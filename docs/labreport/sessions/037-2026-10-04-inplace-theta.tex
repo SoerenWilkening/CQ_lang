@@ -1,0 +1,94 @@
+\labsessionheader{2026-10-04}{cq\_theta becomes in place only: \texttt{cq\_theta(\&x, $\theta$)}; cq\_ry removed}%
+  {ec284441}{n/a}{none}
+
+\subsection*{Goal}
+Implement the owner's surface decision of 2026-10-03 (\bd{test\_C\_libtooling-1501}):
+\texttt{cq\_theta} is always an in-place operation on its variable, written
+\texttt{cq\_theta(\&x, $\theta$)}; the value form \texttt{y = cq\_theta(x, $\theta$)} and the
+\texttt{cq\_ry} macro go. The change is header-only. The pass does not change, so
+the acceptance test is that the migrated C reaches the pass as the same stage-1 IR.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \commit{ec284441} --- \bd{test\_C\_libtooling-1501} ---
+  \fpath{include/CQ.h}: \texttt{cq\_theta(px, $\theta$)} is the void expression
+  \texttt{*(px) = cq\_theta\_<sfx>(*(px), $\theta$)}, with \texttt{\_Generic} on the pointer
+  type; \texttt{cq\_ry} deleted. A side-effecting \texttt{px} (evaluated twice) is a
+  compile error: an unevaluated \texttt{\_\_builtin\_assume} whose \texttt{-Wassume}
+  diagnostic \texttt{\_Pragma} raises to an error for that expansion. 1,211 call sites
+  migrated by a tokenizer script and 10 by hand (expression positions, a
+  \texttt{\#define} body, one type trap, four array-cell preps); 4 frontend fixtures
+  migrated, \fpath{tests/frontend/cq\_ry\_macro.c} replaced by
+  \fpath{tests/frontend/cq\_theta\_inplace.c} (8 RUN lines: positive pattern blocks
+  in-place vs raw entry point; value form, pointer-free form, const, volatile,
+  rvalue, side effect and \texttt{cq\_ry} each a compile error). Three twin-matrix
+  generators, \texttt{probe.py}, \texttt{runtime\_census.py} and the stage-cache
+  self-test's header mutation migrated. \texttt{docs/frontend.md} \S3.1--3.6, \S4--7,
+  \texttt{example.md}, \texttt{backend.md}, \texttt{llvm-implementation.md},
+  \texttt{quantum-classical-handling.md}, README and CLAUDE.md updated.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fconfirmed\ The macro's shape is load-bearing for stage-1 IR. The issue's
+  proposal, an \texttt{always\_inline} wrapper per type, moved the
+  \texttt{declare @cq\_theta\_*} line in 475 of 526 comparable modules (the wrapper is
+  emitted at the end of the translation unit) and changed more than that in 59
+  (\texttt{phi} incoming order, attribute-group numbering). A
+  \texttt{do \{\} while (0)} statement form changed predecessor and \texttt{phi} order
+  in 61 (114 with a local pointer copy); a statement expression with a local, 63. The
+  plain expression keeps the call in the user's function. Recorded as bd memory
+  \texttt{inplace-theta-macro-shape-is-ir-load-bearing}.
+  \item \fconfirmed\ Two migration traps, both caught by the stage-1 diff: the
+  controlling type is now the variable's, so \texttt{\_Bool b = cq\_theta(u, $\theta$)} with
+  \texttt{int u} must rotate an \texttt{int} temporary (rewritten naively it rotates a
+  1-bit register); and a prep into a memory cell (\texttt{b[i] = cq\_theta(0, $\theta$)} on a
+  VLA) must rotate a scalar and store once, or an extra store of the seed survives.
+  \item Residual stage-1 differences, explained: 7 modules list two loop
+  \texttt{phi}s in another order, because a literal-prep variable now has two stores
+  and mem2reg leaves its single-store path; 1 module moves a \texttt{declare}. Lowered
+  with \texttt{cq-opt}, the 7 differ only by the same renaming (gate sequence
+  unchanged) and the 1 is identical.
+  \item Not done: prose in \texttt{.ll} fixture headers, pass-source comments and
+  some slice comments still spells C in the retired form (\bd{test\_C\_libtooling-5yla}).
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+modules byte-identical at stage 1 & 527 of 532 & clang \texttt{-O1} old/new, \texttt{cmp} \\
+matrix \texttt{CASE}s byte-identical & 154 of 157 & same, \texttt{-DCASE=N} \\
+generated cells byte-identical & 4,588 of 4,588 & 6,184 dumped; 1,596 fail both sides \\
+classical lib TUs (no \texttt{CQ.h}) & 32 & excluded, fail both sides by design \\
+\texttt{ctest -LE maintenance} & 586 of 586 passed & \measured{ctest --test-dir build -LE maintenance -j6} \\
+cq-opt equivalence & 2537 fixtures, 0 mismatches & \measured{cmake --build build --target cq-opt-equivalence-full} \\
+e2e goldens moved & 0 & \measured{git status --short | grep -c expected.log} \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+Per-issue budget: red (\fpath{cq\_theta\_inplace.c} against the pre-1501 header,
+1 failed as intended); green folded into the batch gate (\texttt{ctest -LE maintenance
+-j6}, 586 of 586 passed, which includes \texttt{frontend-lit}, \texttt{ir-pass-lit} and
+every e2e slice and twin matrix); final \texttt{ctest -R frontend-lit} after header
+comment edits made while the gate ran (1 of 1 passed). One extra
+\texttt{lit -q build/tests/frontend} run (11 tests, no failure) only to count tests:
+a fourth invocation, over the budget of three. \texttt{cq-opt-equivalence-full}
+compared 2537 fixtures with 0 mismatches; \texttt{update\_code\_map.py --check}
+clean. The stage-1 diffs above are clang runs outside lit and ctest, repeated after
+the last header edit with the same result. No mutants: the change has no
+accept-predicate, and the new fixture's negative RUN lines were each seen failing on
+the old header or by construction. The maintenance label and the full \texttt{ctest}
+were not run. No pass source changed (\texttt{cq-opt} SHA-256 unchanged by the build).
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item Built with the issue's recommended notation \texttt{\&a}. The pointer-free
+  \texttt{cq\_theta(a, $\theta$)} it names as the alternative for the owner to confirm
+  was not built; switching would change the header and drop one character per site.
+  \item \bd{test\_C\_libtooling-5yla} (prose spellings). The explicit copy
+  \texttt{int c = q; cq\_theta(\&c, $\theta$)} keeps C copy semantics; a later read of a
+  quantum \texttt{q} is the stale read \bd{test\_C\_libtooling-57ch} will lower.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+None.
