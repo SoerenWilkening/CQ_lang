@@ -1,0 +1,80 @@
+\labsessionheader{2026-10-04}{Register-form \texttt{cq\_phi} prose is history: the scope of v7oh}%
+  {5b98dfe0}{n/a}{none}
+
+\subsection*{Goal}
+\bd{test\_C\_libtooling-v7oh}, filed at the close of entry 038, asked for the retired
+data-operand spelling \texttt{x = cq\_phi(x, $\theta$)} in comments to be migrated to the
+register-free \texttt{cq\_phi($\theta$)}, site by site. Before any edit, each site was read
+against the IR or code it describes.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \commit{5b98dfe0} --- \bd{test\_C\_libtooling-v7oh} --- comment and
+  documentation text only. Three sites that describe current programs were respelled: the
+  onward-control phase arm in two fixture headers
+  (\fpath{control\_classical\_call\_arm\_accept\_onward\_ctl\_phase.ll},
+  \fpath{control\_swap\_switch\_datamux\_onward\_ctl\_phase.ll}) and in the
+  \fpath{tests/e2e/CMakeLists.txt} note on \fpath{onward\_ctl\_phase\_caller.c}, whose code
+  already reads \texttt{if (y > 50) cq\_phi(0.25)}. The two fixtures without a
+  \texttt{3qlq} note got one. CLAUDE.md's history paragraph now says that
+  register-form \texttt{cq\_phi} spellings in comments and fixture headers are pre-3qlq
+  history.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item The premise of \bd{test\_C\_libtooling-v7oh} was mostly wrong. Unlike the
+  \texttt{cq\_theta} value form (entry 038), whose in-place respelling gives the same IR,
+  the register form of \texttt{cq\_phi} is a different construct, and the prose around it
+  depends on it. Measured: 378 lines match
+  \texttt{cq\_phi(<identifier>, \ldots)}. Of the 149 fixtures among them, 147 already
+  carry a \texttt{3qlq} migration note (51 ``uncontrolled $\to$ deleted'', 17 ``tainted
+  arm $\to$ void call'', 65 \texttt{prep\_a2} notes on re-derived checks, re-spelled
+  diagnostics or a hand decision, 14 others), and their header
+  prose is about the swap route: routed base, loop-carried merge $\varphi$,
+  \texttt{cqrt\_cswap}. Example: \fpath{control\_swap\_inloop\_diamond.ll} reads ``a
+  loop-CARRIED routed base'' directly above the C line. Respelling that line to
+  \texttt{if (q > 5) cq\_phi(b)} would contradict the paragraph. Pass-source comments (57
+  lines) describe diagonal-alias, arg-0 eq-fold or classical-lift mechanics, or symptoms
+  measured on the old surface. Slice prose (74 lines) is already marked as OLD IDIOM,
+  RETIRED or ``was''. The \texttt{tools/} and \texttt{docs/} hits (65) are the deliberately
+  kept retired \texttt{register} generator surface and its documentation. The owner ruled
+  to keep these as history.
+  \item The first draft of one added note claimed that an uncontrolled in-body
+  \texttt{cq\_phi(0.1)} is a deleted global phase. Under a tainted break that claim is
+  unmeasured, so the note now cites only measured fixtures
+  (\fpath{lowering\_reject\_break\_phase\_answer.ll},
+  \fpath{lowering\_reject\_break\_phase\_answer\_kickback.ll}).
+  \item Seen in passing, not changed: the fixtures respelled above still describe their
+  arm as a ``routed phase arm'' (\texttt{cqrt\_cswap}), although their CHECK lines pin
+  kickback. This is the same pre-3qlq mechanism prose that the \texttt{3qlq} notes cover.
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+register-form \texttt{cq\_phi} lines & 378 & grep over \texttt{git ls-files ir-pass tests tools docs include} \\
+fixtures with a \texttt{3qlq} note & 147 of 149 & header scan \\
+touched fixtures under lit & 4 of 4 passed & \measured{lit ir-pass/test --filter <4 names>} \\
+\texttt{ctest -LE maintenance} & 586 of 586 passed & \measured{ctest --test-dir build -LE maintenance -j6} \\
+cq-opt equivalence & 2537 fixtures, 0 mismatches & \measured{cmake --build build --target cq-opt-equivalence-full} \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+Every changed line in \texttt{ir-pass/} and \texttt{tests/} is a \texttt{;} or \texttt{\#}
+comment, and none is a RUN or CHECK line. One lit invocation covered the 4 touched
+fixtures, and all passed. The batch gate followed, because fixtures and a
+\texttt{CMakeLists.txt} changed: \texttt{ctest -LE maintenance -j6} 586 of 586 passed, \texttt{cq-opt-equivalence-full} compared 2537 fixtures with 0 mismatches, \texttt{update\_code\_map.py --check} clean. No mutants. The maintenance label and the full
+\texttt{ctest} were not run.
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item Rewriting the swap-route narrative in fixture headers to describe the kickback
+  that their CHECK lines pin is a separate, larger task, and it needs per-fixture
+  re-measurement. It is not filed. The owner chose the history convention instead.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+Entry 038, Findings, last item: ``It has no mechanical rewrite, because a phase on a
+register is not expressible register-free.'' The reason is incomplete. Most sites also sit
+in prose that depends on the register form, and the owner kept them as history (this entry).
