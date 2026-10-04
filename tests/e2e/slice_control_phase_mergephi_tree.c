@@ -36,10 +36,10 @@
    already a `cq_theta_i1` call and therefore an ordinary interior RAIL leaf).
    Same gates, same order. The widening adds an ACCEPT, not a STREAM. */
 int slice(void) {
-    int q = cq_theta(0, 0.7);
-    _Bool b0 = cq_theta((_Bool)0, 0.5);
+    int q = 0; cq_theta(&q, 0.7);
+    _Bool b0 = (_Bool)0; cq_theta(&b0, 0.5);
     _Bool b1 = 0;
-    if (b0) { b1 = cq_theta(b1, 0.5); }
+    if (b0) { cq_theta(&b1, 0.5); }
     if (b1 && q > 3) cq_phi(0.3);
     return (int) cq_measure(b0) + (int) cq_measure(b1) + cq_measure(q);
 }

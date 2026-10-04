@@ -25,15 +25,15 @@
 #include <stdint.h>
 
 void use(void) {
-    int8_t    a = 0;   (void) cq_theta(a, 0.1);   // CHECK: call {{.*}} @cq_theta_si8(
-    int16_t   b = 0;   (void) cq_theta(b, 0.1);   // CHECK: call {{.*}} @cq_theta_si16(
-    int32_t   c = 0;   (void) cq_theta(c, 0.1);   // CHECK: call {{.*}} @cq_theta_si32(
-    int64_t   d = 0;   (void) cq_theta(d, 0.1);   // CHECK: call {{.*}} @cq_theta_{{sl|sll}}(
-    uint8_t   e = 0;   (void) cq_theta(e, 0.1);   // CHECK: call {{.*}} @cq_theta_ui8(
-    uint16_t  f = 0;   (void) cq_theta(f, 0.1);   // CHECK: call {{.*}} @cq_theta_ui16(
-    uint32_t  g = 0;   (void) cq_theta(g, 0.1);   // CHECK: call {{.*}} @cq_theta_ui32(
-    uint64_t  h = 0;   (void) cq_theta(h, 0.1);   // CHECK: call {{.*}} @cq_theta_{{ul|ull}}(
-    size_t    i = 0;   (void) cq_theta(i, 0.1);   // CHECK: call {{.*}} @cq_theta_ul(
-    intptr_t  j = 0;   (void) cq_theta(j, 0.1);   // CHECK: call {{.*}} @cq_theta_sl(
-    uintptr_t k = 0;   (void) cq_theta(k, 0.1);   // CHECK: call {{.*}} @cq_theta_ul(
+    int8_t    a = 0;   cq_theta(&a, 0.1);          // CHECK: call {{.*}} @cq_theta_si8(
+    int16_t   b = 0;   cq_theta(&b, 0.1);          // CHECK: call {{.*}} @cq_theta_si16(
+    int32_t   c = 0;   cq_theta(&c, 0.1);          // CHECK: call {{.*}} @cq_theta_si32(
+    int64_t   d = 0;   cq_theta(&d, 0.1);          // CHECK: call {{.*}} @cq_theta_{{sl|sll}}(
+    uint8_t   e = 0;   cq_theta(&e, 0.1);          // CHECK: call {{.*}} @cq_theta_ui8(
+    uint16_t  f = 0;   cq_theta(&f, 0.1);          // CHECK: call {{.*}} @cq_theta_ui16(
+    uint32_t  g = 0;   cq_theta(&g, 0.1);          // CHECK: call {{.*}} @cq_theta_ui32(
+    uint64_t  h = 0;   cq_theta(&h, 0.1);          // CHECK: call {{.*}} @cq_theta_{{ul|ull}}(
+    size_t    i = 0;   cq_theta(&i, 0.1);          // CHECK: call {{.*}} @cq_theta_ul(
+    intptr_t  j = 0;   cq_theta(&j, 0.1);          // CHECK: call {{.*}} @cq_theta_sl(
+    uintptr_t k = 0;   cq_theta(&k, 0.1);          // CHECK: call {{.*}} @cq_theta_ul(
 }

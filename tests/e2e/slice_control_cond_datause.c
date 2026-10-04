@@ -35,7 +35,7 @@
    keeps the shared path live in the executed `main` copy). */
 int slice(void) {
     int q = 3;
-    q = cq_theta(q, 0.5);          /* taint q -> handle (alloc i32(3), ry_i32)   */
+    cq_theta(&q, 0.5);             /* taint q -> handle (alloc i32(3), ry_i32)   */
     int f = (q > 5);               /* DATA use of the condition compare          */
     if (q > 5) {                   /* CONTROL use — clang CSEs to ONE icmp        */
         cq_phi(0.25);       /* arm gate 1 (Rz) — VERBATIM on the rail     */

@@ -28,14 +28,14 @@
 
 #define CQ_GROVER_ITER                       \
     if (q == 5) { cq_phi(CQ_PI); }           \
-    q = cq_theta(q, -0.5);                   \
+    cq_theta(&q, -0.5);                      \
     if (q == 0) { cq_phi(CQ_PI); }           \
-    q = cq_theta(q, 0.5);
+    cq_theta(&q, 0.5);
 
 int slice(void) {
     int q = 0;
 
-    q = cq_theta(q, 0.5);
+    cq_theta(&q, 0.5);
 
     CQ_GROVER_ITER
     CQ_GROVER_ITER

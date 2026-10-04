@@ -24,7 +24,7 @@
 int main(void) {
     int a = 5;
     bool b = 0;
-    b = cq_theta(b, 0.5);
+    cq_theta(&b, 0.5);
     if (b) a -= 3;
     int m = cq_measure(a);
     if (b) cq_phi(0.9);

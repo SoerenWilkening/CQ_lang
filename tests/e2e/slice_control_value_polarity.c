@@ -21,8 +21,8 @@
 int slice(void) {
     int q = 3;
     int p = 7;
-    q = cq_theta(q, 0.5);
-    p = cq_theta(p, 0.25);
+    cq_theta(&q, 0.5);
+    cq_theta(&p, 0.25);
     if (q != 5) {                  /* -> icmp eq + swapped successors (ArmNegated) */
         p = p + 3;
         p = p * 5;

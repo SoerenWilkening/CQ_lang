@@ -26,16 +26,16 @@
     if (sqrt(a + 3.) <= 3.5) {                     \
         cq_phi(M_PI);                              \
     }                                              \
-    a = cq_theta(a, -0.5);                         \
+    cq_theta(&a, -0.5);                            \
     if (a == 0) {                                  \
         cq_phi(M_PI);                              \
     }                                              \
-    a = cq_theta(a, 0.5);
+    cq_theta(&a, 0.5);
 
 int slice(void) {
     int a = 0;
 
-    a = cq_theta(a, 0.5);
+    cq_theta(&a, 0.5);
 
     CQ_GROVER_DERIVED_ITER
     CQ_GROVER_DERIVED_ITER

@@ -24,7 +24,7 @@
 #include <stdio.h>
 
 __attribute__((noinline)) int emit_mixed(int seed) {
-    int q = cq_theta(seed, 0.5);
+    int q = seed; cq_theta(&q, 0.5);
     if (q > 5)
         printf("%d", q);                 /* I/O effect — TRUE arm, fires on flag  */
     int r = (q > 5) ? (q + 1) : (q + 2); /* value effect — constant data-mux + q  */

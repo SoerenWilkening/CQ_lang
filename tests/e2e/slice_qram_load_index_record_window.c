@@ -18,17 +18,19 @@
 static const int tbl[8] = {3, 1, 4, 7, 5, 9, 2, 6};
 
 __attribute__((noinline)) static int defect(int u) {
-    _Bool b = cq_theta(u, 0.5);
+    int t = u; cq_theta(&t, 0.5);
+    _Bool b = t;
     int v = tbl[b];
-    b = cq_theta(b, -0.5);
+    cq_theta(&b, -0.5);
     printf("%d %d\n", b, v);
     return 0;
 }
 
 __attribute__((noinline)) static int only_v(int u) {
-    _Bool b = cq_theta(u, 0.5);
+    int t = u; cq_theta(&t, 0.5);
+    _Bool b = t;
     int v = tbl[b];
-    b = cq_theta(b, -0.5);
+    cq_theta(&b, -0.5);
     printf("%d\n", v);
     return 0;
 }

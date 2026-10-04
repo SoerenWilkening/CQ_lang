@@ -18,7 +18,7 @@ typedef unsigned __int128 u128;
 
 __attribute__((noinline))
 void slice(unsigned long x) {
-    unsigned long a = cq_theta(x, 0.25);
+    unsigned long a = x; cq_theta(&a, 0.25);
     u128 wide = (u128)a * (u128)a;          /* 128-bit product (clean i128 ops) */
     unsigned long hi = (unsigned long)(wide >> 64);
     (void) cq_measure(hi);

@@ -20,7 +20,7 @@
 
 int slice(void) {
     int q = 0;
-    q = cq_theta(q, 0.5);
+    cq_theta(&q, 0.5);
 
     if ((q >> 0) & 1) cq_phi(0.3);
     if ((q >> 1) & 1) cq_phi(0.3);

@@ -40,7 +40,7 @@ int ext_f(int a);
 
 int slice(void) {
     int q = 3;
-    q = cq_theta(q, 0.5);          /* taint q -> condition handle (alloc, ry)     */
+    cq_theta(&q, 0.5);             /* taint q -> condition handle (alloc, ry)     */
     int y = 5;
     if (q > 5)                     /* R1: tainted-condition classical-call arm     */
         y = ext_f(7);              /* pure classical call -> route-merged %out      */

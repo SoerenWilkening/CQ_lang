@@ -568,7 +568,7 @@ olm_lgammal_r(long double x, int *signgamp)
 
 long double slice(void) {
     int signgam;                       /* dead local: DSE-eliminated pre-lowering */
-    long double q = cq_theta(0.5L, 0.5);
+    long double q = 0.5L; cq_theta(&q, 0.5);
     return cq_measure(olm_lgammal_r(q, &signgam));
 }
 

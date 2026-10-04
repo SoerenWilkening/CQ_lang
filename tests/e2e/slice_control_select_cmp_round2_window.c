@@ -61,7 +61,7 @@
    `cq-lowering`), because the window needs a callee `clang` cannot inline:
 
        int ext_f(int a);                 // _lib.c: { return a + 100; }
-       int q = 3; q = cq_theta(q, 0.5);
+       int q = 3; cq_theta(&q, 0.5);
        int y = 5;
        if (q > 5) y = ext_f(7);          // the 6.5 classical-call arm -> %out
        int keep = cq_measure(y);         // keeps %out live
@@ -97,14 +97,14 @@ int ext_f(int a);
 
 int slice(void) {
     int q = 3;
-    q = cq_theta(q, 0.5);
+    cq_theta(&q, 0.5);
     int y = 5;
     if (q > 5) y = ext_f(7);
     int keep = cq_measure(y);
     int x = (y != 0);
-    int b = cq_theta(x, 0.25);
+    int b = x; cq_theta(&b, 0.25);
     int a = (b == 1) ? 2 : 5;
-    int b3 = cq_theta(x, 0.9);
+    int b3 = x; cq_theta(&b3, 0.9);
     return cq_measure(a) + cq_measure(b3) + keep;
 }
 

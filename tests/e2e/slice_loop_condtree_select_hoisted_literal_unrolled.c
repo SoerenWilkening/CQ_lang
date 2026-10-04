@@ -6,7 +6,7 @@
    `e2e-loop-condtree-select-hoisted-literal-twin-identical`, compares the two
    committed goldens byte for byte. */
 __attribute__((noinline)) static int slice(int n, int m) {
-    int q = cq_theta(0, 0.25);
+    int q = 0; cq_theta(&q, 0.25);
     int s = 0;
     { int t = ((q > 1) | (m == n)) ? 0 : 55; s += cq_measure(t); }
     { int t = ((q > 1) | (m == n)) ? 1 : 55; s += cq_measure(t); }

@@ -19,12 +19,12 @@
    value `clang -O1` cannot fold, never a literal passed through a noinline call
    (bd 46oo: `-O1` const-propagates a literal argument). */
 __attribute__((noinline)) int slice(double m, int n) {
-    double q = cq_theta(m, 0.5);
+    double q = m; cq_theta(&q, 0.5);
     (void) q;
     double t = m + 1.0;
-    int q2 = cq_theta(n, 0.3);
+    int q2 = n; cq_theta(&q2, 0.3);
     double r = t;
-    if (q2 > 3) r = cq_theta(t, 0.2);
+    if (q2 > 3) { r = t; cq_theta(&r, 0.2); }
     return (int) cq_measure(r) + cq_measure(q2);
 }
 

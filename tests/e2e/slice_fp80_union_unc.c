@@ -100,7 +100,7 @@ union IEEEl2bits {
 __attribute__((noinline))
 long double slice(void) {
     /* (A) measured business — anchors the trace; its rails stay allocated. */
-    long double x = cq_theta(0.5L, 0.5);
+    long double x = 0.5L; cq_theta(&x, 0.5);
     long double r = x + 1.0L;
     long double m = cq_measure(r);
 
@@ -108,7 +108,7 @@ long double slice(void) {
        field-insert back (the scalbnl idiom), kept alive past -O1 DCE by a
        result-dropped cq_phi. The whole-DAG uncompute reverses it — the i80
        write-surface `_unc` family fires. */
-    long double q = cq_theta(0.25L, 0.5);
+    long double q = 0.25L; cq_theta(&q, 0.5);
     union IEEEl2bits u;
     u.e = q;
     u.bits.exp = u.bits.exp + 2;

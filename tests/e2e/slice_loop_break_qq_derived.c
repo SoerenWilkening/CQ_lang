@@ -34,9 +34,9 @@
    measurements inserted; `noinline` keeps the function boundary. */
 __attribute__((noinline))
 int run(int seed, int pseed, int n) {
-    int p0 = cq_theta(pseed, 0.5);
+    int p0 = pseed; cq_theta(&p0, 0.5);
     int p  = p0 + 5;                    /* DERIVED loop-invariant comparand (p0 -> p) */
-    int q  = cq_theta(seed, 0.25);
+    int q = seed; cq_theta(&q, 0.25);
     for (int i = 0; i < n; i++) {
         q = q ^ 5;                      /* in-place value rail self-update */
         if (q == p)                     /* TAINTED Q==Q break flag (rail vs derived-p) */

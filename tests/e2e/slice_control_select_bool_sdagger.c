@@ -4,7 +4,7 @@
 
        int a = 5; bool b = cq_theta((bool)0, 0.5);
        if (b) a -= 3;            // select i1 %b, i32 2, i32 5
-       b = cq_theta(b, -0.5);    // S† on the condition's own wire
+       cq_theta(&b, -0.5);    // S† on the condition's own wire
 
    ON `main` 87d0699 THIS DECLINED `condition predates a non-diagonal gate`
    (probe `k3`): gate 2c's wire walk was POSITION-FREE for every seed, so a theta
@@ -30,8 +30,8 @@
 int main(void) {
     int a = 5;
     bool b = 0;
-    b = cq_theta(b, 0.5);
+    cq_theta(&b, 0.5);
     if (b) a -= 3;
-    b = cq_theta(b, -0.5);
+    cq_theta(&b, -0.5);
     return cq_measure(b) + cq_measure(a);
 }

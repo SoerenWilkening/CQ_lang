@@ -895,7 +895,7 @@ def gen_program(variant, combo, include):
         else:
             lines.append(f"    {ct} a{i} = {sample_literal(k, ct)};")
             if combo.get(i) == "H":
-                lines.append(f"    a{i} = cq_theta(a{i}, {angle:.2f});")
+                lines.append(f"    cq_theta(&a{i}, {angle:.2f});")
                 angle += 0.1
             call_args.append(f"a{i}")
     lines.extend(byref_decls)

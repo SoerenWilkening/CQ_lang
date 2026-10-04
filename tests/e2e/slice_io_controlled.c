@@ -24,13 +24,13 @@
 #include <stdio.h>
 
 __attribute__((noinline)) void emit_sgt(int seed) {
-    int q = cq_theta(seed, 0.5);
+    int q = seed; cq_theta(&q, 0.5);
     if (q > 5) printf("%d", q);   /* un-negated: gate arm = TRUE successor */
     (void) cq_measure(q);
 }
 
 __attribute__((noinline)) void emit_ne(int seed) {
-    int q = cq_theta(seed, 0.25);
+    int q = seed; cq_theta(&q, 0.25);
     if (q != 3) putchar(q);       /* clang -O1 -> icmp eq, FALSE arm, ¬flag bracket */
     (void) cq_measure(q);
 }

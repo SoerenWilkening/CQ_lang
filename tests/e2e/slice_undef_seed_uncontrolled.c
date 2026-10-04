@@ -45,7 +45,7 @@
 int slice(void) {
     int a = 5;
     bool b;
-    b = cq_theta(b, 0.5);
+    cq_theta(&b, 0.5);
     if (b) a -= 3;
     return cq_measure(b) + cq_measure(a);
 }

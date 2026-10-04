@@ -98,14 +98,14 @@
 __attribute__((noinline))
 void slice(int x, int y) {
     /* (1) linear Q+C (_hl) chain, dropped without measure. */
-    int a = cq_theta(x, 0.25);   /* taint x -> handle (alloc + ry)            */
+    int a = x; cq_theta(&a, 0.25); /* taint x -> handle (alloc + ry)            */
     int b = a << 2;              /* shl_hl                                    */
     b = b ^ 9;                   /* xor_hl                                    */
     if (b > 100) cq_phi(0.5);       /* Rz keep-alive; result dropped (dead)      */
 
     /* (2) Q+Q (_qq) product, dropped without measure — the bare-QQ `_unc`. */
-    int p = cq_theta(x, 0.10);   /* alloc + ry                                */
-    int q = cq_theta(y, 0.20);   /* alloc + ry                                */
+    int p = x; cq_theta(&p, 0.10); /* alloc + ry                                */
+    int q = y; cq_theta(&q, 0.20); /* alloc + ry                                */
     int prod = p * q;            /* mul_qq (operands ordered by BirthOrder)   */
     if (prod == 4) cq_phi(0.30);   /* Rz keep-alive; result dropped (dead)      */
 }

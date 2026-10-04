@@ -39,7 +39,7 @@ static int slice(void) {
     int z[] = {1, 2, 3};
     bool b0[n];
     for (int i = 0; i < n; ++i) {
-        if (Z >= z[i]) b0[i] = cq_theta(b0[i], 0.5);
+        if (Z >= z[i]) cq_theta(&b0[i], 0.5);
         if (b0[i]) {
             Z -= z[i];
             P += p[i];

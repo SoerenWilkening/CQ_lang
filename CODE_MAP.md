@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 840 maintained source files, 6541 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 840 maintained source files, 6554 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -33,8 +33,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RotationLowering.cpp` — 2179 physical lines
 - `ir-pass/include/TaintPropagation.h` — 2107 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1964 physical lines
+- `tools/inplace_twin_matrix.py` — 1790 physical lines
 - `ir-pass/src/CQLoweringPass.cpp` — 1786 physical lines
-- `tools/inplace_twin_matrix.py` — 1774 physical lines
 - `ir-pass/src/Specialization.cpp` — 1632 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
 - `tools/library_coverage/probe.py` — 1456 physical lines
@@ -55,7 +55,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/record_census/shipped_guard_model.py` — 866 physical lines
 - `ir-pass/src/IOSinkLowering.cpp` — 862 physical lines
 - `tools/trace_twin_equiv.py` — 843 physical lines
-- `tools/angle_select_twin_matrix.py` — 833 physical lines
+- `tools/angle_select_twin_matrix.py` — 840 physical lines
 - `ir-pass/include/LoopPlan.h` — 762 physical lines
 - `ir-pass/include/ControlPlan.h` — 749 physical lines
 - `tools/cq_stage_cache_test.py` — 730 physical lines
@@ -4417,26 +4417,26 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/railbank_dynamic_matrix.c:496` — `slice`
 - `tests/e2e/railbank_dynamic_matrix.c:506` — `main`
 
-### `tests/e2e/railbank_guarded_vla_matrix.c` (232 lines)
+### `tests/e2e/railbank_guarded_vla_matrix.c` (233 lines)
 
 - `tests/e2e/railbank_guarded_vla_matrix.c:84` — `slice`
 - `tests/e2e/railbank_guarded_vla_matrix.c:101` — `main`
 - `tests/e2e/railbank_guarded_vla_matrix.c:108` — `slice`
 - `tests/e2e/railbank_guarded_vla_matrix.c:117` — `main`
 - `tests/e2e/railbank_guarded_vla_matrix.c:121` — `slice`
-- `tests/e2e/railbank_guarded_vla_matrix.c:131` — `main`
-- `tests/e2e/railbank_guarded_vla_matrix.c:145` — `slice`
-- `tests/e2e/railbank_guarded_vla_matrix.c:158` — `main`
-- `tests/e2e/railbank_guarded_vla_matrix.c:163` — `slice`
-- `tests/e2e/railbank_guarded_vla_matrix.c:179` — `main`
-- `tests/e2e/railbank_guarded_vla_matrix.c:187` — `slice`
-- `tests/e2e/railbank_guarded_vla_matrix.c:200` — `main`
-- `tests/e2e/railbank_guarded_vla_matrix.c:208` — `slice`
-- `tests/e2e/railbank_guarded_vla_matrix.c:217` — `main`
-- `tests/e2e/railbank_guarded_vla_matrix.c:221` — `slice`
-- `tests/e2e/railbank_guarded_vla_matrix.c:231` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:132` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:146` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:159` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:164` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:180` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:188` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:201` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:209` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:218` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:222` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:232` — `main`
 
-### `tests/e2e/railbank_readorder_matrix.c` (306 lines)
+### `tests/e2e/railbank_readorder_matrix.c` (307 lines)
 
 - `tests/e2e/railbank_readorder_matrix.c:45` — `slice`
 - `tests/e2e/railbank_readorder_matrix.c:52` — `main`
@@ -4477,7 +4477,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/railbank_readorder_matrix.c:282` — `slice`
 - `tests/e2e/railbank_readorder_matrix.c:291` — `main`
 - `tests/e2e/railbank_readorder_matrix.c:295` — `slice`
-- `tests/e2e/railbank_readorder_matrix.c:305` — `main`
+- `tests/e2e/railbank_readorder_matrix.c:306` — `main`
 
 ### `tests/e2e/railbank_stale_matrix.c` (654 lines)
 
@@ -6839,11 +6839,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_qram_guarded_store_swapped.c:19` — `guarded_swapped`
 - `tests/e2e/slice_qram_guarded_store_swapped.c:28` — `main`
 
-### `tests/e2e/slice_qram_load_index_record_window.c` (38 lines)
+### `tests/e2e/slice_qram_load_index_record_window.c` (40 lines)
 
 - `tests/e2e/slice_qram_load_index_record_window.c:20` — `defect`
-- `tests/e2e/slice_qram_load_index_record_window.c:28` — `only_v`
-- `tests/e2e/slice_qram_load_index_record_window.c:36` — `main`
+- `tests/e2e/slice_qram_load_index_record_window.c:29` — `only_v`
+- `tests/e2e/slice_qram_load_index_record_window.c:38` — `main`
 
 ### `tests/e2e/slice_qram_local_store_measured_index.c` (30 lines)
 
@@ -7106,10 +7106,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_uncompute_dead_dag.c:99` — `slice`
 - `tests/e2e/slice_uncompute_dead_dag.c:112` — `main`
 
-### `tests/e2e/slice_uncompute_dead_shapes.c` (104 lines)
+### `tests/e2e/slice_uncompute_dead_shapes.c` (106 lines)
 
 - `tests/e2e/slice_uncompute_dead_shapes.c:83` — `slice`
-- `tests/e2e/slice_uncompute_dead_shapes.c:104` — `main`
+- `tests/e2e/slice_uncompute_dead_shapes.c:106` — `main`
 
 ### `tests/e2e/slice_uncompute_interior_chain.c` (71 lines)
 
@@ -7446,26 +7446,37 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/frontend/cq_phi_smoke.c:26` — `use`
 
-### `tests/frontend/cq_ry_macro.c` (114 lines)
-
-- `tests/frontend/cq_ry_macro.c:41` — `macro_i32`
-- `tests/frontend/cq_ry_macro.c:53` — `spelled_i32`
-- `tests/frontend/cq_ry_macro.c:67` — `macro_i1`
-- `tests/frontend/cq_ry_macro.c:77` — `spelled_i1`
-- `tests/frontend/cq_ry_macro.c:90` — `macro_f64`
-- `tests/frontend/cq_ry_macro.c:100` — `spelled_f64`
-
 ### `tests/frontend/cq_stdint_dispatch.c` (39 lines)
 
 - `tests/frontend/cq_stdint_dispatch.c:27` — `use`
 
-### `tests/frontend/cq_theta_bitint_nonabi_reject.c` (17 lines)
+### `tests/frontend/cq_theta_bitint_nonabi_reject.c` (18 lines)
 
 - `tests/frontend/cq_theta_bitint_nonabi_reject.c:14` — `seed_bitint`
 
-### `tests/frontend/cq_theta_i128_nonabi_reject.c` (19 lines)
+### `tests/frontend/cq_theta_i128_nonabi_reject.c` (20 lines)
 
 - `tests/frontend/cq_theta_i128_nonabi_reject.c:16` — `seed_i128`
+
+### `tests/frontend/cq_theta_inplace.c` (184 lines)
+
+- `tests/frontend/cq_theta_inplace.c:43` — `bad`
+- `tests/frontend/cq_theta_inplace.c:46` — `bad`
+- `tests/frontend/cq_theta_inplace.c:49` — `bad`
+- `tests/frontend/cq_theta_inplace.c:52` — `bad`
+- `tests/frontend/cq_theta_inplace.c:55` — `bad`
+- `tests/frontend/cq_theta_inplace.c:58` — `bad`
+- `tests/frontend/cq_theta_inplace.c:61` — `bad`
+- `tests/frontend/cq_theta_inplace.c:66` — `inplace_i32`
+- `tests/frontend/cq_theta_inplace.c:78` — `raw_i32`
+- `tests/frontend/cq_theta_inplace.c:93` — `inplace_i1`
+- `tests/frontend/cq_theta_inplace.c:103` — `inplace_f64`
+- `tests/frontend/cq_theta_inplace.c:116` — `inplace_prep`
+- `tests/frontend/cq_theta_inplace.c:126` — `raw_prep`
+- `tests/frontend/cq_theta_inplace.c:138` — `inplace_copy`
+- `tests/frontend/cq_theta_inplace.c:154` — `inplace_cell`
+- `tests/frontend/cq_theta_inplace.c:164` — `raw_cell`
+- `tests/frontend/cq_theta_inplace.c:174` — `inplace_ptr`
 
 ### `tests/frontend/cq_theta_nomerge.c` (113 lines)
 
@@ -7507,22 +7518,23 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/abi_codegen.py:245` — `_unc_signature`
 - `tools/abi_codegen.py:275` — `_unc_body`
 
-### `tools/angle_select_twin_matrix.py` (833 lines)
+### `tools/angle_select_twin_matrix.py` (840 lines)
 
 - `tools/angle_select_twin_matrix.py:319` — `legal`
 - `tools/angle_select_twin_matrix.py:325` — `name`
 - `tools/angle_select_twin_matrix.py:330` — `cells`
 - `tools/angle_select_twin_matrix.py:334` — `cells.add`
 - `tools/angle_select_twin_matrix.py:350` — `quick_cells`
-- `tools/angle_select_twin_matrix.py:388` — `gen`
-- `tools/angle_select_twin_matrix.py:502` — `run_cell`
-- `tools/angle_select_twin_matrix.py:538` — `_resid`
-- `tools/angle_select_twin_matrix.py:547` — `_diag`
-- `tools/angle_select_twin_matrix.py:552` — `classify`
-- `tools/angle_select_twin_matrix.py:686` — `_known`
-- `tools/angle_select_twin_matrix.py:698` — `_difftxt`
-- `tools/angle_select_twin_matrix.py:704` — `_star`
-- `tools/angle_select_twin_matrix.py:708` — `main`
+- `tools/angle_select_twin_matrix.py:388` — `_gate`
+- `tools/angle_select_twin_matrix.py:395` — `gen`
+- `tools/angle_select_twin_matrix.py:509` — `run_cell`
+- `tools/angle_select_twin_matrix.py:545` — `_resid`
+- `tools/angle_select_twin_matrix.py:554` — `_diag`
+- `tools/angle_select_twin_matrix.py:559` — `classify`
+- `tools/angle_select_twin_matrix.py:693` — `_known`
+- `tools/angle_select_twin_matrix.py:705` — `_difftxt`
+- `tools/angle_select_twin_matrix.py:711` — `_star`
+- `tools/angle_select_twin_matrix.py:715` — `main`
 
 ### `tools/backend_contract.py` (234 lines)
 
@@ -7838,7 +7850,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/golden_multiset_audit_test.py:466` — `named_mutants.rep`
 - `tools/golden_multiset_audit_test.py:726` — `main`
 
-### `tools/inplace_twin_matrix.py` (1774 lines)
+### `tools/inplace_twin_matrix.py` (1790 lines)
 
 - `tools/inplace_twin_matrix.py:499` — `prep_cells`
 - `tools/inplace_twin_matrix.py:505` — `prep_cells.add`
@@ -7849,28 +7861,29 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/inplace_twin_matrix.py:575` — `cells.add`
 - `tools/inplace_twin_matrix.py:591` — `legal`
 - `tools/inplace_twin_matrix.py:597` — `name`
-- `tools/inplace_twin_matrix.py:612` — `gen`
-- `tools/inplace_twin_matrix.py:824` — `parse`
-- `tools/inplace_twin_matrix.py:833` — `reduce_route`
-- `tools/inplace_twin_matrix.py:928` — `reduce_kickback`
-- `tools/inplace_twin_matrix.py:953` — `reduce_prep`
-- `tools/inplace_twin_matrix.py:1010` — `seed_matcher`
-- `tools/inplace_twin_matrix.py:1023` — `seed_matcher.match`
-- `tools/inplace_twin_matrix.py:1033` — `classify_prep`
-- `tools/inplace_twin_matrix.py:1100` — `normalise`
-- `tools/inplace_twin_matrix.py:1106` — `normalise.sub`
-- `tools/inplace_twin_matrix.py:1115` — `flags_and_rails`
-- `tools/inplace_twin_matrix.py:1136` — `prefix_end`
-- `tools/inplace_twin_matrix.py:1152` — `Side.__init__`
-- `tools/inplace_twin_matrix.py:1173` — `_resid`
-- `tools/inplace_twin_matrix.py:1182` — `_first`
-- `tools/inplace_twin_matrix.py:1190` — `build`
-- `tools/inplace_twin_matrix.py:1264` — `run_cell`
-- `tools/inplace_twin_matrix.py:1305` — `classify`
-- `tools/inplace_twin_matrix.py:1447` — `classify_rz`
-- `tools/inplace_twin_matrix.py:1494` — `invariants`
-- `tools/inplace_twin_matrix.py:1579` — `_star`
-- `tools/inplace_twin_matrix.py:1583` — `main`
+- `tools/inplace_twin_matrix.py:615` — `_arm_gate`
+- `tools/inplace_twin_matrix.py:627` — `gen`
+- `tools/inplace_twin_matrix.py:840` — `parse`
+- `tools/inplace_twin_matrix.py:849` — `reduce_route`
+- `tools/inplace_twin_matrix.py:944` — `reduce_kickback`
+- `tools/inplace_twin_matrix.py:969` — `reduce_prep`
+- `tools/inplace_twin_matrix.py:1026` — `seed_matcher`
+- `tools/inplace_twin_matrix.py:1039` — `seed_matcher.match`
+- `tools/inplace_twin_matrix.py:1049` — `classify_prep`
+- `tools/inplace_twin_matrix.py:1116` — `normalise`
+- `tools/inplace_twin_matrix.py:1122` — `normalise.sub`
+- `tools/inplace_twin_matrix.py:1131` — `flags_and_rails`
+- `tools/inplace_twin_matrix.py:1152` — `prefix_end`
+- `tools/inplace_twin_matrix.py:1168` — `Side.__init__`
+- `tools/inplace_twin_matrix.py:1189` — `_resid`
+- `tools/inplace_twin_matrix.py:1198` — `_first`
+- `tools/inplace_twin_matrix.py:1206` — `build`
+- `tools/inplace_twin_matrix.py:1280` — `run_cell`
+- `tools/inplace_twin_matrix.py:1321` — `classify`
+- `tools/inplace_twin_matrix.py:1463` — `classify_rz`
+- `tools/inplace_twin_matrix.py:1510` — `invariants`
+- `tools/inplace_twin_matrix.py:1595` — `_star`
+- `tools/inplace_twin_matrix.py:1599` — `main`
 
 ### `tools/install_cq.py` (402 lines)
 

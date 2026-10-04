@@ -2,7 +2,7 @@
    R7-loop CLAUSE (c): the ITERATION-LOCAL rotated register.
 
        for (k < K) { int r = cq_theta(7, .25);      // a FRESH rail every trip
-                     if (b) r = cq_theta(r, .2);
+                     if (b) cq_theta(&r, .2);
                      s += cq_measure(r); }
 
    `r`'s rail does NOT cross the back edge, so there is no header phi and
@@ -22,11 +22,11 @@
 #endif
 
 int slice(void) {
-    bool b = cq_theta((bool)0, 0.5);
+    bool b = (bool)0; cq_theta(&b, 0.5);
     int s = 0;
     for (int k = 0; k < CQ_K; ++k) {
-        int r = cq_theta(7, 0.25);
-        if (b) r = cq_theta(r, 0.2);
+        int r = 7; cq_theta(&r, 0.25);
+        if (b) cq_theta(&r, 0.2);
         s += cq_measure(r);
     }
     return s + cq_measure(b);

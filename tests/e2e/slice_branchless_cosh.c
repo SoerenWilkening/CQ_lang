@@ -67,7 +67,7 @@ static double bcosh(double x) {
     return 0.5 * (e + 1.0/e);                            /* = cosh(x), no OVF     */
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(bcosh(q));
 }
 int main(void) { (void) slice(); return 0; }

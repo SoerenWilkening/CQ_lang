@@ -63,12 +63,12 @@
 __attribute__((noinline))
 void slice(unsigned x) {
     /* (A) measured forward ctpop. */
-    unsigned a = cq_theta(x, 0.25);
+    unsigned a = x; cq_theta(&a, 0.25);
     int b = __builtin_popcount(a);       /* llvm.ctpop.i32 -> cq_template_ctpop_i32 */
     (void) cq_measure(b);
 
     /* (B) dead ctpop — proves the `_unc` twin + recompute-from-live-source. */
-    unsigned c = cq_theta(x, 0.10);
+    unsigned c = x; cq_theta(&c, 0.10);
     int d = __builtin_popcount(c);        /* dead */
     if (d == 16) cq_phi(0.30);               /* Rz keep-alive; result dropped */
 }

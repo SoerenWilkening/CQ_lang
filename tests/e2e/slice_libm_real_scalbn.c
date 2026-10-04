@@ -70,7 +70,7 @@ __attribute__((always_inline)) static inline double olm_scalbn(double x, int n) 
 }
 
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(olm_scalbn(q, 2));
 }
 int main(void) { (void) slice(); return 0; }

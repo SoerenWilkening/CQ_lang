@@ -15,7 +15,7 @@
 int qpack(int a);
 
 int slice(void) {
-    int q = cq_theta(3, 0.5);
+    int q = 3; cq_theta(&q, 0.5);
     int y = qpack(q);
     return cq_measure(y);
 }

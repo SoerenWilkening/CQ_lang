@@ -25,7 +25,7 @@
    cq_measure resolve from CQ.h, force-included by run_slice.sh. */
 int slice(void) {
     int q = 3;
-    q = cq_theta(q, 0.5);
+    cq_theta(&q, 0.5);
     if (q != 0) cq_phi(0.25);
     return cq_measure(q);
 }

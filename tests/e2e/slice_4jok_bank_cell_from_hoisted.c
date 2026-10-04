@@ -30,7 +30,7 @@
  */
 #include "CQ.h"
 int slice(int u) {
-    int q = cq_theta(u, 0.5);
+    int q = u; cq_theta(&q, 0.5);
     int p = q * 3;
     bool b[3];
     int a = 5;
@@ -39,7 +39,7 @@ int slice(int u) {
         if (b[i]) cq_phi(0.2);
         if (a >= 3) a -= 3;
     }
-    q = cq_theta(q, 0.9);
+    cq_theta(&q, 0.9);
     return cq_measure(q) + cq_measure(a);
 }
 /* ⚠ `(void)slice(4); return 0;` RATHER THAN `return slice(4);`, AND IT IS NOT

@@ -16,11 +16,11 @@
 
 __attribute__((noinline)) static int local_store_measured_index(_Bool u0, _Bool u1) {
     int arr[8] = {0};
-    _Bool b = cq_theta(u0, 0.5);
+    _Bool b = u0; cq_theta(&b, 0.5);
     arr[b] = 0;
-    _Bool p = cq_theta(u1, 0.5);
+    _Bool p = u1; cq_theta(&p, 0.5);
     int v = arr[p];
-    b = cq_theta(b, -0.5);
+    cq_theta(&b, -0.5);
     return cq_measure(b) + cq_measure(v);
 }
 

@@ -41,7 +41,7 @@
 # MISMATCH (bd drbq Inc 2a round-1 review, the record axis).
 #   ROLLED side: the record (`mark`, or `acc`'s source) is defined in the body and
 #     read either after the loop or on a later activation, and the SUFFIX
-#     `a = cq_theta(a, -0.5)` is a NON-DIAGONAL in-place gate on the same rail
+#     `cq_theta(&a, -0.5)` is a NON-DIAGONAL in-place gate on the same rail
 #     between the definition and the read. That is the 8h7d.5 F-1/F-2 staleness
 #     exactly, and `LoopLowering::staleRailRecordRead` declines it
 #     (`cq loop lowering: rail record read past an in-place gate on the same
@@ -53,7 +53,7 @@
 #     PRE-EXISTING PROPERTY OF THE STRAIGHT-LINE PATH, NOT OF THE LOOP LOWERING
 #     AND NOT OF THIS INCREMENT. Measured on BOTH the pre-2a (`f92d95e`) and the
 #     post-2a binary, byte-identically, on the matrix cells and on the minimal
-#     probe `int mark = a; a = cq_theta(a, 0.25); return cq_measure(mark);`
+#     probe `int mark = a; cq_theta(&a, 0.25); return cq_measure(mark);`
 #     (rc 0, no warning, both binaries). The loop half of this class is fenced
 #     (8h7d.5 round 1 / round 2 F-1); the straight-line half is not, and whether
 #     it should be is an OPEN question for the owner — under Rule 8 `int mark = a`
@@ -91,10 +91,10 @@
 #       hoists it out of the loop, CSE merges the flat twin's two copies, and the
 #       kjd1 gate-2c window guard, which is not wire-aware, counts the arm's Ry on
 #       the DISJOINT rail `r` as an intervening gate). The other 15 carry an
-#       `a = cq_theta(a, …)` PREFIX or SUFFIX, i.e. a genuine non-diagonal gate on
+#       `cq_theta(&a, …)` PREFIX or SUFFIX, i.e. a genuine non-diagonal gate on
 #       the condition's own wire. ⚠ THE FIRST FAMILY IS THE ONE TO READ: it says
 #       that lifting the R7 loop fence does not by itself make
-#       `for (…) { if (a == 5) r = cq_theta(r, .9); }` compile. The `oeq`/`one`/
+#       `for (…) { if (a == 5) cq_theta(&r, .9); }` compile. The `oeq`/`one`/
 #       `oder` regions exist so that the same shape with an OPAQUE threshold is
 #       still a live witness.
 #       ⚠ AND DO NOT READ THIS STRING AS A FENCE NAME. `ArmClassify`'s
@@ -153,7 +153,7 @@
 #   more specific AND more true; it was more specific and less true.
 #
 #     `m_none_rcond_none_none_none` — the R4 decline control,
-#     `if (a == 5) { a = cq_theta(a, 0.9); }`. `clang -O1` folds the arm's `a` to
+#     `if (a == 5) { cq_theta(&a, 0.9); }`. `clang -O1` folds the arm's `a` to
 #     the literal `5` on the proving edge, so what reaches the pass is
 #     `cq_theta(5, 0.9)` with the merge's PRED incoming still the live register
 #     `a`. **F1** refuses it: the pred incoming is TAINTED, so the merge would mux
@@ -171,7 +171,7 @@
 #     `m_ry_rprep_none_none_none` — the Inc-4 state-prep decline control, added
 #     at the pre-Inc-4 disposition precisely so this diff would be the witness.
 #     Its ROLLED half now prints **F1**'s tainted-incoming string too, and for the
-#     reason its own caveat gives: the wrapper seeds `r = cq_theta(r, 0.3)` before the loop, so the
+#     reason its own caveat gives: the wrapper seeds `cq_theta(&r, 0.3)` before the loop, so the
 #     merge's pred incoming is the loop-carried QUANTUM `r`, not a `Constant` —
 #     the cell declines for TWO independent reasons (the loop AND F1's data mux)
 #     and does not isolate which. The isolating cells are the lit family

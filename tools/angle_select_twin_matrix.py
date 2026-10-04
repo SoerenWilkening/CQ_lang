@@ -218,7 +218,7 @@ would read like a wall of compiler declines.
 THE TWO STEMS SPLIT UNDER `void`, AND THIS INSTRUMENT SPLITS WITH THEM.
 
   * `stem=theta` (Ry) IS UNCHANGED IN SUBSTANCE. PRD D5 keeps
-    `r = cq_theta(r, T)`, the 2b BY-DIFFERENCE lowering stands, its constant-arm
+    `cq_theta(&r, T)`, the 2b BY-DIFFERENCE lowering stands, its constant-arm
     narrowing stands, and the twin is still the manual `R(r,B); if (c) R(r,A-B)`
     diamond. What DOES change in those cells is the non-arm `cq_phi` spellings —
     `base=phialias` (`int r = cq_phi(p,.11)`) and `use=premark`/`postmark`
@@ -385,6 +385,13 @@ TWIN_C   = dict(COND_C, ne="q == 5")   # the SELECT's post-canonicalization test
 TWIN_SWAP = {"ne"}                     # …and its arms, swapped to match
 
 
+def _gate(R, ang):
+    """The arm gate on `r`: `cq_theta` rotates `r` in place (bd 1501); the
+    `cq_phi` register spelling is left for `phi_void_source` to rewrite."""
+    return ("cq_theta(&r, %s)" % ang if R == "cq_theta"
+            else "r = %s(r, %s)" % (R, ang))
+
+
 def gen(c, form, surface="register"):
     R = "cq_theta" if c["stem"] == "theta" else "cq_phi"
     A, B = ANGLE_PAIR[c["angle"]]
@@ -400,16 +407,16 @@ def gen(c, form, surface="register"):
     # cells before it was found.
     L.append("__attribute__((noinline)) int slice(double x, double y, "
              "double d, double nd) {")
-    L.append("    int q = cq_theta(3, 0.5);")
-    L.append("    int p = cq_theta(7, 0.25);")
+    L.append("    int q = 3; cq_theta(&q, 0.5);")
+    L.append("    int p = 7; cq_theta(&p, 0.25);")
     if fp_cond:
-        L.append("    double g = cq_theta(1.5, 0.375);")
+        L.append("    double g = 1.5; cq_theta(&g, 0.375);")
 
     # ---- the rotated BASE ---------------------------------------------------
     if c["base"] == "src":
         L.append("    int r = p;")
     elif c["base"] == "chain":
-        L.append("    int r = cq_theta(p, 0.125);")
+        L.append("    int r = p; cq_theta(&r, 0.125);")
     elif c["base"] == "mul":
         L.append("    int r = p * 5;")
     elif c["base"] == "add":
@@ -425,8 +432,8 @@ def gen(c, form, surface="register"):
 
     # ---- the construct under test ------------------------------------------
     if form == "select":
-        L.append("    if (%s) r = %s(r, %s); else r = %s(r, %s);"
-                 % (COND_C[c["cond"]], R, A, R, B))
+        L.append("    if (%s) %s; else %s;"
+                 % (COND_C[c["cond"]], _gate(R, A), _gate(R, B)))
     else:
         hi, lo = (B, A) if c["cond"] in TWIN_SWAP else (A, B)
         # THE `args` ANGLE TAKES ITS DIFFERENCE AS A PARAMETER, and that is a
@@ -465,8 +472,8 @@ def gen(c, form, surface="register"):
         else:
             L.append("    double dlo = %s;" % lo)
             L.append("    double ddi = (%s) - (%s);" % (hi, lo))
-        L.append("    r = %s(r, dlo);" % R)
-        L.append("    if (%s) r = %s(r, ddi);" % (TWIN_C[c["cond"]], R))
+        L.append("    %s;" % _gate(R, "dlo"))
+        L.append("    if (%s) %s;" % (TWIN_C[c["cond"]], _gate(R, "ddi")))
 
     # ---- the POST-GATE consumer --------------------------------------------
     tail = []
@@ -480,7 +487,7 @@ def gen(c, form, surface="register"):
         tail.append("    int s = r + 1;")
         tail.append("    return cq_measure(q) + cq_measure(s);")
     elif c["use"] == "region2":
-        tail.append("    if (q == 6) r = %s(r, 0.77);" % R)
+        tail.append("    if (q == 6) %s;" % _gate(R, "0.77"))
         tail.append("    return cq_measure(q) + cq_measure(r);")
     elif c["use"] == "premark":
         tail.append("    return cq_measure(q) + cq_measure(r) + em;")

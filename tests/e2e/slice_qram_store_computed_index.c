@@ -17,17 +17,17 @@
 
 int main(void) {
     int arr[8] = {0};
-    int q = cq_theta(0, 0.5);
-    int r = cq_theta(1, 0.5);
+    int q = 0; cq_theta(&q, 0.5);
+    int r = 1; cq_theta(&r, 0.5);
     arr[q & 7] = r + 1;              /* computed index AND computed value */
-    int c = cq_theta(2, 0.5);
-    int i = cq_theta(3, 0.5);
+    int c = 2; cq_theta(&c, 0.5);
+    int i = 3; cq_theta(&i, 0.5);
     if (c < 3) arr[i] = 7;           /* guarded store: computed path flag */
-    int p = cq_theta(4, 0.5);
+    int p = 4; cq_theta(&p, 0.5);
     int v = arr[p & 7];
-    q = cq_theta(q, -0.5);           /* every source rotated back */
-    r = cq_theta(r, -0.5);
-    c = cq_theta(c, -0.5);
+    cq_theta(&q, -0.5);              /* every source rotated back */
+    cq_theta(&r, -0.5);
+    cq_theta(&c, -0.5);
     return cq_measure(q) + cq_measure(r) + cq_measure(c) + cq_measure(v)
          + cq_measure(i);
 }

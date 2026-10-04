@@ -78,15 +78,15 @@
 __attribute__((noinline))
 void slice(double x, double y, double z) {
     /* (A) measured contracted a*b+c -> @llvm.fmuladd.f64 (QQQ), forward symbol. */
-    double a = cq_theta(x, 0.25);     /* alloc f64 + ry */
-    double b = cq_theta(y, 0.50);     /* alloc f64 + ry */
-    double c = cq_theta(z, 0.75);     /* alloc f64 + ry */
+    double a = x; cq_theta(&a, 0.25); /* alloc f64 + ry */
+    double b = y; cq_theta(&b, 0.50); /* alloc f64 + ry */
+    double c = z; cq_theta(&c, 0.75); /* alloc f64 + ry */
     double r = a * b + c;             /* @llvm.fmuladd.f64 -> cq_template_fma_f64 */
     (void) cq_measure(r);             /* -> cqrt_measure_f64 */
 
     /* (B) dead QLQ fma -> mixed forward + mixed `_unc` twin + source-liveness. */
-    double d = cq_theta(x, 0.10);     /* alloc f64 + ry */
-    double e = cq_theta(y, 0.20);     /* alloc f64 + ry */
+    double d = x; cq_theta(&d, 0.10); /* alloc f64 + ry */
+    double e = y; cq_theta(&e, 0.20); /* alloc f64 + ry */
     double f = __builtin_fma(d, 3.0, e);  /* @llvm.fma.f64(d, 3.0, e) -> QLQ (dead) */
     if (f == 4.0) cq_phi(0.30);           /* Rz keep-alive; result dropped (dead) */
 }

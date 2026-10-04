@@ -62,11 +62,13 @@ can plausibly be called one. Concretely:
 - **Source is plain C.** Compiled by stock Clang. No CQ-specific
   parser, no AST rewriter, no preprocessor pass beyond standard C
   macros and `_Generic` dispatch in `CQ.h`.
-- **The only CQ-specific surface is a header.** `CQ.h` declares two
-  register-carrying primitive families (`cq_theta`, `cq_measure`), the
-  register-free branch phase `cq_phi`, the `cq_ry` statement macro and one
-  inversion bracket (`cq_invert_begin` / `cq_invert_end`). The
-  declarations are plain extern C functions; bodies are never linked.
+- **The only CQ-specific surface is a header.** `CQ.h` declares the in-place
+  rotation `cq_theta(&x, θ)`, the measurement `cq_measure(x)`, the
+  register-free branch phase `cq_phi(θ)` and one inversion bracket
+  (`cq_invert_begin` / `cq_invert_end`), and nothing else (owner decision
+  2026-10-03, bd `1501`). Underneath, `cq_theta` and `cq_measure` are
+  register-carrying per-type families of plain extern C functions; bodies are
+  never linked.
 - **Quantum data has no special type.** A `quantum int` keyword does
   not exist. A variable that has been rotated by `cq_theta` becomes
   *tainted* in the IR — its type remains `int`.
@@ -88,7 +90,7 @@ load-bearing engineering all lives in the IR pass and the runtime.
 
 | Primitive | Gate | Taint effect | Purpose |
 |---|---|---|---|
-| `cq_theta(x, angle)` | Ry(θ) | **Source** — return is tainted | Branching rotation; the only operation that creates superposition |
+| `cq_theta(&x, angle)` | Ry(θ), in place on `x` | **Source** — `x` is tainted after it | Branching rotation; the only operation that creates superposition |
 | `cq_phi(angle)` | branch phase | None — no data operand | Multiplies the CURRENT BRANCH's amplitude by `e^{iθ}` (§3.3) |
 | `cq_measure(x)` | Measurement | **Sink** — return is classical | Reads register into a classical scalar |
 
@@ -128,22 +130,22 @@ suffix convention below is the canonical suffix-to-type map:
 | `float` | `_f32` | |
 | `double` | `_f64` | |
 | `_Float16` | `_f16` | |
-| `long double` | `_f80` | only where `__LDBL_MANT_DIG__ == 64` (x86-64); where `long double` is `double` the `double` arm matches, and where it is IEEE-quad it has no association and `cq_theta((long double)…)` is a compile error rather than a wrong lowering |
+| `long double` | `_f80` | only where `__LDBL_MANT_DIG__ == 64` (x86-64); where `long double` is `double` the `double` arm matches, and where it is IEEE-quad it has no association and `cq_theta(&ld, …)` on a `long double ld` is a compile error rather than a wrong lowering |
 
 > **A `bool` register as a CONDITION.** A `bool` is a one-qubit register and
 > `if (b) …` hands the pass `br i1 %b` with no compare: the register **is**
 > the flag. It is read only as a control — no ancilla is minted for the phase
-> and it is never freed. Measured on `_Bool b = cq_theta((_Bool)0, 0.7);`:
+> and it is never freed. Measured on `_Bool b = 0; cq_theta(&b, 0.7);`:
 >
 > | source | emitted |
 > |---|---|
 > | `if (b) cq_phi(1.0);` | `cqrt_rz_i1(h0, 0x1p+0)` — one gate on `b`'s own rail |
 > | `if (!b) cq_phi(1.0);` | `cqrt_rz_i1(h0, -0x1p+0)` — `X·P(θ)·X` is `P(−θ)` up to a global phase, so no `cqrt_x` ever touches a user register |
 > | `int a = 5; if (b) a -= 3;` | a data select: `alloc_i1; cqrt_cnot(b, f)`, the two `cqrt_copy_i32_controlled` merges, `cqrt_cnot(b, f); cqrt_free(f)` — the flag is a CNOT copy of `b`, again nothing non-diagonal on `b` |
-> | `if (b) r = cq_theta(r, 0.9);` | `cqrt_ry_i32_controlled(h0, h1, θ)` with `b`'s handle as the control |
+> | `if (b) cq_theta(&r, 0.9);` | `cqrt_ry_i32_controlled(h0, h1, θ)` with `b`'s handle as the control |
 >
 > A `bool` that is rotated inside a loop which also reads it as the branch
-> condition (a loop-carried `bool`, `for (…) { if (b) cq_phi(θ); b = cq_theta(b, φ); }`)
+> condition (a loop-carried `bool`, `for (…) { if (b) cq_phi(θ); cq_theta(&b, φ); }`)
 > is not lowered yet: measured, `cq controlled lowering: branch phase on a bare i1
 > condition under quantum control`.
 
@@ -151,7 +153,8 @@ suffix convention below is the canonical suffix-to-type map:
 That is 15 specializations × the **two** register-carrying families
 (`cq_theta`, `cq_measure`) = 30 declarations, plus the two `_f80` ones on x86-64,
 plus the single `void cq_phi(double angle)`, with 2 `_Generic` dispatch macros
-and the `cq_ry` statement macro (§3.2). Showing `cq_theta` in full;
+(`cq_theta`'s dispatches on the POINTER type and rotates in place, §3.2). Showing
+`cq_theta` in full;
 `cq_measure` follows the same shape with the same widths. `cq_phi` does not,
 and that is the point of §3.3: a branch phase has no register to dispatch on.
 
@@ -181,24 +184,25 @@ double              cq_theta_f64 (double             x, double angle);
 _Float16            cq_theta_f16 (_Float16           x, double angle);
 /* + cq_theta_f80 (long double) where long double is x87 extended */
 
-/* User-facing dispatch — type-driven via C11 _Generic */
-#define cq_theta(x, angle) _Generic((x),           \
-    bool:               cq_theta_i1,               \
-    char:               cq_theta_c,                \
-    signed char:        cq_theta_si8,              \
-    unsigned char:      cq_theta_ui8,              \
-    short:              cq_theta_si16,             \
-    unsigned short:     cq_theta_ui16,             \
-    int:                cq_theta_si32,             \
-    unsigned int:       cq_theta_ui32,             \
-    long:               cq_theta_sl,               \
-    unsigned long:      cq_theta_ul,               \
-    long long:          cq_theta_sll,              \
-    unsigned long long: cq_theta_ull,              \
-    float:              cq_theta_f32,              \
-    double:             cq_theta_f64,              \
-    _Float16:           cq_theta_f16               \
-)(x, angle)
+/* User-facing dispatch — in place, by the POINTER type (C11 _Generic).
+   The real macro also rejects a side-effecting `px` at compile time (§3.2). */
+#define cq_theta(px, angle) ((void)(*(px) = _Generic((px), \
+    bool *:               cq_theta_i1,               \
+    char *:               cq_theta_c,                \
+    signed char *:        cq_theta_si8,              \
+    unsigned char *:      cq_theta_ui8,              \
+    short *:              cq_theta_si16,             \
+    unsigned short *:     cq_theta_ui16,             \
+    int *:                cq_theta_si32,             \
+    unsigned int *:       cq_theta_ui32,             \
+    long *:               cq_theta_sl,               \
+    unsigned long *:      cq_theta_ul,               \
+    long long *:          cq_theta_sll,              \
+    unsigned long long *: cq_theta_ull,              \
+    float *:              cq_theta_f32,              \
+    double *:             cq_theta_f64,              \
+    _Float16 *:           cq_theta_f16               \
+)(*(px), (angle))))
 
 /* cq_measure declared the same way but takes only x (no angle arg).
    cq_phi has NO per-type family and NO _Generic macro: it is the one
@@ -211,6 +215,9 @@ Two notes on the dispatch:
   enumerates the standard scalar types; typedefs like `int32_t`,
   `size_t`, `uintptr_t` resolve to their underlying standard type and
   hit the corresponding case (`int32_t → int` on LP64/LLP64, etc.).
+  For `cq_theta` the controlling type is `T *`, so the variable's own type
+  picks the width, and a `const`- or `volatile`-qualified object has no
+  association: a compile error, deliberately.
 - **`long` and `long long` are distinct cases even when same-width.**
   C treats them as separate types regardless of platform sizing, so the
   `_Generic` must list both — both appear as distinct rows in the suffix
@@ -221,7 +228,7 @@ Two notes on the dispatch:
 
 #### Why every `cq_theta_*` is `nomerge`
 
-`cq_theta(x, θ)` on a quantum `x` rotates **that register**; on a classical `x`
+`cq_theta(&x, θ)` on a quantum `x` rotates **that register**; on a classical `x`
 it prepares a **fresh** one. Register identity is therefore part of what a call
 means, and it is not part of C's value semantics — so `clang -O1` is free to treat
 two `cq_theta` calls with equal operands as the same call. It does, and the result
@@ -229,14 +236,14 @@ can be a *different program*:
 
 ```c
 int t = q / 4;  int r = 5;
-if (q2 > 3) { if (t == 5) r = cq_theta(t, .9); else r = cq_theta(5, .9); }
+if (q2 > 3) { if (t == 5) { r = t; cq_theta(&r, .9); } else { r = 5; cq_theta(&r, .9); } }
 ```
 
 IPSCCP substitutes `t := 5` into the first arm, both arms become the identical call
-`cq_theta(5, .9)`, and the late SimplifyCFG hoists the pair and **deletes the inner
-branch**. What reaches the pass is, instruction for instruction, the stage-1 IR of
-the unrelated program `if (q2 > 3) r = cq_theta(5, .9);` — which prepares a fresh
-`|5⟩` and never rotates `t`. A second route (sink two calls that differ in one
+`cq_theta_si32(5, .9)`, and the late SimplifyCFG hoists the pair and **deletes the
+inner branch**. What reaches the pass is, instruction for instruction, the stage-1 IR
+of the unrelated program `if (q2 > 3) { r = 5; cq_theta(&r, .9); }` — which prepares
+a fresh `|5⟩` and never rotates `t`. A second route (sink two calls that differ in one
 operand, then fold `select (q == 20), t, 5` to `5` by InstSimplify) produces the
 **same module** from a source whose rotated register is *not* the compare's operand.
 Because those programs and the legitimate one are the same IR, **no pass-side fence
@@ -254,8 +261,8 @@ the LLVM declaration itself. So:
   cq_theta_si32; f(x, θ)`) is turned back into a direct call by `-O1` *without* the
   attribute (measured: the resulting call carries only `nounwind`), so the fold
   returns.
-- **bd `uw5u`** — `cq_theta((t == s) ? t : s, θ)` is folded by InstSimplify to
-  `cq_theta(s, θ)` with **no merge at all** (measured on two quantum registers `t`,
+- **bd `uw5u`** — `int m = (t == s) ? t : s; cq_theta(&m, θ);` is folded by
+  InstSimplify to `cq_theta_si32(s, θ)` with **no merge at all** (measured on two quantum registers `t`,
   `s`: the stage-1 IR rotates `s`). That turns a rotation of a fresh mux register
   into an in-place rotation of `s` — a different unitary. No header attribute can
   reach it.
@@ -263,17 +270,17 @@ the LLVM declaration itself. So:
 **The costs** (measured):
 
 - **If/else over one register no longer folds into a selected angle.**
-  `if (c) r = cq_theta(r, A); else r = cq_theta(r, B);` with a quantum condition
+  `if (c) cq_theta(&r, A); else cq_theta(&r, B);` with a quantum condition
   stays an if/else and lowers as two controlled Ry (`cqrt_ry_i32_controlled(f, h, A)`,
   `cqrt_x(f)`, `cqrt_ry_i32_controlled(f, h, B)`, `cqrt_x(f)`) — the same unitary.
-  The **ternary** spelling `r = cq_theta(r, c ? A : B);` produces the select-angle
+  The **ternary** spelling `cq_theta(&r, c ? A : B);` produces the select-angle
   call directly (no merge is involved) and lowers by difference: an unconditional
   `ry(h, B)` then one `cqrt_ry_i32_controlled(f, h, A−B)`.
 - **Not lowered yet:** with a **classical** condition inside a loop,
-  `if (i & 1) p = cq_theta(p, .9); else p = cq_theta(p, .3);` fails loudly
+  `if (i & 1) cq_theta(&p, .9); else cq_theta(&p, .3);` fails loudly
   (`loop-carried tainted value crosses iterations`), and so does an if/else with
-  common code on one register, e.g. `if (c) { r = Ry(r, .9); r = Ry(r, .1); } else
-  { r = Ry(r, .1); }` (`impure phase arm under quantum control`). The ternary
+  common code on one register, e.g. `if (c) { cq_theta(&r, .9); cq_theta(&r, .1); }
+  else { cq_theta(&r, .1); }` (`impure phase arm under quantum control`). The ternary
   spelling still lowers.
 
 `cq_phi` and `cq_measure` do **not** carry `nomerge`: a branch phase has no register
@@ -286,9 +293,10 @@ re-opening the merge.
 
 ### 3.2 `cq_theta` (Ry) — the only taint source
 
-`cq_theta(x, θ)` applies a Ry(θ) rotation. Its return value is the
-sole rule for introducing taint in the new design: any SSA value that
-is the result of a `@cq_theta_*` call is a taint source for the
+`cq_theta(&x, θ)` applies a Ry(θ) rotation to `x` in place. After `-O1` it is
+the call `%x2 = call @cq_theta_<sfx>(%x, θ)`, and that call's result (what `x`
+holds afterwards) is the sole rule for introducing taint in the new design: any
+SSA value that is the result of a `@cq_theta_*` call is a taint source for the
 forward propagation in the IR pass.
 
 Two operand-state cases:
@@ -305,7 +313,7 @@ The user does not need to know which case applies. A variable that is
 rotated repeatedly is allocated exactly once, on the first rotation,
 because the pass dispatches on operand taint state at lowering time.
 
-Multi-bit **Ry** registers are tensored: `cq_theta(x, θ)` on a W-bit
+Multi-bit **Ry** registers are tensored: `cq_theta(&x, θ)` on a W-bit
 operand applies Ry(θ) to each of the W qubits in the register
 (`cqrt_ry_<W>`; see `runtime/cq_runtime.h`).
 
@@ -317,19 +325,22 @@ the marked branch and *fixes* `|0…0⟩`, so it can never mark it. That is why
 
 #### The linear rule
 
-**A rotation consumes the old name.** `cq_theta(x, θ)` does not return a
-copy of `x` alongside the original: it names the same physical wire after
-the gate. So a read of the *pre-gate* value that the compiler cannot prove
-executes **before** the gate is refused — loudly, lowering nothing. This is
-one rule of the language (a read of the pre-gate value would need a copy of an
-unknown quantum state), and it is the reason `cq_ry(x, θ)` (below) is the
-spelling to reach for: the assignment makes the consumption visible.
+**A rotation consumes the old name.** `cq_theta(&x, θ)` leaves no copy of
+the pre-gate `x` behind: `x` names the same physical wire after the gate. So a
+read of the *pre-gate* value that the compiler cannot prove executes **before**
+the gate is refused today — loudly, lowering nothing. The in-place notation
+makes the consumption visible at the call. The owner ruled on 2026-10-01 (bd
+`57ch`) that such a stale read is **not** a physics decline: a movable read is
+to be placed before the gate, an unmovable one to keep a pre-rotation snapshot
+with a warning. Until that lowering exists the refusal below is a compiler gap
+(R1), and the old justification, that the read would need a copy of an unknown
+quantum state, is superseded.
 
 ```c
-int q = cq_theta(seed, 0.3);
-int mark = q;              /* another NAME for the same wire, not a copy */
-cq_ry(q, 0.4);             /* the wire moves */
-int s = mark * 7;          /* REFUSED — `mark` denotes the pre-gate value:
+int q = seed; cq_theta(&q, 0.3);
+int mark = q;              /* a C copy, but in IR the same wire as q */
+cq_theta(&q, 0.4);         /* the wire moves */
+int s = mark * 7;          /* REFUSED today — `mark` denotes the pre-gate value:
                               cq opcode lowering: operand predates a
                               non-diagonal gate */
 ```
@@ -357,25 +368,65 @@ diagnostic, because different stages are the first to see the violation:
 A program that trips any of them is asking for a value the hardware no longer
 has.
 
-#### `cq_ry(x, θ)` — the statement surface
+#### The in-place spelling
+
+`cq_theta` is in place, always (owner decision 2026-10-03, bd `1501`): there is
+no value form `y = cq_theta(q, θ)`, and the `cq_ry(x, θ)` statement macro that
+spelled `x = cq_theta(x, θ)` is deleted. The macro expands to
 
 ```c
-#define cq_ry(x, angle) ((x) = cq_theta((x), (angle)))
+((void)(*(px) = cq_theta_<sfx>(*(px), (angle))))    /* <sfx> chosen by the type of px */
 ```
 
-`cq_ry(x, θ)` is exactly `x = cq_theta(x, θ)` and reaches the IR pass as
-the identical construct at `-O1` (pinned by `tests/frontend/cq_ry_macro.c`,
-which asserts the same `@cq_theta_<sfx>` call with its result feeding the
-next use, at three widths). It is **not** a new primitive and **not** a new
-taint source; it is the linear rule made syntactically explicit.
+so `cq_theta(&x, θ)` is exactly the retired `x = cq_theta(x, θ)`, and after
+`-O1` (SROA) the pass sees the same `%x2 = call @cq_theta_<sfx>(%x, θ)` it always
+matched. It is a void expression, so a use of its result does not compile.
+Every former spelling has an in-place one:
 
-`cq_theta` stays declared as the expression form, because state preparation
-has no in-place spelling: `int r = cq_theta(5, θ)` rotates a **fresh**
-register seeded with the classical constant `5`. A register-free
-`a = cq_theta(θ)` is not available and is not a deferred feature — after
-`mem2reg` there is no variable `a` for it to name, and such a call arrives
-at the pass as an unrelated value, i.e. byte-identical to the state-prep
-form above.
+| retired spelling | in place | stage-1 IR |
+|---|---|---|
+| `x = cq_theta(x, θ);` | `cq_theta(&x, θ);` | identical |
+| `int r = cq_theta(5, θ);` (state prep) | `int r = 5; cq_theta(&r, θ);` | `%r = call @cq_theta_si32(i32 5, θ)`, identical |
+| `int c = cq_theta(q, θ);` (a rotated copy) | `int c = q; cq_theta(&c, θ);` | `%c = call @cq_theta_si32(%q, θ)`, identical |
+| `f(cq_theta(x, θ))` | `int t = x; cq_theta(&t, θ); f(t);` | identical |
+| `double y = cq_theta(i, θ);` (`int i`) | `int t = i; cq_theta(&t, θ); double y = t;` | identical |
+
+The explicit copy keeps C's copy semantics: `c` is rotated and `q` keeps its
+value. For a classical `q` that is a prep seeded from `q`. For a quantum `q` a
+later read of `q` is the stale read of the linear rule above (bd `57ch`). The
+last row is a trap the migration had to avoid: the controlling type is the
+variable's, so `double y = i; cq_theta(&y, θ);` would rotate a 64-bit float
+register where the retired line rotated a 32-bit integer and converted it.
+
+**Why a macro and not a function.** The stage-1 IR was measured on 2026-10-04 over
+the repository's C sources (532 modules that include `CQ.h`, the 157 matrix
+`CASE`s and the 6,184 generated twin-matrix cells), old spelling under the old
+header against new spelling under this one. Among 526 comparable modules, an
+`always_inline` wrapper per type moved the `declare @cq_theta_*` line (the wrapper
+body is emitted at the end of the translation unit) in 475, and in 59 of them
+changed more than that line (`phi` incoming order, attribute-group numbering); a `do { … } while (0)` statement form changed
+predecessor and `phi` order in 61 (114 with a local copy of the pointer); a
+statement expression with a pointer local, in 63. The plain expansion leaves the
+call in the user's own function. All 4,588 generated cells that compile are
+byte-identical, and so are 527 of the 532 modules and 154 of the 157 `CASE`s.
+In seven of the eight that differ, a prep variable now has two stores (the seed,
+then the rotation), so mem2reg takes a different path for that alloca and lists
+unrelated loop `phi`s in another order. In the eighth a `declare` moves because
+the rotation is now emitted before its `cq_measure` call.
+
+**The price: `px` is evaluated twice.** `&x`, `&a[i]`, `&s->f` and a pointer
+variable are side-effect free; `&a[i++]` and `next_ptr()` are not and would read
+one object and write another. The header checks this rather than hoping: an
+unevaluated `__builtin_assume` costs no IR, and clang's `-Wassume` diagnostic on a
+side-effecting argument is raised to an error for each expansion (pinned by
+`tests/frontend/cq_theta_inplace.c`). `-w`, which silences every diagnostic,
+silences that one too; do not compile CQ programs with `-w`.
+
+The other rejected spellings are compile errors as well: the pointer-free
+`cq_theta(x, θ)` (`indirection requires pointer operand`), a `const` or `volatile`
+object (no generic association), a non-lvalue (`&5`), and `cq_ry` (undeclared).
+A register-free `a = cq_theta(θ)` is not available and is not a deferred feature:
+after `mem2reg` there is no variable `a` for it to name.
 
 ### 3.3 `cq_phi` — the branch phase (register-free)
 
@@ -392,7 +443,7 @@ standing in. There is one declaration, not one per type.
 `if (c(q)) cq_phi(θ)` the pass mints the condition flag `f = c(q)` into a
 fresh `|0⟩` ancilla (the same compare mint every control shape uses), applies
 the gate **uncontrolled** to that one qubit, and strips the flag with the
-compare's `_unc`. Measured on `int q = cq_theta(0, 0.7); if (q == 5) cq_phi(PI);`:
+compare's `_unc`. Measured on `int q = 0; cq_theta(&q, 0.7); if (q == 5) cq_phi(PI);`:
 
 ```
 cqrt_alloc_i32(0) -> h0
@@ -432,7 +483,7 @@ for (int i = 0; i < W; i++)
 ```
 
 Each iteration is an ordinary tainted-condition region, so this needs no new
-capability. Measured with `W = 4`, `q = cq_theta(3, 0.7)`: four regions, each
+capability. Measured with `W = 4`, `int q = 3; cq_theta(&q, 0.7)`: four regions, each
 `and`-mask flag → `cqrt_x`-bracketed `cqrt_rz_i1(f, θ)` → `_unc` strip → free
 (`-O1` rewrites the condition to `q & (1<<i)` and unrolls the small loop).
 
@@ -510,7 +561,7 @@ Two properties matter for the user's mental model:
    `cq_theta` calls on the same source variable may re-rotate it; the
    register is reused, not freed. From the IR pass's perspective, the
    handle SSA value is unchanged across the measure call. (Measured:
-   `m = cq_measure(q); cq_ry(q, 0.2); cq_measure(q);` emits
+   `m = cq_measure(q); cq_theta(&q, 0.2); cq_measure(q);` emits
    `measure(h0); ry(h0, 0.2); measure(h0)` on one handle.)
 
 Casting a quantum-typed value does *not* measure. A `(double) x` on a
@@ -530,8 +581,8 @@ cq_invert_end();
 
 **Not lowered yet.** The header declares the two markers and they survive
 `clang -O1` (pinned by `tests/frontend/cq_invert_markers_survive.c`), but the
-IR pass does not implement the bracket. Measured on `q = cq_theta(3, 0.5);
-cq_invert_begin(); cq_ry(q, 0.25); cq_invert_end(); cq_measure(q);`: `opt`
+IR pass does not implement the bracket. Measured on `int q = 3; cq_theta(&q, 0.5);
+cq_invert_begin(); cq_theta(&q, 0.25); cq_invert_end(); cq_measure(q);`: `opt`
 exits **0**, the bracketed rotation is emitted **forward**
 (`cqrt_ry_i32(h, 0.25)`), and the calls `@__cq_invert_begin` / `@__cq_invert_end`
 are left in the lowered IR, so the program then fails to **link**
@@ -562,9 +613,10 @@ design:
 | `cq_add_qq` / `cq_mul_qc` / etc. | Never existed | Arithmetic uses stock LLVM opcodes (`add`, `mul`, etc.) on tainted operands. The backend identifies them via taint propagation, not via dedicated intrinsics. |
 | `quantum` keyword / macro | Eliminated | A quantum int *is* an int; taint is a property of SSA values, not of variable declarations. |
 
-The entire user-visible compiler surface beyond stock C is `cq_theta` (and its
-statement form `cq_ry`), `cq_phi`, `cq_measure`, and the
-`cq_invert_begin`/`_end` markers.
+The entire user-visible compiler surface beyond stock C is `cq_theta` (in place,
+§3.2), `cq_phi`, `cq_measure`, and the `cq_invert_begin`/`_end` markers. The
+`cq_ry` statement macro and the value form `y = cq_theta(x, θ)` were retired on
+2026-10-03 (bd `1501`).
 
 ---
 
@@ -578,8 +630,8 @@ qubit substrate:
 int a = 3;          /* classical */
 a = a + 1;          /* classical add — `a` is now 4 */
 a = a * 2;          /* classical mul — `a` is now 8 */
-a = cq_theta(a, 0.5);   /* HERE: allocation + Ry(0.5) on a fresh register
-                           initialized to 8 */
+cq_theta(&a, 0.5);  /* HERE: allocation + Ry(0.5) on a fresh register
+                       initialized to 8 */
 int b = a + 5;      /* tainted add — `b` becomes a tainted register */
 return cq_measure(b);
 ```
@@ -617,7 +669,7 @@ Three consequences for the user:
    stock LLVM `add`/`mul` instructions on `i32`, fast and cheap.
 2. The register is initialized to whatever value the operand carried
    at the moment of the first rotation. The user never needs to
-   write `a = 3; cq_init(a); cq_theta(a, ...)` — the value at the
+   write `a = 3; cq_init(a); cq_theta(&a, ...)` — the value at the
    rotation site *is* the initialization.
 3. Variables that look quantum in intent but are never actually rotated
    produce no qubits at runtime (measured: the same program without the
@@ -640,7 +692,7 @@ cannot be derived from data flow.
 | Which function calls need quantum specialization | — | Tainted-argument mask at the callsite (clone-on-taint of the visible body, §6) |
 | Which branches are quantum-controlled | — | Branch condition's taint state; the region is then recovered from the CFG shape by SSA-value identity, arm by arm (§7) |
 | Allocation lifetime / uncomputation point | — | Whole-DAG reverse-order adjoint at a post-dominator free point, and only for a rail provably back at `\|0⟩` (`backend.md` §9) |
-| Rotation (Ry) | `cq_theta(x, θ)` / `cq_ry(x, θ)` | — |
+| Rotation (Ry) | `cq_theta(&x, θ)` | — |
 | Branch phase | `cq_phi(θ)` | Which branch it lands on — from the enclosing tainted condition, by kickback (§3.3) |
 | Measurement | `cq_measure(x)` | — |
 | Manual inversion | `cq_invert_begin();` / `cq_invert_end();` (not lowered yet, §3.5) | Would derive the adjoint inside the bracket |
@@ -671,7 +723,8 @@ int poly(int a, int b) { return a * a + b; }
 int poly(int a, int b);
 
 int main(void) {
-    int x = cq_theta(2, 0.3);   /* x is tainted */
+    int x = 2;
+    cq_theta(&x, 0.3);           /* x is tainted */
     int y = poly(x, 5);          /* tainted x flows into poly */
     int z = poly(4, 5);          /* classical call of the same function */
     return cq_measure(y) + z;    /* measure result */
@@ -822,14 +875,14 @@ tool for a phase, because a CNOT copies a basis *label*, not a *phase*:
   does not read — is applied **in place**, as one controlled gate
   (`cqrt_ry_<W>_controlled(f, h, θ)`); the rotated register and the control
   register are left allocated. Measured on
-  `if (q == 5) r = cq_theta(r, 0.9);`:
+  `if (q == 5) cq_theta(&r, 0.9);`:
   ```
   cq_template_icmp_eq_i32_hl(h0, 5) -> h2
   cqrt_ry_i32_controlled(h2, h1, 0x1.ccccccccccccdp-1)
   cq_template_icmp_eq_i32_hl_unc(h2, h0, 5)
   cqrt_free(h2)
   ```
-  A controlled state preparation (`if (c) r = cq_theta(SEED, θ)`) lowers the
+  A controlled state preparation (`if (c) { r = SEED; cq_theta(&r, θ); }`) lowers the
   same way on a fresh rail.
 - **A value arm** — the arm assigns an arithmetic result — is a
   **controlled-copy merge**: the arm's chain runs unconditionally on the

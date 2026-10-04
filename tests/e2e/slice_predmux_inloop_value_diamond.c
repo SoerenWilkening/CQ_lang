@@ -27,7 +27,7 @@
 volatile int g_seed = 5;
 
 static int slice(void) {
-    int q = cq_theta(g_seed, 0.25);
+    int q = g_seed; cq_theta(&q, 0.25);
     int A = g_seed, B = g_seed, C = g_seed, D = g_seed;
     for (int i = 0; i < 3; ++i) {
         if (q > 5) { A -= 3; B -= 4; C -= 5; D -= 6; }

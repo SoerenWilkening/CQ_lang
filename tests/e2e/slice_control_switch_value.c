@@ -64,8 +64,8 @@
    load-bearing link order). cq_theta/cq_measure resolve from CQ.h. STRICT 2b. */
 int slice(void) {
     int q = 3, p = 4;
-    q = cq_theta(q, 0.5);          /* taint q -> scrutinee handle               */
-    p = cq_theta(p, 0.7);          /* taint p -> the shared value base (p != q)  */
+    cq_theta(&q, 0.5);             /* taint q -> scrutinee handle               */
+    cq_theta(&p, 0.7);             /* taint p -> the shared value base (p != q)  */
     switch (q) {                   /* tainted switch -> preload + XOR-delta merge */
         case 0: p = p + 1; break;  /* case 0 — chain hoisted onto the ORIGINAL p  */
         case 1: p = p + 2; break;  /* case 1 — likewise; the deltas are disjoint  */

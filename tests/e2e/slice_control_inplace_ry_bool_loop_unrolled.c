@@ -10,10 +10,10 @@
    rolled-versus-compare. */
 
 int slice(void) {
-    bool b = cq_theta((bool)0, 0.5);
-    int r = cq_theta(7, 0.25);
-    if (b) r = cq_theta(r, 0.2);
-    if (b) r = cq_theta(r, 0.2);
+    bool b = (bool)0; cq_theta(&b, 0.5);
+    int r = 7; cq_theta(&r, 0.25);
+    if (b) cq_theta(&r, 0.2);
+    if (b) cq_theta(&r, 0.2);
     return cq_measure(r) + cq_measure(b);
 }
 int main(void) { return slice(); }

@@ -7,7 +7,7 @@
    THE PROGRAM IS THE CUSTOMER'S SIMPLEST SPELLING, verbatim from PRD §13.10 Q1 and
    §13.11 worry 7 — the one the PRD says "is what a user writes first":
 
-       for (i = 0; i < 2; ++i) { if (q == 5) r = cq_theta(r, 0.9); }
+       for (i = 0; i < 2; ++i) { if (q == 5) cq_theta(&r, 0.9); }
 
    with `r` on a rail disjoint from `q` and NO gate on `q` anywhere in the body. That
    makes `q` loop-INVARIANT, so `clang -O1` LICM-hoists the compare out of the loop
@@ -48,11 +48,11 @@
 int slice(void) {
     int q = 0;
     int r = 0;
-    q = cq_theta(q, 0.5);              /* alloc i32(0) + ry — the CONDITION rail   */
-    r = cq_theta(r, 0.3);              /* a SECOND, disjoint rail                  */
+    cq_theta(&q, 0.5);                 /* alloc i32(0) + ry — the CONDITION rail   */
+    cq_theta(&r, 0.3);                 /* a SECOND, disjoint rail                  */
     for (int i = 0; i < 2; ++i) {
         if (q == 5) {                  /* LICM hoists this compare out of the loop */
-            r = cq_theta(r, 0.9);      /* the arm Ry — CONTROLLED and IN PLACE     */
+            cq_theta(&r, 0.9);         /* the arm Ry — CONTROLLED and IN PLACE     */
         }
     }
     return cq_measure(q) + cq_measure(r);

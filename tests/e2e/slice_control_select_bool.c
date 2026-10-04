@@ -6,7 +6,7 @@
 
    SOURCE INTENT, as typed:
        int a = 5; bool b0 = 0; bool b1 = 0;
-       if (a >= 3) b0 = cq_theta(b0, 0.5);   // classical guard: always taken
+       if (a >= 3) cq_theta(&b0, 0.5);   // classical guard: always taken
        if (b0 == 1) a -= 3;                  // a becomes 2 or 5 with b0
        return cq_measure(b0) + cq_measure(a);
 
@@ -54,7 +54,7 @@ int main(void) {
     bool b1 = 0;
 
     if (a >= 3) {
-        b0 = cq_theta(b0, 0.5);
+        cq_theta(&b0, 0.5);
     }
     if (b0 == 1) a -= 3;
 

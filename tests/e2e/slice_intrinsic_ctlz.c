@@ -93,12 +93,12 @@
 __attribute__((noinline))
 void slice(unsigned x) {
     /* (A) measured forward ctlz, `i1 false` — the form the ww4c recognizer emits. */
-    unsigned a = cq_theta(x, 0.25);
+    unsigned a = x; cq_theta(&a, 0.25);
     int b = a ? __builtin_clz(a) : 32;   /* -> llvm.ctlz.i32(%a, i1 false) */
     (void) cq_measure(b);
 
     /* (B) dead ctlz — proves the `_unc` twin + recompute-from-live-source. */
-    unsigned c = cq_theta(x, 0.10);
+    unsigned c = x; cq_theta(&c, 0.10);
     int d = c ? __builtin_clz(c) : 32;    /* dead */
     int g = d + (int) c;          /* Q+Q add: keeps the ctlz LIVE and stops
                                      -O1 folding `clz(c)==12` into a range test
@@ -107,7 +107,7 @@ void slice(unsigned x) {
 
     /* (C) measured forward ctlz, `i1 true` — Rule 15 drops the immarg, so this
        traces byte-identically to (A). Measured, not assumed. */
-    unsigned e = cq_theta(x, 0.50);
+    unsigned e = x; cq_theta(&e, 0.50);
     int f = __builtin_clz(e);             /* -> llvm.ctlz.i32(%e, i1 true) */
     (void) cq_measure(f);
 }

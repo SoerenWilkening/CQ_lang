@@ -32,10 +32,10 @@
    performs neither — so the reduction states the two facts being claimed instead
    of hiding them. */
 int slice(void) {
-    int q = cq_theta(3, 0.3);
-    int r = cq_theta(0, 0.0);      /* the manual mint: alloc + a REAL Ry(0) = I */
+    int q = 3; cq_theta(&q, 0.3);
+    int r = 0; cq_theta(&r, 0.0);  /* the manual mint: alloc + a REAL Ry(0) = I */
     if (q == 5) {
-        r = cq_theta(r, 0.9);      /* CHAINED — the Inc-1 shape, pre-Inc-4      */
+        cq_theta(&r, 0.9);         /* CHAINED — the Inc-1 shape, pre-Inc-4      */
     }
     return (int) cq_measure(r) + (int) cq_measure(q);
 }

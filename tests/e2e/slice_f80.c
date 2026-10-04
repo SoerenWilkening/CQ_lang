@@ -76,15 +76,15 @@
 __attribute__((noinline))
 void slice(long double x, long double y) {
     /* (A) measured sqrtl over a Q+Q fadd — proves the forward f80 symbols. */
-    long double a = cq_theta(x, 0.25);   /* alloc f80 + ry */
-    long double b = cq_theta(y, 0.50);   /* alloc f80 + ry */
+    long double a = x; cq_theta(&a, 0.25); /* alloc f80 + ry */
+    long double b = y; cq_theta(&b, 0.50); /* alloc f80 + ry */
     long double s = a + b;               /* fadd x86_fp80 QQ -> cq_template_fadd_f80 */
     long double r = sqrtl(s);            /* @llvm.sqrt.f80 -> cq_template_sqrt_f80 */
     (void) cq_measure(r);                /* -> cqrt_measure_f80 */
 
     /* (B) dead, unmeasured Q+Q fadd — proves the fadd_f80 `_unc` twin. */
-    long double p = cq_theta(x, 0.10);   /* alloc f80 + ry */
-    long double q = cq_theta(y, 0.20);   /* alloc f80 + ry */
+    long double p = x; cq_theta(&p, 0.10); /* alloc f80 + ry */
+    long double q = y; cq_theta(&q, 0.20); /* alloc f80 + ry */
     long double d = p + q;               /* fadd x86_fp80 QQ (dead) */
     if (d == 4.0L) cq_phi(0.30);              /* Rz keep-alive; result dropped (dead) */
 }

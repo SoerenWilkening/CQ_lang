@@ -65,7 +65,7 @@ def source(cell):
             else:
                 q = cell['assign'][i] == 'Q'
                 if q:
-                    locals_.append(f'  {ct} q{i} = cq_theta(x{i}, 0.5);')
+                    locals_.append(f'  {ct} q{i} = x{i}; cq_theta(&q{i}, 0.5);')
                 args.append(f'q{i}' if q else f'x{i}')
                 actuals.append(f'({ct})(argc > {i+1} ? strtod(argv[{i+1}], 0) : {i+2})')
     prototype = ', '.join(params) or 'void'

@@ -1,7 +1,7 @@
 /* F-1: the bank read before AND after the in-place xor loop; must DECLINE. */
 #include "CQ.h"
 __attribute__((noinline)) int slice(int n, int seed) { if (n <= 1) return 0;
- int q = cq_theta(seed, 0.5); int b[n]; int s = 0; int r = cq_theta(seed, .2);
+ int q = seed; cq_theta(&q, 0.5); int b[n]; int s = 0; int r = seed; cq_theta(&r, .2);
  for (int i = 0; i < n; ++i) b[i] = q;
  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
  for (int k = 0; k < n; ++k) { if (r > k) cq_phi(0.3); q ^= 3; }

@@ -16,8 +16,8 @@ static inline int R2(int p) {
 int slice(void) {
     int q = 3;
     int p = 7;
-    q = cq_theta(q, 0.5);
-    p = cq_theta(p, 0.25);
+    cq_theta(&q, 0.5);
+    cq_theta(&p, 0.25);
     int t1 = R1(p);
     int t2 = R2(p);
     p = (q > 5) ? t1 : t2;

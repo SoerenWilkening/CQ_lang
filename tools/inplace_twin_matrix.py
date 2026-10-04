@@ -28,7 +28,7 @@ axes), which is the smallest design that can see a two-axis interaction at all.
 
 WHAT ONE CELL IS. One C program in two spellings that differ in EXACTLY the
 region's arm gate:
-    Ry side : if (cond) { r = cq_theta(r, 0.9); }   <- the increment under test
+    Ry side : if (cond) { cq_theta(&r, 0.9); }   <- the increment under test
     Rz side : if (cond) { r = cq_phi  (r, 0.9); }   <- the trusted swap route
 Every other angle in the generated program is distinct from the substitutable
 set {0.9, 0.4, 0.3, 0.35}, so the reducer can tell a region-under-test's route
@@ -156,7 +156,7 @@ this file was built for does not apply and neither does its `cq_phi` oracle. The
 `sp_*` pool therefore states a DIFFERENT claim, against a DIFFERENT reference:
 
     SUBJECT : T r = SEED;                 if (cond) { r = cq_theta(SEED, 0.9); }
-    TWIN    : T r = cq_theta(SEED, 0.0);  if (cond) { r = cq_theta(r,    0.9); }
+    TWIN    : T r = cq_theta(SEED, 0.0);  if (cond) { cq_theta(&r,    0.9); }
 
 The twin is the Increment-1 CHAINED shape on a rail seeded by an explicit
 `Ry(0)`, and a PRE-Increment-4 binary already lowers it — MEASURED, on `b506b3b`,
@@ -299,7 +299,7 @@ the Rz side of a cell is no longer a route around the register at all:
                                       strip; free f               (the KICKBACK)
 
 The Ry side is untouched by the surface change (PRD D5 keeps
-`r = cq_theta(r, 0.9)`), so under `void` a cell's two sides are
+`cq_theta(&r, 0.9)`), so under `void` a cell's two sides are
 
     Rz : mint ; [x] ; cqrt_rz_i1(f, T)                ; [x] ; strip ; free
     Ry : mint ; [x] ; cqrt_ry_<W>_controlled(f, r, T) ; [x] ; strip ; free
@@ -427,7 +427,7 @@ AXES = [("base", BASES), ("cond", CONDS), ("cfg", CFGS),
 # controlled STATE PREP — so its arm mints a FRESH rail instead of relabelling a
 # live one:
 #     SUBJECT : T r = SEED;                 if (cond) { r = cq_theta(SEED, 0.9); }
-#     TWIN    : T r = cq_theta(SEED, 0.0);  if (cond) { r = cq_theta(r,    0.9); }
+#     TWIN    : T r = cq_theta(SEED, 0.0);  if (cond) { cq_theta(&r,    0.9); }
 # The twin is the Increment-1 CHAINED shape on a rail seeded by an explicit
 # `Ry(0)`, and it is what the ORACLE — a PRE-Increment-4 binary — already lowers.
 # The claim under test is that Increment 4's stream IS that stream with exactly
@@ -609,6 +609,21 @@ def name(c):
 # `ARM(` is the substitution point: cq_theta on the Ry side, cq_phi on the Rz
 # side. NOTHING ELSE in the program changes between the two sides.
 
+_ARM_GATE = re.compile(r"(\w+) = ARM\(([^,]+), ([^)]+)\)")
+
+
+def _arm_gate(arm, dst, src, ang):
+    """`dst = ARM(src, ang)` in the arm's own spelling. `cq_theta` rotates in
+    place (bd 1501): a chained gate is `cq_theta(&dst, ang)`, a prep from a seed
+    copies the seed first. The `cq_phi` register spelling is left for
+    `phi_void_source` to rewrite."""
+    if arm != "cq_theta":
+        return "%s = %s(%s, %s)" % (dst, arm, src, ang)
+    if src == dst:
+        return "cq_theta(&%s, %s)" % (dst, ang)
+    return "%s = %s; cq_theta(&%s, %s)" % (dst, src, dst, ang)
+
+
 def gen(c, arm, surface="register"):
     """One side of one cell.
 
@@ -636,11 +651,11 @@ def gen(c, arm, surface="register"):
 
     # ── condition register ───────────────────────────────────────────────────
     if c["cond"] == "fcmp":
-        L.append("    double cf = 0.5; cf = cq_theta(cf, 0.5);")
+        L.append("    double cf = 0.5; cq_theta(&cf, 0.5);")
         cond = "cf > 0.5"
         M.append("(int)cq_measure(cf)")
     else:
-        L.append("    int cq0 = 3; cq0 = cq_theta(cq0, 0.5);")
+        L.append("    int cq0 = 3; cq_theta(&cq0, 0.5);")
         cv = "cq0"
         if c["cond"] == "aliaseq":
             L.append("    int cqa = cq_phi(cq0, 0.07);")
@@ -674,25 +689,25 @@ def gen(c, arm, surface="register"):
             # THE TWIN. `cq_theta(SEED, 0.0)` is a REAL allocation plus a REAL
             # zero-angle rotation — two gates Increment 4 never emits — and
             # `reduce_prep` removes exactly those two and nothing else.
-            L.append("    %s r = cq_theta(%s, 0.0);" % (T, sd))
+            L.append("    %s r = %s; cq_theta(&r, 0.0);" % (T, sd))
         arm = "cq_theta"
     b = c.get("base")
     if prep:
         pass
     elif b == "src":
-        L.append("    %s r = (%s)%s; r = cq_theta(r, 0.25);" % (T, T, seven))
+        L.append("    %s r = (%s)%s; cq_theta(&r, 0.25);" % (T, T, seven))
     elif b in ("mul", "add", "xor"):
         op = {"mul": "*", "add": "+", "xor": "^"}[b]
-        L.append("    %s p = (%s)%s; p = cq_theta(p, 0.25);" % (T, T, seven))
+        L.append("    %s p = (%s)%s; cq_theta(&p, 0.25);" % (T, T, seven))
         L.append("    %s r = (%s)(p %s (%s)%s);" % (T, T, op, T, five))
     elif b == "cast":
-        L.append("    %s pc = (%s)%s; pc = cq_theta(pc, 0.25);" % (CT, CT, seven))
+        L.append("    %s pc = (%s)%s; cq_theta(&pc, 0.25);" % (CT, CT, seven))
         L.append("    %s r = (%s)pc;" % (T, T))
     elif b == "phial":
-        L.append("    %s p = (%s)%s; p = cq_theta(p, 0.25);" % (T, T, seven))
+        L.append("    %s p = (%s)%s; cq_theta(&p, 0.25);" % (T, T, seven))
         L.append("    %s r = cq_phi(p, 0.05);" % T)
     elif b == "chain":
-        L.append("    %s r = (%s)%s; r = cq_theta(r, 0.25); r = cq_theta(r, 0.06);"
+        L.append("    %s r = (%s)%s; cq_theta(&r, 0.25); cq_theta(&r, 0.06);"
                  % (T, T, seven))
 
     # ── consumer PRE fragments (they must sit before the region) ─────────────
@@ -713,7 +728,7 @@ def gen(c, arm, surface="register"):
         L.append("    if (%s) { r = ARM(%s, 0.9); } else { r = ARM(%s, 0.4); }"
                  % (cexpr, A0, A0))
     elif c["cfg"] == "ifelse2":
-        L.append("    %s r2 = (%s)%s; r2 = cq_theta(r2, 0.11);" % (T, T, nine))
+        L.append("    %s r2 = (%s)%s; cq_theta(&r2, 0.11);" % (T, T, nine))
         L.append("    if (%s) { r = ARM(%s, 0.9); } else { r2 = ARM(r2, 0.4); }"
                  % (cexpr, A0))
         extra.append("    (void)cq_measure(r2);")
@@ -722,7 +737,7 @@ def gen(c, arm, surface="register"):
 
     if c["cfg"] == "clsbetween":
         L.append("    if (cc) { gsink = 2; }")
-        L.append("    int cq2 = 4; cq2 = cq_theta(cq2, 0.6);")
+        L.append("    int cq2 = 4; cq_theta(&cq2, 0.6);")
         L.append("    if (cq2 == 4) { r = ARM(r, 0.3); }")
         M.append("(int)cq_measure(cq2)")
 
@@ -751,13 +766,13 @@ def gen(c, arm, surface="register"):
         L.append("    %s t = (%s)(s * (%s)%s);" % (T, T, T, three))
         M.append("(int)cq_measure(t)")
     elif k == "theta_after":
-        L.append("    r = cq_theta(r, 0.08);")
+        L.append("    cq_theta(&r, 0.08);")
         M.append("(int)cq_measure(r)")
     elif k == "phi_after":
         L.append("    r = cq_phi(r, 0.08);")
         M.append("(int)cq_measure(r)")
     elif k in ("region2", "route2", "value2"):
-        L.append("    int cz = 4; cz = cq_theta(cz, 0.6);")
+        L.append("    int cz = 4; cq_theta(&cz, 0.6);")
         if k == "region2":
             L.append("    if (cz == 4) { r = ARM(r, 0.35); }")
         elif k == "route2":
@@ -773,10 +788,10 @@ def gen(c, arm, surface="register"):
         # keeps the merge phi alive while the chain itself is DEAD, so the
         # whole-DAG spine wants to reverse and free the rotated rail.
         L.append("    %s sd = (%s)(r + (%s)%s);" % (T, T, T, one))
-        L.append("    (void)cq_theta(sd, 0.13);")
+        L.append("    cq_theta(&sd, 0.13);")
     elif k == "deadmul":
         L.append("    %s sd = (%s)(r * (%s)%s);" % (T, T, T, three))
-        L.append("    (void)cq_theta(sd, 0.13);")
+        L.append("    cq_theta(&sd, 0.13);")
     elif k == "call":
         L.append("    (void)sinkfn((int)r);")
     elif k == "invert":
@@ -796,7 +811,8 @@ def gen(c, arm, surface="register"):
     src.append("    return %s;" % ret)
     src.append("}")
     src.append("int main(void){ (void)slice(1); return 0; }")
-    out = ("\n".join(src) + "\n").replace("ARM(", arm + "(")
+    out = _ARM_GATE.sub(lambda m: _arm_gate(arm, *m.groups()),
+                        "\n".join(src) + "\n")
     return phi_void_source(out) if surface == "void" else out
 
 

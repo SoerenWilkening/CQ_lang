@@ -81,7 +81,7 @@ int main(void) {
     
     for (int i = 0; i < 3; ++i) {
         if (a >= 3){
-            b0[i] = cq_theta(b0[i], 0.5);
+            cq_theta(&b0[i], 0.5);
         }
         if (b0[i]) a -= 3;
     }

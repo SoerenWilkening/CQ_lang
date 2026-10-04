@@ -76,10 +76,10 @@
    (Every `probes/...` reference above is relative to this increment's scoping
    record, `docs/prd/phase-04-swap-route-control/inc1-records/session-f2-i1/`.) */
 int slice(void) {
-    int  q = cq_theta(0, 0.5);     /* the condition register                    */
+    int  q = 0; cq_theta(&q, 0.5); /* the condition register                    */
     _Bool r = 0;                   /* the `_Bool` seed — F2's old collider       */
     if (q == 1) {                  /* tainted condition -> flag mint at the icmp */
-        r = cq_theta(r, 0.9);      /* `r` is classically 0 here: a STATE PREP    */
+        cq_theta(&r, 0.9);         /* `r` is classically 0 here: a STATE PREP    */
     }
     return (int) cq_measure(q) + (int) cq_measure(r);
 }

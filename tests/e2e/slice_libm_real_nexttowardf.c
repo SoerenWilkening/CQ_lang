@@ -111,7 +111,7 @@ __attribute__((always_inline)) static inline float olm_nexttowardf(float x, long
 }
 
 float slice(void) {
-    float q = cq_theta(0.5f, 0.5);
+    float q = 0.5f; cq_theta(&q, 0.5);
     return cq_measure(olm_nexttowardf(q, 0.5L));
 }
 int main(void) { (void) slice(); return 0; }

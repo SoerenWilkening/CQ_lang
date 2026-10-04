@@ -278,9 +278,9 @@ touching it.
 `lo7u` (4.5 `switch` eq-flags from a measured scrutinee), `s82e` (in-loop leak of entangled
 which-path rails), `a3z7` (a dtzb-mutated `cq_theta` result carried through a rail φ),
 `yiid` (reading a name after measuring it), `4e4p` (function-pointer `cq_theta` drops
-`nomerge`), `uw5u` (`cq_theta((t==s)?t:s, θ)` folds), `9oob` (a user `__cq_q_*_unc` twin
+`nomerge`), `uw5u` (`int m=(t==s)?t:s; cq_theta(&m, θ)` folds), `9oob` (a user `__cq_q_*_unc` twin
 with a wrong body is trusted), the twin half of `kyy1`, `jlf8`, `yldg`, `etj3`, and
-`r2j3.6` (a lifted call reads a stale tainted argument: `q2=cq_theta(q,.3); f(q)`) and
+`r2j3.6` (a lifted call reads a stale tainted argument: `int q2=q; cq_theta(&q2,.3); f(q)`) and
 `r2j3.7` (a dead tainted pure op is never uncomputed, a live copy of its source), both filed
 2026-10-01. Warned rather than silent (owner ruling `lyyf`): `r2j3.8` (a reversed QRAM
 call's computed index stays live until its `_unc`; deferred by the owner). Latent, masked by
@@ -402,7 +402,7 @@ python3 tools/free_pairing_check.py /tmp/s2.ll                                  
 
 | Path | Responsibility |
 |---|---|
-| `include/CQ.h` | The whole user surface: `cq_theta`, `cq_measure` (`_Generic` over the 15 C scalar types, plus `long double` on x86-64), register-free `void cq_phi(double)`, `cq_invert_*`, `cq_ry`. Every `cq_theta_*` is `nomerge`. |
+| `include/CQ.h` | The whole user surface: in-place `cq_theta(&x, θ)` (a void macro, `_Generic` on the pointer type; no value form, bd `1501`), `cq_measure` (`_Generic` over the 15 C scalar types, plus `long double` on x86-64), register-free `void cq_phi(double)`, `cq_invert_*`. Every `cq_theta_*` is `nomerge`. |
 | `ir-pass/src/CQLoweringPass.cpp` | Orchestrator and passthrough early-out. |
 | `TaintPropagation.cpp` | Forward taint, prototype validation, `declineTaintEscapes`, `declineClassicalMuxes`, `adjudicateTaintDelta` (run on every taint-growth event). |
 | `RotationLowering.cpp` | `theta → cqrt_alloc_<W> + cqrt_ry_<W>`, the in-place `_controlled` mint, `normalizeUndefRotationSeed`. |

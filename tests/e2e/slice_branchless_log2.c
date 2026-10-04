@@ -60,7 +60,7 @@ static double blog2(double x) {
     return val_lo + val_hi;
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(blog2(q));
 }
 int main(void) { (void) slice(); return 0; }

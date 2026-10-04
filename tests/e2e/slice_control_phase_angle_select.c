@@ -29,7 +29,7 @@
 
 int slice(void) {
     int q = 0;
-    q = cq_theta(q, 0.5);
+    cq_theta(&q, 0.5);
 
     if (q == 5) cq_phi(0.9);
     else        cq_phi(0.3);

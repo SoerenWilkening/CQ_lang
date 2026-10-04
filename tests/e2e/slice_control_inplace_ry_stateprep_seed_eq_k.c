@@ -58,10 +58,10 @@
    (Every `probes/...` reference above is relative to this increment's scoping
    record, `docs/prd/phase-04-swap-route-control/inc1-records/session-f2-i1/`.) */
 int slice(void) {
-    int q = cq_theta(3, 0.3);      /* the condition register                    */
+    int q = 3; cq_theta(&q, 0.3);  /* the condition register                    */
     int r = 5;                     /* seed == the compare literal: F2's subject */
     if (q == 5) {
-        r = cq_theta(5, 0.9);      /* CLASSICAL seed 5: alloc + controlled Ry   */
+        r = 5; cq_theta(&r, 0.9);  /* CLASSICAL seed 5: alloc + controlled Ry   */
     }
     return (int) cq_measure(r) + (int) cq_measure(q);
 }

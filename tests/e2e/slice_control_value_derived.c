@@ -13,7 +13,7 @@
          slice's golden: a duplicate, i.e. a coverage claim with no coverage
          (the Inc-1 OQ-5 precedent, where slice_loop_break_qq_phase was DELETED
          for exactly this).
-     (b) `p = cq_theta(p, 0.9)` -> a pre-region in-place Ry on the SAME handle.
+     (b) `cq_theta(&p, 0.9)` -> a pre-region in-place Ry on the SAME handle.
          Kept. It preserves what the slice is for and is not a new accept class:
          MEASURED rc=0 on the pre-3qlq oracle 52d7764 (29 trace lines, the swap
          ROUTE), rc=0 on the landed Inc-1 `main` (29 lines, the route) and rc=0
@@ -50,9 +50,9 @@
 int slice(void) {
     int q = 3;
     int p = 7;
-    q = cq_theta(q, 0.5);
-    p = cq_theta(p, 0.25);
-    p = cq_theta(p, 0.9);          /* DERIVED base — in-place Ry on p's wire */
+    cq_theta(&q, 0.5);
+    cq_theta(&p, 0.25);
+    cq_theta(&p, 0.9);             /* DERIVED base — in-place Ry on p's wire */
     if (q > 5) { p = p + 3; p = p * 5; p = p ^ 9; p = p + 1; p = p * 7; p = p ^ 2; }
     return cq_measure(p);
 }

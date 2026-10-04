@@ -21,7 +21,7 @@ __attribute__((noinline)) static double lookup(double x) {
 }
 
 int main(void) {
-  double q = cq_theta(0.5, 0.5);
+  double q = 0.5; cq_theta(&q, 0.5);
   double r = lookup(q);
   cq_measure(r);
   return 0;

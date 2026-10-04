@@ -6,7 +6,7 @@
 __attribute__((noinline)) static int f(int x) { return x * 2 + 1; }
 
 __attribute__((noinline)) int slice(int m) {
-    int q = cq_theta(m & 7, 0.5);
+    int q = m & 7; cq_theta(&q, 0.5);
     int r;
     if (q > 3) {
         r = 5;

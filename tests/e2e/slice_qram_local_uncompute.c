@@ -20,8 +20,8 @@
 __attribute__((noinline))
 static int measured_local(int seed) {
     int arr[8] = {0};
-    int q = cq_theta(seed, 0.5);      /* tainted index */
-    int p = cq_theta(seed + 1, 0.5);  /* tainted index */
+    int q = seed; cq_theta(&q, 0.5);  /* tainted index */
+    int p = seed + 1; cq_theta(&p, 0.5); /* tainted index */
     arr[q] = 7;                       /* tainted-index store */
     int v = arr[p];                   /* tainted-index load  */
     return cq_measure(v);             /* observed in a NON-main fn → array uncomputes */

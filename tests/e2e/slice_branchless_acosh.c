@@ -66,7 +66,7 @@ static double bacosh(double x) {
     return blog1p(t + s);                               /* = log(x + sqrt(x*x-1))  */
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(bacosh(q));
 }
 int main(void) { (void) slice(); return 0; }

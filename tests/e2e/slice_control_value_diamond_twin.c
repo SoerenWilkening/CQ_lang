@@ -26,8 +26,8 @@ static inline int R(int p) {
 int slice(void) {
     int q = 3;
     int p = 7;
-    q = cq_theta(q, 0.5);
-    p = cq_theta(p, 0.25);
+    cq_theta(&q, 0.5);
+    cq_theta(&p, 0.25);
     int t = R(p);                  /* the chain, hoisted BY HAND into the pred  */
     p = (q > 5) ? t : p;           /* -> select i1 %c, i32 %t, i32 %p            */
     return cq_measure(p);

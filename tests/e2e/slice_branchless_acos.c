@@ -69,7 +69,7 @@ static double bacos(double x) {
     return 1.57079632679489661923 - basin(x);            /* π/2 − asin(x)           */
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(bacos(q));
 }
 int main(void) { (void) slice(); return 0; }

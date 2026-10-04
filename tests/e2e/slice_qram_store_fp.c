@@ -13,9 +13,9 @@
 
 int main(void) {
     double arr[8] = {0};
-    int q = cq_theta(0, 0.5);      /* tainted integer index */
-    int p = cq_theta(1, 0.5);      /* tainted integer index */
-    double x = cq_theta(7.0, 0.5); /* tainted fp carrier value */
+    int q = 0; cq_theta(&q, 0.5);  /* tainted integer index */
+    int p = 1; cq_theta(&p, 0.5);  /* tainted integer index */
+    double x = 7.0; cq_theta(&x, 0.5); /* tainted fp carrier value */
     arr[q] = x;                    /* fp cell store of a carrier — coherent table write */
     double v = arr[p];             /* fp cell load — coherent table read */
     return (int)cq_measure(v);

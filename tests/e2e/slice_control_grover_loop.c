@@ -24,11 +24,11 @@
    drift apart silently.
 
    SOURCE INTENT — one iteration per trip:
-       S      q = cq_theta(q, 0.5)            state preparation (before the loop)
+       S      cq_theta(&q, 0.5)            state preparation (before the loop)
        O      if (q == 5) cq_phi(PI)   oracle: mark |5>
-       S†     q = cq_theta(q, -0.5)           un-prepare
+       S†     cq_theta(&q, -0.5)           un-prepare
        R0     if (q == 0) cq_phi(PI)   reflect about |0>
-       S      q = cq_theta(q, 0.5)            re-prepare
+       S      cq_theta(&q, 0.5)            re-prepare
        M      measure q                        (after the loop)
 
    WHAT `clang -O1` HANDS THE PASS, because none of it is obvious (Rule 9): a
@@ -55,17 +55,17 @@
 int slice(void) {
     int q = 0;
 
-    q = cq_theta(q, 0.5);                    /* S — before the loop */
+    cq_theta(&q, 0.5);                       /* S — before the loop */
 
     for (int i = 0; i < 2; ++i) {
         if (q == 5) {                        /* O  */
             cq_phi(CQ_PI);
         }
-        q = cq_theta(q, -0.5);               /* S† */
+        cq_theta(&q, -0.5);                  /* S† */
         if (q == 0) {                        /* R0 */
             cq_phi(CQ_PI);
         }
-        q = cq_theta(q, 0.5);                /* S  */
+        cq_theta(&q, 0.5);                   /* S  */
     }
 
     return cq_measure(q);

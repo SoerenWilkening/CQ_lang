@@ -23,7 +23,7 @@ int foo(int b);
 
 int slice(void) {
     int b = 3;
-    b = cq_theta(b, 0.5);
+    cq_theta(&b, 0.5);
     int a = foo(b);
     cq_phi(3.14);
     int z = cq_measure(a);

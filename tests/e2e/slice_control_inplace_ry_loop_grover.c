@@ -6,7 +6,7 @@
    WHY (MEASURED, prep-b2 step 3b, on BOTH binaries). With `cq_phi` register-free
    the two adjacent equality tests on ONE register —
        if (q == 5) cq_phi(PI);              (a PHASE arm)
-       if (q == 3) r = cq_theta(r, 0.9);    (a controlled-Ry arm)
+       if (q == 3) cq_theta(&r, 0.9);    (a controlled-Ry arm)
    — are fused by SimplifyCFG at stage 1 into a single
        switch i32 %q, [ 5 -> phase arm, 3 -> Ry arm ]
    whose arms are of DIFFERENT classes. That is PRD §6.3's mixed-arm row, so the
@@ -38,9 +38,9 @@
 
    SOURCE INTENT — one Grover iteration per trip:
        O    if (q == 5) cq_phi(PI);      oracle: mark |5>          (Rz)
-       cRy  if (q == 3) r = cq_theta(r, 0.9);   controlled Ry on an ANCILLA
-       S†   q = cq_theta(q, -0.5);              un-prepare                (Ry)
-       S    q = cq_theta(q, 0.5);               re-prepare                (Ry)
+       cRy  if (q == 3) cq_theta(&r, 0.9);   controlled Ry on an ANCILLA
+       S†   cq_theta(&q, -0.5);              un-prepare                (Ry)
+       S    cq_theta(&q, 0.5);               re-prepare                (Ry)
 
    THIS PROGRAM WAS **TWO** FENCES AWAY FROM COMPILING, AND ONLY ONE OF THEM WAS A
    LOOP FENCE. That is the fact this slice exists to record.
@@ -91,19 +91,19 @@ int slice(void) {
     int q = 0;
     int r = 7;
 
-    q = cq_theta(q, 0.5);
-    r = cq_theta(r, 0.25);
+    cq_theta(&q, 0.5);
+    cq_theta(&r, 0.25);
 
     for (int i = 0; i < CQ_K; ++i) {
         if (q == 5) {                    /* O   — branch phase by kickback  */
             cq_phi(CQ_PI);
         }
-        q = cq_theta(q, -0.5);           /* S†  — Ry on the CONDITION wire;
+        cq_theta(&q, -0.5);              /* S†  — Ry on the CONDITION wire;
                                             ALSO separates the two regions   */
         if (q == 3) {                    /* cRy — controlled Ry on ancilla  */
-            r = cq_theta(r, 0.9);
+            cq_theta(&r, 0.9);
         }
-        q = cq_theta(q, 0.5);            /* S                               */
+        cq_theta(&q, 0.5);               /* S                               */
     }
 
     return cq_measure(q) + cq_measure(r);

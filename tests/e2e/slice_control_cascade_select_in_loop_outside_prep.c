@@ -38,9 +38,9 @@ int slice(void) {
     int a = 5; int acc = 0;
     _Bool b0 = 0;
     _Bool b1 = 0;
-    if (a >= 3) { b0 = cq_theta(b0, 0.5); }
+    if (a >= 3) { cq_theta(&b0, 0.5); }
     if (b0 == 1) a -= 3;
-    if (a >= 3) { b1 = cq_theta(b1, 0.5); }
+    if (a >= 3) { cq_theta(&b1, 0.5); }
     for (int i = 0; i < 3; ++i) { int t = b1 ? i : 5; acc += cq_measure(t); }
     return (int) cq_measure(b0) + (int) cq_measure(b1) + acc;
 }

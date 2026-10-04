@@ -68,7 +68,7 @@ __attribute__((always_inline)) static inline double olm_frexp(double x, int *ept
 
 double slice(void) {
     int e;
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(olm_frexp(q, &e));
 }
 int main(void) { (void) slice(); return 0; }

@@ -78,7 +78,7 @@ olm_modf(double x, double *iptr)
 
 double slice(void) {
     double ip;
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(olm_modf(q, &ip));
 }
 int main(void) { (void) slice(); return 0; }

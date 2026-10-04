@@ -464,8 +464,8 @@ def main():
 
         # ── G/H: off switches ─────────────────────────────────────────────
         # ── HDR: header BYTES at test time (bd dbjh, r2 F-r2-1) ────────────
-        CQH_OLD = "    _Float16:           cq_theta_f16               \\\n)(x, angle)"
-        CQH_NEW = "    _Float16:           cq_theta_f16               \\\n)(x, (angle) * 2.0)"
+        CQH_OLD = "    _Float16 *:           cq_theta_f16                             \\\n    )(*(px), (angle))))"
+        CQH_NEW = "    _Float16 *:           cq_theta_f16                             \\\n    )(*(px), (angle) * 2.0)))"
 
         def gHDR2(expect):
             # r2's plant: every cq_theta angle doubled, header still compiles,
@@ -524,7 +524,7 @@ def main():
             # K + ARGV on a module whose main returns 3 + measure (= 3).
             ksrc = os.path.join(tmp, "k.c")
             with open(ksrc, "w") as f:
-                f.write("int main(int c, char **v) { (void)v; int x = cq_theta(3, 0.5);"
+                f.write("int main(int c, char **v) { (void)v; int x = 3; cq_theta(&x, 0.5);"
                         " return 3 + cq_measure(x); }\n")
             k1, k2 = os.path.join(tmp, "k.s1.ll"), os.path.join(tmp, "k.s2.ll")
             subprocess.run([a.clang, "-I" + a.include, "-include", "CQ.h", "-O1", "-emit-llvm",

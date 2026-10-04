@@ -26,8 +26,8 @@
 int slice(void) {
     int q = 3;
     int r = 7;
-    q = cq_theta(q, 0.5);
-    r = cq_theta(r, 0.25);
+    cq_theta(&q, 0.5);
+    cq_theta(&r, 0.25);
     cq_phi(0.3);
     if (q == 5) cq_phi(0.9 - 0.3);
     return cq_measure(q) + cq_measure(r);

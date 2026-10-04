@@ -30,8 +30,8 @@ static const int tbl[8] = {10, 11, 12, 13, 14, 15, 16, 17};
 
 __attribute__((noinline))
 int run(long long seed, long long pseed, int n) {
-    long long p = cq_theta(pseed, 0.5);    /* 64-bit loop-invariant qubit */
-    long long q = cq_theta(seed, 0.25);
+    long long p = pseed; cq_theta(&p, 0.5); /* 64-bit loop-invariant qubit */
+    long long q = seed; cq_theta(&q, 0.25);
     for (int i = 0; i < n; i++) {
         q = q ^ 5;                          /* in-place i64 value rail self-update */
         if (q == p)                         /* TAINTED i64 Q==Q break flag */

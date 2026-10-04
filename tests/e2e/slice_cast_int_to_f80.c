@@ -6,7 +6,7 @@
    (arity-1, i32 handle in/out — the f80 `long double` c_type never appears in a
    cast body). */
 long double slice(void) {
-    int qi = cq_theta(5, 0.5);          /* tainted i32                 */
+    int qi = 5; cq_theta(&qi, 0.5);     /* tainted i32                 */
     long double a = (long double)qi;    /* sitofp i32 -> f80           */
     long double b = a * 1.5L;           /* f80 arith (fmul_f80_hl)     */
     return cq_measure(b);               /* cqrt_measure_f80            */

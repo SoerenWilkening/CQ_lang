@@ -45,14 +45,14 @@ int slice(void) {
     int q = 0;
     int r = 7;
 
-    q = cq_theta(q, 0.5);
-    r = cq_theta(r, 0.25);
+    cq_theta(&q, 0.5);
+    cq_theta(&r, 0.25);
 
     for (int i = 0; i < 2; ++i) {
         if ((q & 6) == 4) {
-            r = cq_theta(r, 0.9);
+            cq_theta(&r, 0.9);
         }
-        q = cq_theta(q, 0.1);
+        cq_theta(&q, 0.1);
     }
 
     return cq_measure(q) + cq_measure(r);

@@ -4,7 +4,7 @@
 
        bool b = cq_theta(0, .5);
        int  r = cq_theta(7, .25);
-       for (k < K) if (b) r = cq_theta(r, .2);
+       for (k < K) if (b) cq_theta(&r, .2);
 
    `b` is loop-INVARIANT and `r` is loop-CARRIED, so R7-loop clauses (b)/(b')
    own it: `r`'s header phi peels to the classical-arg-0 mint `cq_theta(7,.25)`
@@ -41,10 +41,10 @@
 #endif
 
 int slice(void) {
-    bool b = cq_theta((bool)0, 0.5);
-    int r = cq_theta(7, 0.25);
+    bool b = (bool)0; cq_theta(&b, 0.5);
+    int r = 7; cq_theta(&r, 0.25);
     for (int k = 0; k < CQ_K; ++k) {
-        if (b) r = cq_theta(r, 0.2);
+        if (b) cq_theta(&r, 0.2);
     }
     return cq_measure(r) + cq_measure(b);
 }

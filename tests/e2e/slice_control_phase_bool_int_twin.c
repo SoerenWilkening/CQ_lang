@@ -9,7 +9,7 @@ int main(void) {
     int a = 5;
     int b0 = 0;
     if (a >= 3) {
-        b0 = cq_theta(b0, 0.5);
+        cq_theta(&b0, 0.5);
     }
     if (b0 == 1) a -= 3;
     if (a >= 3) {

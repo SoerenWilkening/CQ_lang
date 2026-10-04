@@ -16,7 +16,7 @@ int h(int a, struct Big s);
 
 __attribute__((noinline)) int slice(int m) {
     struct Big b = {{m, 1, 2, 3, 4, 5, 6, 7}};
-    int q = cq_theta(m & 7, 0.5);
+    int q = m & 7; cq_theta(&q, 0.5);
     int r = h(q, b);
     return cq_measure(r) + b.x[0];
 }

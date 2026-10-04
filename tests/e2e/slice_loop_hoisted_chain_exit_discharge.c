@@ -57,12 +57,12 @@ volatile int off = 3;
 int slice(void) {
     int a = 0;
     int r = 0;
-    a = cq_theta(a, 0.5);
-    r = cq_theta(r, 0.3);
+    cq_theta(&a, 0.5);
+    cq_theta(&r, 0.3);
     for (int i = 0; i < 2; ++i) {
-        if (sqrt(a + 3.) <= (double)off) { r = cq_theta(r, 0.9); }
+        if (sqrt(a + 3.) <= (double)off) { cq_theta(&r, 0.9); }
     }
-    a = cq_theta(a, 0.7);            /* the interference the leak used to dephase */
+    cq_theta(&a, 0.7);               /* the interference the leak used to dephase */
     return cq_measure(a) + cq_measure(r);
 }
 

@@ -47,7 +47,7 @@
    runtime — load-bearing link order). cq_theta/cq_measure resolve from CQ.h. */
 int slice(void) {
     int q = 3, r = 3;              /* r preset to v_d (the default value)         */
-    q = cq_theta(q, 0.5);          /* taint q -> scrutinee handle                */
+    cq_theta(&q, 0.5);             /* taint q -> scrutinee handle                */
     switch (q) {                   /* tainted switch -> preload + XOR-delta mux   */
         case 0:  r = 7;  break;    /* delta 7^3=4                                 */
         case 5:  r = 9;  break;    /* delta 9^3=10  (non-contiguous: defeats fold)*/

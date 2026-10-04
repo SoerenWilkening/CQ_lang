@@ -36,7 +36,7 @@
 #include <stdlib.h>
 
 int slice(void) {
-    int q = cq_theta(5, 0.5);      /* taint q -> condition handle (alloc, ry)   */
+    int q = 5; cq_theta(&q, 0.5);  /* taint q -> condition handle (alloc, ry)   */
     if (q > 5) abort();            /* controlled noreturn sink -> park cascade   */
     return cq_measure(q);          /* the ordinary uncontrolled remainder        */
 }

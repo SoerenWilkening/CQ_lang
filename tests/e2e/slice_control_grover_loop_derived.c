@@ -51,17 +51,17 @@
 int slice(void) {
     int a = 0;
 
-    a = cq_theta(a, 0.5);                                /* S */
+    cq_theta(&a, 0.5);                                   /* S */
 
     for (int i = 0; i < 2; ++i) {
         if (sqrt(a + 3.) <= 3.5) {                       /* O: derived oracle */
             cq_phi(M_PI);
         }
-        a = cq_theta(a, -0.5);                           /* S-dagger */
+        cq_theta(&a, -0.5);                              /* S-dagger */
         if (a == 0) {                                    /* R0 */
             cq_phi(M_PI);
         }
-        a = cq_theta(a, 0.5);                            /* S */
+        cq_theta(&a, 0.5);                               /* S */
     }
 
     return cq_measure(a);

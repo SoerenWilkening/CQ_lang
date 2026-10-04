@@ -35,7 +35,7 @@
    cq_measure resolve from CQ.h, force-included by run_slice.sh. */
 int slice(void) {
     int q = 5;
-    q = cq_theta(q, 0.5);              /* taint q -> handle (alloc, ry)          */
+    cq_theta(&q, 0.5);                 /* taint q -> handle (alloc, ry)          */
     int r;
     if (q > 100) {                     /* tainted special-case branch (region root) */
         r = q * 2;

@@ -25,16 +25,16 @@
    `cq_template_and_i32_hl_unc` / `cqrt_free` lines per iteration. */
 
 #define CQ_LEADING_GATE_ITER                              \
-    a = cq_theta(a, 0.25);                                \
+    cq_theta(&a, 0.25);                                   \
     if ((a & 3) == 1) {                                   \
         cq_phi(3.14159265358979323846);                   \
     }                                                     \
-    a = cq_theta(a, -0.5);
+    cq_theta(&a, -0.5);
 
 int slice(void) {
     int a = 0;
 
-    a = cq_theta(a, 0.5);
+    cq_theta(&a, 0.5);
 
     CQ_LEADING_GATE_ITER
     CQ_LEADING_GATE_ITER

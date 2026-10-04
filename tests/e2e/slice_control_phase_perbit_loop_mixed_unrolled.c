@@ -11,17 +11,17 @@
    rolled one did not (31 lines vs 37). */
 
 int slice(int u) {
-    int q = cq_theta(u, 0.5);
-    int r = cq_theta(u, 0.3);
+    int q = u; cq_theta(&q, 0.5);
+    int r = u; cq_theta(&r, 0.3);
 
     if ((q >> 0) & 1) cq_phi(0.2);
-    r = cq_theta(r, 0.1);
+    cq_theta(&r, 0.1);
     if ((q >> 1) & 1) cq_phi(0.2);
-    r = cq_theta(r, 0.1);
+    cq_theta(&r, 0.1);
     if ((q >> 2) & 1) cq_phi(0.2);
-    r = cq_theta(r, 0.1);
+    cq_theta(&r, 0.1);
 
-    q = cq_theta(q, 0.9);
+    cq_theta(&q, 0.9);
     return cq_measure(q) + cq_measure(r);
 }
 int main(void) { (void) slice(5); return 0; }

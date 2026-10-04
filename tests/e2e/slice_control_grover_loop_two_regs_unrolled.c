@@ -20,22 +20,22 @@
 #define CQ_PI 3.14159265358979323846
 int slice(void) {
     int a = 0, b = 0;
-    a = cq_theta(a, 0.5);
-    b = cq_theta(b, 0.25);
+    cq_theta(&a, 0.5);
+    cq_theta(&b, 0.25);
 
     if (a == 5) { cq_phi(CQ_PI); }
     if (b == 3) { cq_phi(CQ_PI); }
-    a = cq_theta(a, -0.5);
-    b = cq_theta(b, -0.25);
-    a = cq_theta(a, 0.5);
-    b = cq_theta(b, 0.25);
+    cq_theta(&a, -0.5);
+    cq_theta(&b, -0.25);
+    cq_theta(&a, 0.5);
+    cq_theta(&b, 0.25);
 
     if (a == 5) { cq_phi(CQ_PI); }
     if (b == 3) { cq_phi(CQ_PI); }
-    a = cq_theta(a, -0.5);
-    b = cq_theta(b, -0.25);
-    a = cq_theta(a, 0.5);
-    b = cq_theta(b, 0.25);
+    cq_theta(&a, -0.5);
+    cq_theta(&b, -0.25);
+    cq_theta(&a, 0.5);
+    cq_theta(&b, 0.25);
 
     return cq_measure(a) + cq_measure(b);
 }

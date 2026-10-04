@@ -37,7 +37,7 @@ static double bexp2(double x) {
     return bexp(x * 0.69314718055994530942);              /* 2^x = e^(x·ln2)                */
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(bexp2(q));
 }
 int main(void) { (void) slice(); return 0; }

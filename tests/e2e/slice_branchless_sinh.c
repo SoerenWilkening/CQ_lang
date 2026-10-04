@@ -68,7 +68,7 @@ static double bsinh(double x) {
     return __builtin_copysign(z, x);                     /* keep-set leaf; odd fn */
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(bsinh(q));
 }
 int main(void) { (void) slice(); return 0; }

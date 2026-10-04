@@ -57,7 +57,7 @@ static double blog1p(double x) {
     return logu + c / u;                               /* log(u) + c/u            */
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(blog1p(q));
 }
 int main(void) { (void) slice(); return 0; }

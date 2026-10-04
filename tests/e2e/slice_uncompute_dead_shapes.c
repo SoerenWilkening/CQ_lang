@@ -82,22 +82,24 @@
 __attribute__((noinline))
 void slice(int x, int y, float z) {
     /* (A) _lh chain: literal-left sub then literal-left shl, dropped. */
-    int a = cq_theta(x, 0.25);   /* taint x -> handle (alloc + ry)            */
+    int a = x; cq_theta(&a, 0.25); /* taint x -> handle (alloc + ry)            */
     int s = 100 - a;             /* sub_lh  (100 literal-left, a handle)      */
     int t = 5 << s;              /* shl_lh  (5 literal-left, s shift handle)  */
     if (t > 100) cq_phi(0.5);       /* Rz keep-alive; result dropped (dead)      */
 
     /* (B) tainted widening cast: i32 handle -> i64, dropped. */
-    int  b  = cq_theta(y, 0.30); /* alloc + ry                                */
+    int  b = y; cq_theta(&b, 0.30); /* alloc + ry                                */
     long lb = (long) b;          /* sext_i32_to_i64                           */
-    long lp = lb * (long) cq_theta(y, 0.35);   /* Q+Q i64 mul: keeps the SEXT
+    int  y2 = y; cq_theta(&y2, 0.35);
+    long lp = lb * (long) y2;    /* Q+Q i64 mul: keeps the SEXT
                                      live; `sext(b) == K` folds to `b == K` */
     if (lp == 15L) cq_phi(0.6);      /* Rz keep-alive (cqrt_rz_i64); dropped      */
 
     /* (C) fneg on a tainted float, dropped. */
-    float fc = cq_theta(z, 0.40);/* alloc + ry (f32)                          */
+    float fc = z; cq_theta(&fc, 0.40);/* alloc + ry (f32)                          */
     float fn = -fc;              /* fneg_f32                                  */
-    float fp = fn * cq_theta(z, 0.45);        /* Q+Q f32 mul: keeps the FNEG
+    float z2 = z; cq_theta(&z2, 0.45);
+    float fp = fn * z2;          /* Q+Q f32 mul: keeps the FNEG
                                      live; `-fc == K` folds to `fc == -K` */
     if (fp == -9.0f) cq_phi(0.7);      /* Rz keep-alive (cqrt_rz_f32); dropped      */
 }

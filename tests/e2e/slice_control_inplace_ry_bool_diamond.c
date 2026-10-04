@@ -4,9 +4,9 @@
    compare.
 
        _Bool b = 0;  int r = 7;
-       b = cq_theta(b, 0.5);
-       r = cq_theta(r, 0.25);
-       if (b) { r = cq_theta(r, 0.9); }
+       cq_theta(&b, 0.5);
+       cq_theta(&r, 0.25);
+       if (b) { cq_theta(&r, 0.9); }
 
    `clang -O1` gives every natural `bool` spelling `br i1 %b` with NO COMPARE at
    all, and until l4x4.b every such program declined `bare i1 register condition`
@@ -59,10 +59,10 @@
 int slice(void) {
     _Bool b = 0;
     int   r = 7;
-    b = cq_theta(b, 0.5);          /* the CONDITION register — its own flag    */
-    r = cq_theta(r, 0.25);         /* a SECOND, disjoint rail                  */
+    cq_theta(&b, 0.5);             /* the CONDITION register — its own flag    */
+    cq_theta(&r, 0.25);            /* a SECOND, disjoint rail                  */
     if (b) {                       /* `br i1 %b` — NO compare, NO mint         */
-        r = cq_theta(r, 0.9);      /* the arm Ry — CONTROLLED and IN PLACE     */
+        cq_theta(&r, 0.9);         /* the arm Ry — CONTROLLED and IN PLACE     */
     }
     return (int) cq_measure(b) + cq_measure(r);
 }

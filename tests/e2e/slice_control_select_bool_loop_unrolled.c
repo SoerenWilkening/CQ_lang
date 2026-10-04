@@ -7,7 +7,7 @@
 
 int main(void) {
     bool b = 0;
-    b = cq_theta(b, 0.5);
+    cq_theta(&b, 0.5);
     int acc = 0;
     { int a = b ? 2 + 0 : 5; acc += cq_measure(a); }
     { int a = b ? 2 + 1 : 5; acc += cq_measure(a); }

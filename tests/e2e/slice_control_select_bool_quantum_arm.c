@@ -19,8 +19,8 @@
 int main(void) {
     int q = 3;
     bool b = 0;
-    q = cq_theta(q, 0.3);
-    b = cq_theta(b, 0.5);
+    cq_theta(&q, 0.3);
+    cq_theta(&b, 0.5);
     int s = b ? q : 9;
     return cq_measure(s) + cq_measure(b);
 }

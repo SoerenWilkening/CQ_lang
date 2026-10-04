@@ -20,9 +20,9 @@
 int h(int a, int k);
 
 __attribute__((noinline)) int slice(int m) {
-    int q = cq_theta(m, 0.5);
+    int q = m; cq_theta(&q, 0.5);
     int t = h(q, m);
-    if (t > 3) q = cq_theta(q, 0.2);
+    if (t > 3) cq_theta(&q, 0.2);
     return cq_measure(q);
 }
 

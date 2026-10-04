@@ -7,7 +7,7 @@
    `p`, while the call still did: `p = b ? 9 : 4` is a 4.4 data select on a bare
    `_Bool`, so its `%out` rail — a which-path copy of `b` minted by two
    `cqrt_copy_i32_controlled` — was kept alive by that phantom read across
-   `b = cq_theta(b, 0.7)`, dephasing it (P(b=1) 0.8356 instead of cos^2(.6) =
+   `cq_theta(&b, 0.7)`, dephasing it (P(b=1) 0.8356 instead of cos^2(.6) =
    0.6812 for odd m; exit 0, no warning, stage 2b STRICT clean). The CORRECT
    circuit is the hand-inlined twin's (slice_spec_dropped_arg_boolsel_twin.c,
    `int t = m + 1;`), and `e2e-spec-dropped-arg-boolsel-twin-identical` pins the two
@@ -23,10 +23,10 @@
 int h(int a, int k);
 
 __attribute__((noinline)) int slice(int m) {
-    _Bool b = cq_theta((_Bool)(m & 1), 0.5);
+    _Bool b = (_Bool)(m & 1); cq_theta(&b, 0.5);
     int p = b ? 9 : 4;
     int t = h(p, m);
-    b = cq_theta(b, 0.7);
+    cq_theta(&b, 0.7);
     return t + cq_measure(b);
 }
 

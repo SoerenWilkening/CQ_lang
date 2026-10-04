@@ -79,14 +79,14 @@
 __attribute__((noinline))
 void slice(int x, int y) {
     /* (A) measured Q+Q compare — proves the forward bare-QQ symbol. */
-    int xi = cq_theta(x, 0.25);   /* taint x -> handle (alloc i32 + ry)   */
-    int yi = cq_theta(y, 0.50);   /* taint y -> handle (alloc i32 + ry)   */
+    int xi = x; cq_theta(&xi, 0.25); /* taint x -> handle (alloc i32 + ry)   */
+    int yi = y; cq_theta(&yi, 0.50); /* taint y -> handle (alloc i32 + ry)   */
     int lt = (xi < yi);           /* icmp slt QQ -> flag -> zext -> measure */
     (void) cq_measure(lt);
 
     /* (B) dead, unmeasured Q+Q compare — proves the `_unc` twin. */
-    int pi = cq_theta(x, 0.10);   /* alloc i32 + ry                       */
-    int qi = cq_theta(y, 0.20);   /* alloc i32 + ry                       */
+    int pi = x; cq_theta(&pi, 0.10); /* alloc i32 + ry                       */
+    int qi = y; cq_theta(&qi, 0.20); /* alloc i32 + ry                       */
     int eq = (pi == qi);          /* icmp eq QQ -> flag (dead)            */
     int acc = eq + pi;            /* keeps the Q+Q eq compare LIVE and makes the
                                      branch condition Q+C — see the header */

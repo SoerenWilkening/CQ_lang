@@ -127,14 +127,14 @@ __attribute__((noinline))
 void slice(int x, double d) {
     /* (C) an ARITHMETIC Case A — `p * p` on ONE rail. SURVIVES the migration:
        nothing about it depended on a renaming diagonal gate.               */
-    int p = cq_theta(x, 0.10);
+    int p = x; cq_theta(&p, 0.10);
     (void) cq_measure(p * p);            /* cq_template_mul_i32(h, h)        */
 
     /* (E) an f64 aliased-rail condition feeding a kjd1 fp-DATA select.
        SURVIVES because `x >= x` is NOT foldable to a constant: it is FALSE
        when x is NaN, so `clang -O1` rewrites it to `fcmp ord x, x` — still an
        ALIASED-OPERAND compare, which is the mechanism this slice links.     */
-    double qg = cq_theta(d, 0.20);
+    double qg = d; cq_theta(&qg, 0.20);
     double sg = (qg >= qg) ? 1.0 : 2.0;
     (void) cq_measure(sg);
 }

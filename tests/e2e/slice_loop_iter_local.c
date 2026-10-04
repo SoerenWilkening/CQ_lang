@@ -68,7 +68,7 @@
 __attribute__((noinline))
 void slice(int x, int n) {
     for (int i = 0; i < n; i++) {
-        int q = cq_theta(x, 0.25);   /* fresh rail, born in body            */
+        int q = x; cq_theta(&q, 0.25); /* fresh rail, born in body            */
         int t = q ^ 9;               /* iteration-local temp (xor_hl)       */
         if (t == 11) cq_phi(0.5);       /* Rz keep-alive; result dead -> dies  */
     }

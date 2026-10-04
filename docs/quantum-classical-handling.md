@@ -147,7 +147,8 @@ in the entire compilation unit:
 
 ```c
 int a = 3;                      /* %a is classical */
-int a1 = cq_theta(a, 0.5);      /* %a1 is tainted */
+int a1 = a;
+cq_theta(&a1, 0.5);             /* %a1 is tainted */
 ```
 
 In LLVM IR after Clang `-O1`:
@@ -161,8 +162,8 @@ The pass lowers it to `cqrt_alloc_i32(seed)` followed by
 `cqrt_ry_i32(h, 0.5)` when the seed is a still-classical value (a
 fresh register is born holding the seed), and to a rotation of the
 existing register when the seed is already quantum (the linear rule,
-[`frontend.md`](./frontend.md) §3.2). `cq_ry(x, θ)` is the statement
-spelling of `x = cq_theta(x, θ)`.
+[`frontend.md`](./frontend.md) §3.2). The rotation is always written in
+place, `cq_theta(&x, θ)`, which expands to `x = cq_theta_<sfx>(x, θ)`.
 
 The single-source choice is principled, not minimal-by-omission.
 Ry is the gate that physically introduces superposition: it
@@ -244,7 +245,7 @@ plain classical SSA. No subsequent operation can re-promote the
 value to quantum without flowing it through a fresh `cq_theta`.
 
 ```c
-int q = cq_theta(0, 0.5);    /* tainted */
+int q = 0; cq_theta(&q, 0.5); /* tainted */
 int m = cq_measure(q);        /* forced classical */
 int x = m + 1;                /* classical — add of two classical operands */
 ```
@@ -284,7 +285,7 @@ emitter is decided by the class of the arm:
 The motivating case is the merge of two classical literals:
 
 ```c
-int q = cq_theta(a, 0.5);   /* q tainted */
+int q = a; cq_theta(&q, 0.5);  /* q tainted */
 int y;
 if (q > 0) y = 10; else y = 20;
 return cq_measure(y);
@@ -500,7 +501,7 @@ implemented; their declarations are generated into
 The user writes C casts as they always have:
 
 ```c
-int q = cq_theta(0, 0.5);     /* tainted */
+int q = 0; cq_theta(&q, 0.5);  /* tainted */
 double d = (double) q;         /* representation change; d tainted */
 int back = (int) d;            /* representation change back; tainted */
 int m = cq_measure(back);      /* THIS is the measurement, explicitly */
@@ -540,8 +541,8 @@ __attribute__((noinline))
 double average(double a, double b, int n) { return (a + b) / (double) n; }
 
 double f(int n) {
-    double q1 = cq_theta(1.0, 0.5);
-    double q2 = cq_theta(2.0, 0.3);
+    double q1 = 1.0; cq_theta(&q1, 0.5);
+    double q2 = 2.0; cq_theta(&q2, 0.3);
     return cq_measure(average(q1, q2, n));
 }
 ```

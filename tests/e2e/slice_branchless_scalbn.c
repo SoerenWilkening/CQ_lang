@@ -28,7 +28,7 @@ static double bscalbn(double x, int n) {
     return x * scale;                                  /* x * 2^n                 */
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(bscalbn(q, 2));
 }
 int main(void) { (void) slice(); return 0; }

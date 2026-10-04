@@ -47,8 +47,8 @@
    boundary. cq_theta/cq_measure resolve from CQ.h. */
 __attribute__((noinline))
 int run(int seed, int pseed, int n) {
-    int p = cq_theta(pseed, 0.5);       /* second, loop-invariant qubit */
-    int q = cq_theta(seed, 0.25);
+    int p = pseed; cq_theta(&p, 0.5);   /* second, loop-invariant qubit */
+    int q = seed; cq_theta(&q, 0.25);
     for (int i = 0; i < n; i++) {
         q = q ^ 5;                      /* in-place value rail self-update */
         if (q == p)                     /* TAINTED Q==Q break flag (rail vs p) */

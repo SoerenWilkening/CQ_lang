@@ -14,6 +14,7 @@
 // documented collection-boundary design — never reachable through CQ.h.
 
 unsigned __int128 seed_i128(unsigned __int128 v) {
-    // CHECK: error: controlling expression type 'unsigned __int128' not compatible with any generic association type
-    return cq_theta(v, 0.5);
+    // CHECK: error: controlling expression type 'unsigned __int128 *' not compatible with any generic association type
+    cq_theta(&v, 0.5);
+    return v;
 }

@@ -61,7 +61,7 @@ static double bsin(double x) {
     return sgn * mag;
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(bsin(q));
 }
 int main(void) { (void) slice(); return 0; }

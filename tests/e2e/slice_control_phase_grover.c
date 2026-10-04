@@ -2,9 +2,9 @@
    GROVER WITH A CORRECT ORACLE, flat, two iterations written out.
 
    SOURCE INTENT:
-       q = cq_theta(q, 0.3);            state preparation / diffusion half
+       cq_theta(&q, 0.3);            state preparation / diffusion half
        if (q == 5) cq_phi(PI);          O  — the oracle: mark |5>
-       q = cq_theta(q, 0.3);
+       cq_theta(&q, 0.3);
        if (q == 0) cq_phi(PI);          R0 — reflect about |0>
        ... the four lines again ...
        measure q
@@ -40,14 +40,14 @@
 int slice(void) {
     int q = 0;
 
-    q = cq_theta(q, 0.3);
+    cq_theta(&q, 0.3);
     if (q == 5) cq_phi(CQ_PI);
-    q = cq_theta(q, 0.3);
+    cq_theta(&q, 0.3);
     if (q == 0) cq_phi(CQ_PI);
 
-    q = cq_theta(q, 0.3);
+    cq_theta(&q, 0.3);
     if (q == 5) cq_phi(CQ_PI);
-    q = cq_theta(q, 0.3);
+    cq_theta(&q, 0.3);
     if (q == 0) cq_phi(CQ_PI);
 
     return cq_measure(q);

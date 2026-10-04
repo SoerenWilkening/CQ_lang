@@ -33,7 +33,7 @@
 double slice(void) {
     volatile double z;
     double q = 0.3;
-    q = cq_theta(q, 0.5);              /* taint q -> f64 handle (Ry)          */
+    cq_theta(&q, 0.5);                 /* taint q -> f64 handle (Ry)          */
     if (q < 0.5) z = q - 0.5;          /* one arm writes z                    */
     else         z = q * 2.0;          /* the other arm writes z              */
     return cq_measure(z);              /* reads the copied-out merge          */

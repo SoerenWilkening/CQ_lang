@@ -39,7 +39,7 @@
    fallback in the qubits-not-scarce regime, O(1) per region.
 
    THE TWIN: `slice_control_inplace_ry_stateprep_twin.c` is the manual CHAINED
-   spelling `int r = cq_theta(0, 0.0); if (…) r = cq_theta(r, .9);`, which the
+   spelling `int r = cq_theta(0, 0.0); if (…) cq_theta(&r, .9);`, which the
    PRE-INC-4 binary already lowers. This golden is its REDUCTION under two
    rewrites that are physical identities and are NOT the transformation under
    test — (i) delete `cqrt_ry_i32(h, 0x0p+0)` because Ry(0) = I, (ii) move the
@@ -48,10 +48,10 @@
    a renumbering. Both goldens are committed so the reduction can be re-derived
    BY HAND rather than from a script nobody re-runs. */
 int slice(void) {
-    int q = cq_theta(3, 0.3);      /* the condition register                    */
+    int q = 3; cq_theta(&q, 0.3);  /* the condition register                    */
     int r = 0;                     /* the straight-through value — F1's subject */
     if (q == 5) {                  /* tainted condition -> flag mint at the icmp */
-        r = cq_theta(0, 0.9);      /* CLASSICAL seed: alloc + controlled Ry     */
+        r = 0; cq_theta(&r, 0.9);  /* CLASSICAL seed: alloc + controlled Ry     */
     }
     return (int) cq_measure(r) + (int) cq_measure(q);
 }

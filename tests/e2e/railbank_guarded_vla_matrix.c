@@ -85,8 +85,8 @@ __attribute__((noinline)) static int slice(int m, unsigned k) {
     if (m <= 0) return 0;
     int p[m];
     for (int i = 0; i < m; ++i) p[i] = i + 3;
-    int q = cq_theta(0, 0.25);
-    int r = cq_theta(1, 0.5);
+    int q = 0; cq_theta(&q, 0.25);
+    int r = 1; cq_theta(&r, 0.5);
     (void)r;
     _Bool b = 0, c = 0;
 #if CASE == CASE_OFFSET_READ
@@ -109,7 +109,7 @@ __attribute__((noinline)) static int slice(int m, int k) {
     if (m <= 0) return 0;
     int p[m];
     for (int i = 0; i < m; ++i) p[i] = i + 3;
-    int q = cq_theta(0, 0.25);
+    int q = 0; cq_theta(&q, 0.25);
     _Bool b = 0, c = 0;
     if (q && k < m) { b = p[k] > 4; c = p[k] < 9; }
     return cq_measure(q) + cq_measure(b) + cq_measure(c);
@@ -122,8 +122,9 @@ __attribute__((noinline)) static int slice(int m) {
     if (m <= 0) return 0;
     int p[m];
     for (int i = 0; i < m; ++i) p[i] = i + 3;
-    int q = cq_theta(0, 0.25);
-    unsigned k = (unsigned)cq_theta(0, 0.5);
+    int q = 0; cq_theta(&q, 0.25);
+    int k0 = 0; cq_theta(&k0, 0.5);
+    unsigned k = (unsigned)k0;
     _Bool b = 0, c = 0;
     if (q && k < (unsigned)m) { b = p[k] > 4; c = p[k] < 9; }
     return cq_measure(q) + cq_measure(b) + cq_measure(c);
@@ -146,7 +147,7 @@ __attribute__((noinline)) static int slice(int n, int m) {
     if (n <= 0 || m <= 0) return 0;
     int p[m];
     for (int i = 0; i < m; ++i) p[i] = i + 3;
-    int q = cq_theta(0, 0.25);
+    int q = 0; cq_theta(&q, 0.25);
     int s = 0;
     for (int i = 0; i < n; ++i) {
         _Bool b = 0, c = 0;
@@ -164,8 +165,8 @@ __attribute__((noinline)) static int slice(int m, unsigned k) {
     if (m <= 0) return 0;
     int p[m];
     for (int i = 0; i < m; ++i) p[i] = i + 3;
-    int q = cq_theta(0, 0.25);
-    int r = cq_theta(1, 0.5);
+    int q = 0; cq_theta(&q, 0.25);
+    int r = 1; cq_theta(&r, 0.5);
     (void)r;
     int v = *(k < (unsigned)m ? &p[k] : &zero_cell);
     _Bool b = 0, c = 0;
@@ -188,7 +189,7 @@ __attribute__((noinline)) static int slice(int m, unsigned k) {
     if (m <= 0) return 0;
     int p[m];
     for (int i = 0; i < m; ++i) p[i] = i + 3;
-    int q = cq_theta(0, 0.25);
+    int q = 0; cq_theta(&q, 0.25);
     _Bool b = 0, c = 0;
 #if CASE == CASE_ELSE_ARM_READ
     if (q && k < (unsigned)m) { b = 1; c = 0; } else { b = p[k] > 4; c = p[k] < 9; }
@@ -209,7 +210,7 @@ __attribute__((noinline)) static int slice(int m, int k) {
     if (m <= 0) return 0;
     int p[m];
     for (int i = 0; i < m; ++i) p[i] = i + 3;
-    int q = cq_theta(0, 0.25);
+    int q = 0; cq_theta(&q, 0.25);
     _Bool b = 0, c = 0;
     if (q && k < m) { b = p[(unsigned)k] > 4; c = p[(unsigned)k] < 9; }
     return cq_measure(q) + cq_measure(b) + cq_measure(c);
@@ -222,7 +223,7 @@ __attribute__((noinline)) static int slice(int n, int m) {
     if (n <= 0 || m <= 0) return 0;
     int p[m];
     for (int i = 0; i < m; ++i) p[i] = i + 3;
-    int q = cq_theta(0, 0.25);
+    int q = 0; cq_theta(&q, 0.25);
     int a = 0, z = 0;
     for (int i = 0; i < n; ++i)
         if (q && m == n) { a += p[i]; z -= p[i]; }

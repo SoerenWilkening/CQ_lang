@@ -3,8 +3,8 @@
    an unconditional rotation plus a cancelling one under the un-negated
    condition.
 
-       r = cq_theta(r, 0.9);              [fires on BOTH branches]
-       if (b) { r = cq_theta(r, -0.9); }  [cancels it when b = 1]
+       cq_theta(&r, 0.9);              [fires on BOTH branches]
+       if (b) { cq_theta(&r, -0.9); }  [cancels it when b = 1]
 
    `Ry(0.9)·Ry(-0.9) = I`, so this program and its subject compute the same
    unitary; the gate to check (`e2e-inplace-ry-bool-negated-twin-identical`) is
@@ -24,11 +24,11 @@
 int slice(void) {
     _Bool b = 0;
     int   r = 7;
-    b = cq_theta(b, 0.5);
-    r = cq_theta(r, 0.25);
-    r = cq_theta(r, 0.9);          /* the unconditional half, by hand          */
+    cq_theta(&b, 0.5);
+    cq_theta(&r, 0.25);
+    cq_theta(&r, 0.9);             /* the unconditional half, by hand          */
     if (b) {
-        r = cq_theta(r, -0.9);     /* the cancellation, by hand                */
+        cq_theta(&r, -0.9);        /* the cancellation, by hand                */
     }
     return (int) cq_measure(b) + cq_measure(r);
 }

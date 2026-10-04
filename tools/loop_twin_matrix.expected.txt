@@ -127,7 +127,7 @@
 # MISMATCH (bd drbq Inc 2a round-1 review, the record axis).
 #   ROLLED side: the record (`mark`, or `acc`'s source) is defined in the body and
 #     read either after the loop or on a later activation, and the SUFFIX
-#     `a = cq_theta(a, -0.5)` is a NON-DIAGONAL in-place gate on the same rail
+#     `cq_theta(&a, -0.5)` is a NON-DIAGONAL in-place gate on the same rail
 #     between the definition and the read. That is the 8h7d.5 F-1/F-2 staleness
 #     exactly, and `LoopLowering::staleRailRecordRead` declines it
 #     (`cq loop lowering: rail record read past an in-place gate on the same
@@ -139,7 +139,7 @@
 #     PRE-EXISTING PROPERTY OF THE STRAIGHT-LINE PATH, NOT OF THE LOOP LOWERING
 #     AND NOT OF THIS INCREMENT. Measured on BOTH the pre-2a (`f92d95e`) and the
 #     post-2a binary, byte-identically, on the matrix cells and on the minimal
-#     probe `int mark = a; a = cq_theta(a, 0.25); return cq_measure(mark);`
+#     probe `int mark = a; cq_theta(&a, 0.25); return cq_measure(mark);`
 #     (rc 0, no warning, both binaries). The loop half of this class is fenced
 #     (8h7d.5 round 1 / round 2 F-1); the straight-line half is not, and whether
 #     it should be is an OPEN question for the owner — under Rule 8 `int mark = a`
@@ -177,10 +177,10 @@
 #       hoists it out of the loop, CSE merges the flat twin's two copies, and the
 #       kjd1 gate-2c window guard, which is not wire-aware, counts the arm's Ry on
 #       the DISJOINT rail `r` as an intervening gate). The other 15 carry an
-#       `a = cq_theta(a, …)` PREFIX or SUFFIX, i.e. a genuine non-diagonal gate on
+#       `cq_theta(&a, …)` PREFIX or SUFFIX, i.e. a genuine non-diagonal gate on
 #       the condition's own wire. ⚠ THE FIRST FAMILY IS THE ONE TO READ: it says
 #       that lifting the R7 loop fence does not by itself make
-#       `for (…) { if (a == 5) r = cq_theta(r, .9); }` compile. The `oeq`/`one`/
+#       `for (…) { if (a == 5) cq_theta(&r, .9); }` compile. The `oeq`/`one`/
 #       `oder` regions exist so that the same shape with an OPAQUE threshold is
 #       still a live witness.
 #       ⚠ AND DO NOT READ THIS STRING AS A FENCE NAME. `ArmClassify`'s
@@ -357,7 +357,7 @@
 #        control`, i.e. on the fence bd wx8g removes.
 #        ⚠ THE NINTH IS `m_none_ddilry_none_none_binv` AND ITS MESSAGE IS
 #        DIFFERENT: `condition predates a non-diagonal gate`. Its post-loop
-#        diffusion `a = cq_theta(a, 0.9)` is a non-diagonal gate on the
+#        diffusion `cq_theta(&a, 0.9)` is a non-diagonal gate on the
 #        CONDITION's own wire, so gate 2c refuses it BEFORE the loop clause is
 #        ever reached. Lifting the loop fence alone will NOT flip that row, and a
 #        reader planning the regeneration must not count it with the other eight.
@@ -395,7 +395,7 @@
 #       `m_none_bilprep_none_none_bcar` stay `UNROLLED-ONLY / control flow inside
 #       a loop body` (re-measured directly: rolled DECLINEs, flat ACCEPTs, all
 #       three). THE BLOCKER IS THE COMBINATION AND THIS AXIS PAIR ISOLATES IT:
-#       `bcar` re-rotates the CONDITION rail in the body (`b = cq_theta(b,0.25);`
+#       `bcar` re-rotates the CONDITION rail in the body (`cq_theta(&b,0.25);`
 #       every trip), so the condition register is loop-carried and moves every
 #       activation, while clause (c) covers the iteration-local TARGET rail. That
 #       the two are separable is measured, not argued —

@@ -55,7 +55,7 @@
 __attribute__((noinline)) static int slice(int k) {
     int c[3] = {0};
     for (int i = 0; i < 3; ++i) {
-        int t = cq_theta(c[i], 0.25);
+        int t = c[i]; cq_theta(&t, 0.25);
         if (c[i] != 0) c[i] = t;
     }
     int s = k;
@@ -68,9 +68,9 @@ int main(int argc, char **argv) { (void)argv; return slice(argc); }
 /* Hand-unrolled flat twin of CASE 1: three scalars, no array anywhere. */
 __attribute__((noinline)) static int slice(int k) {
     int c0 = 0, c1 = 0, c2 = 0;
-    int t0 = cq_theta(c0, 0.25); if (c0 != 0) c0 = t0;
-    int t1 = cq_theta(c1, 0.25); if (c1 != 0) c1 = t1;
-    int t2 = cq_theta(c2, 0.25); if (c2 != 0) c2 = t2;
+    int t0 = c0; cq_theta(&t0, 0.25); if (c0 != 0) c0 = t0;
+    int t1 = c1; cq_theta(&t1, 0.25); if (c1 != 0) c1 = t1;
+    int t2 = c2; cq_theta(&t2, 0.25); if (c2 != 0) c2 = t2;
     return k + cq_measure(c0) + cq_measure(c1) + cq_measure(c2);
 }
 int main(int argc, char **argv) { (void)argv; return slice(argc); }
@@ -82,7 +82,7 @@ __attribute__((noinline)) static int slice(int n) {
     if (n <= 0) return 0;
     int c[n];
     for (int i = 0; i < n; ++i) {
-        int t = cq_theta(c[i], 0.25);
+        int t = c[i]; cq_theta(&t, 0.25);
         if (c[i] != 0) c[i] = t;
     }
     int s = 0;
@@ -96,9 +96,9 @@ int main(int argc, char **argv) { (void)argv; return slice(argc); }
 __attribute__((noinline)) static int slice(int n) {
     if (n <= 0) return 0;
     int c0 = 0, c1 = 0, c2 = 0;
-    int t0 = cq_theta(c0, 0.25); if (c0 != 0) c0 = t0;
-    int t1 = cq_theta(c1, 0.25); if (c1 != 0) c1 = t1;
-    int t2 = cq_theta(c2, 0.25); if (c2 != 0) c2 = t2;
+    int t0 = c0; cq_theta(&t0, 0.25); if (c0 != 0) c0 = t0;
+    int t1 = c1; cq_theta(&t1, 0.25); if (c1 != 0) c1 = t1;
+    int t2 = c2; cq_theta(&t2, 0.25); if (c2 != 0) c2 = t2;
     return cq_measure(c0) + cq_measure(c1) + cq_measure(c2);
 }
 int main(int argc, char **argv) { (void)argv; return slice(argc); }
@@ -110,7 +110,7 @@ int main(int argc, char **argv) { (void)argv; return slice(argc); }
 __attribute__((noinline)) static int slice(int k) {
     int c[3] = {0};
     for (int i = 0; i < 3; ++i) {
-        int t = cq_theta(c[i], 0.25);
+        int t = c[i]; cq_theta(&t, 0.25);
         if (c[i] == 0) c[i] = t;
     }
     int s = k;
@@ -123,9 +123,9 @@ int main(int argc, char **argv) { (void)argv; return slice(argc); }
 /* Hand-unrolled flat twin of CASE 5. */
 __attribute__((noinline)) static int slice(int k) {
     int c0 = 0, c1 = 0, c2 = 0;
-    int t0 = cq_theta(c0, 0.25); if (c0 == 0) c0 = t0;
-    int t1 = cq_theta(c1, 0.25); if (c1 == 0) c1 = t1;
-    int t2 = cq_theta(c2, 0.25); if (c2 == 0) c2 = t2;
+    int t0 = c0; cq_theta(&t0, 0.25); if (c0 == 0) c0 = t0;
+    int t1 = c1; cq_theta(&t1, 0.25); if (c1 == 0) c1 = t1;
+    int t2 = c2; cq_theta(&t2, 0.25); if (c2 == 0) c2 = t2;
     return k + cq_measure(c0) + cq_measure(c1) + cq_measure(c2);
 }
 int main(int argc, char **argv) { (void)argv; return slice(argc); }
@@ -141,14 +141,14 @@ __attribute__((noinline)) static void run_bank(int k) {
     int z[3] = {2, 3, 4};
     int c[3] = {0};
     for (int i = 0; i < 3; ++i) {
-        int t = cq_theta(c[i], 0.25);
+        int t = c[i]; cq_theta(&t, 0.25);
         if (c[i] != 0) c[i] = t;
     }
     bool b[3] = {0};
     int P = 0;
     int Z = 12 + k - k;
     for (int i = 0; i < 3; ++i) {
-        if (Z >= z[i]) b[i] = cq_theta(b[i], 0.5);
+        if (Z >= z[i]) cq_theta(&b[i], 0.5);
         if (b[i]) { P += p[i]; Z -= z[i]; }
     }
     for (int i = 0; i < 3; ++i) (void)cq_measure(b[i]);
@@ -165,14 +165,14 @@ __attribute__((noinline)) static void run_bank(int k) {
     int p[3] = {3, 4, 5};
     int z[3] = {2, 3, 4};
     int c0 = 0, c1 = 0, c2 = 0;
-    int t0 = cq_theta(c0, 0.25); if (c0 != 0) c0 = t0;
-    int t1 = cq_theta(c1, 0.25); if (c1 != 0) c1 = t1;
-    int t2 = cq_theta(c2, 0.25); if (c2 != 0) c2 = t2;
+    int t0 = c0; cq_theta(&t0, 0.25); if (c0 != 0) c0 = t0;
+    int t1 = c1; cq_theta(&t1, 0.25); if (c1 != 0) c1 = t1;
+    int t2 = c2; cq_theta(&t2, 0.25); if (c2 != 0) c2 = t2;
     bool b[3] = {0};
     int P = 0;
     int Z = 12 + k - k;
     for (int i = 0; i < 3; ++i) {
-        if (Z >= z[i]) b[i] = cq_theta(b[i], 0.5);
+        if (Z >= z[i]) cq_theta(&b[i], 0.5);
         if (b[i]) { P += p[i]; Z -= z[i]; }
     }
     for (int i = 0; i < 3; ++i) (void)cq_measure(b[i]);
@@ -191,14 +191,14 @@ __attribute__((noinline)) static void run_bank(int n) {
     for (int i = 0; i < n; ++i) { p[i] = i + 3; z[i] = i + 2; }
     int c[n];
     for (int i = 0; i < n; ++i) {
-        int t = cq_theta(c[i], 0.25);
+        int t = c[i]; cq_theta(&t, 0.25);
         if (c[i] != 0) c[i] = t;
     }
     int b[n];
     int P = 0;
     int Z = 4 * n;
     for (int i = 0; i < n; ++i) {
-        if (Z >= z[i]) b[i] = cq_theta(b[i], 0.5);
+        if (Z >= z[i]) cq_theta(&b[i], 0.5);
         if (b[i]) { P += p[i]; Z -= z[i]; }
     }
     for (int i = 0; i < n; ++i) (void)cq_measure(b[i]);
@@ -217,14 +217,14 @@ __attribute__((noinline)) static void run_bank(int n) {
     int z[n];
     for (int i = 0; i < n; ++i) { p[i] = i + 3; z[i] = i + 2; }
     int c0 = 0, c1 = 0, c2 = 0;
-    int t0 = cq_theta(c0, 0.25); if (c0 != 0) c0 = t0;
-    int t1 = cq_theta(c1, 0.25); if (c1 != 0) c1 = t1;
-    int t2 = cq_theta(c2, 0.25); if (c2 != 0) c2 = t2;
+    int t0 = c0; cq_theta(&t0, 0.25); if (c0 != 0) c0 = t0;
+    int t1 = c1; cq_theta(&t1, 0.25); if (c1 != 0) c1 = t1;
+    int t2 = c2; cq_theta(&t2, 0.25); if (c2 != 0) c2 = t2;
     int b[n];
     int P = 0;
     int Z = 4 * n;
     for (int i = 0; i < n; ++i) {
-        if (Z >= z[i]) b[i] = cq_theta(b[i], 0.5);
+        if (Z >= z[i]) cq_theta(&b[i], 0.5);
         if (b[i]) { P += p[i]; Z -= z[i]; }
     }
     for (int i = 0; i < n; ++i) (void)cq_measure(b[i]);
@@ -241,7 +241,7 @@ int main(int argc, char **argv) { (void)argv; run_bank(argc); return 0; }
 __attribute__((noinline)) static int slice(int k) {
     int c[3] = {0, 1, 0};
     for (int i = 0; i < 3; ++i) {
-        int t = cq_theta(c[i], 0.25);
+        int t = c[i]; cq_theta(&t, 0.25);
         if (c[i] != 0) c[i] = t;
     }
     int s = k;
@@ -257,7 +257,7 @@ int main(int argc, char **argv) { (void)argv; return slice(argc); }
 __attribute__((noinline)) static int slice(int k) {
     int c[3] = {0};
     for (int i = 0; i < 3; ++i) {
-        int t = cq_theta(c[i], 0.25);
+        int t = c[i]; cq_theta(&t, 0.25);
         if (k > 5) c[i] = t;
     }
     int s = 0;
@@ -273,7 +273,7 @@ int main(int argc, char **argv) { (void)argv; return slice(argc); }
 __attribute__((noinline)) static int slice(int k) {
     int c[3] = {0};
     for (int i = 0; i < 3; ++i) {
-        int t = cq_theta(c[i], 0.25);
+        int t = c[i]; cq_theta(&t, 0.25);
         if (c[i] != 0 || i == 1) c[i] = t;
     }
     int s = k;
@@ -287,7 +287,7 @@ int main(int argc, char **argv) { (void)argv; return slice(argc); }
 __attribute__((noinline)) static int slice(int k) {
     bool c[3] = {0};
     for (int i = 0; i < 3; ++i) {
-        bool t = cq_theta(c[i], 0.25);
+        bool t = c[i]; cq_theta(&t, 0.25);
         if (c[i]) c[i] = t;
     }
     int s = k;
@@ -300,9 +300,9 @@ int main(int argc, char **argv) { (void)argv; return slice(argc); }
 /* Hand-unrolled flat twin of CASE 14. */
 __attribute__((noinline)) static int slice(int k) {
     bool c0 = 0, c1 = 0, c2 = 0;
-    bool t0 = cq_theta(c0, 0.25); if (c0) c0 = t0;
-    bool t1 = cq_theta(c1, 0.25); if (c1) c1 = t1;
-    bool t2 = cq_theta(c2, 0.25); if (c2) c2 = t2;
+    bool t0 = c0; cq_theta(&t0, 0.25); if (c0) c0 = t0;
+    bool t1 = c1; cq_theta(&t1, 0.25); if (c1) c1 = t1;
+    bool t2 = c2; cq_theta(&t2, 0.25); if (c2) c2 = t2;
     return k + cq_measure(c0) + cq_measure(c1) + cq_measure(c2);
 }
 int main(int argc, char **argv) { (void)argv; return slice(argc); }
@@ -318,7 +318,7 @@ __attribute__((noinline)) static int slice(int k) {
     int s = k;
     for (int i = 0; i < 3; ++i) {
         int ci = 0;
-        int t = cq_theta(ci, 0.25);
+        int t = ci; cq_theta(&t, 0.25);
         if (ci != 0) ci = t;
         s += cq_measure(ci);
     }
@@ -333,7 +333,7 @@ __attribute__((noinline)) static int slice(int n) {
     int s = 0;
     for (int i = 0; i < n; ++i) {
         int ci = 0;
-        int t = cq_theta(ci, 0.25);
+        int t = ci; cq_theta(&t, 0.25);
         if (ci != 0) ci = t;
         s += cq_measure(ci);
     }
@@ -350,7 +350,7 @@ __attribute__((noinline)) static void run_bank(int k) {
     int cs = 0;
     for (int i = 0; i < 3; ++i) {
         int ci = 0;
-        int t = cq_theta(ci, 0.25);
+        int t = ci; cq_theta(&t, 0.25);
         if (ci != 0) ci = t;
         cs += ci;
     }
@@ -358,7 +358,7 @@ __attribute__((noinline)) static void run_bank(int k) {
     int P = 0;
     int Z = 12 + k - k;
     for (int i = 0; i < 3; ++i) {
-        if (Z >= z[i]) b[i] = cq_theta(b[i], 0.5);
+        if (Z >= z[i]) cq_theta(&b[i], 0.5);
         if (b[i]) { P += p[i]; Z -= z[i]; }
     }
     for (int i = 0; i < 3; ++i) (void)cq_measure(b[i]);
@@ -378,7 +378,7 @@ __attribute__((noinline)) static void run_bank(int n) {
     int cs = 0;
     for (int i = 0; i < n; ++i) {
         int ci = 0;
-        int t = cq_theta(ci, 0.25);
+        int t = ci; cq_theta(&t, 0.25);
         if (ci != 0) ci = t;
         cs += ci;
     }
@@ -386,7 +386,7 @@ __attribute__((noinline)) static void run_bank(int n) {
     int P = 0;
     int Z = 4 * n;
     for (int i = 0; i < n; ++i) {
-        if (Z >= z[i]) b[i] = cq_theta(b[i], 0.5);
+        if (Z >= z[i]) cq_theta(&b[i], 0.5);
         if (b[i]) { P += p[i]; Z -= z[i]; }
     }
     for (int i = 0; i < n; ++i) (void)cq_measure(b[i]);
@@ -402,7 +402,7 @@ __attribute__((noinline)) static int slice(int k) {
     int s = k;
     for (int i = 0; i < 3; ++i) {
         bool ci = 0;
-        bool t = cq_theta(ci, 0.25);
+        bool t = ci; cq_theta(&t, 0.25);
         if (ci) ci = t;
         s += cq_measure(ci);
     }
@@ -421,7 +421,7 @@ int main(int argc, char **argv) { (void)argv; return slice(argc); }
 __attribute__((noinline)) static int slice(int k) {
     int c[3] = {0};
     for (int i = 0; i < 3; ++i)
-        if (c[i] != 0) c[i] = cq_theta(c[i], 0.25);
+        if (c[i] != 0) cq_theta(&c[i], 0.25);
     int s = k;
     for (int i = 0; i < 3; ++i) s += cq_measure(c[i]);
     return s;
@@ -436,7 +436,7 @@ __attribute__((noinline)) static int slice(int n) {
     if (n <= 0) return 0;
     int c[n];
     for (int i = 0; i < n; ++i)
-        if (c[i] != 0) c[i] = cq_theta(c[i], 0.25);
+        if (c[i] != 0) cq_theta(&c[i], 0.25);
     int s = 0;
     for (int i = 0; i < n; ++i) s += cq_measure(c[i]);
     return s;
@@ -447,9 +447,9 @@ int main(int argc, char **argv) { (void)argv; return slice(argc); }
 /* Flat twin of CASE 21: compiles, and emits no gate at all. */
 __attribute__((noinline)) static int slice(int k) {
     int c0 = 0, c1 = 0, c2 = 0;
-    if (c0 != 0) c0 = cq_theta(c0, 0.25);
-    if (c1 != 0) c1 = cq_theta(c1, 0.25);
-    if (c2 != 0) c2 = cq_theta(c2, 0.25);
+    if (c0 != 0) cq_theta(&c0, 0.25);
+    if (c1 != 0) cq_theta(&c1, 0.25);
+    if (c2 != 0) cq_theta(&c2, 0.25);
     return k + cq_measure(c0) + cq_measure(c1) + cq_measure(c2);
 }
 int main(int argc, char **argv) { (void)argv; return slice(argc); }
@@ -469,11 +469,11 @@ __attribute__((noinline)) static void run_bank(int k) {
     int p[3] = {3, 4, 5}; int z[3] = {2, 3, 4};
     bool b[3] = {0}; int P = 0; int Z = 12 + k - k;
     for (int i = 0; i < 3; ++i) {
-        if (Z >= z[i]) b[i] = cq_theta(b[i], 0.5);
+        if (Z >= z[i]) cq_theta(&b[i], 0.5);
         if (b[i]) { P += p[i]; Z -= z[i]; }
     }
     int c[3] = {0}; volatile int zv = 0;
-    for (int i = 0; i < 3; ++i) { int t = cq_theta(c[i], 0.25); int zz = zv; if (c[i] != zz) c[i] = t; }
+    for (int i = 0; i < 3; ++i) { int t = c[i]; cq_theta(&t, 0.25); int zz = zv; if (c[i] != zz) c[i] = t; }
     for (int i = 0; i < 3; ++i) (void)cq_measure(b[i]);
     for (int i = 0; i < 3; ++i) (void)cq_measure(c[i]);
     (void)cq_measure(P); (void)cq_measure(Z);

@@ -68,7 +68,7 @@ static double batanh(double x) {
     return __builtin_copysign(0.5 * blog1p(t), x);       /* keep-set leaf; odd fn */
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(batanh(q));
 }
 int main(void) { (void) slice(); return 0; }

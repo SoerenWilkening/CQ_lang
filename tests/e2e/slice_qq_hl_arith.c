@@ -23,8 +23,8 @@
 int slice(void) {
     int x = 2;
     int y = 5;
-    x = cq_theta(x, 0.5);    /* taint x -> handle (alloc i32(2), ry_i32) */
-    y = cq_theta(y, 0.25);   /* taint y -> handle (alloc i32(5), ry_i32) */
+    cq_theta(&x, 0.5);       /* taint x -> handle (alloc i32(2), ry_i32) */
+    cq_theta(&y, 0.25);      /* taint y -> handle (alloc i32(5), ry_i32) */
 
     int hh  = x * y;         /* HH  mul    */
     int hl  = x - 3;         /* HL  add -3 (canonicalized) */

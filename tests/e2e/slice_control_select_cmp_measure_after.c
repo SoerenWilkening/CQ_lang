@@ -22,7 +22,7 @@
 #include "CQ.h"
 
 int slice(void) {
-    int q = cq_theta(0, 0.5);
+    int q = 0; cq_theta(&q, 0.5);
     int a = (q == 1) ? 2 : 5;
     int m = cq_measure(q);
     return cq_measure(a) + m;

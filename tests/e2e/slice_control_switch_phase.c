@@ -69,7 +69,7 @@
    CQ.h, force-included by run_slice.sh. */
 int slice(void) {
     int q = 3;
-    q = cq_theta(q, 0.5);          /* taint q -> scrutinee handle (alloc, ry)   */
+    cq_theta(&q, 0.5);             /* taint q -> scrutinee handle (alloc, ry)   */
     switch (q) {                   /* tainted switch -> N-way swap-route phase   */
         case 0: cq_phi(0.1); break;   /* arm 0 (Rz) — VERBATIM on rail 0 */
         case 1: cq_phi(0.2); break;   /* arm 1 (Rz) — VERBATIM on rail 1 */

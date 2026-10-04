@@ -4,8 +4,8 @@
    Same circuit, written the way the compiler now writes it: the FALSE-arm angle
    applied unconditionally, then the DIFFERENCE applied under the condition.
 
-       r = cq_theta(r, 0.3);
-       if (q == 5) r = cq_theta(r, 0.9 - 0.3);
+       cq_theta(&r, 0.3);
+       if (q == 5) cq_theta(&r, 0.9 - 0.3);
 
    This is an ordinary drbq Increment-1 in-place rotation DIAMOND, and it lowered
    on the PRE-2b binary — which is exactly what makes it an oracle rather than a
@@ -20,10 +20,10 @@
 int slice(void) {
     int q = 3;
     int r = 7;
-    q = cq_theta(q, 0.5);
-    r = cq_theta(r, 0.25);
-    r = cq_theta(r, 0.3);                   /* the unconditional FALSE-arm angle */
-    if (q == 5) r = cq_theta(r, 0.9 - 0.3); /* the controlled DIFFERENCE         */
+    cq_theta(&q, 0.5);
+    cq_theta(&r, 0.25);
+    cq_theta(&r, 0.3);                      /* the unconditional FALSE-arm angle */
+    if (q == 5) cq_theta(&r, 0.9 - 0.3);    /* the controlled DIFFERENCE         */
     return cq_measure(q) + cq_measure(r);
 }
 int main(void) { (void) slice(); return 0; }

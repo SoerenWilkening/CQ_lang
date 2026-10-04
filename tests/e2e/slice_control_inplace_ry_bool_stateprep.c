@@ -3,7 +3,7 @@
    `test_C_libtooling-l4x4` sub-increment l4x4.b).
 
        _Bool b = 0;  int r = 7;
-       b = cq_theta(b, 0.5);
+       cq_theta(&b, 0.5);
        if (b) { r = cq_theta(7, 0.9); }   [`r` is classically 7 here]
 
    The arm's `cq_theta` has a CLASSICAL arg-0, so the hoisted gate MINTS the rail
@@ -40,9 +40,9 @@
 int slice(void) {
     _Bool b = 0;
     int   r = 7;
-    b = cq_theta(b, 0.5);
+    cq_theta(&b, 0.5);
     if (b) {
-        r = cq_theta(7, 0.9);      /* CLASSICAL arg-0: a controlled STATE PREP */
+        r = 7; cq_theta(&r, 0.9);  /* CLASSICAL arg-0: a controlled STATE PREP */
     }
     return (int) cq_measure(b) + cq_measure(r);
 }

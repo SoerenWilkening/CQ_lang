@@ -4,8 +4,8 @@
    it either. */
 #include "CQ.h"
 int slice(int seed) {
-  int q = cq_theta(seed, 0.5);
-  int r = cq_theta(q, 0.7);            /* sibling in-place Ry on q's wire */
+  int q = seed; cq_theta(&q, 0.5);
+  int r = q; cq_theta(&r, 0.7);        /* sibling in-place Ry on q's wire */
   int b0[3]; int s = 0;
   for (int i = 0; i < 3; ++i) b0[i] = q;   /* parks an already-relabelled name */
   for (int i = 0; i < 3; ++i) s += cq_measure(b0[i]);

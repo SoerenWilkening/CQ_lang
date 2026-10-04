@@ -23,11 +23,11 @@
 /* One loop-body activation of slice_loop_phase_accum.c, verbatim. */
 #define CQ_ACCUM_ITER                       \
     if (q == 2.0) cq_phi(0.1);              \
-    q = cq_theta(q, 0.05);
+    cq_theta(&q, 0.05);
 
 __attribute__((noinline))
 double accum(double seed) {
-    double q = cq_theta(seed, 0.5);
+    double q = seed; cq_theta(&q, 0.5);
 
     CQ_ACCUM_ITER
     CQ_ACCUM_ITER

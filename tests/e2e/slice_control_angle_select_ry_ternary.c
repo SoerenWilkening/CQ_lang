@@ -4,7 +4,7 @@
    control-in-place-PRD §12.3).
 
    WHY THIS FILE EXISTS. Until fmt3 the if/else spelling
-   `if (q == 5) r = cq_theta(r, 0.9); else r = cq_theta(r, 0.3);`
+   `if (q == 5) cq_theta(&r, 0.9); else cq_theta(&r, 0.3);`
    (`slice_control_angle_select_ry.c`) reached the pass as ONE `cq_theta` with a
    tainted-condition `select` on the ANGLE, because SimplifyCFG merged the two
    arm calls. fmt3 put `nomerge` on every `cq_theta_*` declaration (owner ruling
@@ -24,9 +24,9 @@
 int slice(void) {
     int q = 3;
     int r = 7;
-    q = cq_theta(q, 0.5);
-    r = cq_theta(r, 0.25);
-    r = cq_theta(r, (q == 5) ? 0.9 : 0.3);   /* the angle select, written out */
+    cq_theta(&q, 0.5);
+    cq_theta(&r, 0.25);
+    cq_theta(&r, (q == 5) ? 0.9 : 0.3);      /* the angle select, written out */
     return cq_measure(q) + cq_measure(r);
 }
 int main(void) { (void) slice(); return 0; }

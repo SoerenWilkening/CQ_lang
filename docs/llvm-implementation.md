@@ -55,8 +55,11 @@ The user writes plain C. `CQ.h` is a header-only intrinsic surface
 declaring:
 
 - `cq_theta_<sfx>(x, θ)` — Ry rotation; the only taint source. One
-  declaration per scalar suffix, selected by a C11 `_Generic` macro,
-  each carrying `__attribute__((nomerge))` (§3.2).
+  declaration per scalar suffix, each carrying `__attribute__((nomerge))`
+  (§3.2). The user writes `cq_theta(&x, θ)`: a C11 `_Generic` on the pointer
+  type selects the suffix and the macro expands to
+  `*(px) = cq_theta_<sfx>(*(px), θ)`, so the rotation is in place and, after
+  `-O1`, the IR holds the plain `@cq_theta_<sfx>` call.
 - `cq_measure_<sfx>(x)` — measurement; the only sink. Same suffix set
   and `_Generic` macro.
 - `cq_phi(φ)` — the **branch phase**: a single register-free
@@ -64,7 +67,6 @@ declaring:
   neither introduces nor propagates taint. The old
   `cq_phi_<sfx>(x, φ)` family is not declared; a use of those names
   is a loud failure in the pass.
-- `cq_ry(x, θ)` — a statement macro, exactly `x = cq_theta(x, θ)`.
 - `cq_invert_begin()` / `cq_invert_end()` — bracket macros around bare
   externs `__cq_invert_begin` / `__cq_invert_end`, each pinned by an
   `asm volatile("" ::: "memory")` barrier so the optimizer cannot move
@@ -203,7 +205,7 @@ behavior comes from how the functions are declared, not from LLVM.
 
 One optimization needed a second, explicit answer. `SimplifyCFG` can
 hoist or merge two *identical* calls from the arms of a branch, and
-for `cq_theta(5, .9)` on two arms that turns a register seeded under a
+for `cq_theta_si32(5, .9)` on two arms that turns a register seeded under a
 condition into an unconditional one. `CQ.h` therefore marks every
 `cq_theta_*` call `nomerge` (`__attribute__((nomerge))`, and the header
 refuses to compile on a compiler without it). This covers direct calls

@@ -11,9 +11,9 @@
    The golden therefore contains ZERO `cqrt_x`, ZERO `cqrt_free` and ZERO
    `cq_template_` lines: nothing is minted for either arm. */
 int slice(void) {
-    _Bool b0 = cq_theta((_Bool)0, 0.5);
+    _Bool b0 = (_Bool)0; cq_theta(&b0, 0.5);
     _Bool b1 = 0;
-    if (b0) { b1 = cq_theta(b1, 0.5); }
+    if (b0) { cq_theta(&b1, 0.5); }
     if (b1) { cq_phi(0.3); cq_phi(0.7); } else { cq_phi(0.11); }
     return (int) cq_measure(b0) + (int) cq_measure(b1);
 }

@@ -23,7 +23,7 @@ static double bfdim(double x, double y) {
     return __builtin_fmax(x - y, 0.0);                 /* positive difference     */
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(bfdim(q, 0.5));                  /* (q,c): x tainted, y const */
 }
 int main(void) { (void) slice(); return 0; }

@@ -35,7 +35,7 @@ __attribute__((noinline)) static double lookup(double x) {
 }
 
 int main(void) {
-  double q = cq_theta(0.5, 0.5);
+  double q = 0.5; cq_theta(&q, 0.5);
   double r = 0.0;
   if (q > 5.0) {          /* outer tainted guard */
     if (q > 10.0)         /* inner tainted guard → nested region PredMux claims */

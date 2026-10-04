@@ -17,11 +17,11 @@
 int h(int a, int k);
 
 __attribute__((noinline)) int slice(int m) {
-    int q = cq_theta(m, 0.5);
+    int q = m; cq_theta(&q, 0.5);
     int t = h(q, m);
     int u = t + q;
     int r = u;
-    if (m > 3) r = cq_theta(u, 0.2);
+    if (m > 3) { r = u; cq_theta(&r, 0.2); }
     return cq_measure(r);
 }
 

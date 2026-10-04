@@ -24,7 +24,7 @@
 int slice(void) {
     int acc = 0;
     for (int i = 0; i < 3; ++i) {
-        bool b = cq_theta((bool)0, 0.5);
+        bool b = (bool)0; cq_theta(&b, 0.5);
         if (b) cq_phi(0.3);
         acc += cq_measure(b) + i;
     }

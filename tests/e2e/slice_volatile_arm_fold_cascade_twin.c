@@ -4,7 +4,7 @@
    byte-identical to the subject's (`e2e-volatile-arm-fold-cascade-twin-identical`). */
 __attribute__((noinline)) int slice(int m) {
     _Bool a = m > 5, b = m < 2;
-    int q = cq_theta(m & 7, 0.5);
+    int q = m & 7; cq_theta(&q, 0.5);
     _Bool p;
     if (m > 3) {
         p = a;

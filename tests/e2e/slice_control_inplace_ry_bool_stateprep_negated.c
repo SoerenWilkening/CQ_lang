@@ -4,8 +4,8 @@
    (snapshot 2026-09-11) IN ISOLATION, verbatim:
 
        bool b0 = 0;  bool b1 = 0;
-       b0 = cq_theta(b0, 0.5);
-       if (b0 == 0) { b1 = cq_theta(b1, 0.5); }
+       cq_theta(&b0, 0.5);
+       if (b0 == 0) { cq_theta(&b1, 0.5); }
        return cq_measure(b0) + cq_measure(b1);
 
    It is the shape bd `b6ap`'s multi-phi peel will hand to this code, and it
@@ -26,7 +26,7 @@
 
    READ THE GOLDEN LINE BY LINE — this is the trace the owner asked for:
      1  cqrt_alloc_i1(0)  -> h0          — `b0`'s rail
-     2  cqrt_ry_i1(h0, 0.5)              — `b0 = cq_theta(b0, 0.5)`
+     2  cqrt_ry_i1(h0, 0.5)              — `cq_theta(&b0, 0.5)`
      3  cqrt_alloc_i1(0)  -> h1          — `b1`'s rail, PREPPED to the seed 0
      4  cqrt_ry_i1(h1, 0.5)              — the arm's Ry, fired UNCONDITIONALLY
      5  cqrt_ry_i1_controlled(h0, h1, -0.5)
@@ -48,9 +48,9 @@
 int slice(void) {
     _Bool b0 = 0;
     _Bool b1 = 0;
-    b0 = cq_theta(b0, 0.5);
+    cq_theta(&b0, 0.5);
     if (b0 == 0) {                 /* a NEGATED bare-rail condition            */
-        b1 = cq_theta(b1, 0.5);    /* a controlled STATE PREP of a `_Bool`     */
+        cq_theta(&b1, 0.5);        /* a controlled STATE PREP of a `_Bool`     */
     }
     return (int) cq_measure(b0) + (int) cq_measure(b1);
 }

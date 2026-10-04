@@ -17,7 +17,7 @@ int combine(int a, int b);
 
 int slice(void) {
     int x = 3;
-    x = cq_theta(x, 0.5);
+    cq_theta(&x, 0.5);
     int k = 5;
     int r1 = combine(x, k);
     int r2 = combine(k, x);

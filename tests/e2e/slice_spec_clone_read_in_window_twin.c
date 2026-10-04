@@ -5,14 +5,14 @@
    compared with the 2-TU golden by `e2e-spec-clone-read-in-window-twin-equivalent`
    (tools/trace_twin_equiv.py — not a byte diff; see the subject's header). */
 __attribute__((noinline)) int slice(int m) {
-    int q = cq_theta(m & 7, 0.5);
+    int q = m & 7; cq_theta(&q, 0.5);
     int p = q * 3;
     int u = p ^ q;
     int s = q + 1;
     if (u == 10)
         cq_phi(3.14159);
     int ms = cq_measure(s);
-    q = cq_theta(q, 0.7);
+    cq_theta(&q, 0.7);
     return ms + cq_measure(q);
 }
 

@@ -13,8 +13,8 @@
 // slice); it is a standing regression guard, not a RED fixture.
 
 int chained(int x) {
-    x = cq_theta(x, 0.1);
-    x = cq_theta(x, 0.2);          // consumes the 1st theta's result
+    cq_theta(&x, 0.1);
+    cq_theta(&x, 0.2);             // consumes the 1st theta's result
     return cq_measure(x);
 }
 // CHECK-LABEL: define {{.*}} @chained
@@ -22,14 +22,14 @@ int chained(int x) {
 // CHECK:       call i32 @cq_theta_si32(
 
 void dead_result(int x) {
-    cq_theta(x, 0.3);              // result unused — must survive DCE
+    cq_theta(&x, 0.3);             // x is dead after it — must survive DCE
 }
 // CHECK-LABEL: define {{.*}} @dead_result
 // CHECK:       call i32 @cq_theta_si32(
 
 int duplicate(int x) {
-    int a = cq_theta(x, 0.4);
-    int b = cq_theta(x, 0.4);      // identical args — must NOT be CSE'd
+    int a = x; cq_theta(&a, 0.4);
+    int b = x; cq_theta(&b, 0.4);  // identical args — must NOT be CSE'd
     return cq_measure(a) + cq_measure(b);
 }
 // CHECK-LABEL: define {{.*}} @duplicate

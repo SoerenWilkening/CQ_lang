@@ -12,7 +12,7 @@
 long double mini_expl(long double x);
 
 long double slice(void) {
-    long double x = cq_theta((long double)5.0e-1, 0.5);
+    long double x = (long double)5.0e-1; cq_theta(&x, 0.5);
     long double r = mini_expl(x);
     return cq_measure(r);
 }

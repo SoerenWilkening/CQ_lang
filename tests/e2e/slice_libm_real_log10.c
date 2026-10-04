@@ -116,7 +116,7 @@ olm_log10(double x)
 }
 
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(olm_log10(q));
 }
 int main(void) { (void) slice(); return 0; }

@@ -16,15 +16,15 @@
 
    SOURCE INTENT — the body of slice_control_grover_derived_oracle.c, twice,
    plus the final re-prep:
-       S    q = cq_theta(q, 0.5);
+       S    cq_theta(&q, 0.5);
        O    if (((q * 5) >> 2) == 5) cq_phi(PI);     the DERIVED oracle (marks q == 4)
-       S-   q = cq_theta(q, -0.5);
+       S-   cq_theta(&q, -0.5);
        R0   if (q == 0) cq_phi(PI);
-       S    q = cq_theta(q, 0.5);
+       S    cq_theta(&q, 0.5);
        O    if (((q * 5) >> 2) == 5) cq_phi(PI);
-       S-   q = cq_theta(q, -0.5);
+       S-   cq_theta(&q, -0.5);
        R0   if (q == 0) cq_phi(PI);
-       S    q = cq_theta(q, 0.5);
+       S    cq_theta(&q, 0.5);
        M    measure q
 
    WHY IT NEEDS THE PER-COMPONENT ANCHOR (Increment 6a) AND NOT ONLY CLAUSE (d2).
@@ -70,25 +70,25 @@
 int slice(void) {
     int q = 0;
 
-    q = cq_theta(q, 0.5);                       /* S  — iteration 1 */
+    cq_theta(&q, 0.5);                          /* S  — iteration 1 */
     if (((q * 5) >> 2) == 5) {                  /* O  — marks q == 4 */
         cq_phi(CQ_PI);
     }
-    q = cq_theta(q, -0.5);                      /* S- */
+    cq_theta(&q, -0.5);                         /* S- */
     if (q == 0) {                               /* R0 */
         cq_phi(CQ_PI);
     }
 
-    q = cq_theta(q, 0.5);                       /* S  — iteration 2 */
+    cq_theta(&q, 0.5);                          /* S  — iteration 2 */
     if (((q * 5) >> 2) == 5) {                  /* O  — marks q == 4 */
         cq_phi(CQ_PI);
     }
-    q = cq_theta(q, -0.5);                      /* S- */
+    cq_theta(&q, -0.5);                         /* S- */
     if (q == 0) {                               /* R0 */
         cq_phi(CQ_PI);
     }
 
-    q = cq_theta(q, 0.5);                       /* final re-prep */
+    cq_theta(&q, 0.5);                          /* final re-prep */
     return cq_measure(q);
 }
 int main(void) { (void) slice(); return 0; }

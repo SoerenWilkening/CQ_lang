@@ -21,7 +21,7 @@ int outer(int t);
 
 int slice(void) {
     int x = 3;
-    x = cq_theta(x, 0.5);
+    cq_theta(&x, 0.5);
     int r = outer(x);
     return cq_measure(r);
 }

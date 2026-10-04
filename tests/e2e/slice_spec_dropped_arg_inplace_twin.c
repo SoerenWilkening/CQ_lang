@@ -4,11 +4,11 @@
    Its golden must stay byte-identical to the 2-TU slice's
    (`e2e-spec-dropped-arg-inplace-twin-identical`). */
 __attribute__((noinline)) int slice(int m) {
-    int q = cq_theta(m, 0.5);
+    int q = m; cq_theta(&q, 0.5);
     int t = m + 1;
     int u = t + q;
     int r = u;
-    if (m > 3) r = cq_theta(u, 0.2);
+    if (m > 3) { r = u; cq_theta(&r, 0.2); }
     return cq_measure(r);
 }
 

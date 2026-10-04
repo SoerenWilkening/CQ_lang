@@ -14,15 +14,15 @@
    TWO COMPLETE GROVER ITERATIONS. The customer the increment was built for.
 
    SOURCE INTENT — the loop body written out twice, plus the final re-prep:
-       S      q = cq_theta(q, 0.5); q += off;         state preparation
+       S      cq_theta(&q, 0.5); q += off;         state preparation
        O      if (q == 5) cq_phi(PI);          oracle: mark |5>
-       S†     q -= off; q = cq_theta(q, -0.5);        un-prepare
+       S†     q -= off; cq_theta(&q, -0.5);        un-prepare
        R0     if (q == 0) cq_phi(PI);          reflect about |0>
-       S      q = cq_theta(q, 0.5); q += off;         RE-PREPARE  <-- the wall
+       S      cq_theta(&q, 0.5); q += off;         RE-PREPARE  <-- the wall
        O      if (q == 5) cq_phi(PI);
-       S†     q -= off; q = cq_theta(q, -0.5);
+       S†     q -= off; cq_theta(&q, -0.5);
        R0     if (q == 0) cq_phi(PI);
-       S      q = cq_theta(q, 0.5); q += off;         final re-prep
+       S      cq_theta(&q, 0.5); q += off;         final re-prep
        M      measure q
 
    WHY THIS SLICE EXISTS BESIDE slice_control_seq_grover.c. That one stops at
@@ -83,29 +83,29 @@ volatile int off = 3;
 int slice(void) {
     int q = 0;
 
-    q = cq_theta(q, 0.5);                    /* S  — iteration 1 */
+    cq_theta(&q, 0.5);                       /* S  — iteration 1 */
     q += off;
     if (q == 5) {                            /* O  */
         cq_phi(CQ_PI);
     }
     q -= off;                                /* S† */
-    q = cq_theta(q, -0.5);
+    cq_theta(&q, -0.5);
     if (q == 0) {                            /* R0 */
         cq_phi(CQ_PI);
     }
 
-    q = cq_theta(q, 0.5);                    /* S  — iteration 2 (THE line) */
+    cq_theta(&q, 0.5);                       /* S  — iteration 2 (THE line) */
     q += off;
     if (q == 5) {                            /* O  */
         cq_phi(CQ_PI);
     }
     q -= off;                                /* S† */
-    q = cq_theta(q, -0.5);
+    cq_theta(&q, -0.5);
     if (q == 0) {                            /* R0 */
         cq_phi(CQ_PI);
     }
 
-    q = cq_theta(q, 0.5);                    /* final re-prep */
+    cq_theta(&q, 0.5);                       /* final re-prep */
     q += off;
     return cq_measure(q);
 }

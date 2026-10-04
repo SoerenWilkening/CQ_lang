@@ -20,12 +20,12 @@
 int h(int a, int k);
 
 __attribute__((noinline)) int slice(int m) {
-    int q = cq_theta(m & 7, 0.5);
+    int q = m & 7; cq_theta(&q, 0.5);
     int p = q & 3;
     int u = p + q;
     if (u == 10)
         cq_phi(3.14159);
-    int q2 = cq_theta(q, 0.7);
+    int q2 = q; cq_theta(&q2, 0.7);
     int s = h(m, p);
     return cq_measure(s) + cq_measure(q2);
 }

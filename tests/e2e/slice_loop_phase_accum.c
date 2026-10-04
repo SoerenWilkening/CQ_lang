@@ -5,7 +5,7 @@
 
      OLD: for (i = 0; i < n; i++) cq_phi(0.1);          (an UNCONTROLLED Rz body)
      NEW: for (i = 0; i < n; i++) { if (q == 2.0) cq_phi(0.1);
-                                    q = cq_theta(q, 0.05); }
+                                    cq_theta(&q, 0.05); }
 
    WHY. Under owner decision D2 an uncontrolled `cq_phi` is a GLOBAL PHASE and is
    DELETED, and this slice's ENTIRE loop body was one such call — so the body
@@ -43,10 +43,10 @@
    run_slice.sh. */
 __attribute__((noinline))
 double accum(double seed, int n) {
-    double q = cq_theta(seed, 0.5);
+    double q = seed; cq_theta(&q, 0.5);
     for (int i = 0; i < n; i++) {
         if (q == 2.0) cq_phi(0.1);   /* the per-iteration BRANCH phase (kickback) */
-        q = cq_theta(q, 0.05);       /* keeps the condition register loop-VARIANT */
+        cq_theta(&q, 0.05);          /* keeps the condition register loop-VARIANT */
     }
     return cq_measure(q);
 }

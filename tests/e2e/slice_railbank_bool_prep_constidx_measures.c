@@ -19,7 +19,7 @@
 
 int slice(void) {
     bool b0[3];
-    for (int i = 0; i < 3; ++i) b0[i] = cq_theta(b0[i], 0.5);
+    for (int i = 0; i < 3; ++i) cq_theta(&b0[i], 0.5);
     return (int) cq_measure(b0[0]) + (int) cq_measure(b0[1])
          + (int) cq_measure(b0[2]);
 }

@@ -18,8 +18,8 @@
 __attribute__((noinline))
 static int guarded_swapped(int seed) {
     int arr[8] = {0};
-    int q = cq_theta(seed, 0.5);      /* condition + load index */
-    int i = cq_theta(seed + 1, 0.5);  /* tainted store index */
+    int q = seed; cq_theta(&q, 0.5);  /* condition + load index */
+    int i = seed + 1; cq_theta(&i, 0.5); /* tainted store index */
     if (q != 3) { arr[i] = 7; }       /* SWAPPED — store on the FALSE successor */
     int v = arr[q];                   /* observed → local array uncomputes */
     return cq_measure(v);

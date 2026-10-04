@@ -2,7 +2,7 @@
    control-in-place rotation arm (Rule 9; bd test_C_libtooling-drbq Inc 1).
 
    SOURCE INTENT — identical to slice_control_inplace_ry.c except the condition:
-       if (q != 5) r = cq_theta(r, 0.9);
+       if (q != 5) cq_theta(&r, 0.9);
 
    `clang -O1` canonicalizes `!=` to `icmp eq` and SWAPS the branch successors, so
    the gate arm is the FALSE one and the gate must fire on the NEGATED flag. The
@@ -22,10 +22,10 @@
 int slice(void) {
     int q = 3;
     int r = 7;
-    q = cq_theta(q, 0.5);
-    r = cq_theta(r, 0.25);
+    cq_theta(&q, 0.5);
+    cq_theta(&r, 0.25);
     if (q != 5) {                  /* -> icmp eq + swapped successors (Rule 9) */
-        r = cq_theta(r, 0.9);      /* the arm Ry, fired on NOT-flag            */
+        cq_theta(&r, 0.9);         /* the arm Ry, fired on NOT-flag            */
     }
     return cq_measure(q) + cq_measure(r);
 }

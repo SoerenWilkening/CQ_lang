@@ -319,7 +319,7 @@ wire the condition reads is hoisted to the predecessor and lowered as
 This dispatch is the structural mechanism behind the "register is allocated
 exactly once on first rotation" guarantee the frontend documents (see
 [`frontend.md`](./frontend.md) §3.2 and §4). A user who writes
-`a = cq_theta(a, 0.1); a = cq_theta(a, 0.2);` allocates once and rotates
+`cq_theta(&a, 0.1); cq_theta(&a, 0.2);` allocates once and rotates
 twice; the pass sees the same dispatch fire twice, once with classical `%a`
 and once with tainted `%h_a`.
 
@@ -791,7 +791,8 @@ arms are homogeneous:
 - **In-place rotation** — the arm is one tainted-operand `cq_theta` on a
   register whose physical wire is disjoint from every wire the condition
   reads. The same shape with a *fresh* register is **controlled state
-  preparation** (`int r = SEED; if (COND) r = cq_theta(SEED, θ)`).
+  preparation** (`int r = SEED; if (COND) { r = SEED; cq_theta(&r, θ); }`, whose
+  arm call after `-O1` is `cq_theta_<sfx>(SEED, θ)`).
 
 An arm that value-rewrites a variable the condition reads (a *clobber*) is not
 lowered; a phase arm beside a value arm (`mixed phase/value arm`) is not

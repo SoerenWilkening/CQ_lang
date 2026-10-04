@@ -36,7 +36,7 @@
 __attribute__((noinline))
 int slice(double A, double B) {
     int q = 0;
-    q = cq_theta(q, 0.5);
+    cq_theta(&q, 0.5);
 
     if (q == 5) cq_phi(A);
     else        cq_phi(B);

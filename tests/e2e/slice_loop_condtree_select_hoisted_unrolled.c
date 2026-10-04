@@ -19,8 +19,8 @@
    THE GATE: `e2e-loop-condtree-select-hoisted-twin-identical` compares the two
    committed goldens byte for byte. */
 int slice(void) {
-    int q = cq_theta(0, 0.25);
-    int r = cq_theta(1, 0.5);
+    int q = 0; cq_theta(&q, 0.25);
+    int r = 1; cq_theta(&r, 0.5);
     int s = 0;
     { int t = ((q > 1) & (r < 5)) ? 0 : 55; s += cq_measure(t); }
     { int t = ((q > 1) & (r < 5)) ? 1 : 55; s += cq_measure(t); }

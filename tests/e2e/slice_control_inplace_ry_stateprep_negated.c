@@ -21,10 +21,10 @@
    allocation is unconditional in the emitted stream, and the `cqrt_x` pair
    flips the FLAG rail, not the prepped one. */
 int slice(void) {
-    int q = cq_theta(3, 0.3);
+    int q = 3; cq_theta(&q, 0.3);
     int r = 0;
     if (q != 5) {                  /* -O1: `icmp eq` + swapped successors       */
-        r = cq_theta(0, 0.9);
+        r = 0; cq_theta(&r, 0.9);
     }
     return (int) cq_measure(r) + (int) cq_measure(q);
 }

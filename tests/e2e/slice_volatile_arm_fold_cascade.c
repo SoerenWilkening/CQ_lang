@@ -17,7 +17,7 @@
    keeps `clang -O1` from folding it (bd 46oo). */
 __attribute__((noinline)) int slice(int m) {
     _Bool a = m > 5, b = m < 2;
-    int q = cq_theta(m & 7, 0.5);
+    int q = m & 7; cq_theta(&q, 0.5);
     _Bool p;
     if (m > 3) {
         volatile int z = 1;

@@ -87,8 +87,8 @@
 int slice(void) {
     int q = 3;
     int p = 7;
-    q = cq_theta(q, 0.5);          /* taint q -> condition handle (alloc, ry)   */
-    p = cq_theta(p, 0.25);         /* taint p -> value handle (alloc, ry)       */
+    cq_theta(&q, 0.5);             /* taint q -> condition handle (alloc, ry)   */
+    cq_theta(&p, 0.25);            /* taint p -> value handle (alloc, ry)       */
     if (q > 5) {                   /* tainted condition -> the chain is HOISTED  */
         p = p + 3;                 /* value-arm op 1 (on the ORIGINAL p, not a   */
         p = p * 5;                 /* value-arm op 2  work rail: there is none)  */

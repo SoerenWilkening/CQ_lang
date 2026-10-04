@@ -17,7 +17,7 @@
 long double lpoly(long double x);
 
 long double slice(void) {
-    long double q = cq_theta((long double)3.0L, 0.5);
+    long double q = (long double)3.0L; cq_theta(&q, 0.5);
     long double y = lpoly(q);
     return cq_measure(y);
 }

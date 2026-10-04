@@ -22,7 +22,7 @@
    identity with the hand-unrolled `..._literal_unrolled.c`, which the ORACLE
    already lowers. */
 __attribute__((noinline)) static int slice(int n, int m) {
-    int q = cq_theta(0, 0.25);
+    int q = 0; cq_theta(&q, 0.25);
     int s = 0;
     for (int i = 0; i < n; ++i) {
         int t = ((q > 1) | (m == n)) ? i : 55;

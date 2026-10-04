@@ -2,7 +2,7 @@
    one genuine design decision of bd `test_C_libtooling-l4x4` sub-increment
    l4x4.b (SCOPE §2.3 option A).
 
-       if (!b) { r = cq_theta(r, 0.9); }
+       if (!b) { cq_theta(&r, 0.9); }
 
    `clang -O1` gives this an ORIENTATION-B diamond (`br i1 %b, merge, arm`), so
    the arm is the FALSE successor and it is plain-C reachable.
@@ -31,7 +31,7 @@
    THE WITNESS IS A REAL `compare_files` GATE, `e2e-inplace-ry-bool-negated-twin-identical`:
    this slice's trace must be BYTE-IDENTICAL to
    `slice_control_inplace_ry_bool_negated_twin.c`, which is the by-hand spelling
-   of the same circuit (`r = cq_theta(r, 0.9); if (b) r = cq_theta(r, -0.9);`).
+   of the same circuit (`cq_theta(&r, 0.9); if (b) cq_theta(&r, -0.9);`).
 
    ⚠ IT IS AN INTERNAL-CONSISTENCY GATE, NOT AN ORACLE GATE, and the label
    matters: BOTH halves lower on the l4x4.b binary and BOTH decline on `main`
@@ -41,10 +41,10 @@
 int slice(void) {
     _Bool b = 0;
     int   r = 7;
-    b = cq_theta(b, 0.5);
-    r = cq_theta(r, 0.25);
+    cq_theta(&b, 0.5);
+    cq_theta(&r, 0.25);
     if (!b) {                      /* orientation-B: the arm is the FALSE edge */
-        r = cq_theta(r, 0.9);
+        cq_theta(&r, 0.9);
     }
     return (int) cq_measure(b) + cq_measure(r);
 }

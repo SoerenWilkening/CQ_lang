@@ -35,7 +35,7 @@
    `noinline` keeps the function boundary. cq_theta/cq_measure resolve from CQ.h. */
 __attribute__((noinline))
 int run(int seed, int n) {
-    int q = cq_theta(seed, 0.25);
+    int q = seed; cq_theta(&q, 0.25);
     for (int i = 0; i < n; i++) {
         q = q ^ 5;                  /* in-place value rail self-update */
         if ((q & 1) == 0)           /* tainted value-arm break flag */

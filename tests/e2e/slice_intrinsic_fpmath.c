@@ -77,13 +77,13 @@
 __attribute__((noinline))
 void slice(double x, double y) {
     /* (A) measured unary floor — proves the forward f64 symbol. */
-    double a = cq_theta(x, 0.25);     /* alloc f64 + ry */
+    double a = x; cq_theta(&a, 0.25); /* alloc f64 + ry */
     double b = __builtin_floor(a);    /* @llvm.floor.f64 -> cq_template_floor_f64 */
     (void) cq_measure(b);             /* -> cqrt_measure_f64 */
 
     /* (B) dead binary fmin — proves the binary `_unc` twin + source-liveness. */
-    double c = cq_theta(x, 0.10);     /* alloc f64 + ry */
-    double d = cq_theta(y, 0.20);     /* alloc f64 + ry */
+    double c = x; cq_theta(&c, 0.10); /* alloc f64 + ry */
+    double d = y; cq_theta(&d, 0.20); /* alloc f64 + ry */
     double e = __builtin_fmin(c, d);  /* @llvm.minnum.f64 QQ (dead) */
     if (e == 1.5) cq_phi(0.30);           /* Rz keep-alive; result dropped (dead) */
 }

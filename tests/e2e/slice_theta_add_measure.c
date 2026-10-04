@@ -2,7 +2,7 @@
    CQ.h, force-included by run_slice.sh (-include CQ.h -I include). */
 int slice(void) {
     int x = 3;
-    x = cq_theta(x, 0.5);
+    cq_theta(&x, 0.5);
     int y = x + 1;
     int z = cq_measure(y);
     return z;

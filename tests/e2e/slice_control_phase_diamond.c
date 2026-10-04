@@ -29,7 +29,7 @@
    force-included by run_slice.sh (-include CQ.h -I include). */
 int slice(void) {
     int q = 3;
-    q = cq_theta(q, 0.5);          /* taint q -> handle (alloc i32(3), ry_i32) */
+    cq_theta(&q, 0.5);             /* taint q -> handle (alloc i32(3), ry_i32) */
     if (q > 5) {                   /* tainted condition -> swap-route the arm    */
         cq_phi(0.25);       /* arm gate 1 (Rz) — VERBATIM on the rail     */
         cq_phi(0.75);       /* arm gate 2 (Rz) — VERBATIM on the rail     */

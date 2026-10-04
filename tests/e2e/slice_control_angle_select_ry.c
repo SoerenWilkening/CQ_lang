@@ -16,14 +16,14 @@
    The golden was REGENERATED deliberately to that stream (STRICT 2b: 2 verified,
    0 violation). The by-difference stream this header describes, and the twin gate,
    moved WITH the angle-select spelling to `slice_control_angle_select_ry_ternary.c`
-   (`r = cq_theta(r, (q == 5) ? 0.9 : 0.3);`), whose golden is this file's
+   (`cq_theta(&r, (q == 5) ? 0.9 : 0.3);`), whose golden is this file's
    PRE-fmt3 golden byte for byte. Teaching the pass to emit the cheaper
    by-difference form for this if/else too is a follow-up bead, not a defect.
 
    THE SOURCE IS THE POINT. This is the plain C `if/else` with a rotation on ONE
    register in each arm — the shape the increment exists for:
 
-       if (q == 5) r = cq_theta(r, 0.9); else r = cq_theta(r, 0.3);
+       if (q == 5) cq_theta(&r, 0.9); else cq_theta(&r, 0.3);
 
    `clang -O1` NEVER hands that to the pass as a diamond. SimplifyCFG merges the
    two arms into ONE call whose ANGLE is a tainted-condition `select`
@@ -53,7 +53,7 @@
    to |0> before `cqrt_free` (PRD §3).
 
    ITS TWIN, `slice_control_angle_select_ry_twin.c`, writes the SAME circuit by
-   hand (`r = cq_theta(r,0.3); if (q==5) r = cq_theta(r, 0.9-0.3);`) — an
+   hand (`cq_theta(&r,0.3); if (q==5) cq_theta(&r, 0.9-0.3);`) — an
    ordinary Inc-1 in-place diamond that the PRE-2b binary already lowered. The
    two goldens are byte-identical and `e2e-angle-select-ry-twin-identical`
    enforces it; that identity, not this trace on its own, is the increment's
@@ -61,10 +61,10 @@
 int slice(void) {
     int q = 3;
     int r = 7;
-    q = cq_theta(q, 0.5);
-    r = cq_theta(r, 0.25);
-    if (q == 5) r = cq_theta(r, 0.9);   /* since fmt3 NOT folded: two calls, */
-    else        r = cq_theta(r, 0.3);   /* one if/else (CQ.h nomerge)         */
+    cq_theta(&q, 0.5);
+    cq_theta(&r, 0.25);
+    if (q == 5) cq_theta(&r, 0.9);      /* since fmt3 NOT folded: two calls, */
+    else        cq_theta(&r, 0.3);      /* one if/else (CQ.h nomerge)         */
     return cq_measure(q) + cq_measure(r);
 }
 int main(void) { (void) slice(); return 0; }

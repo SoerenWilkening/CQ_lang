@@ -4,13 +4,13 @@
 #include "CQ.h"
 
 int main(void) {
-    bool b = cq_theta((bool)0, 0.5);
-    int q = cq_theta(0, 0.3);
+    bool b = (bool)0; cq_theta(&b, 0.5);
+    int q = 0; cq_theta(&q, 0.3);
     if (b) cq_phi(0.7);
-    q = cq_theta(q, 0.2);
+    cq_theta(&q, 0.2);
     if (b) cq_phi(0.7);
-    q = cq_theta(q, 0.2);
+    cq_theta(&q, 0.2);
     if (b) cq_phi(0.7);
-    q = cq_theta(q, 0.2);
+    cq_theta(&q, 0.2);
     return cq_measure(b) + cq_measure(q);
 }

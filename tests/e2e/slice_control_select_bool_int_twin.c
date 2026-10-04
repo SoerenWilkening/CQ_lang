@@ -20,7 +20,7 @@ int main(void) {
     (void) b1;
 
     if (a >= 3) {
-        b0 = cq_theta(b0, 0.5);
+        cq_theta(&b0, 0.5);
     }
     if (b0 == 1) a -= 3;
 

@@ -20,7 +20,7 @@
    angle. cq_theta/cq_measure resolve from CQ.h, force-included by run_slice.sh. */
 int slice(void) {
     float x = 2.0f;
-    x = cq_theta(x, 0.25);          /* taint x -> handle (alloc f32(2.0), ry_f32) */
+    cq_theta(&x, 0.25);             /* taint x -> handle (alloc f32(2.0), ry_f32) */
 
     int lt = !(x >= 1.0f);          /* fcmp ult */
     int ge = !(x <  1.0f);          /* fcmp uge */

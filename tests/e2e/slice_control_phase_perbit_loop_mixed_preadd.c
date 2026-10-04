@@ -10,9 +10,9 @@
        q = q + 7;                           // <-- the only difference
        for (int i = 0; i < 3; i++) {
            if ((q >> i) & 1) cq_phi(0.2);   // D4's per-bit kickback
-           r = cq_theta(r, 0.1);
+           cq_theta(&r, 0.1);
        }
-       q = cq_theta(q, 0.9);                // the DIFFUSION
+       cq_theta(&q, 0.9);                // the DIFFUSION
        return cq_measure(q) + cq_measure(r);
 
    WHAT IT MEASURES. The C-1 fix that made the sibling slice discharge is a
@@ -43,14 +43,14 @@
    `control_phase_kickback_mixed_preheader_addc_inloop.ll`, and its mirror
    `..._preheader_add_outofplace_leak_control.ll` pins the shape M-C refuses. */
 int slice(int u) {
-  int q = cq_theta(u, 0.5);
-  int r = cq_theta(u, 0.3);
+  int q = u; cq_theta(&q, 0.5);
+  int r = u; cq_theta(&r, 0.3);
   q = q + 7;
   for (int i = 0; i < 3; i++) {
     if ((q >> i) & 1) cq_phi(0.2);
-    r = cq_theta(r, 0.1);
+    cq_theta(&r, 0.1);
   }
-  q = cq_theta(q, 0.9);
+  cq_theta(&q, 0.9);
   return cq_measure(q) + cq_measure(r);
 }
 

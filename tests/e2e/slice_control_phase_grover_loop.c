@@ -3,12 +3,12 @@
    as a classically-bounded `for` loop, K = 3.
 
    SOURCE INTENT:
-       q = cq_theta(q, 0.3);            S  — the seed, OUTSIDE the loop
+       cq_theta(&q, 0.3);            S  — the seed, OUTSIDE the loop
        for (i = 0; i < 3; ++i) {
            if (q == 5) cq_phi(PI);      O  — the oracle
-           q = cq_theta(q, 0.3);
+           cq_theta(&q, 0.3);
            if (q == 0) cq_phi(PI);      R0 — reflect about |0>
-           q = cq_theta(q, 0.3);
+           cq_theta(&q, 0.3);
        }
        measure q
 
@@ -18,7 +18,7 @@
    header phi `%q = phi i32 [0, entry], [%rot, latch]` — a CLASSICAL constant
    merged with a tainted value — and `declineClassicalMuxes` refuses the module
    with `cq taint escape: tainted value muxed by a classical-condition phi`. The
-   two-line probe `int q=0; for(i<3) q=cq_theta(q,.3); return cq_measure(q);`
+   two-line probe `int q=0; for(i<3) cq_theta(&q,.3); return cq_measure(q);`
    declines with that exact string on the pre-3qlq ORACLE and on the Increment-1
    SUBJECT alike, and adding one `cq_theta` before the loop makes BOTH accept. So
    it is a pre-existing, arm-class-independent property of the taint layer, not
@@ -57,13 +57,13 @@
 int slice(void) {
     int q = 0;
 
-    q = cq_theta(q, 0.3);                /* S — the SEED, outside the loop. */
+    cq_theta(&q, 0.3);                   /* S — the SEED, outside the loop. */
 
     for (int i = 0; i < CQ_K; ++i) {
         if (q == 5) cq_phi(CQ_PI);       /* O  — the oracle           */
-        q = cq_theta(q, 0.3);
+        cq_theta(&q, 0.3);
         if (q == 0) cq_phi(CQ_PI);       /* R0 — reflect about |0>    */
-        q = cq_theta(q, 0.3);
+        cq_theta(&q, 0.3);
     }
 
     return cq_measure(q);

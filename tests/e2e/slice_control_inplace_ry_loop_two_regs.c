@@ -1,5 +1,5 @@
 /* ⚠ REWRITTEN PROGRAM (3qlq Inc 1, OQ-3 / prep-b2): one statement ADDED —
-   `q = cq_theta(q, 0.05);` immediately after each `cq_phi(0.1);`. The golden
+   `cq_theta(&q, 0.05);` immediately after each `cq_phi(0.1);`. The golden
    below is therefore a NEW PROGRAM's trace, not an audit substitution of the
    old one, and it is recorded as such in
    docs/prd/phase-04-swap-route-control/inc1-records/GOLDEN_REGEN.md.
@@ -26,16 +26,16 @@
    `icmp eq q, 5` out of the loop, and condWireDisposition's P4 precondition declines
    `condition predates a non-diagonal gate` (CLAUDE.md row W / drbq.12). MEASURE this
    before assuming; if it holds, the shape needs a DIFFERENT variant-maker (an Ry,
-   `q = cq_theta(q, 0.1)`) and that is a semantic change, not a migration.
+   `cq_theta(&q, 0.1)`) and that is a semantic change, not a migration.
    (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_inplace_ry_loop_two_regs.c — TWO independent rotated registers, each with its own
    in-loop control-in-place Ry arm off ONE condition register.
 
    SOURCE INTENT — one activation per trip:
-       if (q == 5) r = cq_theta(r, 0.9);
-       if (q == 3) s = cq_theta(s, 0.7);
+       if (q == 5) cq_theta(&r, 0.9);
+       if (q == 3) cq_theta(&s, 0.7);
        cq_phi(0.1);
-       q = cq_theta(q, 0.05);
+       cq_theta(&q, 0.05);
    WHAT IT PINS. `LoopLowering`'s rail-record fence groups chains PER ROOT MINT,
    and the grouping is load-bearing in BOTH directions: a gate on a DIFFERENT
    root's rail must NOT stale this one's record (else two independent registers in
@@ -72,19 +72,19 @@ int slice(void) {
     int r = 7;
     int s = 9;
 
-    q = cq_theta(q, 0.5);
-    r = cq_theta(r, 0.25);
-    s = cq_theta(s, 0.125);
+    cq_theta(&q, 0.5);
+    cq_theta(&r, 0.25);
+    cq_theta(&s, 0.125);
 
     for (int i = 0; i < 2; ++i) {
         if (q == 5) {
-            r = cq_theta(r, 0.9);
+            cq_theta(&r, 0.9);
         }
         if (q == 3) {
-            s = cq_theta(s, 0.7);
+            cq_theta(&s, 0.7);
         }
         cq_phi(0.1);
-        q = cq_theta(q, 0.05);   /* OQ-3: the loop-VARIANT maker */
+        cq_theta(&q, 0.05);      /* OQ-3: the loop-VARIANT maker */
     }
 
     return cq_measure(q) + cq_measure(r) + cq_measure(s);

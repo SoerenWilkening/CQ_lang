@@ -44,7 +44,7 @@
 int slice(void) {
     int q = 3;
     int x = 9;
-    q = cq_theta(q, 0.5);          /* taint q -> condition handle (alloc, ry)   */
+    cq_theta(&q, 0.5);             /* taint q -> condition handle (alloc, ry)   */
     int sel = (q > 5) ? q : x;     /* tainted select -> controlled-XOR copy merge*/
     return cq_measure(sel);        /* reads the copied-out answer (out)          */
 }

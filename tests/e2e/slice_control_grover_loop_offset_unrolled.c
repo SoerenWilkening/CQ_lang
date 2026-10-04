@@ -23,14 +23,14 @@ volatile int cq_off = 3;
 
 #define CQ_OFFSET_ITER                       \
     if (q == 5) { cq_phi(CQ_PI); }           \
-    q = cq_theta(q, -0.5);                   \
+    cq_theta(&q, -0.5);                      \
     q += cq_off;                             \
-    q = cq_theta(q, 0.5);
+    cq_theta(&q, 0.5);
 
 int slice(void) {
     int q = 0;
 
-    q = cq_theta(q, 0.5);
+    cq_theta(&q, 0.5);
     q += cq_off;
 
     CQ_OFFSET_ITER

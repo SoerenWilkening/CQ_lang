@@ -45,7 +45,7 @@
    load-bearing link order). cq_theta/cq_phi/cq_measure resolve from CQ.h. */
 int slice(void) {
     int q = 3;
-    q = cq_theta(q, 0.5);          /* taint q -> handle (alloc, ry)             */
+    cq_theta(&q, 0.5);             /* taint q -> handle (alloc, ry)             */
     if (q == 7) {                  /* eq-folded br diamond -> emitRegion (§4D)   */
         cq_phi(0.25);       /* arm gate 1 (Rz) — arg-0 folds to 7         */
         cq_phi(0.75);       /* arm gate 2 (Rz) — VERBATIM on the rail     */

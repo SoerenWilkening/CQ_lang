@@ -3008,7 +3008,7 @@ INVOKE_STOP_MUTANTS = [
 #     void f(void) {
 #         _Bool b = cq_theta(0, 0.5);
 #         int v = tbl[b];
-#         b = cq_theta(b, -0.5);
+#         cq_theta(&b, -0.5);
 #         printf("%d %d\n", b, v);
 #     }
 #     int main(void) { f(); return 0; }

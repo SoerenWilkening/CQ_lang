@@ -66,15 +66,15 @@ typedef unsigned _BitInt(40) u40;
 __attribute__((noinline))
 void slice(unsigned long x, unsigned long y) {
     /* (A) measured forward: (u40)a + (u40)b, then mask back to 40 bits. */
-    unsigned long a = cq_theta(x, 0.25);
-    unsigned long b = cq_theta(y, 0.50);
+    unsigned long a = x; cq_theta(&a, 0.25);
+    unsigned long b = y; cq_theta(&b, 0.50);
     u40 za = (u40)a;
     u40 zb = (u40)b;
     u40 zs = za + zb;                    /* i40 add — clang masks at 2^40 */
     (void) cq_measure((unsigned long)zs);
 
     /* (B) dead mask — proves the and-mask _unc + recompute-from-live-source. */
-    unsigned long c = cq_theta(x, 0.10);
+    unsigned long c = x; cq_theta(&c, 0.10);
     u40 zc = (u40)c;                     /* and i64 c, 2^40-1 — dead */
     if (zc == (u40)5) cq_phi(0.30);   /* Rz keep-alive; result dropped */
 }

@@ -33,7 +33,7 @@ __attribute__((noinline)) static int slice(int n, int m) {
     if (n <= 0 || m <= 0) return 0;
     int p[m];
     for (int i = 0; i < m; ++i) p[i] = i + 3;
-    int q = cq_theta(0, 0.25);
+    int q = 0; cq_theta(&q, 0.25);
     int a = 0, z = 0;
     for (int i = 0; i < n; ++i)
         if (q && m == n) { a += p[i]; z -= p[i]; }

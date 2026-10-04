@@ -838,13 +838,13 @@ add_test(NAME e2e-slice-control-angle-select-ry-derived-base
 # ⚠⚠ bd test_C_libtooling-fmt3 (2026-09-28): THE if/else SLICES ABOVE NO LONGER
 # REACH THE ANGLE SELECT. `include/CQ.h` puts `nomerge` on every `cq_theta_*`
 # declaration (owner ruling, option B), so `-O1` keeps
-# `if (c) r = cq_theta(r,A); else r = cq_theta(r,B);` as an if/else and it lowers
+# `if (c) cq_theta(&r,A); else cq_theta(&r,B);` as an if/else and it lowers
 # through the in-place Ry arm (`cRy(f,r,A); X f; cRy(f,r,B); X f` — the same
 # unitary, the X pair on the compare ancilla). Their three goldens were
 # REGENERATED deliberately to that stream, and the text above about "clang -O1
 # NEVER hands that to the pass as a diamond" is HISTORY for them.
 # THE ANGLE SELECT ITSELF IS STILL REACHED FROM C, by writing the select:
-# `r = cq_theta(r, c ? A : B);`. The three `_ternary` slices below are that
+# `cq_theta(&r, c ? A : B);`. The three `_ternary` slices below are that
 # spelling; each hands the pass the SAME function bodies the pre-fmt3 fold did
 # (measured, `fmt3_probes/ternary_module_eq.py`) and each golden is the pre-fmt3
 # golden of its if/else sibling BYTE FOR BYTE — moved, not regenerated. So the
@@ -5690,7 +5690,7 @@ add_test(NAME e2e-z0re-angle-select-runtime-base-exact-inplace-identical
 # `−θ` is an IEEE sign flip, never an `fsub`, so the Inc-2b by-difference
 # rounding fence has no subject. That makes the compiler's output directly
 # comparable to a HAND-WRITTEN twin of the same circuit
-# (`r = cq_theta(r, 0.9); if (b) r = cq_theta(r, -0.9);`), which is the gate.
+# (`cq_theta(&r, 0.9); if (b) cq_theta(&r, -0.9);`), which is the gate.
 # ⚠ IT IS AN INTERNAL-CONSISTENCY GATE, NOT AN ORACLE GATE: both halves need
 # l4x4.b to lower at all, and both decline `bare i1 register condition` on `main`
 # 0c7380c. Labelled as such here and in both slice headers.
@@ -7353,7 +7353,7 @@ add_test(NAME e2e-slice-control-value-arm-cone
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_arm_cone.expected.log")
 
 # bd test_C_libtooling-fn1q increment 2 — THE BARE `_Bool` RAIL AS A MULTI-VALUE
-# REGION'S CONDITION, from C. `bool b = cq_theta(b,.5); if (b) { A-=3; B-=4; C-=5;
+# REGION'S CONDITION, from C. `bool cq_theta(&b,.5); if (b) { A-=3; B-=4; C-=5;
 # D-=6; }` declined `control flow` before the increment: `PredMuxFlatten` — the
 # stage that owns a multi-phi tainted merge — refused it at E6 because
 # `isSupportedCondTree`'s grammar is compare leaves and and/or/xor/select nodes,

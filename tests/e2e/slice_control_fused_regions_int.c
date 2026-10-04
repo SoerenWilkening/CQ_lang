@@ -6,9 +6,9 @@
 
    SOURCE INTENT, as typed:
        int a = 5; int b0 = 0; int b1 = 0;
-       if (a >= 3) b0 = cq_theta(b0, 0.5);   // classical guard: always taken
+       if (a >= 3) cq_theta(&b0, 0.5);   // classical guard: always taken
        if (b0 == 1) a -= 3;                  // a becomes 2 or 5 with b0
-       if (a >= 3) b1 = cq_theta(b1, 0.5);   // a state prep, guarded by a again
+       if (a >= 3) cq_theta(&b1, 0.5);   // a state prep, guarded by a again
        return cq_measure(b0) + cq_measure(b1) + cq_measure(a);
 
    WHAT clang -O1 HANDS THE PASS (Rule 9 — the trace will not match what you
@@ -72,12 +72,12 @@ int main(void) {
     int b1 = 0;
 
     if (a >= 3) {
-        b0 = cq_theta(b0, 0.5);
+        cq_theta(&b0, 0.5);
     }
     if (b0 == 1) a -= 3;
 
     if (a >= 3) {
-        b1 = cq_theta(b1, 0.5);
+        cq_theta(&b1, 0.5);
     }
 
     return cq_measure(b0) + cq_measure(b1) + cq_measure(a);

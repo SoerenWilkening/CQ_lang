@@ -15,7 +15,7 @@
    `e2e-angle-select-ry-ne-twin-identical`. Golden REGENERATED deliberately,
    STRICT 2b: 2 verified, 0 violation.
 
-       if (q != 5) r = cq_theta(r, 0.9); else r = cq_theta(r, 0.3);
+       if (q != 5) cq_theta(&r, 0.9); else cq_theta(&r, 0.3);
 
    `clang -O1` canonicalizes `q != 5` to `icmp eq i32 %q, 5` and then SWAPS the
    select's two arms rather than inverting the condition (measured). THE POINT OF
@@ -37,10 +37,10 @@
 int slice(void) {
     int q = 3;
     int r = 7;
-    q = cq_theta(q, 0.5);
-    r = cq_theta(r, 0.25);
-    if (q != 5) r = cq_theta(r, 0.9);
-    else        r = cq_theta(r, 0.3);
+    cq_theta(&q, 0.5);
+    cq_theta(&r, 0.25);
+    if (q != 5) cq_theta(&r, 0.9);
+    else        cq_theta(&r, 0.3);
     return cq_measure(q) + cq_measure(r);
 }
 int main(void) { (void) slice(); return 0; }

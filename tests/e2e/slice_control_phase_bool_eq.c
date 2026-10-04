@@ -7,8 +7,8 @@
 #include "CQ.h"
 
 int main(void) {
-    bool b = cq_theta((bool)0, 0.5);
-    bool c = cq_theta((bool)0, 0.3);
+    bool b = (bool)0; cq_theta(&b, 0.5);
+    bool c = (bool)0; cq_theta(&c, 0.3);
     if (b == c) cq_phi(0.9);
     return cq_measure(b) + cq_measure(c);
 }

@@ -15,9 +15,9 @@
 __attribute__((noinline)) int slice(int m, int s) {
     int acc = 0;
     for (int k = 0; k < 3; k++) {
-        int q = cq_theta(m + k, 0.5);
+        int q = m + k; cq_theta(&q, 0.5);
         int r = s + k;
-        if (q > k) r = cq_theta(s + k, 0.2);
+        if (q > k) { r = s + k; cq_theta(&r, 0.2); }
         acc += cq_measure(r);
     }
     return acc;

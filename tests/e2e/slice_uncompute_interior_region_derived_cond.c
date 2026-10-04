@@ -16,9 +16,9 @@
    anchor).
 
    SOURCE INTENT:
-       a = cq_theta(a, 0.5);
+       cq_theta(&a, 0.5);
        if (sqrt((double)a + 3.0) <= 5.0) cq_phi(PI);   the oracle
-       a = cq_theta(a, -0.5);                                 the S-dagger
+       cq_theta(&a, -0.5);                                 the S-dagger
        return cq_measure(a);
 
    WHAT MADE IT THE BLOCKER. The condition is DERIVED, so the compiler mints
@@ -60,11 +60,11 @@
 #define CQ_PI 3.14159265358979323846
 
 int slice(int u) {
-    int a = cq_theta(u, 0.5);
+    int a = u; cq_theta(&a, 0.5);
     if (sqrt((double) a + 3.0) <= 5.0) {
         cq_phi(CQ_PI);
     }
-    a = cq_theta(a, -0.5);
+    cq_theta(&a, -0.5);
     return cq_measure(a);
 }
 int main(void) { (void) slice(3); return 0; }

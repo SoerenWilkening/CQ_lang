@@ -16,9 +16,9 @@
    tainted-condition regions with a NON-DIAGONAL gate (Ry) between them.
 
    SOURCE INTENT:
-       S      q = cq_theta(q, 0.5); q += off;         state preparation
+       S      cq_theta(&q, 0.5); q += off;         state preparation
        O      if (q == 5) cq_phi(PI);          oracle: mark |5>
-       S†     q -= off; q = cq_theta(q, -0.5);        un-prepare
+       S†     q -= off; cq_theta(&q, -0.5);        un-prepare
        R0     if (q == 0) cq_phi(PI);          reflect about |0>
        M      measure q
 
@@ -50,13 +50,13 @@
    THIS SLICE MAKES, NOT A WALL IT HITS. Read the next two paragraphs as history.
 
    WHAT WAS TRUE UNTIL 2026-08-28. State prep is S = `Ry(0.5)` THEN `+ off`, so
-   re-applying S means `q = cq_theta(q, 0.5); q += off;` — in THAT order the
+   re-applying S means `cq_theta(&q, 0.5); q += off;` — in THAT order the
    theta's arg-0 is the same wire the reflection's condition read,
    `wireGainsNonDiagonalGate` (then schedule-independent) saw it, and the region
    declined even though the flag was stripped and freed long before. MEASURED
    then (and re-measured after M-C batch 2b, unchanged at that point):
-       q += off; q = cq_theta(q, 0.5);   ->  LOWERS
-       q = cq_theta(q, 0.5); q += off;   ->  DECLINED
+       q += off; cq_theta(&q, 0.5);   ->  LOWERS
+       cq_theta(&q, 0.5); q += off;   ->  DECLINED
                                              "cq controlled lowering: condition
                                               predates a non-diagonal gate"
 
@@ -149,13 +149,13 @@ volatile int off = 3;
 
 int slice(void) {
     int q = 0;
-    q = cq_theta(q, 0.5);                    /* S  */
+    cq_theta(&q, 0.5);                       /* S  */
     q += off;
     if (q == 5) {                            /* O  */
         cq_phi(3.14159265358979323846);
     }
     q -= off;                                /* S† */
-    q = cq_theta(q, -0.5);
+    cq_theta(&q, -0.5);
     if (q == 0) {                            /* R0 */
         cq_phi(3.14159265358979323846);
     }

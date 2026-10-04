@@ -37,7 +37,7 @@ static const int tbl[8] = {3, 1, 4, 1, 5, 9, 2, 6};
 #if CASE == CASE_AND || CASE == CASE_AND_CLASSICAL_FIRST || CASE == CASE_OR || \
     CASE == CASE_SUBTREE || CASE == CASE_XOR || CASE == CASE_TERNARY
 __attribute__((noinline)) static int slice(int n, int m) {
-    int q = cq_theta(0, 0.25);
+    int q = 0; cq_theta(&q, 0.25);
     int a = 7;
 #if CASE == CASE_AND
     if (q && m == n) a += 3;
@@ -67,7 +67,7 @@ __attribute__((noinline)) static int slice(int n, int m) {
     if (n <= 0 || m <= 0) return 0;
     int p[m];
     for (int i = 0; i < m; ++i) p[i] = i + 3;
-    int q = cq_theta(0, 0.25);
+    int q = 0; cq_theta(&q, 0.25);
     int a = 0, z = 0;
     for (int i = 0; i < n; ++i)
         if (q && m == n) { a += p[i]; z -= p[i]; }
@@ -77,7 +77,7 @@ int main(int argc, char **argv) { (void)argv; return slice(argc + 1, argc); }
 
 #elif CASE == CASE_TABLE_LOOP
 __attribute__((noinline)) static int slice(int n, int m) {
-    int q = cq_theta(0, 0.25);
+    int q = 0; cq_theta(&q, 0.25);
     int a = 0, z = 0;
     for (int i = 0; i < n && i < 8; ++i)
         if (q && m == n) { a += tbl[i]; z -= tbl[i]; }
@@ -89,7 +89,7 @@ int main(int argc, char **argv) {
 
 #elif CASE == CASE_PHASE
 __attribute__((noinline)) static int slice(int n, int m) {
-    int q = cq_theta(0, 0.25);
+    int q = 0; cq_theta(&q, 0.25);
     if (q && m == n) cq_phi(0.5);
     return cq_measure(q);
 }
@@ -99,7 +99,7 @@ int main(int argc, char **argv) {
 
 #elif CASE == CASE_BOOL_RAIL
 __attribute__((noinline)) static int slice(int n, int m) {
-    _Bool b = cq_theta((_Bool)0, 0.5);
+    _Bool b = (_Bool)0; cq_theta(&b, 0.5);
     int a = 7;
     if (b && m == n) a += 3;
     return cq_measure(b) + cq_measure(a);
@@ -118,7 +118,7 @@ int main(int argc, char **argv) {
 __attribute__((noinline)) static int slice(int n, int m) {
     int a = 0;
     for (int i = 0; i < n; ++i) {
-        int q = cq_theta(i, 0.25);
+        int q = i; cq_theta(&q, 0.25);
         if (q && m == n) a += 3;
     }
     return cq_measure(a);
@@ -131,11 +131,11 @@ int main(int argc, char **argv) {
 /* CASE 10 with n == 3 unrolled by hand (an accept row; see CASE 10). */
 __attribute__((noinline)) static int slice(int n, int m) {
     int a = 0;
-    int q0 = cq_theta(0, 0.25);
+    int q0 = 0; cq_theta(&q0, 0.25);
     if (q0 && m == n) a += 3;
-    int q1 = cq_theta(1, 0.25);
+    int q1 = 1; cq_theta(&q1, 0.25);
     if (q1 && m == n) a += 3;
-    int q2 = cq_theta(2, 0.25);
+    int q2 = 2; cq_theta(&q2, 0.25);
     if (q2 && m == n) a += 3;
     return cq_measure(a);
 }
@@ -148,7 +148,7 @@ int main(int argc, char **argv) {
 __attribute__((noinline)) static int slice(int n, int m) {
     int s = 0;
     for (int i = 0; i < n; ++i) {
-        int q = cq_theta(i, 0.25);
+        int q = i; cq_theta(&q, 0.25);
         int a = 7;
 #if CASE == CASE_VARYING_LEAF
         if (q > 1 && i < m) a += 3;
@@ -173,15 +173,15 @@ int main(int argc, char **argv) {
  * literal is 1, 1, 0; CASE 17's `m == n` is 0 on every trip). */
 __attribute__((noinline)) static int slice(int n, int m) {
     int s = 0;
-    int q0 = cq_theta(0, 0.25);
+    int q0 = 0; cq_theta(&q0, 0.25);
     int a0 = 7;
     if (COND(q0, 0, m, n)) a0 += 3;
     s += cq_measure(a0);
-    int q1 = cq_theta(1, 0.25);
+    int q1 = 1; cq_theta(&q1, 0.25);
     int a1 = 7;
     if (COND(q1, 1, m, n)) a1 += 3;
     s += cq_measure(a1);
-    int q2 = cq_theta(2, 0.25);
+    int q2 = 2; cq_theta(&q2, 0.25);
     int a2 = 7;
     if (COND(q2, 2, m, n)) a2 += 3;
     s += cq_measure(a2);
@@ -197,7 +197,7 @@ int main(int argc, char **argv) {
  * post-fixpoint re-ask declines it. */
 __attribute__((noinline, const)) static int f(int a) { return a + 100; }
 __attribute__((noinline)) static int slice(int u, int a) {
-    int q = cq_theta(u, 0.5);
+    int q = u; cq_theta(&q, 0.5);
     int y = 5;
     if (q > 3) y = f(a);
     int z = 99;
@@ -214,7 +214,7 @@ int main(int argc, char **argv) {
 __attribute__((noinline)) static int slice(int n, int m) {
     int a = 0;
     for (int i = 0; i < n && i < 8; ++i) {
-        int q = cq_theta(i, 0.25);
+        int q = i; cq_theta(&q, 0.25);
         if (q && m == n) a += tbl[i];
     }
     return cq_measure(a);

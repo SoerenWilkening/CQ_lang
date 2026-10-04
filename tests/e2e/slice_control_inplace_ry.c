@@ -6,7 +6,7 @@
    SOURCE INTENT (PRD §4 shape (a) — ONE tainted-operand cq_theta per arm, on a
    register whose physical wire is disjoint from every condition wire):
        q, r : two INDEPENDENT tainted handles (two cq_theta sources, two rails)
-       if (q == 5) r = cq_theta(r, 0.9);     // a controlled Ry on r
+       if (q == 5) cq_theta(&r, 0.9);     // a controlled Ry on r
        measure q; measure r
 
    WHY THIS IS NOT A SWAP ROUTE, which is the whole point of the increment. The
@@ -32,10 +32,10 @@
 int slice(void) {
     int q = 3;
     int r = 7;
-    q = cq_theta(q, 0.5);          /* taint q -> handle (alloc i32(3), ry_i32) */
-    r = cq_theta(r, 0.25);         /* taint r -> a SECOND, disjoint rail       */
+    cq_theta(&q, 0.5);             /* taint q -> handle (alloc i32(3), ry_i32) */
+    cq_theta(&r, 0.25);            /* taint r -> a SECOND, disjoint rail       */
     if (q == 5) {                  /* tainted condition -> flag mint at the icmp */
-        r = cq_theta(r, 0.9);      /* the arm Ry — CONTROLLED and IN PLACE on r  */
+        cq_theta(&r, 0.9);         /* the arm Ry — CONTROLLED and IN PLACE on r  */
     }
     return cq_measure(q) + cq_measure(r);
 }

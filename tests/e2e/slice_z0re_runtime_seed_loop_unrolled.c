@@ -11,9 +11,9 @@
    (bd 46oo: `-O1` const-propagates a literal argument). */
 __attribute__((noinline)) int slice(int m, int s) {
     int acc = 0;
-    { int q = cq_theta(m + 0, 0.5); int r = s + 0; if (q > 0) r = cq_theta(s + 0, 0.2); acc += cq_measure(r); }
-    { int q = cq_theta(m + 1, 0.5); int r = s + 1; if (q > 1) r = cq_theta(s + 1, 0.2); acc += cq_measure(r); }
-    { int q = cq_theta(m + 2, 0.5); int r = s + 2; if (q > 2) r = cq_theta(s + 2, 0.2); acc += cq_measure(r); }
+    { int q = m + 0; cq_theta(&q, 0.5); int r = s + 0; if (q > 0) { r = s + 0; cq_theta(&r, 0.2); } acc += cq_measure(r); }
+    { int q = m + 1; cq_theta(&q, 0.5); int r = s + 1; if (q > 1) { r = s + 1; cq_theta(&r, 0.2); } acc += cq_measure(r); }
+    { int q = m + 2; cq_theta(&q, 0.5); int r = s + 2; if (q > 2) { r = s + 2; cq_theta(&r, 0.2); } acc += cq_measure(r); }
     return acc;
 }
 

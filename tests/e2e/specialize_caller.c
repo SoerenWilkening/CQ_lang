@@ -18,7 +18,7 @@ int helper(int a);
 
 int slice(void) {
     int x = 3;
-    x = cq_theta(x, 0.5);
+    cq_theta(&x, 0.5);
     int y = helper(x);
     int z = cq_measure(y);
     return z;

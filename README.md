@@ -13,7 +13,7 @@ int main(void) {
     int a = 3;
     int b = 5;
 
-    a = cq_theta(a, 0.5);          /* Ry(0.5) — a is now tainted (quantum) */
+    cq_theta(&a, 0.5);             /* Ry(0.5) in place — a is now tainted (quantum) */
 
     int c = a + b;                  /* taint propagates: c is quantum too  */
 
@@ -187,7 +187,8 @@ Example: taint a `math.h` input and measure the lowered result:
 #include <math.h>
 
 int main(void) {
-    double x = cq_theta(1.0, 0.25);  /* x becomes quantum */
+    double x = 1.0;
+    cq_theta(&x, 0.25);              /* x becomes quantum */
     double y = sqrt(x);              /* taint flows through math.h */
     return cq_measure(y);            /* explicit measurement */
 }

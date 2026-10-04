@@ -47,9 +47,9 @@
    and the loop-twin matrix's sub-grid F4 carries the same axis at K=2. */
 int slice(void) {
   int q = 3, p = 7, r = 9;
-  q = cq_theta(q, 0.5);
-  p = cq_theta(p, 0.25);
-  r = cq_theta(r, 0.3);
+  cq_theta(&q, 0.5);
+  cq_theta(&p, 0.25);
+  cq_theta(&r, 0.3);
   int m = (q > 5) ? p : r;
   m = m + 7;
   for (int i = 0; i < 4; i++)

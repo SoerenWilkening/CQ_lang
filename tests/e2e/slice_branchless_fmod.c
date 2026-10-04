@@ -24,7 +24,7 @@ static double bfmod(double x, double y) {
     return x - __builtin_trunc(x / y) * y;             /* truncated-division rem  */
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(bfmod(q, 0.5));                  /* (q,c): x tainted, y const */
 }
 int main(void) { (void) slice(); return 0; }

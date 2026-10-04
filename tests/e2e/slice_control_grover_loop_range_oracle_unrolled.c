@@ -27,12 +27,12 @@
     if (a > 5 && a < 20) {                                \
         cq_phi(3.14159265358979323846);                   \
     }                                                     \
-    a = cq_theta(a, -0.5);
+    cq_theta(&a, -0.5);
 
 int slice(void) {
     int a = 0;
 
-    a = cq_theta(a, 0.5);
+    cq_theta(&a, 0.5);
 
     CQ_RANGE_ORACLE_ITER
     CQ_RANGE_ORACLE_ITER

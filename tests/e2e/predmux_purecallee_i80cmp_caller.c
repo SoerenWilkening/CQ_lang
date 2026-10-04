@@ -59,7 +59,7 @@ long double leafl(long double);          /* defined in the lib TU, stays outline
 __attribute__((noinline))
 long double slice(long double u0)
 {
-    long double q = cq_theta(u0, 0.5);   /* alloc f80 + ry — the taint source */
+    long double q = u0; cq_theta(&q, 0.5); /* alloc f80 + ry — the taint source */
     long double z, z2;
 
     if (q < 0.5L) {                      /* tainted condition -> PredMux claim */

@@ -28,7 +28,7 @@ double mhelper(int n);
 
 double slice(void) {
     int b = 3;
-    b = cq_theta(b, 0.5);
+    cq_theta(&b, 0.5);
     double r = mhelper(b);
     return cq_measure(r);
 }

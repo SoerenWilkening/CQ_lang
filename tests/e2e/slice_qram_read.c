@@ -9,7 +9,7 @@
 static const int tbl[8] = {3, 1, 4, 1, 5, 9, 2, 6};
 
 int main(void) {
-    int q = cq_theta(0, 0.5);   /* tainted index */
+    int q = 0; cq_theta(&q, 0.5); /* tainted index */
     int v = tbl[q];             /* QROM read — coherent table lookup */
     return cq_measure(v);
 }

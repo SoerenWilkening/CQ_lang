@@ -12,7 +12,7 @@
 #include "CQ.h"
 
 __attribute__((noinline)) static int slice(int n, int m) {
-    int q = cq_theta(0, 0.25);
+    int q = 0; cq_theta(&q, 0.25);
     int a = 7, b = 5;
     if (q && m == n) a += 3;
     if (q || m == n) b -= 2;

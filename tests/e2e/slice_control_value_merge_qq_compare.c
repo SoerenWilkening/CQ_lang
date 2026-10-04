@@ -31,9 +31,9 @@ int slice(void) {
     int q = 3;
     int p = 7;
     int r = 2;
-    q = cq_theta(q, 0.5);          /* condition register                        */
-    p = cq_theta(p, 0.25);         /* value register (the merge base)           */
-    r = cq_theta(r, 0.1);          /* the compare's OTHER quantum operand       */
+    cq_theta(&q, 0.5);             /* condition register                        */
+    cq_theta(&p, 0.25);            /* value register (the merge base)           */
+    cq_theta(&r, 0.1);             /* the compare's OTHER quantum operand       */
     if (q > 5) {
         p = p + 3;
         p = p * 5;

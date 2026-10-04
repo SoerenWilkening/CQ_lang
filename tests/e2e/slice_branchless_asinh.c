@@ -72,7 +72,7 @@ static double basinh(double x) {
     return __builtin_copysign(blog1p(A), x);             /* keep-set leaf; odd fn   */
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(basinh(q));
 }
 int main(void) { (void) slice(); return 0; }

@@ -38,7 +38,7 @@ static double bnextafter(double x, double y) {
     return out;
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(bnextafter(q, 0.5));             /* (q,c): x tainted, y const */
 }
 int main(void) { (void) slice(); return 0; }

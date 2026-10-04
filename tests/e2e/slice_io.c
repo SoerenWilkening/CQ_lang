@@ -51,7 +51,7 @@
 #include <stdio.h>
 
 __attribute__((noinline)) void emit(int seed) {
-    int x = cq_theta(seed, 0.5);
+    int x = seed; cq_theta(&x, 0.5);
     printf("%d", x);
     putchar(x);
 }

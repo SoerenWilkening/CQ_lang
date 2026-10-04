@@ -41,9 +41,9 @@ int k;
 
 static int slice(void) {
     int q = 0;
-    q = cq_theta(q, 0.5);
+    cq_theta(&q, 0.5);
     int p = 0;
-    p = cq_theta(p, 0.25);
+    cq_theta(&p, 0.25);
     if (q > 5) { p += (k * 3 + 7) ^ 5; }
     return cq_measure(p);
 }

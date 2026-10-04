@@ -8,9 +8,9 @@
        int r = cq_theta(u, 0.3);            // CARRIED:   rotated once per trip
        for (int i = 0; i < 3; i++) {
            if ((q >> i) & 1) cq_phi(0.2);   // D4's per-bit kickback
-           r = cq_theta(r, 0.1);            // the ancilla
+           cq_theta(&r, 0.1);            // the ancilla
        }
-       q = cq_theta(q, 0.9);                // the DIFFUSION — this is what makes
+       cq_theta(&q, 0.9);                // the DIFFUSION — this is what makes
        return cq_measure(q) + cq_measure(r);//   a leaked bit rail a WRONG UNITARY
 
    WHAT IT MEASURES, AND WHY IT EXISTS. `slice_control_phase_perbit_loop.c` has
@@ -51,15 +51,15 @@
    Class: PRD §6.2 P6 (P1 inside the 8h7d.5 rolled loop), mixed-register variant. */
 
 int slice(int u) {
-    int q = cq_theta(u, 0.5);
-    int r = cq_theta(u, 0.3);
+    int q = u; cq_theta(&q, 0.5);
+    int r = u; cq_theta(&r, 0.3);
 
     for (int i = 0; i < 3; ++i) {
         if ((q >> i) & 1) cq_phi(0.2);
-        r = cq_theta(r, 0.1);
+        cq_theta(&r, 0.1);
     }
 
-    q = cq_theta(q, 0.9);
+    cq_theta(&q, 0.9);
     return cq_measure(q) + cq_measure(r);
 }
 int main(void) { (void) slice(5); return 0; }

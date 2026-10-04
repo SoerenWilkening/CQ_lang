@@ -6,7 +6,7 @@
    turns it into `llvm.smax(p, n)`, an LLVM INTRINSIC call. Round 1's drop replaced the
    operand by `0` but its cone walk deleted only non-call instructions, so the dead
    `smax` survived and kept `p` — a 4.4 bool-select `%out` rail copying `b` — alive and
-   entangled across `b = cq_theta(b, 0.7)`: exit 0, no warning, stage 2b STRICT clean,
+   entangled across `cq_theta(&b, 0.7)`: exit 0, no warning, stage 2b STRICT clean,
    P(b=1) 0.8356 instead of 0.6812 for odd m. (The oracle declined this spelling at the
    3jru fence inside a helper; with `slice` exporting its result it accepted on both.)
    Round 2 asks LIVENESS: the dead intrinsic, the dead select and its `%out` never exist.
@@ -19,10 +19,10 @@
 int h(int a, int k);
 
 __attribute__((noinline)) int slice(int m, int n) {
-    _Bool b = cq_theta((_Bool)(m & 1), 0.5);
+    _Bool b = (_Bool)(m & 1); cq_theta(&b, 0.5);
     int p = b ? 9 : 4;
     int t = h(p > n ? p : n, m);
-    b = cq_theta(b, 0.7);
+    cq_theta(&b, 0.7);
     return t + cq_measure(b);
 }
 

@@ -15,14 +15,14 @@
    BASIS-RELABELLING GATE BEFORE the tainted region.
 
    Every loop slice shipped before this one puts the region FIRST in the body:
-   `if (…) { … } a = cq_theta(a, -0.5);`. That is one cell of a matrix, and it is
+   `if (…) { … } cq_theta(&a, -0.5);`. That is one cell of a matrix, and it is
    the cell where the finding is invisible. Move ONE gate to the front of the body
    and the M-B interior partition stops discharging the oracle's ancilla chain:
 
        for (i < 2) {
-           a = cq_theta(a, 0.25);        <-- the LEADING Ry: the whole finding
+           cq_theta(&a, 0.25);        <-- the LEADING Ry: the whole finding
            if ((a & 3) == 1) { cq_phi(PI); }
-           a = cq_theta(a, -0.5);
+           cq_theta(&a, -0.5);
        }
 
    WHY. The interior partition proves clause (d1) — "the borrowed parent holds, at
@@ -54,14 +54,14 @@
 int slice(void) {
     int a = 0;
 
-    a = cq_theta(a, 0.5);                                /* S */
+    cq_theta(&a, 0.5);                                   /* S */
 
     for (int i = 0; i < 2; ++i) {
-        a = cq_theta(a, 0.25);                           /* the LEADING gate */
+        cq_theta(&a, 0.25);                              /* the LEADING gate */
         if ((a & 3) == 1) {                              /* derived oracle */
             cq_phi(3.14159265358979323846);
         }
-        a = cq_theta(a, -0.5);                           /* S-dagger */
+        cq_theta(&a, -0.5);                              /* S-dagger */
     }
 
     return cq_measure(a);

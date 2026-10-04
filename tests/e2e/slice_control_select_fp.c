@@ -37,7 +37,7 @@
    linked output (templates BEFORE runtime — load-bearing link order). */
 double slice(void) {
     double q = 0.3;
-    q = cq_theta(q, 0.5);              /* taint q -> f64 condition handle     */
+    cq_theta(&q, 0.5);                 /* taint q -> f64 condition handle     */
     double t = q + 1.0;                /* theta-derived fp chain (leaked, §6) */
     double sel = (q > 0.5) ? t : 0.25; /* branchless fp ternary -> select     */
     return cq_measure(sel);            /* reads the copied-out answer (out)   */

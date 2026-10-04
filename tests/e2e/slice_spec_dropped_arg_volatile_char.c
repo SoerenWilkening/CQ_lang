@@ -7,7 +7,7 @@
    `volatile char` and never reads. On the oracle AND on bd vsfp round 1 the fenv
    pre-pass erased the store but kept its `trunc`, so the parameter still had a use,
    the drop and the backstop both stayed silent, and the 4.4 `%out` rail copying `b`
-   stayed allocated and entangled across `b = cq_theta(b, 0.7)` — exit 0, no warning,
+   stayed allocated and entangled across `cq_theta(&b, 0.7)` — exit 0, no warning,
    stage 2b STRICT clean, P(b=1) 0.8356 instead of cos^2(.6) = 0.6812 for odd m.
 
    Under the fenv ruling this program MEANS the one without the volatile line, i.e.
@@ -23,10 +23,10 @@
 int h(int a, int k);
 
 __attribute__((noinline)) int slice(int m) {
-    _Bool b = cq_theta((_Bool)(m & 1), 0.5);
+    _Bool b = (_Bool)(m & 1); cq_theta(&b, 0.5);
     int p = b ? 9 : 4;
     int t = h(p, m);
-    b = cq_theta(b, 0.7);
+    cq_theta(&b, 0.7);
     return t + cq_measure(b);
 }
 

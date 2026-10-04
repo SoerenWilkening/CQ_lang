@@ -6,9 +6,9 @@
        int   a  = 5;
        int   b0 = 0;
        _Bool b1 = 0;
-       if (a >= 3) { b0 = cq_theta(b0, 0.5); }   [a is classically 5 -> folded]
+       if (a >= 3) { cq_theta(&b0, 0.5); }   [a is classically 5 -> folded]
        if (b0 == 1) a -= 3;                      [the `a` mux]
-       if (a >= 3) { b1 = cq_theta(b1, 0.5); }   [the `_Bool` prep]
+       if (a >= 3) { cq_theta(&b1, 0.5); }   [the `_Bool` prep]
 
    ⚠ WHY THIS PROGRAM EXISTS AS A SLICE. It is the bd `rb9x` defect, and it was
    an OVER-DECLINE of a valid circuit (owner ruling 2026-09-11: *"our end-goal is
@@ -89,9 +89,9 @@ int slice(void) {
     int   a  = 5;
     int   b0 = 0;
     _Bool b1 = 0;
-    if (a >= 3) { b0 = cq_theta(b0, 0.5); }
+    if (a >= 3) { cq_theta(&b0, 0.5); }
     if (b0 == 1) a -= 3;
-    if (a >= 3) { b1 = cq_theta(b1, 0.5); }
+    if (a >= 3) { cq_theta(&b1, 0.5); }
     return cq_measure(b0) + (int) cq_measure(b1) + cq_measure(a);
 }
 int main(void) { (void) slice(); return 0; }

@@ -4,7 +4,7 @@
 
    THE SOURCE IS THE OWNER'S 2026-09-11 22:18 EDIT of
    `example/grover/grover_oracle_uncompute.c` with the second region commented
-   out (`//if (a >= 3){ // b1 = cq_theta(b1, 0.5); //}`), which leaves `b1`
+   out (`//if (a >= 3){ // cq_theta(&b1, 0.5); //}`), which leaves `b1`
    declared, never assigned, and measured. On `main` e96f89c / 86c0d25 that one
    classical measure refused the WHOLE program:
 
@@ -51,7 +51,7 @@ int slice(void) {
     bool b0 = 0;
     bool b1 = 0;
     if (a >= 3) {
-        b0 = cq_theta(b0, 0.5);
+        cq_theta(&b0, 0.5);
     }
     if (b0 == 1) a -= 3;
     return cq_measure(b0) + cq_measure(b1) + cq_measure(a);

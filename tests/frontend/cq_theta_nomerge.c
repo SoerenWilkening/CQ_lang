@@ -26,8 +26,8 @@
 
 // a6: the fmt3 exhibit — nested literal prep, the pin on the ERASED inner edge.
 int a6(int m) {
-    int q = cq_theta(m, .5); int t = q / 4; int q2 = cq_theta(7, .4); int r = 5;
-    if (q2 > 3) { if (t == 5) r = cq_theta(t, .9); else r = cq_theta(5, .9); }
+    int q = m; cq_theta(&q, .5); int t = q / 4; int q2 = 7; cq_theta(&q2, .4); int r = 5;
+    if (q2 > 3) { if (t == 5) { r = t; cq_theta(&r, .9); } else { r = 5; cq_theta(&r, .9); } }
     return cq_measure(r) + cq_measure(t) + cq_measure(q2);
 }
 // CHECK-LABEL: define {{.*}} @a6(
@@ -38,8 +38,8 @@ int a6(int m) {
 
 // n13: the SECOND route — the rotated register `t` is NOT the compare's operand.
 int n13(int m) {
-    int q = cq_theta(m, .5); int t = q / 4; int q2 = cq_theta(7, .4); int r = 5;
-    if (q2 > 3) { if (q == 20) r = cq_theta(t, .9); else r = cq_theta(5, .9); }
+    int q = m; cq_theta(&q, .5); int t = q / 4; int q2 = 7; cq_theta(&q2, .4); int r = 5;
+    if (q2 > 3) { if (q == 20) { r = t; cq_theta(&r, .9); } else { r = 5; cq_theta(&r, .9); } }
     return cq_measure(r) + cq_measure(t) + cq_measure(q2);
 }
 // CHECK-LABEL: define {{.*}} @n13(
@@ -51,8 +51,8 @@ int n13(int m) {
 
 // n9: NO enclosing region — the merge used to leave an UNCONDITIONAL prep.
 int n9(int m) {
-    int q = cq_theta(m, .5); int t = q / 4; int r;
-    if (t == 5) r = cq_theta(t, .9); else r = cq_theta(5, .9);
+    int q = m; cq_theta(&q, .5); int t = q / 4; int r;
+    if (t == 5) { r = t; cq_theta(&r, .9); } else { r = 5; cq_theta(&r, .9); }
     return cq_measure(r) + cq_measure(t);
 }
 // CHECK-LABEL: define {{.*}} @n9(
@@ -62,8 +62,8 @@ int n9(int m) {
 
 // n17f: no region, the second route (`W = q + 1`, compare on `q`).
 int n17f(int m) {
-    int q = cq_theta(m, .5); int W = q + 1; int r;
-    if (q == 5) r = cq_theta(W, .9); else r = cq_theta(6, .9);
+    int q = m; cq_theta(&q, .5); int W = q + 1; int r;
+    if (q == 5) { r = W; cq_theta(&r, .9); } else { r = 6; cq_theta(&r, .9); }
     return cq_measure(r) + cq_measure(W) + cq_measure(q);
 }
 // CHECK-LABEL: define {{.*}} @n17f(
@@ -76,8 +76,8 @@ int n17f(int m) {
 // register is no longer folded into one call with a SELECTED ANGLE (the Ry stem
 // of AngleSelectEmit is reached from C by the TERNARY spelling, below).
 int ry_ifelse(int m, int c) {
-    int q = cq_theta(m, .5); int r = cq_theta(3, .2);
-    if (q > c) r = cq_theta(r, .9); else r = cq_theta(r, .3);
+    int q = m; cq_theta(&q, .5); int r = 3; cq_theta(&r, .2);
+    if (q > c) cq_theta(&r, .9); else cq_theta(&r, .3);
     return cq_measure(r) + cq_measure(q);
 }
 // CHECK-LABEL: define {{.*}} @ry_ifelse(
@@ -88,8 +88,8 @@ int ry_ifelse(int m, int c) {
 // CHECK:       ret i32
 
 int ry_ternary(int m, int c) {
-    int q = cq_theta(m, .5); int r = cq_theta(3, .2);
-    r = cq_theta(r, (q > c) ? .9 : .3);
+    int q = m; cq_theta(&q, .5); int r = 3; cq_theta(&r, .2);
+    cq_theta(&r, (q > c) ? .9 : .3);
     return cq_measure(r) + cq_measure(q);
 }
 // CHECK-LABEL: define {{.*}} @ry_ternary(
@@ -102,7 +102,7 @@ int ry_ternary(int m, int c) {
 // if/else STILL folds to one call with a selected angle — the Rz stem of
 // AngleSelectEmit keeps its C spelling.
 void rz_ifelse(int m, int c) {
-    int q = cq_theta(m, .5);
+    int q = m; cq_theta(&q, .5);
     if (q > c) cq_phi(.9); else cq_phi(.3);
     (void) cq_measure(q);
 }

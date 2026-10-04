@@ -62,12 +62,12 @@
 __attribute__((noinline))
 void slice(unsigned x) {
     /* (A) measured forward bswap. */
-    unsigned a = cq_theta(x, 0.25);
+    unsigned a = x; cq_theta(&a, 0.25);
     unsigned b = __builtin_bswap32(a);   /* llvm.bswap.i32 -> cq_template_bswap_i32 */
     (void) cq_measure(b);
 
     /* (B) dead bswap — proves the `_unc` twin. */
-    unsigned c = cq_theta(x, 0.10);
+    unsigned c = x; cq_theta(&c, 0.10);
     unsigned d = __builtin_bswap32(c);   /* dead */
     if (d > 100u) cq_phi(0.30);              /* Rz keep-alive; result dropped */
 }

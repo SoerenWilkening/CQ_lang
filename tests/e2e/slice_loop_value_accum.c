@@ -18,7 +18,7 @@
    by run_slice.sh. */
 __attribute__((noinline))
 int accum(int seed, int n) {
-    int q = cq_theta(seed, 0.25);
+    int q = seed; cq_theta(&q, 0.25);
     for (int i = 0; i < n; i++)
         q = q ^ 9;               /* in-place reversible self-update (xor const) */
     return cq_measure(q);

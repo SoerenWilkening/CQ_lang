@@ -15,8 +15,8 @@
 
 int main(void) {
     int arr[8] = {0};
-    int q = cq_theta(0, 0.5);   /* tainted index */
-    int p = cq_theta(1, 0.5);   /* tainted index */
+    int q = 0; cq_theta(&q, 0.5); /* tainted index */
+    int p = 1; cq_theta(&p, 0.5); /* tainted index */
     arr[q] = 7;                 /* tainted-index store — coherent table write */
     int v = arr[p];             /* tainted-index load  — coherent table read  */
     return cq_measure(v);

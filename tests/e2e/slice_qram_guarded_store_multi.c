@@ -18,9 +18,9 @@
 __attribute__((noinline))
 static int guarded_multi(int seed) {
     int arr[8] = {0};
-    int q = cq_theta(seed, 0.5);      /* condition + load index */
-    int i = cq_theta(seed + 1, 0.5);  /* first tainted store index */
-    int j = cq_theta(seed + 2, 0.5);  /* second tainted store index */
+    int q = seed; cq_theta(&q, 0.5);  /* condition + load index */
+    int i = seed + 1; cq_theta(&i, 0.5); /* first tainted store index */
+    int j = seed + 2; cq_theta(&j, 0.5); /* second tainted store index */
     if (q < 3) { arr[i] = 7; }        /* first guarded store */
     if (q < 5) { arr[j] = 8; }        /* second guarded store, shares merge1 */
     int v = arr[q];                   /* observed → local array uncomputes */

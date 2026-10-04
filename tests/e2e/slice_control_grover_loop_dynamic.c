@@ -41,17 +41,17 @@ volatile int cq_n = 3;
 int slice(void) {
     int q = 0;
 
-    q = cq_theta(q, 0.5);
+    cq_theta(&q, 0.5);
 
     for (int i = 0; i < cq_n; ++i) {
         if (q == 5) {
             cq_phi(CQ_PI);
         }
-        q = cq_theta(q, -0.5);
+        cq_theta(&q, -0.5);
         if (q == 0) {
             cq_phi(CQ_PI);
         }
-        q = cq_theta(q, 0.5);
+        cq_theta(&q, 0.5);
     }
 
     return cq_measure(q);

@@ -40,10 +40,10 @@
 int h(int a, int k);
 
 __attribute__((noinline)) int slice(int m) {
-    int q = cq_theta(m, 0.5);
+    int q = m; cq_theta(&q, 0.5);
     int t = h(q, m);
     int r = q;
-    if (m > 3) r = cq_theta(q, 0.2);
+    if (m > 3) { r = q; cq_theta(&r, 0.2); }
     return cq_measure(r) + t;
 }
 

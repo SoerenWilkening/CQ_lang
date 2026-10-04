@@ -69,7 +69,7 @@ static double batan2(double y, double x) {
     return batan(y / x) + off;                           /* one division -> atan    */
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(batan2(q, 0.5));
 }
 int main(void) { (void) slice(); return 0; }

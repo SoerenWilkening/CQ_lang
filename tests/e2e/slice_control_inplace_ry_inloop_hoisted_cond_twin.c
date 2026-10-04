@@ -27,10 +27,10 @@
 int slice(void) {
     int q = 0;
     int r = 0;
-    q = cq_theta(q, 0.5);
-    r = cq_theta(r, 0.3);
-    if (q == 5) { r = cq_theta(r, 0.9); }   /* trip 1 */
-    if (q == 5) { r = cq_theta(r, 0.9); }   /* trip 2 */
+    cq_theta(&q, 0.5);
+    cq_theta(&r, 0.3);
+    if (q == 5) { cq_theta(&r, 0.9); }   /* trip 1 */
+    if (q == 5) { cq_theta(&r, 0.9); }   /* trip 2 */
     return cq_measure(q) + cq_measure(r);
 }
 int main(void) { (void) slice(); return 0; }

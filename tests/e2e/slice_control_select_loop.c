@@ -19,7 +19,7 @@
    unconditional). */
 double slice(void) {
     volatile int n = 3;
-    double q = cq_theta(0.3, 0.5);
+    double q = 0.3; cq_theta(&q, 0.5);
     double acc = 0.0;
     for (int i = 0; i < n; i++) {
         double sel = (q > 0.5) ? q : (double)i;   /* loop-variant ternary */

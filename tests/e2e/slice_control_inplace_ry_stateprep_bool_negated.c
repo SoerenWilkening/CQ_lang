@@ -29,10 +29,10 @@
    NOT witness (no trace can answer a STATE question; stage 2b never reads the
    alloc's seed) applies here verbatim. */
 int slice(void) {
-    int  q = cq_theta(0, 0.5);     /* the condition register                    */
+    int  q = 0; cq_theta(&q, 0.5); /* the condition register                    */
     _Bool r = 0;                   /* the `_Bool` seed — F2's old collider       */
     if (q != 1) {                  /* `-O1` emits `icmp eq` + a FALSE-arm branch */
-        r = cq_theta(r, 0.9);      /* `r` is classically 0 here: a STATE PREP    */
+        cq_theta(&r, 0.9);         /* `r` is classically 0 here: a STATE PREP    */
     }
     return (int) cq_measure(q) + (int) cq_measure(r);
 }

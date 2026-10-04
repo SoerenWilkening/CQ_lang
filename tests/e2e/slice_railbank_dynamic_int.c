@@ -29,7 +29,7 @@ __attribute__((noinline)) static void run_bank(int n) {
     int P = 0;
     int Z = 4 * n;
     for (int i = 0; i < n; ++i) {
-        if (Z >= z[i]) b[i] = cq_theta(b[i], 0.5);
+        if (Z >= z[i]) cq_theta(&b[i], 0.5);
         if (b[i]) {
             P += p[i];
             Z -= z[i];

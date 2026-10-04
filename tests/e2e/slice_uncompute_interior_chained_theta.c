@@ -2,10 +2,10 @@
    test_C_libtooling-6uqc). bd 6uqc's P4 end to end: the shape that at HEAD
    c36934a DECLINED, and the reason the whole record-family campaign exists.
 
-       a = cq_theta(a, 0.5);
+       cq_theta(&a, 0.5);
        int f = sqrt(a + 3.0) <= 5.0;
        int m = cq_measure(f);
-       a = cq_theta(a, 0.5);
+       cq_theta(&a, 0.5);
        return m + cq_measure(a);
 
    THREE COMPILERS, THREE ANSWERS, and the middle one is why this slice is worth
@@ -44,10 +44,10 @@
 
 __attribute__((noinline))
 int slice(int a) {
-    a = cq_theta(a, 0.5);
+    cq_theta(&a, 0.5);
     int f = sqrt(a + 3.0) <= 5.0;
     int m = cq_measure(f);
-    a = cq_theta(a, 0.5);
+    cq_theta(&a, 0.5);
     return m + cq_measure(a);
 }
 int main(void) { (void) slice(1); return 0; }

@@ -62,7 +62,7 @@ static double bexpm1(double x) {
     return 2.0 * (scale2 * Pr + (scale2 - 0.5));
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(bexpm1(q));
 }
 int main(void) { (void) slice(); return 0; }

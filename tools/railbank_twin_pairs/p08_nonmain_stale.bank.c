@@ -3,10 +3,10 @@
    lowered module). */
 #include "CQ.h"
 __attribute__((noinline)) int slice(int seed) {
-  int q = cq_theta(seed, 0.5);
+  int q = seed; cq_theta(&q, 0.5);
   int b0[3]; int s = 0;
   for (int i = 0; i < 3; ++i) b0[i] = q;
-  q = cq_theta(q, 0.7);
+  cq_theta(&q, 0.7);
   for (int i = 0; i < 3; ++i) s += cq_measure(b0[i]);
   return s + cq_measure(q);
 }

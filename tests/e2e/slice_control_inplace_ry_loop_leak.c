@@ -54,7 +54,7 @@
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* ⚠ REWRITTEN PROGRAM (3qlq Inc 1, OQ-3 / prep-b2): one statement ADDED —
-   `q = cq_theta(q, 0.05);` immediately after each `cq_phi(0.1);`. The golden
+   `cq_theta(&q, 0.05);` immediately after each `cq_phi(0.1);`. The golden
    below is therefore a NEW PROGRAM's trace, not an audit substitution of the
    old one, and it is recorded as such in
    docs/prd/phase-04-swap-route-control/inc1-records/GOLDEN_REGEN.md.
@@ -81,7 +81,7 @@
    `icmp eq q, 5` out of the loop, and condWireDisposition's P4 precondition declines
    `condition predates a non-diagonal gate` (CLAUDE.md row W / drbq.12). MEASURE this
    before assuming; if it holds, the shape needs a DIFFERENT variant-maker (an Ry,
-   `q = cq_theta(q, 0.1)`) and that is a semantic change, not a migration.
+   `cq_theta(&q, 0.1)`) and that is a semantic change, not a migration.
    (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_inplace_ry_loop_leak.c — bd test_C_libtooling-drbq Increment 3,
  * round-1 lens L3 Q1. THE O(K) FREEZE LEAK, MEASURED.
@@ -126,14 +126,14 @@
 
 int slice(void) {
     int q = 0; int r = 7;
-    q = cq_theta(q, 0.5);
-    r = cq_theta(r, 0.25);
+    cq_theta(&q, 0.5);
+    cq_theta(&r, 0.25);
     for (int i = 0; i < 2; ++i) {
         int s = r * 7;
         printf("%d\n", s);
-        if (q == 5) { r = cq_theta(r, 0.9); }
+        if (q == 5) { cq_theta(&r, 0.9); }
         cq_phi(0.1);
-        q = cq_theta(q, 0.05);   /* OQ-3: the loop-VARIANT maker */
+        cq_theta(&q, 0.05);      /* OQ-3: the loop-VARIANT maker */
     }
     return cq_measure(q) + cq_measure(r);
 }

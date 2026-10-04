@@ -23,7 +23,7 @@ int ext_f(int a);
 int g2(int a, int b);
 
 __attribute__((noinline)) int slice(int m) {
-    int q = cq_theta(m, 0.5);
+    int q = m; cq_theta(&q, 0.5);
     int y = 0;
     if (q > 5) y = ext_f(7);
     int t = h(y, m);

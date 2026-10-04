@@ -10,8 +10,8 @@ static double bfdim(double x, double y) {
     return __builtin_fmax(x - y, 0.0);                 /* positive difference     */
 }
 double slice(void) {
-    double q0 = cq_theta(0.5, 0.5);
-    double q1 = cq_theta(0.5, 0.5);
+    double q0 = 0.5; cq_theta(&q0, 0.5);
+    double q1 = 0.5; cq_theta(&q1, 0.5);
     return cq_measure(bfdim(q0, q1));                  /* (q,q): both tainted     */
 }
 int main(void) { (void) slice(); return 0; }

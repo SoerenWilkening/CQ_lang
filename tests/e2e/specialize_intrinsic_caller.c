@@ -23,7 +23,7 @@ int popcount_helper(int a);
 
 int slice(void) {
     int x = 5;
-    x = cq_theta(x, 0.5);
+    cq_theta(&x, 0.5);
     int y = popcount_helper(x);
     int z = cq_measure(y);
     return z;

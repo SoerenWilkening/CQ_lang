@@ -9,7 +9,7 @@
 __attribute__((noinline)) static void mysplit(int v, int *out) { *out = v + 7; }
 
 int slice(void) {
-    int x = cq_theta(0, 0.5);
+    int x = 0; cq_theta(&x, 0.5);
     int e;
     mysplit(x, &e);
     return cq_measure(e);

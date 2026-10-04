@@ -57,7 +57,7 @@ static double btan(double x) {
     return num / den;
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(btan(q));
 }
 int main(void) { (void) slice(); return 0; }

@@ -16,7 +16,7 @@
 
        for (i < 2) {
            if (a > 5 && a < 20) { cq_phi(PI); }   <-- mark the range
-           a = cq_theta(a, -0.5);
+           cq_theta(&a, -0.5);
        }
 
    AT HEAD IT DECLINED, and its hand-unrolled twin compiled. `clang -O1`
@@ -52,13 +52,13 @@
 int slice(void) {
     int a = 0;
 
-    a = cq_theta(a, 0.5);                                /* S */
+    cq_theta(&a, 0.5);                                   /* S */
 
     for (int i = 0; i < 2; ++i) {
         if (a > 5 && a < 20) {                           /* O: range oracle */
             cq_phi(3.14159265358979323846);
         }
-        a = cq_theta(a, -0.5);                           /* S-dagger */
+        cq_theta(&a, -0.5);                              /* S-dagger */
     }
 
     return cq_measure(a);

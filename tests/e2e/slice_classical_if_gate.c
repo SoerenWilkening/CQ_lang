@@ -4,7 +4,7 @@
    docs/prd/phase-04-swap-route-control/inc1-records/GOLDEN_REGEN.md §12.
 
      OLD: if (taken) cq_phi(0.25);        / if (nottaken) cq_phi(0.75);
-     NEW: if (taken) q1 = cq_theta(q1,.25); / if (nottaken) q2 = cq_theta(q2,.75);
+     NEW: if (taken) cq_theta(&q1,.25); / if (nottaken) cq_theta(&q2,.75);
 
    WHY. This slice's whole subject is the CONTRAST — one classically-guarded gate
    FIRES this shot and one does NOT — and under owner decision D2 a
@@ -54,11 +54,11 @@ int main(int argc, char **argv) {
     (void) argv;
     int taken    = argc > 0;       /* 1 on every real invocation */
     int nottaken = argc > 100;     /* 0 on every real invocation */
-    int q1 = cq_theta(3, 0.5);     /* alloc i32(3) + ry            */
-    if (taken)    q1 = cq_theta(q1, 0.25);   /* gate FIRES this shot   */
+    int q1 = 3; cq_theta(&q1, 0.5); /* alloc i32(3) + ry            */
+    if (taken)    cq_theta(&q1, 0.25);       /* gate FIRES this shot   */
     int m1 = cq_measure(q1);
-    int q2 = cq_theta(4, 0.5);     /* alloc i32(4) + ry            */
-    if (nottaken) q2 = cq_theta(q2, 0.75);   /* gate does NOT fire     */
+    int q2 = 4; cq_theta(&q2, 0.5); /* alloc i32(4) + ry            */
+    if (nottaken) cq_theta(&q2, 0.75);       /* gate does NOT fire     */
     int m2 = cq_measure(q2);
     return (m1 + m2) & 0;
 }

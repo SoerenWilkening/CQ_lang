@@ -12,6 +12,7 @@
 // support is a tracked pre-freeze follow-up (D5), out of this increment.
 
 _BitInt(24) seed_bitint(_BitInt(24) v) {
-    // CHECK: error: controlling expression type '_BitInt(24)' not compatible with any generic association type
-    return cq_theta(v, 0.5);
+    // CHECK: error: controlling expression type '_BitInt(24) *' not compatible with any generic association type
+    cq_theta(&v, 0.5);
+    return v;
 }

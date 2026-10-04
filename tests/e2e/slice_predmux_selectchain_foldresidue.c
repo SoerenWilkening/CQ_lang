@@ -37,7 +37,7 @@ union IEEEl2bits {
 };
 
 long double slice(void) {
-    long double y = cq_theta(0.5L, 0.5);  /* taint y -> handle (alloc, ry)       */
+    long double y = 0.5L; cq_theta(&y, 0.5); /* taint y -> handle (alloc, ry)       */
     long double x = 0.5L;                  /* classical const (x == 1.0 is false) */
     union IEEEl2bits ux; ux.e = x;         /* fp80 union stays in memory at -O1   */
     int32_t ex = ux.bits.exp;              /* exp(0.5L) = 16382 (cq folds this)   */

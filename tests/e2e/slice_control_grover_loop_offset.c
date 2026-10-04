@@ -47,16 +47,16 @@ volatile int cq_off = 3;
 int slice(void) {
     int q = 0;
 
-    q = cq_theta(q, 0.5);
+    cq_theta(&q, 0.5);
     q += cq_off;                             /* on the PRE-HEADER chain */
 
     for (int i = 0; i < 2; ++i) {
         if (q == 5) {
             cq_phi(CQ_PI);
         }
-        q = cq_theta(q, -0.5);
+        cq_theta(&q, -0.5);
         q += cq_off;                         /* on the LATCH chain */
-        q = cq_theta(q, 0.5);
+        cq_theta(&q, 0.5);
     }
 
     return cq_measure(q);

@@ -241,7 +241,7 @@ olm_asinl(long double x)
 }
 
 long double slice(void) {
-    long double q = cq_theta(0.5L, 0.5);
+    long double q = 0.5L; cq_theta(&q, 0.5);
     return cq_measure(olm_asinl(q));
 }
 

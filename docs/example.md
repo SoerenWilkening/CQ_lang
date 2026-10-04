@@ -59,7 +59,7 @@ int main(void) {
     int a = 3;
     int b = 5;
 
-    a = cq_theta(a, 0.5);            /* Ry(0.5) — a enters superposition  */
+    cq_theta(&a, 0.5);               /* Ry(0.5) — a enters superposition  */
 
     int c = a + b;                    /* taint propagates: c is quantum    */
 
@@ -78,8 +78,8 @@ distinguished only by whether the SSA value carries taint at the IR layer.
 ### `CQ.h` — what gets included
 
 `CQ.h` declares the `cq_theta` and `cq_measure` families (each fanned out across
-the C scalar types), the register-free `void cq_phi(double)`, the `cq_ry` macro
-and the `cq_invert_begin` / `cq_invert_end` markers
+the C scalar types; `cq_theta(&x, θ)` rotates `x` in place), the register-free
+`void cq_phi(double)` and the `cq_invert_begin` / `cq_invert_end` markers
 ([`frontend.md`](./frontend.md) §3). The example uses only the `int`
 specializations:
 
@@ -163,7 +163,8 @@ Four observations:
 3. **`%2 = add nsw i32 %1, 5`** is a stock LLVM `add` instruction. There
    is no `@cq_add` intrinsic. The pass will classify it as quantum
    purely from its operands' taint state.
-4. **`a` was reassigned in the source** (`a = cq_theta(a, 0.5)`); SSA
+4. **`a` was rotated in place in the source** (`cq_theta(&a, 0.5)`, which
+   expands to `a = cq_theta_si32(a, 0.5)`); SSA
    handles this by renaming — the pre-rotation classical value is the
    `i32 3` literal, the post-rotation tainted value is `%1`. No
    pre-existing taint signal needs to flow across the rebinding; the

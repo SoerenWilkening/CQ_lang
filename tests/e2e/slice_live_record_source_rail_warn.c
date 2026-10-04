@@ -6,7 +6,7 @@
        int q = cq_theta(u, 0.5);
        int w = q * 2;
        int c = q * 3;
-       w = cq_theta(w, 0.25);       <-- the chained, non-diagonal Ry
+       cq_theta(&w, 0.25);       <-- the chained, non-diagonal Ry
        return cq_measure(w) + cq_measure(c);
 
    `w` and `c` are both basis records of `q`, and the second rotation acts on
@@ -60,10 +60,10 @@
    the ruling says to compile anyway. */
 
 int slice(int u) {
-    int q = cq_theta(u, 0.5);
+    int q = u; cq_theta(&q, 0.5);
     int w = q * 2;
     int c = q * 3;
-    w = cq_theta(w, 0.25);
+    cq_theta(&w, 0.25);
     return cq_measure(w) + cq_measure(c);
 }
 int main(void) { (void) slice(1); return 0; }

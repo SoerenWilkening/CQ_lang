@@ -3,7 +3,7 @@
 #include <stdlib.h>
 int main(int argc, char **argv) {
   int n = atoi(argv[1]); if (n <= 0) return 1;
-  int q = cq_theta(argc, 0.5); int s = 0;
+  int q = argc; cq_theta(&q, 0.5); int s = 0;
   if (q > 5) cq_phi(0.3); q ^= 3; int c0 = q;
   if (q > 5) cq_phi(0.3); q ^= 3; int c1 = q;
   if (q > 5) cq_phi(0.3); q ^= 3; int c2 = q;

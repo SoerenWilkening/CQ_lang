@@ -36,7 +36,7 @@
    deterministic regardless of q. */
 int slice(void) {
     int q = 7;
-    q = cq_theta(q, 0.5);          /* alloc i32(7) + ry_i32                  */
+    cq_theta(&q, 0.5);             /* alloc i32(7) + ry_i32                  */
     if (q > 5) {                   /* region 1 — swap-routed phase arm       */
         cq_phi(0.25);
     }

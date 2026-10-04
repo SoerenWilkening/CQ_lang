@@ -18,11 +18,11 @@
    rotation FOLLOWED BY a classical shift of the register, and the oracle is a
    COMPUTATION rather than a compare against a constant:
 
-       S    q = cq_theta(q, 0.5);  q += off;               prepare, then shift
+       S    cq_theta(&q, 0.5);  q += off;               prepare, then shift
        O    if (((q * 5) >> 2) == 5) cq_phi(PI);    the DERIVED oracle
-       S-   q -= off;  q = cq_theta(q, -0.5);              un-shift, un-prepare
+       S-   q -= off;  cq_theta(&q, -0.5);              un-shift, un-prepare
        R0   if (q == 0) cq_phi(PI);                 reflect about |0>
-       S    q = cq_theta(q, 0.5);  q += off;               re-prepare
+       S    cq_theta(&q, 0.5);  q += off;               re-prepare
        M    measure q
 
    IT IS THE UNION OF TWO SLICES THAT ALREADY SHIP, and until this increment the
@@ -102,17 +102,17 @@ volatile int off = 3;
 int slice(void) {
     int q = 0;
 
-    q = cq_theta(q, 0.5);                       /* S  */
+    cq_theta(&q, 0.5);                          /* S  */
     q += off;
     if (((q * 5) >> 2) == 5) {                  /* O — the derived oracle */
         cq_phi(CQ_PI);
     }
     q -= off;                                   /* S- */
-    q = cq_theta(q, -0.5);
+    cq_theta(&q, -0.5);
     if (q == 0) {                               /* R0 */
         cq_phi(CQ_PI);
     }
-    q = cq_theta(q, 0.5);                       /* S  */
+    cq_theta(&q, 0.5);                          /* S  */
     q += off;
     return cq_measure(q);
 }

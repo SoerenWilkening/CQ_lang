@@ -3,8 +3,8 @@
    recorded as such in GOLDEN_REGEN.md §12.
 
      OLD: case 1: cq_phi(0.25);   case 2: cq_phi(0.50); cq_phi(0.55);   ...
-     NEW: case 1: q1 = cq_theta(q1,.25);  case 2: q1 = cq_theta(q1,.50);
-                                          q1 = cq_theta(q1,.55);       ...
+     NEW: case 1: cq_theta(&q1,.25);  case 2: cq_theta(&q1,.50);
+                                          cq_theta(&q1,.55);       ...
 
    WHY — identical to `slice_classical_if_gate`'s (read it there in full). All
    SEVEN gates were classically controlled, so D2 deleted every one of them:
@@ -61,11 +61,11 @@ int main(int argc, char **argv) {
        the program name). The modulo keeps the value small and the switch
        genuinely classical + un-foldable. */
     int sel = (argc + 1) % 4;
-    int q1 = cq_theta(3, 0.5);          /* alloc i32(3) + ry */
+    int q1 = 3; cq_theta(&q1, 0.5);     /* alloc i32(3) + ry */
     switch (sel) {
-        case 1: q1 = cq_theta(q1, 0.25); break;                       /* no fire   */
-        case 2: q1 = cq_theta(q1, 0.50); q1 = cq_theta(q1, 0.55); break;/* BOTH FIRE */
-        case 3: q1 = cq_theta(q1, 0.60); break;                       /* no fire   */
+        case 1: cq_theta(&q1, 0.25); break;                       /* no fire   */
+        case 2: cq_theta(&q1, 0.50); cq_theta(&q1, 0.55); break;/* BOTH FIRE */
+        case 3: cq_theta(&q1, 0.60); break;                       /* no fire   */
         default: break;                                             /* no fire   */
     }
     int m1 = cq_measure(q1);
@@ -73,10 +73,10 @@ int main(int argc, char **argv) {
     /* argc + 7 == 8 on every real invocation -> an absent case -> the DEFAULT
        arm: no case rz fires. */
     int sel2 = argc + 7;
-    int q2 = cq_theta(4, 0.5);          /* alloc i32(4) + ry */
+    int q2 = 4; cq_theta(&q2, 0.5);     /* alloc i32(4) + ry */
     switch (sel2) {
-        case 2: q2 = cq_theta(q2, 0.75); break;                       /* no fire   */
-        case 3: q2 = cq_theta(q2, 0.90); q2 = cq_theta(q2, 0.95); break;/* no fire   */
+        case 2: cq_theta(&q2, 0.75); break;                       /* no fire   */
+        case 3: cq_theta(&q2, 0.90); cq_theta(&q2, 0.95); break;/* no fire   */
         default: break;                                             /* default   */
     }
     int m2 = cq_measure(q2);

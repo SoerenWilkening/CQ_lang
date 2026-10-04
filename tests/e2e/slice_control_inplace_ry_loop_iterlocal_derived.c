@@ -3,7 +3,7 @@
    is the pair that makes clause (c3) a measurable fence rather than a comment.
 
        for (k < K) { int r = cq_theta(7, .25);
-                     if ((q >> k) & 1) r = cq_theta(r, .2);
+                     if ((q >> k) & 1) cq_theta(&r, .2);
                      s += cq_measure(r); }
 
    Unlike the `_Bool` slices, this body mints TEMPLATE rails for the condition
@@ -27,11 +27,11 @@
 #endif
 
 int slice(void) {
-    int q = cq_theta(5, 0.5);
+    int q = 5; cq_theta(&q, 0.5);
     int s = 0;
     for (int k = 0; k < CQ_K; ++k) {
-        int r = cq_theta(7, 0.25);
-        if ((q >> k) & 1) r = cq_theta(r, 0.2);
+        int r = 7; cq_theta(&r, 0.25);
+        if ((q >> k) & 1) cq_theta(&r, 0.2);
         s += cq_measure(r);
     }
     return s + cq_measure(q);

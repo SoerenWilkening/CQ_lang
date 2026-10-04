@@ -35,8 +35,8 @@
    and in TRACK_XDU2_16.md. The lowered module is K-INDEPENDENT (measured: the
    same line count at `i < 3` and `i < 1000`, without `-g`). */
 int slice(void) {
-    int q = cq_theta(0, 0.25);
-    int r = cq_theta(1, 0.5);
+    int q = 0; cq_theta(&q, 0.25);
+    int r = 1; cq_theta(&r, 0.5);
     int s = 0;
     for (int i = 0; i < 3; ++i) {
         int t = ((q > 1) & (r < 5)) ? i : 55;

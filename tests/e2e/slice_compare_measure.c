@@ -20,8 +20,8 @@
 int slice(void) {
     int   xi = 3;
     float xf = 2.0f;
-    xi = cq_theta(xi, 0.5);    /* taint xi -> handle (alloc i32(3), ry_i32)   */
-    xf = cq_theta(xf, 0.25);   /* taint xf -> handle (alloc f32(2.0), ry_f32) */
+    cq_theta(&xi, 0.5);        /* taint xi -> handle (alloc i32(3), ry_i32)   */
+    cq_theta(&xf, 0.25);       /* taint xf -> handle (alloc f32(2.0), ry_f32) */
 
     int lt  = (xi < 10);       /* icmp slt -> flag -> zext i1->i32 -> measure */
     int neq = (xf != 1.0f);    /* fcmp une -> flag -> zext i1->i32 -> measure */

@@ -14,7 +14,7 @@
 
        int p = cq_theta(7, 0.25);
        int r = p * 5;                                     // an OUT-OF-PLACE rail
-       if (q == 5) r = cq_theta(r, 0.9); else r = cq_theta(r, 0.3);
+       if (q == 5) cq_theta(&r, 0.9); else cq_theta(&r, 0.3);
        int s = r + 1;                                     // a post-gate user
        return cq_measure(q) + cq_measure(s);
 
@@ -46,11 +46,11 @@
 int slice(void) {
     int q = 3;
     int p = 7;
-    q = cq_theta(q, 0.5);
-    p = cq_theta(p, 0.25);
+    cq_theta(&q, 0.5);
+    cq_theta(&p, 0.25);
     int r = p * 5;
-    if (q == 5) r = cq_theta(r, 0.9);
-    else        r = cq_theta(r, 0.3);
+    if (q == 5) cq_theta(&r, 0.9);
+    else        cq_theta(&r, 0.3);
     int s = r + 1;
     return cq_measure(q) + cq_measure(s);
 }

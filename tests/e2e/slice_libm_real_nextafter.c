@@ -89,7 +89,7 @@ __attribute__((always_inline)) static inline double olm_nextafter(double x, doub
 }
 
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(olm_nextafter(q, 0.5));
 }
 int main(void) { (void) slice(); return 0; }

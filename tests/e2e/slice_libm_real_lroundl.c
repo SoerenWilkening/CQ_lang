@@ -77,7 +77,7 @@ __attribute__((always_inline)) static inline long olm_lroundl(long double x)
 }
 
 long slice(void) {
-    long double q = cq_theta(0.5L, 0.5);
+    long double q = 0.5L; cq_theta(&q, 0.5);
     return cq_measure(olm_lroundl(q));
 }
 int main(void) { (void) slice(); return 0; }

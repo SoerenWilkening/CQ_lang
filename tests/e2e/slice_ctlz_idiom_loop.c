@@ -105,7 +105,7 @@
 /* (A) the idiom with a preheader pre-shift, MEASURED — the forward chain. */
 __attribute__((noinline))
 int scan_measured(unsigned u) {
-    unsigned w  = cq_theta(u, 0.25);
+    unsigned w = u; cq_theta(&w, 0.25);
     unsigned hx = (w & 0x000ffffeu) | 1u;      /* 1 <= hx < 2^20, as s_ilogb knows */
     int ix = -1022;
     for (hx <<= 11; (int) hx > 0; hx <<= 1)    /* hx<<11 is positive: guard folds */
@@ -117,7 +117,7 @@ int scan_measured(unsigned u) {
    cq_phi — the four `_unc` twins and the LIFO reversal. */
 __attribute__((noinline))
 void scan_uncomputed(unsigned u) {
-    unsigned w  = cq_theta(u, 0.10);
+    unsigned w = u; cq_theta(&w, 0.10);
     unsigned lx = (w & 0x7ffffffeu) | 1u;      /* 1 <= lx < 2^31: provably positive */
     int ix = -1043;
     for (; (int) lx > 0; lx <<= 1)

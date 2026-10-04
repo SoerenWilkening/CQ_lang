@@ -16,12 +16,12 @@
    BYTE-IDENTICAL to it. `m` and `n` stay runtime so every other gate is the same
    program. */
 __attribute__((noinline)) int slice(int m, int n) {
-    int q = cq_theta(m, 0.5);
+    int q = m; cq_theta(&q, 0.5);
     (void) q;
     int t = 6;
-    int q2 = cq_theta(n, 0.3);
+    int q2 = n; cq_theta(&q2, 0.3);
     int r = t;
-    if (q2 > 3) r = cq_theta(t, 0.2);
+    if (q2 > 3) { r = t; cq_theta(&r, 0.2); }
     return cq_measure(r) + cq_measure(q2);
 }
 

@@ -26,7 +26,7 @@
 #include <stdio.h>
 
 __attribute__((noinline)) void emit_both(int seed) {
-    int q = cq_theta(seed, 0.5);
+    int q = seed; cq_theta(&q, 0.5);
     if (q > 5)
         printf("%d", q);   /* TRUE arm  -> fires on flag (no cqrt_x bracket) */
     else

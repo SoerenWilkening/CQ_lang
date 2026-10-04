@@ -16,11 +16,11 @@
 // ⚠ This probe is the if/else spelling because it is the one -O1 merges at every
 // width with no pin needed; it pins the ATTRIBUTE, not the fmt3 hazard itself (that
 // is `cq_theta_nomerge.c` + the `…_nomerge_*.ll` lit fixtures). The ternary spelling
-// `r = cq_theta(r, c ? A : B)` is unaffected by the attribute and is not probed here.
+// `cq_theta(&r, c ? A : B)` is unaffected by the attribute and is not probed here.
 
 #define NM_PROBE(T, NAME)                                                       \
     T NAME(T r, int c) {                                                        \
-        if (c) r = cq_theta(r, 0.9); else r = cq_theta(r, 0.3);                 \
+        if (c) cq_theta(&r, 0.9); else cq_theta(&r, 0.3);                    \
         return r;                                                               \
     }
 

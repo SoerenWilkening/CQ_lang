@@ -27,8 +27,8 @@ volatile bool gbit = false;
 
 int main(void) {
     bool x = gbit;
-    bool b = cq_theta(x, 0.5);
-    bool b3 = cq_theta(x, 0.9);
+    bool b = x; cq_theta(&b, 0.5);
+    bool b3 = x; cq_theta(&b3, 0.9);
     int a = b ? 2 : 5;
     return cq_measure(a) + cq_measure(b3);
 }

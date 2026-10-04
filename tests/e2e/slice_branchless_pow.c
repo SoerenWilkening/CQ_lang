@@ -86,7 +86,7 @@ static double bpow(double x, double y) {
     return bexp2(y * blog2(x));                           /* x^y = 2^(y·log2 x)      */
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(bpow(q, 0.5));                      /* (q,c): x tainted, y const */
 }
 int main(void) { (void) slice(); return 0; }

@@ -41,7 +41,7 @@
    force-included by run_slice.sh (-include CQ.h -I include). */
 int slice(void) {
     int q = 3;
-    q = cq_theta(q, 0.5);          /* taint q -> handle (alloc i32(3), ry_i32)  */
+    cq_theta(&q, 0.5);             /* taint q -> handle (alloc i32(3), ry_i32)  */
     cq_phi(0.9);            /* pre-region Rz — the DERIVED routed base   */
     if (q > 5) {                   /* tainted condition -> swap-route both arms */
         cq_phi(0.25);       /* then gate 1 (Rz) — VERBATIM on its rail   */

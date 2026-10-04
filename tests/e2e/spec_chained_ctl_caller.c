@@ -32,7 +32,7 @@ int gg(int a, int b);
 
 int slice(void) {
     int q = 3;
-    q = cq_theta(q, 0.5);          /* taint q -> condition handle */
+    cq_theta(&q, 0.5);             /* taint q -> condition handle */
     int y = 5;
     if (q > 5)                     /* region 1: tainted-condition classical-call arm -> %out1 */
         y = ext_f(7);

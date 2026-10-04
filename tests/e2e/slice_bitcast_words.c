@@ -11,7 +11,7 @@
    bitcast rail is minted and the second bitcast reads the mutated rail directly.
    The two bitcast symbols this slice exists to link-prove are untouched. */
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);          /* tainted f64                       */
+    double q = 0.5; cq_theta(&q, 0.5);      /* tainted f64                       */
     unsigned long long bits;
     __builtin_memcpy(&bits, &q, 8);         /* EXTRACT_WORDS: bitcast f64 -> i64  */
     bits ^= 1ULL;                           /* flip mantissa LSB (cqrt_xorc_i64)  */

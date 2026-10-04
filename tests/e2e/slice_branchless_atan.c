@@ -62,7 +62,7 @@ static double batan(double x) {
     return __builtin_copysign(res, x);
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(batan(q));
 }
 int main(void) { (void) slice(); return 0; }

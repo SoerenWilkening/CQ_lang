@@ -194,7 +194,7 @@ olm_atan2(double y, double x)
 }
 
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(olm_atan2(q, 0.5));
 }
 int main(void) { (void) slice(); return 0; }

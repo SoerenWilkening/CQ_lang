@@ -11,9 +11,9 @@ the round-4 finding is invisible.
 WHAT THIS GATE IS FOR, stated as the defect it would have caught. Move ONE
 `cq_theta` to the front of the body:
 
-    for (i < 2) { a = cq_theta(a, 0.25);
+    for (i < 2) { cq_theta(&a, 0.25);
                   if (sqrt(a + 3.) <= 3.5) { a = cq_phi(a, PI); }
-                  a = cq_theta(a, -0.5); }
+                  cq_theta(&a, -0.5); }
 
 and the M-B interior partition stopped discharging the oracle's ancilla chain.
 `opt` exited 0. `opt -verify` was clean. STRICT `free_pairing_check.py` reported
@@ -237,7 +237,7 @@ MEANING AND ONE GOES VACUOUS:
     everywhere, which is the only cheap witness for D2 this file can carry.
 
   * THE Ry-ARM CELLS (`RY_REGION`, `RGATE`, `RECORD_R`) ARE UNCHANGED. `cq_theta`
-    keeps `a = cq_theta(a, T)` (PRD D5); nothing on that axis touches `cq_phi`
+    keeps `cq_theta(&a, T)` (PRD D5); nothing on that axis touches `cq_phi`
     except the `rzpost` RGATE and the `rzry`/`ryrz` sequential pairs, whose Rz
     half becomes a kickback exactly as above.
 
@@ -359,7 +359,7 @@ import cq_stage_cache  # noqa: E402  (bd 2dfk: stage 1 + stages 3/4 are content-
 #     discharge point lands.
 PREFIX = {
     "none": "",
-    "ry": "        a = cq_theta(a, 0.25);\n",
+    "ry": "        cq_theta(&a, 0.25);\n",
     "rz": "        a = cq_phi(a, 0.125);\n",
     "add": "        a = a + off;\n",
     "xor": "        a = a ^ 9;\n",
@@ -392,7 +392,7 @@ PRELOOP = {
     "xorpre": "    a = a ^ 9;\n",
     "addpresel": "    a = a + 7;\n",
 }
-# The text emitted between the head (`int a = ...; a = cq_theta(a, 0.5);`) and
+# The text emitted between the head (`int a = ...; cq_theta(&a, 0.5);`) and
 # `PRELOOP`, i.e. BEFORE the pre-loop in-place op — bd 3qlq Inc 1, the FOURTH
 # C-1 round (F-I2-1). Only `addpresel` has one, and every other cell takes the
 # `""` default, which is what keeps all 1144 pre-existing generated sources
@@ -417,8 +417,8 @@ PRELOOP = {
 # `%out` holds a NON-CONSTANT value is the population.
 PREHEAD = {
     "addpresel": ("    int mb = 0, mc = 0;\n"
-                  "    mb = cq_theta(mb, 0.25);\n"
-                  "    mc = cq_theta(mc, 0.3);\n"
+                  "    cq_theta(&mb, 0.25);\n"
+                  "    cq_theta(&mc, 0.3);\n"
                   "    a = (a > 5) ? mb : mc;\n"),
 }
 # The five keys the 120-cell PREFIX x REGION x SUFFIX product iterates. Spelled
@@ -435,7 +435,7 @@ REGION = {
 }
 SUFFIX = {
     "none": "",
-    "ry": "        a = cq_theta(a, -0.5);\n",
+    "ry": "        cq_theta(&a, -0.5);\n",
     "rz": "        a = cq_phi(a, -0.125);\n",
     "add": "        a = a + off;\n",
 }
@@ -503,7 +503,7 @@ RECORD_GRID_SUFFIX = ("none", "ry")
 #                (Ry) while the CONDITION reads `a`. `r`'s physical wire is
 #                disjoint from every condition wire, which is PRD §4 R4 and is
 #                the whole accept shape. A cell here also carries `int r = 0;
-#                r = cq_theta(r, 0.3);` in the head and `+ cq_measure(r)` in the
+#                cq_theta(&r, 0.3);` in the head and `+ cq_measure(r)` in the
 #                tail — those two lines appear in NO other cell in this file, by
 #                construction, so the 156 pre-existing cells' source text is
 #                byte-identical to what it was before this axis existed.
@@ -523,19 +523,19 @@ RECORD_GRID_SUFFIX = ("none", "ry")
 #                ROTATED one. Same three shapes, same reasons, same
 #                declaration-hoisted-out-of-the-loop harness constraint.
 RY_REGION = {
-    "req": "        if (a == 5) { r = cq_theta(r, 0.9); }\n",
+    "req": "        if (a == 5) { cq_theta(&r, 0.9); }\n",
     # POLARITY. `clang -O1` canonicalizes `if (u != k)` to `icmp eq` with the
     # successors SWAPPED, so the gate arm is the FALSE successor and the emitter
     # must bracket the flag with `cqrt_x` (Rule 9). Not a re-spelling of `req`.
-    "rne": "        if (a != 5) { r = cq_theta(r, 0.9); }\n",
-    "req0": "        if (a == 0) { r = cq_theta(r, 0.9); }\n",
+    "rne": "        if (a != 5) { cq_theta(&r, 0.9); }\n",
+    "req0": "        if (a == 0) { cq_theta(&r, 0.9); }\n",
     # DERIVED condition — the one that brings the uncompute spine in with four
     # template rails between the mint and the strip.
-    "rder": "        if (sqrt(a + 3.) <= 3.5) { r = cq_theta(r, 0.9); }\n",
+    "rder": "        if (sqrt(a + 3.) <= 3.5) { cq_theta(&r, 0.9); }\n",
     # TWO-SIDED: `clang -O1` emits `add %a, -6; icmp ult %t, 14`, so the condition
     # temp wears the dtzb IN-PLACE SHAPE on the condition rail (the OD-A oracle)
     # while the ARM relabels a different rail.
-    "rrange": "        if (a > 5 && a < 20) { r = cq_theta(r, 0.9); }\n",
+    "rrange": "        if (a > 5 && a < 20) { cq_theta(&r, 0.9); }\n",
     # SEQUENTIAL pair in one body, both orders. Two `br` diamonds in a row lower
     # flat since bd hcrg; here one is an Rz region on the CONDITION register and
     # the other an Ry region on the ROTATED one, which is the first shape in this
@@ -543,15 +543,15 @@ RY_REGION = {
     # one iteration. The order is an axis because the emission-ORDER fix (hcrg)
     # is what makes sequential regions legal at all.
     "rzry": ("        if (a == 5) { a = cq_phi(a, M_PI); }\n"
-             "        if (a == 6) { r = cq_theta(r, 0.9); }\n"),
-    "ryrz": ("        if (a == 5) { r = cq_theta(r, 0.9); }\n"
+             "        if (a == 6) { cq_theta(&r, 0.9); }\n"),
+    "ryrz": ("        if (a == 5) { cq_theta(&r, 0.9); }\n"
              "        if (a == 6) { a = cq_phi(a, M_PI); }\n"),
     # ── the two DECLINE CONTROLS. Singletons, deliberately not families. ──
     # R4: the Ry is on the CONDITION register's own wire, so the flag strip's
     # `icmp_..._unc` would recompute the compare against a RELABELLED register.
     # A permanent decline, in the loop and out of it; one cell is the whole
     # witness (the family lives in `control_inplace_ry_reject_cond_register.ll`).
-    "rcond": "        if (a == 5) { a = cq_theta(a, 0.9); }\n",
+    "rcond": "        if (a == 5) { cq_theta(&a, 0.9); }\n",
     # SCOPED OUT of Inc 3 — when this was written `clang -O1` never handed this
     # to the pass as a diamond: SimplifyCFG merged the two arms into ONE call with
     # a `select` on the ANGLE (bd drbq Inc 2b's by-difference shape), and the
@@ -562,8 +562,8 @@ RY_REGION = {
     # option B), so the if/else stays an if/else, reaches the rolled in-place Ry
     # arm's if/else form, and the cell is now ACCEPT-IDENTICAL (expected file
     # updated by hand, with the reason, in the same change).
-    "rifelse": "        if (a == 5) { r = cq_theta(r, 0.9); }"
-               " else { r = cq_theta(r, 0.3); }\n",
+    "rifelse": "        if (a == 5) { cq_theta(&r, 0.9); }"
+               " else { cq_theta(&r, 0.3); }\n",
     # ── the OPAQUE-THRESHOLD family, and it is not decoration: it is this
     # axis's instance of the docstring's "ONE WAY THAT PROPERTY CAN BREAK
     # WITHOUT A COMPILER BUG", found by MEASURING the first regeneration rather
@@ -588,10 +588,10 @@ RY_REGION = {
     # ACCEPTS — i.e. `UNROLLED-ONLY`, the live Inc-3 witness. The literal family
     # above is KEPT, in full: it is the shape a reader writes, its a-gated cells
     # are live on their own, and its inert cells now record the hoist decline.
-    "oeq": "        if (a == off) { r = cq_theta(r, 0.9); }\n",
-    "one": "        if (a != off) { r = cq_theta(r, 0.9); }\n",
+    "oeq": "        if (a == off) { cq_theta(&r, 0.9); }\n",
+    "one": "        if (a != off) { cq_theta(&r, 0.9); }\n",
     "oder": "        if (sqrt(a + 3.) <= (double)off)"
-            " { r = cq_theta(r, 0.9); }\n",
+            " { cq_theta(&r, 0.9); }\n",
     # ── the CONTROLLED STATE-PREP decline control (bd
     # test_C_libtooling-drbq Inc 4 / drbq.5). ONE cell, added BEFORE any
     # Inc-4 lowering exists, for the same reason the whole Ry axis was
@@ -606,7 +606,7 @@ RY_REGION = {
     #
     # ⚠ WHAT THIS CELL CANNOT TELL YOU, said plainly because it declines for
     # TWO independent reasons and a control that does should say so. The
-    # wrapper seeds `r = cq_theta(r, 0.3)` before the loop on every
+    # wrapper seeds `cq_theta(&r, 0.3)` before the loop on every
     # `RY_REGION` cell, so the merge phi's pred-edge incoming here is the
     # loop-carried QUANTUM `r`, never a constant — which makes the region a
     # genuine Q data mux (a fresh prepped rail on one edge, a live handle on
@@ -618,7 +618,7 @@ RY_REGION = {
     # means "Inc 4 widened into a loop OR into a non-constant pred incoming";
     # it does not isolate which. The isolating flat cells are the lit family,
     # not this file.
-    "rprep": "        if (a == 5) { r = cq_theta(0, 0.9); }\n",
+    "rprep": "        if (a == 5) { r = 0; cq_theta(&r, 0.9); }\n",
     # ── SUB-GRID F: THE MIXED LOOP (bd 3qlq Inc 1, the Rule-13 CLEARANCE
     # finding C-1, the BLOCK). The clearance's §4 (ii) note is the reason these
     # exist: "the C-1 mixed-loop shape has neither a fixture nor a twin gate nor
@@ -667,13 +667,13 @@ INDEXED_REGION = ("pbit", "pbitd", "pbitne", "pbitned")
 # `return`. Empty for every pre-C-1 region, which is what keeps their generated
 # sources byte-unchanged.
 POSTLOOP_FOR_REGION = {
-    "pbitd": "    a = cq_theta(a, 0.9);\n",
-    "pbitned": "    a = cq_theta(a, 0.9);\n",
+    "pbitd": "    cq_theta(&a, 0.9);\n",
+    "pbitned": "    cq_theta(&a, 0.9);\n",
 }
 RGATE = {
     "none": {"pre": "", "post": ""},
-    "rypre": {"pre": "        r = cq_theta(r, 0.25);\n", "post": ""},
-    "rypost": {"pre": "", "post": "        r = cq_theta(r, 0.25);\n"},
+    "rypre": {"pre": "        cq_theta(&r, 0.25);\n", "post": ""},
+    "rypost": {"pre": "", "post": "        cq_theta(&r, 0.25);\n"},
     "rzpost": {"pre": "", "post": "        r = cq_phi(r, 0.125);\n"},
     "addpost": {"pre": "", "post": "        r = r + off;\n"},
 }
@@ -898,8 +898,8 @@ B_ARM_TEXT = {
     # spelling `cq_phi(M_PI);`. A hand-written void arm here would be a second
     # spelling of the surface and could drift from the rolled/unrolled pair.
     "phi": "{ a = cq_phi(a, M_PI); }",
-    "ry": "{ r = cq_theta(r, 0.9); }",
-    "prep": "{ r = cq_theta(7, 0.9); }",
+    "ry": "{ cq_theta(&r, 0.9); }",
+    "prep": "{ r = 7; cq_theta(&r, 0.9); }",
     "val": "{ a = a - 3; }",
 }
 # The four arms the B1 CORE PRODUCT iterates. Spelled out rather than taken from
@@ -973,10 +973,10 @@ B_SECOND.update({c + "phi": _B_ARM_SECOND["phi"] for c in B6_COND_TEXT})
 # the sub-grid-F POST-LOOP DIFFUSION, which is what turns a leaked per-trip rail
 # from a Rule-6 leak into a WRONG UNITARY.
 B_ARM_TEXT.update({
-    "ilry": "{ r = cq_theta(r, 0.9); }",
-    "ilprep": "{ r = cq_theta(7, 0.9); }",
-    "il2": "{ r = cq_theta(r, 0.9); }",
-    "ilesc": "{ r = cq_theta(r, 0.9); }",
+    "ilry": "{ cq_theta(&r, 0.9); }",
+    "ilprep": "{ r = 7; cq_theta(&r, 0.9); }",
+    "il2": "{ cq_theta(&r, 0.9); }",
+    "ilesc": "{ cq_theta(&r, 0.9); }",
 })
 B_DERIVED_COND_TEXT = {
     "d": "if ((a >> i) & 1)",
@@ -1007,12 +1007,12 @@ assert set(B_SECOND) == set(B_REGION) == set(B_BCOND), \
 # same `_wrap(index=...)` path sub-grid F's per-bit regions take.
 INDEXED_REGION = INDEXED_REGION + tuple(
     c + a for c in B_DERIVED_COND_TEXT for a in ("ilry", "ilesc"))
-POSTLOOP_FOR_REGION["ddilry"] = "    a = cq_theta(a, 0.9);\n"
+POSTLOOP_FOR_REGION["ddilry"] = "    cq_theta(&a, 0.9);\n"
 # How `b` is carried. Same `{pre, post}` shape as `RGATE` and merged into the one
 # dict `sources` indexes, so there is a single gate-slot spelling (Rule 14).
 BCARRY = {
     "binv": {"pre": "", "post": ""},
-    "bcar": {"pre": "        b = cq_theta(b, 0.25);\n", "post": ""},
+    "bcar": {"pre": "        cq_theta(&b, 0.25);\n", "post": ""},
 }
 GATE_ALL = dict(RGATE, **BCARRY)
 
@@ -1023,7 +1023,7 @@ GATE_ALL = dict(RGATE, **BCARRY)
 # six kinds side by side instead of reconstructing them from conditionals.
 #
 #   decl  a line in the head, BEFORE the `_Bool b` declaration
-#   seed  a line in the head, AFTER `a = cq_theta(a, 0.5);`
+#   seed  a line in the head, AFTER `cq_theta(&a, 0.5);`
 #   pre   a line at the TOP of the loop body (after the carry gate)
 #   post  a line at the BOTTOM of the loop body (before the SUFFIX)
 #   tail  what the `return` additionally measures
@@ -1035,7 +1035,7 @@ SECOND = {
     "none": {"decl": "", "seed": "", "pre": "", "post": "", "tail": "",
              "scope": False},
     "quantum": {"decl": "    int r = 0;\n",
-                "seed": "    r = cq_theta(r, 0.3);\n",
+                "seed": "    cq_theta(&r, 0.3);\n",
                 "pre": "", "post": "", "tail": " + cq_measure(r)",
                 "scope": False},
     "classical": {"decl": "    int r = 7;\n", "seed": "",
@@ -1057,7 +1057,7 @@ SECOND = {
     # defined in the loop is read outside it, so clause (c3) is satisfied. `s` is
     # the classical accumulator that makes the per-trip read a real read.
     "iterlocal": {"decl": "    int s = 0;\n", "seed": "",
-                  "pre": "        int r = cq_theta(7, 0.25);\n",
+                  "pre": "        int r = 7; cq_theta(&r, 0.25);\n",
                   "post": "        s += cq_measure(r);\n",
                   "tail": " + s", "scope": True},
     "iterlocalprep": {"decl": "    int s = 0;\n", "seed": "",
@@ -1065,15 +1065,15 @@ SECOND = {
                       "post": "        s += cq_measure(r);\n",
                       "tail": " + s", "scope": True},
     "iterlocal2": {"decl": "    int s = 0;\n", "seed": "",
-                   "pre": "        int r = cq_theta(7, 0.25);\n"
-                          "        int t = cq_theta(3, 0.125);\n",
+                   "pre": "        int r = 7; cq_theta(&r, 0.25);\n"
+                          "        int t = 3; cq_theta(&t, 0.125);\n",
                    "post": "        s += cq_measure(r) + cq_measure(t);\n",
                    "tail": " + s", "scope": True},
     # ⚠ THE ESCAPE. `last = r;` carries the per-trip register OUT of the loop and
     # the `return` reads it — the 19-vs-27 shape. It is the one kind here that
     # MUST decline on the rolled side.
     "iterlocalesc": {"decl": "    int last = 0;\n", "seed": "",
-                     "pre": "        int r = cq_theta(7, 0.25);\n",
+                     "pre": "        int r = 7; cq_theta(&r, 0.25);\n",
                      "post": "        last = r;\n",
                      "tail": " + cq_measure(last)", "scope": True},
 }
@@ -1342,40 +1342,40 @@ TRIPS = 2
 K_REGION = {
     # The DESIGN TARGET: one fresh rail per trip, written to its own cell. This
     # is `$PREV/trackI/probes/w1_bank_prep_only.c`'s body verbatim.
-    "kprep":  "        k[i] = cq_theta(k[i], 0.5);\n",
+    "kprep":  "        cq_theta(&k[i], 0.5);\n",
     # The same store inside a TAINTED-CONDITION ARM — the cascade's arm, and the
     # `MergePhiPeel` P10 `armWritesMemory` obstacle (`SCOPE_L1a` §4.4 (D)): the
     # peel refuses an arm that writes memory, and the promoter is supposed to
     # have removed the store before the peel ever looks.
-    "kcond":  "        if (a > 5) k[i] = cq_theta(k[i], 0.5);\n",
+    "kcond":  "        if (a > 5) cq_theta(&k[i], 0.5);\n",
     # D5, the allow-list's first complement: a bank LOAD used as a BRANCH
     # CONDITION. `SCOPE_L1a` calls this the headline silent failure if taint is
     # let across memory without the promotion — `br i1 %load` is untainted, so
     # `hasTaintedCondBranch` never fires and the ARM RUNS AS CLASSICAL CODE.
-    "kread":  "        k[i] = cq_theta(k[i], 0.5);\n"
-              "        if (k[i]) a = cq_theta(a, 0.25);\n",
+    "kread":  "        cq_theta(&k[i], 0.5);\n"
+              "        if (k[i]) cq_theta(&a, 0.25);\n",
     # D5, second complement: a bank load feeding ARITHMETIC.
-    "karith": "        k[i] = cq_theta(k[i], 0.5);\n"
+    "karith": "        cq_theta(&k[i], 0.5);\n"
               "        a = a + (int) k[i];\n",
     # C2 — a TAINTED INDEX. The negative that must keep 7.5's existing string and
     # never acquire a new one of its own (`SCOPE_L1a` §6.1).
-    "kidx":   "        k[a & 1] = cq_theta(k[a & 1], 0.5);\n",
+    "kidx":   "        cq_theta(&k[a & 1], 0.5);\n",
     # C6 — TOTALITY. Same body as `kprep`; the BANK is over-sized (see `K_BANK`)
     # so two trips leave six cells never written and never read.
-    "kover":  "        k[i] = cq_theta(k[i], 0.5);\n",
+    "kover":  "        cq_theta(&k[i], 0.5);\n",
     # TWO banks in one body — the GROUPING-KEY probe, the bank mirror of
     # sub-grid B7's W-5 two-iteration-local-rails cell. `staleRailRecordRead`
     # groups per ROOT MINT and a bank rail has no root mint at all
     # (`SCOPE_L1a` §4.4 (B)), so "which rails must interfere" is an open
     # question with two allocas in front of it.
-    "k2b":    "        k[i] = cq_theta(k[i], 0.5);\n"
-              "        m[i] = cq_theta(m[i], 0.25);\n",
+    "k2b":    "        cq_theta(&k[i], 0.5);\n"
+              "        cq_theta(&m[i], 0.25);\n",
     # The `int`-cell WIDTH control. The `[N x i1]` -> `[N x i32]` TYPE REWRITE is
     # one of the three pieces Track B lands; an `int` bank needs no rewrite at
     # all, so this pair is the discriminator between "the bank works" and "the
     # type rewrite works".
-    "kiprep": "        k[i] = cq_theta(k[i], 0.5);\n",
-    "kicond": "        if (a > 5) k[i] = cq_theta(k[i], 0.5);\n",
+    "kiprep": "        cq_theta(&k[i], 0.5);\n",
+    "kicond": "        if (a > 5) cq_theta(&k[i], 0.5);\n",
 }
 
 # (cell type, DECLARED bank size, whether a second bank `m` is declared).
@@ -1526,7 +1526,7 @@ def _bank_text(region, read):
 N_INNER = {
     "l2im": {"pre": "", "post":
              "        for (int j = 0; j < 2; ++j) {\n"
-             "            int u = cq_theta(6, 0.4);\n"
+             "            int u = 6; cq_theta(&u, 0.4);\n"
              "            s += cq_measure((u >> j) & 1);\n"
              "        }\n"},
     "l2iu": {"pre": "", "post":
@@ -1534,7 +1534,7 @@ N_INNER = {
              "            s += cq_measure((a >> (j + 8)) & 1);\n"},
     "l2ic": {"pre": "", "post":
              "        for (int j = 0; j < 2; ++j) {\n"
-             "            int u = cq_theta(6, 0.4);\n"
+             "            int u = 6; cq_theta(&u, 0.4);\n"
              "            s += cq_measure((u >> j) & 1) + cq_measure(a & 1);\n"
              "        }\n"},
 }
@@ -1585,12 +1585,12 @@ N_REGION = {
 # same way and for the same reason.
 N_ENCLOSE = {
     "l2inv": ("    for (int io = 0; io < 2; ++io) {\n"
-              "        int w = cq_theta(7, 0.3);\n",
+              "        int w = 7; cq_theta(&w, 0.3);\n",
               "        s += cq_measure(w);\n"
               "    }\n"),
     "l2invd": ("    for (int io = 0; io < 2; ++io) {\n"
-               "        int w = cq_theta(7, 0.3);\n",
-               "        w = cq_theta(w, 0.9);\n"
+               "        int w = 7; cq_theta(&w, 0.3);\n",
+               "        cq_theta(&w, 0.9);\n"
                "        s += cq_measure(w);\n"
                "    }\n"),
     "l2d3d": ("    for (int io = 0; io < 2; ++io) {\n", "    }\n"),
@@ -1601,14 +1601,14 @@ N_ENCLOSE = {
 # the property a faithful sibling needs — so N3 needs no new mechanism at all
 # (Rule 14: ask the slot that already owns the position).
 _N_SIBLING = ("    for (int jj = 0; jj < 2; ++jj) {\n"
-              "        int u = cq_theta(6, 0.4);\n"
+              "        int u = 6; cq_theta(&u, 0.4);\n"
               "        s += cq_measure((u >> jj) & 1);\n"
               "    }\n")
 N_PRELOOP = {"l2sib": _N_SIBLING, "l2sibd": _N_SIBLING}
 # The post-loop interference, on `a`, for every `d` region EXCEPT `l2invd` (see
 # the N_ENCLOSE note: its interfered register is `w`, inside the enclosure).
 POSTLOOP_FOR_REGION.update(
-    {r: "    a = cq_theta(a, 0.9);\n"
+    {r: "    cq_theta(&a, 0.9);\n"
      for r in ("l2nd", "l2bd", "l2cd", "l2sibd", "l2d3d")})
 # The inner loop contributes nothing outside the body, so it rides in the
 # `<rgate>` name slot the way bd uq96 put the carry key and bd rpkr the read
@@ -1764,8 +1764,8 @@ def _wrap(body, second, R, surface="register", index=False, postloop="",
     postloop = postloop + bpost
     head = ("int slice(void){\n    int a = 0;\n" + S["decl"] + bdecl
             + ("    _Bool b = 0;\n" if bcond else "") + R["decl"]
-            + "    a = cq_theta(a, 0.5);\n" + S["seed"]
-            + ("    b = cq_theta(b, 0.5);\n" if bcond else ""))
+            + "    cq_theta(&a, 0.5);\n" + S["seed"]
+            + ("    cq_theta(&b, 0.5);\n" if bcond else ""))
     tail = "    return cq_measure(a)%s%s%s%s;\n}\n" % (
         S["tail"], " + (int) cq_measure(b)" if bcond else "", R["tail"], btail)
     rolled = (
@@ -1863,9 +1863,9 @@ QUARANTINE_CONTROLS = {
     # stronger-sounding sentence and no measurement, which is the failure mode
     # `IMPL_I` §1.6 names for the bank axis one axis over.
     "q_nestinline": "        s += cq_measure((a >> (i + 1)) & 1);\n"
-                    "        { int u = cq_theta(6, 0.4);"
+                    "        { int u = 6; cq_theta(&u, 0.4);"
                     " s += cq_measure((u >> 0) & 1); }\n"
-                    "        { int u = cq_theta(6, 0.4);"
+                    "        { int u = 6; cq_theta(&u, 0.4);"
                     " s += cq_measure((u >> 1) & 1); }\n",
     # The same body with the post-loop interference REMOVED — the isolation for
     # the PLAIN column, where the quarantine's class C lives. `m_none_l2b_none_
@@ -1874,9 +1874,9 @@ QUARANTINE_CONTROLS = {
     # written out flat, and it is ACCEPT-IDENTICAL. That pair of measurements is
     # what makes "class C needs the SUBLOOP" a fact rather than a reading.
     "q_nestinlineplain": "        s += cq_measure((a >> (i + 1)) & 1);\n"
-                         "        { int u = cq_theta(6, 0.4);"
+                         "        { int u = 6; cq_theta(&u, 0.4);"
                          " s += cq_measure((u >> 0) & 1); }\n"
-                         "        { int u = cq_theta(6, 0.4);"
+                         "        { int u = 6; cq_theta(&u, 0.4);"
                          " s += cq_measure((u >> 1) & 1); }\n",
 }
 
@@ -1888,7 +1888,7 @@ QUARANTINE_CONTROLS = {
 # that makes the leak a wrong unitary rather than an accepted leak.
 QUARANTINE_CONTROL_OPTS = {
     "q_nestinline": {"second": "acc", "index": True,
-                     "postloop": "    a = cq_theta(a, 0.9);\n"},
+                     "postloop": "    cq_theta(&a, 0.9);\n"},
     "q_nestinlineplain": {"second": "acc", "index": True},
 }
 
@@ -3593,7 +3593,7 @@ EXPECTED_HEADER = """\
 # MISMATCH (bd drbq Inc 2a round-1 review, the record axis).
 #   ROLLED side: the record (`mark`, or `acc`'s source) is defined in the body and
 #     read either after the loop or on a later activation, and the SUFFIX
-#     `a = cq_theta(a, -0.5)` is a NON-DIAGONAL in-place gate on the same rail
+#     `cq_theta(&a, -0.5)` is a NON-DIAGONAL in-place gate on the same rail
 #     between the definition and the read. That is the 8h7d.5 F-1/F-2 staleness
 #     exactly, and `LoopLowering::staleRailRecordRead` declines it
 #     (`cq loop lowering: rail record read past an in-place gate on the same
@@ -3605,7 +3605,7 @@ EXPECTED_HEADER = """\
 #     PRE-EXISTING PROPERTY OF THE STRAIGHT-LINE PATH, NOT OF THE LOOP LOWERING
 #     AND NOT OF THIS INCREMENT. Measured on BOTH the pre-2a (`f92d95e`) and the
 #     post-2a binary, byte-identically, on the matrix cells and on the minimal
-#     probe `int mark = a; a = cq_theta(a, 0.25); return cq_measure(mark);`
+#     probe `int mark = a; cq_theta(&a, 0.25); return cq_measure(mark);`
 #     (rc 0, no warning, both binaries). The loop half of this class is fenced
 #     (8h7d.5 round 1 / round 2 F-1); the straight-line half is not, and whether
 #     it should be is an OPEN question for the owner — under Rule 8 `int mark = a`
@@ -3643,10 +3643,10 @@ EXPECTED_HEADER = """\
 #       hoists it out of the loop, CSE merges the flat twin's two copies, and the
 #       kjd1 gate-2c window guard, which is not wire-aware, counts the arm's Ry on
 #       the DISJOINT rail `r` as an intervening gate). The other 15 carry an
-#       `a = cq_theta(a, …)` PREFIX or SUFFIX, i.e. a genuine non-diagonal gate on
+#       `cq_theta(&a, …)` PREFIX or SUFFIX, i.e. a genuine non-diagonal gate on
 #       the condition's own wire. ⚠ THE FIRST FAMILY IS THE ONE TO READ: it says
 #       that lifting the R7 loop fence does not by itself make
-#       `for (…) { if (a == 5) r = cq_theta(r, .9); }` compile. The `oeq`/`one`/
+#       `for (…) { if (a == 5) cq_theta(&r, .9); }` compile. The `oeq`/`one`/
 #       `oder` regions exist so that the same shape with an OPAQUE threshold is
 #       still a live witness.
 #       ⚠ AND DO NOT READ THIS STRING AS A FENCE NAME. `ArmClassify`'s
@@ -3803,7 +3803,7 @@ EXPECTED_HEADER = """\
 #        control`, i.e. on the fence bd wx8g removes.
 #        ⚠ THE NINTH IS `m_none_ddilry_none_none_binv` AND ITS MESSAGE IS
 #        DIFFERENT: `condition predates a non-diagonal gate`. Its post-loop
-#        diffusion `a = cq_theta(a, 0.9)` is a non-diagonal gate on the
+#        diffusion `cq_theta(&a, 0.9)` is a non-diagonal gate on the
 #        CONDITION's own wire, so gate 2c refuses it BEFORE the loop clause is
 #        ever reached. Lifting the loop fence alone will NOT flip that row, and a
 #        reader planning the regeneration must not count it with the other eight.
@@ -3841,7 +3841,7 @@ EXPECTED_HEADER = """\
 #       `m_none_bilprep_none_none_bcar` stay `UNROLLED-ONLY / control flow inside
 #       a loop body` (re-measured directly: rolled DECLINEs, flat ACCEPTs, all
 #       three). THE BLOCKER IS THE COMBINATION AND THIS AXIS PAIR ISOLATES IT:
-#       `bcar` re-rotates the CONDITION rail in the body (`b = cq_theta(b,0.25);`
+#       `bcar` re-rotates the CONDITION rail in the body (`cq_theta(&b,0.25);`
 #       every trip), so the condition register is loop-carried and moves every
 #       activation, while clause (c) covers the iteration-local TARGET rail. That
 #       the two are separable is measured, not argued —

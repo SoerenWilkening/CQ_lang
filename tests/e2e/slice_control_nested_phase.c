@@ -51,7 +51,7 @@
    force-included by run_slice.sh (-include CQ.h -I include). */
 int slice(void) {
     int q = 3;
-    q = cq_theta(q, 0.5);              /* taint q -> handle (alloc i32(3), ry_i32) */
+    cq_theta(&q, 0.5);                 /* taint q -> handle (alloc i32(3), ry_i32) */
     if (q > 5) {                       /* OUTER tainted cond -> swap-route (flag f1) */
         cq_phi(0.25);           /* intervening Mid gate (Rz) — VERBATIM on rail1 */
         if (q < 9) {                   /* INNER tainted cond -> route FROM rail1 (f2) */

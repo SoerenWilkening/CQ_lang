@@ -4,7 +4,7 @@
    truncation away) and measured as i32. LINK-proof that
    cq_template_fptosi_f80_to_i32 resolves + signature-matches the runtime. */
 int slice(void) {
-    long double q = cq_theta(2.5L, 0.5); /* tainted f80                */
+    long double q = 2.5L; cq_theta(&q, 0.5); /* tainted f80                */
     long double s = q * 1.5L;            /* f80 arith (fmul_f80_hl)    */
     int i = (int)s;                      /* fptosi f80 -> i32          */
     return cq_measure(i);                /* cqrt_measure_i32           */

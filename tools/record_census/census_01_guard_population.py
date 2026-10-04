@@ -991,7 +991,7 @@ ACCEPTANCE = [
     # census reported ZERO chained thetas here and "MISS" was a statement about
     # a site it could not see. It now asserts BOTH halves:
     #   * the SITE IS FOUND in the pre-lowering view (`sites_source` >= 1) — the
-    #     user's `a = cq_theta(a, -0.5)` at slice_control_seq_grover.c;
+    #     user's `cq_theta(&a, -0.5)` at slice_control_seq_grover.c;
     #   * and it is a MISS — every record on that wire is discharged before the
     #     gate (the region's compare is `_unc`'d and freed first), which is why
     #     the shipped guard accepts the slice and its golden is byte-identical.

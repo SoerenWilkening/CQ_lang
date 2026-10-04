@@ -57,7 +57,7 @@ static double blog(double x) {
            - hfsq + f + dk * 6.93147180369123816490e-01; /* two-constant ln2 split         */
 }
 double slice(void) {
-    double q = cq_theta(0.5, 0.5);
+    double q = 0.5; cq_theta(&q, 0.5);
     return cq_measure(blog(q));
 }
 int main(void) { (void) slice(); return 0; }

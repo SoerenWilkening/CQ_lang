@@ -3,7 +3,7 @@
    INTERIOR rail — one that is neither a dead terminal nor a measured value — is
    uncomputed and freed.
 
-       a = cq_theta(a, 0.5);
+       cq_theta(&a, 0.5);
        int f = sqrt(a + 3.0) <= 5.0;
        return cq_measure(f);
 
@@ -64,7 +64,7 @@
 
 __attribute__((noinline))
 int slice(int a) {
-    a = cq_theta(a, 0.5);
+    cq_theta(&a, 0.5);
     int f = sqrt(a + 3.0) <= 5.0;
     return cq_measure(f);
 }

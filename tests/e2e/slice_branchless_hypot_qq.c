@@ -15,8 +15,8 @@ static double bhypot(double x, double y) {
     return hi * __builtin_sqrt(1.0 + r * r);           /* overflow-safe hypot     */
 }
 double slice(void) {
-    double q0 = cq_theta(0.5, 0.5);
-    double q1 = cq_theta(0.5, 0.5);
+    double q0 = 0.5; cq_theta(&q0, 0.5);
+    double q1 = 0.5; cq_theta(&q1, 0.5);
     return cq_measure(bhypot(q0, q1));                 /* (q,q): both tainted     */
 }
 int main(void) { (void) slice(); return 0; }

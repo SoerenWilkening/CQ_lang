@@ -2336,7 +2336,7 @@ class StreamAnalysis:
         template rail that is not reversed before the second rotation leaves
         `target` entangled with it, and `Ry(t)` does not restore the label. The
         compiler's own lowering of `_Bool b=cq_theta(0,.5); int v=tbl[b];
-        b=cq_theta(b,-.5); printf(b, v)` in a non-`main` function frees the
+        cq_theta(&b,-.5); printf(b, v)` in a non-`main` function frees the
         QRAM load rail after exactly that, and stage 2b certified it through
         (T2): "the load's index operand is unchanged" because its writes were
         `Ry(-.5) Ry(.5)`. The frozen module is

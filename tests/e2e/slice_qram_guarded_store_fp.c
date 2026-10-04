@@ -17,8 +17,8 @@
 __attribute__((noinline))
 static double guarded_local_fp(int seed) {
     double arr[8] = {0};
-    int q = cq_theta(seed, 0.5);      /* condition + load index */
-    int i = cq_theta(seed + 1, 0.5);  /* tainted store index */
+    int q = seed; cq_theta(&q, 0.5);  /* condition + load index */
+    int i = seed + 1; cq_theta(&i, 0.5); /* tainted store index */
     if (q < 3) { arr[i] = 7.0; }      /* guarded tainted-index fp store */
     double v = arr[q];                /* observed → local array uncomputes */
     return cq_measure(v);

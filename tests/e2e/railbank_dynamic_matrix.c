@@ -50,7 +50,7 @@ static int measure_bank(int *b, int n) {
 __attribute__((noinline)) static int slice(int n) {
     if (n <= 0) return 0;
     int b[n];
-    for (int i = 0; i < n; ++i) b[i] = cq_theta(b[i], 0.5);
+    for (int i = 0; i < n; ++i) cq_theta(&b[i], 0.5);
     return measure_bank(b, n);
 }
 int main(int argc, char **argv) { (void)argv; return slice(argc); }
@@ -63,7 +63,7 @@ int main(void) {
     for (int i = 0; i < n; ++i) prefix[i] = i;
     for (int i = 0; i < n; ++i) sum += prefix[i];
     int b[n];
-    for (int i = 0; i < n; ++i) b[i] = cq_theta(b[i], 0.5);
+    for (int i = 0; i < n; ++i) cq_theta(&b[i], 0.5);
     return sum + measure_bank(b, n);
 }
 
@@ -72,7 +72,7 @@ int main(int argc, char **argv) {
     (void)argv;
     int n = argc + 2;
     int b[n];
-    for (int i = 0; i < n; ++i) b[i] = cq_theta(b[i], 0.5);
+    for (int i = 0; i < n; ++i) cq_theta(&b[i], 0.5);
     return measure_bank(b, n - 1);
 }
 
@@ -82,7 +82,7 @@ int main(int argc, char **argv) {
     int n = argc + 2;
     int b[n];
     for (int i = 0; i < n; ++i)
-        if (i + 1 != n) b[i] = cq_theta(b[i], 0.5);
+        if (i + 1 != n) cq_theta(&b[i], 0.5);
     return measure_bank(b, n);
 }
 
@@ -93,7 +93,7 @@ int main(int argc, char **argv) {
     int b[n];
     for (int i = 0; i < n; ++i) {
         if (i == 1) break;
-        b[i] = cq_theta(b[i], 0.5);
+        cq_theta(&b[i], 0.5);
     }
     return measure_bank(b, n);
 }
@@ -104,7 +104,7 @@ int main(int argc, char **argv) {
     (void)argv;
     int n = argc + 2;
     int b[n];
-    for (int i = 0; i < n; ++i) b[i] = cq_theta(b[i], 0.5);
+    for (int i = 0; i < n; ++i) cq_theta(&b[i], 0.5);
     opaque(b);
     return measure_bank(b, n);
 }
@@ -112,9 +112,9 @@ int main(int argc, char **argv) {
 #elif CASE == CASE_TAINTED_EXTENT
 int main(int argc, char **argv) {
     (void)argv;
-    int n = cq_theta(argc + 2, 0.5);
+    int n = argc + 2; cq_theta(&n, 0.5);
     int b[n];
-    for (int i = 0; i < n; ++i) b[i] = cq_theta(b[i], 0.5);
+    for (int i = 0; i < n; ++i) cq_theta(&b[i], 0.5);
     return measure_bank(b, n);
 }
 
@@ -123,7 +123,7 @@ int main(int argc, char **argv) {
     (void)argv;
     int n = argc + 2;
     bool b[n];
-    for (int i = 0; i < n; ++i) b[i] = cq_theta(b[i], 0.5);
+    for (int i = 0; i < n; ++i) cq_theta(&b[i], 0.5);
     int sum = 0;
     for (int i = 0; i < n; ++i) sum += cq_measure(b[i]);
     return sum;
@@ -138,7 +138,7 @@ __attribute__((noinline)) static int slice(int n) {
     int P = 0;
     int Z = 4 * n;
     for (int i = 0; i < n; ++i) {
-        if (Z >= 2) b[i] = cq_theta(b[i], 0.5);
+        if (Z >= 2) cq_theta(&b[i], 0.5);
         if (b[i]) {
             P += p[i];
             Z -= 2;
@@ -154,7 +154,7 @@ int main(int argc, char **argv) {
     (void)argv;
     int n = argc + 2;
     int *b = calloc((size_t)n, sizeof(*b));
-    for (int i = 0; i < n; ++i) b[i] = cq_theta(b[i], 0.5);
+    for (int i = 0; i < n; ++i) cq_theta(&b[i], 0.5);
     return measure_bank(b, n);
 }
 
@@ -164,12 +164,12 @@ int main(int argc, char **argv) {
 __attribute__((noinline)) static int slice(int n) {
     if (n <= 0) return 0;
     int b[n];
-    int q = cq_theta(0, 0.25);
+    int q = 0; cq_theta(&q, 0.25);
     int leaked = 0;
     for (int i = 0; i < n; ++i) {
         int old = b[i];
         leaked += old;
-        if (q) b[i] = cq_theta(old, 0.5);
+        if (q) { b[i] = old; cq_theta(&b[i], 0.5); }
     }
     for (int i = 0; i < n; ++i) (void)cq_measure(b[i]);
     return leaked;
@@ -183,7 +183,7 @@ __attribute__((noinline)) static int slice(int n, int m) {
     if (n <= 0 || m <= 0) return 0;
     int b[m];
     for (int i = 0; i < n; ++i)
-        if (m == n) b[i] = cq_theta(b[i], 0.5);
+        if (m == n) cq_theta(&b[i], 0.5);
     int out = 0;
     for (int i = 0; i < m; ++i) out += cq_measure(b[i]);
     return out;
@@ -209,7 +209,7 @@ __attribute__((noinline)) static int slice(int n, int m) {
     if (n <= 0 || m <= 0) return 0;
     int p[m];
     for (int i = 0; i < m; ++i) p[i] = i + 3;
-    int q = cq_theta(0, 0.25);
+    int q = 0; cq_theta(&q, 0.25);
     int a = 0, z = 0;
     for (int i = 0; i < n; ++i)
         if (q && m == n) { a += p[i]; z -= p[i]; }
@@ -229,7 +229,7 @@ __attribute__((noinline)) static int slice(int n) {
     int b[n];
     int Z = 4 * n;
     for (int i = 0; i < n; ++i) {
-        int t = cq_theta(b[i], 0.5);
+        int t = b[i]; cq_theta(&t, 0.5);
         if (Z >= 2) b[i] = t;
         if (b[i]) Z -= 2;
     }
@@ -246,7 +246,7 @@ __attribute__((noinline)) static int slice(int n, int m) {
     int b[m];
     int Z = 4 * n;
     for (int i = 0; i < n; ++i) {
-        if (Z >= 2) b[i] = cq_theta(b[i], 0.5);
+        if (Z >= 2) cq_theta(&b[i], 0.5);
         if (b[i]) Z -= 2;
     }
     for (int i = 0; i < m; ++i) (void)cq_measure(b[i]);
@@ -260,7 +260,7 @@ __attribute__((noinline)) static int slice(void) {
     int b[3];
     int Z = 12;
     for (int i = 0; i < 3; ++i) {
-        int t = cq_theta(b[i], 0.5);
+        int t = b[i]; cq_theta(&t, 0.5);
         if (Z >= 2) b[i] = t;
         if (b[i]) Z -= 2;
     }
@@ -274,10 +274,10 @@ int main(void) { return slice(); }
  * identity Ry(0) because the rolled form carries Z as a loop-carried handle; the
  * runner drops that one identity line before the byte comparison. */
 __attribute__((noinline)) static int slice(int n) {
-    int Z = cq_theta(4 * n, 0.0);
-    int t0 = cq_theta(0, 0.5); int b0 = 0; if (Z >= 2) b0 = t0; if (b0) Z -= 2;
-    int t1 = cq_theta(0, 0.5); int b1 = 0; if (Z >= 2) b1 = t1; if (b1) Z -= 2;
-    int t2 = cq_theta(0, 0.5); int b2 = 0; if (Z >= 2) b2 = t2; if (b2) Z -= 2;
+    int Z = 4 * n; cq_theta(&Z, 0.0);
+    int t0 = 0; cq_theta(&t0, 0.5); int b0 = 0; if (Z >= 2) b0 = t0; if (b0) Z -= 2;
+    int t1 = 0; cq_theta(&t1, 0.5); int b1 = 0; if (Z >= 2) b1 = t1; if (b1) Z -= 2;
+    int t2 = 0; cq_theta(&t2, 0.5); int b2 = 0; if (Z >= 2) b2 = t2; if (b2) Z -= 2;
     (void)cq_measure(b0); (void)cq_measure(b1); (void)cq_measure(b2);
     return cq_measure(Z);
 }
@@ -297,7 +297,7 @@ __attribute__((noinline)) static int slice(void) {
     bool b[3];
     int Z = 12;
     for (int i = 0; i < 3; ++i) {
-        bool t = cq_theta(b[i], 0.5);
+        bool t = b[i]; cq_theta(&t, 0.5);
         if (Z >= 2) b[i] = t;
         if (b[i]) Z -= 2;
     }
@@ -317,7 +317,7 @@ __attribute__((noinline)) static int slice(int n) {
     int b[n];
     int Z = 4 * n;
     for (int i = 0; i < n; ++i) {
-        int t = cq_theta(b[i], 0.5);
+        int t = b[i]; cq_theta(&t, 0.5);
         if (Z >= 2) { b[i] = t; cq_phi(0.3); }
         if (b[i]) Z -= 2;
     }
@@ -342,14 +342,14 @@ __attribute__((noinline)) static void run_bank(int n) {
     for (int i = 0; i < n; ++i) { p[i] = i + 3; z[i] = i + 2; }
     int c[n];
     for (int i = 0; i < n; ++i) {
-        int t = cq_theta(c[i], 0.25);
+        int t = c[i]; cq_theta(&t, 0.25);
         if (c[i] != 0) c[i] = t;
     }
     int b[n];
     int P = 0;
     int Z = 4 * n;
     for (int i = 0; i < n; ++i) {
-        if (Z >= z[i]) b[i] = cq_theta(b[i], 0.5);
+        if (Z >= z[i]) cq_theta(&b[i], 0.5);
         if (b[i]) { P += p[i]; Z -= z[i]; }
     }
     for (int i = 0; i < n; ++i) (void)cq_measure(b[i]);
@@ -370,14 +370,14 @@ __attribute__((noinline)) static void run_bank(void) {
     int z[3] = {2, 3, 4};
     int c[3] = {0};
     for (int i = 0; i < 3; ++i) {
-        int t = cq_theta(c[i], 0.25);
+        int t = c[i]; cq_theta(&t, 0.25);
         if (c[i] != 0) c[i] = t;
     }
     bool b[3] = {0};
     int P = 0;
     int Z = 12;
     for (int i = 0; i < 3; ++i) {
-        if (Z >= z[i]) b[i] = cq_theta(b[i], 0.5);
+        if (Z >= z[i]) cq_theta(&b[i], 0.5);
         if (b[i]) { P += p[i]; Z -= z[i]; }
     }
     for (int i = 0; i < 3; ++i) (void)cq_measure(b[i]);
@@ -395,7 +395,7 @@ extern void use(int *, int);
 __attribute__((noinline)) static int slice(int n) {
     if (n <= 0) return 0;
     int b[n];
-    for (int i = 0; i < n; ++i) b[i] = cq_theta(b[i], 0.5);
+    for (int i = 0; i < n; ++i) cq_theta(&b[i], 0.5);
     int s = 0;
     for (int k = 1; k < 3; ++k) { int t[k]; use(t, k); s += t[0]; }
     for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
@@ -412,7 +412,7 @@ extern void f1(int); extern void f2(int);
 __attribute__((noinline)) static int slice(int n) {
     if (n <= 0) return 0;
     int b[n];
-    for (int i = 0; i < n; ++i) b[i] = cq_theta(b[i], 0.5);
+    for (int i = 0; i < n; ++i) cq_theta(&b[i], 0.5);
     int s = 0;
     for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
 #define C(k) if (g[k] > s) f1(k); else f2(k);
@@ -435,7 +435,7 @@ __attribute__((noinline)) static int slice(int n, int e) {
     if (e & 1) goto A;
 H: ;
     int i = 0;
-    do { b[i] = cq_theta(b[i], 0.5); } while (++i != n);
+    do { cq_theta(&b[i], 0.5); } while (++i != n);
     if (k++ < 1) goto A; else goto R;
 A:
     side(k);
@@ -457,7 +457,7 @@ __attribute__((noinline)) static int slice(int e) {
     int k = 0;
     if (e & 1) goto A;
 H: ;
-    for (int i = 0; i < 4; ++i) b[i] = cq_theta(b[i], 0.5);
+    for (int i = 0; i < 4; ++i) cq_theta(&b[i], 0.5);
     if (k++ < 1) goto A; else goto R;
 A:
     side(k);
@@ -480,7 +480,7 @@ __attribute__((noinline)) static int slice(int n) {
     if (n <= 0) return 0;
     int b[n];
     int r = setjmp(env);
-    for (int i = 0; i < n; ++i) b[i] = cq_theta(b[i], 0.5);
+    for (int i = 0; i < n; ++i) cq_theta(&b[i], 0.5);
     if (r == 0) longjmp(env, 1);
     int s = 0;
     for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
@@ -497,7 +497,7 @@ __attribute__((noinline)) static int slice(int n) {
     if (n <= 0) return 0;
     int b[2]; n = 2;
     int r = setjmp(env);
-    for (int i = 0; i < n; ++i) b[i] = cq_theta(b[i], 0.5);
+    for (int i = 0; i < n; ++i) cq_theta(&b[i], 0.5);
     if (r == 0) longjmp(env, 1);
     int s = 0;
     for (int i = 0; i < n; ++i) s += cq_measure(b[i]);

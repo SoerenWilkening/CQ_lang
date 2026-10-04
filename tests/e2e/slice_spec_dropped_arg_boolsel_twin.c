@@ -6,11 +6,11 @@
    — the definition of the correct circuit for a call whose callee never reads the
    quantum argument it is handed. */
 __attribute__((noinline)) int slice(int m) {
-    _Bool b = cq_theta((_Bool)(m & 1), 0.5);
+    _Bool b = (_Bool)(m & 1); cq_theta(&b, 0.5);
     int p = b ? 9 : 4;
     int t = m + 1;
     (void) p;
-    b = cq_theta(b, 0.7);
+    cq_theta(&b, 0.7);
     return t + cq_measure(b);
 }
 

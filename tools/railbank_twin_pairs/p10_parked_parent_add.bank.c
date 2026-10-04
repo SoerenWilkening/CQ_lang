@@ -2,7 +2,7 @@
    candidate on q), then the cells measured. The add MUST stay out of place. */
 #include "CQ.h"
 __attribute__((noinline)) int slice(int seed) {
-  int q = cq_theta(seed, 0.5);
+  int q = seed; cq_theta(&q, 0.5);
   int b[3]; int s = 0;
   for (int i = 0; i < 3; ++i) b[i] = q;
   int t = q + 3;

@@ -29,7 +29,7 @@ int qpow(int base, int exp);
 
 int slice(void) {
     int q = 3;
-    q = cq_theta(q, 0.5);          /* taint q -> condition handle */
+    cq_theta(&q, 0.5);             /* taint q -> condition handle */
     int y = 5;
     if (q > 3)                     /* tainted-condition diamond -> classical-call arm */
         y = ext_f(7);              /* pure classical call -> route-merged %out (i32) */

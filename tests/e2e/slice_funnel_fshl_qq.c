@@ -67,11 +67,11 @@
 
 __attribute__((noinline))
 unsigned int slice(void) {
-    unsigned int a = cq_theta(7u, 0.5);
-    unsigned int b = cq_theta(9u, 0.25);
+    unsigned int a = 7u; cq_theta(&a, 0.5);
+    unsigned int b = 9u; cq_theta(&b, 0.25);
     unsigned int r = (a << 16) | (b >> 16);      /* fshl(a,b,16) -> qql, measured */
-    unsigned int c = cq_theta(3u, 0.375);
-    unsigned int d = cq_theta(5u, 0.125);
+    unsigned int c = 3u; cq_theta(&c, 0.375);
+    unsigned int d = 5u; cq_theta(&d, 0.125);
     unsigned int dead = (c << 8) | (d >> 24);    /* fshl(c,d,8) -> qql, dead */
     if (dead == 0u) cq_phi(0.6);                    /* Rz keep-alive -> reverse-play _unc */
     return cq_measure(r);

@@ -50,14 +50,14 @@
    the user's call — a DS_Warning, `opt` exits 0. */
 int slice(void) {
     int q = 3, p = 7;
-    q = cq_theta(q, 0.5);          /* taint q -> alloc i32(3), ry_i32           */
-    p = cq_theta(p, 0.25);         /* taint p -> a second, disjoint rail        */
+    cq_theta(&q, 0.5);             /* taint q -> alloc i32(3), ry_i32           */
+    cq_theta(&p, 0.25);            /* taint p -> a second, disjoint rail        */
     int r = p * 5;                 /* an OUT-OF-PLACE derived rail (fresh mint) */
     if (q == 5) {                  /* tainted condition -> flag mint at the icmp */
-        r = cq_theta(r, 0.9);      /* the arm Ry — CONTROLLED, IN PLACE on r    */
+        cq_theta(&r, 0.9);         /* the arm Ry — CONTROLLED, IN PLACE on r    */
     }
     int s = r + 1;                 /* a POST-REGION user (M-C in-place addc)    */
-    (void) cq_theta(s, 0.125);     /* keeps `s` alive under -O1                 */
+    cq_theta(&s, 0.125);           /* keeps `s` alive under -O1                 */
     return cq_measure(q);
 }
 int main(void) { (void) slice(); return 0; }
