@@ -1,0 +1,87 @@
+\labsessionheader{2026-10-04}{Retired \texttt{cq\_theta} value-form prose migrated to the in-place spelling}%
+  {1a23af53}{n/a}{none}
+
+\subsection*{Goal}
+Close \bd{test\_C\_libtooling-5yla}, the remainder of \bd{test\_C\_libtooling-1501}
+(entry 037): comments that still spelled C in the retired value form
+\texttt{y = cq\_theta(x, $\theta$)}. They described the IR correctly, but a reader who
+copied one got a compile error. The scope was \texttt{.ll} fixture headers, pass-source
+comments and slice prose. Every edit was to comment text.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \commit{1a23af53} --- \bd{test\_C\_libtooling-5yla} --- 871 files, 1,689 lines
+  changed in place: 801 \texttt{.ll} fixtures, 25 pass sources and headers, 44 e2e slice
+  sources plus \fpath{tests/e2e/CMakeLists.txt}, and one frontend fixture. Rewritten by the
+  frontend.md \S3.2 table: \texttt{x = cq\_theta(x, a)} $\to$ \texttt{cq\_theta(\&x, a)},
+  \texttt{T y = cq\_theta(s, a)} $\to$ \texttt{T y = s; cq\_theta(\&y, a)}, and an
+  assignment under an unbraced \texttt{if}/\texttt{else}/\texttt{for} gets braces so the
+  copy and the rotation stay one arm.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item The rewrite was mechanical where the statement context was unambiguous: 1,685
+  occurrences (630 same-variable, 743 declarations, 96 assignments, 216 braced arms).
+  The rest were edited by hand (208 spec lines, plus 77 lines by four regular patterns
+  and a two-line pattern repeated in 17 fixtures). A bare fragment that names the call
+  the pass sees (``the arm's \texttt{cq\_theta(t, .2)} rotated in place'', the arguments of
+  a \texttt{phi(\ldots)}) is now spelled as that IR call, \texttt{@cq\_theta\_si32(t, .2)},
+  with the fixture's own suffix. A bare statement whose variable is read afterwards keeps
+  C copy semantics as a rotated copy (\texttt{int g = q; cq\_theta(\&g, t)}). Otherwise it
+  becomes \texttt{cq\_theta(\&q, t)}.
+  \item \fconfirmed\ The type trap from entry 037 also occurs in prose. The mechanical pass
+  rewrote \texttt{\_Bool r; \ldots\ r = cq\_theta(0, 0.9)} in
+  \fpath{control\_swap\_reject\_value\_rail\_cond\_early\_clause.ll} as an \texttt{i1}
+  rotation. The fixture's next sentence depends on the \texttt{int} overload, and its IR has
+  \texttt{@cq\_theta\_si32(i32 0, \ldots)}. Rewritten by hand as \texttt{int t = 0;
+  cq\_theta(\&t, 0.9); r = t}. The audit then compared each rewritten
+  \texttt{T x = s; cq\_theta(\&x, \ldots)} against the declared type of \texttt{s}, and
+  every literal-seeded rewrite against the fixture's \texttt{@cq\_theta\_<sfx>} calls. It
+  found no other mismatch. Of the 14 \texttt{bool} declarations with a literal seed, all
+  match the fixture's \texttt{@cq\_theta\_i1(i1 false, \ldots)}. The retired spelling
+  \texttt{bool b = cq\_theta(0, \ldots)} would have produced an \texttt{i32} rotation and a
+  compare, so the old prose did not describe its own fixture.
+  The same rule held \texttt{\_Bool c = cq\_theta(0, 1.1)} in
+  \fpath{control\_angle\_select\_reject\_raw\_i1\_cond.ll}, whose fixture has only
+  \texttt{si32}, to \texttt{int t = 0; cq\_theta(\&t, 1.1); \_Bool c = t}.
+  \item Not migrated, on purpose: 88 occurrences in IR notation (\texttt{\%x} or typed
+  operands such as \texttt{i32 5}), 4 prose uses of the word ``cq\_theta'' before a
+  parenthesis, \fpath{tests/frontend/cq\_theta\_inplace.c} (it compiles the retired forms
+  to pin their errors), and the historical quotes in \texttt{docs/} audits, lab reports,
+  \fpath{include/CQ.h} and frontend.md \S3.2.
+  \item Found and filed: the retired data-operand phase \texttt{q = cq\_phi(q, $\varphi$)}
+  is still spelled in about 380 comment lines (\bd{test\_C\_libtooling-v7oh}). It has no
+  mechanical rewrite, because a phase on a register is not expressible register-free.
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+files changed, lines $\pm$ & 871, 1689/1689 & \measured{git diff --shortstat} \\
+lines per file changed & 0 net in every file & \measured{git diff --numstat} \\
+residual value-form matches & 92 (88 IR, 4 prose) & grep over \texttt{git ls-files ir-pass tests} \\
+touched fixtures under lit & 801 of 801 passed & \measured{lit ir-pass/test --filter <801 names>} \\
+\texttt{ctest -LE maintenance} & 586 of 586 passed & \measured{ctest --test-dir build -LE maintenance -j6} \\
+cq-opt equivalence & 2537 fixtures, 0 mismatches & \measured{cmake --build build --target cq-opt-equivalence-full} \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+A script compared each changed file against \texttt{HEAD}. In \texttt{.ll} files every
+changed line is a whole-line \texttt{;} comment, and none is a \texttt{RUN} line or a line
+for any of the file's FileCheck prefixes. In C and C++ files, the text with comments
+stripped is byte-identical, and no changed line has code after a closing \texttt{*/}.
+CMake changes are \texttt{\#} lines only. Line counts are unchanged, so no \texttt{!dbg}
+line or \texttt{[[@LINE]]} moved. Per-issue budget: one lit invocation over the 801 touched
+fixtures, all passed. An earlier invocation with a wrong filter regex matched no test and
+ran nothing; it is counted here as an invocation. The batch gate followed, because the
+batch touches fixtures: \texttt{ctest -LE maintenance -j6} 586 of 586 passed, \texttt{cq-opt-equivalence-full} compared 2537 fixtures with 0 mismatches, \texttt{update\_code\_map.py --check} clean. No mutants: nothing an accept-predicate reads changed.
+The maintenance label and the full \texttt{ctest} were not run.
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item \bd{test\_C\_libtooling-v7oh}: the \texttt{cq\_phi} data-operand prose.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+None.
