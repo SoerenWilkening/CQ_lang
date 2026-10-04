@@ -1,7 +1,7 @@
 ; control_swap_switch_datamux_onward_ctl_phase.ll — ACCEPT (yn71, Phase 4×6, the
 ; CONTROL case): a 4.5 all-ConstantInt switch DATA-MUX whose UNTAINTED merge `%out`
 ; feeds a NEW TAINTED-condition diamond applying a phase — `switch(q){0:r=7; 5:r=9;
-; 17:r=11;}; if (r > 8) r = cq_phi(r, .25); measure r`. The data-mux merge is
+; 17:r=11;}; if (r > 8) cq_phi(.25); measure r`. The data-mux merge is
 ; all-ConstantInt (data-untainted), so `if (r > 8)` was classical at round-1; the
 ; second propagation (`repropagateControlMerges`) taints `%out` → `icmp sgt %out, 8`,
 ; a new quantum-controlled branch on the data-mux answer.

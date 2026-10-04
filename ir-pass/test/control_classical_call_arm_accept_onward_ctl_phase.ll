@@ -1,7 +1,7 @@
 ; control_classical_call_arm_accept_onward_ctl_phase.ll — ACCEPT (yn71, Phase 4×6,
 ; the CONTROL case): a 6.5 classical-call arm whose UNTAINTED merge `%out` feeds a
 ; NEW TAINTED-condition diamond that applies a phase — `int y = 5; if (q>3) y = f(a);
-; if (y > 7) y = cq_phi(y, .25); measure y`. The downstream `if (y > 7)` is a
+; if (y > 7) cq_phi(.25); measure y`. The downstream `if (y > 7)` is a
 ; genuinely quantum-CONTROLLED branch (its condition `icmp sgt %out, 7` is a `%out`
 ; derivation — quantum data used as further quantum control), which dugh over-declined
 ; (`control flow under quantum control`) and yn71 now LOWERS as a routed phase arm.

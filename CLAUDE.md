@@ -16,6 +16,9 @@ mean that file (likewise `docs/design/rssa-swap-control/`, `docs/rationale/`, `d
 comment or fixture that `bd memories` no longer lists: the 2026-10-03 consolidation retired
 it (521 memories to 134). Read the old text from Dolt history with
 `cd .beads/embeddeddolt/test_C_libtooling && dolt sql -r csv -q "select value from config as of 'vlca8sj02jpgil1i0ntj8vhnbhmd197d' where config.key='kv.memory.<key>'"`.
+A comment or fixture header that spells `x = cq_phi(x, θ)` (or `%r = cq_phi(%x, ·)`)
+describes the retired pre-`3qlq` register form and is history too; the fixture's `3qlq:`
+note records how its IR was migrated (bd `v7oh`).
 
 ## The defining hazard
 

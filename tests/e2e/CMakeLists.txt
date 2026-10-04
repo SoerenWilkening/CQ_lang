@@ -3550,7 +3550,7 @@ add_test(NAME e2e-slice-classical-call-under-control
 
 # bd yn71 (Phase 4×6, the CONTROL case): a 6.5 classical-call arm builds an UNTAINTED
 # merge %out (`int y=5; if (q>5) y=ext_f(7)`) that then feeds an ONWARD TAINTED-CONTROL
-# phase arm (`if (y>50) y=cq_phi(y, .25)`). The merge is data-untainted at round-1, so
+# phase arm (`if (y>50) cq_phi(.25)`). The merge is data-untainted at round-1, so
 # `if (y>50)` is a CLASSICAL branch then; dugh's `repropagateControlMerges` re-seeds the
 # second propagation from %out, tainting `icmp sgt %out, 50`. PRE-yn71
 # `declineReClassifiedControl` declined that new tainted-condition branch; yn71 RE-DETECTS

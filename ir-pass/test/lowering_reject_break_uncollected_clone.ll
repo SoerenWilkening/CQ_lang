@@ -60,7 +60,11 @@
 ;     tainted value muxed by a classical-condition …" (declined upstream of the loop
 ;     recognizer, not by E9 — worth knowing before citing E9 for it);
 ;   * `q = cq_phi(q, 0.1)` in the body                         → rc=1, "cq loop lowering:
-;     early break preserves a phase answer" (Rule 7).
+;     early break preserves a phase answer" (Rule 7). Measured 2026-08-13 on the
+;     RETIRED register-form `cq_phi`, not re-measured since bd 3qlq. The
+;     register-free in-body phase is pinned by `lowering_reject_break_phase_answer.ll`
+;     (declines `loop under quantum control`, per its 3qlq note). The B3 string's
+;     register-free carrier is `lowering_reject_break_phase_answer_kickback.ll`.
 ;   * a QROM read in the break condition, `if (T[q & 63] == k) break` with a 64-entry
 ;     `static const` table and a RUNTIME comparand `k` → rc=1, "cq QRAM access:
 ;     tainted-index memory access inside a loop".

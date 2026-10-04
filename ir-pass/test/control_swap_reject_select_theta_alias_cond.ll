@@ -32,6 +32,11 @@
 ; pre-revert HEAD, the reverted tree, and dd2c103^ — so the widening did not move
 ; it, and this fixture pins that it stays put.
 ;
+; 3qlq (note added 2026-10-04, bd v7oh): `%r = cq_phi(%q,·)` above is the RETIRED
+; register form. bd 3qlq made `cq_phi` register-free, and the accept twin's alias was
+; deleted as a global phase (its own `3qlq:` note). This fixture never contained a
+; `cq_phi`; its `cq_theta` decline is unchanged.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}condition predates a non-diagonal gate under quantum control
 ;
