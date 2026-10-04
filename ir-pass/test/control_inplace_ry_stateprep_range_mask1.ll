@@ -6,7 +6,7 @@
 ; this header moved — so the module below is still, character for
 ; character, the one the four drbq Inc-4 adversarial rounds argued over.
 ;
-;     int t = q & 1;  int r = 1;  if (t) r = cq_theta(1, .9);
+;     int t = q & 1;  int r = 1;  if (t) { r = 1; cq_theta(&r, .9); }
 ;
 ; ---- WHY IT IS AN ACCEPT NOW (bd `drbq.14`; F2's `CondWire` narrowing)
 ;
@@ -31,7 +31,7 @@
 ;   register is not touched by the region at all.
 ;
 ; THE RIVAL IT SILENTLY ABSORBS (alpha reading): the source rotated the
-; CONDITION'S OWN register IN PLACE — `cq_theta(<the pinned register>, θ)` —
+; CONDITION'S OWN register IN PLACE — `cq_theta(&<the pinned register>, θ)` —
 ; and `-O1` const-folded arg-0 to the literal on the edge where the equality
 ; is a theorem.
 ; ⚠ SAY IT IN THOSE WORDS: a program that was LOUDLY REFUSED before this
@@ -76,11 +76,11 @@
 ; reachable from ordinary `clang -O1` C (round-1 review, lens L2 finding
 ; F-L2-1, probe `p/k08_and1_measure_cond.c`):
 ;
-;     int q = cq_theta(3, 0.3);
+;     int q = 3; cq_theta(&q, 0.3);
 ;     int t = q & 1;                    /* a template rail derived from q
 ; */
 ;     int r = 1;
-;     if (t) r = cq_theta(t, 0.9);      /* an IN-PLACE Ry on the CONDITION
+;     if (t) { r = t; cq_theta(&r, 0.9); }  /* an IN-PLACE Ry on the CONDITION
 ; rail */
 ;     return (int) cq_measure(r) + (int) cq_measure(t);
 ;

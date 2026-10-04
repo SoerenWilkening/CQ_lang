@@ -55,7 +55,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   int h(int a, int k); int g(int a);
-;   int main(int argc, char **argv) { int m = atoi(argv[1]); int q = cq_theta(m, .5); int t = h(q, m); int u = g(t); return cq_measure(u); }
+;   int main(int argc, char **argv) { int m = atoi(argv[1]); int q = m; cq_theta(&q, .5); int t = h(q, m); int u = g(t); return cq_measure(u); }
 ;
 ; Regenerate: clang -O1 -emit-llvm -S each TU as above, then
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>.

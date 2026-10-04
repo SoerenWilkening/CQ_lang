@@ -2,7 +2,7 @@
 ; PHASE arm in one if/else (control-in-place-PRD §4 R3 homogeneity; bd
 ; test_C_libtooling-drbq).
 ;
-;     if (c) r = cq_theta(r, .9); else r = cq_phi(r, .2);
+;     if (c) cq_theta(&r, .9); else r = cq_phi(r, .2);
 ;
 ; A region lowers by ONE method (Rule 7). The phase arm's answer is a phase kept
 ; in place and the flag is stripped by the uncontrolled `icmp_inv`; the rotation

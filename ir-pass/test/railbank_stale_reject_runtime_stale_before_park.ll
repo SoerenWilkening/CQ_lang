@@ -6,7 +6,7 @@
 ; every cell is ALREADY stale at the store.  The seed the hop recovers (`c`, the
 ; pre-rotation name) has the 0.7 Ry among its forward users, placed before the
 ; park loop, so the read is not provably before it — DECLINE, exactly as the
-; register spelling `c = q; q = cq_theta(q,.7); measure(c)` does.
+; register spelling `c = q; cq_theta(&q,.7); measure(c)` does.
 ;
 ; RE-MEASURED 2026-09-24 on `d0720cb1` (`cq-opt` c6f61f80a5d524c6): DECLINES with
 ; the 3d8q string; red under the hop-disabled source mutant (TRACK_B.md §4).
@@ -15,9 +15,9 @@
 ; SOURCE — `clang -Iinclude -include CQ.h -O1 -emit-llvm -S`, verbatim:
 ;   __attribute__((noinline)) int slice(int n, int seed) {
 ;     if (n <= 1) return 0;
-;     int q = cq_theta(seed, 0.5);
+;     int q = seed; cq_theta(&q, 0.5);
 ;     int c = q;
-;     q = cq_theta(q, 0.7);
+;     cq_theta(&q, 0.7);
 ;     int b[n]; int s = 0;
 ;     for (int i = 0; i < n; ++i) b[i] = c;
 ;     for (int i = 0; i < n; ++i) s += cq_measure(b[i]);

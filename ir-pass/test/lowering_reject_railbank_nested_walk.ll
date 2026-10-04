@@ -43,7 +43,7 @@
 ;      exactly the hazard C2' exists to prevent, one activation level up. */
 ;   #include "CQ.h"
 ;   int main(void){ bool b[3]={0};
-;     for(int k=0;k<2;++k) for(int i=0;i<3;++i) b[i]=cq_theta(b[i],0.5);
+;     for(int k=0;k<2;++k) for(int i=0;i<3;++i) cq_theta(&b[i],0.5);
 ;     int s=0; for(int i=0;i<3;++i) s+=cq_measure(b[i]); return s; }
 ;
 ; RUN: env CQ_CTRL_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \

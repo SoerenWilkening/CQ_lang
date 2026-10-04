@@ -1,11 +1,11 @@
 ; control_inplace_ry_stateprep_seed_nonzero.ll — ACCEPT: the seed is NOT |0>.
 ; PRD §14.3 row A-3, bd test_C_libtooling-drbq Inc 4.
 ;
-;     int q = cq_theta(3,.3); int r = 7;
-;     if (q == 5) r = cq_theta(7, .9);        // seed 7, compare literal 5
+;     int q = 3; cq_theta(&q,.3); int r = 7;
+;     if (q == 5) { r = 7; cq_theta(&r, .9); }  // seed 7, compare literal 5
 ;
 ; The seed is not privileged: `cqrt_alloc_<W>` takes the classical value and the
-; rail starts at |7>, exactly as the UNCONTROLLED `cq_theta(7, θ)` mints today.
+; rail starts at |7>, exactly as the UNCONTROLLED `int r = 7; cq_theta(&r, θ)` mints today.
 ; F1 is satisfied because the merge φ's pred incoming is the SAME uniqued
 ; `ConstantInt 7`, and F2 is silent because 7 != 5.
 ;

@@ -3,13 +3,13 @@
 ; bd test_C_libtooling-z0re round 2 (Rule-13 r1A F-r1A-1; bd test_C_libtooling-fmt3).
 ; THE POST-FOLD MODULE, pinned as an ACCEPT on ONE ground: it IS the legitimate
 ; program. It is what `clang -O1` makes of (review_r1A_z0re/probes/src/a5.c):
-;   r = s; if (q2 > 3) { if (q == s) r = cq_theta(q, .9); else r = cq_theta(s, .9); }   (q not read after)
+;   r = s; if (q2 > 3) { if (q == s) { r = q; cq_theta(&r, .9); } else { r = s; cq_theta(&r, .9); } }  (q not read after)
 ; SimplifyCFG sinks the INNER if/else of two thetas (one differing operand -> one phi),
 ; FoldTwoEntryPHINode turns the phi into `select (q == s), q, s`, InstSimplify folds
 ; that to `s`, and the pinning branch is ERASED. What reaches the pass is the body
-; below: an OUTER diamond on `q2 > 3` whose arm is `cq_theta(s, .9)` and whose Pred
+; below: an OUTER diamond on `q2 > 3` whose arm is `@cq_theta_si32(s, .9)` and whose Pred
 ; incoming is `s` — a runtime-seed state prep F1 admits — and it is the module of the
-; legitimate `r = s; if (q2 > 3) r = cq_theta(s, .9);`, IDENTICAL at -O1 up to the order
+; legitimate `r = s; if (q2 > 3) { r = s; cq_theta(&r, .9); }`, IDENTICAL at -O1 up to the order
 ; of the merge phi's two incomings (MEASURED, z0re_probes/foldcmp.sh vs
 ; z0re_probes/src/a5legit.c; the pass keys on incoming BLOCKS, not order). bd fmt3 measured
 ; the class (n12/n13: the rotated register need not even be the erased compare's

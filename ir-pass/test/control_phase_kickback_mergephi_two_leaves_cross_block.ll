@@ -19,7 +19,7 @@
 ; anchor alone could not tell them apart — the IR could, and did.
 ;
 ; THE SHAPE, straight off `clang -O1` on `p20.c` (this is that module by hand):
-; `if (b0) b1 = cq_theta(b1,.5); if (b0) b2 = cq_theta(b2,.9); if (b1 && b2)
+; `if (b0) cq_theta(&b1,.5); if (b0) cq_theta(&b2,.9); if (b1 && b2)
 ; cq_phi(.3);`. The SECOND prep's diamond owns the kickback's `Pred` (`m2`), so
 ; `%p2` is in `Pred` and `%p1` — the FIRST prep's merge φ — is one block back.
 ;

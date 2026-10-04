@@ -3,14 +3,14 @@
 ;
 ; THE C SOURCE (fmt3's exhibit `a6.c`, review r1A of bd z0re, F-r1A-2):
 ;
-;     int t = q / 4; int q2 = cq_theta(7, .4); int r = 5;
-;     if (q2 > 3) { if (t == 5) r = cq_theta(t, .9); else r = cq_theta(5, .9); }
+;     int t = q / 4; int q2 = 7; cq_theta(&q2, .4); int r = 5;
+;     if (q2 > 3) { if (t == 5) { r = t; cq_theta(&r, .9); } else { r = 5; cq_theta(&r, .9); } }
 ;     return cq_measure(r) + cq_measure(t) + cq_measure(q2);
 ;
 ; BEFORE fmt3, `-O1` MERGED the two inner calls (IPSCCP pins `t := 5` on the
-; inner edge, so both became `cq_theta(5, .9)`; the late SimplifyCFG hoisted the
+; inner edge, so both became `@cq_theta_si32(5, .9)`; the late SimplifyCFG hoisted the
 ; pair and DELETED the inner branch). The pass then saw exactly the stage-1 IR of
-; the legitimate `if (q2 > 3) r = cq_theta(5, .9);` and ACCEPTED at exit 0,
+; the legitimate `if (q2 > 3) { r = 5; cq_theta(&r, .9); }` and ACCEPTED at exit 0,
 ; STRICT 2b clean, preparing a fresh |5> while the source rotated `t` in place —
 ; `t` measured unrotated. No IR predicate can tell the two apart.
 ;

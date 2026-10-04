@@ -2,8 +2,8 @@
 ; REGRESSION PIN for a defect this increment MEASURED and fixed (bd
 ; test_C_libtooling-drbq Inc 1).
 ;
-;     int q=cq_theta(0,.5); int r=cq_theta(0,.3);
-;     if (q > 5) r = cq_theta(r, .9);
+;     int q=0; cq_theta(&q,.5); int r=0; cq_theta(&r,.3);
+;     if (q > 5) cq_theta(&r, .9);
 ;     int s = r + 1;                     // reads the MERGE (post-region) name
 ;     return cq_measure(q);              // r and s dead
 ;

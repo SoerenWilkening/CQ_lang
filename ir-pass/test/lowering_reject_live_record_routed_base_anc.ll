@@ -12,13 +12,13 @@
 ; SOURCE — a PHASE region whose routed base is a derived rail, followed by a
 ; chained theta on that same rail:
 ;     volatile int off = 3;
-;     int q = cq_theta(0, 0.5);
+;     int q = 0; cq_theta(&q, 0.5);
 ;     int r = q * off;                          // routed base: a FRESH rail
 ;                                               // (mul is NOT an M-C in-place
 ;                                               // reassignment), so `q`'s alloc
 ;                                               // rail is a dead ANCESTOR of it
 ;     if (r == 5) { r = cq_phi(r, PI); }        // phase arm
-;     r = cq_theta(r, 0.25);                    // the chained Ry
+;     cq_theta(&r, 0.25);                    // the chained Ry
 ;     return cq_measure(r);
 ;
 ; MEASURED — the verdict never changed, the OWNER did:

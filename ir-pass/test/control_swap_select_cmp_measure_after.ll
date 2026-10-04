@@ -3,7 +3,7 @@
 ; in the SAME BLOCK. The discriminating twin of
 ; `control_swap_reject_select_cmp_measured_before.ll`, one line apart.
 ;
-;     int q = cq_theta(0, .5);
+;     int q = 0; cq_theta(&q, .5);
 ;     int a = (q == 1) ? 2 : 5;        // the merge reads a COHERENT q
 ;     int m = cq_measure(q);           // the measurement owns it from here on
 ;

@@ -4,15 +4,15 @@
 ; completes the round-2 half of the matrix.
 ;
 ;     int ext_f(int a);                        /* a second TU: `return a+100;` */
-;     int slice(int u){ int q=cq_theta(u,0.5); int r=cq_theta(u,0.3);
+;     int slice(int u){ int q=u; cq_theta(&q,0.5); int r=u; cq_theta(&r,0.3);
 ;       int y=5; if (q>5) y=ext_f(7);          /* 6.5 CLASSICAL-CALL ARM -> %out */
 ;       int w = y & 7;
-;       int a = cq_theta(u,0.7);
-;       for(int i=0;i<3;i++){ if((a>>i)&1) cq_phi(0.2); r = r + w; r = cq_theta(r,0.1); }
+;       int a = u; cq_theta(&a,0.7);
+;       for(int i=0;i<3;i++){ if((a>>i)&1) cq_phi(0.2); r = r + w; cq_theta(&r,0.1); }
 ;       return cq_measure(a)+cq_measure(r)+cq_measure(y); }
 ;
 ; `clang -O1`, two TUs `llvm-link`ed, `@main` dropped. `!llvm.loop` VERBATIM.
-; The trailing `r = cq_theta(r,0.1)` is what defeats `-O1`'s exit-value rewrite of
+; The trailing `cq_theta(&r,0.1)` is what defeats `-O1`'s exit-value rewrite of
 ; the affine add-recurrence, which is the ONLY reason the plain `add` spelling
 ; without it is correct today (see `..._w2_add_derived.ll`).
 ;

@@ -2,10 +2,10 @@
 ; MODULE (bd test_C_libtooling-if1e, M-B Increment 6). A component that CANNOT
 ; be proven no longer poisons the components that can.
 ;
-;     int q  = cq_theta(u, 0.5);
+;     int q  = u; cq_theta(&q, 0.5);
 ;     int a  = q * 5;   int m1 = cq_measure(a & 12);   /* component 1 */
 ;     int b  = q * 7;                                  /* component 2 opens */
-;     q      = cq_theta(q, 0.25);                      /* Ry INSIDE its interval */
+;     cq_theta(&q, 0.25);                      /* Ry INSIDE its interval */
 ;     int m2 = cq_measure(b & 20);                     /* component 2 closes */
 ;
 ; This is the C spelling verbatim (`clang -O1` keeps `b`'s `mul` before the

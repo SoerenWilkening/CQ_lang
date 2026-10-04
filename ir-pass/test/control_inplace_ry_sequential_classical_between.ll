@@ -3,9 +3,9 @@
 ; bd test_C_libtooling-drbq Inc 1, lens L4 §2), where the same stale pointer
 ; caused an OVER-DECLINE rather than the crash its phase twin got.
 ;
-;     if (q == 5) r = cq_theta(r, .9);   /* region 1: in-place Ry            */
+;     if (q == 5) cq_theta(&r, .9);   /* region 1: in-place Ry            */
 ;     if (cc)     g();                   /* a CLASSICAL branch between them  */
-;     if (p == 6) r = cq_theta(r, .3);   /* region 2: in-place Ry on the SAME
+;     if (p == 6) cq_theta(&r, .3);   /* region 2: in-place Ry on the SAME
 ;                                           register, base = region 1's φ    */
 ;
 ; THE DEFECT: `classifyArms` records `Region.RoutedBase` at DETECTION (Inc 1 made

@@ -4,7 +4,7 @@
 ; show something working; it is here so the widening beside it stays narrow, and
 ; it is MUTATION-VALIDATED (see below) rather than merely asserted.
 ;
-;     int q = cq_theta(u, 0.3);
+;     int q = u; cq_theta(&q, 0.3);
 ;     int p = q * 3;                                  // HOISTED loop-invariant
 ;     for (int i = 0; i < 8; ++i)                     // TEMPLATE rail
 ;         if ((p >> i) & 1) cq_phi(0.3);              // p read by the condition;

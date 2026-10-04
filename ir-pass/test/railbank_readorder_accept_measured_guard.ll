@@ -13,10 +13,10 @@
 ; SOURCE (stage 1 below is `clang -O1` of it, verbatim):
 ; /* guard from a classical measurement result */
 ; __attribute__((noinline)) static int slice(int k) {
-;     int q = cq_theta(k, 0.4);
+;     int q = k; cq_theta(&q, 0.4);
 ;     int r = cq_measure(q);
 ;     int b[3];
-;     if (r > 0) for (int i = 0; i < 3; ++i) b[i] = cq_theta(0, 0.5);
+;     if (r > 0) for (int i = 0; i < 3; ++i) { b[i] = 0; cq_theta(&b[i], 0.5); }
 ;     int s = 0;
 ;     if (r > 1) for (int j = 0; j < 3; ++j) s += cq_measure(b[j]);
 ;     return s;

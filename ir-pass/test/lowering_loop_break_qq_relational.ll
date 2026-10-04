@@ -3,8 +3,8 @@
 ; value-arm `break` whose tainted Q==Q condition is a RELATIONAL `q < p` (icmp
 ; slt) rather than the symmetric `q == p` (icmp eq). Source shape:
 ;
-;     int p = cq_theta(pseed, 0.5);   // second, loop-invariant qubit
-;     int q = cq_theta(x, 0.25);
+;     int p = pseed; cq_theta(&p, 0.5);  // second, loop-invariant qubit
+;     int q = x; cq_theta(&q, 0.25);
 ;     for (int i = 0; i < n; i++) {
 ;         q = q ^ 9;                  // in-place value rail self-update
 ;         if (q < p) break;           // ASYMMETRIC relational Q==Q break flag

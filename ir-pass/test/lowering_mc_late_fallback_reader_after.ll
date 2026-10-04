@@ -41,7 +41,7 @@
 ;
 ; SHAPE (`clang -O1` output of, with `z = t * 3; if (z == 9)` const-folded by
 ; clang into the `t == 3` spelling below):
-;     int a = cq_theta(u, 0.5);
+;     int a = u; cq_theta(&a, 0.5);
 ;     int t = (a >> 2) + a;
 ;     if (t == 5) a = cq_phi(a, PI);
 ;     a -= off;

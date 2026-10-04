@@ -39,7 +39,7 @@
 ;
 ; `specialize()` DOES scrub here — `h`'s clone returns the classical `k + 1`, so
 ; `t` and `t`'s cone lose their conservative taint — but the lifted phi
-; `phi(q, cq_theta(q, .2))` is over `q`, a `cq_theta` result: a never-scrub keep
+; `phi(q, @cq_theta_si32(q, .2))` is over `q`, a `cq_theta` result: a never-scrub keep
 ; root. Its recorded premise holds at FINAL taint and the re-ask
 ; (`declineFalsifiedMergePhiLifts`) must say nothing. The gate stream is the
 ; hand-inlined twin's (`int t = m + 1;`, measured on main `def1b088`): Ry(.5) on
@@ -53,7 +53,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   int h(int a, int k);
-;   int main(int c, char **v) { int m = atoi(v[1]); int q = cq_theta(m, .5); int t = h(q, m); int r = q; if (m > 3) r = cq_theta(q, .2); return cq_measure(r) + t; }
+;   int main(int c, char **v) { int m = atoi(v[1]); int q = m; cq_theta(&q, .5); int t = h(q, m); int r = q; if (m > 3) { r = q; cq_theta(&r, .2); } return cq_measure(r) + t; }
 ;
 ; Regenerate: clang -O1 -emit-llvm -S the two TUs as above, then
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>.

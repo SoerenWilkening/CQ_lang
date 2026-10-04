@@ -47,7 +47,7 @@
 ;     on the same bit pattern (0xFFFFFFFF > 1 unsigned, < 1 signed), so a green
 ;     `sgt` fixture is zero evidence about `ugt`. Hence a separate witness.
 ;
-; THE PHYSICS BEING PINNED. `q1 = cq_theta(x); q2 = cq_theta(y); w = (q1 > q2)`
+; THE PHYSICS BEING PINNED. `q1 = x; cq_theta(&q1, ·); q2 = y; cq_theta(&q2, ·); w = (q1 > q2)`
 ; with `w` dead. The compare is not a branch — it is DATA. Embedded reversibly it
 ; is the permutation |a,b,c> -> |a,b, c XOR (a >u b)>, self-inverse, with the two
 ; operand rails left untouched. Four facts must hold, and a violation of any one

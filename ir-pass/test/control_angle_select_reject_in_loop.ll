@@ -2,7 +2,7 @@
 ; classically-bounded LOOP (bd drbq Inc 2b; Increment 3 = drbq.4 owns loops).
 ;
 ;     for (int i = 0; i < 3; ++i)
-;       if (q == 5) r = cq_theta(r, .9); else r = cq_theta(r, .3);
+;       if (q == 5) cq_theta(&r, .9); else cq_theta(&r, .3);
 ;
 ; THE IR IS THE `-O1` SHAPE, NOT A HAND-BUILT ONE (measured — probe q8): the
 ; compare AND the angle select are loop-invariant, so LICM hoists them into the

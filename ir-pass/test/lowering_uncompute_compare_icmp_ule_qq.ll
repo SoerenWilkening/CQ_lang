@@ -20,7 +20,7 @@
 ; project's silent miscompiles live on (Rule 13), so this cheap ir-pass fixture
 ; restores the witness without re-vendoring an e2e slice body.
 ;
-; SHAPE. `q1 = cq_theta(x); q2 = cq_theta(y); w = (unsigned)q1 <= (unsigned)q2`
+; SHAPE. `q1 = x; cq_theta(&q1, ·); q2 = y; cq_theta(&q2, ·); w = (unsigned)q1 <= (unsigned)q2`
 ; — a DEAD, source-derived, tainted DATA-position compare with BOTH operands
 ; tainted, so it lowers to the QQ (two-handle) form `cq_template_icmp_ule_i32`,
 ; NOT the `_hl`/`_lh` handle+literal forms. The QQ symbol is genuinely distinct

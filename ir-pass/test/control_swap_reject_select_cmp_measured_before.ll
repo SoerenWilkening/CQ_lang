@@ -2,7 +2,7 @@
 ; test_C_libtooling-r903 item (b) / -r10v): the condition REGISTER is measured
 ; BEFORE the 4.4 data select that controls on it.
 ;
-;     int q = cq_theta(0, .5);
+;     int q = 0; cq_theta(&q, .5);
 ;     int m = cq_measure(q);
 ;     int a = (q == 1) ? 2 : 5;        // the flag is minted from a COLLAPSED q
 ;

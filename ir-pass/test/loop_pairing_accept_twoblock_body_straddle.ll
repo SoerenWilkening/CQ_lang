@@ -5,14 +5,14 @@
 ; SOURCE (`trackT2/probes/t5j_twoblock_noexit_rot.c`, `clang -O1`, no `-g`):
 ;
 ;     int slice(int lim) {
-;         int y = cq_theta(5, 0.5);
+;         int y = 5; cq_theta(&y, 0.5);
 ;         int s = 0;
 ;         for (int k = 1; k <= 4; ++k) {
 ;             int d = (y >> k);
 ;             s += cq_measure(d & 1);
 ;             if (k < lim) s += cq_measure(d & 2);   /* re-joins; NO break */
 ;         }
-;         y = cq_theta(y, 0.9);
+;         cq_theta(&y, 0.9);
 ;         return s + cq_measure(y);
 ;     }
 ;

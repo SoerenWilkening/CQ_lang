@@ -2,9 +2,9 @@
 ; §13.3 rail ladder: the `_Bool` condition register is MEASURED before the branch
 ; (probe `t9`, `clang -O1` stage-1 module committed verbatim).
 ;
-;     _Bool b = cq_theta(0, 0.5); int r = cq_theta(7, .25);
+;     _Bool b = 0; cq_theta(&b, 0.5); int r = 7; cq_theta(&r, .25);
 ;     _Bool m = cq_measure(b);
-;     if (b) r = cq_theta(r, 0.9);
+;     if (b) cq_theta(&r, 0.9);
 ;
 ; A measured register is CLASSICAL from that point on, so firing a gate
 ; controlled on it afterwards is a POST-MEASURE GATE — Rule 6's loud-reject

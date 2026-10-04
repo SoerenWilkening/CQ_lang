@@ -2,8 +2,8 @@
 ; PRD §4 names explicitly and which had NO fixture until the round-1 Rule-13
 ; review found it reachable and unpinned (lens L6 §4).
 ;
-;     if (q > 5) r = cq_theta(r, .9);
-;     else       p = cq_theta(p, .2);   /* a DIFFERENT register in the else arm */
+;     if (q > 5) cq_theta(&r, .9);
+;     else       cq_theta(&p, .2);   /* a DIFFERENT register in the else arm */
 ;
 ; An if/else anchors the routed base on the first arm and R3 requires the second
 ; to match by SSA identity (`Routed && RotBase != Routed`). Two arms rotating two

@@ -3,8 +3,8 @@
 ; `tests/e2e/run_slice_multi.sh` links it:
 ;
 ;     lib:   int h(int a, int k) { return k + 1; }
-;     main:  q = cq_theta(m & 7, .5); p = q * 3; u = p ^ q; s = h(m, q);
-;            if (u == 10) cq_phi(PI); ms = cq_measure(s); q = cq_theta(q, .7);
+;     main:  q = m & 7; cq_theta(&q, .5); p = q * 3; u = p ^ q; s = h(m, q);
+;            if (u == 10) cq_phi(PI); ms = cq_measure(s); cq_theta(&q, .7);
 ;            return ms + cq_measure(q);
 ;
 ; `p = 3q` and `u = 3q ^ q` are a derived chain whose only consumer is the kickback

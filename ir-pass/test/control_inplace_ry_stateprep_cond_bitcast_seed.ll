@@ -7,7 +7,7 @@
 ; `union` and through `memcpy`):
 ;
 ;     union { int i; float f; } u;  float r = <bits of 5>;
-;     if (q == 5) { u.i = q; r = cq_theta(u.f, 0.9); }
+;     if (q == 5) { u.i = q; r = u.f; cq_theta(&r, 0.9); }
 ;
 ; The round-1 review (lens L6, F-L6-1 item (ii)) asked for this to be MEASURED
 ; rather than argued, because the whole cross-type rationale turns on it: if a
@@ -16,7 +16,7 @@
 ; would owe a BIT-PATTERN clause.
 ;
 ; IT IS NOT AN ALIAS. MEASURED: the unfolded twin
-; (`int q = cq_theta(…); union {…} u; u.i = q; cq_theta(u.f, .9);`) lowers to
+; (`int q = …; cq_theta(&q, …); union {…} u; u.i = q; cq_theta(&u.f, .9);`) lowers to
 ;
 ;     %h_cast = call i32 @cq_template_bitcast_i32_to_f32(i32 %h)
 ;     call void @cqrt_ry_f32(i32 %h_cast, double 9.000000e-01)

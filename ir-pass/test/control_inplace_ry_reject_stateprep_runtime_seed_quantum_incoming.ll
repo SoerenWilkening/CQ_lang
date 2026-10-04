@@ -2,7 +2,7 @@
 ; (F1's identity clause, the NO-CLONING split; bd test_C_libtooling-z0re): a runtime
 ; seed on the arm, a LIVE QUANTUM REGISTER on the straight-through edge.
 ;
-;     int r = q; if (q != s) r = cq_theta(s, .2);          // probe e09, from C
+;     int r = q; if (q != s) { r = s; cq_theta(&r, .2); }  // probe e09, from C
 ;
 ; This is the β reading of F2's header with a RUNTIME seed. MEASURED at -O1: the
 ; Pred incoming stays `%q` (no pass substitutes `s` for `q` on the `q == s` edge —

@@ -3,7 +3,7 @@
 ; a COLLAPSE of the borrowed wire strictly inside the interval still leaks the
 ; whole component.
 ;
-;     q = cq_theta(u, 0.5);
+;     q = u; cq_theta(&q, 0.5);
 ;     d = q * 37;
 ;     if ((d >> 3) == 5) q = cq_phi(q, PI);
 ;     return cq_measure(q) + cq_measure(d & 7);

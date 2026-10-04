@@ -186,7 +186,7 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 //   F-1, THE GATE SET WAS THE CHAIN'S, NOT THE RAIL'S. `collectRailGates` read only
 //   the peeled root→PreV→phi→LatV members, so a `cq_theta` whose arg-0 IS a member
 //   but whose RESULT is off the chain — canonically a rotation applied to the
-//   loop's EXIT value — was not a gate. `mark = q; q = cq_theta(q, .125);
+//   loop's EXIT value — was not a gate. `mark = q; cq_theta(&q, .125);
 //   cq_measure(mark)` emitted `cqrt_ry_i32(%h,.125); measure(%h)`, `opt` exit 0 and
 //   stage-2b clean. Ry is ALWAYS lowered in place, so unlike a value op there is no
 //   escape hatch. Each chain is now extended FORWARD through the users that keep
@@ -215,8 +215,8 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 //   enumerating chain members, so a rail value ONE HOP off the chain was never
 //   asked about:
 //
-//       for (…) { if (q==5) q=cq_phi(q,PI); q=cq_theta(q,-.5); q=cq_theta(q,.5); }
-//       int a = cq_theta(q, .125);   int b = cq_theta(a, .25);
+//       for (…) { if (q==5) q=cq_phi(q,PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
+//       int a = q; cq_theta(&a, .125);  int b = a; cq_theta(&b, .25);
 //       return cq_measure(a) + cq_measure(b);
 //
 //   emitted `ry(%h,.125); ry(%h,.25); measure(%h); measure(%h)` — `a` names the
@@ -285,7 +285,7 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // finding **C-1** (the BLOCK verdict). The dispatch used to be exclusive: a loop
 // that `collapseRailPhisIn` CLAIMED was marked with the carried roots alone, and
 // only a `NotClaimed` loop was offered to `invariantRegisterRoots`. A loop can be
-// both — `for (i<K) { if ((q>>i)&1) cq_phi(θ); r = cq_theta(r,.1); }` carries `r`
+// both — `for (i<K) { if ((q>>i)&1) cq_phi(θ); cq_theta(&r,.1); }` carries `r`
 // and reads the INVARIANT `q` — and that loop was served by neither: the carried
 // branch handed `markIfRailLocal` a `Roots` not containing `q`, whose
 // "accumulating loop-invariant tainted input" clause then refused, so the body's

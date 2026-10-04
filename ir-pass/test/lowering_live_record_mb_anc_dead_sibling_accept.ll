@@ -3,10 +3,10 @@
 ; lowering_reject_live_record_anc_dead_sibling.ll: that fixture MINUS its one
 ; `call void @cqrt_x`, i.e. the program a user actually writes.
 ;
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     int w = a * 2;   int b = a * 3;   int c = b * 7;
 ;     int mc = cq_measure(c);
-;     w = cq_theta(w, 0.5);            /* the chained, non-diagonal gate */
+;     cq_theta(&w, 0.5);            /* the chained, non-diagonal gate */
 ;     return cq_measure(w) + cq_measure(a) + mc;
 ;
 ; WHY IT NEEDS ITS OWN PIN. `lowering_live_record_mb_discharged_accept.ll` pins

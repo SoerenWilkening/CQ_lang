@@ -4,9 +4,9 @@
 ; used to LEAK once per trip:
 ;
 ;     for (int i = 0; i < 2; ++i) {
-;         q = cq_theta(q, 0.25);                   /* the LEADING Ry */
+;         cq_theta(&q, 0.25);                   /* the LEADING Ry */
 ;         if ((q & 3) == 1) { q = cq_phi(q, PI); } /* a DERIVED condition */
-;         q = cq_theta(q, -0.5);
+;         cq_theta(&q, -0.5);
 ;     }
 ;
 ; WHAT WAS WRONG. The M-B interior partition proves clause (d1) — "the borrowed

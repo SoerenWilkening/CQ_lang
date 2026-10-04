@@ -13,15 +13,15 @@
 ; THE PROGRAM (`loopfix/probes/n3_nested_iic_inner.c`, stage-1 verbatim,
 ; `clang -O1 -g`):
 ;
-;     int y = cq_theta(5, 0.5);
+;     int y = 5; cq_theta(&y, 0.5);
 ;     for (i = 1; i <= 2; ++i) {
 ;         s += cq_measure((y >> i) & 1);        // the OUTER body rail
 ;         for (j = 0; j < 2; ++j) {
-;             int u = cq_theta(6, 0.4);
+;             int u = 6; cq_theta(&u, 0.4);
 ;             s += cq_measure((u >> j) & 1) + cq_measure(y & 1);   // (ii-c)
 ;         }
 ;     }
-;     y = cq_theta(y, 0.9);                     // the interference (Rule 8)
+;     cq_theta(&y, 0.9);                     // the interference (Rule 8)
 ;     return s + cq_measure(y);
 ;
 ; `-O1` LICM-hoists the loop-invariant `y & 1`, whose every user is a

@@ -1,7 +1,7 @@
 ; control_angle_select_ry_sgt.ll — ACCEPT: a non-equality predicate (`>`), which
 ; reaches the mint as `icmp sgt` (bd drbq Inc 2b).
 ;
-;     if (q > 5) r = cq_theta(r, .9); else r = cq_theta(r, .3);
+;     if (q > 5) cq_theta(&r, .9); else cq_theta(&r, .3);
 ;
 ; Pins that the flag mint is the ORDINARY `lowerCompareToFlag` and carries no
 ; equality assumption: the accept predicate asks only `comparePredLowerable` +
@@ -14,7 +14,7 @@
 ; no longer true. `include/CQ.h` puts `nomerge` on every `cq_theta_*`, so `-O1` keeps
 ; that if/else an if/else (it lowers through the in-place Ry arm, the same unitary).
 ; THIS select shape now comes from C only when the select is written out,
-; `r = cq_theta(r, c ? A : B)` (`tests/e2e/slice_control_angle_select_ry*_ternary.c`,
+; `cq_theta(&r, c ? A : B)` (`tests/e2e/slice_control_angle_select_ry*_ternary.c`,
 ; measured to give the pre-fmt3 fold's function bodies). The IR and this fixture are
 ; unchanged; only the C spelling that reaches them moved.
 ;

@@ -1,7 +1,7 @@
 ; lowering_loop_break_step.ll — POSITIVE recognition (Phase 7.4 Inc 1, y05j.1; the
 ; B5 increment widening, owner 2026-06-26): a value-arm break loop with a NON-UNIT
 ; classical stride:
-;     int q = cq_theta(x, 0.25);
+;     int q = x; cq_theta(&q, 0.25);
 ;     for (int i = 0; i < n; i += 2) {     // step-2 classical counter
 ;         q = q ^ 9;
 ;         if ((q & 1) == 0) break;         // tainted value-arm break

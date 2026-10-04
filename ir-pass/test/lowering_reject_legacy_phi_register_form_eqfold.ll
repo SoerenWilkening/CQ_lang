@@ -7,7 +7,7 @@
 ; against a STALE (pre-3qlq) header:
 ;
 ;     int slice(int u) {
-;         int q = cq_theta(u, 0.5);
+;         int q = u; cq_theta(&q, 0.5);
 ;         if (q == 5) { q = cq_phi(q, 3.141592653589793); }   /* the Grover oracle */
 ;         return cq_measure(q);
 ;     }

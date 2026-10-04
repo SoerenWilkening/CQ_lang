@@ -3,9 +3,9 @@
 ; test_C_libtooling-6uqc).
 ;
 ; SOURCE:
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     int d = a * 3;            // out-of-place: the alloc rail stays live
-;     d = cq_theta(d, 0.5);     // T — chained, in-place Ry on the mul rail
+;     cq_theta(&d, 0.5);     // T — chained, in-place Ry on the mul rail
 ;     int m  = cq_measure(d);
 ;     int m0 = cq_measure(a);   // the parent is OBSERVED AFTER the gate
 ;     return m + m0;

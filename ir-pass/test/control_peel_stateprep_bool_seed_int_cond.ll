@@ -8,8 +8,8 @@
 ;     int  b0 = 0;
 ;     bool b1 = 0;
 ;     int  a  = 5;
-;     b0 = cq_theta(b0, 0.5);
-;     if (b0 == 1) { b1 = cq_theta(b1, 0.5); a = 2; }
+;     cq_theta(&b0, 0.5);
+;     if (b0 == 1) { cq_theta(&b1, 0.5); a = 2; }
 ;     return cq_measure(b0) + cq_measure(b1) + cq_measure(a);
 ;
 ; ⚠ THIS IS THE PEELED TWIN OF `control_inplace_ry_stateprep_bool_seed_int_cond.ll`
@@ -40,7 +40,7 @@
 ; `peelIndependentMergePhis` manufactured it ~90 lines before detection, as
 ; `S.CondCmp->clone()`, and its only consumer is the peel's own select. F2's
 ; question is *"the source the author wrote could have been
-; `cq_theta(<that register>, θ)`"*; a value the author could not have named is
+; `cq_theta(&<that register>, θ)`"*; a value the author could not have named is
 ; not in that question's domain, so there is no rival program to protect
 ; against. The exclusion is a RECORD (`TaintSet::PeelClones`, written at the
 ; manufacture site) consulted at F2's equality TEST — never a name test, never a

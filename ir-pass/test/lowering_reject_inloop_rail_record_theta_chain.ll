@@ -3,8 +3,8 @@
 ; ARGUMENT, pinned).
 ;
 ;     int mark = q;
-;     q = cq_theta(q, 0.125);    /* %p1 — a direct in-place Ry on a chain member */
-;     q = cq_theta(q, 0.250);    /* %p2 — an Ry on %p1, which is on NO chain      */
+;     cq_theta(&q, 0.125);    /* %p1 — a direct in-place Ry on a chain member */
+;     cq_theta(&q, 0.250);    /* %p2 — an Ry on %p1, which is on NO chain      */
 ;     return cq_measure(mark) + cq_measure(q);
 ;
 ; The forward rail extension is walked to a FIXPOINT, so both rotations are
@@ -12,8 +12,8 @@
 ; needed, because the claim is what licenses stopping the walk at an out-of-place
 ; value op (see control_swap_inloop_postloop_railop.ll).
 ;
-; THE ARGUMENT. Let `Def` be the member's definition, `t1 = cq_theta(Def,…)` and
-; `t2 = cq_theta(t1,…)`. `Def` dominates `t1` (SSA: `t1` uses it) and `t1`
+; THE ARGUMENT. Let `Def` be the member's definition, `t1 = Def; cq_theta(&t1,…)` and
+; `t2 = t1; cq_theta(&t2,…)`. `Def` dominates `t1` (SSA: `t1` uses it) and `t1`
 ; dominates `t2`. Then EVERY CFG path from `Def` to `t2` crosses `t1`: a path
 ; avoiding `t1` could be prefixed by a SIMPLE entry→`Def` path — which cannot
 ; visit `t1`'s block, since `Def` dominates it and the path would have to repeat

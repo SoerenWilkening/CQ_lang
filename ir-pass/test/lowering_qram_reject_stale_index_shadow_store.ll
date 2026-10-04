@@ -2,8 +2,8 @@
 ; test_C_libtooling-r2j3.2): a Shadow (local-array) STORE whose bare i64 index
 ; register was rotated in place before the store. clang -O1 of
 ;
-;     long q = cq_theta(0L, .5);  long j = cq_theta(0L, .9) & 7;
-;     long q2 = cq_theta(q, .3);
+;     long q = 0L; cq_theta(&q, .5);  long s = 0L; cq_theta(&s, .9); long j = s & 7;
+;     long q2 = q; cq_theta(&q2, .3);
 ;     arr[q] = 5;                       // `q` names the PRE-Ry record
 ;     return cq_measure(arr[j]) + (int)cq_measure(q2);
 ;

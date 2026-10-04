@@ -3,10 +3,10 @@
 ; A CONFIRMED silent miscompile.
 ;
 ;     static int inner(int u) {
-;       int q = cq_theta(u, .5);
-;       for (i<2) { if (q==5) q=cq_phi(q,PI); q=cq_theta(q,-.5); q=cq_theta(q,.5); }
-;       int a = cq_theta(q, .125);        /* OFF-CHAIN record */
-;       int b = cq_theta(a, .25);         /* a rail gate AFTER it */
+;       int q = u; cq_theta(&q, .5);
+;       for (i<2) { if (q==5) q=cq_phi(q,PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
+;       int a = q; cq_theta(&a, .125);    /* OFF-CHAIN record */
+;       int b = a; cq_theta(&b, .25);     /* a rail gate AFTER it */
 ;       (void)cq_measure(b);
 ;       return a;                         /* the STALE read is a `ret`, not a measure */
 ;     }

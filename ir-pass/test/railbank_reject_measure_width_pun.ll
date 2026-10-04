@@ -10,7 +10,7 @@
 ;     cqrt_measure_i16(h0) -> 0        <-- an i32 rail measured at i16
 ;
 ; — the TRUNCATION GATE DROPPED ENTIRELY.  The register spelling of the same
-; program (`trackB/probes/d5h_scalar_width_pun.c`: `int q = cq_theta(q, .5);
+; program (`trackB/probes/d5h_scalar_width_pun.c`: `int q; cq_theta(&q, .5);
 ; cq_measure((short) q);`, NO ARRAY ANYWHERE) emits
 ;
 ;     cq_template_trunc_i32_to_i16(h0) -> h1
@@ -42,7 +42,7 @@
 ;   #include "CQ.h"
 ;   int main(void) {
 ;       int b0[3]; int s = 0;
-;       for (int i = 0; i < 3; ++i) b0[i] = cq_theta(b0[i], 0.5);
+;       for (int i = 0; i < 3; ++i) cq_theta(&b0[i], 0.5);
 ;       for (int i = 0; i < 3; ++i) s += cq_measure((short) b0[i]);
 ;       return s;
 ;   }

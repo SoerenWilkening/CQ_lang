@@ -3,9 +3,9 @@
 ; test_C_libtooling-if1e, the Rule-13 reviewer's Q2 recommendation from M-B
 ; Increment 5, landed with Increment 6 because its Grover customer needs it).
 ;
-;     int q  = cq_theta(u, 0.5);
+;     int q  = u; cq_theta(&q, 0.5);
 ;     int a  = q * 5;   int m1 = cq_measure(a & 12);
-;     q      = cq_theta(q, 0.25);          /* the chained Ry, in the middle */
+;     cq_theta(&q, 0.25);          /* the chained Ry, in the middle */
 ;     int b  = q * 7;   int m2 = cq_measure(b & 20);
 ;
 ; TWO INTERIOR RAILS, `a` and `b`, with NO producer edge between them: neither

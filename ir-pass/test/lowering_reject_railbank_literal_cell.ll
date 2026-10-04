@@ -4,7 +4,7 @@
 ; its verdict.
 ;
 ; SOURCE: tests/e2e/railbank_dynamic_matrix.c CASE_LITERAL_CELL_FIXED at clang -O1:
-; `int c[3] = {0}; for (i<3) { int t = cq_theta(c[i], .25); if (c[i] != 0) c[i] = t; }`
+; `int c[3] = {0}; for (i<3) { int t = c[i]; cq_theta(&t, .25); if (c[i] != 0) c[i] = t; }`
 ; beside a PredMux-claimed Grover arm on `b[]`, then `cq_measure(c[i])`.
 ;
 ; HISTORY. The HEAD oracle before xdu2.4 ACCEPTED this and parked `store i32 0` (handle

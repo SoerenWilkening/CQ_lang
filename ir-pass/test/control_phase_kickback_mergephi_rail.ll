@@ -1,5 +1,5 @@
 ; control_phase_kickback_mergephi_rail.ll — ACCEPT (bd `3qps`, Track P). THE
-; HEADLINE CUSTOMER: `bool b1 = 0; if (b0) b1 = cq_theta(b1, θ); if (b1)
+; HEADLINE CUSTOMER: `bool b1 = 0; if (b0) cq_theta(&b1, θ); if (b1)
 ; cq_phi(φ);` — the register-free BRANCH PHASE controlled on a preceding
 ; controlled state PREP's MERGE φ.
 ;

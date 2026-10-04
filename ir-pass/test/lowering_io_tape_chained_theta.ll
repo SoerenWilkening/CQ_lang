@@ -8,7 +8,7 @@
 ; formulation leaves it standing.
 ;
 ; MEASURED against the shipped pass before this fix (six lines of ordinary C —
-; `int x=cq_theta(seed,.5); int y=x+1; int z=cq_theta(y,.25); printf("%d",z);`,
+; `int x=seed; cq_theta(&x,.5); int y=x+1; int z=y; cq_theta(&z,.25); printf("%d",z);`,
 ; clang -O1, EXIT=0 — the `%W` read of the root was added later, see the Increment-3
 ; note below): TWO defective frees were emitted,
 ;     cqrt_ry_i32(%OP,-0.25) ; cq_template_add_i32_hl_unc(%OP,%H,1) ; cqrt_free(%OP)

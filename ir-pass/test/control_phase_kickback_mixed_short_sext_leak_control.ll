@@ -9,7 +9,7 @@
 ; the per-bit `and` rails are `3/0 rolled` against `3/3 hand-unrolled`, and the
 ; source ends
 ;
-;     q = cq_theta(q, 0.9); return cq_measure(q) + cq_measure(r);
+;     cq_theta(&q, 0.9); return cq_measure(q) + cq_measure(r);
 ;
 ; — a NON-DIAGONAL, TENSORED `cqrt_ry` on `q`, followed by a measurement of `q`.
 ; The three leaked rails are which-path copies of `q`'s bits. Leaving them
@@ -59,9 +59,9 @@
 ; finding **F-C1-3**: the Q-R1-1 template-rail class reached by a TYPE the user
 ; wrote, not by a cast the user wrote.
 ;
-;     int slice(short u){ short q=cq_theta(u,0.5); short r=cq_theta(u,0.3);
-;       for(int i=0;i<3;i++){ if((q>>i)&1) cq_phi(0.2); r=cq_theta(r,0.1); }
-;       q=cq_theta(q,0.9); return cq_measure(q)+cq_measure(r); }
+;     int slice(short u){ short q=u; cq_theta(&q,0.5); short r=u; cq_theta(&r,0.3);
+;       for(int i=0;i<3;i++){ if((q>>i)&1) cq_phi(0.2); cq_theta(&r,0.1); }
+;       cq_theta(&q,0.9); return cq_measure(q)+cq_measure(r); }
 ;
 ; That is `control_phase_kickback_mixed_invariant_carried_inloop.ll`'s source with
 ; `int` changed to `short` and nothing else. `clang -O1` HOISTS a

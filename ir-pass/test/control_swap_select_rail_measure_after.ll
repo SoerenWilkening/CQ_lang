@@ -9,7 +9,7 @@
 ; there on — and this is plain `clang -O1` C (probe `s05`). The mirror decline
 ; is `..._reject_select_rail_measured_before.ll`, one line apart.
 ; bd test_C_libtooling-r9e5 (Inc 1b-B.1) — THE 4.4 DATA SELECT ON A BARE RAIL.
-; `_Bool b = cq_theta(b0, θ)` is a one-qubit REGISTER; `int a = b ? T : F` hands
+; `_Bool b = b0; cq_theta(&b, θ)` is a one-qubit REGISTER; `int a = b ? T : F` hands
 ; the pass `select i1 %b, …` with no compare to mint a flag from. The merge
 ; stream is the shipped §5a controlled-XOR copy merge, INSTRUCTION FOR
 ; INSTRUCTION — what changes is only where the FLAG comes from: a fresh |0> i1

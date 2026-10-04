@@ -2,7 +2,7 @@
 ; (control-in-place-PRD §4 R1, owner Q4 chose shape (a) — exactly ONE theta per
 ; arm; bd test_C_libtooling-drbq).
 ;
-;     if (q > 5) { r = cq_theta(r,.9); r = cq_theta(r,.4); }
+;     if (q > 5) { cq_theta(&r,.9); cq_theta(&r,.4); }
 ;
 ; The multi-gate in-place SPINE is deferred to shape (b), after Inc 3 (PRD §8),
 ; so the arm-block purity test admits exactly one non-terminator. The general

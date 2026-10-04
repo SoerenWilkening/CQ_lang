@@ -32,7 +32,7 @@
 ; WRONGW-NOT: cq_template_{{(sext|zext)}}_i32_to_i64(i32 %cq.brk.out
 ; WRONGW-NOT: cq_template_icmp_eq_i32{{(_unc)?}}({{(i32 %[a-zA-Z0-9_.]+, )?}}i32 %cq.brk.out
 
-; signed char p = cq_theta(pseed,.5), q = cq_theta(seed,.25);
+; signed char p = pseed, q = seed; cq_theta(&p,.5); cq_theta(&q,.25);
 ; for (int i = 0; i < n; i++) { q = q ^ 5; if (q == p) break; }
 ; return cq_measure((long long)q);
 define i64 @sext_i8(i8 noundef signext %0, i8 noundef signext %1, i32 noundef %2) {
@@ -63,7 +63,7 @@ define i64 @sext_i8(i8 noundef signext %0, i8 noundef signext %1, i32 noundef %2
 ; CHECK:      %[[SC:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sext_i8_to_i64(i32 %[[SO]])
 ; CHECK:      call i64 @cqrt_measure_i64(i32 %[[SC]])
 
-; unsigned char p = cq_theta(pseed,.5), q = cq_theta(seed,.25);
+; unsigned char p = pseed, q = seed; cq_theta(&p,.5); cq_theta(&q,.25);
 ; for (int i = 0; i < n; i++) { q = q ^ 5; if (q == p) break; }
 ; return cq_measure((unsigned long long)q);
 define i64 @zext_u8(i8 noundef zeroext %0, i8 noundef zeroext %1, i32 noundef %2) {
@@ -94,11 +94,11 @@ define i64 @zext_u8(i8 noundef zeroext %0, i8 noundef zeroext %1, i32 noundef %2
 ; CHECK:      %[[ZC:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i8_to_i64(i32 %[[ZO]])
 ; CHECK:      call i64 @cqrt_measure_i64(i32 %[[ZC]])
 
-; long long p = cq_theta(pseed,.5), q = cq_theta(seed,.25);
+; long long p = pseed, q = seed; cq_theta(&p,.5); cq_theta(&q,.25);
 ; for (int i = 0; i < n; i++) { q = q ^ 5; if (q == p) break; }
-; long long p2 = cq_theta(p2s,.5), q2 = cq_theta(s2,.25);
+; long long p2 = p2s, q2 = s2; cq_theta(&p2,.5); cq_theta(&q2,.25);
 ; for (int j = 0; j < n; j++) { q2 = q2 ^ 3; if (q2 == p2) break; }
-; long long r = cq_theta(rseed,.75);
+; long long r = rseed; cq_theta(&r,.75);
 ; return cq_measure((q == q2) ? r + 3 : r ^ 6);
 define i64 @sel_two_i64(i64 noundef %0, i64 noundef %1, i64 noundef %2, i64 noundef %3, i64 noundef %4, i32 noundef %5) {
   %7 = tail call i64 @cq_theta_sll(i64 noundef %1, double noundef 5.000000e-01) #0

@@ -2,7 +2,7 @@
 ; flagship Grover customer of PRD §1, in its smallest form:
 ;
 ;     if (q == 5) cq_phi(PI);        // oracle: mark |5>
-;     q = cq_theta(q, -0.5);         // diffusion
+;     cq_theta(&q, -0.5);         // diffusion
 ;     if (q == 0) cq_phi(PI);        // reflect about |0>
 ;
 ; Region 2's `Pred` IS region 1's `MergeBB`, which `flattenRegion` splices into

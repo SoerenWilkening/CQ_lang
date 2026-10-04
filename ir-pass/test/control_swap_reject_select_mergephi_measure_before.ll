@@ -19,7 +19,7 @@
 ; TWO rungs (the 8h7d.5 F-1/F-3 lesson, CLAUDE.md L2).
 ;
 ; This module is `clang -O1 -g` output verbatim (probe `m05.c`:
-; `if (a >= 3) b1 = cq_theta(b1, .5); int mb = cq_measure(b1); if (b1) a -= 3;`),
+; `if (a >= 3) cq_theta(&b1, .5); int mb = cq_measure(b1); if (b1) a -= 3;`),
 ; debug metadata included, so the fused two-phi diamond and the measure's
 ; placement are `-O1`'s and not a fixture author's.
 

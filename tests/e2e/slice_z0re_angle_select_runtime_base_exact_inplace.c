@@ -6,7 +6,7 @@
    UNCONDITIONAL prep of the literal 6 (= the runtime `m + 1` under the harness) by
    Ry(.25), then an in-place controlled-Ry ARM of .5 on it (the drbq Inc-1 path):
 
-     int r = cq_theta(6, .25); if (q > 3) cq_theta(&r, .5);
+     int r = 6; cq_theta(&r, .25); if (q > 3) cq_theta(&r, .5);
 
    f = 0: Ry(.25)|6⟩; f = 1: Ry(.25 + .5) = Ry(.75)|6⟩ — the runtime-base angle
    select's by-difference stream exactly (.75 − .25 = .5 is exact in binary64). This

@@ -2,8 +2,8 @@
 ; test_C_libtooling-r10v): THE CLOSURE'S STOP PIN. A DIFFERENT register is
 ; measured before the select, on the same path.
 ;
-;     int p = cq_theta(0, .7);
-;     int q = cq_theta(1, .5);
+;     int p = 0; cq_theta(&p, .7);
+;     int q = 1; cq_theta(&q, .5);
 ;     int m = cq_measure(p);           // another register entirely
 ;     int a = (q == 1) ? 2 : 5;
 ;

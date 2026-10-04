@@ -2,8 +2,8 @@
 ; test_C_libtooling-3d8q, P1). THE SIBLING PAIR ON A **TEMPLATE** PARENT, i.e.
 ; the shape whose ancestry edge only exists because of bd 3qlq.4 finding F-1b-1:
 ;
-;   int q=cq_theta(0,0.3); int t=q&1;
-;   int b=cq_theta(t,0.5); int c=cq_theta(t,0.9); return cq_measure(b)+cq_measure(c);
+;   int q=0; cq_theta(&q,0.3); int t=q&1;
+;   int b=t; cq_theta(&b,0.5); int c=t; cq_theta(&c,0.9); return cq_measure(b)+cq_measure(c);
 ;
 ; `%t` is a `cq_template_and_i32_hl` rail, and `%b`/`%c` are two in-place Ry on
 ; IT. The backward closure reaches a template parent only when `WireWalk` is given

@@ -3,10 +3,10 @@
 ; UNREACHABLE and which the eqpx investigation FALSIFIED with five spellings.
 ;
 ;     int ext_f(int a);                        /* a second TU: `return a+100;` */
-;     int slice(int u){ int q=cq_theta(u,0.5); int r=cq_theta(u,0.3);
+;     int slice(int u){ int q=u; cq_theta(&q,0.5); int r=u; cq_theta(&r,0.3);
 ;       int y=5; if (q>5) y=ext_f(7);          /* 6.5 CLASSICAL-CALL ARM -> %out */
 ;       int w = y & 7;
-;       for(int i=0;i<3;i++){ r = r + w; r = cq_theta(r,0.1); }
+;       for(int i=0;i<3;i++){ r = r + w; cq_theta(&r,0.1); }
 ;       return cq_measure(r)+cq_measure(y)+cq_measure(q); }
 ;                            ^^^^^^^^^^^^^^^^ ONE extra body op, and that is the
 ;                            whole difference between this and a correct program.
@@ -20,7 +20,7 @@
 ; add-recurrence (`%10 = mul nuw nsw i32 %9, 3; %11 = add i32 %3, %10`) and
 ; LoopDeletion removes the loop, so no writer ever sees the op. The `add` stem is
 ; therefore correct BY ACCIDENT OF A FRONTEND TRANSFORM, not by any fence that
-; reasons about the immediate. ONE extra body op (here `r = cq_theta(r,0.1)`)
+; reasons about the immediate. ONE extra body op (here `cq_theta(&r,0.1)`)
 ; defeats the rewrite and the loop survives with the `add` in the body.
 ;
 ; The one-opcode CONTROL for the same claim is the eqpx investigation's

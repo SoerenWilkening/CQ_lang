@@ -2,7 +2,7 @@
    at `i32`, the second half of the 2026-09-11 owner ruling (bd `drbq.14`; F2's
    `CondWire` narrowing).
 
-       int r = 5;  if (q == 5) r = cq_theta(5, 0.9);
+       int r = 5;  if (q == 5) { r = 5; cq_theta(&r, 0.9); }
 
    Before the ruling this declined `state prep seed is proven equal to the
    condition register`, and PRD §14.11 Q1 recorded it as a GENUINE over-decline
@@ -41,7 +41,7 @@
    buys at this width.
 
    ⚠ THE TRADE, disclosed rather than fenced (SCOPE H-1): after `-O1` this module
-   is BYTE-IDENTICAL to `int r = 5; if (q == 5) r = cq_theta(q, 0.9);` — an
+   is BYTE-IDENTICAL to `int r = 5; if (q == 5) { r = q; cq_theta(&r, 0.9); }` — an
    in-place Ry on the CONDITION's own register — measured on the sibling pair
    `probes/a_prep.c` / `probes/a_self.c`, where `diff` over the two `-O1`
    slice bodies is EMPTY. That rival now compiles as this prep, silently. It is

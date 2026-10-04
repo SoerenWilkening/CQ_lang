@@ -846,7 +846,7 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
     // reversal needs the ARRAY's state at the load (and its index), not the
     // array's history; the whole-DAG walk nevertheless follows a QRAM array root
     // into its stores, and a store's index or value that the user later
-    // measures (`arr[b] = 0; v = arr[p]; b = cq_theta(b, -.5); measure(b)`)
+    // measures (`arr[b] = 0; v = arr[p]; cq_theta(&b, -.5); measure(b)`)
     // declined the whole module — an over-decline (the same body lowers in
     // `main`). Retry ONCE with every QRAM array root BORROWED: the walk stops
     // at the array (its stores are not reversed, its cells stay as they are —
@@ -1000,7 +1000,7 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P,
   //     derived chain (`p = q*3; u = p^q`) and the chain's kickback consumer; this
   //     predicate refused the call as a mutation of the borrowed parent `q`, the
   //     component leaked, and `3q`, `3q^q` stood allocated and ENTANGLED across
-  //     the later `cq_theta(q, .7)` (Rule 8; `opt` exit 0 with the lyyf-(B)
+  //     the later `@cq_theta_*(q, .7)` (Rule 8; `opt` exit 0 with the lyyf-(B)
   //     warning). The hand-inlined twin puts `cq_template_add_i32_hl(q, 1)` in the
   //     same place — admitted by (2) — and discharged both rails. The call's
   //     effect on `P` is NOT assumed from the name or from the Bennett wrap's
@@ -1351,8 +1351,8 @@ bool borrowedParentsUnmoved(const DataDag &D,
       // DIFFERENT question — "did A run before B on this activation" — and its
       // dominance conjunct is load-bearing there. It is no step of the proof
       // above, and bundling it made the scan refuse two shapes it can prove:
-      //   * the ROLLED LEADING GATE (F-4). `for(…){ q=cq_theta(q,a);
-      //     if((q&3)==1){…} q=cq_theta(q,b); }` — the NEXT iteration's leading
+      //   * the ROLLED LEADING GATE (F-4). `for(…){ cq_theta(&q,a);
+      //     if((q&3)==1){…} cq_theta(&q,b); }` — the NEXT iteration's leading
       //     `cqrt_ry` sits BEFORE `First` in the body, so it does not dominate
       //     anything the old legs asked about, and the whole condition chain
       //     leaked, ENTANGLED, across the trailing Ry: `opt` exit 0, strict
@@ -1650,8 +1650,8 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
   //             because every such path leaves through the discharge `At` first.
   //             That is LEFT-b at the scan below; the barrier is `At`, and the
   //             reason a `First` barrier cannot see it is the whole finding.
-  //             Symptom when it is missed: `for(…){ q=cq_theta(q,a);
-  //             if((q&3)==1){q=cq_phi(q,PI);} q=cq_theta(q,b); }` leaves the
+  //             Symptom when it is missed: `for(…){ cq_theta(&q,a);
+  //             if((q&3)==1){q=cq_phi(q,PI);} cq_theta(&q,b); }` leaves the
   //             `and` record allocated and ENTANGLED across the trailing Ry —
   //             `opt` exit 0, strict stage-2b clean, and (with no leading Rz to
   //             trip the M-A guard) not one warning. The hand-unrolled twin of
@@ -2039,7 +2039,7 @@ void collectInteriorPlansMode(Function &F, TaintSet &taint, DominatorTree &DT,
   // including the clone call. When that call sits after a non-diagonal gate on
   // the component's borrowed parent, clause (d) refuses the WHOLE component and
   // a DEAD sibling the pre-rhk5 planner discharged alone now leaks, entangled:
-  // `p = q & 3; u = p + q; if (u == 10) cq_phi(PI); q2 = cq_theta(q, .7);
+  // `p = q & 3; u = p + q; if (u == 10) cq_phi(PI); q2 = q; cq_theta(&q2, .7);
   // s = h(m, p);` — the oracle discharges `u` before the Ry, round 1 left it
   // standing (the user's phase oracle erased; r1B's `b2n`).
   //

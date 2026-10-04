@@ -47,7 +47,7 @@
 ; `%off` is a volatile load so nothing folds it away.
 ;
 ; SHAPE (`clang -O1` output of):
-;     int a = cq_theta(u, 0.5);
+;     int a = u; cq_theta(&a, 0.5);
 ;     int t = (a >> 2) + a;
 ;     if (t == 5) a = cq_phi(a, PI);
 ;     int mt = cq_measure(t);

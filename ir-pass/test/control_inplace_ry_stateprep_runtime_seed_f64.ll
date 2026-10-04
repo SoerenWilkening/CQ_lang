@@ -1,7 +1,7 @@
 ; control_inplace_ry_stateprep_runtime_seed_f64.ll — ACCEPT (bd
 ; test_C_libtooling-z0re, owner ruling 2026-09-28 option (a)): a RUNTIME f64 seed.
 ;
-;     double s = atof(v[2]); double r = s; if (q > 3) r = cq_theta(s, .2);   // probe e11
+;     double s = atof(v[2]); double r = s; if (q > 3) { r = s; cq_theta(&r, .2); }  // probe e11
 ;
 ; bd z0re's named population includes the f64 width (`zxdC`, Rule-13 r1B d88e), and
 ; the ruling's purpose — the hand-inlined twin and the spec-classical side door

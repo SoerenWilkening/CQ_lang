@@ -2,7 +2,7 @@
 ; AFTER the region, off the MERGE φ (control-in-place-PRD §4 R6; bd
 ; test_C_libtooling-drbq Inc 1, finding J's second positive control).
 ;
-;     if (q > 5) r = cq_theta(r, .9);
+;     if (q > 5) cq_theta(&r, .9);
 ;     int mark = cq_phi(r, .1);            // `r` here is the POST-region name
 ;     use(cq_measure(mark));
 ;

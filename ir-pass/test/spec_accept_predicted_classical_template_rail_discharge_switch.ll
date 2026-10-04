@@ -10,7 +10,7 @@
 ; unchanged) returns the classical value. Before bd cepm the result was tainted
 ; CONSERVATIVELY and scrubbed only after both control rounds.
 ; Here the site's quantum argument is a TEMPLATE RAIL `p = q * 3` read ONLY by the classical-verdict
-; clone call, and a NON-DIAGONAL gate (`cq_theta(q, .2)`) follows under the classical `switch (t)`. THIS FILE
+; clone call, and a NON-DIAGONAL gate (`cq_theta(&q, .2)`) follows under the classical `switch (t)`. THIS FILE
 ; PINS THE bd cepm x bd rhk5 COMPOSITION (Rule-13 r1B F-r1B-1): `p` is a which-path record of `q` and
 ; must be discharged (`_unc` + `cqrt_free`) BEFORE the Ry — rhk5's discharge window through a clone
 ; call. On cepm ALONE this module ACCEPTED with `p` never discharged (a wrong unitary on both C and its
@@ -20,7 +20,7 @@
 ; 5 TUs, each `clang -O1`, llvm-linked as tests/e2e/run_slice_multi.sh does.
 ; Caller TU (-include CQ.h):
 ;   int h(int a, int k);
-;   int main(int c, char **v) { int m = atoi(v[1]); int n = atoi(v[2]); int q = cq_theta(m, .5); int p = q * 3; int t = h(p, m); switch (t) { case 4: q = cq_theta(q, .2); break; case 6: q = cq_theta(q, .3); break; default: break; } return cq_measure(q); }
+;   int main(int c, char **v) { int m = atoi(v[1]); int n = atoi(v[2]); int q = m; cq_theta(&q, .5); int p = q * 3; int t = h(p, m); switch (t) { case 4: cq_theta(&q, .2); break; case 6: cq_theta(&q, .3); break; default: break; } return cq_measure(q); }
 ; Library TU 1 (plain C):
 ;   /* h READS a (a call to g, an external here) and returns the CLASSICAL k + 1. */
 ;   void g(int a);

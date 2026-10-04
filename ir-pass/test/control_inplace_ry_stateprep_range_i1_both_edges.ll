@@ -6,8 +6,8 @@
 ; this header moved — so the module below is still, character for
 ; character, the one the four drbq Inc-4 adversarial rounds argued over.
 ;
-;     _Bool b = cq_theta(u,.5);  _Bool r = false;  if (b == 1) r =
-; cq_theta(false, .9);
+;     _Bool b = u; cq_theta(&b,.5);  _Bool r = false;  if (b == 1) { r = false;
+; cq_theta(&r, .9); }
 ;
 ; ---- WHY IT IS AN ACCEPT NOW (bd `drbq.14`; F2's `CondWire` narrowing)
 ;
@@ -86,7 +86,7 @@
 ; the straight-through edge, and the seed IS `false`, so the module is
 ; byte-identical to
 ;
-;     i1 r = q;  if (q == true) r = cq_theta(false, θ);
+;     i1 r = q;  if (q == true) { r = false; cq_theta(&r, θ); }
 ;
 ; — an ALIAS of the quantum register on the straight-through edge muxed against
 ; a prepared rail (Rule 8, no-cloning; the A2 reading). At `i1` there are only

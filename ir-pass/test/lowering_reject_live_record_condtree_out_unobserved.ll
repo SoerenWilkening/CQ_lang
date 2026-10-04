@@ -4,11 +4,11 @@
 ;
 ; SOURCE — lowering_live_record_condtree_toffoli_observed_accept.ll's C, MINUS ONE
 ; INSTRUCTION (`cq_measure(m)` is gone; nothing ever reads the merge result):
-;     int a = cq_theta(u0, 0.5);
-;     int b = cq_theta(u0 + 1, 0.5);
+;     int a = u0; cq_theta(&a, 0.5);
+;     int b = u0 + 1; cq_theta(&b, 0.5);
 ;     int w = a * 2;                     // THE WIRE
 ;     int c = a * k;                     // the DEAD sibling record
-;     w = cq_theta(w, 0.25);             // T
+;     cq_theta(&w, 0.25);             // T
 ;     int m = ((c > 3) & (d < 9)) ? 10 : 20;   // computed, never observed
 ;     return cq_measure(w) + cq_measure(a) + cq_measure(b);
 ;

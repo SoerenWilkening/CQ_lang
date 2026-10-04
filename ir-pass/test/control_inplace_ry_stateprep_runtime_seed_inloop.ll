@@ -1,8 +1,8 @@
 ; control_inplace_ry_stateprep_runtime_seed_inloop.ll — ACCEPT, ROLLED (bd
 ; test_C_libtooling-z0re): a RUNTIME seed that the loop RE-COMPUTES every trip.
 ;
-;     for (int k = 0; k < 3; k++) { int q = cq_theta(m + k, .5); int r = s + k;
-;                                   if (q > k) r = cq_theta(s + k, .2); acc += cq_measure(r); }
+;     for (int k = 0; k < 3; k++) { int q = m + k; cq_theta(&q, .5); int r = s + k;
+;                                   if (q > k) { r = s + k; cq_theta(&r, .2); } acc += cq_measure(r); }
 ;
 ; The in-loop state prep is the bd wx8g ITERATION-LOCAL rail (R7-loop clause (c)):
 ; the rail is minted by the hoisted theta INSIDE the body, so each activation

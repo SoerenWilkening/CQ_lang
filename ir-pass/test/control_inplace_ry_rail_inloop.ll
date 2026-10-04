@@ -2,8 +2,8 @@
 ; bare `_Bool` condition INSIDE a classically-bounded loop, with `b` loop-INVARIANT
 ; and `r` loop-CARRIED (probe `t5`), lowered ROLLED.
 ;
-;     bool b = cq_theta(0, .5); int r = cq_theta(7, .25);
-;     for (i < 3) if (b) r = cq_theta(r, .9);
+;     bool b = 0; cq_theta(&b, .5); int r = 7; cq_theta(&r, .25);
+;     for (i < 3) if (b) cq_theta(&r, .9);
 ;
 ; ⚠ THIS FILE SHIPPED AS A DECLINE UNTIL 2026-09-14 (bd `test_C_libtooling-wx8g`,
 ; l4x4.c) and is REWRITTEN IN FULL rather than edited, in the same style as

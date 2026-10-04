@@ -7,7 +7,7 @@
 ;
 ;     for (i = 0; i < 4; ++i) {
 ;         if (cc) { d = cq_measure(r); }        <-- read of the PRE-region name
-;         if (q > 5) r = cq_theta(r, 0.9);      <-- the in-place Ry arm
+;         if (q > 5) cq_theta(&r, 0.9);      <-- the in-place Ry arm
 ;     }
 ;
 ; WHY THIS IS THE RIGHT ANSWER, not a relaxation that got lucky (bd drbq Inc 3,

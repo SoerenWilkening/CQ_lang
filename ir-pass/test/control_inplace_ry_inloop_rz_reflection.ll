@@ -2,7 +2,7 @@
 ; Rz REFLECTION on the CONDITION register in the body (bd test_C_libtooling-drbq
 ; Inc 3). This is the C-reachable spelling of shape S2.
 ;
-;     for (...) { if (q == 5) r = cq_theta(r, .9); q = cq_phi(q, .1); }
+;     for (...) { if (q == 5) cq_theta(&r, .9); q = cq_phi(q, .1); }
 ;
 ; TWO THINGS IT PINS THAT NO INVARIANT-CONDITION FIXTURE CAN.
 ;

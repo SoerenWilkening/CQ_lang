@@ -4,11 +4,11 @@
 ;
 ; SOURCE — lowering_reject_live_record_qram_store_no_readback.ll plus a read-back:
 ;     int arr[8] = {0};
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     int w = a * 2;                     // THE WIRE
 ;     int c = a * 3;                     // the SIBLING
-;     p = cq_theta(p, 0.25);             // an independent superposed INDEX
-;     w = cq_theta(w, 0.5);              // T — chained, in-place Ry on the wire
+;     cq_theta(&p, 0.25);             // an independent superposed INDEX
+;     cq_theta(&w, 0.5);              // T — chained, in-place Ry on the wire
 ;     arr[p] = c;                        // HOP: value into the cell
 ;     int v  = arr[p];                   // HOP: cell back out       <-- the difference
 ;     int mv = cq_measure(v);            // SINK                     <-- the difference

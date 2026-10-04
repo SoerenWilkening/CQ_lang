@@ -4,10 +4,10 @@
 ; SPIKE §2R.5's CANONICAL CASE, and it is the ruled outcome, not a surprise.
 ;
 ; SOURCE — six lines of ordinary C, the program bd 6uqc's P4 comment describes:
-;     int x = cq_theta(seed, 0.5);
+;     int x = seed; cq_theta(&x, 0.5);
 ;     int y = x * 3;              // OUT OF PLACE (mul is information-losing, so
 ;                                 // M-C never converts it): a FRESH rail
-;     int z = cq_theta(y, 0.25);  // T — chained, in-place Ry on the DERIVED rail
+;     int z = y; cq_theta(&z, 0.25);  // T — chained, in-place Ry on the DERIVED rail
 ;     printf("%d", z);            // the 7.6 tape write
 ;
 ; THE PHYSICS. At `cqrt_ry_i32(%OP, 0.25)` the state is sum_a c_a |a>_H |3a>_OP.

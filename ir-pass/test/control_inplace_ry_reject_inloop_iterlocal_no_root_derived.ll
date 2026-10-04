@@ -3,8 +3,8 @@
 ; REGISTER and a DERIVED condition, so the body mints a per-trip TEMPLATE rail
 ; that nothing would discharge.
 ;
-;     for (k < 2) { int u = cq_theta(5, .5); int r = cq_theta(7, .25);
-;                   if ((u >> 1) & 1) r = cq_theta(r, .2); … }
+;     for (k < 2) { int u = 5; cq_theta(&u, .5); int r = 7; cq_theta(&r, .25);
+;                   if ((u >> 1) & 1) cq_theta(&r, .2); … }
 ;
 ; CLAUSE (c) ADMITS IT AT DETECTION and the ROUND-2 RE-ASK refuses it, which is
 ; the whole reason that re-ask exists (CLAUDE.md's L1 "a stage that runs ONCE has

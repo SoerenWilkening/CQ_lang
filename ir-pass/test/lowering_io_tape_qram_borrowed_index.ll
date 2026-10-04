@@ -8,8 +8,8 @@
 ;     %IDX = x & 3 ; store(arr, %IDX, k) ; %U = load(arr, %IDX)
 ;     ry(%IDX, 0.25) ; tape(%U)
 ; From ordinary C (clang -O1):
-;     int arr[4]={0,0,0,0}; int i0 = cq_theta(seed,0.5) & 3;
-;     arr[i0] = k; int u = arr[i0]; (void)cq_theta(i0,0.25); printf("%d", u);
+;     int arr[4]={0,0,0,0}; int s = seed; cq_theta(&s,0.5); int i0 = s & 3;
+;     arr[i0] = k; int u = arr[i0]; cq_theta(&i0,0.25); printf("%d", u);
 ;
 ; WHY IT IS THE NASTIEST INSTANCE. The victim %U is the RECORDED rail itself —
 ; Recorded, Correlated, and deliberately NOT frozen, because `preservesBasisUnderRecord`

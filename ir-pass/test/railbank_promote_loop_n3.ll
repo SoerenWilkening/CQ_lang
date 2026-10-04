@@ -3,7 +3,7 @@
 ;
 ; The module is the `clang -O1` stage-1 form of `trackL/probes/a_loop_n3.c`
 ;   int a = 5; bool b[3] = {0};
-;   for (int i = 0; i < 3; ++i) { if (a >= 3) b[i] = cq_theta(b[i], .5);
+;   for (int i = 0; i < 3; ++i) { if (a >= 3) cq_theta(&b[i], .5);
 ;                                 if (b[i]) a -= 3; }
 ; hand-transcribed with named blocks (the numeric form is pinned verbatim by
 ; `railbank_promote_o1_shape.ll`, which is what a `clang` bump moves).

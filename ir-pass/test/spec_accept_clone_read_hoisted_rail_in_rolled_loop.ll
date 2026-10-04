@@ -3,13 +3,13 @@
 ; stage-1 IR below copied VERBATIM from
 ; review_r2A_rhk5/probes/src/l2i.s1.ll — the 2-TU C program llvm-linked). The C:
 ;
-;     q = cq_theta(m, .5); r = cq_theta(m, .3); p = q * 3;
+;     q = m; cq_theta(&q, .5); r = m; cq_theta(&r, .3); p = q * 3;
 ;     for (i = 0; i < 3; i++) {
 ;       if ((p >> i) & 1) cq_phi(.2);
-;       r = cq_theta(r, .1);
+;       cq_theta(&r, .1);
 ;       t += cq_measure(h(m + i, p));   // h(a, k) = k + 1, another TU → a Phase-6 clone
 ;     }
-;     q = cq_theta(q, .9);
+;     cq_theta(&q, .9);
 ;
 ; `p` is a LICM-hoisted template rail read by the rolled body's condition — the bd
 ; tu9q (ii-d) grant, whose licence is verified EX POST by the postcondition

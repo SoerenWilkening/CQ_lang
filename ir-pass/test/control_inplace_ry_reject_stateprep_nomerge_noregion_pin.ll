@@ -4,10 +4,10 @@
 ; THE C SOURCE (`fmt3_probes/src/n9.c`) — fmt3's class with NO enclosing region:
 ;
 ;     int t = q / 4; int r;
-;     if (t == 5) r = cq_theta(t, .9); else r = cq_theta(5, .9);
+;     if (t == 5) { r = t; cq_theta(&r, .9); } else { r = 5; cq_theta(&r, .9); }
 ;     return cq_measure(r) + cq_measure(t);
 ;
-; BEFORE fmt3 the merge left an UNCONDITIONAL `r = cq_theta(5, .9)` — no tainted
+; BEFORE fmt3 the merge left an UNCONDITIONAL `r = 5; cq_theta(&r, .9)` — no tainted
 ; control flow reached the pass at all, so NO fence was ever asked, and the oracle
 ; compiled a fresh |5> prep with `t` measured unrotated (7 trace lines, exit 0).
 ; That member is why option (A), a coarse fence at F2, could not close the class:

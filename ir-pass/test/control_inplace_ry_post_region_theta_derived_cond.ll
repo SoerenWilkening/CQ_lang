@@ -2,8 +2,8 @@
 ; the P1 clause (PRD §13.4b) on a DERIVED condition, i.e. the exact shape
 ; `condWireDisposition`'s own header names as its residual.
 ;
-;     if ((q & 6) == 4) r = cq_theta(r, .9);
-;     q = cq_theta(q, .3);              <-- the Ry reflection on the CONDITION
+;     if ((q & 6) == 4) cq_theta(&r, .9);
+;     cq_theta(&q, .3);              <-- the Ry reflection on the CONDITION
 ;
 ; WHY THIS FILE EXISTS (bd test_C_libtooling-drbq Inc 3, round-1 lens L8, finding
 ; F-L8-2). The P1 widening shipped with exactly ONE flat accept fixture, and its

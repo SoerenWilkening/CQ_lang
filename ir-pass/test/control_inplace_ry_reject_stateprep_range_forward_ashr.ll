@@ -7,10 +7,10 @@
 ; spellings that ACCEPTED after the round-1 fix (round-2 review, lens R1 finding
 ; F-R1-1, CONFIRMED-MISCOMPILE, probe `p/x22_ashr31.c`):
 ;
-;     int q = cq_theta(3, 0.3);
+;     int q = 3; cq_theta(&q, 0.3);
 ;     int s = q >> 31;
 ;     int r = -1;
-;     if (s) r = cq_theta(s, 0.9);          /* an IN-PLACE Ry on s's own rail */
+;     if (s) { r = s; cq_theta(&r, 0.9); }  /* an IN-PLACE Ry on s's own rail */
 ;     return (int) cq_measure(r) + (int) cq_measure(s);
 ;
 ; Same mechanism as the `lshr` file (the compare rewritten onto the ANCESTOR

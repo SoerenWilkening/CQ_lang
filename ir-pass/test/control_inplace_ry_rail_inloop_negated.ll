@@ -2,8 +2,8 @@
 ; `test_C_libtooling-wx8g`): the NEGATED bare-`_Bool` in-place controlled-Ry arm
 ; inside a classically-bounded loop, lowered ROLLED.
 ;
-;     bool b = cq_theta(0, .5); int r = cq_theta(7, .25);
-;     for (k < 2) if (!b) r = cq_theta(r, .2);
+;     bool b = 0; cq_theta(&b, .5); int r = 7; cq_theta(&r, .25);
+;     for (k < 2) if (!b) cq_theta(&r, .2);
 ;
 ; THE POINT OF THIS FILE IS THE ANTI-CONTROL, PER ACTIVATION. l4x4.b's answer to
 ; a negated rail arm is Ry ADDITIVITY (`emitInPlaceRotationRegion` §2.3 option A)

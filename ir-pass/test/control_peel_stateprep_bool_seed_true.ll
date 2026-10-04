@@ -4,8 +4,8 @@
 ;     int  b0 = 0;
 ;     bool b1 = 1;                 ; <- the ONLY difference from
 ;     int  a  = 5;                 ;    control_peel_stateprep_bool_seed_int_cond.ll
-;     b0 = cq_theta(b0, 0.5);
-;     if (b0 == 1) { b1 = cq_theta(b1, 0.5); a = 2; }
+;     cq_theta(&b0, 0.5);
+;     if (b0 == 1) { cq_theta(&b1, 0.5); a = 2; }
 ;     return cq_measure(b0) + cq_measure(b1) + cq_measure(a);
 ;
 ; ⚠ WHY BOTH SEEDS NEEDED A FIXTURE, AND WHY ONE WOULD HAVE BEEN A HALF-TEST.

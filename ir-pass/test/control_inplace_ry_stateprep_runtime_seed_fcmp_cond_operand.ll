@@ -3,7 +3,7 @@
 ; `control_inplace_ry_stateprep_runtime_seed_cond_operand.ll`. A RUNTIME f64 seed
 ; that is also the classical operand of the region's own `fcmp oeq`.
 ;
-;     double s = atof(v[2]); double r = s; if (x == s) r = cq_theta(s, .2);
+;     double s = atof(v[2]); double r = s; if (x == s) { r = s; cq_theta(&r, .2); }
 ;
 ; The RELATIONAL half of F2 reads the branch's `fcmp` through the SAME polarity
 ; table the literal fp ANCHOR uses (`fcmpEqualityHoldsOnEdge`): on the TRUE edge
@@ -18,7 +18,7 @@
 ; runtime-seed header).
 ;
 ; (LLVM 19 does not substitute across `fcmp oeq` at all — `+0.0 == -0.0` — so the
-; in-place rival `r = cq_theta(x, .2)` could not produce this module even with an
+; in-place rival `r = x; cq_theta(&r, .2)` could not produce this module even with an
 ; equality-propagating pass; notes §9 item 24.)
 ;
 ; On the ORACLE this module DECLINES at F1's literal-only clause.

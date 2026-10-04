@@ -1,6 +1,6 @@
 ; control_swap_reject_select_rail_stale_sibling_theta.ll — DECLINE (bd
-; test_C_libtooling-r9e5, Inc 1b-B.1): `bool t = (bool)(q & 1); bool b =
-; cq_theta(t, .5); bool c = cq_theta(t, .9); int a = b ? 2 : 5;` — `b` and `c`
+; test_C_libtooling-r9e5, Inc 1b-B.1): `bool t = (bool)(q & 1); bool b = t;
+; cq_theta(&b, .5); bool c = t; cq_theta(&c, .9); int a = b ? 2 : 5;` — `b` and `c`
 ; are SIBLING in-place Ry on ONE physical rail (both chained on the TEMPLATE
 ; result `t`), and the select reads the STALE name `b`. The select form of the
 ; 3qlq.4 round-1 CONFIRMED silent miscompile F-1b-1, whose fix lives in the

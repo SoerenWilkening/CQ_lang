@@ -3,7 +3,7 @@
 ; F-L1-1 / F-L2-1 (three independent lenses, one defect; bd
 ; test_C_libtooling-3qlq Inc 1 part A).
 ;
-;     int q = cq_theta(3, 0.5);
+;     int q = 3; cq_theta(&q, 0.5);
 ;     int f = (q > 5);              // the compare is ALSO read as DATA
 ;     if (q > 5) cq_phi(0.25);      // the kickback
 ;     return cq_measure(f);

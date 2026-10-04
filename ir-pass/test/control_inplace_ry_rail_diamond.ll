@@ -1,6 +1,6 @@
 ; control_inplace_ry_rail_diamond.ll — ACCEPT: THE FLAGSHIP SHAPE of bd
 ; test_C_libtooling-l4x4 sub-increment l4x4.b — the in-place controlled-Ry arm on
-; a bare `_Bool` (rail-root) condition, `if (b) r = cq_theta(r, .9);` with `r`'s
+; a bare `_Bool` (rail-root) condition, `if (b) cq_theta(&r, .9);` with `r`'s
 ; physical wire disjoint from `b`'s (probe `t1`).
 ;
 ; ⚠ THIS FILE WAS `control_inplace_ry_reject_raw_i1_cond.ll` AND ITS IR IS
@@ -20,8 +20,8 @@
 ; with no compare to mint a flag from (PRD shape S4, owner Q6 deferred; bd
 ; test_C_libtooling-drbq §8).
 ;
-;     _Bool c = cq_theta((_Bool)0, 1.1); int r = cq_theta(0,.3);
-;     if (c) r = cq_theta(r, .9);
+;     _Bool c = (_Bool)0; cq_theta(&c, 1.1); int r = 0; cq_theta(&r,.3);
+;     if (c) cq_theta(&r, .9);
 ;
 ; Every accepted tainted-control region in this compiler mints its flag AT A
 ; COMPARE (`cq_template_icmp_<pred>_<W>_hl`) and strips it with that compare's
@@ -38,7 +38,7 @@
 ; ⚠ SINCE bd test_C_libtooling-3qlq.4 (Inc 1b, 2026-09-10) TWO SENTENCES ABOVE
 ; ARE HISTORY, and this file is the 1b-C FLIP TARGET (bd test_C_libtooling-l4x4).
 ; (i) "The `cq_phi` twin of this source declines identically today" is FALSE:
-; `_Bool c = cq_theta(…); if (c) cq_phi(θ)` now LOWERS — the register is its own
+; `_Bool c = …; cq_theta(&c, …); if (c) cq_phi(θ)` now LOWERS — the register is its own
 ; flag and the kickback rides its rail (`control_phase_kickback_rail_diamond.ll`).
 ; (ii) The string is no longer the generic `control flow`: `classifyArms`' first
 ; gate names a bare `_Bool` register condition with `bare i1 register condition`

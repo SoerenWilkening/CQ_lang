@@ -197,7 +197,7 @@ void collectAndSeed(Function &F, const FnSet &ThetaFns, const FnSet &PhiFns,
         // must run EARLY, BEFORE classification, so F1/F2 and every downstream
         // fence see a concrete `0`: normalizing at the emission site
         // (`lowerRotations`) is measurably WRONG, because the in-region spelling
-        // `bool b; if (c) b = cq_theta(b,.5);` dies ~500 lines earlier at F1's
+        // `bool b; if (c) cq_theta(&b,.5);` dies ~500 lines earlier at F1's
         // `state prep seed does not match the merge incoming`.
         //
         // Sitting HERE — inside `collectAndSeed`, i.e. inside `propagate` — is
@@ -1758,8 +1758,8 @@ constexpr char kMsgClassicalPhi[] =
 // clone MAY return a register: a result predicted classical is never tainted and
 // no lift is ever proved over it); if the clone proves `h` returns a classical value,
 // `scrubForwardCone` UNTAINTS `t` after this lift has already RAUW'd
-// `phi(t, cq_theta(t, θ))` onto it. "One register" was then never true: the arm's
-// `cq_theta(t, θ)` lowers as a SOURCE on a fresh rail (`Chained` is decided at
+// `phi(t, @cq_theta_*(t, θ))` onto it. "One register" was then never true: the arm's
+// `@cq_theta_*(t, θ)` lowers as a SOURCE on a fresh rail (`Chained` is decided at
 // FINAL taint, RotationLowering.cpp), and the user's `cq_measure` of the erased
 // phi reads the classical `t` down the bd 21mg classical-measure path — the
 // measurement VANISHED, exit 0, stage-2b clean, on every binary up to `def1b088`.

@@ -1,7 +1,7 @@
 /* slice_z0re_runtime_seed_prep.c — a controlled STATE PREP whose seed is a RUNTIME
    value (the d88e probe l12T, the hand-inlined twin of the side door l12C).
 
-     int t = m + 1; int r = t; if (q2 > 3) r = cq_theta(t, .2);
+     int t = m + 1; int r = t; if (q2 > 3) { r = t; cq_theta(&r, .2); }
 
    Expected stream (12 lines, ONE `cqrt_free`): `m`'s register is prepared and,
    being DEAD in `slice` (`q` is never read), reverse-played by the spine

@@ -17,8 +17,8 @@
 ; 5 TUs, each `clang -O1`, llvm-linked as tests/e2e/run_slice_multi.sh does.
 ; Caller TU (-include CQ.h):
 ;   int h(int a, int k);
-;   __attribute__((noinline)) int f(int m) { int q = cq_theta(m, .5); int t = h(q, m); return t + cq_measure(q); }
-;   int main(int c, char **v) { int m = atoi(v[1]); int n = atoi(v[2]); int x = f(m); int q2 = cq_theta(n, .4); if (x > 5) q2 = cq_theta(q2, .3); return cq_measure(q2); }
+;   __attribute__((noinline)) int f(int m) { int q = m; cq_theta(&q, .5); int t = h(q, m); return t + cq_measure(q); }
+;   int main(int c, char **v) { int m = atoi(v[1]); int n = atoi(v[2]); int x = f(m); int q2 = n; cq_theta(&q2, .4); if (x > 5) cq_theta(&q2, .3); return cq_measure(q2); }
 ; Library TU 1 (plain C):
 ;   /* h READS a (a call to g, an external here) and returns the CLASSICAL k + 1. */
 ;   void g(int a);

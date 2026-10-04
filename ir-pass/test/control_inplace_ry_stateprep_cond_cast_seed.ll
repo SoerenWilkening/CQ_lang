@@ -11,7 +11,7 @@
 ;
 ; This module is the `-O1` image of PLAIN C (measured 2026-09-05):
 ;
-;     long long r = 5;  if (q == 5) r = cq_theta((long long)q, 0.9);
+;     long long r = 5;  if (q == 5) { r = (long long)q; cq_theta(&r, 0.9); }
 ;
 ; `K` is `i32 5`, the folded seed is `i64 5`. The two are numerically equal — so
 ; §14.2c item 1's old parenthetical ("if `f` were the identity, `f(k) == k` and

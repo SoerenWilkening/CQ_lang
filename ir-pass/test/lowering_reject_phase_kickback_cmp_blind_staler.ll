@@ -3,8 +3,8 @@
 ; A.1, Rule-13 ROUND-2 finding F-A1R2-1; probe `review_a1_r2_probes/io4.c`).
 ;
 ;     void emit(int seed) {
-;       int r  = cq_theta(seed, 0.25);
-;       int r2 = cq_theta(r, 0.9);      /* staler ON r's WIRE */
+;       int r  = seed; cq_theta(&r, 0.25);
+;       int r2 = r; cq_theta(&r2, 0.9);  /* staler ON r's WIRE */
 ;       if (r > 5) cq_phi(0.3);         /* the flat phase kickback */
 ;       (void) cq_measure(r2);
 ;     }

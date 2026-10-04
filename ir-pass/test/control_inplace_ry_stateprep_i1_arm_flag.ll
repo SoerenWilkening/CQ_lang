@@ -6,7 +6,7 @@
 ; this header moved — so the module below is still, character for
 ; character, the one the four drbq Inc-4 adversarial rounds argued over.
 ;
-;     _Bool r = true;  if (q == 5) r = cq_theta(true, .9);
+;     _Bool r = true;  if (q == 5) { r = true; cq_theta(&r, .9); }
 ;
 ; ---- WHY IT IS AN ACCEPT NOW (bd `drbq.14`; F2's `CondWire` narrowing)
 ;
@@ -32,7 +32,7 @@
 ;   register is not touched by the region at all.
 ;
 ; THE RIVAL IT SILENTLY ABSORBS (alpha reading): the source rotated the
-; CONDITION'S OWN register IN PLACE — `cq_theta(<the pinned register>, θ)` —
+; CONDITION'S OWN register IN PLACE — `cq_theta(&<the pinned register>, θ)` —
 ; and `-O1` const-folded arg-0 to the literal on the edge where the equality
 ; is a theorem.
 ; ⚠ SAY IT IN THOSE WORDS: a program that was LOUDLY REFUSED before this
@@ -74,10 +74,10 @@
 ;
 ; This module is the `-O1` image of, verbatim (`$S/fix3/q/z02_i1_flag_arm.c`):
 ;
-;     int slice(void){ int q = cq_theta(3, 0.3);
+;     int slice(void){ int q = 3; cq_theta(&q, 0.3);
 ;                      _Bool c = (q == 5);
 ;                      _Bool r = 1;
-;                      if (c) r = cq_theta(c, 0.9);   /* IN-PLACE Ry on the
+;                      if (c) { r = c; cq_theta(&r, 0.9); }  /* IN-PLACE Ry on the
 ; FLAG */
 ;                      return (int) cq_measure(r) + (int) cq_measure(q); }
 ;

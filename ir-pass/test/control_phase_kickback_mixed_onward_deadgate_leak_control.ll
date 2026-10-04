@@ -5,7 +5,7 @@
 ; `[check]`, and every `--check-prefix` name likewise) so FileCheck cannot see
 ; them. Read it; do not delete it.
 ;
-; THE RULED SHAPE, and this module contains it: the body's `t = cq_theta(r, 0.1)` reads `r`, minted BEFORE the loop.
+; THE RULED SHAPE, and this module contains it: the body's `t = r; cq_theta(&t, 0.1)` reads `r`, minted BEFORE the loop.
 ; The name is loop-INVARIANT and is RE-READ on every trip while the wire has
 ; already moved under it — CLAUDE.md CORRECTNESS RISK §2's rail-staleness rule
 ; verbatim ("a rail member may be read only where no rail-relabelling gate
@@ -29,7 +29,7 @@
 ; carry a zero-`cq_template_and_i32_hl_unc` pin on this binary, four of them
 ; `*_leak_control` files, and the one-token sibling
 ; `control_phase_kickback_mixed_onward_inloop.ll` (the result CARRIED,
-; `r = cq_theta(r,0.1)`, a header φ) still ACCEPTS — so the discrimination this
+; `cq_theta(&r,0.1)`, a header φ) still ACCEPTS — so the discrimination this
 ; file half of a pair established survives in the other half. What is lost is the
 ; UNCARRIED spelling specifically.
 ;
@@ -52,14 +52,14 @@
 ; `taint.ClaimedRailRoots` is an explicit RECORD rather than an inference.
 ;
 ;     int ext_f(int a);                                  /* separate TU */
-;     int slice(int u){ int q=cq_theta(u,0.5); int r=cq_theta(u,0.3);
+;     int slice(int u){ int q=u; cq_theta(&q,0.5); int r=u; cq_theta(&r,0.3);
 ;       int y=5; if (q>5) y=ext_f(7);                    /* 6.5 arm -> %out */
 ;       int t=r; for(int i=0;i<3;i++){ if((y>>i)&1) cq_phi(0.25);
-;                                      t=cq_theta(r,0.1); }   /* result UNCARRIED */
+;                                      t=r; cq_theta(&t,0.1); }  /* result UNCARRIED */
 ;       return cq_measure(t)+cq_measure(y); }
 ;
 ; ⚠ `cq_measure(t)`, NOT `cq_measure(r)` — bd test_C_libtooling-3d8q. The body's
-; `cq_theta(r,·)` CONSUMES the name `r` (`docs/frontend.md` §3.2's linear rule),
+; `t=r; cq_theta(&t,·)` CONSUMES the name `r` (`docs/frontend.md` §3.2's linear rule),
 ; so the original `cq_measure(r)` named the PRE-LOOP record of a rail the loop had
 ; already rotated three times — CLAUDE.md's own 8h7d.5 F-3 shape, out of loop, and
 ; a member of the P1 stale-reader class. It declines since
@@ -69,7 +69,7 @@
 ; NO loop-carried header φ for `r`, the rail is still unclaimed, and the emitted
 ; stream is BYTE-IDENTICAL — all five prefixes below are the lines they always
 ; were, counts included. ⚠ It is NOT the sibling: `..._inloop.ll` CARRIES the
-; result (`r = cq_theta(r,0.1)`, a header φ) and discharges. Uncarried-but-read is
+; result (`cq_theta(&r,0.1)`, a header φ) and discharges. Uncarried-but-read is
 ; a third point, and it lowers exactly like the dead one.
 ;
 ; WHAT THIS PINS. The body gates `r` in place K times, and because the result is
@@ -90,7 +90,7 @@
 ; `cq_template_and_i32_hl` 3 / `_unc` **0**, `opt` exit 0, STRICT stage 2b clean,
 ; and the rolled trace BYTE-UNCHANGED across all three binaries. Its sibling
 ; `control_phase_kickback_mixed_onward_inloop.ll` is the SAME program with the
-; result LIVE (`r = cq_theta(r,0.1)`), and it discharges — one token apart,
+; result LIVE (`cq_theta(&r,0.1)`), and it discharges — one token apart,
 ; opposite dispositions.
 ;
 

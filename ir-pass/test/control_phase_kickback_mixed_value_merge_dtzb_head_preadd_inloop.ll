@@ -23,7 +23,7 @@
 ; copy sources DISTINCT. The G6/G7 net itself is pinned in-tree by
 ; `control_swap_value_ifelse_head_out_of_place.ll`, which goes RED on it.)
 ;
-;     int q=3,p=7; q=cq_theta(q,.5); p=cq_theta(p,.25);
+;     int q=3,p=7; cq_theta(&q,.5); cq_theta(&p,.25);
 ;     int r = p;
 ;     if (q>3){ r = p + 3; r = r ^ 9; }   // dtzb-shaped chain HEAD on `p`
 ;     r = r + 7;                          // PREHEADER dtzb op on the merge rail

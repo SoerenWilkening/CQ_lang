@@ -3,7 +3,7 @@
 ; condition's wire in ONE classically-bounded loop body — Grover written the way
 ; anyone would naturally write repetition:
 ;
-;     for (i = 0; i < 4; ++i) { if (q > 5) q = cq_phi(q, a); q = cq_theta(q, .25); }
+;     for (i = 0; i < 4; ++i) { if (q > 5) q = cq_phi(q, a); cq_theta(&q, .25); }
 ;
 ; THIS FILE WAS `control_swap_reject_post_region_theta_loop.ll`, AND ITS OWN
 ; CLOSING PARAGRAPH ASKED FOR THIS COMMIT. It said the fixture "must either keep

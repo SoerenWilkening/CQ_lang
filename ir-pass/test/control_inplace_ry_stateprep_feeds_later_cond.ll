@@ -4,9 +4,9 @@
 ; ⚠ A NEW ACCEPT CLASS THAT SHIPPED WITH NO FIXTURE, NO §14.3 ROW AND NO SLICE
 ; (round-1 Rule-13 review, lens L3 finding F-1, probe `p/l48_cond_is_prepped_arm_q.c`):
 ;
-;     int q = cq_theta(3, .3);  int r = 0;
-;     if (q == 5) r = cq_theta(0, .9);      /* region 1 — the state prep      */
-;     if (r == 1) q = cq_theta(q, .2);      /* region 2 — flag MINTED FROM r  */
+;     int q = 3; cq_theta(&q, .3);  int r = 0;
+;     if (q == 5) { r = 0; cq_theta(&r, .9); }  /* region 1 — the state prep      */
+;     if (r == 1) cq_theta(&q, .2);      /* region 2 — flag MINTED FROM r  */
 ;
 ; This is the FIRST shape in which a freshly-minted, condition-entangled rail
 ; lands in ANOTHER region's flag-mint slot — i.e. the first place

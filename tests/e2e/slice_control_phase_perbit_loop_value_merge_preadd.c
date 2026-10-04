@@ -9,8 +9,8 @@
    produced by a tainted-condition if-diamond whose arm rewrites `p` through a
    six-op pure chain.
 
-       int q = cq_theta(3, 0.5);
-       int p = cq_theta(7, 0.25);
+       int q = 3; cq_theta(&q, 0.5);
+       int p = 7; cq_theta(&p, 0.25);
        if (q > 3) { p = p+3; p = p*5; p = p^9;
                     p = p+1; p = p*7; p = p^2; }  // Inc-2 VALUE ARM -> %out
        p = p + 7;                                 // PREHEADER dtzb op ON it

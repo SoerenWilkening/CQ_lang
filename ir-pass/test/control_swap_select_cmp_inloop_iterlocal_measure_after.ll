@@ -4,7 +4,7 @@
 ; reach this read ON THE SAME REGISTER".
 ;
 ;     for (int i = 0; i < 3; ++i) {
-;         int q = cq_theta(ext(i), .5);          // a FRESH register every trip
+;         int q = ext(i); cq_theta(&q, .5);      // a FRESH register every trip
 ;         int a = (q == 1) ? i : 5;              // loop-VARIANT arm: select stays
 ;         acc += cq_measure(a) + cq_measure(q);  // owns THIS trip's register
 ;     }

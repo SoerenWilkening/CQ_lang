@@ -5,8 +5,8 @@
 ; `clang -O1` C).
 ;
 ;     int slice(int u) {
-;       int q = cq_theta(u, 0.5);
-;       int r = cq_theta(u + 1, 0.25);
+;       int q = u; cq_theta(&q, 0.5);
+;       int r = u + 1; cq_theta(&r, 0.25);
 ;       int acc = 0;
 ;       for (int i = 0; i < 3; ++i) {
 ;         acc += cq_measure(r);          /* a DIFFERENT register collapses */

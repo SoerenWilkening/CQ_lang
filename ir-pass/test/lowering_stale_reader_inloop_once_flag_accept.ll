@@ -5,9 +5,9 @@
 ; separate fixture because `clang -O1` lowers it to a DIFFERENT IR SHAPE that the
 ; same predicate must handle through a different evaluator:
 ;
-;   int q = cq_theta(0, 0.3); int first = 1;
+;   int q = 0; cq_theta(&q, 0.3); int first = 1;
 ;   for (int i = 0; i < 3; i++)
-;     if (first) { int b = cq_theta(q, 0.1); s += cq_measure(b); first = 0; }
+;     if (first) { int b = q; cq_theta(&b, 0.1); s += cq_measure(b); first = 0; }
 ;     else s += 1;
 ;
 ; `-O1` turns the `first` flag into an `i1` HEADER φ with CONSTANT incomings —

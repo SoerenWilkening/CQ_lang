@@ -6,8 +6,8 @@
 ;
 ;       bool x  = (y != 0);             /* CLASSICAL at round 1  */
 ;       bool xm = cq_measure(x);        /* collapses x's rail    */
-;       bool b  = cq_theta(x, 0.25);    /* CHAINED onto it at FINAL taint */
-;       if (b) r = cq_theta(r, 0.9);
+;       bool b  = x; cq_theta(&b, 0.25);  /* CHAINED onto it at FINAL taint */
+;       if (b) cq_theta(&r, 0.9);
 ;
 ; At round-1 taint `railWireNamesBackward` stops at `b` (its arg-0 `x` is not yet
 ; tainted, so `b` reads as a SOURCE theta) and never sees the measurement; at

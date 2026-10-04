@@ -1,7 +1,7 @@
 ; lowering_reject_stale_reader_chain_measure_mid.ll — DECLINE (bd
 ; test_C_libtooling-3d8q, P1). A WELL-FORMED CHAIN whose MIDDLE name is measured:
 ;
-;   int q=cq_theta(0,0.3); int a=cq_theta(q,0.125); int b=cq_theta(a,0.25);
+;   int q=0; cq_theta(&q,0.3); int a=q; cq_theta(&a,0.125); int b=a; cq_theta(&b,0.25);
 ;   return cq_measure(a)+cq_measure(b);
 ;
 ; ⚠ THIS IS CLAUDE.md's OWN 8h7d.5 FINDING F-3 SHAPE ("`a` naming the pre-`b`

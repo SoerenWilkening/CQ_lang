@@ -25,7 +25,7 @@
 ;   __attribute__((noinline)) static int slice(int n) {
 ;     if (n <= 0) return 0;
 ;     int b[n]; int Z = 4 * n; int s = 0;
-;     for (int i = 0; i < n; ++i) { if (Z >= 2) b[i] = cq_theta(b[i], 0.5); if (b[i]) Z -= 2; }
+;     for (int i = 0; i < n; ++i) { if (Z >= 2) cq_theta(&b[i], 0.5); if (b[i]) Z -= 2; }
 ;     for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
 ;     return s + cq_measure(Z);
 ;   }

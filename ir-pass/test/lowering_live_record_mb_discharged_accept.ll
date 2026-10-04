@@ -4,9 +4,9 @@
 ; This is lowering_reject_live_record_two_hop.ll MINUS its one added
 ; `call void @cqrt_x` — i.e. the program a user actually writes:
 ;
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     int d = a << 1;  int e = d * 3;  m = cq_measure(e);
-;     a = cq_theta(a, 0.5);   m2 = cq_measure(a);
+;     cq_theta(&a, 0.5);   m2 = cq_measure(a);
 ;
 ; At Increment 3 it DECLINED with "cq rotation lowering: non-diagonal gate over a
 ; live derived record", and the decline was correct physics: `%d` was an

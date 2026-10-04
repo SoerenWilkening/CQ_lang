@@ -3,10 +3,10 @@
 ; DISCRIMINATOR** for finding F-C1C-1's (1b) tripwire, and the F-C1-1 capability
 ; carried through a CHAINED root mint.
 ;
-;     int slice(int u){ int q=cq_theta(u,0.5); int r=cq_theta(u,0.3);
-;       int q2=cq_theta(q,0.3);
+;     int slice(int u){ int q=u; cq_theta(&q,0.5); int r=u; cq_theta(&r,0.3);
+;       int q2=q; cq_theta(&q2,0.3);
 ;       int a = q2 + 7;
-;       for(int i=0;i<3;i++){ if((a>>i)&1) cq_phi(0.2); r=cq_theta(r,0.1); }
+;       for(int i=0;i<3;i++){ if((a>>i)&1) cq_phi(0.2); cq_theta(&r,0.1); }
 ;       return cq_measure(r)+cq_measure(a); }     /* NO read of the PRE-op name */
 ;
 ; This is `control_phase_kickback_reject_preloop_commit_stale.ll` MINUS ONE TOKEN

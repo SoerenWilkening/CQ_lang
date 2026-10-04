@@ -1,7 +1,7 @@
 ; control_angle_select_ry_derived_cond.ll — ACCEPT with a DERIVED condition
 ; operand (bd drbq Inc 2b).
 ;
-;     if (q > 5 && q < 100) r = cq_theta(r, .9); else r = cq_theta(r, .3);
+;     if (q > 5 && q < 100) cq_theta(&r, .9); else cq_theta(&r, .3);
 ;
 ; `clang -O1` folds that whole conjunction into ONE compare on a derived value:
 ; `%d = add i32 %q, -6; %c = icmp ult i32 %d, 94` (measured — probe q13). So the

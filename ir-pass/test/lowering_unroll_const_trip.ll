@@ -3,7 +3,7 @@
 ; constant-trip tainted-accumulator polynomial loop — the openlibm `__polevll`
 ; Horner shape that previously X1-declined (`lowering_reject_loop_cross_iter.ll`
 ; documents the deferral this increment retires):
-;     double acc = cq_theta(..), x = cq_theta(..);
+;     double acc = .., x = ..; cq_theta(&acc, ..); cq_theta(&x, ..);
 ;     for (int i = 2; i != 0; i--) acc = fma(acc, x, *++p);   // p over const C[]
 ;     return cq_measure(acc);
 ; The loop is marked `!llvm.loop.unroll.disable` (openlibm marks `__polevll`;

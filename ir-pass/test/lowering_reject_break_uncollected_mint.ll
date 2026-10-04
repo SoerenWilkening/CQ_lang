@@ -29,7 +29,7 @@
 ;
 ; THE SOURCE, five lines of ordinary C, nothing hand-declared:
 ;   int f(int x, int n) {
-;     int q = cq_theta(x, 0.25);
+;     int q = x; cq_theta(&q, 0.25);
 ;     for (int i = 0; i < n; i++) { q ^= 9; int s = (q&1) ? 3 : 5; if ((q & s) == 0) break; }
 ;     return cq_measure(q);
 ;   }

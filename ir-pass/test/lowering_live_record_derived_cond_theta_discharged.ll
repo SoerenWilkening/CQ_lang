@@ -2,10 +2,10 @@
 ; 5b, bd test_C_libtooling-6uqc). bd 6uqc's P4, and the DELIBERATE
 ; RE-DISPOSITION of the fixture that used to pin its decline.
 ;
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     int f = sqrt(a + 3.0) <= 5.0;
 ;     m = cq_measure(f);
-;     a = cq_theta(a, 0.5);            <-- the chained, in-place Ry
+;     cq_theta(&a, 0.5);            <-- the chained, in-place Ry
 ;     cq_measure(a);
 ;
 ; WHAT THIS FILE USED TO BE, and why the change is a fix rather than a

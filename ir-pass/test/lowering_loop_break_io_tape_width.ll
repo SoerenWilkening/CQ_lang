@@ -1,7 +1,7 @@
 ; lowering_loop_break_io_tape_width.ll — ACCEPT (bd test_C_libtooling-01po.3,
 ; round-1 review F2). A value-arm `break` whose answer is printed:
 ;
-;     T p = cq_theta(pseed, 0.5), q = cq_theta(seed, 0.25);
+;     T p = pseed, q = seed; cq_theta(&p, 0.5); cq_theta(&q, 0.25);
 ;     for (int i = 0; i < n; i++) { q = q ^ 5; if (q == p) break; }
 ;     printf(FMT, q);
 ;

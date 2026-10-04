@@ -33,7 +33,7 @@
 ;   /* clause 1 negative: a GLOBAL (not a non-escaping alloca) */
 ;   #include "CQ.h"
 ;   bool g[3];
-;   int main(void){ int a=5; for(int i=0;i<3;++i){ if(a>=3) g[i]=cq_theta(g[i],0.5); if(g[i]) a-=3; } return cq_measure(a); }
+;   int main(void){ int a=5; for(int i=0;i<3;++i){ if(a>=3) cq_theta(&g[i],0.5); if(g[i]) a-=3; } return cq_measure(a); }
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: cq rail bank: cell address has no bounded local-array provenance

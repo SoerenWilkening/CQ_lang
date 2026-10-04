@@ -2,9 +2,9 @@
 ; F-L5-2 red-green pair: the accept `control_inplace_ry_tape_after_region.ll`
 ; with a genuine CONTINUATION after the tape write.
 ;
-;     if (q == 5) { r = cq_theta(r, .9); }
+;     if (q == 5) { cq_theta(&r, .9); }
 ;     printf("%d\n", r);            /* 7.6 tape write */
-;     r = cq_theta(r, .125);        /* the lineage genuinely continues */
+;     cq_theta(&r, .125);        /* the lineage genuinely continues */
 ;     return cq_measure(q) + cq_measure(r);
 ;
 ; bd test_C_libtooling-drbq Increment 3, round-1 Rule-13 review finding F-L5-2.

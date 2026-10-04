@@ -11,7 +11,7 @@
 ; theta in the module, the call's position — would move one of the two.
 ;
 ; SOURCE INTENT (probe `trackC/probes/c8_theta_and_classical.c`):
-;     int q = cq_theta(5, 0.5); int c = 11;
+;     int q = 5; cq_theta(&q, 0.5); int c = 11;
 ;     return cq_measure(q) + cq_measure(c);
 ;
 ; @f_measure_of_measure is the ORDER-INDEPENDENCE case: a `cq_measure` of another

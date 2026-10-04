@@ -2,7 +2,7 @@
 ; test_C_libtooling-01po.4's second refusal twin). The array-frontier retry of
 ; lowering_qram_store_measured_index_nonmain.ll borrows only QRAM ARRAYS; when
 ; the LOAD's own index is measured too,
-;     arr[b] = 0;  v = arr[p];  b = cq_theta(b, -.5);
+;     arr[b] = 0;  v = arr[p];  cq_theta(&b, -.5);
 ;     return cq_measure(b) + cq_measure(v) + cq_measure(p);
 ; the reduced DAG (the load and the `p` wire) is still measured upstream, so the
 ; retry is refused and the module keeps today's decline, verbatim.

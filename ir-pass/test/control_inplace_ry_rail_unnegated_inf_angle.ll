@@ -12,7 +12,7 @@
 ; — exactly one emitted slot for exactly one user angle. Whatever `Ry(inf)` means
 ; on the firing branch, it is what the SOURCE NAMED, and the non-firing branch
 ; gets nothing at all. That is the same disposition an uncontrolled
-; `cq_theta(q, INFINITY)` already has on EVERY binary in this tree, and the same
+; `cq_theta(&q, INFINITY)` already has on EVERY binary in this tree, and the same
 ; distinction `control_angle_select_reject_inf_arm.ll`'s header draws for the
 ; sibling emitter: the fence belongs on the angle a lowering DUPLICATES, never on
 ; non-finite angles as such. Turning it into a blanket refusal would over-decline
@@ -23,7 +23,7 @@
 ; `..._reject_rail_negated_{inf,nan,neginf}_angle.ll`, which differ from this
 ; module in ONE token — the branch orientation — and decline.
 ;
-; Transcribed from plain C at `-O1`: `if (b) r = cq_theta(r, __builtin_inf());`
+; Transcribed from plain C at `-O1`: `if (b) cq_theta(&r, __builtin_inf());`
 ; over the `..._rail_diamond.ll` source.
 ;
 ; RED ON `main` 0c7380c AND ON the F2 checkpoint 578dbc4 (`bare i1 register

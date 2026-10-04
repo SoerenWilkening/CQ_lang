@@ -4,10 +4,10 @@
 ; whose preheader `add` M-C lowers OUT OF PLACE, because the PRE-op value is read
 ; after it.
 ;
-;     int slice(int u){ int q=cq_theta(u,0.5); int r=cq_theta(u,0.3);
+;     int slice(int u){ int q=u; cq_theta(&q,0.5); int r=u; cq_theta(&r,0.3);
 ;       int keep = q;                                  /* the pre-op value */
 ;       q = q + 7;
-;       for(int i=0;i<3;i++){ if((q>>i)&1) cq_phi(0.2); r=cq_theta(r,0.1); }
+;       for(int i=0;i<3;i++){ if((q>>i)&1) cq_phi(0.2); cq_theta(&r,0.1); }
 ;       return cq_measure(keep)+cq_measure(r); }
 ;
 ; WHAT THIS PINS, AND WHY IT IS AN ACCEPT RATHER THAN A DECLINE. M-C's G6/G7 pair

@@ -5,8 +5,8 @@
 ; Increment 3 ADMITS — whose condition reads a register minted OUTSIDE the loop
 ; and re-rotated INSIDE it:
 ;
-;     int q = cq_theta(u0, .5);
-;     for (...) { if (q > 5) g = cq_phi(q, a);  cq_theta(q, t); }
+;     int q = u0; cq_theta(&q, .5);
+;     for (...) { if (q > 5) g = cq_phi(q, a);  int g = q; cq_theta(&g, t); }
 ;                     ^^^^^ loop-INVARIANT      ^^^^^^^^^^^^^^ on q's own wire
 ;
 ; THIS IS THE ONE THE INCREMENT MUST NOT ACCEPT, and it is one edge away from the

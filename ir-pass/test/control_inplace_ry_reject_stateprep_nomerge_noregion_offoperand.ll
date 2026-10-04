@@ -4,12 +4,12 @@
 ; THE C SOURCE (`fmt3_probes/src/n17f.c`) — the second route with NO region:
 ;
 ;     int W = q + 1; int r;
-;     if (q == 5) r = cq_theta(W, .9); else r = cq_theta(6, .9);
+;     if (q == 5) { r = W; cq_theta(&r, .9); } else { r = 6; cq_theta(&r, .9); }
 ;     return cq_measure(r) + cq_measure(W) + cq_measure(q);
 ;
 ; BEFORE fmt3: sink → φ `[W, 6]` → `select (q == 5), W, 6` → InstSimplify
 ; `simplifyWithOpReplaced(W, q := 5)` = `add 5, 1` = 6 → an UNCONDITIONAL
-; `cq_theta(6, .9)`, `W` live and measured, never rotated; the oracle ACCEPTED
+; `@cq_theta_si32(6, .9)`, `W` live and measured, never rotated; the oracle ACCEPTED
 ; (8 trace lines, exit 0) with no fence ever asked. The rotated register `W` is
 ; not the compare's operand.
 ;

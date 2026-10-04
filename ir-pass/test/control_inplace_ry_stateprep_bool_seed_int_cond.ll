@@ -3,9 +3,9 @@
 ;
 ; `probes/M2.c`, verbatim, through `clang -O1`:
 ;
-;     int  q  = cq_theta(0, 0.5);
+;     int  q  = 0; cq_theta(&q, 0.5);
 ;     bool b1 = 0;
-;     if (q > 5) b1 = cq_theta(b1, 0.5);
+;     if (q > 5) cq_theta(&b1, 0.5);
 ;     return cq_measure(q) + cq_measure(b1);
 ;
 ; OWNER RULING 2026-09-11, verbatim: *"WE DO NOT WANT TO WRITE `int b1`. also

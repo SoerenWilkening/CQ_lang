@@ -1,6 +1,6 @@
 ; control_swap_reject_select_rail_measured_template_parent.ll — DECLINE (bd
 ; test_C_libtooling-r9e5, round-1 item F-B1R1-1, the NON-theta parent — plain C:
-; `int q = cq_theta(3,.2); bool t = (bool)(q & 1); bool b = cq_theta(t,.5); int m
+; `int q = 3; cq_theta(&q,.2); bool t = (bool)(q & 1); bool b = t; cq_theta(&b,.5); int m
 ; = cq_measure(t); int a = b ? 2 : 5;`): `t` is a template (cast) rail and `b`
 ; is rotated IN PLACE on it, so `t` is a name of the condition's wire; measuring
 ; it before the select collapses the register the merge controls on.

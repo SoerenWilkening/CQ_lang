@@ -2,10 +2,10 @@
 ; `clang -O1` ACTUALLY PRODUCES for a rolled Grover (Rule-13 round-1 finding
 ; F-L5-3; bd test_C_libtooling-3qlq Inc 1 part A, lens L5).
 ;
-;     int q = cq_theta(0, 0.5);
+;     int q = 0; cq_theta(&q, 0.5);
 ;     for (int i = 0; i < 2; ++i) {
 ;         if (q == PI_INDEX) cq_phi(PI);      // the oracle
-;         q = cq_theta(q, -0.5);              // the diffusion
+;         cq_theta(&q, -0.5);              // the diffusion
 ;     }
 ;     return cq_measure(q);
 ;

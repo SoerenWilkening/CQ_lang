@@ -7,10 +7,10 @@
 ; reachable from ordinary `clang -O1` C (round-2 review, lens R1 finding
 ; F-R1-1, probe `p/x01_fwd_add5_live.c`):
 ;
-;     int q = cq_theta(3, 0.3);
+;     int q = 3; cq_theta(&q, 0.3);
 ;     int t = 5 + (q & 1);              /* an IN-PLACE rail: cqrt_addc on the  */
 ;     int r = 6;                        /* AND's rail                           */
-;     if (t != 5) r = cq_theta(t, 0.9); /* an IN-PLACE Ry on the CONDITION wire */
+;     if (t != 5) { r = t; cq_theta(&r, 0.9); } /* an IN-PLACE Ry on the CONDITION wire */
 ;     return (int) cq_measure(r) + (int) cq_measure(t);
 ;
 ; THE MECHANISM IS THE POINT, and it is MEASURED with isolated `opt` pipelines
@@ -35,7 +35,7 @@
 ; receives NO rotation, and the program has TWO wires where the source has one.
 ; The control that closes the argument, measured on the PRE-Inc-4 binary: the
 ; same program with the guard removed emits `and_i32_hl(h0,1) -> h1 ;
-; addc_i32(h1,5) ; ry_i32(h1,.9)`, i.e. CQ's own semantics for `cq_theta(t,θ)`
+; addc_i32(h1,5) ; ry_i32(h1,.9)`, i.e. CQ's own semantics for `@cq_theta_si32(t,θ)`
 ; is an in-place Ry on `t`'s rail.
 ;
 ; THE FENCE IS THE FORWARD CLOSURE. F2 seeds a bounded walk with (`%t`, its

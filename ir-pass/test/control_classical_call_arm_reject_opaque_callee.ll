@@ -11,7 +11,7 @@
 ;     int y = q;
 ;     if (q > 3) y = recip100(0);
 ;     return cq_measure_si32(y);
-; `cq_theta(_, 0.0)` is Ry(0) = IDENTITY, so `q == 0` on every basis state and the
+; `cq_theta_si32(_, 0.0)` is Ry(0) = IDENTITY, so `q == 0` on every basis state and the
 ; predicate `q > 3` has ZERO AMPLITUDE: the source NEVER evaluates `recip100(0)`,
 ; on any component, and has no UB anywhere. (The zero-amplitude narrative is about
 ; that C SOURCE; the module below deliberately parameterises the seed as `%u0`, so

@@ -6,7 +6,7 @@
 ; this header moved — so the module below is still, character for
 ; character, the one the four drbq Inc-4 adversarial rounds argued over.
 ;
-;     int r = 5;  if (q != 5) ; else r = cq_theta(5, .9);
+;     int r = 5;  if (q != 5) ; else { r = 5; cq_theta(&r, .9); }
 ;
 ; ---- WHY IT IS AN ACCEPT NOW (bd `drbq.14`; F2's `CondWire` narrowing)
 ;
@@ -31,7 +31,7 @@
 ;   register is not touched by the region at all.
 ;
 ; THE RIVAL IT SILENTLY ABSORBS (alpha reading): the source rotated the
-; CONDITION'S OWN register IN PLACE — `cq_theta(<the pinned register>, θ)` —
+; CONDITION'S OWN register IN PLACE — `cq_theta(&<the pinned register>, θ)` —
 ; and `-O1` const-folded arg-0 to the literal on the edge where the equality
 ; is a theorem.
 ; ⚠ SAY IT IN THOSE WORDS: a program that was LOUDLY REFUSED before this
@@ -73,7 +73,7 @@
 ; named nowhere (round-1 Rule-13 review, lens L5 F-L5-3 = lens L7 F-L7-6, a real
 ; Rule-12 gap).
 ;
-;     int r = 5;  if (q != 5) { } else { r = cq_theta(q, 0.9); }
+;     int r = 5;  if (q != 5) { } else { r = q; cq_theta(&r, 0.9); }
 ;
 ; `clang -O1` canonicalizes the `!=` into `icmp eq %q, 5` with the ARM as the
 ; TRUE successor and folds the arm's `cq_theta(%q, .9)` to `cq_theta(i32 5,

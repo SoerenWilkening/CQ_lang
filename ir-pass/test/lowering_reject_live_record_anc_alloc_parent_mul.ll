@@ -4,10 +4,10 @@
 ; class, reached through a NON-M-C op).
 ;
 ; SOURCE (`clang -O1` emits exactly the SSA below):
-;     a = cq_theta(a, 0.5);       // source theta: mints the wire
+;     cq_theta(&a, 0.5);       // source theta: mints the wire
 ;     int d = a * 3;              // OUT-OF-PLACE — mul is information-losing,
 ;                                 // so M-C never converts it: a FRESH rail
-;     d = cq_theta(d, -0.5);      // T — chained, in-place Ry on the mul rail
+;     cq_theta(&d, -0.5);      // T — chained, in-place Ry on the mul rail
 ;     return cq_measure(d);
 ;
 ; WHAT IS STANDING AT THE GATE. `cq_template_mul_i32_hl(%h, 3)` mints `%h_op`

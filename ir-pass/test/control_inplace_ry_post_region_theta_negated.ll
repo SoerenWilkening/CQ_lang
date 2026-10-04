@@ -1,8 +1,8 @@
 ; control_inplace_ry_post_region_theta_negated.ll — ACCEPT (FLAT, no loop): the
 ; P1 clause (PRD §13.4b) at NEGATED polarity.
 ;
-;     if (q != 5) r = cq_theta(r, .9);
-;     q = cq_theta(q, .3);              <-- the Ry reflection on the CONDITION
+;     if (q != 5) cq_theta(&r, .9);
+;     cq_theta(&q, .3);              <-- the Ry reflection on the CONDITION
 ;
 ; `clang -O1` canonicalizes `if (u != k)` to `icmp eq` with the successors
 ; SWAPPED (Rule 9), so the gate arm is the FALSE successor and the emitter must

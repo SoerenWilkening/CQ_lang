@@ -4,7 +4,7 @@
 ; a gap rather than a capability (bd test_C_libtooling-rhwb; drbq Inc 3 round-1
 ; lens L3 Q5).
 ;
-;     for (i = 0; i < 2; ++i) { if (q == 5) r = cq_theta(r, 0.9);
+;     for (i = 0; i < 2; ++i) { if (q == 5) cq_theta(&r, 0.9);
 ;                               q = cq_phi(q, 0.1); }
 ;     return cq_measure(q);          <-- `r` is DEAD after the loop
 ;

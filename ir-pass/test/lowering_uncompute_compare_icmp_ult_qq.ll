@@ -46,7 +46,7 @@
 ; which link the whole template archive; those are build detritus, not a witness,
 ; and they are byte-identical at dbab515^, dbab515 and HEAD.)
 ;
-; THE PHYSICS BEING PINNED. `q1 = cq_theta(x); q2 = cq_theta(y); w = (q1 < q2)`
+; THE PHYSICS BEING PINNED. `q1 = x; cq_theta(&q1, ·); q2 = y; cq_theta(&q2, ·); w = (q1 < q2)`
 ; — a DEAD, source-derived, tainted data-position compare over two independent
 ; theta rails, reaching the whole-DAG LIFO uncompute spine.
 ;

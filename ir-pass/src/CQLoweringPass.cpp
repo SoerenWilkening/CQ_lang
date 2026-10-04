@@ -773,7 +773,7 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // (Track A.1; bd test_C_libtooling-9pum) THE COMPARE HALF of the same stage,
   // in the same slot for the same reason — `y` in the 6.5 two-TU reproducer is
   // an `%out` derivative, classical at round 1 and tainted after the fixpoint,
-  // so the two `cq_theta(y, ·)` siblings are two rails to the classifier and ONE
+  // so the two `@cq_theta_*(y, ·)` siblings are two rails to the classifier and ONE
   // rail to `lowerRotations`. Immediately after its rail twin, not merged with
   // it: the compare record's rung (iii) is asked over the whole `condProvenance`
   // cone AT ONCE (`WireWalk::gateIsHarmless` grows its per-activation barriers
@@ -986,7 +986,7 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // must run only once the lift itself is confirmed: before `specialize()` it
   // judged the post-lift IR on PRE-scrub taint, and for a lift the re-ask above
   // now refuses it declined FIRST, with a stale-record string for a staleness the
-  // false RAUW manufactured (probe `g01C`, `r = t; if (c) r = cq_theta(t, a);
+  // false RAUW manufactured (probe `g01C`, `r = t; if (c) { r = t; cq_theta(&r, a); }
   // cq_measure(r + 1)` over a spec-classical `t`, where the hand-inlined twin
   // declines at the classical-mux guard). Here it reads POST-scrub taint (the
   // same `taint.Tainted` `lowerRotations` starts from), and every lift still

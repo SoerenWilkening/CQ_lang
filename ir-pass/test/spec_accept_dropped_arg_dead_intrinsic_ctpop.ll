@@ -11,7 +11,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   int h(int a, int k);
-;   int main(int c, char **v) { int m = atoi(v[1]); unsigned q = cq_theta((unsigned)(m & 255), .5); int n = __builtin_popcount(q); int t = h(n, m); q = cq_theta(q, .7); return t + cq_measure(q); }
+;   int main(int c, char **v) { int m = atoi(v[1]); unsigned q = (unsigned)(m & 255); cq_theta(&q, .5); int n = __builtin_popcount(q); int t = h(n, m); cq_theta(&q, .7); return t + cq_measure(q); }
 ; Library TU (plain C, no CQ.h):
 ;   int h(int a, int k) { return k + 1; }
 ;

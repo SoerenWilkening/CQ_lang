@@ -8,9 +8,9 @@
 ;
 ;     int keep = cq_measure(y);
 ;     int x = (y != 0);                 // CLASSICAL at round 1, TAINTED at round 2
-;     int b = cq_theta(x, 0.25);
+;     int b = x; cq_theta(&b, 0.25);
 ;     int a = (b == 1) ? 2 : 5;         // the 4.4 merge on that rail
-;     int b3 = cq_theta(x, 0.9);        // the SIBLING — after the merge
+;     int b3 = x; cq_theta(&b3, 0.9);   // the SIBLING — after the merge
 ;
 ; HERE THE STREAM IS CORRECT AND IT STILL LOWERS: the copies really do read
 ; `Ry(0.25)|x>`, the label `b` names. `reverifyCmpCondReads` re-asks rung (iii)
@@ -31,9 +31,9 @@
 ; is about the MERGE's read of `b`; it says nothing about `b3`'s own read, and
 ; `b3` is where the defect is:
 ;
-;     b  = cq_theta(x, 0.25);   /* consumes the name `x` */
+;     b  = x; cq_theta(&b, 0.25);  /* consumes the name `x` */
 ;     …the merge on b…
-;     b3 = cq_theta(x, 0.9);    /* names Ry(0.9)|x>  — the register holds
+;     b3 = x; cq_theta(&b3, 0.9);  /* names Ry(0.9)|x>  — the register holds
 ;                                  Ry(0.9)Ry(0.25)|x> */
 ;
 ; That is `f1_two_siblings_nocontrol.c` with a round-2 rail under it — the

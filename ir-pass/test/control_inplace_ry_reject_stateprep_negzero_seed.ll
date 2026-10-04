@@ -1,7 +1,7 @@
 ; control_inplace_ry_reject_stateprep_negzero_seed.ll — DECLINE (F1): the MIRROR
 ; of `..._negzero_incoming.ll` — a `-0.0` SEED against a `0.0` incoming.
 ;
-;     double r = 0.0;  if (q > 5.0) r = cq_theta(-0.0, .9);   // probe `p07c`, from C
+;     double r = 0.0;  if (q > 5.0) { r = -0.0; cq_theta(&r, .9); }  // probe `p07c`, from C
 ;
 ; Both directions are reachable from plain C and both must decline; a fence that
 ; only checked one order would be the classic half-fence.

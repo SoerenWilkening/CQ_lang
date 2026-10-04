@@ -3,7 +3,7 @@
 ; measurement.
 ;
 ; It is that module with the DIAMOND REMOVED and nothing else changed: the same
-; `%q`, the same `%t = fmul %q, 2.0`, the same `cq_theta(?, 0.9)`, the same two
+; `%q`, the same `%t = fmul %q, 2.0`, the same `@cq_theta_f64(?, 0.9)`, the same two
 ; measurements. Here the rotation's arg-0 is the REGISTER `%t` rather than the
 ; constant `5.0`, which is precisely the reading the declined module is
 ; ambiguous BETWEEN. It lowers to an IN-PLACE `cqrt_ry_f64` on `%t`'s OWN rail

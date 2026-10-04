@@ -13,10 +13,10 @@
 ; THE SHAPE — the F-R1-1 class, which is SIX CONFIRMED plain-C silent
 ; miscompiles (drbq Inc-4 round 2), reduced to its minimum:
 ;
-;     %q = cq_theta(...)            ; the taint root
+;     %q = @cq_theta_si32(...)      ; the taint root
 ;     %c = icmp eq %q, 3            ; the branch condition
 ;     %t = lshr %q, 31              ; a FORWARD user, on a FRESH rail
-;     if (%c) r = cq_theta(0, .9);  ; seed 0
+;     if (%c) { r = 0; cq_theta(&r, .9); }  ; seed 0
 ;
 ; On the true edge `%q == 3`, so `%t == 0 == seed`. `%q` itself is pinned to
 ; `{3}`, which is NOT the seed, so `%q` is not the collider — `%t` is, and `%t`

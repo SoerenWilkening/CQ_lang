@@ -6,7 +6,7 @@
 ; are classical). The real clang -O1 shape of:
 ;
 ;     for (int i = 0; i < n; i++) {
-;         int q = cq_theta(x, 0.5);
+;         int q = x; cq_theta(&q, 0.5);
 ;         if (q > 5) q = cq_phi(q, b);
 ;         acc += cq_measure(q);
 ;     }

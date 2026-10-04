@@ -28,7 +28,7 @@
 
 @.str = private unnamed_addr constant [4 x i8] c"%d\0A\00", align 1
 
-; long long p = cq_theta(pseed,.5), q = cq_theta(seed,.25);
+; long long p = pseed, q = seed; cq_theta(&p,.5); cq_theta(&q,.25);
 ; for (int i = 0; i < n; i++) { q = q ^ 5; if (q == p) break; }
 ; if (q == 9) abort();
 ; return cq_measure(q);
@@ -107,7 +107,7 @@ define signext i8 @park_i8(i8 noundef signext %0, i8 noundef signext %1, i32 nou
 ; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F8]], i32 %[[O8]], i32 %[[G8]])
 ; CHECK:      call i8 @cqrt_measure_i8(i32 %[[O8]])
 
-; long long p = cq_theta(pseed,.5), q = cq_theta(seed,.25);
+; long long p = pseed, q = seed; cq_theta(&p,.5); cq_theta(&q,.25);
 ; for (int i = 0; i < n; i++) { q = q ^ 5; if (q == p) break; }
 ; printf("%d\n", (int)q);
 ; if (q > 5) abort();

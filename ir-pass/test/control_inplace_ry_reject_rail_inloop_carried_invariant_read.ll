@@ -4,10 +4,10 @@
 ; NOT by clause (c) — in a loop whose body mints a per-trip template rail the
 ; spine never discharges.
 ;
-;     bool b = cq_theta(0,.5); int r = cq_theta(7,.25);
-;     for (k<2) { int u = cq_theta(5,.5);
-;                 if ((u>>1)&1) r = cq_theta(r,.2);      // derived cond, carried r
-;                 if (b)        r = cq_theta(r,.3);      // THE RAIL REGION
+;     bool b = 0; cq_theta(&b,.5); int r = 7; cq_theta(&r,.25);
+;     for (k<2) { int u = 5; cq_theta(&u,.5);
+;                 if ((u>>1)&1) cq_theta(&r,.2);      // derived cond, carried r
+;                 if (b)        cq_theta(&r,.3);      // THE RAIL REGION
 ;                 s += cq_measure(u + (int)b); }         // the invariant read
 ;
 ; ⚠ WHY IT IS A SEPARATE FILE FROM THE CLAUSE-(c) DECLINES. The round-2 re-ask

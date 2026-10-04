@@ -3,7 +3,7 @@
 ; SIMPLEST C spelling of the in-loop Ry arm, which used to be refused for a reason
 ; that was neither R7 nor P1.
 ;
-;     for (i = 0; i < 2; ++i) { if (q == 5) r = cq_theta(r, 0.9); }
+;     for (i = 0; i < 2; ++i) { if (q == 5) cq_theta(&r, 0.9); }
 ;
 ; With NO gate on `q` in the body, `q` is loop-INVARIANT, so `clang -O1` LICM-hoists
 ; the compare `%3 = icmp eq i32 %1, 5` into the ENTRY block while the region's

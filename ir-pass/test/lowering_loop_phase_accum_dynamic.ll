@@ -1,6 +1,6 @@
 ; lowering_loop_phase_accum_dynamic.ll — ACCEPT (Phase 7.3 Inc 1, 799w.1): the
 ; RUNTIME-bound in-place phase accumulator
-;     double q = cq_theta(seed, 0.5);
+;     double q = seed; cq_theta(&q, 0.5);
 ;     for (int i = 0; i < n; i++) q = cq_phi(q, 0.1);   // n a runtime param
 ;     return cq_measure(q);
 ; lowers ROLLED IN PLACE — IDENTICALLY to the const bound (A1). This is the

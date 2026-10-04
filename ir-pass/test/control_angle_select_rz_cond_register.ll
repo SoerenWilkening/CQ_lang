@@ -1,7 +1,7 @@
 ; control_angle_select_rz_cond_register.ll — ACCEPT, AND IT IS THE STEM
 ; SEPARATOR (bd drbq Inc 2b; control-in-place-PRD §3c / §12.1).
 ;
-;     int q = cq_theta(3,.5);
+;     int q = 3; cq_theta(&q,.5);
 ;     q = cq_phi(q, q == 5 ? .9 : .3);      // rotate the CONDITION register
 ;
 ; The rotated register IS the register the condition reads. For the `cq_phi`

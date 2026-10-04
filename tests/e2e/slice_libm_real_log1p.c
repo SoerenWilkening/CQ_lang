@@ -83,7 +83,7 @@
 
    LOWERING EXERCISED (every figure below MEASURED on /tmp/log1p_s1.ll,
    /tmp/log1p_s2.ll and the emitted trace, not asserted): tainted
-   x = cq_theta(0.5, 0.5), so no guard const-folds away and the full nest
+   x = 0.5 rotated by cq_theta(&x, 0.5), so no guard const-folds away and the full nest
    survives clang -O1.
      Pre-pass @slice (after -O1 inlining): 29 basic blocks (the unlabeled
      entry + 28 labeled), 28 br of which 14 are conditional, 13 phi, 1 ret.

@@ -5,10 +5,10 @@
 ; SOURCE: identical to the reject twin except that the clone's result is measured
 ; DIRECTLY instead of through an intervening compare:
 ;     __attribute__((noinline)) static int inner(int x){ return x + 3; }
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     int r = inner(a);
 ;     int m = cq_measure(r);   // <-- collapsed BEFORE the gate
-;     a = cq_theta(a, 0.7);
+;     cq_theta(&a, 0.7);
 ;
 ; Walking THROUGH the clone call must not turn every clone-calling program into a
 ; decline. Here the walk crosses the hop and finds NO undischarged record: the

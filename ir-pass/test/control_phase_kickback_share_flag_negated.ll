@@ -2,7 +2,7 @@
 ; keeps the F-L7-1 fix a statement about MEMBERSHIP rather than about polarity
 ; (bd test_C_libtooling-3qlq Inc 1 part A, Rule-13 round-1 lens L1 §F-L1-1).
 ;
-;     int q = cq_theta(3, 0.5);
+;     int q = 3; cq_theta(&q, 0.5);
 ;     int f = (q > 5);                        // DATA use of the compare
 ;     if (!f) { cq_phi(0.25); cq_phi(0.75); } // the arm is the FALSE successor
 ;     return cq_measure(q + f);

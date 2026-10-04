@@ -2,7 +2,7 @@
 ; test_C_libtooling-eqpx (P1), ACCEPT CONTROL 7 of 8: the same discriminator for
 ; the OTHER non-producing merge, the 3qlq Inc-2 controlled-copy VALUE merge.
 ;
-;     int slice(int u){ int q=cq_theta(u,0.5); int r=cq_theta(u,0.3);
+;     int slice(int u){ int q=u; cq_theta(&q,0.5); int r=u; cq_theta(&r,0.3);
 ;       int y = 5; if (q>5) y = q*3;           /* Inc-2 VALUE MERGE -> %out */
 ;       int w = y & 7;
 ;       for(int i=0;i<3;i++){ r = r ^ w; }

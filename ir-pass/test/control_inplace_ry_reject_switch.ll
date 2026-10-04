@@ -2,7 +2,7 @@
 ; tainted-scrutinee `switch` (control-in-place-PRD §4 R7 / §8; bd
 ; test_C_libtooling-drbq).
 ;
-;     switch (q) { case 1: r = cq_theta(r,.9); case 2: r = cq_theta(r,.2); }
+;     switch (q) { case 1: cq_theta(&r,.9); case 2: cq_theta(&r,.2); }
 ;
 ; The 4.5 switch has its own classifier (`SwitchClassify` G0-G11 +
 ; `SwitchArmProve`) and three emitters, reached from `detectControlRegions`'

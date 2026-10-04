@@ -19,7 +19,7 @@
    the same compare and stripped by the same `_unc`, exactly ONE `cqrt_free` (the
    flag's), and no route, no work rail, no reverse-play. The VALUE claim rests on
    two other things, named here rather than implied: (a) `cqrt_alloc_i32(0)` is
-   the SAME call the uncontrolled `cq_theta(0, θ)` mints today, pinned by the
+   the SAME call the uncontrolled `int r = 0; cq_theta(&r, θ)` mints today, pinned by the
    existing runtime goldens; and (b) F1, the seed-identity fence, which is what
    makes |SEED> the right thing for the f=0 branch to hold.
 
@@ -39,7 +39,7 @@
    fallback in the qubits-not-scarce regime, O(1) per region.
 
    THE TWIN: `slice_control_inplace_ry_stateprep_twin.c` is the manual CHAINED
-   spelling `int r = cq_theta(0, 0.0); if (…) cq_theta(&r, .9);`, which the
+   spelling `int r = 0; cq_theta(&r, 0.0); if (…) cq_theta(&r, .9);`, which the
    PRE-INC-4 binary already lowers. This golden is its REDUCTION under two
    rewrites that are physical identities and are NOT the transformation under
    test — (i) delete `cqrt_ry_i32(h, 0x0p+0)` because Ry(0) = I, (ii) move the

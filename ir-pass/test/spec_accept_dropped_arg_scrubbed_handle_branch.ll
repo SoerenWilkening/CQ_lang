@@ -14,7 +14,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   int h(int a, int k);
-;   int main(int argc, char **argv) { int m = atoi(argv[1]); int q = cq_theta(m, .5); int t = h(q, m); int r = m; if (t > 3) r = m + 5; return cq_measure(r); }
+;   int main(int argc, char **argv) { int m = atoi(argv[1]); int q = m; cq_theta(&q, .5); int t = h(q, m); int r = m; if (t > 3) r = m + 5; return cq_measure(r); }
 ; Library TU (plain C, no CQ.h):
 ;   int h(int a, int k) { return k + 1; }
 ;

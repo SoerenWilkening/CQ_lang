@@ -4,7 +4,7 @@
 ; never become tainted. If the consumer tripwire fired here it would not be a
 ; fence, it would be a blanket refusal of the whole dtzb capability.
 ;
-;     int slice(int u){ int q=cq_theta(u,0.5); int r=cq_theta(u,0.3);
+;     int slice(int u){ int q=u; cq_theta(&q,0.5); int r=u; cq_theta(&r,0.3);
 ;       for(int i=0;i<3;i++){ r = r ^ 7; }
 ;       return cq_measure(r)+cq_measure(q); }
 ;

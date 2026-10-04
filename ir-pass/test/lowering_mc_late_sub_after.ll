@@ -46,10 +46,10 @@
 ; `%off` is a volatile load so nothing folds it away.
 ;
 ; SHAPE (`clang -O1` output of):
-;     int a = cq_theta(u, 0.5);
+;     int a = u; cq_theta(&a, 0.5);
 ;     if (((a * 5) >> 2) == 5) a = cq_phi(a, PI);
 ;     a -= off;
-;     a = cq_theta(a, -0.5);  return cq_measure(a);
+;     cq_theta(&a, -0.5);  return cq_measure(a);
 ;
 ; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
 ; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE

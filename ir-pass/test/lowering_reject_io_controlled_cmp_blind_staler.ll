@@ -3,9 +3,9 @@
 ; I/O SINK, PRE-EXISTING on `main` 0c7380c, plain `clang -O1` C, single TU:
 ;
 ;     void emit(int seed) {                      /* review_a1_r2_probes/io3.c */
-;       int q  = cq_theta(seed, 0.5);
-;       int r  = cq_theta(seed, 0.25);
-;       int r2 = cq_theta(r, 0.9);               /* staler ON r's WIRE */
+;       int q  = seed; cq_theta(&q, 0.5);
+;       int r  = seed; cq_theta(&r, 0.25);
+;       int r2 = r; cq_theta(&r2, 0.9);          /* staler ON r's WIRE */
 ;       if (r > 5) printf("%d", q);              /* ctrl = flag minted from r */
 ;       (void) cq_measure(q);
 ;       (void) cq_measure(r2);

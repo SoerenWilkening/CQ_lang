@@ -20,7 +20,7 @@
    only test layer that LINKS (Rule 2, Rule 16). The natural classical N-way
    `switch` around an in-place quantum gate on ONE register:
 
-       int q = cq_theta(k, t);
+       int q = k; cq_theta(&q, t);
        switch (classical_sel) {          // classical N-way dispatch
          case 1:  cq_phi(a);                  break;   // 1 gate
          case 2:  cq_phi(b); cq_phi(c); break;  // 2-gate chain

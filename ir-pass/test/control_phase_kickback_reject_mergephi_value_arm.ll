@@ -2,7 +2,7 @@
 ; Track P). GREEN ON BOTH BINARIES, and the header says exactly what it pins so
 ; it cannot rot into a claim about a subject it does not have (Rule 12(c)).
 ;
-; THE SHAPE: `bool r = cq_theta(...); if (b0) r = !r; if (r) cq_phi(φ);` — the
+; THE SHAPE: `bool r = ...; cq_theta(&r, ...); if (b0) r = !r; if (r) cq_phi(φ);` — the
 ; merge φ of a VALUE arm, not of an `InPlaceRotation` one, feeding the kickback.
 ;
 ; WHAT IT ACTUALLY PINS. The decline fires at the VALUE region itself, BEFORE the

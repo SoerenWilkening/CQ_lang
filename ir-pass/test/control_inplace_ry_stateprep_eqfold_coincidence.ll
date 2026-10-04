@@ -6,7 +6,7 @@
 ; this header moved — so the module below is still, character for
 ; character, the one the four drbq Inc-4 adversarial rounds argued over.
 ;
-;     int r = 5;  if (q == 5) r = cq_theta(5, .9);
+;     int r = 5;  if (q == 5) { r = 5; cq_theta(&r, .9); }
 ;
 ; ---- WHY IT IS AN ACCEPT NOW (bd `drbq.14`; F2's `CondWire` narrowing)
 ;
@@ -31,7 +31,7 @@
 ;   register is not touched by the region at all.
 ;
 ; THE RIVAL IT SILENTLY ABSORBS (alpha reading): the source rotated the
-; CONDITION'S OWN register IN PLACE — `cq_theta(<the pinned register>, θ)` —
+; CONDITION'S OWN register IN PLACE — `cq_theta(&<the pinned register>, θ)` —
 ; and `-O1` const-folded arg-0 to the literal on the edge where the equality
 ; is a theorem.
 ; ⚠ SAY IT IN THOSE WORDS: a program that was LOUDLY REFUSED before this
@@ -71,15 +71,15 @@
 ; control_inplace_ry_reject_stateprep_eqfold_coincidence.ll — DECLINE (F2, the
 ; A1 reading): the seed EQUALS the compare literal, on the ARM edge.
 ;
-;     int r = 5;  if (q == 5) r = cq_theta(5, .9);       // probe `p06a`, from C
+;     int r = 5;  if (q == 5) { r = 5; cq_theta(&r, .9); }  // probe `p06a`, from C
 ;
 ; ⚠ THIS MODULE IS BYTE-IDENTICAL (slice-body diff at `-O1`, measured
 ; 2026-09-04) TO TWO PROGRAMS CQ MUST DECLINE:
-;     int r = 5; if (q == 5)      r = cq_theta(q, .9);   // `p08e` — an in-place
+;     int r = 5; if (q == 5)      { r = q; cq_theta(&r, .9); }  // `p08e` — an in-place
 ;                                                        // Ry on the CONDITION
 ;                                                        // register: R4
 ; forbids it
-;     int r = 5; if (q > 4 && q < 6) r = cq_theta(q, .9); // `p08c` — the same,
+;     int r = 5; if (q > 4 && q < 6) { r = q; cq_theta(&r, .9); } // `p08c` — the same,
 ;                                                        // via a singleton
 ; range
 ; An Ry RELABELS the basis, so the strip `icmp_..._unc` would be computed over a
@@ -117,7 +117,7 @@
 ; which
 ; an edge proves `H != k` and `H`'s own RANGE makes the surviving set a
 ; singleton
-; whose value is NOT `k`. `int t = q & 1; int r = 1; if (t) r = cq_theta(t, θ);`
+; whose value is NOT `k`. `int t = q & 1; int r = 1; if (t) { r = t; cq_theta(&r, θ); }`
 ; is that reading, it is plain `clang -O1` C, and the literal test was silent on
 ; it BY DESIGN — a CONFIRMED silent miscompile at the Inc-4 hand-back. F2 is now
 ; RANGE-based on both edges; see

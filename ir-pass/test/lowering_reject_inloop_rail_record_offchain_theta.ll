@@ -2,10 +2,10 @@
 ; test_C_libtooling-8h7d.5, Rule-13 ROUND 3, finding F-3). A CONFIRMED silent
 ; miscompile, and F-1's EXACT TWIN one hop out.
 ;
-;     int q = cq_theta(0, .5);
-;     for (i<2) { if (q==5) q=cq_phi(q,PI); q=cq_theta(q,-.5); q=cq_theta(q,.5); }
-;     int a = cq_theta(q, 0.125);   /* arg-0 IS a chain member — the RESULT is not */
-;     int b = cq_theta(a, 0.25);    /* a rail gate AFTER the record `a`            */
+;     int q = 0; cq_theta(&q, .5);
+;     for (i<2) { if (q==5) q=cq_phi(q,PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
+;     int a = q; cq_theta(&a, 0.125);  /* arg-0 IS a chain member — the RESULT is not */
+;     int b = a; cq_theta(&b, 0.25);  /* a rail gate AFTER the record `a`            */
 ;     return cq_measure(a) + cq_measure(b);
 ;
 ; THE HOLE. Round 2 (F-1) widened `collectRailGates`'s GATE set from the peeled

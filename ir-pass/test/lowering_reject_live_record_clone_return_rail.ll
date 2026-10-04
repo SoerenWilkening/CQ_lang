@@ -6,11 +6,11 @@
 ; SOURCE (`clang -O1` emits this SSA up to strength reduction — a `* 2` arrives as
 ; `shl nsw …, 1`, which lowers out of place exactly like the `mul` spelled here; NO control flow anywhere):
 ;     __attribute__((noinline)) static int inner(int x){ return x + 3; }
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     int r = inner(a);        // clone hop; the Bennett wrap returns `cqq.out`
 ;     int u = r * 2;           // OUT-OF-PLACE (mul), so `r` is NOT reassigned
 ;     int m = cq_measure(u);   // ...u is measured before the gate => EXEMPT
-;     a = cq_theta(a, 0.7);    // T — and NOTHING declined it before Inc 3
+;     cq_theta(&a, 0.7);    // T — and NOTHING declined it before Inc 3
 ;
 ; WHAT IS STANDING AT THE GATE. `@__cq_q_inner_1` computes `x+3` into `%h_op`,
 ; `cqrt_copy_i32`s it into a fresh `cqrt_alloc_i32`-minted `cqq.out`, uncomputes

@@ -4,7 +4,7 @@
 ; lowering_live_record_derived_cond_theta_discharged.ll was done and for the same
 ; reason: M-B — the customer that decline NAMED — arrived.
 ;
-;     int f = (a > 5);  a = cq_theta(a, 0.25);  m = cq_measure(f);
+;     int f = (a > 5);  cq_theta(&a, 0.25);  m = cq_measure(f);
 ;
 ; Two records are minted from the wire:
 ;   %c -> cq_template_icmp_sgt_i32_hl(%h, 5)   the i1 compare rail

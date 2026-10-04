@@ -7,9 +7,9 @@
    `cq_theta` ROOT MINT, it is a **Phase-4 CONTROL-OWNED MERGE OUT-RAIL** — here
    the 4.4 tainted-condition select merge's `%out`.
 
-       int q = cq_theta(3, 0.5);
-       int p = cq_theta(7, 0.25);
-       int r = cq_theta(9, 0.3);
+       int q = 3; cq_theta(&q, 0.5);
+       int p = 7; cq_theta(&p, 0.25);
+       int r = 9; cq_theta(&r, 0.3);
        int m = (q > 5) ? p : r;             // 4.4 SELECT merge  ->  %out rail
        m = m + 7;                           // PREHEADER dtzb op ON that rail
        for (int i = 0; i < 4; i++)

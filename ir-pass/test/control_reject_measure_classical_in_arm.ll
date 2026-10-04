@@ -8,7 +8,7 @@
 ; SOURCE INTENT (probe `trackC/probes/c7_measure_in_arm.c`, its `-O1` `main`
 ; transcribed without the dbg metadata):
 ;     int a = 5; bool b0 = 0; int c = 3;
-;     if (a >= 3) { b0 = cq_theta(b0, 0.5); }   // folded away: a >= 3 is constant
+;     if (a >= 3) { cq_theta(&b0, 0.5); }   // folded away: a >= 3 is constant
 ;     if (b0 == 1) { a = cq_measure(c); }       // a CLASSICAL measure, under control
 ;     return a + cq_measure(b0);
 ;

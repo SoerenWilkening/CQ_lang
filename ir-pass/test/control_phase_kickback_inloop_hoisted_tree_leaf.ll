@@ -3,11 +3,11 @@
 ; loop-invariant compare, and the fixture that pins `classifyPhaseKickback`'s step-5a
 ; half of the widening (the other half is `condWireDisposition`'s P4).
 ;
-;     int a = cq_theta(0, 0.5);
-;     int r = cq_theta(0, 0.3);
+;     int a = 0; cq_theta(&a, 0.5);
+;     int r = 0; cq_theta(&r, 0.3);
 ;     for (int i = 0; i < 2; ++i) {
 ;         if (a == 5 && r > 2) { cq_phi(0.7); }
-;         r = cq_theta(r, 0.9);
+;         cq_theta(&r, 0.9);
 ;     }
 ;     return cq_measure(a) + cq_measure(r);
 ;

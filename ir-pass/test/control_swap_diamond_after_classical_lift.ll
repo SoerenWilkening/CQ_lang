@@ -2,7 +2,7 @@
 ; COMPOSITION (test_C_libtooling-1k0q). A classical-condition ONE-REGISTER lift
 ; and a separate tainted-condition PHASE-arm diamond, sequenced in ONE function:
 ;
-;     q = cq_theta(...);                         // base wire
+;     cq_theta(&q, ...);                         // base wire
 ;     if (classical_c) q = cq_phi(q, 0.25);      // classical lift  (region 1)
 ;     if (q > 5)       { rz(q,a); rz(q,b); }     // tainted phase   (region 2)
 ;     measure(q);

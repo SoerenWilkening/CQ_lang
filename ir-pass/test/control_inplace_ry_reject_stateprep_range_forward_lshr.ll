@@ -6,10 +6,10 @@
 ; spellings that ACCEPTED after the round-1 fix (round-2 review, lens R1 finding
 ; F-R1-1, CONFIRMED-MISCOMPILE, probe `p/x23_lshr31_live.c`):
 ;
-;     int q = cq_theta(3, 0.3);
+;     int q = 3; cq_theta(&q, 0.3);
 ;     unsigned s = ((unsigned) q) >> 31;
 ;     unsigned r = 1;
-;     if (s) r = cq_theta(s, 0.9);          /* an IN-PLACE Ry on s's own rail */
+;     if (s) { r = s; cq_theta(&r, 0.9); }  /* an IN-PLACE Ry on s's own rail */
 ;     return (int) cq_measure(r) + (int) cq_measure(s);
 ;
 ; THIS IS THE OTHER HALF OF F-R1-1'S MECHANISM, and it is why one fixture was
@@ -28,7 +28,7 @@
 ; by the source, and receives no rotation; the rotation went onto a fresh
 ; `alloc_i32(1)` rail. The unconditional control (`p/u02`, identical on both
 ; binaries) emits `lshr_i32_hl(h0,31) -> h1 ; ry_i32(h1,.9)`, so CQ's own
-; reading of `cq_theta(s,θ)` really is an in-place Ry on `s`'s rail.
+; reading of `@cq_theta_si32(s,θ)` really is an in-place Ry on `s`'s rail.
 ;
 ; THIS FILE'S ALGEBRA: the false edge of `sgt -1` pins `%q` to `[INT_MIN, 0)`,
 ; and `ConstantRange::lshr` of that by `{31}` is `[1,2)` — the singleton `{1}`,

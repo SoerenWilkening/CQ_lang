@@ -1,6 +1,6 @@
 ; condtree_classical_leaf_reject_rail_sibling.ll — DECLINE (bd test_C_libtooling-xdu2.13).
 ;
-; `_Bool b = cq_theta(0, .5); if (b && m == n)`: the literal's sibling is a bare
+; `_Bool b = 0; cq_theta(&b, .5); if (b && m == n)`: the literal's sibling is a bare
 ; RAIL (the user's `_Bool` register). The `_hl` template would read the user's
 ; register in its handle slot — a control read no rail ladder and no spine
 ; predicate was asked about — so the classifier declines (safe direction; a

@@ -11,9 +11,9 @@
 ; `IntrinsicLowering` at a NON-i32 width, so it pins that the fix is a property
 ; of the emitted gate rather than of one lowering path.
 ;
-;     double q=cq_theta(0,.5), p=cq_theta(0,.3);
+;     double q=0, p=0; cq_theta(&q,.5); cq_theta(&p,.3);
 ;     double r = sqrt(p);
-;     if (q > 5.0) r = cq_theta(r, .9);
+;     if (q > 5.0) cq_theta(&r, .9);
 ;     double s = r + 1.0;                // POST-REGION user
 ;     return cq_measure(q);
 ;

@@ -1,7 +1,7 @@
 ; lowering_qram_store_measured_index_nonmain.ll — ACCEPT (bd
 ; test_C_libtooling-01po.4, a goal-1 over-decline). The NON-main form of
 ; lowering_qram_index_width_shadow.ll's @main:
-;     int arr[8] = {0};  arr[b] = 0;  v = arr[p];  b = cq_theta(b, -.5);
+;     int arr[8] = {0};  arr[b] = 0;  v = arr[p];  cq_theta(&b, -.5);
 ;     return cq_measure(b) + cq_measure(v);          // b, p _Bool
 ; In `main` it lowers (nothing is reversed there). Outside `main` the measured
 ; load result is copied out to a kept carrier and its DAG reversed — and the

@@ -2,7 +2,7 @@
 ; test_C_libtooling-r2j3.2): the INNER read of a nested `tbl2[tbl[q]]` takes a
 ; bare i64 index whose register was rotated in place before it. clang -O1 of
 ;
-;     long q = cq_theta(0L, .5);  long q2 = cq_theta(q, .3);
+;     long q = 0L; cq_theta(&q, .5);  long q2 = q; cq_theta(&q2, .3);
 ;     return cq_measure(tbl2[tbl[q]]) + (int)cq_measure(q2);
 ;
 ; MEASURED on the pre-fix binary: exit 0, the inner `cqrt_qram_load_i32(a1,

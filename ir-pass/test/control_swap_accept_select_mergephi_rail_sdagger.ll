@@ -3,7 +3,7 @@
 ; (`control flow` at the select), GREEN HERE.
 ;
 ; THE OWNER'S FILE PLUS A SECOND ROTATION OF THE SAME REGISTER AFTER THE SELECT
-; (`b1 = cq_theta(b1, 0.25);`) — the S† spelling, one construct past the flagship.
+; (`cq_theta(&b1, 0.25);`) — the S† spelling, one construct past the flagship.
 ; `SCOPE_M.md` H-6 predicted this must DECLINE as "two siblings on one rail". IT
 ; IS NOT TWO SIBLINGS, and the IR says so: `%9 = cq_theta_i1(i1 %6, double 0.25)`
 ; takes the SELECT'S OWN CONDITION as its arg-0, so after M-β's RAUW it is CHAINED
@@ -25,12 +25,12 @@
 ; ⚠ MEASURED, NOT ARGUED — the disposition is PRE-EXISTING and Rule-13-cleared.
 ; The frozen ORACLE accepts the IDENTICAL program in the rail-leaf spelling (the
 ; `b1` prep made unconditional: 29 lines, STRICT 2b clean) and accepts the minimal
-; S† form `if (b) a -= 3; b = cq_theta(b, -0.5);` at 16 lines. Track M did not
+; S† form `if (b) a -= 3; cq_theta(&b, -0.5);` at 16 lines. Track M did not
 ; invent this accept; it made a second SPELLING reach a fence that was already
 ; there and already answering. Sources: `probes/impl/m15u.c`, `probes/impl/s04.c`.
 ;
 ; ⚠ WHAT THIS FIXTURE DOES **NOT** LICENSE. The genuine bd `3d8q` class is TWO
-; SIBLING READERS of the pre-rotation name — `bool c = cq_theta(b1,.25);` with
+; SIBLING READERS of the pre-rotation name — `bool c = b1; cq_theta(&c,.25);` with
 ; `b1` STILL measured afterwards, so two SSA names denote one register and the
 ; pass asks nothing (the stale-record guard sweeps PURE ops only). That shape also
 ; ACCEPTS ON THE FROZEN ORACLE in the rail-leaf spelling, so it is a pre-existing

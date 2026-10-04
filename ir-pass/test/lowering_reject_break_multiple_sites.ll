@@ -1,7 +1,7 @@
 ; lowering_reject_break_multiple_sites.ll — DECLINE (Phase 7.4 Inc 1, y05j.1;
 ; PRD-7.4 §2.7, §2.10 multiple-site row): a classically-bounded loop with TWO
 ; tainted-condition early breaks:
-;     int q = cq_theta(x, 0.25);
+;     int q = x; cq_theta(&q, 0.25);
 ;     for (int i = 0; i < n; i++) {
 ;         q = q ^ 9;
 ;         if ((q & 1) == 0) break;   // tainted break #1

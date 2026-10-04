@@ -2,7 +2,7 @@
    R7-loop CLAUSE (c) on the CONTROLLED STATE PREP branch.
 
        for (k < K) { int r = 7;                     // the classical SEED
-                     if (b) r = cq_theta(7, .2);    // prep, under a `_Bool`
+                     if (b) { r = 7; cq_theta(&r, .2); }  // prep, under a `_Bool`
                      s += cq_measure(r); }
 
    A state prep has NO pre-region SSA name for its rail at all — the hoisted

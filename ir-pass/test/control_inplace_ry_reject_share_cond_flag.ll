@@ -2,8 +2,8 @@
 ; read as DATA, so the region would take the ziov SHARED-FLAG path
 ; (control-in-place-PRD §4 R7; bd test_C_libtooling-drbq).
 ;
-;     int q = cq_theta(0,.5); int f = (q > 5);
-;     if (q > 5) r = cq_theta(r, .9);
+;     int q = 0; cq_theta(&q,.5); int f = (q > 5);
+;     if (q > 5) cq_theta(&r, .9);
 ;     use(f);
 ;
 ; `clang -O1` CSEs the two `q > 5` into one `icmp` with a branch use and a data

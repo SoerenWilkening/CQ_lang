@@ -1,6 +1,6 @@
 ; railbank_readorder_accept_unguarded.ll — ACCEPT (bd `test_C_libtooling-xdu2.10`, Track A).
 ;
-; `int b[n]; for (i<n) b[i] = cq_theta(b[i], .5); for (i<n) s += cq_measure(b[i]);`
+; `int b[n]; for (i<n) cq_theta(&b[i], .5); for (i<n) s += cq_measure(b[i]);`
 ; with NO explicit `if (n <= 0) return`. `clang -O1` gives each loop its OWN
 ; `n > 0` guard (`%wg`, `%rg` — two distinct but identical compares), so the read
 ; guard `%rguard` is reached from the write guard's FALSE edge as well as from the

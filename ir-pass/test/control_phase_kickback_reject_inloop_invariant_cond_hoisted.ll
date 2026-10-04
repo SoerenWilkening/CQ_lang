@@ -4,7 +4,7 @@
 ; OVER-DECLINE that the shipped P6 accept fixture hid. The original header is kept
 ; verbatim below because it is the accurate account of why the program was refused.
 ;
-;     int q = cq_theta(0, 0.5);
+;     int q = 0; cq_theta(&q, 0.5);
 ;     for (int i = 0; i < 2; ++i) { if (q == 5) cq_phi(PI); }   // q untouched
 ;     return cq_measure(q);
 ;
@@ -26,7 +26,7 @@
 ; had none, so nothing said the suite does not cover this spelling.
 ;
 ; TWO ONE-TOKEN WORKAROUNDS, both MEASURED to accept BEFORE this bead: gate the
-; register in the body (`q = cq_theta(q, -0.5);`, i.e. an actual Grover diffusion —
+; register in the body (`cq_theta(&q, -0.5);`, i.e. an actual Grover diffusion —
 ; see `control_phase_kickback_inloop_body_gate.ll`), or make the threshold opaque
 ; (`volatile int off;` … `q == 5 + off`), which defeats LICM. Neither is needed now.
 ;

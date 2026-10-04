@@ -3,7 +3,7 @@
 ; test_C_libtooling-3qlq Inc 1, Rule-13 ROUND-2 finding F-R1-2.
 ;
 ;     void abort(void);
-;     int slice(int u){ int q = cq_theta(u, 0.5);
+;     int slice(int u){ int q = u; cq_theta(&q, 0.5);
 ;       if (q > 7) cq_phi(0.75);   // a GENUINE BRANCH phase (a P1 kickback region)
 ;       if (q == 5) abort();       // the 7.2 abort park
 ;       return cq_measure(q); }

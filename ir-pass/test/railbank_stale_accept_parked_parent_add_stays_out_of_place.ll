@@ -24,7 +24,7 @@
 ;
 ; SOURCE — `clang -Iinclude -include CQ.h -O1 -emit-llvm -S`, verbatim:
 ;   __attribute__((noinline)) int slice(int seed) {
-;     int q = cq_theta(seed, 0.5);
+;     int q = seed; cq_theta(&q, 0.5);
 ;     int b[3]; int s = 0;
 ;     for (int i = 0; i < 3; ++i) b[i] = q;
 ;     int t = q + 3;

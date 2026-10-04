@@ -52,7 +52,7 @@
 ;       bool b[3] = {0};
 ;       for (int i = 0; i < 3; ++i) {
 ;           bool t = 0;
-;           if (a >= 3) t = cq_theta(t, 0.5);
+;           if (a >= 3) cq_theta(&t, 0.5);
 ;           if (t) a -= 3;
 ;           b[i] = t;
 ;       }

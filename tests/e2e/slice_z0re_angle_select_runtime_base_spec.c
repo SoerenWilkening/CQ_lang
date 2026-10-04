@@ -16,7 +16,7 @@
    ⚠ RESPELLED AS A TERNARY by bd test_C_libtooling-fmt3 (2026-09-29), exactly as
    z0re's own retirement trigger in tests/e2e/CMakeLists.txt instructed. With
    `nomerge` on every `cq_theta_*` (CQ.h) the IF/ELSE spelling that stood here,
-   `if (q > 3) r = cq_theta(t, A); else r = cq_theta(t, B);`, no longer folds into
+   `if (q > 3) { r = t; cq_theta(&r, A); } else { r = t; cq_theta(&r, B); }`, no longer folds into
    one call — it survives as an if/else of two runtime-seed preps and declines
    `if/else state prep allocates two rails` (measured, fmt3 round-2 header A/B;
    pinned by `control_inplace_ry_reject_stateprep_nomerge_ifelse_runtime_seed.ll`,

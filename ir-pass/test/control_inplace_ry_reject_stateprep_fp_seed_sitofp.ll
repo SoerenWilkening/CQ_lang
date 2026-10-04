@@ -6,10 +6,10 @@
 ; identity test really does cover an fp seed (notes §12.1 F-R3-10). It is the
 ; `-O1` image of PLAIN C, measured 2026-09-05:
 ;
-;     double slice(void){ int q = cq_theta(3,0.3);
+;     double slice(void){ int q = 3; cq_theta(&q,0.3);
 ;                         double t = (double)q;        /* a live sitofp RAIL   */
 ;                         double r = 5.0;
-;                         if (q == 5) r = cq_theta(5.0, 0.9);
+;                         if (q == 5) { r = 5.0; cq_theta(&r, 0.9); }
 ;                         return cq_measure(r) + cq_measure(t); }
 ;
 ; `-O1` folds the arm's arg-0 to `double 5.000000e+00` on the proving edge and

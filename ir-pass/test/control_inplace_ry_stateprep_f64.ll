@@ -1,8 +1,8 @@
 ; control_inplace_ry_stateprep_f64.ll — ACCEPT: controlled STATE PREP of an
 ; f64 register (PRD §14.3 row A-9; probe `p07a`).
 ;
-;     double q = cq_theta(3.0,.3); double r = 0.0;
-;     if (q > 5.0) r = cq_theta(0.0, .9);
+;     double q = 3.0; cq_theta(&q,.3); double r = 0.0;
+;     if (q > 5.0) { r = 0.0; cq_theta(&r, .9); }
 ;
 ; ⚠ THE MERGE φ IS A `double` AND IT IS A REGISTER, NOT AN ANGLE. That
 ; distinction is the f64 silent-miscompile family (CLAUDE.md: "a floating-point

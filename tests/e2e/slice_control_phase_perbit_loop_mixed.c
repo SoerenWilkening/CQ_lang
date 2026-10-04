@@ -4,8 +4,8 @@
    THE MIXED LOOP: D4's per-bit idiom on a loop-INVARIANT condition register,
    inside a loop that ALSO CARRIES a second tainted register.
 
-       int q = cq_theta(u, 0.5);            // INVARIANT: the body gates nothing on it
-       int r = cq_theta(u, 0.3);            // CARRIED:   rotated once per trip
+       int q = u; cq_theta(&q, 0.5);        // INVARIANT: the body gates nothing on it
+       int r = u; cq_theta(&r, 0.3);        // CARRIED:   rotated once per trip
        for (int i = 0; i < 3; i++) {
            if ((q >> i) & 1) cq_phi(0.2);   // D4's per-bit kickback
            cq_theta(&r, 0.1);            // the ancilla

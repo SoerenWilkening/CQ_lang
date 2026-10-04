@@ -3,8 +3,8 @@
 ; lowered to `cqrt_qram_store_<W>_controlled`) whose bare i64 index register was
 ; rotated in place before the region. clang -O1 of
 ;
-;     long q = cq_theta(0L, .5);  long j = cq_theta(0L, .9) & 7;
-;     int c = cq_theta(0, .7);    long q2 = cq_theta(q, .3);
+;     long q = 0L; cq_theta(&q, .5);  long s = 0L; cq_theta(&s, .9); long j = s & 7;
+;     int c = 0; cq_theta(&c, .7);  long q2 = q; cq_theta(&q2, .3);
 ;     if (c > 2) arr[q] = 5;                      // `q`: PRE-Ry record
 ;
 ; MEASURED on the pre-fix binary: exit 0,

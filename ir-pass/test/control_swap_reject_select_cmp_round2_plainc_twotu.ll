@@ -7,10 +7,10 @@
 ; `session-r9e5/review_b1_r2_probes/multi/e13_{caller,lib}.c` verbatim:
 ;
 ;     /* caller */  int ext_f(int a);
-;                   int q = 3; q = cq_theta(q, 0.5);
+;                   int q = 3; cq_theta(&q, 0.5);
 ;                   int y = 5; if (q > 5) y = ext_f(7);
-;                   int b  = cq_theta(y, 0.25);
-;                   int b3 = cq_theta(y, 0.9);
+;                   int b  = y; cq_theta(&b, 0.25);
+;                   int b3 = y; cq_theta(&b3, 0.9);
 ;                   int a  = (b == 1) ? 2 : 5;
 ;                   return cq_measure(a) + cq_measure(b3);
 ;     /* lib    */  int ext_f(int a) { return a + 100; }

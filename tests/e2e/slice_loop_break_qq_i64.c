@@ -4,8 +4,8 @@
    index-gated capture + whole-loop reverse-play mint the i64 capture/copy/compare
    symbols rather than the i32 ones:
 
-       long long p = cq_theta(pseed, 0.5);   // 64-bit loop-invariant qubit
-       long long q = cq_theta(seed, 0.25);
+       long long p = pseed; cq_theta(&p, 0.5);  // 64-bit loop-invariant qubit
+       long long q = seed; cq_theta(&q, 0.25);
        for (int i = 0; i < n; i++) {
            q = q ^ 5;                         // in-place i64 value rail
            if (q == p) break;                 // TAINTED i64 Q==Q break flag

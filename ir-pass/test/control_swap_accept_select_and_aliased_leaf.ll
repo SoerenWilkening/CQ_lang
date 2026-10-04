@@ -29,7 +29,7 @@
 ; control_swap_accept_select_rail_alias_cond.ll.
 ;
 ; SHIP FLOOR: this IR is the verbatim `clang -O1` output of
-;     int q = cq_theta(x,.5); int r = cq_phi(q,.25);
+;     int q = x; cq_theta(&q,.5); int r = cq_phi(q,.25);
 ;     int s = ((q > 3) & (q < r)) ? 11 : 22;
 ; Note the NON-short-circuit `&`. The `&&` spelling does NOT reach here: -O1 emits
 ; the poison-shielded `select i1 %4, i1 %5, i1 false` short-circuit form, which is

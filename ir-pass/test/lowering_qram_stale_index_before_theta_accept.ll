@@ -6,9 +6,9 @@
 ; CLAUDE.md R1/L5). Also pins that a read-only access with no later gate at all
 ; (the second table) still lowers.
 ;
-;     long q = cq_theta(0L, .5);
+;     long q = 0L; cq_theta(&q, .5);
 ;     int v = tbl[q];               // read first
-;     long q2 = cq_theta(q, .3);    // then rotate
+;     long q2 = q; cq_theta(&q2, .3);  // then rotate
 ;     int u = tbl2[q2];             // read the rotated NAME (fresh record)
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s

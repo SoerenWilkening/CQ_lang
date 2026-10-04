@@ -3,9 +3,9 @@
 ; d6ffaca3). clang -O1 of the reviewer's q4:
 ;
 ;     int arr[8] = {0};
-;     long q = cq_theta(0L, .5);  long j = cq_theta(0L, .9);  int c = cq_theta(0, .7);
+;     long q = 0L; cq_theta(&q, .5);  long j = 0L; cq_theta(&j, .9);  int c = 0; cq_theta(&c, .7);
 ;     if (c > 2) arr[j] = (int)(q ^ 6);        // pure chain on q in a TAINTED arm
-;     long q2 = cq_theta(q, .3);                // in-place Ry on q after the merge
+;     long q2 = q; cq_theta(&q2, .3);           // in-place Ry on q after the merge
 ;
 ; The `trunc`/`xor` read `q` before the Ry on every CFG trace, and the Ry
 ; post-dominates them, so the post-dominance grant accepted it (rc 0, only the M-A

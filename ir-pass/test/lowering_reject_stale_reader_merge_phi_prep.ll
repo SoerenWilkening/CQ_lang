@@ -3,11 +3,11 @@
 ; is a controlled STATE-PREP's MERGE φ.
 ;
 ;   int a=5; bool b0=0, b1=0;
-;   if (a>=3) b0 = cq_theta(b0,0.5);
+;   if (a>=3) cq_theta(&b0,0.5);
 ;   if (b0==1) a -= 3;
-;   if (a>=3) b1 = cq_theta(b1,0.5);       /* the prep — its merge φ is `%p` */
+;   if (a>=3) cq_theta(&b1,0.5);       /* the prep — its merge φ is `%p` */
 ;   if (b1) a -= 3;
-;   bool c = cq_theta(b1,0.25);            /* CONSUMES the name `b1` */
+;   bool c = b1; cq_theta(&c,0.25);        /* CONSUMES the name `b1` */
 ;   return cq_measure(b0)+cq_measure(b1)+cq_measure(c)+cq_measure(a);
 ;                        ^^^^^^^^^^^^^^ the stale read
 ;

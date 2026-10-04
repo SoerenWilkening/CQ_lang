@@ -5,8 +5,8 @@
 ; (`LoopLowering.cpp:145` admits `Add` and `Xor` identically).
 ;
 ;     __attribute__((noinline))
-;     int run(int seed, int n){ int r=cq_theta(seed,0.3);
-;       for(int i=0;i<3;i++){ r = r + n; r = cq_theta(r,0.1); }
+;     int run(int seed, int n){ int r=seed; cq_theta(&r,0.3);
+;       for(int i=0;i<3;i++){ r = r + n; cq_theta(&r,0.1); }
 ;       return cq_measure(r); }
 ;
 ; `clang -O1`, `@main` dropped. `!llvm.loop` VERBATIM. The body rotation is what

@@ -6,7 +6,7 @@
 ; `inPlaceValueRailOperand` already answers NULL at the writer, nothing is ever
 ; marked, and the eqpx re-ask has nothing to adjudicate.
 ;
-;     int slice(int u){ int q=cq_theta(u,0.5); int r=cq_theta(u,0.3);
+;     int slice(int u){ int q=u; cq_theta(&q,0.5); int r=u; cq_theta(&r,0.3);
 ;       int y = (q>5) ? 11 : 5;                /* 4.4 SELECT MERGE -> %out */
 ;       int w = y & 7;
 ;       for(int i=0;i<3;i++){ r = r ^ w; }

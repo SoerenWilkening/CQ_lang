@@ -21,7 +21,7 @@
 ; `%d` is a FORWARD user of `%q`, not a member of `condProvenance(%c) = {%q}`
 ; and not on `%q`'s rail (an `icmp` mints a fresh rail), so it is NOT in
 ; `CondWire` and it still collides. The source this module is `-O1`'s image of
-; could have been `r = cq_theta(d, .9)` — an in-place Ry on the SECOND flag's
+; could have been `r = d; cq_theta(&r, .9)` — an in-place Ry on the SECOND flag's
 ; rail, which is live and measured here — and that is a different unitary from
 ; preparing a third wire.
 ;

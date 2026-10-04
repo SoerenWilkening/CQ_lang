@@ -4,11 +4,11 @@
 ;
 ; This is the `-O1` image of `$S/fix3/q/z06_merge_edge_fold2.c`:
 ;
-;     int q = cq_theta(3,0.3);
+;     int q = 3; cq_theta(&q,0.3);
 ;     int t = q / 4;
 ;     int r = t;                          /* the STRAIGHT-THROUGH value is a
 ;                                            LIVE tainted register              */
-;     if (t != 5) r = cq_theta(5, 0.9);
+;     if (t != 5) { r = 5; cq_theta(&r, 0.9); }
 ;     return (int) cq_measure(r) + (int) cq_measure(t);
 ;
 ; On the STRAIGHT-THROUGH (merge) edge `t` is 5, so `-O1` folds the φ's Pred

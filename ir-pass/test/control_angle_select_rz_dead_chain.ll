@@ -2,7 +2,7 @@
 ; whose chain is dead afterwards (bd drbq Inc 2b; the §12.1 transparency
 ; witness, in the select form).
 ;
-;     int p = cq_theta(u1,.3); int r = p * 5;
+;     int p = u1; cq_theta(&p,.3); int r = p * 5;
 ;     r = cq_phi(r, q == 5 ? .9 : .3);       // r never read again
 ;     return cq_measure(q);
 ;

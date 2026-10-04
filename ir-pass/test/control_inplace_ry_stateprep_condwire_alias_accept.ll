@@ -19,7 +19,7 @@
 ;                                   ; rail (lowerRotations RAUWs both to one
 ;                                   ; handle)
 ;     %c = icmp eq %b, 5
-;     if (%c) r = cq_theta(0, .9);  ; seed 0 — which is what `%t` is pinned to
+;     if (%c) { r = 0; cq_theta(&r, .9); }  ; seed 0 — which is what `%t` is pinned to
 ;
 ; `condProvenance` STOPS AT A THETA (`if (isThetaCall(I)) continue;` — it
 ; collects the result and deliberately does not enter arg-0, so it cannot walk

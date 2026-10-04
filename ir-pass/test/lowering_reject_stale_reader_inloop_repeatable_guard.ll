@@ -6,9 +6,9 @@
 ; the guard `icmp eq %i, 0` (provably false on every arrival from the latch)
 ; becomes `icmp slt %i, %n` on a FUNCTION ARGUMENT, which can hold on many trips:
 ;
-;   int q = cq_theta(0, 0.3);
+;   int q = 0; cq_theta(&q, 0.3);
 ;   for (int i = 0; i < 3; i++)
-;     if (i < n) { int b = cq_theta(q, 0.1); s += cq_measure(b); } else s += 1;
+;     if (i < n) { int b = q; cq_theta(&b, 0.1); s += cq_measure(b); } else s += 1;
 ;
 ; With `n >= 2` the reader runs twice on the loop-INVARIANT `q`: at trip 2 the
 ; name `q` denotes `Ry(.25)|0>` while the register holds `Ry(1.15)|0>`. That is

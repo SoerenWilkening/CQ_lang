@@ -22,7 +22,7 @@
 ; file goes red; this one no longer can.
 ;
 ; WHY THE ACCEPT IS THE RIGHT CIRCUIT, not merely a permitted one. The source
-; shape is `int r; if (q == 5) r = cq_theta(r, 0.9);` — an uninitialized object
+; shape is `int r; if (q == 5) cq_theta(&r, 0.9);` — an uninitialized object
 ; prepared under quantum control. Both of its reads (the seed and the merge phi's
 ; straight-through incoming) are `undef`, both are normalized to the same
 ; `i32 0`, and the emitted stream is the drbq `StatePrep` kind: a FRESH |0> rail

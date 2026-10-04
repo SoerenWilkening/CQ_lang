@@ -73,7 +73,7 @@ struct CondTree {
   llvm::SmallVector<llvm::CmpInst *, 4> Leaves;
   // bd test_C_libtooling-3qlq.4 (Inc 1b) — RAIL LEAVES. A leaf that is not a
   // compare but a tainted `i1` REGISTER: the result of a `cq_theta_i1` call
-  // (root mint or chained), i.e. `_Bool b = cq_theta(b0, θ); if (b) …`. Such a
+  // (root mint or chained), i.e. `_Bool b = b0; cq_theta(&b, θ); if (b) …`. Such a
   // leaf mints NO flag — the register IS its own flag (`isCondRailLeaf`), so
   // `CondTreeEmit` maps it to itself and strips/frees NOTHING for it.
   //
@@ -90,8 +90,8 @@ struct CondTree {
   llvm::SmallVector<llvm::CallInst *, 2> RailLeaves;
   // bd `boi6` (D-B) / Track M — REGION-MERGE-φ RAIL LEAVES. The `Merge` φ of a
   // diamond ALREADY accepted into the plan as a controlled in-place Ry / state
-  // PREP (`ArmClass::InPlaceRotation`): `bool b1 = 0; if (!b0) b1 =
-  // cq_theta(b1, .5); if (b1) a -= 3;`, which `clang -O1` hands over as
+  // PREP (`ArmClass::InPlaceRotation`): `bool b1 = 0; if (!b0)
+  // cq_theta(&b1, .5); if (b1) a -= 3;`, which `clang -O1` hands over as
   // `select i1 %phi, …`. Such a φ is NOT a `CallInst`, so it can never join
   // `RailLeaves` — THE ELEMENT TYPE THERE IS THE ENFORCEMENT (bd `boi6` H-3:
   // retyping it to `Instruction *` would hand a φ, with no code change and no

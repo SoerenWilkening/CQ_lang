@@ -4,9 +4,9 @@
 ; control_swap_reject_post_region_theta_derived_cond.ll, which pinned the
 ; decline).
 ;
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     if (sqrt(a + 3.0) <= 5.0) { a = cq_phi(a, PI); }
-;     a = cq_theta(a, 0.25);            /* <-- the post-region Ry */
+;     cq_theta(&a, 0.25);            /* <-- the post-region Ry */
 ;     return cq_measure(a);
 ;
 ; WHAT THIS FILE HAS ALWAYS BEEN ABOUT. bd lom0's Increment-4 accept claim is

@@ -4,7 +4,7 @@
 ;
 ;     for (int i = 0; i < 2; ++i) {
 ;         if (q == 5) cq_phi(0.9); else cq_phi(0.3);   // P2, the angle select
-;         q = cq_theta(q, -0.5);                       // the diffusion
+;         cq_theta(&q, -0.5);                       // the diffusion
 ;     }
 ;
 ; `clang -O1` output verbatim: SimplifyCFG merges the two arms into ONE

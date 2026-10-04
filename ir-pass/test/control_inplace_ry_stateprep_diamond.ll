@@ -2,8 +2,8 @@
 ; the flagship diamond (control-in-place-PRD §14, bd test_C_libtooling-drbq
 ; Inc 4).
 ;
-;     int q = cq_theta(3, .3); int r = 0;
-;     if (q == 5) r = cq_theta(0, .9);       // arg-0 is a CLASSICAL constant
+;     int q = 3; cq_theta(&q, .3); int r = 0;
+;     if (q == 5) { r = 0; cq_theta(&r, .9); }  // arg-0 is a CLASSICAL constant
 ;
 ; The arm's `cq_theta` has a CLASSICAL arg-0, so it does not rotate a live
 ; register — it MINTS one. `lowerRotations` takes its `!Chained` arm
@@ -37,16 +37,16 @@
 ; SAME FIXTURE, NOT ADDITIONAL COVERAGE (measured 2026-09-04, `-O1`, slice-body
 ; diff; PRD §14.3 rows A-4 / A-24 / A-25):
 ;
-;   A-4   `int r; if (q == 5) r = cq_theta(0,.9); else r = 0;`  — SimplifyCFG
+;   A-4   `int r; if (q == 5) { r = 0; cq_theta(&r,.9); } else r = 0;`  — SimplifyCFG
 ;         collapses the if/else to this diamond (only the `; preds =` COMMENT
 ;         order differs). This is the C spelling users write.
-;   A-24  `if (q == 5) r = cq_theta(q - 5, .9);`  — the DERIVED-TEMP fold: `-O1`
+;   A-24  `if (q == 5) { r = q - 5; cq_theta(&r, .9); }`  — the DERIVED-TEMP fold: `-O1`
 ;         value-propagates `q == 5` into the arm and const-folds `q - 5` to `0`,
 ;         deleting the `sub`. Byte-identical slice body. §14.2c records this as a
 ;         documented ACCEPT (seed 0 != the compare literal 5, so F2 is silent)
 ;         and §14.11 Q3 CORRECTED records why no cheap fence can separate the
 ;         two: there is no `f` left to inspect.
-;   A-25  `if (q == 5) r = cq_theta(q * 0, .9);`  — the UNCONDITIONAL identity
+;   A-25  `if (q == 5) { r = q * 0; cq_theta(&r, .9); }`  — the UNCONDITIONAL identity
 ;         fold. Byte-identical, and exactly faithful (`q*0` is |0> for every q).
 ;
 ; Committing three more .ll files with identical IR would be a false claim of

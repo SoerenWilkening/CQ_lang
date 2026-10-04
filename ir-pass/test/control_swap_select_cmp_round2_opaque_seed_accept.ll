@@ -5,8 +5,8 @@
 ;
 ;     volatile int gint = 0;
 ;     int x  = gint;                 // classical at round 1 AND STILL classical
-;     int b  = cq_theta(x, 0.5);
-;     int b3 = cq_theta(x, 0.9);
+;     int b  = x; cq_theta(&b, 0.5);
+;     int b3 = x; cq_theta(&b3, 0.9);
 ;     int a  = (b == 1) ? 2 : 5;
 ;
 ; Same two-sibling SHAPE as the round-2 miscompile, with a seed nothing ever

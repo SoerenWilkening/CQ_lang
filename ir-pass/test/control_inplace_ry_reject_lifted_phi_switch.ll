@@ -7,7 +7,7 @@
 ;     switch (c) { case 0: m = cq_phi(r,.1); break;
 ;                  case 1: m = cq_phi(r,.2); break;
 ;                  default: m = r; }
-;     if (q == 5) { r = cq_theta(r, .9); }
+;     if (q == 5) { cq_theta(&r, .9); }
 ;     return cq_measure(m) + cq_measure(r) + cq_measure(q);
 ;
 ; WHY A SEPARATE FIXTURE FROM THE `if/else` ONE: the launder is not "a diamond";

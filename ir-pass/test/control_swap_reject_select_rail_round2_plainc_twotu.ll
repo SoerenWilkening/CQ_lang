@@ -8,13 +8,13 @@
 ;
 ;   int ext_f(int a);                    /* e16_lib.c: { return a + 100; } */
 ;   int slice(void) {
-;       int q = 3;  q = cq_theta(q, 0.5);
+;       int q = 3;  cq_theta(&q, 0.5);
 ;       int y = 5;
 ;       if (q > 5) y = ext_f(7);         /* 6.5 classical-call arm -> %out  */
 ;       int keep = cq_measure(y);        /* keeps %out live as an i32 phi   */
 ;       bool x  = (y != 0);              /* CLASSICAL at round 1            */
-;       bool b  = cq_theta(x, 0.25);
-;       bool b3 = cq_theta(x, 0.9);      /* SIBLING on the same wire        */
+;       bool b  = x; cq_theta(&b, 0.25);
+;       bool b3 = x; cq_theta(&b3, 0.9);  /* SIBLING on the same wire        */
 ;       int a = b ? 2 : 5;               /* the rail select reads `b`       */
 ;       return cq_measure(a) + cq_measure(b3) + keep;
 ;   }

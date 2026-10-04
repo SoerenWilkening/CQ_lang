@@ -2,8 +2,8 @@
 ; SSA ALIAS of the condition register (`int a = q`; PRD shape S8-with-theta, bd
 ; test_C_libtooling-drbq).
 ;
-;     int q = cq_theta(0,.5); int a = q;
-;     if (q > 5) a = cq_theta(a, .9);
+;     int q = 0; cq_theta(&q,.5); int a = q;
+;     if (q > 5) cq_theta(&a, .9);
 ;
 ; `int a = q` mints no IR at all — `a` IS `%q` — so the Ry lands on the very wire
 ; the flag was minted from. The Rz twin of this shape ACCEPTS (§3c permits a

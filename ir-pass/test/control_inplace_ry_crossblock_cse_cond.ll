@@ -2,10 +2,10 @@
 ; (2026-09-17), and it is the half of that bead a reader will not predict from its
 ; title: **the widening moves ACYCLIC programs, and they are HALF the population.**
 ;
-;     int a = cq_theta(0, 0.5);
-;     int r = cq_theta(0, 0.3);
-;     if (a == 5) { r = cq_theta(r, 0.9); }     // region 1
-;     if (a == 5) { r = cq_theta(r, 0.9); }     // region 2
+;     int a = 0; cq_theta(&a, 0.5);
+;     int r = 0; cq_theta(&r, 0.3);
+;     if (a == 5) { cq_theta(&r, 0.9); }     // region 1
+;     if (a == 5) { cq_theta(&r, 0.9); }     // region 2
 ;     return cq_measure(a) + cq_measure(r);
 ;
 ; This is the HAND-UNROLLED TWIN of `control_inplace_ry_reject_inloop_invariant_cond_hoisted.ll`

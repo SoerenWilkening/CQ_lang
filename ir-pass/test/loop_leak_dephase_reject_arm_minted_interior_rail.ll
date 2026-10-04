@@ -9,7 +9,7 @@
 ;         s += cq_measure(d & 1);
 ;         if (k < lim) { int e = d + 7; s += cq_measure(e & 2); }  /* re-joins */
 ;     }
-;     y = cq_theta(y, 0.9);
+;     cq_theta(&y, 0.9);
 ;     return s + cq_measure(y);
 ;
 ; ⚠ **THIS IS bd `6n1s` AGAIN, ONE TOKEN AWAY FROM THE WITNESS THAT INCREMENT

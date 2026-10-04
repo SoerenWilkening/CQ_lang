@@ -2,10 +2,10 @@
 ; 7.3 Increment 3). THE CUSTOMER SHAPE, reduced: a DERIVED-condition phase oracle
 ; and the S-dagger rotation, inside a classically-bounded loop.
 ;
-;     int a = cq_theta(u0, 0.5);
+;     int a = u0; cq_theta(&a, 0.5);
 ;     for (int i = 0; i < 3; ++i) {
 ;         if (sqrt(a + 3.) <= 3.5) a = cq_phi(a, b);
-;         a = cq_theta(a, -0.5);
+;         cq_theta(&a, -0.5);
 ;     }
 ;     return cq_measure(a);
 ;

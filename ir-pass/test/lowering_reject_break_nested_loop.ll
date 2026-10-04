@@ -1,7 +1,7 @@
 ; lowering_reject_break_nested_loop.ll — DECLINE (Phase 7.4 Inc 1, y05j.1; PRD-7.4
 ; §2.7, §2.10 nested row): a value-arm early break inside an INNER loop of a nested
 ; quantum loop nest:
-;     int q = cq_theta(x, 0.25);
+;     int q = x; cq_theta(&q, 0.25);
 ;     for (int i = 0; i < n; i++)
 ;         for (int j = 0; j < m; j++) {
 ;             q = q ^ 9;

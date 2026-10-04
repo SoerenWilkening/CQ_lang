@@ -4,7 +4,7 @@
 ; that was measurably false).
 ;
 ;     void abort(void);
-;     int slice(int u){ int q = cq_theta(u, 0.5);
+;     int slice(int u){ int q = u; cq_theta(&q, 0.5);
 ;       if (q == 5) abort();     // the 7.2 abort park
 ;       cq_phi(0.75);            // UNCONDITIONAL — a GLOBAL phase; D2 DELETES it
 ;       return cq_measure(q); }

@@ -2,7 +2,7 @@
 ; PRD-7.4 §2.5 B2, §2.10 non-reconverging row): a classically-bounded loop whose
 ; single tainted early break and natural (classical-bound) exit reach DISTINCT
 ; blocks — there is no single loop-exit merge phi carrying the escaping answer:
-;     int q = cq_theta(x, 0.25);
+;     int q = x; cq_theta(&q, 0.25);
 ;     for (int i = 0; i < n; i++) {
 ;         q = q ^ 9;
 ;         if ((q & 1) == 0) goto brk_exit;   // break -> a distinct exit

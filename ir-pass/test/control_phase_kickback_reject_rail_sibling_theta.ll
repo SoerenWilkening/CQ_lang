@@ -2,8 +2,8 @@
 ; Rule-13 round-1 finding F-1b-1, a CONFIRMED silent miscompile on the first
 ; build of Inc 1b; its plain-C source is p80 in the session-3qlq4 record):
 ;
-;     int q = cq_theta(0,.3); bool t = (bool)(q & 1);
-;     bool b = cq_theta(t,.5); bool c = cq_theta(t,.9);   // TWO in-place Ry on t's rail
+;     int q = 0; cq_theta(&q,.3); bool t = (bool)(q & 1);
+;     bool b = t; cq_theta(&b,.5); bool c = t; cq_theta(&c,.9);  // TWO in-place Ry on t's rail
 ;     if (b) cq_phi(.7); return cq_measure(c);
 ;
 ; `b` and `c` are SIBLING in-place rotations on ONE physical rail (both chained
@@ -11,7 +11,7 @@
 ; the branch reads `b` — a STALE name: at the branch the register is `Ry(.9)Ry(.5)|t>`,
 ; which is `c`. The first build accepted and emitted `ry(h,.5); ry(h,.9); rz(h,.7)`
 ; — byte-identical to the stream for `if (c)` and for the well-formed chain
-; `c0 = cq_theta(t,.5); c = cq_theta(c0,.9); if (c)` — at opt exit 0, verify-clean,
+; `c0 = t; cq_theta(&c0,.5); c = c0; cq_theta(&c,.9); if (c)` — at opt exit 0, verify-clean,
 ; stage-2b clean. `main` declined it (`branch phase on a bare i1 condition`).
 ;
 ; ROOT CAUSE, and it is PRE-EXISTING for the compare path: `WireWalk::

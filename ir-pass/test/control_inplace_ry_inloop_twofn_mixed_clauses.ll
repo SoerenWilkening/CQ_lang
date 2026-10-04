@@ -2,10 +2,10 @@
 ; `test_C_libtooling-wx8g`, review round 1): TWO FUNCTIONS IN ONE MODULE GRANTED
 ; BY TWO DIFFERENT R7-LOOP CLAUSES, and both must keep lowering.
 ;
-;     int f_c(void) { for (k<2) { bool t = cq_theta(0,.5); int r = cq_theta(7,.25);
-;                                 if (t) r = cq_theta(r,.2); … } }   // clause (c)
-;     int f_b(void) { int r = cq_theta(7,.25); bool b = cq_theta(0,.5);
-;                     for (k<2) { if (b) r = cq_theta(r,.2); } … }   // clause (b')
+;     int f_c(void) { for (k<2) { bool t = 0; cq_theta(&t,.5); int r = 7; cq_theta(&r,.25);
+;                                 if (t) cq_theta(&r,.2); … } }   // clause (c)
+;     int f_b(void) { int r = 7; cq_theta(&r,.25); bool b = 0; cq_theta(&b,.5);
+;                     for (k<2) { if (b) cq_theta(&r,.2); } … }   // clause (b')
 ;
 ; THE POSITIVE CONTROL FOR BOTH ROUND-1 FIXES, and it is a control precisely
 ; because both fixes move in the DECLINE direction and a fence that declines

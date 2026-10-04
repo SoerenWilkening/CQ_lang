@@ -2,7 +2,7 @@
 ; in-loop Ry arm whose ROUTED BASE is a derived value defined in the loop header
 ; ABOVE the compare, not the header φ itself.
 ;
-;     for (...) { r = cq_theta(r, .25); if (q > 5) r = cq_theta(r, .9); }
+;     for (...) { cq_theta(&r, .25); if (q > 5) cq_theta(&r, .9); }
 ;
 ; WHY IT IS ITS OWN FIXTURE. The routed base here is `%rg`, a `cq_theta` — so the
 ; header φ `%r` is reached only through the base's BACKWARD wire closure, which is

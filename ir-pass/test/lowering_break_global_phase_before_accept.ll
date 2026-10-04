@@ -3,7 +3,7 @@
 ; CONTROL for `lowering_reject_break_phase_answer_kickback.ll`.
 ;
 ;     __attribute__((noinline))
-;     int run(int seed, int n){ int q = cq_theta(seed, 0.25);
+;     int run(int seed, int n){ int q = seed; cq_theta(&q, 0.25);
 ;       cq_phi(0.3);                              // UNCONTROLLED -> a GLOBAL phase
 ;       for (int i = 0; i < n; i++) { q = q ^ 5; if ((q & 1) == 0) break; }
 ;       return cq_measure(q); }

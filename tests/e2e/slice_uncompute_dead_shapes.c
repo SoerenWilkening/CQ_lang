@@ -3,7 +3,7 @@
    as such in docs/prd/phase-04-swap-route-control/inc1-records/GOLDEN_REGEN.md.
 
      OLD IDIOM: (void) cq_phi on t, lb and fn
-     NEW IDIOM: if (t > 100) / long lp = lb * (long) cq_theta(y,0.35); if (lp == 15L) / float fp = fn * cq_theta(z,0.45); if (fp == -9.0f)
+     NEW IDIOM: if (t > 100) / int y2 = y; cq_theta(&y2,0.35); long lp = lb * (long) y2; if (lp == 15L) / float z2 = z; cq_theta(&z2,0.45); float fp = fn * z2; if (fp == -9.0f)
 
    WHY. Under owner decision D1 `cq_phi` takes no register, so the documented
    "Rz keep-alive" — the opaque READER that stopped `clang -O1` deleting the dead

@@ -28,7 +28,7 @@
 ; demonstrated.** Do not upgrade that sentence.
 ;
 ; WHY THE ACCEPT IS LICENSED — the availability ground, on this module. F2 asks
-; whether the author could have written `cq_theta(<that register>, θ)` in the
+; whether the author could have written `cq_theta(&<that register>, θ)` in the
 ; arm. `%p` lives in `%J`; it dominates neither `%pre`'s terminator (the pred-edge
 ; slot) nor any block dominating `%armB` (the arm slot), so it could not have been
 ; SPELLED at either slot in any module — its operands did not exist there. It is

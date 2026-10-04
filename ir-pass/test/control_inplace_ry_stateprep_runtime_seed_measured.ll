@@ -2,7 +2,7 @@
 ; test_C_libtooling-z0re, owner ruling 2026-09-28 option (a)): a controlled state
 ; prep seeded by a MEASUREMENT RESULT.
 ;
-;     int s = cq_measure(q0); int r = s; if (q > 3) r = cq_theta(s, .2);   // probe e07
+;     int s = cq_measure(q0); int r = s; if (q > 3) { r = s; cq_theta(&r, .2); }  // probe e07
 ;
 ; `cq_measure` is the taint SINK (Rule 3): its result is a CLASSICAL value, the
 ; measured outcome, and `isRuntimeStatePrepSeed` admits it like any other runtime

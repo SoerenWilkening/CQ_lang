@@ -63,7 +63,7 @@
    slice_libm_real_atan2l.c). The static const coefficient block, every threshold
    hex compare, the sin_pi switch, and the lgammal_r branch ladder are UNCHANGED.
 
-   *** THE SEED MAKES EVERY BRANCH REACHABLE. *** cq_theta(0.5L,·) is an OPAQUE
+   *** THE SEED MAKES EVERY BRANCH REACHABLE. *** cq_theta(&q,·) on q = 0.5L is an OPAQUE
    f80 the pass cannot constant-fold, so the sign/reflection branch (se & 0x8000),
    the |x|<2 / <8 / <2^66 magnitude ladder, and the sin_pi reduction switch are
    all TAINTED control flow — flattened at plain clang -O1 (PredMux) so sin_pi

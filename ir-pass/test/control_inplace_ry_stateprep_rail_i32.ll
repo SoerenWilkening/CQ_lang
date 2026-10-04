@@ -2,8 +2,8 @@
 ; controlled STATE PREP under a bare `_Bool` (rail-root) condition, at `i32`
 ; (probe `t3`, `clang -O1` stage-1 module committed verbatim):
 ;
-;     _Bool b = 0; int r = 7; b = cq_theta(b, 0.5);
-;     if (b) { r = cq_theta(7, 0.9); }
+;     _Bool b = 0; int r = 7; cq_theta(&b, 0.5);
+;     if (b) { r = 7; cq_theta(&r, 0.9); }
 ;
 ; The seed `7` is an `i32` `ConstantInt`, so — unlike its `_Bool`-seed sibling
 ; `control_inplace_ry_stateprep_rail_i1_seed.ll` — F2's edge-pinned-seed test has

@@ -4,7 +4,7 @@
 ; AND read as DATA after it, so it is NOT measure-owned. Again deliberately with no
 ; post-loop rotation, so no fence's diagnostic is involved.
 ;
-;     int y = cq_theta(5, .5);
+;     int y = 5; cq_theta(&y, .5);
 ;     int b = y & 1;                                  // measured in-loop ...
 ;     for (k = 1; k <= 2; ++k)
 ;         s += cq_measure(b) + cq_measure((y >> k) & 1);

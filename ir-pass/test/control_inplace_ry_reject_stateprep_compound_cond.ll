@@ -7,7 +7,7 @@
 ; ⚠ THIS FIXTURE IS ALSO F2's RETIREMENT TRIGGER, COMMITTED (PRD §14.2b). F2
 ; reads ONE compare and needs no `and`/`or` leaf walk ONLY BECAUSE compound
 ; conditions reach no control accept path. A compound condition DOES fold, and it
-; folds a SECOND register too — `if (q == 5 && p == 3) r = cq_theta(p, .9)`
+; folds a SECOND register too — `if (q == 5 && p == 3) { r = p; cq_theta(&r, .9); }`
 ; arrives as `cq_theta(i32 3, .9)` (probe `p08q`). THE DAY COMPOUND CONDITIONS
 ; ARE ADMITTED TO ANY CONTROL ACCEPT PATH, F2 MUST BE ASKED OF EVERY LEAF OF THE
 ; FLAG NETWORK, AND OF EVERY REGISTER ANY LEAF PINS — not just of the register

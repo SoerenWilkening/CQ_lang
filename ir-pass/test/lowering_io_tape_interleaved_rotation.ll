@@ -8,7 +8,7 @@
 ;     ry(%H,0.5) ; %OP = add(%H,1) ; ry(%H,0.25) ; tape(%OP)
 ; Six lines of ordinary C reach it, because a CHAINED `cq_theta` lowers to an
 ; in-place `ry` on the EXISTING handle (RotationLowering):
-;     int x = cq_theta(seed,0.5); int y = x+1; int x2 = cq_theta(x,0.25);
+;     int x = seed; cq_theta(&x,0.5); int y = x+1; int x2 = x; cq_theta(&x2,0.25);
 ;     printf("%d", y);
 ;
 ; THE DEFECT (MEASURED, three independent refuters failed to refute it, plus two

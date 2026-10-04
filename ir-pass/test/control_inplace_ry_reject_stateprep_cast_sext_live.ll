@@ -5,10 +5,10 @@
 ; ⚠ ROUND-3 RULE-13 FINDING (lens R3, F-R3-2, CONFIRMED-MISCOMPILE, 8 plain-C
 ; programs). Source `$S/review3/R3/p/g03_ll_eq5.c`:
 ;
-;     long long slice(void){ int q = cq_theta(3,0.3);
+;     long long slice(void){ int q = 3; cq_theta(&q,0.3);
 ;                            long long t = (long long)q;      /* a CAST rail    */
 ;                            long long r = 5;
-;                            if (t == 5) r = cq_theta(t, 0.9);
+;                            if (t == 5) { r = t; cq_theta(&r, 0.9); }
 ;                            return cq_measure(r) + cq_measure(t); }
 ;
 ; `-O1` narrows `icmp eq (sext i32 %1 to i64), 5` to `icmp eq i32 %1, 5` (the

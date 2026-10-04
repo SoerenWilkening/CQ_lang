@@ -3201,7 +3201,7 @@ add_test(NAME e2e-spec-musttail-clone-live-arg-twin-equivalent
 # chain's kickback consumer — was counted by the uncompute spine as a MUTATION of what
 # it passed (`preservesBorrowedParent`) or as a disqualifying consumer
 # (`isInteriorConsumer`), so the chain was never uncomputed and stood ENTANGLED with
-# `q` across the later `cq_theta(q, .7)`: a Rule-8 wrong unitary, `opt` exit 0 with
+# `q` across the later `@cq_theta_*(q, .7)`: a Rule-8 wrong unitary, `opt` exit 0 with
 # the lyyf-(B) warning, on programs whose hand-inlined twins are clean.
 # `cloneCallPreservesArg` now proves from the clone body that the call only READS.
 #
@@ -3765,7 +3765,7 @@ add_test(NAME e2e-slice-qram-store
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_store.expected.log")
 
-# bd 38t2: the fp-as-bitpattern memory cell. `arr[q] = x` where `x = cq_theta(...)` is
+# bd 38t2: the fp-as-bitpattern memory cell. `arr[q] = x` where `x` (`cq_theta(&x, ...)`) is
 # an fp superposition CARRIER and `q` a tainted index, then `v = arr[p]`; lowers to
 # cqrt_qram_alloc_f64 + cqrt_qram_store_f64 (of the carrier) + cqrt_qram_load_f64 +
 # cqrt_measure_f64. Storing a coherent fp carrier is faithful reversible QRAM (bd
@@ -5543,7 +5543,7 @@ add_test(NAME e2e-slice-control-inplace-ry-stateprep-seed-eq-k
 # IF/ELSE spelling that `slice_z0re_angle_select_runtime_base{,_exact,_spec}.c` used
 # stopped folding to an angle select and declined at the two-rail clause (measured,
 # fmt3 round-2 header A/B on the merged tree: exactly those 3 slices A→D). They were
-# RESPELLED AS TERNARIES, `r = cq_theta(t, c ? A : B);` — same IR, no merge — and the
+# RESPELLED AS TERNARIES, `r = t; cq_theta(&r, c ? A : B);` — same IR, no merge — and the
 # goldens and the twin gates are byte-for-byte unchanged (measured, and r1B F-r1B-2 /
 # z0re r2 F-r2-1 measured it before). The S3 runtime-base admission is reachable from
 # plain C via the ternary. The if/else spelling's decline is pinned at the IR level by
@@ -6391,7 +6391,7 @@ add_test(NAME e2e-select-bool-loop-twin-identical
 # --- record in their headers — the same disposition
 # --- `slice_control_switch_phase.c` took on 2026-09-05.
 # ---
-# --- WHY: the program ends `b = cq_theta(x,.25); …merge…; b3 = cq_theta(x,.9);`
+# --- WHY: the program ends `b = x; cq_theta(&b,.25); …merge…; b3 = x; cq_theta(&b3,.9);`
 # --- — two SIBLING rotations reading the name `x`, so `b3` names `Ry(0.9)|x>`
 # --- while the register holds `Ry(0.9)Ry(0.25)|x>`. That is the P1 stale-reader
 # --- class (`docs/frontend.md` §3.2: a rotation consumes the old name), and it
@@ -6620,8 +6620,8 @@ add_test(NAME e2e-slice-measure-classical-only
 # --- ALLOCATION. Two slices, one per ruled spelling, and the e2e layer is where
 # --- the rule is actually WITNESSED rather than inferred:
 # ---
-# ---   * `slice_undef_seed_uncontrolled` (customer C2a, `bool b; b =
-# ---     cq_theta(b,.5);`) already compiled on the 2026-09-13 oracle — SILENTLY,
+# ---   * `slice_undef_seed_uncontrolled` (customer C2a, `bool b;
+# ---     cq_theta(&b,.5);`) already compiled on the 2026-09-13 oracle — SILENTLY,
 # ---     handing `i1 undef` to `cqrt_alloc_i1`. The oracle's own trace for that
 # ---     program opens `cqrt_alloc_i1(1) -> h0`, a value the program never wrote
 # ---     and which the golden byte-diff would then pin as if it were the meaning.
@@ -6629,8 +6629,8 @@ add_test(NAME e2e-slice-measure-classical-only
 # ---     THIS: the IR-level check can only say the operand is a constant; only
 # ---     the linked run says WHICH value the `-O0` stage 3 materialised.
 # ---
-# ---   * `slice_undef_seed_in_region` (customer C2b, `bool b; if (c) b =
-# ---     cq_theta(b,.5);`) was a LOUD DECLINE on that oracle — F1's `state prep
+# ---   * `slice_undef_seed_in_region` (customer C2b, `bool b; if (c)
+# ---     cq_theta(&b,.5);`) was a LOUD DECLINE on that oracle — F1's `state prep
 # ---     seed does not match the merge incoming` — and is the reason the rule is
 # ---     stated over the OBJECT: `clang -O1` spells the uninitialized `b1` as
 # ---     `undef` twice (the seed AND the merge phi's straight-through incoming),
@@ -7101,8 +7101,8 @@ add_test(NAME e2e-railbank-register-twin-selftest
     --build "${CMAKE_BINARY_DIR}")
 
 # bd `test_C_libtooling-drbq.12` (2026-09-17) - THE LICM-HOISTED LOOP-INVARIANT
-# CONDITION. The customer's simplest C spelling, `for (...) { if (q == 5) r =
-# cq_theta(r, .9); }` with `r` disjoint from `q`: `q` is loop-invariant, `clang
+# CONDITION. The customer's simplest C spelling, `for (...) { if (q == 5)
+# cq_theta(&r, .9); }` with `r` disjoint from `q`: `q` is loop-invariant, `clang
 # -O1` hoists the compare out of the region's `Pred`, and until this bead
 # `condWireDisposition`'s P4 precondition refused it before the arm was looked at
 # (PRD 13.2 row W, 13.11 worry 7). Registered here because e2e is the only layer
@@ -7147,7 +7147,7 @@ add_test(NAME e2e-inloop-hoisted-cond-twin-identical
 # SHIPPING, VERIFY-CLEAN Rule-8 OVER-ACCEPT: on the 2026-09-18 ORACLE
 # `9bd01598d574b344` the rolled form compiled at `opt` exit 0 with the LICM-hoisted
 # `sqrt((double)a + 3.0)` rail left allocated and ENTANGLED across a non-diagonal
-# `cq_theta(a, 0.7)` on the register it copies, which is then measured — 26 trace
+# `cq_theta(&a, 0.7)` on the register it copies, which is then measured — 26 trace
 # lines against the twin's 28, `cq_template_sqrt_f64_unc` 0 against 1.
 #
 # ⚠ **NO `*-twin-identical` GATE FOR THIS PAIR, AND THAT IS A DECISION.** The two

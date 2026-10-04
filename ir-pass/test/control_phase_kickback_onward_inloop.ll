@@ -4,7 +4,7 @@
 ; classical-call-arm `%out` rail, i.e. a region NO stage sees until ROUND 2.
 ;
 ;     int ext_f(int a);                                 // separate TU
-;     int q = 3; q = cq_theta(q, 0.5);
+;     int q = 3; cq_theta(&q, 0.5);
 ;     int y = 5; if (q > 5) y = ext_f(7);               // 6.5 arm  ->  %out
 ;     for (int i = 0; i < 3; ++i)
 ;         if (((y >> i) & 1)) cq_phi(0.25);             // D4's per-bit idiom

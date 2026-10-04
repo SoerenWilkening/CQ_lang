@@ -930,7 +930,7 @@ bool isSupportedCondTree(const Value *V, unsigned Depth,
   // *** bd `test_C_libtooling-fn1q` INCREMENT 2 — THE BARE RAIL LEAF. ***
   //
   // The user's own `_Bool` REGISTER as the condition, with no compare anywhere:
-  // `bool b = cq_theta(b, .5); if (b) { … }`. Until this increment E6 was the last
+  // `bool b; cq_theta(&b, .5); if (b) { … }`. Until this increment E6 was the last
   // consumer in the tree that had not been told about the shape — the phase
   // kickback, the depth-2 nest, the Rz-stem angle select, the 4.4 data select, the
   // in-place Ry arm and the state prep have all admitted it since bd `3qlq.4` /
@@ -4374,7 +4374,7 @@ private:
     // *** IT ALSO RESTORES A CAPABILITY, WHICH IS WORTH KNOWING BECAUSE IT IS A
     // DECLINE -> ACCEPT FLIP AND THAT IS THE DIRECTION THE PRIME DIRECTIVE POLICES.
     // *** The orphans were not merely inert garbage: the uncompute spine WALKED them.
-    // `int q = cq_theta(...); if (q > 3 && q < 100) { ... } cq_measure(q);` — ordinary
+    // `int q = ...; cq_theta(&q, ...); if (q > 3 && q < 100) { ... } cq_measure(q);` — ordinary
     // C — DECLINED before this fix with
     //     "cq uncompute: dead chain would free a measured register"
     // and lowers at exit 0 after it (measured, pre-fix plugin vs post-fix plugin on

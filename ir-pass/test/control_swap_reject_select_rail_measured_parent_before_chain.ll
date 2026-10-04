@@ -1,7 +1,7 @@
 ; control_swap_reject_select_rail_measured_parent_before_chain.ll — DECLINE (bd
 ; test_C_libtooling-r9e5, round-1 item F-B1R1-1's second spelling, plain-C
-; reachable — `b0 = cq_theta(b0,.5); int m = cq_measure(b0); bool b =
-; cq_theta(b0,.3); int a = b ? 2 : 5;`): the parent name is measured BEFORE the
+; reachable — `cq_theta(&b0,.5); int m = cq_measure(b0); bool b = b0;
+; cq_theta(&b,.3); int a = b ? 2 : 5;`): the parent name is measured BEFORE the
 ; chained rotation that defines the condition, so the chain itself is a
 ; post-measure gate (bd `3d8q`'s stale-reader class, PRE-EXISTING) and the
 ; select then rides the collapsed register. The first B.1 build accepted it;

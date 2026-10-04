@@ -2,7 +2,7 @@
 ; in-loop state prep whose `r` is LOOP-CARRIED (`int r = 0;` OUTSIDE the loop).
 ;
 ;     int r = 0;
-;     for (int i = 0; i < 3; i++) { if (q == 5) r = cq_theta(0, .9); }
+;     for (int i = 0; i < 3; i++) { if (q == 5) { r = 0; cq_theta(&r, .9); } }
 ;                                                        // probe `p18a`, from C
 ;
 ; ⚠ IT NEVER REACHES R7. The merge φ's Pred-edge incoming is the LOOP'S HEADER φ
@@ -28,7 +28,7 @@
 ; (a constant that is not the seed, `undef`/`poison`, a `select`, a
 ; `ConstantExpr`, a runtime value). The split exists because the one string
 ; described the IR rather than the program: on the plain-C R4 shape
-; `for (…) { if (a == 5) a = cq_theta(a, .9); }` — an in-place Ry on the
+; `for (…) { if (a == 5) cq_theta(&a, .9); }` — an in-place Ry on the
 ; CONDITION register, with no state prep and no seed anywhere in the source — it
 ; named a "seed" that only exists because `-O1` substituted `5` for `a` on the
 ; proving edge, and its implied fix ("make the straight-through value the seed")

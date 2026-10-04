@@ -3,7 +3,7 @@
 ; `p22`, measured DECLINING at HEAD on P1's string and required to accept after
 ; Inc 4).
 ;
-;     int r = 0; if (q == 5) r = cq_theta(0, .9);   q = cq_theta(q, .3);
+;     int r = 0; if (q == 5) { r = 0; cq_theta(&r, .9); }  cq_theta(&q, .3);
 ;
 ; This is §13.4b's P1 widening applied to a state prep, and the argument holds
 ; VERBATIM: `condWireDisposition` defers on a non-diagonal gate somewhere on the

@@ -5,7 +5,7 @@
 ;
 ; PROVENANCE: `clang -O1` output of
 ;
-;     int q = cq_theta(u, 0.5);
+;     int q = u; cq_theta(&q, 0.5);
 ;     int a = q * 5;  int b = q * 7;
 ;     int s = (a & 12) + (b & 20);
 ;     return cq_measure(s);

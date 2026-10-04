@@ -2,8 +2,8 @@
 ; bd test_C_libtooling-r10v): the measurement names the compare operand's WIRE,
 ; not its SSA NAME.
 ;
-;     int q  = cq_theta(0, .5);
-;     int q2 = cq_theta(q, .3);        // CHAINED — in place on q's rail
+;     int q  = 0; cq_theta(&q, .5);
+;     int q2 = q; cq_theta(&q2, .3);   // CHAINED — in place on q's rail
 ;     int m  = cq_measure(q);          // names the PARENT; ONE register
 ;     int a  = (q2 == 1) ? 2 : 5;
 ;

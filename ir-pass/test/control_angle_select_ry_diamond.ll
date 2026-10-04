@@ -1,8 +1,8 @@
 ; control_angle_select_ry_diamond.ll — ACCEPT spec, the FLAGSHIP angle-select by
 ; difference (control-in-place-PRD §12.3, bd test_C_libtooling-drbq Inc 2b).
 ;
-;     int q = cq_theta(3,.5); int r = cq_theta(7,.25);
-;     if (q == 5) r = cq_theta(r, .9); else r = cq_theta(r, .3);
+;     int q = 3; cq_theta(&q,.5); int r = 7; cq_theta(&r,.25);
+;     if (q == 5) cq_theta(&r, .9); else cq_theta(&r, .3);
 ;
 ; This is the shape the increment exists for: the C `if/else` with a rotation on
 ; ONE register in each arm. It never reaches the swap-route emitter at all,
@@ -15,7 +15,7 @@
 ; no longer true. `include/CQ.h` puts `nomerge` on every `cq_theta_*`, so `-O1` keeps
 ; that if/else an if/else (it lowers through the in-place Ry arm, the same unitary).
 ; THIS select shape now comes from C only when the select is written out,
-; `r = cq_theta(r, c ? A : B)` (`tests/e2e/slice_control_angle_select_ry*_ternary.c`,
+; `cq_theta(&r, c ? A : B)` (`tests/e2e/slice_control_angle_select_ry*_ternary.c`,
 ; measured to give the pre-fmt3 fold's function bodies). The IR and this fixture are
 ; unchanged; only the C spelling that reaches them moved.
 ;
@@ -42,7 +42,7 @@
 ;
 ; THE CENTRAL WITNESS IS BYTE IDENTITY, NOT THIS FIXTURE. The stream below is
 ; byte-for-byte the MANUAL by-difference twin
-;     r = cq_theta(r, .3); if (q == 5) r = cq_theta(r, .9 - .3);
+;     cq_theta(&r, .3); if (q == 5) cq_theta(&r, .9 - .3);
 ; which is an ordinary Inc-1 in-place DIAMOND the PRE-2b binary already lowers.
 ; Measured on the C forms of both, whole `define` bodies identical, and gated at
 ; the e2e layer by `e2e-angle-select-ry-twin-identical`. In particular the

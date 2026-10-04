@@ -6,7 +6,7 @@
 ;     strip can ride the store's reversal LIFO, and with no reversal there was no
 ;     strip at all;
 ;   * its COMPUTED INDEX `and_i32_hl(i, 7)`.
-; Both then stood as live CNOT copies of their sources across `q = cq_theta(q,
+; Both then stood as live CNOT copies of their sources across `cq_theta(&q,
 ; -0.5)` (the flag is a record of `q`): `opt` exit 0 and one M-A warning.
 ; (A second chained `cq_theta` on `i` is left out on purpose: with the `and` inside
 ; the arm that module declines earlier, `operand predates a non-diagonal gate`, a

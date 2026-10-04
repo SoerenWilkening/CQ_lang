@@ -3,7 +3,7 @@
 ; `k04`). The companion of spec_accept_clone_consumer_after_ry_keeps_sibling.ll with
 ; the clone reading the CONDITION rail instead:
 ;
-;     p = q & 3; u = p + q; if (u == 10) cq_phi(PI); q2 = cq_theta(q, .7); s = h(m, u);
+;     p = q & 3; u = p + q; if (u == 10) cq_phi(PI); q2 = q; cq_theta(&q2, .7); s = h(m, u);
 ;
 ; `u` is read after the Ry, so it stays allocated. `p`'s only consumer is `u`'s
 ; producer, so the ORACLE discharges `p` right after `u`'s mint. Round 1 put `u`

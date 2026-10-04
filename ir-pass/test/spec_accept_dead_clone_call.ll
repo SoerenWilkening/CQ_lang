@@ -9,7 +9,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   int h(int a, int b, int k);
-;   int main(int c, char **v) { int m = atoi(v[1]); int q = cq_theta(m, .5); int p = cq_theta(m + 1, .3); int t = h(q, p, m); p = cq_theta(p, .4); return cq_measure(q) + cq_measure(p); }
+;   int main(int c, char **v) { int m = atoi(v[1]); int q = m; cq_theta(&q, .5); int p = m + 1; cq_theta(&p, .3); int t = h(q, p, m); cq_theta(&p, .4); return cq_measure(q) + cq_measure(p); }
 ; Library TU (plain C, no CQ.h):
 ;   int h(int a, int b, int k) { return a + b * 3 + k; }
 ;

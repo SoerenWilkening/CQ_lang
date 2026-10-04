@@ -7,10 +7,10 @@
 ; construction, but the record sits UPSTREAM of the wire instead of downstream.
 ;
 ; SOURCE SHAPE:
-;     a = cq_theta(a, 0.5);      // mints %h
+;     cq_theta(&a, 0.5);      // mints %h
 ;     int d = a * 3;             // out-of-place: THE WIRE; %h stays live
 ;     if (c) d = cq_phi(d, .25); // CLASSICAL condition, diagonal arm
-;     d = cq_theta(d, 0.125);    // T — chained Ry reached through the merge phi
+;     cq_theta(&d, 0.125);    // T — chained Ry reached through the merge phi
 ;     return cq_measure(d);
 ;
 ; WHAT IS STANDING AT THE GATE: `%h`, the `cqrt_alloc_i32`-minted parent of the

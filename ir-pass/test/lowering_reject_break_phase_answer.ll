@@ -1,7 +1,7 @@
 ; lowering_reject_break_phase_answer.ll — DECLINE (Phase 7.4 Inc 1, y05j.1; PRD-7.4
 ; §2.6, §2.10 phase-arm row): a classically-bounded loop with a tainted early break
 ; whose ESCAPING ANSWER is PHASE-class (an Rz / `cq_phi` accumulator):
-;     double q = cq_theta(seed, 0.5);
+;     double q = seed; cq_theta(&q, 0.5);
 ;     for (int i = 0; i < n; i++) {
 ;         q = cq_phi(q, 0.1);        // Rz — a relative phase
 ;         if (q < 3.0) break;        // compares the phase rail as data

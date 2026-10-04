@@ -11,7 +11,7 @@
 ;
 ; ── THE PROGRAM, NOT THE IR SHAPE ────────────────────────────────────────────
 ;
-;     int u; int q = cq_theta(0, 0.3); return cq_measure(q + u);
+;     int u; int q = 0; cq_theta(&q, 0.3); return cq_measure(q + u);
 ;
 ; The module below is that program's linked stage 1: `clang -O1` folds
 ; `add nsw i32 %q, undef` → `undef`, and THE FOLD DELETES THE DATA-FLOW EDGE TO

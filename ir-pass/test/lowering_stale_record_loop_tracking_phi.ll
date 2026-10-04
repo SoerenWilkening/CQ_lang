@@ -2,7 +2,7 @@
 ; Increment-3 record-refresh cut (bd test_C_libtooling-8h7d.5), and the twin of
 ; lowering_reject_stale_record_loop_nontracking_phi.ll.
 ;
-;     for (...) { d = q * 3; q = cq_theta(q, t2); }
+;     for (...) { d = q * 3; cq_theta(&q, t2); }
 ;
 ; `%qh` is a loop-header phi whose latch incoming `%qn` IS the body's last wire
 ; write, so at every trip `%qh` denotes exactly what the rail holds

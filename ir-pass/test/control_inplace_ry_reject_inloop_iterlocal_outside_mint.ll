@@ -3,8 +3,8 @@
 ; NOT cross the back edge, so clause (b) finds no header phi — but its ROOT MINT
 ; sits OUTSIDE the loop, so the rail is NOT re-minted per activation either.
 ;
-;     int r0 = cq_theta(u1, .25);              // minted ONCE, before the loop
-;     for (...) { int r = r0; if (q == 5) r = cq_theta(r0, .9); m += cq_measure(r); }
+;     int r0 = u1; cq_theta(&r0, .25);         // minted ONCE, before the loop
+;     for (...) { int r = r0; if (q == 5) { r = r0; cq_theta(&r, .9); } m += cq_measure(r); }
 ;
 ; This is the shape that shows (c2) is a POSITIVE proof and not the negation of
 ; (b). Every trip reads the SAME physical rail `r0` as its `f=0` component while

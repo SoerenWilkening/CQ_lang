@@ -2,7 +2,7 @@
 ; PRD-7.4 §2.8). The UNSIGNED-bound twin of lowering_loop_break_value.ll: a
 ; classically-bounded, DATA-MUTATING loop with a SINGLE tainted-condition value-arm
 ; early break, measured after, but with an UNSIGNED trip bound:
-;     int q = cq_theta(x, 0.25);
+;     int q = x; cq_theta(&q, 0.25);
 ;     for (unsigned i = 0; i < n; i++) {   // UNSIGNED counter + bound
 ;         q = q ^ 9;                        // value mutation (the dirty rail)
 ;         if ((q & 1) == 0) break;          // TAINTED value-arm break

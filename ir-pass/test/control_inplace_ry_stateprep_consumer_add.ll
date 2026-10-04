@@ -15,7 +15,7 @@
 ;
 ; ⚠ `clang -O1` DOES NOT PRODUCE THIS MODULE FOR THE OBVIOUS SOURCE, AND SAYING
 ; SO IS THE POINT (measured 2026-09-04; PRD §14.3 row A-15 is CORRECTED). Write
-; `int r = 0; if (q == 5) r = cq_theta(0,.9); r = r + 1;` and `-O1` SINKS the
+; `int r = 0; if (q == 5) { r = 0; cq_theta(&r,.9); } r = r + 1;` and `-O1` SINKS the
 ; `add` INTO THE ARM — it can, because the straight-through value of `r` is a
 ; compile-time constant, so `0 + 1` folds on that edge — and the region then
 ; declines on R1's shape half. That C program is a DECLINE, pinned by

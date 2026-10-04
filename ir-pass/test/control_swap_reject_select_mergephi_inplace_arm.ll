@@ -8,8 +8,8 @@
 ; rung (iii)/gate 2c owns it with `condition predates a non-diagonal gate`. The
 ; string moves; the disposition does not.
 ;
-; THE SHAPE: an in-place Ry **ARM** rather than a state PREP. `r = cq_theta(r,.7)`
-; makes `r` a live rail; `if (b0 == 1) { r = cq_theta(r, .3); }` rotates it IN
+; THE SHAPE: an in-place Ry **ARM** rather than a state PREP. `cq_theta(&r,.7)`
+; makes `r` a live rail; `if (b0 == 1) { cq_theta(&r, .3); }` rotates it IN
 ; PLACE under control, so the merge φ is `[theta(r_old), r_old]` — two basis
 ; labels of ONE register, both on one wire.
 ;

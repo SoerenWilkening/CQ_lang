@@ -6,7 +6,7 @@
 ;
 ; Source (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
-;   __attribute__((noinline,used)) int h(int m) { return cq_theta(m, .3); }
+;   __attribute__((noinline,used)) int h(int m) { cq_theta(&m, .3); return m; }
 ;   int main(int argc, char **argv) { int m = atoi(argv[1]); h(m); return 0; }
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s

@@ -10,7 +10,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   int ident(int a);
-;   int main(int c, char **v) { int m = atoi(v[1]); int q = cq_theta(m & 7, .5); int r = ident(m * 3); return r + cq_measure(q); }
+;   int main(int c, char **v) { int m = atoi(v[1]); int q = m & 7; cq_theta(&q, .5); int r = ident(m * 3); return r + cq_measure(q); }
 ; Library TU (plain C, no CQ.h):
 ;   __attribute__((naked, noinline)) int ident(int a) { __asm__("movl %edi, %eax\n\tret"); }
 ;

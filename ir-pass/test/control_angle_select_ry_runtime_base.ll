@@ -3,7 +3,7 @@
 ; RUNTIME base — controlled STATE PREP by difference on a fresh rail.
 ;
 ;     int t = m + 1; int r;
-;     if (q > 3) r = cq_theta(t, .7); else r = cq_theta(t, .2);   // probe a01T
+;     if (q > 3) { r = t; cq_theta(&r, .7); } else { r = t; cq_theta(&r, .2); }  // probe a01T
 ;     return cq_measure(r) + cq_measure(q) + t;                   // `t` read after
 ;
 ; `-O1` sinks the two thetas into ONE `cq_theta(%t, select(%c, .7, .2))`. S3 now

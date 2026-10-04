@@ -2,7 +2,7 @@
 ; y05j.1; PRD-7.4 §2.5 B5, §6 Risk 4). The ADVERSARIAL Risk-4 probe found by the
 ; Rule-13 review (2026-06-25, R4-8): a GENUINELY QUANTUM-BOUNDED loop disguised as
 ; a value-arm break by a dead counter + a loop-invariant classical guard —
-;     int q = cq_theta(x, 0.25);
+;     int q = x; cq_theta(&q, 0.25);
 ;     int i = 0;
 ;     while ((q & 1) && (m != 0)) {   // sole real termination = (q&1)==0 (QUANTUM)
 ;         q = q ^ 9;

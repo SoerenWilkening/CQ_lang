@@ -5,8 +5,8 @@
 ; unsigned} family — all rail-vs-CONSTANT). A classically-bounded loop whose
 ; in-place value rail is mutated by `q = q ^ 9` and whose break reads `q == p`:
 ;
-;     int p = cq_theta(pseed, 0.5);  // a second, loop-invariant qubit
-;     int q = cq_theta(x, 0.25);
+;     int p = pseed; cq_theta(&p, 0.5);  // a second, loop-invariant qubit
+;     int q = x; cq_theta(&q, 0.25);
 ;     for (int i = 0; i < n; i++) {
 ;         q = q ^ 9;                 // in-place xor rail
 ;         if (q == p) break;         // TAINTED Q==Q break flag (rail vs p)

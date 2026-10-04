@@ -1,7 +1,7 @@
 ; control_inplace_ry_reject_stateprep_runtime_seed_mismatch.ll — DECLINE (F1's
 ; IDENTITY clause, bd test_C_libtooling-z0re): two DIFFERENT runtime values.
 ;
-;     int r = s2; if (q > 3) r = cq_theta(s1, .2);
+;     int r = s2; if (q > 3) { r = s1; cq_theta(&r, .2); }
 ;
 ; The owner's ruling admits a runtime seed only as "the same SSA value as the
 ; merge's Pred incoming". Here the arm prepares `|s1⟩` while the straight-through

@@ -2,7 +2,7 @@
 ; template terminal whose register lineage is LATER measured through an
 ; upstream handle (test_C_libtooling-3h8; straight-line, NO control region).
 ;
-; `%q = cq_theta(...)`; `%dead = q + 7` (never read); `measure(q)`. The
+; `%q = @cq_theta_si32(...)`; `%dead = q + 7` (never read); `measure(q)`. The
 ; whole-chain adjoint of the dead `%dead` chain re-emits `add_hl_inv` and
 ; `cqrt_ry(%h, -θ)` and `cqrt_free(%h)` — undoing the prep Ry and freeing the
 ; register — at a point BEFORE `cqrt_measure(%h)` reads it. `cqrt_free` is a

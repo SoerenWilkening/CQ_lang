@@ -1,7 +1,7 @@
 /* slice_control_inplace_ry_bool_loop_iterlocal.c — bd `test_C_libtooling-wx8g`,
    R7-loop CLAUSE (c): the ITERATION-LOCAL rotated register.
 
-       for (k < K) { int r = cq_theta(7, .25);      // a FRESH rail every trip
+       for (k < K) { int r = 7; cq_theta(&r, .25);  // a FRESH rail every trip
                      if (b) cq_theta(&r, .2);
                      s += cq_measure(r); }
 

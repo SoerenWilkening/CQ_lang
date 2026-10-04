@@ -1,5 +1,5 @@
 ; control_accept_undef_theta_seed_stateprep.ll — ACCEPT (bd z9t1). THE SECOND
-; RULED SPELLING: `bool b1; if (c) b1 = cq_theta(b1, 0.5);` — an uninitialized
+; RULED SPELLING: `bool b1; if (c) cq_theta(&b1, 0.5);` — an uninitialized
 ; `_Bool` prepared UNDER QUANTUM CONTROL.
 ;
 ; Owner, 2026-09-14: "both codes are supposed to compie!! also no warnings." On

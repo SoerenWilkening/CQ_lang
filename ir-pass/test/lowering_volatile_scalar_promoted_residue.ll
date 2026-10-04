@@ -10,7 +10,7 @@
 ;
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
-;   int main(int c, char **v) { int m = atoi(v[1]); int q = cq_theta(m, .5); volatile char z = q; char w = z; int t = m + 1 + (w - w); q = cq_theta(q, .7); return t + cq_measure(q); }
+;   int main(int c, char **v) { int m = atoi(v[1]); int q = m; cq_theta(&q, .5); volatile char z = q; char w = z; int t = m + 1 + (w - w); cq_theta(&q, .7); return t + cq_measure(q); }
 ;
 ; Regenerate: clang -O1 -emit-llvm -S -I<repo>/include -include CQ.h caller.c -o <body>
 ;

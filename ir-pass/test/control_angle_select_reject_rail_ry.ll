@@ -1,6 +1,6 @@
 ; control_angle_select_reject_rail_ry.ll — DECLINE (bd 3qlq.4, follow-on 1b-C):
-; the Ry-stem ANGLE SELECT on a bare rail — `if (b) r = cq_theta(r, A); else r =
-; cq_theta(r, B);` folded to one theta with a selected angle. By difference this
+; the Ry-stem ANGLE SELECT on a bare rail — `if (b) cq_theta(&r, A); else
+; cq_theta(&r, B);` folded to one theta with a selected angle. By difference this
 ; would be `ry(h, B)` + `cqrt_ry_<W>_controlled(h_b, h, A−B)` controlled on the
 ; register; the controlled-Ry family's fences (R4 disjoint wires, the structural
 ; freeze, S7–S9) were argued for a MINTED flag and are re-argued for a borrowed

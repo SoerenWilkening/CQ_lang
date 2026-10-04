@@ -1,7 +1,7 @@
 ; railbank_stale_reject_condprep_beside_invariant_park.ll — bd `xdu2.1` (Track B,
 ; session 2026-09-24-railbank-parallel).
 ;
-; The bd `xdu2.4` CONDITIONAL-PREP bank (`if (Z >= 2) b[i] = cq_theta(b[i], .5);
+; The bd `xdu2.4` CONDITIONAL-PREP bank (`if (Z >= 2) cq_theta(&b[i], .5);
 ; if (b[i]) Z -= 2;` — the owner's `example/grover/main.c` shape, whose store
 ; value after promotion is a MERGE phi `[theta, %cq.bank.seed]`) sitting BESIDE a
 ; second runtime bank `d[]` that parks one loop-invariant rail `q`, relabelled
@@ -20,10 +20,10 @@
 ;   __attribute__((noinline)) static int slice(int n) {
 ;     if (n <= 0) return 0;
 ;     int b[n]; int Z = 4 * n; int s = 0;
-;     int q = cq_theta(n, 0.3); int d[n];
-;     for (int i = 0; i < n; ++i) { if (Z >= 2) b[i] = cq_theta(b[i], 0.5); if (b[i]) Z -= 2; }
+;     int q = n; cq_theta(&q, 0.3); int d[n];
+;     for (int i = 0; i < n; ++i) { if (Z >= 2) cq_theta(&b[i], 0.5); if (b[i]) Z -= 2; }
 ;     for (int i = 0; i < n; ++i) d[i] = q;
-;     q = cq_theta(q, 0.7);
+;     cq_theta(&q, 0.7);
 ;     for (int i = 0; i < n; ++i) s += cq_measure(b[i]) + cq_measure(d[i]);
 ;     return s + cq_measure(q) + cq_measure(Z);
 ;   }

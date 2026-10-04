@@ -34,11 +34,11 @@
 ; SOURCE — `clang -Iinclude -include CQ.h -O1 -emit-llvm -S`, VERBATIM, of
 ; `…/session-2026-09-15-orchestrator/bfix/probes/f06_bank_legit_order.c`:
 ;   int slice(int seed) {
-;     int q = cq_theta(seed, 0.5);
+;     int q = seed; cq_theta(&q, 0.5);
 ;     int b0[3]; int s = 0;
 ;     for (int i = 0; i < 3; ++i) b0[i] = q;
 ;     for (int i = 0; i < 3; ++i) s += cq_measure(b0[i]);
-;     q = cq_theta(q, 0.7);
+;     cq_theta(&q, 0.7);
 ;     return s + cq_measure(q);
 ;   }
 ;   int main(void) { return slice(1); }

@@ -1,6 +1,6 @@
 ; control_phase_kickback_reject_rail_measured_parent_name.ll — DECLINE (bd
 ; test_C_libtooling-r9e5, Rule-13 round-1 item F-B1R1-1 — the KICKBACK twin,
-; plain-C reachable: `b0 = cq_theta(b0,.5); bool b = cq_theta(b0,.3); int m =
+; plain-C reachable: `cq_theta(&b0,.5); bool b = b0; cq_theta(&b,.3); int m =
 ; cq_measure(b0); if (b) cq_phi(.9);`). `railMeasuredBeforeReadPoint` is ONE
 ; helper with two read points (the branch here, the select in 1b-B.1); until
 ; F-B1R1-1 it asked the rail's SSA users only, so the measurement of the PARENT

@@ -3,8 +3,8 @@
 ; proves the two are different physical rails (control-in-place-PRD §4 R4, bd
 ; test_C_libtooling-drbq).
 ;
-;     int q = cq_theta(0,.5); int r = q + 1;
-;     if (q > 5) r = cq_theta(r, .9);
+;     int q = 0; cq_theta(&q,.5); int r = q + 1;
+;     if (q > 5) cq_theta(&r, .9);
 ;
 ; THE ONE FIXTURE THAT REACHES R4 ITSELF, and the reason it must exist: every
 ; other wire-overlap spelling (the condition register, an SSA alias, a diagonal

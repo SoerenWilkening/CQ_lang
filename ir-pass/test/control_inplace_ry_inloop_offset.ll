@@ -2,7 +2,7 @@
 ; IN-PLACE VALUE self-update (`q += 3`) on the CONDITION register (bd
 ; test_C_libtooling-drbq Inc 3).
 ;
-;     for (...) { if (q == 5) r = cq_theta(r, .9); q = q + 3; }
+;     for (...) { if (q == 5) cq_theta(&r, .9); q = q + 3; }
 ;
 ; WHY THIS SHAPE IS ON ITS OWN. `collapseRailPhisIn` step (3) MARKS every in-place
 ; value rail self-update into `taint.InPlaceRailOps`, and that line is not

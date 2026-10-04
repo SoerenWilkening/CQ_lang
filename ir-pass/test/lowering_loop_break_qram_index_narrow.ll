@@ -2,7 +2,7 @@
 ; companion of lowering_loop_break_qram_index_i64.ll). The same value-arm `break`
 ; + const-table subscript at the NARROW rail widths, plus the i32 control:
 ;
-;     T p = cq_theta(pseed, 0.5);  T q = cq_theta(seed, 0.25);
+;     T p = pseed; cq_theta(&p, 0.5);  T q = seed; cq_theta(&q, 0.25);
 ;     for (int i = 0; i < n; i++) { q = q ^ 5; if (q == p) break; }
 ;     return cq_measure(tbl[q]);
 ;

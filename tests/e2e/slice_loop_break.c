@@ -2,7 +2,7 @@
    DATA-MUTATING loop with a SINGLE tainted-condition value-arm early `break`,
    measured after the loop:
 
-       int q = cq_theta(seed, 0.25);
+       int q = seed; cq_theta(&q, 0.25);
        for (int i = 0; i < n; i++) {
            q = q ^ 5;                  // in-place value mutation (the rail)
            if ((q & 1) == 0) break;    // TAINTED value-arm break

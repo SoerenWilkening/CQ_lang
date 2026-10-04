@@ -5,15 +5,15 @@
 ; This is the fixture the increment exists for. `clang -O1` of:
 ;     volatile int off = 3;
 ;     int q = 0;
-;     q = cq_theta(q, 0.5);  q += off;                 /* S      */
+;     cq_theta(&q, 0.5);  q += off;                 /* S      */
 ;     if (q == 5) q = cq_phi(q, PI);                   /* O      */
-;     q -= off;  q = cq_theta(q, -0.5);                /* S†     */
+;     q -= off;  cq_theta(&q, -0.5);                /* S†     */
 ;     if (q == 0) q = cq_phi(q, PI);                   /* R0     */
-;     q = cq_theta(q, 0.5);  q += off;                 /* S      */
+;     cq_theta(&q, 0.5);  q += off;                 /* S      */
 ;     if (q == 5) q = cq_phi(q, PI);                   /* O      */
-;     q -= off;  q = cq_theta(q, -0.5);                /* S†     */
+;     q -= off;  cq_theta(&q, -0.5);                /* S†     */
 ;     if (q == 0) q = cq_phi(q, PI);                   /* R0     */
-;     q = cq_theta(q, 0.5);  q += off;                 /* re-prep */
+;     cq_theta(&q, 0.5);  q += off;                 /* re-prep */
 ;     return cq_measure(q);
 ;
 ; MEASURED at HEAD (b4e329b): declines,

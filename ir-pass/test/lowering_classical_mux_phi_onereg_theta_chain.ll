@@ -1,7 +1,7 @@
 ; lowering_classical_mux_phi_onereg_theta_chain.ll — ACCEPT: one-register
 ; merge phi whose arm chain is TWO in-place gates including a chained
 ; cq_theta (test_C_libtooling-5j5, the theta-gate + multi-gate-chain variant):
-;     if (classical_c) { q = cq_theta(q, t2); q = cq_phi(q, t3); }  measure(q);
+;     if (classical_c) { cq_theta(&q, t2); q = cq_phi(q, t3); }  measure(q);
 ;
 ; A tainted-operand cq_theta is IN PLACE exactly like cq_phi: RotationLowering
 ; emits ry-only on the EXISTING handle (no second allocation — "chained theta")

@@ -1,5 +1,5 @@
 ; control_inplace_ry_rail_cast_base.ll — ACCEPT: the ROTATED base is a CAST OF
-; THE CONDITION REGISTER (`int rb = (int) b; if (b) rb = cq_theta(rb, .9);`).
+; THE CONDITION REGISTER (`int rb = (int) b; if (b) cq_theta(&rb, .9);`).
 ;
 ; It looks like the clobber shape and is not one, and the reason is the rule R4
 ; is built on: A CAST IS A DIFFERENT PHYSICAL WIRE. Every cast CQ can lower is

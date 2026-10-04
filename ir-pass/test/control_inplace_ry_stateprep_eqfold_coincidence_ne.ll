@@ -6,7 +6,7 @@
 ; this header moved — so the module below is still, character for
 ; character, the one the four drbq Inc-4 adversarial rounds argued over.
 ;
-;     int r = 5;  if (q != 5) r = cq_theta(5, .9);   // the pin is on the
+;     int r = 5;  if (q != 5) { r = 5; cq_theta(&r, .9); }  // the pin is on the
 ; STRAIGHT-THROUGH edge
 ;
 ; ---- WHY IT IS AN ACCEPT NOW (bd `drbq.14`; F2's `CondWire` narrowing)
@@ -78,12 +78,12 @@
 ; the A2 reading and the OTHER polarity): the STRAIGHT-THROUGH edge is the one
 ; that proves the equality.
 ;
-;     int r = 5;  if (q != 5) r = cq_theta(5, .9);       // probe `p23b`, from C
+;     int r = 5;  if (q != 5) { r = 5; cq_theta(&r, .9); }  // probe `p23b`, from C
 ;
 ; Here `-O1` folds the merge φ's PRED INCOMING, not the arm's arg-0, so the
 ; program this is byte-identical to is
 ;
-;     int r = q;  if (q != 5) r = cq_theta(5, .9);       // `p23d`
+;     int r = q;  if (q != 5) { r = 5; cq_theta(&r, .9); }  // `p23d`
 ;
 ; — an ALIAS of the quantum register muxed against a fresh rail, which
 ; no-cloning
@@ -118,7 +118,7 @@
 ; which
 ; an edge proves `H != k` and `H`'s own RANGE makes the surviving set a
 ; singleton
-; whose value is NOT `k`. `int t = q & 1; int r = 1; if (t) r = cq_theta(t, θ);`
+; whose value is NOT `k`. `int t = q & 1; int r = 1; if (t) { r = t; cq_theta(&r, θ); }`
 ; is that reading, it is plain `clang -O1` C, and the literal test was silent on
 ; it BY DESIGN — a CONFIRMED silent miscompile at the Inc-4 hand-back. F2 is now
 ; RANGE-based on both edges; see

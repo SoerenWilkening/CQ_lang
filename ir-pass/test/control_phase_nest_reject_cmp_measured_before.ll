@@ -2,8 +2,8 @@
 ; test_C_libtooling-r903 item (b)): the 4.3 DEPTH-2 NEST's inner condition
 ; register is measured before the region.
 ;
-;     int p = cq_theta(u, .2);
-;     int b = cq_theta(3, .5);
+;     int p = u; cq_theta(&p, .2);
+;     int b = 3; cq_theta(&b, .5);
 ;     int m = cq_measure(b);              // collapses the INNER condition register
 ;     if (p > 1) { if (b > 0) cq_phi(.7); }
 ;

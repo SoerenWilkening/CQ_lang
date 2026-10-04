@@ -2,7 +2,7 @@
 ; (issue dtzb): an INTEGER add whose opcode dtzb DOES recognize, but where BOTH
 ; operands are tainted (a two-quantum accumulate, not a classical-immediate
 ; self-update):
-;     int q = cq_theta(seed, 0.25);
+;     int q = seed; cq_theta(&q, 0.25);
 ;     int acc = 0;
 ;     for (int i = 0; i < n; i++) acc = acc + q;    // both operands quantum
 ;     return cq_measure(acc);

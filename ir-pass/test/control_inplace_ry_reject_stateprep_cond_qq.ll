@@ -2,8 +2,8 @@
 ; A-12 IS CORRECTED BY THIS FIXTURE (measured 2026-09-04, bd
 ; test_C_libtooling-drbq Inc 4).
 ;
-;     int q = cq_theta(…); int p = cq_theta(…); int r = 0;
-;     if (q == p) r = cq_theta(0, .9);          // a Q+Q condition
+;     int q = …; cq_theta(&q, …); int p = …; cq_theta(&p, …); int r = 0;
+;     if (q == p) { r = 0; cq_theta(&r, .9); }  // a Q+Q condition
 ;
 ; §14 listed this as an ACCEPT on the ground that "F2 needs a `ConstantInt`
 ; operand and a Q+Q compare has none" — which is TRUE, and is not the operative
@@ -16,7 +16,7 @@
 ;
 ; ⚠ IT IS PRE-EXISTING AND ARM-CLASS-INDEPENDENT, WHICH IS WHY IT IS RECORDED
 ; RATHER THAN FIXED HERE. The CHAINED twin — the same region with
-; `r = cq_theta(r, .9)` on a live third register, i.e. the Inc-1 shape that has
+; `cq_theta(&r, .9)` on a live third register, i.e. the Inc-1 shape that has
 ; shipped since 2026-09-02 — declines with the IDENTICAL string on the PRE-INC-4
 ; ORACLE and on this binary (measured, `$S/impl/probe/qq_chained.ll`). So Inc 4
 ; neither introduced nor widened it, and "state prep under a Q+Q condition"

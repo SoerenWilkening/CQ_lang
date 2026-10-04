@@ -8,8 +8,8 @@
 ; which is bd 3d8q's own definition of the defect, surviving the fence built to
 ; close it.
 ;
-;   int q = cq_theta(0, 0.3);
-;   for (int i = 0; i < 3; i++) { int b = cq_theta(q, 0.1); s += cq_measure(b); }
+;   int q = 0; cq_theta(&q, 0.3);
+;   for (int i = 0; i < 3; i++) { int b = q; cq_theta(&b, 0.1); s += cq_measure(b); }
 ;
 ; At trip 2 the name `q` denotes `Ry(.3)|0>` while the register holds
 ; `Ry(.4)|0>`; at trip 3, `Ry(.5)|0>`. Three states of one register named by one
@@ -21,7 +21,7 @@
 ;
 ; ⚠ THE STALING GATE IS THE READER'S OWN PREVIOUS DYNAMIC INSTANCE, which is why
 ; this survived: `recordStaleQuantumReaders` grants the reader the `Covered`
-; self-exemption (`c = cq_theta(a,θ)` is an in-place Ry on the rail it reads, so
+; self-exemption (`c = a; cq_theta(&c,θ)` is an in-place Ry on the rail it reads, so
 ; without it every well-formed chain would decline against itself), `Covered` is
 ; tested INSIDE the walker BEFORE the harmlessness proof, and the exemption was
 ; UNCONDITIONAL. The fix asks `gateIsHarmless` about the self-gate — the same

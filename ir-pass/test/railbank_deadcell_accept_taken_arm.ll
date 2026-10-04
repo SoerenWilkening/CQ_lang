@@ -1,7 +1,7 @@
 ; railbank_deadcell_accept_taken_arm.ll — ACCEPT (bd test_C_libtooling-xdu2.9).
 ;
 ; SOURCE: tests/e2e/railbank_deadcell_matrix.c CASE_TAKEN_FIXED at clang -O1:
-;   int c[3] = {0}; for (i<3) { int t = cq_theta(c[i], .25); if (c[i] == 0) c[i] = t; }
+;   int c[3] = {0}; for (i<3) { int t = c[i]; cq_theta(&t, .25); if (c[i] == 0) c[i] = t; }
 ; The OTHER constant: the condition is constant TRUE, so the store ALWAYS fires.
 ; PASS H must pick the ARM's value (`t`), the store is unconditional, and the object
 ; IS a rail bank (marked, measured) — the unconditional-prep bank. This fixture pins

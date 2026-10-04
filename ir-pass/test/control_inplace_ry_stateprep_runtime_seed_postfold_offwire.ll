@@ -3,13 +3,13 @@
 ; bd test_C_libtooling-z0re round 2 (Rule-13 r1A F-r1A-1; bd test_C_libtooling-fmt3).
 ; THE POST-FOLD MODULE, pinned as an ACCEPT on ONE ground: it IS the legitimate
 ; program. It is what `clang -O1` makes of (review_r1A_z0re/probes/src/a3.c):
-;   t = q / 4; r = s; if (q2 > 3) { if (t == s) r = cq_theta(t, .9); else r = cq_theta(s, .9); } ... cq_measure(t)
+;   t = q / 4; r = s; if (q2 > 3) { if (t == s) { r = t; cq_theta(&r, .9); } else { r = s; cq_theta(&r, .9); } } ... cq_measure(t)
 ; SimplifyCFG sinks the INNER if/else of two thetas (one differing operand -> one phi),
 ; FoldTwoEntryPHINode turns the phi into `select (t == s), t, s`, InstSimplify folds
 ; that to `s`, and the pinning branch is ERASED. What reaches the pass is the body
-; below: an OUTER diamond on `q2 > 3` whose arm is `cq_theta(s, .9)` and whose Pred
+; below: an OUTER diamond on `q2 > 3` whose arm is `@cq_theta_si32(s, .9)` and whose Pred
 ; incoming is `s` — a runtime-seed state prep F1 admits — and it is the module of the
-; legitimate `r = s; if (q2 > 3) r = cq_theta(s, .9);`, IDENTICAL at -O1 up to the order
+; legitimate `r = s; if (q2 > 3) { r = s; cq_theta(&r, .9); }`, IDENTICAL at -O1 up to the order
 ; of the merge phi's two incomings (MEASURED, z0re_probes/foldcmp.sh vs
 ; z0re_probes/src/a3legit.c; the pass keys on incoming BLOCKS, not order). bd fmt3 measured
 ; the class (n12/n13: the rotated register need not even be the erased compare's
@@ -58,7 +58,7 @@ merge:
 
 ; The source's rotated register is the DERIVED `t = q / 4` (sunk into the merge block,
 ; still live, measured UNROTATED); the fold pinned it through the erased inner `t == s`
-; compare. The module is again the legitimate `r = s; if (q2 > 3) r = cq_theta(s, .9);`
+; compare. The module is again the legitimate `r = s; if (q2 > 3) { r = s; cq_theta(&r, .9); }`
 ; followed by an unrelated read of `q / 4` (same measurement, a3legit.c).
 ; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %m)
 ; CHECK:      %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 3)

@@ -7,7 +7,7 @@
 ; a 4.4 data select on a bare `_Bool`, so round-1 control emission minted its `%out`
 ; rail — two `cqrt_copy_i32_controlled` under a CNOT copy of `b`, i.e. a WHICH-PATH
 ; copy of `b` — and the phantom read was that rail's only reader. It was left
-; allocated and entangled with `b` across `b = cq_theta(b, .7)`, so the Ry acted on a
+; allocated and entangled with `b` across `cq_theta(&b, .7)`, so the Ry acted on a
 ; register whose branches were tagged: a DEPHASED circuit (analytic, r2A §F-9C-1:
 ; P(b=1) for odd m is cos^2(.6) = 0.6812 in the twin and 0.8356 here). `opt` exit 0,
 ; ZERO bytes of warnings (the lyyf-(B) warning does not model value-merge rails),
@@ -23,7 +23,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   int h(int a, int k);
-;   int main(int c, char **v) { int m = atoi(v[1]); _Bool b = cq_theta((_Bool)(m & 1), .5); int p = b ? 9 : 4; int t = h(p, m); b = cq_theta(b, .7); return t + cq_measure(b); }
+;   int main(int c, char **v) { int m = atoi(v[1]); _Bool b = (_Bool)(m & 1); cq_theta(&b, .5); int p = b ? 9 : 4; int t = h(p, m); cq_theta(&b, .7); return t + cq_measure(b); }
 ; Library TU (plain C, no CQ.h):
 ;   int h(int a, int k) { return k + 1; }
 ;

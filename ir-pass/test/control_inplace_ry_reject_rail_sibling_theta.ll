@@ -4,10 +4,10 @@
 ; F-1b-1 class — the CONFIRMED silent miscompile the Inc-1b Rule-13 round-1
 ; review found — arriving at a new consumer:
 ;
-;     int q = cq_theta(q0, .2);  _Bool t = (_Bool)(q & 1);
-;     _Bool b = cq_theta(t, 0.5);
-;     _Bool c = cq_theta(t, 0.9);      /* SAME RAIL as b after lowerRotations */
-;     if (b) r = cq_theta(r, 0.9);
+;     int q = q0; cq_theta(&q, .2);  _Bool t = (_Bool)(q & 1);
+;     _Bool b = t; cq_theta(&b, 0.5);
+;     _Bool c = t; cq_theta(&c, 0.9);  /* SAME RAIL as b after lowerRotations */
+;     if (b) cq_theta(&r, 0.9);
 ;
 ; `lowerRotations` lowers a `cq_theta` IN PLACE whenever its arg-0 is TAINTED and
 ; RAUWs the whole chain onto ONE handle, so `b` and `c` denote one register and

@@ -2,13 +2,13 @@
 ; round-2 finding F-1b2-4): the ONE aliasing a wire walk cannot see, on a RAIL
 ; condition, and why the rail path may drop the compare path's positional prong.
 ;
-;     _Bool b = cq_theta(b0, .5); _Bool x = b ^ 1; _Bool c = cq_theta(x, .9);
+;     _Bool b = b0; cq_theta(&b, .5); _Bool x = b ^ 1; _Bool c = x; cq_theta(&c, .9);
 ;     if (b) cq_phi(.7); return cq_measure(c);
 ;
 ; The compare path keeps its positional scan for "a theta on ANOTHER wire the
 ; walk never sees" (P5 in `condWireDisposition`) — the residual target being a
 ; dtzb in-place `add`/`xor` that would make `x` ALIAS `b`'s rail, so that
-; `c = cq_theta(x, .9)` moves the register the branch then reads. The rail path
+; `c = x; cq_theta(&c, .9)` moves the register the branch then reads. The rail path
 ; has no such prong, and this file pins WHY that is sound rather than lucky: M-C's
 ; G6 ("no data use AFTER the site") refuses the in-place conversion on a rail the
 ; branch reads later, so the `xor` lowers OUT of place onto a FRESH rail

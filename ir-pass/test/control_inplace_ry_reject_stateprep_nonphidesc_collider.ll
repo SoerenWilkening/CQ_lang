@@ -26,7 +26,7 @@
 ; through) edge `%1 = {1}`, so `%2 = {2}` and `%9 = icmp sgt i32 %2, 2` is
 ; provably `false` — the seed. `%9` does not use `%6`, so it stays a collider and
 ; the region stays declined. The rival it protects against is real and writable:
-; `_Bool g = (a >= 3); ... b1 = cq_theta(g, 0.5);` with `g` computed BEFORE the
+; `_Bool g = (a >= 3); ... b1 = g; cq_theta(&b1, 0.5);` with `g` computed BEFORE the
 ; region, which is a different unitary (an in-place Ry on `g`'s rail).
 ;
 ; MEASURED on BOTH binaries — the frozen 2026-09-14 ORACLE (`cq-opt` sha256

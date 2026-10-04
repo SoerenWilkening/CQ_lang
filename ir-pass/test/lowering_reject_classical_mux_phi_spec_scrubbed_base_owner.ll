@@ -64,7 +64,7 @@
 ; ⚠ THIS FIXTURE PINS THE SLOT, NOT ONLY THE VERDICT. The oracle declined this
 ; module too, but with the stale-reader backstop's string (`rotation/measure
 ; operand predates a non-diagonal gate`): after the two false lifts both
-; `cq_theta(t, .2)` and `cq_theta(t, .4)` read `t` IN PLACE and the backstop saw
+; `@cq_theta_si32(t, .2)` and `@cq_theta_si32(t, .4)` read `t` IN PLACE and the backstop saw
 ; a stale reader that exists only because of the lifts' RAUW. The twin declines
 ; at `declineClassicalMuxes` with the classical-phi string. The re-ask sits
 ; immediately after `specialize()` and BEFORE the backstop, so the first owner to
@@ -77,7 +77,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   int h(int a, int k);
-;   int main(int c, char **v) { int m = atoi(v[1]); int q = cq_theta(m, .5); int t = h(q, m); int r = t; if (m > 3) r = cq_theta(t, .2); int u = cq_measure(r); int s = t; if (m > 5) s = cq_theta(t, .4); return u + cq_measure(s); }
+;   int main(int c, char **v) { int m = atoi(v[1]); int q = m; cq_theta(&q, .5); int t = h(q, m); int r = t; if (m > 3) { r = t; cq_theta(&r, .2); } int u = cq_measure(r); int s = t; if (m > 5) { s = t; cq_theta(&s, .4); } return u + cq_measure(s); }
 ;
 ; Regenerate: clang -O1 -emit-llvm -S the two TUs as above, then
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>.

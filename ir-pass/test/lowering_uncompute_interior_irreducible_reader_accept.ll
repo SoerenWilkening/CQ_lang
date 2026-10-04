@@ -6,7 +6,7 @@
 ; PROVENANCE: this is `clang -O1` output, not hand IR. The source is the classic
 ; two-entry irreducible diamond written with plain `goto`s:
 ;
-;     int a = cq_theta(argc, 0.5);
+;     int a = argc; cq_theta(&a, 0.5);
 ;     int x = a * a;
 ;     int m = 0, i = 0;
 ;     if (argc & 1) goto B;

@@ -2,12 +2,12 @@
    THE HEADLINE CUSTOMER: an in-place controlled-Ry arm on a bare `_Bool`
    condition, ROLLED in a classically-bounded loop.
 
-       bool b = cq_theta(0, .5);
-       int  r = cq_theta(7, .25);
+       bool b = 0; cq_theta(&b, .5);
+       int  r = 7; cq_theta(&r, .25);
        for (k < K) if (b) cq_theta(&r, .2);
 
    `b` is loop-INVARIANT and `r` is loop-CARRIED, so R7-loop clauses (b)/(b')
-   own it: `r`'s header phi peels to the classical-arg-0 mint `cq_theta(7,.25)`
+   own it: `r`'s header phi peels to the classical-arg-0 mint `@cq_theta_si32(7,.25)`
    dominating the header, which is exactly what round 2's `collapseRailPhisIn`
    will claim.
 

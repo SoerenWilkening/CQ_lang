@@ -2,7 +2,7 @@
 ; twin of the dtzb fan-out finding; Rule-13 review 2026-06-26). The same Rule-8
 ; fan-out over a Case-A PHASE rail: `%qh` is read by two in-place `cq_phi` (Rz)
 ; gates — `%qn = Rz(1)` carried + `%qm = Rz(2)` escaping:
-;     double q = cq_theta(seed, 0.5);
+;     double q = seed; cq_theta(&q, 0.5);
 ;     for (int i = 0; i < n; i++) { qn = cq_phi(q, 1); qm = cq_phi(q, 2); q = qn; }
 ;     return cq_measure(qm_last);
 ; Before the fan-out guard, tryCaseA ACCEPTED this and collapsed BOTH gates onto the

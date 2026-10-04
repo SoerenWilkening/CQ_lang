@@ -1,7 +1,7 @@
 ; control_inplace_ry_inloop_post_region_gate.ll — ACCEPT: shape S1 (PRD §13.3),
 ; the in-loop Ry arm with a POST-REGION gate on the rotated register.
 ;
-;     for (...) { if (q > 5) r = cq_theta(r, .9); r = cq_theta(r, .25); }
+;     for (...) { if (q > 5) cq_theta(&r, .9); cq_theta(&r, .25); }
 ;
 ; THIS IS THE FAN-OUT SHAPE, and it is the second of the two M-β repairs. Under
 ; the pre-Inc-3 convention the emitter RAUW'd the merge φ to the BASE, so the

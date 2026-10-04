@@ -1,7 +1,7 @@
 ; lowering_loop_value_accum.ll — ACCEPT (issue dtzb, the in-place reversible
 ; arithmetic strategy): the VALUE twin of lowering_loop_phase_accum_dynamic. A
 ; classically-bounded loop over an in-place-mutated VALUE rail
-;     int q = cq_theta(seed, 0.25);
+;     int q = seed; cq_theta(&q, 0.25);
 ;     for (int i = 0; i < n; i++) q = q ^ 9;        // n a runtime param
 ;     return cq_measure(q);
 ; lowers ROLLED IN PLACE. Today (7.3) the rail `%qn = xor %q, 9` threads a FRESH

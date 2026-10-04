@@ -1,6 +1,6 @@
 ; control_swap_select_rail_post_ry.ll — ACCEPT (bd test_C_libtooling-r9e5, Inc
 ; 1b-B.1): a chained Ry on the SAME register AFTER the select — `if (b) a -= 3;
-; b = cq_theta(b, -0.5);`, the S† the owner's Grover cascade writes (probe `k3`,
+; cq_theta(&b, -0.5);`, the S† the owner's Grover cascade writes (probe `k3`,
 ; which DECLINED `condition predates a non-diagonal gate` on `main` 87d0699).
 ;
 ; THIS IS THE DT PRONG (PRD §14.3 rung 3). Gate 2c's walk over a rail's seeds is
@@ -15,7 +15,7 @@
 ; `..._stale_sibling_theta.ll`, `..._inloop_stale_theta.ll`). ORDER IS THE
 ; ASSERTION: the whole merge, then the free, THEN `cqrt_ry_i1(h, -0.5)`.
 ; bd test_C_libtooling-r9e5 (Inc 1b-B.1) — THE 4.4 DATA SELECT ON A BARE RAIL.
-; `_Bool b = cq_theta(b0, θ)` is a one-qubit REGISTER; `int a = b ? T : F` hands
+; `_Bool b = b0; cq_theta(&b, θ)` is a one-qubit REGISTER; `int a = b ? T : F` hands
 ; the pass `select i1 %b, …` with no compare to mint a flag from. The merge
 ; stream is the shipped §5a controlled-XOR copy merge, INSTRUCTION FOR
 ; INSTRUCTION — what changes is only where the FLAG comes from: a fresh |0> i1

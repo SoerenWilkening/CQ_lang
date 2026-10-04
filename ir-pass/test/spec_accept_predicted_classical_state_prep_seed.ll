@@ -10,7 +10,7 @@
 ; unchanged) returns the classical value. Before bd cepm the result was tainted
 ; CONSERVATIVELY and scrubbed only after both control rounds.
 ; Here the classical-verdict result `t` is the SEED of a controlled state prep (`r = t; if (COND)
-; r = cq_theta(t, θ)`), or the base of an if/else angle select. THIS FILE PINS THE bd cepm x bd z0re
+; { r = t; cq_theta(&r, θ); }`), or the base of an if/else angle select. THIS FILE PINS THE bd cepm x bd z0re
 ; COMPOSITION (Rule-13 r1B F-r1B-3 / r1A): with `t` classical it takes z0re's DIRECT path — a RUNTIME
 ; state-prep seed (`cqrt_alloc_<W>(t)` + `cqrt_ry_<W>_controlled` on the fresh rail) or an UNTAINTED
 ; angle-select base. On cepm ALONE it DECLINED (the direct path did not exist; the oracle 9a230646 had
@@ -21,7 +21,7 @@
 ; 5 TUs, each `clang -O1`, llvm-linked as tests/e2e/run_slice_multi.sh does.
 ; Caller TU (-include CQ.h):
 ;   int h(int a, int k);
-;   int main(int c, char **v) { int m = atoi(v[1]); int n = atoi(v[2]); int q = cq_theta(m, .5); int t = h(q, m); int q2 = cq_theta(n, .3); int r = t; if (q2 > 3) r = cq_theta(t, .2); return cq_measure(r) + cq_measure(q2); }
+;   int main(int c, char **v) { int m = atoi(v[1]); int n = atoi(v[2]); int q = m; cq_theta(&q, .5); int t = h(q, m); int q2 = n; cq_theta(&q2, .3); int r = t; if (q2 > 3) { r = t; cq_theta(&r, .2); } return cq_measure(r) + cq_measure(q2); }
 ; Library TU 1 (plain C):
 ;   /* h READS a (a call to g, an external here) and returns the CLASSICAL k + 1. */
 ;   void g(int a);

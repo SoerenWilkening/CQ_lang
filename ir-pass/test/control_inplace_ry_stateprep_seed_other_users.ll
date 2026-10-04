@@ -2,8 +2,8 @@
 ; OTHER USERS in the same function (PRD §14.3 row A-26 and §14.5's trap; probe
 ; `q31`).
 ;
-;     int r = 0; if (q == 5) r = cq_theta(0, .9);
-;     int u = cq_theta(0, .25);           // the literal `i32 0` again, AFTER the region
+;     int r = 0; if (q == 5) { r = 0; cq_theta(&r, .9); }
+;     int u = 0; cq_theta(&u, .25);       // the literal `i32 0` again, AFTER the region
 ;
 ; ⚠ THIS FIXTURE IS THE VACUITY PIN FOR R4/R6, AND IT REDDENS IF ANYONE POINTS
 ; THEM AT THE `Constant`. `railWireClosure` does `Out.insert(W)` BEFORE its taint

@@ -25,7 +25,7 @@
 ; ORIGINAL callee — predictable pre-emission, and since round 2 the drop's slot B
 ; predicts it (see `spec_reject_phantom_arg_read_volatile_callee.ll`, now an accept).
 ;
-; Caller: `int q = cq_theta(m, .5); int t = h(q, m); int u = t + q; int r = u; if (m > 3) r = cq_theta(u, .2); return cq_measure(r);`
+; Caller: `int q = m; cq_theta(&q, .5); int t = h(q, m); int u = t + q; int r = u; if (m > 3) { r = u; cq_theta(&r, .2); } return cq_measure(r);`
 ;
 ;
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err

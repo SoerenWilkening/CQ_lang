@@ -2,9 +2,9 @@
 ; Rule-13 round 1, finding OD1). The staleness test that gates the Increment-3
 ; record-refresh barrier is now PER WIRE.
 ;
-;     q = cq_theta(q0, g);
-;     z = cq_theta(0, 0.125);        // a SECOND, UNRELATED register
-;     for (...) { if (q > 5) q = cq_phi(q, b); q = cq_theta(q, 0.25); }
+;     q = q0; cq_theta(&q, g);
+;     z = 0; cq_theta(&z, 0.125);    // a SECOND, UNRELATED register
+;     for (...) { if (q > 5) q = cq_phi(q, b); cq_theta(&q, 0.25); }
 ;
 ; This is control_swap_inloop_post_region_theta.ll with one extra register minted
 ; after the first. It DECLINED at ba35c1f with "condition predates a non-diagonal

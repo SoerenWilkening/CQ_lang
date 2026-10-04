@@ -3,14 +3,14 @@
 ; control for F-C1B-2's per-loop key.**
 ;
 ;     int ext_f(int a);                             /* separate TU: return a + 100; */
-;     int slice(int u){ int q=cq_theta(u,0.5); int r=cq_theta(u,0.3);
-;       for(int i=0;i<3;i++){ r=cq_theta(r,0.1); }  /* LOOP A — tryCaseA CLAIMS r  */
+;     int slice(int u){ int q=u; cq_theta(&q,0.5); int r=u; cq_theta(&r,0.3);
+;       for(int i=0;i<3;i++){ cq_theta(&r,0.1); }  /* LOOP A — tryCaseA CLAIMS r  */
 ;       int y=5; if (q>5) y=ext_f(7);
 ;       for(int i=0;i<3;i++){ if((y>>i)&1) cq_phi(0.25); }   /* LOOP B — no gate on r */
 ;       return cq_measure(y)+cq_measure(r); }
 ;
 ; This is `..._claim_across_loops_leak_control.ll` with LOOP B's in-body
-; `cq_theta(r,0.2)` REMOVED, and the two dispositions are opposite. Here `r` is
+; `int s = r; cq_theta(&s,0.2)` REMOVED, and the two dispositions are opposite. Here `r` is
 ; not read inside loop B at all, so it is not a candidate there and clause (0)
 ; never needed to skip it; loop B's own invariant register is the 6.5 `%out` rail,
 ; admitted by clause (ii-b), and the per-trip bit rail is discharged EVERY

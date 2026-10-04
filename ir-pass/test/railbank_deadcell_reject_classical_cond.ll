@@ -1,7 +1,7 @@
 ; railbank_deadcell_reject_classical_cond.ll — DECLINE (bd test_C_libtooling-xdu2.9 neighbour).
 ;
 ; SOURCE: tests/e2e/railbank_deadcell_matrix.c CASE_CLASSICAL_COND at clang -O1:
-;   int c[3] = {0}; for (i<3) { int t = cq_theta(c[i], .25); if (k > 5) c[i] = t; }
+;   int c[3] = {0}; for (i<3) { int t = c[i]; cq_theta(&t, .25); if (k > 5) c[i] = t; }
 ; NOT dead: the store is gated by a CLASSICAL RUNTIME value. After the promoter the
 ; condition is still a live `icmp`, so the constant fold must NOT fire; PASS H keeps
 ; `select %cond, t, 0` and the classical-condition mux over tainted data keeps its

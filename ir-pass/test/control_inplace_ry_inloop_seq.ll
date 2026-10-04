@@ -2,7 +2,7 @@
 ; control-in-place Ry regions on ONE rotated register (bd
 ; test_C_libtooling-drbq Inc 3).
 ;
-;     for (...) { if (q > 5) r = cq_theta(r, .9); if (q > 3) r = cq_theta(r, .7); }
+;     for (...) { if (q > 5) cq_theta(&r, .9); if (q > 3) cq_theta(&r, .7); }
 ;
 ; THIS IS THE M-β AUDIT ROW MADE EXECUTABLE. Region 2's `RoutedBase` IS region 1's
 ; merge φ, and M-β changes what that φ is RAUW'd to (the hoisted gate, not the

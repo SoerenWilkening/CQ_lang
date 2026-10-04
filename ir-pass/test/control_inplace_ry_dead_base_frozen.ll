@@ -3,8 +3,8 @@
 ; rather than reverse-playing and freeing it (bd test_C_libtooling-drbq Inc 1;
 ; Rule 6's documented fallback).
 ;
-;     int q=cq_theta(0,.5); int r=cq_theta(0,.3);
-;     if (q > 5) r = cq_theta(r, .9);
+;     int q=0; cq_theta(&q,.5); int r=0; cq_theta(&r,.3);
+;     if (q > 5) cq_theta(&r, .9);
 ;     return cq_measure(q);              // r is dead
 ;
 ; WHY THE SPINE MUST NOT TOUCH IT: a controlled gate's adjoint NEEDS ITS CONTROL,

@@ -4,7 +4,7 @@
 ; `RestoringRoute` has FOUR `cqrt_cswap` members and the discharge is legal only
 ; if ALL FOUR lie inside the interval.
 ;
-;     q = cq_theta(u, 0.5);
+;     q = u; cq_theta(&q, 0.5);
 ;     if (((q * 37) >> 3) == 5) r = cq_phi(q, PI);
 ;     else                      r = cq_phi(cq_phi(q, 0.25), 0.75);
 ;     return cq_measure(r);

@@ -2,7 +2,7 @@
 ; is an OVER-DECLINE that is kept ON PURPOSE (bd drbq Inc 2b).
 ;
 ;     if (cc) acc = cq_measure(r);            // a CLASSICAL branch, side path
-;     r = cq_theta(r, q == 5 ? .9 : .3);      // the 2b gate, in the join block
+;     cq_theta(&r, q == 5 ? .9 : .3);      // the 2b gate, in the join block
 ;
 ; THE FIXTURE THAT FENCES S9's SKIP-SET ASYMMETRY. `%ms` is a genuine READ of a
 ; rail member (not an alias hop), so it owes the full `provablyBefore(ms, T)` —

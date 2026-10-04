@@ -2,10 +2,10 @@
 ; test_C_libtooling-8h7d.5, Rule-13 ROUND 2, finding F-1). A CONFIRMED silent
 ; miscompile in the round-1 fence itself.
 ;
-;     int q = cq_theta(0, .5);
-;     for (i<2) { if (q==5) q = cq_phi(q,PI); q = cq_theta(q,-.5); q = cq_theta(q,.5); }
+;     int q = 0; cq_theta(&q, .5);
+;     for (i<2) { if (q==5) q = cq_phi(q,PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
 ;     int mark = q;                 /* the record: the loop's EXIT state */
-;     q = cq_theta(q, 0.125);       /* an OFF-CHAIN in-place Ry on the same rail */
+;     cq_theta(&q, 0.125);       /* an OFF-CHAIN in-place Ry on the same rail */
 ;     return cq_measure(mark) + cq_measure(q);
 ;
 ; THE HOLE. `collectRailGates` built the gate set from CHAIN MEMBERS only — the
@@ -22,8 +22,8 @@
 ; unlike an out-of-place value op there is no escape hatch.
 ;
 ; Reachable from `clang -O1` C: this file is the -O1 form of BOTH the record-after
-; spelling above and the record-INSIDE spelling `for (…) { …; mark = q; } q =
-; cq_theta(q,.125);` — `-O1` sinks the latter's `mark` to the exit and the two
+; spelling above and the record-INSIDE spelling `for (…) { …; mark = q; }
+; cq_theta(&q,.125);` — `-O1` sinks the latter's `mark` to the exit and the two
 ; produce the same IR modulo phi order, so one fixture pins both. The value-op
 ; twin of the same program (`mark * 7` in place of `cq_measure(mark)`) declines
 ; loudly at `declineStaleRecordOps`; only the measure/`ret` reads reach here, which

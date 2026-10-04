@@ -1,12 +1,12 @@
 ; control_phase_kickback_rail_post_ry.ll — ACCEPT (bd 3qlq.4): a chained Ry on
-; the SAME register AFTER the region (`if (b) cq_phi(φ); b = cq_theta(b, .25)`).
+; the SAME register AFTER the region (`if (b) cq_phi(φ); cq_theta(&b, .25)`).
 ; The wire fence's position-free walk finds that gate, and the DT prong proves it
 ; post-branch (`ProvenPostRegion`) — the P1 argument: a kickback copies nothing,
 ; replays nothing and allocates no work rail, so a later gate has nothing of the
 ; region's to invalidate. Pinned ORDER: rz BEFORE the second ry, one handle.
 
-; bd test_C_libtooling-3qlq.4 (Inc 1b) — the BARE RAIL CONDITION. `_Bool b =
-; cq_theta(b0, θ)` is a one-qubit REGISTER, and `if (b) …` hands the pass
+; bd test_C_libtooling-3qlq.4 (Inc 1b) — the BARE RAIL CONDITION. `_Bool b = b0;
+; cq_theta(&b, θ)` is a one-qubit REGISTER, and `if (b) …` hands the pass
 ; `br i1 %b` with no compare to mint a flag from. The register IS the flag: the
 ; kickback gate `cqrt_rz_i1(h_b, θ)` sits directly on `b`'s rail — NO mint, NO
 ; `_unc` strip, NO `cqrt_free` (the rail is the user's), and NO `cqrt_x` on a

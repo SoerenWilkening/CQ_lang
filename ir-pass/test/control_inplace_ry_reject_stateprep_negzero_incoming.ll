@@ -1,7 +1,7 @@
 ; control_inplace_ry_reject_stateprep_negzero_incoming.ll — DECLINE (F1):
 ; `-0.0` merge incoming against a `0.0` seed.
 ;
-;     double r = -0.0;  if (q > 5.0) r = cq_theta(0.0, .9);   // probe `p07b`, from C
+;     double r = -0.0;  if (q > 5.0) { r = 0.0; cq_theta(&r, .9); }  // probe `p07b`, from C
 ;
 ; ⚠ THIS IS WHY F1 IS SPELLED AS BIT IDENTITY AND NOT AS NUMERIC EQUALITY. `-0.0
 ; == 0.0` is TRUE in IEEE, so an `APFloat::compare` (or `==`) would ACCEPT this

@@ -48,7 +48,7 @@
 ;   int k1(int a, int b) { return (a * 7) + b; }            // lib.c, no CQ.h
 ;   volatile int M = 5, N = 3;
 ;   int main(void) { int m = M, n = N; int acc = 0;
-;     int q = cq_theta(m, .5); int q2 = cq_theta(n, .25);
+;     int q = m; cq_theta(&q, .5); int q2 = n; cq_theta(&q2, .25);
 ;     int arr[8] = {0}; arr[q2 & 7] = 7; arr[q & 7] = 9;
 ;     int r1 = arr[(q2 + 1) & 7]; acc += cq_measure(r1);
 ;     int u = k1(m, q); int v = k1(n, q2);

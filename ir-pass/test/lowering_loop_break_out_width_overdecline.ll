@@ -26,7 +26,7 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 
-; long long p = cq_theta(pseed,.5), q = cq_theta(seed,.25);
+; long long p = pseed, q = seed; cq_theta(&p,.5); cq_theta(&q,.25);
 ; for (int i = 0; i < n; i++) { q = q ^ 5; if (q == p) break; }
 ; return cq_measure((int)q);
 define i32 @trunc_i64(i64 noundef %0, i64 noundef %1, i32 noundef %2) {
@@ -57,7 +57,7 @@ define i32 @trunc_i64(i64 noundef %0, i64 noundef %1, i32 noundef %2) {
 ; CHECK:      %[[TC:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[TO]])
 ; CHECK:      call i32 @cqrt_measure_i32(i32 %[[TC]])
 
-; long long p = cq_theta(pseed,.5), r = cq_theta(rseed,.75), q = cq_theta(seed,.25);
+; long long p = pseed, r = rseed, q = seed; cq_theta(&p,.5); cq_theta(&r,.75); cq_theta(&q,.25);
 ; for (int i = 0; i < n; i++) { q = q ^ 5; if (q == p) break; }
 ; return cq_measure(q == r);
 define i32 @qqcmp_i64(i64 noundef %0, i64 noundef %1, i64 noundef %2, i32 noundef %3) {
@@ -91,7 +91,7 @@ define i32 @qqcmp_i64(i64 noundef %0, i64 noundef %1, i64 noundef %2, i32 nounde
 ; CHECK:      call i32 @cq_template_icmp_eq_i64(i32 %[[QO]], i32 %[[QR]])
 ; CHECK:      ret i32
 
-; long long p = cq_theta(pseed,.5), r = cq_theta(rseed,.75), q = cq_theta(seed,.25);
+; long long p = pseed, r = rseed, q = seed; cq_theta(&p,.5); cq_theta(&r,.75); cq_theta(&q,.25);
 ; for (int i = 0; i < n; i++) { q = q ^ 5; if (q == p) break; }
 ; return cq_measure((q == r) ? r + 3 : r ^ 6);
 define i64 @sel_theta_i64(i64 noundef %0, i64 noundef %1, i64 noundef %2, i32 noundef %3) {

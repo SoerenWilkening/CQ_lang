@@ -3,10 +3,10 @@
 ; test_C_libtooling-6uqc).
 ;
 ; SOURCE:
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     int d = a * 3;            // out-of-place: the alloc rail stays live
 ;     int m0 = cq_measure(a);   // ...but it is MEASURED before the gate
-;     d = cq_theta(d, 0.5);     // T — chained, in-place Ry on the mul rail
+;     cq_theta(&d, 0.5);     // T — chained, in-place Ry on the mul rail
 ;     return cq_measure(d) + m0;
 ;
 ; The DISCRIMINATION TWIN of lowering_reject_live_record_anc_alloc_parent_mul.ll:

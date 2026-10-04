@@ -12,7 +12,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   int h(int a, int k);
-;   int main(int c, char **v) { int m = atoi(v[1]); int q = cq_theta(m & 7, .5); int p = q * 3; int r = h(p, m); int u = p ^ q; if (u == 10) cq_phi(3.14159); q = cq_theta(q, .7); return r + cq_measure(q); }
+;   int main(int c, char **v) { int m = atoi(v[1]); int q = m & 7; cq_theta(&q, .5); int p = q * 3; int r = h(p, m); int u = p ^ q; if (u == 10) cq_phi(3.14159); cq_theta(&q, .7); return r + cq_measure(q); }
 ; Library TU (plain C, no CQ.h):
 ;   static volatile int K = 7;
 ;   int h(int a, int k) { if (a > 3) (void)K; return k + 1; }

@@ -3,9 +3,9 @@
 ; 2026-08-28): A RECORD MINTED STRICTLY AFTER THE GATE CANNOT DEPHASE IT.
 ;
 ; SOURCE:
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     int w = a * 2;                     // THE WIRE
-;     w = cq_theta(w, 0.5);              // T — chained, in-place Ry on the wire
+;     cq_theta(&w, 0.5);              // T — chained, in-place Ry on the wire
 ;     int z = a * 3;                     // a rail that does not EXIST yet at T
 ;     int y = a * 5;                     // ...and one that is observed
 ;     return cq_measure(w) + cq_measure(y);

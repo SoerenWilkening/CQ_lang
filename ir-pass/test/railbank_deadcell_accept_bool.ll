@@ -1,7 +1,7 @@
 ; railbank_deadcell_accept_bool.ll — ACCEPT (bd test_C_libtooling-xdu2.9).
 ;
 ; SOURCE: tests/e2e/railbank_deadcell_matrix.c CASE_DEAD_BOOL at clang -O1:
-;   bool c[3] = {0}; for (i<3) { bool t = cq_theta(c[i], .25); if (c[i]) c[i] = t; }
+;   bool c[3] = {0}; for (i<3) { bool t = c[i]; cq_theta(&t, .25); if (c[i]) c[i] = t; }
 ; The `_Bool` spelling: PASS G narrows the merge φ to the i1 rail type and sinks the
 ; storage `zext` to the relocated store, THEN PASS H resolves the (now i1) φ to the
 ; seed `false`. The store parks a classical `zext i1 false`, the object is not a

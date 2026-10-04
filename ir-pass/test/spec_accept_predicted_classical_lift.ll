@@ -9,14 +9,14 @@
 ; before `specialize()` reads it as a register, and the clone `@__cq_q_h_01` (built
 ; unchanged) returns the classical value. Before bd cepm the result was tainted
 ; CONSERVATIVELY and scrubbed only after both control rounds.
-; Here `cq_theta(t, .1)` is a SOURCE (a classical seed, `cqrt_alloc_i32(t)`), so the one-register
+; Here `@cq_theta_si32(t, .1)` is a SOURCE (a classical seed, `cqrt_alloc_i32(t)`), so the one-register
 ; lift's conjunct (6) sees the twin's shape. Before bd cepm it was a conservatively CHAINED theta
 ; outside the arm and the lift refused.
 ;
 ; 5 TUs, each `clang -O1`, llvm-linked as tests/e2e/run_slice_multi.sh does.
 ; Caller TU (-include CQ.h):
 ;   int h(int a, int k);
-;   int main(int c, char **v) { int m = atoi(v[1]); int n = atoi(v[2]); int q = cq_theta(m, .5); int t = h(q, m); int r = cq_theta(t, .1); int r2 = r; if (m > 3) r2 = cq_theta(r, .2); return cq_measure(r2) + cq_measure(q); }
+;   int main(int c, char **v) { int m = atoi(v[1]); int n = atoi(v[2]); int q = m; cq_theta(&q, .5); int t = h(q, m); int r = t; cq_theta(&r, .1); int r2 = r; if (m > 3) { r2 = r; cq_theta(&r2, .2); } return cq_measure(r2) + cq_measure(q); }
 ; Library TU 1 (plain C):
 ;   /* h READS a (a call to g, an external here) and returns the CLASSICAL k + 1. */
 ;   void g(int a);

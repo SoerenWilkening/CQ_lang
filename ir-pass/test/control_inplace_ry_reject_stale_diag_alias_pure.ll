@@ -4,7 +4,7 @@
 ; closure).
 ;
 ;     int mark = cq_phi(r, .1);
-;     if (q > 5) r = cq_theta(r, .9);
+;     if (q > 5) cq_theta(&r, .9);
 ;     p = mark * 7;                     // `mark` and `r` are ONE physical rail
 ;
 ; Committed for the same reason `control_inplace_ry_reject_stale_pure.ll` is, and

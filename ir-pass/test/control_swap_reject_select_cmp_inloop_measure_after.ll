@@ -1,7 +1,7 @@
 ; control_swap_reject_select_cmp_inloop_measure_after.ll — DECLINE (Track A.1,
 ; bd test_C_libtooling-r10v). THE REPRODUCER, VERBATIM `clang -O1`:
 ;
-;     int b = cq_theta(0, .5);
+;     int b = 0; cq_theta(&b, .5);
 ;     for (int i = 0; i < 3; ++i) {
 ;         int a = (b == 1) ? i : 5;              // arm is loop-VARIANT
 ;         acc += cq_measure(a) + cq_measure(b);  // collapses b IN THE BODY

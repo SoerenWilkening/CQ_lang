@@ -4,7 +4,7 @@
 ; merge phi's Pred incoming IS the `Constant` and F1 is satisfied — lowered
 ; ROLLED, one fresh `|SEED>` per activation.
 ;
-;     for (int i = 0; i < 3; i++) { int r = 0; if (q == 5) r = cq_theta(0, .9); … }
+;     for (int i = 0; i < 3; i++) { int r = 0; if (q == 5) { r = 0; cq_theta(&r, .9); } … }
 ;                                                          // probe `p18c`, from C
 ;
 ; ⚠ THIS FILE SHIPPED AS A DECLINE UNTIL 2026-09-14 and is REWRITTEN IN FULL.

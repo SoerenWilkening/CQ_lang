@@ -4,11 +4,11 @@
 ;
 ; SOURCE:
 ;     int arr[8] = {0};
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     int w = a * 2;                     // THE WIRE
 ;     int c = a * 3;                     // a SIBLING of the wire
-;     p = cq_theta(p, 0.25);             // an independent superposed INDEX
-;     w = cq_theta(w, 0.5);              // T — chained, in-place Ry on the wire
+;     cq_theta(&p, 0.25);             // an independent superposed INDEX
+;     cq_theta(&w, 0.5);              // T — chained, in-place Ry on the wire
 ;     arr[p] = c;                        // the sibling's only post-gate fate
 ;     int y  = a * 5;                    //  (the ancestor's OWN observed read)
 ;     return cq_measure(y) + cq_measure(w);

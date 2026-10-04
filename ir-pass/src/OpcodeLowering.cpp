@@ -144,9 +144,9 @@ void diagnoseStaleQuantumReader(Instruction *I) {
 // below is `BinaryOperator | UnaryOperator | CastInst | data-position Cmp |
 // curated intrinsic`, so a rotation or a measurement reading a stale name was
 // asked NOTHING, while a PURE op reading the same name declined. One line of
-// plain C — `int b=cq_theta(q,.5); int c=cq_theta(q,.9); return
+// plain C — `int b=q; cq_theta(&b,.5); int c=q; cq_theta(&c,.9); return
 // cq_measure(b)+cq_measure(c);` — lowered to a stream BYTE-IDENTICAL to the
-// well-formed chain `a=cq_theta(q,.5); c=cq_theta(a,.9); cq_measure(c)+cq_measure(c)`:
+// well-formed chain `a=q; cq_theta(&a,.5); c=a; cq_theta(&c,.9); cq_measure(c)+cq_measure(c)`:
 // two different programs, one circuit, `opt` exit 0 and stage 2b clean (Rule 2 in
 // its purest form; bd 3d8q, review_1b_r2.md §F-1b2-1).
 //
@@ -233,14 +233,14 @@ bool inLowerOpsScope(Instruction &I, TaintSet &taint) {
 // THE GATE SET, NOT THE FIRST GATE (bd r2j3.2 review round 1, F1; L3). The walk's
 // position-aware proof keeps the CONSERVATIVE precondition `I` dominates `T`
 // (`RequireEmitDominance`, WireWalk.h), so a read in a branch arm declined against
-// a gate after the merge — `if (k) v = tbl[q]; cq_theta(q, .3);` — though every
+// a gate after the merge — `if (k) v = tbl[q]; cq_theta(&q, .3);` — though every
 // trace runs the read first. A gate that fails only that precondition is still
 // harmless when `gateFollowsRead`; every collected gate must pass it.
 //
 // ⚠ ONLY FOR A READ THAT RUNS WHERE IT STANDS (review round 2, F1: a wrong unitary
 // on d6ffaca3). A value arm's pure chain inside a TAINTED arm is hoisted into the
 // pred, where it runs UNCONDITIONALLY, and the guarded-store region never
-// discharges it: `if (c > 2) arr[j] = (int)(q ^ 6); cq_theta(q, .3);` left
+// discharges it: `if (c > 2) arr[j] = (int)(q ^ 6); cq_theta(&q, .3);` left
 // `trunc(q)` a live copy of q on every branch across the Ry (rc 0). So a read under
 // tainted control (`instUnderTaintedControl`, the carve's own predicate) keeps the
 // dominance precondition unless `InPlace`: a QRAM access, which its emitter issues
@@ -358,7 +358,7 @@ void declineStaleRecordOps(Module &M, TaintSet &taint) {
   // ── THE QRAM ACCESS (bd test_C_libtooling-r2j3.2, P1 silent miscompile) ────
   // A QRAM call reads its index register (and a store its value) AT THE ACCESS,
   // so it is asked the pure-op question about exactly those registers
-  // (`qramAccessReads`, owned by QramLowering). `long q2 = cq_theta(q, .3);
+  // (`qramAccessReads`, owned by QramLowering). `long q2 = q; cq_theta(&q2, .3);
   // v = tbl[q];` used to lower to `qram_load(arr, q)` after the Ry: a bare index
   // has no op between the gep and the register, and the `int` twin declined only
   // because its widening `sext` happened to be scheduled after the gate. All four
@@ -479,10 +479,10 @@ void recordStaleQuantumReaders(Module &M, TaintSet &taint,
   // incomplete, and the reader families are the incompleteness.
   //
   // MEASURED, one line of plain C, byte-identical on three shipped binaries:
-  //   `int q=cq_theta(0,.3); int b=cq_theta(q,.5); int c=cq_theta(q,.9);
+  //   `int q=0; cq_theta(&q,.3); int b=q; cq_theta(&b,.5); int c=q; cq_theta(&c,.9);
   //    return cq_measure(b)+cq_measure(c);`
   // emits `ry(.3); ry(.5); ry(.9); measure; measure` — BYTE-IDENTICAL to the
-  // well-formed chain `a=cq_theta(q,.5); c=cq_theta(a,.9);
+  // well-formed chain `a=q; cq_theta(&a,.5); c=a; cq_theta(&c,.9);
   // cq_measure(c)+cq_measure(c)`. Two different programs, one circuit, `opt`
   // exit 0, verify-clean, stage-2b `0 violation(s)`. Rule 2 in its purest form.
   for (Function &F : M) {
@@ -644,7 +644,7 @@ void recordStaleQuantumReaders(Module &M, TaintSet &taint,
         // (i) THE READER IS ITS OWN GATE, exempted with `Covered` — the shipped
         // per-entry exemption bit, NOT a boolean short-circuit (L4: "enumerate,
         // take the difference, and carry the exemption as a per-entry bit").
-        // `c = cq_theta(a, .9)` is an in-place Ry on the very rail it reads, so
+        // `c = a; cq_theta(&c, .9)` is an in-place Ry on the very rail it reads, so
         // a walk seeded at `a` finds `c` among `a`'s users; without the
         // exemption EVERY well-formed chained rotation would decline against
         // itself. `Covered` skips it AS EVIDENCE while still walking THROUGH it,
@@ -663,10 +663,10 @@ void recordStaleQuantumReaders(Module &M, TaintSet &taint,
         // unconditionally, the one gate this fence never ruled on was the
         // reader's own PREVIOUS DYNAMIC INSTANCE: MEASURED, a loop body holding
         // exactly ONE `cq_theta` on a loop-INVARIANT quantum name —
-        //   `int q=cq_theta(0,.3); for(i<3){ int b=cq_theta(q,.1);
+        //   `int q=0; cq_theta(&q,.3); for(i<3){ int b=q; cq_theta(&b,.1);
         //    s+=cq_measure(b); }`
         // — compiled at `opt` exit 0 and emitted a stream BYTE-IDENTICAL to the
-        // self-assigned chain `for(i<3){ q=cq_theta(q,.1); … }`, a DIFFERENT,
+        // self-assigned chain `for(i<3){ cq_theta(&q,.1); … }`, a DIFFERENT,
         // well-formed program. Two programs, one circuit: bd 3d8q's own
         // definition of the defect, surviving the fence built to close it.
         // At trip 2 the name `q` denotes `Ry(.3)|0>` while the register holds
@@ -686,7 +686,7 @@ void recordStaleQuantumReaders(Module &M, TaintSet &taint,
         // list. The three legs that matter, all measured:
         //   * straight-line chain / exclusive arms — `reachesWithoutBarrier`
         //     finds no path back, harmless, EXEMPT (the chain keeps accepting);
-        //   * the φ-carried in-loop chain (`q = cq_theta(q,θ)`) — the header φ
+        //   * the φ-carried in-loop chain (`cq_theta(&q,θ)`) — the header φ
         //     IS the barrier on every back-edge path, harmless, EXEMPT;
         //   * the loop-INVARIANT seed — `SeedDef` is outside the loop, the back
         //     edge reaches the reader again without crossing it, NOT harmless,
@@ -763,7 +763,7 @@ void recordStaleQuantumReaders(Module &M, TaintSet &taint,
         // ⚠ THAT TRIGGER FIRED WITHOUT BEING READ, AND IS RE-DERIVED HERE
         // (bd `xdu2.1`, Track B, 2026-09-24 — L8's "a trigger works only if
         // someone reads it"). CONDITIONAL bank stores accept today: the xdu2.4
-        // seed-path prep (`if (Z >= 2) b[i] = cq_theta(b[i], .5); if (b[i])
+        // seed-path prep (`if (Z >= 2) cq_theta(&b[i], .5); if (b[i])
         // Z -= 2;`, the owner's `example/grover/main.c`) stores the merge phi
         // `%cq.bank = phi [theta, %arm], [%cq.bank.seed, %skip]`, and the PASS-H
         // emptied arm stores `%cq.bank1 = select c, t, 0` (both MEASURED with

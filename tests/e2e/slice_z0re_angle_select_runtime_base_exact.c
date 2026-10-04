@@ -3,9 +3,9 @@
    (A = .75, B = .25, A − B = .5), so its stream can be compared BYTE FOR BYTE with an
    independently cleared spelling (bd test_C_libtooling-z0re, Rule-13 r1B F-r1B-6).
 
-     int t = m + 1; int r; if (q > 3) r = cq_theta(t, .75); else r = cq_theta(t, .25);
+     int t = m + 1; int r; if (q > 3) { r = t; cq_theta(&r, .75); } else { r = t; cq_theta(&r, .25); }
 
-   `-O1` folds it to ONE `cq_theta(t, select(q > 3, .75, .25))`; z0re lowers it by
+   `-O1` folds it to ONE `@cq_theta_*(t, select(q > 3, .75, .25))`; z0re lowers it by
    difference: alloc(t); ry(h, .25); flag(q > 3); ry_controlled(f, h, .5); strip;
    free. The witness is slice_z0re_angle_select_runtime_base_exact_inplace.c — the
    same unitary written as an UNCONDITIONAL literal prep followed by an in-place
@@ -17,7 +17,7 @@
    ⚠ RESPELLED AS A TERNARY by bd test_C_libtooling-fmt3 (2026-09-29), exactly as
    z0re's own retirement trigger in tests/e2e/CMakeLists.txt instructed. With
    `nomerge` on every `cq_theta_*` (CQ.h) the IF/ELSE spelling that stood here,
-   `if (q > 3) r = cq_theta(t, A); else r = cq_theta(t, B);`, no longer folds into
+   `if (q > 3) { r = t; cq_theta(&r, A); } else { r = t; cq_theta(&r, B); }`, no longer folds into
    one call — it survives as an if/else of two runtime-seed preps and declines
    `if/else state prep allocates two rails` (measured, fmt3 round-2 header A/B;
    pinned by `control_inplace_ry_reject_stateprep_nomerge_ifelse_runtime_seed.ll`,

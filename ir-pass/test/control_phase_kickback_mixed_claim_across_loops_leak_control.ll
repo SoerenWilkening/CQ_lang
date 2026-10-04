@@ -5,7 +5,7 @@
 ; `[check]`, and every `--check-prefix` name likewise) so FileCheck cannot see
 ; them. Read it; do not delete it.
 ;
-; THE RULED SHAPE, and this module contains it: LOOP B's `int s = cq_theta(r, 0.2)` reads `r`, which LOOP A left behind.
+; THE RULED SHAPE, and this module contains it: LOOP B's `int s = r; cq_theta(&s, 0.2)` reads `r`, which LOOP A left behind.
 ; The name is loop-INVARIANT and is RE-READ on every trip while the wire has
 ; already moved under it — CLAUDE.md CORRECTNESS RISK §2's rail-staleness rule
 ; verbatim ("a rail member may be read only where no rail-relabelling gate
@@ -25,7 +25,7 @@
 ; loop-invariant re-read. The subject is inseparable from the ruled-out shape, so
 ; this pin cannot be preserved by an edit either. MEASURED: the discriminating
 ; ACCEPT half, `control_phase_kickback_mixed_claim_across_loops_accept_control.ll`
-; (the same source with LOOP B's `cq_theta(r,0.2)` REMOVED), still ACCEPTS on this
+; (the same source with LOOP B's `int s = r; cq_theta(&s,0.2)` REMOVED), still ACCEPTS on this
 ; binary, so the "a narrowed key that refused everything" control is intact; what
 ; is lost is the REFUSAL direction's only positive pin. Filed as a Track-D
 ; follow-on. ⚠ Note also that this file's own header records that its
@@ -53,12 +53,12 @@
 ; PER-LOOP.
 ;
 ;     int ext_f(int a);                             /* separate TU: return a + 100; */
-;     int slice(int u){ int q=cq_theta(u,0.5); int r=cq_theta(u,0.3);
-;       for(int i=0;i<3;i++){ r=cq_theta(r,0.1); }  /* LOOP A — tryCaseA CLAIMS r     */
+;     int slice(int u){ int q=u; cq_theta(&q,0.5); int r=u; cq_theta(&r,0.3);
+;       for(int i=0;i<3;i++){ cq_theta(&r,0.1); }  /* LOOP A — tryCaseA CLAIMS r     */
 ;       int y=5; if (q>5) y=ext_f(7);               /* 6.5 arm -> %out (ROUND 2)      */
 ;       int acc=0;
 ;       for(int i=0;i<3;i++){ if((y>>i)&1) cq_phi(0.25);
-;                             int s=cq_theta(r,0.2); acc+=cq_measure(s); }  /* LOOP B */
+;                             int s=r; cq_theta(&s,0.2); acc+=cq_measure(s); }  /* LOOP B */
 ;       return cq_measure(y)+acc; }
 ;
 ; Clause (0) means *"THIS loop's collapse already proved THIS rail, so do not judge

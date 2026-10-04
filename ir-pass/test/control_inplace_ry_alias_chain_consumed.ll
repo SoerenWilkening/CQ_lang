@@ -4,7 +4,7 @@
 ;
 ;     int mark = cq_phi(r, .1);
 ;     int r2   = cq_phi(mark, .2);
-;     if (q > 5) r2 = cq_theta(r2, .9);
+;     if (q > 5) cq_theta(&r2, .9);
 ;     use(cq_measure(r2));
 ;
 ; `r`, `mark` and `r2` are three SSA names for ONE physical rail, so R6's alias

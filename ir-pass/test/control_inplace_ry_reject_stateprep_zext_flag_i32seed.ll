@@ -5,7 +5,7 @@
 ; A second `icmp eq i32 %1, 1` on the condition's rail, ZERO-EXTENDED to `i32`
 ; and read as data, against an `i32` state-prep seed of `0`:
 ;
-;     %1     = cq_theta(0, .5)
+;     %1     = @cq_theta_si32(0, .5)
 ;     %2     = icmp eq %1, 1              ; the branch condition
 ;     if (%2) b1 = cq_theta(i32 0, .5);   ; seed i32 0
 ;     %clone = icmp eq %1, 1

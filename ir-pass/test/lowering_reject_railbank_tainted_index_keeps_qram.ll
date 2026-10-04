@@ -35,7 +35,7 @@
 ; `docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackL/probes/N4_tainted_index.c`:
 ;   /* clause 2 negative: a TAINTED index — 7.5's axis must keep its own decline */
 ;   #include "CQ.h"
-;   int main(void){ int q=cq_theta(0,0.5); bool b[4]={0}; b[q&3]=cq_theta(b[q&3],0.5); return cq_measure(b[0]); }
+;   int main(void){ int q=0; cq_theta(&q,0.5); bool b[4]={0}; cq_theta(&b[q&3],0.5); return cq_measure(b[0]); }
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s --implicit-check-not='cq rail bank:'

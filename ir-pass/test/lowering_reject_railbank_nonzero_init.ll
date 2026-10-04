@@ -39,7 +39,7 @@
 ;      every cell |0>; a non-zero fill seeds classical contents no rail can represent. */
 ;   #include "CQ.h"
 ;   int main(void){ int a=5; bool b[3]={1,1,1};
-;     for(int i=0;i<3;++i){ if(a>=3) b[i]=cq_theta(b[i],0.5); if(b[i]) a-=3; }
+;     for(int i=0;i<3;++i){ if(a>=3) cq_theta(&b[i],0.5); if(b[i]) a-=3; }
 ;     int s=cq_measure(a); for(int i=0;i<3;++i) s+=cq_measure(b[i]); return s; }
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s

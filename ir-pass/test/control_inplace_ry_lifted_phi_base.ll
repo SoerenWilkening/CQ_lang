@@ -2,7 +2,7 @@
 ; φ-crossing fix (round-1 Rule-13 review, lens L2 §1) a FENCE and not a BAN.
 ;
 ;     int m; if (c) { m = cq_phi(r, .1); } else { m = r; }   /* CLASSICAL diamond */
-;     if (q == 5) { m = cq_theta(m, .9); }                   /* rotate THE φ ITSELF */
+;     if (q == 5) { cq_theta(&m, .9); }                   /* rotate THE φ ITSELF */
 ;     return cq_measure(m) + cq_measure(q);
 ;
 ; Same launder CFG as the seven `..._reject_lifted_phi_*` fixtures, one line

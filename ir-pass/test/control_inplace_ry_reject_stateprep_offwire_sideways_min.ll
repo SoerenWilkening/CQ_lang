@@ -12,12 +12,12 @@
 ; narrowing — a pinned value on the CONDITION'S OWN BACKWARD WIRE is no longer a
 ; collider.)
 ;
-; THE SHAPE — `if (q / 4 == 5) r = cq_theta(<q/4>, .9);` after InstCombine:
+; THE SHAPE — `if (q / 4 == 5) { r = <q/4>; cq_theta(&r, .9); }` after InstCombine:
 ;
 ;     %o = and %q, -4              ; what `-O1` rewrites `q/4 == 5` ONTO
 ;     %c = icmp eq %o, 20
 ;     %t = sdiv %q, 4              ; THE SIBLING — live and measured
-;     if (%c) r = cq_theta(5, .9); ; seed 5
+;     if (%c) { r = 5; cq_theta(&r, .9); } ; seed 5
 ;
 ; On that edge `q ∈ [20,24)`, so `%t == 5 == seed`, while `%o` is pinned to
 ; `{20}` (≠ seed) and `%q` to a four-element range (no singleton). So the ONLY

@@ -2,7 +2,7 @@
 ; the Rule-13 adversarial review 2026-06-26 silent-miscompile finding). A
 ; loop-carried VALUE rail whose rail value is read by TWO in-place self-updates —
 ; one carried via the latch, one escaping to the measure:
-;     int q = cq_theta(seed, 0.25);
+;     int q = seed; cq_theta(&q, 0.25);
 ;     for (int i = 0; i < n; i++) { qn = q ^ 9; qm = q ^ 3; q = qn; }
 ;     return cq_measure(qm_last);
 ; This is FAN-OUT (Rule 8 no-cloning): `%q` is read by both `%qn = q ^ 9` (carried)

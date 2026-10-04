@@ -3,12 +3,12 @@
 ; literal base out of bd z0re's widening, which admits only a RUNTIME base.
 ;
 ;     int t = q / 4; int r;
-;     if (t == 5) r = cq_theta(t, .9); else r = cq_theta(5, .3);   // probe a1, from C
+;     if (t == 5) { r = t; cq_theta(&r, .9); } else { r = 5; cq_theta(&r, .3); }  // probe a1, from C
 ;     return cq_measure(r) + cq_measure(t);
 ;
 ; MEASURED at clang -O1 (this body is its stage-1 IR, minimised): IPSCCP pins `t`
-; to 5 on the true edge and rewrites the true arm's `cq_theta(t, .9)` to
-; `cq_theta(5, .9)`; SimplifyCFG then sinks the two now-arg-0-identical thetas into
+; to 5 on the true edge and rewrites the true arm's `@cq_theta_si32(t, .9)` to
+; `@cq_theta_si32(5, .9)`; SimplifyCFG then sinks the two now-arg-0-identical thetas into
 ; ONE theta reading an angle select; InstCombine rewrites the compare SIDEWAYS off
 ; `t` (`(q & -4) == 20`). `t = sdiv q, 4` is STILL LIVE and measured. The source
 ; rotated `t` IN PLACE on the `t == 5` branch; the module is an angle select on the
@@ -17,7 +17,7 @@
 ; compare reads `and q, -4`, a sibling of `t`), so NOT the owner-ruled α trade.
 ;
 ; The FLAT DIAMOND prep refuses the identical hazard at F2 (probe `a8`: `int r = 5;
-; if (t == 5) r = cq_theta(t, .9);` declines `state prep seed is proven equal to
+; if (t == 5) { r = t; cq_theta(&r, .9); }` declines `state prep seed is proven equal to
 ; the condition register`), because there the pin is on the REGION'S own edge.
 ; ⚠ CORRECTED (Rule-13 r1A F-r1A-2, L7): an earlier spelling of this paragraph
 ; read as "the diamond is safe". It is not in general — bd `fmt3` (PRE-EXISTING P1)
@@ -43,7 +43,7 @@
 ; `nomerge` keeps the two thetas apart, no angle select forms, and the if/else
 ; declines where the pass sees it — measured, drbq.13's `a1.c` (fmt3 `d13a1.c`)
 ; now declines `if/else state prep allocates two rails`. The literal-base decline itself stays reachable from
-; PLAIN C through the TERNARY spelling `cq_theta(6, c ? .75 : .25)` (Rule-13 r2
+; PLAIN C through the TERNARY spelling `int r = 6; cq_theta(&r, c ? .75 : .25)` (Rule-13 r2
 ; probe `t3`/`t3nm`: `rotation angle` with and without `nomerge`), so this file pins
 ; a plain-C decline, not only what S3 owes a hand-IR front end. (⚠ CORRECTED, r2
 ; F-r2-1: an earlier spelling said "hand-IR / non-C front end" only.)

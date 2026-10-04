@@ -9,7 +9,7 @@
 ; @main is the round-1 review's F1: a first draft kept ONE
 ; cast rail per access alive until the access was reversed — or forever, for a
 ; store that is never reversed. That rail is a CNOT copy of the index register,
-; so the later `cq_theta(b, -0.5)` rotated a register entangled with it: the
+; so the later `cq_theta(&b, -0.5)` rotated a register entangled with it: the
 ; source measures b == 0 with probability 1, the draft gave P(b == 1) ≈ 0.115
 ; (`opt` rc 0, stage 2b clean, one `live derived record` warning). It is `main`
 ; because outside `main` this shape declined before and after b6a ("dead chain

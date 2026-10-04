@@ -3,7 +3,7 @@
 ; finding F-A1-3: an OVER-DECLINE of a circuit `main` compiles). Verbatim
 ; `clang -O1` from `review_a1_r1_probes/c1.c`:
 ;
-;     int q = cq_theta(0, 0.5);
+;     int q = 0; cq_theta(&q, 0.5);
 ;     int t = q + 3;
 ;     int m = cq_measure(q);
 ;     int a = (t == 5) ? 2 : 5;

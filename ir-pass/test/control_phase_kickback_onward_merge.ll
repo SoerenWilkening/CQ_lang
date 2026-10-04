@@ -3,7 +3,7 @@
 ; part A, lens L3).
 ;
 ;     int slice(void) {
-;         int q = cq_theta(3, 0.5);
+;         int q = 3; cq_theta(&q, 0.5);
 ;         int y = 5;
 ;         if (q > 5) y = ext_f(7);                     // 6.5 classical-call arm -> %out
 ;         if (y > 50) cq_phi(0.9); else cq_phi(0.3);   // P2 on the ONWARD rail

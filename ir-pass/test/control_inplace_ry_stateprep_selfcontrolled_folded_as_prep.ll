@@ -4,12 +4,12 @@
 ; ⚠ THIS MODULE IS `clang -O1`'s OUTPUT FOR **TWO DIFFERENT PROGRAMS**, AND THAT
 ; IS THE WHOLE POINT. It was produced from `probes/u2.c` —
 ;
-;     int q = cq_theta(0, .25);
-;     int r = 5;  if (q == 5) r = cq_theta(q, .9);   // rotate the CONDITION's
+;     int q = 0; cq_theta(&q, .25);
+;     int r = 5;  if (q == 5) { r = q; cq_theta(&r, .9); }  // rotate the CONDITION's
 ;                                                    // own register IN PLACE
 ;
 ; — i.e. from the SELF-CONTROLLED source, not from a state prep. The genuine
-; prep `r = cq_theta(5, .9)` compiles to the identical module: MEASURED on the
+; prep `r = 5; cq_theta(&r, .9)` compiles to the identical module: MEASURED on the
 ; sibling pair `probes/a_prep.c` / `probes/a_self.c`, where
 ; `diff` over the two `-O1` slice bodies is **EMPTY**. IPSCCP proves `q == 5` on
 ; the equality edge and substitutes the literal for every use of `q` there, so

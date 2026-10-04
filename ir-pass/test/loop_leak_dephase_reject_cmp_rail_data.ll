@@ -58,10 +58,10 @@
 ; **DATA** IS AN ORDINARY OUT-OF-PLACE RAIL, AND CONJUNCT (3) USED TO SCAN
 ; `BinaryOperator` ONLY.
 ;
-;     int y = cq_theta(5, 0.5);
+;     int y = 5; cq_theta(&y, 0.5);
 ;     int s = 0;
 ;     for (int k = 1; k <= 2; ++k) s += cq_measure(y > k);
-;     y = cq_theta(y, 0.9);                 // the interference
+;     cq_theta(&y, 0.9);                 // the interference
 ;     return s + cq_measure(y);
 ;
 ; Five lines of C, NO TAINTED CONTROL FLOW ANYWHERE, and the body holds NO

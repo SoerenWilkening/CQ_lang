@@ -10,9 +10,9 @@
 ;
 ;     for (int i = 0; i < 2; ++i) {
 ;         int s = r * 7;  printf("%d\n", s);       /* -> the output tape */
-;         if (q == 5) { r = cq_theta(r, 0.9); }    /* NON-DIAGONAL, on r */
+;         if (q == 5) { cq_theta(&r, 0.9); }    /* NON-DIAGONAL, on r */
 ;         cq_phi(0.1);
-;         q = cq_theta(q, 0.05);
+;         cq_theta(&q, 0.05);
 ;     }
 ;     return cq_measure(q) + cq_measure(r);        /* r IS the observable */
 ;

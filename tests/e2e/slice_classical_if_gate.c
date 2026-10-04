@@ -30,7 +30,7 @@
    Rule 16). The most natural classically-controlled-gate program a user can
    write:
 
-       int q = cq_theta(k, t);
+       int q = k; cq_theta(&q, t);
        if (classical_c) cq_phi(a);    // classical if around a gate
        cq_measure(q);
 

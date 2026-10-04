@@ -90,7 +90,7 @@
 // case, whose storage already matches the i32 handle ABI and therefore needs no
 // object-type rewrite. Two CONDITIONAL-store shapes are handled, disjointly:
 //
-//   * the IN-ARM runtime preparation (`if (c) b[i] = cq_theta(b[i], θ)`): the
+//   * the IN-ARM runtime preparation (`if (c) cq_theta(&b[i], θ)`): the
 //     skipped path needs a real |0> cell, and a runtime bank has no literal
 //     seed the state-prep emitter could `cqrt_alloc`, so this stage mints ONE
 //     `cqrt_alloc_i32(0)` per activation, marked `!cq.railbank.seed`. Exact
@@ -99,7 +99,7 @@
 //     The marker is COMPILER-OWNED: an input that already carries it is a loud
 //     reserved-name decline (`declineForeignRailBankSeeds`, Rule-13 finding 4),
 //     and the plan admits a seed load with NO other user (finding 1).
-//   * the EMPTIED ARM, fixed or runtime (`t = cq_theta(b[i], θ); if (c) b[i] =
+//   * the EMPTIED ARM, fixed or runtime (`t = b[i]; cq_theta(&t, θ); if (c) b[i] =
 //     t;`): the rewrite leaves an empty if-without-else arm, which PASS H folds
 //     to `select c, t, seed` exactly as `-O1` SimplifyCFG would. That is the
 //     flat twin's 4.4 data select, whose merge mints its own `%out`, so no seed

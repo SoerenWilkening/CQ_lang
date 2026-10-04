@@ -16,7 +16,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   __attribute__((noinline)) int f(int x) { return x * 2 + 1; }
 ;   int main(void) {
-;     int q = cq_theta(0, 0.7);
+;     int q = 0; cq_theta(&q, 0.7);
 ;     int r;
 ;     if (q > 3) { volatile int z = 1; r = 5; } else { r = 9; }
 ;     return cq_measure(f(r));

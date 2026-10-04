@@ -3,10 +3,10 @@
 ; the F1 ruling, 2026-08-28).
 ;
 ; SOURCE:
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     int w = a * 2;                     // THE WIRE
 ;     int c = a * 3;                     // a SIBLING of the wire
-;     w = cq_theta(w, 0.5);              // T — chained, in-place Ry on the wire
+;     cq_theta(&w, 0.5);              // T — chained, in-place Ry on the wire
 ;     int z = c * 7;                     // a post-gate READ of the sibling
 ;     int y = a * 5;                     // a post-gate READ of the ancestor
 ;     printf("%d %d %d", w, z, y);       // all three land on the output tape

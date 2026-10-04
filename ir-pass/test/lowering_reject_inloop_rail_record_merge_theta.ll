@@ -3,7 +3,7 @@
 ;
 ;     int mark = q;
 ;     if (n & 1) q = cq_phi(q, 1.0);   /* a post-loop rail MERGE phi */
-;     q = cq_theta(q, 0.125);          /* Ry whose arg-0 is the phi */
+;     cq_theta(&q, 0.125);          /* Ry whose arg-0 is the phi */
 ;     return cq_measure(mark) + cq_measure(q);
 ;
 ; The third way a gate reaches the register without appearing on any chain: its

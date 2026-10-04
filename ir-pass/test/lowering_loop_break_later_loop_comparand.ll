@@ -2,9 +2,9 @@
 ; requested by the round-1 review). The answer of one i64 value-arm `break` is the
 ; loop-invariant Q==Q COMPARAND of a second break loop:
 ;
-;     long long p = cq_theta(pseed, 0.5), q = cq_theta(seed, 0.25);
+;     long long p = pseed, q = seed; cq_theta(&p, 0.5); cq_theta(&q, 0.25);
 ;     for (int i = 0; i < n; i++) { q = q ^ 5; if (q == p) break; }
-;     long long q2 = cq_theta(s2, 0.75);
+;     long long q2 = s2; cq_theta(&q2, 0.75);
 ;     for (int j = 0; j < n; j++) { q2 = q2 ^ 3; if (q2 == q) break; }
 ;     return cq_measure(q2);
 ;

@@ -4,7 +4,7 @@
 ; `control_inplace_ry_reject_inplace_alias_base.ll`).
 ;
 ;     int b = q ^ 2;
-;     b = cq_theta(b, q > 5 ? .9 : .3);
+;     cq_theta(&b, q > 5 ? .9 : .3);
 ;
 ; `q ^ 2` has an in-place ABI (`cqrt_xorc_<W>`) and the M-C fence in `lowerOps`
 ; really does take it in place here, so `%b` and `%q` end up as ONE physical

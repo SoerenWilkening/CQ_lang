@@ -4,7 +4,7 @@
 
        _Bool b = 0;  int r = 7;
        cq_theta(&b, 0.5);
-       if (b) { r = cq_theta(7, 0.9); }   [`r` is classically 7 here]
+       if (b) { r = 7; cq_theta(&r, 0.9); }  [`r` is classically 7 here]
 
    The arm's `cq_theta` has a CLASSICAL arg-0, so the hoisted gate MINTS the rail
    it rotates (`cqrt_alloc_i32(7)`) inside this region's own stream — which is

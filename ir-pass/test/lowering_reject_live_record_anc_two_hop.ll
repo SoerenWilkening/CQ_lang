@@ -2,10 +2,10 @@
 ; TRANSITIVE (M-A Increment 3, bd test_C_libtooling-6uqc).
 ;
 ; SOURCE (`clang -O1` emits exactly the SSA below):
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     int p = a * 3;              // ancestor, ONE producer hop up
 ;     int b = p * 5;              // the wire
-;     b = cq_theta(b, 0.5);       // T — chained, in-place Ry on `b`'s rail
+;     cq_theta(&b, 0.5);       // T — chained, in-place Ry on `b`'s rail
 ;     return cq_measure(b);
 ;
 ; THE PIN THAT THE ONE-HOP FIXTURE DOES NOT GIVE: two rails stand at the gate,

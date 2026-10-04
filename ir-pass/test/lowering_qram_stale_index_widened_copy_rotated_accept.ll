@@ -4,7 +4,7 @@
 ; copy, not its source. clang -O1 of the natural nested read
 ;
 ;     long w = tbl[q];               // i32 cell, widened to long: sext
-;     long w2 = cq_theta(w, .3);     // rotates the sext's own rail
+;     long w2 = w; cq_theta(&w2, .3);  // rotates the sext's own rail
 ;     int v = tbl2[w];               // `w` names the PRE-Ry record
 ;
 ; `resolveQramIndex` strips the `sext`, so the outer QRAM call reads the inner

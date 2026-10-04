@@ -1,6 +1,6 @@
 ; lowering_reject_break_preloop_mutation.ll — DECLINE (Phase 7.4 Inc 2, y05j.2; the
 ; Rule-13 sign-off 2026-06-28, E14). The rail has a PRE-LOOP in-place mutation between
-; its mint and the loop (`q = cq_theta(); q = q ^ 7; for(…){ q = q ^ 5; … }`). The dtzb
+; its mint and the loop (`cq_theta(&q, …); q = q ^ 7; for(…){ q = q ^ 5; … }`). The dtzb
 ; collapse RAUWs the rail phi to `Root = peelInPlaceBase(RailPre)`, which peels THROUGH
 ; the pre-loop `^7` to the BARE MINT (`%q0`), and marks only the IN-LOOP rail ops
 ; (`^5`) as InPlaceRailOps — so the pre-loop `^7` orphans to a DEAD out-of-place

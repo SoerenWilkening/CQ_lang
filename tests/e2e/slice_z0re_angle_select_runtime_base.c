@@ -1,9 +1,9 @@
 /* slice_z0re_angle_select_runtime_base.c — the Ry-stem ANGLE SELECT on an
    UNTAINTED RUNTIME base (the d88e probe a01T).
 
-     int t = m + 1; int r; if (q > 3) r = cq_theta(t, .7); else r = cq_theta(t, .2);
+     int t = m + 1; int r; if (q > 3) { r = t; cq_theta(&r, .7); } else { r = t; cq_theta(&r, .2); }
 
-   `-O1` sinks the two thetas into ONE `cq_theta(t, select(q > 3, .7, .2))`.
+   `-O1` sinks the two thetas into ONE `@cq_theta_*(t, select(q > 3, .7, .2))`.
    Expected stream (by difference on a FRESH rail): alloc(t); ry(h, .2) — the
    else-arm angle, UNCONDITIONAL; the flag from `q > 3`; ry_controlled(f, h,
    fl(.7 - .2)); the flag stripped and freed. On f=1 the rail sees Ry(.2)·Ry(.5) =
@@ -21,7 +21,7 @@
    ⚠ RESPELLED AS A TERNARY by bd test_C_libtooling-fmt3 (2026-09-29), exactly as
    z0re's own retirement trigger in tests/e2e/CMakeLists.txt instructed. With
    `nomerge` on every `cq_theta_*` (CQ.h) the IF/ELSE spelling that stood here,
-   `if (q > 3) r = cq_theta(t, A); else r = cq_theta(t, B);`, no longer folds into
+   `if (q > 3) { r = t; cq_theta(&r, A); } else { r = t; cq_theta(&r, B); }`, no longer folds into
    one call — it survives as an if/else of two runtime-seed preps and declines
    `if/else state prep allocates two rails` (measured, fmt3 round-2 header A/B;
    pinned by `control_inplace_ry_reject_stateprep_nomerge_ifelse_runtime_seed.ll`,

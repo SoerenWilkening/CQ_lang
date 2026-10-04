@@ -2,8 +2,8 @@
 ; round-1 review F2 of 01po.1). An i64-rail value-arm `break` whose escaping
 ; answer `q` then subscripts a const table:
 ;
-;     long long p = cq_theta(pseed, 0.5);
-;     long long q = cq_theta(seed, 0.25);
+;     long long p = pseed; cq_theta(&p, 0.5);
+;     long long q = seed; cq_theta(&q, 0.25);
 ;     for (int i = 0; i < n; i++) {
 ;         q = q ^ 5;
 ;         if (q == p) break;

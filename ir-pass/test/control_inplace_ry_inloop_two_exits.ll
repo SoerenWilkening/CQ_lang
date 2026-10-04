@@ -3,9 +3,9 @@
 ; sits on the EARLY-RETURN path.
 ;
 ;     for (i = 0; i < 3; ++i) {
-;         if (q == 5) r = cq_theta(r, 0.9);       <-- the in-place Ry arm
+;         if (q == 5) cq_theta(&r, 0.9);       <-- the in-place Ry arm
 ;         q = cq_phi(q, 0.2);
-;         if (k == i) { q = cq_theta(q, 0.3);     <-- the DEFERRED gate (P1)
+;         if (k == i) { cq_theta(&q, 0.3);     <-- the DEFERRED gate (P1)
 ;                       return cq_measure(q) + cq_measure(r); }
 ;     }
 ;     return cq_measure(q) + cq_measure(r);

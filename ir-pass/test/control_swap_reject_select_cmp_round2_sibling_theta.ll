@@ -3,10 +3,10 @@
 ; of `control_swap_reject_select_rail_round2_sibling_theta.ll` (Inc 1b-B.1's
 ; F-B1R2-1) with an `int` register and an `icmp` condition.
 ;
-;     int q = cq_theta(3, .5);
+;     int q = 3; cq_theta(&q, .5);
 ;     int y = 5; if (q > 5) y = f(4);   // a 6.5 classical-call arm -> %out
-;     int b  = cq_theta(y, .5);         // SOURCE theta at round 1
-;     int b3 = cq_theta(y, .9);         // its SIBLING — one rail at FINAL taint
+;     int b  = y; cq_theta(&b, .5);     // SOURCE theta at round 1
+;     int b3 = y; cq_theta(&b3, .9);    // its SIBLING — one rail at FINAL taint
 ;     int a  = (b == 1) ? 2 : 5;        // the 4.4 merge, minted from b
 ;
 ; THE DEFECT, MEASURED on `main` 0c7380c: `opt` exit 0, verify-clean, STRICT

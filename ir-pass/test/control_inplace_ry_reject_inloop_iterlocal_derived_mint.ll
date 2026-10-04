@@ -2,8 +2,8 @@
 ; `test_C_libtooling-wx8g`, R7-loop CLAUSE (c2)): the ITERATION-LOCAL rotated base
 ; is a DERIVED OUT-OF-PLACE value, not a clean rail mint.
 ;
-;     for (...) { int p = cq_theta(u1, .25); int r = p * 5;
-;                 if (q == 5) r = cq_theta(r, .9); m = cq_measure(r); }
+;     for (...) { int p = u1; cq_theta(&p, .25); int r = p * 5;
+;                 if (q == 5) cq_theta(&r, .9); m = cq_measure(r); }
 ;
 ; `peelInPlaceBase` stops at the `mul` (no in-place ABI — a `mul` MINTS a fresh
 ; rail through `cq_template_mul_*`), so `railChainRootMint` returns null and (c2)

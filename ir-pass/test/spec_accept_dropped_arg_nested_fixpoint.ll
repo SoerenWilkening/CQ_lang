@@ -12,7 +12,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   int o4(int a, int b);
-;   int main(int c, char **v) { int m = atoi(v[1]); _Bool b = cq_theta((_Bool)(m & 1), .5); int p = b ? 9 : 4; int t = o4(p, m); b = cq_theta(b, .7); return t + cq_measure(b); }
+;   int main(int c, char **v) { int m = atoi(v[1]); _Bool b = (_Bool)(m & 1); cq_theta(&b, .5); int p = b ? 9 : 4; int t = o4(p, m); cq_theta(&b, .7); return t + cq_measure(b); }
 ; Library TU 1 (plain C, no CQ.h):
 ;   int m4(int a, int b);
 ;   int o4(int a, int b) { return m4(a, b) * 2 + b; }

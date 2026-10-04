@@ -3,9 +3,9 @@
 ; fixture's header for the defect and the root cause), kept as a SEPARATE
 ; fixture because its failure mode was WORSE and lands on a different rail.
 ;
-;     int q=cq_theta(0,.5); int p=cq_theta(0,.3);
+;     int q=0; cq_theta(&q,.5); int p=0; cq_theta(&p,.3);
 ;     int r = p + 5;                     // an add — M-C lowers it IN PLACE
-;     if (q > 5) r = cq_theta(r, .9);
+;     if (q > 5) cq_theta(&r, .9);
 ;     int s = r + 1;                     // a POST-REGION user
 ;     return cq_measure(q);
 ;

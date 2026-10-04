@@ -514,7 +514,7 @@ bool planBank(AllocaInst *Bank, const TaintSet &taint, DominatorTree &DT,
 
     // (1) THE EMPTIED ARM (xdu2.4 Rule-13 follow-up, matrix case 14). When the
     //     arm holds nothing but bank accesses this stage erases — the source is
-    //     `t = cq_theta(b[i], θ); if (c) b[i] = t;`, the preparation runs on
+    //     `t = b[i]; cq_theta(&t, θ); if (c) b[i] = t;`, the preparation runs on
     //     BOTH paths and only its STORE is conditional — the rewrite leaves an
     //     EMPTY arm and a merge φ `[t, arm], [seed, pred]`. `clang -O1` never
     //     emits that shape (SimplifyCFG folds it to a `select`), so no control
@@ -628,7 +628,7 @@ void applyBank(BankPlan &Plan, WidthDispatch &wd) {
     // early-out — no `cq_*` call is left — before `declineForeignRailBankSeeds`
     // would see it.)
     // A skipped conditional preparation still owns a physical |0> rail. Mint
-    // that rail directly: spelling it as `cq_theta(0, 0)` is semantically an
+    // that rail directly: spelling it as `@cq_theta_*(0, 0)` is semantically an
     // identity, but every pre-lowering wire walk must conservatively classify a
     // theta as a non-diagonal gate and would reject a later condition as stale.
     // The exact metadata lets `propagate` seed this already-lowered handle; the

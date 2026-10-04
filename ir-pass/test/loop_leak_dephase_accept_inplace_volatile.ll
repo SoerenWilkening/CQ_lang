@@ -2,10 +2,10 @@
 ; `test_C_libtooling-2g52`, P2 OVER-DECLINE, removed 2026-09-15). A dtzb IN-PLACE
 ; RAIL OP MINTS NOTHING, SO THERE IS NOTHING TO LEAK.
 ;
-;     int y = cq_theta(5, 0.5);
+;     int y = 5; cq_theta(&y, 0.5);
 ;     volatile int v = 1;
 ;     for (int k = 0; k < 3; ++k) y ^= v;   // in place: RELABELS the rail
-;     y = cq_theta(y, 0.9);
+;     cq_theta(&y, 0.9);
 ;     return cq_measure(y);
 ;
 ; `y ^= v` lowers to `cqrt_xorc_i32(h, 1)` — the IN-PLACE emission. It returns no

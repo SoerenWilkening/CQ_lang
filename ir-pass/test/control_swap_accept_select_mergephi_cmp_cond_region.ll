@@ -3,7 +3,7 @@
 ; (`control flow` at the select), GREEN HERE.
 ;
 ; THE PREP REGION IS GUARDED BY A **COMPARE**, NOT BY A BARE RAIL:
-; `int b0 = cq_theta(0,.5); bool b1 = 0; if (b0 == 1) b1 = cq_theta(b1,.5);
+; `int b0 = 0; cq_theta(&b0,.5); bool b1 = 0; if (b0 == 1) cq_theta(&b1,.5);
 ; if (b1) a -= 3;`. The merge block carries a SINGLE phi, so `MergePhiPeel` never
 ; runs and F2 (bd `rb9x`) is not reached — this is the compare spelling in its
 ; cleanest form.

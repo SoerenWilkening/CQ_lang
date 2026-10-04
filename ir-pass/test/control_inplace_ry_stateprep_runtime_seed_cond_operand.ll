@@ -2,7 +2,7 @@
 ; test_C_libtooling-z0re, owner ruling 2026-09-28 option (a)): a RUNTIME state-prep
 ; seed that is ALSO the classical operand of the region's own condition.
 ;
-;     int s = atoi(v[2]); int r = s; if (q == s) r = cq_theta(s, .2);   // probe e01
+;     int s = atoi(v[2]); int r = s; if (q == s) { r = s; cq_theta(&r, .2); }  // probe e01
 ;
 ; This is the fixture the RELATIONAL half of F2 (the runtime-seed branch of
 ; `f2SeedPinnedByLiveRegister`) turns on. On the TRUE edge the branch condition
@@ -22,7 +22,7 @@
 ; — this one included — can pin it. See F2's runtime-seed header in
 ; ArmClassify.cpp for why, and for the retirement triggers that make it pinnable.
 ;
-; The rival that would make the mask matter — `if (q == s) r = cq_theta(q, .2)`,
+; The rival that would make the mask matter — `if (q == s) { r = q; cq_theta(&r, .2); }`,
 ; an in-place Ry on the CONDITION register — does NOT fold to this module at -O1
 ; (probe e02 keeps `%q` as arg-0: no GVN/NewGVN/JumpThreading/CVP in the -O1
 ; pipeline, and IPSCCP substitutes only constants) and declines `condition

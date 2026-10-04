@@ -2,11 +2,11 @@
 ; Rule-13 round 1, finding OD1). TWO INDEPENDENT QUANTUM REGISTERS, each with its
 ; own tainted `if`, in ONE classically-bounded loop.
 ;
-;     a = cq_theta(a, .5);  b = cq_theta(b, .25);
+;     cq_theta(&a, .5);  cq_theta(&b, .25);
 ;     for (…) { if (a == 5) a = cq_phi(a, PI);
 ;               if (b == 3) b = cq_phi(b, PI);
-;               a = cq_theta(a, -.5);  b = cq_theta(b, -.25);
-;               a = cq_theta(a,  .5);  b = cq_theta(b,  .25); }
+;               cq_theta(&a, -.5);  cq_theta(&b, -.25);
+;               cq_theta(&a,  .5);  cq_theta(&b,  .25); }
 ;     return cq_measure(a) + cq_measure(b);
 ;
 ; `clang -O1` verbatim (two loop-carried register phis in one header, two

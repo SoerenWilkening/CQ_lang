@@ -15,9 +15,9 @@
 ;
 ; THE PROGRAM (`trackS/probes/s1_live_shift.c`, stage-1 verbatim, `-O1 -g`):
 ;
-;     int y = cq_theta(5, 0.5);
+;     int y = 5; cq_theta(&y, 0.5);
 ;     for (k = 1; k <= 2; ++k) s += cq_measure((y >> k) & 1);
-;     y = cq_theta(y, 0.9);                 // the interference
+;     cq_theta(&y, 0.9);                 // the interference
 ;     return s + cq_measure(y);
 ;
 ; WHAT CHANGED, AND IT IS A CAPABILITY AND NOT A RELAXED FENCE. `-O1` leaves `y`

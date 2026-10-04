@@ -3,14 +3,14 @@
 ; POPULATION MEMBER OF THE `hasOneUse` RETIREMENT, and the one with NO MERGE IN IT
 ; AT ALL — found by sweeping the whole C-1 reproducer corpus, not by the finding.
 ;
-;     int q = cq_theta(u, 0.5); int r = cq_theta(u, 0.3);
+;     int q = u; cq_theta(&q, 0.5); int r = u; cq_theta(&r, 0.3);
 ;     if (q > 5) cq_phi(0.4);              // a flat kickback REGION on `q`
 ;     q = q + 7;                           // PREHEADER dtzb op on the SAME register
 ;     for (int i = 0; i < 3; ++i) {
 ;         if ((q >> i) & 1) cq_phi(0.2);   // D4's per-bit idiom, ROLLED
-;         r = cq_theta(r, 0.1);            // ... and a CARRIED register: MIXED loop
+;         cq_theta(&r, 0.1);            // ... and a CARRIED register: MIXED loop
 ;     }
-;     q = cq_theta(q, 0.9);                // the DIFFUSION
+;     cq_theta(&q, 0.9);                // the DIFFUSION
 ;     return cq_measure(q) + cq_measure(r);
 ;
 ; `clang -O1` output verbatim (`@main` dropped). Single TU, plain C.

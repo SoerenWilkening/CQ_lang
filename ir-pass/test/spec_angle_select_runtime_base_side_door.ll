@@ -4,7 +4,7 @@
 ; `spec_angle_select_runtime_base_side_door_twin.ll`.
 ;
 ;     int t = h(q, m); int r;
-;     if (q > 3) r = cq_theta(t, .7); else r = cq_theta(t, .2);   // d88e probe a01C
+;     if (q > 3) { r = t; cq_theta(&r, .7); } else { r = t; cq_theta(&r, .2); }  // d88e probe a01C
 ;
 ; `-O1` sinks the two thetas into one reading an angle select. At round 1 `t` is a
 ; conservatively-tainted Phase-6 site, so `classifyAngleSelect` proves the TAINTED-base

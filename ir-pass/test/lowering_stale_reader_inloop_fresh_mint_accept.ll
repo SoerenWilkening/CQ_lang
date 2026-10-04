@@ -7,13 +7,13 @@
 ; `lowering_stale_reader_inloop_selfassign_accept.ll` are what pin that. Neither
 ; was pinned by anything before the ruling.
 ;
-;   the ALIAS reading          for (…) { q = cq_theta(q, .1); s += cq_measure(q); }
+;   the ALIAS reading          for (…) { cq_theta(&q, .1); s += cq_measure(q); }
 ;                              -> one rail, chained  (…_inloop_selfassign_accept.ll)
-;   the RE-PREPARATION reading for (…) { int q = cq_theta(0,.3);        <- THIS FILE
-;                                        int b = cq_theta(q,.1); s += cq_measure(b); }
+;   the RE-PREPARATION reading for (…) { int q = 0; cq_theta(&q,.3);    <- THIS FILE
+;                                        int b = q; cq_theta(&b,.1); s += cq_measure(b); }
 ;                              -> a FRESH rail per trip
-;   the AMBIGUOUS spelling     int q = cq_theta(0,.3);
-;                              for (…) { int b = cq_theta(q,.1); … }   -> DECLINES
+;   the AMBIGUOUS spelling     int q = 0; cq_theta(&q,.3);
+;                              for (…) { int b = q; cq_theta(&b,.1); … }  -> DECLINES
 ;                              (`lowering_reject_stale_reader_inloop_invariant_seed.ll`)
 ;
 ; ⚠ RE-PREPARATION IS NOT CLONING, and that distinction is what the ruling turned

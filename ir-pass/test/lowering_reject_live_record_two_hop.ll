@@ -1,8 +1,8 @@
 ; lowering_reject_live_record_two_hop.ll — WARNING (was DECLINE): a dead INTERIOR record, two
 ; producer hops from the wire (M-A Increment 1, bd test_C_libtooling-6uqc).
 ;
-; SOURCE: `a = cq_theta(a,0.5); int d = a+3; int e = d*2; m = cq_measure(e);
-;          a = cq_theta(a,0.5);` — `clang -O1` reassociates `(a+3)*2` into
+; SOURCE: `cq_theta(&a,0.5); int d = a+3; int e = d*2; m = cq_measure(e);
+;          cq_theta(&a,0.5);` — `clang -O1` reassociates `(a+3)*2` into
 ; `shl`+`add 6`, which is the SSA below.
 ;
 ; WHAT THIS PINS THAT THE ONE-HOP FIXTURE DOES NOT: the record closure is

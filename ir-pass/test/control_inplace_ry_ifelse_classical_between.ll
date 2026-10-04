@@ -3,10 +3,10 @@
 ; crossed with the CROSS-REGION VALUE LIFETIME axis (a classical branch between
 ; two quantum regions), which is round-1 finding M's exact geometry.
 ;
-;     int q = cq_theta(…), p = cq_theta(…), r = cq_theta(…);
-;     if (q > 5) r = cq_theta(r, .9); else r = cq_theta(r, .2);   // region 1
+;     int q = …, p = …, r = …; cq_theta(&q, …); cq_theta(&p, …); cq_theta(&r, …);
+;     if (q > 5) cq_theta(&r, .9); else cq_theta(&r, .2);   // region 1
 ;     if (cc == 0) { } else { g(); }                              // classical
-;     if (p == 6) r = cq_theta(r, .3);                            // region 2
+;     if (p == 6) cq_theta(&r, .3);                            // region 2
 ;     return cq_measure(r) + cq_measure(q) + cq_measure(p);
 ;
 ; WHY IT EXISTS (bd test_C_libtooling-drbq round-2 Rule-13 review, lens C §6).

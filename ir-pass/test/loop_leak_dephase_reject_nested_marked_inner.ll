@@ -12,13 +12,13 @@
 ; THE PROGRAM (`loopfix/probes/n2_nested_unmarked_inner.c`, stage-1 verbatim,
 ; `clang -O1 -g`):
 ;
-;     int y = cq_theta(5, 0.5);
+;     int y = 5; cq_theta(&y, 0.5);
 ;     for (i = 1; i <= 2; ++i) {
 ;         s += cq_measure((y >> i) & 1);            // the OUTER body rail
 ;         for (j = 0; j < 2; ++j)
 ;             s += cq_measure((y >> (j + 8)) & 1);  // the INNER body
 ;     }
-;     y = cq_theta(y, 0.9);                         // the interference (Rule 8)
+;     cq_theta(&y, 0.9);                         // the interference (Rule 8)
 ;     return s + cq_measure(y);
 ;
 ; WHY IT IS A REGRESSION AND NOT A PRE-EXISTING HOLE. On the 2026-09-15 ORACLE

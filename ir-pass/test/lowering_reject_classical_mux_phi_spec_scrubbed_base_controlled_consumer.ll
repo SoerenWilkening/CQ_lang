@@ -41,9 +41,9 @@
 ; A TWO-TU module, built exactly as tests/e2e/run_slice_multi.sh builds one
 ; (r1B probe `zlC`). `t = h(q, m)` is a Phase-6 site whose clone returns the
 ; classical `k + 1`. The first `if` is a CLASSICAL one-register lift of
-; `r = phi(t, cq_theta(t, .9))`; the second is a tainted-condition (`q2 > 3`)
+; `r = phi(t, @cq_theta_si32(t, .9))`; the second is a tainted-condition (`q2 > 3`)
 ; in-place controlled-Ry arm on `r`, which round-1 control emission already
-; lowered — its hoisted `cq_theta(r, .2)` reads the lifted φ, i.e. the base `t`,
+; lowered — its hoisted `@cq_theta_si32(r, .2)` reads the lifted φ, i.e. the base `t`,
 ; as a register.
 ;
 ; On main `def1b088` (cq-opt `b1603d23`) this ACCEPTS at exit 0 with BOTH
@@ -64,7 +64,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   int h(int a, int k);
-;   int main(int c, char **v) { int m=atoi(v[1]),n=atoi(v[2]); int q=cq_theta(m,.5); int t=h(q,m); int q2=cq_theta(n,.3); int r=t; if (m>2) r=cq_theta(t,.9); int s=r; if (q2>3) s=cq_theta(r,.2); return cq_measure(s)+cq_measure(q2); }
+;   int main(int c, char **v) { int m=atoi(v[1]),n=atoi(v[2]); int q=m; cq_theta(&q,.5); int t=h(q,m); int q2=n; cq_theta(&q2,.3); int r=t; if (m>2) { r = t; cq_theta(&r,.9); } int s=r; if (q2>3) { s = r; cq_theta(&s,.2); } return cq_measure(s)+cq_measure(q2); }
 ;
 ; Regenerate: clang -O1 -emit-llvm -S the two TUs as above, then
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>.

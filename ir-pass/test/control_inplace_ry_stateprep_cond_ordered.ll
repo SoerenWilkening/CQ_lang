@@ -1,8 +1,8 @@
 ; control_inplace_ry_stateprep_cond_ordered.ll — ACCEPT: controlled STATE PREP
 ; under an ORDERED compare (PRD §14.3 row A-11; probe `p15b`).
 ;
-;     int q = cq_theta(0,.5); int r = 0;
-;     if (q > 5) r = cq_theta(0, .9);
+;     int q = 0; cq_theta(&q,.5); int r = 0;
+;     if (q > 5) { r = 0; cq_theta(&r, .9); }
 ;
 ; ⚠ THIS FILE WAS `control_inplace_ry_reject_state_prep.ll` — A DECLINE — UNTIL
 ; bd test_C_libtooling-drbq Inc 4, AND THE IR IS UNCHANGED. It is renamed rather

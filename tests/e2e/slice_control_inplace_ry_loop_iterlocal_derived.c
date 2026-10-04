@@ -2,7 +2,7 @@
    `test_C_libtooling-wx8g`, R7-loop CLAUSE (c) with a DERIVED condition, which
    is the pair that makes clause (c3) a measurable fence rather than a comment.
 
-       for (k < K) { int r = cq_theta(7, .25);
+       for (k < K) { int r = 7; cq_theta(&r, .25);
                      if ((q >> k) & 1) cq_theta(&r, .2);
                      s += cq_measure(r); }
 

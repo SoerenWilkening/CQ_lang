@@ -4,9 +4,9 @@
 ;
 ; SOURCE — the loop twin of lowering_live_record_post_gate_record_accept.ll:
 ;     for (int i = 0; i < n; i++) {
-;         int q = cq_theta(x, 0.25);     // a fresh source rail per iteration
+;         int q = x; cq_theta(&q, 0.25);  // a fresh source rail per iteration
 ;         int w = q * 2;                 // THE WIRE
-;         w = cq_theta(w, 0.5);          // T — chained, in-place Ry, IN THE BODY
+;         cq_theta(&w, 0.5);          // T — chained, in-place Ry, IN THE BODY
 ;         int z = q * 3;                 // minted after T ... and T runs again
 ;         int y = q * 5;
 ;         cq_measure(y); cq_measure(w);
@@ -48,9 +48,9 @@
 ; is a REGRESSION Increment 3 introduced, measured end to end on ordinary C:
 ;
 ;     for (int i = 0; i < n; i++) {
-;         int q = cq_theta(u0, 0.25);
+;         int q = u0; cq_theta(&q, 0.25);
 ;         int w = q * 2;
-;         w = cq_theta(w, 0.5);                    // T
+;         cq_theta(&w, 0.5);                    // T
 ;         acc += cq_measure(q) + cq_measure(w);    // BOTH rails measured, in body
 ;     }
 ;

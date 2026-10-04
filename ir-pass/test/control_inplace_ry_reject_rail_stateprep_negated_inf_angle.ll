@@ -15,8 +15,8 @@
 ; leaves the register in no computational state at all.
 ;
 ; MEASURED on the pre-fix checkpoint 267937d from PLAIN C at `-O1`
-; (`_Bool b = 0; int r = 5; b = cq_theta(b,0.5); if (!b) r = cq_theta(5,
-; __builtin_inf());`): rc 0, emitting
+; (`_Bool b = 0; int r = 5; cq_theta(&b,0.5); if (!b) { r = 5; cq_theta(&r,
+; __builtin_inf()); }`): rc 0, emitting
 ; `cqrt_ry_i32(%h1, +inf); cqrt_ry_i32_controlled(%h, %h1, -inf)`. On the fix:
 ; `rotation angle`, rc 1.
 ;

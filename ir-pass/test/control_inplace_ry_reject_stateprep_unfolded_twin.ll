@@ -2,7 +2,7 @@
 ; TWIN, and it is the ORDER-SENSITIVITY WITNESS for why F2 is a DECLINE
 ; predicate and not an ACCEPT predicate (PRD §14.2b).
 ;
-;     int r = 0;  if (q + 1 == 6) r = cq_theta(q, .9);    // probe `p08s`, from C
+;     int r = 0;  if (q + 1 == 6) { r = q; cq_theta(&r, .9); }  // probe `p08s`, from C
 ;
 ; `-O1` canonicalizes the compare to `icmp eq i32 %q, 5` — and then does NOT fold
 ; the arm's `cq_theta(%q, .9)`. So the SAME SOURCE FAMILY reaches the pass folded
@@ -39,7 +39,7 @@
 ; and given F1 both collapse to the single condition `seed == k`". The algebra was
 ; right and THE ENUMERATION WAS THE DEFECT: there is a THIRD reading (A3) in which
 ; an edge proves `H != k` and `H`'s own RANGE makes the surviving set a singleton
-; whose value is NOT `k`. `int t = q & 1; int r = 1; if (t) r = cq_theta(t, θ);`
+; whose value is NOT `k`. `int t = q & 1; int r = 1; if (t) { r = t; cq_theta(&r, θ); }`
 ; is that reading, it is plain `clang -O1` C, and the literal test was silent on
 ; it BY DESIGN — a CONFIRMED silent miscompile at the Inc-4 hand-back. F2 is now
 ; RANGE-based on both edges; see

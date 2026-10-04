@@ -4,9 +4,9 @@
 ; (`p = y*3`), so `invariantRegisterRootsImpl` clause (ii) — which admits only a
 ; classical-arg-0 `cq_theta` root mint — refuses it and the body is never marked.
 ;
-;     int y = cq_theta(5, 0.5);  int p = y * 3;
+;     int y = 5; cq_theta(&y, 0.5);  int p = y * 3;
 ;     for (k = 1; k <= 2; ++k) if ((p >> k) & 1) cq_phi(0.3);
-;     y = cq_theta(y, 0.9);                 // the interference
+;     cq_theta(&y, 0.9);                 // the interference
 ;     return cq_measure(y);
 ;
 ; MEASURED on the ORACLE: rolled 19 trace lines, hand-unrolled twin 25. The six

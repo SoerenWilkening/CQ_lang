@@ -15,9 +15,9 @@
 
    WHY IT DECLINES. The program ends
 
-       bool b  = cq_theta(x, 0.25);   -- consumes the name `x`
+       bool b  = x; cq_theta(&b, 0.25);  -- consumes the name `x`
        ... the 4.4 merge on that rail ...
-       bool b3 = cq_theta(x, 0.9);    -- the SIBLING, reads `x` a SECOND time
+       bool b3 = x; cq_theta(&b3, 0.9);  -- the SIBLING, reads `x` a SECOND time
 
    so `b3` names `Ry(0.9)|x>` while the register holds `Ry(0.9)Ry(0.25)|x>`: two
    sibling rotations emitting on ONE physical register. That is
@@ -45,7 +45,7 @@
 
    RETIREMENT TRIGGER (L8): if the open question recorded in
    `ir-pass/test/control_swap_select_cmp_round2_window_accept.ll` — whether the
-   CHAINED rewrite (`cq_theta(b, 0.9)` instead of a sibling on `x`) is a separate
+   CHAINED rewrite (`cq_theta(&b, 0.9)` instead of a sibling on `x`) is a separate
    over-decline — resolves as an over-decline and the chained spelling is made to
    lower, then this slice becomes registrable again with that one line changed
    and the header below intact. RE-DERIVE THE GOLDEN FROM THE FIXED COMPILER at
@@ -65,9 +65,9 @@
        if (q > 5) y = ext_f(7);          // the 6.5 classical-call arm -> %out
        int keep = cq_measure(y);         // keeps %out live as an i32 phi
        bool x = (y != 0);                // CLASSICAL at round 1, TAINTED at round 2
-       bool b  = cq_theta(x, 0.25);      // the rail the select reads
+       bool b  = x; cq_theta(&b, 0.25);  // the rail the select reads
        int a = b ? 2 : 5;                // the 4.4 copy merge on that rail
-       bool b3 = cq_theta(x, 0.9);       // the SIBLING — after the select
+       bool b3 = x; cq_theta(&b3, 0.9);  // the SIBLING — after the select
 
    `%x` is the `%out`-derived seed the §14.3 rail ladder saw as CLASSICAL (round-1
    taint) and `lowerRotations` sees as TAINTED (final taint), so `b` and `b3` are

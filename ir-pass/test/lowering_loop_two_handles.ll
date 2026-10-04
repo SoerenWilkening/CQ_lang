@@ -1,6 +1,6 @@
 ; lowering_loop_two_handles.ll — ACCEPT (Phase 7.3 Inc 1, 799w.1): TWO independent
 ; persistent rails threaded through one classically-bounded loop
-;     double q = cq_theta(s1, 0.5);  double p = cq_theta(s2, 0.3);
+;     double q = s1; cq_theta(&q, 0.5);  double p = s2; cq_theta(&p, 0.3);
 ;     for (int i = 0; i < n; i++) { q = cq_phi(q, 0.1); p = cq_phi(p, 0.2); }
 ;     cq_measure(q); cq_measure(p);
 ; Each rail is an independent in-place self-cycle (its own header phi, its own

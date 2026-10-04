@@ -66,11 +66,11 @@
 ; loop was passed over — an ACCEPT on a program whose rolled and hand-unrolled
 ; forms compute DIFFERENT UNITARIES.
 ;
-;     int y = cq_theta(5, 0.5);
+;     int y = 5; cq_theta(&y, 0.5);
 ;     for (k = 0; k < 2; ++k) {
-;         int u = cq_theta(6, 0.4);                     // SOURCE theta, per trip
+;         int u = 6; cq_theta(&u, 0.4);                 // SOURCE theta, per trip
 ;         s += cq_measure((u >> 1) & 1) + cq_measure(y & 1);
-;         u = cq_theta(u, 0.9);                         // CHAINED — the interference
+;         cq_theta(&u, 0.9);                         // CHAINED — the interference
 ;         s += cq_measure(u);
 ;     }
 ;     return s + cq_measure(y);

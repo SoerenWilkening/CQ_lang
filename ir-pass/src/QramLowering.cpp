@@ -1900,7 +1900,7 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
   //    stored HANDLE and the promotion forwards the wrong value.
   // ⚠ H-1, FOUND BY THIS INCREMENT'S OWN SELF-ATTACK AND MEASURED AS A `Bank`
   // OVER-ACCEPT before this conjunct existed (`H1_nested_outer_rewrite.c`:
-  // `for (k<2) for (i<3) b[i] = cq_theta(b[i], .5);`). Everything C2′ proves is
+  // `for (k<2) for (i<3) cq_theta(&b[i], .5);`). Everything C2′ proves is
   // about ONE ACTIVATION of `L`: `{0,+,1}` over `Trips == N` visits each cell once
   // PER ACTIVATION. If an enclosing loop re-executes `L`, cell `i` is written once
   // per outer trip and the second outer trip's SEED LOAD reads a previously-stored
@@ -2592,7 +2592,7 @@ bool guardedShadowStoreShape(StoreInst *SI, const TaintSet &taint,
 // emitters mint the QRAM call AT the memop (`IRBuilder<> B(MemOp)`), so the
 // access reads its index and value registers there. A bare index has no op of
 // its own between the gep and the register, so before this the stale-record
-// sweep asked nothing about it: `long q2 = cq_theta(q, .3); v = tbl[q];`
+// sweep asked nothing about it: `long q2 = q; cq_theta(&q2, .3); v = tbl[q];`
 // emitted `qram_load(arr, q)` after the Ry while `q` names the pre-Ry record.
 bool qramAccessReads(Instruction &I, const TaintSet &taint,
                      SmallVectorImpl<Value *> &Reads) {
@@ -2622,7 +2622,7 @@ bool qramAccessReads(Instruction &I, const TaintSet &taint,
     return false;
   // The register the emitter reads: `resolveQramIndex` strips a widening
   // sext/zext and the b6a bracket re-casts AT the call. Seeding the cast as well
-  // would decline `long w = tbl[q]; cq_theta(w, .3); tbl2[w]`, which lowers
+  // would decline `long w = tbl[q]; cq_theta(&w, .3); tbl2[w]`, which lowers
   // correctly; seeding only the cast misses a gate on `q` between a hoisted
   // `sext` and the load.
   Read(qramIndexRegister(Idx, taint));

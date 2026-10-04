@@ -2,8 +2,8 @@
 ; and the increment's MANDATORY probe — §13.2c): a DERIVED OUT-OF-PLACE rotated
 ; base minted before the loop.
 ;
-;     int p = cq_theta(...); int r = p * 5;
-;     for (...) { if (q == 5) r = cq_theta(r, .9); q = cq_phi(q, .1); }
+;     int p = ...; cq_theta(&p, ...); int r = p * 5;
+;     for (...) { if (q == 5) cq_theta(&r, .9); q = cq_phi(q, .1); }
 ;
 ; R7-loop CLAUSE (b') OWNS IT, AT DETECTION. The rail phi for `r` has its external
 ; incoming `%3 = mul nsw i32 %2, 5`, and `peelInPlaceBase` stops at a `mul` (no

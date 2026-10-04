@@ -8,7 +8,7 @@
 ;
 ; PROVENANCE (§2-D — captured from real clang -O1, never hand-shaped). Source:
 ;   int slice(int s, int v, int w) {
-;     int q = cq_theta(s, 0.5), p = cq_theta(v, 0.25), r = cq_theta(w, 0.125);
+;     int q = s, p = v, r = w; cq_theta(&q, 0.5); cq_theta(&p, 0.25); cq_theta(&r, 0.125);
 ;     int t;
 ;     if (q > 5) { t = ((p+3)*5)^(p<<2); t = (t*7+1)^(t<<3); }
 ;     else       { t = ((r*9)+11)^(r<<1); t = (t+13)*3^(t<<4); }

@@ -3,7 +3,7 @@
 ; form of Inc-1 finding K, a CONFIRMED silent miscompile).
 ;
 ;     int m; if (cc) m = cq_phi(r,.1); else m = r;   // classical cc — a join phi
-;     r = cq_theta(r, q == 5 ? .9 : .3);             // the 2b gate
+;     cq_theta(&r, q == 5 ? .9 : .3);             // the 2b gate
 ;     sink(m);                  // a Phase-6 clone-on-taint argument
 ;
 ; `%m` is a phi over two SSA names of ONE physical rail. It passes a position

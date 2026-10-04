@@ -143,7 +143,7 @@ void collectWireValues(Value *Seed, bool CrossValueRouting,
 // path — until 2026-08-30, and the justification given was that over-matching
 // "only ever WITHHOLDS a new accept". That is true of soundness and false of
 // usefulness: it made the barrier depend on SOURCE ORDER. Measured —
-//     q = cq_theta(q0,g); z = cq_theta(0,.125); for (…) { if (q>5) … }
+//     q = q0; cq_theta(&q,g); z = 0; cq_theta(&z,.125); for (…) { if (q>5) … }
 // declined, and the SAME program with the two mints swapped compiled, because
 // `%z` happened to sit between `%q` and the loop entry. It also made two
 // independent registers, each with its own tainted `if` in one loop, permanently
@@ -235,7 +235,7 @@ bool thetaOnPathTo(const Instruction *V, const Instruction *Target) {
 //   DOES NOT `%p = phi [%q, %pre], [%p, %latch]` with a body `cq_theta` whose
 //            result is discarded (or kept in another name). `%p` is provably
 //            `%q` — the PRE-LOOP record — while the wire has moved under it.
-//            Reachable from C (`for (…) { d = q + 1; cq_theta(q, t); }`), and
+//            Reachable from C (`for (…) { d = q + 1; int g = q; cq_theta(&g, t); }`), and
 //            granting it the barrier would ACCEPT the classic iteration-2 stale
 //            read. That is why this predicate exists at all.
 //
@@ -415,8 +415,8 @@ bool gateIsHarmless(const Instruction *EmitPoint, const CallInst *T,
 // twice. MEASURED, two well-formed programs the ORACLE compiled to the CORRECT
 // one-rotation circuit and the round-2 binary declined:
 //
-//   for (i<3) { if (i == 0) { b = cq_theta(q,.1); s += cq_measure(b); } else … }
-//   first = 1; for (i<3) { if (first) { b = cq_theta(q,.1); …; first = 0; } … }
+//   for (i<3) { if (i == 0) { b = q; cq_theta(&b,.1); s += cq_measure(b); } else … }
+//   first = 1; for (i<3) { if (first) { b = q; cq_theta(&b,.1); …; first = 0; } … }
 //
 // `q` is loop-INVARIANT, so leg 2 (`recordBarrierCutsPath`) correctly refuses —
 // there is no per-trip barrier that re-establishes the record. But the reader
@@ -604,7 +604,7 @@ bool readerRunsAtMostOncePerActivation(const Instruction *R, const LoopInfo &LI,
 //
 // THE QUESTION EXISTS BECAUSE OF A MEASURED SILENT MISCOMPILE.
 // `recordStaleQuantumReaders` grants the reader the `Covered` self-exemption —
-// `c = cq_theta(a,θ)` is an in-place Ry on the very rail it reads, so without it
+// `c = a; cq_theta(&c,θ)` is an in-place Ry on the very rail it reads, so without it
 // every well-formed chained rotation would decline against itself — and that
 // exemption was UNCONDITIONAL. A loop body holding exactly ONE `cq_theta` on a
 // loop-INVARIANT quantum name therefore compiled, emitting a stream
@@ -643,7 +643,7 @@ bool readerRunsAtMostOncePerActivation(const Instruction *R, const LoopInfo &LI,
 //   (2) otherwise leg 2 verbatim (`recordBarrierCutsPath`): every back-edge path
 //       from `R` to `R` must cross a barrier that RE-ESTABLISHES the record —
 //       the seed's own definition, or a superseding wire-tracking φ. The
-//       φ-carried in-loop chain (`q = cq_theta(q,θ)`) passes here; the
+//       φ-carried in-loop chain (`cq_theta(&q,θ)`) passes here; the
 //       loop-INVARIANT seed does not, which is the defect.
 // `Seeds` is the one-element `{Seed}`, exactly what the walk this fence runs is
 // seeded with, so the self-gate is asked the same question as every other gate.

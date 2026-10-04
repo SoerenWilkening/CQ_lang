@@ -2,9 +2,9 @@
 ; CHAINED Ry record on the rotated register's own wire (control-in-place-PRD §4
 ; R6; bd test_C_libtooling-drbq Inc 1, finding J).
 ;
-;     int r  = cq_theta(0, .3);
-;     int r2 = cq_theta(r, .5);            // chained Ry — IN PLACE on r's handle
-;     if (q > 5) r = cq_theta(r, .9);      // R == `r`, the PRE-r2 record
+;     int r  = 0; cq_theta(&r, .3);
+;     int r2 = r; cq_theta(&r2, .5);       // chained Ry — IN PLACE on r's handle
+;     if (q > 5) cq_theta(&r, .9);      // R == `r`, the PRE-r2 record
 ;     use(cq_measure(r2));
 ;
 ; The third hop of the same hole, and the one that shows the closure must cross

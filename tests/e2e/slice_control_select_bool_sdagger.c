@@ -1,8 +1,8 @@
 /* slice_control_select_bool_sdagger.c — bd test_C_libtooling-r9e5 (Inc 1b-B.1):
    THE DT PRONG, as the owner's Grover cascade writes it — a data select on the
-   register, then the S† `cq_theta(b, -0.5)` on that SAME register.
+   register, then the S† `cq_theta(&b, -0.5)` on that SAME register.
 
-       int a = 5; bool b = cq_theta((bool)0, 0.5);
+       int a = 5; bool b = (bool)0; cq_theta(&b, 0.5);
        if (b) a -= 3;            // select i1 %b, i32 2, i32 5
        cq_theta(&b, -0.5);    // S† on the condition's own wire
 

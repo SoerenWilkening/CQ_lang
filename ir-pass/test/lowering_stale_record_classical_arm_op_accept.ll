@@ -9,7 +9,7 @@
 ; sibling-arm shape stays declined: lowering_reject_stale_record_exclusive_arms.ll.
 ;
 ;     if (argc > 1) r = cq_measure(q + 1);
-;     q2 = cq_theta(q, .3);
+;     q2 = q; cq_theta(&q2, .3);
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK-NOT: error

@@ -7,10 +7,10 @@
 ;
 ; THE PROGRAM IS UNCHANGED (the reviewer's d5 witness, plain `clang -O1` C):
 ;     static volatile int k = 3;
-;     int a = cq_theta(u0, 0.5);
+;     int a = u0; cq_theta(&a, 0.5);
 ;     int c = a * k;                     // the ONLY record (volatile k so -O1
 ;                                        //   keeps the multiply)
-;     a = cq_theta(a, 0.25);             // T — chained, IN PLACE on the alloc rail
+;     cq_theta(&a, 0.25);                // T — chained, IN PLACE on the alloc rail
 ;     if (c > 3) printf("%d", a);        // c -> the CTRL of the guarded tape write
 ;
 ; ── WHAT IT USED TO PIN, AND WHAT THAT PIN COST ─────────────────────────────

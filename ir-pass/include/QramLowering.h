@@ -480,7 +480,7 @@ void lowerShadowMemory(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 //
 //     bool b[N];                                  //  or `= {0}`
 //     for (int i = 0; i < N; ++i) {
-//       if (a >= 3) b[i] = cq_theta(b[i], .5);    //  the per-trip rail
+//       if (a >= 3) cq_theta(&b[i], .5);    //  the per-trip rail
 //       if (b[i]) a -= 3;
 //     }
 //
@@ -535,7 +535,7 @@ void lowerShadowMemory(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 //       SEED load reads a previously-stored HANDLE and the promoter forwards the
 //       wrong value.
 //       ⚠ THE `getParentLoop()` HALF WAS AN OVER-ACCEPT THIS INCREMENT SHIPPED AND
-//       THEN CAUGHT ITSELF (`for (k<2) for (i<3) b[i] = cq_theta(b[i], .5);`
+//       THEN CAUGHT ITSELF (`for (k<2) for (i<3) cq_theta(&b[i], .5);`
 //       classified `Bank`, with 18 fixtures green, the corpus clean and the
 //       injection matrix 29/29). **The lesson is L2's**: every other conjunct of
 //       C2′ is a statement about ONE ACTIVATION of the walk loop and says nothing

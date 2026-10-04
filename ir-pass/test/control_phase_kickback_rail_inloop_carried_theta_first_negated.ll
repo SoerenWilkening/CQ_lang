@@ -4,8 +4,8 @@
 ; build/ir-pass/cq-opt sha256 fbbe0820… at e96f89c).
 ;
 ; THE SHAPE: the NEGATED arm of the same pin — boi6 probe `p9`:
-;     bool b = cq_theta((bool)0, .5);
-;     for (int i = 0; i < 3; i++) { b = cq_theta(b, .2); if (!b) cq_phi(.7); }
+;     bool b = (bool)0; cq_theta(&b, .5);
+;     for (int i = 0; i < 3; i++) { cq_theta(&b, .2); if (!b) cq_phi(.7); }
 ; The ¬-arm is the DIAGONAL identity `X·P(θ)·X = e^{iθ}·P(−θ)`: the emitted gate
 ; is `cqrt_rz_i1(%h, −θ)` and there is NO `cqrt_x` on the user register — the
 ; Inc-1b non-negotiable (bd memory [diagonal-only-on-user-registers-3qlq4]).

@@ -17,7 +17,7 @@
 ; asked for, `inf` in and `inf` out.
 ;
 ; THE PRECEDENT IS ALREADY SHIPPED AND WAS MEASURED FOR THIS FINDING: an
-; UNCONTROLLED `cq_theta(q, INFINITY)` passes through on BOTH binaries
+; UNCONTROLLED `cq_theta(&q, INFINITY)` passes through on BOTH binaries
 ; ($SP/progress/review_r1_L4/repro/unc_inf.ll, exit 0). Refusing it under control
 ; while accepting it uncontrolled would be a fence on the CONTROL, not on the
 ; value, which is not a distinction the physics supports.

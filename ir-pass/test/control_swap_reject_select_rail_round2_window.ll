@@ -20,9 +20,9 @@
 ; THE PROGRAM, AND WHY THE OLD VERDICT WAS WRONG:
 ;
 ;     bool x  = (y != 0);          /* the %out-derived seed, round-2 tainted */
-;     bool b  = cq_theta(x, 0.25); /* consumes the name `x`                  */
+;     bool b  = x; cq_theta(&b, 0.25); /* consumes the name `x`              */
 ;     int  a  = b ? 2 : 5;         /* the 4.4 copy merge on that rail        */
-;     bool b3 = cq_theta(x, 0.9);  /* the SIBLING — reads `x` a SECOND time  */
+;     bool b3 = x; cq_theta(&b3, 0.9);  /* the SIBLING — reads `x` a SECOND time  */
 ;
 ; `b3` names `Ry(0.9)|x>`; the register holds `Ry(0.9)Ry(0.25)|x>`. That is
 ; `docs/frontend.md` §3.2's linear rule — a rotation CONSUMES the old name — and
@@ -74,14 +74,14 @@
 ; (was) inline:
 ; (was)
 ; (was)     int ext_f(int a);                 // _lib.c: { return a + 100; }
-; (was)     int q = 3; q = cq_theta(q, 0.5);
+; (was)     int q = 3; cq_theta(&q, 0.5);
 ; (was)     int y = 5;
 ; (was)     if (q > 5) y = ext_f(7);          // the 6.5 classical-call arm -> %out
 ; (was)     int keep = cq_measure(y);         // keeps %out live as an i32 phi
 ; (was)     bool x = (y != 0);                // CLASSICAL at round 1, TAINTED at round 2
-; (was)     bool b  = cq_theta(x, 0.25);      // the rail the select reads
+; (was)     bool b  = x; cq_theta(&b, 0.25);  // the rail the select reads
 ; (was)     int a = b ? 2 : 5;                // the 4.4 copy merge on that rail
-; (was)     bool b3 = cq_theta(x, 0.9);       // the SIBLING — after the select
+; (was)     bool b3 = x; cq_theta(&b3, 0.9);  // the SIBLING — after the select
 ; (was)
 ; (was) `%x` is the `%out`-derived seed the §14.3 rail ladder saw as CLASSICAL
 ; (was) (round-1 taint) and `lowerRotations` sees as TAINTED (final taint), so `b`

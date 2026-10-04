@@ -13,16 +13,16 @@
 ; THE PROGRAM (`loopfix/probes/r1_triple_nest_mid_rail.c`, stage-1 verbatim,
 ; `clang -O1 -g`):
 ;
-;     int y = cq_theta(5, 0.5);
+;     int y = 5; cq_theta(&y, 0.5);
 ;     for (i = 0; i < 2; ++i)
 ;         for (j = 1; j <= 2; ++j) {
 ;             s += cq_measure((y >> j) & 1);        // the MIDDLE loop's OWN rail
 ;             for (k = 0; k < 2; ++k) {             // fully ITERATION-LOCAL
-;                 int u = cq_theta(6, 0.4);
+;                 int u = 6; cq_theta(&u, 0.4);
 ;                 s += cq_measure((u >> k) & 1);
 ;             }
 ;         }
-;     y = cq_theta(y, 0.9);                         // the interference (Rule 8)
+;     cq_theta(&y, 0.9);                         // the interference (Rule 8)
 ;     return s + cq_measure(y);
 ;
 ; `markIfIterationLocal` marks the INNERMOST loop; before the fix, conjunct (1)

@@ -8,7 +8,7 @@
 ;
 ; Caller TU (clang -O1 -include CQ.h):
 ;   int main(int argc, char **argv) {
-;     int q = cq_theta(0, 0.7);
+;     int q = 0; cq_theta(&q, 0.7);
 ;     int acc = 0;
 ;     for (int i = 0; i < argc; i++) {
 ;       int d;

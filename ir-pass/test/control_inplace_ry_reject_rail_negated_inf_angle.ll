@@ -11,8 +11,8 @@
 ; and only the checkpoint can. Plain C at `-O1`
 ; (`review_l4x4b_r1_probes/x01_neg_inf_angle.c`):
 ;
-;     _Bool b = 0; int r = 7;  b = cq_theta(b,0.5);  r = cq_theta(r,0.25);
-;     if (!b) { r = cq_theta(r, __builtin_inf()); }
+;     _Bool b = 0; int r = 7;  cq_theta(&b,0.5);  cq_theta(&r,0.25);
+;     if (!b) { cq_theta(&r, __builtin_inf()); }
 ;
 ; THE DEFECT. The negated form is anti-control by Ry ADDITIVITY (SCOPE §2.3
 ; option A): the arm's rotation is emitted UNCONDITIONALLY and cancelled under

@@ -2,9 +2,9 @@
 ; test_C_libtooling-8h7d.5, Rule-13 ROUND 3, finding F-3 — the record itself
 ; reached through a DIAGONAL hop). A CONFIRMED silent miscompile.
 ;
-;     for (i<2) { if (q==5) q=cq_phi(q,PI); q=cq_theta(q,-.5); q=cq_theta(q,.5); }
+;     for (i<2) { if (q==5) q=cq_phi(q,PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
 ;     int mark = cq_phi(q, 1.0);      /* the RECORD is off-chain, behind an Rz */
-;     int r    = cq_theta(mark, .125);/* a rail GATE after that record         */
+;     int r    = mark; cq_theta(&r, .125);/* a rail GATE after that record     */
 ;     return cq_measure(mark) + cq_measure(r);
 ;
 ; WHY THIS IS A SEPARATE FIXTURE FROM ITS `..._offchain_theta` SIBLING, AND WHY

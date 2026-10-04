@@ -12,7 +12,7 @@
 
    (Round 1:) `specialize()` DOES scrub here: `h`'s clone returns the classical `k + 1`, so
    `t` loses the conservative taint `propagate` gave it. But the one-register lift
-   of `r = phi(q, cq_theta(q, .2))` is over `q`, a `cq_theta` result — a
+   of `r = phi(q, @cq_theta_*(q, .2))` is over `q`, a `cq_theta` result — a
    never-scrub keep root — so its recorded premise holds at FINAL taint and the
    re-ask (`declineFalsifiedMergePhiLifts`) must say nothing. The CORRECT circuit
    is the hand-inlined twin's (slice_spec_lift_scrubbed_elsewhere_twin.c, `int t =

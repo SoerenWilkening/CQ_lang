@@ -3,8 +3,8 @@
 ; loop-invariant condition that this bead did NOT move, recorded so the boundary is a
 ; deliberate line rather than an absence.
 ;
-;     int a = cq_theta(0, 0.5);
-;     _Bool b = cq_theta(0, 0.5);
+;     int a = 0; cq_theta(&a, 0.5);
+;     _Bool b = 0; cq_theta(&b, 0.5);
 ;     for (int i = 0; i < 2; ++i) { if (b && a == 5) cq_phi(M_PI); }
 ;     return cq_measure(a) + (int) cq_measure(b);
 ;

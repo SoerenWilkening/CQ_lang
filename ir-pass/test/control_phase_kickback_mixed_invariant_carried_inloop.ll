@@ -3,9 +3,9 @@
 ; THE MIXED LOOP: the kickback's condition register is loop-INVARIANT (D4's
 ; per-bit idiom) while the SAME loop also CARRIES a second tainted register.
 ;
-;     int slice(int u){ int q=cq_theta(u,0.5); int r=cq_theta(u,0.3);
-;       for(int i=0;i<3;i++){ if((q>>i)&1) cq_phi(0.2); r=cq_theta(r,0.1); }
-;       q=cq_theta(q,0.9); return cq_measure(q)+cq_measure(r); }
+;     int slice(int u){ int q=u; cq_theta(&q,0.5); int r=u; cq_theta(&r,0.3);
+;       for(int i=0;i<3;i++){ if((q>>i)&1) cq_phi(0.2); cq_theta(&r,0.1); }
+;       cq_theta(&q,0.9); return cq_measure(q)+cq_measure(r); }
 ;
 ; `clang -O1` on that source with `@main` dropped. The `!llvm.loop` metadata is
 ; kept VERBATIM — this is a genuine ROLLED loop, and `llvm.loop.unroll.disable`

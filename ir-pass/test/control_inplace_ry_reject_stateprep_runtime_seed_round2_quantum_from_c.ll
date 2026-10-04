@@ -7,7 +7,7 @@
 ;     __attribute__((const)) int f(int a);            // lib TU: return a + 100;
 ;     int y = 5; if (q > 3) y = f(n);                 // 6.5: classical call under control
 ;     if (c > 1000) puts("x");                        // a classical block BETWEEN the regions
-;     int r = y; if (q2 + y > 7) r = cq_theta(y, .2); // runtime-seed prep on the 6.5 result
+;     int r = y; if (q2 + y > 7) { r = y; cq_theta(&r, .2); } // runtime-seed prep on the 6.5 result
 ;
 ; WHY THIS FILE EXISTS BESIDE THE HAND-IR ONE: it proves the hazard the bd z0re widening
 ; introduces is reachable from plain C, not only from hand IR. MEASURED with the re-ask

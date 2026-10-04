@@ -10,10 +10,10 @@
 ;
 ; SOURCE (stage 1 below is `clang -O1` of it, verbatim):
 ; __attribute__((noinline)) static int slice(int k) {
-;     _Bool c = cq_theta((_Bool)0, 0.3);
+;     _Bool c = (_Bool)0; cq_theta(&c, 0.3);
 ;     if (c) cq_phi(3.14159);
 ;     int b[3];
-;     if (k > 0) for (int i = 0; i < 3; ++i) b[i] = cq_theta(0, 0.5);
+;     if (k > 0) for (int i = 0; i < 3; ++i) { b[i] = 0; cq_theta(&b[i], 0.5); }
 ;     int s = cq_measure(c);
 ;     if (k > 1) for (int j = 0; j < 3; ++j) s += cq_measure(b[j]);
 ;     return s;

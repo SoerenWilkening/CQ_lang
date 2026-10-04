@@ -1,7 +1,7 @@
 ; lowering_reject_stale_reader_measure_parent.ll — DECLINE (bd
 ; test_C_libtooling-3d8q, P1). THE `cq_measure` HALF, in its smallest form:
 ;
-;   int q=cq_theta(0,0.3); int a=cq_theta(q,0.5); return cq_measure(q)+a;
+;   int q=0; cq_theta(&q,0.3); int a=q; cq_theta(&a,0.5); return cq_measure(q)+a;
 ;
 ; `%a` CONSUMES the name `%q` (`docs/frontend.md` §3.2), so `cq_measure(%q)`
 ; scheduled after it names the pre-Ry record while the register holds the post-Ry

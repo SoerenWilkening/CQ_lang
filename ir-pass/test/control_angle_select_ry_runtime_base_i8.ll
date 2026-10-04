@@ -2,8 +2,8 @@
 ; the Ry-stem angle select on an UNTAINTED RUNTIME base at the i8 width, with the
 ; `!=`-canonicalised orientation.
 ;
-;     signed char t = atoi(v[1]); int q = cq_theta(atoi(v[2]), .3); signed char r;
-;     if (q != 3) r = cq_theta(t, .7); else r = cq_theta(t, .2);   // r1B probe as_i8
+;     signed char t = atoi(v[1]); int q = atoi(v[2]); cq_theta(&q, .3); signed char r;
+;     if (q != 3) { r = t; cq_theta(&r, .7); } else { r = t; cq_theta(&r, .2); }  // r1B probe as_i8
 ;
 ; `-O1` canonicalises `!=` to `icmp eq` and swaps the select arms: `select (q == 3),
 ; .2, .7`, so A = .2 (flag set), B = .7, and the by-difference stream is
@@ -14,7 +14,7 @@
 ; SimplifyCFG MERGES the two thetas, and bd fmt3 option B (`nomerge` on `cq_theta_*`,
 ; landed after z0re, 2026-09-29) stops that merge for direct calls. ⚠ CORRECTED (Rule-13 r2 F-r2-1): the round-2
 ; spelling of this paragraph said the admission then becomes UNREACHABLE FROM C — false.
-; The TERNARY spelling `r = cq_theta(t, (q != 3) ? .7 : .2);` gives this same IR with no
+; The TERNARY spelling `r = t; cq_theta(&r, (q != 3) ? .7 : .2);` gives this same IR with no
 ; merge and is untouched by `nomerge`. This file pins the lowering independently of
 ; which C spelling reaches it, alongside `control_angle_select_ry_runtime_base.ll` (i32)
 ; and `…_runtime_base_f64.ll`. Body: the probe's stage-1 IR, minimised. On the ORACLE

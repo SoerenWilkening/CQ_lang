@@ -12,7 +12,7 @@
 ; value the source never named, on the edge that was fine.
 ;
 ; WHAT THIS FIXTURE DOES *NOT* CLAIM, and the distinction is load-bearing: an
-; UNCONTROLLED `cq_theta(r, INFINITY)` lowers to `cqrt_ry_i32(h, inf)` on the
+; UNCONTROLLED `cq_theta(&r, INFINITY)` lowers to `cqrt_ry_i32(h, inf)` on the
 ; pre-2b binary too. That is a PRE-EXISTING disposition about a single
 ; user-written angle and it is not this increment's to change (lens L7's
 ; `p06_inf_inf.c` measured it identical on both binaries). What 2b added is the

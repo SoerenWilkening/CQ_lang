@@ -808,8 +808,8 @@ bool railGateBetween(const Instruction *Def, const Instruction *Read,
 // same PHYSICAL register without being on it. The canonical shape is a rotation
 // applied to the loop's EXIT value:
 //
-//     for (…) { if (q==5) q = cq_phi(q,PI); q = cq_theta(q,-.5); q = cq_theta(q,.5); }
-//     int mark = q;  q = cq_theta(q, 0.125);   /* arg-0 IS a member, RESULT is not */
+//     for (…) { if (q==5) q = cq_phi(q,PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
+//     int mark = q;  cq_theta(&q, 0.125);   /* arg-0 IS a member, RESULT is not */
 //     return cq_measure(mark) + cq_measure(q);
 //
 // which emitted `cqrt_ry_i32(%h, 0.125); measure(%h); measure(%h)` — `mark` names
@@ -827,7 +827,7 @@ bool railGateBetween(const Instruction *Def, const Instruction *Read,
 //     relabels the basis); `cq_phi` is followed but is NOT a gate (Rz is diagonal
 //     — the shipped reading of the whole stale-record family, bd memory
 //     `rz-diag-flag-strip-invariant`). Following the diagonal one matters: it is
-//     what catches `mark = q; q = cq_phi(q,a); q = cq_theta(q,b);`, where the Ry's
+//     what catches `mark = q; q = cq_phi(q,a); cq_theta(&q,b);`, where the Ry's
 //     arg-0 is the Rz result and therefore not a chain member (probe g1).
 //
 //   * an in-place VALUE self-update (dtzb `add`/`xor`) — ONLY when it is a chain
@@ -864,7 +864,7 @@ bool railGateBetween(const Instruction *Def, const Instruction *Read,
 //     asked POST-RAUW so every rail alias is already unified onto `%h`) and G7 —
 //     which refuses exactly when a later record read of the pre-add register
 //     exists, so the two dispositions are mutually exclusive: `mark = q;
-//     q = q + 9; q = cq_theta(q,.25); measure(mark)` falls back to the
+//     q = q + 9; cq_theta(&q,.25); measure(mark)` falls back to the
 //     out-of-place `cq_template_add_i32_hl` (probe r3h/b5). Both are pinned by
 //     control_swap_inloop_postloop_railop_mc.ll — and pinned WEAKLY, which is part
 //     of the record: measured by mutation, G6 and G7 each refuse that use on their
@@ -876,11 +876,11 @@ bool railGateBetween(const Instruction *Def, const Instruction *Read,
 //     register on at least one edge, so a rotation applied to it moves this wire
 //     on that edge. `railGateBetween` is an ∃-path test, so "some" (not "all") is
 //     the sound side; a phi that also merges a foreign value only ever adds
-//     declines. Without it `mark = q; if (n) q = cq_phi(q,a); q = cq_theta(q,b);`
+//     declines. Without it `mark = q; if (n) q = cq_phi(q,a); cq_theta(&q,b);`
 //     is missed (probe g3).
 //
-// NOT TRANSITIVE PAST THE FIRST GATE, and it does not need to be. If `t2 =
-// cq_theta(t1, …)` with `t1 = cq_theta(m, …)` and `m` a member, then `Def` (m's
+// NOT TRANSITIVE PAST THE FIRST GATE, and it does not need to be. If `t2 = t1;
+// cq_theta(&t2, …)` with `t1 = m; cq_theta(&t1, …)` and `m` a member, then `Def` (m's
 // def) dominates `t1` and `t1` dominates `t2`, so EVERY path from `Def` to `t2`
 // crosses `t1`: a `Def`→`t2` path avoiding `t1` could be prefixed by a simple
 // entry→`Def` path (which cannot visit `t1`'s block — `Def` dominates it, so the
@@ -1132,9 +1132,9 @@ Instruction *staleReadOfValue(Value *V,
 // stale?" — enumerating chain `Members`. A rail value ONE HOP off the chain was
 // therefore never asked about, and this `clang -O1` C program miscompiled:
 //
-//     for (i<2) { if (q==5) q=cq_phi(q,PI); q=cq_theta(q,-.5); q=cq_theta(q,.5); }
-//     int a = cq_theta(q, 0.125);   /* arg-0 IS a member — the RESULT is not */
-//     int b = cq_theta(a, 0.25);    /* a rail gate AFTER the record `a` */
+//     for (i<2) { if (q==5) q=cq_phi(q,PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
+//     int a = q; cq_theta(&a, 0.125);  /* arg-0 IS a member — the RESULT is not */
+//     int b = a; cq_theta(&b, 0.25);  /* a rail gate AFTER the record `a` */
 //     return cq_measure(a) + cq_measure(b);
 //
 // emitting `ry(h0,.125); ry(h0,.25); measure(h0); measure(h0)` — `a` names the
@@ -1206,7 +1206,7 @@ Instruction *taintedExit(Loop *L, const TaintSet &taint) {
 // THE THIRD KIND OF LOOP-CARRIED REGISTER, and it is the owner's rolled cascade:
 //
 //     int a = 5; bool b0[3];
-//     for (int i = 0; i < 3; ++i) { if (a >= 3) b0[i] = cq_theta(b0[i], .5);
+//     for (int i = 0; i < 3; ++i) { if (a >= 3) cq_theta(&b0[i], .5);
 //                                   if (b0[i]) a -= 3; }
 //
 // After `clang -O1` the second `if` is if-converted into a 4.4 DATA SELECT and
@@ -2055,7 +2055,7 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
   // the y05j.2 Rule-13 sign-off 2026-06-28. `Root == RailPre` ⟺ `RailPre` is itself the
   // mint (no peel happened). Decline otherwise (Prime Directive — over-declining is
   // safe; applying the pre-loop mutation in-place to the rail handle is a near-term
-  // widening, not this increment's proven shape — the canonical `q = cq_theta(); for(…)`
+  // widening, not this increment's proven shape — the canonical `cq_theta(&q, …); for(…)`
   // has `RailPre == Root == the mint` and still lowers, lowering_loop_break_*).
   if (Root != RailPre)
     return bail();
@@ -3364,7 +3364,7 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
   //     re-measuring `example/grover/grover_loop_frontier.c` with only the
   //     in-loop offsets removed — `opt` exit 0, verify-clean, strict
   //     free-pairing CLEAN, and the only outward sign was one M-A WARNING).
-  //     `a = cq_theta(a,.5); a += cq_off;` before a loop puts the `add` on the
+  //     `cq_theta(&a,.5); a += cq_off;` before a loop puts the `add` on the
   //     rail's PRE-header chain, so the header phi's external incoming peels
   //     THROUGH it to the mint — and collapsing the phi to that mint RAUW's every
   //     in-loop use to the PRE-OFFSET handle. `lowerOps` then emits the add
@@ -3546,7 +3546,7 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
 // PREHEADER in-place value gates on a candidate's wire, so the FACT-time peel
 // below can walk THROUGH them.
 //
-// THE DEFECT. `q = cq_theta(u,.5); q = q + 7; for (i<K) if ((q>>i)&1) cq_phi(θ);`
+// THE DEFECT. `q = u; cq_theta(&q,.5); q = q + 7; for (i<K) if ((q>>i)&1) cq_phi(θ);`
 // — one added line over C-1's own reproducer — leaked every per-trip which-path
 // rail on 542d588 AND on the round-1 fix (rolled 3 `cq_template_and_i32_hl` / 0
 // `_unc` against a hand-unrolled twin at 3/3 and a pre-3qlq ORACLE at 3/3
@@ -3594,7 +3594,7 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
 //     the window it guards is a property of the **WIRE**. `lowerRotations` RAUWs
 //     every member of a theta chain onto ONE `cqrt_alloc` handle, so a `P` with
 //     exactly one use HERE can have two at `lowerOps` — and it was a CONFIRMED
-//     silent miscompile (`int q2=cq_theta(q,.3); int a=q2+7; …; cq_measure(a)`
+//     silent miscompile (`int q2=q; cq_theta(&q2,.3); int a=q2+7; …; cq_measure(a)`
 //     collapsed `q` and `a` onto one register). The conjunct did not stop that;
 //     the (1b) tripwire does.
 //   * this round's **F-I2-1**: the conjunct also refuses in the other direction,
@@ -3845,7 +3845,7 @@ void commitOutOfLoopInPlaceOps(Value *V, Loop *L, TaintSet &taint,
 //     OF IT IS A LOUD DECLINE (bd `s82e`, owner ruling D4). Three shipped
 //     fixtures of exactly this shape — `control_phase_kickback_mixed_{hoisted_
 //     template,preheader_volatile_imm,short_sext}_leak_control.ll` — end with
-//     `q = cq_theta(q, .9); cq_measure(q)`, so the leaked per-bit copies of `q`
+//     `cq_theta(&q, .9); cq_measure(q)`, so the leaked per-bit copies of `q`
 //     dephase a register that is afterwards ROTATED and MEASURED: rolled and
 //     unrolled are DIFFERENT UNITARIES there, not the same one with more
 //     garbage. All three headers used to call the leak "the PRIME-DIRECTIVE
@@ -3871,7 +3871,7 @@ void commitOutOfLoopInPlaceOps(Value *V, Loop *L, TaintSet &taint,
 // rail at all, because that is the only loop this function could see: its one
 // caller reached it on `RailRound2::NotClaimed`. A loop whose condition register
 // is INVARIANT and which ALSO carries a second tainted register (`for (i<K) {
-// if ((q>>i)&1) cq_phi(θ); r = cq_theta(r, .1); }` — the flagship idiom the
+// if ((q>>i)&1) cq_phi(θ); cq_theta(&r, .1); }` — the flagship idiom the
 // moment the body rotates an ancilla) returns `Collapsed` instead, so this
 // function was never asked and `markIfRailLocal` refused on `%q` at its
 // "accumulating loop-invariant tainted input" clause. MEASURED at 542d588:
@@ -4142,7 +4142,7 @@ bool invariantRegisterRootsImpl(Loop *L, TaintSet &taint, WidthDispatch &wd,
     //      IDENTICAL call `markIfRailLocal`'s own `onRail` makes (Rule 14: the
     //      set this fills and the predicate that reads it must agree by
     //      construction, not by two spellings). Peeling matters for a real
-    //      program: `q = cq_theta(u,.3); q = cq_theta(q,.1); for(…)` reads the
+    //      program: `q = u; cq_theta(&q,.3); cq_theta(&q,.1); for(…)` reads the
     //      SECOND theta, whose arg 0 is tainted. Keying on the un-peeled value
     //      refused it — a safe leak, but a rolled≠unrolled DIVERGENCE of exactly
     //      the class this whole path exists to close (MEASURED before the peel
@@ -4155,7 +4155,7 @@ bool invariantRegisterRootsImpl(Loop *L, TaintSet &taint, WidthDispatch &wd,
     //     longer reads the rail PHI; step (4) RAUW'd it to the root mint, so the
     //     carried register's own `%r0` is now a tainted value DEFINED OUTSIDE `L`
     //     AND READ INSIDE IT — i.e. a `Cand` here — whose in-loop user is the
-    //     body's `r = cq_theta(r, .1)`. Clause (iii) below would see that
+    //     body's `cq_theta(&r, .1)`. Clause (iii) below would see that
     //     `isInPlaceGateOnArg0` user and refuse, taking the whole extension (and
     //     therefore the INVARIANT register's discharge) down with it. But the
     //     carried rail is not this function's to judge: `collapseRailPhisIn` has
@@ -4179,7 +4179,7 @@ bool invariantRegisterRootsImpl(Loop *L, TaintSet &taint, WidthDispatch &wd,
     //     `taint.ClaimedRailRoots` is the same fact taken from the TREE, written
     //     at both Case-A collapse sites; the UNION is what makes the two calls
     //     answer alike. It is never inferred from "no header phi" — a DEAD
-    //     in-body gate (`int t = cq_theta(r,.1);`) has neither a phi nor a claim
+    //     in-body gate (`int t = r; cq_theta(&t,.1);`) has neither a phi nor a claim
     //     and must still be refused (`p/x3_deadgate_body.c`, still leaking).
     //     AND IT IS SKIPPED **INTO `RootsOut`**, NOT PAST IT — the 8h7d.5
     //     lesson caught in this very edit ("when you widen a set, ask what OTHER
@@ -4328,7 +4328,7 @@ bool invariantRegisterRootsImpl(Loop *L, TaintSet &taint, WidthDispatch &wd,
     //        right multiplicity regime and is WRONG: two of this clause's three
     //        intended customers (`…_hoisted_template_leak_control` and
     //        `…_short_sext_leak_control`) have exactly that — their bodies end
-    //        `r = cq_theta(r, 0.1);` — and the conjunct returned both to a decline
+    //        `cq_theta(&r, 0.1);` — and the conjunct returned both to a decline
     //        while ALSO flipping `loop_pairing_reject_round2_falsified` to exit 0.
     //        A carried rail and a hoisted rail are INDEPENDENT regimes; the one
     //        this clause reasons about is the hoisted one, and the carried one is
@@ -4783,7 +4783,7 @@ void collapseFlattenedLoopRails(
         // THE MIXED LOOP (bd 3qlq Inc 1, the Rule-13 CLEARANCE finding C-1 — the
         // BLOCK). A collapse means SOME register crosses the back edge; it says
         // nothing about whether ANOTHER, loop-INVARIANT one is read in the body.
-        // `for (i<K) { if ((q>>i)&1) cq_phi(θ); r = cq_theta(r,.1); }` is both at
+        // `for (i<K) { if ((q>>i)&1) cq_phi(θ); cq_theta(&r,.1); }` is both at
         // once, and it was served by neither path: this branch handed
         // `markIfRailLocal` the carried root alone, and its "accumulating
         // loop-invariant tainted input" clause then refused on `%q`, so the
@@ -4837,9 +4837,9 @@ void collapseFlattenedLoopRails(
 // the loop and a NON-DIAGONAL gate lands on it there. MEASURED (bd `s82e`
 // Track S, 2026-09-14c, on the frozen ORACLE `cq-opt` 5c6f7490a81c7505…):
 //
-//     int y = cq_theta(5, .5);
+//     int y = 5; cq_theta(&y, .5);
 //     for (k = 1; k <= 2; ++k) s += cq_measure((y >> k) & 1);
-//     y = cq_theta(y, .9);                       // <-- the interference
+//     cq_theta(&y, .9);                       // <-- the interference
 //     return s + cq_measure(y);
 //
 // rolled emits 10 trace lines and its HAND-UNROLLED TWIN 14; the four missing
@@ -4905,7 +4905,7 @@ void collapseFlattenedLoopRails(
 //   * bd `test_C_libtooling-c767` (P1, PRE-EXISTING over-accept) — conjunct (2)
 //     inspected only rotations OUTSIDE `L`, so the IDENTICAL dephasing with the
 //     interfering rotation INSIDE the body ACCEPTED. MEASURED on bd `s82e`'s OWN
-//     D4-ruled-BENIGN exhibits plus ONE added line (`u = cq_theta(u, .9);`
+//     D4-ruled-BENIGN exhibits plus ONE added line (`cq_theta(&u, .9);`
 //     before the trip ends): `w2k_noregion_invread` 20 rolled vs 24 unrolled,
 //     `w2h_phase_inloop_invread` 34 vs 42. THE MECHANISM DOES NOT CARE WHERE THE
 //     INTERFERENCE SITS — only that the leaked rail's partner is interfered AT
@@ -6103,7 +6103,7 @@ void declineDephasingUnmarkedLoopRails(Module &M, TaintSet &taint) {
       //     `Rots` came back EMPTY and the loop was passed over — so the
       //     IDENTICAL dephasing accepted. MEASURED on bd `s82e`'s own
       //     D4-ruled-BENIGN exhibits plus one added in-loop line
-      //     (`u = cq_theta(u, .9);` before the trip ends): `w2k` 20 rolled vs 24
+      //     (`cq_theta(&u, .9);` before the trip ends): `w2k` 20 rolled vs 24
       //     unrolled, `w2h` 34 vs 42, md5-equal to the pre-fix binary in both
       //     (PRE-EXISTING, not a regression that increment introduced). THE
       //     MECHANISM DOES NOT CARE WHERE THE INTERFERENCE SITS — only that the

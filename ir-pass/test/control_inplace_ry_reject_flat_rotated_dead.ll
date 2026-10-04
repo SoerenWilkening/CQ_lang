@@ -3,8 +3,8 @@
 ; pair begun in `control_inplace_ry_inloop_rotated_dead.ll` (bd
 ; test_C_libtooling-rhwb; drbq Inc 3 round-1 lens L3 Q5).
 ;
-;     if (q == 5) r = cq_theta(r, 0.9);  q = cq_phi(q, 0.1);
-;     if (q == 5) r = cq_theta(r, 0.9);  q = cq_phi(q, 0.1);
+;     if (q == 5) cq_theta(&r, 0.9);  q = cq_phi(q, 0.1);
+;     if (q == 5) cq_theta(&r, 0.9);  q = cq_phi(q, 0.1);
 ;     return cq_measure(q);          <-- `r` is DEAD
 ;
 ; This is the HAND-UNROLLED TWIN of the accept, i.e. the increment's own stated

@@ -2,7 +2,7 @@
 ; test_C_libtooling-6uqc's P0 CLOSED (M-B Increment 6, clause (d2); renamed from
 ; lowering_uncompute_interior_region_partial.ll, which pinned the seam).
 ;
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     if (sqrt(a + 3.0) <= 5.0) { a = cq_phi(a, 3.0); }
 ;     return cq_measure(a);
 ;

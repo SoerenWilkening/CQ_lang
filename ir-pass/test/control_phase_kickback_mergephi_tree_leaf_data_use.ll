@@ -4,9 +4,9 @@
 ; THE SHAPE: `control_phase_kickback_mergephi_tree_leaf.ll` PLUS an out-of-branch
 ; DATA use of the φ leaf — the C is
 ;
-;   int  q  = cq_theta(0, 0.7);
-;   bool b0 = cq_theta((bool)0, 0.5);
-;   bool b1 = 0;  if (b0) { b1 = cq_theta(b1, 0.5); }
+;   int  q  = 0; cq_theta(&q, 0.7);
+;   bool b0 = (bool)0; cq_theta(&b0, 0.5);
+;   bool b1 = 0;  if (b0) { cq_theta(&b1, 0.5); }
 ;   if (b1 && q > 3) cq_phi(0.3);
 ;   int  z  = (int)b1 + q;                     /* <-- the out-of-branch use */
 ;   return cq_measure(b0) + cq_measure(b1) + cq_measure(z);

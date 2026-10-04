@@ -4,9 +4,9 @@
 ; The sibling of `control_inplace_ry_stateprep_feeds_later_cond.ll` (round-1
 ; Rule-13 review, lens L3 finding F-1, probe `p/l49_prep_then_prep2.c`):
 ;
-;     int q = cq_theta(3, .3);  int r = 0;
-;     if (q == 5) r = cq_theta(0, .9);      /* region 1 */
-;     int s = 0;  if (r == 1) s = cq_theta(0, .4);   /* region 2 — ALSO a prep */
+;     int q = 3; cq_theta(&q, .3);  int r = 0;
+;     if (q == 5) { r = 0; cq_theta(&r, .9); }  /* region 1 */
+;     int s = 0;  if (r == 1) { s = 0; cq_theta(&s, .4); }  /* region 2 — ALSO a prep */
 ;
 ; Where the sibling's region 2 is a CHAINED arm on the original register, this
 ; one is a SECOND STATE PREP whose flag is minted from the first prep's rail — so

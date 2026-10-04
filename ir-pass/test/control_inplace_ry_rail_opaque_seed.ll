@@ -1,5 +1,5 @@
 ; control_inplace_ry_rail_opaque_seed.ll — ACCEPT: the rail's CLASSICAL SEED is
-; an opaque run-time value (`_Bool x = (y != 0); _Bool b = cq_theta(x, .25);`,
+; an opaque run-time value (`_Bool x = (y != 0); _Bool b = x; cq_theta(&b, .25);`,
 ; probe `p4`) rather than the `i1 false` every other fixture in this family uses.
 ;
 ; It is committed because the round-2 taint window's two DECLINE fixtures

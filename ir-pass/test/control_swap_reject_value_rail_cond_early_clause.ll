@@ -14,11 +14,11 @@
 ;
 ; PLAIN C AT `-O1`, `review_l4x4b_r1_probes`-adjacent probe `t16_i1_stateprep`:
 ;
-;     _Bool b = 0, r = 0;  b = cq_theta(b, 0.5);
-;     if (b) { r = cq_theta(0, 0.9); }
+;     _Bool b = 0, r = 0;  cq_theta(&b, 0.5);
+;     if (b) { int t = 0; cq_theta(&t, 0.9); r = t; }
 ;     return (int)cq_measure(b) + (int)cq_measure(r);
 ;
-; `cq_theta(0, 0.9)` binds the `int` overload, so `-O1` leaves an `icmp ne i32
+; `int t` binds `cq_theta(&t, 0.9)` to the `int` overload, so `-O1` leaves an `icmp ne i32
 ; %t, 0` in the arm as the merge phi's incoming. That `icmp` is a VALUE-CHANGING
 ; op the value chain walk does not consume, so the arm bottoms at it and
 ; `classifyArms` declines `value-arm swap-route` (`ArmClassify.cpp`, the

@@ -2,7 +2,7 @@
 ; polarity of the control-in-place rotation diamond (Rule 9; bd
 ; test_C_libtooling-drbq Inc 1).
 ;
-;     if (q != 5) r = cq_theta(r, .9);
+;     if (q != 5) cq_theta(&r, .9);
 ;
 ; `clang -O1` canonicalizes `!=` to `icmp eq` and SWAPS the successors, so the
 ; gate arm is the FALSE one and the gate must fire on ¬flag. The in-place emitter

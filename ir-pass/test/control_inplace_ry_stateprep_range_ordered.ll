@@ -6,7 +6,7 @@
 ; this header moved — so the module below is still, character for
 ; character, the one the four drbq Inc-4 adversarial rounds argued over.
 ;
-;     int t = q & 3;  int r = 3;  if (t > 2) r = cq_theta(3, .9);
+;     int t = q & 3;  int r = 3;  if (t > 2) { r = 3; cq_theta(&r, .9); }
 ;
 ; ---- WHY IT IS AN ACCEPT NOW (bd `drbq.14`; F2's `CondWire` narrowing)
 ;
@@ -31,7 +31,7 @@
 ;   register is not touched by the region at all.
 ;
 ; THE RIVAL IT SILENTLY ABSORBS (alpha reading): the source rotated the
-; CONDITION'S OWN register IN PLACE — `cq_theta(<the pinned register>, θ)` —
+; CONDITION'S OWN register IN PLACE — `cq_theta(&<the pinned register>, θ)` —
 ; and `-O1` const-folded arg-0 to the literal on the edge where the equality
 ; is a theorem.
 ; ⚠ SAY IT IN THOSE WORDS: a program that was LOUDLY REFUSED before this
@@ -78,7 +78,7 @@
 ;     arm: cq_theta(i32 3, .9)  ; seed 3
 ;
 ; The true edge is `[0,4) ∩ (> 2) = {3}` — a singleton, and it IS the seed, so
-; the module is indistinguishable from `if (t > 2) r = cq_theta(t, .9)`, an
+; the module is indistinguishable from `if (t > 2) { r = t; cq_theta(&r, .9); }`, an
 ; in-place Ry on the condition register (R4). The shipped Inc-4 F2 was gated on
 ; `IC->isEquality()` and would have been SILENT here.
 ;

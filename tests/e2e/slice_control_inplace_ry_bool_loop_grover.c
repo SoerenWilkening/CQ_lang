@@ -5,8 +5,8 @@
    program: one bool-controlled Ry on the register plus the S†/S reflection
    pair, per trip, rolled.
 
-       bool b = cq_theta(0, .5);
-       int  r = cq_theta(7, .25);
+       bool b = 0; cq_theta(&b, .5);
+       int  r = 7; cq_theta(&r, .25);
        for (k < K) { if (b) cq_theta(&r, .9);
                      cq_theta(&r, -.5); cq_theta(&r, .5); }
 

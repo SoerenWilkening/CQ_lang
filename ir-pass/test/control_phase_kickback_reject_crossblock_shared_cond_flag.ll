@@ -2,7 +2,7 @@
 ; `test_C_libtooling-drbq.12` (2026-09-17): the fixture for the ONE conjunct that
 ; keeps the widening off the ziov SHARED-FLAG path.
 ;
-;     int a = cq_theta(0, 0.5);
+;     int a = 0; cq_theta(&a, 0.5);
 ;     int f = (a == 5);                      // the compare is ALSO read as DATA
 ;     if (a == 5) cq_phi(0.7);               // region 1 — compare IS in its Pred
 ;     if (a == 5) cq_phi(0.7);               // region 2 — Pred is region 1's merge
@@ -35,7 +35,7 @@
 ; flag" invariant the ziov path exists to hold, broken. That is what this file pins.
 ;
 ; ⚠ THE Ry-ARM SPELLING OF THIS PROGRAM CANNOT PIN IT, and that is why the fixture is
-; a PHASE arm. Measured: the same module with `r = cq_theta(r, 0.9)` arms declines
+; a PHASE arm. Measured: the same module with `cq_theta(&r, 0.9)` arms declines
 ; earlier and elsewhere, `cq controlled lowering: rotation arm shares the condition
 ; flag under quantum control` — a dedicated rotation-arm refusal that fires before
 ; `condWireDisposition` is reached, so the conjunct would have no subject there.

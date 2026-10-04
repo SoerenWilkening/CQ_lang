@@ -2,8 +2,8 @@
 ; the rotated register is MEASURED after the region (control-in-place-PRD §4 R6;
 ; bd test_C_libtooling-drbq).
 ;
-;     int r = cq_theta(0,.3); int mark = r;
-;     if (q > 5) r = cq_theta(r, .9);
+;     int r = 0; cq_theta(&r,.3); int mark = r;
+;     if (q > 5) cq_theta(&r, .9);
 ;     use(cq_measure(mark));
 ;
 ; `mark` and `r` are ONE SSA value and ONE physical rail. After the region that

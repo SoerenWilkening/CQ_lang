@@ -4,8 +4,8 @@
 ; MEASURED accepting before the fix). Read
 ; `control_inplace_ry_reject_lifted_phi_measure.ll`'s header for the mechanism.
 ;
-;     int m; if (c) { m = cq_theta(r, .1); } else { m = r; }
-;     if (q == 5) { r = cq_theta(r, .9); }
+;     int m; if (c) { m = r; cq_theta(&m, .1); } else { m = r; }
+;     if (q == 5) { cq_theta(&r, .9); }
 ;     return cq_measure(m) + cq_measure(r) + cq_measure(q);
 ;
 ; WHY THIS ONE IS ITS OWN FIXTURE: `railWireClosure`'s forward hop list treats a

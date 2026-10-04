@@ -4,9 +4,9 @@
    itself a DERIVED (non-mint) tainted value — `p = p0 + 5`, whose producer chain is
    p0 (cq_theta) -> p (add). Vs slice_loop_break_qq.c (a bare cq_theta mint comparand):
 
-       int p0 = cq_theta(pseed, 0.5);
+       int p0 = pseed; cq_theta(&p0, 0.5);
        int p  = p0 + 5;                // DERIVED loop-invariant comparand (p0 -> p)
-       int q  = cq_theta(seed, 0.25);
+       int q  = seed; cq_theta(&q, 0.25);
        for (int i = 0; i < n; i++) {
            q = q ^ 5;                  // in-place value rail
            if (q == p) break;          // TAINTED Q==Q break (rail vs derived-p)

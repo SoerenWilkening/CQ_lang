@@ -4,7 +4,7 @@
 ;
 ;     for (…) { x = x;                       <-- %x = phi [%r0, pre], [%x, latch]
 ;               cq_measure(x);               <-- read of the PRE-LOOP register
-;               if (q > 5) r = cq_theta(r, 0.9);
+;               if (q > 5) cq_theta(&r, 0.9);
 ;               r = r + 3; }                 <-- dtzb in-place VALUE gate
 ;
 ; WHY THIS SHAPE WAS BUILT (bd test_C_libtooling-drbq Inc 3, round-1 lens L5 Q3).

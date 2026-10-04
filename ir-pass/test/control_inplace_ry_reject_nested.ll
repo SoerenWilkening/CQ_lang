@@ -1,7 +1,7 @@
 ; control_inplace_ry_reject_nested.ll — DECLINE: a rotation arm inside a DEPTH-2
 ; nest (control-in-place-PRD §4 R7 / §8; bd test_C_libtooling-drbq).
 ;
-;     if (q > 5) { if (q < 9) r = cq_theta(r, .9); }
+;     if (q > 5) { if (q < 9) cq_theta(&r, .9); }
 ;
 ; The 4.3 nest has its own emitter (`NestedRouteEmit`, flag-per-level routing over
 ; two work rails) and its own detector (`recoverRegionTree`), neither of which

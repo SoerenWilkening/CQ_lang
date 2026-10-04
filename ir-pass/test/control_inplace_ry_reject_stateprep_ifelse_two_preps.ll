@@ -3,7 +3,7 @@
 ;
 ; ⚠ FROM PLAIN C THIS SHAPE DOES NOT REACH `classifyArms` AT ALL, and that is the
 ; scope correction §7's Inc-4 bullet needed. `-O1` (SimplifyCFG) merges
-; `if (c) r = cq_theta(0,A); else r = cq_theta(0,B);` into ONE theta with a
+; `if (c) { r = 0; cq_theta(&r,A); } else { r = 0; cq_theta(&r,B); }` into ONE theta with a
 ; tainted-condition ANGLE `select`, which lands in `classifyAngleSelect` and is
 ; refused at S3 with `rotation angle` — measured (probe `p14a`), and pinned by
 ; the pre-existing `control_angle_select_reject_state_prep.ll`. So Inc 4 has TWO

@@ -74,7 +74,7 @@ StringRef suffixFromName(const CallInst *CI, StringRef Prefix) {
 // `int` in a guard makes the guard vanish before this pass ever runs).
 //
 // *** THIS IS A TIGHTENING, NOT A LOOSENING, AND THE DIRECTION MATTERS. ***
-// Before the rule, `bool b; b = cq_theta(b,.5);` compiled SILENTLY and handed
+// Before the rule, `bool b; cq_theta(&b,.5);` compiled SILENTLY and handed
 // `i1 undef` to `cqrt_alloc_i1`, so which basis state the rail started in was
 // whatever the `-O0` stage-3 link materialised — the trace printed
 // `cqrt_alloc_i1(1)`, a value the program never wrote. After it, the rail is
@@ -111,7 +111,7 @@ StringRef suffixFromName(const CallInst *CI, StringRef Prefix) {
 // ── THE MOTIVATION IS "ONE OBJECT, READ TWICE"; THE SCOPE IS WIDER ─────────
 //
 // MEASURED, not predicted (`$SES/trackU/probes/u2.c`): for the second ruled
-// spelling `bool b1; if (c) b1 = cq_theta(b1,.5);`, `clang -O1` writes the SAME
+// spelling `bool b1; if (c) cq_theta(&b1,.5);`, `clang -O1` writes the SAME
 // uninitialized object twice —
 //
 //     %3 = call i1 @cq_theta_i1(i1 undef, double 5.0e-01)   ; the SEED
@@ -290,7 +290,7 @@ StringRef suffixFromName(const CallInst *CI, StringRef Prefix) {
 // diagnostic nobody predicted — `declineUnpairedUndefLiterals` (GUARD 1) — by
 // DELETING one of the two slots that guard was counting:
 //
-//   double d; d = cq_theta(d, d);          // review probe r14
+//   double d; cq_theta(&d, d);          // review probe r14
 //
 // At CQ type `double` the SEED and the ANGLE share the LLVM type, and `undef` is
 // UNIQUED PER TYPE, so ONE `double undef` object filled BOTH emitted gate slots
@@ -301,7 +301,7 @@ StringRef suffixFromName(const CallInst *CI, StringRef Prefix) {
 //
 // MEASURED 2026-09-14, both binaries, same stage-1 file: ORACLE `f7b65d8c`
 // exit 1 / 246 B; this build exit 0 / 0 B. It is NOT confined to the width
-// coincidence — `_Bool b; double th; b = cq_theta(b, th);` (probe r21) pairs
+// coincidence — `_Bool b; double th; cq_theta(&b, th);` (probe r21) pairs
 // `i1 undef` with `double undef`, TWO DIFFERENT uniqued constants, and moves the
 // same way (oracle exit 1 / 248 B). Nor is it confined to one call: probe r22
 // puts the surviving slot on a DIFFERENT theta and moves the same way, which no
@@ -1316,9 +1316,9 @@ bool isTeardownUse(const CallInst *CI, const TaintSet &taint) {
 //
 // MEASURED, on ordinary C through the real pipeline:
 //     for (int i = 0; i < n; i++) {
-//         int q = cq_theta(u0, 0.25);
+//         int q = u0; cq_theta(&q, 0.25);
 //         int w = q * 2;
-//         w = cq_theta(w, 0.5);                    // T
+//         cq_theta(&w, 0.5);                    // T
 //         acc += cq_measure(q) + cq_measure(w);    // BOTH rails measured, in body
 //     }
 // HEAD (d2828e3) `opt` exit 0; Increment 3, both round 1 and round 2, exit 1. Every
@@ -1816,7 +1816,7 @@ bool reachesObservingSink(Instruction *U, Value *R, const TaintSet &taint,
     // entry on the output tape reveals the flag to whoever reads the tape. A
     // record whose lineage reaches the flag is therefore observed just as surely
     // as one that reaches `src` — the reader learns a bit of it either way.
-    // MEASURED as a C-reachable OVER-DECLINE: `c = a*k; a = cq_theta(a,.25);
+    // MEASURED as a C-reachable OVER-DECLINE: `c = a*k; cq_theta(&a,.25);
     // if (c > 3) printf("%d", a);` — `opt` exit 0 at HEAD, exit 1 in the
     // pre-round-2 tree; its SRC-slot twin (`printf("%d", c)`) always accepted.
     // Pinned by lowering_live_record_tape_ctrl_observed_accept.ll.

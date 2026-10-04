@@ -3,7 +3,7 @@
 ; ABOUT THE SPELLING (Track A.1; bd test_C_libtooling-r903 item (b)). Verbatim
 ; `clang -O1` from `review_a1_r1_probes/c9.c`:
 ;
-;     int q = cq_theta(0, 0.5);
+;     int q = 0; cq_theta(&q, 0.5);
 ;     int t = q + 3;
 ;     int m = cq_measure(q);
 ;     if (t > 3) cq_phi(0.3);

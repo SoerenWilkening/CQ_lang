@@ -9,7 +9,7 @@
 ; the per-bit `and` rails are `3/0 rolled` against `3/3 hand-unrolled`, and the
 ; source ends
 ;
-;     q = cq_theta(q, 0.9); return cq_measure(q) + cq_measure(r);
+;     cq_theta(&q, 0.9); return cq_measure(q) + cq_measure(r);
 ;
 ; — a NON-DIAGONAL, TENSORED `cqrt_ry` on `q`, followed by a measurement of `q`.
 ; The three leaked rails are which-path copies of `q`'s bits. Leaving them
@@ -59,10 +59,10 @@
 ; **THE MEASURED COST OF F-C1B-1's FIX (1a), pinned rather than left to prose.**
 ;
 ;     static volatile int off = 7;
-;     int slice(int u){ int q=cq_theta(u,0.5); int r=cq_theta(u,0.3);
+;     int slice(int u){ int q=u; cq_theta(&q,0.5); int r=u; cq_theta(&r,0.3);
 ;       q = q + off;                                   /* a VOLATILE-LOAD immediate */
-;       for(int i=0;i<3;i++){ if((q>>i)&1) cq_phi(0.2); r=cq_theta(r,0.1); }
-;       q=cq_theta(q,0.9); return cq_measure(q)+cq_measure(r); }
+;       for(int i=0;i<3;i++){ if((q>>i)&1) cq_phi(0.2); cq_theta(&r,0.1); }
+;       cq_theta(&q,0.9); return cq_measure(q)+cq_measure(r); }
 ;
 ; The (1a) fence is `isa<Constant>(Imm)` at the commit, whose whole argument is
 ; that a `Constant` can NEVER become tainted between `lowerLoops` and `lowerOps`.

@@ -1,7 +1,7 @@
 ; spec_accept_dropped_arg_theta_kept.ll — ACCEPT (bd test_C_libtooling-vsfp): the drop's
 ; cone deletion NEVER deletes a call, and a dead `cq_theta` stays.
 ;
-; `q = cq_theta(m, .5)` is read only by `h(q, m)`, whose callee ignores it. The drop
+; `q = m; cq_theta(&q, .5)` is read only by `h(q, m)`, whose callee ignores it. The drop
 ; replaces the operand by `0`, which leaves `q` with no users — and `q` is a CALL, so
 ; the cone walk stops there: a `cq_theta` is the user's gate, "never this stage's to
 ; erase, WHATEVER ITS USE COUNT" (CLAUDE.md §4i), and `clang -O1` keeps it in the
@@ -13,7 +13,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   int h(int a, int k);
-;   int main(int c, char **v) { int m = atoi(v[1]); int q = cq_theta(m, .5); int t = h(q, m); return t; }
+;   int main(int c, char **v) { int m = atoi(v[1]); int q = m; cq_theta(&q, .5); int t = h(q, m); return t; }
 ; Library TU (plain C, no CQ.h):
 ;   int h(int a, int k) { return k + 1; }
 ;

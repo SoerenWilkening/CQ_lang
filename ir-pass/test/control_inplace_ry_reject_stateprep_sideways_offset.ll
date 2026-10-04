@@ -10,8 +10,8 @@
 ; SIBLING (`udiv %1, 3`). The plain-C source is
 ; `$S/review3/R3/p/t02_udiv3_eq5.c`:
 ;
-;     int q = cq_theta(3,0.3); unsigned t = ((unsigned)q) / 3u; unsigned r = 5;
-;     if (t == 5) r = cq_theta(t, 0.9);
+;     int q = 3; cq_theta(&q,0.3); unsigned t = ((unsigned)q) / 3u; unsigned r = 5;
+;     if (t == 5) { r = t; cq_theta(&r, 0.9); }
 ;     return (int) cq_measure(r) + (int) cq_measure(t);
 ;
 ; This is the shape that makes the ORDERED half of F2 load-bearing: the compare

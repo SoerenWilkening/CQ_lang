@@ -21,11 +21,11 @@
 ;
 ; SOURCE (`clang -O1` emits exactly the SSA below — NO control flow anywhere):
 ;     __attribute__((noinline)) static int inner(int x){ return x + 3; }
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     int r = inner(a);        // clone hop; the Bennett wrap returns `cqq.out`
 ;     int u = r + 1;           // M-C: IN PLACE on the returned rail
 ;     int m = cq_measure(u);   // ...so this MEASURES the copy rail, before T
-;     a = cq_theta(a, 0.7);    // T — chained, in-place Ry on the wire
+;     cq_theta(&a, 0.7);    // T — chained, in-place Ry on the wire
 ;
 ; WHAT IS PINNED HERE, and they are three separate claims:
 ;   * CLAUSE 4 on the copy rail — `cqrt_addc_i32(%r, 1)` then

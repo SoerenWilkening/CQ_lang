@@ -4,7 +4,7 @@
 ; taint `lowerRotations` decides `Chained` on.
 ;
 ;     int y = 5; if (q > 3) y = f(a);          // 6.5 classical call under quantum control
-;     int r = y; if (q2 + y > 7) r = cq_theta(y, .2);
+;     int r = y; if (q2 + y > 7) { r = y; cq_theta(&r, .2); }
 ;
 ; At round 1 the 6.5 merge φ `%y` is untainted (its incomings are classical), so the
 ; second region is a controlled STATE PREP with the runtime seed `%y` and F1 admits

@@ -2,7 +2,7 @@
 ; that made F-A1-3 a defect rather than a policy (Track A.1, Rule-13 round-1).
 ; Verbatim `clang -O1` from `review_a1_r1_probes/c7.c`:
 ;
-;     int q = cq_theta(0, 0.5);
+;     int q = 0; cq_theta(&q, 0.5);
 ;     int t = q + 3;
 ;     int m = cq_measure(t);              /* the DERIVED rail is measured */
 ;     int a = (q == 5) ? 2 : 5;           /* the PARENT is the control    */

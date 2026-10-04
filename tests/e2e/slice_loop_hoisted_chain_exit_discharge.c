@@ -5,7 +5,7 @@
    ⚠ THIS PROGRAM WAS A LIVE, SHIPPING, VERIFY-CLEAN Rule-8 OVER-ACCEPT. On the
    2026-09-18 session ORACLE `9bd01598d574b344` it compiled at `opt` exit 0 with
    the LICM-hoisted `sqrt((double)a + 3.0)` rail LEFT ALLOCATED and ENTANGLED
-   across the trailing `cq_theta(a, 0.7)` on the register it copies — and that
+   across the trailing `cq_theta(&a, 0.7)` on the register it copies — and that
    register is then measured. The leaked rail is an INJECTIVE function of `a`'s
    basis label, i.e. a perfect which-path record standing at a non-diagonal gate:
    rolled and hand-unrolled were DIFFERENT UNITARIES (CLAUDE.md Rule 8's last

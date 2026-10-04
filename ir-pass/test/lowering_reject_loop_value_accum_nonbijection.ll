@@ -2,7 +2,7 @@
 ; (issue dtzb): a loop-rail self-update whose immediate operand is CLASSICAL and
 ; whose shape otherwise matches the in-place value rail, but whose opcode is NOT a
 ; reversible bijection:
-;     int q = cq_theta(seed, 0.25);
+;     int q = seed; cq_theta(&q, 0.25);
 ;     for (int i = 0; i < n; i++) q = q & 5;        // AND is lossy, not a bijection
 ;     return cq_measure(q);
 ; `and`/`or`/`mul`/`shl`/`lshr` are NOT bijections of the rail (they lose

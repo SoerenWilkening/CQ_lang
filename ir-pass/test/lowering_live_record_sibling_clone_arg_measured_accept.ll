@@ -4,10 +4,10 @@
 ;
 ; SOURCE:
 ;     __attribute__((noinline)) static int inner(int x){ return x * 3; }
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     int w = a * 2;                     // THE WIRE
 ;     int c = a * 3;                     // a SIBLING of the wire
-;     w = cq_theta(w, 0.5);              // T — chained, in-place Ry on the wire
+;     cq_theta(&w, 0.5);              // T — chained, in-place Ry on the wire
 ;     int z  = inner(c);                 // the sibling's post-gate fate
 ;     int mz = cq_measure(z);            // ...and it IS observed
 ;     return cq_measure(w) + mz + cq_measure(a);

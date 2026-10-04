@@ -1,7 +1,7 @@
 ; control_swap_inloop_gatefree_body.ll — ACCEPT, and the ACCEPT BOUNDARY of the
 ; F-2 identity-carry rule (bd test_C_libtooling-8h7d.5, Rule-13 ROUND 2).
 ;
-;     int q = cq_theta(0, .5);
+;     int q = 0; cq_theta(&q, .5);
 ;     for (i<2) { if (q==5) q = cq_phi(q, PI); }     // the body is ONLY a phase region
 ;     return cq_measure(q);
 ;

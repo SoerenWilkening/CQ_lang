@@ -1,5 +1,5 @@
 ; control_phase_kickback_reject_bare_i1_loop_phi.ll — DECLINE (bd 3qlq.4): the
-; LOOP-CARRIED `_Bool` — `for (…) { if (b) cq_phi(θ); b = cq_theta(b, φ); }` —
+; LOOP-CARRIED `_Bool` — `for (…) { if (b) cq_phi(θ); cq_theta(&b, φ); }` —
 ; whose condition at the header is the rail PHI, not a `cq_theta_i1` call. It is
 ; the same physical rail after the round-2 collapse claims the phi, so the gate
 ; would belong on it; admitting the phi means asking `railPhiRootMint` (the drbq

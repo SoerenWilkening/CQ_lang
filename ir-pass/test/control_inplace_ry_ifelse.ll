@@ -2,7 +2,7 @@
 ; rotation if/else (control-in-place-PRD §4 R3, owner Q4; bd
 ; test_C_libtooling-drbq Inc 1).
 ;
-;     if (c) r = cq_theta(r, .9); else r = cq_theta(r, .2);
+;     if (c) cq_theta(&r, .9); else cq_theta(&r, .2);
 ;
 ; Both arms rotate the SAME base `r`, so ONE register is relabelled twice: the
 ; true arm under `flag` (unbracketed) and the false arm under `¬flag` (the

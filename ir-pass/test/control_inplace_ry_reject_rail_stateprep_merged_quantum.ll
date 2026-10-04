@@ -2,12 +2,12 @@
 ; SECOND clause: an in-place Ry on the CONDITION'S OWN REGISTER, as `clang -O1`
 ; actually hands it to the pass (probe `t6`).
 ;
-;     _Bool b = cq_theta(b, 0.5);
-;     if (b) { b = cq_theta(b, 0.9); }
+;     _Bool b; cq_theta(&b, 0.5);
+;     if (b) { cq_theta(&b, 0.9); }
 ;
 ; ⚠ THE FENCE THAT FIRES IS NOT R4, AND SCOPING THE CLOBBER DECLINE ONTO R4
 ; WOULD HAVE PINNED NOTHING (SCOPE §0 measurement 4). On the arm edge `-O1`
-; PROVES `b == true` and const-folds the arm's `cq_theta(b, .9)` to
+; PROVES `b == true` and const-folds the arm's `cq_theta_i1(b, .9)` to
 ; `cq_theta_i1(i1 true, .9)` — so the shape arriving here is a STATE PREP, for
 ; which R4 and R6 are SKIPPED outright (`if (!StatePrep)`). What refuses it is
 ; F1's second clause: the merge's Pred-edge incoming is the TAINTED rail `%1`,

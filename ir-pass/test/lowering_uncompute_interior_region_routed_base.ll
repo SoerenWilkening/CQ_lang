@@ -3,7 +3,7 @@
 ; ITSELF A TEMPLATE RAIL, and it is never an interior candidate; the CONDITION's
 ; own chain rail, on the other side of the same region, is.
 ;
-;     q = cq_theta(u, 0.5);
+;     q = u; cq_theta(&q, 0.5);
 ;     d = q * 37;                        /* the routed base — a template rail */
 ;     if ((q & 4096) == 0) d = cq_phi(d, PI);
 ;     return cq_measure(d);

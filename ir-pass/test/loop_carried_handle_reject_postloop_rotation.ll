@@ -6,16 +6,16 @@
 ;
 ; THE PROGRAM is the owner's rolled cascade with an S-dagger after the loop:
 ;   int a = 5; bool b0[3];
-;   for (int i = 0; i < 3; ++i) { if (a >= 3) b0[i] = cq_theta(b0[i], .5);
+;   for (int i = 0; i < 3; ++i) { if (a >= 3) cq_theta(&b0[i], .5);
 ;                                 if (b0[i]) a -= 3; }
-;   a = cq_theta(a, -0.5);
+;   cq_theta(&a, -0.5);
 ;   return cq_measure(b0[0]) + cq_measure(a);
 ;
 ; ⚠ THE DECLINE STRING MOVED AND THE MOVE IS NOT A FENCE WEAKENING — READ THIS
 ; BEFORE "FIXING" IT.  On the ORACLE (`cq-opt` 07d93784…) this module declined
 ; `cq controlled lowering: condition predates a non-diagonal gate`, anchored at
 ; the region CONDITION.  That string was NOT the 2c wire fence speaking: the
-; post-loop `cq_theta(a,-.5)` is PROVABLY POST-REGION, so `condWireDisposition`
+; post-loop `cq_theta(&a,-.5)` is PROVABLY POST-REGION, so `condWireDisposition`
 ; returned `ProvenPostRegion`, which sets `DeferredWireGate` — and
 ; `DeferredWireGate` RE-SPELLS EVERY LATER DECLINE IN `classifyArms` AS THE WIRE
 ; MESSAGE.  What actually declined was the R7-loop clause (c3).  So the oracle's

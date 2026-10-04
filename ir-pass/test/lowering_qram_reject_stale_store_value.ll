@@ -3,7 +3,7 @@
 ; copies its VALUE register into the cell AT THE STORE, so a stored value whose
 ; register was rotated in place before the store is a stale read too:
 ;
-;     int q = cq_theta(0, .5);  int q2 = cq_theta(q, .3);
+;     int q = 0; cq_theta(&q, .5);  int q2 = q; cq_theta(&q2, .3);
 ;     arr[i] = q;                         // `q` names the PRE-Ry record
 ;
 ; (`-O1` forwards a C spelling of this to its reader, so this is IR-level.)

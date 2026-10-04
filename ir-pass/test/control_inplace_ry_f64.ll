@@ -1,8 +1,8 @@
 ; control_inplace_ry_f64.ll — ACCEPT spec, the control-in-place rotation diamond
 ; at a NON-i32 width (bd test_C_libtooling-drbq Inc 1).
 ;
-;     double q = cq_theta(0.0,.5); double r = cq_theta(0.0,.3);
-;     if (q > 5.0) r = cq_theta(r, .9);
+;     double q = 0.0; cq_theta(&q,.5); double r = 0.0; cq_theta(&r,.3);
+;     if (q > 5.0) cq_theta(&r, .9);
 ;
 ; The width tags the SYMBOL and nothing else (Rule 15): `cqrt_ry_f64_controlled`
 ; takes the same `(i32 ctrl, i32 handle, double angle)` as every other width, and

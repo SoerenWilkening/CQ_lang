@@ -363,10 +363,10 @@ Value *diagonalAliasHit(Value *Routed, const SmallPtrSetImpl<Value *> &Prov) {
 //
 //   * `cq_phi(x, θ)` — Rz is diagonal and ALWAYS lowers in place on `x`'s
 //     handle. This is `diagonalAliasHit`'s hop, generalized.
-//   * `cq_theta(x, θ)` with `x` TAINTED — a CHAINED Ry lowers in place on `x`'s
+//   * `@cq_theta_*(x, θ)` with `x` TAINTED — a CHAINED Ry lowers in place on `x`'s
 //     handle too (`RotationLowering`'s `Chained` branch mints no alloc). A
 //     SOURCE theta (classical arg-0) mints a fresh rail, so the walk stops
-//     there — that is what makes `int q = cq_theta(0,·); int r = cq_theta(0,·)`
+//     there — that is what makes `int q = 0; cq_theta(&q,·); int r = 0; cq_theta(&r,·)`
 //     two disjoint wires and the whole increment possible.
 //   * a `PHINode` / `SelectInst` over tainted operands — a ROUTER forwards the
 //     same physical handle (the bd tayx rule that `WireWalk` crosses).
@@ -389,7 +389,7 @@ Value *diagonalAliasHit(Value *Routed, const SmallPtrSetImpl<Value *> &Prov) {
 //     the HANDLE-LHS spelling `q - c`. For the LH spelling `k - q` the answer IS
 //     knowable at detection and is always "out of place, a FRESH rail" — so
 //     crossing `k - q` is UNCONDITIONALLY conservative here, not conditionally
-//     so. Measured cost: `int r = 5 - p; if (q==5) r = cq_theta(r,.9); …
+//     so. Measured cost: `int r = 5 - p; if (q==5) cq_theta(&r,.9); …
 //     cq_measure(p);` declines R6, while its `cq_phi` twin accepts and emits
 //     `cq_template_sub_i32_lh(5, h1)` on a fresh rail where `p` was never
 //     touched. Over-declining is safe (Prime Directive), so this is recorded and
@@ -405,7 +405,7 @@ Value *diagonalAliasHit(Value *Routed, const SmallPtrSetImpl<Value *> &Prov) {
 //
 // FORWARD hops (`WireDir::BothWays` only) are the exact MIRROR of the backward
 // list — a user whose RESULT keeps the member's own handle: `cq_phi(M,·)`, a
-// CHAINED `cq_theta(M,·)`, an `add`/`sub`/`xor` whose sole tainted operand is
+// CHAINED `@cq_theta_*(M,·)`, an `add`/`sub`/`xor` whose sole tainted operand is
 // `M`, and (since the round-1 Rule-13 review, lens L2 §1) a `PHINode` /
 // `SelectInst` / `freeze` DATA user. Three deliberate exclusions remain, each of
 // which is the STRICT direction because a non-member user faces R6's position
@@ -441,7 +441,7 @@ Value *diagonalAliasHit(Value *Routed, const SmallPtrSetImpl<Value *> &Prov) {
 //     all: it either reads the wire (R6's business) or mints a fresh rail.
 //
 // KNOWN OVER-DECLINE, stated so it is not rediscovered as a bug: the add/xor hop
-// refuses `if (q==5) r = cq_theta(r,·)` when `r = q + 1`, even though M-C would
+// refuses `if (q==5) cq_theta(&r,·)` when `r = q + 1`, even though M-C would
 // in fact lower that out of place. Over-declining is always safe (Prime
 // Directive) and the shape is outside the Inc-1 accept class either way.
 namespace {
@@ -621,7 +621,7 @@ void railWireClosure(Value *V, TaintSet &Taint, WireDir Dir,
 //     on every path where it runs, and dominates nothing.
 //
 // A hop that CAN follow the gate is a stale record either way and declines (the
-// dead `z = cq_theta(r_pre, ·)` written after the region), and every hop's own
+// dead `z = r_pre; cq_theta(&z, ·)` written after the region), and every hop's own
 // readers are enumerated regardless, because it is a member.
 //
 // SAY THE COST OUT LOUD: this is a WIDENING, and exactly one shape gains an
@@ -848,8 +848,8 @@ CallInst *inPlaceRotationArmTheta(Value *ArmIncoming, const BasicBlock *ArmBB,
 // widener needs, and it is the REASON the shape of the answer changed:
 //
 //   gen 1  (shipped Inc 4)   the compare's LITERAL `k`, bit-identical to the
-//          seed. DEFEATED by round-1 lens L2: `int t = q & 1; if (t) r =
-//          cq_theta(t,θ);` pins `t` to 1 on the `!= 0` edge while `k` is 0 —
+//          seed. DEFEATED by round-1 lens L2: `int t = q & 1; if (t) { r = t;
+//          cq_theta(&r,θ); }` pins `t` to 1 on the `!= 0` edge while `k` is 0 —
 //          NINE plain-C spellings, all accepted, all in-place Ry on the
 //          CONDITION register.
 //   gen 2  (round-1 fix)     `H`'s EDGE RANGE (`computeConstantRange` ∩
@@ -1262,7 +1262,7 @@ bool f2Model(Instruction *I, F2State &S, const DataLayout &DL,
 // F2's question, asked semantically. TRUE ⇒ some live tainted value of the
 // SEED'S type that is **NOT ON THE CONDITION'S OWN WIRE** is provably EQUAL to
 // the seed on one of the branch's two edges, i.e. the source the author wrote
-// could have been `cq_theta(<that register>,θ)` and this arm's constant is
+// could have been `cq_theta(&<that register>,θ)` and this arm's constant is
 // `-O1`'s fold of it. `Truncated` ⇒ the evaluation could not be completed; the
 // caller declines on that too.
 //
@@ -1414,7 +1414,7 @@ bool f2Model(Instruction *I, F2State &S, const DataLayout &DL,
 // H-2): a program that was LOUDLY REFUSED yesterday now receives the circuit for
 // the *other* reading.
 //   * α (15 of the 19) — the plain-C illustration is `int r = k; if (q == k)
-//     r = cq_theta(q, θ);`, which is BYTE-IDENTICAL after `-O1` to the genuine
+//     { r = q; cq_theta(&r, θ); }`, which is BYTE-IDENTICAL after `-O1` to the genuine
 //     prep (MEASURED: `probes/a_prep.c` vs `probes/a_self.c`, `diff` empty). It
 //     now compiles as a fresh rail rotated under the flag, `q` never touched.
 //     ⚠ **DO NOT ATTACK THIS FENCE WITH THAT SPELLING — IT IS THE WRONG RIVAL**
@@ -1495,7 +1495,7 @@ bool f2Model(Instruction *I, F2State &S, const DataLayout &DL,
 //
 // THE ARGUMENT, IN FULL — AND IT IS AN **OPERAND** ARGUMENT, NOT A POSITION
 // ONE. This function's question is *"the source the author wrote could have been
-// `cq_theta(<that register>, θ)`"*, and the register it is asking about can
+// `cq_theta(&<that register>, θ)`"*, and the register it is asking about can
 // occupy exactly two slots of the module in front of us: the ARM theta's arg-0,
 // or the merge φ's PRED-edge incoming. The φ `M` is defined AT THE JOIN, so `M`
 // IS NOT AVAILABLE AT EITHER SLOT — and therefore any `V` whose OPERANDS reach
@@ -2011,26 +2011,26 @@ bool fcmpEqualityHoldsOnEdge(FCmpInst::Predicate P, bool TrueEdge) {
 //     CorrelatedValuePropagation), and NONE is in the `-O1` pipeline at LLVM 19
 //     (MEASURED with `-print-pipeline-passes`: 1× ipsccp, 1× sccp, 2× early-cse,
 //     8× instcombine, 9× simplifycfg, no gvn/newgvn/jump-threading/correlated-
-//     propagation — TRACK_Z0RE.md §3). Measured from C: `if (q == s) r =
-//     cq_theta(q, θ)` keeps `%q` as arg-0, `r = q; if (q != s) r = cq_theta(s,
-//     θ)` keeps `%q` as the Pred incoming (probes e02/e09/e10/e15/e16).
+//     propagation — TRACK_Z0RE.md §3). Measured from C: `if (q == s) { r = q;
+//     cq_theta(&r, θ); }` keeps `%q` as arg-0, `r = q; if (q != s) { r = s; cq_theta(&r,
+//     θ); }` keeps `%q` as the Pred incoming (probes e02/e09/e10/e15/e16).
 //   ⚠ CORRECTED (Rule-13 r1A F-r1A-1, L7): this bullet used to end "and
 //     InstCombine's relational simplification (`select (X == Y), X, Y → Y`)
 //     acts on a SELECT, which a diamond whose arm holds a `cq_theta` CALL never
 //     becomes". FALSE as a class statement. `-O1` DOES perform ONE relational
 //     rewrite into a call operand: an if/else of two thetas differing in ONE
-//     operand (`if (q == s) r = cq_theta(q, θ); else r = cq_theta(s, θ);`) is
+//     operand (`if (q == s) { r = q; cq_theta(&r, θ); } else { r = s; cq_theta(&r, θ); }`) is
 //     SUNK by SimplifyCFG into one call reading a φ, `FoldTwoEntryPHINode` turns
 //     that φ into `select (q == s), q, s`, and InstSimplify folds it to `s` —
 //     the pinning branch is ERASED. Flat, that is an UNCONDITIONAL prep with no
 //     region (bd `zt0b`). NESTED in an outer tainted diamond it IS a runtime-seed
-//     prep that reaches F1 — the outer arm is `cq_theta(s, θ)` with Pred
+//     prep that reaches F1 — the outer arm is `@cq_theta_*(s, θ)` with Pred
 //     incoming `s` — and F2 cannot see it, because the pin lived on an edge that
 //     is NOT the region's (review_r1A_z0re probes a1/a3/a5). ⚠ The post-fold
 //     module is INDISTINGUISHABLE from a legitimate program: bd `fmt3` measured
 //     that the rotated register need not even be the erased compare's operand
 //     (probe n13: inner `q == 20`, rotated `t = q / 4`) and that the folded IR is
-//     byte-identical to `if (q2 > 3) r = cq_theta(5, .9);` (n12) — so NO question
+//     byte-identical to `if (q2 > 3) { r = 5; cq_theta(&r, .9); }` (n12) — so NO question
 //     this pass can ask of the IR in front of it separates the hazard from the
 //     program the module denotes. The disposition is therefore at the SOURCE
 //     level, not here: bd `fmt3` OPTION B (owner ruling 2026-09-28, LANDED after
@@ -2326,7 +2326,7 @@ bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
       // folded to the seed). R-1 needs no rival at all: a value
       // `peelIndependentMergePhis` MANUFACTURED **did not exist in the module
       // `clang` produced**. This function's question is *"the source the author
-      // wrote could have been `cq_theta(<that register>, θ)`"*, and a value the
+      // wrote could have been `cq_theta(&<that register>, θ)`"*, and a value the
       // author could not have named is not in that question's domain — there is
       // no rival program for F2 to be protecting against.
       //
@@ -2872,7 +2872,7 @@ enum class CondWireDisp {
 // What changed is the one case the position-free walk over-declined: a chained
 // Ry that runs strictly AFTER this region's whole emitted stream. That was the
 // single wall between CQ and a full Grover iteration (`… R0;
-// a = cq_theta(a, 0.5); a += off;` — state prep is Ry THEN +off, and no source
+// cq_theta(&a, 0.5); a += off;` — state prep is Ry THEN +off, and no source
 // spelling of S itself got past the walk).
 //
 // THE EMISSION CONTRACT IS THE PREDICATE. `SwapRouteEmit::emitRegion` builds
@@ -3190,7 +3190,7 @@ bool chainedThetaBetweenDefAndBranch(const Instruction *Def,
 //      COMPARE (PRD §13.2 row W, §13.10 Q1; owner ruling 2026-09-11 that an
 //      over-decline of a valid circuit is a DEFECT, not a safety margin).
 //
-// THE PROGRAM. `for (…) { if (q == 5) r = cq_theta(r, .9); }` with `r` disjoint
+// THE PROGRAM. `for (…) { if (q == 5) cq_theta(&r, .9); }` with `r` disjoint
 // from `q` and NO gate on `q` — the simplest thing a user writes, and PRD §13.11
 // worry 7's own headline. `q` is loop-INVARIANT, so `clang -O1` LICM-hoists the
 // compare into the preheader (and, in the hand-unrolled twin, CSEs the two
@@ -3475,7 +3475,7 @@ CondWireDisp condWireDisposition(const ControlRegion &R, TaintSet &Taint,
 }
 
 // bd test_C_libtooling-3qlq.4 (Inc 1b) — the wire question for a RAIL-LEAF
-// condition (`_Bool b = cq_theta(b0, θ); if (b) …`). The SSA name `b` read by
+// condition (`_Bool b = b0; cq_theta(&b, θ); if (b) …`). The SSA name `b` read by
 // the branch is STALE iff a non-diagonal gate fires on `b`'s wire between its
 // def and the branch; the kickback gate is emitted AT the branch and is
 // diagonal, so — exactly as `condWireDisposition` argues for a compare — a
@@ -3490,7 +3490,7 @@ CondWireDisp condWireDisposition(const ControlRegion &R, TaintSet &Taint,
 // CONFIRMED silent miscompile). The prong scans the block window for ANY
 // tainted-operand theta; the walk asks the seed's USER graph — and until F-1b-1
 // the walk's ancestry stopped at a TEMPLATE parent, so a SIBLING in-place Ry on
-// the same physical rail (`bool t = q & 1; b = cq_theta(t,.5); c = cq_theta(t,.9);
+// the same physical rail (`bool t = q & 1; b = t; cq_theta(&b,.5); c = t; cq_theta(&c,.9);
 // if (b) …`) was on neither side, and the kickback rode the register `c` moved.
 // The fix is in the walker, not here: `findNonDiagonalWireGate` now crosses a
 // chained theta's arg-0 edge whenever the parent is TAINTED (the relation
@@ -3505,7 +3505,7 @@ CondWireDisp condWireDisposition(const ControlRegion &R, TaintSet &Taint,
 // BY ANY WALK (round 2, F-1b2-4 — the sentence above once read as complete).
 // The compare path's P5 keeps its positional scan for a theta on ANOTHER wire,
 // whose residual target is a dtzb in-place `add`/`xor` that would ALIAS the
-// condition's rail (`x = b ^ 1; c = cq_theta(x, θ); if (b) …`), which the
+// condition's rail (`x = b ^ 1; c = x; cq_theta(&c, θ); if (b) …`), which the
 // forward walk deliberately does not cross. The rail path drops the prong on a
 // STRUCTURAL ground, measured: a condition rail is always read later by its own
 // branch in `R.Pred` — or, at the 4.4 select (bd r9e5, 1b-B.1, which inherits
@@ -3693,7 +3693,7 @@ bool railMeasuredBeforeReadPoint(const Value *Rail,
   // register this read can no longer name, and refuses nothing.
   //
   // WITHOUT THIS, AN ITERATION-LOCAL REGISTER IS AN OVER-DECLINE, and it is not
-  // hypothetical: `for (…) { int q = cq_theta(x,.5); if (q > 5) …;
+  // hypothetical: `for (…) { int q = x; cq_theta(&q,.5); if (q > 5) …;
   // acc += cq_measure(q); }` mints a FRESH `q` every trip, so the body measure
   // owns THIS trip's register and the next trip's mint reads the NEXT one. Five
   // shipped accepts have exactly that shape (`control_swap_inloop_diamond_iterlocal`,
@@ -3993,7 +3993,7 @@ bool declineRound2TaintedArmCone(Module &M, TaintSet &Taint) {
 // reasons F1's header gives each (an unreadable link-time value; the bd `xy9n`
 // literal-integrity defect). What is admitted is a value computed at run time —
 // an `Instruction` or an `Argument` — which `cqrt_alloc_<W>` takes as it takes
-// the unconditional prep's `cq_theta(atoi(v[1]), θ)` seed today.
+// the unconditional prep's `int q = atoi(v[1]); cq_theta(&q, θ)` seed today.
 //
 // ⚠ WHICH CONJUNCTS ARE FENCES AND WHICH ARE MEANING (Rule-13 r1A P3-2, r1B M4).
 // Measured and argued: at EVERY current caller only the first test below
@@ -4153,8 +4153,8 @@ bool reverifyRailCondReads(Module &M, TaintSet &Taint) {
 // extension.
 //
 // THE DEFECT, MEASURED (two TUs of plain C through the shipped 6.5 recipe):
-//   int q = cq_theta(3,.5); int y = 5; if (q > 5) y = ext_f(7);
-//   int b = cq_theta(y,.25); int b3 = cq_theta(y,.9);
+//   int q = 3; cq_theta(&q,.5); int y = 5; if (q > 5) y = ext_f(7);
+//   int b = y; cq_theta(&b,.25); int b3 = y; cq_theta(&b3,.9);
 //   int a = (b == 1) ? 2 : 5;  return cq_measure(a) + cq_measure(b3);
 // `y` is a 6.5 classical-call-arm `%out` derivative: CLASSICAL at round 1, so
 // `b` and `b3` are two SOURCE thetas — two rails — to gate 2c's walk, and
@@ -4311,7 +4311,7 @@ bool reverifyCmpCondReads(Module &M, TaintSet &Taint) {
     //   * TAINT-AWARE (`&Taint`, FINAL) with the blind set as `Covered` — what
     //     is left is reachable ONLY through the crossing, i.e. only because of a
     //     rail merge the classifier did not know about. That IS bd `9pum`:
-    //     `b = cq_theta(y,.25)` and `b3 = cq_theta(y,.9)` with `y` a 6.5 `%out`
+    //     `b = y; cq_theta(&b,.25)` and `b3 = y; cq_theta(&b3,.9)` with `y` a 6.5 `%out`
     //     derivative — two rails to the classifier, ONE to `lowerRotations`, and
     //     `b3` reachable from `b` only by crossing `y`.
     //
@@ -4321,7 +4321,7 @@ bool reverifyCmpCondReads(Module &M, TaintSet &Taint) {
     // the entry when it said yes. But the walker returns ONE gate, so "SOME gate
     // is visible taint-blind" was standing in for "THIS gate is visible
     // taint-blind" — two different propositions — and one extra line of plain C
-    // (`int b2 = cq_theta(b, -0.25);`, the shipped S† shape, which
+    // (`int b2 = b; cq_theta(&b2, -0.25);`, the shipped S† shape, which
     // `condWireDisposition`'s DT prong legitimately ACCEPTS as post-region)
     // suppressed the whole re-ask about the sibling `b3` that only round-2 taint
     // reveals. bd `9pum` returned verbatim, at `opt` exit 0, verify-clean and
@@ -4812,8 +4812,8 @@ Value *straightThroughConstFoldHandle(const ControlRegion &Region, Value *Routed
 //        "no tainted value defined in `L` escapes" ⇒ "no iteration-local temp
 //        escapes", for every `Roots`. It can therefore only OVER-decline, never
 //        under-. THE KNOWN OVER-DECLINE IS THE MIXED LOOP — a loop that ALSO
-//        carries a rail whose exit value is read after the loop (`for (k) { q =
-//        cq_theta(q,.1); int r = cq_theta(7,.25); if (b) r = cq_theta(r,.2); … }
+//        carries a rail whose exit value is read after the loop (`for (k) {
+//        cq_theta(&q,.1); int r = 7; cq_theta(&r,.25); if (b) cq_theta(&r,.2); … }
 //        return cq_measure(q);`) — which `markIfRailLocal` would have exempted.
 //        Filed as a follow-on rather than approximated here, because predicting
 //        `Roots` at detection is a SECOND SPELLING of two functions' claim
@@ -5000,7 +5000,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   // OPTIMISATION (bd test_C_libtooling-l4x4, l4x4.b, hazard H-4). Left in, this
   // block is not merely inapplicable — it is WRONG ABOUT THE WRONG OBJECT. A
   // rail's `users()` are the user's own reads of a `_Bool` variable: the
-  // increment's flagship program (`bool b = cq_theta(…); if (b) …; return
+  // increment's flagship program (`bool b = …; cq_theta(&b, …); if (b) …; return
   // cq_measure(b);`) has a `cq_measure_i1` user, so `HasDataUse` is TRUE and
   // `condDataUseDisposition` would adjudicate the USER'S REGISTER as a FLAG
   // LINEAGE. Every outcome is then a wrong answer about the wrong object:
@@ -5152,7 +5152,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   // is processed SECOND; a rotation arm FIRST followed by a phase/value/eq-fold
   // arm is the same mixture and has to decline on the same string. (Measured
   // during the Inc-1 build: with only the one-directional test, `if(c)
-  // r=cq_theta(r,·) else r=cq_phi(r,·)` declined — but on R6's
+  // cq_theta(&r,·); else r=cq_phi(r,·)` declined — but on R6's
   // stale-record string, by luck, because the sibling arm's `cq_phi` is a
   // post-region user of the base. Luck is not a fence.)
   bool SawRotationArm = false;
@@ -5324,7 +5324,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       //      2026-09-14 ORACLE (`cq-opt` f7b65d8c…, built from 59ac5b7), three
       //      pairs, plain C at `-O1`, traces byte-compared:
       //
-      //        `for (k<2) if (b) r = cq_theta(r,.2);`        rolled == unrolled
+      //        `for (k<2) if (b) cq_theta(&r,.2);`        rolled == unrolled
       //                                                       (8 trace lines)
       //        the same with `if (!b)` (Ry additivity)        == (10 lines)
       //        one bool-controlled Ry + S†/S per trip         == (12 lines)
@@ -5402,8 +5402,8 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       //     This used to say "UNREACHABLE FROM PLAIN C — `-O1` (SimplifyCFG)
       //     merges two rotation arms into ONE call with an ANGLE SELECT", and that
       //     stopped being true when `include/CQ.h` put `nomerge` on every
-      //     `cq_theta_*`: `bool b = …; if (b) r = cq_theta(r,A); else
-      //     r = cq_theta(r,B);` now arrives as this two-arm if/else and declines
+      //     `cq_theta_*`: `bool b = …; if (b) cq_theta(&r,A); else
+      //     cq_theta(&r,B);` now arrives as this two-arm if/else and declines
       //     HERE (`fmt3_probes/src/n23.c`, measured) with the SAME string it got at
       //     `classifyAngleSelect`'s l4x4.a gate before — so the verdict and the
       //     diagnostic are unchanged; only the fence that speaks moved.
@@ -5444,8 +5444,8 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       //      `x02_neg_nan_angle.c` — plain C at `-O1`, `opt` exit 0,
       //      verify-clean, stage-2b clean):
       //
-      //          _Bool b = cq_theta(b,.5); int r = cq_theta(r,.25);
-      //          if (!b) r = cq_theta(r, __builtin_inf());
+      //          _Bool b; cq_theta(&b,.5); int r; cq_theta(&r,.25);
+      //          if (!b) cq_theta(&r, __builtin_inf());
       //        ->  cqrt_ry_i32(%h1, +inf)
       //            cqrt_ry_i32_controlled(%h, %h1, -inf)
       //
@@ -5481,7 +5481,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       //      finite class. So the ONLY input that breaks the identity is an angle
       //      that was ALREADY non-finite, i.e. an ill-formed CQ program in EVERY
       //      spelling (`Ry(NaN)` lands on the taken branch of the compare twin
-      //      too, and an uncontrolled `cq_theta(q, inf)` lowers to
+      //      too, and an uncontrolled `cq_theta(&q, inf)` lowers to
       //      `cqrt_ry_<W>(h, inf)` on every binary in the tree — the distinction
       //      `control_angle_select_reject_inf_arm.ll`'s header already draws).
       //      What the negated form adds is that it ALSO corrupts the untaken
@@ -5586,12 +5586,12 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // `alloc(t); ry(h, B); ry_controlled(f, h, A−B)` — the one-rail reading
         // Q4 describes. With `nomerge` on every `cq_theta_*` (CQ.h) the IF/ELSE
         // spelling no longer folds: it survives to HERE and declines — drbq.13's
-        // own counter-example `if (t == 5) r = cq_theta(t,.9); else
-        // r = cq_theta(5,.3);`, fmt3's no-region member `n9.c` (measured,
+        // own counter-example `if (t == 5) { r = t; cq_theta(&r,.9); } else
+        // { r = 5; cq_theta(&r,.3); }`, fmt3's no-region member `n9.c` (measured,
         // `fmt3_probes/src/d13a1.c`, `n9.c`; pinned by
         // `control_inplace_ry_reject_stateprep_nomerge_noregion_pin.ll`) and z0re's
         // own if/else runtime-seed spelling. The TERNARY spelling
-        // (`r = cq_theta(SEED, c ? A : B)`) still reaches S3, and z0re's C slices
+        // (`r = SEED; cq_theta(&r, c ? A : B)`) still reaches S3, and z0re's C slices
         // are spelled that way since fmt3. Q4 ("two preps = two rails = decline")
         // stands for the unfolded shape; the asymmetry is recorded, not resolved.
         //
@@ -5646,7 +5646,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         //     (`LiteralIntegrity.cpp`): a literal `undef` in two emitted gate
         //     slots is read as TWO DIFFERENT VALUES at the `-O0` stage 3, so the
         //     claim is not even well-formed. This is also the `-O1` shape of
-        //     `int r; if (…) r = cq_theta(0,θ);` (probe `p11`), i.e. reachable.
+        //     `int r; if (…) { r = 0; cq_theta(&r,θ); }` (probe `p11`), i.e. reachable.
         //
         // ---- THE RUNTIME SEED — bd `test_C_libtooling-z0re`, OWNER RULING
         //      2026-09-28, option (a); PRD §14.11 Q2 GRANTED (bd `drbq.14`).
@@ -5654,7 +5654,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // A function ARGUMENT, a load, a call result, a classical φ, a
         // `cq_measure` RESULT (a measurement is the taint SINK — Rule 3 — so its
         // value is classical feed-forward, exactly as for an UNCONDITIONAL
-        // `cq_theta(cq_measure(q0), θ)`, which the oracle already lowers to
+        // `int r = cq_measure(q0); cq_theta(&r, θ)`, which the oracle already lowers to
         // `cqrt_alloc_<W>(<measured value>)`): probe `p16` and the z0re battery.
         // Until 2026-09-28 it was refused by this very test and it was a FREE
         // widening — the clause below (the Pred incoming must be POINTER-IDENTICAL
@@ -5716,7 +5716,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // author's fix is not "make the straight-through value the seed". Worse,
         // the single string made the most ordinary R4 program a user writes
         //
-        //     for (…) { if (a == 5) a = cq_theta(a, .9); }   // Ry ON THE
+        //     for (…) { if (a == 5) cq_theta(&a, .9); }   // Ry ON THE
         //                                                     // CONDITION REGISTER
         //
         // print `state prep seed does not match the merge incoming` for a source
@@ -6084,7 +6084,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       // `BaseWire = BaseWireOrder = { i32 0 }` — NOT empty. And an LLVM
       // `ConstantInt` is uniqued per `LLVMContext`, so its use list spans the
       // whole module: R6 would enumerate the literal's users, find an unrelated
-      // `cq_theta(0, ·)` sitting AFTER the region, fail `provablyBefore` on it,
+      // `int z = 0; cq_theta(&z, ·)` sitting AFTER the region, fail `provablyBefore` on it,
       // and decline `stale rail record read past a controlled Ry` on a program
       // with no record at all. (Users in OTHER functions are skipped only because
       // `DT->isReachableFromEntry` returns false for a foreign block — i.e. by
@@ -6349,7 +6349,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // a rotation arm, declined `mixed phase/value arm` when it is not), or a
         // stray op in THIS arm (already refused by `inPlaceRotationArmTheta`).
         // Excluding them is what keeps the DIAGNOSTIC honest — without it a
-        // mixed `if(c) r=cq_theta(r,·) else r=cq_phi(r,·)` declines here, on the
+        // mixed `if(c) cq_theta(&r,·); else r=cq_phi(r,·)` declines here, on the
         // stale-record string, for a region whose actual defect is the mixture.
         // (`railWireClosure` skips the same two blocks, so a member never comes
         // from inside the region either.)
@@ -6763,7 +6763,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   // (PRD §13.4b), AND IT MOVES ACYCLIC PROGRAMS — say so plainly, because every
   // other part of that increment is about loops. Before it, a control-in-place
   // ROTATION arm set `SawRotationArm` and never `SawPhaseArm`, so `!SawPhaseArm`
-  // was true and `if (q == 5) r = cq_theta(r, .9); q = cq_theta(q, .3);` declined
+  // was true and `if (q == 5) cq_theta(&r, .9); cq_theta(&q, .3);` declined
   // `condition predates a non-diagonal gate` with NO loop anywhere in it — while
   // the identical program with `q = cq_phi(q, .3)` ACCEPTED. The fence was keyed
   // on the arm's SPELLING, not on its physics (recorded over-decline bd drbq.7).
@@ -7107,7 +7107,7 @@ PhaseKickbackDisp classifyPhaseKickback(
   // ---- 5. THE CONDITION MUST BE A LOWERABLE COMPARE, OR A COMPOUND TREE OVER
   // LOWERABLE COMPARES (P3, bd test_C_libtooling-3qlq Inc 1 part B).
   //
-  // A bare tainted `i1` (`_Bool b = cq_theta(b0,θ); if (b) cq_phi(θ);`) is NOT
+  // A bare tainted `i1` (`_Bool b = b0; cq_theta(&b,θ); if (b) cq_phi(θ);`) is NOT
   // this shape and gets its own message: the correct lowering there mints
   // NOTHING — the gate belongs directly on `b`'s own rail — and that is filed as
   // Inc 1b's bare-i1 row (PRD §6.3, §9, owner question Q4 assumed answer).
@@ -7443,8 +7443,8 @@ PhaseKickbackDisp classifyPhaseKickback(
   // NOT "two diamonds have two merge blocks": `-O1` FUSES two same-condition
   // preps into ONE diamond whose ONE merge block carries TWO prep φs, both in
   // this kickback's `Pred` (bd `b6ap`'s own construct; probe
-  // `review_r1_probes/r07_two_phi_fused.c` — `if (b0) { b1 = cq_theta(b1,.5);
-  // b2 = cq_theta(b2,.9); } if (b1 && b2) cq_phi(.3);`). The real invariant is
+  // `review_r1_probes/r07_two_phi_fused.c` — `if (b0) { cq_theta(&b1,.5);
+  // cq_theta(&b2,.9); } if (b1 && b2) cq_phi(.3);`). The real invariant is
   // rung 0's: `preppedRailPhiRegionIdx` requires `R.Merge == P` and a
   // `ControlRegion` has exactly ONE `Merge` FIELD, so a fused diamond's SECOND
   // φ matches no region, returns `kNoParent`, and declines the whole tree —
@@ -7612,10 +7612,10 @@ PhaseKickbackDisp classifyPhaseKickback(
   }
   // RUNG (ii) FOR THE COMPARE LEAVES — Track A.1, bd test_C_libtooling-r903
   // item (b). THE PARITY REPAIR, and the one-token discriminator is the whole
-  // argument: `int q = cq_theta(0,.5); int m = cq_measure(q); if (q > 3)
+  // argument: `int q = 0; cq_theta(&q,.5); int m = cq_measure(q); if (q > 3)
   // cq_phi(.3);` ACCEPTED and emitted `cq_template_icmp_sgt_i32_hl(%h, 3)` AFTER
   // `cqrt_measure_i32(%h)` — a flag minted from a COLLAPSED register, Rule 6's
-  // loud-reject class — while its `_Bool` twin (`bool b = cq_theta(0,.5);
+  // loud-reject class — while its `_Bool` twin (`bool b = 0; cq_theta(&b,.5);
   // m = cq_measure(b); if (b) cq_phi(.3);`) DECLINED through step 5b's rail
   // rung (ii) above. Same ladder, same helper, same string; the read point is
   // `Pred->getTerminator()` because the kickback's stream lands AT the branch,
@@ -8663,11 +8663,11 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
 //
 // THE SHAPE, which is what `clang -O1` makes of the C the user writes:
 //
-//     r = cq_theta(r, q == 5 ? A : B);                  // the select, written out
+//     cq_theta(&r, q == 5 ? A : B);                  // the select, written out
 //     if (q == 5) cq_phi(A); else cq_phi(B);            // Rz stem: still merged
 //
 // ⚠ CHANGED 2026-09-28 (bd test_C_libtooling-fmt3, owner ruling, option B): the
-// if/else `if (q == 5) r = cq_theta(r, A); else r = cq_theta(r, B);` NO LONGER
+// if/else `if (q == 5) cq_theta(&r, A); else cq_theta(&r, B);` NO LONGER
 // reaches this function. `include/CQ.h` puts `nomerge` on every `cq_theta_*`
 // (the same merge could erase a branch and hand the pass a different program),
 // so that if/else stays an if/else and lowers through the in-place Ry arm. For
@@ -9165,7 +9165,7 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
     // subtraction and is retired for this stem by owner question Q3. Note the
     // consequence deliberately kept: a non-finite or `ConstantExpr` arm PASSES
     // THROUGH here, which is the SAME disposition an uncontrolled
-    // `cq_theta(q, inf)` already has on both binaries. That is a decision, not
+    // `cq_theta(&q, inf)` already has on both binaries. That is a decision, not
     // an oversight, and `control_angle_select_phase_nonfinite_arm.ll` records it.
     if (valueCarriesUndef(A) || valueCarriesUndef(B))
       return AngleSelectDisp::NotApplicable;
@@ -9191,7 +9191,7 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // S3 — THE ROTATION'S arg-0. A TAINTED base is a CHAINED rotation on a live
   // register (Inc 2b, byte-for-byte unchanged). An UNTAINTED base is controlled
   // STATE PREP on a fresh rail — the plain-C spelling of the if/else two-prep
-  // shape, `if (c) r = cq_theta(t, A); else r = cq_theta(t, B);`, which `-O1`'s
+  // shape, `if (c) { r = t; cq_theta(&r, A); } else { r = t; cq_theta(&r, B); }`, which `-O1`'s
   // SimplifyCFG sinks into ONE theta reading an angle `select` (PRD §14.2e /
   // §14.11 Q5, bd `drbq.13`).
   //
@@ -9234,8 +9234,8 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // declines at F2). fmt3 is its own track; what matters HERE is that the
   // diamond's F2 is NOT a fence the literal angle select could borrow even in
   // principle. The angle select inherits the hazard and then HIDES the edge:
-  // `int t = q / 4; int r; if (t == 5) r = cq_theta(t, .9); else r =
-  // cq_theta(5, .3); … cq_measure(t)` (probe `a1`, TRACK_Z0RE.md §4) compiles
+  // `int t = q / 4; int r; if (t == 5) { r = t; cq_theta(&r, .9); } else {
+  // r = 5; cq_theta(&r, .3); } … cq_measure(t)` (probe `a1`, TRACK_Z0RE.md §4) compiles
   // at `-O1` to `cq_theta(i32 5, select((q & -4) == 20, .9, .3))` with `t =
   // sdiv q, 4` STILL LIVE and measured — IPSCCP pinned `t` to 5 in the true arm,
   // SimplifyCFG sank the two now-arg-0-identical thetas, and InstCombine moved
@@ -9260,10 +9260,10 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   //
   // ⚠ WHAT bd `fmt3` OPTION B (`nomerge` on `cq_theta_*`, landing AFTER z0re)
   // DOES TO THIS ADMISSION — ONLY THE IF/ELSE SPELLING STOPS REACHING IT. The
-  // if/else `if (c) r = cq_theta(t, A); else r = cq_theta(t, B);` reaches S3 only
+  // if/else `if (c) { r = t; cq_theta(&r, A); } else { r = t; cq_theta(&r, B); }` reaches S3 only
   // because SimplifyCFG MERGES the two thetas; under `nomerge` the if/else
   // survives and declines `if/else state prep allocates two rails` (owner ruling
-  // Q4). The TERNARY spelling `r = cq_theta(t, c ? A : B);` produces the SAME
+  // Q4). The TERNARY spelling `r = t; cq_theta(&r, c ? A : B);` produces the SAME
   // one-theta-on-an-angle-select IR with NO merge at all, so it is untouched by
   // `nomerge` and this untainted-base admission STAYS A PLAIN-C ACCEPT SURFACE
   // (Rule-13 r2 F-r2-1, measured with a `nomerge` `CQ.h`: probe `t1nm` accepts
@@ -9295,7 +9295,7 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   if (!Tree.Nodes.empty() || Tree.Leaves.size() + Tree.RailLeaves.size() != 1)
     return AngleSelectDisp::NotApplicable;  // a compound `&&`/`||` tree.
   // bd 3qlq.4 — the single leaf is a COMPARE (every pre-1b line below) or a
-  // RAIL (`_Bool b = cq_theta(…); if (b) cq_phi(A); else cq_phi(B);`, which
+  // RAIL (`_Bool b = …; cq_theta(&b, …); if (b) cq_phi(A); else cq_phi(B);`, which
   // `clang -O1` folds to `select i1 %b, double A, double B` feeding ONE
   // `cq_phi`). A rail condition is admitted for the PHASE stem only: its
   // kickback pair is `rz(b, −B); rz(b, A)` on the register itself (no mint,

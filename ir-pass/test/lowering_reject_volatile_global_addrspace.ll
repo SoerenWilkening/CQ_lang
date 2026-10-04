@@ -16,7 +16,7 @@
 ;   #include <stdlib.h>
 ;   static volatile int __attribute__((address_space(1))) K = 7;
 ;   int main(int c, char **v) {
-;     int q = cq_theta(atoi(v[1]) & 7, .5);
+;     int q = atoi(v[1]) & 7; cq_theta(&q, .5);
 ;     int r = 0;
 ;     if (q > 3) r = K;
 ;     return cq_measure(r) + cq_measure(q);

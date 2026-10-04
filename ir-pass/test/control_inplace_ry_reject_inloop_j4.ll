@@ -2,7 +2,7 @@
 ; **j4** shape: an `Rz` written on the PRE-region name of the rotated register,
 ; after the region, inside the body.
 ;
-;     for (...) { if (q > 5) r = cq_theta(r, .9); d = cq_phi(r_pre, .2); }
+;     for (...) { if (q > 5) cq_theta(&r, .9); d = cq_phi(r_pre, .2); }
 ;
 ; `%d` is an ALIAS HOP off the member `%r` (the header phi), and R6's
 ; per-activation certificate asks the same question of a hop as of a read: every

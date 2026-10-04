@@ -4,12 +4,12 @@
 ;
 ; SOURCE (`clang -O1` emits this SSA up to strength reduction — a `* 2` arrives as
 ; `shl nsw …, 1`, which lowers out of place exactly like the `mul` spelled here):
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     int w = a * 2;             // THE WIRE
 ;     int b = a * 3;             // a SIBLING of the wire, off the same parent
 ;     int c = b * 7;             // ...whose own product is measured
 ;     int mc = cq_measure(c);    //    => c is EXEMPT (clause 4)
-;     w = cq_theta(w, 0.5);      // T — chained, in-place Ry on the wire
+;     cq_theta(&w, 0.5);         // T — chained, in-place Ry on the wire
 ;     int m  = cq_measure(w);
 ;     int m0 = cq_measure(a);    //    => the ANCESTOR is LIVE (clause 3) — EXEMPT
 ;     return m + m0 + mc;

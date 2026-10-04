@@ -2,7 +2,7 @@
 ; condition, with no compare to mint from (bd drbq Inc 2b; PRD §8 / owner Q6,
 ; deferred).
 ;
-;     _Bool c = cq_theta(0, 1.1); ... cq_theta(r, c ? .9 : .3);
+;     int t = 0; cq_theta(&t, 1.1); _Bool c = t; ... cq_theta(&r, c ? .9 : .3);
 ;
 ; The whole control mechanism mints its flag AT A COMPARE
 ; (`cq_template_icmp_<pred>_<W>_hl`), and a `trunc i32 %b to i1` on a quantum

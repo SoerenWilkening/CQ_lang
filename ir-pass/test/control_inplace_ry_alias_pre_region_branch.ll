@@ -4,7 +4,7 @@
 ; that Inc 1 declined, pinned deliberately rather than left invisible).
 ;
 ;     if (opaque) cq_phi(r, .1);          // a real Rz, conditionally, BEFORE
-;     if (q > 5)  r = cq_theta(r, .9);    // the controlled Ry
+;     if (q > 5)  cq_theta(&r, .9);    // the controlled Ry
 ;     use(cq_measure(r));
 ;
 ; R6 asks a POSITION question about a read: can it observe the register AFTER the

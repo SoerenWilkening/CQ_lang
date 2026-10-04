@@ -12,17 +12,17 @@
 ; `(int)q` out of the loop, the loop reads its bits and carries a rotated `r`, and
 ; `q` is rotated after the loop:
 ;
-;     short r = cq_theta(s2, 0.3);
+;     short r = s2; cq_theta(&r, 0.3);
 ;     for (int i = 0; i < 3; i++) { if (q & (1 << i)) <arm>; r = <r rotated>; }
-;     q = cq_theta(q, 0.9);
+;     cq_theta(&q, 0.9);
 ;     return cq_measure(q) + cq_measure(r);
 ;
 ; with `q` a LAUNDERED i16 handle in two functions and a plain theta in the
 ; control:
 ;   @merge_out      q = (c > 2) ? a : b    (a 4.4 select-merge `%out`), arm cq_phi
 ;   @break_answer   q = an i16 value-arm `break` answer (`%cq.brk.out`), arm
-;                   `r = cq_theta(r, 0.1)` (controlled Ry), no unconditional Ry
-;   @theta_control  q = cq_theta(s, 0.5), arm cq_phi (the shipped shape: its
+;                   `cq_theta(&r, 0.1)` (controlled Ry), no unconditional Ry
+;   @theta_control  q = s; cq_theta(&q, 0.5); arm cq_phi (the shipped shape: its
 ;                   source is not laundered, so the old and new forecast agree)
 ;
 ; The forecast's consumer here is `invariantRegisterRootsImpl` clause (ii-a): an
@@ -54,10 +54,10 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 
-; short a = cq_theta(s,.5), b = cq_theta(t,.25); int c = cq_theta(k,.75);
-; short q = (c > 2) ? a : b;   short r = cq_theta(s2,.3);
-; for (int i = 0; i < 3; i++) { if (q & (1 << i)) cq_phi(0.2); r = cq_theta(r,.1); }
-; q = cq_theta(q, 0.9);  return cq_measure(q) + cq_measure(r);
+; short a = s, b = t; cq_theta(&a,.5); cq_theta(&b,.25); int c = k; cq_theta(&c,.75);
+; short q = (c > 2) ? a : b;   short r = s2; cq_theta(&r,.3);
+; for (int i = 0; i < 3; i++) { if (q & (1 << i)) cq_phi(0.2); cq_theta(&r,.1); }
+; cq_theta(&q, 0.9);  return cq_measure(q) + cq_measure(r);
 define i32 @merge_out(i16 noundef signext %0, i16 noundef signext %1, i32 noundef %2, i16 noundef signext %3) {
   %5 = tail call signext i16 @cq_theta_si16(i16 noundef signext %0, double noundef 5.000000e-01) #0
   %6 = tail call signext i16 @cq_theta_si16(i16 noundef signext %1, double noundef 2.500000e-01) #0
@@ -106,11 +106,11 @@ define i32 @merge_out(i16 noundef signext %0, i16 noundef signext %1, i32 nounde
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[MA]])
 ; (The loop block follows the exit block in the output, so no `ret` after it.)
 
-; short p = cq_theta(ps,.5), q = cq_theta(s,.25);
+; short p = ps, q = s; cq_theta(&p,.5); cq_theta(&q,.25);
 ; for (int i = 0; i < n; i++) { q = q ^ 5; if (q == p) break; }
-; short r = cq_theta(s2,.3);
-; for (int i = 0; i < 3; i++) { if (q & (1 << i)) r = cq_theta(r,.1); }
-; q = cq_theta(q, 0.9);  return cq_measure(q) + cq_measure(r);
+; short r = s2; cq_theta(&r,.3);
+; for (int i = 0; i < 3; i++) { if (q & (1 << i)) cq_theta(&r,.1); }
+; cq_theta(&q, 0.9);  return cq_measure(q) + cq_measure(r);
 define i32 @break_answer(i16 noundef signext %0, i16 noundef signext %1, i16 noundef signext %2, i32 noundef %3) {
   %5 = tail call signext i16 @cq_theta_si16(i16 noundef signext %1, double noundef 5.000000e-01) #0
   %6 = tail call signext i16 @cq_theta_si16(i16 noundef signext %0, double noundef 2.500000e-01) #0
@@ -172,9 +172,9 @@ define i32 @break_answer(i16 noundef signext %0, i16 noundef signext %1, i16 nou
 ; CHECK:      call void @cq_template_and_i32_hl_unc(i32 %[[BA]], i32 %[[BC]],
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[BA]])
 
-; short q = cq_theta(s,.5), r = cq_theta(s2,.3);
-; for (int i = 0; i < 3; i++) { if (q & (1 << i)) cq_phi(0.2); r = cq_theta(r,.1); }
-; q = cq_theta(q, 0.9);  return cq_measure(q) + cq_measure(r);
+; short q = s, r = s2; cq_theta(&q,.5); cq_theta(&r,.3);
+; for (int i = 0; i < 3; i++) { if (q & (1 << i)) cq_phi(0.2); cq_theta(&r,.1); }
+; cq_theta(&q, 0.9);  return cq_measure(q) + cq_measure(r);
 define i32 @theta_control(i16 noundef signext %0, i16 noundef signext %1) {
   %3 = tail call signext i16 @cq_theta_si16(i16 noundef signext %0, double noundef 5.000000e-01) #0
   %4 = tail call signext i16 @cq_theta_si16(i16 noundef signext %1, double noundef 3.000000e-01) #0

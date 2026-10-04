@@ -466,7 +466,7 @@ bool isTerminalHandle(llvm::Value *Handle, const TaintSet &taint);
 // `isTerminalHandle` above answers "is this register's last value never read
 // again?" — the DEAD-TERMINAL question. It is FALSE for every rail in the middle
 // of a live chain, which is why the whole condition-provenance chain of
-//     int f = sqrt(a + 3.0) <= 5.0;   /* a = cq_theta(...) */
+//     int f = sqrt(a + 3.0) <= 5.0;   /* cq_theta(&a, ...) */
 // has no terminal at all and is never seeded into `recoverDataDag`: four
 // entangled rails minted, never uncomputed, never freed, and both shipped gates
 // blind to it (the golden records a self-consistent stream; `free_pairing_check`

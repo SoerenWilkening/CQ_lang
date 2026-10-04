@@ -4,11 +4,11 @@
 ;
 ; SOURCE (`clang -O1` emits exactly the SSA below):
 ;     __attribute__((noinline)) static int inner(int x){ return x + 3; }
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     int r = inner(a);        // clone-call hop
 ;     int s = (r > 100);       // a 1-bit compare of the clone's result
 ;     int m = cq_measure(s);   // only that ONE bit leaves
-;     a = cq_theta(a, 0.7);    // <-- THIS GATE
+;     cq_theta(&a, 0.7);    // <-- THIS GATE
 ;
 ; THE DEFECT THIS PINS. `collectDescendantRecords` follows PRODUCER edges, and a
 ; non-void `__cq_q_<inner>_<mask>` clone call is not a producer by clause 1's

@@ -2,8 +2,8 @@
    Q==Q value-arm `break` of slice_loop_break_qq_i64.c whose escaping answer then
    SUBSCRIPTS a const table (a QROM read at a quantum index):
 
-       long long p = cq_theta(pseed, 0.5);
-       long long q = cq_theta(seed, 0.25);
+       long long p = pseed; cq_theta(&p, 0.5);
+       long long q = seed; cq_theta(&q, 0.25);
        for (int i = 0; i < n; i++) {
            q = q ^ 5;                       // in-place i64 value rail
            if (q == p) break;               // TAINTED i64 Q==Q break flag

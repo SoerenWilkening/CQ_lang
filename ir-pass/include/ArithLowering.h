@@ -222,9 +222,9 @@ bool classifyInPlaceReassignment(llvm::BinaryOperator *bo, WidthDispatch &wd,
 // arm (d) was written for (SPIKE §9.8). The M-B interior partition runs LAST, so
 // on a DERIVED-condition region
 //
-//     a = cq_theta(a, .5);  a += off;
+//     cq_theta(&a, .5);  a += off;
 //     if (((a*5)>>2) == 5) a = cq_phi(a, PI);
-//     a -= off;             a = cq_theta(a, -.5);
+//     a -= off;             cq_theta(&a, -.5);
 //
 // the oracle chain's `cq_template_ashr_…`/`cq_template_add_…` rails read `a` and
 // their `_unc`+`cqrt_free` DO land right after the region's strip — provably

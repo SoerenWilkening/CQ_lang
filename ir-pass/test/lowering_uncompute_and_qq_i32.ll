@@ -31,7 +31,7 @@
 ; Rule 12 a POSITIVE fixture alone is the obligation — there is no decline shape
 ; to mirror.
 ;
-; `q1 = cq_theta(x); q2 = cq_theta(y); d = q1 & q2` — a DEAD Q+Q terminal. The
+; `q1 = x; cq_theta(&q1, ·); q2 = y; cq_theta(&q2, ·); d = q1 & q2` — a DEAD Q+Q terminal. The
 ; forward `and` is the one place the embedding matters: AND is NOT injective as a
 ; function (|1,0>, |0,1> and |0,0> all map to 0, so it has no inverse and cannot
 ; be a unitary on two wires). What CQ emits is the EMBEDDED reversible form on

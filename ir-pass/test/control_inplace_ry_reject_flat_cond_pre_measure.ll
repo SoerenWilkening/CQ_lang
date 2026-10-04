@@ -5,7 +5,7 @@
 ; land on OPPOSITE sides. Read them together or neither is informative.
 ;
 ;     if (cc) { d = cq_measure(r); }        <-- a read of the PRE-region name, on
-;     if (q > 5) r = cq_theta(r, 0.9);          a CONDITIONAL path before the region
+;     if (q > 5) cq_theta(&r, 0.9);          a CONDITIONAL path before the region
 ;
 ; R6 asks every user of every member of the rotated base's wire closure a
 ; question. FLAT, that question is `provablyBefore(U, BI, DT)`, which is

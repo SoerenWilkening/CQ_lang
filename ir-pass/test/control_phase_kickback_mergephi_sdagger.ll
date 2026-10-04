@@ -1,6 +1,6 @@
 ; control_phase_kickback_mergephi_sdagger.ll — ACCEPT (bd `3qps`, Track P). The
 ; S† SHAPE on a prep merge φ: a chained `cq_theta` on the SAME register AFTER the
-; region (`if (b1) cq_phi(φ); b1 = cq_theta(b1, −θ);`).
+; region (`if (b1) cq_phi(φ); cq_theta(&b1, −θ);`).
 ;
 ; The wire fence finds that later Ry through the position-free walk and the DT
 ; prong proves it POST-branch (`ProvenPostRegion`). The P1 argument is what

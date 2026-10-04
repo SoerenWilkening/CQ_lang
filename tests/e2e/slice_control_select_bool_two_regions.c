@@ -2,7 +2,7 @@
    1b-B.1): a 4.4 DATA SELECT and an Inc-1b PHASE KICKBACK on ONE `_Bool`
    register, in that order.
 
-       int a = 5; bool b = cq_theta((bool)0, 0.5);
+       int a = 5; bool b = (bool)0; cq_theta(&b, 0.5);
        if (b) a -= 3;        // 1b-B.1: the copy merge, on a copied flag
        int m = cq_measure(a);
        if (b) cq_phi(0.9);   // 1b:    the kickback, on the register itself

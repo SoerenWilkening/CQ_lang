@@ -38,8 +38,8 @@
 ; owner ruling D4 of 2026-09-14c). THE BENIGN HALF OF THE CLASS, pinned so the D4
 ; decline can never widen onto it.
 ;
-;     int y = cq_theta(5, .5);
-;     for (k < 2) { int u = cq_theta(6, .4);
+;     int y = 5; cq_theta(&y, .5);
+;     for (k < 2) { int u = 6; cq_theta(&u, .4);
 ;                   s += cq_measure((u >> 1) & 1) + cq_measure(y & 1); }
 ;     return s + cq_measure(y);
 ;
@@ -56,7 +56,7 @@
 ;
 ; ⚠ THE DISCRIMINATOR THIS FILE PINS is conjunct (2) of
 ; `declineDephasingUnmarkedLoopRails`: there is no CHAINED `cq_theta` after the
-; loop. Delete `cq_measure(y)` and add `y = cq_theta(y, .9)` and this file becomes
+; loop. Delete `cq_measure(y)` and add `cq_theta(&y, .9)` and this file becomes
 ; `loop_leak_dephase_reject_noregion_live.ll`. If a widening ever makes this one
 ; decline, it has stopped being narrow and is the blanket decline owner ruling D2
 ; explicitly REJECTED.
@@ -66,7 +66,7 @@
 ; read as pinning a general one. MEASURED by Rule-13 round 1 track β
 ; (`$PREV/review_r1b/REVIEW_R1B.md` F-β1, filed as bd `test_C_libtooling-c767`,
 ; P1, closed 2026-09-15): take this very program — bd `s82e`'s exhibit
-; `w2k_noregion_invread` — and add ONE line, `u = cq_theta(u, .9);` before the
+; `w2k_noregion_invread` — and add ONE line, `cq_theta(&u, .9);` before the
 ; trip ends, and it becomes DIVERGENT (20 trace lines rolled against the
 ; hand-unrolled twin's 24, the four missing being
 ; `cq_template_lshr_i32_hl_unc` + `cqrt_free` twice). The same one-line edit moves
@@ -83,8 +83,8 @@
 ; MEASUREMENT and not a prediction: on the widened binary
 ; (`f667cf90436bd31d…`) this program is `ORACLE A:16 lines | SUBJECT A:16 lines`,
 ; UNMOVED, while its one-line variant `b7b_w2k_interfered` goes
-; `ORACLE A:20 | SUBJECT DECLINE`. The reason is exactly the stated one: `int u =
-; cq_theta(6, 0.4);` has a CLASSICAL arg 0, so it is a SOURCE theta, and conjunct
+; `ORACLE A:20 | SUBJECT DECLINE`. The reason is exactly the stated one: `int u = 6;
+; cq_theta(&u, 0.4);` has a CLASSICAL arg 0, so it is a SOURCE theta, and conjunct
 ; (2) counts only CHAINED ones. The two pinned probes are
 ; `$SES/trackS/probes/{w2k_noregion_invread,b7b_w2k_interfered}.c`.
 ;

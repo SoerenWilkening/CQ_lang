@@ -1,7 +1,7 @@
 ; railbank_deadcell_reject_partly_dead.ll — DECLINE (bd test_C_libtooling-xdu2.9 neighbour).
 ;
 ; SOURCE: tests/e2e/railbank_deadcell_matrix.c CASE_PARTLY_DEAD at clang -O1:
-;   int c[3] = {0}; for (i<3) { int t = cq_theta(c[i], .25); if (c[i] != 0 || i == 1) c[i] = t; }
+;   int c[3] = {0}; for (i<3) { int t = c[i]; cq_theta(&t, .25); if (c[i] != 0 || i == 1) c[i] = t; }
 ; PARTLY dead: c[1]'s store fires, c[0]/c[2]'s never do. After forwarding the
 ; condition is `i == 1`, not a constant, so the fold must NOT fire and the per-trip
 ; classical-condition mux keeps its decline. ⚠ This is a residual OVER-DECLINE (the

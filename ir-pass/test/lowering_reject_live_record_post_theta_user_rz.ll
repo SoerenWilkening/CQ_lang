@@ -4,9 +4,9 @@
 ; ruling came down for the ENUMERATED data-use list, so it is now the negative.
 ;
 ; SOURCE (`clang -O1` emits exactly the SSA below):
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     int c = a + 3;          // ONE record of the wire
-;     a = cq_theta(a, 0.7);   // T — chained, in-place Ry
+;     cq_theta(&a, 0.7);   // T — chained, in-place Ry
 ;     c = cq_phi(c, 1.0);     // a USER Rz naming the record AFTER T — and NOTHING observes c
 ;     return cq_measure(a);
 ;
@@ -16,7 +16,7 @@
 ; onto a register nothing ever observes is unobservable, so it cannot make `%c`
 ; "the program's own data"; `%c` is a dead, undischarged, entangled record at `T`
 ; and the module declines — the SAME verdict the rotation-BEFORE spelling
-; (`int c = a+3; c = cq_phi(c,1.0); a = cq_theta(a,0.7);`) always had, for the
+; (`int c = a+3; c = cq_phi(c,1.0); cq_theta(&a,0.7);`) always had, for the
 ; same physics at the gate (`Rz` is diagonal; it disentangles nothing).
 ;
 ; WHAT STILL ACCEPTS, so the boundary is not over-read: rotate `c` and then

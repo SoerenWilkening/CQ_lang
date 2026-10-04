@@ -1,7 +1,7 @@
 ; control_angle_select_reject_state_prep.ll — DECLINE (S3): the consumer's arg-0
 ; is CLASSICAL — controlled STATE PREP (bd drbq Inc 2b; PRD S5 / Increment 4).
 ;
-;     int r = cq_theta(0, q == 5 ? .9 : .3);
+;     int r = 0; cq_theta(&r, q == 5 ? .9 : .3);
 ;
 ; There is no live register to rotate in place: the gate would have to MINT one
 ; (`cqrt_alloc_i32(0)`) and then apply a controlled Ry to the fresh rail, whose
@@ -17,8 +17,8 @@
 ; IS INC 4's SECOND CUSTOMER SITE (PRD §14.2e / §14.11 Q5, follow-on `drbq.13`).
 ; Inc 4 shipped controlled state prep at ONE site — `inPlaceRotationArmTheta`'s
 ; classical-seed path, a flat DIAMOND — and left S3 refused. The two are the same
-; source shape seen through different `-O1` outcomes: `if (c) r = cq_theta(0,A);
-; else r = cq_theta(0,B);` is merged by SimplifyCFG into the ONE theta with an
+; source shape seen through different `-O1` outcomes: `if (c) { r = 0; cq_theta(&r,A); }
+; else { r = 0; cq_theta(&r,B); }` is merged by SimplifyCFG into the ONE theta with an
 ; angle `select` that this fixture pins, while the owner's ruling on the
 ; hand-IR if/else form is a separate explicit decline
 ; (`control_inplace_ry_reject_stateprep_ifelse_two_preps.ll`,
@@ -27,7 +27,7 @@
 ; no longer true. With `nomerge` on every `cq_theta_*` (CQ.h) the if/else is NOT merged;
 ; it reaches `classifyArms` and declines `if/else state prep allocates two rails`
 ; (drbq.13's own counter-example `a1.c` measured, `fmt3_probes/src/d13a1.c`). This
-; fixture's select shape comes from C only as `r = cq_theta(SEED, c ? A : B)`.
+; fixture's select shape comes from C only as `r = SEED; cq_theta(&r, c ? A : B)`.
 ;
 ; What S3 would need is an Inc-2b-shaped BY-DIFFERENCE lowering on a fresh rail —
 ; `alloc(SEED); cqrt_ry_<W>(h, B); cqrt_ry_<W>_controlled(f, h, A-B)` — and it

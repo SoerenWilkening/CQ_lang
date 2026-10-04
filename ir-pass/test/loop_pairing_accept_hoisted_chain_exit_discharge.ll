@@ -7,11 +7,11 @@
 ; "reachable consequence", which nobody had built until the 2026-09-18 scoping:
 ;
 ;     int a = 0; int r = 0;
-;     a = cq_theta(a, 0.5);
-;     r = cq_theta(r, 0.3);
+;     cq_theta(&a, 0.5);
+;     cq_theta(&r, 0.3);
 ;     for (int i = 0; i < 2; ++i)
-;         if (sqrt(a + 3.) <= (double)off) { r = cq_theta(r, 0.9); }
-;     a = cq_theta(a, 0.7);                      /* <- the interference */
+;         if (sqrt(a + 3.) <= (double)off) { cq_theta(&r, 0.9); }
+;     cq_theta(&a, 0.7);                      /* <- the interference */
 ;     return cq_measure(a) + cq_measure(r);
 ;
 ; ⚠ WHAT IT WAS: `opt` exit **0**, 26 trace lines against the hand-unrolled twin's

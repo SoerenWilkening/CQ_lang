@@ -3,8 +3,8 @@
 ; THE **β** (STRAIGHT-THROUGH-EDGE) HALF OF THE 2026-09-11 RULING, from plain C.
 ; Built from `probes/bc1.c`:
 ;
-;     int q = cq_theta(u, .5);
-;     int r = q;  if (q != 5) r = cq_theta(5, .9);
+;     int q = u; cq_theta(&q, .5);
+;     int r = q;  if (q != 5) { r = 5; cq_theta(&r, .9); }
 ;
 ; `-O1` folds the merge phi's **Pred** incoming from `%q` to the literal 5 —
 ; MEASURED, `%7 = phi i32 [ %5, %4 ], [ 5, %1 ]` — because on the

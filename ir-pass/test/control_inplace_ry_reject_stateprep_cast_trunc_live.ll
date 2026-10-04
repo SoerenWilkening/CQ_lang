@@ -3,7 +3,7 @@
 ;
 ; The seed is `i16 5` while the compare is at `i32`, so the shipped type gate
 ; skipped F2 here too. The `trunc` rail is live and measured, so the fresh
-; `cqrt_alloc_i16(5)` is a THIRD wire and the source's `cq_theta(t,θ)` was an
+; `cqrt_alloc_i16(5)` is a THIRD wire and the source's `@cq_theta_si16(t,θ)` was an
 ; in-place Ry on the SECOND. Written by hand rather than lifted from `-O1`
 ; because `clang` keeps the narrow theta operand tainted for the `short` C
 ; spelling (probes `g02`/`m09`, the chained class) — the shape is nevertheless

@@ -7,7 +7,7 @@
 ;
 ; The OWNER QUESTION bd z0re's member `l12C` (d88e probes). On `main` aee8f4f8 `t =
 ; h(q, m)` was a Phase-6 site: round 1 read the conservatively-tainted `t` as a
-; register and classified `if (q2 > 3) r = cq_theta(t, .2)` as an IN-PLACE
+; register and classified `if (q2 > 3) { r = t; cq_theta(&r, .2); }` as an IN-PLACE
 ; controlled-Ry arm; after `specialize()` scrubbed `t` it lowered as a controlled
 ; state prep seeded by a RUNTIME value, while the hand-inlined twin (`int t = m + 1;`)
 ; declined at F1 (literal-only seed). bd vsfp's dead-argument drop then turned the
@@ -25,7 +25,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   int h(int a, int k);
-;   int main(int c, char **v) { int m = atoi(v[1]), n = atoi(v[2]); int q = cq_theta(m, .5); int t = h(q, m); int q2 = cq_theta(n, .3); int r = t; if (q2 > 3) r = cq_theta(t, .2); return cq_measure(r) + cq_measure(q2); }
+;   int main(int c, char **v) { int m = atoi(v[1]), n = atoi(v[2]); int q = m; cq_theta(&q, .5); int t = h(q, m); int q2 = n; cq_theta(&q2, .3); int r = t; if (q2 > 3) { r = t; cq_theta(&r, .2); } return cq_measure(r) + cq_measure(q2); }
 ; Library TU (plain C, no CQ.h):
 ;   int h(int a, int k) { return k + 1; }
 ;

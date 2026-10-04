@@ -25,8 +25,8 @@
 ; and the widening is no longer "an accept, not a stream". Re-derive BOTH from
 ; the pass output; do not edit one to match the other.
 ;
-; THE NEGATED PREP (`m18`) — THE OWNER'S OWN SHAPE. `if (b0 == 0) b1 =
-; cq_theta(b1, .5)` is an ORIENTATION-B diamond, and the emitter spells the
+; THE NEGATED PREP (`m18`) — THE OWNER'S OWN SHAPE. `if (b0 == 0)
+; cq_theta(&b1, .5)` is an ORIENTATION-B diamond, and the emitter spells the
 ; anti-control by Ry ADDITIVITY (never a `cqrt_x` on a user register): rotate the
 ; fresh rail UNCONDITIONALLY by θ, then cancel it under `b0` with −θ. So M-β's
 ; RAUW target is the CHAINED cancelling clone `%tneg`, not the first theta — two

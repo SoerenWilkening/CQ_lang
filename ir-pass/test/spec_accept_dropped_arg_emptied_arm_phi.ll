@@ -10,7 +10,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   int h(int a, int k);
-;   int main(int c, char **v) { int m = atoi(v[1]); int n = atoi(v[2]); int q = cq_theta(m & 7, .5); int p = m, s = 7; if (q > 3) { p = 100 / n; s = 5; } int t = h(p, m); return t + cq_measure(s) + cq_measure(q); }
+;   int main(int c, char **v) { int m = atoi(v[1]); int n = atoi(v[2]); int q = m & 7; cq_theta(&q, .5); int p = m, s = 7; if (q > 3) { p = 100 / n; s = 5; } int t = h(p, m); return t + cq_measure(s) + cq_measure(q); }
 ; Library TU (plain C, no CQ.h):
 ;   int h(int a, int k) { return k + 1; }
 ;

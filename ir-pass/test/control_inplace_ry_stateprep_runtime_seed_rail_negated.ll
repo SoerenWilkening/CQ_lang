@@ -2,7 +2,7 @@
 ; test_C_libtooling-z0re): a RUNTIME seed under a NEGATED bare `_Bool` rail
 ; condition — the one spelling where the emitter CLONES the hoisted theta.
 ;
-;     int r = s; _Bool b = cq_theta((_Bool)0, .5); if (!b) r = cq_theta(s, .2);
+;     int r = s; _Bool b = (_Bool)0; cq_theta(&b, .5); if (!b) { r = s; cq_theta(&r, .2); }
 ;
 ; The rail path fires `¬b` by Ry ADDITIVITY (no `cqrt_x` on a user register):
 ; the hoisted theta `T` stays the UNCONDITIONAL twin (`alloc(s); ry(h, .2)`) and

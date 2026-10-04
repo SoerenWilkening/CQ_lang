@@ -15,8 +15,8 @@
 ; twin's consumer set. Round 2 instead ACCEPTED a phantom read whose operand had another
 ; reader and left the read in place — one consumer too many for the spine.
 ;
-; Caller (r2B `k19`): `int q = cq_theta(m & 7, .5); int p = q * 3; int r = h(p, m); int u = p ^ q;
-;   if (u == 10) cq_phi(3.14159); q = cq_theta(q, .7); return r + cq_measure(q);`
+; Caller (r2B `k19`): `int q = m & 7; cq_theta(&q, .5); int p = q * 3; int r = h(p, m); int u = p ^ q;
+;   if (u == 10) cq_phi(3.14159); cq_theta(&q, .7); return r + cq_measure(q);`
 ;
 ;
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err

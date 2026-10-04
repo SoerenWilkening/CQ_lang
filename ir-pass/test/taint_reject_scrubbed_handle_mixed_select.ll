@@ -53,7 +53,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   int h(int a, int k);
-;   int main(int argc, char **argv) { int m = atoi(argv[1]); int n = atoi(argv[2]); int q = cq_theta(m, .5); int t = h(q, m); int r = m; if ((t > 3) & (m == n)) r = m + 5; return cq_measure(r); }
+;   int main(int argc, char **argv) { int m = atoi(argv[1]); int n = atoi(argv[2]); int q = m; cq_theta(&q, .5); int t = h(q, m); int r = m; if ((t > 3) & (m == n)) r = m + 5; return cq_measure(r); }
 ;
 ; Regenerate: clang -O1 -emit-llvm -S the two TUs as above, then
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>.

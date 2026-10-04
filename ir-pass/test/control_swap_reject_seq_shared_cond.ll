@@ -31,7 +31,7 @@
 ; ⚠ AND THE ACCEPT IS NOT GRANTED ON THAT ARGUMENT ALONE. `crossBlockCompareMintable`
 ; WALKS the gap — region 1's arm and merge, every program point between `%c1` and
 ; region 2's branch — looking for a rail-relabelling gate on `%c1`'s own rail
-; closure, and finds none. Had region 1's arm carried `q = cq_theta(q, …)`, the walk
+; closure, and finds none. Had region 1's arm carried `cq_theta(&q, …)`, the walk
 ; would have found it and this file would still decline; that program is
 ; `control_inplace_ry_reject_crossblock_cond_wire_gate_in_gap.ll`, with its
 ; one-line-apart accepting control beside it.

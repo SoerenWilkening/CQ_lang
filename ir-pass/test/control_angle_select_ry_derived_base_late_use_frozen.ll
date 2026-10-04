@@ -2,8 +2,8 @@
 ; FREEZE probe (bd drbq Inc 2b; Inc-1 finding L, the CONFIRMED silent miscompile
 ; that shipped through a green suite).
 ;
-;     int p = cq_theta(7,.25); int r = p * 5;
-;     r = cq_theta(r, q == 5 ? .9 : .3);
+;     int p = 7; cq_theta(&p,.25); int r = p * 5;
+;     cq_theta(&r, q == 5 ? .9 : .3);
 ;     int s = r + 1; ... cq_measure(s);
 ;
 ; A register a `cqrt_{ry,rz}_<W>_controlled` fired on is FROZEN: never

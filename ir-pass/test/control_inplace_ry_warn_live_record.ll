@@ -2,8 +2,8 @@
 ; CONTROLLED spelling of an in-place Ry (bd test_C_libtooling-drbq Inc 1, the
 ; walker audit).
 ;
-;     int r = cq_theta(0,.3); int rec = r * 2;      // a DEAD derived record of r
-;     if (q > 5) r = cq_theta(r, .9);               // a controlled Ry on r's wire
+;     int r = 0; cq_theta(&r,.3); int rec = r * 2;  // a DEAD derived record of r
+;     if (q > 5) cq_theta(&r, .9);               // a controlled Ry on r's wire
 ;
 ; `warnLiveRecordRotations` reports a non-diagonal gate standing over a live
 ; derived record of its own wire: the record's rail is never restored, so it

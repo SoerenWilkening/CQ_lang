@@ -12,7 +12,7 @@
    STRICT 2b: 1 verified, 0 violation. The select-path probe moved, golden byte
    for byte, to `slice_control_angle_select_ry_derived_base_ternary.c`.
 
-       int p = cq_theta(7, 0.25);
+       int p = 7; cq_theta(&p, 0.25);
        int r = p * 5;                                     // an OUT-OF-PLACE rail
        if (q == 5) cq_theta(&r, 0.9); else cq_theta(&r, 0.3);
        int s = r + 1;                                     // a post-gate user

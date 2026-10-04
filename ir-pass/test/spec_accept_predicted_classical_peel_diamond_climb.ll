@@ -2,7 +2,7 @@
 ; HAND IR (Rule-13 r2 review probe `review_r2_cepm/probes/ir/pkdC.s1.ll`, copied verbatim to
 ; `cepm_probes/ir/`): an if/else diamond on the tainted `q > 5` with two NON-EMPTY phase arms
 ; (`cq_phi(.2)` | `cq_phi(.3); cq_phi(.1)`) and two pred-available merge φs `y=[m|n]`, `z=[n|m]`, feeding
-; `t = h(q, z); if (t > 3) q2 = cq_theta(q2, .2)` with the READING callee (`h(a,k){ g(a); return k+1; }`).
+; `t = h(q, z); if (t > 3) cq_theta(&q2, .2)` with the READING callee (`h(a,k){ g(a); return k+1; }`).
 ;
 ; THIS FILE PINS `LaterTaintOracle::walk`'s CLIMB past the φ block's direct predecessors. The merge-φ
 ; peel (`MergePhiPeel`) replaces `z` by a tainted `select` in a GROWTH drain, so `h(q, z)`'s mask grows

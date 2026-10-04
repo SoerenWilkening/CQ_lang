@@ -1,7 +1,7 @@
 ; control_inplace_ry_stateprep_runtime_seed_classical_reads.ll — ACCEPT (bd
 ; test_C_libtooling-z0re): the runtime seed is READ CLASSICALLY after the region.
 ;
-;     int r = s; if (q > 3) r = cq_theta(s, .2);
+;     int r = s; if (q > 3) { r = s; cq_theta(&r, .2); }
 ;     return cq_measure(r) + s * 3;          // `s` read after the region
 ;
 ; This file pins WHY R4 and R6 are SKIPPED (not handed the seed) for a state prep —

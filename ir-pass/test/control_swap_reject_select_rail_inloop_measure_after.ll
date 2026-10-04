@@ -2,7 +2,7 @@
 ; test_C_libtooling-r9e5, 1b-B.1; orchestrator finding F-B1-1 on the first B.1
 ; build, plain-C reachable):
 ;
-;     bool b = cq_theta((bool)0, 0.5); int acc = 0;
+;     bool b = (bool)0; cq_theta(&b, 0.5); int acc = 0;
 ;     for (int i = 0; i < 3; ++i) { int a = b ? i : 5; acc += cq_measure(a) + cq_measure(b); }
 ;
 ; The select stays INSIDE the loop body because its true arm is the loop counter

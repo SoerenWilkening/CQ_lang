@@ -4,8 +4,8 @@
 ; (bd test_C_libtooling-3d8q, Rule-13 round-1 finding F-D1-1), and the pin that
 ; keeps that finding's fix from becoming an over-decline.
 ;
-;   int q = cq_theta(0, 0.3);
-;   for (int i = 0; i < 3; i++) { q = cq_theta(q, 0.1); s += cq_measure(q); }
+;   int q = 0; cq_theta(&q, 0.3);
+;   for (int i = 0; i < 3; i++) { cq_theta(&q, 0.1); s += cq_measure(q); }
 ;
 ; The chain is SELF-ASSIGNED, so the loop header φ `%r` carries it: `%r`
 ; re-establishes the record on the back edge, `phiTracksWire` proves it, and the

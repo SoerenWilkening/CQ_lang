@@ -6,7 +6,7 @@
 ; this header moved — so the module below is still, character for
 ; character, the one the four drbq Inc-4 adversarial rounds argued over.
 ;
-;     int a = q & 6;  int r = 2;  if (a == 2) r = cq_theta(2, .9);
+;     int a = q & 6;  int r = 2;  if (a == 2) { r = 2; cq_theta(&r, .9); }
 ;
 ; ---- WHY IT IS AN ACCEPT NOW (bd `drbq.14`; F2's `CondWire` narrowing)
 ;
@@ -31,7 +31,7 @@
 ;   register is not touched by the region at all.
 ;
 ; THE RIVAL IT SILENTLY ABSORBS (alpha reading): the source rotated the
-; CONDITION'S OWN register IN PLACE — `cq_theta(<the pinned register>, θ)` —
+; CONDITION'S OWN register IN PLACE — `cq_theta(&<the pinned register>, θ)` —
 ; and `-O1` const-folded arg-0 to the literal on the edge where the equality
 ; is a theorem.
 ; ⚠ SAY IT IN THOSE WORDS: a program that was LOUDLY REFUSED before this
@@ -73,7 +73,7 @@
 ; case PRD §14.2b's prose does not enumerate and its SPELLING already covers
 ; (measured 2026-09-05, from plain C; bd test_C_libtooling-drbq Inc 4).
 ;
-;     int r = 2;  if ((q & 6) == 2) r = cq_theta(q & 6, .9);
+;     int r = 2;  if ((q & 6) == 2) { r = q & 6; cq_theta(&r, .9); }
 ;
 ; `-O1` proves `(q & 6) == 2` on the arm edge, folds the arm's `q & 6` to the
 ; literal `2`, and DELETES the second `and`. The module that reaches the pass is
@@ -81,7 +81,7 @@
 ; `%a`, an arm theta seeded with the compare literal, and a pred incoming of the
 ; same literal. Byte-identical, therefore, to a genuine `int r = 2; if
 ; ((q&6)==2)
-; r = cq_theta(2, .9);`.
+; { r = 2; cq_theta(&r, .9); }`.
 ;
 ; ⚠ THE CONDITION REGISTER F2 IS PROTECTING HERE IS NOT `q` — IT IS `%a`, a rail
 ; the flag mint's template chain creates. §14.2b's text says "a TAINTED operand
@@ -107,8 +107,8 @@
 ;
 ; ⚠ THAT CONTRAST IS BETWEEN THE TWO `.ll` FILES, NOT BETWEEN TWO C PROGRAMS
 ; (corrected 2026-09-05, round-1 Rule-13 review, lens L2 finding F-L2-7). The C
-; program a reader would infer for the accept — `int r = 0; if ((q&6)==2) r =
-; cq_theta(q&6, .9);` — does NOT produce that fixture: `-O1` folds the arm's
+; program a reader would infer for the accept — `int r = 0; if ((q&6)==2) { r = q&6;
+; cq_theta(&r, .9); }` — does NOT produce that fixture: `-O1` folds the arm's
 ; `q & 6` to `2` there as well, and it then declines on **F1** (seed 2 vs pred
 ; incoming 0). The accept fixture's C has a source-written `0` in the arm.
 ;

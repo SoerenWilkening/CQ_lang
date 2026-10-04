@@ -1,8 +1,8 @@
 ; control_inplace_ry_diamond.ll — ACCEPT spec, the CONTROL-IN-PLACE ROTATION
 ; diamond (control-in-place-PRD §4 shape (a), bd test_C_libtooling-drbq Inc 1).
 ;
-;     int q = cq_theta(0,.7); int r = cq_theta(0,.3);
-;     if (q == 5) r = cq_theta(r, .9);         // S1
+;     int q = 0; cq_theta(&q,.7); int r = 0; cq_theta(&r,.3);
+;     if (q == 5) cq_theta(&r, .9);         // S1
 ;
 ; A tainted-control Ry has NO swap-route form, so this is not an optimization of
 ; the phase path — it is the mechanism (PRD §2). The route's premise is that the

@@ -45,9 +45,9 @@
 ;     a += off;
 ;     if (((a * 5) >> 2) == 5) a = cq_phi(a, PI);
 ;     a -= off;
-;     a = cq_theta(a, -0.5);
+;     cq_theta(&a, -0.5);
 ;     if (a == 0) cq_phi(0, PI);
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

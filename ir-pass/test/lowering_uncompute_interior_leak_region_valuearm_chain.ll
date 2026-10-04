@@ -9,7 +9,7 @@
 ; PROVENANCE: `clang -O1` output (a 6-op arm — a shorter one folds to a tainted
 ; select, PRD §8.4 / slice_control_value_diamond.c) of
 ;
-;     int q = cq_theta(u, 0.5);  int p = cq_theta(u, 0.25);
+;     int q = u; cq_theta(&q, 0.5);  int p = u; cq_theta(&p, 0.25);
 ;     if (((q * 5) >> 2) == 5) { p = p+3; p = p*5; p = p^9; p = p+1; p = p*7; p = p^2; }
 ;     return cq_measure(q) + cq_measure(p);
 ;

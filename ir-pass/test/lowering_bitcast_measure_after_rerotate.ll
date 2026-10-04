@@ -9,7 +9,7 @@
 ;     "The rule is the language semantics; the enforcement is per-site and is not
 ;      yet complete. … the example above declines, but replacing the arithmetic
 ;      with a MEASUREMENT of the same stale name —
-;      `int q = cq_theta(seed,.3); int mark = q; cq_ry(q,.4); cq_measure(mark);`
+;      `int q = seed; cq_theta(&q,.3); int mark = q; cq_theta(&q,.4); cq_measure(mark);`
 ;      — is accepted … `declineStaleRecordOps` covers tainted PURE OPS only …
 ;      Do not rely on the compiler to catch this spelling."
 ;

@@ -2,7 +2,7 @@
 ; 5a, bd test_C_libtooling-6uqc). THE FLAGSHIP INTERIOR-RAIL FIXTURE: bd 6uqc's
 ; P1, verbatim, as the pass receives it.
 ;
-;     int f = sqrt(a + 3.0) <= 5.0;      /* a = cq_theta(a, 0.5) */
+;     int f = sqrt(a + 3.0) <= 5.0;      /* cq_theta(&a, 0.5) */
 ;     return cq_measure(f);
 ;
 ; THE DEFECT IT PINS. `clang -O1` DCEs only chains that are dead BEFORE the pass;

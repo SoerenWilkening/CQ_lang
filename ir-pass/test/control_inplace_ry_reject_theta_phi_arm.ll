@@ -1,7 +1,7 @@
 ; control_inplace_ry_reject_theta_phi_arm.ll — DECLINE: a `cq_phi` (Rz) BESIDE
 ; the `cq_theta` (Ry) in one arm (PRD shape S3; bd test_C_libtooling-drbq).
 ;
-;     if (q > 5) { r = cq_phi(r,.2); r = cq_theta(r,.9); }
+;     if (q > 5) { r = cq_phi(r,.2); cq_theta(&r,.9); }
 ;
 ; A mixed in-place SPINE (`rz; ry` on one register) is shape (b), deferred with
 ; the multi-rotation case (PRD §8). The arm has two non-terminators, so the

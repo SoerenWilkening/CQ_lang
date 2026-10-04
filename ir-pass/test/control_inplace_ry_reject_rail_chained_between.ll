@@ -2,9 +2,9 @@
 ; other half of the same closure: a CHAINED `cq_theta` on the condition register
 ; between its definition and the branch (probe `p2`):
 ;
-;     _Bool b = cq_theta(t, 0.5);
-;     _Bool c = cq_theta(b, 0.9);      /* IN PLACE on b's rail */
-;     if (b) r = cq_theta(r, 0.9);
+;     _Bool b = t; cq_theta(&b, 0.5);
+;     _Bool c = b; cq_theta(&c, 0.9);  /* IN PLACE on b's rail */
+;     if (b) cq_theta(&r, 0.9);
 ;
 ; The branch names `b` while the register holds `Ry(0.9)Ry(0.5)|t⟩`. Same fence,
 ; same string, different direction through the wire — committed separately

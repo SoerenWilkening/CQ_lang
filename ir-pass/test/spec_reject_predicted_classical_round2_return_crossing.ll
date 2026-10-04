@@ -1,6 +1,6 @@
 ; spec_reject_predicted_classical_round2_return_crossing.ll — DECLINE (bd test_C_libtooling-cepm (round 2; bd we38)).
 ; The decline twin of `spec_accept_predicted_classical_measured_callee.ll`: here `F`'s RETURN is a 6.5
-; merge `%out` (`F(n){ r = cq_theta(n,.3); y = 0; if (r > 5) y = ext_f(7); return y; }`), so bd 3jru's
+; merge `%out` (`F(n){ r = n; cq_theta(&r,.3); y = 0; if (r > 5) y = ext_f(7); return y; }`), so bd 3jru's
 ; return crossing taints `F(n)` in ROUND 2 and the site `h(q, F(n))`'s mask grows. That growth is
 ; refused by `declineQuantumReturnCalls` at the post-fixpoint slot, before `specialize()` — with or
 ; without round 1b's callee seed (measured by Rule-13 r1A: identical decline string). THE STRING IS
@@ -10,7 +10,7 @@
 ; Caller TU (-include CQ.h):
 ;   int h(int a, int k);
 ;   int F(int n);
-;   int main(int c, char **v) { int m = atoi(v[1]); int n = atoi(v[2]); int q = cq_theta(m, .5); int y = F(n); int t = h(q, y); int q2 = cq_theta(n, .4); if (t > 3) q2 = cq_theta(q2, .2); return cq_measure(q2) + cq_measure(q); }
+;   int main(int c, char **v) { int m = atoi(v[1]); int n = atoi(v[2]); int q = m; cq_theta(&q, .5); int y = F(n); int t = h(q, y); int q2 = n; cq_theta(&q2, .4); if (t > 3) cq_theta(&q2, .2); return cq_measure(q2) + cq_measure(q); }
 ; Library TU 1 (plain C):
 ;   /* h READS a (a call to g, an external here) and returns the CLASSICAL k + 1. */
 ;   void g(int a);
@@ -32,7 +32,7 @@
 ; Library TU 6 (plain C):
 ;   #include "CQ.h"
 ;   int ext_f(int a);
-;   int F(int n) { int r = cq_theta(n, .3); int y = 0; if (r > 5) y = ext_f(7); return y; }
+;   int F(int n) { int r = n; cq_theta(&r, .3); int y = 0; if (r > 5) y = ext_f(7); return y; }
 ;
 ; Oracle 9a230646: the same DECLINE (byte-identical first error line).
 ; Hand-inlined twin (r6aT.c) declines with the SAME string.

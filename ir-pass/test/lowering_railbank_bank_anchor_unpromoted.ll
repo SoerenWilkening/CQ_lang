@@ -7,7 +7,7 @@
 ; "THE PROMOTER RAN". Rule 17 and the owner's 2026-09-11 ruling both apply: an
 ; over-decline of a valid circuit is a DEFECT, not a safety margin. The program
 ;
-;   for (i = 0; i < 3; ++i) { b[i] = cq_theta(z, 0.5); }
+;   for (i = 0; i < 3; ++i) { b[i] = z; cq_theta(&b[i], 0.5); }
 ;   ...  s += cq_measure(b[i]);
 ;
 ; writes every cell UNCONDITIONALLY and never reads one inside the loop, so it is

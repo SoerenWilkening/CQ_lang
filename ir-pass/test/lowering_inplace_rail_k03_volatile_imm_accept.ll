@@ -5,7 +5,7 @@
 ; so it is neither a `Constant` nor an `Argument`, and it is still CLASSICAL.
 ;
 ;     volatile int g = 9;
-;     int slice(int u){ int r=cq_theta(u,0.3); int n = g;
+;     int slice(int u){ int r=u; cq_theta(&r,0.3); int n = g;
 ;       for(int i=0;i<3;i++){ r = r ^ n; }
 ;       return cq_measure(r); }
 ;

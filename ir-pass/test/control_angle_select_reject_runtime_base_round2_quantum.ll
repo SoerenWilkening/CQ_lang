@@ -3,7 +3,7 @@
 ; angle-select twin of `control_inplace_ry_reject_stateprep_runtime_seed_round2_quantum.ll`.
 ;
 ;     int y = 5; if (q > 3) y = f(a);                 // 6.5 → `%out` rail at round 1
-;     int r = cq_theta(y, (q2 + y > 7) ? .9 : .3);    // angle select on base `y`
+;     int r = y; cq_theta(&r, (q2 + y > 7) ? .9 : .3);  // angle select on base `y`
 ;
 ; At round 1 `%y` is an untainted 6.5 merge φ, so S3 admits it as a RUNTIME base and
 ; SKIPS S7's rail prong, S8 and S9 (a fresh rail has no pre-region name). The 6.5

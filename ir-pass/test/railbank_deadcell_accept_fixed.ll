@@ -2,7 +2,7 @@
 ;
 ; SOURCE: tests/e2e/railbank_deadcell_matrix.c CASE_DEAD_FIXED at clang -O1:
 ;   int c[3] = {0};
-;   for (i<3) { int t = cq_theta(c[i], .25); if (c[i] != 0) c[i] = t; }
+;   for (i<3) { int t = c[i]; cq_theta(&t, .25); if (c[i] != 0) c[i] = t; }
 ;   for (i<3) s += cq_measure(c[i]);
 ; The zero seed makes `c[i] != 0` CONSTANT FALSE. The promoter's own forwarding
 ; (PASS B) and fold (PASS F) turn the branch condition into `i1 true` (the -O1

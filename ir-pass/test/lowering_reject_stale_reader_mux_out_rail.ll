@@ -2,8 +2,8 @@
 ; test_C_libtooling-3d8q, P1). THE `MergePhiPeel` / MUX OUT-RAIL CUSTOMER: two
 ; sibling in-place Ry on one DERIVED rail, both measured.
 ;
-;   int q=0; q=cq_theta(q,0.3); int m=q+1;
-;   int r1=cq_theta(m,0.2); int r2=cq_theta(m,0.6);
+;   int q=0; cq_theta(&q,0.3); int m=q+1;
+;   int r1=m; cq_theta(&r1,0.2); int r2=m; cq_theta(&r2,0.6);
 ;   printf("%d\n", cq_measure(r1)+cq_measure(r2));
 ;
 ; That is `review_b6ap_r2_probes/S04_sibling_plain_oracle.c` — the CONTROL that

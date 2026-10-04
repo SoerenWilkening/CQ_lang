@@ -1,7 +1,7 @@
 ; control_angle_select_reject_qq_compare.ll — DECLINE (S4): a Q+Q condition
 ; (bd drbq Inc 2b).
 ;
-;     if (q > p) r = cq_theta(r,.9); else r = cq_theta(r,.3);
+;     if (q > p) cq_theta(&r,.9); else cq_theta(&r,.3);
 ;
 ; BOTH compare operands are quantum. S4 requires EXACTLY ONE tainted operand —
 ; the `_hl`/`_lh` shape `lowerCompareToFlag` mints from with an empty `qqWidth`

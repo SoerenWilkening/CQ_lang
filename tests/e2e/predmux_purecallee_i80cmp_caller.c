@@ -21,7 +21,7 @@
    SHAPE. A tainted-condition diamond with TWO merge phis (the W3 claim witness
    PredMux needs at top level), whose taken arm calls the outlined `leafl`:
 
-       q = cq_theta(u0, 0.5)                 -- the sole taint source
+       q = u0; cq_theta(&q, 0.5)             -- the sole taint source
        if (q < 0.5L) { r = leafl(q);         -- the SPECULATED pure call
                        z = r - 0.5L; z2 = r; }
        else          { z = q * 2.0L; z2 = q; }

@@ -1,7 +1,7 @@
 ; lowering_reject_stale_reader_sibling_theta.ll — DECLINE (bd
 ; test_C_libtooling-3d8q, P1). THE REPRODUCER, one line of plain C:
 ;
-;   int q=cq_theta(0,0.3); int b=cq_theta(q,0.5); int c=cq_theta(q,0.9);
+;   int q=0; cq_theta(&q,0.3); int b=q; cq_theta(&b,0.5); int c=q; cq_theta(&c,0.9);
 ;   return cq_measure(b)+cq_measure(c);
 ;
 ; `%b` and `%c` are two in-place Ry on ONE physical rail (`lowerRotations` RAUWs
@@ -13,7 +13,7 @@
 ; ⚠ WHY THIS IS THE PROJECT'S PUREST RULE-2 CASE, and why a green suite could
 ; never have caught it: on the pre-fix compiler it emitted
 ; `ry(.3); ry(.5); ry(.9); measure; measure` — BYTE-IDENTICAL to the stream of a
-; DIFFERENT, well-formed program (`a=cq_theta(q,.5); c=cq_theta(a,.9);
+; DIFFERENT, well-formed program (`a=q; cq_theta(&a,.5); c=a; cq_theta(&c,.9);
 ; cq_measure(c)+cq_measure(c)`, the accept twin
 ; `lowering_stale_reader_chain_accept.ll`). `opt` exit 0, verify-clean, STRICT
 ; stage 2b `0 violation(s)`. The golden byte-diff proves every symbol resolves,

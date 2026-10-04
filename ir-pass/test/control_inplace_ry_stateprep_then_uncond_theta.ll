@@ -2,7 +2,7 @@
 ; `cq_theta` on the prepped register after the region (PRD §14.3 rows A-17/A-22;
 ; probe `p12d`).
 ;
-;     int r = 0; if (q == 5) r = cq_theta(0, .9);  r = cq_theta(r, .4);
+;     int r = 0; if (q == 5) { r = 0; cq_theta(&r, .9); }  cq_theta(&r, .4);
 ;
 ; The post-region theta is CHAINED (its arg-0 is the merge φ, which M-β RAUW'd to
 ; the hoisted state-prep theta and `lowerRotations` then RAUW'd to the alloc

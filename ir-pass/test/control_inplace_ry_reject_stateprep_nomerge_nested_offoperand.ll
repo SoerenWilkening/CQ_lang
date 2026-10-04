@@ -4,8 +4,8 @@
 ; THE C SOURCE (`fmt3_probes/src/n13.c`) — the SECOND route, and the evidence
 ; the owner withdrew the 2026-09-28 α-extension on:
 ;
-;     int t = q / 4; int q2 = cq_theta(7, .4); int r = 5;
-;     if (q2 > 3) { if (q == 20) r = cq_theta(t, .9); else r = cq_theta(5, .9); }
+;     int t = q / 4; int q2 = 7; cq_theta(&q2, .4); int r = 5;
+;     if (q2 > 3) { if (q == 20) { r = t; cq_theta(&r, .9); } else { r = 5; cq_theta(&r, .9); } }
 ;     return cq_measure(r) + cq_measure(t) + cq_measure(q2);
 ;
 ; Here the rotated register `t` is NOT the inner compare's operand (`q`). IPSCCP
@@ -13,7 +13,7 @@
 ; sank them with ONE φ `[t, 5]`, FoldTwoEntryPHINode made
 ; `select (q == 20), t, 5`, and InstSimplify's `simplifyWithOpReplaced(t, q := 20)`
 ; = `sdiv 20, 4` = 5 folded it to the literal. The module was then IDENTICAL to
-; `a6`'s and to the legitimate `if (q2 > 3) r = cq_theta(5, .9);`, and ACCEPTED.
+; `a6`'s and to the legitimate `if (q2 > 3) { r = 5; cq_theta(&r, .9); }`, and ACCEPTED.
 ;
 ; SINCE fmt3 (`nomerge` on every `cq_theta_*`) this is what `clang -O1` produces
 ; (transcribed from `fmt3_probes/out/n13.nomerge.s1.ll`): nothing is sunk, the

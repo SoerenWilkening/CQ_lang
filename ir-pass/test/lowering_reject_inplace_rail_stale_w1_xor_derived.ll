@@ -7,10 +7,10 @@
 ;     int ext_f(int a);                        /* a second TU: `return a+100;` */
 ;     __attribute__((noinline))
 ;     int run(int seed, int pseed, int n) {
-;         int p = cq_theta(pseed, 0.5);
+;         int p = pseed; cq_theta(&p, 0.5);
 ;         int y = 5; if (p > 5) y = ext_f(7);  /* 6.5 CLASSICAL-CALL ARM -> %out */
 ;         int w = y & 7;                       /* DERIVED from %out */
-;         int q = cq_theta(seed, 0.25);
+;         int q = seed; cq_theta(&q, 0.25);
 ;         for (int i = 0; i < n; i++) { q = q ^ w; if ((q & 1) == 0) break; }
 ;         return cq_measure(q) + cq_measure(y); }
 ;

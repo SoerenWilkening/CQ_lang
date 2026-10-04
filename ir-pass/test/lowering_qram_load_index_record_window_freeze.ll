@@ -3,9 +3,9 @@
 ; free is a separate defect owned elsewhere).
 ;
 ; SOURCE (`tbl` a static const table with DISTINCT entries, non-main):
-;     _Bool b = cq_theta(u, .5);
+;     _Bool b = u; cq_theta(&b, .5);
 ;     int v = tbl[b];                  // G: the load reads b as its index
-;     b = cq_theta(b, -.5);            // N: a non-diagonal gate on that index
+;     cq_theta(&b, -.5);            // N: a non-diagonal gate on that index
 ;     printf("%d %d\n", b, v);         // the tape records b's POST-N label
 ;
 ; THE DEFECT (@defect). The dead-terminal spine reverse-plays the whole DAG: it

@@ -1,8 +1,8 @@
 ; control_inplace_ry_stateprep_negated.ll — ACCEPT: controlled STATE PREP whose
 ; arm is the FALSE successor (Rule 9 polarity), bd test_C_libtooling-drbq Inc 4.
 ;
-;     int q = cq_theta(3,.3); int r = 0;
-;     if (q != 5) r = cq_theta(0, .9);
+;     int q = 3; cq_theta(&q,.3); int r = 0;
+;     if (q != 5) { r = 0; cq_theta(&r, .9); }
 ;
 ; MEASURED `-O1` shape (probe `p02`): clang canonicalizes `!=` to `icmp eq` and
 ; SWAPS the successors, so the gate arm is the FALSE edge — `br i1 %c, label

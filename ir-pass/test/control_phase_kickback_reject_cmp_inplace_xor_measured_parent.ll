@@ -9,7 +9,7 @@
 ; there is a reachable DECLINE face, from single-TU plain `clang -O1` C.
 ;
 ;     int slice(int u) {
-;       int q = cq_theta(u, 0.5);  int acc = 0;
+;       int q = u; cq_theta(&q, 0.5);  int acc = 0;
 ;       for (int i = 0; i < 3; ++i) {
 ;         acc += cq_measure(q);          /* the register COLLAPSES */
 ;         q = q ^ 9;                     /* IN PLACE: same rail, NEW SSA name */

@@ -11,7 +11,7 @@
 // |seed⟩:
 //
 //     %h = cqrt_alloc_i32(%m)      ; |m⟩
-//     cqrt_ry_i32(%h, 0.5)         ; the user's cq_theta(m, 0.5), q dead
+//     cqrt_ry_i32(%h, 0.5)         ; the user's `int q = m; cq_theta(&q, 0.5)`, q dead
 //     cqrt_ry_i32(%h, -0.5)        ; spine adjoint: back to |m⟩, NOT |0⟩
 //     cqrt_free(%h)                ; reset of |m⟩ — a dirty free for m ≠ 0
 //

@@ -1,8 +1,8 @@
 ; control_inplace_ry_sequential.ll — ACCEPT spec: TWO control-in-place rotation
 ; regions in sequence on ONE register (bd test_C_libtooling-drbq Inc 1).
 ;
-;     if (q > 5) r = cq_theta(r, .9);
-;     if (q > 7) r = cq_theta(r, .4);
+;     if (q > 5) cq_theta(&r, .9);
+;     if (q > 7) cq_theta(&r, .4);
 ;
 ; After `clang -O1` the first region's MERGE BLOCK hosts the second region's
 ; tainted branch, which is the bd `hcrg` sequential-chain shape: block lifetime is

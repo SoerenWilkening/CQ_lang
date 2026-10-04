@@ -6,9 +6,9 @@
 ; after the Ry. Pins that the sweep seeds the register `qramIndexRegister`
 ; strips a `zext` to (seeding the `zext` itself finds no gate here).
 ;
-;     unsigned q = cq_theta(0u, .5);
+;     unsigned q = 0u; cq_theta(&q, .5);
 ;     unsigned long w = q;           // zext here, before the gate
-;     unsigned q2 = cq_theta(q, .3);
+;     unsigned q2 = q; cq_theta(&q2, .3);
 ;     int v = tbl[w];
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s

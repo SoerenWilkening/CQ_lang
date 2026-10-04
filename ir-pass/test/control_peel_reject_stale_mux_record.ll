@@ -8,8 +8,8 @@
 ; Transcribed from probe `S02_stale_mux_record.c`:
 ;
 ;     int m = 5, n = 1;
-;     if (q == 5) { a = cq_theta(a, 0.9); m = 7; n = 2; }
-;     int r = cq_theta(m, 0.2);   // SOURCE prep at :337 (m is a classical phi);
+;     if (q == 5) { cq_theta(&a, 0.9); m = 7; n = 2; }
+;     int r = m; cq_theta(&r, 0.2);  // SOURCE prep at :337 (m is a classical phi);
 ;                                 // CHAINED at lowerRotations (m is the mux rail)
 ;     int s = m + 1;              // reads the PRE-Ry record of that same rail
 ;
@@ -17,7 +17,7 @@
 ; `declineStaleRecordOps`' own slot (`CQLoweringPass.cpp:337`) `%8` is a CLASSICAL
 ; `phi`, so `%11 = add i32 %8, 1` is a classical `add` that is not even in
 ; `inLowerOpsScope` — the once-only sweep structurally cannot see it. The peel then
-; turns `%8` into a tainted `select`, which flips `cq_theta(m, 0.2)` from a SOURCE
+; turns `%8` into a tainted `select`, which flips `@cq_theta_si32(m, 0.2)` from a SOURCE
 ; mint into a CHAINED in-place `Ry` on the mux rail, and the `add` becomes a read
 ; of that rail's pre-rotation record. Only call 5, re-run over the delta, asks.
 ;

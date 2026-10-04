@@ -3,7 +3,7 @@
 ; derived-condition phase regions on one wire — the bd hcrg sequential-region
 ; shape, with a chain in front of each condition.
 ;
-;     q = cq_theta(u, 0.5);
+;     q = u; cq_theta(&q, 0.5);
 ;     if (((q * 37) >> 3) == 5)  q = cq_phi(q, PI);
 ;     if (((q * 11) >> 2) == 3)  q = cq_phi(q, 0.25);
 ;     return cq_measure(q);

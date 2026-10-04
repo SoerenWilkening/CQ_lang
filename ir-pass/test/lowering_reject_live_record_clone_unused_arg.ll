@@ -25,11 +25,11 @@
 ; SOURCE (the reviewer's h21 witness — but read the IR-ONLY note below before
 ; treating this as its lowering):
 ;     __attribute__((noinline)) static int inner(int x, int y){ (void)x; return y+3; }
-;     int a = cq_theta(u0, 0.5);
-;     int p = cq_theta(u0 + 1, 0.25);    // a SECOND wire
+;     int a = u0; cq_theta(&a, 0.5);
+;     int p = u0 + 1; cq_theta(&p, 0.25);  // a SECOND wire
 ;     int w = a * 2;                     // THE WIRE
 ;     int c = a * k;                     // the DEAD sibling record
-;     w = cq_theta(w, 0.5);              // T
+;     cq_theta(&w, 0.5);              // T
 ;     int r = inner(c, p);               // `c` is IGNORED by inner
 ;     return cq_measure(r) + cq_measure(w) + cq_measure(a) + cq_measure(p);
 ;

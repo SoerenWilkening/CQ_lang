@@ -7,7 +7,7 @@
 ; below is a statement about that other branch (Rule-13 round-2 finding F-R2-4).
 ; That slice is prep-b's; this fixture does not depend on it.)
 ;
-;     if (q == 5) { s = cq_theta(s, 0.7); if (r == 3) cq_phi(0.3); }
+;     if (q == 5) { cq_theta(&s, 0.7); if (r == 3) cq_phi(0.3); }
 ;
 ; P4 is the HOMOGENEOUS phase nest and this is not one, but the reason it must
 ; decline is stronger than scope: an Ry RELABELS a register. The whole P4

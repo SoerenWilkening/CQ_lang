@@ -4,7 +4,7 @@
 ; The d88e decline family's exact caller (`lowering_reject_classical_mux_phi_spec_
 ; scrubbed_base.ll`) with the library `h` returning its QUANTUM argument. The
 ; clone's verdict is QUANTUM, `specialize()` scrubs nothing, and `t` really IS a
-; register: the one-register lift of `phi(t, cq_theta(t, .2))` was a true
+; register: the one-register lift of `phi(t, @cq_theta_si32(t, .2))` was a true
 ; renaming, so the re-ask after `specialize()` (`declineFalsifiedMergePhiLifts`)
 ; finds its recorded premise intact at FINAL taint and says nothing. The stream
 ; is byte-identical to main `def1b088` (cq-opt `b1603d23`): the arm's Ry fires IN
@@ -17,7 +17,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   int h(int a, int k);
-;   int main(int c, char **v) { int m = atoi(v[1]); int q = cq_theta(m, .5); int t = h(q, m); int r = t; if (m > 3) r = cq_theta(t, .2); return cq_measure(r); }
+;   int main(int c, char **v) { int m = atoi(v[1]); int q = m; cq_theta(&q, .5); int t = h(q, m); int r = t; if (m > 3) { r = t; cq_theta(&r, .2); } return cq_measure(r); }
 ;
 ; Regenerate: clang -O1 -emit-llvm -S the two TUs as above, then
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>.

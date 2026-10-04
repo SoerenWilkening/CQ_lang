@@ -9,7 +9,7 @@
 ; disagreeing about one program is not a safety margin; under the owner's
 ; 2026-09-11 ruling it is a defect, and this is its removal.
 ;
-; THE SHAPE: `bool b0 = cq_theta(0,.5); bool b1 = 0; if (b0) b1 = cq_theta(b1,.5);
+; THE SHAPE: `bool b0 = 0; cq_theta(&b0,.5); bool b1 = 0; if (b0) cq_theta(&b1,.5);
 ; for (i<3) { if (b1) cq_phi(.3); }` — the PREP outside the loop, the KICKBACK
 ; inside it. The prep's merge φ lives in the preheader-side block, the kickback's
 ; `Pred` is the loop HEADER, so the φ is cross-block and `condWireDisposition`'s

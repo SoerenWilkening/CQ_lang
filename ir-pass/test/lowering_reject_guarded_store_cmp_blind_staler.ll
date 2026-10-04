@@ -5,9 +5,9 @@
 ;
 ;     static int guarded_local(int seed) {     /* review_a1_r2_probes/gs1.c */
 ;       int arr[8] = {0};
-;       int q  = cq_theta(seed, 0.5);
-;       int q2 = cq_theta(q, 0.9);             /* staler ON q's WIRE */
-;       int i  = cq_theta(seed + 1, 0.5);
+;       int q  = seed; cq_theta(&q, 0.5);
+;       int q2 = q; cq_theta(&q2, 0.9);        /* staler ON q's WIRE */
+;       int i  = seed + 1; cq_theta(&i, 0.5);
 ;       if (q < 3) { arr[i] = 7; }             /* the guarded Shadow store */
 ;       int v = arr[q2];
 ;       return cq_measure(v);

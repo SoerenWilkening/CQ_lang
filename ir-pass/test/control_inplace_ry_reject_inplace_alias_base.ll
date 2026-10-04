@@ -2,10 +2,10 @@
 ; TRUE-POSITIVE fixture: the rotated base and the condition genuinely share ONE
 ; physical rail (round-1 Rule-13 review, lens L1 §1).
 ;
-;     int q = cq_theta(u, .5);
+;     int q = u; cq_theta(&q, .5);
 ;     (void)(q > 5);                 /* the compare, FIRST                    */
 ;     int b = q ^ 2;                 /* M-C lowers this IN PLACE on q's rail  */
-;     if (q > 5) b = cq_theta(b, .9);
+;     if (q > 5) cq_theta(&b, .9);
 ;
 ; WHY THIS FIXTURE EXISTS. Until the round-1 review, the ONLY committed R4
 ; fixture was `control_inplace_ry_reject_derived_base.ll`, and its own header

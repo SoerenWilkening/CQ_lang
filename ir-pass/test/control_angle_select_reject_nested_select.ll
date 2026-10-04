@@ -1,7 +1,7 @@
 ; control_angle_select_reject_nested_select.ll — DECLINE (S2): a NESTED angle
 ; select (bd drbq Inc 2b).
 ;
-;     r = cq_theta(r, q == 5 ? .9 : (q == 6 ? .3 : .1));
+;     cq_theta(&r, q == 5 ? .9 : (q == 6 ? .3 : .1));
 ;
 ; The inner select's only user is the OUTER select, not a rotation arg-1, so S2
 ; refuses it; the outer select's FALSE operand is the inner select's result,

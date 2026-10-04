@@ -1,7 +1,7 @@
 ; control_inplace_ry_reject_stateprep_undef_incoming.ll — DECLINE (F1): an
 ; `undef` Pred-edge incoming.
 ;
-; This is the `-O1` shape of `int r; if (…) r = cq_theta(0, θ);` — an
+; This is the `-O1` shape of `int r; if (…) { r = 0; cq_theta(&r, θ); }` — an
 ; UNINITIALIZED `r` — so it is not a hand-IR curiosity (probe `p11` reaches it by
 ; a different route, `llvm.assume`).
 ;

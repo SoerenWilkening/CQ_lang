@@ -1,6 +1,6 @@
 /* slice_qram_store_fp.c — bd 38t2 e2e smoke: an alloca-backed tainted-index fp
  * cell STORE of a COHERENT CARRIER + LOAD (Shadow-shaped, fp element). `arr[q] = x`
- * where `x = cq_theta(...)` is an fp superposition carrier and `q` a tainted integer
+ * where `x` (`cq_theta(&x, ...)`) is an fp superposition carrier and `q` a tainted integer
  * index, followed by `arr[p]` (a tainted-index fp load), then measured. Lowers
  * COHERENTLY to cqrt_qram_alloc_f64 (array-handle birth) + cqrt_qram_store_f64 (void
  * in-place; the backend owns the per-store tape) + cqrt_qram_load_f64 (Toffoli

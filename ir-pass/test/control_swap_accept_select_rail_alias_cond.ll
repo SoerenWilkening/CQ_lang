@@ -11,7 +11,7 @@
 ; That mechanism is the durable finding of bd 7q3s and it still stands:
 ;   *** A PRE-MUTATION SSA TEST CANNOT SEE A POST-LOWERING ALIAS. ***
 ; It is reachable from FOUR LINES of ordinary C at the plain -O1 ship floor —
-;     q = cq_theta(u,.5);  r = cq_phi(q,.25);  s = (q < r) ? 11 : 22;
+;     q = u; cq_theta(&q,.5);  r = cq_phi(q,.25);  s = (q < r) ? 11 : 22;
 ; — and the `if (q < r) s = 11;` spelling lowers to this same select via -O1
 ; if-conversion, so this fixture covers that route too.
 ;
@@ -66,7 +66,7 @@
 ; WHY THE ACCEPT IS SOUND AND NOT MERELY REALIZABLE: the alias is created by a
 ; DIAGONAL gate (Rz), so both SSA names denote the same BASIS LABEL and collapsing
 ; `icmp(a,a)` to a constant is the CORRECT answer. The NON-diagonal twin —
-; `r = cq_theta(q,.25)`, an in-place Ry that also RAUWs to one rail but CHANGES the
+; `r = q; cq_theta(&r,.25)`, an in-place Ry that also RAUWs to one rail but CHANGES the
 ; basis, so the source means "pre-Ry record vs post-Ry record" — must NOT lower,
 ; and does not: it is owned by ArmClassify's gate 2c (`findNonDiagonalWireGate`)
 ; and pinned by control_swap_reject_select_theta_alias_cond.ll. Read that fixture

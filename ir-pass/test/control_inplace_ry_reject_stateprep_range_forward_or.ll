@@ -6,8 +6,8 @@
 ; spellings that ACCEPTED after the round-1 fix (round-2 review, lens R1 finding
 ; F-R1-1, CONFIRMED-MISCOMPILE, probe `p/y05_and_or.c`):
 ;
-;     int q = cq_theta(3,0.3); int t = (q&1)|8; int r = 9;
-;     if (t != 8) r = cq_theta(t, 0.9);
+;     int q = 3; cq_theta(&q,0.3); int t = (q&1)|8; int r = 9;
+;     if (t != 8) { r = t; cq_theta(&r, 0.9); }
 ;     return (int) cq_measure(r) + (int) cq_measure(t);
 ;
 ; `ipsccp` proves the pin about the DERIVED register and substitutes it into the
@@ -18,7 +18,7 @@
 ; The round-1 fix widened F2's PREDICATE and kept F2's SET; this is the bd
 ; `8h7d.5` F-1/F-3 lesson a third time. The full mechanism, with the isolated
 ; `opt` pipelines that measured it and the unconditional control that fixes
-; CQ's own reading of `cq_theta(t,θ)`, is written once in
+; CQ's own reading of `@cq_theta_si32(t,θ)`, is written once in
 ; `..._range_forward_add.ll` and in the walk's header in `ArmClassify.cpp`.
 ;
 ; THIS FILE'S ALGEBRA: the `ne 0` edge pins `%t` to `{1}`, and `{1} | 8 = {9}` = the seed.

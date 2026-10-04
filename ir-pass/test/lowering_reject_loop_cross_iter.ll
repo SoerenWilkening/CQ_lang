@@ -1,6 +1,6 @@
 ; lowering_reject_loop_cross_iter.ll — DECLINE (Phase 7.3 Inc 1, 799w.1; PRD §2.7,
 ; X1): a tainted value carried across iterations on a DIRTY (non-in-place) rail
-;     double q = cq_theta(seed, 0.5);
+;     double q = seed; cq_theta(&q, 0.5);
 ;     double acc = 0.0;
 ;     for (int i = 0; i < n; i++) acc = acc + q;   // fresh value-op rail each iter
 ;     return cq_measure(acc);

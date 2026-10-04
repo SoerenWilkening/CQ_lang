@@ -1,8 +1,8 @@
 ; control_angle_select_reject_second_select_same_cmp.ll — DECLINE (S4): TWO angle
 ; selects on ONE compare (bd drbq Inc 2b).
 ;
-;     if (q == 5) { r = cq_theta(r,.9); r = cq_theta(r,.8); }
-;     else        { r = cq_theta(r,.3); r = cq_theta(r,.2); }
+;     if (q == 5) { cq_theta(&r,.9); cq_theta(&r,.8); }
+;     else        { cq_theta(&r,.3); cq_theta(&r,.2); }
 ;
 ; `clang -O1` folds TWO gates per arm into TWO selects sharing ONE `icmp`
 ; (measured — probe q5). S4's `Cond->hasOneUse()` refuses it.

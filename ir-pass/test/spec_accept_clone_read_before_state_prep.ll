@@ -2,11 +2,11 @@
 ; the z0re Rule-13 reviewer's member of rhk5's class, probe `k3L`, literal seed). A
 ; clone call reading `q` sits between the derived chain (`p = 3q`, `u = p ^ q`) and
 ; the chain's consumer — here a CONTROLLED STATE PREP, `r = 6; if (u == 10)
-; r = cq_theta(6, .2);`, lowered to `cqrt_ry_i32_controlled(flag, alloc(6), .2)`:
+; { r = 6; cq_theta(&r, .2); }`, lowered to `cqrt_ry_i32_controlled(flag, alloc(6), .2)`:
 ;
-;     q = cq_theta(m & 7, .5); p = q * 3; u = p ^ q; s = h(m, q);
-;     r = 6; if (u == 10) r = cq_theta(6, .2);
-;     ms = cq_measure(s); q = cq_theta(q, .7); return ms + cq_measure(q) + cq_measure(r);
+;     q = m & 7; cq_theta(&q, .5); p = q * 3; u = p ^ q; s = h(m, q);
+;     r = 6; if (u == 10) { r = 6; cq_theta(&r, .2); }
+;     ms = cq_measure(s); cq_theta(&q, .7); return ms + cq_measure(q) + cq_measure(r);
 ;
 ; ORACLE (main 9a230646): the chain leaks, entangled across the second Ry, warned.
 ; Round 1 and round 2: both chain rails discharged after the flag strip, before the

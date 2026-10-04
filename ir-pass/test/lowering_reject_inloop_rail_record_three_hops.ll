@@ -2,10 +2,10 @@
 ; test_C_libtooling-8h7d.5, Rule-13 ROUND 3, finding F-3 — TWO stale records at
 ; once). A CONFIRMED silent miscompile.
 ;
-;     for (i<2) { if (q==5) q=cq_phi(q,PI); q=cq_theta(q,-.5); q=cq_theta(q,.5); }
-;     int a = cq_theta(q, .125);
-;     int b = cq_theta(a, .25);
-;     int c = cq_theta(b, .5);
+;     for (i<2) { if (q==5) q=cq_phi(q,PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
+;     int a = q; cq_theta(&a, .125);
+;     int b = a; cq_theta(&b, .25);
+;     int c = b; cq_theta(&c, .5);
 ;     return cq_measure(a) + cq_measure(b) + cq_measure(c);
 ;
 ; The extension walks a FIXPOINT, so the rail here is `%qn → %a → %b → %c` and BOTH

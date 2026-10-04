@@ -6,7 +6,7 @@
 ; SAME function; a boundary pinned by someone else's diagnostic is a boundary that
 ; moves when they edit it).
 ;
-;     int y = cq_theta(5, .5);
+;     int y = 5; cq_theta(&y, .5);
 ;     int p = y * 3;                                  // hoisted TEMPLATE rail
 ;     for (k = 1; k <= 2; ++k)
 ;         s += cq_measure(y & 1) + cq_measure((p >> k) & 1);

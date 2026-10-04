@@ -1,9 +1,9 @@
 ; control_swap_inloop_railop_inplace.ll — ACCEPT, and the RED-GREEN FIXTURE FOR A
 ; SILENT MISCOMPILE THE FIRST DRAFT OF bd test_C_libtooling-8h7d.5 SHIPPED.
 ;
-;     q = cq_theta(q, .5); q += off;                 // the PRE-HEADER chain
+;     cq_theta(&q, .5); q += off;                 // the PRE-HEADER chain
 ;     for (...) { if (q == 5) q = cq_phi(q, PI);
-;                 q = cq_theta(q, -.5); q += off; q = cq_theta(q, .5); }
+;                 cq_theta(&q, -.5); q += off; cq_theta(&q, .5); }
 ;
 ; VERBATIM `clang -O1` output (`off` is `volatile`, so the offsets survive
 ; canonicalization and the immediate is a RUNTIME value — Rule 9).

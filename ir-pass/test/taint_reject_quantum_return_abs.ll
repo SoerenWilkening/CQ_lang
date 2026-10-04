@@ -6,9 +6,9 @@
 ;
 ; Source (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
-;   __attribute__((noinline)) int g(int k) { return cq_theta(k, 0.7); }
+;   __attribute__((noinline)) int g(int k) { cq_theta(&k, 0.7); return k; }
 ;   __attribute__((noinline)) static int slice(int m, int n) {
-;     int q = cq_theta(0, 0.5);
+;     int q = 0; cq_theta(&q, 0.5);
 ;     int r = g(m);
 ;     int ar = abs(r);
 ;     int a = 7;

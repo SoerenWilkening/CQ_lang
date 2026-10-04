@@ -1,8 +1,8 @@
 ; control_angle_select_ry_runtime_base_f64.ll — ACCEPT (bd test_C_libtooling-z0re round 2):
 ; the Ry-stem angle select on an UNTAINTED RUNTIME f64 base.
 ;
-;     double t = atof(v[1]); int q = cq_theta(atoi(v[2]), .3); double r;
-;     if (q > 3) r = cq_theta(t, .7); else r = cq_theta(t, .2);   // r1B probe p2as_f64
+;     double t = atof(v[1]); int q = atoi(v[2]); cq_theta(&q, .3); double r;
+;     if (q > 3) { r = t; cq_theta(&r, .7); } else { r = t; cq_theta(&r, .2); }  // r1B probe p2as_f64
 ;
 ; Stream: `alloc_f64(t); ry_f64(h, .2); ry_f64_controlled(f, h, fl(.7 - .2))`. The fp
 ; base is admitted under the owner's 2026-09-28 fp ruling; the seed's bits reach

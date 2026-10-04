@@ -11,15 +11,15 @@
 ;
 ; THE PROGRAM (`loopfix/probes/a9_nested_loop.c`, stage-1 verbatim, `-O1 -g`):
 ;
-;     int y = cq_theta(5, 0.5);
+;     int y = 5; cq_theta(&y, 0.5);
 ;     for (k = 1; k <= 2; ++k)
 ;         for (j = 0; j < 2; ++j)
 ;             s += cq_measure((y >> (k + j)) & 1);   // ALL of it is INNER
-;     y = cq_theta(y, 0.9);
+;     cq_theta(&y, 0.9);
 ;     return s + cq_measure(y);
 ;
 ; WHY IT ACCEPTS, AND IT IS CONJUNCT (3) AND NOT CONJUNCT (1). The post-loop
-; `cq_theta(y, .9)` is a CHAINED rotation dominated by the outer header, so
+; `cq_theta(&y, .9)` is a CHAINED rotation dominated by the outer header, so
 ; conjunct (2) is satisfied and `Rots` is NON-EMPTY — this program does not escape
 ; the fence early. It accepts because the OUTER loop's OWN blocks (its header and
 ; its latch) carry NO tainted instruction that `mintsOutOfPlaceTemplateRail`

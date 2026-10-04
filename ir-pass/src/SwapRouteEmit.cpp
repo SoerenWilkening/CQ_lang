@@ -1055,8 +1055,8 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //    this region's own stream — so no pre-region SSA name for it exists and
   //    disjointness from the condition's chain is a property of construction
   //    rather than of a walk. MEASURED end-to-end on a derived condition that
-  //    actually exercises this discharge (`if (sqrt(q+3.) <= 3.5) r =
-  //    cq_theta(0,.9);`): the whole `sitofp/fadd/sqrt/fcmp` chain discharges in
+  //    actually exercises this discharge (`if (sqrt(q+3.) <= 3.5) { r = 0;
+  //    cq_theta(&r,.9); }`): the whole `sitofp/fadd/sqrt/fcmp` chain discharges in
   //    LIFO order after the strip, strict stage 2b 8 verified / 0 violations, and
   //    the trace reduces byte-for-byte to the chained twin's on the pre-Inc-4
   //    binary. The sentence above still governs the CHAINED class, where R4 does

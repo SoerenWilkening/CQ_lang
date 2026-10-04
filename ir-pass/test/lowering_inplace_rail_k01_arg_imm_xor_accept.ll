@@ -7,7 +7,7 @@
 ; writers would refuse it; G2 accepts it, today and after the fix.
 ;
 ;     __attribute__((noinline))
-;     int run(int seed, int n){ int r=cq_theta(seed,0.3);
+;     int run(int seed, int n){ int r=seed; cq_theta(&r,0.3);
 ;       for(int i=0;i<3;i++){ r = r ^ n; }
 ;       return cq_measure(r); }
 ;

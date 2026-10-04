@@ -8,7 +8,7 @@
 ; THE LAUNDER, which is the same in all seven:
 ;
 ;     int m; if (c) { m = cq_phi(r, .1); } else { m = r; }   /* CLASSICAL diamond */
-;     if (q == 5) { r = cq_theta(r, .9); }                    /* in-place Ry on r  */
+;     if (q == 5) { cq_theta(&r, .9); }                    /* in-place Ry on r  */
 ;     ... <consumer>(m) ...                                    /* reads the PRE-Ry record */
 ;
 ; `cq_phi` is Rz and ALWAYS lowers in place, so `m` and `r` are two SSA names for

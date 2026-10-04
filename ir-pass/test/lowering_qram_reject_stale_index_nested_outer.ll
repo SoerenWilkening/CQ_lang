@@ -3,7 +3,7 @@
 ; read's i64 result as a bare index, and that result's register is rotated in
 ; place before the outer read:
 ;
-;     long w = tbl64[q];  long w2 = cq_theta(w, .3);  v = tbl2[w];  // `w`: PRE-Ry
+;     long w = tbl64[q];  long w2 = w; cq_theta(&w2, .3);  v = tbl2[w];  // `w`: PRE-Ry
 ;
 ; The inner load result is a fresh copy-out rail, and the chained `cq_theta` is an
 ; in-place Ry on it; the outer `cqrt_qram_load` is minted at its own load, after.

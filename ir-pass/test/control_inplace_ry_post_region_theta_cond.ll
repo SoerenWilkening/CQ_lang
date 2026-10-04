@@ -3,8 +3,8 @@
 ; PROVABLY AFTER the region's entire emitted stream (PRD §13.4b, bd
 ; test_C_libtooling-drbq Increment 3 part 3b).
 ;
-;     if (q == 5) r = cq_theta(r, .9);
-;     q = cq_theta(q, .3);              <-- the Ry reflection on the CONDITION
+;     if (q == 5) cq_theta(&r, .9);
+;     cq_theta(&q, .3);              <-- the Ry reflection on the CONDITION
 ;
 ; THIS DECLINED BEFORE INCREMENT 3, AND IT IS NOT A LOOP SHAPE. `ArmClassify`'s
 ; final P1 fence read `if (DeferredWireGate && (SawValueArm || !SawPhaseArm))`,

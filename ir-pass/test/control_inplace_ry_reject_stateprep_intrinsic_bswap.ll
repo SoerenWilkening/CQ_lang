@@ -3,7 +3,7 @@
 ; rail and the round-2 walk's `dyn_cast<BinaryOperator>` dropped).
 ;
 ; ⚠ ROUND-3 RULE-13 FINDING (lens R3, F-R3-3, CONFIRMED-MISCOMPILE, 4 plain-C
-; programs). Source `$S/review3/R3/p/h04_bswap_eq5.c`: `unsigned t = __builtin_bswap32((unsigned)q); if (t == 5u) r = cq_theta(t, 0.9);` — `-O1` rewrites `icmp eq (bswap %1), 5` into `icmp eq i32 %1, 83886080` because `bswap` is invertible, leaving `%7 = call i32 @llvm.bswap.i32(i32 %1)` alive and measured.
+; programs). Source `$S/review3/R3/p/h04_bswap_eq5.c`: `unsigned t = __builtin_bswap32((unsigned)q); if (t == 5u) { r = t; cq_theta(&r, 0.9); }` — `-O1` rewrites `icmp eq (bswap %1), 5` into `icmp eq i32 %1, 83886080` because `bswap` is invertible, leaving `%7 = call i32 @llvm.bswap.i32(i32 %1)` alive and measured.
 ;
 ; The rotated register is a USER of the compare's operand — the exact direction
 ; round 2 fixed — but it is a `CallInst`, so the `BinaryOperator`-only SET never

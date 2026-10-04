@@ -15,7 +15,7 @@
 ;   #include <stdlib.h>
 ;   int h(int a, int k);
 ;   
-;   int main(int c, char **v) { int m = atoi(v[1]); _Bool b = cq_theta((_Bool)(m & 1), .5); int p = b ? 9 : 4; int t = h(p, m); b = cq_theta(b, .7); return t + cq_measure(b); }
+;   int main(int c, char **v) { int m = atoi(v[1]); _Bool b = (_Bool)(m & 1); cq_theta(&b, .5); int p = b ? 9 : 4; int t = h(p, m); cq_theta(&b, .7); return t + cq_measure(b); }
 ; Library TU (plain C, no CQ.h):
 ;   static volatile int K = 0; int h(int a, int k) { return k + 1 + ((a > 3) ? K : 0); }
 ;

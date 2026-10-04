@@ -12,13 +12,13 @@
 ; IT IS THE SAME ORDER SHAPE AS `..._rail_then_kickback.ll` WITH A DIFFERENT THIRD
 ; CONSTRUCT: there the construct following the merge-φ select is a register-free
 ; PHASE KICKBACK; here it is another compare-guarded controlled STATE PREP
-; (`if (a >= 3) b1 = cq_theta(b1, .5)`, where `a` is the select's own output).
+; (`if (a >= 3) cq_theta(&b1, .5)`, where `a` is the select's own output).
 ; Both take the sanctioned `hcrg` `sequentialChainAlias` edge — their `Pred` IS
 ; the first prep's `MergeBB` — so both scheduled the first prep AFTER the inert
 ; select and both hit the H-1 backstop. Two constructs, one cause, one edge.
 ;
 ; ⚠ AND ITS SELECT ARM IS A QUANTUM REGISTER, which the flagship's is not.
-; `if (b0 == 1) a = p;` with `p = cq_theta(0, .3)` makes the true operand the LIVE
+; `if (b0 == 1) a = p;` with `p = 0; cq_theta(&p, .3)` makes the true operand the LIVE
 ; rail `%h`, so the merge is `copy_i32_controlled(bf, h, out)` — a controlled
 ; basis COPY out of a register that STAYS LIVE and is measured at the end, into a
 ; fresh |0> out rail. Rule 8 has no subject: nothing is freed by copy+uncompute

@@ -10,7 +10,7 @@
 ; — the theta's result — i.e. the program the source names once `u` is
 ; initialised:
 ;
-;     int u = 0; int q = cq_theta(0, 0.3); return cq_measure(q + u);
+;     int u = 0; int q = 0; cq_theta(&q, 0.3); return cq_measure(q + u);
 ;
 ; ⚠ IT ACCEPTS ON **BOTH** BINARIES (session ORACLE `cq-opt` 0e280fc6 and the
 ; `fve8` subject) and it emits the user's measurement. That is the whole job of

@@ -6,8 +6,8 @@
 ; phi, is the claim "the phi re-reads the wire every trip". THAT CLAIM IS FALSE IN
 ; GENERAL, and this fixture is the shape it is false for.
 ;
-;     for (...) { d = q * 3; q = cq_theta(q, t2); cq_theta(q, t3); }
-;                                                 ^^^^^^^^^^^^^^^ result DISCARDED
+;     for (...) { d = q * 3; cq_theta(&q, t2); int g = q; cq_theta(&g, t3); }
+;                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ a DEAD rotated copy of q
 ;
 ; `%qh` is the loop-carried register phi and it looks exactly like the customer's
 ; — 2 incomings, latch value `%qn` a chained theta that peels back to the phi. But

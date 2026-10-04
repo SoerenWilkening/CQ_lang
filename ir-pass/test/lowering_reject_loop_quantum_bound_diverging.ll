@@ -2,7 +2,7 @@
 ; y05j.1; PRD-7.4 §2.5 B5, §6 Risk 4). The adversarial-review P3 probe
 ; (2026-06-26): a genuinely QUANTUM-BOUNDED loop disguised by a VACUOUS two-counter
 ; DIVERGING bound —
-;     int q = cq_theta(x, 0.25);
+;     int q = x; cq_theta(&q, 0.25);
 ;     int i = 0, m = 10;
 ;     while ((q & 1) && (i < m)) {   // i<m is ALWAYS TRUE: m outruns i
 ;         q = q ^ 9; i += 2; m += 4;

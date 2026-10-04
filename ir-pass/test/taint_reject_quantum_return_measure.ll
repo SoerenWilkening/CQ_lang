@@ -8,7 +8,7 @@
 ;
 ; Source (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
-;   __attribute__((noinline)) int g(int k) { return cq_theta(k, 0.7); }
+;   __attribute__((noinline)) int g(int k) { cq_theta(&k, 0.7); return k; }
 ;   int main(int argc, char **argv) { int r = g(atoi(argv[1])); return cq_measure(r); }
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \

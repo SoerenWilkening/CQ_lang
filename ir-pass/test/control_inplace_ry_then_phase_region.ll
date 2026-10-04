@@ -2,7 +2,7 @@
 ; ROTATION region followed by a swap-routed PHASE region on the SAME register
 ; (bd test_C_libtooling-drbq Inc 1).
 ;
-;     if (q > 5) r = cq_theta(r, .9);      // control-in-place  (new)
+;     if (q > 5) cq_theta(&r, .9);      // control-in-place  (new)
 ;     if (q > 7) r = cq_phi(r, .4);        // swap route        (4.1, unchanged)
 ;
 ; THE COMPOSITION CHECK, and the reason it is worth a fixture of its own: the two

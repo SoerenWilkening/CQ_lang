@@ -8,7 +8,7 @@
 ; `test_C_libtooling-xdu2.23`; r1A F-A1-2, bd `test_C_libtooling-xdu2.22`), all
 ; flat OVER-declines in the safe direction; see TRACK_XDU2_16.md §7.
 ;
-; `for (i < n) { int t = ((q > 1) & (r < 5)) ? i : 55; t = cq_theta(t, 0.7);
+; `for (i < n) { int t = ((q > 1) & (r < 5)) ? i : 55; cq_theta(&t, 0.7);
 ;  s += cq_measure(t); }` — the select's OUTPUT is rotated by a NON-DIAGONAL gate
 ; and measured, every trip. The tree is LICM-hoisted, so on the pre-change ORACLE
 ; `438c77bf45c02e3e` this declined at the xdu2.16 wall (`round-1 iteration-local
@@ -18,7 +18,7 @@
 ; FLAT OVER-DECLINE, NOT A HAZARD THE ROLLED FORM ESCAPES. Measured with CQ_CTRL_DBG:
 ; the flat form's second select declines `condition predates a non-diagonal gate`
 ; at `SelectClassify`'s POSITIONAL prong (c) — `-O1` CSEs the three trees into ONE
-; `and` in the entry block, so the first copy's `cq_theta(t, 0.7)` sits between the
+; `and` in the entry block, so the first copy's `@cq_theta_si32(t, 0.7)` sits between the
 ; shared compare leaves and the second select IN THE SAME BLOCK, and prong (c)
 ; refuses any tainted-operand `cq_theta` in that window "even on another wire (over-
 ; decline is safe)" — its own words. In the rolled form the leaves are in the

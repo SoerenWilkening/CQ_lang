@@ -6,10 +6,10 @@
 ; the round-2 fix, and the acceptance was a silent miscompile reachable from
 ; ordinary `clang -O1` C (`$S/review3/R3/p/s06_sdiv4_eq5.c`):
 ;
-;     int q = cq_theta(3,0.3);
+;     int q = 3; cq_theta(&q,0.3);
 ;     int t = q / 4;                    /* the rotated register — LIVE          */
 ;     int r = 5;
-;     if (t == 5) r = cq_theta(t, 0.9); /* an IN-PLACE Ry on t                   */
+;     if (t == 5) { r = t; cq_theta(&r, 0.9); } /* an IN-PLACE Ry on t           */
 ;     return (int) cq_measure(r) + (int) cq_measure(t);
 ;
 ; MECHANISM, and it is NOT the round-2 one. Round 2 closed the DOWNWARD rewrite
@@ -35,7 +35,7 @@
 ; source has one. The control that closes it, byte-identical on BOTH binaries
 ; (`p/u06_uncond_sdiv4.c`): the same program with the guard removed emits
 ; `sdiv(h0,4) -> h1 ; ry_i32(h1,.9) ; measure(h1) ; measure(h1)`, i.e. CQ's own
-; semantics for `cq_theta(t,θ)` is an IN-PLACE Ry on `t`'s rail.
+; semantics for `@cq_theta_si32(t,θ)` is an IN-PLACE Ry on `t`'s rail.
 ;
 ; THE FENCE IS SEMANTIC, NOT A FOURTH SET. `LazyValueInfo` is asked, on both
 ; edges, about every tainted integer value LIVE ON THE EDGE — it reads the

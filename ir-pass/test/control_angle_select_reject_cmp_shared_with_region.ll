@@ -3,7 +3,7 @@
 ; Inc 2b).
 ;
 ;     if (q == 5) s = cq_phi(s, .7);                  // a swap-route region
-;     r = cq_theta(r, q == 5 ? .9 : .3);              // an angle select
+;     cq_theta(&r, q == 5 ? .9 : .3);              // an angle select
 ;
 ; `clang -O1` CSEs the two `q == 5` tests into ONE `icmp` with two users, so this
 ; is a plain-C-reachable composition, not a hand-built curiosity.

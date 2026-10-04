@@ -3,7 +3,7 @@
 ; `break|brk` filter beside its companion lowering_loop_break_abort_park_width.ll.
 ;
 ;     long long g(long long a) { return a * 3 + 1; }    // plain classical function
-;     long long q = cq_theta(seed, 0.5);
+;     long long q = seed; cq_theta(&q, 0.5);
 ;     long long y = 5;
 ;     if (q > 3) y = g(a);          // classical call under quantum control
 ;     if (y > t) abort();           // noreturn arm: AbortParkEmit parks y

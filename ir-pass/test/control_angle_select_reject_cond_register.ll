@@ -1,8 +1,8 @@
 ; control_angle_select_reject_cond_register.ll — DECLINE: an in-place Ry on the
 ; register the CONDITION reads (bd drbq Inc 2b).
 ;
-;     int q = cq_theta(3,.5);
-;     q = cq_theta(q, q == 5 ? .9 : .3);
+;     int q = 3; cq_theta(&q,.5);
+;     cq_theta(&q, q == 5 ? .9 : .3);
 ;
 ; THE STEM SEPARATOR. This is `control_angle_select_rz_cond_register.ll` with
 ; `cq_phi` changed to `cq_theta` and NOTHING else; that one ACCEPTS and this one
@@ -35,7 +35,7 @@
 ; │ DIAGONAL ALIAS of the condition register (bd drbq Inc 2b).
 ; │
 ; │ int qd = cq_phi(q, .1);
-; │ qd = cq_theta(qd, q == 5 ? .9 : .3);   // rotates q's OWN physical rail
+; │ cq_theta(&qd, q == 5 ? .9 : .3);   // rotates q's OWN physical rail
 ; │
 ; │ SSA-value disjointness is NOT wire disjointness: rotation lowering RAUWs
 ; │ `%qd = cq_phi(%q, .)` and `%q` onto the SAME `cqrt_alloc_i32` handle, so this

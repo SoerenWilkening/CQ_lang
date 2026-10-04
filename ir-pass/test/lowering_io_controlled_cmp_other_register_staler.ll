@@ -4,9 +4,9 @@
 ; `review_a1_r2_probes/io6.c`, plain `clang -O1` C).
 ;
 ;     void emit(int seed) {
-;       int q  = cq_theta(seed, 0.5);
-;       int r  = cq_theta(seed, 0.25);
-;       int q2 = cq_theta(q, 0.9);       /* staler on q's WIRE — NOT on r's */
+;       int q  = seed; cq_theta(&q, 0.5);
+;       int r  = seed; cq_theta(&r, 0.25);
+;       int q2 = q; cq_theta(&q2, 0.9);  /* staler on q's WIRE — NOT on r's */
 ;       if (r > 5) printf("%d", r);      /* ctrl = flag minted from r */
 ;       (void) cq_measure(q2);
 ;       (void) cq_measure(r);

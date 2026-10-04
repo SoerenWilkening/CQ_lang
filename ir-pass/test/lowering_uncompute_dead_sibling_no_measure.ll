@@ -1,7 +1,7 @@
 ; lowering_uncompute_dead_sibling_no_measure.ll — ACCEPT: the don't-over-decline
 ; twin of lowering_uncompute_dead_sibling_premeasure.ll (test_C_libtooling-3h8).
 ;
-; Same DEAD tainted template terminal (`%q = cq_theta(...)`; `%dead = q + 7`,
+; Same DEAD tainted template terminal (`%q = @cq_theta_si32(...)`; `%dead = q + 7`,
 ; never read) — but NO measurement reads the register on any lineage handle.
 ; The whole-chain adjoint is then sound and Phase 5 emits it (the root is then
 ; kept, not freed — its runtime seed is not |0>, bd 5c5b): the lineage-measure

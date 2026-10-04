@@ -3,7 +3,7 @@
 ; review_inc2_r2 finding **F-I2-1**). THE PRODUCT OF TWO AXES THE TREE ALREADY
 ; HAD SEPARATELY AND NEVER TOGETHER.
 ;
-;     int q=3,p=7,r=9; q=cq_theta(q,.5); p=cq_theta(p,.25); r=cq_theta(r,.3);
+;     int q=3,p=7,r=9; cq_theta(&q,.5); cq_theta(&p,.25); cq_theta(&r,.3);
 ;     int m = (q > 5) ? p : r;             // 4.4 SELECT merge  ->  %out rail
 ;     m = m + 7;                           // PREHEADER dtzb op ON that rail
 ;     for (int i = 0; i < 4; ++i)

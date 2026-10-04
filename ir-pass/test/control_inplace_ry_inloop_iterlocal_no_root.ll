@@ -3,8 +3,8 @@
 ; REGISTER AT ALL — the `_Bool` condition is minted inside the body too, so every
 ; quantum value in the loop is iteration-local.
 ;
-;     for (k < 2) { bool t = cq_theta(0, .5); int r = cq_theta(7, .25);
-;                   if (t) r = cq_theta(r, .2); s += cq_measure(r)+cq_measure(t); }
+;     for (k < 2) { bool t = 0; cq_theta(&t, .5); int r = 7; cq_theta(&r, .25);
+;                   if (t) cq_theta(&r, .2); s += cq_measure(r)+cq_measure(t); }
 ;
 ; IT IS HERE TO PIN A PRECONDITION, NOT A LOWERING. `LoopLowering::
 ; invariantRegisterRoots` returns false for this loop at its "no invariant

@@ -22,7 +22,7 @@
 ;
 ; SOURCE — `clang -Iinclude -include CQ.h -O1 -emit-llvm -S`, verbatim:
 ;   int main(int argc, char **argv) {
-;     int q = cq_theta(argc, 0.5); int b[3]; int s = 0; int r = cq_theta(argc+1, .2);
+;     int q = argc; cq_theta(&q, 0.5); int b[3]; int s = 0; int r = argc+1; cq_theta(&r, .2);
 ;     for (int i = 0; i < 3; ++i) b[i] = q;
 ;     for (int k = 0; k < argc; ++k) { if (r > k) cq_phi(0.3); q ^= 3; }
 ;     for (int i = 0; i < 3; ++i) s += cq_measure(b[i]);

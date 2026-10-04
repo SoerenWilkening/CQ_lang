@@ -3,7 +3,7 @@
 ; Inc-1 finding K's launder).
 ;
 ;     int m; if (cc) m = cq_phi(r,.1); else m = r;      // classical cc
-;     m = cq_theta(m, q == 5 ? .9 : .3);
+;     cq_theta(&m, q == 5 ? .9 : .3);
 ;
 ; `%m` is a phi over TWO SSA names of ONE physical rail, which
 ; `liftOneRegisterMergePhi` later RAUWs to the base. The rail-wire closure

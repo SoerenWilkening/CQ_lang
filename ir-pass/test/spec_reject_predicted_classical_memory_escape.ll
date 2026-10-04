@@ -9,7 +9,7 @@
 ; Caller TU (-include CQ.h):
 ;   int h(int a, int k);
 ;   extern int G;
-;   int main(int c, char **v) { int m = atoi(v[1]); int n = atoi(v[2]); int q = cq_theta(m, .5); int t = h(q, m); int r = m; if (t > 3) r = m + 5; return cq_measure(r) + cq_measure(q) + cq_measure(G); }
+;   int main(int c, char **v) { int m = atoi(v[1]); int n = atoi(v[2]); int q = m; cq_theta(&q, .5); int t = h(q, m); int r = m; if (t > 3) r = m + 5; return cq_measure(r) + cq_measure(q) + cq_measure(G); }
 ; Library TU 1 (plain C):
 ;   int G;
 ;   int h(int a, int k) { G = a; return k + 1; }

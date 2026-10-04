@@ -5,7 +5,7 @@
 ; row must NOT do.
 ;
 ; @premutated — the index is computed BEFORE a chained `cq_theta` on its source:
-;     int t = q & 7;  q = cq_theta(q, .25);  arr[t] = 3;  ...  q = cq_theta(q, -.5);
+;     int t = q & 7;  cq_theta(&q, .25);  arr[t] = 3;  ...  cq_theta(&q, -.5);
 ; `t` is a record of the PRE-rotation `q`; after the first chained Ry no adjoint
 ; can return it to |0> (its `_unc` would recompute `q & 7` from a relabelled
 ; register — clause (d), owner ruling 2026-08-27). The interior planner's

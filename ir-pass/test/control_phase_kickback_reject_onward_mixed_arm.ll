@@ -4,8 +4,8 @@
 ; pre-3qlq oracle DECLINES LOUDLY (bd test_C_libtooling-3qlq Inc 1 part A, L3).
 ;
 ;     int slice(void) {
-;         int q = cq_theta(3, 0.5);
-;         int w = cq_theta(9, 0.2);
+;         int q = 3; cq_theta(&q, 0.5);
+;         int w = 9; cq_theta(&w, 0.2);
 ;         int y = 5;
 ;         if (q > 5) y = ext_f(7);                  // 6.5 classical-call arm -> %out
 ;         if (y > 50) { cq_phi(0.25); w = w + 1; }  // ONWARD: branch phase BESIDE a value arm

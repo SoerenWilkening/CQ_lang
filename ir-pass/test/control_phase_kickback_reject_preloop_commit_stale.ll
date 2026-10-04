@@ -3,10 +3,10 @@
 ; a SECOND CONFIRMED SILENT MISCOMPILE in the second round's commit, in the very
 ; half its `hasOneUse` conjunct was written to close.
 ;
-;     int slice(int u){ int q=cq_theta(u,0.5); int r=cq_theta(u,0.3);
-;       int q2=cq_theta(q,0.3);          /* the SAME WIRE, a SECOND SSA name for it */
+;     int slice(int u){ int q=u; cq_theta(&q,0.5); int r=u; cq_theta(&r,0.3);
+;       int q2=q; cq_theta(&q2,0.3);     /* the SAME WIRE, a SECOND SSA name for it */
 ;       int a = q2 + 7;                  /* P = %q2, which really does have ONE use */
-;       for(int i=0;i<3;i++){ if((a>>i)&1) cq_phi(0.2); r=cq_theta(r,0.1); }
+;       for(int i=0;i<3;i++){ if((a>>i)&1) cq_phi(0.2); cq_theta(&r,0.1); }
 ;       return cq_measure(q)+cq_measure(r)+cq_measure(a); }
 ;                    ^^^^^^^^^^^^^^^^ a LATER read of the PRE-op name
 ;
@@ -56,7 +56,7 @@
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; ⚠ MESSAGE OWNERSHIP MOVED — bd test_C_libtooling-3d8q, and the module, the
 ; verdict and the anti-miscompile pins below are ALL UNCHANGED. The source's
-; `cq_measure(q)` is a read of the PRE-`q2` name: `q2 = cq_theta(q,0.3)` CONSUMES
+; `cq_measure(q)` is a read of the PRE-`q2` name: `q2 = q; cq_theta(&q2,0.3)` CONSUMES
 ; `q` (`docs/frontend.md` §3.2's linear rule), which this header's own C snippet
 ; marks with `^^^^ a LATER read of the PRE-op name`. That is now caught by
 ; `recordStaleQuantumReaders`, which runs as PURE ANALYSIS before `lowerLoops` and

@@ -8,7 +8,7 @@
 ;         s += cq_measure(d & 1);
 ;         s += cq_measure(d & 2);      /* NOT guarded — one body block */
 ;     }
-;     y = cq_theta(y, 0.9);
+;     cq_theta(&y, 0.9);
 ;
 ; WHAT IT PROVES, and it is the half a reader is most likely to get wrong: the
 ; 6n1s defect was **the second block**, not the rail, not the fan-out and not the

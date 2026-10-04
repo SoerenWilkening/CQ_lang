@@ -5,7 +5,7 @@
 ; `clang -O1` from `review_a1_r1_probes/b2.c`:
 ;
 ;     for (int i = 0; i < 3; ++i) {
-;         _Bool b = cq_theta((_Bool)0, 0.5);
+;         _Bool b = (_Bool)0; cq_theta(&b, 0.5);
 ;         int a = b ? i : 5;                  /* the 1b-B.1 rail-root select */
 ;         acc += cq_measure(a) + cq_measure(b);
 ;     }

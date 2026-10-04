@@ -1,7 +1,7 @@
 ; control_inplace_ry_reject_mixed_ifelse_rz_first.ll — DECLINE: the OTHER ARM
 ; ORDER of the mixed if/else (bd test_C_libtooling-drbq).
 ;
-;     if (c) r = cq_phi(r, .9); else r = cq_theta(r, .2);
+;     if (c) r = cq_phi(r, .9); else cq_theta(&r, .2);
 ;
 ; Committed as a PAIR with control_inplace_ry_reject_mixed_ifelse.ll because the
 ; property is symmetry, not either module on its own: homogeneity must hold

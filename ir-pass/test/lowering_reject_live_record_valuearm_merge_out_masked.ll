@@ -7,10 +7,10 @@
 ; whole thing into a `select` and the program becomes severance class 2 instead
 ; (lowering_reject_live_record_select_merge_out.ll — which ACCEPTED at HEAD).
 ;     volatile int off = 3;
-;     int q = cq_theta(0, 0.5);
+;     int q = 0; cq_theta(&q, 0.5);
 ;     int m = 7;
 ;     if (q == 5) { m = off * 2 + 1; }     // value arm
-;     int w = cq_theta(m, 0.25);           // chained Ry on the merge out
+;     int w = m; cq_theta(&w, 0.25);       // chained Ry on the merge out
 ;     return cq_measure(w);
 ;
 ; MEASURED AT HEAD AND AFTER INCREMENT 3 — verdict and message IDENTICAL:

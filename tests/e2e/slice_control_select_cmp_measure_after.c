@@ -3,7 +3,7 @@
    compare-leaf rung (ii) a DISCRIMINATOR and not a blanket refusal. The COMPARE
    twin of `slice_control_select_bool_measure_after`'s shape.
 
-       int q = cq_theta(0, 0.5);
+       int q = 0; cq_theta(&q, 0.5);
        int a = (q == 1) ? 2 : 5;      // the 4.4 copy merge reads a COHERENT q
        int m = cq_measure(q);         // the measurement owns it from here on
        return cq_measure(a) + m;      // both results observed (else -O1 DCEs the merge)

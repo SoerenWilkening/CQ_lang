@@ -10,7 +10,7 @@
 ;         s += cq_measure(d & 1);
 ;         if (k < lim) s += cq_measure(d & 2);
 ;     }
-;     y = cq_theta(y, 0.9);
+;     cq_theta(&y, 0.9);
 ;     return s + cq_measure(last) + cq_measure(y);
 ;
 ; WHAT IT PROVES: that the MARKING is the door. It DECLINES on the session ORACLE

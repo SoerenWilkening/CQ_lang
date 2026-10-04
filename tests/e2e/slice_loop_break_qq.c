@@ -4,8 +4,8 @@
    SECOND loop-invariant QUBIT `p` (Q==Q) — vs slice_loop_break.c, whose break
    compares the rail against a CONSTANT (`(q&1)==0`):
 
-       int p = cq_theta(pseed, 0.5);   // a second, loop-invariant qubit
-       int q = cq_theta(seed, 0.25);
+       int p = pseed; cq_theta(&p, 0.5);  // a second, loop-invariant qubit
+       int q = seed; cq_theta(&q, 0.25);
        for (int i = 0; i < n; i++) {
            q = q ^ 5;                  // in-place value rail
            if (q == p) break;          // TAINTED Q==Q break flag (rail vs p)

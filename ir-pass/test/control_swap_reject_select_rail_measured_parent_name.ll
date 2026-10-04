@@ -1,6 +1,6 @@
 ; control_swap_reject_select_rail_measured_parent_name.ll — DECLINE (bd
 ; test_C_libtooling-r9e5, Rule-13 round-1 item F-B1R1-1, plain-C reachable —
-; `bool b0 = 0; b0 = cq_theta(b0, .5); bool b = cq_theta(b0, .3); int m =
+; `bool b0 = 0; cq_theta(&b0, .5); bool b = b0; cq_theta(&b, .3); int m =
 ; cq_measure(b0); int a = b ? 2 : 5;`): the select's condition `b` is a CHAINED
 ; theta, so `b` and `b0` are ONE physical register after `lowerRotations`, and
 ; the measurement names the PARENT. The first B.1 build asked rung (ii) of the

@@ -5,14 +5,14 @@
 ;
 ; SOURCE (the reviewer's g9 witness, verbatim in structure):
 ;     static volatile int k = 3;
-;     int a = cq_theta(u0, 0.5);
-;     int b = cq_theta(u0 + 1, 0.5);     // a SECOND wire
+;     int a = u0; cq_theta(&a, 0.5);
+;     int b = u0 + 1; cq_theta(&b, 0.5);  // a SECOND wire
 ;     int w = a * 2;                     // THE WIRE
 ;     int c = a * k;                     // the SIBLING record (volatile k so -O1
 ;                                        //   keeps the multiply; the pass sees the
 ;                                        //   folded literal, written directly here)
 ;     int d = b * 5;
-;     w = cq_theta(w, 0.25);             // T — chained, in-place Ry on the wire
+;     cq_theta(&w, 0.25);             // T — chained, in-place Ry on the wire
 ;     int m = ((c > 3) & (d < 9)) ? 10 : 20;   // `and i1` -> ONE cqrt_toffoli
 ;     return cq_measure(m) + cq_measure(w) + cq_measure(a) + cq_measure(b);
 ;

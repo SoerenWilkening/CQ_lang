@@ -3,7 +3,7 @@
 ;
 ; `hf(double a, int k) = k + 1` ignores its `double` parameter; the operand `e = d * 2.0`
 ; is an fp template rail on the `double` register `d`. On the oracle (`main` aee8f4f8) the
-; phantom read kept `e`'s `cq_template_fmul_f64_hl` rail live across `d = cq_theta(d,
+; phantom read kept `e`'s `cq_template_fmul_f64_hl` rail live across `cq_theta(&d,
 ; .7)` — dephased, WARNED (`non-diagonal gate over a live derived record`). The drop's
 ; replacement constant is `Constant::getNullValue(double)`, i.e. `0.000000e+00` (+0.0,
 ; which no `nofpclass` clang emits at -O1 excludes; the attribute whitelist refuses any
@@ -13,7 +13,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   int hf(double a, int k);
-;   int main(int c, char **v) { int m = atoi(v[1]); double d = cq_theta((double)m, .5); double e = d * 2.0; int t = hf(e, m); d = cq_theta(d, .7); return t + (int)cq_measure(d); }
+;   int main(int c, char **v) { int m = atoi(v[1]); double d = (double)m; cq_theta(&d, .5); double e = d * 2.0; int t = hf(e, m); cq_theta(&d, .7); return t + (int)cq_measure(d); }
 ; Library TU (plain C, no CQ.h):
 ;   int hf(double a, int k) { return k + 1; }
 ;

@@ -6,8 +6,8 @@
    that is a Phase-6.5 classical-call-arm `%out` rail — a region no stage sees
    until ROUND 2 — inside a loop that ALSO CARRIES a second tainted register.
 
-       int q = cq_theta(u, 0.5);
-       int r = cq_theta(u, 0.3);            // CARRIED: rotated once per trip
+       int q = u; cq_theta(&q, 0.5);
+       int r = u; cq_theta(&r, 0.3);        // CARRIED: rotated once per trip
        int y = 5; if (q > 5) y = ext_f(7);  // 6.5 arm  ->  %out (INVARIANT)
        for (int i = 0; i < 3; i++) {
            if ((y >> i) & 1) cq_phi(0.25);  // D4's per-bit kickback on %out
@@ -24,7 +24,7 @@
    CLASSICAL and ROUND-1 `lowerLoops`/`tryCaseA` claims and collapses the carried
    rail itself. By the round-2 pass there is no tainted header phi left, the local
    carried set is EMPTY, and clause (iii) refused on the carried root's in-body
-   `cq_theta(r,.1)` — taking the INVARIANT register's discharge down with it.
+   `cq_theta(&r,.1)` — taking the INVARIANT register's discharge down with it.
 
    MEASURED on 542d588 AND on the round-1 C-1 fix: `cq_template_and_i32_hl` 3 /
    `_unc` **0** against this pair's twin at 3/3; the `diff` of the two traces is

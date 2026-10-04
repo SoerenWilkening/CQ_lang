@@ -5,7 +5,7 @@
 ; a BARE RAIL — the user's own `_Bool` register, a `cq_theta_i1` result, with no
 ; compare anywhere. This is `wide4.c` (the s9xi exhibit) at the IR level:
 ;
-;     int A=5,B=6,C=7,D=8; bool b = cq_theta(b, 0.5);
+;     int A=5,B=6,C=7,D=8; bool b; cq_theta(&b, 0.5);
 ;     if (b) { A -= 3; B -= 4; C -= 5; D -= 6; }
 ;
 ; `clang -O1` const-folds all four arms to 2 and then REFUSES to if-convert,

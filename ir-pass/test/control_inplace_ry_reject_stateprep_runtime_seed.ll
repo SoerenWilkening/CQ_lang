@@ -8,7 +8,7 @@
 ; (the bead lists this file), once no merge that could resurrect the old name is
 ; pending — and run the duplicate-body scan after it.
 ;
-;     int slice(int seed){ int r = seed; if (q == 5) r = cq_theta(seed, .9); }
+;     int slice(int seed){ int r = seed; if (q == 5) { r = seed; cq_theta(&r, .9); } }
 ;     // probe `p16`, from C
 ;
 ; A RUNTIME seed: the merge's Pred incoming and the theta's arg-0 are THE SAME SSA

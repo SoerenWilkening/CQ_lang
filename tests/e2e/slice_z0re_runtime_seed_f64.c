@@ -1,9 +1,9 @@
 /* slice_z0re_runtime_seed_f64.c — a RUNTIME f64 state-prep seed (the r1B d88e
    probe zxdT, bd z0re's f64 member).
 
-     double t = m + 1.0; double r = t; if (q2 > 3) r = cq_theta(t, .2);
+     double t = m + 1.0; double r = t; if (q2 > 3) { r = t; cq_theta(&r, .2); }
 
-   Expected stream: the dead `q = cq_theta(m, .5)` rail is reverse-played and KEPT
+   Expected stream: the dead `q = m; cq_theta(&q, .5)` rail is reverse-played and KEPT
    (bd 5c5b, libcqops vmz9: `ry(h0, -.5)` restores its runtime birth value 2.5,
    not |0>, so a `cqrt_free(h0)` would be a dirty reset); then the flag from the
    i32 `q2 > 3`; `cqrt_alloc_f64(t)` with the RUNTIME double;

@@ -94,7 +94,7 @@ target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:
 target triple = "x86_64-apple-macosx16.0.0"
 
 ; int f(int x, int n) {
-;   int q = cq_theta(x, 0.25);
+;   int q = x; cq_theta(&q, 0.25);
 ;   for (int i = 0; i < n; i++) { q ^= 9; if (g(q) == 0) break; }
 ;   return cq_measure(q);
 ; }

@@ -1,7 +1,7 @@
 ; control_swap_inloop_postloop_railop.ll — ACCEPT, and the ACCEPT BOUNDARY of the
 ; F-1 forward rail extension (bd test_C_libtooling-8h7d.5, Rule-13 ROUND 2).
 ;
-;     for (i<2) { if (q==5) q = cq_phi(q,PI); q = cq_theta(q,-.5); }
+;     for (i<2) { if (q==5) q = cq_phi(q,PI); cq_theta(&q,-.5); }
 ;     int mark = q;
 ;     q = q + 9;                     /* an OUT-of-place value op after the record */
 ;     return cq_measure(mark) + cq_measure(q);
@@ -23,7 +23,7 @@
 ; would rotate the fresh rail, not this one.
 ;
 ; The RED twin is lowering_reject_inloop_rail_record_postloop_theta.ll — the same
-; program with `cq_theta(q, 0.125)` in place of `q + 9`. Swap the `add` for a
+; program with `cq_theta(&q, 0.125)` in place of `q + 9`. Swap the `add` for a
 ; `cq_theta` and this file must go red; that is the mutation it exists to make
 ; available.
 ;

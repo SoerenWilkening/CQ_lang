@@ -4,18 +4,18 @@
 ; THE C SOURCE — z0re's runtime-base angle select in its ORIGINAL if/else spelling
 ; (`slice_z0re_angle_select_runtime_base_exact.c` before fmt3 respelled it):
 ;
-;     int q = cq_theta(m, .5); int t = m + 1;
-;     int r; if (q > 3) r = cq_theta(t, .75); else r = cq_theta(t, .25);
+;     int q = m; cq_theta(&q, .5); int t = m + 1;
+;     int r; if (q > 3) { r = t; cq_theta(&r, .75); } else { r = t; cq_theta(&r, .25); }
 ;     return cq_measure(r) + cq_measure(q);
 ;
-; BEFORE fmt3, `-O1` sank the two calls into ONE `cq_theta(t, select(q > 3, .75,
+; BEFORE fmt3, `-O1` sank the two calls into ONE `@cq_theta_si32(t, select(q > 3, .75,
 ; .25))`, and bd z0re (owner ruling 2026-09-28, option a) lowers that on ONE fresh
 ; rail by difference: `alloc(t); ry(h, .25); ry_controlled(f, h, .5)`. SINCE fmt3
 ; (`nomerge` on every `cq_theta_*`) this module — transcribed from `clang -O1` under
 ; the committed header — is what reaches the pass: an if/else of two RUNTIME-seed
 ; preps, which the two-rail clause refuses (PRD §14.11 Q4, owner ruling "two
 ; preps = two rails = decline"). The e2e slices were respelled as the TERNARY
-; (`r = cq_theta(t, (q > 3) ? .75 : .25)`), which is the one call with no merge
+; (`r = t; cq_theta(&r, (q > 3) ? .75 : .25)`), which is the one call with no merge
 ; and keeps their goldens byte for byte; this file pins what the if/else does now.
 ;
 ; ⚠ AN OVER-DECLINE, and a PRICED one (the owner's option-B cost statement): the

@@ -3,7 +3,7 @@
 ; the S9 stale-record fence).
 ;
 ;     int mark = cq_phi(r,.1); int mm = cq_measure(mark);   // BEFORE
-;     r = cq_theta(r, q == 5 ? .9 : .3);
+;     cq_theta(&r, q == 5 ? .9 : .3);
 ;
 ; `%mark` is a second SSA name for `r`'s physical rail (Rz is diagonal and always
 ; lowers in place), so it IS a member of the base's rail closure and S9

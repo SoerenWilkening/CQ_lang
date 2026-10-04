@@ -3,9 +3,9 @@
 ; Rule-13 review of bd test_C_libtooling-drbq Inc 1 (reviewer lenses L3 §1 and
 ; L5 §1, independently).
 ;
-;     int q=cq_theta(0,.5); int p=cq_theta(0,.3);
+;     int q=0; cq_theta(&q,.5); int p=0; cq_theta(&p,.3);
 ;     int r = p * 5;                     // an OUT-OF-PLACE DERIVED base
-;     if (q > 5) r = cq_theta(r, .9);    // the accepted in-place Ry arm
+;     if (q > 5) cq_theta(&r, .9);    // the accepted in-place Ry arm
 ;     int s = r + 1;                     // a POST-REGION user
 ;     return cq_measure(q);
 ;

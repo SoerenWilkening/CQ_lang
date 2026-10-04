@@ -2,9 +2,9 @@
 ; stays discharged (bd test_C_libtooling-kyy1; bd rhk5 round 2; Rule-13 r1B
 ; F-r1B-1, probe `b2n`). The C program:
 ;
-;     q = cq_theta(m & 7, .5); p = q & 3; u = p + q;
+;     q = m & 7; cq_theta(&q, .5); p = q & 3; u = p + q;
 ;     if (u == 10) cq_phi(PI);
-;     q2 = cq_theta(q, .7);
+;     q2 = q; cq_theta(&q2, .7);
 ;     s = h(m, p);                    // h(a, k) = k + 1, in another TU
 ;     return cq_measure(s) + cq_measure(q2);
 ;

@@ -1,8 +1,8 @@
 ; control_angle_select_ry_then_region.ll — ACCEPT: an angle-select gate FOLLOWED
 ; by an Inc-1 in-place rotation DIAMOND on the SAME register (bd drbq Inc 2b).
 ;
-;     r = cq_theta(r, q == 5 ? .9 : .3);      // 2b, by difference
-;     if (q == 6) r = cq_theta(r, .8);        // Inc 1, in place
+;     cq_theta(&r, q == 5 ? .9 : .3);      // 2b, by difference
+;     if (q == 6) cq_theta(&r, .8);        // Inc 1, in place
 ;
 ; A COMPOSITION FIXTURE, and the thing it actually probes is EMISSION ORDER, not
 ; the two lowerings separately. Both regions are pushed by ONE

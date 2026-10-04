@@ -1,7 +1,7 @@
 ; control_inplace_ry_tape_after_region.ll — ACCEPT: a 7.6 OUTPUT-TAPE write of
 ; the register a FLAT control-in-place Ry arm rotated.
 ;
-;     if (q == 5) { r = cq_theta(r, .9); }   /* Inc-1 control-in-place Ry arm */
+;     if (q == 5) { cq_theta(&r, .9); }   /* Inc-1 control-in-place Ry arm */
 ;     printf("%d\n", r);                     /* 7.6 tape write on the POST-region value */
 ;     return cq_measure(q);
 ;
@@ -14,7 +14,7 @@
 ; WHY IT IS AN OVER-DECLINE REPAIR AND NOT A WIDENING — the decisive measurement.
 ; The 7.6 sink guard asks TERMINALITY, not measuredness. Both facts were measured
 ; on the pre-Inc-3 oracle before this fixture was written:
-;   * `int r = cq_theta(0,.3); printf("%d\n", r); return 0;`  — an UNMEASURED,
+;   * `int r = 0; cq_theta(&r,.3); printf("%d\n", r); return 0;`  — an UNMEASURED,
 ;     superposed register taped with NO control flow anywhere: **ACCEPTS**, and
 ;     the lowered IR is byte-identical on both binaries. So taping a live
 ;     superposed rail is already inside 7.6's admitted semantics.
@@ -41,8 +41,8 @@
 ; VERBATIM `clang -O1` output for
 ;   #include <stdio.h>
 ;   int slice(void) { int q=3, r=7;
-;                     q = cq_theta(q,0.5); r = cq_theta(r,0.25);
-;                     if (q == 5) { r = cq_theta(r, 0.9); }
+;                     cq_theta(&q,0.5); cq_theta(&r,0.25);
+;                     if (q == 5) { cq_theta(&r, 0.9); }
 ;                     printf("%d\n", r);
 ;                     return cq_measure(q); }
 ;

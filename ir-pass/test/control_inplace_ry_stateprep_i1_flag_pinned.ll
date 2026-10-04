@@ -6,7 +6,7 @@
 ; this header moved — so the module below is still, character for
 ; character, the one the four drbq Inc-4 adversarial rounds argued over.
 ;
-;     _Bool r = <false>;  if (q == 5) r = cq_theta(false, .9);  // the i1 SEED
+;     _Bool r = <false>;  if (q == 5) { r = false; cq_theta(&r, .9); }  // the i1 SEED
 ; collides with the FLAG
 ;
 ; ---- WHY IT IS AN ACCEPT NOW (bd `drbq.14`; F2's `CondWire` narrowing)
@@ -97,14 +97,14 @@
 ; from plain C:
 ;
 ;   * ARM edge — `..._i1_arm_flag.ll` (source `$S/fix3/q/z02_i1_flag_arm.c`):
-;     `_Bool c = (q==5); _Bool r = 1; if (c) r = cq_theta(c, 0.9);` reaches the
+;     `_Bool c = (q==5); _Bool r = 1; if (c) { r = c; cq_theta(&r, 0.9); }` reaches the
 ;     pass as `cq_theta_i1(i1 true, …)`, i.e. `clang -O1` FOLDED the flag. That
 ;     is an in-place Ry on the CONDITION register, the shape R4 forbids, and the
 ;     shipped type gate (compare literal `i32 5`, seed `i1 true`) skipped all of
 ;     F2 for it.
 ;   * MERGE edge — THIS file. `%c` is pinned to `false` on the straight-through
 ;     edge and the seed is `i1 false`, so the source could have been
-;     `_Bool r = c; if (c) r = cq_theta(…);` with `-O1` folding the φ's Pred
+;     `_Bool r = c; if (c) { r = …; cq_theta(&r, …); }` with `-O1` folding the φ's Pred
 ;     incoming. Inc 4 RAUWs the merge φ to the PREPPED rail, so on the ¬f branch
 ;     downstream would read a fresh unentangled |0> rail where the source names
 ;     the flag's rail.
@@ -123,7 +123,7 @@
 ; THE MERGE EDGE IS NOT ITSELF SPECULATIVE. `q/z05_merge_edge_fold.c` and
 ; `q/z06_merge_edge_fold2.c` are plain-C programs where the straight-through
 ; incoming IS a live measured register that `-O1` folds to the seed on the merge
-; edge (`int t = q&1; int r = t; if (t) r = cq_theta(0,θ);` →
+; edge (`int t = q&1; int r = t; if (t) { r = 0; cq_theta(&r,θ); }` →
 ; `phi i32 [%5,%arm],[0,%entry]`). Both decline. That is why F2 asks both edges
 ; at all.
 ;

@@ -2,7 +2,7 @@
 ; test_C_libtooling-r903 item (b)): the condition REGISTER is measured BEFORE the
 ; branch the kickback controls on.
 ;
-;     int q = cq_theta(0, .5);
+;     int q = 0; cq_theta(&q, .5);
 ;     int m = cq_measure(q);
 ;     if (q > 3) cq_phi(.3);
 ;

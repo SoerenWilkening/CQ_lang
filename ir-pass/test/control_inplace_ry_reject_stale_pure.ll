@@ -2,7 +2,7 @@
 ; pre-region record of the rotated register after the region (bd
 ; test_C_libtooling-drbq; the PURE-op corner of R6).
 ;
-;     if (q > 5) r = cq_theta(r, .9);
+;     if (q > 5) cq_theta(&r, .9);
 ;     p = mark * 7;                     // mark == the pre-Ry `r`
 ;
 ; Committed because the coverage is SHARED and the sharing is worth pinning: this

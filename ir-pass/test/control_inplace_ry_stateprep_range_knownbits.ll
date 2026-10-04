@@ -6,7 +6,7 @@
 ; this header moved — so the module below is still, character for
 ; character, the one the four drbq Inc-4 adversarial rounds argued over.
 ;
-;     int b = (q > 7);  int r = 1;  if (b) r = cq_theta(1, .9);
+;     int b = (q > 7);  int r = 1;  if (b) { r = 1; cq_theta(&r, .9); }
 ;
 ; ---- WHY IT IS AN ACCEPT NOW (bd `drbq.14`; F2's `CondWire` narrowing)
 ;
@@ -31,7 +31,7 @@
 ;   register is not touched by the region at all.
 ;
 ; THE RIVAL IT SILENTLY ABSORBS (alpha reading): the source rotated the
-; CONDITION'S OWN register IN PLACE — `cq_theta(<the pinned register>, θ)` —
+; CONDITION'S OWN register IN PLACE — `cq_theta(&<the pinned register>, θ)` —
 ; and `-O1` const-folded arg-0 to the literal on the edge where the equality
 ; is a theorem.
 ; ⚠ SAY IT IN THOSE WORDS: a program that was LOUDLY REFUSED before this
@@ -84,7 +84,7 @@
 ; an ACCEPT — that is its red-green relation, and it is the only file in the
 ; family with it (round-1 Rule-13 review, mutation table row M9).
 ;
-; The source shape is `int b = (q > 7); int r = 1; if (b) r = cq_theta(b, .9);`
+; The source shape is `int b = (q > 7); int r = 1; if (b) { r = b; cq_theta(&r, .9); }`
 ; — the L2 `k04` class. ⚠ From plain C that spelling does NOT reach the pass in
 ; this form: instcombine rewrites `icmp ne (zext %c), 0` to `%c` and DELETES
 ; `%b`, which is the residual documented in the notes §10 and PRD §14.2b (F2 can

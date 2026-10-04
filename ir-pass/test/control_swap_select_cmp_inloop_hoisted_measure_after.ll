@@ -2,7 +2,7 @@
 ; bd test_C_libtooling-r10v): the CONSTANT-ARM spelling of the r10v reproducer,
 ; and what `clang -O1` actually does to it.
 ;
-;     int b = cq_theta(0, .5);
+;     int b = 0; cq_theta(&b, .5);
 ;     for (int i = 0; i < 3; ++i) {
 ;         int a = (b == 1) ? 7 : 5;              // arm is loop-INVARIANT
 ;         acc += cq_measure(a) + cq_measure(b);

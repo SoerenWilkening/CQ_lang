@@ -2,9 +2,9 @@
 ; owner ruling D4 of 2026-09-14c). THE POSITIVE CONTROL, and the fixture most
 ; likely to break if the D4 decline is ever widened.
 ;
-;     int y = cq_theta(5, .5);
+;     int y = 5; cq_theta(&y, .5);
 ;     for (k = 1; k <= 2; ++k) if ((y >> k) & 1) cq_phi(.3);
-;     y = cq_theta(y, .9);                  // THE SAME POST-LOOP INTERFERENCE
+;     cq_theta(&y, .9);                  // THE SAME POST-LOOP INTERFERENCE
 ;     return cq_measure(y);
 ;
 ; It carries the IDENTICAL hazard shape to `loop_leak_dephase_reject_noregion_live

@@ -3,19 +3,19 @@
 ; (Track A.1, Rule-13 round-1 finding F-A1-1).
 ;
 ; `control_phase_kickback_reject_cmp_round2_sibling_theta_sdagger.ll` MINUS the
-; round-2 sibling `int b3 = cq_theta(y, 0.9);` — so the ONLY non-diagonal gate on
-; the condition wire is the POST-REGION S-DAGGER `int b2 = cq_theta(b, -0.25);`,
+; round-2 sibling `int b3 = y; cq_theta(&b3, 0.9);` — so the ONLY non-diagonal gate on
+; the condition wire is the POST-REGION S-DAGGER `int b2 = b; cq_theta(&b2, -0.25);`,
 ; which `condWireDisposition`'s DT prong proves is after every execution of the
 ; branch and therefore ACCEPTS. That is the shipped S-dagger shape the owner's
 ; Grover cascade writes, and it must keep lowering. Two TUs through the shipped
 ; 6.5 recipe, from `session-9pum/probes/k10_caller.c` + `review_a1_r1_probes/lib3.c`:
 ;
-;     int q = 3; q = cq_theta(q, 0.5);
+;     int q = 3; cq_theta(&q, 0.5);
 ;     int y = 5; if (q > 5) y = ext_f(7);      /* 6.5 classical-call arm -> %out */
 ;     int z = 0; if (opaque()) z = ext(1);
-;     int b  = cq_theta(y, 0.25);
+;     int b  = y; cq_theta(&b, 0.25);
 ;     if (b > 1) cq_phi(0.3);
-;     int b2 = cq_theta(b, -0.25);             /* the S-DAGGER, post-region      */
+;     int b2 = b; cq_theta(&b2, -0.25);        /* the S-DAGGER, post-region      */
 ;     return cq_measure(b2) + z;
 ;
 ; MEASURED ACCEPT on `main` 0c7380c, on the pre-fix Track-A.1 build, and here —

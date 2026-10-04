@@ -7,7 +7,7 @@
 ; land. Before clause C7 there was ONE accept-shaped verdict and it was STRICTLY
 ; WEAKER than the shape the type rewrite can serve. THIS MODULE IS THE PROOF:
 ;
-;   for (i = 0; i < 3; ++i) { if (n > 0) b[i] = cq_theta(z, 0.5); }
+;   for (i = 0; i < 3; ++i) { if (n > 0) { b[i] = z; cq_theta(&b[i], 0.5); } }
 ;   ...  s += cq_measure(b[i]);            // every cell, after the loop
 ;
 ; The store sits in a CONDITIONAL arm (block %6), so a trip whose condition is

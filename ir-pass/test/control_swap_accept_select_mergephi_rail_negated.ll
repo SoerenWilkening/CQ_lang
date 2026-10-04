@@ -3,7 +3,7 @@
 ; snapshot) as `clang -O1 -g` hands it over. bd `boi6` D-B / Track M, probe `m01`.
 ; RED ON THE ORACLE (`control flow` at the select), GREEN HERE.
 ;
-; THE CONSTRUCT. `bool b1 = 0; if (a >= 3) b1 = cq_theta(b1, .5); if (b1) a -= 3;`
+; THE CONSTRUCT. `bool b1 = 0; if (a >= 3) cq_theta(&b1, .5); if (b1) a -= 3;`
 ; — the select's condition is the prep diamond's MERGE φ (`%6` below), which
 ; Track M admits as a rail leaf by CALLING the region's own committed verdict in
 ; `plan.Regions` (`ClassArm == InPlaceRotation` + its hoisted `Shadow` theta),

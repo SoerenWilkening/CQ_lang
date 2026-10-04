@@ -1,5 +1,5 @@
 ; control_inplace_ry_rail_post_ry_sdagger.ll — ACCEPT: an S†-style UNCOMPUTE of
-; the condition register AFTER the region (`b = cq_theta(b, -0.5);`, probe `t8`).
+; the condition register AFTER the region (`cq_theta(&b, -0.5);`, probe `t8`).
 ; The uncompute cascade the owner's Grover writes, on the rail path.
 ;
 ; WHAT ADMITS IT IS P1's `ProvenPostRegion` HALF, unchanged by this increment and

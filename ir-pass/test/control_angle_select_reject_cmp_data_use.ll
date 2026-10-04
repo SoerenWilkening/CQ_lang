@@ -2,7 +2,7 @@
 ; compare is ALSO read as DATA (bd drbq Inc 2b).
 ;
 ;     int f = (q == 5);                       // a data use of the compare
-;     r = cq_theta(r, q == 5 ? .9 : .3);      // clang -O1 CSEs the two tests
+;     cq_theta(&r, q == 5 ? .9 : .3);      // clang -O1 CSEs the two tests
 ;     ... cq_measure(f);
 ;
 ; THE FIXTURE THAT FENCES S4's `Cond->hasOneUse()`. Its sibling

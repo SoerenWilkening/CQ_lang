@@ -9,12 +9,12 @@
 // `cq_theta_nomerge_widths.c` pins all 16.
 //
 // WHY. IPSCCP substitutes a register pinned on an edge (`t := 5` under `t == 5`)
-// into the arm's `cq_theta`; if the other arm is `cq_theta(5, θ)` the two calls
+// into the arm's `cq_theta`; if the other arm is `r = 5; cq_theta(&r, θ)` the two calls
 // became IDENTICAL and the late SimplifyCFG hoisted them and DELETED THE BRANCH.
 // A second route sinks two calls that differ in ONE operand and folds the φ's
 // `select (q == 20), t, 5` to `5` (InstSimplify simplifyWithOpReplaced). Either
 // way the module that reached cq-lowering was the stage-1 IR of a DIFFERENT,
-// legitimate program (`r = cq_theta(5, θ)` with `t` untouched) and was compiled
+// legitimate program (`r = 5; cq_theta(&r, θ)` with `t` untouched) and was compiled
 // as that — silently (TRACK_FMT3.md §1). With `nomerge` the branch survives and
 // the pass declines the shape; the lit fixtures
 // `control_inplace_ry_reject_stateprep_nomerge_*.ll` pin THAT half (this suite

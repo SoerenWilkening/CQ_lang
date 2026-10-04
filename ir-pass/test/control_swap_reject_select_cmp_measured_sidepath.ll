@@ -2,7 +2,7 @@
 ; test_C_libtooling-r10v): the measurement sits on a CLASSICALLY GUARDED SIDE
 ; PATH that reaches the select.
 ;
-;     int q = cq_theta(0, .5);
+;     int q = 0; cq_theta(&q, .5);
 ;     if (ext(1)) s = cq_measure(q);      // neither dominates nor is dominated
 ;     int a = (q == 1) ? 2 : 5;
 ;

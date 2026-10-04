@@ -2,7 +2,7 @@
 ; (Z4) ISOLATING CONTROL for `loop_carried_handle_accept_select_merge.ll`.
 ;
 ; ONE EDIT from the positive: the entry incoming is already a RAIL
-; (`%seed = cq_theta(5, .25)`), not a classical literal.  There is nothing to
+; (`%seed = @cq_theta_si32(5, .25)`), not a classical literal.  There is nothing to
 ; promote — the register exists — and this is NOT the loop-carried HANDLE
 ; variable but the ordinary loop-carried rail, whose own owners are
 ; `collapseRailPhisIn` (the closed self-cycle) and X1 (everything else).

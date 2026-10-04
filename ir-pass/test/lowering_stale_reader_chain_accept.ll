@@ -2,7 +2,7 @@
 ; ACCEPT for bd test_C_libtooling-3d8q: the reader fence must widen a DECLINE
 ; without touching one well-formed chain.
 ;
-;   int q=cq_theta(0,0.3); int a=cq_theta(q,0.5); int c=cq_theta(a,0.9);
+;   int q=0; cq_theta(&q,0.3); int a=q; cq_theta(&a,0.5); int c=a; cq_theta(&c,0.9);
 ;   return cq_measure(c)+cq_measure(c);
 ;
 ; Every rotation consumes the previous name, and the ONLY name read afterwards is

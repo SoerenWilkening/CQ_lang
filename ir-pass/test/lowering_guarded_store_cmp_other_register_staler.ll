@@ -5,10 +5,10 @@
 ;
 ;     static int guarded_local(int seed) {
 ;       int arr[8] = {0};
-;       int q  = cq_theta(seed, 0.5);
-;       int t  = cq_theta(seed + 2, 0.5);
-;       int t2 = cq_theta(t, 0.9);        /* staler on t's WIRE — NOT on q's */
-;       int i  = cq_theta(seed + 1, 0.5);
+;       int q  = seed; cq_theta(&q, 0.5);
+;       int t  = seed + 2; cq_theta(&t, 0.5);
+;       int t2 = t; cq_theta(&t2, 0.9);   /* staler on t's WIRE — NOT on q's */
+;       int i  = seed + 1; cq_theta(&i, 0.5);
 ;       if (q < 3) { arr[i] = 7; }
 ;       int v = arr[q];
 ;       return cq_measure(v) + cq_measure(t2);

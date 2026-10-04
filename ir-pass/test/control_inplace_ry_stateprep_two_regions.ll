@@ -3,8 +3,8 @@
 ; `p12a`).
 ;
 ;     int r = 0, s = 0;
-;     if (q == 5) r = cq_theta(0, .9);
-;     if (q == 6) s = cq_theta(0, .4);
+;     if (q == 5) { r = 0; cq_theta(&r, .9); }
+;     if (q == 6) { s = 0; cq_theta(&s, .4); }
 ;
 ; The bd `hcrg` SEQUENTIAL-region path: region 2's tainted branch lives in
 ; region 1's MERGE block, so `lowerControlRegions` must Kahn-sort the two before

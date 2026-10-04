@@ -3,7 +3,7 @@
 ; the F-1b2-4 structural ground that `railCondWireDisposition`'s header states
 ; for the kickback and the 4.4 select INHERITS. The compare path's positional
 ; prong exists for a theta on ANOTHER wire that would ALIAS the condition's rail
-; through a dtzb in-place `xor` (`x = b ^ 1; c = cq_theta(x, θ)`); the rail path
+; through a dtzb in-place `xor` (`x = b ^ 1; c = x; cq_theta(&c, θ)`); the rail path
 ; drops that prong because a condition rail is always read LATER by its own
 ; consumer — the branch for the kickback, the two mid-block `cqrt_cnot` reads of
 ; the copy flag here — so M-C's G6 refuses the in-place conversion and the `xor`

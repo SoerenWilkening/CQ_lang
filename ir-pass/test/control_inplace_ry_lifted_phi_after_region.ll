@@ -31,8 +31,8 @@
 ; VERBATIM `clang -O1` output for
 ;   volatile int OPQ = 1;
 ;   int slice(void) { int q=3, r=7;
-;                     q = cq_theta(q,0.5); r = cq_theta(r,0.25);
-;                     if (q == 5)  { r = cq_theta(r, 0.9); }   /* Ry arm, M-β */
+;                     cq_theta(&q,0.5); cq_theta(&r,0.25);
+;                     if (q == 5)  { cq_theta(&r, 0.9); }   /* Ry arm, M-β */
 ;                     if (OPQ)     { r = cq_phi(r, 0.5);   }   /* 5j5 lift */
 ;                     return cq_measure(q) + cq_measure(r); }
 ;

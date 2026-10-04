@@ -3,8 +3,8 @@
 ; NOT provably after the region, so `condWireDisposition` returns `DeclineNow` and
 ; the P1 widening is never reached.
 ;
-;     qs = cq_theta(q, .2);            <-- a SIBLING Ry on the condition's wire,
-;     if (q == 5) r = cq_theta(r, .9);     emitted BEFORE the branch
+;     qs = q; cq_theta(&qs, .2);       <-- a SIBLING Ry on the condition's wire,
+;     if (q == 5) cq_theta(&r, .9);     emitted BEFORE the branch
 ;
 ; THE TWO HALVES MUST NOT DRIFT. Its green twin
 ; (control_inplace_ry_post_region_theta_cond.ll) is the identical arm class with the

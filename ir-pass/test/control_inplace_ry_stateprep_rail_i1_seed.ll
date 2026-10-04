@@ -2,9 +2,9 @@
 ; of a `_Bool` under a bare `_Bool` (rail-root) condition. `probes/M1.c` of the
 ; Track-C (bd `drbq.14`) session, verbatim, through `clang -O1`:
 ;
-;     bool b0 = cq_theta(0, 0.5);    // a BARE RAIL condition: `br i1 %1`
+;     bool b0 = 0; cq_theta(&b0, 0.5);  // a BARE RAIL condition: `br i1 %1`
 ;     bool b1 = 0;
-;     if (b0) b1 = cq_theta(b1, 0.5);
+;     if (b0) cq_theta(&b1, 0.5);
 ;
 ; ⚠ THIS FILE WAS `control_inplace_ry_reject_stateprep_rail_i1_seed_l4x4.ll` AND
 ; ITS IR IS BYTE-UNCHANGED (`git mv`). It was committed by the F2 narrowing
@@ -37,7 +37,7 @@
 ;     narrowing F2 refused it `state prep seed is proven equal to the condition
 ;     register`. The narrowing excludes values on the CONDITION'S OWN BACKWARD
 ;     WIRE, and `b0` is the condition, so the collision is gone and the α theorem
-;     covers it: the RIVAL reading (`if (b0) b1 = cq_theta(b0, .5)`, an in-place
+;     covers it: the RIVAL reading (`if (b0) { b1 = b0; cq_theta(&b1, .5); }`, an in-place
 ;     Ry on the condition register) is refused by R4/rung (iii), measured.
 ;
 ; ⚠ WALL 1 IS STILL STANDING, AND THIS FILE MUST NOT BE READ AS *"the owner's
@@ -64,9 +64,9 @@
 ;
 ; `probes/M1.c`, verbatim, through `clang -O1`:
 ;
-;     bool b0 = cq_theta(0, 0.5);    // a BARE RAIL condition: `br i1 %1`
+;     bool b0 = 0; cq_theta(&b0, 0.5);  // a BARE RAIL condition: `br i1 %1`
 ;     bool b1 = 0;
-;     if (b0) b1 = cq_theta(b1, 0.5);
+;     if (b0) cq_theta(&b1, 0.5);
 ;
 ; With NO compare in front of it, `classifyArms` declines the rail leaf on the
 ; in-place-Ry / state-prep arm path (bd `l4x4`, Inc 1b-C, OPEN) before F2 is

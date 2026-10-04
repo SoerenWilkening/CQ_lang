@@ -6,7 +6,7 @@
 ; this header moved — so the module below is still, character for
 ; character, the one the four drbq Inc-4 adversarial rounds argued over.
 ;
-;     int t = q & 1;  int r = t;  if (!t) r = cq_theta(1, .9);  //
+;     int t = q & 1;  int r = t;  if (!t) { r = 1; cq_theta(&r, .9); }  //
 ; STRAIGHT-THROUGH pin
 ;
 ; ---- WHY IT IS AN ACCEPT NOW (bd `drbq.14`; F2's `CondWire` narrowing)
@@ -79,10 +79,10 @@
 ; ⚠ ALSO A ROUND-1 RULE-13 FINDING (lens L2, F-L2-2, probe
 ; `p/k06_a2_range_alias.c`), and it ACCEPTED at hand-back:
 ;
-;     int q = cq_theta(3, 0.3);
+;     int q = 3; cq_theta(&q, 0.3);
 ;     int r = q & 1;                       /* r ALIASES the condition register
 ; */
-;     if (!(q & 1)) r = cq_theta(1, 0.9);
+;     if (!(q & 1)) { r = 1; cq_theta(&r, 0.9); }
 ;     return (int) cq_measure(r);
 ;
 ; The straight-through edge is the `!= 0` edge, so `-O1` folds the merge φ's

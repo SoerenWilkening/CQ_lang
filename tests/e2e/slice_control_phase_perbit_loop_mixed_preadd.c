@@ -5,8 +5,8 @@
    `slice_control_phase_perbit_loop_mixed.c` PLUS ONE LINE: a dtzb in-place `add`
    on the loop-INVARIANT condition register, in the loop's PREHEADER.
 
-       int q = cq_theta(u, 0.5);            // INVARIANT: the body gates nothing on it
-       int r = cq_theta(u, 0.3);            // CARRIED:   rotated once per trip
+       int q = u; cq_theta(&q, 0.5);        // INVARIANT: the body gates nothing on it
+       int r = u; cq_theta(&r, 0.3);        // CARRIED:   rotated once per trip
        q = q + 7;                           // <-- the only difference
        for (int i = 0; i < 3; i++) {
            if ((q >> i) & 1) cq_phi(0.2);   // D4's per-bit kickback

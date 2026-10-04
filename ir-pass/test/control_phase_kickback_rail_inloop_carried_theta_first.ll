@@ -6,8 +6,8 @@
 ; THE SHAPE: a LOOP-CARRIED `_Bool` rail whose region condition is the IN-BODY
 ; chained `cq_theta_i1` (the theta BEFORE the region in the body), i.e. boi6
 ; probe `p2`:
-;     bool b = cq_theta((bool)0, .5);
-;     for (int i = 0; i < 3; i++) { b = cq_theta(b, .2); if (b) cq_phi(.7); }
+;     bool b = (bool)0; cq_theta(&b, .5);
+;     for (int i = 0; i < 3; i++) { cq_theta(&b, .2); if (b) cq_phi(.7); }
 ; This is the ONE shape where the Inc-1b kickback already fires on a rail whose
 ; wire crosses a BACK EDGE: the condition is a genuine `cq_theta_i1` CALL (so
 ; `isCondRailLeaf` admits it), while the rail's identity is carried by the header

@@ -35,7 +35,7 @@
 ; `docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackL/probes/N1_vla_bound.c`:
 ;   /* dynamic-bool boundary: i8 storage cannot yet carry i32 handles */
 ;   #include "CQ.h"
-;   __attribute__((noinline)) int slice(int n){ int a=5; bool b[n]; for(int i=0;i<n;++i){ b[i]=0; if(a>=3) b[i]=cq_theta(b[i],0.5); if(b[i]) a-=3; } return cq_measure(a)+cq_measure(b[0]); }
+;   __attribute__((noinline)) int slice(int n){ int a=5; bool b[n]; for(int i=0;i<n;++i){ b[i]=0; if(a>=3) cq_theta(&b[i],0.5); if(b[i]) a-=3; } return cq_measure(a)+cq_measure(b[0]); }
 ;   int main(void){ return slice(3); }
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s

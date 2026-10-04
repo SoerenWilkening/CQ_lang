@@ -3,7 +3,7 @@
 
    THE PROGRAM IS THE CANONICAL NON-LIFTABLE RESIDUE, and it is ordinary C:
 
-       int q = cq_theta(u, 0.5);
+       int q = u; cq_theta(&q, 0.5);
        int w = q * 2;
        int c = q * 3;
        cq_theta(&w, 0.25);       <-- the chained, non-diagonal Ry

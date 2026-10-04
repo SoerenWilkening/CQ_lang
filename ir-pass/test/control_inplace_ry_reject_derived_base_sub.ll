@@ -1,9 +1,9 @@
 ; control_inplace_ry_reject_derived_base_sub.ll — DECLINE. The `sub` spelling of
 ; R4's condition-wire fence (round-1 Rule-13 review, lens L1 §1).
 ;
-;     int q = cq_theta(u, .5);
+;     int q = u; cq_theta(&q, .5);
 ;     int b = q - 1;                 /* derived FROM the condition register */
-;     if (q > 5) b = cq_theta(b, .9);
+;     if (q > 5) cq_theta(&b, .9);
 ;
 ; WHY `sub` GETS ITS OWN FIXTURE ALONGSIDE `add` AND `xor`: R4 is the SOLE fence
 ; for this whole family, and the two shared wire walkers are ASYMMETRIC across

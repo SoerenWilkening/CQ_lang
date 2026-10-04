@@ -1,7 +1,7 @@
 ; control_inplace_ry_reject_stateprep_seed_mismatch.ll — DECLINE (F1): the seed
 ; and the merge's Pred-edge incoming are different constants.
 ;
-;     int r = 7;  if (q == 5) r = cq_theta(0, .9);      // probe `p04b`, from C
+;     int r = 7;  if (q == 5) { r = 0; cq_theta(&r, .9); }  // probe `p04b`, from C
 ;
 ; On the straight-through edge `r` is 7; on the arm edge the fresh rail holds
 ; Ry(θ)|0>. There is no single rail whose two components those are.

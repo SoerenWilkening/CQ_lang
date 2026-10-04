@@ -17,16 +17,16 @@
 ;
 ;   int ext_f(int a);  void ext_sink(int a);       /* lib: { return a + 100; } */
 ;   int slice(int g) {
-;       int q = 3; q = cq_theta(q, 0.5);
+;       int q = 3; cq_theta(&q, 0.5);
 ;       int y = 5;
 ;       if (q > 5) y = ext_f(7);        /* 6.5 classical-call arm -> %out      */
 ;       int keep = cq_measure(y);
 ;       if (g) ext_sink(keep);          /* an opaque CLASSICAL diamond — see ⚠ */
 ;       bool x  = (y != 0);             /* CLASSICAL at round 1                */
-;       bool b  = cq_theta(x, 0.25);
-;       bool b3 = cq_theta(x, 0.9);     /* SIBLING on the same wire            */
-;       int r = 7; r = cq_theta(r, 0.25);
-;       if (b) r = cq_theta(r, 0.9);    /* the in-place Ry arm reads `b`       */
+;       bool b  = x; cq_theta(&b, 0.25);
+;       bool b3 = x; cq_theta(&b3, 0.9);  /* SIBLING on the same wire            */
+;       int r = 7; cq_theta(&r, 0.25);
+;       if (b) cq_theta(&r, 0.9);    /* the in-place Ry arm reads `b`       */
 ;       return cq_measure(r) + cq_measure(b3) + keep;
 ;   }
 ;

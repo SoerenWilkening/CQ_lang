@@ -4,7 +4,7 @@
 ;
 ;     for (int i = 0; i < 2; ++i) {
 ;         if (q > 5 && q < 20) { q = cq_phi(q, PI); }
-;         q = cq_theta(q, -0.5);
+;         cq_theta(&q, -0.5);
 ;     }
 ;
 ; WHAT WAS WRONG. `clang -O1` canonicalizes the range test to

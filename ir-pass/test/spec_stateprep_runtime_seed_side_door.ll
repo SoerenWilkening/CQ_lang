@@ -3,7 +3,7 @@
 ; SAME stream as its hand-inlined twin `spec_stateprep_runtime_seed_side_door_twin.ll`.
 ;
 ;     int t = h(q, m);                 // Phase-6 site; the clone proves h classical
-;     int r = t; if (q2 > 3) r = cq_theta(t, .2);        // d88e probe l12C
+;     int r = t; if (q2 > 3) { r = t; cq_theta(&r, .2); }  // d88e probe l12C
 ;
 ; THE SIDE DOOR bd z0re NAMED. At round 1 `t = h(q, m)` is CONSERVATIVELY tainted
 ; (its first argument is `q`), so `classifyArms` classifies the arm as an IN-PLACE

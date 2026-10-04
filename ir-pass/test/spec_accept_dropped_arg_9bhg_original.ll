@@ -15,7 +15,7 @@
 ;   lib.c:  int h(int a, int k) { return k + 1; }
 ;   main.c: #include <stdlib.h>
 ;           int h(int a, int k);
-;           __attribute__((noinline)) int f(int m) { int q = cq_theta(m, .5); int t = h(q, m); return t + cq_measure(q); }
+;           __attribute__((noinline)) int f(int m) { int q = m; cq_theta(&q, .5); int t = h(q, m); return t + cq_measure(q); }
 ;           int main(int c, char **v) { return f(atoi(v[1])); }
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \

@@ -6,7 +6,7 @@
 ; QUANTUM) and ignores `a`. On the oracle (`main` aee8f4f8) the site's mask was `011`:
 ; `__cq_q_h3_011(%out, q, m)`, whose clone never looks at slot 0 — and `%out` is the 4.4
 ; bool-select rail of `p = b ? 9 : 4`, a which-path copy of `b`, left entangled across
-; `b = cq_theta(b, .7)`. Silent, stage 2b clean. So the class is "a clone that does not
+; `cq_theta(&b, .7)`. Silent, stage 2b clean. So the class is "a clone that does not
 ; read a slot it is passed", not "a classical-verdict clone" — the verdict is irrelevant.
 ; With the drop the mask is `010`: the clone reads exactly what it is given, `p` is
 ; never computed, and the stream is the twin's (`int t = q + m;`): the clone's
@@ -15,7 +15,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   int h3(int a, int b, int k);
-;   int main(int c, char **v) { int m = atoi(v[1]); _Bool b = cq_theta((_Bool)(m & 1), .5); int p = b ? 9 : 4; int q = cq_theta(m, .3); int t = h3(p, q, m); b = cq_theta(b, .7); return cq_measure(t) + cq_measure(b); }
+;   int main(int c, char **v) { int m = atoi(v[1]); _Bool b = (_Bool)(m & 1); cq_theta(&b, .5); int p = b ? 9 : 4; int q = m; cq_theta(&q, .3); int t = h3(p, q, m); cq_theta(&b, .7); return cq_measure(t) + cq_measure(b); }
 ; Library TU (plain C, no CQ.h):
 ;   int h3(int a, int b, int k) { return b + k; }
 ;

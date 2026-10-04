@@ -3,9 +3,9 @@
 ; widening `sext` scheduled BEFORE the in-place `cq_theta`. clang -O1 keeps that
 ; order for
 ;
-;     int q = cq_theta(0, .5);
+;     int q = 0; cq_theta(&q, .5);
 ;     long w = q;                    // sext here, before the gate
-;     int q2 = cq_theta(q, .3);
+;     int q2 = q; cq_theta(&q2, .3);
 ;     int v = tbl[w];                // `w` names the PRE-Ry record
 ;
 ; The `sext` itself reads `q` before the Ry, so the pure-op sweep accepts it; but

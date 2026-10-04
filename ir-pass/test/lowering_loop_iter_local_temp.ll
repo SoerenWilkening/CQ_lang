@@ -1,7 +1,7 @@
 ; lowering_loop_iter_local_temp.ll — ACCEPT (Phase 7.3 Inc 2, 799w.2): the Case B
 ; iteration-local born-and-dies temporary
 ;     for (int i = 0; i < n; i++) {
-;         int q = cq_theta(x, 0.25);   // fresh rail, born in body
+;         int q = x; cq_theta(&q, 0.25);  // fresh rail, born in body
 ;         int t = q ^ 9;               // template producer (born)
 ;         (void) cq_phi(t, 0.5);       // Rz keep-alive; result dead -> t & q die
 ;     }

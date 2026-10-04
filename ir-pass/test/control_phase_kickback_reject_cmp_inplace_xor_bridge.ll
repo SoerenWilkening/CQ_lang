@@ -2,11 +2,11 @@
 ; DOCUMENTED OVER-DECLINE of the COMPARE path (bd 3qlq.4, Rule-13 round-2 finding
 ; F-1b2-4): the compare spelling of `control_phase_kickback_rail_inplace_xor_bridge.ll`.
 ;
-;     int q = cq_theta(u,.5); int x = q ^ 7; int c = cq_theta(x,.9);
+;     int q = u; cq_theta(&q,.5); int x = q ^ 7; int c = x; cq_theta(&c,.9);
 ;     if (q == 1) cq_phi(.7); return cq_measure(c);
 ;
 ; `condWireDisposition`'s positional scan (P5) refuses any tainted-operand theta
-; between the compare and the branch "even on another wire", and `c = cq_theta(x,
+; between the compare and the branch "even on another wire", and `c = x; cq_theta(&c,
 ; .9)` sits there — although the `xor` lowers OUT of place (M-C's G6, as the
 ; rail twin pins), so the program is safe. Pinned as the asymmetry the rail path
 ; does NOT pay; pre-existing on `main`, unchanged by the increment.

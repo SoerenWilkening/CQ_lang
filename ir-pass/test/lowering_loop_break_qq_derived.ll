@@ -5,9 +5,9 @@
 ; (non-mint) tainted value — `p = p0 + 5`, an out-of-place template result whose
 ; producer chain is p0 (cq_theta) -> p (add). Source shape:
 ;
-;     int p0 = cq_theta(pseed, 0.5);
+;     int p0 = pseed; cq_theta(&p0, 0.5);
 ;     int p  = p0 + 5;                // DERIVED loop-invariant comparand (p0 -> p)
-;     int q  = cq_theta(x, 0.25);
+;     int q  = x; cq_theta(&q, 0.25);
 ;     for (int i = 0; i < n; i++) {
 ;         q = q ^ 9;                  // in-place value rail self-update
 ;         if (q == p) break;          // TAINTED Q==Q break flag (rail vs derived-p)

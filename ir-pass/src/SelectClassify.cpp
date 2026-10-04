@@ -353,7 +353,7 @@ bool hasCoherentDownstreamUse(Value *Op, SelectInst *Sel, TaintSet &Taint) {
   // the exemption is EMPTY, and the LINEAGE-WIDE seeding above then reaches the
   // base's own producing theta and flags it as "off-ancestry". MEASURED on all
   // three binaries (pre-3qlq oracle 52d7764, `main` a3c1513, branch
-  // `3qlq-inc2`): `p = cq_theta(p,0.9)` before a 6-op arm ACCEPTS as a `br`
+  // `3qlq-inc2`): `cq_theta(&p,0.9)` before a 6-op arm ACCEPTS as a `br`
   // diamond and DECLINES `control flow` as the pre-hoisted select, while the
   // UNCHAINED spelling accepts both ways.
   //
@@ -362,7 +362,7 @@ bool hasCoherentDownstreamUse(Value *Op, SelectInst *Sel, TaintSet &Taint) {
   // FRESH |0⟩ ancilla with the flag minted and stripped by an exact inverse pair
   // — a PERMUTATION, hence linear, hence correct for an arbitrary input
   // superposition. The genuine hazard this seeding was built for (the kjd1 fork,
-  // `int a = p; int p1 = cq_theta(p,·); if (c) a = R(a);`) is caught on the `br`
+  // `int a = p; int p1 = p; cq_theta(&p1,·); if (c) a = R(a);`) is caught on the `br`
   // path by the pass-wide `declineStaleRecordOps` — `cq opcode lowering: operand
   // predates a non-diagonal gate`, measured on all three binaries in all three
   // orderings. So this gate is CONSERVATIVE, as §16.7 says, and widening the
@@ -452,7 +452,7 @@ bool hasCoherentDownstreamUse(Value *Op, SelectInst *Sel, TaintSet &Taint) {
 // longer exists (D1: `cq_phi` carries no register). The nearest LIVE analogue is
 // the `cq_theta`-shaped alias, and it does not reach this gate: MEASURED on all
 // three binaries (pre-3qlq oracle 52d7764, `main` a3c1513, this branch),
-// `int t = cq_theta(q,0.9); p = (q>5) ? t : q;` DECLINES
+// `int t = q; cq_theta(&t,0.9); p = (q>5) ? t : q;` DECLINES
 // `cq controlled lowering: condition predates a non-diagonal gate under quantum
 // control` at gate 2c — earlier than here, and identically before and after
 // Inc 1/Inc 2 (round-2 review F-I2-4; re-measured by `fix_inc2_r2`, reproducer
@@ -460,7 +460,7 @@ bool hasCoherentDownstreamUse(Value *Op, SelectInst *Sel, TaintSet &Taint) {
 // (2c fires first, so the shape cannot be observed past it): a theta alias that
 // survived 2c would be refused by gate 5's channel-B walk, which is NOT vacuous —
 // asked of the `q` operand, `rotationAncestry(q)` is `{q, seed}` while the
-// sibling `t = cq_theta(q,·)` is a rotation user of `q` OUTSIDE it, so
+// sibling `t = q; cq_theta(&t,·)` is a rotation user of `q` OUTSIDE it, so
 // `hasCoherentDownstreamUse` returns true.
 //
 // Read this as a gate whose subject was retired, not as a gate that was proven
@@ -528,7 +528,7 @@ bool operandsAlias(Value *A, Value *B) {
 // measuring it is what showed the mistake (orchestrator ruling, 2026-09-13):
 // `classifyArms` sets that flag ONLY when the REGION'S OWN condition is a bare
 // rail, so the conjunct silently refused every prep guarded by a COMPARE —
-// `int b0 = cq_theta(0,.5); bool b1 = 0; if (b0 == 1) b1 = cq_theta(b1,.5);
+// `int b0 = 0; cq_theta(&b0,.5); bool b1 = 0; if (b0 == 1) cq_theta(&b1,.5);
 // if (b1) a -= 3;`, a single-φ merge that never peels and so never meets F2
 // (bd `rb9x`). MEASURED: that program reached rung 0 and was refused by this
 // conjunct ALONE.
@@ -804,7 +804,7 @@ bool collectCondTree(Value *Root, CondTree &Tree, bool AllowLogicalSelect,
       // SOUNDNESS, not just realizability: the alias here is created by a
       // DIAGONAL gate (Rz), so both SSA names denote the same BASIS LABEL and
       // collapsing `icmp(a,a)` is the CORRECT answer. The NON-diagonal twin
-      // (`r = cq_theta(q,·)`, an in-place Ry that also RAUWs to one rail but
+      // (`r = q; cq_theta(&r,·)`, an in-place Ry that also RAUWs to one rail but
       // CHANGES the basis) must NOT lower, and does not — it is owned by
       // ArmClassify's gate 2c (`findNonDiagonalWireGate`) and pinned by
       // control_swap_reject_select_theta_alias_cond.ll. That pairing is the
@@ -1144,7 +1144,7 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   // 1b-B.1, and the COMPARE leaf beside it was asked by nothing. The 4.4
   // classifier has no measured-before rung at all — `condDataUseDisposition`'s
   // `MeasuredEarly` is a `br`-path question about the FLAG's lineage and is not
-  // even reached from here — so `int b = cq_theta(0,.5); for (i<3) { int a =
+  // even reached from here — so `int b = 0; cq_theta(&b,.5); for (i<3) { int a =
   // (b == 1) ? i : 5; acc += cq_measure(a) + cq_measure(b); }` (plain `clang
   // -O1`; the arm is loop-VARIANT so the select stays in the body) minted trips
   // 2 and 3's flag from a register trip 1 had COLLAPSED — `cqrt_measure_i32(h0)`
@@ -1231,7 +1231,7 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   // PROVEN after it accepts. The P1 argument transfers exactly: the copies read
   // `b`'s basis label AT the select, the flag is minted and stripped and freed
   // inside the stream, and nothing of the region survives on `b` for a later
-  // gate to invalidate — so `if (b) a -= 3; b = cq_theta(b, -0.5);` (the S†
+  // gate to invalidate — so `if (b) a -= 3; cq_theta(&b, -0.5);` (the S†
   // spelling, probe `s04`) lowers, while a theta BETWEEN the rail's def and the
   // select, a SIBLING theta on the same physical rail (the F-1b-1 class, which
   // the walker's tainted-parent ancestry now sees), and any in-LOOP body theta
@@ -1315,11 +1315,11 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   // narrowing from the CLEARANCE review, finding F-11 / owner option (2)) and is
   // byte-identical to the
   // manual by-difference twin the Inc-1/2a in-place diamond already lowers. It is
-  // the IR `clang -O1` makes of `r = cq_theta(r, q==5 ? A : B);` and of
+  // the IR `clang -O1` makes of `cq_theta(&r, q==5 ? A : B);` and of
   // `if (q==5) cq_phi(A); else cq_phi(B);` (SimplifyCFG merges the phase arms into
   // ONE call with a select on the ANGLE). ⚠ Since bd test_C_libtooling-fmt3
   // (2026-09-28) it is NO LONGER what `-O1` makes of the `cq_theta` if/else
-  // `if (q==5) r=cq_theta(r,A); else r=cq_theta(r,B);` — `include/CQ.h` puts
+  // `if (q==5) cq_theta(&r,A); else cq_theta(&r,B);` — `include/CQ.h` puts
   // `nomerge` on every `cq_theta_*`, so that if/else stays an if/else and lowers
   // through the in-place Ry arm (same unitary). The sentence that stood here said
   // this select was "the shape that makes the C `if/else` with two rotations on

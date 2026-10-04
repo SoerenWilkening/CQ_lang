@@ -2,7 +2,7 @@
 ; prep in one arm beside a CHAINED in-place rotation in the other (probe `p05`,
 ; from C).
 ;
-;     if (q == 5) r = cq_theta(0, .9);   else r = cq_theta(p, .4);
+;     if (q == 5) { r = 0; cq_theta(&r, .9); }  else { r = p; cq_theta(&r, .4); }
 ;
 ; The prep arm is `Region.Arm` (successor 0) and is processed FIRST, so the
 ; if/else clause fires before any homogeneity flag is set. PRD §14.3 row IE-4

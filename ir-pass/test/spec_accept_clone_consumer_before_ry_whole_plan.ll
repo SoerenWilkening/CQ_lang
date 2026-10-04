@@ -4,7 +4,7 @@
 ; spec_accept_clone_consumer_after_ry_keeps_sibling.ll with the clone call moved
 ; BEFORE the Ry:
 ;
-;     p = q & 3; u = p + q; if (u == 10) cq_phi(PI); s = h(m, p); q2 = cq_theta(q, .7);
+;     p = q & 3; u = p + q; if (u == 10) cq_phi(PI); s = h(m, p); q2 = q; cq_theta(&q2, .7);
 ;
 ; Now the component `{p, u}` anchored after the clone call lies wholly before the Ry,
 ; clause (d) holds, and the whole plan discharges BOTH rails — a strict superset of

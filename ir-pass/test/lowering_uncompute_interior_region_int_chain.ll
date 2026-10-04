@@ -2,7 +2,7 @@
 ; clause (d2)). The INTEGER twin of lowering_uncompute_interior_region_chain.ll:
 ; the same emitter-recorded-strip anchor over an all-integer condition chain.
 ;
-;     q = cq_theta(u, 0.5);
+;     q = u; cq_theta(&q, 0.5);
 ;     if (((q * 37) >> 3) == 5) { q = cq_phi(q, PI); }
 ;     return cq_measure(q);
 ;

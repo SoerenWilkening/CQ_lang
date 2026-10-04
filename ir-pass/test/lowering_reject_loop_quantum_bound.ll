@@ -1,6 +1,6 @@
 ; lowering_reject_loop_quantum_bound.ll — DECLINE (Phase 7.3 Inc 1, 799w.1; PRD
 ; §2.6, L1): a loop whose EXIT condition is a live tainted value
-;     double q = cq_theta(seed, 0.5);
+;     double q = seed; cq_theta(&q, 0.5);
 ;     while (q < 10.0) q = cq_phi(q, 0.1);
 ;     return cq_measure(q);
 ; is a genuinely quantum/measurement-bounded loop — a runtime branch on a qubit,

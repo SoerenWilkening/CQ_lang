@@ -3,10 +3,10 @@
 ; IN ONE TRANSLATION UNIT, the first one PASSING the round-2 re-ask and the
 ; second one owing a decline.
 ;
-;     int kernel_a(void) { for (k<2) { bool t = cq_theta(0,.5); int r = cq_theta(7,.25);
-;                                      if (t) r = cq_theta(r,.2); … } }      // PASSES
-;     int kernel_b(void) { for (k<2) { int  u = cq_theta(5,.5); int r = cq_theta(7,.25);
-;                                      if ((u>>1)&1) r = cq_theta(r,.2); … } }  // MUST DECLINE
+;     int kernel_a(void) { for (k<2) { bool t = 0; cq_theta(&t,.5); int r = 7; cq_theta(&r,.25);
+;                                      if (t) cq_theta(&r,.2); … } }      // PASSES
+;     int kernel_b(void) { for (k<2) { int  u = 5; cq_theta(&u,.5); int r = 7; cq_theta(&r,.25);
+;                                      if ((u>>1)&1) cq_theta(&r,.2); … } }  // MUST DECLINE
 ;     int main(void) { return kernel_a() + kernel_b(); }
 ;
 ; ⚠ THIS FILE EXISTS BECAUSE THE TWO-FUNCTION AXIS WAS UNINSTRUMENTED AND A

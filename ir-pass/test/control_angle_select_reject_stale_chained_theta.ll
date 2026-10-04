@@ -1,8 +1,8 @@
 ; control_angle_select_reject_stale_chained_theta.ll — DECLINE (S9): a SIBLING
 ; chained `cq_theta` on the base's rail, written after the gate (bd drbq Inc 2b).
 ;
-;     r = cq_theta(r, q == 5 ? .9 : .3);   // the 2b gate
-;     int z = cq_theta(r, .2);             // reads the PRE-gate SSA name `r`
+;     cq_theta(&r, q == 5 ? .9 : .3);   // the 2b gate
+;     int z = r; cq_theta(&z, .2);         // reads the PRE-gate SSA name `r`
 ;
 ; `%z` names a rotation whose arg-0 is the base's pre-gate SSA record. It is
 ; itself a rail member (a chained Ry lowers in place), so S9 asks it the ALIAS-HOP

@@ -3,7 +3,7 @@
 ;
 ; The f64 twin of `lowering_classical_mux_phi_onereg_spec_quantum_base.ll`: the
 ; library `hf` returns its QUANTUM `double` argument, so the clone's verdict is
-; QUANTUM and the one-register lift of `phi(t, cq_theta(t, .2))` is a true
+; QUANTUM and the one-register lift of `phi(t, @cq_theta_f64(t, .2))` is a true
 ; renaming. What this file adds is the ERASE: a tainted fp return is an `i32`
 ; handle at the call site, so `specialize()`'s `retargetSite` REBUILDS the call
 ; (`double @hf` -> `i32 @__cq_q_hf_01`), RAUWs the old result onto the new one and
@@ -20,7 +20,7 @@
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   double hf(double a, double k);
-;   int main(int c, char **v) { double m = atof(v[1]); double q = cq_theta(m, .5); double t = hf(q, m); double r = t; if (m > 3) r = cq_theta(t, .2); return (int) cq_measure(r); }
+;   int main(int c, char **v) { double m = atof(v[1]); double q = m; cq_theta(&q, .5); double t = hf(q, m); double r = t; if (m > 3) { r = t; cq_theta(&r, .2); } return (int) cq_measure(r); }
 ;
 ; Regenerate: clang -O1 -emit-llvm -S the two TUs as above, then
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>.

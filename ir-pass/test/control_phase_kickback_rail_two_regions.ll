@@ -6,8 +6,8 @@
 ; loop's `R.Condition == Cond` collision is asked only for compares. Stream:
 ; `rz(h, .1)` then `rz(h, −.2)`, no bracket, no ancilla.
 
-; bd test_C_libtooling-3qlq.4 (Inc 1b) — the BARE RAIL CONDITION. `_Bool b =
-; cq_theta(b0, θ)` is a one-qubit REGISTER, and `if (b) …` hands the pass
+; bd test_C_libtooling-3qlq.4 (Inc 1b) — the BARE RAIL CONDITION. `_Bool b = b0;
+; cq_theta(&b, θ)` is a one-qubit REGISTER, and `if (b) …` hands the pass
 ; `br i1 %b` with no compare to mint a flag from. The register IS the flag: the
 ; kickback gate `cqrt_rz_i1(h_b, θ)` sits directly on `b`'s rail — NO mint, NO
 ; `_unc` strip, NO `cqrt_free` (the rail is the user's), and NO `cqrt_x` on a

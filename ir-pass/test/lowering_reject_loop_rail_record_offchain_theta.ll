@@ -5,10 +5,10 @@
 ; lowering_reject_inloop_rail_record_offchain_theta.ll with the in-body tainted
 ; `if` REMOVED —
 ;
-;     int q = cq_theta(0, .5);
-;     for (i<2) { q = cq_theta(q,-.5); q = cq_theta(q,.5); }   /* NO tainted control */
-;     int a = cq_theta(q, 0.125);
-;     int b = cq_theta(a, 0.25);
+;     int q = 0; cq_theta(&q, .5);
+;     for (i<2) { cq_theta(&q,-.5); cq_theta(&q,.5); }   /* NO tainted control */
+;     int a = q; cq_theta(&a, 0.125);
+;     int b = a; cq_theta(&b, 0.25);
 ;     return cq_measure(a) + cq_measure(b);
 ;
 ; — so it is claimed by ROUND 1 (`tryCaseA`, whose CLOSURE calls the fence over its

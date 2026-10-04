@@ -3,7 +3,7 @@
 ; because F-R1-1 was reported as a stage-ORDER finding and the population turned
 ; out to be wider than that.
 ;
-;     int q = 3; q = cq_theta(q, 0.5);
+;     int q = 3; cq_theta(&q, 0.5);
 ;     int y = (q > 5) ? 7 : 5;                   // 4.4 SELECT merge  ->  %out
 ;     for (int i = 0; i < 3; ++i)
 ;         if (((y >> i) & 1)) cq_phi(0.25);      // D4's per-bit idiom, ROLLED

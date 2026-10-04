@@ -1,7 +1,7 @@
 ; control_inplace_ry_reject_inloop_premark.ll — DECLINE (PRD §13.2 row R6-1): a
 ; PRE-Ry record of the rotated register, minted before the loop and read AFTER it.
 ;
-;     int mark = r; for (...) { if (q > 5) r = cq_theta(r, .9); } measure(mark);
+;     int mark = r; for (...) { if (q > 5) cq_theta(&r, .9); } measure(mark);
 ;
 ; R6 PER ACTIVATION REFUSES IT, and the reason is the certificate's own shape: the
 ; record's definition `D` is the mint, which sits in the entry block and is NEVER

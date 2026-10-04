@@ -16,7 +16,7 @@
 // handle identity, CLAUDE.md Rule 9 / Key Prohibitions.)
 //
 //     int main(void) {
-//       int q = cq_theta(7, 0.5);
+//       int q = 7; cq_theta(&q, 0.5);
 //       int s = q + 3;
 //       int a = (q > 3) ? (q << 2) : (q + 1);
 //       int b = (q && 5) ? q : 0;

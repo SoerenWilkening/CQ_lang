@@ -3,9 +3,9 @@
 ; the F1 rail-record fence GROUPS, and the reason it groups by ROOT MINT and not
 ; by chain.
 ;
-;     q = cq_theta(q, .5);  int a = q, b = q;
-;     for (…) { if (a == 5) a = cq_phi(a, PI); a = cq_theta(a, -.5);
-;                                              b = cq_theta(b, .25); }
+;     cq_theta(&q, .5);  int a = q, b = q;
+;     for (…) { if (a == 5) a = cq_phi(a, PI); cq_theta(&a, -.5);
+;                                              cq_theta(&b, .25); }
 ;     return cq_measure(a) + cq_measure(b);
 ;
 ; `int a = q, b = q;` is an ALIAS, never a copy (Rule 8 — there is no cloning), so
@@ -32,7 +32,7 @@
 ; fence per loop") would refuse it.
 ;
 ; SCOPE NOTE, so the next reader does not read more into this than it says: the
-; STRAIGHT-LINE twin (`int a=q,b=q; a=cq_theta(a,-.5); b=cq_theta(b,.25);
+; STRAIGHT-LINE twin (`int a=q,b=q; cq_theta(&a,-.5); cq_theta(&b,.25);
 ; measure(a)+measure(b);`) still lowers to `ry(h,-0.5); ry(h,0.25); measure(h);
 ; measure(h)` and is NOT touched here. That is the pre-existing wire-alias
 ; reading, the M-A live-record guard's territory (owner ruling 2026-08-29: a

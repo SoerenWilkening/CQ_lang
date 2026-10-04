@@ -5,7 +5,7 @@
    The exact caller of the d88e decline family
    (ir-pass/test/lowering_reject_classical_mux_phi_spec_scrubbed_base.ll) with a
    library whose clone returns a QUANTUM handle. `t = h(q, m)` really is a register,
-   so `declineClassicalMuxes`' one-register lift of `r = phi(t, cq_theta(t, .2))`
+   so `declineClassicalMuxes`' one-register lift of `r = phi(t, @cq_theta_*(t, .2))`
    is a true renaming, its re-ask after `specialize()` finds the premise intact,
    and the arm's Ry fires IN PLACE on the clone's returned handle, which the user
    measures. The golden pins that stream: no fresh rail in the arm, ONE

@@ -6,7 +6,7 @@
 ; this header moved — so the module below is still, character for
 ; character, the one the four drbq Inc-4 adversarial rounds argued over.
 ;
-;     int r = 0;  if (q == 0) r = cq_theta(0, .9);   // narrowed compare
+;     int r = 0;  if (q == 0) { r = 0; cq_theta(&r, .9); }  // narrowed compare
 ;
 ; ---- WHY IT IS AN ACCEPT NOW (bd `drbq.14`; F2's `CondWire` narrowing)
 ;
@@ -31,7 +31,7 @@
 ;   register is not touched by the region at all.
 ;
 ; THE RIVAL IT SILENTLY ABSORBS (alpha reading): the source rotated the
-; CONDITION'S OWN register IN PLACE — `cq_theta(<the pinned register>, θ)` —
+; CONDITION'S OWN register IN PLACE — `cq_theta(&<the pinned register>, θ)` —
 ; and `-O1` const-folded arg-0 to the literal on the edge where the equality
 ; is a theorem.
 ; ⚠ SAY IT IN THOSE WORDS: a program that was LOUDLY REFUSED before this
@@ -71,14 +71,14 @@
 ; control_inplace_ry_reject_stateprep_eqfold_cast.ll — DECLINE (F2): the seed
 ; arrived through a CAST LAUNDER, and the fold erased the cast.
 ;
-;     int r = 0;  if (q == 0) r = cq_theta((int)(signed char)q, .9);  // probe
+;     int r = 0;  if (q == 0) { r = (int)(signed char)q; cq_theta(&r, .9); }  // probe
 ; `q27`
 ;
 ; `-O1` proves `q == 0` on the arm edge, folds `(signed char)q` to `0`, folds
 ; the
 ; `sext` back to `0`, and DELETES both casts — so the module that reaches the
-; pass is byte-identical to `if (q == 0) r = cq_theta(0, .9)` (`p08a_prep0`) AND
-; to `if (q == 0) r = cq_theta(q, .9)` (`p08a`, the R4-forbidden spelling).
+; pass is byte-identical to `if (q == 0) { r = 0; cq_theta(&r, .9); }` (`p08a_prep0`) AND
+; to `if (q == 0) { r = q; cq_theta(&r, .9); }` (`p08a`, the R4-forbidden spelling).
 ; Measured, all three.
 ;
 ; It is worth its own fixture even though the IR is a `k = 0` instance of the
@@ -112,7 +112,7 @@
 ; which
 ; an edge proves `H != k` and `H`'s own RANGE makes the surviving set a
 ; singleton
-; whose value is NOT `k`. `int t = q & 1; int r = 1; if (t) r = cq_theta(t, θ);`
+; whose value is NOT `k`. `int t = q & 1; int r = 1; if (t) { r = t; cq_theta(&r, θ); }`
 ; is that reading, it is plain `clang -O1` C, and the literal test was silent on
 ; it BY DESIGN — a CONFIRMED silent miscompile at the Inc-4 hand-back. F2 is now
 ; RANGE-based on both edges; see

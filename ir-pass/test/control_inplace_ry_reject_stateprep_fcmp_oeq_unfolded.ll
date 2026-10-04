@@ -2,7 +2,7 @@
 ; `fcmp oeq` condition whose arm rotates the fp CONDITION register — MEASURED NOT
 ; TO FOLD, which is why F2 reads `ConstantInt` and is COMPLETE for the fp family.
 ;
-;     double r = 0.0;  if (q == 0.0) r = cq_theta(q, .9);   // probes `q32`/`q34`
+;     double r = 0.0;  if (q == 0.0) { r = q; cq_theta(&r, .9); }  // probes `q32`/`q34`
 ;
 ; ⚠ THE REASON IS AN LLVM INVARIANT, NOT LUCK. `propagateEquality` will NOT
 ; substitute across `oeq`, because `oeq` is not a bitwise-equality proof

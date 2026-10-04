@@ -7,7 +7,7 @@
 ; defined in the MERGE block (so F2's BACKWARD half cannot see it — the `Cand`
 ; list filters on `DT->dominates(&In, BI)`) and read as DATA:
 ;
-;     %1 = cq_theta(0, .5)            ; the condition's rail
+;     %1 = @cq_theta_si32(0, .5)      ; the condition's rail
 ;     %2 = icmp eq %1, 1              ; the branch condition
 ;     if (%2) b1 = cq_theta(i1 false, .5);
 ;     %clone = icmp eq %1, 1          ; <- the collider: the SAME compare,
@@ -26,7 +26,7 @@
 ; peel's clones on the PREIMAGE ground: a value the compiler manufactured has no
 ; source program behind it, so there is no rival for F2 to protect against. That
 ; ground does not reach this module — the author DID write this compare, so the
-; rival `b1 = cq_theta(<that flag>, .5)` is a well-formed program and the fold
+; rival `b1 = <that flag>; cq_theta(&b1, .5)` is a well-formed program and the fold
 ; image is genuinely ambiguous. A widening spelled as "a second tainted compare
 ; identical to the region's condition is never a collider" would turn this file
 ; GREEN and would be an over-accept with no argument behind it.

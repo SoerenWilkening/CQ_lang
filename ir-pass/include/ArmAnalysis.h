@@ -206,7 +206,7 @@ void railWireNamesBackward(const llvm::Value *Rail, const TaintSet &Taint,
 // CARRIES COMPARE SEEDS, and the write half moved INSIDE the one mint. A
 // COMPARE-conditioned control read has exactly the same round-2 taint window
 // (bd `9pum`: `y` is a 6.5 `%out` derivative, classical at round 1, so the two
-// `cq_theta(y, ·)` siblings are two rails to the fence and ONE rail to
+// `@cq_theta_*(y, ·)` siblings are two rails to the fence and ONE rail to
 // `lowerRotations`). Rather than ask ten emitters to remember a call —
 // "every emission site, or none", the `markBranchPhaseGate` / `markRailCondRead`
 // lesson twice over — the compare record is written by `lowerCompareToFlag`
@@ -303,10 +303,10 @@ bool declineRound2TaintedArmCone(llvm::Module &M, TaintSet &Taint);
 // BOTH — each keeps the reason F1's header gives it.
 //
 // TWO CLASSIFIER SITES, ONE SPELLING (Rule 14): F1's seed clause in
-// `classifyArms` (the DIAMOND state prep, `int r = s; if (c) r = cq_theta(s, θ);`,
+// `classifyArms` (the DIAMOND state prep, `int r = s; if (c) { r = s; cq_theta(&r, θ); }`,
 // asked again where the accept sets `ControlRegion::RuntimeSeedAdmitted`) and S3
-// of `classifyAngleSelect` (the UNTAINTED Ry-stem base, `if (c) r = cq_theta(t,
-// A); else r = cq_theta(t, B);`, which `-O1` folds into one theta with an angle
+// of `classifyAngleSelect` (the UNTAINTED Ry-stem base, `if (c) { r = t; cq_theta(&r,
+// A); } else { r = t; cq_theta(&r, B); }`, which `-O1` folds into one theta with an angle
 // select). ⚠ The EMITTERS do NOT call it: they consume the classifier's
 // recorded verdict (`RuntimeSeedAdmitted`), both for the L1 record and — since
 // Rule-13 r1B F-r1B-2 — for `emitAngleSelectRegion`'s step-0 admission, so the

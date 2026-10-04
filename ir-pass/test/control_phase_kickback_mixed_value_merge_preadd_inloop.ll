@@ -5,7 +5,7 @@
 ; the merge rail "CANNOT be measured until the orchestrator rebases this branch
 ; onto the landed Inc 2". This file is that measurement, pinned.
 ;
-;     int q=3,p=7; q=cq_theta(q,.5); p=cq_theta(p,.25);
+;     int q=3,p=7; cq_theta(&q,.5); cq_theta(&p,.25);
 ;     if (q>3){ p=p+3; p=p*5; p=p^9; p=p+1; p=p*7; p=p^2; }  // Inc-2 VALUE ARM
 ;     p = p + 7;                            // PREHEADER dtzb op on the %out rail
 ;     for (int i = 0; i < 4; ++i)

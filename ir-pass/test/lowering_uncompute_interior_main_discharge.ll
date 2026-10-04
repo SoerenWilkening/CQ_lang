@@ -4,9 +4,9 @@
 ; answered by the Rule-13 reviewer: keep discharging in `main`).
 ;
 ; bd 6uqc's P4, written inside `main` instead of a called slice:
-;     int a = cq_theta(1, 0.5);
+;     int a = 1; cq_theta(&a, 0.5);
 ;     int f = sqrt(a + 3.0) <= 5.0;   int m = cq_measure(f);
-;     a = cq_theta(a, 0.5);           return m + cq_measure(a);
+;     cq_theta(&a, 0.5);           return m + cq_measure(a);
 ;
 ; WHY `FreePoint`'S `main` SKIP DOES NOT APPLY HERE, stated as the difference it
 ; is: that skip is about RECLAMATION — process exit releases every register, so a

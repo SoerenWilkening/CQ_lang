@@ -6,13 +6,13 @@
 ; `cq-lowering`), from `session-9pum/probes/k7_{caller,lib3}.c`, which is the
 ; reviewer's `review_a1_r1_probes/k7_caller.c` + `lib3.c` verbatim:
 ;
-;     int q = 3; q = cq_theta(q, 0.5);
+;     int q = 3; cq_theta(&q, 0.5);
 ;     int y = 5; if (q > 5) y = ext_f(7);      /* 6.5 classical-call arm -> %out */
 ;     int z = 0; if (opaque()) z = ext(1);     /* a classical diamond, to split  */
-;     int b  = cq_theta(y, 0.25);
-;     int b3 = cq_theta(y, 0.9);               /* the ROUND-2 sibling: ONE rail  */
+;     int b  = y; cq_theta(&b, 0.25);
+;     int b3 = y; cq_theta(&b3, 0.9);          /* the ROUND-2 sibling: ONE rail  */
 ;     if (b > 1) cq_phi(0.3);                  /* the control read               */
-;     int b2 = cq_theta(b, -0.25);             /* the S-DAGGER, post-region      */
+;     int b2 = b; cq_theta(&b2, -0.25);        /* the S-DAGGER, post-region      */
 ;     return cq_measure(b3) + cq_measure(b2) + z;
 ;
 ; It is `control_phase_kickback_reject_cmp_round2_sibling_theta.ll` PLUS ONE

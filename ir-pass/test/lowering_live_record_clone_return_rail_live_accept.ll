@@ -4,9 +4,9 @@
 ;
 ; SOURCE (`clang -O1` emits exactly the SSA below; NO control flow anywhere):
 ;     __attribute__((noinline)) static int inner(int x){ return x + 3; }
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     int r = inner(a);        // clone hop; the Bennett wrap returns `cqq.out`
-;     a = cq_theta(a, 0.7);    // T — chained, in-place Ry on the wire
+;     cq_theta(&a, 0.7);    // T — chained, in-place Ry on the wire
 ;     int m = cq_measure(r);   // the copy rail is MEASURED AFTER the gate
 ;     return cq_measure(a) + m;
 ;

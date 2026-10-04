@@ -4,9 +4,9 @@
 ; compares the rail against a loop-invariant comparand `p` that carries a RELATIVE
 ; PHASE (an Rz / cq_phi in p's lineage). Source shape:
 ;
-;     int p0 = cq_theta(pseed, 0.5);
+;     int p0 = pseed; cq_theta(&p0, 0.5);
 ;     int p  = cq_phi(p0, 0.3);       // Rz — p now carries a relative phase
-;     int q  = cq_theta(x, 0.25);
+;     int q  = x; cq_theta(&q, 0.25);
 ;     for (int i = 0; i < n; i++) {
 ;         q = q ^ 9;                  // in-place value rail self-update
 ;         if (q == p) break;          // TAINTED Q==Q break flag (rail vs phase-p)

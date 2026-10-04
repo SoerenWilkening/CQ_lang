@@ -10,11 +10,11 @@
 // C that is CHANGED on 2026-09-28 (bd test_C_libtooling-fmt3, owner ruling,
 // option B), so read both halves:
 //   * Ry STEM (`cq_theta`): `include/CQ.h` puts `nomerge` on every `cq_theta_*`,
-//     so the if/else `if (q == 5) r = cq_theta(r, A); else r = cq_theta(r, B);`
+//     so the if/else `if (q == 5) cq_theta(&r, A); else cq_theta(&r, B);`
 //     is NO LONGER merged into one call — it stays an if/else and lowers through
 //     the in-place Ry arm (two controlled Ry, the same unitary). The C spelling
 //     that reaches THIS emitter is the select written out:
-//     `r = cq_theta(r, (q == 5) ? A : B);` — measured to hand the pass the same
+//     `cq_theta(&r, (q == 5) ? A : B);` — measured to hand the pass the same
 //     function bodies the old fold did (`slice_control_angle_select_ry*_ternary.c`,
 //     whose goldens are the pre-fmt3 ones byte for byte). Hand IR reaches it as
 //     before (the `control_angle_select_*.ll` fixtures).
@@ -94,7 +94,7 @@
 //
 // WHY THIS EMISSION ORDER AND NO OTHER: with the unconditional twin emitted
 // BEFORE the mint, the stream is BYTE-IDENTICAL to the MANUAL by-difference twin
-//     r = cq_theta(r, B); if (q == 5) r = cq_theta(r, A − B);
+//     cq_theta(&r, B); if (q == 5) cq_theta(&r, A − B);
 // which is an ordinary in-place DIAMOND that the PRE-2b binary already lowers.
 // That byte identity — not a fresh unitary argument — is this increment's
 // central witness, and it is checked at the e2e layer by a `compare_files` gate

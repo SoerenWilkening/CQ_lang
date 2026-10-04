@@ -11,9 +11,9 @@
 ;
 ; SOURCE (a 4-way `switch` that `clang -O1` canonicalizes into arithmetic + a
 ; single `select` — the SSA below is verbatim what it emits):
-;     int a = cq_theta(u0, 0.5);
+;     int a = u0; cq_theta(&a, 0.5);
 ;     switch (a) { case 0: m=11; case 1: m=22; case 2: m=33; default: m=44; }
-;     int w = cq_theta(m, 0.25);
+;     int w = m; cq_theta(&w, 0.25);
 ;     return cq_measure(w);
 ;
 ; HEAD stream (measured, `opt` exit 0 — the over-accept this closes):

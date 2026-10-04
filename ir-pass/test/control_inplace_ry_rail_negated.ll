@@ -1,6 +1,6 @@
 ; control_inplace_ry_rail_negated.ll — ACCEPT: the in-place controlled-Ry arm on
 ; a bare `_Bool` (rail-root) condition with the arm on the FALSE successor —
-; `if (!b) r = cq_theta(r, .9);` (bd test_C_libtooling-l4x4, sub-increment
+; `if (!b) cq_theta(&r, .9);` (bd test_C_libtooling-l4x4, sub-increment
 ; l4x4.b, probe `t7`). Transcribed from `clang -O1`, which gives this source an
 ; ORIENTATION-B diamond (`br i1 %c, merge, arm`), so the shape is plain-C
 ; reachable and is the increment's ONE genuine design decision.
@@ -31,8 +31,8 @@
 ; `bare i1 register condition` at `classifyArms`' first gate.
 ;
 ; THE TWO-GATE FORM IS ALSO THE e2e WITNESS: `slice_control_inplace_ry_bool_negated`
-; and its MANUAL twin `..._negated_twin` (`r = cq_theta(r,θ); if (b) r =
-; cq_theta(r,−θ);`) are byte-identical traces, gated by `compare_files`.
+; and its MANUAL twin `..._negated_twin` (`cq_theta(&r,θ); if (b)
+; cq_theta(&r,−θ);`) are byte-identical traces, gated by `compare_files`.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

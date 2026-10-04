@@ -6,7 +6,7 @@
 ; this header moved — so the module below is still, character for
 ; character, the one the four drbq Inc-4 adversarial rounds argued over.
 ;
-;     int r = 0;  if ((unsigned)q < 1) r = cq_theta(0, .9);
+;     int r = 0;  if ((unsigned)q < 1) { r = 0; cq_theta(&r, .9); }
 ;
 ; ---- WHY IT IS AN ACCEPT NOW (bd `drbq.14`; F2's `CondWire` narrowing)
 ;
@@ -31,7 +31,7 @@
 ;   register is not touched by the region at all.
 ;
 ; THE RIVAL IT SILENTLY ABSORBS (alpha reading): the source rotated the
-; CONDITION'S OWN register IN PLACE — `cq_theta(<the pinned register>, θ)` —
+; CONDITION'S OWN register IN PLACE — `cq_theta(&<the pinned register>, θ)` —
 ; and `-O1` const-folded arg-0 to the literal on the edge where the equality
 ; is a theorem.
 ; ⚠ SAY IT IN THOSE WORDS: a program that was LOUDLY REFUSED before this
@@ -70,11 +70,11 @@
 ; control_inplace_ry_reject_stateprep_eqfold_ult.ll — DECLINE (F2): an UNSIGNED
 ; singleton range, and a MIXED-SIGNEDNESS pair of suffixes.
 ;
-;     unsigned u = cq_theta(3u, .3);  int r = 0;
-;     if (u < 1u) r = cq_theta((int)u, .9);          // probe `p08g`, from C
+;     unsigned u = 3u; cq_theta(&u, .3);  int r = 0;
+;     if (u < 1u) { r = (int)u; cq_theta(&r, .9); }  // probe `p08g`, from C
 ;
 ; `u < 1u` is true only at 0, so instcombine rewrites it to `icmp eq i32 %u, 0`
-; and the fold turns the arm into `cq_theta(0, .9)`. The condition register is
+; and the fold turns the arm into `@cq_theta_si32(0, .9)`. The condition register is
 ; minted by `cq_theta_ui32` and the arm by `cq_theta_si32`: F2 must still fire,
 ; and it does, because signedness is not part of the ABI width — the runtime
 ; handle is always `i32` (Rule 15) and F2 compares the compare literal's LLVM
@@ -104,7 +104,7 @@
 ; which
 ; an edge proves `H != k` and `H`'s own RANGE makes the surviving set a
 ; singleton
-; whose value is NOT `k`. `int t = q & 1; int r = 1; if (t) r = cq_theta(t, θ);`
+; whose value is NOT `k`. `int t = q & 1; int r = 1; if (t) { r = t; cq_theta(&r, θ); }`
 ; is that reading, it is plain `clang -O1` C, and the literal test was silent on
 ; it BY DESIGN — a CONFIRMED silent miscompile at the Inc-4 hand-back. F2 is now
 ; RANGE-based on both edges; see

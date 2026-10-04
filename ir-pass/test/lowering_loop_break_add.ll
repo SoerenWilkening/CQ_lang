@@ -4,7 +4,7 @@
 ; loop whose in-place value rail is mutated by `q = q + 3` and whose tainted
 ; value-arm break reads the POST-mutation rail (`(q+3) & 1`):
 ;
-;     int q = cq_theta(x, 0.25);
+;     int q = x; cq_theta(&q, 0.25);
 ;     for (int i = 0; i < n; i++) {
 ;         q = q + 3;                 // in-place add rail
 ;         if ((q & 1) == 0) break;   // break-cond reads the POST-add value

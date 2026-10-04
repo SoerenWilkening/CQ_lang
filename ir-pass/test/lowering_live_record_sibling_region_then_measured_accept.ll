@@ -4,10 +4,10 @@
 ; test_C_libtooling-6uqc; the F1 ruling, 2026-08-28).
 ;
 ; SOURCE — the reject twin plus a single measurement:
-;     a = cq_theta(a, 0.5);
+;     cq_theta(&a, 0.5);
 ;     int w = a * 2;                     // THE WIRE
 ;     int c = a * 3;                     // the SIBLING
-;     w = cq_theta(w, 0.5);              // T — chained, in-place Ry on the wire
+;     cq_theta(&w, 0.5);              // T — chained, in-place Ry on the wire
 ;     if (c == 5) { c = cq_phi(c, 3.0); }
 ;     int mp = cq_measure(c);            // <-- THE WHOLE DIFFERENCE
 ;     return cq_measure(w) + cq_measure(a) + mp;

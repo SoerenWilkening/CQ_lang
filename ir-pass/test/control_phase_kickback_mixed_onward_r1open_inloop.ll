@@ -5,11 +5,11 @@
 ; loop-rail pass structurally unreachable.
 ;
 ;     int ext_f(int a);                                  /* separate TU */
-;     int slice(int u){ int q=cq_theta(u,0.5); int r=cq_theta(u,0.3);
+;     int slice(int u){ int q=u; cq_theta(&q,0.5); int r=u; cq_theta(&r,0.3);
 ;       int y=5; if (q>5) y=ext_f(7);                    /* 6.5 arm -> %out */
 ;       for(int i=0;i<3;i++){ if(r==3) cq_phi(0.2);      /* ROUND-1 region  */
 ;                             if((y>>i)&1) cq_phi(0.25); /* ROUND-2 region  */
-;                             r=cq_theta(r,0.1); }
+;                             cq_theta(&r,0.1); }
 ;       return cq_measure(r)+cq_measure(y); }
 ;
 ; `clang -O1`, `llvm-link`ed with `int ext_f(int a){return a+100;}`, `@main`

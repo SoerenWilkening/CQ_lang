@@ -19,7 +19,7 @@
 ; (a constant that is not the seed, `undef`/`poison`, a `select`, a
 ; `ConstantExpr`, a runtime value). The split exists because the one string
 ; described the IR rather than the program: on the plain-C R4 shape
-; `for (…) { if (a == 5) a = cq_theta(a, .9); }` — an in-place Ry on the
+; `for (…) { if (a == 5) cq_theta(&a, .9); }` — an in-place Ry on the
 ; CONDITION register, with no state prep and no seed anywhere in the source — it
 ; named a "seed" that only exists because `-O1` substituted `5` for `a` on the
 ; proving edge, and its implied fix ("make the straight-through value the seed")

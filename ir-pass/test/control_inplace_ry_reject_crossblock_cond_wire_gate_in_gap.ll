@@ -6,12 +6,12 @@
 ; arm on a disjoint register — with ONE addition: a SIBLING chained `cq_theta` on the
 ; CONDITION's own register `%1`, sitting in the LATCH.
 ;
-;     int a = cq_theta(0, 0.5);
-;     int r = cq_theta(0, 0.3);
+;     int a = 0; cq_theta(&a, 0.5);
+;     int r = 0; cq_theta(&r, 0.3);
 ;     int s = 0;
 ;     for (int i = 0; i < 2; ++i) {
-;         if (a == 5) { r = cq_theta(r, 0.9); }
-;         s = cq_theta(a, 0.1);              // <-- relabels `a`'s RAIL every trip
+;         if (a == 5) { cq_theta(&r, 0.9); }
+;         s = a; cq_theta(&s, 0.1);          // <-- relabels `a`'s RAIL every trip
 ;     }
 ;     return cq_measure(r) + cq_measure(s);
 ;

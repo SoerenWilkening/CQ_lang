@@ -2,8 +2,8 @@
 ; AFTER an in-place `cq_theta` on its register (bd test_C_libtooling-r2j3.2, P1
 ; silent miscompile). Plain C, clang -O1:
 ;
-;     long q = cq_theta(u, .5);
-;     long q2 = cq_theta(q, .3);     // chained, in-place Ry on q's register
+;     long q = u; cq_theta(&q, .5);
+;     long q2 = q; cq_theta(&q2, .3);  // chained, in-place Ry on q's register
 ;     int v = tbl[q];                // `q` names the PRE-Ry record
 ;
 ; The QROM emitter mints `cqrt_qram_load_i32(arr, q)` AT the load, after the Ry,

@@ -59,7 +59,7 @@
 ; Caller TU (clang -O1 -include CQ.h), before the reorder:
 ;   #include <stdlib.h>
 ;   int h(int a, int k);
-;   int main(int c, char **v) { int m = atoi(v[1]); int q = cq_theta(m, .5); int t = h(q, m); int r = t; if (m > 3) r = cq_theta(t, .2); int s = r; if (m > 7) s = cq_theta(r, .4); return cq_measure(s); }
+;   int main(int c, char **v) { int m = atoi(v[1]); int q = m; cq_theta(&q, .5); int t = h(q, m); int r = t; if (m > 3) { r = t; cq_theta(&r, .2); } int s = r; if (m > 7) { s = r; cq_theta(&s, .4); } return cq_measure(s); }
 ;
 ; Regenerate: build `k04C` (clang -O1 both TUs, llvm-link), run
 ; `opt -passes=instnamer`, then move blocks `bb14`, `bb12`, `bb9`, `bb7` (in that

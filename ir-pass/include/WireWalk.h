@@ -68,7 +68,7 @@ struct TaintSet;
 // CONFIRMED silent miscompile, PRE-EXISTING for the compare path): the backward
 // ancestry closure below crosses a chained `cq_theta`'s arg-0 edge only when the
 // parent is spelled `cq_theta_`/`cq_phi_`, so a theta whose parent is a TEMPLATE
-// result (`bool t = q & 1; b = cq_theta(t, .5); c = cq_theta(t, .9);`) stopped
+// result (`bool t = q & 1; b = t; cq_theta(&b, .5); c = t; cq_theta(&c, .9);`) stopped
 // the closure at `b`, and the SIBLING `c` — an in-place Ry on the SAME physical
 // rail, a user of the PARENT and never of the seed — was invisible to every
 // fence that asks this walker. `lowerRotations` decides in-place-ness by exactly
@@ -168,10 +168,10 @@ llvm::CallInst *findNonDiagonalWireGate(
 // `true` and only LEG 1 (`!isPotentiallyReachable(T, EmitPoint)`) may grant.
 // Decline-only, and the default leaves every other caller byte-unchanged.
 // MEASURED CUSTOMER (reached with the collapse fence's bank-load hop disabled,
-// `TRACK_B.md` §6c): `for(k){ if(r>k) q = cq_theta(q,.3); b[k] = q; }
+// `TRACK_B.md` §6c): `for(k){ if(r>k) cq_theta(&q,.3); b[k] = q; }
 // for(i) cq_measure(b[i]);` accepted with every cell reading the final wire.
 // ⚠ RESIDUAL, NOT FENCED HERE: when the parked seed IS the relabelling gate's
-// own next dynamic instance (`q = cq_theta(q, .3); b[k] = q;` with an
+// own next dynamic instance (`cq_theta(&q, .3); b[k] = q;` with an
 // unrelated kickback in the body), the walker never returns the seed as its
 // own staler, so this bit does not catch it. It is the cell analogue of
 // `readerStalesItself`. Today it is caught by `LoopLowering::staleReadOfValue`'s

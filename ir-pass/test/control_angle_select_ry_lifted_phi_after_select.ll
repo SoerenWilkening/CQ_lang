@@ -2,7 +2,7 @@
 ; BY-DIFFERENCE angle select followed by the canonical 5j5 one-register
 ; merge-phi lift over the ROTATED register.
 ;
-;     r = cq_theta(r, q == 5 ? .9 : .3);      // 2b, consumer rotation T
+;     cq_theta(&r, q == 5 ? .9 : .3);      // 2b, consumer rotation T
 ;     if (OPQ) { r = cq_phi(r, .5); }         // 5j5 classical join phi
 ;
 ; bd test_C_libtooling-drbq Increment 3, round-1 Rule-13 review, F-L5-1's
@@ -35,8 +35,8 @@
 ; VERBATIM `clang -O1` output for
 ;   volatile int OPQ = 1;
 ;   int slice(void) { int q=3, r=7;
-;                     q = cq_theta(q,0.5); r = cq_theta(r,0.25);
-;                     if (q == 5) { r = cq_theta(r,0.9); } else { r = cq_theta(r,0.3); }
+;                     cq_theta(&q,0.5); cq_theta(&r,0.25);
+;                     if (q == 5) { cq_theta(&r,0.9); } else { cq_theta(&r,0.3); }
 ;                     if (OPQ)    { r = cq_phi(r,0.5); }
 ;                     return cq_measure(q) + cq_measure(r); }
 ; (SimplifyCFG merges the two arms into ONE call with a `select` on the ANGLE —
@@ -45,7 +45,7 @@
 ; no longer true. `include/CQ.h` puts `nomerge` on every `cq_theta_*`, so `-O1` keeps
 ; that if/else an if/else (it lowers through the in-place Ry arm, the same unitary).
 ; THIS select shape now comes from C only when the select is written out,
-; `r = cq_theta(r, c ? A : B)` (`tests/e2e/slice_control_angle_select_ry*_ternary.c`,
+; `cq_theta(&r, c ? A : B)` (`tests/e2e/slice_control_angle_select_ry*_ternary.c`,
 ; measured to give the pre-fmt3 fold's function bodies). The IR and this fixture are
 ; unchanged; only the C spelling that reaches them moved.
 ;

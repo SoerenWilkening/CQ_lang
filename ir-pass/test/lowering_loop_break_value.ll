@@ -1,7 +1,7 @@
 ; lowering_loop_break_value.ll — POSITIVE recognition (Phase 7.4 Inc 1, y05j.1;
 ; PRD-7.4 §2.5 B1-B5, §2.10 accept row): a classically-bounded, DATA-MUTATING
 ; loop with a SINGLE tainted-condition value-arm early break, measured after:
-;     int q = cq_theta(x, 0.25);
+;     int q = x; cq_theta(&q, 0.25);
 ;     for (int i = 0; i < n; i++) {
 ;         q = q ^ 9;                 // value mutation (the dirty rail)
 ;         if ((q & 1) == 0) break;   // TAINTED value-arm break

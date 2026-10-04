@@ -1,8 +1,8 @@
 ; control_angle_select_ry_f64_fcmp.ll — ACCEPT at a NON-i32 width, with an
 ; `fcmp` condition (bd drbq Inc 2b).
 ;
-;     double q = cq_theta(u0,.5), r = cq_theta(u1,.3);
-;     r = cq_theta(r, q > 5.0 ? .9 : .3);
+;     double q = u0, r = u1; cq_theta(&q,.5); cq_theta(&r,.3);
+;     cq_theta(&r, q > 5.0 ? .9 : .3);
 ;
 ; TWO THINGS ARE PINNED HERE AND ONE OF THEM IS AN ORDERING FACT.
 ;

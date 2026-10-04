@@ -2,8 +2,8 @@
 ; test_C_libtooling-r2j3.2): a Shadow (local-array) LOAD whose bare i64 index
 ; register was rotated in place before the load. clang -O1 of
 ;
-;     arr[cq_theta(0L, .9) & 7] = 5;
-;     long q = cq_theta(0L, .5);  long q2 = cq_theta(q, .3);
+;     long s = 0L; cq_theta(&s, .9); arr[s & 7] = 5;
+;     long q = 0L; cq_theta(&q, .5);  long q2 = q; cq_theta(&q2, .3);
 ;     return cq_measure(arr[q]) + (int)cq_measure(q2);   // `q`: PRE-Ry record
 ;
 ; MEASURED on the pre-fix binary: exit 0, `cqrt_qram_load_i32(a0, trunc(h5))`

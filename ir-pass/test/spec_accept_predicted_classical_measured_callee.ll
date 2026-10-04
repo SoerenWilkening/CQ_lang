@@ -10,7 +10,7 @@
 ; unchanged) returns the classical value. Before bd cepm the result was tainted
 ; CONSERVATIVELY and scrubbed only after both control rounds.
 ; Here the site's SECOND argument is `F(n)`, where `F` holds a `cq_theta` but returns a MEASURED
-; classical value (`F(n){ r = cq_theta(n,.3); return n + cq_measure(r); }`). Round 1b's
+; classical value (`F(n){ r = n; cq_theta(&r,.3); return n + cq_measure(r); }`). Round 1b's
 ; `LaterTaintOracle` counted any call to a callee holding a `cq_theta` as a value a later round can
 ; taint (a SYNTACTIC answer, L5), predicted the site quantum, tainted `t` at round 1, and bd l3oi's
 ; fence declined. Round 2 removed that seed (Rule-13 r1A F-r1A-1 / bd we38): the only channel by which
@@ -25,7 +25,7 @@
 ; Caller TU (-include CQ.h):
 ;   int h(int a, int k);
 ;   int F(int n);
-;   int main(int c, char **v) { int m = atoi(v[1]); int n = atoi(v[2]); int q = cq_theta(m, .5); int y = F(n); int t = h(q, y); int q2 = cq_theta(n, .4); if (t > 3) q2 = cq_theta(q2, .2); return cq_measure(q2) + cq_measure(q); }
+;   int main(int c, char **v) { int m = atoi(v[1]); int n = atoi(v[2]); int q = m; cq_theta(&q, .5); int y = F(n); int t = h(q, y); int q2 = n; cq_theta(&q2, .4); if (t > 3) cq_theta(&q2, .2); return cq_measure(q2) + cq_measure(q); }
 ; Library TU 1 (plain C):
 ;   /* h READS a (a call to g, an external here) and returns the CLASSICAL k + 1. */
 ;   void g(int a);
@@ -46,7 +46,7 @@
 ;   int g2(int a, int b) { return a * b + 1; }
 ; Library TU 6 (plain C):
 ;   #include "CQ.h"
-;   int F(int n) { int r = cq_theta(n, .3); return n + cq_measure(r); }
+;   int F(int n) { int r = n; cq_theta(&r, .3); return n + cq_measure(r); }
 ;
 ; Oracle 9a230646: DECLINE `classical call result used as a quantum register`. Round 1b: same.
 ; Hand-inlined twin (r6bT.c: `g(q); int t = y + 1;`) is TRACE-IDENTICAL under argv

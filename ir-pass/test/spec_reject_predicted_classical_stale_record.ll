@@ -1,6 +1,6 @@
 ; spec_reject_predicted_classical_stale_record.ll — DECLINE (bd test_C_libtooling-cepm (bd d88e's `l04`)).
-; `t = h(q, m); r = t; if (m > 3) r = cq_theta(t, .2); … return t + s`. Before bd cepm the
-; EARLY `declineStaleRecordOps` read the conservative taint (the arm's `cq_theta(t, .2)` a chained
+; `t = h(q, m); r = t; if (m > 3) { r = t; cq_theta(&r, .2); } … return t + s`. Before bd cepm the
+; EARLY `declineStaleRecordOps` read the conservative taint (the arm's `@cq_theta_si32(t, .2)` a chained
 ; gate on `t`'s wire) and declined `operand predates a non-diagonal gate` — an owner the twin never
 ; reaches. With `t` classical the module declines at the TWIN'S owner (the classical-mux guard:
 ; `r` muxes the rotated register against the classical `t` under the classical `m > 3`).
@@ -8,7 +8,7 @@
 ; 5 TUs, each `clang -O1`, llvm-linked as tests/e2e/run_slice_multi.sh does.
 ; Caller TU (-include CQ.h):
 ;   int h(int a, int k);
-;   __attribute__((noinline)) int f(int m) { int q = cq_theta(m, .5); int t = h(q, m); int r = t; if (m > 3) r = cq_theta(t, .2); int s = cq_measure(r); return t + s + cq_measure(q); }
+;   __attribute__((noinline)) int f(int m) { int q = m; cq_theta(&q, .5); int t = h(q, m); int r = t; if (m > 3) { r = t; cq_theta(&r, .2); } int s = cq_measure(r); return t + s + cq_measure(q); }
 ;   int main(int c, char **v) { int m = atoi(v[1]); int n = atoi(v[2]); return f(m); }
 ; Library TU 1 (plain C):
 ;   /* h READS a (a call to g, an external here) and returns the CLASSICAL k + 1. */

@@ -1,7 +1,7 @@
 ; control_inplace_ry_reject_stateprep_select_incoming.ll — DECLINE (F1): the Pred
 ; incoming is a CLASSICAL `select`.
 ;
-;     int r = cc ? 0 : 3;  if (q > 5) r = cq_theta(0, .9);   // probe `p21b`, from C
+;     int r = cc ? 0 : 3;  if (q > 5) { r = 0; cq_theta(&r, .9); }  // probe `p21b`, from C
 ;
 ; `-O1` keeps the classical `select i32` (measured), so the straight-through
 ; value is not a compile-time constant at all — on one classical path it happens

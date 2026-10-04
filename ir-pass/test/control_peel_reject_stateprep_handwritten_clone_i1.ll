@@ -15,7 +15,7 @@
 ; single phi, so the peel never runs, nothing is recorded, and `%clone` is just
 ; a tainted compare that appeared in the module `clang` handed the pass. F2's
 ; question — *"could the source the author wrote have been
-; `cq_theta(<that register>, θ)`?"* — HAS an answer for this module: the author
+; `cq_theta(&<that register>, θ)`?"* — HAS an answer for this module: the author
 ; did write `%clone`, so the rival program exists and F2 keeps declining. It is
 ; an over-decline of a hand-written spelling, and it is the CONSERVATIVE side of
 ; the only line R-1 is willing to draw.

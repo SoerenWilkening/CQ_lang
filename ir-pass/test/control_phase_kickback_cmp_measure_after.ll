@@ -3,7 +3,7 @@
 ; `control_phase_kickback_reject_cmp_measured_before.ll`. The SAME program with
 ; the two statements swapped:
 ;
-;     int q = cq_theta(0, .5);
+;     int q = 0; cq_theta(&q, .5);
 ;     if (q > 3) cq_phi(.3);           // the flag reads a COHERENT q
 ;     return cq_measure(q);            // the measurement owns it afterwards
 ;

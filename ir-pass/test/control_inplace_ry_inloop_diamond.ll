@@ -2,7 +2,7 @@
 ; inside a classically-bounded loop, lowered ROLLED (control-in-place-PRD §13,
 ; bd test_C_libtooling-drbq Increment 3).
 ;
-;     for (i = 0; i <= 3; i++) { if (q > 5) r = cq_theta(r, .9); }
+;     for (i = 0; i <= 3; i++) { if (q > 5) cq_theta(&r, .9); }
 ;
 ; THIS FILE SHIPPED AS A DECLINE UNTIL 2026-09-04 and its whole header was an
 ; Inc-3 to-do list; it is rewritten in full rather than edited. Its decline

@@ -6,9 +6,9 @@
 ; real `switch` + merge phi instead of folding it into arithmetic (contrast
 ; lowering_reject_live_record_select_merge_tainted_src.ll, which is the folded
 ; spelling and DOES reach this campaign's guard):
-;     int a = cq_theta(u0, 0.5);
+;     int a = u0; cq_theta(&a, 0.5);
 ;     switch (a) { case 0: m=11; case 3: m=47; case 7: m=5; default: m=44; }
-;     int w = cq_theta(m, 0.25);      // chained Ry on the 4.5 data-mux out rail
+;     int w = m; cq_theta(&w, 0.25);  // chained Ry on the 4.5 data-mux out rail
 ;     return cq_measure(w);
 ;
 ; MEASURED AT HEAD AND AFTER INCREMENT 3 — the verdict and the message are

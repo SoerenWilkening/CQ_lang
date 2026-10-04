@@ -6,7 +6,7 @@
 ; PROVENANCE — captured from real `clang -O1`, SSA values renamed and nothing else.
 ; Source (`$SP/progress/fix_inc2_r2_work/p/q1e_ent_twin.c`):
 ;
-;   int slice(void){ int q=3; q=cq_theta(q,0.5); int p=q+11;
+;   int slice(void){ int q=3; cq_theta(&q,0.5); int p=q+11;
 ;     int t=p; t=t+3; t=t*5; t=t^9; t=t+1; t=t*7; t=t^2;
 ;     p=(q>3)?t:p;
 ;     return cq_measure(p); }

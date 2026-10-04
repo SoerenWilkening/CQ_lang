@@ -1,5 +1,5 @@
 ; control_phase_kickback_rail_diamond.ll — ACCEPT (bd 3qlq.4, Inc 1b): the
-; flagship shape, `_Bool b = cq_theta(b0, θ); if (b) cq_phi(φ); measure(b)`.
+; flagship shape, `_Bool b = b0; cq_theta(&b, θ); if (b) cq_phi(φ); measure(b)`.
 ;
 ; THIS FILE WAS `control_phase_kickback_reject_bare_i1.ll` — the Inc-1 DECLINE
 ; whose header said "when that shape is built, its string must stop firing". It
@@ -8,8 +8,8 @@
 ; `i1` residuals (`..._reject_bare_i1_{trunc,loop_phi}.ll`), which is what keeps
 ; it a discriminator. (`git mv`, so the history of the decline is this file's.)
 
-; bd test_C_libtooling-3qlq.4 (Inc 1b) — the BARE RAIL CONDITION. `_Bool b =
-; cq_theta(b0, θ)` is a one-qubit REGISTER, and `if (b) …` hands the pass
+; bd test_C_libtooling-3qlq.4 (Inc 1b) — the BARE RAIL CONDITION. `_Bool b = b0;
+; cq_theta(&b, θ)` is a one-qubit REGISTER, and `if (b) …` hands the pass
 ; `br i1 %b` with no compare to mint a flag from. The register IS the flag: the
 ; kickback gate `cqrt_rz_i1(h_b, θ)` sits directly on `b`'s rail — NO mint, NO
 ; `_unc` strip, NO `cqrt_free` (the rail is the user's), and NO `cqrt_x` on a
@@ -21,7 +21,7 @@
 ; `b` (measure, compare, arithmetic, a chained Ry) sees the same basis label.
 ; `SwapRouteEmit.cpp` (`emitKickbackGroup`), `SelectClassify.h` (`RailLeaves`).
 
-; What the `int` twin emits for `int b = cq_theta(0,θ); if (b == 1) cq_phi(φ)`
+; What the `int` twin emits for `int b = 0; cq_theta(&b,θ); if (b == 1) cq_phi(φ)`
 ; is the SAME stream plus a mint `icmp_eq_i32_hl(h,1) -> f`, `x`-free, then the
 ; `_unc` strip and `free(f)` — the flag copy of a register that is already a
 ; flag. The reduction (delete mint/strip/free, rename `f → h`, `i32 → i1`) is

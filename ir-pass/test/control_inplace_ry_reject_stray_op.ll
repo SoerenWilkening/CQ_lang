@@ -1,7 +1,7 @@
 ; control_inplace_ry_reject_stray_op.ll — DECLINE: a STRAY op beside the arm's
 ; rotation (control-in-place-PRD §4 R1; bd test_C_libtooling-drbq).
 ;
-;     if (q > 5) { cq_measure(r); r = cq_theta(r, .9); }
+;     if (q > 5) { cq_measure(r); cq_theta(&r, .9); }
 ;
 ; `RegionFlatten` ERASES the arm block. Anything the emitter does not hoist is
 ; therefore silently DROPPED from the emitted program — here a USER MEASUREMENT

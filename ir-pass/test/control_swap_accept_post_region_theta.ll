@@ -4,7 +4,7 @@
 ;
 ; THE CUSTOMER, and it is one line of C: state preparation is S = `Ry(0.5)`
 ; THEN `+ off`, so re-preparing after the reflection about |0> means
-;     ... R0; a = cq_theta(a, 0.5); a += off;
+;     ... R0; cq_theta(&a, 0.5); a += off;
 ; and until this increment that spelling declined with
 ;     cq controlled lowering: condition predates a non-diagonal gate
 ; because `wireGainsNonDiagonalGate` was schedule-INDEPENDENT: ANY theta
@@ -18,11 +18,11 @@
 ; THE SOURCE THIS IR IS `clang -O1` OF (example/grover/grover_iteration.c):
 ;     volatile int cq_off = 3;
 ;     int a = 0;
-;     a = cq_theta(a, 0.5);   a += cq_off;          /* S  */
+;     cq_theta(&a, 0.5);   a += cq_off;          /* S  */
 ;     if (a == 5) a = cq_phi(a, PI);                /* O  */
-;     a -= cq_off; a = cq_theta(a, -0.5);           /* S† */
+;     a -= cq_off; cq_theta(&a, -0.5);           /* S† */
 ;     if (a == 0) a = cq_phi(a, PI);                /* R0 */
-;     a = cq_theta(a, 0.5);   a += cq_off;          /* S  — THE FRONTIER LINE */
+;     cq_theta(&a, 0.5);   a += cq_off;          /* S  — THE FRONTIER LINE */
 ;     return cq_measure(a);
 ; The `volatile` offset is load-bearing (Rule 9): a literal `+3/-3` pair is
 ; reassociated by -O1, cancelled on the straight-through edge and SUNK into the

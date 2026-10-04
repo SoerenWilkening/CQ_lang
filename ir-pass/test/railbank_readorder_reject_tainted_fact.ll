@@ -1,8 +1,8 @@
 ; railbank_readorder_reject_tainted_fact.ll — DECLINE (bd `xdu2.10`, Rule-13 round 2 F-1, P2).
 ;
 ; SOURCE (reviewer `reviewA_r2/q06_tvalue.c`, stage 1 at `clang -O1`, verbatim):
-;   int b[3]; int x = cq_theta(0, .2); _Bool c = cq_theta((_Bool)0, .3);
-;   if (k > 0) for (i<3) b[i] = cq_theta(0, .5);
+;   int b[3]; int x = 0; cq_theta(&x, .2); _Bool c = (_Bool)0; cq_theta(&c, .3);
+;   if (k > 0) for (i<3) { b[i] = 0; cq_theta(&b[i], .5); }
 ;   _Bool g = (k > 0) & c;
 ;   if (g) x = ((x + b[k & 1]) * 3) ^ 5;
 ;

@@ -7,12 +7,12 @@
 ; adjudicate one op under two different fences.
 ;
 ;     int ext_f(int a);                        /* a second TU: `return a+100;` */
-;     int slice(int u){ int q=cq_theta(u,0.5); int r=cq_theta(u,0.3);
+;     int slice(int u){ int q=u; cq_theta(&q,0.5); int r=u; cq_theta(&r,0.3);
 ;       int y=5; if (q>5) y=ext_f(7);          /* 6.5 CLASSICAL-CALL ARM -> %out */
 ;       int w = y & 7;
-;       int a = cq_theta(u,0.7);
+;       int a = u; cq_theta(&a,0.7);
 ;       a = a ^ w;                             /* the PREHEADER op — W4's lane */
-;       for(int i=0;i<3;i++){ if((a>>i)&1) cq_phi(0.2); r=cq_theta(r,0.1); }
+;       for(int i=0;i<3;i++){ if((a>>i)&1) cq_phi(0.2); cq_theta(&r,0.1); }
 ;       return cq_measure(a)+cq_measure(r)+cq_measure(y); }
 ;
 ; `clang -O1`, two TUs `llvm-link`ed, `@main` dropped. `!llvm.loop` VERBATIM.

@@ -4,7 +4,7 @@
 ;
 ;   A (the rhk5 win)   pa = q*3; ua = pa ^ q; s1 = h(m, q);  if (ua == 10) cq_phi(PI);
 ;   B (the kyy1 shape) pb = q & 3; ub = pb + q;              if (ub == 5)  cq_phi(.25);
-;   then q2 = cq_theta(q, .7); s2 = h(m, pb);   (the clone consumer of pb is AFTER the Ry)
+;   then q2 = q; cq_theta(&q2, .7); s2 = h(m, pb); (the clone consumer of pb is AFTER the Ry)
 ;
 ; ORACLE (main 9a230646): A leaks (the clone call in A's window is a "mutation" of
 ; `q`), B's dead `ub` is discharged — warned. ROUND 1: A discharged, B's `ub` lost

@@ -3,7 +3,7 @@
 ; NOT BY THE POSITIVE SUITE (bd test_C_libtooling-drbq Inc 4; PRD §14.3's
 ; consumer rows are CORRECTED by this fixture).
 ;
-;     int r = 0;  if (q == 5) r = cq_theta(0, .9);
+;     int r = 0;  if (q == 5) { r = 0; cq_theta(&r, .9); }
 ;     int s = r * 3;                    /* ANY post-region op on r */
 ;
 ; ⚠ `clang -O1` SINKS THAT `mul` INTO THE ARM. It can, and only for THIS arm
@@ -22,7 +22,7 @@
 ; declines with the generic string.
 ;
 ; ⚠ THE CHAINED TWIN DOES NOT HAVE THIS PROBLEM, WHICH IS EXACTLY WHY IT WENT
-; UNNOTICED. With `int r = cq_theta(0, 0.0);` the straight-through value is a
+; UNNOTICED. With `int r = 0; cq_theta(&r, 0.0);` the straight-through value is a
 ; live REGISTER, `r * 3` does not fold on that edge, and `-O1` leaves the `mul`
 ; after the merge — so the Inc-1 shape accepts. MEASURED as 48 of the 297
 ; `--stateprep` twin-matrix cells reading SUBJECT-DECLINES-TWIN-ACCEPTS with the

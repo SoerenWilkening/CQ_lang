@@ -3,8 +3,8 @@
 ; row A-21; probe `p12b`).
 ;
 ;     int r = 0;
-;     if (q == 5) r = cq_theta(0,  .9);     // region 1 — state prep (Inc 4)
-;     if (q == 6) r = cq_theta(r,  .4);     // region 2 — chained  (Inc 1)
+;     if (q == 5) { r = 0; cq_theta(&r,  .9); }  // region 1 — state prep (Inc 4)
+;     if (q == 6) cq_theta(&r,  .4);     // region 2 — chained  (Inc 1)
 ;
 ; Region 2's routed base is region 1's MERGE φ, which region 1's emitter RAUWs to
 ; the hoisted theta `T` (M-β). `ControlPlan`'s `RoutedBase` is a

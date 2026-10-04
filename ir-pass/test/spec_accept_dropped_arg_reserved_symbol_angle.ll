@@ -10,7 +10,7 @@
 ;
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
-;   int main(int c, char **v) { int m = atoi(v[1]); double th = atof(v[2]); int q = cq_theta(m & 7, th); return cq_measure(q); }
+;   int main(int c, char **v) { int m = atoi(v[1]); double th = atof(v[2]); int q = m & 7; cq_theta(&q, th); return cq_measure(q); }
 ; Library TU (plain C, no CQ.h):
 ;   int cq_theta_si32(int x, double a) { return x; }
 ;

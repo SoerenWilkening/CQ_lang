@@ -35,8 +35,8 @@
 ;   #include "CQ.h"
 ;   int main(void) {
 ;       bool b0[3];
-;       for (int i = 0; i < 3; ++i) b0[i] = cq_theta(b0[i], 0.5);
-;       bool x = cq_theta(b0[0], 0.25);
+;       for (int i = 0; i < 3; ++i) cq_theta(&b0[i], 0.5);
+;       bool x = b0[0]; cq_theta(&x, 0.25);
 ;       return cq_measure(x);
 ;   }
 ; (with `-g` the diagnostic is source-located at `d5b…:7:14`, the second theta.)

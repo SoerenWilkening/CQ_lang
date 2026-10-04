@@ -2,10 +2,10 @@
 ; rotated base is a PHASE-6 SPECIALIZATION-CLONE RESULT (`@__cq_q_<callee>_<mask>`).
 ;
 ;     static int helper(int x) { return x * 3; }      // noinline
-;     int q = cq_theta(…), p = cq_theta(…);
+;     int q = …, p = …; cq_theta(&q, …); cq_theta(&p, …);
 ;     int r = helper(p);                 // the clone result IS the rotated base
-;     if (q == 5) r = cq_theta(r, .9);   // the accepted in-place Ry arm
-;     int s = r + 1; cq_theta(s, .125);  // a post-region chain, so the spine has work
+;     if (q == 5) cq_theta(&r, .9);   // the accepted in-place Ry arm
+;     int s = r + 1; cq_theta(&s, .125); // a post-region chain, so the spine has work
 ;     return cq_measure(q);
 ;
 ; WHY THIS SHAPE (bd test_C_libtooling-drbq round-2 Rule-13 review, lens A §1).

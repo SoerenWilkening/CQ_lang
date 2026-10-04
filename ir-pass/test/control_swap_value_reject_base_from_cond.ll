@@ -12,7 +12,7 @@
 ; PROVENANCE — captured from real `clang -O1`, SSA values renamed for reading and
 ; nothing else. Source (`$SP/progress/fix_inc2_r2_work/p/q1e_ent.c`):
 ;
-;   int slice(void){ int q=3; q=cq_theta(q,0.5); int p=q+11;
+;   int slice(void){ int q=3; cq_theta(&q,0.5); int p=q+11;
 ;     if (q>3){ p=p+3; p=p*5; p=p^9; p=p+1; p=p*7; p=p^2; }
 ;     return cq_measure(p); }
 ;

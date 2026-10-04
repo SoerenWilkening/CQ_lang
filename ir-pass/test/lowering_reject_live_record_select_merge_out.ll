@@ -16,9 +16,9 @@
 ; closes it; Increment 4 must not be planned as if it were the one lifting a mask.
 ;
 ; SOURCE (`clang -O1` emits exactly the SSA below — a `?:`, not a diamond):
-;     int a = cq_theta(u0, 0.5);
+;     int a = u0; cq_theta(&a, 0.5);
 ;     int m = (a > 3) ? 10 : 20;   // tainted-condition data mux
-;     int w = cq_theta(m, 0.25);   // T — chained, in-place Ry on the merge out
+;     int w = m; cq_theta(&w, 0.25);  // T — chained, in-place Ry on the merge out
 ;     return cq_measure(w);
 ;
 ; WHAT IS STANDING AT THE GATE, from the HEAD stream:

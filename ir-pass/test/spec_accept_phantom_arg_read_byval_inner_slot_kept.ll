@@ -20,7 +20,7 @@
 ;   int main(int c, char **v) {
 ;     int m = atoi(v[1]);
 ;     struct Big b = {{m, 1, 2, 3, 4, 5, 6, 7}};
-;     int q = cq_theta(m & 7, .5);
+;     int q = m & 7; cq_theta(&q, .5);
 ;     int r = h(q, b);
 ;     return cq_measure(r) + b.x[0];
 ;   }

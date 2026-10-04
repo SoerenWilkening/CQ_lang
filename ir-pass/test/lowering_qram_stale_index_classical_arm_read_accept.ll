@@ -3,9 +3,9 @@
 ; inside a CLASSICAL branch arm, and the in-place `cq_theta` on the index register
 ; after the merge. clang -O1 of the reviewer's p1:
 ;
-;     long q = cq_theta(0L, .5);  long r = 0;
+;     long q = 0L; cq_theta(&q, .5);  long r = 0;
 ;     if (argc > 1) r = cq_measure(tbl[q]);
-;     long q2 = cq_theta(q, .3);
+;     long q2 = q; cq_theta(&q2, .3);
 ;
 ; Every trace that runs the read runs it before the Ry, so the read sees the record
 ; `q` names. The read does not DOMINATE the gate, which the first r2j3.2 binary

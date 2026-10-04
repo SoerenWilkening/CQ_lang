@@ -4,9 +4,9 @@
 ; ACCEPT direction. A reader on a loop-INVARIANT quantum name, inside a loop, in a
 ; block that executes EXACTLY ONCE:
 ;
-;   int q = cq_theta(0, 0.3);
+;   int q = 0; cq_theta(&q, 0.3);
 ;   for (int i = 0; i < 3; i++)
-;     if (i == 0) { int b = cq_theta(q, 0.1); s += cq_measure(b); } else s += 1;
+;     if (i == 0) { int b = q; cq_theta(&b, 0.1); s += cq_measure(b); } else s += 1;
 ;
 ; ⚠ ITS ONE-TOKEN SIBLING IS A DECLINE and that is the whole discrimination:
 ; `lowering_reject_stale_reader_inloop_invariant_seed.ll` is this module with the

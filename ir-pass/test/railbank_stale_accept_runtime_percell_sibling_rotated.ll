@@ -17,10 +17,10 @@
 ; SOURCE — `clang -Iinclude -include CQ.h -O1 -emit-llvm -S`, verbatim:
 ;   __attribute__((noinline)) int slice(int n, int seed) {
 ;     if (n <= 1) return 0;
-;     int r = cq_theta(seed, 0.2);
+;     int r = seed; cq_theta(&r, 0.2);
 ;     int b[n]; int s = 0;
-;     for (int i = 0; i < n; ++i) b[i] = cq_theta(b[i], 0.5);
-;     r = cq_theta(r, 0.7);
+;     for (int i = 0; i < n; ++i) cq_theta(&b[i], 0.5);
+;     cq_theta(&r, 0.7);
 ;     for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
 ;     return s + cq_measure(r);
 ;   }

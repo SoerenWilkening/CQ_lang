@@ -375,7 +375,7 @@ struct TaintSet {
   // correction (`scrubForwardCone`) REMOVES taint from a Phase-6 call result the
   // clone proves classical. A base that was only CONSERVATIVELY tainted then
   // stops being a register after the phi has already been RAUW'd onto it: the
-  // arm's `cq_theta(t, θ)` lowers as a SOURCE on a fresh rail, and a consumer of
+  // arm's `@cq_theta_*(t, θ)` lowers as a SOURCE on a fresh rail, and a consumer of
   // the erased phi (the user's `cq_measure`) reads the classical `t` — the
   // measurement vanished, `opt` exit 0, stage-2b clean. The consequence is a
   // REWRITE, not an emission, so bd l3oi's `declineScrubbedHandleReads` (which
@@ -443,7 +443,7 @@ struct TaintSet {
   //
   // THE ONE CONSUMER, AND THE ONE QUESTION. `f2SeedPinnedByLiveRegister`
   // (`ArmClassify.cpp`, the drbq Inc-4 state-prep fence F2) asks *"could the
-  // source the author wrote have been `cq_theta(<this value>, θ)`, with `-O1`
+  // source the author wrote have been `cq_theta(&<this value>, θ)`, with `-O1`
   // folding it to the arm's literal?"*. A value THIS PASS manufactures has **no
   // source preimage**: it did not exist in the module `clang` produced, so no
   // source program can have passed it to the arm's `cq_theta`, so there is no
@@ -1415,7 +1415,7 @@ struct TaintSet {
   // writers, one reader (Rule 14).
   //
   // NOT INFERRED FROM THE ABSENCE OF A HEADER PHI, deliberately: an in-place gate
-  // whose result is DEAD in the body (`int t = cq_theta(r,.1);`) mints no phi and
+  // whose result is DEAD in the body (`int t = r; cq_theta(&t,.1);`) mints no phi and
   // carries no claim, and admitting it would grant the marking on a rail nothing
   // proved. Pinned by `p/x3_deadgate_body.c`, which still leaks.
   //
@@ -1439,7 +1439,7 @@ struct TaintSet {
   // (iii)'s per-loop question — is there an in-loop in-place gate on this root? —
   // was then never asked. MEASURED (`p/z32_claim_across_loops_nomeas.c`: loop A
   // carries `r` and is claimed by `tryCaseA`; loop B has an onward per-bit region
-  // and a DEAD `cq_theta(r,0.2)` in its body) — `claimed=1` from LOOP A, `IRR
+  // and a DEAD `int s = r; cq_theta(&s,0.2)` in its body) — `claimed=1` from LOOP A, `IRR
   // TRUE`, `markIfRailLocal MARKED 1 blocks`, i.e. loop B marked on a rail loop B
   // never proved. That is exactly the grant the "NOT INFERRED FROM THE ABSENCE OF
   // A HEADER PHI" paragraph above says must not happen, and the control that
@@ -1794,7 +1794,7 @@ bool isRegisterFreePhaseCall(const llvm::CallInst *CI, const TaintSet &taint);
 // here, where every tainted `br` is still standing. Measured:
 //
 //     void abort(void);
-//     int slice(int u){ int q = cq_theta(u,0.5);
+//     int slice(int u){ int q = u; cq_theta(&q,0.5);
 //       if (q == 5) abort();          /* the 7.2 park                        */
 //       cq_phi(0.75);                 /* UNCONDITIONAL — a GLOBAL phase (D2) */
 //       return cq_measure(q); }

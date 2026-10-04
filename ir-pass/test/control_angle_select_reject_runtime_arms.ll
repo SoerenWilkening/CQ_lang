@@ -3,8 +3,8 @@
 ; parameters), so no compile-time difference exists and the by-difference
 ; lowering's preconditions cannot be established.
 ;
-;     int f(double x, double y) { ... if (q == 5) r = cq_theta(r, x);
-;                                     else       r = cq_theta(r, y); }
+;     int f(double x, double y) { ... if (q == 5) cq_theta(&r, x);
+;                                     else       cq_theta(&r, y); }
 ;
 ; *** THIS FILE REPLACES `control_angle_select_ry_arg_angles.ll`, WHICH WAS AN
 ; *** ACCEPT FIXTURE FOR EXACTLY THIS SHAPE. The flip is the Rule-12 red-green of
