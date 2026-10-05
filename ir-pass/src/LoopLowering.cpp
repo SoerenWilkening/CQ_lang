@@ -1691,8 +1691,9 @@ namespace {
 // `retLineageCarriesPhase` and the AbortPark/SelectClassify twins (the house
 // style sanctions the trivial duplicate — keeping the loop partition
 // self-contained, Rule 14). A `cq_theta` (Ry) basis superposition has no
-// relative phase; a branch phase in the function (the first clause) is the
-// carrier, and the `cq_phi_` lineage row is the vacuous retired-form check.
+// relative phase; a branch phase whose control meets the answer's lineage (the
+// first clause) is the carrier, and the `cq_phi_` lineage row is the vacuous
+// retired-form check.
 bool breakLineageCarriesPhase(Value *Op, const TaintSet &taint) {
   // ---- THE REGISTER-FREE BRANCH PHASE (bd 3qlq Inc 1 part A, Rule-13 round-1
   // finding F-L5-6 — a latent WIDENING). The `cq_phi_` prefix row below went
@@ -1701,14 +1702,16 @@ bool breakLineageCarriesPhase(Value *Op, const TaintSet &taint) {
   // kickback phase has no `cq_phi` in its operand graph at all, because the gate
   // lands on a flag ancilla the register does not derive from. Without this
   // clause this fence silently answered "no phase" for a value that carries one.
-  // Asked FIRST and COARSELY (any tainted-control branch phase in the same
-  // function) — see `TaintPropagation.h` for why a precise, per-register answer
-  // is a control-dependence question this backward operand walk cannot ask, and
-  // why over-declining is safe here (every consumer turns `true` into a loud
-  // decline).
-  if (auto *OpI = dyn_cast<Instruction>(Op))
-    if (functionCarriesBranchPhase(OpI->getFunction(), taint))
-      return true;
+  //
+  // Asked PER REGISTER since bd 3by9: `lineageCarriesBranchPhase` asks the
+  // control-dependence question the backward walk below cannot (which tainted
+  // values each branch phase is a function of) and intersects it with this
+  // answer's lineage. The coarse `functionCarriesBranchPhase` this replaced
+  // declined a kickback on the break's COMPARAND, which the construct only reads
+  // as a control (`lowering_loop_break_qq_phase.ll`). The twins in
+  // `ControlDetect` and `AbortParkEmit` still ask the coarse question.
+  if (lineageCarriesBranchPhase(Op, taint))
+    return true;
 
   SmallVector<Value *, 8> Work;
   SmallPtrSet<Value *, 16> Visited;
@@ -2270,7 +2273,7 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
                    // restored exactly and LEFT ALLOCATED (the Rule-6 safe leak;
                    // `isTerminalHandle(p)` is false, so the whole-DAG spine never
                    // recovers it). Cleared by a 5-lens adversarial Rule-13 sign-off
-                   // 2026-06-30 (0 holes). CONTRAST B3 (line ~1027), which DOES fence a
+                   // 2026-06-30 (0 holes). CONTRAST B3 (in `tryBreak`), which DOES fence a
                    // phase ESCAPING ANSWER (the rail itself) — there method-B copies
                    // the rail out, and Rule 7's CNOT-copies-a-label-not-a-phase bites;
                    // a phase on the COMPARAND is never copied out, so it does not.
@@ -2526,7 +2529,10 @@ bool tryBreak(Loop *L, Function &F, TaintSet &taint, WidthDispatch &wd,
   // (B3) Value-class answer. A phase-class escaping answer (a branch phase, per
   // `breakLineageCarriesPhase` — v2_phase) cannot be CNOT-copied out (Rule 7
   // dephases) and the data-comparison phase break is degenerate ⇒ PERMANENT
-  // decline (§2.6).
+  // decline (§2.6). Since bd 3by9 a branch phase counts only when its control
+  // meets the answer's own lineage: a kickback on the COMPARAND alone lowers
+  // (`lowering_loop_break_qq_phase.ll`); one inside the loop still declines here
+  // (`lowering_reject_break_phase_inloop_comparand.ll`).
   for (Value *In : EscapePhi->incoming_values())
     if (taint.Tainted.count(In) && breakLineageCarriesPhase(In, taint)) {
       diagnose(BreakI, kMsgBreakPhase);

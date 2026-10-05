@@ -2766,6 +2766,17 @@ bool isRegisterFreePhaseCall(const CallInst *CI, const TaintSet &taint) {
 
 namespace {
 
+// The condition a block's terminator branches on: a conditional `br`'s i1 or a
+// `switch` scrutinee; null for every other terminator. The ONE spelling the
+// walks below share (bd 3by9 hoisted it out of the two inline copies).
+const Value *branchCondition(const Instruction *T) {
+  if (const auto *BI = dyn_cast<BranchInst>(T))
+    return BI->isConditional() ? BI->getCondition() : nullptr;
+  if (const auto *SI = dyn_cast<SwitchInst>(T))
+    return SI->getCondition();
+  return nullptr;
+}
+
 // Is `BB` reachable from the function entry along a path that passes through a
 // block whose TERMINATOR branches on a TAINTED condition? Pure backward CFG
 // walk from `BB`'s predecessors; `Taint` decides tainted-ness by SSA identity.
@@ -2786,12 +2797,7 @@ bool reachedThroughTaintedBranch(const BasicBlock *BB, const TaintSet &taint) {
     const BasicBlock *P = Work.pop_back_val();
     if (!Seen.insert(P).second)
       continue;
-    const Instruction *T = P->getTerminator();
-    const Value *C = nullptr;
-    if (const auto *BI = dyn_cast<BranchInst>(T))
-      C = BI->isConditional() ? BI->getCondition() : nullptr;
-    else if (const auto *SI = dyn_cast<SwitchInst>(T))
-      C = SI->getCondition();
+    const Value *C = branchCondition(P->getTerminator());
     if (C && taint.Tainted.count(const_cast<Value *>(C)))
       return true;
     Work.append(pred_begin(P), pred_end(P));
@@ -2862,13 +2868,42 @@ bool everyReturningPathThrough(const BasicBlock *From,
   return true;
 }
 
-// Is `BB` CONTROL-DEPENDENT on some TAINTED branch of its function? The textbook
+// Is `BB` CONTROL-DEPENDENT on the conditional terminator of `P`? The textbook
 // definition, with post-dominance read in the returning-paths sense above:
 //   `BB` is control-dependent on `P` iff (i) some successor `S` of `P` that can
 //   still reach a `ret` is post-dominated by `BB`, and (ii) `P` itself is not.
 // Clause (i)'s `canReachReturn` filter is the load-bearing half for the abort
 // park: without it the `unreachable` arm is VACUOUSLY post-dominated by every
-// block and (i) is true for anything.
+// block and (i) is true for anything. The ONE per-pair spelling, asked by
+// `controlDependentOnTaintedBranch` and `transitiveControllers` (bd 3by9 hoisted
+// it out of the former, unchanged).
+//
+// Clause (ii) is read NON-STRICTLY (`P == BB` counts as "post-dominated"), so a
+// block is never control-dependent on its OWN terminator — not even the
+// single-block loop whose back edge decides whether it runs again. The textbook
+// definition says strict. Recorded rather than changed (bd 3by9): the one place
+// it is observable, a phase inside a quantum-exit loop, is refused before any
+// emitter by tryBreak's B4 side-effect clause and then the L1 loop decline.
+bool controlDependsOn(const BasicBlock *BB, const BasicBlock *P) {
+  if (everyReturningPathThrough(P, BB))
+    return false;  // (ii) fails — `BB` post-dominates `P`: a GLOBAL phase.
+  for (const BasicBlock *S : successors(P)) {
+    if (!canReachReturn(S))
+      continue;  // a `noreturn` arm — it decides nothing about `BB`.
+    if (everyReturningPathThrough(S, BB))
+      return true;  // (i) holds: `BB` runs on this arm and not on all of them.
+  }
+  return false;
+}
+
+bool functionHasReturn(const Function *F) {
+  for (const BasicBlock &B : *F)
+    if (isa<ReturnInst>(B.getTerminator()))
+      return true;
+  return false;
+}
+
+// Is `BB` CONTROL-DEPENDENT on some TAINTED branch of its function?
 //
 // Conservative fallback: a function with no `ReturnInst` at all has no
 // returning-path structure to reason over, so this answers TRUE (the pre-fix
@@ -2876,34 +2911,71 @@ bool everyReturningPathThrough(const BasicBlock *From,
 bool controlDependentOnTaintedBranch(const BasicBlock *BB,
                                      const TaintSet &taint) {
   const Function *F = BB->getParent();
-  bool AnyReturn = false;
-  for (const BasicBlock &B : *F)
-    if (isa<ReturnInst>(B.getTerminator())) {
-      AnyReturn = true;
-      break;
-    }
-  if (!AnyReturn)
+  if (!functionHasReturn(F))
     return true;
 
   for (const BasicBlock &P : *F) {
-    const Instruction *T = P.getTerminator();
-    const Value *C = nullptr;
-    if (const auto *BI = dyn_cast<BranchInst>(T))
-      C = BI->isConditional() ? BI->getCondition() : nullptr;
-    else if (const auto *SI = dyn_cast<SwitchInst>(T))
-      C = SI->getCondition();
+    const Value *C = branchCondition(P.getTerminator());
     if (!C || !taint.Tainted.count(const_cast<Value *>(C)))
       continue;
-    if (everyReturningPathThrough(&P, BB))
-      continue;  // (ii) fails — `BB` post-dominates `P`: a GLOBAL phase.
-    for (const BasicBlock *S : successors(&P)) {
-      if (!canReachReturn(S))
-        continue;  // a `noreturn` arm — it decides nothing about `BB`.
-      if (everyReturningPathThrough(S, BB))
-        return true;  // (i) holds: `BB` runs on this arm and not on all of them.
-    }
+    if (controlDependsOn(BB, &P))
+      return true;
   }
   return false;
+}
+
+// Is `CI` (a member of `taint.PhaseCalls`) a BRANCH phase — control-dependent
+// on a tainted branch — rather than a global one? The per-call clause of
+// `functionCarriesBranchPhase`, shared with `lineageCarriesBranchPhase` so the
+// precise predicate considers EXACTLY the calls the coarse one counts.
+bool isTaintControlledBranchPhase(const CallInst *CI, const TaintSet &taint) {
+  // The crude reachability walk stays as the CHEAP PRE-FILTER (it is implied
+  // by control dependence — `BB` post-dominating a successor of `P` requires
+  // `BB` reachable from `P` — so it can only skip work, never change an
+  // answer), and the control-dependence test decides.
+  return reachedThroughTaintedBranch(CI->getParent(), taint) &&
+         controlDependentOnTaintedBranch(CI->getParent(), taint);
+}
+
+// Every block whose conditional terminator `BB` is control-dependent on,
+// DIRECTLY OR THROUGH A CHAIN — the closure of `controlDependsOn`, classical
+// and tainted controllers alike (a classical `if` nested in a quantum arm, or a
+// loop-invariant `if` inside a loop whose exit is quantum, both hand the
+// question on to the branch that decides whether THEY run).
+void transitiveControllers(const BasicBlock *BB,
+                           SmallVectorImpl<const BasicBlock *> &Out) {
+  const Function *F = BB->getParent();
+  SmallPtrSet<const BasicBlock *, 16> Seen;
+  SmallVector<const BasicBlock *, 8> Work{BB};
+  while (!Work.empty()) {
+    const BasicBlock *X = Work.pop_back_val();
+    for (const BasicBlock &P : *F) {
+      if (Seen.count(&P) || !branchCondition(P.getTerminator()))
+        continue;
+      if (!controlDependsOn(X, &P))
+        continue;
+      Seen.insert(&P);
+      Out.push_back(&P);
+      Work.push_back(&P);
+    }
+  }
+}
+
+// The TAINTED backward OPERAND closure of `V`, `V` itself included — the walk
+// the three carriers' `cq_phi_` rows already take (an argument / constant root
+// stops it; untainted operands are not followed).
+void taintedOperandLineage(const Value *V, const TaintSet &taint,
+                           SmallPtrSetImpl<const Value *> &Out) {
+  SmallVector<const Value *, 16> Work{V};
+  Out.insert(V);
+  while (!Work.empty()) {
+    const auto *I = dyn_cast<Instruction>(Work.pop_back_val());
+    if (!I)
+      continue;
+    for (const Value *Op : I->operands())
+      if (taint.Tainted.count(const_cast<Value *>(Op)) && Out.insert(Op).second)
+        Work.push_back(Op);
+  }
 }
 
 }  // namespace
@@ -2911,17 +2983,50 @@ bool controlDependentOnTaintedBranch(const BasicBlock *BB,
 // See the header for the whole argument (bd 3qlq Inc 1 part A, F-L5-6; narrowed
 // to genuine control dependence by Rule-13 round-2 finding F-R1-2).
 bool functionCarriesBranchPhase(const Function *F, const TaintSet &taint) {
-  for (CallInst *CI : taint.PhaseCalls) {
-    if (CI->getFunction() != F)
-      continue;
-    // The crude reachability walk stays as the CHEAP PRE-FILTER (it is implied
-    // by control dependence — `BB` post-dominating a successor of `P` requires
-    // `BB` reachable from `P` — so it can only skip work, never change an
-    // answer), and the control-dependence test decides.
-    if (!reachedThroughTaintedBranch(CI->getParent(), taint))
-      continue;
-    if (controlDependentOnTaintedBranch(CI->getParent(), taint))
+  for (CallInst *CI : taint.PhaseCalls)
+    if (CI->getFunction() == F && isTaintControlledBranchPhase(CI, taint))
       return true;
+  return false;
+}
+
+// See the header (bd 3by9). Strictly NARROWER than `functionCarriesBranchPhase`
+// by construction: it visits exactly the calls that predicate counts, and adds a
+// condition before answering true.
+bool lineageCarriesBranchPhase(const Value *V, const TaintSet &taint) {
+  const auto *VI = dyn_cast<Instruction>(V);
+  if (!VI)
+    return false;  // the coarse clause's own scope: it never asked of a non-instruction.
+  const Function *F = VI->getFunction();
+  SmallPtrSet<const Value *, 32> Answer;
+  for (CallInst *CI : taint.PhaseCalls) {
+    if (CI->getFunction() != F || !isTaintControlledBranchPhase(CI, taint))
+      continue;
+    // No returning path: `controlDependentOnTaintedBranch` answered by its
+    // fallback, not by structure, and so would `transitiveControllers` (every
+    // block vacuously post-dominates everything). Keep the coarse answer.
+    if (!functionHasReturn(F))
+      return true;
+    if (Answer.empty())
+      taintedOperandLineage(V, taint, Answer);
+    // The values the phase is a function of: every TAINTED controlling
+    // condition, plus a tainted angle (the folded `cq_phi(c ? a : b)` form).
+    SmallVector<const Value *, 8> Keys;
+    SmallVector<const BasicBlock *, 8> Ctl;
+    transitiveControllers(CI->getParent(), Ctl);
+    for (const BasicBlock *P : Ctl) {
+      const Value *C = branchCondition(P->getTerminator());
+      if (taint.Tainted.count(const_cast<Value *>(C)))
+        Keys.push_back(C);
+    }
+    if (taint.Tainted.count(CI->getArgOperand(0)))
+      Keys.push_back(CI->getArgOperand(0));
+    for (const Value *K : Keys) {
+      SmallPtrSet<const Value *, 32> KeyLineage;
+      taintedOperandLineage(K, taint, KeyLineage);
+      for (const Value *X : KeyLineage)
+        if (Answer.count(X))
+          return true;
+    }
   }
   return false;
 }

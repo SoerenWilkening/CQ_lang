@@ -1812,7 +1812,55 @@ bool isRegisterFreePhaseCall(const llvm::CallInst *CI, const TaintSet &taint);
 // The fence stays a DISCRIMINATOR, not a blanket: `if (q>7) cq_phi(0.75); if
 // (q==5) abort();` — a genuine BRANCH phase reaching the same park — still
 // declines, from plain `clang -O1` C (`control_phase_kickback_abort_*.ll`).
+//
+// bd 3by9: the 7.4 B3 fence no longer asks this coarse question; it asks
+// `lineageCarriesBranchPhase` below. The controlled-`return` and abort-park
+// carriers still ask this one.
 bool functionCarriesBranchPhase(const llvm::Function *F, const TaintSet &taint);
+
+// THE PHASE-CARRIER QUESTION PER REGISTER — bd test_C_libtooling-3by9, the
+// R1 over-decline `functionCarriesBranchPhase` produced at the 7.4 B3 fence:
+// a kickback on a COMPARAND `p` (`if (p == 3) cq_phi(.3);` before `for (…) {
+// q ^= 9; if (q == p) break; }`) declined the break on `q` although the phase
+// never touches q's lineage.
+//
+// It asks: does some branch phase of `V`'s function depend on a tainted value
+// that `V` itself derives from? "Branch phase" is exactly the set
+// `functionCarriesBranchPhase` counts (same per-call clause), so this predicate
+// is STRICTLY NARROWER: true here implies true there. "Depends on" is answered
+// as the earlier comment says it must be, by CONTROL DEPENDENCE, not by the
+// phase's operand graph (it has none): the phase's KEYS are the conditions of
+// every branch its block is control-dependent on, TRANSITIVELY (classical
+// intermediate branches included), that are tainted, plus its angle when that is
+// tainted (the folded `cq_phi(c ? a : b)`). The answer is true iff the tainted
+// backward operand closure of some key meets the tainted backward operand
+// closure of `V`. Transitivity is load-bearing: a loop-invariant `if (p == 3)
+// cq_phi(θ)` INSIDE a quantum-exit loop has `p == 3` as its only direct
+// controller, but that branch's block is control-dependent on the loop's own
+// exit, whose condition reads the rail (`lowering_reject_break_phase_inloop_
+// comparand.ll`). A function with no returning path keeps the coarse answer.
+//
+// WHAT THE ANSWER IS FOR, measured against L5. The 7.4 break construct is a
+// basis permutation that reads every register it does not own only as a
+// control, so by linearity a diagonal phase applied BEFORE it rides on the
+// amplitude untouched, and one applied AFTER it is a later gate — the
+// comparand case is the stream `lowering_loop_break_qq_phase.ll` pins with its
+// trace argument. The only placement that is a unitary hazard is a phase INSIDE
+// the construct (the loop body), and that is refused independently of this
+// predicate by tryBreak's B4 side-effect clause (`cq_phi` is a call). So "a
+// phase whose keys meet the ANSWER's lineage" is a policy line kept at the
+// owner's scope (bd 3by9), not a unitary proof: the before-the-loop kickback ON
+// q (`lowering_reject_break_phase_answer_kickback.ll`) stays loud under it.
+//
+// L1. Asked once, from `lowerLoops`, before round 1 of control detection. For
+// an emittable break the answer's closure is the rail chain rooted at a
+// `cq_theta` (the emitter's own precondition), which round 2 cannot grow; a key
+// that becomes tainted only in round 2 (a control-merge `%out`) is invisible
+// here exactly as it is to `functionCarriesBranchPhase`, and the backward
+// OPERAND walk cannot follow a merge `%out` back to its condition in either
+// round. Both gaps can only accept a phase outside the loop body, which the
+// paragraph above shows is unitary-safe; no round-2 re-ask is recorded.
+bool lineageCarriesBranchPhase(const llvm::Value *V, const TaintSet &taint);
 
 // bd test_C_libtooling-3qlq Inc 1, PRD §6.2 row P7 (owner decision D2) — DELETE
 // every SURVIVING register-free `cq_phi`, and ASSERT the Rule-1 invariant that

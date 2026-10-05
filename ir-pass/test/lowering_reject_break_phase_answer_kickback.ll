@@ -24,6 +24,18 @@
 ; canonical method-B-on-a-phase-arm miscompile). Over-declining is safe; this is
 ; the Prime Directive doing its job on a shape the surface change made ordinary.
 ;
+; bd 3by9 (2026-10-05). B3 now asks the per-register `lineageCarriesBranchPhase`
+; instead of "any branch phase in the function". This program still declines
+; under it: the phase's controller `q == 5` reads `%3`, the rail root the
+; escaping answer `%18` derives from. Its sibling with the kickback on the
+; COMPARAND instead (`lowering_loop_break_qq_phase.ll`) now lowers. ⚠ THE
+; PARAGRAPH ABOVE IS AN UNREVIEWED RATIONALE, NOT A PROOF: by linearity the
+; construct (a basis permutation that restores the rail) carries a phase applied
+; before it on the amplitude, and the copy-out's entanglement with the restored
+; rail is the same for a phase-free superposed answer. The decline is kept at
+; the scope bd 3by9 was given; whether it is an over-decline too is reported for
+; owner review, so do not cite this file as evidence of a phase hazard.
+;
 ; ⚠ WHY THIS FILE EXISTS BESIDE `lowering_reject_break_phase_answer.ll`. That file
 ; is the ORIGINAL B3 pin and it no longer reaches B3: after the round-2 carrier fix
 ; its module is pre-empted by `loop under quantum control`, so it now pins THAT

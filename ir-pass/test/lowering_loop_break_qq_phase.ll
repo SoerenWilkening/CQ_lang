@@ -1,120 +1,176 @@
-; lowering_loop_break_qq_phase.ll — POSITIVE emission (Phase 7.4 Inc 2, epic
-; y05j; coverage test_C_libtooling-mvrb). Written as the PHASE-CARRYING-COMPARAND
-; sibling of lowering_loop_break_qq.ll: a value-arm `break` whose tainted Q==Q
-; condition compares the rail against a loop-invariant comparand `p`. Source shape
-; (pre-3qlq register form):
+; lowering_loop_break_qq_phase.ll — POSITIVE emission (Phase 7.4, epic y05j;
+; coverage test_C_libtooling-mvrb; RE-SPELLED for bd test_C_libtooling-3by9).
+; A value-arm `break` whose tainted Q==Q condition compares the rail against a
+; loop-invariant comparand `p` that carries a RELATIVE PHASE — a register-free
+; kickback on `p` placed before the loop. The module below is `clang -O1`'s
+; output for this C, unedited apart from the ModuleID / source_filename lines:
 ;
-;     int p0 = pseed; cq_theta(&p0, 0.5);
-;     int p  = cq_phi(p0, 0.3);       // Rz — p now carries a relative phase
-;     int q  = x; cq_theta(&q, 0.25);
-;     for (int i = 0; i < n; i++) {
-;         q = q ^ 9;                  // in-place value rail self-update
-;         if (q == p) break;          // TAINTED Q==Q break flag (rail vs phase-p)
+;     int break_qq_phase(int x, int pseed, int n) {
+;         int p = pseed; cq_theta(&p, 0.5);
+;         if (p == 3) cq_phi(0.3);        // |3> of p now carries e^{i 0.3}
+;         int q = x; cq_theta(&q, 0.25);
+;         for (int i = 0; i < n; i++) { q = q ^ 9; if (q == p) break; }
+;         return cq_measure(q);
 ;     }
-;     return cq_measure(q);
 ;
-; The 3qlq migration deleted `p = cq_phi(p0, 0.3)` (uncontrolled, a global phase),
-; so the comparand is now the bare Ry-prepared `p0` and no Rz is emitted anywhere.
+; HISTORY. The file was written (mvrb) for the pre-3qlq register form
+; `p = cq_phi(p0, 0.3)`; 3qlq deleted that uncontrolled call as a global phase,
+; and the jttf re-spell to the kickback above was BLOCKED because the C declined
+; `cq loop lowering: early break preserves a phase answer`: B3's
+; `breakLineageCarriesPhase` asked `functionCarriesBranchPhase` first, so ANY
+; tainted-control branch phase anywhere in the function made the escaping answer
+; phase-class (bd 3by9, an R1 over-decline). B3 now asks
+; `lineageCarriesBranchPhase` (TaintPropagation.h): does some branch phase's
+; CONTROL (its transitively controlling tainted conditions, or a tainted angle)
+; share a tainted value with the ESCAPING ANSWER's operand lineage? Here the
+; phase's only controller is `p == 3`, whose lineage is {p}; the answer's lineage
+; is the rail chain {q0, the rail phi, q ^ 9}. Disjoint, so the loop lowers.
 ;
-; ⚠ RE-SPELL BLOCKED BY AN OVER-DECLINE (bd jttf, 2026-10-05). The register-free
-; way to give the comparand a relative phase is a kickback on `p` before the
-; loop:
-;
-;     int p = pseed; cq_theta(&p, 0.5);
-;     if (p == 3) cq_phi(0.3);        // |3> of p now carries e^{i 0.3}
-;     int q = x; cq_theta(&q, 0.25);
-;     for (int i = 0; i < n; i++) { q = q ^ 9; if (q == p) break; }
-;     return cq_measure(q);
-;
-; Measured through `clang -O1` and `cq-opt` on 2ab46c39: it DECLINES `cq loop
-; lowering: early break preserves a phase answer`. B3's
-; `breakLineageCarriesPhase` asks `functionCarriesBranchPhase` FIRST, so any
-; tainted-control branch phase anywhere in the function makes the escaping
-; answer phase-class, although here the phase sits on the COMPARAND, which the
-; argument below shows rides inert. That is an over-decline (R1), reported to the
-; coordinator for a bd bug. Until it is lifted this file keeps the bare-mint
-; comparand, so its IR equals lowering_loop_break_qq.ll's up to SSA names and it
-; pins nothing that file does not. RE-SPELL TRIGGER: when the C above accepts,
-; replace the IR with its `clang -O1` output and re-derive the CHECKs (the
-; kickback `cqrt_rz_i1` before the loop, no phase gate inside the construct, `p`
-; left allocated).
-;
-; WHY A COMPARAND'S RELATIVE PHASE WOULD RIDE INERT (cleared by a 5-lens adversarial
-; Rule-13 sign-off 2026-06-30 — permutation-completeness / phase-kickback /
-; free-cleanliness / spine-terminal / entanglement-semantics, 0 concrete holes): the
-; ENTIRE break construct (forward capture + exit consolidation + reverse-play) emits
-; ONLY computational-basis PERMUTATION gates — cqrt_xorc/addc, cqrt_toffoli/cnot,
-; cqrt_copy_<W>[_controlled], cq_template_icmp_eq_<W>(+_unc), cqrt_alloc(|0>)/
-; cqrt_free(|0>), cqrt_measure — and NO Ry/Rz/Hadamard. So the construct acts as a
-; FIXED permutation π on the computational basis: any input amplitudes ride inert
-; (out = Σ γ_x |π(x)>, γ_x preserved). The comparand `p` is consumed EXCLUSIVELY as
-; an operand/control of the QQ eq-compare and its matched `_unc` — never rotated,
-; never copied into `out`, never measured, never freed — so `p` is restored EXACTLY
-; and LEFT ALLOCATED (the Rule-6 safe leak, identical to the bare-mint comparand in
-; lowering_loop_break_qq.ll). This is DISTINCT from the B3 phase fence, which
-; declines a phase-class ESCAPING ANSWER (the rail itself carrying the phase — a
-; CNOT copy-out would dephase it, Rule 7); a comparand is never copied out.
+; THE TRACE ARGUMENT for the stream pinned below (R2; no simulator).
+;  (1) The kickback block is `f = [p==3]` XORed into a fresh |0> flag (a basis
+;      permutation), `cqrt_rz_i1(f, 0.3)` (diagonal on f: a relative e^{i 0.3} on
+;      the f=1 branch, up to a global phase), the `_unc` strip (the same XOR, so f
+;      is |0> on EVERY basis branch, hence on the superposition), and ONE
+;      `cqrt_free(f)` of that provably-|0> flag (R5: a reset of |0> is not a
+;      measurement). Net effect: D = diag(e^{i 0.3 [p==3]}) on p, nothing else.
+;  (2) The break construct U (from the `cq.brk.R` mint to the R/idx frees in
+;      `cq.brk.tail`) is the identical gate sequence lowering_loop_break_qq.ll
+;      pins (cleared by the 7.4 Rule-13 rounds): for every basis input
+;      |q0>|p>|0>_R|0>_idx|0>_out it ends in |q0>|p>|0>|0>|f(q0,p)>, f the
+;      source's break answer. In U the handle of `p` appears ONLY as the second
+;      operand of `cq_template_icmp_eq_i32` and its `_unc` (forward body and the
+;      `cq.brk.rev` clone): read as a control, never written, copied, swapped,
+;      reverse-played or freed. So U is block-diagonal in p's basis and
+;      U·D = D·U exactly.
+;  (3) By linearity U maps the phased input Σ c·e^{i 0.3 [p==3]}|q0,p,0,0,0> to
+;      Σ c·e^{i 0.3 [p==3]}|q0,p,0,0,f(q0,p)>: the phase rides on the amplitude,
+;      untouched. Every `cqrt_free` inside U frees a register that is |0> on
+;      every basis branch, so none is a hidden measurement. `p` is left allocated
+;      (Ry-prepared and entangled with `out`, never provably |0>), as is the rail
+;      (restored to q0 by the reverse-play, still entangled with `out`).
+; So the whole stream is D followed by the unchanged construct: the kickback
+; `cqrt_rz_i1` before the loop, NO phase gate inside the construct, p never freed.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=PHASE < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=PLEAK < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=RLEAK < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
 ;
-; --- p built as cq_theta (its register-form cq_phi was deleted by 3qlq) --------
-; CHECK: %[[P:[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 %pseed)
-; CHECK: call void @cqrt_ry_i32(i32 %[[P]], double 5.000000e-01)
-; CHECK: %[[RAIL:[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 %x)
-; --- FORWARD body: in-place rail xor, then the bare Q==Q compare (rail vs p) + _unc
-; CHECK: call void @cqrt_xorc_i32(i32 %[[RAIL]], i32 9)
-; CHECK: %[[FCMP:[a-z0-9_]+]] = call i32 @cq_template_icmp_eq_i32(i32 %[[RAIL]], i32 %[[P]])
-; CHECK: call void @cqrt_toffoli(i32 %[[FCMP]],
-; CHECK: call void @cq_template_icmp_eq_i32_unc(i32 %[[FCMP]], i32 %[[RAIL]], i32 %[[P]])
-; --- BACKWARD reverse-play clone: the SAME compare (rail vs p) reading the same %p --
+; --- p minted and rotated, then the kickback on p's flag, all BEFORE q is minted
+; CHECK-LABEL: define i32 @break_qq_phase(
+; CHECK: [[P:%[a-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %1)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[P]], double 5.000000e-01)
+; CHECK-NEXT: [[F:%[a-z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 [[P]], i32 3)
+; CHECK-NEXT: call void @cqrt_rz_i1(i32 [[F]], double 3.000000e-01), !cq.branchphase
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 [[F]], i32 [[P]], i32 3)
+; CHECK-NEXT: call void @cqrt_free(i32 [[F]])
+; CHECK-NEXT: [[RAIL:%[a-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[RAIL]], double 2.500000e-01)
+; --- the 7.4 scratch, minted |0> in the preheader
+; CHECK: %cq.brk.R = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK: %cq.brk.idx = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK: %cq.brk.out = call i32 @cqrt_alloc_i32(i32 0)
+; --- FORWARD body: in-place rail xor, the bare Q==Q compare (rail vs p), the
+;     index-gated copy-not-move capture, the compare's `_unc`
+; CHECK: call void @cqrt_xorc_i32(i32 [[RAIL]], i32 9)
+; CHECK-NEXT: [[FCMP:%[a-z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32(i32 [[RAIL]], i32 [[P]])
+; CHECK: call void @cqrt_toffoli(i32 [[FCMP]],
+; CHECK: call void @cqrt_copy_i32_controlled(i32 %cq.brk.fire, i32 [[RAIL]], i32 %cq.brk.R)
+; CHECK: call void @cq_template_icmp_eq_i32_unc(i32 [[FCMP]], i32 [[RAIL]], i32 [[P]])
+; CHECK-NEXT: call void @cqrt_free(i32 [[FCMP]])
+; --- exit consolidation + the copy-out into `out`
+; CHECK: call void @cqrt_copy_i32(i32 %cq.brk.R, i32 %cq.brk.out)
+; --- BACKWARD reverse-play: the SAME compare (rail vs p), then the inverse rail xor
 ; CHECK: cq.brk.rev:
-; CHECK: %[[BCMP:[a-z0-9_]+]] = call i32 @cq_template_icmp_eq_i32(i32 %[[RAIL]], i32 %[[P]])
-; CHECK: call void @cqrt_toffoli(i32 %[[BCMP]],
-; CHECK: call void @cq_template_icmp_eq_i32_unc(i32 %[[BCMP]], i32 %[[RAIL]], i32 %[[P]])
-; --- the inverse rail-mut closes the reverse-play; R/idx freed, out measured ----
-; CHECK: call void @cqrt_xorc_i32(i32 %[[RAIL]], i32 9)
+; CHECK: [[BCMP:%[a-z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32(i32 [[RAIL]], i32 [[P]])
+; CHECK-NEXT: call void @cqrt_toffoli(i32 [[BCMP]],
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_unc(i32 [[BCMP]], i32 [[RAIL]], i32 [[P]])
+; CHECK: call void @cqrt_xorc_i32(i32 [[RAIL]], i32 9)
 ; CHECK: cq.brk.tail:
-; CHECK: call void @cqrt_free(i32 %cq.brk.R)
-; CHECK: call void @cqrt_free(i32 %cq.brk.idx)
-; CHECK: call i32 @cqrt_measure_i32(i32 %cq.brk.out)
-; The two CHECK-NOTs mirror LIVE diagnostics (documentary on this -S stdout stream —
-; a decline regression is caught by the positive CHECKs failing on empty stdout).
-; CHECK-NOT: cq controlled lowering: loop under quantum control
-; CHECK-NOT: cq loop lowering: early break body is not a provable rolled single-rail loop
+; CHECK-NEXT: call void @cqrt_free(i32 %cq.brk.R)
+; CHECK-NEXT: call void @cqrt_free(i32 %cq.brk.idx)
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %cq.brk.out)
 ;
-; --- p is never freed — left allocated (Rule 6): a free is a hidden measurement,
-; and p is entangled with out on every break branch.
-; PLEAK: %[[P2:[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 %pseed)
-; PLEAK-NOT: cqrt_free(i32 %[[P2]])
-; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
+; --- EXACTLY ONE phase gate in the module — the kickback above, before the
+;     construct — and no `cqrt_x` bracket (the phase is on the true arm), no
+;     swap. A phase gate inside the construct would fire on every iteration of
+;     the full classical trip, not up to the break.
+; PHASE-COUNT-1: call void @cqrt_rz_
+; PHASE-NOT: call void @cqrt_rz_
+; PHASE-NOT: call void @cqrt_x(
+; PHASE-NOT: @cqrt_cswap
+;
+; --- p is never freed (R5): it is Ry-prepared and entangled with `out`.
+; PLEAK: [[P2:%[a-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %1)
+; PLEAK-NOT: call void @cqrt_free(i32 [[P2]])
+;
+; --- the rail is never freed either: the reverse-play restores it to q0, still
+;     entangled with `out`.
+; RLEAK: [[R2:%[a-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %0)
+; RLEAK-NOT: call void @cqrt_free(i32 [[R2]])
+;
+; --- the free census: 14 sites of the break construct (forward body 5, exit
+;     consolidation 2, reverse-play body 5, R and idx 2: the count the same
+;     construct emits beside a phase-free comparand) + 1 for the kickback flag.
+; FCNT-COUNT-15: call void @cqrt_free(
+; FCNT-NOT: call void @cqrt_free(
 
-target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
-target triple = "x86_64-unknown-linux-gnu"
+target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-apple-macosx16.0.0"
 
-declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_measure_si32(i32)
+; Function Attrs: nounwind ssp uwtable
+define i32 @break_qq_phase(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = tail call i32 @cq_theta_si32(i32 noundef %1, double noundef 5.000000e-01) #2
+  %5 = icmp eq i32 %4, 3
+  br i1 %5, label %6, label %7
 
-define i32 @break_qq_phase(i32 %x, i32 %pseed, i32 %n) {
-entry:
-  %p0 = call i32 @cq_theta_si32(i32 %pseed, double 5.000000e-01)  ; basis superposition
-  %q0 = call i32 @cq_theta_si32(i32 %x, double 2.500000e-01)
-  %guard = icmp sgt i32 %n, 0
-  br i1 %guard, label %loop, label %exit
+6:                                                ; preds = %3
+  tail call void @cq_phi(double noundef 3.000000e-01) #3
+  br label %7
 
-loop:                                             ; preds = %entry, %loop
-  %i = phi i32 [ 0, %entry ], [ %inext, %loop ]      ; classical induction
-  %q = phi i32 [ %q0, %entry ], [ %qn, %loop ]       ; tainted value-mutating rail
-  %qn = xor i32 %q, 9                                ; value mutation (tainted)
-  %brk = icmp eq i32 %qn, %p0                         ; TAINTED Q==Q break flag (rail vs phase-p)
-  %inext = add nuw nsw i32 %i, 1
-  %bound = icmp eq i32 %inext, %n                    ; CLASSICAL loop bound
-  %exit.cond = select i1 %brk, i1 true, i1 %bound    ; FUSED select(brk, true, bound)
-  br i1 %exit.cond, label %exit, label %loop
+7:                                                ; preds = %6, %3
+  %8 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef 2.500000e-01) #2
+  %9 = icmp sgt i32 %2, 0
+  br i1 %9, label %10, label %18
 
-exit:                                             ; preds = %loop, %entry
-  %ans = phi i32 [ %q0, %entry ], [ %qn, %loop ]     ; value-class escaping answer
-  %m = call i32 @cq_measure_si32(i32 %ans)
-  ret i32 %m
+10:                                               ; preds = %7, %10
+  %11 = phi i32 [ %15, %10 ], [ 0, %7 ]
+  %12 = phi i32 [ %13, %10 ], [ %8, %7 ]
+  %13 = xor i32 %12, 9
+  %14 = icmp eq i32 %13, %4
+  %15 = add nuw nsw i32 %11, 1
+  %16 = icmp eq i32 %15, %2
+  %17 = select i1 %14, i1 true, i1 %16
+  br i1 %17, label %18, label %10, !llvm.loop !6
+
+18:                                               ; preds = %10, %7
+  %19 = phi i32 [ %8, %7 ], [ %13, %10 ]
+  %20 = tail call i32 @cq_measure_si32(i32 noundef %19) #3
+  ret i32 %20
 }
+
+declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr #1
+
+declare void @cq_phi(double noundef) local_unnamed_addr #1
+
+declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr #1
+
+attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #2 = { nomerge nounwind }
+attributes #3 = { nounwind }
+
+!llvm.module.flags = !{!0, !1, !2, !3, !4}
+!llvm.ident = !{!5}
+
+!0 = !{i32 2, !"SDK Version", [2 x i32] [i32 26, i32 4]}
+!1 = !{i32 1, !"wchar_size", i32 4}
+!2 = !{i32 8, !"PIC Level", i32 2}
+!3 = !{i32 7, !"uwtable", i32 2}
+!4 = !{i32 7, !"frame-pointer", i32 2}
+!5 = !{!"Homebrew clang version 19.1.7"}
+!6 = distinct !{!6, !7, !8}
+!7 = !{!"llvm.loop.mustprogress"}
+!8 = !{!"llvm.loop.unroll.disable"}
