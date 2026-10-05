@@ -18,7 +18,7 @@
    the |0> result rail -> cqrt_copy_<W>_controlled the TRUE operand (q) on the
    flag -> X-bracket and cqrt_copy_<W>_controlled the FALSE operand (x,
    materialized to a fresh handle via cqrt_alloc because it is a classical value)
-   on ¬flag -> icmp_inv strip the boolean -> the ONE cqrt_free (the flag) ->
+   on ¬flag -> icmp_sgt_i32_hl_unc strip -> the ONE cqrt_free (the flag) ->
    RAUW %sel -> %out. The merge is a COPY, NOT a route: NO cqrt_cswap, NO rail
    route, NO phi, NO RegionFlatten, NO reverse-play, ZERO controlled ROTATIONS
    (a CNOT-copy of a basis label is correct here precisely because both operands

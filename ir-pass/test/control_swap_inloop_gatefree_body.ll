@@ -68,7 +68,7 @@ loop:
   %c1 = icmp eq i32 %q, 5
   br i1 %c1, label %mid, label %merge
 mid:
-  call void @cq_phi(double 0x400921FB54442D18)  ; -O1 const-folds arg-0
+  call void @cq_phi(double 0x400921FB54442D18)  ; pre-3qlq: -O1 const-folded the register arg-0 to 5
   br label %merge
 merge:
   %inext = add i32 %i, 1

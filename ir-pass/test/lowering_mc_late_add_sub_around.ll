@@ -13,6 +13,10 @@
 ; pipeline-order account.
 ;
 ; So the CHECK chain below is also the statement that the late round is
+; ADDITIVE: it takes only the site Phase 1 left behind (the `-=`, emitted as
+; `cqrt_addc_i32` of the immediate negated in classical IR, `sub i32 0, %3`),
+; while the `+=` stays the earlier in-place `cqrt_addc_i32` of `%3`. (The end
+; of this sentence was cut by the 3qlq prep_a2 rewrite; restored 2026-10-05.)
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
 ; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)

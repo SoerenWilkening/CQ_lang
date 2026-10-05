@@ -10,6 +10,23 @@
 ; phase on f1, the inner on a fresh |0> AND node `g = f1 ∧ f2` (`cqrt_toffoli`),
 ; uncomputed and freed before the two flag strips.
 ;
+; ⚠ LEFT-DIRTY RAIL (measured 2026-10-05, bd zbz3 item 11; cq-opt sha256
+; 50a6f549 at 2ab46c39). The stream below never uncomputes or frees the outer
+; chain's `cq_template_fadd_f64_hl` rail (H_OP), and FCNT pins exactly three
+; frees (g and the two flags), so `q + 1.0` stays allocated and entangled with
+; q. This is NOT bd r2j3.7, whose pure op has no users: this fadd is live, read
+; by the outer mint and the outer strip. The flat outer region alone discharges
+; it (`cq_template_fadd_f64_hl_unc` + `cqrt_free`), and so does this nest with
+; the inner compare on a different register; an i32 nest (`q*3 > 5`, `q < 9`)
+; leaks the same way. That points at clause (d) of the M-B interior discharge
+; (`borrowedParentsUnmoved`, Uncomputation.cpp): the INNER strip
+; `cq_template_fcmp_olt_f64_hl_unc(flag, q, 9.0)` reads the borrowed parent q
+; inside the discharge window, and `preservesBorrowedParent` admits no `_unc`.
+; Stage 2b reports it as "3 template rail mint(s) of which 1 left dirty". Here
+; only a computational-basis measure of q follows, so the measured result is
+; unchanged, and a `cq_theta` on q after the nest declines loudly (`condition
+; predates a non-diagonal gate`). A Rule-6 leak to remove; not in bd yet.
+;
 ; WI-1 lands DETECTION only — recognized as the accept shape, declined
 ; transitionally `nested control flow`, so this XFAILs. WI-3 lands the emitter and
 ; this XPASSes — delete the XFAIL then.

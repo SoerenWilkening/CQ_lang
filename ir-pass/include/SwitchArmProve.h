@@ -4,9 +4,10 @@
 // The `SwitchClassify` driver does the structural recovery (merge block, content
 // phi, per-case arms, the G1/G3/G4/G5/G9/G10/G11 gates) and then dispatches to one
 // of the three per-content-class proofs declared here. Each proof returns true on
-// a clean would-be-ACCEPT shape (the WI-1 driver then transitionally declines
-// `switch`; WI-2/3/4 push a region) or fires the precise loud decline and returns
-// false. Pure SSA/CFG analysis — NO IR is mutated (Rule 9).
+// a clean ACCEPT shape (the driver then pushes a region; under WI-1 it declined
+// `switch` transitionally until WI-2/3/4 built the emitters) or fires the precise
+// loud decline and returns false. Pure SSA/CFG analysis — NO IR is mutated
+// (Rule 9).
 
 #ifndef CQ_IRPASS_SWITCH_ARM_PROVE_H_
 #define CQ_IRPASS_SWITCH_ARM_PROVE_H_

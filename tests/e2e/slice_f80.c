@@ -46,7 +46,7 @@
    width behind the 54 `…l` math.h variants. The ONLY layer that LINKS, so the
    only proof that the new frozen f80 symbols — cqrt_alloc_f80 / cqrt_ry_f80 /
    cqrt_measure_f80 and cq_template_fadd_f80 (+ its `_unc` twin)
-   and the intrinsic-backed cq_template_sqrt_f80 (+ `_unc`) — all resolve and
+   and the intrinsic-backed cq_template_sqrt_f80 (forward only) — all resolve and
    signature-match the hand-written core ABI (cq_runtime) and the generated
    template ABI (cq_templates / cq_intrinsic_templates) at the long-double width
    (Rule 2, Rule 16). A green `opt -verify` and passing .ll FileCheck are NOT
@@ -55,7 +55,7 @@
    On this x86-64 host `long double` IS x86_fp80, so CQ.h's _Generic dispatches
    the `long double` token to the f80 suffix (__LDBL_MANT_DIG__ == 64).
 
-   Three f80 lineages in a `__attribute__((noinline))` helper (the noinline
+   Two f80 lineages in a `__attribute__((noinline))` helper (the noinline
    boundary is LOAD-BEARING: whole-DAG uncompute is gated OFF in `main`, and at
    -O1 clang would otherwise inline `slice` so the uncompute never runs — same
    discipline as slice_f16.c):
@@ -67,8 +67,8 @@
    (B) DEAD Q+Q fadd — proves the fadd_f80 `_unc` TWIN. Two more f80 thetas →
        `fadd x86_fp80` (result dead), kept alive past -O1 DCE by the `d == 4` flag
        of a kickback `cq_phi`. The whole-DAG uncompute spine reverses the
-       dead fadd via `cq_template_fadd_f80_unc(out, a, b)` and frees each rail —
-       NO cqrt_copy_f80 (an f80 carrier is an angle, never data).
+       dead fadd via `cq_template_fadd_f80_unc(out, a, b)` and frees the fadd
+       rail and the flag (h6, h7; p,q stay allocated) — NO cqrt_copy_f80.
 
    cq_theta/cq_phi/cq_measure resolve from CQ.h, force-included by run_slice.sh. */
 #include <math.h>

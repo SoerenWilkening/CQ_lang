@@ -131,7 +131,7 @@ declare i32 @cq_measure_si32(i32)
 define void @example(i32 %u0) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
-  %c = icmp slt i32 %q, %q                                 ; SSA-distinct, one rail
+  %c = icmp slt i32 %q, %q                                 ; one SSA value, one rail (pre-3qlq: SSA-distinct)
   %s = select i1 %c, i32 11, i32 22
   %m = call i32 @cq_measure_si32(i32 %s)
   ret void

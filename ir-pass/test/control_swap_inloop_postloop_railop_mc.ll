@@ -12,6 +12,21 @@
 ;
 ;   @mc_plain      — `int r = q + 9; return cq_measure(r);` with NO later read of
 ;                    `q`. M-C (`classifyInPlaceReassignment`, ArithLowering.cpp)
+;                    FIRES: the add is emitted IN PLACE as `cqrt_addc_i32(.., 9)`
+;                    on the very register the loop rail owns.
+;   @mc_then_theta — the same add with `q` still measured afterwards. M-C's
+;                    position-aware deadness loop (G6, G7) REFUSES, and the add
+;                    falls back to the out-of-place `cq_template_add_i32_hl` on
+;                    a fresh rail, so the later `cqrt_measure_i32` of the
+;                    register reads the pre-add value.
+;
+; The exclusion is therefore sound not because M-C never fires in place, but
+; because M-C refuses in exactly the case a later record read exists; the
+; dependency is written down at both ends (`collectRailGates` in
+; LoopLowering.cpp and the G6/G7 site in ArithLowering.cpp), and LoopLowering's
+; note records how weakly this file pins it (only relaxing BOTH G6 and G7
+; reddens it). (These lines were cut by the 3qlq prep_a2 rewrite; restored
+; 2026-10-05 against the CHECK block below.)
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
 ; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)

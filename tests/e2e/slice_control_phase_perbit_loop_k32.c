@@ -11,10 +11,10 @@
    redundancy. The measurement is a LINE COUNT of stage-2 IR at K=4 vs K=32,
    which is a measurement and not a ctest gate (the 8h7d.5 precedent for
    `slice_control_grover_loop_dynamic`); this slice is the artifact it is taken
-   on, and its golden is 32 trips of the same five-line region.
+   on, and its golden is 32 trips of the same nine-line region.
 
-   EXPECTED TRACE SHAPE: 32 × (lshr_hl, and_hl, icmp mint, cqrt_rz_i1(f, 0.3),
-   strip, two data `_unc`, cqrt_free). ONE copy in the lowered IR.
+   GOLDEN TRACE SHAPE: 32 × (and_hl, icmp mint, x, cqrt_rz_i1(f, 0.3), x,
+   strip, and_hl_unc, two cqrt_free). ONE copy in the lowered IR.
 
    PRE-INCREMENT DISPOSITION: the ORACLE (pre-3qlq, commit 52d7764,
    $SP/wt/pre-3qlq/build/ir-pass/cq-opt) DECLINES exit 1 — `cq controlled lowering: control flow under quantum control`

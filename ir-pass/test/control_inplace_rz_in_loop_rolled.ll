@@ -44,12 +44,13 @@
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=ACNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=MDCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 
 declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
@@ -60,7 +61,7 @@ entry:
   %q0 = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   br label %loop
 loop:
-  %q = phi i32 [ %q0, %entry ], [ %q, %merge ]       ; loop-carried routed base
+  %q = phi i32 [ %q0, %entry ], [ %q, %merge ]       ; loop-carried register (self-carry)
   %i = phi i32 [ 0, %entry ], [ %inext, %merge ]      ; classical induction
   %c1 = icmp sgt i32 %q, 5                             ; TAINTED condition
   br i1 %c1, label %mid, label %merge
@@ -127,10 +128,16 @@ exit:
 ; NOROUTE-NOT: call void @cqrt_cswap
 ; NOROUTE-NOT: call i32 @cqrt_alloc_i32(i32 0)
 ; NOROUTE-NOT: call void @cqrt_rz_i32_controlled(
-; NOROUTE-NOT: under quantum control
-; NOROUTE-NOT: control flow inside a loop body
-; NOROUTE-NOT: loop-carried rail has multiple in-place consumers
-; NOROUTE-NOT: error
+;
+; STDERR (bd zbz3, 2026-10-05). The four diagnostic negatives below used to be
+; NOROUTE lines over the stdout IR, where a diagnostic never appears, so they
+; could not fail. A DS_Error decline already fails the first RUN line (it has no
+; `not`, so a non-zero exit is a lit failure); reading stderr is what lets them
+; also catch one of these strings printed as a warning on an exit-0 run.
+; SILENT-NOT: under quantum control
+; SILENT-NOT: control flow inside a loop body
+; SILENT-NOT: loop-carried rail has multiple in-place consumers
+; SILENT-NOT: error
 
 ; ---------------------------------------------------------------------------
 ; COUNTS — ONE PATTERN PER PREFIX.  Two counts in one prefix silently become

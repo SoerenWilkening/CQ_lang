@@ -74,16 +74,16 @@
    flag. NO fresh-minting `_inv`, NO added measurement (Rules 5/6), NO
    `cqrt_cswap`.
 
-   Chain 2 (later in program) reverses first. Exactly FIVE frees (h4,h3 then
-   h2,h1,h0) — one per allocated rail, none double-freed.
+   Each chain reverses right after its own kickback, in program order (chain 1
+   first). Exactly FOUR frees (h1,h2 then h5,h6): each chain rail, then its flag.
 
-   IT WAS SIX BEFORE M-C INCREMENT 2c (bd test_C_libtooling-6uqc), and the
-   arithmetic of that change is the point rather than a caveat: `b = b ^ 9` used
-   to MINT a rail (`cq_template_xor_i32_hl`) and therefore needed its own free;
-   it now mutates the `shl` rail in place (`cqrt_xorc_i32`), so there is one
-   fewer alloc AND one fewer free. A free that disappears together with its
-   alloc is the mechanism working; a free that disappears alone would be the
-   Rule-6 defect this slice exists to catch.
+   The three cq_theta registers (h0, h3, h4) are neither reverse-rotated nor
+   freed. It was SIX frees before M-C Increment 2c (bd test_C_libtooling-6uqc):
+   `b = b ^ 9` used to MINT a rail (`cq_template_xor_i32_hl`) with its own free,
+   and now mutates the `shl` rail in place (`cqrt_xorc_i32`), one fewer alloc
+   AND one fewer free. It was FIVE until 3qlq Inc 1 (a3c1513d), whose golden
+   dropped the theta registers' reverse Ry and free. A free that disappears
+   without its alloc would be the Rule-6 defect this slice exists to catch.
 
    TWO distinct `_unc` symbols are now exercised at the link layer — the BARE QQ
    `cq_template_mul_i32_unc` (the WI-6-caught fix) and
@@ -100,7 +100,7 @@ void slice(int x, int y) {
     /* (1) linear Q+C (_hl) chain, dropped without measure. */
     int a = x; cq_theta(&a, 0.25); /* taint x -> handle (alloc + ry)            */
     int b = a << 2;              /* shl_hl                                    */
-    b = b ^ 9;                   /* xor_hl                                    */
+    b = b ^ 9;                   /* cqrt_xorc_i32, in place on the shl rail   */
     if (b > 100) cq_phi(0.5);       /* kickback keep-alive (rz_i1 on flag)       */
 
     /* (2) Q+Q (_qq) product, dropped without measure — the bare-QQ `_unc`. */

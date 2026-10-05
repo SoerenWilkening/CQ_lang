@@ -59,7 +59,7 @@ entry:
   %c = icmp sgt i32 %p, 5                          ; condition on qubit P
   br i1 %c, label %then, label %else
 then:
-  call void @cq_phi(double %a)  ; arms rotate derived Q
+  call void @cq_phi(double %a)  ; kicked back onto P's flag; Q is untouched
   br label %merge
 else:
   call void @cq_phi(double %b)

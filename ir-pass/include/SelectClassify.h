@@ -297,11 +297,11 @@ bool collectCondTree(llvm::Value *Root, CondTree &Tree,
 // (`ControlDetect`'s select scan) guarantees `taint.Tainted.count(getCondition())`
 // — gate 1 re-checks defensively. No IR is mutated.
 //
-// WI-1 (this increment, emission unbuilt): an ACCEPT declines TRANSITIONALLY
-// (`control flow`) instead of pushing — pushing a `SelectRegion` now would
-// reach `emitRegion`'s null-block dereference (there is no `SelectRegion`
-// dispatch until WI-3), so lowering nothing is the Prime-Directive-safe
-// placeholder. WI-3 flips the ACCEPT branch to the push above.
+// HISTORY: under WI-1 (emission unbuilt) an ACCEPT declined TRANSITIONALLY
+// (`control flow`) instead of pushing, because there was no `SelectRegion`
+// dispatch before WI-3. WI-3 flipped the ACCEPT branch to the push above, which
+// is what `classifySelectRegion` does today (`plan.Regions.push_back` in
+// SelectClassify.cpp).
 //
 // `wd` / `DT` / `LI` are threaded for GATE 3's `classifyAngleSelect` hook (bd
 // drbq Inc 2b): the width fence asks the MINT's own expression

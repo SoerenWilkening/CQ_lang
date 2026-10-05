@@ -15,15 +15,15 @@
    and gets no symbol for it (Rule 15).
 
    THE CLAIM THIS SLICE MEASURES is D4's: the idiom lowers ROLLED, with lowered-IR
-   size INDEPENDENT of K. `i` is the classical induction variable, so `(q >> i)`
-   is a tainted `lshr` against a classical operand (cq_template_lshr_i32_hl) and
-   the compare is loop-VARIANT — LICM cannot hoist it, which is the precondition
-   CLAUDE.md's row W records for the in-place family.
+   size INDEPENDENT of K. `i` is the classical induction variable; -O1 rewrites
+   `(q >> i) & 1` as `q & (1 << i)`, a tainted `and` against a classical mask
+   (cq_template_and_i32_hl) tested `== 0`, and the compare is loop-VARIANT — LICM
+   cannot hoist it, which is the precondition CLAUDE.md's row W records.
 
-   EXPECTED TRACE SHAPE, per trip: lshr_hl -> and_hl -> icmp_eq_hl mint ->
-   cqrt_rz_i1(flag, 0.3) -> icmp_eq_hl_unc strip -> the two data `_unc` ->
-   cqrt_free(flag). Four trips. No cswap, no work rail, no `_controlled`, and
-   the ONLY Rz width in the trace is i1.
+   GOLDEN TRACE SHAPE, per trip: and_hl -> icmp_eq_hl(.., 0) mint -> cqrt_x ->
+   cqrt_rz_i1(flag, 0.3) -> cqrt_x (the arm is the `!= 0` edge) -> icmp_eq_hl_unc
+   strip -> and_hl_unc -> cqrt_free(and rail), cqrt_free(flag). Four trips. No
+   cswap, no work rail, no `_controlled`, and the ONLY Rz width is i1.
 
    Its golden must be BYTE-IDENTICAL to slice_control_phase_perbit_loop_unrolled;
    the gate is `e2e-phase-perbit-loop-twin-identical`.

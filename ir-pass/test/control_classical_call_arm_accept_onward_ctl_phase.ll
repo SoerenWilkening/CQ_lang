@@ -80,7 +80,7 @@ merge:
   %c2 = icmp sgt i32 %y, 7                            ; tainted only AFTER the re-seed
   br i1 %c2, label %ph, label %m2                     ; NEW tainted control on %out
 ph:
-  call void @cq_phi(double 0.25)  ; ONWARD controlled phase on %out
+  call void @cq_phi(double 0.25)  ; ONWARD branch phase, kicked back onto the icmp(%out, 7) flag
   br label %m2
 m2:
   %m = call i32 @cq_measure_si32(i32 %y)

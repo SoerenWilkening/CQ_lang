@@ -96,9 +96,11 @@ struct ControlRegion {
   // condition. For a plain compare it is the `CmpInst` itself; for a
   // compound `&&`/`||` it is the flag-combination `SelectInst`
   // (`select i1 %fa, i1 %fb, i1 false` / `…, i1 true, i1 %fb`, PRD §2.5),
-  // whose sub-compares live in `CondA`/`CondB`. Lowered as the control flag
-  // by `ControlFlag`; the original instruction stays until linearization
-  // erases it (§1.3, keeps the `br i1` well-typed mid-pass).
+  // whose sub-compares once lived in `CondA`/`CondB` (deleted, below). The
+  // emitters mint the control flag from it with `lowerCompareToFlag` (per leaf;
+  // `CondTreeEmit` combines a compound tree); the `ControlFlag` lowering this
+  // once named was excised in 7cde677. The original instruction stays until
+  // linearization erases it (§1.3, keeps the `br i1` well-typed mid-pass).
   llvm::Value *Condition = nullptr;
 
   // ⚠ THE WP5 COMPOUND-CONDITION FIELDS (`Conj`/`CondA`/`CondB`/`FlagA`/`FlagB`)
@@ -417,8 +419,10 @@ struct ControlRegion {
   // is null (no default gate body / nothing to splice) and the default angle
   // base rides the `Pred` (switch-block) φ edge instead of an `Arm` edge; the
   // default control is implicit (no case matched ⇒ no gate, the unconditional
-  // base angle), so `lowerGatedSwitch` skips the ¬OR default substitution and
-  // the OR-fold entirely. False for a distinct default block (gated or empty).
+  // base angle). `SwitchClassify` writes it and NOTHING reads it today: its
+  // reader, `lowerGatedSwitch` (which used it to skip the ¬OR default
+  // substitution and the OR-fold), was excised in 7cde677. False for a
+  // distinct default block (gated or empty).
   bool SwitchDefaultDirect = false;
 
   // npu.5/.6 (MUX-EXCH) — vocabulary of the WP18 gated-switch lowering
@@ -444,26 +448,24 @@ struct ControlRegion {
   // time as a `cqrt_x` bracket on the inner root inside the conjunction node
   // (`CondNetwork::Node::NegR`), never as a second flag mint.
   bool InnerArmNegated = false;
-  // Nested-AND intermediate guard block (WP5, PRD §2.7): for the un-flattened
-  // `if (a) { if (b) gate; }` shape, `Pred -[a]-> {Mid, Merge}`,
-  // `Mid -[b]-> {Arm, Merge}`, `Arm -> Merge`. `Mid` holds the inner compare
-  // `CondB` + the inner `br i1`; it is spliced out at linearization with `Arm`.
-  // Null for a flat (WP3) or compound-`&&`-select (single-block-condition)
-  // region. When set, `Conj == ConjAnd`, `CondA` is the outer compare, `CondB`
-  // the inner — so nesting reuses the conjunction flag machinery verbatim.
+  // Nested-AND intermediate guard block (WP5, PRD §2.7) for the un-flattened
+  // `if (a) { if (b) gate; }` shape (`Pred -[a]-> {Mid, Merge}`,
+  // `Mid -[b]-> {Arm, Merge}`). WRITTEN AND READ BY NOTHING today: its
+  // `Conj`/`CondA`/`CondB` partners are deleted (above), and the depth-2
+  // register-free phase nest carries its inner condition in `InnerCondition`
+  // and its blocks in `Arm`/`ArmFalse`. Vocabulary of the excised generation.
   llvm::BasicBlock *Mid = nullptr;
 
-  // Nesting depth (0 = outermost) and the enclosing region, for the
-  // single-flag AND model (PRD §2.7). For a nested region (`Depth > 0`),
-  // `ParentIdx` is the index of the enclosing region in `ControlPlan::Regions`
-  // (an index, not a pointer — the region list is a `SmallVector` that may
-  // reallocate as detection pushes; `kNoParent` ⇒ outermost). `ParentFlag` is
-  // resolved from the parent's `Flag` at lowering time (the outer→inner Depth
-  // sort guarantees the parent's flag is already minted, IMPLEMENTATION
-  // §"Nesting"). The inner region's own condition flag is then AND-combined
-  // with `ParentFlag` into a single `f_both` (`FlagConjunction`), and every
-  // inner controlled op uses that one flag (§1.2). WP3/WP4's flat fixtures
-  // leave `ParentIdx == kNoParent` and `ParentFlag` null.
+  // Nesting depth (0 = outermost) and the enclosing region's index in
+  // `ControlPlan::Regions` (an index, not a pointer; `kNoParent` ⇒ outermost),
+  // for the single-flag AND model of the excised generation (PRD §2.7).
+  // NOTHING WRITES `Depth` OR `ParentIdx` today (since 3qlq nothing pushes a
+  // Depth-1 region), so every region keeps the defaults 0 / `kNoParent`;
+  // `SwapRouteEmit.cpp` still reads them (the cross-region pre-flight's
+  // parent/child exemption and the dispatch's `Depth > 0` skip). `ParentFlag`
+  // is written and read by nothing: it was to be resolved from the parent's
+  // `Flag` (deleted, above) and AND-combined with the inner flag into one
+  // `f_both` by `FlagConjunction`, which was excised in 7cde677.
   static constexpr unsigned kNoParent = ~0u;
   unsigned Depth = 0;
   unsigned ParentIdx = kNoParent;

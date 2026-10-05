@@ -34,13 +34,13 @@
    and with nothing else; that single diagnostic was the entire wall between CQ
    and a repeatable Grover iteration.
 
-   WHY THIS SHAPE, and not a `for` loop. A loop over S-O-S†-R0 is the natural
-   spelling and it DECLINES today for an unrelated reason — a flat tainted
-   region whose entry is on a CFG cycle is `control flow inside a loop body`
-   (the d8jl guard), and the M-A record guard has its own in-loop over-decline
-   (bd test_C_libtooling-58tc). Unrolling two iterations by hand is what isolates
-   THIS increment's change; the loop spelling is the next frontier and is marked
-   as such in example/grover/grover_loop_frontier.c.
+   WHY THIS SHAPE, and not a `for` loop. When this slice was written the loop
+   spelling DECLINED (d8jl: `control flow inside a loop body`; bd 58tc's in-loop
+   M-A over-decline), so unrolling by hand isolated THIS increment's change. The
+   loop spelling lowers ROLLED since bd 8h7d.5: slice_control_grover_loop.c (its
+   golden == its unrolled twin's, e2e-grover-loop-twin-identical) and
+   slice_control_grover_loop_offset.c (the volatile `q += off` form). The file
+   once named here, example/grover/grover_loop_frontier.c, is not in this repo.
 
    WHY `off` IS `volatile`, and it is load-bearing (Rule 9). Written as literal
    `q += 3; … q -= 3;` pairs, clang -O1 reassociates and cancels them on the

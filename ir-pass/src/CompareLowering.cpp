@@ -273,8 +273,8 @@ static Value *lowerCompareImpl(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
   // `ClassicalCallArmEmit`, `AbortParkEmit`, `GuardedStoreArmEmit`,
   // `lowerControlledIOSinks`), so recording at THIS site — rather than at each
   // emitter — makes the record complete BY CONSTRUCTION. That is deliberate and
-  // it is the lesson of `markBranchPhaseGate` (six call sites, four files, a
-  // seventh emitter re-opens F-L7-1 silently) and of `markRailCondRead`, whose
+  // it is the lesson of `markBranchPhaseGate` (six call sites, in four files
+  // then and three now, and a new emitter re-opens F-L7-1 silently) and of `markRailCondRead`, whose
   // FIRST spelling already missed a site (the 4.3 nest's conjunction toffoli,
   // FIX_B1_R2.md). A record written by the shared mint cannot be forgotten; the
   // failure mode of a NEW caller is therefore an over-DECLINE, which is the

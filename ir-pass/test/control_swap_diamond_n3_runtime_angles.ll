@@ -60,8 +60,8 @@ entry:
   br i1 %k, label %arm, label %merge
 arm:
   call void @cq_phi(double %a)
-  call void @cq_phi(double %b)  ; merge-feeding spine
-  call void @cq_phi(double %c)  ; FAN-OUT: second use of %q
+  call void @cq_phi(double %b)  ; 2nd gate on the one flag (pre-3qlq: the merge-feeding spine)
+  call void @cq_phi(double %c)  ; 3rd gate on the one flag (pre-3qlq: the fan-out, a second use of %q)
   br label %merge
 merge:
   %m  = call i32 @cq_measure_si32(i32 %q)

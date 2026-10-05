@@ -21,7 +21,7 @@
    fcmp — pre-W5 this loud-declined (the zco4 Inc-1 finding); W5 claims it,
    PredMux flattens the diamond to a tainted fp select, and the kjd1 merge
    lowers it: flag mint (fcmp_olt _hl) → |0⟩ out rail → controlled copy of
-   each arm value, the ¬flag one cqrt_x-bracketed → fcmp _inv strip → ONE
+   each arm value, the ¬flag one cqrt_x-bracketed → fcmp _hl_unc strip → ONE
    cqrt_free (the flag). Both arm chains and the out rail stay allocated
    (leaked deliberately — the copy marks the DAG NotClosed; freeing an
    entangled source is a hidden measurement, Rules 6/8).

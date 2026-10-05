@@ -321,12 +321,12 @@ add_test(NAME e2e-slice-control-phase-ifelse-derived
 # The swap route is RETIRED for value arms. The old stream was `flag mint -> |0>
 # rail -> cswap in -> chain verbatim on the rail -> cswap back -> alloc out ->
 # cqrt_copy_i32(p,out) -> cswap -> reversed chain _unc -> cswap -> rail free ->
-# icmp_inv strip -> flag free` (4 cswap = 4W Toffoli + 8W CNOT, one W-bit work
+# icmp_sgt_i32_hl_unc strip -> flag free` (4 cswap = 4W Toffoli + 8W CNOT, one W-bit work
 # rail, TWO frees). The new stream hoists the chain onto the ORIGINAL p and
 # merges with the 4.4 controlled-XOR copy pair: `chain on p (M-C converts the
 # in-place links on the FRESH intermediate rails) -> flag mint -> alloc out ->
 # copy_controlled(f, armvalue, out) -> x -> copy_controlled(f, p, out) -> x ->
-# icmp_inv strip -> ONE free`. The whole diff was audited line by line and is
+# icmp_sgt_i32_hl_unc strip -> ONE free`. The whole diff was audited line by line and is
 # exactly that substitution (progress record: impl_inc2.md AUDIT 1).
 #
 # THE WITNESS IS slice_control_value_diamond_twin.c — the PRE-HOISTED SELECT
@@ -572,7 +572,7 @@ add_test(NAME e2e-slice-control-cond-datause
 # phi) and lowers to the §5a merge stream: flag mint -> |0> out rail alloc ->
 # cqrt_copy_i32_controlled the TRUE operand (q) on the flag -> X-bracket +
 # cqrt_copy_i32_controlled the FALSE operand (x, materialized via cqrt_alloc) on
-# ¬flag -> icmp_inv strip -> the ONE cqrt_free (the flag). q / out / the
+# ¬flag -> icmp_sgt_i32_hl_unc strip -> the ONE cqrt_free (the flag). q / out / the
 # materialized scratch are LEFT ALLOCATED (freeing an operand entangled with out
 # is a hidden measurement, Rule 6/8); ZERO cqrt_cswap, ZERO controlled rotations,
 # no surviving `phi i32`, EXACTLY ONE free (the value diamond has reused this merge
@@ -588,7 +588,7 @@ add_test(NAME e2e-slice-control-select
 
 # fp-DATA select un-staging (fp-data-select-PRD §8, issue kjd1): the branchless
 # fp ternary `(q > 0.5) ? q+1.0 : 0.25` -> `select` over an fcmp-ogt condition,
-# the FIRST fcmp-minted merge (cq_template_fcmp_ogt_f64_hl / _inv, not icmp).
+# the FIRST fcmp-minted merge (cq_template_fcmp_ogt_f64_hl / _hl_unc, not icmp).
 # The only layer that LINKS the new frozen-designate cqrt_copy_f64_controlled.
 # The golden ALSO asserts the §6 uncompute shape: the copied theta-derived fadd
 # chain is deliberately LEAKED (its _controlled user marks the DAG NotClosed) —

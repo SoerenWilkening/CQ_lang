@@ -332,9 +332,14 @@ void declineStaleRecordOps(Module &M, TaintSet &taint) {
   // ALIAS (`%qd = cq_phi(%q, ·)`) shared `%q`'s physical wire, so a chained
   // theta consuming the SIBLING name `%q` staled it too — the wire walk closes
   // every seed backward through such arg-0 hops before walking forward
-  // (test_C_libtooling-6j1; fixtures
-  // lowering_reject_stale_record_alias_{sibling,chain}.ll, accept twins
-  // lowering_stale_record_alias_{before_theta,producer}.ll; migrated at 3qlq).
+  // (test_C_libtooling-6j1). That alias no longer occurs: the 3qlq migration
+  // removed it from the fixtures written for it, `..._alias_chain.ll` was
+  // deleted at ae840fac as an IR duplicate of
+  // lowering_reject_stale_record_alias_sibling.ll, and the three survivors
+  // carry no diagonal hop: `..._reject_..._alias_sibling.ll` (decline) and
+  // lowering_stale_record_alias_before_theta.ll (accept) read `%q` after /
+  // before a chained theta on it, and lowering_stale_record_alias_producer.ll
+  // has no chained theta at all.
   //
   // ── WHERE THIS RUNS, AND THE L1 ANSWER (bd 3d8q) ─────────────────────────
   // This sweep is called from FOUR slots and needs no fifth:

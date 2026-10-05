@@ -54,7 +54,7 @@ define i32 @slice(i32 %u0) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   %o = load volatile i32, ptr @off, align 4
-  %d = add nsw i32 %q, %o                       ; the ROUTED BASE — in-place addc
+  %d = add nsw i32 %q, %o                       ; the COMPARED REGISTER — in-place addc on %q's rail
   %c = icmp eq i32 %d, 5
   br i1 %c, label %arm, label %merge
 

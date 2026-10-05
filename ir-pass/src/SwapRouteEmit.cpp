@@ -80,9 +80,14 @@ void scrubTaint(Instruction *I, TaintSet &taint) {
     auto &PC = taint.PhiCalls;
     PC.erase_value(CI);
     // M-B Increment 6's two EMITTER-RECORDED sets (bd test_C_libtooling-160a
-    // Rule-13 round, finding F3). This module is their sole writer, so it is
-    // also where a recorded key must be dropped if the call it names is ever
-    // erased — a dangling `CallInst *` reused by a later allocation would make
+    // Rule-13 round, finding F3). This module is NOT their sole writer (it was
+    // when this was written): `SwitchRouteEmit.cpp` and `AngleSelectEmit.cpp`
+    // also insert into `DischargedFlagGates`, and `RestoringRoutes` has no
+    // writer at all (below). This TU-local scrub drops a key only when THIS
+    // module erases the call; `DischargedFlagGates` is a `ScrubPtrSet`
+    // (ScrubOnDelete.h), which drops a deleted key whoever erases it. The
+    // hazard both guard against: a dangling `CallInst *` reused by a later
+    // allocation would make
     // `ChainWalk::isInteriorConsumer` / `routeGroupFullyInside` answer YES for
     // an unrelated call, i.e. discharge a chain against a route that never
     // restored anything.

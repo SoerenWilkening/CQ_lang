@@ -343,7 +343,15 @@ Value *diagonalAliasHit(Value *Routed, const SmallPtrSetImpl<Value *> &Prov) {
 // FORWARD of the base as often as behind it. Inc 1 shipped R6 over the DIRECT
 // users of the base alone and a one-hop diagonal alias evaded it in BOTH
 // directions (`control_inplace_ry_reject_stale_diag_alias_{forward,backward}.ll`,
-// both measured wrong-VALUE silent miscompiles). That is the bd 8h7d.5 F-1/F-3
+// both measured wrong-VALUE silent miscompiles; both fixtures are gone: the 3qlq
+// migration removed their register-form `cq_phi` hop, `..._backward` was merged
+// into `..._forward` at 402a5643, and `..._forward` was deleted at ae840fac as an
+// IR duplicate of `control_inplace_ry_reject_stale_measure.ll`). The FORWARD
+// member hop is pinned today by `control_inplace_ry_reject_stale_chained_theta.ll`
+// (a chained `cq_theta`) and the `control_inplace_ry_reject_lifted_phi_*.ll`
+// family (a classical join φ). No fixture carrying R6's diagnostic pins the
+// BACKWARD hop in a straight-line region (scanned 2026-10-05; the diagonal
+// spelling no longer exists). That is the bd 8h7d.5 F-1/F-3
 // lesson one epic later: the fence was written over the CHAIN — one SSA name —
 // when the object it protects is the RAIL. So both questions now read ONE member
 // set built by ONE walk, and `WireDir` is the only thing that differs.
@@ -388,8 +396,9 @@ Value *diagonalAliasHit(Value *Routed, const SmallPtrSetImpl<Value *> &Prov) {
 //     so. Measured cost: `int r = 5 - p; if (q==5) cq_theta(&r,.9); …
 //     cq_measure(p);` declines R6, while its (pre-3qlq register-form) `cq_phi`
 //     twin accepted and emitted `cq_template_sub_i32_lh(5, h1)` on a fresh rail
-//     where `p` was never touched. Over-declining is safe (Prime Directive), so
-//     this is recorded and not fixed — but PRD §11.5 obligation 2 makes NARROWING
+//     where `p` was never touched. The decline is loud, so it is never silent,
+//     but it is an over-decline to remove (R1), not a safe margin; it is
+//     recorded and not yet fixed — and PRD §11.5 obligation 2 makes NARROWING
 //     this hop a Rule-13 change, and whoever performs it must not reason from
 //     the M-C-fence premise for the `sub` half: it does not apply.
 //
@@ -438,8 +447,9 @@ Value *diagonalAliasHit(Value *Routed, const SmallPtrSetImpl<Value *> &Prov) {
 //
 // KNOWN OVER-DECLINE, stated so it is not rediscovered as a bug: the add/xor hop
 // refuses `if (q==5) cq_theta(&r,·)` when `r = q + 1`, even though M-C would
-// in fact lower that out of place. Over-declining is always safe (Prime
-// Directive) and the shape is outside the Inc-1 accept class either way.
+// in fact lower that out of place. The decline is loud, so it is never silent,
+// but it is an over-decline to remove (R1), not a safe margin; the shape is
+// outside the Inc-1 accept class either way.
 namespace {
 
 enum class WireDir {
@@ -535,7 +545,8 @@ void railWireClosure(Value *V, TaintSet &Taint, WireDir Dir,
       Order->push_back(W);
     // FORWARD, asked of every TAINTED member (including the roots the backward
     // hops bottom at — that is how a sibling alias off the ROOT is found, which
-    // is the `..._stale_diag_alias_backward.ll` shape).
+    // was the shape of the deleted `..._stale_diag_alias_backward.ll`; see the
+    // header of this walk for what pins the closure today).
     //
     // The taint gate is not decoration. Every hop above pushes only tainted
     // values EXCEPT the backward `cq_phi_<sfx>` one (retired register form),
@@ -6321,7 +6332,8 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       // one physical rail, and the shipped direct-user scan saw `mark` (a user,
       // not a read) while `cq_measure(mark)` sat one hop out and lowered to a
       // measurement of the POST-Ry register. Measured, both directions, both verify- and
-      // stage-2b-clean: `..._reject_stale_diag_alias_{forward,backward}.ll`.
+      // stage-2b-clean: `..._reject_stale_diag_alias_{forward,backward}.ll`, both
+      // deleted since (see `railWireClosure`'s header for what pins it today).
       const Instruction *BI = Region.Pred ? Region.Pred->getTerminator()
                                           : nullptr;
       if (!BI || !DT) {

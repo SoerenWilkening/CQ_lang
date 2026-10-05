@@ -2,7 +2,7 @@
    test_C_libtooling-bkpz.6): the RSSA tainted-switch constant DATA-MUX (preload +
    XOR-delta controlled copy), the only test layer that LINKS and so the ONLY
    proof that the data-mux switch emitter's symbol set (the eq-flag template +
-   `_inv`, the XOR-delta cqrt_alloc, and cqrt_copy_i32_controlled) resolves and
+   its `_unc` strip, the XOR-delta cqrt_alloc, cqrt_copy_i32_controlled) resolves and
    signature-matches against libcq_runtime (Rule 2, Rule 16).
 
    SOURCE INTENT (all-ConstantInt merge — a compile-time multiplexer, the §4C
@@ -33,9 +33,9 @@
    (7^3=4, 9^3=10, 11^3=8), and fires cqrt_copy_i32_controlled(f_i, d_i, out) —
    out ^= d_i iff f_i. Distinct literals => mutually exclusive flags => at most one
    copy fires: matched case k gives out = v_d ^ (v_k ^ v_d) = v_k; no match leaves
-   out = v_d. Then each flag is stripped with icmp_eq_inv(q) (q==q0 — the copies
-   write out, never q) and freed. RAUW merge->out — the measure reads the muxed
-   answer.
+   out = v_d. Then each flag is stripped with icmp_eq_i32_hl_unc(f_i, q, c_i)
+   (`_inv` when written; bd 8txa; the copies write out, never q) and freed.
+   RAUW merge->out — the measure reads the muxed answer.
 
    EXACTLY THREE frees (the N=3 flags only). out (the result), q, and every XOR-
    delta scratch are NEVER freed — a benign classical leak (Rule 6); a free here

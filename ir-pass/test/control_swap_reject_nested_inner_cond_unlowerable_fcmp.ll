@@ -9,7 +9,9 @@
 ; only AFTER the outer diamond was already mutated — a mutate-then-decline (Rule 9
 ; violation). jvun gates BOTH conditions' predicates in `recoverRegionTree`
 ; (detection), so the out-of-scope inner condition declines BEFORE any emit.
-; Over-declining is always safe (Prime Directive). After 8rvn
+; The decline is loud, so it is never silent, but it is an over-decline to
+; remove (R1): `fcmp false` is the constant 0 and needs no template. No bd issue
+; tracks it as of 2026-10-05. After 8rvn
 ; (Phase 7.1 iw81.4 §4.4) broadened the fcmp set to the full ordered/unordered
 ; comparison family, `true`/`false` are the only out-of-set fcmp predicates left
 ; — so `false` is the standing residual for the inner condition here.

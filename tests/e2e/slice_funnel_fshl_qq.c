@@ -56,8 +56,8 @@
      - dead = (c<<8)|(d>>24) -> fshl.i32(c,d,8), guards a kickback cq_phi, then
        dead -> reverse-play: the void cq_template_fshl_i32_qql_unc(out,c,d,8)
        recompute-and-XOR from the still-LIVE c,d,8 zeroes the rail, which is then
-       freed (Rule 6), and c,d are ry-reversed + freed. Sources kept live through
-       the forward pass; every rail freed only at |0> (0 double-frees).
+       freed (Rule 6), then the flag; c,d are NOT ry-reversed or freed (the golden
+       frees h4 and h5 only). Every freed rail is freed at |0> (0 double-frees).
 
    `slice` is __attribute__((noinline)) so the trace deterministically reflects the
    slice() lowering (main's discarded-result inline copy drops the dead-funnel

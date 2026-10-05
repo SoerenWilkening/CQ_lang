@@ -615,7 +615,8 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // S8 says about wires. The real re-proof triggers are (i) a change to what
   // `_hl_unc` WRITES, and (ii) a SECOND minter of that symbol with different
   // effects. Readers: `ChainWalk.cpp:767` (that clause) and `:836`
-  // (`isInteriorTerminalHandle`); `SwapRouteEmit.cpp:113` scrubs the set.
+  // (`isInteriorTerminalHandle`); `SwapRouteEmit.cpp`'s `scrubTaint` scrubs the
+  // set for that module's erasures, and the set is a `ScrubPtrSet`.
   //
   // `Strip` null is UNREACHABLE for the same two reasons the mint's null is
   // (step 0b's lockstep re-ask, and `DS_Error` → `exit(1)`); the

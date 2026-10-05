@@ -6,8 +6,11 @@
 ;     v = tbl[a & 3];  x = v * 3;  y = x * x;  return measure(y) + measure(v);
 ;
 ; WHAT IT EXERCISES THAT NOTHING ELSE DOES. `preservesBorrowedParent` is a
-; deliberately two-row whitelist (a diagonal `cqrt_rz_<W>` on the parent, and a
-; forward reassigning producer); everything else — `cqrt_measure_*` included —
+; deliberately narrow whitelist, two rows when this was written and four today
+; (Uncomputation.cpp: (1) a diagonal `cqrt_rz_<W>` on the parent, (1b) its
+; `_controlled` twin, vacuous since 3qlq, (2) a forward reassigning producer,
+; (3) since bd rhk5 a Phase-6 clone call proven read-only on the parent);
+; everything else — `cqrt_measure_*` included —
 ; counts as a MUTATION and must then clear the positional interval scan. The
 ; shipped RIGHT-disjunct fixtures all clear a `cqrt_ry` (the chained theta) or,
 ; pre-3qlq, a Phase-4 route. This is the third kind of "mutation": a COLLAPSE.

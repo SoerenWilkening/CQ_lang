@@ -72,7 +72,7 @@ entry:
   %q0 = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   br label %loop
 loop:
-  %q = phi i32 [ %q0, %entry ], [ %q, %merge ]       ; loop-carried routed base
+  %q = phi i32 [ %q0, %entry ], [ %q, %merge ]       ; loop-carried register (self-carry)
   %i = phi i32 [ 0, %entry ], [ %inext, %merge ]      ; classical induction
   %c1 = icmp sgt i32 %q, 5                             ; TAINTED (quantum) condition
   br i1 %c1, label %mid, label %merge

@@ -1,7 +1,10 @@
 ; lowering_reject_fma_result_as_angle.ll — DECLINE: a TAINTED, NOW-RECOGNIZED
 ; ternary fma result (`@llvm.fma.f64(q, r, s)`) used as a rotation ANGLE
 ; (PRD-iw81.4 §7 hazard 1 / decline-matrix D1, the wd2p ternary counterpart
-; of lowering_reject_math_result_as_angle_sin.ll). Now that fma is a curated
+; of lowering_reject_math_result_as_angle.ll's `fmul` proxy). The recognized
+; unary sibling this once cited, lowering_reject_math_result_as_angle_sin.ll, was
+; deleted at ce069c64 (libm name-recognition retired); no fixture now puts a
+; recognized unary math intrinsic in the angle operand. Now that fma is a curated
 ; fp-DATA producer, `cq_phi(fma(q,r,s))` puts the tainted fma result in the
 ; phase's one (angle) operand and MUST STILL loud-decline — never lowering a
 ; quantum-derived ANGLE through the `cq_template_fma_f64` DATA template (the
@@ -26,7 +29,7 @@ entry:
   %r   = call double @cq_theta_f64(double %v, double 2.500000e-01)
   %s   = call double @cq_theta_f64(double %w, double 1.250000e-01)
   %fma = call double @llvm.fma.f64(double %q, double %r, double %s)   ; TAINTED, recognized fp-DATA
-  call void @cq_phi(double %fma)  ; %fma in the arg-1 ANGLE slot
+  call void @cq_phi(double %fma)  ; %fma in the arg-0 (sole) ANGLE operand
   %m   = call double @cq_measure_f64(double %u0)
   ret double %m
 }

@@ -70,11 +70,14 @@
 ; binary.  The pre-Inc-1 pin — a `cqrt_rz_<W>` or `cqrt_rz_<W>_controlled` on
 ; the user's REGISTER — asserted the gate PRD §1 shows is the identity on the
 ; marked branch (`cqrt_rz_<W>` is TENSORED, so a routed W-bit Rz applies
-; `(-1)^popcount(target)` and can never mark |0..0>).  The stream now pinned is
-; the KICKBACK: the flag is minted into a |0> ancilla, the phase lands on the
-; FLAG with an UNCONTROLLED `cqrt_rz_i1`, the ordinary compare `_unc` returns
-; the flag to |0> on every branch, and the flag is freed.  The fixture's
-; PURPOSE (its header above) is unchanged.
+; `(-1)^popcount(target)` and can never mark |0..0>).  This file pins NO
+; kickback (corrected 2026-10-05, bd zbz3): its one `cq_phi` is uncontrolled,
+; so it is deleted as a global phase and no flag, `cqrt_rz_i1` or compare
+; `_unc` is emitted.  What it pins is the ordered stream below (the forward
+; store and load, each index cast discharged and freed right after its QRAM
+; access, the chained Ry on the loaded rail, the measure), two frees (FCNT)
+; and the M-A warning on stderr (WARN).  The fixture's PURPOSE (its header
+; above) is unchanged.
 ;
 ; ORIGINAL negatives REMOVED.  Each was MEASURED to fire on this fixture's
 ; own Inc-1 output, so keeping it would assert something false.  A `-NOT`

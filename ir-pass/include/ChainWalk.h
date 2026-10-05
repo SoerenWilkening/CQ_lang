@@ -138,25 +138,32 @@ bool isInPlaceGateOn(const llvm::CallInst *G, const llvm::Value *H);
 // STAMP IT AT EVERY EMISSION SITE — AND THE ENUMERATION IS THE FENCE, SO IT IS
 // KEPT EXACT (Rule-13 round-2 findings F-R1-3 / F-R2-2: this sentence said
 // "three" while the tree it shipped in had six, in the one comment whose whole
-// job is to let a reader audit exactly that). There are **SIX**
-// `markBranchPhaseGate` calls, wrapping SIX `CreateCall(Rz, …)` expressions, in
-// FOUR files, belonging to FIVE emitters:
-//   1. `SwapRouteEmit.cpp:1538`  — P1 flat, the arm loop           (pinned by
-//      `control_phase_kickback_and2.ll`'s MDTAG, and by the CHECK in
-//      `..._share_flag*.ll` / the three `..._inloop*.ll`);
-//   2. `SwapRouteEmit.cpp:1568`  — P1 flat, the merge-tail loop    (pinned by
-//      `..._ifelse.ll`, `..._ifelse_tail_armfalse.ll`, `..._negated_tail_phi.ll`);
-//   3. `SwapRouteEmit.cpp:1773`  — P4, `emitPhaseKickbackNestRegion` (pinned by
-//      `control_phase_nest_kickback.ll`'s `MDTAG-COUNT-2`);
-//   4. `SwitchRouteEmit.cpp:179` — P5, `emitSwitchPhaseRegion`      (pinned by
+// job is to let a reader audit exactly that). Re-measured 2026-10-05: there are
+// **SIX** `markBranchPhaseGate` calls, one per `CreateCall(Rz, …)`, in THREE
+// files, reached from FOUR emitters:
+//   1. `SwapRouteEmit.cpp:1816` — inside `emitKickbackGroup`, which records
+//      every gate of a group. Its callers are P1 flat `emitPhaseKickbackRegion`
+//      (the arm loop and the merge-tail loop) and P4
+//      `emitPhaseKickbackNestRegion` (pinned by `control_phase_kickback_and2.ll`'s
+//      MDTAG, the CHECKs in `..._share_flag*.ll`, the `..._inloop*.ll` family,
+//      `..._ifelse.ll`, `..._ifelse_tail_armfalse.ll`,
+//      `..._negated_tail_phi.ll`, and `control_phase_nest_kickback.ll`'s
+//      `MDTAG-COUNT-2`);
+//   2. `SwitchRouteEmit.cpp:178` — P5, `emitSwitchPhaseRegion` (pinned by
 //      `control_phase_switch_kickback.ll`'s `MDTAG-COUNT-3`);
-//   5/6. `AngleSelectEmit.cpp:179` and `:181` — P2, the Rz stem's two gates
-//      (pinned by `control_angle_select_phase_{constants,runtime,nonfinite_arm}.ll`).
-// Sites 3 and 4 were added by the Inc-1b merge, which is the concrete form of
-// the warning that follows: a SEVENTH emitter that mints a kickback gate and
-// forgets this call re-opens F-L7-1 with no diagnostic anywhere. Re-measure with
-// `grep -c 'markBranchPhaseGate(' ir-pass/src/*.cpp` rather than trusting the
-// list.
+//   3/4. `AngleSelectEmit.cpp:212` and `:218` — P2, the Rz stem's two gates on a
+//      `_Bool` rail condition, `rz(b, −B)` then `rz(b, A)` (pinned by
+//      `control_angle_select_phase_rail.ll`'s `MDTAG-COUNT-2`);
+//   5/6. `AngleSelectEmit.cpp:221` and `:223` — P2, the same two gates on a
+//      minted flag inside the `cqrt_x` bracket (pinned by
+//      `control_angle_select_phase_{constants,runtime,nonfinite_arm}.ll`).
+// The list this replaces named three direct calls in `SwapRouteEmit.cpp` (flat
+// arm loop, flat merge-tail loop, nest) that now go through `emitKickbackGroup`;
+// the nest and switch sites were added by the Inc-1b merge, which is the
+// concrete form of the warning that follows: a NEW emitter that mints a
+// kickback gate and forgets this call re-opens F-L7-1 with no diagnostic
+// anywhere. Re-measure with `grep -c 'markBranchPhaseGate(' ir-pass/src/*.cpp`
+// rather than trusting the list.
 void markBranchPhaseGate(llvm::CallInst *G);
 
 // Is `G` a recorded branch-phase (kickback) gate? Asked by the three spine

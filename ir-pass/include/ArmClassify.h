@@ -44,7 +44,11 @@ struct TaintSet;
 //                (the §0 accept criteria 2 and 3 both hold), OR every arm is a
 //                routable value chain over ONE shared tainted routed base
 //                disjoint from the condition's provenance (the 4.2 §0
-//                criterion; diamond since WI-4, if/else since WI-5). NO
+//                criterion; diamond since WI-4, if/else since WI-5), OR every
+//                arm is an in-place controlled-Ry arm (`ArmClass::
+//                InPlaceRotation`, bd drbq Inc 1: one `cq_theta` on a register
+//                disjoint from the condition wire, recorded in `Shadow`/
+//                `ShadowFalse` and lowered as `cqrt_ry_<W>_controlled`). NO
 //                diagnostic was fired; the caller pushes the region for
 //                emission.
 //   * Declined — some arm failed a criterion; `classifyArms` has ALREADY fired
