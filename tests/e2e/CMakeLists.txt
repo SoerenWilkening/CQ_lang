@@ -759,6 +759,20 @@ add_test(NAME e2e-slice-control-inplace-ry-negated
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_negated.expected.log")
 
+# THE CONDITION'S OWN REGISTER, FLAG KEPT (bd test_C_libtooling-dm7f.4, owner
+# ruling 2026-10-03, option (a)). `if (q > 5) cq_theta(&q, .9)` and a derived
+# `(p & 3) == 2` twin: the flag is minted, controls the Ry and is LEFT ALLOCATED
+# (no strip, no free: after the Ry the predicate is not a function of q's basis).
+# The golden is the link-layer proof that the kept-flag stream resolves, and that
+# the derived condition's `and` rail is discharged before its controlled Ry.
+add_test(NAME e2e-slice-control-inplace-ry-cond-register
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_cond_register.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_cond_register.expected.log")
+
 # THE DERIVED-BASE FREEZE, at the LINK layer (round-1 Rule-13 review of drbq Inc
 # 1, lenses L3 §1 / L5 §1). The rotated base is an out-of-place `mul` rail and
 # there is a post-region user, so the whole-DAG spine has something to reverse —
