@@ -9,7 +9,12 @@
 ; THE ONE FIXTURE THAT REACHES R4 ITSELF, and the reason it must exist: every
 ; other wire-overlap spelling (the condition register, an SSA alias, a diagonal
 ; alias) is caught EARLIER by `condWireDisposition`, so without this one R4 would
-; be an unexercised rule. Here the condition's wire gains no gate — the Ry is on
+; be an unexercised rule. (⚠ Corrected 2026-10-05, bd dm7f.4: the condition
+; register itself was never caught earlier; `condWireDisposition` DEFERS its own
+; arm gate as `ProvenPostRegion` and R4 declined it under the re-spelled
+; wire-gate message. Since dm7f.4 R4 ACCEPTS that shape with the flag kept when
+; the rotated register is in the condition's provenance (conjunct K3). This
+; module's base `%r` is not, so it still declines here, on R4's own string.) Here the condition's wire gains no gate — the Ry is on
 ; `%r` — and the hazard is instead that `%r` may BE `%q`'s rail: an `add` with one
 ; tainted operand lowers IN PLACE (`cqrt_addc_<W>` on the parent's own rail) when
 ; the M-C fence admits it, OUT of place otherwise, and that fence lives in

@@ -883,7 +883,12 @@ tool for a phase, because a CNOT copies a basis *label*, not a *phase*:
   cqrt_free(h2)
   ```
   A controlled state preparation (`if (c) { r = SEED; cq_theta(&r, θ); }`) lowers the
-  same way on a fresh rail.
+  same way on a fresh rail. When the arm rotates the register the condition
+  reads (`if (q > 5) cq_theta(&q, 0.9);`), the flag cannot be uncomputed after
+  the rotation, so it is left allocated and the compiler warns
+  (`non-diagonal gate over a live derived record`): the leftover entanglement
+  is part of the circuit you wrote. The `==` spelling (`if (q == 5) …`) and the
+  same shape inside a loop are not lowered yet.
 - **A value arm** — the arm assigns an arithmetic result — is a
   **controlled-copy merge**: the arm's chain runs unconditionally on the
   original register (it is hoisted above the branch), the flag is minted, and

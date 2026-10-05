@@ -632,6 +632,19 @@ struct ControlRegion {
   // only carries it.
   bool RuntimeSeedAdmitted = false;
 
+  // bd `test_C_libtooling-dm7f.4` (owner ruling 2026-10-03, option (a)) — set by
+  // `classifyArms`' R4 clause iff an in-place Ry arm rotates a register in the
+  // CONDITION's own tainted provenance (`if (q > 5) cq_theta(&q, θ)`), acyclic,
+  // with a compare (not a `_Bool` rail) condition. After that Ry the predicate is
+  // no longer a function of `q`'s basis, so the compare `_unc` cannot return the
+  // minted flag to |0>. `emitInPlaceRotationRegion` therefore SKIPS its step-3
+  // strip and free and the flag is LEFT ALLOCATED (Rule 5: it is not provably
+  // |0>). M-A's `warnLiveRecordRotations` reports the leftover record as a
+  // `DS_Warning` (owner ruling lyyf). The verdict is the classifier's; the
+  // emitter only carries it. False everywhere else, which is byte-identical to
+  // the stream before the field existed.
+  bool CondFlagKept = false;
+
   // bd test_C_libtooling-8h7d.5 (7.3 Inc 3) — this region sits WHOLLY INSIDE a
   // reducible `LoopInfo` loop and was admitted by
   // `ControlDetect::flatRegionRollableInLoop`. Set at detection, read only by

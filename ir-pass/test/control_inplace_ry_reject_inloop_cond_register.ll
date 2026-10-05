@@ -13,10 +13,21 @@
 ; REGRESSION. `classifyArms`' `declineArm` lambda re-spells every later decline as
 ; the wire-gate message whenever `condWireDisposition` returned
 ; `ProvenPostRegion` — which the arm's own `cq_theta` on the condition wire always
-; is. MEASURED IDENTICAL on the FLAT sibling `control_inplace_ry_reject_cond_register.ll`,
-; which prints the same string for the same reason. The PRD §13.2 table predicted
-; `rotation arm on a condition wire` here and is corrected in place; §13.11 worry 2
-; is exactly this hazard, and this fixture is where a reader meets it.
+; is. The PRD §13.2 table predicted `rotation arm on a condition wire` here and is
+; corrected in place; §13.11 worry 2 is exactly this hazard, and this fixture is
+; where a reader meets it.
+;
+; ⚠ bd test_C_libtooling-dm7f.4 (2026-10-05): THE FLAT SIBLING NOW ACCEPTS
+; (`control_inplace_ry_cond_register_flag_kept.ll`, formerly
+; `control_inplace_ry_reject_cond_register.ll`): the strip is dropped and the
+; flag is kept, so the "strip against a relabelled register" argument above no
+; longer forces a decline. THIS loop shape still declines, and on purpose: the
+; accept's conjunct (K2) excludes `Region.InLoop`, because a rolled region would
+; keep one flag per trip and neither R7's loop clauses nor the rolled-region
+; marking postcondition were argued for a kept flag. That is a SCOPE fence (the
+; loop work is bd 8h7d's), not physics. RETIREMENT TRIGGER: when an in-loop
+; kept flag is built, this module should accept with one flag allocated per
+; trip; re-derive it then.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}condition predates a non-diagonal gate under quantum control
 ; CHECK-NOT: cqrt_ry_i32_controlled

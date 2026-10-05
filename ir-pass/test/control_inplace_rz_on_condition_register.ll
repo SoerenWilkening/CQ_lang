@@ -11,9 +11,12 @@
 ; the kickback `cqrt_rz_i1` on the flag, so q's basis label is never moved and the
 ; strip is valid pointwise (pre-3qlq: a diagonal controlled Rz on q itself).
 ;
-; The same condition with `cq_theta` on `q` in the arm DECLINES
-; (control_inplace_ry_reject_cond_register.ll and its alias family). Keeping both
-; in the tree is what makes R4's Ry-only scope a decision rather than an accident.
+; The same condition with `cq_theta` on `q` in the arm used to DECLINE. Since bd
+; test_C_libtooling-dm7f.4 (2026-10-05) it lowers too, but by a DIFFERENT stream:
+; no strip, and the flag is left allocated with an M-A warning
+; (control_inplace_ry_cond_register_flag_kept.ll). This fixture pins that the
+; phase stem keeps its strip and free. Keeping both in the tree is what makes
+; the stem split a decision rather than an accident.
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
 ; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)
