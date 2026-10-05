@@ -59,8 +59,9 @@ namespace {
 // (read-only, never adjointed or freed) and declines only when that reduced
 // plan cannot be proven — see the retry in `reverseTerminalGroup`. The fixture
 // that used to pin this string, lowering_uncompute_dead_sibling_premeasure.ll,
-// is now that retry's simplest ACCEPT; the decline pins are
-// lowering_reject_uncompute_measured_parent_moved.ll,
+// is now that retry's simplest ACCEPT; the decline pins are (bd 01po.8)
+// lowering_reject_uncompute_measured_parent_{moved_dead_record,open_copy,
+// open_root_frozen}.ll,
 // lowering_reject_uncompute_measured_parent_read_after_measure.ll, (bd 01po.12)
 // lowering_reject_uncompute_measured_parent_per_component_read_after_measure.ll and (bd eqti)
 // lowering_reject_uncompute_measured_parent_frozen_{taped,copyout,transitive}.ll
@@ -588,10 +589,14 @@ void emitDagReversal(const DataDag &D, Instruction *At, WidthDispatch &wd,
 
 // Defined with the M-B partition below (it is that partition's clause-(d) scan);
 // declared here for the dead-terminal driver's QRAM-array retry (bd 01po.4).
+// `Moved`, when non-null (bd 01po.8, the frontier fixpoint only), makes the scan
+// ask EVERY borrowed parent and collect each one whose window fails, instead of
+// stopping at the first; the boolean answer is the same either way.
 bool borrowedParentsUnmoved(const DataDag &D,
                             const SmallPtrSetImpl<Value *> &Borrowed,
                             Instruction *At, DominatorTree &DT,
-                            const TaintSet &taint, bool AdmitCloneCalls);
+                            const TaintSet &taint, bool AdmitCloneCalls,
+                            SmallVectorImpl<Value *> *Moved = nullptr);
 
 // bd test_C_libtooling-ptue — may the frontier retry BORROW these measured rails?
 // True iff no measurement of a borrowed measured rail `P` can reach a gate of `D`
@@ -918,25 +923,45 @@ void emitTerminalReversal(const DataDag &D, Instruction *At, WidthDispatch &wd,
     ReversedRails.insert(R);
 }
 
-// Every check the dead-terminal FRONTIER RETRY asks of one reduced DAG `DR`
-// (bd ptue / 01po.4), in the retry's original order. Factored out by bd
-// test_C_libtooling-01po.12 so the per-component fallback below re-asks EXACTLY
-// these (Rule 12). On `true`, `At` is `DR`'s reversal point.
-bool frontierPlanProves(Function &F, const DataDag &DR,
-                        ArrayRef<Instruction *> Ats,
-                        const SmallPtrSetImpl<Value *> &Borrowed,
-                        const SmallPtrSetImpl<Value *> &Measured,
-                        TaintSet &taint, DominatorTree &DT,
-                        PostDominatorTree &PDT, LoopInfo &LI, bool IterLocal,
-                        Instruction *&At) {
+// The verdict of the dead-terminal FRONTIER RETRY on one reduced DAG `DR` (bd
+// ptue / 01po.4): every check that retry asks, in its original order. Factored
+// out by bd test_C_libtooling-01po.12 so the per-component fallback re-asks
+// EXACTLY these (Rule 12), and split into verdicts by bd 01po.8 so the frontier
+// fixpoint can tell the two refusals it WIDENS on from every other one:
+//   * `NotClosed`   — a rail of `DR` has a consumer outside it (`OpenRails`);
+//   * `ParentMoved` — clause (d) failed for the borrowed parents in `Moved`;
+//   * `Refused`     — anything else, which keeps today's decline.
+// `Emit` iff the pre-01po.8 conjunction held: an open rail makes
+// `planTerminalReversal` refuse first anyway, and `borrowedParentsUnmoved` gives
+// the same answer whether or not it collects. On `Emit`, `At` is the point.
+enum class FrontierVerdict { Emit, NotClosed, ParentMoved, Refused };
+
+FrontierVerdict judgeFrontierPlan(Function &F, const DataDag &DR,
+                                  ArrayRef<Instruction *> Ats,
+                                  const SmallPtrSetImpl<Value *> &Borrowed,
+                                  const SmallPtrSetImpl<Value *> &Measured,
+                                  TaintSet &taint, DominatorTree &DT,
+                                  PostDominatorTree &PDT, LoopInfo &LI,
+                                  bool IterLocal, Instruction *&At,
+                                  SmallVectorImpl<Value *> &Moved) {
+  if (DR.MeasuredUpstream)
+    return FrontierVerdict::Refused;
+  // An escape, an empty DAG, or a closure refused only by an OWNERSHIP image
+  // (no open rail) is not widened: `planTerminalReversal` refuses it below.
+  if (DR.NotClosed && !DR.Escaped && !DR.Calls.empty() && !DR.OpenRails.empty())
+    return FrontierVerdict::NotClosed;
   CallInst *Unused = nullptr;
-  return !DR.MeasuredUpstream &&
-         planTerminalReversal(F, DR, Ats, taint, DT, PDT, LI, IterLocal, At,
-                              Unused) == TerminalPlan::Emit &&
-         borrowedParentsUnmoved(DR, Borrowed, At, DT, taint,
-                                /*AdmitCloneCalls=*/false) &&
-         measuredParentsReadBeforeCollapse(DR, Measured, DT) &&
-         !keptRailAdjointReadsBorrowed(DR, Borrowed);
+  if (planTerminalReversal(F, DR, Ats, taint, DT, PDT, LI, IterLocal, At,
+                           Unused) != TerminalPlan::Emit)
+    return FrontierVerdict::Refused;
+  if (!borrowedParentsUnmoved(DR, Borrowed, At, DT, taint,
+                              /*AdmitCloneCalls=*/false, &Moved))
+    return Moved.empty() ? FrontierVerdict::Refused
+                         : FrontierVerdict::ParentMoved;
+  if (!measuredParentsReadBeforeCollapse(DR, Measured, DT) ||
+      keptRailAdjointReadsBorrowed(DR, Borrowed))
+    return FrontierVerdict::Refused;
+  return FrontierVerdict::Emit;
 }
 
 struct FrontierComponentPlan {
@@ -944,46 +969,18 @@ struct FrontierComponentPlan {
   Instruction *At = nullptr;
 };
 
-// bd test_C_libtooling-01po.12 — THE FRONTIER RETRY, ONE COMPONENT AT A TIME.
-//
-// WHY. The group's reversal point is the LATEST anchor of all its terminals, and
-// clause (d) checks each borrowed parent over [first DAG read, that point]. So a
-// dead temp anchored after `measure(q)` that has nothing to do with `q` put the
-// measurement inside q's window and refused the bd ptue accept (`int q=x;
-// cq_theta(&q,.25); int t=q^9; cq_theta(&t,.5); int m=cq_measure(q); int w=y;
-// cq_theta(&w,.3); return m;`). The shared point protected the PLAN, not the
-// unitary (L5).
-//
-// WHAT. Terminals are partitioned by the connectivity of their REDUCED DAGs
-// (walked with the same borrowed frontier): two terminals are in one component
-// iff their DAGs share a gate or a rail, transitively. A shared OWNED prefix
-// therefore stays in one component and is reversed once (splitting it would make
-// each half `NotClosed` anyway). Each component is planned at its OWN anchors
-// and must pass every check `frontierPlanProves` asks; ALL are planned before
-// ANY is emitted, and one refusal returns false (the caller keeps today's
-// decline verbatim).
-//
-// WHY SEPARATE REVERSALS COMPOSE. Components share at most a BORROWED register,
-// and no reversal writes or frees one — each adjoint writes only its own
-// component's rails and only READS a borrowed parent, which cannot move that
-// parent's label for another component's window. So the reversals act on
-// disjoint written registers and commute. The other components' emitted
-// adjoints are not in the IR when a component's window is scanned; by the same
-// argument none of them is a mutation of any register that scan asks about.
-//
-// Returns false when there is only one component: that IS the whole group,
-// which the caller already refused.
-bool planFrontierPerComponent(Function &F, ArrayRef<Value *> Terms,
-                              ArrayRef<Instruction *> Ats,
-                              const InteriorPlan &Frontier,
-                              const SmallPtrSetImpl<Value *> &Measured,
-                              TaintSet &taint, DominatorTree &DT,
-                              PostDominatorTree &PDT, LoopInfo &LI,
-                              bool IterLocal,
-                              SmallVectorImpl<FrontierComponentPlan> &Plans) {
+// bd test_C_libtooling-01po.12 — partition `Terms` by the connectivity of their
+// REDUCED DAGs (walked with the borrowed frontier): two terminals are in one
+// component iff their DAGs share a gate or a rail, transitively. A shared OWNED
+// prefix therefore stays in one component and is reversed once (splitting it
+// would make each half `NotClosed` anyway). Components come out in
+// first-terminal order (FileCheck-stable emission).
+void partitionByReducedDag(ArrayRef<Value *> Terms, ArrayRef<Instruction *> Ats,
+                           const InteriorPlan &Frontier, const TaintSet &taint,
+                           DominatorTree &DT,
+                           SmallVectorImpl<SmallVector<Value *, 4>> &CTerms,
+                           SmallVectorImpl<SmallVector<Instruction *, 4>> &CAts) {
   const unsigned N = Terms.size();
-  if (N < 2)
-    return false;
   SmallVector<unsigned, 8> Parent(N);
   for (unsigned I = 0; I != N; ++I)
     Parent[I] = I;
@@ -1008,10 +1005,7 @@ bool planFrontierPerComponent(Function &F, ArrayRef<Value *> Terms,
     for (Value *R : DI.Rails)  // roots and template rails
       join(R);
   }
-  // Components in first-terminal order (FileCheck-stable emission).
   DenseMap<unsigned, unsigned> SlotOf;
-  SmallVector<SmallVector<Value *, 4>, 4> CTerms;
-  SmallVector<SmallVector<Instruction *, 4>, 4> CAts;
   for (unsigned I = 0; I != N; ++I) {
     auto Ins = SlotOf.try_emplace(find(I), CTerms.size());
     if (Ins.second) {
@@ -1021,17 +1015,157 @@ bool planFrontierPerComponent(Function &F, ArrayRef<Value *> Terms,
     CTerms[Ins.first->second].push_back(Terms[I]);
     CAts[Ins.first->second].push_back(Ats[I]);
   }
-  if (CTerms.size() < 2)
-    return false;
-  for (unsigned C = 0, E = CTerms.size(); C != E; ++C) {
-    FrontierComponentPlan P;
-    P.D = recoverDataDag(CTerms[C], taint, DT, &Frontier);
-    if (!frontierPlanProves(F, P.D, CAts[C], Frontier.Borrowed, Measured, taint,
-                            DT, PDT, LI, IterLocal, P.At))
-      return false;
-    Plans.push_back(std::move(P));
+}
+
+// bd test_C_libtooling-01po.8 — is `R`, written by `G` from the borrowed parent
+// `P`, NECESSARILY a which-path record of `P` across a move of `P`? True iff some
+// later use `U` of `R` (dominated by `G`) has a real move of `P` inside
+// `(G, U)`: the window scan cannot clear the interval, and every user it fails
+// to clear is an in-place gate on `P` or a measurement of `P`. Then the source
+// itself keeps `R` live across the move, `R`'s `_unc` would need `P`'s
+// pre-move label, which no later point has, and leaving `R` allocated is the
+// program's own circuit, not a choice. Anything unproven (a non-call user of
+// `P`, a user that is neither a writer nor a measurement) answers false.
+//
+// WHY "FORCED" AND NOT "ANY": a record whose uses all END before the move could
+// have been uncomputed before it. Leaking it instead would keep MORE of `P`
+// across the move than the program does (`a = q*3; b = a & 1; cq_theta(&q, .3);
+// cq_theta(&b, .5)`: leaking `a` keeps all of q, the program keeps one bit), a
+// different distribution behind a warning that blames the user. That shape keeps
+// its decline.
+bool recordLiveAcrossMove(CallInst *G, Value *R, Value *P, DominatorTree &DT,
+                          const TaintSet &taint) {
+  for (User *U : R->users()) {
+    auto *UI = dyn_cast<Instruction>(U);
+    if (!UI || UI == G || !DT.dominates(G, UI))
+      continue;
+    SmallVector<const CallInst *, 4> Failing;
+    if (railUnmovedInWindow(P, G, UI, DT, taint, /*AdmitCloneCalls=*/false,
+                            /*Opener=*/nullptr, &Failing))
+      continue;  // P holds its label up to this use
+    if (Failing.empty())
+      return false;  // a non-call user of P: unprovable
+    if (llvm::all_of(Failing, [&](const CallInst *M) {
+          return isInPlaceGateOn(M, P) || isMeasureSink(M);
+        }))
+      return true;
   }
-  return true;
+  return false;
+}
+
+// THE FRONTIER FIXPOINT — bd test_C_libtooling-01po.12 (per component) and bd
+// test_C_libtooling-01po.8 (the general retry). Asked only after the
+// whole-group retry refused, so no module that lowered before changes.
+//
+// PER COMPONENT (01po.12). The group's reversal point is the LATEST anchor of all
+// its terminals, and clause (d) checks each borrowed parent over [first DAG
+// read, that point]. So a dead temp anchored after `measure(q)` that has nothing
+// to do with `q` put the measurement inside q's window and refused the bd ptue
+// accept. Each component is planned at its OWN anchors instead and must pass
+// every check `judgeFrontierPlan` asks; ALL are planned before ANY is emitted.
+// WHY SEPARATE REVERSALS COMPOSE: components share at most a BORROWED register,
+// and no reversal writes or frees one — each adjoint writes only its own
+// component's rails and only READS a borrowed parent, so it cannot move that
+// parent's label for another component's window. The reversals act on disjoint
+// written registers and commute. (The other components' adjoints are not in the
+// IR when a window is scanned; by the same argument none of them could move it.)
+//
+// THE FRONTIER GROWS (01po.8). `Frontier.Borrowed` starts as the measured rails
+// and the QRAM array roots. A component's refusal WIDENS it in two cases, and
+// only where the rail left allocated is one EVERY schedule must leave:
+//   * `NotClosed` on an open ROOT — a `cqrt_alloc` register of the reduced DAG
+//     has a consumer outside it (bd 01po.13 F3: `q2 = q+1; t = q2^9; u = q^5;`
+//     with `q2` measured: `q`'s consumer `q+1` is not in the reduced DAG). The
+//     root is BORROWED: never walked, adjointed or freed, like a measured rail,
+//     and every check is re-asked with it borrowed — its own clause-(d) window
+//     included. Its un-rotation would act on a register entangled with the
+//     outside consumer's live result, so no schedule reverses it; the
+//     non-measured spine leaves such a group allocated whole (`NotClosed`).
+//     An open TEMPLATE rail (a copy) is NOT widened: it could be discharged
+//     after its last use, and borrowing it would leave it allocated (the
+//     reversal's own `_unc` then keeps M-B off it) — `Refused`.
+//   * `ParentMoved` — a borrowed parent P is moved inside its window, so no
+//     `_unc` reading P can run at that point. Every DAG gate G reading P stops
+//     being reversed: `railOf(G)` joins the frontier (a terminal that lands in it
+//     is dropped), PROVIDED `recordLiveAcrossMove` proves R = railOf(G) is used
+//     after a real move of P — a which-path record the program itself keeps
+//     across the move, left ALLOCATED: never freed (Rule 5), never adjointed
+//     (lowering_reject_uncompute_measured_parent_moved.ll). A record whose uses
+//     all end before the move is `Refused` (see that predicate).
+// Then the components are re-derived and re-planned from scratch. Every other
+// refusal (`Refused`: an escape, an ownership-image closure, an in-loop or
+// divergent or uninvertible plan, a post-collapse read (bd yiid, pending E3), a
+// kept rail whose adjoint reads a borrowed register (bd eqti)) returns false and
+// the caller keeps today's decline verbatim. A leaked rail is BORROWED, so the
+// eqti test keeps treating it as a live register.
+//
+// TERMINATION: a round that neither returns nor emits inserts at least one NEW
+// value into `Frontier.Borrowed` (an open rail is walked, so it is not yet
+// borrowed; `railOf(G)` of a recovered gate is not borrowed, or the walk would
+// have stopped before G), and the frontier is bounded by the function's values.
+// A round where every terminal is borrowed returns true with NO plan: every
+// terminal is a kept record and nothing is reversed or freed.
+bool planFrontierFixpoint(Function &F, ArrayRef<Value *> InsertTerms,
+                          ArrayRef<Instruction *> InsertAts,
+                          InteriorPlan Frontier,
+                          const SmallPtrSetImpl<Value *> &Measured,
+                          TaintSet &taint, DominatorTree &DT,
+                          PostDominatorTree &PDT, LoopInfo &LI, bool IterLocal,
+                          SmallVectorImpl<FrontierComponentPlan> &Plans) {
+  for (;;) {
+    Plans.clear();
+    SmallVector<Value *, 8> Terms;
+    SmallVector<Instruction *, 8> Ats;
+    for (unsigned I = 0, E = InsertTerms.size(); I != E; ++I)
+      if (!Frontier.Borrowed.count(InsertTerms[I])) {
+        Terms.push_back(InsertTerms[I]);
+        Ats.push_back(InsertAts[I]);
+      }
+    if (Terms.empty())
+      return true;
+    SmallVector<SmallVector<Value *, 4>, 4> CTerms;
+    SmallVector<SmallVector<Instruction *, 4>, 4> CAts;
+    partitionByReducedDag(Terms, Ats, Frontier, taint, DT, CTerms, CAts);
+    bool Grew = false;
+    for (unsigned C = 0, E = CTerms.size(); C != E; ++C) {
+      FrontierComponentPlan P;
+      P.D = recoverDataDag(CTerms[C], taint, DT, &Frontier);
+      SmallVector<Value *, 4> Moved;
+      bool New = false;
+      switch (judgeFrontierPlan(F, P.D, CAts[C], Frontier.Borrowed, Measured,
+                                taint, DT, PDT, LI, IterLocal, P.At, Moved)) {
+      case FrontierVerdict::Emit:
+        Plans.push_back(std::move(P));
+        continue;
+      case FrontierVerdict::Refused:
+        return false;
+      case FrontierVerdict::NotClosed:
+        for (Value *R : P.D.OpenRails) {
+          if (!llvm::is_contained(P.D.Roots, R))
+            return false;  // an open COPY (template rail): see the header
+          New |= Frontier.Borrowed.insert(R).second;
+        }
+        break;
+      case FrontierVerdict::ParentMoved:
+        for (Value *Pm : Moved)
+          for (CallInst *G : P.D.Calls)
+            for (Value *Op : G->args())
+              if (Op == Pm) {
+                Value *R = railOf(G);
+                if (!R || isa<Constant>(R) ||
+                    !recordLiveAcrossMove(G, R, Pm, DT, taint))
+                  return false;  // not a FORCED record: see the header
+                New |= Frontier.Borrowed.insert(R).second;
+              }
+        break;
+      }
+      if (!New)
+        return false;  // no progress — keep the decline
+      Grew = true;
+    }
+    if (!Grew)
+      return true;
+  }
 }
 
 // Classify + recover + reverse ONE group of data terminals at a single insertion
@@ -1126,7 +1260,9 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
     //   * `borrowedParentsUnmoved` (clause (d), one spelling): no gate moves a
     //     borrowed rail between the first DAG gate that reads it and `At`. A
     //     measurement there is refused by `preservesBorrowedParent` too
-    //     (lowering_reject_uncompute_measured_parent_moved.ll pins a Ry there);
+    //     (lowering_reject_uncompute_measured_parent_moved.ll pins a Ry there:
+    //     the whole-group retry refuses, and since bd 01po.8 the frontier
+    //     fixpoint leaves that record allocated instead of declining);
     //   * `measuredParentsReadBeforeCollapse`: no measurement of a borrowed
     //     measured rail can PRECEDE a DAG read of it. That is bd yiid, a RULED
     //     capability (2026-09-14, E3 (b) BROAD 2026-09-15) not yet built, so
@@ -1148,7 +1284,11 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
     // reaches neither cuts it nor is scanned). The eqti conjunct is NOT
     // monotone and is not meant to be: it turns the pre-existing 01po.4
     // miscompile above from an rc-0 accept into the decline. Every refusal
-    // keeps today's decline, character for character.
+    // keeps today's decline, character for character — EXCEPT that since bd
+    // 01po.12/01po.8 a whole-group refusal is re-planned per component with a
+    // growing frontier (`planFrontierFixpoint`), which may end with a FORCED
+    // record left allocated instead of the decline (an open root, or a rail the
+    // program itself keeps live across a move of its borrowed parent).
     InteriorPlan Frontier;
     for (Value *R : D.Roots)
       if (isQramArrayHandle(R))
@@ -1158,20 +1298,23 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
     if (!Frontier.Borrowed.empty()) {
       DataDag DR = recoverDataDag(InsertTerms, taint, DT, &Frontier);
       Instruction *AtR = nullptr;
-      if (frontierPlanProves(F, DR, InsertAts, Frontier.Borrowed,
-                             D.MeasuredRails, taint, DT, PDT, LI, IterLocal,
-                             AtR)) {
+      SmallVector<Value *, 4> Ignored;  // whole-group retry: no widening
+      if (judgeFrontierPlan(F, DR, InsertAts, Frontier.Borrowed,
+                            D.MeasuredRails, taint, DT, PDT, LI, IterLocal, AtR,
+                            Ignored) == FrontierVerdict::Emit) {
         emitTerminalReversal(DR, AtR, wd, taint, ReversedGates, ReversedRails);
         return;
       }
-      // bd test_C_libtooling-01po.12 — the whole group refused; ask again PER
-      // COMPONENT of the reduced DAG, each at its own reversal point (see
-      // `planFrontierPerComponent`). Reached only on the way to the decline, so
-      // no module that lowered before changes.
+      // bd test_C_libtooling-01po.12 / 01po.8 — the whole group refused; plan
+      // again PER COMPONENT of the reduced DAG, each at its own reversal point,
+      // growing the borrowed frontier on an open rail or a moved parent (see
+      // `planFrontierFixpoint`). Reached only on the way to the decline, so no
+      // module that lowered before changes. An empty plan set means every
+      // terminal is a kept record: nothing is reversed, freed or diagnosed.
       SmallVector<FrontierComponentPlan, 4> Plans;
-      if (planFrontierPerComponent(F, InsertTerms, InsertAts, Frontier,
-                                   D.MeasuredRails, taint, DT, PDT, LI,
-                                   IterLocal, Plans)) {
+      if (planFrontierFixpoint(F, InsertTerms, InsertAts, Frontier,
+                               D.MeasuredRails, taint, DT, PDT, LI, IterLocal,
+                               Plans)) {
         for (FrontierComponentPlan &P : Plans)
           emitTerminalReversal(P.D, P.At, wd, taint, ReversedGates,
                                ReversedRails);
@@ -1568,7 +1711,8 @@ bool routeGroupFullyInside(const CallInst *M, const Value *P, CallInst *First,
 // never being a rotation).
 bool railUnmovedInWindow(Value *P, CallInst *First, Instruction *At,
                          const DominatorTree &DT, const TaintSet &taint,
-                         bool AdmitCloneCalls, const Instruction *Opener) {
+                         bool AdmitCloneCalls, const Instruction *Opener,
+                         SmallVectorImpl<const CallInst *> *Failing) {
   // Proven ONCE per (`First`, `At`) pair and read by `routeGroupFullyInside`'s
   // `At`-barriered leg 1 below — see `WireWalk.h`'s `intervalAlternates` for
   // the window argument, and for why the `First`-barriered legs (that leg's
@@ -1722,9 +1866,11 @@ bool railUnmovedInWindow(Value *P, CallInst *First, Instruction *At,
       continue;  // INSIDE — a COMPLETE emitter-recorded Phase-4 route, the
                  // identity on P's basis LABEL over the interval (Inc 6,
                  // clause (d2)).
-    return false;  // unprovable ⇒ this component leaks (Rule 6).
+    if (!Failing)
+      return false;  // unprovable ⇒ this component leaks (Rule 6).
+    Failing->push_back(M);  // bd 01po.8: collect, same verdict below
   }
-  return true;
+  return !Failing || Failing->empty();
 }
 
 namespace {
@@ -1746,7 +1892,8 @@ namespace {
 bool borrowedParentsUnmoved(const DataDag &D,
                             const SmallPtrSetImpl<Value *> &Borrowed,
                             Instruction *At, DominatorTree &DT,
-                            const TaintSet &taint, bool AdmitCloneCalls) {
+                            const TaintSet &taint, bool AdmitCloneCalls,
+                            SmallVectorImpl<Value *> *Moved) {
   for (Value *P : Borrowed) {
     CallInst *First = nullptr;
     for (CallInst *G : D.Calls) {  // forward program order (recoverDataDag §2)
@@ -1776,10 +1923,13 @@ bool borrowedParentsUnmoved(const DataDag &D,
     if (First == At)
       return false;
     if (!railUnmovedInWindow(P, First, At, DT, taint, AdmitCloneCalls,
-                             /*Opener=*/nullptr))
-      return false;
+                             /*Opener=*/nullptr)) {
+      if (!Moved)
+        return false;
+      Moved->push_back(P);
+    }
   }
-  return true;
+  return !Moved || Moved->empty();
 }
 
 // PLAN one interior COMPONENT: the positional half (§2), the borrowed-parent

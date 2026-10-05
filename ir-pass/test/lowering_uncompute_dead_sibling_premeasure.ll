@@ -25,8 +25,9 @@
 ; thereby uncomputed at once, which is the program's meaning of "dead".
 ;
 ; The no-measure twin (lowering_uncompute_dead_sibling_no_measure.ll) still owns
-; `q` and reverses it whole; the decline twins of the borrowed plan are
-; lowering_reject_uncompute_measured_parent_moved.ll and
+; `q` and reverses it whole; the neighbours of the borrowed plan are
+; lowering_reject_uncompute_measured_parent_moved.ll (an accept that leaves the
+; record allocated since bd 01po.8) and the decline
 ; lowering_reject_uncompute_measured_parent_read_after_measure.ll.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll

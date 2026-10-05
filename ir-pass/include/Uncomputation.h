@@ -18,6 +18,7 @@
 #define CQ_IRPASS_UNCOMPUTATION_H_
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
@@ -110,10 +111,17 @@ InteriorDischargePlan planInteriorDischarges(llvm::Function &F, TaintSet &taint)
 //   * M-A clause 4, `recordIsExemptAt` (RotationLowering.cpp): a record measured
 //     at `First` is still collapsed when the gate `At` fires only if nothing
 //     writes it in between. `Opener` is the measurement.
-bool railUnmovedInWindow(llvm::Value *P, llvm::CallInst *First,
-                         llvm::Instruction *At, const llvm::DominatorTree &DT,
-                         const TaintSet &taint, bool AdmitCloneCalls,
-                         const llvm::Instruction *Opener);
+//
+// `Failing`, when non-null (bd 01po.8, the dead-terminal frontier fixpoint),
+// makes the scan collect EVERY call user it cannot clear instead of stopping at
+// the first; a non-call user still answers false at once and is NOT collected,
+// so "false with an empty list" means "unprovable", never "moved". The boolean
+// answer is the same either way; both callers above pass null.
+bool railUnmovedInWindow(
+    llvm::Value *P, llvm::CallInst *First, llvm::Instruction *At,
+    const llvm::DominatorTree &DT, const TaintSet &taint, bool AdmitCloneCalls,
+    const llvm::Instruction *Opener,
+    llvm::SmallVectorImpl<const llvm::CallInst *> *Failing = nullptr);
 
 }  // namespace cq
 

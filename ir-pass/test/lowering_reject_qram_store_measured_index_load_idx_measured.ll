@@ -23,12 +23,15 @@
 ;   free(v)                 |0> in a product state — no information learned
 ;   measure(OUT); measure(p) the program's joint distribution of v and p
 ;
-; THE DECLINE NEIGHBOUR, measured rather than argued (bd ptue): rotating `p`
+; THE MOVED NEIGHBOUR, measured rather than argued (bd ptue): rotating `p`
 ; between the load and the reversal (`cq_theta(&p, .3)` before the measures)
-; makes the clause-(d) scan refuse the borrow, and the module keeps the decline
-; verbatim — the reversal would re-derive T from a moved `p` and pop the wrong
-; cell. lowering_reject_uncompute_measured_parent_moved.ll pins that refusal on
-; the scalar surface.
+; makes the clause-(d) scan refuse the borrow — the reversal would re-derive T
+; from a moved `p` and pop the wrong cell. Until bd 01po.8 the module kept the
+; decline; since then the frontier fixpoint leaves `v` ALLOCATED instead (the
+; program reads `v` after the rotation, so `v` is a record of p across it):
+; measured, `opt` rc 0 with no `load_unc` and no free of `v`.
+; lowering_reject_uncompute_measured_parent_moved.ll pins the same outcome on the
+; scalar surface.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

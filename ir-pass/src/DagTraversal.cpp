@@ -342,6 +342,7 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
             isInteriorConsumer(CU, R, taint, IP->AdmitCloneCalls))
           continue;
         D.NotClosed = true;  // controlled copy/cswap, free, or out-of-DAG gate
+        D.OpenRails.insert(R);  // bd 01po.8: the frontier retry's borrow seed
         continue;
       }
       if (isa<ReturnInst>(U)) {
@@ -352,6 +353,9 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
         if (Phi->use_empty())
           continue;  // a benign both-arm live-range merge (dead result)
       D.NotClosed = true;  // any other user we cannot prove reversible
+      D.OpenRails.insert(R);  // bd 01po.8 (a borrowed rail's window scan then
+                              // refuses this non-call user — see
+                              // `railUnmovedInWindow`)
     }
   }
 

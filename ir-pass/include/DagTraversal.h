@@ -64,6 +64,14 @@ struct DataDag {
   // leading to a terminal we are NOT reversing, or any other unprovable user.
   // The sub-DAG is owned elsewhere — leave it allocated (Rule 6/8). Silent skip.
   bool NotClosed = false;
+  // The rails that set `NotClosed` through a CONSUMER outside the recovered set
+  // (an out-of-DAG gate or a non-call user) — bd test_C_libtooling-01po.8.
+  // Recorded at the one site that decides it, so the dead-terminal frontier
+  // retry BORROWS exactly these rails (Rule 12) instead of re-scanning users.
+  // A rail refused by an OWNERSHIP image (`ControlOwnedRails`, `OutputRails`,
+  // `GraveyardRails`, a controlled-rotation register) is NOT in this set: it
+  // still sets `NotClosed`, and the retry then keeps its decline.
+  llvm::SmallPtrSet<llvm::Value *, 4> OpenRails;
 
   // bd 261j(a) — rails that are RECORDED into a kept carrier (an output tape,
   // never uncomputed and never freed) AND whose forward chain is not a basis
