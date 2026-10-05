@@ -272,6 +272,16 @@ void collectLiveRemainderRegs(BasicBlock *Sibling, const TaintSet &Taint,
 // at its IR position; the park moves it to the branch). RETIREMENT TRIGGER: if
 // CLOSURE ever admits a compare consumer, or G7(e) admits plain-IR uses, a
 // stale flag can return SILENTLY.
+// (1) is MEASURED to hold at HEAD (bd dm7f.7): in the do-while `q ^= 3` after
+// a park, the xor is not an `InPlaceRailOps` member when the park is
+// classified. The dm7f.7 fix is exactly a CLOSURE that admits the park's own
+// condition compare, so it retires (1). On a local experiment with that
+// CLOSURE (compare in its branch's block), the two stale-flag neighbours
+// `int c0=q; do{q^=3;}while(++i<n); if(c0>5) abort();` and its `cq_theta(&q,.1)`
+// loop twin both decline `cq loop lowering: rail record read past an in-place
+// gate on the same rail` (`staleRailRecordRead`, the compare reading the root
+// after the loop). That fence is then the wall for (1); a change that admits a
+// compare in a block other than its branch's must ask it at the branch.
 //
 // L9 DISCLOSURE: this also admits `if(q>5)abort(); int m=cq_measure(q);
 // cq_theta(&q,.3); …`, the bd yiid measure-then-rotate boundary. The emitted
@@ -358,10 +368,50 @@ AbortParkDisp classifyAbortPark(BranchInst *BI, TaintSet &Taint,
   // escaping value beside the park arm) is the §2.6 deferred park-vs-dephasing
   // interaction → conservatively DECLINE `phase-class value escaping` (do NOT
   // assert the park preserves the phase). A name of any OTHER (value-class)
-  // register is unparked → DECLINE until the multi-register park is built. The
-  // guard counts REGISTERS, not SSA names (bd x61g): `if(q>5)abort();
-  // cq_theta(&q,.3); return cq_measure(q);` reads `Q` and its post-gate name,
-  // one register, and accepts (`namesRoutedRegister`).
+  // register is unparked → DECLINE until the multi-register park is built.
+  //
+  // The guard counts REGISTERS only across the in-place steps
+  // `railWireNamesBackward` crosses (bd x61g): `if(q>5)abort(); cq_theta(&q,.3);
+  // return cq_measure(q);` reads `Q` and its post-gate name, one register, and
+  // accepts (`namesRoutedRegister`). ⚠ IT DOES NOT CROSS A φ, so a φ that names
+  // `Q`'s own register is counted as a SECOND register (bd dm7f.7, corrected
+  // here; the x61g wording said "registers, not SSA names" without the
+  // qualification). Measured on `int q=u; cq_theta(&q,.5); if(q>5) abort();
+  // for(i<n) cq_theta(&q,.1); return cq_measure(q);` at `-O1`: the remainder
+  // reads the header φ `[%3, pre], [%14, latch]`, the exit φ `[%3, guard],
+  // [%14, exit]` and `%14 = cq_theta(header φ)`, all names of Q's rail, and the
+  // park declines `control flow`. A φ step HERE IS NOT THE FIX: measured, the
+  // park then accepts and the module declines one stage later at
+  // `declineClassicalMuxes` (`tainted value muxed by a classical-condition
+  // phi`), because nothing collapses the loop's rail φs — `tryCaseA`'s CLOSURE
+  // leaves the loop unclaimed (this park's condition compare is a non-rail
+  // reader of the root) and `collapseFlattenedLoopRails` re-offers only a loop
+  // holding a flattened in-loop region. The fix belongs in that CLOSURE: when it
+  // admits the park's own condition compare, `tryCaseA` collapses the φs to the
+  // root before this guard runs and the guard accepts unchanged (measured on a
+  // local experiment, never committed: `ry(h,.5); f=icmp_sgt(h,5); cswap(f,h,g);
+  // tape_write(t,f); ry(h,.1)×n; measure(h)`, and `cqrt_xorc_i32(h,3)×n` for the
+  // do-while `q ^= 3` twin). That experiment also retires structural refusal
+  // (1) at `namesRoutedRegister`; see the retirement trigger there.
+  //
+  // ⚠ L1: THIS GUARD RUNS ONCE, over the classifying round's taint, and the park
+  // is emitted before round 2, so it is never re-asked. A name tainted only at
+  // round 2 (a 6.5/4.5 merge `%out` and its derivations) can therefore be live
+  // in the remainder unparked. Measured on `int y=(p>3)?g(k):7; if(k>100)
+  // puts(..); if(q>5) abort(); return cq_measure(q)+cq_measure(y);` (and the
+  // same with `(q>3)`): `opt` exit 0, and the stream is right. A value with any
+  // round-1-tainted operand (Q included) is tainted at round 1 and asked here,
+  // so a round-2-only value's tainted cone bottoms at `%out` rails alone. A
+  // pre-park `%out` is written by controlled copies whose flag the merge
+  // emitter strips BEFORE the park (`..._hl_unc(f, q, 3); cqrt_free(f)` ahead of
+  // the `cqrt_cswap` in the `(q>3)` trace), so nothing after the park
+  // reverse-computes against Q's parked rail, and the flag=1 tail stays
+  // orthogonal on the kept abort flag.
+  // RETIREMENT TRIGGER: a taint-growth stage that taints a value with Q in its
+  // operand cone at round 2, or a merge emitter that leaves its `%out` flag
+  // live for the whole-DAG spine to strip after the park, falsifies that
+  // argument; the guard must then be RECORDED here and re-asked after the
+  // round-2 fixpoint in both entry points.
   SmallVector<Value *, 4> LiveRegs;
   collectLiveRemainderRegs(Sibling, Taint, LiveRegs);
   for (Value *V : LiveRegs)
