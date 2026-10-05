@@ -1227,6 +1227,172 @@ void cqrt_qram_store_f80_controlled_unc(int32_t pred, int32_t arr, int32_t idx, 
     fflush(stdout);
 }
 
+/* bd test_C_libtooling-01po.9 — the CLASSICAL-index (literal `idx`) access to a
+ * QRAM-backed local array; see cq_runtime.h. Same trace-only bodies as the
+ * handle-index forms above, except `idx` prints as a decimal. */
+int32_t cqrt_qram_load_i1_hl(int32_t arr, int32_t idx) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_qram_load_i1_hl(a%d, %d) -> h%d\n", arr, idx, out);
+    fflush(stdout);
+    return out;
+}
+int32_t cqrt_qram_load_i8_hl(int32_t arr, int32_t idx) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_qram_load_i8_hl(a%d, %d) -> h%d\n", arr, idx, out);
+    fflush(stdout);
+    return out;
+}
+int32_t cqrt_qram_load_i16_hl(int32_t arr, int32_t idx) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_qram_load_i16_hl(a%d, %d) -> h%d\n", arr, idx, out);
+    fflush(stdout);
+    return out;
+}
+int32_t cqrt_qram_load_i32_hl(int32_t arr, int32_t idx) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_qram_load_i32_hl(a%d, %d) -> h%d\n", arr, idx, out);
+    fflush(stdout);
+    return out;
+}
+int32_t cqrt_qram_load_i64_hl(int32_t arr, int32_t idx) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_qram_load_i64_hl(a%d, %d) -> h%d\n", arr, idx, out);
+    fflush(stdout);
+    return out;
+}
+int32_t cqrt_qram_load_f16_hl(int32_t arr, int32_t idx) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_qram_load_f16_hl(a%d, %d) -> h%d\n", arr, idx, out);
+    fflush(stdout);
+    return out;
+}
+int32_t cqrt_qram_load_f32_hl(int32_t arr, int32_t idx) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_qram_load_f32_hl(a%d, %d) -> h%d\n", arr, idx, out);
+    fflush(stdout);
+    return out;
+}
+int32_t cqrt_qram_load_f64_hl(int32_t arr, int32_t idx) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_qram_load_f64_hl(a%d, %d) -> h%d\n", arr, idx, out);
+    fflush(stdout);
+    return out;
+}
+int32_t cqrt_qram_load_f80_hl(int32_t arr, int32_t idx) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_qram_load_f80_hl(a%d, %d) -> h%d\n", arr, idx, out);
+    fflush(stdout);
+    return out;
+}
+void cqrt_qram_load_i1_hl_unc(int32_t out, int32_t arr, int32_t idx) {
+    printf("cqrt_qram_load_i1_hl_unc(h%d, a%d, %d)\n", out, arr, idx);
+    fflush(stdout);
+}
+void cqrt_qram_load_i8_hl_unc(int32_t out, int32_t arr, int32_t idx) {
+    printf("cqrt_qram_load_i8_hl_unc(h%d, a%d, %d)\n", out, arr, idx);
+    fflush(stdout);
+}
+void cqrt_qram_load_i16_hl_unc(int32_t out, int32_t arr, int32_t idx) {
+    printf("cqrt_qram_load_i16_hl_unc(h%d, a%d, %d)\n", out, arr, idx);
+    fflush(stdout);
+}
+void cqrt_qram_load_i32_hl_unc(int32_t out, int32_t arr, int32_t idx) {
+    printf("cqrt_qram_load_i32_hl_unc(h%d, a%d, %d)\n", out, arr, idx);
+    fflush(stdout);
+}
+void cqrt_qram_load_i64_hl_unc(int32_t out, int32_t arr, int32_t idx) {
+    printf("cqrt_qram_load_i64_hl_unc(h%d, a%d, %d)\n", out, arr, idx);
+    fflush(stdout);
+}
+void cqrt_qram_load_f16_hl_unc(int32_t out, int32_t arr, int32_t idx) {
+    printf("cqrt_qram_load_f16_hl_unc(h%d, a%d, %d)\n", out, arr, idx);
+    fflush(stdout);
+}
+void cqrt_qram_load_f32_hl_unc(int32_t out, int32_t arr, int32_t idx) {
+    printf("cqrt_qram_load_f32_hl_unc(h%d, a%d, %d)\n", out, arr, idx);
+    fflush(stdout);
+}
+void cqrt_qram_load_f64_hl_unc(int32_t out, int32_t arr, int32_t idx) {
+    printf("cqrt_qram_load_f64_hl_unc(h%d, a%d, %d)\n", out, arr, idx);
+    fflush(stdout);
+}
+void cqrt_qram_load_f80_hl_unc(int32_t out, int32_t arr, int32_t idx) {
+    printf("cqrt_qram_load_f80_hl_unc(h%d, a%d, %d)\n", out, arr, idx);
+    fflush(stdout);
+}
+void cqrt_qram_store_i1_hl(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i1_hl(a%d, %d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+void cqrt_qram_store_i8_hl(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i8_hl(a%d, %d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+void cqrt_qram_store_i16_hl(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i16_hl(a%d, %d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+void cqrt_qram_store_i32_hl(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i32_hl(a%d, %d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+void cqrt_qram_store_i64_hl(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i64_hl(a%d, %d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+void cqrt_qram_store_f16_hl(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f16_hl(a%d, %d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+void cqrt_qram_store_f32_hl(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f32_hl(a%d, %d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+void cqrt_qram_store_f64_hl(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f64_hl(a%d, %d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+void cqrt_qram_store_f80_hl(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f80_hl(a%d, %d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+void cqrt_qram_store_i1_hl_unc(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i1_hl_unc(a%d, %d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+void cqrt_qram_store_i8_hl_unc(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i8_hl_unc(a%d, %d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+void cqrt_qram_store_i16_hl_unc(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i16_hl_unc(a%d, %d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+void cqrt_qram_store_i32_hl_unc(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i32_hl_unc(a%d, %d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+void cqrt_qram_store_i64_hl_unc(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i64_hl_unc(a%d, %d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+void cqrt_qram_store_f16_hl_unc(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f16_hl_unc(a%d, %d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+void cqrt_qram_store_f32_hl_unc(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f32_hl_unc(a%d, %d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+void cqrt_qram_store_f64_hl_unc(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f64_hl_unc(a%d, %d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+void cqrt_qram_store_f80_hl_unc(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f80_hl_unc(a%d, %d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+
 /* ---------------------------------------------------------------------
  * Free — width-irrelevant.
  * ------------------------------------------------------------------- */

@@ -74,7 +74,9 @@ constexpr char kMsgQramCell[] =
 // The exact diagnostic strings the Shadow (alloca-backed store/load) emitter owns
 // (Phase 7.5 Inc 2; PRD-7.5 §2.8). The negative LIT fixtures mirror each one
 // CHARACTER-FOR-CHARACTER (Rule 12):
-//   * lowering_reject_qram_mixed_access.ll → kMsgQramMixed  (§6.6)
+//   * lowering_reject_qram_classical_read_before_quantum_write.ll,
+//     lowering_reject_qram_classical_index_in_loop.ll → kMsgQramMixed  (§6.6; the
+//     classical accesses bd 01po.9 does not lower)
 //   * lowering_reject_qram_alloca_escape.ll → kMsgQramEscape (§2.8(iv))
 //   * lowering_reject_qram_mid_seq.ll      → kMsgQramMidSeq  (§2.8(iii))
 //   * lowering_reject_qram_nonzero_init.ll → kMsgQramInit    (§2.6/§6.5, Inc 3)
@@ -683,6 +685,9 @@ struct ShadowAccess {
   Value *RawIndex;          // the gep's trailing (tainted) index operand
   Value *StoreVal;          // the stored value (store only; null for a load)
   bool IsStore;
+  // bd 01po.9 — a CLASSICAL-index access (`classicalCellAccess`): `RawIndex` is the
+  // classical cell index and `Gep` is null for the bare array pointer (`arr[0]`).
+  bool Classical = false;
 };
 
 }  // namespace
@@ -1022,6 +1027,124 @@ std::optional<ShadowAccess> classifyShadowAccess(Instruction *MemOp,
     return std::nullopt;
   return ShadowAccess{M->MemOp,  M->Gep,   M->Origin.AI, M->ElemAbi,
                       M->Count,  M->RawIndex, M->StoreVal, M->IsStore};
+}
+
+// ── bd test_C_libtooling-01po.9: a CLASSICAL-index access to a QRAM-backed local
+//    array (owner ruling 2026-10-05: the literal-index `cqrt_qram_{load,store}_<W>_hl`).
+//
+// Once one access of a local array has a quantum index its cells are quantum, so a
+// classical read must be a QRAM read and a classical write a QRAM write. `MemOp`
+// reads or writes ONE cell of the alloca array `AI` at a CLASSICAL index, returned in
+// `Idx`. Three spellings, all with the accessed type equal to the cell type:
+//   * an array-decay / flat-element GEP whose trailing index is UNTAINTED — the
+//     tainted-index access's own structural accept (`matchQramAccess`, which also
+//     asks the single-use GEP, straight-line and not-in-a-loop);
+//   * a single-use all-constant GEP straight off `AI` whose byte offset is a whole
+//     in-bounds cell (`arr[1]` is `getelementptr inbounds i8, ptr %arr, i64 4`);
+//   * the array pointer itself (`arr[0]`).
+// Not volatile or atomic, straight-line, not in a loop. A store must write a
+// CLASSICAL value: a quantum value written at a classical index is the rail-bank
+// carve's domain (L-1a), never this one's (TaintPropagation.cpp, "a CLASSICAL index
+// over quantum cells"). Anything else stays the alloca-wide mixed-access decline.
+bool classicalCellAccess(Instruction *MemOp, AllocaInst *AI,
+                         const TaintSet &taint, DominatorTree &DT,
+                         LoopInfo &LInfo, Value *&Idx) {
+  Value *Ptr = nullptr;
+  Type *AccTy = nullptr;
+  if (auto *LI = dyn_cast<LoadInst>(MemOp)) {
+    if (!LI->isSimple())
+      return false;
+    Ptr = LI->getPointerOperand();
+    AccTy = LI->getType();
+  } else if (auto *SI = dyn_cast<StoreInst>(MemOp)) {
+    if (!SI->isSimple() ||
+        taint.Tainted.count(const_cast<Value *>(SI->getValueOperand())))
+      return false;
+    Ptr = SI->getPointerOperand();
+    AccTy = SI->getValueOperand()->getType();
+  } else {
+    return false;
+  }
+  auto *AT = dyn_cast<ArrayType>(AI->getAllocatedType());
+  if (!AT || AI->isArrayAllocation() || AT->getNumElements() == 0 ||
+      AccTy != AT->getElementType())
+    return false;
+  if (instUnderTaintedControl(MemOp, taint, DT) ||
+      LInfo.getLoopFor(MemOp->getParent()))
+    return false;
+  Type *I32 = Type::getInt32Ty(AI->getContext());
+  if (Ptr == AI) {
+    Idx = ConstantInt::get(I32, 0);
+    return true;
+  }
+  auto *GEP = dyn_cast<GetElementPtrInst>(Ptr);
+  if (!GEP || !GEP->hasOneUse() || GEP->getPointerOperand() != AI)
+    return false;
+  if (auto M = matchQramAccess(MemOp, taint, DT, LInfo,
+                               /*allowTaintedControl=*/false,
+                               /*allowUntaintedIndex=*/true)) {
+    if (M->Origin.Kind != OriginResult::Alloca || M->Origin.AI != AI ||
+        taint.Tainted.count(M->RawIndex))
+      return false;
+    Idx = M->RawIndex;
+    return true;
+  }
+  const DataLayout &DL = AI->getModule()->getDataLayout();
+  APInt Off(DL.getIndexTypeSizeInBits(GEP->getType()), 0);
+  if (!GEP->accumulateConstantOffset(DL, Off) || Off.isNegative())
+    return false;
+  const uint64_t Size = DL.getTypeAllocSize(AT->getElementType());
+  if (Size == 0 || Off.urem(Size) != 0)
+    return false;
+  const APInt Cell = Off.udiv(Size);
+  if (Cell.uge(AT->getNumElements()))
+    return false;
+  Idx = ConstantInt::get(I32, Cell.getZExtValue());
+  return true;
+}
+
+bool guardedShadowStoreShapeImpl(StoreInst *SI, const TaintSet &taint,
+                                 DominatorTree &DT, LoopInfo &LInfo);
+
+// The local arrays of `F` that hold quantum cells — those with a quantum-index
+// access, straight-line (`classifyShadowAccess`) or the guarded store a control
+// region will flatten into one (`guardedShadowStoreShapeImpl`) — each mapped to its
+// quantum-index STORES (possibly none: a quantum-index read of a classically
+// written table).
+void quantumIndexedAllocas(
+    Function &F, const TaintSet &taint, DominatorTree &DT, LoopInfo &LInfo,
+    MapVector<AllocaInst *, SmallVector<Instruction *, 2>> &Out) {
+  for (Instruction &I : instructions(F)) {
+    if (auto A = classifyShadowAccess(&I, taint, DT, LInfo)) {
+      auto &Stores = Out[A->Alloca];
+      if (A->IsStore)
+        Stores.push_back(&I);
+      continue;
+    }
+    auto *SI = dyn_cast<StoreInst>(&I);
+    if (!SI || !guardedShadowStoreShapeImpl(SI, taint, DT, LInfo))
+      continue;
+    OriginResult O = walkPtrOrigin(
+        cast<GetElementPtrInst>(SI->getPointerOperand())->getPointerOperand());
+    if (O.Kind == OriginResult::Alloca)
+      Out[O.AI].push_back(SI);
+  }
+}
+
+// The memop (a load or store) that reads or writes through use `U` of `AI`
+// directly or through its single-use address GEP; null for any other user.
+Instruction *cellAccessThrough(User *U, AllocaInst *AI) {
+  if (auto *LI = dyn_cast<LoadInst>(U))
+    return LI->getPointerOperand() == AI ? LI : nullptr;
+  if (auto *SI = dyn_cast<StoreInst>(U))
+    return SI->getPointerOperand() == AI ? SI : nullptr;
+  auto *GEP = dyn_cast<GetElementPtrInst>(U);
+  if (!GEP || !GEP->hasOneUse())
+    return nullptr;
+  auto *M = dyn_cast<Instruction>(*GEP->user_begin());
+  if (!M || getLoadStorePointerOperand(M) != GEP)
+    return nullptr;
+  return M;
 }
 
 // bd 3c6m.13 — is `LI` a would-be QROM read (constant-global table, tainted trailing
@@ -2638,6 +2761,46 @@ bool qramAccessReads(Instruction &I, const TaintSet &taint,
   return Reads.size() != Before;
 }
 
+// bd test_C_libtooling-01po.9 — see QramLowering.h. The SAME two predicates the
+// emitter asks (`quantumIndexedAllocas` / `classicalCellAccess` via
+// `processShadowAlloca`), so the seed and the lowering cannot disagree about which
+// read becomes a QRAM read.
+void qramClassicalIndexLoads(Function &F, const TaintSet &taint,
+                             SmallPtrSetImpl<LoadInst *> &Out) {
+  if (F.isDeclaration())
+    return;
+  // Cheap pre-filter: no tainted address GEP, no quantum-indexed array.
+  bool Any = false;
+  for (Instruction &I : instructions(F))
+    if (isa<GetElementPtrInst>(&I) && taint.Tainted.count(&I)) {
+      Any = true;
+      break;
+    }
+  if (!Any)
+    return;
+  DominatorTree DT(F);
+  LoopInfo LInfo(DT);
+  MapVector<AllocaInst *, SmallVector<Instruction *, 2>> Quantum;
+  quantumIndexedAllocas(F, taint, DT, LInfo, Quantum);
+  for (auto &[AI, QStores] : Quantum)
+    for (User *U : AI->users())
+      if (auto *LD = dyn_cast_or_null<LoadInst>(cellAccessThrough(U, AI))) {
+        Value *K = nullptr;
+        if (!classicalCellAccess(LD, AI, taint, DT, LInfo, K))
+          continue;
+        // ONLY a read some quantum write can reach. A cell no quantum-index store
+        // has touched on any path into the read is still the classical contents
+        // the source reads, and making that value a register would turn the
+        // program's classical use of it into a quantum one (`int w = arr[k]; …
+        // return w;` then declined as a quantum return). Such a read is left
+        // unseeded, and the emitter keeps it the loud mixed-access decline.
+        if (llvm::any_of(QStores, [&](Instruction *S) {
+              return isPotentiallyReachable(S, LD, /*ExclusionSet=*/nullptr, &DT);
+            }))
+          Out.insert(LD);
+      }
+}
+
 QromClaim classifyQromReadUnderControl(
     LoadInst *LI, const TaintSet &taint, DominatorTree &DT, LoopInfo &LInfo,
     uint64_t *OutCount, const llvm::SmallPtrSetImpl<llvm::BasicBlock *> *Region,
@@ -3416,8 +3579,26 @@ void emitCopyOutIfDirectMeasure(CallInst *Out, StringRef ElemAbi, WidthDispatch 
 // mid-sequence-observation guard — are checked here; any failure loud-declines the
 // WHOLE alloca (its per-access-well-formed accesses were already carved, so opt
 // exits non-zero regardless — the Inc-1 carve/emit-consistency discipline, §6.9).
-void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> Accesses,
-                         WidthDispatch &wd, TaintSet &taint, DominatorTree &DT) {
+// The literal-index QRAM forms (bd 01po.9, cq_runtime.h): `i32(i32 arr, i32 idx)`
+// for the load, `void(i32 arr, i32 idx, i32 val)` for the store, at exactly the
+// widths that have a QRAM cell. (The handle-index getters live in WidthDispatch.)
+FunctionCallee qramHlFn(Module &M, StringRef ElemAbi, bool IsStore) {
+  if (!widthHasQramCell(ElemAbi))
+    return FunctionCallee();
+  LLVMContext &Ctx = M.getContext();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  if (IsStore)
+    return M.getOrInsertFunction(
+        ("cqrt_qram_store_" + ElemAbi + "_hl").str(),
+        FunctionType::get(Type::getVoidTy(Ctx), {I32, I32, I32}, false));
+  return M.getOrInsertFunction(("cqrt_qram_load_" + ElemAbi + "_hl").str(),
+                               FunctionType::get(I32, {I32, I32}, false));
+}
+
+void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> TaintedAccesses,
+                         WidthDispatch &wd, TaintSet &taint, DominatorTree &DT,
+                         LoopInfo &LInfo) {
+  ArrayRef<ShadowAccess> Accesses = TaintedAccesses;
   StringRef ElemAbi = Accesses.front().ElemAbi;
   uint64_t Count = Accesses.front().Count;
   Instruction *Anchor = Accesses.front().MemOp;  // a real access for the !dbg.
@@ -3446,24 +3627,47 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> Accesses,
   // §2.8(iv) provenance / no-aliasing + §2.6 initializer modeling: EVERY use of the
   // alloca must be one of (a) an accepted tainted-index access gep, (b) the
   // classical initializer (`llvm.memset` — its contents are classical metadata,
-  // only the count reaches the alloc), or (c) a lifetime marker. A classical-index
-  // gep on the SAME alloca is a mixed access (§6.6) — the stub model cannot keep a
-  // quantum array register and a classical pointer view of the same memory
-  // coherent, so DECLINE (a fully-classical SEPARATE array is never a candidate and
-  // is left untouched — the "no spurious taint" property). Any other use (the
-  // alloca pointer captured by a call, `ptrtoint`, a non-memset initializer) →
-  // pointer/heap escape, DECLINE.
+  // only the count reaches the alloc), (c) a lifetime marker, or (d) since bd
+  // 01po.9 a CLASSICAL-index access (`classicalCellAccess`), lowered as a QRAM access
+  // at a literal index rather than kept as a classical pointer view of the same
+  // memory (the coherence the §6.6 decline protected). A classical-index access this
+  // does not lower is still a mixed access (§6.6), DECLINE (a fully-classical
+  // SEPARATE array is never a candidate and is left untouched — the "no spurious
+  // taint" property). Any other use (the alloca pointer captured by a call,
+  // `ptrtoint`, a non-memset initializer) → pointer/heap escape, DECLINE.
   SmallVector<Instruction *, 4> InitErase;
+  // bd 01po.9 — the CLASSICAL-index accesses of this quantum array: a QRAM read or
+  // write at a literal index (`classicalCellAccess`). A read is lowered only if
+  // `propagate` SEEDED it (`qramClassicalIndexLoads`): its users were tainted from
+  // that seed, so a classical consumer can never be left reading the handle. An
+  // unseeded one (a taint-growth event that never re-propagated) fails closed here.
+  SmallVector<ShadowAccess, 4> ClassicalAccesses;
   for (User *U : AI->users()) {
     auto *UI = dyn_cast<Instruction>(U);
     if (!UI) {
       diagnose(AI, kMsgQramEscape);
       return;
     }
+    if (isa<GetElementPtrInst>(UI) && AccessGeps.count(UI))
+      continue;  // an accepted tainted-index access.
+    if (Instruction *Cell = cellAccessThrough(UI, AI)) {
+      Value *K = nullptr;
+      if (classicalCellAccess(Cell, AI, taint, DT, LInfo, K) &&
+          (isa<StoreInst>(Cell) || taint.Tainted.count(Cell))) {
+        auto *SI = dyn_cast<StoreInst>(Cell);
+        ShadowAccess CA{Cell, dyn_cast<GetElementPtrInst>(UI), AI, ElemAbi, Count,
+                        K, SI ? SI->getValueOperand() : nullptr, SI != nullptr};
+        CA.Classical = true;
+        ClassicalAccesses.push_back(CA);
+        continue;
+      }
+      if (isa<GetElementPtrInst>(UI)) {
+        diagnose(UI, kMsgQramMixed);  // an unaccepted classical-index access.
+        return;
+      }
+    }
     if (isa<GetElementPtrInst>(UI)) {
-      if (AccessGeps.count(UI))
-        continue;  // an accepted tainted-index access.
-      diagnose(UI, kMsgQramMixed);  // a classical-index / unaccepted gep.
+      diagnose(UI, kMsgQramMixed);  // a gep that addresses no single cell.
       return;
     }
     if (auto *II = dyn_cast<IntrinsicInst>(UI)) {
@@ -3492,6 +3696,21 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> Accesses,
     diagnose(UI, kMsgQramEscape);
     return;
   }
+
+  // Every access in PROGRAM ORDER from here on, the classical ones included: the
+  // mid-sequence, coherent-escape and emission loops below ask every one of them.
+  SmallVector<ShadowAccess, 8> All(TaintedAccesses.begin(), TaintedAccesses.end());
+  if (!ClassicalAccesses.empty()) {
+    All.append(ClassicalAccesses.begin(), ClassicalAccesses.end());
+    DenseMap<const Instruction *, unsigned> Pos;
+    unsigned N = 0;
+    for (Instruction &I : instructions(*AI->getFunction()))
+      Pos[&I] = N++;
+    llvm::stable_sort(All, [&](const ShadowAccess &A, const ShadowAccess &B) {
+      return Pos.lookup(A.MemOp) < Pos.lookup(B.MemOp);
+    });
+  }
+  Accesses = All;
 
   // §2.8(iii) mid-sequence observation: a load whose value is OBSERVED (measured /
   // returned) with a store to this array AFTER it (program order) reads an
@@ -3536,10 +3755,21 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> Accesses,
 
   // Every index must resolve to the i32 index width (`resolveQramIndex`); ask
   // before emitting anything so a failure never leaves the alloca half-lowered.
+  // A classical index is a literal (bd 01po.9): no rail, no width to resolve.
   for (const ShadowAccess &A : Accesses)
-    if (!checkQramIndexWidth(A.Gep->getOperand(A.Gep->getNumOperands() - 1),
+    if (!A.Classical &&
+        !checkQramIndexWidth(A.Gep->getOperand(A.Gep->getNumOperands() - 1),
                              A.MemOp, taint))
       return;
+  FunctionCallee LoadHlFn, StoreHlFn;
+  if (!ClassicalAccesses.empty()) {
+    LoadHlFn = qramHlFn(*AI->getModule(), ElemAbi, /*IsStore=*/false);
+    StoreHlFn = qramHlFn(*AI->getModule(), ElemAbi, /*IsStore=*/true);
+    if (!LoadHlFn || !StoreHlFn) {
+      diagnose(Anchor, kMsgQramCell);  // unreachable past the width gate.
+      return;
+    }
+  }
 
   // All invariants hold → emit. Array-handle birth: ONE `cqrt_qram_alloc_<W>(N)` at
   // entry. TAINTED — an alloca-backed mutable array is an in-place-mutated register
@@ -3558,6 +3788,39 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> Accesses,
 
   SmallVector<Instruction *, 16> ToErase;
   for (const ShadowAccess &A : Accesses) {
+    if (A.Classical) {
+      // bd 01po.9 — the literal-index QRAM access. The index is a CLASSICAL value
+      // (R13: a literal, never a cqrt_alloc'd rail) and an in-bounds cell index fits
+      // i32 exactly, as the handle-index contract already states for `idx`. A
+      // classical stored value is materialized exactly as the handle-index store
+      // does (the frozen §2.5 `val` contract, below).
+      IRBuilder<> B(A.MemOp);
+      Value *K = A.RawIndex;
+      if (K->getType() != I32)
+        K = B.CreateSExtOrTrunc(K, I32, "qidx.lit");
+      CallInst *Q;
+      if (A.IsStore) {
+        Value *Val = cast<StoreInst>(A.MemOp)->getValueOperand();
+        CallInst *VH = B.CreateCall(wd.allocFn(ElemAbi), {Val}, "qval");
+        if (DebugLoc DL = A.MemOp->getDebugLoc())
+          VH->setDebugLoc(DL);
+        Q = B.CreateCall(StoreHlFn, {Arr, K, VH});
+      } else {
+        Q = B.CreateCall(LoadHlFn, {Arr, K});
+        taint.Tainted.insert(Q);
+        taint.HandleWidth[Q] = ElemAbi;
+        taint.BirthOrder[Q] = taint.NextBirth++;
+        A.MemOp->replaceAllUsesWith(Q);
+      }
+      if (DebugLoc DL = A.MemOp->getDebugLoc())
+        Q->setDebugLoc(DL);
+      if (!A.IsStore)
+        emitCopyOutIfDirectMeasure(Q, ElemAbi, wd, taint);
+      ToErase.push_back(A.MemOp);
+      if (A.Gep)
+        ToErase.push_back(A.Gep);
+      continue;
+    }
     // bd gyc9 (the 7z9k.3 fresh-value-read's INDEX twin): re-read the index FRESH
     // from the LIVE gep's trailing operand, NOT the captured `A.RawIndex`. When an
     // earlier-processed load access RAUW'd its original load to the new
@@ -3688,7 +3951,7 @@ void lowerShadowMemory(Module &M, WidthDispatch &wd, TaintSet &taint) {
         }
       }
     for (AllocaInst *AI : Order)
-      processShadowAlloca(AI, ByAlloca[AI], wd, taint, *DT);
+      processShadowAlloca(AI, ByAlloca[AI], wd, taint, *DT, *LInfo);
   }
 }
 

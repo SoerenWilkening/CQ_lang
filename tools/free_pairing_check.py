@@ -866,6 +866,22 @@ def classify(sym):
         return Effect("gate", reads=(0, 2, 3), writes=(1,), controls=(0,),
                       adjoint_of="twin:cqrt_qram_store_" + m.group(1) +
                                  "_controlled")
+    # bd test_C_libtooling-01po.9 — the CLASSICAL-index forms: slot 1 (`idx`) is a
+    # classical literal (`classical_imm`), never a rail; `arr` and `val`/`out` are
+    # handles exactly as in the handle-index forms above.
+    if re.fullmatch(rf"cqrt_qram_load_{_W}_hl", sym):
+        return Effect("mint", reads=(0,), mints="rail", classical_imm=(1,))
+    m = re.fullmatch(rf"cqrt_qram_load_({_W})_hl_unc", sym)
+    if m:
+        return Effect("unc", reads=(1,), writes=(0,), classical_imm=(2,),
+                      base=f"cqrt_qram_load_{m.group(1)}_hl")
+    if re.fullmatch(rf"cqrt_qram_store_{_W}_hl", sym):
+        return Effect("gate", reads=(2,), writes=(0,), classical_imm=(1,),
+                      adjoint_of="twin:" + sym + "_unc")
+    m = re.fullmatch(rf"cqrt_qram_store_({_W})_hl_unc", sym)
+    if m:
+        return Effect("gate", reads=(2,), writes=(0,), classical_imm=(1,),
+                      adjoint_of="twin:cqrt_qram_store_" + m.group(1) + "_hl")
 
     # ---- generated templates + specialization clones ----------------------
     # Grammar (TemplateName.h):

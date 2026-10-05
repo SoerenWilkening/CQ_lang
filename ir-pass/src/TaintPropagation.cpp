@@ -98,6 +98,17 @@ void diagnoseIntrinsicInvoke(CallBase *CB, const Function *Callee) {
 // a phi propagates taint through a tainted operand (reached as an ordinary
 // user) but never introduces it, and a phi on a classical operand must
 // still be collected so the lowering can delete it.
+// THE ONE SPELLING of "a load from QUANTUM MEMORY is a taint seed": a rail-bank
+// cell read (below) and, since bd test_C_libtooling-01po.9, a classical-index read
+// of a QRAM-backed local array (`qramClassicalIndexLoads`, seeded at the end of
+// `propagate`). Taint is otherwise SSA-only, so a load needs this to make its
+// consumers quantum.
+void seedQuantumMemoryLoad(LoadInst *LD, TaintSet &out,
+                           std::vector<Value *> &Worklist) {
+  if (out.Tainted.insert(LD).second)
+    Worklist.push_back(LD);
+}
+
 void collectAndSeed(Function &F, const FnSet &ThetaFns, const FnSet &PhiFns,
                     const FnSet &MeasureFns, const Function *PhaseFn,
                     TaintSet &out, std::vector<Value *> &Worklist) {
@@ -135,9 +146,8 @@ void collectAndSeed(Function &F, const FnSet &ThetaFns, const FnSet &PhiFns,
       // CONSUMERS are, and they are adjudicated by the D5 allow-list
       // (`declineUnallowedRailBankReaders`).
       if (auto *LD = dyn_cast<LoadInst>(&I)) {
-        if (railBankOfPointer(LD->getPointerOperand()) &&
-            out.Tainted.insert(LD).second)
-          Worklist.push_back(LD);
+        if (railBankOfPointer(LD->getPointerOperand()))
+          seedQuantumMemoryLoad(LD, out, Worklist);
         continue;
       }
       // CallBase (not CallInst) so an `invoke` of a front-end intrinsic is
@@ -909,6 +919,29 @@ TaintSet propagate(Module &M, WidthDispatch &wd) {
   // `skipRuntimeCalls=false`: no `cqrt_*`/`cq_template_*` calls exist pre-lowering.
   propagateWorklist(Worklist, ThetaFns, PhiFns, MeasureFns, out,
                     /*skipRuntimeCalls=*/false);
+
+  // bd test_C_libtooling-01po.9 — a CLASSICAL-index read of a local array that also
+  // has a quantum-index access reads quantum cells: it is a QRAM read and its value
+  // a register (`qramClassicalIndexLoads`). Which arrays qualify is a question about
+  // the INDEX taint the drain above settles, so the seed follows it, and a seeded
+  // read can taint another array's index; iterate to the fixpoint (monotone: seeds
+  // only grow, and there are finitely many loads). Inside `propagate`, the funnel
+  // every full re-propagation and `declineStaleTaintSet` go through, like the
+  // rail-bank seed. A taint-growth DELTA that never re-propagates seeds nothing,
+  // and the emitter then refuses the unseeded read (`processShadowAlloca`).
+  for (;;) {
+    std::vector<Value *> More;
+    for (Function &F : M) {
+      SmallPtrSet<LoadInst *, 4> Reads;
+      qramClassicalIndexLoads(F, out, Reads);
+      for (LoadInst *LD : Reads)
+        seedQuantumMemoryLoad(LD, out, More);
+    }
+    if (More.empty())
+      break;
+    propagateWorklist(More, ThetaFns, PhiFns, MeasureFns, out,
+                      /*skipRuntimeCalls=*/false);
+  }
 
   // bd `test_C_libtooling-3jru`: call-return taint is closed INSIDE
   // `propagateWorklist` (see there), so this rebuild is closed under it too.

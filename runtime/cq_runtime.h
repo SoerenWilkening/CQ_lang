@@ -692,6 +692,66 @@ void cqrt_qram_store_f64_controlled_unc(int32_t pred, int32_t arr, int32_t idx, 
 void cqrt_qram_store_f80_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val);
 
 /* -----------------------------------------------------------------
+ * bd test_C_libtooling-01po.9 (owner ruling 2026-10-05) — a CLASSICAL-index
+ * access to a QRAM-backed local array (one that also has a quantum-index
+ * access). `idx` is a CLASSICAL value passed as a literal (R13: never a
+ * cqrt_alloc'd rail); `arr` and `val`/`out` are handles exactly as in the
+ * forms above, with the same cell widths (`widthHasQramCell`).
+ *   cqrt_qram_load_<W>_hl(arr, idx) -> out
+ *       Copy cell `idx` out into a FRESH value handle (the cell is
+ *       preserved); an ordinary reversible data producer, reversed by
+ *       cqrt_qram_load_<W>_hl_unc(out, arr, idx) (out-first).
+ *   cqrt_qram_store_<W>_hl(arr, idx, val)
+ *       Write `val` into cell `idx`; VOID and in place on the arg-0 array
+ *       handle, the displaced old value on the backend's own tape, reversed by
+ *       cqrt_qram_store_<W>_hl_unc(arr, idx, val) (same args; pops the tape).
+ * Trace: `idx` is a classical value and prints as a DECIMAL, not a handle:
+ *     "cqrt_qram_load_<W>_hl(a<arr>, <idx>) -> h<out>"
+ *     "cqrt_qram_load_<W>_hl_unc(h<out>, a<arr>, <idx>)"     (void).
+ *     "cqrt_qram_store_<W>_hl(a<arr>, <idx>, h<val>)"         (void).
+ *     "cqrt_qram_store_<W>_hl_unc(a<arr>, <idx>, h<val>)"     (void).
+ * ----------------------------------------------------------------- */
+int32_t cqrt_qram_load_i1_hl (int32_t arr, int32_t idx);
+int32_t cqrt_qram_load_i8_hl (int32_t arr, int32_t idx);
+int32_t cqrt_qram_load_i16_hl(int32_t arr, int32_t idx);
+int32_t cqrt_qram_load_i32_hl(int32_t arr, int32_t idx);
+int32_t cqrt_qram_load_i64_hl(int32_t arr, int32_t idx);
+int32_t cqrt_qram_load_f16_hl(int32_t arr, int32_t idx);
+int32_t cqrt_qram_load_f32_hl(int32_t arr, int32_t idx);
+int32_t cqrt_qram_load_f64_hl(int32_t arr, int32_t idx);
+int32_t cqrt_qram_load_f80_hl(int32_t arr, int32_t idx);
+
+void cqrt_qram_load_i1_hl_unc (int32_t out, int32_t arr, int32_t idx);
+void cqrt_qram_load_i8_hl_unc (int32_t out, int32_t arr, int32_t idx);
+void cqrt_qram_load_i16_hl_unc(int32_t out, int32_t arr, int32_t idx);
+void cqrt_qram_load_i32_hl_unc(int32_t out, int32_t arr, int32_t idx);
+void cqrt_qram_load_i64_hl_unc(int32_t out, int32_t arr, int32_t idx);
+void cqrt_qram_load_f16_hl_unc(int32_t out, int32_t arr, int32_t idx);
+void cqrt_qram_load_f32_hl_unc(int32_t out, int32_t arr, int32_t idx);
+void cqrt_qram_load_f64_hl_unc(int32_t out, int32_t arr, int32_t idx);
+void cqrt_qram_load_f80_hl_unc(int32_t out, int32_t arr, int32_t idx);
+
+void cqrt_qram_store_i1_hl (int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i8_hl (int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i16_hl(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i32_hl(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i64_hl(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f16_hl(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f32_hl(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f64_hl(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f80_hl(int32_t arr, int32_t idx, int32_t val);
+
+void cqrt_qram_store_i1_hl_unc (int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i8_hl_unc (int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i16_hl_unc(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i32_hl_unc(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i64_hl_unc(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f16_hl_unc(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f32_hl_unc(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f64_hl_unc(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f80_hl_unc(int32_t arr, int32_t idx, int32_t val);
+
+/* -----------------------------------------------------------------
  * Free — width-irrelevant (handle-typed only). Compiler-emitted after the
  * lowering proves that the rail is in |0⟩; never a user-facing primitive.
  * Trace: "cqrt_free(h<handle>)" (no return-value suffix).

@@ -3987,6 +3987,19 @@ add_test(NAME e2e-slice-qram-guarded-store-fp
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_guarded_store_fp.expected.log")
 
+# bd 01po.9 (owner ruling 2026-10-05): CLASSICAL-index accesses to a QRAM-backed
+# local array lower to the literal-index cqrt_qram_{load,store}_i32_hl forms (no rail
+# for the index, R13). Non-main helper whose index source is never measured, so every
+# store reverses in LIFO and all four new symbols (_hl, _hl_unc for load and store)
+# resolve, signature-match and trace through a real link.
+add_test(NAME e2e-slice-qram-classical-index
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_classical_index.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_classical_index.expected.log")
+
 # Phase 7.3 Increment 1 (test_C_libtooling-799w.1): the rolled-in-place Case A
 # phase accumulator. A classically-bounded loop over an in-place persistent f64
 # rail, `for (i<n) { if (q == 2.0) cq_phi(0.1); cq_theta(&q, 0.05); }` (rewritten
