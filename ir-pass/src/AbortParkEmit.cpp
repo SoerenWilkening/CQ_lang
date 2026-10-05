@@ -250,20 +250,32 @@ void collectLiveRemainderRegs(BasicBlock *Sibling, const TaintSet &Taint,
 // then fires on `h`, the handle the park's cswap leaves holding the survivor.
 //
 // ⚠ ACCEPT DIRECTION. More names here GRANTS. The owner's index-less
-// `InPlaceRailOps` fallback over-approximates (collects every tainted operand),
-// which is the refusing direction for its other callers and the granting one
-// here; it is unreachable while `markInPlaceRailOp` writes the index with the
-// membership. RETIREMENT TRIGGER: if that fallback becomes reachable, refuse it
-// here before relying on the closure.
-// POSITION is not asked here. A relabelling between the compare and the branch
+// `InPlaceRailOps` fallback collects every tainted operand and stops, which
+// refuses for its other callers and grants here. It IS reachable as code:
+// `markInPlaceRailOp` inserts membership unconditionally and writes the index
+// only `if (Rail)`; that its three callers without a proven rail checked the
+// shape first is an argument about the callers, not a property of the code.
+// It still grants nothing wrong: on an add/xor-by-constant op the only tainted
+// operand IS the rail, so the fallback collects exactly that name and stops.
+//
+// POSITION is not asked here. A cq_theta between the compare and the branch
 // leaves the flag minted from a moved rail; that is `reverifyCmpCondReads`'s
 // question (this park records `CondReadKind::Unruled`, so nothing is exempted),
 // pinned by control_swap_reject_abort_inplace_ry_before_park.ll. That re-ask
-// counts only `cq_theta` stalers, so a dtzb op there would be invisible to it.
-// MEASURED unreachable from `-O1` C: a remainder-only `q += 3` is sunk past the
-// branch, and one a pre-park use keeps in `Pred` is no `InPlaceRailOps` member
-// at detection, so this closure does not cross it and the guard refuses.
-// RETIREMENT TRIGGER: a pre-branch `InPlaceRailOps` member on `Q`'s rail.
+// does NOT see an in-place add/xor, and three STRUCTURAL refusals keep one from
+// being an in-place relabelling of `Q` placed there: (1) `tryCaseA`'s CLOSURE
+// leaves a loop unclaimed when a tainted compare reads a value on its wire, so
+// an in-loop xor never joins `InPlaceRailOps`; (2) M-C's G6/G7(e): the park's
+// compare is an unsettled plain-IR prior user of `Q` and its flag mint a later
+// use, so a straight-line add stays out of place; (3) WireWalk.cpp's dtzb note
+// deliberately does not cross these ops (its G6 premise assumes the read stays
+// at its IR position; the park moves it to the branch). RETIREMENT TRIGGER: if
+// CLOSURE ever admits a compare consumer, or G7(e) admits plain-IR uses, a
+// stale flag can return SILENTLY.
+//
+// L9 DISCLOSURE: this also admits `if(q>5)abort(); int m=cq_measure(q);
+// cq_theta(&q,.3); …`, the bd yiid measure-then-rotate boundary. The emitted
+// `measure(h); ry(h); measure(h)` matches the source and the no-park program.
 bool namesRoutedRegister(const Value *V, const Value *Q,
                          const TaintSet &Taint) {
   SmallVector<const Value *, 8> Names;
