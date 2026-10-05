@@ -87,6 +87,11 @@ constexpr char kMsgUninvertible[] =
 // only some exclusive paths, so one unconditional adjoint at the merge would fire
 // on paths the forward gate never took (the reverted-543bd85 divergent-arm
 // miscompile). Per-arm reverse-play is Phase 4's job; Phase 5 declines (§2.4).
+// Since bd dm7f.2 a gate that merely runs AFTER the terminals' last uses (a
+// trailing in-place gate on a walked register, straight-line) moves the point
+// past it instead (`planTerminalReversal`), so this message now fires only when
+// no such point proves out — a gate on a classical arm
+// (lowering_reject_uncompute_trailing_gate_in_arm.ll).
 constexpr char kMsgDivergentArm[] =
     "cq uncompute: dead chain spans divergent control-flow arms";
 
@@ -841,7 +846,12 @@ TerminalPlan planTerminalReversal(Function &F, const DataDag &D,
   At = dagInsertPoint(Anchors, PDT);
   if (!At)
     return TerminalPlan::Leak;
-  if (At != dagInsertPoint(InsertAts, PDT)) {
+  Instruction *BaseAt = dagInsertPoint(InsertAts, PDT);
+  // The moved-point clause-(d) test above, as a predicate so the bd dm7f.2
+  // trailing-gate placement below asks it of its own point too.
+  auto movedPointClean = [&](Instruction *X) {
+    if (X == BaseAt)
+      return true;
     SmallPtrSet<Value *, 16> ReadByAdjoints;
     for (CallInst *G : D.Calls)
       for (Value *Op : G->args())
@@ -854,21 +864,24 @@ TerminalPlan planTerminalReversal(Function &F, const DataDag &D,
           if (!InDag.count(CI))
             for (Value *Op : CI->args())
               if (ReadByAdjoints.count(Op) && isInPlaceGateOn(CI, Op))
-                return TerminalPlan::Leak;  // clause (d) unprovable at the
-                                            // moved point — safe leak.
-  }
+                return false;  // clause (d) unprovable at the moved point
+    return true;
+  };
+  if (!movedPointClean(At))
+    return TerminalPlan::Leak;  // safe leak
 
   // Every gate must DOMINATE `At` (acyclic + dominating ⇒ ran exactly once on
   // every reaching path). For an iteration-local group this holds WITHIN the
   // iteration (no value crosses the backedge by construction of L4b); a gate that
   // does not dominate the in-body `At` (a split across a classical in-body
   // diamond) declines LOUDLY rather than reverse a partial chain.
-  CallInst *NonDominating = nullptr;
-  for (CallInst *G : D.Calls)
-    if (!DT.dominates(G, At)) {
-      NonDominating = G;
-      break;
-    }
+  auto firstNonDominating = [&](Instruction *X) -> CallInst * {
+    for (CallInst *G : D.Calls)
+      if (!DT.dominates(G, X))
+        return G;
+    return nullptr;
+  };
+  CallInst *NonDominating = firstNonDominating(At);
   // (§2.9) AT-MOST-ONCE. Dominance says every gate ran before `At`; it says NOTHING
   // about how many TIMES `At` itself runs. If `At` sits in a natural loop, one
   // emitted reversal executes K times: the adjoint of a once-run `cqrt_ry_i32(%h,
@@ -900,7 +913,43 @@ TerminalPlan planTerminalReversal(Function &F, const DataDag &D,
   // The 7.3 EXCEPTION is affirmative, not incidental: an ITERATION-LOCAL group is
   // reversed IN-BODY once per iteration BY DESIGN, over rails re-minted each
   // iteration, and `FreePoint` already re-checked that its anchor is in-body.
+  auto runsOnceAt = [&](Instruction *X) {
+    if (blockCanRepeat(X->getParent()) &&
+        !(IterLocal && taint.IterationLocalBlocks.count(X->getParent())))
+      return false;  // never a once-minted reversal on a per-iteration path
+    for (CallInst *G : D.Calls)  // the tu9q mirror below, for the dm7f.2 point
+      if (!multiplicityAgrees(G, X, LI, taint))
+        return false;
+    return true;
+  };
   if (NonDominating) {
+    // bd test_C_libtooling-dm7f.2 — A TRAILING GATE IS NOT A DIVERGENT ARM.
+    // The anchors are the terminals' last uses and the preserving sinks; an
+    // in-place gate on a walked register that runs AFTER all of them (`_Bool b
+    // = u; cq_theta(&b,.5); int v = tbl[b]; printf("%d %d\n", b, v);
+    // cq_theta(&b,-.5);` in a non-main function: the trailing Ry is in the DAG
+    // because the walk owns `b`) does not dominate that point, and this used
+    // to decline with the divergent-arm message on straight-line code. Place
+    // the reversal after it instead: every non-dominating gate's next node
+    // joins the anchors, and the new point is TAKEN ONLY IF the whole plan
+    // proves out there — every gate dominates it, the moved-point clause-(d)
+    // test holds, and it runs at most once with matching multiplicity.
+    // Reverse program order then undoes the trailing gate FIRST, so every
+    // earlier `_unc` reads the label its forward gate read. Anything less keeps
+    // today's verdict, a loud decline that now names a real divergent arm:
+    // a gate in a classical arm never dominates a point past the merge
+    // (lowering_reject_uncompute_trailing_gate_in_arm.ll), and a refused new
+    // point is never turned into a silent leak (bd 261j(a) risk 1, below).
+    SmallVector<Instruction *, 8> Ext(Anchors.begin(), Anchors.end());
+    for (CallInst *G : D.Calls)
+      if (!DT.dominates(G, At))
+        Ext.push_back(G->getNextNode());  // a call is never a terminator
+    Instruction *At2 = dagInsertPoint(Ext, PDT);
+    if (At2 && !firstNonDominating(At2) && movedPointClean(At2) &&
+        runsOnceAt(At2)) {
+      At = At2;
+      return TerminalPlan::Emit;
+    }
     Culprit = NonDominating;
     return TerminalPlan::DeclineDivergent;
   }
