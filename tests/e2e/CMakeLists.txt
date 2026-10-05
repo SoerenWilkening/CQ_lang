@@ -878,6 +878,31 @@ add_test(NAME e2e-angle-select-ry-ne-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne_ternary.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne_twin.expected.log")
 
+# bd 3paw — the Ry angle select followed by a classical loop that rotates the
+# SAME rail (the rolled subject) and its hand-unrolled by-difference twin (no
+# loop, no select; lowered before 3paw). The gate pins the rolled stream to the
+# oracle's byte for byte. Both STRICT stage 2b.
+add_test(NAME e2e-slice-control-angle-select-ry-forward-loop
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_forward_loop.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_forward_loop.expected.log")
+
+add_test(NAME e2e-slice-control-angle-select-ry-forward-loop-unrolled-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_forward_loop_unrolled_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_forward_loop_unrolled_twin.expected.log")
+
+add_test(NAME e2e-angle-select-ry-forward-loop-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_forward_loop.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_forward_loop_unrolled_twin.expected.log")
+
 # REMOVED 2026-09-05 (3qlq Inc 1, prep-b2): `e2e-angle-select-rz-twin-identical`.
 # It asserted `compare_files` between the Rz angle select and its BY-DIFFERENCE
 # manual twin, and under owner decision D2 that assertion is FALSE — not because

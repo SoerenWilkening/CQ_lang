@@ -9424,8 +9424,9 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   //     (`ChainWalk::railCarriesControlledRotation` stops the uncompute spine
   //     walking a rail that carries a controlled rotation), which reproduces on
   //     the oracle. Accept fixture:
-  //     `control_angle_select_forward_rail_cycle_frozen.ll`, whose header carries
-  //     the argument in full.
+  //     `control_angle_select_forward_rail_cycle_frozen.ll` (re-spelled by bd
+  //     3paw to the register-free form, a natural loop, collapsed; the pre-3qlq
+  //     argument above is in its git history).
   //     The `Exclude = T` rationale is correspondingly narrower than it reads: it
   //     is a statement about `T`'s OWN POSITION (asked directly by prong (ii)),
   //     NOT about the rail past `T`. Crossing `T` would sweep every legitimate
@@ -9447,11 +9448,17 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // `CQLoweringPass.cpp:310`, BEFORE detection, and its Case-A persistent-rail
   // COLLAPSE rewrites a loop header phi that carries the rail, which turns the
   // in-loop gate into a DIRECT forward user of `RotBase` — that is the only
-  // reason prong (iii) sees it despite `Exclude = T`. Measured both ways: with
-  // the header phi (`oa1_var_seed_t.ll`) the shape DECLINES; without one
-  // (`nat_sel_rz.ll`) the identical forward read ACCEPTS. So a future change to
+  // reason prong (iii) sees it despite `Exclude = T`. So a future change to
   // Case-A's collapse SILENTLY NARROWS S7, with no fixture here to notice — the
   // 8h7d.5 lesson running in the opposite direction.
+  // ⚠ CORRECTED by bd 3paw (L7). This paragraph also said that a FORWARD loop
+  // with a header phi (`oa1_var_seed_t.ll`) DECLINES while the identical read
+  // without one (`nat_sel_rz.ll`) ACCEPTS. The decline was the collapse's
+  // re-spelling, not a cycle question about `T`: a name the collapse moved onto
+  // `RotBase` from a POST-gate value is now skipped by this prong and by S9 (the
+  // `CollapsedRail` note below), so both spellings accept. What still rests on
+  // the collapse is the BACKWARD half only, a loop that runs before `T`
+  // (`control_angle_select_reject_backward_rail_cycle.ll`).
   if (!DT || !LI)
     return AngleSelectDisp::NotApplicable;  // no analysis, no proof.
   //
@@ -9541,9 +9548,69 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   if (!IsPhase && !UntaintedBase)
     railWireClosure(RotBase, Taint, WireDir::BothWays, nullptr, nullptr,
                     BaseWire, &BaseWireOrder, /*Exclude=*/T);
+
+  // ---- bd `test_C_libtooling-3paw` — A NAME THE ROUND-1 COLLAPSE RE-SPELT.
+  //
+  // `Exclude = T` keeps the post-gate register out of this closure, and Case-A
+  // undoes that before detection runs. `tryCaseA` (in `lowerLoops`) RAUWs every
+  // rail φ it claims, among them the header φ and the exit φ of a loop AFTER
+  // `T`, both post-gate names, to the rail's ROOT MINT. When `RotBase` is on that
+  // rail, the loop's `cq_theta(root, ·)` and the exit's `cq_measure(root)` read a
+  // name the closure collects. Here the prong below called the loop gate a cycle
+  // member of the base's wire, and S9 called the measure a stale record. That
+  // declined `cq_theta(&r, c ? A : B); for (…) cq_theta(&r, .1);`, whose
+  // stream is the hand-unrolled by-difference twin's
+  // (`control_angle_select_forward_rail_cycle_frozen.ll`, e2e
+  // `slice_control_angle_select_ry_forward_loop`).
+  //
+  // THE SKIP. A member (this prong) or a reader (S9) is skipped when the rail is
+  // CLAIMED (`TaintSet::ClaimedRailRoots`, written by both collapse sites, holds
+  // `RotBase`'s root mint for some loop) AND `T` DOMINATES it. `T`'s anchors are
+  // on no cycle (asked above), so `T` runs at most once per activation and every
+  // execution of a dominated name follows it. Dominance, not reachability: it is
+  // exact, where `isPotentiallyReachable` answers `true` past its block budget,
+  // and it keeps a loop BEFORE `T` declining
+  // (`control_angle_select_reject_backward_rail_cycle.ll`).
+  //
+  // WHY THE SKIP IS SOUND, AND WHAT IT RESTS ON. A dominated name that READS a
+  // PRE-gate record, i.e. a genuinely stale one, is refused before this stage on
+  // the PRE-collapse IR by fences that held `T` in their gate set:
+  //   * `staleRailRecordRead` (`tryCaseA`) refuses a measure / `ret` reader of a
+  //     rail value with a rail gate between its definition and the read;
+  //   * `tryCaseA`'s fan-out guard refuses a second in-place gate on a pre-`T`
+  //     name (`T` is the first), and its CLOSURE leaves any other user unclaimed;
+  //   * `recordStaleQuantumReaders` refuses a `cq_theta` / `cq_measure` reader
+  //     whose record a later non-diagonal gate relabelled, which covers the one
+  //     read `staleRailRecordRead` skips as a chain member: a header φ seeded with
+  //     the pre-gate name (`int z = r; …; for (…) cq_theta(&z, ·)`). After the
+  //     collapse that program is IR-identical here to a legal one, so this skip
+  //     ADMITS it and the decline comes from that fence
+  //     (`control_angle_select_reject_forward_rail_cycle_stale_alias.ll`).
+  // So a claimed, dominated name denotes the post-gate register, which is what
+  // the handle holds once `lowerRotations` RAUWs the rail onto it. The emitter's
+  // twin `T0` lands immediately before `T`, so a read between the two does not
+  // exist and those fences' answers do not change with it. RETIREMENT TRIGGER:
+  // removing `T` (or any `cq_theta`) from one of those gate sets, or a third
+  // collapse site that does not write `ClaimedRailRoots`, re-opens this skip.
+  bool CollapsedRail = false;
+  if (!IsPhase && !UntaintedBase) {
+    SmallPtrSet<CallInst *, 32> GateCalls;  // the `lowerLoops` recipe (θ ∪ φ)
+    GateCalls.insert(Taint.ThetaCalls.begin(), Taint.ThetaCalls.end());
+    GateCalls.insert(Taint.PhiCalls.begin(), Taint.PhiCalls.end());
+    if (CallInst *Root = railChainRootMint(RotBase, GateCalls, Taint))
+      for (Loop *L : LI->getLoopsInPreorder())
+        if (Taint.ClaimedRailRoots.count({Root, L->getHeader()})) {
+          CollapsedRail = true;
+          break;
+        }
+  }
+  auto collapsedPostGateName = [&](const Instruction *I) {
+    return CollapsedRail && DT->dominates(T, I);
+  };
+
   for (Value *W : BaseWireOrder) {
     auto *WI = dyn_cast<Instruction>(W);
-    if (WI && blockInAnyCycle(WI->getParent())) {
+    if (WI && blockInAnyCycle(WI->getParent()) && !collapsedPostGateName(WI)) {
       diagnoseUnderControl(Sel, "control flow inside a loop body");
       return AngleSelectDisp::Declined;
     }
@@ -9667,8 +9734,11 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
       }
       if (!DT->isReachableFromEntry(UI->getParent()))
         continue;  // never executes, so never reads.
-      const bool Ok = BaseWire.count(UI) ? cannotFollowGate(UI, T, *DT)
-                                         : provablyBefore(UI, T, *DT);
+      // bd 3paw: a reader `T` dominates on a collapse-claimed rail reads the
+      // post-gate register (the `CollapsedRail` note at S7's rail prong).
+      const bool Ok = collapsedPostGateName(UI) ||
+                      (BaseWire.count(UI) ? cannotFollowGate(UI, T, *DT)
+                                          : provablyBefore(UI, T, *DT));
       if (!Ok) {
         diagnoseUnderControl(UI, "stale rail record read past a controlled Ry");
         return AngleSelectDisp::Declined;

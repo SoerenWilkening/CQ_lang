@@ -1,188 +1,204 @@
-; control_angle_select_forward_rail_cycle_frozen.ll — ACCEPT. A phase angle
-; select in `entry`, then an empty classical counting loop on `%n`.
+; control_angle_select_forward_rail_cycle_frozen.ll — ACCEPT (bd 3paw). An Ry
+; angle select on `r`, then a CLASSICAL counting loop that rotates the SAME rail
+; on every trip. The IR below is the `clang -O1` output of (attributes and
+; `!llvm.loop` dropped, nothing else touched):
 ;
-;     int r = u1; cq_theta(&r,.25);            // r never read again
-;     cq_phi(q == 5 ? .9 : .3);
+;     int slice(int u0, int u1, int n) {
+;       int q = u0; cq_theta(&q, .5);  int r = u1; cq_theta(&r, .25);
+;       cq_theta(&r, q == 5 ? .9 : .3);                // the 2b gate on r
+;       for (int i = 0; i <= n; i++) cq_theta(&r, .1); // FORWARD gate, in a cycle
+;       return cq_measure(q) + cq_measure(r);
+;     }
 ;
-; WHAT IT PINS: the select lowers by kickback on the flag in `entry` (mint,
-; `cqrt_x`-bracketed `cqrt_rz_i1(f, .3)`, `cqrt_rz_i1(f, .9)`, strip, free), the
-; loop carries no gate, and the dead `r` is reverse-played and kept allocated
-; (the bd 5c5b note in the CHECK block).
+; and `@slice_dead` is the same program returning `cq_measure(q)` only, so `r`
+; is dead after the loop.
 ;
-; ⚠ THE ORIGINAL SUBJECT IS GONE. The file was written (bd drbq Inc 2b, round-2
-; Rule-13 review, lens R1 item 2) to pin a GAP: S7's prongs do not ask about the
-; rotated register's rail FORWARD of the consumer, so a later gate on the SAME
-; rail inside a loop (pre-3qlq register form `t = cq_phi(r, 0.9)`) lowered, and
-; `ChainWalk::railCarriesControlledRotation` FROZE that rail (never
-; reverse-played, never freed). The 3qlq migration deleted the in-loop gate (an
-; uncontrolled phase) and the select no longer rotates `r`, so neither the gap
-; nor the freeze is exercised here; "frozen" in the file name is history.
+; WHAT IT PINS. The select's by-difference stream on `r` (`ry(r, .3)`, the flag
+; mint from `q == 5`, `cqrt_ry_i32_controlled(f, r, fl(.9-.3))`, the `_unc`
+; strip, the flag's free), all in `entry`; then the loop body's in-place
+; `ry(r, .1)` on the SAME handle, rolled; and no reverse-play and no free of
+; `r`'s rail anywhere (R6: a rail that carries a controlled Ry is frozen,
+; `ChainWalk::railCarriesControlledRotation`). `@slice_dead` is the half where
+; the freeze is load-bearing: its uncontrolled twin (`.3` written unconditionally)
+; declines `cq uncompute: tainted handle live range crosses a loop backedge`,
+; because the spine would have to reverse-play a dead rail that a loop rotated;
+; the frozen rail is left allocated instead (R5's accepted leak).
 ;
-; ⚠ RE-SPELL BLOCKED (bd jttf, 2026-10-05). The register-free spelling of the
-; subject rotates `r` with the 2b select and keeps an in-place gate on the same
-; rail inside a classical cycle:
+; WHY IT DECLINED BEFORE bd 3paw (the re-spell trigger bd jttf left here).
+; `lowerLoops` runs before detection, and Case-A's persistent-rail collapse
+; (`tryCaseA`) RAUWs the loop header φ and the exit φ — both post-gate names of
+; `r` — to the rail's ROOT mint `%5`, which is also the select's base. The
+; consumer `%8` is left with no user, and the loop's `cq_theta(%5, .1)` and the
+; exit `cq_measure(%5)` read the base by SSA identity. S7's rail prong then saw
+; the loop gate as a member of the BASE's wire on a cycle and declined `control
+; flow inside a loop body`; with that prong skipped alone, S9 declines next
+; (`stale rail record read past a controlled Ry`, measured: bd 3paw mutant M3).
+; Both read names the collapse re-spelt, not the pre-gate register.
+; The fix (`classifyAngleSelect`, bd 3paw): on a rail some loop's collapse
+; CLAIMED (`TaintSet::ClaimedRailRoots`), a member or reader that the consumer
+; `T` DOMINATES is skipped by S7's rail prong and by S9. The fences that judged
+; those reads ran on the PRE-collapse IR with `T` in their gate set:
+; `tryCaseA`'s `staleRailRecordRead` (measure / ret readers), its fan-out guard
+; (a second in-place gate on a pre-`T` name), and `recordStaleQuantumReaders`
+; (a `cq_theta` / `cq_measure` reader of a staled record, including through a
+; header φ, which `staleRailRecordRead` skips as a member). Their decline twins:
+; `control_angle_select_reject_forward_rail_cycle_stale_alias.ll` (the pre-gate
+; alias `z = r` rotated in the loop) and
+; `control_angle_select_reject_backward_rail_cycle.ll` (the loop BEFORE `T`,
+; which the dominance conjunct keeps loud).
 ;
-;     int q = u0; cq_theta(&q, .5);  int r = u1; cq_theta(&r, .25);
-;     cq_theta(&r, q == 5 ? .9 : .3);              // the 2b gate on r
-;     for (int i = 0; i <= n; i++) cq_theta(&r, .1); // FORWARD gate, in a cycle
-;     return cq_measure(q) + cq_measure(r);
+; SEMANTIC EVIDENCE (R2). The source's unitary on `r` is `Ry(.25)`, then `Ry(.9)`
+; on `q == 5` and `Ry(.3)` otherwise, then `Ry(.1)` n+1 times; the stream below
+; is `Ry(.25)·Ry(.3)·cRy_f(fl(.9-.3))·Ry(.1)^(n+1)` with `f = [q == 5]` minted
+; from `q`'s rail and stripped by its `_unc` while `q` is unchanged (no gate
+; touches `q`'s rail between mint and strip). `f = 1` gives `Ry(.3+fl(.9-.3))`,
+; i.e. `Ry(.9)` up to the 2^-54 rad by-difference residual the 2b family
+; documents; `f = 0` gives `Ry(.3)`. The loop gate lowers to `cqrt_ry_i32(h_r,
+; .1)` on the one handle (`lowerRotations` RAUWs every chained `cq_theta` on the
+; rail to it). Linked witness: e2e `slice_control_angle_select_ry_forward_loop`
+; (n = 2, three trips) has a golden byte-identical to its hand-unrolled
+; by-difference twin `slice_control_angle_select_ry_forward_loop_unrolled_twin`,
+; which the pre-3paw compiler already lowered; STRICT stage 2b, 1 verified free.
 ;
-; Measured through `clang -O1` and `cq-opt` on 2ab46c39: it DECLINES `cq
-; controlled lowering: control flow inside a loop body under quantum control`
-; (also with `r` left unmeasured), while the same program with an UNCONTROLLED
-; `cq_theta(&r, .3)` in place of the select lowers (Case A, the loop rolled on
-; one handle). The loop's bound is classical, so this is an over-decline (R1),
-; reported to the coordinator for a bd bug. The non-loop-carried spelling
-; (`int g = r; cq_theta(&g, .1);` in the body) declines `rotation/measure operand
-; predates a non-diagonal gate`, the stale-copy fence. So the S7 gap this file
-; was written for is unreachable today, by declines. RE-SPELL TRIGGER: when the
-; C above accepts, replace the IR with its `clang -O1` output and re-derive the
-; CHECKs (the select's controlled Ry on `r`, then the rolled in-place Ry on the
-; same rail inside the cycle, and no reverse-play and no free of that rail).
+; HISTORY. This file was written (bd drbq Inc 2b, round-2 Rule-13 review, lens R1
+; item 2) to pin S7's forward-rail gap in the pre-3qlq register form; 3qlq
+; deleted the in-loop gate and jttf found the register-free re-spelling above
+; declined. The original IR (a phase select, an empty loop) is in git history.
 ;
-; ORACLE DISPOSITION: RED on the pre-2b binary (`rotation angle under quantum
-; control`) — it declines every angle select.
-;
-; Reproducers from the round-2 review, lens R1
-; (`review2b_r2/R1/probes/s7/{fwd,nat}_sel_{ry,rz}.ll`), re-derived without the
-; scaffolding block in `fix2b_r2/probes/fwdcycle_{sel,twin,plain}.ll`.
-;
-;
-; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
-; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)
-; binary.  The pre-Inc-1 pin — a `cqrt_rz_<W>` or `cqrt_rz_<W>_controlled` on
-; the user's REGISTER — asserted the gate PRD §1 shows is the identity on the
-; marked branch (`cqrt_rz_<W>` is TENSORED, so a routed W-bit Rz applies
-; `(-1)^popcount(target)` and can never mark |0..0>).  The stream now pinned is
-; the KICKBACK: the flag is minted into a |0> ancilla, the phase lands on the
-; FLAG with an UNCONTROLLED `cqrt_rz_i1`, the ordinary compare `_unc` returns
-; the flag to |0> on every branch, and the flag is freed.  The fixture's
-; PURPOSE (its header above) is unchanged.
-;
-; ORIGINAL negatives REMOVED.  Each was MEASURED to fire on this fixture's
-; own Inc-1 output, so keeping it would assert something false.  A `-NOT`
-; that used to sit AFTER a positive of its prefix was WINDOWED to the text
-; past that positive; re-measuring it whole-file is a strictly stronger
-; question, and where the pattern is one of the counted ones the
-; `-COUNT-n` + `-NOT` pair below pins `exactly n` — stronger than the
-; window it replaces, not weaker.
-;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
-;   * call void @cqrt_free(   [superseded by the FCNT count]
-;   * call void @cqrt_x(   [superseded by the XCNT count]
-;   * !cq.branchphase
-;
-; 30 line(s) of prose that annotated the OLD CHECK block were removed with
-; it — they described the pre-Inc-1 gate stream line by line.
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
-; RUN: %filecheck %s < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=ACNT < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=MDCNT < %t.cqd0.ll
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.ll
+; RUN: %filecheck %s --check-prefix=CRYCNT < %t.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.ll
+; RUN: %filecheck %s --check-prefix=LOOPRY < %t.ll
 
-declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
-define i32 @example(i32 %u0, i32 %u1, i32 %n) {
-entry:
-  %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
-  %r = call i32 @cq_theta_si32(i32 %u1, double 2.500000e-01)
-  %c = icmp eq i32 %q, 5
-  %ang = select i1 %c, double 9.000000e-01, double 3.000000e-01
-  call void @cq_phi(double %ang)
-  br label %L
+define i32 @slice(i32 noundef %0, i32 noundef %1, i32 noundef %2) {
+  %4 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef 5.000000e-01)
+  %5 = tail call i32 @cq_theta_si32(i32 noundef %1, double noundef 2.500000e-01)
+  %6 = icmp eq i32 %4, 5
+  %7 = select i1 %6, double 9.000000e-01, double 3.000000e-01
+  %8 = tail call i32 @cq_theta_si32(i32 noundef %5, double noundef %7)
+  %9 = icmp slt i32 %2, 0
+  br i1 %9, label %10, label %15
 
-L:
-  %i = phi i32 [ 0, %entry ], [ %inext, %L ]
-  ; pre-3qlq, the FORWARD gate on the SAME rail sat here; the migration deleted it
-  %inext = add i32 %i, 1
-  %done = icmp sgt i32 %inext, %n
-  br i1 %done, label %exit, label %L
+10:
+  %11 = phi i32 [ %8, %3 ], [ %18, %15 ]
+  %12 = tail call i32 @cq_measure_si32(i32 noundef %4)
+  %13 = tail call i32 @cq_measure_si32(i32 noundef %11)
+  %14 = add nsw i32 %13, %12
+  ret i32 %14
 
-exit:
-  %m = call i32 @cq_measure_si32(i32 %q)
-  ret i32 %m
+15:
+  %16 = phi i32 [ %19, %15 ], [ 0, %3 ]
+  %17 = phi i32 [ %18, %15 ], [ %8, %3 ]
+  %18 = tail call i32 @cq_theta_si32(i32 noundef %17, double noundef 1.000000e-01)
+  %19 = add nuw i32 %16, 1
+  %20 = icmp eq i32 %16, %2
+  br i1 %20, label %10, label %15
+}
+
+define i32 @slice_dead(i32 noundef %0, i32 noundef %1, i32 noundef %2) {
+  %4 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef 5.000000e-01)
+  %5 = tail call i32 @cq_theta_si32(i32 noundef %1, double noundef 2.500000e-01)
+  %6 = icmp eq i32 %4, 5
+  %7 = select i1 %6, double 9.000000e-01, double 3.000000e-01
+  %8 = tail call i32 @cq_theta_si32(i32 noundef %5, double noundef %7)
+  %9 = icmp slt i32 %2, 0
+  br i1 %9, label %10, label %12
+
+10:
+  %11 = tail call i32 @cq_measure_si32(i32 noundef %4)
+  ret i32 %11
+
+12:
+  %13 = phi i32 [ %16, %12 ], [ 0, %3 ]
+  %14 = phi i32 [ %15, %12 ], [ %8, %3 ]
+  %15 = tail call i32 @cq_theta_si32(i32 noundef %14, double noundef 1.000000e-01)
+  %16 = add nuw i32 %13, 1
+  %17 = icmp eq i32 %13, %2
+  br i1 %17, label %10, label %12
 }
 
 ; ===========================================================================
-; THE EMITTED STREAM, IN ORDER — DERIVED from this fixture's own pass output
-; (prep_a2, bd test_C_libtooling-3qlq Inc 1).  Every `%name` below is bound at
-; its DEFINITION and referenced afterwards, so the chain asserts operand
-; IDENTITY — the strip and the free name the SAME flag the mint produced
-; (bd 8txa: the golden itself must witness the pairing).  Handle names are
-; DERIVED, never typed (bd drbq Inc 4: 9 of 20 accepts named a %h1 the pass
-; never emits).  Trailing `!cq.branchphase` metadata is stripped here because
-; its NUMBER is LLVM's, not ours; its presence and count are MDCNT's job.
-; CHECK: define i32 @example(i32 %u0, i32 %u1, i32 %n) {
-; CHECK-NEXT: entry:
-; CHECK-NEXT: %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
-; CHECK-NEXT: %[[H1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H1]], double 2.500000e-01)
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H1]], double -2.500000e-01)
-; bd 5c5b (libcqops vmz9): the dead `%r` root is reverse-played back to its
-; runtime seed |u1>, not |0>, so it is kept allocated: no free follows its Ry-dagger.
-; CHECK-NEXT: %[[H_CMP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 5)
-; CHECK-NEXT: call void @cqrt_x(i32 %[[H_CMP]])
-; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[H_CMP]], double 3.000000e-01)
-; CHECK-NEXT: call void @cqrt_x(i32 %[[H_CMP]])
-; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[H_CMP]], double 9.000000e-01)
-; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[H_CMP]], i32 %[[H]], i32 5)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[H_CMP]])
-; CHECK-NEXT: br label %L
-; CHECK: L:                                                ; preds = %L, %entry
-; CHECK-NEXT: %[[I:[a-zA-Z0-9_.]+]] = phi i32 [ 0, %entry ], [ %inext, %L ]
-; CHECK-NEXT: %[[INEXT:[a-zA-Z0-9_.]+]] = add i32 %[[I]], 1
-; CHECK-NEXT: %[[DONE:[a-zA-Z0-9_.]+]] = icmp sgt i32 %[[INEXT]], %n
-; CHECK-NEXT: br i1 %[[DONE]], label %exit, label %L
-; CHECK: exit:                                             ; preds = %L
-; CHECK-NEXT: %[[M2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[H]])
-; CHECK-NEXT: ret i32 %[[M2]]
+; THE EMITTED STREAM, IN ORDER — hand-derived from `emitAngleSelectRegion`
+; (twin `R(base, B)` before the consumer, the mint at the consumer, the strip and
+; the free after it) and `lowerRotations`, before the fix existed. Handles are
+; bound at their definition and referenced after, so the chain asserts operand
+; IDENTITY: the controlled Ry, the strip and the free name the flag the mint
+; produced, and the loop's Ry names `r`'s handle. Block labels are LLVM's.
+; CHECK-LABEL: define i32 @slice(
+; CHECK-NEXT: %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
+; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %1)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 2.500000e-01)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
+; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 5)
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 0x3FE3333333333334)
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
+; CHECK-NEXT: %[[G:[a-zA-Z0-9_.]+]] = icmp slt i32 %2, 0
+; CHECK-NEXT: br i1 %[[G]], label %[[EXIT:[a-zA-Z0-9_.]+]], label %[[LOOP:[a-zA-Z0-9_.]+]]
+; CHECK: {{^}}[[EXIT]]:
+; CHECK-NEXT: %[[MQ:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[Q]])
+; CHECK-NEXT: %[[MR:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[R]])
+; CHECK-NEXT: %[[S:[a-zA-Z0-9_.]+]] = add nsw i32 %[[MR]], %[[MQ]]
+; CHECK-NEXT: ret i32 %[[S]]
+; CHECK: {{^}}[[LOOP]]:
+; CHECK-NEXT: %[[I:[a-zA-Z0-9_.]+]] = phi i32
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 1.000000e-01)
+; CHECK-NEXT: add nuw i32 %[[I]], 1
+; CHECK-NEXT: icmp eq i32 %[[I]], %2
+; CHECK-NEXT: br i1
+; CHECK-NEXT: }
+;
+; CHECK-LABEL: define i32 @slice_dead(
+; CHECK-NEXT: %[[DQ:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[DQ]], double 5.000000e-01)
+; CHECK-NEXT: %[[DR:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %1)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[DR]], double 2.500000e-01)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[DR]], double 3.000000e-01)
+; CHECK-NEXT: %[[DF:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[DQ]], i32 5)
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[DF]], i32 %[[DR]], double 0x3FE3333333333334)
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[DF]], i32 %[[DQ]], i32 5)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[DF]])
+; CHECK-NEXT: %[[DG:[a-zA-Z0-9_.]+]] = icmp slt i32 %2, 0
+; CHECK-NEXT: br i1 %[[DG]], label %[[DEXIT:[a-zA-Z0-9_.]+]], label %[[DLOOP:[a-zA-Z0-9_.]+]]
+; CHECK: {{^}}[[DEXIT]]:
+; CHECK-NEXT: %[[DMQ:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[DQ]])
+; CHECK-NEXT: ret i32 %[[DMQ]]
+; CHECK: {{^}}[[DLOOP]]:
+; CHECK-NEXT: %[[DI:[a-zA-Z0-9_.]+]] = phi i32
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[DR]], double 1.000000e-01)
+; CHECK-NEXT: add nuw i32 %[[DI]], 1
+; CHECK-NEXT: icmp eq i32 %[[DI]], %2
+; CHECK-NEXT: br i1
 ; CHECK-NEXT: }
 
 ; ---------------------------------------------------------------------------
-; WHOLE-FILE, PURE-NEGATIVE.  No positive directive may enter this prefix: a
-; positive WINDOWS every negative after it, which is how an injected gate
-; escaped 20 of 20 blocks in bd drbq Inc 3 (F-L6-1) and again in Inc 4.
-; NOROUTE-NOT: cqrt_cswap
-;   ^ the swap route is retired — no work rail, so no Fredkin
-; NOROUTE-NOT: cqrt_copy
-;   ^ method-B copy on a phase arm dephases the answer (Rule 7)
-; NOROUTE-NOT: _controlled
-;   ^ the kickback gate is UNCONTROLLED, on the flag ancilla
-; NOROUTE-NOT: call void @cqrt_rz_{{[a-z0-9]+}}_controlled(
-;   ^ ⚠ NARROW TWIN of the blanket `_controlled` above, and it exists because the blanket one is DROPPED from any fixture that legitimately emits a controlled Ry or a controlled copy — and dropping it took the only catch for a controlled Rz with it. MEASURED: 4 of the 104 re-derived accepts were BLIND to an injected `cqrt_rz_i32_controlled` — the exact pre-Inc-1 TENSORED gate this increment removes — until this line was added. The width complement above cannot cover it either: it requires `(` immediately after the width, and `cqrt_rz_i32_controlled(` has `_controlled` in between.
-; NOROUTE-NOT: call void @cqrt_rz_{{(i8|i16|i32|i64|f16|f32|f64|f80)}}(
-;   ^ the TENSORED per-register Rz is the defect this increment removes (PRD §1). ONE complement pattern, not an enumeration of six — the shipped ABI has NINE widths and f16/f80 were absent from every pre-Inc-1 NOROUTE block (round-1 findings F-L6-4/F-L8-1/F-L4-2). The trailing `(` is load-bearing: `cqrt_rz_i1` is a textual prefix of `cqrt_rz_i16`.
-; NOROUTE-NOT: call void @cq_phi(
-;   ^ a surviving phase call is lowered or deleted, never left for the linker
-; NOROUTE-NOT: cq_phi_
-;   ^ the register form is a RESERVED NAME and declines (round-1 F-L6-1)
-
-; Original negatives PRESERVED (re-measured on the Inc-1 output):
-; NOROUTE-NOT: double -3.000000e-01
-; NOROUTE-NOT: double 0xBFD3333333333333
+; WHOLE-FILE, PURE-NEGATIVE (no positive may enter this prefix: a positive
+; windows every negative after it).
+; NOROUTE-NOT: double -
+;   ^ no reverse-play of `r` (or of anything): every angle this file writes is positive
 ; NOROUTE-NOT: call void @cqrt_cswap
 ; NOROUTE-NOT: call void @cqrt_copy
-
-; ---------------------------------------------------------------------------
-; COUNTS — ONE PATTERN PER PREFIX.  Two counts in one prefix silently become
-; an ORDER assertion, and a `-NOT` after a count in the same prefix is
-; windowed to the text past the count.  `-COUNT-n` then `-NOT` of the SAME
-; pattern is the only spelling that pins `exactly n`.
-; ACNT-COUNT-2: call void @cqrt_rz_i1(
-; ACNT-NOT:     call void @cqrt_rz_i1(
-; FCNT-COUNT-1: call void @cqrt_free(
-; FCNT-NOT:     call void @cqrt_free(
-; XCNT-COUNT-2: call void @cqrt_x(
-; XCNT-NOT:     call void @cqrt_x(
+; NOROUTE-NOT: call void @cqrt_rz_
+;   ^ the Ry stem emits no phase gate
+; NOROUTE-NOT: call void @cqrt_x(
+;   ^ a select always means "true value when the flag is 1": no polarity bracket
+; NOROUTE-NOT: call i32 @cq_theta_
+; NOROUTE-NOT: call i32 @cq_measure_
+;   ^ every front-end call is lowered
 ;
-; Every `cqrt_rz_i1` the pass emits must carry `!cq.branchphase`, or the
-; whole-DAG spine reads it as a reclaimable in-place rotation and emits
-; `cqrt_rz_i1(f, -theta)`, cancelling the user's phase EXACTLY (round-1
-; F-L7-1, a CONFIRMED silent miscompile found by three lenses).  The two
-; counts are asserted SEPARATELY and must agree: 2 and 2 here.
-; MDCNT-COUNT-2: !cq.branchphase
-; MDCNT-NOT:     !cq.branchphase
+; COUNTS — one pattern per prefix, `-COUNT-n` then `-NOT` pins exactly n.
+; One controlled Ry and one flag free per function; the free is the FLAG's (the
+; CHECK chain names it), so `r`'s rail is never freed.
+; CRYCNT-COUNT-2: call void @cqrt_ry_i32_controlled(
+; CRYCNT-NOT:     call void @cqrt_ry_i32_controlled(
+; FCNT-COUNT-2: call void @cqrt_free(
+; FCNT-NOT:     call void @cqrt_free(
+; The loop gate, once per function body (rolled, not unrolled):
+; LOOPRY-COUNT-2: call void @cqrt_ry_i32({{.*}}, double 1.000000e-01)
+; LOOPRY-NOT:     call void @cqrt_ry_i32({{.*}}, double 1.000000e-01)
