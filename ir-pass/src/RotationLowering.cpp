@@ -1108,6 +1108,11 @@ namespace {
 //   * lowering_live_record_park_cswap_observed_accept.ll  a record whose only
 //       post-gate uses are the abort park's flag mint and cswap is silent (the
 //       park tapes its flag), beside a kickback-region control that warns
+// bd gl3x (2026-10-05, owner ruling) — clause 4 gains the unguarded tape write:
+//   * lowering_live_record_tape_before_gate.ll  the park's flag (both branch
+//       orientations) and a printf'd sibling, taped before the gate, are silent;
+//       a dead untaped record beside the park, a tape write that does not
+//       dominate the gate, and a guarded write still warn
 // bd aako (2026-10-05) — no behaviour change; clause 5 measured from C:
 //   * lowering_live_record_own_rail_accept.ll  a gate on the record's own rail
 //       (in-place chain, loop-carried handle, M-C in-place xor) is silent; the
@@ -1217,6 +1222,18 @@ bool isDischargeOf(const CallInst *CI, const Value *R) {
   if (!N.ends_with("_unc") || N.starts_with("cqrt_qram_store_"))
     return false;
   return CI->arg_size() >= 1 && CI->getArgOperand(0) == R;
+}
+
+// `CI` is a 7.6 output-tape write whose WRITTEN slot holds `V`: `src` is the LAST
+// operand of both `cqrt_tape_write_<W>(tape, src)` and
+// `cqrt_tape_write_<W>_controlled(ctrl, tape, src)` (runtime/cq_runtime.h, the
+// 7.6 block). ONE spelling for its two readers (Rule 12). Clause 3's sink walk
+// takes either arity: any information reaching the tape AFTER the gate is an
+// observation. Clause 4 also requires `arg_size() == 2` (bd gl3x), because only
+// the unguarded write copies `src` in full.
+bool isTapeWriteOf(const CallInst *CI, const Value *V) {
+  return emittedCalleeName(CI).starts_with("cqrt_tape_write_") &&
+         CI->arg_size() >= 2 && CI->getArgOperand(CI->arg_size() - 1) == V;
 }
 
 bool isRecordedUserRotation(const CallInst *CI, const TaintSet &taint) {
@@ -1822,8 +1839,7 @@ bool reachesObservingSink(Instruction *U, Value *R, const TaintSet &taint,
     // ── SINKS ──
     if (N.starts_with("cqrt_measure_"))
       return true;
-    if (N.starts_with("cqrt_tape_write_") && CI->arg_size() >= 2 &&
-        CI->getArgOperand(CI->arg_size() - 1) == In)
+    if (isTapeWriteOf(CI, In))
       return true;  // the WRITTEN slot (`…(tape, src)` / `…(ctrl, tape, src)`).
     // …and so is the CTRL slot of the GUARDED spelling (round 2 of the Inc-3
     // Rule-13 round, 2026-08-28). `cqrt_tape_write_<W>_controlled(ctrl, tape,
@@ -2034,8 +2050,44 @@ bool recordIsExemptAt(CallInst *R, CallInst *T, const TaintSet &taint,
       // barrier-free path and the guard still reports it live, which is right.
       if (isDischargeOf(CI, R) && provablyBeforePerActivation(CI, T, R, DT))
         return true;
-      // clause 4 — measured before the gate (collapsed; nothing left to dephase).
-      if (emittedCalleeName(CI).starts_with("cqrt_measure_") &&
+      // clause 4 — COLLAPSED before the gate, so nothing is left to dephase:
+      // measured, or written IN FULL to the 7.6 output tape (bd gl3x, owner
+      // ruling 2026-10-05: a tape write before the gate exempts "the way a
+      // measurement does").
+      //
+      // WHY A TAPE WRITE IS A MEASUREMENT HERE. `cqrt_tape_write_<W>(tape, R)`
+      // CNOT-copies R into a fresh output rail that is KEPT: never freed, never
+      // uncomputed (no `_unc` twin exists), never read again, and measured at
+      // tape inspection (cq_runtime.h: "the measurement is DEFERRED to tape
+      // inspection"). Nothing touches that rail after the write, so by the
+      // deferred-measurement principle measuring it at inspection is the same as
+      // measuring it at the write, which collapses R. R then adds no dephasing
+      // the user's own output has not already caused. The measured customer is
+      // the 7.2 abort park, which tapes its flag before the downstream runs
+      // (`if (q > 5) abort(); cq_theta(&q, .3);` warned on that flag).
+      //
+      // UNGUARDED ONLY (`arg_size() == 2`). The guarded
+      // `…_controlled(ctrl, tape, src)` commits `ctrl ? src : 0`, which
+      // determines neither operand: on the ctrl = 0 branch R's value reaches no
+      // tape. That is enough for clause 3 (any observation after the gate) and
+      // not for this clause (R determined before it).
+      //
+      // ⚠ SCOPE IS WIDER THAN THE RULING'S CUSTOMER. The owner ruled on the
+      // park's flag; nothing above uses the park, so a sibling record taped by a
+      // plain `printf` before the gate is exempt too. Both are pinned by
+      // lowering_live_record_tape_before_gate.ll, with three twins that still
+      // warn: a dead record beside the park (per record), a tape write that does
+      // not dominate the gate (position), and a guarded write (arity).
+      //
+      // SHARED EXPOSURE, NOT NEW: neither spelling asks whether R is written in
+      // place between the collapse and the gate. A classical-constant write
+      // (`cqrt_xorc`/`cqrt_addc`) keeps R a bijection of what was observed; a
+      // write with a quantum operand would not. RETIREMENT TRIGGER (L7): a tape
+      // entry that gains an `_unc`, a free or a later read invalidates the
+      // deferred-measurement step, and the tape half must go.
+      const bool Measured = emittedCalleeName(CI).starts_with("cqrt_measure_");
+      const bool TapedInFull = CI->arg_size() == 2 && isTapeWriteOf(CI, R);
+      if ((Measured || TapedInFull) &&
           provablyBeforePerActivation(CI, T, R, DT))
         return true;
     }

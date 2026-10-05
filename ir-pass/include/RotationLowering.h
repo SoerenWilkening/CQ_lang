@@ -244,7 +244,12 @@ void lowerRotations(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
 //      gate DECLINED on identical rails
 //      (`lowering_reject_live_record_sibling_region_after_theta.ll` vs
 //      `lowering_reject_live_record_anc_dead_sibling.ll`).
-//   4. it is not MEASURED before `T` (collapse exemption).
+//   4. it is not COLLAPSED before `T`: not MEASURED, and not written in full to
+//      the 7.6 output tape by an UNGUARDED `cqrt_tape_write_<W>(tape, R)`, a
+//      kept, never-reread rail whose measurement is deferred to inspection
+//      (bd gl3x, owner ruling 2026-10-05). The guarded `_controlled` write does
+//      not count here: it commits `ctrl ? src : 0`. Pinned by
+//      `lowering_live_record_tape_before_gate.ll`.
 //   5. it is not `W` itself.
 //   6. **it EXISTS at `T`** — `provablyBefore(T, R)` is FALSE. The F2 fix
 //      (2026-08-28): a rail minted strictly after the gate is not allocated when
