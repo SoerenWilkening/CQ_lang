@@ -872,7 +872,10 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   // program's own data) when the controlled Ry fires. A rail condition never
   // carries the field (K1); a non-call flag would leave the postcondition
   // nothing to ask, so both bail loudly instead (unreachable today).
-  if (R.CondFlagKept) {
+  // Tagged for EVERY R4 accept on the condition's own register, kept flag or
+  // stripped-after-the-gate flag (review round 2, F-A): either way the rest of
+  // the chain must be gone or observed at the gate.
+  if (R.CondOnRotatedRegister) {
     auto *Mint = dyn_cast<CallInst>(Flag);
     if (RailCond || !Mint) {
       diagnoseUnderControl(CondI, "control flow");
@@ -1069,8 +1072,14 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //    from every rail the condition's derived chain lives on. So the same
   //    property holds for the same reason, by a different argument. If R4 is
   //    ever widened, THIS recording is one of the things that must be re-proved.
-  //    (bd dm7f.4 widened it, and the re-proof is that the widened case emits
-  //    no strip at all, so there is nothing to record; see `CondFlagKept` below.)
+  //    (bd dm7f.4 widened it. Its KEPT case emits no strip, so there is nothing
+  //    to record; see `CondFlagKept` below. Its STRIPPED case, review round 2
+  //    F-A, does record one, and the re-proof is the classifier's conjunct:
+  //    every tainted compare operand is OFF the rotated wire, so nothing in the
+  //    stream moves what the strip reads. The chain behind those operands has
+  //    the rotated register as its borrowed parent, so an interior discharge
+  //    placed after this strip is refused by `preservesBorrowedParent` and
+  //    leaks; those operands are the program's own data read after the region.)
   //
   //    ⚠ AMENDED 2026-09-05 (round-1 Rule-13 review, lens L5 finding F-L5-2).
   //    FOR A CONTROLLED STATE PREP (Inc 4) R4 IS NOT WIDENED — IT IS **SKIPPED**
@@ -1128,6 +1137,10 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //    user is arg 0 of a `_controlled` gate (`isTerminalHandle` and
   //    `isInteriorConsumer` both refuse that), so it stays allocated, and M-A
   //    reports it at the gate.
+  //    ⚠ A `CondOnRotatedRegister` region WITHOUT `CondFlagKept` takes the
+  //    ordinary strip below (review round 2, F-A): its compare reads only
+  //    records the program keeps past the region, none on the rotated wire,
+  //    so the strip after the gate is exact.
   if (!RailCond && !R.CondFlagKept) {
     auto *Strip = dyn_cast_or_null<CallInst>(lowerCompareToFlag(
         cast<CmpInst>(Cond), wd, taint, /*qqWidth=*/{}, /*inverse=*/true,

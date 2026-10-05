@@ -648,6 +648,17 @@ struct ControlRegion {
   // before the field existed.
   bool CondFlagKept = false;
 
+  // bd dm7f.4, review round 2 (F-A) — set with every R4 accept of a Ry on the
+  // condition's own register, kept flag or not. `CondFlagKept` is its STRICT
+  // subset: the strip is impossible because a compare operand is on the rotated
+  // wire or is a temporary the spine discharges before the gate. When every
+  // tainted compare operand is instead a record the program reads after the
+  // region, the strip after the gate is exact, so the flag is stripped and
+  // freed as on the disjoint path (keeping it would record `[d == 2]` beside a
+  // `d` the program may rotate later). Either way the emitter tags the mint, so
+  // the late chain check asks the rest of the chain.
+  bool CondOnRotatedRegister = false;
+
   // bd test_C_libtooling-8h7d.5 (7.3 Inc 3) — this region sits WHOLLY INSIDE a
   // reducible `LoopInfo` loop and was admitted by
   // `ControlDetect::flatRegionRollableInLoop`. Set at detection, read only by

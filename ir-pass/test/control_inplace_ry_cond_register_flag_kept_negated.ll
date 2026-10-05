@@ -1,5 +1,6 @@
 ; control_inplace_ry_cond_register_flag_kept_negated.ll — ACCEPT: the Ry on the
 ; condition's own register sits on the FALSE edge (bd test_C_libtooling-dm7f.4).
+; CASE: KEPT (the compare reads the rotated register; the strip is impossible).
 ;
 ;     int q = u; cq_theta(&q, .5);
 ;     if (q > 5) { } else cq_theta(&q, .9);   // -O1 hands this over exactly so

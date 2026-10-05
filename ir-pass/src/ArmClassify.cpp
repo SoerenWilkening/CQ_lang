@@ -6159,7 +6159,9 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         //     (`int d = q & 6; … cq_measure(d * 5)`) cannot be: its borrowed
         //     parent is moved by a `_controlled` Ry, which
         //     `preservesBorrowedParent` refuses, so it stays allocated as the
-        //     program's own data. ⚠ NOT EVERY CHAIN IS DISCHARGED, and this
+        //     program's own data (and, when it is the compare's operand, the
+        //     flag is then stripped against it after the gate: round 2, F-A,
+        //     below). ⚠ NOT EVERY CHAIN IS DISCHARGED, and this
         //     comment said so in 03d9ca8a: a LIFTED CALL's `__cq_q_*` result
         //     is never an interior producer (bd ln16), so `h(q) > 13` left an
         //     injective record of `q` live at the gate, a wrong unitary (review
@@ -6199,10 +6201,55 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // on the mint, and the absence of a `DischargedFlagGates` record are
         // this verdict's only consumers. A new consumer of "this region's flag
         // is stripped" must read the field.
+        //
+        // ---- REVIEW ROUND 2 (F-A): KEEP THE FLAG ONLY WHEN THE STRIP IS
+        //      IMPOSSIBLE. The ruling keeps the flag BECAUSE it cannot be
+        //      uncomputed. That holds when a tainted compare operand is on the
+        //      rotated wire (`q > 5`), or is a temporary nothing reads after the
+        //      region (`(q & 3) == 1`): the spine then discharges it before the
+        //      gate, so nothing is left to recompute the predicate from. It
+        //      FAILS when every tainted operand is a record the program reads
+        //      after the region (`int d = q & 6; if (d == 2) …; … d …`): that
+        //      rail is off the rotated wire, unchanged by the stream (mint,
+        //      gate, `x` brackets on the flag), and still live after the gate,
+        //      so the strip there is exact. Keeping the flag would add a
+        //      `[d == 2]` record the source does not have, and a later Ry on `d`
+        //      would then lose the coherence between the two branches
+        //      (MEASURED wrong stream, `int d = q & 6; if (d == 2)
+        //      cq_theta(&q,.9); cq_theta(&d,.4);`; pinned by
+        //      control_inplace_ry_cond_register_strip_observed.ll). So that case
+        //      strips and frees after the gate, as the disjoint path does.
+        //      "Read after" = a user other than the compare that is not
+        //      `provablyBefore` the branch. A wrong "yes" only strips a flag whose
+        //      operand then stands unobserved at the gate, which the late chain
+        //      check refuses loudly; a "no" is impossible for a live operand.
         for (Value *B : BaseWireOrder)
           if (CondRails.count(B)) {
             if (!RailCond && !Region.InLoop && Prov.count(RotBase)) {
-              Region.CondFlagKept = true;
+              const Instruction *Br = Region.Pred->getTerminator();
+              auto *Cmp = cast<CmpInst>(Region.Condition);
+              bool StripExact = DT != nullptr;
+              for (Value *Op : Cmp->operands()) {
+                if (!StripExact)
+                  break;
+                if (!Taint.Tainted.count(Op))
+                  continue;  // a classical operand: the strip reads it as is.
+                if (BaseWire.count(Op)) {
+                  StripExact = false;  // the rotated wire itself.
+                  break;
+                }
+                bool ReadAfter = false;
+                for (User *U : Op->users()) {
+                  auto *UI = dyn_cast<Instruction>(U);
+                  if (UI && UI != Cmp && !provablyBefore(UI, Br, *DT)) {
+                    ReadAfter = true;
+                    break;
+                  }
+                }
+                StripExact = ReadAfter;
+              }
+              Region.CondOnRotatedRegister = true;
+              Region.CondFlagKept = !StripExact;
               break;
             }
             declineArm(declAnchor(Region), "rotation arm on a condition wire");

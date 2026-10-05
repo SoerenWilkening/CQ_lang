@@ -2,6 +2,9 @@
 ; flag accept (bd test_C_libtooling-dm7f.4) with a condition computed by a
 ; LIFTED CALL whose result would stand live at the controlled Ry. Review round 1
 ; of dm7f.4, finding F1 (introduced, L9).
+; CASE: KEPT, then DECLINED. `t` has no reader after the region, so the strip is
+; not available and the flag would be kept; the late chain check then refuses
+; the undischarged `t`.
 ;
 ;     __attribute__((noinline)) int h(int x) { return x * 3 + 1; }
 ;     int q = u; cq_theta(&q, .5);

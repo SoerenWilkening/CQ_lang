@@ -1,6 +1,9 @@
 ; control_inplace_ry_cond_register_flag_kept.ll — ACCEPT: the arm's Ry rotates
 ; the condition's own register, and the condition flag is KEPT (bd
 ; test_C_libtooling-dm7f.4, owner ruling 2026-10-03, option (a)).
+; CASE: KEPT. The compare reads the rotated register itself, so the strip is
+; impossible after the gate. (The STRIPPED case, where the compare reads only
+; records the program keeps, is control_inplace_ry_cond_register_strip_observed.ll.)
 ;
 ;     int q = u; cq_theta(&q, .5);
 ;     if (q > 5) cq_theta(&q, .9);

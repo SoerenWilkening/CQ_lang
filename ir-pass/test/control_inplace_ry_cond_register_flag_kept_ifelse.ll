@@ -1,5 +1,6 @@
 ; control_inplace_ry_cond_register_flag_kept_ifelse.ll — ACCEPT: both arms of an
 ; if/else rotate the condition's own register (bd test_C_libtooling-dm7f.4).
+; CASE: KEPT (the compare reads the rotated register; the strip is impossible).
 ;
 ;     int q = u; cq_theta(&q, .5);
 ;     if (q > 5) cq_theta(&q, .3); else cq_theta(&q, .7);

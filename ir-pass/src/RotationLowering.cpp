@@ -2480,7 +2480,11 @@ bool warnLiveRecordRotations(Module &M, const TaintSet &taint) {
 // The tag is the emitter's record (`markKeptConditionFlag`, on the flag MINT,
 // which no later stage replaces); it is cleared here so the lowered module is
 // byte-identical to one that never carried it. A foreign tag in the input can
-// only ADD this decline, never remove one.
+// only ADD this decline, never remove one. Since review round 2 (F-A) the tag
+// is also on a flag the region STRIPS after the gate (`CondOnRotatedRegister`
+// without `CondFlagKept`: its compare reads only records the program keeps).
+// That flag is excluded the same way (`R == Flag`), and the question about
+// the rest of the chain is unchanged.
 namespace {
 constexpr char kKeptFlagTag[] = "cq.keptflag";
 }  // namespace
