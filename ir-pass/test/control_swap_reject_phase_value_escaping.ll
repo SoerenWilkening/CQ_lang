@@ -41,8 +41,24 @@
 ;   * without it (`pret_ctl.ll`, the SAME module minus the one `cq_phi` line):
 ;     `non-reconverging value exit` — a DIFFERENT clause. The phase is what
 ;     selects this message, not the non-reconverging exit it rides on.
+;
+; ===========================================================================
+; RE-DERIVED by bd test_C_libtooling-dm7f.5 — the message above is HISTORY for this
+; module. dm7f.5 merges the two `ret`s before detection (`unifyTaintedReturns`,
+; ReturnMerge.cpp), so this module is now, up to names, the CFG `clang -O1` emits for
+;     int example(int u0) { int q = u0; cq_theta(&q, .5);
+;                           if (q > 5) { cq_phi(.7); return q; } return cq_measure(q); }
+; (one `ret` of a φ of `%q` and the measured `%m`), and it declines with that twin's
+; message, `impure phase arm` (measured on main 7b4e6359 from the C source above;
+; the `cq_measure` sits in the region's other arm). It stays a decline for a reason
+; that matters: the user's measurement runs only on the q <= 5 branches, a
+; measurement UNDER quantum control, which no emitter may hoist or drop. This is the
+; decline twin that keeps a normalized multi-exit with a measuring arm loud.
+; The `phase-class value escaping` fence is NOT unpinned by the change: its
+; population is now single-`ret` modules whose region merge has an outside
+; predecessor, pinned by control_multiexit_reject_classical_exit_phase.ll.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq controlled lowering: phase-class value escaping under quantum control
+; CHECK: error{{.*}}cq controlled lowering: impure phase arm under quantum control
 
 declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)

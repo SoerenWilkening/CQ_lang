@@ -21,6 +21,7 @@
 #include "Specialization.h"
 #include "LoopPlan.h"          // collapseFlattenedLoopRails (F-R1-1 onward pass)
 #include "MergePhiPeel.h"     // peelIndependentMergePhis (bd b6ap, ROUND-2 site)
+#include "ReturnMerge.h"      // unifyTaintedReturns (bd dm7f.5, ROUND-2 site)
 #include "SwapRouteEmit.h"     // lowerControlRegions (yn71 onward-control re-emit)
 #include "WidthDispatch.h"
 
@@ -2342,6 +2343,15 @@ void detectAndLowerOnwardControl(Module &M, WidthDispatch &wd, TaintSet &taint,
     // beforeTaint)` AFTER it. Every value this peel taints is therefore inside
     // that reseed set and is adjudicated by the same `adjudicateTaintDelta` call.
     // If this loop ever gains a second caller, that caller owes the delta.
+    //
+    // bd `test_C_libtooling-dm7f.5` — the multi-exit `ret` normalization
+    // (`ReturnMerge.h`), slot (b), ROUND 2, for the same reason as the peel: a
+    // `br` reading a 6.5/4.5 `%out` is classical at slot (a) and tainted only
+    // here, and if it reaches two `ret`s, detection would see no merge. Same
+    // `nullptr` disposition and the same inclusion argument: the `cq.ret` φ it
+    // taints is inserted into `Tainted` inside this loop, so it is part of the
+    // `Tainted − beforeTaint` reseed the sole caller adjudicates.
+    unifyTaintedReturns(M, taint, /*Delta=*/nullptr);
     peelIndependentMergePhis(M, taint, /*Delta=*/nullptr);
     ControlPlan plan2 = detectControlRegions(M, wd, taint);
     if (plan2.Regions.empty())

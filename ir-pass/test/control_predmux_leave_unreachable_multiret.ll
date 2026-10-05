@@ -8,6 +8,14 @@
 ; region falls through to the existing loud decline. Pins that tolerating
 ; `unreachable` never widened E3 to admit a real `ret`/multi-exit.
 ;
+; bd test_C_libtooling-dm7f.5: the second exit is now MERGED before PredMux runs
+; (`unifyTaintedReturns`: `%retarm` is folded into `entry`, whose `br %sp` targets
+; `cq.retmerge` — φ of 7 and `%r` — directly), so the region is no longer multi-exit
+; when PredMux asks. The verdict is unchanged and still fired at the outer `br %sp`
+; (CQ_CTRL_DBG, measured): PredMux does not claim it, and it must stay loud because
+; `%r` MEASURES only on the `%sp`-false paths — a measurement under quantum control.
+; What this file pins since dm7f.5 is that decline, not the E3 multi-exit refusal.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

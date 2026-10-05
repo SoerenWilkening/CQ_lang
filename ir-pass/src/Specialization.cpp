@@ -13,6 +13,7 @@
 #include "OpcodeSupport.h"
 #include "PredMuxFlatten.h"
 #include "QramLowering.h"      // lowerQramReads (bd 20xt.4 spec-callee QROM read)
+#include "ReturnMerge.h"       // mergeReturnBlocks (bd dm7f.5 — the shared ret merge)
 #include "SelectClassify.h"    // collectCondTree / CondTree (5po2 I2 compound cond)
 #include "SelectMergeEmit.h"   // materializeCopySource (5po2 I2 classical arm)
 #include "SpecializeClone.h"
@@ -575,15 +576,13 @@ void normalizeReturnMerge(Function &Clone) {
   for (ReturnInst *R : Rets)
     if (!R->getReturnValue() || R->getReturnValue()->getType() != RetTy)
       return;
-  LLVMContext &Ctx = Clone.getContext();
-  BasicBlock *Merge = BasicBlock::Create(Ctx, "cqq.retmerge", &Clone);
-  PHINode *Phi = PHINode::Create(RetTy, Rets.size(), "cqq.ret", Merge);
-  ReturnInst::Create(Ctx, Phi, Merge);
-  for (ReturnInst *R : Rets) {
-    Phi->addIncoming(R->getReturnValue(), R->getParent());  // (value, block) captured
-    BranchInst::Create(Merge, R);  // `br merge` before the `ret`…
-    R->eraseFromParent();          // …then drop the `ret`.
-  }
+  // The merge itself is the ONE shared spelling (bd test_C_libtooling-dm7f.5,
+  // `ReturnMerge.h`), extracted from here verbatim: same names, same statement
+  // order, no debug locations — so a clone body is byte-identical to the
+  // pre-extraction binary's. The module-level `unifyTaintedReturns` is its second
+  // caller.
+  mergeReturnBlocks(Clone, Rets, "cqq.retmerge", "cqq.ret",
+                    /*CarryDebugLoc=*/false);
 }
 
 // 5po2 I1: flatten any PredMux-claimable acyclic tainted VALUE diamond in the

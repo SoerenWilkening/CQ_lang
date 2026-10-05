@@ -92,6 +92,8 @@ add_library(CQPass MODULE
   src/RailBankPromote.cpp
   src/RegionFlatten.cpp
   src/RegionTreeDetect.cpp
+  # bd dm7f.5: multi-exit `ret` normalization under tainted control.
+  src/ReturnMerge.cpp
   src/RotationLowering.cpp
   src/SelectClassify.cpp
   src/SelectMergeEmit.cpp
