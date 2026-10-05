@@ -8,10 +8,13 @@
 ; is FALSE for an INTERPOSABLE definition (weak / linkonce / common / extern_weak
 ; — the linker may substitute an ARBITRARY body) AND for a DEREFINABLE one
 ; (weak_odr / linkonce_odr / available_externally — a differently-optimized ODR
-; variant may bind), so every non-link-exact definition declines. EXACT mirror of
-; the E4 pending-spec fence `isSpeculatablePureCalleeBodyImpl` (PredMuxFlatten.cpp)
-; and the ByRefInline `hasLocalLinkage` precedent (Rule 14), so the spec-clone and
-; E4-speculation accept-surfaces stay aligned. The body is otherwise the exact
+; variant may bind). bd p3kd.2 (2026-10-05) narrowed this fence for the TOP callee
+; of a candidate to the interposable set (`calleeBodyTrusted(F, Execute)`,
+; CalleeBody.h): its call is retargeted to the clone, so the cloned body is the
+; body that runs, and a derefinable ODR body is lifted (spec_accept_odr_callee.ll).
+; `weak` is interposable: no implementation is known, so this still declines. The
+; E4 pending-spec fence `isSpeculatablePureCalleeBodyImpl` (PredMuxFlatten.cpp)
+; keeps the exact definition, because a hoisted call runs the LINKED body. The body is otherwise the exact
 ; `spec_accept_single.ll` accept shape — ONLY the `weak` linkage differs — so this
 ; isolates the interposability decline. NO control: this is the direct-call gap
 ; the E4 fence (which fires only inside a PredMux control region) never covered.

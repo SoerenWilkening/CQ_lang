@@ -76,14 +76,15 @@ constexpr char kMsgInBodyControl[] =
 constexpr char kMsgArityOverflow[] =
     "cq specialization: callee arity exceeds the 64-parameter specialization "
     "mask limit";
-// bd gxhi: a callee whose definition is NOT link-exact — either INTERPOSABLE
-// (weak/linkonce/common/extern_weak: the linker may substitute an arbitrary
-// body) or DEREFINABLE (weak_odr/linkonce_odr/available_externally: a
-// differently-optimized ODR variant may bind). Specialization reads + clones the
-// module-local body, so a stage-3 rebind makes the cloned unitary diverge from
-// the linked program (verify-clean). EXACT mirror of the E4 speculation fence's
-// `hasExactDefinition()` test (PredMuxFlatten.cpp) so the two accept-surfaces
-// stay aligned (Rule 14).
+// bd gxhi: a callee whose body the pass may not lift. Since bd p3kd.2 the
+// question is `calleeBodyTrusted` (CalleeBody.h): the TOP callee of a candidate
+// is refused only when INTERPOSABLE (weak/linkonce/common/extern_weak, or not
+// dso_local under SemanticInterposition: the linker may bind an ARBITRARY body),
+// while a weak_odr/linkonce_odr/available_externally top callee is lifted (its
+// call runs the clone of the body analyzed). A NESTED callee must still be exact,
+// because a nested call the clone does not taint runs the LINKED body, twice once
+// the uncompute twin copies the clone (`scanBody` (0-pre)). The text is unchanged
+// so the existing negatives keep mirroring it.
 constexpr char kMsgInterposable[] =
     "cq specialization: callee has a non-link-exact definition "
     "(interposable/derefinable linkage); the linker may bind a different body";

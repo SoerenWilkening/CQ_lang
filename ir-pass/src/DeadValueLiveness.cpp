@@ -2,6 +2,8 @@
 
 #include "DeadValueLiveness.h"
 
+#include "CalleeBody.h"  // calleeBodyTrusted (bd p3kd.2)
+
 #include "SpecializeDetect.h"  // nullSafeSlot (bd 91k9 / w7nm: the ONE null-soundness rule)
 #include "TaintPropagation.h"
 
@@ -61,7 +63,14 @@ bool isEmptyUncondArm(const BasicBlock &B) {
 // `memory(inaccessiblemem: readwrite)` without `willreturn` from it (bd vsfp
 // round 2, r1B probe `v16`), and hand-written IR carries no attributes at all.
 bool bodyIsSideEffectFree(const Function &F) {
-  if (F.isDeclaration() || !F.hasExactDefinition() || F.isVarArg() ||
+  // `AssumeOfLinkedCall` (bd p3kd.2, CalleeBody.h; unchanged behaviour). A
+  // "not a root" verdict licenses more than deleting the call: the drop reads it
+  // as "this caller's parameter is dead" and rewrites the OUTER call's operand,
+  // and a clone's recorded dead slots are built on it. Deleting a call to a
+  // derefinable ODR body would be sound (inline the visible body, then DCE it),
+  // but until every such consumer is shown to delete the call it reasons about,
+  // a derefined variant that still reads the operand must not be possible.
+  if (!calleeBodyTrusted(&F, CalleeBodyUse::AssumeOfLinkedCall) || F.isVarArg() ||
       F.hasFnAttribute(Attribute::Naked))
     return false;
   SmallVector<std::pair<const BasicBlock *, const BasicBlock *>, 4> BackEdges;

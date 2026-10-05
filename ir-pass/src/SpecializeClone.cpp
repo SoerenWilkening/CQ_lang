@@ -3,6 +3,7 @@
 
 #include "SpecializeClone.h"
 
+#include "CalleeBody.h"     // calleeBodyTrusted (bd p3kd.2)
 #include "OpcodeSupport.h"  // abiWidthFromType, abiWidthHasReversibleFpCopy
 #include "SpecializePlan.h"
 #include "TaintPropagation.h"
@@ -202,7 +203,9 @@ bool predictReturnTainted(Function *Callee, SpecMask Mask) {
 // for the contract and the two backstops. Every conjunct below narrows the set of
 // calls the prediction is asked about (a false return keeps today's conservative
 // taint), so each is the SAFE direction on its own:
-//   * a DIRECT `CallInst` to an EXACT, non-intrinsic, non-variadic DEFINITION, called
+//   * a DIRECT `CallInst` to a LIFTABLE (`calleeBodyTrusted(…, Execute)`: exact, or
+//     ODR-derefinable and not interposable — bd p3kd.2), non-intrinsic, non-variadic
+//     DEFINITION, called
 //     with the callee's own function type and of arity ≤ `kSpecMaxArity` — the
 //     candidate shape `detectSpecializations` / `scanBody` accept (an invoke, an
 //     indirect call, a declaration, an interposable body, a vararg tail — whose
@@ -225,8 +228,12 @@ bool predictReturnTainted(Function *Callee, SpecMask Mask) {
 // add `!Callee->hasFnAttribute(Attribute::Naked)` here in the same change.
 bool specCallResultPredictedClassical(const CallInst &CI, const TaintSet &taint) {
   Function *Callee = CI.getCalledFunction();
-  if (!Callee || Callee->isDeclaration() || Callee->isIntrinsic() ||
-      !Callee->hasExactDefinition() || Callee->isVarArg())
+  // `Execute` (bd p3kd.2, CalleeBody.h): the prediction is about the body that
+  // runs at a site that is specialized (retargeted to its clone) or declined, so
+  // it asks exactly what `scanBody` asks of a TOP callee; a derefinable ODR body
+  // is admitted by both or by neither.
+  if (!Callee || Callee->isIntrinsic() ||
+      !calleeBodyTrusted(Callee, CalleeBodyUse::Execute) || Callee->isVarArg())
     return false;
   if (CI.getType()->isVoidTy() ||
       CI.getFunctionType() != Callee->getFunctionType() ||
