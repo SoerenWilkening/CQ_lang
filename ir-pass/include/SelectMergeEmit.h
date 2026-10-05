@@ -46,6 +46,7 @@
 
 namespace llvm {
 class DebugLoc;
+class Module;
 class Value;
 }  // namespace llvm
 
@@ -72,10 +73,31 @@ struct TaintSet;
 // Promoted from the file-local `static materialize` in SelectMergeEmit.cpp so the
 // select emitter, `SwitchDataMuxEmit`, and `ClassicalCallArmEmit` share ONE
 // implementation (Rule 14 — retires the SwitchDataMuxEmit:176 inline duplication).
+//
+// bd test_C_libtooling-r2j3.14 — A CLASSICAL ANSWER IS A ROUND-1 ANSWER (L1).
+// "Is `V` quantum?" is asked at the taint of the caller's round. A value that is
+// classical when a round-1 region emits can become a register in round 2 (it
+// derives from a 6.5 / 4.5 merge `%out`, or from a 7.4 break escape register),
+// and then the alloc above loads the register's HANDLE ID as the value: a
+// verify-clean wrong unitary (measured, control_select_reject_round2_copy_source.ll).
+// So every classical load is RECORDED here and re-asked at final taint by
+// `declineQuantumCopySources`; a compile-time constant is never recorded (it
+// cannot become quantum).
 llvm::Value *materializeCopySource(llvm::Value *V, llvm::FunctionCallee Alloc,
                                    const TaintSet &taint, llvm::IRBuilder<> &B,
                                    const llvm::DebugLoc &DL,
                                    const llvm::Twine &Name = "selop");
+
+// bd test_C_libtooling-r2j3.14 — THE L1 RE-ASK of every classical copy source
+// `materializeCopySource` loaded, in the slot after the round-2 fixpoint where
+// `declineQuantumCondLiterals` re-asks a condition literal, in BOTH entry points
+// (the same record-and-re-ask pattern, for the data operand instead of the
+// condition literal). A recorded load whose value is quantum at FINAL taint
+// declines loudly ("classical copy source became quantum-derived"). Reads the
+// record once and clears it. Returns true iff it declined. Lowering instead of
+// declining would read the value's register as the copy source, which is what
+// the emitter does for a value quantum at emission time (a gap, R1).
+bool declineQuantumCopySources(llvm::Module &M, TaintSet &taint);
 
 // Lower one accepted `SelectRegion` (`R.Merge` is the `SelectInst`, `R.Condition`
 // its `CmpInst`) to the controlled-XOR copy merge stream above. Mutates the

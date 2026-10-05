@@ -40,6 +40,7 @@
 #include "llvm/IR/Instructions.h"
 
 #include <algorithm>
+#include <vector>  // copySourceLedger (bd r2j3.14)
 
 using namespace llvm;
 
@@ -73,6 +74,17 @@ void scrubTaint(Instruction *I, TaintSet &taint) {
 // Shared copy-source materializer (promoted from the former file-local `static
 // materialize`; see SelectMergeEmit.h for the contract). Now consumed by the
 // select merge below, `SwitchDataMuxEmit`, and `ClassicalCallArmEmit` (Rule 14).
+namespace {
+// bd r2j3.14 — the classical copy sources loaded so far, for the final-taint
+// re-ask. A function-local static, the pattern of `exitDischargeObligations` (no
+// new `TaintSet` field). `WeakVH`: a load erased since is nothing to re-ask, and
+// the handle must NOT follow a RAUW (it names the load, whose operand is read).
+std::vector<WeakVH> &copySourceLedger() {
+  static std::vector<WeakVH> Ledger;
+  return Ledger;
+}
+}  // namespace
+
 Value *materializeCopySource(Value *V, FunctionCallee Alloc,
                              const TaintSet &taint, IRBuilder<> &B,
                              const DebugLoc &DL, const Twine &Name) {
@@ -81,7 +93,25 @@ Value *materializeCopySource(Value *V, FunctionCallee Alloc,
   CallInst *H = B.CreateCall(Alloc, {V}, Name);
   if (DL)
     H->setDebugLoc(DL);
+  if (!isa<Constant>(V))
+    copySourceLedger().emplace_back(H);  // re-asked at final taint (r2j3.14).
   return H;
+}
+
+bool declineQuantumCopySources(Module &M, TaintSet &taint) {
+  (void)M;  // module-wide record; each load names its own function.
+  std::vector<WeakVH> Ledger;
+  Ledger.swap(copySourceLedger());  // read once: the next module starts empty.
+  for (const WeakVH &H : Ledger) {
+    auto *Load = dyn_cast_or_null<CallInst>(static_cast<Value *>(H));
+    if (!Load || !Load->getFunction() || Load->arg_size() != 1)
+      continue;  // erased or detached: no load left to read.
+    if (taint.Tainted.count(Load->getArgOperand(0))) {
+      diagnoseUnderControl(Load, "classical copy source became quantum-derived");
+      return true;
+    }
+  }
+  return false;
 }
 
 void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,

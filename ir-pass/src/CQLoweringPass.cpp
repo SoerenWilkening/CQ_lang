@@ -10,6 +10,7 @@
 #include "ArmAnalysis.h"      // reverifyRailCondReads (bd r9e5 1b-B.1 round 2)
 #include "ByRefInline.h"
 #include "CondLiteral.h"      // declineQuantumCondLiterals (bd xdu2.13 round 2)
+#include "SelectMergeEmit.h"  // declineQuantumCopySources (bd r2j3.14)
 #include "ControlPlan.h"
 #include "CtlzIdiomPrepass.h"
 #include "Fp80Union.h"
@@ -813,6 +814,12 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // a quantum value in a classical slot (Rule 3). Loud. The rule-(B) marks are
   // dropped immediately after: no classifier can ask again past this slot.
   declineQuantumCondLiterals(M, taint);
+  // (bd `test_C_libtooling-r2j3.14`) THE DATA HALF of the literal re-ask, same
+  // slot, same reason: a round-1 controlled-copy merge (4.4 select, 6.5 arm, 4.5
+  // delta, IO-sink mux) loaded a CLASSICAL arm with `cqrt_alloc_<W>(v)`, and a `v`
+  // derived from a 6.5/4.5 `%out` or a 7.4 break escape register is quantum after
+  // the fixpoint, so the load would read a handle id. Loud.
+  declineQuantumCopySources(M, taint);
   // bd `test_C_libtooling-3jru` — THE refusal of a register returned across a
   // function boundary, and its slot is the argument. The call-return closure lives
   // in `propagateWorklist`, through which `propagate`, the round-2 reseed and
@@ -1615,6 +1622,8 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   reverifyCmpCondReads(M, taint);
   // (bd `test_C_libtooling-xdu2.13`) the literal half + the mark drop, mirrored.
   declineQuantumCondLiterals(M, taint);
+  // (bd `test_C_libtooling-r2j3.14`) the copy-source half, mirrored.
+  declineQuantumCopySources(M, taint);
   // bd `test_C_libtooling-3jru` — THE refusal of a register returned across a
   // function boundary, and its slot is the argument. The call-return closure lives
   // in `propagateWorklist`, through which `propagate`, the round-2 reseed and
