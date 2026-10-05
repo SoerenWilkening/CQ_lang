@@ -52,6 +52,7 @@
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/Analysis/ValueTracking.h"  // isSafeToSpeculativelyExecute (bd 8h7d.15, E17)
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DebugLoc.h"
@@ -2200,6 +2201,45 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
   if (!DT.dominates(Mint, Header))
     return bail();
 
+  // ── (E17) The zero-trip GUARD block (bd 8h7d.15). Canonically `PreB` IS the
+  // guard: it ends in the conditional branch that enters the loop or skips to the
+  // exit merge. When `-O1` LICM hoists an invariant into the loop's preheader
+  // (`(int)b` for a `_Bool` comparand, `p + k`), that preheader
+  // stays a DEDICATED block — one predecessor (the guard), an unconditional branch
+  // to the header — which the guard's zero-trip edge bypasses. Everything this
+  // emitter needs at "the guard" is then one block up: the R/idx/out mints (read
+  // in the exit merge), E13's zero-trip incoming, E12's condition. The preheader's
+  // own instructions are read by the loop and, through the reverse-play's clone of
+  // the break-cond (BreakReversePlay.cpp `cloneBreakCond`), the rail-op adjoints
+  // and the companion loop's `n - 1`, in the exit merge, which the preheader does
+  // NOT dominate: left in place they make the module ill-dominated. So they are
+  // HOISTED into the guard below, which gives the canonical shape this emitter
+  // already lowers. That moves each one onto the zero-trip path, so it must be
+  // safe to execute there: `isSafeToSpeculativelyExecute` (no side effect, no
+  // trap — a runtime `k / d` hoisted by LICM is refused, it would trap on a path
+  // the source never divides on; lowering_reject_break_hoisted_trapping_
+  // comparand.ll). A tainted hoisted value is a pure template the construct only
+  // READS, as a control, exactly like a comparand derived before the guard
+  // (lowering_loop_break_qq_derived.ll). Detection only: nothing moves until
+  // every precondition below has passed.
+  BasicBlock *GuardB = PreB;  // the block holding the zero-trip guard branch
+  SmallVector<Instruction *, 4> PreheaderHoist;
+  if (auto *PreBr = dyn_cast<BranchInst>(PreB->getTerminator());
+      PreBr && PreBr->isUnconditional()) {
+    GuardB = PreB->getSinglePredecessor();
+    if (!GuardB || GuardB == PreB)
+      return bail();
+    for (Instruction &I : *PreB) {
+      if (I.isTerminator())
+        continue;
+      if (isa<PHINode>(I) || !isSafeToSpeculativelyExecute(&I))
+        return bail();
+      PreheaderHoist.push_back(&I);
+    }
+  }
+  SmallPtrSet<const Instruction *, 4> HoistSet(PreheaderHoist.begin(),
+                                              PreheaderHoist.end());
+
   // ── (E14) NO pre-loop in-place rail mutation: the rail value ENTERING the loop
   // (`RailPre`, the rail phi's PreB-incoming) must BE the bare mint (`Root`). The dtzb
   // collapse RAUWs the rail phi to `Root = peelInPlaceBase(RailPre)`, which peels
@@ -2238,13 +2278,14 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
   // y05j.2 Rule-13 re-review 2026-06-27, MISSED originally because every fixture/e2e
   // measures `q` itself so escape == rail held by luck on both edges, never by check).
   // Require the escape phi to be exactly two incomings — `RailLat` from `Latch` and
-  // `RailPre` from `PreB`; decline otherwise (Prime Directive — over-declining is safe;
-  // capturing a derived answer rather than the rail is a near-term widening, not this
-  // increment's proven shape). The canonical `return measure(q)` carries `RailLat`/
-  // `RailPre` themselves and still lowers (lowering_loop_break_*).
+  // `RailPre` from the guard (`GuardB`, E17: `PreB` itself unless a dedicated
+  // preheader sits between them); decline otherwise (Prime Directive — over-declining
+  // is safe; capturing a derived answer rather than the rail is a near-term widening,
+  // not this increment's proven shape). The canonical `return measure(q)` carries
+  // `RailLat`/`RailPre` themselves and still lowers (lowering_loop_break_*).
   {
     int LatchIdx = Rgn.EscapePhi->getBasicBlockIndex(Latch);
-    int PreBIdx = Rgn.EscapePhi->getBasicBlockIndex(PreB);
+    int PreBIdx = Rgn.EscapePhi->getBasicBlockIndex(GuardB);
     if (Rgn.EscapePhi->getNumIncomingValues() != 2 || LatchIdx < 0 || PreBIdx < 0 ||
         Rgn.EscapePhi->getIncomingValue(LatchIdx) != RailLat ||
         Rgn.EscapePhi->getIncomingValue(PreBIdx) != RailPre)
@@ -2270,33 +2311,36 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
     if (U != RailPhi && U != Rgn.EscapePhi)
       return bail();
 
-  // ── (E6) `PreB` (the rail phi's external/entry predecessor — where R/idx/out are
-  // minted) MUST dominate the exit merge. R/idx/out are read in the loop AND in the
-  // exit merge (the consolidation/copy-out/reverse-play), so their defs must
-  // dominate those uses. This holds for the canonical zero-trip guard block (which
-  // dominates the bypassing exit edge) but FAILS for a clang-materialized DEDICATED
-  // preheader that the zero-trip guard edge bypasses — minting there yields an
-  // ill-dominated module (`opt -verify` aborts on valid C; the Rule-13 review
-  // 2026-06-26). Decline (Prime Directive — over-declining is safe).
-  if (!DT.dominates(PreB, Rgn.ExitMerge))
+  // ── (E6) The guard block `GuardB` (E17: `PreB` itself, or the block above a
+  // dedicated preheader — where R/idx/out are minted) MUST dominate the exit merge.
+  // R/idx/out are read in the loop AND in the exit merge (the consolidation/copy-out/
+  // reverse-play), so their defs must dominate those uses. This holds for the
+  // canonical zero-trip guard block (which dominates the bypassing exit edge). A
+  // clang-materialized DEDICATED preheader that the zero-trip guard edge bypasses is
+  // never the mint point: minting there yielded an ill-dominated module (`opt
+  // -verify` aborted on valid C; the Rule-13 review 2026-06-26), which is why E17
+  // steps up to its guard. Decline (Prime Directive — over-declining is safe).
+  if (!DT.dominates(GuardB, Rgn.ExitMerge))
     return bail();
 
-  // ── (E12) Capture the forward loop's zero-trip ENTRY guard (PreB's conditional
-  // branch into the Header) so the reverse-play companion loop can REUSE it. A
+  // ── (E12) Capture the forward loop's zero-trip ENTRY guard (GuardB's conditional
+  // branch into the loop) so the reverse-play companion loop can REUSE it. A
   // re-invented signed `sgt(n, 0)` backward guard would be WRONG for an
   // unsigned-bounded loop (`for (unsigned i=0; i<n; i++)`, whose `-O1` entry guard
   // is `icmp eq n, 0` → enter iff `n != 0`): for `n ≥ 2^31` the forward enters +
   // captures while the signed `sgt(n,0)` skips the whole reverse-play → R/idx freed
   // DIRTY (a Rule-6 hidden measurement; the CRITICAL Rule-13 FINAL finding
   // 2026-06-26). Reusing the forward guard makes the backward loop enter iff the
-  // forward did, for ANY signedness. Require PreB to end in a conditional branch
-  // with the Header as one successor (the canonical guard shape); decline otherwise.
-  auto *GuardBr = dyn_cast<BranchInst>(PreB->getTerminator());
+  // forward did, for ANY signedness. Require GuardB to end in a conditional branch
+  // with the loop's entry block (the Header, or the dedicated preheader `PreB` of
+  // E17, whose only successor is the Header) as one successor; decline otherwise.
+  BasicBlock *LoopEntry = GuardB == PreB ? Header : PreB;
+  auto *GuardBr = dyn_cast<BranchInst>(GuardB->getTerminator());
   if (!GuardBr || !GuardBr->isConditional())
     return bail();
-  bool LoopOnTrue = GuardBr->getSuccessor(0) == Header;
-  if (!LoopOnTrue && GuardBr->getSuccessor(1) != Header)
-    return bail();  // PreB does not branch directly to the loop header.
+  bool LoopOnTrue = GuardBr->getSuccessor(0) == LoopEntry;
+  if (!LoopOnTrue && GuardBr->getSuccessor(1) != LoopEntry)
+    return bail();  // GuardB does not branch directly into the loop.
   Rgn.GuardCond = GuardBr->getCondition();
   Rgn.GuardLoopOnTrue = LoopOnTrue;
 
@@ -2326,7 +2370,9 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
   // immediate — a loop-body value there is undefined (a dominance violation /
   // broken module; the Rule-13 review 2026-06-26). A `ConstantInt` / function-arg
   // immediate is not a body Instruction ⇒ passes; a counter-derived immediate
-  // declines (Prime Directive — over-declining is safe).
+  // declines (Prime Directive — over-declining is safe). An invariant immediate
+  // LICM left in a dedicated preheader passes too: E17 hoists it into the guard,
+  // which dominates the exit merge.
   SmallVector<BinaryOperator *, 4> RailOps;
   for (Value *V = RailLat; V != RailPhi;) {
     auto *BO = dyn_cast<BinaryOperator>(V);
@@ -2337,7 +2383,7 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
       return bail();
     Value *Imm = BO->getOperand(0) == Base ? BO->getOperand(1) : BO->getOperand(0);
     if (auto *ImmI = dyn_cast<Instruction>(Imm))
-      if (!DT.dominates(ImmI, Rgn.ExitMerge))
+      if (!DT.dominates(ImmI, Rgn.ExitMerge) && !HoistSet.count(ImmI))
         return bail();  // loop-variant immediate — undefined in the reverse-play.
     RailOps.push_back(BO);
     V = Base;
@@ -2516,9 +2562,34 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
   for (BinaryOperator *BO : RailOps)
     markInPlaceRailOp(BO, taint);  // + the proven rail's operand INDEX (eqpx).
 
-  // (2) Mint R / idx / out = |0> before the loop (in the rail phi's external
-  //     predecessor, which dominates both the loop and the exit).
-  IRBuilder<> PB(PreB->getTerminator());
+  // (1b) E17: hoist a dedicated preheader's instructions into the guard, in
+  //      order (each operand is defined in the guard or above, since the guard is
+  //      the preheader's only predecessor). UB-implying attributes and metadata
+  //      are dropped, as LLVM's own speculation does (`hoistAllInstructionsInto`),
+  //      except this pass's own `cq.*` marks (`cq.predmux.predicted` is still read
+  //      by the classifiers); the debug location stays the source's. The
+  //      preheader is left holding its unconditional branch to the header.
+  if (!PreheaderHoist.empty()) {
+    SmallVector<StringRef, 32> KindNames;
+    GuardB->getContext().getMDKindNames(KindNames);
+    for (Instruction *I : PreheaderHoist) {
+      SmallVector<unsigned, 8> Keep{LLVMContext::MD_annotation,
+                                    LLVMContext::MD_range,
+                                    LLVMContext::MD_nonnull,
+                                    LLVMContext::MD_align};
+      SmallVector<std::pair<unsigned, MDNode *>, 4> MDs;
+      I->getAllMetadataOtherThanDebugLoc(MDs);
+      for (const auto &KN : MDs)
+        if (KN.first < KindNames.size() && KindNames[KN.first].starts_with("cq."))
+          Keep.push_back(KN.first);
+      I->dropUBImplyingAttrsAndUnknownMetadata(Keep);
+      I->moveBefore(GuardB->getTerminator());
+    }
+  }
+
+  // (2) Mint R / idx / out = |0> before the loop (in the guard block, which
+  //     dominates both the loop and the exit — E6/E17).
+  IRBuilder<> PB(GuardB->getTerminator());
   Type *RailTy = RailPhi->getType();
   Type *IdxTy = CounterPhi->getType();
   CallInst *RReg =

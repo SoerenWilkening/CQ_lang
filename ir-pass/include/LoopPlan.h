@@ -98,8 +98,10 @@ struct LoopBreakRegion {
   llvm::Value *OutReg = nullptr;             // the |0> escaping answer `out` (cqrt_alloc result; RAUW'd into the measure)
   llvm::StringRef RailWidth;                 // the rail's ABI width (`i8`/`i16`/`i32`/`i64`) for copy/alloc symbol selection
   llvm::StringRef IdxWidth;                   // the counter's ABI width — the `idx` register width (PRD §2.8)
-  // The forward loop's zero-trip ENTRY guard (the rail phi's external predecessor's
-  // conditional branch). The reverse-play companion loop reuses it VERBATIM so the
+  // The forward loop's zero-trip ENTRY guard (the conditional branch of the rail
+  // phi's external predecessor, or of that block's single predecessor when `-O1`
+  // left a dedicated preheader between them — E17, bd 8h7d.15). The reverse-play
+  // companion loop reuses it VERBATIM so the
   // backward loop enters iff the forward did — for ANY bound signedness (a re-
   // invented signed `sgt(n,0)` guard would skip the reverse-play for an unsigned
   // `n ≥ 2^31`, leaving R/idx dirty at `cqrt_free`; the Rule-13 FINAL review).
