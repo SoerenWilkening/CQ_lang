@@ -15,12 +15,17 @@
 ; WHY IT NOW LOWERS — AND WHAT IT LOWERS TO (semantic evidence for the flip, R10).
 ; `t`'s last use, `ry(t, .5)`, comes AFTER `ry(q, .3)`: the program itself keeps
 ; `t = q ^ 9` live across the rotation of `q`, a which-path record of q's
-; pre-rotation label. After that, `t`'s `_unc` would need that label, which no
-; later point has. So NO schedule can return `t` to |0>; the faithful circuit
-; leaves it allocated. The frontier fixpoint (`planFrontierFixpoint`) proves
-; exactly that (`recordLiveAcrossMove`: a use of `t` after an in-place gate on
-; `q` inside its window), borrows `t`, drops it as a terminal, and emits NOTHING
-; for it — no adjoint, no free. Stream (hand trace, Ry(.25)|x> = Σ_v a_v|v>):
+; pre-rotation label. After that, `t`'s `_unc` would need that label. Any schedule
+; that returns `t` to |0> must act on `q` (undo `ry(q,.3)`, `_unc` t, redo it), and
+; that conjugation changes q's statistics: it computes a different program,
+; one in which `t` is not alive across the rotation, whereas in the source it
+; is. So the faithful circuit leaves `t` allocated, and the dephasing is the
+; program's own physics (owner ruling, review round 1 of bd 01po.8; lyyf). The
+; frontier fixpoint (`planFrontierFixpoint`) proves the premise
+; (`recordLiveAcrossMove`: the xor dominates `ry(q,.3)`, which dominates the use
+; `ry(t,.5)`, which dominates the reversal point — live across the move on every
+; path), borrows `t`, drops it as a terminal, and emits NOTHING for it — no
+; adjoint, no free. Stream (hand trace, Ry(.25)|x> = Σ_v a_v|v>):
 ;   alloc(x); ry(q,.25)           Σ a_v |v>
 ;   xor_hl(q,9) -> t              Σ a_v |v>|v^9>
 ;   ry(q,.3)                      Σ a_v (R'|v>)|v^9>   (dephased by the record)
