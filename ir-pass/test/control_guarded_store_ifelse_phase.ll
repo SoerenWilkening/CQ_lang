@@ -52,11 +52,9 @@
 ; control_guarded_store_ifelse_reject_trapping_op.ll (a trapping classical op the
 ; flatten would run on every branch), …_reject_quantum_angle.ll (Rule 3),
 ; control_guarded_store_reject_round2_{angle,value}.ll (L1: classical at round 1,
-; quantum after round 2) and
-; control_guarded_store_ifelse_reject_inarm_index_later_ry.ll (an in-arm index
-; and a later Ry on its source: the stale-record guard, bd 01po.7). The original
-; reproducer WITH its later Ry on q accepts:
-; control_guarded_store_ifelse_phase_full_repro.ll.
+; quantum after round 2). The original reproducer WITH its later Ry on q accepts:
+; control_guarded_store_ifelse_phase_full_repro.ll, and so does its in-arm index
+; neighbour, control_guarded_store_ifelse_inarm_index_later_ry.ll (bd 01po.7).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

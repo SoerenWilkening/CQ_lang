@@ -23,10 +23,11 @@
 ; copies. The array cells stay correlated with c and q exactly as the source's
 ; stores make them.
 ;
-; NEIGHBOUR THAT STILL DECLINES: when an arm computes its own index from q (`else
+; NEIGHBOUR: when an arm computes its own index from q (`else
 ; { arr[(q >> 1) & 7] = 9; }` keeps `q & 7` in the true arm), the stale-record
-; guard refuses the in-arm index before detection runs:
-; control_guarded_store_ifelse_reject_inarm_index_later_ry.ll (bd 01po.7).
+; guard grants the in-arm index read and re-checks it late (bd 01po.7), and the
+; module lowers with each arm's index chain discharged after its store:
+; control_guarded_store_ifelse_inarm_index_later_ry.ll.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

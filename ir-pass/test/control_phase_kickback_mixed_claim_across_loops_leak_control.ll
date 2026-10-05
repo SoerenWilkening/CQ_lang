@@ -38,8 +38,16 @@
 ; for exactly that — and `lowering_reject_stale_reader_inloop_invariant_seed.ll`
 ; inverts with it, in the same commit. Do not move one without the other.
 ;
+; WHICH FENCE (2026-10-05, batch 043). Until then the stale-reader fence refused
+; this module (`cq opcode lowering: rotation/measure operand predates a
+; non-diagonal gate`, still the message of its twin
+; lowering_reject_stale_reader_inloop_invariant_seed.ll). Since bd r2j3.13
+; (commit 430ef345) round 1 asks every off-chain absorbed rail op positionally, so
+; LOOP B's read of r past LOOP B's in-place gate on r is refused earlier, by the
+; loop record fence. Same hazard, same verdict; only the reporting fence moved.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+; CHECK: error{{.*}}cq loop lowering: rail record read past an in-place gate on the same rail
 ;
 ; ⚠ A `DS_Error` decline writes 0 bytes to stdout, so an IR-text `CHECK-NOT` here
 ; would be VACUOUS (Rule 12 fixture-hygiene defect (b)); the property is carried
