@@ -1517,19 +1517,22 @@ struct TaintSet {
   scrub::PairSet<const llvm::Value *, const llvm::BasicBlock *> ClaimedRailRoots;
 
   // Issue dugh (Phase 4×6) — the untainted-capable control-merge OUT-rails. The
-  // two accept paths that build a DATA-untainted-yet-quantum-by-control merge
-  // register — the 6.5 classical-call arm (`emitClassicalCallArmRegion`) and the
-  // 4.5 switch data-mux (`emitSwitchDataMuxRegion`) — RAUW their merge phi to a
-  // fresh `%out = cqrt_alloc_<W>` handle and record it HERE. The FIRST `propagate`
-  // (data-flow taint from `cq_theta`) ran BEFORE `%out` existed and classified its
-  // onward consumers as classical; `repropagateControlMerges` (run right after
+  // accept paths that build a DATA-untainted-yet-quantum-by-control merge
+  // register record it HERE: the 6.5 classical-call arm
+  // (`emitClassicalCallArmRegion`) and the 4.5 switch data-mux
+  // (`emitSwitchDataMuxRegion`) RAUW their merge phi to a fresh
+  // `%out = cqrt_alloc_<W>` handle; the 7.6 IO-sink value mux (`IOSinkLowering`)
+  // and the 7.4 break escape register `cq.brk.esc.out` (`emitBreakForward`,
+  // bd 8h7d.17) do the same BEFORE round-1 detection. The FIRST `propagate`
+  // (data-flow taint from `cq_theta`) classified the replaced value's onward
+  // consumers as classical; `repropagateControlMerges` (run right after
   // `lowerControlRegions`) re-seeds a forward propagation from this set so an
   // onward QUANTUM flow (arith / phase / local-array Shadow store) is re-tainted
   // and lowers, while an onward CLASSICAL escape (store / opaque call / non-i32
   // ret) declines via the re-run escape net. A rail whose merge WAS already
   // tainted (a `q`-straight-through classical-call arm) is recorded too — the
   // re-propagation is idempotent for it (its onward users were tainted by the
-  // first round). Populated by the two emitters; consumed once by
+  // first round). Populated by those four sites; consumed once by
   // `repropagateControlMerges`. Empty for a module with no untainted-merge region.
   ScrubPtrSet<llvm::Value *, 4> UntaintedMergeRails;
 

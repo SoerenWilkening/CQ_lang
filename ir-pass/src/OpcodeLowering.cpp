@@ -462,8 +462,9 @@ bool checkStaleReads(Instruction &I, ArrayRef<Value *> Reads, TaintSet &taint,
 // control emitter runs in sequence. Every path from `I` passes `T`, so `T` is after
 // the merge or later in `I`'s own arm, and a claimed region is emitted inside its
 // own span with each arm in program order. ORDER IS NOT THE WHOLE STORY: a hoisted
-// read also becomes UNCONDITIONAL, which is why the caller withholds this for a
-// read under tainted control (above). Sibling arms keep declining, classical or
+// read also becomes UNCONDITIONAL, which is why the caller RECORDS a grant for a
+// read under tainted control (`TaintSet::TaintedArmGrantedReads`, above) and the
+// late live-record pass errors if its rail still stands at a gate (bd 01po.7). Sibling arms keep declining, classical or
 // tainted (lowering_reject_stale_record_exclusive_arms.ll,
 // lowering_reject_stale_record_tainted_sibling_arms.ll). Leg 2 (a back edge
 // refreshing the record) is not widened: a `T` that can reach `I` still needs `I`
