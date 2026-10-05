@@ -1086,37 +1086,52 @@ void partitionByReducedDag(ArrayRef<Value *> Terms, ArrayRef<Instruction *> Ats,
 }
 
 // bd test_C_libtooling-01po.8 — is `R`, written by `G` from the borrowed parent
-// `P`, NECESSARILY a which-path record of `P` across a move of `P`? True iff some
-// later use `U` of `R` (dominated by `G`) has a real move of `P` inside
-// `(G, U)`: the window scan cannot clear the interval, and every user it fails
-// to clear is an in-place gate on `P` or a measurement of `P`. Then the source
-// itself keeps `R` live across the move, `R`'s `_unc` would need `P`'s
-// pre-move label, which no later point has, and leaving `R` allocated is the
-// program's own circuit, not a choice. Anything unproven (a non-call user of
-// `P`, a user that is neither a writer nor a measurement) answers false.
+// `P`, a which-path record of `P` that the PROGRAM keeps alive across a move of
+// `P` on EVERY path to the reversal point `At`? Owner rule (review round 1): a
+// record whose last use PRECEDES the parent's next non-diagonal gate must be
+// uncomputed, never leaked; only a record genuinely live across a move on every
+// path is left allocated.
 //
-// WHY "FORCED" AND NOT "ANY": a record whose uses all END before the move could
-// have been uncomputed before it. Leaking it instead would keep MORE of `P`
-// across the move than the program does (`a = q*3; b = a & 1; cq_theta(&q, .3);
-// cq_theta(&b, .5)`: leaking `a` keeps all of q, the program keeps one bit), a
-// different distribution behind a warning that blames the user. That shape keeps
-// its decline.
-bool recordLiveAcrossMove(CallInst *G, Value *R, Value *P, DominatorTree &DT,
-                          const TaintSet &taint) {
-  for (User *U : R->users()) {
-    auto *UI = dyn_cast<Instruction>(U);
-    if (!UI || UI == G || !DT.dominates(G, UI))
+// True iff some user `M` of `P` is a NON-PERMUTATION in-place gate on it — an
+// in-place gate (`isInPlaceGateOn`) that is not a basis permutation
+// (`preservesBasisUnderRecord`), which on that surface is exactly the Ry family,
+// controlled or not — and some user `U` of `R` follows it, with
+// `G` dom `M` dom `U` dom `At`: on every path that reaches the reversal, the
+// gate moves `P` after `G` read it and `R` is used after the move. Then any
+// schedule that returns `R` to |0> must act on `P` (undo the move, `_unc`,
+// redo it) and changes `P`'s statistics, while the source keeps `R` alive across
+// the move: leaving `R` allocated is the program's own physics (owner ruling
+// lyyf), never adjointed, never freed.
+//
+// WHAT IS NOT A FORCING MOVE, each a silent miscompile when it was one
+// (review round 1, f6984f85):
+//   * a MEASUREMENT of `P` (F1). A collapse leaves `P`'s computational-basis
+//     label unchanged on the realised branch, and that label is all an `_unc`
+//     reads; the dead record is uncomputed in the program's meaning, and
+//     leaking it kept a full record of another register across a later
+//     rotation (lowering_reject_uncompute_measured_parent_measured_in_window.ll);
+//   * a gate on SOME paths only (F2): the record is uncomputable on the others
+//     (lowering_reject_uncompute_measured_parent_moved_on_some_paths.ll);
+//   * a record whose uses all END before the move (dominance fails), and a
+//     basis permutation of `P` (`xorc`/`addc`/a store): conjugating by it would
+//     not change `P`'s statistics, so the record is not forced
+//     (lowering_reject_uncompute_measured_parent_moved_dead_record.ll).
+// Every refusal keeps the decline. Asked of the IR as it stands (nothing has
+// been emitted for this function's terminal groups when it is planned), with
+// `DominatorTree::dominates` only — no window collector, so no unprovable user
+// can be read as "moved" (finding F4).
+bool recordLiveAcrossMove(CallInst *G, Value *R, Value *P, Instruction *At,
+                          DominatorTree &DT) {
+  for (User *PU : P->users()) {
+    auto *M = dyn_cast<CallInst>(PU);
+    if (!M || !isInPlaceGateOn(M, P) || preservesBasisUnderRecord(M) ||
+        !DT.dominates(G, M))
       continue;
-    SmallVector<const CallInst *, 4> Failing;
-    if (railUnmovedInWindow(P, G, UI, DT, taint, /*AdmitCloneCalls=*/false,
-                            /*Opener=*/nullptr, &Failing))
-      continue;  // P holds its label up to this use
-    if (Failing.empty())
-      return false;  // a non-call user of P: unprovable
-    if (llvm::all_of(Failing, [&](const CallInst *M) {
-          return isInPlaceGateOn(M, P) || isMeasureSink(M);
-        }))
-      return true;
+    for (User *RU : R->users()) {
+      auto *U = dyn_cast<Instruction>(RU);
+      if (U && DT.dominates(M, U) && DT.dominates(U, At))
+        return true;
+    }
   }
   return false;
 }
@@ -1156,10 +1171,12 @@ bool recordLiveAcrossMove(CallInst *G, Value *R, Value *P, DominatorTree &DT,
 //     `_unc` reading P can run at that point. Every DAG gate G reading P stops
 //     being reversed: `railOf(G)` joins the frontier (a terminal that lands in it
 //     is dropped), PROVIDED `recordLiveAcrossMove` proves R = railOf(G) is used
-//     after a real move of P — a which-path record the program itself keeps
-//     across the move, left ALLOCATED: never freed (Rule 5), never adjointed
-//     (lowering_reject_uncompute_measured_parent_moved.ll). A record whose uses
-//     all end before the move is `Refused` (see that predicate).
+//     after a non-permutation gate on P on EVERY path to the reversal point — a
+//     which-path record the program itself keeps across the move, left
+//     ALLOCATED: never freed (Rule 5), never adjointed
+//     (lowering_reject_uncompute_measured_parent_moved.ll). A measurement, a
+//     move on some paths only, or a record whose uses all end before the move
+//     is `Refused` (see that predicate; review round 1, F1/F2).
 // Then the components are re-derived and re-planned from scratch. Every other
 // refusal (`Refused`: an escape, an ownership-image closure, an in-loop or
 // divergent or uninvertible plan, a post-collapse read (bd yiid, pending E3), a
@@ -1221,7 +1238,7 @@ bool planFrontierFixpoint(Function &F, ArrayRef<Value *> InsertTerms,
               if (Op == Pm) {
                 Value *R = railOf(G);
                 if (!R || isa<Constant>(R) ||
-                    !recordLiveAcrossMove(G, R, Pm, DT, taint))
+                    !recordLiveAcrossMove(G, R, Pm, P.At, DT))
                   return false;  // not a FORCED record: see the header
                 New |= Frontier.Borrowed.insert(R).second;
               }
@@ -1779,8 +1796,7 @@ bool routeGroupFullyInside(const CallInst *M, const Value *P, CallInst *First,
 // never being a rotation).
 bool railUnmovedInWindow(Value *P, CallInst *First, Instruction *At,
                          const DominatorTree &DT, const TaintSet &taint,
-                         bool AdmitCloneCalls, const Instruction *Opener,
-                         SmallVectorImpl<const CallInst *> *Failing) {
+                         bool AdmitCloneCalls, const Instruction *Opener) {
   // Proven ONCE per (`First`, `At`) pair and read by `routeGroupFullyInside`'s
   // `At`-barriered leg 1 below — see `WireWalk.h`'s `intervalAlternates` for
   // the window argument, and for why the `First`-barriered legs (that leg's
@@ -1934,11 +1950,9 @@ bool railUnmovedInWindow(Value *P, CallInst *First, Instruction *At,
       continue;  // INSIDE — a COMPLETE emitter-recorded Phase-4 route, the
                  // identity on P's basis LABEL over the interval (Inc 6,
                  // clause (d2)).
-    if (!Failing)
-      return false;  // unprovable ⇒ this component leaks (Rule 6).
-    Failing->push_back(M);  // bd 01po.8: collect, same verdict below
+    return false;  // unprovable ⇒ this component leaks (Rule 6).
   }
-  return !Failing || Failing->empty();
+  return true;
 }
 
 namespace {
