@@ -89,6 +89,17 @@ llvm::CallInst *emitRoute(llvm::IRBuilder<> &B, const ControlledSymbols &csyms,
                           llvm::Value *Flag, llvm::Value *Q, llvm::Value *Rail,
                           bool Negated, const llvm::DebugLoc &DL);
 
+// THE one spelling of "fire P(θ) for each angle when `Ctl == !Neg`" (see the
+// definition): `cqrt_rz_i1(Ctl, θ)` per angle, `cqrt_x`-bracketed when `Neg` and
+// `Ctl` is an ancilla, `rz(Ctl, −θ)` when `Neg` and `Ctl` is the user's `_Bool`
+// register (`CtlIsRail`). Every gate is recorded with
+// `ChainWalk::markBranchPhaseGate`. Callers: the flat and nested kickback
+// emitters in this file and, since bd dm7f.3, `emitGuardedStoreArmRegion`.
+void emitKickbackGroup(llvm::IRBuilder<> &B, llvm::FunctionCallee Rz,
+                       llvm::FunctionCallee X, llvm::Value *Ctl, bool CtlIsRail,
+                       llvm::ArrayRef<llvm::Value *> Angles, bool Neg,
+                       const llvm::DebugLoc &DL, TaintSet &taint);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_SWAP_ROUTE_EMIT_H_

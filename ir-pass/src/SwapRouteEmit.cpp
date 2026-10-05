@@ -1795,10 +1795,12 @@ CallInst *emitRoute(IRBuilder<> &B, const ControlledSymbols &csyms, Value *Flag,
 // EVERY gate is RECORDED (`markBranchPhaseGate`) for the F-L7-1 reason the
 // callers state; a seventh emission site that omits it re-opens that
 // miscompile with no diagnostic anywhere.
-static void emitKickbackGroup(IRBuilder<> &B, FunctionCallee Rz,
-                              FunctionCallee X, Value *Ctl, bool CtlIsRail,
-                              ArrayRef<Value *> Angles, bool Neg,
-                              const DebugLoc &DL, TaintSet &taint) {
+//
+// EXPORTED (SwapRouteEmit.h) for bd dm7f.3, body unchanged: the guarded-store
+// region's phase arms (`GuardedStoreArmEmit`) fire through this one spelling.
+void emitKickbackGroup(IRBuilder<> &B, FunctionCallee Rz, FunctionCallee X,
+                       Value *Ctl, bool CtlIsRail, ArrayRef<Value *> Angles,
+                       bool Neg, const DebugLoc &DL, TaintSet &taint) {
   if (Angles.empty())
     return;
   auto stamp = [&](CallInst *C) {
