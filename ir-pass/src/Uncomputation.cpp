@@ -60,8 +60,10 @@ namespace {
 // plan cannot be proven — see the retry in `reverseTerminalGroup`. The fixture
 // that used to pin this string, lowering_uncompute_dead_sibling_premeasure.ll,
 // is now that retry's simplest ACCEPT; the decline pins are
-// lowering_reject_uncompute_measured_parent_moved.ll and
-// lowering_reject_uncompute_measured_parent_read_after_measure.ll, each
+// lowering_reject_uncompute_measured_parent_moved.ll,
+// lowering_reject_uncompute_measured_parent_read_after_measure.ll and (bd eqti)
+// lowering_reject_uncompute_measured_parent_frozen_{taped,copyout,transitive}.ll
+// plus lowering_reject_qram_frozen_adjoint_reads_borrowed_array.ll, each
 // mirroring this string character-for-character.
 constexpr char kMsgLineageMeasured[] =
     "cq uncompute: dead chain would free a measured register";
@@ -595,11 +597,29 @@ bool borrowedParentsUnmoved(const DataDag &D,
 // that reads `P`, i.e. every read the reversal replays happened BEFORE `P`'s
 // collapse. `borrowedParentsUnmoved` already refuses a measurement strictly
 // inside the window (first read, `At`) and admits one after `At`; this refuses
-// the remaining position, a measurement BEFORE the first read. The reversal
-// itself would be exact there (the collapsed register no longer moves), but the
-// FORWARD read is of a register whose name denotes the pre-measurement
-// superposition — bd yiid, owner-unruled, a CLAUDE.md r2j3-A class — and that
-// module declines today only through this chain. Refusing keeps it loud (L9).
+// the remaining position, a measurement BEFORE the first read.
+//
+// THAT REFUSAL IS AN OVER-DECLINE OF A RULED CAPABILITY, KEPT LOUD AS A GAP. A
+// post-measurement read of a name is bd yiid, CLOSED with two owner rulings:
+// 2026-09-14 "a capability, not a decline" (the measured name is re-usable by
+// re-preparation: a fresh allocation seeded from the outcome) and 2026-09-15 E3
+// (b) BROAD (every use positioned after the measurement is fresh/classical) —
+// ruled, NOT BUILT; today such a read chains on the collapsed rail. The
+// reversal would be exact on that rail, but here it REPLAYS the post-collapse
+// read itself (`xor_unc(t, q, …)` after `measure(q)`), and E3 re-targets exactly
+// that read to a re-prepared register; the spine's reversal has not been
+// composed with E3, so the module keeps its pre-ptue decline rather than pin
+// the pre-E3 reading. RETIREMENT TRIGGER (L7): when E3 lands, re-derive this
+// predicate and lowering_reject_uncompute_measured_parent_read_after_measure.ll.
+//
+// SCOPE, deliberately (Rule-11 round 1, F2): only reads by gates of `D` — the
+// reads the reversal REPLAYS. A post-collapse read by a BORROWED rail's own
+// producer (`mq = measure(q); q2 = q + 1; t = q2 ^ 9; …; measure(q2)`, borrow
+// `q2`) is not replayed: the reversal reads `q2`, before `q2`'s collapse, and
+// `q2`'s label is m+1 under today's chaining and under E3 alike. That forward
+// read lowers on its own without any reversal, so it is accepted
+// (lowering_uncompute_measured_parent_derived_after_collapse.ll).
+//
 // `isPotentiallyReachable` answers per-activation conservatively: a measurement
 // in a loop that reaches a read round the back edge refuses (the decline stands).
 bool measuredParentsReadBeforeCollapse(const DataDag &D,
@@ -991,9 +1011,11 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
     //     measurement there is refused by `preservesBorrowedParent` too
     //     (lowering_reject_uncompute_measured_parent_moved.ll pins a Ry there);
     //   * `measuredParentsReadBeforeCollapse`: no measurement of a borrowed
-    //     measured rail can PRECEDE a DAG read of it — bd yiid's unruled
-    //     boundary, which this retry must not start accepting (L9;
-    //     lowering_reject_uncompute_measured_parent_read_after_measure.ll).
+    //     measured rail can PRECEDE a DAG read of it. That is bd yiid, a RULED
+    //     capability (2026-09-14, E3 (b) BROAD 2026-09-15) not yet built, so
+    //     the refusal is a loud over-decline kept until E3 lands — see the
+    //     predicate's header
+    //     (lowering_reject_uncompute_measured_parent_read_after_measure.ll).
     //   * `keptRailAdjointReadsBorrowed` (bd eqti): no rail the plan reverse-
     //     plays but KEEPS (frozen by a record, an array) has an adjoint
     //     controlled by a borrowed register — that adjoint would act on the LIVE

@@ -33,7 +33,12 @@
 ;   * lowering_reject_uncompute_measured_parent_moved.ll — `q` is rotated
 ;     between the xor and t's free point, so the `_unc` would read a moved label;
 ;   * lowering_reject_uncompute_measured_parent_read_after_measure.ll — the dead
-;     chain reads `q` AFTER the measurement (bd yiid's owner-unruled boundary).
+;     chain reads `q` AFTER the measurement: bd yiid, a RULED capability (owner
+;     2026-09-14; E3 (b) BROAD 2026-09-15) not yet built, so that decline is a
+;     loud over-decline kept pending E3, not a physics wall;
+;   * the bd eqti kept-rail adjoint fence, when `t` is RECORDED as well as
+;     rotated: lowering_reject_uncompute_measured_parent_frozen_{taped,copyout,
+;     transitive}.ll (here `t` is not recorded, so it is freed, not kept).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
