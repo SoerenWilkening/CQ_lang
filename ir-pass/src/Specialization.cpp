@@ -4,6 +4,7 @@
 
 #include "BennettWrap.h"
 #include "CompareLowering.h"
+#include "CondLiteral.h"      // condLiteralAdmissible / emitCondLiteralNode (bd p3kd.3)
 #include "DeadValueLiveness.h"
 #include "ControlledSymbols.h"
 #include "IntrinsicLowering.h"
@@ -114,8 +115,14 @@ void scrubCloneTaint(Instruction *I, TaintSet &ct) {
 // `cqrt_cnot` are in `isInverseEmittable` post-I2) and the i1 ancilla allocs join
 // `NodeRails` (ScratchRails — the wrap frees them after the reverse zeroes them).
 // A single-leaf tree mints exactly the pre-I2 single flag (no ancilla), so the
-// existing one-flag fixtures are byte-identical. Returns null after a diagnosed
-// leaf (unsupported width/predicate, or a per-leaf Q+Q compare).
+// existing one-flag fixtures are byte-identical. bd p3kd.3: a CLASSICAL LITERAL
+// child of an `and`/`or` node (`Tree.LiteralLeaves`, collected by
+// `lowerCloneSelect` with `condLiteralAdmissible`) is never walked and never
+// minted; its node is the top-level 4.4 select's `emitCondLiteralNode`,
+// `gl = cq_template_<and|or>_i1_hl(flag, literal)`, a forward data template the
+// wrap captures (`isForwardTemplate`) and reverses with the SAME SSA literal.
+// Returns null after a diagnosed leaf (unsupported width/predicate, or a per-leaf
+// Q+Q compare).
 Value *mintCondNetwork(Value *Root, const CondTree &Tree, WidthDispatch &wd,
                        ControlledSymbols &csyms, TaintSet &ct, SelectInst *SI,
                        IRBuilder<> &B, const DebugLoc &DL,
@@ -138,9 +145,12 @@ Value *mintCondNetwork(Value *Root, const CondTree &Tree, WidthDispatch &wd,
   //     the i32 HANDLE slot (`cq_template_icmp_..._hl(i32 %classical, k)`): a phantom
   //     rail ID aliasing an unrelated qubit — a verify-clean WRONG UNITARY (the §5.2
   //     classical-operand-as-handle prohibition; the Rule-13 CONFIRMED finding). The
-  //     top-level `SelectClassify` gate 2 declines this exact hybrid classical∧quantum
-  //     conjunction; mirror it per-leaf here (folding a classical leaf classically is
-  //     a separate widening, not I2). Over-declining is safe (Prime Directive).
+  //     bd p3kd.3: a classical child of an `and`/`or` node is now a LITERAL (see
+  //     above) and never reaches this loop, exactly as at the top level (CondLiteral.h).
+  //     What still does is a classical leaf the literal grammar does not offer —
+  //     under an `xor` node (no `cq_template_xor_i1_hl`), or in a tree the literal
+  //     grammar failed to collect — and the fence keeps refusing it
+  //     (spec_reject_clone_classical_leaf_xor.ll).
   for (CmpInst *Leaf : Tree.Leaves) {
     bool T0 = ct.Tainted.count(Leaf->getOperand(0));
     bool T1 = ct.Tainted.count(Leaf->getOperand(1));
@@ -167,8 +177,17 @@ Value *mintCondNetwork(Value *Root, const CondTree &Tree, WidthDispatch &wd,
       return nullptr;
     }
   }
+  // bd p3kd.3 — a classical LITERAL child, by MEMBERSHIP of the tree the caller
+  // collected (the CondTreeEmit `isLit` spelling).
+  auto isLit = [&Tree](const Value *V) {
+    return llvm::is_contained(Tree.LiteralLeaves, V);
+  };
+  // The i1 ancilla allocator is resolved only for a node that conjoins two flags
+  // (a literal node mints its own rail), so a literal-only network declares none.
   FunctionCallee AllocI1;
-  if (!Tree.Nodes.empty()) {
+  if (llvm::any_of(Tree.Nodes, [&](Instruction *N) {
+        return !isLit(N->getOperand(0)) && !isLit(N->getOperand(1));
+      })) {
     AllocI1 = wd.allocFn("i1");
     if (!AllocI1)
       return nullptr;  // no i1 ancilla allocator (unreachable — defensive).
@@ -189,6 +208,43 @@ Value *mintCondNetwork(Value *Root, const CondTree &Tree, WidthDispatch &wd,
       // increment — the shapes differ in what they DO NOT emit, and unifying
       // them would move the specialization goldens. Filed as a follow-on.
       auto *BO = cast<BinaryOperator>(V);
+      // bd p3kd.3 — a MIXED node: `gl = cq_template_<and|or>_i1_hl(f, lit)` on the
+      // other child's flag, the classical bit in the `_hl` literal slot (Rule 15:
+      // never a handle). `collectCondTree` offers a literal only under `and`/`or`
+      // and never both children, so a miss below is detection/emission drift.
+      if (isLit(BO->getOperand(0)) || isLit(BO->getOperand(1))) {
+        const bool LitIsL = isLit(BO->getOperand(0));
+        Value *Lit = BO->getOperand(LitIsL ? 0 : 1);
+        Value *Q = BO->getOperand(LitIsL ? 1 : 0);
+        Value *QF = isLit(Q) ? nullptr : FlagOf.lookup(Q);
+        CallInst *G = QF ? emitCondLiteralNode(B, BO->getOpcode(), QF, Lit, wd,
+                                               ct, DL)
+                         : nullptr;
+        if (!G) {
+          SI->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+              *SI->getFunction(),
+              "cq specialization: classical compare leaf in a quantum condition "
+              "under quantum lift",
+              SI->getDebugLoc()));
+          return nullptr;
+        }
+        // The Bennett wrap reverses G through `emitInverseCall`'s DD-3 adjoint
+        // `<forward>_unc(out, f, lit)`, minted with NO call-site attributes, while
+        // the runtime takes `bool b_classical` (Clang: `zeroext`; CondLiteral's
+        // round-2 F-2 measured garbage high bits without it). `emitCondLiteralNode`
+        // stamps the forward call; the adjoint (and every copy of it the twin
+        // synthesis makes) gets it from the DECLARATION, which call lowering reads.
+        // The type is exactly the one `emitInverseCall` builds, so it reuses this.
+        Type *UncParams[] = {G->getType(), QF->getType(), Lit->getType()};
+        FunctionCallee Unc = SI->getModule()->getOrInsertFunction(
+            (G->getCalledFunction()->getName() + "_unc").str(),
+            FunctionType::get(Type::getVoidTy(SI->getContext()), UncParams,
+                              /*isVarArg=*/false));
+        if (auto *UF = dyn_cast<Function>(Unc.getCallee()))
+          UF->addParamAttr(2, Attribute::ZExt);
+        FlagOf[V] = G;
+        continue;
+      }
       Value *L = FlagOf.lookup(BO->getOperand(0));
       Value *Rv = FlagOf.lookup(BO->getOperand(1));
       CallInst *G =
@@ -241,8 +297,13 @@ Value *mintCondNetwork(Value *Root, const CondTree &Tree, WidthDispatch &wd,
     }
     auto *BO = cast<BinaryOperator>(V);  // grammar proven by collectCondTree.
     Stack.push_back({V, true});
-    Stack.push_back({BO->getOperand(1), false});
-    Stack.push_back({BO->getOperand(0), false});
+    // A literal child is read by its node's `_hl` mint, never walked: walking it
+    // would mint the phantom `cq_template_icmp_*_hl(i32 %classical, k)` the fence
+    // above exists to refuse.
+    if (!isLit(BO->getOperand(1)))
+      Stack.push_back({BO->getOperand(1), false});
+    if (!isLit(BO->getOperand(0)))
+      Stack.push_back({BO->getOperand(0), false});
   }
   return FlagOf.lookup(Root);
 }
@@ -338,6 +399,29 @@ void lowerCloneSelect(Function &Clone, TaintSet &cloneTaint, WidthDispatch &wd,
           "cq specialization: mixed classical/quantum select under quantum lift",
           SI->getDebugLoc()));
       continue;  // loud decline (opt exits non-zero) — never a partial emit.
+    }
+
+    // bd p3kd.3 — the condition is quantum: re-collect it with the top-level 4.4
+    // select's LITERAL rule (`condLiteralAdmissible`, CondLiteral.h, asked of the
+    // CLONE's taint), so a classical child of an `and`/`or` node is the network's
+    // classical input rather than a compare leaf to mint. The trichotomy above keeps
+    // reading the plain tree, so every classical-condition verdict is unchanged. A
+    // tree the literal grammar does not collect (a node with two literal children,
+    // reachable only under an `xor`) keeps the plain tree, whose classical leaf the
+    // per-leaf fence in `mintCondNetwork` refuses. The clone's taint is FINAL here:
+    // `specialize` runs after the round-2 fixpoint and `declineQuantumCondLiterals`,
+    // and the clone's mask is fixed at its build, so no later round can make this
+    // literal quantum (L1).
+    {
+      CondTree LitTree;
+      auto IsLit = [&cloneTaint](Value *V) {
+        return condLiteralAdmissible(V, cloneTaint);
+      };
+      if (collectCondTree(SI->getCondition(), LitTree,
+                          /*AllowLogicalSelect=*/false, /*AllowRailPhi=*/false,
+                          IsLit) &&
+          LitTree.RailLeaves.empty() && LitTree.RailPhiLeaves.empty())
+        Tree = std::move(LitTree);
     }
 
     StringRef Abi = abiWidthFromType(SI->getType());  // "i32" | "f16..f80"
