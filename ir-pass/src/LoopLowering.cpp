@@ -703,12 +703,13 @@ constexpr char kMsgExitObligation[] =
 // `%z` is ever reached. The only way `%z` is NOT such a read is when it is a
 // chain MEMBER, i.e. when `%rec`'s own carry runs through it, and then `%rec`
 // refreshes and there was nothing frozen to propagate.
-// ⚠ THAT LAST SENTENCE WAS ROUND 2's ONLY (bd hk9y). Round 1 (`tryCaseA`) passes
+// ⚠ THAT LAST SENTENCE WAS ROUND 2's ONLY (bd hk9y). Round 1 (`tryCaseA`) passed
 // its whole `railRoot` as the skip set, and its fixpoint makes `%z` a member
 // WITHOUT `%rec`'s carry running through it; `staleReadOfValue` skipped it and the
 // frozen read was never asked (an in-place `xor` reader lowered silently). The
-// member skip there now holds only for a REFRESHING record, so the paragraph is
-// true in both rounds again.
+// member skip there then held only for a REFRESHING record; since bd r2j3.13
+// round 1 passes only its peeled chains as the skip set, so `%z` is not a
+// member at all and the paragraph is true in both rounds by construction.
 //
 // CONSERVATIVE DIRECTION: answering "no" only ever REMOVES a cut, which only ever
 // adds declines, so `false` is the safe default and any shape this cannot classify
@@ -1163,11 +1164,12 @@ Instruction *staleReadOfValue(Value *V,
     // The skip says "a chain member's own execution is the rail moving, not a
     // read", which is true of an in-place gate and FALSE of a φ: a φ moves
     // nothing, it SELECTS a record per edge, and once the collapse RAUWs it to
-    // the root every reader of it reads the CURRENT rail. `tryCaseA` hands this
-    // function its whole `railRoot` as `Members`, and its (b) fixpoint admits any
-    // φ whose incomings all peel to the root, so the loop's zero-trip exit φ
-    // `phi [%pre, guard], [%post, latch]` was a member, its guard edge carried a
-    // PRE-gate name past a gate, and nothing asked it:
+    // the root every reader of it reads the CURRENT rail. `tryCaseA` handed this
+    // function its whole `railRoot` as `Members` (its peeled chains since bd
+    // r2j3.13), and its (b) fixpoint admits any φ whose incomings all peel to the
+    // root, so the loop's zero-trip exit φ `phi [%pre, guard], [%post, latch]`
+    // was a member, its guard edge carried a PRE-gate name past a gate, and
+    // nothing asked it:
     //     `int z = r; cq_theta(&r, .3); for (i < n) { cq_theta(&r, .1); z = r; }
     //      z ^= 1; return cq_measure(z);`
     // emitted `ry(h,.3); xorc(h,1); measure(h)`, which on n == 0 measures the
@@ -1205,8 +1207,9 @@ Instruction *staleReadOfValue(Value *V,
     // "a member's execution is the rail moving": its operand is the record the
     // chain just produced, so it cannot be stale. That holds for ROUND 2, whose
     // `Members` are the CHAIN (an in-place gate is a member only when the φ's own
-    // carry runs through it, and then the φ refreshes). It is FALSE for ROUND 1,
-    // whose `Members` are `tryCaseA`'s whole `railRoot`: the (a) fixpoint absorbs
+    // carry runs through it, and then the φ refreshes). It was FALSE for ROUND 1
+    // while its `Members` were `tryCaseA`'s whole `railRoot` (until bd r2j3.13,
+    // below; the refresh condition is now defence in depth): the (a) fixpoint absorbs
     // every in-place op on a rail value, including one on a zero-hop identity
     // carry that a sibling chain on the same root moves the wire under —
     //     `%rec = phi [%t, entry], [%rec, loop]; %z = xor %rec, 5;
@@ -1217,11 +1220,23 @@ Instruction *staleReadOfValue(Value *V,
     // shape in round 1, the regression its header warns of (a rail-wide skip set
     // deletes the read that proves the record frozen). So a member gate is
     // skipped only when its record REFRESHES; on a frozen record it gets the
-    // positional test like any reader. A refreshing record's member gate is not
-    // re-asked: the measured round-1 escapes of a moved wire past a refreshing
-    // name surface on a φ edge (g35c) or at the pure-op / quantum-reader fences
-    // that run before `lowerLoops` (probe `rootxor`: `xor %root, 5` in the body
-    // declines `operand predates a non-diagonal gate`).
+    // positional test like any reader.
+    //
+    // ⚠ CORRECTED (bd `test_C_libtooling-r2j3.13`, P1, silent on main). This note
+    // used to end "a refreshing record's member gate is not re-asked: the
+    // round-1 escapes of a moved wire past a refreshing name surface on a φ edge
+    // (g35c) or at the pre-`lowerLoops` fences". FALSE: an op the (a) fixpoint
+    // absorbed OFF the chain reads its operand at its OWN position, and the root
+    // mint always refreshes. `int z = q; for (…) { q += 1; s += cq_measure(q); }
+    // z += 5; return s + cq_measure(z);` absorbed `add %root, 5`, skipped it here
+    // and emitted `addc(h,5)` after the body's `addc(h,1) x n` (the source's
+    // q0 + 5 measured as q0 + n + 5); no Ry on the wire, so the pre-pass saw
+    // nothing. Since r2j3.13 round 1 passes its PEELED CHAINS as this skip set
+    // (`staleRailRecordRead`'s `Skip`), so an off-chain absorbed op is a
+    // non-member reader and is asked; `Members` is the skip set in BOTH rounds
+    // now, and the hk9y refresh condition above guards the chain's own frozen
+    // carries. Pinned by `lowering_reject_loop_rail_offchain_alias_add.ll` and
+    // `loop_caseA_postloop_compare_reject_offchain_alias.ll`.
     if (Members.count(UI) && (isa<PHINode>(UI) ? UI == V : Refreshes))
       continue;  // the chain itself — its own gates are the rail, not a read.
     if (auto *P = dyn_cast<PHINode>(UI)) {
@@ -1278,10 +1293,24 @@ Instruction *staleReadOfValue(Value *V,
 // extension's first edge kind, and skipping it as a "rail step" deletes exactly
 // the read that proves the record frozen (round 2's F-2 argument depends on that
 // read being visible — see `recordRefreshedByDef`).
+//
+// `Skip`, when given, REPLACES `Members` as the skip set (bd r2j3.13). Round 2's
+// `Members` already are its peeled chains, so it passes nothing. Round 1's are
+// its whole `railRoot`, which also holds every op the (a) fixpoint absorbed OFF
+// the chain (a post-loop `add %root, 5` on a pre-loop alias), and skipping those
+// as "the rail moving" let them read a moved register unasked (silent on main).
+// So round 1 passes its peeled chains here and keeps `Members` as the GATE seed:
+// an absorbed op is still a gate on this rail, it is just also a read.
 Instruction *staleRailRecordRead(ArrayRef<Value *> Members,
                                  const SmallPtrSetImpl<CallInst *> &GateCalls,
-                                 const TaintSet &taint) {
-  SmallPtrSet<const Value *, 16> MemberSet(Members.begin(), Members.end());
+                                 const TaintSet &taint,
+                                 const SmallPtrSetImpl<const Value *> *Skip =
+                                     nullptr) {
+  SmallPtrSet<const Value *, 16> MemberSet;
+  if (Skip)
+    MemberSet.insert(Skip->begin(), Skip->end());
+  else
+    MemberSet.insert(Members.begin(), Members.end());
   SmallPtrSet<const Instruction *, 8> Gates;
   SmallVector<Value *, 32> RailValues;
   collectRailGates(Members, GateCalls, taint, Gates, &RailValues);
@@ -2916,6 +2945,8 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
   // self-cycle header phis; expanded to a fixpoint over in-place gates and
   // single-root phis below.
   DenseMap<Value *, Value *> railRoot;
+  // Per root, the peeled header chains (bd r2j3.13): the record fence's skip set.
+  DenseMap<Value *, SmallPtrSet<const Value *, 16>> ChainSkip;
   for (PHINode &P : Header->phis()) {
     if (!taint.Tainted.count(&P))
       continue;  // classical induction phi — not a rail.
@@ -2978,6 +3009,18 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
       return false;
     railRoot[Root] = Root;
     railRoot[&P] = Root;
+    // bd r2j3.13 — the PEELED CHAIN (root → … → PreV → P → … → LatV), walked
+    // over the same `peelInPlaceStep` edges the two peels above proved, exactly
+    // as round 2's `collapseRailPhisIn` enumerates its `Chain`. Only these are
+    // "the rail moving" for the record fence's skip; see its call below.
+    auto &Skip = ChainSkip[Root];
+    Skip.insert(&P);
+    for (Value *V = LatV; V && V != &P; V = peelInPlaceStep(V, GateCalls, taint))
+      Skip.insert(V);
+    for (Value *V = PreV; V && V != Root;
+         V = peelInPlaceStep(V, GateCalls, taint))
+      Skip.insert(V);
+    Skip.insert(Root);
   }
   if (railRoot.empty())
     return false;  // no persistent rail — Case B / other, not Inc 1.
@@ -3233,8 +3276,13 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
         if (It != railRoot.end())
           ByRoot[It->second].push_back(&I);
       }
+    // bd r2j3.13 — the SKIP set is the root's peeled header chains
+    // (`ChainSkip`), never all of `railRoot`: an op the fixpoint absorbed OFF
+    // the chain is a gate AND a read, and is asked like any reader. `KV.second`
+    // (every rail value of the root) stays the gate seed.
     for (auto &KV : ByRoot)
-      if (Instruction *Bad = staleRailRecordRead(KV.second, GateCalls, taint)) {
+      if (Instruction *Bad = staleRailRecordRead(KV.second, GateCalls, taint,
+                                                 &ChainSkip[KV.first])) {
         diagnose(Bad, kMsgRailRecordStale);
         return true;  // recognized but unlowerable record escape — loud decline.
       }

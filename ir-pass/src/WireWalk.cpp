@@ -781,12 +781,18 @@ static CallInst *walkNonDiagonalWireGates(
         // out-of-place `cq_template_add_<W>_hl` MINTS a fresh rail, and a later
         // rotation of THAT handle touches nothing of the parent's wire.
         //
-        // And when the add IS in place, the read is already fenced by an owner
-        // that can see it: straight-line by the M-C fence's G6 ("no data use
-        // AFTER the site" — so the stale reader cannot exist), and inside a loop
-        // by `LoopLowering::staleRailRecordRead`, which reasons over the RAIL
-        // CHAIN rather than over user edges and therefore sees a theta behind an
-        // add without needing to walk through it.
+        // And when the add IS in place, the read is fenced by an owner that can
+        // see it: straight-line by the M-C fence's G6 ("no data use AFTER the
+        // site" — so the stale reader cannot exist), and on a loop's rail by
+        // `LoopLowering::staleRailRecordRead`, which counts every in-place op on
+        // the RAIL (chain and forward extension) as a gate, so it sees a theta
+        // behind an add without walking through it. ⚠ CORRECTED (bd
+        // test_C_libtooling-r2j3.13): that fence ALSO has to ask the add as a
+        // READ. Until r2j3.13 round 1 skipped every op its fixpoint absorbed, so
+        // a post-loop `add %root, 5` on a pre-loop alias (an add-only loop, no Ry
+        // on this wire for `declineStaleRecordOps` to find) was marked in place
+        // and read the moved register unasked: a silent miscompile on main.
+        // Round 1 now skips only its peeled chains, as round 2 always did.
         //
         // MEASURED 2026-08-30 with the crossing spliced in: ZERO new declines
         // across the 53-program Rule-13 probe corpus (the two programs it
