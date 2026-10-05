@@ -496,8 +496,14 @@ StringRef offPatternDisposition(BranchInst *BI, TaintSet &Taint) {
 
   // (C-i) NON-RECONVERGING VALUE EXIT — the two-way value-exit mux clang did NOT
   // reconverge: BOTH arms end in a value `ret` (the two-un-merged-rets / `musttail`
-  // survivors; 7.2 does NOT synthesize the merge — reopenable tooling boundary,
-  // §2.10). REQUIRING BOTH arms is LOAD-BEARING for the §2.11 mutual-exclusivity:
+  // survivors). ⚠ A BACKSTOP since bd test_C_libtooling-dm7f.5: the merge IS now
+  // synthesized before every detection round (`unifyTaintedReturns`, ReturnMerge.h),
+  // so a tainted `br` whose two arms are `ret` blocks reaches this row only when that
+  // stage REFUSED the function (a load-bearing `musttail`), which has already fired
+  // its own diagnostic; on a host whose handler does not exit (bd br4a) this is the
+  // second, still-loud message. No fixture can reach it through `opt` any more
+  // (control_swap_reject_nonreconverging_value_exit.ll was re-derived). REQUIRING
+  // BOTH arms is LOAD-BEARING for the §2.11 mutual-exclusivity:
   // an abort LOOKALIKE (an `unreachable` arm beside the ordinary uncontrolled
   // `ret` sibling — control_swap_reject_abort_nonnoreturn.ll) has ONE `unreachable`
   // arm, so it is NEVER a `non-reconverging value exit` (its `ret` sibling is the

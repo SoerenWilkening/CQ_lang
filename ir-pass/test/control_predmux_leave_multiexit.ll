@@ -3,6 +3,13 @@
 ; PredMux must LEAVE this region (accept-only discipline) so it falls
 ; through to the existing loud decline — pinned char-for-char.
 ;
+; bd test_C_libtooling-dm7f.5: the multi-exit is now merged BEFORE PredMux
+; (`unifyTaintedReturns`): `%armret` is folded into `%mid`, whose `br %c2` then targets
+; `cq.retmerge` (φ of 7 and `%m`) directly, skipping the outer merge. PredMux still
+; leaves it and the verdict is unchanged, now fired at the outer `br %c1` (CQ_CTRL_DBG,
+; measured). It must stay loud for a physics reason the merge does not remove: `%m`
+; MEASURES only on the paths that skip `%armret`, a measurement under quantum control.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

@@ -24,6 +24,7 @@
 #include "QramLowering.h"
 #include "QramIndexWidth.h"     // bracketQramIndexCasts / stripForeignQramIndexTags (libcqops b6a)
 #include "RailBankPromote.h"
+#include "ReturnMerge.h"        // unifyTaintedReturns (bd dm7f.5)
 #include "RotationLowering.h"
 #include "SpecializeDetect.h"
 #include "SpecializePlan.h"
@@ -127,6 +128,20 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   if (taint.ThetaCalls.empty() && taint.PhiCalls.empty() &&
       taint.PhaseCalls.empty() && taint.MeasureCalls.empty())
     return PreservedAnalyses::all();
+
+  // bd `test_C_libtooling-dm7f.5` — MULTI-EXIT `ret` NORMALIZATION, SLOT (a) of
+  // two (`ReturnMerge.h`). A function whose tainted-condition `br`/`switch`
+  // reaches two or more `ret`s (a `musttail` arm keeps its own `ret` at -O1;
+  // hand IR) is rewritten into the single-merge shape `clang -O1` emits for the
+  // same program with ordinary returns, `musttail` demoted to `tail` where that
+  // is sound and refused loudly where it is not. FIRST, before every stage that
+  // reads the CFG (PredMux, the I/O-sink / guarded-store / loop pre-peels, the
+  // specialization detector and the escape guards), so each of them sees the
+  // twin's IR. No guard has run yet, so a plain re-`propagate` is the whole taint
+  // obligation (the dead-argument drop's argument below). Slot (b) is beside
+  // every `peelIndependentMergePhis` call, for branches tainted only later.
+  if (unifyTaintedReturns(M, taint, /*Delta=*/nullptr))
+    taint = propagate(M, wd);
 
   // bd `test_C_libtooling-vsfp` (P1) / bd `hgwx` — THE DEAD CALL-ARGUMENT DROP
   // (`SpecializeDetect.h`), SLOT A of two. An integer/fp argument whose callee
@@ -707,8 +722,15 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // peel's own P9 refuses to widen into. Keeping the slot and re-asking the
   // guards costs one pure-analysis re-scan and removes the premise instead of
   // relocating it. See `FIX_b6ap_R1.md` for the per-stage table.
+  //
+  // bd `test_C_libtooling-dm7f.5` — the multi-exit `ret` normalization's SLOT (b)
+  // shares this block and this delta: a `br` whose condition became tainted after
+  // slot (a) (a rail-bank promotion, an `%out` at round 2) can reach two `ret`s
+  // only now. Its new `cq.ret` φ is a taint-growth event exactly like a peeled
+  // `select`, so it is adjudicated by the same `adjudicateTaintDelta` call.
   {
     SmallPtrSet<Value *, 32> PeelDelta;
+    unifyTaintedReturns(M, taint, &PeelDelta);
     peelIndependentMergePhis(M, taint, &PeelDelta);
     adjudicateTaintDelta(M, wd, taint, plan6, PeelDelta);
   }
@@ -1306,6 +1328,17 @@ bool CQLoweringPass::runOnFunction(Function &F) {
       taint.PhaseCalls.empty() && taint.MeasureCalls.empty())
     return false;
 
+  // bd `test_C_libtooling-dm7f.5` — the multi-exit `ret` normalization's SLOT (a),
+  // mirrored (twin-pipeline parity is MANDATORY, WI-1.12); see run(). Module-wide,
+  // like the dead-argument drop below (AXIS-F).
+  if (unifyTaintedReturns(M, taint, /*Delta=*/nullptr)) {
+    taint = propagate(M, wd);
+    onlyInF(taint.ThetaCalls);
+    onlyInF(taint.PhiCalls);
+    onlyInF(taint.PhaseCalls);
+    onlyInF(taint.MeasureCalls);
+  }
+
   // bd `test_C_libtooling-vsfp` — the dead call-argument drop's SLOT A, mirrored
   // in this entry point too (twin-pipeline parity is MANDATORY, WI-1.12). FIRST,
   // before any stage reads an argument; see run() for the slot argument and for
@@ -1548,9 +1581,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // `detectControlRegions` in the tree — AND for why the peel's taint delta must
   // be adjudicated (bd b6ap F-B6-1). Twin-pipeline parity applies to the
   // adjudication exactly as it does to the peel: dropping it here would make this
-  // entry point the one that ships the F-B6-1 miscompile.
+  // entry point the one that ships the F-B6-1 miscompile. The bd dm7f.5 `ret`
+  // normalization's slot (b) is mirrored here too, on the same delta.
   {
     SmallPtrSet<Value *, 32> PeelDelta;
+    unifyTaintedReturns(M, taint, &PeelDelta);
     peelIndependentMergePhis(M, taint, &PeelDelta);
     adjudicateTaintDelta(M, wd, taint, plan6, PeelDelta);
   }
