@@ -28,7 +28,8 @@
 ;
 ; SIBLINGS that make the same point on the other two scans:
 ;   lowering_reject_uncompute_divergent_arm_taped.ll   (the dominance scan)
-;   lowering_reject_uncompute_premeasure_taped.ll      (the measured-lineage reject)
+;   lowering_reject_uncompute_premeasure_taped.ll      (the measured-lineage reject;
+;     an ACCEPT since bd ptue, which borrows the measured rail read-only)
 ;
 ;
 ; VEHICLE-OP NOTE (bd test_C_libtooling-6uqc, M-C Increment 2a — `add` only).

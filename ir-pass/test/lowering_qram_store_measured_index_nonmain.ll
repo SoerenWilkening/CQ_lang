@@ -23,9 +23,11 @@
 ; array-record class (2026-08-27 point 4), exactly what `main` already does —
 ; and `b`, the user's measured register, is never touched by the spine.
 ;
-; The decline twin (the retry must still refuse):
-; lowering_reject_qram_store_measured_index_load_idx_measured.ll — the LOAD's own
-; index is measured, so the reduced DAG is measured too. A store on the array
+; The former decline twin,
+; lowering_reject_qram_store_measured_index_load_idx_measured.ll (the LOAD's own
+; index measured), is an ACCEPT since bd ptue: the retry now borrows every
+; measured rail too, so that index is read-only and its Ry is not reverse-played;
+; rotating it between the load and the reversal still refuses. A store on the array
 ; between the load and the reversal would also refuse the retry (the clause-(d)
 ; scan), but no C program reaches that today: the 7.5 lowering declines any store
 ; after a load of the same array ("cq QRAM store: array is observed before its

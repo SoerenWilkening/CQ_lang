@@ -8,8 +8,9 @@
 //
 // The reversal is sound only for a CLOSED, non-measured, non-escaped DAG whose
 // gates all dominate the single insertion point (acyclic + dominating ⇒ each gate
-// ran exactly once on every reaching path). A measured intermediate declines
-// LOUDLY (a free of a measured register is a hidden collapse, Rule 5/6); an
+// ran exactly once on every reaching path). A measured intermediate is BORROWED
+// (read-only) when the reduced plan proves out, else declines LOUDLY (a free of
+// a measured register is a hidden collapse, Rule 5/6; bd ptue); an
 // escaped / not-closed / unplaceable DAG is a Rule-6/8 safe-leak (left allocated,
 // never a dirty free). Phase-4-owned control rails are subtracted up front
 // (DD-4 — `ControlOwnedRails`) so a flag / work / merge out-rail is never walked.
@@ -52,9 +53,16 @@ namespace {
 // NON-terminal DAG rail is read by a measurement sink. FreePoint inspects only the
 // terminal's own users, so it never sees the upstream measure; DagTraversal (which
 // recovers the whole DAG) flags it and the driver rejects here. LOUD reject — a
-// free of a measured register is a hidden projective collapse (Rule 5/6). The
-// negative fixture lowering_uncompute_dead_sibling_premeasure.ll mirrors this
-// string character-for-character.
+// free of a measured register is a hidden projective collapse (Rule 5/6).
+//
+// Since bd ptue the driver first RETRIES with every measured rail borrowed
+// (read-only, never adjointed or freed) and declines only when that reduced
+// plan cannot be proven — see the retry in `reverseTerminalGroup`. The fixture
+// that used to pin this string, lowering_uncompute_dead_sibling_premeasure.ll,
+// is now that retry's simplest ACCEPT; the decline pins are
+// lowering_reject_uncompute_measured_parent_moved.ll and
+// lowering_reject_uncompute_measured_parent_read_after_measure.ll, each
+// mirroring this string character-for-character.
 constexpr char kMsgLineageMeasured[] =
     "cq uncompute: dead chain would free a measured register";
 
@@ -573,6 +581,35 @@ bool borrowedParentsUnmoved(const DataDag &D,
                             Instruction *At, DominatorTree &DT,
                             const TaintSet &taint, bool AdmitCloneCalls);
 
+// bd test_C_libtooling-ptue — may the frontier retry BORROW these measured rails?
+// True iff no measurement of a borrowed measured rail `P` can reach a gate of `D`
+// that reads `P`, i.e. every read the reversal replays happened BEFORE `P`'s
+// collapse. `borrowedParentsUnmoved` already refuses a measurement strictly
+// inside the window (first read, `At`) and admits one after `At`; this refuses
+// the remaining position, a measurement BEFORE the first read. The reversal
+// itself would be exact there (the collapsed register no longer moves), but the
+// FORWARD read is of a register whose name denotes the pre-measurement
+// superposition — bd yiid, owner-unruled, a CLAUDE.md r2j3-A class — and that
+// module declines today only through this chain. Refusing keeps it loud (L9).
+// `isPotentiallyReachable` answers per-activation conservatively: a measurement
+// in a loop that reaches a read round the back edge refuses (the decline stands).
+bool measuredParentsReadBeforeCollapse(const DataDag &D,
+                                       const SmallPtrSetImpl<Value *> &Measured,
+                                       const DominatorTree &DT) {
+  for (Value *P : Measured)
+    for (User *U : P->users()) {
+      auto *M = dyn_cast<CallInst>(U);
+      if (!M || !isMeasureSink(M))
+        continue;
+      for (CallInst *G : D.Calls)
+        for (Value *Op : G->args())
+          if (Op == P &&
+              isPotentiallyReachable(M, G, /*ExclusionSet=*/nullptr, &DT))
+            return false;
+    }
+  return true;
+}
+
 // The verdict of `planTerminalReversal` — what the dead-terminal driver does
 // with one recovered group (bd test_C_libtooling-01po.4 split the checks out
 // of `reverseTerminalGroup` so its QRAM-array retry re-asks EXACTLY them).
@@ -859,14 +896,43 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
     // changes, and the retry only ever turns a decline into an emitted reversal.
     //
     // WHY BORROWING CANNOT RE-INTRODUCE THE MEASURED REGISTER: it was reachable
-    // only THROUGH the array's stores; if the reduced DAG still reaches a
-    // measured rail (the load's own index measured) it is still
-    // `MeasuredUpstream` and the decline stands
-    // (lowering_reject_qram_store_measured_index_load_idx_measured.ll).
+    // only THROUGH the array's stores. A measured rail the reduced DAG still
+    // reads directly (the load's own index measured) used to keep the decline;
+    // since bd ptue it is borrowed as well (below), and
+    // lowering_reject_qram_store_measured_index_load_idx_measured.ll is that
+    // retry's QRAM accept.
+    //
+    // bd test_C_libtooling-ptue — THE MEASURED RAILS JOIN THE FRONTIER (the
+    // measured-rail half of bd 01po.8). The decline protected the SPINE'S PLAN,
+    // not the unitary (L5): the whole-DAG walk OWNS every rail it reaches, so a
+    // dead copy `t = q ^ 9` of a measured `q` dragged `q`'s `cqrt_alloc` root
+    // and prep Ry into the reversal, which would then un-rotate `q` and act on
+    // it ahead of the user's measurement. `t`'s reversal never needs that — it
+    // needs `q`'s LABEL, read-only. So every rail the scan saw measured
+    // (`D.MeasuredRails`, recorded where `MeasuredUpstream` is decided) is
+    // borrowed too: never walked, never adjointed, never freed, so no measured
+    // register can be touched by the reversal at all. What CAN go wrong is the
+    // label the adjoints read, and that is asked, not assumed:
+    //   * `borrowedParentsUnmoved` (clause (d), one spelling): no gate moves a
+    //     borrowed rail between the first DAG gate that reads it and `At`. A
+    //     measurement there is refused by `preservesBorrowedParent` too
+    //     (lowering_reject_uncompute_measured_parent_moved.ll pins a Ry there);
+    //   * `measuredParentsReadBeforeCollapse`: no measurement of a borrowed
+    //     measured rail can PRECEDE a DAG read of it — bd yiid's unruled
+    //     boundary, which this retry must not start accepting (L9;
+    //     lowering_reject_uncompute_measured_parent_read_after_measure.ll).
+    // MONOTONE, so no module that lowered before can change: this branch is
+    // reached only on the way to the decline below, and adding measured rails
+    // to a QRAM-only frontier that already succeeded is a no-op (that DAG
+    // reached no measured rail, or it would have been `MeasuredUpstream`, and a
+    // frontier member the walk never reaches neither cuts it nor is scanned).
+    // Every refusal keeps today's decline, character for character.
     InteriorPlan Frontier;
     for (Value *R : D.Roots)
       if (isQramArrayHandle(R))
         Frontier.Borrowed.insert(R);
+    for (Value *R : D.MeasuredRails)
+      Frontier.Borrowed.insert(R);
     if (!Frontier.Borrowed.empty()) {
       DataDag DR = recoverDataDag(InsertTerms, taint, DT, &Frontier);
       Instruction *AtR = nullptr;
@@ -875,7 +941,8 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
           planTerminalReversal(F, DR, InsertAts, taint, DT, PDT, LI, IterLocal,
                                AtR, Unused) == TerminalPlan::Emit &&
           borrowedParentsUnmoved(DR, Frontier.Borrowed, AtR, DT, taint,
-                                 /*AdmitCloneCalls=*/false)) {
+                                 /*AdmitCloneCalls=*/false) &&
+          measuredParentsReadBeforeCollapse(DR, D.MeasuredRails, DT)) {
         emitTerminalReversal(DR, AtR, wd, taint, ReversedGates, ReversedRails);
         return;
       }

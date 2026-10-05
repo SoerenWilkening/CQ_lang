@@ -240,6 +240,7 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
           continue;  // R's own in-place rotation — part of R's chain
         if (isMeasureSink(CU)) {
           D.MeasuredUpstream = true;
+          D.MeasuredRails.insert(R);  // bd ptue: the frontier retry's seed
           if (!D.UpstreamMeasure)
             D.UpstreamMeasure = CU;
           continue;

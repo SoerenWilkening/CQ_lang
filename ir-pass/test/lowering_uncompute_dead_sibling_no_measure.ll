@@ -22,6 +22,10 @@
 ; this file holds against lowering_uncompute_dead_sibling_premeasure.ll (no
 ; measurement on the lineage => reverse; free only what is born |0>) is unchanged.
 ;
+; bd ptue: the premeasure twin is an ACCEPT now too, by a DIFFERENT plan — its
+; measured `q` is BORROWED (read-only, never un-rotated or freed) and only the
+; dead op is reversed. Here `q` is owned and reversed whole, as before.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOFREEROOT < %t.cqd0.ll

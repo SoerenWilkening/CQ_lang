@@ -43,10 +43,17 @@ struct DataDag {
 
   // A NON-rotation rail (a root or a template result) in the DAG is read by a
   // `cqrt_measure_` sink. Reversing the DAG would free a register a user
-  // measurement still reads — a hidden projective collapse (Rule 5/6). LOUD
-  // decline; `UpstreamMeasure` carries the sink for the `!dbg` source location.
+  // measurement still reads — a hidden projective collapse (Rule 5/6). The
+  // driver retries with the measured rails borrowed (bd ptue) and otherwise
+  // declines LOUDLY; `UpstreamMeasure` carries the sink for the `!dbg` location.
   bool MeasuredUpstream = false;
   llvm::CallInst *UpstreamMeasure = nullptr;
+  // EVERY rail that set `MeasuredUpstream` (bd test_C_libtooling-ptue). Recorded
+  // at the one site that decides "measured", so the dead-terminal driver's
+  // frontier retry borrows exactly the rails this scan saw measured (Rule 12 —
+  // never a second `isMeasureSink` sweep in the driver). Membership only; the
+  // set's iteration order is never read into emitted IR.
+  llvm::SmallPtrSet<llvm::Value *, 4> MeasuredRails;
 
   // A DAG rail is consumed by a `ReturnInst` or a `cq_invert_*` call — it escapes
   // the function (the caller / Phase 7 owns its reversal). Silent skip (§2.6).
