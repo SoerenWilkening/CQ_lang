@@ -1,0 +1,108 @@
+\labsessionheader{2026-10-05}{The three 7pxe follow-ups: park cswap exemption, lost-subject fixtures, comment drift}%
+  {4cb25ebb}{n/a}{none}
+
+\subsection*{Goal}
+The owner asked for the three follow-ups filed by \bd{test\_C\_libtooling-7pxe} (entry 040)
+to be done in parallel. Three agents ran, one per issue, each in its own git worktree with
+its own build so that test runs could not race. The coordinator reviewed each branch,
+integrated the three commits onto \texttt{main} as a linear history, and ran one batch gate.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \commit{6f2887c4} --- \bd{test\_C\_libtooling-vjdo} --- comments in
+  \fpath{RotationLowering.cpp/.h} and \fpath{TaintPropagation.h}, plus the new fixture
+  \fpath{lowering\_live\_record\_park\_cswap\_observed\_accept.ll}. The \texttt{cqrt\_cswap} /
+  \texttt{cqrt\_x} non-use row now gives its real reason.
+  \item \commit{c0fe9c95} --- \bd{test\_C\_libtooling-zbz3} --- comment and doc drift in
+  39 files, plus one fixture-hygiene fix:
+  \fpath{control\_inplace\_rz\_in\_loop\_rolled.ll} now checks its stderr diagnostics
+  against \texttt{\%t.err} instead of the stdout IR, where they could never appear.
+  \item \commit{e20c8cb0} --- \bd{test\_C\_libtooling-jttf} --- 23 fixtures re-spelled so
+  that they exercise their subject again, 5 retired as duplicates (each retirement is noted
+  in the header of the sibling it duplicated), 4 kept.
+  \item \commit{4cb25ebb} --- integration: source comments that cited the five
+  retired fixtures now name their successors, and \fpath{CODE\_MAP.md} is regenerated.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \bd{test\_C\_libtooling-vjdo}: the exemption is sound. The walk it sits in,
+  \texttt{reachesObservingSink}, feeds only \texttt{recordIsExemptAt} and from there
+  \texttt{warnLiveRecordRotations}. That function emits a \texttt{DS\_Warning}, and both
+  call sites in \fpath{CQLoweringPass.cpp} discard its result (checked by the
+  coordinator). The exemption can therefore change a warning, never a unitary, a free or a
+  decline. The agent measured probes with the cswap row turned into a sink (mutant M3); the
+  results matched the baseline on every probe. The park's flag is written to the tape
+  directly after the cswap, and that tape write is what exempts the record. Two fixture
+  mutants were killed; MISSED 0.
+  \item \bd{test\_C\_libtooling-jttf}: two re-derived streams were checked by the
+  coordinator. \fpath{lowering\_loop\_phase\_accum\_const.ll}: Ry(0.5), then four in-place
+  Ry(0.1) on the one handle, then a measure, with no free. \fpath{lowering\_classical\_mux\_phi\_onereg.ll}:
+  an Ry under a classical branch on the same handle, then a measure. Both are correct.
+  Three mutants were killed; MISSED 0.
+  \item New issues filed from the agents' findings:
+  \begin{itemize}
+    \item a left-dirty rail leak in a depth-2 phase nest whose inner compare reads the
+    source of the outer chain (\bd{test\_C\_libtooling-7xsh}; not r2j3.7, because the chain
+    is live);
+    \item over-declines \bd{test\_C\_libtooling-x61g} (a park followed by an in-place
+    gate), \bd{test\_C\_libtooling-3by9} (any branch phase in the function trips the break's
+    phase-answer fence), \bd{test\_C\_libtooling-3paw} (an angle select followed by a
+    classical Ry loop), and \bd{test\_C\_libtooling-ptue} (a dead rotated copy of a
+    measured register);
+    \item a suspected over-warning on the record's own rail (\bd{test\_C\_libtooling-aako});
+    \item an owner question about tape writes that precede a gate
+    (\bd{test\_C\_libtooling-gl3x});
+    \item remaining comment drift (\bd{test\_C\_libtooling-tn85}).
+  \end{itemize}
+  \item \fpreexisting\ Entry 040's batch edited comments in \fpath{TaintPropagation.h},
+  and R15 then requires the \texttt{maintenance} label. That label was not run in entry
+  040. It ran this time, and the result covers both batches (Measurements).
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+agent commits integrated & 82 files, +2124/$-$1321 & \measured{git diff --stat main\textasciitilde 3..main} (before integration) \\
+\texttt{cq-opt} SHA-256 & unchanged & \measured{shasum -a 256 build/ir-pass/cq-opt} (\texttt{50a6f549\ldots}) \\
+\texttt{ctest -LE maintenance} & 586 of 586 passed & \measured{ctest --test-dir build -LE maintenance -j6} \\
+\texttt{ctest -L maintenance} & 3 of 3 passed & \measured{ctest --test-dir build -L maintenance -j6} \\
+cq-opt equivalence & 2533 fixtures, 0 mismatches & \measured{cmake --build build --target cq-opt-equivalence-full} \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+Per-issue lit invocations, each run by its agent in its own worktree:
+\begin{itemize}
+  \item \bd{test\_C\_libtooling-vjdo}: 2 runs, the new fixture 1/1 both times.
+  \item \bd{test\_C\_libtooling-zbz3}: 1 run, 18/18 touched fixtures; plus one mutant run
+  on the item-9 fixture, which was meant to fail and did.
+  \item \bd{test\_C\_libtooling-jttf}: 3 runs. The first matched nothing because of a bad
+  filter, green passed 33/33, and the final run passed 2/2.
+\end{itemize}
+
+The coordinator re-checked each branch against \texttt{main}:
+\begin{itemize}
+  \item C and C++ sources are byte-identical once comments are stripped;
+  \item in \bd{test\_C\_libtooling-zbz3}'s 18 fixtures, the IR before any trailing
+  \texttt{;} comment is unchanged;
+  \item the only directive changes are \bd{test\_C\_libtooling-zbz3}'s item-9 fix and the
+  fixtures \bd{test\_C\_libtooling-jttf} and \bd{test\_C\_libtooling-vjdo} added or
+  re-spelled.
+\end{itemize}
+
+The three branches touched disjoint files. After integration the batch gate ran:
+\texttt{ctest -LE maintenance -j6} 586 of 586 and \texttt{ctest -L maintenance -j6} 3 of 3 passed, \texttt{cq-opt-equivalence-full} compared 2533 fixtures with 0 mismatches, \texttt{update\_code\_map.py --check} clean. No core lowering code changed, and the \texttt{cq-opt} binary is identical,
+so no Rule-11 adversarial review was owed.
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item \bd{test\_C\_libtooling-gl3x} (owner): should a tape write that precedes a gate
+  exempt the record?
+  \item The over-declines \bd{test\_C\_libtooling-x61g}, \bd{test\_C\_libtooling-3by9},
+  \bd{test\_C\_libtooling-3paw} and \bd{test\_C\_libtooling-ptue}, and the leak
+  \bd{test\_C\_libtooling-7xsh}.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+Entry 040, Verification run: the \texttt{maintenance} label was owed (R15, because of the
+\fpath{TaintPropagation.h} comment edits) and was not run. It was run in this entry's gate.
