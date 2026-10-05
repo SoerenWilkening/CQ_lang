@@ -3376,9 +3376,97 @@ namespace {
 // returned `true` for both and the caller marked either way.
 enum class RailRound2 { NotClaimed, Declined, Collapsed };
 
+// bd `test_C_libtooling-8h7d.14` — RE-OPEN A RAIL'S `-O1` CLOSED EXIT VALUE.
+//
+// `clang -O1` (IndVars) rewrites the exit value of an affine recurrence in its
+// closed form. For `for (i < n) { …; q += 1; } return cq_measure(q);` the exit
+// block computes `%x = add %q0, %n` from the ROOT record instead of reading the
+// latch value through an LCSSA φ, while the in-body `q += 1` survives (the body
+// still reads q). After the collapse `%x` is an out-of-place add on a register
+// the loop's in-place `addc`s have already moved: `q0 + 2n`, a wrong value, and
+// the record-liveness fence (rightly) declined it as a stale read of `%q0`.
+//
+// `%x` is not a computation the source asked for; it IS the loop's exit value,
+// and ScalarEvolution says so: SCEV(`%x`) == SCEV-at-exit(latch value). Where it
+// does, `%x` is replaced by the φ `-O1` would have written, `phi [LatV, latch]`
+// in the dedicated exit block, and erased. That φ is an ordinary member of the
+// rail's renaming closure (step (5) collapses it onto the root), and its readers
+// are asked positionally by the same fence, so a reader past a later gate still
+// declines. Equality is the INTEGER value in every computational-basis branch,
+// which is exactly what the in-place permutation gates preserve; a reversible
+// add or xor on the register realizes the same map.
+//
+// SCOPE, each conjunct a guard against a different misreading:
+//   * the exit block `E` is unique and its ONLY predecessor is the latch, so `%x`
+//     runs only after a completed trip (SCEV's exit value is the value at the
+//     last iteration; a zero-trip path never reaches `E`);
+//   * `%x` is dominated by `E`, outside `L` and at `L`'s parent loop depth (not
+//     re-run by a later loop), tainted, of the latch value's type, and a DIRECT
+//     user of an out-of-loop chain member (root or pre-header chain) — so the
+//     erased op leaves no tainted intermediate behind (bd r2j3.7's dead tainted
+//     pure op);
+//   * the exit SCEV is computable and loop-invariant for `L`.
+// Round 1 (`tryCaseA`) is not a caller: a closed recurrence whose in-body update
+// survives needs another in-body reader of the rail, and round 1's COVERAGE
+// refuses every such reader but a measure. Returns the number re-opened.
+unsigned reopenClosedRailExits(Loop *L, PHINode &P,
+                               ArrayRef<Value *> ChainMembers,
+                               DominatorTree &DT, LoopInfo &LI,
+                               TaintSet &taint) {
+  BasicBlock *Latch = L->getLoopLatch();
+  BasicBlock *E = L->getExitBlock();
+  if (!Latch || !E || E->getSinglePredecessor() != Latch)
+    return 0;
+  Value *LatV = P.getIncomingValueForBlock(Latch);
+  SmallVector<Instruction *, 2> Cands;
+  for (Value *M : ChainMembers) {
+    auto *MI = dyn_cast<Instruction>(M);
+    if (!MI || L->contains(MI))
+      continue;
+    for (User *U : M->users()) {
+      auto *X = dyn_cast<Instruction>(U);
+      if (!X || isa<PHINode>(X) || L->contains(X) ||
+          !taint.Tainted.count(X) || X->getType() != LatV->getType() ||
+          !DT.dominates(E, X->getParent()) ||
+          LI.getLoopFor(X->getParent()) != L->getParentLoop() ||
+          is_contained(Cands, X))
+        continue;
+      Cands.push_back(X);
+    }
+  }
+  if (Cands.empty())
+    return 0;
+  Function &F = *L->getHeader()->getParent();
+  AssumptionCache AC(F);
+  TargetLibraryInfoImpl TLII(Triple(F.getParent()->getTargetTriple()));
+  TargetLibraryInfo TLI(TLII);
+  ScalarEvolution SE(F, TLI, AC, DT, LI);
+  const SCEV *ExitS = SE.getSCEVAtScope(SE.getSCEV(LatV), L->getParentLoop());
+  if (isa<SCEVCouldNotCompute>(ExitS) || !SE.isLoopInvariant(ExitS, L))
+    return 0;
+  PHINode *Exit = nullptr;
+  unsigned N = 0;
+  for (Instruction *X : Cands) {
+    if (SE.getSCEV(X) != ExitS)
+      continue;
+    if (!Exit) {
+      Exit = PHINode::Create(LatV->getType(), 1, "cq.rail.exit");
+      Exit->insertBefore(E->getFirstNonPHI());
+      Exit->addIncoming(LatV, Latch);
+      taint.Tainted.insert(Exit);
+    }
+    X->replaceAllUsesWith(Exit);
+    taint.Tainted.erase(X);
+    taint.BirthOrder.erase(X);
+    X->eraseFromParent();
+    ++N;
+  }
+  return N;
+}
+
 RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
                               const SmallPtrSetImpl<CallInst *> &GateCalls,
-                              DominatorTree &DT,
+                              DominatorTree &DT, LoopInfo &LI,
                               SmallPtrSetImpl<Value *> &RootsOut) {
   BasicBlock *Header = L->getHeader();
   BasicBlock *Latch = L->getLoopLatch();
@@ -3485,6 +3573,15 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
   }
   if (Collapse.empty())
     return RailRound2::NotClaimed;
+
+  // (1b) bd 8h7d.14 — each claimed rail's `-O1` CLOSED exit value (`%q0 + n`)
+  //      becomes the LCSSA φ it replaced, BEFORE the fences below ask about
+  //      it (see `reopenClosedRailExits`). From here on this function returns
+  //      Declined or Collapsed, never NotClaimed, and the rewrite is an
+  //      integer-value identity either way.
+  for (auto &KV : Collapse)
+    reopenClosedRailExits(L, *KV.first, ChainsByRoot[KV.second], DT, LI,
+                          taint);
 
   // (2) FAN-OUT / linear-lineage guard (Rule 8 no-cloning) — the SAME guard
   //     round 1 applies, for the same reason: a rail value read by TWO in-place
@@ -4997,7 +5094,7 @@ void collapseFlattenedLoopRails(
       // non-zero, and handing the spine an in-body discharge permission for a
       // module that is never emitted is bookkeeping on a corpse (bd 8h7d.5
       // Rule-13 round 1); a NotClaimed loop keeps its pre-existing owner.
-      RailRound2 R2 = collapseRailPhisIn(L, F, taint, GateCalls, DT, Roots);
+      RailRound2 R2 = collapseRailPhisIn(L, F, taint, GateCalls, DT, LI, Roots);
       if (R2 == RailRound2::Collapsed) {
         // THE MIXED LOOP (bd 3qlq Inc 1, the Rule-13 CLEARANCE finding C-1 — the
         // BLOCK). A collapse means SOME register crosses the back edge; it says
