@@ -18,6 +18,7 @@
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Transforms/Utils/Local.h"  // TryToSimplifyUncondBranchFromEmptyBlock
 
@@ -138,10 +139,11 @@ enum class ExitDisp { None, Normalize, LeaveForLoopOwner };
 // (bd 8h7d's row), and the whole function is then left untouched so that row's
 // loud declines fire on exactly the IR they fire on today
 // (`lowering_reject_break_nonreconverging.ll`). `regionEntryInLoop` is the d8jl
-// cycle predicate the detector itself asks.
-ExitDisp classifyExits(Function &F, TaintSet &taint) {
+// cycle predicate the detector itself asks. On `Normalize`, `Needing` holds every
+// terminator that needs the merge (the caller merges only the `ret`s they reach).
+ExitDisp classifyExits(Function &F, TaintSet &taint,
+                       SmallVectorImpl<BasicBlock *> &Needing) {
   std::optional<PostDominatorTree> PDT;  // built on the first candidate only
-  bool Flat = false;
   for (BasicBlock &BB : F) {
     Instruction *T = BB.getTerminator();
     if (!T || !isTaintedControlTerminator(T, taint) || !reachesTwoReturns(T))
@@ -152,9 +154,54 @@ ExitDisp classifyExits(Function &F, TaintSet &taint) {
       continue;  // nothing to merge for this terminator
     if (regionEntryInLoop(T))
       return ExitDisp::LeaveForLoopOwner;
-    Flat = true;
+    Needing.push_back(&BB);
   }
-  return Flat ? ExitDisp::Normalize : ExitDisp::None;
+  return Needing.empty() ? ExitDisp::None : ExitDisp::Normalize;
+}
+
+// Review round 1 F1 — the `lifetime.end` markers that CLOSE a former `ret` block
+// (the maximal run of them immediately before its new `br`) move into the merge,
+// after the φ and before the `ret`, a marker identical to one already moved being
+// dropped. `clang -O1` emits a scope's lifetime cleanup before every plain `ret` and
+// none before a `musttail` one; for the same source without the attribute it emits
+// it ONCE, in the single return block — so without this a former `ret` block holding
+// only the marker is not empty, is never folded, and the module declines where its
+// twin compiles (review probe p4/p4t). Only a marker whose pointer operand IS a static
+// `alloca` of the entry block moves (it then dominates the merge). Sound: the marker
+// now also runs on paths that reached a `ret` without it — e.g. after the demoted
+// `musttail` call — at the point the function returns, where the object is dead
+// anyway (`tail` and `musttail` both promise the callee does not access the caller's
+// allocas, and a `lifetime.end` on an object already dead is a no-op); the twin runs
+// the same marker on the same paths.
+void sinkLifetimeEnds(ArrayRef<BasicBlock *> RetBlocks, BasicBlock *Merge) {
+  BasicBlock *Entry = &Merge->getParent()->getEntryBlock();
+  Instruction *NewRet = Merge->getTerminator();
+  SmallVector<IntrinsicInst *, 4> Moved;
+  for (BasicBlock *BB : RetBlocks) {
+    SmallVector<IntrinsicInst *, 4> Run;  // backwards from the `br`
+    for (Instruction *I = BB->getTerminator()->getPrevNode(); I;
+         I = I->getPrevNode()) {
+      auto *II = dyn_cast<IntrinsicInst>(I);
+      if (!II || II->getIntrinsicID() != Intrinsic::lifetime_end)
+        break;
+      auto *AI = dyn_cast<AllocaInst>(II->getArgOperand(1));
+      if (!AI || AI->getParent() != Entry || !AI->isStaticAlloca())
+        break;
+      Run.push_back(II);
+    }
+    for (IntrinsicInst *II : llvm::reverse(Run)) {
+      bool Dup = any_of(Moved, [&](IntrinsicInst *M) {
+        return M->getArgOperand(0) == II->getArgOperand(0) &&
+               M->getArgOperand(1) == II->getArgOperand(1);
+      });
+      if (Dup) {
+        II->eraseFromParent();
+        continue;
+      }
+      II->moveBefore(NewRet);
+      Moved.push_back(II);
+    }
+  }
 }
 
 // The decline `What` if demoting the `musttail` call `CI` to `tail` would change
@@ -163,13 +210,19 @@ ExitDisp classifyExits(Function &F, TaintSet &taint) {
 // LOWERED as a tail call (stack reuse). Its operands, its callee, its result and
 // the callee's view of the caller's stack are unchanged by `tail` — LangRef: both
 // markers imply the callee does not access the caller's allocas — so the
-// demotion changes only stack depth, EXCEPT in the four cases refused here:
+// demotion changes only stack depth, EXCEPT in the five cases refused here:
 //   * a `preallocated` operand is legal only on a `musttail` call (or with the
 //     "preallocated" bundle a forwarded argument has no token for): the demoted
 //     call is invalid IR. The clone path refuses the same forward in `scanBody`
-//     (SpecializeReject.cpp); IR-only, the 32-bit Windows C++ ABI. (`inalloca`
-//     is NOT refused: a forwarded `inalloca` is legal on a plain call — the
-//     clone path's measured precedent, `stripStaleClassicalAttrs`.)
+//     (SpecializeReject.cpp); IR-only, the 32-bit Windows C++ ABI.
+//   * an `inalloca` operand (review round 1 F3). LangRef: a `musttail` call forwards
+//     an `inalloca` argument IN PLACE; on any other call the operand must be the
+//     `alloca` the caller set up for that call. A demoted call forwarding the
+//     caller's own incoming `inalloca` memory is verifier-clean (the verifier asks
+//     about provenance only when the operand is an `alloca`) and still invalid.
+//     The first build of this stage cited the clone path's demotion of the same
+//     forward (`stripStaleClassicalAttrs`) as precedent; that precedent is the same
+//     defect, reported with this fix rather than relied on.
 //   * a variadic or "thunk" caller: `musttail` forwards the caller's
 //     unprototyped variadic arguments (and, in a thunk, returns the callee's
 //     result to the caller's caller); a plain call forwards nothing.
@@ -181,9 +234,12 @@ ExitDisp classifyExits(Function &F, TaintSet &taint) {
 //     opaque external callback is not an edge of the `CallGraph` and is not seen.
 StringRef mustTailDemotionRefusal(CallInst *CI, Module &M,
                                   std::unique_ptr<CallGraph> &CG) {
-  for (unsigned A = 0, E = CI->arg_size(); A < E; ++A)
+  for (unsigned A = 0, E = CI->arg_size(); A < E; ++A) {
     if (CI->paramHasAttr(A, Attribute::Preallocated))
       return "musttail forward of a preallocated argument";
+    if (CI->paramHasAttr(A, Attribute::InAlloca))
+      return "musttail forward of an inalloca argument";
+  }
   Function *Caller = CI->getFunction();
   if (Caller->isVarArg() || Caller->hasFnAttribute("thunk"))
     return "variadic musttail forward";
@@ -230,12 +286,26 @@ bool unifyTaintedReturns(Module &M, TaintSet &taint,
     if (F.isDeclaration())
       continue;
     // Identities captured BEFORE the first mutation (Rule 9 / CLAUDE.md R8).
-    SmallVector<ReturnInst *, 4> Rets;
+    unsigned NumRets = 0;
     for (BasicBlock &BB : F)
-      if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
-        Rets.push_back(R);
-    if (Rets.size() < 2 || classifyExits(F, taint) != ExitDisp::Normalize)
+      NumRets += isa<ReturnInst>(BB.getTerminator());
+    SmallVector<BasicBlock *, 4> Needing;
+    if (NumRets < 2 ||
+        classifyExits(F, taint, Needing) != ExitDisp::Normalize)
       continue;
+    // Only the `ret`s a needing terminator reaches are merged and asked about
+    // (review round 1 F2): a `ret` no needing branch reaches — a CLASSICAL tail
+    // recursion ahead of the quantum part — keeps its `musttail` and its own
+    // `ret`. Each needing terminator reaches two or more, so `Rets.size() >= 2`.
+    SmallPtrSet<BasicBlock *, 8> Reached;
+    for (BasicBlock *T : Needing)
+      for (BasicBlock *BB : depth_first(T))
+        if (isa<ReturnInst>(BB->getTerminator()))
+          Reached.insert(BB);
+    SmallVector<ReturnInst *, 4> Rets;  // layout order
+    for (BasicBlock &BB : F)
+      if (Reached.count(&BB))
+        Rets.push_back(cast<ReturnInst>(BB.getTerminator()));
 
     // (1) Every `musttail` before one of these `ret`s is asked FIRST, and a
     // single refusal leaves the whole function untouched (detect before mutate).
@@ -261,6 +331,7 @@ bool unifyTaintedReturns(Module &M, TaintSet &taint,
       RetBlocks.push_back(R->getParent());
     MergedReturn MR = mergeReturnBlocks(F, Rets, "cq.retmerge", "cq.ret",
                                         /*CarryDebugLoc=*/true);
+    sinkLifetimeEnds(RetBlocks, MR.Merge);
 
     // (3) A φ of one value is that value.
     if (MR.Phi)

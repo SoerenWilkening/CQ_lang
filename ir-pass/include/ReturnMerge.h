@@ -20,13 +20,18 @@
 //     the `ret` exits alone where its virtual root hides an `unreachable` or
 //     infinite-loop exit) — not on a CFG cycle, this rewrites the function into
 //     the shape `clang -O1` emits for the same program written with ordinary
-//     returns, and nothing else:
+//     returns, and nothing else. "Those `ret`s" are the ones such a terminator
+//     reaches; any other `ret` (a classical tail recursion ahead of the quantum
+//     part) is neither merged nor asked about (review round 1 F2):
 //       1. every `musttail` call that precedes one of those `ret`s is demoted to
 //          `tail` — or, where its tail position is LOAD-BEARING, the function is
 //          refused with a loud, source-located diagnostic and left untouched
-//          (`mustTailDemotionRefusal` below names each case);
-//       2. every `ret` becomes a `br` to one new block `cq.retmerge` holding
-//          `φ cq.ret` (value functions) and the one `ret`;
+//          (`mustTailDemotionRefusal` in the .cpp names each case);
+//       2. each of those `ret`s becomes a `br` to one new block `cq.retmerge`
+//          holding `φ cq.ret` (value functions) and the one `ret`; the
+//          `lifetime.end` markers of static entry-block allocas that closed a
+//          former `ret` block move into `cq.retmerge`, where clang puts the one
+//          copy in the twin (`sinkLifetimeEnds`, review round 1 F1);
 //       3. a φ whose incoming values are all ONE value (`PHINode::
 //          hasConstantValue`) is replaced by that value — `-O1`'s InstSimplify
 //          does the same to the twin;
@@ -85,7 +90,8 @@ struct MergedReturn {
   llvm::PHINode *Phi = nullptr;       // the return-value φ; null for `ret void`
 };
 
-// Replace every `ret` in `Rets` (all of `F`'s, in layout order) with a `br` to a
+// Replace every `ret` in `Rets` (in layout order: all of `F`'s for the clone
+// caller, the needing subset for `unifyTaintedReturns`) with a `br` to a
 // new block named `BlockName` appended to `F`; for a non-void `F` the block holds
 // `PhiName` = φ(ret value, ret block) feeding its `ret`. `CarryDebugLoc` copies
 // each `ret`'s location onto its `br` and gives the new `ret` the merged location

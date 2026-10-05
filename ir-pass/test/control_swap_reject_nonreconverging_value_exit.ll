@@ -19,8 +19,10 @@
 ; disjoint from the condition ACCEPTS (`add %p, 1` / `add %p, 2`, `%p` a second
 ; `cq_theta`). Retirement trigger: when 3qlq.14 lands this module ACCEPTS through the
 ; controlled-copy merge — re-derive it then, do not delete it. The `non-reconverging
-; value exit` row survives in ControlDetect.cpp only as a backstop behind a REFUSED
-; `musttail` demotion (control_multiexit_reject_*_musttail.ll, which diagnose first).
+; value exit` row survives in ControlDetect.cpp behind a REFUSED `musttail` demotion
+; (control_multiexit_reject_*_musttail.ll, which diagnose first) and in a function
+; the merge leaves to the loop owner because it also holds a cyclic multi-exit
+; tainted terminator (review round 1 F4).
 ; The two stdout `CHECK-NOT`s this file carried were vacuous on a `not` RUN line
 ; (CLAUDE.md R10) and are gone.
 ;
