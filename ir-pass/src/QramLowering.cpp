@@ -17,6 +17,7 @@
 #include "QramIndexWidth.h"     // resolveQramIndex / tagQramIndexCast (libcqops b6a)
 #include "TaintPropagation.h"   // TaintSet
 #include "WidthDispatch.h"
+#include "WireWalk.h"         // provablyBefore (bd r2j3.15: the initializer test)
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SCCIterator.h"
@@ -96,6 +97,12 @@ constexpr char kMsgQramMidSeq[] =
 // contents through the const-global origin instead).
 constexpr char kMsgQramInit[] =
     "cq QRAM store: alloca array has a non-zero initializer the trace model cannot represent";
+// bd test_C_libtooling-r2j3.15: a zero-fill `memset` that is NOT the initializer (it
+// does not run before every access) and is not a shape the literal-index lowering of
+// a reset covers (whole in-bounds cells, a constant non-volatile length, straight-line,
+// not in a loop). Mirrored by lowering_reject_qram_memset_reset_partial_cell.ll.
+constexpr char kMsgQramReset[] =
+    "cq QRAM store: alloca array is re-zeroed by a memset the QRAM model cannot lower";
 
 // Phase 7.5 Increment 3 — the pattern-naming decline matrix (PRD-7.5 §2.8(iv),
 // §5/§6; the Bennett signpost model). Each names the EXACT off-pattern the
@@ -3642,6 +3649,7 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> TaintedAccesses,
   // that seed, so a classical consumer can never be left reading the handle. An
   // unseeded one (a taint-growth event that never re-propagated) fails closed here.
   SmallVector<ShadowAccess, 4> ClassicalAccesses;
+  SmallVector<IntrinsicInst *, 2> ZeroFills;
   for (User *U : AI->users()) {
     auto *UI = dyn_cast<Instruction>(U);
     if (!UI) {
@@ -3689,7 +3697,9 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> TaintedAccesses,
           diagnose(II, kMsgQramInit);
           return;
         }
-        InitErase.push_back(II);
+        // bd r2j3.15 — a zero fill is the `|0>` initializer only if it runs before
+        // every access; that is decided below, over the full access list.
+        ZeroFills.push_back(II);
         continue;
       }
     }
@@ -3712,6 +3722,45 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> TaintedAccesses,
   }
   Accesses = All;
 
+  // ── bd test_C_libtooling-r2j3.15 (P1 silent miscompile, pre-existing on main):
+  //    WHICH ZERO FILL IS THE INITIALIZER. `cqrt_qram_alloc_<W>` models a FRESH array
+  //    of `|0>` cells, so the one zero-fill `memset` it may stand for is one that runs
+  //    before every access and never again after one: `provablyBefore` (WireWalk), the
+  //    shared "A runs before B, and B never reaches A again" proof, over every access.
+  //    Every zero fill used to be erased as the initializer, wherever it sat, so
+  //    `arr[p] = 7; if (k) memset(arr, 0, ..);` emitted an EMPTY guarded block and the
+  //    7 survived the reset (rc 0). Any other zero fill is a classical WRITE of 0 into
+  //    each cell it covers, lowered as that many literal-index QRAM stores
+  //    (`cqrt_qram_store_<W>_hl`, bd 01po.9) at the memset's own position, each
+  //    reversed by the spine like any QRAM store. A fill that lowering does not cover
+  //    (a partial cell, a non-constant or volatile length, in a loop, under tainted
+  //    control) declines loudly.
+  SmallVector<std::pair<IntrinsicInst *, uint64_t>, 2> ResetFills;
+  {
+    const DataLayout &DL = AI->getModule()->getDataLayout();
+    auto *AT = cast<ArrayType>(AI->getAllocatedType());
+    const uint64_t CellSize = DL.getTypeAllocSize(AT->getElementType());
+    for (IntrinsicInst *MS : ZeroFills) {
+      if (llvm::all_of(Accesses, [&](const ShadowAccess &A) {
+            return provablyBefore(MS, A.MemOp, DT);
+          })) {
+        InitErase.push_back(MS);  // the initializer: the array is born `|0>`.
+        continue;
+      }
+      auto *Len = dyn_cast<ConstantInt>(MS->getArgOperand(2));
+      auto *Vol = dyn_cast<ConstantInt>(MS->getArgOperand(3));
+      if (!Len || !Vol || !Vol->isZero() || CellSize == 0 ||
+          Len->getZExtValue() % CellSize != 0 ||
+          Len->getZExtValue() / CellSize > AT->getNumElements() ||
+          LInfo.getLoopFor(MS->getParent()) ||
+          instUnderTaintedControl(MS, taint, DT)) {
+        diagnose(MS, kMsgQramReset);
+        return;
+      }
+      ResetFills.push_back({MS, Len->getZExtValue() / CellSize});
+    }
+  }
+
   // §2.8(iii) mid-sequence observation: a load whose value is OBSERVED (measured /
   // returned) with a store to this array AFTER it (program order) reads an
   // intermediate state a later store-reversal would corrupt → loud decline (owner
@@ -3728,6 +3777,17 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> TaintedAccesses,
                        : DT.dominates(L.MemOp, S.MemOp);
       if (After) {
         diagnose(S.MemOp, kMsgQramMidSeq);
+        return;
+      }
+    }
+    // A reset (bd r2j3.15) writes every cell it covers: a store like any other here.
+    for (const auto &[MS, Cells] : ResetFills) {
+      (void)Cells;
+      bool After = (MS->getParent() == L.MemOp->getParent())
+                       ? L.MemOp->comesBefore(MS)
+                       : DT.dominates(L.MemOp, MS);
+      if (After) {
+        diagnose(MS, kMsgQramMidSeq);
         return;
       }
     }
@@ -3762,7 +3822,7 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> TaintedAccesses,
                              A.MemOp, taint))
       return;
   FunctionCallee LoadHlFn, StoreHlFn;
-  if (!ClassicalAccesses.empty()) {
+  if (!ClassicalAccesses.empty() || !ResetFills.empty()) {
     LoadHlFn = qramHlFn(*AI->getModule(), ElemAbi, /*IsStore=*/false);
     StoreHlFn = qramHlFn(*AI->getModule(), ElemAbi, /*IsStore=*/true);
     if (!LoadHlFn || !StoreHlFn) {
@@ -3911,6 +3971,24 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> TaintedAccesses,
       taint.BirthOrder.erase(DeadCast);
       ToErase.push_back(DeadCast);  // the now-dead widening cast
     }
+  }
+
+  // bd r2j3.15 — each reset becomes one literal-index store of a `|0>` value handle
+  // per covered cell, in cell order, at the memset (the §2.5 `val` contract, as for a
+  // classical-index store); the memset itself goes with the memops.
+  for (const auto &[MS, Cells] : ResetFills) {
+    IRBuilder<> B(MS);
+    auto *Cell = cast<ArrayType>(AI->getAllocatedType())->getElementType();
+    for (uint64_t K = 0; K != Cells; ++K) {
+      CallInst *VH = B.CreateCall(wd.allocFn(ElemAbi),
+                                  {Constant::getNullValue(Cell)}, "qval.zero");
+      CallInst *St = B.CreateCall(StoreHlFn, {Arr, ConstantInt::get(I32, K), VH});
+      if (DebugLoc DL = MS->getDebugLoc()) {
+        VH->setDebugLoc(DL);
+        St->setDebugLoc(DL);
+      }
+    }
+    ToErase.push_back(MS);
   }
 
   // Erase memops + geps + dead casts FIRST (drops the alloca's gep uses), then the
