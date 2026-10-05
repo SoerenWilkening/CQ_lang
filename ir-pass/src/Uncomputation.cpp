@@ -551,6 +551,15 @@ void emitDagReversal(const DataDag &D, Instruction *At, WidthDispatch &wd,
     // On the kept carrier it is not even observable: a local unitary on a leaked
     // rail cannot change the tape's reduced state.
     //
+    // ⚠ ONLY WHILE EVERY REGISTER THAT ADJOINT READS IS DEAD OR REVERSED BY THIS
+    // SAME PLAN (bd test_C_libtooling-eqti — the sentence above said it
+    // unconditionally and was false the moment a plan BORROWED a live register).
+    // A kept rail's adjoint that reads a live register is a controlled gate FROM
+    // it onto a leaked, recorded rail, and it changes that register's coherence.
+    // The whole-DAG plan is closed and the M-B interior plan keeps no rail, so
+    // only the frontier retry can violate it, and `keptRailAdjointReadsBorrowed`
+    // refuses that retry when it would.
+    //
     // The suppression is SUBTRACTIVE and lands HERE, at the last step, rather than
     // pruning `D.Calls` in recovery: the invertibility pre-scan, the InLoop
     // backstop and the dominance scan above all iterate `D.Calls`, so a prune
@@ -608,6 +617,70 @@ bool measuredParentsReadBeforeCollapse(const DataDag &D,
             return false;
     }
   return true;
+}
+
+// bd test_C_libtooling-eqti — does the reduced plan reverse-play a rail it will
+// NOT free, through a gate that reads a BORROWED register or a rail whose label
+// depends on one?
+//
+// WHY THAT IS A WRONG UNITARY AND NOT A LEAK. `emitDagReversal` emits EVERY
+// adjoint, including those of a rail it then keeps (a step-3b frozen rail, a QRAM
+// array, a value outside the scanned `Rails`), on the premise that "an adjoint on
+// a rail we then leak is harmless — a local unitary on a leaked rail". That holds
+// for a rail whose reversal is inexact (it was recorded, so it does not return to
+// |0>) only when nothing the adjoint READS stays live: then the adjoint is a
+// unitary on registers that are all leaked or reversed together, and no later
+// gate can see it. A borrowed register is live by construction — the frontier
+// retry borrows it precisely because it is measured (bd ptue) or still holds its
+// cells (bd 01po.4), and clause (d) admits non-diagonal gates on it AFTER `At`.
+// A kept rail's adjoint controlled by it is then a controlled gate from a live
+// register onto a leaked, recorded one: it changes the live register's
+// coherence. Measured (bd eqti): `t = !q; cq_theta(&t,.5); printf(t);
+// cq_theta(&q,.3); measure(q)` emitted `ry(t,-.5); xor_i1_hl_unc(t, q, 1)` with
+// `t` kept, scaling q's coherence by ∓sin(.5) (P(q=1) 0.037181 -> 0.045584).
+//
+// "DEPENDS ON" IS TRANSITIVE and is closed to a fixpoint over `D.Calls`: a kept
+// rail whose gate reads an OWNED rail minted from `q` is controlled by `q` just
+// the same once that rail is reversed away. Over-approximating (a read that in
+// reverse order precedes the dependence) can only refuse, which keeps today's
+// decline.
+//
+// A reversal whose kept rails' adjoints are all LOCAL (read nothing but the rail)
+// is untouched: the bd 01po.4 accept lowering_qram_store_measured_index_nonmain.ll
+// keeps `p` (frozen) and reverse-plays only `ry(p, -.5)`.
+//
+// SCOPE: only the frontier retry can reach this — the whole-DAG plan is CLOSED
+// (no borrowed register), and an M-B interior plan keeps no rail (every gate
+// passes `preservesBasisUnderRecord`, so steps 3b/3c freeze nothing; it has no
+// roots, so 3d freezes nothing; every adjointed rail is `Owned`, a scanned
+// template rail). Re-derive this if either stops being true.
+bool keptRailAdjointReadsBorrowed(const DataDag &D,
+                                  const SmallPtrSetImpl<Value *> &Borrowed) {
+  SmallPtrSet<const Value *, 16> Dep(Borrowed.begin(), Borrowed.end());
+  auto readsDep = [&](CallInst *G, const Value *Self) {
+    for (Value *Op : G->args())
+      if (Op != Self && Dep.count(Op))
+        return true;
+    return false;
+  };
+  for (bool Grew = true; Grew;) {
+    Grew = false;
+    for (CallInst *G : D.Calls) {
+      Value *R = railOf(G);
+      if (R && !Dep.count(R) && readsDep(G, R)) {
+        Dep.insert(R);
+        Grew = true;
+      }
+    }
+  }
+  for (CallInst *G : D.Calls) {
+    Value *R = railOf(G);
+    const bool Kept = !R || isa<Constant>(R) || !D.Rails.count(R) ||
+                      D.FrozenRails.count(R) || isQramArrayHandle(R);
+    if (Kept && readsDep(G, R))
+      return true;
+  }
+  return false;
 }
 
 // The verdict of `planTerminalReversal` — what the dead-terminal driver does
@@ -921,12 +994,22 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
     //     measured rail can PRECEDE a DAG read of it — bd yiid's unruled
     //     boundary, which this retry must not start accepting (L9;
     //     lowering_reject_uncompute_measured_parent_read_after_measure.ll).
-    // MONOTONE, so no module that lowered before can change: this branch is
-    // reached only on the way to the decline below, and adding measured rails
-    // to a QRAM-only frontier that already succeeded is a no-op (that DAG
-    // reached no measured rail, or it would have been `MeasuredUpstream`, and a
-    // frontier member the walk never reaches neither cuts it nor is scanned).
-    // Every refusal keeps today's decline, character for character.
+    //   * `keptRailAdjointReadsBorrowed` (bd eqti): no rail the plan reverse-
+    //     plays but KEEPS (frozen by a record, an array) has an adjoint
+    //     controlled by a borrowed register — that adjoint would act on the LIVE
+    //     register's coherence (lowering_reject_uncompute_measured_parent_
+    //     frozen_{taped,copyout}.ll). It covers the ARRAY borrow too, and that
+    //     half was a PRE-EXISTING silent miscompile of the bd 01po.4 retry
+    //     (lowering_reject_qram_frozen_adjoint_reads_borrowed_array.ll).
+    // MONOTONE for the measured-rail borrow, so no module that lowered before
+    // ptue changes through it: this branch is reached only on the way to the
+    // decline below, and adding measured rails to a QRAM-only frontier that
+    // already succeeded is a no-op (that DAG reached no measured rail, or it
+    // would have been `MeasuredUpstream`, and a frontier member the walk never
+    // reaches neither cuts it nor is scanned). The eqti conjunct is NOT
+    // monotone and is not meant to be: it turns the pre-existing 01po.4
+    // miscompile above from an rc-0 accept into the decline. Every refusal
+    // keeps today's decline, character for character.
     InteriorPlan Frontier;
     for (Value *R : D.Roots)
       if (isQramArrayHandle(R))
@@ -942,7 +1025,8 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
                                AtR, Unused) == TerminalPlan::Emit &&
           borrowedParentsUnmoved(DR, Frontier.Borrowed, AtR, DT, taint,
                                  /*AdmitCloneCalls=*/false) &&
-          measuredParentsReadBeforeCollapse(DR, D.MeasuredRails, DT)) {
+          measuredParentsReadBeforeCollapse(DR, D.MeasuredRails, DT) &&
+          !keptRailAdjointReadsBorrowed(DR, Frontier.Borrowed)) {
         emitTerminalReversal(DR, AtR, wd, taint, ReversedGates, ReversedRails);
         return;
       }
