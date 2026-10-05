@@ -8,64 +8,65 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 842 maintained source files, 6571 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 851 maintained source files, 6674 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
 The entries below are an inventory for decomposition work. Generated files and test/tooling sources are listed too; they are not silently treated as application logic.
 
 - `runtime/cq_templates.c` — 15665 physical lines
-- `ir-pass/src/ArmClassify.cpp` — 9816 physical lines
-- `ir-pass/src/LoopLowering.cpp` — 7532 physical lines
-- `ir-pass/src/PredMuxFlatten.cpp` — 5472 physical lines
-- `tools/loop_twin_matrix.py` — 4110 physical lines
-- `tools/free_pairing_check.py` — 3829 physical lines
-- `tools/free_pairing_check_test.py` — 3746 physical lines
-- `ir-pass/src/QramLowering.cpp` — 3688 physical lines
-- `ir-pass/src/TaintPropagation.cpp` — 3234 physical lines
-- `ir-pass/src/SwapRouteEmit.cpp` — 3090 physical lines
+- `ir-pass/src/ArmClassify.cpp` — 9948 physical lines
+- `ir-pass/src/LoopLowering.cpp` — 8062 physical lines
+- `ir-pass/src/PredMuxFlatten.cpp` — 5473 physical lines
+- `tools/loop_twin_matrix.py` — 4115 physical lines
+- `ir-pass/src/QramLowering.cpp` — 4036 physical lines
+- `tools/free_pairing_check.py` — 3845 physical lines
+- `tools/free_pairing_check_test.py` — 3785 physical lines
+- `ir-pass/src/TaintPropagation.cpp` — 3335 physical lines
+- `ir-pass/src/Uncomputation.cpp` — 3160 physical lines
+- `ir-pass/src/SwapRouteEmit.cpp` — 3147 physical lines
 - `runtime/cq_link_smoke.c` — 2873 physical lines
 - `tools/taintset_scrub_guard.py` — 2758 physical lines
-- `ir-pass/src/Uncomputation.cpp` — 2744 physical lines
+- `ir-pass/src/RotationLowering.cpp` — 2549 physical lines
 - `runtime/cq_templates.h` — 2437 physical lines
-- `ir-pass/src/RotationLowering.cpp` — 2370 physical lines
 - `runtime/cq_intrinsic_templates.c` — 2355 physical lines
+- `ir-pass/include/TaintPropagation.h` — 2254 physical lines
 - `tools/golden_multiset_audit.py` — 2211 physical lines
-- `ir-pass/include/TaintPropagation.h` — 2165 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1964 physical lines
+- `ir-pass/src/CQLoweringPass.cpp` — 1848 physical lines
 - `tools/inplace_twin_matrix.py` — 1790 physical lines
-- `ir-pass/src/CQLoweringPass.cpp` — 1785 physical lines
-- `ir-pass/src/Specialization.cpp` — 1632 physical lines
+- `ir-pass/src/Specialization.cpp` — 1715 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
 - `tools/library_coverage/probe.py` — 1456 physical lines
+- `ir-pass/src/OpcodeLowering.cpp` — 1452 physical lines
 - `ir-pass/src/SelectClassify.cpp` — 1446 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
-- `runtime/cq_runtime.c` — 1237 physical lines
-- `ir-pass/src/OpcodeLowering.cpp` — 1215 physical lines
-- `ir-pass/src/ChainWalk.cpp` — 1207 physical lines
+- `runtime/cq_runtime.c` — 1403 physical lines
+- `ir-pass/src/ChainWalk.cpp` — 1208 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
 - `ir-pass/src/ArithLowering.cpp` — 1189 physical lines
 - `tools/loop_twin_matrix_quarantine_test.py` — 1110 physical lines
-- `ir-pass/src/SpecializeReject.cpp` — 1049 physical lines
+- `ir-pass/src/SpecializeReject.cpp` — 1078 physical lines
+- `ir-pass/src/BreakReversePlay.cpp` — 1007 physical lines
+- `ir-pass/src/WireWalk.cpp` — 948 physical lines
 - `tools/golden_multiset_audit_test.py` — 948 physical lines
-- `ir-pass/src/WireWalk.cpp` — 942 physical lines
-- `ir-pass/src/ControlDetect.cpp` — 899 physical lines
-- `ir-pass/src/BreakReversePlay.cpp` — 891 physical lines
+- `ir-pass/src/ControlDetect.cpp` — 910 physical lines
 - `tools/record_census/shipped_guard_model.py` — 878 physical lines
 - `tools/library_coverage/full_surface/full_census.py` — 877 physical lines
 - `ir-pass/src/IOSinkLowering.cpp` — 862 physical lines
 - `tools/trace_twin_equiv.py` — 843 physical lines
 - `tools/angle_select_twin_matrix.py` — 840 physical lines
-- `ir-pass/include/LoopPlan.h` — 762 physical lines
+- `ir-pass/include/LoopPlan.h` — 805 physical lines
+- `runtime/cq_runtime.h` — 772 physical lines
+- `ir-pass/include/ControlPlan.h` — 736 physical lines
 - `tools/cq_stage_cache_test.py` — 730 physical lines
-- `runtime/cq_runtime.h` — 712 physical lines
-- `ir-pass/include/ControlPlan.h` — 709 physical lines
-- `ir-pass/include/ChainWalk.h` — 697 physical lines
+- `ir-pass/include/ChainWalk.h` — 700 physical lines
 - `ir-pass/src/AngleSelectEmit.cpp` — 673 physical lines
 - `ir-pass/src/MergePhiPeel.cpp` — 663 physical lines
 - `ir-pass/include/ScrubOnDelete.h` — 661 physical lines
+- `ir-pass/include/QramLowering.h` — 659 physical lines
 - `tests/e2e/railbank_stale_matrix.c` — 654 physical lines
-- `ir-pass/include/QramLowering.h` — 647 physical lines
+- `ir-pass/src/GuardedStoreArmEmit.cpp` — 651 physical lines
 - `tools/negative_vacuity_check.py` — 646 physical lines
 - `ir-pass/src/SwitchClassify.cpp` — 621 physical lines
 - `ir-pass/src/MeasureLowering.cpp` — 614 physical lines
@@ -73,26 +74,27 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/library_coverage/full_surface/wprobe.py` — 605 physical lines
 - `ir-pass/src/WidthDispatch.cpp` — 581 physical lines
 - `tests/e2e/slice_libm_real_asinhl.c` — 581 physical lines
+- `ir-pass/src/AbortParkEmit.cpp` — 580 physical lines
 - `tests/e2e/slice_hybrid_lgammal.c` — 578 physical lines
 - `tests/e2e/slice_libm_real_acoshl.c` — 575 physical lines
 - `ir-pass/src/CompareLowering.cpp` — 534 physical lines
 - `ir-pass/include/ArmAnalysis.h` — 531 physical lines
 - `ir-pass/include/RailBankPromote.h` — 528 physical lines
 - `ir-pass/src/IntrinsicLowering.cpp` — 518 physical lines
-- `ir-pass/src/AbortParkEmit.cpp` — 513 physical lines
 - `tests/e2e/railbank_dynamic_matrix.c` — 507 physical lines
 - `tests/e2e/slice_libm_real_lgammaf.c` — 506 physical lines
 - `tools/library_coverage/inject_census.py` — 505 physical lines
 - `ir-pass/src/CtlzIdiomPrepass.cpp` — 497 physical lines
 - `tests/e2e/slice_libm_real_lgamma.c` — 497 physical lines
 - `tools/cq_stage_cache.py` — 495 physical lines
+- `ir-pass/src/DeadValueLiveness.cpp` — 494 physical lines
 - `ir-pass/include/LiteralIntegrity.h` — 489 physical lines
-- `ir-pass/src/DeadValueLiveness.cpp` — 485 physical lines
 - `tests/e2e/railbank_deadcell_matrix.c` — 482 physical lines
 - `tools/gen_templates.py` — 473 physical lines
 - `tools/library_coverage/loop_bounds/LoopBoundProbe.cpp` — 471 physical lines
 - `tools/record_census/census_common.py` — 468 physical lines
-- `ir-pass/src/DagTraversal.cpp` — 454 physical lines
+- `ir-pass/src/DagTraversal.cpp` — 458 physical lines
+- `ir-pass/src/SelectMergeEmit.cpp` — 456 physical lines
 - `tests/e2e/slice_libm_real_atanhl.c` — 453 physical lines
 - `tests/e2e/slice_libm_real_erfcl.c` — 451 physical lines
 - `tools/predmux_probe_gen.py` — 450 physical lines
@@ -101,7 +103,6 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/record_census/source_ir.py` — 434 physical lines
 - `tests/e2e/slice_libm_real_erfl.c` — 432 physical lines
 - `tools/record_census/census_02_mc_population.py` — 430 physical lines
-- `ir-pass/src/SelectMergeEmit.cpp` — 426 physical lines
 - `ir-pass/include/WireWalk.h` — 424 physical lines
 - `ir-pass/tools/scrub_selftest.cpp` — 423 physical lines
 - `tests/e2e/slice_libm_real_powf.c` — 418 physical lines
@@ -110,7 +111,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 ## Function locations
 
-### `ir-pass/include/ControlPlan.h` (709 lines)
+### `ir-pass/include/CalleeBody.h` (84 lines)
+
+- `ir-pass/include/CalleeBody.h:68` — `calleeBodyTrusted`
+
+### `ir-pass/include/ControlPlan.h` (736 lines)
 
 - `ir-pass/include/ControlPlan.h:326` — `setRoutedBase`
 
@@ -183,16 +188,16 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/SpecializePlan.h:133` — `getHashValue`
 - `ir-pass/include/SpecializePlan.h:137` — `isEqual`
 
-### `ir-pass/include/TaintPropagation.h` (2165 lines)
+### `ir-pass/include/TaintPropagation.h` (2254 lines)
 
-- `ir-pass/include/TaintPropagation.h:632` — `isPeelClone`
+- `ir-pass/include/TaintPropagation.h:679` — `isPeelClone`
 
 ### `ir-pass/include/WidthDispatch.h` (245 lines)
 
 - `ir-pass/include/WidthDispatch.h:227` — `i32Ty`
 - `ir-pass/include/WidthDispatch.h:228` — `context`
 
-### `ir-pass/src/AbortParkEmit.cpp` (513 lines)
+### `ir-pass/src/AbortParkEmit.cpp` (580 lines)
 
 - `ir-pass/src/AbortParkEmit.cpp:61` — `scrubTaint`
 - `ir-pass/src/AbortParkEmit.cpp:76` — `bailLoud`
@@ -202,9 +207,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/AbortParkEmit.cpp:185` — `ioTapeFor`
 - `ir-pass/src/AbortParkEmit.cpp:201` — `hlTaintedOperand`
 - `ir-pass/src/AbortParkEmit.cpp:218` — `collectLiveRemainderRegs`
-- `ir-pass/src/AbortParkEmit.cpp:279` — `namesRoutedRegister`
-- `ir-pass/src/AbortParkEmit.cpp:288` — `classifyAbortPark`
-- `ir-pass/src/AbortParkEmit.cpp:391` — `emitAbortParkRegion`
+- `ir-pass/src/AbortParkEmit.cpp:292` — `namesRoutedRegister`
+- `ir-pass/src/AbortParkEmit.cpp:303` — `isAbortParkCondition`
+- `ir-pass/src/AbortParkEmit.cpp:315` — `classifyAbortPark`
+- `ir-pass/src/AbortParkEmit.cpp:458` — `emitAbortParkRegion`
 
 ### `ir-pass/src/AngleSelectEmit.cpp` (673 lines)
 
@@ -227,7 +233,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArithLowering.cpp:983` — `lateReassignShape`
 - `ir-pass/src/ArithLowering.cpp:1023` — `lowerLateReassignments`
 
-### `ir-pass/src/ArmClassify.cpp` (9816 lines)
+### `ir-pass/src/ArmClassify.cpp` (9948 lines)
 
 - `ir-pass/src/ArmClassify.cpp:79` — `isCallToPrefix`
 - `ir-pass/src/ArmClassify.cpp:106` — `isPhiCall`
@@ -283,13 +289,13 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArmClassify.cpp:4684` — `straightThroughConstFoldHandle`
 - `ir-pass/src/ArmClassify.cpp:4851` — `iterationLocalRollable`
 - `ir-pass/src/ArmClassify.cpp:4911` — `classifyArms`
-- `ir-pass/src/ArmClassify.cpp:6864` — `phaseAngleTail`
-- `ir-pass/src/ArmClassify.cpp:6973` — `classifyPhaseKickback`
-- `ir-pass/src/ArmClassify.cpp:7969` — `classifyPhaseKickbackNest`
-- `ir-pass/src/ArmClassify.cpp:8293` — `freezeDischargesHoistedArg`
-- `ir-pass/src/ArmClassify.cpp:8349` — `classifyClassicalCallArm`
-- `ir-pass/src/ArmClassify.cpp:8874` — `angleSelectArmsAdmissible`
-- `ir-pass/src/ArmClassify.cpp:9095` — `classifyAngleSelect`
+- `ir-pass/src/ArmClassify.cpp:6993` — `phaseAngleTail`
+- `ir-pass/src/ArmClassify.cpp:7102` — `classifyPhaseKickback`
+- `ir-pass/src/ArmClassify.cpp:8098` — `classifyPhaseKickbackNest`
+- `ir-pass/src/ArmClassify.cpp:8422` — `freezeDischargesHoistedArg`
+- `ir-pass/src/ArmClassify.cpp:8478` — `classifyClassicalCallArm`
+- `ir-pass/src/ArmClassify.cpp:9006` — `angleSelectArmsAdmissible`
+- `ir-pass/src/ArmClassify.cpp:9227` — `classifyAngleSelect`
 
 ### `ir-pass/src/ArmHomogeneity.cpp` (217 lines)
 
@@ -312,32 +318,34 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/BirthFreeze.cpp:16` — `railBornZero`
 - `ir-pass/src/BirthFreeze.cpp:30` — `freezeUnprovenBirths`
 
-### `ir-pass/src/BreakReversePlay.cpp` (891 lines)
+### `ir-pass/src/BreakReversePlay.cpp` (1007 lines)
 
-- `ir-pass/src/BreakReversePlay.cpp:141` — `diagnoseAt`
-- `ir-pass/src/BreakReversePlay.cpp:161` — `isInPlaceRailGate`
-- `ir-pass/src/BreakReversePlay.cpp:170` — `isBreakCondTemplate`
-- `ir-pass/src/BreakReversePlay.cpp:180` — `isCompareTemplate`
-- `ir-pass/src/BreakReversePlay.cpp:186` — `discoverLoweredBreak`
-- `ir-pass/src/BreakReversePlay.cpp:359` — `coversLoweredBody`
-- `ir-pass/src/BreakReversePlay.cpp:433` — `mintCall`
-- `ir-pass/src/BreakReversePlay.cpp:441` — `toffoliFn`
-- `ir-pass/src/BreakReversePlay.cpp:447` — `cnotFn`
-- `ir-pass/src/BreakReversePlay.cpp:455` — `emitEqZero`
-- `ir-pass/src/BreakReversePlay.cpp:469` — `clearAndFree`
-- `ir-pass/src/BreakReversePlay.cpp:484` — `clearChainAndFree`
-- `ir-pass/src/BreakReversePlay.cpp:508` — `cloneBreakCond`
-- `ir-pass/src/BreakReversePlay.cpp:545` — `copyCtrlR`
-- `ir-pass/src/BreakReversePlay.cpp:546` — `copyCtrlIdx`
-- `ir-pass/src/BreakReversePlay.cpp:547` — `allocIdx`
-- `ir-pass/src/BreakReversePlay.cpp:548` — `addcIdx`
-- `ir-pass/src/BreakReversePlay.cpp:551` — `captureRailToR`
-- `ir-pass/src/BreakReversePlay.cpp:563` — `xorEqKIntoFire`
-- `ir-pass/src/BreakReversePlay.cpp:580` — `emitForwardCapture`
-- `ir-pass/src/BreakReversePlay.cpp:625` — `emitExitConsolidation`
-- `ir-pass/src/BreakReversePlay.cpp:648` — `emitBackwardBody`
-- `ir-pass/src/BreakReversePlay.cpp:707` — `emitOneBreak`
-- `ir-pass/src/BreakReversePlay.cpp:886` — `lowerBreakReversePlay`
+- `ir-pass/src/BreakReversePlay.cpp:145` — `diagnoseAt`
+- `ir-pass/src/BreakReversePlay.cpp:165` — `isInPlaceRailGate`
+- `ir-pass/src/BreakReversePlay.cpp:174` — `isBreakCondTemplate`
+- `ir-pass/src/BreakReversePlay.cpp:184` — `isCompareTemplate`
+- `ir-pass/src/BreakReversePlay.cpp:190` — `discoverLoweredBreak`
+- `ir-pass/src/BreakReversePlay.cpp:363` — `coversLoweredBody`
+- `ir-pass/src/BreakReversePlay.cpp:437` — `mintCall`
+- `ir-pass/src/BreakReversePlay.cpp:445` — `toffoliFn`
+- `ir-pass/src/BreakReversePlay.cpp:451` — `cnotFn`
+- `ir-pass/src/BreakReversePlay.cpp:459` — `emitEqZero`
+- `ir-pass/src/BreakReversePlay.cpp:473` — `clearAndFree`
+- `ir-pass/src/BreakReversePlay.cpp:488` — `clearChainAndFree`
+- `ir-pass/src/BreakReversePlay.cpp:512` — `cloneBreakCond`
+- `ir-pass/src/BreakReversePlay.cpp:561` — `copyCtrlR`
+- `ir-pass/src/BreakReversePlay.cpp:562` — `copyCtrlIdx`
+- `ir-pass/src/BreakReversePlay.cpp:563` — `allocIdx`
+- `ir-pass/src/BreakReversePlay.cpp:564` — `addcIdx`
+- `ir-pass/src/BreakReversePlay.cpp:567` — `captureRailToR`
+- `ir-pass/src/BreakReversePlay.cpp:577` — `xorClassical`
+- `ir-pass/src/BreakReversePlay.cpp:588` — `recomputeEscape`
+- `ir-pass/src/BreakReversePlay.cpp:613` — `xorEqKIntoFire`
+- `ir-pass/src/BreakReversePlay.cpp:630` — `emitForwardCapture`
+- `ir-pass/src/BreakReversePlay.cpp:675` — `emitExitConsolidation`
+- `ir-pass/src/BreakReversePlay.cpp:706` — `emitBackwardBody`
+- `ir-pass/src/BreakReversePlay.cpp:766` — `emitOneBreak`
+- `ir-pass/src/BreakReversePlay.cpp:1001` — `lowerBreakReversePlay`
 
 ### `ir-pass/src/ByRefInline.cpp` (387 lines)
 
@@ -348,40 +356,40 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ByRefInline.cpp:255` — `cloneExpr`
 - `ir-pass/src/ByRefInline.cpp:277` — `lowerByRefInline`
 
-### `ir-pass/src/CQLoweringPass.cpp` (1785 lines)
+### `ir-pass/src/CQLoweringPass.cpp` (1848 lines)
 
-- `ir-pass/src/CQLoweringPass.cpp:55` — `eraseDeadDecls`
-- `ir-pass/src/CQLoweringPass.cpp:89` — `declineSurvivingIntrinsicCalls`
-- `ir-pass/src/CQLoweringPass.cpp:115` — `CQLoweringPass::run`
-- `ir-pass/src/CQLoweringPass.cpp:1253` — `CQLoweringPass::runOnFunction`
+- `ir-pass/src/CQLoweringPass.cpp:57` — `eraseDeadDecls`
+- `ir-pass/src/CQLoweringPass.cpp:91` — `declineSurvivingIntrinsicCalls`
+- `ir-pass/src/CQLoweringPass.cpp:117` — `CQLoweringPass::run`
+- `ir-pass/src/CQLoweringPass.cpp:1296` — `CQLoweringPass::runOnFunction`
 
 ### `ir-pass/src/CastLowering.cpp` (135 lines)
 
 - `ir-pass/src/CastLowering.cpp:38` — `promote`
 - `ir-pass/src/CastLowering.cpp:50` — `rewriteCast`
 
-### `ir-pass/src/ChainWalk.cpp` (1207 lines)
+### `ir-pass/src/ChainWalk.cpp` (1208 lines)
 
-- `ir-pass/src/ChainWalk.cpp:32` — `markBranchPhaseGate`
-- `ir-pass/src/ChainWalk.cpp:38` — `isBranchPhaseGate`
-- `ir-pass/src/ChainWalk.cpp:42` — `isAbiQramStore`
-- `ir-pass/src/ChainWalk.cpp:94` — `isInPlaceGateOn`
-- `ir-pass/src/ChainWalk.cpp:339` — `railCarriesControlledRotation`
-- `ir-pass/src/ChainWalk.cpp:373` — `isAllocMint`
-- `ir-pass/src/ChainWalk.cpp:400` — `isTemplateProducer`
-- `ir-pass/src/ChainWalk.cpp:490` — `preservesBasisUnderRecord`
-- `ir-pass/src/ChainWalk.cpp:630` — `isMeasureSink`
-- `ir-pass/src/ChainWalk.cpp:635` — `isOutputSink`
-- `ir-pass/src/ChainWalk.cpp:640` — `recordsIntoKeptCarrier`
-- `ir-pass/src/ChainWalk.cpp:699` — `isCopyOutSink`
-- `ir-pass/src/ChainWalk.cpp:730` — `railOf`
-- `ir-pass/src/ChainWalk.cpp:772` — `isTerminalHandle`
-- `ir-pass/src/ChainWalk.cpp:827` — `isInteriorConsumer`
-- `ir-pass/src/ChainWalk.cpp:993` — `isRecordedStripReaderOf`
-- `ir-pass/src/ChainWalk.cpp:1010` — `isInteriorTerminalHandle`
-- `ir-pass/src/ChainWalk.cpp:1090` — `clonePassPreserves`
-- `ir-pass/src/ChainWalk.cpp:1131` — `formalLabelPreserved`
-- `ir-pass/src/ChainWalk.cpp:1196` — `cloneCallPreservesArg`
+- `ir-pass/src/ChainWalk.cpp:33` — `markBranchPhaseGate`
+- `ir-pass/src/ChainWalk.cpp:39` — `isBranchPhaseGate`
+- `ir-pass/src/ChainWalk.cpp:43` — `isAbiQramStore`
+- `ir-pass/src/ChainWalk.cpp:95` — `isInPlaceGateOn`
+- `ir-pass/src/ChainWalk.cpp:340` — `railCarriesControlledRotation`
+- `ir-pass/src/ChainWalk.cpp:374` — `isAllocMint`
+- `ir-pass/src/ChainWalk.cpp:401` — `isTemplateProducer`
+- `ir-pass/src/ChainWalk.cpp:491` — `preservesBasisUnderRecord`
+- `ir-pass/src/ChainWalk.cpp:631` — `isMeasureSink`
+- `ir-pass/src/ChainWalk.cpp:636` — `isOutputSink`
+- `ir-pass/src/ChainWalk.cpp:641` — `recordsIntoKeptCarrier`
+- `ir-pass/src/ChainWalk.cpp:700` — `isCopyOutSink`
+- `ir-pass/src/ChainWalk.cpp:731` — `railOf`
+- `ir-pass/src/ChainWalk.cpp:773` — `isTerminalHandle`
+- `ir-pass/src/ChainWalk.cpp:828` — `isInteriorConsumer`
+- `ir-pass/src/ChainWalk.cpp:994` — `isRecordedStripReaderOf`
+- `ir-pass/src/ChainWalk.cpp:1011` — `isInteriorTerminalHandle`
+- `ir-pass/src/ChainWalk.cpp:1091` — `clonePassPreserves`
+- `ir-pass/src/ChainWalk.cpp:1132` — `formalLabelPreserved`
+- `ir-pass/src/ChainWalk.cpp:1197` — `cloneCallPreservesArg`
 
 ### `ir-pass/src/ClassicalCallArmEmit.cpp` (281 lines)
 
@@ -422,7 +430,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `ir-pass/src/CondTreeStrip.cpp:24` — `stripCondNetwork`
 
-### `ir-pass/src/ControlDetect.cpp` (899 lines)
+### `ir-pass/src/ControlDetect.cpp` (910 lines)
 
 - `ir-pass/src/ControlDetect.cpp:57` — `diagnoseUnderControl`
 - `ir-pass/src/ControlDetect.cpp:86` — `anchorIsLocated`
@@ -437,8 +445,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ControlDetect.cpp:404` — `isSelfLoopArm`
 - `ir-pass/src/ControlDetect.cpp:418` — `retLineageCarriesPhase`
 - `ir-pass/src/ControlDetect.cpp:467` — `offPatternDisposition`
-- `ir-pass/src/ControlDetect.cpp:518` — `handleBranchRegion`
-- `ir-pass/src/ControlDetect.cpp:747` — `detectControlRegions`
+- `ir-pass/src/ControlDetect.cpp:529` — `handleBranchRegion`
+- `ir-pass/src/ControlDetect.cpp:758` — `detectControlRegions`
 
 ### `ir-pass/src/ControlledSymbols.cpp` (172 lines)
 
@@ -459,28 +467,28 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/CtlzIdiomPrepass.cpp:407` — `emitClosedForm`
 - `ir-pass/src/CtlzIdiomPrepass.cpp:465` — `recognizeCtlzIdiomLoops`
 
-### `ir-pass/src/DagTraversal.cpp` (454 lines)
+### `ir-pass/src/DagTraversal.cpp` (458 lines)
 
 - `ir-pass/src/DagTraversal.cpp:26` — `isInvertEscape`
 - `ir-pass/src/DagTraversal.cpp:41` — `recoverDataDag`
 
-### `ir-pass/src/DeadValueLiveness.cpp` (485 lines)
+### `ir-pass/src/DeadValueLiveness.cpp` (494 lines)
 
-- `ir-pass/src/DeadValueLiveness.cpp:35` — `isFrontEndIntrinsicSite`
-- `ir-pass/src/DeadValueLiveness.cpp:44` — `isEmptyUncondArm`
-- `ir-pass/src/DeadValueLiveness.cpp:63` — `bodyIsSideEffectFree`
-- `ir-pass/src/DeadValueLiveness.cpp:88` — `isLivenessRoot`
-- `ir-pass/src/DeadValueLiveness.cpp:131` — `isRecordedDeadSlot`
-- `ir-pass/src/DeadValueLiveness.cpp:142` — `isRewritableDeadSlot`
-- `ir-pass/src/DeadValueLiveness.cpp:147` — `isUnreadScalarSlot`
-- `ir-pass/src/DeadValueLiveness.cpp:158` — `stripParamValueConstraints`
-- `ir-pass/src/DeadValueLiveness.cpp:164` — `stripUnreadSlotValueConstraints`
-- `ir-pass/src/DeadValueLiveness.cpp:172` — `rewriteRecordedDeadSlotUse`
-- `ir-pass/src/DeadValueLiveness.cpp:186` — `FunctionLiveness::FunctionLiveness`
-- `ir-pass/src/DeadValueLiveness.cpp:247` — `FunctionLiveness::isLive`
-- `ir-pass/src/DeadValueLiveness.cpp:249` — `deadParamMask`
-- `ir-pass/src/DeadValueLiveness.cpp:253` — `deadParamMask`
-- `ir-pass/src/DeadValueLiveness.cpp:261` — `deleteDeadCones`
+- `ir-pass/src/DeadValueLiveness.cpp:37` — `isFrontEndIntrinsicSite`
+- `ir-pass/src/DeadValueLiveness.cpp:46` — `isEmptyUncondArm`
+- `ir-pass/src/DeadValueLiveness.cpp:65` — `bodyIsSideEffectFree`
+- `ir-pass/src/DeadValueLiveness.cpp:97` — `isLivenessRoot`
+- `ir-pass/src/DeadValueLiveness.cpp:140` — `isRecordedDeadSlot`
+- `ir-pass/src/DeadValueLiveness.cpp:151` — `isRewritableDeadSlot`
+- `ir-pass/src/DeadValueLiveness.cpp:156` — `isUnreadScalarSlot`
+- `ir-pass/src/DeadValueLiveness.cpp:167` — `stripParamValueConstraints`
+- `ir-pass/src/DeadValueLiveness.cpp:173` — `stripUnreadSlotValueConstraints`
+- `ir-pass/src/DeadValueLiveness.cpp:181` — `rewriteRecordedDeadSlotUse`
+- `ir-pass/src/DeadValueLiveness.cpp:195` — `FunctionLiveness::FunctionLiveness`
+- `ir-pass/src/DeadValueLiveness.cpp:256` — `FunctionLiveness::isLive`
+- `ir-pass/src/DeadValueLiveness.cpp:258` — `deadParamMask`
+- `ir-pass/src/DeadValueLiveness.cpp:262` — `deadParamMask`
+- `ir-pass/src/DeadValueLiveness.cpp:270` — `deleteDeadCones`
 
 ### `ir-pass/src/EmitInverse.cpp` (442 lines)
 
@@ -536,15 +544,18 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/GuardedClassicalRead.cpp:173` — `classicalRuntimeAllocaReadIsInBoundsUnderGuard`
 - `ir-pass/src/GuardedClassicalRead.cpp:249` — `guardSpeculatedClassicalRead`
 
-### `ir-pass/src/GuardedStoreArmEmit.cpp` (343 lines)
+### `ir-pass/src/GuardedStoreArmEmit.cpp` (651 lines)
 
-- `ir-pass/src/GuardedStoreArmEmit.cpp:44` — `scrubTaint`
-- `ir-pass/src/GuardedStoreArmEmit.cpp:59` — `bailLoud`
-- `ir-pass/src/GuardedStoreArmEmit.cpp:68` — `hlTaintedOperand`
-- `ir-pass/src/GuardedStoreArmEmit.cpp:83` — `soleSideEffectStore`
-- `ir-pass/src/GuardedStoreArmEmit.cpp:118` — `conditionReadsMemory`
-- `ir-pass/src/GuardedStoreArmEmit.cpp:140` — `classifyGuardedStoreArm`
-- `ir-pass/src/GuardedStoreArmEmit.cpp:224` — `emitGuardedStoreArmRegion`
+- `ir-pass/src/GuardedStoreArmEmit.cpp:56` — `scrubTaint`
+- `ir-pass/src/GuardedStoreArmEmit.cpp:71` — `bailLoud`
+- `ir-pass/src/GuardedStoreArmEmit.cpp:80` — `hlTaintedOperand`
+- `ir-pass/src/GuardedStoreArmEmit.cpp:105` — `armContent`
+- `ir-pass/src/GuardedStoreArmEmit.cpp:148` — `conditionReadsMemory`
+- `ir-pass/src/GuardedStoreArmEmit.cpp:197` — `mergeDecidersInto`
+- `ir-pass/src/GuardedStoreArmEmit.cpp:235` — `mayTaintAtRound2`
+- `ir-pass/src/GuardedStoreArmEmit.cpp:271` — `storeRegionShape`
+- `ir-pass/src/GuardedStoreArmEmit.cpp:297` — `classifyGuardedStoreArm`
+- `ir-pass/src/GuardedStoreArmEmit.cpp:433` — `emitGuardedStoreArmRegion`
 
 ### `ir-pass/src/IOSinkLowering.cpp` (862 lines)
 
@@ -583,72 +594,79 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LiteralIntegrity.cpp:274` — `declineAddressTakenBlocks`
 - `ir-pass/src/LiteralIntegrity.cpp:327` — `removeUnreachableBlocksChecked`
 
-### `ir-pass/src/LoopLowering.cpp` (7532 lines)
+### `ir-pass/src/LoopLowering.cpp` (8062 lines)
 
-- `ir-pass/src/LoopLowering.cpp:131` — `diagnose`
-- `ir-pass/src/LoopLowering.cpp:156` — `inPlaceValueRailOperand`
-- `ir-pass/src/LoopLowering.cpp:204` — `markInPlaceRailOp`
-- `ir-pass/src/LoopLowering.cpp:254` — `railValueConsumerDisposition`
-- `ir-pass/src/LoopLowering.cpp:311` — `peelInPlaceStep`
-- `ir-pass/src/LoopLowering.cpp:337` — `peelInPlaceBase`
-- `ir-pass/src/LoopLowering.cpp:373` — `railPhiRootMint`
-- `ir-pass/src/LoopLowering.cpp:415` — `railChainRootMint`
-- `ir-pass/src/LoopLowering.cpp:434` — `isInPlaceGateOnArg0`
-- `ir-pass/src/LoopLowering.cpp:550` — `isHoistedRegionArmGate`
-- `ir-pass/src/LoopLowering.cpp:562` — `isMeasureCall`
-- `ir-pass/src/LoopLowering.cpp:717` — `recordRefreshedByDef`
-- `ir-pass/src/LoopLowering.cpp:762` — `railGateBetween`
-- `ir-pass/src/LoopLowering.cpp:946` — `collectRailGates`
-- `ir-pass/src/LoopLowering.cpp:1041` — `staleReadOfValue`
-- `ir-pass/src/LoopLowering.cpp:1229` — `staleRailRecordRead`
-- `ir-pass/src/LoopLowering.cpp:1260` — `taintedExit`
-- `ir-pass/src/LoopLowering.cpp:1400` — `latchIsControlMergeRail`
-- `ir-pass/src/LoopLowering.cpp:1418` — `loopCarriedHandlePhi`
-- `ir-pass/src/LoopLowering.cpp:1732` — `collectCarriedHandleChains`
-- `ir-pass/src/LoopLowering.cpp:1770` — `breakLineageCarriesPhase`
-- `ir-pass/src/LoopLowering.cpp:1832` — `decomposeFusedExit`
-- `ir-pass/src/LoopLowering.cpp:1859` — `isTaintedExitingTerminator`
-- `ir-pass/src/LoopLowering.cpp:1870` — `subloopHasTaintedValue`
-- `ir-pass/src/LoopLowering.cpp:1910` — `hasFiniteClassicalTripBound`
-- `ir-pass/src/LoopLowering.cpp:1926` — `boundComparesInductionToInvariant`
-- `ir-pass/src/LoopLowering.cpp:1962` — `boundProvablyTerminates`
-- `ir-pass/src/LoopLowering.cpp:2033` — `emitBreakForward`
-- `ir-pass/src/LoopLowering.cpp:2532` — `tryBreak`
-- `ir-pass/src/LoopLowering.cpp:2745` — `tryCaseA`
-- `ir-pass/src/LoopLowering.cpp:3141` — `markIfIterationLocal`
-- `ir-pass/src/LoopLowering.cpp:3216` — `loopHasInPlaceRailStructure`
-- `ir-pass/src/LoopLowering.cpp:3262` — `collapseRailPhisIn`
-- `ir-pass/src/LoopLowering.cpp:3868` — `commitOutOfLoopInPlaceOps`
-- `ir-pass/src/LoopLowering.cpp:4079` — `measureOwnedInvariantRail`
-- `ir-pass/src/LoopLowering.cpp:4131` — `exitDischargeObligations`
-- `ir-pass/src/LoopLowering.cpp:4149` — `allUsersInside`
-- `ir-pass/src/LoopLowering.cpp:4158` — `recordExitDischargeObligation`
-- `ir-pass/src/LoopLowering.cpp:4166` — `invariantRegisterRootsImpl`
-- `ir-pass/src/LoopLowering.cpp:4564` — `invariantRegisterRoots`
-- `ir-pass/src/LoopLowering.cpp:4604` — `railLocalQualifies`
-- `ir-pass/src/LoopLowering.cpp:4742` — `markIfRailLocal`
-- `ir-pass/src/LoopLowering.cpp:4788` — `recordRound1RailGrant`
-- `ir-pass/src/LoopLowering.cpp:4800` — `collapseFlattenedLoopRails`
-- `ir-pass/src/LoopLowering.cpp:5214` — `taintedAncestryReaches`
-- `ir-pass/src/LoopLowering.cpp:5245` — `railIsInterior`
-- `ir-pass/src/LoopLowering.cpp:5350` — `mintsOutOfPlaceTemplateRail`
-- `ir-pass/src/LoopLowering.cpp:5475` — `bodyBlocksMarked`
-- `ir-pass/src/LoopLowering.cpp:5612` — `markedBodyRailObligations`
-- `ir-pass/src/LoopLowering.cpp:5617` — `recordMarkedBodyRailObligation`
-- `ir-pass/src/LoopLowering.cpp:5624` — `markedBodyRailsHaveInBodyDischargePoint`
-- `ir-pass/src/LoopLowering.cpp:5750` — `deferDephasingDecline`
-- `ir-pass/src/LoopLowering.cpp:5772` — `deferredDephasingSlot`
-- `ir-pass/src/LoopLowering.cpp:5783` — `declineRound2FalsifiedRailGrants`
-- `ir-pass/src/LoopLowering.cpp:6047` — `declineDephasingUnmarkedLoopRails`
-- `ir-pass/src/LoopLowering.cpp:6379` — `declineUndischargedMarkedBodyRails`
-- `ir-pass/src/LoopLowering.cpp:6448` — `emitDeferredDephasingDecline`
-- `ir-pass/src/LoopLowering.cpp:6503` — `declineUndischargedExitObligations`
-- `ir-pass/src/LoopLowering.cpp:6572` — `loopExitDischargePoint`
-- `ir-pass/src/LoopLowering.cpp:6592` — `iterationLocalTaintEscape`
-- `ir-pass/src/LoopLowering.cpp:6757` — `bodyHasSpineDischargeCandidate`
-- `ir-pass/src/LoopLowering.cpp:6907` — `promoteLoopCarriedHandleSeeds`
-- `ir-pass/src/LoopLowering.cpp:7176` — `declineUnmarkedRolledIterLocal`
-- `ir-pass/src/LoopLowering.cpp:7372` — `lowerLoops`
+- `ir-pass/src/LoopLowering.cpp:135` — `diagnose`
+- `ir-pass/src/LoopLowering.cpp:160` — `inPlaceValueRailOperand`
+- `ir-pass/src/LoopLowering.cpp:208` — `markInPlaceRailOp`
+- `ir-pass/src/LoopLowering.cpp:258` — `railValueConsumerDisposition`
+- `ir-pass/src/LoopLowering.cpp:315` — `peelInPlaceStep`
+- `ir-pass/src/LoopLowering.cpp:341` — `peelInPlaceBase`
+- `ir-pass/src/LoopLowering.cpp:377` — `railPhiRootMint`
+- `ir-pass/src/LoopLowering.cpp:419` — `railChainRootMint`
+- `ir-pass/src/LoopLowering.cpp:438` — `isInPlaceGateOnArg0`
+- `ir-pass/src/LoopLowering.cpp:554` — `isHoistedRegionArmGate`
+- `ir-pass/src/LoopLowering.cpp:566` — `isMeasureCall`
+- `ir-pass/src/LoopLowering.cpp:722` — `recordRefreshedByDef`
+- `ir-pass/src/LoopLowering.cpp:767` — `railGateBetween`
+- `ir-pass/src/LoopLowering.cpp:951` — `collectRailGates`
+- `ir-pass/src/LoopLowering.cpp:1049` — `railGateBeforeControlUse`
+- `ir-pass/src/LoopLowering.cpp:1083` — `staleReadOfValue`
+- `ir-pass/src/LoopLowering.cpp:1305` — `staleRailRecordRead`
+- `ir-pass/src/LoopLowering.cpp:1342` — `taintedExit`
+- `ir-pass/src/LoopLowering.cpp:1482` — `latchIsControlMergeRail`
+- `ir-pass/src/LoopLowering.cpp:1500` — `loopCarriedHandlePhi`
+- `ir-pass/src/LoopLowering.cpp:1814` — `collectCarriedHandleChains`
+- `ir-pass/src/LoopLowering.cpp:1839` — `breakEscapeLedger`
+- `ir-pass/src/LoopLowering.cpp:1845` — `breakEscapeCone`
+- `ir-pass/src/LoopLowering.cpp:1894` — `breakLineageCarriesPhase`
+- `ir-pass/src/LoopLowering.cpp:1963` — `decomposeFusedExit`
+- `ir-pass/src/LoopLowering.cpp:1990` — `isTaintedExitingTerminator`
+- `ir-pass/src/LoopLowering.cpp:2001` — `subloopHasTaintedValue`
+- `ir-pass/src/LoopLowering.cpp:2041` — `hasFiniteClassicalTripBound`
+- `ir-pass/src/LoopLowering.cpp:2057` — `boundComparesInductionToInvariant`
+- `ir-pass/src/LoopLowering.cpp:2093` — `boundProvablyTerminates`
+- `ir-pass/src/LoopLowering.cpp:2164` — `emitBreakForward`
+- `ir-pass/src/LoopLowering.cpp:2814` — `tryBreak`
+- `ir-pass/src/LoopLowering.cpp:3030` — `isTaintedBranchTerminator`
+- `ir-pass/src/LoopLowering.cpp:3070` — `railUseHandedToControl`
+- `ir-pass/src/LoopLowering.cpp:3102` — `isPostLoopRailCompare`
+- `ir-pass/src/LoopLowering.cpp:3114` — `tryCaseA`
+- `ir-pass/src/LoopLowering.cpp:3573` — `markIfIterationLocal`
+- `ir-pass/src/LoopLowering.cpp:3648` — `loopHasInPlaceRailStructure`
+- `ir-pass/src/LoopLowering.cpp:3727` — `reopenClosedRailExits`
+- `ir-pass/src/LoopLowering.cpp:3782` — `collapseRailPhisIn`
+- `ir-pass/src/LoopLowering.cpp:4397` — `commitOutOfLoopInPlaceOps`
+- `ir-pass/src/LoopLowering.cpp:4608` — `measureOwnedInvariantRail`
+- `ir-pass/src/LoopLowering.cpp:4660` — `exitDischargeObligations`
+- `ir-pass/src/LoopLowering.cpp:4678` — `allUsersInside`
+- `ir-pass/src/LoopLowering.cpp:4687` — `recordExitDischargeObligation`
+- `ir-pass/src/LoopLowering.cpp:4695` — `invariantRegisterRootsImpl`
+- `ir-pass/src/LoopLowering.cpp:5093` — `invariantRegisterRoots`
+- `ir-pass/src/LoopLowering.cpp:5133` — `railLocalQualifies`
+- `ir-pass/src/LoopLowering.cpp:5271` — `markIfRailLocal`
+- `ir-pass/src/LoopLowering.cpp:5317` — `recordRound1RailGrant`
+- `ir-pass/src/LoopLowering.cpp:5329` — `collapseFlattenedLoopRails`
+- `ir-pass/src/LoopLowering.cpp:5743` — `taintedAncestryReaches`
+- `ir-pass/src/LoopLowering.cpp:5774` — `railIsInterior`
+- `ir-pass/src/LoopLowering.cpp:5879` — `mintsOutOfPlaceTemplateRail`
+- `ir-pass/src/LoopLowering.cpp:6004` — `bodyBlocksMarked`
+- `ir-pass/src/LoopLowering.cpp:6141` — `markedBodyRailObligations`
+- `ir-pass/src/LoopLowering.cpp:6146` — `recordMarkedBodyRailObligation`
+- `ir-pass/src/LoopLowering.cpp:6153` — `markedBodyRailsHaveInBodyDischargePoint`
+- `ir-pass/src/LoopLowering.cpp:6279` — `deferDephasingDecline`
+- `ir-pass/src/LoopLowering.cpp:6301` — `deferredDephasingSlot`
+- `ir-pass/src/LoopLowering.cpp:6312` — `declineRound2FalsifiedRailGrants`
+- `ir-pass/src/LoopLowering.cpp:6576` — `declineDephasingUnmarkedLoopRails`
+- `ir-pass/src/LoopLowering.cpp:6908` — `declineUndischargedMarkedBodyRails`
+- `ir-pass/src/LoopLowering.cpp:6977` — `emitDeferredDephasingDecline`
+- `ir-pass/src/LoopLowering.cpp:7032` — `declineUndischargedExitObligations`
+- `ir-pass/src/LoopLowering.cpp:7101` — `loopExitDischargePoint`
+- `ir-pass/src/LoopLowering.cpp:7121` — `iterationLocalTaintEscape`
+- `ir-pass/src/LoopLowering.cpp:7286` — `bodyHasSpineDischargeCandidate`
+- `ir-pass/src/LoopLowering.cpp:7436` — `promoteLoopCarriedHandleSeeds`
+- `ir-pass/src/LoopLowering.cpp:7705` — `declineUnmarkedRolledIterLocal`
+- `ir-pass/src/LoopLowering.cpp:7901` — `lowerLoops`
 
 ### `ir-pass/src/LoopUnrollPrepass.cpp` (303 lines)
 
@@ -671,22 +689,30 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/MergePhiPeel.cpp:261` — `phiPeelable`
 - `ir-pass/src/MergePhiPeel.cpp:312` — `peelIndependentMergePhis`
 
-### `ir-pass/src/OpcodeLowering.cpp` (1215 lines)
+### `ir-pass/src/OpcodeLowering.cpp` (1452 lines)
 
-- `ir-pass/src/OpcodeLowering.cpp:80` — `diagnoseStaleRecord`
-- `ir-pass/src/OpcodeLowering.cpp:94` — `diagnosePreLoopCommitStale`
-- `ir-pass/src/OpcodeLowering.cpp:110` — `diagnoseRailOpStale`
-- `ir-pass/src/OpcodeLowering.cpp:133` — `diagnoseStaleQuantumReader`
-- `ir-pass/src/OpcodeLowering.cpp:172` — `staleReaderRecordOperand`
-- `ir-pass/src/OpcodeLowering.cpp:198` — `inLowerOpsScope`
-- `ir-pass/src/OpcodeLowering.cpp:252` — `checkStaleReads`
-- `ir-pass/src/OpcodeLowering.cpp:294` — `gateFollowsRead`
-- `ir-pass/src/OpcodeLowering.cpp:300` — `checkStaleOp`
-- `ir-pass/src/OpcodeLowering.cpp:308` — `declineStaleRecordOps`
-- `ir-pass/src/OpcodeLowering.cpp:399` — `declineLiftedStaleRecordOps`
-- `ir-pass/src/OpcodeLowering.cpp:470` — `recordStaleQuantumReaders`
-- `ir-pass/src/OpcodeLowering.cpp:819` — `declineRecordedStaleQuantumReaders`
-- `ir-pass/src/OpcodeLowering.cpp:876` — `lowerOps`
+- `ir-pass/src/OpcodeLowering.cpp:81` — `diagnoseStaleRecord`
+- `ir-pass/src/OpcodeLowering.cpp:95` — `diagnosePreLoopCommitStale`
+- `ir-pass/src/OpcodeLowering.cpp:111` — `diagnoseRailOpStale`
+- `ir-pass/src/OpcodeLowering.cpp:134` — `diagnoseStaleQuantumReader`
+- `ir-pass/src/OpcodeLowering.cpp:149` — `diagnoseStaleTapeReader`
+- `ir-pass/src/OpcodeLowering.cpp:164` — `tapeReaderRecordOperand`
+- `ir-pass/src/OpcodeLowering.cpp:204` — `staleReaderRecordOperand`
+- `ir-pass/src/OpcodeLowering.cpp:230` — `inLowerOpsScope`
+- `ir-pass/src/OpcodeLowering.cpp:328` — `liftsOf`
+- `ir-pass/src/OpcodeLowering.cpp:355` — `coveredFor`
+- `ir-pass/src/OpcodeLowering.cpp:370` — `coveredForValue`
+- `ir-pass/src/OpcodeLowering.cpp:398` — `noteReader`
+- `ir-pass/src/OpcodeLowering.cpp:407` — `checkStaleReads`
+- `ir-pass/src/OpcodeLowering.cpp:472` — `gateFollowsRead`
+- `ir-pass/src/OpcodeLowering.cpp:478` — `checkStaleOp`
+- `ir-pass/src/OpcodeLowering.cpp:490` — `declineStaleRecordOps`
+- `ir-pass/src/OpcodeLowering.cpp:496` — `declineStaleRecordOpsImpl`
+- `ir-pass/src/OpcodeLowering.cpp:594` — `declineLiftedStaleRecordOps`
+- `ir-pass/src/OpcodeLowering.cpp:673` — `recordStaleQuantumReaders`
+- `ir-pass/src/OpcodeLowering.cpp:680` — `recordStaleQuantumReadersImpl`
+- `ir-pass/src/OpcodeLowering.cpp:1051` — `declineRecordedStaleQuantumReaders`
+- `ir-pass/src/OpcodeLowering.cpp:1113` — `lowerOps`
 
 ### `ir-pass/src/OpcodeSupport.cpp` (342 lines)
 
@@ -721,49 +747,49 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/PoisonFacts.cpp:289` — `unconditionalMax`
 - `ir-pass/src/PoisonFacts.cpp:330` — `indexBoundIsPoisonConditional`
 
-### `ir-pass/src/PredMuxFlatten.cpp` (5472 lines)
+### `ir-pass/src/PredMuxFlatten.cpp` (5473 lines)
 
-- `ir-pass/src/PredMuxFlatten.cpp:125` — `isTaintedCtrlTerm`
-- `ir-pass/src/PredMuxFlatten.cpp:144` — `isMuxableType`
-- `ir-pass/src/PredMuxFlatten.cpp:159` — `isTemplateWidthType`
-- `ir-pass/src/PredMuxFlatten.cpp:170` — `isSupportedCompareLeaf`
-- `ir-pass/src/PredMuxFlatten.cpp:260` — `definedOpAfterFlagDrop`
-- `ir-pass/src/PredMuxFlatten.cpp:347` — `classifyConeNode`
-- `ir-pass/src/PredMuxFlatten.cpp:744` — `coneDefinedAfterFlagDrop`
-- `ir-pass/src/PredMuxFlatten.cpp:835` — `isConvertiblePhiCond`
-- `ir-pass/src/PredMuxFlatten.cpp:929` — `isSupportedCondTree`
-- `ir-pass/src/PredMuxFlatten.cpp:1365` — `isBooleanCondTree`
-- `ir-pass/src/PredMuxFlatten.cpp:1544` — `isSpeculatableDataflow`
-- `ir-pass/src/PredMuxFlatten.cpp:1937` — `isSpeculatablePureCalleeBodyImpl`
-- `ir-pass/src/PredMuxFlatten.cpp:2266` — `isSpeculatablePureCalleeBody`
-- `ir-pass/src/PredMuxFlatten.cpp:2312` — `recordHoldsRailPhiLeaf`
-- `ir-pass/src/PredMuxFlatten.cpp:2368` — `collectCycleBlocks`
-- `ir-pass/src/PredMuxFlatten.cpp:2385` — `topoOrderRegion`
-- `ir-pass/src/PredMuxFlatten.cpp:2527` — `regionStrictlyInsideLoopBody`
-- `ir-pass/src/PredMuxFlatten.cpp:2652` — `classicalTableReadIsSpeculatable`
-- `ir-pass/src/PredMuxFlatten.cpp:2809` — `mergeIgnoringUnreachable`
-- `ir-pass/src/PredMuxFlatten.cpp:2930` — `ensure`
-- `ir-pass/src/PredMuxFlatten.cpp:2941` — `recoverRegion`
-- `ir-pass/src/PredMuxFlatten.cpp:3848` — `run`
-- `ir-pass/src/PredMuxFlatten.cpp:3924` — `literal`
-- `ir-pass/src/PredMuxFlatten.cpp:4116` — `stripPoisonCone`
-- `ir-pass/src/PredMuxFlatten.cpp:4151` — `canonicalizePred`
-- `ir-pass/src/PredMuxFlatten.cpp:4327` — `buildNegation`
-- `ir-pass/src/PredMuxFlatten.cpp:4593` — `blockPred`
-- `ir-pass/src/PredMuxFlatten.cpp:4610` — `edgePred`
-- `ir-pass/src/PredMuxFlatten.cpp:4643` — `convertPhis`
-- `ir-pass/src/PredMuxFlatten.cpp:4858` — `moveBody`
-- `ir-pass/src/PredMuxFlatten.cpp:4907` — `maskQromIndex`
-- `ir-pass/src/PredMuxFlatten.cpp:4926` — `track`
-- `ir-pass/src/PredMuxFlatten.cpp:4992` — `trackCondCone`
-- `ir-pass/src/PredMuxFlatten.cpp:5092` — `sweepDead`
-- `ir-pass/src/PredMuxFlatten.cpp:5116` — `isSpeculatablePureCallee`
-- `ir-pass/src/PredMuxFlatten.cpp:5164` — `isSpeculatableTotalCallee`
-- `ir-pass/src/PredMuxFlatten.cpp:5223` — `isFlattenResidue`
-- `ir-pass/src/PredMuxFlatten.cpp:5268` — `deleteDeadPreservingCqOwned`
-- `ir-pass/src/PredMuxFlatten.cpp:5292` — `simplifyFlattenResiduesInFunction`
-- `ir-pass/src/PredMuxFlatten.cpp:5343` — `flattenPredMuxRegions`
-- `ir-pass/src/PredMuxFlatten.cpp:5460` — `declineConvertedRailPhiLeaves`
+- `ir-pass/src/PredMuxFlatten.cpp:126` — `isTaintedCtrlTerm`
+- `ir-pass/src/PredMuxFlatten.cpp:145` — `isMuxableType`
+- `ir-pass/src/PredMuxFlatten.cpp:160` — `isTemplateWidthType`
+- `ir-pass/src/PredMuxFlatten.cpp:171` — `isSupportedCompareLeaf`
+- `ir-pass/src/PredMuxFlatten.cpp:261` — `definedOpAfterFlagDrop`
+- `ir-pass/src/PredMuxFlatten.cpp:348` — `classifyConeNode`
+- `ir-pass/src/PredMuxFlatten.cpp:745` — `coneDefinedAfterFlagDrop`
+- `ir-pass/src/PredMuxFlatten.cpp:836` — `isConvertiblePhiCond`
+- `ir-pass/src/PredMuxFlatten.cpp:930` — `isSupportedCondTree`
+- `ir-pass/src/PredMuxFlatten.cpp:1366` — `isBooleanCondTree`
+- `ir-pass/src/PredMuxFlatten.cpp:1545` — `isSpeculatableDataflow`
+- `ir-pass/src/PredMuxFlatten.cpp:1938` — `isSpeculatablePureCalleeBodyImpl`
+- `ir-pass/src/PredMuxFlatten.cpp:2267` — `isSpeculatablePureCalleeBody`
+- `ir-pass/src/PredMuxFlatten.cpp:2313` — `recordHoldsRailPhiLeaf`
+- `ir-pass/src/PredMuxFlatten.cpp:2369` — `collectCycleBlocks`
+- `ir-pass/src/PredMuxFlatten.cpp:2386` — `topoOrderRegion`
+- `ir-pass/src/PredMuxFlatten.cpp:2528` — `regionStrictlyInsideLoopBody`
+- `ir-pass/src/PredMuxFlatten.cpp:2653` — `classicalTableReadIsSpeculatable`
+- `ir-pass/src/PredMuxFlatten.cpp:2810` — `mergeIgnoringUnreachable`
+- `ir-pass/src/PredMuxFlatten.cpp:2931` — `ensure`
+- `ir-pass/src/PredMuxFlatten.cpp:2942` — `recoverRegion`
+- `ir-pass/src/PredMuxFlatten.cpp:3849` — `run`
+- `ir-pass/src/PredMuxFlatten.cpp:3925` — `literal`
+- `ir-pass/src/PredMuxFlatten.cpp:4117` — `stripPoisonCone`
+- `ir-pass/src/PredMuxFlatten.cpp:4152` — `canonicalizePred`
+- `ir-pass/src/PredMuxFlatten.cpp:4328` — `buildNegation`
+- `ir-pass/src/PredMuxFlatten.cpp:4594` — `blockPred`
+- `ir-pass/src/PredMuxFlatten.cpp:4611` — `edgePred`
+- `ir-pass/src/PredMuxFlatten.cpp:4644` — `convertPhis`
+- `ir-pass/src/PredMuxFlatten.cpp:4859` — `moveBody`
+- `ir-pass/src/PredMuxFlatten.cpp:4908` — `maskQromIndex`
+- `ir-pass/src/PredMuxFlatten.cpp:4927` — `track`
+- `ir-pass/src/PredMuxFlatten.cpp:4993` — `trackCondCone`
+- `ir-pass/src/PredMuxFlatten.cpp:5093` — `sweepDead`
+- `ir-pass/src/PredMuxFlatten.cpp:5117` — `isSpeculatablePureCallee`
+- `ir-pass/src/PredMuxFlatten.cpp:5165` — `isSpeculatableTotalCallee`
+- `ir-pass/src/PredMuxFlatten.cpp:5224` — `isFlattenResidue`
+- `ir-pass/src/PredMuxFlatten.cpp:5269` — `deleteDeadPreservingCqOwned`
+- `ir-pass/src/PredMuxFlatten.cpp:5293` — `simplifyFlattenResiduesInFunction`
+- `ir-pass/src/PredMuxFlatten.cpp:5344` — `flattenPredMuxRegions`
+- `ir-pass/src/PredMuxFlatten.cpp:5461` — `declineConvertedRailPhiLeaves`
 
 ### `ir-pass/src/QramIndexWidth.cpp` (207 lines)
 
@@ -779,61 +805,66 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/QramIndexWidth.cpp:177` — `stripForeignQramIndexTags`
 - `ir-pass/src/QramIndexWidth.cpp:184` — `bracketQramIndexCasts`
 
-### `ir-pass/src/QramLowering.cpp` (3688 lines)
+### `ir-pass/src/QramLowering.cpp` (4036 lines)
 
-- `ir-pass/src/QramLowering.cpp:255` — `instReaches`
-- `ir-pass/src/QramLowering.cpp:334` — `singleValuedClosure`
-- `ir-pass/src/QramLowering.cpp:438` — `readFollowsLoopOnEveryPath`
-- `ir-pass/src/QramLowering.cpp:538` — `readInsideTaintedRegion`
-- `ir-pass/src/QramLowering.cpp:582` — `stackRestoreMayFree`
-- `ir-pass/src/QramLowering.cpp:593` — `indexIsAddressWidth`
-- `ir-pass/src/QramLowering.cpp:605` — `scevEqualAt`
-- `ir-pass/src/QramLowering.cpp:645` — `scevEqualInLoop`
-- `ir-pass/src/QramLowering.cpp:657` — `diagnose`
-- `ir-pass/src/QramLowering.cpp:711` — `instUnderTaintedControl`
-- `ir-pass/src/QramLowering.cpp:749` — `isAllocatorCall`
-- `ir-pass/src/QramLowering.cpp:769` — `originAlloca`
-- `ir-pass/src/QramLowering.cpp:770` — `originGlobal`
-- `ir-pass/src/QramLowering.cpp:771` — `originBad`
-- `ir-pass/src/QramLowering.cpp:774` — `sameOrigin`
-- `ir-pass/src/QramLowering.cpp:796` — `walkPtrOrigin`
-- `ir-pass/src/QramLowering.cpp:859` — `isDirectOriginPtr`
-- `ir-pass/src/QramLowering.cpp:886` — `matchAddressGep`
-- `ir-pass/src/QramLowering.cpp:934` — `matchQramAccess`
-- `ir-pass/src/QramLowering.cpp:1007` — `classifyQromRead`
-- `ir-pass/src/QramLowering.cpp:1016` — `classifyShadowAccess`
-- `ir-pass/src/QramLowering.cpp:1057` — `isQromReadBlockedOnlyByControl`
-- `ir-pass/src/QramLowering.cpp:1079` — `indexWillTaintAfterFlatten`
-- `ir-pass/src/QramLowering.cpp:1173` — `qromIndexKnownInBounds`
-- `ir-pass/src/QramLowering.cpp:1283` — `classifyQromReadUnderControlImpl`
-- `ir-pass/src/QramLowering.cpp:1368` — `guardedShadowStoreShapeImpl`
-- `ir-pass/src/QramLowering.cpp:1407` — `classifyQramCarve`
-- `ir-pass/src/QramLowering.cpp:1549` — `isObservedValue`
-- `ir-pass/src/QramLowering.cpp:1583` — `coherentlyEscapesToReturn`
-- `ir-pass/src/QramLowering.cpp:1627` — `railBankCellAddress`
-- `ir-pass/src/QramLowering.cpp:1647` — `wholeArrayConstantZero`
-- `ir-pass/src/QramLowering.cpp:1657` — `railBankCarveVerdictImpl`
-- `ir-pass/src/QramLowering.cpp:2327` — `qromShapedReadTaintsIndexAfterFlatten`
-- `ir-pass/src/QramLowering.cpp:2355` — `classicalTableIndexKnownInBounds`
-- `ir-pass/src/QramLowering.cpp:2381` — `runtimeAllocaReadShape`
-- `ir-pass/src/QramLowering.cpp:2450` — `unitCounterTrips`
-- `ir-pass/src/QramLowering.cpp:2472` — `classicalRuntimeAllocaReadIsInBounds`
-- `ir-pass/src/QramLowering.cpp:2496` — `valueWillTaintAfterFlatten`
-- `ir-pass/src/QramLowering.cpp:2521` — `qromReadShapeInScope`
-- `ir-pass/src/QramLowering.cpp:2567` — `qramCarveVerdict`
-- `ir-pass/src/QramLowering.cpp:2577` — `railBankCarveVerdict`
-- `ir-pass/src/QramLowering.cpp:2586` — `guardedShadowStoreShape`
-- `ir-pass/src/QramLowering.cpp:2597` — `qramAccessReads`
-- `ir-pass/src/QramLowering.cpp:2634` — `classifyQromReadUnderControl`
-- `ir-pass/src/QramLowering.cpp:2648` — `foldVolatileConstGlobalLoads`
-- `ir-pass/src/QramLowering.cpp:2767` — `foldVolatileConstAllocaLoads`
-- `ir-pass/src/QramLowering.cpp:2894` — `eraseDeadVolatileScalarStores`
-- `ir-pass/src/QramLowering.cpp:3013` — `everyLoadIsStoreDefined`
-- `ir-pass/src/QramLowering.cpp:3062` — `promoteVolatileScalarLocals`
-- `ir-pass/src/QramLowering.cpp:3175` — `lowerQramReads`
-- `ir-pass/src/QramLowering.cpp:3368` — `emitCopyOutIfDirectMeasure`
-- `ir-pass/src/QramLowering.cpp:3412` — `processShadowAlloca`
-- `ir-pass/src/QramLowering.cpp:3657` — `lowerShadowMemory`
+- `ir-pass/src/QramLowering.cpp:264` — `instReaches`
+- `ir-pass/src/QramLowering.cpp:343` — `singleValuedClosure`
+- `ir-pass/src/QramLowering.cpp:447` — `readFollowsLoopOnEveryPath`
+- `ir-pass/src/QramLowering.cpp:547` — `readInsideTaintedRegion`
+- `ir-pass/src/QramLowering.cpp:591` — `stackRestoreMayFree`
+- `ir-pass/src/QramLowering.cpp:602` — `indexIsAddressWidth`
+- `ir-pass/src/QramLowering.cpp:614` — `scevEqualAt`
+- `ir-pass/src/QramLowering.cpp:654` — `scevEqualInLoop`
+- `ir-pass/src/QramLowering.cpp:666` — `diagnose`
+- `ir-pass/src/QramLowering.cpp:723` — `instUnderTaintedControl`
+- `ir-pass/src/QramLowering.cpp:761` — `isAllocatorCall`
+- `ir-pass/src/QramLowering.cpp:781` — `originAlloca`
+- `ir-pass/src/QramLowering.cpp:782` — `originGlobal`
+- `ir-pass/src/QramLowering.cpp:783` — `originBad`
+- `ir-pass/src/QramLowering.cpp:786` — `sameOrigin`
+- `ir-pass/src/QramLowering.cpp:808` — `walkPtrOrigin`
+- `ir-pass/src/QramLowering.cpp:871` — `isDirectOriginPtr`
+- `ir-pass/src/QramLowering.cpp:898` — `matchAddressGep`
+- `ir-pass/src/QramLowering.cpp:946` — `matchQramAccess`
+- `ir-pass/src/QramLowering.cpp:1019` — `classifyQromRead`
+- `ir-pass/src/QramLowering.cpp:1028` — `classifyShadowAccess`
+- `ir-pass/src/QramLowering.cpp:1056` — `classicalCellAccess`
+- `ir-pass/src/QramLowering.cpp:1121` — `quantumIndexedAllocas`
+- `ir-pass/src/QramLowering.cpp:1143` — `cellAccessThrough`
+- `ir-pass/src/QramLowering.cpp:1187` — `isQromReadBlockedOnlyByControl`
+- `ir-pass/src/QramLowering.cpp:1209` — `indexWillTaintAfterFlatten`
+- `ir-pass/src/QramLowering.cpp:1303` — `qromIndexKnownInBounds`
+- `ir-pass/src/QramLowering.cpp:1413` — `classifyQromReadUnderControlImpl`
+- `ir-pass/src/QramLowering.cpp:1501` — `guardedShadowStoreShapeImpl`
+- `ir-pass/src/QramLowering.cpp:1544` — `classifyQramCarve`
+- `ir-pass/src/QramLowering.cpp:1686` — `isObservedValue`
+- `ir-pass/src/QramLowering.cpp:1720` — `coherentlyEscapesToReturn`
+- `ir-pass/src/QramLowering.cpp:1764` — `railBankCellAddress`
+- `ir-pass/src/QramLowering.cpp:1784` — `wholeArrayConstantZero`
+- `ir-pass/src/QramLowering.cpp:1794` — `railBankCarveVerdictImpl`
+- `ir-pass/src/QramLowering.cpp:2464` — `qromShapedReadTaintsIndexAfterFlatten`
+- `ir-pass/src/QramLowering.cpp:2492` — `classicalTableIndexKnownInBounds`
+- `ir-pass/src/QramLowering.cpp:2518` — `runtimeAllocaReadShape`
+- `ir-pass/src/QramLowering.cpp:2587` — `unitCounterTrips`
+- `ir-pass/src/QramLowering.cpp:2609` — `classicalRuntimeAllocaReadIsInBounds`
+- `ir-pass/src/QramLowering.cpp:2633` — `valueWillTaintAfterFlatten`
+- `ir-pass/src/QramLowering.cpp:2658` — `qromReadShapeInScope`
+- `ir-pass/src/QramLowering.cpp:2704` — `qramCarveVerdict`
+- `ir-pass/src/QramLowering.cpp:2714` — `railBankCarveVerdict`
+- `ir-pass/src/QramLowering.cpp:2723` — `guardedShadowStoreShape`
+- `ir-pass/src/QramLowering.cpp:2734` — `qramAccessReads`
+- `ir-pass/src/QramLowering.cpp:2775` — `qramClassicalIndexLoads`
+- `ir-pass/src/QramLowering.cpp:2811` — `classifyQromReadUnderControl`
+- `ir-pass/src/QramLowering.cpp:2825` — `foldVolatileConstGlobalLoads`
+- `ir-pass/src/QramLowering.cpp:2944` — `foldVolatileConstAllocaLoads`
+- `ir-pass/src/QramLowering.cpp:3071` — `eraseDeadVolatileScalarStores`
+- `ir-pass/src/QramLowering.cpp:3190` — `everyLoadIsStoreDefined`
+- `ir-pass/src/QramLowering.cpp:3239` — `promoteVolatileScalarLocals`
+- `ir-pass/src/QramLowering.cpp:3352` — `lowerQramReads`
+- `ir-pass/src/QramLowering.cpp:3545` — `emitCopyOutIfDirectMeasure`
+- `ir-pass/src/QramLowering.cpp:3592` — `qramHlFn`
+- `ir-pass/src/QramLowering.cpp:3605` — `processShadowAlloca`
+- `ir-pass/src/QramLowering.cpp:4005` — `lowerShadowMemory`
 
 ### `ir-pass/src/RailBankPromote.cpp` (1964 lines)
 
@@ -884,7 +915,21 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RegionTreeDetect.cpp:81` — `condHasDataUse`
 - `ir-pass/src/RegionTreeDetect.cpp:90` — `recoverRegionTree`
 
-### `ir-pass/src/RotationLowering.cpp` (2370 lines)
+### `ir-pass/src/ReturnMerge.cpp` (374 lines)
+
+- `ir-pass/src/ReturnMerge.cpp:32` — `mergeReturnBlocks`
+- `ir-pass/src/ReturnMerge.cpp:81` — `mustTailForwardBlocksDemotion`
+- `ir-pass/src/ReturnMerge.cpp:98` — `isTaintedControlTerminator`
+- `ir-pass/src/ReturnMerge.cpp:110` — `reachesTwoReturns`
+- `ir-pass/src/ReturnMerge.cpp:120` — `retReachableAvoiding`
+- `ir-pass/src/ReturnMerge.cpp:148` — `returnsReconverge`
+- `ir-pass/src/ReturnMerge.cpp:173` — `classifyExits`
+- `ir-pass/src/ReturnMerge.cpp:205` — `sinkLifetimeEnds`
+- `ir-pass/src/ReturnMerge.cpp:254` — `mustTailDemotionRefusal`
+- `ir-pass/src/ReturnMerge.cpp:281` — `foldEmptyForwarder`
+- `ir-pass/src/ReturnMerge.cpp:295` — `unifyTaintedReturns`
+
+### `ir-pass/src/RotationLowering.cpp` (2549 lines)
 
 - `ir-pass/src/RotationLowering.cpp:52` — `suffixFromName`
 - `ir-pass/src/RotationLowering.cpp:431` — `normalizeUndefRotationSeed`
@@ -892,26 +937,29 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RotationLowering.cpp:515` — `declineTaintedAngle`
 - `ir-pass/src/RotationLowering.cpp:558` — `declineFrozenWire`
 - `ir-pass/src/RotationLowering.cpp:604` — `lowerRotations`
-- `ir-pass/src/RotationLowering.cpp:1137` — `emittedCalleeName`
-- `ir-pass/src/RotationLowering.cpp:1214` — `isRecordProducer`
-- `ir-pass/src/RotationLowering.cpp:1226` — `isDischargeOf`
-- `ir-pass/src/RotationLowering.cpp:1242` — `isTapeWriteOf`
-- `ir-pass/src/RotationLowering.cpp:1247` — `isRecordedUserRotation`
-- `ir-pass/src/RotationLowering.cpp:1305` — `isTeardownUse`
-- `ir-pass/src/RotationLowering.cpp:1379` — `isCloneCallHop`
-- `ir-pass/src/RotationLowering.cpp:1457` — `cloneArgReachesResult`
-- `ir-pass/src/RotationLowering.cpp:1483` — `isAllocRail`
-- `ir-pass/src/RotationLowering.cpp:1495` — `isQramArrayHandle`
-- `ir-pass/src/RotationLowering.cpp:1518` — `isCopyGate`
-- `ir-pass/src/RotationLowering.cpp:1537` — `classifyRail`
-- `ir-pass/src/RotationLowering.cpp:1560` — `push`
-- `ir-pass/src/RotationLowering.cpp:1582` — `collectDescendantRecords`
-- `ir-pass/src/RotationLowering.cpp:1647` — `collectAncestorRecords`
-- `ir-pass/src/RotationLowering.cpp:1709` — `isQramStoreGate`
-- `ir-pass/src/RotationLowering.cpp:1808` — `reachesObservingSink`
-- `ir-pass/src/RotationLowering.cpp:2028` — `recordAbsentAt`
-- `ir-pass/src/RotationLowering.cpp:2039` — `recordIsExemptAt`
-- `ir-pass/src/RotationLowering.cpp:2271` — `warnLiveRecordRotations`
+- `ir-pass/src/RotationLowering.cpp:1146` — `emittedCalleeName`
+- `ir-pass/src/RotationLowering.cpp:1223` — `isRecordProducer`
+- `ir-pass/src/RotationLowering.cpp:1235` — `isDischargeOf`
+- `ir-pass/src/RotationLowering.cpp:1251` — `isTapeWriteOf`
+- `ir-pass/src/RotationLowering.cpp:1256` — `isRecordedUserRotation`
+- `ir-pass/src/RotationLowering.cpp:1314` — `isTeardownUse`
+- `ir-pass/src/RotationLowering.cpp:1388` — `isCloneCallHop`
+- `ir-pass/src/RotationLowering.cpp:1466` — `cloneArgReachesResult`
+- `ir-pass/src/RotationLowering.cpp:1492` — `isAllocRail`
+- `ir-pass/src/RotationLowering.cpp:1504` — `isQramArrayHandle`
+- `ir-pass/src/RotationLowering.cpp:1527` — `isCopyGate`
+- `ir-pass/src/RotationLowering.cpp:1546` — `classifyRail`
+- `ir-pass/src/RotationLowering.cpp:1569` — `push`
+- `ir-pass/src/RotationLowering.cpp:1591` — `collectDescendantRecords`
+- `ir-pass/src/RotationLowering.cpp:1656` — `collectAncestorRecords`
+- `ir-pass/src/RotationLowering.cpp:1718` — `isQramStoreGate`
+- `ir-pass/src/RotationLowering.cpp:1817` — `reachesObservingSink`
+- `ir-pass/src/RotationLowering.cpp:2037` — `recordAbsentAt`
+- `ir-pass/src/RotationLowering.cpp:2051` — `recordDischargedBefore`
+- `ir-pass/src/RotationLowering.cpp:2060` — `recordIsExemptAt`
+- `ir-pass/src/RotationLowering.cpp:2293` — `warnLiveRecordRotations`
+- `ir-pass/src/RotationLowering.cpp:2492` — `markKeptConditionFlag`
+- `ir-pass/src/RotationLowering.cpp:2496` — `declineUndischargedKeptFlagChains`
 
 ### `ir-pass/src/SelectClassify.cpp` (1446 lines)
 
@@ -933,91 +981,93 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SelectClassify.cpp:707` — `collectCondTree`
 - `ir-pass/src/SelectClassify.cpp:936` — `classifySelectRegion`
 
-### `ir-pass/src/SelectMergeEmit.cpp` (426 lines)
+### `ir-pass/src/SelectMergeEmit.cpp` (456 lines)
 
-- `ir-pass/src/SelectMergeEmit.cpp:55` — `scrubTaint`
-- `ir-pass/src/SelectMergeEmit.cpp:76` — `materializeCopySource`
-- `ir-pass/src/SelectMergeEmit.cpp:87` — `emitSelectRegion`
+- `ir-pass/src/SelectMergeEmit.cpp:56` — `scrubTaint`
+- `ir-pass/src/SelectMergeEmit.cpp:82` — `copySourceLedger`
+- `ir-pass/src/SelectMergeEmit.cpp:88` — `materializeCopySource`
+- `ir-pass/src/SelectMergeEmit.cpp:101` — `declineQuantumCopySources`
+- `ir-pass/src/SelectMergeEmit.cpp:117` — `emitSelectRegion`
 
-### `ir-pass/src/Specialization.cpp` (1632 lines)
+### `ir-pass/src/Specialization.cpp` (1715 lines)
 
-- `ir-pass/src/Specialization.cpp:68` — `isForwardTemplate`
-- `ir-pass/src/Specialization.cpp:85` — `isForwardQramLoad`
-- `ir-pass/src/Specialization.cpp:96` — `scrubCloneTaint`
-- `ir-pass/src/Specialization.cpp:119` — `mintCondNetwork`
-- `ir-pass/src/Specialization.cpp:286` — `lowerCloneSelect`
-- `ir-pass/src/Specialization.cpp:446` — `reseedCloneTaintFromParams`
-- `ir-pass/src/Specialization.cpp:480` — `normalizeReturnMerge`
-- `ir-pass/src/Specialization.cpp:530` — `lowerCloneControl`
-- `ir-pass/src/Specialization.cpp:641` — `scrubForwardCone`
-- `ir-pass/src/Specialization.cpp:700` — `synthUncomputeTwin`
-- `ir-pass/src/Specialization.cpp:747` — `ensureTwin`
-- `ir-pass/src/Specialization.cpp:804` — `retargetSite`
-- `ir-pass/src/Specialization.cpp:831` — `resolveSite`
-- `ir-pass/src/Specialization.cpp:842` — `buildClone`
-- `ir-pass/src/Specialization.cpp:1316` — `shouldSpecialize`
-- `ir-pass/src/Specialization.cpp:1338` — `isQuantumCallerValue`
-- `ir-pass/src/Specialization.cpp:1344` — `isRuntimeCall`
-- `ir-pass/src/Specialization.cpp:1373` — `isCopyDestination`
-- `ir-pass/src/Specialization.cpp:1404` — `userProgramReads`
-- `ir-pass/src/Specialization.cpp:1437` — `resolvePhantomCloneArgReads`
-- `ir-pass/src/Specialization.cpp:1531` — `specialize`
+- `ir-pass/src/Specialization.cpp:70` — `isForwardTemplate`
+- `ir-pass/src/Specialization.cpp:87` — `isForwardQramLoad`
+- `ir-pass/src/Specialization.cpp:98` — `scrubCloneTaint`
+- `ir-pass/src/Specialization.cpp:127` — `mintCondNetwork`
+- `ir-pass/src/Specialization.cpp:348` — `lowerCloneSelect`
+- `ir-pass/src/Specialization.cpp:531` — `reseedCloneTaintFromParams`
+- `ir-pass/src/Specialization.cpp:565` — `normalizeReturnMerge`
+- `ir-pass/src/Specialization.cpp:613` — `lowerCloneControl`
+- `ir-pass/src/Specialization.cpp:724` — `scrubForwardCone`
+- `ir-pass/src/Specialization.cpp:783` — `synthUncomputeTwin`
+- `ir-pass/src/Specialization.cpp:830` — `ensureTwin`
+- `ir-pass/src/Specialization.cpp:887` — `retargetSite`
+- `ir-pass/src/Specialization.cpp:914` — `resolveSite`
+- `ir-pass/src/Specialization.cpp:925` — `buildClone`
+- `ir-pass/src/Specialization.cpp:1399` — `shouldSpecialize`
+- `ir-pass/src/Specialization.cpp:1421` — `isQuantumCallerValue`
+- `ir-pass/src/Specialization.cpp:1427` — `isRuntimeCall`
+- `ir-pass/src/Specialization.cpp:1456` — `isCopyDestination`
+- `ir-pass/src/Specialization.cpp:1487` — `userProgramReads`
+- `ir-pass/src/Specialization.cpp:1520` — `resolvePhantomCloneArgReads`
+- `ir-pass/src/Specialization.cpp:1614` — `specialize`
 
-### `ir-pass/src/SpecializeClone.cpp` (334 lines)
+### `ir-pass/src/SpecializeClone.cpp` (346 lines)
 
-- `ir-pass/src/SpecializeClone.cpp:40` — `stripStaleClassicalAttrs`
-- `ir-pass/src/SpecializeClone.cpp:97` — `mangleSpecName`
-- `ir-pass/src/SpecializeClone.cpp:113` — `taintArgMask`
-- `ir-pass/src/SpecializeClone.cpp:134` — `predictReturnTainted`
-- `ir-pass/src/SpecializeClone.cpp:226` — `specCallResultPredictedClassical`
-- `ir-pass/src/SpecializeClone.cpp:268` — `cloneFor`
+- `ir-pass/src/SpecializeClone.cpp:41` — `stripStaleClassicalAttrs`
+- `ir-pass/src/SpecializeClone.cpp:103` — `mangleSpecName`
+- `ir-pass/src/SpecializeClone.cpp:119` — `taintArgMask`
+- `ir-pass/src/SpecializeClone.cpp:140` — `predictReturnTainted`
+- `ir-pass/src/SpecializeClone.cpp:234` — `specCallResultPredictedClassical`
+- `ir-pass/src/SpecializeClone.cpp:280` — `cloneFor`
 
-### `ir-pass/src/SpecializeDetect.cpp` (361 lines)
+### `ir-pass/src/SpecializeDetect.cpp` (367 lines)
 
-- `ir-pass/src/SpecializeDetect.cpp:43` — `intrinsicSites`
-- `ir-pass/src/SpecializeDetect.cpp:60` — `readsTainted`
-- `ir-pass/src/SpecializeDetect.cpp:104` — `dropEligibleCallee`
-- `ir-pass/src/SpecializeDetect.cpp:109` — `dropEligibleParamAttrs`
-- `ir-pass/src/SpecializeDetect.cpp:128` — `dropEligibleParam`
-- `ir-pass/src/SpecializeDetect.cpp:138` — `nullSafeSlot`
-- `ir-pass/src/SpecializeDetect.cpp:147` — `dropEligibleSlot`
-- `ir-pass/src/SpecializeDetect.cpp:156` — `dropDeadCallArguments`
-- `ir-pass/src/SpecializeDetect.cpp:272` — `detectSpecializations`
+- `ir-pass/src/SpecializeDetect.cpp:44` — `intrinsicSites`
+- `ir-pass/src/SpecializeDetect.cpp:61` — `readsTainted`
+- `ir-pass/src/SpecializeDetect.cpp:110` — `dropEligibleCallee`
+- `ir-pass/src/SpecializeDetect.cpp:115` — `dropEligibleParamAttrs`
+- `ir-pass/src/SpecializeDetect.cpp:134` — `dropEligibleParam`
+- `ir-pass/src/SpecializeDetect.cpp:144` — `nullSafeSlot`
+- `ir-pass/src/SpecializeDetect.cpp:153` — `dropEligibleSlot`
+- `ir-pass/src/SpecializeDetect.cpp:162` — `dropDeadCallArguments`
+- `ir-pass/src/SpecializeDetect.cpp:278` — `detectSpecializations`
 
-### `ir-pass/src/SpecializeReject.cpp` (1049 lines)
+### `ir-pass/src/SpecializeReject.cpp` (1078 lines)
 
-- `ir-pass/src/SpecializeReject.cpp:52` — `buildIntrinsicSets`
-- `ir-pass/src/SpecializeReject.cpp:79` — `touchesVector`
-- `ir-pass/src/SpecializeReject.cpp:94` — `firstEHConstruct`
-- `ir-pass/src/SpecializeReject.cpp:120` — `unsupportedWidth`
-- `ir-pass/src/SpecializeReject.cpp:137` — `isLiftableSelect`
-- `ir-pass/src/SpecializeReject.cpp:197` — `isLiftableFpSelect`
-- `ir-pass/src/SpecializeReject.cpp:463` — `returnDerivesFromUndef`
-- `ir-pass/src/SpecializeReject.cpp:494` — `scanBody`
-- `ir-pass/src/SpecializeReject.cpp:969` — `classifyCandidate`
-- `ir-pass/src/SpecializeReject.cpp:1012` — `diagnoseReject`
+- `ir-pass/src/SpecializeReject.cpp:55` — `buildIntrinsicSets`
+- `ir-pass/src/SpecializeReject.cpp:82` — `touchesVector`
+- `ir-pass/src/SpecializeReject.cpp:97` — `firstEHConstruct`
+- `ir-pass/src/SpecializeReject.cpp:123` — `unsupportedWidth`
+- `ir-pass/src/SpecializeReject.cpp:140` — `isLiftableSelect`
+- `ir-pass/src/SpecializeReject.cpp:219` — `isLiftableFpSelect`
+- `ir-pass/src/SpecializeReject.cpp:485` — `returnDerivesFromUndef`
+- `ir-pass/src/SpecializeReject.cpp:516` — `scanBody`
+- `ir-pass/src/SpecializeReject.cpp:998` — `classifyCandidate`
+- `ir-pass/src/SpecializeReject.cpp:1041` — `diagnoseReject`
 
 ### `ir-pass/src/SpecializeSeed.cpp` (50 lines)
 
 - `ir-pass/src/SpecializeSeed.cpp:18` — `seedClone`
 
-### `ir-pass/src/SwapRouteEmit.cpp` (3090 lines)
+### `ir-pass/src/SwapRouteEmit.cpp` (3147 lines)
 
-- `ir-pass/src/SwapRouteEmit.cpp:69` — `scrubTaint`
-- `ir-pass/src/SwapRouteEmit.cpp:130` — `intrinsicSuffix`
-- `ir-pass/src/SwapRouteEmit.cpp:159` — `isPhiCall`
-- `ir-pass/src/SwapRouteEmit.cpp:175` — `phaseSpineBase`
-- `ir-pass/src/SwapRouteEmit.cpp:194` — `valueChainBase`
-- `ir-pass/src/SwapRouteEmit.cpp:309` — `emitValueRegion`
-- `ir-pass/src/SwapRouteEmit.cpp:716` — `emitInPlaceRotationRegion`
-- `ir-pass/src/SwapRouteEmit.cpp:1212` — `emitRegion`
-- `ir-pass/src/SwapRouteEmit.cpp:1652` — `collectArmPhis`
-- `ir-pass/src/SwapRouteEmit.cpp:1675` — `emitRoute`
-- `ir-pass/src/SwapRouteEmit.cpp:1798` — `emitKickbackGroup`
-- `ir-pass/src/SwapRouteEmit.cpp:1833` — `phaseAngles`
-- `ir-pass/src/SwapRouteEmit.cpp:1840` — `emitPhaseKickbackRegion`
-- `ir-pass/src/SwapRouteEmit.cpp:2249` — `emitPhaseKickbackNestRegion`
-- `ir-pass/src/SwapRouteEmit.cpp:2511` — `lowerControlRegions`
+- `ir-pass/src/SwapRouteEmit.cpp:70` — `scrubTaint`
+- `ir-pass/src/SwapRouteEmit.cpp:131` — `intrinsicSuffix`
+- `ir-pass/src/SwapRouteEmit.cpp:160` — `isPhiCall`
+- `ir-pass/src/SwapRouteEmit.cpp:176` — `phaseSpineBase`
+- `ir-pass/src/SwapRouteEmit.cpp:195` — `valueChainBase`
+- `ir-pass/src/SwapRouteEmit.cpp:310` — `emitValueRegion`
+- `ir-pass/src/SwapRouteEmit.cpp:725` — `emitInPlaceRotationRegion`
+- `ir-pass/src/SwapRouteEmit.cpp:1267` — `emitRegion`
+- `ir-pass/src/SwapRouteEmit.cpp:1707` — `collectArmPhis`
+- `ir-pass/src/SwapRouteEmit.cpp:1730` — `emitRoute`
+- `ir-pass/src/SwapRouteEmit.cpp:1856` — `emitKickbackGroup`
+- `ir-pass/src/SwapRouteEmit.cpp:1890` — `phaseAngles`
+- `ir-pass/src/SwapRouteEmit.cpp:1897` — `emitPhaseKickbackRegion`
+- `ir-pass/src/SwapRouteEmit.cpp:2306` — `emitPhaseKickbackNestRegion`
+- `ir-pass/src/SwapRouteEmit.cpp:2568` — `lowerControlRegions`
 
 ### `ir-pass/src/SwitchArmProve.cpp` (390 lines)
 
@@ -1062,61 +1112,62 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SwitchValueEmit.cpp:115` — `bailLoud`
 - `ir-pass/src/SwitchValueEmit.cpp:137` — `emitSwitchValueRegion`
 
-### `ir-pass/src/TaintPropagation.cpp` (3234 lines)
+### `ir-pass/src/TaintPropagation.cpp` (3335 lines)
 
-- `ir-pass/src/TaintPropagation.cpp:82` — `diagnoseIntrinsicInvoke`
-- `ir-pass/src/TaintPropagation.cpp:100` — `collectAndSeed`
-- `ir-pass/src/TaintPropagation.cpp:270` — `isMeasureSink`
-- `ir-pass/src/TaintPropagation.cpp:302` — `declMatchesPrototype`
-- `ir-pass/src/TaintPropagation.cpp:322` — `diagnoseMalformedDecl`
-- `ir-pass/src/TaintPropagation.cpp:363` — `resolveSources`
-- `ir-pass/src/TaintPropagation.cpp:487` — `drainWorklist`
-- `ir-pass/src/TaintPropagation.cpp:660` — `mayGain`
-- `ir-pass/src/TaintPropagation.cpp:669` — `dt`
-- `ir-pass/src/TaintPropagation.cpp:676` — `terminatorCondition`
-- `ir-pass/src/TaintPropagation.cpp:697` — `selectsIncoming`
-- `ir-pass/src/TaintPropagation.cpp:736` — `decides`
-- `ir-pass/src/TaintPropagation.cpp:745` — `walk`
-- `ir-pass/src/TaintPropagation.cpp:811` — `specCallResultMayTurnQuantum`
-- `ir-pass/src/TaintPropagation.cpp:829` — `settleSpecPredictions`
-- `ir-pass/src/TaintPropagation.cpp:862` — `propagateWorklist`
-- `ir-pass/src/TaintPropagation.cpp:873` — `propagate`
-- `ir-pass/src/TaintPropagation.cpp:916` — `declineStaleTaintSet`
-- `ir-pass/src/TaintPropagation.cpp:958` — `foldIdentityBitcasts`
-- `ir-pass/src/TaintPropagation.cpp:1016` — `readsTaintedValue`
-- `ir-pass/src/TaintPropagation.cpp:1049` — `diagnoseEscape`
-- `ir-pass/src/TaintPropagation.cpp:1078` — `freezeOperandIndependentlyEscapes`
-- `ir-pass/src/TaintPropagation.cpp:1101` — `freezeResultWouldEscape`
-- `ir-pass/src/TaintPropagation.cpp:1124` — `isLocalIntegerIdentityFreeze`
-- `ir-pass/src/TaintPropagation.cpp:1139` — `declineTaintEscapes`
-- `ir-pass/src/TaintPropagation.cpp:1815` — `resolveWireBase`
-- `ir-pass/src/TaintPropagation.cpp:1876` — `terminatorIsClassical`
-- `ir-pass/src/TaintPropagation.cpp:1890` — `liftOneRegisterMergePhi`
-- `ir-pass/src/TaintPropagation.cpp:2040` — `collectLiftGateCalls`
-- `ir-pass/src/TaintPropagation.cpp:2048` — `declineClassicalMuxes`
-- `ir-pass/src/TaintPropagation.cpp:2175` — `declineFalsifiedMergePhiLifts`
-- `ir-pass/src/TaintPropagation.cpp:2307` — `detectAndLowerOnwardControl`
-- `ir-pass/src/TaintPropagation.cpp:2396` — `replanReseedSpecialization`
-- `ir-pass/src/TaintPropagation.cpp:2461` — `propagateFromSeeds`
-- `ir-pass/src/TaintPropagation.cpp:2528` — `adjudicateTaintDelta`
-- `ir-pass/src/TaintPropagation.cpp:2579` — `repropagateControlMerges`
-- `ir-pass/src/TaintPropagation.cpp:2766` — `isRegisterFreePhaseCall`
-- `ir-pass/src/TaintPropagation.cpp:2776` — `branchCondition`
-- `ir-pass/src/TaintPropagation.cpp:2797` — `reachedThroughTaintedBranch`
-- `ir-pass/src/TaintPropagation.cpp:2839` — `canReachReturn`
-- `ir-pass/src/TaintPropagation.cpp:2858` — `everyReturningPathThrough`
-- `ir-pass/src/TaintPropagation.cpp:2891` — `controlDependsOn`
-- `ir-pass/src/TaintPropagation.cpp:2903` — `functionHasReturn`
-- `ir-pass/src/TaintPropagation.cpp:2915` — `controlDependentOnTaintedBranch`
-- `ir-pass/src/TaintPropagation.cpp:2935` — `isTaintControlledBranchPhase`
-- `ir-pass/src/TaintPropagation.cpp:2949` — `transitiveControllers`
-- `ir-pass/src/TaintPropagation.cpp:2971` — `taintedOperandLineage`
-- `ir-pass/src/TaintPropagation.cpp:2989` — `functionCarriesBranchPhase`
-- `ir-pass/src/TaintPropagation.cpp:2999` — `lineageCarriesBranchPhase`
-- `ir-pass/src/TaintPropagation.cpp:3039` — `deleteGlobalPhases`
-- `ir-pass/src/TaintPropagation.cpp:3130` — `functionReturnsTainted`
-- `ir-pass/src/TaintPropagation.cpp:3140` — `declineQuantumReturnCalls`
-- `ir-pass/src/TaintPropagation.cpp:3198` — `declineScrubbedHandleReads`
+- `ir-pass/src/TaintPropagation.cpp:83` — `diagnoseIntrinsicInvoke`
+- `ir-pass/src/TaintPropagation.cpp:106` — `seedQuantumMemoryLoad`
+- `ir-pass/src/TaintPropagation.cpp:112` — `collectAndSeed`
+- `ir-pass/src/TaintPropagation.cpp:281` — `isMeasureSink`
+- `ir-pass/src/TaintPropagation.cpp:313` — `declMatchesPrototype`
+- `ir-pass/src/TaintPropagation.cpp:333` — `diagnoseMalformedDecl`
+- `ir-pass/src/TaintPropagation.cpp:374` — `resolveSources`
+- `ir-pass/src/TaintPropagation.cpp:498` — `drainWorklist`
+- `ir-pass/src/TaintPropagation.cpp:673` — `mayGain`
+- `ir-pass/src/TaintPropagation.cpp:682` — `dt`
+- `ir-pass/src/TaintPropagation.cpp:689` — `terminatorCondition`
+- `ir-pass/src/TaintPropagation.cpp:710` — `selectsIncoming`
+- `ir-pass/src/TaintPropagation.cpp:749` — `decides`
+- `ir-pass/src/TaintPropagation.cpp:758` — `walk`
+- `ir-pass/src/TaintPropagation.cpp:824` — `specCallResultMayTurnQuantum`
+- `ir-pass/src/TaintPropagation.cpp:842` — `settleSpecPredictions`
+- `ir-pass/src/TaintPropagation.cpp:875` — `propagateWorklist`
+- `ir-pass/src/TaintPropagation.cpp:886` — `propagate`
+- `ir-pass/src/TaintPropagation.cpp:952` — `declineStaleTaintSet`
+- `ir-pass/src/TaintPropagation.cpp:994` — `foldIdentityBitcasts`
+- `ir-pass/src/TaintPropagation.cpp:1052` — `readsTaintedValue`
+- `ir-pass/src/TaintPropagation.cpp:1085` — `diagnoseEscape`
+- `ir-pass/src/TaintPropagation.cpp:1114` — `freezeOperandIndependentlyEscapes`
+- `ir-pass/src/TaintPropagation.cpp:1137` — `freezeResultWouldEscape`
+- `ir-pass/src/TaintPropagation.cpp:1160` — `isLocalIntegerIdentityFreeze`
+- `ir-pass/src/TaintPropagation.cpp:1175` — `declineTaintEscapes`
+- `ir-pass/src/TaintPropagation.cpp:1851` — `resolveWireBase`
+- `ir-pass/src/TaintPropagation.cpp:1912` — `terminatorIsClassical`
+- `ir-pass/src/TaintPropagation.cpp:1926` — `liftOneRegisterMergePhi`
+- `ir-pass/src/TaintPropagation.cpp:2121` — `collectLiftGateCalls`
+- `ir-pass/src/TaintPropagation.cpp:2129` — `declineClassicalMuxes`
+- `ir-pass/src/TaintPropagation.cpp:2256` — `declineFalsifiedMergePhiLifts`
+- `ir-pass/src/TaintPropagation.cpp:2388` — `detectAndLowerOnwardControl`
+- `ir-pass/src/TaintPropagation.cpp:2486` — `replanReseedSpecialization`
+- `ir-pass/src/TaintPropagation.cpp:2551` — `propagateFromSeeds`
+- `ir-pass/src/TaintPropagation.cpp:2618` — `adjudicateTaintDelta`
+- `ir-pass/src/TaintPropagation.cpp:2669` — `repropagateControlMerges`
+- `ir-pass/src/TaintPropagation.cpp:2856` — `isRegisterFreePhaseCall`
+- `ir-pass/src/TaintPropagation.cpp:2866` — `branchCondition`
+- `ir-pass/src/TaintPropagation.cpp:2887` — `reachedThroughTaintedBranch`
+- `ir-pass/src/TaintPropagation.cpp:2929` — `canReachReturn`
+- `ir-pass/src/TaintPropagation.cpp:2948` — `everyReturningPathThrough`
+- `ir-pass/src/TaintPropagation.cpp:2981` — `controlDependsOn`
+- `ir-pass/src/TaintPropagation.cpp:2993` — `functionHasReturn`
+- `ir-pass/src/TaintPropagation.cpp:3005` — `controlDependentOnTaintedBranch`
+- `ir-pass/src/TaintPropagation.cpp:3025` — `isTaintControlledBranchPhase`
+- `ir-pass/src/TaintPropagation.cpp:3039` — `transitiveControllers`
+- `ir-pass/src/TaintPropagation.cpp:3061` — `taintedOperandLineage`
+- `ir-pass/src/TaintPropagation.cpp:3079` — `functionCarriesBranchPhase`
+- `ir-pass/src/TaintPropagation.cpp:3090` — `lineageCarriesBranchPhase`
+- `ir-pass/src/TaintPropagation.cpp:3140` — `deleteGlobalPhases`
+- `ir-pass/src/TaintPropagation.cpp:3231` — `functionReturnsTainted`
+- `ir-pass/src/TaintPropagation.cpp:3241` — `declineQuantumReturnCalls`
+- `ir-pass/src/TaintPropagation.cpp:3299` — `declineScrubbedHandleReads`
 
 ### `ir-pass/src/TemplateName.cpp` (143 lines)
 
@@ -1128,34 +1179,39 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/TemplateName.cpp:117` — `isUncHandleSlot`
 - `ir-pass/src/TemplateName.cpp:133` — `castName`
 
-### `ir-pass/src/Uncomputation.cpp` (2744 lines)
+### `ir-pass/src/Uncomputation.cpp` (3160 lines)
 
-- `ir-pass/src/Uncomputation.cpp:94` — `diagnose`
-- `ir-pass/src/Uncomputation.cpp:102` — `isDataProducer`
-- `ir-pass/src/Uncomputation.cpp:129` — `isQramArrayHandle`
-- `ir-pass/src/Uncomputation.cpp:241` — `markedHeaderOf`
-- `ir-pass/src/Uncomputation.cpp:256` — `multiplicityAgrees`
-- `ir-pass/src/Uncomputation.cpp:378` — `anchorForConsumer`
-- `ir-pass/src/Uncomputation.cpp:394` — `useCompleteBeforeDischarge`
-- `ir-pass/src/Uncomputation.cpp:412` — `dagInsertPoint`
-- `ir-pass/src/Uncomputation.cpp:487` — `emitDagReversal`
-- `ir-pass/src/Uncomputation.cpp:625` — `measuredParentsReadBeforeCollapse`
-- `ir-pass/src/Uncomputation.cpp:677` — `keptRailAdjointReadsBorrowed`
-- `ir-pass/src/Uncomputation.cpp:716` — `planTerminalReversal`
-- `ir-pass/src/Uncomputation.cpp:906` — `emitTerminalReversal`
-- `ir-pass/src/Uncomputation.cpp:951` — `reverseTerminalGroup`
-- `ir-pass/src/Uncomputation.cpp:1096` — `preservesBorrowedParent`
-- `ir-pass/src/Uncomputation.cpp:1361` — `routeGroupFullyInside`
-- `ir-pass/src/Uncomputation.cpp:1444` — `railUnmovedInWindow`
-- `ir-pass/src/Uncomputation.cpp:1621` — `borrowedParentsUnmoved`
-- `ir-pass/src/Uncomputation.cpp:1672` — `planInteriorComponent`
-- `ir-pass/src/Uncomputation.cpp:1999` — `addDischargedRails`
-- `ir-pass/src/Uncomputation.cpp:2009` — `collectInteriorPlansMode`
-- `ir-pass/src/Uncomputation.cpp:2491` — `collectInteriorPlans`
-- `ir-pass/src/Uncomputation.cpp:2516` — `reverseInteriorGroup`
-- `ir-pass/src/Uncomputation.cpp:2531` — `collectTerminalCandidates`
-- `ir-pass/src/Uncomputation.cpp:2572` — `uncompute`
-- `ir-pass/src/Uncomputation.cpp:2668` — `planInteriorDischarges`
+- `ir-pass/src/Uncomputation.cpp:101` — `diagnose`
+- `ir-pass/src/Uncomputation.cpp:109` — `isDataProducer`
+- `ir-pass/src/Uncomputation.cpp:136` — `isQramArrayHandle`
+- `ir-pass/src/Uncomputation.cpp:248` — `markedHeaderOf`
+- `ir-pass/src/Uncomputation.cpp:263` — `multiplicityAgrees`
+- `ir-pass/src/Uncomputation.cpp:385` — `anchorForConsumer`
+- `ir-pass/src/Uncomputation.cpp:401` — `useCompleteBeforeDischarge`
+- `ir-pass/src/Uncomputation.cpp:419` — `dagInsertPoint`
+- `ir-pass/src/Uncomputation.cpp:494` — `emitDagReversal`
+- `ir-pass/src/Uncomputation.cpp:651` — `measuredParentsReadBeforeCollapse`
+- `ir-pass/src/Uncomputation.cpp:707` — `keptRailAdjointReadsBorrowed`
+- `ir-pass/src/Uncomputation.cpp:746` — `planTerminalReversal`
+- `ir-pass/src/Uncomputation.cpp:980` — `emitTerminalReversal`
+- `ir-pass/src/Uncomputation.cpp:1007` — `judgeFrontierPlan`
+- `ir-pass/src/Uncomputation.cpp:1046` — `partitionByReducedDag`
+- `ir-pass/src/Uncomputation.cpp:1102` — `componentObservedBefore`
+- `ir-pass/src/Uncomputation.cpp:1182` — `recordLiveAcrossMove`
+- `ir-pass/src/Uncomputation.cpp:1252` — `planFrontierFixpoint`
+- `ir-pass/src/Uncomputation.cpp:1346` — `reverseTerminalGroup`
+- `ir-pass/src/Uncomputation.cpp:1508` — `preservesBorrowedParent`
+- `ir-pass/src/Uncomputation.cpp:1773` — `routeGroupFullyInside`
+- `ir-pass/src/Uncomputation.cpp:1856` — `railUnmovedInWindow`
+- `ir-pass/src/Uncomputation.cpp:2033` — `borrowedParentsUnmoved`
+- `ir-pass/src/Uncomputation.cpp:2088` — `planInteriorComponent`
+- `ir-pass/src/Uncomputation.cpp:2415` — `addDischargedRails`
+- `ir-pass/src/Uncomputation.cpp:2425` — `collectInteriorPlansMode`
+- `ir-pass/src/Uncomputation.cpp:2907` — `collectInteriorPlans`
+- `ir-pass/src/Uncomputation.cpp:2932` — `reverseInteriorGroup`
+- `ir-pass/src/Uncomputation.cpp:2947` — `collectTerminalCandidates`
+- `ir-pass/src/Uncomputation.cpp:2988` — `uncompute`
+- `ir-pass/src/Uncomputation.cpp:3084` — `planInteriorDischarges`
 
 ### `ir-pass/src/WidthDispatch.cpp` (581 lines)
 
@@ -1193,7 +1249,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/WidthDispatch.cpp:533` — `WidthDispatch::addTemplate`
 - `ir-pass/src/WidthDispatch.cpp:544` — `WidthDispatch::frontEndIntrinsicNames`
 
-### `ir-pass/src/WireWalk.cpp` (942 lines)
+### `ir-pass/src/WireWalk.cpp` (948 lines)
 
 - `ir-pass/src/WireWalk.cpp:34` — `isCallToPrefix`
 - `ir-pass/src/WireWalk.cpp:68` — `collectWireValues`
@@ -1207,12 +1263,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/WireWalk.cpp:650` — `readerStalesItself`
 - `ir-pass/src/WireWalk.cpp:662` — `phiTracksWire`
 - `ir-pass/src/WireWalk.cpp:684` — `walkNonDiagonalWireGates`
-- `ir-pass/src/WireWalk.cpp:864` — `findNonDiagonalWireGate`
-- `ir-pass/src/WireWalk.cpp:875` — `collectNonDiagonalWireGates`
-- `ir-pass/src/WireWalk.cpp:885` — `provablyBefore`
-- `ir-pass/src/WireWalk.cpp:891` — `provablyBeforePerActivation`
-- `ir-pass/src/WireWalk.cpp:927` — `everyPathReExecutes`
-- `ir-pass/src/WireWalk.cpp:934` — `intervalAlternates`
+- `ir-pass/src/WireWalk.cpp:870` — `findNonDiagonalWireGate`
+- `ir-pass/src/WireWalk.cpp:881` — `collectNonDiagonalWireGates`
+- `ir-pass/src/WireWalk.cpp:891` — `provablyBefore`
+- `ir-pass/src/WireWalk.cpp:897` — `provablyBeforePerActivation`
+- `ir-pass/src/WireWalk.cpp:933` — `everyPathReExecutes`
+- `ir-pass/src/WireWalk.cpp:940` — `intervalAlternates`
 
 ### `ir-pass/tools/cq_debug_alloc.cpp` (181 lines)
 
@@ -1660,7 +1716,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `runtime/cq_link_smoke.c:2866` — `main`
 
-### `runtime/cq_runtime.c` (1237 lines)
+### `runtime/cq_runtime.c` (1403 lines)
 
 - `runtime/cq_runtime.c:66` — `cqrt_alloc_handle`
 - `runtime/cq_runtime.c:74` — `cqrt_alloc_i1`
@@ -1843,7 +1899,43 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `runtime/cq_runtime.c:1215` — `cqrt_qram_store_f32_controlled_unc`
 - `runtime/cq_runtime.c:1220` — `cqrt_qram_store_f64_controlled_unc`
 - `runtime/cq_runtime.c:1225` — `cqrt_qram_store_f80_controlled_unc`
-- `runtime/cq_runtime.c:1234` — `cqrt_free`
+- `runtime/cq_runtime.c:1233` — `cqrt_qram_load_i1_hl`
+- `runtime/cq_runtime.c:1239` — `cqrt_qram_load_i8_hl`
+- `runtime/cq_runtime.c:1245` — `cqrt_qram_load_i16_hl`
+- `runtime/cq_runtime.c:1251` — `cqrt_qram_load_i32_hl`
+- `runtime/cq_runtime.c:1257` — `cqrt_qram_load_i64_hl`
+- `runtime/cq_runtime.c:1263` — `cqrt_qram_load_f16_hl`
+- `runtime/cq_runtime.c:1269` — `cqrt_qram_load_f32_hl`
+- `runtime/cq_runtime.c:1275` — `cqrt_qram_load_f64_hl`
+- `runtime/cq_runtime.c:1281` — `cqrt_qram_load_f80_hl`
+- `runtime/cq_runtime.c:1287` — `cqrt_qram_load_i1_hl_unc`
+- `runtime/cq_runtime.c:1291` — `cqrt_qram_load_i8_hl_unc`
+- `runtime/cq_runtime.c:1295` — `cqrt_qram_load_i16_hl_unc`
+- `runtime/cq_runtime.c:1299` — `cqrt_qram_load_i32_hl_unc`
+- `runtime/cq_runtime.c:1303` — `cqrt_qram_load_i64_hl_unc`
+- `runtime/cq_runtime.c:1307` — `cqrt_qram_load_f16_hl_unc`
+- `runtime/cq_runtime.c:1311` — `cqrt_qram_load_f32_hl_unc`
+- `runtime/cq_runtime.c:1315` — `cqrt_qram_load_f64_hl_unc`
+- `runtime/cq_runtime.c:1319` — `cqrt_qram_load_f80_hl_unc`
+- `runtime/cq_runtime.c:1323` — `cqrt_qram_store_i1_hl`
+- `runtime/cq_runtime.c:1327` — `cqrt_qram_store_i8_hl`
+- `runtime/cq_runtime.c:1331` — `cqrt_qram_store_i16_hl`
+- `runtime/cq_runtime.c:1335` — `cqrt_qram_store_i32_hl`
+- `runtime/cq_runtime.c:1339` — `cqrt_qram_store_i64_hl`
+- `runtime/cq_runtime.c:1343` — `cqrt_qram_store_f16_hl`
+- `runtime/cq_runtime.c:1347` — `cqrt_qram_store_f32_hl`
+- `runtime/cq_runtime.c:1351` — `cqrt_qram_store_f64_hl`
+- `runtime/cq_runtime.c:1355` — `cqrt_qram_store_f80_hl`
+- `runtime/cq_runtime.c:1359` — `cqrt_qram_store_i1_hl_unc`
+- `runtime/cq_runtime.c:1363` — `cqrt_qram_store_i8_hl_unc`
+- `runtime/cq_runtime.c:1367` — `cqrt_qram_store_i16_hl_unc`
+- `runtime/cq_runtime.c:1371` — `cqrt_qram_store_i32_hl_unc`
+- `runtime/cq_runtime.c:1375` — `cqrt_qram_store_i64_hl_unc`
+- `runtime/cq_runtime.c:1379` — `cqrt_qram_store_f16_hl_unc`
+- `runtime/cq_runtime.c:1383` — `cqrt_qram_store_f32_hl_unc`
+- `runtime/cq_runtime.c:1387` — `cqrt_qram_store_f64_hl_unc`
+- `runtime/cq_runtime.c:1391` — `cqrt_qram_store_f80_hl_unc`
+- `runtime/cq_runtime.c:1400` — `cqrt_free`
 
 ### `runtime/cq_templates.c` (15665 lines)
 
@@ -5270,6 +5362,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_control_inplace_ry_bool_stateprep_negated.c:48` — `slice`
 - `tests/e2e/slice_control_inplace_ry_bool_stateprep_negated.c:57` — `main`
 
+### `tests/e2e/slice_control_inplace_ry_cond_register.c` (43 lines)
+
+- `tests/e2e/slice_control_inplace_ry_cond_register.c:30` — `slice`
+- `tests/e2e/slice_control_inplace_ry_cond_register.c:43` — `main`
+
 ### `tests/e2e/slice_control_inplace_ry_derived_base.c` (63 lines)
 
 - `tests/e2e/slice_control_inplace_ry_derived_base.c:51` — `slice`
@@ -5399,6 +5496,32 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/slice_control_inplace_ry_stateprep_twin.c:34` — `slice`
 - `tests/e2e/slice_control_inplace_ry_stateprep_twin.c:42` — `main`
+
+### `tests/e2e/slice_control_multiexit_musttail.c` (27 lines)
+
+- `tests/e2e/slice_control_multiexit_musttail.c:14` — `k`
+- `tests/e2e/slice_control_multiexit_musttail.c:16` — `f`
+- `tests/e2e/slice_control_multiexit_musttail.c:22` — `main`
+
+### `tests/e2e/slice_control_multiexit_musttail_alloca.c` (27 lines)
+
+- `tests/e2e/slice_control_multiexit_musttail_alloca.c:11` — `k`
+- `tests/e2e/slice_control_multiexit_musttail_alloca.c:12` — `sum2`
+- `tests/e2e/slice_control_multiexit_musttail_alloca.c:14` — `f`
+- `tests/e2e/slice_control_multiexit_musttail_alloca.c:22` — `main`
+
+### `tests/e2e/slice_control_multiexit_musttail_alloca_twin.c` (22 lines)
+
+- `tests/e2e/slice_control_multiexit_musttail_alloca_twin.c:6` — `k`
+- `tests/e2e/slice_control_multiexit_musttail_alloca_twin.c:7` — `sum2`
+- `tests/e2e/slice_control_multiexit_musttail_alloca_twin.c:9` — `f`
+- `tests/e2e/slice_control_multiexit_musttail_alloca_twin.c:17` — `main`
+
+### `tests/e2e/slice_control_multiexit_musttail_twin.c` (20 lines)
+
+- `tests/e2e/slice_control_multiexit_musttail_twin.c:7` — `k`
+- `tests/e2e/slice_control_multiexit_musttail_twin.c:9` — `f`
+- `tests/e2e/slice_control_multiexit_musttail_twin.c:15` — `main`
 
 ### `tests/e2e/slice_control_nested_phase.c` (63 lines)
 
@@ -6841,6 +6964,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_qq_hl_arith.c:23` — `slice`
 - `tests/e2e/slice_qq_hl_arith.c:36` — `main`
 
+### `tests/e2e/slice_qram_classical_index.c` (30 lines)
+
+- `tests/e2e/slice_qram_classical_index.c:16` — `classical_index`
+- `tests/e2e/slice_qram_classical_index.c:25` — `main`
+
 ### `tests/e2e/slice_qram_guarded_store.c` (35 lines)
 
 - `tests/e2e/slice_qram_guarded_store.c:24` — `guarded_local`
@@ -7674,91 +7802,91 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/fixture_guard_liveness.py:91` — `guards_in`
 - `tools/fixture_guard_liveness.py:122` — `main`
 
-### `tools/free_pairing_check.py` (3829 lines)
+### `tools/free_pairing_check.py` (3845 lines)
 
 - `tools/free_pairing_check.py:669` — `Unclassified.__init__`
 - `tools/free_pairing_check.py:694` — `Undecidable.__init__`
 - `tools/free_pairing_check.py:712` — `NarrowingViolation.__init__`
 - `tools/free_pairing_check.py:747` — `Effect.__init__`
 - `tools/free_pairing_check.py:765` — `classify`
-- `tools/free_pairing_check.py:927` — `pairing_register`
-- `tools/free_pairing_check.py:931` — `mark_qram_index_brackets`
-- `tools/free_pairing_check.py:977` — `read_terminator`
-- `tools/free_pairing_check.py:1026` — `split_args`
-- `tools/free_pairing_check.py:1044` — `norm_arg`
-- `tools/free_pairing_check.py:1070` — `arg_value`
-- `tools/free_pairing_check.py:1079` — `Call.__init__`
-- `tools/free_pairing_check.py:1092` — `Call.key`
-- `tools/free_pairing_check.py:1095` — `Call.read_idx`
-- `tools/free_pairing_check.py:1105` — `Function.__init__`
-- `tools/free_pairing_check.py:1130` — `balanced`
-- `tools/free_pairing_check.py:1170` — `first_ptr_operand`
-- `tools/free_pairing_check.py:1183` — `ModuleFns.__init__`
-- `tools/free_pairing_check.py:1188` — `parse_module`
-- `tools/free_pairing_check.py:1303` — `build_streams`
-- `tools/free_pairing_check.py:1377` — `CrossStreamIndex.__init__`
-- `tools/free_pairing_check.py:1403` — `CrossStreamIndex.cyclic_blocks`
-- `tools/free_pairing_check.py:1428` — `CrossStreamIndex.stream_runs_at_most_once`
-- `tools/free_pairing_check.py:1445` — `_hex_neg`
-- `tools/free_pairing_check.py:1506` — `carries_undef`
-- `tools/free_pairing_check.py:1511` — `is_negation`
-- `tools/free_pairing_check.py:1561` — `Finding.__init__`
-- `tools/free_pairing_check.py:1566` — `Finding.__str__`
-- `tools/free_pairing_check.py:1574` — `Rail.__init__`
-- `tools/free_pairing_check.py:1582` — `StreamAnalysis.__init__`
-- `tools/free_pairing_check.py:1620` — `StreamAnalysis.run`
-- `tools/free_pairing_check.py:1661` — `StreamAnalysis.check_orphan_reversals`
-- `tools/free_pairing_check.py:1687` — `StreamAnalysis.rail_for_write`
-- `tools/free_pairing_check.py:1708` — `StreamAnalysis.check_case_b`
-- `tools/free_pairing_check.py:1776` — `StreamAnalysis.provably_not_a_rail`
-- `tools/free_pairing_check.py:1845` — `StreamAnalysis.add`
-- `tools/free_pairing_check.py:1849` — `StreamAnalysis.ok`
-- `tools/free_pairing_check.py:1863` — `StreamAnalysis.writes_in`
-- `tools/free_pairing_check.py:1867` — `StreamAnalysis.unchanged_over`
-- `tools/free_pairing_check.py:1982` — `StreamAnalysis.adjoint_matches`
-- `tools/free_pairing_check.py:2019` — `StreamAnalysis.commutes`
-- `tools/free_pairing_check.py:2047` — `StreamAnalysis.reduces_to_identity`
-- `tools/free_pairing_check.py:2114` — `StreamAnalysis.pair_operands_unchanged`
-- `tools/free_pairing_check.py:2216` — `StreamAnalysis.co_written_stable`
-- `tools/free_pairing_check.py:2324` — `StreamAnalysis.light_cone_closed`
-- `tools/free_pairing_check.py:2425` — `StreamAnalysis._light_cone`
-- `tools/free_pairing_check.py:2495` — `StreamAnalysis._minted_closed`
-- `tools/free_pairing_check.py:2536` — `StreamAnalysis._minted_core`
-- `tools/free_pairing_check.py:2553` — `StreamAnalysis.check_free`
-- `tools/free_pairing_check.py:2630` — `StreamAnalysis.loop_exit_discharge`
-- `tools/free_pairing_check.py:2870` — `StreamAnalysis.check_alloc_rail`
-- `tools/free_pairing_check.py:2922` — `StreamAnalysis.check_minted_rail`
-- `tools/free_pairing_check.py:3032` — `ensure_recursion_headroom`
-- `tools/free_pairing_check.py:3134` — `_tape_sink`
-- `tools/free_pairing_check.py:3162` — `recorded_rails`
-- `tools/free_pairing_check.py:3205` — `resolve_object`
-- `tools/free_pairing_check.py:3236` — `bank_address_confined`
-- `tools/free_pairing_check.py:3297` — `adjudicate_memory`
-- `tools/free_pairing_check.py:3535` — `address_taken`
-- `tools/free_pairing_check.py:3558` — `live_functions`
-- `tools/free_pairing_check.py:3595` — `census_of`
-- `tools/free_pairing_check.py:3639` — `check_module`
-- `tools/free_pairing_check.py:3714` — `main`
-- `tools/free_pairing_check.py:3771` — `main.dump`
+- `tools/free_pairing_check.py:943` — `pairing_register`
+- `tools/free_pairing_check.py:947` — `mark_qram_index_brackets`
+- `tools/free_pairing_check.py:993` — `read_terminator`
+- `tools/free_pairing_check.py:1042` — `split_args`
+- `tools/free_pairing_check.py:1060` — `norm_arg`
+- `tools/free_pairing_check.py:1086` — `arg_value`
+- `tools/free_pairing_check.py:1095` — `Call.__init__`
+- `tools/free_pairing_check.py:1108` — `Call.key`
+- `tools/free_pairing_check.py:1111` — `Call.read_idx`
+- `tools/free_pairing_check.py:1121` — `Function.__init__`
+- `tools/free_pairing_check.py:1146` — `balanced`
+- `tools/free_pairing_check.py:1186` — `first_ptr_operand`
+- `tools/free_pairing_check.py:1199` — `ModuleFns.__init__`
+- `tools/free_pairing_check.py:1204` — `parse_module`
+- `tools/free_pairing_check.py:1319` — `build_streams`
+- `tools/free_pairing_check.py:1393` — `CrossStreamIndex.__init__`
+- `tools/free_pairing_check.py:1419` — `CrossStreamIndex.cyclic_blocks`
+- `tools/free_pairing_check.py:1444` — `CrossStreamIndex.stream_runs_at_most_once`
+- `tools/free_pairing_check.py:1461` — `_hex_neg`
+- `tools/free_pairing_check.py:1522` — `carries_undef`
+- `tools/free_pairing_check.py:1527` — `is_negation`
+- `tools/free_pairing_check.py:1577` — `Finding.__init__`
+- `tools/free_pairing_check.py:1582` — `Finding.__str__`
+- `tools/free_pairing_check.py:1590` — `Rail.__init__`
+- `tools/free_pairing_check.py:1598` — `StreamAnalysis.__init__`
+- `tools/free_pairing_check.py:1636` — `StreamAnalysis.run`
+- `tools/free_pairing_check.py:1677` — `StreamAnalysis.check_orphan_reversals`
+- `tools/free_pairing_check.py:1703` — `StreamAnalysis.rail_for_write`
+- `tools/free_pairing_check.py:1724` — `StreamAnalysis.check_case_b`
+- `tools/free_pairing_check.py:1792` — `StreamAnalysis.provably_not_a_rail`
+- `tools/free_pairing_check.py:1861` — `StreamAnalysis.add`
+- `tools/free_pairing_check.py:1865` — `StreamAnalysis.ok`
+- `tools/free_pairing_check.py:1879` — `StreamAnalysis.writes_in`
+- `tools/free_pairing_check.py:1883` — `StreamAnalysis.unchanged_over`
+- `tools/free_pairing_check.py:1998` — `StreamAnalysis.adjoint_matches`
+- `tools/free_pairing_check.py:2035` — `StreamAnalysis.commutes`
+- `tools/free_pairing_check.py:2063` — `StreamAnalysis.reduces_to_identity`
+- `tools/free_pairing_check.py:2130` — `StreamAnalysis.pair_operands_unchanged`
+- `tools/free_pairing_check.py:2232` — `StreamAnalysis.co_written_stable`
+- `tools/free_pairing_check.py:2340` — `StreamAnalysis.light_cone_closed`
+- `tools/free_pairing_check.py:2441` — `StreamAnalysis._light_cone`
+- `tools/free_pairing_check.py:2511` — `StreamAnalysis._minted_closed`
+- `tools/free_pairing_check.py:2552` — `StreamAnalysis._minted_core`
+- `tools/free_pairing_check.py:2569` — `StreamAnalysis.check_free`
+- `tools/free_pairing_check.py:2646` — `StreamAnalysis.loop_exit_discharge`
+- `tools/free_pairing_check.py:2886` — `StreamAnalysis.check_alloc_rail`
+- `tools/free_pairing_check.py:2938` — `StreamAnalysis.check_minted_rail`
+- `tools/free_pairing_check.py:3048` — `ensure_recursion_headroom`
+- `tools/free_pairing_check.py:3150` — `_tape_sink`
+- `tools/free_pairing_check.py:3178` — `recorded_rails`
+- `tools/free_pairing_check.py:3221` — `resolve_object`
+- `tools/free_pairing_check.py:3252` — `bank_address_confined`
+- `tools/free_pairing_check.py:3313` — `adjudicate_memory`
+- `tools/free_pairing_check.py:3551` — `address_taken`
+- `tools/free_pairing_check.py:3574` — `live_functions`
+- `tools/free_pairing_check.py:3611` — `census_of`
+- `tools/free_pairing_check.py:3655` — `check_module`
+- `tools/free_pairing_check.py:3730` — `main`
+- `tools/free_pairing_check.py:3787` — `main.dump`
 
-### `tools/free_pairing_check_test.py` (3746 lines)
+### `tools/free_pairing_check_test.py` (3785 lines)
 
-- `tools/free_pairing_check_test.py:671` — `order_ladder`
-- `tools/free_pairing_check_test.py:781` — `cswap_braid`
-- `tools/free_pairing_check_test.py:1024` — `drop`
-- `tools/free_pairing_check_test.py:1033` — `sub`
-- `tools/free_pairing_check_test.py:1043` — `insert_after`
-- `tools/free_pairing_check_test.py:2669` — `_swap_lines`
-- `tools/free_pairing_check_test.py:2681` — `_hoist_line`
-- `tools/free_pairing_check_test.py:3074` — `lc`
-- `tools/free_pairing_check_test.py:3119` — `cone_nest`
-- `tools/free_pairing_check_test.py:3383` — `_Stop.__init__`
-- `tools/free_pairing_check_test.py:3387` — `_Stop.__str__`
-- `tools/free_pairing_check_test.py:3391` — `findings`
-- `tools/free_pairing_check_test.py:3399` — `proofs_of`
-- `tools/free_pairing_check_test.py:3416` — `verdict_map`
-- `tools/free_pairing_check_test.py:3428` — `main`
-- `tools/free_pairing_check_test.py:3466` — `main.counted`
+- `tools/free_pairing_check_test.py:706` — `order_ladder`
+- `tools/free_pairing_check_test.py:816` — `cswap_braid`
+- `tools/free_pairing_check_test.py:1060` — `drop`
+- `tools/free_pairing_check_test.py:1069` — `sub`
+- `tools/free_pairing_check_test.py:1079` — `insert_after`
+- `tools/free_pairing_check_test.py:2708` — `_swap_lines`
+- `tools/free_pairing_check_test.py:2720` — `_hoist_line`
+- `tools/free_pairing_check_test.py:3113` — `lc`
+- `tools/free_pairing_check_test.py:3158` — `cone_nest`
+- `tools/free_pairing_check_test.py:3422` — `_Stop.__init__`
+- `tools/free_pairing_check_test.py:3426` — `_Stop.__str__`
+- `tools/free_pairing_check_test.py:3430` — `findings`
+- `tools/free_pairing_check_test.py:3438` — `proofs_of`
+- `tools/free_pairing_check_test.py:3455` — `verdict_map`
+- `tools/free_pairing_check_test.py:3467` — `main`
+- `tools/free_pairing_check_test.py:3505` — `main.counted`
 
 ### `tools/gen_templates.py` (473 lines)
 
@@ -8371,43 +8499,43 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/llvm_discovery.py:12` — `_cmakedir_from`
 - `tools/llvm_discovery.py:25` — `discover_llvm_dir`
 
-### `tools/loop_twin_matrix.py` (4110 lines)
+### `tools/loop_twin_matrix.py` (4115 lines)
 
-- `tools/loop_twin_matrix.py:1227` — `phi_surface_of_header`
-- `tools/loop_twin_matrix.py:1241` — `phi_void_source`
-- `tools/loop_twin_matrix.py:1248` — `phi_void_source.one`
-- `tools/loop_twin_matrix.py:1417` — `_bank_text`
-- `tools/loop_twin_matrix.py:1638` — `sources`
-- `tools/loop_twin_matrix.py:1696` — `_wrap`
-- `tools/loop_twin_matrix.py:1999` — `control_sources`
-- `tools/loop_twin_matrix.py:2016` — `run_boundary_controls`
-- `tools/loop_twin_matrix.py:2109` — `_pair_check`
-- `tools/loop_twin_matrix.py:2130` — `Side.__init__`
-- `tools/loop_twin_matrix.py:2151` — `_resid`
-- `tools/loop_twin_matrix.py:2163` — `_first_diag`
-- `tools/loop_twin_matrix.py:2171` — `build_side`
-- `tools/loop_twin_matrix.py:2236` — `counts`
-- `tools/loop_twin_matrix.py:2270` — `divergence_signature`
-- `tools/loop_twin_matrix.py:2332` — `split_header`
-- `tools/loop_twin_matrix.py:2348` — `resolve_header`
-- `tools/loop_twin_matrix.py:2373` — `write_preserving_header`
-- `tools/loop_twin_matrix.py:2395` — `load_quarantine`
-- `tools/loop_twin_matrix.py:2443` — `write_quarantine`
-- `tools/loop_twin_matrix.py:2461` — `cell_name`
-- `tools/loop_twin_matrix.py:2493` — `ry_cells`
-- `tools/loop_twin_matrix.py:2700` — `f_cells`
-- `tools/loop_twin_matrix.py:2719` — `bool_cells`
-- `tools/loop_twin_matrix.py:2789` — `bank_cells`
-- `tools/loop_twin_matrix.py:2836` — `nest_cells`
-- `tools/loop_twin_matrix.py:2882` — `_bank_floor`
-- `tools/loop_twin_matrix.py:2891` — `_floor_is_a_lower_bound`
-- `tools/loop_twin_matrix.py:2909` — `trace_floor`
-- `tools/loop_twin_matrix.py:2915` — `cells_of_matrix`
-- `tools/loop_twin_matrix.py:2960` — `run_cell`
-- `tools/loop_twin_matrix.py:2974` — `_run_cell_star`
-- `tools/loop_twin_matrix.py:2978` — `verdict`
-- `tools/loop_twin_matrix.py:3070` — `main`
-- `tools/loop_twin_matrix.py:3278` — `main.write_out`
+- `tools/loop_twin_matrix.py:1232` — `phi_surface_of_header`
+- `tools/loop_twin_matrix.py:1246` — `phi_void_source`
+- `tools/loop_twin_matrix.py:1253` — `phi_void_source.one`
+- `tools/loop_twin_matrix.py:1422` — `_bank_text`
+- `tools/loop_twin_matrix.py:1643` — `sources`
+- `tools/loop_twin_matrix.py:1701` — `_wrap`
+- `tools/loop_twin_matrix.py:2004` — `control_sources`
+- `tools/loop_twin_matrix.py:2021` — `run_boundary_controls`
+- `tools/loop_twin_matrix.py:2114` — `_pair_check`
+- `tools/loop_twin_matrix.py:2135` — `Side.__init__`
+- `tools/loop_twin_matrix.py:2156` — `_resid`
+- `tools/loop_twin_matrix.py:2168` — `_first_diag`
+- `tools/loop_twin_matrix.py:2176` — `build_side`
+- `tools/loop_twin_matrix.py:2241` — `counts`
+- `tools/loop_twin_matrix.py:2275` — `divergence_signature`
+- `tools/loop_twin_matrix.py:2337` — `split_header`
+- `tools/loop_twin_matrix.py:2353` — `resolve_header`
+- `tools/loop_twin_matrix.py:2378` — `write_preserving_header`
+- `tools/loop_twin_matrix.py:2400` — `load_quarantine`
+- `tools/loop_twin_matrix.py:2448` — `write_quarantine`
+- `tools/loop_twin_matrix.py:2466` — `cell_name`
+- `tools/loop_twin_matrix.py:2498` — `ry_cells`
+- `tools/loop_twin_matrix.py:2705` — `f_cells`
+- `tools/loop_twin_matrix.py:2724` — `bool_cells`
+- `tools/loop_twin_matrix.py:2794` — `bank_cells`
+- `tools/loop_twin_matrix.py:2841` — `nest_cells`
+- `tools/loop_twin_matrix.py:2887` — `_bank_floor`
+- `tools/loop_twin_matrix.py:2896` — `_floor_is_a_lower_bound`
+- `tools/loop_twin_matrix.py:2914` — `trace_floor`
+- `tools/loop_twin_matrix.py:2920` — `cells_of_matrix`
+- `tools/loop_twin_matrix.py:2965` — `run_cell`
+- `tools/loop_twin_matrix.py:2979` — `_run_cell_star`
+- `tools/loop_twin_matrix.py:2983` — `verdict`
+- `tools/loop_twin_matrix.py:3075` — `main`
+- `tools/loop_twin_matrix.py:3283` — `main.write_out`
 
 ### `tools/loop_twin_matrix_quarantine_test.py` (1110 lines)
 
