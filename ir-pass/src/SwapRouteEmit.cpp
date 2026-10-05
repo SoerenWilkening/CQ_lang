@@ -33,6 +33,7 @@
 #include "EmitInverse.h"         // emitInverseChain (the value-arm reverse-play)
 #include "OpcodeSupport.h"       // abiWidthFromType · abiWidthHasControlledRotation
 #include "RegionFlatten.h"   // flattenRegion / flattenRegionTree       // flattenRegion
+#include "RotationLowering.h"    // markKeptConditionFlag (bd dm7f.4)
 #include "SelectMergeEmit.h"     // emitSelectRegion (the 4.4 select merge)
 #include "SwitchRouteEmit.h"     // emitSwitchPhaseRegion (the 4.5 switch phase)
 #include "TaintPropagation.h"    // TaintSet
@@ -864,6 +865,21 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
                                          /*readKind=*/CondReadKind::WireRuled);
   if (!Flag)
     return;  // lowerCompareToFlag already diagnosed (unsupported / Q+Q).
+  // bd dm7f.4 — THE RECORD HALF of the kept-flag postcondition
+  // (`declineUndischargedKeptFlagChains`, RotationLowering.h): tag the MINT, the
+  // one call no later stage replaces, so the late slot can find this region's
+  // gates and ask whether the rest of the condition's chain is gone (or the
+  // program's own data) when the controlled Ry fires. A rail condition never
+  // carries the field (K1); a non-call flag would leave the postcondition
+  // nothing to ask, so both bail loudly instead (unreachable today).
+  if (R.CondFlagKept) {
+    auto *Mint = dyn_cast<CallInst>(Flag);
+    if (RailCond || !Mint) {
+      diagnoseUnderControl(CondI, "control flow");
+      return;
+    }
+    markKeptConditionFlag(Mint);
+  }
 
   // 2. Per arm in successor order: HOIST the gate, bracketed in the self-inverse
   //    `cqrt_x(f)` pair for a ¬flag (FALSE-successor / else) arm — the SAME
@@ -1103,9 +1119,12 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //    it would not return `f` to |0⟩ and the free after it would be a hidden
   //    measurement of an entangled ancilla — the exact defect R4 was written to
   //    refuse. Without the strip there is no `DischargedFlagGates` record, so
-  //    the spine's interior discharge of the condition's chain lands after the
-  //    mint and BEFORE the controlled Ry (measured on `(q & 3) == 1` and a
-  //    `sitofp`/`fmul`/`fcmp` chain). The flag itself is never claimed: its only
+  //    the spine's interior discharge of a TEMPLATE condition chain lands after
+  //    the mint and BEFORE the controlled Ry (measured on `(q & 3) == 1` and a
+  //    `sitofp`/`fmul`/`fcmp` chain). Not every chain gets one: a lifted call's
+  //    `__cq_q_*` result does not (bd ln16), and the late postcondition
+  //    `declineUndischargedKeptFlagChains` refuses such a region loudly (review
+  //    round 1, F1). The flag itself is never claimed: its only
   //    user is arg 0 of a `_controlled` gate (`isTerminalHandle` and
   //    `isInteriorConsumer` both refuse that), so it stays allocated, and M-A
   //    reports it at the gate.

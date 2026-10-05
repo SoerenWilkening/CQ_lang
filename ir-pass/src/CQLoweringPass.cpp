@@ -1209,6 +1209,13 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // follow-up rather than papered over here.
   if (declineUnpairedUndefLiterals(M))
     return PreservedAnalyses::none();
+  // bd dm7f.4 — the kept-flag postcondition, the one LOUD question in M-A's slot
+  // and asked with M-A's predicates: a kept condition flag is the only record
+  // the owner ruled into the circuit, so any other condition-chain rail of the
+  // rotated register still standing unobserved at its controlled Ry declines
+  // (RotationLowering.h). Before the warning, so a refused module prints none.
+  if (declineUndischargedKeptFlagChains(M, taint))
+    return PreservedAnalyses::none();
   // bd test_C_libtooling-6uqc (M-A) — the LIVE-RECORD WARNING, at the
   // SAME late slot and for the SAME reason as the literal-integrity guard above:
   // this is the only position where "is rail R still undischarged when this
@@ -1795,6 +1802,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // a unit-level caller silently keeps the pairing break. See run() for why this
   // position is the complete one, and for why the bool is consumed.
   if (declineUnpairedUndefLiterals(M))
+    return true;
+  // bd dm7f.4 — mirrored from `run()` (twin-pipeline parity, WI-1.12): miss it
+  // and this entry point lowers a kept-flag region whose condition chain is
+  // still live at the gate.
+  if (declineUndischargedKeptFlagChains(M, taint))
     return true;
   // bd test_C_libtooling-6uqc (M-A) — mirrored from `run()` (twin-pipeline
   // parity, WI-1.12): miss it and a unit-level caller loses the live-record

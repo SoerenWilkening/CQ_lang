@@ -354,6 +354,17 @@ void lowerRotations(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
 //     minted on branches where the source made no record.
 bool warnLiveRecordRotations(llvm::Module &M, const TaintSet &taint);
 
+// bd test_C_libtooling-dm7f.4 — the KEPT-FLAG POSTCONDITION (argument at the
+// definition). `markKeptConditionFlag` is the emitter's record: called by
+// `emitInPlaceRotationRegion` on the flag mint of a `CondFlagKept` region.
+// `declineUndischargedKeptFlagChains` runs in the late slot just BEFORE
+// `warnLiveRecordRotations`, in both entry points: every condition-chain record
+// of the rotated wire other than the kept flag must be absent or exempt at the
+// controlled Ry (M-A's own predicates), else a `DS_Error` with R4's string.
+// It clears every tag it finds. Returns true iff it declined.
+void markKeptConditionFlag(llvm::CallInst *FlagMint);
+bool declineUndischargedKeptFlagChains(llvm::Module &M, const TaintSet &taint);
+
 // A void BASIS COPY gate `cqrt_copy_<W>(src, dst)` / `cqrt_copy_<W>_controlled(ctl,
 // src, dst)` — the DESTINATION is the LAST operand and every other operand is
 // only READ (the argument, with every emission site checked, is at the definition

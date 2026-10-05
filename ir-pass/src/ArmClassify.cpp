@@ -6152,11 +6152,22 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         //     BEFORE the hoisted gate. The `CmpCondRead` the mint records is
         //     re-asked at FINAL taint in both entry points (L1); the hoisted
         //     gate is visible taint-blind there and stays exempt.
-        //   * THE CONDITION'S CHAIN (`(q & 3) == 1`, a cast, a lifted call) is
-        //     the uncompute spine's: its interior discharge reads `q` before
-        //     the gate, and a chain rail still read after the gate is a
-        //     borrowed parent moved by a `_controlled` gate, which
-        //     `preservesBorrowedParent` refuses, so the rail is left allocated.
+        //   * THE CONDITION'S CHAIN is the uncompute spine's. A template chain
+        //     (`(q & 3) == 1`, `sitofp`/`fmul`/`fcmp`, an `add` range test) is
+        //     discharged by M-B right after the mint, before the gate, while
+        //     `q` is unmoved. A chain rail the PROGRAM reads after the gate
+        //     (`int d = q & 6; … cq_measure(d * 5)`) cannot be: its borrowed
+        //     parent is moved by a `_controlled` Ry, which
+        //     `preservesBorrowedParent` refuses, so it stays allocated as the
+        //     program's own data. ⚠ NOT EVERY CHAIN IS DISCHARGED, and this
+        //     comment said so in 03d9ca8a: a LIFTED CALL's `__cq_q_*` result
+        //     is never an interior producer (bd ln16), so `h(q) > 13` left an
+        //     injective record of `q` live at the gate, a wrong unitary (review
+        //     round 1, F1). That is now refused LOUDLY, after the spine has
+        //     placed its discharges, by `declineUndischargedKeptFlagChains`
+        //     (RotationLowering.h): every chain record but the flag must be
+        //     gone or observed at the gate, asked with M-A's own predicates
+        //     (control_inplace_ry_reject_cond_register_lifted_chain.ll).
         //   * STALE READS of the pre-Ry `q` after the region are R6's, below,
         //     unchanged.
         //   * NEGATION. The flag is a minted ANCILLA, so the else arm keeps the
@@ -6184,9 +6195,10 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         //        (control_inplace_ry_reject_inplace_alias_base.ll).
         // Monotone across the two detection rounds: round-2 taint only grows
         // `Prov`, and a kept flag is never a dirty free.
-        // RETIREMENT TRIGGER: the emitter's step-3 skip and the absence of a
-        // `DischargedFlagGates` record are this verdict's only consumers. A new
-        // consumer of "this region's flag is stripped" must read the field.
+        // RETIREMENT TRIGGER: the emitter's step-3 skip, its `cq.keptflag` tag
+        // on the mint, and the absence of a `DischargedFlagGates` record are
+        // this verdict's only consumers. A new consumer of "this region's flag
+        // is stripped" must read the field.
         for (Value *B : BaseWireOrder)
           if (CondRails.count(B)) {
             if (!RailCond && !Region.InLoop && Prov.count(RotBase)) {

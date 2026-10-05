@@ -641,8 +641,11 @@ struct ControlRegion {
   // strip and free and the flag is LEFT ALLOCATED (Rule 5: it is not provably
   // |0>). M-A's `warnLiveRecordRotations` reports the leftover record as a
   // `DS_Warning` (owner ruling lyyf). The verdict is the classifier's; the
-  // emitter only carries it. False everywhere else, which is byte-identical to
-  // the stream before the field existed.
+  // emitter only carries it, and tags the flag mint so the late postcondition
+  // `declineUndischargedKeptFlagChains` can refuse a region whose OTHER chain
+  // rails (a lifted call's result, bd ln16) are still live and unobserved at
+  // the gate. False everywhere else, which is byte-identical to the stream
+  // before the field existed.
   bool CondFlagKept = false;
 
   // bd test_C_libtooling-8h7d.5 (7.3 Inc 3) — this region sits WHOLLY INSIDE a

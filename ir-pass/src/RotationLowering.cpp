@@ -2446,4 +2446,100 @@ bool warnLiveRecordRotations(Module &M, const TaintSet &taint) {
   return Warned;
 }
 
+// ── bd test_C_libtooling-dm7f.4 — THE KEPT-FLAG POSTCONDITION ────────────────
+//
+// `classifyArms`' R4 admits `if (q > 5) cq_theta(&q, θ)` with the condition flag
+// KEPT (`ControlRegion::CondFlagKept`): minted, used as the control, never
+// stripped or freed. The owner ruled THAT record into the user's circuit (option
+// (a), lyyf class). The ruling covers the FLAG and nothing else: the rest of
+// the condition's chain (`q & 3`, a cast, a lifted call's result) is a compiler
+// temporary of the pre-Ry `q`, which the source does not keep. If one of those
+// rails still stands at the controlled Ry, it records more of `q` than the flag
+// does (`h(q) = 3q + 1` records all of it) and the circuit dephases `q` beyond
+// what the source asks: a WRONG UNITARY that the M-A warning would only report
+// generically (review round 1 of dm7f.4, F1, `@lifted`; root cause bd ln16, a
+// `__cq_q_*` result is never an interior producer).
+//
+// WHY A POSTCONDITION AND NOT A DETECTION-TIME TEST. "Is this chain rail gone
+// before the gate?" is the uncompute spine's answer, decided last; at R4 the
+// chain is still plain IR and any test there would be a prediction of the spine,
+// a second spelling of it (R12). Here it is a FACT about the emitted stream, the
+// same reason M-A sits in this slot. It runs BEFORE M-A in both entry points, so
+// a refused module never prints the warning first.
+//
+// THE QUESTION, asked with M-A's OWN predicates (R12). The chain is
+// `Anc(flag) ∩ Desc(W) \ {flag}`: every record the flag's producer walk reaches
+// (`collectAncestorRecords`) that is also derived from the rotated wire `W`
+// (`collectDescendantRecords`), so another register a Q+Q compare reads is not a
+// temporary of `q`. Each one must be absent at the gate or exempt there
+// (`recordAbsentAt` / `recordIsExemptAt`): discharged or collapsed before it,
+// or OBSERVED after it, which is the program's own data
+// (`int d = q & 6; if (d == 2) …; cq_measure(d * 5)` keeps `d` by the source's
+// own semantics). Anything else declines, with R4's string, at the gate.
+//
+// The tag is the emitter's record (`markKeptConditionFlag`, on the flag MINT,
+// which no later stage replaces); it is cleared here so the lowered module is
+// byte-identical to one that never carried it. A foreign tag in the input can
+// only ADD this decline, never remove one.
+namespace {
+constexpr char kKeptFlagTag[] = "cq.keptflag";
+}  // namespace
+
+void markKeptConditionFlag(CallInst *FlagMint) {
+  FlagMint->setMetadata(kKeptFlagTag, MDNode::get(FlagMint->getContext(), {}));
+}
+
+bool declineUndischargedKeptFlagChains(Module &M, const TaintSet &taint) {
+  const unsigned Kind = M.getContext().getMDKindID(kKeptFlagTag);
+  bool Declined = false;
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    SmallVector<CallInst *, 4> Flags;
+    for (BasicBlock &BB : F)
+      for (Instruction &I : BB)
+        if (I.getMetadata(Kind)) {
+          I.setMetadata(Kind, nullptr);
+          if (auto *C = dyn_cast<CallInst>(&I))
+            Flags.push_back(C);
+        }
+    if (Flags.empty() || Declined)
+      continue;
+    DominatorTree DT(F);
+    for (CallInst *Flag : Flags) {
+      for (User *U : Flag->users()) {
+        auto *T = dyn_cast<CallInst>(U);
+        if (!T || T->arg_size() != 3 || T->getArgOperand(0) != Flag)
+          continue;
+        const StringRef N = emittedCalleeName(T);
+        if (!N.starts_with("cqrt_ry_") || !N.ends_with("_controlled"))
+          continue;  // the `cqrt_x` bracket, or another reader of the flag.
+        Value *W = T->getArgOperand(1);
+        SmallVector<CallInst *, 8> Desc;
+        RecordSet DescRS(W, Desc);
+        SmallPtrSet<const Value *, 32> Seen;
+        collectDescendantRecords(W, DescRS, Seen);
+        SmallVector<CallInst *, 8> Anc;
+        RecordSet AncRS(W, Anc);
+        SmallVector<Value *, 8> Seeds;
+        collectAncestorRecords(Flag, AncRS, Seeds);
+        for (CallInst *R : Anc) {
+          if (R == Flag || !DescRS.Recorded.count(R))
+            continue;
+          if (recordAbsentAt(R, T, DT) || recordIsExemptAt(R, T, taint, DT))
+            continue;
+          diagnoseUnderControl(T, "rotation arm on a condition wire");
+          Declined = true;
+          break;
+        }
+        if (Declined)
+          break;
+      }
+      if (Declined)
+        break;
+    }
+  }
+  return Declined;
+}
+
 }  // namespace cq
