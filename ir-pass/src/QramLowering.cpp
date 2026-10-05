@@ -1360,11 +1360,14 @@ QromClaim classifyQromReadUnderControlImpl(
 // iw81.7 — the shared GuardedStoreArm SHAPE predicate (impl; public wrapper
 // `guardedShadowStoreShape` below). (a) The bounded-alloca tainted-index Shadow
 // STORE shape, ALLOWING the tainted control the region flattens away. (b) The
-// depth-1 diamond arm: the store's block has a single predecessor ending in a
-// conditional TAINTED `br` whose two successors are exactly {this block, the
-// merge}, and this block's single successor is that merge — a side-effect-only
-// diamond arm. (The arm being EXACTLY {gep, store, br} — no other gate — is
-// checked by `classifyGuardedStoreArm`, which owns the loud decline on any miss.)
+// depth-1 arm: the store's block has a single predecessor ending in a
+// conditional TAINTED `br`, and this block's single successor is the merge. The
+// branch's OTHER successor is either that merge (a one-armed diamond) or — bd
+// dm7f.3 — a SIBLING arm: a block whose single predecessor is the same `Pred` and
+// whose single successor is the same merge (an if/else, a guarded store in one
+// or both arms). (The arms' CONTENT — at most one store each, register-free
+// `cq_phi` calls, nothing escaping — is checked by `classifyGuardedStoreArm`,
+// which owns the loud decline on any miss.)
 bool guardedShadowStoreShapeImpl(StoreInst *SI, const TaintSet &taint,
                                  DominatorTree &DT, LoopInfo &LInfo) {
   auto M = matchQramAccess(SI, taint, DT, LInfo, /*allowTaintedControl=*/true);
@@ -1380,8 +1383,12 @@ bool guardedShadowStoreShapeImpl(StoreInst *SI, const TaintSet &taint,
       !taint.Tainted.count(BI->getCondition()))
     return false;
   BasicBlock *S0 = BI->getSuccessor(0), *S1 = BI->getSuccessor(1);
-  if (!((S0 == ArmBB && S1 == Merge) || (S1 == ArmBB && S0 == Merge)))
+  BasicBlock *Other = S0 == ArmBB ? S1 : S1 == ArmBB ? S0 : nullptr;
+  if (!Other || Other == ArmBB)
     return false;
+  if (Other != Merge && !(Other->getSinglePredecessor() == Pred &&
+                          Other->getSingleSuccessor() == Merge))
+    return false;  // neither the merge nor a sibling arm of the same diamond.
   // Reject a NESTED diamond (Rule 10 — do NOT lean on clang's incidental
   // AND-flattening of `if(a){if(b){...}}` into one compound condition). If the
   // branch block `Pred` is ITSELF control-dependent on another tainted br, the

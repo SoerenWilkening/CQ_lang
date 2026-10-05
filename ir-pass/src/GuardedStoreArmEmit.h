@@ -26,6 +26,11 @@
 // compare is a reversible DAG ancestor, §6.0 compare `_unc`). The flag is left LIVE
 // so the guarded `_unc` is gated by the SAME pred value (an ungated / pre-stripped
 // `_unc` over-pops the inactive branch — a dephasing silent miscompile).
+//
+// bd dm7f.3 widens the shape to an IF/ELSE (a guarded store in one or both arms)
+// and to arms carrying register-free `cq_phi` calls beside their store. Each store
+// keeps its own flag (an if/else FALSE arm's is a negated mint); the phases are
+// emitted by KICKBACK on a separate ancilla this emitter mints, strips and frees.
 
 #ifndef CQ_IRPASS_GUARDED_STORE_ARM_EMIT_H_
 #define CQ_IRPASS_GUARDED_STORE_ARM_EMIT_H_
@@ -43,13 +48,18 @@ struct TaintSet;
 // Outcome of the guarded-store recognizer, tried by
 // `ControlDetect::handleBranchRegion` in the Diamond/IfElse arm BEFORE
 // `classifyArms`:
-//   * Accept        — exactly one arm is a side-effect-only bounded-alloca
-//                     tainted-index Shadow store (a depth-1 diamond arm, no merge
-//                     φ), the condition is a lowerable HL compare, and the store
-//                     does not clobber a cell the condition reads (§3c). The caller
-//                     pushes the `GuardedStoreArm` region for
+//   * Accept        — a one-armed diamond or an if/else (no merge φ) whose arms
+//                     are side-effect-only (at most one bounded-alloca
+//                     tainted-index Shadow store each, register-free `cq_phi`
+//                     calls, nothing escaping) with at least one store; the
+//                     condition is a lowerable HL compare that reads no memory
+//                     (§3c); and, for a composed region (an if/else or a phase),
+//                     classical angles and stored values that stay classical
+//                     after round 2 and speculatable classical arm ops. The
+//                     caller pushes the `GuardedStoreArm` region for
 //                     `emitGuardedStoreArmRegion`. NO diagnostic; `R` is populated
-//                     (Pred/Arm/MergeBB/Condition/ArmNegated).
+//                     (Pred/Arm/ArmFalse/MergeBB/Condition/ArmNegated, and
+//                     `Shadow`/`ShadowFalse` = each arm's phase calls).
 //   * Declined      — structurally a store-arm diamond (so this step OWNS it) but a
 //                     precondition failed (non-HL/Q+Q/unsupported-width condition; a
 //                     merge φ / mixed arm; a §3c clobber; the condition read as

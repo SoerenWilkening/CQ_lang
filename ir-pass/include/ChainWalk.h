@@ -140,15 +140,18 @@ bool isInPlaceGateOn(const llvm::CallInst *G, const llvm::Value *H);
 // "three" while the tree it shipped in had six, in the one comment whose whole
 // job is to let a reader audit exactly that). Re-measured 2026-10-05: there are
 // **SIX** `markBranchPhaseGate` calls, one per `CreateCall(Rz, …)`, in THREE
-// files, reached from FOUR emitters:
-//   1. `SwapRouteEmit.cpp:1816` — inside `emitKickbackGroup`, which records
+// files, reached from FIVE emitters (bd dm7f.3 added the fifth through site 1):
+//   1. `SwapRouteEmit.cpp:1818` — inside `emitKickbackGroup`, which records
 //      every gate of a group. Its callers are P1 flat `emitPhaseKickbackRegion`
-//      (the arm loop and the merge-tail loop) and P4
+//      (the arm loop and the merge-tail loop), P4
 //      `emitPhaseKickbackNestRegion` (pinned by `control_phase_kickback_and2.ll`'s
 //      MDTAG, the CHECKs in `..._share_flag*.ll`, the `..._inloop*.ll` family,
 //      `..._ifelse.ll`, `..._ifelse_tail_armfalse.ll`,
 //      `..._negated_tail_phi.ll`, and `control_phase_nest_kickback.ll`'s
-//      `MDTAG-COUNT-2`);
+//      `MDTAG-COUNT-2`) and, since bd dm7f.3, `GuardedStoreArmEmit.cpp`'s
+//      `emitGuardedStoreArmRegion` for a phase arm beside a guarded store (its
+//      own minted flag, stripped and freed by the emitter, never the store's;
+//      pinned by `control_guarded_store_ifelse_phase.ll`'s `MDTAG`);
 //   2. `SwitchRouteEmit.cpp:178` — P5, `emitSwitchPhaseRegion` (pinned by
 //      `control_phase_switch_kickback.ll`'s `MDTAG-COUNT-3`);
 //   3/4. `AngleSelectEmit.cpp:212` and `:218` — P2, the Rz stem's two gates on a
