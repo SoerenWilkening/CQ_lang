@@ -3009,7 +3009,8 @@ bool lineageCarriesBranchPhase(const Value *V, const TaintSet &taint) {
     if (Answer.empty())
       taintedOperandLineage(V, taint, Answer);
     // The values the phase is a function of: every TAINTED controlling
-    // condition, plus a tainted angle (the folded `cq_phi(c ? a : b)` form).
+    // condition, plus a tainted angle (a folded `cq_phi(c ? a : b)` nested under
+    // a tainted branch; a top-level fold never passes the per-call clause above).
     SmallVector<const Value *, 8> Keys;
     SmallVector<const BasicBlock *, 8> Ctl;
     transitiveControllers(CI->getParent(), Ctl);

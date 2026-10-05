@@ -2315,6 +2315,33 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
     return bail();  // a stray tainted body value — not the proven clean shape.
   }
 
+  // ── (E16) NOTHING BUT THE ANSWER LEAVES THE LOOP — bd 923w (the 3by9 Rule-11
+  // review, round 1, F1). Step (5) below strips the break flag from the loop
+  // terminator, so the rolled loop runs its FULL classical trip on every branch
+  // and the break exists only in `idx`. The capture rescues exactly ONE value,
+  // the escape φ's (copied into `out`). Any OTHER value defined in the loop and
+  // read outside it leaves as its full-trip value, not the source's: an LCSSA φ
+  // of the counter, `%iex = phi [0, guard], [i.next, loop]`, reads n where the
+  // source reads the break iteration + 1, a function of the quantum state. B2
+  // inspects only TAINTED exit φs, so nothing caught it, and step (5) also leaves
+  // no tainted control above a phase keyed on it, which `deleteGlobalPhases` then
+  // deletes as global (a verify-clean dropped relative phase, measured). The same
+  // read in `cq_measure(q) + i` is quantum data reaching classical code with no
+  // measure. A tainted value other than the answer would read the restored rail
+  // or a freed break-cond flag. Refuse every such use until it is lowered as a
+  // tainted control-merge value; a value defined OUTSIDE the loop (an exit φ
+  // carrying the loop-invariant `n`) is unaffected by the virtualization and
+  // passes. lowering_reject_break_escape_classical_counter.ll (decline) /
+  // lowering_loop_break_escape_invariant_classical.ll (its accepted twin).
+  for (BasicBlock *BB : Rgn.L->blocks())
+    for (Instruction &I : *BB)
+      for (User *U : I.users()) {
+        auto *UI = cast<Instruction>(U);
+        if (Rgn.L->contains(UI->getParent()) || UI == Rgn.EscapePhi)
+          continue;
+        return bail();  // a loop value escapes past the virtual break.
+      }
+
   // ── Width fences (the in-place / copy ABI serves ≤64-bit integers only) ────
   StringRef RailWidth = abiWidthFromType(RailPhi->getType());
   StringRef IdxWidth = abiWidthFromType(CounterPhi->getType());

@@ -1832,9 +1832,13 @@ bool functionCarriesBranchPhase(const llvm::Function *F, const TaintSet &taint);
 // phase's operand graph (it has none): the phase's KEYS are the conditions of
 // every branch its block is control-dependent on, TRANSITIVELY (classical
 // intermediate branches included), that are tainted, plus its angle when that is
-// tainted (the folded `cq_phi(c ? a : b)`). The answer is true iff the tainted
-// backward operand closure of some key meets the tainted backward operand
-// closure of `V`. Transitivity is load-bearing: a loop-invariant `if (p == 3)
+// tainted. The angle key matters only for a folded `cq_phi(c ? a : b)` that is
+// ITSELF control-dependent on a tainted branch: `-O1`'s top-level fold of
+// `if (q==5) cq_phi(a); else cq_phi(b);` is no branch phase under the shared
+// per-call clause, so neither predicate consults it (the angle-select emitter
+// lowers it, with a correct stream; the inconsistency is bd tinh). The answer
+// is true iff the tainted backward operand closure of some key meets the
+// tainted backward operand closure of `V`. Transitivity is load-bearing: a loop-invariant `if (p == 3)
 // cq_phi(θ)` INSIDE a quantum-exit loop has `p == 3` as its only direct
 // controller, but that branch's block is control-dependent on the loop's own
 // exit, whose condition reads the rail (`lowering_reject_break_phase_inloop_
@@ -1843,14 +1847,20 @@ bool functionCarriesBranchPhase(const llvm::Function *F, const TaintSet &taint);
 // WHAT THE ANSWER IS FOR, measured against L5. The 7.4 break construct is a
 // basis permutation that reads every register it does not own only as a
 // control, so by linearity a diagonal phase applied BEFORE it rides on the
-// amplitude untouched, and one applied AFTER it is a later gate — the
-// comparand case is the stream `lowering_loop_break_qq_phase.ll` pins with its
-// trace argument. The only placement that is a unitary hazard is a phase INSIDE
-// the construct (the loop body), and that is refused independently of this
-// predicate by tryBreak's B4 side-effect clause (`cq_phi` is a call). So "a
-// phase whose keys meet the ANSWER's lineage" is a policy line kept at the
-// owner's scope (bd 3by9), not a unitary proof: the before-the-loop kickback ON
-// q (`lowering_reject_break_phase_answer_kickback.ll`) stays loud under it.
+// amplitude untouched — the comparand case is the stream
+// `lowering_loop_break_qq_phase.ll` pins with its trace argument. A phase
+// applied AFTER it is a later gate ONLY IF its keys hold the source's values
+// there, and the construct guarantees that for the answer `out`, for registers
+// it only reads, and for values defined outside the loop — NOT for a value
+// computed inside the loop: the break is virtual (full classical trip), so such
+// a value leaves as its full-trip value (bd 923w; the emitter's E16 refuses any
+// in-loop value read outside the loop other than the escape φ). The remaining
+// unitary hazard is a phase INSIDE the construct (the loop body), refused
+// independently of this predicate by tryBreak's B4 side-effect clause (`cq_phi`
+// is a call). So "a phase whose keys meet the ANSWER's lineage" is a policy
+// line kept at the owner's scope (bd 3by9), not a unitary proof: the
+// before-the-loop kickback ON q (`lowering_reject_break_phase_answer_kickback.ll`)
+// stays loud under it.
 //
 // L1. Asked once, from `lowerLoops`, before round 1 of control detection. For
 // an emittable break the answer's closure is the rail chain rooted at a
@@ -1858,8 +1868,9 @@ bool functionCarriesBranchPhase(const llvm::Function *F, const TaintSet &taint);
 // that becomes tainted only in round 2 (a control-merge `%out`) is invisible
 // here exactly as it is to `functionCarriesBranchPhase`, and the backward
 // OPERAND walk cannot follow a merge `%out` back to its condition in either
-// round. Both gaps can only accept a phase outside the loop body, which the
-// paragraph above shows is unitary-safe; no round-2 re-ask is recorded.
+// round. Both gaps can only accept a phase outside the loop body whose keys E16
+// guarantees hold the source's values, which the paragraph above shows is
+// unitary-safe; no round-2 re-ask is recorded.
 bool lineageCarriesBranchPhase(const llvm::Value *V, const TaintSet &taint);
 
 // bd test_C_libtooling-3qlq Inc 1, PRD §6.2 row P7 (owner decision D2) — DELETE
