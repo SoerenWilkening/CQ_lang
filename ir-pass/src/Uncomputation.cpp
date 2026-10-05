@@ -976,8 +976,9 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
 // Does `M` — a user of the BORROWED parent `P` — leave P's BASIS LABEL alone?
 //
 // FAILS CLOSED, and that is the whole design: the shapes below — (1)/(1b) a
-// diagonal rotation, (2) a forward producer and, since bd rhk5, (3) a Phase-6 clone
-// call PROVEN read-only on `P` — are the ONLY ones admitted, and everything else
+// diagonal rotation, (2) a forward producer, since bd rhk5 (3) a Phase-6 clone
+// call PROVEN read-only on `P`, and since bd 7xsh (4) a recorded Phase-4 flag
+// strip reading `P` outside its written slot — are the ONLY ones admitted, and everything else
 // counts as a mutation, a `cqrt_measure_*` included. (This sentence said "exactly
 // two shapes" from Inc 5a until bd rhk5; clause (1b) had already made it three.)
 // Clause (d) of the record invariant (bd memory
@@ -1083,12 +1084,52 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P,
   //     that no discharge the pre-rhk5 planner made can be lost.
   if (AdmitCloneCalls && cloneCallPreservesArg(M, P, taint))
     return true;
+  // (4) AN EMITTER-RECORDED PHASE-4 FLAG STRIP THAT READS `P` IN A HANDLE SLOT —
+  //     bd test_C_libtooling-7xsh, and the reason is (2)'s, read in reverse. The
+  //     strip `cq_template_<cmp>_<W>_hl_unc(flag, P, k)` XORs `cmp(P, k)` onto
+  //     its slot-0 flag and READS every other slot: it is Σ_p |p><p|_P ⊗
+  //     X_flag^{cmp(p,k)}, block-diagonal in P's computational basis, so P's
+  //     LABEL after it is its label before — all clause (d) asks of a gate in
+  //     the window (the `_unc`s this partition emits are label-only readers;
+  //     see `routeGroupFullyInside`'s header). MEASURED customer: a depth-2
+  //     phase nest whose INNER compare reads the outer chain's source `q`
+  //     (`d = q*3; if (d > 5) { cq_phi(b); if (q < 9) cq_phi(a); }`) puts the
+  //     inner strip `icmp_slt_i32_hl_unc(f2, q, 9)` inside the outer chain's
+  //     window, and refusing it left `q*3` allocated and entangled with `q`
+  //     (stage 2b: 1 template rail left dirty; control_swap_nested_phase_
+  //     derived.ll, which this row now discharges).
+  //
+  //     THE SAME PREDICATE AS `isInteriorConsumer`'s clause (c), asked, not
+  //     re-spelt (`isRecordedStripReaderOf`), and its three fences are this
+  //     row's fences:
+  //       * SLOT 0 REFUSED: a strip whose FLAG is `P` writes `P` (it zeroes it),
+  //         which is exactly the mutation clause (d) exists to refuse. It is
+  //         UNREACHABLE today, stated so a green suite is not read as a test of
+  //         it: a borrowed parent must be in `taint.Tainted`, and every recorder
+  //         (AngleSelect / SwapRoute / SwitchRoute) strips a flag it minted
+  //         through `lowerCompareToFlag`, which never enters `Tainted` (the one
+  //         tainted-flag minter, `GuardedStoreArmEmit`, records nothing). The
+  //         tainted flag clause (1) cites — the `zext(flag)` rail of
+  //         `int f=(q>5); if (q>5){…} return cq_measure(q+f);` — is the
+  //         condition's own DATA compare, and is never stripped (measured). The
+  //         fence is the shared `isUncHandleSlot` one, defence in depth, and no
+  //         mutant of it can be killed until a recorder strips a tainted flag;
+  //       * a `_controlled_unc` or literal slot: `isUncHandleSlot` fails closed;
+  //       * MEMBERSHIP: an unrecorded `_unc` — a spine adjoint, a 7.4
+  //         reverse-play, a hand-written call — is NOT admitted, though the same
+  //         algebra holds for any out-first `_unc`; kept out until a customer is
+  //         measured, because those are adjoints another owner is still
+  //         executing (clause (c)'s reason). Pinned by
+  //         lowering_uncompute_interior_leak_unrecorded_strip_reads_parent.ll.
+  if (isRecordedStripReaderOf(M, P, taint))
+    return true;
   // Everything else is a mutation for this purpose: `cqrt_ry_` (the chained
   // theta) and `cqrt_ry_<W>_controlled` (the drbq Inc-1 control-in-place arm —
   // NON-diagonal, it really does relabel P on the `f=1` branch),
   // `cqrt_addc/xorc_` and `cqrt_qram_store_` (in-place relabelling),
   // `cqrt_x` / `cqrt_cswap` / `cqrt_cnot` / `cqrt_toffoli` (routes and targets),
-  // a `cqrt_copy_*` destination, every `_unc`/`_inv` adjoint, a `cqrt_free`, and
+  // a `cqrt_copy_*` destination, every `_unc`/`_inv` adjoint OTHER than a
+  // recorded strip reading `P` purely (row (4)), a `cqrt_free`, and
   // `cqrt_measure_*` (a collapse — sound to read past in principle, refused here
   // because "in principle" is what this project's history says not to trust).
   //
@@ -1195,8 +1236,11 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P,
 // the 7.2 abort park (`AbortParkEmit`), which could start recording. If you
 // re-enable a writer, re-read the atomicity and homogeneity fences below FIRST;
 // they are unchanged and still correct. If you delete it, delete
-// `RestoringRoutes`, its scrub in `SwapRouteEmit::scrubTaint`, and
-// `lowering_uncompute_interior_leak_route_in_interval.ll`'s premise together.
+// `RestoringRoutes` and its scrub in `SwapRouteEmit::scrubTaint` together.
+// (`lowering_uncompute_interior_leak_route_in_interval.ll` was this function's
+// leak pin; its route retired with drbq Inc 2a, its strip became the refuser,
+// and since bd 7xsh row (4) of `preservesBorrowedParent` admits that strip, so
+// the file is an ACCEPT and pins nothing here.)
 bool routeGroupFullyInside(const CallInst *M, const Value *P, CallInst *First,
                            Instruction *At, const DominatorTree &DT,
                            const TaintSet &taint, bool Alternates) {
@@ -1774,10 +1818,13 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
   //    is after the region and whatever it wrote on the wire is to `First`'s
   //    LEFT — admitted by LEFT, not RIGHT. (Measured pre-3qlq on the swap route,
   //    sound because its `cqrt_cswap` pair self-cancels: the second restores the
-  //    basis label the first exchanged.) What is NOT admitted is a route
-  //    STRICTLY INSIDE the interval — that satisfies neither disjunct and leaks
-  //    (lowering_uncompute_interior_leak_route_in_interval.ll). The interval,
-  //    not the source line, is what this scan reasons about.
+  //    basis label the first exchanged.) What is NOT admitted is a label
+  //    MUTATION strictly inside the interval — that satisfies neither disjunct
+  //    and leaks (lowering_uncompute_interior_leak_parent_ry_between.ll; the
+  //    route-in-interval pin that used to stand here accepts since bd 7xsh,
+  //    because its in-interval user is now a recorded strip, row (4) of
+  //    `preservesBorrowedParent`). The interval, not the source line, is what
+  //    this scan reasons about.
   //
   //    THE TWO DISJUNCTS ARE NOT SYMMETRIC IN WHAT THEY PROTECT, and the
   //    difference is the owner's clause-(d) ruling of 2026-08-27: "a discharge

@@ -967,18 +967,13 @@ bool isInteriorConsumer(const CallInst *C, const Value *R,
   //     positional half — that the strip has already run and never reads the
   //     rail again — is the driver's `provablyBefore` proof, exactly as it is
   //     for a forward producer.
-  if (taint.DischargedFlagGates.count(C)) {
-    StringRef CN = C->getCalledFunction() ? C->getCalledFunction()->getName()
-                                          : StringRef();
-    bool ReadsInHandleSlot = false;
-    for (unsigned I = 0, E = C->arg_size(); I != E; ++I)
-      if (C->getArgOperand(I) == R) {
-        if (!isUncHandleSlot(CN, I))
-          return false;
-        ReadsInHandleSlot = true;
-      }
-    return ReadsInHandleSlot;
-  }
+  //
+  //     The membership-and-slot test itself is `isRecordedStripReaderOf`, the
+  //     one spelling `Uncomputation::preservesBorrowedParent` asks too (bd 7xsh).
+  //     A recorded strip that does NOT read `R` purely still answers here, with
+  //     `false` — no fall-through to the list below, exactly as before.
+  if (taint.DischargedFlagGates.count(C))
+    return isRecordedStripReaderOf(C, R, taint);
   // Everything else DISQUALIFIES the rail, and the list of what "everything
   // else" contains is the point: `cqrt_measure_*` (observed), a
   // `cqrt_tape_write_*` / `cqrt_copy_*` (recorded into a kept carrier the
@@ -991,6 +986,25 @@ bool isInteriorConsumer(const CallInst *C, const Value *R,
   // late M-A guard owns loudness for a record that is still standing at a
   // non-diagonal gate.
   return false;
+}
+
+// See the header. Moved VERBATIM out of `isInteriorConsumer`'s clause (c) (bd
+// 7xsh) so its second customer asks it rather than re-spelling it (Rule 12).
+bool isRecordedStripReaderOf(const CallInst *C, const Value *R,
+                             const TaintSet &taint) {
+  if (!taint.DischargedFlagGates.count(C))
+    return false;
+  StringRef CN = C->getCalledFunction() ? C->getCalledFunction()->getName()
+                                        : StringRef();
+  bool ReadsInHandleSlot = false;
+  for (unsigned I = 0, E = C->arg_size(); I != E; ++I)
+    if (C->getArgOperand(I) == R) {
+      if (!isUncHandleSlot(CN, I))
+        return false;  // slot 0 (the flag it WRITES), a literal slot, or a
+                       // layout `isUncHandleSlot` cannot read — fail closed.
+      ReadsInHandleSlot = true;
+    }
+  return ReadsInHandleSlot;
 }
 
 bool isInteriorTerminalHandle(Value *Handle, const TaintSet &taint,

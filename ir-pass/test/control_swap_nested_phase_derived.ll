@@ -10,22 +10,34 @@
 ; phase on f1, the inner on a fresh |0> AND node `g = f1 ∧ f2` (`cqrt_toffoli`),
 ; uncomputed and freed before the two flag strips.
 ;
-; ⚠ LEFT-DIRTY RAIL (measured 2026-10-05, bd zbz3 item 11; cq-opt sha256
-; 50a6f549 at 2ab46c39). The stream below never uncomputes or frees the outer
-; chain's `cq_template_fadd_f64_hl` rail (H_OP), and FCNT pins exactly three
-; frees (g and the two flags), so `q + 1.0` stays allocated and entangled with
-; q. This is NOT bd r2j3.7, whose pure op has no users: this fadd is live, read
-; by the outer mint and the outer strip. The flat outer region alone discharges
-; it (`cq_template_fadd_f64_hl_unc` + `cqrt_free`), and so does this nest with
-; the inner compare on a different register; an i32 nest (`q*3 > 5`, `q < 9`)
-; leaks the same way. That points at clause (d) of the M-B interior discharge
-; (`borrowedParentsUnmoved`, Uncomputation.cpp): the INNER strip
-; `cq_template_fcmp_olt_f64_hl_unc(flag, q, 9.0)` reads the borrowed parent q
-; inside the discharge window, and `preservesBorrowedParent` admits no `_unc`.
-; Stage 2b reports it as "3 template rail mint(s) of which 1 left dirty". Here
-; only a computational-basis measure of q follows, so the measured result is
-; unchanged, and a `cq_theta` on q after the nest declines loudly (`condition
-; predates a non-diagonal gate`). A Rule-6 leak to remove; not in bd yet.
+; THE OUTER CHAIN IS DISCHARGED (bd 7xsh, 2026-10-05; FCNT 3 -> 4, DELIBERATE).
+; Measured first on cq-opt sha256 50a6f549 (bd zbz3 item 11): the stream never
+; uncomputed the outer chain's `cq_template_fadd_f64_hl` rail (H_OP) — FCNT pinned
+; three frees (g and the two flags) and stage 2b reported "3 template rail mint(s)
+; of which 1 left dirty": `q + 1.0` stood allocated, entangled with q. Cause,
+; INSTRUMENTED (not inferred): H_OP is an M-B interior rail discharged after the
+; outer strip with q BORROWED, and clause (d) (`borrowedParentsUnmoved`) refused
+; exactly one user of q in that window — the INNER strip
+; `cq_template_fcmp_olt_f64_hl_unc(H_CMP1, q, 9.0)` — because
+; `preservesBorrowedParent` admitted no `_unc`.
+;
+; THE SEMANTIC EVIDENCE for the new stream. The inner strip XORs [q<9.0] onto its
+; slot-0 flag and only READS q (slot 1; slot 2 is a literal): Σ_v |v><v|_q ⊗
+; X^{[v<9]}, block-diagonal in q's basis, so q's LABEL over the window is the label
+; the forward fadd read. Row (4) of `preservesBorrowedParent` now admits an
+; emitter-RECORDED strip (`DischargedFlagGates`) reading the parent outside slot 0
+; (`isRecordedStripReaderOf`, shared with `isInteriorConsumer` clause (c)). The
+; discharge `fadd_f64_hl_unc(H_OP, q, 1.0)` is out-of-place XOR-compute, so it is
+; EXACT for f64 whatever the rounding: H_OP holds fl(v+1.0) and the `_unc` XORs
+; fl(v+1.0) recomputed from the same label, leaving |0> in a product state, and
+; `cqrt_free(H_OP)` learns nothing. It lands after the outer strip (H_OP's last
+; reader) and before the outer flag's free. f64 here is DATA (a `cq_theta_f64`
+; register, not an angle — R3). The i32 twin is
+; control_nested_phase_inner_reads_chain_source.ll; the leak neighbour (an
+; UNRECORDED `_unc` reading the parent stays refused) is
+; lowering_uncompute_interior_leak_unrecorded_strip_reads_parent.ll. A
+; `cq_theta` on q after the nest still declines (`condition predates a
+; non-diagonal gate`), unchanged.
 ;
 ; WI-1 lands DETECTION only — recognized as the accept shape, declined
 ; transitionally `nested control flow`, so this XFAILs. WI-3 lands the emitter and
@@ -111,6 +123,8 @@ merge:
 ; CHECK-NEXT: call void @cq_template_fcmp_olt_f64_hl_unc(i32 %[[H_CMP1]], i32 %[[H]], double 9.000000e+00)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[H_CMP1]])
 ; CHECK-NEXT: call void @cq_template_fcmp_ogt_f64_hl_unc(i32 %[[H_CMP]], i32 %[[H_OP]], double 5.000000e+00)
+; CHECK-NEXT: call void @cq_template_fadd_f64_hl_unc(i32 %[[H_OP]], i32 %[[H]], double 1.000000e+00)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[H_OP]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[H_CMP]])
 ; CHECK-NEXT: %[[M2:[a-zA-Z0-9_.]+]] = call double @cqrt_measure_f64(i32 %[[H]])
 ; CHECK-NEXT: ret double %[[M2]]
@@ -145,7 +159,7 @@ merge:
 ; pattern is the only spelling that pins `exactly n`.
 ; ACNT-COUNT-2: call void @cqrt_rz_i1(
 ; ACNT-NOT:     call void @cqrt_rz_i1(
-; FCNT-COUNT-3: call void @cqrt_free(
+; FCNT-COUNT-4: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
 ;
 ; Every `cqrt_rz_i1` the pass emits must carry `!cq.branchphase`, or the

@@ -549,6 +549,19 @@ bool isInteriorTerminalHandle(llvm::Value *Handle, const TaintSet &taint,
 bool isInteriorConsumer(const llvm::CallInst *C, const llvm::Value *R,
                         const TaintSet &taint, bool AdmitCloneCalls);
 
+// Is `C` an EMITTER-RECORDED Phase-4 flag strip (`TaintSet::DischargedFlagGates`)
+// that READS `R` — `R` in at least one `_unc` HANDLE slot (`isUncHandleSlot`:
+// slot >= 1, never the slot-0 flag it zeroes, never a literal slot) and in no
+// other slot? The strip XORs `cmp(operands…)` onto its slot-0 flag, so for every
+// such `R` it is block-diagonal in `R`'s computational basis: `R`'s LABEL is the
+// same after it as before. ONE spelling, two questions (bd 7xsh): clause (c) of
+// `isInteriorConsumer` ("has the consumer finished with the rail?") and clause
+// (4) of `Uncomputation`'s `preservesBorrowedParent` ("does the gate move the
+// borrowed parent's label?"). Membership, never the `_unc` name: the spine's
+// own adjoints and the 7.4 reverse-play wear the same suffix (see clause (c)).
+bool isRecordedStripReaderOf(const llvm::CallInst *C, const llvm::Value *R,
+                             const TaintSet &taint);
+
 // ── bd test_C_libtooling-rhk5 — a PHASE-6 CLONE CALL THAT ONLY READS `V` ─────
 //
 // Does the call `C` — a call to a function the SPECIALIZER built (a clone

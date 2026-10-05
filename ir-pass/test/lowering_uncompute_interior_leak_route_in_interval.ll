@@ -1,7 +1,8 @@
-; lowering_uncompute_interior_leak_route_in_interval.ll — LEAK PROBE (M-B
-; Increment 5, bd test_C_libtooling-4p7j Rule-13 round, finding F4a). CLAUSE (d)
-; with a user of the BORROWED parent strictly INSIDE the interval [first recovered
-; gate reading it, `At`]: it satisfies neither disjunct, and the group leaks.
+; lowering_uncompute_interior_leak_route_in_interval.ll — ACCEPT since bd
+; test_C_libtooling-7xsh (was a LEAK PROBE: M-B Increment 5, bd 4p7j Rule-13
+; round, finding F4a). CLAUSE (d) with a user of the BORROWED parent strictly
+; INSIDE the interval [first recovered gate reading it, `At`]. The name is kept so
+; a merge cannot resurrect the old leak pin under it (CLAUDE.md L7).
 ;
 ; The clause-(d) scan has exactly two ways out for a mutation `M` of a borrowed
 ; parent `P`:
@@ -14,20 +15,31 @@
 ; `if (a > 2) cq_phi(.25)` and read AFTER it (`mul %x, 3`, measured), so `At`
 ; lands after the region while `First` is before it.
 ;
-; WHAT REFUSES IT TODAY. The region's condition is DIRECT, so its flag strip
-; `cq_template_icmp_sgt_i32_hl_unc(%[[H_CMP]], %[[H]], 2)` reads the borrowed wire
-; itself, inside the interval. `preservesBorrowedParent` admits only a diagonal
-; rotation, a forward producer or a proven read-only clone call; an adjoint twin
-; is none of them, so the strip must clear the positional scan, and it cannot
-; (after `First`, before `At`). The kickback's `cqrt_rz_i1` lands on the flag, not
-; on `%[[H]]`. So `%h_op` is never uncomputed (the NOROUTE `mul` `_unc` negatives).
+; WHAT REFUSED IT UNTIL bd 7xsh. The region's condition is DIRECT, so its flag
+; strip `cq_template_icmp_sgt_i32_hl_unc(%[[H_CMP]], %[[H]], 2)` reads the borrowed
+; wire itself, inside the interval, and `preservesBorrowedParent` admitted no
+; adjoint twin; the strip could not clear the positional scan either (after
+; `First`, before `At`). The kickback's `cqrt_rz_i1` lands on the flag, not on
+; `%[[H]]`. So `%h_op` was never uncomputed.
 ;
-; THAT IS AN OVER-DECLINE AND IS RECORDED AS ONE. A recorded strip demonstrably
-; does not WRITE the operands in its shifted handle slots — that is the whole
-; basis on which `isInteriorConsumer` admits it as a consumer — so admitting it
-; in `preservesBorrowedParent` too would be the same claim from the other side.
-; The widening is filed rather than assumed. If this file ever ACCEPTS, check that
-; it was that widening and not a lost fence.
+; THIS FILE NOW ACCEPTS, AND IT WAS THE WIDENING, NOT A LOST FENCE — checked as
+; this header asked. The widening it recorded as owed is row (4) of
+; `preservesBorrowedParent`: an emitter-RECORDED strip reading the parent outside
+; its slot-0 flag (`isRecordedStripReaderOf`, the very predicate `isInteriorConsumer`
+; clause (c) uses — "the same claim from the other side"). MEASURED: the old and
+; new lowerings of this module differ by exactly the two lines
+; `mul_i32_unc(%h_op, %h, %h)` + `cqrt_free(%h_op)`, after `%h_op`'s last reader.
+; Hand trace, Ry(.5)|u0> = Σ_v a_v|v> on q:
+;   mul(q, q)                 x = v*v                    (fresh rail)
+;   icmp_sgt_hl(q, 2)         f = [v>2]; rz_i1(f, .25): branch phase on f
+;   icmp_sgt_hl_unc(f, q, 2)  f = 0 — reads q, writes only f; free(f)
+;   mul_hl(x, 3)              y = 3v^2                   (x's last reader)
+;   mul_unc(x, q, q)          x = v^2 ⊕ v^2 = 0: q's label is v across the window
+;                             (the strip is Σ_v |v><v|_q ⊗ X_f^{[v>2]})
+;   cqrt_free(x)              |0> in a product state — nothing learned
+;   measure(y), measure(q)    the program's joint distribution, phase kept
+; The membership neighbour (an UNRECORDED `_unc` reading the parent stays
+; refused) is lowering_uncompute_interior_leak_unrecorded_strip_reads_parent.ll.
 ;
 ; HISTORY, and why the name no longer describes the file. Increment 5 wrote it for
 ; a Phase-4 `cqrt_cswap` ROUTE pair on the parent inside the interval
@@ -114,6 +126,8 @@ merge:
 ; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[H_CMP]], i32 %[[H]], i32 2)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[H_CMP]])
 ; CHECK-NEXT: %[[H_OP1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[H_OP]], i32 3)
+; CHECK-NEXT: call void @cq_template_mul_i32_unc(i32 %[[H_OP]], i32 %[[H]], i32 %[[H]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[H_OP]])
 ; CHECK-NEXT: %[[M3:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[H_OP1]])
 ; CHECK-NEXT: %[[M4:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[H]])
 ; CHECK-NEXT: %[[S:[a-zA-Z0-9_.]+]] = add i32 %[[M3]], %[[M4]]
@@ -139,8 +153,8 @@ merge:
 ; NOROUTE-NOT: cq_phi_
 ;   ^ the register form is a RESERVED NAME and declines (round-1 F-L6-1)
 
-; Original negatives PRESERVED (re-measured on the Inc-1 output):
-; NOROUTE-NOT: @cq_template_mul_i32_unc(
+; Original negatives PRESERVED (re-measured on the Inc-1 output), minus
+; `@cq_template_mul_i32_unc(` — the discharge bd 7xsh added (CHECK above):
 ; NOROUTE-NOT: @cq_template_mul_i32_hl_unc(
 ; NOROUTE-NOT: call i32 @cqrt_alloc_i32(i32 0)
 
@@ -151,7 +165,7 @@ merge:
 ; pattern is the only spelling that pins `exactly n`.
 ; ACNT-COUNT-1: call void @cqrt_rz_i1(
 ; ACNT-NOT:     call void @cqrt_rz_i1(
-; FCNT-COUNT-1: call void @cqrt_free(
+; FCNT-COUNT-2: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
 ;
 ; Every `cqrt_rz_i1` the pass emits must carry `!cq.branchphase`, or the
