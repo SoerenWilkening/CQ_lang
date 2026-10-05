@@ -1130,6 +1130,15 @@ namespace {
 constexpr char kMsgLiveRecord[] =
     "cq rotation lowering: non-diagonal gate over a live derived record";
 
+// bd test_C_libtooling-01po.7 — the LATE RE-CHECK of a stale-record grant. The
+// DECISION is `OpcodeLowering::checkStaleReads`' (it granted a pure op under
+// tainted control on the premise that its hoisted record is gone before the gate),
+// so the message keeps the `cq opcode lowering:` stage prefix, as
+// `diagnosePreLoopCommitStale` keeps `cq loop lowering:`. Mirrored
+// character-for-character by lowering_reject_tainted_arm_read_live_at_gate.ll.
+constexpr char kMsgTaintedArmReadLive[] =
+    "cq opcode lowering: hoisted tainted-arm read is live at a non-diagonal gate";
+
 // The called OPERAND's own name, never `getCalledFunction()` — the bd xy9n
 // lesson (LiteralIntegrity.cpp): `getOrInsertFunction` may resolve to a
 // `GlobalAlias`, for which `getCalledFunction()` is null and every name test
@@ -2035,15 +2044,30 @@ bool recordAbsentAt(CallInst *R, CallInst *T, const DominatorTree &DT) {
   return false;
 }
 
+// Clause 2 for ONE record: `R`'s own discharge runs provably before the gate,
+// PER ACTIVATION (see the note in `recordIsExemptAt`). The one spelling, asked by
+// `recordIsExemptAt` and by the bd 01po.7 re-check, for which it is the ONLY
+// exemption a hoisted tainted-arm read can earn.
+bool recordDischargedBefore(CallInst *R, CallInst *T, const DominatorTree &DT) {
+  for (User *U : R->users())
+    if (auto *CI = dyn_cast<CallInst>(U))
+      if (isDischargeOf(CI, R) && provablyBeforePerActivation(CI, T, R, DT))
+        return true;
+  return false;
+}
+
 // Clauses 2-4 for ONE record. Returns true iff `R` is EXEMPT at `T`.
 bool recordIsExemptAt(CallInst *R, CallInst *T, const TaintSet &taint,
                       const DominatorTree &DT) {
+  if (recordDischargedBefore(R, T, DT))
+    return true;  // clause 2 (below, for the reasoning).
   for (User *U : R->users()) {
     auto *UI = dyn_cast<Instruction>(U);
     if (!UI)
       continue;
     if (auto *CI = dyn_cast<CallInst>(UI)) {
-      // clause 2 — R's own discharge, provably before the gate.
+      // clause 2 — R's own discharge, provably before the gate. Asked above, by
+      // `recordDischargedBefore`.
       //
       // PER ACTIVATION since bd test_C_libtooling-8h7d.5 (which closes bd
       // test_C_libtooling-58tc, "no record inside a loop body can be exempted by
@@ -2059,8 +2083,6 @@ bool recordIsExemptAt(CallInst *R, CallInst *T, const TaintSet &taint,
       // A LOOP-INVARIANT record (minted outside the loop) is untouched — its
       // mint is not on the back-edge path, so the barrier walk finds a
       // barrier-free path and the guard still reports it live, which is right.
-      if (isDischargeOf(CI, R) && provablyBeforePerActivation(CI, T, R, DT))
-        return true;
       // clause 4 — COLLAPSED before the gate, so nothing is left to dephase:
       // measured, or written IN FULL to the 7.6 output tape (bd gl3x, owner
       // ruling 2026-10-05: a tape write before the gate exempts "the way a
@@ -2290,6 +2312,12 @@ bool warnLiveRecordRotations(Module &M, const TaintSet &taint) {
         if (isRecordProducer(CI) && LiftedReaders.insert(CI).second)
           LiftWork.push_back(CI);
   }
+  // bd test_C_libtooling-01po.7 — the stale-record fence's GRANTED tainted-arm
+  // reads (`TaintSet::TaintedArmGrantedReads`), followed to their templates.
+  SmallPtrSet<const Value *, 4> GrantedReads;
+  for (const WeakTrackingVH &H : taint.TaintedArmGrantedReads)
+    if (const Value *V = H)
+      GrantedReads.insert(V);
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
@@ -2342,6 +2370,7 @@ bool warnLiveRecordRotations(Module &M, const TaintSet &taint) {
           continue;
         if (!DT)
           DT.emplace(F);
+        bool WarnGate = false;
         for (CallInst *R : Records) {
           // A record MINTED STRICTLY AFTER THE GATE cannot dephase it (the
           // Rule-13 round's F2 finding: the guard never tested that `R` exists
@@ -2373,24 +2402,43 @@ bool warnLiveRecordRotations(Module &M, const TaintSet &taint) {
           if (LiftedReaders.count(R) &&
               !isPotentiallyReachable(R, T, /*ExclusionSet=*/nullptr, &*DT))
             continue;
+          // THE 01po.7 RE-CHECK. A read the stale-record fence granted under
+          // tainted control was hoisted and minted its record on EVERY branch, so
+          // only its own discharge before the gate (clause 2) makes it absent
+          // there. Clauses 3 and 4 say the record is the PROGRAM's data, which is
+          // false on the branch where the source never computed it; so a standing
+          // granted read is a wrong unitary, never the lyyf warning, and it is
+          // asked before `recordIsExemptAt` can exempt it on those grounds.
+          if (GrantedReads.count(R)) {
+            if (recordDischargedBefore(R, T, *DT))
+              continue;
+            F.getContext().diagnose(DiagnosticInfoUnsupported(
+                F, kMsgTaintedArmReadLive, R->getDebugLoc()));
+            return true;  // `diagnose` exits on a DS_Error; never fall through.
+          }
           if (recordIsExemptAt(R, T, taint, *DT))
             continue;
-          // ONE report per GATE, not per record: the message names the gate (it
-          // carries `T`'s `!dbg`), so a second record on the same rotation would
-          // print a duplicate line with nothing new in it.
-          //
-          // DS_Warning, and the severity is the ENTIRE behavioural change of
-          // Increment 7b (owner ruling 2026-08-29, bd lyyf — see the header).
-          // The analysis above is byte-identical to the Increment-3 guard, the
-          // message string is unchanged, and `opt` now exits ZERO and hands back
-          // the lowered module. The record is LEFT ALLOCATED: nothing in this
-          // function ever freed anything, and the M-B spine's leak-first
-          // fallback is what left it standing, so Rule 6 is untouched — a rail
-          // that is not provably |0> is never freed, it is only reported.
+          // A live record. Do not stop at it: a GRANTED read later in `Records`
+          // must still be asked (the error above), and the warning is reported
+          // once per gate below either way.
+          WarnGate = true;
+        }
+        // ONE report per GATE, not per record: the message names the gate (it
+        // carries `T`'s `!dbg`), so a second record on the same rotation would
+        // print a duplicate line with nothing new in it.
+        //
+        // DS_Warning, and the severity is the ENTIRE behavioural change of
+        // Increment 7b (owner ruling 2026-08-29, bd lyyf — see the header).
+        // The analysis above is byte-identical to the Increment-3 guard, the
+        // message string is unchanged, and `opt` now exits ZERO and hands back
+        // the lowered module. The record is LEFT ALLOCATED: nothing in this
+        // function ever freed anything, and the M-B spine's leak-first
+        // fallback is what left it standing, so Rule 6 is untouched — a rail
+        // that is not provably |0> is never freed, it is only reported.
+        if (WarnGate) {
           F.getContext().diagnose(DiagnosticInfoUnsupported(
               F, kMsgLiveRecord, T->getDebugLoc(), DS_Warning));
           Warned = true;
-          break;
         }
       }
     }

@@ -237,15 +237,18 @@ bool inLowerOpsScope(Instruction &I, TaintSet &taint) {
 // trace runs the read first. A gate that fails only that precondition is still
 // harmless when `gateFollowsRead`; every collected gate must pass it.
 //
-// ⚠ ONLY FOR A READ THAT RUNS WHERE IT STANDS (review round 2, F1: a wrong unitary
-// on d6ffaca3). A value arm's pure chain inside a TAINTED arm is hoisted into the
-// pred, where it runs UNCONDITIONALLY, and the guarded-store region never
-// discharges it: `if (c > 2) arr[j] = (int)(q ^ 6); cq_theta(&q, .3);` left
-// `trunc(q)` a live copy of q on every branch across the Ry (rc 0). So a read under
-// tainted control (`instUnderTaintedControl`, the carve's own predicate) keeps the
-// dominance precondition unless `InPlace`: a QRAM access, which its emitter issues
-// at the access under control with nothing hoisted
-// (lowering_reject_stale_record_tainted_arm_hoisted_chain.ll pins the pure op).
+// ⚠ A READ UNDER TAINTED CONTROL IS GRANTED ON A RECORDED PREMISE (bd
+// test_C_libtooling-01po.7). A value arm's pure chain inside a TAINTED arm is
+// hoisted into the pred, where it runs UNCONDITIONALLY. Review round 2 of r2j3.2
+// (F1, a wrong unitary on d6ffaca3) measured `if (c > 2) arr[j] = (int)(q ^ 6);
+// cq_theta(&q, .3);` leaving `trunc(q)` a live copy of q on every branch across the
+// Ry (rc 0), and this fence then withheld the grant from every read under tainted
+// control (`instUnderTaintedControl`) except an `InPlace` QRAM access. The hazard is
+// the hoisted RAIL, not the value: since bd r2j3.1 the uncompute spine discharges
+// that chain right after the store when nothing reverses it, so the read is granted
+// and RECORDED (`TaintSet::TaintedArmGrantedReads`), and the late live-record pass
+// declines loudly if its record is still standing at a gate
+// (lowering_reject_tainted_arm_read_live_at_gate.ll).
 bool gateFollowsRead(const Instruction &I, const CallInst *T,
                      const DominatorTree &DT, const PostDominatorTree &PDT);
 
@@ -394,11 +397,21 @@ bool checkStaleReads(Instruction &I, ArrayRef<Value *> Reads, TaintSet &taint,
       continue;
     if (!PDT)
       PDT.emplace(*I.getFunction());
-    if ((InPlace || !instUnderTaintedControl(&I, taint, DT)) &&
-        llvm::all_of(Gates, [&](const CallInst *T) {
+    if (llvm::all_of(Gates, [&](const CallInst *T) {
           return gateFollowsRead(I, T, DT, *PDT);
-        }))
+        })) {
+      // bd test_C_libtooling-01po.7 — a pure op UNDER TAINTED CONTROL is granted
+      // too, and the grant is RECORDED. Every gate runs after the read on every
+      // trace, so the value is right; what the dominance precondition protected was
+      // the RAIL, which the control emitter hoists into the pred and mints on every
+      // branch. That hazard is a record still standing at the gate, a fact only the
+      // late live-record pass can see (after `uncompute` placed every discharge),
+      // and there it is a loud ERROR for a recorded read
+      // (`TaintSet::TaintedArmGrantedReads`, `RotationLowering`).
+      if (!InPlace && instUnderTaintedControl(&I, taint, DT))
+        taint.TaintedArmGrantedReads.emplace_back(&I);
       continue;
+    }
     diagnoseStaleRecord(&I);
     taint.StaleDeclined.insert(&I);
     return true;  // one diagnostic per op; lowerOps will skip it.

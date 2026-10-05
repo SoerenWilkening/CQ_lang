@@ -658,6 +658,20 @@ struct TaintSet {
   // delta scope must be re-derived (bd 3d8q, review round-1 F-D1-5).
   llvm::SmallVector<llvm::WeakVH, 4> StaleQuantumReaders;
 
+  // bd `test_C_libtooling-01po.7` — the pure ops UNDER TAINTED CONTROL that the
+  // stale-record fence (`OpcodeLowering::checkStaleReads`) GRANTED although a
+  // non-diagonal gate on their wire follows the merge. The grant is right about the
+  // VALUE (every gate runs after the read on every trace) and blind to the RAIL: a
+  // control emitter hoists the op into the pred, where it mints its record on EVERY
+  // branch, so a record still standing when the gate fires dephases the register on
+  // the branch whose source program made no record. Whether the uncompute spine
+  // discharges it first is decided only at the end, so the grant is RECORDED here and
+  // RE-ASKED where it is a fact: the late live-record pass (`RotationLowering::
+  // warnLiveRecordRotations`) turns such a record, live at a gate, into a loud ERROR
+  // instead of the lyyf warning. `WeakTrackingVH` so the entry follows `lowerOps`'
+  // RAUW of the op onto the template that IS the record; a nulled entry was erased.
+  llvm::SmallVector<llvm::WeakTrackingVH, 2> TaintedArmGrantedReads;
+
   llvm::SmallVector<llvm::WeakTrackingVH, 4> PeelClones;
 
   // The ONE membership question `PeelClones` answers. A NULLED entry (the clone
