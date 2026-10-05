@@ -137,6 +137,10 @@ constexpr char kMsgBreakUninvertible[] =
     "cq loop lowering: break reverse-play cannot invert a lowered body gate";
 constexpr char kMsgBreakUncovered[] =
     "cq loop lowering: break reverse-play cannot re-emit an uncollected body value";
+// bd 8h7d.17, review round 1 F1 — the L1 re-ask of E16's "the escape is
+// classical outside the loop" (see `emitOneBreak`).
+constexpr char kMsgBreakEscapeQuantum[] =
+    "cq loop lowering: early break escape carries a quantum value from outside the loop";
 
 void diagnoseAt(Value *Where, StringRef Msg) {
   auto *I = dyn_cast_or_null<Instruction>(Where);
@@ -849,6 +853,33 @@ void emitOneBreak(LoopBreakRegion &Rgn, Module &M, WidthDispatch &wd,
         !breakEscapeCone(X.V, Rgn.CounterPhi, Body, taint, X.Cone)) {
       diagnoseAt(Rgn.OutReg, kMsgBreakRederive);
       return;
+    }
+    // THE L1 RE-ASK (review round 1, F1). The consolidation below reads the
+    // escape φ E as a CLASSICAL value (`cqrt_alloc_<W>(E)`, the never-fired
+    // value), and E16 asked whether E is classical only at ROUND-1 taint, in
+    // `lowerLoops`. Its zero-trip incoming Z can become a register after that:
+    // a 6.5 / 4.5 merge φ that round-1 emission RAUWs to its `%out`, or an
+    // earlier break loop's own `cq.brk.esc.out`. Round 2 then taints E, but E has
+    // no users left (they read `Out`), so `declineClassicalMuxes` skips it as
+    // dead, and the consolidation would materialise the register's HANDLE ID as
+    // the value (measured, rv-C1/p6: `esc.out` held handle 4 where the source
+    // holds y in {5, 107}). Asked here, at FINAL taint (this stage runs after the
+    // round-2 fixpoint in both entry points), of E and of every incoming not from
+    // the loop body. Loud and before any gate: copying a quantum Z into the
+    // capture on the zero-trip edge is a lowering not built yet (R1).
+    // lowering_reject_break_escape_{zerotrip_merge_out,chain}.ll.
+    {
+      auto *EP = dyn_cast<PHINode>(X.Phi);
+      bool Quantum = !EP || taint.Tainted.count(EP);
+      if (EP)
+        for (unsigned k = 0, e = EP->getNumIncomingValues(); k < e; ++k)
+          if (EP->getIncomingBlock(k) != Body &&
+              taint.Tainted.count(EP->getIncomingValue(k)))
+            Quantum = true;
+      if (Quantum) {
+        diagnoseAt(X.Out, kMsgBreakEscapeQuantum);
+        return;
+      }
     }
     Esc.push_back(std::move(X));
   }

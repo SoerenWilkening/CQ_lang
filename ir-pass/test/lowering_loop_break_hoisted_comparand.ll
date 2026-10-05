@@ -49,7 +49,12 @@
 ;      That is the comparand-template leak lowering_loop_break_qq_derived.ll
 ;      documents for a pre-guard derivation (stage 2b: 1 template rail left
 ;      dirty); this landing adds the LICM-hoisted population to it and runs the
-;      computation on the zero-trip path too (L9).
+;      computation on the zero-trip path too (L9). The leaked c is entangled
+;      with p, so a later NON-DIAGONAL gate on p sees a dephased p; that case
+;      only warns (`cq rotation lowering: non-diagonal gate over a live derived
+;      record`), and 8h7d.15 makes it reachable from C, including on the
+;      zero-trip path where the source never copies p (measured on the `_Bool`
+;      twin, lowering_loop_break_hoisted_bool_comparand.ll).
 ; MEASURED: linked and run, the trace of this module is byte-identical to main's
 ; trace of the hand-hoisted twin (the same module with %9 moved into %4 and %8
 ; deleted).

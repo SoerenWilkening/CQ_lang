@@ -40,6 +40,21 @@
 ; is the comparand-template leak lowering_loop_break_hoisted_comparand.ll
 ; discloses).
 ;
+; ⚠ DISCLOSED, NOT FIXED (review round 1 of bd 8h7d.15, probe rv-C1/p2.c). The
+; leaked copy c is ENTANGLED with b, and the hoist computes it on the zero-trip
+; path too, where the source never touches b. A later NON-DIAGONAL gate on b then
+; sees a dephased b: in
+;     _Bool b = bseed & 1; cq_theta(&b, 0.5); ... the same break loop ...;
+;     cq_theta(&b, -0.5); return cq_measure(q) + 2 * cq_measure(b);
+; at n = 0 the source returns b to |0> (P(b = 1) = 0), while the lowering leaves
+; b entangled with c, so Ry(0.5) and Ry(-0.5) no longer cancel: P(b = 1) =
+; sin^2(0.5)/2 ~ 0.115. The pass WARNS (`cq rotation lowering: non-diagonal gate
+; over a live derived record`) and exits 0; main declined the program at E13.
+; So 8h7d.15 adds C-reachable cases to that warned class: a hoisted comparand
+; copy that dephases its source register when the source is rotated after the
+; loop. The fix is the comparand discharge (an `_unc` of c after the
+; reverse-play), the retirement trigger in lowering_loop_break_hoisted_comparand.ll.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll
 ; RUN: %filecheck %s --check-prefix=PHASE < %t.ll

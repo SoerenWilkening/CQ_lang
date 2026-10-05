@@ -2584,6 +2584,10 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
   // fresh register `cq.brk.esc.out`, registered as a control-merge rail so round 2
   // taints them (a phase keyed on it lowers by kickback, a classical sink stays a
   // loud taint escape), and E itself stays, classical, as the never-fired value.
+  // E's own classical-ness is asked here at ROUND-1 taint only; its zero-trip
+  // incoming can still become a register later (a 6.5 / 4.5 merge `%out`, an
+  // earlier break's escape register), so `emitOneBreak` re-asks it at FINAL
+  // taint and declines loudly (review round 1, F1).
   // A dead E is left alone (nothing reads its full-trip value). Everything else
   // still refuses: a TAINTED value other than the answer (it would read the
   // restored rail or a freed break-cond flag), a use that is not such an exit φ, a

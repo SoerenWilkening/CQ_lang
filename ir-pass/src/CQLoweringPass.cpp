@@ -758,10 +758,15 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   collapseFlattenedLoopRails(M, wd, taint);
 
   // Issue dugh (Phase 4×6): the SECOND propagation round for control-merge
-  // out-rails. The two untainted-merge emitters (6.5 classical-call arm, 4.5
-  // switch data-mux) built a fresh `%out` quantum handle and RAUW'd their
-  // (data-untainted) merge phi to it — but the first `propagate` ran before `%out`
-  // existed, so its onward consumers were classified CLASSICAL. Re-seed a forward
+  // out-rails. The untainted-merge emitters (6.5 classical-call arm, 4.5 switch
+  // data-mux, the IO-sink mux, and the 7.4 break escape register
+  // `cq.brk.esc.out`, bd 8h7d.17) built a fresh quantum handle and RAUW'd a
+  // (data-untainted) value to it after the first `propagate` ran, so its onward
+  // consumers were classified CLASSICAL. The IO-sink mux and the break escape
+  // register are minted before round-1 detection (`lowerControlledIOSinks`,
+  // `lowerLoops`), so they already EXIST there, with their consumers still
+  // classical; anything asked about those consumers before this point is round-1
+  // evidence (L1). Re-seed a forward
   // propagation from `taint.UntaintedMergeRails` so an onward QUANTUM flow (arith /
   // phase / local-array Shadow store) is re-tainted and lowers via the stages
   // below, while an onward CLASSICAL escape / a new tainted-condition control on

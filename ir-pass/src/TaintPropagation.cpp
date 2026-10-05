@@ -576,7 +576,9 @@ void drainWorklist(std::vector<Value *> &Worklist, const FnSet &ThetaFns,
         // replaced an UNTAINTED φ and was never re-seeded. The complete list of
         // direct inserts of a FRESH value over an UNTAINTED one is: the 6.5
         // `ClassicalCallArmEmit` `%out`, the 4.5 `SwitchDataMuxEmit` `%out`, the
-        // IO-sink `MuxOut` (all three registered in `UntaintedMergeRails`, which
+        // IO-sink `MuxOut`, the 7.4 break escape register `cq.brk.esc.out`
+        // (`emitBreakForward` E16, bd 8h7d.17; minted in `lowerLoops`, so BEFORE
+        // round-1 detection) (all four registered in `UntaintedMergeRails`, which
         // `repropagateControlMerges` drains through here), and `MergePhiPeel`'s
         // clone/select (drained via `propagateFromSeeds`). Every other direct
         // insert replaces an already-tainted value or is scaffold with no reader

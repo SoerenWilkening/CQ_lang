@@ -1869,9 +1869,14 @@ bool functionCarriesBranchPhase(const llvm::Function *F, const TaintSet &taint);
 // it only reads, and for values defined outside the loop — NOT for a value
 // computed inside the loop as such: the break is virtual (full classical trip),
 // so such a value leaves as its full-trip value (bd 923w). The emitter's E16
-// either lowers it as a control-merge register that does hold the source's value
-// (an untainted exit φ whose loop value is a pure function of the counter, bd
-// 8h7d.17) or refuses it. The remaining
+// either refuses it or lowers it as a control-merge register (an untainted exit
+// φ whose loop value is a pure function of the counter, bd 8h7d.17). That
+// register holds the source's value ONLY while the φ's zero-trip incoming is
+// classical, a fact E16 can ask only at round-1 taint: a 6.5 / 4.5 merge `%out`
+// or an earlier break's escape register can replace it afterwards, and the
+// consolidation would then read a handle id as the value. `emitOneBreak`
+// re-asks it at final taint and declines loudly (review round 1, F1). The
+// remaining
 // unitary hazard is a phase INSIDE the construct (the loop body), refused
 // independently of this predicate by tryBreak's B4 side-effect clause (`cq_phi`
 // is a call). A phase AFTER the construct whose keys meet the answer's lineage
@@ -1891,7 +1896,8 @@ bool functionCarriesBranchPhase(const llvm::Function *F, const TaintSet &taint);
 // OPERAND walk cannot follow a merge `%out` back to its condition in either
 // round. Both gaps can only accept a phase outside the loop body whose keys E16
 // guarantees hold the source's values (an 8h7d.17 escape register included: it is
-// such a round-2 key, and it holds the source's value), which the paragraph above
+// such a round-2 key, and it holds the source's value once `emitOneBreak`'s
+// final-taint re-ask has passed), which the paragraph above
 // shows is
 // unitary-safe; no round-2 re-ask is recorded. The construct filter reads only
 // the CFG, asked of the source CFG; a later stage flattens claimed regions
@@ -1936,9 +1942,14 @@ void deleteGlobalPhases(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // points (the twin-pipeline trap). A no-op when `taint.UntaintedMergeRails` is
 // empty (no 6.5 classical-call arm / 4.5 switch data-mux region emitted).
 //
-// The two untainted-merge emitters build a fresh `%out` quantum handle and RAUW
-// their (data-untainted) merge phi to it, but the first `propagate` ran before
-// `%out` existed, so `%out`'s onward consumers were classified CLASSICAL. This
+// The untainted-merge emitters (the 6.5 classical-call arm, the 4.5 switch
+// data-mux, the IO-sink mux, and the 7.4 break escape register `cq.brk.esc.out`
+// of bd 8h7d.17) build a fresh quantum handle and RAUW a (data-untainted) value
+// to it after the first `propagate` ran, so its onward consumers were classified
+// CLASSICAL. The 6.5 / 4.5 rails appear during round-1 emission; the IO-sink
+// mux (`lowerControlledIOSinks`) and the break escape register (`lowerLoops`)
+// appear earlier, so round-1 DETECTION already sees them, with their consumers
+// still classical at that point. This
 // re-seeds a forward taint propagation from those rails (skipping the emitted
 // `cqrt_*`/`cq_template_*` scaffolding so uncompute parity with the tainted-merge
 // case is preserved), then re-runs the taint-gated guards on the newly-tainted
