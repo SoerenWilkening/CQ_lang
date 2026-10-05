@@ -6039,8 +6039,11 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       // registers and XORs it back onto the flag; that returns the flag to |0⟩
       // ONLY IF those registers still hold the basis the forward mint read. Rz
       // is diagonal so a phase arm may rotate a condition register freely (why
-      // S8 accepts); an in-place Ry RELABELS it, and then neither the arm
-      // selection nor the strip is a function of the source's condition.
+      // S8 accepts); an in-place Ry RELABELS it, and then the strip is not a
+      // function of the source's condition. Since bd dm7f.4 the arm whose
+      // register IS in the condition's provenance lowers WITHOUT a strip (the
+      // flag is kept, see the clause at the intersection below); every other
+      // overlap still declines.
       //
       // "Same wire" is a RAIL question, not an SSA one — see `railWireClosure`
       // for each admitted hop and for the deliberate over-approximation.
@@ -6128,8 +6131,68 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
                           CondRails);
         railWireClosure(RotBase, Taint, WireDir::BothWays, ArmA, ArmB, BaseWire,
                         &BaseWireOrder, /*Exclude=*/MergePhi);
+        // ---- bd `test_C_libtooling-dm7f.4` (owner ruling 2026-10-03, option
+        //      (a)) — THE ARM ROTATES THE REGISTER THE CONDITION READS.
+        //
+        // `if (q > 5) cq_theta(&q, θ)`. The premise above fails BY CONSTRUCTION:
+        // after the Ry the predicate is no longer a function of `q`'s basis, so
+        // no strip can return the flag to |0>. That is a fact about the STRIP,
+        // not about the program (CLAUDE.md L5): the circuit
+        //     f = C(q) ; [x(f)] cRy(f, q, θ) [x(f)]          (f never stripped)
+        // realizes the source on every basis branch, with the which-branch
+        // record `f` left entangled. So the region LOWERS, the emitter skips
+        // its strip and free (`ControlRegion::CondFlagKept`), the flag stays
+        // allocated (R5: never freed, it is not provably |0>), and M-A's
+        // `warnLiveRecordRotations` reports the record as a `DS_Warning` at the
+        // gate (owner ruling lyyf: the leftover entanglement is the user's).
+        // No measurement is inserted. Why each earlier premise still holds:
+        //   * ARM SELECTION. The mint reads the pre-Ry basis: the wire gate
+        //     above returned `ProvenPostRegion`, so no gate on this wire runs
+        //     between the compare and the branch, and the emitter puts the mint
+        //     BEFORE the hoisted gate. The `CmpCondRead` the mint records is
+        //     re-asked at FINAL taint in both entry points (L1); the hoisted
+        //     gate is visible taint-blind there and stays exempt.
+        //   * THE CONDITION'S CHAIN (`(q & 3) == 1`, a cast, a lifted call) is
+        //     the uncompute spine's: its interior discharge reads `q` before
+        //     the gate, and a chain rail still read after the gate is a
+        //     borrowed parent moved by a `_controlled` gate, which
+        //     `preservesBorrowedParent` refuses, so the rail is left allocated.
+        //   * STALE READS of the pre-Ry `q` after the region are R6's, below,
+        //     unchanged.
+        //   * NEGATION. The flag is a minted ANCILLA, so the else arm keeps the
+        //     compare path's `cqrt_x(f)` bracket; nothing but the controlled Ry
+        //     touches the user's register.
+        // THE ACCEPT IS THREE CONJUNCTS; each miss keeps R4's decline:
+        //   (K1) `!RailCond`. A `_Bool` rail IS the flag, so `cRy(b, b, θ)`
+        //        would control a gate on its own target. That spelling needs a
+        //        CNOT copy into a fresh flag and is not built. (Unreachable
+        //        today: the rail ladder's rung (iii) refuses it earlier,
+        //        control_inplace_ry_reject_rail_cond_wire.ll.)
+        //   (K2) `!Region.InLoop`. A rolled region would keep one flag per
+        //        trip; the R7 loop clauses and the marking postcondition were
+        //        never argued for a kept flag
+        //        (control_inplace_ry_reject_inloop_cond_register.ll). Measured
+        //        with K2 dropped (mutant, 2026-10-05): that fixture lowers
+        //        rolled, `icmp_sgt_hl` + `ry_i32_controlled` per trip, no strip,
+        //        one M-A warning. Plausible, unreviewed; the loop owner's call.
+        //   (K3) `Prov.count(RotBase)`: the rotated register is itself in the
+        //        condition's tainted provenance (`condProvenance`, R4's own
+        //        cone). An overlap reached only through `railWireClosure`'s
+        //        add/sub/xor hops (`int b = q ^ 2; if (q > 5) cq_theta(&b, θ)`)
+        //        rests on whether M-C later lowers that op in place, which
+        //        detection cannot see; it keeps R4's own string
+        //        (control_inplace_ry_reject_inplace_alias_base.ll).
+        // Monotone across the two detection rounds: round-2 taint only grows
+        // `Prov`, and a kept flag is never a dirty free.
+        // RETIREMENT TRIGGER: the emitter's step-3 skip and the absence of a
+        // `DischargedFlagGates` record are this verdict's only consumers. A new
+        // consumer of "this region's flag is stripped" must read the field.
         for (Value *B : BaseWireOrder)
           if (CondRails.count(B)) {
+            if (!RailCond && !Region.InLoop && Prov.count(RotBase)) {
+              Region.CondFlagKept = true;
+              break;
+            }
             declineArm(declAnchor(Region), "rotation arm on a condition wire");
             return ArmDisposition::Declined;
           }
@@ -6785,6 +6848,13 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   // flag is already stripped and freed and `R`'s relabelling is complete; and R4
   // has proved `R`'s wire ∉ `C`'s wires, so `G` is not on the register this arm
   // touched.
+  // ⚠ bd dm7f.4: for a `CondFlagKept` region R4 proved the OPPOSITE, and the
+  // argument changes rather than fails. There is no strip for `G` to stand in
+  // front of: `f` is minted before the hoisted gate and never stripped or
+  // freed, so a later `G` on `C`'s (= `R`'s) wire acts on a register whose
+  // record `f` is still live. That is the dephasing class (owner ruling lyyf),
+  // and M-A warns at `G` as well as at the arm's own gate (measured: two
+  // warnings for `if (q > 5) cq_theta(&q, .3); cq_theta(&q, .2);`).
   //
   // THE RESIDUAL IS IDENTICAL TO THE PHASE ARM'S, not new: a DERIVED condition
   // leaves template rails entangled with `C` and live past the strip, which a

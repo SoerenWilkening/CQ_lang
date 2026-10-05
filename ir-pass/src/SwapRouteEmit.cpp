@@ -688,6 +688,14 @@ struct ArmInfo {
 // basis at the strip is the basis the mint read, and `f` returns to |0⟩
 // unconditionally (Rule 6, then `cqrt_free`).
 //
+// ⚠ EXCEPT WHEN R4 SAID THE OPPOSITE AND ACCEPTED ANYWAY (bd
+// `test_C_libtooling-dm7f.4`, owner ruling 2026-10-03, `R.CondFlagKept`): the
+// arm rotates the register the condition reads, so no strip can return `f` to
+// |0⟩ and step 3 emits NEITHER the strip NOR the free. `f` is LEFT ALLOCATED,
+// holding the pre-Ry predicate entangled with the register (Rule 5), and M-A's
+// late guard warns at the controlled Ry. The classifier's clause at R4 carries
+// the whole argument.
+//
 // ---- bd test_C_libtooling-l4x4, sub-increment l4x4.b — THE BARE `_Bool`
 //      (RAIL-ROOT) CONDITION. `Cond` is a `Value *` because it is now either a
 //      `CmpInst` or the user's own `@cq_theta_i1` CALL (`isCondRailLeaf`). For a
@@ -1045,6 +1053,8 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //    from every rail the condition's derived chain lives on. So the same
   //    property holds for the same reason, by a different argument. If R4 is
   //    ever widened, THIS recording is one of the things that must be re-proved.
+  //    (bd dm7f.4 widened it, and the re-proof is that the widened case emits
+  //    no strip at all, so there is nothing to record; see `CondFlagKept` below.)
   //
   //    ⚠ AMENDED 2026-09-05 (round-1 Rule-13 review, lens L5 finding F-L5-2).
   //    FOR A CONTROLLED STATE PREP (Inc 4) R4 IS NOT WIDENED — IT IS **SKIPPED**
@@ -1086,7 +1096,20 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //    ⚠ `railCarriesControlledRotation` freezes arg-1 (the ROTATED rail), NOT
   //    arg-0; the asymmetry is deliberate and is the only thing standing between
   //    a user register as a control and an M-B interior discharge (§2.7, H-9).
-  if (!RailCond) {
+  //
+  //    ⚠ AND BOTH ARE SKIPPED FOR A KEPT COMPARE FLAG (bd dm7f.4,
+  //    `R.CondFlagKept`, set only by `classifyArms`' R4 clause). The strip would
+  //    recompute the predicate on the register the hoisted gate just rotated, so
+  //    it would not return `f` to |0⟩ and the free after it would be a hidden
+  //    measurement of an entangled ancilla — the exact defect R4 was written to
+  //    refuse. Without the strip there is no `DischargedFlagGates` record, so
+  //    the spine's interior discharge of the condition's chain lands after the
+  //    mint and BEFORE the controlled Ry (measured on `(q & 3) == 1` and a
+  //    `sitofp`/`fmul`/`fcmp` chain). The flag itself is never claimed: its only
+  //    user is arg 0 of a `_controlled` gate (`isTerminalHandle` and
+  //    `isInteriorConsumer` both refuse that), so it stays allocated, and M-A
+  //    reports it at the gate.
+  if (!RailCond && !R.CondFlagKept) {
     auto *Strip = dyn_cast_or_null<CallInst>(lowerCompareToFlag(
         cast<CmpInst>(Cond), wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
         /*before=*/BI, /*negate=*/false, /*railToStrip=*/Flag));

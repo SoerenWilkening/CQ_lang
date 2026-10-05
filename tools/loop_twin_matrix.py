@@ -549,8 +549,13 @@ RY_REGION = {
     # ── the two DECLINE CONTROLS. Singletons, deliberately not families. ──
     # R4: the Ry is on the CONDITION register's own wire, so the flag strip's
     # `icmp_..._unc` would recompute the compare against a RELABELLED register.
-    # A permanent decline, in the loop and out of it; one cell is the whole
-    # witness (the family lives in `control_inplace_ry_reject_cond_register.ll`).
+    # ⚠ NOT PERMANENT (bd test_C_libtooling-dm7f.4, 2026-10-05): the FLAT
+    # non-equality spelling now lowers with the strip dropped and the flag kept
+    # (`control_inplace_ry_cond_register_flag_kept.ll`, formerly
+    # `..._reject_cond_register.ll`). This cell's `a == 5` is folded by `-O1`
+    # into a state prep with seed 5 and declines at F1 in both twins
+    # (`control_inplace_ry_reject_cond_register_eqfold.ll` is the flat pin), and
+    # the in-loop form stays out of the kept-flag accept's scope.
     "rcond": "        if (a == 5) { cq_theta(&a, 0.9); }\n",
     # SCOPED OUT of Inc 3 — when this was written `clang -O1` never handed this
     # to the pass as a diamond: SimplifyCFG merged the two arms into ONE call with

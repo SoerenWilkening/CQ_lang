@@ -7,9 +7,17 @@
 ;
 ; `int a = q` mints no IR at all — `a` IS `%q` — so the Ry lands on the very wire
 ; the flag was minted from. The Rz twin of this shape ACCEPTS (§3c permits a
-; diagonal op on a condition variable); the Ry does not, for the reason in
-; control_inplace_ry_reject_cond_register.ll. Same pre-existing wire guard,
-; reached one alias hop out.
+; diagonal op on a condition variable).
+;
+; ⚠ THE REASON CHANGED WITH bd test_C_libtooling-dm7f.4 (2026-10-05); THE STRING
+; DID NOT. An Ry on the condition's own register now lowers with the flag kept
+; (control_inplace_ry_cond_register_flag_kept.ll), so the shared wire alone no
+; longer declines. What declines here is the read `cq_measure(%q)` AFTER the
+; region: C says `q` is unrotated (only `a` was), the emitted measurement would
+; read the rail the controlled Ry relabelled. That is R6's
+; `stale rail record read past a controlled Ry`, re-spelled by `declineArm` as
+; the deferred wire-gate message because the condition wire carries the arm's
+; gate. Drop the `cq_measure(%q)` and this module is the flag-kept accept.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}condition predates a non-diagonal gate under quantum control
