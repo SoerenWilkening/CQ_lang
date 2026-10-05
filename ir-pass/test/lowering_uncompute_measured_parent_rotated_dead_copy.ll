@@ -31,7 +31,9 @@
 ;
 ; THE DECLINE TWINS keep the genuinely unsafe neighbours loud, char-for-char:
 ;   * lowering_reject_uncompute_measured_parent_moved.ll — `q` is rotated
-;     between the xor and t's free point, so the `_unc` would read a moved label;
+;     between the xor and t's free point, so the `_unc` would read a moved label
+;     (an ACCEPT since bd 01po.8: that reversal is still never emitted, `t` is
+;     left allocated as the record the program keeps across the rotation);
 ;   * lowering_reject_uncompute_measured_parent_read_after_measure.ll — the dead
 ;     chain reads `q` AFTER the measurement: bd yiid, a RULED capability (owner
 ;     2026-09-14; E3 (b) BROAD 2026-09-15) not yet built, so that decline is a
