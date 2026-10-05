@@ -1,6 +1,17 @@
 #!/usr/bin/env python3
 """shipped_guard_model.py — a TEXT MODEL OF THE SHIPPED M-A GUARD (b4e329b).
 
+⚠ DATED SNAPSHOT, NOT THE GUARD'S DEFINITION (marked 2026-10-05, bd gl3x / bd
+cmr9). It mirrors the guard at b4e329b and nothing later; no ctest or lit run
+calls it. Since then the guard's clause 4 has diverged: an unguarded
+`cqrt_tape_write_<W>(tape, R)` before the gate also exempts `R` (bd gl3x), and a
+measurement exempts only if no gate writes `R` between it and the gate
+(`railUnmovedInWindow`, bd cmr9). This model still reads clause 4 as
+"measured before the gate". The definition is `recordIsExemptAt`
+(`ir-pass/src/RotationLowering.cpp`, contract in
+`ir-pass/include/RotationLowering.h`). Re-sync before using this model's
+verdicts as a measurement of the shipped guard.
+
 WHAT THIS IS
 ============
 A line-for-line mirror, over LOWERED IR text, of `warnLiveRecordRotations`
@@ -31,7 +42,8 @@ It models, per chained-rotation site `T` on wire `W`:
   CLAUSE 3  DEAD as user data at `T` — no post-gate use of `R` whose lineage
             reaches an OBSERVING SINK (`reachesObservingSink`'s SINK / HOP /
             NON-USE grammar, F1+F2+round-2 N1/N2/N3 as shipped).
-  CLAUSE 4  not measured before `T`.
+  CLAUSE 4  not measured before `T` (the b4e329b reading; see the DATED
+            SNAPSHOT note above for what the shipped guard asks today).
   CLAUSE 5  not `W` itself.
   CLAUSE 6  `R` EXISTS at `T` — `provablyBefore(T, R)` is false.
 

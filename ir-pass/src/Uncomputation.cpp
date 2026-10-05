@@ -1131,7 +1131,7 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P,
 // `RestoringRoutes`, its scrub in `SwapRouteEmit::scrubTaint`, and
 // `lowering_uncompute_interior_leak_route_in_interval.ll`'s premise together.
 bool routeGroupFullyInside(const CallInst *M, const Value *P, CallInst *First,
-                           Instruction *At, DominatorTree &DT,
+                           Instruction *At, const DominatorTree &DT,
                            const TaintSet &taint, bool Alternates) {
   // The routed base is `cqrt_cswap(flag, base, rail)`'s ARG 1, read HERE and
   // never stored at emission time — see the `RestoringRoutes` comment in
@@ -1200,6 +1200,182 @@ bool routeGroupFullyInside(const CallInst *M, const Value *P, CallInst *First,
   return false;
 }
 
+}  // namespace
+
+// THE WINDOW SCAN — "does any gate move `P`'s basis label strictly inside
+// `(First, At)`?" — hoisted out of `borrowedParentsUnmoved` VERBATIM by bd
+// test_C_libtooling-cmr9 so the M-A live-record guard's clause 4
+// (`RotationLowering`'s `recordIsExemptAt`) asks the SAME question about a
+// measured record (Rule 12, one spelling). Declared in Uncomputation.h, where the
+// contract is stated; the argument for each leg is at the leg, below.
+//
+// PRECONDITION, met by every caller before asking: `First` DOMINATES `At` and
+// `First != At` (`borrowedParentsUnmoved` proves both from §4; the clause-4
+// caller from `provablyBeforePerActivation(First, At, …)` and a measurement
+// never being a rotation).
+bool railUnmovedInWindow(Value *P, CallInst *First, Instruction *At,
+                         const DominatorTree &DT, const TaintSet &taint,
+                         bool AdmitCloneCalls, const Instruction *Opener) {
+  // Proven ONCE per (`First`, `At`) pair and read by `routeGroupFullyInside`'s
+  // `At`-barriered leg 1 below — see `WireWalk.h`'s `intervalAlternates` for
+  // the window argument, and for why the `First`-barriered legs (that leg's
+  // sibling, and (W2) here) do not need it. The dominance half it assumes
+  // (`First` dominates `At`) is the PRECONDITION above.
+  //
+  // RULE-12 GAP, RECORDED RATHER THAN PAPERED OVER (bd 8h7d.5 round-5
+  // cleanup). Mutating this call to a constant `true` leaves all 1293 fixtures
+  // GREEN. That is not evidence the premise is dead — it is evidence the suite
+  // exercises it only in its CONSERVATIVE direction (every shape that reaches
+  // `routeGroupFullyInside`'s leg 1 today already alternates, so forcing the
+  // premise true changes no verdict), and there is no discriminating fixture: a
+  // recorded route group inside a CFG cycle through `At` that misses `First`.
+  // Do NOT read the green suite as licence to drop the premise; the F-4 round
+  // showed the loop shapes that break it exist. A fixture that goes RED under
+  // the constant-`true` mutant is owed.
+  const bool Alternates = intervalAlternates(First, At);
+  for (User *U : P->users()) {
+    auto *M = dyn_cast<CallInst>(U);
+    if (!M)
+      return false;  // a φ/select ROUTES the same physical rail (bd tayx), a `store`
+               // escapes it, and none of them is a gate whose position this
+               // scan can reason about — leak rather than guess.
+    // The window's own opening event, which the caller vouches does not move
+    // `P` (bd cmr9: clause 4's measurement of `P`). Asked of it, (W2) below is
+    // `everyPathReExecutes(First, At, First)`, which starts its walk AFTER
+    // `First` and so fails on every straight path: the window is OPEN at
+    // `First`, and the opener is not inside it. `borrowedParentsUnmoved` passes
+    // null and is unchanged — its `First` is a DAG gate that may write `P`.
+    if (M == Opener)
+      continue;
+    if (!DT.isReachableFromEntry(M->getParent()))
+      continue;  // a mutation that can never execute cannot move P. Vacuous
+                 // truth is the SAFE direction here — unlike in the anchor
+                 // scan, where it would have hidden a missing proof — but it is
+                 // made explicit so the two uses of reachability are not read
+                 // as one rule.
+    if (preservesBorrowedParent(M, P, taint, AdmitCloneCalls))
+      continue;
+    // ── THE WINDOW LEMMA (bd 8h7d.5, Rule-13 ROUND 4, finding F-4) ────────
+    //
+    // Fix one execution of the discharge at trace time `T_At`, and let
+    // `T_First` be the LAST execution of `First` before it (it exists: §4
+    // proved `First` dominates `At`). Everything this scan owes clause (d1) is
+    //
+    //     (†)  NO execution of `M` lies strictly inside `W = (T_First, T_At)`.
+    //
+    // `M` before `T_First` is harmless — `P`'s value at `T_First` already
+    // includes it and the `_unc`s read the same one. `M` after `T_At` is
+    // harmless — the adjoints are inserted BEFORE `At`, so they have already
+    // run. Only the inside is a wrong unitary.
+    //
+    // THE CERTIFICATE IS A SINGLE BARRIER WALK, AND IT NEEDS NO DOMINANCE
+    // PREMISE:
+    //
+    //   (W2) every path `M`⇝`At` re-executes `First`.  Assume `t_M ∈ W`; the
+    //        trace from `t_M` to `T_At` is such a path, so a `First` runs in
+    //        `(t_M, T_At) ⊂ W` — contradicting the MAXIMALITY of `T_First`. ∎
+    //        (This is Inc 5b's RIGHT leg, "M runs only after the discharge",
+    //        with the premise it never used removed.)
+    //
+    // TWO OTHER CERTIFICATES ARE SOUND AND BOTH ARE REDUNDANT — a theorem, not
+    // an omission, and the reason this scan ships ONE walk instead of three:
+    //
+    //   (W1) "every path `First`⇝`M` re-executes `First`" (an `M ∈ W` puts a
+    //        `First` in `W`). IMPLIES (W2): suppose some path `P: M ⇝ At`
+    //        avoids `First`. `First` dominates `At`, so every entry⇝`At` walk
+    //        executes `First` (a walk avoiding it would contain a simple path
+    //        avoiding it); prefixing `P` with any entry⇝`M` path gives such a
+    //        walk, and `P` has no `First`, so every entry⇝`M` path does. Take
+    //        the LAST `First` on one before `M`: that `First`⇝`M` segment
+    //        re-executes no `First`, contradicting (W1). ∎
+    //
+    //   (W3) "every path `First`⇝`M` passes through `At`, read under
+    //        `intervalAlternates`" — the shape the round-4 reviewer measured as
+    //        the fix (an `M ∈ W` puts a second `At` in `W`, and two `At`s with
+    //        no `First` between them contradict alternation). ALSO IMPLIES
+    //        (W2): with the same `P`, the same argument gives a `First`⇝`M`
+    //        path with no intermediate `First`; by (W3) it carries an `At`, so
+    //        `At ⇝ M ⇝ At` is an `At`⇝`At` walk with no `First` on it,
+    //        contradicting alternation. ∎
+    //
+    // Measured as well as proved: disabling (W1) and disabling (W3) each leave
+    // all 1293 fixtures green, and the 234-program probe sweep unmoved.
+    //
+    // NEITHER (W1) NOR (W3) IS SHIPPED. (W2) is the sole certificate, and the
+    // deletion of (W1) is itself a round-5 finding rather than a tidy-up
+    // (bd 8h7d.5). (W1) shipped for one stated reason: `everyPathReExecutes`
+    // tests barrier membership BEFORE the endpoint, so with `Barrier == To` it
+    // cuts at the very instruction it is trying to reach and hands back a
+    // certificate that proves nothing (the P1 vacuity trap of round 1), and
+    // (W2) was said to be the leg where that happens — at `First == At`, where
+    // (W1)'s own barrier is its start and its proof never mentions `At`.
+    //
+    // THAT JUSTIFICATION WAS FALSE, because `First == At` CANNOT HAPPEN: §4
+    // proves it (see the assert above), and it was measured at 0 hits over all
+    // 1293 fixtures. So (W1) was guarding a degeneracy that never arrives,
+    // while the one configuration in which it could still fire on its own
+    // (`M == First`, also measured at 0 hits) makes its certificate VACUOUS in
+    // exactly the P1 way it was supposed to avoid — `everyPathReExecutes(First,
+    // First, First)` is `Barrier == From == To`. A disjunct that can only
+    // return a vacuous `true` is not a weaker proof, it is a hole waiting for a
+    // widening to reach it. Removing a DISJUNCT can only ADD refusals (the safe
+    // direction, Rule 6): confirmed by 1293/1293 lit green, the 234-program
+    // sweep byte-identical, and the 120-cell rolled≡unrolled twin matrix
+    // unchanged.
+    //
+    // WHAT THIS REPLACES. Rounds 1–3 asked both legs through
+    // `provablyBeforePerActivation`, which is `DT.dominates(A,B) AND
+    // (plain-unreachability OR the barrier walk)`. That helper answers a
+    // DIFFERENT question — "did A run before B on this activation" — and its
+    // dominance conjunct is load-bearing there. It is no step of the proof
+    // above, and bundling it made the scan refuse two shapes it can prove:
+    //   * the ROLLED LEADING GATE (F-4). `for(…){ cq_theta(&q,a);
+    //     if((q&3)==1){…} cq_theta(&q,b); }` — the NEXT iteration's leading
+    //     `cqrt_ry` sits BEFORE `First` in the body, so it does not dominate
+    //     anything the old legs asked about, and the whole condition chain
+    //     leaked, ENTANGLED, across the trailing Ry: `opt` exit 0, strict
+    //     stage-2b clean, and — with no leading Rz to trip the M-A guard — not
+    //     one warning. Measured over a 100-cell prefix × region × suffix
+    //     matrix: 11 rolled cells whose traces differed from their
+    //     hand-unrolled twins', 5 of them silent
+    //     (lowering_inloop_derived_cond_leading_gate.ll,
+    //     tools/loop_twin_matrix.py).
+    //   * `M == At`, which is REACHABLE (`At` is the `getNextNode()` of a
+    //     consumer of an owned rail, and that can be a `cqrt_ry` on the parent).
+    //     `DT.dominates(I, I)` is FALSE by definition in LLVM ("an instruction
+    //     doesn't dominate a use in itself"), so the old RIGHT leg refused
+    //     every one of them; (W2)'s walk cannot reach `At` from `At` in an
+    //     acyclic region and admits it
+    //     (lowering_live_record_dead_compare_flag_discharged.ll).
+    // STRICTLY MORE PERMISSIVE, PROVABLY — AND STILL SO WITH (W1) DELETED,
+    // which is why the deletion cannot leak a shape that used to discharge:
+    //   * old RIGHT was `DT.dominates(At,M) AND (!isPotentiallyReachable(M,At)
+    //     OR (W2))`. `!isPotentiallyReachable(M, At)` makes (W2)'s walk
+    //     vacuously succeed, so old RIGHT ⊆ (W2).
+    //   * old LEFT was `DT.dominates(M,First) AND (!isPotentiallyReachable
+    //     (First,M) OR (W1))` — its barrier-walk half IS (W1) verbatim
+    //     (`WireWalk.cpp`'s `provablyBeforePerActivation` says so). (W1) ⇒ (W2)
+    //     by the theorem above. And `!isPotentiallyReachable(First, M)` ⇒ (W2)
+    //     directly: §4 gives `First` dominates `At`, so every entry⇝`At` walk
+    //     carries a `First`; none can lie in an entry⇝`M` prefix (that would be
+    //     `First` reaching `M`), so every `M`⇝`At` suffix carries one. So old
+    //     LEFT ⊆ (W2) too.
+    // Nothing that discharged before can leak now.
+    if (everyPathReExecutes(M, At, First))
+      continue;  // (W2) — M runs only after the discharge (Inc 5b). The SOLE
+                 // window certificate; the `First != At` conjunct that used to
+                 // guard it is proven above, not tested here.
+    if (routeGroupFullyInside(M, P, First, At, DT, taint, Alternates))
+      continue;  // INSIDE — a COMPLETE emitter-recorded Phase-4 route, the
+                 // identity on P's basis LABEL over the interval (Inc 6,
+                 // clause (d2)).
+    return false;  // unprovable ⇒ this component leaks (Rule 6).
+  }
+  return true;
+}
+
+namespace {
+
 // CLAUSE (d) FOR A BORROWED FRONTIER (§5 of `planInteriorComponent`, hoisted
 // VERBATIM into a function by bd test_C_libtooling-01po.4 so the dead-terminal
 // driver's QRAM-array retry asks the SAME question — Rule 14, one spelling).
@@ -1207,7 +1383,8 @@ bool routeGroupFullyInside(const CallInst *M, const Value *P, CallInst *First,
 // holds, at every emitted `_unc`, the value it held when that gate ran: every
 // user of `P` is proven label-preserving (`preservesBorrowedParent`) or outside
 // the window `(First, At)` (the (W2) certificate) or a complete recorded route
-// (clause (d2)). The argument for each leg is at the leg, below.
+// (clause (d2)). The per-user scan is `railUnmovedInWindow` (above; bd cmr9
+// moved it out verbatim so the M-A guard can ask it too).
 //
 // PRECONDITION, and both callers meet it before asking: every gate of `D`
 // DOMINATES `At` — §4's `DT.dominates(G, At)` scan in the interior planner, the
@@ -1245,154 +1422,9 @@ bool borrowedParentsUnmoved(const DataDag &D,
     assert(First != At && "§4 dominance already rejects First == At");
     if (First == At)
       return false;
-    // Proven ONCE per (`First`, `At`) pair and read by `routeGroupFullyInside`'s
-    // `At`-barriered leg 1 below — see `WireWalk.h`'s `intervalAlternates` for
-    // the window argument, and for why the `First`-barriered legs (that leg's
-    // sibling, and (W2) here) do not need it. The dominance half it assumes
-    // (`First` dominates `At`) is proven for every recovered gate in §4 above,
-    // `First` included.
-    //
-    // RULE-12 GAP, RECORDED RATHER THAN PAPERED OVER (bd 8h7d.5 round-5
-    // cleanup). Mutating this call to a constant `true` leaves all 1293 fixtures
-    // GREEN. That is not evidence the premise is dead — it is evidence the suite
-    // exercises it only in its CONSERVATIVE direction (every shape that reaches
-    // `routeGroupFullyInside`'s leg 1 today already alternates, so forcing the
-    // premise true changes no verdict), and there is no discriminating fixture: a
-    // recorded route group inside a CFG cycle through `At` that misses `First`.
-    // Do NOT read the green suite as licence to drop the premise; the F-4 round
-    // showed the loop shapes that break it exist. A fixture that goes RED under
-    // the constant-`true` mutant is owed.
-    const bool Alternates = intervalAlternates(First, At);
-    for (User *U : P->users()) {
-      auto *M = dyn_cast<CallInst>(U);
-      if (!M)
-        return false;  // a φ/select ROUTES the same physical rail (bd tayx), a `store`
-                 // escapes it, and none of them is a gate whose position this
-                 // scan can reason about — leak rather than guess.
-      if (!DT.isReachableFromEntry(M->getParent()))
-        continue;  // a mutation that can never execute cannot move P. Vacuous
-                   // truth is the SAFE direction here — unlike in the anchor
-                   // scan, where it would have hidden a missing proof — but it is
-                   // made explicit so the two uses of reachability are not read
-                   // as one rule.
-      if (preservesBorrowedParent(M, P, taint, AdmitCloneCalls))
-        continue;
-      // ── THE WINDOW LEMMA (bd 8h7d.5, Rule-13 ROUND 4, finding F-4) ────────
-      //
-      // Fix one execution of the discharge at trace time `T_At`, and let
-      // `T_First` be the LAST execution of `First` before it (it exists: §4
-      // proved `First` dominates `At`). Everything this scan owes clause (d1) is
-      //
-      //     (†)  NO execution of `M` lies strictly inside `W = (T_First, T_At)`.
-      //
-      // `M` before `T_First` is harmless — `P`'s value at `T_First` already
-      // includes it and the `_unc`s read the same one. `M` after `T_At` is
-      // harmless — the adjoints are inserted BEFORE `At`, so they have already
-      // run. Only the inside is a wrong unitary.
-      //
-      // THE CERTIFICATE IS A SINGLE BARRIER WALK, AND IT NEEDS NO DOMINANCE
-      // PREMISE:
-      //
-      //   (W2) every path `M`⇝`At` re-executes `First`.  Assume `t_M ∈ W`; the
-      //        trace from `t_M` to `T_At` is such a path, so a `First` runs in
-      //        `(t_M, T_At) ⊂ W` — contradicting the MAXIMALITY of `T_First`. ∎
-      //        (This is Inc 5b's RIGHT leg, "M runs only after the discharge",
-      //        with the premise it never used removed.)
-      //
-      // TWO OTHER CERTIFICATES ARE SOUND AND BOTH ARE REDUNDANT — a theorem, not
-      // an omission, and the reason this scan ships ONE walk instead of three:
-      //
-      //   (W1) "every path `First`⇝`M` re-executes `First`" (an `M ∈ W` puts a
-      //        `First` in `W`). IMPLIES (W2): suppose some path `P: M ⇝ At`
-      //        avoids `First`. `First` dominates `At`, so every entry⇝`At` walk
-      //        executes `First` (a walk avoiding it would contain a simple path
-      //        avoiding it); prefixing `P` with any entry⇝`M` path gives such a
-      //        walk, and `P` has no `First`, so every entry⇝`M` path does. Take
-      //        the LAST `First` on one before `M`: that `First`⇝`M` segment
-      //        re-executes no `First`, contradicting (W1). ∎
-      //
-      //   (W3) "every path `First`⇝`M` passes through `At`, read under
-      //        `intervalAlternates`" — the shape the round-4 reviewer measured as
-      //        the fix (an `M ∈ W` puts a second `At` in `W`, and two `At`s with
-      //        no `First` between them contradict alternation). ALSO IMPLIES
-      //        (W2): with the same `P`, the same argument gives a `First`⇝`M`
-      //        path with no intermediate `First`; by (W3) it carries an `At`, so
-      //        `At ⇝ M ⇝ At` is an `At`⇝`At` walk with no `First` on it,
-      //        contradicting alternation. ∎
-      //
-      // Measured as well as proved: disabling (W1) and disabling (W3) each leave
-      // all 1293 fixtures green, and the 234-program probe sweep unmoved.
-      //
-      // NEITHER (W1) NOR (W3) IS SHIPPED. (W2) is the sole certificate, and the
-      // deletion of (W1) is itself a round-5 finding rather than a tidy-up
-      // (bd 8h7d.5). (W1) shipped for one stated reason: `everyPathReExecutes`
-      // tests barrier membership BEFORE the endpoint, so with `Barrier == To` it
-      // cuts at the very instruction it is trying to reach and hands back a
-      // certificate that proves nothing (the P1 vacuity trap of round 1), and
-      // (W2) was said to be the leg where that happens — at `First == At`, where
-      // (W1)'s own barrier is its start and its proof never mentions `At`.
-      //
-      // THAT JUSTIFICATION WAS FALSE, because `First == At` CANNOT HAPPEN: §4
-      // proves it (see the assert above), and it was measured at 0 hits over all
-      // 1293 fixtures. So (W1) was guarding a degeneracy that never arrives,
-      // while the one configuration in which it could still fire on its own
-      // (`M == First`, also measured at 0 hits) makes its certificate VACUOUS in
-      // exactly the P1 way it was supposed to avoid — `everyPathReExecutes(First,
-      // First, First)` is `Barrier == From == To`. A disjunct that can only
-      // return a vacuous `true` is not a weaker proof, it is a hole waiting for a
-      // widening to reach it. Removing a DISJUNCT can only ADD refusals (the safe
-      // direction, Rule 6): confirmed by 1293/1293 lit green, the 234-program
-      // sweep byte-identical, and the 120-cell rolled≡unrolled twin matrix
-      // unchanged.
-      //
-      // WHAT THIS REPLACES. Rounds 1–3 asked both legs through
-      // `provablyBeforePerActivation`, which is `DT.dominates(A,B) AND
-      // (plain-unreachability OR the barrier walk)`. That helper answers a
-      // DIFFERENT question — "did A run before B on this activation" — and its
-      // dominance conjunct is load-bearing there. It is no step of the proof
-      // above, and bundling it made the scan refuse two shapes it can prove:
-      //   * the ROLLED LEADING GATE (F-4). `for(…){ cq_theta(&q,a);
-      //     if((q&3)==1){…} cq_theta(&q,b); }` — the NEXT iteration's leading
-      //     `cqrt_ry` sits BEFORE `First` in the body, so it does not dominate
-      //     anything the old legs asked about, and the whole condition chain
-      //     leaked, ENTANGLED, across the trailing Ry: `opt` exit 0, strict
-      //     stage-2b clean, and — with no leading Rz to trip the M-A guard — not
-      //     one warning. Measured over a 100-cell prefix × region × suffix
-      //     matrix: 11 rolled cells whose traces differed from their
-      //     hand-unrolled twins', 5 of them silent
-      //     (lowering_inloop_derived_cond_leading_gate.ll,
-      //     tools/loop_twin_matrix.py).
-      //   * `M == At`, which is REACHABLE (`At` is the `getNextNode()` of a
-      //     consumer of an owned rail, and that can be a `cqrt_ry` on the parent).
-      //     `DT.dominates(I, I)` is FALSE by definition in LLVM ("an instruction
-      //     doesn't dominate a use in itself"), so the old RIGHT leg refused
-      //     every one of them; (W2)'s walk cannot reach `At` from `At` in an
-      //     acyclic region and admits it
-      //     (lowering_live_record_dead_compare_flag_discharged.ll).
-      // STRICTLY MORE PERMISSIVE, PROVABLY — AND STILL SO WITH (W1) DELETED,
-      // which is why the deletion cannot leak a shape that used to discharge:
-      //   * old RIGHT was `DT.dominates(At,M) AND (!isPotentiallyReachable(M,At)
-      //     OR (W2))`. `!isPotentiallyReachable(M, At)` makes (W2)'s walk
-      //     vacuously succeed, so old RIGHT ⊆ (W2).
-      //   * old LEFT was `DT.dominates(M,First) AND (!isPotentiallyReachable
-      //     (First,M) OR (W1))` — its barrier-walk half IS (W1) verbatim
-      //     (`WireWalk.cpp`'s `provablyBeforePerActivation` says so). (W1) ⇒ (W2)
-      //     by the theorem above. And `!isPotentiallyReachable(First, M)` ⇒ (W2)
-      //     directly: §4 gives `First` dominates `At`, so every entry⇝`At` walk
-      //     carries a `First`; none can lie in an entry⇝`M` prefix (that would be
-      //     `First` reaching `M`), so every `M`⇝`At` suffix carries one. So old
-      //     LEFT ⊆ (W2) too.
-      // Nothing that discharged before can leak now.
-      if (everyPathReExecutes(M, At, First))
-        continue;  // (W2) — M runs only after the discharge (Inc 5b). The SOLE
-                   // window certificate; the `First != At` conjunct that used to
-                   // guard it is proven above, not tested here.
-      if (routeGroupFullyInside(M, P, First, At, DT, taint, Alternates))
-        continue;  // INSIDE — a COMPLETE emitter-recorded Phase-4 route, the
-                   // identity on P's basis LABEL over the interval (Inc 6,
-                   // clause (d2)).
-      return false;  // unprovable ⇒ this component leaks (Rule 6).
-    }
+    if (!railUnmovedInWindow(P, First, At, DT, taint, AdmitCloneCalls,
+                             /*Opener=*/nullptr))
+      return false;
   }
   return true;
 }

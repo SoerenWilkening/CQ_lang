@@ -15,6 +15,7 @@
 #include "OpcodeSupport.h"  // abiWidthFromType
 #include "RailBankPromote.h"  // isRailBankSeedAlloc
 #include "TaintPropagation.h"
+#include "Uncomputation.h"  // railUnmovedInWindow (bd cmr9: clause 4's window scan)
 #include "WidthDispatch.h"
 #include "WireWalk.h"  // provablyBefore (the shared position-aware proof)
 
@@ -1113,6 +1114,10 @@ namespace {
 //       orientations) and a printf'd sibling, taped before the gate, are silent;
 //       a dead untaped record beside the park, a tape write that does not
 //       dominate the gate, and a guarded write still warn
+// bd cmr9 (2026-10-05) — clause 4's measurement half asks the window scan:
+//   * lowering_reject_live_record_measured_then_moved.ll  a record measured,
+//       then written again under a flag before the gate, warns at the gate; the
+//       same record untouched, or written only after the gate, does not
 // bd aako (2026-10-05) — no behaviour change; clause 5 measured from C:
 //   * lowering_live_record_own_rail_accept.ll  a gate on the record's own rail
 //       (in-place chain, loop-carried handle, M-C in-place xor) is silent; the
@@ -2079,16 +2084,38 @@ bool recordIsExemptAt(CallInst *R, CallInst *T, const TaintSet &taint,
       // warn: a dead record beside the park (per record), a tape write that does
       // not dominate the gate (position), and a guarded write (arity).
       //
-      // SHARED EXPOSURE, NOT NEW: neither spelling asks whether R is written in
-      // place between the collapse and the gate. A classical-constant write
-      // (`cqrt_xorc`/`cqrt_addc`) keeps R a bijection of what was observed; a
-      // write with a quantum operand would not. RETIREMENT TRIGGER (L7): a tape
-      // entry that gains an `_unc`, a free or a later read invalidates the
-      // deferred-measurement step, and the tape half must go.
+      // A COLLAPSE IS THE LAST WORD ON R ONLY IF NOTHING WRITES R AFTER IT (bd
+      // test_C_libtooling-cmr9, found by the gl3x Rule-11 review). A gate that
+      // writes R's rail between the collapse and `T` can make R a record again:
+      // `sink = cq_measure(r); if (q > 3) cq_theta(&r, .9); cq_theta(&q, .3);`
+      // rotates r under q's flag after measuring it, and the gate on q was
+      // silent. The two halves close this differently:
+      //   * MEASUREMENT: reachable from plain C, so it is asked here, through the
+      //     one window scan M-B's clause (d) already owns, `railUnmovedInWindow`
+      //     (Uncomputation.h): every user of R is label-preserving or provably
+      //     outside (collapse, `T`) on every path. The measurement is the
+      //     window's opener. Clone calls are NOT admitted (`false`): a call
+      //     reading R in the window counts as a write, which can only add a
+      //     warning. Pinned by lowering_reject_live_record_measured_then_moved.ll.
+      //   * TAPE: closed before this pass sees it. `IOSinkLowering`'s
+      //     `tapedLineageClosed` declines a taped value with any user that is not
+      //     an I/O sink or a measurement, so no gate can write a printf'd record
+      //     after its write. The park's flag is the emitter's own: its only user
+      //     after the write is the closing `cqrt_x` of the bracket around it,
+      //     which restores the flag to the value the tape holds the complement
+      //     of. The window scan would refuse that `cqrt_x` (it is not
+      //     label-preserving), so asking it here would re-warn
+      //     @park_negated_then_gate for no hazard. RETIREMENT TRIGGER (L7): if
+      //     `tapedLineageClosed` is relaxed, the park gains another post-write
+      //     user of its flag, or a tape entry gains an `_unc`, a free or a later
+      //     read, re-derive the tape half.
       const bool Measured = emittedCalleeName(CI).starts_with("cqrt_measure_");
       const bool TapedInFull = CI->arg_size() == 2 && isTapeWriteOf(CI, R);
       if ((Measured || TapedInFull) &&
-          provablyBeforePerActivation(CI, T, R, DT))
+          provablyBeforePerActivation(CI, T, R, DT) &&
+          (TapedInFull ||
+           railUnmovedInWindow(R, CI, T, DT, taint, /*AdmitCloneCalls=*/false,
+                               /*Opener=*/CI)))
         return true;
     }
     // clause 3 — an OBSERVED use provably AFTER the gate: the record is LIVE,
@@ -2158,25 +2185,35 @@ bool recordIsExemptAt(CallInst *R, CallInst *T, const TaintSet &taint,
 //                               (bd `test_C_libtooling-7845`, P1).
 //
 // ⚠⚠ IT IS **NOT** A DIVERGENCE DETECTOR AND MUST NOT BE DESCRIBED AS ONE, however
-// suggestive that 5-of-5 split is. MEASURED on the same binary: it fires on
-// `slice_control_inplace_ry_loop_leak` (1) and on `…_unrolled` (2), a pair whose
-// traces are BYTE-IDENTICAL under the shipped ctest gate
-// `e2e-inplace-ry-loop-leak-twin-identical`. ⚠ And byte identity does not prove
-// that pair CORRECT: if both halves are wrong the same way the twin witness is
-// blind — `CLAUDE.md` L10's `m_none_pbitd_none_premark_rypost` cell, which agreed
-// with itself while both halves were wrong.
+// suggestive that 5-of-5 split is. HISTORY, measured on the merged binary above
+// (2026-09-14, before bd gl3x): it fired on `slice_control_inplace_ry_loop_leak`
+// (1) and on `…_unrolled` (2), a pair whose traces were BYTE-IDENTICAL under the
+// then-shipped ctest gate `e2e-inplace-ry-loop-leak-twin-identical`. ⚠ And byte
+// identity does not prove that pair CORRECT: if both halves are wrong the same
+// way the twin witness is blind — `CLAUDE.md` L10's
+// `m_none_pbitd_none_premark_rypost` cell, which agreed with itself while both
+// halves were wrong. RE-MEASURED 2026-10-05 after bd gl3x (single `cq-opt`
+// probes, `run_slice.sh`'s stage-1 flags): BOTH now warn 0 times. Each tapes
+// `s = r * 7` before the in-place controlled Ry on `r`; `* 7` is a bijection, so
+// the unguarded tape write determines `r` and clause 4's tape half exempts the
+// record. The pair no longer witnesses this paragraph, and both slices have been
+// unregistered since 2026-09-18 (bd 6n1s, see their headers).
 //
 // ⚠ WHY IT IS A WARNING, WHICH IS A RULING AND NOT AN ASSESSMENT OF HARM. Owner
 // ruling bd `test_C_libtooling-lyyf` (2026-08-29) made it `DS_Warning`, and the
 // recorded reason is REPORTING COMPLETENESS — under `DS_Error` the pass was over
 // after one site, and a warning that hid the second would send the author round
 // the compile loop once per record. It is NOT a finding that the reported gates
-// are benign. Promoting it to a decline therefore has a real, measured cost: 5 of
-// the 366 accepting e2e slices emit it (`slice_control_angle_select_ry_derived_base`,
+// are benign. Promoting it to a decline therefore has a real, measured cost.
+// HISTORY (measured when this note was written, date unrecorded, before bd
+// gl3x): 5 of the 366 accepting e2e slices emitted it (`slice_control_angle_select_ry_derived_base`,
 // `slice_control_inplace_ry_derived_base`, `slice_control_inplace_ry_loop_leak`,
-// `…_unrolled`, `slice_live_record_source_rail_warn`) and would have to be
-// re-dispositioned first. Use it as a SIGNAL when hunting bd `7845` / bd `c767`;
-// never as a second fence and never as coverage.
+// `…_unrolled`, `slice_live_record_source_rail_warn`). RE-MEASURED 2026-10-05
+// for those five only, by single `cq-opt` probes after bd gl3x and bd cmr9:
+// 2, 4, 0, 0 and 2 warnings, and the two loop-leak slices are unregistered (see
+// above). The corpus-wide count was not re-measured; count it before relying on
+// it. Use it as a SIGNAL when hunting bd `7845` / bd `c767`; never as a second
+// fence and never as coverage.
 bool warnLiveRecordRotations(Module &M, const TaintSet &taint) {
   if (taint.UserChainedRotations.empty())
     return false;  // no site in the whole module — every other cost is skipped.

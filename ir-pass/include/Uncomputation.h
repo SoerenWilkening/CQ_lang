@@ -22,6 +22,10 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 
+namespace llvm {
+class DominatorTree;
+}  // namespace llvm
+
 namespace cq {
 
 class WidthDispatch;
@@ -85,6 +89,31 @@ struct InteriorDischargePlan {
 // nothing, diagnoses nothing (a `diagnose` here would double-fire against
 // `uncompute`'s own).
 InteriorDischargePlan planInteriorDischarges(llvm::Function &F, TaintSet &taint);
+
+// ── THE WINDOW SCAN (bd test_C_libtooling-cmr9) ─────────────────────────────
+//
+// True iff no execution of any user of the rail `P` can MOVE `P`'s basis label
+// strictly inside the window `(First, At)`: every user is proven label-preserving
+// (a forward template read, a diagonal rotation, and, with `AdmitCloneCalls`, a
+// clone call proven read-only on `P`), or provably outside the window on every
+// path (the (W2) certificate: every path from it to `At` re-executes `First`),
+// or a complete recorded restoring route. A non-call user (a φ/select alias, a
+// store) or anything unproven answers false. `Opener`, when non-null, is the
+// window's opening event, which the caller vouches does not move `P`.
+//
+// PRECONDITION: `First` dominates `At` and `First != At`.
+//
+// TWO CALLERS, ONE QUESTION (Rule 12):
+//   * M-B clause (d), `borrowedParentsUnmoved` (Uncomputation.cpp): a borrowed
+//     parent must hold, at the adjoints inserted before `At`, the label it held
+//     when the first gate reading it ran. `Opener` is null.
+//   * M-A clause 4, `recordIsExemptAt` (RotationLowering.cpp): a record measured
+//     at `First` is still collapsed when the gate `At` fires only if nothing
+//     writes it in between. `Opener` is the measurement.
+bool railUnmovedInWindow(llvm::Value *P, llvm::CallInst *First,
+                         llvm::Instruction *At, const llvm::DominatorTree &DT,
+                         const TaintSet &taint, bool AdmitCloneCalls,
+                         const llvm::Instruction *Opener);
 
 }  // namespace cq
 
