@@ -1,6 +1,8 @@
 ; lowering_loop_break_escape_invariant_classical.ll — ACCEPT (bd
 ; test_C_libtooling-923w). The discriminating twin of
-; lowering_reject_break_escape_classical_counter.ll: the SAME module with ONE
+; lowering_loop_break_escape_classical_counter.ll (a decline until bd 8h7d.17,
+; then named lowering_reject_break_escape_classical_counter.ll; it now lowers the
+; escaping counter through a capture register): the SAME module with ONE
 ; operand changed, the exit φ's in-loop incoming `%15` (i.next, loop-VARIANT) ->
 ; `%2` (the bound n, loop-INVARIANT):
 ;
@@ -16,11 +18,15 @@
 ; global, and `deleteGlobalPhases` deletes it (owner decision D2). The break
 ; construct and the `p == 3` kickback before it lower exactly as in
 ; lowering_loop_break_qq_phase.ll. Without this twin, E16 could be a wall ("any
-; exit φ beside the answer declines") rather than a test of loop variance.
+; exit φ beside the answer declines") rather than a test of loop variance; since
+; bd 8h7d.17 it also pins that a loop-INVARIANT carrier gets no capture register
+; (no `cq.brk.esc.*` mint): only a value computed inside the loop is lowered as
+; a control-merge register.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=PHASE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=ESC < %t.cqd0.ll
 ;
 ; CHECK-LABEL: define i32 @break_escape_invariant(
 ; CHECK: call void @cqrt_rz_i1(i32 {{%[a-z0-9_.]+}}, double 3.000000e-01), !cq.branchphase
@@ -38,6 +44,10 @@
 ; PHASE-COUNT-1: call void @cqrt_rz_
 ; PHASE-NOT: call void @cqrt_rz_
 ; PHASE-NOT: call void @cq_phi(
+;
+; --- bd 8h7d.17: a loop-invariant carrier is not an escape; no capture register.
+; ESC: %cq.brk.out = call i32 @cqrt_alloc_i32(i32 0)
+; ESC-NOT: cq.brk.esc
 
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"

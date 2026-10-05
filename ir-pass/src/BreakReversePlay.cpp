@@ -541,6 +541,18 @@ struct BreakEmit {
   StringRef IW;    // idx/counter ABI width
   Type *IdxLogTy;  // the counter logical type (for the `i+1` immediate)
   DebugLoc DL;
+  // bd 8h7d.17 — the region's escaping classical values (`BreakEscape`,
+  // LoopPlan.h), resolved and re-validated by `emitOneBreak`.
+  struct Escape {
+    Value *Phi;  // E: the never-fired value (classical)
+    Value *V;    // the in-loop value, read in the forward body
+    Value *Out;  // the control-merge register E's users read
+    Value *Cap;  // the capture scratch
+    StringRef W;
+    SmallVector<Instruction *, 8> Cone;  // V's classical cone, clone order
+  };
+  SmallVector<Escape, 2> Esc;
+  PHINode *CounterPhi = nullptr;  // the forward counter the cone clones remap
 
   FunctionCallee copyCtrlR() { return csyms.copyControlledFn(RW); }
   FunctionCallee copyCtrlIdx() { return csyms.copyControlledFn(IW); }
@@ -550,6 +562,40 @@ struct BreakEmit {
   // fire-controlled XOR of the rail into R (capture / un-capture; self-inverse).
   void captureRailToR(IRBuilder<> &B, Value *Fire) {
     mintCall(B, copyCtrlR(), {Fire, Rail, R}, DL);
+  }
+
+  // `Dst ^= Ctl ? Val : 0` for a CLASSICAL `Val` of ABI width `W`: materialise
+  // `Val` in a fresh register, controlled-copy it, unload it (`-Val`, so it is
+  // |0> on every branch: it never held anything but the classical `Val`, and the
+  // copy reads it only as a source) and free it. Self-inverse in `Dst`. The ONE
+  // spelling, shared by the idx write / un-write (`cq.brk.k`) and the escape
+  // captures (bd 8h7d.17, `cq.brk.ev`).
+  void xorClassical(IRBuilder<> &B, Value *Ctl, Value *Val, Value *Dst,
+                    StringRef W, const Twine &Name, const Twine &NegName) {
+    CallInst *T = mintCall(B, wd.allocFn(W), {Val}, DL, Name);
+    mintCall(B, csyms.copyControlledFn(W), {Ctl, T, Dst}, DL);
+    Value *Neg = B.CreateNeg(Val, NegName);
+    mintCall(B, wd.addcFn(W), {T, Neg}, DL);
+    mintCall(B, wd.freeFn(), {T}, DL);
+  }
+
+  // `Esc[j].V` recomputed from the backward counter: its cone cloned at `B` with
+  // the forward counter replaced by `IPrime`.
+  Value *recomputeEscape(IRBuilder<> &B, const Escape &X, Value *IPrime) {
+    DenseMap<Value *, Value *> VMap;
+    VMap[CounterPhi] = IPrime;
+    for (Instruction *I : X.Cone) {
+      Instruction *C = I->clone();
+      for (Use &U : C->operands()) {
+        auto It = VMap.find(U.get());
+        if (It != VMap.end())
+          U.set(It->second);
+      }
+      B.Insert(C, "cq.brk.ecl");
+      VMap[I] = C;
+    }
+    auto It = VMap.find(X.V);
+    return It != VMap.end() ? It->second : X.V;
   }
 };
 
@@ -590,16 +636,16 @@ struct BreakEmit {
 
   // CAPTURE (copy, not move): R ^= fire ? rail : 0  — rail left INTACT.
   E.captureRailToR(B, Fire);
+  // bd 8h7d.17: each escaping classical value, captured the same way (this
+  // iteration's value of V, under the same `fire`).
+  for (const BreakEmit::Escape &X : E.Esc)
+    E.xorClassical(B, Fire, X.V, X.Cap, X.W, "cq.brk.ev", "cq.brk.negev");
 
   // clear e BEFORE the idx-write (idx still old) — then free it.
   bool OK = clearAndFree(B, Efl, E.wd, E.DL, &E.taint.SpineOps);
 
   // IDX-WRITE: idx ^= fire ? (i+1) : 0  via a materialised `K` register.
-  CallInst *Ip1 = mintCall(B, E.allocIdx(), {K}, E.DL, "cq.brk.k");
-  mintCall(B, E.copyCtrlIdx(), {Fire, Ip1, E.Idx}, E.DL);
-  Value *NegK = B.CreateNeg(K, "cq.brk.negk");
-  mintCall(B, E.addcIdx(), {Ip1, NegK}, E.DL);  // unload Ip1 -> 0
-  mintCall(B, E.wd.freeFn(), {Ip1}, E.DL);
+  E.xorClassical(B, Fire, K, E.Idx, E.IW, "cq.brk.k", "cq.brk.negk");
 
   // clear fire via (idx == i+1) (true iff this iteration first fired), then free.
   // `fire` itself is this emitter's own `cqrt_alloc_i1` |0> ancilla returned to |0>
@@ -627,13 +673,21 @@ struct BreakEmit {
   // consolidate
   CallInst *E0 = emitEqZero(B, E.wd, E.Idx, E.IW, E.DL);
   mintCall(B, E.copyCtrlR(), {E0, E.Rail, E.R}, E.DL);
+  // bd 8h7d.17: never fired (or zero trip) ⇒ the escape's value is E itself, the
+  // classical φ the virtual loop computed (full trip, or the guard incoming).
+  for (const BreakEmit::Escape &X : E.Esc)
+    E.xorClassical(B, E0, X.Phi, X.Cap, X.W, "cq.brk.ev", "cq.brk.negev");
   bool OK = clearAndFree(B, E0, E.wd, E.DL, &E.taint.SpineOps);
-  // copy out:  out ^= R
+  // copy out:  out ^= R  (and each escape's register from its capture)
   mintCall(B, E.wd.copyFn(E.RW), {E.R, E.Out}, E.DL);
+  for (const BreakEmit::Escape &X : E.Esc)
+    mintCall(B, E.wd.copyFn(X.W), {X.Cap, X.Out}, E.DL);
   // consolidation REVERSE (self-inverse — pairs with the above; the reverse-play
   // companion loop then un-captures the fired branches + walks the rail back).
   CallInst *E0b = emitEqZero(B, E.wd, E.Idx, E.IW, E.DL);
   mintCall(B, E.copyCtrlR(), {E0b, E.Rail, E.R}, E.DL);
+  for (const BreakEmit::Escape &X : E.Esc)
+    E.xorClassical(B, E0b, X.Phi, X.Cap, X.W, "cq.brk.ev", "cq.brk.negev");
   OK = clearAndFree(B, E0b, E.wd, E.DL, &E.taint.SpineOps) && OK;  // both clears run — no short-circuit.
   return OK;
 }
@@ -656,14 +710,15 @@ struct BreakEmit {
   bool OK = xorEqKIntoFire(B, E, Fire, K);
 
   // un-write idx: idx ^= fire ? K : 0  (idx → its pre-fire value)
-  CallInst *Ip1 = mintCall(B, E.allocIdx(), {K}, E.DL, "cq.brk.k");
-  mintCall(B, E.copyCtrlIdx(), {Fire, Ip1, E.Idx}, E.DL);
-  Value *NegK = B.CreateNeg(K, "cq.brk.negk");
-  mintCall(B, E.addcIdx(), {Ip1, NegK}, E.DL);  // unload Ip1
-  mintCall(B, E.wd.freeFn(), {Ip1}, E.DL);
+  E.xorClassical(B, Fire, K, E.Idx, E.IW, "cq.brk.k", "cq.brk.negk");
 
   // un-capture R: R ^= fire ? rail : 0
   E.captureRailToR(B, Fire);
+  // bd 8h7d.17: un-capture each escape with V recomputed from i' (the forward
+  // iteration this backward one replays), under the same `fire`.
+  for (const BreakEmit::Escape &X : E.Esc)
+    E.xorClassical(B, Fire, E.recomputeEscape(B, X, IPrime), X.Cap, X.W,
+                   "cq.brk.ev", "cq.brk.negev");
 
   // recompute e = (idx == 0) (idx now pre-fire) and the break-cond, then uncompute
   // fire via the SAME Toffoli `fire ^= brk' ∧ e` (≡ forward) ⇒ fire → 0.
@@ -776,6 +831,28 @@ void emitOneBreak(LoopBreakRegion &Rgn, Module &M, WidthDispatch &wd,
     }
   }
 
+  // ── bd 8h7d.17: this region's escaping classical values. Resolved and
+  // re-validated BEFORE the first gate, like the two scans above: a handle that
+  // went null (its value was deleted) or a cone that is no longer a pure
+  // classical function of the counter declines and emits nothing.
+  SmallVector<BreakEmit::Escape, 2> Esc;
+  for (const BreakEscape &Rec : breakEscapeLedger()) {
+    if (Rec.Region != Rgn.OutReg)
+      continue;
+    BreakEmit::Escape X;
+    X.Phi = Rec.Phi;
+    X.V = Rec.V;
+    X.Out = Rec.Out;
+    X.Cap = Rec.Cap;
+    X.W = Rec.Width;
+    if (!X.Phi || !X.V || !X.Out || !X.Cap ||
+        !breakEscapeCone(X.V, Rgn.CounterPhi, Body, taint, X.Cone)) {
+      diagnoseAt(Rgn.OutReg, kMsgBreakRederive);
+      return;
+    }
+    Esc.push_back(std::move(X));
+  }
+
   // Exclude the whole break construct from the whole-DAG uncompute spine.
   taint.ControlOwnedRails.insert(LB.RailHandle);
   for (CallInst *C : LB.BreakCond)
@@ -785,6 +862,8 @@ void emitOneBreak(LoopBreakRegion &Rgn, Module &M, WidthDispatch &wd,
               LB,         LB.RailHandle, Rgn.RReg, Rgn.IdxReg,
               Rgn.OutReg, Rgn.RailWidth, Rgn.IdxWidth,
               wd.llvmWidthType(Rgn.IdxWidth), Body->getTerminator()->getDebugLoc()};
+  E.Esc = std::move(Esc);
+  E.CounterPhi = Rgn.CounterPhi;
 
   // K = i+1 = the counter's latch-incoming (`i.next`), live at the terminator.
   Value *K = Rgn.CounterPhi->getIncomingValueForBlock(Body);
@@ -879,6 +958,11 @@ void emitOneBreak(LoopBreakRegion &Rgn, Module &M, WidthDispatch &wd,
   IRBuilder<> TB(&*ExitTail->getFirstInsertionPt());
   mintCall(TB, wd.freeFn(), {E.R}, E.DL);
   mintCall(TB, wd.freeFn(), {E.Idx}, E.DL);
+  // bd 8h7d.17: each escape's capture is R's shape (written only by controlled
+  // copies, copied out, returned by the exact replay above), so the same `OK`
+  // licenses its free. Its output register is not freed (it is not |0>).
+  for (const BreakEmit::Escape &X : E.Esc)
+    mintCall(TB, wd.freeFn(), {X.Cap}, E.DL);
 }
 
 }  // namespace
@@ -886,6 +970,7 @@ void emitOneBreak(LoopBreakRegion &Rgn, Module &M, WidthDispatch &wd,
 void lowerBreakReversePlay(Module &M, WidthDispatch &wd, TaintSet &taint) {
   for (LoopBreakRegion &Rgn : taint.BreakRegions)
     emitOneBreak(Rgn, M, wd, taint);
+  breakEscapeLedger().clear();  // bd 8h7d.17: read once, by the regions above.
 }
 
 }  // namespace cq

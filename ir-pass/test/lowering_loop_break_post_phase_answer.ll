@@ -42,7 +42,9 @@
 ;      source's `if (q == 5) cq_phi(0.3)` applied after the loop, and the stream is
 ;      D after U. The 923w hazard (a key computed INSIDE the loop leaving with its
 ;      full-trip value) does not arise: the key reads only the answer, and E16
-;      refuses any other in-loop value read after the loop. The stream equals the
+;      lowers any other in-loop value read after the loop as a control-merge
+;      register holding the source's value (bd 8h7d.17) or refuses it. The
+;      stream equals the
 ;      folded twin's with its ¬-arm kickback (`cqrt_x`, `cqrt_rz_i1(f, 0.5)`,
 ;      `cqrt_x`) removed.
 ;
