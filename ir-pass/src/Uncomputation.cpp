@@ -1085,6 +1085,57 @@ void partitionByReducedDag(ArrayRef<Value *> Terms, ArrayRef<Instruction *> Ats,
   }
 }
 
+// bd test_C_libtooling-01po.8 review round 2 — can the parent `P` be COLLAPSED
+// (fully or partly) before the move `M` runs? Over-approximated, and every
+// over-approximation refuses (keeps the decline): walk `P`'s ENTANGLED COMPONENT
+// along data edges — a minted register's producer operands, and for every call
+// that uses a member, its result and all its operands — and answer true when an
+// OBSERVATION of any member (a measurement, or a record into a kept carrier: a
+// tape write or a copy-out) can reach `M` (`isPotentiallyReachable`, so a loop
+// that could run it first counts), or when a member has a non-call user (a
+// phi/select/store/ret alias the walk cannot follow). A collapse of any register
+// correlated with `P` can fix `P`'s label, and then a record of `P` is a
+// product-state record of the rest — not the program's own entanglement.
+// Members are the tainted values plus the minted registers the taint set does
+// not carry (a control flag from `lowerCompareToFlag`, a `cqrt_alloc` mint), so
+// a correlation routed through a controlled gate is walked too.
+bool componentObservedBefore(Value *P, const Instruction *M,
+                             const DominatorTree &DT, const TaintSet &taint) {
+  SmallVector<Value *, 16> Work{P};
+  SmallPtrSet<Value *, 32> Seen;
+  Seen.insert(P);
+  auto push = [&](Value *V) {
+    if (!V || isa<Constant>(V) || Seen.count(V))
+      return;
+    auto *CI = dyn_cast<CallInst>(V);
+    if (!taint.Tainted.count(V) &&
+        !(CI && (isTemplateProducer(CI) || isAllocMint(CI))))
+      return;
+    Seen.insert(V);
+    Work.push_back(V);
+  };
+  while (!Work.empty()) {
+    Value *V = Work.pop_back_val();
+    if (auto *Def = dyn_cast<CallInst>(V))
+      for (Value *Op : Def->args())
+        push(Op);
+    for (User *U : V->users()) {
+      auto *CI = dyn_cast<CallInst>(U);
+      if (!CI)
+        return true;  // an alias the walk cannot follow — unprovable
+      if (isMeasureSink(CI) || recordsIntoKeptCarrier(CI, V)) {
+        if (isPotentiallyReachable(CI, M, /*ExclusionSet=*/nullptr, &DT))
+          return true;
+        continue;
+      }
+      push(CI);
+      for (Value *Op : CI->args())
+        push(Op);
+    }
+  }
+  return false;
+}
+
 // bd test_C_libtooling-01po.8 — is `R`, written by `G` from the borrowed parent
 // `P`, a which-path record of `P` that the PROGRAM keeps alive across a move of
 // `P` on EVERY path to the reversal point `At`? Owner rule (review round 1): a
@@ -1116,16 +1167,24 @@ void partitionByReducedDag(ArrayRef<Value *> Terms, ArrayRef<Instruction *> Ats,
 //     basis permutation of `P` (`xorc`/`addc`/a store): conjugating by it would
 //     not change `P`'s statistics, so the record is not forced
 //     (lowering_reject_uncompute_measured_parent_moved_dead_record.ll).
+//   * a move of a parent that is NOT IN SUPERPOSITION when it runs (review
+//     round 2): after a collapse the parent is |m> in a product state, the
+//     record carries only its OTHER operands, and conjugating by the move
+//     leaves the parent's statistics unchanged — so the premise above fails
+//     (lowering_reject_uncompute_measured_parent_collapsed_before_move.ll).
+//     `componentObservedBefore` refuses a move that an observation of the
+//     parent's entangled component can precede, a copy's measurement included
+//     (lowering_reject_uncompute_measured_parent_copy_measured_before_move.ll).
 // Every refusal keeps the decline. Asked of the IR as it stands (nothing has
 // been emitted for this function's terminal groups when it is planned), with
 // `DominatorTree::dominates` only — no window collector, so no unprovable user
 // can be read as "moved" (finding F4).
 bool recordLiveAcrossMove(CallInst *G, Value *R, Value *P, Instruction *At,
-                          DominatorTree &DT) {
+                          DominatorTree &DT, const TaintSet &taint) {
   for (User *PU : P->users()) {
     auto *M = dyn_cast<CallInst>(PU);
     if (!M || !isInPlaceGateOn(M, P) || preservesBasisUnderRecord(M) ||
-        !DT.dominates(G, M))
+        !DT.dominates(G, M) || componentObservedBefore(P, M, DT, taint))
       continue;
     for (User *RU : R->users()) {
       auto *U = dyn_cast<Instruction>(RU);
@@ -1238,7 +1297,7 @@ bool planFrontierFixpoint(Function &F, ArrayRef<Value *> InsertTerms,
               if (Op == Pm) {
                 Value *R = railOf(G);
                 if (!R || isa<Constant>(R) ||
-                    !recordLiveAcrossMove(G, R, Pm, P.At, DT))
+                    !recordLiveAcrossMove(G, R, Pm, P.At, DT, taint))
                   return false;  // not a FORCED record: see the header
                 New |= Frontier.Borrowed.insert(R).second;
               }
