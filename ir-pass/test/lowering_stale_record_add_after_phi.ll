@@ -1,14 +1,21 @@
-; lowering_stale_record_add_after_phi.ll — ACCEPT: the diagonal twin of
-; lowering_reject_stale_record_add.ll (test_C_libtooling-uzb).
+; lowering_stale_record_add_after_phi.ll — ACCEPT: written as the diagonal twin
+; of lowering_reject_stale_record_add.ll (test_C_libtooling-uzb).
 ;
-; The intervening in-place gate on `%q`'s wire is a `cq_phi` (Rz), which is
-; DIAGONAL — `Rz = diag(1, e^{i.theta})` preserves the computational basis —
-; so the template emitted at the add's position (after the rz) still reads
-; exactly the basis record the SSA value `%d = add i32 %q, 1` denotes.
-; Non-diagonality is the load-bearing trigger of the stale-record family
-; (bd memory rz-diag-flag-strip-invariant); the wire walk
-; (WireWalk::findNonDiagonalWireGate) walks THROUGH diagonal gates and must
-; not decline this shape.
+; ⚠ ITS DIAGONAL GATE IS GONE (noted by bd jttf, 2026-10-05). Pre-3qlq the
+; intervening in-place gate on `%q`'s wire was the register form `cq_phi` (Rz),
+; DIAGONAL, so the template emitted at the add's position (after the rz) still
+; read exactly the basis record the SSA value `%d = add i32 %q, 1` denotes, and
+; the wire walk (WireWalk::findNonDiagonalWireGate) had to walk THROUGH it (bd
+; memory rz-diag-flag-strip-invariant). The 3qlq migration deleted that
+; uncontrolled phase. A register-free phase creates no in-place gate on `%q`'s
+; wire, so the walk-through-a-diagonal-gate subject has no spelling; what this
+; file pins today is the theta -> dead-parent `add` -> measure stream below.
+;
+; RETIRED INTO THIS FILE (bd jttf, 2026-10-05):
+; lowering_stale_record_alias_producer.ll, the producer-boundary twin whose add
+; read the diagonal alias `%qd = cq_phi(%q, ·)` of a plain `cq_theta` source
+; (the backward seed closure crossed diagonal hops only, never the producing
+; theta). After 3qlq its module equalled this one up to the add's constant.
 ;
 ; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the `q + c` lowers IN PLACE
 ; to the frozen `cqrt_addc_<W>` (its parent handle has no data use after it), so

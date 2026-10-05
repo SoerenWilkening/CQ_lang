@@ -10,6 +10,17 @@
 ; Ry on `%q`'s wire cannot touch that rail. The lift still fires (the phi is a
 ; pure renaming) AND the add lowers — a legitimate use-then-re-rotate program.
 ;
+; RETIRED INTO THIS FILE (bd jttf, 2026-10-05):
+; lowering_classical_mux_phi_lift_diaghop_before_sibling.ll, the twin whose add
+; read the phi THROUGH an intervening diagonal hop `%qphi = cq_phi(%p, ·)` (the
+; pre-3qlq register form). The 3qlq migration deleted the hop and left that
+; file's normalized IR identical to this one's. Its register-free spelling (the
+; hop as an in-place `cq_theta(%p, tc)`) is not an accept: the sibling chained Ry
+; on the pre-hop name `%q` then reads a register the hop already rotated and
+; declines `rotation/measure operand predates a non-diagonal gate`, measured
+; 2026-10-05 (lowering_reject_classical_mux_phi_lift_thetahop_stale.ll is that
+; family's decline).
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ;

@@ -12,6 +12,17 @@
 ; record, has no user at all after `%e`, and is never uncomputed or freed: it is
 ; live and entangled with `%h` when the second `Ry` fires.
 ;
+; RETIRED INTO THIS FILE (bd jttf, 2026-10-05):
+; lowering_reject_live_record_sibling_alias.ll (M-A Increment 1), whose chained
+; theta named the DIAGONAL SIBLING `%qd = cq_phi(%q, ·)` of the wire its record
+; was built from (pre-3qlq register form). The 3qlq migration deleted that alias,
+; which left the same structure as this file (a dead interior record behind the
+; same `cqrt_x` fence, a `mul` terminal measured before the chained Ry, the same
+; warning) with `add %q, 3` for `shl %q, 1`. A register-free phase creates no
+; sibling SSA name, so its subject has no spelling. Its un-fenced twin
+; lowering_live_record_mb_sibling_alias_accept.ll was re-spelled with a branch
+; phase on the wire instead.
+;
 ; PHYSICS HONESTY — WHAT THIS FIXTURE DOES AND DOES NOT DEMONSTRATE. It pins the
 ; STRUCTURAL rule (the record closure is transitive; a one-hop walk under-declines),
 ; NOT an incremental physical harm in this module. `%e = %d + 6` is a BIJECTION of

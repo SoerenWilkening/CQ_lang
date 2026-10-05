@@ -16,6 +16,13 @@
 ; over-decline this shape for no soundness gain. The CHECK-NEXT order pins the
 ; load-bearing property: the template between the two ry calls.
 ;
+; RETIRED INTO THIS FILE (bd jttf, 2026-10-05):
+; lowering_stale_record_alias_before_theta.ll, written as this boundary "one
+; diagonal hop removed" (its add read `%qd = cq_phi(%q, ·)`, the pre-3qlq
+; register form). The 3qlq migration deleted that hop and left this file's
+; module with `add %q, 3` for `add %q, 1`; a register-free phase creates no SSA
+; alias of `%q`, so its subject has no spelling and this file pins what is left.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ;

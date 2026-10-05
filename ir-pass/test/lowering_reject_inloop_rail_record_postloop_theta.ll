@@ -30,6 +30,15 @@
 ; is why this fence has to own them (Rule 14 — one predicate, not a neighbour's
 ; coverage).
 ;
+; RETIRED INTO THIS FILE (bd jttf, 2026-10-05):
+; lowering_reject_inloop_rail_record_offchain_rz.ll (round 3, F-3), whose RECORD
+; was an off-chain name reached through a DIAGONAL hop, `int mark = cq_phi(q,
+; 1.0)` (pre-3qlq register form). The 3qlq migration deleted the hop, which made
+; the record the chain member itself with the gate behind it: this file's shape,
+; with the same message. A register-free phase creates no SSA name, so the
+; diagonal-hop record has no spelling; the non-diagonal hop is
+; lowering_reject_inloop_rail_record_offchain_theta.ll.
+;
 ; The GREEN twin is control_swap_inloop_postloop_railop.ll (the same program with
 ; an out-of-place `q + 9` in place of the Ry — that one is CORRECT today, because
 ; the M-C decision lowers it into a FRESH rail and the register never moves).

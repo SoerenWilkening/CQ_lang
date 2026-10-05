@@ -7,6 +7,13 @@
 ; inner phase lands on a fresh ancilla holding the Toffoli AND of the two flags.
 ; ZERO controlled gates, EXACTLY THREE cqrt_rz_i1 and THREE cqrt_free.
 ;
+; bd jttf (2026-10-05): KEPT, not re-spelled. The diagonal-alias inner operand
+; has no register-free spelling (a branch phase creates no SSA name for `q`, and
+; an in-place `cq_theta` alias in Mid would be a controlled Ry, a different arm
+; class). What the file still pins is the multi-phase Mid: two kickbacks on the
+; outer flag, in order, before the inner compare and the Toffoli AND, the
+; two-gate complement of control_swap_nested_phase_gatefree_mid.ll.
+;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
 ; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)

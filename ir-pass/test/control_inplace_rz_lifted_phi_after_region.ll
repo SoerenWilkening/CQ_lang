@@ -1,24 +1,34 @@
-; control_inplace_rz_lifted_phi_after_region.ll — ACCEPT. The phase-arm
-; counterpart of `control_inplace_ry_lifted_phi_after_region.ll`: a
-; tainted-condition phase region, then a 5j5 classical join φ over `r`.
+; control_inplace_rz_lifted_phi_after_region.ll — ACCEPT. The STEM-DIFFERENTIAL
+; CONTROL for `control_inplace_ry_lifted_phi_after_region.ll`: the same program
+; with a PHASE arm in the first region instead of the in-place Ry arm, then the
+; same 5j5 classical join φ over `r`. `clang -O1` output (attribute groups and
+; metadata trimmed, like the Ry twin's) for
 ;
-;     if (q == 5)  { cq_phi(0.9); }     /* phase arm, kickback on the flag */
-;     if (OPQ)     { }                  /* 5j5 classical join φ over r     */
-;
-; WHAT IT PINS: the phase region is the four-line kickback and touches no data
-; register; the join φ dissolves and `r` is measured on its own handle.
-;
-; (History, bd drbq Inc 3, round-1 Rule-13 finding F-L5-1: pre-3qlq this was the
-; STEM-DIFFERENTIAL CONTROL for the Ry twin — the same program with an Rz arm
-; (Inc-2a peephole, M-α, merge φ RAUW'd to the BASE vs the Ry twin's M-β). 3qlq
-; made the arm register-free and deleted the OPQ arm's phase.) The pre-3qlq
-; VERBATIM `clang -O1` output was for
 ;   volatile int OPQ = 1;
 ;   int slice(void) { int q=3, r=7;
 ;                     cq_theta(&q,0.5); cq_theta(&r,0.25);
-;                     if (q == 5)  { r = cq_phi(r, 0.9); }     /* Rz arm, M-α */
-;                     if (OPQ)     { r = cq_phi(r, 0.5); }     /* 5j5 lift */
+;                     if (q == 5)  { cq_phi(0.9); }        /* phase arm, kickback */
+;                     if (OPQ)     { cq_theta(&r, 0.5); }  /* 5j5 lift            */
 ;                     return cq_measure(q) + cq_measure(r); }
+;
+; bd test_C_libtooling-drbq Increment 3, round-1 Rule-13 review finding F-L5-1.
+; The pair is a STANDING witness that a change to `resolveWireBase`'s
+; `ControlledRotations` stop cannot move one stem without the other going red.
+; In the Ry twin the join φ's wire runs through the region's HOISTED controlled
+; gate (M-β, a `ControlledRotations` STOP); here the phase arm touches no data
+; register, so the join φ `%11 = phi [%9, %8], [%2, %5]` resolves through its
+; arm's in-place Ry `%9` straight to the alloc `%2`, the plain 5j5 lift. Same
+; program, one differing stem, one differing wire base.
+;
+; WHAT IT PINS: the phase region is the four-line kickback on a flag minted off
+; `q` (mint, `cqrt_rz_i1`, strip, free) and touches no data register; the OPQ arm
+; keeps its uncontrolled Ry on `r`'s handle in its own block; the join φ
+; dissolves and both registers are measured on their own handles.
+;
+; History: pre-3qlq the first arm was the Inc-2a in-place Rz `r = cq_phi(r, 0.9)`
+; (M-α, merge φ RAUW'd to the BASE) and the OPQ arm `r = cq_phi(r, 0.5)`. 3qlq
+; made the first arm register-free and deleted the OPQ arm's phase; bd jttf
+; (2026-10-05) re-spelled the OPQ arm as the in-place Ry above, in BOTH twins.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
@@ -58,29 +68,30 @@ define i32 @slice() local_unnamed_addr {
   %1 = tail call i32 @cq_theta_si32(i32 noundef 3, double noundef 5.000000e-01)
   %2 = tail call i32 @cq_theta_si32(i32 noundef 7, double noundef 2.500000e-01)
   %3 = icmp eq i32 %1, 5
-  br i1 %3, label %4, label %6
+  br i1 %3, label %4, label %5
 
 4:                                                ; preds = %0
-  call void @cq_phi(double 9.000000e-01)
-  br label %6
+  tail call void @cq_phi(double noundef 9.000000e-01)
+  br label %5
 
-6:                                                ; preds = %4, %0
-  %8 = load volatile i32, ptr @OPQ, align 4
-  %9 = icmp eq i32 %8, 0
-  br i1 %9, label %12, label %10
+5:                                                ; preds = %4, %0
+  %6 = load volatile i32, ptr @OPQ, align 4
+  %7 = icmp eq i32 %6, 0
+  br i1 %7, label %10, label %8
 
-10:                                               ; preds = %6
-  br label %12
+8:                                                ; preds = %5
+  %9 = tail call i32 @cq_theta_si32(i32 noundef %2, double noundef 5.000000e-01)
+  br label %10
 
-12:                                               ; preds = %10, %6
-  %13 = phi i32 [ %2, %10 ], [ %2, %6 ]
-  %14 = tail call i32 @cq_measure_si32(i32 noundef %1)
-  %15 = tail call i32 @cq_measure_si32(i32 noundef %13)
-  %16 = add nsw i32 %15, %14
-  ret i32 %16
+10:                                               ; preds = %8, %5
+  %11 = phi i32 [ %9, %8 ], [ %2, %5 ]
+  %12 = tail call i32 @cq_measure_si32(i32 noundef %1)
+  %13 = tail call i32 @cq_measure_si32(i32 noundef %11)
+  %14 = add nsw i32 %13, %12
+  ret i32 %14
 }
 
-declare void @cq_phi(double)
+declare void @cq_phi(double noundef) local_unnamed_addr
 declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr
 declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr
 
@@ -106,6 +117,7 @@ declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr
 ; CHECK-NEXT: %[[V2:[a-zA-Z0-9_.]+]] = icmp eq i32 %[[V1]], 0
 ; CHECK-NEXT: br i1 %[[V2]], label %4, label %3
 ; CHECK: 3:                                                ; preds = %0
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H1]], double 5.000000e-01)
 ; CHECK-NEXT: br label %4
 ; CHECK: 4:                                                ; preds = %3, %0
 ; CHECK-NEXT: %[[M:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[H]])

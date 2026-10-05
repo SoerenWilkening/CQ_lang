@@ -16,6 +16,14 @@
 ; (Pre-3qlq history: the phase was a `cqrt_rz_<W>_controlled` on `r`, and the
 ; chain was then neither uncomputed nor freed, the bd `wt3l` contrast this
 ; fixture was written for.)
+;
+; bd jttf (2026-10-05): KEPT, not re-spelled. The Rz STEM over a derived base
+; (a diagonal controlled gate on a data register, PRD §12.1's transparent stem)
+; has no register-free spelling: a branch phase touches no data register. The
+; Ry stem of the same select is control_angle_select_ry_dead_base_frozen.ll
+; (rail frozen, never reverse-played). What this file still pins is the
+; composition: a dead derived chain reclaimed in full beside a select kickback
+; whose two `cqrt_rz_i1` survive with `!cq.branchphase`.
 ; ORACLE DISPOSITION: RED on the pre-2b binary (`rotation angle under quantum
 ; control`, SelectClassify gate 3) — Rule 12 red-green.
 ;

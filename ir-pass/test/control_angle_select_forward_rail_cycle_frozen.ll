@@ -18,6 +18,28 @@
 ; uncontrolled phase) and the select no longer rotates `r`, so neither the gap
 ; nor the freeze is exercised here; "frozen" in the file name is history.
 ;
+; ⚠ RE-SPELL BLOCKED (bd jttf, 2026-10-05). The register-free spelling of the
+; subject rotates `r` with the 2b select and keeps an in-place gate on the same
+; rail inside a classical cycle:
+;
+;     int q = u0; cq_theta(&q, .5);  int r = u1; cq_theta(&r, .25);
+;     cq_theta(&r, q == 5 ? .9 : .3);              // the 2b gate on r
+;     for (int i = 0; i <= n; i++) cq_theta(&r, .1); // FORWARD gate, in a cycle
+;     return cq_measure(q) + cq_measure(r);
+;
+; Measured through `clang -O1` and `cq-opt` on 2ab46c39: it DECLINES `cq
+; controlled lowering: control flow inside a loop body under quantum control`
+; (also with `r` left unmeasured), while the same program with an UNCONTROLLED
+; `cq_theta(&r, .3)` in place of the select lowers (Case A, the loop rolled on
+; one handle). The loop's bound is classical, so this is an over-decline (R1),
+; reported to the coordinator for a bd bug. The non-loop-carried spelling
+; (`int g = r; cq_theta(&g, .1);` in the body) declines `rotation/measure operand
+; predates a non-diagonal gate`, the stale-copy fence. So the S7 gap this file
+; was written for is unreachable today, by declines. RE-SPELL TRIGGER: when the
+; C above accepts, replace the IR with its `clang -O1` output and re-derive the
+; CHECKs (the select's controlled Ry on `r`, then the rolled in-place Ry on the
+; same rail inside the cycle, and no reverse-play and no free of that rail).
+;
 ; ORACLE DISPOSITION: RED on the pre-2b binary (`rotation angle under quantum
 ; control`) — it declines every angle select.
 ;

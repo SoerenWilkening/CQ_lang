@@ -1,70 +1,101 @@
 ; lowering_loop_iter_local_temp.ll — ACCEPT (Phase 7.3 Inc 2, 799w.2): the Case B
-; iteration-local born-and-dies temporary
-;     for (int i = 0; i < n; i++) {
-;         int q = x; cq_theta(&q, 0.25);  // fresh rail, born in body
-;         int t = q ^ 9;               // template producer (born), dead
+; iteration-local born-and-dies temporary, `clang -O1` output (attribute groups
+; and metadata trimmed) for
+;
+;     void slice(int x, int n) {
+;       for (int i = 0; i < n; i++) {
+;         int q = x; cq_theta(&q, 0.25);   /* fresh rail, born in body   */
+;         int t = q ^ 9;                    /* template producer (born)   */
+;         cq_theta(&t, 0.5);                /* in-place Ry keep-alive; t then dies */
+;       }
 ;     }
-; (The register-form keep-alive `(void) cq_phi(t, 0.5);` was an uncontrolled
-; global phase; the 3qlq migration deleted it.) It lowers with a PER-ITERATION
-; IN-BODY uncompute. Verified against real `clang -O1` output (Rule 11): a
-; single-block loop body whose ONLY loop phi is the classical induction (no tainted
-; header phi, no loop-carried rail), every tainted value (the fresh alloc `q`, the
-; `xor` temp `t`) BORN AND DEAD within one iteration.
+;
+; It lowers with a PER-ITERATION IN-BODY uncompute: a single-block loop body
+; whose ONLY loop phi is the classical induction (no tainted header phi, no
+; loop-carried rail), every tainted value (the fresh alloc `%7`, the `xor` temp
+; `%8`, the dead keep-alive `%9`) BORN AND DEAD within one iteration. Without
+; the keep-alive `clang -O1` deletes the dead `xor`, so the gate on `t` is what
+; makes the temp reach the pass at all.
 ;
 ; THE SPINE SURGERY (PRD §2.5): `lowerLoops` recognizes the iteration-local loop
 ; and marks its body block; the Phase-5 spine then LIFTS its two backedge guards
 ; (FreePoint kMsgLoopBackedge + Uncomputation §2.9 InLoop) for the proven
-; iteration-local DAG and places the whole-DAG recovery + `cqrt_free` IN-BODY —
-; before the backedge, proven to execute exactly ONCE PER ITERATION (never the
-; function-scope post-dominator, which would free the rail K times → use-after-free
-; + double-free, the central Rule-13 hazard). The reversal is the standard whole-DAG
-; LIFO: xor `_unc` (reads the live `q`) -> free t-rail -> ry(-0.25) (undo mint).
-; The q-rail is then KEPT, not freed (bd 5c5b, libcqops vmz9): its Ry-dagger
-; restores the runtime seed |x>, not |0>, so each trip leaves one rail allocated.
-; The t-rail free is the in-body placement witness.
+; iteration-local DAG and places the whole-DAG recovery + `cqrt_free` IN-BODY,
+; after the temp's last in-iteration use (the keep-alive Ry), before the
+; backedge, proven to execute exactly ONCE PER ITERATION (never the
+; function-scope post-dominator, which would free the rail K times: use-after-
+; free + double-free, the central Rule-13 hazard). The reversal is the standard
+; whole-DAG LIFO: ry(t, -0.5) (undo keep-alive) -> xor `_unc` (reads the live
+; `q`) -> free t-rail -> ry(q, -0.25) (undo mint). The q-rail is then KEPT, not
+; freed (bd 5c5b, libcqops vmz9): its Ry-dagger restores the runtime seed |x>,
+; not |0>, so each trip leaves one rail allocated. The t-rail free is the in-body
+; placement witness, and it is sound: after its Ry is undone `t` is again the
+; basis copy `q ^ 9`, which the `_unc` returns to |0>.
+;
+; This module also prints `warning: ... non-diagonal gate over a live derived
+; record` (the M-A guard; its gate is the keep-alive Ry on `t`'s own rail).
+; Reported to the coordinator 2026-10-05 as a suspected over-warning; it is not
+; pinned here in either direction.
+;
+; History: pre-3qlq the keep-alive was the register form `(void) cq_phi(t, 0.5)`
+; (an in-place Rz), so the LIFO began with `rz(t, -0.5)`. The 3qlq migration
+; deleted it as an uncontrolled phase and left a dead `xor` that `clang -O1`
+; would never emit; bd jttf (2026-10-05) re-spelled the keep-alive as the
+; in-place Ry above.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NEG < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
 ;
 ; The whole compute+uncompute pair lives INSIDE the loop body, before the backedge:
-; CHECK:      loop:
-; Forward compute (fresh rail mint, the xor temp):
-; CHECK:        %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %x)
-; CHECK:        call void @cqrt_ry_i32(i32 %[[Q]], double 2.500000e-01)
-; CHECK:        %[[T:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i32_hl(i32 %[[Q]], i32 9)
-; In-body LIFO uncompute (xor `_unc` reading live %[[Q]] -> free t-rail ->
-; negated mint; the q-rail is kept), all before the backedge branch:
-; CHECK:   call void @cq_template_xor_i32_hl_unc(i32 %[[T]], i32 %[[Q]], i32 9)
-; CHECK-NEXT:   call void @cqrt_free(i32 %[[T]])
-; CHECK-NEXT:   call void @cqrt_ry_i32(i32 %[[Q]], double -2.500000e-01)
-; CHECK-NOT:    call void @cqrt_free(i32 %[[Q]])
-; CHECK:        br i1 %{{.*}}, label %exit, label %loop
-; CHECK-NOT:    call void @cqrt_free(i32 %[[Q]])
-; No fresh-minting `_inv`, no added measurement, no surviving front-end intrinsic:
-; CHECK-NOT:  cq_template_xor_i32_hl_inv
-; CHECK-NOT:  cqrt_measure
-; CHECK-NOT:  cq_theta_si32
-; CHECK-NOT:  cq_phi_si32
-; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
+; CHECK-LABEL: define void @slice(
+; CHECK:      br i1 %{{[0-9]+}}, label %[[LOOP:[0-9]+]], label %[[EXIT:[0-9]+]]
+; CHECK:      {{^}}[[LOOP]]:
+; CHECK-NEXT: phi i32
+; Forward compute (fresh rail mint, the xor temp, the keep-alive Ry):
+; CHECK-NEXT: %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 2.500000e-01)
+; CHECK-NEXT: %[[T:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i32_hl(i32 %[[Q]], i32 9)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[T]], double 5.000000e-01)
+; In-body LIFO uncompute (negated keep-alive -> xor `_unc` reading live %[[Q]] ->
+; free t-rail -> negated mint; the q-rail is kept), all before the backedge:
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[T]], double -5.000000e-01)
+; CHECK-NEXT: call void @cq_template_xor_i32_hl_unc(i32 %[[T]], i32 %[[Q]], i32 9)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[T]])
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double -2.500000e-01)
+; CHECK-NEXT: add nuw nsw i32
+; CHECK-NEXT: icmp eq i32
+; CHECK-NEXT: br i1 %{{[0-9]+}}, label %[[EXIT]], label %[[LOOP]]
+;
+; Exactly one free in the module, the t-rail's (count + negative of the same
+; pattern, alone in its prefix):
+; FCNT-COUNT-1: call void @cqrt_free(
+; FCNT-NOT:     call void @cqrt_free(
+; Whole-module negatives: no fresh-minting `_inv`, no added measurement, no
+; surviving front-end intrinsic:
+; NEG-NOT: cq_template_xor_i32_hl_inv
+; NEG-NOT: cqrt_measure
+; NEG-NOT: cq_theta_si32
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2)); jttf: re-spelled register-free 2026-10-05
 
-target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
-target triple = "x86_64-unknown-linux-gnu"
+define void @slice(i32 noundef %0, i32 noundef %1) local_unnamed_addr {
+  %3 = icmp sgt i32 %1, 0
+  br i1 %3, label %5, label %4
 
-declare i32 @cq_theta_si32(i32, double)
-
-define void @slice(i32 %x, i32 %n) {
-entry:
-  %guard = icmp sgt i32 %n, 0
-  br i1 %guard, label %loop, label %exit
-
-loop:                                             ; preds = %entry, %loop
-  %i = phi i32 [ 0, %entry ], [ %inext, %loop ]   ; classical induction (NO tainted header phi)
-  %q = call i32 @cq_theta_si32(i32 %x, double 2.500000e-01) ; fresh rail, born in body
-  %t = xor i32 %q, 9                              ; template producer (born)
-  %inext = add nuw nsw i32 %i, 1
-  %done = icmp eq i32 %inext, %n                  ; classical exit condition
-  br i1 %done, label %exit, label %loop
-
-exit:                                             ; preds = %entry, %loop
+4:                                                ; preds = %5, %2
   ret void
+
+5:                                                ; preds = %2, %5
+  %6 = phi i32 [ %10, %5 ], [ 0, %2 ]
+  %7 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef 2.500000e-01) #2
+  %8 = xor i32 %7, 9
+  %9 = tail call i32 @cq_theta_si32(i32 noundef %8, double noundef 5.000000e-01) #2
+  %10 = add nuw nsw i32 %6, 1
+  %11 = icmp eq i32 %10, %1
+  br i1 %11, label %4, label %5
 }
+
+declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr
+
+attributes #2 = { nomerge nounwind }

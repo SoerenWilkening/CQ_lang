@@ -980,9 +980,9 @@ ACCEPTANCE = [
      "measured AFTER the gate, so clause 3's sink walk reaches a "
      "`cqrt_measure_i32` and the rail is LIVE user data. A HIT here means the "
      "observing-sink walk stopped seeing a direct measurement"),
-    ("lit:lowering_stale_record_alias_before_theta",
-     {"sites_source": 1, "shipped_hit": False},
-     "the diagonal-alias sibling of the same boundary, one hop removed"),
+    # (The diagonal-alias sibling `lit:lowering_stale_record_alias_before_theta`
+    # was retired 2026-10-05, bd jttf: after 3qlq deleted its `cq_phi` hop its
+    # module equalled the pin above up to the add's constant.)
     # THE A8 PIN, AND IT IS THE HEADLINE OF THIS REVISION.
     #
     # Before the upgrade this pin was VACUOUS and said so in its own comment:

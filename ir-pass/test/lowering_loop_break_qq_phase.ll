@@ -16,6 +16,29 @@
 ; The 3qlq migration deleted `p = cq_phi(p0, 0.3)` (uncontrolled, a global phase),
 ; so the comparand is now the bare Ry-prepared `p0` and no Rz is emitted anywhere.
 ;
+; ⚠ RE-SPELL BLOCKED BY AN OVER-DECLINE (bd jttf, 2026-10-05). The register-free
+; way to give the comparand a relative phase is a kickback on `p` before the
+; loop:
+;
+;     int p = pseed; cq_theta(&p, 0.5);
+;     if (p == 3) cq_phi(0.3);        // |3> of p now carries e^{i 0.3}
+;     int q = x; cq_theta(&q, 0.25);
+;     for (int i = 0; i < n; i++) { q = q ^ 9; if (q == p) break; }
+;     return cq_measure(q);
+;
+; Measured through `clang -O1` and `cq-opt` on 2ab46c39: it DECLINES `cq loop
+; lowering: early break preserves a phase answer`. B3's
+; `breakLineageCarriesPhase` asks `functionCarriesBranchPhase` FIRST, so any
+; tainted-control branch phase anywhere in the function makes the escaping
+; answer phase-class, although here the phase sits on the COMPARAND, which the
+; argument below shows rides inert. That is an over-decline (R1), reported to the
+; coordinator for a bd bug. Until it is lifted this file keeps the bare-mint
+; comparand, so its IR equals lowering_loop_break_qq.ll's up to SSA names and it
+; pins nothing that file does not. RE-SPELL TRIGGER: when the C above accepts,
+; replace the IR with its `clang -O1` output and re-derive the CHECKs (the
+; kickback `cqrt_rz_i1` before the loop, no phase gate inside the construct, `p`
+; left allocated).
+;
 ; WHY A COMPARAND'S RELATIVE PHASE WOULD RIDE INERT (cleared by a 5-lens adversarial
 ; Rule-13 sign-off 2026-06-30 — permutation-completeness / phase-kickback /
 ; free-cleanliness / spine-terminal / entanglement-semantics, 0 concrete holes): the
