@@ -9597,13 +9597,39 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   //     first). Its CLOSURE leaves the rail unclaimed for any other user.
   // A dominated reader that survives is therefore a reader of a post-gate name,
   // which is what the handle holds once `lowerRotations` RAUWs the rail onto it.
-  // The round-2 writer (`collapseRailPhisIn`) runs the same `staleRailRecordRead`
-  // over its chain and forward extension. The emitter's twin `T0` lands
-  // immediately before `T`, so no read lies between the two and the fence's
-  // answer does not change with it. `recordStaleQuantumReaders` is not part of
-  // this argument: it never asks a `ret`, and it did not reach the pre-gate
-  // record through the exit φ and an `xor` (bd g35c, measured).
-  // RETIREMENT TRIGGER: re-introducing any member skip in `staleReadOfValue`,
+  // The emitter's twin `T0` lands immediately before `T`, so no read lies
+  // between the two and the fence's answer does not change with it.
+  //
+  // `recordStaleQuantumReaders` is NOT what makes the skip exact: it never asks a
+  // `ret`, and it did not reach the pre-gate record through the exit φ and an
+  // `xor` (bd g35c, measured). It does refuse a `cq_theta` / `cq_measure` reader
+  // of a stale name, including one on a frozen identity carry, so for that
+  // sub-shape it is a SECOND wall, and in the round-2 shape below it is the ONLY
+  // one.
+  //
+  // ⚠ THE ROUND-2 WRITER IS NOT COVERED BY THIS ARGUMENT (Rule-11 round-2 review,
+  // finding F2). `railChainRootMint` peels any `add`/`xor` by SHAPE
+  // (`peelInPlaceBase` with `AsLowered=false`), while `collapseRailPhisIn`'s
+  // gate set (`collectRailGates`) follows an `add`/`xor` only when it is marked
+  // in place. So for a `T` classified at ROUND 2 (a 6.5 `%out` condition) whose
+  // base reaches the claimed root only through an OUT-OF-PLACE `x = r ^ 1`,
+  // `CollapsedRail` is true while `T` is in no claiming fence's gate set: with
+  // `keep = x; cq_theta(&x, y == k ? .9 : .3);` and a round-2-claimed loop on `r`,
+  // `return keep` (a pre-`T` read that `T` dominates) is skipped by S9 and asked
+  // by nobody here. Today `recordStaleQuantumReaders` declines that program at the
+  // loop's `cq_theta(&r, .1)` (`rotation/measure operand predates a non-diagonal
+  // gate`), and that decline is itself an OVER-decline: `T` moves `x`'s fresh
+  // rail, not `r`'s. RETIREMENT TRIGGER: fixing that over-decline re-opens this
+  // hole unless the skip is keyed on the claiming fence's own gate set (`T` in
+  // it) or the root is found with the lowered-aware peel (`AsLowered=true`).
+  //
+  // Population note (L9): the skip hands angle selects to Case-A-claimed loops,
+  // so a gap in that fence's loop-gate questions is reachable through them too;
+  // bd hk9y (a member gate on a frozen identity carry, fixed in
+  // `staleReadOfValue`) was one, `control_angle_select_reject_forward_rail_cycle_
+  // frozen_carry_xor.ll`.
+  // RETIREMENT TRIGGER: re-introducing any member skip in `staleReadOfValue`
+  // beyond a member φ's self edge and a member gate on a refreshing record,
   // dropping `T` (a collected `cq_theta`) from the collapse's gate set, or a third
   // collapse site that writes `ClaimedRailRoots` without that fence, re-opens
   // this skip.

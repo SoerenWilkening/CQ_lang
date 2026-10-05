@@ -700,6 +700,12 @@ constexpr char kMsgExitObligation[] =
 // `%z` is ever reached. The only way `%z` is NOT such a read is when it is a
 // chain MEMBER, i.e. when `%rec`'s own carry runs through it, and then `%rec`
 // refreshes and there was nothing frozen to propagate.
+// ⚠ THAT LAST SENTENCE WAS ROUND 2's ONLY (bd hk9y). Round 1 (`tryCaseA`) passes
+// its whole `railRoot` as the skip set, and its fixpoint makes `%z` a member
+// WITHOUT `%rec`'s carry running through it; `staleReadOfValue` skipped it and the
+// frozen read was never asked (an in-place `xor` reader lowered silently). The
+// member skip there now holds only for a REFRESHING record, so the paragraph is
+// true in both rounds again.
 //
 // CONSERVATIVE DIRECTION: answering "no" only ever REMOVES a cut, which only ever
 // adds declines, so `false` is the safe default and any shape this cannot classify
@@ -1146,14 +1152,37 @@ Instruction *staleReadOfValue(Value *V,
     // ONE EDGE STAYS SKIPPED: a member φ's SELF edge (`UI == V`, the identity
     // carry `phi [%x, pre], [%self, latch]`). That edge carries the φ's own
     // record, nothing from outside it, so it launders no other name; whether
-    // that record is still current wherever it is READ is asked of each of the
-    // φ's readers by this same function (with `Refreshes` false for a frozen
-    // carry). Asking the self edge as well was MEASURED to move
-    // `lowering_reject_loop_nested_quantum.ll` — a dead identity carry of a rail
-    // the OUTER loop re-mints, which has no reader — off its subject's diagnostic
-    // (FreePoint's back-edge reject) onto this one, because the walk counts the
-    // re-executed root mint as a gate.
-    if (Members.count(UI) && (!isa<PHINode>(UI) || UI == V))
+    // that record is still current where it is READ is asked of each of the φ's
+    // readers instead (with `Refreshes` false for a frozen carry), including a
+    // MEMBER gate on it since bd hk9y (next note). Asking the self edge as well
+    // was MEASURED to move `lowering_reject_loop_nested_quantum.ll` — a dead
+    // identity carry of a rail the OUTER loop re-mints, which has no reader — off
+    // its subject's diagnostic (FreePoint's back-edge reject) onto this one,
+    // because the walk counts the re-executed root mint as a gate.
+    //
+    // bd `test_C_libtooling-hk9y` (silent on main, hand IR) — A MEMBER GATE ON A
+    // RECORD THAT DOES NOT REFRESH IS A READ TOO. The non-φ skip below rests on
+    // "a member's execution is the rail moving": its operand is the record the
+    // chain just produced, so it cannot be stale. That holds for ROUND 2, whose
+    // `Members` are the CHAIN (an in-place gate is a member only when the φ's own
+    // carry runs through it, and then the φ refreshes). It is FALSE for ROUND 1,
+    // whose `Members` are `tryCaseA`'s whole `railRoot`: the (a) fixpoint absorbs
+    // every in-place op on a rail value, including one on a zero-hop identity
+    // carry that a sibling chain on the same root moves the wire under —
+    //     `%rec = phi [%t, entry], [%rec, loop]; %z = xor %rec, 5;
+    //      cq_measure(%z); %g = cq_theta(%p, .1)`   (`%p` the moving header φ)
+    // emitted `xorc(h,5); measure(h); ry(h,.1)` per trip: the xor lands on the
+    // rail for good, and from trip 2 on it reads iteration 0's record through a
+    // frozen name. That is `lowering_reject_inloop_rail_frozen_gate_first.ll`'s
+    // shape in round 1, the regression its header warns of (a rail-wide skip set
+    // deletes the read that proves the record frozen). So a member gate is
+    // skipped only when its record REFRESHES; on a frozen record it gets the
+    // positional test like any reader. A refreshing record's member gate is not
+    // re-asked: the measured round-1 escapes of a moved wire past a refreshing
+    // name surface on a φ edge (g35c) or at the pure-op / quantum-reader fences
+    // that run before `lowerLoops` (probe `rootxor`: `xor %root, 5` in the body
+    // declines `operand predates a non-diagonal gate`).
+    if (Members.count(UI) && (isa<PHINode>(UI) ? UI == V : Refreshes))
       continue;  // the chain itself — its own gates are the rail, not a read.
     if (auto *P = dyn_cast<PHINode>(UI)) {
       for (unsigned i = 0, e = P->getNumIncomingValues(); i != e; ++i)
