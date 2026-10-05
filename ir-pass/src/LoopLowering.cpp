@@ -45,6 +45,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Analysis/AssumptionCache.h"
+#include "llvm/Analysis/CFG.h"  // isPotentiallyReachable (bd 8h7d.16)
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/PostDominators.h"  // bd 6n1s — conjunct (1)'s 2nd half
 #include "llvm/Analysis/ScalarEvolution.h"
@@ -2797,6 +2798,30 @@ bool railUseHandedToControl(Instruction *U, const Loop *L, const TaintSet &taint
   return instUnderTaintedControl(U, taint, DT);
 }
 
+// bd `test_C_libtooling-8h7d.16` — is `I` a compare that reads a rail value
+// strictly AFTER `L`: outside `L`, and unable to reach `L`'s header? CLOSURE
+// used to refuse every compare, so `for (…) cq_theta(&r, .1);` followed by a
+// 7.4 break whose comparand is `r` left the loop unclaimed and the zero-trip
+// exit φ declined at `declineClassicalMuxes`.
+//
+// WHY "CANNOT REACH THE HEADER". A compare's flag is a fresh template rail whose
+// `_unc` reads the register again, LATER (at the region's strip, or at the
+// spine's LIFO adjoint). A compare that can reach the loop could have that
+// adjoint run after the loop's gates moved the register, and the record fence
+// asks only "a gate between the record and the READ", never "a gate between
+// the read and its adjoint". After the loop every gate of THIS rail precedes
+// the read; a later gate on the exit name is a different, exact-SSA record
+// question that `declineStaleRecordOps` and the condition-wire fence ask
+// before and at detection. `isPotentiallyReachable` errs toward `true` past its
+// scan limit, which here only refuses (the pre-8h7d.16 answer).
+bool isPostLoopRailCompare(Instruction *I, const Loop *L,
+                           const DominatorTree &DT, const LoopInfo &LI) {
+  if (!isa<CmpInst>(I) || L->contains(I))
+    return false;
+  return !isPotentiallyReachable(I, &L->getHeader()->front(),
+                                 /*ExclusionSet=*/nullptr, &DT, &LI);
+}
+
 // Try to recognize + collapse one natural loop `L` as Case A (in-place
 // persistent accumulator). Returns true iff a Case-A collapse (or a LOUD
 // X1/Q1 decline) was performed; false ⇒ `L` is left untouched for its existing
@@ -3056,10 +3081,14 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
   }
 
   // CLOSURE: every user of a rail value is an in-place gate / phi on the rail, a
-  // measure sink, or an escape (`ret`). ANY other consumer — a value-op
-  // template producer, a tainted control compare, a store, an unknown call, or
-  // the rail used as a classical ANGLE (arg-1) — means the rail is not isolated;
-  // leave it (the consumer's own guard declines loudly downstream).
+  // measure sink, an escape (`ret`), a post-loop tainted region's arm consumer
+  // or merge φ handed to the control chain (bd wt8u, `railUseHandedToControl`),
+  // or a compare strictly after the loop (bd 8h7d.16, `isPostLoopRailCompare`).
+  // ANY other consumer — a value-op template producer, a compare that can
+  // reach the loop, a store, an unknown call, or the rail used as a classical
+  // ANGLE (arg-1) — means the rail is not isolated; leave it (the consumer's
+  // own guard declines loudly downstream). Every admitted non-member read is
+  // asked positionally by the record fence below.
   //
   // ⚠ THIS CLAUSE KEEPS A RAIL-BANK-PARKED RAIL OUT OF *THIS* PATH's IN-PLACE
   // RELABEL (Case A) — AND ONLY THIS PATH's. Corrected 2026-09-24 (bd `xdu2.1`,
@@ -3097,6 +3126,16 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
       // region's own position; the record fence below asks that read like any
       // other non-member read.
       if (handedToControl(I))
+        continue;
+      // bd 8h7d.16 — a tainted COMPARE reading the rail AFTER the loop (a
+      // kickback condition, a 7.4 break comparand, a data flag). The collapse
+      // makes it read the register at its own position; the record fence below
+      // asks that read positionally, and no rail gate of this loop can run after
+      // it (it cannot reach the header), so its flag's later `_unc` reads the
+      // same state. A post-loop rail gate AFTER the compare is the stale-record
+      // pre-pass's (`operand predates a non-diagonal gate`, asked before this
+      // collapse on exact SSA) and the condition-wire fence's.
+      if (isPostLoopRailCompare(I, L, DT, LI))
         continue;
       // An in-place gate on the rail whose result is itself a rail is in
       // railRoot (handled above). Anything else is an out-of-rail consumer.
