@@ -52,8 +52,9 @@
 ;      virtual (the loop runs its full classical trip), so a value computed
 ;      INSIDE the loop and read after it would hold its full-trip value, and a
 ;      phase keyed on it would not be "a later gate" on the source's state. Here
-;      nothing but the answer leaves the loop; the emitter's E16 refuses any
-;      other escape (bd 923w, lowering_reject_break_escape_classical_counter.ll).
+;      nothing but the answer leaves the loop; the emitter's E16 lowers any
+;      other escape as a control-merge register holding the source's value, or
+;      refuses it (bd 923w, 8h7d.17, lowering_loop_break_escape_classical_counter.ll).
 ; So the whole stream is D followed by the unchanged construct: the kickback
 ; `cqrt_rz_i1` before the loop, NO phase gate inside the construct, p never freed.
 ;

@@ -1867,9 +1867,11 @@ bool functionCarriesBranchPhase(const llvm::Function *F, const TaintSet &taint);
 // applied AFTER it is a later gate ONLY IF its keys hold the source's values
 // there, and the construct guarantees that for the answer `out`, for registers
 // it only reads, and for values defined outside the loop — NOT for a value
-// computed inside the loop: the break is virtual (full classical trip), so such
-// a value leaves as its full-trip value (bd 923w; the emitter's E16 refuses any
-// in-loop value read outside the loop other than the escape φ). The remaining
+// computed inside the loop as such: the break is virtual (full classical trip),
+// so such a value leaves as its full-trip value (bd 923w). The emitter's E16
+// either lowers it as a control-merge register that does hold the source's value
+// (an untainted exit φ whose loop value is a pure function of the counter, bd
+// 8h7d.17) or refuses it. The remaining
 // unitary hazard is a phase INSIDE the construct (the loop body), refused
 // independently of this predicate by tryBreak's B4 side-effect clause (`cq_phi`
 // is a call). A phase AFTER the construct whose keys meet the answer's lineage
@@ -1888,7 +1890,9 @@ bool functionCarriesBranchPhase(const llvm::Function *F, const TaintSet &taint);
 // here exactly as it is to `functionCarriesBranchPhase`, and the backward
 // OPERAND walk cannot follow a merge `%out` back to its condition in either
 // round. Both gaps can only accept a phase outside the loop body whose keys E16
-// guarantees hold the source's values, which the paragraph above shows is
+// guarantees hold the source's values (an 8h7d.17 escape register included: it is
+// such a round-2 key, and it holds the source's value), which the paragraph above
+// shows is
 // unitary-safe; no round-2 re-ask is recorded. The construct filter reads only
 // the CFG, asked of the source CFG; a later stage flattens claimed regions
 // (removing paths) or adds the reverse-play's self-loop inside the exit merge,

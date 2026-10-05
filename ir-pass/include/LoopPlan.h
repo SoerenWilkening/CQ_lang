@@ -37,8 +37,10 @@
 #include "llvm/ADT/SmallPtrSet.h"  // loopHasInPlaceRailStructure (set param)
 #include "llvm/ADT/SmallVector.h"  // CarriedHandleProof::BypassIncomings (bd h1ip)
 #include "llvm/ADT/StringRef.h"  // LoopBreakRegion::RailWidth (by-value member)
+#include "llvm/IR/ValueHandle.h"  // BreakEscape (bd 8h7d.17)
 
 #include <optional>  // loopCarriedHandlePhi (bd zujr)
+#include <vector>    // breakEscapeLedger (bd 8h7d.17)
 
 namespace llvm {
 class Module;
@@ -612,6 +614,45 @@ void declineUnmarkedRolledIterLocal(llvm::Module &M, TaintSet &taint);
 // so the whole-DAG `uncompute` spine never double-reverses them. No-op when
 // `taint.BreakRegions` is empty (every module with no recognized value-arm break).
 void lowerBreakReversePlay(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
+
+// bd test_C_libtooling-8h7d.17 — an UNTAINTED loop value that leaves a virtual
+// 7.4 break through an exit φ `E = φ [Z, guard], [V, latch]`. The virtual loop
+// runs its full trip, so E's classical value is the NEVER-FIRED one (V after the
+// last trip, Z on the zero-trip edge); the source's value depends on when the
+// quantum break fired. `emitBreakForward` (E16) rewires E's users to a fresh
+// control-merge register `Out` and mints a capture scratch `Cap`; the
+// reverse-play stage captures V into `Cap` under `fire`, adds E under the
+// consolidation flag, copies `Cap` into `Out` and replays the capture backward
+// with V recomputed from the reverse counter (`breakEscapeCone`).
+//
+// A LEDGER, NOT A `LoopBreakRegion` FIELD: `TaintSet::BreakRegions` is walked by
+// `taintset_scrub_guard.py` under policy "fields" (one raw pointer per field, no
+// library container), and a list of these records is exactly the shape it
+// refuses. The handles are `WeakVH` (null on deletion, NOT following a RAUW: E is
+// itself RAUW'd to `Out` and must keep naming E); the reverse-play stage declines
+// loudly on a null one. Cleared by `lowerLoops` on entry, in both entry points.
+struct BreakEscape {
+  llvm::WeakVH Region;  // the region's `OutReg`: keys this record to its region
+  llvm::WeakVH Phi;     // E, kept classical (the never-fired value)
+  llvm::WeakVH V;       // the in-loop value E carries on the latch edge
+  llvm::WeakVH Out;     // the control-merge register E's users now read
+  llvm::WeakVH Cap;     // the capture scratch, |0> again after the reverse-play
+  llvm::StringRef Width;
+};
+std::vector<BreakEscape> &breakEscapeLedger();
+
+// THE ONE SPELLING of "is `V` a pure classical function of the break loop's
+// counter?" — asked by `emitBreakForward` before it admits an escape and by the
+// reverse-play stage before it clones the answer. Collects, in an order that
+// respects operand dependence, every instruction of `Body` that `V` depends on
+// (`V` itself included, unless it is `CounterPhi`); the walk stops at
+// `CounterPhi` and at values defined outside `Body`. False iff some such
+// instruction is a φ other than `CounterPhi`, a call, tainted, touches memory,
+// or is not safe to speculate (a clone must compute what the forward did and
+// nothing else).
+bool breakEscapeCone(llvm::Value *V, const llvm::PHINode *CounterPhi,
+                     const llvm::BasicBlock *Body, const TaintSet &taint,
+                     llvm::SmallVectorImpl<llvm::Instruction *> &Cone);
 
 // ── bd `test_C_libtooling-tu9q`, the HOISTED-TEMPLATE half (2026-09-18) ───────
 // **THE ONE SPELLING OF "DOES `L` HAVE A POINT AT WHICH A RAIL MINTED OUTSIDE IT

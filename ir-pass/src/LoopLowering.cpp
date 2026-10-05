@@ -1834,6 +1834,48 @@ void collectCarriedHandleChains(const Loop *L, const TaintSet &taint,
   }
 }
 
+// bd 8h7d.17 — see LoopPlan.h. A function-local static, the pattern of
+// `exitDischargeObligations` (no new `TaintSet` field).
+std::vector<BreakEscape> &breakEscapeLedger() {
+  static std::vector<BreakEscape> Ledger;
+  return Ledger;
+}
+
+// bd 8h7d.17 — see LoopPlan.h. Post-order DFS, so a link follows its operands.
+bool breakEscapeCone(Value *V, const PHINode *CounterPhi, const BasicBlock *Body,
+                     const TaintSet &taint, SmallVectorImpl<Instruction *> &Cone) {
+  SmallPtrSet<const Value *, 16> Done;
+  // Explicit stack of (instruction, next operand index), so a deep cone cannot
+  // overflow the native stack.
+  SmallVector<std::pair<Instruction *, unsigned>, 16> Stack;
+  auto visit = [&](Value *X) -> bool {
+    auto *I = dyn_cast<Instruction>(X);
+    if (!I || I == CounterPhi || I->getParent() != Body || Done.count(I))
+      return true;  // a leaf: constant, argument, the counter, an outside value.
+    if (isa<PHINode>(I) || isa<CallBase>(I) ||
+        taint.Tainted.count(I) || I->mayReadOrWriteMemory() ||
+        !isSafeToSpeculativelyExecute(I))
+      return false;
+    Done.insert(I);
+    Stack.push_back({I, 0});
+    return true;
+  };
+  if (!visit(V))
+    return false;
+  while (!Stack.empty()) {
+    auto &[I, Next] = Stack.back();
+    if (Next < I->getNumOperands()) {
+      Value *Op = I->getOperand(Next++);
+      if (!visit(Op))
+        return false;
+      continue;
+    }
+    Cone.push_back(I);
+    Stack.pop_back();
+  }
+  return true;
+}
+
 namespace {
 
 // ── Phase 7.4 (epic y05j) — single value-arm `break` recognition ────────────
@@ -1870,8 +1912,8 @@ bool breakLineageCarriesPhase(Value *Op, const TaintSet &taint,
   // bd tinh: `Construct` is the loop header. A branch phase that cannot reach it
   // runs after the construct, a later gate whose keys hold the source's values
   // there (`out`, a register the construct only reads, a value defined outside
-  // the loop; E16 refuses any other in-loop value read after the loop), and is
-  // not counted.
+  // the loop, an 8h7d.17 escape register; E16 refuses any other in-loop value
+  // read after the loop), and is not counted.
   if (lineageCarriesBranchPhase(Op, taint, Construct))
     return true;
 
@@ -2522,32 +2564,78 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
     return bail();  // a stray tainted body value — not the proven clean shape.
   }
 
-  // ── (E16) NOTHING BUT THE ANSWER LEAVES THE LOOP — bd 923w (the 3by9 Rule-11
-  // review, round 1, F1). Step (5) below strips the break flag from the loop
-  // terminator, so the rolled loop runs its FULL classical trip on every branch
-  // and the break exists only in `idx`. The capture rescues exactly ONE value,
-  // the escape φ's (copied into `out`). Any OTHER value defined in the loop and
-  // read outside it leaves as its full-trip value, not the source's: an LCSSA φ
-  // of the counter, `%iex = phi [0, guard], [i.next, loop]`, reads n where the
-  // source reads the break iteration + 1, a function of the quantum state. B2
-  // inspects only TAINTED exit φs, so nothing caught it, and step (5) also leaves
-  // no tainted control above a phase keyed on it, which `deleteGlobalPhases` then
-  // deletes as global (a verify-clean dropped relative phase, measured). The same
-  // read in `cq_measure(q) + i` is quantum data reaching classical code with no
-  // measure. A tainted value other than the answer would read the restored rail
-  // or a freed break-cond flag. Refuse every such use until it is lowered as a
-  // tainted control-merge value; a value defined OUTSIDE the loop (an exit φ
-  // carrying the loop-invariant `n`) is unaffected by the virtualization and
-  // passes. lowering_reject_break_escape_classical_counter.ll (decline) /
-  // lowering_loop_break_escape_invariant_classical.ll (its accepted twin).
-  for (BasicBlock *BB : Rgn.L->blocks())
-    for (Instruction &I : *BB)
-      for (User *U : I.users()) {
-        auto *UI = cast<Instruction>(U);
-        if (Rgn.L->contains(UI->getParent()) || UI == Rgn.EscapePhi)
-          continue;
-        return bail();  // a loop value escapes past the virtual break.
-      }
+  // ── (E16) NOTHING BUT THE ANSWER LEAVES THE LOOP UNCAPTURED — bd 923w (the
+  // 3by9 Rule-11 review, round 1, F1), lowered since bd 8h7d.17. Step (5) below
+  // strips the break flag from the loop terminator, so the rolled loop runs its
+  // FULL classical trip on every branch and the break exists only in `idx`. Any
+  // value defined in the loop and read outside it leaves as its full-trip value,
+  // not the source's: an LCSSA φ of the counter, `%iex = phi [0, guard], [i.next,
+  // loop]`, reads n where the source reads the break iteration + 1, a function of
+  // the quantum state. B2 inspects only TAINTED exit φs, so nothing caught it, and
+  // step (5) leaves no tainted control above a phase keyed on it, which
+  // `deleteGlobalPhases` then deleted as global (923w: a verify-clean dropped
+  // relative phase, measured).
+  //
+  // 8h7d.17 lowers such a value as a CONTROL-MERGE value. The capture rescues the
+  // escape φ's value into `out`; an UNTAINTED exit φ `E = φ [Z, guard], [V,
+  // latch]` whose `V` is a pure classical function of the counter
+  // (`breakEscapeCone`, so the reverse-play can recompute it) gets the same
+  // treatment through the ledger (`BreakEscape`, LoopPlan.h): E's users read a
+  // fresh register `cq.brk.esc.out`, registered as a control-merge rail so round 2
+  // taints them (a phase keyed on it lowers by kickback, a classical sink stays a
+  // loud taint escape), and E itself stays, classical, as the never-fired value.
+  // A dead E is left alone (nothing reads its full-trip value). Everything else
+  // still refuses: a TAINTED value other than the answer (it would read the
+  // restored rail or a freed break-cond flag), a use that is not such an exit φ, a
+  // cone with a load, a call or a non-speculatable op, a non-integer width. A
+  // value defined OUTSIDE the loop (an exit φ carrying the loop-invariant `n`) is
+  // unaffected by the virtualization and passes untouched.
+  // lowering_loop_break_escape_classical_counter.ll (accept, the former 923w
+  // decline) / lowering_reject_break_escape_counter_classical_sink.ll (the
+  // classical sink, loud) / lowering_loop_break_escape_invariant_classical.ll.
+  struct EscapeCand {
+    PHINode *Phi;
+    Instruction *V;
+    StringRef W;
+  };
+  SmallVector<EscapeCand, 2> Escapes;
+  {
+    SmallPtrSet<const PHINode *, 4> EscSeen;
+    for (BasicBlock *BB : Rgn.L->blocks())
+      for (Instruction &I : *BB)
+        for (User *U : I.users()) {
+          auto *UI = cast<Instruction>(U);
+          if (Rgn.L->contains(UI->getParent()) || UI == Rgn.EscapePhi)
+            continue;
+          // Every use outside the loop is a φ of the exit merge (the guard edge
+          // bypasses the loop, so nothing else there is dominated by `I`).
+          auto *E = dyn_cast<PHINode>(UI);
+          if (!E || E->getParent() != Rgn.ExitMerge || taint.Tainted.count(&I) ||
+              taint.Tainted.count(E) || E->getNumIncomingValues() != 2)
+            return bail();  // a loop value escapes past the virtual break.
+          int EL = E->getBasicBlockIndex(Latch), EG = E->getBasicBlockIndex(GuardB);
+          if (EL < 0 || EG < 0 || E->getIncomingValue(EL) != &I)
+            return bail();
+          if (!EscSeen.insert(E).second || E->use_empty())
+            continue;
+          SmallVector<Instruction *, 8> Cone;
+          if (!breakEscapeCone(&I, CounterPhi, Header, taint, Cone))
+            return bail();
+          // The reverse-play clones the cone after the loop: every operand it
+          // reads from outside the body must be defined there too (E10's rule).
+          for (Instruction *C : Cone)
+            for (Value *Op : C->operands())
+              if (auto *OI = dyn_cast<Instruction>(Op))
+                if (OI->getParent() != Header && !HoistSet.count(OI) &&
+                    !DT.dominates(OI, Rgn.ExitMerge))
+                  return bail();
+          StringRef W = abiWidthFromType(E->getType());
+          if (!E->getType()->isIntegerTy() || !wd.allocFn(W) || !wd.copyFn(W) ||
+              !wd.addcFn(W))
+            return bail();
+          Escapes.push_back({E, &I, W});
+        }
+  }
 
   // ── Width fences (the in-place / copy ABI serves ≤64-bit integers only) ────
   StringRef RailWidth = abiWidthFromType(RailPhi->getType());
@@ -2637,6 +2725,37 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
   // every break-body scratch handle) is excluded from the whole-DAG uncompute
   // spine LATER, in the post-lowering `lowerBreakReversePlay`, where the LOWERED
   // i32 handles are live.
+
+  // (2b) bd 8h7d.17 (E16): each escape's capture scratch and control-merge
+  //      register, minted |0> in the guard beside R/idx/out and owned by the
+  //      construct the same way. `Out` joins `UntaintedMergeRails`, the route
+  //      every fresh rail over an UNTAINTED value takes (the 6.5 / 4.5 `%out`,
+  //      the IO-sink mux): `repropagateControlMerges` re-seeds taint from it and
+  //      re-runs the escape and control guards over the delta. E keeps no user.
+  for (const EscapeCand &EC : Escapes) {
+    Type *ETy = EC.Phi->getType();
+    CallInst *Cap = PB.CreateCall(wd.allocFn(EC.W), {ConstantInt::get(ETy, 0)},
+                                  "cq.brk.esc.R");
+    CallInst *EOut = PB.CreateCall(wd.allocFn(EC.W), {ConstantInt::get(ETy, 0)},
+                                   "cq.brk.esc.out");
+    stamp(Cap);
+    stamp(EOut);
+    for (Value *H : {static_cast<Value *>(Cap), static_cast<Value *>(EOut)}) {
+      taint.Tainted.insert(H);
+      taint.ControlOwnedRails.insert(H);
+      taint.HandleWidth[H] = EC.W;
+    }
+    taint.UntaintedMergeRails.insert(EOut);
+    EC.Phi->replaceAllUsesWith(EOut);
+    BreakEscape Rec;
+    Rec.Region = OutReg;
+    Rec.Phi = EC.Phi;
+    Rec.V = EC.V;
+    Rec.Out = EOut;
+    Rec.Cap = Cap;
+    Rec.Width = EC.W;
+    breakEscapeLedger().push_back(Rec);
+  }
 
   // (3) RAUW the exit merge phi → out, erase it (BEFORE `declineClassicalMuxes`
   //     would flag a tainted merge phi). `out` is |0> now; the post-lowering
@@ -7784,6 +7903,7 @@ void lowerLoops(Module &M, WidthDispatch &wd, TaintSet &taint) {
   // it again after reading, and neither clear depends on the other having run.
   // Same discipline, and the same reason, as bd `bbu0`'s deferred slot.
   exitDischargeObligations().clear();
+  breakEscapeLedger().clear();  // bd 8h7d.17: same discipline, same reason.
   // The collected rotation call sites — the in-place-gate wire vocabulary the
   // peel + closure consult (same seed as `declineClassicalMuxes`).
   SmallPtrSet<CallInst *, 32> GateCalls;
