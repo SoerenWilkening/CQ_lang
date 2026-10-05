@@ -61,7 +61,8 @@ namespace {
 // that used to pin this string, lowering_uncompute_dead_sibling_premeasure.ll,
 // is now that retry's simplest ACCEPT; the decline pins are
 // lowering_reject_uncompute_measured_parent_moved.ll,
-// lowering_reject_uncompute_measured_parent_read_after_measure.ll and (bd eqti)
+// lowering_reject_uncompute_measured_parent_read_after_measure.ll, (bd 01po.12)
+// lowering_reject_uncompute_measured_parent_per_component_read_after_measure.ll and (bd eqti)
 // lowering_reject_uncompute_measured_parent_frozen_{taped,copyout,transitive}.ll
 // plus lowering_reject_qram_frozen_adjoint_reads_borrowed_array.ll, each
 // mirroring this string character-for-character.
@@ -917,6 +918,122 @@ void emitTerminalReversal(const DataDag &D, Instruction *At, WidthDispatch &wd,
     ReversedRails.insert(R);
 }
 
+// Every check the dead-terminal FRONTIER RETRY asks of one reduced DAG `DR`
+// (bd ptue / 01po.4), in the retry's original order. Factored out by bd
+// test_C_libtooling-01po.12 so the per-component fallback below re-asks EXACTLY
+// these (Rule 12). On `true`, `At` is `DR`'s reversal point.
+bool frontierPlanProves(Function &F, const DataDag &DR,
+                        ArrayRef<Instruction *> Ats,
+                        const SmallPtrSetImpl<Value *> &Borrowed,
+                        const SmallPtrSetImpl<Value *> &Measured,
+                        TaintSet &taint, DominatorTree &DT,
+                        PostDominatorTree &PDT, LoopInfo &LI, bool IterLocal,
+                        Instruction *&At) {
+  CallInst *Unused = nullptr;
+  return !DR.MeasuredUpstream &&
+         planTerminalReversal(F, DR, Ats, taint, DT, PDT, LI, IterLocal, At,
+                              Unused) == TerminalPlan::Emit &&
+         borrowedParentsUnmoved(DR, Borrowed, At, DT, taint,
+                                /*AdmitCloneCalls=*/false) &&
+         measuredParentsReadBeforeCollapse(DR, Measured, DT) &&
+         !keptRailAdjointReadsBorrowed(DR, Borrowed);
+}
+
+struct FrontierComponentPlan {
+  DataDag D;
+  Instruction *At = nullptr;
+};
+
+// bd test_C_libtooling-01po.12 — THE FRONTIER RETRY, ONE COMPONENT AT A TIME.
+//
+// WHY. The group's reversal point is the LATEST anchor of all its terminals, and
+// clause (d) checks each borrowed parent over [first DAG read, that point]. So a
+// dead temp anchored after `measure(q)` that has nothing to do with `q` put the
+// measurement inside q's window and refused the bd ptue accept (`int q=x;
+// cq_theta(&q,.25); int t=q^9; cq_theta(&t,.5); int m=cq_measure(q); int w=y;
+// cq_theta(&w,.3); return m;`). The shared point protected the PLAN, not the
+// unitary (L5).
+//
+// WHAT. Terminals are partitioned by the connectivity of their REDUCED DAGs
+// (walked with the same borrowed frontier): two terminals are in one component
+// iff their DAGs share a gate or a rail, transitively. A shared OWNED prefix
+// therefore stays in one component and is reversed once (splitting it would make
+// each half `NotClosed` anyway). Each component is planned at its OWN anchors
+// and must pass every check `frontierPlanProves` asks; ALL are planned before
+// ANY is emitted, and one refusal returns false (the caller keeps today's
+// decline verbatim).
+//
+// WHY SEPARATE REVERSALS COMPOSE. Components share at most a BORROWED register,
+// and no reversal writes or frees one — each adjoint writes only its own
+// component's rails and only READS a borrowed parent, which cannot move that
+// parent's label for another component's window. So the reversals act on
+// disjoint written registers and commute. The other components' emitted
+// adjoints are not in the IR when a component's window is scanned; by the same
+// argument none of them is a mutation of any register that scan asks about.
+//
+// Returns false when there is only one component: that IS the whole group,
+// which the caller already refused.
+bool planFrontierPerComponent(Function &F, ArrayRef<Value *> Terms,
+                              ArrayRef<Instruction *> Ats,
+                              const InteriorPlan &Frontier,
+                              const SmallPtrSetImpl<Value *> &Measured,
+                              TaintSet &taint, DominatorTree &DT,
+                              PostDominatorTree &PDT, LoopInfo &LI,
+                              bool IterLocal,
+                              SmallVectorImpl<FrontierComponentPlan> &Plans) {
+  const unsigned N = Terms.size();
+  if (N < 2)
+    return false;
+  SmallVector<unsigned, 8> Parent(N);
+  for (unsigned I = 0; I != N; ++I)
+    Parent[I] = I;
+  auto find = [&](unsigned I) {
+    while (Parent[I] != I)
+      I = Parent[I] = Parent[Parent[I]];
+    return I;
+  };
+  DenseMap<Value *, unsigned> FirstWalker;  // walked value -> a terminal walking it
+  for (unsigned I = 0; I != N; ++I) {
+    DataDag DI = recoverDataDag(Terms[I], taint, DT, &Frontier);
+    auto join = [&](Value *V) {
+      auto Ins = FirstWalker.try_emplace(V, I);
+      if (Ins.second)
+        return;
+      unsigned A = find(Ins.first->second), B = find(I);
+      if (A != B)
+        Parent[std::max(A, B)] = std::min(A, B);
+    };
+    for (CallInst *G : DI.Calls)
+      join(G);
+    for (Value *R : DI.Rails)  // roots and template rails
+      join(R);
+  }
+  // Components in first-terminal order (FileCheck-stable emission).
+  DenseMap<unsigned, unsigned> SlotOf;
+  SmallVector<SmallVector<Value *, 4>, 4> CTerms;
+  SmallVector<SmallVector<Instruction *, 4>, 4> CAts;
+  for (unsigned I = 0; I != N; ++I) {
+    auto Ins = SlotOf.try_emplace(find(I), CTerms.size());
+    if (Ins.second) {
+      CTerms.emplace_back();
+      CAts.emplace_back();
+    }
+    CTerms[Ins.first->second].push_back(Terms[I]);
+    CAts[Ins.first->second].push_back(Ats[I]);
+  }
+  if (CTerms.size() < 2)
+    return false;
+  for (unsigned C = 0, E = CTerms.size(); C != E; ++C) {
+    FrontierComponentPlan P;
+    P.D = recoverDataDag(CTerms[C], taint, DT, &Frontier);
+    if (!frontierPlanProves(F, P.D, CAts[C], Frontier.Borrowed, Measured, taint,
+                            DT, PDT, LI, IterLocal, P.At))
+      return false;
+    Plans.push_back(std::move(P));
+  }
+  return true;
+}
+
 // Classify + recover + reverse ONE group of data terminals at a single insertion
 // point (PRD §2.11; the body of the per-function driver, factored out so the
 // regular straight-line group and each Phase-7.3 ITERATION-LOCAL loop group are
@@ -1041,15 +1158,23 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
     if (!Frontier.Borrowed.empty()) {
       DataDag DR = recoverDataDag(InsertTerms, taint, DT, &Frontier);
       Instruction *AtR = nullptr;
-      CallInst *Unused = nullptr;
-      if (!DR.MeasuredUpstream &&
-          planTerminalReversal(F, DR, InsertAts, taint, DT, PDT, LI, IterLocal,
-                               AtR, Unused) == TerminalPlan::Emit &&
-          borrowedParentsUnmoved(DR, Frontier.Borrowed, AtR, DT, taint,
-                                 /*AdmitCloneCalls=*/false) &&
-          measuredParentsReadBeforeCollapse(DR, D.MeasuredRails, DT) &&
-          !keptRailAdjointReadsBorrowed(DR, Frontier.Borrowed)) {
+      if (frontierPlanProves(F, DR, InsertAts, Frontier.Borrowed,
+                             D.MeasuredRails, taint, DT, PDT, LI, IterLocal,
+                             AtR)) {
         emitTerminalReversal(DR, AtR, wd, taint, ReversedGates, ReversedRails);
+        return;
+      }
+      // bd test_C_libtooling-01po.12 — the whole group refused; ask again PER
+      // COMPONENT of the reduced DAG, each at its own reversal point (see
+      // `planFrontierPerComponent`). Reached only on the way to the decline, so
+      // no module that lowered before changes.
+      SmallVector<FrontierComponentPlan, 4> Plans;
+      if (planFrontierPerComponent(F, InsertTerms, InsertAts, Frontier,
+                                   D.MeasuredRails, taint, DT, PDT, LI,
+                                   IterLocal, Plans)) {
+        for (FrontierComponentPlan &P : Plans)
+          emitTerminalReversal(P.D, P.At, wd, taint, ReversedGates,
+                               ReversedRails);
         return;
       }
     }
