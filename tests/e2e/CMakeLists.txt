@@ -481,6 +481,32 @@ add_test(NAME e2e-value-polarity-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_polarity.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_polarity_twin.expected.log")
 
+# bd test_C_libtooling-dm7f.5: a `musttail` early return under a quantum condition
+# (one `ret` per arm survives -O1). `unifyTaintedReturns` demotes the `musttail` and
+# merges the `ret`s, so the module is the plain-return twin's IR and the two goldens
+# are byte-identical — the twin gate below is the witness. Both slices link, so the
+# demoted call and every emitted symbol resolve.
+add_test(NAME e2e-slice-control-multiexit-musttail
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_multiexit_musttail.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_multiexit_musttail.expected.log")
+
+add_test(NAME e2e-slice-control-multiexit-musttail-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_multiexit_musttail_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_multiexit_musttail_twin.expected.log")
+
+add_test(NAME e2e-control-multiexit-musttail-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_multiexit_musttail.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_multiexit_musttail_twin.expected.log")
+
 # 3c6m.14 L6 / bd 20xt.5 (d): PredMux tolerates `unreachable` switch-defaults.
 # The only layer that LINKS — proves the (d)-flattened nest (a tainted special-
 # case branch over an EXHAUSTIVE `switch (q&3)` whose dead default clang lowers
