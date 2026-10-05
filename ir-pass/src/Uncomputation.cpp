@@ -1205,6 +1205,17 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P,
   //     (stage 2b: 1 template rail left dirty; control_swap_nested_phase_
   //     derived.ll, which this row now discharges).
   //
+  //     ⚠ IT HAS A SECOND CUSTOMER, AND THIS ROW WIDENED IT TOO (Rule-11 round 1,
+  //     finding F1 — disclosed here, L9). `borrowedParentsUnmoved` is also
+  //     asked by the dead-terminal FRONTIER RETRY in `reverseTerminalGroup`
+  //     (bd 01po.4's array borrow, bd ptue's measured-rail borrow). A dead copy
+  //     `t = q ^ 9` of a measured `q`, minted BEFORE a phase region on `q`, has
+  //     the region's recorded strip inside its window; it declined before this
+  //     row and now lowers, correct by the same algebra
+  //     (lowering_uncompute_measured_parent_strip_in_window.ll, with its trace).
+  //     The retry's own fences (`measuredParentsReadBeforeCollapse`,
+  //     `keptRailAdjointReadsBorrowed`) are asked after this scan, unchanged.
+  //
   //     THE SAME PREDICATE AS `isInteriorConsumer`'s clause (c), asked, not
   //     re-spelt (`isRecordedStripReaderOf`), and its three fences are this
   //     row's fences:
