@@ -16,13 +16,16 @@
 ; while a different function runs at stage 3").
 ;
 ; `available_externally` is chosen deliberately as the ordinary spelling: it is
-; what a C99 `inline` function becomes in an importing translation unit, so this
-; is not an exotic linkage. `hasExactDefinition()` is `!isDeclaration() &&
+; what a C99 `inline` function becomes in an importing translation unit. (bd
+; p3kd.2 measured, clang 19 -O1: only in the frontend's IR; the -O1 pipeline
+; inlines such a body or turns it into a declaration, so plain C at -O1 does not
+; deliver it to the pass.) `hasExactDefinition()` is `!isDeclaration() &&
 ; !mayBeDerefined()`, and per bd gxhi (verified against LLVM 19) `mayBeDerefined()`
 ; is TRUE for `weak_odr`/`linkonce_odr`/`available_externally` as well as for the
-; arbitrary-replacement set — so all of them decline. Admitting the ODR variants
-; would be a deliberate `!isInterposable()` widening and is a separate ticket, not
-; an oversight here.
+; arbitrary-replacement set — so all of them decline. bd p3kd.2 decided that they
+; stay declined HERE (`calleeBodyTrusted(F, AssumeOfLinkedCall)`, CalleeBody.h):
+; the hoisted call runs the LINKED body. The ODR widening applies only where the
+; body is cloned and the call retargeted to the clone (spec_accept_odr_callee.ll).
 ;
 ; WHY IT NEEDED ITS OWN FIXTURE (found by the wve8 Rule-13 round, lens
 ; over-decline): the other totality declines pin CONTENT clauses —

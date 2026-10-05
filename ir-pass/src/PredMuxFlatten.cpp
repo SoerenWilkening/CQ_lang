@@ -69,6 +69,7 @@
 // block-lifetime SIGSEGV family).
 
 #include "PredMuxFlatten.h"
+#include "CalleeBody.h"  // calleeBodyTrusted (bd p3kd.2)
 
 #include "CompareLowering.h"  // logicalOperandWidth (bd 01po.2 — the mask's width)
 #include "CondLiteral.h"    // markPredictedTaintCone (bd xdu2.13 — the rule-(B) record)
@@ -1961,9 +1962,9 @@ bool isSpeculatablePureCalleeBodyImpl(const Function *Root, PureCalleeQuery &Q) 
     // `!isDeclaration() && !mayBeDerefined()`, and `mayBeDerefined()` is TRUE for
     // weak_odr/linkonce_odr/available_externally — so this predicate ALSO
     // declines those ODR variants, NOT only the arbitrary-replacement
-    // interposable set. That is a loud over-decline (a gap to remove, R1) with
-    // zero corpus cost (openlibm has no weak symbols); admitting the ODR variants
-    // would be a deliberate `!isInterposable()` widening, a separate ticket.
+    // interposable set, and bd p3kd.2 keeps it so (`AssumeOfLinkedCall`,
+    // CalleeBody.h): a hoisted call runs the LINKED body on paths where the source
+    // never called it, and a derefined ODR variant may trap there.
     // Declarations fail here too.
     //
     // F-local and cheap; deliberately NOT memoised. It is also counted BEFORE
@@ -1971,7 +1972,7 @@ bool isSpeculatablePureCalleeBodyImpl(const Function *Root, PureCalleeQuery &Q) 
     // memo-hit count: counting guard rejects and cycle returns as "hits" made the
     // number a mislabel (a module with one `declare`d callee and no memo activity
     // at all reported `hits=1`), found by the bd u1rp Rule-13 round.
-    if (!F || !F->hasExactDefinition() || F->isVarArg()) {
+    if (!calleeBodyTrusted(F, CalleeBodyUse::AssumeOfLinkedCall) || F->isVarArg()) {
       Ret = false;
       return true;
     }

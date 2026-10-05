@@ -9,6 +9,7 @@
 #include "SpecializeReject.h"
 
 #include "ArmAnalysis.h"        // comparePredLowerable (Rule 14 — the one predicate gate)
+#include "CalleeBody.h"         // calleeBodyTrusted (bd p3kd.2 — the one body-trust predicate)
 #include "IntrinsicLowering.h"
 #include "LiteralIntegrity.h"   // slotCarriesUndef (bd 3p2a — the return-cone fence)
 #include "OpcodeSupport.h"
@@ -494,30 +495,35 @@ bool returnDerivesFromUndef(const Value *RV) {
 SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
                     WidthDispatch &wd, SmallPtrSetImpl<const Function *> &OnStack,
                     Instruction *&WhereOut, std::string &KindOut) {
-  // (0-pre) Link-exact definition (bd gxhi — the adia Rule-13 board's confirmed
-  //      fence gap). Specialization ANALYZES this body and CLONES it into a
-  //      Bennett twin the tainted path calls IN PLACE OF the callee. If the
-  //      linker may bind a DIFFERENT body at stage 3, the analyzed+cloned unitary
-  //      diverges from the linked program with NO diagnostic (verify-clean).
-  //      `hasExactDefinition()` is FALSE for an INTERPOSABLE definition
-  //      (weak_any/linkonce_any/common/extern_weak — the linker may substitute an
-  //      ARBITRARY body) AND for a DEREFINABLE one (weak_odr/linkonce_odr/
-  //      available_externally — `mayBeDerefined()` is true, a differently-optimized
-  //      ODR variant may bind). This is the EXACT predicate of the E4 pending-spec
-  //      fence `isSpeculatablePureCalleeBodyImpl` (PredMuxFlatten.cpp) and the
-  //      ByRefInline `hasLocalLinkage` precedent, so the spec-clone and
-  //      E4-speculation accept-surfaces stay aligned (Rule 14). NOTE: LLVM's
-  //      `hasExactDefinition()` ALSO declines the weak_odr/linkonce_odr ODR
-  //      variants (they `mayBeDerefined`), NOT only the arbitrary-replacement
-  //      interposable set — that over-decline is loud, never silent, but a gap
-  //      to remove (R1); it costs zero openlibm coverage (no weak symbols).
-  //      Admitting weak_odr would be a deliberate `!isInterposable()` widening
-  //      across BOTH fences, a separate ticket. A top candidate is a definition
-  //      by contract, and a nested declaration is declined as "nested call"
-  //      BEFORE recursing here, so this fires only on a real non-link-exact BODY.
-  //      Placed first: an untrusted body must not be scanned as if its
+  // (0-pre) A body this pass may lift (bd gxhi; bd p3kd.2 — CalleeBody.h).
+  //      Specialization ANALYZES this body and CLONES it into a Bennett twin the
+  //      tainted path calls IN PLACE OF the callee. If the linker may bind a
+  //      NON-EQUIVALENT body (an INTERPOSABLE definition: weak/linkonce/common/
+  //      extern_weak, or a non-dso_local one under SemanticInterposition), the
+  //      cloned unitary diverges from the program with NO diagnostic: decline.
+  //      Which question depends on the DEPTH (bd p3kd.2):
+  //        * the TOP callee of the candidate (`OnStack` empty: `classifyCandidate`
+  //          calls in with a fresh stack, and every recursion below inserts the
+  //          caller first) asks `Execute`. Its call is retargeted to the clone, so
+  //          the analyzed body IS the body that runs there, and a `weak_odr`/
+  //          `linkonce_odr`/`available_externally` body (a derefinable but not
+  //          interposable one) is lifted like an exact one: LLVM's inlining rule.
+  //        * a NESTED callee asks `AssumeOfLinkedCall` (an exact definition). A
+  //          nested call the clone does not taint (mask 0 at `buildClone`'s inner
+  //          loop) stays a call to the LINKED body, and `synthUncomputeTwin`
+  //          copies the clone verbatim, so that body runs twice and the twin's
+  //          `_unc` reads its second result as the literal the forward read from
+  //          its first. A derefined ODR variant need not return the same value
+  //          twice (spec_reject_nested_odr_callee.ll). Conservative for a nested
+  //          ODR callee that WOULD be cloned: telling the two apart needs the
+  //          inner mask, which only `buildClone` has (a follow-up).
+  //      A top candidate is a definition by contract, and a nested declaration is
+  //      declined as "nested call" BEFORE recursing here, so this fires only on a
+  //      real BODY. Placed first: an untrusted body must not be scanned as if its
   //      instructions were the ones that run.
-  if (!Callee->hasExactDefinition()) {
+  const CalleeBodyUse Use = OnStack.empty() ? CalleeBodyUse::Execute
+                                            : CalleeBodyUse::AssumeOfLinkedCall;
+  if (!calleeBodyTrusted(Callee, Use)) {
     WhereOut = &*Callee->getEntryBlock().begin();
     return SpecReject::Interposable;
   }

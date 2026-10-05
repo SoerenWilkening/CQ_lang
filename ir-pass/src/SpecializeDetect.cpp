@@ -3,6 +3,7 @@
 
 #include "SpecializeDetect.h"
 
+#include "CalleeBody.h"  // calleeBodyTrusted (bd p3kd.2)
 #include "DeadValueLiveness.h"
 #include "Specialization.h"  // shouldSpecialize (bd 9paa round-2 Pending dedup)
 #include "SpecializePlan.h"
@@ -68,8 +69,13 @@ bool readsTainted(const CallInst *CI, const TaintSet &taint) {
 // LLVM 19's `DeadArgumentEliminationPass::removeDeadArgumentsFromCallers`, which is
 // the transform the drop performs across the TU boundary `-O1` cannot see. A callee
 // is eligible only if ALL of these hold:
-//   * it is a definition the linker cannot replace (`hasExactDefinition()` — an
-//     interposable or derefinable body may not be the body that runs);
+//   * it is a definition the linker cannot replace, asked as
+//     `calleeBodyTrusted(F, AssumeOfLinkedCall)` (CalleeBody.h; `hasExactDefinition()`):
+//     the dropped call still runs the LINKED body, so an interposable body may not
+//     be the body that runs, and a derefinable ODR one (bd p3kd.2) may be a
+//     differently optimized variant that still reads the slot — LLVM's own DAE
+//     refuses it for that reason (spec_accept_odr_callee_dead_arg_kept.ll: such a
+//     site is lifted instead, which runs the visible body);
 //   * it is not `naked` (its inline asm reads the argument REGISTERS; no IR use
 //     exists to find — r1A's `naked1.c` printed `ident=0` at exit 0 when this
 //     conjunct was missing, and `naked2.c` turned a correct decline into an accept);
@@ -102,7 +108,7 @@ bool readsTainted(const CallInst *CI, const TaintSet &taint) {
 // Any other attribute kind leaves the slot alone for the post-`specialize()`
 // backstop.
 bool dropEligibleCallee(const Function *F) {
-  return F && !F->isDeclaration() && F->hasExactDefinition() &&
+  return calleeBodyTrusted(F, CalleeBodyUse::AssumeOfLinkedCall) &&
          !F->hasFnAttribute(Attribute::Naked) && !F->isVarArg();
 }
 

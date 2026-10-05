@@ -3,6 +3,7 @@
 // module is the vocabulary both it and the uncompute driver consult.
 
 #include "ChainWalk.h"
+#include "CalleeBody.h"  // calleeBodyTrusted (bd p3kd.2)
 
 #include "RailBankPromote.h"  // railStoredToRailBank (bd `xdu2` W1 D1)
 #include "RotationLowering.h" // isCopyGate — the ONE copy-write-slot owner (bd rhk5 r2)
@@ -1096,7 +1097,7 @@ Proof clonePassPreserves(const CallInst *C, const Value *V, const TaintSet &tain
   // interposed by a strong writing one). `hasExactDefinition()` also excludes a
   // declaration.
   const auto *F = dyn_cast<Function>(C->getCalledOperand());
-  if (!F || !F->hasExactDefinition() || F->isVarArg())
+  if (!calleeBodyTrusted(F, CalleeBodyUse::AssumeOfLinkedCall) || F->isVarArg())
     return Proof::No;
   auto It = taint.SpecHandleArgMask.find(F);
   if (It == taint.SpecHandleArgMask.end())

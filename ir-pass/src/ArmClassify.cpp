@@ -8508,7 +8508,10 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
   //     fix and a Rule-13 lens broke it with six lines of C: a `static const`
   //     lookup table read, hoisted out of a zero-amplitude guard, SIGSEGV.
   //     Content clauses of the strict walk, each with its own decline fixture:
-  //     visible + non-interposable (`hasExactDefinition`) + non-varargs; no
+  //     visible + link-exact (`calleeBodyTrusted(F, AssumeOfLinkedCall)`, i.e.
+  //     `hasExactDefinition`: weak_odr/linkonce_odr/available_externally refused
+  //     too, because the hoisted call runs the LINKED body, bd p3kd.2) +
+  //     non-varargs; no
   //     call-graph cycle; no CFG cycle; every block ending br/ret; NO memory op
   //     at all; NO conditional branch; and every remaining instruction
   //     `isSpeculatableDataflow` — which is where the division guard lives:

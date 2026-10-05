@@ -12,10 +12,14 @@
 ; envelope (the coshl-family ordering) and the loud spec-interposable decline
 ; fires first, char-for-char below. The E4 `isSpeculatablePureCalleeBodyImpl`
 ; fence remains as defense-in-depth (it would fire were the spec-scan ever
-; bypassed). NOTE: `hasExactDefinition()` ALSO declines weak_odr/linkonce_odr/
-; available_externally (they `mayBeDerefined`), not only this arbitrary-replacement
-; `weak_any` case — a safe over-decline. The direct-call analogue with no control
-; region is pinned by spec_reject_weak_callee.ll.
+; bypassed). bd p3kd.2 (2026-10-05): `scanBody` now refuses only an INTERPOSABLE
+; top callee, so with `@purefn` linkonce_odr this module no longer stops at the
+; spec message; it declines at the E4 walk, which keeps the exact definition
+; (measured: `cq controlled lowering: nested control flow under quantum control`).
+; That is a loud over-decline (the speculated call is the clone's, so the ROOT
+; could ask `Execute`; the walk is shared with the 6.5 hoist and memoised per
+; function, which cannot). The direct-call analogue with no control region is
+; pinned by spec_reject_weak_callee.ll.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq specialization: callee has a non-link-exact definition (interposable/derefinable linkage); the linker may bind a different body
