@@ -31,6 +31,7 @@
 
 #include "ArithLowering.h"
 #include "CastLowering.h"
+#include "ChainWalk.h"         // isOutputSink — the one tape-write spelling (bd r2j3.12)
 #include "CompareLowering.h"
 #include "IntrinsicLowering.h"
 // bd test_C_libtooling-eqpx — `inPlaceValueRailOperand` (G2), the ONE spelling of
@@ -136,6 +137,37 @@ void diagnoseStaleQuantumReader(Instruction *I) {
       "cq opcode lowering: rotation/measure operand predates a non-diagonal "
       "gate",
       I->getDebugLoc()));
+}
+
+// (bd test_C_libtooling-r2j3.12) THE STALE OUTPUT-TAPE DECLINE: an emitted
+// `cqrt_tape_write_<W>` that records a name the wire has moved past. A string of its
+// own beside `diagnoseStaleQuantumReader`, for the reason that one gives for not
+// folding into the pure-op string: attribution is by string, and a tape write is
+// neither a rotation nor a measurement. Same `cq opcode lowering:` stage prefix (the
+// decision is this fence's), and like that one it does not begin with
+// `cq_measure_`. Mirrored by lowering_reject_lift_stale_reader_tape.ll.
+void diagnoseStaleTapeReader(Instruction *I) {
+  I->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+      *I->getFunction(),
+      "cq opcode lowering: output-tape operand predates a non-diagonal gate",
+      I->getDebugLoc()));
+}
+
+// (bd test_C_libtooling-r2j3.12) The SOURCE an emitted output-tape write records
+// (`cqrt_tape_write_<W>(tape, src)` / `_controlled(ctrl, tape, src)`: the LAST
+// argument), and its slot, or nullptr when `I` is no tape write or `src` carries no
+// wire. A tape write reads its source IN PLACE at the write, exactly as a
+// measurement does, so it is the same reader family. It is asked ONLY by the
+// post-lift re-ask: every earlier reader slot runs before `lowerIOSinks` emits it,
+// and there the `printf` belongs to IOSinkLowering's own lineage fence, which ran
+// before the one-register lift and saw only the phi.
+Value *tapeReaderRecordOperand(Instruction &I, TaintSet &taint, unsigned &Slot) {
+  auto *CI = dyn_cast<CallInst>(&I);
+  if (!CI || !isOutputSink(CI) || CI->arg_size() < 2)
+    return nullptr;
+  Slot = CI->arg_size() - 1;
+  Value *Src = CI->getArgOperand(Slot);
+  return taint.Tainted.count(Src) ? Src : nullptr;
 }
 
 // (bd test_C_libtooling-3d8q) The operand a `@cq_theta_<sfx>` / `@cq_measure_<sfx>`
@@ -627,7 +659,9 @@ void declineLiftedStaleRecordOps(Module &M, TaintSet &taint) {
   // phi's OWN incoming gates and false of a gate on another name over the same
   // base, and the residual it left was a silent miscompile (bd r2j3.11): `int r =
   // q; if (c) { cq_theta(&q,.125); r = q; cq_theta(&q,.25); } cq_measure(r)`
-  // measured the post-`.25` wire, byte-identical to measuring `q` twice. With the
+  // measured the post-`.25` wire, byte-identical to measuring `q` twice, and its
+  // output-tape twin `printf("%d", r)` taped it (bd r2j3.12: an emitted
+  // `cqrt_tape_write_<W>`'s source is asked here too). With the
   // per-use record the two shipped accepts keep their exemption (their gates ARE
   // the phi's record) and that sibling is evidence. The scope is the lifted reads
   // alone: every other reader keeps the verdict the early slot gave it on IR the
@@ -686,13 +720,18 @@ void recordStaleQuantumReadersImpl(Module &M, TaintSet &taint,
     std::optional<ScalarEvolution> SE;
     for (BasicBlock &BB : F) {
       for (Instruction &I : BB) {
+        unsigned RecSlot = 0;  // arg 0 for a rotation / measurement reader
         Value *Rec = staleReaderRecordOperand(I, taint);
+        // bd r2j3.12 — the post-lift pass also asks an emitted output-tape write
+        // (its source slot): the same in-place reader, emitted by then.
+        if (!Rec && LC)
+          Rec = tapeReaderRecordOperand(I, taint, RecSlot);
         if (!Rec)
           continue;
         // bd r2j3.11 — the post-lift pass (`LC`) asks ONLY a lifted read, and
         // exempts it from the gates on the record it read (`LiftCoverage`).
         SmallPtrSet<const CallInst *, 8> LiftCov;
-        if (LC && !LC->coveredFor(I, /*OpNo=*/0, LiftCov))
+        if (LC && !LC->coveredFor(I, RecSlot, LiftCov))
           continue;
         // ── THE MEMORY HOP (bd `xdu2` W1, Rule-13 review F-1, 2026-09-15 —
         //    a P1 OVER-ACCEPT: THE RAIL BANK LAUNDERED bd `3d8q` THROUGH MEMORY).
@@ -1060,7 +1099,12 @@ void declineRecordedStaleQuantumReaders(Module &M, TaintSet &taint) {
           "non-instruction; refusing to lower (bd 3d8q F-D1-2)");
     if (taint.StaleDeclined.count(I))
       continue;
-    diagnoseStaleQuantumReader(I);  // (1)
+    // (1). A tape write gets its own string (bd r2j3.12; only the post-lift
+    // re-ask records one); every other recorded reader is a rotation/measure.
+    if (auto *TW = dyn_cast<CallInst>(I); TW && isOutputSink(TW))
+      diagnoseStaleTapeReader(I);
+    else
+      diagnoseStaleQuantumReader(I);
     taint.StaleDeclined.insert(I);
   }
 }
