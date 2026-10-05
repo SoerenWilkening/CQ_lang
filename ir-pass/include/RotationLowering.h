@@ -342,6 +342,16 @@ void lowerRotations(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
 // NOT branch on it (there is nothing left to abandon), and it exists for
 // unit-level callers and for the fixture that asserts silence. Pure analysis —
 // mutates nothing.
+//
+// TWO NARROW ADDITIONS (2026-10-05), neither a change to the warning:
+//   * bd dm7f.1 — a read the post-lift stale re-sweep exempted per use
+//     (`TaintSet::LiftedMergePhi::Readers`), or a record minted from one, that
+//     cannot reach the gate is ABSENT at it;
+//   * bd 01po.7 — a pure op the stale-record fence GRANTED under tainted control
+//     (`TaintSet::TaintedArmGrantedReads`) and still standing at a gate it was not
+//     discharged before is a `DS_Error` (`cq opcode lowering: hoisted tainted-arm
+//     read is live at a non-diagonal gate`), not this warning: hoisted, it was
+//     minted on branches where the source made no record.
 bool warnLiveRecordRotations(llvm::Module &M, const TaintSet &taint);
 
 // A void BASIS COPY gate `cqrt_copy_<W>(src, dst)` / `cqrt_copy_<W>_controlled(ctl,
