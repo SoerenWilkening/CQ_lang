@@ -7,7 +7,7 @@
 ;
 ;     for (int i = 0; i < n; i++) {
 ;         int q = x; cq_theta(&q, 0.5);
-;         if (q > 5) q = cq_phi(q, b);
+;         if (q > 5) cq_phi(b);
 ;         acc += cq_measure(q);
 ;     }
 ;
@@ -28,13 +28,9 @@
 ;
 ; `%h` is minted fresh EVERY iteration and MEASURED in-body, so it is the
 ; measurement's to own: never freed by the compiler (Rule 6), exactly as in the
-; hand-unrolled spelling.
-;
-; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
-; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE
-; `cqrt_rz_i32_controlled(flag, register, theta)` and the swap route (work-rail
-; alloc, both `cqrt_cswap`s, the rail free) is gone. The regression-guard half of
-; this fixture is untouched by that.
+; hand-unrolled spelling. The phase arm lowers by kickback inside the iteration:
+; flag minted from the icmp, one uncontrolled `cqrt_rz_i1(flag, b)`, icmp `_unc`
+; strip, one `cqrt_free` (the flag). No work rail, no `cqrt_cswap`.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
@@ -58,12 +54,6 @@
 ;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

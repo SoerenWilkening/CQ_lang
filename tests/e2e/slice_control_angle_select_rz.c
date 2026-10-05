@@ -17,21 +17,21 @@
    NOTE: PRD S3 retires the 2b BY-DIFFERENCE lowering for the Rz stem -- the new form
    is `x(f); rz_i1(f,B); x(f); rz_i1(f,A)`, exact, no subtraction and no 2^-40 fence.
    (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
-/* slice_control_angle_select_rz.c — ANGLE-SELECT BY DIFFERENCE, `cq_phi` (Rz)
-   stem, at the LINK layer (bd test_C_libtooling-drbq Increment 2b).
+/* slice_control_angle_select_rz.c — ANGLE SELECT, `cq_phi` (Rz) stem, at the
+   LINK layer (bd test_C_libtooling-drbq Increment 2b; 3qlq Inc 1 lowering).
 
        if (q == 5) cq_phi(0.9); else cq_phi(0.3);
 
-   The by-difference identity holds for Rz too, and EXACTLY rather than up to a
-   phase: under this project's `Rz = diag(1, e^{i.theta})` convention the two
-   diagonals multiply entrywise, so `Rz(0.3)·Rz(0.6) = Rz(0.9)` with no
-   global-phase residue. The emitted gate is the drbq Increment-2a in-place
-   `cqrt_rz_i32_controlled`, so this stem adds no frozen symbol and reuses the
-   2a peephole's machinery unchanged.
+   `-O1` folds the two calls into ONE `cq_phi` on `select i1 %c, double 0.9,
+   double 0.3`. It lowers by kickback onto the flag, exact and with no
+   subtraction: f = icmp_eq(q, 5); cqrt_x(f); cqrt_rz_i1(f, 0.3); cqrt_x(f);
+   cqrt_rz_i1(f, 0.9); the compare `_unc` strip; one cqrt_free(f) — P(0.9) when
+   f is 1, P(0.3) when it is 0. The X pair is on the compare ANCILLA, never on a
+   user register. The 2b by-difference `cqrt_rz_i32_controlled` form is retired.
 
-   Its twin `slice_control_angle_select_rz_twin.c` is an in-place Rz DIAMOND,
-   which the PRE-2b binary lowered via the 2a peephole;
-   `e2e-angle-select-rz-twin-identical` compares the goldens. STRICT stage 2b. */
+   Its twin `slice_control_angle_select_rz_twin.c` keeps its own golden; the byte
+   gate between the two was removed (see the note at the top). STRICT stage 2b.
+   */
 int slice(void) {
     int q = 3;
     int r = 7;

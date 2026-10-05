@@ -1,14 +1,13 @@
 ; control_swap_ifelse_derived_stalecond.ll — ACCEPT: derived base, STALE condition operand.
 ;
-; Same derived-base if/else as control_swap_ifelse_derived.ll, but the condition
-; reads the THETA result %q while the arms rotate the pre-region-derived %qd.
-; This is still correct to accept: %q and %qd denote the SAME physical qubit
-; (an Rz is in-place — rotation lowering RAUWs both to one i32 handle), and Rz
-; is diagonal, so basis(%q) == basis(%qd) and the flag minted from icmp(%q)
-; equals the flag icmp(%qd) would mint. The strip icmp_inv likewise lands on the
-; same handle. The lowered stream is byte-identical to the live-condition
-; variant. (clang -O1 can produce this when it CSEs/reorders the compare against
-; an intervening cq_phi.)
+; Pre-3qlq (register form) the condition read the THETA result %q while the
+; arms rotated the pre-region-derived %qd; accepting was correct because both
+; denote the SAME qubit and Rz is diagonal, so icmp(%q) equals icmp(%qd).
+; 3qlq deleted %qd, so the operand is no longer stale: the module is the plain
+; `if (q > 5) cq_phi(a); else cq_phi(b);` and lowers to the same kickback
+; stream as control_swap_ifelse.ll — icmp mint, `cqrt_rz_i1(flag, a)`, the ELSE
+; `cqrt_rz_i1(flag, b)` in a `cqrt_x(flag)` bracket, icmp `_unc` strip, one
+; `cqrt_free`.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

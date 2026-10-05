@@ -805,7 +805,7 @@ lowered yet.
 | **phase arm** — flat diamond, if/else, folded angle select (Rz stem), compound condition tree, depth-2 nest, `switch`, rolled inside a classically bounded loop | **kickback**: mint flag → `cqrt_rz_i1(f, θ)` uncontrolled per `cq_phi` → `_unc` strip → free; a `¬flag` arm on an ancilla is `cqrt_x`-bracketed, on a rail it is `rz(−θ)` | `emitPhaseKickbackRegion`, `emitPhaseKickbackNestRegion`, `emitKickbackGroup` (`SwapRouteEmit.cpp`); `SwitchRouteEmit.cpp`; `AngleSelectEmit.cpp` |
 | **value arm** — diamond, if/else | **controlled-copy merge**: hoist the arm's chain into the predecessor so it runs unconditionally on the original register, build a `select`, hand it to the select merge | `emitValueRegion` → `SelectMergeEmit` verbatim |
 | tainted-condition integer- or scalar-fp-data **`select`** | mint flag; `%out = cqrt_alloc_<W>(0)`; `cqrt_copy_<W>_controlled(f, true_val, %out)`; then `cqrt_x(f)`, `cqrt_copy_<W>_controlled(f, false_val, %out)`, `cqrt_x(f)`; compare `_unc` strip; **one** `cqrt_free(f)` | `SelectClassify` + `SelectMergeEmit.cpp` |
-| tainted-scrutinee **`switch`** | homogeneous phase: per-case equality flag + kickback. Homogeneous value and all-constant data-mux: **preload + XOR-delta** — `cqrt_copy_<W>(p, out)` once, then per case a hoisted chain, a QQ `xor` delta, an equality flag and one `cqrt_copy_<W>_controlled`; the eq-folded diamond | `SwitchClassify` + `SwitchArmProve` + `Switch{Route,Value,DataMux}Emit`, `EqFoldArm` |
+| tainted-scrutinee **`switch`** | homogeneous phase: per-case equality flag + kickback. Homogeneous value and all-constant data-mux: **preload + XOR-delta** — `cqrt_copy_<W>(p, out)` once, then per case a hoisted chain, a QQ `xor` delta, an equality flag and one `cqrt_copy_<W>_controlled`. An equality-guarded diamond (`if (q == k) cq_phi(θ)`) is an ordinary phase arm: `EqFoldArm`'s const-fold re-anchor served only the retired register form | `SwitchClassify` + `SwitchArmProve` + `Switch{Route,Value,DataMux}Emit` |
 | **in-place Ry arm** on a register disjoint from every condition wire | the arm's theta is hoisted and lowered as `cqrt_ry_<W>_controlled(f, h, θ)`; the rotated register is then **pinned live** (never reverse-played, never freed — `Ry(θ)\|0⟩ ≠ \|0⟩`). A negated arm is spelled by additivity, `ry(h, θ); ry_controlled(h_b, h, −θ)`, never `cqrt_x` on a user register | `emitInPlaceRotationRegion` |
 | controlled **state prep** | `cqrt_alloc_<W>(SEED)` + `cqrt_ry_<W>_controlled(f, h, θ)` on the fresh rail, pinned live the same way; the seed may be a run-time value | same, state-prep kind |
 | folded if/else **angle select** — Ry stem | by difference: unconditional `R(h, B)` plus one `cqrt_ry_<W>_controlled(f, h, A−B)`; **constant arms only** | `AngleSelectEmit` |
@@ -1035,8 +1035,8 @@ order:
 | Forward gate | Inverse |
 |---|---|
 | a gate carrying `!cq.branchphase` (a kickback `cqrt_rz_i1`) | **refused** — adjointing it cancels the answer (§6.1a) |
-| `cqrt_ry_<W>(h, θ)` / `cqrt_rz_<W>(h, θ)`, uncontrolled | the same symbol with `-θ` |
-| `cqrt_ry_<W>_controlled(f, h, θ)` / `cqrt_rz_<W>_controlled(f, h, θ)` | the same symbol with `-θ`, the control threaded unchanged through arg 0 |
+| `cqrt_ry_<W>(h, θ)` / `cqrt_rz_<W>(h, θ)`, uncontrolled (the pass emits Rz at `i1` only) | the same symbol with `-θ` |
+| `cqrt_ry_<W>_controlled(f, h, θ)` / `cqrt_rz_<W>_controlled(f, h, θ)` (nothing mints the `rz` stem) | the same symbol with `-θ`, the control threaded unchanged through arg 0 |
 | `cqrt_x(q)`, `cqrt_cswap(f, a, b)` | as-is (self-adjoint) |
 | `cqrt_cnot(c, t)`, `cqrt_toffoli(c1, c2, t)` (exact arity, void) | as-is (self-adjoint; re-emitted under the still-live controls) |
 | `cqrt_copy_<W>_controlled(f, src, dst)` | as-is (a controlled XOR is an involution) |
@@ -1252,10 +1252,6 @@ them. The pass does emit these directly:
   not define them. `cqrt_x_controlled` and `cqrt_cnot_controlled` are declared
   as well and no emitter mints them either, but they are not exempted, so a
   backend must still define them.
-
-Comments in `runtime/cq_runtime.h` and `ir-pass/include/SwapRouteEmit.h` that
-describe `cqrt_cswap` as the swap-route primitive are stale: the swap route is
-retired for every arm class.
 
 **Reversible basis copy.** `cqrt_copy_<W>(src, dst)` is the keep-sources-live
 transversal-CNOT copy `|x⟩_src |0⟩_dst → |x⟩_src |x⟩_dst` (`dst` must be a

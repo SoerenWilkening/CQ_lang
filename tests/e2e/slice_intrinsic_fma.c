@@ -66,8 +66,8 @@
    (B) DEAD must-fuse QLQ fma — proves the MIXED forward + the MIXED `_unc` twin +
        R-E source-liveness. Two f64 thetas + a literal 3.0 -> `__builtin_fma(d, 3.0,
        e)` = @llvm.fma.f64(d, 3.0, e) (the commutative product canonicalized
-       handle-before-literal -> QLQ), result dead, kept alive past -O1 DCE by a
-       `cq_phi` (Rz) whose own result is dropped. The whole-DAG uncompute spine
+       handle-before-literal -> QLQ), result dead, kept alive past -O1 DCE by the
+       `f == 4.0` flag of a kickback `cq_phi`. The whole-DAG uncompute spine
        reverses the dead fma ONCE via cq_template_fma_f64_qlq_unc(out, d, 3.0, e)
        (recompute-and-XOR from the still-LIVE f64 sources d, e and the literal 3.0)
        and frees each rail ONLY AFTER its own `_unc` — never before (a source freed
@@ -88,6 +88,6 @@ void slice(double x, double y, double z) {
     double d = x; cq_theta(&d, 0.10); /* alloc f64 + ry */
     double e = y; cq_theta(&e, 0.20); /* alloc f64 + ry */
     double f = __builtin_fma(d, 3.0, e);  /* @llvm.fma.f64(d, 3.0, e) -> QLQ (dead) */
-    if (f == 4.0) cq_phi(0.30);           /* Rz keep-alive; result dropped (dead) */
+    if (f == 4.0) cq_phi(0.30);           /* kickback keep-alive (rz_i1 on flag) */
 }
 int main(void) { slice(1.5, 2.5, 3.5); return 0; }

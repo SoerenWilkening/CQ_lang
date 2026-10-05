@@ -1,10 +1,10 @@
-// RotationLowering.h — Lower `@cq_theta_<sfx>` and `@cq_phi_<sfx>` to
-// runtime rotation calls. Replaces the retired mid-struct rebind module:
+// RotationLowering.h — Lower `@cq_theta_<sfx>` to runtime rotation
+// calls. Replaces the retired mid-struct rebind module:
 // under the plain-SSA surface there are no mid-structs to rebind, so
 // gate-triggered allocation now happens here, at the theta call site.
 //
 // Contract (algorithm in RotationLowering.cpp; backend.md §5.1):
-//   * The arg-1 ANGLE of EITHER rotation must be classical (untainted). A
+//   * The arg-1 ANGLE of the rotation must be classical (untainted). A
 //     quantum-derived angle has no fixed unitary → loud decline before any
 //     emission, rotation left standing (test_C_libtooling-659; the
 //     straight-line twin of ArmClassify::taintedAngleGate).
@@ -14,10 +14,9 @@
 //         alloc handle; mark the handle tainted; seed `taint.BirthOrder`.
 //       - tainted operand (a chained theta) → emit `cqrt_ry_<W>` on the
 //         existing handle only; RAUW the theta result to that operand.
-//   * `@cq_phi_<sfx>(operand, angle)`:
-//       - tainted operand → emit `cqrt_rz_<W>(handle, angle)`.
-//       - classical operand → no rz (Rz on a basis state is unobservable).
-//       - RAUW the phi result to its operand either way, then erase.
+//   * `cq_phi` is not lowered here (the `@cq_phi_<sfx>` loop is deleted since
+//     3qlq): a register-free `cq_phi(θ)` lowers by kickback in the control
+//     emitters, or is deleted as a global phase (`deleteGlobalPhases`).
 //
 // The theta result's natural type (e.g. `double` for f64) may differ from
 // the i32 handle it is RAUW'd to — that cross-type RAUW is laundered by
@@ -94,16 +93,14 @@ llvm::StringRef suffixFromName(const llvm::CallInst *CI, llvm::StringRef Prefix)
 // affected either way.
 bool normalizeUndefRotationSeed(llvm::CallInst *Theta);
 
-// Lowers every `@cq_theta_<sfx>` / `@cq_phi_<sfx>` collected by
-// `propagate` (in `taint.ThetaCalls` / `taint.PhiCalls`), in BB order, and
-// erases the originals. Mutates `taint`: inserts minted alloc handles into
-// `taint.Tainted`, seeds `taint.BirthOrder`, and records each handle's logical
-// ABI width in `taint.HandleWidth` (from the `cq_theta` classical operand,
-// before any RAUW launders it — §5.6). `plan` (may be null) names the
-// in-shadow gate-body `cq_phi` calls: those are skipped here. For the 4.1
-// swap-route emitter (`SwapRouteEmit::lowerControlRegions`) this set is EMPTY
-// — it runs before this pass and erases each arm `cq_phi` (§3), so the skip
-// never fires; the hook is retained for the §6a control-in-place peephole.
+// Lowers every `@cq_theta_<sfx>` collected by `propagate` (in
+// `taint.ThetaCalls`; `taint.PhiCalls` is permanently empty since 3qlq), in BB
+// order, and erases the originals. Mutates `taint`: inserts minted alloc handles
+// into `taint.Tainted`, seeds `taint.BirthOrder`, and records each handle's
+// logical ABI width in `taint.HandleWidth` (from the `cq_theta` classical
+// operand, before any RAUW launders it — §5.6). `plan` (may be null) is unused:
+// its one reader, the deleted `cq_phi` loop, skipped `plan->InShadow`, which
+// nothing populates. It is kept in the signature (see the definition).
 void lowerRotations(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
                     const ControlPlan *plan = nullptr);
 
@@ -196,7 +193,7 @@ void lowerRotations(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
 //        NON-USES `cqrt_free` · every `_unc`/`_inv` · `taint.SpineOps` · ALL
 //                 rotations (the F2 ruling — a phase written onto a register
 //                 nothing observes is unobservable) · the ROUTE/BRACKET gates
-//                 `cqrt_cswap`/`cqrt_x` (a routed value returns to its own rail;
+//                 `cqrt_cswap`/`cqrt_x` (pre-3qlq: a routed value returned to its rail;
 //                 a later measurement of that rail is a DIRECT user of it and
 //                 counts on its own) · the TARGET slot of `cqrt_cnot`/
 //                 `cqrt_toffoli` (the written rail's own users are scanned

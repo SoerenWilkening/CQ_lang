@@ -8,12 +8,11 @@
 // later rotation-lowering RAUW-to-handle because no block pointers are cached
 // across erasures (none happen here).
 //
-// Disposition (swap-route 4.1):
-//   * accepted PHASE-arm DIAMOND (one content arm, WI-2) or IF/ELSE (two arms,
-//     WI-3) → pushed onto `plan.Regions` for the `SwapRouteEmit` emitter;
-//   * §3c clobber → permanent reject; value-arm / nested / select / switch /
-//     off-pattern → declined with a precise per-shape string.
-// Every decline is a loud `DiagnosticInfoUnsupported` (opt exits non-zero).
+// Disposition: an accepted region (phase-arm kickback, value arm, in-place Ry,
+// select, switch, park, guarded store, classical call, ...) is pushed onto
+// `plan.Regions` for `SwapRouteEmit::lowerControlRegions`; every other shape is
+// declined with a precise per-shape string, a loud `DiagnosticInfoUnsupported`
+// (opt exits non-zero).
 //
 // See swap-route 4.1 IMPLEMENTATION §0/§2/§3.
 
@@ -122,11 +121,11 @@ bool hasTaintedCondBranch(BasicBlock *BB, TaintSet &Taint) {
 // large function. This walk is reducibility-independent AND unbounded-but-finite
 // (each block visited once), so it is exact for our purpose.
 //
-// A flat tainted-control region on a cycle has NO sound swap-route lowering: the
-// merge feeds the backedge / the routed base is a loop-carried phi, so
-// `RegionFlatten` would erase the merge — the loop latch / backedge source —
+// A flat tainted-control region on a cycle had NO sound lowering when this was
+// written (bd d8jl; see the 8h7d.5 narrowing below): the merge feeds the backedge /
+// the base is a loop-carried phi, so `RegionFlatten` would erase the merge,
 // leaving the loop's header phi dangling (a BROKEN MODULE, verified on the
-// clang-O1 iteration-local `for(){ q=cq_theta; if(q>5) q=cq_phi(q);
+// pre-3qlq register-form `for(){ q=cq_theta; if(q>5) q=cq_phi(q);
 // acc+=cq_measure(q); }` shape) OR, when a loop-carried header phi survives,
 // deferring to `declineClassicalMuxes` whose `classical-condition phi` string
 // MISLABELS the QUANTUM condition. We decline HERE, before any mutation
@@ -611,8 +610,8 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
     return;
   case RegionShape::Nested:
     // d8jl (Rule-13 round 2) — a depth-2 nest whose entry is on a CFG cycle
-    // (inside a loop body) has no sound NestedRouteEmit lowering: its
-    // `flattenRegionTree` erases the shared merge — a backedge source — dangling
+    // (inside a loop body) had no sound pre-3qlq NestedRouteEmit lowering: its
+    // `flattenRegionTree` erased the shared merge — a backedge source — dangling
     // the loop's re-entry phi (a BROKEN MODULE on the IRREDUCIBLE iteration-local
     // nest, reachable from a clang-O1 `goto`-into-loop). `recoverRegionTree`'s
     // own `DominatorTree` backedge guard MISSES that case — in an irreducible
@@ -626,19 +625,16 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
       diagnoseUnderControl(BI, "nested control flow");
       return;
     }
-    // 4.3 — prove-or-decline the depth-2 nest instead of the blanket decline. On
-    // ACCEPT, `recoverRegionTree` has pushed the Outer (Depth 0) + Inner (Depth 1)
-    // regions onto `Plan` and recorded the inner `br` in `Claimed`;
-    // `lowerControlRegions` dispatches `NestedRouteEmit` for them. On decline it
-    // has already fired the precise §5h string. Either way nothing more to do here
-    // (WI-3 drops the WI-1 transitional `nested control flow` decline — the proven
-    // nest now LOWERS).
+    // 4.3 — `recoverRegionTree` fires its precise §5h string, or `nested control
+    // flow` for a nest that passes every criterion: it has accepted nothing since
+    // 3qlq Inc 1 part B (the register-free nest is claimed above by
+    // `classifyPhaseKickbackNest`). Nothing more to do here.
     recoverRegionTree(BI, Taint, Plan, Claimed);
     return;
   case RegionShape::Diamond:
   case RegionShape::IfElse:
     // d8jl — a FLAT tainted-condition control region whose entry is on a CFG
-    // cycle (inside a loop body) has no sound swap-route lowering (see
+    // cycle (inside a loop body) is unsound to flatten as-is (see
     // `regionEntryInLoop`). Decline HERE, before `classifyArms` accepts and
     // `lowerControlRegions`/`RegionFlatten` mutates the CFG — accepting +
     // emitting it corrupts the loop's header phi (a BROKEN MODULE on the
@@ -662,11 +658,11 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
       R.InLoop = true;
     }
     // IN-LOOP SCOPE FENCE, part 1 (bd test_C_libtooling-8h7d.5). The owner's
-    // increment is the NON-EXITING tainted `if` — the PHASE-arm routed stream,
-    // whose every ancilla (flag, work rails) is minted, stripped and freed
-    // INSIDE the iteration, leaving only the persistent register across the back
-    // edge. The 6.5 classical-call arm is a different emitter with a different
-    // teardown (it HOISTS a call into the pred and route-merges an `%out` rail),
+    // increment is the NON-EXITING tainted `if` whose every ancilla is minted,
+    // stripped and freed INSIDE the iteration, leaving only the persistent
+    // register across the back edge. The 6.5 classical-call arm is a different
+    // emitter with a different teardown (it HOISTS a call into the pred and
+    // copy-merges its result into a fresh `%out` rail),
     // and no shipped analysis proves that `%out` is clean at the back edge — so
     // an in-loop classical-call arm keeps the loop decline rather than silently
     // acquiring an accept it was never cleared for (Prime Directive). Skipping
@@ -675,7 +671,7 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
     if (!R.InLoop) {
       // 6.5 (DD-7) — try the classical-call-under-control shape FIRST. A pure
       // classical call (all-classical-args) whose i32 result feeds the diamond
-      // merge is route-merged by `ClassicalCallArmEmit` (no clone). On Accept it
+      // merge is copy-merged by `ClassicalCallArmEmit` (no clone). On Accept it
       // set `R.Kind = ClassicalCallArm`; push it. On Declined it already fired
       // the precise diagnostic. NotApplicable falls through to `classifyArms`
       // (the phase/value/§3c classifier owns every other shape).
@@ -691,12 +687,11 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
     }
     if (classifyArms(R, Taint, DT, LI) == ArmDisposition::Declined)
       return;  // ArmClassify already fired the precise diagnostic (§3c / value).
-    // IN-LOOP SCOPE FENCE, part 2 — a method-B VALUE arm inside a loop. Its
+    // IN-LOOP SCOPE FENCE, part 2 — a VALUE arm inside a loop. Its
     // copy-out mints a FRESH `%out` rail per iteration and RAUWs the merge to
-    // it, so the loop-carried register is a different handle every trip: the
-    // route-back is NOT the adjoint of its split (`emitRegion`'s own note),
+    // it, so the loop-carried register is a different handle every trip:
     // nothing proves `%out` is `|0>` at the back edge, and the per-iteration
-    // B-keep leftover is linear in the trip count. `lowerLoops`' X1 would catch
+    // leftover is linear in the trip count. `lowerLoops`' X1 would catch
     // the loop-carried spelling as a cross-iteration dirty rail, but NOT an
     // iteration-local one — so decline HERE, with the loop message, rather than
     // lean on a guard that does not cover the whole shape. Deferred, not
@@ -729,14 +724,14 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
     // `flatRegionRollableInLoop` (A)-(D) is what sets `R.InLoop` in the first
     // place, so an irreducible cycle, a two-depth region, a multi-latch loop or a
     // second cycle through the entry never reaches the classifier at all. Parts 1
-    // (6.5 classical-call arm) and 2 (method-B value arm) are UNCHANGED — neither
+    // (6.5 classical-call arm) and 2 (value arm) are UNCHANGED — neither
     // was cleared for a loop and neither moves in this increment.
-    // ACCEPT: a pure phase region over ONE tainted handle — a one-content-arm
-    // diamond (WI-2) or a two-arm if/else (WI-3). Push it so `lowerControlRegions`
-    // (SwapRouteEmit) emits the routed stream. Polarity: a diamond's single arm
-    // rides `R.ArmNegated` (Rule 9 — clang -O1 may make the gate arm the false
-    // successor); an if/else routes `R.Arm` (S0) under flag and `R.ArmFalse` (S1)
-    // under ¬flag via the emitter's `cqrt_x` bracket.
+    // ACCEPT: what `classifyArms` proved (e.g. a value arm, an in-place Ry arm or
+    // a controlled state prep; the register-free phase arm was pre-peeled above).
+    // `lowerControlRegions` hands it to `emitRegion`. Polarity: a diamond's single
+    // arm rides `R.ArmNegated` (Rule 9 — clang -O1 may make the gate arm the false
+    // successor); an if/else fires `R.Arm` (S0) under flag, `R.ArmFalse` (S1) under
+    // ¬flag.
     Plan.Regions.push_back(R);
     return;
   }
@@ -745,17 +740,17 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
 }  // namespace
 
 // Scan every function for a tainted-condition `br i1` / `switch` / `select i1`:
-// push each accepted phase-arm diamond onto the returned `ControlPlan` and
+// push each accepted region onto the returned `ControlPlan` and
 // decline everything else with its precise string. A classical-condition
 // construct is left byte-untouched (detection keys strictly on condition taint).
 // No IR is mutated here — emission is `SwapRouteEmit::lowerControlRegions`.
 ControlPlan detectControlRegions(Module &M, WidthDispatch &wd,
                                  TaintSet &taint) {
   ControlPlan plan;
-  // Inner branches of an ACCEPTED nest, claimed by `recoverRegionTree` so the
-  // loop does NOT re-visit them (blocker FA0): the inner tainted `br` recovers
-  // FLAT in isolation (its 3-incoming merge → `soleMergePhi` null → OffPattern)
-  // and would false-decline `control flow`, killing the accept. `-O1` visits the
+  // Inner branches of an ACCEPTED nest, claimed by `classifyPhaseKickbackNest`
+  // so the loop does NOT re-visit them (blocker FA0): the inner tainted `br`
+  // recovers FLAT in isolation (pre-3qlq: 3-incoming merge → OffPattern) and
+  // would false-decline `control flow`, killing the accept. `-O1` visits the
   // outer Pred before the inner Mid, so the outer's claim lands first.
   SmallPtrSet<BranchInst *, 4> Claimed;
   // 3qlq Inc 1 part B (P3) — the LOGICAL `select i1` nodes of an ACCEPTED
@@ -832,7 +827,7 @@ ControlPlan detectControlRegions(Module &M, WidthDispatch &wd,
           // cycle (inside a loop body) declines with the accurate loop message
           // (mirrors the `br` Diamond/IfElse guard) before the G-ladder fires its
           // generic `control flow`; no in-loop switch is ever soundly ACCEPTED
-          // (the N-way route + merge would flatten across the backedge), so this
+          // (the N-way merge would flatten across the backedge), so this
           // only sharpens an already-declining path.
           if (regionEntryInLoop(SI)) {
             diagnoseUnderControl(SI, "control flow inside a loop body");

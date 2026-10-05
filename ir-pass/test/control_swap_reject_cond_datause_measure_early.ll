@@ -1,16 +1,15 @@
 ; control_swap_reject_cond_datause_measure_early.ll — DECLINE probe (ziov WI-1,
 ; Rule-13 adversarial finding atk9): the condition compare is reused as data AND
-; that data is MEASURED in the route block, BEFORE the route controls on the flag.
+; that data is MEASURED in the pred block, BEFORE the arm's control uses the flag.
 ;
-; `bool f = cq_measure(q>5); if (q>5) { ... }` — clang -O1 CSEs to ONE `icmp`, and
-; the `cq_measure` of the flag-derived value lands in the PRED (route) block,
-; ahead of the conditional `br`. Sharing the flag and skipping its strip+free
-; would emit `cqrt_measure` on the flag BEFORE the `cqrt_cswap` route — the cswap
-; would then be controlled by an ALREADY-COLLAPSED flag, silently destroying the
-; coherent `if(q>5)` control (a verify-clean wrong unitary). A measure of the
-; flag's lineage in the route block is NOT a safe owner; decline LOUDLY. (A
-; measure DOWNSTREAM of the route — the merge block — is fine and ACCEPTS; see
-; control_swap_cond_datause_measured.ll.)
+; `bool f = cq_measure(q>5); if (q>5) cq_phi(a);` — clang -O1 CSEs to ONE `icmp`,
+; and the `cq_measure` of the flag-derived value lands in the PRED block, ahead of
+; the conditional `br`. Sharing the flag and skipping its strip+free would emit
+; `cqrt_measure` on the flag BEFORE the arm's kickback lands on it: the flag is
+; already collapsed, silently destroying the coherent `if(q>5)` control (a
+; verify-clean wrong unitary). A measure of the flag's lineage in the pred block
+; is NOT a safe owner; decline LOUDLY. (A measure DOWNSTREAM of the region — the
+; merge block — is fine and ACCEPTS; see control_swap_cond_datause_measured.ll.)
 ;
 ;
 ; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error

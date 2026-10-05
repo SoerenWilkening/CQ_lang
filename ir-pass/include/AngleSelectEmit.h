@@ -1,5 +1,5 @@
-// AngleSelectEmit.h — ANGLE-SELECT BY DIFFERENCE (control-in-place-PRD §12.3,
-// bd test_C_libtooling-drbq Increment 2b). BOTH rotation stems.
+// AngleSelectEmit.h — ANGLE SELECT (control-in-place-PRD §12.3, bd drbq Inc 2b).
+// Ry stem BY DIFFERENCE; the `cq_phi` stem by KICKBACK (3qlq Inc 1 P2, below).
 //
 // Dispatched from `SwapRouteEmit::lowerControlRegions` on
 // `R.Kind == AngleSelectRegion`, which `ArmClassify::classifyAngleSelect` pushes
@@ -32,7 +32,7 @@
 //                                                      ; paragraph below
 //     %t = call i32 @cq_theta_si32(i32 %r, double %a)  ; %r TAINTED, %a only arg-1
 //
-// THE OUTPUT — four emitted CALLS and one rewire, all positional around `%t`.
+// THE Ry OUTPUT — four emitted CALLS and one rewire, positional around `%t`.
 // The difference ALWAYS folds (both arms are `ConstantFP` by the accept
 // predicate), so no `fsub` instruction is emitted at all:
 //
@@ -44,17 +44,16 @@
 //     cqrt_free(i32 %f)
 //
 // `lowerRotations` then mints `cqrt_ry_<W>(h, B)` for the twin and
-// `cqrt_ry_<W>_controlled(f, h, A−B)` for the recorded consumer (the drbq Inc-1
-// path for `cq_theta`, the Inc-2a path for `cq_phi` — NEITHER is changed here).
+// `cqrt_ry_<W>_controlled(f, h, A−B)` for the recorded consumer (drbq Inc 1).
+// The `cq_phi(sel)` stem emits `x(f); rz_i1(f, B); x(f); rz_i1(f, A)` on the flag
+// instead (`emitPhaseAngleSelect`): exact, no subtraction, run-time arms admitted.
 //
-// WHY THIS IS EXACT IN REAL ARITHMETIC: angle additivity on ONE axis.
-// `Ry(A) = Ry(B)·Ry(A−B)`, and under this project's `Rz = diag(1, e^{iθ})`
-// convention `Rz(A) = Rz(B)·Rz(A−B)` entrywise, so there is no global-phase
-// residue either. `f = 0` leaves `R(B)`; `f = 1` composes to `R(A)`. There is NO
-// polarity case at all — `select %c, A, B` always means "A when the flag is 1" —
-// so a `!=` source (which `clang` canonicalizes to `icmp eq` with the select
-// operands SWAPPED) needs nothing special and no `cqrt_x` bracket ever appears in
-// this stream.
+// WHY THIS IS EXACT IN REAL ARITHMETIC: angle additivity on ONE axis,
+// `Ry(A) = Ry(B)·Ry(A−B)`. `f = 0` leaves `Ry(B)`; `f = 1` composes to `Ry(A)`.
+// There is NO polarity case at all — `select %c, A, B` always means "A when the
+// flag is 1" — so a `!=` source (which `clang` canonicalizes to `icmp eq` with
+// the select operands SWAPPED) needs nothing special and no `cqrt_x` bracket ever
+// appears in this stream.
 //
 // AND IN IEEE DOUBLE IT IS EXACT UP TO ONE ROUNDING, WHICH IS NOT THE SAME THING
 // (bd drbq Inc 2b round-1 Rule-13 review, lens L7-F1). The emitted true-arm angle
@@ -103,14 +102,14 @@
 // WHY THE `cq_theta` SPELLING AND NOT `cqrt_ry_<W>` DIRECTLY: the register is
 // still a `cq_*` SSA value at this point (for an f64 register it is
 // `double`-typed, so a direct `cqrt_*` call would be ill-typed), and every
-// PRE-`lowerRotations` wire walker recognizes a gate by the `@cq_theta_`/
-// `@cq_phi_` spelling with the wire at arg 0 (PRD §6, the hoist-and-defer
+// PRE-`lowerRotations` wire walker recognizes a gate by the `@cq_theta_`
+// spelling with the wire at arg 0 (PRD §6, the hoist-and-defer
 // rationale). Emitting the twin as a real rotation call means those walkers keep
 // seeing an in-place gate where one will fire.
 //
-// NO CFG surgery, NO hoist, NO `RegionFlatten`, NO `cqrt_x`, NO `cqrt_alloc`, NO
-// `cqrt_cswap`, NO reverse-play. The only rails are the user's own register and
-// the one flag.
+// Ry stem: NO CFG surgery, NO hoist, NO `RegionFlatten`, NO `cqrt_x`, NO
+// `cqrt_alloc`, NO `cqrt_cswap`, NO reverse-play. The only rails are the user's
+// own register and the one flag.
 //
 // Correctness rests on analytic reasoning plus the twin byte-diff, NOT on
 // `opt -verify` (Rule 2). Mutates the module IR and `taint`.

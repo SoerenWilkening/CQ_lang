@@ -7,7 +7,7 @@
 ; permutation, never a phase — no dephasing). This DEPENDS on the WI-0 compare
 ; `_unc` grid (§6.0): pre-WI-0 a recovered compare gate was an un-invertible
 ; primitive and this body would have loud-declined. A compare driving CONTROL
-; FLOW is a separate path (swap-route, before `lowerOps`) — declined for 6.1.
+; FLOW is a separate path (the control emitters, before `lowerOps`) — declined for 6.1.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

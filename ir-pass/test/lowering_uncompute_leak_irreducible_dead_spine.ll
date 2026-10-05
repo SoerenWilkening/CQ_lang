@@ -6,8 +6,8 @@
 ; THE DEFECT IT WAS WRITTEN FOR. `%h_op` is minted once in `entry`;
 ; `cqrt_addc_i32(%h_op, 7)` sits in `%A`, which executes K >= 1 times
 ; (`entry -> A -> B -> A -> …`). `%h_op` is a DEAD TERMINAL (its only other user
-; is a diagonal `cqrt_rz`), so the whole-DAG spine recovered {mul, addc, rz} and
-; reversed them ONCE in `%exit`:
+; was a diagonal `cqrt_rz`, deleted by the 3qlq migration), so the whole-DAG spine
+; recovered {mul, addc, rz} and reversed them ONCE in `%exit`:
 ;
 ;     cqrt_rz_i32(%h_op, -1.0); cqrt_addc_i32(%h_op, -7)      ; ONE adjoint …
 ;     cq_template_mul_i32_hl_unc(%h_op, %h, 5); cqrt_free(%h_op)

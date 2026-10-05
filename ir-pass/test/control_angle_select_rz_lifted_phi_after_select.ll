@@ -1,20 +1,19 @@
 ; control_angle_select_rz_lifted_phi_after_select.ll — ACCEPT: the **Rz** twin of
-; `control_angle_select_ry_lifted_phi_after_select.ll`. An Inc-2b BY-DIFFERENCE
-; angle select on the PHASE stem, followed by the canonical 5j5 one-register
-; merge-phi lift over the rotated register.
+; `control_angle_select_ry_lifted_phi_after_select.ll`. A phase angle select,
+; followed by a 5j5 one-register classical join phi over `r`.
 ;
-;     r = cq_phi(r, q == 5 ? .9 : .3);        // 2b, consumer rotation T (Rz)
-;     if (OPQ) { r = cq_phi(r, .5); }         // 5j5 classical join phi
+;     cq_phi(q == 5 ? .9 : .3);               // 2b phase angle select
+;     if (OPQ) { }                            // 5j5 classical join phi over r
 ;
 ; bd test_C_libtooling-drbq Increment 3, ROUND-2 Rule-13 review, finding R1-Q1(c).
-; WHY IT EXISTS: the F-L5-1 `resolveWireBase` stop was documented, and pinned, as
-; an **Ry** story — `AngleSelectEmit.cpp` records its consumer in
-; `taint.ControlledRotations` for **BOTH stems** (one `record` call, no stem
-; test), so the Rz-stem angle select flips ORACLE-decline → HEAD-accept exactly
-; like its Ry twin and nothing pinned it. Round 2 constructed this file; it is
-; committed unchanged.
+; WHAT IT PINS: the select lowers by kickback on the flag (mint, `cqrt_x`-bracketed
+; `cqrt_rz_i1(f, .3)`, `cqrt_rz_i1(f, .9)`, strip, free) and touches no data
+; register; the join phi dissolves and `r` is measured on its own handle.
+; (Pre-3qlq the Rz consumer on `r` was recorded in `taint.ControlledRotations`
+; like its Ry twin, so the F-L5-1 `resolveWireBase` stop was an Rz story too;
+; the phase stem no longer records one.)
 ;
-; MEASURED, both binaries, on this exact module:
+; MEASURED on the pre-3qlq module:
 ;   ORACLE (`1bdaa60`, pre-Inc-3, already ships 2b):
 ;     error: ... cq taint escape: tainted value muxed by a classical-condition phi
 ;

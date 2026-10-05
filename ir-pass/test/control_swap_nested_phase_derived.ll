@@ -3,12 +3,12 @@
 ; survives clang -O1 — an FP carrier `q + 1.0 > 5.0` (an integer `q+1>5` folds to
 ; `icmp sgt q,4` and exercises nothing; document, don't fight, the canonicalizer).
 ;
-; The derived outer cond drives the diagonal-alias closure on the outer level:
-; the condition's provenance includes the `fadd`, yet the routed handle is still
-; the f64 cq_theta and every arm a pure cq_phi_f64 (Rz) — the merge is FP because
-; the QUANTUM HANDLE is f64 (NOT an angle; a phase nest on an f64 handle is the
-; same class as control_swap_diamond_derived_f64.ll). Detection accepts; emission
-; routes the f64 rails.
+; The outer flag is minted from `fcmp ogt` on the `fadd` result
+; (`cq_template_fadd_f64_hl`), the inner flag from `fcmp olt` on q itself. The
+; QUANTUM HANDLE is f64 (NOT an angle; the same class as
+; control_swap_diamond_derived_f64.ll). Both levels lower by kickback: the outer
+; phase on f1, the inner on a fresh |0> AND node `g = f1 ∧ f2` (`cqrt_toffoli`),
+; uncomputed and freed before the two flag strips.
 ;
 ; WI-1 lands DETECTION only — recognized as the accept shape, declined
 ; transitionally `nested control flow`, so this XFAILs. WI-3 lands the emitter and

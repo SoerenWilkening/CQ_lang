@@ -1,7 +1,7 @@
 ; lowering_reject_inloop_rail_record_onepath_theta.ll — DECLINE (bd
 ; test_C_libtooling-8h7d.5, Rule-13 ROUND 2, finding F-1 — the ∃-PATH edge).
 ;
-;     for (i<2) { if (q==5) q = cq_phi(q,PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
+;     for (i<2) { if (q==5) cq_phi(PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
 ;     int mark = q;
 ;     if (n & 1) { cq_theta(&q, 0.125); }   /* the gate fires on ONE path; result dropped */
 ;     return cq_measure(mark);

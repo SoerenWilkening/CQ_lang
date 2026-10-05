@@ -664,8 +664,8 @@ void scrubForwardCone(Value *Root, TaintSet &taint,
       // scrubbed root). Stopping here also prunes its whole downstream cone from
       // the walk, so a fresh `cq_theta(%r, θ)` seeded from a scrubbed classical
       // `%r` keeps the qubit and every consumer of it tainted (the over-scrub
-      // the Rule-13 axis-(g) probe caught). NOT `cq_phi`: a `cq_phi` on a
-      // now-classical operand is deleted (Rule 3), so it is correctly scrubbed.
+      // the Rule-13 axis-(g) probe caught). NOT `cq_phi`: it is not a source
+      // (pre-3qlq a register-form one on a now-classical operand was scrubbed).
       if (TaintedSources.count(I))
         continue;
       bool HasOtherTaintedOperand = false;
@@ -1611,7 +1611,7 @@ void specialize(Module &M, WidthDispatch &wd, TaintSet &taint, SpecPlan &plan) {
   // regardless of its arg-0 seed, Rule 3) and every genuinely-tainted
   // specialized-call result. The walk stops at these, pruning their downstream
   // cones (axis-(g) over-scrub fix). `cq_phi` is deliberately absent — it is
-  // not a source, and a `cq_phi` on a now-classical operand must be scrubbed.
+  // not a source (pre-3qlq a register-form one on a classical operand was scrubbed).
   SmallPtrSet<const Value *, 8> TaintedSources;
   for (auto &R : Retargeted)
     if (R.second)

@@ -3,7 +3,7 @@
 ; base minted before the loop.
 ;
 ;     int p = ...; cq_theta(&p, ...); int r = p * 5;
-;     for (...) { if (q == 5) cq_theta(&r, .9); q = cq_phi(q, .1); }
+;     for (...) { if (q == 5) cq_theta(&r, .9); }
 ;
 ; R7-loop CLAUSE (b') OWNS IT, AT DETECTION. The rail phi for `r` has its external
 ; incoming `%3 = mul nsw i32 %2, 5`, and `peelInPlaceBase` stops at a `mul` (no
@@ -28,7 +28,7 @@
 ; place. The disposition it argued for — decline, at detection, with the loop
 ; string — is what shipped.
 ;
-; The body below is verbatim `clang -O1` output.
+; The body below is verbatim `clang -O1` output, less the phase 3qlq deleted.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}control flow inside a loop body under quantum control

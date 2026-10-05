@@ -8,17 +8,17 @@
        if (q != 0) cq_phi(a);     // cq_phi == Rz, a PHASE on q
        measure q
 
-   `clang -O1` reaches the else (straight-through) edge ONLY when `q == 0`, so it
-   value-propagates the merge's Pred-edge incoming to the literal `0` — the merge
-   is `phi [phase(q), 0]`. Pre-a8c0 the classifier declined this (its `Base ==
-   Routed` gate saw the folded `0`, not the qubit). The straight-through const-fold
-   re-anchor (straightThroughConstFoldHandle) proves `q == 0` on that edge from the
-   `icmp eq q, 0` condition, re-anchors the routed handle to `q`, and the diamond
-   lowers as a clean phase arm: flag from the tainted `icmp eq`, CSWAP q into a |0>
-   rail on ¬flag (the arm fires when q != 0, the FALSE edge — the cqrt_x brackets),
-   the Rz VERBATIM on the rail, CSWAP back, free the rail, strip with
-   icmp_eq_inv(q). ZERO controlled gates, NO `phi i32`, NO added measure, and the
-   merge RAUWs to q (not the folded 0).
+   Pre-3qlq (register form) `clang -O1` folded the merge's straight-through
+   incoming to the literal `0` (`phi [phase(q), 0]`); pre-a8c0 the classifier
+   declined that, and a8c0's straight-through const-fold re-anchor
+   (straightThroughConstFoldHandle) accepted it. Register-free, the arm writes no
+   value, so `-O1` emits no merge `phi`: `br (icmp eq q, 0)` with the cq_phi on
+   the FALSE edge. The diamond lowers as a clean phase arm by kickback: the flag
+   h1 = icmp_eq(q, 0) is minted into a fresh |0> ancilla, the Rz fires
+   UNCONTROLLED on ¬h1 (cqrt_rz_i1 between two cqrt_x, since the arm fires when
+   q != 0), the compare `_unc` strips h1 back to |0>, and ONE cqrt_free releases
+   it. ZERO controlled gates, NO cswap, NO `phi i32`, NO added measure; the
+   user's measure reads q.
 
    The runtime is trace-only and the diamond is flattened, so every gate fires
    unconditionally; the trace is deterministic regardless of q. cq_theta/cq_phi/

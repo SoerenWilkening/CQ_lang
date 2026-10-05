@@ -3,11 +3,9 @@
 ; 2026-09-05, on the prep-b measurement OQ-7 / finding 3(b)).
 ;
 ; This module is `clang -O1`'s OUTPUT for `tests/e2e/slice_control_phase_ifelse_
-; derived.c`, transcribed. ⚠ THE COMMITTED COPY OF THAT SLICE IS STILL ON THE
-; RETIRED SURFACE (`q = cq_phi(q, 0.9)`), so `clang` refuses it here and the
-; transcription cannot be re-derived from the tree as it stands; the rewritten
-; slice lands with branch `3qlq-inc1-slices` (prep-b), merged before this epic's
-; commit (Rule-13 round-2 finding F-R2-4). The IR below is what this file
+; derived.c`, transcribed. (When this was written the slice was still on the
+; retired `q = cq_phi(q, 0.9)` surface, Rule-13 round-2 finding F-R2-4; it now
+; carries the register-free spelling below.) The IR below is what this file
 ; asserts on, and it stands on its own:
 ;
 ;     cq_phi(0.9);                                  // pre-region: a global phase

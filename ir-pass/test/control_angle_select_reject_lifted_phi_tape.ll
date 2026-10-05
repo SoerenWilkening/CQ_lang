@@ -2,7 +2,7 @@
 ; through a LIFTABLE ONE-REGISTER CLASSICAL JOIN PHI (bd drbq Inc 2b; the select
 ; form of Inc-1 finding K, a CONFIRMED silent miscompile).
 ;
-;     int m; if (cc) m = cq_phi(r,.1); else m = r;   // classical cc — a join phi
+;     int m; if (cc) m = r; else m = r;   // classical cc — a join phi
 ;     cq_theta(&r, q == 5 ? .9 : .3);             // the 2b gate
 ;     printf("%d", m);          // a 7.6 output-tape write
 ;

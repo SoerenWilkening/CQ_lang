@@ -93,8 +93,8 @@
    loop, not the ~10 the decision memo budgeted), and this golden is where it stops
    being an argument and becomes a measurement.
 
-   (B) is the uncompute side: its counter feeds only a `cq_phi` keep-alive whose
-   result is dropped, so the whole substituted chain is dead and the Phase-5
+   (B) is the uncompute side: its counter feeds only the `ix == -1043` flag of a
+   kickback `cq_phi`, so the whole substituted chain is dead and the Phase-5
    whole-DAG LIFO spine reverses it — the golden shows all four `_unc` twins firing
    in reverse program order, each before its rail is freed. Every one of those
    symbols already exists in libcq_templates.a: ZERO new frozen symbols, no YAML
@@ -114,7 +114,7 @@ int scan_measured(unsigned u) {
 }
 
 /* (B) the idiom with NO pre-shift and a different seed, DEAD and kept alive by a
-   cq_phi — the four `_unc` twins and the LIFO reversal. */
+   kickback cq_phi — the four `_unc` twins and the LIFO reversal. */
 __attribute__((noinline))
 void scan_uncomputed(unsigned u) {
     unsigned w = u; cq_theta(&w, 0.10);
@@ -122,7 +122,7 @@ void scan_uncomputed(unsigned u) {
     int ix = -1043;
     for (; (int) lx > 0; lx <<= 1)
         ix--;
-    if (ix == -1043) cq_phi(0.30);                   /* Rz keep-alive; result dropped */
+    if (ix == -1043) cq_phi(0.30);                   /* kickback keep-alive (rz_i1 on flag) */
 }
 
 int main(void) {

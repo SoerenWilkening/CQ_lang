@@ -4,13 +4,13 @@
 ;     int q = 0; cq_theta(&q,.7); int r = 0; cq_theta(&r,.3);
 ;     if (q == 5) cq_theta(&r, .9);         // S1
 ;
-; A tainted-control Ry has NO swap-route form, so this is not an optimization of
-; the phase path — it is the mechanism (PRD §2). The route's premise is that the
-; arm gate is a no-op on the INACTIVE |0> work rail: true for Rz = diag(1,e^{iθ}),
-; FALSE for Ry(θ)|0> = cos|0> + sin|1>, which hands that rail back DIRTY and
-; ENTANGLED with the flag (Rules 6/8). Cleaning it would need a controlled Ry† —
-; method-A, dropped 2026-06-09 precisely because a gate you would emit to clean a
-; rail is a gate you could have controlled in place from the start.
+; The controlled in-place Ry is the mechanism (PRD §2), not an optimization of
+; the phase path. The retired swap route assumed the arm gate is a no-op on an
+; INACTIVE |0> work rail, which is FALSE for Ry(θ)|0> = cos|0> + sin|1>: it would
+; hand that rail back DIRTY and ENTANGLED with the flag (Rules 6/8). Cleaning it
+; would need a controlled Ry† — method-A, dropped 2026-06-09 precisely because a
+; gate you would emit to clean a rail is a gate you could have controlled in
+; place from the start.
 ;
 ; So the whole stream is: mint the flag at the compare, fire ONE
 ; `cqrt_ry_i32_controlled(flag, r, θ)` in place on the user's own register, strip
@@ -20,9 +20,9 @@
 ; the strip is the basis the mint read (PRD §3).
 ;
 ; The merge φ RAUWs to the base — both incomings denote the ONE physical rail,
-; exactly as for a phase arm; what differs is that the rail has been RELABELLED on
-; the flag=1 branch, which is why R6 refuses any pre-region SSA record of it read
-; after the region (see control_inplace_ry_reject_stale_*.ll).
+; which has been RELABELLED on the flag=1 branch; that is why R6 refuses any
+; pre-region SSA record of it read after the region (see
+; control_inplace_ry_reject_stale_*.ll).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

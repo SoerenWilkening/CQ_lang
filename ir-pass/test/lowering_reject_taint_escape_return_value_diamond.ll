@@ -3,8 +3,8 @@
 ; (test_C_libtooling-udw, member 3/3).
 ;
 ; `if (q > 5) { p = p*5 + 15; } return p;` — the i32-width twin is an ACCEPT case
-; (Phase 4.2 value-arm swap-route: `cqrt_copy_i32` produces the merged handle `%out`,
-; ALWAYS i32). Returning that always-i32 `%out` from a function declared to return
+; (the controlled-copy merge, `SelectMergeEmit`: `cqrt_copy_i32_controlled` into a
+; fresh rail produces the merged handle `%out`, ALWAYS i32). Returning that always-i32 `%out` from a function declared to return
 ; i64 leaves `ret i64 <i32 handle>` — so a shape PRD Part II §8.5 sanctions (ret is
 ; a legitimate consumer of `out`) crashes the verifier on ACCEPT-class input rather
 ; than declining. declineTaintEscapes catches the tainted non-i32 ret pre-RAUW.

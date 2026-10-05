@@ -1,17 +1,14 @@
 ; control_swap_reject_switch_value_derived_angle.ll — DECLINE (Rule-9 detect-before-
-; mutate; the WI-3 Rule-13 clearance probe). A VALUE switch whose DERIVED routed base
-; %pd = cq_phi(%p, sitofp(%p)) carries a QUANTUM-DERIVED (tainted) rotation angle. The
-; switch value twin of control_swap_reject_value_derived_tainted_angle.ll (the diamond
-; fixture).
+; mutate; the WI-3 Rule-13 clearance probe). A VALUE switch (`case 0: r = p + 3;
+; case 1: r = p + 5;`) preceded by `cq_phi((double)p)`, a branch phase whose angle is
+; QUANTUM-DERIVED. The switch value twin of
+; control_swap_reject_value_derived_tainted_angle.ll (the diamond fixture).
 ;
-; Without the routed-base angle guard in `proveSwitchValue`, detection ACCEPTS the
-; region and `emitSwitchValueRegion` mints flags/rails, routes, copies out, reverse-
-; plays, frees, RAUWs the merge phi, and flattens — all BEFORE `RotationLowering`'s own
-; angle guard aborts downstream (a half-mutated/broken module under a non-fatal-DS_Error
-; host; there is NO downstream backstop). The forward G3 walk cannot see it: the tainted
-; angle is UPSTREAM of the straight-through incoming %pd, never a forward user of the
-; merge phi. `proveSwitchValue` declines PRE-MUTATION with the canonical source-located
-; string (mirrors the diamond value twin, ArmClassify.cpp:944).
+; Pre-3qlq the tainted angle sat on the switch's derived routed base
+; `%pd = cq_phi(%p, sitofp(%p))`, and `proveSwitchValue` had to decline it before
+; `emitSwitchValueRegion` mutated anything. Since 3qlq the phase is register-free
+; and outside the region, and RotationLowering's quantum-derived-angle guard owns
+; the decline (Rule 3).
 ;
 ;
 ; 3qlq(prep_a2): the asserted diagnostic was RE-SPELLED on the Inc-1 binary.

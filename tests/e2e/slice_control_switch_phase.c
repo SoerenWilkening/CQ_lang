@@ -27,12 +27,12 @@
    by PRD S6.2 P5 -- a register-free cq_phi has no arg-0 to fold.
    (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_switch_phase.c — Phase 4.5 e2e smoke (WI-6,
-   test_C_libtooling-bkpz.6): the RSSA swap-routed homogeneous-PHASE switch, the
-   only test layer that LINKS and so the ONLY proof that the N-way phase switch
-   emitter's symbol set (the eq-flag template cq_template_icmp_eq_i32_hl + its
-   `_inv` strip, cqrt_cswap, the |0> rail alloc/free, the verbatim arm rz)
-   resolves and signature-matches against libcq_runtime (Rule 2, Rule 16) —
-   verify-clean and "runs without crashing" prove neither.
+   test_C_libtooling-bkpz.6). PRE-3qlq RECORD, kept as history (pre-3qlq swap
+   route; the file now declines, see above): the RSSA swap-routed homogeneous-
+   PHASE switch, then the ONLY proof that the N-way phase switch emitter's
+   symbol set (the eq-flag template cq_template_icmp_eq_i32_hl + its `_inv`
+   strip, cqrt_cswap, the |0> rail alloc/free, the verbatim arm rz) resolved
+   against libcq_runtime (Rule 2, Rule 16).
 
    SOURCE INTENT (homogeneous PHASE-arm switch, N=3 cases, empty default — the
    §4A / IMPLEMENTATION-4.5 ACCEPT shape, control_swap_switch_phase.ll is the
@@ -70,10 +70,10 @@
 int slice(void) {
     int q = 3;
     cq_theta(&q, 0.5);             /* taint q -> scrutinee handle (alloc, ry)   */
-    switch (q) {                   /* tainted switch -> N-way swap-route phase   */
-        case 0: cq_phi(0.1); break;   /* arm 0 (Rz) — VERBATIM on rail 0 */
-        case 1: cq_phi(0.2); break;   /* arm 1 (Rz) — VERBATIM on rail 1 */
-        case 2: cq_phi(0.3); break;   /* arm 2 (Rz) — VERBATIM on rail 2 */
+    switch (q) {                   /* -O1: angle table + one cq_phi (QRAM decline)*/
+        case 0: cq_phi(0.1); break;   /* arm 0 (Rz) — sunk into the table */
+        case 1: cq_phi(0.2); break;   /* arm 1 (Rz) — sunk into the table */
+        case 2: cq_phi(0.3); break;   /* arm 2 (Rz) — sunk into the table */
     }
     return cq_measure(q);
 }

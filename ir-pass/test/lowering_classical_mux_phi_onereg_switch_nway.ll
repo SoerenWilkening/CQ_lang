@@ -6,21 +6,18 @@
 ;                            case 2: q=cq_phi(q,b);  break;
 ;                            default:               break; }
 ;     measure(q);
-; survives clang -O1 as a switch with one merge phi whose 3 incomings are
-; DISTINCT SSA names denoting the SAME physical register (cq_phi is in place —
-; RotationLowering emits cqrt_rz on q's handle AT THE CALL'S POSITION inside the
-; case block and RAUWs the result to q). So post-lowering EVERY incoming is the
-; same i32 handle: the phi is a pure SSA renaming. The N-ary lift (the Increment
-; C generalization of liftOneRegisterMergePhi) proves every edge's chain lives
-; in its own case block AND no arm gate can reach the merge through ANY OTHER
-; edge whose record omits it (the generalized (7a) over all j != i), then RAUWs
-; the phi to the wire base and erases it.
+; (pre-3qlq register form; the 3qlq migration deleted both phases, global phases
+; under a classical scrutinee, so every case block is now EMPTY). It survives
+; clang -O1 as a switch with one merge phi whose 3 incomings all denote the SAME
+; register %q: the phi is a pure SSA renaming. The N-ary lift (the Increment C
+; generalization of liftOneRegisterMergePhi) proves every edge's chain lives in
+; its own case block AND no arm gate can reach the merge through ANY OTHER edge
+; whose record omits it (the generalized (7a) over all j != i), then RAUWs the
+; phi to the wire base and erases it.
 ;
 ; Rule-13 trace clearance: the scrutinee is CLASSICAL — each shot takes exactly
-; one case; the lift adds/moves/removes NO gate, only an SSA name disappears.
-; Each emitted cqrt_rz sits INSIDE its own case block, so per shot the trace is
-; exactly the executed case's gate stream (the gate fires iff that case ran) —
-; no superposed control, no flag, no routing, no controlled gates.
+; one case; the lift adds/moves/removes NO gate, only an SSA name disappears —
+; no superposed control, no flag, no controlled gates.
 ;
 ; N==2 reduces EXACTLY to the prior `1-i` complement (the arity-2 fixtures
 ; lowering_classical_mux_phi_onereg*.ll are behaviorally unchanged); the third-
@@ -34,7 +31,7 @@
 ; CHECK:      call i32 @cqrt_alloc_i32(i32 7)
 ; CHECK-NOT:  call i32 @cqrt_alloc_i32
 ; CHECK:      call void @cqrt_ry_i32(i32 %[[H:[a-zA-Z0-9_.]+]], double 5.000000e-01)
-; Each case gate stays INSIDE its own case block — it fires iff that case runs:
+; The case blocks survive (empty since 3qlq):
 ; CHECK:      arm1:
 ; CHECK:      arm2:
 ; The merge measures the ONE handle; the renaming phi is GONE:

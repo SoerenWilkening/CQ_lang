@@ -1,10 +1,10 @@
 // TaintPropagation.cpp — Forward taint propagation from quantum rotation
 // returns. The source set spans every `@cq_theta_<sfx>` declared in the
-// module (14-suffix enumeration via `WidthDispatch::allSuffixes()`);
-// `@cq_phi_<sfx>` is collected for lowering but is not a source;
-// `@cq_measure_<sfx>` is the sink. Propagation rules are unchanged from the
-// original source-collection version — only the source predicate moved to
-// the `@cq_theta_<sfx>` rotation family.
+// module (14-suffix enumeration via `WidthDispatch::allSuffixes()`); the
+// register-free `@cq_phi` is collected but is not a source (a use of the retired
+// `@cq_phi_<sfx>` is a reserved-name decline); `@cq_measure_<sfx>` is the sink.
+// Propagation rules are unchanged from the original source-collection version —
+// only the source predicate moved to the `@cq_theta_<sfx>` rotation family.
 
 #include "TaintPropagation.h"
 
@@ -294,7 +294,7 @@ bool isMeasureSink(Instruction *I, const FnSet &MeasureFns) {
 // bypassed (twin-pipeline trap, IMPLEMENTATION §6.5).
 //
 // Canonical prototype per suffix (CQ.h, with T = WidthDispatch::llvmTypeFor):
-//   cq_theta_<sfx> / cq_phi_<sfx>: T (T, double)    cq_measure_<sfx>: T (T)
+//   cq_theta_<sfx>: T (T, double)   cq_measure_<sfx>: T (T)   cq_phi: void(double)
 // Exact FunctionType match — no varargs, no extra params. Parameter
 // ATTRIBUTES (zeroext/noundef/...) are not part of the FunctionType and are
 // accepted, so every clang-emitted CQ.h decl passes.
@@ -314,7 +314,7 @@ bool declMatchesPrototype(const Function *F, Type *T, bool HasAngle) {
 // decl-only mismatch diagnoses on the declaration itself. The negative
 // fixtures mirror each rendered message CHARACTER-FOR-CHARACTER (Rule 12):
 //   * lowering_reject_decl_prototype_theta.ll   → "... for cq_theta_si32"
-//   * lowering_reject_decl_prototype_phi.ll     → "... for cq_phi_si32"
+//   * lowering_reject_decl_prototype_phi.ll     → "... for cq_phi"
 //   * lowering_reject_decl_prototype_measure.ll → "... for cq_measure_f64"
 //   * lowering_reject_decl_prototype_unused.ll  → decl-only, no call sites
 //   * lowering_reject_decl_prototype_invoke.ll  → invoke-only call site (thd7)
@@ -339,8 +339,8 @@ void diagnoseMalformedDecl(Function *F, StringRef Concern) {
   F->getContext().diagnose(DiagnosticInfoUnsupported(*F, Msg));
 }
 
-// Resolve every declared `@cq_theta_<sfx>` / `@cq_phi_<sfx>` /
-// `@cq_measure_<sfx>` into the three FnSets. Suffixes whose intrinsic isn't
+// Resolve every declared `@cq_theta_<sfx>` / `@cq_measure_<sfx>` and the
+// register-free `@cq_phi` (`PhiFns` stays empty). Suffixes whose intrinsic isn't
 // declared in `M` are skipped — that's the early-out cue the per-function
 // walk uses to leave a purely-classical module untouched. Order doesn't
 // matter: `collectAndSeed` walks call sites in BB order, not symbol order.
@@ -495,7 +495,7 @@ void drainWorklist(std::vector<Value *> &Worklist, const FnSet &ThetaFns,
       if (isMeasureSink(I, MeasureFns))
         continue;
       // WP10/R9 angle taint-discipline: the angle operand (arg 1) of a
-      // cq_theta/cq_phi is a classical scalar, never a quantum handle. If `V`
+      // cq_theta is a classical scalar, never a quantum handle. If `V`
       // reaches a rotation ONLY as its angle (arg 1) and not as the arg-0
       // handle, do NOT propagate taint through that edge — an angle-derived
       // value (e.g. an `if(q){rz(u,a)}else{rz(u,b)}` angle select) must stay
@@ -1322,7 +1322,7 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
             isa<CmpInst>(I) || isa<CastInst>(I))
           continue;
         // 3. Control-flow value merges/muxes — owned by ControlDetect (a
-        //    tainted-condition select/switch/branch accepts as a swap-route
+        //    tainted-condition select/switch/branch accepts as a control
         //    region or declines "... under quantum control") and, for the
         //    CLASSICAL-condition leftovers, by `declineClassicalMuxes`, which
         //    runs after `lowerControlRegions` (test_C_libtooling-wi5 — the
@@ -1693,26 +1693,26 @@ constexpr char kMsgClassicalPhi[] =
 // test_C_libtooling-sbt1.3, Phase 7.1 Increment C).
 //
 // The natural "classical if around a quantum gate" program
-//     if (classical_c) q = cq_phi(q, theta);  ...use(q)...
+//     if (classical_c) cq_theta(&q, theta);  ...use(q)...
 // survives `clang -O1` as a merge phi whose two incomings are DISTINCT SSA
 // values denoting the SAME physical register:
-//     merge: %p = phi i32 [ %q2, %arm ], [ %q, %entry ]   ; %q2 = cq_phi(%q,θ)
-// (verified 2026-06-10 on both the `if` and the ternary form — clang cannot
-// speculate the opaque cq_phi call, so BOTH compile to this branch+phi shape,
-// never to a select). The N-ary classical `switch` around an in-place gate on
-// the SAME register is the same shape at higher arity — N>2 incomings, each a
-// distinct SSA name of the one register's per-path record, reconverging at one
-// merge phi; Increment C lifts it by the IDENTICAL per-edge argument, with the
-// (7a) reachability proof carried against EVERY other edge (not just the single
-// 2-way complement). Rotation lowering is IN PLACE: `RotationLowering` emits
-// the gate at the call's position ON THE OPERAND HANDLE and RAUWs the result
-// to that same operand (cqrt_rz for cq_phi; ry-only on the existing handle for
-// a tainted-operand chained cq_theta). So after lowering, EVERY incoming of
-// such a phi is the same i32 handle — the phi is a pure SSA renaming that
-// never touches the register. RAUW'ing it to the wire's base SSA value and
-// erasing it reduces the module to the phi-less form the pipeline ALREADY
-// accepts (verified: gate-in-classical-arm + use-of-base lowers to
-// rz-inside-the-arm + measure-on-handle, in both main and non-main).
+//     merge: %p = phi i32 [ %q2, %arm ], [ %q, %entry ]   ; %q2 = cq_theta(%q,θ)
+// (verified 2026-06-10 on the `if` and ternary forms of the pre-3qlq register
+// form `q = cq_phi(q, θ)` — clang cannot speculate the opaque call, so BOTH
+// compile to this branch+phi shape, never to a select). The N-ary classical
+// `switch` around an in-place gate on the SAME register is the same shape at
+// higher arity — N>2 incomings, each a distinct SSA name of the one register's
+// per-path record, reconverging at one merge phi; Increment C lifts it by the
+// IDENTICAL per-edge argument, with the (7a) reachability proof carried against
+// EVERY other edge (not just the single 2-way complement). Rotation lowering is
+// IN PLACE: `RotationLowering` emits the gate at the call's position ON THE
+// OPERAND HANDLE and RAUWs the result to that same operand (ry-only on the
+// existing handle for a tainted-operand chained cq_theta). So after lowering,
+// EVERY incoming of such a phi is the same i32 handle — the phi is a pure SSA
+// renaming that never touches the register. RAUW'ing it to the wire's base SSA
+// value and erasing it reduces the module to the phi-less form the pipeline
+// ALREADY accepts (verified pre-3qlq with an rz: gate-in-classical-arm +
+// use-of-base lowers to gate-inside-the-arm + measure-on-handle, main and not).
 //
 // Rule-13 trace/statevector clearance (the accept argument): the condition is
 // CLASSICAL — each shot executes exactly one path; no superposed control, no
@@ -1724,7 +1724,7 @@ constexpr char kMsgClassicalPhi[] =
 // merge through that edge does not physically have. The predicate below
 // makes that impossible:
 //   (3) every incoming resolves through the in-place gate wire (arg-0 of
-//       COLLECTED cq_theta/cq_phi call sites — exact CallInst membership,
+//       COLLECTED cq_theta call sites — exact CallInst membership,
 //       never name matching, this is an ACCEPT predicate) to ONE common base;
 //       a classical-operand theta MINTS a fresh register, so the walk stops
 //       there; template results (add/mul/...) mint fresh rails
@@ -1776,7 +1776,7 @@ constexpr char kMsgClassicalPhi[] =
 // accept controls `lowering_classical_mux_phi_onereg_spec_*.ll`.
 // ───────────────────────────────────────────────────────────────────────────
 
-// The backward in-place-gate wire resolution: peel collected cq_theta/cq_phi
+// The backward in-place-gate wire resolution: peel collected cq_theta
 // call sites through their arg-0 handle while that handle is tainted (a
 // tainted-operand rotation is in-place — its result RAUWs to its operand).
 // Stops at a classical-operand theta (the register's mint point — the call
@@ -2005,7 +2005,7 @@ bool liftOneRegisterMergePhi(PHINode *Phi, TaintSet &taint,
   // AFTER `specialize()` and the re-ask of this lift's own premise, so it only
   // ever adjudicates a lift that survived that re-ask. The sweep is complete,
   // not scoped to the phi's consumers: the genuine stale op may be a TRANSITIVE
-  // consumer separated from the phi by in-place-gate hops (Rz / chained Ry) — a
+  // consumer separated from the phi by in-place-gate hops (chained Ry) — a
   // Rule-13 adversarial finding — so only re-walking every consumer's full wire
   // is sound. (bd ec7r: the witness is the RECORD, i.e. the lift event; the
   // self-cleaning direct-consumer set that used to be the witness is removed.)
@@ -2056,7 +2056,7 @@ void declineClassicalMuxes(Module &M, TaintSet &taint) {
   //
   // ONE deliberate accept (test_C_libtooling-5j5): the live merge PHI that is
   // a proven pure renaming of ONE register's per-path current record — the
-  // natural `if (classical_c) q = cq_phi(q, θ); use(q)` shape — is RAUW'd to
+  // natural `if (classical_c) cq_theta(&q, θ); use(q)` shape — is RAUW'd to
   // its wire base and erased (see liftOneRegisterMergePhi above for the full
   // predicate and the Rule-13 clearance). ⚠ That accept is proved at PRE-
   // `specialize()` taint and is PROVISIONAL until `declineFalsifiedMergePhiLifts`
@@ -2284,7 +2284,7 @@ namespace {
 // THE RE-FLATTEN HAZARD (Rule 13). The CFG is ALREADY flattened by round-1
 // `lowerControlRegions` (step 184). When the downstream diamond's pred is the
 // round-1 spliced merge tail (`int y=5; if(q>3) y=f(a); if(y>7) y=cq_phi(y,θ)`,
-// the round-1 merge block ending in the downstream `br i1 %c2`), round-1
+// pre-3qlq register form; the round-1 merge block ends in `br i1 %c2`), round-1
 // `flattenRegion` already re-pointed the downstream merge phi's incoming block
 // `Merge → Pred` before erasing `Merge` (the dugh D1 fix
 // `replaceSuccessorsPhiUsesWith`, load-bearing for the CLASSICAL 5j5

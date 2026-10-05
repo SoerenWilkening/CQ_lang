@@ -4,21 +4,16 @@
 ;
 ;     int a = u0; cq_theta(&a, 0.5);
 ;     for (int i = 0; i < 3; ++i) {
-;         if (sqrt(a + 3.) <= 3.5) a = cq_phi(a, b);
+;         if (sqrt(a + 3.) <= 3.5) cq_phi(b);
 ;         cq_theta(&a, -0.5);
 ;     }
 ;     return cq_measure(a);
 ;
 ; VERBATIM `clang -O1` OUTPUT (Rule 9 — note the polarity: `<= 3.5` is emitted as
 ; `fcmp ugt` with the gate arm as the FALSE successor, so the emitter brackets the
-; arm's gate run with `cqrt_x`).
-;
-; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
-; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE
-; `cqrt_rz_i32_controlled(flag, register, theta)`, and the swap route (work-rail
-; alloc, both `cqrt_cswap`s, the rail free) is gone. On this NEGATED arm that also
-; halves the `cqrt_x` count — the route bracketed EACH of its two cswaps (four
-; `cqrt_x`), control-in-place brackets the arm's gate run ONCE (two).
+; arm's kickback gate with `cqrt_x`). The phase arm lowers by kickback: the fcmp
+; mints the flag, ONE uncontrolled `cqrt_rz_i1(flag, b)` inside ONE `cqrt_x(flag)`
+; pair, then the fcmp `_unc` strip.
 ;
 ; THIS FIXTURE IS ABOUT THE DISCHARGE, not the arm gate. The condition builds a
 ; three-rail chain (`sitofp` → `fadd` → `sqrt`) that is ENTANGLED with the
@@ -61,12 +56,6 @@
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * call void @cqrt_x(   [superseded by the XCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

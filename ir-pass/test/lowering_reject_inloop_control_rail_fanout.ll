@@ -1,7 +1,7 @@
 ; lowering_reject_inloop_control_rail_fanout.ll — DECLINE (bd test_C_libtooling-8h7d.5):
 ; the Rule-8 LINEAR-LINEAGE / FAN-OUT guard, reached through the round-2 path.
 ;
-;     for (...) { if (q > 5) q = cq_phi(q, b); q = q + 7; }
+;     for (...) { if (q > 5) cq_phi(b); q = q + 7; }
 ;     int a = q + 9;  int b = q ^ 3;   /* TWO in-place consumers of the exit rail */
 ;     return cq_measure(a) + cq_measure(b);
 ;

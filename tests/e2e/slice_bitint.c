@@ -57,7 +57,7 @@
    signature-match the generated ABI (Rule 2, Rule 16). Two lineages:
 
    (A) MEASURED unsigned _BitInt(40) add — proves the forward round+mask producers.
-   (B) DEAD masked value kept alive by a cq_phi — proves the and-mask _unc twin
+   (B) DEAD masked value under a kickback cq_phi — proves the and-mask _unc twin
        (recompute-and-XOR from the live source) + the |0> free.
 
    cq_theta/cq_phi/cq_measure resolve from CQ.h (force-included by run_slice.sh). */
@@ -76,6 +76,6 @@ void slice(unsigned long x, unsigned long y) {
     /* (B) dead mask — proves the and-mask _unc + recompute-from-live-source. */
     unsigned long c = x; cq_theta(&c, 0.10);
     u40 zc = (u40)c;                     /* and i64 c, 2^40-1 — dead */
-    if (zc == (u40)5) cq_phi(0.30);   /* Rz keep-alive; result dropped */
+    if (zc == (u40)5) cq_phi(0.30);   /* kickback keep-alive (rz_i1 on flag) */
 }
 int main(void) { slice(0xFFFFFFFFFFul, 1ul); return 0; }

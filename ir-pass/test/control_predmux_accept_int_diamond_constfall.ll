@@ -29,7 +29,7 @@
 ; control_predmux_leave_int_diamond_constfall_prereg.ll (the a8c0 empty arm,
 ; where the non-constant incoming is PRE-REGION) and by the pre-existing
 ; control_swap_value_diamond.ll / control_swap_value_accept_nonclobber.ll
-; (a non-constant straight-through keeps its method-B cswap stream).
+; (a non-constant straight-through keeps the 4.2 value emitter's stream).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s  --implicit-check-not='br i1' --implicit-check-not='phi i32' < %t.cqd0.ll

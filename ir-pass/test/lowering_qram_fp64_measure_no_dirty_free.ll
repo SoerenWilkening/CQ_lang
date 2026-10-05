@@ -1,41 +1,24 @@
-; lowering_qram_fp64_measure_no_dirty_free.ll — ACCEPT (bd 38t2): the SHARP
-; DISCRIMINATOR at fp width. A coherent fp carrier (`%cp = Rz(Ry)`) is stored at a
-; tainted index, LOADED BACK at a DIFFERENT tainted index, given an in-place user
-; `cq_phi_f64`, then MEASURED. This is the shape a naive "storing a carrier
-; dephases → miscompile" analysis flags — but it is SOUND: the compiler emits
-; EXACTLY the user's forward gate stream (alloc/ry/rz/ry/store/ry/load/rz/measure)
-; with ZERO cqrt_free and ZERO `_unc` in the measured cone (the measured terminal
-; takes the whole-DAG `InsertTerms`-empty bail). Emitted == written = correct-by-
-; construction; the never-freed carrier/cell/index entanglement is unobservable at
-; a computational-basis measure (measurement immunity, memory
-; 7-5-qram-coherent-return-nocloning). NO compiler-inserted measurement/dirty-free
-; can diverge from the faithful reversible-QRAM semantics (bd
-; [38t2-fp-cell-commits-to-basis-sound]). Distinct tainted indices q != p defeat
+; lowering_qram_fp64_measure_no_dirty_free.ll — ACCEPT (bd 38t2, re-derived under
+; bd 3qlq). A coherent fp carrier is stored at a tainted index, LOADED BACK at a
+; DIFFERENT tainted index, then MEASURED. Distinct tainted indices q != p defeat
 ; store->load forwarding and keep the array live.
 ;
-; ⚠ THE FINAL GATE WAS A CHAINED `cq_theta_f64` UNTIL M-A INCREMENT 3, AND THAT
-; VARIANT NOW DECLINES. Read this before assuming the change was cosmetic. With an
-; in-place Ry there, `%h_cast4` (the fptosi rail holding the load index `pi`) and
-; `%h3` (its `cqrt_alloc_f64` parent) are dead, undischarged, entangled ANCESTORS
-; of the loaded rail at a NON-DIAGONAL gate — the loaded value is `[pi==qi]·carrier`,
-; a function of `pi`, so the wire's reduced state is diagonal and the Ry acts on a
-; mixture. Owner ruling (2026-08-27 / 2026-08-28, bd test_C_libtooling-6uqc):
-; "emitted == written" is not a soundness argument at a non-diagonal gate over a
-; live record, and that variant is now the negative fixture
-; lowering_reject_live_record_qram_fp64_load_index.ll — same module, verbatim.
+; WHAT THE CHECK PINS TODAY. Both `cq_phi` calls are uncontrolled, so they are
+; global phases and are deleted, and the program measures the loaded `%v`
+; directly. The whole-DAG spine copies the loaded value into a fresh rail
+; (`cqrt_copy_f64`), reverses the load (`cqrt_qram_load_f64_unc`), both fptosi
+; index rails, the store and the three source Ry's, frees the loaded rail and the
+; two index rails once uncomputed (FCNT = 3), and measures the copy.
 ;
-; WHY `cq_phi_f64` IS THE RIGHT REPLACEMENT and not a retreat: an Rz is DIAGONAL,
-; so it COMMUTES with every basis record standing beside it and the dephasing
-; argument does not reach it. Every property bd 38t2 pinned survives unchanged —
-; no `_unc`, no `cqrt_free`, no `cqrt_copy`, no compiler-inserted measurement in
-; the measured coherent-fp cone — and the CHECK-NOT block below is the same block
-; it always was. What is NOT pinned here any more is the phase→amplitude
-; interference observation; that is the reject twin's job now.
-; (Measured, and it is why the obvious edit was not taken: simply deleting the
-; final gate and measuring `%v` directly does NOT preserve this fixture — the
-; whole-DAG spine then emits `cqrt_copy_f64` + `cqrt_qram_load_f64_unc` +
-; `cqrt_free` + a full reversal, i.e. every CHECK-NOT below fires.)
-;
+; HISTORY. Before bd 3qlq the carrier was `Rz(Ry)` and the loaded value got an
+; in-place user `cq_phi_f64` (Rz) before the measure; this file then pinned EXACTLY
+; the user's forward gates with ZERO `cqrt_free` and ZERO `_unc` in the measured
+; cone (bd [38t2-fp-cell-commits-to-basis-sound]). Its final gate was a chained
+; `cq_theta_f64` until M-A Increment 3; that variant is now the warning fixture
+; lowering_reject_live_record_qram_fp64_load_index.ll (same module, verbatim). The
+; old header recorded that deleting the final gate makes the spine emit
+; `cqrt_copy_f64` + `cqrt_qram_load_f64_unc` + `cqrt_free` + a full reversal:
+; that is the stream pinned now.
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
 ; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)

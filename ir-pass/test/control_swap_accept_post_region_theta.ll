@@ -9,9 +9,9 @@
 ;     cq controlled lowering: condition predates a non-diagonal gate
 ; because `wireGainsNonDiagonalGate` was schedule-INDEPENDENT: ANY theta
 ; anywhere on the condition's wire declined the region, including one that runs
-; after the flag was minted, routed, Rz'd, routed back, `_unc`-stripped and
-; freed. It was the single wall between CQ and a full Grover iteration, and it
-; was NOT workaroundable from source — reordering S to `+off` then `Ry` gets
+; after the flag was minted, used, `_unc`-stripped and freed. It was the single
+; wall between CQ and a full Grover iteration, and it was NOT workaroundable
+; from source — reordering S to `+off` then `Ry` gets
 ; past the guard but computes a DIFFERENT unitary (Ry does not commute with the
 ; `+3` permutation), which is the one thing this compiler exists to prevent.
 ;
@@ -19,9 +19,9 @@
 ;     volatile int cq_off = 3;
 ;     int a = 0;
 ;     cq_theta(&a, 0.5);   a += cq_off;          /* S  */
-;     if (a == 5) a = cq_phi(a, PI);                /* O  */
+;     if (a == 5) cq_phi(PI);                       /* O  */
 ;     a -= cq_off; cq_theta(&a, -0.5);           /* S† */
-;     if (a == 0) a = cq_phi(a, PI);                /* R0 */
+;     if (a == 0) cq_phi(PI);                       /* R0 */
 ;     cq_theta(&a, 0.5);   a += cq_off;          /* S  — THE FRONTIER LINE */
 ;     return cq_measure(a);
 ; The `volatile` offset is load-bearing (Rule 9): a literal `+3/-3` pair is
@@ -31,14 +31,13 @@
 ; WHICH REGION THE ACCEPT IS ABOUT. Region 1 (the oracle) never saw a wire gate
 ; at all — MEASURED, not assumed: replace its arm gate with a value op and it
 ; declines `arm rewrites a condition operand`, the value-arm string, rather than
-; the deferred wire-gate one. Its condition reads `%3 = add %2, %1`; the walk
-; crosses the merge phi `%8` but an ordinary `sub`/`add` result is a distinct SSA
-; value it does not cross, so `%10 = sub %8, %9` ends the wire and the S-dagger
-; theta `%11` behind it is never reached.
+; the deferred wire-gate one. Its condition reads `%3 = add %2, %1`; an ordinary
+; `sub`/`add` result is a distinct SSA value the walk does not cross, so
+; `%10 = sub %3, %9` ends the wire and the S-dagger theta `%11` is never reached.
 ; Region 2 (the reflection) is the one that declined: its condition reads the
-; CHAINED theta `%11`, whose forward wire runs through the merge phi `%16` into
-; `%17 = cq_theta(%16, 0.5)` — the re-prep Ry. `%17` is in block `%15`, which
-; `%7`'s terminator dominates, and nothing reaches back from `%15` to `%7`, so
+; CHAINED theta `%11`, whose forward wire runs into `%17 = cq_theta(%11, 0.5)`
+; — the re-prep Ry. `%17` is in block `%15`, which `%7`'s terminator
+; dominates, and nothing reaches back from `%15` to `%7`, so
 ; `provablyBefore(BI, %17)` holds and the region is accepted as a PHASE arm.
 ;
 ; WHAT THE CHECKS BELOW ASSERT, and it is the whole soundness claim: region 2's

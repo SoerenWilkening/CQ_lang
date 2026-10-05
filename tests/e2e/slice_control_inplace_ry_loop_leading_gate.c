@@ -28,14 +28,14 @@
    before assuming; if it holds, the shape needs a DIFFERENT variant-maker (an Ry,
    `cq_theta(&q, 0.1)`) and that is a semantic change, not a migration.
    (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
-/* slice_control_inplace_ry_loop_leading_gate.c — shape S11 (PRD §13.3) — the in-loop Ry arm whose ROUTED
+/* slice_control_inplace_ry_loop_leading_gate.c — shape S11 (PRD §13.3) — the in-loop Ry arm whose ROTATED
    BASE is a DERIVED value defined in the loop header ABOVE the compare, not the
    header phi itself.
 
    SOURCE INTENT — one activation per trip:
-       cq_theta(&r, 0.25);              the LEADING gate: the routed base
+       cq_theta(&r, 0.25);              the LEADING gate: the rotated base
        if (q == 5) cq_theta(&r, 0.9);   the controlled Ry, on that base
-       cq_phi(0.1);                 keeps the condition register variant
+       cq_phi(0.1); cq_theta(&q, 0.05); deleted phase; the Ry keeps q variant
 
    WHY IT IS ITS OWN SLICE. R7-loop clause (b) asks "is some member of the rotated
    base's wire closure a PHINode in `L`'s header?", and here the base is a

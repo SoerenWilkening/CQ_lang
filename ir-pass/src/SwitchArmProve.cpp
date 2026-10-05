@@ -19,7 +19,7 @@
 #include "ArmAnalysis.h"     // walkPhaseSpine, walkValueChain, taintedAngleGate
 #include "ControlPlan.h"     // diagnoseUnderControl, SwitchClass
 #include "TaintPropagation.h"  // TaintSet
-#include "WireWalk.h"          // findNonDiagonalWireGate (routed-base wire staleness)
+#include "WireWalk.h"          // findNonDiagonalWireGate (shared-base wire staleness)
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -68,7 +68,7 @@ bool isThetaCall(const Value *V) { return isCallToPrefix(V, "cq_theta_"); }
 
 // Re-derived mirror of ArmClassify.cpp / ArmHomogeneity.cpp's anonymous
 // `isValueChangingOp`: a leaf (Argument/Constant), a `cq_theta` (Ry source), or a
-// `cq_phi` (Rz, diagonal — basis-preserving) is NOT value-changing; ANY other
+// retired `cq_phi_<sfx>` (`isPhiCall`, vacuous) is NOT value-changing; ANY other
 // instruction (add/mul/cast/shl/…) defining a new computational-basis value IS.
 // Classified by OPCODE, never by defining block.
 bool isValueChangingOp(const Value *Base) {
@@ -82,9 +82,9 @@ bool isValueChangingOp(const Value *Base) {
 
 // Re-derived mirror of ArmClassify::armBlockIsPureSpine / ArmHomogeneity::
 // innerArmIsPureSpine: every non-terminator instruction in `ArmBB` must lie on the
-// linear `cq_phi` spine of `ArmIncoming` (following arg-0). A fan-out sibling or a
-// stray op the emitter would silently drop on flatten makes the arm impure
-// (Rule 5 / Rule 8).
+// linear spine of `ArmIncoming` (retired `cq_phi_<sfx>` calls, following arg-0).
+// A fan-out sibling or a stray op the emitter would silently drop on flatten
+// makes the arm impure (Rule 5 / Rule 8).
 bool armPureSpine(const BasicBlock *ArmBB, const Value *ArmIncoming) {
   SmallPtrSet<const Value *, 8> Spine;
   for (const Value *V = ArmIncoming; isPhiCall(V);) {
@@ -137,8 +137,8 @@ SwitchClass caseArmClass(Value *Incoming, BasicBlock *Block) {
     return SwitchClass::Phase;  // empty case (straight-through); not content.
   Value *Base = walkPhaseSpine(Incoming, Block);
   if (Base != Incoming) {
-    // The spine consumed ≥1 `cq_phi`; an in-arm value-changing base is the mixed
-    // `q=q*7; rz(q)` lineage (treated Value — `mixed` fires downstream).
+    // The spine consumed ≥1 retired `cq_phi_<sfx>`; an in-arm value-changing
+    // base is the mixed `q=q*7; rz(q)` lineage (Value; `mixed` fires later).
     if (auto *BI = dyn_cast<Instruction>(Base);
         BI && BI->getParent() == Block && isValueChangingOp(Base))
       return SwitchClass::Value;
@@ -149,20 +149,20 @@ SwitchClass caseArmClass(Value *Incoming, BasicBlock *Block) {
   return isValueChangingOp(Base) ? SwitchClass::Value : SwitchClass::Phase;
 }
 
-// G6 PHASE — each content arm is a const-folded phase gate over its case literal
-// (`clang -O1` folds the arm `cq_phi` arg-0 to the case constant — the §5
-// re-anchor signature), a pure spine, and a classical angle.
+// G6 PHASE — the merge-φ ladder's phase proof, written for the RETIRED register
+// form: each content arm a `cq_phi_<sfx>` gate whose arg-0 `clang -O1` folded to
+// the case literal, a pure spine, and a classical angle. That form now declines
+// in `resolveSources`, and a register-free phase switch has no merge φ and is
+// accepted by `classifyPhaseKickbackSwitch` instead, so on a valid module this
+// proof only declines (e.g. a distinct tainted incoming, MUX-EXCH).
 bool proveSwitchPhase(const SwitchShape &S, TaintSet &Taint) {
   // The phase model is single-rail on the SCRUTINEE: the default/straight-through
-  // edge carries q itself, and the WI-2 emitter routes q and RAUWs the merge -> q
-  // (IMPLEMENTATION-4.5 §4A). A straight-through that is a DIFFERENT tainted rail
-  // %b would be silently dropped (its state/phase lost) while the case arms'
-  // q-encoding const rails are muxed against an unrelated wire — an over-accept
-  // under either emitter model. Require the straight-through to BE the scrutinee.
-  // (A derived `cq_phi(q)` straight-through is independently declined by the
-  // driver's G10 unowned-data-use scan.) This also forces the case-literal and
-  // arm-const WIDTHS to be structurally equal, so the per-arm width guard below is
-  // belt-and-suspenders defense-in-depth.
+  // edge carries q itself (pre-3qlq, the emitter routed q and RAUWed the merge to
+  // q). A straight-through that is a DIFFERENT tainted rail %b would be silently
+  // dropped while the case arms are muxed against an unrelated wire — an
+  // over-accept. Require the straight-through to BE the scrutinee. This also
+  // forces the case-literal and arm-const WIDTHS to be structurally equal, so the
+  // per-arm width guard below is belt-and-suspenders defense-in-depth.
   if (S.StraightThrough != S.SI->getCondition()) {
     diagnoseUnderControl(S.SI, "control flow");
     return false;
@@ -204,11 +204,11 @@ bool proveSwitchPhase(const SwitchShape &S, TaintSet &Taint) {
   return true;  // clean homogeneous phase switch (would-be-accept).
 }
 
-// G6 VALUE — each content arm is a pure value chain bottoming at the SHARED routed
-// base `p` = the straight-through (default-edge) incoming, with `p != q` (C2
-// anchor; routing the scrutinee would clobber the eq-flags). WI-1 established the
+// G6 VALUE — each content arm is a pure value chain bottoming at the SHARED base
+// `p` = the straight-through (default-edge) incoming, with `p != q` (C2 anchor;
+// writing the scrutinee would clobber the eq-flags). WI-1 established the
 // base-identity / purity floor; WI-3 completes the proof into a faithful mirror of
-// the diamond value path (ArmClassify.cpp): the §3c clobber (G7), the routed-base
+// the diamond value path (ArmClassify.cpp): the §3c clobber (G7), the shared-base
 // wire-staleness guard, and the derived-base own-angle guard all land here beside
 // the value emitter, each PRE-MUTATION (Rule 9 detect-before-mutate) so no
 // off-pattern shape is ever emitted+flattened before a downstream abort.
@@ -219,16 +219,16 @@ bool proveSwitchValue(const SwitchShape &S, TaintSet &Taint) {
     return false;
   }
 
-  // G7 §3c clobber (WI-3) — the routed base `p` must be DISJOINT from the
-  // SCRUTINEE's transitive taint provenance. Routing+rewriting a register the
+  // G7 §3c clobber (WI-3) — the shared base `p` must be DISJOINT from the
+  // SCRUTINEE's transitive taint provenance. Rewriting a register the
   // scrutinee reads clobbers the very wire the eq-flags are minted from: the
   // flag-strip premise `icmp_inv(q, c_i)` reads the same basis as the mint, and
   // that premise dies with the rewrite (information-theoretically impossible to
   // both keep `p`'s answer and disentangle the scrutinee — §3c). `condProvenance`
   // seeds the scrutinee-read set (its arg-1 angle exclusion intact); a value arm
-  // routed over `p` while the scrutinee reads `p`'s diagonal-alias closure (RAUW
-  // collapses `%qd = cq_phi(%q,·)` and `%q` to ONE handle, so SSA-value
-  // disjointness from `q` is NOT wire disjointness) is the silent miscompile.
+  // over `p` while the scrutinee reads `p`'s diagonal-alias closure (pre-3qlq
+  // register form: RAUW collapsed `%qd = cq_phi_si32(%q,·)` and `%q` to ONE
+  // handle, so SSA-value disjointness was NOT wire disjointness) is the miscompile.
   // The PERMANENT string fires on the proven identity (`p` itself is read); a
   // mere shared-wire alias declines GENERIC `control flow` — the flat-path
   // Defect-2 discipline (never brand a shape information-theoretically impossible
@@ -241,15 +241,15 @@ bool proveSwitchValue(const SwitchShape &S, TaintSet &Taint) {
     return false;
   }
 
-  // Routed-base WIRE staleness (WI-3 Rule-13 clearance) — the routed base `p`'s
-  // physical wire (its diagonal-alias closure: the backward `cq_phi` arg-0 chain)
-  // must gain NO non-diagonal (Ry/`cq_theta`) in-place gate. A chained theta
-  // reaching the wire through a SIBLING SSA name of the closure
-  // (`%pd = cq_phi(%p,·); %p2 = cq_theta(%p,·)`) is invisible to the §3c clobber
+  // Shared-base WIRE staleness (WI-3 Rule-13 clearance) — the shared base `p`'s
+  // physical wire (with its diagonal-alias closure, the retired `cq_phi_<sfx>`
+  // arg-0 chain) must gain NO non-diagonal (Ry/`cq_theta`) in-place gate. A
+  // chained theta reaching the wire through a SIBLING SSA name
+  // (`%p2 = cq_theta(%p,·)`) is invisible to the §3c clobber
   // scan above (`condProvenance` stops AT a theta source, never entering its
   // tainted arg-0) and to G10 (which seeds only the SCRUTINEE `q`, never `p`) —
-  // yet post-RAUW the route-in reads the POST-Ry wire while the chain names the
-  // PRE-Ry RECORD: the stale-record family, replayed onto the rail as a
+  // yet post-RAUW the preload copy and the hoisted chain read the POST-Ry wire
+  // while the chain names the PRE-Ry RECORD: the stale-record family, a
   // verify-clean wrong unitary. Position-free walk — ANY theta on the wire
   // declines (over-decline is safe). Mirrors the diamond value twin
   // (ArmClassify.cpp:928) so the switch shares the diamond's primary guard rather
@@ -268,15 +268,14 @@ bool proveSwitchValue(const SwitchShape &S, TaintSet &Taint) {
     return false;
   }
 
-  // A DERIVED routed base's OWN angle must be classical — the arg-1 parallel of
-  // criterion 3 (Rule 3). Without this the region is fully EMITTED and FLATTENED
-  // before `RotationLowering`'s own angle guard fires (mutate-then-decline, a
-  // Rule-9 detect-before-mutate violation; under a non-fatal-DS_Error host it
-  // leaves a half-mutated broken module — there is NO downstream backstop). The
-  // forward G3 walk (`mergeReachesRotationArg1`) cannot see it: the tainted angle
-  // is UPSTREAM of the straight-through incoming, never a forward user of the
-  // merge phi. Declines PRE-MUTATION, source-located, with the canonical
-  // `rotation angle` string. Mirrors the diamond value twin (ArmClassify.cpp:944).
+  // A DERIVED shared base's OWN angle must be classical — the arg-1 parallel of
+  // criterion 3 (Rule 3), written for a `cq_phi_<sfx>(x, θ)` base. VACUOUS since
+  // 3qlq: that register form declines in `resolveSources`, so `isPhiCall` matches
+  // nothing on a valid module (kept, see `isPhiCall`). Pre-3qlq, without it the
+  // region was EMITTED and FLATTENED before `RotationLowering`'s angle guard
+  // fired (mutate-then-decline), and the forward G3 walk cannot see an angle
+  // UPSTREAM of the straight-through incoming. Mirrors the diamond value twin
+  // (ArmClassify.cpp:944).
   if (auto *BaseCI = dyn_cast<CallInst>(P);
       BaseCI && isPhiCall(BaseCI) && BaseCI->arg_size() >= 2 &&
       Taint.Tainted.count(BaseCI->getArgOperand(1))) {
@@ -297,16 +296,16 @@ bool proveSwitchValue(const SwitchShape &S, TaintSet &Taint) {
       diagnoseUnderControl(Chain.MixedPhi, "mixed phase/value arm");
       return false;
     }
-    if (Chain.Base != P) {  // bottoms anywhere but the shared routed base.
+    if (Chain.Base != P) {  // bottoms anywhere but the shared base.
       diagnoseUnderControl(S.SI, "value-arm swap-route");
       return false;
     }
     if (Chain.HasQQ) {
       // A Q+Q link (a SECOND tainted operand, `p op r` with r an independent
-      // tainted register) entangles a second superposed rail into the routed
-      // chain; method-B reverse-play threads a single operand and cannot
-      // disentangle r (Rule 8 no-cloning / linear lineage). Mirrors the flat
-      // if/else value twin (ArmClassify.cpp). Deferred per PRD §8.3.
+      // tainted register) is deferred per PRD §8.3, mirroring the flat if/else
+      // value twin (ArmClassify.cpp). The recorded reason is pre-3qlq: the
+      // route's method-B reverse-play threaded a single operand and could not
+      // disentangle r (Rule 8 no-cloning / linear lineage).
       diagnoseUnderControl(S.SI, "value-arm swap-route");
       return false;
     }

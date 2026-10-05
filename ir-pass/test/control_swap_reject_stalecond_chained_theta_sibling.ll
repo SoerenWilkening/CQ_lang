@@ -7,11 +7,11 @@
 ; The condition `%c = (%qc > 5)` reads the chained theta `%qc = cq_theta(%q,
 ; 1.25)`; a SIBLING chained theta `%qs = cq_theta(%q, 0.25)` re-rotates `%q`'s
 ; physical wire, and is scheduled BEFORE the compare so the positional
-; compare→branch scan does not see it. The swap-route emitter mints the flag at
-; the BRANCH, so it would read the post-`%qs` basis — the wrong arm fires AND
-; `icmp_inv` cannot strip the flag (the MINT_AT_COMPARE P2 family; the one-hop
-; version control_swap_reject_stalecond_chained_theta.ll is a PERMANENT
-; decline). condProvenance collects `%qc` but stops AT the theta source
+; compare→branch scan does not see it. The phase emitter mints the flag at the
+; BRANCH, so it would read the post-`%qs` basis — the kickback lands on the wrong
+; branch AND the `_unc` strip cannot clear the flag (the MINT_AT_COMPARE P2
+; family; the one-hop version control_swap_reject_stalecond_chained_theta.ll is a
+; PERMANENT decline). condProvenance collects `%qc` but stops AT the theta source
 ; (never entering its tainted arg-0), so before test_C_libtooling-6vk the
 ; condition-seeded wire walk stopped at `%qc` and the sibling `%qs` (a user of
 ; `%q`, not `%qc`) was invisible — exit 0, the phase region accepted and
@@ -19,8 +19,7 @@
 ; the wire origin `%q`, exempts the on-ancestry producers (`%qc`, `%q`), and
 ; flags the OFF-ancestry sibling `%qs`. Guard:
 ; ArmClassify::wireGainsNonDiagonalGate via WireWalk::findNonDiagonalWireGate
-; (position-free). Phase arm, so the routed-base guard does not apply — the
-; defect is the condition-side mint.
+; (position-free). Phase arm: the defect is the condition-side mint.
 ;
 ;
 ; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error

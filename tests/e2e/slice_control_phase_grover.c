@@ -9,17 +9,17 @@
        ... the four lines again ...
        measure q
 
-   WHY THIS SLICE EXISTS, and it is not "one more Grover". Every
-   `slice_control_*grover*` golden in this tree PRE-DATES 3qlq and encodes a
-   CONTROLLED TENSORED Rz — `cqrt_rz_<W>` is "Rz on each qubit of the register"
-   (docs/backend.md:995), so the phase it puts on the marked branch is
-   (-1)^popcount(target) — which is +1 for |5> — and a per-qubit DIAGONAL gate
-   fixes |0..0>, so the reflection can never put -1 there. Those goldens are
+   WHY THIS SLICE EXISTS. Every `slice_control_*grover*` golden that PRE-DATED
+   3qlq encoded a CONTROLLED TENSORED Rz — `cqrt_rz_<W>` is "Rz on each qubit of
+   the register" (docs/backend.md:995), so the phase it put on the marked branch
+   was (-1)^popcount(target) — +1 for |5> — and a per-qubit DIAGONAL gate fixes
+   |0..0>, so the reflection could never put -1 there. Those goldens were
    self-consistent traces OF THE IDENTITY ON q (PRD §1, measured 2026-09-05 at
-   HEAD 52d7764). This slice is the first one whose trace is an oracle.
+   HEAD 52d7764). This slice was the first whose trace is an oracle; every Grover
+   golden in the tree now carries only `cqrt_rz_i1` (no wider Rz, no cswap).
 
-   EXPECTED TRACE SHAPE (words, not a golden — the golden is regenerated once the
-   lowering exists): per region, in source order —
+   TRACE SHAPE (written before the lowering existed; the golden now shows exactly
+   this): per region, in source order —
        ONE flag mint   cq_template_icmp_{eq}_i32_hl(h_q, k) -> h_f
        ONE gate        cqrt_rz_i1(h_f, PI)          UNCONTROLLED, on the FLAG
        ONE strip       cq_template_icmp_{eq}_i32_hl_unc(h_f, h_q, k)

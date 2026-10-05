@@ -2,18 +2,18 @@
 ; IMPLEMENTATION §4 WI-5; bd memory divergent-arm-uncompute-soundness-guard). The
 ; reverted-`543bd85` shape: a tainted DATA handle whose MUTATING gates span the
 ; exclusive arms of a classical branch — `entry` preps `%h` (ry once on every
-; path), then arm-a applies `cq_phi(a)` [rz(a)] ONLY and arm-b applies
-; `cq_phi(b)` [rz(b)] ONLY, joined by a DEAD merge φ.
+; path), then arm-a applies `cq_theta(a)` [ry(a)] ONLY and arm-b applies
+; `cq_theta(b)` [ry(b)] ONLY, joined by a DEAD merge φ.
 ;
-; The single whole-DAG adjoint lands at the merge post-dominator. But `rz(a)` and
-; `rz(b)` each run on only ONE exclusive path, so neither DOMINATES the merge — a
-; single unconditional `rz(-a)·rz(-b)` at the merge would fire BOTH inverses on
+; The single whole-DAG adjoint lands at the merge post-dominator. But `ry(a)` and
+; `ry(b)` each run on only ONE exclusive path, so neither DOMINATES the merge — a
+; single unconditional `ry(-a)·ry(-b)` at the merge would fire BOTH inverses on
 ; BOTH paths (the register corrupted, then `cqrt_free`'d = a verify-clean silent
 ; quantum miscompile). Pre-WI-5 the placement guard `!DT.dominates(gate, At)`
 ; SILENTLY skipped (register leaked, `opt` exit 0). WI-5 flips it to a
-; source-located loud decline: per-arm reverse-play is PHASE 4's job
-; (the swap-route emitter), not Phase-5 data uncompute — Phase 5 declines and
-; defers (PRD §2.4 settles the open policy: option (b), loud-diagnose).
+; source-located loud decline: per-arm reverse-play is not Phase-5 data
+; uncompute's job — Phase 5 declines and defers (PRD §2.4 settles the open
+; policy: option (b), loud-diagnose).
 ;
 ; Contrast lowering_uncompute_branch_botharms.ll (ACCEPT): there the only mutation
 ; (`ry`) is in the common dominator `entry` and the arms carry a NON-mutating

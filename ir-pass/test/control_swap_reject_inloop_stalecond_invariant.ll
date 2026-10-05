@@ -6,8 +6,8 @@
 ; and re-rotated INSIDE it:
 ;
 ;     int q = u0; cq_theta(&q, .5);
-;     for (...) { if (q > 5) g = cq_phi(q, a);  int g = q; cq_theta(&g, t); }
-;                     ^^^^^ loop-INVARIANT      ^^^^^^^^^^^^^^ on q's own wire
+;     for (...) { if (q > 5) cq_phi(a);      cq_theta(&q, t); }
+;                     ^^^^^ loop-INVARIANT   ^^^^^^^^^^^^^^^ on q's own wire
 ;
 ; THIS IS THE ONE THE INCREMENT MUST NOT ACCEPT, and it is one edge away from the
 ; one it must. `control_swap_inloop_post_region_theta.ll` is the SAME picture with
@@ -19,8 +19,8 @@
 ;   * `%q` here is bound ONCE, before the loop. At iteration 2 the wire has been
 ;     relabelled by the previous trip's `cqrt_ry` while `%q` still denotes the
 ;     pre-loop record, so the flag encodes a predicate of the WRONG basis: the
-;     wrong arm fires AND `icmp_inv` cannot strip the flag (the verify-clean
-;     stale-flag miscompile, oracle investigation_mint_at_compare.py P2).
+;     kickback lands on the wrong branch AND the `_unc` strip cannot clear the
+;     flag (the stale-flag miscompile, oracle investigation_mint_at_compare.py P2).
 ;
 ; MECHANICALLY: `gateIsHarmless` leg 2 takes the SEED's own definition as its
 ; barrier, and `%q`'s definition sits in `%entry`, which is NOT on the back-edge

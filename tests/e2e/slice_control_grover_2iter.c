@@ -8,7 +8,7 @@
    or that the reflection reflects about |0>, was TRUE OF THE SOURCE and FALSE OF
    THE EMITTED CIRCUIT. It becomes true only from 3qlq Inc 1 on, where the phase is
    a BRANCH phase by kickback (rz_i1 on the minted flag), not a register Rz. The
-   older prose is left verbatim rather than silently corrected; read it with this.
+   older prose was revised on 2026-10-05 (bd 7pxe); remaining register-Rz wording is history.
    (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_grover_2iter.c — bd test_C_libtooling-lom0 Increment 4 e2e:
    TWO COMPLETE GROVER ITERATIONS. The customer the increment was built for.
@@ -53,18 +53,18 @@
 
    WHAT THE GOLDEN WITNESSES, and — say this plainly — WHAT IT DOES NOT.
 
-   It witnesses ORDER: for each of the four regions the flag is minted, routed,
-   Rz'd, routed back, the work rail freed, the flag `_unc`-STRIPPED and FREED,
-   and only THEN does the next `cqrt_ry_i32` fire. That is the increment's whole
+   It witnesses ORDER: for each of the four regions the flag is minted, takes
+   the phase as an uncontrolled `cqrt_rz_i1` (kickback), is `_unc`-STRIPPED and
+   FREED, and only THEN does the next `cqrt_ry_i32` fire. That is the increment's whole
    soundness claim in emitted form — the position-aware accept says the region
    holds no live record of the wire once its strip has run, and the trace shows
    the strip and the free preceding every non-diagonal gate.
 
-   It also witnesses the ONE-RAIL property: `cqrt_alloc_i32` appears exactly five
-   times (the register `h0`, plus one work rail per region) and every reassignment
-   is an in-place `cqrt_addc_i32`, so no ancestor rail is ever minted. When any of
-   the four Ry gates fires there is no other allocated rail entangled with `h0`
-   except the region ancillas, which are freed before it.
+   It also witnesses the ONE-RAIL property: `cqrt_alloc_i32` appears exactly once
+   (the register `h0`; each region's flag is minted by its compare template) and
+   every reassignment is an in-place `cqrt_addc_i32`, so no ancestor rail is ever
+   minted. When any of the four Ry gates fires there is no other allocated rail
+   entangled with `h0` except the region flags, which are freed before it.
 
    IT IS NOT, BY ITSELF, CORRECTNESS EVIDENCE. A cleared golden encoded a
    dephased circuit once already (bd test_C_libtooling-nepx: the shipped

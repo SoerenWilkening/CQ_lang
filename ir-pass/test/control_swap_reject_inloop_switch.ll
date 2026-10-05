@@ -3,7 +3,7 @@
 ; backedge (test_C_libtooling-d8jl, the `switch` sibling of the `br` in-loop
 ; guard). Source shape:
 ;
-;     for (...) { switch (q) { case 1: q=cq_phi(q,a); case 2: q=cq_phi(q,b); } }
+;     for (...) { switch (q) { case 1: cq_phi(a); break; case 2: cq_phi(b); break; } }
 ;
 ; BEFORE the d8jl guard this declined via the `classifySwitchRegion` G-ladder
 ; with the GENERIC `control flow under quantum control` (one of the structural
@@ -11,9 +11,7 @@
 ; `flatControlInLoop` guard in `detectControlRegions` (run before
 ; `classifySwitchRegion`, mirroring the `br` Diamond/IfElse guard) declines with
 ; the accurate `control flow inside a loop body` message. No in-loop tainted
-; `switch` is ever soundly ACCEPTED (the N-way route + merge would flatten across
-; the backedge), so this only SHARPENS an already-declining path — over-declining
-; is always safe (Prime Directive).
+; `switch` is ACCEPTED today, so this only SHARPENS an already-declining path.
 ;
 ;
 ; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error

@@ -4,7 +4,8 @@
  * surface is 33 symbols (below); Phase 4 (PRD §2.8) adds the controlled
  * surface — cqrt_rz_<W>_controlled[_inv] (7 widths × 2) and
  * cqrt_x/h/cnot_controlled — each prepending one i32 control-flag
- * handle as argument 0 (PRD §1.2).
+ * handle as argument 0 (PRD §1.2). Since bd 3qlq the pass mints no
+ * controlled Rz; those symbols are ABI reserve.
  *
  * Phase 7.1 Increment D (FROZEN) adds the half-precision fp width f16 to
  * the rotation-lowering path — cqrt_alloc_f16 / cqrt_measure_f16 /
@@ -156,8 +157,9 @@ void cqrt_rz_f80 (int32_t handle, double angle);  /* bd 3c6m.4 — long double (
  * thread through). 7 widths × {controlled, controlled_inv}. Trace (no
  * return-value suffix), control flag printed as a leading h<N>:
  *     "cqrt_rz_<W>_controlled(h<ctrl>, h<handle>, <angle>)".
- * Declared + defined this phase; the IR pass begins emitting the
- * controlled rz in WP3 (substitution of in-shadow gate bodies).
+ * Declared and defined, but NOT emitted: since bd 3qlq a phase arm is a
+ * kickback (an uncontrolled `cqrt_rz_i1` on the condition flag), and
+ * no caller asks `controlledRotationFn` for the Rz stem. ABI reserve.
  * ----------------------------------------------------------------- */
 void cqrt_rz_i1_controlled (int32_t ctrl, int32_t handle, double angle);
 void cqrt_rz_i8_controlled (int32_t ctrl, int32_t handle, double angle);
@@ -187,8 +189,8 @@ void cqrt_rz_f80_controlled_inv (int32_t ctrl, int32_t handle, double angle);  /
  * it. FROZEN-DESIGNATE (like the kjd1 `cqrt_copy_f<W>_controlled`
  * family).
  *
- * WHY IT EXISTS, and why it is NOT interchangeable with the route: the
- * swap-route phase-arm lowering (`cswap; gate; cswap`) is sound only
+ * WHY IT EXISTS: the retired swap-route phase-arm lowering
+ * (`cswap; gate; cswap`, removed by bd 3qlq) was sound only
  * because the arm gate is a no-op on the INACTIVE `|0>` work rail —
  * true for `Rz = diag(1, e^{i.theta})`, FALSE for
  * `Ry(theta)|0> = cos|0> + sin|1>`, which hands back a DIRTY rail
@@ -240,9 +242,10 @@ void cqrt_ry_f80_controlled(int32_t ctrl, int32_t handle, double angle);
  * Controlled Ry inverse (npu.6) — the controlled inverse of the
  * Ry-prep rotation (`cqrt_ry_<W>`, the lowered cq_theta). Same
  * `(i32 ctrl, i32 handle, double angle)` shape as the controlled Rz
- * above. Emitted ONLY by the gated-switch MUX-EXCH lowering to
- * UNCOMPUTE a non-selected source's single-Ry prep back to |0> on the
- * branches where `cqrt_cswap` did NOT move it: `Ry†(angle)` controlled
+ * above. NOT emitted today: its one emitter, the gated-switch MUX-EXCH
+ * lowering, was excised in commit 7cde677. It UNCOMPUTED a non-selected
+ * source's single-Ry prep back to |0> on the branches where
+ * `cqrt_cswap` did NOT move it: `Ry†(angle)` controlled
  * on ¬f_q (the source was prepared but not selected, so it stays
  * entangled with the scrutinee unless its prep is reversed — Bennett /
  * QROM disentangle). A SEPARATE RESERVE from the plain
@@ -263,9 +266,9 @@ void cqrt_ry_f64_controlled_inv(int32_t ctrl, int32_t handle, double angle);
 
 /* -----------------------------------------------------------------
  * Gate primitives (backend.md §11.4) — handle-typed, void. `cqrt_x` IS
- * pass-emitted since Phase 4.1: the swap-route emitter brackets a
- * ¬flag (else / false-successor) arm in a self-inverse `cqrt_x(flag)`
- * pair so the enclosed `cqrt_cswap` routes on the negated flag. The
+ * pass-emitted: a ¬flag (else / false-successor) phase arm's kickback
+ * `cqrt_rz_i1` is bracketed in a self-inverse `cqrt_x(flag)` pair, and so
+ * is the abort park's `cqrt_cswap` on a negated arm. The
  * `cqrt_cnot` and `cqrt_toffoli` ARE pass-emitted too — they are the
  * 3c6m.12 compound-condition FLAG NETWORK, minted in THREE places with one
  * shape (`And` -> a single `cqrt_toffoli(L,R,G)`; `Or` -> `cqrt_cnot(L,G)` +
@@ -301,18 +304,14 @@ void cqrt_cnot_controlled(int32_t ctrl, int32_t target_ctrl, int32_t tgt);
 /* -----------------------------------------------------------------
  * Controlled-SWAP / Fredkin (npu.4) — `cqrt_cswap(i32 ctrl, i32 a,
  * i32 b)` swaps registers a and b iff the i32 control flag is set.
- * It is pass-emitted: the RSSA swap-route control emitter
- * (`SwapRouteEmit`, Phase 4) routes a tainted-`br` arm's operand into a
- * |0> work rail with `cqrt_cswap(flag, value, rail)` and routes the
- * active result back with the adjoint split — `cqrt_cswap(flag, value,
- * railResult)` — the tainted `phi` being the inverse of the `br` on the
- * same live flag (SWAP is an involution, so the route-back IS the
- * adjoint helper call). Phase 4.1 routes phase arms; 4.2 routes the
- * value-register of a method-B value arm (and brackets the ¬flag arm in
- * a `cqrt_x` pair, see the gate primitives above). SWAP is an
- * involution, so the controlled-SWAP is its own inverse — no `_inv`
- * twin. (The deleted controlled-op generation's gated-switch MUX-EXCH
- * use is gone with commit 7cde677; routing is the only caller now.)
+ * It has ONE pass emitter: the 7.2 noreturn-arm park (`AbortParkEmit`,
+ * through `emitRoute` in SwapRouteEmit.cpp), which swaps the pre-abort
+ * register into a fresh, KEPT graveyard rail under the abort flag
+ * (`cqrt_x`-bracketed for a negated arm). The Phase-4 swap route that
+ * also used it for phase arms (4.1) and method-B value arms (4.2) was
+ * retired by bd 3qlq, and the gated-switch MUX-EXCH use went with
+ * commit 7cde677. SWAP is an involution, so the controlled-SWAP is its
+ * own inverse — no `_inv` twin.
  * Same no-arrow void trace convention; all three args print as h<N>.
  * ----------------------------------------------------------------- */
 void cqrt_cswap(int32_t ctrl, int32_t a, int32_t b);

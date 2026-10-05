@@ -177,14 +177,12 @@ bool selReachesRotationArg1(SelectInst *Sel, const TaintSet &taint) {
 // enforce the §16.7 "decline coherent operands" intent that the forward-only
 // proxy alone missed. See [[select-merge-phase-operand-dephasing]].
 //
-// CROSS-MODULE INVARIANT (WI-5 Rule-13 clearance, the one non-material residual):
-// the walk only recurses through `taint.Tainted` operands, so a `cq_phi` on a
-// CLASSICAL operand (untainted result) is correctly NOT flagged — it carries no
-// real relative phase because `RotationLowering` deletes a classical-operand
-// `cq_phi` (Rz on a basis state is unobservable; Rule 3). If classical-`cq_phi`
-// handling ever changes (its result becomes tainted, or it stops being deleted),
-// this gate must be re-reviewed — a classical phase reaching the basis copy would
-// otherwise leak. Holds at HEAD; flagged here per the §8.3 second-review note.
+// The `cq_phi` this half looks for is the retired register form `cq_phi_<sfx>`
+// (`isPhiCall`), so it is vacuous since 3qlq (see the note at
+// `operandCarriesPhase`). Pre-3qlq CROSS-MODULE INVARIANT (WI-5 Rule-13
+// clearance): the walk recursed only through `taint.Tainted` operands, so a
+// `cq_phi_<sfx>` on a CLASSICAL operand was not flagged, because
+// `RotationLowering` deleted it (Rz on a basis state is unobservable; Rule 3).
 // Op's ROTATION ANCESTRY: Op itself plus the backward rotation-arg-0 chain —
 // the in-place gates that PRODUCE Op's record (a chained `cq_theta`/`cq_phi`
 // result denotes a record on its parent's physical wire; rotation lowering

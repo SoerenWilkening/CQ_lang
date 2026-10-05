@@ -4,7 +4,6 @@
 ;
 ;     for (i = 0; i < 3; ++i) {
 ;         if (q == 5) cq_theta(&r, 0.9);       <-- the in-place Ry arm
-;         q = cq_phi(q, 0.2);
 ;         if (k == i) { cq_theta(&q, 0.3);     <-- the DEFERRED gate (P1)
 ;                       return cq_measure(q) + cq_measure(r); }
 ;     }
@@ -18,9 +17,9 @@
 ; cannot reach it, because the block it lives in RETURNS. So the flat proof
 ; succeeds INSIDE a loop, and on the trace where `G` fires, that iteration's whole
 ; region stream (mint, controlled rotation, strip, free) has already run and the
-; function leaves — no later mint reads the moved wire. Measured: ORACLE DECLINE
-; -> HEAD ACCEPT, linked and run, 2 region activations then the gate at `k = 1`,
-; strict stage 2b clean.
+; function leaves — no later mint reads the moved wire. Measured pre-3qlq:
+; ORACLE DECLINE -> HEAD ACCEPT, linked and run, 2 region activations then the
+; gate at `k = 1`, strict stage 2b clean.
 ;
 ; ⚠ §13.1's ACCEPT SHAPE DOES NOT CONSTRAIN EXIT COUNT, AND THAT IS DELIBERATE
 ; RATHER THAN AN OVERSIGHT — it is `flatRegionRollableInLoop`'s (A)-(D) that
@@ -41,7 +40,8 @@
 ; stripped and freed inside the iteration).
 ;
 ; THE BODY BELOW IS VERBATIM `clang -O1` OUTPUT (`review3/L8/p19*.c`), function
-; renamed to `@example`, because the shape is entirely about what the optimizer
+; renamed to `@example` (3qlq then deleted the body's uncontrolled
+; `q = cq_phi(q, 0.2)`), because the shape is entirely about what the optimizer
 ; does to a two-exit loop: `%9`/`%26` are the rotated-`i1` exit predicate SimplifyCFG
 ; introduces, and hand-transcribing them would have tested a different program.
 ;
@@ -55,7 +55,6 @@
 ; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R:[a-zA-Z0-9_.]+]], double 9.0
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
-; the source's own diagonal reflection stays uncontrolled and in the body:
 ; the DEFERRED P1 gate is in the EARLY-EXIT block, on its own, after the branch:
 ; CHECK: call void @cqrt_ry_i32(i32 %[[Q]], double 3.0
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[Q]])

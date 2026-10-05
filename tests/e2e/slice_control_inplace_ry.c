@@ -9,8 +9,8 @@
        if (q == 5) cq_theta(&r, 0.9);     // a controlled Ry on r
        measure q; measure r
 
-   WHY THIS IS NOT A SWAP ROUTE, which is the whole point of the increment. The
-   route's premise is that the arm gate is a no-op on the INACTIVE |0> work rail:
+   WHY THIS IS NOT A SWAP ROUTE (retired since 3qlq), the point of the increment.
+   The route's premise was that the arm gate is a no-op on the INACTIVE |0> rail:
    true for Rz = diag(1, e^{i.theta}), FALSE for Ry(t)|0> = cos|0> + sin|1>,
    which hands that rail back DIRTY and ENTANGLED with the flag (Rules 6/8).
    Cleaning it would need a controlled Ry-dagger — method-A, dropped 2026-06-09

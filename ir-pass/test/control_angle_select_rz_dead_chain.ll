@@ -1,32 +1,21 @@
-; control_angle_select_rz_dead_chain.ll — ACCEPT: the Rz stem over a DERIVED base
-; whose chain is dead afterwards (bd drbq Inc 2b; the §12.1 transparency
+; control_angle_select_rz_dead_chain.ll — ACCEPT: the Rz stem beside a DERIVED
+; register whose chain is dead (bd drbq Inc 2b; the §12.1 transparency
 ; witness, in the select form).
 ;
-;     int p = u1; cq_theta(&p,.3); int r = p * 5;
-;     r = cq_phi(r, q == 5 ? .9 : .3);       // r never read again
+;     int p = u1; cq_theta(&p,.3); int r = p * 5;   // r never read
+;     cq_phi(q == 5 ? .9 : .3);
 ;     return cq_measure(q);
 ;
-; WHAT IT PINS, and it is a NEGATIVE-SPACE fact worth stating precisely because
-; the obvious expectation is wrong. PRD §12.1 splits the two stems: a
-; `cqrt_rz_<W>_controlled` is NOT a DAG link, gets NO adjoint, and is NOT frozen,
-; because a diagonal gate moves no basis label. One might therefore expect the
-; dead `mul` chain to be uncomputed and freed here. It is NOT — and the emitted
-; stream is BYTE-IDENTICAL to the drbq Inc-2a in-place Rz DIAMOND over the same
-; dead chain (measured, hand-IR twin). So 2b inherits 2a's disposition exactly
-; and moves nothing.
+; WHAT IT PINS. The register-free phase touches no data register, and the dead
+; `mul` chain is reclaimed: the `mul` is uncomputed and its rail freed, then the
+; root's Ry is reversed (since bd 5c5b the root stays allocated: its Ry-dagger
+; restores the runtime seed |u1>, not |0>). The select then lowers by kickback
+; on the flag: mint, `cqrt_x`-bracketed `cqrt_rz_i1(f, .3)`, `cqrt_rz_i1(f, .9)`,
+; strip, free.
 ;
-; The contrast that makes it legible: the wholly UNCONTROLLED twin
-; (`r = cq_phi(r,.3); r = cq_phi(r,.6);`, no condition at all) DOES cancel its
-; rotations and uncompute the `mul`, freeing its rail (since bd 5c5b the root stays
-; allocated: its Ry-dagger restores the runtime seed |u1>, not |0>). That difference is bd
-; `wt3l`'s open cancel/leak/keep question about a user Rz on a possibly-dead
-; rail; this increment does not touch it in either direction, and this fixture
-; exists so a future reader sees which side of it the angle select lands on.
-;
-; (The C-source manual by-difference twin of THIS shape declines for an unrelated
-; pre-existing reason — with `r` dead, `clang -O1` leaves the diamond with no
-; merge phi and `recoverRegion` refuses it. The hand-IR 2a diamond, which keeps
-; the phi, is the twin that matches byte for byte.)
+; (Pre-3qlq history: the phase was a `cqrt_rz_<W>_controlled` on `r`, and the
+; chain was then neither uncomputed nor freed, the bd `wt3l` contrast this
+; fixture was written for.)
 ; ORACLE DISPOSITION: RED on the pre-2b binary (`rotation angle under quantum
 ; control`, SelectClassify gate 3) — Rule 12 red-green.
 ;
@@ -53,12 +42,6 @@
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * call void @cqrt_x(   [superseded by the XCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

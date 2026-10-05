@@ -1,6 +1,6 @@
 ; control_inplace_ry_lifted_phi_after_region.ll — ACCEPT: a FLAT control-in-place
-; Ry arm followed by the canonical 5j5 one-register merge-phi lift
-; (`if (classical_c) r = cq_phi(r, θ);`) over the ROTATED register.
+; Ry arm followed by the canonical 5j5 one-register merge-phi lift (a classical
+; `if (OPQ)` join φ, its arm emptied by 3qlq) over the ROTATED register.
 ;
 ; bd test_C_libtooling-drbq Increment 3, ROUND-1 Rule-13 review finding F-L5-1.
 ; RED-GREEN: this file DECLINED `cq taint escape: tainted value muxed by a
@@ -24,11 +24,11 @@
 ; in the CFG (the conditionality is quantum, carried by the flag operand), and
 ; its OPERAND names a record the register no longer holds. See the site comment.
 ;
-; The emitted stream is byte-identical to the pre-Inc-3 oracle's: the region
-; lowers control-in-place and the classical `if` keeps its own block with a
-; plain uncontrolled `cqrt_rz_i32` inside it.
+; The region lowers control-in-place and the classical `if` keeps its own block,
+; now empty (pre-3qlq it held a plain uncontrolled `cqrt_rz_i32`).
 ;
-; VERBATIM `clang -O1` output for
+; VERBATIM `clang -O1` output (pre-3qlq register form; the migration then
+; deleted the OPQ arm's uncontrolled phase) for
 ;   volatile int OPQ = 1;
 ;   int slice(void) { int q=3, r=7;
 ;                     cq_theta(&q,0.5); cq_theta(&r,0.25);
@@ -82,7 +82,7 @@ declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr
 ; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 9.000000e-01)
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
-; The CLASSICAL guard keeps its own block and an UNCONTROLLED Rz on the same rail.
+; The CLASSICAL guard keeps its own (now empty) block.
 ; CHECK: br i1
 ; CHECK: call i32 @cqrt_measure_i32(i32 %[[Q]])
 ; CHECK: call i32 @cqrt_measure_i32(i32 %[[R]])

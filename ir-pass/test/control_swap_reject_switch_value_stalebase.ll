@@ -3,18 +3,17 @@
 ; switch value twin of control_swap_reject_value_stalebase_inarm.ll (the diamond
 ; fixture) — same isolation technique.
 ;
-; The routed base %pd = cq_phi(%p, 1.0) has a CLASSICAL angle (the angle guard is
-; silent). The chained `cq_theta(%p, ·)` sits IN-ARM, AFTER the chain op `add %pd, 3`
-; (dominated, no reach-back), so the position-aware straight-line guard
+; A single content case `r = p + 3;` is followed IN-ARM by a chained `cq_theta` on
+; `p` (dominated, no reach-back), so the position-aware straight-line guard
 ; (`declineStaleRecordOps`) ACCEPTS the add — and a SINGLE content case avoids a
-; sibling arm that guard would conservatively flag. The region must still decline: the
-; route-in/route-back cswaps and the method-B reverse-play read the routed WIRE at the
-; region boundary, and `{%pd, %p}` gains a non-diagonal (Ry) gate there, so replaying
-; the chain against the post-Ry rail is a verify-clean wrong unitary (stale-record
-; family). condProvenance(q) stops at the theta source and G10 seeds only the scrutinee
-; %q, so this is invisible to every other detection guard; `proveSwitchValue`'s
-; position-free guard owns the decline (mirrors the diamond value twin,
-; ArmClassify.cpp:928), not the valuePureChain backstop.
+; sibling arm that guard would conservatively flag. The region must still decline:
+; the shared base `p`'s wire gains a non-diagonal (Ry) gate, so the merge's preload
+; copy and the hoisted chain would read the POST-Ry wire while the chain names the
+; PRE-Ry record, a verify-clean wrong unitary (stale-record family).
+; condProvenance(q) stops at the theta source and G10 seeds only the scrutinee %q,
+; so this is invisible to every other detection guard; `proveSwitchValue`'s
+; position-free guard owns the decline (mirrors the diamond value twin), not the
+; valuePureChain backstop. (Pre-3qlq the base was `%pd = cq_phi(%p, 1.0)`.)
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}routed base predates a non-diagonal gate under quantum control

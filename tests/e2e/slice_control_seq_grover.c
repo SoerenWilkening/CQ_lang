@@ -8,7 +8,7 @@
    or that the reflection reflects about |0>, was TRUE OF THE SOURCE and FALSE OF
    THE EMITTED CIRCUIT. It becomes true only from 3qlq Inc 1 on, where the phase is
    a BRANCH phase by kickback (rz_i1 on the minted flag), not a register Rz. The
-   older prose is left verbatim rather than silently corrected; read it with this.
+   older prose was revised on 2026-10-05 (bd 7pxe); remaining register-Rz wording is history.
    (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_seq_grover.c — bd hcrg e2e smoke: the CUSTOMER shape.
    One Grover iteration's worth of structure — state prep, an oracle, the
@@ -25,9 +25,9 @@
    WHY THIS SLICE EXISTS BESIDE slice_control_seq_regions.c: that one is two
    adjacent diamonds on an untouched wire. This one puts real work BETWEEN the
    regions — a reversible sub, and an in-place Ry that ROTATES THE BASIS the
-   second region's condition reads. Region 2's flag is minted from region 1's
-   merge phi after region 1's emit has RAUW'd it to the live handle, so this is
-   the shape where a stale flag would show up as a wrong unitary. The gate stream
+   second region's condition reads. Region 2's flag is minted from the register
+   as it stands after region 1, the sub and the Ry, so this is the shape where a
+   stale flag would show up as a wrong unitary. The gate stream
    below is the byte-level record that region 1 is fully torn down — flag
    stripped and freed — before the sub, the Ry, and region 2's mint.
 
@@ -111,16 +111,16 @@
        cqrt_alloc_i32(0) -> h0            allocate the wire
        cqrt_ry_i32(h0, 0x1p-1)            S      : state prep
        cqrt_addc_i32(h0, 3)               S      : q += off, IN PLACE
-       ... region 1 (the oracle) on h0, flag h1 + work rail h2, both freed ...
+       ... region 1 (the oracle): flag h1, cqrt_rz_i1 on h1, strip, free ...
        cqrt_addc_i32(h0, -3)              S-dag  : q -= off, IN PLACE, NEGATED imm
        cqrt_ry_i32(h0, -0x1p-1)           S-dag  : the reflection's un-prep
-       ... region 2 (reflect about |0>) on h0, flag h3 + work rail h4, freed ...
+       ... region 2 (reflect about |0>): flag h2, cqrt_rz_i1, strip, free ...
        cqrt_addc_i32(h0, 3)               re-prep
        cqrt_measure_i32(h0)
 
-   `cqrt_alloc_i32` appears exactly three times — the wire and one work rail per
-   region — and every `cqrt_free` pairs with one of the two flags or two work
-   rails. There is NOTHING else allocated, so when the S-dagger `cqrt_ry_i32(h0,
+   `cqrt_alloc_i32` appears exactly once — the wire; each region's flag is
+   minted by its compare template — and every `cqrt_free` pairs with one of the
+   two flags. There is NOTHING else allocated, so when the S-dagger `cqrt_ry_i32(h0,
    -0x1p-1)` fires there is no live entangled basis record of the wire beside it,
    and the reflection composition this slice exists to demonstrate is coherent.
    That is precisely the property bd nepx said the shipped golden did not have.

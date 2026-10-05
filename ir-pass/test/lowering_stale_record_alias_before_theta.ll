@@ -1,18 +1,17 @@
 ; lowering_stale_record_alias_before_theta.ll — ACCEPT: the positive twin of
-; lowering_reject_stale_record_alias_sibling.ll, pinning that the diagonal-
-; alias seed closure stays POSITION-AWARE (test_C_libtooling-6j1).
+; lowering_reject_stale_record_alias_sibling.ll, pinning that the stale-record
+; check stays POSITION-AWARE (test_C_libtooling-6j1).
 ;
-; Same SSA graph as the reject fixture — the add reads the diagonal alias
-; `%qd = cq_phi(%q, ·)` and `%q`'s wire later gains a chained, NON-diagonal
-; `cq_theta` through the sibling name — but here the add is SCHEDULED BEFORE
-; the chained theta. The template is emitted AT the add's position and opaque
+; Before bd 3qlq the add read the diagonal alias `%qd = cq_phi(%q, ·)`; the
+; migration deleted that uncontrolled alias, so the add now reads `%q` itself.
+; `%q`'s wire later gains a chained, NON-diagonal `cq_theta`, but the add is
+; SCHEDULED BEFORE it. The template is emitted AT the add's position and opaque
 ; calls keep their order, so the emitted `cq_template_add` fires PRE-Ry,
-; capturing exactly the record `%qd` denotes onto its own fresh rail (the
-; lowering_stale_record_add_before_theta.ll boundary, one diagonal hop
-; removed). The closure must only ADD seeds for the backward wire walk — it
-; must not erase the dominance proof that makes this legitimate
-; use-then-re-rotate program keep lowering. The CHECK-NEXT order pins the
-; load-bearing property: the template between the rz and the second ry.
+; capturing exactly the record `%d` reads onto its own fresh rail (the
+; lowering_stale_record_add_before_theta.ll boundary). The check must not erase
+; the dominance proof that makes this legitimate use-then-re-rotate program keep
+; lowering. The CHECK-NEXT order pins the load-bearing property: the template
+; between the two ry's.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

@@ -4,12 +4,13 @@
 // Increment 1 (799w.1) — Case A "in-place persistent accumulator". A
 // classically-bounded loop whose every tainted value is a persistent rail
 // threaded through a loop-carried header phi, mutated only by IN-PLACE gates
-// (`cq_phi`=Rz / chained `cq_theta`=Ry on a tainted operand), lowers ROLLED IN
-// PLACE: the loop CFG is preserved and the rail phi(s) — the loop-carried header
-// phi AND the zero-trip/exit merge phi the `-O1` guard emits — collapse to the
-// single persistent rail, so the body lowers to `cqrt_rz(%h, angle_i)` over a
-// loop-invariant handle. The trace is byte-identical to the manually-unrolled
-// form. No in-body free, no uncompute (the rail is measured/escaped after L).
+// (chained `cq_theta`=Ry on a tainted operand; the register-form `cq_phi`=Rz is
+// retired), lowers ROLLED IN PLACE: the loop CFG is preserved and the rail phi(s)
+// — the loop-carried header phi AND the zero-trip/exit merge phi the `-O1` guard
+// emits — collapse to the single persistent rail, so the body lowers to
+// `cqrt_ry_<W>(%h, angle_i)` over a loop-invariant handle. The trace is
+// byte-identical to the manually-unrolled form. No in-body free, no uncompute
+// (the rail is measured/escaped after L).
 //
 // Also: the Q1 (quantum/measurement-bounded exit) and X1 (cross-iteration dirty
 // rail) LOUD declines. Every other off-pattern loop is LEFT for its existing
@@ -269,7 +270,7 @@ RailValueUse railValueConsumerDisposition(
 // Peel in-place gates off the front of a value's wire, returning the underlying
 // base. Two gate kinds peel (both are in-place mutations of the one rail handle,
 // their result RAUWs to the operand at lowering): (1) rotation gates
-// (`cq_theta`/`cq_phi` whose arg-0 handle is tainted — the 7.3 vocabulary), and
+// (a collected `cq_theta` whose arg-0 handle is tainted — the 7.3 vocabulary), and
 // (2, issue dtzb) value rail self-updates (`q = q OP c`, add/xor + classical
 // immediate — `inPlaceValueRailOperand`). Parallels
 // `TaintPropagation::resolveWireBase` but returns only the base. Stops at a
@@ -408,7 +409,7 @@ llvm::CallInst *railPhiRootMint(const llvm::PHINode &P, const llvm::Loop *L,
 // both are monotone toward DECLINE, so no accepted module can move: the null
 // guard (the direct caller passes a `RotBase` that may be null for a state prep
 // whose base is the seed `Constant`) and `arg_size() < 1` (unreachable for a
-// `cq_theta_*`/`cq_phi_*` — `TaintPropagation`'s collection-time prototype
+// collected `cq_theta_*` — `TaintPropagation`'s collection-time prototype
 // validation rejects a 0-arg one — but `getArgOperand(0)` on it would be UB,
 // and a Release build has no assertion to catch that).
 llvm::CallInst *railChainRootMint(llvm::Value *V,
@@ -427,7 +428,7 @@ llvm::CallInst *railChainRootMint(llvm::Value *V,
 namespace {
 
 // Is `CI` an IN-PLACE rotation gate on its arg-0 handle `H` (a collected
-// `cq_theta`/`cq_phi` whose arg-0 is `H` and tainted)? Such a gate mints no new
+// `cq_theta` whose arg-0 is `H` and tainted)? Such a gate mints no new
 // rail; its result RAUWs to `H` at rotation lowering — so its result belongs to
 // `H`'s persistent rail.
 bool isInPlaceGateOnArg0(const CallInst *CI, const Value *H,
@@ -439,9 +440,10 @@ bool isInPlaceGateOnArg0(const CallInst *CI, const Value *H,
          taint.Tainted.count(const_cast<Value *>(H));
 }
 
-// Is `CI` a control region's OWN arm gate, HOISTED into the pred by
-// `SwapRouteEmit` and awaiting its controlled mint in `lowerRotations`? (bd
-// test_C_libtooling-drbq Inc 2a — the §6a Rz peephole.)
+// Is `CI` a control region's OWN `cq_phi_` arm gate, HOISTED into the pred by
+// `SwapRouteEmit` for a controlled-Rz mint? (bd test_C_libtooling-drbq Inc 2a —
+// the §6a Rz peephole.) VACUOUS since 3qlq Inc 1 (see the body): nothing hoists
+// or mints that gate today, and the paragraphs below are the drbq-era record.
 //
 // WHY THIS EXISTS, and it is a REPAIR of a structural premise, not a new licence.
 // The round-2 fan-out guard's own comment states the premise it runs on: "the
@@ -586,7 +588,7 @@ bool isMeasureCall(const Instruction *I) {
 // disagreement is invisible to every shipped gate:
 //
 //     for (...) { if (q == 5) q = cq_phi(q, PI); acc = q * 7; q += 3; }
-//     return cq_measure(q) + cq_measure(acc);
+//     return cq_measure(q) + cq_measure(acc);       // (pre-3qlq register form)
 //
 // `clang -O1` sinks the `mul` past the loop (only `acc`'s last value is read), so
 // the emitted `cq_template_mul_i32_hl(%h, 7)` runs after every `cqrt_addc_i32`
@@ -637,10 +639,10 @@ bool isMeasureCall(const Instruction *I) {
 //
 // WHICH INSTRUCTIONS COUNT AS GATES. Exactly the ones that relabel the
 // computational basis ON THIS RAIL: `cq_theta` (Ry) and the dtzb in-place
-// `add`/`xor` (a permutation of the register). `cq_phi` (Rz) is DIAGONAL and is
+// `add`/`xor` (a permutation of the register). An Rz is DIAGONAL and is
 // deliberately NOT a gate — the shipped reading of the whole stale-record family
-// (WireWalk.h, bd memory rz-diag-flag-strip-invariant), and the reason
-// control_swap_inloop_diamond.ll's post-loop read of a pure-Rz rail keeps lowering.
+// (WireWalk.h, bd memory rz-diag-flag-strip-invariant); a branch `cq_phi` puts its
+// Rz on the flag, so control_swap_inloop_diamond.ll's post-loop read lowers.
 // A PHINode is a renaming, not a gate. Gates from a DIFFERENT rail are not
 // consulted: they mutate another wire and say nothing about this record (bd
 // `hcrg`'s lesson in reverse — fence the unitary, not the bookkeeping).
@@ -685,11 +687,11 @@ constexpr char kMsgExitObligation[] =
 //
 // STATED GENERALLY, not as a special case for `In == P`. A carry refreshes only
 // if it crosses a rail GATE: an incoming that peels back to the phi itself
-// through diagonal / renaming steps only (`cq_phi`/Rz, a re-entrant rename) is
-// the same frozen record wearing extra phases, and a basis-relabelling `cq_theta`
-// or in-place `add`/`xor` on the carry is what makes it a genuine rotating rail
-// (the customer's own header phi: its latch incoming peels back through the body
-// `cq_theta`s, so it refreshes and the cut stands).
+// through diagonal / renaming steps only (a re-entrant rename; pre-3qlq also a
+// register-form `cq_phi` Rz) is the same frozen record wearing extra phases, and
+// a basis-relabelling `cq_theta` or in-place `add`/`xor` on the carry makes it a
+// genuine rotating rail (the customer's own header phi: its latch incoming peels
+// back through the body `cq_theta`s, so it refreshes and the cut stands).
 //
 // FROZEN-NESS IS DELIBERATELY NOT PROPAGATED FORWARD, and that is a conclusion,
 // not an omission. A gate applied to a frozen record (`%z = cq_theta(%rec, a)`)
@@ -793,7 +795,7 @@ bool railGateBetween(const Instruction *Def, const Instruction *Read,
 
 // Apply the fence to ONE rail. `Members` is that rail's value set (the chain
 // endpoints and everything between, in any order — the predicate needs identity,
-// never order) and `GateCalls` the collected `cq_theta`/`cq_phi` vocabulary.
+// never order) and `GateCalls` the collected `cq_theta` vocabulary.
 // Returns the offending CONSUMER (for the `!dbg`-located diagnostic) or null.
 //
 // A PHI consumer reads its incoming on the EDGE, not in its own block, so its
@@ -810,7 +812,7 @@ bool railGateBetween(const Instruction *Def, const Instruction *Read,
 //
 //     for (…) { if (q==5) q = cq_phi(q,PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
 //     int mark = q;  cq_theta(&q, 0.125);   /* arg-0 IS a member, RESULT is not */
-//     return cq_measure(mark) + cq_measure(q);
+//     return cq_measure(mark) + cq_measure(q);      // (pre-3qlq register form)
 //
 // which emitted `cqrt_ry_i32(%h, 0.125); measure(%h); measure(%h)` — `mark` names
 // the pre-Ry record and is measured AFTER it. `opt` exit 0, verify-clean, STRICT
@@ -823,12 +825,12 @@ bool railGateBetween(const Instruction *Def, const Instruction *Read,
 // gate. Three edge kinds are followed, and each exclusion is load-bearing:
 //
 //   * an IN-PLACE ROTATION (`isInPlaceGateOnArg0`) — unconditionally, because
-//     `cq_theta`/`cq_phi` are always lowered in place. `cq_theta` is a GATE (Ry
-//     relabels the basis); `cq_phi` is followed but is NOT a gate (Rz is diagonal
-//     — the shipped reading of the whole stale-record family, bd memory
-//     `rz-diag-flag-strip-invariant`). Following the diagonal one matters: it is
-//     what catches `mark = q; q = cq_phi(q,a); cq_theta(&q,b);`, where the Ry's
-//     arg-0 is the Rz result and therefore not a chain member (probe g1).
+//     `cq_theta` is always lowered in place, and it is a GATE (Ry relabels the
+//     basis). The retired register-form `cq_phi` (Rz, diagonal) was followed as
+//     a hop but NOT counted as a gate (bd memory `rz-diag-flag-strip-invariant`);
+//     that caught `mark = q; q = cq_phi(q,a); cq_theta(&q,b);`, where the Ry's
+//     arg-0 is the Rz result and not a chain member (probe g1). `PhiCalls` is
+//     empty since 3qlq, so that hop no longer occurs.
 //
 //   * an in-place VALUE self-update (dtzb `add`/`xor`) — ONLY when it is a chain
 //     member or already in `taint.InPlaceRailOps` — the `InPlace` cell of
@@ -877,7 +879,7 @@ bool railGateBetween(const Instruction *Def, const Instruction *Read,
 //     on that edge. `railGateBetween` is an ∃-path test, so "some" (not "all") is
 //     the sound side; a phi that also merges a foreign value only ever adds
 //     declines. Without it `mark = q; if (n) q = cq_phi(q,a); cq_theta(&q,b);`
-//     is missed (probe g3).
+//     is missed (probe g3, pre-3qlq register form).
 //
 // NOT TRANSITIVE PAST THE FIRST GATE, and it does not need to be. If `t2 = t1;
 // cq_theta(&t2, …)` with `t1 = m; cq_theta(&t1, …)` and `m` a member, then `Def` (m's
@@ -1130,8 +1132,8 @@ Instruction *staleReadOfValue(Value *V,
 // Round 2 widened `collectRailGates`'s GATE set from the chain to the whole rail
 // and left the RECORD loop — the values this fence asks "is any read of you
 // stale?" — enumerating chain `Members`. A rail value ONE HOP off the chain was
-// therefore never asked about, and this `clang -O1` C program miscompiled:
-//
+// therefore never asked about, and this `clang -O1` C program miscompiled (pre-3qlq
+// register form):
 //     for (i<2) { if (q==5) q=cq_phi(q,PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
 //     int a = q; cq_theta(&a, 0.125);  /* arg-0 IS a member — the RESULT is not */
 //     int b = a; cq_theta(&b, 0.25);  /* a rail gate AFTER the record `a` */
@@ -1684,13 +1686,13 @@ namespace {
 // All analysis below is PURE SSA/CFG identity on the still-unmutated IR (Rule 9);
 // `tryBreak` never mutates in Increment 1 (recognition + decline partition only).
 
-// "Does this value's lineage carry a relative phase (an Rz / `cq_phi`)?" — the
-// §2.6 phase fence over the escaping answer (B3). A per-TU mirror of
-// `ControlDetect`'s `retLineageCarriesPhase` and the AbortPark/SelectClassify
-// twins (the house style sanctions the trivial duplicate — keeping the loop
-// partition self-contained, Rule 14). A `cq_theta` (Ry) basis superposition has
-// no relative phase and STOPS the walk; a `cq_phi` (Rz) in the lineage is the
-// phase carrier. Over-decline-safe (any phi flags it).
+// "Does this value's lineage carry a relative phase?" — the §2.6 phase fence
+// over the escaping answer (B3). A per-TU mirror of `ControlDetect`'s
+// `retLineageCarriesPhase` and the AbortPark/SelectClassify twins (the house
+// style sanctions the trivial duplicate — keeping the loop partition
+// self-contained, Rule 14). A `cq_theta` (Ry) basis superposition has no
+// relative phase; a branch phase in the function (the first clause) is the
+// carrier, and the `cq_phi_` lineage row is the vacuous retired-form check.
 bool breakLineageCarriesPhase(Value *Op, const TaintSet &taint) {
   // ---- THE REGISTER-FREE BRANCH PHASE (bd 3qlq Inc 1 part A, Rule-13 round-1
   // finding F-L5-6 — a latent WIDENING). The `cq_phi_` prefix row below went
@@ -2045,7 +2047,7 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
   // (`RailPre`, the rail phi's PreB-incoming) must BE the bare mint (`Root`). The dtzb
   // collapse RAUWs the rail phi to `Root = peelInPlaceBase(RailPre)`, which peels
   // THROUGH any pre-loop in-place value/rotation mutation (`q = q ^ 7;` or a pre-loop
-  // `cq_phi` between the `cq_theta` mint and the loop), and only the IN-LOOP `RailOps`
+  // chained `cq_theta` between the mint and the loop), and only the IN-LOOP `RailOps`
   // are marked `InPlaceRailOps`. So a pre-loop mutation orphans to a DEAD out-of-place
   // template handle and is NEVER applied to the in-place rail handle — the post-lowering
   // capture (BreakReversePlay.cpp) then copies a rail handle MISSING that mutation into
@@ -2256,7 +2258,7 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
         continue;  // constant / argument / loop-invariant (defined outside the body).
                    // A loop-INVARIANT comparand (`q == p`, p defined pre-loop) STOPS
                    // the walk here — its lineage is deliberately NOT inspected, and
-                   // that is SOUND even when p carries a RELATIVE PHASE (`p =
+                   // that is SOUND even when p carries a RELATIVE PHASE (pre-3qlq `p =
                    // cq_phi(p0,θ)`, mvrb) or is a DERIVED tainted handle (`p = p0 + 5`,
                    // 1784). The whole break construct (capture + consolidation +
                    // reverse-play, BreakReversePlay.cpp) emits ONLY basis-PERMUTATION
@@ -2521,9 +2523,10 @@ bool tryBreak(Loop *L, Function &F, TaintSet &taint, WidthDispatch &wd,
   if (!EscapePhi)
     return false;
 
-  // (B3) Value-class answer. A phase-class escaping answer (an Rz/`cq_phi` in any
-  // incoming lineage — v2_phase) cannot be CNOT-copied out (Rule 7 dephases) and
-  // the data-comparison phase break is degenerate ⇒ PERMANENT decline (§2.6).
+  // (B3) Value-class answer. A phase-class escaping answer (a branch phase, per
+  // `breakLineageCarriesPhase` — v2_phase) cannot be CNOT-copied out (Rule 7
+  // dephases) and the data-comparison phase break is degenerate ⇒ PERMANENT
+  // decline (§2.6).
   for (Value *In : EscapePhi->incoming_values())
     if (taint.Tainted.count(In) && breakLineageCarriesPhase(In, taint)) {
       diagnose(BreakI, kMsgBreakPhase);
@@ -2822,8 +2825,9 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
   // ≠ the source's Rz(2)). In-place mutation needs LINEAR lineage; a fan-out of a
   // superposed source needs an ancilla/`cqrt_cswap`, not in-place collapse. The
   // count covers BOTH gate kinds — value self-updates (dtzb add/xor) AND rotations
-  // (cq_phi/rz, the SHARED pre-dtzb gap) — so the same guard closes both. Loud
-  // decline (claimed), never a silent serialized collapse (Prime Directive).
+  // (chained cq_theta; pre-3qlq also cq_phi/rz, the SHARED pre-dtzb gap) — so the
+  // same guard closes both. Loud decline (claimed), never a silent serialized
+  // collapse (Prime Directive).
   //
   // COUNTED VIA `railValueConsumerDisposition` (bd 8h7d.5 Rule-13 round 4, OD-A)
   // — the ONE spelling of "will this BO be lowered in place", shared with round 2
@@ -3263,24 +3267,19 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
   //     round 1 applies, for the same reason: a rail value read by TWO in-place
   //     mutators would have both serialised onto the one handle, corrupting
   //     both (`rz(h,1); rz(h,2)` = Rz(3), not the source's Rz(2)). The emitted
-  //     region stream is NOT counted here and must not be — but SINCE bd drbq
-  //     Inc 2a THAT IS PART STRUCTURE AND PART **PREDICATE**, and the split is
-  //     what a reader must carry away (round-1 review of Inc 2a, L2 N-3; this
-  //     paragraph asserted "by construction" for the whole of it and that premise
-  //     is retired).
-  //       * A ROUTED region — the 4.3 nest, the 4.5 switch, the method-B value
-  //         arm — is still rejected BY CONSTRUCTION: `cqrt_cswap` /
-  //         `cq_template_*` are not in `GateCalls` (which holds only the
-  //         collected front-end `@cq_theta`/`@cq_phi` sites) and are not
-  //         `BinaryOperator`s, so `isInPlaceGateOnArg0` /
-  //         `inPlaceValueRailOperand` cannot match them. A route puts the value
-  //         on a work rail and brings it back; it does not mutate the lineage.
-  //       * A CONTROL-IN-PLACE region is rejected BY PREDICATE: hoist-and-defer
-  //         keeps the arm `@cq_phi` alive in the pred with the register at arg 0,
-  //         so it IS in `GateCalls` and IS an `isInPlaceGateOnArg0` match. It is
-  //         excluded explicitly by `isHoistedRegionArmGate` at the loop below —
-  //         read that predicate's header for the argument and for the `cq_phi`
-  //         stem restriction it carries.
+  //     region stream is NOT counted here and must not be (round-1 review of
+  //     drbq Inc 2a, L2 N-3, split the reason in two):
+  //       * Every emitted call — compare templates and their `_unc` strips, the
+  //         kickback `cqrt_rz_i1`, `cqrt_x`, the controlled copies, the park's
+  //         `cqrt_cswap` — is rejected BY CONSTRUCTION: none is in `GateCalls`
+  //         (which holds only the collected front-end `@cq_theta` sites) or is a
+  //         `BinaryOperator`, so `isInPlaceGateOnArg0` /
+  //         `inPlaceValueRailOperand` cannot match it.
+  //       * The drbq Inc-2a CONTROL-IN-PLACE Rz arm (a hoisted `@cq_phi_`) was
+  //         excluded BY PREDICATE, `isHoistedRegionArmGate` at the loop below,
+  //         which is vacuous since 3qlq. The Ry arm's hoisted `cq_theta` is a
+  //         chain MEMBER under M-β and needs no exemption (that predicate's
+  //         header has the argument).
   //
   //     A `BinaryOperator` CONSUMER IS COUNTED ONLY IF IT WILL ACTUALLY BE
   //     LOWERED IN PLACE (bd 8h7d.5 Rule-13 ROUND 4, finding OD-A) — the
@@ -3336,7 +3335,7 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
   //            about whether round 1 may own the loop. Not ours; dropped, rightly.
   //       (ii) "a rail record is only read where the register still holds it" —
   //            a UNITARY condition, and it is exactly as binding after the
-  //            flatten as before it. Dropping it made
+  //            flatten as before it. Dropping it made (pre-3qlq register form)
   //            `for (…) { if (q==5) q=cq_phi(q,PI); acc = q*7; q += 3; }` emit
   //            the `mul` in the EXIT block against the post-loop register: a
   //            different unitary, `opt` exit 0, verify-clean, stage-2b clean.
@@ -3515,7 +3514,7 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
 //     round 1, finding F1). A rail SSA name denotes one prefix of the rail's gate
 //     sequence; it is a faithful name for the register only at positions where
 //     the register still holds that prefix. `for (…) { if (q==5) q=cq_phi(q,PI);
-//     acc = q*7; q += 3; }` reads it one `addc` too late and computes a different
+//     acc = q*7; q += 3; }` (pre-3qlq) read it one `addc` too late: a different
 //     unitary, `opt` exit 0 and stage-2b clean. The exemption is sound HERE only
 //     because `collapseRailPhisIn` step (2b) has already PROVEN, for every rail
 //     VALUE and every consumer, that no rail-relabelling gate separates the
@@ -4379,12 +4378,9 @@ bool invariantRegisterRootsImpl(Loop *L, TaintSet &taint, WidthDispatch &wd,
     //        walked, never freed by the spine, and the emitters' own comments
     //        say so) AND the STRUCTURAL `cqrt_alloc_` producer test (so the (I1)
     //        argument above can be read at this site without trusting the set's
-    //        insertion discipline). A Phase-4 WORK rail is in the same set and is
-    //        NOT excluded by name here — it does not need to be: a work rail is
-    //        allocated and freed inside its own region, so it is either defined
-    //        INSIDE `L` (never a `Cand` — the `L->contains` skip above) or freed
-    //        before `L` and unreadable in it; and if one ever did reach here it
-    //        would be admissible on the identical (I1) argument.
+    //        insertion discipline). The retired route's Phase-4 WORK rail was in
+    //        the same set and not excluded by name: it was allocated and freed
+    //        inside its own region, so it could never be a `Cand` here.
     //
     //        The hoisted loop-invariant TEMPLATE rail (`int p = q * 3;` — owner
     //        question Q-R1-1) is UNAFFECTED and still refused: a
@@ -4413,7 +4409,7 @@ bool invariantRegisterRootsImpl(Loop *L, TaintSet &taint, WidthDispatch &wd,
           return false;
     // (iii-b) A MERGE OUT-RAIL MAY ONLY BE READ INSIDE `L`, never written. The
     //         clause above asks `isInPlaceGateOnArg0`, whose vocabulary is the
-    //         collected `cq_theta`/`cq_phi` calls — the right question for an SSA
+    //         collected `cq_theta` calls — the right question for an SSA
     //         register (an in-place gate on one always mints a header phi, which
     //         clause (i) already refuses) and the WRONG one for a rail the
     //         emitters mutate through VOID calls that are in no work list
@@ -4648,7 +4644,7 @@ bool markIfRailLocal(Loop *L, TaintSet &taint, LoopInfo &LI,
   // ONLY `L`'s OWN blocks (bd 8h7d.5 Rule-13 round 1, finding P2). `L->blocks()`
   // includes every strictly-deeper SUBLOOP block, and the subloop refusal above
   // only inspects `taint.Tainted` membership — which the region emitters' own
-  // output (`cqrt_cswap`, `cqrt_x`, the `_unc` strips) is never in, because they
+  // output (`cqrt_rz_i1`, `cqrt_x`, the `_unc` strips) is never in, because they
   // are void calls minted after propagation. So a subloop carrying an EMITTED
   // stream would be certified iteration-local while running its gates N times per
   // outer iteration, and the spine would reverse them ONCE: the under-reversed
@@ -6563,7 +6559,8 @@ Instruction *iterationLocalTaintEscape(const Loop *L, const TaintSet &taint) {
 //     or an in-place `cqrt_ry_<W>`; an alloc-minted rail is excluded from the M-B
 //     interior partition OUTRIGHT by `ChainWalk::isInteriorTerminalHandle` clause
 //     (I1), and a rail carrying a controlled rotation is FROZEN;
-//   * a `@cq_phi_*` call — register-free (Rule 3): it allocates nothing;
+//   * a `@cq_phi_*` call — the retired register form (vacuous since 3qlq; the
+//     register-free `@cq_phi` is void and allocates nothing either);
 //   * a `@cq_measure_*` call — the sole sink; its result is not tainted;
 //   * a `PHINode` — no gate, no rail;
 //   * a member of `taint.InPlaceRailOps` — the M-C / dtzb IN-PLACE value rail

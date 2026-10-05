@@ -1,20 +1,20 @@
-; control_inplace_rz_sequential.ll — the §6a Rz peephole on TWO SEQUENTIAL flat
-; regions, the bd `hcrg` shape (bd test_C_libtooling-drbq Inc 2a).
+; control_inplace_rz_sequential.ll — TWO SEQUENTIAL flat phase regions, the bd
+; `hcrg` shape (bd test_C_libtooling-drbq Inc 2a).
 ;
-; `if (q>5) rz(r,a); if (q>9) rz(r,b);` — after `-O1` the second region's tainted
-; branch lives in the FIRST region's merge block, which is the shape that declined
-; as "nested control flow" for four months until `hcrg` replaced the structural
-; guard with an emission-ORDER one. Nothing about that changes here; what this
-; fixture pins is that the ORDER survives the peephole.
+;     if (q > 5) cq_phi(a);  if (q > 9) cq_phi(b);
+;
+; After `-O1` the second region's tainted branch lives in the FIRST region's
+; merge block, which is the shape that declined as "nested control flow" for four
+; months until `hcrg` replaced the structural guard with an emission-ORDER one.
+; What this fixture pins is that the ORDER survives lowering.
 ;
 ; WHY ORDER IS AT RISK AND NOT MERELY DECORATIVE. `lowerControlRegions`
 ; Kahn-sorts the regions by a precedence graph, so region 2 may be EMITTED first;
 ; each emitter inserts positionally into its OWN pred block, which is what keeps
-; the emitted stream in SOURCE order. Inc 2a adds a second positional actor — the
-; HOIST (`moveBefore(BI)`) — and a deferred one, `lowerRotations`, which mints
-; each controlled gate at the hoisted position. So "region 1's whole stream, then
-; region 2's whole stream, each with its own flag minted / stripped / freed" is a
-; property this increment could have broken and did not.
+; the emitted stream in SOURCE order: region 1's whole stream, then region 2's,
+; each with its own flag minted / kicked / stripped / freed. (Inc 2a's in-place
+; Rz, retired by 3qlq, added the hoist `moveBefore(BI)` and a deferred
+; `lowerRotations` mint as two more positional actors.)
 ;
 ; Two flags, two strips, two frees, and NO interleaving.
 ;

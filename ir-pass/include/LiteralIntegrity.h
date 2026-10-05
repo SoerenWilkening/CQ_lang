@@ -112,10 +112,10 @@
 // identity-keying reproduces the very over-decline per-function just fixed.
 //
 // Counting is spelling-independent, also deliberately: it catches the `_unc`
-// adjoint, the `_inv` adjoint, and the NEGATED-ANGLE re-emission form that no
-// name test would find — `cq_phi(x, poison)` emits `cqrt_rz_<W>(h, poison)`
-// twice, because the adjoint is `CreateFNeg(arg1)` and `fneg poison` folds back
-// to `poison`. Any future adjoint form is covered without editing this guard.
+// adjoint, the `_inv` adjoint, and the NEGATED-ANGLE re-emission form no name
+// test would find — a reverse-played uncontrolled `cqrt_ry_<W>(h, poison)` shows
+// up twice, because the adjoint is `CreateFNeg(arg1)` and `fneg poison` folds
+// back to `poison`. Any future adjoint form is covered without editing this guard.
 //
 // Placed LAST in the pipeline (after `uncompute`, before `eraseDeadDecls`, in
 // BOTH entry points) because that is the only position that provably sees EVERY

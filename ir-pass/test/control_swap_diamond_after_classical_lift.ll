@@ -2,43 +2,28 @@
 ; COMPOSITION (test_C_libtooling-1k0q). A classical-condition ONE-REGISTER lift
 ; and a separate tainted-condition PHASE-arm diamond, sequenced in ONE function:
 ;
-;     cq_theta(&q, ...);                         // base wire
-;     if (classical_c) q = cq_phi(q, 0.25);      // classical lift  (region 1)
-;     if (q > 5)       { rz(q,a); rz(q,b); }     // tainted phase   (region 2)
+;     cq_theta(&q, ...);                             // base wire
+;     if (classical_c) { }                           // classical lift  (region 1)
+;     if (q > 5)       { cq_phi(a); cq_phi(b); }     // tainted phase   (region 2)
 ;     measure(q);
 ;
-; This pins the lift/region ORDERING interaction that was previously cleared only
-; analytically + by an ad-hoc adversarial probe (Rule-13 re-clearance LENS C,
-; 2026-06-11): in the pass, `lowerControlRegions` (SwapRouteEmit) runs BEFORE the
-; `declineClassicalMuxes` one-register lift. So region 2 is emitted FIRST while
-; the classical merge phi `%p` is still live and IS the region's gated base
-; — the controlled-Rz/icmp_inv calls are minted against `%p`. The lift then RAUWs `%p` to
-; its wire base `%q` and erases the phi; rotation lowering finally RAUWs `%q` to
-; the `i32` handle `%h`. A THREE-stage RAUW chain (phi → wire base → handle) the
-; emitted region stream must survive intact — the precise hazard this fixture
-; guards (Rule 9: never cache value identity across a mutation).
+; Region 1's arm is empty (3qlq deleted its pre-3qlq phase call); its merge phi
+; `%p` still renames the one register. In the pass, `lowerControlRegions`
+; (SwapRouteEmit) runs BEFORE the `declineClassicalMuxes` one-register lift, so
+; region 2 is emitted FIRST while `%p` is still live and IS the region's gated
+; base — the icmp mint and its `_unc` strip are minted against `%p`. The lift
+; then RAUWs `%p` to its wire base `%q` and erases the phi; rotation lowering
+; finally RAUWs `%q` to the `i32` handle `%h`. A THREE-stage RAUW chain (phi →
+; wire base → handle) the emitted region stream must survive intact (Rule 9:
+; never cache value identity across a mutation).
 ;
-; Correctness (Rule-13 trace reasoning, no controlled gates):
-;   * Region 1 is CLASSICAL — per shot exactly one path runs; the lift moves NO
-;     gate, only the SSA renaming phi disappears, so `cqrt_rz(h,0.25)` fires iff
-;     `classical_c` (it stays INSIDE arm1). [[phi-select-onereg-lift-asymmetry]]
-;   * Region 2 is a PHASE arm: under the §6a control-in-place peephole each arm Rz
-;     is emitted as one `cqrt_rz_i32_controlled(flag, q, ·)` on the register itself
-;     — no |0> work rail, no CSWAP route — and the boolean is then stripped with the
-;     UNCONTROLLED icmp_inv(q); q's basis value is unchanged by Rz (diagonal), so
-;     the strip is exact. ZERO copies (method-B on a phase arm dephases — Rule 7).
-;   * The two regions only SHARE the wire %h; region 1's conditional Rz(0.25) has
-;     completed before region 2 reads %h, and the flag strip reads %h's (unchanged)
-;     basis label — no cross-region interference.
-;
-; The lift erases region 1's merge phi AND RegionFlatten erases region 2's merge
-; phi: NO `phi i32` survives, no `@cq_theta`/`@cq_phi` remains, the controlled arm
-; gates (region 2) AND the lifted Rz (region 1) are BOTH present, and the module is
-; verify-clean. The two are distinguishable by SYMBOL — the lifted region-1 gate is
-; the UNCONTROLLED `cqrt_rz_i32` still inside `arm1`, the region-2 gates are
-; `cqrt_rz_i32_controlled` in `merge1` — which is exactly the ordering/RAUW property
-; the fixture exists to pin. Both mechanisms are covered standalone by the e2e goldens
-; (classical-if-gate, control-phase-diamond) + lit twins
+; Region 2 lowers by kickback: the flag is minted from the icmp into a |0>
+; ancilla, each arm phase is one uncontrolled `cqrt_rz_i1(flag, ·)`, the icmp
+; `_unc` strips the flag and one `cqrt_free` releases it. ZERO copies (method-B
+; on a phase arm dephases — Rule 7). The two regions only SHARE the wire %h.
+; NO `phi i32` survives, no `@cq_theta`/`@cq_phi` remains, arm1 stays empty and
+; the kickback gates sit in `merge1`. Both mechanisms are covered standalone by
+; the e2e goldens (classical-if-gate, control-phase-diamond) + lit twins
 ; (lowering_classical_mux_phi_onereg.ll, control_swap_diamond.ll); this is the
 ; composition guard. See [[lift-stale-reseep-must-be-full-not-scoped-2qyz]] for
 ; the post-lift stale re-sweep that this clean (no add/mul/cast) shape no-ops.
@@ -65,12 +50,6 @@
 ;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

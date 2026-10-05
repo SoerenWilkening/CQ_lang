@@ -1,7 +1,6 @@
-; control_tainted_diag.ll — transitional guard for the `swap-route-control` branch.
-;
-; The old controlled-op lowering was removed so the RSSA swap-route control
-; emitter can be built without it. A tainted-condition `br i1` (a quantum-
+; control_tainted_diag.ll — guard written for the `swap-route-control` branch,
+; when the old controlled-op lowering was removed so the (since retired) swap-route
+; emitter could be built without it. A tainted-condition `br i1` (a quantum-
 ; controlled region) that the compiler cannot PROVE must DIAGNOSE loudly
 ; ("… under quantum control") and fail (non-zero exit) — it must NEVER silently
 ; pass through as classical control over quantum state (a verify-clean silent

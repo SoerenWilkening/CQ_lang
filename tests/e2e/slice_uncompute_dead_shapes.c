@@ -56,15 +56,15 @@
    Same load-bearing scaffold as slice_uncompute_dead_dag (see its header): a
    `__attribute__((noinline))` helper (Phase-5 uncompute is gated OFF in `main`,
    and `-O1` would otherwise inline `slice` away so the uncompute never runs) and
-   a `(void) cq_phi` (Rz, a side-effecting extern that READS its operand)
-   keep-alive on each dead terminal so `-O1` DCE cannot drop the arithmetic while
-   its result is dropped — a real `cq_template_*` terminal survives to be
+   a kickback `cq_phi` whose condition reads each dead terminal (one `cqrt_rz_i1`
+   on the flag, stripped by the compare `_unc`), so `-O1` DCE cannot drop the
+   arithmetic — a real `cq_template_*` terminal survives to be
    uncomputed. Each chain is a dead, unmeasured, unreturned source-derived tainted
    handle; the pass recovers the whole DAG and reverses it ONCE in reverse program
    order (LIFO), adjointing each gate via its void in-place `_unc` form (DD-3
    slots: `out` first, then the forward operands in original order), freeing each
-   rail right after its last reverse-use, and undoing each Rz/Ry with a negated
-   angle. NO fresh-minting `_inv`, NO added measurement (Rules 5/6), NO
+   rail right after its last reverse-use and then the flag (the Ry roots stay).
+   NO fresh-minting `_inv`, NO added measurement (Rules 5/6), NO
    `cqrt_cswap`.
 
    Three independent dead lineages, one per uncovered `_unc` family:
@@ -85,7 +85,7 @@ void slice(int x, int y, float z) {
     int a = x; cq_theta(&a, 0.25); /* taint x -> handle (alloc + ry)            */
     int s = 100 - a;             /* sub_lh  (100 literal-left, a handle)      */
     int t = 5 << s;              /* shl_lh  (5 literal-left, s shift handle)  */
-    if (t > 100) cq_phi(0.5);       /* Rz keep-alive; result dropped (dead)      */
+    if (t > 100) cq_phi(0.5);       /* kickback keep-alive (rz_i1 on flag)       */
 
     /* (B) tainted widening cast: i32 handle -> i64, dropped. */
     int  b = y; cq_theta(&b, 0.30); /* alloc + ry                                */
@@ -93,7 +93,7 @@ void slice(int x, int y, float z) {
     int  y2 = y; cq_theta(&y2, 0.35);
     long lp = lb * (long) y2;    /* Q+Q i64 mul: keeps the SEXT
                                      live; `sext(b) == K` folds to `b == K` */
-    if (lp == 15L) cq_phi(0.6);      /* Rz keep-alive (cqrt_rz_i64); dropped      */
+    if (lp == 15L) cq_phi(0.6);      /* kickback keep-alive (rz_i1 on flag)       */
 
     /* (C) fneg on a tainted float, dropped. */
     float fc = z; cq_theta(&fc, 0.40);/* alloc + ry (f32)                          */
@@ -101,6 +101,6 @@ void slice(int x, int y, float z) {
     float z2 = z; cq_theta(&z2, 0.45);
     float fp = fn * z2;          /* Q+Q f32 mul: keeps the FNEG
                                      live; `-fc == K` folds to `fc == -K` */
-    if (fp == -9.0f) cq_phi(0.7);      /* Rz keep-alive (cqrt_rz_f32); dropped      */
+    if (fp == -9.0f) cq_phi(0.7);      /* kickback keep-alive (rz_i1 on flag)       */
 }
 int main(void) { slice(2, 5, 3.0f); return 0; }

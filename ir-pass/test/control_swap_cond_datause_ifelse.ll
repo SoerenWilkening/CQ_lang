@@ -1,11 +1,10 @@
 ; control_swap_cond_datause_ifelse.ll — ACCEPT probe (ziov WI-1, adversarial):
-; shared condition flag on a two-arm IF/ELSE (both successors hold a phase gate,
-; reconverging at a 2-incoming merge phi).
+; shared condition flag on a two-arm IF/ELSE (both successors hold a phase gate).
 ;
-; `if (q>5) rz(q,a); else rz(q,b);` with `%c = q>5` ALSO read as data (`zext →
-; add → ret`, escaped). BOTH arms route off the SAME shared flag (the else arm
-; ¬flag-bracketed), and the data `zext` consumes that same flag. ONE mint, two
-; rails freed, no strip, NO flag free.
+; `if (q>5) cq_phi(a); else cq_phi(b);` with `%c = q>5` ALSO read as data (`zext →
+; add → ret`, escaped). BOTH arms kick back onto the SAME shared flag
+; (`cqrt_rz_i1`, the else arm inside a `cqrt_x` bracket), and the data `zext`
+; consumes that same flag. ONE mint, no strip, NO free at all.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

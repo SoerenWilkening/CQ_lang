@@ -1,59 +1,42 @@
-// SwapRouteEmit.h — The RSSA swap-route emitter for tainted-condition control
-// regions (swap-route 4.1 IMPLEMENTATION §4/§5 — PHASE arms; 4.2
-// IMPLEMENTATION-4.2 §4/§5d/§5e — VALUE arms, method-B). This is the mutating
-// step that replaces `ControlStub`'s loud-decline-only behavior for the narrow
-// cases `detectControlRegions` (ControlDetect) accepts: a tainted-condition
-// diamond (one content arm) or if/else (two arms) whose every arm is a pure
-// phase chain (`@cq_phi`/Rz only, §5a/§5b) — or a pure linear value chain
-// (supported tainted integer BinaryOperators, §5d/§5e) — over ONE tainted
-// quantum handle.
+// SwapRouteEmit.h — the control-region emitters. The file name is history: the
+// RSSA swap route it was named for (a |0> work rail plus a `cqrt_cswap`
+// route-in/route-back) was retired by bd test_C_libtooling-3qlq (Inc 1 for
+// phase arms, Inc 2 for value arms). `lowerControlRegions` dispatches every
+// region `detectControlRegions` (ControlDetect) accepted, emitting into the pred
+// block BEFORE the conditional `br`; `RegionFlatten` then splices the merge into
+// the pred and deletes the dead arm/merge blocks. What each class emits now:
+//   * PHASE arm (`PhaseKickback` / `PhaseKickbackNest`, register-free
+//     `cq_phi(θ)`): KICKBACK — flag mint, one UNCONTROLLED `cqrt_rz_i1(f, θ)` per
+//     arm gate (`cqrt_x`-bracketed for a ¬flag arm), the compare's `_unc` strip,
+//     ONE `cqrt_free(f)`. A bare `_Bool` condition is its own flag (no mint, strip
+//     or free; a ¬ arm is the diagonal `rz(−θ)`). `emitKickbackGroup` is the one
+//     spelling of that gate group.
+//   * VALUE arm (`ClassArm == Value`, `emitRegion` → `emitValueRegion`): the
+//     CONTROLLED-COPY MERGE. The arm's proven pure linear chain is HOISTED into
+//     the pred (`lowerOps` lowers it, the whole-DAG spine reverses it), a `select`
+//     is built for the merge, and the 4.4 `emitSelectRegion` emits two
+//     `cqrt_copy_<W>_controlled` into a fresh |0> rail (the ¬flag one
+//     X-bracketed), the flag strip and ONE `cqrt_free`. A value arm's polarity
+//     rides the `select`'s operand SLOT, not a bracket.
+//   * IN-PLACE ROTATION arm / controlled state prep (`InPlaceRotation`): the
+//     arm's `cq_theta` is hoisted and recorded in `taint.ControlledRotations`, and
+//     `lowerRotations` mints `cqrt_ry_<W>_controlled(f, h, θ)`.
+//   * select, angle-select, switch, classical-call, guarded-store and abort-park
+//     regions go to their own emitters (see `lowerControlRegions`).
+// Nothing in this file routes a register into a work rail. `cqrt_cswap` is
+// minted only by `AbortParkEmit`, through `emitRoute` below.
 //
-// Per accepted region the emitter lowers `if (cond) { rz(q,·)… }` (or
-// `… else { rz(q,·)… }`) to the coherent, ZERO-controlled-gate routed stream
-// (SCOPING §3a), emitted into the pred block BEFORE the conditional `br`. A
-// diamond routes its single content arm; an if/else routes BOTH arms to distinct
-// |0> rails — the true arm under flag, the else arm under ¬flag via a
-// self-inverse `cqrt_x(flag)` bracket. The exact order (the §5 contract):
-//   1. flag mint            cq_template_icmp_<pred>_<W>_hl(q, lit)   (CompareLowering)
-//   2. |0> work rail        cqrt_alloc_<W>(0)                        (WidthDispatch)
-//   3. route-in             [cqrt_x(flag);] cqrt_cswap(flag,q,rail) [;cqrt_x(flag)]
-//   4. arm body VERBATIM    cqrt_rz_<W>(rail, angle)  per arm cq_phi (uncontrolled)
-//   5. route-back           the SAME cswap (+bracket) — adjoint of the split
-//   6. rail free            cqrt_free(rail)   — the rail is |0> for free (Rz|0>=|0>)
-//   7. flag strip           cq_template_icmp_<pred>_<W>_hl_inv(q, lit)  (q==q0)
-//   8. flag free            cqrt_free(flag)
-//   9. RAUW merge phi → q; erase merge phi / arm cq_phi / dead icmp; SCRUB each
-//      erased instruction from taint.Tainted / taint.PhiCalls (§6.1 — else a
-//      later `lowerRotations`/`uncompute` dereferences freed memory; ⚠ since bd
-//      8e5r every `TaintSet` table drops a deleted key BY ITSELF
-//      (`ScrubOnDelete.h`), so this scrub is belt-and-braces, no longer the only
-//      defence — and the other IR-deleting sites, most of which never scrubbed,
-//      are covered too: 133 static sites, 29 dynamic unscrubbed producers); then
-//      `RegionFlatten` splices the merge into the pred and deletes the now-dead
-//      arm/merge blocks.
+// Every erased instruction (merge φ, arm `cq_phi`, arm links, dead icmp) is
+// SCRUBBED from `taint`'s work lists (§6.1 — else a later
+// `lowerRotations`/`uncompute` dereferences freed memory; ⚠ since bd 8e5r every
+// `TaintSet` table drops a deleted key BY ITSELF (`ScrubOnDelete.h`), so this
+// scrub is belt-and-braces, no longer the only defence — and the other
+// IR-deleting sites, most of which never scrubbed, are covered too: 133 static
+// sites, 29 dynamic unscrubbed producers).
 //
-// The route-in/route-back X-bracket fires only for an `ArmNegated` (¬flag /
-// FALSE-successor) arm — `clang -O1` makes the gate arm the false successor for
-// `if (u != k)`-style conditions (Rule 9); detection resolves the arm by
-// merge-phi incoming identity (ControlDetect) and records the polarity in
+// A ¬flag arm: `clang -O1` makes the gate arm the false successor for
+// `if (u != k)`-style conditions (Rule 9); detection records the polarity in
 // `ControlRegion::ArmNegated`.
-//
-// A VALUE-class region (ClassArm/ClassArmFalse == Value, the ordered chain in
-// Shadow/ShadowFalse) takes the CONTROLLED-COPY MERGE (bd
-// test_C_libtooling-3qlq Inc 2, retire-swap-route-PRD §7; see emitValueRegion in
-// the .cpp). ⚠ IT NO LONGER ROUTES. The pre-3qlq method-B B-keep path — per-arm
-// |0> work rails, the chain replayed VERBATIM + UNCONTROLLED on each rail via
-// `rewriteBinary`, ONE `cqrt_copy_<W>`-out of the settled register, then per-arm
-// reverse-play R† via `emitInverseChain` before the clean rail frees — is
-// RETIRED. `emitValueRegion` is now a REWRITE: it HOISTS each arm's proven pure
-// linear chain into the pred (where `lowerOps` lowers it and the whole-DAG spine
-// reverses it, exactly as for any straight-line tainted arithmetic), builds a
-// `select` for the merge, flattens, and hands the result to the 4.4
-// `emitSelectRegion` — two `cqrt_copy_<W>_controlled` into a fresh |0> rail, the
-// same flag strip, ONE `cqrt_free`. No work rail, no `cqrt_cswap`, no
-// reverse-play, and no new runtime symbol. The X-bracket note above therefore
-// applies to the PHASE paths and to the merge's second controlled copy; a value
-// arm's polarity now rides the `select`'s operand SLOT, not a bracket count.
 //
 // Runs AFTER `detectControlRegions` and BEFORE `lowerRotations` (§4): it
 // references the still-present `@cq_theta` result `%q`; when `lowerRotations`
@@ -84,26 +67,22 @@ class WidthDispatch;
 struct TaintSet;
 struct ControlPlan;
 
-// Emit the swap-route stream for every region in `plan.Regions` (each a §0
-// accepted phase- or value-arm diamond / if-else, populated by
-// `detectControlRegions`). Mutates the
-// module IR and `taint` (scrubs every erased instruction). A plan with no
-// regions is a no-op, so a classical-only / fully-declined module is untouched.
+// Emit every region in `plan.Regions` (populated by `detectControlRegions`),
+// dispatched by `Kind` and arm class as above. Mutates the module IR and `taint`
+// (scrubs every erased instruction). A plan with no regions is a no-op, so a
+// classical-only / fully-declined module is untouched.
 void lowerControlRegions(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
                          const ControlPlan &plan);
 
-// Reused routing primitives (de-anonymized from the .cpp's anonymous namespace,
-// WI-3/MD1-style, so the 4.3 `NestedRouteEmit` TU shares ONE definition per
-// Rule 14). `collectArmPhis` returns an arm block's IN-BLOCK `@cq_phi` (Rz) gates
-// in FORWARD program order, bounded at the arm-block boundary (a pre-region phi
-// is the live derived base, not an arm gate — the load-bearing bound, Rule 10).
-// `emitRoute` emits `cqrt_cswap(flag, q, rail)`, X-bracketed for a ¬flag
-// (`Negated`/FALSE-successor) arm; the route-in and route-back are the SAME call
-// (the RSSA join-is-the-inverse-of-the-split symmetry). It RETURNS that cswap so
-// a caller whose route-back is the literal adjoint of its route-in can collect
-// the pair into a `TaintSet::RestoringRoute` group (M-B Increment 6 clause (d2)).
-// The X brackets are on the FLAG, never on the routed base, so they are not part
-// of the group.
+// Shared primitives, de-anonymized from the .cpp. `collectArmPhis` returns an
+// arm block's IN-BLOCK `@cq_phi_<sfx>` gates in FORWARD program order, bounded at
+// the arm-block boundary (a pre-region phi is the live derived base, not an arm
+// gate). It matches only that retired register form, whose every use is a loud
+// reserved-name error in `resolveSources`, so on a module that reaches emission it
+// finds no gates. `emitRoute` emits `cqrt_cswap(flag, q, rail)`, X-bracketed for a
+// ¬flag (`Negated`/FALSE-successor) arm, and RETURNS that cswap. Its one caller is
+// `AbortParkEmit` (the 7.2 park into a kept graveyard rail), which records no
+// `TaintSet::RestoringRoute` group. The X brackets are on the FLAG, never on `Q`.
 llvm::SmallVector<llvm::CallInst *, 4> collectArmPhis(
     llvm::Value *ArmIncoming, const llvm::BasicBlock *ArmBB);
 llvm::CallInst *emitRoute(llvm::IRBuilder<> &B, const ControlledSymbols &csyms,

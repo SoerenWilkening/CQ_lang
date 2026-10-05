@@ -33,16 +33,16 @@
 
    SOURCE INTENT — one activation per trip:
        if (q == 5) cq_theta(&r, 0.9);   the controlled Ry on a DISJOINT rail
-       cq_phi(0.1);                 an Rz on the condition register
+       cq_phi(0.1); cq_theta(&q, 0.05); a deleted global phase, then an Ry on q
 
-   WHY THE `cq_phi` ON `q` IS NOT DECORATION (PRD §13.1). From C the condition
+   WHY THE `cq_theta(&q, 0.05)` IS NOT DECORATION (PRD §13.1). From C the condition
    register MUST be loop-VARIANT or `clang -O1` LICM-hoists the compare into the
    preheader, `condWireDisposition`'s P4 precondition fires
    (`Cond->getParent() != R.Pred`) and BOTH sides decline `condition predates a
    non-diagonal gate` — PRD §13.2 row W, a recorded over-decline pinned by
-   ir-pass/test/control_inplace_ry_reject_inloop_invariant_cond_hoisted.ll. An Rz
-   is the cheapest gate that defeats the hoist, and it is DIAGONAL, so
-   `condWireDisposition` still returns `None` and the P1 fence is never consulted.
+   ir-pass/test/control_inplace_ry_reject_inloop_invariant_cond_hoisted.ll. The
+   pre-3qlq register-form Rz `q = cq_phi(q, 0.1)` defeated the hoist; register-free
+   `cq_phi(0.1)` reads nothing, so the Ry now does it (see the note above).
    (The `Ry` reflection is the Grover customer and needs §13.4b — see
    slice_control_inplace_ry_loop_grover.c.)
 

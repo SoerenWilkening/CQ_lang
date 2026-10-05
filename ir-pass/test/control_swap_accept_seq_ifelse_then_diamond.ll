@@ -2,7 +2,7 @@
 ; whose MERGE hosts the next region's tainted branch, i.e. two SEQUENTIAL
 ; tainted-control regions.
 ;
-; `if (q>5) {rz a} else {rz b}; if (q>3) {rz c}` — the natural clang -O1 shape
+; `if (q>5) cq_phi(a); else cq_phi(b); if (q>3) cq_phi(c);` — the natural -O1 shape
 ; for two consecutive tainted ifs. Region 2's `Pred` IS region 1's `MergeBB`.
 ;
 ; THIS FIXTURE USED TO BE `control_swap_reject_seq_ifelse.ll`, a DECLINE. The
@@ -24,8 +24,8 @@
 ; of the CHECK block below: each emitter inserts POSITIONALLY into its own pred
 ; block, so region 1's stream still precedes region 2's in the final linear
 ; block. The SSA NAMES betray the emission order (region 2 got the un-suffixed
-; `%rail`/`%h_cmp`), which is exactly why every name below is a regex capture and
-; never a literal.
+; `%h_cmp`), which is exactly why every name below is a regex capture and never a
+; literal.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

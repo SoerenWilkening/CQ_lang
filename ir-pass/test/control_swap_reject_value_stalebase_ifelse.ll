@@ -3,16 +3,15 @@
 ; adversarial review, 2026-06-11 — the shape the removed staged WI-5 decline
 ; was incidentally masking).
 ;
-; Both chains bottom at `%qd = cq_phi(%q, ·)` while `%q2 = cq_theta(%q, ·)`
-; (a chained Ry through the sibling SSA name) fires on the same physical wire
-; before the branch: the dual route-ins would read the POST-Ry wire while the
-; chains' SSA base names the PRE-Ry RECORD (stale-record family — see the
-; diamond twin for the full rationale). Since test_C_libtooling-6j1 the
-; observed message is the EARLIER straight-line guard's
-; (OpcodeLowering::declineStaleRecordOps — its seed closure catches the arm
-; ops over `%qd` first; opt exits at the FIRST DS_Error); the region-level
-; routed-base diagonal-alias-closure walk in classifyArms remains live behind
-; it, pinned by control_swap_reject_value_stalebase_inarm.ll.
+; Both chains bottom at `%q` while `%q2 = cq_theta(%q, ·)` (a chained Ry through
+; a sibling SSA name) fires on the same physical wire before the branch: the
+; value-arm lowering would read the POST-Ry wire while the chains' SSA base names
+; the PRE-Ry RECORD (stale-record family — see the diamond twin for the full
+; rationale). Since test_C_libtooling-6j1 the observed message is the EARLIER
+; straight-line guard's (OpcodeLowering::declineStaleRecordOps — its seed closure
+; catches the arm ops over `%q` first; opt exits at the FIRST DS_Error); the
+; region-level routed-base diagonal-alias-closure walk in classifyArms remains
+; live behind it, pinned by control_swap_reject_value_stalebase_inarm.ll.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))

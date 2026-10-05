@@ -1,50 +1,25 @@
-; control_angle_select_forward_rail_cycle_frozen.ll — ACCEPT, and it pins a GAP
-; rather than a guarantee: S7's three prongs do NOT ask about the rotated
-; register's rail FORWARD of the consumer, so a cycle carrying a later gate on the
-; SAME rail lowers.
+; control_angle_select_forward_rail_cycle_frozen.ll — ACCEPT. A phase angle
+; select in `entry`, then an empty classical counting loop on `%n`.
 ;
-; *** ROUND-2 RULE-13 REVIEW, lens R1 item 2 (bd drbq Inc 2b). *** The round-1
-; fix widened S7 from "`LI->getLoopFor` of `Cond`/`Sel`/`T`'s blocks" to three
-; prongs and its comment claimed S7 "now asks all three questions, ORed,
-; over-declining by construction", with the `Exclude = T` rationale reading
-; "nothing about the consumer's position is lost by the exclusion". Both sentences
-; are FALSE OF THE RAIL PAST `T`, and this fixture is the shape that shows it:
+;     int r = u1; cq_theta(&r,.25);            // r never read again
+;     cq_phi(q == 5 ? .9 : .3);
 ;
-;   * prong (i)/(ii) ask three ANCHOR blocks — `Cond`, `Sel`, `T` are all in
-;     `entry`, which is on no cycle;
-;   * prong (iii) asks the rotated register's wire closure, which carries
-;     `Exclude = T` and therefore STOPS at the consumer — so `%g`, the `cq_phi` on
-;     `%t` inside the loop, is not a member and is never asked about.
+; WHAT IT PINS: the select lowers by kickback on the flag in `entry` (mint,
+; `cqrt_x`-bracketed `cqrt_rz_i1(f, .3)`, `cqrt_rz_i1(f, .9)`, strip, free), the
+; loop carries no gate, and the dead `r` is reverse-played and kept allocated
+; (the bd 5c5b note in the CHECK block).
 ;
-; The gate below is on the SAME PHYSICAL RAIL as the controlled rotation (after
-; `lowerRotations` both are `%h1`), it executes an unbounded number of times, and
-; nothing in this classifier looks at it. Note this is NOT about irreducibility:
-; the cycle here is a perfectly ordinary NATURAL loop that `LoopInfo` sees. The
-; blind spot is the `Exclude = T` boundary, not the loop recognizer.
-;
-; *** WHY IT IS SOUND, AND WHY THE SILENCE IS NOT 2b's TO OWN — MEASURED, NOT
-; *** ARGUED. The manual by-difference twin of this program
-; (`r = R(r,B); if (c) r = R(r,A-B);`, an Inc-2a in-place diamond) is ACCEPTED BY
-; THE PRE-2b BINARY, and its emitted `@example` body is BYTE-IDENTICAL to what
-; this file pins — same gates, same rails, same order, same frozen-rail
-; disposition. So the property that reads alarming here (the plain UNCONTROLLED
-; program `t = cq_phi(r, 0.9)` over the same cycle declines LOUDLY, `cq uncompute:
-; tainted handle live range crosses a loop backedge`, on BOTH binaries) is
-; produced by Inc-1's STRUCTURAL FREEZE — `ChainWalk::railCarriesControlledRotation`
-; stops the whole-DAG uncompute spine walking a rail that carries a controlled
-; rotation — and it reproduces on the oracle without any 2b code in the build.
-; 2b turns no loud decline into silence here; it reaches the same already-shipped
-; disposition through a different front door.
-;
-; WHAT THAT LEAVES: the rail is FROZEN, so it is never reverse-played and never
-; freed — left allocated, which is the Rule-6 safe direction (a qubit leak in the
-; qubits-not-scarce regime, never a dirty free). The negatives below pin exactly
-; that: no adjoint of the unconditional twin, and no `cqrt_free` of the rotated
-; rail. A future change that "tidies up" the freeze would redden this file, which
-; is the whole reason it is committed as an ACCEPT rather than left in a report.
+; ⚠ THE ORIGINAL SUBJECT IS GONE. The file was written (bd drbq Inc 2b, round-2
+; Rule-13 review, lens R1 item 2) to pin a GAP: S7's prongs do not ask about the
+; rotated register's rail FORWARD of the consumer, so a later gate on the SAME
+; rail inside a loop (pre-3qlq register form `t = cq_phi(r, 0.9)`) lowered, and
+; `ChainWalk::railCarriesControlledRotation` FROZE that rail (never
+; reverse-played, never freed). The 3qlq migration deleted the in-loop gate (an
+; uncontrolled phase) and the select no longer rotates `r`, so neither the gap
+; nor the freeze is exercised here; "frozen" in the file name is history.
 ;
 ; ORACLE DISPOSITION: RED on the pre-2b binary (`rotation angle under quantum
-; control`) — it declines every angle select. The twin above is what accepts there.
+; control`) — it declines every angle select.
 ;
 ; Reproducers from the round-2 review, lens R1
 ; (`review2b_r2/R1/probes/s7/{fwd,nat}_sel_{ry,rz}.ll`), re-derived without the
@@ -99,7 +74,7 @@ entry:
 
 L:
   %i = phi i32 [ 0, %entry ], [ %inext, %L ]
-  ; the FORWARD gate on the SAME rail, inside the cycle — asked by NEITHER prong
+  ; pre-3qlq, the FORWARD gate on the SAME rail sat here; the migration deleted it
   %inext = add i32 %i, 1
   %done = icmp sgt i32 %inext, %n
   br i1 %done, label %exit, label %L

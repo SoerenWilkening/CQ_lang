@@ -6,13 +6,13 @@
 ;     volatile int off = 3;
 ;     int q = 0;
 ;     cq_theta(&q, 0.5);  q += off;                 /* S      */
-;     if (q == 5) q = cq_phi(q, PI);                   /* O      */
+;     if (q == 5) cq_phi(PI);                          /* O      */
 ;     q -= off;  cq_theta(&q, -0.5);                /* S†     */
-;     if (q == 0) q = cq_phi(q, PI);                   /* R0     */
+;     if (q == 0) cq_phi(PI);                          /* R0     */
 ;     cq_theta(&q, 0.5);  q += off;                 /* S      */
-;     if (q == 5) q = cq_phi(q, PI);                   /* O      */
+;     if (q == 5) cq_phi(PI);                          /* O      */
 ;     q -= off;  cq_theta(&q, -0.5);                /* S†     */
-;     if (q == 0) q = cq_phi(q, PI);                   /* R0     */
+;     if (q == 0) cq_phi(PI);                          /* R0     */
 ;     cq_theta(&q, 0.5);  q += off;                 /* re-prep */
 ;     return cq_measure(q);
 ;
@@ -24,36 +24,31 @@
 ; FOUR CHAINED THETAS, TWO OF WHICH DRIVE THE ACCEPT. The two `S†` thetas and
 ; the two `S` re-preps are all chained (arg-0 is a live quantum wire). The
 ; ORACLE regions never needed the widening: their conditions read an `add`
-; result, the walk crosses the merge phi but not the following `sub`, so the
-; S-dagger theta behind it is never reached and no gate is found on their wire
-; at all (measured on the one-iteration twin: swapping an oracle arm for a value
-; op yields the value-arm string, not the deferred wire-gate one). The two REFLECTION regions are
-; the ones that declined: each reads a chained theta directly, and each one's
-; forward wire runs through its merge phi into the NEXT `cq_theta`. Both of
+; result, the walk does not cross the following `sub`, so the S-dagger theta
+; behind it is never reached and no gate is found on their wire at all
+; (measured on the one-iteration twin: swapping an oracle arm for a value op
+; yields the value-arm string, not the deferred wire-gate one). The two
+; REFLECTION regions are the ones that declined: each reads a chained theta
+; directly, and each one's forward wire runs into the NEXT `cq_theta`. Both of
 ; those are dominated by their region's branch and cannot reach back to it, so
 ; `provablyBefore(BI, T)` holds twice and both regions accept as PHASE arms.
 ;
 ; WHAT THE STREAM BELOW WITNESSES, in order, and it is the whole correctness
-; claim of the increment: for EVERY region the flag is minted, the arm gate fires
-; CONTROLLED AND IN PLACE on the register, and the flag is `_unc`-STRIPPED and
-; FREED — and only THEN does the next `cqrt_ry_i32` fire. Four strips, four flag
-; frees, and no `cqrt_ry_i32` between a mint and its strip. A regression that let
-; a re-prep Ry slide before a strip would still verify clean and still pair every
-; free; only this ordering catches it.
+; claim of the increment: for EVERY region the flag is minted, takes the phase
+; by one uncontrolled `cqrt_rz_i1`, and is `_unc`-STRIPPED and FREED — and only
+; THEN does the next `cqrt_ry_i32` fire. Four strips, four flag frees, and no
+; `cqrt_ry_i32` between a mint and its strip. A regression that let a re-prep
+; Ry slide before a strip would still verify clean and still pair every free;
+; only this ordering catches it.
 ;
-; ⚠ THERE ARE **ZERO** RAIL FREES, and this paragraph used to claim four. Since bd
-; drbq Inc 2a (2026-09-02) the FLAT phase path emits no work rail at all — the CNT
-; block below asserts exactly that (one cqrt_alloc_i32 on the CNT prefix, four
-; cqrt_free on CNT3 = the four FLAG frees), and line ~181 of this same file already said
-; "No swap route survives on any of the four regions". Corrected in the Inc-2a
-; round-1 review (L3 F3); the file used to contradict itself.
-;
-; ONE REGISTER (M-C, bd 6uqc Inc 2): every `+= off` / `-= off` is an in-place
-; `cqrt_addc_i32`, so exactly FIVE `cqrt_alloc_i32` appear — the wire plus one
-; work rail per region — and nothing else is entangled with the wire when any of
-; the four non-diagonal gates fires. That is the property the e2e customer
-; `slice_control_grover_2iter` re-checks at the trace level with strict
-; free-pairing (`5 rail mint(s) of which 1 left allocated`, the measured register).
+; ONE REGISTER, ZERO RAIL FREES. Every `+= off` / `-= off` is an in-place
+; `cqrt_addc_i32` (M-C, bd 6uqc Inc 2), and since bd drbq Inc 2a (2026-09-02)
+; the FLAT phase path emits no work rail, so exactly ONE `cqrt_alloc_i32`
+; appears — the wire — and FCNT's four `cqrt_free` are the four FLAG frees (this
+; header used to claim four rail frees; corrected in the Inc-2a round-1 review,
+; L3 F3). Nothing else is entangled with the wire when any of the four chained Ry
+; gates fires; the e2e customer `slice_control_grover_2iter` re-checks this at
+; the trace level.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

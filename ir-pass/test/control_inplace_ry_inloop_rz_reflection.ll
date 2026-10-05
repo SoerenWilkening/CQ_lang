@@ -1,23 +1,21 @@
-; control_inplace_ry_inloop_rz_reflection.ll — ACCEPT: the in-loop Ry arm with an
-; Rz REFLECTION on the CONDITION register in the body (bd test_C_libtooling-drbq
-; Inc 3). This is the C-reachable spelling of shape S2.
+; control_inplace_ry_inloop_rz_reflection.ll — ACCEPT: the in-loop Ry arm on a
+; loop-invariant condition register whose compare sits in the loop block (bd
+; test_C_libtooling-drbq Inc 3; written as the C-reachable spelling of shape S2).
 ;
-;     for (...) { if (q == 5) cq_theta(&r, .9); q = cq_phi(q, .1); }
+;     for (...) { if (q == 5) cq_theta(&r, .9); }
 ;
-; TWO THINGS IT PINS THAT NO INVARIANT-CONDITION FIXTURE CAN.
+; ⚠ THE Rz REFLECTION IS GONE. The body used to apply `q = cq_phi(q, .1)`
+; (pre-3qlq register form), a diagonal gate on `q` that made it loop-variant, so
+; `clang -O1` could not LICM-hoist the compare into the preheader, where P4
+; declines it (PRD §13.2 row W, an over-decline), while `condWireDisposition`
+; still returned `None`. The 3qlq migration deleted that uncontrolled phase, and a
+; register-free phase cannot touch `q`, so this hand-kept IR is no longer the
+; C-reachable spelling. (An `Ry` reflection here is the Grover customer and needs
+; §13.4b — see control_inplace_ry_post_region_theta_cond.ll.)
 ;
-; (1) FROM C THE CONDITION REGISTER MUST BE LOOP-VARIANT (PRD §13.1). With no gate
-;     on `q` in the body, `clang -O1` LICM-hoists the compare into the preheader
-;     and `condWireDisposition`'s P4 precondition (`Cond->getParent() != R.Pred`)
-;     declines BEFORE any rotation clause is reached — PRD §13.2 row W, an
-;     over-decline. An `Rz` on `q` is the cheapest gate that defeats the hoist,
-;     and it is DIAGONAL, so `condWireDisposition` still returns `None` and the
-;     P1 fence is never consulted. (An `Ry` reflection here is the Grover customer
-;     and needs §13.4b — see control_inplace_ry_post_region_theta_cond.ll.)
-;
-; (2) The condition rail and the rotated rail are DISJOINT (R4), so the flag the
-;     mint reads is the basis the source compare describes and the uncontrolled
-;     `_unc` strip returns it to |0> — per activation, exactly as flat.
+; WHAT IT STILL PINS: the condition rail and the rotated rail are DISJOINT (R4),
+; so the flag the mint reads is the basis the source compare describes and the
+; uncontrolled `_unc` strip returns it to |0> — per activation, exactly as flat.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

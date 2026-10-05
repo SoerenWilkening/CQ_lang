@@ -2,10 +2,10 @@
 ; TWO rotations' angle slots (bd drbq Inc 2b).
 ;
 ;     double a = q == 5 ? .9 : .3;
-;     cq_theta(&r, a); s = cq_phi(s, a);
+;     cq_theta(&r, a); cq_phi(a);
 ;
 ; A RECORDED FOLLOW-ON, not a hazard of the construct: each consumer would get its
-; own unconditional twin and its own controlled gate, and the two would need to
+; own gate stream, and the two would need to
 ; SHARE one flag (minting twice and stripping twice is sound but wasteful; minting
 ; once means the mint and the strip bracket BOTH gates). What makes N consumers
 ; more than bookkeeping is S6: its positional scan is deliberately WIRE-BLIND, so

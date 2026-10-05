@@ -2,7 +2,7 @@
 ; used as BOTH a `br` region's control AND an angle select's condition (bd drbq
 ; Inc 2b).
 ;
-;     if (q == 5) s = cq_phi(s, .7);                  // a swap-route region
+;     if (q == 5) cq_phi(.7);                      // a phase-arm region
 ;     cq_theta(&r, q == 5 ? .9 : .3);              // an angle select
 ;
 ; `clang -O1` CSEs the two `q == 5` tests into ONE `icmp` with two users, so this

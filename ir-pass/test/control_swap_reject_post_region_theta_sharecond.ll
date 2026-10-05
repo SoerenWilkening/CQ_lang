@@ -4,13 +4,12 @@
 ;
 ; The condition is ALSO read as data (`int f = (q > 5); … measure(f)`), so
 ; `classifyArms` takes the ziov WI-1 share path and sets `Region.ShareCondFlag`.
-; On that path `SwapRouteEmit::emitRegion` deliberately SKIPS steps 7-8 — the
-; `_unc` flag strip and the `cqrt_free` — because the data lineage owns the
-; flag downstream. MEASURE THAT, do not take it on trust: delete the
-; `cq_theta` below and the emitted stream is
-;     cq_template_icmp_sgt_i32_hl -> %h_cmp ; alloc rail ; cswap ; rz ; cswap ;
-;     free(rail) ; cq_template_zext_i1_to_i32(%h_cmp) ; measure ; measure
-; with NO `..._hl_unc` and NO `cqrt_free(%h_cmp)` anywhere.
+; On that path the phase emitter deliberately SKIPS the `_unc` flag strip and the
+; `cqrt_free`, because the data lineage owns the flag downstream. MEASURE THAT, do
+; not take it on trust: delete the `cq_theta` below and the emitted stream is
+;     cq_template_icmp_sgt_i32_hl -> %h_cmp ; cqrt_rz_i1(%h_cmp) ;
+;     cq_template_zext_i1_to_i32(%h_cmp) ; measure ; measure
+; with NO `..._hl_unc` and NO `cqrt_free(%h_cmp)` anywhere (re-measured 2026-10-05).
 ;
 ; SO THE FLAG IS A LIVE, ENTANGLED RECORD OF THE WIRE past the region, and a
 ; later in-place Ry on that wire dephases exactly the superposition the region

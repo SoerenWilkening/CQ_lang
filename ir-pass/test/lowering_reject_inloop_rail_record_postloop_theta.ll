@@ -3,7 +3,7 @@
 ; miscompile in the round-1 fence itself.
 ;
 ;     int q = 0; cq_theta(&q, .5);
-;     for (i<2) { if (q==5) q = cq_phi(q,PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
+;     for (i<2) { if (q==5) cq_phi(PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
 ;     int mark = q;                 /* the record: the loop's EXIT state */
 ;     cq_theta(&q, 0.125);       /* an OFF-CHAIN in-place Ry on the same rail */
 ;     return cq_measure(mark) + cq_measure(q);

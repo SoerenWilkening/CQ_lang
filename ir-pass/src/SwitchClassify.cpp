@@ -593,19 +593,19 @@ void classifySwitchRegion(SwitchInst *SI, TaintSet &taint, ControlPlan &plan) {
   ControlRegion R;
   R.Kind = ControlRegion::SwitchRegion;
   R.SwitchCls = Cls;
-  R.Condition = Q;            // the scrutinee. For PHASE it IS the routed base
-                              // (§4A); for VALUE/DATA-MUX it is ONLY the eq-flag
-                              // source — the routed base is `p` = the merge
-                              // straight-through, recovered in the emitter, NOT
-                              // R.Condition (WI-7 Lens-4 clarification).
+  R.Condition = Q;            // the scrutinee: ONLY the eq-flag source. The
+                              // VALUE base is `p` = the merge straight-through,
+                              // recovered in the emitter, NOT R.Condition (WI-7
+                              // Lens-4). A PHASE region from this ladder is the
+                              // retired register form (`proveSwitchPhase`).
   R.Merge = P;                // the sole N-incoming content merge phi.
   R.Pred = SwitchBB;          // the switch block (survives the flatten).
   R.MergeBB = MergeBB;
   R.SwitchDefaultDirect = DefaultDirect;
   // Capture every case-arm BLOCK (incl. an empty passthrough arm whose incoming
   // is just the scrutinee) so `flattenSwitchRegion` erases them all; the emitter
-  // skips an arm with no folded gates (`collectArmPhis` empty). A straight-to-
-  // merge case has a null block — no block to route or flatten — so skip it.
+  // skips an arm whose incoming is the straight-through. A straight-to-merge
+  // case has a null block — nothing to flatten — so skip it.
   for (const SwitchCase &C : S.Cases) {
     if (!C.Block)
       continue;

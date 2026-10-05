@@ -1,28 +1,27 @@
 ; lowering_uncompute_interior_region_ifelse_chain.ll — ACCEPT (M-B Increment 6,
-; clause (d2)). THE FOUR-MEMBER ROUTE GROUP: an IF/ELSE phase region routes the
-; base TWICE (once per arm, the else arm X-bracketed on ¬flag), so the recorded
-; `RestoringRoute` has FOUR `cqrt_cswap` members and the discharge is legal only
-; if ALL FOUR lie inside the interval.
+; clause (d2)). An IF/ELSE phase region whose condition is a DERIVED chain
+; (`mul`, `and`), discharged right after the region's recorded flag strip.
 ;
 ;     q = u; cq_theta(&q, 0.5);
-;     if (((q * 37) >> 3) == 5) r = cq_phi(q, PI);
-;     else                      r = cq_phi(cq_phi(q, 0.25), 0.75);
-;     return cq_measure(r);
+;     if (((q * 37) >> 3) == 5) cq_phi(PI);
+;     else                      { cq_phi(0.25); cq_phi(0.75); }
+;     return cq_measure(q);
 ;
-; WHY THE GROUP IS STILL THE IDENTITY ON THE BASE'S LABEL. The true arm's pair
-; fires on `flag`, the else arm's on `¬flag` (the `cqrt_x` brackets are on the
-; FLAG rail, opened and closed by `emitRoute` in the same step). At most one of
-; the two exchanges is active on any branch, so the four calls commute and each
-; active pair is its own inverse: the base leaves the region with the label it
-; entered with. Two `Rz` gates run in between, both DIAGONAL and both on WORK
-; RAILS, never on the base.
+; WHAT THE CHECK PINS. Both arms lower by KICKBACK onto ONE flag: the true arm's
+; `cqrt_rz_i1(flag, PI)`, then the else arm's two `cqrt_rz_i1` inside one
+; `cqrt_x` bracket (¬flag). The strip runs first (it reads the live `and` rail),
+; then the chain's `_unc`s LIFO with their frees, then the flag free. No gate in
+; the region touches the base `%h`.
+;
+; HISTORY. Before bd 3qlq this file pinned THE FOUR-MEMBER ROUTE GROUP: the swap
+; route moved the base TWICE (once per arm), so the recorded `RestoringRoute` had
+; FOUR `cqrt_cswap` members and the discharge was legal only if ALL FOUR lay
+; inside the interval.
 ;
 ; THE ELSE ARM CARRIES TWO GATES DELIBERATELY. Written with one gate per arm,
-; `clang -O1` merges the two `cq_phi` calls and muxes their ANGLES through a
-; phi — a rotation angle under quantum control, which declines (Rule 3). Two
-; gates in one arm keeps the two spines distinct. (The angle mux decline is not
-; what this fixture is about; it is why the shape is spelled this way.)
-;
+; `clang -O1` merges the two `cq_phi` calls into one call on a muxed ANGLE (an
+; angle select, which declined pre-3qlq). Two gates in one arm keep this an
+; if/else region; the angle select is not what this fixture is about.
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
 ; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)

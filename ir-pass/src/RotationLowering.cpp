@@ -1,10 +1,9 @@
-// RotationLowering.cpp — Lower tainted `@cq_theta_<sfx>` / `@cq_phi_<sfx>`
-// rotations to runtime calls. See header for the contract; backend.md §5.1
-// for the operand-dispatch table and IMPLEMENTATION.md §1 for the
-// cross-type-RAUW invariant.
-//
-// Single pass over the already-collected work lists (`taint.ThetaCalls`,
-// `taint.PhiCalls` — populated by `propagate`); no module re-walk.
+// RotationLowering.cpp — Lower tainted `@cq_theta_<sfx>` rotations to runtime
+// calls (the retired `@cq_phi_<sfx>` loop is deleted, see `lowerRotations`). See
+// header for the contract; backend.md §5.1 for the operand-dispatch table and
+// IMPLEMENTATION.md §1 for the cross-type-RAUW invariant. Single pass over the
+// collected `taint.ThetaCalls` (from `propagate`; `taint.PhiCalls` is
+// permanently empty since 3qlq); no module re-walk.
 
 #include "RotationLowering.h"
 
@@ -277,8 +276,8 @@ StringRef suffixFromName(const CallInst *CI, StringRef Prefix) {
 // ARG-1 IS THE ANGLE AND IS NEVER TOUCHED (Rule 3). An `undef` angle is out of
 // scope for this increment and keeps today's behaviour exactly: it survives into
 // `cqrt_ry_<W>(h, undef)` as ONE slot, which `declineUnpairedUndefLiterals`
-// counts but does not decline on, and its `cq_phi` twin (two slots, forward +
-// negated adjoint) already declines through
+// counts but does not decline on, and its paired twin (a chained theta on a
+// template rail: forward + negated adjoint, two slots) already declines through
 // `lowering_reject_undef_literal_paired_rz_angle.ll`. Measured 2026-09-14 on the
 // oracle and re-measured after this change: byte-identical.
 //
@@ -965,8 +964,8 @@ namespace {
 //   * lowering_reject_live_record_qram_load.ll            (a `cqrt_qram_load_` record)
 //   * lowering_reject_live_record_spine_only_use.ll       (post-T mention is an
 //       `_unc` READ of a DIFFERENT rail — the spine-aware reading's defining case)
-//   * lowering_reject_live_record_sibling_alias.ll        (record off the `cq_phi`
-//       sibling name of the wire)
+//   * lowering_reject_live_record_sibling_alias.ll        (record off the wire;
+//       its pre-3qlq `cq_phi` sibling alias was deleted by the 3qlq migration)
 //   * lowering_reject_live_record_router_phi.ll           (record behind the bd
 //       tayx one-register router phi)
 //   * lowering_reject_live_record_clone_call_hop.ll       (the record sits behind
@@ -1025,9 +1024,9 @@ namespace {
 //   * lowering_qram_array_record_chained_theta_accept.ll the RULED-DEFERRED
 //       QRAM-array record class
 //   * lowering_reject_live_record_post_theta_user_rz.ll  the RULED F2 boundary
-//       (2026-08-28): a bare post-gate user rotation is a liveness NON-use, so
-//       the record stays dead and declines — read its header before touching
-//       `isTeardownUse`'s rotation arm or the clause-3 loop
+//       (2026-08-28): a bare post-gate user rotation is a liveness NON-use. Its
+//       user Rz was a register-form `cq_phi` that the 3qlq migration deleted, so
+//       the file now pins only the dead record, not the rotation arm
 //   * lowering_live_record_region_owner_probe.ll         an earlier stage still
 //       owns its own message; this guard re-owns none
 //   * lowering_live_record_anc_measured_before_theta_accept.ll  clause 4 on an
@@ -1051,8 +1050,8 @@ namespace {
 // not the letter.) Negatives:
 //   * lowering_reject_live_record_sibling_region_after_theta.ll  THE F1 fixture:
 //       a dead sibling whose only post-gate fate is a compare feeding a phase
-//       region — routed, stripped, freed, never observed. MEASURED `opt` exit 0
-//       pre-fix; its region-BEFORE twin
+//       region — its flag minted, stripped, freed, never observed. MEASURED
+//       `opt` exit 0 pre-fix; its region-BEFORE twin
 //       (lowering_reject_live_record_anc_dead_sibling.ll) always declined, and
 //       closing that before/after asymmetry is what the ruling is for
 //   * lowering_reject_live_record_qram_store_no_readback.ll      the array HOP in
@@ -1242,7 +1241,7 @@ bool isRecordedUserRotation(const CallInst *CI, const TaintSet &taint) {
 // own rail; nothing is observed, and if the rail is measured later that measure
 // is a DIRECT user of the rail and counts on its own. The over-accept this
 // closed is measured, not hypothetical: a dead sibling whose only post-gate fate
-// was a compare feeding a phase region — flag routed, stripped and freed —
+// was a compare feeding a phase region — flag minted, stripped and freed —
 // exempted on the route/compare mentions and the module ACCEPTED, while the same
 // program with the region moved BEFORE the gate DECLINED on identical rails
 // (lowering_reject_live_record_sibling_region_after_theta.ll vs
@@ -1261,8 +1260,8 @@ bool isRecordedUserRotation(const CallInst *CI, const TaintSet &taint) {
 // residual documented there is unchanged and still structurally unreachable
 // from a guard site (its emissions live inside a clone body, and a clone is
 // theta-free by construction, so it holds no `UserChainedRotations` member).
-// Pinned by lowering_reject_live_record_post_theta_user_rz.ll (F2) and
-// lowering_reject_live_record_sibling_region_after_theta.ll (F1).
+// Pinned by lowering_reject_live_record_post_theta_user_rz.ll (F2; its user Rz is
+// gone since 3qlq, see above) and ..._sibling_region_after_theta.ll (F1).
 bool isTeardownUse(const CallInst *CI, const TaintSet &taint) {
   if (taint.SpineOps.count(CI))
     return true;
@@ -1462,9 +1461,10 @@ bool isQramArrayHandle(const CallInst *CI) {
 // (`void cqrt_copy_<W>(src, dst)`, `void cqrt_copy_<W>_controlled(ctrl, src,
 // dst)`) and against every emission site rather than assumed — all ten put the
 // destination last: BennettWrap.cpp:82 `{ResultRail, Out}`, SwapRouteEmit.cpp:361
-// `{Q, Out}`, SelectMergeEmit.cpp:242/250 and SwitchDataMuxEmit.cpp:200
-// `{Flag, Src, Out}`, IOSinkLowering.cpp:779/782, ClassicalCallArmEmit.cpp:233/241,
-// Specialization.cpp:351/361/369, BreakReversePlay.cpp:552-660, QramLowering.cpp:1883
+// `{Q, Out}` (value-arm route, retired by 3qlq), SelectMergeEmit.cpp:242/250 and
+// SwitchDataMuxEmit.cpp:200 `{Flag, Src, Out}`, IOSinkLowering.cpp:779/782,
+// ClassicalCallArmEmit.cpp:233/241, Specialization.cpp:351/361/369,
+// BreakReversePlay.cpp:552-660, QramLowering.cpp:1883
 // (re-verified by the Inc-3 Rule-13 round, 2026-08-28).
 // The family is SELF-INVERSE, so there is no `_unc`/`_inv` twin to exclude
 // (cq_runtime.h:269, :317).
@@ -1755,10 +1755,10 @@ bool isQramStoreGate(const CallInst *CI, unsigned &ArrPos) {
 //       constructed probes exactly as F1 and F2 were.
 //
 // A COMPARE whose flag is only stripped needs no rule of its own: the compare is
-// a HOP, and the flag's users are then `cqrt_cswap` / `_unc` / `cqrt_free`, all
-// non-uses, so the walk simply runs out. That is the h4 shape. A compare whose
-// flag feeds a condition-tree NODE is the N1 shape and does hop — but only as far
-// as the node ancilla, so if nothing reads the merge OUT the walk still runs out
+// a HOP, and the flag's users are then non-uses (a kickback `cqrt_rz_i1`, `cqrt_x`,
+// `_unc`, `cqrt_free`), so the walk runs out: the h4 shape. A compare whose flag
+// feeds a condition-tree NODE is the N1 shape and does hop — but only as far as
+// the node ancilla, so if nothing reads the merge OUT the walk still runs out
 // (`lowering_reject_live_record_condtree_out_unobserved.ll`).
 //
 // Deeper nodes carry NO position test — they are downstream of `U`, which the

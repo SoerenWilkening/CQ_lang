@@ -3,10 +3,10 @@
 ; (test_C_libtooling-5j5 decline complement; pins lift condition (6)).
 ;
 ; Both incomings DO resolve to the one base %q — but the arm incoming's chain
-; is {%q2 in %arm, %q3 in %entry}: the %q3 = cq_phi(%q, x) gate fired BEFORE
+; is {%q2 in %arm, %q3 in %entry}: the %q3 = cq_theta(%q, x) gate fired BEFORE
 ; the branch, unconditionally, on every path. The straight edge's incoming
 ; %q then claims the PRE-%q3 record while the physical register always
-; carries rz(x): a stale record on every not-taken shot. Accepting + RAUW to
+; carries ry(x): a stale record on every not-taken shot. Accepting + RAUW to
 ; %q would be the verify-clean wrong-unitary class, so the single-block-arm
 ; condition (every chain call's parent == its edge's incoming block) refuses
 ; and the wi5 decline fires.
@@ -22,7 +22,7 @@
 ; a region emitter already adjudicated — treating its result as the base. Those
 ; gates dominate every incoming edge, so they discharge condition (6)'s
 ; obligation by DOMINATION instead of by edge-locality. `%q3` here is an
-; ORDINARY uncontrolled `cq_phi` in nobody's `ControlledRotations`, so this
+; ORDINARY uncontrolled `cq_theta` in nobody's `ControlledRotations`, so this
 ; decline and the conservative-cost variant above both stand unchanged. Making
 ; the strip dominance-based in general would cover them too and is a real
 ; widening of this accept class — its own probe family, its own Rule-13 round.

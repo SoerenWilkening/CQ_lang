@@ -31,21 +31,21 @@
    write:
 
        int q = k; cq_theta(&q, t);
-       if (classical_c) cq_phi(a);    // classical if around a gate
+       if (classical_c) cq_theta(&q, a);  // classical if around a gate
        cq_measure(q);
 
    survives clang -O1 as a branch + merge phi whose two incomings are distinct
-   SSA names for the SAME register (cq_phi is in place). The lift
+   SSA names for the SAME register (cq_theta is in place). The lift
    (TaintPropagation::liftOneRegisterMergePhi) proves the phi a pure renaming,
    RAUWs it to the wire base, erases it, and leaves the CLASSICAL branch
-   byte-untouched — so the emitted cqrt_rz stays INSIDE the arm and fires iff
+   byte-untouched — so the emitted cqrt_ry stays INSIDE the arm and fires iff
    the condition held THIS SHOT. That per-shot trace difference is the
    user-written classical control over WHICH gates execute — fine classically
    (no superposed condition, no flag, no routing, no controlled gates).
 
    Both polarities are goldened in one run: `taken` (argc > 0) is true on
    every run with no args, `nottaken` (argc > 100) is false — so the trace
-   must show the rz for q1 and NO rz for q2. Conditions derive from argc so
+   must show the arm ry for q1 and NONE for q2. Conditions derive from argc so
    -O1 cannot constant-fold the branches away.
 
    cq_theta/cq_phi/cq_measure resolve from CQ.h, force-included by

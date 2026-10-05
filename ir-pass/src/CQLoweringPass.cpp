@@ -623,25 +623,24 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // recognizes the §2.2 sound-rolled invariant by pure LoopInfo/SSA analysis
   // (Rule 9) and collapses each Case-A in-place persistent-rail phi (the
   // loop-carried header phi + the zero-trip/exit merge phi) to its single rail,
-  // so the body lowers to `cqrt_rz(%h, angle_i)` over a loop-invariant handle.
+  // so the body's in-place gates (`cqrt_ry_<W>(%h, angle_i)`) reuse one handle.
   // Runs BEFORE `detectControlRegions` so a quantum/measurement-bounded loop
   // (Q1) is partitioned out with the dedicated `loop under quantum control`
   // message before ControlDetect declines it generically; BEFORE
   // `declineClassicalMuxes` so the collapsed header phi never reaches
   // `kMsgClassicalPhi`; and BEFORE `lowerRotations` (the still-present
-  // `@cq_theta`/`@cq_phi` SSA values). A cross-iteration dirty rail (X1) and a
+  // `@cq_theta` SSA values). A cross-iteration dirty rail (X1) and a
   // tainted-exit loop (Q1) decline LOUDLY here; every other loop is left for its
   // existing owner. A purely-classical loop is untouched.
   lowerLoops(M, wd, taint);
 
   // Tainted control flow: `detectControlRegions` (ControlDetect.cpp) recognizes
-  // the swap-route phase-arm diamond/if-else shape by SSA identity (Rule 9, no
-  // mutation), pushes each accepted phase-arm DIAMOND onto `plan.Regions`, and
-  // declines everything else loudly ("… under quantum control", opt exits
-  // non-zero). `lowerControlRegions` (SwapRouteEmit) then emits the coherent
-  // routed stream per region — flag mint → |0> rail → cswap route-in → verbatim
-  // Rz on rail → cswap route-back → rail free → icmp_inv flag-strip → flag free —
-  // and flattens the CFG. It runs BEFORE `lowerRotations` so it can reference the
+  // each region by SSA identity (Rule 9, no mutation), pushes it onto
+  // `plan.Regions`, and declines everything else loudly ("… under quantum
+  // control", opt exits non-zero). `lowerControlRegions` (SwapRouteEmit) emits
+  // each region (a phase arm by kickback: flag mint → `cqrt_rz_i1` on the flag →
+  // `_unc` flag-strip → flag free; a value arm by the controlled-copy merge) and
+  // flattens the CFG. It runs BEFORE `lowerRotations` so it can reference the
   // still-present `@cq_theta` result; the later RAUW-to-handle updates every
   // emitted call (Rule 9). A classical-condition branch stays byte-untouched.
   // bd test_C_libtooling-b6ap — THE MULTI-PHI MERGE PEEL (MergePhiPeel.cpp).
@@ -926,7 +925,7 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // whenever the base handle is measured/escaped/`main`-resident or
   // non-terminal. Must run BEFORE `lowerRotations` (pre-RAUW SSA identity).
   // One deliberate accept (test_C_libtooling-5j5): the proven ONE-REGISTER
-  // merge phi (`if (classical_c) q = cq_phi(q, θ); use(q)`) is RAUW'd to its
+  // merge phi (`if (classical_c) cq_theta(&q, θ); use(q)`) is RAUW'd to its
   // wire base and erased here instead of declined. ⚠ That proof reads PRE-
   // `specialize()` taint, so it is RECORDED and re-asked right after
   // `specialize()` (`declineFalsifiedMergePhiLifts`, bd `test_C_libtooling-d88e`):
@@ -1537,8 +1536,8 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // ordering rationale.
   lowerLoops(M, wd, taint);
 
-  // See run() — `detectControlRegions` pushes accepted phase-arm diamonds and
-  // declines the rest; `lowerControlRegions` emits the routed stream. BOTH must
+  // See run() — `detectControlRegions` pushes accepted regions and declines
+  // the rest; `lowerControlRegions` emits each region. BOTH must
   // run in this entry point too, between detection and `lowerRotations`, or
   // unit-level callers silently diverge from `run()` (the twin-pipeline trap,
   // IMPLEMENTATION §6.5).

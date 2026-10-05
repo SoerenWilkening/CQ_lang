@@ -1,22 +1,17 @@
 ; control_swap_diamond.ll — ACCEPT spec, one-content-arm PHASE diamond (§5a).
 ;
-; `if (q > 5) { rz(q, a); rz(q, b); }` — a multi-gate phase arm over a tainted
-; quantum handle. The lowering mints the flag from the tainted icmp, emits each arm
-; Rz CONTROL-IN-PLACE on the user's own register (§6a peephole — one
-; `cqrt_rz_i32_controlled(flag, q, theta)` per arm gate, no work rail and no CSWAP
-; route), then strips the boolean with icmp_inv(q) — NO `phi i32`. Shape and symbol
-; ORDER are still the contract, and are unchanged from the routed form apart from
-; the collapsed arm; transcribed from
+; `if (q > 5) { cq_phi(a); cq_phi(b); }` — a multi-gate phase arm under a flag
+; from a tainted icmp on q. It lowers by kickback: the flag is minted into a |0>
+; ancilla, each arm phase is one uncontrolled `cqrt_rz_i1(flag, ·)`, then the
+; icmp `_unc` strips the flag — NO `phi i32`, no work rail, no CSWAP. Shape and
+; symbol ORDER are the contract. Originally transcribed from
 ; docs/design/rssa-swap-control/swap_route_if_diamond.ll.
 ;
 ; WI-2 lands SwapRouteEmit (`lowerControlRegions`), so this XPASSes — XFAIL gone.
-; WI-5's §8.2 no-spurious-free + §8.5 dephasing postconditions survive the collapse,
-; restated for the single-register (diamond) shape: EXACTLY ONE cqrt_free (the flag —
-; there is no work rail to free any more) and the later uncompute pass must add NO
-; second (a spurious free is a hidden measurement that collapses q); and still ZERO
-; copies (method-B copy on a PHASE arm dephases the answer, verified P0
-; 0.585->0.500). The phase answer stays on q either way: the route put it there via
-; the return CSWAP, the peephole never moves it off.
+; WI-5's §8.2 no-spurious-free + §8.5 dephasing postconditions: EXACTLY ONE
+; cqrt_free (the flag) and the later uncompute pass must add NO second (a
+; spurious free is a hidden measurement that collapses q); and ZERO copies
+; (method-B copy on a PHASE arm dephases the answer, verified P0 0.585->0.500).
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
@@ -40,12 +35,6 @@
 ;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

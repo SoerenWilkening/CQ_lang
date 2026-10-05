@@ -66,7 +66,7 @@
 
    (B) DEAD binary fmin — proves the binary `_unc` TWIN + R-E source-liveness.
        Two f64 thetas -> `@llvm.minnum.f64` (result dead), kept alive past -O1 DCE
-       by a `cq_phi` (Rz) whose own result is dropped. The whole-DAG uncompute
+       by the `e == 1.5` flag of a kickback `cq_phi`. The whole-DAG uncompute
        spine reverses the dead fmin ONCE via cq_template_fmin_f64_unc(out, c, d)
        (recompute-and-XOR from the still-LIVE f64 sources c, d) and frees each rail
        ONLY AFTER its own `_unc` — never before (a source freed before its `_unc`
@@ -85,6 +85,6 @@ void slice(double x, double y) {
     double c = x; cq_theta(&c, 0.10); /* alloc f64 + ry */
     double d = y; cq_theta(&d, 0.20); /* alloc f64 + ry */
     double e = __builtin_fmin(c, d);  /* @llvm.minnum.f64 QQ (dead) */
-    if (e == 1.5) cq_phi(0.30);           /* Rz keep-alive; result dropped (dead) */
+    if (e == 1.5) cq_phi(0.30);           /* kickback keep-alive (rz_i1 on flag) */
 }
 int main(void) { slice(1.5, 2.5); return 0; }

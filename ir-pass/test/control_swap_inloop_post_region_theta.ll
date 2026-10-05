@@ -3,7 +3,7 @@
 ; condition's wire in ONE classically-bounded loop body — Grover written the way
 ; anyone would naturally write repetition:
 ;
-;     for (i = 0; i < 4; ++i) { if (q > 5) q = cq_phi(q, a); cq_theta(&q, .25); }
+;     for (i = 0; i < 4; ++i) { if (q > 5) cq_phi(a); cq_theta(&q, .25); }
 ;
 ; THIS FILE WAS `control_swap_reject_post_region_theta_loop.ll`, AND ITS OWN
 ; CLOSING PARAGRAPH ASKED FOR THIS COMMIT. It said the fixture "must either keep
@@ -32,11 +32,9 @@
 ; `condition predates a non-diagonal gate`; if it is ever widened wrongly, the
 ; nontracking sibling goes green.
 ;
-; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
-; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE
-; `cqrt_rz_i32_controlled(flag, register, theta)` and the swap route (work-rail
-; alloc, both `cqrt_cswap`s, the rail free) is gone. Nothing else moves — the flag
-; mint, the strip, the flag free and every downstream gate are unchanged.
+; The phase arm lowers by kickback: flag minted from the icmp, one uncontrolled
+; `cqrt_rz_i1(flag, a)`, icmp `_unc` strip, one `cqrt_free` (the flag), then the
+; body's `cqrt_ry_i32` on q's rail. No work rail, no `cqrt_cswap`.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
@@ -60,12 +58,6 @@
 ;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

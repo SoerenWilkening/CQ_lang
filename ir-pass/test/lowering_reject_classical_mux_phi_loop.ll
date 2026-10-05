@@ -5,15 +5,15 @@
 ; The diamond body is exactly the headline lift shape — both incomings
 ; tainted, both resolve to the one base %q, the chain sits in its arm — but
 ; the merge feeds a classical back edge. On iteration 1 (i==0) the arm fires
-; rz; on iteration 2 the straight edge claims the BASE record %q while the
-; physical register already carries the iteration-1 rz: measuring the
+; ry; on iteration 2 the straight edge claims the BASE record %q while the
+; physical register already carries the iteration-1 ry: measuring the
 ; last-iteration %p as "the un-rotated q" is a stale record, verify-clean
 ; wrong. Condition (7a) — no chain gate may reach the OTHER edge's
 ; terminator — sees arm -> merge -> loop (the back edge) and refuses; the
 ; wi5 decline fires.
 ;
-; (The genuinely loop-carried source `for(..) if(c) q = cq_phi(q,θ);` also
-; declines: its loop-header phi never resolves to one base — the resolver
+; (Pre-3qlq register form: the loop-carried source `for(..) if(c) q = cq_phi(q,θ);`
+; also declined: its loop-header phi never resolves to one base — the resolver
 ; stops at phis, so header-incoming and back-edge-incoming bases differ.)
 ;
 ; Guard: TaintPropagation::declineClassicalMuxes. It OWNS the exact `Msg`

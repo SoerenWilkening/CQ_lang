@@ -5,11 +5,11 @@
 ;     if (q != 5) cq_theta(&r, .9);
 ;
 ; `clang -O1` canonicalizes `!=` to `icmp eq` and SWAPS the successors, so the
-; gate arm is the FALSE one and the gate must fire on ¬flag. The in-place emitter
-; brackets it in the SAME self-inverse `cqrt_x(flag)` pair the swap route puts
-; around a negated route — one spelling of "fires on ¬f", so the two cannot
-; drift. Transcribed from `clang -O1` output (the source above compiles to
-; exactly this shape).
+; gate arm is the FALSE one and the gate must fire on ¬flag. The in-place
+; emitter brackets it in the SAME self-inverse `cqrt_x(flag)` pair `emitRoute`
+; (today only the abort park's cswap) puts around a negated route — one spelling
+; of "fires on ¬f", so the two cannot drift. Transcribed from `clang -O1` output
+; (the source above compiles to exactly this shape).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

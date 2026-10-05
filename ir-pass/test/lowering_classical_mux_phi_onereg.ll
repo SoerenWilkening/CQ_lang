@@ -2,17 +2,14 @@
 ; (test_C_libtooling-5j5, the headline lift). The natural classical-if-around-
 ; a-quantum-gate program
 ;     if (classical_c) q = cq_phi(q, theta);  measure(q);
-; survives `clang -O1` as exactly this branch+phi shape (verified 2026-06-10
-; on BOTH the `if` and the ternary form — the opaque cq_phi call cannot be
-; speculated, so clang never produces a select here). The merge phi's two
-; incomings are DISTINCT SSA values denoting the SAME physical register:
-; rotation lowering is in place (%q2 = cq_phi(%q, θ) emits cqrt_rz on %q's
-; handle AT THE CALL'S POSITION — inside the arm — and RAUWs %q2 to %q), so
-; post-lowering the phi would collapse to phi [h, h]: a pure SSA renaming
-; that touches no register.
+; (pre-3qlq register form) survived `clang -O1` as exactly this branch+phi shape
+; (verified 2026-06-10 on BOTH the `if` and the ternary form), with two DISTINCT
+; SSA incomings denoting the SAME register. The 3qlq migration deleted the phase
+; (a global phase under a classical condition), so the arm is now EMPTY and the
+; merge is `phi [q, arm], [q, entry]`: a pure SSA renaming that touches no register.
 ;
 ; THE LIFT (TaintPropagation::liftOneRegisterMergePhi): both incomings
-; tainted; both resolve through the in-place cq_theta/cq_phi arg-0 wire to
+; tainted; both resolve through the in-place cq_theta arg-0 wire to
 ; the ONE base %q; the gate chain lives entirely in its edge's incoming
 ; block; no path can fire the arm gate and then enter the merge through the
 ; straight edge (no back edges). The phi is RAUW'd to %q and ERASED before
@@ -21,9 +18,6 @@
 ;
 ; Rule-13 trace clearance: the condition is CLASSICAL — each shot runs one
 ; path; the lift adds/moves/removes NO gate, only an SSA name disappears.
-; The emitted cqrt_rz sits INSIDE the arm block, so per shot the trace is
-; exactly the executed source path's gate stream (rz fires iff c) — no
-; superposed control, no cloning, no phase hazard.
 ;
 ; DECLINE complements (Rule 12): select_onereg (speculated gate), phi_tworeg
 ; (distinct registers), phi_derived_add (fresh template rail),
@@ -36,8 +30,7 @@
 ; Mint + Ry in entry:
 ; CHECK:      call i32 @cqrt_alloc_i32(i32 7)
 ; CHECK:      call void @cqrt_ry_i32(i32 %[[H:[a-zA-Z0-9_.]+]], double 5.000000e-01)
-; The arm gate stays INSIDE the arm — it fires iff the classical branch is
-; taken (the whole point of the per-shot trace semantics):
+; The arm block survives (empty since 3qlq):
 ; CHECK:      arm:
 ; The merge measures the ONE handle; the renaming phi is GONE:
 ; CHECK:      merge:

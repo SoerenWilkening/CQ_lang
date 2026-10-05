@@ -1,10 +1,10 @@
 ; control_swap_switch_phase_passthrough.ll — ACCEPT spec, PHASE switch with an
-; EMPTY passthrough case (case 2 routes q unchanged: an arm BLOCK with no gate,
-; merge incoming = q). Confirms the emitter SKIPS a gate-free arm — no flag, no
-; rail, no route for case 2 — while still flattening its (now-dead) block, and the
-; round-3 driver passthrough-arm scan does NOT over-decline a legitimate empty
-; passthrough. WI-1 fired the transitional "switch" decline; WI-2 graduates it to
-; the lowered stream (exactly cases 0 and 1; case 2 contributes nothing).
+; EMPTY passthrough case: `switch (q) { case 0: cq_phi(.1); break; case 1:
+; cq_phi(.2); break; case 2: break; }`. Confirms the emitter SKIPS a gate-free
+; arm — no flag and no compare for case 2 — while still flattening its (now-dead)
+; block, and the round-3 driver passthrough-arm scan does NOT over-decline a
+; legitimate empty passthrough. WI-1 fired the transitional "switch" decline; WI-2
+; graduates it to the lowered stream (one kickback each for cases 0 and 1).
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

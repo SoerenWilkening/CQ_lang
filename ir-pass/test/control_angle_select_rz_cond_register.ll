@@ -2,42 +2,29 @@
 ; SEPARATOR (bd drbq Inc 2b; control-in-place-PRD §3c / §12.1).
 ;
 ;     int q = 3; cq_theta(&q,.5);
-;     q = cq_phi(q, q == 5 ? .9 : .3);      // rotate the CONDITION register
+;     cq_phi(q == 5 ? .9 : .3);      // the CONDITION register picks the phase
 ;
-; The rotated register IS the register the condition reads. For the `cq_phi`
-; stem that is fine and needs no fence: Rz is DIAGONAL, so neither the
-; unconditional `rz(q,B)` nor the controlled `crz(f,q,A-B)` moves any
-; computational-basis label, and the strip `icmp_eq_unc(f, q, 5)` therefore
-; recomputes the SAME predicate the mint read and returns the flag to |0>.
+; The condition register is the only register in play. The phase is
+; register-free and lands on the minted flag by kickback, a diagonal gate on
+; `f`, so nothing moves `q`'s computational-basis label and the strip
+; `icmp_eq_unc(f, q, 5)` recomputes the SAME predicate the mint read and returns
+; the flag to |0>.
 ;
 ; ITS `cq_theta` TWIN DECLINES, and the pair is the invariant — read this
-; fixture together with `control_angle_select_reject_cond_register.ll`, which is
-; the SAME IR with the stem changed and which declines `condition predates a
-; non-diagonal gate`. An in-place Ry RELABELS the register, so after it the flag
-; is no longer a function of `q`'s basis and the strip would leave a dirty,
-; entangled ancilla (Rules 6/8).
+; fixture together with `control_angle_select_reject_cond_register.ll`, which
+; rotates `q` in place, `cq_theta(&q, q == 5 ? .9 : .3)`, and declines
+; `condition predates a non-diagonal gate`. An in-place Ry RELABELS the
+; register, so after it the flag is no longer a function of `q`'s basis and the
+; strip would leave a dirty, entangled ancilla (Rules 6/8).
 ;
-; SHAPE (exactly what `clang -O1` produces — SimplifyCFG merges the two arms of
-; `if (c) r = R(r, A); else r = R(r, B);` into ONE call with a `select` on the
+; SHAPE (exactly what `clang -O1` produces — SimplifyCFG sinks
+; `if (c) cq_phi(A); else cq_phi(B);` into ONE call with a `select` on the
 ; ANGLE, so the branch CFG is gone before the pass runs, Rule 9).
 ;
-; LOWERED BY DIFFERENCE (control-in-place-PRD §12.3): `R(h, B)` unconditional,
-; the ordinary flag mint, ONE `cqrt_{ry,rz}_<W>_controlled(f, h, A-B)`, the
-; ordinary `_unc` strip, ONE `cqrt_free`. Exact IN REAL ARITHMETIC by angle
-; additivity on one axis (`R(A) = R(B).R(A-B)`; for `Rz = diag(1,e^{i.theta})` the
-; two diagonals multiply entrywise, so there is no global-phase residue either) —
-; in IEEE double the emitted true-arm angle is `B + fl(A-B)`, so
-; `|delta| <= 1/2 ulp(A-B)`; constant arms are fenced at the placeholder
-; `kAngleSelectMaxRoundingRad` = 2^-40 rad, and a RUN-TIME arm DECLINES — the
-; accept class is CONSTANT arms only, because for a run-time arm the compiler
-; would synthesize an `fsub` the source never wrote whose error is unbounded in
-; absolute radians and whose result can be `inf`/`NaN` from two FINITE arms
-; (round-1 Rule-13 review lens L7-F1 for the bound; the Rule-13 CLEARANCE
-; review, finding F-11 / owner option (2), for the narrowing — an earlier
-; version of this line said "runtime arms carry the bound"; see
-; `control_angle_select_accept_rounding_flagship_bound.ll`). No CFG
-; surgery, no route, no work rail, no `cqrt_x` bracket (a select always means
-; "A when the flag is 1", so there is no polarity case at all).
+; LOWERED BY KICKBACK (`emitPhaseAngleSelect`): the flag mint, a
+; `cqrt_x`-bracketed `cqrt_rz_i1(f, B)` for the f = 0 arm, `cqrt_rz_i1(f, A)`
+; for the f = 1 arm, the `_unc` strip, ONE `cqrt_free`. A and B reach the gates
+; verbatim; no `A-B` is computed.
 ;
 ; ORACLE DISPOSITION: RED on the pre-2b binary — it declines `rotation angle
 ; under quantum control` at SelectClassify's gate 3 (Rule 12 red-green).
@@ -65,12 +52,6 @@
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * call void @cqrt_x(   [superseded by the XCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

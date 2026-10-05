@@ -4,23 +4,19 @@
 ; if (y > 7) cq_phi(.25); measure y`. The downstream `if (y > 7)` is a
 ; genuinely quantum-CONTROLLED branch (its condition `icmp sgt %out, 7` is a `%out`
 ; derivation — quantum data used as further quantum control), which dugh over-declined
-; (`control flow under quantum control`) and yn71 now LOWERS as a routed phase arm.
+; (`control flow under quantum control`) and yn71 now LOWERS as a phase arm.
 ;
 ; This is the TAINTED-condition twin of control_classical_call_arm_accept_onward_phase
-; _downstream_if.ll (which has a CLASSICAL `i1 %cc` condition, lowered UNCONTROLLED via
-; the 5j5 one-register lift). Here the condition is tainted, so
-; `repropagateControlMerges` RE-DETECTS the diamond (`detectAndLowerOnwardControl`) and
-; `SwapRouteEmit` emits the coherent CONTROL-IN-PLACE phase stream ON `%out`: mint the
-; flag from `icmp(%out, 7)`, apply ONE `cqrt_rz_i32_controlled(flag, %out, θ)` — no work
-; rail, no `cqrt_cswap` either way — then `icmp_inv`-strip + free the flag (%out == %out0
-; because a controlled Rz is diagonal on BOTH branches of the flag, so the strip is
-; valid). The measure reads `%out`.
+; _downstream_if.ll (which has a CLASSICAL `i1 %cc` condition). Here the condition is
+; tainted, so `repropagateControlMerges` RE-DETECTS the diamond
+; (`detectAndLowerOnwardControl`). The call arm merges into `%out` by the
+; controlled-copy merge (two `cqrt_copy_i32_controlled` into a fresh rail, the second
+; X-bracketed); the phase arm then mints the flag from `icmp(%out, 7)`, puts ONE
+; uncontrolled `cqrt_rz_i1(flag, θ)` on it by kickback, strips it with the `_unc`
+; template and frees it. No work rail, no `cqrt_cswap`. The measure reads `%out`.
 ;
-; ⚠ THIS PARAGRAPH USED TO DESCRIBE THE ROUTE ("route into a |0> rail via `cqrt_cswap`
-; … zero controlled Rz") and said so NINE LINES ABOVE this file's own
-; own assertion of `call void @cqrt_rz_i32_controlled`. The FLAT phase path has lowered in
-; place since bd drbq Inc 2a (2026-09-02); the 4.3 nest and the 4.5 switch keep the
-; route. Corrected in the Inc-2a round-1 review (L3 F3).
+; (History: before bd drbq Inc 2a this phase arm lowered by the swap route; from
+; Inc 2a until 3qlq it was `cqrt_rz_i32_controlled(flag, %out, θ)` in place.)
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
@@ -45,12 +41,6 @@
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * call void @cqrt_x(   [superseded by the XCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 38 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

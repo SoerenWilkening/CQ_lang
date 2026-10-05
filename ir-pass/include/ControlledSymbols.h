@@ -1,7 +1,7 @@
 // ControlledSymbols.h — Lazy minter for the Phase-4 controlled symbol
 // surface (PRD §2.8). Sibling to `WidthDispatch`: where that resolver
 // spells the base template / runtime symbols, this one spells the
-// controlled forms — controlled data templates, the controlled Rz gate
+// controlled forms — controlled data templates, the controlled rotation gate
 // body, and the Toffoli flag-conjunction primitive.
 //
 // The controlled invariant (PRD §1.2): every controlled symbol takes
@@ -85,10 +85,10 @@ public:
   llvm::FunctionCallee xFn() const;
 
   // Controlled-SWAP / Fredkin (npu.4/.5): `void cqrt_cswap(i32 ctrl, i32 a,
-  // i32 b)` swaps registers a and b iff the i32 control flag is set. The
-  // primitive for the distinct-per-case-handle gated-switch MUX-EXCH lowering —
-  // `cqrt_cswap(f_q, regOut, q)` moves the selected source's state into the
-  // muxed register and frees the source. Width-agnostic (all three args are
+  // i32 b)` swaps registers a and b iff the i32 control flag is set. Its one
+  // caller is `emitRoute`, used only by the 7.2 abort park (`AbortParkEmit`) to
+  // swap the live handle into a kept graveyard rail; the npu MUX-EXCH lowering
+  // it was added for was excised in 7cde677. Width-agnostic (all three args are
   // i32 handles). SWAP is an involution, so the controlled-SWAP is its own
   // inverse — no `_inv` twin.
   llvm::FunctionCallee cswapFn() const;

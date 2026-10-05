@@ -1,13 +1,13 @@
 ; control_inplace_ry_reject_theta_phi_arm.ll — DECLINE: a `cq_phi` (Rz) BESIDE
 ; the `cq_theta` (Ry) in one arm (PRD shape S3; bd test_C_libtooling-drbq).
 ;
-;     if (q > 5) { r = cq_phi(r,.2); cq_theta(&r,.9); }
+;     if (q > 5) { cq_phi(.2); cq_theta(&r,.9); }
 ;
-; A mixed in-place SPINE (`rz; ry` on one register) is shape (b), deferred with
-; the multi-rotation case (PRD §8). The arm has two non-terminators, so the
-; rotation-arm recognizer does not claim it and it keeps the pre-existing generic
-; decline. There is no correctness gap in the deferral: the diagonal link is
-; harmless, but nothing in Inc 1 hoists TWO gates or orders them under one flag.
+; Pre-3qlq the phase was `r = cq_phi(r,.2)`, making a mixed in-place SPINE
+; (`rz; ry` on one register), shape (b), deferred with the multi-rotation case
+; (PRD §8). The arm still has two non-terminators, so the rotation-arm recognizer
+; does not claim it and it keeps the generic decline: nothing in Inc 1 hoists TWO
+; gates or orders them under one flag.
 ;
 ;
 ; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error

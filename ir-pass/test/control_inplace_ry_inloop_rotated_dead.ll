@@ -4,8 +4,7 @@
 ; a gap rather than a capability (bd test_C_libtooling-rhwb; drbq Inc 3 round-1
 ; lens L3 Q5).
 ;
-;     for (i = 0; i < 2; ++i) { if (q == 5) cq_theta(&r, 0.9);
-;                               q = cq_phi(q, 0.1); }
+;     for (i = 0; i < 2; ++i) { if (q == 5) cq_theta(&r, 0.9); }
 ;     return cq_measure(q);          <-- `r` is DEAD after the loop
 ;
 ; ROLLED IS CORRECT AND IT IS THE FREEZE'S OWN FLAGSHIP CONSEQUENCE. The
@@ -13,8 +12,8 @@
 ; never `_unc`'d, never freed. That is the right answer under Rule 6, not an
 ; omission: a dead register carrying superposition ENTANGLED with the condition
 ; register must not be freed, because `cqrt_free` is a hardware reset, i.e. a
-; hidden measurement that would collapse `q`. Measured (L3): 15 trace lines,
-; strict stage 2b `4 rail mints of which 4 left allocated, 2 cqrt_free sites: 2
+; hidden measurement that would collapse `q`. Measured (L3, pre-3qlq): 15 trace
+; lines, strict stage 2b `4 rail mints of which 4 left allocated, 2 cqrt_free sites: 2
 ; verified, 0 violations`.
 ;
 ; ⚠ WHAT THE PAIR RECORDS: FOR THIS SHAPE THE INCREMENT'S STATED ORACLE DOES NOT
@@ -29,9 +28,9 @@
 ; declines is exactly the shape whose witness cannot be twin-identity, and a
 ; reader must know that before treating this file as covered by the matrix.
 ;
-; THE BODY IS VERBATIM `clang -O1` OUTPUT (`review3/L3/p/q5a_rdead.c`), function
-; renamed, because the whole point of the pair is what the optimizer does to the
-; two spellings.
+; THE BODY IS VERBATIM `clang -O1` OUTPUT (`review3/L3/p/q5a_rdead.c`), renamed,
+; less the loop's `q = cq_phi(q, 0.1)` 3qlq deleted, because the whole point of
+; the pair is what the optimizer does to the two spellings.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

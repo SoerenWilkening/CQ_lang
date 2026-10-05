@@ -1,19 +1,19 @@
-; control_inplace_rz_on_condition_register.ll — the §6a Rz peephole where the
-; ROTATED REGISTER **IS** THE CONDITION REGISTER (bd test_C_libtooling-drbq Inc 2a;
-; PRD S6-on-q / S8, and §3c permits phase ops on a condition variable).
+; control_inplace_rz_on_condition_register.ll — a phase arm whose ONLY register
+; is the condition register (bd test_C_libtooling-drbq Inc 2a; PRD S6-on-q / S8,
+; and §3c permits phase ops on a condition variable).
+;
+;     if (q > 5) cq_phi(a);
 ;
 ; THE FIXTURE THAT SEPARATES THE TWO STEMS. Inc 1's R4 refuses a controlled **Ry**
 ; whose target wire is in the condition's wire set, because after a non-diagonal
 ; gate the flag is no longer a function of q's basis and the `icmp_..._unc` strip
-; cannot return it to |0>. For the **Rz** stem that fence does not apply and must
-; not be copied over: a controlled Rz is `diag(1, e^{iθ})` on the f=1 branch and
-; `I` on f=0 — DIAGONAL EITHER WAY — so q's basis label is not merely restored,
-; it is never moved, and the strip is valid pointwise.
+; cannot return it to |0>. The phase stem needs no such fence: its only gate is
+; the kickback `cqrt_rz_i1` on the flag, so q's basis label is never moved and the
+; strip is valid pointwise (pre-3qlq: a diagonal controlled Rz on q itself).
 ;
-; The identical shape with `cq_theta` in the arm DECLINES
+; The same condition with `cq_theta` on `q` in the arm DECLINES
 ; (control_inplace_ry_reject_cond_register.ll and its alias family). Keeping both
 ; in the tree is what makes R4's Ry-only scope a decision rather than an accident.
-;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
 ; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)

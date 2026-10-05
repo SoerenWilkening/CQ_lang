@@ -5,8 +5,8 @@
 ; vocabulary has no select member — that tripwire is PRESERVED, type-agnostic,
 ; by control_swap_reject_select_in_routed_arm_intmerge.ll (an INTEGER merge W5
 ; never claims, so ArmClassify still owns it and still declines). Post-W5 the
-; fp sole-phi merge is a claim witness, so the region never reaches the arm
-; route: PredMux speculates the arm (fcmp + select are E4 dataflow) and
+; fp sole-phi merge is a claim witness, so the region never reaches
+; ArmClassify: PredMux speculates the arm (fcmp + select are E4 dataflow) and
 ; converts the merge phi to a second select — `y = c ? (c2 ? p : 2.0) : p` —
 ; and BOTH selects lower independently through the kjd1 six-gate ladder into
 ; controlled-copy merges (nested select cascades are the Inc-1-probed

@@ -11,15 +11,14 @@
 ;   * the condition is CROSS-QUBIT (`icmp` on `%p`) — its provenance never
 ;     touches `%q`'s wire, keeping every condition-side guard clean;
 ;   * the chained `cq_theta(%q, ·)` sits IN-ARM, AFTER the chain op — it is
-;     provably post-emission of `add %qd, 3` (dominated, no reach-back), so
+;     provably post-emission of `add %q, 3` (dominated, no reach-back), so
 ;     the position-aware straight-line guard accepts the add.
 ; The region-level guard must still decline: it is POSITION-FREE, because the
-; route-in/route-back `cqrt_cswap` pair and the method-B reverse-play read the
-; routed WIRE at the region boundary, not at the arm op's schedule — ANY
-; non-diagonal gate on the routed base's closed wire (`{%qd, %q}`, backward
-; `cq_phi` arg-0 hops) makes the routed record stale there. Accepting would
-; replay the chain against the post-Ry rail (stale-record family,
-; lowering_reject_stale_record_add.ll physics) — a verify-clean wrong unitary.
+; value-arm lowering's preload copy and hoisted chain read the base's WIRE at the
+; region boundary, not at the arm op's schedule — ANY non-diagonal gate on the
+; routed base's wire makes its record stale there. Accepting would read the chain
+; against the post-Ry rail (stale-record family, lowering_reject_stale_record_add.ll
+; physics) — a verify-clean wrong unitary.
 ; (Defense-in-depth, not a sole barrier: the later valueArmIsPureChain check
 ; would also decline this layout — the in-arm theta is a stray op beside the
 ; chain — so what this fixture pins is the routed-base guard's OWNERSHIP of

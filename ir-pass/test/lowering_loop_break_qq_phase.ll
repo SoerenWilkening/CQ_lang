@@ -1,8 +1,8 @@
 ; lowering_loop_break_qq_phase.ll — POSITIVE emission (Phase 7.4 Inc 2, epic
-; y05j; coverage test_C_libtooling-mvrb). The PHASE-CARRYING-COMPARAND sibling of
-; lowering_loop_break_qq.ll: a value-arm `break` whose tainted Q==Q condition
-; compares the rail against a loop-invariant comparand `p` that carries a RELATIVE
-; PHASE (an Rz / cq_phi in p's lineage). Source shape:
+; y05j; coverage test_C_libtooling-mvrb). Written as the PHASE-CARRYING-COMPARAND
+; sibling of lowering_loop_break_qq.ll: a value-arm `break` whose tainted Q==Q
+; condition compares the rail against a loop-invariant comparand `p`. Source shape
+; (pre-3qlq register form):
 ;
 ;     int p0 = pseed; cq_theta(&p0, 0.5);
 ;     int p  = cq_phi(p0, 0.3);       // Rz — p now carries a relative phase
@@ -13,30 +13,30 @@
 ;     }
 ;     return cq_measure(q);
 ;
-; WHY THE COMPARAND'S RELATIVE PHASE RIDES INERT (the load-bearing rationale, cleared
-; by a 5-lens adversarial Rule-13 sign-off 2026-06-30 — permutation-completeness /
-; phase-kickback / free-cleanliness / spine-terminal / entanglement-semantics, 0
-; concrete holes): the ENTIRE break construct (forward capture + exit consolidation +
-; reverse-play) emits ONLY computational-basis PERMUTATION gates — cqrt_xorc/addc,
-; cqrt_toffoli/cnot, cqrt_copy_<W>[_controlled], cq_template_icmp_eq_<W>(+_unc),
-; cqrt_alloc(|0>)/cqrt_free(|0>), cqrt_measure. There is NO Ry/Rz/Hadamard ANYWHERE
-; inside it; the ONLY cqrt_rz is PRE-LOOP (it prepares p's phase, OUTSIDE the
-; construct). So the construct acts as a FIXED permutation π on the computational
-; basis: any input amplitudes — incl. p's relative phase e^{iθ} — ride inert
+; The 3qlq migration deleted `p = cq_phi(p0, 0.3)` (uncontrolled, a global phase),
+; so the comparand is now the bare Ry-prepared `p0` and no Rz is emitted anywhere.
+;
+; WHY A COMPARAND'S RELATIVE PHASE WOULD RIDE INERT (cleared by a 5-lens adversarial
+; Rule-13 sign-off 2026-06-30 — permutation-completeness / phase-kickback /
+; free-cleanliness / spine-terminal / entanglement-semantics, 0 concrete holes): the
+; ENTIRE break construct (forward capture + exit consolidation + reverse-play) emits
+; ONLY computational-basis PERMUTATION gates — cqrt_xorc/addc, cqrt_toffoli/cnot,
+; cqrt_copy_<W>[_controlled], cq_template_icmp_eq_<W>(+_unc), cqrt_alloc(|0>)/
+; cqrt_free(|0>), cqrt_measure — and NO Ry/Rz/Hadamard. So the construct acts as a
+; FIXED permutation π on the computational basis: any input amplitudes ride inert
 ; (out = Σ γ_x |π(x)>, γ_x preserved). The comparand `p` is consumed EXCLUSIVELY as
 ; an operand/control of the QQ eq-compare and its matched `_unc` — never rotated,
 ; never copied into `out`, never measured, never freed — so `p` is restored EXACTLY
-; (phase intact) and LEFT ALLOCATED (the Rule-6 safe leak, identical to the bare-mint
-; comparand in lowering_loop_break_qq.ll). This is DISTINCT from the B3 phase fence,
-; which permanently declines a phase-class ESCAPING ANSWER (the rail itself carrying
-; the phase — there method-B's CNOT copy-out would dephase, Rule 7); a phase on the
-; COMPARAND is never copied out, so Rule 7 does not bite.
+; and LEFT ALLOCATED (the Rule-6 safe leak, identical to the bare-mint comparand in
+; lowering_loop_break_qq.ll). This is DISTINCT from the B3 phase fence, which
+; declines a phase-class ESCAPING ANSWER (the rail itself carrying the phase — a
+; CNOT copy-out would dephase it, Rule 7); a comparand is never copied out.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=PLEAK < %t.cqd0.ll
 ;
-; --- p built as cq_theta THEN cq_phi (the Rz is the relative phase) ------------
+; --- p built as cq_theta (its register-form cq_phi was deleted by 3qlq) --------
 ; CHECK: %[[P:[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 %pseed)
 ; CHECK: call void @cqrt_ry_i32(i32 %[[P]], double 5.000000e-01)
 ; CHECK: %[[RAIL:[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 %x)
@@ -61,9 +61,8 @@
 ; CHECK-NOT: cq controlled lowering: loop under quantum control
 ; CHECK-NOT: cq loop lowering: early break body is not a provable rolled single-rail loop
 ;
-; --- NEITHER p NOR the phase-source p0 is ever freed — left allocated-clean (Rule 6)
-; The compiler must NOT reverse the pre-loop cqrt_rz: that would be a hidden
-; measurement collapsing the answer (p is entangled with out on every break branch).
+; --- p is never freed — left allocated (Rule 6): a free is a hidden measurement,
+; and p is entangled with out on every break branch.
 ; PLEAK: %[[P2:[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 %pseed)
 ; PLEAK-NOT: cqrt_free(i32 %[[P2]])
 ; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))

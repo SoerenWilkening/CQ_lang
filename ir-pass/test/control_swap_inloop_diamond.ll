@@ -1,10 +1,10 @@
 ; control_swap_inloop_diamond.ll — ACCEPT (bd test_C_libtooling-8h7d.5, Phase 7.3
 ; Increment 3; owner ruling 2026-08-29). A FLAT (depth-1) tainted-condition PHASE
 ; diamond that lives wholly inside a classically-bounded loop body, with a
-; loop-CARRIED routed base — the merge feeds the backedge and the routed `%q` is a
-; loop-header phi. Source shape:
+; loop-CARRIED register — the merge feeds the backedge and `%q` is a loop-header
+; phi. Source shape:
 ;
-;     for (...) { if (q > 5) { q = cq_phi(q, b); } }   // q loop-carried
+;     for (...) { if (q > 5) cq_phi(b); }   // q loop-carried
 ;
 ; THIS FILE WAS `control_swap_reject_inloop_diamond.ll` UNTIL 2026-08-29, AND THE
 ; FLIP IS THE INCREMENT. The d8jl guard declined every flat region on a CFG cycle
@@ -25,16 +25,11 @@
 ; trace grows. The loop-carried header phi is collapsed to its root mint by the
 ; round-2 rail analysis (`collapseFlattenedLoopRails`), which runs AFTER the
 ; flatten because that is the first point at which the merge phi is gone and the
-; rail peels. The register `%h` is one physical qubit for the whole loop; the only
-; ancilla left (the flag) is minted, used, stripped and freed INSIDE the iteration,
-; so nothing dirty crosses the back edge.
-;
-; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
-; CONTROL-IN-PLACE (§6a): the arm's `Rz` fires as ONE
-; `cqrt_rz_i32_controlled(flag, register, theta)` and the swap route — work-rail
-; alloc, both `cqrt_cswap`s, the rail free — is gone entirely. Everything else
-; below (flag mint, strip, flag free, the rolled CFG, the exit measure) is
-; byte-identical to the routed form.
+; rail peels. The register `%h` is one physical qubit for the whole loop. The
+; phase arm lowers by kickback: the flag is minted from the icmp into a |0>
+; ancilla, takes one uncontrolled `cqrt_rz_i1(flag, b)`, is stripped by the
+; icmp `_unc` and freed, all INSIDE the iteration, so nothing dirty crosses the
+; back edge. No work rail, no `cqrt_cswap`.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
@@ -58,12 +53,6 @@
 ;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

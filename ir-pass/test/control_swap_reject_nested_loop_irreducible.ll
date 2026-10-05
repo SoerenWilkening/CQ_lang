@@ -11,7 +11,7 @@
 ;         if (e) goto MID;                  // jump INTO the loop body -> irreducible
 ;         for (; i < n; i++) {
 ;             int q = x; cq_theta(&q, 0.5);
-;             if (q > 5) { q = cq_phi(q, b); if (q < 9) q = cq_phi(q, a); }
+;             if (q > 5) { cq_phi(b); if (q < 9) cq_phi(a); }
 ;             acc += cq_measure(q);
 ;         MID:;
 ;         }

@@ -20,14 +20,14 @@
    clang -O1 CSEs `f = (q>5)` and `if (q>5)` to ONE `icmp sgt q, 5` with two uses
    (a `br` and a `zext`). The OLD flat classifier declined this outright
    ("condition used outside the branch"); ziov re-derives the correct lowering:
-   the compare IS the control flag, so the route AND the data use must read ONE
-   shared physical flag. The flag is minted ONCE (h1), CSWAP-routes q into the |0>
-   work rail for the verbatim arm Rz gates, routes back, frees the rail — then the
-   SAME flag h1 feeds the data `zext` (h3) and `add` (h4), and is NEITHER stripped
-   (no icmp_inv) NOR freed: its data lineage flows into the measured value, which
-   owns the handle. Contrast slice_control_phase_diamond.c (no data use), which
-   strips + frees the flag. EXACTLY ONE free (the rail), ONE icmp mint, no
-   `_inv` strip, ZERO controlled gates.
+   the compare IS the control flag, so the phase arm AND the data use must read
+   ONE shared physical flag. The flag is minted ONCE (h1) and the two arm Rz gates
+   fire VERBATIM and UNCONTROLLED on it as cqrt_rz_i1 (kickback) — then the SAME
+   flag h1 feeds the data `zext` (h2) and `add` (h3), and is NEITHER stripped (no
+   compare `_unc`) NOR freed: its data lineage flows into the measured value,
+   which owns the handle. Contrast slice_control_phase_diamond.c (no data use),
+   which strips + frees the flag. EXACTLY ONE free (the zext result h2, after its
+   `_unc`), ONE icmp mint, no compare strip, ZERO controlled gates.
 
    The data use feeds the side-effecting `cq_measure`, so it survives clang's DCE
    even when `main` discards slice's result (a discarded PURE data use is DCE'd
@@ -38,8 +38,8 @@ int slice(void) {
     cq_theta(&q, 0.5);             /* taint q -> handle (alloc i32(3), ry_i32)   */
     int f = (q > 5);               /* DATA use of the condition compare          */
     if (q > 5) {                   /* CONTROL use — clang CSEs to ONE icmp        */
-        cq_phi(0.25);       /* arm gate 1 (Rz) — VERBATIM on the rail     */
-        cq_phi(0.75);       /* arm gate 2 (Rz) — VERBATIM on the rail     */
+        cq_phi(0.25);       /* arm gate 1 (Rz) — cqrt_rz_i1 on the flag   */
+        cq_phi(0.75);       /* arm gate 2 (Rz) — cqrt_rz_i1 on the flag   */
     }
     return cq_measure(q + f);      /* f feeds the measured value (owns the flag) */
 }

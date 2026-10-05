@@ -1,20 +1,18 @@
-; control_inplace_rz_lifted_phi_after_region.ll — ACCEPT. The STEM-DIFFERENTIAL
-; CONTROL for `control_inplace_ry_lifted_phi_after_region.ll`: the identical
-; program with an **Rz** arm (the Inc-2a control-in-place peephole, which keeps
-; M-α and RAUWs the region merge φ to the BASE).
+; control_inplace_rz_lifted_phi_after_region.ll — ACCEPT. The phase-arm
+; counterpart of `control_inplace_ry_lifted_phi_after_region.ll`: a
+; tainted-condition phase region, then a 5j5 classical join φ over `r`.
 ;
-; bd test_C_libtooling-drbq Increment 3, round-1 Rule-13 review finding F-L5-1.
-; This half accepted before the increment, during it, and after the fix — it is
-; committed so the pair is a STANDING witness that the two stems agree on this
-; shape, and so a future change to `resolveWireBase`'s `ControlledRotations`
-; stop cannot move one stem without the other going red.
+;     if (q == 5)  { cq_phi(0.9); }     /* phase arm, kickback on the flag */
+;     if (OPQ)     { }                  /* 5j5 classical join φ over r     */
 ;
-; The lens isolated the regression with exactly this pair: the ONLY difference
-; between the two programs is the arm's stem, and the only difference between
-; the two stems in this window is the RAUW target (M-β's hoisted gate vs M-α's
-; base). That left no other hypothesis standing.
+; WHAT IT PINS: the phase region is the four-line kickback and touches no data
+; register; the join φ dissolves and `r` is measured on its own handle.
 ;
-; VERBATIM `clang -O1` output for
+; (History, bd drbq Inc 3, round-1 Rule-13 finding F-L5-1: pre-3qlq this was the
+; STEM-DIFFERENTIAL CONTROL for the Ry twin — the same program with an Rz arm
+; (Inc-2a peephole, M-α, merge φ RAUW'd to the BASE vs the Ry twin's M-β). 3qlq
+; made the arm register-free and deleted the OPQ arm's phase.) The pre-3qlq
+; VERBATIM `clang -O1` output was for
 ;   volatile int OPQ = 1;
 ;   int slice(void) { int q=3, r=7;
 ;                     cq_theta(&q,0.5); cq_theta(&r,0.25);

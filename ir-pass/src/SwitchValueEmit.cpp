@@ -149,7 +149,7 @@ void emitSwitchValueRegion(const ControlRegion &R, WidthDispatch &wd,
   if (!SI)
     return bailLoud(R);
 
-  // Routed base `p` = the merge incoming on the SwitchBB→MergeBB (default-direct)
+  // Shared base `p` = the merge incoming on the SwitchBB→MergeBB (default-direct)
   // edge — the straight-through value, proven `!= q` by the C2 anchor
   // (`proveSwitchValue`). An empty default + any straight-to-merge case share this
   // one predecessor edge. Recover it here (not cached) so the emitter stays a pure
@@ -294,7 +294,7 @@ void emitSwitchValueRegion(const ControlRegion &R, WidthDispatch &wd,
   taint.ControlOwnedRails.insert(Out);  // DD-4: Phase-4 owns this merge out-rail
   taint.BirthOrder[Out] = taint.NextBirth++;
   // bd p119.8 (same gap as p119.6): record the out-rail's LOGICAL ABI width (=
-  // `Abi`, the routed value-arm width) so a DOWNSTREAM cast/Q+Q-compare off the
+  // `Abi`, the value-arm width) so a DOWNSTREAM cast/Q+Q-compare off the
   // RAUW'd merge recovers the real width instead of the laundered i32.
   taint.HandleWidth[Out] = Abi;
   stamp(B.CreateCall(Copy, {P, Out}));

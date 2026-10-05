@@ -15,7 +15,7 @@
 ; jvun gates the compare predicate in `condDataUseDisposition` (the same
 ; `compareInScope` the data path now consults): an out-of-scope predicate on the
 ; lineage yields `Unlowerable` and declines HERE, in detection, before any
-; route/flatten. Over-declining is always safe (Prime Directive). After 8rvn
+; emission/flatten. Over-declining is always safe (Prime Directive). After 8rvn
 ; (Phase 7.1 iw81.4 §4.4) broadened the fcmp set to the full ordered/unordered
 ; comparison family, the degenerate `true`/`false` are the only out-of-set fcmp
 ; predicates left — so `false` is the standing residual for this call site.

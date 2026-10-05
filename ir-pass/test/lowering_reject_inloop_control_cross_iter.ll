@@ -1,7 +1,7 @@
 ; lowering_reject_inloop_control_cross_iter.ll — DECLINE (bd test_C_libtooling-8h7d.5):
 ; the X1 CROSS-ITERATION DIRTY RAIL, reached through the NEW round-2 path.
 ;
-;     for (...) { if (q > 5) q = cq_phi(q, b); q = q * 3; }
+;     for (...) { if (q > 5) cq_phi(b); q = q * 3; }
 ;
 ; The tainted region itself is admissible (flat, phase, wholly inside a reducible
 ; loop) and IS emitted + flattened. What is not admissible is the loop-carried

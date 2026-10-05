@@ -3,7 +3,7 @@
 ; rail-record fence, and the reason the fence is POSITIONAL rather than a blanket
 ; "no rail member escapes the loop".
 ;
-;     for (...) { if (q == 5) q = cq_phi(q, b); q += 3; acc = q_before_the_add * 7; }
+;     for (...) { if (q == 5) cq_phi(b); q += 3; acc = q_before_the_add * 7; }
 ;
 ; Nothing leaves the loop here — `%acc` is minted and consumed inside one
 ; iteration, which is the sound Case-B pattern and must NOT be over-declined in

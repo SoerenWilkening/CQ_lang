@@ -2,13 +2,13 @@
 ;
 ; The §0 depth-2 phase nest with BOTH gate arms negated (outer and inner negate independently). clang -O1 swaps a branch's successors for an
 ; ordering condition (Rule 9), making the gate arm the FALSE successor; detection
-; resolves arms by merge-phi incoming IDENTITY (never successor order) and the
-; emitter routes the negated level on ¬flag via a self-inverse cqrt_x bracket
-; around BOTH route-in and route-back (the adjoint of the split). The flag-strip
-; is polarity-independent (Rz preserves q's basis).
+; resolves arms by merge-phi incoming IDENTITY (never successor order). Both
+; levels lower by kickback: the outer phase is `cqrt_rz_i1(f1, b)` inside a
+; `cqrt_x(f1)` bracket (¬f1); the inner phase lands on a fresh |0> AND node
+; `g = ¬f1 ∧ ¬f2` (`cqrt_toffoli`, both controls `cqrt_x`-bracketed), uncomputed
+; and freed before the two polarity-independent flag strips.
 ;
-; WI-3 lands NestedRouteEmit — recognized as the accept shape, now LOWERS to
-; the per-polarity routed stream (XFAIL removed at WI-3 XPASS).
+; WI-3 landed the pre-3qlq NestedRouteEmit (XFAIL removed at WI-3 XPASS).
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

@@ -1,9 +1,9 @@
-; control_inplace_ry_reject_stale_diag_alias_pure.ll — DECLINE: a PURE op reads a
-; DIAGONAL ALIAS of the rotated register after the region (bd
+; control_inplace_ry_reject_stale_diag_alias_pure.ll — DECLINE: a PURE op reads
+; the PRE-region record of the rotated register after the region (bd
 ; test_C_libtooling-drbq Inc 1, finding J; the pure-op corner of R6's alias
 ; closure).
 ;
-;     int mark = cq_phi(r, .1);
+;     int mark = r;                     // pre-3qlq: cq_phi(r, .1), a diagonal alias
 ;     if (q > 5) cq_theta(&r, .9);
 ;     p = mark * 7;                     // `mark` and `r` are ONE physical rail
 ;

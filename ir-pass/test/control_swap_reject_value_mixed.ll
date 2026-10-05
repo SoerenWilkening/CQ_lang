@@ -2,13 +2,11 @@
 ; decline (4.2 WI-3; PRD Part II §8.3 row "mixed"; fixture pair partner:
 ; control_swap_reject_value_mixed_spine.ll, the opposite stacking order).
 ;
-; `if (q > 5) { rz(p, a); p = p + 3; }` — the merge contribution is a value op
-; stacked on an IN-ARM rotation (`add(cq_phi(p,a), 3)`). The answer then
-; carries BOTH a phase and a changed basis: the method-B CNOT copy-out copies
-; only the basis label (dephasing the Rz answer — P0 0.585->0.500, Rule 7), and
-; the phase-arm icmp_inv flag-strip is invalid over a changed basis. There is
-; no copy-safe, strip-valid lowering for a mixed chain — §6a control-in-place
-; territory; declined loudly with its own string.
+; `if (q > 5) { cq_phi(a); p = p + 3; }` — one arm carries BOTH a branch phase and
+; a value op feeding the merge; the pass declines it loudly as an impure value
+; arm. (Pre-3qlq the phase sat on `p` itself, `add(cq_phi(p,a), 3)`, so the answer
+; carried both a phase and a changed basis, and a CNOT copy-out dephases the
+; phase: P0 0.585->0.500, Rule 7.)
 ;
 ;
 ; 3qlq(prep_a2): the asserted diagnostic was RE-SPELLED on the Inc-1 binary.

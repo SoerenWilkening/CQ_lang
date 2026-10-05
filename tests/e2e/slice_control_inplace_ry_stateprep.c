@@ -7,8 +7,8 @@
    `!Chained` arm (`cqrt_alloc_i32(0)`) AT THE HOISTED POSITION and then mints
    `cqrt_ry_i32_controlled(f, h, θ)` instead of the unconditional gate.
 
-   WHY IT IS THE MECHANISM AND NOT A PEEPHOLE: the swap route cannot carry an Ry
-   at all. `Ry(θ)|0> != |0>`, so the inactive routed work rail would be handed
+   WHY IT IS THE MECHANISM AND NOT A PEEPHOLE: the retired swap route could not
+   carry an Ry at all. `Ry(θ)|0> != |0>`, so the inactive work rail would be handed
    back DIRTY and ENTANGLED with the flag (Rules 6/8, PRD §2).
 
    WHAT THIS GOLDEN PROVES, AND WHAT IT DOES NOT — say both, because the

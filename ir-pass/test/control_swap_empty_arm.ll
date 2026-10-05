@@ -1,9 +1,9 @@
 ; control_swap_empty_arm.ll — ACCEPT probe: a degenerate EMPTY phase arm.
 ;
 ; `if (q > 5) {}` — the arm holds no gate, so the merge phi is just `q` on both
-; edges. This is pure identity on q: the swap-route emitter routes NOTHING (no
-; flag, no rail, no strip — there is no quantum op to control), just RAUWs the
-; phi to q and flattens the dead diamond CFG. The result is a single block that
+; edges. This is pure identity on q: the control lowering emits NOTHING (no
+; flag, no rail, no strip — there is no quantum op to control); the phi becomes
+; q and the dead diamond CFG is flattened. The result is a single block that
 ; allocates/prepares q and measures it, with NO cswap / alloc-rail / icmp flag.
 ; (clang -O1 normally elides an empty-arm diamond outright; this pins the emitter
 ; against the shape regardless, so it can never silently strand a tainted br.)

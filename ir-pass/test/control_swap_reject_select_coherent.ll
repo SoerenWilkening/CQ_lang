@@ -8,7 +8,7 @@
 ; clearance item, widened only by independent review — a green suite does NOT
 ; authorize widening this gate.
 ;
-; `(q>5) ? q : x` where `%q` ALSO feeds a downstream `cq_phi(%q, …)`: the
+; `(y>5) ? q : x` where `%q` ALSO feeds a downstream `cq_theta(&q, .9)`: the
 ; operand `%q` has a quantum use beyond the select, so `hasCoherentDownstreamUse`
 ; flags it. Gate 3 (angle) passes — `%sel` itself feeds only a measure — and
 ; gate 4 passes (i32), so the decline is squarely gate 5.

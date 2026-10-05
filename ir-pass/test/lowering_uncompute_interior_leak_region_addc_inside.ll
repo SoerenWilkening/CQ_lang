@@ -1,21 +1,19 @@
 ; lowering_uncompute_interior_leak_region_addc_inside.ll — LEAK PROBE (M-B
 ; Increment 6, clause (d2); bd test_C_libtooling-160a Rule-13 round, finding
-; F1e). Second of three: the write on the routed base sits AFTER the region but
-; BEFORE the chain rail's last reader, so it is still inside the interval.
+; F1e). Second of three: the write on the wire sits AFTER the region but BEFORE
+; the chain rail's last reader, so it is still inside the interval.
 ;
-; This is the position the exemption is most likely to be misread at. The
-; recorded route group IS fully inside and IS exempted; the `cqrt_addc_i32(%h,5)`
-; that follows it is inside the SAME interval and is NOT. `%h_op` is read again
-; afterwards (`%h_op & 7`, measured), so `At` lands past the addc — and the
-; would-be `mul_unc(%h_op, %h, 37)` there would read `%h + 5` where the forward
-; `mul` read `%h`. The scan refuses it and the component LEAKS.
+; `%h_op` is read again after the addc (`%h_op & 7`, measured), so `At` lands past
+; `cqrt_addc_i32(%h,5)` — and the would-be `mul_unc(%h_op, %h, 37)` there would
+; read `%h + 5` where the forward `mul` read `%h`. The scan refuses it and the
+; component LEAKS: the CHECK frees only the flag (FCNT = 1). (Pre-3qlq the region's
+; recorded route group sat in the same interval and WAS exempted by (d2), which made
+; this the position most likely to be misread.)
 ;
-; TOGETHER WITH ITS TWO SIBLINGS this is the whole clause-(d2) statement:
+; TOGETHER WITH ITS TWO SIBLINGS this is the whole clause-(d) statement:
 ;   * ..._leak_region_addc_before.ll        write between forward gate and region
 ;   * this file                             write after the region, before the last reader
 ;   * ..._region_addc_after_readers.ll      write after every reader -> RIGHT -> discharges
-; The exemption moves NONE of that; it only removes the route pair from the set
-; of writes the scan must clear.
 ;
 ; NO RED STATE on an earlier plugin (it leaks on `439dae3` and `f27c7fd` too, for
 ; different reasons); its discriminator is the same clause-(d) mutation as the

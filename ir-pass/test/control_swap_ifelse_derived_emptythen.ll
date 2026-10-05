@@ -1,12 +1,12 @@
 ; control_swap_ifelse_derived_emptythen.ll — ACCEPT: derived base, gate-free
 ; TRUE arm, gates on the FALSE arm (¬flag bracket PRESENT).
 ;
-; The mirror of control_swap_ifelse_derived_emptyelse.ll: the THEN arm is empty
-; (contributes %qd unchanged) and the ELSE arm carries the gate, so the single
-; surviving stream fires on ¬flag — the route cswaps MUST be wrapped in the
-; self-inverse `cqrt_x(flag)` bracket (the emptyelse fixture pins the bracket's
-; ABSENCE; this one pins its PRESENCE — the §8 completeness review noted only
-; one direction was covered, 2026-06-10).
+; `if (q > 5) {} else cq_phi(b);` — mirror of control_swap_ifelse_derived_emptyelse.ll
+; (3qlq reduced both derived bases to the plain %q): THEN arm empty, ELSE arm the
+; phase, so the single kickback gate fires on ¬flag — `cqrt_rz_i1(flag, %b)`
+; MUST sit inside the self-inverse `cqrt_x(flag)` bracket (the emptyelse fixture
+; pins the bracket's ABSENCE; this one pins its PRESENCE — the §8 completeness
+; review noted only one direction was covered, 2026-06-10).
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

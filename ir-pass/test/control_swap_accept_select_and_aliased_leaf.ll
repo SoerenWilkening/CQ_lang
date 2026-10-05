@@ -10,8 +10,7 @@
 ; while its LEAF fence was removed, and the stated reason is:
 ;     "rail-aliasing cannot create the node shape either — every leaf mints its
 ;      OWN fresh flag rail, so two distinct leaves are never one rail."
-; That is a claim about THIS input. Here `%q` and `%r = cq_phi(%q,·)` ARE one rail
-; (the in-place Rz RAUW), and BOTH leaves read it — yet the emission is
+; That is a claim about THIS input. BOTH leaves read one rail `%h`, yet it emits
 ;     %h_cmp  = cq_template_icmp_sgt_i32_hl(%h, 3)      ; leaf 1, fresh rail
 ;     %h_cmp1 = cq_template_icmp_slt_i32(%h, %h)        ; leaf 2, ALIASED, fresh rail
 ;     %g      = cqrt_alloc_i1(false)
@@ -28,7 +27,8 @@
 ; correctness requirement. The full partition is in
 ; control_swap_accept_select_rail_alias_cond.ll.
 ;
-; SHIP FLOOR: this IR is the verbatim `clang -O1` output of
+; SHIP FLOOR: this IR was the verbatim `clang -O1` output of (pre-3qlq register
+; form; 3qlq deleted the uncontrolled `cq_phi`, so `%r` became `%2`)
 ;     int q = x; cq_theta(&q,.5); int r = cq_phi(q,.25);
 ;     int s = ((q > 3) & (q < r)) ? 11 : 22;
 ; Note the NON-short-circuit `&`. The `&&` spelling does NOT reach here: -O1 emits

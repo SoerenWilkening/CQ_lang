@@ -1,11 +1,11 @@
 // ArmHomogeneity.cpp — Tree-homogeneity gate (IMPLEMENTATION-4.3 §3.2).
 // See ArmHomogeneity.h for the contract.
 //
-// Classifies the two arms of a recovered depth-2 nest (the OUTER arm = the `Mid`
-// block, the INNER content arm) as Phase or Value, reusing the de-anonymized
-// per-arm lineage walks (ArmAnalysis.h). The accepted shape is ALL-PHASE; any
-// value arm declines (`mixed phase/value arm` / `value-arm swap-route`) and a
-// stray op in `Mid` declines `impure phase arm`. All pure SSA analysis (Rule 9).
+// Classifies the two arms of a depth-2 nest in `recoverRegionTree` (`Mid`, the
+// INNER content arm) as Phase — a retired register-form `cq_phi_<sfx>` spine,
+// possibly empty — or Value. Any value arm declines (`mixed phase/value arm` /
+// `value-arm swap-route`), a stray op in `Mid` declines `impure phase arm`, and a
+// nest that passes still declines in the caller. Pure SSA analysis (Rule 9).
 
 #include "ArmHomogeneity.h"
 
@@ -59,7 +59,7 @@ bool isThetaCall(const Value *V) { return isCallToPrefix(V, "cq_theta_"); }
 
 // Mirror of ArmClassify.cpp's anonymous `isValueChangingOp` (kept TU-local for
 // the same reason): a value the merge carries that is NOT a leaf quantum handle.
-// A leaf is a `cq_theta` source, a `cq_phi` (Rz, DIAGONAL — basis-preserving) the
+// A leaf is a `cq_theta` source, a retired-form `cq_phi_<sfx>` (diagonal) the
 // arm extends, a function argument, or a constant; ANY other instruction
 // (add/mul/cast/select/…) defining a new computational-basis value is
 // value-changing. Classified by OPCODE, never by defining block (clang -O1 hoists
@@ -77,7 +77,7 @@ bool isValueChangingOp(const Value *Base) {
 enum class ArmContent { Phase, Value };
 
 // Classify one arm's merge contribution as Phase or Value. Walks the IN-BLOCK
-// phase spine (`walkPhaseSpine`); the arm is VALUE iff that spine bottoms at an
+// `cq_phi_<sfx>` spine (`walkPhaseSpine`); the arm is VALUE iff it bottoms at an
 // IN-ARM value-changing op (an Rz stacked over a basis the arm itself changed),
 // or — when the spine consumed nothing — the arm incoming is itself a
 // value-changing op (the value chain `q=q*7; q=q+3`). Otherwise the arm is a
@@ -85,7 +85,7 @@ enum class ArmContent { Phase, Value };
 ArmContent classifyArmContent(BasicBlock *ArmBB, Value *ArmIncoming) {
   Value *Base = walkPhaseSpine(ArmIncoming, ArmBB);
   if (Base != ArmIncoming) {
-    // The spine consumed ≥1 `cq_phi`; an in-arm value-changing base is the
+    // The spine consumed ≥1 `cq_phi_<sfx>`; an in-arm value-changing base is the
     // mixed `q=q*7; rz(q)` lineage (treated as value — mixed fires downstream).
     if (auto *BI = dyn_cast<Instruction>(Base);
         BI && BI->getParent() == ArmBB && isValueChangingOp(Base))
@@ -99,8 +99,8 @@ ArmContent classifyArmContent(BasicBlock *ArmBB, Value *ArmIncoming) {
 
 // PURE PHASE INNER ARM (the clean-diamond twin of ArmClassify's
 // `armBlockIsPureSpine`): every non-terminator instruction in `ArmBB` must lie
-// on the linear `cq_phi` spine of `ArmIncoming` — rejecting a fan-out sibling or
-// a stray op the emitter would silently drop on flatten (Rule 8 / Rule 5).
+// on the linear `cq_phi_<sfx>` spine of `ArmIncoming` — rejecting a fan-out sibling
+// or a stray op the pre-3qlq nest emitter would have dropped on flatten.
 bool innerArmIsPureSpine(const BasicBlock *ArmBB, const Value *ArmIncoming) {
   SmallPtrSet<const Value *, 8> Spine;
   for (const Value *V = ArmIncoming; isPhiCall(V);) {
@@ -123,8 +123,8 @@ bool innerArmIsPureSpine(const BasicBlock *ArmBB, const Value *ArmIncoming) {
 // holds — beyond its phase-gate spine — the INNER condition compare and the inner
 // branch (and, for a derived inner cond, that compare's in-`Mid` operand
 // lineage). Every OTHER non-terminator instruction is a stray (a value op, a
-// measure, a fan-out sibling) the emitter would drop on flatten → `impure phase
-// arm`. The allow-set is: the `cq_phi` spine of `MidIncoming` DOWN TO its base
+// measure, a fan-out sibling; the pre-3qlq emitter dropped it) → `impure phase
+// arm`. The allow-set is: the `cq_phi_<sfx>` spine of `MidIncoming` DOWN TO its base
 // (inclusive — a degenerate gate-free Mid bottoms at an in-`Mid` `cq_theta`),
 // PLUS `InnerCond` and its operand lineage defined IN `Mid`. The whole-block scan
 // is load-bearing: a spine-only walk would silently accept a stray value op
@@ -151,7 +151,7 @@ bool midIsPurePhase(const BasicBlock *Mid, Value *MidIncoming, Value *InnerCond)
       continue;
     const auto *I = dyn_cast<Instruction>(V);
     if (!I || I->getParent() != Mid)
-      continue;  // out-of-Mid operand (e.g. the routed base in Pred) — not scanned.
+      continue;  // out-of-Mid operand (e.g. the base in Pred) — not scanned.
     Allowed.insert(I);
     for (const Use &U : I->operands())
       Work.push_back(U.get());

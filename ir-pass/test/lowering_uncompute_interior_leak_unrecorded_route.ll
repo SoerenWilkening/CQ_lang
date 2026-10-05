@@ -7,27 +7,27 @@
 ; (`TaintSet::RestoringRoutes`).
 ;
 ; ⚠ THAT SET HAS HAD **NO WRITER** SINCE bd drbq Inc 2a (2026-09-02). Its only
-; writer WAS `SwapRouteEmit`'s flat PHASE path, which no longer emits a route at
-; all — the arm gate is one `cqrt_rz_<W>_controlled` in place. So this fixture's
-; discrimination ("hand-written cswaps are in no group") is now true BY
-; CONSTRUCTION rather than by test design: with the set permanently empty,
-; `routeGroupFullyInside` has exactly one reachable return value and no fixture
-; can pin its `true` branch. The VERDICT below is unchanged and still correct, and
-; the clause-(d2) machinery is deliberately KEPT and annotated (`Uncomputation.cpp`
-; `routeGroupFullyInside`) because the route is still emitted by three other
-; emitters — the 4.3 nest, the 4.5 switch and the method-B value arm — any of
-; which could legitimately start recording. Recorded in the Inc-2a round-1 review
-; (L3 F3/N1).
+; writer WAS `SwapRouteEmit`'s flat PHASE path, which emits no route (Inc 2a made
+; its arm gate one `cqrt_rz_<W>_controlled`; since bd 3qlq it is the kickback
+; `cqrt_rz_i1` on the flag). So this fixture's discrimination ("hand-written
+; cswaps are in no group") is now true BY CONSTRUCTION rather than by test design:
+; with the set permanently empty, `routeGroupFullyInside` has exactly one
+; reachable return value and no fixture can pin its `true` branch. The VERDICT
+; below is unchanged and still correct, and the clause-(d2) machinery is
+; deliberately KEPT and annotated (`Uncomputation.cpp` `routeGroupFullyInside`)
+; because the 7.2 abort park (`AbortParkEmit`) still emits a route and could start
+; recording (the 4.3 nest, 4.5 switch and method-B value arm routes Inc 2a also
+; named are retired by bd 3qlq). Recorded in the Inc-2a round-1 review (L3 F3/N1).
 ;
 ; Pairing, bracket closure, and "the join is the
 ; adjoint of the split" are the EMITTER's invariants; re-deriving them here by
 ; scanning the IR for two cswaps would be a second, weaker spelling of a property
-; that already has an owner (Rule 14) — and it would silently claim the method-B
-; VALUE arm's route, whose route-back swaps in the arm's ANSWER, so the base's
+; that already has an owner (Rule 14) — and it would silently claim a route whose
+; route-back swaps in an ANSWER (the pre-3qlq method-B VALUE arm's), so the base's
 ; label genuinely changes.
 ;
 ; The two `cqrt_cswap` calls below are hand-written and therefore in no group.
-; `preservesBorrowedParent` refuses them (a route is not one of the two
+; `preservesBorrowedParent` refuses them (a route is not one of the
 ; proven-read-only shapes), LEFT fails (they are after the interval opens), RIGHT
 ; fails (they are before the discharge would go), and clause (d2) finds no group
 ; — so the component leaks and `%a` is left allocated.

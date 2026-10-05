@@ -9,8 +9,8 @@
 ; deliberately two-row whitelist (a diagonal `cqrt_rz_<W>` on the parent, and a
 ; forward reassigning producer); everything else — `cqrt_measure_*` included —
 ; counts as a MUTATION and must then clear the positional interval scan. The
-; shipped RIGHT-disjunct fixtures all clear a `cqrt_ry` (the chained theta) or a
-; Phase-4 route. This is the third kind of "mutation": a COLLAPSE.
+; shipped RIGHT-disjunct fixtures all clear a `cqrt_ry` (the chained theta) or,
+; pre-3qlq, a Phase-4 route. This is the third kind of "mutation": a COLLAPSE.
 ;
 ; WHY ADMITTING IT IS SOUND, and note the argument is positional, not physical.
 ; The `_unc`s are inserted BEFORE `At`, and `provablyBefore(At, measure)` says

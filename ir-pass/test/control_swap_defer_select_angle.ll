@@ -4,8 +4,8 @@
 ; so the shape it describes LOWERS. The file keeps its name for git continuity
 ; and because several documents cite it by name — read the name as historical.
 ;
-; THE SHAPE, unchanged from the original fixture:
-;     q = rz(q, 0.9); if (q > 5) { rz(q, a); } else { rz(q, b); }
+; THE SHAPE:
+;     if (q > 5) cq_phi(0.25); else cq_phi(0.75);
 ; `clang -O1` SimplifyCFG folds that to ONE hoisted `cq_phi` whose ANGLE is a
 ; tainted-condition select (`select i1 %c, double a, double b`) — the branch CFG
 ; is gone before the pass runs (Rule 9). The original header called this "a
@@ -13,49 +13,30 @@
 ; exactly right: it is a rotation angle, the select is never lowered as a data
 ; merge, and no angle-position taint ever reaches a handle.
 ;
-; WHAT CHANGED IS THE DISPOSITION, NOT THE CLASSIFICATION. The angle select is
-; lowered BY DIFFERENCE (control-in-place-PRD §12.3):
-;     rz(q, b)                            ; unconditional, the FALSE-arm angle
+; THE DISPOSITION: the folded angle select lowers by KICKBACK, one arm per
+; polarity of the flag minted from `q > 5`:
 ;     f = icmp_sgt_i32_hl(q, 5)           ; the ordinary flag mint
-;     rz_controlled(f, q, a - b)          ; the drbq Inc-2a in-place gate
+;     x(f); rz_i1(f, 0.75); x(f)          ; FALSE arm, on ¬flag
+;     rz_i1(f, 0.25)                      ; TRUE arm, on flag
 ;     icmp_sgt_i32_hl_unc(f, q, 5)        ; the ordinary strip
 ;     free(f)
-; Exact IN REAL ARITHMETIC by angle additivity on one axis: under
-; `Rz = diag(1, e^{i.theta})` the two diagonals multiply entrywise, so
-; `Rz(b).Rz(a-b) = Rz(a)` with no global-phase residue. In IEEE double the
-; realized true-arm angle is `b + fl(a-b)`, error `|delta| <= 1/2 ulp(a-b)` — AND
-; FOR THIS FIXTURE THAT ERROR IS EXACTLY ZERO: the arms are the CONSTANTS 0.25 and
-; 0.75, a Sterbenz pair, so `fl(0.25 - 0.75) = -0.5` is exact, and the
-; constant-arm fence (S1 clauses 2a/2b/3, round-1 Rule-13 review lens L7-F1)
-; applies to this file and passes.
-;
-; *** ROUND-2 CORRECTION (lens R2 N5 = lens R1 item 4b). *** The round-1 edit put
-; the RUNTIME-ARM sentence here — "the arms here are RUNTIME `double` arguments,
-; so no compile-time fence is possible and the bound is what stands" — which is
-; false of this fixture (its arms are constants, two lines below in the body) and
-; contradicted its own next sentence. The runtime-arm caveat then lived on the two
-; files that actually had runtime arms, `control_swap_reject_switch_datamux_angle.ll`
-; and `control_angle_select_ry_arg_angles.ll`, and stated BOTH halves of the
-; residual rather than only "the bound".
-;
-; *** CLEARANCE CORRECTION (Rule-13 clearance review, finding F-11 / blocker B1;
-; *** orchestrator decision: owner option (2)). RUN-TIME ARMS NOW DECLINE — the
-; *** accept class is CONSTANT arms only, so this fixture's Sterbenz constants are
-; *** no longer merely "fenced and passing", they are the whole admitted class.
-; *** The two files named above changed with it: the datamux one was given the
-; *** constants 0.9/0.3 and `control_angle_select_ry_arg_angles.ll` was REPLACED by
-; *** `control_angle_select_reject_runtime_arms.ll`, which carries the full
-; *** argument. Nothing about THIS fixture's stream, arms or assertions moved.
+; Each arm's constant is passed VERBATIM into its own `cqrt_rz_i1`, so no
+; difference `a - b` is computed and there is no rounding residual. The 2b
+; by-difference stream (unconditional `rz(q, b)` plus `rz_controlled(f, q,
+; a - b)`, with its Sterbenz exactness argument, constant-arm fence and the
+; ROUND-2 / CLEARANCE corrections once recorded here) is pre-3qlq history for
+; this stem; the clearance's CONSTANT-arms-only narrowing now binds the Ry stem
+; (`control_angle_select_reject_runtime_arms.ll`), while the phase stem admits
+; run-time arms (`control_angle_select_phase_runtime.ll`).
 ;
 ; NOTHING QUANTUM ENTERS THE ANGLE SLOT — every angle emitted is a classical
-; constant (here `0.75`, `0.9` and the folded difference `-0.5`), which is what
-; the f64/angle prohibition (Rule 3) actually forbids.
+; constant (`0.75`, `0.25`), which is what the f64/angle prohibition (Rule 3)
+; actually forbids.
 ;
-; NOTE the rotated register IS the condition register (`%qd` and `%q` are one
-; rail after the RAUW). That is legal for the `cq_phi` stem and ONLY for it —
-; PRD §3c: a diagonal gate moves no computational-basis label, so the strip still
-; recomputes the predicate the mint read. The `cq_theta` twin of this shape
-; declines; see `control_angle_select_rz_cond_register.ll` and
+; The condition register is never rotated: the phase lands on the flag, a
+; diagonal gate, so the strip recomputes the predicate the mint read. The
+; `cq_theta` twin of this shape declines; see
+; `control_angle_select_rz_cond_register.ll` and
 ; `control_angle_select_reject_cond_register.ll`, which are that pair stated
 ; minimally.
 ;
@@ -86,12 +67,6 @@
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * call void @cqrt_x(   [superseded by the XCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

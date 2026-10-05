@@ -3,11 +3,11 @@
 ; value-preserving carriers, not just direct users.
 ;
 ; `%sel` is a float-operand select whose result is `fpext`'d to double and fed to
-; a `cq_phi` arg-1 (the angle slot): `%w = fpext %sel; cq_phi(%qd, %w)`. The
+; the angle of `cq_phi` (arg 0): `%w = fpext %sel; cq_phi(%w)`. The
 ; angle never appears as a DIRECT user of the select — it sits one `fpext` hop
 ; behind it. `selReachesRotationArg1` crosses the fpext carrier
-; (`WireWalk.cpp:105-113` pattern) and lands on the arg-1 reach
-; (`TaintPropagation.cpp:300-303` predicate), declining `rotation angle`. Lowering
+; (`WireWalk.cpp:105-113` pattern) and lands on the angle-slot reach, declining
+; `rotation angle`. Lowering
 ; this as a data merge would route quantum-derived data into a rotation angle
 ; (the f64/angle miscompile family); the only sound disposition is a loud decline
 ; (Rule 3). There is NO downstream backstop — the angle MUST be caught here,

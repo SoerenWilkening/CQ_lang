@@ -4,7 +4,7 @@
 // A pure classical call (all-classical-args) inside a tainted-condition
 // `br`-diamond arm runs CLASSICALLY — it is pure, so executing it unconditionally
 // and discarding it on the inactive branch is observationally inert — and its
-// i32 result is routed into the controlled register by the SAME controlled-XOR
+// i32 result is merged into the controlled register by the SAME controlled-XOR
 // copy merge `SelectMergeEmit` uses for a tainted-condition `select` (4.4). NO
 // clone, NO cswap/route, NO reverse-play, NO input-tainting, NO qubit allocation
 // for the classical data (only the `|0>` out rail joins `taint.Tainted`).

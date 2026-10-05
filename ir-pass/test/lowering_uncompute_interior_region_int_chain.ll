@@ -3,7 +3,7 @@
 ; the same emitter-recorded-strip anchor over an all-integer condition chain.
 ;
 ;     q = u; cq_theta(&q, 0.5);
-;     if (((q * 37) >> 3) == 5) { q = cq_phi(q, PI); }
+;     if (((q * 37) >> 3) == 5) { cq_phi(PI); }
 ;     return cq_measure(q);
 ;
 ; `clang -O1` canonicalizes `(x*37)>>3 == 5` into `(x*37) & -8 == 40`, so the

@@ -3,18 +3,18 @@
 ;     double q = seed; cq_theta(&q, 0.5);
 ;     for (int i = 0; i < n; i++) q = cq_phi(q, 0.1);   // n a runtime param
 ;     return cq_measure(q);
-; lowers ROLLED IN PLACE — IDENTICALLY to the const bound (A1). This is the
-; central reversal vs. the old "prove K at compile time" rule (owner decision
-; 2026-06-24): the trip count need NOT be a compile-time constant; a dynamic but
-; CLASSICAL bound runs the body the right number of times at runtime.
+; (pre-3qlq register form; the uncontrolled phase is a global phase the 3qlq
+; migration deleted, so the body is now empty) lowers ROLLED IN PLACE —
+; IDENTICALLY to the const bound (A1). This is the central reversal vs. the old
+; "prove K at compile time" rule (owner decision 2026-06-24): the trip count need
+; NOT be a compile-time constant; a dynamic but CLASSICAL bound runs the body the
+; right number of times at runtime.
 ;
 ; Verified against real `clang -O1` output (Rule 11): a possibly-zero-trip bound
 ; emits a zero-trip GUARD (`if (n>0) goto loop`) and therefore TWO tainted phis —
 ; the loop-carried HEADER phi `%qh` AND a zero-trip/exit MERGE phi `%qx = phi
-; [%q0, entry], [%qn, loop]` in the exit block (n<=0 ⇒ the unrotated `%q0`; n>0 ⇒
-; the loop result `%qn`). BOTH denote the one persistent rail and BOTH collapse to
-; the `cq_theta` mint `%q0` (the rail's preheader incoming peels to the mint; the
-; exit phi's every incoming peels to the mint's rail). Without the exit-phi
+; [%q0, entry], [%qh, loop]` in the exit block. BOTH denote the one persistent
+; rail and BOTH collapse to the `cq_theta` mint `%q0`. Without the exit-phi
 ; collapse this would still decline at `declineClassicalMuxes` (kMsgClassicalPhi).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
@@ -25,7 +25,7 @@
 ; CHECK:      %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double %{{.*}})
 ; CHECK:      call void @cqrt_ry_f64(i32 %[[H]], double 5.000000e-01)
 ; CHECK:      br i1 %{{.*}}, label %loop, label %exit
-; The rolled body: ONE in-place Rz on the loop-invariant handle:
+; The rolled loop survives (its body is empty since 3qlq):
 ; CHECK:      loop:
 ; The exit measures the ONE handle; BOTH rail phis are GONE:
 ; CHECK:      exit:

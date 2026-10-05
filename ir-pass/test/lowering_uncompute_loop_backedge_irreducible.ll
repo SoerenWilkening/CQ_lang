@@ -3,7 +3,7 @@
 ; test_C_libtooling-4p7j's Rule-13 RE-review (finding G1).
 ;
 ; SAME PROGRAM, DIFFERENT CFG SPELLING. A tainted handle is minted in `entry`
-; and its in-place `cq_phi` (→ `cqrt_rz_i32`) sits inside a cycle, so the
+; and its in-place `cq_theta` (→ `cqrt_ry_i32`) sits inside a cycle, so the
 ; handle's live range crosses a backedge and a once-only reversal + free would
 ; undo K executions with one adjoint (Rule 6: a free of a non-|0> rail is a
 ; hidden measurement). The natural-loop spelling has declined loudly since Phase

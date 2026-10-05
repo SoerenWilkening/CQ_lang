@@ -8,7 +8,7 @@
    or that the reflection reflects about |0>, was TRUE OF THE SOURCE and FALSE OF
    THE EMITTED CIRCUIT. It becomes true only from 3qlq Inc 1 on, where the phase is
    a BRANCH phase by kickback (rz_i1 on the minted flag), not a register Rz. The
-   older prose is left verbatim rather than silently corrected; read it with this.
+   older prose was revised on 2026-10-05 (bd 7pxe); remaining register-Rz wording is history.
    (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_grover_derived_oracle.c — ONE COMPLETE GROVER ITERATION WITH A
    NON-TRIVIAL ORACLE. The customer M-B Increment 6 was built for.
@@ -48,17 +48,17 @@
    the oracle's chain is uncomputed after its strip, the reflection's flag is
    simply stripped and freed.
 
-   WHAT THE TRACE WITNESSES. For the oracle region: ashr, add, flag mint, route,
-   Rz, route back, work-rail free, flag STRIP, then add-unc + free, ashr-unc +
+   WHAT THE TRACE WITNESSES. For the oracle region: ashr, add, flag mint, the
+   kickback cqrt_rz_i1 on the flag, flag STRIP, then add-unc + free, ashr-unc +
    free, then the flag free — and only then the S-dagger cqrt_ry_i32. For the R0
-   region: flag mint, route, Rz, route back, free, strip, free — then the final
+   region: flag mint, cqrt_rz_i1 on the flag, strip, free — then the final
    cqrt_ry_i32.
 
    RAIL LIVENESS AT EVERY NON-DIAGONAL GATE (the reading the golden cannot do for
-   itself): cqrt_alloc_i32 appears THREE times — the register h0 and one work
-   rail per region — and each work rail is freed inside its own region. At each
-   of the three cqrt_ry_i32 gates the only allocated rail is h0. Strict stage 2b
-   (no --allow-unproven) confirms it from the rail side.
+   itself): cqrt_alloc_i32 appears ONCE — the register h0; the oracle's records
+   and each region's flag are template-minted and freed inside their own region.
+   At each of the three cqrt_ry_i32 gates the only allocated rail is h0. Strict
+   stage 2b (no --allow-unproven) confirms it from the rail side.
 
    IT IS NOT, BY ITSELF, CORRECTNESS EVIDENCE (bd nepx): read it with the
    liveness reading, the strict free-pairing, and the adversarial round. */

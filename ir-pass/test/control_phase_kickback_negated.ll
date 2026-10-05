@@ -7,9 +7,9 @@
 ;
 ; The gate then fires on ¬f, spelled with the self-inverse `cqrt_x(f)` pair that
 ; every other "fires on ¬f" emission in this tree uses (one pair per ARM, not per
-; gate — `cqrt_x` is an involution, and `SwapRouteEmit.cpp`'s `-2 cqrt_x` audit
-; arithmetic assumes exactly this). Nothing else about the stream changes: same
-; mint, same single `cqrt_rz_i1`, same strip, same free.
+; gate — `cqrt_x` is an involution; the drbq Inc-2a `-2 cqrt_x` route-collapse
+; audit does not cover this path, see `SwapRouteEmit.cpp`). Nothing else about
+; the stream changes: same mint, same single `cqrt_rz_i1`, same strip, same free.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll

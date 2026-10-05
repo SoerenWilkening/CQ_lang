@@ -1,7 +1,7 @@
 ; lowering_reject_loop_quantum_bound.ll — DECLINE (Phase 7.3 Inc 1, 799w.1; PRD
 ; §2.6, L1): a loop whose EXIT condition is a live tainted value
 ;     double q = seed; cq_theta(&q, 0.5);
-;     while (q < 10.0) q = cq_phi(q, 0.1);
+;     while (q < 10.0) cq_phi(0.1);
 ;     return cq_measure(q);
 ; is a genuinely quantum/measurement-bounded loop — a runtime branch on a qubit,
 ; which would require coherent superposition over trip counts. PERMANENT decline
@@ -9,7 +9,7 @@
 ; while" ROADMAP §"Beyond the freeze" parks).
 ;
 ; Verified against real `clang -O1` output (Rule 11): the exit `fcmp olt double
-; %qn, 10.0` reads the live tainted `cq_phi` result, so every EXITING block's
+; %qh, 10.0` reads the live tainted register, so every EXITING block's
 ; condition is tainted (L1 fails). `lowerLoops` runs BEFORE `detectControlRegions`
 ; and partitions this out with the dedicated `loop under quantum control` message
 ; (rather than the generic `nested control flow under quantum control`

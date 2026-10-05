@@ -1,36 +1,18 @@
 ; control_angle_select_rz_diamond.ll — ACCEPT: the `cq_phi` (Rz) stem of the
 ; flagship shape (bd drbq Inc 2b).
 ;
-;     if (q == 5) r = cq_phi(r, .9); else r = cq_phi(r, .3);
+;     if (q == 5) cq_phi(.9); else cq_phi(.3);
 ;
-; The by-difference identity holds for Rz too, and exactly rather than up to a
-; phase: under this project's `Rz = diag(1, e^{i.theta})` convention the two
-; diagonals multiply entrywise, so `Rz(B).Rz(A-B) = Rz(A)` with no global-phase
-; residue. The emitted gate is the drbq Inc-2a in-place
-; `cqrt_rz_<W>_controlled`, so this stem shares the 2a peephole's machinery and
-; adds no frozen symbol.
+; SHAPE (exactly what `clang -O1` produces — SimplifyCFG sinks both calls into
+; ONE `cq_phi` call with a `select` on the ANGLE, so the branch CFG is gone
+; before the pass runs, Rule 9).
 ;
-; SHAPE (exactly what `clang -O1` produces — SimplifyCFG merges the two arms of
-; `if (c) r = R(r, A); else r = R(r, B);` into ONE call with a `select` on the
-; ANGLE, so the branch CFG is gone before the pass runs, Rule 9).
-;
-; LOWERED BY DIFFERENCE (control-in-place-PRD §12.3): `R(h, B)` unconditional,
-; the ordinary flag mint, ONE `cqrt_{ry,rz}_<W>_controlled(f, h, A-B)`, the
-; ordinary `_unc` strip, ONE `cqrt_free`. Exact IN REAL ARITHMETIC by angle
-; additivity on one axis (`R(A) = R(B).R(A-B)`; for `Rz = diag(1,e^{i.theta})` the
-; two diagonals multiply entrywise, so there is no global-phase residue either) —
-; in IEEE double the emitted true-arm angle is `B + fl(A-B)`, so
-; `|delta| <= 1/2 ulp(A-B)`; constant arms are fenced at the placeholder
-; `kAngleSelectMaxRoundingRad` = 2^-40 rad, and a RUN-TIME arm DECLINES — the
-; accept class is CONSTANT arms only, because for a run-time arm the compiler
-; would synthesize an `fsub` the source never wrote whose error is unbounded in
-; absolute radians and whose result can be `inf`/`NaN` from two FINITE arms
-; (round-1 Rule-13 review lens L7-F1 for the bound; the Rule-13 CLEARANCE
-; review, finding F-11 / owner option (2), for the narrowing — an earlier
-; version of this line said "runtime arms carry the bound"; see
-; `control_angle_select_accept_rounding_flagship_bound.ll`). No CFG
-; surgery, no route, no work rail, no `cqrt_x` bracket (a select always means
-; "A when the flag is 1", so there is no polarity case at all).
+; LOWERED BY KICKBACK (`emitPhaseAngleSelect`): the flag mint, a
+; `cqrt_x`-bracketed `cqrt_rz_i1(f, .3)` for the f = 0 arm, `cqrt_rz_i1(f, .9)`
+; for the f = 1 arm, the `_unc` strip, ONE `cqrt_free`. Both angles reach the
+; gates verbatim, so no `A-B` is computed and no rounding residue arises. The
+; second register `r` is only prepared and measured. No CFG surgery, no route,
+; no work rail.
 ;
 ; ORACLE DISPOSITION: RED on the pre-2b binary — it declines `rotation angle
 ; under quantum control` at SelectClassify's gate 3 (Rule 12 red-green).
@@ -58,12 +40,6 @@
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * call void @cqrt_x(   [superseded by the XCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

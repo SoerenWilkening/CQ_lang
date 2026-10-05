@@ -11,7 +11,7 @@
 ;         if (e) goto MID;              // jump INTO the loop body -> irreducible
 ;         for (; i < n; i++) {
 ;             int q = x; cq_theta(&q, 0.5);
-;             if (q > 5) q = cq_phi(q, b);   // the in-body tainted diamond
+;             if (q > 5) cq_phi(b);          // the in-body tainted diamond
 ;             acc += cq_measure(q);
 ;         MID:;
 ;         }

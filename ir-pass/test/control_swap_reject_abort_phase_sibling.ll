@@ -1,6 +1,6 @@
 ; control_swap_reject_abort_phase_sibling.ll — Phase 7.2 Inc 3 DECLINE probe: a
-; PHASE-class value (`%p = cq_phi(q)`, an Rz / relative-phase carrier) escapes via
-; the sibling beside the abort park arm (PRD-7.2 §2.6 deferred interaction /
+; value PHASED by an upstream kickback region (`if (q == 3) cq_phi(.25);`) escapes
+; via the sibling beside the abort park arm (PRD-7.2 §2.6 deferred interaction /
 ; §2.11-C-iii; the issue's RED->GREEN negative #2).
 ;
 ; Whether the §2.8 `cqrt_cswap` park preserves the relative phase on the surviving

@@ -1,19 +1,19 @@
 ; lowering_uncompute_interior_region_addc_after_readers.ll — ACCEPT (M-B
 ; Increment 6, clause (d2); bd test_C_libtooling-160a Rule-13 round, finding
-; F1e). Third of three: the write on the routed base is RIGHT of every reader of
-; the chain, so the interval is genuinely clean and the chain discharges.
+; F1e). Third of three: the write on the wire is RIGHT of every reader of the
+; chain, so the interval is genuinely clean and the chain discharges.
 ;
 ; This is the fixture that stops its two leak siblings from being vacuous. Same
-; program, same recorded route group, ONE line moved: `cqrt_addc_i32(%h, 5)` now
-; follows the last reader of `%h_op` (`%h_op & 7`, whose rail is measured). The
-; clause-(d) RIGHT disjunct (`provablyBefore(At, M)`) then holds for the addc,
-; the route group is exempted as a unit by (d2), and the component discharges
+; program, ONE line moved: `cqrt_addc_i32(%h, 5)` now follows the last reader of
+; `%h_op` (`%h_op & 7`, whose rail is measured). The clause-(d) RIGHT disjunct
+; (`provablyBefore(At, M)`) then holds for the addc, and the component discharges
 ; LIFO — `and_unc`, free, `mul_unc`, free — all of it BEFORE the addc runs.
 ;
 ; READ THE ORDER, IT IS THE PROOF. `mul_i32_hl_unc(%h_op, %h, 37)` is emitted
-; while `%h` still holds the label the forward `mul` read: the two cswaps between
-; them restore it (clause (d2)), the arm `Rz` landed on the WORK rail and is
-; diagonal anyway, and the only other write on `%h` in the function comes after.
+; while `%h` still holds the label the forward `mul` read: the kickback acts on the
+; flag, not on `%h`, and the only other write on `%h` in the function comes after.
+; (Pre-3qlq the region routed `%h`: two cswaps restored its label as a recorded
+; group, clause (d2), and the arm `Rz` landed on the WORK rail.)
 ; Move that addc one line earlier and this becomes
 ; lowering_uncompute_interior_leak_region_addc_inside.ll.
 ;

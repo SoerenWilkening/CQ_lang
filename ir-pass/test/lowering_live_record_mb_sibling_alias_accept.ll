@@ -3,25 +3,17 @@
 ; lowering_reject_live_record_sibling_alias.ll: that fixture MINUS its one
 ; `call void @cqrt_x`.
 ;
-; THE WALK IT PINS. The chained theta is written on `%qd = cq_phi(%q, ·)` — the
-; DIAGONAL ALIAS of the wire the record was built from — so a guard comparing SSA
-; names would see two wires. It is structural rather than a special case:
-; `lowerRotations` RAUWs a `cq_phi` result to its own operand, so by the late M-A
-; slot `%qd` and `%q` ARE the same i32 handle.
-;
-; WHAT M-B ADDS, and it is the one discharge in this family that reads the wire
-; ACROSS a gate: `%d = a + 3` is minted AFTER `cqrt_rz_i32(%h, 1.0)`, and its
-; `add_unc(%d, %h, 3)` reads `%h` after that same Rz. Sound because Rz is
-; DIAGONAL — it writes a phase, never a basis label — so the register the adjoint
-; recomputes from carries exactly the label the forward gate read. That is the
-; same property the region flag-strip relies on (bd memory
-; [rz-diag-flag-strip-invariant]) and the reason `preservesBorrowedParent`'s
-; first row admits `cqrt_rz_<W>` on the parent at all. Swap the `cq_phi` for a
-; second `cq_theta` and the rail leaks instead
+; THE WALK IT PINNED (pre-3qlq register form): the chained theta was written on
+; `%qd = cq_phi(%q, ·)`, the DIAGONAL ALIAS of the wire the record was built from,
+; and `%d`'s `add_unc` read `%h` across that Rz (sound: Rz writes a phase, never a
+; basis label; bd memory [rz-diag-flag-strip-invariant]). The 3qlq migration
+; deleted that uncontrolled phase, so the chained theta is now written on `%q`
+; itself and no gate sits between the record and its discharge. Swap a second
+; `cq_theta` in for the old phase and the rail leaks instead
 ; (lowering_uncompute_interior_leak_parent_ry_between.ll).
 ;
-; The record is therefore discharged before the chained `cqrt_ry`, the guard
-; exempts it on clause 2, and nothing dead is standing at the gate.
+; The record is discharged before the chained `cqrt_ry`, the guard exempts it on
+; clause 2, and nothing dead is standing at the gate.
 ;
 ; MEASURED BOTH WAYS by the Rule-13 reviewer (REVIEW lens C): DECLINES at
 ; c36934a, LOWERS here, stream read by hand and sound.
@@ -51,7 +43,7 @@ entry:
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
 ; CHECK-NEXT: %[[D:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 3)
 ; CHECK-NEXT: %[[E:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[D]], i32 3)
-; the adjoint reads %[[H]] across the DIAGONAL gate — label unchanged:
+; the adjoint reads %[[H]] before the chained Ry — label unchanged:
 ; CHECK-NEXT: call void @cq_template_add_i32_hl_unc(i32 %[[D]], i32 %[[H]], i32 3)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[D]])
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[E]])

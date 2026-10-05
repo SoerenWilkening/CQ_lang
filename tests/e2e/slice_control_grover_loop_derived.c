@@ -8,7 +8,7 @@
    or that the reflection reflects about |0>, was TRUE OF THE SOURCE and FALSE OF
    THE EMITTED CIRCUIT. It becomes true only from 3qlq Inc 1 on, where the phase is
    a BRANCH phase by kickback (rz_i1 on the minted flag), not a register Rz. The
-   older prose is left verbatim rather than silently corrected; read it with this.
+   older prose was revised on 2026-10-05 (bd 7pxe); remaining register-Rz wording is history.
    (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_grover_loop_derived.c — bd test_C_libtooling-8h7d.5 (Phase 7.3
    Increment 3) e2e: THE CUSTOMER PROGRAM. Two Grover iterations as a `for` loop,
@@ -40,9 +40,9 @@
    loop and the cleared straight-line stream are the same circuit.
 
    WATCH WHAT clang -O1 DOES (Rule 9): `<= 3.5` is emitted as `fcmp ugt` with the
-   gate arm as the FALSE successor, so the route is `cqrt_x`-bracketed; and the
-   `a == 0` arm arrives as `cq_phi(0, PI)` because the register was
-   value-propagated to the literal inside the arm.
+   gate arm as the FALSE successor, so the kickback `cqrt_rz_i1` on the flag is
+   `cqrt_x`-bracketed; each arm is a bare register-free `cq_phi(PI)` (pre-3qlq
+   the `a == 0` arm arrived eq-folded as `cq_phi(0, PI)`).
 
    STRICT stage 2b (no `--allow-unproven`). */
 

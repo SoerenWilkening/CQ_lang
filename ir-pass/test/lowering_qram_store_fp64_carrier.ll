@@ -1,17 +1,16 @@
 ; lowering_qram_store_fp64_carrier.ll — ACCEPT (bd 38t2): a DEAD-scratch fp cell
-; store of a COHERENT CARRIER. `%cp = Rz(Ry(theta))` is a superposition-with-relative-
-; phase fp carrier; `arr[q] = %cp` stores it into a `[8 x double]` cell at a tainted
-; index. This is FAITHFUL reversible QRAM: the store CNOT-copies the fp BIT PATTERN
-; into the |0> cell, and the whole-DAG LIFO uncompute fires `cqrt_qram_store_f64_unc`
-; FIRST — disentangling the carrier from the cell — and only THEN reverse-plays the
-; carrier's own `cqrt_rz_f64`/`cqrt_ry_f64` adjoints and frees it clean (the Bennett
-; order, NOT method-B: a CNOT-copy of a carrier into |0> preserves the phase in the
-; JOINT amplitude, so the reversal is a clean identity — bd
-; [38t2-fp-cell-commits-to-basis-sound]). PARITY with the shipped integer
-; lowering_qram_store_dead_lifo.ll (the fp store is the identical W-bit CNOT-write;
-; handles are always i32, only the symbol name changes). The array handle is a
-; classical resource token, NEVER freed (§2.9). NO measurement (Rule 5).
-;
+; store of a COHERENT CARRIER. `%c = Ry(theta)` is a superposed fp carrier (the
+; uncontrolled `cq_phi(0.3)` is a global phase and is deleted); `arr[q] = %c` stores
+; it into a `[8 x double]` cell at a tainted index. This is FAITHFUL reversible QRAM:
+; the store CNOT-copies the fp BIT PATTERN into the |0> cell, and the whole-DAG LIFO
+; uncompute fires `cqrt_qram_store_f64_unc` FIRST — disentangling the carrier from
+; the cell — then unwinds the index rails and the carrier's own `cqrt_ry_f64` (the
+; Bennett order, bd [38t2-fp-cell-commits-to-basis-sound]). The carrier is kept: its
+; runtime seed returns it to |u0>, not |0> (bd 5c5b). Pre-3qlq the carrier was
+; `Rz(Ry)` and its `cqrt_rz_f64` adjoint was reverse-played too. PARITY with the
+; shipped integer lowering_qram_store_dead_lifo.ll (the fp store is the identical
+; W-bit CNOT-write; handles are always i32, only the symbol name changes). The array
+; handle is a classical resource token, NEVER freed (§2.9). NO measurement (Rule 5).
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
 ; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)

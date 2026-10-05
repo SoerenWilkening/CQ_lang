@@ -66,13 +66,13 @@ bool isInverseEmittable(const CallInst *Forward) {
       !Name.contains("_controlled") && Forward->arg_size() == 2)
     return true;
   // CONTROLLED rotation `cqrt_{ry,rz}_<W>_controlled(f, h, θ)` (control-in-place
-  // PRD §5, bd test_C_libtooling-drbq Inc 0): the SAME negated-angle recipe, with
-  // the control threaded unchanged through arg 0 and the handle at arg 1. Sound
-  // for both stems and for both branches of the flag: on `f=0` forward and
-  // adjoint are each the identity, on `f=1` they are `R(θ)` and `R(-θ)`, so the
-  // composition is the identity unconditionally — no assumption about the flag's
-  // value is needed, which is why the control is a plain read-only thread rather
-  // than something that must be re-derived.
+  // PRD §5, bd drbq Inc 0; nothing mints the `rz` stem since 3qlq): the SAME
+  // negated-angle recipe, control threaded unchanged through arg 0, handle at
+  // arg 1. Sound for both stems and both branches of the flag: on `f=0` forward
+  // and adjoint are each the identity, on `f=1` they are `R(θ)` and `R(-θ)`, so
+  // the composition is the identity unconditionally — no assumption about the
+  // flag's value is needed, which is why the control is a plain read-only thread
+  // rather than something that must be re-derived.
   //
   // THREE FENCES, all load-bearing:
   //  * `ends_with("_controlled")`, NOT `contains` — the `_controlled_inv`
@@ -274,7 +274,7 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
   // kickback, and Inc 2 took the value path off it, leaving the 7.2 abort park
   // (`AbortParkEmit`) as the sole `emitRoute` caller — MEASURED,
   // `grep -rn 'emitRoute(' ir-pass/src ir-pass/include` = the definition, the
-  // declaration and ONE call site, `AbortParkEmit.cpp:396`. So this guard now
+  // declaration and ONE call site, in `AbortParkEmit.cpp`. So this guard now
   // guards exactly the park.
   //
   // The 4.4 controlled-XOR copy `cqrt_copy_<W>_controlled(ctrl, src, dst)` joins

@@ -57,7 +57,7 @@
    `_inv` (ctpop is not invertible). Two lineages in a `noinline` helper:
 
    (A) MEASURED ctpop — proves the FORWARD producer.
-   (B) DEAD ctpop kept alive by a `cq_phi` — proves the `_unc` twin + source-live.
+   (B) DEAD ctpop under a kickback `cq_phi` — proves the `_unc` twin + source-live.
 
    cq_theta/cq_phi/cq_measure resolve from CQ.h (force-included by run_slice.sh). */
 __attribute__((noinline))
@@ -70,6 +70,6 @@ void slice(unsigned x) {
     /* (B) dead ctpop — proves the `_unc` twin + recompute-from-live-source. */
     unsigned c = x; cq_theta(&c, 0.10);
     int d = __builtin_popcount(c);        /* dead */
-    if (d == 16) cq_phi(0.30);               /* Rz keep-alive; result dropped */
+    if (d == 16) cq_phi(0.30);               /* kickback keep-alive (rz_i1 on flag) */
 }
 int main(void) { slice(0x0f0f0f0fu); return 0; }

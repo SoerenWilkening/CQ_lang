@@ -4,7 +4,7 @@
 ;
 ;     static int inner(int u) {
 ;       int q = u; cq_theta(&q, .5);
-;       for (i<2) { if (q==5) q=cq_phi(q,PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
+;       for (i<2) { if (q==5) cq_phi(PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
 ;       int a = q; cq_theta(&a, .125);    /* OFF-CHAIN record */
 ;       int b = a; cq_theta(&b, .25);     /* a rail gate AFTER it */
 ;       (void)cq_measure(b);

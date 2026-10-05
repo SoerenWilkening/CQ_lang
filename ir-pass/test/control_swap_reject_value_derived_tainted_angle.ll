@@ -1,16 +1,14 @@
-; control_swap_reject_value_derived_tainted_angle.ll — DECLINE: a VALUE arm's
-; DERIVED routed base carries a quantum-derived angle.
+; control_swap_reject_value_derived_tainted_angle.ll — DECLINE: a branch phase
+; with a quantum-derived angle ahead of a VALUE diamond.
 ;
 ; The value-arm twin of control_swap_reject_tainted_angle_prebase.ll:
-; `%pd = cq_phi(%p, sitofp(%p))` is the routed base of an otherwise accept-class
-; value diamond (`if (q > 5) { pd = pd + 3 }`, condition disjoint from %pd).
-; taintedAngleGate's base check never sees it — for a value arm the phase
-; spine consumes nothing, so its Base is the arm's first binop, not the chain's
-; real base. Without the value-path check the region is fully EMITTED and
-; FLATTENED before RotationLowering's own angle guard fires (loud either way,
-; but mutation must never precede detection — found by the WI-4 §8 adversarial
-; review, 2026-06-11). classifyArms declines pre-mutation with the same
-; source-located string as the phase-path twin.
+; `cq_phi((double)p); if (q > 5) r = p + 3;` — an otherwise accept-class value
+; diamond (condition disjoint from %p) preceded by a phase whose angle is the
+; sitofp of %p. RotationLowering's quantum-derived-angle guard owns the decline
+; (Rule 3). Pre-3qlq the angle sat on the diamond's derived routed base
+; `%pd = cq_phi(%p, sitofp(%p))`, and classifyArms had to decline it before the
+; region was EMITTED and FLATTENED (found by the WI-4 §8 adversarial review,
+; 2026-06-11).
 ;
 ;
 ; 3qlq(prep_a2): the asserted diagnostic was RE-SPELLED on the Inc-1 binary.

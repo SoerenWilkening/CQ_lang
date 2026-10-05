@@ -1,6 +1,6 @@
-// RegionFlatten.cpp — see header. CFG flatten for one swap-route region: after
-// `SwapRouteEmit` has emitted the routed stream into the pred and rewired the
-// data, collapse the dead diamond/if-else CFG into the single pred block.
+// RegionFlatten.cpp — see header. CFG flatten for one control region: after its
+// emitter has emitted the gate stream into the pred and rewired the data,
+// collapse the dead diamond/if-else CFG into the single pred block.
 //
 // Block identities are captured BEFORE the first erase (the block-lifetime
 // hazard — a `BasicBlock*` re-read through freed memory is a SIGSEGV on valid
@@ -121,12 +121,12 @@ void flattenRegion(const ControlRegion &R, TaintSet &taint) {
   // dugh (Phase 4×6): the merge block's spliced tail is USUALLY a clean
   // measure/`ret` sink, but with the second-propagation round the merge value
   // `%out` may now flow ONWARD into a downstream block structure whose head is
-  // the merge's terminator — e.g. `if (q>k) y=f(a); if (cc) y=cq_phi(y,θ);
-  // measure y`, where `merge` ends in `br i1 %cc` and a downstream block's phi
-  // lists `merge` as a predecessor. Splicing that terminator into `Pred` moves
-  // control to `Pred`, but a PHI incoming BLOCK is not an operand-use of the
-  // block, so `Merge`'s erase below leaves those phis with a dangling `<badref>`
-  // predecessor (a broken module the standard merge-into-pred fixup prevents).
+  // the merge's terminator — e.g. (pre-3qlq register form) `if (q>k) y=f(a);
+  // if (cc) y=cq_phi(y,θ); measure y`, where `merge` ends in `br i1 %cc` and a
+  // downstream block's phi lists `merge` as a predecessor. Splicing that
+  // terminator into `Pred` moves control to `Pred`, but a PHI incoming BLOCK is
+  // not an operand-use of the block, so `Merge`'s erase below leaves those phis
+  // with a dangling `<badref>` predecessor (the merge-into-pred fixup prevents it).
   // Re-point every successor-phi incoming block `Merge → Pred` — a NO-OP for the
   // clean-tail case (a `ret` has no successors). Runs AFTER the splice (so `Pred`
   // owns the successors) and BEFORE the erase (so no phi dangles).
@@ -142,7 +142,7 @@ void flattenRegionTree(const ControlRegion &Outer, const ControlRegion &Inner,
   // content arm; both reconverge at the SINGLE shared `Outer.MergeBB`
   // (== Inner.MergeBB), whose sole 3-incoming phi is `Outer.Merge`.
   auto *MergePhi = dyn_cast_or_null<PHINode>(Outer.Merge);
-  BasicBlock *Pred = Outer.Pred;       // survives (holds the routed stream)
+  BasicBlock *Pred = Outer.Pred;       // survives (holds the emitted stream)
   BasicBlock *Mid = Outer.Arm;         // doomed (= Inner.Pred)
   BasicBlock *InnerArm = Inner.Arm;    // doomed
   BasicBlock *Merge = Outer.MergeBB;   // doomed (shared — erased EXACTLY ONCE)
@@ -168,8 +168,8 @@ void flattenRegionTree(const ControlRegion &Outer, const ControlRegion &Inner,
   if (declineAddressTakenBlocks({Mid, InnerArm, Merge}, OuterBI))
     return;
 
-  // 1. Rewire the data: the 3-incoming merge phi collapses to the routed base `q`
-  //    (a phase arm preserves q's basis value on every edge). RAUW → q so the
+  // 1. (Pre-3qlq register-form nest only: the one caller passes a null φ.) The
+  //    3-incoming merge phi collapses to the base `q`. RAUW → q so the
   //    measure that consumed the phi now reads `q`, then scrub + erase it. The
   //    nest is the SOLE owner of this phi (§6.1) — erasing it here, before
   //    `declineClassicalMuxes`, is what keeps the live 3-incoming tainted phi from
@@ -215,11 +215,10 @@ void flattenRegionTree(const ControlRegion &Outer, const ControlRegion &Inner,
     OuterCond->eraseFromParent();
   }
 
-  // 4. Erase the arm-gate chains in REVERSE lineage order (the caller passes them
-  //    Mid-gates-first, forward order, so reverse drops the inner-arm gate `%h`
-  //    — which reads `%g` — before the Mid gate `%g`, keeping each use-empty).
-  //    Scrubbing each from `taint.PhiCalls` is what stops `lowerRotations` from
-  //    re-emitting a stray uncontrolled `cqrt_rz` on the wrong register (§6.1).
+  // 4. Erase the arm-gate chains in REVERSE lineage order (Mid-gates-first in,
+  //    so the inner-arm gate `%h` — which reads `%g` — goes before `%g`). The one
+  //    caller, `emitPhaseKickbackNestRegion`, passes an EMPTY list; only the
+  //    pre-3qlq nest emitter passed its `cq_phi_<sfx>` gates here.
   for (CallInst *Phi : reverse(armPhis)) {
     scrubTaint(Phi, taint);
     Phi->eraseFromParent();
@@ -249,7 +248,7 @@ void flattenRegionTree(const ControlRegion &Outer, const ControlRegion &Inner,
 void flattenSwitchRegion(const ControlRegion &R, TaintSet &taint) {
   // Capture EVERY block identity before the first erase (the block-lifetime
   // hazard — a `BasicBlock*` re-read through freed memory is a SIGSEGV on valid
-  // input). `Pred` is the switch block (SURVIVES — it holds the emitted routed
+  // input). `Pred` is the switch block (SURVIVES — it holds the emitted
   // stream). The arm blocks (incl. empty passthrough arms whose merge incoming is
   // just the scrutinee) and the merge block are doomed.
   BasicBlock *Pred = R.Pred;

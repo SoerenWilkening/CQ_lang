@@ -5,29 +5,23 @@
 ;
 ; SOURCE (`clang -O1` emits exactly the SSA below):
 ;     cq_theta(&a, 0.5);
-;     int c = a + 3;          // ONE record of the wire
+;     int c = a + 3;          // ONE record of the wire — and NOTHING observes c
 ;     cq_theta(&a, 0.7);   // T — chained, in-place Ry
-;     c = cq_phi(c, 1.0);     // a USER Rz naming the record AFTER T — and NOTHING observes c
 ;     return cq_measure(a);
 ;
-; THE RULING: a bare post-gate ROTATION on a record is NOT a clause-3 data use.
-; A record exempts only if its lineage reaches an OBSERVING sink after the gate
-; (measure / ret / tape / a template read that flows to one). A phase written
-; onto a register nothing ever observes is unobservable, so it cannot make `%c`
-; "the program's own data"; `%c` is a dead, undischarged, entangled record at `T`
-; and the module declines — the SAME verdict the rotation-BEFORE spelling
-; (`int c = a+3; c = cq_phi(c,1.0); cq_theta(&a,0.7);`) always had, for the
-; same physics at the gate (`Rz` is diagonal; it disentangles nothing).
+; Before bd 3qlq the program also had `c = cq_phi(c, 1.0);` after T, a USER Rz
+; naming the record. THE RULING: a bare post-gate ROTATION on a record is NOT a
+; clause-3 data use. A record exempts only if its lineage reaches an OBSERVING sink
+; after the gate (measure / ret / tape / a template read that flows to one). The
+; 3qlq migration deleted that uncontrolled phase, so `%c` is now a plainly dead,
+; undischarged, entangled record at `T`, with the same verdict.
 ;
-; WHAT STILL ACCEPTS, so the boundary is not over-read: rotate `c` and then
-; MEASURE it (or return/tape it) — the measure is an observing sink, `%c` is live
-; user data, and its dephasing of `T` is source semantics
+; WHAT STILL ACCEPTS, so the boundary is not over-read: MEASURE `c` (or
+; return/tape it) — the measure is an observing sink, `%c` is live user data, and
+; its dephasing of `T` is source semantics
 ; (lowering_stale_record_add_before_theta.ll is the ruled accept boundary).
 ;
-; The decline message tells the author exactly what to do: measure `c` or drop
-; it. Zero shipped programs are affected (both spellings were constructed
-; probes); the change is accept-NARROWING, the safe direction.
-;
+; The message tells the author exactly what to do: measure `c` or drop it.
 ;
 ; ⚠ NOW A WARNING, NOT A DECLINE — owner ruling 2026-08-29 (bd
 ; test_C_libtooling-lyyf, shipped as M-A Increment 7b): "we can always apply any

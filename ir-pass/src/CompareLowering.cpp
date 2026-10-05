@@ -72,8 +72,8 @@ bool isDataPositionCompare(CmpInst *cmp) {
 }
 
 // Shared classify-and-emit core for the data-path mint (`lowerCompareToFlag`)
-// and the swap-route inner-condition mint (`lowerCompareToFlagRail`). Operands
-// are classified by taint exactly once so BOTH callers mint byte-identical
+// and the swap-route inner-condition mint (`lowerCompareToFlagRail`, no caller
+// since 3qlq Inc 1). Operands are classified by taint once so both mint identical
 // signatures (§4 "the same template machinery"); when `railBase` is non-null it
 // is substituted for the parent-routed handle operand (see
 // `lowerCompareToFlagRail`). `railBase` is null on the data path.
@@ -169,16 +169,14 @@ static Value *lowerCompareImpl(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
     return nullptr;
   }
 
-  // Swap-route inner condition (§4/§12.2): the parent-routed operand's
-  // amplitude physically lives on `railBase` after the outer route-in — the
-  // original SSA register holds |0> on the f1=1 path — so the inner flag must
-  // be minted FROM the rail, not from that now-stale register. The
-  // classification above lands the parent-routed handle in `Lhs` (for HL the
-  // sole tainted operand, moved left directly or via `flipPredicate`; for the
-  // Q+Q forward seam, operand 0), so the substitution is exactly
-  // `Lhs := railBase`, leaving `Rhs` (the classical operand that fixed
-  // `AbiWidth`) untouched. A plain mint off the stale register would compute
-  // the wrong predicate — verify-clean (§6 hazard 3). Null on the data path.
+  // Swap-route inner condition (§4/§12.2), reached only through
+  // `lowerCompareToFlagRail`, which has had no caller since the 4.3 nest
+  // stopped routing (3qlq Inc 1). Under that route the parent-routed operand's
+  // amplitude lived on `railBase` after the outer route-in, so the inner flag
+  // had to be minted FROM the rail. The classification above lands that handle
+  // in `Lhs` (HL: the sole tainted operand, moved left directly or via
+  // `flipPredicate`; Q+Q forward seam: operand 0), so the substitution is
+  // `Lhs := railBase`, leaving `Rhs` untouched. Null on the data path.
   if (railBase)
     Lhs = railBase;
 
@@ -402,8 +400,8 @@ bool compareFlagMintable(CmpInst *cmp, TaintSet &taint) {
 Value *lowerCompareToFlagRail(CmpInst *cmp, Value *railBase, WidthDispatch &wd,
                               TaintSet &taint, StringRef qqWidth, bool inverse,
                               Instruction *before, Value *railToStrip) {
-  // Nested-control mint is never negated (the swap-route nest has no FALSE-
-  // successor store arm); pass negate=false.
+  // Nested-control mint is never negated (the retired swap-route nest had no
+  // FALSE-successor store arm); pass negate=false.
   // (Track A.1) The record rides the default: this mint substitutes a ROUTED
   // rail for the compare's own handle operand, so its read point is still a
   // control read of the condition's wire, and it is `Unruled` — the strongest
@@ -477,9 +475,9 @@ bool rewriteCompare(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint) {
   // IMPLEMENTATION §1.2 / risk R2, guarded by the per-fixture `verify` RUN
   // line) and bookkeep. A null flag means the helper diagnosed (unsupported
   // width / Q+Q) and left the compare standing — the driver must NOT erase it.
-  // ziov WI-1: if `SwapRouteEmit::emitRegion` already minted a SHARED control
-  // flag for this exact compare (the condition is the control flag AND a data
-  // value), REUSE it — minting a second flag here is the ziov duplicate-mint. The
+  // ziov WI-1: if the phase-kickback emitter (`SwapRouteEmit`) already minted a
+  // SHARED control flag for this compare (the condition is the control flag AND
+  // a data value), REUSE it — a second flag here is the ziov duplicate-mint. The
   // shared flag was positioned at the compare so it dominates every data use;
   // RAUW the now-redundant compare onto it (the same cross-type i1→i32 launder as
   // the fresh-mint path below, but the data casts' i1 widths were already captured

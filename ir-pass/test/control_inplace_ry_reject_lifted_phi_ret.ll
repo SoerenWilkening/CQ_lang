@@ -7,13 +7,13 @@
 ;
 ; THE LAUNDER, which is the same in all seven:
 ;
-;     int m; if (c) { m = cq_phi(r, .1); } else { m = r; }   /* CLASSICAL diamond */
+;     int m; if (c) { m = r; } else { m = r; }              /* CLASSICAL diamond */
 ;     if (q == 5) { cq_theta(&r, .9); }                    /* in-place Ry on r  */
 ;     ... <consumer>(m) ...                                    /* reads the PRE-Ry record */
 ;
-; `cq_phi` is Rz and ALWAYS lowers in place, so `m` and `r` are two SSA names for
-; ONE physical rail. Inc 1's `railWireClosure` crossed a `PHINode` BACKWARD but
-; not FORWARD, so the classical join φ was a plain USER of a member: it passes
+; `m` and `r` are two SSA names for ONE physical rail (pre-3qlq one edge carried
+; an in-place `cq_phi` Rz). Inc 1's `railWireClosure` crossed a `PHINode` BACKWARD
+; but not FORWARD, so the classical join φ was a plain USER of a member: it passes
 ; `provablyBefore` HONESTLY (it dominates the region's branch and the branch
 ; cannot reach it), R6 stopped there, and ITS users were never enumerated.
 ; `liftOneRegisterMergePhi` then RAUW'd the φ to the base AFTER the region was

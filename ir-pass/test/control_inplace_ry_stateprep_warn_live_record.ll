@@ -13,7 +13,7 @@
 ;   %r  = <the prepped rail>            ; root = cqrt_ry_i32_controlled
 ;   %c  = add nsw i32 %r, 3             ; a RECORD off the prepped rail
 ;   %r2 = cq_theta(%r, 0.7)             ; a CHAINED non-diagonal gate on the rail
-;   %cz = cq_phi(%c, 1.0)               ; a user Rz on the record, UNOBSERVED
+;   (pre-3qlq also `%cz = cq_phi(%c, 1.0)`, a user Rz on the record; 3qlq deleted it)
 ;
 ; HEAD emits `warning: cq rotation lowering: non-diagonal gate over a live
 ; derived record` and exits 0. Its exempt control — the same module with the

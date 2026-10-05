@@ -1,8 +1,8 @@
 /* classical_call_under_control_caller.c — the CQ translation unit for the Phase
    6.5 e2e golden (test_C_libtooling-mvna.11, WI-5.7): a PURE CLASSICAL call under
    QUANTUM CONTROL with CLASSICAL inputs (DD-7 / PRD §2.13). The clone-ORTHOGONAL
-   Phase-6 capability — it depends ONLY on the cleared swap-route Phase-4 path, not
-   on clone-on-taint.
+   Phase-6 capability — it depends ONLY on the Phase-4 tainted-control path (the
+   controlled-copy merge below), not on clone-on-taint.
 
    SOURCE INTENT: `q` is theta-tainted (the condition register). The diamond
        int y = q;
@@ -12,11 +12,11 @@
    classical call result)]. Because `ext_f` is PURE and its argument is classical,
    `ext_f(7)` runs CLASSICALLY: the call is HOISTED into the pred (inert — its
    result on the inactive branch is computed-and-discarded), and its i32 result is
-   routed into the controlled register by the 4.4-style controlled-XOR copy merge
-   over the FLATTENED diamond — mint the flag from the icmp, alloc the |0> out
-   rail, copy the cond-TRUE value (the call result, materialized via cqrt_alloc)
-   on the flag, X-bracket + copy the cond-FALSE value (q, the identity) on ¬flag,
-   icmp_inv strip, the ONE cqrt_free (the flag). NO clone (@__cq_q_), NO cqrt_cswap,
+   merged by the 4.4-style controlled-copy merge over the FLATTENED diamond — mint
+   the flag from the icmp, alloc the |0> out rail, cqrt_copy_i32_controlled the
+   cond-TRUE value (the call result, materialized via cqrt_alloc) on the flag,
+   X-bracket + copy the cond-FALSE value (q, the identity) on ¬flag, the compare
+   `_unc` strip, the ONE cqrt_free (the flag). NO clone (@__cq_q_), NO cqrt_cswap,
    NO reverse-play, NO input-tainting, ZERO controlled rotations.
 
    `ext_f` is DECLARED (not defined) here, so it is a direct call to a visible,
@@ -34,8 +34,8 @@ int slice(void) {
     cq_theta(&q, 0.5);             /* taint q -> condition handle (alloc, ry)   */
     int y = q;
     if (q > 5)                     /* tainted-condition diamond                 */
-        y = ext_f(7);              /* pure classical call -> route-merged result */
-    return cq_measure(y);          /* reads the route-merged answer (out)        */
+        y = ext_f(7);              /* pure classical call -> copy-merged result  */
+    return cq_measure(y);          /* reads the copy-merged answer (out)         */
 }
 
 int main(void) { (void) slice(); return 0; }

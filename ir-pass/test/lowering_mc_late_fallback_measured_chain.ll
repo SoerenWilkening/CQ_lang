@@ -49,7 +49,7 @@
 ; SHAPE (`clang -O1` output of):
 ;     int a = u; cq_theta(&a, 0.5);
 ;     int t = (a >> 2) + a;
-;     if (t == 5) a = cq_phi(a, PI);
+;     if (t == 5) cq_phi(PI);
 ;     int mt = cq_measure(t);
 ;     a -= off;
 ;     return cq_measure(a) + mt;

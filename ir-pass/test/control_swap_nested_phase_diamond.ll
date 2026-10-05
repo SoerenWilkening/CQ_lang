@@ -1,18 +1,14 @@
 ; control_swap_nested_phase_diamond.ll — ACCEPT spec (§5g), depth-2 homogeneous
 ; PHASE nest. The §0 accept shape, pinned from real clang -O1 of
-; `if (q>5) { q = rz(q,b); if (q<9) { q = rz(q,a); } }`.
+; `if (q>5) { cq_phi(b); if (q<9) { cq_phi(a); } }`.
 ;
-; The swap-route nest mints the outer flag, routes q onto rail1, replays the
-; intervening Rz on rail1, mints the inner flag FROM rail1 (the value's amplitude
-; lives there post-route-in — NOT from the stale %g register), routes rail1 onto
-; rail2, replays the inner Rz, routes back, then tears down LIFO: free rail2 →
-; STRIP the inner flag vs rail1 (BEFORE the outer route-back, the load-bearing
-; §12.3 order) → free inner flag → outer route-back → free rail1 → strip the outer
-; flag vs q → free outer flag. ZERO controlled gates, NO cqrt_toffoli, NO phi i32,
-; EXACTLY FOUR cqrt_free (rail2, %f2, rail1, %f1).
+; Both levels lower by kickback, both flags minted from q: the outer phase is
+; `cqrt_rz_i1(f1, b)`; the inner phase lands on a fresh |0> AND node
+; `g = f1 ∧ f2` (`cqrt_toffoli`), which is uncomputed and freed; then LIFO
+; teardown strips f2 and frees it, strips f1 and frees it. ZERO controlled gates,
+; NO phi i32, EXACTLY THREE cqrt_free (g, f2, f1); no work rail, no `cqrt_cswap`.
 ;
-; WI-3 lands NestedRouteEmit — the proven nest now LOWERS to the §5g routed
-; stream below (XFAIL removed at WI-3 XPASS).
+; WI-3 landed the pre-3qlq NestedRouteEmit (XFAIL removed at WI-3 XPASS).
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

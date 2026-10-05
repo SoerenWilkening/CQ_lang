@@ -1,23 +1,18 @@
 ; control_swap_ifelse_derived_crossqubit_cond.ll — ACCEPT: condition on qubit P,
 ; arms rotate the DERIVED handle of qubit Q.
 ;
-; `if (p > 5) { rz(q, a); } else { rz(q, b); }` where the gated handle is the
-; pre-region-derived %qd of theta %q and the condition reads a DIFFERENT theta
-; %p. This is a genuine TWO-QUBIT controlled phase — semantically distinct from
-; the single-handle phase-kick of the other accept fixtures — and it is correct
-; by the same §3a reasoning: the flag is minted from basis(p), NOTHING in the
-; region touches p, so icmp_inv(p) strips the flag exactly; the arms are
-; diagonal on q. Nothing in §0 criterion 3 requires the gated base to share
-; lineage with the condition. Under the §6a control-in-place peephole the
-; two-qubit structure is READ DIRECTLY off the emitted gate — each arm is one
-; `cqrt_rz_i32_controlled(%[[F]], %[[Q]], ·)` whose control comes from P's flag and
-; whose target is Q's handle, two DISTINCT SSA values. The route encoded the same
-; separation with a CSWAP that moved Q under P's flag.
-; (The un-derived cross-qubit form was already accepted; the derived form was
-; silently enabled by test_C_libtooling-9hh — this fixture pins it per Rule 12,
+; Pre-3qlq (register form) the arms rotated the pre-region-derived handle %qd of
+; Q under a condition on a DIFFERENT theta %p — a two-qubit controlled phase.
+; Register-free, the arms carry no data operand:
+; `if (p > 5) cq_phi(a); else cq_phi(b);` is a branch phase on `p > 5`. It
+; lowers by kickback onto P's flag: icmp mint from p, `cqrt_rz_i1(flag, a)`,
+; then `cqrt_rz_i1(flag, b)` in a `cqrt_x(flag)` bracket for the ¬flag arm, the
+; icmp `_unc` strip and one `cqrt_free`. NOTHING in the region touches p's or
+; q's handle, so the strip is exact; q is only prepared and measured.
+; (The derived form was enabled by test_C_libtooling-9hh and pinned per Rule 12,
 ; flagged by the §8 completeness review 2026-06-10. The CROSS-HANDLE rejects —
-; arms muxing two handles at the MERGE — are a different shape and still
-; decline: control_swap_reject_{ifelse_crosshandle,ifelse_derived_mixed}.ll.)
+; arms muxing two handles at the MERGE — are a different shape:
+; control_swap_reject_{ifelse_crosshandle,ifelse_derived_mixed}.ll.)
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
@@ -42,12 +37,6 @@
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * call void @cqrt_x(   [superseded by the XCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

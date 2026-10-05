@@ -1,10 +1,10 @@
 ; lowering_reject_frozen_wire_phi.ll — DECLINE (test_C_libtooling-4i7r): a
-; tainted fp `freeze` of a quantum WIRE feeding a `cq_phi` (Rz) arg-0 handle
-; slot. PRE-FIX this SIGABRT'd (134) — the theta RAUW-to-i32-handle left
-; `freeze double %h` ill-typed and `cqrt_rz_f64(double %f, …)` read the fp
-; freeze in an i32 slot. The `declineFrozenWire` scan declines the tainted
-; non-i32 freeze BEFORE the RAUW. Companion of the chained-theta spelling; this
-; pins the Rz (cq_phi) arm too.
+; tainted fp `freeze` of a quantum WIRE. Pre-3qlq it fed a register-form
+; `cq_phi` (Rz) arg-0 handle slot, and PRE-FIX that SIGABRT'd (134) — the theta
+; RAUW-to-i32-handle left `freeze double %h` ill-typed and `cqrt_rz_f64(double %f,
+; …)` read the fp freeze in an i32 slot. The migration deleted that uncontrolled
+; phase, so the freeze is now dead; the `declineFrozenWire` scan still declines
+; the tainted non-i32 freeze BEFORE the RAUW.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq rotation lowering: unsupported frozen quantum wire

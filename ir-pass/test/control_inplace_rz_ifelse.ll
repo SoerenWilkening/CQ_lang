@@ -1,20 +1,21 @@
-; control_inplace_rz_ifelse.ll — the §6a Rz peephole on a TWO-ARM if/else
-; (bd test_C_libtooling-drbq Inc 2a).
+; control_inplace_rz_ifelse.ll — a TWO-ARM phase if/else under a tainted
+; condition (bd test_C_libtooling-drbq Inc 2a).
 ;
-; Both arms rotate the SAME register; the true arm fires on the flag and the else
-; arm on ¬flag via the `cqrt_x` bracket. Under the swap route this shape cost TWO
-; work rails, FOUR `cqrt_cswap`s, FOUR `cqrt_x` and THREE frees; it now costs two
-; controlled gates, two `cqrt_x` and ONE free (the flag).
+;     if (q > 5) cq_phi(a); else cq_phi(b);
+;
+; Both arms kick back onto ONE flag: the true arm's `cqrt_rz_i1(f, a)`, then the
+; else arm's `cqrt_rz_i1(f, b)` on ¬flag via the `cqrt_x` bracket, the strip and
+; ONE free (the flag). (Under the retired swap route this shape cost TWO work
+; rails, FOUR `cqrt_cswap`s, FOUR `cqrt_x` and THREE frees.)
 ;
 ; ARM ORDER IS THE CONTRACT and is why this fixture is not redundant with the
 ; diamond: the emitter walks `Arms` in SUCCESSOR order (R.Arm then R.ArmFalse),
-; so the true arm's gate must precede the bracketed else arm's — the same order
-; the route emitted its two bodies in. A swap here would apply the two phases
-; under the wrong branch of the flag.
+; so the true arm's gate precedes the bracketed else arm's. Putting the bracket
+; on the wrong arm would apply the two phases under the wrong branch of the flag.
 ;
 ; Hand-constructed IR: `clang -O1` merges a symmetric two-gate if/else into ONE
-; call with a `select` on the ANGLE (which declines today and is Inc 2b's shape),
-; so the two-block form has to be written directly.
+; call with a `select` on the ANGLE (the angle-select shape), so the two-block
+; form has to be written directly.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
@@ -39,12 +40,6 @@
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * call void @cqrt_x(   [superseded by the XCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

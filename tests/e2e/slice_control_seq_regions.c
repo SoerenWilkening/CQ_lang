@@ -37,7 +37,7 @@
 int slice(void) {
     int q = 7;
     cq_theta(&q, 0.5);             /* alloc i32(7) + ry_i32                  */
-    if (q > 5) {                   /* region 1 — swap-routed phase arm       */
+    if (q > 5) {                   /* region 1 — phase arm (kickback)        */
         cq_phi(0.25);
     }
     if (q > 3) {                   /* region 2 — its Pred is region 1's merge */

@@ -1,16 +1,14 @@
 ; control_swap_reject_nested_cond_datause_measure_early.ll — DECLINE probe
 ; (ziov.3, MeasuredEarly arm): a depth-2 phase nest whose OUTER condition is
-; reused as data, and that data is MEASURED in the OUTER route block (Pred),
-; BEFORE the route would control on the flag.
+; reused as data, and that data is MEASURED in the OUTER Pred block, BEFORE the
+; nest's control uses the flag.
 ;
-; `bool f = cq_measure(q>5); if (q>5) { ... }` — clang -O1 CSEs to ONE `icmp` and
-; the `cq_measure` of the flag-derived value lands in the outer Pred (the route
-; block), ahead of the conditional `br`. A shared-flag lowering would emit
-; `cqrt_measure` on the flag BEFORE the route's cswap — a route controlled by an
-; ALREADY-COLLAPSED flag (the WI-1 atk9 hazard, now on the nested level). ziov.3
-; declines it with the SAME string the flat path uses ("condition measured before
-; the control route"); a measure DOWNSTREAM of the route would not (but nested
-; declines every cond-data-use regardless until sharing lands).
+; `bool f = cq_measure(q>5); if (q>5) { cq_phi(b); if (q<9) cq_phi(a); }` — clang
+; -O1 CSEs to ONE `icmp` and the `cq_measure` of the flag-derived value lands in
+; the outer Pred, ahead of the conditional `br`. A shared-flag lowering would emit
+; `cqrt_measure` on the flag BEFORE the nest's kickbacks use it, collapsing the
+; coherent control (the WI-1 atk9 hazard, now on the nested level). Nested
+; declines every cond-data-use regardless until sharing lands.
 ;
 ;
 ; 3qlq(prep_a2): the asserted diagnostic was RE-SPELLED on the Inc-1 binary.

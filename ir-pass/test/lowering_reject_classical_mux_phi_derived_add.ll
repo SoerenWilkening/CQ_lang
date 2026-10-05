@@ -8,13 +8,13 @@
 ; lowers it to `cq_template_add_*` and RAUWs the add to the template CALL
 ; result, a FRESH rail handle (`h_op`). Post-lowering the phi incomings would
 ; be DIFFERENT handles (new rail vs base) — a real runtime-chosen data mux,
-; never a renaming. The 5j5 wire resolution only peels collected
-; cq_theta/cq_phi call sites (the only in-place ops), so the add incoming
+; never a renaming. The 5j5 wire resolution only peels collected in-place
+; rotation call sites (`cq_theta`), so the add incoming
 ; resolves to itself, bases differ, the lift refuses, and the wi5 decline
 ; fires.
 ;
-; (A value-arm under QUANTUM control is the swap-route emitter's deferred
-; method-B territory; under CLASSICAL control this shape needs a real owner
+; (Under QUANTUM control a value arm lowers by the controlled-copy merge,
+; `SelectMergeEmit`; under CLASSICAL control this shape needs a real owner
 ; for the rail-vs-base merge before it can ever accept — out of 5j5 scope.)
 ;
 ; Guard: TaintPropagation::declineClassicalMuxes. It OWNS the exact `Msg`

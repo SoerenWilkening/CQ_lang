@@ -404,7 +404,7 @@ FunctionCallee WidthDispatch::ryRtFn(StringRef abiWidth) const {
 
 FunctionCallee WidthDispatch::rzRtFn(StringRef abiWidth) const {
   // Signature: void(i32 handle, double angle). Mirrors cqrt_rz_<W> in
-  // runtime/cq_runtime.h. Same shape as ryRtFn.
+  // runtime/cq_runtime.h. Every caller asks for "i1" (the flag kickback).
   LLVMContext &Ctx = M.getContext();
   if (!typeForAbiWidth(abiWidth, Ctx))
     return FunctionCallee();
@@ -569,8 +569,8 @@ ArrayRef<StringRef> WidthDispatch::frontEndIntrinsicNames() const {
       "cq_measure_f80",
       // bd test_C_libtooling-3qlq Inc 1 — the register-free branch phase.
       // The 16 `cq_phi_<sfx>` rows above are the RETIRED family: `CQ.h` no
-      // longer declares them and the pass no longer recognizes them (a call
-      // to one now declines through the ordinary taint-escape guard), but a
+      // longer declares them and the pass no longer lowers them (a call to
+      // one is a loud reserved-name decline in `resolveSources`), but a
       // decl-only leftover is still swept here rather than left to fail at
       // Stage-3 link.
       "cq_phi",

@@ -147,7 +147,7 @@ exit:
 ; it does there — the plan is real and arm (d2) would settle the prior readers —
 ; and G5 is now the only thing between that plan and a per-trip mutation.
 ;
-; the chain, the route and the full interior discharge — all of it BEFORE the
+; the chain, the kickback and the full interior discharge — all of it BEFORE the
 ; cycle, which is precisely what makes arm (d2) willing and G5 load-bearing
 ; and the site still lowers OUT OF PLACE inside the cycle
 define i32 @late_round_site(i32 noundef %0, ptr noundef %1, i1 %c0, ptr %pc) {

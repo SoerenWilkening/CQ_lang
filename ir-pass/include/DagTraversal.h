@@ -94,7 +94,7 @@ struct DataDag {
   llvm::SmallPtrSet<llvm::Value *, 4> FrozenRails;
 
   // bd 8gi5(3) + bd e4zs — every SOURCE-PRESERVING SINK that reads a rail of this
-  // DAG: a `cqrt_tape_write_<W>[_controlled]` (`isOutputSink`) or a method-B
+  // DAG: a `cqrt_tape_write_<W>[_controlled]` (`isOutputSink`) or an uncontrolled
   // `cqrt_copy_<W>(src, dst)` (`isCopyOutSink`). These READ a rail without
   // consuming it, which is why the closure scan above lets them pass — but they
   // are still USES, and the reversal's `cqrt_free` must land AFTER them.

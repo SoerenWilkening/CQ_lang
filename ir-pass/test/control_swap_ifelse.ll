@@ -1,18 +1,15 @@
 ; control_swap_ifelse.ll — ACCEPT spec, two-arm PHASE if/else (§5b).
 ;
-; `if (q > 5) { rz(q, a); } else { rz(q, b); }`. Both arms act on the live handle.
-; Under the §6a control-in-place peephole neither arm gets a work rail: each arm Rz
-; is emitted as one `cqrt_rz_i32_controlled` on q itself — the THEN gate on %flag,
-; the ELSE gate on ¬flag via a self-inverse `cqrt_x(flag)` bracket around the else
-; gate run — then icmp_inv(q) strips the boolean. Transcribed from
-; docs/design/rssa-swap-control/swap_route_ifelse.ll (the IR analog of
-; prototype_semantics.py Demo A, matched to 3e-16).
+; `if (q > 5) cq_phi(a); else cq_phi(b);`. Both arms are phase arms under one
+; tainted flag and lower by kickback: the flag is minted from the icmp into a
+; |0> ancilla, `cqrt_rz_i1(flag, a)` is the THEN phase, `cqrt_rz_i1(flag, b)`
+; inside a self-inverse `cqrt_x(flag)` bracket is the ELSE phase (on ¬flag),
+; then the icmp `_unc` strips the flag and one `cqrt_free` releases it.
 ;
-; The two-arm property this pins is unchanged by the collapse and is the whole
-; point: the arms are MUTUALLY EXCLUSIVE by polarity, both acting on the SAME
-; register, and per shot exactly one fires. What the route encoded with a pair of
-; distinct |0> rails, the peephole encodes with the flag polarity — the bracket is
-; what makes the else gate the complement of the then gate.
+; The two-arm property this pins: the arms are MUTUALLY EXCLUSIVE by polarity,
+; and per shot exactly one fires. The `cqrt_x` bracket is what makes the else
+; phase the complement of the then phase. Originally transcribed from
+; docs/design/rssa-swap-control/swap_route_ifelse.ll.
 ;
 ; WI-3 lands the if/else (¬flag bracket) in SwapRouteEmit, so this XPASSes — XFAIL
 ; gone.
@@ -40,12 +37,6 @@
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * call void @cqrt_x(   [superseded by the XCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

@@ -228,8 +228,9 @@ bool isBranchPhaseGate(const llvm::CallInst *G);
 //     controlled Rz an unrecognized consumer too: `isTerminalHandle` false,
 //     `isInteriorConsumer` false, `DagTraversal` closure `NotClosed`, and this
 //     predicate false. Four verdicts, all identical to the route's, which is what
-//     makes the Inc-2a golden multiset diff EXACTLY the collapsed route quintuple
-//     and nothing else. See PRD §12.1 and bd `drbq-freeze-vs-261j-reconciled`.
+//     made the Inc-2a golden multiset diff EXACTLY the collapsed route quintuple
+//     (PRD §12.1, bd `drbq-freeze-vs-261j-reconciled`). Since bd 3qlq nothing
+//     mints a controlled Rz at all.
 //
 //     The `ry` stem is UNCHANGED and still frozen, for the reason at the top of
 //     this header: an Ry relabels its target on the `f=1` branch, so a skipped
@@ -344,7 +345,7 @@ bool isOutputSink(const llvm::CallInst *CI);
 // under-freeze risk on the controlled form and under-freeze is the unforgivable
 // direction. Do not "fix" it by indexing arguments.
 //
-// TWO SURFACES, and only the tape arm is slot-blind. The method-B copy-out
+// TWO SURFACES, and only the tape arm is slot-blind. The uncontrolled copy-out
 // `cqrt_copy_<W>(src, dst)` now ALSO records (bd 5pio, owner ruling 2026-08-11): its
 // destination is a kept carrier the reversal never touches, the same relation the
 // tape has. That arm is SLOT-AWARE — it fires only when `H` is the SOURCE.
@@ -369,7 +370,7 @@ bool isOutputSink(const llvm::CallInst *CI);
 // on it.
 bool recordsIntoKeptCarrier(const llvm::CallInst *S, const llvm::Value *H);
 
-// A method-B copy-out `cqrt_copy_<W>(src, dst)` reading `H` as its SOURCE (arg 0).
+// An uncontrolled copy-out `cqrt_copy_<W>(src, dst)` reading `H` as its SOURCE (arg 0).
 // Like a measure / tape-write SINK it READS H (a CNOT-class basis copy) without
 // consuming it, so the whole-DAG spine treats it as a benign terminal user: H
 // stays a terminal candidate while the copy DESTINATION (dst, arg 1) is the kept
@@ -379,11 +380,10 @@ bool recordsIntoKeptCarrier(const llvm::CallInst *S, const llvm::Value *H);
 // The "PRESERVES H ⇒ H's lineage uncomputes normally" rationale this predicate
 // used to carry is the SAME false step bd 261j(a) ruled out on the tape surface —
 // see `isOutputSink` above. It is not a LIVE defect here, and the reason is a
-// CENSUS, not an argument (bd 8gi5). Exactly FIVE sites mint an uncontrolled 2-arg
-// `cqrt_copy_<W>`, and each is excluded for a DIFFERENT structural reason:
-//   * SwapRouteEmit.cpp   — the src's cswap users force `NotClosed`, so the spine
-//                           never reverses it.
-//   * SwitchValueEmit.cpp — same (routed base, cswap users).
+// CENSUS, not an argument (bd 8gi5). At 8gi5 FIVE sites minted an uncontrolled
+// 2-arg `cqrt_copy_<W>`, each excluded for a DIFFERENT structural reason:
+//   * SwapRouteEmit.cpp, SwitchValueEmit.cpp — pre-3qlq, route cswap users forced
+//     `NotClosed`; SwitchValueEmit's remaining preload copy rests on 5pio (below).
 //   * BreakReversePlay.cpp— the capture rails are `ControlOwnedRails` (DD-4),
 //                           subtracted from the DAG before any of this runs.
 //   * BennettWrap.cpp     — inside a Phase-6 clone body, invisible to the spine

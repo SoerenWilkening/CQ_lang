@@ -1,33 +1,23 @@
-; control_inplace_rz_in_loop_rolled.ll — the §6a Rz peephole INSIDE a
+; control_inplace_rz_in_loop_rolled.ll — a tainted-condition phase arm INSIDE a
 ; classically-bounded loop, lowered ROLLED (bd test_C_libtooling-drbq Inc 2a over
 ; the bd 8h7d.5 in-loop path; control-in-place-PRD §12.2 lists the rolled loop in
 ; scope).
 ;
-; `for (i = 0; i <= n; i++) if (q > 5) q = cq_phi(q, b);` — one physical register,
-; one back edge, IR size independent of the trip count. The 8h7d.5 machinery is
-; unchanged: `flatRegionRollableInLoop` narrows the d8jl decline,
-; `collapseFlattenedLoopRails` collapses the loop-carried rail phi after the
-; flatten, and the per-activation `provablyBefore` reading fences the record
-; walks. What Inc 2a changes is only the five route lines inside the body.
-;
-; WHY THIS SHAPE NEEDED ITS OWN FIXTURE AND IS NOT COVERED BY THE DIAMOND. Inc 2a
-; keeps the arm's `@cq_phi` ALIVE and moves it into the pred (hoist-and-defer),
-; where the route re-minted a fresh gate on a work rail and ERASED the original.
-; Inside a loop that is a structural difference, not a cosmetic one: the hoisted
-; call is still in `taint.GateCalls` with the register at arg 0, so the round-2
-; rail fan-out guard started counting the region's OWN arm gate as a SECOND
-; in-place mutator of the rail and loudly rejected every rolled Grover in the
-; tree (`kMsgRailFanout`, mirrored character-for-character below). `LoopLowering::isHoistedRegionArmGate` is the repair — it excludes exactly
-; the gates the two in-place emitters recorded in `taint.ControlledRotations`, and
-; nothing else. If that exclusion is deleted, THIS FILE goes red with
-; `loop-carried rail has multiple in-place consumers`, not with a wrong stream.
+; `for (i = 0; i <= n; i++) if (q > 5) cq_phi(b);` — one physical register, one
+; back edge, IR size independent of the trip count.
 ;
 ; WHAT IS PINNED: the rolled CFG survives (a back edge and ONE copy of the body),
-; the register is the SAME handle across the whole loop, and every ancilla — now
-; just the flag — is minted, used, stripped and freed INSIDE the iteration, so
-; nothing dirty crosses the back edge (Rule 6). The hand-unrolled twin's byte
-; identity is checked at the e2e layer by the `cmp` twin gates and
+; the register is the SAME handle across the whole loop, and every ancilla — just
+; the flag — is minted, used, stripped and freed INSIDE the iteration, so nothing
+; dirty crosses the back edge (Rule 6). The hand-unrolled twin's byte identity is
+; checked at the e2e layer by the `cmp` twin gates and
 ; `tools/loop_twin_matrix.py`; this file is the IR-level pin.
+;
+; (History: pre-3qlq the arm was `q = cq_phi(q, b)` on the loop-carried rail.
+; Inc 2a kept that gate ALIVE, hoisted into the pred and still in
+; `taint.GateCalls` with the register at arg 0, so the round-2 rail fan-out guard
+; counted it as a SECOND in-place mutator and rejected every rolled Grover
+; (`kMsgRailFanout`); `LoopLowering::isHoistedRegionArmGate` was the repair.)
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

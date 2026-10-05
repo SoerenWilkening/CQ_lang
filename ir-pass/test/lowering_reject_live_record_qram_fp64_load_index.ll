@@ -14,9 +14,10 @@
 ; "emitted == written" is NOT a soundness argument when a live entangled record
 ; stands at a NON-DIAGONAL gate. That is the whole premise of this campaign.
 ;
-; THE PHYSICS, in the stream's own terms. The emitted forward program is:
+; THE PHYSICS, in the stream's own terms. The emitted forward program is (the
+; uncontrolled `cq_phi(0.3)` is a global phase and is deleted):
 ;     %arr1    = cqrt_qram_alloc_f64(8)
-;     %h       = cqrt_alloc_f64(%u0) ; ry(0.5) ; rz(0.3)        the carrier
+;     %h       = cqrt_alloc_f64(%u0) ; ry(0.5)                  the carrier
 ;     %h2      = cqrt_alloc_f64(0.0) ; ry(0.1)                  index register q
 ;     %h_cast  = cq_template_fptosi_f64_to_i32(%h2)             qi
 ;     cqrt_qram_store_f64(%arr1, %h_cast, %h)
@@ -50,7 +51,6 @@
 ; decline is carried entirely by the INDEX side: `%h_cast4` and `%h3`.
 ;
 ; MEASURED AT HEAD (pre-Inc-3): `opt` exit 0 — this exact module lowered.
-;
 ;
 ; ⚠ NOW A WARNING, NOT A DECLINE — owner ruling 2026-08-29 (bd
 ; test_C_libtooling-lyyf, shipped as M-A Increment 7b): "we can always apply any

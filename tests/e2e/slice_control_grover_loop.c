@@ -8,7 +8,7 @@
    or that the reflection reflects about |0>, was TRUE OF THE SOURCE and FALSE OF
    THE EMITTED CIRCUIT. It becomes true only from 3qlq Inc 1 on, where the phase is
    a BRANCH phase by kickback (rz_i1 on the minted flag), not a register Rz. The
-   older prose is left verbatim rather than silently corrected; read it with this.
+   older prose was revised on 2026-10-05 (bd 7pxe); remaining register-Rz wording is history.
    (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_grover_loop.c — bd test_C_libtooling-8h7d.5 (Phase 7.3
    Increment 3) e2e: TWO GROVER ITERATIONS WRITTEN AS A `for` LOOP.
@@ -34,9 +34,9 @@
    WHAT `clang -O1` HANDS THE PASS, because none of it is obvious (Rule 9): a
    rotated loop with TWO header phis — the classical induction variable and the
    quantum register — and TWO sequential tainted-condition diamonds in the body,
-   the second of whose merge blocks IS the latch. The `q == 0` arm arrives as
-   `cq_phi(0, PI)` because clang value-propagated the register to the literal
-   inside the arm (the eq-folded diamond).
+   the second of whose merge blocks IS the latch. Each arm is a bare
+   register-free `cq_phi(PI)` (pre-3qlq the `q == 0` arm arrived eq-folded as
+   `cq_phi(0, PI)`, the register value-propagated to the literal).
 
    WHAT LOWERS IT. `ControlDetect::flatRegionRollableInLoop` admits both regions
    (reducible loop, one depth, single latch, no second cycle); `lowerControlRegions`

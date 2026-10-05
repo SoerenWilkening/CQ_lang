@@ -2,32 +2,25 @@
 ; F-2 identity-carry rule (bd test_C_libtooling-8h7d.5, Rule-13 ROUND 2).
 ;
 ;     int q = 0; cq_theta(&q, .5);
-;     for (i<2) { if (q==5) q = cq_phi(q, PI); }     // the body is ONLY a phase region
+;     for (i<2) { if (q==5) cq_phi(PI); }     // the body is ONLY a phase region
 ;     return cq_measure(q);
 ;
-; This is `r2x/z1_gatefree_body.c` at `clang -O1` (the Rz's arg-0 is const-folded
-; to `5` on the gated edge, which is what -O1 really emits and why this is not a
-; duplicate of control_swap_inloop_diamond.ll). Post-flatten the region's merge
-; phi is dissolved, so the loop-carried rail phi becomes an IDENTITY CARRY — the
-; exact shape F-2 says never refreshes a record.
+; This is `r2x/z1_gatefree_body.c` at `clang -O1` (pre-3qlq register form: the
+; Rz's arg-0 was const-folded to `5` on the gated edge, which is why this is not a
+; duplicate of control_swap_inloop_diamond.ll). The loop-carried rail phi is an
+; IDENTITY CARRY — the exact shape F-2 says never refreshes a record.
 ;
 ; IT MUST STILL LOWER, and it does, for a reason that is not a special case: the
 ; rail's only basis-relabelling gate is the ROOT MINT itself, which sits in the
 ; entry block and is never re-reachable, so `railGateBetween` finds no path
 ; `Def → gate → read` whether or not the cut is taken. F-2 REMOVES a cut, and a
 ; removed cut can only turn a found path into a decline — it cannot invent one.
-; The rail is pure-Rz inside the loop (diagonal, no relabelling), so nothing the
-; body does can stale the exit read.
+; The phase arm lowers by kickback onto a flag ancilla (mint, uncontrolled
+; `cqrt_rz_i1`, icmp `_unc`, one `cqrt_free`), so nothing in the body relabels the
+; rail or stales the exit read.
 ;
 ; The RED twin is lowering_reject_inloop_rail_identity_carry.ll — the same carry
 ; with a SIBLING chain on the same mint that rotates the wire.
-;
-; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
-; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE
-; `cqrt_rz_i32_controlled(flag, register, theta)` and the swap route (work-rail
-; alloc, both `cqrt_cswap`s, the rail free) is gone. The F-2 argument above is
-; untouched — it is about the RAIL's basis-relabelling gates, and neither the route
-; nor the controlled Rz is one (both are diagonal-or-permutation on the register).
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
@@ -51,12 +44,6 @@
 ;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

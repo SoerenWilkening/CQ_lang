@@ -1,19 +1,13 @@
 ; control_swap_diamond_derived_polarity.ll — ACCEPT: derived base × FALSE-successor arm.
 ;
-; The Rule-9 polarity case (clang -O1 canonicalizes `if (u != k)` to
-; `icmp eq; br eq, Merge, Arm`, swapping successors) COMPOSED with the derived
-; base (test_C_libtooling-9hh): the gate arm is the FALSE successor and both its
-; spine base and the merge straight-through are the pre-region %qd. Must lower
-; to the IDENTICAL stream as control_swap_diamond.ll (which absorbed the former
-; control_swap_diamond_derived.ll, bd 2dfk — see its MERGED block) except that the arm's
-; gate run is ¬flag-bracketed (`cqrt_x(flag)` self-inverse pair), exactly like the
-; un-derived control_swap_diamond_polarity.ll. Arms are resolved by merge-phi
-; incoming IDENTITY, not edge order.
-;
-; Under the §6a control-in-place peephole there is nothing to route, so the bracket
-; wraps the CONTROLLED gate run — ONE pair, i.e. EXACTLY TWO `cqrt_x` (the route
-; needed four, one pair per CSWAP). The composed property being pinned is unchanged:
-; derived base × false-successor arm still resolves to the same arm, on ¬flag.
+; `if (q != 5) cq_phi(a);` — the Rule-9 polarity case (clang -O1 canonicalizes
+; `if (u != k)` to `icmp eq; br eq, Merge, Arm`, swapping successors), so the
+; gate arm is the FALSE successor. The derived base (test_C_libtooling-9hh) was
+; a pre-region register-form rotation that 3qlq deleted, so the IR now gates on
+; the plain %q, like control_swap_diamond_polarity.ll. The arm fires on ¬flag:
+; icmp eq mints the flag into a |0> ancilla, ONE self-inverse `cqrt_x(flag)`
+; pair (EXACTLY TWO `cqrt_x`) wraps one uncontrolled `cqrt_rz_i1(flag, %a)`,
+; then the icmp `_unc` strip and one `cqrt_free`.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

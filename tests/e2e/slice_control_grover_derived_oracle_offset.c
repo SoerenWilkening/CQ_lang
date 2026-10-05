@@ -8,7 +8,7 @@
    or that the reflection reflects about |0>, was TRUE OF THE SOURCE and FALSE OF
    THE EMITTED CIRCUIT. It becomes true only from 3qlq Inc 1 on, where the phase is
    a BRANCH phase by kickback (rz_i1 on the minted flag), not a register Rz. The
-   older prose is left verbatim rather than silently corrected; read it with this.
+   older prose was revised on 2026-10-05 (bd 7pxe); remaining register-Rz wording is history.
    (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_grover_derived_oracle_offset.c — THE DERIVED ORACLE *AND* THE
    OFFSET TRICK, IN ONE PROGRAM. The customer M-C Increment 7a was built for
@@ -54,16 +54,16 @@
 
    WHAT THE TRACE WITNESSES, in order, for the oracle half of each iteration:
    cqrt_addc_i32(h0, 3) — the `+= off`, in place, no rail; then ashr_i32_hl,
-   add_i32 (QQ), the flag mint, route, Rz, route back, work-rail free, the flag
+   add_i32 (QQ), the flag mint, the kickback cqrt_rz_i1 on the flag, the flag
    STRIP; then add_i32_unc + free, ashr_i32_hl_unc + free, the flag free; and
    only then cqrt_addc_i32(h0, -3) — the `-= off`, ALSO in place, with the
    immediate negated at compile time — followed by the S-dagger cqrt_ry_i32.
 
    RAIL LIVENESS AT EVERY NON-DIAGONAL GATE (the reading the golden cannot do
    for itself, and the only physics claim this file makes): cqrt_alloc_i32
-   appears THREE times — the register h0 and one work rail per region — and each
-   work rail is freed inside its own region. At each of the three cqrt_ry_i32
-   gates the ONLY allocated rail is h0. Neither offset step mints a rail at all,
+   appears ONCE — the register h0; the oracle's records and each region's flag
+   are template-minted and freed inside their own region. At each of the three
+   cqrt_ry_i32 gates the ONLY allocated rail is h0. Neither offset step mints a rail at all,
    which is the whole increment.
 
    THE IMMEDIATE IS NEGATED, NOT SUBTRACTED. There is no `cqrt_subc_` and there

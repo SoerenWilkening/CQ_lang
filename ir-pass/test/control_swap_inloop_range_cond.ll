@@ -3,7 +3,7 @@
 ; predicate — inside a classically-bounded loop:
 ;
 ;     for (int i = 0; i < 2; ++i) {
-;         if (q > 5 && q < 20) { q = cq_phi(q, PI); }
+;         if (q > 5 && q < 20) { cq_phi(PI); }
 ;         cq_theta(&q, -0.5);
 ;     }
 ;
@@ -49,11 +49,9 @@
 ;
 ; e2e twin: slice_control_grover_loop_range_oracle{,_unrolled} (byte-diff gate).
 ;
-; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
-; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE
-; `cqrt_rz_i32_controlled(flag, register, theta)` and the swap route (work-rail
-; alloc, both `cqrt_cswap`s, the rail free) is gone. Nothing else moves — the flag
-; mint, the strip, the flag free and every downstream gate are unchanged.
+; The phase arm lowers by kickback: the flag is minted from the `%t` compare, takes
+; one uncontrolled `cqrt_rz_i1(flag, PI)`, and the icmp and add `_unc`s strip the
+; flag and `%t` before both are freed. No work rail, no `cqrt_cswap`.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
@@ -77,12 +75,6 @@
 ;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 35 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

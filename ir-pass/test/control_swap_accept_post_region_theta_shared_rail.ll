@@ -1,16 +1,16 @@
 ; control_swap_accept_post_region_theta_shared_rail.ll — ACCEPT (bd
 ; test_C_libtooling-lom0 Increment 4, precondition (c) of the Rule-13 round):
-; the ROUTED BASE and the POST-REGION theta are the SAME PHYSICAL RAIL.
+; the COMPARED REGISTER and the POST-REGION theta are the SAME PHYSICAL RAIL.
 ;
 ; WHY THIS FIXTURE EXISTS SEPARATELY. The Inc-4 accept is proven over IR
 ; POSITIONS — `provablyBefore(R.Pred->getTerminator(), T, DT)`. It is very
 ; tempting to reach instead for the easier-sounding argument "the theta sits on
-; a different SSA value than the routed base, so it is a different rail". THAT
-; ARGUMENT IS FALSE HERE, and has been since M-C (bd test_C_libtooling-6uqc
+; a different SSA value than the compared register, so it is a different rail".
+; THAT ARGUMENT IS FALSE HERE, and has been since M-C (bd test_C_libtooling-6uqc
 ; Inc 2a/2b): a tainted `add` with one classical operand lowers IN PLACE to
 ; `cqrt_addc_i32`, minting NO new rail, so `%d` and `%q` are one register. The
-; source below is exactly that shape — the routed base `%d` is the addc result,
-; and the post-region `cq_theta` lands on the identical handle.
+; flag is minted from icmp(`%d`), takes the phase by one `cqrt_rz_i1`, is
+; stripped and freed, and the post-region `cq_theta` lands on the same handle.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

@@ -6,7 +6,7 @@
 ; `cq_template_icmp_slt_i32(i32, i32)` lowers — there is no same-block
 ; assumption in the Increment-A reader. The straight-line `br label` keeps this
 ; OFF the tainted-control path (no `br i1` on the compare), so `rewriteCompare`
-; owns it, not the swap-route emitter.
+; owns it, not a control emitter.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

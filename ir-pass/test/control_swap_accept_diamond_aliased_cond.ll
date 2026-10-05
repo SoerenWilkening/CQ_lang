@@ -41,10 +41,9 @@
 ; CHECK: call void @cq_template_fcmp_uno_f64_unc(i32 %h_cmp, i32 %h_cast, i32 %h_cast)
 ; CHECK: call void @cqrt_free(i32 %h_cmp)
 ;
-; CASE B must never appear — an input aliasing the rail the gate WRITES. The route
-; emitter's `cqrt_cswap(flag, q, rail)` writes BOTH q and rail, so a cswap whose
-; flag is also one of its swapped rails is the shape that genuinely cannot be
-; realized; this path emits no cswap at all. Under a *-NOT-only prefix so they
+; CASE B must never appear — an input aliasing the rail the gate WRITES (a
+; controlled copy or cswap whose control is also a written rail cannot be
+; realized); this path emits no cswap at all. Under a *-NOT-only prefix so they
 ; scan the WHOLE input (as trailing plain CHECK-NOTs they were DEAD over the
 ; function body — measured 2026-07-31 by injection).
 ; NOCASEB-NOT: @cq_template_fcmp_uno_f64_unc(i32 %h_cast, i32 %h_cast

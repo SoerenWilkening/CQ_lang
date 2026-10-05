@@ -1,17 +1,12 @@
 // ControlPlan.h — Shared data shapes for controlled-region lowering.
 //
-// NOTE (swap-route-control branch): the old controlled-op lowering that produced
-// and consumed a populated `ControlPlan` (ControlDetection / ControlledLowering /
-// ControlFlag / ControlledSubstitution / MergeDissolution / CFGLinearization)
-// was removed pending the RSSA swap-route emitter. The struct survives because
-// `RotationLowering` reads `plan->InShadow` to skip in-shadow gate bodies; the
-// WI-1 `detectControlRegions` (ControlDetect.cpp) recognizes the swap-route
-// phase-arm shape but, having no emitter yet, declines every tainted region and
-// returns an EMPTY plan (no regions, empty InShadow), so every rotation lowers
-// uncontrolled. The rich `ControlRegion` fields below are retained as the design
-// vocabulary the swap-route emitter will reshape — they are currently unpopulated.
-//
-// Historical shape (PRD §2.2/§2.6/§2.10/§2.11, IMPLEMENTATION §5.1).
+// `detectControlRegions` (ControlDetect.cpp) fills a `ControlPlan` with one
+// `ControlRegion` per accepted tainted-condition region and
+// `SwapRouteEmit::lowerControlRegions` emits them (phase arms by kickback, value
+// arms by the controlled-copy merge, in-place Ry arms by
+// `cqrt_ry_<W>_controlled`; see SwapRouteEmit.h). Some fields below are
+// vocabulary of the controlled-op generation excised in 7cde677 (PRD
+// §2.2/§2.6/§2.10/§2.11, IMPLEMENTATION §5.1) and are populated by nothing.
 //
 // Detection is PURE ANALYSIS (no IR mutation) so it runs before
 // `lowerRotations`: the region/shadow membership is by SSA *value* identity,
@@ -42,32 +37,26 @@ class WidthDispatch;
 struct TaintSet;
 
 // 4.2 (PRD Part II §8.3) — per-arm content class. A region is lowerable only
-// when HOMOGENEOUS: all-phase or all-value (method-B: route + chain replay +
-// copy-out + reverse-play) over ONE shared routed base.
+// when HOMOGENEOUS: all-phase or all-value (the controlled-copy merge,
+// `emitValueRegion`) over ONE shared base.
 //
-// ⚠ HOW A `Phase` ARM IS EMITTED DEPENDS ON THE EMITTER, AND IT IS NO LONGER
-// "the 4.1 route" EVERYWHERE (bd drbq Inc 2a, 2026-09-02; round-1 review L3 F4).
-//   * FLAT regions (`SwapRouteEmit::emitRegion` — diamond, if/else, hcrg
-//     sequential, the 8h7d.5 rolled in-loop region, `ShareCondFlag`, the 4.5
-//     eq-folded diamond) lower CONTROL-IN-PLACE: flag mint, ONE
-//     `cqrt_rz_<W>_controlled(f, q, θ)` per arm gate, icmp_inv flag-strip, flag
-//     free. No work rail, no `cqrt_cswap`.
-//   * The 4.3 depth-2 nest (`NestedRouteEmit`) and the 4.5 switch
-//     (`SwitchRouteEmit`) KEEP the 4.1 route + verbatim-Rz replay + icmp_inv
-//     strip. `SwitchClass::Phase`'s doc below is therefore still literally true —
-//     do not "fix" it to match this one. Any mixture — phase and value
+// ⚠ `Phase` here is the REGISTER-FORM phase arm (an `@cq_phi_<sfx>` spine). That
+// spelling is a loud reserved-name error since bd 3qlq, so only an EMPTY arm
+// still takes this class. A register-free `cq_phi(θ)` arm becomes a
+// `PhaseKickback`/`PhaseKickbackNest` region (kickback, `cqrt_rz_i1` on the flag)
+// and never gets an `ArmClass`. Any mixture — phase and value
 // links in one chain, or a phase arm beside a value arm in an if/else —
 // declines `mixed phase/value arm`: a chain carrying both a phase and a
 // changed basis has no copy-safe, strip-valid lowering (the CNOT copy
 // dephases the Rz answer, Rule 7; §6a control-in-place territory). `Phase` is
-// the default so the 4.1 phase-arm paths need not write it.
+// the default.
 //
 // `InPlaceRotation` (control-in-place-PRD §4, bd test_C_libtooling-drbq Inc 1)
 // is the THIRD class, and it is neither of the other two — Rule 7 again: a
 // tainted-control Ry arm is not a phase arm (the answer is a superposition, not
-// a phase, so the route's "the work rail is |0⟩ for free" premise is FALSE and
-// the inactive rail comes back dirty and entangled, PRD §2) and not a value arm
-// (method-B's copy-out copies a basis LABEL and dephases it). It has NO route
+// a phase, so the pre-3qlq route's "the work rail is |0⟩ for free" premise is
+// FALSE and the inactive rail comes back dirty and entangled, PRD §2) and not a
+// value arm (a basis copy copies a LABEL and dephases it). It has NO route
 // and NO work rail at all: the arm's `cq_theta` is HOISTED to the pred and
 // lowered as `cqrt_ry_<W>_controlled(flag, R, θ)` in place on the user's own
 // register, with the flag minted and stripped exactly as a phase arm's is.
@@ -76,24 +65,22 @@ enum class ArmClass { Phase, Value, InPlaceRotation };
 
 // 4.5 (PRD Part V §20.5) — the per-CONTENT-class discriminator for an accepted
 // `SwitchRegion`, parallel to `ArmClass`/`ClassArm` (a *content* class, NOT a
-// top-level `Kind`). `Phase` = homogeneous phase-arm switch (route + verbatim-Rz
-// replay + icmp_inv strip, zero controlled gates); `Value` = homogeneous value
-// chain on a base `p != q` (method-B route + chain replay + copy-out +
-// reverse-play); `DataMux` = all-`ConstantInt` merge incomings (preload + per-case
-// XOR-delta controlled-copy). Scoped (`enum class`) so its `Phase`/`Value`
+// top-level `Kind`). `Phase` = homogeneous phase-arm switch (per-case eq-flag
+// kickback, `cqrt_rz_i1`, zero controlled gates); `Value` = homogeneous value
+// chain on a base `p != q` (preload + per-case hoisted chain + XOR-delta
+// controlled copy); `DataMux` = all-`ConstantInt` merge incomings (preload +
+// per-case XOR-delta controlled-copy). Scoped (`enum class`) so its `Phase`/`Value`
 // enumerators do NOT collide with `ArmClass`'s in the `cq` namespace.
 enum class SwitchClass { Phase, Value, DataMux };
 
-// WP18 (PRD §8.5) — one case arm of a gated `SwitchRegion`: the case constant(s)
-// targeting it, its arm block, and the arm's in-shadow gate bodies (the `cq_phi`
-// calls that become `_controlled` on the arm's flag). The DEFAULT arm is carried
-// by the region's own `Arm`/`Shadow` (controlled on the ¬OR "none-matched" flag).
+// WP18 (PRD §8.5) — one case arm of a `SwitchRegion`: the case constant(s)
+// targeting it, its arm block, and (phase class) the arm's `cq_phi` calls, each
+// lowered as `cqrt_rz_i1` on the case's eq-flag (`emitSwitchPhaseRegion`).
 //
-// `Values` holds ALL case constants that target `Block`: usually one, but a
-// SHARED arm block — two+ case values folded onto one body by `clang` for
-// duplicate-body cases (test_C_libtooling-6qg) — carries several. The arm is then
-// controlled on the OR of its cases' `icmp eq` flags (`f_{v1} ∨ … ∨ f_{vm}`),
-// which gates both the gate-body substitution and the angle difference.
+// `Values` holds ALL case constants that target `Block`. Today's classifiers push
+// exactly one, and the phase and value emitters decline any other count. (A
+// SHARED arm block controlled on the OR of its cases' flags, test_C_libtooling-6qg,
+// was the WP18 `lowerGatedSwitch` design, excised in 7cde677.)
 struct SwitchArm {
   llvm::SmallVector<llvm::ConstantInt *, 2> Values;
   llvm::BasicBlock *Block = nullptr;
@@ -136,20 +123,20 @@ struct ControlRegion {
   //
   // AngleSelectRegion (control-in-place-PRD §12.3, bd test_C_libtooling-drbq
   // Inc 2b) — a tainted-condition select over the classical rotation ANGLE
-  // (`select i1 %c, double A, double B`) whose SOLE user is the arg-1 slot of a
-  // chained `cq_theta`/`cq_phi` `T`. `Merge` is the select, `Condition` the bare
-  // single-user compare, and `Shadow` holds exactly ONE element: the consuming
-  // rotation. Every block field stays NULL (there is no CFG diamond — the user
-  // wrote the select, or, for `cq_phi` only, `clang -O1` SimplifyCFG merged the
-  // two arms into this one call; for `cq_theta` that merge is forbidden by CQ.h's
-  // `nomerge` since bd test_C_libtooling-fmt3, 2026-09-28), which makes the
-  // region inert to `lowerControlRegions`' cross-region pre-flight exactly like a
-  // `SelectRegion`.
+  // (`select i1 %c, double A, double B`) whose SOLE user is the angle slot of a
+  // chained `cq_theta` or register-free `cq_phi` `T`. `Merge` is the select,
+  // `Condition` the bare single-user compare, and `Shadow` holds exactly ONE
+  // element: the consuming rotation. Every block field stays NULL (there is no
+  // CFG diamond — the user wrote the select, or, for `cq_phi` only, `clang -O1`
+  // SimplifyCFG merged the two arms into this one call; for `cq_theta` that merge
+  // is forbidden by CQ.h's `nomerge` since bd test_C_libtooling-fmt3,
+  // 2026-09-28), which makes the region inert to `lowerControlRegions`'
+  // cross-region pre-flight exactly like a `SelectRegion`.
   //
-  // Lowered by `AngleSelectEmit` BY DIFFERENCE, which is exact IN REAL
-  // ARITHMETIC by angle additivity on one axis (`R(A) = R(B)·R(A−B)` for both Ry
-  // and, under `Rz = diag(1,e^{iθ})`, Rz — the diagonals multiply entrywise, so
-  // there is no global-phase residue). In IEEE double the emitted true-arm angle
+  // Lowered by `AngleSelectEmit`. The `cq_phi` stem goes by KICKBACK
+  // (`x(f); rz_i1(f, B); x(f); rz_i1(f, A)`, exact, run-time arms admitted). The
+  // Ry stem goes BY DIFFERENCE, exact IN REAL ARITHMETIC by angle additivity on
+  // one axis (`Ry(A) = Ry(B)·Ry(A−B)`). In IEEE double the emitted true-arm angle
   // is `B + fl(A−B)`, `|δ| ≤ ½ ulp(A−B)`, so **BOTH ARMS MUST BE `ConstantFP`**
   // and their evaluated residual must sit under the placeholder
   // `kAngleSelectMaxRoundingRad` = 2^-40 rad. A RUN-TIME arm DECLINES (`rotation
@@ -160,9 +147,9 @@ struct ControlRegion {
   // from ±8.99e307), neither fenceable at compile time. That narrowing is the
   // Rule-13 CLEARANCE review's (finding F-11, owner option (2)); the rounding
   // fence itself is the round-1 review's (lens L7-F1) and the both-halves wording
-  // the round-2 one's (lens R1 item 1). The stream is an
-  // UNCONDITIONAL `R(h, B)`, the ordinary flag mint,
-  // the drbq in-place `R_controlled(f, h, A−B)`, the ordinary strip, one
+  // the round-2 one's (lens R1 item 1). The Ry stream is an
+  // UNCONDITIONAL `Ry(h, B)`, the ordinary flag mint,
+  // the drbq in-place `Ry_controlled(f, h, A−B)`, the ordinary strip, one
   // `cqrt_free`. No CFG surgery, no hoist, no flatten, no `cqrt_x` bracket (a
   // select always means "A when the flag is 1", so there is no polarity case),
   // no work rail and no route.
@@ -176,9 +163,9 @@ struct ControlRegion {
   // distinct SIDE-EFFECTING gate sequences (not a value/angle select). `Pred`
   // is the switch block, `Condition` the tainted scrutinee, `MergeBB` the common
   // merge, `SwitchArms` the case arms (case value(s) + block + gate shadow), and
-  // `Arm`/`Shadow` the DEFAULT arm. Lowered by `lowerGatedSwitch`: per-case
-  // `icmp eq` flags, each arm controlled on the OR of its cases' flags, the
-  // default on the ¬(f_1∨…∨f_n) flag, the N-way φ dissolved, switch linearized.
+  // `Arm`/`Shadow` the DEFAULT arm. Lowered by the `SwitchRouteEmit.h` emitters
+  // (chosen by `SwitchCls`): one `icmp eq` flag per content case, then the
+  // switch is flattened.
   // ClassicalCallArm (6.5, DD-7) — a tainted-condition `br`-diamond whose single
   // content arm computes a PURE CLASSICAL call (all-classical-args) whose i32
   // result `c` feeds the 2-incoming merge `φ` (the other incoming the tainted
@@ -263,12 +250,10 @@ struct ControlRegion {
   // `MergeDissolution` is gone, 7cde677).
   llvm::Instruction *Merge = nullptr;
 
-  // In-shadow gate-body ops, in program order. For a PHASE arm this is the
-  // retained-but-unpopulated 4.1 vocabulary: `SwapRouteEmit` walks the arm
-  // blocks directly and replays each `cq_phi` verbatim+uncontrolled on the
-  // routed work rail (the excised `ControlledSubstitution`'s `_controlled`
-  // lowering survives only as the §6a control-in-place reserve,
-  // `ControlledSymbols`). For a VALUE arm (4.2, `ClassArm == Value`)
+  // In-shadow gate-body ops, in program order. For a `PhaseKickback`/
+  // `PhaseKickbackNest` region these are the arm's register-free `cq_phi` calls
+  // (each becomes `cqrt_rz_i1` on the flag); for an `InPlaceRotation` arm, its
+  // single `cq_theta`. For a VALUE arm (4.2, `ClassArm == Value`)
   // `ArmClassify` populates it with the arm's ordered chain links
   // (FORWARD/base-first order. ⚠ THE EMIT ORDER CHANGED AT bd
   // test_C_libtooling-3qlq Inc 2: the pre-3qlq emitter moved each link onto a |0>
@@ -276,34 +261,27 @@ struct ControlRegion {
   // `emitInverseChain`; `emitValueRegion` now simply HOISTS the links into the
   // pred as ORDINARY tainted instructions — `lowerOps` lowers them and the
   // whole-DAG spine reverses them — and merges via the 4.4 controlled-copy
-  // `emitSelectRegion`. Forward/base-first order is still what the hoist needs.) `Shadow` is `Arm`'s content and
-  // `ShadowFalse` is `ArmFalse`'s — by FIELD identity, not edge truth: for an
+  // `emitSelectRegion`. Forward/base-first order is still what the hoist
+  // needs.) `Shadow` is `Arm`'s content and `ShadowFalse` is `ArmFalse`'s — by
+  // FIELD identity, not edge truth: for an
   // orientation-B diamond `Arm` is the FALSE successor (`ArmNegated` carries
   // the polarity, Rule 9).
   llvm::SmallVector<llvm::Instruction *, 4> Shadow;
 
   // 4.2 (PRD Part II §8.3) — the per-arm classes for `Arm` / `ArmFalse`.
   // Meaningful only on a region that survived `classifyArms`; `Phase` is the
-  // 4.1 default (phase paths never write these). A value-class arm's ordered
-  // chain links live in `Shadow` / `ShadowFalse` above.
+  // default (the kickback regions never write these). A value-class arm's
+  // ordered chain links live in `Shadow` / `ShadowFalse` above.
   ArmClass ClassArm = ArmClass::Phase;
   ArmClass ClassArmFalse = ArmClass::Phase;
 
-  // 4.5 WI-5 (equality-folded `br` diamond) — the routed quantum handle the
-  // PHASE emitter (`emitRegion`) must CSWAP into the work rails, set by
-  // `tryEqFoldArm` to the icmp's non-constant tainted operand. Null for every
-  // non-eq-fold region (emitRegion then derives it as before: a diamond's
-  // Pred-edge incoming, or an if/else's first-arm phase-spine base).
-  //
-  // LOAD-BEARING for the eq-fold IF/ELSE: `clang -O1` const-folds the `q==k`
-  // (true) arm's gate to `cq_phi(i32 k, θ)` — arg-0 is the literal `k`, not the
-  // handle `q`. An if/else has NO Pred-edge merge incoming, so emitRegion would
-  // otherwise derive `Q` via `phaseSpineBase(R.Arm)`, which bottoms at that
-  // folded constant `k` and routes a CONSTANT instead of `q` (a verify-clean
-  // silent miscompile — the eq-fold analog of the §5 switch re-anchor; §4D's
-  // "reuse emitRegion verbatim" misses it). Recording the classifier-proven
-  // routed handle here re-anchors the emitter by SSA identity. Unused by the
-  // value/data-mux emitters (they derive their own routed base).
+  // The base register the arm acts on, pinned by SSA identity at detection:
+  // the rotated register of an `InPlaceRotation` arm (`classifyArms`, read by
+  // `emitInPlaceRotationRegion` — an if/else merge has no Pred edge to re-derive
+  // it from). The other writers, `tryEqFoldArm` (4.5 WI-5) and
+  // `straightThroughConstFoldHandle`, re-anchor a pre-3qlq register-form phase
+  // arm whose gate `-O1` const-folded to `cq_phi(i32 k, θ)`; they are
+  // unreachable now (see EqFoldArm.h). Unused by the value/data-mux emitters.
   //
   // ⚠ A `WeakTrackingVH`, NOT A RAW `Value *`, AND THAT IS THE FIX FOR A
   // CONFIRMED CRASH (round-1 Rule-13 review of bd test_C_libtooling-drbq Inc 1,
@@ -313,9 +291,10 @@ struct ControlRegion {
   // A raw pointer is not a USE, so the RAUW does not update it and the erase
   // leaves it DANGLING. Measured, from plain C at `-O1`:
   //
-  //   * `if (q==5) q=cq_phi(q,.2); if (cc) g(); if (q==6) q=cq_phi(q,.3);` —
-  //     two eq-fold PHASE regions with a CLASSICAL branch between them, so the
-  //     bd hcrg pre-flight (which reasons about BASIC BLOCKS) sees no alias and
+  //   * (pre-3qlq register form) `if (q==5) q=cq_phi(q,.2); if (cc) g();
+  //     if (q==6) q=cq_phi(q,.3);` — two eq-fold PHASE regions with a CLASSICAL
+  //     branch between them, so the bd hcrg pre-flight (which reasons about
+  //     BASIC BLOCKS) sees no alias and
   //     orders nothing. Region 2's `RoutedBase` IS region 1's merge φ, and the
   //     phase emitter dereferences it (`emitRoute` → `CreateCall` reads
   //     `Q->getType()`) — SIGSEGV under libgmalloc.
@@ -336,9 +315,9 @@ struct ControlRegion {
   // (every non-eq-fold, non-rotation region — the emitter derives `Q` as before)
   // from "it had one and the handle has since been ERASED with no replacement",
   // which the `WeakTrackingVH` reports as null and which must be a LOUD DECLINE
-  // rather than a fall-through to the φ derivation: for an eq-fold if/else that
-  // derivation bottoms at the folded constant `k` and routes a CONSTANT — the
-  // exact verify-clean miscompile the field exists to prevent. Written ONLY
+  // rather than a fall-through to the φ derivation: on the pre-3qlq eq-fold
+  // if/else that derivation bottomed at the folded constant `k` — the verify-clean
+  // miscompile the field was added to prevent. Written ONLY
   // through `setRoutedBase` so the two cannot drift.
   bool RoutedBaseRecorded = false;
 
@@ -442,19 +421,10 @@ struct ControlRegion {
   // the OR-fold entirely. False for a distinct default block (gated or empty).
   bool SwitchDefaultDirect = false;
 
-  // npu.5/.6 (MUX-EXCH): the merge carries exactly one DISTINCT-per-case-handle
-  // mux φ (a coherent multiplexer dispatching case0→qx, case1→qy, …) that PASSED
-  // the conservative G0–G7 safety gate in `tryBuildGatedSwitchRegion`. When set,
-  // `lowerGatedSwitch` lowers that φ by a fresh `regOut = cqrt_alloc(0)` + a
-  // per-distinct-base `cqrt_cswap(f_q, regOut, q)` controlled MOVE + a
-  // `cqrt_ry_<W>_controlled_inv(¬f_q, q, angle)` uncompute of every non-selected
-  // source (so regOut is not left entangled with the scrutinee), instead of the
-  // step-4 first-tainted RAUW (which would silently drop every other-handle
-  // edge). False ⇒ every handle φ is uniform-base (the RAUW path) — the gate
-  // declined any distinct-base φ to the WP12 diagnostic, so a distinct-base φ
-  // never reaches lowering with this false. The mux φ self-identifies at
-  // lowering (≥2 distinct tainted incomings); this bit only certifies the gate
-  // passed. See the archived
+  // npu.5/.6 (MUX-EXCH) — vocabulary of the WP18 gated-switch lowering
+  // (`lowerGatedSwitch` / `tryBuildGatedSwitchRegion`: a per-distinct-base
+  // `cqrt_cswap(f_q, regOut, q)` controlled MOVE for a distinct-per-case-handle
+  // mux φ), excised in 7cde677. Nothing sets or reads it now. See the archived
   // docs/archive/old-design/phases/phase04-controlled-form/npu6-mux-exch-gate-spec.md
   // + [[cwk-merge-phi-discriminator]].
   bool MuxExch = false;
@@ -463,8 +433,8 @@ struct ControlRegion {
   // `Arm == S1`), so it is taken when `cond` is FALSE and its gates fire on
   // ¬flag, not flag. `clang` produces this whenever it swaps the branch targets
   // — e.g. `if (u != 5)` canonicalizes to `icmp eq; br eq, Merge, Arm`. The
-  // controlled substitution wraps such an arm in the self-inverse `cqrt_x` flag
-  // bracket (the same ¬flag mechanism as the WP8 symmetric false arm). False for
+  // emitters wrap such an arm's gates in the self-inverse `cqrt_x` flag bracket
+  // (the same ¬flag mechanism as the WP8 symmetric false arm). False for
   // the ordinary true-successor diamond and for select/symmetric regions (whose
   // polarity is carried explicitly by the arm assignment).
   bool ArmNegated = false;
@@ -595,21 +565,17 @@ struct ControlRegion {
   // direction of this field.
   llvm::SmallVector<unsigned, 2> PrepRegionIdxs;
 
-  // 4.3 (IMPLEMENTATION-4.3 §1/§4) — the parent region's work rail (`rail1`),
-  // onto which the parent routes its base before the child mints + routes. The
-  // child's inner flag is minted FROM this rail (`lowerCompareToFlagRail`), not
-  // from the now-stale-on-`q` SSA register the source compare read (§12.2). Null
-  // for a flat region or the outermost nest level; populated at EMIT time by
-  // `NestedRouteEmit` (WI-3) — WI-1 detection leaves it null (the parent/child
-  // link is the existing `ParentIdx`, the same link the pre-flight exemption
-  // and the emit-loop child lookup key on; no `ChildIdx` field — MD4).
+  // 4.3 (IMPLEMENTATION-4.3 §1/§4) — the parent's work rail of the pre-3qlq
+  // swap-routed nest, populated by `NestedRouteEmit` (deleted by bd 3qlq Inc 1
+  // part B). Nothing sets or reads it now.
   llvm::Value *ParentRail = nullptr;
 
   // ziov WI-1 (owner 2026-06-15) — the tainted condition compare `q>5` is read in
   // BOTH a control (the `br`) AND a data position (`int f = (q>5)`; clang -O1 CSEs
   // them to one `icmp` with two uses). The compare IS the control flag, so the
-  // route and the data use must share ONE physical flag: `SwapRouteEmit::emitRegion`
-  // mints it once, routes with it, feeds the SAME handle to the data use, and
+  // phase gates and the data use must share ONE physical flag: the kickback
+  // emitter (`emitPhaseKickbackRegion`) mints it once at the compare, puts the
+  // phase on it, feeds the SAME handle to the data use, and
   // SKIPS the eager strip+free (the data lineage owns the handle — it escapes or
   // is measured, FreePoint → Escaped/Measured, no free). `classifyArms` sets this
   // ONLY when the condition has a non-branch user whose forward lineage is wholly
@@ -668,30 +634,25 @@ struct ControlRegion {
   // reducible `LoopInfo` loop and was admitted by
   // `ControlDetect::flatRegionRollableInLoop`. Set at detection, read only by
   // `handleBranchRegion`'s own in-loop scope fence (PHASE arms only) — the
-  // emitters are UNCHANGED: an in-loop region emits the exact same routed
+  // emitters are UNCHANGED: an in-loop region emits the exact same
   // stream, positionally, into its own `Pred`, which is why the rolled loop's
   // trace is byte-identical to its hand-unrolled twin's.
   bool InLoop = false;
 };
 
-// The full detection result: the recovered regions plus the set of in-shadow
-// `cq_phi` calls (so `lowerRotations` skips them — the orchestrator lowers
-// them controlled). `InShadow` is keyed on the gate-body `Instruction*`.
+// The full detection result: the recovered regions plus `InShadow`, a set of
+// in-shadow gate bodies (keyed on the gate-body `Instruction*`) for
+// `lowerRotations` to skip.
 //
 // ⚠ `InShadow` HAS NO `insert` ANYWHERE IN `ir-pass/` — stated as a FACT, not a
-// hedge (bd drbq round-2 review, lens C §2). Measured: `grep -rn "InShadow"
-// ir-pass/` returns this declaration, its comments, and ONE read
-// (`RotationLowering.cpp`'s `plan->InShadow.count(Phi)`). No emitter populates
-// it, so it is permanently empty and that read is a no-op.
-//
-// WHY THAT MATTERS RATHER THAN BEING TRIVIA: it is the ONLY field of the ROUND-1
-// plan that `lowerRotations` reads, and `lowerRotations` runs AFTER the round-2
-// (`plan2`) emission. So the round-1 plan is inert from the moment emission
-// finishes, which is what makes the plan-lifetime obligation hold. If a future
-// control path ever DOES populate this set — one that keeps gate bodies in place
-// rather than erasing them — the set must also be re-scoped per round: a stale
-// round-1 `Instruction *` whose address is reused by a round-2-minted `cq_phi`
-// would silently suppress that phi's `cqrt_rz`.
+// hedge (bd drbq round-2 review, lens C §2) — and since bd 3qlq Inc 1 deleted
+// `lowerRotations`' `cq_phi` loop it has NO read either (`lowerRotations` now
+// ignores `plan`; see RotationLowering.cpp). So the round-1 plan is inert from
+// the moment emission finishes, which is what makes the plan-lifetime
+// obligation hold. If a future control path that keeps gate bodies in place
+// ever populates this set, it must also be re-scoped per round: `lowerRotations`
+// runs AFTER the round-2 (`plan2`) emission, so a stale round-1 `Instruction *`
+// whose address a round-2-minted gate reuses would silently suppress that gate.
 struct ControlPlan {
   llvm::SmallVector<ControlRegion, 4> Regions;
   llvm::SmallPtrSet<const llvm::Instruction *, 8> InShadow;
@@ -731,16 +692,13 @@ void diagnoseUnderControl(llvm::Instruction *Where, llvm::StringRef What);
 bool anchorIsLocated(const llvm::Instruction *I);
 
 // Pure-analysis detection (swap-route 4.1 IMPLEMENTATION §0/§3). For each
-// tainted-condition `br i1`, recognize the §0 clean diamond / if-else shape by
-// SSA-value identity (Rule 9 — before any mutation), classify each arm
-// (phase / value / §3c clobber) via `ArmClassify`, and decline everything that
-// is not a pure-phase-over-tainted-handle region. An accepted phase-arm DIAMOND
-// (one content arm, WI-2) or IF/ELSE (two arms, WI-3) is pushed onto
-// `plan.Regions` for `SwapRouteEmit::lowerControlRegions`. `plan.InShadow`
-// stays empty — the emitter erases each arm `cq_phi` before `lowerRotations`
-// runs, so there is no in-place gate body to skip (IMPLEMENTATION §3). A
-// classical-condition branch is ignored (detection keys strictly on condition
-// taint). No IR is mutated here.
+// tainted-condition `br`/`select`/`switch`, recognize the region shape by
+// SSA-value identity (Rule 9 — before any mutation), classify it (phase
+// kickback, value, in-place rotation, select, switch, …) and decline loudly
+// whatever no classifier accepts. Each accepted region is pushed onto
+// `plan.Regions` for `SwapRouteEmit::lowerControlRegions`; `plan.InShadow`
+// stays empty. A classical-condition branch is ignored (detection keys strictly
+// on condition taint). No IR is mutated here.
 ControlPlan detectControlRegions(llvm::Module &M, WidthDispatch &wd,
                                  TaintSet &taint);
 

@@ -9,9 +9,10 @@
 ; SOURCE SHAPE:
 ;     cq_theta(&a, 0.5);      // mints %h
 ;     int d = a * 3;             // out-of-place: THE WIRE; %h stays live
-;     if (c) d = cq_phi(d, .25); // CLASSICAL condition, diagonal arm
+;     if (c) d = cq_phi(d, .25); // CLASSICAL condition (pre-3qlq register form)
 ;     cq_theta(&d, 0.125);    // T — chained Ry reached through the merge phi
 ;     return cq_measure(d);
+; The 3qlq migration deleted that classical-condition phase; the IR keeps the phi.
 ;
 ; WHAT IS STANDING AT THE GATE: `%h`, the `cqrt_alloc_i32`-minted parent of the
 ; mul rail, never read again, never uncomputed, never freed.
@@ -29,7 +30,6 @@
 ;
 ; MEASURED AT HEAD (pre-Inc-3): `opt` exit 0, ONE `cqrt_alloc_i32`, the phi gone
 ; — the over-accept this closes.
-;
 ;
 ; ⚠ NOW A WARNING, NOT A DECLINE — owner ruling 2026-08-29 (bd
 ; test_C_libtooling-lyyf, shipped as M-A Increment 7b): "we can always apply any

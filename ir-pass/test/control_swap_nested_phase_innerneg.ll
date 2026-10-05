@@ -1,14 +1,12 @@
 ; control_swap_nested_phase_innerneg.ll — ACCEPT spec (§5g polarity probe): inner arm is the FALSE successor (outer positive).
 ;
-; The §0 depth-2 phase nest with the INNER gate arm negated. clang -O1 swaps a branch's successors for an
+; `if (q > 5) { cq_phi(b); if (!(q < 9)) cq_phi(a); }`: the §0 depth-2 phase nest
+; with the INNER gate arm negated. clang -O1 swaps a branch's successors for an
 ; ordering condition (Rule 9), making the gate arm the FALSE successor; detection
-; resolves arms by merge-phi incoming IDENTITY (never successor order) and the
-; emitter routes the negated level on ¬flag via a self-inverse cqrt_x bracket
-; around BOTH route-in and route-back (the adjoint of the split). The flag-strip
-; is polarity-independent (Rz preserves q's basis).
-;
-; WI-3 lands NestedRouteEmit — recognized as the accept shape, now LOWERS to
-; the per-polarity routed stream (XFAIL removed at WI-3 XPASS).
+; resolves arms by merge-phi incoming IDENTITY (never successor order). The negated
+; level is taken on ¬flag: a self-inverse `cqrt_x` bracket on the inner flag around
+; both Toffolis that compute and clear the AND ancilla carrying `a`. The flag
+; strips are polarity-independent (Rz preserves q's basis). Accepted since WI-3.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

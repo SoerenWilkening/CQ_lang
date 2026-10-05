@@ -3,22 +3,17 @@
 ;     double q = seed; cq_theta(&q, 0.5);
 ;     for (int i = 0; i < 4; i++) q = cq_phi(q, 0.1);
 ;     return cq_measure(q);
-; lowers ROLLED IN PLACE. This is the headline Case A (the owner's phase
-; accumulation / Trotterization shape). Verified against real `clang -O1` output
-; (Rule 11): a KNOWN-≥1-trip const bound has NO zero-trip guard and NO exit phi —
-; just the loop-carried header phi `%qh = phi [%q0, entry], [%qn, loop]` whose
-; latch incoming `%qn = cq_phi(%qh, 0.1)` peels (through the in-place rotation)
-; back to the header phi itself, rooted at the `cq_theta` mint `%q0`. clang `-O1`
-; NEVER unrolls the opaque `cq_phi` body (verified), so 7.3 lowers the rolled CFG
-; directly.
+; (pre-3qlq register form) lowers ROLLED IN PLACE. This was the headline Case A
+; (the owner's phase accumulation / Trotterization shape). The uncontrolled phase
+; is a global phase the 3qlq migration deleted, so the body is now empty and the
+; loop-carried header phi is the pure self-cycle `%qh = phi [%q0, entry], [%qh,
+; loop]`, rooted at the `cq_theta` mint `%q0`. A KNOWN-≥1-trip const bound has NO
+; zero-trip guard and NO exit phi (verified on real `clang -O1` output, Rule 11).
 ;
 ; THE COLLAPSE (LoopLowering::tryCaseA): the in-place self-cycle header phi
 ; collapses to its single persistent rail (RAUW %qh -> %q0, erase) BEFORE
-; rotation lowering, so the body lowers to `cqrt_rz_f64(%h, 0.1)` over the
-; loop-invariant alloc handle. The loop CFG (backedge, classical induction) is
-; PRESERVED; zero measurements inserted, zero in-body frees (the rail is measured
-; after L). The trace running the rolled loop 4 times is byte-identical to the
-; manually-unrolled 4×cqrt_rz form.
+; rotation lowering. The loop CFG (backedge, classical induction) is PRESERVED;
+; zero measurements inserted, zero in-body frees (the rail is measured after L).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
@@ -26,7 +21,7 @@
 ; Mint + Ry in the preheader (entry), in place:
 ; CHECK:      %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double %{{.*}})
 ; CHECK:      call void @cqrt_ry_f64(i32 %[[H]], double 5.000000e-01)
-; The rolled body: ONE in-place Rz on the loop-invariant handle, once per trip:
+; The rolled loop CFG survives (its body is empty since 3qlq):
 ; CHECK:      loop:
 ; CHECK:        br i1 %{{.*}}, label %exit, label %loop
 ; The exit measures the ONE handle; the rail phi is GONE:

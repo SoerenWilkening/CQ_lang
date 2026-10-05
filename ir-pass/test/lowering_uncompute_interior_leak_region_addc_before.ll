@@ -1,17 +1,16 @@
 ; lowering_uncompute_interior_leak_region_addc_before.ll — LEAK PROBE (M-B
 ; Increment 6, clause (d2); bd test_C_libtooling-160a Rule-13 round, finding
-; F1e). "Clause (d2) exempts the ROUTE and nothing else" — the REGION-shaped
-; statement of it, first of three (before / inside / after).
+; F1e). An in-place WRITE on the wire inside the chain's interval — the
+; REGION-shaped statement, first of three (before / inside / after).
 ;
 ; The straight-line twins already exist (lowering_uncompute_interior_leak_
-; parent_addc_between.ll and siblings). What was unpinned is the case where an
-; in-place WRITE on the routed base shares an interval with a RECORDED route
-; group: there the group is exempted, and a reader could conclude the interval is
-; therefore clean. It is not. `routeGroupFullyInside` exempts exactly the cswaps
-; of one recorded group; every OTHER user of the borrowed parent still has to
-; clear LEFT (`provablyBefore(M, First)`) or RIGHT (`provablyBefore(At, M)`) on
-; its own.
-;
+; parent_addc_between.ll and siblings). Here `cqrt_addc_i32(%h, 5)` sits between
+; the forward `mul` and the region, so it clears neither LEFT
+; (`provablyBefore(M, First)`) nor RIGHT (`provablyBefore(At, M)`), and the
+; component LEAKS: the CHECK frees only the flag (FCNT = 1). Pre-3qlq the region
+; also put a RECORDED route group on the wire, which `routeGroupFullyInside`
+; exempted — its cswaps and nothing else — so a reader could conclude the
+; interval was clean. It was not, and this file pinned that.
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
 ; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)

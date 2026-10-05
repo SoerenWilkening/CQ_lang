@@ -1,15 +1,14 @@
 ; lowering_classical_mux_phi_onereg_theta_chain.ll — ACCEPT: one-register
-; merge phi whose arm chain is TWO in-place gates including a chained
-; cq_theta (test_C_libtooling-5j5, the theta-gate + multi-gate-chain variant):
-;     if (classical_c) { cq_theta(&q, t2); q = cq_phi(q, t3); }  measure(q);
+; merge phi whose arm holds a chained in-place cq_theta (test_C_libtooling-5j5,
+; the theta-gate variant; its second gate, a register-form `cq_phi` under a
+; classical condition, was a global phase the 3qlq migration deleted):
+;     if (classical_c) cq_theta(&q, t2);  measure(q);
 ;
-; A tainted-operand cq_theta is IN PLACE exactly like cq_phi: RotationLowering
-; emits ry-only on the EXISTING handle (no second allocation — "chained theta")
-; and RAUWs the result to its operand. So the wire resolution walks
-; %q3 -> %q2 -> %q through two collected gate call sites to the one base, and
-; the whole chain sits in the arm block: entering via the arm edge implies
-; both gates ran, this traversal, in block order; entering via the straight
-; edge implies neither did. The phi is a pure renaming either way.
+; A tainted-operand cq_theta is IN PLACE: RotationLowering emits ry-only on the
+; EXISTING handle (no second allocation — "chained theta") and RAUWs the result
+; to its operand. So the wire resolution walks %q2 -> %q to the one base, and the
+; gate sits in the arm block: entering via the arm edge implies it ran, entering
+; via the straight edge implies it did not. The phi is a pure renaming either way.
 ;
 ; Note the Ry is NON-diagonal and that is still fine HERE: the only
 ; downstream consumer is the measure of the merged value itself, whose

@@ -54,9 +54,9 @@
    whole-DAG uncompute is gated OFF in `main`):
 
    (A) MEASURED bswap — proves the FORWARD producer cq_template_bswap_i32.
-   (B) DEAD bswap kept alive by a `cq_phi` — proves the `_unc` TWIN: the spine
-       reverses it via cq_template_bswap_i32_unc (recompute from the live source)
-       and frees the rail, with NO `_inv`, NO added measure.
+   (B) DEAD bswap kept alive by a kickback `cq_phi` — proves the `_unc` TWIN:
+       the spine reverses it via cq_template_bswap_i32_unc (recompute from the
+       live source) and frees the rail, with NO `_inv`, NO added measure.
 
    cq_theta/cq_phi/cq_measure resolve from CQ.h (force-included by run_slice.sh). */
 __attribute__((noinline))
@@ -69,6 +69,6 @@ void slice(unsigned x) {
     /* (B) dead bswap — proves the `_unc` twin. */
     unsigned c = x; cq_theta(&c, 0.10);
     unsigned d = __builtin_bswap32(c);   /* dead */
-    if (d > 100u) cq_phi(0.30);              /* Rz keep-alive; result dropped */
+    if (d > 100u) cq_phi(0.30);              /* kickback keep-alive (rz_i1 on flag) */
 }
 int main(void) { slice(0x12345678u); return 0; }

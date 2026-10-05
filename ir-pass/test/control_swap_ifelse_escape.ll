@@ -1,16 +1,15 @@
 ; control_swap_ifelse_escape.ll — ACCEPT probe: if/else result ESCAPES via ret.
 ;
-; `if (q > 5) { rz(q, a); } else { rz(q, b); } return q;` — the merged handle is
-; NOT measured; it escapes to the caller. The swap-route stream is identical to the
-; measured case (the merge phi RAUWs to q), and the boolean is still stripped
-; (icmp_inv(q)) so the escaping handle is coherent and disentangled — the caller
-; owns it.
+; `if (q > 5) cq_phi(a); else cq_phi(b); return q;` — q is NOT measured; it
+; escapes to the caller. The kickback stream is identical to the measured case
+; (control_swap_ifelse.ll), and the flag is still stripped (icmp `_unc`) so the
+; escaping handle is coherent and disentangled — the caller owns it.
 ;
 ; ADVERSARIAL POSTCONDITION (§6.2 + Rule 6): q ESCAPED, so it must NOT be freed
 ; (freeing an escaped handle is a hidden measurement that collapses it). Exactly
-; THREE cqrt_free are emitted — the two work rails and the flag — and q is returned
-; live. The later uncompute pass sees q escape (computeFreePoint → Escaped) and adds
-; no free. Pairs with control_swap_ifelse_multigate.ll (the measured-q free count).
+; ONE cqrt_free is emitted — the flag — and q is returned live. The later
+; uncompute pass sees q escape (computeFreePoint → Escaped) and adds no free.
+; Pairs with control_swap_ifelse_multigate.ll (the measured-q free count).
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

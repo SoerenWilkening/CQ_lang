@@ -57,7 +57,7 @@
    lineage this slice needs that ctpop does not (C, below):
 
    (A) MEASURED forward ctlz — proves the FORWARD producer.
-   (B) DEAD ctlz kept alive by a `cq_phi` — proves the void `_unc` twin
+   (B) DEAD ctlz kept alive by a kickback `cq_phi` — proves the void `_unc` twin
        cq_template_ctlz_i32_unc(out, src) and the Class-2 recompute-from-live-source
        discipline: the dead ctlz is reversed by recomputing it from its STILL-LIVE
        source, and the source stays allocated and untouched through its own
@@ -103,7 +103,7 @@ void slice(unsigned x) {
     int g = d + (int) c;          /* Q+Q add: keeps the ctlz LIVE and stops
                                      -O1 folding `clz(c)==12` into a range test
                                      on c — see the header */
-    if (g == 12) cq_phi(0.30);               /* Rz keep-alive; result dropped */
+    if (g == 12) cq_phi(0.30);               /* kickback keep-alive (rz_i1 on flag) */
 
     /* (C) measured forward ctlz, `i1 true` — Rule 15 drops the immarg, so this
        traces byte-identically to (A). Measured, not assumed. */

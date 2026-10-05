@@ -451,8 +451,8 @@ llvm::Value *inPlaceReassignRailOperand(BinaryOperator *bo,
 //     ruling's sense. An `_unc` whose OUT slot IS `P` is refused: that would say
 //     `P`'s own rail was discharged before we mutate it.
 //
-// (c) A VOID `cqrt_*` GATE THAT MINTS NO RAIL FROM `P` (`cqrt_cswap` route
-//     pairs, `cqrt_x` brackets, `cqrt_cnot`/`cqrt_toffoli` networks,
+// (c) A VOID `cqrt_*` GATE THAT MINTS NO RAIL FROM `P` (`cqrt_cswap` from the
+//     abort park, `cqrt_x` brackets, `cqrt_cnot`/`cqrt_toffoli` networks,
 //     `cqrt_copy_*`, `cqrt_tape_write_*`) is harmless: a void call is never a
 //     DAG *handle*, and `isInPlaceGateOn` does not match it, so it can never be
 //     a member of `D.Calls` — the spine never re-emits it.
@@ -473,7 +473,7 @@ llvm::Value *inPlaceReassignRailOperand(BinaryOperator *bo,
 //         is `NotClosed`, and the spine emits NOTHING AT ALL. For THIS stem, "can
 //         never be a member of `D.Calls`" is false — do not cite it.
 //
-//       * `cqrt_rz_<W>_controlled` → **arm (c), THIS ONE**, since Inc 2a. The
+//       * `cqrt_rz_<W>_controlled` → **arm (c)**, Inc 2a (no minter since 3qlq). The
 //         stem split narrowed `isInPlaceGateOn` to `ry`, so the controlled Rz is
 //         an UNRECOGNIZED consumer: not a link, never in `D.Calls`, never
 //         re-emitted by the spine — i.e. this bullet's own ground is RESTORED for
@@ -823,7 +823,7 @@ bool inPlaceFenceHolds(const Instruction *Site, const Value *P, const Value *Imm
     // CONSUMER 2 — THE VALUE-ARM CONTROLLED-COPY MERGE (bd
     // test_C_libtooling-3qlq Inc 2, round-1 review finding F-V1-5). Since that
     // increment `SwapRouteEmit::emitValueRegion` HOISTS the arm chain onto the
-    // ORIGINAL routed register `Q` and merges with two controlled copies whose
+    // ORIGINAL base register `Q` and merges with two controlled copies whose
     // sources must denote DISTINCT physical registers. If M-C ever fired on a
     // chain HEAD (whose parent is `Q`), a DIAMOND's second copy
     // `copy_controlled(f, Q, out)` would read a RELABELLED `Q` — `out =

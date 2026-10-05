@@ -1,15 +1,15 @@
 ; control_inplace_ry_reject_mixed_ifelse_rz_first.ll — DECLINE: the OTHER ARM
 ; ORDER of the mixed if/else (bd test_C_libtooling-drbq).
 ;
-;     if (c) r = cq_phi(r, .9); else cq_theta(&r, .2);
+;     if (c) cq_phi(.9); else cq_theta(&r, .2);
 ;
 ; Committed as a PAIR with control_inplace_ry_reject_mixed_ifelse.ll because the
 ; property is symmetry, not either module on its own: homogeneity must hold
-; whichever arm the classifier meets first. This one exercises the rotation
-; clause's own test (a rotation arm after a phase arm); its twin exercises the
+; whichever arm the classifier meets first. This one exercised the rotation
+; clause's own test (a rotation arm after a phase arm) until 3qlq moved the refusal
+; to the phase-arm clause (`impure phase arm`, note below); its twin exercises the
 ; three checks added to the phase / value / eq-fold accept sites for the reverse
 ; order.
-;
 ;
 ; 3qlq(prep_a2): the asserted diagnostic was RE-SPELLED on the Inc-1 binary.
 ; The construct this fixture pins is unchanged; the CLAUSE that refuses it

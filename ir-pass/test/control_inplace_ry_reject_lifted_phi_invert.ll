@@ -7,13 +7,13 @@
 ;
 ; THE LAUNDER, which is the same in all seven:
 ;
-;     int m; if (c) { m = cq_phi(r, .1); } else { m = r; }   /* CLASSICAL diamond */
+;     int m; if (c) { m = r; } else { m = r; }              /* CLASSICAL diamond */
 ;     if (q == 5) { cq_theta(&r, .9); }                    /* in-place Ry on r  */
 ;     ... <consumer>(m) ...                                    /* reads the PRE-Ry record */
 ;
-; `cq_phi` is Rz and ALWAYS lowers in place, so `m` and `r` are two SSA names for
-; ONE physical rail. Inc 1's `railWireClosure` crossed a `PHINode` BACKWARD but
-; not FORWARD, so the classical join φ was a plain USER of a member: it passes
+; `m` and `r` are two SSA names for ONE physical rail (pre-3qlq one edge carried
+; an in-place `cq_phi` Rz). Inc 1's `railWireClosure` crossed a `PHINode` BACKWARD
+; but not FORWARD, so the classical join φ was a plain USER of a member: it passes
 ; `provablyBefore` HONESTLY (it dominates the region's branch and the branch
 ; cannot reach it), R6 stopped there, and ITS users were never enumerated.
 ; `liftOneRegisterMergePhi` then RAUW'd the φ to the base AFTER the region was
@@ -27,10 +27,10 @@
 ; twin (drop the classical `if`) declined all along, which is what makes the
 ; classical diamond the launder rather than the defect.
 ;
-; CONSUMER PINNED HERE: a `cq_invert_begin/_end` bracket over the laundered record.
-; MEASURED emitting `cqrt_rz_i32(%h1, 0.7)` inside the bracket, on the post-Ry
-; rail. This is the ESCAPE spelling R6 exists for (probe a5 of the increment's
-; own self-adversarial round, which caught the STRAIGHT-LINE form only).
+; CONSUMER PINNED HERE: a `cq_invert_begin/_end` bracket over the laundered
+; record. Pre-3qlq the bracket held `m = cq_phi(m, .7)`, MEASURED emitting
+; `cqrt_rz_i32(%h1, 0.7)` on the post-Ry rail (probe a5's ESCAPE spelling); 3qlq
+; deleted it, so the bracket is empty and `cq_measure(m)` after it is the read.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s

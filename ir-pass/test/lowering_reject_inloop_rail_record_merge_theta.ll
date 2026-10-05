@@ -2,15 +2,15 @@
 ; test_C_libtooling-8h7d.5, Rule-13 ROUND 2, finding F-1 — the MERGE-PHI HOP).
 ;
 ;     int mark = q;
-;     if (n & 1) q = cq_phi(q, 1.0);   /* a post-loop rail MERGE phi */
+;     if (n & 1) q = cq_phi(q, 1.0);   /* pre-3qlq register form: a rail MERGE phi */
 ;     cq_theta(&q, 0.125);          /* Ry whose arg-0 is the phi */
 ;     return cq_measure(mark) + cq_measure(q);
 ;
+; The migration deleted that classical-condition phase; the IR keeps the merge `%qj`.
 ; The third way a gate reaches the register without appearing on any chain: its
-; arg-0 is a PHI that names this rail on at least one incoming edge. Measured at
-; the round-2 HEAD: `opt` exit 0 and `cqrt_ry_i32(%h, 0.125)` emitted before both
-; `measure(%h)` calls, so `mark` reads iteration-k's register through the pre-Ry
-; name.
+; arg-0 is a PHI that names this rail on at least one incoming edge. Measured at the
+; round-2 HEAD: `opt` exit 0 and `cqrt_ry_i32(%h, 0.125)` emitted before both
+; `measure(%h)` calls, so `mark` reads iteration-k's register through the pre-Ry name.
 ;
 ; SOME INCOMING, NOT ALL — and that asymmetry is the sound side, not a shortcut.
 ; `railGateBetween` asks whether SOME execution path runs the record's def, then a

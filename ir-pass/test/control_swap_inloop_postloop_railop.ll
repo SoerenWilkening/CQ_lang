@@ -1,7 +1,7 @@
 ; control_swap_inloop_postloop_railop.ll — ACCEPT, and the ACCEPT BOUNDARY of the
 ; F-1 forward rail extension (bd test_C_libtooling-8h7d.5, Rule-13 ROUND 2).
 ;
-;     for (i<2) { if (q==5) q = cq_phi(q,PI); cq_theta(&q,-.5); }
+;     for (i<2) { if (q==5) cq_phi(b); cq_theta(&q,-.5); }
 ;     int mark = q;
 ;     q = q + 9;                     /* an OUT-of-place value op after the record */
 ;     return cq_measure(mark) + cq_measure(q);
@@ -9,7 +9,7 @@
 ; THE FENCE MUST NOT FIRE HERE, and the reason is a property of the LOWERING, not
 ; of the shape. F-1 extends the rail forward through the users that keep mutating
 ; the SAME handle, and a rotation qualifies unconditionally (`lowerRotations`
-; always RAUWs an Ry/Rz result to its arg-0 handle). A value self-update does NOT:
+; always RAUWs an Ry result to its arg-0 handle). A value self-update does NOT:
 ; only a chain member, or an op the M-C decision already put in
 ; `taint.InPlaceRailOps`, becomes `cqrt_{addc,xorc}` on this register. THIS one is
 ; on no chain and is not marked, so `lowerOps` emits it OUT of place —
@@ -27,11 +27,9 @@
 ; `cq_theta` and this file must go red; that is the mutation it exists to make
 ; available.
 ;
-; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
-; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE
-; `cqrt_rz_i32_controlled(flag, register, theta)` and the swap route (work-rail
-; alloc, both `cqrt_cswap`s, the rail free) is gone. Nothing else moves — the flag
-; mint, the strip, the flag free and every downstream gate are unchanged.
+; The phase arm lowers by kickback: flag minted from the icmp, one uncontrolled
+; `cqrt_rz_i1(flag, b)`, icmp `_unc` strip, one `cqrt_free` (the flag). No work
+; rail, no `cqrt_cswap`.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
@@ -55,12 +53,6 @@
 ;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

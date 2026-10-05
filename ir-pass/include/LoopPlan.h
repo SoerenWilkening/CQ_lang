@@ -142,17 +142,17 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // region's MERGE phi, which `peelInPlaceBase` does not cross, so the persistent
 // rail reads as a cross-iteration dirty rail (X1) and the whole loop would
 // loud-decline a shape that is in fact clean. After the flatten the merge phis
-// are GONE (RAUW'd to the routed base) and the body is straight-line, so the
-// very same peel now resolves — which is why the analysis is re-asked here and
-// not made cleverer up front (Rule 9: analyse the IR in front of you).
+// are GONE (RAUW'd, or never built by a kickback) and the body is straight-line,
+// so the very same peel now resolves — which is why the analysis is re-asked
+// here and not made cleverer up front (Rule 9: analyse the IR in front of you).
 //
 // SCOPE, and why it is NOT a second `tryCaseA`. This round makes ONE claim: the
 // loop-carried tainted header phi denotes ONE PERSISTENT QUBIT RAIL, so it
 // collapses to its root mint. It does not re-prove `tryCaseA`'s COVERAGE ("every
 // tainted body value is on the rail") — that is a CLAIM condition, about whether
 // round 1 may own a loop, and the post-flatten body legitimately contains values
-// on no rail at all: the region's own emitted stream (flag mint, `cqrt_cswap`
-// route, `_unc` strip) and a derived condition's iteration-local template rails.
+// on no rail at all: the region's own emitted stream (flag mint, the gates on
+// the flag, `_unc` strip) and a derived condition's iteration-local template rails.
 // Their disposition belongs to the owners that already have it — the Phase-5
 // uncompute spine and `FreePoint`, whose back-edge live-range reject is untouched.
 //
@@ -164,7 +164,7 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // position while the SSA name denotes a fixed prefix of the rail's gates —
 // and inside a loop those diverge the moment any gate separates them.
 //
-//     for (…) { if (q == 5) q = cq_phi(q, PI); acc = q * 7; q += 3; }
+//     for (…) { if (q == 5) cq_phi(PI); acc = q * 7; q += 3; }
 //     return cq_measure(q) + cq_measure(acc);
 //
 // `clang -O1` sinks the `mul` past the loop, so the emitted template runs against
@@ -215,7 +215,7 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 //   enumerating chain members, so a rail value ONE HOP off the chain was never
 //   asked about:
 //
-//       for (…) { if (q==5) q=cq_phi(q,PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
+//       for (…) { if (q==5) cq_phi(PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
 //       int a = q; cq_theta(&a, .125);  int b = a; cq_theta(&b, .25);
 //       return cq_measure(a) + cq_measure(b);
 //

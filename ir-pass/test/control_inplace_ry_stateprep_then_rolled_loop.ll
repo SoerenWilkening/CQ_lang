@@ -13,11 +13,11 @@
 ; with a `Mint` that is a CONTROLLED rotation — a shape that did not exist before
 ; Inc 4. `collapseFlattenedLoopRails` then claims the rail φ, and the body rolls.
 ;
-; The C original (measured HEAD rc=0, pre-Inc-4 oracle rc=1):
+; The C original (measured pre-3qlq: HEAD rc=0, pre-Inc-4 oracle rc=1):
 ;
 ;     int q = u0; cq_theta(&q, .5);  int r = 0;
 ;     if (q == 7) { r = 0; cq_theta(&r, .9); }                /* flat prep */
-;     for (int i=0;i<3;i++){ if (q>5) q=cq_phi(q,.2); cq_theta(&r,.1); }
+;     for (int i=0;i<3;i++){ if (q>5) cq_phi(.2); cq_theta(&r,.1); }
 ;
 ; NO DEFECT ON THIS WITNESS: the hand-unrolled K=3 twin links and runs to a
 ; BYTE-IDENTICAL trace (24 lines each), strict stage 2b 0 violations / 0

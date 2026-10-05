@@ -1,16 +1,13 @@
 ; control_swap_reject_ifelse_crosshandle.ll — DECLINE: if/else over TWO handles.
 ;
-; `if (q > 5) { rz(q, a); } else { rz(p, b); }` — both arms are pure phase chains,
-; but the then-arm rotates the routed handle %q while the else-arm rotates a
-; DIFFERENT tainted source %p. A swap-route if/else routes ONE shared handle and
-; strips the flag with icmp_inv(q); muxing a phase of %p against a phase of %q has
-; no single routed handle, so the strip would be invalid. classifyArms anchors the
-; routed handle on the first arm's base (%q) and rejects the second arm because its
-; base (%p) != the routed handle → loud decline ("control flow"), lower nothing.
+; `if (q > 5) { cq_phi(a); r = q; } else { cq_phi(b); r = p; }` — both arms carry
+; a branch phase, AND the merge φ muxes two DIFFERENT tainted sources (%q vs %p),
+; so neither arm is a pure phase arm: loud decline (`impure phase arm`), nothing
+; lowered. (Pre-3qlq the arms were register-form `rz(q, a)` / `rz(p, b)`, declined
+; because a swap-route if/else routed ONE shared handle.)
 ;
 ; The existing control_swap_reject_crosshandle.ll exercises the DIAMOND path; this
-; pins the same guard on the TWO-ARM if/else path (the second-arm Base==Routed
-; check, which the diamond fixture never reaches).
+; pins the TWO-ARM if/else path.
 ;
 ;
 ; 3qlq(prep_a2): the asserted diagnostic was RE-SPELLED on the Inc-1 binary.

@@ -3,11 +3,11 @@
 ;     double q = s1; cq_theta(&q, 0.5);  double p = s2; cq_theta(&p, 0.3);
 ;     for (int i = 0; i < n; i++) { q = cq_phi(q, 0.1); p = cq_phi(p, 0.2); }
 ;     cq_measure(q); cq_measure(p);
-; Each rail is an independent in-place self-cycle (its own header phi, its own
-; `cq_theta` root) and collapses INDEPENDENTLY to its own loop-invariant handle —
-; the railRoot fixpoint tracks the two roots separately and never merges them.
-; Pins that the per-rail collapse does not cross-contaminate (each `cqrt_rz` fires
-; on its own handle with its own angle).
+; (pre-3qlq register form; the uncontrolled phases are global phases the 3qlq
+; migration deleted, so the body is now empty). Each rail is an independent
+; self-cycle (its own header phi, its own `cq_theta` root) and collapses
+; INDEPENDENTLY to its own loop-invariant handle — the railRoot fixpoint tracks
+; the two roots separately and never merges them; each is measured on its handle.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
@@ -17,7 +17,7 @@
 ; CHECK:      call void @cqrt_ry_f64(i32 %[[HQ]], double 5.000000e-01)
 ; CHECK:      %[[HP:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double %s2)
 ; CHECK:      call void @cqrt_ry_f64(i32 %[[HP]], double 3.000000e-01)
-; The rolled body: each rail rotated in place with its own angle:
+; The rolled loop survives (its body is empty since 3qlq):
 ; CHECK:      loop:
 ; Both rails measured at exit; both rail phis gone:
 ; CHECK:      exit:

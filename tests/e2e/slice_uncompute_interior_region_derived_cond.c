@@ -8,7 +8,7 @@
    or that the reflection reflects about |0>, was TRUE OF THE SOURCE and FALSE OF
    THE EMITTED CIRCUIT. It becomes true only from 3qlq Inc 1 on, where the phase is
    a BRANCH phase by kickback (rz_i1 on the minted flag), not a register Rz. The
-   older prose is left verbatim rather than silently corrected; read it with this.
+   older prose was revised on 2026-10-05 (bd 7pxe); remaining register-Rz wording is history.
    (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_uncompute_interior_region_derived_cond.c — bd test_C_libtooling-6uqc's
    P0, end to end, WITH the S-dagger that used to make it decline. The e2e
@@ -33,7 +33,7 @@
    WHAT THE TRACE WITNESSES, in order, and it is the increment's whole claim:
      1. the three chain rails are minted;
      2. the flag is minted from the LAST of them;
-     3. the region routes, rotates, routes back, frees its work rail;
+     3. the region kicks the phase onto the flag (cqrt_x-bracketed rz_i1);
      4. the flag STRIP fires — still reading the live sqrt rail;
      5. the chain is uncomputed LIFO (sqrt, fadd, sitofp) and each rail freed;
      6. the flag is freed;
@@ -44,13 +44,13 @@
    strip recomputed the flag from it.
 
    RAIL LIVENESS AT THE NON-DIAGONAL GATE (the reading the golden cannot do for
-   itself): in the trace cqrt_alloc_i32 appears TWICE — the register h0 and the
-   region's work rail h5 — and h5 is freed before the strip. At the S-dagger
-   cqrt_ry_i32 the only allocated rail is h0. Strict stage 2b (no
+   itself): in the trace cqrt_alloc_i32 appears ONCE — the register h0; the
+   chain rails h1-h3 and the flag h4 are all freed before the S-dagger
+   cqrt_ry_i32, where the only allocated rail is h0. Strict stage 2b (no
    --allow-unproven) confirms the same from the rail side, over the whole MODULE
    rather than the trace: `slice` takes an argument, so clang -O1 keeps it AND
-   inlines a copy into main — 4 rail mints, 10 frees, all verified, 0 unproven,
-   and the 2 rails left allocated are the two copies' own measured registers.
+   inlines a copy into main (counts measured pre-3qlq, with the swap route: 4
+   rail mints, 10 frees, all verified, 0 unproven, 2 left = the measured registers).
 
    IT IS NOT, BY ITSELF, CORRECTNESS EVIDENCE. Read it with the rail-liveness
    reading, strict free-pairing, and the independent adversarial round — the

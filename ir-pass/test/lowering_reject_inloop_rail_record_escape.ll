@@ -2,7 +2,7 @@
 ; test_C_libtooling-8h7d.5, Rule-13 round 1, finding F1). THE CONFIRMED SILENT
 ; MISCOMPILE of Increment 3, in its smallest form.
 ;
-;     for (...) { if (q == 5) q = cq_phi(q, b); acc = q * 7; q += 3; }
+;     for (...) { if (q == 5) cq_phi(b); acc = q * 7; q += 3; }
 ;     return cq_measure(q) + cq_measure(acc);
 ;
 ; `%qm` (after the flatten, the loop-carried header phi) denotes the register at

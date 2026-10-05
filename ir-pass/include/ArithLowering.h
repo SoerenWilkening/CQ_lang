@@ -223,7 +223,7 @@ bool classifyInPlaceReassignment(llvm::BinaryOperator *bo, WidthDispatch &wd,
 // on a DERIVED-condition region
 //
 //     cq_theta(&a, .5);  a += off;
-//     if (((a*5)>>2) == 5) a = cq_phi(a, PI);
+//     if (((a*5)>>2) == 5) cq_phi(PI);
 //     a -= off;             cq_theta(&a, -.5);
 //
 // the oracle chain's `cq_template_ashr_…`/`cq_template_add_…` rails read `a` and

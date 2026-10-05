@@ -2,7 +2,7 @@
 ; tainted-condition phase diamonds, each region's merge hosting the next
 ; region's branch.
 ;
-; `if(q>5){rz a}; if(q>3){rz b}; if(q>1){rz c}` — the two-region accept
+; `if(q>5)cq_phi(a); if(q>3)cq_phi(b); if(q>1)cq_phi(c);` — the two-region accept
 ; (control_swap_accept_seq_ifelse_then_diamond.ll) generalized, and the reason
 ; the emission order is a topological SORT and not a hard-coded "reverse".
 ; The precedence edges are R3→R2→R1 (each region names the previous one's merge
@@ -12,8 +12,8 @@
 ;
 ; THE LOAD-BEARING ASSERTION IS ORDER: the gate stream must read 5, then 3, then
 ; 1 — SOURCE order — even though the emitters ran 1, 3, 5. Every SSA name below
-; is a regex capture for exactly that reason (the un-suffixed `%rail`/`%h_cmp`
-; belong to the LAST region in the source, which was emitted FIRST). A
+; is a regex capture for exactly that reason (the un-suffixed `%h_cmp` flag
+; belongs to the LAST region in the source, which was emitted FIRST). A
 ; regression that emitted in plan order would still verify clean and still pair
 ; every free; only this ordering, and the golden traces, would catch it.
 ;

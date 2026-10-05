@@ -2,16 +2,13 @@
 // sources. Originally inline in `CQLoweringPass.cpp` step 4.
 //
 // Contract: walk the module, collect every `@cq_theta_<sfx>` (rotation
-// source), `@cq_phi_<sfx>` (rotation that propagates but does not
-// introduce taint), and `@cq_measure_<sfx>` (sink) call site in
-// basic-block order, seed the taint set with each theta's RESULT SSA
-// value, and forward-propagate through user instructions. Measurement
-// stops propagation — it is the canonical point where quantum state
-// becomes classical. A `@cq_phi_<sfx>` on a tainted operand is reached by
-// propagation as an ordinary user, so its result stays tainted (Rz
-// preserves the quantum value); a phi on a classical operand is still
-// collected so the lowering can delete it (else an unresolved
-// `@cq_phi_*` extern is a Stage-3 link error). The source/sink sets span
+// source), register-free `@cq_phi` (branch phase: no data operand, so it
+// neither introduces nor propagates taint), and `@cq_measure_<sfx>` (sink)
+// call site in basic-block order, seed the taint set with each theta's RESULT
+// SSA value, and forward-propagate through user instructions. Measurement
+// stops propagation — it is the canonical point where quantum state becomes
+// classical. A use of the retired register form `@cq_phi_<sfx>` declines
+// loudly as a reserved name (`resolveSources`). The source/sink sets span
 // every suffix in `WidthDispatch::allSuffixes()`.
 //
 // All call sites are collected into `TaintSet` so the rotation / opcode /
@@ -175,8 +172,8 @@ struct TaintSet {
   // unrecoverable. Populated and consumed by later WPs; unread this WP.
   ScrubMap<llvm::Value *, llvm::StringRef> HandleWidth;
 
-  // ziov WI-1 (owner 2026-06-15). Maps a tainted condition compare that
-  // `SwapRouteEmit::emitRegion` minted a SHARED control flag for — because the
+  // ziov WI-1 (owner 2026-06-15). Maps a tainted condition compare that the
+  // phase kickback emitter minted a SHARED control flag for — because the
   // compare is ALSO read as data (`int f = (q>5)`; clang -O1 CSEs the control and
   // data uses to one `icmp`) — to that flag handle. The emitter mints the flag
   // ONCE at the compare's position (so it dominates every data use) and records
@@ -186,9 +183,9 @@ struct TaintSet {
   // defers the cross-type i1→i32 launder to lowerOps Phase 2, AFTER Phase 1 has
   // captured the data casts' true i1 source width (a pre-RAUW capture the early
   // emitter cannot do — RAUWing first turns `zext i1→i32` into a templateless
-  // `zext i32→i32`). Populated by `emitRegion`; consumed in `rewriteCompare` (the
-  // entry then goes stale as the compare is erased). Empty for every region
-  // without a shared condition flag.
+  // `zext i32→i32`). Populated by `emitPhaseKickbackRegion`; consumed in
+  // `rewriteCompare` (the entry then goes stale as the compare is erased). Empty
+  // for every region without a shared condition flag.
   // bd 8e5r: the MAPPED value is a `WeakVH` (was a raw `Value *`), so a deleted
   // mapped value reads back null instead of dangling; the key side is
   // self-cleaning like every table here.
@@ -641,12 +638,12 @@ struct TaintSet {
     return false;
   }
 
-  // Phase 5 WI-4 (DD-4). Pass-invented control SCRATCH rails the swap-route /
-  // select / switch emitters minted (`cqrt_alloc_<W>` work rails, merge / data-mux
-  // OUT-rails) and inserted into `Tainted` so downstream consumers keep
-  // classifying them as quantum handles. Phase 4 OWNS their reversal-or-leak
-  // (phase arms strip the flag + free a |0> rail; value arms reverse-play; an
-  // entangled merge out-rail is LEFT ALLOCATED, Rule 6/8). The whole-DAG uncompute
+  // Phase 5 WI-4 (DD-4). Pass-invented control SCRATCH rails the control
+  // emitters minted (the select / value-arm / switch / classical-call merge and
+  // data-mux OUT-rails; loop, break and I/O emitters add their own) and inserted
+  // into `Tainted` so downstream consumers keep classifying them as quantum
+  // handles. Phase 4 OWNS their reversal-or-leak (an entangled merge out-rail is
+  // LEFT ALLOCATED, Rule 6/8). The whole-DAG uncompute
   // driver subtracts this set BEFORE terminal selection so it never selects a
   // Phase-4 rail as a data terminal — replacing the dead `ControlFlag`/`FlagImage`
   // plumbing (which had zero writers) with a real, explicitly-populated image, and
@@ -699,12 +696,12 @@ struct TaintSet {
   // would let one partition discharge a rail another partition's adjoint still
   // reads (Rule 8's shared-prefix hazard, from the other side). Only a strip a
   // control emitter recorded AT ITS EMISSION SITE is in here, and only emitters
-  // whose route provably leaves the compare's operands at their forward basis
-  // record one (today: `SwapRouteEmit`'s flat PHASE-arm region — diamond,
-  // if/else and the eq-folded diamond that reuses it). Every other strip —
-  // value-arm, 4.3 nest, 4.4 select, 4.5 switch, the 6.5 classical-call arm, the
-  // 7.6 controlled tape write — deliberately stays OUT and its condition chain
-  // keeps leaking, each pinned by a leak fixture.
+  // whose gates provably leave the compare's operands at their forward basis
+  // record one (today: every phase kickback — flat, nest, `switch`, angle
+  // select — plus the in-place Ry region and the Ry-stem angle select). Every
+  // other strip — value-arm, 4.4 select, 4.5 value / data-mux switch, the 6.5
+  // classical-call arm, the 7.6 controlled tape write — deliberately stays OUT
+  // and its condition chain keeps leaking, each pinned by a leak fixture.
   ScrubPtrSet<const llvm::CallInst *, 4> DischargedFlagGates;
 
   // ── THE EMITTED RAIL CONTROL READS (bd test_C_libtooling-r9e5 1b-B.1,
@@ -992,8 +989,8 @@ struct TaintSet {
   // inside the interval is NOT restoring (the base holds |0> or |x> depending on
   // the flag), so the scan admits a group only when EVERY member is inside;
   // mixed positions leak. A route whose join is NOT the adjoint of its split —
-  // the method-B VALUE arm, whose route-back carries the arm's ANSWER onto the
-  // base — is never recorded at all.
+  // the pre-3qlq method-B VALUE arm, whose route-back carried the arm's ANSWER
+  // onto the base — was never recorded at all.
   //
   // ⚠ THE BASE IS READ FROM THE GATES, NEVER STORED. A `cqrt_cswap(flag, base,
   // rail)` names its base in ARG 1, which is a USE and therefore follows every
@@ -1007,7 +1004,7 @@ struct TaintSet {
   // ⚠ NO WRITER AT HEAD SINCE bd test_C_libtooling-drbq Inc 2a — THIS SET IS
   // PERMANENTLY EMPTY. `SwapRouteEmit::emitRegion`'s phase path was its only
   // writer, and the §6a peephole replaced that path's route with one
-  // `cqrt_rz_<W>_controlled`. The exemption the set existed to grant moved to
+  // `cqrt_rz_<W>_controlled` (itself retired by 3qlq). The exemption moved to
   // `Uncomputation::preservesBorrowedParent` clause (1b), where it is a POINTWISE
   // property of a diagonal gate rather than a group property of two swaps; read
   // the note above `routeGroupFullyInside` before re-enabling a writer or
@@ -1549,13 +1546,12 @@ struct TaintSet {
   // carry live basis records of its own value.
   ScrubPtrSet<const llvm::CallInst *, 4> UserChainedRotations;
 
-  // `cqrt_rz_<W>` emitted for a user `@cq_phi` (a DIAGONAL user gate). Recorded
-  // for the same reason as the two above: so a user Rz on a record is not
-  // mistaken for spine traffic. The Phase-4 arm Rz (`SwapRouteEmit` /
-  // `SwitchRouteEmit` / `NestedRouteEmit`) is deliberately NOT recorded — its
-  // arg-0 is always a freshly `cqrt_alloc`'d work RAIL, never a template- or
-  // qram-load-minted record, so it can never be a use of a record (see
-  // `warnLiveRecordRotations`'s record definition).
+  // `cqrt_rz_<W>` emitted for a user register-form `@cq_phi_<sfx>` (a DIAGONAL
+  // user gate), so a user Rz on a record was not mistaken for spine traffic.
+  // ⚠ NO WRITER since bd 3qlq Inc 1 deleted `lowerRotations`' `cq_phi` loop: the
+  // set is permanently empty and its one read (RotationLowering.cpp) is vacuous.
+  // The kickback `cqrt_rz_i1` (on a minted flag or a bare `_Bool` register) is
+  // not recorded here.
   ScrubPtrSet<const llvm::CallInst *, 8> UserPhaseRotations;
 
   // Every adjoint `EmitInverse::emitInverseCall` minted (the whole-DAG spine's
@@ -1580,12 +1576,12 @@ struct TaintSet {
   // asks "is this use teardown?" but "does this use's LINEAGE REACH AN OBSERVING
   // SINK?" (`reachesObservingSink`, RotationLowering.cpp), whose default for an
   // unmodelled call is NOT A SINK — and the route/bracket gates are named
-  // NON-uses outright, because a routed value returns to its own rail and
-  // observes nothing. So for the live-record guard a missed `SpineOps` recording
-  // can now only over-DECLINE. `isTeardownUse` survives as ONE of that walk's
-  // non-use categories (it is the only way to recognize a re-emitted
-  // self-inverse adjoint), so the recorder is still worth threading — it just no
-  // longer sits on the over-accept edge for this consumer.
+  // NON-uses outright, because (the pre-3qlq route's rationale) a routed value
+  // returns to its own rail and observes nothing. So for the live-record guard
+  // a missed `SpineOps` recording can now only over-DECLINE. `isTeardownUse`
+  // survives as ONE of that walk's non-use categories (it is the only way to
+  // recognize a re-emitted self-inverse adjoint), so the recorder is still worth
+  // threading — it just no longer sits on the over-accept edge for this consumer.
   //
   // ⚠ NOTHING HERE LICENSES DROPPING A RECORDING. Measured 2026-08-28: the ONLY
   // reader of this set in the tree is `isTeardownUse` (RotationLowering.cpp) —
@@ -2091,7 +2087,7 @@ void declineTaintEscapes(llvm::Module &M, TaintSet &taint,
 //     one common base, each gate chain confined to its edge's incoming block,
 //     and no path able to fire a chain gate then enter the merge through an
 //     edge whose record omits it — the natural -O1 shape of
-//     `if (classical_c) q = cq_phi(q, θ); use(q)`. That phi is a PROVEN pure
+//     `if (classical_c) cq_theta(&q, θ); use(q)`. That phi is a PROVEN pure
 //     SSA renaming of one physical register: it is RAUW'd to the wire base
 //     and ERASED (hence non-const `taint` — the erased phi is scrubbed from
 //     `Tainted`), reducing the module to the already-accepted phi-less form.

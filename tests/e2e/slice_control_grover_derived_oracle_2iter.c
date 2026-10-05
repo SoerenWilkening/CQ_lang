@@ -8,7 +8,7 @@
    or that the reflection reflects about |0>, was TRUE OF THE SOURCE and FALSE OF
    THE EMITTED CIRCUIT. It becomes true only from 3qlq Inc 1 on, where the phase is
    a BRANCH phase by kickback (rz_i1 on the minted flag), not a register Rz. The
-   older prose is left verbatim rather than silently corrected; read it with this.
+   older prose was revised on 2026-10-05 (bd 7pxe); remaining register-Rz wording is history.
    (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_grover_derived_oracle_2iter.c — TWO COMPLETE GROVER ITERATIONS
    WITH A NON-TRIVIAL ORACLE. The slice that needs BOTH halves of M-B Increment
@@ -43,9 +43,9 @@
    WHAT THE TRACE WITNESSES: FOUR regions and FIVE cqrt_ry_i32 gates, and before
    every one of those five gates every ancilla minted since the previous one has
    been uncomputed and freed. The two oracle regions each show
-   ashr / add / mint / route / Rz / route / rail-free / STRIP / add-unc+free /
-   ashr-unc+free / flag-free; the two R0 regions each show mint / route / Rz /
-   route / rail-free / strip / flag-free.
+   ashr / add / mint / cqrt_rz_i1 on the flag / STRIP / add-unc+free /
+   ashr-unc+free / flag-free; the two R0 regions each show mint /
+   cqrt_rz_i1 on the flag / strip / flag-free.
 
    THE PREDICATE IS SATISFIABLE, and that is deliberate (bd
    test_C_libtooling-160a Rule-13 round, finding F2): `(q*5)>>2 == 5` holds
@@ -56,8 +56,8 @@
    the full note.
 
    RAIL LIVENESS AT EVERY NON-DIAGONAL GATE (the reading the golden cannot do
-   for itself): cqrt_alloc_i32 appears FIVE times — the register h0 plus one work
-   rail per region — and each work rail is freed inside its own region. At each
+   for itself): cqrt_alloc_i32 appears ONCE — the register h0; the records and
+   flags are template-minted and freed inside their own region. At each
    of the five cqrt_ry_i32 gates the only allocated rail in the program is h0.
    Strict stage 2b (no --allow-unproven) confirms it from the rail side: every
    free verified, the single rail left allocated is the measured register.

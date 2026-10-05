@@ -1,14 +1,14 @@
-// RegionTreeDetect.h — Depth-2 nested-control region-tree recovery (pure analysis).
+// RegionTreeDetect.h — Depth-2 register-form nest recovery (pure analysis).
 //
-// Lifts the blanket `nested control flow` decline (ControlDetect's
-// `case RegionShape::Nested:`) for the PROVEN §0 depth-2 homogeneous-phase nest
-// only — every other nested shape declines loudly with its precise per-shape
-// string (the §5h decline matrix). All recognition is by SSA-value identity
-// BEFORE any IR mutation (Rule 9), reusing the de-anonymized shape recognizers
-// (`recoverRegion` siblings, ControlShape.h) and per-arm lineage walks
-// (ArmAnalysis.h) plus the tree-homogeneity gate (ArmHomogeneity.h).
+// Called from ControlDetect's `case RegionShape::Nested:`. Since bd 3qlq Inc 1
+// part B it has NO accept: it runs the §0 criteria below only so each nested
+// shape declines loudly with its precise per-shape string (the §5h decline
+// matrix), and a shape that passes them all declines `nested control flow`. All
+// recognition is by SSA-value identity BEFORE any IR mutation (Rule 9), reusing
+// the de-anonymized shape recognizers (ControlShape.h), the per-arm lineage
+// walks (ArmAnalysis.h) and the tree-homogeneity gate (ArmHomogeneity.h).
 //
-// The seven §0 accept criteria, in the order that yields the §5h table (FA2 —
+// The seven §0 criteria, in the order that yields the §5h table (FA2 —
 // pinned empirically against the post-4.3 build, NOT the §3.1 narrative order):
 //   1. outer one-content-arm diamond (else `nested control flow`);
 //   7. inner single-pred / domination invariants (else `nested control flow`);

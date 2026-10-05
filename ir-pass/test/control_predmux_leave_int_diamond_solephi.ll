@@ -6,11 +6,11 @@
 ; this condition-reading same-base form keeps its ArmClassify
 ; provenance-overlap decline exactly as before the widening (if it ever
 ; compiles, the W5 witness has leaked past fp). The other half of int
-; containment — an ACCEPTED independent-base int sole-phi if/else keeping its
-; cswap method-B routed stream rather than being stolen into a select-copy —
-; is pinned by the pre-existing control_swap_value_ifelse.ll, whose CHECK-NEXT
-; cswap stream turns red on any such leak (Rule-13 adjudication note,
-; 2026-07-24). Together the two pins cover both int directions.
+; containment — an ACCEPTED independent-base int sole-phi if/else staying with
+; its 4.2 value-path owner rather than being claimed by W5 — is pinned by the
+; pre-existing control_swap_value_ifelse.ll (Rule-13 adjudication note,
+; 2026-07-24; that pin was a cswap method-B stream until bd 3qlq Inc 2).
+; Together the two pins cover both int directions.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq controlled lowering: control flow under quantum control

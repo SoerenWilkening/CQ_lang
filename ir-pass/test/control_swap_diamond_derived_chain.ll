@@ -1,19 +1,17 @@
 ; control_swap_diamond_derived_chain.ll — ACCEPT: diamond on a CHAINED derived base.
 ;
-; TWO unconditional pre-region rotations: `%qd2 = rz(rz(q, x), y)`. The
-; arm-block-bounded spine walk must stop at the FIRST out-of-block cq_phi it
-; reaches from the arm — %qd2, the LIVE register — and gate on THAT, leaving the
-; whole pre-region chain (%qd1, %qd2) to ordinary rotation lowering. Both
-; pre-region `cqrt_rz` lines fire in program order strictly BEFORE the flag
-; mint; neither is collected as an arm gate (a walk that hops the chain would
-; replay/erase shared pre-region gates — the WI-3 double-erase family).
+; Pre-3qlq (register form) the base was TWO unconditional pre-region rotations,
+; `%qd2 = rz(rz(q, x), y)`, and the arm-block-bounded spine walk had to stop at
+; the FIRST out-of-block cq_phi it reached from the arm — %qd2, the LIVE
+; register — leaving the pre-region chain to ordinary rotation lowering (a walk
+; that hops the chain would replay/erase shared pre-region gates — the WI-3
+; double-erase family).
 ;
-; Under the §6a control-in-place peephole there is no work rail: the single arm
-; gate is emitted as `cqrt_rz_i32_controlled(flag, %qd2, %a)` on the register
-; itself. The no-replay property is now pinned by SYMBOL as well as position —
-; exactly ONE `cqrt_rz_i32_controlled` (the arm gate) and exactly TWO uncontrolled
-; `cqrt_rz_i32` (the pre-region chain). A walk that hopped the chain would show up
-; as three controlled rotations.
+; 3qlq deleted that chain, so the IR now gates on the plain base %q:
+; `if (q > 5) cq_phi(a);`. The stream pinned is the one-gate kickback diamond —
+; the icmp mints the flag into a |0> ancilla, one uncontrolled
+; `cqrt_rz_i1(flag, %a)`, the icmp `_unc` strip, one `cqrt_free` — and no
+; `cqrt_rz_i32` of any kind.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
@@ -37,12 +35,6 @@
 ;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

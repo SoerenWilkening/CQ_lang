@@ -2,20 +2,15 @@
 ; (Rule 9 polarity probe; swap-route 4.1 IMPLEMENTATION §6.3/§8.3).
 ;
 ; Same phase diamond as control_swap_diamond.ll, but the gate arm is the FALSE
-; successor: `br i1 %c, label %merge, label %arm`, with the merge phi's
-; entry-incoming listed FIRST. This is exactly what `clang -O1` produces for an
-; `if (q <= 5) {} else { rz(q,·) }` / `if (u != k)`-style condition — it swaps the
-; branch targets and the phi edge order. A lowering that assumed "successor 0 is
-; the taken arm" or "phi incoming 0 is the arm value" would resolve the WRONG arm
-; and miscompile (verify-clean). Detection MUST resolve the arm by merge-phi
-; incoming IDENTITY (ControlDetect), set `ArmNegated`, and the emitter MUST gate on
-; ¬flag via a self-inverse `cqrt_x(flag)` bracket. Under the §6a control-in-place
-; peephole there is no route to bracket: the arm's Rz gates are emitted
-; CONTROL-IN-PLACE on q, and the bracket wraps that gate RUN — ONCE, so EXACTLY TWO
-; `cqrt_x` (the route needed four, one pair per CSWAP). The polarity property being
-; pinned is unchanged: the arm resolved from the merge-phi incoming identity must be
-; the one that fires, on ¬flag. The flag-strip is polarity-independent: Rz preserves
-; q's basis value, so `icmp_inv(q)` returns the flag to |0> regardless of polarity.
+; successor: `br i1 %c, label %merge, label %arm`. This is exactly what
+; `clang -O1` produces for an `if (q <= 5) {} else { cq_phi(a); cq_phi(b); }` /
+; `if (u != k)`-style condition — it swaps the branch targets. A lowering that
+; assumed "successor 0 is the taken arm" would fire the phase on the WRONG
+; branch (verify-clean). The arm must fire on ¬flag: the kickback run (two
+; uncontrolled `cqrt_rz_i1(flag, ·)`) sits inside ONE self-inverse `cqrt_x(flag)`
+; pair, so EXACTLY TWO `cqrt_x`. The flag strip is polarity-independent: no gate
+; touches q inside the region, so the icmp `_unc` returns the flag to |0>
+; regardless of polarity, and one `cqrt_free` releases it.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

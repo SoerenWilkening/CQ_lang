@@ -44,33 +44,33 @@
    (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_loop_iter_local.c — Phase 7.3 Inc 2 (799w.2): the per-iteration in-body
    uncompute Case B e2e golden — the only layer that LINKS, so the only proof the
-   in-body whole-DAG reversal (xor `_unc` + `cqrt_free`) resolves and runs ONCE
-   PER ITERATION over a rail re-allocated each trip (Rule 2/16).
+   in-body discharge (compare `_unc` + `cqrt_free`) resolves and runs ONCE PER
+   ITERATION over a rail re-allocated each trip (Rule 2/16).
 
-   Each iteration mints a FRESH quantum rail `q` (born in body), derives an
-   iteration-local temp `t = q ^ 9`, keeps it alive with a dead `(void) cq_phi`
-   (so -O1 DCE cannot drop the arithmetic), and drops both — neither measured nor
-   escaped, neither loop-carried. `lowerLoops` recognizes the iteration-local loop
-   and marks its body; the Phase-5 spine lifts its two backedge guards for the
-   proven iteration-local DAG and places the recovery + free IN-BODY, after the
-   keep-alive Rz and before the backedge.
+   Each iteration mints a FRESH quantum rail `q` (born in body), derives
+   `t = q ^ 9` and applies a kickback `cq_phi` under `t == 11`; neither is
+   measured, escaped or loop-carried. MEASURED at -O1: clang folds `t == 11`
+   through the xor to `icmp eq q, 2`, so NO xor survives and the per-trip flag is
+   the only iteration-local ancilla (the pre-3qlq xor `_unc` recovery is gone).
+   Each trip mints the flag, fires `cqrt_rz_i1` on it, strips it with its
+   compare `_unc` and frees it IN-BODY, before the backedge.
 
-   The golden (n = 3 fixed so the trace is deterministic) shows exactly THREE
-   balanced compute/uncompute pairs over DISTINCT handle pairs (h0/h1, h2/h3,
-   h4/h5 — monotonic, proving a fresh alloc each iteration, never a reuse) with
-   SIX frees (two per iteration). A function-scope free would run once over the
-   K-times-reallocated rail (use-after-free + (K-1) double-frees, the central
-   Rule-13 hazard, §2.5/Risk 1) — the per-iteration handle progression IS the
-   proof that did not happen. `noinline` is load-bearing (whole-DAG uncompute is
-   gated OFF in `main`, and -O1 would otherwise inline `slice` away so the
-   uncompute never runs). cq_theta/cq_phi resolve from CQ.h, force-included by
-   run_slice.sh. */
+   The golden (n = 3 fixed so the trace is deterministic) shows THREE
+   alloc/ry/mint/rz_i1/strip/free groups over DISTINCT handle pairs (h0/h1,
+   h2/h3, h4/h5 — monotonic, proving a fresh alloc each iteration, never a reuse)
+   with THREE frees (each iteration's flag). A function-scope free would run
+   once over the K-times-reallocated rail (use-after-free + (K-1) double-frees,
+   the central Rule-13 hazard, §2.5/Risk 1) — the per-iteration handle
+   progression IS the proof that did not happen. `noinline` is load-bearing
+   (whole-DAG uncompute is gated OFF in `main`, and -O1 would otherwise inline
+   `slice` away so the uncompute never runs). cq_theta/cq_phi resolve from
+   CQ.h, force-included by run_slice.sh. */
 __attribute__((noinline))
 void slice(int x, int n) {
     for (int i = 0; i < n; i++) {
         int q = x; cq_theta(&q, 0.25); /* fresh rail, born in body            */
-        int t = q ^ 9;               /* iteration-local temp (xor_hl)       */
-        if (t == 11) cq_phi(0.5);       /* Rz keep-alive; result dead -> dies  */
+        int t = q ^ 9;               /* -O1 folds t == 11 to q == 2: no xor */
+        if (t == 11) cq_phi(0.5);       /* kickback keep-alive (rz_i1 on flag) */
     }
 }
 int main(void) { slice(2, 3); return 0; }

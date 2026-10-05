@@ -61,8 +61,8 @@
 
    (B) DEAD Q+Q — proves the `_unc` TWIN.
        `pi == qi` over two more i32 thetas → `cq_template_icmp_eq_i32(hp, hq)`,
-       kept alive past `-O1` DCE by a `cq_phi` (Rz) keep-alive whose own result
-       is dropped, then never measured/returned. The whole-DAG uncompute spine
+       kept alive past `-O1` DCE by `acc = eq + pi` feeding a kickback
+       `if (acc == 4) cq_phi`, never measured. The whole-DAG uncompute spine
        (gated OFF in `main`, so the `noinline` boundary is LOAD-BEARING)
        recovers the dead compare flag and reverses it ONCE via its void `_unc`
        twin `cq_template_icmp_eq_i32_unc(out, hp, hq)` (recompute-and-XOR from
@@ -71,8 +71,8 @@
 
    `noinline` is LOAD-BEARING (same as slice_uncompute_dead_dag.c): Phase-5
    uncompute is gated OFF in `main`, and at `-O1` clang would otherwise inline
-   `slice` into `main` so the uncompute never runs. `cq_phi` (a side-effecting
-   extern reading its operand) keeps the dead compare-B chain alive.
+   `slice` into `main` so the uncompute never runs. The `acc == 4` condition
+   of the kickback `cq_phi` keeps the dead compare-B chain alive.
 
    cq_theta/cq_phi/cq_measure resolve from CQ.h, force-included by run_slice.sh
    (-include CQ.h -I include). */
@@ -90,6 +90,6 @@ void slice(int x, int y) {
     int eq = (pi == qi);          /* icmp eq QQ -> flag (dead)            */
     int acc = eq + pi;            /* keeps the Q+Q eq compare LIVE and makes the
                                      branch condition Q+C — see the header */
-    if (acc == 4) cq_phi(0.30);      /* Rz keep-alive; result dropped (dead) */
+    if (acc == 4) cq_phi(0.30);      /* kickback keep-alive: rz_i1 on the flag */
 }
 int main(void) { slice(3, 7); return 0; }

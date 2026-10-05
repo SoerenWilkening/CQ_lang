@@ -53,7 +53,7 @@
    Two funnels, each with LINEAR (no-fan-out) sources so the whole-DAG uncompute
    engages (Rule 8):
      - r = (a<<16)|(b>>16)  -> fshl.i32(a,b,16), MEASURED  -> the FORWARD qql only.
-     - dead = (c<<8)|(d>>24) -> fshl.i32(c,d,8), phase-armed by cq_phi (Rz) then
+     - dead = (c<<8)|(d>>24) -> fshl.i32(c,d,8), guards a kickback cq_phi, then
        dead -> reverse-play: the void cq_template_fshl_i32_qql_unc(out,c,d,8)
        recompute-and-XOR from the still-LIVE c,d,8 zeroes the rail, which is then
        freed (Rule 6), and c,d are ry-reversed + freed. Sources kept live through
@@ -73,7 +73,7 @@ unsigned int slice(void) {
     unsigned int c = 3u; cq_theta(&c, 0.375);
     unsigned int d = 5u; cq_theta(&d, 0.125);
     unsigned int dead = (c << 8) | (d >> 24);    /* fshl(c,d,8) -> qql, dead */
-    if (dead == 0u) cq_phi(0.6);                    /* Rz keep-alive -> reverse-play _unc */
+    if (dead == 0u) cq_phi(0.6);                    /* kickback keep-alive -> reverse-play _unc */
     return cq_measure(r);
 }
 

@@ -22,7 +22,7 @@
 #include "ControlledSymbols.h"  // tapeWriteControlledFn / xFn
 #include "LiteralIntegrity.h"   // slotCarriesUndef (bd c4ow — the co-arg fence)
 #include "OpcodeSupport.h"
-#include "RegionFlatten.h"      // flattenRegion (swap-route diamond flattener)
+#include "RegionFlatten.h"      // flattenRegion (control-region diamond flattener)
 #include "SelectMergeEmit.h"    // materializeCopySource (4.4 controlled-copy mux)
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
@@ -115,7 +115,7 @@ bool readsTaintedArg(const CallInst *CI, const TaintSet &taint) {
 
 // A taped value's lineage must be CLOSED at the sink: every user of `V` must be
 // a recognized I/O sink or a `cq_measure`. If `V` feeds further tainted
-// computation (a data op, a cast, a `cq_phi` continuation, a ret/store, a user
+// computation (a data op, a cast, a chained `cq_theta`, a ret/store, a user
 // call), it is a NON-TERMINAL rail whose DAG the whole-DAG uncompute spine
 // reverses — and that reversal, anchored at the dead terminal (which may PRECEDE
 // this sink), can reverse-play and `cqrt_free` V's rail BEFORE the tape write
@@ -133,7 +133,7 @@ bool readsTaintedArg(const CallInst *CI, const TaintSet &taint) {
 // place (the flag is freed; the original compare is erased by the flatten) —
 // PRESERVING V, exactly the shipped SelectMergeEmit pattern — so it is not a
 // lineage continuation. Every OTHER non-call user (a real data op / cast /
-// cq_phi continuation / ret / store) still bails (the Rule-13 R2 use-after-free).
+// chained cq_theta / ret / store) still bails (the Rule-13 R2 use-after-free).
 //
 // `valuePhi`, when non-null (the MIXED value+I/O path only), additionally permits
 // ONE class of extra user: the VALUE-PATH COMBINER — an instruction in the merge
@@ -182,7 +182,7 @@ bool tapedLineageClosed(const Value *V, const Value *allowedExtraUser = nullptr,
       continue;  // a tape write ALREADY emitted for V earlier this pass (V is
                  // taped by >1 sink — a legitimate multi-emit; the write is a
                  // sink that preserves V, not a lineage continuation)
-    return false;  // any other call (cq_phi continuation, a user call) — fan-out
+    return false;  // any other call (a chained cq_theta, a user call) — fan-out
   }
   return true;
 }
@@ -845,7 +845,7 @@ void lowerControlledIOSinks(Module &M, WidthDispatch &wd, TaintSet &taint) {
       ValuePhi->eraseFromParent();
     }
 
-    // 7e. FLATTEN the region (Rule 14: the swap-route diamond flattener). For a
+    // 7e. FLATTEN the region (Rule 14: the control-region diamond flattener). For a
     //     both-arm if/else `R.ArmFalse` is the second arm, so `flattenRegion`
     //     erases BOTH arms + the merge and splices the merge tail once. The phi-
     //     less void region has no `R.Merge`, so the flattener never touches it.

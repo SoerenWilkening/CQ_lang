@@ -19,9 +19,9 @@
 ; from every condition wire BY CONSTRUCTION rather than by proof (§14.5 — this is
 ; the one place Inc 4 is easier than Inc 1, not harder).
 ;
-; The swap route cannot carry this either: Ry(θ)|0> != |0> hands the inactive
-; work rail back DIRTY and ENTANGLED (Rules 6/8), so control-in-place is the
-; MECHANISM. The prepped rail is then FROZEN by Inc 1's structural freeze
+; The retired swap route could not carry this either: Ry(θ)|0> != |0> hands the
+; inactive work rail back DIRTY and ENTANGLED (Rules 6/8), so control-in-place
+; is the MECHANISM. The prepped rail is then FROZEN by Inc 1's structural freeze
 ; (`ChainWalk::railCarriesControlledRotation`, which asks the emitted gate's own
 ; arg-1 use): never reverse-played, never freed — a controlled gate's adjoint
 ; needs its control and the flag is stripped and freed inside the region. The
@@ -29,9 +29,9 @@
 ;
 ; M-β IS A CORRECTNESS REQUIREMENT HERE, not the loop-bookkeeping convenience it
 ; is for Inc 3: the emitter RAUWs the merge φ to the hoisted theta T (which
-; `lowerRotations` then RAUWs to the fresh alloc handle). The Rz stem's M-α
-; (RAUW to the BASE) would RAUW the merge to the CONSTANT SEED and every consumer
-; of `r` would become a classical literal — a silently classical program.
+; `lowerRotations` then RAUWs to the fresh alloc handle). M-α (RAUW to the BASE,
+; the retired in-place Rz stem's rule) would RAUW the merge to the CONSTANT
+; SEED: every consumer of `r` would become a classical literal.
 ;
 ; ⚠ THREE OTHER C PROGRAMS COMPILE TO THIS EXACT MODULE AND ARE THEREFORE THE
 ; SAME FIXTURE, NOT ADDITIONAL COVERAGE (measured 2026-09-04, `-O1`, slice-body

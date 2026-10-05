@@ -3,7 +3,7 @@
 ; merge-phi lift over the ROTATED register.
 ;
 ;     cq_theta(&r, q == 5 ? .9 : .3);      // 2b, consumer rotation T
-;     if (OPQ) { r = cq_phi(r, .5); }         // 5j5 classical join phi
+;     if (OPQ) { }                         // 5j5 classical join phi
 ;
 ; bd test_C_libtooling-drbq Increment 3, round-1 Rule-13 review, F-L5-1's
 ; SECOND customer. Read this file together with
@@ -32,7 +32,8 @@
 ; another owner (`ControlDetect`+`ArmClassify`, or `classifyAngleSelect`) has
 ; ALREADY adjudicated — and nothing wider.
 ;
-; VERBATIM `clang -O1` output for
+; VERBATIM `clang -O1` output (pre-3qlq register form; the migration then
+; deleted the OPQ arm's uncontrolled phase) for
 ;   volatile int OPQ = 1;
 ;   int slice(void) { int q=3, r=7;
 ;                     cq_theta(&q,0.5); cq_theta(&r,0.25);
@@ -81,8 +82,7 @@ declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr
 declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr
 
 ; The 2b by-difference stream: unconditional R(h,B=.3), flag mint, ONE controlled
-; R(h, A−B = .6), strip, free — then the CLASSICAL guard's own block with a plain
-; uncontrolled Rz on the same rail.
+; R(h, A−B = .6), strip, free — then the CLASSICAL guard's (now empty) blocks.
 ; CHECK: %[[Q:h[0-9]*]] = call i32 @cqrt_alloc_i32(i32 3)
 ; CHECK: %[[R:h[0-9]*]] = call i32 @cqrt_alloc_i32(i32 7)
 ; CHECK: call void @cqrt_ry_i32(i32 %[[R]], double 2.500000e-01)

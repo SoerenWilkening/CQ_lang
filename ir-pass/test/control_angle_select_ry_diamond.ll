@@ -5,7 +5,7 @@
 ;     if (q == 5) cq_theta(&r, .9); else cq_theta(&r, .3);
 ;
 ; This is the shape the increment exists for: the C `if/else` with a rotation on
-; ONE register in each arm. It never reaches the swap-route emitter at all,
+; ONE register in each arm. It never reaches a diamond (region) emitter at all,
 ; because there is no diamond left by the time the pass runs.
 ;
 ; SHAPE (exactly what `clang -O1` produces — SimplifyCFG merges the two arms of
@@ -20,20 +20,18 @@
 ; unchanged; only the C spelling that reaches them moved.
 ;
 ; LOWERED BY DIFFERENCE (control-in-place-PRD §12.3): `R(h, B)` unconditional,
-; the ordinary flag mint, ONE `cqrt_{ry,rz}_<W>_controlled(f, h, A-B)`, the
+; the ordinary flag mint, ONE `cqrt_ry_<W>_controlled(f, h, A-B)`, the
 ; ordinary `_unc` strip, ONE `cqrt_free`. Exact IN REAL ARITHMETIC by angle
-; additivity on one axis (`R(A) = R(B).R(A-B)`; for `Rz = diag(1,e^{i.theta})` the
-; two diagonals multiply entrywise, so there is no global-phase residue either) —
-; in IEEE double the emitted true-arm angle is `B + fl(A-B)`, so
-; `|delta| <= 1/2 ulp(A-B)`; constant arms are fenced at the placeholder
-; `kAngleSelectMaxRoundingRad` = 2^-40 rad, and a RUN-TIME arm DECLINES — the
-; accept class is CONSTANT arms only, because for a run-time arm the compiler
-; would synthesize an `fsub` the source never wrote whose error is unbounded in
-; absolute radians and whose result can be `inf`/`NaN` from two FINITE arms
-; (round-1 Rule-13 review lens L7-F1 for the bound; the Rule-13 CLEARANCE
-; review, finding F-11 / owner option (2), for the narrowing — an earlier
-; version of this line said "runtime arms carry the bound"; see
-; `control_angle_select_accept_rounding_flagship_bound.ll`). No CFG
+; additivity on one axis (`R(A) = R(B).R(A-B)`) — in IEEE double the emitted
+; true-arm angle is `B + fl(A-B)`, so `|delta| <= 1/2 ulp(A-B)`; constant arms
+; are fenced at the placeholder `kAngleSelectMaxRoundingRad` = 2^-40 rad, and a
+; RUN-TIME arm DECLINES — the accept class is CONSTANT arms only, because for a
+; run-time arm the compiler would synthesize an `fsub` the source never wrote
+; whose error is unbounded in absolute radians and whose result can be
+; `inf`/`NaN` from two FINITE arms (round-1 Rule-13 review lens L7-F1 for the
+; bound; the Rule-13 CLEARANCE review, finding F-11 / owner option (2), for the
+; narrowing — an earlier version of this line said "runtime arms carry the
+; bound"; see `control_angle_select_accept_rounding_flagship_bound.ll`). No CFG
 ; surgery, no route, no work rail, no `cqrt_x` bracket (a select always means
 ; "A when the flag is 1", so there is no polarity case at all).
 ;

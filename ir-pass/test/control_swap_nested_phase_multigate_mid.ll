@@ -1,13 +1,11 @@
 ; control_swap_nested_phase_multigate_mid.ll — ACCEPT: depth-2 phase nest whose
-; outer arm (`Mid`) holds TWO intervening Rz gates and the inner condition reads
-; the LAST one (an intermediate diagonal alias). Positive coverage for the WI-3
-; criterion-5 strengthening (§8 review 2026-06-12): the inner compare's tainted
-; operand must be a DIRECT rail-closure member — and a multi-gate Mid's `%g2`
-; (= cq_phi(cq_phi(%q,b1),b2)) IS one (Rz preserves the basis value, so every
-; closure member compares equal to rail1). The criterion-5 fix declines a NON-
-; diagonal derived operand (`add %g,1`) but must NOT decline a diagonal alias —
-; this pins that it doesn't over-decline. Both intervening gates replay verbatim on
-; rail1 before the inner mint; ZERO controlled gates, EXACTLY FOUR cqrt_free.
+; outer arm (`Mid`) holds TWO phase gates before the inner compare:
+; `if (q > 5) { cq_phi(b1); cq_phi(b2); if (q < 9) cq_phi(a); }`. Written for the
+; WI-3 criterion-5 strengthening (§8 review 2026-06-12), when the inner compare
+; read the second gate's diagonal alias (pre-3qlq register form); it now reads %q.
+; Both Mid phases kick back onto the outer flag before the inner mint, and the
+; inner phase lands on a fresh ancilla holding the Toffoli AND of the two flags.
+; ZERO controlled gates, EXACTLY THREE cqrt_rz_i1 and THREE cqrt_free.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

@@ -3,7 +3,7 @@
 ; to ship as lowering_reject_inloop_control_rail_fanout.ll, pinned at the fence
 ; that names its ACTUAL hazard:
 ;
-;     for (...) { if (q > 5) q = cq_phi(q, b); q = q + 7; other = q_pre + 9; }
+;     for (...) { if (q > 5) cq_phi(b); q = q + 7; other = q_pre + 9; }
 ;     return cq_measure(other);
 ;
 ; `%o2 = add %qm, 9` is an OFF-CHAIN, unmarked `add` INSIDE the loop body, so M-C's

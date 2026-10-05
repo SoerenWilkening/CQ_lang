@@ -1,22 +1,19 @@
-// SwapRouteEmit.cpp — see header. The mutating swap-route emitter for accepted
-// regions. PHASE arms — a one-content-arm diamond (§5a) or a two-arm if/else
-// (§5b), lowered by one arm-list-parameterized procedure — emit the coherent,
-// zero-controlled-gate routed stream of SCOPING §3a in the §5 contract order
-// (an if/else routes BOTH arms to distinct rails, the else under ¬flag via the
-// cqrt_x bracket), then rewire + flatten. VALUE arms — a one-content-arm
-// DIAMOND (§5d, WI-4) or a two-arm IF/ELSE (§5e, WI-5), likewise one
-// arm-list-parameterized procedure — no longer route at all: since bd
-// test_C_libtooling-3qlq Inc 2 they HOIST the arm chain into the pred and merge
-// with the 4.4 controlled-XOR copy pair (`emitSelectRegion`) — see
-// emitValueRegion.
+// SwapRouteEmit.cpp — see header. The mutating emitter for accepted control
+// regions. The file name is history: since bd test_C_libtooling-3qlq no phase
+// or value arm routes, and `emitRoute` survives only for `AbortParkEmit`'s park.
+// PHASE arms lower by KICKBACK (`emitPhaseKickbackRegion`, `…NestRegion`): mint
+// the flag, an uncontrolled `cqrt_rz_i1(f, θ)` (`cqrt_x`-bracketed for a ¬flag
+// arm), the compare `_unc` strip, one `cqrt_free`. VALUE arms — a one-content-arm
+// DIAMOND (§5d, WI-4) or a two-arm IF/ELSE (§5e, WI-5) — HOIST the arm chain into
+// the pred and merge with the 4.4 controlled-XOR copy pair (`emitSelectRegion`)
+// — see emitValueRegion. IN-PLACE ROTATION arms use `cqrt_ry_<W>_controlled`.
 //
 // Correctness rests on analytic state reasoning, NOT on `opt -verify` (Rule 2):
-//   `(|0> + |1>)/√2 ⊗ |0>_f` ─route+Rz+route→ `(|0>|0>_f + e^{iθ}|1>|1>_f)/√2`
-//   ─icmp_inv(q)→ `(|0> + e^{iθ}|1>)/√2 ⊗ |0>_f`: the rail returns to |0>
-//   UNCONDITIONALLY (Rz|0>=|0>), q keeps the conditional phase, and the flag is
-//   stripped because Rz preserves q's basis value (q == q0). Zero `_controlled`
-//   gates, no added measurement (SCOPING §3a/§3b). The value-arm trace is at
-//   emitValueRegion (PRD Part II §8.2).
+//   `(|0> + |1>)/√2 ⊗ |0>_f` ─mint→ `(|0>|0>_f + |1>|1>_f)/√2` ─rz_i1(f,θ)→
+//   `(|0>|0>_f + e^{iθ}|1>|1>_f)/√2` ─icmp_inv(q)→ `(|0> + e^{iθ}|1>)/√2 ⊗ |0>_f`:
+//   q keeps the conditional phase, and the flag is stripped because no gate
+//   touched q (q == q0). No `_controlled` gate, no added measurement. The
+//   value-arm trace is at emitValueRegion (PRD Part II §8.2).
 
 #include "SwapRouteEmit.h"
 
@@ -114,8 +111,8 @@ void scrubTaint(Instruction *I, TaintSet &taint) {
     // (Since drbq Inc 2a this module records only `DischargedFlagGates`: the
     // phase path emits no route, so `RestoringRoutes` has no writer anywhere and
     // the loop below is a no-op over an empty container. Kept for the same reason
-    // the set is — three other emitters still call `emitRoute` and any of them
-    // could start recording; see `Uncomputation::routeGroupFullyInside`.)
+    // the set is — `AbortParkEmit` still calls `emitRoute` and could start
+    // recording; see `Uncomputation::routeGroupFullyInside`.)
     taint.DischargedFlagGates.erase(CI);
     for (auto &Gates : taint.RestoringRoutes)
       if (llvm::is_contained(Gates, CI))
@@ -157,20 +154,19 @@ StringRef intrinsicSuffix(const Value *V, StringRef Prefix) {
 bool isPhiCall(const Value *V) { return !intrinsicSuffix(V, "cq_phi_").empty(); }
 
 // `collectArmPhis` and `emitRoute` are DE-ANONYMIZED into the named `cq`
-// namespace (declared in SwapRouteEmit.h, WI-3/MD1-style) so the 4.3
-// `NestedRouteEmit` TU can reuse the SAME bounded arm-gate collector and the SAME
-// ¬flag-bracketed router at both nest levels (Rule 14 — one definition of the
-// correctness-critical routing primitive, no drift-prone copy). Their definitions
-// move below the anonymous block (so they can still see the TU-local `isPhiCall`);
-// behavior is unchanged. See the definitions just before `lowerControlRegions`.
+// namespace (declared in SwapRouteEmit.h, WI-3/MD1-style). They were shared with
+// the 4.3 `NestedRouteEmit` TU, deleted in 3qlq part B; `emitRoute`'s one caller
+// is now `AbortParkEmit` (Rule 14 — one definition of the ¬flag-bracketed swap).
+// Their definitions sit below the anonymous block (so they can still see the
+// TU-local `isPhiCall`). See the definitions just before `lowerControlRegions`.
 
-// The value an arm's IN-BLOCK phase spine bottoms at — the routed base handle
-// (the live quantum register the arm's gates rotate). For an if/else, which has
-// no straight-through (Pred) merge edge, this recovers the routed handle
-// `classifyArms` proved BOTH arms share; for a gate-free arm (`ArmIncoming` is the
-// base itself) it returns that value unchanged. Bounded at the arm-block boundary
-// for the same reason as `collectArmPhis`: a `cq_phi` defined OUTSIDE `ArmBB` is
-// the live DERIVED base handle (route THIS), never hopped past to the theta.
+// The value an arm's IN-BLOCK `@cq_phi_<sfx>` spine bottoms at (the retired
+// register form only, see `isPhiCall`) — the base handle the arm's gates rotate.
+// For an if/else, which has no straight-through (Pred) merge edge, this recovers
+// the base `classifyArms` proved BOTH arms share; for a gate-free arm
+// (`ArmIncoming` is the base itself) it returns that value unchanged. Bounded at
+// the arm-block boundary for the same reason as `collectArmPhis`: a `cq_phi_`
+// defined OUTSIDE `ArmBB` is the DERIVED base handle, never hopped past.
 Value *phaseSpineBase(Value *ArmIncoming, const BasicBlock *ArmBB) {
   Value *V = ArmIncoming;
   while (isPhiCall(V)) {
@@ -184,12 +180,12 @@ Value *phaseSpineBase(Value *ArmIncoming, const BasicBlock *ArmBB) {
   return V;
 }
 
-// The routed base a value chain consumes — its FIRST (base-first) link's sole
-// tainted operand, i.e. the exact SSA value the step-4 rail retarget must
-// substitute. classifyArms proved every accepted link has exactly ONE tainted
-// operand (Q+Q links defer) and, for an if/else, that BOTH arms' chains bottom
-// at the SAME base (base-identity). Null on anything off that proof — a
-// malformed plan the caller declines loudly (Rule 1).
+// The base a value chain consumes — its FIRST (base-first) link's sole tainted
+// operand, i.e. the `Q` the merge `select` keeps on the straight-through edge
+// (nothing is retargeted since 3qlq Inc 2). classifyArms proved every accepted
+// link has exactly ONE tainted operand (Q+Q links defer) and, for an if/else,
+// that BOTH arms' chains bottom at the SAME base (base-identity). Null on
+// anything off that proof — a malformed plan the caller declines loudly (Rule 1).
 Value *valueChainBase(ArrayRef<Instruction *> Chain, const TaintSet &taint) {
   if (Chain.empty())
     return nullptr;
@@ -205,19 +201,18 @@ Value *valueChainBase(ArrayRef<Instruction *> Chain, const TaintSet &taint) {
   return T0 ? Op0 : Op1;
 }
 
-// One content arm's routed VALUE stream: its ¬flag polarity, the ordered
-// ORIGINAL chain links (the plan's Shadow/ShadowFalse, FORWARD order), and the
-// per-arm state threaded through emission.
+// One content VALUE arm: its ¬flag polarity, the ordered ORIGINAL chain links
+// (the plan's Shadow/ShadowFalse, FORWARD order), and its classical cone.
 struct ValueArmStream {
   bool Negated;
-  ArrayRef<Instruction *> Chain;   // original IR links (erased in step 10)
+  ArrayRef<Instruction *> Chain;   // original IR links (hoisted in step 1)
   // bd `test_C_libtooling-fn1q` increment 1 — the arm's CLASSICAL CONE in BLOCK
   // order, as PROVEN and RECORDED by `valueArmIsPureChain`. Hoisted ahead of the
   // chain in step 1; never re-derived here (L1 / Rule 14). Empty on every region
   // that lowered before that increment.
   ArrayRef<Instruction *> Cone = {};
-  CallInst *Rail = nullptr;             // the arm's |0> work rail (chain head; freed)
-  SmallVector<CallInst *, 6> Fwd = {};  // minted forward template calls (step 4)
+  CallInst *Rail = nullptr;             // unused since 3qlq Inc 2 (route work rail)
+  SmallVector<CallInst *, 6> Fwd = {};  // unused since 3qlq Inc 2
 };
 
 // Lower one accepted VALUE-arm region — a one-content-arm DIAMOND (§7.2 V1) or
@@ -341,13 +336,13 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
     Arms.push_back({R.ArmNegated, R.Shadow, R.ShadowCone});
   }
 
-  // The routed register Q — re-derived per arm as the chain head's sole tainted
+  // The base register Q — re-derived per arm as the chain head's sole tainted
   // operand (an if/else merge has no Pred edge to read it from; never read
   // width/identity off Q's SSA type). Every arm must agree, and a diamond's Q
   // must equal the straight-through (Pred-edge) incoming — classifyArms proved
   // both (base-identity), so a mismatch is a malformed plan: decline LOUDLY.
   // Q is ALSO the `select`'s straight-through operand below, so this identity
-  // is now a correctness precondition of the merge itself, not just of a route.
+  // is a correctness precondition of the merge itself.
   Value *Q = valueChainBase(Arms.front().Chain, taint);
   for (const ValueArmStream &A : Arms)
     if (!Q || valueChainBase(A.Chain, taint) != Q) {
@@ -362,7 +357,7 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
   }
 
   // ABI width from the chain op's INTEGER SSA type — reliable pre-RAUW (the ops
-  // still carry iN; PRD §8.1 width-source). NEVER the theta suffix (the routed
+  // still carry iN; PRD §8.1 width-source). NEVER the theta suffix (the
   // base may be derived), and never a classifying signal (the f64 trap) —
   // classifyArms' positive integer fence already proved validity, so a null here
   // is a malformed plan: decline LOUDLY, lower nothing (Rule 1). The merge
@@ -642,8 +637,8 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
   emitSelectRegion(S, wd, csyms, taint);
 }
 
-// One content arm's routed phase stream: whether it fires on ¬flag (X-bracketed
-// cswap) and its ordered Rz gates to replay verbatim on its own work rail.
+// One content arm's phase stream on `emitRegion`'s retired-form path: whether it
+// fires on ¬flag (X-bracketed) and its ordered `@cq_phi_<sfx>` gates.
 struct ArmStream {
   bool Negated;
   SmallVector<CallInst *, 4> Phis;
@@ -666,7 +661,7 @@ struct ArmInfo {
 //     cq_template_icmp_<pred>_<W>_hl_unc(f, c, lit) ; flag strip, unchanged
 //     cqrt_free(f)
 // No `cqrt_alloc`, no `cqrt_cswap`, no reverse-play, no work rail at ALL — and
-// that is forced, not chosen (PRD §2). The route's premise is that the arm gate
+// that is forced, not chosen (PRD §2). The retired route's premise: the arm gate
 // is a no-op on the inactive `|0⟩` rail: true for `Rz = diag(1, e^{iθ})`, FALSE
 // for `Ry(θ)|0⟩ = cos|0⟩ + sin|1⟩`, which hands the inactive rail back DIRTY and
 // ENTANGLED with the flag. Cleaning that needs a controlled `Ry†` — method-A,
@@ -1033,14 +1028,14 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
       stamp(B.CreateCall(X, {Flag}));
   }
 
-  // 3. Flag strip + free — byte-identical to the phase path's steps 7-8. Reads
+  // 3. Flag strip + free — byte-identical to the phase path's. Reads
   //    `Cond`'s operands, so it MUST precede the erase of `Cond` (in
   //    `flattenRegion`).
   //
   //    RECORDED as a DISCHARGED FLAG GATE, and the licence is R4, named: the
-  //    phase path records its strip because its route restores `Q`'s basis label
-  //    as a group, so an interior `_unc` placed after the strip reads the wire
-  //    its forward chain read. This path has no route AND deliberately DOES
+  //    phase (kickback) path records its strip because it moves no condition
+  //    register's basis label, so an interior `_unc` placed after the strip reads
+  //    the wire its forward chain read. This path deliberately DOES
   //    relabel its base — but only its base, and R4 proved that rail is disjoint
   //    from every rail the condition's derived chain lives on. So the same
   //    property holds for the same reason, by a different argument. If R4 is
@@ -1122,9 +1117,9 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //
   //      Ry — THIS emitter — RAUWs the merge φ to the LAST HOISTED GATE (M-β).
   //      Rz — `emitRegion`'s §6a peephole — RAUWs it to the BASE `Q` (M-α), as
-  //           shipped by Inc 2a and UNCHANGED here.
+  //           shipped by Inc 2a (since 3qlq it sees only the retired form).
   //
-  //    The reason is the physics, not taste. `cqrt_rz_<W>_controlled` is
+  //    The reason is the physics, not taste. A controlled Rz is
   //    DIAGONAL: the two names denote the same computational-basis state, so
   //    either target is correct and the base is the cheaper one. An Ry MOVES the
   //    register on the `f=1` branch, so the post-gate value is genuinely a
@@ -1200,15 +1195,15 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   flattenRegion(R, taint);
 }
 
-// Lower one accepted phase-arm region — a one-content-arm DIAMOND (§5a) or a
-// two-arm IF/ELSE (§5b) — to the coherent swap-route stream, emitted into the
-// pred block before the conditional `br`. Both shapes share ONE emission
-// procedure parameterized by the arm list: a diamond routes its single content
-// arm (Q = the straight-through incoming); an if/else routes BOTH arms to
-// DISTINCT |0> rails (Q = the shared phase-spine base), the true arm under flag
-// and the false arm under ¬flag via the self-inverse `cqrt_x` bracket. The join
-// is the literal adjoint of the split (the SAME cswap-pairs, same flag) — RSSA's
-// "phi on both splits and joins" (SCOPING §2).
+// Lower one accepted `classifyArms` region — a one-content-arm DIAMOND (§5a) or
+// a two-arm IF/ELSE (§5b) — into the pred block before the conditional `br`.
+// VALUE arms go to `emitValueRegion`, IN-PLACE ROTATION arms (and every bare
+// `_Bool` rail condition) to `emitInPlaceRotationRegion`. The phase-stream path
+// after them collects `@cq_phi_<sfx>` arm gates, i.e. only the RETIRED register
+// form, whose use `resolveSources` declines first (bd 3qlq); a register-free
+// `cq_phi` arm is claimed by `classifyPhaseKickback` and lowered by kickback.
+// On that path the true arm fires on flag, the false arm on ¬flag via the
+// self-inverse `cqrt_x` bracket (Q = the straight-through or shared spine base).
 void emitRegion(const ControlRegion &R, WidthDispatch &wd,
                 ControlledSymbols &csyms, TaintSet &taint) {
   // ---- bd test_C_libtooling-l4x4 (l4x4.b). `R.Condition` may now be a BARE
@@ -1278,13 +1273,13 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
     Arms.push_back({R.Arm, R.ArmNegated});
   }
 
-  // 4.2 VALUE path (method-B, §4/§5d/§5e): classifyArms recorded the per-arm
-  // class + ordered chain (Shadow/ShadowFalse, FORWARD order — by FIELD
-  // identity: for an orientation-B diamond R.Arm is the FALSE successor and
-  // polarity rides ArmNegated). This dispatch MUST precede the phase-stream
-  // collection: a value arm has no cq_phi gates, so falling through would hit
-  // the identity-region RAUW — a verify-clean silent wrong answer. The value
-  // emitter validates the plan shape and derives its own routed handle (an
+  // 4.2 VALUE path (§5d/§5e, the select merge since 3qlq): classifyArms
+  // recorded the per-arm class + ordered chain (Shadow/ShadowFalse, FORWARD
+  // order — by FIELD identity: for an orientation-B diamond R.Arm is the FALSE
+  // successor and polarity rides ArmNegated). This dispatch MUST precede the
+  // phase-stream collection: a value arm has no cq_phi gates, so falling through
+  // would hit the identity-region RAUW — a verify-clean silent wrong answer. The
+  // value emitter validates the plan shape and derives its own base handle (an
   // if/else merge has no Pred edge to read it from).
   if (R.ClassArm == ArmClass::Value || R.ClassArmFalse == ArmClass::Value) {
     emitValueRegion(R, BI, Cond, MergePhi, wd, csyms, taint);
@@ -1303,16 +1298,19 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
     return;
   }
 
-  // The routed handle Q: a diamond's straight-through (Pred-edge) incoming, or —
+  // FROM HERE ON every arm is a retired `@cq_phi_<sfx>` spine (see the header);
+  // the prose below records the drbq Inc 2a design of this path.
+  //
+  // The base handle Q: a diamond's straight-through (Pred-edge) incoming, or —
   // for an if/else, which has no Pred edge — the shared phase-spine base the arms
   // rotate. Never read width/identity off Q's SSA type (§4 width-source); Q is
-  // only the cswap data operand.
+  // only the gates' arg-0 anchor and the merge's RAUW target.
   //
   // 4.5 WI-5 (eq-fold re-anchor): when `clang -O1` const-folds an `if(q==k)`
-  // arm's gate base to the literal `k`, classifyArms recorded the PROVEN routed
+  // arm's gate base to the literal `k`, classifyArms recorded the PROVEN base
   // handle in `R.RoutedBase` — PREFER it. The eq-fold IF/ELSE has no Pred edge
   // AND its first arm's `phaseSpineBase` bottoms at the folded constant `k`, so
-  // the default derivation would route (and RAUW the merge to) a CONSTANT — a
+  // the default derivation would anchor on (and RAUW the merge to) a CONSTANT — a
   // verify-clean wrong unitary (the measure-operand guard only catches it when
   // the merge happens to feed a measure; an escaping merge would miscompile
   // silently). `R.RoutedBase` is null for every non-eq-fold region, so the
@@ -1321,8 +1319,8 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
   // ⚠ `RoutedBase` IS A `WeakTrackingVH` and it may be null for TWO different
   // reasons (round-1 Rule-13 review L4 §1, a CONFIRMED SIGSEGV). Never recorded
   // ⇒ derive, as before. RECORDED AND SINCE ERASED ⇒ the handle this region was
-  // proven to route no longer exists, and falling through to the derivation
-  // would route the folded constant — exactly the miscompile this field
+  // proven to rotate no longer exists, and falling through to the derivation
+  // would anchor on the folded constant — exactly the miscompile this field
   // prevents. That case declines LOUDLY. (Before the handle, a raw `Value *`
   // here was simply DEREFERENCED after the earlier region's
   // `MergePhi->eraseFromParent()`, which is the crash.)
@@ -1391,16 +1389,16 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
     return;
   }
 
-  // ABI width from the FIRST gate's `cq_phi` suffix — the rotation width (all
-  // arms rotate the same-width routed handle, by classifyArms). The routed handle
+  // ABI width from the FIRST gate's `cq_phi_` suffix — the rotation width (all
+  // arms rotate the same-width base handle, by classifyArms). The base handle
   // MAY be a value DERIVED before the region (its own suffix is unreliable), so
   // never read width off Q (§4 width-source).
   //
   // THE WIDTH FENCE IS NOW `abiWidthHasControlledRotation`, not `rzRtFn`/`allocFn`
-  // (bd test_C_libtooling-drbq Inc 2a): the stream this path emits is
+  // (bd test_C_libtooling-drbq Inc 2a): the stream this path emitted was
   // `cqrt_rz_<W>_controlled`, so the width that must exist is the CONTROLLED one.
   // MEASURED to be a strictly equal set on this frontend, not a narrowing:
-  // `abiWidthFor` maps every `cq_phi_<sfx>` spelling `CQ.h` exposes into
+  // `abiWidthFor` maps every `cq_phi_<sfx>` spelling `CQ.h` exposed into
   // {i1,i8,i16,i32,i64,f16,f32,f64,f80} (`WidthDispatch.cpp`'s `kRows`), which is
   // exactly `abiWidthHasControlledRotation`'s set — `i80`/`i128` are intermediate
   // widths no `cq_phi` suffix names. So this is detect-before-mutate defence in
@@ -1457,7 +1455,7 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
   // 1. Flag mint — cq_template_icmp_<pred>_<W>_hl(q, lit). On the ziov share path
   //    (R.ShareCondFlag — the condition is ALSO read as data) the flag is minted
   //    at the COMPARE's position so it DOMINATES every data use (a data `zext` may
-  //    precede the routed stream); otherwise it lands at the branch as before.
+  //    precede the gate stream); otherwise it lands at the branch as before.
   Instruction *FlagAt = R.ShareCondFlag ? Cond->getNextNode() : BI;
   // (Track A.1, F-A1R2-1) `WireRuled`: `classifyArms` asked
   // `condWireDisposition` over this region's `Prov` at round-1 taint.
@@ -1483,8 +1481,8 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
   //    test_C_libtooling-drbq Inc 2a — the §6a peephole, default-on for this FLAT
   //    path). Per arm in successor order, HOIST the arm's `cq_phi` spine to just
   //    before the branch and record each gate against the flag it must fire under;
-  //    `lowerRotations` then mints `cqrt_rz_<W>_controlled(f, handle, θ)` at the
-  //    hoisted position instead of the unconditional `cqrt_rz_<W>(handle, θ)`.
+  //    `lowerRotations` minted `cqrt_rz_<W>_controlled(f, handle, θ)` there until
+  //    3qlq deleted its PHI loop (it mints no `cqrt_rz_<W>` of any form now).
   //
   //    WHAT THIS REPLACES, exactly — the route QUINTUPLE, per arm:
   //        cqrt_alloc_<W>(0) -> rail ; cqrt_cswap(f, q, rail)
@@ -1506,7 +1504,7 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
   //    THE `cqrt_x` COUNT IS THE ONE THING THAT DOES CHANGE, AND IT MUST BE SAID
   //    OUT LOUD because PRD §9.2's literal wording ("the `cqrt_x` brackets …
   //    unchanged") does not survive contact with a NEGATED arm. The route
-  //    brackets EACH of its two `cqrt_cswap`s, so a ¬flag arm carries FOUR
+  //    bracketed EACH of its two `cqrt_cswap`s, so a ¬flag arm carried FOUR
   //    `cqrt_x(f)`; this path brackets the arm's gate run ONCE, so it carries
   //    TWO. The bracket is still the same self-inverse pair on the same flag in
   //    the same place — there are simply two fewer of them because there are two
@@ -1533,17 +1531,17 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
     if (S.Negated)
       stamp(B.CreateCall(X, {Flag}));
     // THE §5 CONST-FOLD RE-ANCHOR, AND IT IS LOAD-BEARING HERE IN A WAY IT IS
-    // NOT ON THE ROUTE (bd drbq Inc 2a). The route reads ONLY arg 1 (the angle)
-    // off the arm gate and puts the rotation on its own work rail, so an arm
-    // whose `cq_phi` bottoms at a folded `ConstantInt k` (the 4.5 `tryEqFoldArm`
+    // NOT ON THE ROUTE (bd drbq Inc 2a). The route read ONLY arg 1 (the angle)
+    // off the arm gate and put the rotation on its own work rail, so an arm
+    // whose `cq_phi_` bottoms at a folded `ConstantInt k` (the 4.5 `tryEqFoldArm`
     // shape: `clang -O1` proves `q == k` inside the arm and value-propagates it)
-    // routes correctly with no re-anchor at all. Hoist-and-defer reads arg 0:
+    // routed correctly with no re-anchor at all. Hoist-and-defer reads arg 0:
     // `lowerRotations`' phi loop would see an UNTAINTED operand, emit NOTHING,
     // and RAUW the gate to the constant — the arm's Rz silently DROPPED, a
     // verify-clean wrong unitary. `Region.RoutedBase` is the handle
     // `tryEqFoldArm`/`straightThroughConstFoldHandle` PROVED the arm rotates, and
     // `Q` is it; re-anchoring arg 0 to `Q` is the same move `SwitchRouteEmit`
-    // makes "by physics" for the switch spine.
+    // made "by physics" for the pre-3qlq switch spine.
     //
     // FENCED, because a silent re-anchor of anything else would be a data-mux
     // rewrite: a first spine gate whose arg 0 is neither `Q` nor a `Constant` is
@@ -1568,11 +1566,11 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
   }
 
   // 3. Flag strip + free — the eager ancilla cleanup, byte-identical to the
-  //    route's steps 7-8. SKIPPED on the ziov share path (R.ShareCondFlag): the
-  //    condition is also live as DATA, so the flag's last use is downstream (the
-  //    escaped/measured data lineage owns it). Stripping here would return the
-  //    flag to |0> before the data read (read-after-collapse); freeing it would be
-  //    a hidden measurement. The data lineage is the flag's reclaimer (FreePoint →
+  //    pre-2a route's steps 7-8. SKIPPED on the ziov share path
+  //    (R.ShareCondFlag): the condition is also live as DATA, so the flag's last
+  //    use is downstream (the escaped/measured data lineage owns it). Stripping
+  //    here would return the flag to |0> before the data read
+  //    (read-after-collapse); freeing it would be a hidden measurement. The data lineage is the flag's reclaimer (FreePoint →
   //    Escaped/Measured, no free). The only other case — a dead-within-function
   //    lineage — is declined upstream by classifyArms and stays declined.
   if (!R.ShareCondFlag) {
@@ -1591,10 +1589,10 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
     // be discharged (bd 6uqc's P0).
     //
     // THE LICENCE MOVED WITH THE MECHANISM, AND IT GOT STRONGER, NOT WEAKER. The
-    // route's ground was "step 3/5 restore `Q`'s basis label AS A GROUP, so an
-    // adjoint placed after the strip reads the wire the forward chain read". This
-    // path emits no route at all: its only gate on `Q` is a CONTROLLED Rz, which
-    // is `diag(1, e^{iθ})` on the `f=1` branch and `I` on the `f=0` branch —
+    // pre-2a route's ground was "step 3/5 restore `Q`'s basis label AS A GROUP,
+    // so an adjoint placed after the strip reads the wire the forward chain
+    // read". This path emitted no route at all: its only gate on `Q` was a
+    // CONTROLLED Rz, `diag(1, e^{iθ})` on `f=1` and `I` on `f=0` —
     // DIAGONAL either way, so `Q`'s basis label is not merely restored, it is
     // never moved. The property the recording needs therefore holds pointwise
     // rather than as a group property of two swaps. (The Ry stem is the
@@ -1618,11 +1616,10 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
   //    becomes a measure on q.
   //
   //    THE ARM `cq_phi` CALLS ARE **NOT** ERASED HERE — they were MOVED to the
-  //    pred at step 2 and are live instructions `lowerRotations` owns (the
-  //    hoist-and-defer contract). That is the one structural difference from the
-  //    route path, which re-minted each gate on a work rail and erased the
-  //    original. Nothing scrubs them from `taint.PhiCalls` either: membership is
-  //    exactly what makes `lowerRotations` lower them.
+  //    pred at step 2 and were owned by `lowerRotations` (the hoist-and-defer
+  //    contract; its PHI loop is deleted since 3qlq, so nothing lowers them now).
+  //    The pre-2a route re-minted each gate on a work rail and erased the
+  //    original. Nothing scrubs them from `taint.PhiCalls` either.
   MergePhi->replaceAllUsesWith(Q);
   scrubTaint(MergePhi, taint);
   MergePhi->eraseFromParent();
@@ -1632,22 +1629,21 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
 }  // namespace
 
 // Walk the arm's merge contribution back along its IN-BLOCK phase spine,
-// collecting the `@cq_phi` (Rz) calls DEFINED IN `ArmBB` in FORWARD program order
-// (first gate applied first). The chain is `qN = cq_phi(q{N-1}, angle)`; the
-// back-walk hops arg-0 handles, so reversing it yields forward order. An empty
-// result means a degenerate gate-free arm (`if (q) {}` / an empty else / a
-// gate-free `Mid`) — handled by the caller.
+// collecting the `@cq_phi_<sfx>` calls DEFINED IN `ArmBB` in FORWARD program
+// order (first gate applied first). That is the RETIRED register form
+// `qN = cq_phi_<sfx>(q{N-1}, angle)` (see `isPhiCall`), so on an accepted module
+// the result is always empty. The back-walk hops arg-0 handles, so reversing it
+// yields forward order. An empty result is handled by the caller.
 //
-// The walk STOPS at the arm-block boundary: a `cq_phi` defined OUTSIDE `ArmBB` is
-// a pre-region rotation — the live DERIVED base handle the region ROUTES
-// (accepted since test_C_libtooling-9hh), NOT an arm gate. It stays in
-// `taint.PhiCalls`, so `lowerRotations` lowers it as an ordinary unconditional
-// Rz at its own (pre-stream) position and RAUWs it to the same i32 handle as its
-// theta. Bounding here is load-bearing (Rule 10): an unbounded walk would
+// The walk STOPS at the arm-block boundary: a `cq_phi_` defined OUTSIDE `ArmBB`
+// is a pre-region rotation — the DERIVED base handle (accepted since
+// test_C_libtooling-9hh), NOT an arm gate; pre-3qlq `lowerRotations` lowered it
+// as an ordinary unconditional Rz at its own position. Bounding here is
+// load-bearing (Rule 10): an unbounded walk would
 // collect a pre-region phi SHARED by both arms once per arm, and the §6.1
 // reverse-erase would double-free it (SIGSEGV — the WI-3 crash). Keeping the
 // per-arm gate list strictly in-block makes that impossible. De-anonymized
-// (named `cq`, declared in the header) so `NestedRouteEmit` reuses it per level.
+// (named `cq`, declared in the header) for the since-deleted `NestedRouteEmit`.
 SmallVector<CallInst *, 4> collectArmPhis(Value *ArmIncoming,
                                           const BasicBlock *ArmBB) {
   SmallVector<CallInst *, 4> Phis;
@@ -1664,13 +1660,13 @@ SmallVector<CallInst *, 4> collectArmPhis(Value *ArmIncoming,
   return Phis;
 }
 
-// Emit the route swap `cqrt_cswap(flag, q, rail)`, X-bracketed for an ArmNegated
+// Emit the swap `cqrt_cswap(flag, q, rail)`, X-bracketed for an ArmNegated
 // (¬flag / FALSE-successor) arm: `cqrt_x(flag); cqrt_cswap(…); cqrt_x(flag)`.
-// Used identically for the route-in (split) and the route-back (join = adjoint
-// of the split, same flag) — that symmetry is the RSSA join-is-the-inverse-of-
-// the-split property (SCOPING §2). De-anonymized (named `cq`, declared in the
-// header) so `NestedRouteEmit` routes both nest levels through the SAME bracket
-// logic (a drift in the ¬flag polarity here would be a silent miscompile).
+// Its one caller is `AbortParkEmit` (the 7.2 park of q into a kept graveyard
+// rail); the pre-3qlq phase, value and 4.3 nest routes also used it for their
+// route-in and route-back. De-anonymized (named `cq`, declared in the header)
+// so every caller shares the SAME bracket logic (a drift in the ¬flag polarity
+// here would be a silent miscompile).
 CallInst *emitRoute(IRBuilder<> &B, const ControlledSymbols &csyms, Value *Flag,
                     Value *Q, Value *Rail, bool Negated, const DebugLoc &DL) {
   FunctionCallee Cswap = csyms.cswapFn();
@@ -1682,7 +1678,7 @@ CallInst *emitRoute(IRBuilder<> &B, const ControlledSymbols &csyms, Value *Flag,
   };
   if (Negated)
     stamp(B.CreateCall(X, {Flag}));
-  // The ONE gate on the routed base `Q`. The X brackets are on the FLAG, so a
+  // The ONE gate on the base `Q`. The X brackets are on the FLAG, so a
   // caller collecting a `RestoringRoute` group over `Q` wants exactly this call
   // and not the brackets (M-B Increment 6).
   CallInst *Swap = stamp(B.CreateCall(Cswap, {Flag, Q, Rail}));
@@ -1743,10 +1739,11 @@ CallInst *emitRoute(IRBuilder<> &B, const ControlledSymbols &csyms, Value *Flag,
 // MODULE — the earlier spelling of this paragraph said "byte-for-byte the rule
 // `emitRegion` follows", and that false equivalence is precisely where the
 // Rule-13 round-1 CONFIRMED SILENT MISCOMPILE F-L7-1 / F-L1-1 / F-L2-1 lived.
-// `emitRegion`'s arm gate is `cqrt_rz_<W>_controlled`, which
-// `ChainWalk::isInPlaceGateOn` deliberately REFUSES (Inc 2a, `ChainWalk.cpp`'s
-// stem-split note) — so handing `emitRegion`'s flag to the data lineage hands
-// over a rail carrying an UNRECOGNIZED consumer, and the spine leaves it alone.
+// `emitRegion`'s arm gate was then `cqrt_rz_<W>_controlled` (a retired-form-only
+// path now), which `ChainWalk::isInPlaceGateOn` deliberately REFUSES (Inc 2a,
+// `ChainWalk.cpp`'s stem-split note) — so handing `emitRegion`'s flag to the
+// data lineage hands over a rail carrying an UNRECOGNIZED consumer, and the
+// spine leaves it alone.
 // THIS emitter's gate is a plain `cqrt_rz_i1`, which that predicate ADMITTED. So
 // "the data lineage owns the flag" was, for this path and not for its sibling,
 // the sentence that AUTHORISED the whole-DAG spine to emit `cqrt_rz_i1(f, -θ)`
@@ -2516,9 +2513,9 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
   // A coordinated parent/child pair (a Depth-N region and its Depth-(N+1) child,
   // linked by `ParentIdx`) DELIBERATELY shares blocks: the 4.3 nest's Outer and
   // Inner share `MergeBB` and `Outer.Arm == Inner.Pred` (§0 criterion 1).
-  // `NestedRouteEmit` tears the pair down together (one shared-merge erase), so
-  // the cross-region pre-flight below must EXEMPT such a pair while staying active
-  // for genuinely independent / sequential regions (blocker MD0).
+  // The deleted `NestedRouteEmit` tore the pair down together, so the pre-flight
+  // below EXEMPTS such a pair (vestigial since 3qlq: nothing pushes a Depth-1
+  // region) while staying active for independent / sequential ones (MD0).
   auto coordinated = [&](size_t a, size_t b) {
     const ControlRegion &A = Regions[a], &B = Regions[b];
     return (B.Depth == A.Depth + 1 && B.ParentIdx == a) ||
@@ -2604,9 +2601,9 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
   // rather than silently acquire a reorder it was never cleared for.
   //
   // KNOWN AND ACCEPTED, worth writing down before someone rediscovers it in a
-  // trace (bd hcrg Rule-13 clearance, unitary lens): a chain of VALUE (method-B)
-  // regions stacks ONE B-keep leftover PER REGION — each region's copied-out
-  // `%out` plus its source rail stay allocated and entangled with the answer.
+  // trace (bd hcrg Rule-13 clearance, unitary lens): a chain of VALUE regions
+  // stacks leftovers PER REGION — each region's merged `%out`, its source rail
+  // and (since 3qlq Inc 2) the chain's final rail stay allocated.
   // Every region is individually correct and `free_pairing_check.py` is clean on
   // the chain (Rule 6 leaves a not-provably-|0> rail ALLOCATED rather than
   // freeing it dirty), but the leak is now linear in chain length where before
@@ -2893,13 +2890,12 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
   }
 
   ControlledSymbols csyms(M, wd);
-  // Emit. A Depth-0 region with a coordinated Depth-1 child is the proven depth-2
-  // nest — dispatch BOTH to `NestedRouteEmit::lowerNestedRegion` (it consumes +
-  // flattens the child too), and SKIP the child in this loop: re-visiting a
-  // Depth>0 region would dereference erased blocks (blocker MD4). `plan.Regions`
-  // is already outer→inner (detection pushes Outer before Inner, §3.1), so no sort
-  // is needed (the plan is `const`, COMPLETENESS#7). A flat (Depth-0, childless)
-  // region takes the unchanged `emitRegion` path.
+  // Emit. Each Kind dispatches to its emitter; a flat (Depth-0) `BranchRegion`
+  // takes `emitRegion`. A Depth>0 child is SKIPPED: re-visiting one would
+  // dereference erased blocks (blocker MD4). Since 3qlq nothing pushes a Depth-1
+  // region and the 4.3 `NestedRouteEmit` nest dispatch is gone (see below); the
+  // register-free depth-2 nest is one `PhaseKickbackNest` region. The plan is
+  // `const` (COMPLETENESS#7).
   // Iterate the ORDER computed above, not the plan order — `i` stays the real
   // plan index so the `ParentIdx` child lookup below is unaffected.
   for (size_t i : Order) {
@@ -2978,8 +2974,8 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
       if (R.SwitchCls == SwitchClass::Phase) {
         emitSwitchPhaseRegion(R, wd, csyms, taint);
       } else if (R.SwitchCls == SwitchClass::Value) {
-        // 4.5 WI-3 — homogeneous value-chain switch: the N-way method-B over the
-        // shared routed base `p` = the merge default-edge incoming (`p != q`).
+        // 4.5 WI-3 — homogeneous value-chain switch: preload + XOR-delta over the
+        // shared base `p` = the merge default-edge incoming (`p != q`).
         emitSwitchValueRegion(R, wd, csyms, taint);
       } else if (R.SwitchCls == SwitchClass::DataMux) {
         // 4.5 WI-4 — all-ConstantInt data-mux: PRELOAD %out=cqrt_alloc(v_d) +

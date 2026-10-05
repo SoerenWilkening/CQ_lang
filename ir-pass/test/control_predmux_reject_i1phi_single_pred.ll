@@ -15,7 +15,7 @@
 ; a degenerate phi RAUW'd to an untainted incoming stays classical, and the muxed
 ; select becomes a classical mux over tainted data (the residual-risk note at the
 ; E6 rule-(B) gate). E6-condtree fires instead and the region falls through
-; byte-untouched to the existing loud swap-route decline.
+; byte-untouched to the existing loud `control flow` decline (CHECK below).
 ;
 ; Everything else about `%flag` is deliberately IN-grammar — i1 typed, parent
 ; inside the region and not the entry block, incoming a compare leaf over non-i1

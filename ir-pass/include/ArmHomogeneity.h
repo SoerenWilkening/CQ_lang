@@ -1,12 +1,12 @@
-// ArmHomogeneity.h — Tree-homogeneity gate for swap-routed nested control.
+// ArmHomogeneity.h — Tree-homogeneity gate for the register-form depth-2 nest.
 //
 // The §12.5 split (IMPLEMENTATION-4.3 §3.2): classify every arm in a recovered
 // depth-2 region TREE as Phase or Value, then gate the tree on HOMOGENEITY —
-// all-phase is the 4.3 lowerable shape (route + verbatim-Rz replay + icmp_inv
-// flag-strip at each level); any value arm declines `mixed phase/value arm`
-// (mixed) or `value-arm swap-route` (pure-value), and a stray op in the outer
-// arm (the `Mid` block, which legitimately also holds the inner condition/branch
-// — the COMPLETENESS#5 carve-out) declines `impure phase arm`.
+// all-phase passes on to `recoverRegionTree`'s later criteria, which since bd
+// 3qlq Inc 1 part B also end in a decline (RegionTreeDetect.h); any value arm
+// declines `mixed phase/value arm` (mixed) or `value-arm swap-route` (pure-value),
+// and a stray op in the outer arm (the `Mid` block, which also holds the inner
+// condition/branch — the COMPLETENESS#5 carve-out) declines `impure phase arm`.
 //
 // Called by `RegionTreeDetect` over the proven tree shape, BEFORE the criterion-4
 // RAUW-collapse (FA2: the order that yields the §5h decline table — a value-op

@@ -32,7 +32,7 @@
 //        diamond whose ENTRY-edge incoming is a ConstantInt and whose other
 //        incoming is a region-INTERIOR instruction, the fdlibm __isnanl tail).
 //        Every OTHER flat sole-2-incoming-phi INTEGER diamond (a non-constant
-//        straight-through — the 4.2 routed method-B accepts — and the a8c0
+//        straight-through — the 4.2 value-arm accepts — and the a8c0
 //        empty-arm const-fold re-anchor), a straight-line-arm switch, and the
 //        depth-2 homogeneous-phase nest (its arms hold cq_phi CALLS, excluded
 //        by E4) all stay with their shipped owners byte-identically.
@@ -621,11 +621,11 @@ ConeNode classifyConeNode(const Value *V) {
     // exactly ONE place, the allocator's literal argument, so there is no
     // forward/`_unc` pair to break.
     //
-    // `cq_phi` IS NOT A LEAF. `RotationLowering` does
-    // `Phi->replaceAllUsesWith(Op)` — the result IS OPERAND 0, verbatim, tainted
-    // or not. So its definedness is exactly operand 0's definedness and the
-    // cone must continue through it. Calling it a leaf let three separate
-    // defects through, all measured on the pre-fix plugin:
+    // `cq_phi_<sfx>` (the retired register form; vacuous since 3qlq, see below)
+    // IS NOT A LEAF: pre-3qlq `RotationLowering` did `Phi->replaceAllUsesWith(Op)`,
+    // so the result was OPERAND 0 verbatim and the cone continues through it.
+    // Calling it a leaf let three separate defects through, all measured on the
+    // pre-fix plugin:
     //
     //   (1) LITERAL POISON, at any chain depth. `cq_phi(poison)` feeding the
     //       shielded compare emitted a forward call and its `_unc` adjoint
@@ -3056,7 +3056,7 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
   }
   bool Claim = false;
   if (isa<SwitchInst>(T)) {
-    // Straight-line-arm switches are 4.5 territory (route/value/data-mux/
+    // Straight-line-arm switches are 4.5 territory (phase/value/data-mux/
     // eq-fold) — claim only when an arm hosts further tainted control (or a
     // claimable read, which 4.5 never accepts).
     Claim = NestedTainted || ClaimableRead;
@@ -3066,15 +3066,15 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
     // distilled log10l `z` accumulator diamond/triangle the zco4 promotion
     // exposed. No shipped owner ever ACCEPTS this shape — ArmClassify's 4.2
     // value path categorically declines an fp-typed merge (the fp-angle
-    // fence), and every fp-merge shape the swap-route owners DO accept
+    // fence), and every fp-merge shape the `br` control owners DO accept
     // (phase arms, the eq-fold and a8c0 re-anchor diamonds) holds a
     // `cq_phi`/`cq_theta` CALL inside an arm, which E4 excludes from any
     // PredMux claim; the 6.5 classical-call arm is i32-only. The
     // distinct-incomings fence keeps the degenerate empty-arm identity phi
     // (`phi [%q,%arm],[%q,%entry]`, an ACCEPTED empty phase arm) with its
     // owner. INTEGER sole-phi diamonds are not claimed HERE — the 4.2 value
-    // emitter owns their accepts (routed method-B), and the two-base integer
-    // mux stays the owner-declined 65wb.5 surface; W7 below claims the ONE
+    // emitter owns their accepts (controlled-copy merge), and the two-base
+    // integer mux stays the owner-declined 65wb.5 surface; W7 below claims the ONE
     // integer subset that provably has no such owner (a `ConstantInt`
     // straight-through, which no accept path can match). So W5
     // claims only currently-DECLINING shapes: containment (every existing
@@ -3129,8 +3129,8 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
     //     threads only the TAINTED operand of a tainted `BinaryOperator`, so
     //     `Chain.Base` is always a tainted value and never a `ConstantInt` — the
     //     region declines `non-routable value multiplexer`;
-    //   * the 4.1 PHASE path requires `Base == Routed` where
-    //     `Base = walkPhaseSpine(ArmIncoming, ArmBB)`, and that walk steps ONLY
+    //   * the 4.1 PHASE path (retired register form) requires `Base == Routed`
+    //     where `Base = walkPhaseSpine(ArmIncoming, ArmBB)`, and that walk steps ONLY
     //     through IN-ARM `cq_phi_*` calls, which E4 excludes (an external
     //     declaration fails the pure-callee proof). Under clause (d) `Base` is the
     //     interior instruction itself, never a `ConstantInt`;
@@ -3199,7 +3199,7 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
     // (`if (q != 0) q1 = q + 1` merged against the folded literal) was an
     // OVER-decline, and it now flattens and lowers. That is a real accept-surface
     // widening inside W7's own shape class, not a leak: the §3c clobber hazard
-    // that motivated its decline is a SWAP-ROUTE hazard (route the register in,
+    // that motivated its decline was a SWAP-ROUTE hazard (route the register in,
     // rewrite it in place, then strip a flag that must re-read the same basis),
     // and the flattened form never rewrites `%q` at all — it writes a FRESH out
     // rail and strips against the untouched `%q`. The Rule-13 round strengthened
@@ -5146,7 +5146,7 @@ bool isSpeculatablePureCallee(const Function *F) {
 // really does load; the index is a classical parameter no quantum guard can
 // constrain; the hoist executes the read. idx=1e8 -> SIGSEGV (run_exit=139).
 // idx=9 -> NO crash and `cqrt_alloc_i32(539780133)` in the trace: a word read
-// past the end of the table, route-merged on a run where the source never
+// past the end of the table, copy-merged on a run where the source never
 // evaluated the call. `cq-opt` exit 0, verifier clean, `free_pairing_check.py`
 // 2 verified / 0 violations / 0 unproven, every gate in the tree silent.
 // Pinned by control_classical_call_arm_reject_qrom_callee.ll (arm-kill: flip the

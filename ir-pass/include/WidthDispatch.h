@@ -5,7 +5,7 @@
 // intrinsic / runtime / template symbol the lowering needs.
 //
 // Symbol policy:
-//   * Front-end intrinsics (`@cq_theta_<sfx>`, `@cq_phi_<sfx>`,
+//   * Front-end intrinsics (`@cq_theta_<sfx>`, `@cq_phi`,
 //     `@cq_measure_<sfx>`) are looked up but never *created* — they come
 //     from the frontend (`include/CQ.h`) or they don't exist (the
 //     passthrough_no_quantum fixture relies on the latter).
@@ -93,8 +93,8 @@ public:
   // ({i1,i8,i16,i32,i64}): an FP merge phi under tainted control is
   // categorically an angle, never data (the f64 miscompile family), so
   // `f32`/`f64` return a null FunctionCallee (caller diagnoses) rather
-  // than minting dead ABI. Emitted as the copy-out step of the value-arm
-  // (method-B) swap-route lowering.
+  // than minting dead ABI. Emitted by the 4.5 switch-value preload and
+  // `BreakReversePlay` (no longer by the retired value-arm swap route).
   llvm::FunctionCallee copyFn(llvm::StringRef abiWidth) const;        // @cqrt_copy_<W>
 
   // bd 38t2 — the CELL-WIDENED copy resolver: same `@cqrt_copy_<W>` symbol, but
@@ -171,7 +171,7 @@ public:
 
   // Rotation runtime resolvers. Both signatures are `void(i32, double)`
   // (handle, angle) — the handle is always i32 across every ABI width
-  // (PRD §"Width unification"). Names `@cqrt_ry_<W>` / `@cqrt_rz_<W>`.
+  // (PRD §"Width unification"). Names `@cqrt_ry_<W>` / `@cqrt_rz_<W>` (Rz: `i1` only).
   llvm::FunctionCallee ryRtFn(llvm::StringRef abiWidth) const;        // @cqrt_ry_<W>
   llvm::FunctionCallee rzRtFn(llvm::StringRef abiWidth) const;        // @cqrt_rz_<W>
 

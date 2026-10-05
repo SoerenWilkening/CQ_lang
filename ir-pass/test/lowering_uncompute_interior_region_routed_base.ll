@@ -1,33 +1,27 @@
-; lowering_uncompute_interior_region_routed_base.ll — ACCEPT + a structural
-; refusal in one module (M-B Increment 6, clause (d2)). THE ROUTED BASE IS
-; ITSELF A TEMPLATE RAIL, and it is never an interior candidate; the CONDITION's
-; own chain rail, on the other side of the same region, is.
+; lowering_uncompute_interior_region_routed_base.ll — ACCEPT (M-B Increment 6,
+; clause (d2)). TWO TEMPLATE RAILS, OPPOSITE DISPOSITIONS, ONE REGION: the measured
+; rail is left standing; the CONDITION's own chain rail is discharged.
 ;
 ;     q = u; cq_theta(&q, 0.5);
-;     d = q * 37;                        /* the routed base — a template rail */
-;     if ((q & 4096) == 0) d = cq_phi(d, PI);
+;     d = q * 37;                        /* a template rail, measured below */
+;     if ((q & 4096) == 0) cq_phi(PI);
 ;     return cq_measure(d);
 ;
-; TWO RAILS, TWO OPPOSITE ANSWERS, ONE REGION.
-;
-;   * `%[[D]]` (`q * 37`) is the register the region ROUTES: `cqrt_cswap` takes
-;     it as arg 1. `isInteriorConsumer` refuses every route gate outright — the
-;     rail belongs to Phase 4 for the length of the region and its label is
-;     exchanged with a work rail mid-stream — so it is not a candidate at all and
-;     is left standing (it is measured here, which is also a refusal).
-;   * `%[[K]]` (`q & 4096`) is the CONDITION's chain rail. Its two users are the
+; WHAT THE CHECK PINS.
+;   * `q * 37` (`%[[H_OP]]`) is MEASURED, so it is not an interior candidate and is
+;     left standing.
+;   * `q & 4096` (`%[[H_OP1]]`) is the CONDITION's chain rail. Its two users are the
 ;     flag mint and the recorded strip, so clause (d2) admits it and it is
 ;     discharged right after the strip.
+; The kickback puts its `cqrt_rz_i1` on the flag; no gate in the region touches
+; `%[[H]]` or `%[[H_OP]]`. `%[[H_OP1]]`'s borrowed parent is the wire `%[[H]]`, whose
+; clause (d) scan sees only the source `cqrt_ry` (LEFT) and forward producers.
 ;
-; The distinction is the whole point of keeping the admission on the STRIP rather
-; than on "any `_unc`": one is a rail the emitter is still moving, the other is a
-; rail the emitter has finished reading.
-;
-; NOTE THE BORROWED PARENT IS THE WIRE, NOT THE BASE. `%[[K]]`'s producer reads
-; `%[[H]]` (`and(q, 4096)`), and `%[[H]]` is never routed in this region — the
-; cswaps take `%[[D]]`. So clause (d)'s scan over `%[[H]]` sees only the source
-; `cqrt_ry` (LEFT) and two forward producers, and never needs clause (d2) at all.
-;
+; HISTORY. Before bd 3qlq the region ROUTED `q * 37` (the "routed base" of the
+; file name): `cqrt_cswap` took it as arg 1, and `isInteriorConsumer` refused every
+; route gate outright, so that rail was a STRUCTURAL refusal beside the admitted
+; condition rail — the reason the admission keys on the recorded STRIP rather than
+; on "any `_unc`".
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
 ; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)

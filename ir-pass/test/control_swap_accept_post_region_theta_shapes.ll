@@ -8,34 +8,26 @@
 ; remaining shapes that `classifyArms` calls a phase arm must be pinned too —
 ; otherwise a future narrowing could drop one of them silently.
 ;
-;   @ifelse       TWO content arms, one shared routed base. `emitRegion` routes
-;                 BOTH arms — two work rails, the ¬flag arm `cqrt_x`-bracketed —
-;                 and still emits ONE flag, ONE strip and ONE flag free, all
-;                 before the post-region Ry.
-;   @derived_base The routed base is a PRE-REGION `cq_phi` (an Rz applied
+;   @ifelse       TWO content arms under one flag, by kickback: `cqrt_rz_i1(flag,
+;                 a)`, then `cqrt_rz_i1(flag, b)` inside a `cqrt_x(flag)` bracket
+;                 (the ¬flag arm), ONE strip and ONE flag free, all before the
+;                 post-region Ry.
+;   @derived_base Pre-3qlq its base was a PRE-REGION `cq_phi` (an Rz applied
 ;                 unconditionally before the branch — the 9hh derived-base
-;                 accept). Rz is DIAGONAL, so it leaves no basis record of the
-;                 wire and rotation lowering RAUWs `%q` and `%qd` to the SAME
-;                 handle; the post-region Ry then lands on that handle. This is
-;                 the shape most likely to be confused with the DERIVED-CONDITION
-;                 one, which declines — see the contrast below.
+;                 accept). The IR now has no pre-region phase, so it lowers as a
+;                 plain diamond: mint, `cqrt_rz_i1`, strip, free, then the Ry.
 ;
-; THE CONTRAST THAT MATTERS. A derived BASE is a diagonal rotation and is fine; a
-; derived CONDITION (`sqrt(a+3.0) <= 5.0`) builds template rails, and until M-B
-; Increment 6 they survived the flag strip and the program declined at the
-; live-record guard. It ACCEPTS now — the emitter records its strip, the interior
-; partition discharges the chain right after it, and the guard reads that as a
-; fact (control_swap_accept_post_region_theta_derived_cond.ll, renamed from
-; ..._reject_...). The contrast this file draws is UNCHANGED, because it was never
-; about the word "derived": the question is whether anything the region touched is
-; still an allocated, entangled RECORD of the wire when the Ry fires. Here nothing
-; is — and the derived-condition file now answers the same way for the same
-; reason, by the chain being discharged rather than by it never existing. The
-; shapes that still decline are the ones whose chain M-B cannot discharge (a
+; THE CONTRAST THAT MATTERS. A derived CONDITION (`sqrt(a+3.0) <= 5.0`) builds
+; template rails, and until M-B Increment 6 they survived the flag strip and the
+; program declined at the live-record guard. It ACCEPTS now — the emitter records
+; its strip, the interior partition discharges the chain right after it, and the
+; guard reads that as a fact (control_swap_accept_post_region_theta_derived_cond.ll,
+; renamed from ..._reject_...). The question is whether anything the region
+; touched is still an allocated, entangled RECORD of the wire when the Ry fires.
+; The shapes that still decline are the ones whose chain M-B cannot discharge (a
 ; non-diagonal write on the wire inside the interval; a strip no emitter
-; recorded). Here nothing is —
-; both functions lower to one data register plus per-arm work rails, and every
-; rail and flag is freed before the `cqrt_ry_i32`.
+; recorded). Neither function has one: both lower to one data register plus one
+; flag, and the flag is freed before the `cqrt_ry_i32`.
 ;
 ; Two functions in one module deliberately: `opt` exits non-zero if EITHER
 ; declines, and one spawn is the whole cost of a lit fixture (the pass itself is

@@ -30,10 +30,9 @@
 ;
 ; THE RESULT IS A ONE-RAIL PROGRAM, which is the physics claim: at the ONLY
 ; `cqrt_ry_i32` after the region, the sole allocated rail is `%h` — the flag and
-; both chain rails have been freed on the lines above, and since the §6a
-; control-in-place peephole there is no work rail to free at all. That is what the
-; CHECK-NEXT chain below pins, and it is why the M-A guard now has nothing to
-; name.
+; both chain rails have been freed on the lines above, and the kickback mints no
+; other rail. That is what the CHECK-NEXT chain below pins, and it is why the M-A
+; guard now has nothing to name.
 ;
 ; RED STATE: this file is RED on every plugin built before Increment 7a — there
 ; it exits non-zero at the guard, so both the `%cq-opt` RUN line and every CHECK
@@ -47,15 +46,15 @@
 ;
 ; SHAPE (`clang -O1` output of):
 ;     int a = u; cq_theta(&a, 0.5);
-;     if (((a * 5) >> 2) == 5) a = cq_phi(a, PI);
+;     if (((a * 5) >> 2) == 5) cq_phi(PI);
 ;     a -= off;
 ;     cq_theta(&a, -0.5);  return cq_measure(a);
 ;
-; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
-; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE
-; `cqrt_rz_i32_controlled(flag, register, theta)` and the swap route (work-rail
-; alloc, both `cqrt_cswap`s, the rail free) is gone. Nothing else moves — the flag
-; mint, the strip, the flag free and every downstream gate are unchanged.
+; The flat phase arm lowers by KICKBACK: ONE uncontrolled `cqrt_rz_i1(flag,
+; theta)` on the flag ancilla, between the flag mint and its strip. (drbq Inc 2a's
+; `cqrt_rz_i32_controlled(flag, register, theta)` and the earlier swap route —
+; work-rail alloc, both `cqrt_cswap`s, the rail free — are retired.) The flag mint,
+; the strip and the flag free are where they were.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

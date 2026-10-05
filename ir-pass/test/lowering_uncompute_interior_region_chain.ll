@@ -3,7 +3,7 @@
 ; lowering_uncompute_interior_region_partial.ll, which pinned the seam).
 ;
 ;     cq_theta(&a, 0.5);
-;     if (sqrt(a + 3.0) <= 5.0) { a = cq_phi(a, 3.0); }
+;     if (sqrt(a + 3.0) <= 5.0) { cq_phi(3.0); }
 ;     return cq_measure(a);
 ;
 ; THE DEFECT THIS FILE USED TO PIN. A region whose condition is DERIVED computes
@@ -17,7 +17,7 @@
 ; anchor its forward consumers imply would free the rail before the strip
 ; recomputes the flag from it.
 ;
-; CLAUSE (d2) — the emitter-recorded strip. `SwapRouteEmit`'s PHASE path records
+; CLAUSE (d2) — the emitter-recorded strip. The phase-region emitter records
 ; its strip in `TaintSet::DischargedFlagGates`, `isInteriorConsumer` admits a
 ; RECORDED strip as a READ of the rails in its shifted handle slots, and the
 ; interior partition's `dagInsertPoint` then lands right after that strip. The
@@ -25,20 +25,15 @@
 ; the strip runs FIRST (it still reads the live `sqrt` rail), then the three
 ; adjoints, then the flag free.
 ;
-; WHY THE `sitofp` ADJOINT MAY READ THE WIRE ACROSS THE REGION — RESTATED FOR
-; CONTROL-IN-PLACE (drbq Inc 2a; the paragraph this replaces argued the same
-; verdict from the swap route, which this path no longer emits).
-; `cq_template_sitofp_i32_to_f64_unc(%[[C]], %[[H]])` recomputes `sitofp` from
+; WHY THE `sitofp` ADJOINT MAY READ THE WIRE ACROSS THE REGION.
+; `cq_template_sitofp_i32_to_f64_unc(%[[H_CAST]], %[[H]])` recomputes `sitofp` from
 ; %[[H]]'s COMPUTATIONAL-BASIS LABEL — an `_unc` is a label-only reader — and the
-; region's ONLY gate on %[[H]] is now `cqrt_rz_i32_controlled(flag, %[[H]], 3.0)`,
-; which is `diag(1, e^{i3})` on the flag-set branch and `I` on the other:
-; DIAGONAL either way, so the label is not restored-after-being-moved, it is NEVER
-; MOVED. `Uncomputation::preservesBorrowedParent` clause (1b) states exactly that,
-; pointwise, for this one gate. It deliberately does NOT restore the wire's PHASE
-; — that phase IS the answer the region computed — and by the label-only-reader
-; argument that is exactly what makes this legal. (The pre-2a route needed the
-; weaker GROUP argument of clause (d2): two `cqrt_cswap`s are the identity on the
-; label only when BOTH run. There is no group here to prove.)
+; kickback region puts NO gate on %[[H]]: its `cqrt_x` bracket and `cqrt_rz_i1`
+; act on the flag ancilla, so the label is never moved. (History: drbq Inc 2a
+; argued the same verdict for `cqrt_rz_i32_controlled(flag, %[[H]], 3.0)`, diagonal
+; on both branches — `preservesBorrowedParent` clause (1b); before that, the swap
+; route's two `cqrt_cswap`s needed the GROUP argument of clause (d2), the identity
+; on the label only when BOTH run.)
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

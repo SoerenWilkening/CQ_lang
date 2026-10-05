@@ -9,10 +9,10 @@
 ; spelled directly.
 ;
 ; WHAT IT PINS, AND IT IS THE WHOLE REASON THE FENCE IS POSITION-AWARE. Site 3
-; (`%18 = add i32 %17, %16`) has a parent whose user list is NOT empty: the
-; region-2 compare read it, the arm's controlled `Rz` read it (two `cqrt_cswap`s
-; routed it before the §6a control-in-place peephole), and its `_unc` strip read
-; it again. Under the WITHDRAWN "single-consumer-ever" reading every one of those
+; (`%18 = add nsw i32 %17, %11`) has a parent whose user list is NOT empty: the
+; region-2 compare read it and its `_unc` strip read it again (pre-3qlq the arm's
+; controlled `Rz` read it too, and before that two route `cqrt_cswap`s). Under
+; the WITHDRAWN "single-consumer-ever" reading every one of those
 ; disqualified the site, and the customer stayed dephased (SPIKE §9.8). Under the
 ; RULED position-aware, spine-discharge-aware fence they do not, because every one
 ; of them is a PRIOR, COMPLETED reader: they all precede the add, and the compare's
@@ -35,17 +35,16 @@
 ; never becomes a gate, and emits NO trace line — the e2e golden sees only the
 ; negated runtime value `-3` in the `addc` immediate slot.
 ;
-; THE OTHER THING IT PINS is that `detectControlRegions` + `SwapRouteEmit` +
+; THE OTHER THING IT PINS is that `detectControlRegions` + `lowerControlRegions` +
 ; `RegionFlatten` all run BEFORE `lowerOps`, which is why the fence can see this
-; at all. Pre-flatten, the parent of sites 2 and 3 is a MERGE PHI whose later-use
-; set is not readable off the CFG; post-flatten it is a plain SSA value with a
-; positioned, fully torn-down user list.
+; at all: each region's flag mint, strip and free already stand in the stream.
+; (Pre-3qlq the parent of sites 2 and 3 was a MERGE PHI until the flatten; with
+; the register-free `cq_phi` it is a plain SSA value from the start.)
 ;
-; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
-; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE
-; `cqrt_rz_i32_controlled(flag, register, theta)` and the swap route (work-rail
-; alloc, both `cqrt_cswap`s, the rail free) is gone. Nothing else moves — the flag
-; mint, the strip, the flag free and every downstream gate are unchanged.
+; Each flat phase arm lowers by KICKBACK: ONE uncontrolled `cqrt_rz_i1(flag,
+; theta)` on the flag ancilla, between the flag mint and its strip. (drbq Inc 2a's
+; `cqrt_rz_i32_controlled(flag, register, theta)` and the earlier swap route —
+; work-rail alloc, both `cqrt_cswap`s, the rail free — are retired.)
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

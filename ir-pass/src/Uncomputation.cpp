@@ -954,8 +954,8 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P,
       M->arg_size() == 2 && M->getArgOperand(0) == P)
     return true;
   // (1b) THE CONTROLLED DIAGONAL ROTATION `cqrt_rz_<W>_controlled(f, P, θ)` — bd
-  //     test_C_libtooling-drbq Inc 2a, and this row IS REQUIRED BY THAT
-  //     INCREMENT, not an opportunistic widening. MEASURED: without it, nine
+  //     drbq Inc 2a; VACUOUS since 3qlq (nothing mints it). This row WAS REQUIRED
+  //     BY THAT INCREMENT, not an opportunistic widening. MEASURED: without it, nine
   //     modules lost their whole M-B interior discharge the moment the §6a
   //     peephole replaced the swap route (`lowering_mc_late_sub_after.ll` &c —
   //     the condition chain's `_unc` + `cqrt_free` pair vanished and an in-place
@@ -1054,8 +1054,8 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P,
 // adjoint reads holds the value it held when the forward gate ran" — is a
 // statement about the LABEL, and nothing weaker or stronger.
 //
-// WHY THE PHASE-ARM ROUTE RESTORES THE LABEL. `SwapRouteEmit`'s phase path emits,
-// per content arm, one `cqrt_cswap(flag, P, rail)` to route in and the SAME call
+// WHY THE PRE-2a PHASE-ARM ROUTE RESTORED THE LABEL. `SwapRouteEmit`'s phase path
+// emitted, per content arm, one `cqrt_cswap(flag, P, rail)` to route in and the SAME call
 // again to route back (RSSA: the join is the literal adjoint of the split). If
 // the flag is set `P` and the rail exchange and exchange back; if it is clear
 // neither call moves anything. In the if/else shape the second arm's pair is
@@ -1063,8 +1063,8 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P,
 // the two pairs is ever active, so they commute. Either way `P` leaves the group
 // holding the label it entered with.
 //
-// WHAT SITS BETWEEN THE HALVES, LISTED FROM THE EMITTER'S ACTUAL STREAM RATHER
-// THAN FROM A SLOGAN. Three kinds of gate, and none of them changes `P`'s label:
+// WHAT SAT BETWEEN THE HALVES, LISTED FROM THAT EMITTER'S STREAM RATHER THAN
+// FROM A SLOGAN. Three kinds of gate, and none of them changes `P`'s label:
 //   * `cqrt_rz_<W>(rail, θ)` — the arm body. DIAGONAL, and on the WORK RAIL, not
 //     on `P`.
 //   * `cqrt_x(flag)` brackets — NON-diagonal, but on the FLAG rail. They exist so
@@ -1083,8 +1083,8 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P,
 // invariants; scanning the IR for two cswaps and calling them a pair would be a
 // second, weaker spelling of a property that already has an owner (Rule 14), and
 // it would silently claim the value arm's route — whose route-back swaps in the
-// arm's ANSWER, so `P`'s label genuinely changes — which is why that emitter
-// records nothing.
+// arm's ANSWER, so `P`'s label genuinely changes — which is why that (pre-3qlq)
+// emitter recorded nothing.
 //
 // ATOMICITY IS THE FENCE. Half a pair inside the interval is NOT restoring: `P`
 // then holds |0> or |x> depending on the flag, and the `_unc` would recompute
@@ -1105,14 +1105,14 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P,
 // writer — `SwapRouteEmit::emitRegion`'s phase path — and Inc 2a replaced that
 // path's `cqrt_cswap` route with a single `cqrt_rz_<W>_controlled`, so the set is
 // now permanently EMPTY and the loop below never iterates. Nothing else records a
-// group: the 4.3 nest, the 4.5 switch and the method-B value arm all call
-// `emitRoute` WITHOUT recording (the last deliberately — its route-back carries
-// the arm's ANSWER, so it is not a restoring group at all).
+// group: the one remaining `emitRoute` caller, the 7.2 abort park, does not (nor
+// did the pre-3qlq 4.3 nest, 4.5 switch and method-B value arm, the last
+// deliberately — its route-back carried the arm's ANSWER, not a restoring group).
 //
-// THE EXEMPTION DID NOT DISAPPEAR, IT MOVED TO THE GATE, and it got STRONGER
-// there. Clause (d)'s customers on the phase path — the interior-partition
-// discharges in `lowering_uncompute_interior_region_*.ll` — are now served by
-// `preservesBorrowedParent` clause (1b): a controlled Rz is `diag(1, e^{iθ})` on
+// AT Inc 2a THE EXEMPTION MOVED TO THE GATE, and got STRONGER there: clause
+// (d)'s phase-path customers (`lowering_uncompute_interior_region_*.ll`) were
+// served by clause (1b); since 3qlq the kickback puts no gate on `P` at all (its
+// `cqrt_rz_i1` lands on the flag). (1b): a controlled Rz is `diag(1, e^{iθ})` on
 // the `f=1` branch and `I` on `f=0`, DIAGONAL EITHER WAY, so `P`'s basis label is
 // not restored-after-being-moved, it is NEVER MOVED. That holds POINTWISE, with
 // no group membership and no atomicity fence to prove. MEASURED: every one of
@@ -1125,7 +1125,7 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P,
 // IT IS KEPT, NOT DELETED, and this comment is the price of keeping it. Deleting
 // it would remove the only written statement of WHY a route pair may be read
 // across (the F4a / Increment-6 argument), and the route is still emitted by
-// three other emitters — any of which could legitimately start recording. If you
+// the 7.2 abort park (`AbortParkEmit`), which could start recording. If you
 // re-enable a writer, re-read the atomicity and homogeneity fences below FIRST;
 // they are unchanged and still correct. If you delete it, delete
 // `RestoringRoutes`, its scrub in `SwapRouteEmit::scrubTaint`, and
@@ -1142,11 +1142,11 @@ bool routeGroupFullyInside(const CallInst *M, const Value *P, CallInst *First,
   // reads exactly like a missing recording).
   //
   // ARG 1 IS A CONVENTION, NOT AN ABI FACT (bd 160a Rule-13 finding F6):
-  // `cqrt_cswap(flag, a, b)` is physically symmetric in `a`/`b`. The read is safe
-  // because the convention has exactly ONE owner — `SwapRouteEmit::emitRegion`,
-  // the sole writer of `RestoringRoutes`, which always builds `{Flag, Q, Rail}`
-  // and ASSERTS it at the record site. An emitter that records a group with the
-  // base in arg 2 must update both places.
+  // `cqrt_cswap(flag, a, b)` is physically symmetric in `a`/`b`. The read was safe
+  // because the convention had exactly ONE owner — the pre-2a `emitRegion` phase
+  // path, the only writer `RestoringRoutes` ever had, which built `{Flag, Q,
+  // Rail}` and asserted it at the record site. An emitter that records a group
+  // with the base in arg 2 must update both places.
   auto baseOf = [](const CallInst *G) -> const Value * {
     return G->arg_size() >= 2 ? G->getArgOperand(1) : nullptr;
   };
@@ -1651,7 +1651,7 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
   //             That is LEFT-b at the scan below; the barrier is `At`, and the
   //             reason a `First` barrier cannot see it is the whole finding.
   //             Symptom when it is missed: `for(…){ cq_theta(&q,a);
-  //             if((q&3)==1){q=cq_phi(q,PI);} cq_theta(&q,b); }` leaves the
+  //             if((q&3)==1){cq_phi(PI);} cq_theta(&q,b); }` leaves the
   //             `and` record allocated and ENTANGLED across the trailing Ry —
   //             `opt` exit 0, strict stage-2b clean, and (with no leading Rz to
   //             trip the M-A guard) not one warning. The hand-unrolled twin of
@@ -1669,16 +1669,14 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
   //
   //    READ THE LEFT DISJUNCT WITH THIS FACT IN HAND, or the next reader will
   //    "fix" a correct accept into a leak (bd 4p7j Rule-13 finding F6):
-  //    `clang -O1` ROUTINELY SINKS a derived chain PAST a swap-route region.
+  //    `clang -O1` ROUTINELY SINKS a derived chain PAST a control region.
   //    Source order `x = sqrt(a+3.0); if (a > 2) { … }` arrives with the whole
   //    `x` chain AFTER the region (measured: `a9b_after_region.c`), so `First`
-  //    is after the emitter's route-back and the region's `cqrt_cswap` pair is
-  //    to its LEFT — the discharge then reads the wire AFTER route-back and is
-  //    admitted by LEFT, not by RIGHT. That is sound because the route pair is
-  //    self-cancelling: the second `cswap` restores the basis label the first
-  //    exchanged, so a read after the pair sees the pre-region label. What is
-  //    NOT admitted is a route STRICTLY INSIDE the interval — that satisfies
-  //    neither disjunct and leaks
+  //    is after the region and whatever it wrote on the wire is to `First`'s
+  //    LEFT — admitted by LEFT, not RIGHT. (Measured pre-3qlq on the swap route,
+  //    sound because its `cqrt_cswap` pair self-cancels: the second restores the
+  //    basis label the first exchanged.) What is NOT admitted is a route
+  //    STRICTLY INSIDE the interval — that satisfies neither disjunct and leaks
   //    (lowering_uncompute_interior_leak_route_in_interval.ll). The interval,
   //    not the source line, is what this scan reasons about.
   //
@@ -2285,7 +2283,7 @@ void collectTerminalCandidates(Function &F, const TaintSet &taint,
                    // a data producer, so it never reaches here, but the
                    // explicit image is load-bearing, like ControlOwnedRails.
       if (railCarriesControlledRotation(H))
-        continue;  // bd drbq Inc 1: a register a `cqrt_{ry,rz}_<W>_controlled`
+        continue;  // bd drbq Inc 1: a register a `cqrt_ry_<W>_controlled`
                    // fired on. FROZEN — its adjoint needs a control flag the
                    // region already stripped and freed, so no point at or after
                    // this terminal can reverse it (Rule 6: leave it allocated).
@@ -2317,8 +2315,8 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
       continue;
 
     // 1. Collect terminal candidates: tainted data producers whose only users are
-    //    benign, MINUS Phase-4-owned control rails (DD-4 — never select a flag /
-    //    work / merge out-rail the swap-route emitter owns and leaves allocated;
+    //    benign, MINUS Phase-4-owned control rails (DD-4 — never select a merge
+    //    out-rail or other rail a control emitter owns and leaves allocated;
     //    its reversal-or-leak is Phase 4's, not the data-uncompute driver's).
     SmallVector<CallInst *, 8> Terminals;
     bool AnyTaintedProducer = false;  // cheap gate: no tainted rail ⇒ no work

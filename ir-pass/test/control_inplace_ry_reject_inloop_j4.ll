@@ -1,18 +1,17 @@
 ; control_inplace_ry_reject_inloop_j4.ll — DECLINE (PRD §13.2 row R6-2), the
-; **j4** shape: an `Rz` written on the PRE-region name of the rotated register,
-; after the region, inside the body.
+; **j4** shape: the PRE-region name of the rotated register read after the
+; region.
 ;
-;     for (...) { if (q > 5) cq_theta(&r, .9); d = cq_phi(r_pre, .2); }
+;     for (...) { if (q > 5) cq_theta(&r, .9); }
+;     return cq_measure(r) + cq_measure(r_pre);   // r_pre: the header phi `%r`
 ;
-; `%d` is an ALIAS HOP off the member `%r` (the header phi), and R6's
-; per-activation certificate asks the same question of a hop as of a read: every
-; `BI -> %d` path must re-execute `%r` first. It does not — `BI -> merge -> %d`
-; stays inside one activation — so the record is stale where it is used.
-;
-; AND THE PHYSICS AGREES, which is why this is a decline and not a bookkeeping
-; artefact: `Rz` applied AFTER the controlled `Ry` is a different unitary from `Rz`
-; applied before it. Writing `cq_phi(r_pre, ...)` means the SOURCE'S `r` before the
-; arm fired; the emitted gate would land on the relabelled register.
+; Pre-3qlq the body also wrote `d = cq_phi(r_pre, .2)`, an Rz ALIAS HOP off the
+; member `%r`, and the exit measured `%d`; 3qlq deleted that uncontrolled phase,
+; so the exit now reads `%r` itself. R6's per-activation certificate asks the
+; same question of that read: every `BI -> use` path must re-execute `%r` first.
+; It does not — `BI -> merge -> exit` stays inside one activation — so the record
+; is stale where it is used: it names the SOURCE'S `r` before the arm fired, and
+; the register has since been relabelled.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}stale rail record read past a controlled Ry under quantum control
 ; CHECK-NOT: cqrt_ry_i32_controlled

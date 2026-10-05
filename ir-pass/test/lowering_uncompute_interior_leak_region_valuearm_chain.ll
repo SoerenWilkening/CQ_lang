@@ -13,18 +13,14 @@
 ;     if (((q * 5) >> 2) == 5) { p = p+3; p = p*5; p = p^9; p = p+1; p = p*7; p = p^2; }
 ;     return cq_measure(q) + cq_measure(p);
 ;
-; WHY IT MUST LEAK, and it is NOT a scope decision. `SwapRouteEmit::emitRegion`
-; records its flag strip in `TaintSet::DischargedFlagGates` because a PHASE arm
-; leaves the base holding the same BASIS LABEL it went in with, so an `_unc` placed
-; after the strip reads the wire the forward chain read.
-;
-; ⚠ IT NO LONGER RECORDS A CSWAP PAIR IN `TaintSet::RestoringRoutes` — since bd drbq
-; Inc 2a (2026-09-02) the flat phase path emits NO route at all (one
-; `cqrt_rz_<W>_controlled` in place), so that set has no writer and clause (d2) is
-; inert. The licence MOVED TO THE GATE and got stronger there
-; (`preservesBorrowedParent` clause (1b): a controlled Rz is `diag(1,e^{iθ})` on
-; `f=1` and `I` on `f=0`, so the base's label is never moved, not
-; moved-and-restored). Corrected in the Inc-2a round-1 review (L3 F3).
+; WHY IT MUST LEAK, and it is NOT a scope decision. The phase kickback emitter
+; (`emitPhaseKickbackRegion`) records its flag strip in
+; `TaintSet::DischargedFlagGates` because a PHASE arm leaves the base holding the
+; same BASIS LABEL it went in with (the kickback acts on the flag alone), so an
+; `_unc` placed after the strip reads the wire the forward chain read. (History:
+; the swap route also recorded a cswap pair in `TaintSet::RestoringRoutes`, clause
+; (d2); drbq Inc 2a's in-place `cqrt_rz_<W>_controlled` moved that licence to
+; `preservesBorrowedParent` clause (1b); bd 3qlq retired both.)
 ;
 ; ⚠⚠ THE VALUE ARM'S ROUTE IS GONE TOO, SINCE bd test_C_libtooling-3qlq Inc 2
 ; (2026-09-05). `emitValueRegion` now HOISTS the arm chain into the pred and hands

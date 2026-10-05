@@ -1,21 +1,15 @@
 ; control_swap_reject_nested_loop.ll — DECLINE: a depth-2 phase nest that sits
-; INSIDE a loop (the routed base %q is a loop-carried phi, the merge result feeds
+; INSIDE a loop (the condition register %q is a loop-carried phi, the merge feeds
 ; the backedge). The WI-1 forward-note backedge hazard, made a principled decline
 ; at WI-3 (§8 review 2026-06-12).
 ;
-; `for (...) { if (q>5) { q=rz(q,b); if (q<9) { q=rz(q,a); } } }`. Detection's
-; outer-shape / one-phi / 3-incoming / RAUW-collapse criteria all PASS (the loop
-; phi is the routed base; every merge edge bottoms at it), so without a loop check
-; the nest would be ACCEPTED — but the swap-route emitter's emitter-driven LIFO
-; frees + 3-incoming-phi erase run BEFORE (and bypass) the FreePoint /
-; declineClassicalMuxes backedge guards the flat path defers to ("tainted value
-; muxed by a classical-condition phi"), so a loop-resident nest has no proven sound
-; lowering in 4.3. recoverRegionTree's LOOP GUARD declines it `nested control flow`
-; via the textbook backedge test (a region edge whose successor DOMINATES its
-; source: %merge -> %loop, and %loop dominates %merge). The flat 4.1 path declines
-; the analogous loop diamond too (declineClassicalMuxes), so this is consistent —
-; the safe disposition (Prime Directive). A regression that re-accepted + emitted
-; this would flip opt to exit 0 and fail the `not` wrapper.
+; `for (...) { if (q>5) { cq_phi(b); if (q<9) cq_phi(a); } }`. recoverRegionTree's
+; LOOP GUARD declines it `nested control flow` via the textbook backedge test (a
+; region edge whose successor DOMINATES its source: %merge -> %loop, and %loop
+; dominates %merge). At WI-3 the swap-route nest emitter's own LIFO frees bypassed
+; the FreePoint / declineClassicalMuxes backedge guards, so a loop-resident nest
+; had no proven sound lowering. A regression that re-accepted + emitted this would
+; flip opt to exit 0 and fail the `not` wrapper.
 ;
 ;
 ; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error

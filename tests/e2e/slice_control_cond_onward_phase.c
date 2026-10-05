@@ -36,37 +36,37 @@
 
    Same `argc` trick, same reason, as `slice_classical_if_gate.c`. */
 /* slice_control_cond_onward_phase.c — dugh (Phase 4×6) e2e smoke: an untainted
-   control-merge result feeding an ONWARD-QUANTUM PHASE (Rz), driven through the full
+   control-merge result feeding ONWARD QUANTUM ops, driven through the full
    clang -O1 → opt cq-lowering → link → run pipeline. The only test layer that LINKS,
-   so the ONLY proof that the re-tainted onward `cqrt_rz_i32` over the data-mux `%out`
-   resolves + signature-matches against libcq_runtime (Rule 2, Rule 16) — the
-   second-propagation round wired for real.
+   so the ONLY proof that the re-tainted onward add over the data-mux `%out` and the
+   onward kickback resolve + signature-match against libcq_runtime (Rule 2, Rule 16)
+   — the second-propagation round wired for real.
 
    SOURCE INTENT (the (A2) onward-QUANTUM subset dugh converts from decline):
        q : tainted quantum SCRUTINEE handle
        int r = 3;                                  // the default value v_d
        switch (q) { case 0: r=7; case 5: r=9; case 17: r=11; }   // all-const data-mux
-       cq_phi(0.25);                        // ONWARD phase on the muxed answer
+       int t = r + argc; if (t == 10) cq_phi(0.25);  // ONWARD add + kickback
        measure(r)
 
    The switch merge is all-ConstantInt => data-untainted, so the FIRST propagation
-   classified `cq_phi(r, …)` classical. PRE-dugh the `proveSwitchDataMux` merge-out
-   gate declined it (the onward `cq_phi` read the i32 %out handle as a value). dugh
-   RE-SEEDS a second propagation from the emitted `%out` (`repropagateControlMerges`,
-   right after `lowerControlRegions`), so the onward `cq_phi` is re-tainted and lowers
-   IN PLACE to `cqrt_rz_i32(out, 0.25)` (a phase arm — the answer stays on out, zero
-   controlled gates); the measure reads out. The opaque `cq_phi` is what keeps this
-   test HONEST: unlike a stock `r + const` (which clang -O1 folds into the switch
-   incomings, erasing the onward op), clang cannot fold/sink an opaque call across the
-   merge, so a REAL onward-quantum op survives to opt.
+   classifies the onward ops classical (PRE-dugh, the `proveSwitchDataMux` merge-out
+   gate declined the then-register-form onward `cq_phi(r, …)`). dugh RE-SEEDS a
+   second propagation from the emitted `%out` (`repropagateControlMerges`, right
+   after `lowerControlRegions`), so `t = r + argc` is re-tainted and lowers to
+   `cq_template_add_i32_hl(out, argc)`, and `t == 10` becomes a tainted condition:
+   its flag is minted from t, `cqrt_rz_i1` lands the phase on it (kickback, zero
+   controlled gates), the compare `_unc` strips it, and it is freed. The measure
+   reads out. `argc` is what keeps the onward ops alive past -O1 (the note above);
+   a stock `r + const` would fold into the switch incomings.
 
    Same two -O1-survival tricks as slice_control_switch_datamux.c: NON-CONTIGUOUS
    case values (0, 5, 17) defeat the select/lookup-table fold, and PRE-INIT r = v_d
    with no explicit `default:` body makes the entry straight-through carry v_d (the
    §4C preload). out (a ControlOwnedRail), q, and every XOR-delta scratch are NEVER
-   freed (benign leak, Rule 6); EXACTLY THREE frees (the N=3 eq-flags). The onward Rz
-   is applied to out IN PLACE and out is MEASURED. The golden pins the trace from REAL
-   linked output (templates BEFORE runtime — load-bearing link order). */
+   freed (benign leak, Rule 6); EXACTLY FIVE frees (the N=3 eq-flags, t after its
+   `_unc`, the onward flag after its strip); out is MEASURED. The golden pins the
+   trace from REAL linked output (templates BEFORE runtime — load-bearing link order). */
 int slice(int argc) {
     int q = 3, r = 3;              /* r preset to v_d (the default value)         */
     cq_theta(&q, 0.5);             /* taint q -> scrutinee handle                */

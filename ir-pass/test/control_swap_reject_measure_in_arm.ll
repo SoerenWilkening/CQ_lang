@@ -1,16 +1,14 @@
 ; control_swap_reject_measure_in_arm.ll — DECLINE probe: a phase-arm diamond
-; whose arm block holds a STRAY op beyond the phase spine — here a user
-; `cq_measure` of a DIFFERENT tainted handle (swap-route 4.1 §8 adversarial review).
+; whose arm block holds a STRAY op beyond its phases — here a user `cq_measure`
+; of a DIFFERENT tainted handle (swap-route 4.1 §8 adversarial review).
 ;
-; The merge-feeding spine is the pure phase chain q -> %q1 -> %q2, which a naive
-; arm classifier would accept. But the arm block ALSO measures %p (an unrelated
-; quantum handle) under quantum control. The swap-route emitter neither replays
-; nor scrubs that measure; RegionFlatten erases the whole arm block, which would
-; (a) SILENTLY DROP the user's measurement of %p (Rule 5 — never drop/insert a
-; measurement) and (b) leave its taint.MeasureCalls pointer dangling → a
-; use-after-free in lowerMeasures. The arm must be EXACTLY the linear phase spine;
-; a stray op trips the `impure phase arm` decline (over-decline is safe; Prime
-; Directive). Detection is pure SSA-value analysis before any mutation.
+; `if (q > 5) { cq_phi(a); cq_phi(b); mp = cq_measure(p); }`. The two phases alone
+; would lower by kickback, but the arm ALSO measures %p (an unrelated quantum
+; handle) under quantum control. Lowering the phases and letting RegionFlatten
+; erase the arm block would (a) SILENTLY DROP the user's measurement of %p (Rule 5
+; — never drop/insert a measurement) and (b) leave its taint.MeasureCalls pointer
+; dangling → a use-after-free in lowerMeasures. The stray op trips a loud decline;
+; detection is pure SSA-value analysis before any mutation.
 ;
 ;
 ; 3qlq(prep_a2): the asserted diagnostic was RE-SPELLED on the Inc-1 binary.

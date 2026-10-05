@@ -3,10 +3,10 @@
 ; (test_C_libtooling-sbt1.3 decline complement; pins condition (6) under N>2).
 ;
 ; All 3 incomings resolve to the one base %q — but the arm2 incoming's chain is
-; {%q2b in %arm2, %q2a in %entry}: the %q2a = cq_phi(%q, x) gate fired BEFORE the
+; {%q2b in %arm2, %q2a in %entry}: the %q2a = cq_theta(%q, x) gate fired BEFORE the
 ; switch, unconditionally, on every path. The arm1 incoming %q1 then claims a
 ; record (q rotated by 0.25 only) that the physical register never holds in
-; isolation (it always carries the pre-branch %q2a rz too), and the default %q
+; isolation (it always carries the pre-branch %q2a ry too), and the default %q
 ; claims the pre-%q2a record: stale on every path. Accepting + RAUW to %q would
 ; be the verify-clean wrong-unitary class, so the single-block-arm condition (6)
 ; (every chain call's parent == its edge's incoming block) refuses — the %q2a

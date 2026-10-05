@@ -1,9 +1,9 @@
-; control_inplace_ry_alias_pre_region_branch.ll — ACCEPT spec: a diagonal alias
-; hop on a CLASSICALLY-BRANCHED path that cannot follow the region (bd
-; test_C_libtooling-drbq Inc 1, finding J — and the one shape this fix ACCEPTS
-; that Inc 1 declined, pinned deliberately rather than left invisible).
+; control_inplace_ry_alias_pre_region_branch.ll — ACCEPT spec, written for a
+; diagonal alias hop on a CLASSICALLY-BRANCHED path ahead of the region (bd
+; test_C_libtooling-drbq Inc 1, finding J: the one shape that fix ACCEPTS that
+; Inc 1 declined).
 ;
-;     if (opaque) cq_phi(r, .1);          // a real Rz, conditionally, BEFORE
+;     if (opaque) { }                  // empty since 3qlq (see below)
 ;     if (q > 5)  cq_theta(&r, .9);    // the controlled Ry
 ;     use(cq_measure(r));
 ;
@@ -16,11 +16,11 @@
 ; nothing. So an alias HOP now owes only `cannotFollowGate`; every other user keeps
 ; `provablyBefore` verbatim (two sets, two questions — bd 8h7d.5 round 3).
 ;
-; The emitted order is what makes it sound, and the CHECKs below pin it: the `rz`
-; stays in its own conditionally-executed block, the controlled Ry is hoisted into
-; the region's pred, and the source's order (hop THEN gate) survives. Swap the
-; alias to a POST-region read and it declines again —
-; ..._reject_stale_diag_alias_forward.ll is that fixture.
+; ⚠ THE ALIAS HOP IS GONE. Pre-3qlq the `side` block held it, register form
+; `if (opaque) cq_phi(r, .1);`, and the CHECKs pinned it ahead of the hoisted
+; controlled Ry. The migration deleted that uncontrolled phase; the CHECKs now pin
+; an empty `side` block, then the region. The POST-region alias twin that
+; declines is ..._reject_stale_diag_alias_forward.ll.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
@@ -50,7 +50,7 @@ merge:
 
 ; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
 ; CHECK:      %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
-; the hop lowers in its OWN conditionally-executed block, ahead of the region
+; the (now empty) conditionally-executed block, ahead of the region
 ; CHECK:      side:
 ; CHECK:      join:
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 5)

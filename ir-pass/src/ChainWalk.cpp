@@ -141,7 +141,7 @@ bool isInPlaceGateOn(const CallInst *G, const Value *H) {
   if (isAbiQramStore(G))
     return N.ends_with("_controlled") ? G->getArgOperand(1) == H
                                       : G->getArgOperand(0) == H;
-  // CONTROL-IN-PLACE ROTATION `cqrt_{ry,rz}_<W>_controlled(f, H, θ)` — bd
+  // CONTROL-IN-PLACE ROTATION `cqrt_ry_<W>_controlled(f, H, θ)` — bd
   // test_C_libtooling-drbq. VOID, arity EXACTLY 3, the ROTATED HANDLE at arg 1
   // (arg 0 is the control flag, arg 2 the classical angle). Recognized BEFORE
   // the generic `_controlled` bail below for the same reason the guarded QRAM
@@ -188,7 +188,7 @@ bool isInPlaceGateOn(const CallInst *G, const Value *H) {
   // relies IN WRITING on `isTerminalHandle` being FALSE for a rail *because it
   // has a `_controlled` consumer*, so that the whole-DAG spine never claims a
   // rail the emitter owns: `SelectMergeEmit.cpp:224`, `SwitchValueEmit.cpp:196`,
-  // `SwitchDataMuxEmit.cpp:31`/`:140`, `SwapRouteEmit.cpp:342`,
+  // `SwitchDataMuxEmit.cpp:31`/`:140`, `SwapRouteEmit.cpp:342` (pre-3qlq route),
   // `ClassicalCallArmEmit.cpp:205`, `LoopLowering.cpp:1442`. They survive THIS
   // widening only because their consumers are `cqrt_copy_<W>_controlled` /
   // `cqrt_cswap`, which the generic `if (N.contains("_controlled")) return
@@ -203,9 +203,9 @@ bool isInPlaceGateOn(const CallInst *G, const Value *H) {
   // SPLIT IS THE POINT OF THAT INCREMENT, NOT AN OPTIMIZATION. Inc 1 admitted
   // BOTH `cqrt_ry_<W>_controlled` and `cqrt_rz_<W>_controlled` here, at a time
   // when `emitRz`'s controlled arm had no caller so the `rz` half was inert. Inc
-  // 2a gave it one (every FLAT phase region now emits `cqrt_rz_<W>_controlled`
-  // in place of the five-line route), and admitting it HERE would have been a
-  // silent miscompile of exactly the finding-A shape, one stem over:
+  // 2a gave it one (every FLAT phase region then emitted it in place of the
+  // five-line route; since 3qlq nothing mints it), and admitting it HERE would
+  // have been a silent miscompile of exactly the finding-A shape, one stem over:
   //
   //   * as a DAG LINK the gate joins `D.Calls`, so `emitDagReversal` emits its
   //     adjoint — `cqrt_rz_<W>_controlled(f, h, -θ)` naming a flag the region
@@ -213,11 +213,11 @@ bool isInPlaceGateOn(const CallInst *G, const Value *H) {
   //     spine believes it zeroed;
   //   * and because `preservesBasisUnderRecord` calls the `rz` spelling
   //     basis-preserving, the M-B INTERIOR partition would have claimed a
-  //     template rail carrying one (`r = p*5; if (q==5) r = cq_phi(r,θ); s = r*3;`)
-  //     and discharged it, which the route NEVER did.
+  //     template rail carrying one (pre-3qlq register form: `r = p*5; if (q==5)
+  //     r = cq_phi(r,θ); s = r*3;`) and discharged it, which the route NEVER did.
   //
-  // The route is the oracle for what this gate must look like to the spine, and
-  // under the route the register's only users are `cqrt_cswap`s — which this
+  // The route was the oracle for what this gate must look like to the spine, and
+  // under the route the register's only users were `cqrt_cswap`s — which this
   // predicate refuses, making them UNRECOGNIZED consumers. Refusing the
   // controlled `rz` reproduces that exactly: `isTerminalHandle` is false,
   // `isInteriorConsumer` is false, `DagTraversal`'s closure scan sets
@@ -239,7 +239,7 @@ bool isInPlaceGateOn(const CallInst *G, const Value *H) {
   // readings agree": an in-place gate is a BENIGN user (`continue` — `H` may
   // still be the terminal), an unrecognized consumer FORCES `false`, so the
   // narrowing takes the `rz` spelling from possibly-terminal to never-terminal.
-  // That is the RIGHT move because the oracle is the ROUTE, where the register's
+  // That is the RIGHT move because the oracle was the ROUTE, where the register's
   // users were `cqrt_cswap`s — unrecognized — so `H` was never a terminal there
   // either; and it is the SAFE direction (a non-terminal is not freed: a leak,
   // Rule 6, never a dirty free). MEASURED: no `cqrt_free` appears or disappears
@@ -333,7 +333,7 @@ bool isInPlaceGateOn(const CallInst *G, const Value *H) {
 // round-1 review L3 §1 / L5 §1). ONE spelling of "is this rail frozen by a
 // controlled rotation", derived from `isInPlaceGateOn` so the two cannot drift:
 // that predicate ALREADY answers arg-1 for exactly this symbol shape (VOID,
-// arity 3, `cqrt_{ry,rz}_<W>_controlled`), so all this adds is the `_controlled`
+// arity 3, `cqrt_ry_<W>_controlled`), so all this adds is the `_controlled`
 // restriction — an uncontrolled `cqrt_ry_<W>(H, θ)` is reversible by the spine
 // and must stay so.
 bool railCarriesControlledRotation(const Value *H) {
@@ -521,9 +521,9 @@ bool preservesBasisUnderRecord(const CallInst *G) {
   // label-diagonal phase it applies commutes with, and cancels against, a
   // basis-label record.
   //
-  // THE PREFIX DELIBERATELY COVERS `cqrt_rz_<W>_controlled` TOO (bd
-  // test_C_libtooling-drbq audit). It was already matched incidentally before
-  // that symbol had an emitter; it is now matched ON PURPOSE, and it is correct:
+  // THE PREFIX DELIBERATELY COVERS `cqrt_rz_<W>_controlled` TOO (bd drbq
+  // audit; nothing mints that symbol since 3qlq). Matched incidentally before it
+  // had an emitter, it is now matched ON PURPOSE, and it is correct:
   // a controlled Rz is `f=0 → I`, `f=1 → diag(1, e^{iθ})`, diagonal on BOTH
   // branches, so it relabels nothing whatever the flag holds. Its NON-diagonal
   // twin `cqrt_ry_<W>_controlled` is NOT matched here and must never be — a

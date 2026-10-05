@@ -1,21 +1,17 @@
 ; lowering_reject_live_record_sibling_alias.ll — WARNING (was DECLINE): the chained theta names
 ; the DIAGONAL SIBLING of the wire the record was built from (M-A Increment 1).
 ;
-; The over-accept probe this answers (bd test_C_libtooling-lom0 names the
+; The over-accept probe this answered (bd test_C_libtooling-lom0 names the
 ; spelling as "invisible to every other guard", ArmClassify.cpp:1104): the record
-; `%d` is built off `%q`, while the gate is written on `%qd = cq_phi(%q, ·)`.
-; A guard that compared SSA NAMES would see two different wires and accept.
-;
-; WHY THE LATE SLOT MAKES THIS STRUCTURAL RATHER THAN A SPECIAL CASE:
-; `lowerRotations` RAUWs a `cq_phi` result to its own operand, so by the time
-; this guard runs `%qd` and `%q` are LITERALLY THE SAME i32 handle and the
-; record walk starts from it with no alias closure of any kind. The pre-mutation
-; guards (WireWalk) need an explicit backward `cq_phi` arg-0 closure for exactly
-; this shape; here there is nothing left to close over.
+; `%d` was built off `%q`, while the gate was written on `%qd = cq_phi(%q, ·)`, the
+; pre-3qlq register form. A guard that compared SSA NAMES would see two different
+; wires and accept. `lowerRotations` RAUW'd a `cq_phi` result to its own operand,
+; so at this late slot `%qd` and `%q` were the same handle and the record walk
+; needed no alias closure. The 3qlq migration deleted that uncontrolled alias, so
+; the gate is now written on `%q` itself; the dead record `%d` still stands at it.
 ;
 ; `%e` is measured after nothing — it is measured BEFORE the gate, so it is
 ; exempt by clause 4; `%d` is the dead interior record that carries the decline.
-;
 ;
 ; VEHICLE-OP NOTE (bd test_C_libtooling-6uqc, M-C Increment 2a — `add` only).
 ; The terminal record used to be built with `add`. M-C now lowers a
@@ -47,21 +43,22 @@
 ; not recognize, so it is neither an in-place gate the interior DAG would adjoint
 ; nor a forward producer: the rail is refused and LEFT ALLOCATED (pinned
 ; independently by lowering_uncompute_interior_leak_route_consumer.ll). It is
-; ALSO a NON-use for the guard's clause-3 observing-sink walk (a route moves a
-; value onto a work rail and back; nothing is observed — owner ruling
-; 2026-08-28, F1), so the record stays DEAD at the gate and the decline stays
+; ALSO a NON-use for the guard's clause-3 observing-sink walk (a permutation
+; observes nothing — owner ruling 2026-08-28, F1), so the record stays DEAD at
+; the gate and the decline stays
 ; correct physics: an undischarged basis record entangled with the wire when a
 ; non-diagonal gate fires.
 ;
-; So this file still measures exactly what it always measured — the seed closure through a DIAGONAL `cq_phi` alias of the same wire — on a
-; program where the record really is still standing. The version WITHOUT the
-; `cqrt_x` is now an accept, and lowering_live_record_mb_sibling_alias_accept.ll
-; is the twin that pins it.
+; So this file still measures a dead record standing at the gate (pre-3qlq it
+; reached the gate through a DIAGONAL `cq_phi` alias of the same wire). The
+; version WITHOUT the `cqrt_x` is now an accept, and
+; lowering_live_record_mb_sibling_alias_accept.ll is the twin that pins it.
 ;
 ; THAT TWIN IS NOT A PLACEHOLDER — the un-fenced stream was READ, LINE BY LINE,
-; in the Increment-5 Rule-13 round (REVIEW lens C) and is sound: `add_unc(%d, %h, 3)` reads `%h` across the DIAGONAL `cqrt_rz` that
-; precedes the record's mint — a phase, never a basis label — so the register
-; carries exactly the label the forward gate read and the rail returns to |0>.
+; in the Increment-5 Rule-13 round (REVIEW lens C) and was sound: `add_unc(%d, %h, 3)`
+; read `%h` across the DIAGONAL pre-3qlq `cqrt_rz` that preceded the record's mint —
+; a phase, never a basis label — so the register carried exactly the label the
+; forward gate read and the rail returned to |0>.
 ; The reviewer measured the un-fenced module DECLINING at c36934a and LOWERING
 ; on this build, so the flip is a real behaviour change that is pinned in BOTH
 ; directions — this file for the still-standing record, the twin for the lift.

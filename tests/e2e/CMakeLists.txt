@@ -267,13 +267,13 @@ add_test(NAME e2e-slice-fcmp-unordered
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_fcmp_unordered.expected.log")
 
-# Phase 4.1 (WI-4): RSSA swap-routed PHASE-arm diamond. The only layer that
-# LINKS — it proves every symbol the swap-route emitter mints (the icmp flag
-# template + its `_hl_inv` strip, cqrt_cswap, the |0> rail alloc/free, the
-# verbatim arm rz) resolves and signature-matches against the runtime. Tainted
-# `if (q>5) { rz(q,a); rz(q,b); }` lowers to the pinned routed stream (§5a):
-# flag mint -> rail alloc -> cswap in -> verbatim rz -> cswap back -> rail free
-# -> icmp_inv flag-strip -> flag free; ZERO controlled gates, exactly two frees.
+# Phase 4.1 (WI-4): PHASE-arm diamond lowered by kickback. The only layer that
+# LINKS — it proves every symbol the kickback emitter mints (the icmp flag
+# template + its `_hl_unc` strip, cqrt_rz_i1, cqrt_free) resolves and
+# signature-matches against the runtime. Tainted
+# `if (q>5) { cq_phi(a); cq_phi(b); }` lowers to: flag mint -> cqrt_rz_i1(flag, a)
+# -> cqrt_rz_i1(flag, b) -> `_unc` flag-strip -> flag free; ZERO controlled
+# gates, exactly one free.
 add_test(NAME e2e-slice-control-phase-diamond
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -282,14 +282,13 @@ add_test(NAME e2e-slice-control-phase-diamond
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_diamond.expected.log")
 
-# Issue a8c0: the idiomatic conditional phase `if (q != 0) q = cq_phi(q, a)` whose
-# else edge `clang -O1` const-folds to `0` (the merge is `phi [phase(q), 0]`).
-# Pre-a8c0 the classifier over-declined it (the `Base == Routed` gate saw the
-# folded `0`, not the qubit). The straight-through const-fold re-anchor proves
-# `q == 0` on that edge and re-anchors the routed handle to `q`, so it lowers as a
-# clean phase arm (¬flag cqrt_x brackets — the arm fires on the `q != 0` FALSE
-# edge — the Rz on the rail, strip with icmp_eq_inv, merge RAUW'd to q). LINK-proves
-# the a8c0 stream resolves against the runtime; the golden is the trace contract.
+# Issue a8c0: the idiomatic conditional phase `if (q != 0) cq_phi(a)`. Pre-3qlq the
+# register form `q = cq_phi(q, a)` left a merge `phi [phase(q), 0]` whose else edge
+# -O1 const-folded to `0`; the classifier over-declined it until a8c0 re-anchored
+# the folded edge to `q`. The register-free call has no merge: it lowers as a
+# kickback phase arm, flag = icmp_eq(q, 0), cqrt_x-bracketed cqrt_rz_i1 (the arm
+# fires on the `q != 0` FALSE edge), the `_unc` strip, one free. LINK-proves the
+# stream resolves against the runtime; the golden is the trace contract.
 add_test(NAME e2e-slice-control-phase-ifne
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -298,12 +297,12 @@ add_test(NAME e2e-slice-control-phase-ifne
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_ifne.expected.log")
 
-# Phase 4.1 follow-on (test_C_libtooling-9hh): two-arm PHASE if/else routing a
-# DERIVED base (a pre-region cq_phi result). Links the dual-rail §5b stream —
-# both rails, the cqrt_x ¬flag bracket, and the pre-region cqrt_rz that must
-# precede the flag mint — against the runtime. The arms are asymmetric (2 vs 1
-# gates) deliberately: symmetric one-gate arms canonicalize at -O1 into the
-# 4.4-deferred tainted ANGLE SELECT, which declines (Rule 9).
+# Phase 4.1 follow-on (test_C_libtooling-9hh): two-arm PHASE if/else after a
+# pre-region `cq_phi(0.9)` (uncontrolled, so deleted as a global phase; the pre-3qlq
+# "derived base" is gone). Links the kickback stream — one flag, the then-arm
+# cqrt_rz_i1 pair, the cqrt_x-bracketed else-arm cqrt_rz_i1, the `_unc` strip, one
+# free — against the runtime. The arms are asymmetric (2 vs 1 gates) on purpose:
+# symmetric one-gate arms fold at -O1 into a tainted ANGLE SELECT (Rule 9).
 add_test(NAME e2e-slice-control-phase-ifelse-derived
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -441,14 +440,14 @@ add_test(NAME e2e-slice-control-value-merge-qq-compare
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_merge_qq_compare.expected.log")
 
-# The DERIVED-base value diamond (a pre-region `cq_phi` on the value register;
-# the 9hh discipline). NO twin gate: the pre-hoisted select twin of this program
-# DECLINES `control flow` on BOTH the pre-3qlq oracle and this binary, because
-# `SelectClassify` conservatively refuses a coherent Rz-lineage select OPERAND
-# while the `br`-value classifier deliberately ACCEPTS a derived base. Inc 2
-# reuses the select EMITTER, not the select CLASSIFIER, so the two dispositions
-# stay different by design; a `compare_files` gate here would assert something
-# false. See the slice header.
+# The DERIVED-base value diamond (a pre-region in-place `cq_theta(&p, 0.9)` on the
+# value register, respelled from the retired register-form `cq_phi`; the 9hh
+# discipline). NO twin gate: its pre-hoisted select twin DECLINES `control flow`,
+# because `SelectClassify` conservatively refuses a coherent rotation-lineage
+# select OPERAND while the `br`-value classifier deliberately ACCEPTS a derived
+# base. Inc 2 reuses the select EMITTER, not the select CLASSIFIER, so the two
+# dispositions stay different by design; a `compare_files` gate here would assert
+# something false. See the slice header.
 add_test(NAME e2e-slice-control-value-derived
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -532,20 +531,16 @@ add_test(NAME e2e-slice-predmux-fp-diamond-volatile
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_fp_diamond_volatile.expected.log")
 
-# Phase 4.3 (WI-4, test_C_libtooling-s8yf.5): RSSA swap-routed depth-2
-# homogeneous-PHASE NEST. The only layer that LINKS — and so the only proof the
-# nested emitter's symbol set resolves and signature-matches across BOTH routing
-# levels against the runtime (Rule 2, Rule 16; 4.3 adds no new runtime ABI, so
-# this re-proves 4.1's symbols compose at depth 2). The §0 accept shape
-# `if (q>5) { q=rz(q,.25); if (q<9) { q=rz(q,.75); } }` SURVIVES -O1 as the
-# measured one-content-arm-diamond-inside-one-content-arm-diamond reconverging at
-# a single 3-incoming merge phi, and lowers to the §5g routed stream: outer mint
-# -> rail1 alloc -> outer route-in -> intervening rz on rail1 -> inner mint FROM
-# RAIL1 -> rail2 alloc -> inner route-in -> inner rz -> inner route-back -> free
-# rail2 -> STRIP f2 (BEFORE the outer route-back, the load-bearing §12.3 order)
-# -> free f2 -> outer route-back -> free rail1 -> STRIP f1 -> free f1 -> measure
-# q. EXACTLY FOUR frees (rail2, f2, rail1, f1); ZERO controlled gates, no
-# cqrt_toffoli, no surviving `phi i32`, no added measure.
+# Phase 4.3 (WI-4, test_C_libtooling-s8yf.5): depth-2 homogeneous-PHASE NEST by
+# kickback. The only layer that LINKS — and so the only proof the nested emitter's
+# symbol set resolves and signature-matches against the runtime (Rule 2, Rule 16).
+# The §0 accept shape `if (q>5) { cq_phi(.25); if (q<9) { cq_phi(.75); } }` lowers
+# to: outer mint f1 = icmp_sgt(q,5) -> cqrt_rz_i1(f1, .25) -> inner mint
+# f2 = icmp_slt(q,9) -> |0> i1 ancilla a -> cqrt_toffoli(f1,f2,a) ->
+# cqrt_rz_i1(a, .75) -> cqrt_toffoli(f1,f2,a) -> free a -> STRIP f2 -> free f2 ->
+# STRIP f1 -> free f1 -> measure q. EXACTLY THREE frees (a, f2, f1); ZERO
+# controlled rotations, no cswap, no surviving `phi i32`, no added measure.
+# (Pre-3qlq this pinned a routed stream: two |0> rails, cswap at both levels.)
 add_test(NAME e2e-slice-control-nested-phase
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -556,11 +551,11 @@ add_test(NAME e2e-slice-control-nested-phase
 
 # ziov WI-1 (test_C_libtooling-ziov.1): the SHARED-CONDITION-FLAG path. A tainted
 # control compare `q>5` reused as DATA (`int f = (q>5)`) lowers to ONE shared flag
-# — the route AND the data `zext`/`add` read the same icmp handle, the flag is
-# NEITHER stripped (no icmp_inv) NOR freed (its data lineage owns it). The only
-# layer that LINKS, so it proves the shared flag's data consumers resolve against
-# the runtime. EXACTLY ONE free (the rail); contrast slice_control_phase_diamond
-# (no data use → strip + flag free, two frees).
+# — the kickback cqrt_rz_i1 gates AND the data `zext`/`add` read the same icmp
+# handle, and the flag is NEITHER stripped NOR freed (its data lineage owns it). The
+# only layer that LINKS, so it proves the shared flag's data consumers resolve
+# against the runtime. EXACTLY ONE free (the zext result, after its `_unc`);
+# contrast slice_control_phase_diamond (no data use → strip + flag free).
 add_test(NAME e2e-slice-control-cond-datause
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -580,8 +575,9 @@ add_test(NAME e2e-slice-control-cond-datause
 # ¬flag -> icmp_inv strip -> the ONE cqrt_free (the flag). q / out / the
 # materialized scratch are LEFT ALLOCATED (freeing an operand entangled with out
 # is a hidden measurement, Rule 6/8); ZERO cqrt_cswap, ZERO controlled rotations,
-# no surviving `phi i32`, EXACTLY ONE free (contrast the method-B value diamond's
-# two). control_swap_select_qc.ll is the pinned IR contract; IMPLEMENTATION-4.4 §5a.
+# no surviving `phi i32`, EXACTLY ONE free (the value diamond has reused this merge
+# since 3qlq Inc 2). control_swap_select_qc.ll is the pinned IR contract;
+# IMPLEMENTATION-4.4 §5a.
 add_test(NAME e2e-slice-control-select
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -606,35 +602,26 @@ add_test(NAME e2e-slice-control-select-fp
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_fp.expected.log")
 
-# bd big5 (2026-07-31): the ALIASED-RAIL condition compare -- `%q` and
-# `%r = cq_phi(%q,.25)` are SSA-DISTINCT (InstCombine cannot fold them, unlike
-# `x==x`) yet lower to ONE rail, because cq_phi (Rz) is an IN-PLACE gate whose
-# result RAUWs to its argument's handle. bd 7q3s fenced this for one day on the
-# premise that `cq_template_icmp_slt_i32(h0, h0)` is "an ill-formed physical gate
-# no backend can realize"; the owner refuted that premise and the fence was
-# reverted. Aliased INPUTS of an OUT-OF-PLACE gate with a FRESH |0> output rail
-# (CASE A) make it a UNARY function of the shared operand -- realizable, usually
-# free, and a Phase-9 backend obligation rather than a compiler defect. What is
-# genuinely unrealizable is CASE B, an input aliasing a rail the gate WRITES;
-# the golden emits none, and every `_unc` line's written rail is distinct from
-# its reads.
-# The only layer that LINKS, so the only proof the aliased mint and its void
-# out-first `_unc` twin resolve and signature-match the ABI. Stage 2b
-# (free_pairing_check.py) verifies all FOUR flag frees at a proven |0>.
-# Five lineages in one TU: (A) integer select, (B) f64 select through the kjd1
-# fp copy family, (C) the ARITHMETIC Case A `p*p` -- the consistency witness,
-# since 118 of 226 committed goldens already ship an aliased-operand template
-# call AND WERE GREEN WITH THE FENCE IN (the condition walk never inspects
-# arithmetic), so the defect was an inconsistency of principle, not a
-# contradiction; (D) the CONSTANT-TRUE `icmp eq(a,a)`, the demanding half of
-# Rule 6 -- its flag rail is |1> at the mint, so the `_unc` strip must actually
-# return it to |0> before `cqrt_free`, whereas (A)/(B) are FALSE-valued and leave
-# it at |0> trivially; and (E) the ENTANGLED-flag f64 case -- `fcmp oge(a,a)` is
-# NOT constant TRUE, it is ord(a) == !isnan(a) (no ORDERED fcmp is constant on
-# aliased operands), which is a STRICTLY HARDER Rule-6 witness than a constant.
-# Two extension traps, both measured: `q <= r` does not survive -O1 as itself
-# (canonicalized to `icmp sgt`, arms swapped, Rule 9), and surviving as the same
-# PREDICATE is not the same as being constant on aliased operands.
+# bd big5 (2026-07-31): the ALIASED-RAIL condition compare. Pre-3qlq, `%q` and
+# `%r = cq_phi(%q,.25)` were SSA-DISTINCT yet lowered to ONE rail (the retired
+# register-form cq_phi renamed its argument's handle). bd 7q3s fenced this for one
+# day on the premise that `cq_template_icmp_slt_i32(h0, h0)` is "an ill-formed
+# physical gate no backend can realize"; the owner refuted that premise and the
+# fence was reverted. Aliased INPUTS of an OUT-OF-PLACE gate with a FRESH |0>
+# output rail (CASE A) make it a UNARY function of the shared operand --
+# realizable, usually free, and a Phase-9 backend obligation rather than a compiler
+# defect. What is genuinely unrealizable is CASE B, an input aliasing a rail the
+# gate WRITES; the golden emits none, and every `_unc` line's written rail is
+# distinct from its reads.
+# REWRITTEN AT 3qlq Inc 1 (see the slice header): with a register-free `cq_phi` the
+# aliased compares fold at stage 1, so lineages (A) integer select, (B) f64 select
+# and (D) constant-true `icmp eq(a,a)` were retired. Two remain: (C) the ARITHMETIC
+# Case A `p*p` -> `cq_template_mul_i32(h0, h0)`, the surviving alias witness (the
+# 7q3s condition walk never inspected arithmetic); and (E) the f64
+# `(qg >= qg) ? 1.0 : 2.0`, which -O1 rewrites to `fcmp ord x, 0.0`, so it is a live
+# customer of the kjd1 fp copy family (two cqrt_copy_f64_controlled, the cqrt_x
+# bracket, the `_unc` strip), not an alias witness. The only layer that LINKS;
+# stage 2b (free_pairing_check.py) verifies its ONE flag free at a proven |0>.
 add_test(NAME e2e-slice-select-rail-alias-cond
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -690,11 +677,11 @@ add_test(NAME e2e-slice-control-seq-grover
 # only tests that prove the symbol the in-place rotation-arm emitter mints resolves
 # and signature-matches against libcq_runtime (Rule 2).
 #
-# A tainted-control Ry has NO swap-route form (`Ry|0> != |0>` leaves the inactive
-# work rail dirty and entangled with the flag, Rules 6/8), so this is the MECHANISM
-# and not a peephole. The whole stream per arm is `icmp_hl -> ry_controlled ->
-# icmp_hl_unc -> free`: no alloc, no cswap, no work rail, no reverse-play, and
-# EXACTLY ONE free (the flag) against the phase diamond's two.
+# A tainted-control Ry could never take the (since retired) swap route (`Ry|0> !=
+# |0>` leaves the inactive work rail dirty and entangled with the flag, Rules 6/8),
+# so this is the MECHANISM and not a peephole. The whole stream per arm is
+# `icmp_hl -> ry_controlled -> icmp_hl_unc -> free`: no alloc, no cswap, no work
+# rail, no reverse-play, and EXACTLY ONE free (the flag).
 #
 # STRICT stage 2b (no --allow-unproven): the flag is minted, stripped and freed in
 # one straight-line stream and the checker proves that pairing outright. The two
@@ -744,7 +731,8 @@ add_test(NAME e2e-slice-control-inplace-ry-derived-base
 # ONE call whose ANGLE is a tainted-condition `select`, so the branch CFG is gone
 # before the pass runs (Rule 9). Lowered by angle additivity on one axis — an
 # unconditional `R(h, B)`, the ordinary flag mint, ONE
-# `cqrt_{ry,rz}_<W>_controlled(f, h, A-B)`, the ordinary strip, one free. Exact in
+# `cqrt_ry_<W>_controlled(f, h, A-B)`, the ordinary strip, one free (the Rz stem
+# now lowers by kickback instead; see the REMOVED note below). Exact in
 # REAL arithmetic; in IEEE double the realized true-arm angle is `B + fl(A-B)`,
 # `|delta| <= 1/2 ulp(A-B)` — 2^-54 rad on these goldens' 0.9/0.3 pair. BOTH ARMS
 # MUST BE CONSTANTS, fenced at a placeholder 2^-40 rad; a RUN-TIME arm DECLINES
@@ -759,9 +747,10 @@ add_test(NAME e2e-slice-control-inplace-ry-derived-base
 # the constant-arms-only narrowing is the CLEARANCE review's, finding F-11 /
 # owner option (2)).
 #
-# THREE SUBJECT/TWIN PAIRS AND THREE `compare_files` GATES, and the gates are the
-# increment's CENTRAL WITNESS rather than a convenience. Each `_twin` slice writes
-# the SAME circuit by hand in by-difference form (`r = R(r,B); if (c) r = R(r,A-B);`)
+# THREE SUBJECT/TWIN PAIRS AND (since 3qlq Inc 1) TWO `compare_files` GATES, and
+# the gates are the increment's CENTRAL WITNESS rather than a convenience. Each
+# `_twin` slice writes the SAME circuit by hand in by-difference form
+# (`r = R(r,B); if (c) r = R(r,A-B);`)
 # — an ordinary in-place DIAMOND that the PRE-2b binary already lowered, verified
 # byte-identical across both binaries. So the twin is an ORACLE, not a second copy
 # of the thing under test: if the select form ever drifts into a different (and
@@ -1609,8 +1598,9 @@ add_test(NAME e2e-slice-libm-real-exp2l
 # data operands quantum handles (the (ix<<16)|(i0>>16) word-extract idiom that
 # unblocks erfl/erfcl). This e2e is the LINK-layer proof (Rule 2/Rule 16) that
 # the new frozen symbols cq_template_fshl_i32_qql[_unc] RESOLVE + signature-match:
-# a measured forward funnel + a dead phase-armed funnel reverse-played through the
-# void _unc (recompute-and-XOR from live sources). 19-line deterministic trace;
+# a measured forward funnel + a dead funnel kept alive by a kickback phase arm,
+# reverse-played through the void _unc (recompute-and-XOR from live sources).
+# 17-line deterministic trace;
 # 0 double-frees; every rail freed only at |0>. Flagged by the Rule-13 review as
 # the missing regression baseline for the funnel symbols.
 add_test(NAME e2e-slice-funnel-fshl-qq
@@ -2292,11 +2282,12 @@ add_test(NAME e2e-slice-control-abort
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_abort.expected.log")
 
 # test_C_libtooling-5j5: the ONE-REGISTER classical-mux lift. The natural
-# `if (classical_c) q = cq_phi(q, a);` survives -O1 as a merge phi over two
-# SSA names of one register; the lift RAUWs it away and the CLASSICAL branch
-# stays byte-untouched, so the rz fires iff the condition held this shot.
+# `if (classical_c) cq_theta(&q, a);` (the gate was the retired register-form
+# `cq_phi` before 3qlq Inc 1; see the slice header) survives -O1 as a merge phi over
+# two SSA names of one register; the lift RAUWs it away and the CLASSICAL branch
+# stays byte-untouched, so the ry fires iff the condition held this shot.
 # Goldens BOTH polarities in one run (argc>0 true / argc>100 false): the
-# taken diamond's rz appears, the not-taken diamond's does not.
+# taken diamond's ry appears, the not-taken diamond's does not.
 add_test(NAME e2e-slice-classical-if-gate
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -2311,13 +2302,14 @@ add_test(NAME e2e-slice-classical-if-gate
 # whose >2 incomings are distinct SSA names of the one register; the generalized
 # lift (the (7a) reachability proof carried against ALL j != i, not just the 2-way
 # complement) RAUWs it away and the CLASSICAL switch stays byte-untouched, so each
-# case's cqrt_rz fires iff that case ran this shot. DISTINCT per-case gate-chain
-# lengths (1/2/1/0) keep clang from merging the cases into one angle-selected
+# case's cqrt_ry fires iff that case ran this shot (the gates are `cq_theta` since
+# 3qlq Inc 1; see the slice header). DISTINCT per-case gate-chain lengths
+# (1/2/1/0) keep clang from merging the cases into one angle-selected
 # block, preserving the N>2 phi; the executed case is the 2-gate chain
 # (sel=(argc+1)%4=2), goldening the single-block-chain proof (condition (6)) for a
 # REAL chain. A second register on the DEFAULT arm goldens the no-case-fires path.
 # The only layer that LINKS — it re-proves the lifted N-ary form lowers to the
-# phi-less rz-inside-the-case stream the pipeline already accepts (Increment C
+# phi-less ry-inside-the-case stream the pipeline already accepts (Increment C
 # adds NO new symbol).
 add_test(NAME e2e-slice-classical-switch-gate
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
@@ -2327,14 +2319,12 @@ add_test(NAME e2e-slice-classical-switch-gate
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_classical_switch_gate.expected.log")
 
-# Phase 4.5 (WI-6, test_C_libtooling-bkpz.6): the RSSA swap-routed tainted SWITCH,
-# one golden per ACCEPT class — the only layer that LINKS, so the only proof every
-# symbol the four switch emit paths mint resolves + signature-matches against the
-# runtime (Rule 2, Rule 16). PHASE switch (N>=3 cases): per-case eq-flag mint ->
-# |0> rail -> cqrt_cswap route -> verbatim cqrt_rz arg-1 -> route back -> rail
-# free -> icmp_eq_inv strip + flag free; the N>=3 byte-diff exercises the N-way
-# folded-gate scrub + N-way flatten (the §5 const-fold re-anchor BLOCKER's only
-# downstream backstop). control_swap_switch_phase.ll is the pinned IR contract.
+# Phase 4.5 (WI-6, test_C_libtooling-bkpz.6): the tainted SWITCH, one golden per
+# ACCEPT class — the only layer that LINKS, so the only proof every symbol the
+# switch emit paths mint resolves + signature-matches against the runtime (Rule 2,
+# Rule 16). The PHASE switch (per-case eq-flag mint -> kickback cqrt_rz_i1 on the
+# flag -> `_unc` strip -> flag free) is pinned in lit only, by
+# control_swap_switch_phase.ll.
 # REMOVED 2026-09-05 (3qlq Inc 1, OQ-4/OQ-11 / prep-b2): `e2e-slice-control-switch-phase`
 # and `slice_control_switch_phase.expected.log`. PRD §6.2 P5 (the homogeneous-phase
 # switch) LOWERS — Increment 1b implements it on the IR `switch` and ships 3 accept +
@@ -2351,10 +2341,11 @@ add_test(NAME e2e-slice-classical-switch-gate
 # that record in its header; giving P5 a real e2e customer needs the table-fold
 # recognizer, which is an owner decision (OQ-11), not something this increment may take.
 
-# Phase 4.5 (WI-6): VALUE switch (N-way method-B on a shared routed base p != q):
-# per-case route-in -> verbatim add chain -> route back, then ONE cqrt_copy_i32
-# copy-out + LIFO reverse-play (route-back† · add `_inv` · route-in†) + rail/flag
-# frees. control_swap_switch_value.ll is the pinned IR contract.
+# Phase 4.5 (WI-6): VALUE switch on a shared base p != q, by the preload + XOR-delta
+# merge: ONE uncontrolled cqrt_copy_i32(p, out) preload, then per case the hoisted
+# chain's delta R_i(p)^p, an eq-flag mint and cqrt_copy_i32_controlled(f_i, d_i,
+# out); each flag stripped + freed at the end. NO cswap, ZERO cqrt_x.
+# control_swap_switch_value.ll is the pinned IR contract.
 add_test(NAME e2e-slice-control-switch-value
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -2377,12 +2368,13 @@ add_test(NAME e2e-slice-control-switch-datamux
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_switch_datamux.expected.log")
 
 # dugh (Phase 4×6): the SECOND propagation round. A data-mux merge (untainted by
-# SSA data-flow) feeds an ONWARD-QUANTUM phase `cq_phi(r, .25)` — an OPAQUE call
-# clang -O1 cannot fold into the switch incomings (a stock `r + const` WOULD fold,
-# erasing the onward op), so a real onward-quantum op survives to opt.
-# `repropagateControlMerges` re-seeds taint from the emitted %out so the onward
-# cq_phi lowers IN PLACE to `cqrt_rz_i32(out, .25)` instead of declining. The only
-# layer that LINK-proves the re-tainted onward Rz over the control merge.
+# SSA data-flow) feeds ONWARD-QUANTUM work, `int t = r + argc; if (t == 10)
+# cq_phi(.25);` (rewritten at 3qlq Inc 1 from the retired register-form onward
+# `cq_phi(r, .25)`; `argc` defeats an -O1 hoist, see the slice header).
+# `repropagateControlMerges` re-seeds taint from the emitted %out, so the onward add
+# lowers to `cq_template_add_i32_hl(out, 1)` and the branch phase to a kickback on
+# the flag icmp_eq(t, 10) instead of declining. The only layer that LINK-proves
+# the re-tainted onward ops over the control merge.
 add_test(NAME e2e-slice-control-cond-onward-phase
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -2391,9 +2383,10 @@ add_test(NAME e2e-slice-control-cond-onward-phase
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cond_onward_phase.expected.log")
 
-# Phase 4.5 (WI-6): the equality-folded `br` diamond (`if (q==7) { phase arm }`) —
-# the regression FLOOR for emitRegion-reuse via the additive D1-D7 tryEqFoldArm
-# clause (§4D detection-only; re-tests the golden 4.1 diamond path end-to-end).
+# Phase 4.5 (WI-6): the equality-guarded `br` diamond (`if (q==7) { phase arm }`),
+# written as the regression FLOOR for the additive D1-D7 tryEqFoldArm clause on the
+# pre-3qlq register form (§4D detection-only). A register-free `cq_phi` has no arg-0
+# to fold, so it now links the plain kickback diamond on an `icmp eq` flag.
 # control_swap_eqfold_diamond.ll is the pinned IR contract.
 add_test(NAME e2e-slice-control-switch-eqfold
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
@@ -2412,10 +2405,11 @@ add_test(NAME e2e-slice-control-switch-eqfold
 # `..._unc`), invisible to FileCheck. TWO dead, unmeasured handles in a
 # `noinline` helper (`noinline` is load-bearing: Phase-5 uncompute is gated OFF in
 # `main`, and `-O1` would otherwise inline `slice` away so the uncompute never
-# runs). `cq_phi` keeps the dead arithmetic alive past `-O1` DCE. Reverses the
-# whole DAG ONCE in reverse program order: mul_qq `_unc` (bare, DD-3 slots) +
-# two `_hl_unc` + Rz keep-alive undo (negated angle); SIX frees, one per rail,
-# each after its last reverse-use; ZERO `_inv`, ZERO added measure, ZERO cswap.
+# runs). Each chain is kept alive past `-O1` DCE by a kickback phase under a
+# condition on it (the register-form `cq_phi` keep-alive retired at 3qlq Inc 1).
+# Each chain reverses after its kickback: flag `_hl_unc` strip, the in-place xorc
+# undo + shl `_hl_unc`, or mul_qq `_unc` (bare, DD-3 slots); FOUR frees (two chain
+# rails, two flags); ZERO `_inv`, ZERO added measure, ZERO cswap.
 add_test(NAME e2e-slice-uncompute-dead-dag
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -2470,13 +2464,13 @@ add_test(NAME e2e-slice-uncompute-interior-chained-theta
 # generator/emitter name or signature drift in any of those three families would be
 # invisible to every test (the .ll fixtures assert IR text and never link — Rule
 # 2/16). Three independent dead lineages in a `noinline` helper, each kept alive by
-# a `(void) cq_phi`: (A) `100 - a` / `5 << s` -> sub_i32_lh_unc + shl_i32_lh_unc;
-# (B) `(long) b` -> sext_i32_to_i64_unc; (C) `-fc` -> fneg_f32_unc. Whole-DAG LIFO
-# reversal (chain C, then B, then A): each gate adjointed via its void `_unc` form
-# (DD-3 slots: out first, then forward operands in original order), 7 frees (one per
-# rail), Rz/Ry undone with negated angles; ZERO `_inv`, ZERO added measure, ZERO
-# cqrt_cswap. Together with dead-dag, every `_unc` shape the emitter can mint is now
-# permanently link-proven by SOME golden.
+# a kickback phase under a condition on it (since 3qlq Inc 1; see the slice
+# header): (A) `100 - a` / `5 << s` -> sub_i32_lh_unc + shl_i32_lh_unc; (B)
+# `(long) b` -> sext_i32_to_i64_unc; (C) `-fc` -> fneg_f32_unc. Each chain reverses
+# after its kickback, each gate via its void `_unc` form (DD-3 slots: out first,
+# then forward operands in original order); 10 frees (chain rails and flags); ZERO
+# `_inv`, ZERO added measure, ZERO cqrt_cswap. Together with dead-dag, every `_unc`
+# shape the emitter can mint is now permanently link-proven by SOME golden.
 add_test(NAME e2e-slice-uncompute-dead-shapes
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -2496,10 +2490,10 @@ add_test(NAME e2e-slice-uncompute-dead-shapes
 # `HandleWidth`, so this golden re-proves the bare-QQ compare grid composes. Two
 # independent Q+Q lineages in a `noinline` helper (`noinline` is LOAD-BEARING —
 # whole-DAG uncompute is gated OFF in `main`): (A) a MEASURED `xi < yi`
-# (icmp_slt QQ -> zext bridge -> measure) proves the forward symbol; (B) a DEAD,
-# `cq_phi`-kept-alive `pi == qi` (icmp_eq QQ) proves the `_unc` twin — the spine
-# reverses it ONCE (zext_unc -> icmp_eq_unc -> ry undos) and frees each rail,
-# with NO added measure, NO `_inv`, NO cqrt_cswap.
+# (icmp_slt QQ -> zext bridge -> measure) proves the forward symbol; (B) a DEAD
+# `pi == qi` (icmp_eq QQ), kept alive by a kickback under `eq + pi == 4`, proves
+# the `_unc` twin — the spine reverses it ONCE (add_unc -> zext_unc -> icmp_eq_unc)
+# and frees each rail, with NO added measure, NO `_inv`, NO cqrt_cswap.
 add_test(NAME e2e-slice-compare-qq
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -2510,11 +2504,12 @@ add_test(NAME e2e-slice-compare-qq
 
 # Phase 7.1 Increment D (FROZEN ABI): the half-precision (f16) e2e link proof.
 # The only layer that LINKS, so the only proof that the new frozen f16 symbols
-# (cqrt_alloc/ry/rz/measure_f16, cq_template_fadd_f16 + its `_unc` twin) resolve
+# (cqrt_alloc/ry/measure_f16, cq_template_fadd_f16 + its `_unc` twin) resolve
 # and signature-match the hand-written core ABI and the generated template ABI
 # at the `half` width. (A) a measured Q+Q fadd proves the forward symbol; (B) a
-# dead Q+Q fadd kept alive by a cq_phi proves the `_unc` twin reverses once and
-# frees every rail — no cqrt_copy_f16 (an f16 carrier is an angle, never data).
+# dead Q+Q fadd kept alive by a kickback phase proves the `_unc` twin reverses
+# once and frees every rail — no cqrt_copy_f16 (an f16 carrier is an angle, never
+# data).
 # i128 is deferred (its C ABI shreds __int128 to {i64,i64}); see the follow-up.
 add_test(NAME e2e-slice-f16
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
@@ -2526,15 +2521,15 @@ add_test(NAME e2e-slice-f16
 
 # bd 3c6m.4 (FROZEN ABI): the long-double (f80 / x86_fp80) e2e link proof — the
 # width behind the 54 `…l` math.h variants. The only layer that LINKS, so the
-# only proof that the new frozen f80 symbols (cqrt_alloc/ry/rz/measure_f80,
+# only proof that the new frozen f80 symbols (cqrt_alloc/ry/measure_f80,
 # cq_template_fadd_f80 + its `_unc` twin, and the intrinsic-backed
 # cq_template_sqrt_f80) resolve and signature-match the hand-written core ABI and
 # the generated template ABI at the long-double width. (A) a measured sqrtl over
 # a Q+Q fadd proves the forward symbols + the headline `…l` intrinsic shape; (B) a
-# dead Q+Q fadd kept alive by a cq_phi proves the fadd_f80 `_unc` twin reverses
-# once and frees every rail — no cqrt_copy_f80 (an f80 carrier is an angle, never
-# data). On this x86-64 host `long double` == x86_fp80, so CQ.h's _Generic seeds
-# the f80 suffix (__LDBL_MANT_DIG__ == 64).
+# dead Q+Q fadd kept alive by a kickback phase proves the fadd_f80 `_unc` twin
+# reverses once and frees every rail — no cqrt_copy_f80 (an f80 carrier is an
+# angle, never data). On this x86-64 host `long double` == x86_fp80, so CQ.h's
+# _Generic seeds the f80 suffix (__LDBL_MANT_DIG__ == 64).
 add_test(NAME e2e-slice-f80
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -3523,16 +3518,17 @@ add_test(NAME e2e-slice-specialize-transitive
 
 # Phase 6.5 (WI-5.7, test_C_libtooling-mvna.11): a PURE CLASSICAL call under
 # QUANTUM CONTROL with CLASSICAL inputs (DD-7 / PRD §2.13) — the clone-ORTHOGONAL
-# Phase-6 capability (it reuses the cleared swap-route Phase-4 path, NOT clone-on-
-# taint). classical_call_under_control_caller.c (a CQ TU whose theta-tainted `q`
-# gates `if (q>5) y = ext_f(7);`) + classical_call_under_control_lib.c (the pure
+# Phase-6 capability (it reuses the cleared Phase-4 tainted-control path, NOT
+# clone-on-taint). classical_call_under_control_caller.c (a CQ TU whose
+# theta-tainted `q` gates `if (q>5) y = ext_f(7);`) +
+# classical_call_under_control_lib.c (the pure
 # i32 `ext_f`, the single LIBSRCS word, compiled WITHOUT CQ.h). After llvm-link,
 # the ONE cq-lowering pass recognizes the diamond's merge phi [q (tainted),
 # ext_f(7) (a direct classical call result)], HOISTS the pure call into the pred
-# (inert), and route-merges its i32 result via the 4.4 controlled-XOR copy merge
+# (inert), and merges its i32 result via the 4.4 controlled-XOR copy merge
 # over the FLATTENED diamond: flag mint -> |0> out rail -> cqrt_alloc of the call
 # result -> cqrt_copy_i32_controlled (the result, on the flag) -> cqrt_x + the
-# ¬flag controlled copy of q -> icmp_inv strip -> the ONE cqrt_free (the flag).
+# ¬flag controlled copy of q -> `_unc` strip -> the ONE cqrt_free (the flag).
 # This is the ONLY layer that LINK-proves the hoisted classical call (ext_f, run
 # classically — no trace line, its 107 result feeds cqrt_alloc_i32(107)) +
 # cqrt_copy_i32_controlled all resolve and signature-match through the multi-file
@@ -3554,12 +3550,12 @@ add_test(NAME e2e-slice-classical-call-under-control
 # `if (y>50)` is a CLASSICAL branch then; dugh's `repropagateControlMerges` re-seeds the
 # second propagation from %out, tainting `icmp sgt %out, 50`. PRE-yn71
 # `declineReClassifiedControl` declined that new tainted-condition branch; yn71 RE-DETECTS
-# it (`detectAndLowerOnwardControl`) and `SwapRouteEmit` emits the routed phase arm ON
-# %out (flag=icmp(%out,50), cqrt_cswap route in, VERBATIM cqrt_rz(rail,.25), route back,
-# rail free, icmp_inv strip, flag free; measure reads %out). The ONLY layer that
-# LINK-proves the re-detected onward controlled cqrt_cswap/cqrt_rz stream over the control
-# merge resolves + signature-matches (Rule 2/16). Reuses classical_call_under_control_lib.c
-# for the visible pure `ext_f` (=107); the downstream `ext_f(7)`/`y>50` are unfoldable at
+# it (`detectAndLowerOnwardControl`) and lowers it as a kickback phase arm on %out
+# (flag=icmp_sgt(%out,50), cqrt_rz_i1(flag,.25), `_unc` strip, flag free; measure
+# reads %out). The ONLY layer that LINK-proves the re-detected onward kickback stream
+# over the control merge resolves + signature-matches (Rule 2/16). Reuses
+# classical_call_under_control_lib.c for the visible pure `ext_f` (=107); the
+# downstream `ext_f(7)`/`y>50` are unfoldable at
 # the CQ-TU compile (ext_f only declared), so `if (y>50)` survives -O1 as a real diamond.
 # control_classical_call_arm_accept_onward_ctl_phase.ll is the pinned IR contract.
 add_test(NAME e2e-slice-control-cond-onward-ctl-phase
@@ -3916,17 +3912,17 @@ add_test(NAME e2e-slice-qram-guarded-store-fp
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_guarded_store_fp.expected.log")
 
 # Phase 7.3 Increment 1 (test_C_libtooling-799w.1): the rolled-in-place Case A
-# phase accumulator. A classically-bounded loop over an in-place persistent rail
-# `for (i<n) q = cq_phi(q, 0.1)` lowers ROLLED — the loop CFG is preserved, the
-# body emits `cqrt_rz_f64` in place over the loop-invariant handle, the
-# loop-carried header phi AND the zero-trip/exit merge phi collapse to the single
-# rail. The bound is a RUNTIME param (the A2 shape: zero-trip guard + exit phi)
-# passed a fixed 3 so the trace is deterministic; the golden (alloc + ry + 3×rz +
-# measure) is BYTE-IDENTICAL to the manually-unrolled 3-iteration form — the PRD
-# §4 done-criterion. ZERO measurements inserted, ZERO in-body frees (the rail is
-# measured after L); the classical induction + loop CFG survive. 7.3 adds no new
-# runtime ABI — this re-proves the existing alloc/ry/rz/measure symbols compose
-# over a rolled loop.
+# phase accumulator. A classically-bounded loop over an in-place persistent f64
+# rail, `for (i<n) { if (q == 2.0) cq_phi(0.1); cq_theta(&q, 0.05); }` (rewritten
+# at 3qlq Inc 1 from the register form; see the slice header), lowers ROLLED — the
+# loop CFG is preserved; each trip mints an fcmp flag, kicks the phase onto it with
+# `cqrt_rz_i1`, strips and frees it, then applies `cqrt_ry_f64` in place over the
+# loop-invariant handle; the loop-carried header phi AND the zero-trip/exit merge
+# phi collapse to the single rail. The bound is a RUNTIME param (the A2 shape:
+# zero-trip guard + exit phi) passed a fixed 3 so the trace is deterministic; the
+# golden is BYTE-IDENTICAL to the manually-unrolled 3-iteration form — the PRD §4
+# done-criterion. ZERO measurements inserted; the only in-body frees are the
+# per-trip flags. 7.3 adds no new runtime ABI.
 add_test(NAME e2e-slice-loop-phase-accum
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -4085,17 +4081,16 @@ add_test(NAME e2e-slice-loop-break-qram-index-i64
     "--allow-unproven")   # dtzb whole-loop reverse-play; see e2e-slice-loop-break
 
 # Phase 7.3 Increment 2 (test_C_libtooling-799w.2): the per-iteration in-body
-# uncompute Case B. Each iteration mints a FRESH rail, derives an iteration-local
-# temp (xor_hl), keeps it alive with a dead cq_phi, and drops both. The Phase-5
-# spine lifts its two backedge guards for the proven iteration-local DAG and
-# places the whole-DAG reversal (rz⁻¹ -> xor `_unc` reading the live mint -> free
-# t-rail -> ry⁻¹ -> free q-rail) IN-BODY, once per iteration. The golden (n=3)
-# shows THREE balanced compute/uncompute pairs over distinct handle pairs (h0/h1,
-# h2/h3, h4/h5) with SIX frees — the per-iteration handle progression proves the
-# free runs once per trip, never a function-scope free over a K-times-reallocated
-# rail (use-after-free + double-free, the Rule-13 hazard). `noinline` is
-# load-bearing (uncompute gated off in main). No new frozen runtime ABI (reuses
-# the `_unc` spine).
+# uncompute Case B. Each iteration mints a FRESH rail q and applies a kickback phase
+# under `t == 11` with `t = q ^ 9` (the dead register-form `cq_phi` keep-alive was
+# replaced at 3qlq Inc 1; see the slice header). `-O1` folds the condition through
+# the xor to `q == 2`, so the golden (n=3) shows, per trip, alloc + ry, the flag
+# mint, `cqrt_rz_i1`, the `_unc` strip and the flag's free: THREE frees over
+# distinct handle pairs (h0/h1, h2/h3, h4/h5) — the per-iteration progression
+# proves each free runs once per trip, never a function-scope free over a
+# K-times-reallocated rail (use-after-free + double-free, the Rule-13 hazard).
+# `noinline` is load-bearing (uncompute gated off in main). No new frozen runtime
+# ABI (reuses the `_unc` spine).
 add_test(NAME e2e-slice-loop-iter-local
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -4106,8 +4101,8 @@ add_test(NAME e2e-slice-loop-iter-local
 
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old
-# controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route
-# control emitter re-adds e2e coverage for tainted control flow when it lands.
+# controlled-op lowering on the `swap-route-control` branch. Tainted control flow
+# is covered by the e2e-slice-control-* slices registered above.
 
 # Convenience target: build the prerequisites, then run every e2e slice.
 add_custom_target(check-e2e
@@ -5053,8 +5048,8 @@ add_test(NAME e2e-grover-loop-offset-twin-identical
 # could be claimed. The decline text ("condition predates a non-diagonal gate")
 # named a register the walk was not even reasoning about, and the disposition
 # turned on which mint clang emitted first. The test is per WIRE now, and this is
-# the end-to-end witness: two rails, two routed regions, four rotations per trip,
-# every ancilla freed in its own iteration, STRICT stage 2b.
+# the end-to-end witness: two rails, two kickback phase regions, four rotations
+# per trip, every flag freed in its own iteration, STRICT stage 2b.
 add_test(NAME e2e-slice-control-grover-loop-two-regs
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"

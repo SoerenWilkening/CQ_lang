@@ -1,26 +1,24 @@
 ; control_inplace_ry_then_phase_region.ll — ACCEPT spec: a control-in-place
-; ROTATION region followed by a swap-routed PHASE region on the SAME register
+; ROTATION region followed by a PHASE region under the same condition register
 ; (bd test_C_libtooling-drbq Inc 1).
 ;
-;     if (q > 5) cq_theta(&r, .9);      // control-in-place  (new)
-;     if (q > 7) r = cq_phi(r, .4);        // swap route        (4.1, unchanged)
+;     if (q > 5) cq_theta(&r, .9);      // control-in-place Ry on r
+;     if (q > 7) cq_phi(.4);            // phase arm, kickback on its own flag
 ;
-; THE COMPOSITION CHECK, and the reason it is worth a fixture of its own: the two
-; mechanisms are different (one relabels in place, the other routes onto a |0>
-; work rail), they run on ONE physical register, and each has to leave the other's
-; premises intact.
+; THE COMPOSITION CHECK, because the two mechanisms differ (one relabels `r` in
+; place, the other puts the phase on its flag ancilla), and each has to leave
+; the other's premises intact.
 ;
-;   * The phase region CSWAPs a register a controlled Ry has already relabelled.
-;     That is fine — the route is basis-agnostic and its join is the adjoint of
-;     its split, so it hands the register back exactly as it found it, whatever
-;     the Ry put there.
-;   * The phase region's own flag strip reads `q`, which neither region touched.
-;   * The phase region's work rail is |0> for free (Rz|0>=|0>) and IS freed; the
-;     rotation region mints no rail at all. Three frees total: flag, rail+flag.
+;   * The phase region's flag strip reads `q`, which neither region touched.
+;   * Each region mints, strips and frees its own flag; the phase region touches
+;     no data register. Two frees total, both flags.
 ;
-; And the register itself stays FROZEN (`ChainWalk::railCarriesControlledRotation`
-; — asked structurally of the emitted gate, never from a recorded `Value *`), so the
-; whole-DAG spine adds no reversal of either region on top.
+; And `r` stays FROZEN (`ChainWalk::railCarriesControlledRotation` — asked
+; structurally of the emitted gate, never from a recorded `Value *`), so the
+; whole-DAG spine adds no reversal on top.
+;
+; (Pre-3qlq the phase region was `r = cq_phi(r, .4)` on the SAME register,
+; lowered by the swap route: a CSWAP onto a |0> work rail, three frees.)
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

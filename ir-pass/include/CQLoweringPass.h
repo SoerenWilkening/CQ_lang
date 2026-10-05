@@ -1,7 +1,7 @@
 // CQLoweringPass.h — production header for the cq-lowering IR pass.
 //
 // The pass walks each function, finds the front-end intrinsics that Clang
-// leaves behind from `include/CQ.h` (`@cq_theta_<sfx>`, `@cq_phi_<sfx>`,
+// leaves behind from `include/CQ.h` (`@cq_theta_<sfx>`, `@cq_phi`,
 // `@cq_measure_<sfx>` — all on plain scalar SSA), propagates taint forward
 // from theta returns, and rewrites:
 //
@@ -9,8 +9,8 @@
 //                       -> `cqrt_alloc_i32(value)` + `cqrt_ry_i32(h, θ)`
 //   * `cq_theta_si32(%h, θ)` (tainted/chained operand)
 //                       -> `cqrt_ry_i32(%h, θ)` (no re-allocation)
-//   * `cq_phi_si32(%h, φ)` (tainted operand)
-//                       -> `cqrt_rz_i32(%h, φ)`; classical operand -> deleted
+//   * `cq_phi(φ)` under a tainted condition -> kickback `cqrt_rz_i1(flag, φ)`
+//                       (control emitters); otherwise a global phase -> deleted
 //   * tainted `add i32 %a, %b` where both are tainted (Q+Q)
 //                       -> `cq_template_add_i32(%a, %b)`
 //   * tainted `add i32 %a, %c` where one operand is classical (Q+C)

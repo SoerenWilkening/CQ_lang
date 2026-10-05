@@ -1,11 +1,12 @@
-// ArmClassify.h — Per-arm lineage classification for swap-route control regions.
+// ArmClassify.h — Per-arm lineage classification for tainted-condition regions.
 //
 // Given a shape-recovered `ControlRegion` (from `ControlDetect::recoverRegion`),
 // classify every arm's contribution to the merge `φ` (4.2, PRD Part II §8.3 +
 // IMPLEMENTATION-4.2 §3 — pure analysis, NO IR mutated, Rule 9):
 //
-//   * PHASE arm — a pure `cq_phi` spine over the tainted routed handle (the 4.1
-//     §0 criteria 2+3, unchanged).
+//   * PHASE arm — a pure `@cq_phi_<sfx>` spine (4.1 §0 criteria 2+3): only the
+//     retired register form or an EMPTY arm; a register-free `cq_phi(θ)` arm is
+//     pre-peeled by `classifyPhaseKickback`.
 //   * VALUE arm — a pure LINEAR chain of supported tainted integer
 //     `BinaryOperator`s bottoming at exactly the routed slot (base-identity),
 //     each link consuming the threaded value as its sole tainted operand.
@@ -13,17 +14,16 @@
 //     since 4.2 WI-3); routable + disjoint is the accept class — a value
 //     DIAMOND (WI-4) or a two-arm value IF/ELSE over ONE shared routed base
 //     (WI-5), with the ordered chain recorded in `Shadow`/`ShadowFalse` +
-//     `ClassArm`/`ClassArmFalse` for the method-B emitter.
+//     `ClassArm`/`ClassArmFalse` for `emitValueRegion` (controlled-copy merge).
 //   * Everything else declines loudly with its precise string: `ChainBase !=
 //     Routed` mux shapes (the Defect-2 fix) and FP-typed merges → `control
 //     flow`; mixed phase/value content (either stacking order, or
 //     heterogeneous if/else arms) → `mixed phase/value arm`; fan-out / stray
 //     ops → `impure value arm`; Q+Q links → `value-arm swap-route` (defer).
 //
-// The §3c provenance walk replicates the per-use arg-1 angle exclusion from
-// `TaintPropagation.cpp` verbatim (the angle operand of a `cq_theta`/`cq_phi` is
-// classical and must never be mistaken for a condition operand — the f64/angle
-// miscompile family). See swap-route 4.1 IMPLEMENTATION §3.
+// The §3c provenance walk replicates the per-use angle exclusion from
+// `TaintPropagation.cpp` verbatim (a rotation angle is classical and is never a
+// condition operand — the f64/angle family). See swap-route 4.1 IMPLEMENTATION §3.
 
 #ifndef CQ_IRPASS_ARM_CLASSIFY_H_
 #define CQ_IRPASS_ARM_CLASSIFY_H_

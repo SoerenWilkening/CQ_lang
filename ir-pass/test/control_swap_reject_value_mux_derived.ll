@@ -6,8 +6,8 @@
 ; `t = q + 7; if (q > 5) { t = q + 3; }` — the merge muxes TWO independently
 ; q-derived values (%t on the straight-through edge, %t2 from the arm). The arm
 ; chain bottoms at %q, NOT at the routed slot %t (`ChainBase != Routed`), so the
-; region is NOT routable: routing %t and replaying the arm chain on a rail would
-; compute add(t,3), not the source's add(q,3) — a verify-clean wrong unitary.
+; region is NOT a routable value arm (the retired swap route would have replayed
+; the arm chain on %t's rail, computing add(t,3) — a verify-clean wrong unitary).
 ; The condition register q is never overwritten here (it stays live; the flag is
 ; strippable), so this is NOT a §3c clobber either — it is the 4.4 select-family
 ; data mux, declined with the DEDICATED `non-routable value multiplexer` string

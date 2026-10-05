@@ -1,13 +1,13 @@
-; control_inplace_rz_multi_rz_spine.ll — the §6a Rz peephole on a MULTI-GATE arm
-; spine (bd test_C_libtooling-drbq Inc 2a; PRD §12.2 admits multi-Rz spines
+; control_inplace_rz_multi_rz_spine.ll — a MULTI-GATE phase arm under a tainted
+; condition (bd test_C_libtooling-drbq Inc 2a; PRD §12.2 admits multi-Rz spines
 ; because a diagonal chain has no basis hazard).
 ;
-; `if (q > 5) { rz(r,a); rz(r,b); rz(r,c); }` — three gates, ONE work rail under
-; the route (which routed once, replayed all three on the rail, and routed back).
-; The peephole re-mints each gate as its own `cqrt_rz_i32_controlled` on the
-; register: the route's ONE quintuple becomes THREE controlled gates, so the
-; collapse is per-GATE for the rz and per-ARM for the alloc/cswap/free — which is
-; exactly the arithmetic `tools/golden_multiset_audit.py` checks.
+;     if (q > 5) { cq_phi(a); cq_phi(b); cq_phi(c); }
+;
+; Each phase kicks back onto the ONE flag: mint, `cqrt_rz_i1(f, a)`,
+; `cqrt_rz_i1(f, b)`, `cqrt_rz_i1(f, c)`, strip, ONE free. (Pre-3qlq the arm was
+; three `rz(r, ·)` on `r`: the swap route replayed all three on ONE work rail,
+; then Inc 2a re-minted each as its own `cqrt_rz_i32_controlled` on `r`.)
 ;
 ; ORDER IS THE POINT. Rz gates commute with each other, so this fixture is not
 ; pinning a correctness hazard in the composition; it pins that the SPINE ORDER
@@ -37,12 +37,6 @@
 ;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

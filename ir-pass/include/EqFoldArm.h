@@ -1,22 +1,20 @@
 // EqFoldArm.h — The equality-folded `br` diamond accept clause (4.5 WI-5).
 //
-// `clang -O1` const-folds an `if (q == k) { q = cq_phi(q, θ) … }` arm: inside
-// the `q==k`-true block it KNOWS `q` equals the literal `k`, so it rewrites the
-// gate's arg-0 handle to the constant — the arm gate becomes `cq_phi(i32 k, θ)`.
-// `classifyArms`'s phase spine then bottoms at the `ConstantInt k` instead of the
-// routed handle `q`, and the region declines `control flow` (the gap WI-5 fills).
+// Pre-3qlq, `clang -O1` const-folded a register-form `if (q == k) { q =
+// cq_phi(q, θ) … }` arm: inside the `q==k`-true block it KNOWS `q` equals `k`, so
+// it rewrote the gate's arg-0 handle to the constant, `cq_phi(i32 k, θ)`, and the
+// phase spine bottomed at the `ConstantInt k` instead of `q`. `tryEqFoldArm` is
+// the STRICTLY-ADDITIVE D1–D8 clause that re-recognized such an arm as a pure
+// PHASE arm over the icmp's tainted operand, re-anchoring the base by SSA
+// identity in `Region.RoutedBase`. It is a PURE PREDICATE (Rule 9, no IR
+// mutation, no diagnostics); on any miss it returns `false` and `classifyArms`
+// declines exactly as before.
 //
-// `tryEqFoldArm` is the STRICTLY-ADDITIVE D1–D8 clause that re-recognizes such a
-// folded arm as a pure PHASE arm over the icmp's tainted operand, RE-ANCHORING
-// the routed handle by SSA identity. It is a PURE PREDICATE (Rule 9, no IR
-// mutation, no diagnostics): it returns `true` only on a proven eq-fold phase
-// arm (and records the routed handle in `Region.RoutedBase`); on any miss it
-// returns `false` so the existing `classifyArms` paths fall through and decline
-// exactly as before — it never weakens a decline (a real cross-handle mux still
-// declines `control flow`). Once it accepts, the diamond is a normal
-// `ControlRegion` and `emitRegion` lowers it (§4D), reading `Region.RoutedBase`
-// for the eq-fold IF/ELSE (where the folded-constant base would otherwise be
-// routed — see ControlPlan.h `RoutedBase`).
+// ⚠ STRUCTURALLY UNREACHABLE SINCE bd 3qlq: D2 needs a spine bottoming at a
+// `ConstantInt`, which only the retired `@cq_phi_<sfx>` arg-0 ever produced, and
+// that spelling is now a loud reserved-name error. A register-free
+// `if (q == k) cq_phi(θ);` has nothing to fold and lowers as an ordinary
+// `PhaseKickback` region (see the header of `control_swap_eqfold_diamond.ll`).
 
 #ifndef CQ_IRPASS_EQ_FOLD_ARM_H_
 #define CQ_IRPASS_EQ_FOLD_ARM_H_

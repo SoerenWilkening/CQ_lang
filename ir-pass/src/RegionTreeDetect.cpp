@@ -2,11 +2,11 @@
 // See RegionTreeDetect.h for the contract and the criterion order.
 //
 // Invoked from ControlDetect's `case RegionShape::Nested:` (where the blanket
-// `nested control flow` decline lived). Proves the §0 depth-2 homogeneous-phase
-// nest by SSA-value identity (Rule 9) or declines loudly with the §5h per-shape
-// string. WI-1 lands DETECTION ONLY: an Accepted nest declines transitionally via
-// the existing `nested control flow` string at the call site (no emitter yet),
-// while the inner branch is recorded in `Claimed` (FA0) for WI-3.
+// `nested control flow` decline lived). Runs the 4.3 depth-2 nest criteria by
+// SSA-value identity (Rule 9) and declines loudly with the §5h per-shape string.
+// Nothing is accepted here since 3qlq Inc 1 part B: a nest that passes every
+// criterion (the pre-3qlq register form) declines `nested control flow` at the
+// end; the register-free nest is claimed earlier by `classifyPhaseKickbackNest`.
 
 #include "RegionTreeDetect.h"
 
@@ -59,11 +59,11 @@ bool isCallToPrefix(const Value *V, StringRef Prefix) {
 bool isPhiCall(const Value *V) { return isCallToPrefix(V, "cq_phi_"); }
 bool isThetaCall(const Value *V) { return isCallToPrefix(V, "cq_theta_"); }
 
-// The bottom of `V`'s backward `cq_phi` arg-0 chain — the diagonal-alias base
-// (criterion 4). Rz is diagonal, so rotation lowering RAUWs every link on this
-// chain to one i32 handle; two merge incomings agree iff their bases are
-// identical. A `cq_theta`/Ry or value-op incoming bottoms at itself (NOT the
-// routed base) → distinct base → criterion 4 declines.
+// The bottom of `V`'s backward `cq_phi_<sfx>` arg-0 chain — the diagonal-alias
+// base (criterion 4). Only the retired register form builds such a chain (any use
+// of it now declines at `resolveSources`), so on any other module this returns
+// `V`. A `cq_theta`/Ry or value-op incoming bottoms at itself → distinct base →
+// criterion 4 declines.
 Value *diagonalBase(Value *V) {
   while (isPhiCall(V)) {
     auto *CI = cast<CallInst>(V);
@@ -135,28 +135,13 @@ NestDisposition recoverRegionTree(
     return diagnoseUnderControl(OuterBI, "nested control flow"),
            NestDisposition::Declined;
 
-  // LOOP GUARD (WI-1 forward note / Rule 6 — the backedge live-range hazard). A
-  // loop-resident nest (the routed base is a loop-carried phi, or the region sits
-  // on a backedge) has no proven sound swap-route lowering in 4.3: the emitter's
-  // emitter-driven LIFO frees + 3-incoming-phi erase run BEFORE — and BYPASS — the
-  // `FreePoint` / `declineClassicalMuxes` backedge guards the flat path defers to
-  // ("tainted value muxed by a classical-condition phi"). So detection must
-  // re-check here, exactly as the flat path relies on those guards. Decline if any
-  // region edge is a backedge — a successor that DOMINATES its source (the textbook
-  // backedge test). Realistic loop nests are ALSO caught incidentally by criterion
-  // 5's provenance cycle (the backedge pulls the inner-arm gate, a non-closure
-  // `cq_phi`, into the inner condition's provenance). SCOPE (WI-5 §8 review, NIT —
-  // do NOT over-trust this): this check inspects only edges OUT of the region
-  // block-set {Pred, Mid, InnerArm, Merge}, so it catches backedges INTERNAL to the
-  // region. A loop whose latch lies OUTSIDE that set (Merge → latch → header, latch
-  // ∉ set) is NOT inspected here and lowers — but ONLY soundly, because a phase nest
-  // self-cleans within the body (no rail/flag handle crosses the backedge; all four
-  // `cqrt_free` land inside the region), the SAME accepted-leak disposition the flat
-  // 4.1 path gives the identical "control region inside a fresh-θ loop" shape. When
-  // value-arm nests land, a loop-carried DIRTY rail WOULD be a Rule-6 collapse — this
-  // guard must then be WIDENED to all reachable backedges, not assumed complete.
-  // Fresh DT per call (never reuse across levels — §12.4). All four §5g/§5h-accept
-  // shapes are acyclic → no false decline.
+  // LOOP GUARD (WI-1 forward note / Rule 6 — the backedge live-range hazard). The
+  // deleted pre-3qlq `NestedRouteEmit` had no proven sound loop-resident lowering
+  // (its LIFO frees + 3-incoming-phi erase bypassed the `FreePoint` /
+  // `declineClassicalMuxes` backedge guards), so decline if any region edge is a
+  // backedge — a successor that DOMINATES its source. SCOPE: only edges OUT of
+  // {Pred, Mid, InnerArm, Merge} are inspected; a latch outside that set is not.
+  // Fresh DT per call (never reuse across levels — §12.4).
   DominatorTree DT(*Pred->getParent());
   for (BasicBlock *B : {Pred, Mid, InnerArm, Merge})
     for (BasicBlock *S : successors(B))
@@ -165,11 +150,10 @@ NestDisposition recoverRegionTree(
                NestDisposition::Declined;
 
   // Per-level polarity (Rule 9 — clang -O1 may make either gate arm the FALSE
-  // successor; the emitter routes a negated level on ¬flag via the cqrt_x
-  // bracket). The OUTER gate arm `Mid` is the false successor iff it was S1 (i.e.
+  // successor). The OUTER gate arm `Mid` is the false successor iff it was S1 (i.e.
   // the tainted branch was on S1, so !T0); the INNER content arm is the false
   // successor iff it was IS1. Resolved by SSA/successor identity, never edge
-  // truth — the emitter pairs them against the 3-incoming phi incomings.
+  // truth. Unread since the pre-3qlq nest emitter that consumed it was deleted.
   const bool OuterNeg = !T0;
   const bool InnerNeg = (InnerArm == IS1);
 
@@ -194,40 +178,34 @@ NestDisposition recoverRegionTree(
            NestDisposition::Declined;
 
   Value *QPred = MergePhi->getIncomingValueForBlock(Pred);   // %q
-  Value *GMid = MergePhi->getIncomingValueForBlock(Mid);     // %g (routed to rail1)
+  Value *GMid = MergePhi->getIncomingValueForBlock(Mid);     // %g
   Value *HArm = MergePhi->getIncomingValueForBlock(InnerArm);  // %h
   Value *InnerCond = InnerBI->getCondition();
 
   // ziov.3 — Q/C-BOUNDARY COND-DATA-USE on a nested condition (the flat path's
   // `ArmClassify::condDataUseDisposition`, applied to BOTH nest levels). A tainted
   // control compare ALSO read as data (`int f=(q>5)`; clang -O1 CSEs the two to one
-  // `icmp` with a `br` + a data user) is a cond-data-use: the flat 4.1 phase path
-  // SHARES ONE physical flag (mint once, route + feed the data use, skip the
-  // strip+free — ziov WI-1). `NestedRouteEmit` does NOT yet share, so left
-  // unchecked it (i) DUPLICATE-MINTS on an OUTER cond-data-use — `flattenRegionTree`
-  // keeps the live data compare (use_empty() false), then `lowerOps` mints a
-  // SECOND, leaked, entangled-with-q flag (verify-clean qubit leak, reachable from
-  // clang -O1); or (ii) (the inner level) would dangle a live use of the Mid gate
-  // the flatten erases. Apply the SAME disposition predicate the flat path uses,
-  // keyed on each region's route block (outer = `Pred`, inner = `Mid`), and decline
-  // LOUDLY HERE — in detection, before `NestedRouteEmit` mutates (Prime Directive;
-  // over-declining is always safe). BEFORE criterion 6 so the precise cond-data-use
+  // `icmp` with a `br` + a data user) is a cond-data-use: the flat phase path
+  // SHARES ONE physical flag (mint once, feed the data use, skip the strip+free —
+  // ziov WI-1). The pre-3qlq `NestedRouteEmit` did not share, and left unchecked
+  // it (i) DUPLICATE-MINTED on an OUTER cond-data-use (a SECOND, leaked,
+  // entangled-with-q flag from `lowerOps`) or (ii) dangled a live use of the Mid
+  // gate the flatten erased. Apply the SAME disposition predicate the flat path
+  // uses, keyed on each level's block (outer = `Pred`, inner = `Mid`), and decline
+  // LOUDLY HERE, in detection. BEFORE criterion 6 so the precise cond-data-use
   // string fires rather than the arm-content `impure phase arm` an inner data use
-  // would otherwise hit (an in-`Mid`/`InnerArm` data op is a homogeneity stray);
-  // no existing reject fixture reuses a condition as data, so no message regresses.
-  // Nested flag-SHARING is a later WI: when it lands the `ShareOk` arm flips from
-  // decline to a shared-flag accept. Pure SSA analysis (Rule 9); diagnostics
-  // anchored on `OuterBI` like every other nested decline, messages mirror the flat
-  // path char-for-char.
+  // would otherwise hit (an in-`Mid`/`InnerArm` data op is a homogeneity stray).
+  // Pure SSA analysis (Rule 9); diagnostics anchored on `OuterBI` like every other
+  // nested decline, messages mirror the flat path char-for-char.
   auto declineCondDataUse = [&](Value *CondV, const BasicBlock *Route) -> bool {
     auto *Cond = dyn_cast<Instruction>(CondV);
     if (!Cond || !condHasDataUse(Cond))
       return false;
     switch (condDataUseDisposition(Cond, Route, Taint)) {
     case CondDataDisp::ShareOk:
-      // A shareable cond-data-use, but `NestedRouteEmit` has no shared-flag path
-      // yet — decline (the flat VALUE-arm path declines a `ShareCondFlag` region
-      // with the SAME string). The later nested-sharing WI flips this to accept.
+      // A shareable cond-data-use; this path has no shared-flag accept, so
+      // decline (the flat VALUE-arm path declines a `ShareCondFlag` region with
+      // the SAME string).
       diagnoseUnderControl(OuterBI, "condition used outside the branch");
       return true;
     case CondDataDisp::MeasuredEarly:
@@ -240,9 +218,9 @@ NestDisposition recoverRegionTree(
       return true;
     case CondDataDisp::Unlowerable:
       // A data cast on the lineage has no template (unsupported width /
-      // out-of-scope pair) — the nested path already declines every cond-data-use
-      // before `NestedRouteEmit` mutates, so this only sharpens the reason from
-      // the generic "used outside the branch" to the precise cause (ziov.4).
+      // out-of-scope pair) — the nested path already declines every cond-data-use,
+      // so this only sharpens the reason from the generic "used outside the
+      // branch" to the precise cause (ziov.4).
       diagnoseUnderControl(OuterBI, "condition data use has no template");
       return true;
     }
@@ -253,10 +231,10 @@ NestDisposition recoverRegionTree(
     return NestDisposition::Declined;
 
   // jvun — CONTROL-CONDITION predicate scope (outer AND inner). An out-of-scope
-  // fcmp predicate has no flag template; the OUTER mint is `NestedRouteEmit` step
-  // 1 (null-bails clean) but the INNER mint follows the outer rail alloc + route +
-  // replay, so an out-of-scope inner condition would MUTATE-then-decline. Decline
-  // BOTH here, in detection, before any emit (Rule 9 detect-before-mutate). The
+  // fcmp predicate has no flag template; in the pre-3qlq nest emitter the INNER
+  // mint followed the outer rail alloc + route + replay, so an out-of-scope inner
+  // condition would have mutated-then-declined. Decline BOTH here, in detection,
+  // before any emit (Rule 9 detect-before-mutate). The
   // conditions are tainted `br` operands the nest proved are `CmpInst`s (the flag
   // mints cast to `CmpInst`); guard the cast defensively all the same.
   auto declineUnlowerableCond = [&](Value *CondV) -> bool {
@@ -280,17 +258,16 @@ NestDisposition recoverRegionTree(
     return NestDisposition::Declined;
 
   // Criterion 4 — N-incoming RAUW-collapse: every merge incoming bottoms at one
-  // base through the `cq_phi` diagonal-alias closure. A distinct independently-
-  // derived base, or a non-diagonal (cq_theta) intervening gate, → `control flow`.
+  // base through the `cq_phi_<sfx>` diagonal-alias closure (retired register
+  // form). A distinct base, or a cq_theta intervening gate, → `control flow`.
   Value *BasePred = diagonalBase(QPred);
   if (diagonalBase(GMid) != BasePred || diagonalBase(HArm) != BasePred)
     return diagnoseUnderControl(OuterBI, "control flow"),
            NestDisposition::Declined;
 
-  // Criterion 5 — MINT-FROM-RAIL (the load-bearing binding signal). The inner
-  // condition must be a function of ONLY the parent-routed value `%g` (the value
-  // physically on rail1 post-route-in) and classical constants — so the inner
-  // flag can be minted `icmp(rail1, k)`. Build `%g`'s diagonal-alias closure (the
+  // Criterion 5 — MINT-FROM-RAIL (pre-3qlq route: the deleted nest emitter put `%g`
+  // on rail1 and minted the inner flag `icmp(rail1, k)`). The inner condition must
+  // be a function of ONLY `%g` and classical constants. Build `%g`'s closure (the
   // backward `cq_phi` arg-0 chain) and require EVERY quantum-register LEAF in the
   // inner condition's provenance — a `cq_theta` source or a pre-region `cq_phi`
   // handle — to lie in it. A SECOND quantum register (`icmp((%g+%r),9)` /
@@ -323,19 +300,14 @@ NestDisposition recoverRegionTree(
   // Criterion 5, STRENGTHENED (§8 adversarial review 2026-06-12 — a REAL verify-
   // clean silent miscompile the leaf-loop above MISSED): the inner compare's
   // tainted operand must be a DIRECT member of the rail closure — a diagonal
-  // (`cq_phi`/Rz) alias of the routed base, whose BASIS VALUE equals rail1's — NOT a
-  // value-DERIVED offshoot built in `Mid` (e.g. `%d = add %g, 1`). `lowerCompare
-  // ToFlagRail` mints the inner flag by substituting rail1 for that operand
-  // WHOLESALE: an in-`Mid` derivation is (i) DROPPED by the substitution, so the
-  // flag tests `rail1 < k` instead of `(rail1+1) < k` — a wrong predicate; AND
-  // (ii) it is neither a `cq_phi` gate (collectArmPhis walks only `cq_phi`) nor a
-  // compare, so `flattenRegionTree` never erases it → it dangles a live use of `%g`
-  // and the `Mid` block erase is a use-after-free (silent on this no-assert LLVM;
-  // SIGSEGV under Guard Malloc). The leaf-only check passes it (its sole quantum
-  // leaf `%g` IS in-closure), so the OPERAND itself must be checked. Over-decline
-  // the derived-inner shape (Prime Directive) — 4.3 does not replay an in-`Mid`
-  // derivation onto the rail. A direct `icmp(%g, k)` / `icmp(%q, k)` (gate-free
-  // Mid) / multi-gate `icmp(%g2, k)` keeps its operand IN the closure and lowers.
+  // (`cq_phi_<sfx>`) alias of `%g` — NOT a value-DERIVED offshoot built in `Mid`
+  // (e.g. `%d = add %g, 1`). Pre-3qlq, the route's `lowerCompareToFlagRail` (no
+  // caller since) substituted rail1 for that operand WHOLESALE: an in-`Mid`
+  // derivation was (i) DROPPED, so the flag tested `rail1 < k` instead of
+  // `(rail1+1) < k`; AND (ii) never erased by the flatten, so it dangled a live
+  // use of `%g` across the `Mid` block erase (a use-after-free). The leaf-only
+  // check passes it (its sole quantum leaf `%g` IS in-closure), so the OPERAND
+  // itself must be checked.
   auto *InnerCmp = dyn_cast<CmpInst>(InnerCond);
   if (!InnerCmp)
     return diagnoseUnderControl(OuterBI, "nested control flow"),

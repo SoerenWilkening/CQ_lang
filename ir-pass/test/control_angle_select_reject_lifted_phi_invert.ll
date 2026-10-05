@@ -2,9 +2,9 @@
 ; through a LIFTABLE ONE-REGISTER CLASSICAL JOIN PHI (bd drbq Inc 2b; the select
 ; form of Inc-1 finding K, a CONFIRMED silent miscompile).
 ;
-;     int m; if (cc) m = cq_phi(r,.1); else m = r;   // classical cc — a join phi
+;     int m; if (cc) m = r; else m = r;   // classical cc — a join phi
 ;     cq_theta(&r, q == 5 ? .9 : .3);             // the 2b gate
-;     cq_invert { m = cq_phi(m,.7); }
+;     cq_invert_begin(); cq_invert_end(); cq_measure(m);  // bracket empty since 3qlq
 ;
 ; `%m` is a phi over two SSA names of ONE physical rail. It passes a position
 ; proof HONESTLY (it dominates the gate), so a fence that stopped AT it would

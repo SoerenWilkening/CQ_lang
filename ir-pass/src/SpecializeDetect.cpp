@@ -35,11 +35,11 @@ namespace cq {
 
 namespace {
 
-// Exact-pointer set of the front-end intrinsic call sites (theta/phi/measure)
-// so a `cq_phi(%q, θ)` — which reads the tainted handle `%q` and so LOOKS like a
-// tainted-arg candidate — is skipped. NEVER name-prefix on the candidate side
-// (a user function named `cq_theta_evil` must not be skipped — it is a genuine
-// unknown callee the carve-out declines).
+// Exact-pointer set of the front-end intrinsic call sites (theta/phase/measure)
+// so a chained `cq_theta(%q, θ)` — which reads the tainted handle `%q` and so
+// LOOKS like a tainted-arg candidate — is skipped. NEVER name-prefix on the
+// candidate side (a user function named `cq_theta_evil` must not be skipped — it
+// is a genuine unknown callee the carve-out declines).
 SmallPtrSet<const CallInst *, 16> intrinsicSites(const TaintSet &taint) {
   SmallPtrSet<const CallInst *, 16> S;
   S.insert(taint.ThetaCalls.begin(), taint.ThetaCalls.end());

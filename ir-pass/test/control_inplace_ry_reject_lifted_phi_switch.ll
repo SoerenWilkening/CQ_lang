@@ -4,20 +4,20 @@
 ; `control_inplace_ry_reject_lifted_phi_measure.ll`'s header for the mechanism.
 ;
 ;     int m;
-;     switch (c) { case 0: m = cq_phi(r,.1); break;
-;                  case 1: m = cq_phi(r,.2); break;
+;     switch (c) { case 0: m = r; break;      // pre-3qlq: m = cq_phi(r,.1)
+;                  case 1: m = r; break;      // pre-3qlq: m = cq_phi(r,.2)
 ;                  default: m = r; }
 ;     if (q == 5) { cq_theta(&r, .9); }
 ;     return cq_measure(m) + cq_measure(r) + cq_measure(q);
 ;
 ; WHY A SEPARATE FIXTURE FROM THE `if/else` ONE: the launder is not "a diamond";
-; it is ANY classical CFG join over one register. `clang -O1` lowers this switch
-; to a two-predecessor merge φ whose incomings are the shared `cq_phi` result and
-; the base (the two case arms are folded into one gate with a `select` on the
-; ANGLE), so it reaches R6 through a φ with a DIFFERENT provenance than the
-; if/else. Pinning only one spelling would leave the fence looking like a
-; diamond-shaped guard, which is exactly the "a STRUCTURAL guard wearing a
-; semantic label" failure this project has already paid for once (bd hcrg).
+; it is ANY classical CFG join over one register. Pre-3qlq `clang -O1` lowered
+; this switch to a two-predecessor merge φ over the shared `cq_phi` result and
+; the base; the CFG remains (the φ now names `r` on both edges), so it reaches
+; R6 through a φ with a DIFFERENT provenance than the if/else. Pinning only one
+; spelling would leave the fence looking like a diamond-shaped guard, which is
+; exactly the "a STRUCTURAL guard wearing a semantic label" failure this project
+; has already paid for once (bd hcrg).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s

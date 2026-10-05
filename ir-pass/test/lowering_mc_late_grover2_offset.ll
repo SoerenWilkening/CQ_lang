@@ -17,20 +17,17 @@
 ; THE PHYSICS CLAIM, and it is the only one worth checking on a Grover slice:
 ; at EVERY `cqrt_ry_i32` — the five S/S† rotations across two iterations — the
 ; ONLY allocated rail is `%h`. Each iteration's oracle chain (`ashr` rail, QQ
-; `add` rail), its flag, and its work rail are all freed on the lines above,
-; and neither offset step mints a rail at all. A record standing at any one of
+; `add` rail) and its flags are all freed on the lines above, and neither
+; offset step mints a rail at all. A record standing at any one of
 ; those rotations would dephase the interference the algorithm depends on; that
 ; is what the M-A guard used to say, loudly and about the wrong cause.
 ;
-; CHECKING IT IS DELIBERATELY SPLIT ACROSS TWO PREFIXES rather than written as a
-; 60-line CHECK-NEXT transcript. The default prefix walks the stream in order and
-; pins the FOUR offset steps and the two oracle discharges; the NOMINT prefix
-; re-reads the SAME file (one `%cq-opt` spawn — the lit cost note) with nothing
-; but CHECK-NOTs, which is the only way to say "no data-template rail for an
-; offset step ANYWHERE in the function", including before the first CHECK. A full
-; adjacency chain would additionally pin the two regions' interleaving — churn
-; with no physics in it; that pinning lives in the two smaller siblings, whose
-; streams are the same shape.
+; CHECKING IT. Since bd 3qlq the default prefix is a CHECK-NEXT transcript of the
+; whole stream: the four in-place offset steps (`cqrt_addc_i32`), both oracle
+; discharges and every free, in order. The pure-negative NOROUTE prefix keeps the
+; old NOMINT question — no `cq_template_sub_i32_hl` / `cq_template_add_i32_hl`
+; rail for an offset step ANYWHERE in the function — and the count prefixes pin
+; four kickbacks and eight frees.
 ;
 ; RED STATE: RED on every plugin built before Increment 7a (non-zero exit at the
 ; M-A guard, so the RUN line fails before any CHECK is read).
@@ -43,10 +40,10 @@
 ;
 ; SHAPE (`clang -O1` output of two iterations of):
 ;     a += off;
-;     if (((a * 5) >> 2) == 5) a = cq_phi(a, PI);
+;     if (((a * 5) >> 2) == 5) cq_phi(PI);
 ;     a -= off;
 ;     cq_theta(&a, -0.5);
-;     if (a == 0) cq_phi(0, PI);
+;     if (a == 0) cq_phi(PI);
 ;     cq_theta(&a, 0.5);
 ;
 ;

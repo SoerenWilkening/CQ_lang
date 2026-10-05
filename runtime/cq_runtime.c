@@ -405,7 +405,7 @@ void cqrt_rz_f80_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
  * block above; only the `ry` stem differs). The control flag is
  * argument 0 and prints as a leading h<N>. Minted ONLY by the in-place
  * rotation-arm emitter (see the header comment for why a tainted-control
- * Ry arm has no swap-route form at all).
+ * Ry arm never had a swap-route form).
  * --------------------------------------------------------------------- */
 
 void cqrt_ry_i1_controlled(int32_t ctrl, int32_t handle, double angle) {
@@ -548,11 +548,11 @@ void cqrt_cnot_controlled(int32_t ctrl, int32_t target_ctrl, int32_t tgt) {
 /* ---------------------------------------------------------------------
  * Controlled-SWAP / Fredkin (npu.4) — swaps a and b iff ctrl is set.
  * PURE self-inverse Fredkin: it frees NOTHING and allocates nothing
- * (SCOPING §2/§3a, PRD Part II §8.2/§8.5). The swap-route emitters
- * depend on that: every region issues route/route-back (+ R-dagger)
- * cswap pairs over live registers and frees the work rail exactly once,
- * separately — a cswap that freed an operand would double-free the rail
- * and hidden-measure the routed register. (An earlier MUX-EXCH/npu.5
+ * (SCOPING §2/§3a, PRD Part II §8.2/§8.5). Its one emitter today, the
+ * abort park, depends on that: it swaps a live register into a graveyard
+ * rail and KEEPS both, so a cswap that freed an operand would be a hidden
+ * measurement. (The retired swap route relied on it the same way for its
+ * route / route-back pairs.) (An earlier MUX-EXCH/npu.5
  * sentence here described a move-and-free composite from the excised
  * controlled-op design, 7cde677 — struck 2026-06-11; never revive it as
  * the primitive's semantics.) Trace prints all three handle args as
@@ -567,8 +567,9 @@ void cqrt_cswap(int32_t ctrl, int32_t a, int32_t b) {
 /* ---------------------------------------------------------------------
  * Reversible basis copy (Phase 4.2, PRD Part II §8.1) — one per integer
  * width. Keep-sources-live transversal-CNOT copy |x>|0> -> |x>|x>; an
- * involution (no _inv twin); never frees its source. Emitted by the
- * value-arm (method-B) swap-route lowering as its copy-out step. Same
+ * involution (no _inv twin); never frees its source. Emitted by the 4.5
+ * switch-value preload and by BreakReversePlay (the retired value-arm
+ * swap route used it as its copy-out step). Same
  * no-arrow void trace convention as cqrt_cswap; both handles print as
  * h<N>. Integer widths only — an FP merge phi under tainted control is
  * an angle, never data, so no f32/f64 twins exist (see cq_runtime.h).

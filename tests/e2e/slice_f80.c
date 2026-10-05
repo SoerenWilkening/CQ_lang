@@ -45,7 +45,7 @@
 /* slice_f80.c — bd 3c6m.4 e2e smoke: the long-double (f80 / x86_fp80) ABI, the
    width behind the 54 `…l` math.h variants. The ONLY layer that LINKS, so the
    only proof that the new frozen f80 symbols — cqrt_alloc_f80 / cqrt_ry_f80 /
-   cqrt_rz_f80 / cqrt_measure_f80 and cq_template_fadd_f80 (+ its `_unc` twin)
+   cqrt_measure_f80 and cq_template_fadd_f80 (+ its `_unc` twin)
    and the intrinsic-backed cq_template_sqrt_f80 (+ `_unc`) — all resolve and
    signature-match the hand-written core ABI (cq_runtime) and the generated
    template ABI (cq_templates / cq_intrinsic_templates) at the long-double width
@@ -65,8 +65,8 @@
        → `cqrt_measure_f80`. This is the headline `…l` shape.
 
    (B) DEAD Q+Q fadd — proves the fadd_f80 `_unc` TWIN. Two more f80 thetas →
-       `fadd x86_fp80` (result dead), kept alive past -O1 DCE by a `cq_phi` (Rz)
-       whose own result is dropped. The whole-DAG uncompute spine reverses the
+       `fadd x86_fp80` (result dead), kept alive past -O1 DCE by the `d == 4` flag
+       of a kickback `cq_phi`. The whole-DAG uncompute spine reverses the
        dead fadd via `cq_template_fadd_f80_unc(out, a, b)` and frees each rail —
        NO cqrt_copy_f80 (an f80 carrier is an angle, never data).
 
@@ -86,6 +86,6 @@ void slice(long double x, long double y) {
     long double p = x; cq_theta(&p, 0.10); /* alloc f80 + ry */
     long double q = y; cq_theta(&q, 0.20); /* alloc f80 + ry */
     long double d = p + q;               /* fadd x86_fp80 QQ (dead) */
-    if (d == 4.0L) cq_phi(0.30);              /* Rz keep-alive; result dropped (dead) */
+    if (d == 4.0L) cq_phi(0.30);              /* kickback keep-alive (rz_i1 on flag) */
 }
 int main(void) { slice(1.5L, 2.5L); return 0; }

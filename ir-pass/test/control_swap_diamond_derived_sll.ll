@@ -1,18 +1,14 @@
 ; control_swap_diamond_derived_sll.ll — ACCEPT: derived base at 64-bit width (sll).
 ;
-; The derived-base diamond (test_C_libtooling-9hh) at the `sll` (i64) width.
-; Pins the width-dispatch interaction: every fixture in the control_swap family
-; is si32, which could hide an i32 width assumption in the emitter's
-; suffix-derived Rz/template minting. Width comes from the FIRST arm gate's
-; cq_phi suffix (never from the derived Q's SSA type — §4 width-source): arm gates
-; as cqrt_rz_i64_controlled, the flag pair as cq_template_icmp_sgt_i64_hl[/_unc]
-; carrying the i64 LITERAL — while every HANDLE stays i32 (Rule 15: width-only ABI,
-; handles are always i32).
-;
-; Under the §6a control-in-place peephole the work rail is gone, so the width probe
-; moves onto the CONTROLLED rotation twin: a suffix-derived i32 assumption in the
-; emitter would now mint `cqrt_rz_i32_controlled` here and this fixture reddens. The
-; only remaining alloc is q's own seeded `cqrt_alloc_i64(i64 %u0)`.
+; `if (q > 5) cq_phi(a);` at the `sll` (i64) width. The derived base
+; (test_C_libtooling-9hh) was a pre-region register-form rotation that 3qlq
+; deleted; the IR now gates on the plain %q. Pins the width-dispatch
+; interaction: an si32-only family could hide an i32 width assumption in the
+; emitter. The data width now reaches the alloc, the Ry
+; and the flag pair `cq_template_icmp_sgt_i64_hl[/_unc]` carrying the i64
+; LITERAL, while the kickback gate is `cqrt_rz_i1` on the flag and every HANDLE
+; stays i32 (Rule 15: width-only ABI). The only alloc is q's own seeded
+; `cqrt_alloc_i64(i64 %u0)`.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
@@ -36,12 +32,6 @@
 ;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

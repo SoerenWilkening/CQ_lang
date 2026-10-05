@@ -6,11 +6,11 @@
 ; second propagation (`repropagateControlMerges`) taints `%out` → `icmp sgt %out, 8`,
 ; a new quantum-controlled branch on the data-mux answer.
 ;
-; yn71 RE-DETECTS the diamond (`detectAndLowerOnwardControl`) and `SwapRouteEmit` emits
-; the routed phase arm ON `%out`: mint the flag from `icmp(%out, 8)`, route `%out` into
-; a |0> rail via `cqrt_cswap`, VERBATIM uncontrolled `cqrt_rz` on the rail, route back,
-; free the rail, `icmp_inv`-strip + free the flag; the measure reads `%out`. This is
-; the CONTROL twin of control_swap_switch_datamux_onward_arith.ll (dugh onward DATA).
+; yn71 RE-DETECTS the diamond (`detectAndLowerOnwardControl`) and lowers the phase
+; arm by kickback on `%out`: mint the flag from `icmp(%out, 8)`, an uncontrolled
+; `cqrt_rz_i1` on the flag, the `_unc` strip and one free; the measure reads
+; `%out` (pre-3qlq: the `cqrt_cswap` swap route on `%out`). This is the CONTROL
+; twin of control_swap_switch_datamux_onward_arith.ll (dugh onward DATA).
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

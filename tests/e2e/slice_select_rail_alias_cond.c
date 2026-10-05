@@ -52,11 +52,11 @@
    ALIASED-RAIL condition compare, the shape bd 7q3s fenced for one day on a
    premise the owner then refuted.
 
-   THE MECHANISM (the durable half of 7q3s, unretracted): `cq_phi` (Rz) is an
-   IN-PLACE gate whose lowered result RAUWs to its argument's i32 handle, so two
-   SSA-DISTINCT values become ONE RAIL during RotationLowering. `%q` and
-   `%r = cq_phi(%q,·)` are therefore not foldable by InstCombine — unlike `x==x`
-   — yet both lower to `h0`. A PRE-MUTATION SSA TEST CANNOT SEE THIS.
+   THE MECHANISM (pre-3qlq register form; the durable half of 7q3s): `cq_phi`
+   (Rz) was an IN-PLACE gate whose lowered result RAUWed to its argument's i32
+   handle, so two SSA-DISTINCT values became ONE RAIL during RotationLowering.
+   `%q` and `%r = cq_phi(%q,·)` were not foldable by InstCombine — unlike `x==x`
+   — yet both lowered to `h0`. A PRE-MUTATION SSA TEST CANNOT SEE THIS.
 
    WHY IT LOWERS RATHER THAN DECLINING — the CASE A / CASE B partition (owner
    ruling 2026-07-31, bd memory [aliased-rail-gate-is-realizable-2026-07-31]):

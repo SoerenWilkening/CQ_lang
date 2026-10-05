@@ -1,20 +1,16 @@
 ; control_swap_switch_phase.ll — ACCEPT spec, homogeneous PHASE switch (N=3).
 ;
-; `switch(q){ case 0: q=cq_phi(q,.1); case 1: q=cq_phi(q,.2); case 2: q=cq_phi(q,.3) }`
-; with an empty default. `clang -O1` const-folds each arm gate to
-; `cq_phi(i32 c_i, θ_i)` — arg-0 is the CASE LITERAL, not q (the §5 re-anchor
-; signature). The swap-route lowering, per content case `i`: mints the eq-flag
-; f_i = (q==c_i), CSWAPs q into a |0> work rail under f_i, replays θ_i VERBATIM on
-; the rail (the folded gate's ARG-1 only — arg-0 discarded, NO RAUW), CSWAPs back
-; (join = adjoint of the split, same f_i), frees the |0> rail, strips f_i with
-; icmp_eq_inv(q) (q==q0), frees f_i. ZERO controlled gates beyond the route
-; cswaps; q (not the phi) is measured; NO surviving `cq_phi`, NO `phi i32`.
-;
-; THE BLOCKER (§5, verify-clean-invisible, NO downstream backstop): a folded
-; `cq_phi(c_i,θ)` that survives to lowerRotations RAUWs to its constant arg-0 →
-; the merge degenerates into a wrong data-mux. Authored at N>=3 to exercise the
-; N-way folded-gate scrub + N-way flatten. WI-1 reached the would-be-ACCEPT and
-; fired the TRANSITIONAL "switch" decline; WI-2 graduates: push + emit + scrub.
+; `switch(q){ case 0: cq_phi(.1); break; case 1: cq_phi(.2); break; case 2:
+; cq_phi(.3); break; }` with an empty default. Per content case `i` the lowering
+; mints the eq-flag f_i = (q==c_i), fires an uncontrolled `cqrt_rz_i1(f_i, θ_i)`
+; with θ_i VERBATIM, strips f_i with its `_unc` (q==q0) and frees it. ZERO
+; controlled gates and no rail; q is measured; NO surviving `cq_phi`, NO `phi i32`.
+; Authored at N>=3 to exercise the N-way scrub + N-way flatten. (Pre-3qlq,
+; `clang -O1` const-folded each register-form arm gate to `cq_phi(i32 c_i, θ_i)`,
+; the lowering swap-routed q through a |0> work rail per case, and a folded gate
+; surviving to lowerRotations RAUWed to its constant arg-0 — the §5 BLOCKER.)
+; WI-1 reached the would-be-ACCEPT and fired the TRANSITIONAL "switch" decline;
+; WI-2 graduates: push + emit + scrub.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

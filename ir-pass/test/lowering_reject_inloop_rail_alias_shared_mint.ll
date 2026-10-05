@@ -4,7 +4,7 @@
 ; by chain.
 ;
 ;     cq_theta(&q, .5);  int a = q, b = q;
-;     for (…) { if (a == 5) a = cq_phi(a, PI); cq_theta(&a, -.5);
+;     for (…) { if (a == 5) cq_phi(PI); cq_theta(&a, -.5);
 ;                                              cq_theta(&b, .25); }
 ;     return cq_measure(a) + cq_measure(b);
 ;

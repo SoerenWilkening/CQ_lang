@@ -44,7 +44,7 @@
    (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_f16.c — Phase 7.1 Increment D e2e smoke: the half-precision (f16) ABI.
    The ONLY layer that LINKS, so the only proof that the new frozen f16 symbols
-   — cqrt_alloc_f16 / cqrt_ry_f16 / cqrt_rz_f16 / cqrt_measure_f16 and
+   — cqrt_alloc_f16 / cqrt_ry_f16 / cqrt_measure_f16 and
    cq_template_fadd_f16(i32,i32) plus its void `_unc` twin
    cq_template_fadd_f16_unc(out,a,b) — all resolve and signature-match against
    the hand-written core ABI (cq_runtime) and the generated template ABI
@@ -60,8 +60,8 @@
        `fadd half` → `cq_template_fadd_f16(hi, hj)` → `cqrt_measure_f16`.
 
    (B) DEAD Q+Q fadd — proves the f16 `_unc` TWIN. Two more f16 thetas →
-       `fadd half` (result dead), kept alive past -O1 DCE by a `cq_phi` (Rz)
-       whose own result is dropped. The whole-DAG uncompute spine reverses the
+       `fadd half` (result dead), kept alive past -O1 DCE by the `d == 4` flag of
+       a kickback `cq_phi`. The whole-DAG uncompute spine reverses the
        dead fadd ONCE via `cq_template_fadd_f16_unc(out, a, b)` (recompute-and-
        XOR from the live f16 sources) and frees each rail — NO added measure,
        NO cqrt_copy_f16 (none exists: an f16 carrier is an angle, never data).
@@ -79,6 +79,6 @@ void slice(_Float16 x, _Float16 y) {
     _Float16 p = x; cq_theta(&p, 0.10); /* alloc f16 + ry */
     _Float16 q = y; cq_theta(&q, 0.20); /* alloc f16 + ry */
     _Float16 d = p + q;               /* fadd half QQ (dead) */
-    if (d == (_Float16)4.0f) cq_phi(0.30);           /* Rz keep-alive; result dropped (dead) */
+    if (d == (_Float16)4.0f) cq_phi(0.30);           /* kickback keep-alive (rz_i1 on flag) */
 }
 int main(void) { slice((_Float16)1.5, (_Float16)2.5); return 0; }

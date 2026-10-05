@@ -109,9 +109,9 @@ bool rewriteCast(CastInst *cast, CastWidths cw, WidthDispatch &wd,
   //     operand is already the i32 handle.
   //   * `cqrt_measure_<W>` (`lowerMeasures`) and the uncompute adjoints —
   //     minted AFTER `lowerOps`, when every RAUW has settled.
-  //   * `cqrt_ry_<W>` / `cqrt_rz_<W>` (`lowerRotations`, runs BEFORE
-  //     `lowerOps`) and SwapRouteEmit's replayed rail Rz — the ONLY final
-  //     calls minted before this point. Their arg-0 handle slot is
+  //   * `cqrt_ry_<W>[_controlled]` (`lowerRotations`, runs BEFORE `lowerOps`)
+  //     and the control emitters' kickback `cqrt_rz_i1` — the ONLY final
+  //     rotation calls minted before this point. Their arg-0 handle slot is
   //     INTENTIONALLY laundered by later RAUWs (it converges to i32); their
   //     arg-1 ANGLE slot must stay floating-point and is exactly what a
   //     cross-type RAUW breaks (Broken module, exit 134). Both emitters now

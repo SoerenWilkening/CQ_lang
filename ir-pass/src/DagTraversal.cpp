@@ -217,7 +217,7 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
       D.NotClosed = true;
       continue;
     }
-    // bd drbq Inc 1: a register a `cqrt_{ry,rz}_<W>_controlled` fired on, reached
+    // bd drbq Inc 1: a register a `cqrt_ry_<W>_controlled` fired on, reached
     // as a DAG ANCESTOR (`s = r + 1` off the rotated register). Its adjoint needs
     // the control flag, which the in-place rotation-arm emitter stripped and
     // freed inside the region — so reversing it HERE would name a freed rail and

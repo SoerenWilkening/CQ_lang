@@ -1,16 +1,16 @@
 ; control_swap_ifelse_multigate.ll — ACCEPT probe: asymmetric multi-gate if/else.
 ;
-; `if (q > 5) { rz(q, a); rz(q, c); } else { rz(q, b); }` — the then arm carries
-; TWO Rz gates, the else arm ONE. Each arm's gates run VERBATIM/UNCONTROLLED on its
-; OWN |0> rail (then's two on the then rail, else's one on the else rail); the join
-; repeats the two CSWAP-pairs (adjoint of the split, same flag); both rails free
-; clean; icmp_inv(q) strips the boolean.
+; `if (q > 5) { cq_phi(a); cq_phi(c); } else { cq_phi(b); }` — the then arm
+; carries TWO phases, the else arm ONE. All three kick back onto ONE flag as
+; uncontrolled `cqrt_rz_i1` in source order: then's two on flag, else's one
+; inside ONE `cqrt_x(flag)` bracket (per arm, not per gate); then the icmp
+; `_unc` strips the flag.
 ;
-; ADVERSARIAL POSTCONDITIONS (§8.2 no-spurious-free + §8.5 dephasing guard) for the
-; two-rail shape: EXACTLY THREE cqrt_free (then rail + else rail + flag) — the later
-; uncompute pass must add NO fourth (a spurious free is a hidden measurement that
-; collapses q); and ZERO controlled gates / copies (method-B copy on a PHASE arm
-; dephases the answer — verified P0 0.585->0.500), NO surviving data mux.
+; ADVERSARIAL POSTCONDITIONS (§8.2 no-spurious-free + §8.5 dephasing guard):
+; EXACTLY ONE cqrt_free (the flag) — the later uncompute pass must add NO second
+; (a spurious free is a hidden measurement that collapses q); and ZERO
+; controlled gates / copies (method-B copy on a PHASE arm dephases the answer —
+; verified P0 0.585->0.500), NO surviving data mux.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

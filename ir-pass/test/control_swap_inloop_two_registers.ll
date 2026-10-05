@@ -3,20 +3,20 @@
 ; own tainted `if`, in ONE classically-bounded loop.
 ;
 ;     cq_theta(&a, .5);  cq_theta(&b, .25);
-;     for (…) { if (a == 5) a = cq_phi(a, PI);
-;               if (b == 3) b = cq_phi(b, PI);
+;     for (…) { if (a == 5) cq_phi(PI);
+;               if (b == 3) cq_phi(PI);
 ;               cq_theta(&a, -.5);  cq_theta(&b, -.25);
 ;               cq_theta(&a,  .5);  cq_theta(&b,  .25); }
 ;     return cq_measure(a) + cq_measure(b);
 ;
 ; `clang -O1` verbatim (two loop-carried register phis in one header, two
-; sequential diamonds, the arms value-propagated to `cq_phi(5, …)` / `cq_phi(3,
-; …)`). It DECLINED at ba35c1f — "condition predates a non-diagonal gate under
-; quantum control" — because `WireWalk::phiTracksWire` asked whether ANY
-; `cq_theta` sat between an incoming and its edge, so each register's rotations
-; refused the OTHER register's barrier and neither could ever be claimed. Nothing
-; about that decline was about either register's own wire; the shape was simply
-; unreachable.
+; sequential diamonds; in the pre-3qlq register form the arms value-propagated to
+; `cq_phi(5, …)` / `cq_phi(3, …)`). It DECLINED at ba35c1f — "condition predates
+; a non-diagonal gate under quantum control" — because `WireWalk::phiTracksWire`
+; asked whether ANY `cq_theta` sat between an incoming and its edge, so each
+; register's rotations refused the OTHER register's barrier and neither could ever
+; be claimed. Nothing about that decline was about either register's own wire; the
+; shape was simply unreachable.
 ;
 ; THE FIXTURE PINS BOTH HALVES OF THE GROUPING RULE, and they pull in opposite
 ; directions, which is why it is worth a file:
@@ -33,11 +33,9 @@
 ; handles, and gates on distinct wires commute, so the rolled body is the same
 ; circuit the hand-unrolled form would emit.
 ;
-; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
-; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE
-; `cqrt_rz_i32_controlled(flag, register, theta)` and the swap route (work-rail
-; alloc, both `cqrt_cswap`s, the rail free) is gone. Nothing else moves — the flag
-; mint, the strip, the flag free and every downstream gate are unchanged.
+; Each phase arm lowers by kickback on its own flag: mint from the icmp, one
+; uncontrolled `cqrt_rz_i1`, icmp `_unc` strip, one `cqrt_free`. No work rail, no
+; `cqrt_cswap`.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
@@ -61,12 +59,6 @@
 ;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

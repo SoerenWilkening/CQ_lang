@@ -7,8 +7,8 @@
    `clang -O1` canonicalizes `!=` to `icmp eq` and SWAPS the branch successors, so
    the gate arm is the FALSE one and the gate must fire on the NEGATED flag. The
    in-place emitter brackets it in the self-inverse `cqrt_x(flag)` pair — the SAME
-   bracket the swap route puts around a negated route, so the two spellings of
-   "fires on not-f" cannot drift.
+   bracket `emitRoute` (now only the abort park's cswap) puts around a negated
+   route, so the two spellings of "fires on not-f" cannot drift.
 
    THE BRACKET IS A PAIR, and the golden is what witnesses that: a stray single
    `cqrt_x` would leave the flag INVERTED when `icmp_eq_i32_hl_unc` recomputes

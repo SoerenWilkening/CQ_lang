@@ -1,7 +1,7 @@
-// RegionFlatten.h — CFG flatten for one swap-route control region (swap-route
-// 4.1 IMPLEMENTATION §1/§4 step 9). After `SwapRouteEmit` has emitted the routed
-// stream into the pred block and rewired the data (RAUW merge phi → routed
-// handle, erased the merge phi + arm `cq_phi`), the region's diamond/if-else CFG
+// RegionFlatten.h — CFG flatten for one tainted-condition control region
+// (swap-route 4.1 IMPLEMENTATION §1/§4 step 9). After an emitter has put its
+// stream into the pred block and rewired the data (RAUW'd + erased the merge phi,
+// if any, and erased or hoisted the arm gates), the region's diamond/if-else CFG
 // is dead control: the conditional `br`, the arm block(s), and the merge block
 // exist only to host instructions that now all live in (or have moved to) the
 // pred. This step linearizes them into the single pred block.
@@ -38,29 +38,26 @@ struct TaintSet;
 // the stream and rewired/erased the phi + arm gate bodies.
 void flattenRegion(const ControlRegion &R, TaintSet &taint);
 
-// Coordinated CFG flatten for a depth-2 nest tree (Phase 4.3,
-// IMPLEMENTATION-4.3 §4/§12.4). `Outer` is the depth-0 diamond whose `Arm` is the
-// `Mid` block (= `Inner.Pred`); `Inner` is the depth-1 diamond; both share the
-// SINGLE merge block `Outer.MergeBB` (== `Inner.MergeBB`) and its 3-incoming phi
-// `Outer.Merge`. Unlike calling `flattenRegion` per region (which would erase the
-// shared merge TWICE → SIGSEGV), this owns the FULL teardown in the one order that
-// keeps every value use-empty when freed: RAUW the merge phi → the routed base,
-// erase it, then both branches, then both compares (BEFORE the arm gates — the
-// inner compare reads the Mid gate, the load-bearing §6.1 order), then the arm
-// gates in `armPhis` REVERSE order (Mid-gates-first forward in, so the inner-arm
-// gate is dropped before the Mid gate it reads), then splice the shared merge into
-// `Pred` exactly once and delete the dead arm/merge blocks. `armPhis` are the
-// per-level IN-BLOCK `@cq_phi` gates in forward (Mid-then-inner-arm) order; empty
-// for the identity nest. `Pred` survives (it holds the emitted routed stream).
+// Coordinated CFG flatten for a depth-2 nest (IMPLEMENTATION-4.3 §4/§12.4).
+// `Outer.Arm` is the `Mid` block (= `Inner.Pred`); both levels share the SINGLE
+// merge block `Outer.MergeBB` (== `Inner.MergeBB`). Unlike calling `flattenRegion`
+// per region (which would erase the shared merge TWICE → SIGSEGV), this owns the
+// FULL teardown in the one order that keeps every value use-empty when freed: the
+// 3-incoming merge phi `Outer.Merge`, if any, RAUW'd → base and erased; both
+// branches; both compares (BEFORE the arm gates — the §6.1 order); the `armPhis`
+// gates in REVERSE order; then the shared merge spliced into `Pred` exactly once
+// and the dead arm/merge blocks deleted. The merge phi and `armPhis` belonged to
+// the pre-3qlq register-form nest: the one caller, `emitPhaseKickbackNestRegion`,
+// passes a null phi and empty `armPhis`. `Pred` survives (it holds the stream).
 void flattenRegionTree(const ControlRegion &Outer, const ControlRegion &Inner,
                        llvm::ArrayRef<llvm::CallInst *> armPhis, TaintSet &taint);
 
 // N-way CFG flatten for an accepted tainted `switch` region (swap-route 4.5;
 // IMPLEMENTATION-4.5 §4/§5). Reads `R.Pred` (the switch block — SURVIVES, holds
-// the emitted routed stream), `R.SwitchArms[].Block` (the case-arm blocks —
-// doomed, incl. empty passthrough arms), and `R.MergeBB` (doomed). Assumes
-// `emitSwitchPhaseRegion` has already emitted the per-case stream, RAUW'd the
-// merge phi → the scrutinee, and scrubbed+erased the phi + folded arm gates.
+// the emitted stream), `R.SwitchArms[].Block` (the case-arm blocks — doomed,
+// incl. empty passthrough arms), and `R.MergeBB` (doomed). Assumes the switch
+// emitter (phase / value / data-mux) has already emitted the per-case stream and
+// disposed of the merge phi (if any) and the arm gates.
 // Captures every block identity BEFORE the first erase (the block-lifetime
 // hazard), then: scrub+erase the `switch` terminator (a USER of the tainted
 // scrutinee — §6.1); splice the merge's surviving instructions into `Pred`;

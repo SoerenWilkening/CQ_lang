@@ -1,12 +1,12 @@
 // EqFoldArm.cpp — The equality-folded `br` diamond accept clause (4.5 WI-5).
 // See EqFoldArm.h for the contract and the const-fold rationale.
 //
-// All analysis is pure SSA reading by value identity, before any mutation
-// (Rule 9). The clause is strictly additive: it ONLY turns a const-folded phase
-// arm `classifyArms` already declines into an accept; every miss returns false
-// and the existing decline paths run unchanged (over-decline is safe — Prime
-// Directive). It reuses `armBlockIsPureSpine`/`taintedAngleGate` (ArmAnalysis.h)
-// for D6/D7 rather than re-deriving them (Rule 14).
+// ⚠ STRUCTURALLY UNREACHABLE since 3qlq: D2's folded base only ever came from
+// the retired register form `cq_phi_<sfx>(k, θ)`, which now declines in
+// `resolveSources` (measured; see control_swap_eqfold_polarity.ll's header).
+// Pure SSA reading by value identity, before any mutation (Rule 9); strictly
+// additive: every miss returns false and the existing declines run unchanged.
+// D6/D7 reuse `armBlockIsPureSpine`/`taintedAngleGate` (ArmAnalysis.h, Rule 14).
 
 #include "EqFoldArm.h"
 
@@ -70,8 +70,8 @@ bool tryEqFoldArm(ControlRegion &Region, const BasicBlock *ArmBB,
 
   // D4 — the compare literal C equals the folded spine constant k (same width
   //      AND same value). A mismatch (`icmp eq q,7` but the arm folds to
-  //      `cq_phi(9,…)`) is an off-pattern shape we cannot prove equals a routed
-  //      phase arm — fall through to the `control flow` decline (D4 fixture).
+  //      `cq_phi_si32(9,…)`) is off-pattern: we cannot prove it is a phase
+  //      arm on `H` — fall through to the `control flow` decline (D4 fixture).
   if (C->getType() != K->getType() || C->getValue() != K->getValue())
     return false;
 
@@ -98,20 +98,20 @@ bool tryEqFoldArm(ControlRegion &Region, const BasicBlock *ArmBB,
   //      names; they never ask WHICH edge the arm sits on. The fold `H → k` is
   //      sound only where `H == k` is a THEOREM — the TRUE successor of an
   //      `icmp eq`, the FALSE successor of an `icmp ne`. On the opposite edge
-  //      `k` is precisely the value `H` does NOT hold, so `cq_phi(k, θ)` is a
-  //      value CLOBBER (the merge takes the rotated CONSTANT, discarding `H`),
-  //      not a phase on `H`; re-anchoring it names the wrong basis and the
-  //      emitter puts `cqrt_rz_<W>_controlled(f, H, θ)` on exactly the branch
-  //      where the source does not rotate `H` at all — a verify-clean wrong
+  //      `k` is precisely the value `H` does NOT hold, so `cq_phi_<sfx>(k, θ)`
+  //      is a value CLOBBER (the merge takes the rotated CONSTANT, discarding
+  //      `H`), not a phase on `H`; re-anchoring it names the wrong basis and the
+  //      phase lands on exactly the branch where the source does not rotate `H`
+  //      (pre-3qlq: `cqrt_rz_<W>_controlled(f, H, θ)`) — a verify-clean wrong
   //      unitary (bd test_C_libtooling-ogw2). This mirrors, one edge over, the
   //      `StraightProvesEq` discipline `straightThroughConstFoldHandle`
   //      (ArmClassify.cpp) already applies to the Pred edge.
   //
-  //      ⚠ `control_swap_eqfold_polarity.ll` — `icmp ne` with the folded arm on
-  //      the FALSE successor — is the VALID negated shape (`ne`-false IS the
-  //      `H == k` region) and MUST STAY ACCEPTING; so is `@ifelse_ne` in
-  //      control_swap_eqfold_ifelse.ll. Polarity is a proof obligation, not a
-  //      preference for `ArmNegated == false`.
+  //      `icmp ne` with the folded arm on the FALSE successor is the VALID
+  //      negated shape (`ne`-false IS the `H == k` region). Its old pins
+  //      (`control_swap_eqfold_polarity.ll`, `@ifelse_ne`) now carry the
+  //      register-free `cq_phi` and pin the kickback, not this clause. Polarity
+  //      is a proof obligation, not a preference for `ArmNegated == false`.
   //
   //      From `clang -O1` C the wrong edge is unreachable (clang folds the
   //      straight-through incoming too, and the region then declines
@@ -143,7 +143,7 @@ bool tryEqFoldArm(ControlRegion &Region, const BasicBlock *ArmBB,
   // ACCEPT — a const-folded phase arm over the tainted handle H. Re-anchor the
   // routed handle by SSA identity (for an if/else's first arm `Routed` was null;
   // for a diamond it already equals H). `Region.RoutedBase` carries it to
-  // `emitRegion` so the eq-fold IF/ELSE routes H, not the folded constant base.
+  // `emitRegion` so the eq-fold IF/ELSE anchors on H, not the folded constant.
   Routed = H;
   Region.setRoutedBase(H);
   return true;

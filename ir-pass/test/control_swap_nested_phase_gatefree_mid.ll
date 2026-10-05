@@ -1,16 +1,14 @@
 ; control_swap_nested_phase_gatefree_mid.ll — ACCEPT spec (§3.1 step-6 GATE-FREE
 ; Mid degenerate; was control_swap_defer_nested.ll, converted at WI-3 / MD3).
 ;
-; `if (q > 5) { if (q > 3) { rz(q, a); } }`. The outer arm block (%mid) holds a
-; second tainted-condition `br` but NO intervening gate — the inner condition
-; reads the UN-gated %q directly (criterion-5 mint-from-rail is satisfied trivially:
-; the inner cond reads exactly the routed %q, which lives on rail1 post-route-in).
-; Criterion 6 (tree homogeneity) holds VACUOUSLY over the empty Mid gate set, so
-; this ACCEPTS. Through WI-1/WI-2 it declined transitionally `nested control flow`
-; (no emitter); WI-3 lands NestedRouteEmit and it now LOWERS — the distinctive
-; shape: outer route-in with NO intervening cqrt_rz before the inner mint, the
-; rail/rotation WIDTH recovered from the inner-arm gate (Mid contributes none).
-; ZERO controlled gates, NO cqrt_toffoli, NO phi i32, EXACTLY FOUR cqrt_free.
+; `if (q > 5) { if (q > 3) cq_phi(a); }`. The outer arm block (%mid) holds a
+; second tainted-condition `br` but NO intervening gate, so the inner condition
+; reads %q directly and tree homogeneity (criterion 6) holds VACUOUSLY over the
+; empty Mid gate set: this ACCEPTS (it declined `nested control flow` before WI-3).
+; It lowers by kickback on the AND of both flags: a `cqrt_toffoli` writes it into a
+; fresh |0> ancilla, an uncontrolled `cqrt_rz_i1` lands `a` there, a second
+; `cqrt_toffoli` clears it, and the ancilla and both flags are stripped and freed.
+; ZERO controlled gates, NO phi i32, ONE cqrt_rz_i1, EXACTLY THREE cqrt_free.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

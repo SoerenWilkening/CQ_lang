@@ -326,15 +326,15 @@ void declineStaleRecordOps(Module &M, TaintSet &taint) {
   //     lowering_reject_stale_record_add.ll).
   //   * a position-FREE rule would over-decline the first shape — a
   //     legitimate use-then-re-rotate program — for no soundness gain.
-  // Diagonal gates (`cq_phi`/Rz) on the wire are basis-preserving and never
-  // trigger (bd memory rz-diag-flag-strip-invariant; fixture
-  // lowering_stale_record_add_after_phi.ll). An operand that is itself a
-  // diagonal ALIAS (`%qd = cq_phi(%q, ·)`) shares `%q`'s physical wire, so a
-  // chained theta consuming the SIBLING name `%q` stales it too — the wire
-  // walk closes every seed backward through `cq_phi` arg-0 hops before
-  // walking forward (test_C_libtooling-6j1; fixtures
+  // Diagonal gates (Rz) on the wire are basis-preserving and never trigger
+  // (bd memory rz-diag-flag-strip-invariant; fixture
+  // lowering_stale_record_add_after_phi.ll). A pre-3qlq register-form diagonal
+  // ALIAS (`%qd = cq_phi(%q, ·)`) shared `%q`'s physical wire, so a chained
+  // theta consuming the SIBLING name `%q` staled it too — the wire walk closes
+  // every seed backward through such arg-0 hops before walking forward
+  // (test_C_libtooling-6j1; fixtures
   // lowering_reject_stale_record_alias_{sibling,chain}.ll, accept twins
-  // lowering_stale_record_alias_{before_theta,producer}.ll).
+  // lowering_stale_record_alias_{before_theta,producer}.ll; migrated at 3qlq).
   //
   // ── WHERE THIS RUNS, AND THE L1 ANSWER (bd 3d8q) ─────────────────────────
   // This sweep is called from FOUR slots and needs no fifth:
@@ -402,8 +402,8 @@ void declineLiftedStaleRecordOps(Module &M, TaintSet &taint) {
   // The re-check is a FULL re-sweep, NOT scoped to the phi's direct users. A
   // Rule-13 adversarial probe (2026-06-11) showed that scoping to the recorded
   // direct consumers is INCOMPLETE: a stale arithmetic op can sit ANY number of
-  // in-place-gate hops (a diagonal `cq_phi`/Rz, or a chained `cq_theta`/Ry, both
-  // valid wire-sharing users that are not themselves `lowerOps` ops) downstream
+  // in-place-gate hops (a chained `cq_theta`/Ry; pre-3qlq a register `cq_phi`/Rz —
+  // wire-sharing users that are not themselves `lowerOps` ops) downstream
   // of the lifted phi, so the genuine stale op is a TRANSITIVE user the direct
   // re-check never visits — a residual silent miscompile. Re-running the
   // COMPLETE `declineStaleRecordOps` on the post-lift IR adjudicates every
@@ -878,15 +878,15 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint,
   // IN PLACE. Decided HERE, in Phase 1, and for a measured reason — this is the
   // first point in the pipeline where the fence can see the truth.
   //
-  // MEASURED, on the campaign's own customer (`slice_control_seq_grover`, IR
-  // dumped immediately before this call). At `clang -O1` the parent of two of
+  // MEASURED pre-3qlq, on the customer (`slice_control_seq_grover` in the register
+  // form, IR dumped immediately before this call). At `-O1` the parent of two of
   // its three candidate sites is a MERGE PHI of a tainted-condition diamond
   // (`%8 = phi i32 [ %6, %5 ], [ %3, %0 ]`), whose "later uses" cannot be read
   // off the CFG at all. By the time `lowerOps` runs, `detectControlRegions` +
   // `SwapRouteEmit` + `RegionFlatten` have linearized the whole function and
   // RAUW'd those phis away, so the same site reads as a flat
   // `%6 = add nsw i32 %5, %4` on a handle whose entire user list — the region
-  // compare, its `_unc` strip, the two `cqrt_cswap`s, the `cqrt_free` — is
+  // compare, its `_unc` strip, the route's two `cqrt_cswap`s, the free — was
   // visible, positioned, and ALREADY TORN DOWN. The plan of record said "the
   // Phase-1 collection loop"; this is that loop, and it is also the earliest
   // slot where the answer is not a guess.

@@ -31,9 +31,9 @@
 ;
 ; WHAT MUST BE IN THE OUTPUT: the four-call per-activation stream (flag mint,
 ; controlled Ry, flag strip, free) INSIDE the loop block, and NO route at all —
-; the cswap route cannot carry an Ry (`Ry|0> != |0>` leaves the inactive work
-; rail dirty and entangled, Rules 6/8), which is why this is the MECHANISM and
-; not a peephole.
+; the retired cswap route could not carry an Ry (`Ry|0> != |0>` leaves the
+; inactive work rail dirty and entangled, Rules 6/8), which is why this is the
+; MECHANISM and not a peephole.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

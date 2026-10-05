@@ -4,11 +4,11 @@
 ;
 ; Same `%c = icmp sgt q, 5` reused as control (`br`) AND data (`zext → add →
 ; measure`). Like the escape twin, the shared flag is minted ONCE and fed to both
-; the route and the `zext`; its eager strip+free is SKIPPED because the data
-; lineage is consumed by a measurement — the measurement owns the handle
-; (FreePoint → Measured, no adjoint/free). Net: ONE icmp mint, NO `_inv`, NO flag
-; free. (This is the shape the flat 4.1 path declined as "condition used outside
-; the branch"; ziov upgrades that decline to a correct shared-flag accept.)
+; the kickback `cqrt_rz_i1` and the `zext`; its eager strip+free is SKIPPED
+; because the data lineage is consumed by a measurement — the measurement owns
+; the handle (FreePoint → Measured). Net: ONE icmp mint, NO icmp `_unc`, NO flag
+; free; only the `zext` rail is uncomputed and freed (FCNT's one free). (The
+; flat 4.1 path declined this as "condition used outside the branch".)
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

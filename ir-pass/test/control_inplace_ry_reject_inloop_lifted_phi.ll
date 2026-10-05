@@ -1,7 +1,7 @@
 ; control_inplace_ry_reject_inloop_lifted_phi.ll — DECLINE. The IN-LOOP sibling
-; of `control_inplace_ry_lifted_phi_after_region.ll`: the same classical guard
-; (`if (OPQ) r = cq_phi(r, .5);`) placed INSIDE the rolled loop body, below the
-; control-in-place Ry region.
+; of `control_inplace_ry_lifted_phi_after_region.ll`: a classical guard
+; (`if (OPQ) cq_theta(&r, .5);`, re-spelled by 3qlq — see the note below) placed
+; INSIDE the rolled loop body, below the control-in-place Ry region.
 ;
 ; bd test_C_libtooling-drbq Increment 3, round-1 Rule-13 review finding F-L5-1.
 ; The flat form of this shape ACCEPTS (that fixture); this one does not, and the
@@ -25,13 +25,13 @@
 ; `condition predates a non-diagonal gate`, before the loop stage is reached) —
 ; both binaries refuse it, only the owner moved.
 ;
-; VERBATIM `clang -O1` output for
+; VERBATIM `clang -O1` output (OPQ arm re-spelled by 3qlq) for
 ;   volatile int OPQ = 1;
 ;   int slice(void) { int q=3, r=7;
 ;                     cq_theta(&q,0.5); cq_theta(&r,0.25);
 ;                     for (int i = 0; i < 3; ++i) {
 ;                       if (q == 5) { cq_theta(&r, 0.9); }
-;                       if (OPQ)    { r = cq_phi(r, 0.5); }
+;                       if (OPQ)    { cq_theta(&r, 0.5); }
 ;                       cq_theta(&q, 0.3);
 ;                     }
 ;                     return cq_measure(q) + cq_measure(r); }

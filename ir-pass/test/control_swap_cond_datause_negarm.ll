@@ -2,11 +2,11 @@
 ; shared condition flag on a NEGATED diamond (the gate arm is the FALSE
 ; successor, Rule 9 — clang -O1 swaps the branch targets).
 ;
-; `br i1 %c, label %merge, label %arm` routes the gate on ¬flag (the `cqrt_x`
-; bracket), AND `%c` is reused as data (`zext → add → ret`, escaped). The flag's
-; VALUE is independent of arm polarity, so the shared `q>5` flag feeds the data
-; `zext` correctly while the route fires on ¬flag. ONE mint, no strip, no flag
-; free — the ¬flag `cqrt_x` brackets must survive on the SHARED flag handle.
+; `br i1 %c, label %merge, label %arm` fires the phase on ¬flag (`cqrt_rz_i1`
+; inside a `cqrt_x` bracket), AND `%c` is reused as data (`zext → add → ret`,
+; escaped). The flag's VALUE is independent of arm polarity, so the shared `q>5`
+; flag feeds the data `zext` correctly while the kickback fires on ¬flag. ONE
+; mint, no strip, no free — the ¬flag `cqrt_x` brackets sit on the SHARED flag.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

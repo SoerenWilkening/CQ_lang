@@ -1,15 +1,13 @@
-; control_inplace_rz_negated.ll — the §6a Rz peephole on a NEGATED (false-successor)
-; phase arm (bd test_C_libtooling-drbq Inc 2a). Rule 9 polarity.
+; control_inplace_rz_negated.ll — a NEGATED (false-successor) phase arm under a
+; tainted condition (bd test_C_libtooling-drbq Inc 2a). Rule 9 polarity.
 ;
-; `clang -O1` routinely makes the gate arm the FALSE successor, so the gate must
-; fire on ¬flag. Both spellings of "fires on ¬f" use the SAME self-inverse
-; `cqrt_x(flag)` bracket the swap route used, so they cannot drift — what changes
-; is HOW MANY. The route bracketed EACH of its two `cqrt_cswap`s and therefore
-; carried FOUR `cqrt_x`; control-in-place brackets the arm's GATE RUN once and
-; carries TWO. That is the ONE count besides the route itself that Inc 2a moves,
-; and it is the reason PRD §9.2's literal "the cqrt_x brackets … unchanged" is
-; true of a non-negated arm and false here; `tools/golden_multiset_audit.py`
-; models the -2 explicitly rather than waiving it.
+;     if (!(q > 5)) cq_phi(a);       // IR: `br i1 %c, label %merge, label %arm`
+;
+; `clang -O1` routinely makes the gate arm the FALSE successor, so the phase must
+; land on ¬flag: the kickback `cqrt_rz_i1(f, a)` sits inside ONE self-inverse
+; `cqrt_x(flag)` pair — the same bracket `emitRoute` (now only the abort park)
+; puts around a negated cswap, so the spellings cannot drift. Two `cqrt_x` in all
+; (the retired swap route bracketed each of its two cswaps and carried FOUR).
 ;
 ; THE PAIR IS WHAT THIS PINS. A stray SINGLE `cqrt_x` would leave the flag
 ; inverted when the strip recomputes `q > 5`, so the strip would XOR onto the
@@ -39,12 +37,6 @@
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * call void @cqrt_x(   [superseded by the XCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

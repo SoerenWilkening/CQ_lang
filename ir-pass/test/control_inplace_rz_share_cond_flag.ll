@@ -1,4 +1,4 @@
-; control_inplace_rz_share_cond_flag.ll — the §6a Rz peephole on a ziov
+; control_inplace_rz_share_cond_flag.ll — a phase arm (kickback) on a ziov
 ; SHARE-COND-FLAG region: the condition compare is ALSO read as DATA
 ; (bd test_C_libtooling-drbq Inc 2a; PRD §12.2 keeps ShareCondFlag on the same
 ; path it has today, strip skipped).
@@ -15,9 +15,9 @@
 ;     measurement. So this is the one accepted Rz shape with ZERO `cqrt_free` from
 ;     the region itself.
 ;
-; Both properties are inherited verbatim from the routed path — Inc 2a changed only
-; what sits between the mint and the (absent) strip.
-;
+; Both properties date from the retired routed path; Inc 2a and then 3qlq changed
+; only what sits between the mint and the (absent) strip — now ONE kickback
+; `cqrt_rz_i1` on the flag.
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
 ; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)

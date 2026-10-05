@@ -1,82 +1,41 @@
 ; lowering_uncompute_interior_leak_route_in_interval.ll — LEAK PROBE (M-B
-; Increment 5, bd test_C_libtooling-4p7j Rule-13 round, finding F4a). CLAUSE (d)'s
-; OWN ROUTE CASE: a Phase-4 `cqrt_cswap` route on a BORROWED parent, strictly
-; INSIDE the interval [first recovered gate reading it, `At`], satisfies neither
-; disjunct and leaks the group.
+; Increment 5, bd test_C_libtooling-4p7j Rule-13 round, finding F4a). CLAUSE (d)
+; with a user of the BORROWED parent strictly INSIDE the interval [first recovered
+; gate reading it, `At`]: it satisfies neither disjunct, and the group leaks.
 ;
 ; The clause-(d) scan has exactly two ways out for a mutation `M` of a borrowed
 ; parent `P`:
 ;   LEFT   `provablyBefore(M, First)` — M ran before the interval opened;
 ;   RIGHT  `provablyBefore(At, M)`    — M runs only after the discharge.
-; The shipped fixtures pin LEFT (the source `Ry` that mints the wire —
-; interior_straightline) and RIGHT (the chained `cq_theta` after the discharge —
-; live_record_derived_cond_theta_discharged; and a region route after it —
-; interior_region_chain, then named interior_region_partial). THE STRICTLY-INSIDE
-; CASE HAD NO FIXTURE, which is
-; the one where an `_unc` would read a RELABELLED register: `cqrt_cswap(flag, P,
-; work)` exchanges P's amplitude with the work rail on the flag-set branch, so
-; between the forward gate and the adjoint P no longer holds what the forward
-; gate read, and the "adjoint" would neither zero the rail nor be the forward's
-; inverse. Freeing it would then be a hidden measurement (Rules 6/8).
+; Other fixtures pin LEFT (interior_straightline) and RIGHT
+; (live_record_derived_cond_theta_discharged, interior_region_chain).
 ;
-; THE SHAPE (the hand-IR spelling of `x = a*a; m0 = measure(x < 3); if (a > 2)
-; { a = cq_phi(a, .25); } measure(x > 100)` — the C form is
-; `scratchpad/review-inc5/a19_cswap_interval_c.c` and lowers identically).
-; `%h_op = mul(%h, %h)` is read BEFORE the region and again AFTER it, so `At`
-; lands after the region while `First` is before it, and the emitter's own route
-; pair sits between them.
+; THE SHAPE (hand IR): `%h_op = mul(%h, %h)` is minted BEFORE the region
+; `if (a > 2) cq_phi(.25)` and read AFTER it (`mul %x, 3`, measured), so `At`
+; lands after the region while `First` is before it.
 ;
-; ⚠ RE-DISPOSITIONED BY M-B INCREMENT 6 — SAME VERDICT, DIFFERENT REASON, AND
-; THE HEADER ABOVE IS NOW HISTORY. Increment 6 added clause (d2): the phase-arm
-; emitter RECORDS its route as a matched group, and a group every member of which
-; lies inside the interval IS admitted (it is the identity on the base's basis
-; label, and an `_unc` is a label-only reader). So the two `cqrt_cswap` calls in
-; this file are no longer what refuses it.
-;
-; WHAT REFUSES IT NOW, measured: the region's FLAG STRIP,
-; `cq_template_icmp_sgt_i32_hl_unc(%[[FLAG]], %[[H]], 2)`. This region's
-; condition is DIRECT, so the strip reads the borrowed source wire itself.
-; `preservesBorrowedParent` proves only two shapes read-only (a diagonal
-; `cqrt_rz_<W>` on the parent, and a forward reassigning producer) and an adjoint
-; twin is neither, so the strip must clear the positional scan — and it cannot:
-; it is after the interval opens (not LEFT) and before the discharge would go
-; (not RIGHT), and it is not a route, so clause (d2) never looks at it.
+; WHAT REFUSES IT TODAY. The region's condition is DIRECT, so its flag strip
+; `cq_template_icmp_sgt_i32_hl_unc(%[[H_CMP]], %[[H]], 2)` reads the borrowed wire
+; itself, inside the interval. `preservesBorrowedParent` admits only a diagonal
+; rotation, a forward producer or a proven read-only clone call; an adjoint twin
+; is none of them, so the strip must clear the positional scan, and it cannot
+; (after `First`, before `At`). The kickback's `cqrt_rz_i1` lands on the flag, not
+; on `%[[H]]`. So `%h_op` is never uncomputed (the NOROUTE `mul` `_unc` negatives).
 ;
 ; THAT IS AN OVER-DECLINE AND IS RECORDED AS ONE. A recorded strip demonstrably
 ; does not WRITE the operands in its shifted handle slots — that is the whole
 ; basis on which `isInteriorConsumer` admits it as a consumer — so admitting it
 ; in `preservesBorrowedParent` too would be the same claim from the other side.
-; Increment 6 deliberately did not make it (its customers do not need it and the
-; leak direction is free), and the widening is filed rather than assumed. If this
-; file ever ACCEPTS, check that it was that widening and not a lost fence.
+; The widening is filed rather than assumed. If this file ever ACCEPTS, check that
+; it was that widening and not a lost fence.
 ;
-; NOTE WHAT IS *NOT* THE ARGUMENT, and it is why the route half moved. The route
-; pair is self-cancelling — the second `cqrt_cswap` restores the basis label,
-; which is why the emitter's own flag strip may read `%h` between the halves and
-; why a chain SUNK past a whole region still discharges (`a9b_after_region.c`,
-; LEFT). Increment 5 refused it anyway, on the grounds that clause (d) is a
-; POSITIONAL proof and a data-uncompute driver that does not own the route should
-; not reason about it. Increment 6 resolved that by having the OWNER record the
-; pair, rather than by having this scan infer it.
-;
-; ⚠ AND SINCE drbq Inc 2a THERE IS NO ROUTE HERE AT ALL — SAY IT PLAINLY, BECAUSE
-; THE FILE'S NAME NO LONGER DESCRIBES WHAT IT MEASURES. The §6a peephole lowers
-; this FLAT phase region control-in-place: the quintuple
-; `alloc(0); cswap; rz(rail); cswap; free(rail)` is one
-; `cqrt_rz_i32_controlled(%[[FLAG]], %[[H]], .25)`. So the "strictly-inside route"
-; that names this file is not emitted any more, and the clause-(d2) group
-; exemption is not consulted (`TaintSet::RestoringRoutes` has no writer at HEAD).
-;
-; WHAT THE FILE MEASURES NOW, and why it is still worth its name in git history:
-; the SAME verdict, from the SAME refusing element, with one MORE thing proven not
-; to be it. The controlled Rz sits strictly inside the interval on the borrowed
-; parent `%[[H]]`, and it is ADMITTED — `preservesBorrowedParent` clause (1b), a
-; diagonal gate on both branches moves no basis label. The flag strip is still
-; what refuses the discharge, exactly as the Increment-6 paragraph above records:
-; it is after `First`, before `At`, and is neither a diagonal rotation nor a
-; forward reassigning producer. If this file ever ACCEPTS, check that it was the
-; filed strip widening and not a lost fence — that instruction is unchanged.
-;
+; HISTORY, and why the name no longer describes the file. Increment 5 wrote it for
+; a Phase-4 `cqrt_cswap` ROUTE pair on the parent inside the interval
+; (`cqrt_cswap(flag, P, work)` relabels P between the forward gate and the
+; adjoint). Increment 6's clause (d2) admitted a RECORDED route group lying wholly
+; inside, and the strip became the refuser. drbq Inc 2a replaced the route with
+; one `cqrt_rz_i32_controlled(flag, %h, .25)` (admitted by clause (1b)); bd 3qlq
+; replaced that with the kickback. The verdict and the refusing strip are unchanged.
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
 ; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)

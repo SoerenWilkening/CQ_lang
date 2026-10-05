@@ -3,7 +3,7 @@
 ; miscompile, and F-1's EXACT TWIN one hop out.
 ;
 ;     int q = 0; cq_theta(&q, .5);
-;     for (i<2) { if (q==5) q=cq_phi(q,PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
+;     for (i<2) { if (q==5) cq_phi(PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
 ;     int a = q; cq_theta(&a, 0.125);  /* arg-0 IS a chain member — the RESULT is not */
 ;     int b = a; cq_theta(&b, 0.25);  /* a rail gate AFTER the record `a`            */
 ;     return cq_measure(a) + cq_measure(b);
@@ -30,7 +30,7 @@
 ;
 ; THIS IS THE `clang -O1` FORM of the C above, hand-named but structurally
 ; verbatim: the rotated 2-trip do-while, the `icmp eq %i, 0` back edge, and the
-; value-propagated `cq_phi(5, PI)` on the equality arm (Rule 9's canonicalization).
+; `cq_phi(PI)` on the equality arm.
 ;
 ; THE ROUND-1 TWIN IS lowering_reject_loop_rail_record_offchain_theta.ll — the
 ; SAME C program with the in-body tainted `if` removed, so it is claimed by

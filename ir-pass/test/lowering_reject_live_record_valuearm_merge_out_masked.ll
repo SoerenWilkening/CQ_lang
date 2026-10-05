@@ -15,7 +15,7 @@
 ;
 ; MEASURED AT HEAD AND AFTER INCREMENT 3 — verdict and message IDENTICAL:
 ;     cq controlled lowering: value-arm swap-route under quantum control
-; from `ArmClassify`/`SwapRouteEmit`, long before the late live-record slot. So
+; from `ArmClassify`, long before the late live-record slot. So
 ; class 3 IS masked — but NOT by bd test_C_libtooling-lom0's
 ; "condition predates a non-diagonal gate", which is what the Increment-1 scope
 ; note said. See lowering_reject_live_record_switch_mux_out_masked.ll for the

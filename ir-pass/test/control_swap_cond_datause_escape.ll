@@ -5,16 +5,16 @@
 ; `%c = icmp sgt q, 5` feeds the diamond's `br` (control) AND a `zext` (data) — the
 ; CSE of a `q>5` reused as a boolean value `f`. The flat 4.1 classifier USED to
 ; decline this outright ("condition used outside the branch"); ziov re-derives the
-; correct lowering (owner 2026-06-15): the control flag IS `q>5`, so the route and
-; the data use must read ONE shared physical flag — mint it once, route with it,
-; and feed the SAME handle to the data `zext`. The flag's eager strip+free is
-; SKIPPED because its data lineage (`zext → add → ret`) escapes to the caller —
-; FreePoint already treats that chain as Escaped (left allocated, caller owns it).
-; Net: ONE icmp mint, NO `_inv` flag-strip, NO flag free.
+; correct lowering (owner 2026-06-15): the control flag IS `q>5`, so the phase
+; arm and the data use must read ONE shared physical flag — mint it once, kick
+; the phase onto it (`cqrt_rz_i1`), and feed the SAME handle to the data `zext`.
+; The flag's eager strip+free is SKIPPED because its data lineage (`zext → add
+; → ret`) escapes to the caller — FreePoint treats that chain as Escaped (left
+; allocated, caller owns it). Net: ONE icmp mint, NO `_unc` strip, NO free.
 ;
 ; ADVERSARIAL POSTCONDITION (the ziov bug it fixes): exactly ONE
-; cq_template_icmp_sgt_i32_hl — NOT two distinct flag handles (the route and the
-; data use controlled by different physical flags was the verify-clean redundancy).
+; cq_template_icmp_sgt_i32_hl — NOT two distinct flag handles (the phase arm and
+; the data use reading different physical flags was the verify-clean redundancy).
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

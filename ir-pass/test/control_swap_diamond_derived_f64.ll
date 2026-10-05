@@ -1,18 +1,15 @@
 ; control_swap_diamond_derived_f64.ll — ACCEPT: derived base at f64 / fcmp condition.
 ;
-; The derived-base diamond (test_C_libtooling-9hh) over a FLOAT quantum handle
-; with an `fcmp` condition — the first float-width fixture in the control_swap
-; family (the §8 completeness review found the fcmp control path entirely
-; unpinned, 2026-06-10). Same diagonality argument as i32: Rz preserves the
-; basis value at any width, so fcmp(q) is recoverable by fcmp_inv(q). Handles
-; stay i32 (Rule 15); f64 appears only as the alloc seed, the template literal,
-; and the angle.
-;
-; Under the §6a control-in-place peephole the fcmp control path is pinned by the
-; f64 CONTROLLED rotation twin instead of the route: the arm gate is
-; `cqrt_rz_f64_controlled(flag, q, %a)`, so the width still has to be dispatched
-; correctly for the emitted symbol (the old rail alloc / arm Rz pair did that job).
-; No work rail, so the only alloc is q's own seeded one.
+; `if (q > 5.0) cq_phi(a);` over a FLOAT quantum handle with an `fcmp`
+; condition — the first float-width fixture in the control_swap family (the §8
+; completeness review found the fcmp control path entirely unpinned,
+; 2026-06-10). The derived base (test_C_libtooling-9hh) was a pre-region
+; register-form rotation that 3qlq deleted; the IR now gates on the plain %q.
+; It lowers by kickback: `cq_template_fcmp_ogt_f64_hl` mints the flag into a
+; |0> ancilla, one uncontrolled `cqrt_rz_i1(flag, %a)`, the fcmp `_unc` strip,
+; one `cqrt_free`. The f64 width is still dispatched for the alloc, the Ry, the
+; compare template and its `_unc`. Handles stay i32 (Rule 15); f64 appears only
+; as the alloc seed, the template literal, and the angle.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
@@ -36,12 +33,6 @@
 ;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

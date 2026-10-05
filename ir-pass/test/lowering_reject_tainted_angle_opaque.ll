@@ -7,16 +7,16 @@
 ;       lowering's RAUW the surviving call would read the i32 RUNTIME HANDLE
 ;       TAG (verify-clean, links, runs, plausible trace: the silent-miscompile
 ;       class found by the test_C_libtooling-9hh §8 adversarial clearance);
-;   (2) its result feeds `cq_phi`'s arg-1 ANGLE slot — angle = f(quantum
+;   (2) its result is `cq_phi`'s ANGLE operand — angle = f(quantum
 ;       value), no fixed unitary.
-; Reachable from real C: `double t = f(q); q = cq_phi(q, t);` — no control flow.
+; Reachable from real C: `double t = f(q); cq_phi(t);` — no control flow.
 ;
 ; RE-POINTED (bxv): violation (1) is the more fundamental one and its guard
 ; (TaintPropagation::declineTaintEscapes) runs FIRST, before any lowering; opt
 ; exits at the first error diagnostic, so the escape message is what this
-; program prints. The ANGLE-slot guard (RotationLowering::declineTaintedAngle)
-; still backstops every non-escape producer — pinned by
-; lowering_reject_tainted_angle_{cast,theta}.ll.
+; program prints. The ANGLE guards (`deleteGlobalPhases` for `cq_phi`,
+; RotationLowering::declineTaintedAngle for `cq_theta`) still backstop every
+; non-escape producer — pinned by lowering_reject_tainted_angle_{cast,theta}.ll.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)

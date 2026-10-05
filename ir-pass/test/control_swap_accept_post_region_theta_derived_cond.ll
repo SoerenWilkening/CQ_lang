@@ -5,7 +5,7 @@
 ; decline).
 ;
 ;     cq_theta(&a, 0.5);
-;     if (sqrt(a + 3.0) <= 5.0) { a = cq_phi(a, PI); }
+;     if (sqrt(a + 3.0) <= 5.0) { cq_phi(PI); }
 ;     cq_theta(&a, 0.25);            /* <-- the post-region Ry */
 ;     return cq_measure(a);
 ;

@@ -29,8 +29,8 @@ FunctionCallee ControlledSymbols::controlledRotationFn(StringRef abiWidth,
   // is no `cqrt_rz_i128_controlled` / `cqrt_ry_f128_controlled` body, so minting
   // one would be a phantom extern that link-fails (the jvun class). ONE fence,
   // shared with the detection-time gate in `ArmClassify` (Rule 14) so accept and
-  // emit cannot drift. This TIGHTENS the pre-drbq behaviour on a path no caller
-  // reached (`emitRz`'s controlled arm is unreached today).
+  // emit cannot drift. Every caller today asks for `RotStem::Ry` (`emitRz`, an
+  // Rz-stem caller, was deleted at 3qlq Inc 1).
   if (!abiWidthHasControlledRotation(abiWidth))
     return FunctionCallee();
   // Ry has NO `_inv` mint from this resolver, deliberately. Two independent

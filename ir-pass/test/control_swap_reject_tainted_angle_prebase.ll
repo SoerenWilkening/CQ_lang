@@ -1,14 +1,12 @@
-; control_swap_reject_tainted_angle_prebase.ll — DECLINE: the DERIVED BASE's own
+; control_swap_reject_tainted_angle_prebase.ll — DECLINE: a pre-region phase's
 ; angle is quantum-derived.
 ;
-; `%qd = cq_phi(%q, sitofp(%q))` — the pre-region rotation that would become the
-; routed base carries a TAINTED angle (the sitofp of the handle's own value).
-; The arm gates' angles are classical, so only the base check in
-; taintedAngleGate catches this. Declining here turns what used to be a
-; broken-module abort (rotation lowering cross-type-RAUWs the f64 angle to an
-; i32 handle inside an emitted call that is never erased — LLVM ERROR, exit 134)
-; into a clean, source-located decline. The straight-line variant of the same
-; hole (no control flow at all) still aborts loudly and is tracked separately.
+; `cq_phi((double)q); if (q > 5) cq_phi(a);` — the pre-region phase's angle is
+; TAINTED (the sitofp of the handle's own value); the arm's angle is classical.
+; RotationLowering's quantum-derived-angle guard declines it, source-located
+; (Rule 3). Pre-3qlq this was the derived routed base `%qd = cq_phi(%q,
+; sitofp(%q))`, caught by taintedAngleGate's base check; before that check it was
+; a broken-module abort (LLVM ERROR, exit 134).
 ;
 ;
 ; 3qlq(prep_a2): the asserted diagnostic was RE-SPELLED on the Inc-1 binary.

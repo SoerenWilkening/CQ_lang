@@ -1,8 +1,8 @@
 // SelectMergeEmit.cpp — see header. The mutating controlled-XOR copy merge for an
 // accepted tainted-condition integer-data `select` (Phase 4.4 / PRD Part IV
-// §16.3; IMPLEMENTATION-4.4 §4). NO rail, NO route `cqrt_cswap`, NO
-// `RegionFlatten`, NO reverse-play — the single biggest simplification vs. the
-// br-diamond emitters. Reuses `lowerCompareToFlag` (mint/strip), `allocFn`/
+// §16.3; IMPLEMENTATION-4.4 §4). NO work rail, NO route `cqrt_cswap`, NO
+// `RegionFlatten`, NO reverse-play (the br-diamond value arm reuses it via
+// `emitValueRegion`). Reuses `lowerCompareToFlag` (mint/strip), `allocFn`/
 // `freeFn` (rail + the one free), `copyControlledFn` (the merge primitive), and
 // `xFn` (the ¬flag bracket) verbatim (Rule 14); the only original logic is the
 // six-step ordering, which IS the §5a contract.

@@ -5,7 +5,7 @@
 ;
 ;     q = u; cq_theta(&q, 0.5);
 ;     d = q * 37;
-;     if ((d >> 3) == 5) q = cq_phi(q, PI);
+;     if ((d >> 3) == 5) cq_phi(PI);
 ;     return cq_measure(q) + cq_measure(d & 7);
 ;
 ; The chain rail `d` is read AGAIN after the region (`d & 7`, measured), so the
@@ -16,11 +16,11 @@
 ; invert its forward, and the `cqrt_free` would be a hidden measurement of an
 ; entangled rail (Rules 6/8).
 ;
-; `preservesBorrowedParent` refuses `cqrt_measure_*` (it is not one of the two
+; `preservesBorrowedParent` refuses `cqrt_measure_*` (it is not one of the
 ; proven-read-only shapes), and neither positional disjunct saves it: the measure
 ; is after the interval opens (not LEFT) and before the discharge (not RIGHT). It
-; is not a `cqrt_cswap` at all, so clause (d2) never looks at it. The component
-; leaks — both rails left allocated, Rule 6's fallback.
+; is not a `cqrt_cswap` (pre-3qlq clause (d2) exempted only those). The component
+; leaks — both chain rails left allocated (FCNT = 1), Rule 6's fallback.
 ;
 ; CONTRAST, deliberately, with lowering_uncompute_interior_qram_parent_measured_
 ; after.ll: a measure AFTER the anchor is admitted by the RIGHT disjunct and is

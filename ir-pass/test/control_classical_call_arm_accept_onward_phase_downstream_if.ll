@@ -1,9 +1,9 @@
 ; control_classical_call_arm_accept_onward_phase_downstream_if.ll — ACCEPT (dugh,
 ; Phase 4×6; the block-lifetime crash regression): a 6.5 classical-call arm whose
 ; UNTAINTED merge `%out` flows ONWARD into a DOWNSTREAM CLASSICAL `if (cc)` diamond
-; that applies a phase — `int y = 5; if (q>3) y = f(a); if (cc) y = cq_phi(y, .25);
-; measure y`. The onward phase under classical control is the 5j5 one-register merge
-; (`declineClassicalMuxes` lifts the downstream `%pp` phi to the wire base `%out`).
+; — `int y = 5; if (q>3) y = f(a); if (cc) { } measure y` (the arm's uncontrolled
+; phase was deleted by 3qlq). The downstream `%pp` phi is the 5j5 one-register
+; merge (`declineClassicalMuxes` lifts it to the wire base `%out`).
 ;
 ; THE BUG THIS PINS (found by the dugh Rule-13 adversarial sweep, fixed in
 ; RegionFlatten.cpp): the ccarm `flattenRegion` splices the merge block's terminator
@@ -54,15 +54,15 @@ m2:
 attributes #0 = { nounwind willreturn memory(none) }
 
 ; the ccarm builds %out in the (flattened) entry, then the downstream classical
-; branch stays, with the onward Rz applied IN PLACE to %out inside the if(cc) arm,
-; and the measure reads %out (the %pp phi lifted to %out — no dangling pred):
+; branch stays, and the measure reads %out (the %pp phi lifted to %out — no
+; dangling pred):
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32_controlled(
 ; CHECK:     br i1 %cc
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])
 
-; no surviving merge phi over the handle (the one-register lift ran), the onward
-; phase is uncontrolled (classical if, not a controlled Rz), and the region ACCEPTS:
+; no surviving merge phi over the handle (the one-register lift ran), no
+; controlled Rz, and the region ACCEPTS:
 ; CHECK-NOT: phi i32
 ; CHECK-NOT: cqrt_rz{{.*}}_controlled
 ; ACC-NOT: under quantum control

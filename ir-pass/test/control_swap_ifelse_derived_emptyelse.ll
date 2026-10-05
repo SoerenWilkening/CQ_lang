@@ -1,13 +1,13 @@
 ; control_swap_ifelse_derived_emptyelse.ll — ACCEPT: derived base, one GATE-FREE arm.
 ;
-; An if/else whose then-arm rotates the pre-region-derived %qd and whose else-arm
-; is EMPTY (contributes %qd to the merge unchanged through a real, instruction-
-; free else block). The gate-free arm is a no-op route (cswap in + cswap out of
-; an untouched |0> rail), so the emitter SKIPS it — no else rail, no ¬flag
-; bracket — and the stream degenerates to the single-rail diamond stream over
-; the derived base. (clang -O1 normally folds an empty else into the diamond
-; form; this raw-IR shape pins the emitter's gate-free-arm skip against the
-; derived base regardless of which frontend produced it.)
+; `if (q > 5) cq_phi(a); else {}` — an if/else whose else-arm is a real,
+; instruction-free block. (The derived base was a pre-region register-form
+; rotation that 3qlq deleted; the IR now gates on the plain %q.) The gate-free
+; arm contributes nothing, so the emitter SKIPS it — no ¬flag bracket — and the
+; stream degenerates to the one-gate kickback diamond: icmp mint, one
+; uncontrolled `cqrt_rz_i1(flag, %a)`, the icmp `_unc` strip, one `cqrt_free`.
+; (clang -O1 normally folds an empty else into the diamond form; this raw-IR
+; shape pins the gate-free-arm skip regardless of the frontend.)
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

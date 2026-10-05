@@ -1,17 +1,17 @@
 ; lowering_reject_loop_rail_fanout_rot.ll — DECLINE (the PRE-EXISTING rotation-path
 ; twin of the dtzb fan-out finding; Rule-13 review 2026-06-26). The same Rule-8
-; fan-out over a Case-A PHASE rail: `%qh` is read by two in-place `cq_phi` (Rz)
-; gates — `%qn = Rz(1)` carried + `%qm = Rz(2)` escaping:
+; fan-out over a Case-A rotation rail: `%qh` is read by two in-place `cq_theta` (Ry)
+; gates — `%qn = Ry(1)` carried + `%qm = Ry(2)` escaping:
 ;     double q = seed; cq_theta(&q, 0.5);
-;     for (int i = 0; i < n; i++) { qn = cq_phi(q, 1); qm = cq_phi(q, 2); q = qn; }
+;     for (int i = 0; i < n; i++) { qn = q; cq_theta(&qn, 1); qm = q; cq_theta(&qm, 2); q = qn; }
 ;     return cq_measure(qm_last);
-; Before the fan-out guard, tryCaseA ACCEPTED this and collapsed BOTH gates onto the
-; one rail handle — `cqrt_rz_f64(%h, 1); cqrt_rz_f64(%h, 2)` = Rz(3) applied — so the
-; measure reads Rz(3) on q, NOT the source's Rz(2) (and the carried rail is Rz(1+2)
-; not Rz(1)). A verify-clean silent miscompile that PREDATES dtzb (the rotation
-; closure gap the value path newly exposed). The single fan-out guard closes BOTH
-; the value (add/xor) and rotation (cq_phi/rz) paths. LOUD decline; mirror
-; CHARACTER-FOR-CHARACTER (Rule 12).
+; Before the fan-out guard, tryCaseA ACCEPTED the pre-3qlq Rz spelling and collapsed
+; BOTH gates onto the one rail handle — `cqrt_rz_f64(%h, 1); cqrt_rz_f64(%h, 2)` =
+; Rz(3) applied — so the measure read Rz(3) on q, NOT the source's Rz(2). A
+; verify-clean silent miscompile that PREDATES dtzb (the rotation closure gap the
+; value path newly exposed). The single fan-out guard closes BOTH the value
+; (add/xor) and rotation paths. LOUD decline; mirror CHARACTER-FOR-CHARACTER
+; (Rule 12).
 ;
 ;
 ; 3qlq(prep_a2): HAND DECISION — the register `cq_phi` here was NEVER the subject.

@@ -4,8 +4,8 @@
 ; shape, with a chain in front of each condition.
 ;
 ;     q = u; cq_theta(&q, 0.5);
-;     if (((q * 37) >> 3) == 5)  q = cq_phi(q, PI);
-;     if (((q * 11) >> 2) == 3)  q = cq_phi(q, 0.25);
+;     if (((q * 37) >> 3) == 5)  cq_phi(PI);
+;     if (((q * 11) >> 2) == 3)  cq_phi(0.25);
 ;     return cq_measure(q);
 ;
 ; THIS IS THE SHAPE THAT NEEDS BOTH HALVES OF THE INCREMENT AT ONCE, and it is
@@ -15,14 +15,14 @@
 ;     so each chain anchors AFTER its strip;
 ;   * the PER-COMPONENT anchor keeps the two chains apart. They share the wire
 ;     but have NO producer edge between them, so they are two components. With
-;     one `At` per function (Increment 5) the FIRST chain would have been
-;     anchored after the SECOND region's strip — putting region 1's whole route
-;     INSIDE region 1's own interval alongside region 2's, and, in the Grover
-;     spelling, an S-dagger `cqrt_ry` too. Everything leaked.
+;     one `At` per function (Increment 5) the FIRST chain was anchored after the
+;     SECOND region's strip — on the pre-3qlq route stream that put both regions'
+;     routes INSIDE region 1's interval and, in the Grover spelling, an S-dagger
+;     `cqrt_ry` too. Everything leaked.
 ;
-; Each component's clause-(d) scan sees only its OWN region's route as INSIDE;
-; the other region's cswaps are LEFT (component 2) or RIGHT (component 1) of its
-; interval, which the straight-line disjuncts already admit.
+; Since bd 3qlq each region's kickback acts on its flag only, so the wire's users
+; are the two chains' forward producers; the CHECK pins each chain discharged
+; right after its own region's strip.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

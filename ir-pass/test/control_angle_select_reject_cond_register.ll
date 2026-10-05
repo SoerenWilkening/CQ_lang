@@ -4,15 +4,15 @@
 ;     int q = 3; cq_theta(&q,.5);
 ;     cq_theta(&q, q == 5 ? .9 : .3);
 ;
-; THE STEM SEPARATOR. This is `control_angle_select_rz_cond_register.ll` with
-; `cq_phi` changed to `cq_theta` and NOTHING else; that one ACCEPTS and this one
+; THE STEM SEPARATOR. `control_angle_select_rz_cond_register.ll` applies the
+; register-free `cq_phi(q == 5 ? .9 : .3)` instead; that one ACCEPTS and this one
 ; declines. Read the pair together — it is the whole content of PRD §3c.
 ;
 ; An in-place Ry RELABELS the register's computational basis, so after it the
 ; minted flag is no longer a function of `q`'s basis and the `icmp_..._unc` strip
 ; cannot return it to |0>. The `cqrt_free` that follows would then be a free of a
 ; DIRTY, condition-entangled ancilla — a hidden measurement that collapses `q`
-; (Rules 6/8). A diagonal Rz moves no basis label, which is why the twin is fine.
+; (Rules 6/8). The twin's kickback Rz on the flag moves no basis label of `q`.
 ;
 ; WHICH GUARD FIRES, stated because two could: `SelectClassify`'s GATE 2c wins.
 ; Its prong (a) is position-free — `findNonDiagonalWireGate` over

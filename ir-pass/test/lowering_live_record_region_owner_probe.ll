@@ -27,12 +27,12 @@
 ; the guard until M-B Increment 6 taught the interior partition to discharge it
 ; after the emitter-recorded strip, and now accepts for the same reason this file
 ; does — nothing of the region is still standing at the Ry) and no dead ancestor
-; rail (contrast lowering_reject_live_record_routed_base_anc.ll). Since the §6a
-; control-in-place peephole (bd test_C_libtooling-drbq Increment 2a) there is
-; exactly ONE `cqrt_alloc_i32` in the whole program — the register — and it is
-; never freed, because the user's `cq_measure` owns it (Rule 6). The region's only
-; ancilla is the TEMPLATE-minted compare flag, stripped and freed in place; the
-; work rail and its two `cqrt_cswap`s are gone.
+; rail (contrast lowering_reject_live_record_routed_base_anc.ll). Under the 3qlq
+; kickback there is exactly ONE `cqrt_alloc_i32` in the whole program — the
+; register — and it is never freed, because the user's `cq_measure` owns it
+; (Rule 6). The region's only ancilla is the TEMPLATE-minted compare flag, which
+; carries the uncontrolled `cqrt_rz_i1` and is stripped and freed in place (the
+; work rail and its two `cqrt_cswap`s were already gone at drbq Increment 2a).
 ;
 ; KEEPING THE FILE UNDER ITS OLD NAME IS DELIBERATE. Its value was never the
 ; exit code; it was the record of WHICH STAGE speaks for this program, and that

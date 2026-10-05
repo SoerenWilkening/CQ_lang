@@ -29,7 +29,7 @@
    or that the reflection reflects about |0>, was TRUE OF THE SOURCE and FALSE OF
    THE EMITTED CIRCUIT. It becomes true only from 3qlq Inc 1 on, where the phase is
    a BRANCH phase by kickback (rz_i1 on the minted flag), not a register Rz. The
-   older prose is left verbatim rather than silently corrected; read it with this.
+   older prose was revised on 2026-10-05 (bd 7pxe); remaining register-Rz wording is history.
    (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_inplace_ry_loop_grover.c — THE CUSTOMER (bd
    test_C_libtooling-drbq Increment 3, PRD §13). Canonical Grover written as a
@@ -62,8 +62,8 @@
 
    WHY THE STRIP IS STILL VALID with an Ry on the condition wire: `ProvenPostRegion`
    means the reflection is provably after the region's ENTIRE emitted stream, so at
-   the moment it fires the flag is already stripped and freed. The trace below shows
-   exactly that ordering — `cqrt_free(h3)` precedes `cqrt_ry_i32(h0, -0.5)`.
+   the moment it fires the flag is already stripped and freed. The trace shows it:
+   `cqrt_free(h2)` precedes `cqrt_ry_i32(h0, -0.5)`; `cqrt_free(h3)` precedes S.
 
    THE TWIN IS THE WITNESS. This golden must be BYTE-IDENTICAL to
    slice_control_inplace_ry_loop_grover_unrolled.expected.log (ctest

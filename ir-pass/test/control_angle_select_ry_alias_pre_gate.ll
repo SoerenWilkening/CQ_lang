@@ -1,15 +1,14 @@
-; control_angle_select_ry_alias_pre_gate.ll — ACCEPT: a diagonal ALIAS of the
-; rotated register, READ BEFORE the gate (bd drbq Inc 2b; the accept control for
-; the S9 stale-record fence).
+; control_angle_select_ry_alias_pre_gate.ll — ACCEPT: the rotated register READ
+; BEFORE the gate (bd drbq Inc 2b; the accept control for the S9 stale-record
+; fence).
 ;
-;     int mark = cq_phi(r,.1); int mm = cq_measure(mark);   // BEFORE
+;     int mm = cq_measure(r);                 // BEFORE
 ;     cq_theta(&r, q == 5 ? .9 : .3);
 ;
-; `%mark` is a second SSA name for `r`'s physical rail (Rz is diagonal and always
-; lowers in place), so it IS a member of the base's rail closure and S9
-; enumerates its users. Reading it here is fine — `cq_measure(mark)` is provably
-; BEFORE the controlled Ry, so the source's record and the register agree at the
-; point of the read.
+; Reading `r` here is fine — `cq_measure(r)` is provably BEFORE the controlled
+; Ry, so the source's record and the register agree at the point of the read.
+; (Pre-3qlq the read went through a diagonal alias, `mark = cq_phi(r,.1)`; the
+; migration deleted that uncontrolled phase, so "alias" in the name is history.)
 ;
 ; Move that same measurement AFTER the gate and it becomes the wrong-VALUE class
 ; the whole fence exists for: see
@@ -47,7 +46,7 @@ entry:
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[QC]], double 5.000000e-01)
 ; CHECK:      %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
-; the alias and its read, BOTH before the gate
+; the read of `r`, before the gate
 ; CHECK-NEXT: %[[MM:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[R]])
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
 ; the CONDITION REGISTER: `%[[QC]]` was ANCHORED above at its own `cqrt_alloc`,

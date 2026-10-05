@@ -1,26 +1,19 @@
-; control_inplace_rz_diamond.ll — ACCEPT spec, the §6a Rz CONTROL-IN-PLACE
-; PEEPHOLE on a one-content-arm PHASE diamond (bd test_C_libtooling-drbq Inc 2a,
-; control-in-place-PRD §12.2). THE FLAGSHIP FIXTURE OF THE INCREMENT.
+; control_inplace_rz_diamond.ll — ACCEPT spec, a one-content-arm PHASE diamond
+; beside a register `r` DISJOINT from the condition (bd test_C_libtooling-drbq
+; Inc 2a, control-in-place-PRD §12.2; that increment's flagship fixture).
 ;
-; `if (q > 5) r = cq_phi(r, a)` on a register DISJOINT from the condition. Until
-; Inc 2a this lowered to the swap route — mint, |0> work-rail alloc, cswap in,
-; verbatim uncontrolled Rz on the rail, cswap back, rail free, strip, flag free.
-; It now emits ONE `cqrt_rz_i32_controlled(flag, r, a)` on the user's own register
-; and NOTHING ELSE CHANGES: same mint, same strip, same flag free, same order.
+;     if (q > 5) cq_phi(a);          // `a` is a run-time angle
 ;
-; THE TWO ARE THE SAME UNITARY, not an approximation. With the work rail at |0>,
-; `cswap(f,r,w) · Rz_w(θ) · cswap(f,r,w)` applies Rz(θ) to r exactly on the f=1
-; branch, and on f=0 applies Rz(θ) to a rail still holding |0> — which under this
-; project's `Rz = diag(1, e^{iθ})` convention is the identity with NO global-phase
-; residue. So the peephole is an equality. (The Ry stem could never route at all —
-; `Ry(θ)|0> ≠ |0>` hands the inactive rail back dirty and entangled, PRD §2 — which
-; is why control-in-place is the MECHANISM there and a PEEPHOLE here.)
+; WHAT IT PINS: the four-line kickback — mint the flag, ONE uncontrolled
+; `cqrt_rz_i1(flag, a)` on it, the `_unc` strip, ONE `cqrt_free` (the flag). `r`
+; is touched by nothing but its own prep and measure (no alloc, no cswap, no
+; copy), and the uncompute spine adds no second free (a spurious free of an
+; entangled register is a hidden measurement, Rules 6/8).
 ;
-; WHAT THIS PINS BEYOND THE SYMBOL: the register is untouched by anything else
-; (no alloc, no cswap, no copy), the flag is minted BEFORE the gate and stripped
-; AFTER it, and there is EXACTLY ONE cqrt_free — the flag. There is no work rail
-; to free any more, and the uncompute spine must not add a second free (a spurious
-; free of an entangled register is a hidden measurement, Rules 6/8).
+; (History: the source was `r = cq_phi(r, a)`. Before Inc 2a it lowered by the
+; swap route — work-rail alloc, cswap in, uncontrolled Rz on the rail, cswap back,
+; rail free; Inc 2a replaced that with an in-place `cqrt_rz_i32_controlled(flag,
+; r, a)`, which 3qlq retired.)
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
@@ -44,12 +37,6 @@
 ;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

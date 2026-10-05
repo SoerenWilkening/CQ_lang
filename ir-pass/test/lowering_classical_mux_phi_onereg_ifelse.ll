@@ -1,13 +1,10 @@
 ; lowering_classical_mux_phi_onereg_ifelse.ll — ACCEPT: one-register merge
-; phi with BOTH arms gated, no straight-through edge (test_C_libtooling-5j5):
+; phi over an if/else, no straight-through edge (test_C_libtooling-5j5):
 ;     if (classical_c) q = cq_phi(q, a); else q = cq_phi(q, b);  measure(q);
-;
-; The lift predicate is per-edge, so a base-valued incoming is not required:
-; each incoming resolves through its own single-block arm chain to the SAME
-; base %q, and neither arm's gate can reach the other arm's terminator (each
-; arm's only successor is the merge). Per shot exactly one of rz(a)/rz(b)
-; fires — the executed source path's stream — and the phi renames the one
-; register either way.
+; (pre-3qlq register form). The 3qlq migration deleted both phases (a phase under
+; a classical condition is a global phase), so both arms are now EMPTY and the
+; merge is `phi [q, a], [q, b]`. The lift predicate is per-edge: each incoming
+; resolves to the SAME base %q and the renaming phi is erased.
 ;
 ; This is NOT ControlDetect's if/else: the condition is CLASSICAL (detection
 ; keys strictly on condition taint), so no flag, no rails, no routing — the

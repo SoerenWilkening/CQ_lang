@@ -5,7 +5,7 @@
 ;
 ;     for (int i = 0; i < 2; ++i) {
 ;         cq_theta(&q, 0.25);                   /* the LEADING Ry */
-;         if ((q & 3) == 1) { q = cq_phi(q, PI); } /* a DERIVED condition */
+;         if ((q & 3) == 1) cq_phi(PI);           /* a DERIVED condition */
 ;         cq_theta(&q, -0.5);
 ;     }
 ;
@@ -41,10 +41,9 @@
 ; spelling of (W1)/(W2) and this fixture goes red on the missing
 ; `cq_template_and_i32_hl_unc` / `cqrt_free`.
 ;
-; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
-; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE
-; `cqrt_rz_i32_controlled(flag, register, theta)` and the swap route (work-rail
-; alloc, both `cqrt_cswap`s, the rail free) is gone. Nothing else moves — the flag
+; SINCE bd 3qlq Inc 1 the phase arm lowers by KICKBACK: ONE uncontrolled
+; `cqrt_rz_i1` on the flag (drbq Inc 2a's `cqrt_rz_i32_controlled(flag, register,
+; theta)` and the earlier `cqrt_cswap` swap route are both retired). The flag
 ; mint, the strip, the flag free and every downstream gate are unchanged.
 ;
 ;

@@ -4,13 +4,12 @@
 ;
 ; A depth-2 phase nest whose OUTER condition is in scope (`fcmp ogt`) but whose
 ; INNER condition is an OUT-OF-SCOPE fcmp predicate (`fcmp false`, no template).
-; In NestedRouteEmit the OUTER flag mint is step 1 (null-bails clean), but the
-; INNER flag mint (F2) happens AFTER the outer rail alloc + route-in + Mid replay
-; (lines NestedRouteEmit.cpp §1–2). So WITHOUT a detection gate, F2's null bail
-; would fire only AFTER the outer diamond was already routed — a mutate-then-
-; decline (Rule 9 violation). jvun gates BOTH conditions' predicates in
-; `recoverRegionTree` (detection), so the out-of-scope inner condition declines
-; BEFORE any emit. Over-declining is always safe (Prime Directive). After 8rvn
+; In the pre-3qlq NestedRouteEmit the INNER flag mint (F2) ran AFTER the outer rail
+; alloc + route-in + Mid replay, so WITHOUT a detection gate F2's null bail fired
+; only AFTER the outer diamond was already mutated — a mutate-then-decline (Rule 9
+; violation). jvun gates BOTH conditions' predicates in `recoverRegionTree`
+; (detection), so the out-of-scope inner condition declines BEFORE any emit.
+; Over-declining is always safe (Prime Directive). After 8rvn
 ; (Phase 7.1 iw81.4 §4.4) broadened the fcmp set to the full ordered/unordered
 ; comparison family, `true`/`false` are the only out-of-set fcmp predicates left
 ; — so `false` is the standing residual for the inner condition here.

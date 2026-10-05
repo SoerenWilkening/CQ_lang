@@ -8,16 +8,16 @@
 ;     int w = a * 2;                     // THE WIRE
 ;     int c = a * 3;                     // the SIBLING
 ;     cq_theta(&w, 0.5);              // T — chained, in-place Ry on the wire
-;     if (c == 5) { c = cq_phi(c, 3.0); }
+;     if (c == 5) cq_phi(3.0);
 ;     int mp = cq_measure(c);            // <-- THE WHOLE DIFFERENCE
 ;     return cq_measure(w) + cq_measure(a) + mp;
 ;
 ; WHY IT LOWERS. `%h_op1` (`c`) is still a rail entangled with the wire and still
 ; undischarged when the gate fires — the physics AT THE GATE is identical to the
 ; reject twin's. What changed is that its lineage now reaches an OBSERVING SINK:
-; after `RegionFlatten` dissolves the merge phi, `cq_measure(c)` is a
-; `cqrt_measure_i32` directly on `%h_op1`. Under the ruled clause 3 that makes it
-; the program's own live data, and a live record's dephasing of the rotation is
+; `cq_measure(c)` is a `cqrt_measure_i32` directly on `%h_op1`. Under the ruled
+; clause 3 that makes it the program's own live data, and a live record's
+; dephasing of the rotation is
 ; SOURCE SEMANTICS, not a compiler defect (owner ruling 2026-08-27 (1)) — exactly
 ; the principle that keeps lowering_stale_record_add_before_theta.ll green.
 ;
@@ -26,14 +26,13 @@
 ;   * `%h_cmp` — the region's eq flag, minted AFTER the gate. It is skipped by the
 ;     F2 existence test (`provablyBefore(T, R)`): a rail that is not allocated when
 ;     the `Ry` fires cannot dephase it. Note it would NOT be exempt on clause 3 —
-;     its only users are the arm's controlled `Rz`, the `_unc` strip and
+;     its only users are the kickback `cqrt_rz_i1`, the `_unc` strip and
 ;     `cqrt_free`, none of which observe anything. That is the division of labour
 ;     between the two fixes, visible in one module.
 ;
-; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
-; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE
-; `cqrt_rz_i32_controlled(flag, register, theta)` and the swap route (work-rail
-; alloc, both `cqrt_cswap`s, the rail free) is gone. Nothing else moves — the flag
+; SINCE bd 3qlq Inc 1 the phase arm lowers by KICKBACK: ONE uncontrolled
+; `cqrt_rz_i1` on the flag (drbq Inc 2a's `cqrt_rz_i32_controlled(flag, register,
+; theta)` and the earlier `cqrt_cswap` swap route are both retired). The flag
 ; mint, the strip, the flag free and every downstream gate are unchanged.
 ;
 ;

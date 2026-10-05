@@ -2,14 +2,14 @@
 ; don't-over-decline twin of lowering_reject_classical_mux_phi_lift_stale.ll
 ; (test_C_libtooling-2qyz).
 ;
-; Same lift + intervening diagonal hop `%qphi = cq_phi(%p, ·)` + sibling chained
-; theta `%q2` on the base wire — but the arithmetic op `%v = add %qphi, 3` is
-; scheduled BEFORE the sibling Ry. The post-lift re-sweep is POSITION-AWARE: the
-; add's template fires PRE-Ry, capturing exactly the record `%v` denotes onto
-; its own rail (DT->dominates(%v, %q2) && !reachable(%q2, %v)), so the later Ry
-; on `%q`'s wire cannot touch it. The lift still fires and the add lowers — a
-; legitimate use-then-re-rotate program through a diagonal alias. Confirms the
-; complete re-sweep does not over-decline the transitive-consumer accept.
+; Same lift + sibling chained theta `%q2` on the base wire — but the arithmetic
+; op `%v = add %p, 3` is scheduled BEFORE the sibling Ry. (The name's diagonal hop
+; `%qphi = cq_phi(%p, ·)` was register-form; 3qlq deleted it as a global phase.)
+; The post-lift re-sweep is POSITION-AWARE: the add's template fires PRE-Ry,
+; capturing exactly the record `%v` denotes onto its own rail
+; (DT->dominates(%v, %q2) && !reachable(%q2, %v)), so the later Ry on `%q`'s wire
+; cannot touch it. The lift still fires and the add lowers — a legitimate
+; use-then-re-rotate program. Confirms the complete re-sweep does not over-decline.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

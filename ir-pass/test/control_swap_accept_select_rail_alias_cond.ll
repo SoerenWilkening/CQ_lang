@@ -4,13 +4,13 @@
 ; one day (bd 7q3s / commit dd2c103, 2026-07-30→31); the fence it pinned rested on
 ; a false premise and was reverted. DO NOT RE-ADD THAT FENCE.
 ;
-; THE SHAPE. The two condition operands are SSA-DISTINCT — `%q` and
-; `%r = cq_phi(%q, .25)` — so InstCombine cannot fold the compare, unlike the
-; `x == x` idiom. But `cq_phi` (Rz) is an IN-PLACE gate whose result RAUWs to its
-; argument's i32 handle, so AFTER RotationLowering both operands ARE ONE RAIL.
-; That mechanism is the durable finding of bd 7q3s and it still stands:
+; THE SHAPE (pre-3qlq register form; 3qlq deleted the uncontrolled `cq_phi`, so
+; the IR below compares `%q` with itself). The operands were SSA-DISTINCT — `%q`
+; and `%r = cq_phi(%q, .25)` — so InstCombine could not fold the compare, unlike
+; `x == x`; but that Rz was IN-PLACE, its result RAUWed to `%q`'s handle, so
+; AFTER RotationLowering both operands WERE ONE RAIL. bd 7q3s's finding stands:
 ;   *** A PRE-MUTATION SSA TEST CANNOT SEE A POST-LOWERING ALIAS. ***
-; It is reachable from FOUR LINES of ordinary C at the plain -O1 ship floor —
+; It was reachable from FOUR LINES of ordinary C at the plain -O1 ship floor —
 ;     q = u; cq_theta(&q,.5);  r = cq_phi(q,.25);  s = (q < r) ? 11 : 22;
 ; — and the `if (q < r) s = 11;` spelling lowers to this same select via -O1
 ; if-conversion, so this fixture covers that route too.
@@ -63,8 +63,8 @@
 ; consumer), so "consistency with the data path" is not a rule here. It is evidence
 ; about THIS gate shape only.
 ;
-; WHY THE ACCEPT IS SOUND AND NOT MERELY REALIZABLE: the alias is created by a
-; DIAGONAL gate (Rz), so both SSA names denote the same BASIS LABEL and collapsing
+; WHY THE ACCEPT IS SOUND AND NOT MERELY REALIZABLE: both operands denote the same
+; BASIS LABEL (pre-3qlq the alias came from a DIAGONAL Rz), so collapsing
 ; `icmp(a,a)` to a constant is the CORRECT answer. The NON-diagonal twin —
 ; `r = q; cq_theta(&r,.25)`, an in-place Ry that also RAUWs to one rail but CHANGES the
 ; basis, so the source means "pre-Ry record vs post-Ry record" — must NOT lower,

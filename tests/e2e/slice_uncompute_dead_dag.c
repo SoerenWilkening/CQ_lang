@@ -64,14 +64,14 @@
    boundary so the uncompute actually executes. This is also a faithful program:
    a subroutine that prepares quantum scratch and drops it without measuring.
 
-   `cq_phi` (Rz, a side-effecting extern that READS its operand) is the keep-alive
-   that prevents `-O1` from DCE-ing the dead arithmetic while its own result is
-   dropped — so a real `cq_template_*` terminal survives to be uncomputed. The
-   pass recovers the whole DAG and reverses it ONCE in reverse program order
-   (LIFO): each gate adjointed exactly once via the void in-place `_unc` form
-   (DD-3 slots: `out` first, then the forward operands in order), each rail freed
-   right after its last reverse-use, the Rz keep-alives undone with a negated
-   angle. NO fresh-minting `_inv`, NO added measurement (Rules 5/6), NO
+   Each chain's dead terminal is read by the condition of a kickback `cq_phi`
+   (`b > 100`, `prod == 4`), which stops `-O1` DCE-ing the dead arithmetic — so
+   a real `cq_template_*` terminal survives to be uncomputed. The flag takes one
+   `cqrt_rz_i1` and is stripped by its compare `_unc`; the pass then reverses the
+   chain ONCE in reverse program order (LIFO): each gate adjointed exactly once
+   via the void in-place `_unc` form (DD-3 slots: `out` first, then the forward
+   operands in order), the chain rail freed after its last reverse-use, then the
+   flag. NO fresh-minting `_inv`, NO added measurement (Rules 5/6), NO
    `cqrt_cswap`.
 
    Chain 2 (later in program) reverses first. Exactly FIVE frees (h4,h3 then
@@ -101,12 +101,12 @@ void slice(int x, int y) {
     int a = x; cq_theta(&a, 0.25); /* taint x -> handle (alloc + ry)            */
     int b = a << 2;              /* shl_hl                                    */
     b = b ^ 9;                   /* xor_hl                                    */
-    if (b > 100) cq_phi(0.5);       /* Rz keep-alive; result dropped (dead)      */
+    if (b > 100) cq_phi(0.5);       /* kickback keep-alive (rz_i1 on flag)       */
 
     /* (2) Q+Q (_qq) product, dropped without measure — the bare-QQ `_unc`. */
     int p = x; cq_theta(&p, 0.10); /* alloc + ry                                */
     int q = y; cq_theta(&q, 0.20); /* alloc + ry                                */
     int prod = p * q;            /* mul_qq (operands ordered by BirthOrder)   */
-    if (prod == 4) cq_phi(0.30);   /* Rz keep-alive; result dropped (dead)      */
+    if (prod == 4) cq_phi(0.30);   /* kickback keep-alive (rz_i1 on flag)       */
 }
 int main(void) { slice(2, 5); return 0; }

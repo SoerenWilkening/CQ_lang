@@ -2,7 +2,7 @@
 ; test_C_libtooling-8h7d.5, Rule-13 ROUND 3, finding F-3 — TWO stale records at
 ; once). A CONFIRMED silent miscompile.
 ;
-;     for (i<2) { if (q==5) q=cq_phi(q,PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
+;     for (i<2) { if (q==5) cq_phi(PI); cq_theta(&q,-.5); cq_theta(&q,.5); }
 ;     int a = q; cq_theta(&a, .125);
 ;     int b = a; cq_theta(&b, .25);
 ;     int c = b; cq_theta(&c, .5);
@@ -30,7 +30,7 @@
 ; edits — the first is about which GATES are needed, the second about which
 ; RECORDS are asked.
 ;
-; `clang -O1` form (rotated 2-trip do-while, value-propagated `cq_phi(5, PI)`).
+; `clang -O1` form (rotated 2-trip do-while).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq loop lowering: rail record read past an in-place gate on the same rail

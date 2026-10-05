@@ -1,15 +1,15 @@
-; control_swap_reject_freeze_phi_angle.ll — DECLINE: a PHI-routed FP-angle leak
+; control_swap_reject_freeze_phi_angle.ll — DECLINE: a PHI-carried FP-angle leak
 ; carried through a `freeze` (Phase-7.1 Increment B, the carrier-extension probe).
 ; Proves `selReachesRotationArg1` crosses BOTH a `phi` and a `freeze` on the way
-; to a rotation arg-1.
+; to a rotation angle slot.
 ;
 ; `%sel = select i1 %c, float a, float b` has a TAINTED condition (`%c` reads the
-; quantum `%qd`). Its float result flows into a CLASSICAL-condition (`%cc`) merge
-; `phi`, then through a `freeze`, then `fpext`, into a `cq_phi` arg-1 (the angle
-; slot). The angle leak ORIGINATES at the tainted-condition select; the
+; quantum `%q`). Its float result flows into a CLASSICAL-condition (`%cc`) merge
+; `phi`, then through a `freeze`, then `fpext`, into the angle of `cq_phi` (its only
+; operand, arg 0). The angle leak ORIGINATES at the tainted-condition select; the
 ; surrounding `phi` join is classical, so ControlDetect does not claim the merge —
 ; the select ladder's GATE-3 carrier walk must cross `select -> phi -> freeze ->
-; fpext` and land on the arg-1 reach.
+; fpext` and land on the angle-slot reach.
 ;
 ; Increment B SKIPS an FP-typed tainted `freeze` at the escape guard (value-
 ; preserving carrier), so the angle no longer hits the blunt `kMsgOther` backstop

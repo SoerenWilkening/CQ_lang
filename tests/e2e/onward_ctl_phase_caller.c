@@ -5,9 +5,9 @@
 /* onward_ctl_phase_caller.c — the CQ translation unit for the yn71 (Phase 4×6, the
    CONTROL case) e2e golden: a 6.5 classical-call arm whose UNTAINTED merge `%out`
    feeds an ONWARD TAINTED-CONTROL phase arm. The only test layer that LINKS, so the
-   ONLY proof that yn71's re-detected + emitted onward controlled phase — the routed
-   `cqrt_cswap`/`cqrt_rz` stream over `%out` under a flag minted from `icmp(%out, k)`
-   — resolves + signature-matches against libcq_runtime (Rule 2, Rule 16).
+   ONLY proof that yn71's re-detected + emitted onward controlled phase — a kickback
+   `cqrt_rz_i1` on a flag minted from `icmp(%out, k)` — resolves + signature-matches
+   against libcq_runtime (Rule 2, Rule 16).
 
    SOURCE INTENT (the CONTROL case yn71 converts from decline):
        q : theta-tainted condition handle
@@ -31,11 +31,11 @@
    `repropagateControlMerges` re-seeds the second propagation from the emitted `%out`,
    tainting `icmp sgt %out, 50`; PRE-yn71 `declineReClassifiedControl` declined the new
    tainted-condition branch. yn71 RE-DETECTS it (`detectAndLowerOnwardControl`) and
-   `SwapRouteEmit` emits the routed phase arm ON `%out`: flag = `icmp(%out, 50)`, route
-   `%out` into a |0> rail (`cqrt_cswap`), VERBATIM `cqrt_rz(rail, 0.25)`, route back,
-   free the rail, `icmp_inv`-strip + free the flag; the measure reads `%out`. q, %out,
-   and the materialized `ext_f(7)` scratch are LEFT ALLOCATED (Rule 6/8); EXACTLY TWO
-   frees (the R1 ccarm flag + the R2 phase-arm flag) plus the ONE route-rail free. */
+   lowers the phase arm by kickback: flag = `icmp_sgt(%out, 50)` minted into a fresh
+   |0> ancilla, an UNCONTROLLED `cqrt_rz_i1(flag, 0.25)`, the compare `_unc` strip,
+   one free; the measure reads `%out`. q, %out, and the materialized `ext_f(7)` and
+   default `5` scratch rails are LEFT ALLOCATED (Rule 6/8); EXACTLY TWO frees (the
+   R1 ccarm flag + the R2 phase-arm flag). */
 int ext_f(int a);
 
 int slice(void) {
@@ -43,9 +43,9 @@ int slice(void) {
     cq_theta(&q, 0.5);             /* taint q -> condition handle (alloc, ry)     */
     int y = 5;
     if (q > 5)                     /* R1: tainted-condition classical-call arm     */
-        y = ext_f(7);              /* pure classical call -> route-merged %out      */
+        y = ext_f(7);              /* pure classical call -> copy-merged %out       */
     if (y > 50)                    /* R2: ONWARD tainted control on the merge %out  */
-        cq_phi(0.25);       /* controlled phase arm (routed cswap+rz on out) */
+        cq_phi(0.25);       /* controlled phase arm (kickback rz_i1 on flag) */
     return cq_measure(y);          /* reads the (conditionally) phased answer        */
 }
 

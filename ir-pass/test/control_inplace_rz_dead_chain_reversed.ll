@@ -1,38 +1,27 @@
-; control_inplace_rz_dead_chain_reversed.ll — the §6a Rz peephole's TRANSPARENCY
+; control_inplace_rz_dead_chain_reversed.ll — a phase region's TRANSPARENCY
 ; witness (bd test_C_libtooling-drbq Inc 2a, control-in-place-PRD §12.1).
 ;
-; THIS IS THE FIXTURE FOR THE HALF OF INC 2a THAT IS NOT A SYMBOL SUBSTITUTION.
-; Every other `control_inplace_rz_*` file pins the five route lines collapsing to
-; one gate. This one pins what happens to the register's OWN dead data chain
-; AFTERWARDS — the part the golden multiset audit needs to come out empty, and the
-; part a wrong stem split would silently change.
+; WHAT IT PINS: what happens to a register's OWN dead data chain across a
+; tainted-condition phase region — the part the golden multiset audit needs to
+; come out empty.
 ;
 ; THE SHAPE. `r` carries a two-link dead chain (`y = r*7`, `z = y*2`) computed
-; BEFORE the region; the region rotates `r`; `t = z*3` is measured after. So the
+; BEFORE the region `if (q == 5) cq_phi(.9);`; `t = z*3` is measured after. So the
 ; interval [first gate reading r, the discharge point] STRADDLES the region, and
-; the whole-DAG spine must reverse `z` then `y` and free both, reading `r` after
-; the region fired.
+; the whole-DAG spine must reverse `z` then `y` and free both after the region.
 ;
-; WHY IT IS LEGAL, and why it is the Rz stem specifically. `Uncomputation::
-; preservesBorrowedParent` clause (d) needs every register the forward chain read
-; to still hold its forward value when the adjoint fires. Under the swap ROUTE
-; that held as a GROUP property: `cswap; rz(rail); cswap` restores r's basis label
-; only because BOTH cswaps run (clause (d2), `TaintSet::RestoringRoutes`).
-; Control-in-place emits no group, so the licence had to move to the gate — and
-; there it is STRONGER: `cqrt_rz_i32_controlled(f, r, θ)` is `diag(1,e^{iθ})` on
-; the f=1 branch and `I` on f=0, DIAGONAL EITHER WAY, so r's basis label is not
-; restored-after-being-moved, it is NEVER MOVED. Clause (1b) states that pointwise.
+; WHY IT IS LEGAL. `Uncomputation::preservesBorrowedParent` clause (d) needs
+; every register the forward chain read to still hold its forward value when the
+; adjoint fires. The kickback region's only gate is `cqrt_rz_i1` on its own flag,
+; so `r`'s basis label is NEVER MOVED. The four lines the CHECK chain ends with
+; (`mul_unc`, free, `mul_unc`, free) are that claim.
 ;
-; WHAT BREAKS IF THE STEMS ARE NOT SPLIT. Admit `cqrt_rz_<W>_controlled` to
-; `ChainWalk::isInPlaceGateOn` (as Inc 1 did, harmlessly, while the gate had no
-; caller) and this file goes red in TWO different ways at once: as a DAG link the
-; gate joins `D.Calls`, so `emitDagReversal` emits its adjoint naming a flag the
-; region already freed; and `railCarriesControlledRotation` freezes r's DAG, so
-; the two `mul_unc`s and their frees below vanish entirely. Either way the four
-; lines this file ends with are the ones that disappear.
-;
-; MEASURED AGAINST THE PRE-2a BINARY: the routed stream for this exact module has
-; the identical four-line tail. That equality is the whole claim of §12.1.
+; (History: pre-3qlq the region was `r2 = cq_phi(r, .9)` on `r` itself. Under
+; the swap route the licence was a GROUP property — both cswaps restore r's
+; label, clause (d2), `TaintSet::RestoringRoutes`; Inc 2a moved it to the gate,
+; an in-place `cqrt_rz_i32_controlled(f, r, θ)`, diagonal either way, which
+; forced the Ry/Rz stem split in `ChainWalk::isInPlaceGateOn`. MEASURED then
+; against the pre-2a binary: the routed stream had the identical four-line tail.)
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
@@ -56,12 +45,6 @@
 ;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
 ;   * !cq.branchphase
-;
-; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
-; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
-; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
-; emitted here.  Read it as history; the stream this file now ASSERTS is
-; the derived one below, and the two are meant to differ.
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.

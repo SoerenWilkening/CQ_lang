@@ -1,17 +1,14 @@
 ; control_swap_straightthrough_constfold.ll — ACCEPT spec, issue a8c0: the
 ; straight-through const-fold re-anchor (the Pred-edge analog of tryEqFoldArm).
 ;
-; `if (q != 0) q = cq_phi(q, a); measure(q);` — the idiomatic conditional phase.
-; `clang -O1` reaches the else (straight-through) edge ONLY when `q == 0`, so it
-; value-propagates the merge's Pred-edge incoming to the literal `0`: the merge is
-; `phi [phase(q), 0]`. The classifier's `Base == Routed` gate then fails — `Routed`
-; is the folded `0`, `Base` is the qubit — a verify-clean OVER-DECLINE of a clean
-; phase arm (`phi [phase(q), 0] ≡ phi [phase(q), q]` because `q == 0` on that edge).
-;
-; `straightThroughConstFoldHandle` re-recognizes it: the condition `icmp eq q, 0`
-; proves `q == 0` on the straight-through (true) edge, the folded constant equals
-; the compare literal, and the arm rotates the proven handle — so it re-anchors
-; `Routed`/`RoutedBase` to `q` and the diamond lowers through `emitRegion`
+; `if (q != 0) cq_phi(a); measure(q);` — the idiomatic conditional phase. Under
+; the pre-3qlq register form `clang -O1` folded the merge's straight-through
+; incoming to the literal `0` (`phi [phase(q), 0]`, as `q == 0` on that edge), and
+; `straightThroughConstFoldHandle` re-anchored `Routed`/`RoutedBase` to `q` to
+; avoid a verify-clean OVER-DECLINE. The register-free phase leaves no merge phi,
+; so the diamond lowers as a phase arm on the FALSE successor of `icmp eq q, 0`:
+; a `cqrt_x`-bracketed `cqrt_rz_i1` on the flag, the strip, one free, and NO
+; `cqrt_alloc_i32(i32 0)` for the folded constant.
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
 ; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)

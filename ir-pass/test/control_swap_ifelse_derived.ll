@@ -1,30 +1,18 @@
-; control_swap_ifelse_derived.ll — ACCEPT: if/else routing a DERIVED base (pre-region cq_phi).
+; control_swap_ifelse_derived.ll — ACCEPT: if/else on a DERIVED base (pre-3qlq pre-region cq_phi).
 ;
-; `q = rz(q, 0.9); if (q > 5) { rz(q, a); } else { rz(q, b); }` — both arm spines
-; bottom at the PRE-REGION `%qd = cq_phi(%q, ·)` (an unconditional Rz applied
-; before the branch, shared by both arms). %qd is the LIVE derived base handle:
-; it is tainted (theta lineage), and Rz is DIAGONAL (basis-value-preserving), so
-; icmp(%qd) equals the minted flag throughout the region and the icmp_inv(%qd)
-; flag-strip is exactly as valid as for an un-derived theta base (§0 criterion 3
-; permits a derived tainted base; test_C_libtooling-9hh). The condition here ALSO
-; reads %qd — the natural clang -O1 shape (the condition reads the live register).
+; Pre-3qlq (register form) both arm spines bottomed at a PRE-REGION
+; `%qd = cq_phi(%q, ·)`, an unconditional Rz shared by both arms; gating on %qd
+; was valid because Rz is diagonal (§0 criterion 3; test_C_libtooling-9hh).
+; REGRESSION GUARD from that era (§8 adversarial review 2026-06-09): an
+; UNBOUNDED phase-spine walk collected the SHARED %qd once per arm → double-erase
+; SIGSEGV (exit 139); the sibling where %qd fed the icmp emitted a dangling
+; `void <badref>` (exit 134). See [[swap-route-ifelse-derived-base-boundary]].
 ;
-; At the HANDLE level the stream is control_swap_ifelse.ll plus one unconditional
-; `cqrt_rz` that MUST fire BEFORE the flag mint (the CHECK order pins it):
-; rotation lowering RAUWs both %q and %qd to the SAME i32 handle (Rz is
-; in-place), which is WHY gating on the derived register is correct. Under the §6a
-; control-in-place peephole that is now visible directly — the controlled arm gates
-; name that one handle as their target.
-;
-; REGRESSION GUARD (§8 adversarial review 2026-06-09 — this exact shape was a
-; crash, then a WI-3 decline): with an UNBOUNDED phase-spine walk both arms
-; appear to bottom at the theta %q and the emitter collects the SHARED %qd once
-; per arm → double-erase SIGSEGV (exit 139); the sibling where %qd feeds the
-; icmp emitted a dangling `void <badref>` (exit 134). The arm-block-bounded walk
-; keeps both impossible: %qd is the region's gated base, never an arm gate — which
-; is why exactly TWO controlled rotations are emitted here, one per arm, and the
-; pre-region Rz stays uncontrolled. Any rebound of that walk re-crashes THIS fixture
-; loudly. See [[swap-route-ifelse-derived-base-boundary]].
+; 3qlq deleted %qd, so the IR gates on the plain %q:
+; `if (q > 5) cq_phi(a); else cq_phi(b);`. It lowers by kickback, the same
+; stream as control_swap_ifelse.ll — icmp mint, `cqrt_rz_i1(flag, a)`, the ELSE
+; `cqrt_rz_i1(flag, b)` in a `cqrt_x(flag)` bracket, icmp `_unc` strip, one
+; `cqrt_free` — with no `cqrt_rz_i32` of any kind.
 ;
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
