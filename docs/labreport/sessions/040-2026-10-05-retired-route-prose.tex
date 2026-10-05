@@ -1,0 +1,101 @@
+\labsessionheader{2026-10-05}{Comments and docs rewritten off the retired swap route}%
+  {9c9c61b5}{n/a}{none}
+
+\subsection*{Goal}
+The owner asked why fixtures still mention \texttt{cqrt\_cswap}, given that 3qlq retired the
+swap route on 2026-09-06 (commit \texttt{a3c1513d}), and then asked for the docs to be
+cleaned up (\bd{test\_C\_libtooling-7pxe}). The behaviour was already right. Goldens and
+CHECK lines pin the kickback, and \texttt{onward\_ctl\_phase\_caller.expected.log} has no
+\texttt{cqrt\_cswap}. What was out of date was the prose: fixture headers, slice
+comments, \fpath{tests/e2e/CMakeLists.txt} notes, pass comments and two docs still
+described the swap route, the tensored \texttt{cqrt\_rz\_<W>}, \texttt{cqrt\_rz\_<W>\_controlled}
+and the register-form \texttt{cq\_phi} as current.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \commit{9c9c61b5} --- \bd{test\_C\_libtooling-7pxe} --- comment and doc
+  text in 326 files (+3680/$-$4553 lines): 225 fixtures, 46 e2e files, 30 pass sources,
+  21 headers, \fpath{runtime/cq\_runtime.\{h,c\}}, \fpath{docs/backend.md}, and the
+  regenerated \fpath{CODE\_MAP.md}. Each stale description was rewritten to what that
+  file's own CHECK lines, golden or code show. In rewritten headers, register-form C
+  snippets were respelled (\texttt{if (q == 5) cq\_phi(PI)}). Text that could not be
+  grounded was cut or tagged ``pre-3qlq''. The following were left unchanged: the 3qlq
+  migration notes, dated history, quoted live diagnostics (\texttt{value-arm swap-route}),
+  and the live \texttt{cqrt\_cswap}, whose one minter is the abort park
+  (\texttt{AbortParkEmit}, via \texttt{emitRoute}), together with the uncompute spine's
+  handling of it.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item Scope, measured: 1,759 comment lines matched the retired vocabulary. After
+  dropping PRD paths, explicit history notes, true negatives and park lines, 871 lines in
+  363 files remained. Adding the register-form \texttt{cq\_phi} sites gives 479 files,
+  split across seven agents with disjoint sets. 323 files changed. The rest already
+  described current behaviour.
+  \item What the code shows (read by the agents before editing): any use of the register
+  form declines in \texttt{resolveSources}, so every \texttt{isPhiCall} or
+  \texttt{collectArmPhis} path sees only the retired form. \texttt{controlledRotationFn}
+  is only asked for Ry, so no \texttt{cqrt\_rz\_<W>\_controlled} is minted.
+  \texttt{rzRtFn} is only called at \texttt{i1}. \texttt{emitRoute} has one caller,
+  \texttt{AbortParkEmit.cpp:408}. \texttt{RestoringRoutes} has no writer.
+  \texttt{cqrt\_ry\_<W>\_controlled\_inv} has had no minter since 7cde677.
+  \item \ftag{open question} \texttt{RotationLowering} still treats \texttt{cqrt\_cswap} as a
+  non-use, on the route's ``a routed value returns to its rail'' rationale. The park swaps
+  the register into a kept graveyard rail instead, and reads the flag as a control. Filed
+  for adversarial review: \bd{test\_C\_libtooling-vjdo}.
+  \item About 30 fixtures lost the construct they were written to pin when the 3qlq
+  migration deleted or dissolved it. Examples: empty arms, phase-accumulation loops with
+  no phase left, and alias fixtures whose IR now equals a sibling's. Their headers now say
+  so. Re-spelling or retiring them is \bd{test\_C\_libtooling-jttf} (R10).
+  \item Drift unrelated to the retired mechanism was recorded, not fixed
+  (\bd{test\_C\_libtooling-zbz3}): slice prose against goldens, \texttt{\_inv} where
+  \texttt{\_unc} is meant, citations of deleted fixtures, ``over-declining is safe'' notes
+  that contradict R1, and one vacuous stdout \texttt{-NOT} on a stderr diagnostic.
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+files changed, lines & 326, +3680/$-$4553 & \measured{git diff --shortstat} \\
+non-comment / directive / IR change & 0 & script vs \texttt{HEAD} (C stripped of comments; \texttt{.ll} non-comment and directive lines) \\
+\texttt{.c} slice line counts changed & 0 & same script \\
+touched fixtures under lit & 225 of 225 passed & \measured{lit ir-pass/test --filter <225 names>} \\
+\texttt{ctest -LE maintenance} & 586 of 586 passed & \measured{ctest --test-dir build -LE maintenance -j6} \\
+cq-opt equivalence & 2537 fixtures, 0 mismatches & \measured{cmake --build build --target cq-opt-equivalence-full} \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+The coordinator checked every agent's work in one pass over the whole tree, not per
+agent. The checks:
+\begin{itemize}
+  \item every changed \texttt{.ll} keeps its non-comment lines and every line naming one
+  of its FileCheck prefixes, byte for byte;
+  \item C, C++ and runtime files are byte-identical once comments are stripped;
+  \item \texttt{.c} slices keep their line count (the one \texttt{runtime/cq\_runtime.c}
+  comment line added carries no diagnostic line);
+  \item CMake non-\texttt{\#} lines and \texttt{docs/backend.md} headings are unchanged;
+  \item no file grew, except \texttt{runtime/cq\_runtime.c} (one line).
+\end{itemize}
+Sampled rewrites were read against their CHECK lines. One example: the angles
+\texttt{0.75}/\texttt{0.25} in \fpath{control\_swap\_defer\_select\_angle.ll} match its
+\texttt{cqrt\_rz\_i1} CHECK-NEXT lines.
+
+The agents ran no tests. Some ran \texttt{cq-opt} read-only on single fixtures. One lit
+invocation covered the 225 touched fixtures. After the build, the batch gate ran:
+\texttt{ctest -LE maintenance -j6} 586 of 586 passed, \texttt{cq-opt-equivalence-full} compared 2537 fixtures with 0 mismatches, \texttt{update\_code\_map.py --check} clean. No mutants were run. The maintenance label and the full \texttt{ctest} were
+not run.
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item \bd{test\_C\_libtooling-vjdo}: is the park \texttt{cqrt\_cswap} non-use exemption
+  sound?
+  \item \bd{test\_C\_libtooling-jttf}: re-spell or retire the fixtures that lost their
+  subject in 3qlq.
+  \item \bd{test\_C\_libtooling-zbz3}: the remaining non-retired comment drift.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+Entry 039, Open questions: the larger task it said was ``not filed'' (rewriting the
+swap-route narrative to the kickback the CHECK lines pin) was done this session at the
+owner's request (\bd{test\_C\_libtooling-7pxe}).
