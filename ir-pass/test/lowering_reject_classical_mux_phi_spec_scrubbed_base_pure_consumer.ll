@@ -70,7 +70,10 @@
 ; change's first build, both print that). bd d88e moved the re-sweep below
 ; `specialize()` and the lift's re-ask, so the re-ask speaks first, with the
 ; twin's string. The TRUE-lift twin of this module (library `h` returning its
-; quantum argument) still declines at the re-sweep:
+; quantum argument) ACCEPTS since bd dm7f.1, because the arm theta is the phi's own
+; incoming and so on the record `r + 1` reads
+; (`lowering_classical_mux_phi_lift_spec_quantum_base_accept.ll`); the re-sweep's
+; slot is pinned by a sibling-gate shape over the same base,
 ; `lowering_reject_classical_mux_phi_lift_stale_spec_quantum_base.ll`.
 ;
 ; Library TU (plain C, no CQ.h):
