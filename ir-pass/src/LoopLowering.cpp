@@ -35,6 +35,7 @@
 #include "LiteralIntegrity.h"  // valueCarriesUndef (bd zujr, clause (Z4))
 #include "RailBankPromote.h"  // isRailBankAlloca/railBankOfPointer (bd zujr, L3)
 #include "SelectMergeEmit.h"   // materializeCopySource (bd zujr, the promotion)
+#include "QramLowering.h"  // instUnderTaintedControl (bd wt8u, the hand-off)
 
 #include "llvm/IR/IRBuilder.h"
 
@@ -2738,6 +2739,64 @@ bool tryBreak(Loop *L, Function &F, TaintSet &taint, WidthDispatch &wd,
   return true;
 }
 
+// Is `T` a conditional `br` / `switch` on a TAINTED condition? (`tryCaseA`'s
+// gate L2 and the hand-off below ask the same question of a terminator.)
+bool isTaintedBranchTerminator(const Instruction *T, const TaintSet &taint) {
+  if (const auto *BI = dyn_cast<BranchInst>(T))
+    return BI->isConditional() &&
+           taint.Tainted.count(const_cast<Value *>(BI->getCondition()));
+  if (const auto *SI = dyn_cast<SwitchInst>(T))
+    return taint.Tainted.count(const_cast<Value *>(SI->getCondition())) != 0;
+  return false;
+}
+
+// bd `test_C_libtooling-wt8u` — IS THIS CONSUMER OF A RAIL VALUE THE CONTROL
+// CHAIN'S, NOT THE LOOP'S? True for an instruction OUTSIDE `L` that is either
+// under tainted control (`instUnderTaintedControl`, the shared "inside a tainted
+// arm" predicate) or a φ merging tainted control (some incoming edge leaves a
+// tainted branch, or leaves a block under tainted control).
+//
+// WHY THE RAIL STOPS HERE. `tryCaseA`'s fixpoint used to grow the rail over the
+// whole function, so a POST-loop `if (q == 3) cq_theta(&r, .2);` lost its arm
+// gate (a) and its merge φ (b) to the rail, and the accept RAUW'd that merge φ
+// to the root: detection then saw a tainted diamond with no merge φ and declined
+// `control flow under quantum control`. The same fold MARKED an arm `xor` in
+// place (`markInPlaceRailOp`), an unconditional `cqrt_xorc` for an op the source
+// runs on one branch; only that missing merge φ kept it from the backend. A
+// region's arm and merge are emitted by the control chain, under its flag, and
+// the loop's collapse owes them only ONE thing: that the register they read at
+// their own position holds the record they name. That is the record-liveness
+// fence's question (`staleRailRecordRead`), asked of a hand-off like of any
+// other non-member reader, and `collectRailGates` still counts a hand-off arm's
+// in-place Ry as a GATE on this rail, so a pre-region alias read after the
+// region stays loud (`loop_caseA_postloop_region_handoff_reject_stale_alias.ll`).
+//
+// IN-BODY tainted control never reaches here: gate L2 leaves such a loop
+// unclaimed before the fixpoint, and the `L->contains` test keeps the answer
+// about the loop's OUTSIDE. A loop that is ITSELF inside a tainted arm gets no
+// hand-off at all (the caller's `LoopUnderControl`): its body is under control
+// too, and the old whole-function rail, whose collapse leaves the enclosing
+// region without its merge φ, is what keeps it declining (`control flow under
+// quantum control`, unchanged; probe `a5_loop_in_arm.c`). Conservative
+// direction: answering true only leaves a value to the control chain or to
+// `declineClassicalMuxes`, both of which lower it or decline loudly; it never
+// adds a collapse or a mark.
+bool railUseHandedToControl(Instruction *U, const Loop *L, const TaintSet &taint,
+                            DominatorTree &DT) {
+  if (L->contains(U))
+    return false;
+  if (auto *P = dyn_cast<PHINode>(U)) {
+    for (BasicBlock *IB : P->blocks()) {
+      Instruction *T = IB->getTerminator();
+      if (isTaintedBranchTerminator(T, taint) ||
+          instUnderTaintedControl(T, taint, DT))
+        return true;
+    }
+    return false;
+  }
+  return instUnderTaintedControl(U, taint, DT);
+}
+
 // Try to recognize + collapse one natural loop `L` as Case A (in-place
 // persistent accumulator). Returns true iff a Case-A collapse (or a LOUD
 // X1/Q1 decline) was performed; false ⇒ `L` is left untouched for its existing
@@ -2762,16 +2821,9 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
   // BEFORE the X1 header-phi analysis below, so a control-merge latch phi (a
   // tainted nested-diamond merge feeding the backedge) is left for that owner
   // rather than mis-declined as a cross-iteration dirty value rail.
-  for (BasicBlock *BB : L->blocks()) {
-    Instruction *T = BB->getTerminator();
-    if (auto *BI = dyn_cast<BranchInst>(T)) {
-      if (BI->isConditional() && taint.Tainted.count(BI->getCondition()))
-        return false;
-    } else if (auto *SI = dyn_cast<SwitchInst>(T)) {
-      if (taint.Tainted.count(SI->getCondition()))
-        return false;
-    }
-  }
+  for (BasicBlock *BB : L->blocks())
+    if (isTaintedBranchTerminator(BB->getTerminator(), taint))
+      return false;
 
   BasicBlock *Header = L->getHeader();
   BasicBlock *Latch = L->getLoopLatch();
@@ -2859,6 +2911,22 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
   // tainted phi ALL of whose incomings peel to one common root joins that root
   // (the zero-trip/exit merge phi and any inner renaming). A phi whose incomings
   // peel to TWO distinct roots is a cross-rail merge — not clean; bail.
+  // NEITHER EDGE CROSSES INTO TAINTED CONTROL (bd wt8u): a gate in a tainted arm
+  // or a φ merging one is the control chain's (`railUseHandedToControl`); it is
+  // left out of the rail and accepted by CLOSURE as a hand-off. Memoized: the
+  // predicate may build a post-dominator tree per call. Never for a loop that
+  // is itself under tainted control (see `railUseHandedToControl`).
+  const bool LoopUnderControl =
+      instUnderTaintedControl(Header->getTerminator(), taint, DT);
+  DenseMap<Instruction *, bool> HandOffMemo;
+  auto handedToControl = [&](Instruction *U) {
+    if (LoopUnderControl)
+      return false;
+    auto [It, New] = HandOffMemo.try_emplace(U, false);
+    if (New)
+      It->second = railUseHandedToControl(U, L, taint, DT);
+    return It->second;
+  };
   SmallVector<Value *, 16> Work;
   for (auto &KV : railRoot)
     Work.push_back(KV.first);
@@ -2881,6 +2949,8 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
         if (!InPlace)
           continue;
         auto *I = cast<Instruction>(U);
+        if (handedToControl(I))
+          continue;  // an arm's gate — the control chain's (bd wt8u).
         auto It = railRoot.find(I);
         if (It == railRoot.end()) {
           railRoot[I] = R;
@@ -2896,6 +2966,8 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
       for (PHINode &P : BB.phis()) {
         if (railRoot.count(&P) || !taint.Tainted.count(&P))
           continue;
+        if (handedToControl(&P))
+          continue;  // a region's merge φ — the control chain's (bd wt8u).
         Value *Common = nullptr;
         bool Ok = true, Touches = false;
         for (Value *V : P.incoming_values()) {
@@ -3019,6 +3091,12 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
       if (!I)
         continue;
       if (railRoot.count(I) || isMeasureCall(I) || isa<ReturnInst>(I))
+        continue;
+      // bd wt8u — a post-loop tainted region's arm consumer or merge φ is
+      // HANDED to the control chain, which reads the collapsed register at the
+      // region's own position; the record fence below asks that read like any
+      // other non-member read.
+      if (handedToControl(I))
         continue;
       // An in-place gate on the rail whose result is itself a rail is in
       // railRoot (handled above). Anything else is an out-of-rail consumer.
