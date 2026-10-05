@@ -3003,10 +3003,12 @@ bool functionCarriesBranchPhase(const Function *F, const TaintSet &taint) {
   return false;
 }
 
-// See the header (bd 3by9). Strictly NARROWER than `functionCarriesBranchPhase`
-// by construction: it visits exactly the calls that predicate counts, and adds a
+// See the header (bd 3by9, tinh). Strictly NARROWER than
+// `functionCarriesBranchPhase` by construction: it visits exactly the calls that
+// predicate counts, skips the ones that cannot reach `Construct`, and adds a
 // condition before answering true.
-bool lineageCarriesBranchPhase(const Value *V, const TaintSet &taint) {
+bool lineageCarriesBranchPhase(const Value *V, const TaintSet &taint,
+                               const BasicBlock *Construct) {
   const auto *VI = dyn_cast<Instruction>(V);
   if (!VI)
     return false;  // the coarse clause's own scope: it never asked of a non-instruction.
@@ -3014,6 +3016,15 @@ bool lineageCarriesBranchPhase(const Value *V, const TaintSet &taint) {
   SmallPtrSet<const Value *, 32> Answer;
   for (CallInst *CI : taint.PhaseCalls) {
     if (CI->getFunction() != F || !isTaintControlledBranchPhase(CI, taint))
+      continue;
+    // bd tinh: a phase whose block cannot reach the construct runs only after
+    // it (or on a path that never enters it), so it is a later gate. Asked
+    // BEFORE the no-`ret` fallback below, because the question is purely
+    // structural and reads no post-dominance. `isPotentiallyReachable` answers
+    // TRUE when its block budget runs out, which counts the phase (the loud
+    // direction).
+    if (Construct && Construct->getParent() == F &&
+        !isPotentiallyReachable(CI->getParent(), Construct))
       continue;
     // No returning path: `controlDependentOnTaintedBranch` answered by its
     // fallback, not by structure, and so would `transitiveControllers` (every

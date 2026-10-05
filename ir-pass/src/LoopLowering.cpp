@@ -1849,7 +1849,8 @@ namespace {
 // relative phase; a branch phase whose control meets the answer's lineage (the
 // first clause) is the carrier, and the `cq_phi_` lineage row is the vacuous
 // retired-form check.
-bool breakLineageCarriesPhase(Value *Op, const TaintSet &taint) {
+bool breakLineageCarriesPhase(Value *Op, const TaintSet &taint,
+                              const BasicBlock *Construct) {
   // ---- THE REGISTER-FREE BRANCH PHASE (bd 3qlq Inc 1 part A, Rule-13 round-1
   // finding F-L5-6 — a latent WIDENING). The `cq_phi_` prefix row below went
   // VACUOUS with the surface change, and the property it protected became
@@ -1865,7 +1866,13 @@ bool breakLineageCarriesPhase(Value *Op, const TaintSet &taint) {
   // declined a kickback on the break's COMPARAND, which the construct only reads
   // as a control (`lowering_loop_break_qq_phase.ll`). The twins in
   // `ControlDetect` and `AbortParkEmit` still ask the coarse question.
-  if (lineageCarriesBranchPhase(Op, taint))
+  //
+  // bd tinh: `Construct` is the loop header. A branch phase that cannot reach it
+  // runs after the construct, a later gate whose keys hold the source's values
+  // there (`out`, a register the construct only reads, a value defined outside
+  // the loop; E16 refuses any other in-loop value read after the loop), and is
+  // not counted.
+  if (lineageCarriesBranchPhase(Op, taint, Construct))
     return true;
 
   SmallVector<Value *, 8> Work;
@@ -2784,9 +2791,14 @@ bool tryBreak(Loop *L, Function &F, TaintSet &taint, WidthDispatch &wd,
   // decline (§2.6). Since bd 3by9 a branch phase counts only when its control
   // meets the answer's own lineage: a kickback on the COMPARAND alone lowers
   // (`lowering_loop_break_qq_phase.ll`); one inside the loop still declines here
-  // (`lowering_reject_break_phase_inloop_comparand.ll`).
+  // (`lowering_reject_break_phase_inloop_comparand.ll`). Since bd tinh a branch
+  // phase whose block cannot reach the loop header is not counted at all: it is
+  // a later gate (`lowering_loop_break_post_phase_answer.ll`), while the same
+  // kickback before the loop still declines
+  // (`lowering_reject_break_pre_phase_answer.ll`).
   for (Value *In : EscapePhi->incoming_values())
-    if (taint.Tainted.count(In) && breakLineageCarriesPhase(In, taint)) {
+    if (taint.Tainted.count(In) &&
+        breakLineageCarriesPhase(In, taint, L->getHeader())) {
       diagnose(BreakI, kMsgBreakPhase);
       return true;
     }

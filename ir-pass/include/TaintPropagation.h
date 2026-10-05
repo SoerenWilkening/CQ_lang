@@ -1836,13 +1836,28 @@ bool functionCarriesBranchPhase(const llvm::Function *F, const TaintSet &taint);
 // ITSELF control-dependent on a tainted branch: `-O1`'s top-level fold of
 // `if (q==5) cq_phi(a); else cq_phi(b);` is no branch phase under the shared
 // per-call clause, so neither predicate consults it (the angle-select emitter
-// lowers it, with a correct stream; the inconsistency is bd tinh). The answer
+// lowers it, with a correct stream). The answer
 // is true iff the tainted backward operand closure of some key meets the
 // tainted backward operand closure of `V`. Transitivity is load-bearing: a loop-invariant `if (p == 3)
 // cq_phi(θ)` INSIDE a quantum-exit loop has `p == 3` as its only direct
 // controller, but that branch's block is control-dependent on the loop's own
 // exit, whose condition reads the rail (`lowering_reject_break_phase_inloop_
-// comparand.ll`). A function with no returning path keeps the coarse answer.
+// comparand.ll`).
+//
+// THE CONSTRUCT FILTER — bd test_C_libtooling-tinh. `Construct` (the break
+// loop's header; null asks of every phase) exempts every branch phase whose
+// block cannot reach it: such a phase runs only after the construct has
+// finished, or on a path that never enters it. It was an R1 over-decline:
+// `if (q == 5) cq_phi(.3);` AFTER the loop, q the break answer, declined while
+// its folded twin `if (q == 5) cq_phi(.3); else cq_phi(.5);` (no branch phase,
+// see above) lowered with a correct stream. The filter is asked BEFORE the
+// coarse fallback below, so it holds in a function with no returning path too
+// (`lowering_loop_break_post_phase_noret.ll`). Reachability is LLVM's
+// `isPotentiallyReachable`, which answers true when its block budget runs out:
+// the phase is then counted, the loud direction. A function with no returning
+// path still keeps the coarse answer for every phase that CAN reach the
+// construct, a comparand kickback before the loop included (reported, not
+// changed: telling a program end from a `noreturn` park is an owner question).
 //
 // WHAT THE ANSWER IS FOR, measured against L5. The 7.4 break construct is a
 // basis permutation that reads every register it does not own only as a
@@ -1857,10 +1872,14 @@ bool functionCarriesBranchPhase(const llvm::Function *F, const TaintSet &taint);
 // in-loop value read outside the loop other than the escape φ). The remaining
 // unitary hazard is a phase INSIDE the construct (the loop body), refused
 // independently of this predicate by tryBreak's B4 side-effect clause (`cq_phi`
-// is a call). So "a phase whose keys meet the ANSWER's lineage" is a policy
-// line kept at the owner's scope (bd 3by9), not a unitary proof: the
-// before-the-loop kickback ON q (`lowering_reject_break_phase_answer_kickback.ll`)
-// stays loud under it.
+// is a call). A phase AFTER the construct whose keys meet the answer's lineage
+// is such a later gate (its key reads `out`), so the construct filter exempts
+// it (bd tinh, `lowering_loop_break_post_phase_answer.ll`, with the trace
+// argument). What is left, "a phase that can reach the construct and whose
+// keys meet the ANSWER's lineage", is a policy line kept at the owner's scope
+// (bd 3by9), not a unitary proof: the before-the-loop kickback ON q
+// (`lowering_reject_break_pre_phase_answer.ll`,
+// `lowering_reject_break_phase_answer_kickback.ll`) stays loud under it.
 //
 // L1. Asked once, from `lowerLoops`, before round 1 of control detection. For
 // an emittable break the answer's closure is the rail chain rooted at a
@@ -1870,8 +1889,13 @@ bool functionCarriesBranchPhase(const llvm::Function *F, const TaintSet &taint);
 // OPERAND walk cannot follow a merge `%out` back to its condition in either
 // round. Both gaps can only accept a phase outside the loop body whose keys E16
 // guarantees hold the source's values, which the paragraph above shows is
-// unitary-safe; no round-2 re-ask is recorded.
-bool lineageCarriesBranchPhase(const llvm::Value *V, const TaintSet &taint);
+// unitary-safe; no round-2 re-ask is recorded. The construct filter reads only
+// the CFG, asked of the source CFG; a later stage flattens claimed regions
+// (removing paths) or adds the reverse-play's self-loop inside the exit merge,
+// and neither gives a phase after the loop a path back to the header, so round
+// 2 cannot falsify it either.
+bool lineageCarriesBranchPhase(const llvm::Value *V, const TaintSet &taint,
+                               const llvm::BasicBlock *Construct);
 
 // bd test_C_libtooling-3qlq Inc 1, PRD §6.2 row P7 (owner decision D2) — DELETE
 // every SURVIVING register-free `cq_phi`, and ASSERT the Rule-1 invariant that
