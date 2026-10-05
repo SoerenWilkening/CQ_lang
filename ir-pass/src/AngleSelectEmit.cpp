@@ -644,17 +644,24 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // a surviving user means `lowerOps` still owns it. Scrub before erasing so no
   // later module walk dereferences freed memory.
   //
-  // WHAT LEAVING THE COMPARE STANDING WOULD ACTUALLY COST — measured, because the
-  // first draft of this comment said "a silent leak" and that is only sometimes
-  // true (round-1 Rule-13 review, lens L5-6). Deleting the erase turns 14 of the
-  // 46 angle-select fixtures RED, and on MOST shapes the failure is LOUD:
-  // `lowerOps` lowers the dead tainted compare into a second
-  // `cq_template_icmp_*_hl` flag rail that nothing strips, and `Uncomputation`
-  // then refuses with `dead chain would free a measured register`. The EXCEPTION
-  // is `control_angle_select_ry_lifted_phi_base.ll`, where `opt` exits 0 with a
-  // never-stripped, condition-entangled second flag rail: strict stage 2b passes
-  // and FileCheck was green. That fixture now carries a
-  // `CNT-COUNT-1: cq_template_icmp_eq_i32_hl(` so the silent cell is fenced too.
+  // WHAT LEAVING THE COMPARE STANDING WOULD ACTUALLY COST — measured twice, and
+  // the answer moved. HISTORY (round-1 Rule-13 review, lens L5-6, which also
+  // corrected a first draft that said "a silent leak"): deleting the erase
+  // turned 14 of the 46 angle-select fixtures RED; on most shapes `lowerOps`
+  // lowered the dead tainted compare into a second `cq_template_icmp_*_hl` flag
+  // rail that nothing strips and `Uncomputation` refused with `dead chain would
+  // free a measured register`, and the one silent cell then measured was
+  // `control_angle_select_ry_lifted_phi_base.ll` (`opt` exit 0, a never-stripped,
+  // condition-entangled second flag rail, strict stage 2b and FileCheck green).
+  // That fixture carries `CNT-COUNT-1: cq_template_icmp_eq_i32_hl(` since.
+  // ⚠ RE-MEASURED 2026-10-05 by the bd ptue agent on a mutant build (reported,
+  // not re-run for this note): under the same deletion SIX cells are silent and
+  // unstripped, with or without the ptue change, and with the ptue change the
+  // other 14 formerly-loud cells lower to an identity (the compare computed,
+  // immediately `_unc`'d and freed) instead of failing. So the `dead chain`
+  // decline is no longer the loud backstop this paragraph used to name; the
+  // erase itself is what keeps the second flag rail from existing. Which of the
+  // six a FileCheck count fences was not re-established here.
   scrubTaint(Sel, taint);
   Sel->eraseFromParent();
   if (Cond->use_empty()) {

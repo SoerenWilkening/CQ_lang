@@ -1738,9 +1738,9 @@ bool f2Model(Instruction *I, F2State &S, const DataLayout &DL,
 //       (`:917`) and `T`'s own angle (`:930`).
 // In case (b) the target was ALREADY reachable from anything that reached the
 // φ, because `inPlaceRotationArmTheta` admits an arm theta ONLY when the merge
-// φ is its SOLE USER — `ArmClassify.cpp:823`, `if (!T->hasOneUse() ||
-// T->user_back() != MergePhi) return nullptr;`, re-checked at
-// `SwapRouteEmit.cpp:752-758`. So for every `X`,
+// φ is its SOLE USER — its own `if (!T->hasOneUse() ||
+// T->user_back() != MergePhi) return nullptr;` (the `SwapRouteEmit.cpp`
+// re-check once cited here no longer exists, 2026-10-05). So for every `X`,
 //       X →* T  ⟹  X →* M  ⟹  X →* users(M)
 // held BEFORE the RAUW, and the RAUW re-parents exactly those users onto `T`.
 // No pre-existing value gains membership in any region's `PhiDesc`, in round 2
@@ -2777,6 +2777,15 @@ CallInst *taintedAngleGate(Value *ArmIncoming, const BasicBlock *ArmBB,
   // later broken-module abort (rotation lowering RAUWs the f64 angle to an i32
   // handle inside a call that is never erased — exit 134) into a clean,
   // source-located decline.
+  // ⚠ This row matches only the retired `cq_phi_<sfx>` base, as do the
+  // value-arm row in `classifyArms` and `SwitchArmProve`'s twin. A `cq_theta`
+  // base with a quantum-derived angle passes all three. On a value-arm diamond
+  // (IR probe, 2026-10-05, bd tn85; its classical-angle twin lowers) the region
+  // is lowered and `lowerRotations`' `declineTaintedAngle` then fails loudly
+  // AFTER `lowerControlRegions` (`cq rotation lowering: unsupported
+  // quantum-derived rotation angle`). Still loud, but mutate-then-decline rather
+  // than detection before mutation (R8). Lowering a quantum angle at all is the
+  // angle-register gap (bd 94ad).
   if (isPhiCall(Base) && AngleTainted(cast<CallInst>(Base)))
     return cast<CallInst>(Base);
   return nullptr;
@@ -6644,6 +6653,10 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // `resolveSources`, so this is vacuous on an accepted module. It was
         // added so mutation never preceded detection (§8 adversarial review,
         // 2026-06-11; control_swap_reject_value_derived_tainted_angle.ll).
+        // ⚠ A `cq_theta` base with a quantum-derived angle is NOT matched: it
+        // is caught, loudly, by `declineTaintedAngle` in `lowerRotations`,
+        // AFTER `lowerControlRegions` has lowered this region (see the base
+        // row of `taintedAngleGate`; measured 2026-10-05, bd tn85).
         if (auto *BaseCI = dyn_cast<CallInst>(Routed);
             BaseCI && isPhiCall(BaseCI) && BaseCI->arg_size() >= 2 &&
             Taint.Tainted.count(BaseCI->getArgOperand(1))) {

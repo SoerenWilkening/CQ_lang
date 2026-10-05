@@ -496,7 +496,8 @@ void classifySwitchRegion(SwitchInst *SI, TaintSet &taint, ControlPlan &plan) {
           return diagnoseUnderControl(SI, "control flow");
 
   // G3 — the angle BLOCKER, FIRST among the type gates (the FP-use fence precedes
-  // the width gate, exactly as ArmClassify.cpp:820 precedes :834). No backstop.
+  // the width gate, exactly as `classifyArms`' value-arm `isFPOrFPVectorTy` fence
+  // precedes its `widthHasReversibleCopy` gate in ArmClassify.cpp). No backstop.
   if (mergeReachesRotationArg1(P))
     return diagnoseUnderControl(SI, "rotation angle");
 

@@ -104,8 +104,8 @@
      Lowered @slice: 2 basic blocks, 1 br (unconditional, into the measure
      block), 0 conditional br, 0 phi — PredMuxFlatten straight-lined the
      whole nest onto the select substrate.
-   Lowered-IR call-site counts (each equals its trace-line count exactly,
-   because the lowered body is straight-line and every site executes once):
+   Lowered-IR call-site counts (re-counted on the golden 2026-10-05; each
+   equals its trace-line count: the body is straight-line, each site runs once):
      - cqrt_alloc_f64 : 20   (the FIRST is the cq_theta rail — it is the
                               operand of the single cqrt_ry_f64; the other
                               19 are PredMux f64 work rails)
@@ -118,11 +118,11 @@
      - cqrt_toffoli   : 630  (flag conjunctions for the predicated merges)
      - cqrt_cnot      : 528
      - cqrt_x         : 42
-     - cqrt_free      : 619
-     - cq_template_*  : 681 call sites total, 16 of them the fma keep-folds
-                        above; the bulk is 594 icmp_*_i32_hl — 297 forward
-                        compares paired one-for-one with 297 _inv strips
-     - trace lines    : 2886  (= 2205 cqrt + 681 cq_template, exactly)
+     - cqrt_free      : 666
+     - cq_template_*  : 728 call sites total, 16 of them the forward fma
+                        keep-folds above; the bulk is 594 icmp_*_i32_hl — 297
+                        forward compares paired one-for-one with 297 _unc strips
+     - trace lines    : 2980  (= 2252 cqrt + 728 cq_template, exactly)
    AUDITOR NOTE: the corpus's `c` is conditionally uninitialized by design
    (it is written only on the k!=0 path and read only under k!=0), and
    clang materializes that as one `undef` merge-phi incoming in the

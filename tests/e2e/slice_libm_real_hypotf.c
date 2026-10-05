@@ -70,23 +70,23 @@
    flattens through PredMux onto the select substrate: 28 cqrt_copy_f32_
    controlled + 18 cqrt_copy_i32_controlled merges, 222 cqrt_toffoli flag
    conjunctions, 72 cqrt_cnot, 46 cqrt_x, and each fcmp/icmp template paired
-   1:1 with its _inv strip (e.g. 50 cq_template_icmp_ule_i32_hl / 50 _inv,
-   21 icmp_ugt / 21 _inv, 21 icmp_slt / 21 _inv, 1 fcmp_ogt / 1 _inv). The
+   1:1 with its _unc strip (e.g. 50 cq_template_icmp_ule_i32_hl / 50 _unc,
+   21 icmp_ugt / 21 _unc, 21 icmp_slt / 21 _unc, 1 fcmp_ogt / 1 _unc). The
    word-level integer work — the GET_/SET_FLOAT_WORD punning together with the
    corpus's own exponent-word masks, the ±0x22000000 rescales, the k<<23
    exponent build and the ha-hb difference — becomes bitcast/mask/add template
    chains after SROA; counted over the whole trace: 8 cq_template_bitcast_i32_
-   to_f32, 1 cq_template_bitcast_f32_to_i32, 3 and_i32_hl, 7 add_i32_hl,
-   1 shl_i32_hl, 1 or_i32_hl, 1 sub_i32.
+   to_f32, 1 cq_template_bitcast_f32_to_i32, 3 and_i32_hl, 5 add_i32_hl,
+   4 cqrt_addc_i32, 1 shl_i32_hl, 1 or_i32_hl, 1 sub_i32.
    Rail traffic: 139 allocations (111 cqrt_alloc_i1, 17 cqrt_alloc_f32,
-   11 cqrt_alloc_i32) and 227 cqrt_free, against 425 handles minted in total
-   (allocs + template results), so 198 rails are left allocated at exit — the
+   11 cqrt_alloc_i32) and 254 cqrt_free, against 307 handles minted in total
+   (allocs + template results), so 53 rails are left allocated at exit — the
    Rule-6 "not provably |0⟩ is left allocated, never freed dirty" leak. The
    trace is handle-linear: zero double-free, zero use-after-free, zero use of
    an unproduced handle. Exactly 1 cqrt_ry_f32 and exactly 1 cqrt_measure_f32.
-   Lowered @slice holds 1040 call instructions, 2 basic blocks, 1 unconditional
-   br, 0 phi and 0 select, and the golden trace is 1040 lines — the flattened
-   body is straight-line, so every emitted call executes exactly once.
+   Lowered @slice holds 2 basic blocks, 1 unconditional br, 0 phi and 0
+   select; the golden trace is 1096 lines (trace counts re-counted 2026-10-05)
+   — the flattened body is straight-line, so every call executes exactly once.
 
    THE SUB-RULE (B) WITNESS. The construct that blocked this cell before q2wk is
    in pre-pass @slice:  %89 = icmp eq i32 %54, 0  used directly as a conditional

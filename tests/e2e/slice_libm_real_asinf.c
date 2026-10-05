@@ -55,7 +55,7 @@
        2 blocks with 0 `br i1` (one unconditional `br label` + the `ret`
        survive). The five arm values are merged by the controlled-XOR copy
        substrate: 5 `cqrt_copy_f32_controlled` PAIRS, each pair `cqrt_x`-
-       bracketed on its control, each control un-minted and its compare `_inv`-
+       bracketed on its control, each control un-minted and its compare `_unc`-
        stripped and freed afterwards. The control is NOT uniformly a toffoli
        conjunction rail — two of the five deviate: the `hx>0` sign merge drives
        its copy pair from the BARE `icmp_sgt_i32_hl` flag (no `cqrt_alloc_i1`,
@@ -64,9 +64,9 @@
        conjunction. Golden-trace totals: 8 `cqrt_alloc_i1` control rails (all 8
        freed), 16 `cqrt_toffoli` (each rail minted and un-minted once), 4
        `cqrt_cnot` (the OR-network, minted and un-minted), 10 `cqrt_x`, 13
-       compare `_inv` strips, 21 `cqrt_free` over 21 DISTINCT handles (the 8
-       rails + the 13 flags). The 6 `cqrt_alloc_f32` (the theta rail + the 5
-       merge destinations) are left allocated, never freed dirty (Rule 6). The
+       compare `_unc` strips, 43 `cqrt_free` on 43 DISTINCT handles (8 rails,
+       13 flags, 22 `_unc`'d template rails); the 6 `cqrt_alloc_f32` (theta rail
+       + 5 merge destinations) stay allocated, never freed dirty (Rule 6). The
        `huge+x>one` raise-inexact guard is in that set (it lowers to
        cq_template_fadd_f32_hl(h0, 1e30) then fcmp_ogt/fcmp_ule_f32_hl vs 1.0);
      - a MIXED-WIDTH Rule-18 keep pair on one tainted rail:

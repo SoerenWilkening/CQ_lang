@@ -105,8 +105,8 @@
      vendored as source above.
 
    LOWERING EXERCISED (every figure below MEASURED — the IR counts by
-   grepping call sites in the lowered /tmp/acosh_s2.ll, the trace counts by
-   grepping the emitted trace; none is asserted):
+   grepping call sites in the lowered /tmp/acosh_s2.ll, the trace counts on
+   the golden, re-counted 2026-10-05 (bd tn85); none is asserted):
      Pre-pass @slice (after clang -O1, always_inline having collapsed the
      3-function closure into one body) has 72 basic blocks and 71 br, 37 of
      them conditional — this is the fdlibm exponent-word classification chain
@@ -120,10 +120,10 @@
      the flatten's work rails and edge-predicate flags), 76
      cqrt_copy_f64_controlled + 16 cqrt_copy_i32_controlled controlled-copy
      merges, 1526 cqrt_toffoli flag conjunctions, 1088 cqrt_cnot, 92 cqrt_x
-     (the !flag brackets), 1508 cqrt_free, 0 cqrt_cswap. Exactly 1 cqrt_ry_f64
+     (the !flag brackets), 1684 cqrt_free, 0 cqrt_cswap. Exactly 1 cqrt_ry_f64
      and 1 cqrt_measure_f64 (and 0 cqrt_rz_f64 — acosh writes no phase).
-     Every compare template is emitted paired with its _inv strip (e.g. 115
-     cq_template_icmp_sge_i32_hl and 115 cq_template_icmp_sge_i32_hl_inv).
+     Every compare template is emitted paired with its _unc strip (e.g. 115
+     cq_template_icmp_sge_i32_hl and 115 cq_template_icmp_sge_i32_hl_unc).
      Rule-18 keeps: clang -O1 hands the pass 2 @llvm.sqrt.f64 call sites and
      48 @llvm.fmuladd.f64 call sites (its default fp-contract fuses the
      fdlibm polynomial products). Both families lower 1:1 and nothing is
@@ -134,7 +134,7 @@
      `declare @llvm.*` lines (sqrt.f64, fmuladd.f64) do survive with no uses,
      so a bare grep for @llvm. is not a refutation of that claim.
      The lowered module has ZERO residual @cq_* intrinsic calls. The trace is
-     6860 lines over 75 distinct symbols (5129 cqrt_* + 1731 cq_template_*)
+     7215 lines over 105 distinct symbols (5311 cqrt_* + 1904 cq_template_*)
      and is byte-identical across two runs (determinism checked). Every
      cqrt_ and cq_template_ IR call-site count above equals its trace line
      count, as it must for a straight-line function. This slice is the

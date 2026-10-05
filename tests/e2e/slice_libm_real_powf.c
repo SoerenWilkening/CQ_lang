@@ -82,8 +82,8 @@
             misrepresentation the sqrtf pin above exists to remove, so it was
             deleted and the sites keep-routed with it — bd tkju.)
        scalbnf is NOT in the keep set and is therefore vendored, not builtin'd.
-       The copysignf fix does not move this cell's golden — 152 trace lines
-       before and after, byte-identical — because olm_scalbnf is dead-stripped
+       The copysignf fix did not move this cell's golden (then 152 trace lines
+       before and after, byte-identical) because olm_scalbnf is dead-stripped
        before cq-lowering, so no copysign path reaches the golden at all.
 
    PROBE: arg0 tainted, arg1 the classical literal 0.5f —
@@ -118,12 +118,12 @@
    cqrt_copy_f32_controlled route-merges — 6 candidate values through 5 binary
    route-merges = 10 cqrt_copy_f32_controlled calls in the golden. TWO distinct
    flag-cleanup mechanisms are at work here, not one: the 18 compare flags are
-   stripped by their compare `_inv` twins (18 forward cq_template_icmp_*_i32_hl
-   against 18 _inv), while the 13 cqrt_alloc_i1 conjunction rails are
+   stripped by their compare `_unc` twins (18 forward cq_template_icmp_*_i32_hl
+   against 18 _unc), while the 13 cqrt_alloc_i1 conjunction rails are
    uncomputed by REPLAYING their own self-inverse cqrt_toffoli (26 toffoli =
    13 forward + 13 replayed; the single OR rail additionally replays 2 of the 4
-   cqrt_cnot). 18 + 13 = 31, exactly the 31 cqrt_free calls over 31 distinct
-   handles in the 152-line golden.
+   cqrt_cnot). 18 + 13 + 5 `_unc`'d fsub/fadd/fpext rails = 36, exactly the 36
+   cqrt_free calls over 36 distinct handles in the 162-line golden.
    This slice is the LINK-layer proof (Rule 2) that
    every emitted symbol resolves and signature-matches and that the trace is
    stable; it is NOT a proof that powf's log/exp core lowers, and a reviewer

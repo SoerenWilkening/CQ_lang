@@ -499,19 +499,20 @@ bool peelIndependentMergePhis(Module &M, TaintSet &taint,
       // FENCE, and the claim that it does (shipped until 2026-09-13) was false.
       // `f2SeedPinnedByLiveRegister` has TWO halves; placement only moves the
       // clone out of the **backward** one (`Cand` filters on
-      // `DT->dominates(&In, BI)`, `ArmClassify.cpp:1505-1510`). The **forward**
-      // half reaches it anyway: it walks every tainted USER of the condition's
-      // pinned operand rail with no position filter
-      // (`ArmClassify.cpp:1619-1626`), folds this clone to a singleton `i1`
-      // through `f2Model`'s `ICmpInst` arm (`:1198-1208`), and `:1616` then
-      // matches it against an `i1` (`_Bool`) seed — `true` on one edge, `false`
+      // `DT->dominates(&In, BI)`, in `f2SeedPinnedByLiveRegister`,
+      // ArmClassify.cpp). The **forward** half reaches it anyway: it walks
+      // every tainted USER of the condition's pinned operand rail with no
+      // position filter, folds this clone to a singleton `i1` through
+      // `f2Model`'s `ICmpInst` arm, and the seed test then matches it against
+      // an `i1` (`_Bool`) seed — `true` on one edge, `false`
       // on the other, so BOTH `i1` seeds collide. MEASURED:
       // `HP_g_sel_only.ll` (this clone alone, merge-placed, no select) turns
       // `HP_f_nopeel.ll`'s ACCEPT into F2's `state prep seed is proven equal to
       // the condition register`; it is the PIN and not the spelling (`HP_d`:
       // another predicate, `HP_e`: another constant — both decline). The repair
       // is at F2's test, not here: the clone is recorded in `taint.PeelClones`
-      // below and excluded at `ArmClassify.cpp:1616`, on the ground that a value
+      // below and excluded at that test (`excludedAtTest` in
+      // `f2SeedPinnedByLiveRegister`), on the ground that a value
       // this pass MANUFACTURES has no source preimage and therefore no rival
       // program for F2 to protect against (bd `rb9x`). Do not re-ground that
       // exclusion on "the same compare on the same wire": a function with two

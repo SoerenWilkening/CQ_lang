@@ -124,24 +124,24 @@
      Both frexpl and log1pl are LIBRARY functions and are vendored as source.
 
    LOWERING EXERCISED (every figure below MEASURED on the lowered IR / the
-   trace; nothing asserted):
+   golden; trace counts re-counted 2026-10-05; nothing asserted):
      Pre-pass @slice (clang -O1, the whole closure inlined into one function):
      56 basic blocks, 53 br of which 24 conditional, 2 switch, 38 phi, and
      8 NATURAL LOOPS — clang -O1 leaves the four __polevll/__p1evll Horner
      do/while loops ROLLED, once in each of log1pl's two exponent-range halves.
      Lowered @slice: 2 basic blocks, 1 unconditional br, 0 conditional br,
-     0 phi, 0 loops, 1626 call sites — a straight line.
-     Trace: 1626 lines, byte-identical across two consecutive runs.
+     0 phi, 0 loops — a straight line.
+     Trace: 1459 lines, byte-identical across two consecutive runs.
      Exactly 1 cqrt_ry_f80 and exactly 1 cqrt_measure_f80 — the sole user-written
      rotation and the sole user-written measurement (Rule 5: the compiler
      inserted none).
-     Rails: 182 cqrt_alloc (136 _i1 flag rails + 32 _f80 + 12 _i32 + 2 _i64) and
-     300 cqrt_free.
-     Control substrate: 272 cqrt_toffoli flag conjunctions, 188 cqrt_cnot,
+     Rails: 136 cqrt_alloc (90 _i1 flag rails + 32 _f80 + 12 _i32 + 2 _i64) and
+     335 cqrt_free.
+     Control substrate: 180 cqrt_toffoli flag conjunctions, 80 cqrt_cnot,
      74 cqrt_x (the not-flag brackets), and 74 controlled-copy merges
      (54 cqrt_copy_f80_controlled + 16 cqrt_copy_i32_controlled +
-     4 cqrt_copy_i64_controlled). Compares: 122 cq_template_icmp_* with 122
-     matching _inv strips, and 44 cq_template_fcmp_* with 42 _inv strips.
+     4 cqrt_copy_i64_controlled). Compares: 90 cq_template_icmp_* with 90
+     matching _unc strips, 39 fcmp with 37 (the 2 unstripped olt feed a sext).
      The ld80 union work (GET_LDOUBLE_WORDS / SET_LDOUBLE_EXP / u.bits.exp and
      u.bits.man{l,h} reads and the exponent write-back) lowers through
      promoteFp80Union to 12 bitcast templates (9 f80_to_i80 + 3 i80_to_f80),

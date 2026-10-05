@@ -125,28 +125,28 @@
    1 br and that br is UNCONDITIONAL (0 conditional br, 0 phi, 0 select) —
    PredMuxFlatten straight-lined the entire 32-way conditional nest onto the
    select substrate.
-   MEASURED on the lowered IR (and the trace agrees call-for-call, since the
-   lowered body is straight-line and every call executes exactly once):
+   MEASURED on the lowered IR; re-counted on the golden 2026-10-05 (straight-
+   line body: every call executes once, so the two agree call-for-call):
      1346 cqrt_alloc (44 cqrt_alloc_f64 + 1288 cqrt_alloc_i1 +
        14 cqrt_alloc_i32); of the 44 f64 allocs exactly 1 is the Ry rail,
      1 cqrt_ry_f64, 1 cqrt_measure_f64,
      70 cqrt_copy_f64_controlled + 24 cqrt_copy_i32_controlled route merges,
      2576 cqrt_toffoli flag conjunctions, 2320 cqrt_cnot, 94 cqrt_x,
-     2521 cqrt_free,
+     2627 cqrt_free,
      16 distinct compare templates totalling 1234 forward compares, each of
-       which has an exactly-matching _inv strip count (e.g. icmp_ult_i32_hl
-       231/231, icmp_uge_i32_hl 220/220, fcmp_ogt_f64_hl 66/66) — with ONE
-       deliberate exception: cq_template_icmp_ne_i64_hl appears once with no
-       _inv twin, because that compare is DATA, not a control flag: it is
+       which has an exactly-matching _unc count (e.g. icmp_ult_i32_hl
+       231/231, icmp_uge_i32_hl 220/220, fcmp_ogt_f64_hl 66/66). That includes
+       cq_template_icmp_ne_i64_hl (1/1), which is DATA, not a control flag:
        clang's canonicalization of atanh's `(lx|(-lx))>>31` nonzero-test into
        `icmp ne i64 %w, 0` + `zext i1 to i32`, whose result is ORed straight
-       into `ix`.  A data compare is consumed by the value DAG, not stripped
-       as a flag.
+       into `ix`. The golden uncomputes it with its value chain, before any
+       controlled copy (lines 12-18: icmp, zext, or, the zext's `_unc`, a free,
+       the icmp's `_unc`, a free), not as a flag strip.
    MEASURED, residual intrinsics: 0 @cq_* intrinsic call sites and 0 @llvm.*
    CALL SITES in the lowered module.  2 now-unused `declare @llvm.*` lines
    (llvm.fabs.f64, llvm.fmuladd.f64) do survive with no uses, so a bare grep
    for @llvm. is not a refutation of that claim.
-   MEASURED, trace: 11587 lines, byte-identical across two consecutive runs
+   MEASURED, trace: 11799 lines, byte-identical across two consecutive runs
    (determinism verified by diff), containing cqrt_ry_f64 and cqrt_measure_f64.
    This slice is the LINK-layer proof (Rule 2) that every emitted symbol
    resolves, signature-matches, and the trace is stable. */

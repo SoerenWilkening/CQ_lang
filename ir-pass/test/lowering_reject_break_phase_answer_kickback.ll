@@ -16,20 +16,24 @@
 ; are committed at
 ; `docs/prd/phase-04-swap-route-control/inc1-records/session-0a61aa31/clearance_c1/f1_break_kick_before.{c,subj.s1.ll}`).
 ;
-; WHY IT DECLINES. `tryBreak` classifies the escaping answer's lineage: `%18`, the
-; exit merge phi, has an incoming that is the register a `cq_phi` PHASED, so the
-; answer is PHASE-class. The §2.2 capture is `cqrt_copy_<W>` — a CNOT — and a CNOT
-; copies a BASIS LABEL, not a phase, so the index-gated capture + whole-loop
-; reverse-play would DEPHASE exactly the answer the program computed (Rule 7, the
-; canonical method-B-on-a-phase-arm miscompile). Over-declining is safe; this is
-; the Prime Directive doing its job on a shape the surface change made ordinary.
+; WHY IT DECLINES — THE FENCE'S STATED RATIONALE, WHICH IS UNREVIEWED AND NOT
+; PHASE-SPECIFIC (bd 3by9, 2026-10-05; see below). `tryBreak` classifies the
+; escaping answer's lineage: `%18`, the exit merge phi, has an incoming that is
+; the register a `cq_phi` PHASED, so the answer is PHASE-class. The §2.2 capture
+; is `cqrt_copy_<W>` — a CNOT — and the rationale says a CNOT copies a BASIS
+; LABEL, not a phase, so the index-gated capture + whole-loop reverse-play would
+; DEPHASE the answer (Rule 7, the method-B-on-a-phase-arm argument). But the
+; copy-out entangles with the restored rail in exactly the same way when the
+; superposed answer carries no phase at all, so that argument does not single out
+; a phase. The decline is loud, never silent; where it refuses a valid program it
+; is an over-decline to remove (R1), not a safe margin.
 ;
 ; bd 3by9 (2026-10-05). B3 now asks the per-register `lineageCarriesBranchPhase`
 ; instead of "any branch phase in the function". This program still declines
 ; under it: the phase's controller `q == 5` reads `%3`, the rail root the
 ; escaping answer `%18` derives from. Its sibling with the kickback on the
 ; COMPARAND instead (`lowering_loop_break_qq_phase.ll`) now lowers. ⚠ THE
-; PARAGRAPH ABOVE IS AN UNREVIEWED RATIONALE, NOT A PROOF: by linearity the
+; `WHY IT DECLINES` PARAGRAPH IS AN UNREVIEWED RATIONALE, NOT A PROOF: by linearity the
 ; construct (a basis permutation that restores the rail) carries a phase applied
 ; before it on the amplitude, and the copy-out's entanglement with the restored
 ; rail is the same for a phase-free superposed answer. The decline is kept at

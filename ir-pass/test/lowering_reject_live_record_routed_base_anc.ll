@@ -54,8 +54,10 @@
 ; lowered module. THE ANALYSIS AND THE MESSAGE STRING ARE UNCHANGED — only the
 ; severity moved, so everything this header says about WHY the record counts
 ; still holds verbatim. The record is LEFT ALLOCATED and never freed (Rule 6 is
-; untouched: nothing frees a rail that is not provably |0>), which the
-; `NOFREEREC` prefix below pins alongside the gate that IS now emitted. The file KEEPS its
+; untouched: nothing frees a rail that is not provably |0>). The ordered stream
+; below spans the whole body and FCNT counts exactly one free (the flag's), which
+; pins that alongside the gate that IS now emitted (a `NOFREEREC` prefix was cited
+; here; none exists, corrected 2026-10-05, bd tn85). The file KEEPS its
 ; `reject_` name deliberately — see RotationLowering.h, which also states what
 ; the ruling does NOT cover (every wrong-value and dirty-free guard stays loud).
 ;

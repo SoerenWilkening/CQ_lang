@@ -90,22 +90,22 @@
        where `%71 = phi i32 [%64,%62],[0,%32]` is the region-internal phi
        carrying `k`.
    All 12 phis are consumed by the flatten: 0 phi nodes survive in the lowered
-   @slice. Measured on the lowered IR (call sites, declarations excluded), and
-   identically on the trace (the runtime prints exactly one line per call):
+   @slice. Measured on the lowered IR (call sites, declarations excluded) and
+   on the trace (one line per call; re-counted on the golden 2026-10-05):
        332 cqrt_alloc_*  = 306 cqrt_alloc_i1 + 19 cqrt_alloc_f32
                            + 7 cqrt_alloc_i32
        1 cqrt_ry_f32, 1 cqrt_measure_f32   (the sole rotation and the sole
                                             measurement; the compiler inserted
                                             no measurement — Rule 5)
        612 cqrt_toffoli flag conjunctions, 512 cqrt_cnot, 40 cqrt_x,
-       600 cqrt_free
+       640 cqrt_free
        28 cqrt_copy_f32_controlled + 12 cqrt_copy_i32_controlled route-merges
-       653 cq_template_* calls total
+       693 cq_template_* calls total
        0 residual @cq_* intrinsic call sites, 0 @llvm.* CALL SITES
-   Every compare that mints a flag is paired 1:1 with its _inv strip (measured:
+   Every compare that mints a flag is paired 1:1 with its _unc strip (measured:
    294 forward compare templates — 287 icmp + 7 fcmp — against exactly 294
-   cq_template_*_inv calls).
-   Golden trace: 2791 lines, byte-identical across two runs of the linked
+   compare _unc strips).
+   Golden trace: 2871 lines, byte-identical across two runs of the linked
    binary. Note that 2 now-unused `declare @llvm.*` lines (fabs.f32,
    fmuladd.f32) do survive in the lowered module with no uses, so a bare grep
    for @llvm. is not a refutation of the zero-call-site claim above.

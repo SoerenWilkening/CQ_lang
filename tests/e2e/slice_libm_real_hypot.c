@@ -60,7 +60,7 @@
    medium-size split are nested tainted classifications — all of it flattens
    through PredMux onto the select substrate: 32 cqrt_copy_f64_controlled + 20
    cqrt_copy_i32_controlled merges, 222 cqrt_toffoli flag conjunctions, and
-   fcmp/icmp templates each paired with their _inv strip. The SET_HIGH_WORD
+   fcmp/icmp templates each paired with their _unc strip. The SET_HIGH_WORD
    sites become bitcast/shift/mask template chains after SROA. Every llvm.*
    construct clang -O1 hands the pass is lowered 1:1, nothing dropped:
    3 llvm.fabs.f64 -> 3 cq_template_fabs_f64, 1 llvm.sqrt.f64 -> 1

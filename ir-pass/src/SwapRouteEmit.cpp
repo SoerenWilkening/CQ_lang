@@ -1182,7 +1182,7 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //      value that was ALREADY reachable from the φ it replaces — here
   //      `Gates.back().first` is the arm theta `T`, or the re-chained `T2`, or
   //      the negated clone `TNeg` over `T`, and `inPlaceRotationArmTheta`
-  //      (`ArmClassify.cpp:823`) made `MergePhi` that theta's SOLE USER. So the
+  //      (its `hasOneUse` check) made `MergePhi` that theta's SOLE USER. So the
   //      RAUW re-parents users of the φ onto something they already reached
   //      through it and no other region's closure grows.
   //
@@ -1192,8 +1192,8 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //      CONJUNCT MUST BE RE-DERIVED**, not merely re-run. The tripwires are
   //      `ir-pass/test/control_inplace_ry_reject_stateprep_mbeta_base_
   //      offcone.ll` and `…_mbeta_ifelse_rechain.ll`: if either turns into an
-  //      ACCEPT, this is the line that did it. Relaxing `:823`'s `hasOneUse`
-  //      fires the same trigger.
+  //      ACCEPT, this is the line that did it. Relaxing the `hasOneUse` in
+  //      `inPlaceRotationArmTheta` (ArmClassify.cpp) fires the same trigger.
   MergePhi->replaceAllUsesWith(Gates.back().first);
   scrubTaint(MergePhi, taint);
   MergePhi->eraseFromParent();

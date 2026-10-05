@@ -60,8 +60,9 @@
 ; carries the retirement trigger).
 ;
 ; KNOWN COSTS OF THIS RULE, filed and not pinned here: a measured record that is
-; only READ inside the window by an `_unc`, a `_controlled` gate or a clone call
-; also warns at the gate, because the scan refuses those wherever the record
+; only READ inside the window by an unrecorded `_unc` (the spine's adjoint; bd
+; 7xsh's row admits only emitter-recorded strips), a `_controlled` gate or a clone
+; call also warns at the gate, because the scan refuses those wherever the record
 ; sits (bd rced, an over-warning); and in a rolled loop the certificate covers
 ; only the current instance of the record (bd 9128, masked by a loud loop
 ; decline today).

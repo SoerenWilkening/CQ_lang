@@ -128,9 +128,9 @@
    lowered module calls cqrt_copy_f32_controlled 218x and cqrt_copy_i32_-
    controlled 38x (the kjd1 fp / 4.4 integer controlled-copy merges) — and the
    whole-DAG LIFO uncompute spine reverses the dead arithmetic: all 14 compare
-   families have their `_inv` twin with matching call counts and zero orphan
-   `_inv`, and the trace carries 3267 cqrt_free lines on 3267 distinct
-   operands, interleaved from trace line 29 onward (not a terminal block — the
+   families have their `_unc` twin with matching call counts and zero orphan
+   `_unc`, and the trace carries 3732 cqrt_free lines on 3732 distinct
+   operands, interleaved from trace line 7 onward (not a terminal block — the
    trace's last line is the cqrt_measure_f32). What this region chain does NOT
    contain is a store under quantum control: see SCOPE LIMIT at the top.
 
@@ -141,17 +141,17 @@
    always_inline convention here collapses it. Both routes reach opt exit 0;
    this golden pins the ship-floor one (precedent: slice_libm_real_sinhl.c).
 
-   MEASURED AT MINT (bd 3c6m.60 gate), all re-measured 2026-07-25: opt exit 0
-   with an empty stderr; s2.ll has 0 residual @cq_theta / @cq_phi / @cq_measure
-   calls, and @slice and @main are the only defined functions. Four vestigial
-   `declare`s outside the cqrt_ / cq_template_ families survive — @llvm.fabs.f32,
-   @llvm.fmuladd.f32, @llvm.floor.f32, @llvm.fmuladd.f64 — each with ZERO
-   remaining call sites (LLVM does not strip unused declarations); nothing
-   unlowered escapes and the link is clean. 1891 cqrt_alloc call sites (1719
-   i1 + 134 f32 + 38 i32); the trace is 14135 lines with EXACTLY one
-   cqrt_ry_f32 and EXACTLY one cqrt_measure_f32; all 3267 cqrt_free operands
-   are distinct and the measured handle h5626 is never among them; two runs are
-   byte-identical. */
+   MEASURED AT MINT (bd 3c6m.60 gate), re-measured 2026-07-25, trace counts
+   re-counted on the golden 2026-10-05: opt exit 0 with an empty stderr; s2.ll
+   has 0 residual @cq_theta / @cq_phi / @cq_measure calls, and @slice and @main
+   are the only defined functions. Four vestigial `declare`s outside the cqrt_ /
+   cq_template_ families survive — @llvm.fabs.f32, @llvm.fmuladd.f32,
+   @llvm.floor.f32, @llvm.fmuladd.f64 — each with ZERO remaining call sites
+   (LLVM does not strip unused declarations); nothing unlowered escapes and the
+   link is clean. 1891 cqrt_alloc call sites (1719 i1 + 134 f32 + 38 i32); the
+   trace is 15072 lines with EXACTLY one cqrt_ry_f32 and EXACTLY one
+   cqrt_measure_f32; all 3732 cqrt_free operands are distinct and the measured
+   handle h4072 is never among them; two runs are byte-identical. */
 #include <stdint.h>
 typedef uint32_t u_int32_t;
 typedef uint64_t u_int64_t;

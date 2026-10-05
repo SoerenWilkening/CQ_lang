@@ -69,8 +69,9 @@ using FnSet = SmallPtrSet<Function *, 16>;
 // `call`; an `invoke` is a TERMINATOR with normal + unwind successors, and
 // every lowering stage (RotationLowering / MeasureLowering / Uncomputation)
 // inserts plain CallInsts at the call position and RAUWs the result —
-// terminator surgery the pipeline has no story for. Declining is the correct
-// move (Prime Directive: over-declining is always safe): silently dropping it
+// terminator surgery the pipeline has no story for. Declining loudly is the
+// move until that story exists (an over-decline to remove, R1, not a safe
+// margin): silently dropping it
 // (the historical `dyn_cast<CallInst>` gap) treated an invoke'd theta's result
 // as CLASSICAL — a verify-clean UNDER-taint — and left the `@cq_*` extern to a
 // Stage-3 LINK error. Source-located via the invoke's `!dbg`; the negative
@@ -355,7 +356,8 @@ void diagnoseMalformedDecl(Function *F, StringRef Concern) {
 // convention (cf. FreePoint's `cq_invert_` prefix escapes), a wrong-typed
 // declaration of one is a user error whether or not it is currently called,
 // and gating on "has calls" would make the diagnostic depend on DCE
-// happenstance (over-declining is always safe, Prime Directive). An
+// happenstance (where the declaration is otherwise a valid program, this is a
+// loud over-decline to remove under R1, not a safe margin). An
 // UNRECOGNIZED suffix (e.g. `cq_measure_xyz999`) is NOT in the 42-name
 // surface and stays out of collection — and validation — entirely.
 void resolveSources(WidthDispatch &wd, FnSet &ThetaFns, FnSet &PhiFns,
@@ -1164,8 +1166,9 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
   // OpcodeLowering::declineStaleRecordOps). One diagnostic per offending
   // instruction. The KNOWN-CONSUMER list below is everything a later stage
   // provably owns — each entry cites its owner; ANYTHING else that reads a
-  // tainted value is an unproven shape and declines loudly (Prime Directive:
-  // over-declining is always safe, over-accepting is a silent miscompile).
+  // tainted value is an unproven shape and declines loudly: never silent, but
+  // each valid program it refuses is a gap to close (R1), while over-accepting
+  // is a silent miscompile.
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
@@ -1538,12 +1541,13 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
             // half exists to close (three written `cq_measure` calls emitting
             // nothing). The record is minted at the normaliser slot, so the two
             // can only disagree if a stage BETWEEN that slot and here changed
-            // the shape — and then the safe answer is the generic decline.
+            // the shape — and then the loud answer is the generic decline.
             // MEASURED direction of each disagreement: shape destroyed after
             // the mint ⇒ the carve no longer says `Bank` and some `Reject*` or
-            // the generic `kMsgStore` fires (over-decline, safe); a NEW bank
+            // the generic `kMsgStore` fires (a loud over-decline); a NEW bank
             // manufactured after the mint ⇒ `Bank` with no record ⇒ the `break`
-            // below (over-decline, safe).
+            // below (a loud over-decline). Loud, never silent, but each is still
+            // a gap to remove (R1), not a free margin.
             //
             // ⚠ AND THAT DIRECTION ARGUMENT IS THE WHOLE JUSTIFICATION — the
             // injection matrix's mutant M2 (drop this conjunct) is reported
@@ -1881,8 +1885,8 @@ bool terminatorIsClassical(const Instruction *T, const TaintSet &taint) {
 // the phi was PROVEN a pure renaming of one register's per-path current
 // record, RAUW'd to the wire base, scrubbed from the taint set, and erased —
 // the caller then has nothing to diagnose. Any unproven branch returns false
-// and the caller declines loudly, exactly as before the lift (Prime
-// Directive: over-declining is always safe).
+// and the caller declines loudly, exactly as before the lift (never silent;
+// a valid program declined there is a gap to close, R1).
 bool liftOneRegisterMergePhi(PHINode *Phi, TaintSet &taint,
                              const SmallPtrSetImpl<CallInst *> &GateCalls,
                              std::optional<DominatorTree> &DT) {
@@ -3149,7 +3153,8 @@ bool declineQuantumReturnCalls(Module &M, const TaintSet &taint) {
     //    when no indirect call exists in the module (a function that is only
     //    address-taken and never called still declines): proving the absence of
     //    every indirect read is a points-to question this stage does not ask, and
-    //    an over-decline is the safe side of it.
+    //    an over-decline is the loud side of it (never silent, but a gap to
+    //    remove under R1, not a safe margin).
     // A function with no use in this module (an entry point, or a cross-TU
     // export) is untouched: its `ret` of a handle is the existing Escaped contract.
     for (User *U : F.users()) {

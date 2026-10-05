@@ -374,10 +374,10 @@ struct ControlRegion {
   // ⚠ NOTHING POPULATES EITHER OF THESE, ANYWHERE — stated as a MEASURED FACT,
   // not a hedge (bd drbq Inc 2b; the same audit `InShadow` got in round 2).
   // `grep -rn "AnglePhi\|AngleConsumers" ir-pass/` finds this declaration, its
-  // comments, and exactly ONE read — `ArmClassify.cpp:1538` (the `if
-  // (!Region.AnglePhi.empty() || !Region.AngleConsumers.empty())` itself; the
-  // round-1 correction cited `:1534`, which is a closing brace four lines up —
-  // round-2 Rule-13 review, lens R2 N8), the in-place rotation-arm R7
+  // comments, and exactly ONE read — in `classifyArms`, ArmClassify.cpp (the `if
+  // (!Region.AnglePhi.empty() || !Region.AngleConsumers.empty())` itself; it was
+  // cited by line number until 2026-10-05, and that cite went stale more than
+  // once — round-2 Rule-13 review, lens R2 N8), the in-place rotation-arm R7
   // defence-in-depth clause. (The first draft said TWO and named
   // `EqFoldArm` as the second; `EqFoldArm` never reads `AnglePhi` at all —
   // corrected by the Inc-2b round-1 Rule-13 review, lens L6-N4.) There is no

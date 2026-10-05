@@ -222,7 +222,10 @@ void lowerRotations(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
 //            ABSENCE reveals the flag to whoever reads the tape. Also a
 //            C-reachable over-decline, measured, while its SRC-slot twin always
 //            accepted. Pinned by
-//            `lowering_live_record_tape_ctrl_observed_accept.ll`.
+//            `lowering_live_record_tape_ctrl_observed_accept.ll` until 7203d1c1
+//            (bd 9pum) moved that program to a DECLINE by rung-(iii) parity, as
+//            `lowering_reject_live_record_tape_ctrl_cond_staler.ll`; that header
+//            says why the CTRL-slot arm is unpinnable by construction today.
 //        N3  the DECLINE direction, and the only one of the three: the clone hop
 //            no longer crosses an argument the callee IGNORES (its result cannot
 //            depend on it). IR-only — `clang -O1` DAE drops such a parameter —
@@ -260,8 +263,11 @@ void lowerRotations(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
 //      clause 4 in RotationLowering.cpp. Pinned by
 //      `lowering_live_record_tape_before_gate.ll`. The measurement half inherits
 //      M-B's conservative refusals, so a measured record that is only READ in
-//      the window by an `_unc`, a `_controlled` gate or a clone call still warns
-//      (bd rced, an over-warning), and its certificate covers only R's current
+//      the window by an unrecorded `_unc` (the spine's adjoint, e.g. of a dead
+//      `int c = (r == 2)` flag; bd 7xsh's row (4) admits only emitter-RECORDED
+//      strips), a `_controlled` gate or a clone call still warns (bd rced, an
+//      over-warning; a record DERIVED from a collapsed one is never treated as
+//      collapsed either), and its certificate covers only R's current
 //      instance in a rolled loop (bd 9128, masked by a loud loop decline today).
 //   5. it is not `W` itself.
 //   6. **it EXISTS at `T`** — `provablyBefore(T, R)` is FALSE. The F2 fix

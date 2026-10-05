@@ -251,8 +251,9 @@ bool proveSwitchValue(const SwitchShape &S, TaintSet &Taint) {
   // yet post-RAUW the preload copy and the hoisted chain read the POST-Ry wire
   // while the chain names the PRE-Ry RECORD: the stale-record family, a
   // verify-clean wrong unitary. Position-free walk — ANY theta on the wire
-  // declines (over-decline is safe). Mirrors the diamond value twin
-  // (ArmClassify.cpp:928) so the switch shares the diamond's primary guard rather
+  // declines (a loud over-decline, a gap to remove per R1). Mirrors the diamond
+  // value twin (the `findNonDiagonalWireGate` row in `classifyArms`,
+  // ArmClassify.cpp) so the switch shares the diamond's primary guard rather
   // than relying on the `valuePureChain` / `declineStaleRecordOps` backstop
   // coincidence (Rule 14).
   // CrossValueRouting=TRUE since bd tayx (uniform router posture; Rule 14): a
@@ -275,7 +276,12 @@ bool proveSwitchValue(const SwitchShape &S, TaintSet &Taint) {
   // region was EMITTED and FLATTENED before `RotationLowering`'s angle guard
   // fired (mutate-then-decline), and the forward G3 walk cannot see an angle
   // UPSTREAM of the straight-through incoming. Mirrors the diamond value twin
-  // (ArmClassify.cpp:944).
+  // (the derived-routed-base angle row in `classifyArms`, ArmClassify.cpp).
+  // ⚠ Like that twin it matches only the retired `cq_phi_` form, so a `cq_theta`
+  // base with a quantum-derived angle passes here. On the diamond it is caught,
+  // loudly, by `declineTaintedAngle` in `lowerRotations`, AFTER
+  // `lowerControlRegions` (mutate-then-decline, R8; measured 2026-10-05, see the
+  // base row of `taintedAngleGate`, bd tn85); the switch spelling is unprobed.
   if (auto *BaseCI = dyn_cast<CallInst>(P);
       BaseCI && isPhiCall(BaseCI) && BaseCI->arg_size() >= 2 &&
       Taint.Tainted.count(BaseCI->getArgOperand(1))) {

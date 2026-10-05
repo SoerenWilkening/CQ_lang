@@ -90,7 +90,7 @@
    and both lower 1:1 (counts below).
 
    LOWERING EXERCISED (every figure below MEASURED on /tmp/atanhf_s1.ll,
-   /tmp/atanhf_s2.ll and the trace; nothing asserted): a single tainted-x
+   /tmp/atanhf_s2.ll and the golden, re-counted 2026-10-05): a single tainted-x
    atanhf. Pre-pass @slice is NOT straight-line — it carries 64 basic blocks
    and 63 br, 32 of them CONDITIONAL: the fdlibm exponent-word
    classification cascade of e_atanhf.c with two whole inlined copies of
@@ -102,11 +102,11 @@
    2496 cqrt_toffoli flag conjunctions, 2248 cqrt_cnot, 90 cqrt_x polarity
    brackets, 1248 cqrt_alloc_i1 flag rails, 42 cqrt_alloc_f32 and 14
    cqrt_alloc_i32 (of the 42 f32 allocs, exactly 1 is the taint source —
-   trace line 1, `cqrt_alloc_f32(0.500000) -> h0`, immediately followed by
-   the single cqrt_ry_f32), and 2441 cqrt_free. There is exactly 1
+   trace line 1, `cqrt_alloc_f32(0x1p-1) -> h0`, immediately followed by
+   the single cqrt_ry_f32), and 2528 cqrt_free. There is exactly 1
    cqrt_ry_f32 (the sole taint source) and exactly 1 cqrt_measure_f32 (the
-   sole sink, trace line 11203). Every fcmp/icmp template appears paired
-   with its _inv strip at equal count (e.g. 225/225 icmp_ult_i32_hl,
+   sole sink, trace line 11377). Every fcmp/icmp template appears paired
+   with its _unc strip at equal count (e.g. 225/225 icmp_ult_i32_hl,
    64/64 fcmp_ogt_f32_hl) — no unstripped flag.
    Both keep families lower 1:1, nothing dropped: 3 @llvm.fabs.f32 -> 3
    cq_template_fabs_f32, and 32 @llvm.fmuladd.f32 -> 32 fma templates
@@ -114,7 +114,7 @@
    The lowered module has ZERO residual @cq_* intrinsic calls and ZERO
    @llvm.* CALL SITES — though 2 now-unused `declare @llvm.{fmuladd,fabs}.f32`
    lines do survive with no uses, so a bare grep for @llvm. is not a
-   refutation of that claim. The trace is 11203 lines and byte-identical
+   refutation of that claim. The trace is 11377 lines and byte-identical
    across two runs. This slice is the LINK-layer proof (Rule 2) that every
    emitted symbol resolves, signature-matches, and the trace is stable. */
 #include <stdint.h>

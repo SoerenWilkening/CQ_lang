@@ -18,7 +18,7 @@
 
    At -O1 the ternary is a single `select i1 %c, double %t, double 2.5e-01`
    over an fcmp-ogt condition — the FIRST fcmp-minted merge: flag mint is
-   cq_template_fcmp_ogt_f64_hl / strip its _inv (not the icmp family). The
+   cq_template_fcmp_ogt_f64_hl / strip its _unc (not the icmp family). The
    classical false operand 0.25 is materialized via cqrt_alloc_f64 (the 4.4
    carve-out extended to fp); the fp width tags only the symbol names — every
    handle stays i32 (Rule 15).

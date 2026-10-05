@@ -7,9 +7,11 @@
 ; lowering_qram_fp64_measure_no_dirty_free.ll (bd 38t2). That fixture's thesis was
 ; "the compiler emits EXACTLY the user's forward gate stream, with zero
 ; `cqrt_free`, zero `_unc` and no inserted measurement in the measured cone —
-; emitted == written = correct-by-construction". THE EMISSION CLAIM IS STILL TRUE
-; AND IS STILL PINNED (the rewritten
-; lowering_qram_fp64_measure_no_dirty_free.ll keeps every CHECK-NOT); what the
+; emitted == written = correct-by-construction". THAT EMISSION CLAIM IS HISTORY
+; and no fixture pins it today (corrected 2026-10-05, bd tn85): the rewritten
+; lowering_qram_fp64_measure_no_dirty_free.ll lowers the module WITHOUT the final
+; chained gate and pins a full reversal (`_unc`s, three frees), and the stream
+; below discharges both index casts (two `_unc`s, two frees; bd r2j3.1). What the
 ; owner ruled (2026-08-27 / 2026-08-28, bd test_C_libtooling-6uqc) is that
 ; "emitted == written" is NOT a soundness argument when a live entangled record
 ; stands at a NON-DIAGONAL gate. That is the whole premise of this campaign.
@@ -60,9 +62,12 @@
 ; lowered module. THE ANALYSIS AND THE MESSAGE STRING ARE UNCHANGED — only the
 ; severity moved, so everything this header says about WHY the record counts
 ; still holds verbatim. The record is LEFT ALLOCATED and never freed (Rule 6 is
-; untouched: nothing frees a rail that is not provably |0>), which the
-; `NOFREEREC` prefix below pins alongside the gate that IS now emitted. The file KEEPS its
-; `reject_` name deliberately — see RotationLowering.h, which also states what
+; untouched: nothing frees a rail that is not provably |0>). Three things below
+; pin that, alongside the gate that IS now emitted: the ordered stream spans the
+; whole body, the NOROUTE negative names `cqrt_free(i32 %h3)` (the record's
+; emitted name, measured 2026-10-05), and FCNT counts exactly two frees, both
+; index casts. (A `NOFREEREC` prefix was cited here; none exists.) The file
+; KEEPS its `reject_` name deliberately — see RotationLowering.h, which also states what
 ; the ruling does NOT cover (every wrong-value and dirty-free guard stays loud).
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this

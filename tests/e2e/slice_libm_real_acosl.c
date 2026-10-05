@@ -58,7 +58,7 @@
    confirms this: cq_template_sqrt_f80 appears (twice — once per surviving
    sqrt arm), and no software-sqrt loop exists anywhere in the cell.
 
-   LOWERING EXERCISED (observed in the lowered IR and the 222-line trace, not
+   LOWERING EXERCISED (observed in the lowered IR and the 374-line trace, not
    assumed):
      - the tainted fp80 argument is decomposed through the union IEEEl2bits
        .xbits.expsign / .bits.manh / .bits.manl views. SROA does NOT promote
@@ -78,7 +78,7 @@
      - the four-way classification cascade (|x| >= 1 NaN-or-exact / |x| < 0.5 /
        x < -0.5 / x > 0.5) becomes a tainted-word integer-compare ladder
        (icmp eq / ne / ule / ugt / uge / slt / sgt / sge over i32 _hl, each
-       paired with its _inv strip) which PredMux flattens completely: @slice in
+       paired with its _unc strip) which PredMux flattens completely: @slice in
        the lowered module has no conditional branch, no phi, and no surviving
        `select` instruction — it is straight-line.
      - the fp80 arm results merge through the kjd1 fp-select controlled-copy
@@ -101,7 +101,7 @@
    the LINK-layer proof (Rule 2) that every emitted symbol resolves and
    signature-matches and that the trace is stable and deterministic: exactly one
    cqrt_ry_f80 and exactly one cqrt_measure_f80 (Rule 5 — no compiler-inserted
-   measurement), all 29 cqrt_free operands distinct (Rule 6/8 — no double free),
+   measurement), all 105 cqrt_free operands distinct (Rule 6/8 — no double free),
    the measured handle never freed, and two runs byte-identical. */
 #include <stdint.h>
 

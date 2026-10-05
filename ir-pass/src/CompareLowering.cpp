@@ -157,9 +157,10 @@ static Value *lowerCompareImpl(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
   }
 
   // i128 compare fence (n0ui Tier-1): `icmp` is OUT of the i128 frozen surface
-  // (no `cq_template_icmp_*_i128` — over-decline is safe, Prime Directive). Now
-  // that `abiWidthFromType` recognizes i128, BOTH the Q+Q data-compare (`qqWidth`)
-  // and the `_hl` classical-operand paths can land `AbiWidth == "i128"`; without
+  // (no `cq_template_icmp_*_i128`; the decline is loud, and an i128 compare is a
+  // gap to close per R1, not a safe margin). Now that `abiWidthFromType`
+  // recognizes i128, BOTH the Q+Q data-compare (`qqWidth`) and the `_hl`
+  // classical-operand paths can land `AbiWidth == "i128"`; without
   // this explicit gate they would `getOrInsertFunction` a phantom unresolved
   // compare template (verify-clean, exit 0, LINK-FAILS at Stage 3). Decline
   // LOUDLY and leave `cmp` standing (well-typed i1, verify-clean), exactly like
@@ -277,8 +278,8 @@ static Value *lowerCompareImpl(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
   // then and three now, and a new emitter re-opens F-L7-1 silently) and of `markRailCondRead`, whose
   // FIRST spelling already missed a site (the 4.3 nest's conjunction toffoli,
   // FIX_B1_R2.md). A record written by the shared mint cannot be forgotten; the
-  // failure mode of a NEW caller is therefore an over-DECLINE, which is the
-  // Prime Directive's direction.
+  // failure mode of a NEW caller is therefore an over-DECLINE: loud, never
+  // silent, but still a gap to remove (R1), not a free safety margin.
   //
   // WHAT IS RECORDED: `(each member of the compare's `condProvenance` cone, T)`.
   // The cone is the seed set gate 2c already walks for rung (iii), so the

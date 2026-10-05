@@ -116,7 +116,7 @@
      3c6m.60 fixed. No other keep-set name appears anywhere in this closure.
 
    LOWERING EXERCISED (every figure below MEASURED on /tmp/asinhf_s1.ll,
-   /tmp/asinhf_s2.ll and on the emitted trace — none asserted):
+   /tmp/asinhf_s2.ll and the golden (re-counted 2026-10-05) — none asserted):
      - Pre-pass @slice, after -O1 has inlined the whole 3-file closure into one
        function: 70 basic blocks, 69 `br`, 35 of them conditional. That is the
        fdlibm exponent-word classification chain bd q2wk widened the PredMux E6
@@ -131,12 +131,12 @@
        logf arm, the 2**28>|x|>2.0 logf arm, and the log1pf arm.
      - Merge substrate on the trace: 72 cqrt_copy_f32_controlled +
        16 cqrt_copy_i32_controlled controlled-copy merges; 1628 cqrt_toffoli
-       flag conjunctions, 1248 cqrt_cnot, 88 cqrt_x, 1609 cqrt_free;
+       flag conjunctions, 1248 cqrt_cnot, 88 cqrt_x, 1753 cqrt_free;
        868 allocations (814 cqrt_alloc_i1 flag rails + 43 cqrt_alloc_f32 +
        11 cqrt_alloc_i32); 1 cqrt_ry_f32 and 1 cqrt_measure_f32 (the single
        tainted theta rail in, the single measurement out).
-       Every compare template is paired 1:1 with its `_inv` strip (e.g. 140
-       cq_template_icmp_ule_i32_hl against 140 ..._inv; the same holds for each
+       Every compare template is paired 1:1 with its `_unc` strip (e.g. 140
+       cq_template_icmp_ule_i32_hl against 140 ..._unc; the same holds for each
        of the 14 predicate families present — 10 icmp (eq ne sge sgt sle slt uge
        ugt ule ult) and 4 fcmp (oeq ogt ule une)).
      - KEEPS actually lowered, counted on the trace: 2 cq_template_fabs_f32 and
@@ -159,7 +159,7 @@
      - 42 cq_template_fma_f32* (10 all-handle + 18 _qlq + 8 _qll + 6 _qql) come
        from clang's default fp-contract fusing the Lg1..Lg4 / Lp1..Lp7 Horner
        chains and `x*x+one`; fma/fmuladd is likewise a Rule-18 keep.
-     - Total trace: 7329 lines. The lowered module has ZERO residual @cq_*
+     - Total trace: 7621 lines. The lowered module has ZERO residual @cq_*
        intrinsic call sites (call.*@cq_theta / call.*@cq_measure both 0) and ZERO
        @llvm.* CALL sites — but 3 now-unused `declare @llvm.*` lines do survive
        with no uses, so a bare grep for @llvm. is not a refutation of that claim.

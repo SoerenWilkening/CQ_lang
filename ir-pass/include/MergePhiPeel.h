@@ -42,7 +42,7 @@
 // A peeled `select` that REUSES the region's own compare value declines
 // `condition data use neither escaped nor measured` — `classifyArms` sees a
 // non-`BranchInst` user of the condition and `condDataUseDisposition`
-// (`ArmClassify.cpp:2195`) does not recognize a `SelectInst`, so it ends at its
+// (ArmClassify.cpp) does not recognize a `SelectInst`, so it ends at its
 // `Unowned` catch-all. MEASURED both ways (`h09a`/`h09b` decline; `h09c`/`h09d`
 // accept). So each peeled φ gets its OWN `CmpInst` clone in the merge — the
 // region and the select then mint, strip and free their own flag on the same

@@ -14,8 +14,8 @@
 ; emitters: **every merge-phi RAUW in the tree targets either a fresh
 ; `cqrt_alloc` whose only operand is a constant (the closure SHRINKS) or one of
 ; the phi's own INCOMINGS, or a descendant of one.** For M-beta
-; (`SwapRouteEmit.cpp:1105`, target `Gates.back().first`) that holds because
-; `inPlaceRotationArmTheta` (`ArmClassify.cpp:823`,
+; (`emitInPlaceRotationRegion` in SwapRouteEmit.cpp, target `Gates.back().first`) that holds because
+; `inPlaceRotationArmTheta` (ArmClassify.cpp,
 ; `!T->hasOneUse() || T->user_back() != MergePhi`) admits an arm theta ONLY when
 ; the merge phi is its SOLE USER — so `X ->* T  =>  X ->* M  =>  X ->* users(M)`
 ; ALREADY held before the RAUW, and no other region's closure can grow.

@@ -208,8 +208,8 @@ void emitSwitchValueRegion(const ControlRegion &R, WidthDispatch &wd,
     // OWN predicate — the one SimplifyCFG consults before speculating a block
     // (Rule 14) — never a hand-rolled per-opcode table. The pre-3qlq route ran the
     // chain unconditionally too (on a `|0>` rail, i.e. `0 sdiv n`), so this fence
-    // NARROWS the accept class rather than repairing a regression; that direction
-    // is always safe (Prime Directive).
+    // NARROWS the accept class rather than repairing a regression. The decline is
+    // loud, never silent, but a valid guarded division is a gap to close (R1).
     for (Instruction *Op : VC.Ops)
       if (!isSafeToSpeculativelyExecute(Op)) {
         diagnoseUnderControl(Op, "value arm op that cannot run unconditionally");

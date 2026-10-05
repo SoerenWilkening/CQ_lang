@@ -39,9 +39,9 @@
 ; `cq_theta` on q after the nest still declines (`condition predates a
 ; non-diagonal gate`), unchanged.
 ;
-; WI-1 lands DETECTION only — recognized as the accept shape, declined
-; transitionally `nested control flow`, so this XFAILs. WI-3 lands the emitter and
-; this XPASSes — delete the XFAIL then.
+; HISTORY — WI-1 landed DETECTION only (the shape was recognized and declined
+; transitionally as `nested control flow`, so the fixture carried an XFAIL); WI-3
+; landed the emitter and removed the XFAIL (4d452d01, bd s8yf.4). None remains.
 ;
 ;
 ;

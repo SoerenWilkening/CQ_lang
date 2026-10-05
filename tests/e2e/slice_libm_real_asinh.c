@@ -99,7 +99,7 @@
    identical: e_log 545/545, s_log1p 594/594, s_asinh 183/183.
 
    LOWERING EXERCISED (every figure below MEASURED on the lowered IR / the
-   trace, not asserted; q is theta-tainted so no guard const-folds away):
+   golden, re-counted 2026-10-05; q is theta-tainted so no guard folds away):
      - pre-pass @slice after -O1 inlining: 75 basic blocks, 74 `br` (38 of
        them conditional) and 21 `phi`. Post-pass @slice: 2 basic blocks and
        exactly 1 `br`, an unconditional edge into the measure block (0
@@ -108,16 +108,16 @@
        subnormal/fast-path/i>0 splits and the log1p domain / correction-term /
        normalize splits — onto the select substrate.
      - rails: 969 cqrt_alloc_* in total (906 cqrt_alloc_i1 predicate rails,
-       48 cqrt_alloc_f64, 14 cqrt_alloc_i32, 1 cqrt_alloc_i64) against 1787
+       48 cqrt_alloc_f64, 14 cqrt_alloc_i32, 1 cqrt_alloc_i64) against 1965
        cqrt_free. Exactly 1 cqrt_ry_f64 and 1 cqrt_measure_f64 — the one
        user-written rotation and the one user-written measurement; the pass
        inserted no measurement (Rule 5).
      - merge substrate: 80 cqrt_copy_f64_controlled + 18
        cqrt_copy_i32_controlled + 2 cqrt_copy_i64_controlled controlled-copy
        merges, 1812 cqrt_toffoli flag conjunctions, 1348 cqrt_cnot and 100
-       cqrt_x. Every fcmp/icmp template is paired 1:1 with its `_inv` strip
-       (e.g. 149 cq_template_icmp_ule_i32_hl / 149 ..._inv, 55
-       cq_template_fcmp_ule_f64_hl / 55 ..._inv).
+       cqrt_x. Every fcmp/icmp template is paired 1:1 with its `_unc` strip
+       (e.g. 149 cq_template_icmp_ule_i32_hl / 149 ..._unc, 55
+       cq_template_fcmp_ule_f64_hl / 55 ..._unc).
      - keeps lowered 1:1, nothing dropped: 3 @llvm.fabs.f64 -> 3
        cq_template_fabs_f64 and 2 @llvm.sqrt.f64 -> 2 cq_template_sqrt_f64.
        Those counts equal the 3 fabs / 2 sqrt SOURCE sites exactly — all three
@@ -131,7 +131,7 @@
      - 0 residual @cq_theta / @cq_measure calls in the lowered IR, and 0
        @llvm.* CALL SITES — but 3 now-unused `declare @llvm.*` lines do
        survive with no uses, so a bare grep for @llvm. is not a refutation of
-       that claim. The trace is 8132 lines over 86 distinct symbols and
+       that claim. The trace is 8491 lines over 117 distinct symbols and
        contains cqrt_ry_f64 and cqrt_measure_f64; two consecutive runs of the
        linked binary are byte-identical. This slice is the LINK-layer proof
        (Rule 2) that every emitted symbol resolves, signature-matches, and the

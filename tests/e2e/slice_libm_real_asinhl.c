@@ -119,7 +119,7 @@
    __polevll, __p1evll.
 
    LOWERING EXERCISED (every figure below MEASURED on the lowered IR or the
-   golden trace; nothing here is asserted):
+   golden trace, re-counted 2026-10-05; nothing here is asserted):
    Pre-pass @slice is the whole closure inlined into one function: 115 labelled
    blocks, 112 br (54 of them conditional), 65 phi, 10 select, 66 load and 49
    getelementptr, and 12 REAL BACK-EDGE LOOPS — clang -O1 does not unroll the
@@ -129,22 +129,22 @@
    inlinings, because asinhl reaches logl from two arms and log1pl from a third).
    Lowered @slice is ONE straight line: 1 labelled block, 1 br (unconditional,
    into the measure block), 0 conditional br, 0 phi, 0 select, 0 load, 0
-   getelementptr. The 3887-line trace is that straight line executed once, so
+   getelementptr. The 3810-line trace is that straight line executed once, so
    every count below is simultaneously a static call-site count and a dynamic
    one.
      - Rotation/measure spine: trace line 1 is the cq_theta_f80 seed rail
        (the first of the 57 cqrt_alloc_f80), line 2 is the single cqrt_ry_f80,
        and the last line is the single cqrt_measure_f80. 0 cqrt_rz — no phase
        arm in this cell.
-     - PredMux flatten substrate: 360 cqrt_alloc_i1 flag rails, 720
-       cqrt_toffoli path conjunctions, 440 cqrt_cnot, 142 cqrt_x (¬flag
-       brackets), 388 forward compare templates and 385 `_inv` strips, and 142
-       controlled copies (104 cqrt_copy_f80_controlled + 32
-       cqrt_copy_i32_controlled + 6 cqrt_copy_i64_controlled) standing against
-       the 65 phi + 10 select the pre-pass IR contained — that is a raw
-       side-by-side of two measured numbers, not a claimed per-merge ratio.
-       442 cqrt_alloc total (57 f80, 360 i1, 22 i32, 3 i64) against 745
-       cqrt_free. 0 cqrt_cswap.
+     - PredMux flatten substrate: 290 cqrt_alloc_i1 flag rails, 580
+       cqrt_toffoli path conjunctions, 280 cqrt_cnot, 142 cqrt_x (¬flag
+       brackets), 333 forward compare templates and 330 `_unc` strips (the 3
+       unstripped fcmp_olt_f80_hl feed cq_template_sext_i1_to_i32 as DATA and
+       stay allocated), and 142 controlled copies (104 cqrt_copy_f80_controlled
+       + 32 cqrt_copy_i32_controlled + 6 cqrt_copy_i64_controlled) against
+       the 65 phi + 10 select the pre-pass IR contained (a raw side-by-side of
+       two measured numbers, not a per-merge ratio). 372 cqrt_alloc total
+       (57 f80, 290 i1, 22 i32, 3 i64) against 884 cqrt_free. 0 cqrt_cswap.
      - Bounded-loop rollout: the 12 counted loops are rolled out to their trip
        counts and their const-global coefficient loads resolved to literals —
        which is exactly why the fma count grows. 31 pre-pass fmuladd sites split

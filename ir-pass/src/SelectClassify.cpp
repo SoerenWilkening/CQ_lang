@@ -1294,8 +1294,9 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   }
 
   // GATE 3 — the §3.2 BLOCKER: NOT an angle. FIRST among the type gates (the
-  // FP-use fence precedes the width gate, exactly as ArmClassify.cpp:820 precedes
-  // :834). There is NO downstream backstop, so the angle MUST be caught here.
+  // FP-use fence precedes the width gate, exactly as `classifyArms`' value-arm
+  // `isFPOrFPVectorTy` fence precedes its `widthHasReversibleCopy` gate in
+  // ArmClassify.cpp). There is NO downstream backstop, so the angle MUST be caught here.
   //
   // ⚠ "AN ANGLE SELECT MUST KEEP DECLINING" IS NO LONGER TRUE OF THE WHOLE CLASS
   // (bd test_C_libtooling-drbq Inc 2b, control-in-place-PRD §12.3). ONE angle

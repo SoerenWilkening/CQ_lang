@@ -118,7 +118,7 @@ StringRef suffixFromName(const CallInst *CI, StringRef Prefix) {
 //     %6 = phi i1 [ %3, %2 ], [ undef, %0 ]                 ; the MERGE INCOMING
 //
 // — and normalizing only the seed leaves F1's SECOND sub-clause (the Pred
-// incoming must be POINTER-IDENTICAL to the seed, `ArmClassify.cpp:3905-3908`)
+// incoming must be POINTER-IDENTICAL to the seed, in `classifyArms`, ArmClassify.cpp)
 // comparing `i1 false` against `undef`, so the module STILL declines with the
 // same string and the ruling's clause 2 ("both spellings compile") is not met.
 // That is WHY the phi incomings move. It is a MOTIVATION, not a precondition,
@@ -216,7 +216,7 @@ StringRef suffixFromName(const CallInst *CI, StringRef Prefix) {
 // them move through ONE mechanism: **F1's pointer-identity proof is
 // MANUFACTURED, not found.** F1's second sub-clause is a literal `Value*`
 // comparison — `MergePhi->getIncomingValue(PredIdx) != RotBase`
-// (`ArmClassify.cpp:3905-3908`) — and `Constant::getNullValue` is UNIQUED, so
+// (`classifyArms`, ArmClassify.cpp) — and `Constant::getNullValue` is UNIQUED, so
 // rewriting a seed `undef` and a straight-through `undef` to "the type's zero"
 // makes them THE SAME `Value*`, for two operands the source never equated. The
 // other 20: 14 `control flow` (the `MergePhiPeel` P3b route above), 4
@@ -1091,7 +1091,10 @@ namespace {
 //   * lowering_live_record_tape_ctrl_observed_accept.ll         N2: the CTRL slot
 //       of `cqrt_tape_write_<W>_controlled` is a SINK — the entry's presence or
 //       absence reveals the flag. Its SRC-slot twin always accepted, so this was
-//       one slot's worth of asymmetry
+//       one slot's worth of asymmetry. (7203d1c1, bd 9pum, renamed it to
+//       lowering_reject_live_record_tape_ctrl_cond_staler.ll, which now DECLINES
+//       by rung-(iii) parity; that header says why the CTRL-slot arm is
+//       unpinnable by construction.)
 // Negatives:
 //   * lowering_reject_live_record_condtree_out_unobserved.ll    THE N1
 //       DISCRIMINATOR (unchanged by the fix, `opt` exit 1 both sides — that IS its
@@ -1853,9 +1856,12 @@ bool reachesObservingSink(Instruction *U, Value *R, const TaintSet &taint,
     // record whose lineage reaches the flag is therefore observed just as surely
     // as one that reaches `src` — the reader learns a bit of it either way.
     // MEASURED as a C-reachable OVER-DECLINE: `c = a*k; cq_theta(&a,.25);
-    // if (c > 3) printf("%d", a);` — `opt` exit 0 at HEAD, exit 1 in the
-    // pre-round-2 tree; its SRC-slot twin (`printf("%d", c)`) always accepted.
-    // Pinned by lowering_live_record_tape_ctrl_observed_accept.ll.
+    // if (c > 3) printf("%d", a);` — `opt` exit 0 after that round, exit 1 in
+    // the pre-round-2 tree; its SRC-slot twin (`printf("%d", c)`) always accepted.
+    // It was pinned by lowering_live_record_tape_ctrl_observed_accept.ll until
+    // 7203d1c1 (bd 9pum) moved that program to a DECLINE by rung-(iii) parity
+    // (now lowering_reject_live_record_tape_ctrl_cond_staler.ll, whose header
+    // says why this arm is unpinnable by construction today).
     //
     // ARITY, not the `_controlled` suffix, is the discriminator, and it is exact:
     // `cqrt_tape_write_<W>(tape, src)` is i32(i32,i32) and the `_controlled` twin
@@ -2099,20 +2105,35 @@ bool recordIsExemptAt(CallInst *R, CallInst *T, const TaintSet &taint,
       //     warning. Pinned by lowering_reject_live_record_measured_then_moved.ll.
       //     ⚠ PRECISION COST, DISCLOSED (bd rced, round-2 review of cmr9). The
       //     scan inherits M-B's conservative refusals: `preservesBorrowedParent`
-      //     admits a forward template read, a diagonal Rz (controlled or not)
-      //     and, when allowed, a proven read-only clone call, and refuses every
-      //     `_unc`/`_inv`, every other `_controlled` gate and (with `false` here)
-      //     every clone call, WHEREVER R SITS in it. So a measured record that is
-      //     only READ inside the window now warns at the gate, where main was
-      //     silent: `int r = q & 6; sink = cq_measure(r); int s = r * 3;
+      //     admits a forward template read, a diagonal Rz (controlled or not),
+      //     since bd 7xsh an emitter-RECORDED flag strip reading R outside its
+      //     written slot (row (4), by membership) and, when allowed, a proven
+      //     read-only clone call, and refuses every other `_unc`/`_inv`, every
+      //     other `_controlled` gate and (with `false` here) every clone call,
+      //     WHEREVER R SITS in it. So a measured record that is only READ inside
+      //     the window now warns at the gate, where main was silent:
+      //     `int r = q & 6; sink = cq_measure(r); int s = r * 3;
       //     sink = cq_measure(s ^ q); cq_theta(&q, .3);` (the spine's
-      //     `cq_template_mul_i32_hl_unc` reads r before the gate), a compare of r
-      //     whose own strip runs in the window (`int c = (r == 2); …`; bd 7xsh's
-      //     row (4) for RECORDED strips should cover it once integrated), and a
-      //     clone call `__cq_q_g_1(r)`. That is an over-warning (a signal, not a
-      //     gate), taken to keep ONE spelling of "rail unmoved". The fix is one
-      //     widening of `preservesBorrowedParent` for read-only slots (bd rced),
-      //     an R11 core change because M-B's clause (d) reads the same predicate.
+      //     `cq_template_mul_i32_hl_unc` reads r before the gate), a compare of r whose own adjoint runs in the
+      //     window, and a clone call `__cq_q_g_1(r)`. ROW (4) DOES NOT COVER THE
+      //     COMPARE CASE (an earlier spelling here forecast that it would): in
+      //     `int r = q & 6; sink = cq_measure(r); int c = (r == 2);
+      //     cq_theta(&q, .3); return cq_measure(c);` the `_unc` reading r is
+      //     `cq_template_icmp_eq_i32_hl_unc(%h_cmp, %h_op, 2)`, the uncompute
+      //     SPINE's adjoint of c's dead i1 flag (`-O1` wraps it in a zext), not a
+      //     recorded strip, and it still warns at the gate (measured on the
+      //     integrated binary of main 9b2c5853 by the composition review,
+      //     2026-10-05). The recorded-strip spelling is unreachable from C today:
+      //     `sink = cq_measure(r); if (r == 2) cq_phi(.4); cq_theta(&q, .3);`
+      //     declines loudly (`condition measured before the control route under
+      //     quantum control`). So the over-warn persists (bd rced): a precision
+      //     cost, since both records there are collapsed. A record DERIVED from
+      //     a collapsed record is never itself treated as collapsed, which is a
+      //     separate over-warn class. All of this is an over-warning (a signal,
+      //     not a gate), taken to keep ONE spelling of "rail unmoved". The fix is
+      //     one widening of `preservesBorrowedParent` for read-only slots (bd
+      //     rced), an R11 core change because M-B's clause (d) reads the same
+      //     predicate.
       //     RETIREMENT TRIGGER (L7, bd 9128): the (W2) certificate speaks about
       //     the CURRENT instance of R only. In a rolled loop that re-mints R each
       //     trip, measures it, and writes it after `T`, the PREVIOUS trip's

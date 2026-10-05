@@ -3,7 +3,8 @@
 // scan: only `BinaryOperator` / `UnaryOperator` / `CmpInst` / `CastInst` data
 // ops, the `ret` terminator, and quantum-primitive calls (which themselves
 // reject) are recognized; EVERYTHING else is an unproven shape and rejects
-// (Prime Directive — over-declining is always safe).
+// loudly (never silently). Each such reject of a valid program is an
+// over-decline to remove (R1), not a free safety margin.
 
 #include "SpecializeReject.h"
 
@@ -121,18 +122,18 @@ bool unsupportedWidth(Type *T) {
 }
 
 // 5po2: the ONE in-body control shape Phase 6 specialization lifts — a liftable
-// tainted `select`. Scoped tight (Prime Directive; first increment): an i32
-// `select(<icmp>, <param>, 0)` — a DIRECT-param true arm, a constant-ZERO false
-// arm (so the clone emits ONE `cqrt_copy_i32_controlled` with no ¬flag bracket),
-// and an integer-`icmp` condition. The clone (`lowerCloneSelect`) lowers it to a
-// controlled-XOR copy `out = flag ? param : 0` and the Bennett reverse plays the
-// self-inverse copy + the flag `_unc` (EmitInverse 5po2). Everything off this
-// shape — a non-zero / non-constant false arm, a derived (non-`Argument`) true
-// arm, an `fcmp` / vector / non-`icmp` condition, a non-i32 width — stays
-// `InBodyControl` (a safe over-decline). This is a SHAPE gate only (scanBody has
-// no per-Site mask); `lowerCloneSelect` RE-PROVES the condition is genuinely
-// tainted before it mints the controlled copy, and loudly declines a shape-match
-// whose condition turns out classical.
+// tainted `select`. Scoped tight (first increment; the rest is a gap, R1): an
+// i32 `select(<icmp>, <param>, 0)` — a DIRECT-param true arm, a constant-ZERO
+// false arm (so the clone emits ONE `cqrt_copy_i32_controlled` with no ¬flag
+// bracket), and an integer-`icmp` condition. The clone (`lowerCloneSelect`)
+// lowers it to a controlled-XOR copy `out = flag ? param : 0` and the Bennett
+// reverse plays the self-inverse copy + the flag `_unc` (EmitInverse 5po2).
+// Everything off this shape — a non-zero / non-constant false arm, a derived
+// (non-`Argument`) true arm, an `fcmp` / vector / non-`icmp` condition, a
+// non-i32 width — stays `InBodyControl` (a loud over-decline to remove, R1).
+// This is a SHAPE gate only (scanBody has no per-Site mask); `lowerCloneSelect`
+// RE-PROVES the condition is genuinely tainted before it mints the controlled
+// copy, and loudly declines a shape-match whose condition turns out classical.
 bool isLiftableSelect(const SelectInst *SI) {
   if (abiWidthFromType(SI->getType()) != "i32")
     return false;  // copyControlledFn + the i32-return gate support only i32.
@@ -185,11 +186,12 @@ bool isLiftableSelect(const SelectInst *SI) {
 // family with no clone-local guard). See the kmdc PRD (§ANGLE-SAFETY of the
 // 3c6m.54 PRD for the R1 supersession).
 //
-// Scoped tight (Prime Directive; first slice): scalar fp result restricted to an
-// EXPLICIT {f32,f64} whitelist (NOT `abiWidthHasControlledFpCopy`, which also
-// admits f16/f80 with no coverage; f128/vector fall out via `isFloatingPointTy`),
-// an integer-`icmp` condition (the fabs sign test folds to `icmp slt i32`; `fcmp`
-// clamps deferred), and BOTH arms non-constant. This is a SHAPE gate only;
+// Scoped tight (first slice; the rest is a gap, R1): scalar fp result
+// restricted to an EXPLICIT {f32,f64} whitelist (NOT
+// `abiWidthHasControlledFpCopy`, which also admits f16/f80 with no coverage;
+// f128/vector fall out via `isFloatingPointTy`), an integer-`icmp` condition
+// (the fabs sign test folds to `icmp slt i32`; `fcmp` clamps deferred), and
+// BOTH arms non-constant. This is a SHAPE gate only;
 // `lowerCloneSelect` re-proves the condition AND BOTH arms are genuinely tainted
 // (mixed → loud decline; all-classical → left for the backend).
 bool isLiftableFpSelect(const SelectInst *SI) {
@@ -281,8 +283,8 @@ bool isLiftableFpSelect(const SelectInst *SI) {
   // Bennett wrap (Specialization.cpp select-op capture). This admits const/const
   // (the atanl ±π/2 arm), const/value, and value/const on top of value/value. A
   // NON-`ConstantFP` constant (undef / poison / ConstantExpr) is not a concrete
-  // materializable basis value → stays InBodyControl (safe over-decline, Prime
-  // Directive; spec_reject_fp_select_undef_arm.ll). This is a taint-blind SHAPE
+  // materializable basis value → stays InBodyControl (a loud over-decline to
+  // remove, R1; spec_reject_fp_select_undef_arm.ll). This is a taint-blind SHAPE
   // gate only: `lowerCloneSelect` re-proves the condition's taint and the
   // whole-classical / mixed trichotomy at emission (an all-classical select is
   // left for the backend; a classical condition over a tainted arm declines the
@@ -446,10 +448,11 @@ bool isLiftableFpSelect(const SelectInst *SI) {
 // verbatim into the clone — now kills the whole outer specialization. Measured:
 // pre-change `opt` exit 0 with the dead subcall harmlessly present, post-change a
 // loud `UndefReturn` naming the nested callee. That is a genuine ACCEPT LOSS on
-// top of the fix, it is a pure over-decline (safe, Prime Directive), and it is
-// deliberately not carved out — a carve-out would need its own proof that the
-// dead subcall is really dead in BOTH the clone and any twin, which is exactly
-// the kind of unproven accept surface this fence exists to remove.
+// top of the fix, it is a pure over-decline (loud, never silent, but a gap to
+// remove per R1, not a safe margin), and it is not carved out yet — a carve-out
+// would need its own proof that the dead subcall is really dead in BOTH the
+// clone and any twin, which is exactly the kind of unproven accept surface this
+// fence exists to remove.
 //
 // The predicate is `slotCarriesUndef`, the GlobalValue-address-skipping one: a
 // global's operands are its INITIALIZER while the value in the slot is its
@@ -506,14 +509,14 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
   //      E4-speculation accept-surfaces stay aligned (Rule 14). NOTE: LLVM's
   //      `hasExactDefinition()` ALSO declines the weak_odr/linkonce_odr ODR
   //      variants (they `mayBeDerefined`), NOT only the arbitrary-replacement
-  //      interposable set — over-declining them is safe (Prime Directive) and
-  //      costs zero coverage (openlibm has no weak symbols); admitting weak_odr
-  //      would be a deliberate `!isInterposable()` widening across BOTH fences, a
-  //      separate ticket. A top candidate is a definition by contract, and a
-  //      nested declaration is declined as "nested call" BEFORE recursing here, so
-  //      this fires only on a real non-link-exact BODY. Placed first: an
-  //      untrusted body must not be scanned as if its instructions were the ones
-  //      that run.
+  //      interposable set — that over-decline is loud, never silent, but a gap
+  //      to remove (R1); it costs zero openlibm coverage (no weak symbols).
+  //      Admitting weak_odr would be a deliberate `!isInterposable()` widening
+  //      across BOTH fences, a separate ticket. A top candidate is a definition
+  //      by contract, and a nested declaration is declined as "nested call"
+  //      BEFORE recursing here, so this fires only on a real non-link-exact BODY.
+  //      Placed first: an untrusted body must not be scanned as if its
+  //      instructions were the ones that run.
   if (!Callee->hasExactDefinition()) {
     WhereOut = &*Callee->getEntryBlock().begin();
     return SpecReject::Interposable;
@@ -559,8 +562,9 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
   //     controlled-return shape; a loop; a compound region) is caught by the
   //     `lowerCloneControl` post-flatten "still multi-block → decline" backstop
   //     and, for a surviving unlowered mux, the "no tainted select survives" guard
-  //     in `buildClone` — detection stays permissive-but-safe here (Prime
-  //     Directive), the emission proves the flatten by construction.
+  //     in `buildClone` — detection stays permissive here (a shape it lets
+  //     through declines loudly later, never silently), and the emission proves
+  //     the flatten by construction.
 
   // (2) ABI return: a (possibly-tainted) return must have a reversible copy-out
   //     to an i32 handle. Two admitted families (bd 3c6m.54):
@@ -602,7 +606,8 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
     // Terminators: a plain `ret` (the whitelist proves the returned value
     // reversible) or a `br` — 5po2 I1's diamond edge, collapsed by the clone's
     // PredMux flatten. A `switch`/`indirectbr`/`invoke`/`callbr` is out of the I1
-    // br scope → InBodyControl (a safe over-decline; a later widening).
+    // br scope → InBodyControl (a loud over-decline to remove, R1; a later
+    // widening).
     if (I.isTerminator()) {
       if (!isa<ReturnInst>(I) && !isa<BranchInst>(I)) {
         WhereOut = &I;
@@ -649,7 +654,7 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
         // `ctpop`/`ctlz`/`cttz`/`abs`/`smin`/`smax`/`umin`/`umax`/`*.sat`). An
         // intrinsic call is a `CallInst` to an llvm INTRINSIC DECLARATION, so
         // without this it falls through to the declaration-only "nested call"
-        // decline below (the safe over-decline this follow-up lifts). Inside a
+        // decline below (the loud over-decline this follow-up lifts). Inside a
         // specialized clone it is a reversibilizable data op exactly like the
         // `BinaryOperator`/`CastInst` whitelist further down: `seedClone`'s
         // transitive-user closure taints it, `lowerOps` (taint-gated) lowers it
@@ -859,8 +864,8 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
       // pointer) is over-accepted into the clone today and only backstopped LATE
       // at lowerOps (naming the CLONE, not source-located). Reject it HERE, at the
       // offending body op, with its precise `!dbg`. Taint-agnostic: detection has
-      // no clone taint yet, and over-declining a classical wide op is always safe
-      // (Prime Directive).
+      // no clone taint yet, so a classical wide op declines too: loud, never
+      // silent, but an over-decline to remove (R1), not a safe margin.
       if (unsupportedWidth(I.getType())) {
         WhereOut = &I;
         KindOut = "unsupported width";
@@ -947,7 +952,8 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
     }
 
     // Anything else (getelementptr, freeze, va_arg, extract/insert, …) is an
-    // unproven shape — decline (Prime Directive).
+    // unproven shape — decline loudly (R1: never guess; each is a gap to
+    // close).
     WhereOut = &I;
     KindOut = "unsupported instruction";
     pop();

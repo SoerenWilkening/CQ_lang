@@ -38,9 +38,9 @@
    loss is not one trace line, it is the whole chain and the `_unc` symbol the slice
    was written to LINK. Measured on slice_intrinsic_bswap: the `llvm.bswap.i32` is
    absent from stage-1 IR. There is no drop-in replacement in CQ.h (cq_measure is a
-   SINK and turns the shape into `dead chain would free a measured register`; an
-   unknown extern is declineTaintEscapes; a volatile local is erased by the fenv
-   ruling's eraseDeadVolatileScalarStores). OWNER QUESTION -- see PRE_DISPOSITIONS.md.
+   SINK and, before bd ptue (2026-10-05), turned the shape into `dead chain would
+   free a measured register`; an unknown extern is declineTaintEscapes; a volatile
+   local is erased by the fenv ruling's eraseDeadVolatileScalarStores). OWNER QUESTION -- see PRE_DISPOSITIONS.md.
    (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_intrinsic_fpmath.c — Phase 7.1 iw81.4.b e2e link proof: the fp-math
    intrinsic family (FROZEN ABI). The ONLY layer that LINKS, so the only proof

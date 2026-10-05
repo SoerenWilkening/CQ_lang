@@ -11,9 +11,11 @@
 // silence.
 //
 // ⚠ "OVER-DECLINING STAYS SAFE; PredMux CAN ONLY WIDEN THE ACCEPT SURFACE"
-// STOOD HERE AND THE SECOND HALF IS NOW MEASURABLY FALSE — Rule-13 rounds A and
-// B on bd `test_C_libtooling-woa0`, INDEPENDENTLY, `F-RA-1` / `F-RB-1`, four
-// hand-built exhibits between them. `declineConvertedRailPhiLeaves` can NARROW
+// STOOD HERE. ITS FIRST HALF CONTRADICTS R1: an over-decline is loud, never
+// silent, but a gap to remove, not a safe margin. ITS SECOND HALF IS NOW
+// MEASURABLY FALSE — Rule-13 rounds A and B on bd `test_C_libtooling-woa0`,
+// INDEPENDENTLY, `F-RA-1` / `F-RB-1`, four hand-built exhibits between them.
+// `declineConvertedRailPhiLeaves` can NARROW
 // the accept surface: the cross-claim record is committed at the E6 ADMISSION
 // while `run()` builds edge predicates LAZILY, so a region can record a rail φ
 // its emission never reads, and a later claim's VACUOUS RAUW then declines a
@@ -252,9 +254,9 @@ using cq::curatedIntrinsicCanBePoison;
 //     (fptosi/fptoui are inherent poison on out-of-range inputs — fail);
 //   * select/phi/freeze.
 // Everything else — loads, geps, fneg, and every call — fails HERE. Those are
-// over-declines and they are safe; `fneg` in particular is total and could be
-// admitted, but nothing measured needs it and widening a definedness proof is
-// not what this ticket is for (Rule 17).
+// over-declines: loud, never silent, but gaps to remove (R1), not safe margins;
+// `fneg` in particular is total and could be admitted, but nothing measured
+// needed it and widening a definedness proof was not that ticket's scope.
 bool definedOpAfterFlagDrop(const Instruction &I) {
   if (isa<CmpInst>(&I) || isa<SelectInst>(&I) || isa<PHINode>(&I) ||
       isa<FreezeInst>(&I))
@@ -405,10 +407,11 @@ ConeNode classifyConeNode(const Value *V) {
     // KNOWN AND DELIBERATE INCOMPLETENESS, so nobody "completes" it into the
     // enumeration this comment forbids: LLVM's own Argument clause is
     // `noundef || dereferenceable || dereferenceable_or_null`, and this predicate
-    // takes only the first. The other two are a pure over-decline (safe), and both
-    // are unreachable here anyway — a pointer cone leaf needs `ptrtoint`, which
-    // `definedOpAfterFlagDrop` refuses (measured: `ptr noundef nonnull align 8`
-    // through a `ptrtoint` declines under BOTH the old and the new predicate).
+    // takes only the first. The other two are a loud over-decline (a gap, R1),
+    // and both are unreachable here anyway — a pointer cone leaf needs
+    // `ptrtoint`, which `definedOpAfterFlagDrop` refuses (measured: `ptr noundef
+    // nonnull align 8` through a `ptrtoint` declines under BOTH the old and the
+    // new predicate).
     // Likewise a `freeze` does NOT stop the walk (`definedOpAfterFlagDrop` makes it
     // `Interior`), so `freeze(bare_arg)` declines even though LangRef guarantees a
     // freeze is well-defined — the one-line widening is correct and is filed
@@ -784,7 +787,7 @@ bool coneDefinedAfterFlagDrop(const Value *Root) {
 // dereferences `Entry` (a dominance test, an assert) must keep this case alive
 // or it silently turns W6 off — or, worse, on for a genuine entry phi. NOTE the
 // fence is spelled `PB == S->Entry`, so a DETACHED phi (null parent) also reads
-// as fenced under a null `Entry` — the safe direction (both scopes then answer
+// as fenced under a null `Entry` — the loud direction (both scopes then answer
 // false and W6 cannot fire), and unreachable in practice since any phi in a
 // verified terminator's condition cone is parented.
 // ⚠ `RailLeaves` is bd `test_C_libtooling-woa0`'s HALF of the record and it is
@@ -953,8 +956,8 @@ bool isSupportedCondTree(const Value *V, unsigned Depth,
   // ⚠ IT IS REFUSED UNDER `Strict`, DELIBERATELY. `Strict` is the xor sub-tree's
   // forced descent into `collectCondTree`'s grammar, and relaxing it is the
   // separate accept widening the head of this function refuses in writing. A rail
-  // leaf under an xor therefore keeps declining — the safe direction, and nothing
-  // measured wants it.
+  // leaf under an xor therefore keeps declining — loudly, never silently, and
+  // nothing measured wants it yet; it is still a gap to remove (R1).
   //
   // ⚠ AND IT IS NOT A ONE-LINE WIDENING: `buildNegation` ends in an UNCHECKED
   // `cast<BinaryOperator>(V)`, which a rail leaf reaches on the false edge. Its
@@ -1134,7 +1137,7 @@ bool isSupportedCondTree(const Value *V, unsigned Depth,
   //     `Convertible && !Downstream`. For a rail φ at `Mg`, Convertible is
   //     FALSE and Downstream TRUE; for one elsewhere, both are TRUE. Either way
   //     the conjunction is FALSE, so a rail φ can only ever SUPPRESS that
-  //     witness, never manufacture it — the safe direction. (Both scopes leave
+  //     witness, never manufacture it — the loud direction. (Both scopes leave
   //     `RailLeaves` null, so a witness walk records nothing regardless.)
   //
   // (6) MEASURED, FOUR TIMES, BY THREE INSTRUMENTS: round 3 found 22 firings in
@@ -1383,9 +1386,9 @@ bool isBooleanCondTree(const Value *V, unsigned Depth, const PhiCondScope *S) {
   // select whose arms are not the 0/1 constants its `cast<ConstantInt>` assumes
   // — a BROKEN MODULE, not a decline). NOTHING MEASURED WANTS IT: the four
   // 3c6m.67 census cells carry their xor as a plain branch condition, not as a
-  // phi incoming. So an xor under a phi keeps declining loudly, which is the
-  // safe direction. Widening it would owe its own red-green pair and its own
-  // Rule-13 round — do that, or leave it; do not do it in passing.
+  // phi incoming. So an xor under a phi keeps declining loudly: never silent,
+  // but a gap to remove (R1). Widening it would owe its own red-green pair and
+  // its own Rule-13 round — do that, or leave it; do not do it in passing.
   if (const auto *BO = dyn_cast<BinaryOperator>(V))
     if (BO->getType()->isIntegerTy(1) &&
         (BO->getOpcode() == Instruction::And ||
@@ -1580,7 +1583,7 @@ bool isSpeculatableDataflow(const Instruction &I, bool AdmitI80Compare = false) 
     // MONOTONE — a constant is never tainted, before or after the flatten, so
     // the `_hl` classification cannot drift. Admitting the data-position Q+Q
     // form would be a separate, deliberate widening (bd 3c6m.14.1); declining it
-    // here is an over-decline, always safe.
+    // here is a loud over-decline, a gap to remove (R1), not a safe margin.
     //
     // WHAT THIS DOES *NOT* EXCLUDE (stated because the natural reading is
     // wrong): a `Constant` that is not a `ConstantInt` — `undef`, `poison`, a
@@ -1597,8 +1600,8 @@ bool isSpeculatableDataflow(const Instruction &I, bool AdmitI80Compare = false) 
     // i80): a merged i80 value would need `cqrt_copy_i80_controlled`, which
     // does not exist. i80 as a BRANCH condition also stays unclaimed —
     // `isSupportedCompareLeaf` (E6's `isSupportedCondTree` leaf) is NOT
-    // widened here; no measured cell needs it and over-declining a shape we
-    // did not set out to build is correct (Rule 17).
+    // widened here; no measured cell needs it yet, and the loud decline is a
+    // gap to remove (R1), not a safe margin.
     // The `!=` (exactly one ConstantInt) rather than `||` (at least one) IS
     // LOAD-BEARING, and the story of how that was established is worth keeping
     // because it is a methodology trap, not an i80 one.
@@ -1909,8 +1912,8 @@ struct PureCalleeQuery {
 // perfectly provable callee becomes an artefact of how deep its call graph
 // happens to be, and the pinned `Invocations`/`BodiesWalked`/`MemoHits` triple
 // becomes depth-dependent. Say the direction plainly rather than inflating it:
-// that is an over-DECLINE, so it is safe under the Prime Directive and is a
-// capability + determinism defect, NOT a silent miscompile. It is still the shape
+// that is an over-DECLINE: loud, so NOT a silent miscompile, but a capability +
+// determinism defect to remove (R1), not a safe margin. It is still the shape
 // bd xzdx forbids (bd memory
 // [[budget-in-a-memo-and-probes-with-no-power-2026-08-08]]: "ANY cut-off inside a
 // memoised function is part of its answer" — and a gate whose answer depends on
@@ -1958,8 +1961,8 @@ bool isSpeculatablePureCalleeBodyImpl(const Function *Root, PureCalleeQuery &Q) 
     // `!isDeclaration() && !mayBeDerefined()`, and `mayBeDerefined()` is TRUE for
     // weak_odr/linkonce_odr/available_externally — so this predicate ALSO
     // declines those ODR variants, NOT only the arbitrary-replacement
-    // interposable set. That is a SAFE over-decline (Prime Directive) with zero
-    // corpus cost (openlibm has no weak symbols); admitting the ODR variants
+    // interposable set. That is a loud over-decline (a gap to remove, R1) with
+    // zero corpus cost (openlibm has no weak symbols); admitting the ODR variants
     // would be a deliberate `!isInterposable()` widening, a separate ticket.
     // Declarations fail here too.
     //
@@ -2162,8 +2165,8 @@ bool isSpeculatablePureCalleeBodyImpl(const Function *Root, PureCalleeQuery &Q) 
       // COST OF THE BLUNTER RULE, MEASURED: zero. Every callee body in the corpus
       // that reaches this consumer is single-block (12 e2e sites, 25 fixtures). A
       // branching classical helper is not a shape 6.5 set out to support, so
-      // declining it is a safe over-decline (Rule 17's carve-out), and widening it
-      // later needs a poison analysis that does not consult uses.
+      // declining it is a loud over-decline (a gap to remove, R1), and widening
+      // it later needs a poison analysis that does not consult uses.
       if (!Q.AdmitDeferred)
         if (const auto *BrI = dyn_cast<BranchInst>(Term))
           if (BrI->isConditional()) {
@@ -2642,7 +2645,8 @@ bool regionStrictlyInsideLoopBody(const PredMuxRegion &R, LoopInfo &LInfo,
 // global with no gep at all, and an UNINITIALISED alloca (dereferenceable, so no
 // fault; the value is as undefined as the source's own read of it). What the
 // constant-global requirement really bounds is (1b)'s VARIABLE-index case.
-// The asymmetry is inherited, not designed, and it is in the SAFE direction. ⚠ If
+// The asymmetry is inherited, not designed, and it errs toward a LOUD decline (an
+// over-decline to remove, R1), never a silent accept. ⚠ If
 // you widen it, do it by giving `matchQramAccess` the option — NOT by growing a
 // second bounds proof here (Rule 14; the drbq Inc-3 (b') defect).
 bool classicalTableReadIsSpeculatable(
@@ -2678,7 +2682,7 @@ bool classicalTableReadIsSpeculatable(
   // The fix is to ask QROM's OWN question instead of a proxy for it (Rule 14) —
   // and to ask it at the FLATTEN's taint, not round 1 (CLAUDE.md L1, the
   // "PREDICATE species": a fence keyed on round-1 taint while the lowering decides
-  // at final taint). Refusing here is always safe: if the index will taint, the
+  // at final taint). Refusing here is never silent: if the index will taint, the
   // read belongs to QROM, and QROM has already declined it for a reason of its own.
   //
   // ⚠ TWO QUESTIONS, AND THE FIRST ONE IS VACUOUS INSIDE A LOOP. Rule-13 round 2
@@ -2798,7 +2802,8 @@ bool classicalTableReadIsSpeculatable(
 // exactly the "convert unreachable→br-merge then post-dominate" experiment, but
 // as PURE ANALYSIS (no mutation; Rule 9 detect-before-mutate). Returns nullptr
 // (→ leave; the caller keeps today's silent virtual-root bail) unless a single
-// real merge exists — over-declining is safe (Prime Directive). Downstream E2
+// real merge exists — a leave is loud downstream, never silent, though a valid
+// region left here is a gap to remove (R1). Downstream E2
 // (acyclic) / E3 (single-exit, now unreachable-tolerant) VALIDATE the returned
 // merge structurally, so a wrong answer here can only LEAVE, never miscompile.
 BasicBlock *mergeIgnoringUnreachable(BasicBlock *E) {
@@ -3546,8 +3551,8 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
         // silently, which is SOUND only because a classical runtime operand
         // occupies the sanctioned `_hl` literal slot and is never promoted to a
         // qubit handle (the §5.2 non-negotiable). The SWITCH scrutinee gate
-        // below is deliberately NOT widened: no measured cell needs it and
-        // over-declining is safe.
+        // below is deliberately NOT widened: no measured cell needs it yet, and
+        // its loud decline is a gap to remove (R1), not a safe margin.
         //
         // bd `test_C_libtooling-xdu2.13` — THAT BACKSTOP IS NOW A RECORD. The
         // 4.4 data select accepts a classical `and`/`or` child as a `_hl`
@@ -3653,15 +3658,16 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
         // admitted only via `indexWillTaintAfterFlatten`): the flatten +
         // `lowerCloneSelect` lower it to a `cqrt_alloc_i64` handle whose known-bits
         // `lowerQramReads`' `qromIndexKnownInBounds` re-proof cannot see, so it would
-        // else loud-decline `kMsgQramCloneUnbounded` (a safe-but-confusing claim/emit
-        // divergence). A CURRENTLY-TAINTED Provable index (a source `& 3` straight-
-        // line computation) keeps its RAW op at the gep, which the emitter re-proves
-        // directly — masking THAT would be a redundant double-`and` that drifts its
-        // golden (Rule 14; the e2e slice_spec_qrom_read_arm_escape regression this
-        // guard fixes). Gated on `ClaimAll` (clone-only): a top-level Provable read
+        // else loud-decline `kMsgQramCloneUnbounded` (a loud but confusing
+        // claim/emit divergence). A CURRENTLY-TAINTED Provable index (a source
+        // `& 3` straight-line computation) keeps its RAW op at the gep, which the
+        // emitter re-proves directly — masking THAT would be a redundant
+        // double-`and` that drifts its golden (Rule 14; the e2e
+        // slice_spec_qrom_read_arm_escape regression this guard fixes). Gated on `ClaimAll` (clone-only): a top-level Provable read
         // is a faithful source access, bounds the source's obligation, left UNMASKED.
         // A non-pow2 Provable clone read stays unmasked here and, in a clone, still
-        // declines at the emitter (rare; the safe residual over-decline).
+        // declines at the emitter (rare; a loud residual over-decline to remove,
+        // R1).
         if (QC == QromClaim::NeedsMask ||
             (QC == QromClaim::Provable && ClaimAll && IndexBecomesOpaque &&
              Count != 0 && isPowerOf2_64(Count)))

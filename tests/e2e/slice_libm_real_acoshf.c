@@ -139,21 +139,21 @@
        1065353216` normalize sites, one per inline).
 
    LOWERING EXERCISED (every figure below MEASURED on the lowered IR / on the
-   golden trace, never asserted): a tainted-x acoshf. `hx` is the tainted
-   float word, so the entire 5-arm ladder, both logf inlines and the whole
-   log1pf body are tainted classification, and all 37 conditional branches
-   flatten through PredMux onto the select substrate.
+   golden trace, never asserted; trace counts re-counted 2026-10-05, tn85):
+   a tainted-x acoshf. `hx` is the tainted float word, so the 5-arm ladder,
+   both logf inlines and the whole log1pf body are tainted classification,
+   and all 37 conditional branches flatten (PredMux) onto the select substrate.
      lowered @slice        : 2 basic blocks, 1 br (unconditional), 0 phi
      residual @cq_* calls  : 0   (grep 'call.*@cq_theta\|call.*@cq_measure')
      residual @llvm.* CALL SITES : 0 — but 3 now-unused `declare @llvm.*`
        lines (fabs.f32, fmuladd.f32, sqrt.f32) DO survive in the lowered
        module with zero uses, so a bare grep for @llvm. is not a refutation.
-     trace lines           : 6661, across exactly 66 distinct symbols
+     trace lines           : 6952, across exactly 90 distinct symbols
      cqrt_alloc (all)      : 802  = 745 cqrt_alloc_i1 + 46 cqrt_alloc_f32
                                     + 11 cqrt_alloc_i32
      cqrt_toffoli          : 1490   (flag conjunctions)
      cqrt_cnot             : 1056
-     cqrt_free             : 1472
+     cqrt_free             : 1616
      cqrt_x                : 90     (¬flag brackets)
      cqrt_copy_f32_controlled : 74
      cqrt_copy_i32_controlled : 16
@@ -165,8 +165,8 @@
                              3 cq_template_bitcast_i32_to_f32, exactly the 6
                              float->i32 and 3 i32->float bitcasts in the
                              pre-pass IR
-   Every icmp/fcmp template appears paired with its `_inv` strip (e.g. 124
-   cq_template_icmp_sge_i32_hl and 124 cq_template_icmp_sge_i32_hl_inv).
+   Every icmp/fcmp template appears paired with its `_unc` strip (e.g. 124
+   cq_template_icmp_sge_i32_hl and 124 cq_template_icmp_sge_i32_hl_unc).
    The binary was run TWICE and the two traces are byte-identical, so the
    golden is deterministic. This slice is the LINK-layer proof (Rule 2) that
    every emitted symbol resolves, signature-matches, and the trace is stable. */

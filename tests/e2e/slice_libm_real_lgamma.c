@@ -113,7 +113,7 @@
    (PredMuxFlatten.cpp) flattens all of it onto the edge-predicated select
    substrate — the lowered module carries cqrt_copy_f64_controlled and
    cqrt_copy_i32_controlled merges over cqrt_alloc_i1 flag rails, with
-   cqrt_x/cqrt_cnot/cqrt_toffoli conjunctions and matching compare `_inv`
+   cqrt_x/cqrt_cnot/cqrt_toffoli conjunctions and matching compare `_unc`
    strips. The Horner tables ride the arithmetic templates (at -O1 the default
    -ffp-contract=on fuses most of them into @llvm.fmuladd.f64, itself a Rule-18
    keep, which lowers to the cq_template_fma_f64 family); the fdivs, the
