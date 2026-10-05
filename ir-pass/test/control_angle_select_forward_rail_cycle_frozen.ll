@@ -36,14 +36,16 @@
 ; Both read names the collapse re-spelt, not the pre-gate register.
 ; The fix (`classifyAngleSelect`, bd 3paw): on a rail some loop's collapse
 ; CLAIMED (`TaintSet::ClaimedRailRoots`), a member or reader that the consumer
-; `T` DOMINATES is skipped by S7's rail prong and by S9. The fences that judged
-; those reads ran on the PRE-collapse IR with `T` in their gate set:
-; `tryCaseA`'s `staleRailRecordRead` (measure / ret readers), its fan-out guard
-; (a second in-place gate on a pre-`T` name), and `recordStaleQuantumReaders`
-; (a `cq_theta` / `cq_measure` reader of a staled record, including through a
-; header φ, which `staleRailRecordRead` skips as a member). Their decline twins:
+; `T` DOMINATES is skipped by S7's rail prong and by S9. The fence that judged
+; those reads ran on the PRE-collapse IR with `T` in its gate set: `tryCaseA`'s
+; `staleRailRecordRead`, which asks every reader of every rail value (a member
+; rail φ on each incoming edge since bd g35c), plus its fan-out guard for a
+; second in-place gate on a pre-`T` name. Before g35c a member φ was never asked
+; and this skip let a zero-trip stale record through (bd g35c). Decline twins:
+; `control_angle_select_reject_forward_rail_cycle_zero_trip_{stale,ret}.ll` (the
+; pre-gate alias reaching a measure / `ret` through the exit φ),
 ; `control_angle_select_reject_forward_rail_cycle_stale_alias.ll` (the pre-gate
-; alias `z = r` rotated in the loop) and
+; alias rotated in the loop, through the header φ) and
 ; `control_angle_select_reject_backward_rail_cycle.ll` (the loop BEFORE `T`,
 ; which the dominance conjunct keeps loud).
 ;

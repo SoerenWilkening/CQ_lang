@@ -9572,26 +9572,41 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // and it keeps a loop BEFORE `T` declining
   // (`control_angle_select_reject_backward_rail_cycle.ll`).
   //
-  // WHY THE SKIP IS SOUND, AND WHAT IT RESTS ON. A dominated name that READS a
-  // PRE-gate record, i.e. a genuinely stale one, is refused before this stage on
-  // the PRE-collapse IR by fences that held `T` in their gate set:
-  //   * `staleRailRecordRead` (`tryCaseA`) refuses a measure / `ret` reader of a
-  //     rail value with a rail gate between its definition and the read;
-  //   * `tryCaseA`'s fan-out guard refuses a second in-place gate on a pre-`T`
-  //     name (`T` is the first), and its CLOSURE leaves any other user unclaimed;
-  //   * `recordStaleQuantumReaders` refuses a `cq_theta` / `cq_measure` reader
-  //     whose record a later non-diagonal gate relabelled, which covers the one
-  //     read `staleRailRecordRead` skips as a chain member: a header φ seeded with
-  //     the pre-gate name (`int z = r; …; for (…) cq_theta(&z, ·)`). After the
-  //     collapse that program is IR-identical here to a legal one, so this skip
-  //     ADMITS it and the decline comes from that fence
-  //     (`control_angle_select_reject_forward_rail_cycle_stale_alias.ll`).
-  // So a claimed, dominated name denotes the post-gate register, which is what
-  // the handle holds once `lowerRotations` RAUWs the rail onto it. The emitter's
-  // twin `T0` lands immediately before `T`, so a read between the two does not
-  // exist and those fences' answers do not change with it. RETIREMENT TRIGGER:
-  // removing `T` (or any `cq_theta`) from one of those gate sets, or a third
-  // collapse site that does not write `ClaimedRailRoots`, re-opens this skip.
+  // WHY THE SKIP IS SOUND, AND WHAT IT RESTS ON. It is exact only because the
+  // collapse's own fence refuses, on the PRE-collapse IR and with `T` in its gate
+  // set, every claimed rail in which a dominated name reads a PRE-gate record.
+  // `T` is an in-place gate on `RotBase`, and `RotBase` peels in place to the
+  // claimed root, so `T` is in `tryCaseA`'s `railRoot` and in the gate set of
+  // its `staleRailRecordRead`. For a pre-gate record `M` (its definition
+  // dominates `T`) and a reader `U` that `T` dominates, the path `M → T → U`
+  // exists and cannot re-run `M`'s definition without putting `T` on a cycle,
+  // which the anchor prong above refused. So that fence finds a gate between `M`
+  // and `U` for each of the three ways `U` can read `M`:
+  //   * a measure / `ret` (any non-member user): `staleReadOfValue`'s positional
+  //     test, at the instruction;
+  //   * a rail φ (a member the collapse folds onto the root): the same test on
+  //     each incoming EDGE. ⚠ Only since bd g35c. Before it `staleReadOfValue`
+  //     skipped member users wholesale, so the zero-trip exit φ
+  //     `phi [%pre-gate, guard], [%post, latch]` was never asked, and this skip
+  //     passed its `ret` and its `xor` + measure as post-gate reads, a silent
+  //     miscompile (`control_angle_select_reject_forward_rail_cycle_zero_trip_
+  //     {stale,ret}.ll`). The header φ seeded with a pre-gate alias
+  //     (`control_angle_select_reject_forward_rail_cycle_stale_alias.ll`) is the
+  //     same edge test;
+  //   * a second in-place gate on `M`: `tryCaseA`'s fan-out guard (`T` is the
+  //     first). Its CLOSURE leaves the rail unclaimed for any other user.
+  // A dominated reader that survives is therefore a reader of a post-gate name,
+  // which is what the handle holds once `lowerRotations` RAUWs the rail onto it.
+  // The round-2 writer (`collapseRailPhisIn`) runs the same `staleRailRecordRead`
+  // over its chain and forward extension. The emitter's twin `T0` lands
+  // immediately before `T`, so no read lies between the two and the fence's
+  // answer does not change with it. `recordStaleQuantumReaders` is not part of
+  // this argument: it never asks a `ret`, and it did not reach the pre-gate
+  // record through the exit φ and an `xor` (bd g35c, measured).
+  // RETIREMENT TRIGGER: re-introducing any member skip in `staleReadOfValue`,
+  // dropping `T` (a collected `cq_theta`) from the collapse's gate set, or a third
+  // collapse site that writes `ClaimedRailRoots` without that fence, re-opens
+  // this skip.
   bool CollapsedRail = false;
   if (!IsPhase && !UntaintedBase) {
     SmallPtrSet<CallInst *, 32> GateCalls;  // the `lowerLoops` recipe (θ ∪ φ)

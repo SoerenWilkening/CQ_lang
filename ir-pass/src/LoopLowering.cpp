@@ -1109,7 +1109,51 @@ Instruction *staleReadOfValue(Value *V,
   }
   for (User *U : V->users()) {
     auto *UI = dyn_cast<Instruction>(U);
-    if (!UI || Members.count(UI))
+    if (!UI)
+      continue;
+    // bd `test_C_libtooling-g35c` (P1, a silent miscompile on main) — a MEMBER φ
+    // IS a read, on each incoming edge, and the skip below no longer reaches it.
+    //
+    // The skip says "a chain member's own execution is the rail moving, not a
+    // read", which is true of an in-place gate and FALSE of a φ: a φ moves
+    // nothing, it SELECTS a record per edge, and once the collapse RAUWs it to
+    // the root every reader of it reads the CURRENT rail. `tryCaseA` hands this
+    // function its whole `railRoot` as `Members`, and its (b) fixpoint admits any
+    // φ whose incomings all peel to the root, so the loop's zero-trip exit φ
+    // `phi [%pre, guard], [%post, latch]` was a member, its guard edge carried a
+    // PRE-gate name past a gate, and nothing asked it:
+    //     `int z = r; cq_theta(&r, .3); for (i < n) { cq_theta(&r, .1); z = r; }
+    //      z ^= 1; return cq_measure(z);`
+    // emitted `ry(h,.3); xorc(h,1); measure(h)`, which on n == 0 measures the
+    // POST-gate rail where the source measures the pre-gate record (its
+    // straight-line spelling declines). `lowering_reject_loop_rail_record_zero_
+    // trip_merge.ll`; the angle-select and `ret` spellings are
+    // `control_angle_select_reject_forward_rail_cycle_zero_trip_{stale,ret}.ll`.
+    //
+    // So the φ edge test below runs for every φ, member or not (one exception,
+    // the member's self edge, at the end of this note). It cannot refuse
+    // the shipped exit φ (`phi [PreV, guard], [LatV, latchexit]`, both correct on
+    // their own edge, the note on `staleRailRecordRead`): no rail gate lies
+    // between `PreV` and the guard's branch, or between `LatV` and the latch's.
+    // This NARROWS the skip set (L2): it only adds questions, so it can only add
+    // declines. The NON-φ member skip is unchanged. Both rounds share this
+    // function; round 2's member φ is the header φ, whose two edges carry `PreV`
+    // and `LatV` and pass the same way. Round 2 was not open to the hole itself:
+    // its `Members` are the chain only, so the exit φ is a NON-member user of the
+    // chain's pre-gate name and was always asked (measured with this change
+    // reverted: the in-body-`if` spelling of the program below declines there).
+    //
+    // ONE EDGE STAYS SKIPPED: a member φ's SELF edge (`UI == V`, the identity
+    // carry `phi [%x, pre], [%self, latch]`). That edge carries the φ's own
+    // record, nothing from outside it, so it launders no other name; whether
+    // that record is still current wherever it is READ is asked of each of the
+    // φ's readers by this same function (with `Refreshes` false for a frozen
+    // carry). Asking the self edge as well was MEASURED to move
+    // `lowering_reject_loop_nested_quantum.ll` — a dead identity carry of a rail
+    // the OUTER loop re-mints, which has no reader — off its subject's diagnostic
+    // (FreePoint's back-edge reject) onto this one, because the walk counts the
+    // re-executed root mint as a gate.
+    if (Members.count(UI) && (!isa<PHINode>(UI) || UI == V))
       continue;  // the chain itself — its own gates are the rail, not a read.
     if (auto *P = dyn_cast<PHINode>(UI)) {
       for (unsigned i = 0, e = P->getNumIncomingValues(); i != e; ++i)
