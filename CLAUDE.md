@@ -289,7 +289,10 @@ with a wrong body is trusted), the twin half of `kyy1`, `jlf8`, `yldg`, `etj3`, 
 call's computed index stays live until its `_unc`; deferred by the owner). Latent, masked by
 a loud decline today: `r2j3.9` (`GuardedStoreArmEmit` never discharges a hoisted tainted-arm
 value chain). Dirty-rail leak (r2j3 section B): `iwr7` (a dead `cq_template_zext` beside a
-QRAM load of the same index is never uncomputed; 10 libm goldens). Latent, not yet built
+QRAM load of the same index is never uncomputed; 10 libm goldens) and `r2j3.16` (an in-arm
+tainted select's `%out` rail and its operand chain stay dirty after a guarded store, reachable
+from C; filed 2026-10-05). Suspected, unprobed: `r2j3.17` (planTerminalReversal's silent
+leak returns may dephase a parent rotated later). Latent, not yet built
 from C (section D): `hp0x` (the 6.5 classical-call argument clause keys on `noundef` alone,
 so a `dereferenceable` parameter without `noundef` is hoisted with poison). Instrument gap:
 `r2j3.4` (stage 2b certifies a diagonal phase inside a superposing restore window).
