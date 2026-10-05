@@ -30,6 +30,7 @@ namespace llvm {
 class AllocaInst;
 class BasicBlock;
 class DominatorTree;
+class Function;
 class Instruction;
 class LoadInst;
 class Loop;
@@ -105,6 +106,17 @@ bool guardedShadowStoreShape(llvm::StoreInst *SI, const TaintSet &taint,
 // Pure analysis (no mutation).
 bool qramAccessReads(llvm::Instruction &I, const TaintSet &taint,
                      llvm::SmallVectorImpl<llvm::Value *> &Reads);
+
+// bd test_C_libtooling-01po.9 (owner ruling 2026-10-05) — the CLASSICAL-index
+// reads of `F`'s QRAM-backed local arrays: a load at a classical (or constant) cell
+// index of an alloca array that also has a QUANTUM-index access, straight-line or the
+// guarded store a control region flattens. Its cells are quantum, so the read is a
+// QRAM read (`cqrt_qram_load_<W>_hl`, a literal index) and its value a register:
+// `propagate` SEEDS each one as tainted (the rail-bank load seed's clause), which is
+// what taints its consumers. `lowerShadowMemory` lowers exactly these reads, and only
+// once seeded. Pure analysis; appends to `Out`.
+void qramClassicalIndexLoads(llvm::Function &F, const TaintSet &taint,
+                             llvm::SmallPtrSetImpl<llvm::LoadInst *> &Out);
 
 // Is `I` control-dependent on a tainted br/switch (inside a tainted arm, not after
 // its merge)? The carve's straight-line gate; also asked by the stale-record sweep

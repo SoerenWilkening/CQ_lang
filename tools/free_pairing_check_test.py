@@ -352,6 +352,41 @@ define void @slice(i32 noundef %0, i32 noundef %1, float noundef %2) local_unnam
 """  # tests/e2e/slice_uncompute_dead_shapes.c @slice — the Phase-5 whole-DAG
      # LIFO `_unc` spine plus `cq_theta` source rails undone by `ry(-0)`.
 
+QRAM_HL = """
+define internal fastcc i32 @classical_index(i32 noundef %0, i32 noundef %1) unnamed_addr #1 {
+  %arr = call i32 @cqrt_qram_alloc_i32(i32 8)
+  %3 = and i32 %1, 7
+  %4 = zext nneg i32 %3 to i64
+  %qidx.lit = trunc i64 %4 to i32
+  %qval = call i32 @cqrt_alloc_i32(i32 9)
+  call void @cqrt_qram_store_i32_hl(i32 %arr, i32 %qidx.lit, i32 %qval)
+  %h = call i32 @cqrt_alloc_i32(i32 %0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %h_op = call i32 @cq_template_and_i32_hl(i32 %h, i32 7)
+  %qval1 = call i32 @cqrt_alloc_i32(i32 5)
+  call void @cqrt_qram_store_i32(i32 %arr, i32 %h_op, i32 %qval1)
+  %5 = add nsw i32 %1, 1
+  %6 = and i32 %5, 7
+  %7 = zext nneg i32 %6 to i64
+  %qidx.lit2 = trunc i64 %7 to i32
+  %8 = call i32 @cqrt_qram_load_i32_hl(i32 %arr, i32 %qidx.lit2)
+  %qret = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %8, i32 %qret)
+  call void @cqrt_qram_load_i32_hl_unc(i32 %8, i32 %arr, i32 %qidx.lit2)
+  call void @cqrt_free(i32 %8)
+  call void @cqrt_qram_store_i32_unc(i32 %arr, i32 %h_op, i32 %qval1)
+  call void @cq_template_and_i32_hl_unc(i32 %h_op, i32 %h, i32 7)
+  call void @cqrt_free(i32 %h_op)
+  call void @cqrt_ry_i32(i32 %h, double -5.000000e-01)
+  call void @cqrt_qram_store_i32_hl_unc(i32 %arr, i32 %qidx.lit, i32 %qval)
+  %m = call i32 @cqrt_measure_i32(i32 %qret)
+  ret i32 %m
+}
+"""  # tests/e2e/slice_qram_classical_index.c @classical_index (bd 01po.9) — the
+     # literal-index `cqrt_qram_{load,store}_i32_hl` forms and their `_hl_unc`
+     # twins, in LIFO beside a handle-index store; the index is a classical value
+     # (`classical_imm`), never a rail.
+
 QRAM_LOCAL = """
 define internal fastcc i32 @measured_local() unnamed_addr #1 {
   %arr = call i32 @cqrt_qram_alloc_i32(i32 8)
@@ -993,6 +1028,7 @@ POSITIVE = [
     ("clone-unc-twin", CLONE_UNC),
     ("uncompute-lifo-chain", UNCOMPUTE_CHAIN),
     ("qram-store-load-lifo", QRAM_LOCAL),
+    ("qram-hl-literal-index-lifo", QRAM_HL),
     ("qram-index-bracket-lifo", QRAM_BRACKET),
     ("identical-inv-group", IDENTICAL_INV),
     ("break-index-rail", BREAK_INDEX),
@@ -1416,6 +1452,9 @@ MUTANTS = [
      "W-orphan-reversal"),
     ("qram-load-unc-deleted",
      drop(QRAM_LOCAL, "@cqrt_qram_load_i32_unc", 0),
+     "T1-no-reversal"),
+    ("qram-hl-load-unc-deleted",
+     drop(QRAM_HL, "@cqrt_qram_load_i32_hl_unc", 0),
      "T1-no-reversal"),
     # ---- libcqops b6a: the QRAM index bracket is RECOGNISED, not trusted ----
     # The reversal's bracket casts a DIFFERENT source register: the load `_unc`
