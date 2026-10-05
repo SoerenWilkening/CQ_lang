@@ -1575,10 +1575,13 @@ struct TaintSet {
   // THE F1 RULING (owner 2026-08-28) RETIRED THAT DEFAULT. Clause 3 no longer
   // asks "is this use teardown?" but "does this use's LINEAGE REACH AN OBSERVING
   // SINK?" (`reachesObservingSink`, RotationLowering.cpp), whose default for an
-  // unmodelled call is NOT A SINK — and the route/bracket gates are named
-  // NON-uses outright, because (the pre-3qlq route's rationale) a routed value
-  // returns to its own rail and observes nothing. So for the live-record guard
-  // a missed `SpineOps` recording can now only over-DECLINE. `isTeardownUse`
+  // unmodelled call is NOT A SINK — and `cqrt_cswap` / `cqrt_x` are named
+  // NON-uses outright. Their reason was once the pre-3qlq route's ("a routed
+  // value returns to its own rail"); since 3qlq the one `cqrt_cswap` is the abort
+  // park's, which does not return the value, and the row stands because no row
+  // for it can change that walk's answer (bd vjdo, reason at the row). So for
+  // the live-record guard a missed `SpineOps` recording can now only
+  // over-DECLINE. `isTeardownUse`
   // survives as ONE of that walk's non-use categories (it is the only way to
   // recognize a re-emitted self-inverse adjoint), so the recorder is still worth
   // threading — it just no longer sits on the over-accept edge for this consumer.

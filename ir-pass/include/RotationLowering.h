@@ -192,10 +192,14 @@ void lowerRotations(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
 //                 (round 2).
 //        NON-USES `cqrt_free` · every `_unc`/`_inv` · `taint.SpineOps` · ALL
 //                 rotations (the F2 ruling — a phase written onto a register
-//                 nothing observes is unobservable) · the ROUTE/BRACKET gates
-//                 `cqrt_cswap`/`cqrt_x` (pre-3qlq: a routed value returned to its rail;
-//                 a later measurement of that rail is a DIRECT user of it and
-//                 counts on its own) · the TARGET slot of `cqrt_cnot`/
+//                 nothing observes is unobservable) · the abort park's SWAP
+//                 `cqrt_cswap` and the BRACKET `cqrt_x` (bd vjdo: no row for
+//                 them can change the walk's answer — `cqrt_x` is in place on
+//                 its one operand, and every walk into the park's cswap also
+//                 reaches the park's tape write of its flag; the reason is at
+//                 their row in `reachesObservingSink`. The pre-3qlq reason, "a
+//                 routed value returns to its rail", is false for the park,
+//                 which does not return it) · the TARGET slot of `cqrt_cnot`/
 //                 `cqrt_toffoli` (the written rail's own users are scanned
 //                 independently) · anything the walk does not model, which is the
 //                 DECLINE direction.
@@ -203,9 +207,10 @@ void lowerRotations(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
 //      OF THEM IN THE ACCEPT DIRECTION — say that plainly, because widening an
 //      exemption grammar is the dangerous direction and each one is measured:
 //        N1  `cqrt_cnot`/`cqrt_toffoli` were NON-USES beside `cqrt_cswap`/
-//            `cqrt_x`, and the cswap rationale does NOT transfer: a route brings
-//            a value back to its own rail, while a CNOT/Toffoli writes the
-//            CONTROLS' information into a FRESH ancilla the merge then reads —
+//            `cqrt_x`, and the cswap rationale of the day did NOT transfer: the
+//            pre-3qlq route brought a value back to its own rail, while a
+//            CNOT/Toffoli writes the CONTROLS' information into a FRESH ancilla
+//            the merge then reads —
 //            the `and`/`or`/`xor` node of a condition tree. A C-reachable
 //            OVER-DECLINE, measured (`((c>3) & (d<9)) ? 10 : 20` with the result
 //            measured). Pinned by

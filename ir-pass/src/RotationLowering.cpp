@@ -1083,8 +1083,9 @@ namespace {
 //   * lowering_live_record_condtree_toffoli_observed_accept.ll  N1, the AND node:
 //       a CONTROL of `cqrt_toffoli` HOPS to the node ancilla, so a sibling read by
 //       a condition tree whose merge result is measured IS observed. The route
-//       rationale that had filed cnot/toffoli as non-uses is true for `cqrt_cswap`
-//       and false for these two
+//       rationale that had filed cnot/toffoli as non-uses is false for these two.
+//       Since bd 3qlq retired the route it is false for `cqrt_cswap` too, whose
+//       non-use row bd vjdo re-derived (see `reachesObservingSink`)
 //   * lowering_live_record_condtree_xor_observed_accept.ll      N1, the XOR node
 //       (`cqrt_cnot` pair — bd 3c6m.67's openlibm ulp-direction idiom), which the
 //       AND fixture's toffoli CHECK cannot cover
@@ -1104,6 +1105,11 @@ namespace {
 //       the round-1 tree (an over-accept), exit 1 after. IR-ONLY — `clang -O1` DAE
 //       drops the dead parameter — and ruled on constructed probes exactly as F1
 //       and F2 were
+// bd vjdo (2026-10-05) — the `cqrt_cswap` / `cqrt_x` non-use row re-derived after
+// the swap route's retirement; no behaviour change:
+//   * lowering_live_record_park_cswap_observed_accept.ll  a record whose only
+//       post-gate uses are the abort park's flag mint and cswap is silent (the
+//       park tapes its flag), beside a kickback-region control that warns
 constexpr char kMsgLiveRecord[] =
     "cq rotation lowering: non-diagonal gate over a live derived record";
 
@@ -1218,9 +1224,10 @@ bool isRecordedUserRotation(const CallInst *CI, const TaintSet &taint) {
 // TEARDOWN traffic — the compiler undoing ITSELF, which the owner ruled is NOT a
 // user data use (2026-08-27 (3); SPIKE §2R.5a). Three sources, in order of force:
 //   1. `taint.SpineOps` — EMITTER-RECORDED. The only way to recognize a
-//      re-emitted SELF-INVERSE gate (`cqrt_cswap` route-back, `cqrt_x` bracket,
-//      `cqrt_toffoli`/`cqrt_cnot`, `cqrt_copy_*_controlled`, `cqrt_xorc/addc`),
-//      which is byte-identical to its own forward.
+//      re-emitted SELF-INVERSE gate (the retired route's `cqrt_cswap`
+//      route-back, `cqrt_x` bracket, `cqrt_toffoli`/`cqrt_cnot`,
+//      `cqrt_copy_*_controlled`, `cqrt_xorc/addc`), which is byte-identical to
+//      its own forward.
 //   2. structural, and exact: `cqrt_free` is compiler-emitted only (Rule 6), and
 //      the `_unc` family is minted only by `EmitInverse` — no user surface spells
 //      either.
@@ -1236,10 +1243,14 @@ bool isRecordedUserRotation(const CallInst *CI, const TaintSet &taint) {
 // rest — "a record exempts only if its lineage reaches an OBSERVING sink after
 // the gate — measure / ret / tape / a template read that itself flows to one".
 //
-// So a ROUTE IS NOW A NON-USE, not a data use. `cqrt_cswap` / `cqrt_x` /
-// `cqrt_cnot` / `cqrt_toffoli` move a value onto a work rail and back onto its
-// own rail; nothing is observed, and if the rail is measured later that measure
-// is a DIRECT user of the rail and counts on its own. The over-accept this
+// So a ROUTE BECAME A NON-USE, not a data use. The F1-era reason was the swap
+// route's: `cqrt_cswap` / `cqrt_x` / `cqrt_cnot` / `cqrt_toffoli` move a value
+// onto a work rail and back onto its own rail. Neither half survives as written.
+// Round 2 of the same Rule-13 round moved `cqrt_cnot` / `cqrt_toffoli` to
+// CONTROL-slot HOPS, and bd 3qlq retired the route, leaving the 7.2 abort park as
+// the one `cqrt_cswap` minter, which does NOT return the value. The current
+// reason for the two rows that remain non-uses is at their row in
+// `reachesObservingSink` (bd vjdo). The over-accept this
 // closed is measured, not hypothetical: a dead sibling whose only post-gate fate
 // was a compare feeding a phase region — flag minted, stripped and freed —
 // exempted on the route/compare mentions and the module ACCEPTED, while the same
@@ -1729,13 +1740,13 @@ bool isQramStoreGate(const CallInst *CI, unsigned &ArrPos) {
 //             undoing itself), ALL rotations (the F2 ruling: a phase written onto
 //             a never-observed register is unobservable, so `cqrt_ry`/`cqrt_rz`
 //             observe nothing whether the emitter recorded them as USER gates or
-//             not), the ROUTE/BRACKET gates `cqrt_cswap` / `cqrt_x`, and the
-//             TARGET slot of `cqrt_cnot` / `cqrt_toffoli`. A ROUTE is not an
-//             observation: a routed value comes back to its own rail, and if that
-//             rail is later measured the measurement is a DIRECT user of the rail
-//             and counts on its own. Anything else — a plain-IR instruction, an
-//             unmodelled call — is conservatively neither, which is the decline
-//             direction.
+//             not), the abort park's SWAP `cqrt_cswap` and the BRACKET `cqrt_x`,
+//             and the TARGET slot of `cqrt_cnot` / `cqrt_toffoli`. Neither of the
+//             first two can change this walk's answer; the reason is at their row
+//             below (bd vjdo). The pre-3qlq reason, "a routed value comes back to
+//             its own rail", is false for the park. Anything else — a plain-IR
+//             instruction, an unmodelled call — is conservatively neither, which
+//             is the decline direction.
 //
 // ROUND 2 OF THIS RULE-13 ROUND (2026-08-28) MOVED THREE ENTRIES OF THAT GRAMMAR,
 // and TWO of them WIDEN the exemption — the dangerous direction, so each one is
@@ -1840,19 +1851,52 @@ bool reachesObservingSink(Instruction *U, Value *R, const TaintSet &taint,
       continue;  // the pre-8txa adjoint spelling, same reading as `_unc`.
     if (N.starts_with("cqrt_ry_") || N.starts_with("cqrt_rz_"))
       continue;  // the F2 ruling: a USER rotation observes nothing either.
+    // `cqrt_cswap` / `cqrt_x`: NON-USES. This line behaves exactly like the
+    // default at the bottom of the loop (both gates are void and match no SINK or
+    // HOP row); it stays to record why that default is right for them. Its old
+    // reason, "a routed value returns to its rail", belonged to the swap route
+    // that bd 3qlq retired, and it is false for the one `cqrt_cswap` left.
+    // Re-derived by bd vjdo (2026-10-05):
+    //   * `cqrt_x(h)` is an in-place involution on its ONE operand. No information
+    //     reaches another SSA value, so the only hop target would be `h` itself,
+    //     whose readers are users of `h` and are walked on their own. A hop back
+    //     onto `h` would be wrong, not just redundant: `pushValue(h)` scans every
+    //     user, so it would admit a reader that ran BEFORE the gate past clause
+    //     3's position test.
+    //   * `cqrt_cswap(flag, q, grave)` is minted only by the 7.2 abort park
+    //     (`AbortParkEmit` via `emitRoute`). It moves the would-abort component of
+    //     `q` into a KEPT graveyard rail and reads the flag as a CONTROL, so the
+    //     value does not come back. The row is still right because ANY row is
+    //     answer-neutral here. The park emits `flag = icmp(q, k)`, `grave`, the
+    //     cswap and `cqrt_tape_write_i1(tape, flag)` contiguously in one block
+    //     (plus `cqrt_x` brackets). A walk that reaches the flag slot has reached
+    //     the flag, and the flag's tape write is a SINK above (written slot). A
+    //     walk that reaches the Q slot has reached `q`, which the flag mint also
+    //     reads, on the same side of the gate, since nothing can sit between
+    //     them. `grave` has no other user. MEASURED on cq-opt mutants: this row
+    //     widened to a SINK changes no verdict; disabling the tape written-slot
+    //     SINK makes the park's record warn; doing both silences it again. The
+    //     row would only decide if the park stopped taping its flag. Pinned by
+    //     lowering_live_record_park_cswap_observed_accept.ll.
+    //     RETIREMENT TRIGGER (L7): a second `cqrt_cswap` minter, a flag strip in
+    //     the park, or a park that no longer tapes its flag reopens this row.
+    // A NON-USE is also the warning direction: stopping here can only add a
+    // warning, never hide one. And the walk's answer gates only the M-A
+    // `DS_Warning` (owner ruling lyyf), never a free, an uncompute or an accept.
     if (N == "cqrt_cswap" || N == "cqrt_x")
-      continue;  // route / bracket gates — a routed value returns to its rail.
+      continue;
 
     // ── HOPS ──
     // CONDITION-TREE NODE GATES — a CONTROL slot HOPS to the TARGET (round 2 of
     // the Increment-3 Rule-13 round, 2026-08-28). `cqrt_cnot` and `cqrt_toffoli`
     // used to sit on the NON-USE line above beside `cqrt_cswap`/`cqrt_x`, and the
-    // cswap rationale DOES NOT TRANSFER: a route puts a value on a work rail and
-    // brings it back to its OWN rail, whereas a CNOT/Toffoli WRITES the controls'
-    // information into a FRESH `|0⟩` ancilla that somebody else then reads. That
-    // ancilla is the `and`/`or`/`xor` node of a condition tree
-    // (`SelectClassify`/`ArmClassify`; the xor node is the openlibm ulp-direction
-    // idiom bd 3c6m.67 admitted), and the merge reads it as the copy CONTROL.
+    // cswap rationale of the day DID NOT TRANSFER: the pre-3qlq route put a value
+    // on a work rail and brought it back to its OWN rail, whereas a CNOT/Toffoli
+    // WRITES the controls' information into a FRESH `|0⟩` ancilla that somebody
+    // else then reads. That ancilla is the `and`/`or`/`xor` node of a condition
+    // tree (`SelectClassify`/`ArmClassify`; the xor node is the openlibm
+    // ulp-direction idiom bd 3c6m.67 admitted), and the merge reads it as the
+    // copy CONTROL.
     // MEASURED as a C-reachable OVER-DECLINE: `((c>3) & (d<9)) ? 10 : 20` with the
     // select's result measured left `c` exempt-less because the walk stopped dead
     // at the toffoli — `opt` exit 0 at HEAD, exit 1 in the pre-round-2 tree.
