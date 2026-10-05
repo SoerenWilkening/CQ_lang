@@ -56,7 +56,7 @@
 ; decline twin that keeps a normalized multi-exit with a measuring arm loud.
 ; The `phase-class value escaping` fence is NOT unpinned by the change: its
 ; population is now single-`ret` modules whose region merge has an outside
-; predecessor, pinned by control_multiexit_reject_classical_exit_phase.ll.
+; predecessor, pinned by control_swap_reject_phase_value_escaping_outside_pred.ll.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq controlled lowering: impure phase arm under quantum control
 

@@ -496,14 +496,19 @@ StringRef offPatternDisposition(BranchInst *BI, TaintSet &Taint) {
 
   // (C-i) NON-RECONVERGING VALUE EXIT — the two-way value-exit mux clang did NOT
   // reconverge: BOTH arms end in a value `ret` (the two-un-merged-rets / `musttail`
-  // survivors). ⚠ A BACKSTOP since bd test_C_libtooling-dm7f.5: the merge IS now
-  // synthesized before every detection round (`unifyTaintedReturns`, ReturnMerge.h),
-  // so a tainted `br` whose two arms are `ret` blocks reaches this row only when that
-  // stage REFUSED the function (a load-bearing `musttail`), which has already fired
-  // its own diagnostic; on a host whose handler does not exit (bd br4a) this is the
-  // second, still-loud message. No fixture can reach it through `opt` any more
-  // (control_swap_reject_nonreconverging_value_exit.ll was re-derived). REQUIRING
-  // BOTH arms is LOAD-BEARING for the §2.11 mutual-exclusivity:
+  // survivors). ⚠ Since bd test_C_libtooling-dm7f.5 the merge IS synthesized
+  // before every detection round (`unifyTaintedReturns`, ReturnMerge.h), and a
+  // tainted `br` whose two arms are `ret` blocks reaches this row only where that
+  // stage left the function untouched: (1) it REFUSED a load-bearing `musttail`
+  // and has already fired its own diagnostic (on a host whose handler does not
+  // exit, bd br4a, this is the second, still-loud message); or (2) the same
+  // function ALSO holds a non-reconverging tainted terminator ON A CYCLE, so the
+  // whole function was left to the loop owner (bd 8h7d) — then this row fires for
+  // the acyclic `br` exactly as before dm7f.5, unless a loop decline fires first.
+  // (Review round 1 F4 corrected the first version of this comment, which named
+  // only (1).) control_swap_reject_nonreconverging_value_exit.ll no longer
+  // reaches it (re-derived). REQUIRING BOTH arms is LOAD-BEARING for the §2.11
+  // mutual-exclusivity:
   // an abort LOOKALIKE (an `unreachable` arm beside the ordinary uncontrolled
   // `ret` sibling — control_swap_reject_abort_nonnoreturn.ll) has ONE `unreachable`
   // arm, so it is NEVER a `non-reconverging value exit` (its `ret` sibling is the

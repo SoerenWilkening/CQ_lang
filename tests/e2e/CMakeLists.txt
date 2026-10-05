@@ -507,6 +507,31 @@ add_test(NAME e2e-control-multiexit-musttail-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_multiexit_musttail.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_multiexit_musttail_twin.expected.log")
 
+# dm7f.5 review round 1 F1: the same musttail return in a function that keeps an
+# ALLOCA at -O1, so clang closes its lifetime before the plain `ret` only. The
+# merge sinks that `lifetime.end` into the merged return block, where the twin has
+# it; the goldens must stay byte-identical.
+add_test(NAME e2e-slice-control-multiexit-musttail-alloca
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_multiexit_musttail_alloca.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_multiexit_musttail_alloca.expected.log")
+
+add_test(NAME e2e-slice-control-multiexit-musttail-alloca-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_multiexit_musttail_alloca_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_multiexit_musttail_alloca_twin.expected.log")
+
+add_test(NAME e2e-control-multiexit-musttail-alloca-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_multiexit_musttail_alloca.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_multiexit_musttail_alloca_twin.expected.log")
+
 # 3c6m.14 L6 / bd 20xt.5 (d): PredMux tolerates `unreachable` switch-defaults.
 # The only layer that LINKS — proves the (d)-flattened nest (a tainted special-
 # case branch over an EXHAUSTIVE `switch (q&3)` whose dead default clang lowers
