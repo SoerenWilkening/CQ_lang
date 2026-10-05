@@ -1,0 +1,218 @@
+\labsessionheader{2026-10-05}{Five over-declines, a dirty-rail leak and a live-record warning, with four silent miscompiles found in review}%
+  {69a84126}{session\_01XHgDUdLg83bTXKKGa4PH81}{none}
+
+\subsection*{Goal}
+Implement the issues filed by entry 041:
+\begin{itemize}
+  \item four over-declines: \bd{test\_C\_libtooling-x61g}, \bd{test\_C\_libtooling-3by9},
+  \bd{test\_C\_libtooling-3paw} and \bd{test\_C\_libtooling-ptue};
+  \item the left-dirty rail leak \bd{test\_C\_libtooling-7xsh};
+  \item the live-record warning questions \bd{test\_C\_libtooling-aako} and
+  \bd{test\_C\_libtooling-gl3x};
+  \item the comment chore \bd{test\_C\_libtooling-tn85}.
+\end{itemize}
+A coordinator ran five implementer agents in parallel, each in its own worktree and build.
+Each core change got independent Rule-11 review rounds. The reviewed commits went onto
+\texttt{main} as a linear history, followed by one comment-only agent (tn85), one composition
+review of the integrated binary, and one gate.
+
+\subsection*{Owner rulings this session}
+\begin{itemize}
+  \item \bd{test\_C\_libtooling-gl3x}: yes. An unguarded output-tape write of a record that
+  precedes the non-diagonal gate exempts the record from the live-record warning, as a
+  measurement does. Asked again once the agent's implementation proved wider than the
+  question (any taped record, not only a park flag), the owner chose to keep it general.
+  \item Stale worktrees: remove all nine (eight clean \texttt{agent-*} worktrees whose
+  commits were already on \texttt{main}, and one broken \texttt{wf\_} directory that pointed
+  at an old repository path).
+  \item After objecting to the volume of test runs, the owner reduced this batch's gate to
+  the fast tier (\texttt{ctest -LE heavy -j6} plus the \fpath{CODE\_MAP.md} check). This
+  was recorded on \bd{test\_C\_libtooling-r2j3}.
+\end{itemize}
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \commit{6f1b3cbf}, \commit{49e17a4e} --- \bd{test\_C\_libtooling-x61g}. The abort
+  park's sole-live-register guard asks \texttt{railWireNamesBackward}, so it counts
+  registers instead of SSA names. \texttt{if(q>5) abort(); cq\_theta(\&q,.3);} now lowers,
+  and the post-park Ry acts on the routed handle.
+  \item \commit{f5cbd7ce} --- \bd{test\_C\_libtooling-3by9}. The 7.4 break's B3 fence asks
+  the new \texttt{lineageCarriesBranchPhase} in \fpath{TaintPropagation.cpp/.h}. Before, it
+  declined whenever any branch phase existed in the function.
+  \item \commit{d4f41b8f} --- \bd{test\_C\_libtooling-923w}. New check E16 in
+  \texttt{emitBreakForward}: an in-loop value that escapes a virtual break by any route
+  other than the escape $\phi$ now declines loudly.
+  \item \commit{a5fba29d} --- \bd{test\_C\_libtooling-aako}. Not an over-warning: both named
+  fixtures warn about real records. The warning is now pinned.
+  \item \commit{98def0e3} --- \bd{test\_C\_libtooling-gl3x}. Clause 4 implements the tape
+  exemption (the owner's ruling).
+  \item \commit{a194ae65}, \commit{2fc7d378} --- \bd{test\_C\_libtooling-cmr9}.
+  \begin{itemize}
+    \item A measurement now exempts a record only if nothing writes it between the
+    measurement and the gate.
+    \item The window scan is extracted from \texttt{borrowedParentsUnmoved} as
+    \texttt{railUnmovedInWindow}, giving one spelling of ``rail unmoved''.
+  \end{itemize}
+  \item \commit{cc8ef1c0}, \commit{a8d7e612} --- \bd{test\_C\_libtooling-ptue}. The
+  dead-terminal frontier retry borrows measured rails, so a dead rotated derived copy of a
+  measured register is reversed and freed at $|0\rangle$. The measured register itself is
+  never reversed or freed.
+  \item \commit{df63fcfe}, \commit{d281c0b8} --- \bd{test\_C\_libtooling-7xsh}.
+  \begin{itemize}
+    \item Row~(4) of \texttt{preservesBorrowedParent} admits a recorded flag strip as a
+    reader of the borrowed parent (\texttt{ChainWalk::isRecordedStripReaderOf}).
+    \item The outer chain of a depth-2 nest is now uncomputed:
+    \fpath{control\_swap\_nested\_phase\_derived.ll} FCNT changes from 3 to 4, with the
+    evidence in its header.
+  \end{itemize}
+  \item \commit{214065d7} --- \bd{test\_C\_libtooling-eqti}.
+  \texttt{keptRailAdjointReadsBorrowed} refuses the retry when a kept rail's adjoint reads a
+  borrowed register.
+  \item \commit{303ce82b} --- \bd{test\_C\_libtooling-3paw}. An Ry angle select followed by
+  a classical Ry loop on the same rail now lowers. The rail stays frozen.
+  \item \commit{abc5a418} --- \bd{test\_C\_libtooling-g35c}. \texttt{staleReadOfValue}
+  checks each incoming edge of a member rail $\phi$, except an identity carry's self edge.
+  \item \commit{9b2c5853} --- \bd{test\_C\_libtooling-hk9y}. A member gate on a frozen rail
+  record is now checked like any other reader.
+  \item \commit{bbf6a117} --- \bd{test\_C\_libtooling-tn85}. Comment drift in 55 files:
+  \begin{itemize}
+    \item the libm strip counts are now spelled \texttt{\_unc} and were re-counted against
+    the goldens;
+    \item the ``over-declining is safe'' notes are re-worded to R1;
+    \item stale \fpath{ArmClassify.cpp} line cites are replaced by function names;
+    \item a clause-4 comment's false forecast is corrected.
+  \end{itemize}
+  \item \commit{69a84126} --- \fpath{CODE\_MAP.md} regenerated.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fconfirmed\ \bd{test\_C\_libtooling-g35c} (P1). This silent miscompile was
+  reachable from plain \texttt{-O1} C on \texttt{main} \commit{8e9f3382} (coordinator
+  re-ran it). \texttt{int z=r; cq\_theta(\&r,.3); for(..)\{cq\_theta(\&r,.1); z=r;\}
+  z\^{}=1; return cq\_measure(z);}
+  \begin{itemize}
+    \item Source semantics: on the zero-trip path the program measures the pre-gate record.
+    \item What was emitted: \texttt{ry(h,.3); xorc(h,1); measure(h)}.
+    \item Cause: \texttt{staleReadOfValue} skipped chain members before its per-edge
+    $\phi$ test.
+    \item Found by the 3paw review, round 1. 3paw had added the angle-select spelling.
+  \end{itemize}
+  \item \fconfirmed\ \bd{test\_C\_libtooling-eqti} (P1).
+  \begin{itemize}
+    \item ptue's retry, unmerged, reverse-played a kept rail whose adjoint reads a live
+    measured register. That adds a gate controlled by that register which the source never
+    wrote: by hand arithmetic, $P(q{=}1)$ is 0.0372 in the source and 0.0456 in the emitted
+    stream.
+    \item The same premise had a pre-existing instance in the 01po.4 QRAM-array borrow,
+    reachable from C on the \texttt{main} binary \texttt{50a6f549\ldots}.
+    \item Found by the ptue review, round 1. Both instances are fixed.
+  \end{itemize}
+  \item \fconfirmed\ \bd{test\_C\_libtooling-hk9y} (P2). Pre-existing on \texttt{main}; hand
+  IR only (the \texttt{-O1} spelling declines). An in-loop \texttt{xor} of an identity-carried
+  record was absorbed as an in-place rail op and applied to the rail on every trip. Found
+  by the 3paw review, round 2.
+  \item \fconfirmed\ \bd{test\_C\_libtooling-923w} (P1). Latent from C. The counter's
+  LCSSA $\phi$ escaped a virtual break carrying its full-trip value, and a phase keyed on it
+  was deleted as global. It is now a loud decline (E16). Found by the 3by9 review, round 1;
+  3by9 had added the kickback spelling (L9).
+  \item \fpreexisting\ \bd{test\_C\_libtooling-cmr9}. Clause 4 exempted a measured record
+  that was later re-entangled in place, so a real hazard went unwarned. Found by the
+  aako/gl3x review, round 1; fixed.
+  \item Precision costs and latent holes filed, not fixed:
+  \begin{itemize}
+    \item \bd{test\_C\_libtooling-rced}: clause 4 over-warns on read-only uses of a measured
+    record.
+    \item \bd{test\_C\_libtooling-9128}: clause 4 covers only the current loop instance;
+    masked today by a loud decline.
+    \item \bd{test\_C\_libtooling-2k72}: over-warning newly reachable through 3by9.
+  \end{itemize}
+  \item \foverdecline\ Filed from the reviews:
+  \begin{itemize}
+    \item \bd{test\_C\_libtooling-dm7f.7}: a rolled loop on the parked register after a park.
+    \item \bd{test\_C\_libtooling-tinh}: a post-loop phase keyed on the break answer.
+    \item \bd{test\_C\_libtooling-8h7d.14}, \bd{test\_C\_libtooling-8h7d.15},
+    \bd{test\_C\_libtooling-8h7d.16}: loop shapes.
+    \item \bd{test\_C\_libtooling-wt8u}: an angle select, a Case-A loop, then a post-loop
+    controlled Ry.
+    \item \bd{test\_C\_libtooling-01po.12}: the shared reversal point.
+    \item \bd{test\_C\_libtooling-01po.13}: a per-iteration measured parent.
+    \item \bd{test\_C\_libtooling-01po.14}: a missed discharge after a break, which is
+    warned, not silent.
+  \end{itemize}
+  \item Disclosure (L9). x61g now admits the \texttt{yiid} measure-then-rotate shape after a
+  park. The emitted \texttt{measure(h); ry(h); measure(h)} matches the source.
+\end{itemize}
+
+\subsection*{Rule-11 review}
+\begin{tabular}{@{}lll@{}}\toprule
+Change & Rounds & Result per round \\ \midrule
+x61g & 2 & comment arguments wrong (fixed); clean \\
+3by9 (+923w) & 2 & 923w latent miscompile (fixed); clean \\
+3paw (+g35c, hk9y) & 3 & g35c (fixed); hk9y (fixed); composition clean \\
+ptue, 7xsh (+eqti) & 2 & eqti, 7xsh disclosure, comments (fixed); clean \\
+aako, gl3x (+cmr9) & 3 & cmr9 (fixed); rced/9128 filed, comments; composition: one comment \\
+\bottomrule\end{tabular}
+
+The composition round ran six probes on the integrated binary. It found no silent
+miscompile and no dirty free. The x61g$+$gl3x stream is exactly
+\texttt{ry(h,.5); f=icmp\_sgt\_hl(h,5); g=alloc(0); cswap(f,h,g); tape\_write(t,f);
+ry(h,.3); measure(h)}, with no warning.
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+batch diff & 111 files, +5152/$-$1297 & \measured{git diff --shortstat 8e9f3382 69a84126} \\
+lit fixtures & 2562 (was 2533) & \measured{ls ir-pass/test/*.ll | wc -l} \\
+e2e goldens & 479 (was 477) & \measured{ls tests/e2e/*.expected.log | wc -l} \\
+\texttt{cq-opt} SHA-256 & \texttt{9e3d3851\ldots} & \measured{shasum -a 256 build/ir-pass/cq-opt} (unchanged by tn85) \\
+\texttt{ctest -LE heavy} & 580 of 580 passed & \measured{ctest --test-dir build -LE heavy -j6} \\
+\texttt{CODE\_MAP.md} & clean & \measured{python3 tools/update\_code\_map.py --check} \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+Per-issue lit/ctest invocations, as reported by each agent:
+\begin{itemize}
+  \item 2: x61g, hk9y, cmr9.
+  \item 3: 3by9, 923w, 7xsh, eqti.
+  \item 3 plus aborted calls that ran nothing: 3paw (two), ptue (one), aako$+$gl3x (one).
+  \item 0: tn85.
+  \item \textbf{Over budget: g35c, 5.} One aborted call ran on source paths (1351 false
+  failures). Two runs covered 1351 grep-selected fixtures, and one of them also ran 169 e2e
+  tests. This was not approved.
+  \item \textbf{Outside the probe rule: ptue and 7xsh.} Their agent re-lowered the corpus
+  with \texttt{cq-opt} as a ``sweep'': 1114 negative fixtures, 500 single-source and 45
+  multi-source slices, and 157 matrix cases.
+  \item Also counted: cmr9's green covered 251 fixtures.
+\end{itemize}
+The owner objected to this volume mid-session.
+
+Coordinator checks:
+\begin{itemize}
+  \item tn85 is comment-only. Its 55 files are byte-identical to \commit{9b2c5853} with
+  comments stripped, no FileCheck directive changed, every \texttt{.c} line count is
+  unchanged, and \texttt{cq-opt} is byte-identical.
+  \item The batch gate ran the fast tier only, by owner ruling.
+\end{itemize}
+
+\textbf{Not run:}
+\begin{itemize}
+  \item \texttt{ctest -LE maintenance}, \texttt{cq-opt-equivalence-full}, and the
+  \texttt{-L maintenance} scrub shards. R15 requires the shards because
+  \fpath{TaintPropagation.h} changed: one declaration plus comments, with no change to any
+  type reachable from \texttt{TaintSet}.
+  \item The heavy-labelled ctest entries.
+\end{itemize}
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item Run the full batch gate (maintenance shards, equivalence) at the next batch: this
+  batch skipped it by owner ruling.
+  \item \bd{test\_C\_libtooling-rced}: one read-only-slot widening of
+  \texttt{preservesBorrowedParent}, which serves both the spine and clause~4 (R11).
+  \item \bd{test\_C\_libtooling-923w}'s lowering gap: an escaping loop value as a
+  control-merge value (\bd{test\_C\_libtooling-8h7d.17}).
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+None.
