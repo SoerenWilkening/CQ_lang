@@ -271,17 +271,20 @@ void collectLiveRemainderRegs(BasicBlock *Sibling, const TaintSet &Taint,
 // deliberately does not cross these ops (its G6 premise assumes the read stays
 // at its IR position; the park moves it to the branch). RETIREMENT TRIGGER: if
 // CLOSURE ever admits a compare consumer, or G7(e) admits plain-IR uses, a
-// stale flag can return SILENTLY.
-// (1) is MEASURED to hold at HEAD (bd dm7f.7): in the do-while `q ^= 3` after
-// a park, the xor is not an `InPlaceRailOps` member when the park is
-// classified. The dm7f.7 fix is exactly a CLOSURE that admits the park's own
-// condition compare, so it retires (1). On a local experiment with that
-// CLOSURE (compare in its branch's block), the two stale-flag neighbours
-// `int c0=q; do{q^=3;}while(++i<n); if(c0>5) abort();` and its `cq_theta(&q,.1)`
-// loop twin both decline `cq loop lowering: rail record read past an in-place
-// gate on the same rail` (`staleRailRecordRead`, the compare reading the root
-// after the loop). That fence is then the wall for (1); a change that admits a
-// compare in a block other than its branch's must ask it at the branch.
+// stale flag can return SILENTLY. (The first half FIRED; see the next note.)
+// (1) IS RETIRED. CLOSURE now admits two compare consumers: a compare that
+// cannot reach the loop (bd 8h7d.16) and this park's own condition compare
+// (bd dm7f.7, `isAbortParkCondition`, in any block). So an in-loop or
+// post-loop add/xor CAN now be an `InPlaceRailOps` member when a park reads
+// the rail, and the wall that replaces (1) is `tryCaseA`'s record-liveness
+// fence asked at BOTH read points: the compare (`staleReadOfValue`) and the
+// branch where this park mints (`railGateBeforeControlUse`, which follows a
+// compare's i1 uses to every branch/select). Measured: the stale-flag
+// neighbours `int c0=q; do{q^=3;}while(++i<n); if(c0>5) abort();`, its
+// `cq_theta(&q,.1)` loop twin, and the cross-block `int c=(q>5); if(k>3)
+// {q^=3; …} if(c) abort();` after a loop all decline `rail record read past an
+// in-place gate on the same rail` (loop_park_condition_reject_*.ll). A new
+// CLOSURE admission of a compare must keep both read points asked.
 //
 // L9 DISCLOSURE: this also admits `if(q>5)abort(); int m=cq_measure(q);
 // cq_theta(&q,.3); …`, the bd yiid measure-then-rotate boundary. The emitted
@@ -294,6 +297,20 @@ bool namesRoutedRegister(const Value *V, const Value *Q,
 }
 
 }  // namespace
+
+// bd dm7f.7 — contract in AbortParkEmit.h. The SAME sink-arm recognizer
+// `classifyAbortPark` asks below (one spelling of "this is a park arm").
+bool isAbortParkCondition(const CmpInst *Cmp, const TaintSet &Taint) {
+  if (!Cmp || !Cmp->hasOneUse())
+    return false;
+  const auto *BI = dyn_cast<BranchInst>(Cmp->user_back());
+  if (!BI || !BI->isConditional() || BI->getCondition() != Cmp)
+    return false;
+  const BasicBlock *Pred = BI->getParent();
+  CallInst *Sink = nullptr;
+  return isNoreturnSinkArm(BI->getSuccessor(0), Pred, Taint, &Sink) ||
+         isNoreturnSinkArm(BI->getSuccessor(1), Pred, Taint, &Sink);
+}
 
 AbortParkDisp classifyAbortPark(BranchInst *BI, TaintSet &Taint,
                                 ControlRegion &R) {
@@ -386,13 +403,13 @@ AbortParkDisp classifyAbortPark(BranchInst *BI, TaintSet &Taint,
   // phi`), because nothing collapses the loop's rail φs — `tryCaseA`'s CLOSURE
   // leaves the loop unclaimed (this park's condition compare is a non-rail
   // reader of the root) and `collapseFlattenedLoopRails` re-offers only a loop
-  // holding a flattened in-loop region. The fix belongs in that CLOSURE: when it
-  // admits the park's own condition compare, `tryCaseA` collapses the φs to the
-  // root before this guard runs and the guard accepts unchanged (measured on a
-  // local experiment, never committed: `ry(h,.5); f=icmp_sgt(h,5); cswap(f,h,g);
+  // holding a flattened in-loop region. The fix is in that CLOSURE (bd dm7f.7,
+  // `isAbortParkCondition`): it admits the park's own condition compare, so
+  // `tryCaseA` collapses the φs to the root before this guard runs and the guard
+  // accepts unchanged: `ry(h,.5); f=icmp_sgt(h,5); cswap(f,h,g);
   // tape_write(t,f); ry(h,.1)×n; measure(h)`, and `cqrt_xorc_i32(h,3)×n` for the
-  // do-while `q ^= 3` twin). That experiment also retires structural refusal
-  // (1) at `namesRoutedRegister`; see the retirement trigger there.
+  // do-while `q ^= 3` twin (loop_park_condition.ll). That retires structural
+  // refusal (1) at `namesRoutedRegister`; see the note there for its wall.
   //
   // ⚠ L1: THIS GUARD RUNS ONCE, over the classifying round's taint, and the park
   // is emitted before round 2, so it is never re-asked. A name tainted only at

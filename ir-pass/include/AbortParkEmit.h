@@ -37,6 +37,7 @@
 
 namespace llvm {
 class BranchInst;
+class CmpInst;
 }  // namespace llvm
 
 namespace cq {
@@ -73,6 +74,16 @@ enum class AbortParkDisp { Accept, Declined, NotApplicable };
 // Pure analysis — NO IR is mutated (Rule 9); writes `R` only on Accept.
 AbortParkDisp classifyAbortPark(llvm::BranchInst *BI, TaintSet &Taint,
                                 ControlRegion &R);
+
+// bd test_C_libtooling-dm7f.7 — is `Cmp` the condition of an abort/exit park:
+// its ONLY user a conditional `br` on it, one of whose successors is the
+// recognized noreturn-sink arm `classifyAbortPark` owns (`isNoreturnSinkArm`)?
+// The SHAPE half only: whether the park is then accepted (remainder guard,
+// widths, the HL operand) stays `classifyAbortPark`'s. Asked by `tryCaseA`'s
+// CLOSURE, which lets a loop whose rail the park's compare reads before the loop
+// collapse: the park tapes its flag and never strips it, so no adjoint of the
+// compare runs after the loop's gates. Pure analysis.
+bool isAbortParkCondition(const llvm::CmpInst *Cmp, const TaintSet &Taint);
 
 // Lower one accepted `AbortPark` region (dispatched from
 // `SwapRouteEmit::lowerControlRegions`). Mutates the module IR and `taint`.
