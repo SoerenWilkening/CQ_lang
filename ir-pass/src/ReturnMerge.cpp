@@ -61,6 +61,35 @@ MergedReturn mergeReturnBlocks(Function &F, ArrayRef<ReturnInst *> Rets,
   return Out;
 }
 
+// THE one spelling (CLAUDE.md R12) of "a `musttail` forward no demoted call can
+// express", asked by both demotion sites: `unifyTaintedReturns`' refusal and the
+// clone path's `scanBody` (SpecializeReject.cpp), whose clone demotes every
+// `musttail` (`stripStaleClassicalAttrs`). Owner ruling 2026-10-05 (dm7f.5 review
+// round 2): BOTH paths refuse both cases below; for `inalloca` this supersedes the
+// owner's 2026-09-29 invariant ("a forwarded `inalloca` is legal on a plain call,
+// so the demoted clone is byte-identical to its plain-`tail` spelling").
+//   * `preallocated`: legal only on a `musttail` call or with a "preallocated"
+//     operand bundle, for which a forwarded argument has no token — the demoted
+//     call is invalid IR and the verifier aborts (bd m5pn round 2, r1B F-r1B-2).
+//   * `inalloca`: LangRef — a `musttail` call forwards an `inalloca` argument IN
+//     PLACE; on any other call the operand must be the `alloca` the caller set up
+//     for that call. A demoted call forwarding the caller's own incoming `inalloca`
+//     memory is verifier-clean (the verifier asks about provenance only when the
+//     operand is an `alloca`) and still invalid.
+// IR-only: clang emits both attributes only for the 32-bit Windows C++ ABI. The
+// returned string is the decline's construct kind, shared by both callers.
+StringRef mustTailForwardBlocksDemotion(const CallInst *CI) {
+  if (!CI->isMustTailCall())
+    return StringRef();
+  for (unsigned A = 0, E = CI->arg_size(); A < E; ++A) {
+    if (CI->paramHasAttr(A, Attribute::Preallocated))
+      return "musttail forward of a preallocated argument";
+    if (CI->paramHasAttr(A, Attribute::InAlloca))
+      return "musttail forward of an inalloca argument";
+  }
+  return StringRef();
+}
+
 namespace {
 
 // Is `Term` a tainted-control terminator — the two `detectControlRegions`
@@ -210,19 +239,9 @@ void sinkLifetimeEnds(ArrayRef<BasicBlock *> RetBlocks, BasicBlock *Merge) {
 // LOWERED as a tail call (stack reuse). Its operands, its callee, its result and
 // the callee's view of the caller's stack are unchanged by `tail` — LangRef: both
 // markers imply the callee does not access the caller's allocas — so the
-// demotion changes only stack depth, EXCEPT in the five cases refused here:
-//   * a `preallocated` operand is legal only on a `musttail` call (or with the
-//     "preallocated" bundle a forwarded argument has no token for): the demoted
-//     call is invalid IR. The clone path refuses the same forward in `scanBody`
-//     (SpecializeReject.cpp); IR-only, the 32-bit Windows C++ ABI.
-//   * an `inalloca` operand (review round 1 F3). LangRef: a `musttail` call forwards
-//     an `inalloca` argument IN PLACE; on any other call the operand must be the
-//     `alloca` the caller set up for that call. A demoted call forwarding the
-//     caller's own incoming `inalloca` memory is verifier-clean (the verifier asks
-//     about provenance only when the operand is an `alloca`) and still invalid.
-//     The first build of this stage cited the clone path's demotion of the same
-//     forward (`stripStaleClassicalAttrs`) as precedent; that precedent is the same
-//     defect, reported with this fix rather than relied on.
+// demotion changes only stack depth, EXCEPT in the cases refused here:
+//   * a forward no demoted call can express — `mustTailForwardBlocksDemotion`,
+//     the ONE predicate the clone path's `scanBody` asks too (see its definition);
 //   * a variadic or "thunk" caller: `musttail` forwards the caller's
 //     unprototyped variadic arguments (and, in a thunk, returns the callee's
 //     result to the caller's caller); a plain call forwards nothing.
@@ -234,12 +253,8 @@ void sinkLifetimeEnds(ArrayRef<BasicBlock *> RetBlocks, BasicBlock *Merge) {
 //     opaque external callback is not an edge of the `CallGraph` and is not seen.
 StringRef mustTailDemotionRefusal(CallInst *CI, Module &M,
                                   std::unique_ptr<CallGraph> &CG) {
-  for (unsigned A = 0, E = CI->arg_size(); A < E; ++A) {
-    if (CI->paramHasAttr(A, Attribute::Preallocated))
-      return "musttail forward of a preallocated argument";
-    if (CI->paramHasAttr(A, Attribute::InAlloca))
-      return "musttail forward of an inalloca argument";
-  }
+  if (StringRef Why = mustTailForwardBlocksDemotion(CI); !Why.empty())
+    return Why;
   Function *Caller = CI->getFunction();
   if (Caller->isVarArg() || Caller->hasFnAttribute("thunk"))
     return "variadic musttail forward";

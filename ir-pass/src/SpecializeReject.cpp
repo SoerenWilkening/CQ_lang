@@ -14,6 +14,7 @@
 #include "LiteralIntegrity.h"   // slotCarriesUndef (bd 3p2a — the return-cone fence)
 #include "OpcodeSupport.h"
 #include "QramLowering.h"
+#include "ReturnMerge.h"        // mustTailForwardBlocksDemotion (bd dm7f.5 ruling)
 #include "SelectClassify.h"     // collectCondTree (bd p3kd.3 — the clone select grammar)
 #include "SpecializePlan.h"
 #include "TaintPropagation.h"
@@ -731,21 +732,23 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
         // (exit 134; the ORACLE aborted too, on the old `musttail … must precede a
         // ret` rule). There is no plain-`tail` spelling to be identical to (the same
         // call without `musttail` is invalid input IR), so this is a decline of a
-        // shape with no valid alternative spelling, loud instead of an abort. ⚠ NOT
-        // `inalloca`: a forwarded `inalloca` argument is legal on a plain call (the
-        // verifier checks `inalloca` provenance only when the operand is an `alloca`),
-        // and after demotion the module is byte-identical to its plain-`tail`
-        // spelling's (measured, nlfd_probes/src/r2/ia2.ll vs iaN.ll — the owner's
-        // 2026-09-29 invariant). IR-only: clang emits both attributes only for the
+        // shape with no valid alternative spelling, loud instead of an abort. AND
+        // `inalloca` (owner ruling 2026-10-05, bd dm7f.5 review round 2, superseding
+        // the owner's 2026-09-29 invariant for `inalloca`): LangRef — a `musttail`
+        // call forwards an `inalloca` argument in place, and on any other call the
+        // operand must be the `alloca` set up for that call; the demoted forward was
+        // verifier-clean (the verifier checks provenance only when the operand is an
+        // `alloca`) and byte-identical to its plain-`tail` spelling, and both are
+        // invalid. Both cases are asked through the ONE shared predicate,
+        // `mustTailForwardBlocksDemotion` (ReturnMerge.h), which the module-level
+        // `ret` merge asks too. IR-only: clang emits both attributes only for the
         // 32-bit Windows C++ ABI.
-        if (CI->isMustTailCall())
-          for (unsigned A = 0, E = CI->arg_size(); A < E; ++A)
-            if (CI->paramHasAttr(A, Attribute::Preallocated)) {
-              WhereOut = &I;
-              KindOut = "musttail forward of a preallocated argument";
-              pop();
-              return SpecReject::NonReversibilizable;
-            }
+        if (StringRef Why = mustTailForwardBlocksDemotion(CI); !Why.empty()) {
+          WhereOut = &I;
+          KindOut = Why.str();
+          pop();
+          return SpecReject::NonReversibilizable;
+        }
         Function *Inner = CI->getCalledFunction();
         // syscall: a direct call to the libc `syscall` trap is an irreversible
         // kernel side effect. The ONE exact-name match in the classifier — an

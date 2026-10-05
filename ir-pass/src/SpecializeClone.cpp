@@ -79,10 +79,15 @@ void stripStaleClassicalAttrs(Function *F) {
   // load-bearing. ⚠ NOT for a `preallocated` argument (legal only on a `musttail`
   // call or with the `"preallocated"` bundle — the demotion would leave the verifier
   // aborting): `scanBody` DECLINES a lifted body that `musttail`-forwards one (r1B
-  // F-r1B-2, IR-only — the 32-bit Windows C++ ABI), so none reaches this loop. An
+  // F-r1B-2, IR-only — the 32-bit Windows C++ ABI), so none reaches this loop. NOR
+  // for an `inalloca` argument (owner ruling 2026-10-05, bd dm7f.5 review round 2,
+  // superseding the 2026-09-29 invariant this comment used to state — "an
   // `inalloca` forward IS demoted and is then byte-identical to its plain-`tail`
-  // spelling (measured). The demotion goes to NO tail kind at all: a clone promises
-  // nothing it cannot prove.
+  // spelling"): that plain spelling is itself invalid (LangRef: off `musttail`, an
+  // `inalloca` operand must be the `alloca` set up for the call), merely
+  // verifier-clean, so `scanBody` declines it through the same shared predicate,
+  // `mustTailForwardBlocksDemotion`. The demotion goes to NO tail kind at all: a
+  // clone promises nothing it cannot prove.
   for (BasicBlock &BB : *F)
     for (Instruction &I : BB)
       if (auto *CI = dyn_cast<CallInst>(&I); CI && CI->isMustTailCall())

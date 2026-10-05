@@ -9,8 +9,9 @@
 ; valid plain-`tail` spelling to be identical to (r1B's `paN.ll` is exactly that spelling, and
 ; it is invalid input). `scanBody` now declines a lifted body that musttail-forwards a
 ; `preallocated` argument: a clean exit 1 with this string. IR-only: clang emits
-; `preallocated` only for the 32-bit Windows C++ ABI. ⚠ `inalloca` is NOT declined — see
-; `spec_accept_musttail_in_clone_demoted_inalloca.ll`.
+; `preallocated` only for the 32-bit Windows C++ ABI. Since the owner's 2026-10-05 ruling (bd
+; dm7f.5 review round 2) an `inalloca` forward is declined too, through the same shared
+; predicate `mustTailForwardBlocksDemotion` — spec_reject_musttail_forward_inalloca.ll.
 ;
 ; RUN: env CQ_DEADARG_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
 ; RUN:   | %filecheck %s

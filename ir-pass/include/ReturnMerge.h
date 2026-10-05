@@ -18,11 +18,26 @@
 //     `br`/`switch` — two or more `ret` blocks reachable from it, and no block on
 //     every path from it to a `ret` (LLVM's `PostDominatorTree`, re-asked over
 //     the `ret` exits alone where its virtual root hides an `unreachable` or
-//     infinite-loop exit) — not on a CFG cycle, this rewrites the function into
-//     the shape `clang -O1` emits for the same program written with ordinary
-//     returns, and nothing else. "Those `ret`s" are the ones such a terminator
-//     reaches; any other `ret` (a classical tail recursion ahead of the quantum
-//     part) is neither merged nor asked about (review round 1 F2):
+//     infinite-loop exit) — not on a CFG cycle, this merges the `ret`s such a
+//     terminator reaches and nothing else; any other `ret` (a classical tail
+//     recursion, a classical early exit ahead of the quantum part) is neither
+//     merged nor asked about (review round 1 F2).
+//
+//     ⚠ THE CONTRACT, STATED EXACTLY (review round 2 F-A; the first build said "the
+//     shape `clang -O1` emits for the same program with ordinary returns, and
+//     nothing else", false since F2). When every `ret` of the function is reached
+//     by a needing terminator, the result IS the plain-return twin's CFG (up to
+//     names), and the multi-exit spelling compiles exactly when the twin does
+//     (pinned line for line by the control_multiexit_* twin pairs). When a CLASSICAL
+//     exit is reached by no needing terminator, the result is NOT the twin: clang
+//     sends that exit through the one return block too, where it becomes a
+//     predecessor from OUTSIDE the quantum region, and the twin can decline where
+//     this spelling, whose merge belongs to the region alone, compiles
+//     (control_multiexit_musttail_classical_exit_alloca.ll accepts;
+//     control_multiexit_reject_twin_outside_pred_value_arm.ll is its twin, which
+//     declines). So: the multi-exit spelling compiles at least whenever its twin
+//     does, and may compile where the twin's outside-predecessor return block
+//     declines. The steps:
 //       1. every `musttail` call that precedes one of those `ret`s is demoted to
 //          `tail` — or, where its tail position is LOAD-BEARING, the function is
 //          refused with a loud, source-located diagnostic and left untouched
@@ -59,7 +74,7 @@
 // SLOTS (CLAUDE.md L1 — control detection runs twice). Called (a) EARLY, right
 // after the pass-through early-out in BOTH entry points, so every pre-detection
 // stage (PredMux, the I/O-sink and guarded-store pre-peels, `lowerLoops`, the
-// specialization detector and the escape guards) sees the twin's IR; and (b)
+// specialization detector and the escape guards) sees the merged IR; and (b)
 // immediately before EVERY `detectControlRegions` call — both round-1 call sites
 // and the round-2 fixpoint — beside `peelIndependentMergePhis`, because a branch
 // whose condition reads a 6.5/4.5 `%out` rail is classical at slot (a) and
@@ -74,6 +89,7 @@
 
 namespace llvm {
 class BasicBlock;
+class CallInst;
 class Function;
 class Module;
 class PHINode;
@@ -101,6 +117,13 @@ MergedReturn mergeReturnBlocks(llvm::Function &F,
                                llvm::ArrayRef<llvm::ReturnInst *> Rets,
                                llvm::StringRef BlockName,
                                llvm::StringRef PhiName, bool CarryDebugLoc);
+
+// The construct kind ("musttail forward of a preallocated argument" / "… of an
+// inalloca argument") if `CI` is a `musttail` call whose forward no demoted call
+// can express, else an empty string. The ONE predicate both demotion sites ask:
+// `unifyTaintedReturns` and the clone path's `scanBody` (owner ruling 2026-10-05:
+// both refuse; see the definition).
+llvm::StringRef mustTailForwardBlocksDemotion(const llvm::CallInst *CI);
 
 // The module-level normalization described above. Returns true iff the module
 // was mutated. Refusals are diagnosed here (loud, `!dbg`-located, through

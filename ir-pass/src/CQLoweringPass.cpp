@@ -132,14 +132,16 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // bd `test_C_libtooling-dm7f.5` — MULTI-EXIT `ret` NORMALIZATION, SLOT (a) of
   // two (`ReturnMerge.h`). A function whose tainted-condition `br`/`switch`
   // reaches two or more `ret`s (a `musttail` arm keeps its own `ret` at -O1;
-  // hand IR) is rewritten into the single-merge shape `clang -O1` emits for the
-  // same program with ordinary returns, `musttail` demoted to `tail` where that
-  // is sound and refused loudly where it is not. FIRST, before every stage that
-  // reads the CFG (PredMux, the I/O-sink / guarded-store / loop pre-peels, the
-  // specialization detector and the escape guards), so each of them sees the
-  // twin's IR. No guard has run yet, so a plain re-`propagate` is the whole taint
-  // obligation (the dead-argument drop's argument below). Slot (b) is beside
-  // every `peelIndependentMergePhis` call, for branches tainted only later.
+  // hand IR) has the `ret`s that branch reaches merged into one block,
+  // `musttail` demoted to `tail` where that is sound and refused loudly where it
+  // is not — the plain-return twin's CFG when no classical exit stays outside
+  // the merge (`ReturnMerge.h` states the exact contract). FIRST, before every
+  // stage that reads the CFG (PredMux, the I/O-sink / guarded-store / loop
+  // pre-peels, the specialization detector and the escape guards), so each of
+  // them sees the merged IR. No guard has run yet, so a plain re-`propagate` is
+  // the whole taint obligation (the dead-argument drop's argument below). Slot
+  // (b) is beside every `peelIndependentMergePhis` call, for branches tainted
+  // only later.
   if (unifyTaintedReturns(M, taint, /*Delta=*/nullptr))
     taint = propagate(M, wd);
 

@@ -29,7 +29,8 @@
 ; file still pins is the GENERIC inner-slot neutralisation (`h2`'s clone records slot 0 dead, `h`'s
 ; clone passes `0` into its now-PLAIN inner call, `main` passes `0`) — worth keeping, but not the
 ; subject it was written for. The demotion itself is pinned by
-; `spec_accept_musttail_in_clone_demoted{,_inalloca}.ll` and the e2e slices
+; `spec_accept_musttail_in_clone_demoted.ll` (an `inalloca` forward is DECLINED since the
+; owner's 2026-10-05 ruling: spec_reject_musttail_forward_inalloca.ll) and the e2e slices
 ; `e2e-slice-spec-musttail-{clone-live-arg,clone-partial-drop}` (linked, twin-equivalent).;
 ;
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
