@@ -24,7 +24,7 @@
 
 #include "AbortParkEmit.h"
 
-#include "ArmAnalysis.h"        // comparePredLowerable
+#include "ArmAnalysis.h"        // comparePredLowerable / railWireNamesBackward
 #include "CompareLowering.h"    // lowerCompareToFlag (flag mint)
 #include "ControlPlan.h"        // ControlRegion / diagnoseUnderControl
 #include "ControlledSymbols.h"  // xFn (the ¬flag bracket for the tape record)
@@ -34,6 +34,7 @@
 #include "TaintPropagation.h"   // TaintSet
 #include "WidthDispatch.h"      // allocFn / tapeAllocFn / tapeWriteFn
 
+#include "llvm/ADT/STLExtras.h"   // is_contained
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -208,10 +209,10 @@ Value *hlTaintedOperand(CmpInst *Cond, const TaintSet &Taint) {
 }
 
 // Every tainted SSA value with a user in a block FORWARD-reachable from `Sibling`
-// (the uncontrolled remainder). These are the quantum registers live across the
-// park: the routed handle `Q` is the ONLY one the park preserves, so any OTHER
-// live register is unparked (decline), and a phase-class one beside the park arm
-// is the §2.6 deferred interaction (decline). The condition compare needs no
+// (the uncontrolled remainder): the NAMES the remainder reads. The park routes
+// ONE register, `Q`'s, so a name of any OTHER register is unparked (decline), and
+// a phase-class one beside the park arm is the §2.6 deferred interaction
+// (decline). The condition compare needs no
 // exclusion here — `classifyAbortPark`'s `Cond->hasOneUse()` gate already
 // guarantees its sole user is the branch (in `Pred`, never in the remainder).
 void collectLiveRemainderRegs(BasicBlock *Sibling, const TaintSet &Taint,
@@ -235,6 +236,39 @@ void collectLiveRemainderRegs(BasicBlock *Sibling, const TaintSet &Taint,
       }
     }
   }
+}
+
+// bd test_C_libtooling-x61g — is the live name `V` a name of the ROUTED register,
+// i.e. `Q` itself or a later in-place relabelling of `Q`'s rail? Asked over
+// `railWireNamesBackward` (ArmAnalysis.h), the one spelling of "every SSA name of
+// this physical register" (`lowerRotations` lowers a `cq_theta` on a tainted
+// arg-0 IN PLACE and RAUWs its result onto that handle; a proven
+// `InPlaceRailOps` member is crossed the same way). The walk runs BACKWARD from
+// `V`, so only `Q` and names DOWNSTREAM of it qualify: an older name of the rail
+// (stale), a sibling relabelling of a shared parent, a fresh template rail
+// derived from `Q`, or another register all fail. The gate `cqrt_ry_<W>(h, θ)`
+// then fires on `h`, the handle the park's cswap leaves holding the survivor.
+//
+// ⚠ ACCEPT DIRECTION. More names here GRANTS. The owner's index-less
+// `InPlaceRailOps` fallback over-approximates (collects every tainted operand),
+// which is the refusing direction for its other callers and the granting one
+// here; it is unreachable while `markInPlaceRailOp` writes the index with the
+// membership. RETIREMENT TRIGGER: if that fallback becomes reachable, refuse it
+// here before relying on the closure.
+// POSITION is not asked here. A relabelling between the compare and the branch
+// leaves the flag minted from a moved rail; that is `reverifyCmpCondReads`'s
+// question (this park records `CondReadKind::Unruled`, so nothing is exempted),
+// pinned by control_swap_reject_abort_inplace_ry_before_park.ll. That re-ask
+// counts only `cq_theta` stalers, so a dtzb op there would be invisible to it.
+// MEASURED unreachable from `-O1` C: a remainder-only `q += 3` is sunk past the
+// branch, and one a pre-park use keeps in `Pred` is no `InPlaceRailOps` member
+// at detection, so this closure does not cross it and the guard refuses.
+// RETIREMENT TRIGGER: a pre-branch `InPlaceRailOps` member on `Q`'s rail.
+bool namesRoutedRegister(const Value *V, const Value *Q,
+                         const TaintSet &Taint) {
+  SmallVector<const Value *, 8> Names;
+  railWireNamesBackward(V, Taint, Names);
+  return is_contained(Names, Q);
 }
 
 }  // namespace
@@ -307,14 +341,15 @@ AbortParkDisp classifyAbortPark(BranchInst *BI, TaintSet &Taint,
   }
 
   // §2.6 phase fence + sole-live-register guard. The park preserves ONLY the
-  // routed handle `Q`. Scan the tainted registers live in the remainder
+  // routed register, `Q`'s rail. Scan the tainted names live in the remainder
   // (reachable from the sibling): a phase-class one (Q itself, or any other
   // escaping value beside the park arm) is the §2.6 deferred park-vs-dephasing
   // interaction → conservatively DECLINE `phase-class value escaping` (do NOT
-  // assert the park preserves the phase). Any OTHER (value-class) live register is
-  // unparked → conservatively DECLINE (over-decline is safe; the multi-register
-  // park is reopenable). The verified -O1 shape (`if(q>5)abort(); return q;`) has
-  // `Q` as the sole live register, value-class, so it accepts.
+  // assert the park preserves the phase). A name of any OTHER (value-class)
+  // register is unparked → DECLINE until the multi-register park is built. The
+  // guard counts REGISTERS, not SSA names (bd x61g): `if(q>5)abort();
+  // cq_theta(&q,.3); return cq_measure(q);` reads `Q` and its post-gate name,
+  // one register, and accepts (`namesRoutedRegister`).
   SmallVector<Value *, 4> LiveRegs;
   collectLiveRemainderRegs(Sibling, Taint, LiveRegs);
   for (Value *V : LiveRegs)
@@ -323,7 +358,7 @@ AbortParkDisp classifyAbortPark(BranchInst *BI, TaintSet &Taint,
       return AbortParkDisp::Declined;
     }
   for (Value *V : LiveRegs)
-    if (V != Q) {
+    if (!namesRoutedRegister(V, Q, Taint)) {
       diagnoseUnderControl(Cond, "control flow");  // an unparked live register.
       return AbortParkDisp::Declined;
     }
