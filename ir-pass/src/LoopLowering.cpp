@@ -36,6 +36,7 @@
 #include "RailBankPromote.h"  // isRailBankAlloca/railBankOfPointer (bd zujr, L3)
 #include "SelectMergeEmit.h"   // materializeCopySource (bd zujr, the promotion)
 #include "QramLowering.h"  // instUnderTaintedControl (bd wt8u, the hand-off)
+#include "AbortParkEmit.h"  // isAbortParkCondition (bd dm7f.7)
 
 #include "llvm/IR/IRBuilder.h"
 
@@ -1037,6 +1038,43 @@ void collectRailGates(ArrayRef<Value *> Members,
   }
 }
 
+// bd `test_C_libtooling-dm7f.7` — does a rail gate run between `Def` and a point
+// where a control emitter re-reads the register through compare `C`? The
+// control uses are the terminators (`br`/`switch`) and tainted-condition
+// `select`s reached from `C` through i1 logic (`and`/`or`/`xor`, i1 `select`),
+// i.e. where a flag minted from `C`'s operands is minted. Data uses (a `zext`,
+// an arithmetic consumer) keep the read at `C` and are not followed.
+bool railGateBeforeControlUse(const Instruction *Def, const CmpInst *C,
+                              const SmallPtrSetImpl<const Instruction *> &Gates,
+                              bool DefRefreshes) {
+  SmallVector<const Value *, 4> Work{C};
+  SmallPtrSet<const Value *, 8> Seen{C};
+  while (!Work.empty()) {
+    const Value *V = Work.pop_back_val();
+    for (const User *U : V->users()) {
+      const auto *I = dyn_cast<Instruction>(U);
+      if (!I || !Seen.insert(I).second)
+        continue;
+      if (isa<BranchInst>(I) || isa<SwitchInst>(I) ||
+          (isa<SelectInst>(I) && cast<SelectInst>(I)->getCondition() == V)) {
+        if (railGateBetween(Def, I, Gates, DefRefreshes))
+          return true;
+        if (!isa<SelectInst>(I) || !I->getType()->isIntegerTy(1))
+          continue;  // a terminator or a data select: the read stops here.
+      }
+      if (!I->getType()->isIntegerTy(1))
+        continue;
+      if (isa<SelectInst>(I) ||
+          (isa<BinaryOperator>(I) &&
+           (I->getOpcode() == Instruction::And ||
+            I->getOpcode() == Instruction::Or ||
+            I->getOpcode() == Instruction::Xor)))
+        Work.push_back(I);
+    }
+  }
+  return false;
+}
+
 // ONE rail value against a precomputed gate set. Split out so the step-(5) phi
 // fixpoint can ask it AFTER step (4) has erased the header phi — the gates
 // themselves survive that erase, the members do not.
@@ -1196,6 +1234,18 @@ Instruction *staleReadOfValue(Value *V,
     }
     if (railGateBetween(Def, UI, Gates, Refreshes))
       return UI;
+    // bd `test_C_libtooling-dm7f.7` — A COMPARE IS ALSO READ WHERE ITS FLAG IS
+    // MINTED. Every control emitter (kickback, value merge, abort park, condition
+    // tree, the 4.4 select) mints the flag at the BRANCH or SELECT the compare
+    // drives, not at the compare, so the register is read again THERE. A rail
+    // gate between the compare and that point leaves the flag minted from a
+    // moved register (`int c = q > 5; if (k > 3) q ^= 3; if (c) abort();` after
+    // a Case-A loop: the compare is fresh, the park's mint is not). Asked of each
+    // control use reached through i1 logic, with the same walk; the compare is
+    // named (the read the source wrote). Decline-only: it adds read points.
+    if (auto *C = dyn_cast<CmpInst>(UI))
+      if (railGateBeforeControlUse(Def, C, Gates, Refreshes))
+        return UI;
   }
   return nullptr;
 }
@@ -3083,12 +3133,15 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
   // CLOSURE: every user of a rail value is an in-place gate / phi on the rail, a
   // measure sink, an escape (`ret`), a post-loop tainted region's arm consumer
   // or merge φ handed to the control chain (bd wt8u, `railUseHandedToControl`),
-  // or a compare strictly after the loop (bd 8h7d.16, `isPostLoopRailCompare`).
-  // ANY other consumer — a value-op template producer, a compare that can
-  // reach the loop, a store, an unknown call, or the rail used as a classical
-  // ANGLE (arg-1) — means the rail is not isolated; leave it (the consumer's
-  // own guard declines loudly downstream). Every admitted non-member read is
-  // asked positionally by the record fence below.
+  // a compare strictly after the loop (bd 8h7d.16, `isPostLoopRailCompare`),
+  // or an abort park's own condition compare (bd dm7f.7,
+  // `isAbortParkCondition`). ANY other consumer — a value-op template producer,
+  // another compare that can reach the loop, a store, an unknown call, or the
+  // rail used as a classical ANGLE (arg-1) — means the rail is not isolated;
+  // leave it (the consumer's own guard declines loudly downstream). Every
+  // admitted non-member read is asked positionally by the record fence below,
+  // a compare at its own position AND at every branch/select it drives
+  // (`railGateBeforeControlUse`: the control emitters mint the flag there).
   //
   // ⚠ THIS CLAUSE KEEPS A RAIL-BANK-PARKED RAIL OUT OF *THIS* PATH's IN-PLACE
   // RELABEL (Case A) — AND ONLY THIS PATH's. Corrected 2026-09-24 (bd `xdu2.1`,
@@ -3137,6 +3190,14 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
       // collapse on exact SSA) and the condition-wire fence's.
       if (isPostLoopRailCompare(I, L, DT, LI))
         continue;
+      // bd dm7f.7 — an abort park's OWN condition compare, which may sit BEFORE
+      // the loop (`if (q > 5) abort(); for (…) cq_theta(&q, .1);`). Its flag is
+      // taped by the park and never stripped, so no adjoint of it runs after
+      // the loop's gates; the record fence below asks the compare AND the
+      // park's branch (`railGateBeforeControlUse`), where the park mints.
+      if (auto *C = dyn_cast<CmpInst>(I))
+        if (!L->contains(C) && isAbortParkCondition(C, taint))
+          continue;
       // An in-place gate on the rail whose result is itself a rail is in
       // railRoot (handled above). Anything else is an out-of-rail consumer.
       return false;
