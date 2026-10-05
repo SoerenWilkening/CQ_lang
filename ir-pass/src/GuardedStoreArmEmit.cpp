@@ -166,32 +166,90 @@ bool conditionReadsMemory(CmpInst *Cond, const TaintSet &Taint) {
 }
 
 // bd dm7f.3, L1 — may the classical value `V` become TAINTED at round 2?
-// `repropagateControlMerges` taints only control-merge `%out` rails and what
-// derives from them, and every `%out` replaces a merge φ or a `select` that stood
-// in the round-1 IR. So a value whose operand cone holds neither cannot turn
-// quantum after this region is emitted; anything else answers "may".
+//
+// THE PREMISE, re-checked against every producer (review round 1, finding 2):
+// `repropagateControlMerges` re-seeds forward taint only from
+// `taint.UntaintedMergeRails`, and exactly three emitters fill it — 6.5
+// `ClassicalCallArmEmit`, 4.5 `SwitchDataMuxEmit` and the 7.6 I/O-sink value mux
+// (`IOSinkLowering`) — each RAUWing the MERGE φ of a region whose `br`/`switch`
+// condition is tainted. The onward round (`detectAndLowerOnwardControl`, the
+// `%out2` rails) runs the same emitters on a condition that turned quantum at
+// round 2. Everything else round 2 taints is reached by plain data flow from
+// those rails: operands, φ incomings, a `select`'s condition and arms, the
+// arguments of a call that a re-planned specialization lifts. So `V` "may" turn
+// quantum iff its operand cone reaches (a) a tainted value or (b) a φ whose
+// deciding branches — the conditional terminators between the merge's immediate
+// dominator and its incoming blocks — have a tainted or may-turn-tainted
+// condition. A `select` and a classical φ are walked through, not refused: a
+// classical ternary angle or a loop counter stays classical (the first version
+// answered "may" for ANY φ or `select`, an over-decline with a misleading string).
+// A `cq_measure` result is classical for good (the sink, asked by exact
+// membership in `MeasureCalls`): the walk does not enter its operand, so
+// measurement feed-forward stays admitted. Unreachable merges, and deciding
+// terminators other than `br`/`switch`, answer "may".
+//
 // MEASURED reason it exists: `int y = (p>3) ? g(k) : 7; …; if (c<3) { arr[q&7]=7;
 // cq_phi((double)y); }` has a classical angle at round 1, and at round 2 the
 // `sitofp` of the 6.5 `%out` lowers to `cq_template_sitofp_i32_to_f64` feeding
-// `cqrt_rz_i1`: a broken module (`opt` abort, exit 134). Conservative by design
-// (a φ that never becomes a rail also answers "may"). A `cq_measure` result is
-// classical for good (the sink, asked by exact membership in `MeasureCalls`), so
-// the walk does not enter its operand: measurement feed-forward stays admitted.
+// `cqrt_rz_i1`: a broken module (`opt` abort, exit 134).
 // RETIREMENT TRIGGER: a round-2 re-ask of branch-phase angles and guarded store
 // values (RECORD at emission, RE-ASK after the fixpoint, L1) replaces this.
-bool mayTaintAtRound2(const Value *V, const TaintSet &Taint) {
+bool mergeDecidersInto(const PHINode *P, const DominatorTree &DT,
+                       SmallVectorImpl<const Value *> &Work,
+                       SmallPtrSetImpl<const Value *> &Seen) {
+  const DomTreeNode *N = DT.getNode(P->getParent());
+  if (!N || !N->getIDom())
+    return false;  // unreachable (or entry) merge: unproven.
+  const BasicBlock *D = N->getIDom()->getBlock();
+  // Every block on a path from `D` to an incoming block, `D` included. A block
+  // reached backward without passing `D` is dominated by `D` (else a path from
+  // the entry to the incoming block would avoid `D`).
+  SmallVector<const BasicBlock *, 8> BW;
+  SmallPtrSet<const BasicBlock *, 16> SeenB;
+  for (const BasicBlock *IB : P->blocks())
+    if (SeenB.insert(IB).second)
+      BW.push_back(IB);
+  while (!BW.empty()) {
+    const BasicBlock *B = BW.pop_back_val();
+    const Instruction *T = B->getTerminator();
+    const Value *C = nullptr;
+    if (const auto *BI = dyn_cast<BranchInst>(T)) {
+      if (BI->isConditional())
+        C = BI->getCondition();
+    } else if (const auto *SI = dyn_cast<SwitchInst>(T)) {
+      C = SI->getCondition();
+    } else {
+      return false;  // invoke / indirectbr / callbr deciding the merge: unproven.
+    }
+    if (C && Seen.insert(C).second)
+      Work.push_back(C);
+    if (B == D)
+      continue;
+    for (const BasicBlock *PB : predecessors(B))
+      if (SeenB.insert(PB).second)
+        BW.push_back(PB);
+  }
+  return true;
+}
+
+bool mayTaintAtRound2(const Value *V, const TaintSet &Taint,
+                      const DominatorTree &DT) {
   SmallVector<const Value *, 8> Work{V};
   SmallPtrSet<const Value *, 16> Seen{V};
   while (!Work.empty()) {
-    const auto *I = dyn_cast<Instruction>(Work.pop_back_val());
+    const Value *X = Work.pop_back_val();
+    if (Taint.Tainted.count(const_cast<Value *>(X)))
+      return true;  // quantum already (a deciding condition, typically).
+    const auto *I = dyn_cast<Instruction>(X);
     if (!I)
       continue;  // a constant, global or argument: fixed for the whole run.
-    if (isa<PHINode>(I) || isa<SelectInst>(I))
-      return true;
     if (const auto *CI = dyn_cast<CallInst>(I))
       if (is_contained(Taint.MeasureCalls, CI))
         continue;
-    for (const Value *Op : I->operands())
+    if (const auto *P = dyn_cast<PHINode>(I))
+      if (!mergeDecidersInto(P, DT, Work, Seen))
+        return true;
+    for (const Value *Op : I->operands())  // φ incomings, `select` cond + arms
       if (Seen.insert(Op).second)
         Work.push_back(Op);
   }
@@ -330,7 +388,7 @@ GuardedStoreDisp classifyGuardedStoreArm(BranchInst *BI, TaintSet &Taint,
   for (const ArmContent *C : {&CT, &CF})
     for (CallInst *P : C->Phases)
       if (Taint.Tainted.count(P->getArgOperand(0)) ||
-          mayTaintAtRound2(P->getArgOperand(0), Taint)) {
+          mayTaintAtRound2(P->getArgOperand(0), Taint, DT)) {
         diagnoseUnderControl(P, "rotation angle");
         return GuardedStoreDisp::Declined;
       }
@@ -349,7 +407,7 @@ GuardedStoreDisp classifyGuardedStoreArm(BranchInst *BI, TaintSet &Taint,
     }
     for (StoreInst *SI : {CT.Store, CF.Store})
       if (SI && (Taint.Tainted.count(SI->getValueOperand()) ||
-                 mayTaintAtRound2(SI->getValueOperand(), Taint))) {
+                 mayTaintAtRound2(SI->getValueOperand(), Taint, DT))) {
         diagnoseUnderControl(SI, "guarded store of a quantum value in a "
                                  "composed region");
         return GuardedStoreDisp::Declined;

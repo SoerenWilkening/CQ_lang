@@ -14,7 +14,8 @@
 ; flatten hoists into the pred and runs on EVERY branch, becomes a template rail
 ; that nothing discharges after the guarded store: bd r2j3.9's live copy, reached
 ; through round 2. A composed region refuses a stored value that is tainted OR
-; whose operand cone holds a φ or a `select` (`mayTaintAtRound2`), with the
+; whose operand cone reaches a merge φ decided by a tainted (or may-turn-tainted)
+; branch (`mayTaintAtRound2`; here `%13`, decided by the quantum p), with the
 ; quantum-value string, at the store.
 ; PINS (written to kill, not mutation-run in dm7f.3): dropping the `mayTaintAtRound2` conjunct from the
 ; stored-value clause.
