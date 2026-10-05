@@ -14,6 +14,7 @@
 #include "LiteralIntegrity.h"   // slotCarriesUndef (bd 3p2a — the return-cone fence)
 #include "OpcodeSupport.h"
 #include "QramLowering.h"
+#include "SelectClassify.h"     // collectCondTree (bd p3kd.3 — the clone select grammar)
 #include "SpecializePlan.h"
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
@@ -139,8 +140,27 @@ bool isLiftableSelect(const SelectInst *SI) {
   if (abiWidthFromType(SI->getType()) != "i32")
     return false;  // copyControlledFn + the i32-return gate support only i32.
   auto *Cond = dyn_cast<ICmpInst>(SI->getCondition());
-  if (!Cond)
-    return false;  // integer compare only (no fcmp / non-icmp condition).
+  if (!Cond) {
+    // bd p3kd.3 — a COMPOUND condition: `clang -O1` if-converts `a && b` / `a & b`
+    // over cheap compares into ONE straight-line `select` on `and i1`, which no
+    // flatten turns into a diamond. `lowerCloneSelect` lowers any condition the
+    // `collectCondTree` grammar collects (the 5po2 I2 network the flattened
+    // diamond already reaches), so ask THAT grammar (Rule 14), for the two-arm
+    // shape only, every compare leaf an integer `icmp` (the single-leaf rule
+    // above), and no register leaf (`lowerCloneSelect` skips one). A classical
+    // leaf is fine at this taint-blind gate: `lowerCloneSelect` re-collects with
+    // the literal rule and the per-leaf fence refuses what it cannot fold.
+    CondTree Tree;
+    if (!collectCondTree(const_cast<Value *>(SI->getCondition()), Tree) ||
+        Tree.Nodes.empty() ||
+        !Tree.RailLeaves.empty() || !Tree.RailPhiLeaves.empty())
+      return false;
+    for (const CmpInst *Leaf : Tree.Leaves)
+      if (!isa<ICmpInst>(Leaf))
+        return false;
+    return !isa<Constant>(SI->getTrueValue()) &&
+           !isa<Constant>(SI->getFalseValue());
+  }
   // Increment-1 one-copy shape: false arm = const 0, true arm = a param the
   // compare tests (one operand == TrueArg, the other a constant). Condition and
   // data share taint by construction — with the param tainted both are quantum
