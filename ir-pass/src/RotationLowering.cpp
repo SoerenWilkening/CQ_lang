@@ -2097,18 +2097,51 @@ bool recordIsExemptAt(CallInst *R, CallInst *T, const TaintSet &taint,
       //     window's opener. Clone calls are NOT admitted (`false`): a call
       //     reading R in the window counts as a write, which can only add a
       //     warning. Pinned by lowering_reject_live_record_measured_then_moved.ll.
-      //   * TAPE: closed before this pass sees it. `IOSinkLowering`'s
-      //     `tapedLineageClosed` declines a taped value with any user that is not
-      //     an I/O sink or a measurement, so no gate can write a printf'd record
-      //     after its write. The park's flag is the emitter's own: its only user
-      //     after the write is the closing `cqrt_x` of the bracket around it,
-      //     which restores the flag to the value the tape holds the complement
-      //     of. The window scan would refuse that `cqrt_x` (it is not
+      //     ⚠ PRECISION COST, DISCLOSED (bd rced, round-2 review of cmr9). The
+      //     scan inherits M-B's conservative refusals: `preservesBorrowedParent`
+      //     admits a forward template read, a diagonal Rz (controlled or not)
+      //     and, when allowed, a proven read-only clone call, and refuses every
+      //     `_unc`/`_inv`, every other `_controlled` gate and (with `false` here)
+      //     every clone call, WHEREVER R SITS in it. So a measured record that is
+      //     only READ inside the window now warns at the gate, where main was
+      //     silent: `int r = q & 6; sink = cq_measure(r); int s = r * 3;
+      //     sink = cq_measure(s ^ q); cq_theta(&q, .3);` (the spine's
+      //     `cq_template_mul_i32_hl_unc` reads r before the gate), a compare of r
+      //     whose own strip runs in the window (`int c = (r == 2); …`; bd 7xsh's
+      //     row (4) for RECORDED strips should cover it once integrated), and a
+      //     clone call `__cq_q_g_1(r)`. That is an over-warning (a signal, not a
+      //     gate), taken to keep ONE spelling of "rail unmoved". The fix is one
+      //     widening of `preservesBorrowedParent` for read-only slots (bd rced),
+      //     an R11 core change because M-B's clause (d) reads the same predicate.
+      //     RETIREMENT TRIGGER (L7, bd 9128): the (W2) certificate speaks about
+      //     the CURRENT instance of R only. In a rolled loop that re-mints R each
+      //     trip, measures it, and writes it after `T`, the PREVIOUS trip's
+      //     instance is still live at this trip's `T`, yet every write sits
+      //     outside (collapse, `T`) and R is exempted. A loud loop decline masks
+      //     that shape today; fix bd 9128 before that over-decline is removed.
+      //   * TAPE: rests on TWO upstream facts, neither of them owned here.
+      //     (a) `IOSinkLowering`'s `tapedLineageClosed` declines a taped value
+      //     with any user that is not an I/O sink or a measurement. It runs at
+      //     `lowerIOSinks`, BEFORE `lowerRotations` merges a `cq_theta` result
+      //     onto its pre-rotation name, so it checks only the taped SSA name's
+      //     OWN users. (b) A stale alias of the PRE-rotation name, the bd r2j3.6
+      //     stale-alias class, is not one of them: `int d = c; cq_theta(&c,
+      //     .1); printf("%d", c); if (q > 3) cq_theta(&d, .9);` writes c's rail
+      //     after its tape write through `d`. Today that shape is declined by
+      //     `ArmClassify`'s condition-wire fence (`condWireDisposition` and its
+      //     round-2 re-asks; "condition predates a non-diagonal gate under
+      //     quantum control"), not by (a). The park's flag is the emitter's own:
+      //     its only user after the write is the closing `cqrt_x` of the bracket
+      //     around it, which restores the flag to the value the tape holds the
+      //     complement of. The window scan would refuse that `cqrt_x` (it is not
       //     label-preserving), so asking it here would re-warn
       //     @park_negated_then_gate for no hazard. RETIREMENT TRIGGER (L7): if
-      //     `tapedLineageClosed` is relaxed, the park gains another post-write
-      //     user of its flag, or a tape entry gains an `_unc`, a free or a later
-      //     read, re-derive the tape half.
+      //     `tapedLineageClosed` is relaxed, the condition-wire fence stops
+      //     declining the stale-alias shape above or the r2j3.6 class is lowered
+      //     instead of declined, the park gains another post-write user of its
+      //     flag, or a tape entry gains an `_unc`, a free or a later read,
+      //     re-derive the tape half (most likely: ask it the window scan too,
+      //     with the park's own bracket admitted).
       const bool Measured = emittedCalleeName(CI).starts_with("cqrt_measure_");
       const bool TapedInFull = CI->arg_size() == 2 && isTapeWriteOf(CI, R);
       if ((Measured || TapedInFull) &&

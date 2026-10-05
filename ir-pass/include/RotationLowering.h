@@ -251,10 +251,18 @@ void lowerRotations(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
 //      full to the 7.6 output tape by an UNGUARDED `cqrt_tape_write_<W>(tape,
 //      R)`, a kept, never-reread rail whose measurement is deferred to inspection
 //      (bd gl3x, owner ruling 2026-10-05). The guarded `_controlled` write does
-//      not count: it commits `ctrl ? src : 0`. A taped record cannot be written
-//      after its tape write (`IOSinkLowering`'s `tapedLineageClosed` declines
-//      it), so the tape half needs no window scan. Pinned by
-//      `lowering_live_record_tape_before_gate.ll`.
+//      not count: it commits `ctrl ? src : 0`. The tape half asks no window scan
+//      because two UPSTREAM fences keep a taped record unwritten after its
+//      write: `IOSinkLowering`'s `tapedLineageClosed` (the taped name's own
+//      users, checked before `lowerRotations` merges names) and `ArmClassify`'s
+//      condition-wire fence (which today declines a write through a stale
+//      pre-rotation alias, the bd r2j3.6 class); the retirement trigger is at
+//      clause 4 in RotationLowering.cpp. Pinned by
+//      `lowering_live_record_tape_before_gate.ll`. The measurement half inherits
+//      M-B's conservative refusals, so a measured record that is only READ in
+//      the window by an `_unc`, a `_controlled` gate or a clone call still warns
+//      (bd rced, an over-warning), and its certificate covers only R's current
+//      instance in a rolled loop (bd 9128, masked by a loud loop decline today).
 //   5. it is not `W` itself.
 //   6. **it EXISTS at `T`** — `provablyBefore(T, R)` is FALSE. The F2 fix
 //      (2026-08-28): a rail minted strictly after the gate is not allocated when

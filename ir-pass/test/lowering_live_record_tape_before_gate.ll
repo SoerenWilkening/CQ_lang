@@ -98,18 +98,30 @@
 ; this exemption the same way @park_then_gate does; nothing here assumes `return 0`.
 ;
 ; A WRITE TO THE RECORD AFTER ITS TAPE WRITE cannot reach this clause today, and
-; that is a property of the pipeline, not of this file. `IOSinkLowering`'s
-; `tapedLineageClosed` declines a printf'd value with any user that is not an I/O
-; sink or a measurement (so a later `cq_theta(&c, …)` on a taped `c` fails loudly
-; before lowering), and the park's flag is written after its tape write only by
-; the closing `cqrt_x` of its own bracket. The MEASUREMENT half of clause 4 has no
-; such closure upstream and asks the window scan instead (bd cmr9,
+; that rests on TWO upstream fences, not on this file:
+;   (a) `IOSinkLowering`'s `tapedLineageClosed` declines a printf'd value with any
+;       user that is not an I/O sink or a measurement, so a later
+;       `cq_theta(&c, …)` on the taped name `c` fails loudly before lowering. It
+;       runs at `lowerIOSinks`, BEFORE `lowerRotations` merges a `cq_theta`
+;       result onto its pre-rotation name, so it sees only the taped name's own
+;       users.
+;   (b) A stale alias of the PRE-rotation name (the bd r2j3.6 stale-alias class)
+;       is not one of them: `int d = c; cq_theta(&c, .1); printf("%d", c);
+;       if (q > 3) cq_theta(&d, .9);` writes c's rail after its tape write
+;       through `d`. Today `ArmClassify`'s condition-wire fence declines that
+;       shape ("condition predates a non-diagonal gate under quantum control"),
+;       not (a).
+; The park's flag is written after its tape write only by the closing `cqrt_x`
+; of its own bracket. The MEASUREMENT half of clause 4 has no closure upstream
+; and asks the window scan instead (bd cmr9,
 ; lowering_reject_live_record_measured_then_moved.ll).
 ;
 ; RETIREMENT TRIGGER (L7): if a tape entry ever gains an `_unc`, is freed, or is
 ; read again after its write, the deferred-measurement step above fails and this
-; clause must go. If `tapedLineageClosed` is relaxed, or the park gains another
-; user of its flag after the write, the tape half must ask the window scan too.
+; clause must go. If `tapedLineageClosed` is relaxed, the condition-wire fence
+; stops declining the stale-alias shape in (b) or the r2j3.6 class is lowered
+; instead of declined, or the park gains another user of its flag after the
+; write, the tape half must ask the window scan too.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll

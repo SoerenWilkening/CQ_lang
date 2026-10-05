@@ -51,11 +51,20 @@
 ;     window, so T stays silent; the two gates on r warn for their own reason (q's
 ;     rail stands as an unobserved record of r).
 ;
-; The TAPE half of clause 4 is not asked this, because the question cannot
-; arise there: `IOSinkLowering`'s `tapedLineageClosed` declines a taped value
-; with any user other than an I/O sink or a measurement, and the park's flag is
+; The TAPE half of clause 4 is not asked this, because two upstream fences keep a
+; taped record unwritten after its write: `IOSinkLowering`'s `tapedLineageClosed`
+; (the taped name's own users) and `ArmClassify`'s condition-wire fence (a write
+; through a stale pre-rotation alias, the bd r2j3.6 class); the park's flag is
 ; written only by its own `cqrt_x` bracket closing around the write
-; (lowering_live_record_tape_before_gate.ll, @park_negated_then_gate).
+; (lowering_live_record_tape_before_gate.ll, @park_negated_then_gate, which also
+; carries the retirement trigger).
+;
+; KNOWN COSTS OF THIS RULE, filed and not pinned here: a measured record that is
+; only READ inside the window by an `_unc`, a `_controlled` gate or a clone call
+; also warns at the gate, because the scan refuses those wherever the record
+; sits (bd rced, an over-warning); and in a rolled loop the certificate covers
+; only the current instance of the record (bd 9128, masked by a loud loop
+; decline today).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
