@@ -22,7 +22,10 @@
 ; parameter type does not match function signature!`, `LLVM ERROR: Broken module
 ; found`, exit 134. Until a round-2 re-ask exists (L1: record at emission, re-ask
 ; after the fixpoint), `mayTaintAtRound2` refuses an angle whose operand cone
-; holds a φ or a `select`, with the quantum-angle string, at the phase call.
+; reaches a merge φ decided by a tainted (or may-turn-tainted) branch — here `%13`,
+; decided by `%9 = icmp sgt %8, 3` on the quantum p — with the quantum-angle
+; string, at the phase call. A classical `select` or φ is walked through, not
+; refused (control_guarded_store_ifelse_phase_classical_angle.ll accepts).
 ; MUTANT this file kills (measured, dm7f.3 M3): dropping the `mayTaintAtRound2` conjunct from the angle
 ; clause (the module then aborts instead of declining).
 ;
