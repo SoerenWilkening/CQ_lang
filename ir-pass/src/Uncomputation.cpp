@@ -626,12 +626,29 @@ bool borrowedParentsUnmoved(const DataDag &D,
 // read lowers on its own without any reversal, so it is accepted
 // (lowering_uncompute_measured_parent_derived_after_collapse.ll).
 //
-// `isPotentiallyReachable` answers per-activation conservatively: a measurement
-// in a loop that reaches a read round the back edge refuses (the decline stands).
+// PER ACTIVATION (bd test_C_libtooling-01po.13). `isPotentiallyReachable(M, G)`
+// alone answers "can the measurement run before the read", which a back edge
+// always makes true — so a FRESH register measured every loop trip (`int q =
+// x + i; cq_theta(&q, .25); int t = q ^ 9; cq_theta(&t, .5); acc +=
+// cq_measure(q);`) refused: trip i's measurement reaches trip i+1's xor. That
+// xor reads the register minted by trip i+1, not the one trip i collapsed. So a
+// read is post-collapse only if some path from the measurement reaches it
+// WITHOUT re-executing `P`'s definition (`everyPathReExecutes`, the barrier walk
+// the per-activation proofs share), and that exemption is taken only when the
+// definition MINTS a physically fresh register each time it runs — a
+// `cqrt_alloc` mint or a template producer. A register CARRIED across trips (a
+// φ, an argument, a mint outside the loop) keeps the old answer: every path round
+// the back edge misses its definition, or it is not a mint at all
+// (lowering_reject_uncompute_measured_parent_carried_across_iterations.ll).
+// Neither vacuity trap of the walk is reachable: `G` reads `P`, so it is not
+// `P`'s definition (`Barrier != To`), and `M` re-entering its own block from the
+// top through the definition is exactly "re-executes".
 bool measuredParentsReadBeforeCollapse(const DataDag &D,
                                        const SmallPtrSetImpl<Value *> &Measured,
                                        const DominatorTree &DT) {
-  for (Value *P : Measured)
+  for (Value *P : Measured) {
+    auto *Def = dyn_cast<CallInst>(P);
+    const bool FreshMint = Def && (isAllocMint(Def) || isTemplateProducer(Def));
     for (User *U : P->users()) {
       auto *M = dyn_cast<CallInst>(U);
       if (!M || !isMeasureSink(M))
@@ -639,9 +656,11 @@ bool measuredParentsReadBeforeCollapse(const DataDag &D,
       for (CallInst *G : D.Calls)
         for (Value *Op : G->args())
           if (Op == P &&
-              isPotentiallyReachable(M, G, /*ExclusionSet=*/nullptr, &DT))
+              isPotentiallyReachable(M, G, /*ExclusionSet=*/nullptr, &DT) &&
+              !(FreshMint && everyPathReExecutes(M, G, Def)))
             return false;
     }
+  }
   return true;
 }
 
