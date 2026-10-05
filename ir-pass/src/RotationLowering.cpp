@@ -1108,6 +1108,12 @@ namespace {
 //   * lowering_live_record_park_cswap_observed_accept.ll  a record whose only
 //       post-gate uses are the abort park's flag mint and cswap is silent (the
 //       park tapes its flag), beside a kickback-region control that warns
+// bd aako (2026-10-05) — no behaviour change; clause 5 measured from C:
+//   * lowering_live_record_own_rail_accept.ll  a gate on the record's own rail
+//       (in-place chain, loop-carried handle, M-C in-place xor) is silent; the
+//       same xor out of place in a loop leaves the parent's rail as a record and
+//       warns. lowering_loop_iter_local_temp.ll and
+//       control_classical_call_arm_accept_onward_phase.ll pin that warning
 constexpr char kMsgLiveRecord[] =
     "cq rotation lowering: non-diagonal gate over a live derived record";
 

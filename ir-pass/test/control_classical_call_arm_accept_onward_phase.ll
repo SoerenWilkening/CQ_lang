@@ -29,9 +29,19 @@
 ; (they hold f(a) and 5, not |0>).
 ;
 ; This module also prints `warning: ... non-diagonal gate over a live derived
-; record` (the M-A guard; its gate is the onward Ry on `%out`'s own rail).
-; Reported to the coordinator 2026-10-05 as a suspected over-warning; it is not
-; pinned here in either direction.
+; record` (the M-A guard), and the warning is RIGHT; it is pinned below (ACC).
+; The gate is the onward Ry on `%out`, but no record is `%out`'s own rail
+; (measured with a record-dump build, bd aako 2026-10-05). The guard counts
+; three: `q`'s rail %[[H]] and the two copy sources %[[S1]] / %[[S2]].
+; %[[H]] is the real one. At the gate the state is sum_h c_h |h>_H |g(h)>_OUT with
+; g(h) = (h > 3) ? f(a) : 5, and nothing reads `q` again, so %out's reduced state
+; is diagonal and the Ry acts on a mixture; `q` cannot be discharged first because
+; %out depends on it. That is the user's circuit (owner ruling lyyf): warn and
+; lower. The copy sources hold the classical constants f(a) and 5 and are only
+; ever CONTROLS of the Toffoli copy, so they stay product states. Counting them
+; is an over-count, but it cannot change this verdict while %[[H]] is dead.
+; Measuring `q` after the gate exempts %[[H]] and leaves the copy sources warning
+; alone; that over-warning is reported with aako, not pinned here.
 ;
 ; History: written for the pre-3qlq register form `y = cq_phi(y, 0.25)`, an
 ; onward PHASE lowered in place as `cqrt_rz_i32(%out, 0.25)` (the tensored Rz
@@ -40,9 +50,9 @@
 ; the in-place Ry above. The register-free onward PHASE is a branch phase on the
 ; merge, which is control_classical_call_arm_accept_onward_ctl_phase.ll.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=ACC
+; RUN: %filecheck %s --check-prefix=ACC < %t.err
 ; RUN: %filecheck %s --check-prefix=NEG < %t.cqd0.ll
 
 ; bd wve8 — DEFINED, not declared. The 6.5 arm HOISTS this call out of its
@@ -108,7 +118,11 @@ attributes #4 = { nounwind }
 ; NEG-NOT: cq_theta_si32
 ; NEG-NOT: cqrt_cswap
 ; NEG-NOT: call void @cqrt_free(i32 %out)
-; the region ACCEPTS (no decline diagnostic; the M-A warning above is not pinned):
+; the region ACCEPTS (no decline diagnostic) and M-A warns once, on the onward
+; gate (`q`'s rail %[[H]] stands as a dead record of %out; see the header):
 ; ACC-NOT: under quantum control
+; ACC-NOT: error
+; ACC:     warning: {{.*}}in function example i32 (i32, i32): cq rotation lowering: non-diagonal gate over a live derived record
+; ACC-NOT: warning
 ; ACC-NOT: error
 ; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2)); jttf: re-spelled register-free 2026-10-05

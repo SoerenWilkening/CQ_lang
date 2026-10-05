@@ -33,9 +33,16 @@
 ; basis copy `q ^ 9`, which the `_unc` returns to |0>.
 ;
 ; This module also prints `warning: ... non-diagonal gate over a live derived
-; record` (the M-A guard; its gate is the keep-alive Ry on `t`'s own rail).
-; Reported to the coordinator 2026-10-05 as a suspected over-warning; it is not
-; pinned here in either direction.
+; record` (the M-A guard), and the warning is RIGHT; it is pinned below (WARN).
+; The gate is the keep-alive Ry on `t`'s rail, but the record is NOT `t`'s own
+; rail: it is `q`'s rail (the `cqrt_alloc_i32` that `%7` lowers to, %[[Q]]
+; below), the xor's parent (measured with a record-dump build, bd aako
+; 2026-10-05). At the gate the state is
+; sum_a c_a |a>_q |a^9>_t: `q`'s rail is a basis record of `t`, never observed,
+; so the Ry acts on a mixture, which is the ruled canonical case of
+; lowering_reject_live_record_io_tape_chained_theta.ll. Straight-line, the same C
+; is silent because M-C lowers `t = q ^ 9` in place on `q`'s rail; inside this
+; loop it does not. Both sides are in lowering_live_record_own_rail_accept.ll.
 ;
 ; History: pre-3qlq the keep-alive was the register form `(void) cq_phi(t, 0.5)`
 ; (an in-place Rz), so the LIFO began with `rz(t, -0.5)`. The 3qlq migration
@@ -43,10 +50,15 @@
 ; would never emit; bd jttf (2026-10-05) re-spelled the keep-alive as the
 ; in-place Ry above.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NEG < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=WARN < %t.err
+;
+; One warning, on the keep-alive gate (`q`'s rail stands as a record of `t`):
+; WARN:     warning: {{.*}}in function slice void (i32, i32): cq rotation lowering: non-diagonal gate over a live derived record
+; WARN-NOT: warning
 ;
 ; The whole compute+uncompute pair lives INSIDE the loop body, before the backedge:
 ; CHECK-LABEL: define void @slice(
