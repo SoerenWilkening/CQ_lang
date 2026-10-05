@@ -32,7 +32,10 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
 ; RUN: %filecheck %s --check-prefix=WARN < %t.err
-; RUN: %filecheck %s --implicit-check-not=cqrt_free --implicit-check-not=_unc < %t.ll
+; RUN: %filecheck %s --implicit-check-not=cqrt_free --implicit-check-not=_unc --implicit-check-not=keptflag < %t.ll
+; (`keptflag`: the emitter's `cq.keptflag` tag on the mint is cleared by the late
+; postcondition `declineUndischargedKeptFlagChains`; the lowered module never
+; carries it.)
 
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
