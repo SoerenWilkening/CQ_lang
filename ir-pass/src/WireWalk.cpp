@@ -707,7 +707,7 @@ static CallInst *walkNonDiagonalWireGates(
   // NOT on the seed's own arg-0 chain) is stale evidence. This is the 6vk fix
   // sketch: the over-decline the previous never-cross-theta stop avoided came
   // ONLY from flagging the producing theta, which the exemption now prevents
-  // (accept boundary pinned by lowering_stale_record_alias_producer.ll,
+  // (accept boundary pinned by lowering_stale_record_add_after_phi.ll,
   // lowering_stale_record_add_before_theta.ll,
   // lowering_stale_record_chained_theta_onancestry.ll). A SOURCE theta's arg-0
   // is the classical init (not a quantum wire), so the closure stops there and

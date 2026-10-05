@@ -964,8 +964,6 @@ namespace {
 //   * lowering_reject_live_record_qram_load.ll            (a `cqrt_qram_load_` record)
 //   * lowering_reject_live_record_spine_only_use.ll       (post-T mention is an
 //       `_unc` READ of a DIFFERENT rail — the spine-aware reading's defining case)
-//   * lowering_reject_live_record_sibling_alias.ll        (record off the wire;
-//       its pre-3qlq `cq_phi` sibling alias was deleted by the 3qlq migration)
 //   * lowering_reject_live_record_router_phi.ll           (record behind the bd
 //       tayx one-register router phi)
 //   * lowering_reject_live_record_clone_call_hop.ll       (the record sits behind
@@ -1014,8 +1012,8 @@ namespace {
 //       the only one whose message MOVED when Inc 4 lifted that decline: it now
 //       lands here, on kMsgLiveRecord. Re-measured, not re-derived.
 // ACCEPT controls, each pinning a clause this change must NOT widen:
-//   * lowering_stale_record_add_before_theta.ll  }  clause 3 — the ruled LIVE
-//   * lowering_stale_record_alias_before_theta.ll}  record boundary (pre-existing)
+//   * lowering_stale_record_add_before_theta.ll     clause 3 — the ruled LIVE
+//       record boundary (pre-existing; its `_alias_` twin retired by bd jttf)
 //   * lowering_live_record_discharged_before_theta.ll   clause 2
 //   * lowering_live_record_measured_before_theta.ll     clause 4
 //   * lowering_live_record_source_theta_accept.ll       source thetas are not sites

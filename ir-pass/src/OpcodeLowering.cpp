@@ -336,10 +336,11 @@ void declineStaleRecordOps(Module &M, TaintSet &taint) {
   // removed it from the fixtures written for it, `..._alias_chain.ll` was
   // deleted at ae840fac as an IR duplicate of
   // lowering_reject_stale_record_alias_sibling.ll, and the three survivors
-  // carry no diagonal hop: `..._reject_..._alias_sibling.ll` (decline) and
-  // lowering_stale_record_alias_before_theta.ll (accept) read `%q` after /
-  // before a chained theta on it, and lowering_stale_record_alias_producer.ll
-  // has no chained theta at all.
+  // carried no diagonal hop. bd jttf (2026-10-05) retired two of them as
+  // duplicates: `..._reject_..._alias_sibling.ll` (decline) still reads `%q`
+  // after a chained theta on it; its accept twin is now
+  // lowering_stale_record_add_before_theta.ll, and the no-chained-theta
+  // producer case is lowering_stale_record_add_after_phi.ll.
   //
   // ── WHERE THIS RUNS, AND THE L1 ANSWER (bd 3d8q) ─────────────────────────
   // This sweep is called from FOUR slots and needs no fifth:
