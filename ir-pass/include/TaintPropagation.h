@@ -423,11 +423,44 @@ struct TaintSet {
   //     depends on following. `taintset-scrub-guard` admits `WeakTrackingVH` for
   //     exactly this reason (a tracking handle cannot dangle: it follows a RAUW
   //     and nulls on a plain delete).
+  //
+  // ── THE PER-USE RECORD (bd `test_C_libtooling-r2j3.11` + `-dm7f.1`) ──────────
+  // The RAUW makes a reader of the phi and a reader of the base the SAME operand,
+  // and no rule asked of the post-lift IR alone can tell them apart: `int r = q;
+  // if (c) { cq_theta(&q,.125); r = q; cq_theta(&q,.25); }` lifts TWO phis onto
+  // one base, and after the RAUW `v = r + 3` and `v = q + 3` are byte-identical
+  // although only the first is stale (measured: a union of every lift's gates
+  // accepted it and emitted the post-`.25` read). So the lift records WHICH uses
+  // read the phi, and the post-lift stale re-sweep (`declineLiftedStaleRecordOps`)
+  // keys its exemption per use:
+  //   * `Uses` — every (user, operand number) that read the phi at the RAUW.
+  //     `WeakTrackingVH` so a later rebuild of the user (`specialize()`'s fp
+  //     re-target) is followed; a reader only trusts an entry whose operand still
+  //     IS `Base`, so a followed-but-renumbered user drops out (the decline
+  //     direction).
+  //   * `RecordGates` — the gates ON the phi's per-path record: every incoming's
+  //     own chain (clauses (6)/(7) prove a chain gate fires exactly when its edge
+  //     is taken), plus an EARLIER lift's record when EVERY incoming derives from
+  //     that lift's phi (a gate inherited through one edge only would cover a
+  //     path whose record omits it). `WeakVH` — identity; nothing RAUWs a
+  //     `cq_theta` call before `lowerRotations`.
+  //   * `Readers` — written by the re-sweep, not by the lift: each pure op or QRAM
+  //     access whose read it found covered. `WeakTrackingVH` so the late
+  //     live-record warning (`RotationLowering`) can recognise the TEMPLATE the
+  //     reader lowered to, and not report it as standing at a gate its record
+  //     already contains.
+  struct LiftedUse {
+    llvm::WeakTrackingVH User;
+    unsigned OpNo = 0;
+  };
   struct LiftedMergePhi {
     llvm::WeakVH F;
     llvm::DebugLoc DL;
     llvm::WeakTrackingVH Base;
     llvm::SmallVector<llvm::WeakTrackingVH, 2> Incomings;
+    llvm::SmallVector<LiftedUse, 4> Uses;
+    llvm::SmallVector<llvm::WeakVH, 4> RecordGates;
+    llvm::SmallVector<llvm::WeakTrackingVH, 4> Readers;
   };
   llvm::SmallVector<LiftedMergePhi, 2> LiftedMergePhis;
 

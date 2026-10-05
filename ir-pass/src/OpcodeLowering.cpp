@@ -249,17 +249,147 @@ bool inLowerOpsScope(Instruction &I, TaintSet &taint) {
 bool gateFollowsRead(const Instruction &I, const CallInst *T,
                      const DominatorTree &DT, const PostDominatorTree &PDT);
 
+// ── THE PER-USE LIFT COVERAGE (bd test_C_libtooling-r2j3.11 + -dm7f.1) ──────────
+//
+// After `liftOneRegisterMergePhi` RAUWs a phi onto its wire base, a read of the
+// phi and a read of the base are the same operand, so the re-sweep seeded at the
+// base sees the phi's OWN incoming gates as siblings (dm7f.1: `if (c)
+// cq_theta(&q,.125); v = q + 3;` declined) — and a union of every lift's gates
+// would accept a stale read of a SECOND phi over the same base (`int r = q; if (c)
+// { cq_theta(&q,.125); r = q; cq_theta(&q,.25); } v = r + 3;`, measured: the
+// `add` read the post-`.25` wire). The lift therefore records its USES
+// (`TaintSet::LiftedMergePhi`), and a read is exempted from exactly the gates on
+// the record it read:
+//   * the read's own slot is a recorded use of lift L — L's `RecordGates`;
+//   * the operand is an in-place gate chain whose ancestry passes a recorded use
+//     (`%t = cq_theta(phi, ·)`, then `v = %t + 3`) — the same, since `%t`'s record
+//     extends the phi's. The hop is the walker's own backward closure: a
+//     `cq_theta_` call whose arg 0 is tainted (the relation `lowerRotations`
+//     builds the rail from), or a `cq_phi_` call.
+// A use only counts while its slot still holds the lift's base: a later rebuild
+// that renumbered or re-pointed it drops out, which can only decline.
+struct LiftCoverage {
+  const TaintSet *Taint = nullptr;
+  DenseMap<std::pair<const Value *, unsigned>, SmallVector<unsigned, 1>> UseToLift;
+
+  explicit LiftCoverage(TaintSet &T) : Taint(&T) {
+    for (unsigned L = 0, E = T.LiftedMergePhis.size(); L != E; ++L) {
+      const TaintSet::LiftedMergePhi &Rec = T.LiftedMergePhis[L];
+      const Value *Base = Rec.Base;
+      if (!Base)
+        continue;
+      for (const TaintSet::LiftedUse &U : Rec.Uses) {
+        auto *UI = dyn_cast_or_null<User>(static_cast<Value *>(U.User));
+        if (!UI || U.OpNo >= UI->getNumOperands() ||
+            UI->getOperand(U.OpNo) != Base)
+          continue;
+        UseToLift[{UI, U.OpNo}].push_back(L);
+      }
+    }
+  }
+
+  // The lifts whose record the read in slot `OpNo` of `I` denotes; false when the
+  // read is not a lifted read at all.
+  bool liftsOf(const Instruction &I, unsigned OpNo,
+               SmallVectorImpl<unsigned> &Lifts) const {
+    auto Add = [&](const Value *U, unsigned Slot) {
+      auto It = UseToLift.find({U, Slot});
+      if (It != UseToLift.end())
+        Lifts.append(It->second.begin(), It->second.end());
+    };
+    Add(&I, OpNo);
+    SmallPtrSet<const Value *, 8> Seen;
+    for (const Value *V = I.getOperand(OpNo); V && Seen.insert(V).second;) {
+      const auto *CI = dyn_cast<CallInst>(V);
+      const Function *F = CI ? CI->getCalledFunction() : nullptr;
+      if (!F || CI->arg_size() < 1)
+        break;
+      const Value *A0 = CI->getArgOperand(0);
+      const bool Hop = F->getName().starts_with("cq_phi_") ||
+                       (F->getName().starts_with("cq_theta_") &&
+                        Taint->Tainted.count(const_cast<Value *>(A0)));
+      if (!Hop)
+        break;
+      Add(CI, 0);
+      V = A0;
+    }
+    return !Lifts.empty();
+  }
+
+  // The gates the read in slot `OpNo` of `I` is exempt from (see above).
+  bool coveredFor(const Instruction &I, unsigned OpNo,
+                  SmallPtrSetImpl<const CallInst *> &Cov) const {
+    SmallVector<unsigned, 2> Lifts;
+    if (!liftsOf(I, OpNo, Lifts))
+      return false;
+    for (unsigned L : Lifts)
+      for (const WeakVH &G : Taint->LiftedMergePhis[L].RecordGates)
+        if (auto *GC = dyn_cast_or_null<CallInst>(static_cast<Value *>(G)))
+          Cov.insert(GC);
+    return true;
+  }
+
+  // Every slot of `I` that holds `Op` must be a lifted read, and a gate is exempt
+  // only if EVERY such slot's record contains it: `add %p, %q` after the RAUW is
+  // `add %q, %q`, and the base slot's record is not the phi's.
+  bool coveredForValue(const Instruction &I, const Value *Op,
+                       SmallPtrSetImpl<const CallInst *> &Cov) const {
+    bool First = true;
+    for (unsigned S = 0, E = I.getNumOperands(); S != E; ++S) {
+      if (I.getOperand(S) != Op)
+        continue;
+      SmallPtrSet<const CallInst *, 8> Mine;
+      if (!coveredFor(I, S, Mine)) {
+        Cov.clear();
+        return false;
+      }
+      if (First) {
+        Cov.insert(Mine.begin(), Mine.end());
+        First = false;
+        continue;
+      }
+      SmallVector<const CallInst *, 8> Drop;
+      for (const CallInst *G : Cov)
+        if (!Mine.count(G))
+          Drop.push_back(G);
+      for (const CallInst *G : Drop)
+        Cov.erase(G);
+    }
+    return !First;
+  }
+
+  // Record `I` as a covered reader of every lift its slots read, for the late
+  // live-record warning (`TaintSet::LiftedMergePhi::Readers`).
+  void noteReader(Instruction &I, TaintSet &T) const {
+    SmallVector<unsigned, 2> Lifts;
+    for (unsigned S = 0, E = I.getNumOperands(); S != E; ++S)
+      liftsOf(I, S, Lifts);
+    for (unsigned L : Lifts)
+      T.LiftedMergePhis[L].Readers.emplace_back(&I);
+  }
+};
+
 bool checkStaleReads(Instruction &I, ArrayRef<Value *> Reads, TaintSet &taint,
                      DominatorTree &DT, std::optional<PostDominatorTree> &PDT,
-                     bool InPlace) {
+                     bool InPlace, const LiftCoverage *LC = nullptr) {
   if (taint.StaleDeclined.count(&I))
     return false;  // already declined — idempotent across the post-lift re-sweep.
+  bool Lifted = false;
   for (Value *Op : Reads) {
     if (!taint.Tainted.count(Op))
       continue;  // classical operand — no wire.
     SmallVector<CallInst *, 4> Gates;
     collectNonDiagonalWireGates(Op, /*CrossValueRouting=*/true, &I, &DT, &taint,
                                 Gates);
+    // bd r2j3.11 / dm7f.1 — the post-lift re-sweep drops the gates ON the record
+    // this read denotes. A dropped gate that is not provably after the read was
+    // walked THROUGH by the enumeration (it is pushed like any staler), so a gate
+    // behind it is still here: the exemption is of the gate, not of what follows.
+    SmallPtrSet<const CallInst *, 8> Cov;
+    if (LC && LC->coveredForValue(I, Op, Cov)) {
+      Lifted = true;
+      llvm::erase_if(Gates, [&](CallInst *G) { return Cov.count(G) != 0; });
+    }
     if (Gates.empty())
       continue;
     if (!PDT)
@@ -273,6 +403,8 @@ bool checkStaleReads(Instruction &I, ArrayRef<Value *> Reads, TaintSet &taint,
     taint.StaleDeclined.insert(&I);
     return true;  // one diagnostic per op; lowerOps will skip it.
   }
+  if (Lifted)
+    LC->noteReader(I, taint);
   return false;
 }
 
@@ -298,14 +430,25 @@ bool gateFollowsRead(const Instruction &I, const CallInst *T,
 }
 
 bool checkStaleOp(Instruction &I, TaintSet &taint, DominatorTree &DT,
-                  std::optional<PostDominatorTree> &PDT) {
+                  std::optional<PostDominatorTree> &PDT,
+                  const LiftCoverage *LC) {
   SmallVector<Value *, 4> Ops(I.operand_values());
-  return checkStaleReads(I, Ops, taint, DT, PDT, /*InPlace=*/false);
+  return checkStaleReads(I, Ops, taint, DT, PDT, /*InPlace=*/false, LC);
 }
+
+void declineStaleRecordOpsImpl(Module &M, TaintSet &taint,
+                               const LiftCoverage *LC);
 
 }  // namespace
 
 void declineStaleRecordOps(Module &M, TaintSet &taint) {
+  declineStaleRecordOpsImpl(M, taint, /*LC=*/nullptr);
+}
+
+namespace {
+
+void declineStaleRecordOpsImpl(Module &M, TaintSet &taint,
+                               const LiftCoverage *LC) {
   // WHY POSITION-AWARE (and why that is not the MINT_AT_COMPARE §4 trap):
   // a pure tainted producer's template is emitted AT THE PRODUCER'S OWN
   // scheduled position, and opaque calls keep their order through the
@@ -388,13 +531,19 @@ void declineStaleRecordOps(Module &M, TaintSet &taint) {
         if (!DT)
           DT.emplace(F);  // either form always has a tainted read.
         if (PureOp)
-          checkStaleOp(I, taint, *DT, PDT);
+          checkStaleOp(I, taint, *DT, PDT, LC);
         else
-          checkStaleReads(I, QramReads, taint, *DT, PDT, /*InPlace=*/true);
+          checkStaleReads(I, QramReads, taint, *DT, PDT, /*InPlace=*/true, LC);
       }
     }
   }
 }
+
+void recordStaleQuantumReadersImpl(Module &M, TaintSet &taint,
+                                   const SmallPtrSetImpl<Value *> *Delta,
+                                   const LiftCoverage *LC);
+
+}  // namespace
 
 void declineLiftedStaleRecordOps(Module &M, TaintSet &taint) {
   // Re-adjudicate stale records exposed by the one-register merge-phi lift
@@ -449,26 +598,40 @@ void declineLiftedStaleRecordOps(Module &M, TaintSet &taint) {
   // re-asked whenever a stage moves into it.
   if (taint.LiftedMergePhis.empty())
     return;  // no lift occurred — nothing to re-adjudicate.
-  // ⚠ PURE OPS ONLY, and after bd test_C_libtooling-3d8q that is a positive
-  // statement rather than an accident of scope: `declineStaleQuantumReaders` runs
-  // BEFORE `declineClassicalMuxes`, hence before this lift, ON PURPOSE. A pure op
-  // CAPTURES a basis record onto a FRESH rail, so which record it captures is a
-  // fact about the NAME it reads and the lift's proof ("every incoming is one
-  // register") says nothing about it — that is bd 2qyz, and it is why this
-  // re-sweep exists. A `@cq_theta_*` / `@cq_measure_*` reader READS THE WIRE IN
-  // PLACE: before the lift its name is the merge φ, which denotes the wire on
-  // every edge ("the per-path record matches the wire per path" —
-  // `lowering_classical_mux_phi_onereg_theta_chain.ll`,
-  // `control_phase_kickback_rail_cross_block.ll`, both shipped Rule-13-cleared
-  // ACCEPTS that flip if a reader sweep runs here). RESIDUAL, filed not hidden: a
-  // quantum reader whose staling sibling is reachable ONLY through the lift's
-  // RAUW is not caught — a MISS of the 3d8q class in one narrow shape, strictly
-  // no worse than the pre-fix compiler, which asked NOTHING of any reader.
-  declineStaleRecordOps(M, taint);
+  // ── PER USE (bd test_C_libtooling-dm7f.1 + -r2j3.11). A read the lift
+  // recorded as a read of the phi is exempt from the gates ON the phi's per-path
+  // record (`LiftCoverage`), and from nothing else: the arm's own `cq_theta` is
+  // part of what `if (c) cq_theta(&q,.125); v = q + 3;` reads, while a second phi
+  // over the same base contributes its gates to its OWN readers only.
+  LiftCoverage LC(taint);
+  declineStaleRecordOpsImpl(M, taint, &LC);
+  // ⚠ THE READER FAMILIES ARE NOW RE-ASKED HERE TOO, and ONLY for a lifted read.
+  // This used to say "PURE OPS ONLY": a `@cq_theta_*` / `@cq_measure_*` reader
+  // reads the wire in place, and before the lift its name is the merge φ, which
+  // denotes the wire on every edge — so a plain re-sweep would flip the shipped
+  // ACCEPTS `lowering_classical_mux_phi_onereg_theta_chain.ll` and
+  // `control_phase_kickback_rail_cross_block.ll`. That argument is true of the
+  // phi's OWN incoming gates and false of a gate on another name over the same
+  // base, and the residual it left was a silent miscompile (bd r2j3.11): `int r =
+  // q; if (c) { cq_theta(&q,.125); r = q; cq_theta(&q,.25); } cq_measure(r)`
+  // measured the post-`.25` wire, byte-identical to measuring `q` twice. With the
+  // per-use record the two shipped accepts keep their exemption (their gates ARE
+  // the phi's record) and that sibling is evidence. The scope is the lifted reads
+  // alone: every other reader keeps the verdict the early slot gave it on IR the
+  // loop-rail collapse had not yet rewritten (`TaintSet::StaleQuantumReaders`).
+  recordStaleQuantumReadersImpl(M, taint, /*Delta=*/nullptr, &LC);
 }
 
 void recordStaleQuantumReaders(Module &M, TaintSet &taint,
                                const SmallPtrSetImpl<Value *> *Delta) {
+  recordStaleQuantumReadersImpl(M, taint, Delta, /*LC=*/nullptr);
+}
+
+namespace {
+
+void recordStaleQuantumReadersImpl(Module &M, TaintSet &taint,
+                                   const SmallPtrSetImpl<Value *> *Delta,
+                                   const LiftCoverage *LC) {
   // THE LINEAR RULE FOR THE READER FAMILIES (bd test_C_libtooling-3d8q, P1 —
   // the project's one KNOWN pre-existing silent miscompile). PURE ANALYSIS:
   // this function diagnoses nothing and mutates no IR; it fills
@@ -512,6 +675,11 @@ void recordStaleQuantumReaders(Module &M, TaintSet &taint,
       for (Instruction &I : BB) {
         Value *Rec = staleReaderRecordOperand(I, taint);
         if (!Rec)
+          continue;
+        // bd r2j3.11 — the post-lift pass (`LC`) asks ONLY a lifted read, and
+        // exempts it from the gates on the record it read (`LiftCoverage`).
+        SmallPtrSet<const CallInst *, 8> LiftCov;
+        if (LC && !LC->coveredFor(I, /*OpNo=*/0, LiftCov))
           continue;
         // ── THE MEMORY HOP (bd `xdu2` W1, Rule-13 review F-1, 2026-09-15 —
         //    a P1 OVER-ACCEPT: THE RAIL BANK LAUNDERED bd `3d8q` THROUGH MEMORY).
@@ -720,13 +888,22 @@ void recordStaleQuantumReaders(Module &M, TaintSet &taint,
         // `readerStalesItself(CI, Seeds.front(), …)` over each seed, not a
         // blanket withholding — and the seed set must be a singleton for that
         // question to be well posed.
-        SmallPtrSet<const CallInst *, 1> Self;
+        SmallPtrSet<const CallInst *, 8> Self;
         if (!Hopped)
           if (auto *CI = dyn_cast<CallInst>(&I))
             if (CI->getCalledFunction() &&
                 CI->getCalledFunction()->getName().starts_with("cq_theta_") &&
                 !readerStalesItself(CI, Rec, *DT, &*LI, &*SE, &taint))
               Self.insert(CI);
+        // A lifted read is not a cell read (its slot holds the base, not a bank
+        // load), so the hop never fires for one; the record's gates join `Self`
+        // as the same per-entry exemption (`Covered`: skipped as evidence, walked
+        // through).
+        if (LC) {
+          if (Hopped)
+            continue;
+          Self.insert(LiftCov.begin(), LiftCov.end());
+        }
         // (ii) `RequireEmitDominance=false` — THE POLICY BIT (see `WireWalk.h`).
         // The pure-op policy keeps the conservative dominance PRECONDITION; this
         // policy asks the harmlessness proof itself, because the reader family
@@ -815,6 +992,8 @@ void recordStaleQuantumReaders(Module &M, TaintSet &taint,
     }
   }
 }
+
+}  // namespace
 
 void declineRecordedStaleQuantumReaders(Module &M, TaintSet &taint) {
   (void)M;

@@ -2272,6 +2272,24 @@ bool warnLiveRecordRotations(Module &M, const TaintSet &taint) {
   if (taint.UserChainedRotations.empty())
     return false;  // no site in the whole module — every other cost is skipped.
   bool Warned = false;
+  // bd test_C_libtooling-dm7f.1 — the post-lift re-sweep's COVERED READERS (the
+  // per-use record, `TaintSet::LiftedMergePhi::Readers`), followed to the template
+  // each lowered to, and every record minted FROM one (`tbl[q & 7]` reads the
+  // `and`, not the phi): a record produced from a lifted read is minted after it.
+  SmallPtrSet<const Value *, 8> LiftedReaders;
+  SmallVector<const Value *, 8> LiftWork;
+  for (const TaintSet::LiftedMergePhi &L : taint.LiftedMergePhis)
+    for (const WeakTrackingVH &H : L.Readers)
+      if (const Value *V = H)
+        if (LiftedReaders.insert(V).second)
+          LiftWork.push_back(V);
+  while (!LiftWork.empty()) {
+    const Value *V = LiftWork.pop_back_val();
+    for (const User *U : V->users())
+      if (const auto *CI = dyn_cast<CallInst>(U))
+        if (isRecordProducer(CI) && LiftedReaders.insert(CI).second)
+          LiftWork.push_back(CI);
+  }
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
@@ -2341,6 +2359,19 @@ bool warnLiveRecordRotations(Module &M, const TaintSet &taint) {
           // this is "does R exist at the gate?" (clause 1's implicit premise),
           // not "is R live?" (clause 3).
           if (recordAbsentAt(R, T, *DT))
+            continue;
+          // A LIFTED READ that cannot reach `T` is never standing at it
+          // (bd dm7f.1). `recordAbsentAt` asks the CONDITIONAL-on-R form and so
+          // needs `T` to dominate `R`, which the arm gate of a lifted diamond
+          // never does: `if (c) cq_theta(&q,.125); v = q + 3;` warned at the arm's
+          // `ry` about the `add` that reads its result. No path runs `R` and then
+          // `T`, so `R` does not exist when `T` fires. Scoped to the reads the
+          // post-lift re-sweep exempted (which proved every gate that can run
+          // before them lies on the record they read) and the records minted from
+          // them; the same relaxation for every record is plausible and
+          // unreviewed.
+          if (LiftedReaders.count(R) &&
+              !isPotentiallyReachable(R, T, /*ExclusionSet=*/nullptr, &*DT))
             continue;
           if (recordIsExemptAt(R, T, taint, *DT))
             continue;

@@ -96,6 +96,12 @@ void declineRecordedStaleQuantumReaders(llvm::Module &M, TaintSet &taint);
 // diagnostics are never duplicated or re-pointed; only newly-exposed ops are
 // diagnosed. Gated on the lift witness so non-lift modules incur no churn
 // (opt exits at the first DS_Error). A no-op when nothing was lifted.
+// PER USE (bd test_C_libtooling-dm7f.1 / -r2j3.11): a read the lift recorded as a
+// read of the phi (`TaintSet::LiftedMergePhi::Uses`, directly or through an
+// in-place `cq_theta` chain) is exempt from the gates on that phi's per-path
+// record and nothing else, and the `@cq_theta_*` / `@cq_measure_*` readers of a
+// lifted phi are re-asked here under the same exemption (recorded into
+// `taint.StaleQuantumReaders` for the late drain).
 void declineLiftedStaleRecordOps(llvm::Module &M, TaintSet &taint);
 
 // Walks tainted BinaryOperators in `M`, lowers each in BB order to

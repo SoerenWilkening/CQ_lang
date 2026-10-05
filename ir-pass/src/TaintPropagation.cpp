@@ -2028,6 +2028,51 @@ bool liftOneRegisterMergePhi(PHINode *Phi, TaintSet &taint,
     Rec.Base = Chains[0].Base;
     for (Value *V : Phi->incoming_values())
       Rec.Incomings.emplace_back(V);
+    // bd r2j3.11 / dm7f.1 — the PER-USE record (`TaintSet::LiftedMergePhi`), taken
+    // BEFORE the RAUW makes a phi read and a base read the same operand.
+    for (Use &U : Phi->uses())
+      Rec.Uses.push_back({WeakTrackingVH(U.getUser()), U.getOperandNo()});
+    // The gates on the phi's per-path record. Each incoming's own chain is exact:
+    // (6)/(7) above prove a chain gate fires iff its edge is taken. An EARLIER
+    // lift's record is inherited only when EVERY incoming derives from that lift's
+    // phi — the incoming WAS the phi (a recorded `(Phi, k)` use), or the chain's
+    // bottom gate read it (a recorded `(gate, 0)` use). One edge without the
+    // inheritance can enter the merge after the earlier gate fired, on a record
+    // that omits it (`int q0 = q; if (c) Ry; if (d) Ry; else q = q0;`).
+    SmallPtrSet<Value *, 8> Gates;
+    std::optional<SmallPtrSet<Value *, 8>> Inherited;
+    for (unsigned K = 0; K < N; ++K) {
+      for (CallInst *G : Chains[K].Gates)
+        Gates.insert(G);
+      SmallPtrSet<Value *, 8> Mine;
+      const User *Reader = Chains[K].Gates.empty()
+                               ? static_cast<const User *>(Phi)
+                               : Chains[K].Gates.back();
+      const unsigned Slot = Chains[K].Gates.empty() ? K : 0;
+      for (const TaintSet::LiftedMergePhi &E : taint.LiftedMergePhis) {
+        if (static_cast<Value *>(E.Base) != Chains[0].Base)
+          continue;
+        for (const TaintSet::LiftedUse &EU : E.Uses)
+          if (static_cast<Value *>(EU.User) == Reader && EU.OpNo == Slot)
+            for (const WeakVH &EG : E.RecordGates)
+              if (Value *GV = EG)
+                Mine.insert(GV);
+      }
+      if (!Inherited) {
+        Inherited.emplace(Mine);
+      } else {
+        SmallVector<Value *, 8> Drop;
+        for (Value *GV : *Inherited)
+          if (!Mine.count(GV))
+            Drop.push_back(GV);
+        for (Value *GV : Drop)
+          Inherited->erase(GV);
+      }
+    }
+    if (Inherited)
+      Gates.insert(Inherited->begin(), Inherited->end());
+    for (Value *G : Gates)
+      Rec.RecordGates.emplace_back(G);
     taint.LiftedMergePhis.push_back(std::move(Rec));
   }
   Phi->replaceAllUsesWith(Chains[0].Base);

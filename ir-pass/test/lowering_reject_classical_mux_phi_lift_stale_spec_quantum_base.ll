@@ -2,28 +2,24 @@
 ; test_C_libtooling-2qyz's post-lift stale re-sweep, still firing after bd
 ; test_C_libtooling-d88e MOVED it below `specialize()`).
 ;
-; The TRUE-lift twin of `lowering_reject_classical_mux_phi_spec_scrubbed_base_pure_
-; consumer.ll`: the library `h` returns its QUANTUM argument, so `t = h(q, m)` IS a
-; register, the one-register lift of `phi(t, @cq_theta_si32(t, .2))` is a true renaming,
-; and the d88e re-ask (`declineFalsifiedMergePhiLifts`) keeps it. After the lift,
-; `r + 1` reads `t`, whose wire the arm's `@cq_theta_si32(t, .2)` rotated in place: a
-; pure op past a non-diagonal gate on its wire, which is exactly what the bd 2qyz
-; re-sweep (`declineLiftedStaleRecordOps`) exists to refuse. This file pins that
-; the re-sweep still fires at its NEW slot (after `specialize()` and the re-ask,
-; before the l3oi fence) — deleting the moved call turns it red. Same verdict and
-; string on main `def1b088` (cq-opt `b1603d23`), where the re-sweep ran before
-; `specialize()`.
+; The library `h` returns its QUANTUM argument, so `t = h(q, m)` IS a register and
+; the one-register lift of `phi(t, t)` is a true renaming that the d88e re-ask keeps.
+; A SIBLING `cq_theta(t, .2)` then rotates `t`'s wire before `r + 1` reads the phi:
+; a pure op past a non-diagonal gate that is NOT on the record it reads (the phi's
+; incomings are `t` itself), which is exactly what the bd 2qyz re-sweep exists to
+; refuse. This file pins that the re-sweep still fires at its NEW slot (after
+; `specialize()` and the re-ask) — deleting the moved call turns it red.
+;
+; ⚠ RE-SPELLED for bd test_C_libtooling-dm7f.1. The module that shipped here was
+; `if (m > 3) { r = t; cq_theta(&r, .2); } int u = r + 1;`, whose arm theta is the
+; phi's OWN incoming and therefore on the record `r + 1` reads: that was the dm7f.1
+; over-decline, and it now ACCEPTS with its trace argument in
+; lowering_classical_mux_phi_lift_spec_quantum_base_accept.ll. This body is hand-built
+; from that module (no C spelling: clang folds the empty-arm `phi(t, t)`), the QRAM
+; twin of the same shape being lowering_qram_reject_stale_index_lifted_phi.ll.
 ;
 ; Library TU (plain C, no CQ.h):
 ;   int h(int a, int k) { return a + k; }
-;
-; Caller TU (clang -O1 -include CQ.h):
-;   #include <stdlib.h>
-;   int h(int a, int k);
-;   int main(int c, char **v) { int m = atoi(v[1]); int q = m; cq_theta(&q, .5); int t = h(q, m); int r = t; if (m > 3) { r = t; cq_theta(&r, .2); } int u = r + 1; return cq_measure(u); }
-;
-; Regenerate: clang -O1 -emit-llvm -S the two TUs as above, then
-;   llvm-link -S caller.ll lib.ll -o <this file's body>.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
@@ -42,17 +38,19 @@ define i32 @main(i32 noundef %0, ptr nocapture noundef readonly %1) local_unname
   %6 = tail call i32 @cq_theta_si32(i32 noundef %5, double noundef 5.000000e-01) #4
   %7 = tail call i32 @h(i32 noundef %6, i32 noundef %5) #4
   %8 = icmp sgt i32 %5, 3
-  br i1 %8, label %9, label %11
+  br i1 %8, label %9, label %10
 
 9:                                                ; preds = %2
-  %10 = tail call i32 @cq_theta_si32(i32 noundef %7, double noundef 2.000000e-01) #4
-  br label %11
+  br label %10
 
-11:                                               ; preds = %9, %2
-  %12 = phi i32 [ %10, %9 ], [ %7, %2 ]
-  %13 = add nsw i32 %12, 1
+10:                                               ; preds = %9, %2
+  %11 = phi i32 [ %7, %9 ], [ %7, %2 ]           ; one register, two SSA names
+  %12 = tail call i32 @cq_theta_si32(i32 noundef %7, double noundef 2.000000e-01) #4 ; SIBLING Ry on t's wire
+  %13 = add nsw i32 %11, 1                        ; reads the PRE-Ry record
   %14 = tail call i32 @cq_measure_si32(i32 noundef %13) #4
-  ret i32 %14
+  %15 = tail call i32 @cq_measure_si32(i32 noundef %12) #4
+  %16 = add nsw i32 %15, %14
+  ret i32 %16
 }
 
 ; Function Attrs: mustprogress nofree nounwind willreturn memory(read)
