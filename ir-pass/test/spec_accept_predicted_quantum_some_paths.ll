@@ -1,9 +1,18 @@
-; spec_reject_predicted_quantum_some_paths.ll — DECLINE (bd test_C_libtooling-cepm (negative)).
+; spec_accept_predicted_quantum_some_paths.ll — ACCEPT (bd test_C_libtooling-cepm
+; (negative); was spec_reject_predicted_quantum_some_paths.ll until bd p3kd.7.2).
 ; `h(a,k) { g(a); return k > 3 ? a : k; }` returns the QUANTUM argument on SOME paths: the
 ; masked parameter reaches the `ret` through the select, `predictReturnTainted` is TRUE, and the
-; call's result stays tainted exactly as before bd cepm. The clone then declines its own
-; classical-condition select over a quantum arm. Pins that a partially-quantum return is never
-; predicted classical.
+; call's result stays tainted exactly as before bd cepm. Pins that a partially-quantum return is
+; never predicted classical: the caller's `t > 3` is a QUANTUM compare on the clone's result
+; rail (`cq_template_icmp_sgt_i32_hl`), merged by the controlled-copy mux.
+;
+; Until bd p3kd.7.2 the clone declined its own classical-condition select over a quantum arm
+; ("mixed classical/quantum select under quantum lift"). Since the owner ruling of 2026-10-06 it
+; is a classical choice of rail (CloneRailSelect.h): `k > 3` picks the BORROWED parameter rail
+; or a materialized |k> rail, and the copy-out reads the chosen one. This now matches the
+; hand-inlined twin (npT.c), which already accepted.
+;
+; Trace check, |q> and classical m: t = (m > 3) ? q : m; r = (t > 3) ? m + 5 : m.
 ;
 ; 5 TUs, each `clang -O1`, llvm-linked as tests/e2e/run_slice_multi.sh does.
 ; Caller TU (-include CQ.h):
@@ -28,9 +37,22 @@
 ; Hand-inlined twin (npT.c) accepts; this is the specializer's pre-existing select fence, unchanged.
 ; Regenerate: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/cepm_probes/mkprobes.py + gen.sh npC, then mkfix.py.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s
-; CHECK: cq specialization: mixed classical/quantum select under quantum lift
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; CHECK-LABEL: define i32 @main(
+; CHECK:       %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[M:[a-zA-Z0-9_.]+]])
+; CHECK:       %[[T:[a-zA-Z0-9_.]+]] = tail call i32 @__cq_q_h_01(i32 noundef %[[H]], i32 noundef %[[M]])
+; CHECK:       %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[T]], i32 3)
+; CHECK:       call void @cqrt_copy_i32_controlled(i32 %[[F]],
+; CHECK:       call i32 @cqrt_measure_i32(i32 %[[H]])
+; CHECK-LABEL: define internal noundef i32 @__cq_q_h_01(i32 noundef %0, i32 noundef %1)
+; CHECK-NEXT:  tail call void @__cq_q_g_1(i32 noundef %0)
+; CHECK-NEXT:  %[[C:[a-zA-Z0-9_.]+]] = icmp sgt i32 %1, 3
+; CHECK-NEXT:  %[[K:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %1)
+; CHECK-NEXT:  %[[S:[a-zA-Z0-9_.]+]] = select i1 %[[C]], i32 %0, i32 %[[K]]
+; CHECK-NEXT:  %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT:  call void @cqrt_copy_i32(i32 %[[S]], i32 %[[OUT]])
+; CHECK-NEXT:  ret i32 %[[OUT]]
 
 ; ModuleID = 'llvm-link'
 source_filename = "llvm-link"

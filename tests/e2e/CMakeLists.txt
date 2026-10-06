@@ -3496,6 +3496,24 @@ add_test(NAME e2e-slice-spec-switch-mux
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/spec_switch_mux_caller.expected.log")
 
+# bd p3kd.7.2 — classical control inside a lifted body (owner ruling 2026-10-06:
+# speculate both arms, choose the rail classically). The helpers branch or switch on
+# a parameter the caller passes CLASSICAL at runtime (argc), the CQ/QC math.h
+# mixture shape: clampsub folds at -O1 to a classical select over a quantum mux,
+# pick is a switch on the classical mode over three quantum arms. Each clone runs
+# every arm, routes the result through a `select` between rail handles, copies the
+# chosen rail out and reverses every arm on its own operands. The golden was checked
+# by hand for argc = 1: clampsub's copy-out reads the [b > 1]·(b − 1) mux rail (the
+# materialized |−1> rail stays allocated), pick's reads the shl rail (2b).
+add_test(NAME e2e-slice-spec-classical-ctl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_classical_ctl_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_classical_ctl_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_classical_ctl_caller.expected.log")
+
 # Phase 7.1-E follow-up (test_C_libtooling-mvjc): a CURATED reversible llvm.* idiom
 # intrinsic INSIDE a specialized clone. specialize_intrinsic_caller.c routes a
 # theta-tainted `x` through the separate-TU classical helper popcount_helper

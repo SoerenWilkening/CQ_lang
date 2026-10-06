@@ -57,6 +57,7 @@ add_library(CQPass MODULE
   src/CompareLowering.cpp
   src/CondLiteral.cpp
   src/CondTreeEmit.cpp
+  src/CloneRailSelect.cpp
   src/CondTreeStrip.cpp
   src/ControlDetect.cpp
   src/ControlledSymbols.cpp

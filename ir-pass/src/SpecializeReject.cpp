@@ -130,8 +130,8 @@ bool unsupportedWidth(Type *T) {
 // condition or arms are quantum at a given site. `lowerCloneSelect`
 // (Specialization.cpp) can, and it already disposes of every select by taint:
 //   * all classical → left as a classical select;
-//   * classical condition over a quantum arm → a loud "mixed classical/quantum
-//     select" decline (spec_reject_select_mixed_param.ll);
+//   * classical condition over a quantum arm → since bd p3kd.7.2 a classical
+//     choice of rail (CloneRailSelect.h; spec_accept_clone_classical_cond.ll);
 //   * quantum condition → the controlled-copy data-mux over any mix of quantum
 //     arms (threaded as handles) and classical arms (materialized by
 //     `materializeCopySource`), or, for a condition off the `collectCondTree`
@@ -451,17 +451,18 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
   //     (a dead sink, bd p3kd.7.1) and `phi` (merge mux) are accepted as
   //     flattenable control, and `indirectbr`/`callbr` decline in the walk
   //     (`invoke` declines at (0c)). A shape PredMux cannot claim (multi-exit —
-  //     the I2 controlled-return shape; a loop; a compound region; a CLASSICAL
-  //     branch or switch, which PredMux never claims) is caught by the
+  //     the I2 controlled-return shape; a loop; a compound region; a classical
+  //     region holding an op that cannot run speculatively, bd p3kd.7.2) is
+  //     caught by the
   //     `lowerCloneControl` post-flatten "still multi-block → decline" backstop
   //     and, for a surviving unlowered mux, the "no tainted select survives" guard
   //     in `buildClone` — detection stays permissive here (a shape it lets
   //     through declines loudly later, never silently), and the emission proves
   //     the flatten by construction. Detection is mask-blind, so it must not
   //     refuse a terminator the emitter lowers under SOME mask: a switch is
-  //     lowered when its scrutinee is quantum and backstopped when it is
-  //     classical (spec_accept_clone_switch.ll,
-  //     spec_reject_clone_switch_classical_scrutinee.ll).
+  //     lowered whether its scrutinee is quantum (a controlled-copy mux) or
+  //     classical (a choice of rail, bd p3kd.7.2) (spec_accept_clone_switch.ll,
+  //     spec_accept_clone_switch_classical_scrutinee.ll).
 
   // (2) ABI return: a (possibly-tainted) return must have a reversible copy-out
   //     to an i32 handle. Two admitted families (bd 3c6m.54):

@@ -92,6 +92,7 @@
 #include "llvm/Analysis/AssumptionCache.h"   // bd fn1q inc 4 (E4 classical read)
 #include "llvm/Analysis/Loads.h"             // isDereferenceableAndAligned*
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ValueTracking.h"  // isGuaranteedNotToBePoison (bd p3kd.7.2)
 #include "llvm/Analysis/ScalarEvolution.h"   // bd fn1q inc 4
 #include "llvm/Analysis/TargetLibraryInfo.h" // bd fn1q inc 4
 #include "llvm/Analysis/PostDominators.h"
@@ -128,6 +129,35 @@ bool isTaintedCtrlTerm(const Instruction *T, const TaintSet &Taint) {
     return BI->isConditional() && Taint.Tainted.count(BI->getCondition());
   if (const auto *SI = dyn_cast<SwitchInst>(T))
     return Taint.Tainted.count(SI->getCondition());
+  return false;
+}
+
+// bd p3kd.7.2 (owner ruling 2026-10-06, bd memory
+// owner-ruling-clone-classical-control-2026-10-06) — the CLONE-MODE root set.
+// Inside a Bennett clone, classical control is if-converted like quantum control:
+// both arms run, the merge becomes a select chain, and a classical-condition
+// select over quantum values becomes a select of rail handles
+// (`rewriteRailSelects`, Specialization.cpp). Sound there and nowhere else: the
+// wrap reverses EVERY forward op on its own operands and frees every minted rail
+// only after the complete reverse, so which rail a classical select picks never
+// changes what is uncomputed. A top-level classical mux has no such reverse (its
+// record/uncompute story is path-dependent: `declineClassicalMuxes`).
+//
+// A function is the clone being lowered iff one of its ARGUMENTS is in `Taint`:
+// the clone driver passes the clone's own `cloneTaint`, seeded from the clone's
+// tainted parameters and disjoint from every other function's values, so no other
+// function in the module (caller, sibling clone, library body) can root a
+// classical region here.
+bool isConditionalCtrlTerm(const Instruction *T) {
+  if (const auto *BI = dyn_cast<BranchInst>(T))
+    return BI->isConditional();
+  return isa<SwitchInst>(T);
+}
+
+bool hasTaintedArgument(const Function &F, const TaintSet &Taint) {
+  for (const Argument &A : F.args())
+    if (Taint.Tainted.count(const_cast<Argument *>(&A)))
+      return true;
   return false;
 }
 
@@ -3579,7 +3609,9 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
         // branch), this record gains a subject and owes a decline fixture.
         // Not in clone mode (`ClaimAll`): no data-select classifier runs in a
         // clone body.
-        if (!Taint.Tainted.count(BI->getCondition()) &&
+        // bd p3kd.7.2: in clone mode (`ClaimAll`) a classical branch is
+        // if-converted like a tainted one (see `isConditionalCtrlTerm`).
+        if (!ClaimAll && !Taint.Tainted.count(BI->getCondition()) &&
             !isa<ConstantInt>(BI->getCondition()) &&
             !valueWillTaintAfterFlatten(BI->getCondition(), Taint, R.InRegion,
                                         R.Entry))
@@ -3591,8 +3623,8 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
           return leave("E6-condtree", BI);
       }
     } else if (const auto *SI = dyn_cast<SwitchInst>(Term)) {
-      if (!Taint.Tainted.count(SI->getCondition()))
-        return leave("E6-classicalswitch", SI);
+      if (!ClaimAll && !Taint.Tainted.count(SI->getCondition()))
+        return leave("E6-classicalswitch", SI);  // bd p3kd.7.2: clone mode if-converts it
       Type *ScrTy = SI->getCondition()->getType();
       if (!isMuxableType(ScrTy))
         return leave("E6-switchwidth", SI);  // eq/ne flags must be mintable at this width
@@ -3841,10 +3873,12 @@ public:
   // recorded as a condition-tree rail leaf. Null when the driver does not police
   // the property; the flattener's behaviour is otherwise identical either way —
   // it only ever WRITES a bool, never reads one back.
-  // `Taint` is read only by `maskQromIndex` (a logical-width query).
+  // `Taint` is read by `maskQromIndex` (a logical-width query) and, in clone mode,
+  // by `literal` (is an edge's condition classical, so its literal is frozen; bd
+  // p3kd.7.2).
   RegionFlattener(PredMuxRegion &R, IRBuilder<> &B, PredMuxRailPhiRecord *Rec,
-                  TaintSet &Taint)
-      : R(R), B(B), Rec(Rec), Taint(Taint) {}
+                  TaintSet &Taint, bool CloneMode = false)
+      : R(R), B(B), Rec(Rec), Taint(Taint), CloneMode(CloneMode) {}
 
   void run() {
     // Process arm blocks in topological order: convert phis to select
@@ -3915,6 +3949,9 @@ private:
   IRBuilder<> &B;
   PredMuxRailPhiRecord *Rec = nullptr;  // bd woa0 — write-only, may be null
   TaintSet &Taint;
+  // bd p3kd.7.2: flattening a Bennett clone (`ClaimAll`), where classical
+  // conditions are if-converted too (see `literal`).
+  bool CloneMode = false;
   DenseMap<BasicBlock *, Value *> BlockPred;   // nullptr = ⊤ (entry)
   DenseMap<std::pair<BasicBlock *, unsigned>, Value *> LitCache;
   SmallVector<WeakTrackingVH, 32> MaybeDead;
@@ -3954,6 +3991,33 @@ private:
                               ->getCaseValue();
         L = track(B.CreateICmpEQ(SI->getCondition(), CV));
       }
+    }
+    // bd p3kd.7.2 — FREEZE A CLASSICAL EDGE LITERAL IN CLONE MODE. A classical
+    // condition in a block the flatten speculates is evaluated on basis states
+    // that never reach the block, where its classical cone may be poison (a
+    // shift by an out-of-range amount, an `nsw` overflow). The edge predicate is
+    // `and(BP, lit)`, and LLVM's `and i1 false, poison` is POISON, not false, so
+    // an unreached block's predicate would not be false and the merge chain could
+    // pick its value. `freeze` makes the literal an arbitrary but fixed bit, so
+    // the conjunction with a false block predicate is false. Identity on a
+    // non-poison literal; a tainted literal is untouched (it becomes a flag
+    // template, total on every basis state), so every clone with only quantum
+    // control is byte-identical. Clone mode needs it because there the select
+    // chain over classical predicates becomes a classical choice of RAIL
+    // (CloneRailSelect.h). This freezes EDGE LITERALS only: another speculated
+    // classical value that becomes a gate's `_hl` literal (a `fptosi` or `shl` in
+    // an unreached arm) is not frozen, so its forward gate and adjoint rely on
+    // reading one value for one SSA use pair, which holds when the lowered IR is
+    // compiled without optimization; the same holds for PredMux speculation under
+    // quantum control (bd p3kd.7.7, a latent hazard, filed at review).
+    if (CloneMode && !isa<Constant>(L) && !isGuaranteedNotToBePoison(L)) {
+      // Classical-ness is the TERMINATOR's condition's: `L` is usually a fresh
+      // compare or negation the next re-seed has not tainted yet.
+      const Value *Cond =
+          isa<BranchInst>(Term) ? cast<BranchInst>(Term)->getCondition()
+                                : cast<SwitchInst>(Term)->getCondition();
+      if (!Taint.Tainted.count(const_cast<Value *>(Cond)))
+        L = track(B.CreateFreeze(L));
     }
     LitCache[Key] = L;
     return L;
@@ -5346,9 +5410,16 @@ bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll,
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
+    // bd p3kd.7.2: in clone mode the clone's classical terminators root regions
+    // too (see `isConditionalCtrlTerm`).
+    const bool CloneBody = ClaimAll && hasTaintedArgument(F, Taint);
+    auto isRoot = [&](const Instruction *T) {
+      return isTaintedCtrlTerm(T, Taint) ||
+             (CloneBody && isConditionalCtrlTerm(T));
+    };
     bool HasTaintedCtrl = false;
     for (BasicBlock &BB : F)
-      if (isTaintedCtrlTerm(BB.getTerminator(), Taint))
+      if (isRoot(BB.getTerminator()))
         HasTaintedCtrl = true;
     if (!HasTaintedCtrl)
       continue;
@@ -5373,7 +5444,7 @@ bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll,
 
     for (BasicBlock &BB : F) {
       Instruction *T = BB.getTerminator();
-      if (!isTaintedCtrlTerm(T, Taint))
+      if (!isRoot(T))
         continue;
       PredMuxRegion R;
       if (!recoverRegion(T, PDT, DT, LInfo, OnCycle, Taint, R, ClaimAll, &Loads))
@@ -5414,7 +5485,7 @@ bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll,
         markPredictedTaintCone(PC);
       IRBuilder<> Builder(T);
       Builder.SetCurrentDebugLocation(T->getDebugLoc());
-      RegionFlattener(R, Builder, Rec, Taint).run();
+      RegionFlattener(R, Builder, Rec, Taint, /*CloneMode=*/ClaimAll).run();
       // bd adia (3c6m.55 Lever C): collapse fold residues the flatten materialized
       // (a select chain over constant incomings folds to a constant, leaving
       // a constant-operand compare feeding a "classical" branch that would
