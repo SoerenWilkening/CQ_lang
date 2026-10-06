@@ -4,7 +4,8 @@
 # Orchestrates the taint-driven CQ pipeline over one CQ translation unit plus
 # zero or more classical C libraries:
 #   1. clang -O1 -emit-llvm per .c   (ONLY the CQ TU gets -include CQ.h — C18)
-#   2. llvm-link the per-TU IR        (un-inlined bodies for the specializer)
+#   2. llvm-link the per-TU IR        (un-inlined bodies for the specializer,
+#                                      plus the math.h bundle, bd 3c6m.72)
 #   3. opt -passes=cq-lowering        (the single lowering pass; no inliner before)
 #   4. clang link                     (exactly one installer-selected backend)
 #
@@ -18,6 +19,7 @@
 #   cqc <cq_input.c> [lib.c ...] -o <output> [options]
 #     --keep-intermediates    keep <output>.{combined,lowered}.<ext> next to <output>
 #     --emit-ll               textual .ll intermediates instead of .bc (implies keep)
+#     -g                      emit debug info, so a decline names its source line
 #     --cq-prefix=<dir>       install/source prefix (default: $(dirname $0)/..)
 #     --opt=<binary>          opt binary        (default: opt-19 / $LLVM_PREFIX)
 #     --clang=<binary>        clang binary      (default: clang-19 / $LLVM_PREFIX)
@@ -38,6 +40,7 @@ usage: cqc <cq_input.c> [lib.c ...] -o <output> [options]
   --keep-intermediates    keep <output>.{combined,lowered}.<ext> next to <output>
   --emit-ll               emit intermediates as textual .ll instead of .bc
                           (implies --keep-intermediates)
+  -g                      emit debug info, so a decline names its source line
   --cq-prefix=<dir>       install/source prefix (default: $(dirname "$0")/..)
   --opt=<binary>          opt binary        (default: opt-19)
   --clang=<binary>        clang binary      (default: clang-19)
@@ -64,7 +67,7 @@ resolve_script_path() {
 }
 
 self_path="$(resolve_script_path "$0")"
-inputs=(); output=""; keep=0; emit_ll=0; uninstall=0; assume_yes=0
+inputs=(); output=""; keep=0; emit_ll=0; uninstall=0; assume_yes=0; debug_flag=()
 prefix="$(cd "$(dirname "$self_path")/.." && pwd)"
 opt_explicit=0; clang_explicit=0; link_explicit=0
 
@@ -94,6 +97,7 @@ while [[ $# -gt 0 ]]; do
         -o)                     output="$2"; shift 2 ;;
         --keep-intermediates)   keep=1; shift ;;
         --emit-ll)              keep=1; emit_ll=1; shift ;;
+        -g)                     debug_flag=(-g); shift ;;
         --cq-prefix=*)          prefix="${1#*=}"; shift ;;
         --cq-prefix)            prefix="$2"; shift 2 ;;
         --opt=*)                opt_bin="${1#*=}"; opt_explicit=1; shift ;;
@@ -231,6 +235,11 @@ if [[ -n "$backend_selection" ]]; then
         echo "cqc: installed pass missing next to $backend_selection" >&2
         exit 3
     }
+    libm_bundle="$(dirname "$backend_selection")/cq_libm.bc"
+    [[ -f "$libm_bundle" ]] || {
+        echo "cqc: installed math.h bundle missing next to $backend_selection" >&2
+        exit 3
+    }
     if [[ -n "${CQ_LLVM_BIN:-}" ]]; then
         [[ "$opt_explicit" == "1" ]] || opt_bin="$CQ_LLVM_BIN/opt"
         [[ "$clang_explicit" == "1" ]] || clang_bin="$CQ_LLVM_BIN/clang"
@@ -240,6 +249,8 @@ else
     # Source-tree development fallback: the two trace archives form one backend.
     pass_so="$(find_artifact libCQPass.so lib/libCQPass.so \
         build/ir-pass/libCQPass.so build-install/ir-pass/libCQPass.so)" || exit 3
+    libm_bundle="$(find_artifact cq_libm.bc lib/cq/cq_libm.bc \
+        build/libm/cq_libm.bc build-install/libm/cq_libm.bc)" || exit 3
     tpl_lib="$(find_artifact libcq_templates.a lib/libcq_templates.a \
         build/runtime/libcq_templates.a build-install/runtime/libcq_templates.a)" || exit 3
     rt_lib="$(find_artifact libcq_runtime.a lib/libcq_runtime.a \
@@ -278,10 +289,12 @@ idx=0
 for src in "${inputs[@]}"; do
     tu_ir="$work/$out_base.tu_$idx.$ir_ext"
     if [[ "$idx" == "0" ]]; then
-        run_stage compile "$clang_bin" -O1 -emit-llvm "$clang_emit_flag" "$src" \
+        run_stage compile "$clang_bin" -O1 "${debug_flag[@]+"${debug_flag[@]}"}" \
+            -emit-llvm "$clang_emit_flag" "$src" \
             -include CQ.h -I"$prefix/include" -o "$tu_ir"
     else
-        run_stage compile "$clang_bin" -O1 -emit-llvm "$clang_emit_flag" "$src" \
+        run_stage compile "$clang_bin" -O1 "${debug_flag[@]+"${debug_flag[@]}"}" \
+            -emit-llvm "$clang_emit_flag" "$src" \
             -I"$prefix/include" -o "$tu_ir"
     fi
     tu_irs+=("$tu_ir")
@@ -290,8 +303,25 @@ done
 
 # Stage 2: llvm-link the per-TU IR into one module — gives the specializer the
 # un-inlined callee bodies (llvm-link, not a multi-input clang invocation).
-run_stage link-ir "$link_bin" "${link_emit_flag[@]+"${link_emit_flag[@]}"}" \
-    "${tu_irs[@]}" -o "$combined"
+# A program that uses a CQ primitive (`cq_*`) also gets the math.h bundle
+# (bd 3c6m.72): every body under a private `__cq_libm_<name>`, so no classical
+# call changes callee; the pass binds a call with a quantum operand to its body
+# and erases the bodies nothing uses. A purely classical program never sees the
+# bundle, so its module is exactly what it was (owner ruling 2026-10-06).
+# Bitcode even under --emit-ll: llvm-nm reads no textual IR.
+user_ir="$work/$out_base.user.bc"
+run_stage link-ir "$link_bin" "${tu_irs[@]}" -o "$user_ir"
+if [[ "$link_bin" == */* ]]; then nm_bin="$(dirname "$link_bin")/llvm-nm"
+else nm_bin="$(pick_bin llvm-nm-19 llvm-nm)"; fi
+undefined_syms="$("$nm_bin" --undefined-only "$user_ir")" || {
+    echo "cqc: stage scan failed ($nm_bin)" >&2; exit 4; }
+if grep -qE '(^|[[:space:]])_?cq_' <<< "$undefined_syms"; then
+    run_stage link-libm "$link_bin" "${link_emit_flag[@]+"${link_emit_flag[@]}"}" \
+        "$user_ir" "$libm_bundle" -o "$combined"
+else
+    run_stage link-ir "$link_bin" "${link_emit_flag[@]+"${link_emit_flag[@]}"}" \
+        "$user_ir" -o "$combined"
+fi
 
 # Stage 3: opt cq-lowering over the combined module (no inliner before it).
 run_stage lower "$opt_bin" -load-pass-plugin "$pass_so" \

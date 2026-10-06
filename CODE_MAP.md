@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 851 maintained source files, 6674 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 851 maintained source files, 6677 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -19,7 +19,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LoopLowering.cpp` — 8062 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5473 physical lines
 - `tools/loop_twin_matrix.py` — 4115 physical lines
-- `ir-pass/src/QramLowering.cpp` — 4036 physical lines
+- `ir-pass/src/QramLowering.cpp` — 4048 physical lines
 - `tools/free_pairing_check.py` — 3845 physical lines
 - `tools/free_pairing_check_test.py` — 3785 physical lines
 - `ir-pass/src/TaintPropagation.cpp` — 3335 physical lines
@@ -33,11 +33,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/TaintPropagation.h` — 2254 physical lines
 - `tools/golden_multiset_audit.py` — 2211 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1964 physical lines
-- `ir-pass/src/CQLoweringPass.cpp` — 1848 physical lines
+- `ir-pass/src/CQLoweringPass.cpp` — 1869 physical lines
 - `tools/inplace_twin_matrix.py` — 1790 physical lines
 - `ir-pass/src/Specialization.cpp` — 1715 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
-- `tools/library_coverage/probe.py` — 1456 physical lines
+- `tools/library_coverage/probe.py` — 1476 physical lines
 - `ir-pass/src/OpcodeLowering.cpp` — 1452 physical lines
 - `ir-pass/src/SelectClassify.cpp` — 1446 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
@@ -71,7 +71,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SwitchClassify.cpp` — 621 physical lines
 - `ir-pass/src/MeasureLowering.cpp` — 614 physical lines
 - `tools/migrate_phi_fixtures_rederive.py` — 612 physical lines
-- `tools/library_coverage/full_surface/wprobe.py` — 605 physical lines
+- `tools/library_coverage/full_surface/wprobe.py` — 606 physical lines
 - `ir-pass/src/WidthDispatch.cpp` — 581 physical lines
 - `tests/e2e/slice_libm_real_asinhl.c` — 581 physical lines
 - `ir-pass/src/AbortParkEmit.cpp` — 580 physical lines
@@ -356,12 +356,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ByRefInline.cpp:255` — `cloneExpr`
 - `ir-pass/src/ByRefInline.cpp:277` — `lowerByRefInline`
 
-### `ir-pass/src/CQLoweringPass.cpp` (1848 lines)
+### `ir-pass/src/CQLoweringPass.cpp` (1869 lines)
 
-- `ir-pass/src/CQLoweringPass.cpp:57` — `eraseDeadDecls`
-- `ir-pass/src/CQLoweringPass.cpp:91` — `declineSurvivingIntrinsicCalls`
-- `ir-pass/src/CQLoweringPass.cpp:117` — `CQLoweringPass::run`
-- `ir-pass/src/CQLoweringPass.cpp:1296` — `CQLoweringPass::runOnFunction`
+- `ir-pass/src/CQLoweringPass.cpp:58` — `eraseDeadDecls`
+- `ir-pass/src/CQLoweringPass.cpp:92` — `declineSurvivingIntrinsicCalls`
+- `ir-pass/src/CQLoweringPass.cpp:118` — `CQLoweringPass::run`
+- `ir-pass/src/CQLoweringPass.cpp:1313` — `CQLoweringPass::runOnFunction`
 
 ### `ir-pass/src/CastLowering.cpp` (135 lines)
 
@@ -805,66 +805,66 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/QramIndexWidth.cpp:177` — `stripForeignQramIndexTags`
 - `ir-pass/src/QramIndexWidth.cpp:184` — `bracketQramIndexCasts`
 
-### `ir-pass/src/QramLowering.cpp` (4036 lines)
+### `ir-pass/src/QramLowering.cpp` (4048 lines)
 
-- `ir-pass/src/QramLowering.cpp:264` — `instReaches`
-- `ir-pass/src/QramLowering.cpp:343` — `singleValuedClosure`
-- `ir-pass/src/QramLowering.cpp:447` — `readFollowsLoopOnEveryPath`
-- `ir-pass/src/QramLowering.cpp:547` — `readInsideTaintedRegion`
-- `ir-pass/src/QramLowering.cpp:591` — `stackRestoreMayFree`
-- `ir-pass/src/QramLowering.cpp:602` — `indexIsAddressWidth`
-- `ir-pass/src/QramLowering.cpp:614` — `scevEqualAt`
-- `ir-pass/src/QramLowering.cpp:654` — `scevEqualInLoop`
-- `ir-pass/src/QramLowering.cpp:666` — `diagnose`
-- `ir-pass/src/QramLowering.cpp:723` — `instUnderTaintedControl`
-- `ir-pass/src/QramLowering.cpp:761` — `isAllocatorCall`
-- `ir-pass/src/QramLowering.cpp:781` — `originAlloca`
-- `ir-pass/src/QramLowering.cpp:782` — `originGlobal`
-- `ir-pass/src/QramLowering.cpp:783` — `originBad`
-- `ir-pass/src/QramLowering.cpp:786` — `sameOrigin`
-- `ir-pass/src/QramLowering.cpp:808` — `walkPtrOrigin`
-- `ir-pass/src/QramLowering.cpp:871` — `isDirectOriginPtr`
-- `ir-pass/src/QramLowering.cpp:898` — `matchAddressGep`
-- `ir-pass/src/QramLowering.cpp:946` — `matchQramAccess`
-- `ir-pass/src/QramLowering.cpp:1019` — `classifyQromRead`
-- `ir-pass/src/QramLowering.cpp:1028` — `classifyShadowAccess`
-- `ir-pass/src/QramLowering.cpp:1056` — `classicalCellAccess`
-- `ir-pass/src/QramLowering.cpp:1121` — `quantumIndexedAllocas`
-- `ir-pass/src/QramLowering.cpp:1143` — `cellAccessThrough`
-- `ir-pass/src/QramLowering.cpp:1187` — `isQromReadBlockedOnlyByControl`
-- `ir-pass/src/QramLowering.cpp:1209` — `indexWillTaintAfterFlatten`
-- `ir-pass/src/QramLowering.cpp:1303` — `qromIndexKnownInBounds`
-- `ir-pass/src/QramLowering.cpp:1413` — `classifyQromReadUnderControlImpl`
-- `ir-pass/src/QramLowering.cpp:1501` — `guardedShadowStoreShapeImpl`
-- `ir-pass/src/QramLowering.cpp:1544` — `classifyQramCarve`
-- `ir-pass/src/QramLowering.cpp:1686` — `isObservedValue`
-- `ir-pass/src/QramLowering.cpp:1720` — `coherentlyEscapesToReturn`
-- `ir-pass/src/QramLowering.cpp:1764` — `railBankCellAddress`
-- `ir-pass/src/QramLowering.cpp:1784` — `wholeArrayConstantZero`
-- `ir-pass/src/QramLowering.cpp:1794` — `railBankCarveVerdictImpl`
-- `ir-pass/src/QramLowering.cpp:2464` — `qromShapedReadTaintsIndexAfterFlatten`
-- `ir-pass/src/QramLowering.cpp:2492` — `classicalTableIndexKnownInBounds`
-- `ir-pass/src/QramLowering.cpp:2518` — `runtimeAllocaReadShape`
-- `ir-pass/src/QramLowering.cpp:2587` — `unitCounterTrips`
-- `ir-pass/src/QramLowering.cpp:2609` — `classicalRuntimeAllocaReadIsInBounds`
-- `ir-pass/src/QramLowering.cpp:2633` — `valueWillTaintAfterFlatten`
-- `ir-pass/src/QramLowering.cpp:2658` — `qromReadShapeInScope`
-- `ir-pass/src/QramLowering.cpp:2704` — `qramCarveVerdict`
-- `ir-pass/src/QramLowering.cpp:2714` — `railBankCarveVerdict`
-- `ir-pass/src/QramLowering.cpp:2723` — `guardedShadowStoreShape`
-- `ir-pass/src/QramLowering.cpp:2734` — `qramAccessReads`
-- `ir-pass/src/QramLowering.cpp:2775` — `qramClassicalIndexLoads`
-- `ir-pass/src/QramLowering.cpp:2811` — `classifyQromReadUnderControl`
-- `ir-pass/src/QramLowering.cpp:2825` — `foldVolatileConstGlobalLoads`
-- `ir-pass/src/QramLowering.cpp:2944` — `foldVolatileConstAllocaLoads`
-- `ir-pass/src/QramLowering.cpp:3071` — `eraseDeadVolatileScalarStores`
-- `ir-pass/src/QramLowering.cpp:3190` — `everyLoadIsStoreDefined`
-- `ir-pass/src/QramLowering.cpp:3239` — `promoteVolatileScalarLocals`
-- `ir-pass/src/QramLowering.cpp:3352` — `lowerQramReads`
-- `ir-pass/src/QramLowering.cpp:3545` — `emitCopyOutIfDirectMeasure`
-- `ir-pass/src/QramLowering.cpp:3592` — `qramHlFn`
-- `ir-pass/src/QramLowering.cpp:3605` — `processShadowAlloca`
-- `ir-pass/src/QramLowering.cpp:4005` — `lowerShadowMemory`
+- `ir-pass/src/QramLowering.cpp:265` — `instReaches`
+- `ir-pass/src/QramLowering.cpp:344` — `singleValuedClosure`
+- `ir-pass/src/QramLowering.cpp:448` — `readFollowsLoopOnEveryPath`
+- `ir-pass/src/QramLowering.cpp:548` — `readInsideTaintedRegion`
+- `ir-pass/src/QramLowering.cpp:592` — `stackRestoreMayFree`
+- `ir-pass/src/QramLowering.cpp:603` — `indexIsAddressWidth`
+- `ir-pass/src/QramLowering.cpp:615` — `scevEqualAt`
+- `ir-pass/src/QramLowering.cpp:655` — `scevEqualInLoop`
+- `ir-pass/src/QramLowering.cpp:667` — `diagnose`
+- `ir-pass/src/QramLowering.cpp:724` — `instUnderTaintedControl`
+- `ir-pass/src/QramLowering.cpp:762` — `isAllocatorCall`
+- `ir-pass/src/QramLowering.cpp:782` — `originAlloca`
+- `ir-pass/src/QramLowering.cpp:783` — `originGlobal`
+- `ir-pass/src/QramLowering.cpp:784` — `originBad`
+- `ir-pass/src/QramLowering.cpp:787` — `sameOrigin`
+- `ir-pass/src/QramLowering.cpp:809` — `walkPtrOrigin`
+- `ir-pass/src/QramLowering.cpp:872` — `isDirectOriginPtr`
+- `ir-pass/src/QramLowering.cpp:899` — `matchAddressGep`
+- `ir-pass/src/QramLowering.cpp:947` — `matchQramAccess`
+- `ir-pass/src/QramLowering.cpp:1020` — `classifyQromRead`
+- `ir-pass/src/QramLowering.cpp:1029` — `classifyShadowAccess`
+- `ir-pass/src/QramLowering.cpp:1057` — `classicalCellAccess`
+- `ir-pass/src/QramLowering.cpp:1122` — `quantumIndexedAllocas`
+- `ir-pass/src/QramLowering.cpp:1144` — `cellAccessThrough`
+- `ir-pass/src/QramLowering.cpp:1188` — `isQromReadBlockedOnlyByControl`
+- `ir-pass/src/QramLowering.cpp:1210` — `indexWillTaintAfterFlatten`
+- `ir-pass/src/QramLowering.cpp:1304` — `qromIndexKnownInBounds`
+- `ir-pass/src/QramLowering.cpp:1414` — `classifyQromReadUnderControlImpl`
+- `ir-pass/src/QramLowering.cpp:1502` — `guardedShadowStoreShapeImpl`
+- `ir-pass/src/QramLowering.cpp:1545` — `classifyQramCarve`
+- `ir-pass/src/QramLowering.cpp:1687` — `isObservedValue`
+- `ir-pass/src/QramLowering.cpp:1721` — `coherentlyEscapesToReturn`
+- `ir-pass/src/QramLowering.cpp:1765` — `railBankCellAddress`
+- `ir-pass/src/QramLowering.cpp:1785` — `wholeArrayConstantZero`
+- `ir-pass/src/QramLowering.cpp:1795` — `railBankCarveVerdictImpl`
+- `ir-pass/src/QramLowering.cpp:2465` — `qromShapedReadTaintsIndexAfterFlatten`
+- `ir-pass/src/QramLowering.cpp:2493` — `classicalTableIndexKnownInBounds`
+- `ir-pass/src/QramLowering.cpp:2519` — `runtimeAllocaReadShape`
+- `ir-pass/src/QramLowering.cpp:2588` — `unitCounterTrips`
+- `ir-pass/src/QramLowering.cpp:2610` — `classicalRuntimeAllocaReadIsInBounds`
+- `ir-pass/src/QramLowering.cpp:2634` — `valueWillTaintAfterFlatten`
+- `ir-pass/src/QramLowering.cpp:2659` — `qromReadShapeInScope`
+- `ir-pass/src/QramLowering.cpp:2705` — `qramCarveVerdict`
+- `ir-pass/src/QramLowering.cpp:2715` — `railBankCarveVerdict`
+- `ir-pass/src/QramLowering.cpp:2724` — `guardedShadowStoreShape`
+- `ir-pass/src/QramLowering.cpp:2735` — `qramAccessReads`
+- `ir-pass/src/QramLowering.cpp:2776` — `qramClassicalIndexLoads`
+- `ir-pass/src/QramLowering.cpp:2812` — `classifyQromReadUnderControl`
+- `ir-pass/src/QramLowering.cpp:2826` — `foldVolatileConstGlobalLoads`
+- `ir-pass/src/QramLowering.cpp:2945` — `foldVolatileConstAllocaLoads`
+- `ir-pass/src/QramLowering.cpp:3072` — `eraseDeadVolatileScalarStores`
+- `ir-pass/src/QramLowering.cpp:3191` — `everyLoadIsStoreDefined`
+- `ir-pass/src/QramLowering.cpp:3240` — `promoteVolatileScalarLocals`
+- `ir-pass/src/QramLowering.cpp:3364` — `lowerQramReads`
+- `ir-pass/src/QramLowering.cpp:3557` — `emitCopyOutIfDirectMeasure`
+- `ir-pass/src/QramLowering.cpp:3604` — `qramHlFn`
+- `ir-pass/src/QramLowering.cpp:3617` — `processShadowAlloca`
+- `ir-pass/src/QramLowering.cpp:4017` — `lowerShadowMemory`
 
 ### `ir-pass/src/RailBankPromote.cpp` (1964 lines)
 
@@ -8339,23 +8339,23 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/library_coverage/full_surface/synth_census.py:109` — `needs_control_plus`
 - `tools/library_coverage/full_surface/synth_census.py:161` — `base_of`
 
-### `tools/library_coverage/full_surface/wprobe.py` (605 lines)
+### `tools/library_coverage/full_surface/wprobe.py` (606 lines)
 
-- `tools/library_coverage/full_surface/wprobe.py:71` — `_alias_shim_dir`
-- `tools/library_coverage/full_surface/wprobe.py:120` — `_keep_shim_dir`
-- `tools/library_coverage/full_surface/wprobe.py:126` — `_synth_keep_shim`
-- `tools/library_coverage/full_surface/wprobe.py:160` — `keep_shims`
-- `tools/library_coverage/full_surface/wprobe.py:242` — `_cq_shim_dir`
-- `tools/library_coverage/full_surface/wprobe.py:248` — `_synth_cq_shim`
-- `tools/library_coverage/full_surface/wprobe.py:266` — `cq_provided_shims`
-- `tools/library_coverage/full_surface/wprobe.py:292` — `_parse_define_sig`
-- `tools/library_coverage/full_surface/wprobe.py:330` — `_synth_alias_shim`
-- `tools/library_coverage/full_surface/wprobe.py:350` — `build_defmap`
-- `tools/library_coverage/full_surface/wprobe.py:416` — `undefined_syms`
-- `tools/library_coverage/full_surface/wprobe.py:425` — `closure_link`
-- `tools/library_coverage/full_surface/wprobe.py:448` — `make_src`
-- `tools/library_coverage/full_surface/wprobe.py:464` — `make_src.proto_t`
-- `tools/library_coverage/full_surface/wprobe.py:489` — `probe`
+- `tools/library_coverage/full_surface/wprobe.py:72` — `_alias_shim_dir`
+- `tools/library_coverage/full_surface/wprobe.py:121` — `_keep_shim_dir`
+- `tools/library_coverage/full_surface/wprobe.py:127` — `_synth_keep_shim`
+- `tools/library_coverage/full_surface/wprobe.py:161` — `keep_shims`
+- `tools/library_coverage/full_surface/wprobe.py:243` — `_cq_shim_dir`
+- `tools/library_coverage/full_surface/wprobe.py:249` — `_synth_cq_shim`
+- `tools/library_coverage/full_surface/wprobe.py:267` — `cq_provided_shims`
+- `tools/library_coverage/full_surface/wprobe.py:293` — `_parse_define_sig`
+- `tools/library_coverage/full_surface/wprobe.py:331` — `_synth_alias_shim`
+- `tools/library_coverage/full_surface/wprobe.py:351` — `build_defmap`
+- `tools/library_coverage/full_surface/wprobe.py:417` — `undefined_syms`
+- `tools/library_coverage/full_surface/wprobe.py:426` — `closure_link`
+- `tools/library_coverage/full_surface/wprobe.py:449` — `make_src`
+- `tools/library_coverage/full_surface/wprobe.py:465` — `make_src.proto_t`
+- `tools/library_coverage/full_surface/wprobe.py:490` — `probe`
 
 ### `tools/library_coverage/inject_census.py` (505 lines)
 
@@ -8435,58 +8435,61 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/library_coverage/loop_bounds/sweep_cells.py:183` — `run_cell`
 - `tools/library_coverage/loop_bounds/sweep_cells.py:272` — `main`
 
-### `tools/library_coverage/probe.py` (1456 lines)
+### `tools/library_coverage/probe.py` (1476 lines)
 
-- `tools/library_coverage/probe.py:148` — `_c_fn_body`
-- `tools/library_coverage/probe.py:167` — `_leaf_in_sync`
-- `tools/library_coverage/probe.py:190` — `_cq_provided_evidence`
-- `tools/library_coverage/probe.py:213` — `cq_provided_cells`
-- `tools/library_coverage/probe.py:225` — `cq_provided_rejected`
-- `tools/library_coverage/probe.py:240` — `_injection_scoreboard`
-- `tools/library_coverage/probe.py:247` — `_full_surface_scoreboard`
-- `tools/library_coverage/probe.py:283` — `_cq_provided_scoreboard`
-- `tools/library_coverage/probe.py:306` — `mathh_union_scoreboard`
-- `tools/library_coverage/probe.py:370` — `scoreboard_lines`
-- `tools/library_coverage/probe.py:595` — `B`
-- `tools/library_coverage/probe.py:700` — `Lib`
-- `tools/library_coverage/probe.py:721` — `St`
-- `tools/library_coverage/probe.py:816` — `c_type`
-- `tools/library_coverage/probe.py:827` — `is_mixable`
-- `tools/library_coverage/probe.py:830` — `sample_literal`
-- `tools/library_coverage/probe.py:837` — `expand_variants`
-- `tools/library_coverage/probe.py:849` — `mixtures`
-- `tools/library_coverage/probe.py:863` — `mixture_label`
-- `tools/library_coverage/probe.py:874` — `gen_program`
-- `tools/library_coverage/probe.py:923` — `_run`
-- `tools/library_coverage/probe.py:934` — `first_error`
-- `tools/library_coverage/probe.py:941` — `classify`
-- `tools/library_coverage/probe.py:977` — `probe_cell`
-- `tools/library_coverage/probe.py:1025` — `rollup`
-- `tools/library_coverage/probe.py:1040` — `static_row`
-- `tools/library_coverage/probe.py:1051` — `probe_library`
-- `tools/library_coverage/probe.py:1082` — `run`
-- `tools/library_coverage/probe.py:1123` — `_lowers`
-- `tools/library_coverage/probe.py:1126` — `summarize`
-- `tools/library_coverage/probe.py:1156` — `bucket_table`
-- `tools/library_coverage/probe.py:1169` — `backend_bucket_table`
-- `tools/library_coverage/probe.py:1190` — `category_tables`
-- `tools/library_coverage/probe.py:1222` — `write_library_page`
-- `tools/library_coverage/probe.py:1239` — `aggregate`
-- `tools/library_coverage/probe.py:1253` — `_spec_backend_map`
-- `tools/library_coverage/probe.py:1266` — `render`
-- `tools/library_coverage/probe.py:1286` — `write_index`
-- `tools/library_coverage/probe.py:1353` — `update_readme`
-- `tools/library_coverage/probe.py:1416` — `bless`
-- `tools/library_coverage/probe.py:1439` — `main`
+- `tools/library_coverage/probe.py:149` — `_c_fn_body`
+- `tools/library_coverage/probe.py:168` — `_leaf_in_sync`
+- `tools/library_coverage/probe.py:191` — `_cq_provided_evidence`
+- `tools/library_coverage/probe.py:214` — `cq_provided_cells`
+- `tools/library_coverage/probe.py:226` — `cq_provided_rejected`
+- `tools/library_coverage/probe.py:241` — `_injection_scoreboard`
+- `tools/library_coverage/probe.py:248` — `_full_surface_scoreboard`
+- `tools/library_coverage/probe.py:284` — `_cq_provided_scoreboard`
+- `tools/library_coverage/probe.py:307` — `cqc_census_lines`
+- `tools/library_coverage/probe.py:333` — `mathh_union_scoreboard`
+- `tools/library_coverage/probe.py:397` — `scoreboard_lines`
+- `tools/library_coverage/probe.py:626` — `B`
+- `tools/library_coverage/probe.py:731` — `Lib`
+- `tools/library_coverage/probe.py:752` — `St`
+- `tools/library_coverage/probe.py:847` — `c_type`
+- `tools/library_coverage/probe.py:858` — `is_mixable`
+- `tools/library_coverage/probe.py:861` — `sample_literal`
+- `tools/library_coverage/probe.py:868` — `expand_variants`
+- `tools/library_coverage/probe.py:880` — `mixtures`
+- `tools/library_coverage/probe.py:894` — `mixture_label`
+- `tools/library_coverage/probe.py:905` — `gen_program`
+- `tools/library_coverage/probe.py:954` — `_run`
+- `tools/library_coverage/probe.py:965` — `first_error`
+- `tools/library_coverage/probe.py:972` — `classify`
+- `tools/library_coverage/probe.py:1008` — `probe_cell`
+- `tools/library_coverage/probe.py:1056` — `rollup`
+- `tools/library_coverage/probe.py:1071` — `static_row`
+- `tools/library_coverage/probe.py:1082` — `probe_library`
+- `tools/library_coverage/probe.py:1113` — `run`
+- `tools/library_coverage/probe.py:1154` — `_lowers`
+- `tools/library_coverage/probe.py:1157` — `summarize`
+- `tools/library_coverage/probe.py:1187` — `bucket_table`
+- `tools/library_coverage/probe.py:1200` — `backend_bucket_table`
+- `tools/library_coverage/probe.py:1221` — `category_tables`
+- `tools/library_coverage/probe.py:1253` — `write_library_page`
+- `tools/library_coverage/probe.py:1270` — `aggregate`
+- `tools/library_coverage/probe.py:1284` — `_spec_backend_map`
+- `tools/library_coverage/probe.py:1297` — `render`
+- `tools/library_coverage/probe.py:1317` — `write_index`
+- `tools/library_coverage/probe.py:1384` — `update_readme`
+- `tools/library_coverage/probe.py:1436` — `bless`
+- `tools/library_coverage/probe.py:1459` — `main`
 
-### `tools/library_coverage/runtime_census.py` (274 lines)
+### `tools/library_coverage/runtime_census.py` (260 lines)
 
-- `tools/library_coverage/runtime_census.py:31` — `run`
-- `tools/library_coverage/runtime_census.py:36` — `variants`
-- `tools/library_coverage/runtime_census.py:53` — `source`
-- `tools/library_coverage/runtime_census.py:85` — `measure`
-- `tools/library_coverage/runtime_census.py:175` — `render_report`
-- `tools/library_coverage/runtime_census.py:217` — `main`
+- `tools/library_coverage/runtime_census.py:32` — `run`
+- `tools/library_coverage/runtime_census.py:37` — `variants`
+- `tools/library_coverage/runtime_census.py:54` — `source`
+- `tools/library_coverage/runtime_census.py:91` — `calls_in`
+- `tools/library_coverage/runtime_census.py:102` — `measure`
+- `tools/library_coverage/runtime_census.py:167` — `render_report`
+- `tools/library_coverage/runtime_census.py:208` — `sha256`
+- `tools/library_coverage/runtime_census.py:212` — `main`
 
 ### `tools/link_smoke_selftest.py` (142 lines)
 

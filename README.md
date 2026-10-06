@@ -155,30 +155,23 @@ when no installer selection exists.
 
 ## Demonstrator — standard-library coverage under tainted inputs
 
-> **Baseline, not the current number.** The figures below were scored before the
-> [northstar](NORTHSTAR.md) goal-2 rule: a function counts only when it compiles for
-> non-trivial input (every classical/quantum argument combination, and classical values
-> that exercise the real body, so `powf` at exponents `0.5`/`2.0` does not count). They
-> have now been re-scored with runtime operands; see the [2026-09-30 recheck](docs/audits-2026-09-30/RECHECK.md) and its separate provider rows. The new measurements do not bless additional semantic goldens.
+<!-- MATHH-HEADLINE:START -->
+> ### `math.h` coverage through `cqc`: **71/180 scalar-input cells (39%)**
+>
+> **19/120** source-injected · **6/6** CQ-provided · **36/42** intrinsic · **3/3** classical-only · **10/12** macro. A cell counts when every runtime C/Q mixture builds, lowers, links and trace-runs through `tools/cqc`, the driver a user runs ([detail](tools/library_coverage/runtime_census.md); regenerate with `python3 tools/library_coverage/runtime_census.py --output tools/library_coverage/runtime_census.json`). The `nan` row is classical-only and outside the scalar total.
+>
+> The lab-harness scoreboards in [`COVERAGE.md`](tools/library_coverage/COVERAGE.md) inject openlibm bodies `cqc` does not ship (bd `3c6m.70`, `3c6m.72`). They measure what the compiler can lower inside that harness, not what a user can compile.
+<!-- MATHH-HEADLINE:END -->
 
-**Baseline coverage:** `math.h` **159/183 cells (87%)** — **101/120** real-body
-injection, **6/6** CQ-provided leaves, **42/42** recognition cases, **10/12**
-type-generic macros, and **0/3** `nan` cases (no quantum input by design).
+The headline counts what `tools/cqc` compiles: every probe uses runtime operands
+and every classical/quantum argument combination ([northstar](NORTHSTAR.md) goal 2).
+`cqc` injects the real openlibm source (CQ's own branchless code for `sin`/`cos`/`tan`)
+for a math.h call with a quantum operand; a classical call keeps the system libm.
+A body whose quantum branches the function lifter cannot lower yet still fails
+loudly, and is a compiler gap (bd `p3kd`).
 
-The broader library probe reports **48/222 (21.6%) lowering-verified** cases and
-**28/222 (12.6%) backend-available** cases. Injection coverage comes from the
-full-surface census using real openlibm bodies; the other rows are separate
-recognition/CQ-provided scoreboards. “Verified” means the lowered template trace
-links, runs, and matches a committed golden; the trace runtime does not simulate
-a unitary. See [`tools/library_coverage/COVERAGE.md`](tools/library_coverage/COVERAGE.md)
-for the generated tables and methodology.
-
-For users, the normal setup is simply a C source file plus the standard
-library headers and runtime supplied by the host toolchain. Compile it with
-`tools/cqc` as shown below. The coverage numbers use a separate developer
-harness that injects openlibm source bodies before LLVM sees the program; that
-source-injection path is not currently exposed as a `tools/cqc` option and
-should not be treated as a user installation step.
+“Verified” in the lab scoreboards means the lowered template trace links, runs,
+and matches a committed golden; the trace runtime does not simulate a unitary.
 
 Example: taint a `math.h` input and measure the lowered result:
 
@@ -201,12 +194,10 @@ tools/cqc tainted_sqrt.c -o tainted_sqrt
 ./tainted_sqrt
 ```
 
-This `cqc` example uses the compiler’s recognized `sqrt` route. It does **not**
-use a source-injected openlibm body: `tools/cqc` does not automatically inject
-or link one. Passing an openlibm `.c` file as an additional
-`tools/cqc` input would compile it as a separate classical translation unit,
-but would not by itself vendor and rename the coverage slice or make that body
-the selected `math.h` implementation.
+This example uses the hardware route for `sqrt`. A call such as `sin(x)` or
+`cbrt(x)` on a quantum `x` instead lifts the openlibm (or CQ) body `cqc` injects;
+the build fetches openlibm at a pinned commit (`CQ_OPENLIBM_SOURCE_DIR` points it at
+a local checkout instead).
 
 ## Documentation
 

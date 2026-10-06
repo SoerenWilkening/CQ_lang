@@ -27,6 +27,7 @@
 #include "RailBankPromote.h"
 #include "ReturnMerge.h"        // unifyTaintedReturns (bd dm7f.5)
 #include "RotationLowering.h"
+#include "LibmBinding.h"
 #include "SpecializeDetect.h"
 #include "SpecializePlan.h"
 #include "Specialization.h"
@@ -128,7 +129,15 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // vacuous term it now is; see TaintPropagation.h.)
   if (taint.ThetaCalls.empty() && taint.PhiCalls.empty() &&
       taint.PhaseCalls.empty() && taint.MeasureCalls.empty())
-    return PreservedAnalyses::all();
+    return eraseUnusedLibmBodies(M, /*KeepBindable=*/false) ? PreservedAnalyses::none()
+                                    : PreservedAnalyses::all();
+
+  // bd `test_C_libtooling-3c6m.72` — a quantum math.h call reaches the body
+  // `tools/cqc` injected (`__cq_libm_<name>`); a classical one keeps the system
+  // libm. FIRST, so every pre-pass below sees an ordinary call to a visible
+  // callee. Re-asked before `detectSpecializations` (L1). See LibmBinding.h.
+  bindLibmCalls(M, taint, wd);
+  eraseUnusedLibmBodies(M, /*KeepBindable=*/true);
 
   // bd `test_C_libtooling-dm7f.5` — MULTI-EXIT `ret` NORMALIZATION, SLOT (a) of
   // two (`ReturnMerge.h`). A function whose tainted-condition `br`/`switch`
@@ -585,6 +594,13 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // TaintPropagation.h for what it can and cannot see.
   if (declineStaleTaintSet(M, wd, taint))
     return PreservedAnalyses::none();
+  // bd 3c6m.72 — re-ask the early `bindLibmCalls` after the pre-passes above,
+  // which can taint a math.h call the first round saw as classical. AFTER the
+  // stale-taint postcondition, so its own re-propagation hides nothing. NOT an
+  // L1 round-2 re-ask: taint grown later (`adjudicateTaintDelta`,
+  // `repropagateControlMerges`) binds nothing, and the call then fails loudly
+  // as an unknown callee (an over-decline, bd 3c6m.75).
+  bindLibmCalls(M, taint, wd);
   SpecPlan plan6;
   detectSpecializations(M, taint, wd, plan6);
 
@@ -1289,6 +1305,7 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   if (declineNonHandleBankStores(M))
     return PreservedAnalyses::none();
   eraseDeadDecls(M, wd);
+  eraseUnusedLibmBodies(M, /*KeepBindable=*/false);  // bd 3c6m.72, LibmBinding.h
 
   return PreservedAnalyses::none();
 }
@@ -1304,7 +1321,9 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   TaintSet taint = propagate(M, wd);
   if (taint.ThetaCalls.empty() && taint.PhiCalls.empty() &&
       taint.PhaseCalls.empty() && taint.MeasureCalls.empty())
-    return false;
+    return eraseUnusedLibmBodies(M, /*KeepBindable=*/false);
+  bindLibmCalls(M, taint, wd);  // bd 3c6m.72 — see run().
+  eraseUnusedLibmBodies(M, /*KeepBindable=*/true);
 
   // Restrict the work lists to the requested function. Callers of
   // runOnFunction expect side-effects only on F.
@@ -1549,6 +1568,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // here would silently diverge, WI-1.12). See run() for the rationale.
   if (declineStaleTaintSet(M, wd, taint))  // bd otam — see run().
     return false;
+  bindLibmCalls(M, taint, wd);  // bd 3c6m.72 — see run().
   SpecPlan plan6;
   detectSpecializations(M, taint, wd, plan6);
 
@@ -1842,6 +1862,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   if (declineNonHandleBankStores(M))
     return true;
   eraseDeadDecls(M, wd);
+  eraseUnusedLibmBodies(M, /*KeepBindable=*/false);  // bd 3c6m.72 — see run().
   return true;
 }
 

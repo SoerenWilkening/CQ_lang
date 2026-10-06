@@ -50,6 +50,7 @@ COVERAGE_DIR = HERE / "coverage"
 GOLDENS = HERE / "goldens"
 README = ROOT / "README.md"
 INJECTION_SUMMARY = HERE / "injection_summary.json"   # written by inject_census.py
+CQC_CENSUS = HERE / "runtime_census.json"             # written by runtime_census.py
 TIMEOUT = 40
 
 # The RECOGNITION keep-set (Rule 18; bd libm-coverage-source-injection-rule / 3c6m.56).
@@ -303,6 +304,32 @@ def _cq_provided_scoreboard():
     except Exception:
         return None
 
+def cqc_census_lines(md_link="tools/library_coverage/runtime_census.md",
+                     lab="in [`COVERAGE.md`](tools/library_coverage/COVERAGE.md)"):
+    """The math.h number a USER gets: runtime_census.py compiles every probe with
+    tools/cqc (bd 3c6m.70). It leads every page. The lab scoreboards below it measure
+    a harness pipeline cqc does not run, so they never stand in for it."""
+    try:
+        data = json.loads(CQC_CENSUS.read_text())
+    except Exception:
+        return None
+    score = data["score"]
+    scalar = {p: t for p, t in score.items() if p != "classical-only"}
+    c = sum(t["covered"] for t in scalar.values())
+    t = sum(t["total"] for t in scalar.values())
+    comp = " · ".join(f"**{v['covered']}/{v['total']}** {k}" for k, v in score.items())
+    return [f"> ## `math.h` coverage through `cqc`: **{c}/{t} scalar-input cells ({round(100*c/t)}%)**",
+            ">",
+            f"> {comp}. A cell counts when every runtime C/Q mixture builds, lowers, links and "
+            f"trace-runs through `tools/cqc`, the driver a user runs ([detail]({md_link}); "
+            f"regenerate with `python3 tools/library_coverage/runtime_census.py --output "
+            f"tools/library_coverage/runtime_census.json`). The `nan` row is classical-only and "
+            f"outside the scalar total.",
+            ">",
+            f"> The lab-harness scoreboards {lab} inject openlibm bodies `cqc` does not "
+            f"ship (bd `3c6m.70`, `3c6m.72`). They measure what the compiler can lower inside "
+            f"that harness, not what a user can compile."]
+
 def mathh_union_scoreboard():
     """THE HEADLINE (owner ruling 2026-08-22, bd `fhas`): whole-`math.h` coverage across
     ALL routes — recognition keep-set + injection + CQ-PROVIDED + macros — over the full
@@ -433,7 +460,7 @@ def scoreboard_lines(short=False, census_link="tools/library_coverage/INJECTION-
     if mu is not None:
         mc, mt, mbrk = mu
         comp = " + ".join(f"{c}/{t} {b}" for b, c, t in mbrk)
-        headline = (f"> ## `math.h` coverage: **{mc}/{mt} cells ({round(100*mc/mt)}%)**\n"
+        headline = (f"> ## Lab harness `math.h` coverage (not reachable through `cqc`): **{mc}/{mt} cells ({round(100*mc/mt)}%)**\n"
                     f">\n"
                     f"> **Composition — {comp}.** The routes are measured SEPARATELY and "
                     f"stay separately quotable; since the owner ruling of 2026-08-22 "
@@ -451,6 +478,10 @@ def scoreboard_lines(short=False, census_link="tools/library_coverage/INJECTION-
                     f"compiler work.\n>")
     else:
         headline = "> ## `math.h` coverage: **see the full-surface census**\n>"
+    cqc_head = cqc_census_lines(census_link.replace("INJECTION-CENSUS.md", "runtime_census.md"),
+                                lab="below")
+    if cqc_head is not None:
+        headline = "\n".join(cqc_head) + "\n\n" + headline
     head = (f"{headline}\n"
             f"> **{nrows} separately-measured coverage scoreboards "
             f"(bd `libm-scoreboard-two-numbers`) — summable ONLY as above, never "
@@ -1361,7 +1392,7 @@ def update_readme(per_lib, agg):
     L = []
     if mu is not None:
         mc, mt, mbrk = mu
-        L += [f"**`math.h` coverage: {mc}/{mt} cells ({round(100*mc/mt)}%)** — "
+        L += [f"**Lab harness `math.h` coverage (not reachable through `cqc`): {mc}/{mt} cells ({round(100*mc/mt)}%)** — "
               + " + ".join(f"{c}/{t} {b}" for b, c, t in mbrk)
               + ". Summable only with that composition shown (bd `fhas`); the "
                 "COMPILER-progress number is the injection row alone.", ""]
@@ -1395,20 +1426,9 @@ def update_readme(per_lib, agg):
         print("updated README badge")
     # The leading `math.h` headline (bd `fhas`), generated for the reason in the
     # HEADLINE_START comment. Absent markers => nothing to do, never an error.
-    if mu is not None and HEADLINE_START in txt and HEADLINE_END in txt:
-        mc, mt, mbrk = mu
-        H = [f"> ### `math.h` coverage: **{mc}/{mt} cells ({round(100*mc/mt)}%)**", ">",
-             "> " + " · ".join(f"**{c}/{t}** {b}" for b, c, t in mbrk) + ".", ">",
-             f"> Read it as *\"CQ compiles {mc} of the {mt} modelled `math.h` cells\"* — a "
-             f"caller of `sqrt()` gets a real lowering. It is **not** *\"CQ compiled "
-             f"openlibm's body {mc} times\"*: the recognition cells have **no injectable "
-             f"body at all** (Rule 18) and the CQ-PROVIDED cells use **CQ's own reversible "
-             f"leaf**, not upstream's. **The number that tracks COMPILER progress is the "
-             f"injection row alone** — recognition and CQ-PROVIDED move without any "
-             f"compiler work. Computed, never hand-copied "
-             f"(`probe.mathh_union_scoreboard()`), and **-3** if `fma{{,f,l}}`'s *partial* "
-             f"cells are excluded. Owner ruling 2026-08-22, bd `fhas`; composition is "
-             f"mandatory wherever the total appears."]
+    cqc_head = cqc_census_lines()
+    if cqc_head is not None and HEADLINE_START in txt and HEADLINE_END in txt:
+        H = [line.replace("> ## ", "> ### ", 1) for line in cqc_head]
         head = HEADLINE_START + "\n" + "\n".join(H) + "\n" + HEADLINE_END
         README.write_text(txt.split(HEADLINE_START)[0] + head + txt.split(HEADLINE_END)[1])
         print("updated README math.h headline")

@@ -7,7 +7,13 @@
 
 > *These two figures are the **per-function probe harness** (does the spelling lower in a small C harness — the `Lowers`/`Verified`/`Backend-avail` columns below), across ALL libraries. They are a DIFFERENT INSTRUMENT from the `math.h` coverage headline that follows, which additionally counts the real openlibm bodies the **source-injection census** compiles. Both are true of `math.h`; they answer different questions, which is why neither replaces the other.*
 
-> ## `math.h` coverage: **159/183 cells (87%)**
+> ## `math.h` coverage through `cqc`: **71/180 scalar-input cells (39%)**
+>
+> **19/120** source-injected · **6/6** CQ-provided · **36/42** intrinsic · **3/3** classical-only · **10/12** macro. A cell counts when every runtime C/Q mixture builds, lowers, links and trace-runs through `tools/cqc`, the driver a user runs ([detail](runtime_census.md); regenerate with `python3 tools/library_coverage/runtime_census.py --output tools/library_coverage/runtime_census.json`). The `nan` row is classical-only and outside the scalar total.
+>
+> The lab-harness scoreboards below inject openlibm bodies `cqc` does not ship (bd `3c6m.70`, `3c6m.72`). They measure what the compiler can lower inside that harness, not what a user can compile.
+
+> ## Lab harness `math.h` coverage (not reachable through `cqc`): **159/183 cells (87%)**
 >
 > **Composition — 101/120 injection + 6/6 CQ-PROVIDED + 42/42 recognition keep-set + 10/12 type-generic macros + 0/3 nan (by design).** The routes are measured SEPARATELY and stay separately quotable; since the owner ruling of 2026-08-22 (bd `fhas`) they may be summed, but **only with this composition shown**. Read the total as *"CQ compiles 159 of the 183 modelled `math.h` cells"* — which is true, a user calling `sqrt()` gets a real lowering. It is **NOT** *"CQ compiled openlibm's body 159 times"*: the recognition cells have **no injectable body at all** (Rule 18) and the CQ-PROVIDED cells use **CQ's own leaf**, not upstream's. Sensitivity, so the figure is never quoted barer than it is: **-3** if `fma{,f,l}`'s *partial* cells are excluded, and the 3 by-design `nan` cells arguably do not belong in a denominator at all (nothing to taint). **The campaign number for COMPILER progress remains the injection row alone** — rows (1) and (3) move with no compiler work.
 >

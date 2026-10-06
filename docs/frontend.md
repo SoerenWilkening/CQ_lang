@@ -787,14 +787,15 @@ The IR pass uses different mechanisms depending on what is visible at pass time.
   consumed by an unknown callee`).
 - **A library function — its source, in the module.** A `math.h` function
   such as `sin` with quantum arguments and no body in the module fails the
-  same way (measured: `sin(x)` on a tainted `double` gives `cq taint escape:
-  tainted value consumed by an unknown callee`). A library function means its
+  same way (measured without the bundle: `sin(x)` on a tainted `double` gives
+  `cq taint escape: tainted value consumed by an unknown callee`). A library function means its
   real implementation compiled into the module before the pass runs, so the pass
-  sees ordinary opcodes; it is never recognized by name. Today that injection is
-  done by the coverage harness (`tools/library_coverage/`); `tools/cqc` links
-  only the sources it is given and does not inject a library body itself
-  ([`backend.md`](./backend.md) §7.1). Library coverage and its accounting are
-  NORTHSTAR goal 2.
+  sees ordinary opcodes; it is never recognized by name. `tools/cqc` injects it:
+  it links a bundle of openlibm bodies under private names into every program
+  that uses a CQ primitive,
+  and the pass sends only a call with a quantum operand to that body, so a
+  classical call still reaches the system libm ([`backend.md`](./backend.md)
+  §7.1). Library coverage and its accounting are NORTHSTAR goal 2.
 - **A hardware-mapped LLVM intrinsic.** A handful of operations that
   `clang -O1` turns into an `@llvm.*` intrinsic (`sqrt`, `fabs`, `floor`, the
   integer bit intrinsics `ctpop`/`ctlz`/`cttz`/`bswap`, `smin`/`umax`, …) lower

@@ -169,6 +169,49 @@ if(TARGET cq-opt)
     install(TARGETS cq-opt RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 endif()
 
+# The math.h bundle tools/cqc injects (bd 3c6m.72): openlibm built to bitcode
+# at a pinned commit, every body renamed __cq_libm_<name>, CQ's owner-ruled
+# trig bodies in place of openlibm's sin/cos/tan. The pass binds only a call
+# with a quantum operand to it; classical calls keep the system libm.
+set(CQ_OPENLIBM_COMMIT 5fe399749f9276eaa0b8403e507470da05cbbb3f)
+set(CQ_OPENLIBM_SOURCE_DIR "" CACHE PATH
+    "openlibm checkout at ${CQ_OPENLIBM_COMMIT} (empty: fetch it at configure time)")
+if(NOT CQ_OPENLIBM_SOURCE_DIR)
+    include(FetchContent)
+    # SOURCE_SUBDIR names no CMakeLists.txt, so openlibm is fetched, not built.
+    FetchContent_Declare(cq_openlibm
+        GIT_REPOSITORY https://github.com/JuliaMath/openlibm.git
+        GIT_TAG ${CQ_OPENLIBM_COMMIT}
+        SOURCE_SUBDIR cq-fetch-only)
+    FetchContent_MakeAvailable(cq_openlibm)
+    set(_CQ_OPENLIBM_DIR "${cq_openlibm_SOURCE_DIR}")
+else()
+    set(_CQ_OPENLIBM_DIR "${CQ_OPENLIBM_SOURCE_DIR}")
+endif()
+set(_CQ_LIBM_DIR "${CMAKE_CURRENT_BINARY_DIR}/libm")
+set(_CQ_LIBM_TOOLS "${CMAKE_CURRENT_SOURCE_DIR}/tools/library_coverage")
+add_custom_command(
+    OUTPUT "${_CQ_LIBM_DIR}/cq_libm.bc"
+    COMMAND "${CMAKE_COMMAND}" -E rm -rf "${_CQ_LIBM_DIR}/bc"
+    COMMAND "${CQ_MAP_PYTHON}" "${_CQ_LIBM_TOOLS}/full_surface/build_corpus.py"
+            --openlibm "${_CQ_OPENLIBM_DIR}" --out "${_CQ_LIBM_DIR}/bc"
+            --expect-bc 252 --clang "${LLVM_TOOLS_BINARY_DIR}/clang"
+    COMMAND "${CMAKE_COMMAND}" -E env "CQ_LLVM_BIN=${LLVM_TOOLS_BINARY_DIR}"
+            "${CQ_MAP_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/libm_bundle.py"
+            --openlibm "${_CQ_OPENLIBM_DIR}" --bc "${_CQ_LIBM_DIR}/bc"
+            --out "${_CQ_LIBM_DIR}/cq_libm.bc" --expect-commit ${CQ_OPENLIBM_COMMIT}
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/libm_bundle.py"
+            "${_CQ_LIBM_TOOLS}/full_surface/build_corpus.py"
+            "${_CQ_LIBM_TOOLS}/full_surface/wprobe.py"
+            "${_CQ_LIBM_TOOLS}/probe.py"
+            "${_CQ_LIBM_TOOLS}/branchless/sin.c" "${_CQ_LIBM_TOOLS}/branchless/cos.c"
+            "${_CQ_LIBM_TOOLS}/branchless/tan.c" "${_CQ_LIBM_TOOLS}/branchless/sinl.c"
+            "${_CQ_LIBM_TOOLS}/branchless/cosl.c" "${_CQ_LIBM_TOOLS}/branchless/tanl.c"
+    COMMENT "Building the math.h bundle (openlibm ${CQ_OPENLIBM_COMMIT})"
+    VERBATIM)
+add_custom_target(cq_libm_bundle ALL DEPENDS "${_CQ_LIBM_DIR}/cq_libm.bc")
+install(FILES "${_CQ_LIBM_DIR}/cq_libm.bc" DESTINATION "${CMAKE_INSTALL_LIBDIR}/cq")
+
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/include/CQ.h"
         DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 install(FILES

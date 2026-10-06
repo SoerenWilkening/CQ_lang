@@ -614,15 +614,26 @@ sound for a non-injective `f` only while the sources stay live.
 A tainted call to any other external — the transcendentals, `pow`, direct
 libm entry points — has no template and declines loudly
 (`cq taint escape: tainted value consumed by an unknown callee`) unless its
-source has been injected. Injection is done outside the pass: the body is
-vendored or `llvm-link`ed into the module and the caller is compiled with
-`-fno-builtin-<fn>` so the named call resolves to the body. For `sin`, `cos`
-and `tan` at `f64`/`f80` the body that is injected is CQ's own branchless leaf
-(`tools/library_coverage/branchless/`), which the census reports as
-**CQ-provided** and never as upstream injection (`CLAUDE.md` R14,
-`tools/library_coverage/probe.py`). The coverage census that measures all of
-this lives under `tools/library_coverage/`; per NORTHSTAR goal 2 a function
-counts only when it compiles for non-trivial input.
+source has been injected. `tools/cqc` injects it (bd `3c6m.72`): the build
+compiles openlibm at a pinned commit to one bitcode bundle
+(`tools/libm_bundle.py`, target `cq_libm_bundle`, installed next to the pass)
+in which every definition is renamed `__cq_libm_<name>` and only the math.h entry
+points stay external, and `cqc` `llvm-link`s it into every program that uses a CQ
+primitive (a purely classical program never sees it). The pass (`LibmBinding.h`) retargets only a call with a
+tainted operand — to a declared `@<name>`, or to an `@llvm.<fn>.<ty>` intrinsic
+LangRef defines equal to the libm function — to `__cq_libm_<name>` when that body
+is public and has the call's exact type and calling convention (a program's own
+external definition of the name wins), and the specializer lifts it like any
+visible classical callee (§7.2; no inlining). A lifted math.h call inherits the
+lifter's open stale-argument defect (bd `r2j3.6`). A classical call keeps its callee and the
+system libm, and the pass erases every bundle body nothing uses, so a purely
+classical program is unchanged. A curated hardware intrinsic keeps its direct
+template. For `sin`, `cos` and `tan` at `f64`/`f80` the bundle carries CQ's own
+branchless leaf (`tools/library_coverage/branchless/`), which the census reports
+as **CQ-provided** and never as upstream injection (`CLAUDE.md` R14,
+`tools/library_coverage/probe.py`). The census (`runtime_census.py`) compiles
+every probe through `tools/cqc`; per NORTHSTAR goal 2 a function counts only when
+it compiles for non-trivial input.
 
 ### 7.2 Clone-on-taint
 

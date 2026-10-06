@@ -8,7 +8,8 @@
 import os, re, subprocess, sys, tempfile
 from pathlib import Path
 
-LLVM = Path("/usr/local/opt/llvm@19/bin")
+# CQ_LLVM_BIN: the build passes its configured LLVM (tools/libm_bundle.py).
+LLVM = Path(os.environ.get("CQ_LLVM_BIN", "/usr/local/opt/llvm@19/bin"))
 CLANG, OPT, LINK, DIS = LLVM/"clang", LLVM/"opt", LLVM/"llvm-link", LLVM/"llvm-dis"
 AS = LLVM/"llvm-as"   # bd vuy6: assemble the synthesized .set-alias forwarding shims
 HERE = Path(__file__).resolve().parent
