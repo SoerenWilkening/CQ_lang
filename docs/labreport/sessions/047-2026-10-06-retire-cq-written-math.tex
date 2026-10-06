@@ -1,0 +1,97 @@
+\labsessionheader{2026-10-06}{Retiring CQ's own C math: what a ``hand-written'' function means}%
+  {b2986d04}{n/a}{none}
+
+\subsection*{Goal}
+Earlier today the owner asked to keep only the trigonometric ``hand-written'' functions.
+I read that as CQ's own C source for \texttt{sin} (the branchless leaves of bd \texttt{guwr},
+2026-07-31). The owner meant a function that lowers to one template call whose reversible
+circuit a backend supplies, with Bennett.jl as reference. They found many instructions and no
+\texttt{cq\_template\_sin} call in the lowered IR. Nothing in the repository recorded the meaning,
+and the shipped bundle still carried CQ-written C. The session wrote the definition down and
+removed every CQ-written implementation of a library function (\bd{3c6m.78}).
+
+\subsection*{Owner rulings this session}
+\begin{itemize}
+  \item A \emph{hand-written} function means a direct route: the compiler emits one call,
+  \texttt{cq\_template\_<fn>\_<W>}, and a circuit backend supplies the circuit (Bennett.jl as
+  reference, never linked). CQ never writes its own C or IR version of a library function.
+  Recorded in CLAUDE.md R14, NORTHSTAR goal 2, \fpath{docs/backend.md} \S7.1, README and bd
+  memory \texttt{hand-written-means-backend-circuit}. bd \texttt{guwr} was granted on Bennett's
+  \texttt{soft\_sin} circuit but implemented as CQ-written C; it is reversed.
+  \item Delete the hand-written C, the CQ-provided census component and the
+  \texttt{slice\_branchless\_*} slices.
+\end{itemize}
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \commit{b2986d04} --- \bd{3c6m.78} --- deleted 148 files: the 36 leaves in
+  \fpath{tools/library_coverage/branchless/}, 51 \texttt{slice\_branchless\_*} and
+  \texttt{slice\_hybrid\_lgammal} slices with their goldens, five lit fixtures compiled from the
+  leaves, and the authored-body census (\fpath{inject_census.py}, its outputs,
+  \fpath{census_to_tickets.py}). The \texttt{cqc} bundle no longer carries
+  \texttt{sin}/\texttt{cos}/\texttt{tan}/\texttt{sinl}/\texttt{cosl}/\texttt{tanl} leaves. Each
+  name with a direct route at a width (read from \fpath{tools/intrinsic_table.yaml}) forwards to
+  its intrinsic (\texttt{wprobe.direct\_shims}), so a lifted openlibm body that calls
+  \texttt{sin} or \texttt{atan} on a \texttt{double} reaches the one-call lowering. The census
+  tools lost the CQ-provided row, its A/B re-probe and its gate.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fdoc\ \fpath{docs/backend.md} \S7.1 opened with ``\texttt{@sin} $\to$
+  \texttt{@cq\_template\_sin\_f64} does not exist'' and later described exactly that route. Fixed.
+  \item \fdoc\ CLAUDE.md R14 still said ``hand-authored bodies can count as CQ-provided'' and
+  described injection as ``llvm-link and inline''; \texttt{cqc} binds and lifts without inlining.
+  Fixed.
+  \item \foverdecline\ \texttt{float} and \texttt{long double} \texttt{sin}/\texttt{cos}/\texttt{tan}
+  now fail loudly: Bennett.jl has only binary64, and openlibm's Payne-Hanek source does not lower.
+  Filed as \bd{3c6m.79}. \texttt{lgammal} and \texttt{tgammal} block on openlibm \texttt{sinl} again.
+  \item \fdoc\ The deleted slices were the only e2e trace witnesses of 24 template symbols
+  (\texttt{rint\_f64}, \texttt{fmax\_f64}, \texttt{copysign\_f64}, \texttt{trunc\_f64},
+  \texttt{fcmp\_olt\_f64}, \ldots). \texttt{runtime\_link\_smoke} still proves each is defined.
+  User-level replacement slices filed as \bd{3c6m.80}.
+  \item \fdoc\ In the \texttt{cqc} census \texttt{atan2.f64} QC/QQ still compile; their traces
+  fell from 4561/5202 to 1241/1882 lines, because openlibm's inner \texttt{atan} call now takes the
+  direct route. Read by hand: the lifted forwarder computes, copies out, runs \texttt{\_unc} and
+  frees the zeroed rail; stage 2b verified 314 of 314 frees.
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+math.h cells via cqc & 79/180 (was 82/180) & \measured{runtime\_census.py --output tools/library\_coverage/runtime\_census.json} \\
+\quad source-injected & 24/120 (was 24/117) & same \\
+\quad CQ-provided & row removed (was 3/3) & same \\
+lab harness, injection row & 101/126 (was 101/120 + 6/6) & \measured{CENSUS\_OPTLEVEL=O1 full\_census.py} \\
+lab harness, all routes & 153/183 (was 159/183) & \measured{probe.py render} \\
+ctest entries & 551 (was 602) & \measured{ctest --test-dir build -N | tail -1} \\
+lit fixtures / e2e goldens & 2698 / 436 & \measured{ls ir-pass/test/*.ll | wc -l; ls tests/e2e/*.expected.log | wc -l} \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+\begin{itemize}
+  \item Probes through \texttt{cqc}: \texttt{sin(q)} on a \texttt{double} traces in 4 lines with one
+  \texttt{cq\_template\_sin\_f64}; \texttt{sinl(q)} fails loudly in openlibm's body;
+  \texttt{tgamma(q)} stops at \texttt{\_\_log\_\_D}, as before; \texttt{atan2(q,c)} as above.
+  \item Both censuses re-run. The cqc census changed in exactly the \texttt{sinl}/\texttt{cosl}/\texttt{tanl}
+  Q mixtures (decline) and the two \texttt{atan2} traces; the lab census in exactly the six former
+  CQ-provided cells plus three first-blocker moves (\texttt{tgamma}, \texttt{tgammaf},
+  \texttt{lgammal}). \texttt{powl.f80} moved to a \texttt{frexpl} blocker, which comes from
+  \bd{p3kd.7}, since this was the first lab run after it. The four changed SCOPE notes were copied
+  into the census JSON from the edited table, not re-run.
+  \item Green: lit 19/19 (binding, direct-trig and the two edited fixtures); ctest 11/12, the
+  failure \texttt{code\_map\_drift} from editing after regeneration, then clean by
+  \texttt{update\_code\_map.py --check}.
+  \item Batch gate: \texttt{ctest -LE maintenance -j6} 548/548; \texttt{cq-opt-equivalence-full} 2698 fixtures, 0 mismatches; \texttt{update\_code\_map.py --check} clean.
+  \item Not run: no adversarial review round and no mutants. No pass source changed; the change is
+  deletions, census tooling and the bundle's forwarders.
+\end{itemize}
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item \bd{3c6m.79}: lower \texttt{float}/\texttt{long double} trig, either from openlibm source
+  or through an approved backend route.
+  \item \bd{3c6m.80}: user-level e2e slices for the 24 symbols that lost their trace witness.
+  \item The 2026-07-27 \texttt{decided-decline} label on openlibm's Payne-Hanek trig predates R1's
+  ``only physics-forbidden declines''; with no other route at f32/f80, it may need a re-ruling.
+\end{itemize}
