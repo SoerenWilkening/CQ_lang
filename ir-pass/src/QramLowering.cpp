@@ -46,6 +46,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/ValueHandle.h"
 #include "llvm/Support/KnownBits.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Transforms/Utils/PromoteMemToReg.h"  // bd zco4 (isAllocaPromotable / PromoteMemToReg)
@@ -3331,18 +3332,29 @@ bool promoteVolatileScalarLocals(Module &M, const TaintSet &taint) {
     // DEAD — the residue the dead-argument drop's liveness question must not
     // trip over, and a dead tainted op the lowering would otherwise mint a rail
     // for. Collected before `PromoteMemToReg` erases the stores.
-    SmallVector<Value *, 8> Stored;
+    //
+    // TRACKING handles (bd r2j3.18): a stored value can itself be a load from
+    // ANOTHER promoted alloca (`volatile double a = b;`, openlibm b_tgamma.c),
+    // which `PromoteMemToReg` RAUWs to its reaching definition and erases. A raw
+    // `Value *` then dangled into `deleteDeadCones` (measured: heap corruption,
+    // deterministic under CQ_OPT_DEBUG_ALLOC=lifo); the handle follows the RAUW
+    // to the value that now carries the store, the same answer -O1 would see.
+    SmallVector<WeakTrackingVH, 8> StoredH;
     SmallVector<BasicBlock *, 8> Emptied;
     for (AllocaInst *A : ToPromote)
       for (User *U : A->users()) {
         if (auto *SI = dyn_cast<StoreInst>(U))
-          Stored.push_back(SI->getValueOperand());
+          StoredH.push_back(SI->getValueOperand());
         if (auto *I = dyn_cast<Instruction>(U))
           Emptied.push_back(I->getParent());  // the accesses PromoteMemToReg erases.
       }
     if (!DT)
       DT.emplace(F);
     PromoteMemToReg(ToPromote, *DT);
+    SmallVector<Value *, 8> Stored;
+    for (WeakTrackingVH &H : StoredH)
+      if (Value *V = H)
+        Stored.push_back(V);
     deleteDeadCones(F, Stored, taint, "volatile-promote", Emptied);
     Changed = true;
   }
