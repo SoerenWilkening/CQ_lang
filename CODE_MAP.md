@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 856 maintained source files, 6710 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 860 maintained source files, 6716 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -396,6 +396,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ClassicalCallArmEmit.cpp:60` — `scrubTaint`
 - `ir-pass/src/ClassicalCallArmEmit.cpp:73` — `bailLoud`
 - `ir-pass/src/ClassicalCallArmEmit.cpp:82` — `emitClassicalCallArmRegion`
+
+### `ir-pass/src/CloneRailSelect.cpp` (92 lines)
+
+- `ir-pass/src/CloneRailSelect.cpp:28` — `isRecordedRailSelect`
+- `ir-pass/src/CloneRailSelect.cpp:36` — `rewriteRailSelects`
 
 ### `ir-pass/src/CompareLowering.cpp` (534 lines)
 
@@ -7400,6 +7405,16 @@ The entries below are an inventory for decomposition work. Generated files and t
 ### `tests/e2e/spec_chained_ctl_lib.c` (23 lines)
 
 - `tests/e2e/spec_chained_ctl_lib.c:21` — `gg`
+
+### `tests/e2e/spec_classical_ctl_caller.c` (29 lines)
+
+- `tests/e2e/spec_classical_ctl_caller.c:19` — `slice`
+- `tests/e2e/spec_classical_ctl_caller.c:25` — `main`
+
+### `tests/e2e/spec_classical_ctl_lib.c` (24 lines)
+
+- `tests/e2e/spec_classical_ctl_lib.c:9` — `clampsub`
+- `tests/e2e/spec_classical_ctl_lib.c:15` — `pick`
 
 ### `tests/e2e/spec_clone_read_nested_lib.c` (26 lines)
 
