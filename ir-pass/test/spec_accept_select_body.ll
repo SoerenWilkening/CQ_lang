@@ -1,6 +1,7 @@
 ; spec_accept_select_body.ll — Phase 6 / issue 5po2: a tainted `select` INSIDE a
-; specialization-lifted callee. The ONE in-body control shape the clone path
-; lowers (everything else still declines `InBodyControl`). `helper(b) = (b<5)?b:0`
+; specialization-lifted callee, the first in-body control shape the clone path
+; lowered (5po2; the clone lowers far more since, e.g. bd p3kd.7.1 / p3kd.7.2).
+; `helper(b) = (b<5)?b:0`
 ; — the canonical `clang -O1` lowering of `int a=0; if(b<5) a+=b; return a` — is
 ; lifted into the reversible clone `@__cq_q_helper_1` as a 4.4 controlled-XOR copy
 ; `out = flag ? b : 0`, then Bennett-wrapped: copy-out → self-inverse reverse
@@ -8,7 +9,8 @@
 ; the flag) → free both scratch rails → return the escaping basis copy. The flag
 ; is kept LIVE across the body (no local strip); the Bennett reverse plays its
 ; adjoint. See EmitInverse (`cqrt_copy_<W>_controlled` = self-inverse) +
-; SpecializeReject::isLiftableSelect + Specialization::lowerCloneSelect.
+; SpecializeReject::isAdmissibleCloneSelect (was isLiftableSelect until bd
+; p3kd.7.1) + Specialization::lowerCloneSelect.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

@@ -7,11 +7,10 @@
 ; `cq_template_fcmp_true_f64_hl` symbol.
 ;
 ; WHICH GATE FIRES (measured): the `scanBody` DATA-OP whitelist rejects the
-; `fcmp true` INSTRUCTION ("unsupported compare predicate") before
-; `isLiftableFpSelect`'s own `comparePredLowerable` clause is consulted — the
-; condition compare is an instruction in the body, so the data-op gate reaches it
-; first. Both gates route through the SAME `compareInScope` policy (Rule 14), so
-; they cannot drift apart into disagreement.
+; `fcmp true` INSTRUCTION ("unsupported compare predicate"). The retired
+; `isLiftableFpSelect` also carried a `comparePredLowerable` clause, never reached
+; first; since bd p3kd.7.1 the data-op gate is the only predicate gate, through
+; `compareInScope` (Rule 14).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported compare predicate)

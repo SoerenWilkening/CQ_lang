@@ -3,7 +3,7 @@
 ; `fabsl` if-conversion shape (`(n<0) ? -x : x` over f80), followed by a
 ; `fptosi x86_fp80 → i32` reading the select's merge rail (the openlibm expl
 ; `n = (int)floorl(...)` exponent cast). Pins THREE Lever-C composes at once:
-;   * `isLiftableFpSelect` admits f80 (was the kmdc {f32,f64} slice-1
+;   * `isLiftableFpSelect` (`isAdmissibleCloneSelect` since bd p3kd.7.1) admits f80 (was the kmdc {f32,f64} slice-1
 ;     whitelist); the emission mints `cqrt_copy_f80_controlled` — the kjd1
 ;     frozen select-local family, via `copyControlledFpFn` ONLY (the shared
 ;     integer minter's fp-null classifier is untouched);

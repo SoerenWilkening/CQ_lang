@@ -1379,8 +1379,15 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
     return SpecRecord{Clone, ReturnTainted};
   }
 
-  emitBennettWrap(*Clone, ForwardStream, ResultRail, ScratchRails, RetW, wd,
-                  cloneTaint);
+  // Every `false` is a diagnosed decline (BennettWrap.cpp); keep the site
+  // consistent, as the other clone declines do, so no secondary crash precedes the
+  // DS_Error (bd p3kd.7.1 review round 1, F1: the result used to be dropped).
+  if (!emitBennettWrap(*Clone, ForwardStream, ResultRail, ScratchRails, RetW, wd,
+                       cloneTaint)) {
+    plan.Cache[Key].ReturnTainted = false;
+    retargetSite(Site, Clone);
+    return SpecRecord{Clone, false};
+  }
 
   // Finalize the record BEFORE returning — any later cache HIT (sibling or outer)
   // must read the true `ReturnTainted`, never the up-front placeholder.

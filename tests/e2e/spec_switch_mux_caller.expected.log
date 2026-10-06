@@ -1,0 +1,75 @@
+cqrt_alloc_i32(6) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_and_i32_hl(h0, 3) -> h1
+cq_template_add_i32_hl(h0, -1) -> h2
+cq_template_mul_i32_hl(h0, 5) -> h3
+cq_template_add_i32_hl(h0, 4) -> h4
+cq_template_icmp_eq_i32_hl(h1, 1) -> h5
+cqrt_alloc_i32(0) -> h6
+cqrt_copy_i32_controlled(h5, h4, h6)
+cqrt_x(h5)
+cqrt_alloc_i32(3) -> h7
+cqrt_copy_i32_controlled(h5, h7, h6)
+cqrt_x(h5)
+cq_template_icmp_eq_i32_hl(h1, 2) -> h8
+cqrt_alloc_i32(0) -> h9
+cqrt_copy_i32_controlled(h8, h3, h9)
+cqrt_x(h8)
+cqrt_copy_i32_controlled(h8, h6, h9)
+cqrt_x(h8)
+cq_template_icmp_eq_i32_hl(h1, 3) -> h10
+cqrt_alloc_i32(0) -> h11
+cqrt_copy_i32_controlled(h10, h2, h11)
+cqrt_x(h10)
+cqrt_copy_i32_controlled(h10, h9, h11)
+cqrt_x(h10)
+cqrt_alloc_i32(0) -> h12
+cqrt_copy_i32(h11, h12)
+cqrt_x(h10)
+cqrt_copy_i32_controlled(h10, h9, h11)
+cqrt_x(h10)
+cqrt_copy_i32_controlled(h10, h2, h11)
+cq_template_icmp_eq_i32_hl_unc(h10, h1, 3)
+cqrt_x(h8)
+cqrt_copy_i32_controlled(h8, h6, h9)
+cqrt_x(h8)
+cqrt_copy_i32_controlled(h8, h3, h9)
+cq_template_icmp_eq_i32_hl_unc(h8, h1, 2)
+cqrt_x(h5)
+cqrt_copy_i32_controlled(h5, h7, h6)
+cqrt_x(h5)
+cqrt_copy_i32_controlled(h5, h4, h6)
+cq_template_icmp_eq_i32_hl_unc(h5, h1, 1)
+cq_template_add_i32_hl_unc(h4, h0, 4)
+cq_template_mul_i32_hl_unc(h3, h0, 5)
+cq_template_add_i32_hl_unc(h2, h0, -1)
+cq_template_and_i32_hl_unc(h1, h0, 3)
+cqrt_free(h1)
+cqrt_free(h2)
+cqrt_free(h3)
+cqrt_free(h4)
+cqrt_free(h5)
+cqrt_free(h6)
+cqrt_free(h8)
+cqrt_free(h9)
+cqrt_free(h10)
+cqrt_free(h11)
+cq_template_icmp_sgt_i32_hl(h0, 5) -> h13
+cqrt_alloc_i32(0) -> h14
+cqrt_alloc_i32(7) -> h15
+cqrt_copy_i32_controlled(h13, h15, h14)
+cqrt_x(h13)
+cqrt_alloc_i32(9) -> h16
+cqrt_copy_i32_controlled(h13, h16, h14)
+cqrt_x(h13)
+cqrt_alloc_i32(0) -> h17
+cqrt_copy_i32(h14, h17)
+cqrt_x(h13)
+cqrt_copy_i32_controlled(h13, h16, h14)
+cqrt_x(h13)
+cqrt_copy_i32_controlled(h13, h15, h14)
+cq_template_icmp_sgt_i32_hl_unc(h13, h0, 5)
+cqrt_free(h13)
+cqrt_free(h14)
+cq_template_add_i32(h17, h12) -> h18
+cqrt_measure_i32(h18) -> 0

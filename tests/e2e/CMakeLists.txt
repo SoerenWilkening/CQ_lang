@@ -2859,7 +2859,8 @@ add_test(NAME e2e-slice-specialize-select
 # `cqrt_x` brackets replay, the flag + every arm producer `_unc`, then ALL frees
 # after the complete reverse; the borrowed input `h0`=`b` left allocated, never
 # freed dirty) is the trace contract (Rules 2, 6, 13, 16). The same generalized
-# `lowerCloneSelect`/`isLiftableSelect` two-arm path also lowers a PredMux-
+# `lowerCloneSelect`/`isLiftableSelect` (`isAdmissibleCloneSelect` since bd
+# p3kd.7.1) two-arm path also lowers a PredMux-
 # flattened value diamond (ir-pass-lit spec_accept_diamond_body.ll — a real
 # multi-block merge-phi diamond rarely survives `clang -O1` from C, which
 # if-converts it, so the flatten path is pinned by lit, this e2e link-proves the
@@ -3474,6 +3475,26 @@ add_test(NAME e2e-slice-specialize-fp-select-fcmp
     "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp_select_fcmp_lib.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp_select_fcmp_caller.expected.log")
+
+# bd p3kd.7.1 — detection mirrors the clone emitters. A tainted-scrutinee `switch`
+# (exhaustive, `unreachable` default: the atan2-family shape) and a two-constant-arm
+# integer select (`x > 5 ? 7 : 9`: the exp/expf/tgammal shape), each in a classical
+# helper of a separate TU, were refused by `scanBody` although the clone path lowers
+# them. The clone's PredMux flattens the switch into a three-select chain and
+# `lowerCloneSelect` lowers every select to two controlled copies (the second inside
+# a ¬flag `cqrt_x` bracket), materializing constant arms to rails that stay
+# allocated. The golden was checked by hand: the smux chain yields 3, x+4, 5x, x-1
+# for x&3 = 0..3, and each clone's reverse replays its copies in reverse order inside
+# their brackets before the compare and data `_unc`s and the frees. This LINK-proves
+# both clones and every emitted template across llvm-link (Rules 2, 13).
+add_test(NAME e2e-slice-spec-switch-mux
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_switch_mux_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_switch_mux_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_switch_mux_caller.expected.log")
 
 # Phase 7.1-E follow-up (test_C_libtooling-mvjc): a CURATED reversible llvm.* idiom
 # intrinsic INSIDE a specialized clone. specialize_intrinsic_caller.c routes a

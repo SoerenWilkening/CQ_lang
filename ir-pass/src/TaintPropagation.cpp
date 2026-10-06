@@ -2464,9 +2464,11 @@ void detectAndLowerOnwardControl(Module &M, WidthDispatch &wd, TaintSet &taint,
 // already relies on.
 //
 // SOUNDNESS OF THE WIDER MASK. `scanBody` (the body verdict inside
-// `classifyCandidate`) is MASK-INDEPENDENT: it proved the WHOLE transitive body is
-// straight-line, pure, and built only from in-scope data ops at DETECTION, and
-// every such op carries a complete QQ + `unc_qq` grid (opcode_table.yaml), so an
+// `classifyCandidate`) is MASK-INDEPENDENT: it proved the whole transitive body
+// pure and built only from in-scope data ops and the control the clone flattens
+// (not straight-line: br/switch/unreachable/phi/select since 5po2 and bd p3kd.7.1)
+// at DETECTION, and every such op carries a complete QQ + `unc_qq` grid
+// (opcode_table.yaml), so an
 // operand flipped C→Q switches a `cq_template_<op>_<W>_hl` producer to its bare-QQ
 // twin `cq_template_<op>_<W>` (both with an `_unc` twin `emitInverseChain`
 // reverses) and nothing else changes. The ONE mask-dependent gate is
@@ -2480,9 +2482,11 @@ void detectAndLowerOnwardControl(Module &M, WidthDispatch &wd, TaintSet &taint,
 // reseed value. A call that was NOT a candidate at round 1 (ALL args classical
 // then, now reading `%out`) is a round-2 spec DETECTION, out of this increment's
 // scope — it stays declined by the re-run `declineTaintEscapes` (`kMsgUnknownCallee`,
-// a visible-body callee reading tainted, not carved; tracked follow-on). An
-// in-clone construct the clone cannot emit was already declined at DETECTION by the
-// mask-independent `scanBody`, so it never entered `Pending`.
+// a visible-body callee reading tainted, not carved; tracked follow-on). A
+// construct no mask can lower was declined at DETECTION by the mask-independent
+// `scanBody`, so it never entered `Pending`; one that only SOME masks lower (a
+// condition off the clone's grammar, a region PredMux will not claim) passes
+// detection and declines loudly when the clone is built (bd p3kd.7.1).
 void replanReseedSpecialization(TaintSet &taint, WidthDispatch &wd,
                                 SpecPlan &plan6,
                                 const SmallPtrSetImpl<Value *> &reseed) {

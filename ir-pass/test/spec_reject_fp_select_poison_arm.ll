@@ -1,6 +1,8 @@
 ; spec_reject_fp_select_poison_arm.ll — DECLINE (bd 20xt.3 boundary, sibling of
 ; spec_reject_fp_select_undef_arm.ll): an fp select whose FALSE arm is `poison` — a
-; NON-`ConstantFP` constant. `armLiftable` (isLiftableFpSelect) admits ONLY a
+; NON-`ConstantFP` constant. `armLiftable` (isLiftableFpSelect; `armAdmissible`
+; in `isAdmissibleCloneSelect` since bd p3kd.7.1, which also admits a
+; `ConstantInt`) admits ONLY a
 ; concrete `ConstantFP` (or a non-constant derived value); `poison`/`undef`/
 ; `ConstantExpr` are not concrete materializable basis values, so the select stays
 ; InBodyControl (a safe over-decline, Prime Directive — materializing a `poison`

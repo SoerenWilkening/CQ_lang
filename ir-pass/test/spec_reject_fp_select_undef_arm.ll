@@ -2,7 +2,8 @@
 ; whose FALSE arm is a NON-`ConstantFP` constant (`undef`). The 20xt.3 widening
 ; admits a concrete `ConstantFP` arm (materialized to a `cqrt_alloc_f<W>(<const>)`
 ; |const⟩ rail), but `undef`/`poison`/`ConstantExpr` are not concrete
-; materializable basis values — `armLiftable` (isLiftableFpSelect) requires
+; materializable basis values — `armLiftable` (isLiftableFpSelect; `armAdmissible`
+; in `isAdmissibleCloneSelect` since bd p3kd.7.1) requires
 ; `!isa<Constant> || isa<ConstantFP>`, so an `undef` arm stays InBodyControl (a
 ; safe over-decline, Prime Directive). The ConstantFP-vs-other-constant edge pin
 ; for the value/const + const/const accept set (spec_accept_fp_select_const_arm.ll,

@@ -1,21 +1,21 @@
 // SpecializeReject.cpp — the single authoritative accept predicate for Phase 6
 // specialization (Rule 14), plus the loud-diagnostic renderer. WHITELIST body
-// scan: only `BinaryOperator` / `UnaryOperator` / `CmpInst` / `CastInst` data
-// ops, the `ret` terminator, and quantum-primitive calls (which themselves
-// reject) are recognized; EVERYTHING else is an unproven shape and rejects
-// loudly (never silently). Each such reject of a valid program is an
-// over-decline to remove (R1), not a free safety margin.
+// scan: `BinaryOperator` / `UnaryOperator` / `CmpInst` / `CastInst` data ops,
+// `phi` and `select` muxes, the `ret` / `br` / `switch` / `unreachable`
+// terminators the clone's PredMux flatten collapses, the curated intrinsics and
+// QROM reads, nested visible calls (scanned recursively), and quantum-primitive
+// calls (which themselves reject) are recognized; EVERYTHING else is an unproven
+// shape and rejects loudly (never silently). Each such reject of a valid program
+// is an over-decline to remove (R1), not a free safety margin.
 
 #include "SpecializeReject.h"
 
-#include "ArmAnalysis.h"        // comparePredLowerable (Rule 14 — the one predicate gate)
 #include "CalleeBody.h"         // calleeBodyTrusted (bd p3kd.2 — the one body-trust predicate)
 #include "IntrinsicLowering.h"
 #include "LiteralIntegrity.h"   // slotCarriesUndef (bd 3p2a — the return-cone fence)
 #include "OpcodeSupport.h"
 #include "QramLowering.h"
 #include "ReturnMerge.h"        // mustTailForwardBlocksDemotion (bd dm7f.5 ruling)
-#include "SelectClassify.h"     // collectCondTree (bd p3kd.3 — the clone select grammar)
 #include "SpecializePlan.h"
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
@@ -124,197 +124,61 @@ bool unsupportedWidth(Type *T) {
   return !T->isVectorTy() && abiWidthFromType(T).empty();
 }
 
-// 5po2: the ONE in-body control shape Phase 6 specialization lifts — a liftable
-// tainted `select`. Scoped tight (first increment; the rest is a gap, R1): an
-// i32 `select(<icmp>, <param>, 0)` — a DIRECT-param true arm, a constant-ZERO
-// false arm (so the clone emits ONE `cqrt_copy_i32_controlled` with no ¬flag
-// bracket), and an integer-`icmp` condition. The clone (`lowerCloneSelect`)
-// lowers it to a controlled-XOR copy `out = flag ? param : 0` and the Bennett
-// reverse plays the self-inverse copy + the flag `_unc` (EmitInverse 5po2).
-// Everything off this shape — a non-zero / non-constant false arm, a derived
-// (non-`Argument`) true arm, an `fcmp` / vector / non-`icmp` condition, a
-// non-i32 width — stays `InBodyControl` (a loud over-decline to remove, R1).
-// This is a SHAPE gate only (scanBody has no per-Site mask); `lowerCloneSelect`
-// RE-PROVES the condition is genuinely tainted before it mints the controlled
-// copy, and loudly declines a shape-match whose condition turns out classical.
-bool isLiftableSelect(const SelectInst *SI) {
-  if (abiWidthFromType(SI->getType()) != "i32")
-    return false;  // copyControlledFn + the i32-return gate support only i32.
-  auto *Cond = dyn_cast<ICmpInst>(SI->getCondition());
-  if (!Cond) {
-    // bd p3kd.3 — a COMPOUND condition: `clang -O1` if-converts `a && b` / `a & b`
-    // over cheap compares into ONE straight-line `select` on `and i1`, which no
-    // flatten turns into a diamond. `lowerCloneSelect` lowers any condition the
-    // `collectCondTree` grammar collects (the 5po2 I2 network the flattened
-    // diamond already reaches), so ask THAT grammar (Rule 14), for the two-arm
-    // shape only, every compare leaf an integer `icmp` (the single-leaf rule
-    // above), and no register leaf (`lowerCloneSelect` skips one). A classical
-    // leaf is fine at this taint-blind gate: `lowerCloneSelect` re-collects with
-    // the literal rule and the per-leaf fence refuses what it cannot fold.
-    CondTree Tree;
-    if (!collectCondTree(const_cast<Value *>(SI->getCondition()), Tree) ||
-        Tree.Nodes.empty() ||
-        !Tree.RailLeaves.empty() || !Tree.RailPhiLeaves.empty())
-      return false;
-    for (const CmpInst *Leaf : Tree.Leaves)
-      if (!isa<ICmpInst>(Leaf))
-        return false;
-    return !isa<Constant>(SI->getTrueValue()) &&
-           !isa<Constant>(SI->getFalseValue());
-  }
-  // Increment-1 one-copy shape: false arm = const 0, true arm = a param the
-  // compare tests (one operand == TrueArg, the other a constant). Condition and
-  // data share taint by construction — with the param tainted both are quantum
-  // (`lowerCloneSelect` emits ONE controlled copy `out = flag ? param : 0`), with
-  // it classical both are classical (a plain classical select, left untouched) —
-  // foreclosing the mixed classical-control-over-quantum-data shape at slice 1.
-  auto *FalseC = dyn_cast<ConstantInt>(SI->getFalseValue());
-  auto *TrueArg = dyn_cast<Argument>(SI->getTrueValue());
-  if (FalseC && FalseC->isZero() && TrueArg) {
-    Value *A = Cond->getOperand(0), *B = Cond->getOperand(1);
-    return (A == TrueArg && isa<ConstantInt>(B)) ||
-           (B == TrueArg && isa<ConstantInt>(A));
-  }
-  // 5po2 I1 two-arm shape: BOTH arms non-constant (derived) — the integer analog
-  // of `isLiftableFpSelect`, covering the `clang -O1` if-conversion of an integer
-  // if/else (`select(icmp, f(b), g(b))`) AND a PredMux-flattened value-diamond
-  // mux. This is a SHAPE gate only (scanBody is taint-blind): `lowerCloneSelect`
-  // re-proves the condition + BOTH arms genuinely tainted (whole-classical →
-  // leave; MIXED → loud decline) and a Q+Q compare condition → loud decline. A
-  // constant arm needs the materialize-classical-arm path (a later widening),
-  // not this slice — so both arms must be non-constant here.
-  return !isa<Constant>(SI->getTrueValue()) && !isa<Constant>(SI->getFalseValue());
-}
-
-// kmdc (5po2 fp widening): the canonical fabs/abs-shape FP select in a lifted
-// clone — `select(<icmp>, <derived fp>, <derived fp>)`, e.g. clang -O1's
-// `(x<0.0)?-x:x` → `select(icmp slt %param, 0, fneg %x, %x)`. UNLIKE the integer
-// slice this is a TWO-arm select (both arms derived, non-constant), so
-// `lowerCloneSelect` emits the full 4.4 stream — copy_T, the ¬flag `cqrt_x`
-// bracket, copy_F, `cqrt_x` — over an fp `cqrt_copy_f<W>_controlled` and an fp
-// |0> rail. SAFE despite the f64/angle miscompile family: a clone body is provably
-// ROTATION-FREE (scanBody rejects every `cq_theta`/`cq_phi`; buildClone never
-// lowers rotations), so there is no rotation arg-1 angle slot for the fp value to
-// reach — the top-level three-legged angle fence is VACUOUS here. The residual
-// (an fp select value → a CALLER angle) was originally blocked by kmdc's R1
-// `RetW == "i32"` return gate. bd 3c6m.54 LIFTED that gate (an fp-return clone is
-// now admitted), so R1 no longer applies — but the residual is still fenced,
-// SUPERSEDED not removed: an fp-tainted return is COPIED OUT to an i32 handle
-// (`cqrt_copy_f<W>`, never a raw fp value crossing the boundary), and if a caller
-// steers that handle into a rotation angle the top-level `declineTaintedAngle`
-// fence catches it (fixture spec_reject_fp_return_used_as_angle.ll). The remaining
-// load-bearing precondition is R2: `scanBody` MUST keep rejecting `cq_theta`/
-// `cq_phi` (a rotation admitted into a lifted body would re-arm the f64/angle
-// family with no clone-local guard). See the kmdc PRD (§ANGLE-SAFETY of the
-// 3c6m.54 PRD for the R1 supersession).
+// bd p3kd.7.1 — the select gate, which asks only what the clone emitter cannot
+// answer for itself. `scanBody` runs before any clone exists and is MASK-BLIND:
+// one body verdict serves every call site, so it cannot know whether a select's
+// condition or arms are quantum at a given site. `lowerCloneSelect`
+// (Specialization.cpp) can, and it already disposes of every select by taint:
+//   * all classical → left as a classical select;
+//   * classical condition over a quantum arm → a loud "mixed classical/quantum
+//     select" decline (spec_reject_select_mixed_param.ll);
+//   * quantum condition → the controlled-copy data-mux over any mix of quantum
+//     arms (threaded as handles) and classical arms (materialized by
+//     `materializeCopySource`), or, for a condition off the `collectCondTree`
+//     grammar or a width with no controlled copy, left in place for the loud
+//     "no tainted select survives" backstop in `buildClone`.
+// So detection refuses only what no taint assignment can make lowerable, and
+// admits everything else. It used to admit two hand-picked shapes
+// (`isLiftableSelect`: an i32 select with a const-zero false arm or two derived
+// arms; `isLiftableFpSelect`: an f32/f64/f80 select with derived or ConstantFP
+// arms), which declined shapes the emitter lowers: two integer constant arms
+// (exp/expf/tgammal, `select i1 %c, i32 C1, i32 C2`), a non-zero constant arm, a
+// derived arm next to a constant one, and any i1/i8/i16/i64 select.
 //
-// Scoped tight (first slice; the rest is a gap, R1): scalar fp result
-// restricted to an EXPLICIT {f32,f64} whitelist (NOT
-// `abiWidthHasControlledFpCopy`, which also admits f16/f80 with no coverage;
-// f128/vector fall out via `isFloatingPointTy`), an integer-`icmp` condition
-// (the fabs sign test folds to `icmp slt i32`; `fcmp` clamps deferred), and
-// BOTH arms non-constant. This is a SHAPE gate only;
-// `lowerCloneSelect` re-proves the condition AND BOTH arms are genuinely tainted
-// (mixed → loud decline; all-classical → left for the backend).
-bool isLiftableFpSelect(const SelectInst *SI) {
-  if (!SI->getType()->isFloatingPointTy())
-    return false;  // scalar fp only — vectors / non-fp fall out here.
-  StringRef W = abiWidthFromType(SI->getType());
-  if (W != "f32" && W != "f64" && W != "f80")
-    return false;  // bd adia whitelist: {f32,f64,f80} — f16 declines (no coverage)
-  // bd tkmn (the tgamma lever, Inc 1): the condition may be an `icmp` OR — NEW —
-  // an `fcmp`. The fcmp clause was staged out as "a deferred widening" when this
-  // gate was written; the substrate it was waiting on has since shipped. The
-  // ONLY thing that changes is which conditions this SHAPE gate admits: the
-  // emitter beneath it is already fcmp-capable and untouched by this increment
-  // (`mintCondNetwork`'s leaves are generic `CmpInst`s lowered by
-  // `lowerCompareToFlag`, whose family stem is literally `IsFp ? "fcmp" :
-  // "icmp"`, and the YAML ships the full fcmp grid: 14 predicates x
-  // {f16,f32,f64,f80} x {fwd,inv,unc} x {hl,qq}).
-  //
-  // MEASURED shape that motivated it (openlibm bsdsrc/b_exp.c:171 `return
-  // isfinite(x) ? scalbn(1.0,5000) : x`, inlined into `tgamma`, which clang -O1
-  // if-converts to a straight-line select — so there is no control-flow work
-  // here at all, only this predicate):
-  //     %.inv.i        = fcmp one double %v, 0x7FF0000000000000
-  //     %spec.select.i = select i1 %.inv.i, double 0x7FF0000000000000, double %v
-  // const/value arms, already admitted by the 20xt.3 widening below; f64 result,
-  // already in the width whitelist above. The fcmp condition was the sole
-  // failing clause — PINNED by instrumentation (tagging both InBodyControl
-  // origins and all three `diagnoseReject` call sites, then rebuilding), NOT
-  // inferred from the diagnostic string, which is emitted from several sites.
-  //
-  // ANGLE SAFETY (the f64/angle miscompile family, and the reason the top-level
-  // kjd1 fp-select un-staging needed a three-legged fence this does not): a
-  // clone body is provably ROTATION-FREE — `scanBody` rejects every
-  // `cq_theta`/`cq_phi` as `QuantumPrimitive` (Sets.Rotations, above) and
-  // `buildClone` never lowers rotations — so there is no rotation arg-1 angle
-  // slot for a compared fp value to reach, and kjd1's gate-2c stale-condition
-  // wire guard (a chained in-place Ry between the compare and the select
-  // restaging the flag's basis) is VACUOUS here rather than merely unlikely.
-  // RE-VERIFIED at this increment, not inherited from the comment above.
-  auto *Cond = dyn_cast<CmpInst>(SI->getCondition());
-  if (!Cond)
-    return false;  // condition must be a single compare (an and/or tree is not
-                   // this gate's shape — see `collectCondTree` in the emitter).
-  // Predicate + compare-operand-width fences. HONEST STATUS — these are
-  // DEFENSE IN DEPTH, NOT the gate that stops the off-grid shapes today, and the
-  // distinction is recorded because a containment claim that names the wrong
-  // clause is how this file has been wrong before: the condition compare is
-  // ITSELF an instruction in the callee body, so `scanBody`'s data-op whitelist
-  // (`isa<CmpInst>` → `unsupportedWidth` / the predicate gate, below) reaches it
-  // independently of this select and declines FIRST. MEASURED, not reasoned: an
-  // `fcmp olt fp128` condition declines "(unsupported width)" and an `fcmp true`
-  // condition declines "(unsupported compare predicate)" — BOTH at that data-op
-  // gate, neither at these lines (spec_reject_fp_select_fcmp_fp128.ll /
-  // spec_reject_fp_select_fcmp_degenerate_pred.ll pin the messages that actually
-  // fire). They are kept anyway so this predicate is SELF-CONTAINED rather than
-  // silently coupled to another gate's reachability, which is the property a
-  // future caller of `isLiftableFpSelect` would assume it has.
-  //
-  // `comparePredLowerable` is the ONE shared predicate gate (Rule 14 — never a
-  // second copy of the policy). It is VACUOUS for `icmp` (all 10 integer
-  // predicates are in scope), so this narrows NOTHING on the pre-existing
-  // integer path.
-  if (!comparePredLowerable(Cond))
+// What stays refused, each a property of the select alone:
+//   * a vector select: a lane has no scalar controlled copy, and no ABI width
+//     names a vector type, so the width clause below refuses it (a separate
+//     vector test was a redundant clause: its mutant survived,
+//     spec_reject_select_vector.ll);
+//   * a width with no ABI name (pointer, fp128, i256 and up), and an fp width
+//     outside {f32, f64, f80}: f16 has the runtime symbols but no tested clone
+//     coverage (spec_reject_fp_select_f16.ll);
+//   * an arm that is a constant other than a `ConstantInt`/`ConstantFP` (undef,
+//     poison, a ConstantExpr): it has no basis value to materialize, and a twin
+//     re-reading an undef would see a different one (bd xy9n)
+//     (spec_reject_fp_select_undef_arm.ll, spec_reject_fp_select_poison_arm.ll,
+//     spec_reject_select_int_undef_arm.ll).
+// The condition's compare is a body instruction of its own, so the data-op
+// whitelist below already refuses an out-of-scope predicate or compare width.
+//
+// ANGLE SAFETY (kmdc, re-verified for the widening): a clone body is
+// rotation-free (`scanBody` refuses every `cq_theta`/`cq_phi` as
+// `QuantumPrimitive`, and `buildClone` lowers no rotation), so no select value,
+// integer or fp, can reach a rotation-angle slot inside the clone. A quantum fp
+// return leaves the clone as an i32 handle (`cqrt_copy_f<W>`), so a caller that
+// steers it into an angle meets the top-level `declineTaintedAngle`
+// (spec_reject_fp_return_used_as_angle.ll).
+bool isAdmissibleCloneSelect(const SelectInst &SI) {
+  Type *Ty = SI.getType();
+  const StringRef W = abiWidthFromType(Ty);
+  if (W.empty())
     return false;
-  if (Cond->isFPPredicate()) {
-    // The compare's OPERAND width is independent of the select's RESULT width
-    // gated above (an `fcmp fp128` can feed a `double` select), so it takes its
-    // own check. `isFloatingPointTy()` is the right test HERE precisely because
-    // it EXCLUDES vectors — the one place the usual `isFPOrFPVectorTy` advice
-    // inverts, since a `<2 x double>` compare yields a `<2 x i1>` condition and
-    // must not be admitted.
-    Type *OpTy = Cond->getOperand(0)->getType();
-    if (!OpTy->isFloatingPointTy())
-      return false;
-    StringRef CW = abiWidthFromType(OpTy);
-    if (CW != "f16" && CW != "f32" && CW != "f64" && CW != "f80")
-      return false;  // outside the YAML fcmp grid (fp128/bf16) — no template.
-  }
-  // 20xt.3 (the materialize-classical-arm widening — atan2l → inner atanl block
-  // %20, the |x|≥2^64 overflow arm `select(sgn, +π/2, −π/2)`): each arm is EITHER
-  // a derived (non-constant) fp value OR a concrete `ConstantFP`. A ConstantFP arm
-  // is a classical basis value `lowerCloneSelect` materializes to a fresh
-  // `cqrt_alloc_f<W>(<const>)` |const⟩ rail via `materializeCopySource`, then
-  // controlled-copies into the |0⟩ out rail — the SAME two-copy stream the
-  // value/value fabs shape emits, the SAME classical-arm materialize the 4.4
-  // top-level select / 4.5 switch data-mux / 6.5 classical-call arm already ship
-  // (Rule 14). The materialized rail is separable classical data: LEFT allocated
-  // (leaked) per Rule 6, its controlled copy captured + reverse-played by the
-  // Bennett wrap (Specialization.cpp select-op capture). This admits const/const
-  // (the atanl ±π/2 arm), const/value, and value/const on top of value/value. A
-  // NON-`ConstantFP` constant (undef / poison / ConstantExpr) is not a concrete
-  // materializable basis value → stays InBodyControl (a loud over-decline to
-  // remove, R1; spec_reject_fp_select_undef_arm.ll). This is a taint-blind SHAPE
-  // gate only: `lowerCloneSelect` re-proves the condition's taint and the
-  // whole-classical / mixed trichotomy at emission (an all-classical select is
-  // left for the backend; a classical condition over a tainted arm declines the
-  // unforgivable mixed shape loudly — spec_reject_fp_select_mixed.ll).
-  auto armLiftable = [](const Value *A) {
-    return !isa<Constant>(A) || isa<ConstantFP>(A);
+  if (Ty->isFloatingPointTy() && W != "f32" && W != "f64" && W != "f80")
+    return false;
+  auto armAdmissible = [](const Value *A) {
+    return !isa<Constant>(A) || isa<ConstantInt>(A) || isa<ConstantFP>(A);
   };
-  return armLiftable(SI->getTrueValue()) && armLiftable(SI->getFalseValue());
+  return armAdmissible(SI.getTrueValue()) && armAdmissible(SI.getFalseValue());
 }
 
 // bd 3p2a — DOES THE CALLEE'S RETURNED VALUE DERIVE FROM A LITERAL
@@ -580,18 +444,24 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
   }
 
   // (1) Body shape: a SINGLE straight-line value block, OR (5po2 I1) a multi-block
-  //     acyclic tainted VALUE diamond that the clone's scoped PredMux flatten
+  //     acyclic tainted VALUE region that the clone's scoped PredMux flatten
   //     (`lowerCloneControl`) collapses to straight-line. The whitelist walk below
   //     covers EVERY block, so a non-value construct in ANY arm still declines;
-  //     `br` (diamond edge) and `phi` (merge mux) are accepted as flattenable
-  //     control, and `switch`/`indirectbr`/`invoke` (out of the I1 br scope)
-  //     decline in the walk. A shape PredMux cannot claim (multi-exit — the I2
-  //     controlled-return shape; a loop; a compound region) is caught by the
+  //     `br` (diamond edge), `switch` (N-way edge, bd p3kd.7.1), `unreachable`
+  //     (a dead sink, bd p3kd.7.1) and `phi` (merge mux) are accepted as
+  //     flattenable control, and `indirectbr`/`callbr` decline in the walk
+  //     (`invoke` declines at (0c)). A shape PredMux cannot claim (multi-exit —
+  //     the I2 controlled-return shape; a loop; a compound region; a CLASSICAL
+  //     branch or switch, which PredMux never claims) is caught by the
   //     `lowerCloneControl` post-flatten "still multi-block → decline" backstop
   //     and, for a surviving unlowered mux, the "no tainted select survives" guard
   //     in `buildClone` — detection stays permissive here (a shape it lets
   //     through declines loudly later, never silently), and the emission proves
-  //     the flatten by construction.
+  //     the flatten by construction. Detection is mask-blind, so it must not
+  //     refuse a terminator the emitter lowers under SOME mask: a switch is
+  //     lowered when its scrutinee is quantum and backstopped when it is
+  //     classical (spec_accept_clone_switch.ll,
+  //     spec_reject_clone_switch_classical_scrutinee.ll).
 
   // (2) ABI return: a (possibly-tainted) return must have a reversible copy-out
   //     to an i32 handle. Two admitted families (bd 3c6m.54):
@@ -631,12 +501,16 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
   for (BasicBlock &BB : *Callee)
   for (Instruction &I : BB) {
     // Terminators: a plain `ret` (the whitelist proves the returned value
-    // reversible) or a `br` — 5po2 I1's diamond edge, collapsed by the clone's
-    // PredMux flatten. A `switch`/`indirectbr`/`invoke`/`callbr` is out of the I1
-    // br scope → InBodyControl (a loud over-decline to remove, R1; a later
-    // widening).
+    // reversible), a `br` (5po2 I1's diamond edge), a `switch` (bd p3kd.7.1: the
+    // N-way edge PredMux flattens with one `icmp eq` flag per case, exactly as at
+    // the top level) or an `unreachable` (bd p3kd.7.1: the dead sink PredMux
+    // tolerates inside a region since bd 20xt.5 (d); outside one it keeps the
+    // clone multi-block and the backstop declines; a body with no `ret` at all
+    // declines at the wrap, `kMsgCloneNoReturn`, spec_reject_clone_no_return.ll).
+    // An `indirectbr`/`callbr` → InBodyControl (a loud over-decline to remove, R1).
     if (I.isTerminator()) {
-      if (!isa<ReturnInst>(I) && !isa<BranchInst>(I)) {
+      if (!isa<ReturnInst>(I) && !isa<BranchInst>(I) && !isa<SwitchInst>(I) &&
+          !isa<UnreachableInst>(I)) {
         WhereOut = &I;
         pop();
         return SpecReject::InBodyControl;
@@ -840,11 +714,11 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
       }
       continue;
     }
-    // A SELECT is a straight-line mux: most decline InBodyControl, but the tight
-    // 5po2 liftable shape (`select(icmp, param, 0)`) is emitted as a controlled
-    // copy in the clone, so accept it here (the emission re-proves taint).
+    // A SELECT is a straight-line mux, disposed of by taint in the clone
+    // (`lowerCloneSelect`); detection refuses only the shapes no mask can lower
+    // (`isAdmissibleCloneSelect`, bd p3kd.7.1).
     if (auto *SI = dyn_cast<SelectInst>(&I)) {
-      if (isLiftableSelect(SI) || isLiftableFpSelect(SI))
+      if (isAdmissibleCloneSelect(*SI))
         continue;
       WhereOut = &I;
       pop();

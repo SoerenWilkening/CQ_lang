@@ -13,9 +13,11 @@
 // (decline-by-default).
 //
 // Accepted body set (the open Rule-13 item, IMPLEMENTATION_PLAN §8): a VISIBLE,
-// PURELY-CLASSICAL, NON-RECURSIVE, STRAIGHT-LINE value function — no `cq_*`
-// primitive, no measurement, no tainted in-body control flow (`br`/`select`/
-// `switch` reached by a tainted param), no fp/i128/vector/half quantum ABI, no
+// PURELY-CLASSICAL, NON-RECURSIVE value function — no `cq_*` primitive, no
+// measurement, in-body control only of the kinds the clone's PredMux flatten and
+// `lowerCloneSelect` collapse to straight-line (`br`/`switch`/`unreachable`
+// terminators, `phi`/`select` muxes; a shape they leave declines loudly at the
+// clone, bd p3kd.7.1), no fp/i128/vector/half quantum ABI, no
 // non-reversibilizable construct, every forward gate `isInverseEmittable`, and
 // (bd 3p2a) a RETURNED VALUE that actually denotes a value — the whitelist scans
 // instruction OPCODES and used to `continue` past every terminator, so a body of

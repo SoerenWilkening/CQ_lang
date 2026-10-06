@@ -9,11 +9,10 @@
 ; WHICH GATE FIRES (measured, and deliberately recorded because naming the wrong
 ; clause is how containment arguments in this file have been wrong before): the
 ; message below is the `scanBody` DATA-OP whitelist rejecting the `fcmp fp128`
-; INSTRUCTION itself ("unsupported width"), NOT `isLiftableFpSelect`'s own
-; compare-width clause — the condition compare is an instruction in the callee
-; body, so the data-op gate reaches it first regardless of the select. The clause
-; in `isLiftableFpSelect` is defense in depth, kept so that predicate is
-; self-contained rather than silently coupled to another gate's reachability.
+; INSTRUCTION itself ("unsupported width") — the condition compare is an
+; instruction in the callee body, so the data-op gate reaches it whatever the
+; select. The retired `isLiftableFpSelect` carried its own compare-width clause as
+; defence in depth; since bd p3kd.7.1 the data-op gate is the only one.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported width)

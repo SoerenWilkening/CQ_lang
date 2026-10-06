@@ -30,6 +30,16 @@ constexpr char kMsgCloneUninvertible[] =
 constexpr char kMsgCloneNoCopy[] =
     "cq specialization: clone return width has no reversible copy under quantum "
     "lift";
+// bd p3kd.7.1 review rounds 1 and 2: since `scanBody` admits `unreachable`, a body
+// with no `ret` at all reaches the wrap as ONE block whose terminator is not a
+// `ret` (a parameter read by a branch stays live, because every terminator is a
+// liveness root, so the dead-argument drop keeps the quantum slot). The wrap used
+// to return false silently and `buildClone` dropped the result: an unwrapped clone,
+// forward gates never reversed or freed, at `opt` exit 0. Such a callee never
+// returns, so every call is UB, but the pass still fails loudly (R1: never guess).
+// Pinned by spec_reject_clone_no_return.ll.
+constexpr char kMsgCloneNoReturn[] =
+    "cq specialization: lifted callee never returns under quantum lift";
 
 void diagnose(Instruction *Where, StringRef Msg) {
   Where->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
@@ -44,8 +54,10 @@ bool emitBennettWrap(Function &Clone, ArrayRef<CallInst *> ForwardStream,
                      TaintSet &cloneTaint) {
   // The accepted body is a single straight-line BB terminated by `ret`.
   auto *Ret = dyn_cast<ReturnInst>(Clone.getEntryBlock().getTerminator());
-  if (!Ret)
-    return false;  // not the proven straight-line shape (defensive).
+  if (!Ret) {
+    diagnose(Clone.getEntryBlock().getTerminator(), kMsgCloneNoReturn);
+    return false;
+  }
 
   // (a) Pre-scan the WHOLE forward stream BEFORE any mutation. A single
   //     un-invertible primitive declines loudly with NO emission — never a

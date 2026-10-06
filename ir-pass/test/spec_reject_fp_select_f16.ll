@@ -1,6 +1,7 @@
 ; spec_reject_fp_select_f16.ll — DECLINE probe (bd adia whitelist edge): a
 ; HALF (f16) fp select in a lifted clone body. The adia widening admitted
-; exactly f80 into `isLiftableFpSelect` (the coshl/floorl need); f16 stays on
+; exactly f80 into `isLiftableFpSelect` (`isAdmissibleCloneSelect` since bd
+; p3kd.7.1, same fp width set) (the coshl/floorl need); f16 stays on
 ; the explicit whitelist's outside — no tested coverage, so it keeps the loud
 ; InBodyControl decline (Prime Directive: never accept an unproven-in-test
 ; shape). The f16 edge pin for the {f32,f64,f80} accept set.

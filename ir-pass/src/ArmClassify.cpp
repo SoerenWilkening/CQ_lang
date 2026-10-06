@@ -4531,15 +4531,19 @@ bool comparePredLowerable(const CmpInst *Cmp) {
   // and a user SSA name one Value, but never merges the flag rail with a DATA
   // rail, so it is not Case B either.)
   //
-  // THE TRUE CALL-SITE LIST of this predicate, measured — an earlier comment
-  // named five and there are EIGHT, in eight distinct functions:
+  // THE CALL-SITE LIST of this predicate, re-measured by grep at bd p3kd.7.1
+  // (an earlier list named eight and missed five; the same change removed the
+  // SpecializeReject `isLiftableFpSelect` call, whose compare the clone scan's
+  // data-op whitelist already gates): THIRTEEN calls in thirteen functions:
   //   ArmClassify.cpp        condDataUseDisposition · classifyArms ·
-  //                          classifyClassicalCallArm
+  //                          classifyPhaseKickback · classifyPhaseKickbackNest ·
+  //                          classifyClassicalCallArm · classifyAngleSelect
   //   SelectClassify.cpp     classifySelectRegion
-  //   SpecializeReject.cpp   isLiftableFpSelect
   //   GuardedStoreArmEmit.cpp classifyGuardedStoreArm
   //   RegionTreeDetect.cpp   recoverRegionTree
   //   AbortParkEmit.cpp      classifyAbortPark
+  //   AngleSelectEmit.cpp    emitPhaseAngleSelect · emitAngleSelectRegion
+  //   SwapRouteEmit.cpp      emitValueRegion
   // `classifySelectRegion` matters most: it calls this per collected leaf right
   // after `collectCondTree`, so the 4.4 SELECT route was covered by TWO of the
   // three reverted fences, not one — the two removals are not independent, and

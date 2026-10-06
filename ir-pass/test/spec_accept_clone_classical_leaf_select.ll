@@ -15,8 +15,11 @@
 ; lift`, at the select, BEFORE the per-leaf fence. `scanBody`'s shape gate
 ; `isLiftableSelect` admitted a straight-line select only on a bare `icmp`
 ; condition, while `lowerCloneSelect` lowers any `collectCondTree` condition (the
-; same select reached through a flattened diamond compiled, 5po2 I2). The gate now
-; asks that grammar for the two-arm shape. Then the classical leaf `k > 3` is the
+; same select reached through a flattened diamond compiled, 5po2 I2). bd p3kd.3
+; made the gate ask that grammar; since bd p3kd.7.1 the gate
+; (`isAdmissibleCloneSelect`) asks no grammar at all and leaves the condition to
+; `lowerCloneSelect`, whose skip lands on the loud backstop. Then the classical
+; leaf `k > 3` is the
 ; network's classical literal (spec_accept_clone_classical_leaf.ll has the
 ; trace argument): `gl = and_i1_hl(icmp_sgt_i32_hl(b, 5), k > 3)`, out = gl ? 3b :
 ; b^6, the source's value on every basis state; the Bennett reverse returns every

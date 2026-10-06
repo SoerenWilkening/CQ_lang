@@ -1,8 +1,10 @@
 ; spec_accept_clone_select_compound_cond.ll — ACCEPT (bd test_C_libtooling-p3kd.3,
 ; L9 disclosure). `scanBody`'s select gate `isLiftableSelect` admitted a
-; STRAIGHT-LINE select only on a bare `icmp` condition; it now asks the
+; STRAIGHT-LINE select only on a bare `icmp` condition; bd p3kd.3 made it ask the
 ; `collectCondTree` grammar `lowerCloneSelect` lowers, for the two-arm shape (both
-; arms non-constant, every compare leaf an `icmp`, no register leaf). That newly
+; arms non-constant, every compare leaf an `icmp`, no register leaf). Since bd
+; p3kd.7.1 the gate (`isAdmissibleCloneSelect`) asks no grammar and admits every
+; select a mask could lower; the condition is `lowerCloneSelect`'s. That newly
 ; admits a compound condition whose leaves are ALL quantum, the
 ; `(a > 5 & b < 9) ? a * 3 : b ^ 6` spelling below (clang -O1's straight-line
 ; form of `&`/`&&` over cheap compares). The SAME condition reached through a

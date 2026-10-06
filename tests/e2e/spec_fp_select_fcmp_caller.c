@@ -9,7 +9,8 @@
    (see the lib TU header for why the literal isfinite test cannot be used here). The
    specializer lifts it into __cq_q_mhelper_1: the condition flag is minted by
    `cq_template_fcmp_une_f64_hl` — the fcmp family stem this increment made
-   reachable from isLiftableFpSelect — the ConstantFP arm is materialized to a
+   reachable from isLiftableFpSelect (isAdmissibleCloneSelect since bd p3kd.7.1)
+   — the ConstantFP arm is materialized to a
    fresh `cqrt_alloc_f64(2.5)` |const> rail (LEAKED, Rule 6), the two
    `cqrt_copy_f64_controlled` copies are ¬flag `cqrt_x`-bracketed, and the Bennett
    wrap reverse-plays copies + flag and frees every tainted rail on |0>.
