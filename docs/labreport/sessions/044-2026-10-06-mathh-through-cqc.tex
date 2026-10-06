@@ -1,0 +1,104 @@
+\labsessionheader{2026-10-06}{math.h through cqc: the census measured a lab pipeline; source injection shipped}%
+  {5667ae1d}{n/a}{none}
+
+\subsection*{Goal}
+The owner tested math.h calls through \texttt{tools/cqc} and found \texttt{sin} rejected and
+\texttt{pow} compiling only at exponents \texttt{2} and \texttt{0.5} (clang rewrites those to a
+multiply and \texttt{sqrt}). The session found where the published figure came from, measured
+what a user actually gets, and shipped math.h source injection in \texttt{cqc}.
+
+\subsection*{Owner rulings this session}
+\begin{itemize}
+  \item Purely classical behaviour must not change. This ruled out \texttt{-fno-builtin} on the
+  user's file.
+  \item Library bodies are lifted, not inlined: a called body must lower exactly as an inlined
+  one would, so a decline there is a lifting gap (\bd{p3kd}).
+  \item Lifting targets purely classical callees; a lifted callee containing \texttt{cq\_theta}
+  may keep declining.
+  \item Injection first. Direct Bennett lowering of \texttt{pow}, \texttt{exp} and the like was
+  dropped (\bd{3c6m.71} closed); trig keeps CQ's own bodies.
+\end{itemize}
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \commit{08089be6} --- \bd{r2j3.18} --- use-after-free in
+  \texttt{promoteVolatileScalarLocals}, pre-existing on main.
+  \item \commit{5667ae1d} --- \bd{3c6m.70}, \bd{3c6m.72} --- the census compiles through
+  \texttt{cqc}; the openlibm bundle; pass-side binding (\texttt{LibmBinding}); \texttt{cqc -g}.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fdoc\ The published 131/180 (README: 159/183) was measured by
+  \texttt{runtime\_census.py}, which compiled each probe with blanket \texttt{-fno-builtin},
+  linked an openlibm corpus built under \texttt{/private/tmp}, force-inlined the bodies and
+  reran \texttt{default<O1>}. \texttt{cqc} did none of this; README line 177 said so but kept
+  the lab headline. Through \texttt{cqc}: 46/180 (0/120 injected).
+  \item \fdoc\ The census guard skipped every \texttt{llvm.*} callee and so could not see
+  an unlowered \texttt{llvm.sin.f64}. Found with an R17 mutant: replacing \texttt{cq\_theta} by
+  \texttt{freeze} still read COMPILES. Fixed: 18/18 quantum probes now report
+  \texttt{unlowered-call} under that mutant.
+  \item \fpreexisting\ \bd{r2j3.18}: when a promoted volatile alloca stores a load of another
+  one, \texttt{PromoteMemToReg} erases that load while \texttt{deleteDeadCones} still holds a raw
+  pointer to it. This caused 29/483 census crashes under \texttt{-j6}, deterministic under
+  \texttt{CQ\_OPT\_DEBUG\_ALLOC=lifo}. Reachable from plain C.
+  \item \fconfirmed\ (caught before commit) Review rounds 1--3 found seven defects in the new binding, all fixed:
+  \begin{itemize}
+    \item verify-clean: a TU-private \texttt{static sin} was bound as the program's own;
+    \item latent: \texttt{llvm.powi.f80} bound openlibm's private \texttt{powil};
+    \item an alias or ifunc \texttt{sin} was missed;
+    \item a bound call ending classical could stay on injected source;
+    \item an observable rename;
+    \item debug-info bloat in classical programs;
+    \item an early sweep that internalized bindable bodies.
+  \end{itemize}
+  \item \foverdecline\ Loud gaps, filed: \bd{p3kd.11} (a math.h call inside a lifted helper is
+  not bound); \bd{3c6m.75} (round-2 taint growth is not re-asked).
+  \item \fpreexisting\ The lifter's open stale-argument defect \bd{r2j3.6} now reaches every lifted
+  math.h call (\texttt{q2=q; cq\_theta(\&q2,.3); cbrt(q)}), which previously failed loudly.
+  Disclosed in CLAUDE.md (L9).
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+math.h cells via cqc, before & 46/180 & \measured{runtime\_census.py (cqc, no bundle)} \\
+math.h cells via cqc, after & 71/180 & \measured{runtime\_census.py --output tools/library\_coverage/runtime\_census.json} \\
+\quad source-injected / CQ-provided & 19/120, 6/6 & same \\
+\quad intrinsic / macro & 36/42, 10/12 & same \\
+probes accepted & 313/483 & same \\
+lab-only cells (lifting gaps) & 60 & per-cell diff vs \texttt{docs/audits-2026-09-30/runtime\_census.json} \\
+bundle & 171 spellings, 207 bodies & \measured{tools/libm\_bundle.py} \\
+\bottomrule\end{tabular}
+
+The 60 lab-only cells split by first lifter blocker: 29 quantum control flow, 14
+memory or nested calls, 9 clone ABI, 8 undef return (\bd{p3kd.6}--\bd{p3kd.9}).
+
+\subsection*{Verification run}
+\begin{itemize}
+  \item Batch gate: \texttt{ctest --test-dir build -LE maintenance -j6}, 597/597 passed (load
+  average up to 181 from another session); \texttt{cq-opt-equivalence-full}, 2685 fixtures, 0
+  mismatches; \texttt{update\_code\_map.py --check} clean.
+  \item lit for \bd{3c6m.72}: three invocations, the last 81/81. The five fixtures added after
+  that (round-2 and round-3 findings) ran only inside the batch gate.
+  \item Mutation: one no-op mutant and three real mutants, MISSED 0. The predicates added in
+  review rounds have fixtures that were observed failing on the old code, but no extra mutants:
+  the mutant budget was spent.
+  \item Installed path: \texttt{install\_cq.py --backend trace} into a scratch prefix, then the
+  installed \texttt{cqc} compiled \texttt{sin(q)}; the binary ran with a 153-line trace.
+  \item Not run: a Linux end-to-end run; an offline configure (FetchContent needs the network,
+  or \texttt{CQ\_OPENLIBM\_SOURCE\_DIR}).
+\end{itemize}
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item Owner ruling: \bd{3c6m.76}. \texttt{cqc}'s one-module build lets a TU's \texttt{static}
+  function named like a libm symbol capture other TUs' classical libcalls. Should C semantics
+  be the reference?
+  \item Next: \bd{p3kd.7} (29 cells). Run the caller-side control emitters inside the lifted
+  copy, so the Bennett wrap reverses their forward stream.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+Every math.h coverage figure in earlier entries was measured by the lab harness, not through
+\texttt{cqc}; the figure of record is now the \texttt{cqc} census.
