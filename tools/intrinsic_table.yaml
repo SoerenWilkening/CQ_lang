@@ -189,8 +189,8 @@ intrinsics:
   # (Cody-Waite reduction to |x| < 2^28*pi/2, Payne-Hanek beyond), <= 1 ULP
   # reference accuracy, bit-exact vs Linux's system libm; NaN -> NaN,
   # +-Inf -> NaN, sin/tan(+-0) = +-0, cos(+-0) = 1. f64 ONLY: Bennett has no
-  # binary32 or x87 version, so sinf/sinl (and cos/tan) keep source injection
-  # (openlibm, CQ's branchless sinl/cosl/tanl). Class-2 additive producers like
+  # binary32 or x87 version, so sinf/sinl (and cos/tan) keep openlibm source
+  # injection (not lowerable yet, bd 3c6m.79). Class-2 additive producers like
   # sqrt: the `_unc` recomputes f(live source); the angle fence stays upstream.
   - { op: sin, llvm_id: sin, class: 2, reversibility: pure_noninjective, arity: unary, widths: [f64], variants: [fwd, unc] }
   - { op: cos, llvm_id: cos, class: 2, reversibility: pure_noninjective, arity: unary, widths: [f64], variants: [fwd, unc] }

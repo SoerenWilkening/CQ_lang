@@ -156,18 +156,20 @@ when no installer selection exists.
 ## Demonstrator — standard-library coverage under tainted inputs
 
 <!-- MATHH-HEADLINE:START -->
-> ### `math.h` coverage through `cqc`: **82/180 scalar-input cells (46%)**
+> ### `math.h` coverage through `cqc`: **79/180 scalar-input cells (44%)**
 >
-> **24/117** source-injected · **45/48** intrinsic · **3/3** CQ-provided · **3/3** classical-only · **10/12** macro. A cell counts when every runtime C/Q mixture builds, lowers, links and trace-runs through `tools/cqc`, the driver a user runs ([detail](tools/library_coverage/runtime_census.md); regenerate with `python3 tools/library_coverage/runtime_census.py --output tools/library_coverage/runtime_census.json`). The `nan` row is classical-only and outside the scalar total.
+> **24/120** source-injected · **45/48** intrinsic · **3/3** classical-only · **10/12** macro. A cell counts when every runtime C/Q mixture builds, lowers, links and trace-runs through `tools/cqc`, the driver a user runs ([detail](tools/library_coverage/runtime_census.md); regenerate with `python3 tools/library_coverage/runtime_census.py --output tools/library_coverage/runtime_census.json`). The `nan` row is classical-only and outside the scalar total.
 >
 > The lab-harness scoreboards in [`COVERAGE.md`](tools/library_coverage/COVERAGE.md) inject openlibm bodies `cqc` does not ship (bd `3c6m.70`, `3c6m.72`). They measure what the compiler can lower inside that harness, not what a user can compile.
 <!-- MATHH-HEADLINE:END -->
 
 The headline counts what `tools/cqc` compiles: every probe uses runtime operands
 and every classical/quantum argument combination ([northstar](NORTHSTAR.md) goal 2).
-`cqc` injects the real openlibm source (CQ's own branchless code for `sinl`/`cosl`/`tanl`)
-for a math.h call with a quantum operand; a classical call keeps the system libm.
-`sin`, `cos`, `tan`, `asin`, `acos` and `atan` on a `double` lower to one backend call each (Bennett.jl reference).
+`cqc` injects the real openlibm source for a math.h call with a quantum operand;
+a classical call keeps the system libm. `sin`, `cos`, `tan`, `asin`, `acos` and `atan`
+on a `double` lower to one backend call each, `cq_template_<fn>_f64`, whose circuit
+the backend supplies with Bennett.jl as reference. That is what a "hand-written"
+function means here; CQ ships no C implementation of a math function of its own.
 A body whose quantum branches the function lifter cannot lower yet still fails
 loudly, and is a compiler gap (bd `p3kd`).
 

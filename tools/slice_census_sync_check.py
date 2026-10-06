@@ -44,8 +44,7 @@ WHAT IT DOES **NOT** WITNESS (read before quoting it):
     measured apart, and the docs state that their coinciding today is a
     MEASUREMENT, not an invariant.  Making it an error here would quietly convert
     that stance into a rule.
-  * It says nothing about `slice_branchless_*` (the CQ-PROVIDED row, whose gate is
-    `probe.cq_provided_cells()`) or about any other slice family.
+  * It says nothing about any other slice family.
 
 Usage:  slice_census_sync_check.py [--root <repo-root>] [-q]
 Exit 0 = clean, 1 = a golden claims coverage the census does not, 2 = cannot run.
@@ -121,7 +120,7 @@ def main() -> int:
               f"pass vacuously, which is not a pass.", file=sys.stderr)
         return 2
 
-    unknown, not_covered, cq_provided, no_source = [], [], [], []
+    unknown, not_covered, no_source = [], [], []
     for s in goldens:
         if not (e2e / f"{PREFIX}{s}.c").exists():
             no_source.append(s)
@@ -130,13 +129,11 @@ def main() -> int:
             unknown.append(s)
             continue
         key, rec = hit
-        if rec.get("provider") == "cq":
-            cq_provided.append((s, key))
-        elif not is_covered(rec.get("status", "decline")):
+        if not is_covered(rec.get("status", "decline")):
             not_covered.append((s, key, rec.get("status"), rec.get("bucket", "")))
 
     covered = {s for s, (k, r) in by_spelling.items()
-               if r.get("provider", "openlibm") != "cq" and is_covered(r.get("status", "decline"))}
+               if is_covered(r.get("status", "decline"))}
     missing_golden = sorted(covered - set(goldens))
 
     # Printed BEFORE any failure banner, and flushed, so the two do not interleave
@@ -166,13 +163,6 @@ def main() -> int:
               f"a census cell at all: {unknown}", file=sys.stderr)
         print("   The prefix asserts 'the REAL openlibm body for census cell <s>'. "
               "If there is no such cell, use another prefix.", file=sys.stderr)
-    if cq_provided:
-        bad = True
-        print(f"\n!! {len(cq_provided)} `{PREFIX}*` golden(s) name a CQ-PROVIDED cell: "
-              f"{[s for s, _ in cq_provided]}", file=sys.stderr)
-        print("   Those cells inject CQ's OWN leaf, not upstream's body (Rule 18 "
-              "amendment (iii)); their goldens are `slice_branchless_*`.",
-              file=sys.stderr)
     if no_source:
         bad = True
         print(f"\n!! {len(no_source)} golden(s) have no `.c` beside them: {no_source}",

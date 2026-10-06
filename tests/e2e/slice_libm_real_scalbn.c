@@ -1,8 +1,7 @@
 /* slice_libm_real_scalbn.c — bd 3c6m.14 / L6 Inc 1: the REAL openlibm scalbn
    body (s_scalbn.c, fdlibm-derived, BSD-licensed; verbatim algorithm with the
    math_private.h word macros expanded to the __builtin_memcpy idiom clang -O1
-   folds to the same bitcast IR). UNLIKE slice_branchless_scalbn.c (the L1
-   authored substitute that dissolves the branches), this body carries the full
+   folds to the same bitcast IR). This body carries the full
    nested tainted control the census flags — pre-pass @slice is 11 blocks / 5
    conditional br (the k==0 subnormal arm with its nested +-0 test, the NaN/Inf
    test, the overflow test, the normal/subnormal split), with a cross-arm DAG

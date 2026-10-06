@@ -30,9 +30,8 @@
 ; the ir-pass layer, without resurrecting an e2e slice.
 ;
 ; NEAR-MISS — DO NOT DELETE THIS AS REDUNDANT. The repo already witnesses
-; `cq_template_icmp_ult_i32_hl` / `..._hl_inv` (ir-pass/test/
-; lowering_hybrid_lgammal_words_f80.ll and the `slice_libm_real_{logf,tanhl}`
-; goldens). Those are the HANDLE+LITERAL shape used as a control-condition flag
+; `cq_template_icmp_ult_i32_hl` / `..._hl_inv` (the
+; `slice_libm_real_{logf,tanhl}` goldens). Those are the HANDLE+LITERAL shape used as a control-condition flag
 ; and stripped by the fresh-minting `_inv`. They are DIFFERENT SYMBOLS with a
 ; DIFFERENT ARITY from the bare QQ pair pinned here: `_hl` takes (handle, i32
 ; literal) and its `_inv` returns a fresh handle; the bare QQ form takes

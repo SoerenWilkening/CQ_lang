@@ -1,5 +1,11 @@
 # Full-surface libm injection census (bd 3c6m.49 / 3c6m.50)
 
+> **2026-10-06 (bd `3c6m.78`): every cell is openlibm's own body.** CQ's own
+> branchless leaves and the CQ-provided row are retired: a "hand-written" function
+> means a backend circuit reached by one template call, never C that CQ writes
+> (CLAUDE.md R14). Current: **101/126 injection-covered, 25 decline** (2 lever-gap,
+> 3 deferred-capability, 20 decided-decline). Older counts below are dated history.
+
 ## ⚠ READ THIS FIRST — `bucket` is NOT a work list. `scope` is.
 
 **The 23 declines contain 2 cells of actionable work, not 23** (last re-measured
@@ -512,24 +518,12 @@ number (2) must appear beside it. For progress, use **(2)** and nothing else.
 
 ---
 
-### Decomposition — FOUR disjoint scoreboards (three live, one retired)
+### Decomposition — two live scoreboards (rows 3 and 4 retired 2026-10-06)
 
 **NEVER SUMMED.** A merged headline is the retired
 "165/174 = 95%" overclaim recurring, and this project treats that as a **bug**
-(bd `libm-scoreboard-two-numbers`, owner, emphatic; `probe.py::scoreboard_lines` —
-renamed from `two_scoreboard_lines` by bd `guwr`, since there are now three live
-rows). If you take one number from this file, take **(2)**.
-
-**⚡ 2026-07-31 (owner ruling, bd `guwr`): a third LIVE row exists.** Between (2) and
-the retired (4) sits **CQ-PROVIDED** — functions whose reversible implementation CQ
-ships itself, injected in place of upstream's body. It is gated (Bennett
-concrete-branchless backing **and** a committed e2e golden **at that width** **and**
-an explicit owner ruling per function) and it is **never merged into (2)**. Today:
-**6/6** — `sin`/`cos`/`tan`.f64, `sinl`/`cosl`/`tanl`.f80. **The distinction from the
-retired (4) is the entire point:** (4) counted *every* authored substitute as
-injection coverage, ungated — that is the overclaim, and it stays retired. (3) counts
-only what passes the gate, and counts it in its own row. Like recognition, it moves
-only when a leaf is authored, so it is **never campaign progress** either.
+(bd `libm-scoreboard-two-numbers`, owner, emphatic; `probe.py::scoreboard_lines`).
+If you take one number from this file, take **(2)**.
 
 **The surface**, as modelled by `probe.MATHH_SPEC` — *a model, not ISO's own count*:
 **69 named entities → 183 cells.** The 12 type-generic macros are modelled at **one**
@@ -548,19 +542,21 @@ Measured: **36 verified · 3 accepted** (`fabs{,f,l}`) **· 3 partial** (`fma{,f
 
 ### (2) Real-openlibm source injection — ***THE* campaign number**
 
-**What `120` is** — it is the **upstream-injectable subset**, not `math.h`:
+**What `126` is** — it is the **upstream-injectable subset**, not `math.h`:
 
 ```
 183 modelled cells  =  42 hardware keep-set (no injectable body, Rule 18)
                      + 12 type-generic macro cells (modelled at 1 width each)
                      +  3 nan (by-design, no taintable input)
-                     + 126 nominally injectable
-                     = 126 actually probed   (bd bcv4 CLOSED 2026-08-10: the 3
-                            ilogb cells are no longer skipped — see below)
-                            − 6 CQ-PROVIDED (bd guwr — probed, but against CQ's
-                                 own leaf, so they answer scoreboard (3), not this one)
-                     = 120 upstream-injectable   <- THIS row's denominator
+                     + 126 injectable, all probed against openlibm's body
+                                 <- THIS row's denominator
 ```
+
+**Measured 2026-10-06 (bd `3c6m.78`): 101/126 (80%), 25 decline** (2 lever-gap,
+3 deferred-capability, 20 decided-decline). The six cells the retired CQ-provided
+row used to hold (`sin`/`cos`/`tan`.f64, `sinl`/`cosl`/`tanl`.f80) returned to this
+denominator as declines; the numerator did not move, so no injection-covered cell
+rested on a CQ leaf. Everything below that quotes `/120` predates this.
 
 So **97/120 = 81% of the upstream-injectable subset** — which is **53%** of the 183
 modelled cells and **~42%** of the 69 named entities. **Never write "81% of
@@ -703,57 +699,17 @@ affected the claim, which is about the all-3 set.)*
 Note the int-return rule is narrower than it sounds — `lround`/`llround` are
 *long*-return and *are* censused.
 
-### (3) CQ-PROVIDED — CQ ships the leaf; upstream's body is NOT injected
-**6 / 6 cells**: `sin`/`cos`/`tan`.f64 + `sinl`/`cosl`/`tanl`.f80 (owner ruling
-2026-07-31, bd `guwr`; Rule 18 amendment). These are census cells like any other —
-probed, lowered, recorded — but probed against **CQ's own reversible source**, front-
-registered in the defmap exactly the way the hardware keep-set shims already are
-(`wprobe.py::cq_provided_shims`, the structural twin of `keep_shims`). **Never merged
-into (2)**, and never campaign progress: this row moves only when a leaf is authored.
-The gate is mechanical where it can be — `probe.py::cq_provided_cells` measures leaf +
-slice + committed golden + `ctest` registration + **body-sync between the leaf and the
-slice the golden pins** — and human where it must be (Bennett backing, owner ruling
-per function). It **rejects `sinf`/`cosf`/`tanf`** today. Each cell's
-`upstream_scope` field retains the openlibm ruling, so *why CQ ships its own* stays on
-the record.
-
-> **"9" IS A TRIPWIRE, NOT A CAP — clarified by owner ruling 2026-08-10.** This
-> paragraph used to end "a change that 'covers' 9 has broken the gate", which read
-> literally forbade bd `eur4` from ever succeeding. The ruling is per **stem**;
-> condition (ii) is mechanical and per **width**. Authoring three REAL f32 leaves
-> (+ slices, goldens, whole-token ctest rows, in-sync bodies) takes this row to 9
-> **legitimately**. What would mean the gate broke: reaching 9 **without** that
-> evidence. And price `eur4` correctly before quoting it — `sinf`/`cosf`/`tanf` are
-> **declines**, so admitting them leaves the injection **numerator at 100** and only
-> shrinks its denominator (120 → 117, reading 83% → 85%). Row-3 movement with zero
-> compiler work; **never** injection progress.
-
-> **DECLINED 2026-08-10 (owner ruling): the `log` stem is NOT admitted.** Measured:
-> `log` and `logl` BOTH pass condition (ii) on disk **and both cells are already
-> `COMPILES` by real openlibm injection**. Admitting the stem moves two *covered*
-> cells out of this denominator to buy one (`lgammal.f80`) — campaign number
-> **97 → 96**; the `logl`-only variant is **flat, not +1**. A triage claim of "+1
-> injection cell, cheaper than any lever on the list" was wrong on that arithmetic.
-> The amendment's grounding also does not reach it: CQ-PROVIDED exists because
-> openlibm's **source form** is un-injectable (trig's Payne–Hanek `k_rem_pio2.c`),
-> and `log`'s source form works and is injected today — admitting it would trade
-> "CQ compiled openlibm's `log`" for "CQ ships its own `log`". `lgammal.f80` gets a
-> **re-scope** instead; its `scope_ref` already self-flags its ground as SPENT.
-
-### (4) Authored-branchless substitutes — RETIRED, superseded, do not quote
-36 hand-written leaves, **f64/f80 only — zero f32 leaves exist**, with numerics that
-diverge from ISO in documented ways (`atan` ≤1.15 ulp and `atan(±inf)=NaN`; `tanh`
-≤3.05 ulp). They cover 11 further functions at some widths. **Do not add this to (2).**
-Because a union prints in the same shape as (2)'s row, a reader diffs them and reads
-the delta as injection progress — it is not, and `fmod` appears "covered" here while
-being a standing Rule-18 decline.
-
-**How (4) differs from the live (3), since they draw on the same `branchless/` dir —
-this is the whole distinction and it is worth stating twice.** (4) counted **every**
-authored substitute **as injection coverage**, ungated: that is the overclaim, and it
-stays retired. (3) counts a spelling only when it passes the three-part gate, and
-counts it in its **own row**. Six of these 36 leaves pass; the other 30 (`fmod`
-included) do **not**, and their cells still decline in (2) exactly as before.
+### (3) CQ-PROVIDED and (4) authored-branchless — BOTH RETIRED 2026-10-06 (bd `3c6m.78`)
+These two rows counted functions through C bodies CQ wrote itself
+(`tools/library_coverage/branchless/`, 36 leaves): (4) as injection coverage,
+ungated, and (3) as a gated row of its own (bd `guwr`, 2026-07-31). The owner
+clarified on 2026-10-06 that a "hand-written" function means a **backend circuit**
+reached by one call (`cq_template_<fn>_<W>`, Bennett.jl as reference), never CQ-written
+C. The leaves, their `slice_branchless_*` goldens, the `cq_provided_shims` defmap
+registration and both rows were deleted. Every cell this census probes is now
+openlibm's own body. `double` sin/cos/tan reach users through their direct route
+(bd `3c6m.71`), which this census does not measure; `float` and `long double` trig
+have no route (bd `3c6m.79`). History: `git show 56275358:tools/library_coverage/full_surface/README.md`.
 
 ### Two caveats load-bearing for every number above
 

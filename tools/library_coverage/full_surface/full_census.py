@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-# Full-surface injection census — the width/by-ref/int-ret widening of
-# inject_census.py the roadmap intended. Imports probe.py's MATHH_SPEC as the
+# Full-surface injection census over every width, by-ref and int-ret cell. Imports probe.py's MATHH_SPEC as the
 # authoritative surface, expands each base fn across its width variants (f/d/l),
 # injects the REAL openlibm body per cell, runs cq-lowering, records the actual
 # blocking capability. Skips the hardware keep-set (recognition-covered, no
@@ -17,13 +16,6 @@ import probe as P
 # variant key -> (census width, c-type, spelling suffix, fp-const literal)
 VAR = {"f": ("f32","float","f","0.5f"), "": ("f64","double","","0.5"), "l": ("f80","long double","l","0.5L")}
 KEEP = set(P.HARDWARE_KEEP_SET.split())   # recognition-covered; no injectable body
-# bd guwr (Rule 18 AMENDMENT, owner 2026-07-31): the CQ-PROVIDED spellings. These
-# ARE probed and DO stay in this census — unlike the keep-set, which has no
-# injectable body at all — but they are probed against CQ's OWN leaf and are
-# reported on their own row. Amendment condition (iii): NEVER merged into the
-# injection number. The gate is measured on disk by `probe.cq_provided_cells()`;
-# day one that is exactly 6 and it rejects sinf/cosf/tanf (bd `eur4`).
-CQPROV = set(P.cq_provided_cells())
 
 def cell_args(spec, width, ctype, lit):
     """Map a spec's arg kinds to wprobe arg descriptors (arg0 tainted)."""
@@ -149,38 +141,29 @@ SCOPE = {
            "do NOT quote '9/9 have a loop SCEV cannot bound' for these two")
        for c in ("remainderl.f80", "remquol.f80")},
 
-    # -- sin/cos/tan x3 widths: Payne-Hanek. SINGLY grounded, and the difference
-    #    from fmod is load-bearing (measured 2026-07-28): Bennett DOES back
-    #    sin/cos/tan by a CONCRETE branchless fixed-window Payne-Hanek
-    #    (src/softfloat/fsin.jl:468 _rp_paynehanek, zero for/while). What is
-    #    ruled out is openlibm's SOURCE FORM — k_rem_pio2.c's nested
-    #    data-dependent loops, which Bennett would reject too. CLAUDE.md Rule 18
-    #    names "Payne-Hanek `rem_pio2`" verbatim. The parity-correct answer is
-    #    the authored branchless leaf (bd 20xt.8), which by the campaign's own
-    #    honesty rule leaves the CENSUS cell declined.
+    # -- sin/cos/tan x3 widths: Payne-Hanek. What is ruled out is openlibm's
+    #    SOURCE FORM — k_rem_pio2.c's nested data-dependent loops (owner decision
+    #    2026-07-27; CLAUDE.md Rule 18 named "Payne-Hanek `rem_pio2`").
     #    The f32/f64 bucket split is a pure SROA artifact: e_rem_pio2f.c:47
     #    `double tx[1]` promotes to SSA while e_rem_pio2.c:55 `double tx[3]`
     #    survives, so the f32 trio blocks one call DEEPER (inside k_rem_pio2)
     #    on the @ipio2 QROM read instead of on the tx fill store. Same capability.
-    #    *** READ THE scope_ref, NOT THE CELL NAME. *** "sin.f64: decided-decline"
-    #    does NOT mean CQ cannot do quantum sin. It means openlibm's s_sin.c +
-    #    e_rem_pio2.c + k_rem_pio2.c cannot be lowered AS INJECTED SOURCE, which is
-    #    the only thing this census measures (Rule 18). CQ compiles quantum
-    #    sin/cos/tan TODAY at 6 of 9 widths, e2e-verified.
+    #    *** READ THE scope_ref, NOT THE CELL NAME. *** This census measures
+    #    openlibm's body only. A user's quantum sin/cos/tan on a DOUBLE lowers to one
+    #    Bennett-backed template call (bd 3c6m.71), so the f64 function is covered
+    #    through cqc. The f32 and f80 widths have no backend route (Bennett has no
+    #    binary32 or x87 version) and are NOT covered. CQ's own branchless leaves
+    #    that once covered f64/f80 were retired 2026-10-06 (bd 3c6m.78): CQ ships
+    #    no C implementation of a library function.
     **{c: ("decided-decline",
-           f"openlibm BODY only (nested data-dependent-trip loops in k_rem_pio2.c; "
-           f"CLAUDE.md Rule 18 names rem_pio2). THE FUNCTION IS COVERED AND SHIPS: "
-           f"branchless/{c.split('.')[0]}.c + e2e slice_branchless_{c.split('.')[0]} "
-           f"(registered in tests/e2e/CMakeLists.txt). Bennett backs it the same way "
-           f"(branchless fsin.jl:468). Cell stays declined per the campaign honesty rule.")
-       for c in ("sin.f64", "cos.f64", "tan.f64",
-                 "sinl.f80", "cosl.f80", "tanl.f80")},
-    #    The f32 trio is the SAME ruling but WITHOUT the shipped leaf — bd eur4.
+           "openlibm BODY only (nested data-dependent-trip loops in k_rem_pio2.c; owner "
+           "2026-07-27). The f64 function lowers through cqc by its direct Bennett-backed "
+           "template (bd 3c6m.71); this cell does not measure that route.")
+       for c in ("sin.f64", "cos.f64", "tan.f64")},
     **{c: ("decided-decline",
-           "openlibm BODY only (same k_rem_pio2.c loops; CLAUDE.md Rule 18 names rem_pio2). "
-           "UNLIKE the f64/f80 six, NO branchless leaf exists at f32 for any function — "
-           "so this width of the function is genuinely NOT covered yet. bd eur4.")
-       for c in ("sinf.f32", "cosf.f32", "tanf.f32")},
+           "openlibm BODY only (same k_rem_pio2.c loops; owner 2026-07-27). No backend "
+           "route exists at this width, so the function is NOT covered (bd 3c6m.79).")
+       for c in ("sinf.f32", "cosf.f32", "tanf.f32", "sinl.f80", "cosl.f80", "tanl.f80")},
 
     # -- ld80 gamma pair. NOT decided for the reason bd 20xt's 2026-07-24 comment
     #    gives ("no soft_lgamma in Bennett") — that premise is analytically WRONG
@@ -210,8 +193,10 @@ SCOPE = {
     #     still UNMEASURED, so the ruling's own evidence is still unverified.
     "tgammal.f80": ("decided-decline",
                     "RULING STANDS (its own reduction loops ld80/e_tgammal.c:271/277/286, SCEV "
-                    "Unpredictable, quantum-governed trip) but that is NOT the measured first "
-                    "blocker and was not on the 2026-07-30 baseline either: pre-amendment it "
+                    "Unpredictable, quantum-governed trip). MEASURED 2026-10-06 (bd 3c6m.78): the "
+                    "first blocker is openlibm's `sinl` again (unsupported instruction), since CQ's "
+                    "own sinl leaf was retired. History: that is NOT the "
+                    "blocker the ruling names, and was not on the 2026-07-30 baseline either: pre-amendment it "
                     "blocked at `sinl` (unsupported instruction), post-amendment at `stirf` "
                     "(unsupported instruction) — the CQ-provided sinl cleared the sinl layer. "
                     "CORRECTED 2026-08-21 (bd 19v3 §4c): 'the loops sit behind stirf' is HALF "
@@ -223,51 +208,21 @@ SCOPE = {
                     "the instruction: `%7 = alloca i32`, the int* out-param slot for frexpl(x,&e) "
                     "in the inlined powl body = the g387/7.5 by-ref Shadow axis, the same axis "
                     "lgammal.f80's ref already names"),
-    # RE-SCOPED 2026-08-10 by owner ruling. The previous entry ended "Re-scope
-    # before quoting this cell: it may no longer be decided at all" — that
-    # re-scope has now happened, and the answer is that the cell stays declined
-    # for a NEW and honest reason.
-    #
-    # THE CHEAP PATH WAS OFFERED AND DECLINED. bd 20xt.8 measured (2026-07-23)
-    # that with a branchless `logl` leaf injected this cell returns
-    # STATUS=COMPILES, surv:[]; sinl/cosl are already CQ-provided here
-    # (cq_linked: [cosl, sinl]), so `logl` was the only remaining variable, and
-    # probe._cq_provided_evidence('logl') returns all five condition-(ii)
-    # requirements satisfied on disk TODAY. The sole gate was the ruled stem
-    # tuple. OWNER RULING 2026-08-10: NOT ADMITTED. Two reasons, both measured:
-    #   (a) IT IS NOT +1. `log` and `logl` are BOTH already `COMPILES` by real
-    #       openlibm injection, so admitting the stem moves TWO covered cells out
-    #       of the injection row to buy ONE — campaign number 97 -> 96. Even a
-    #       logl-only admission (which would need the gate changed from per-stem
-    #       to per-spelling) is FLAT, not +1. A 2026-08-10 triage round pitched
-    #       this as "a measured +1 injection cell ... cheaper than any lever on
-    #       the list"; that was wrong on the arithmetic.
-    #   (b) THE AMENDMENT'S GROUNDING DOES NOT REACH IT. CQ-PROVIDED exists
-    #       because openlibm's SOURCE FORM is un-injectable (trig's Payne-Hanek
-    #       k_rem_pio2.c). log's source form works and is injected today, so
-    #       admitting it would trade the true claim "CQ compiled openlibm's log"
-    #       for the weaker "CQ ships its own log", and leave this cell resting on
-    #       THREE CQ leaves.
-    #
-    # SO WHAT WOULD ACTUALLY MOVE IT is a real capability, and it is NOT bd 5po2
-    # alone: measured on the injected body, ld80/e_logl.c at -O1 carries an
-    # `alloca i32`, two `store i32` into it and a by-ref `call @frexpl(x86_fp80,
-    # ptr)` — the SAME g387/7.5 by-ref out-param axis that owns powl.f80 — plus
-    # __isnanl/__polevll/__p1evll/ldexpl, and scanBody recurses into visible
-    # nested callees (SpecializeReject.cpp:503-510). Depth behind the control
-    # layer is UNMEASURED. Do not scope against a predicted next layer here: this
-    # table has mispredicted the next layer three times running on the adjacent
-    # gamma pair.
+    # RE-SCOPED 2026-08-10 by owner ruling, re-measured 2026-10-06. The 2026-08-10
+    # entry rested on CQ-provided sinl/cosl leaves and weighed admitting a CQ `logl`
+    # leaf; both ideas are retired (bd 3c6m.78: CQ ships no C implementation of a
+    # library function). Measured now: the first blocker is openlibm's `sinl`
+    # (Payne-Hanek, unsupported instruction), the same blocker as the f80 trig
+    # cells (bd 3c6m.79). Behind it, ld80/e_logl.c at -O1 carries an `alloca i32`,
+    # two `store i32` into it and a by-ref `call @frexpl(x86_fp80, ptr)` — the
+    # g387/7.5 by-ref out-param axis that owns powl.f80. Depth behind that is
+    # UNMEASURED; this table has mispredicted the next layer three times running on
+    # the adjacent gamma pair.
     "lgammal.f80": ("decided-decline",
-                    "RE-SCOPED 2026-08-10 (owner ruling). Original ground ('inherited Payne-Hanek "
-                    "via sinl') is SPENT — post-amendment sinl is CQ-provided and the measured "
-                    "first blocker moved to `logl` (tainted control flow under quantum lift). The "
-                    "cheap mover (admit log/logl to CQ-PROVIDED, measured by bd 20xt.8 to flip this "
-                    "cell) was OFFERED AND DECLINED: log.f64 and logl.f80 are BOTH already "
-                    "injection-COMPILES, so admitting the stem is 97->96 and logl-only is flat, and "
-                    "the amendment's grounding (upstream source form un-injectable) does not reach "
-                    "a function whose source form works today. Real mover is a capability: in-clone "
-                    "control (5po2) AND the g387/7.5 by-ref frexpl axis behind it — depth UNMEASURED"),
+                    "first blocker openlibm `sinl` (Payne-Hanek k_rem_pio2l loops, owner "
+                    "2026-07-27; no backend route at f80, bd 3c6m.79), measured 2026-10-06. "
+                    "Behind it: in-clone control in logl and the g387/7.5 by-ref frexpl axis — "
+                    "depth UNMEASURED"),
 
     # -- THE ACTIONABLE SET (3 cells).
     #
@@ -306,15 +261,22 @@ SCOPE = {
     # recursion, but a struct-valued fp return under Phase-6 specialization.
     # Do not quote the loop or the recursion as known-remaining; they are still
     # UNMEASURED, now behind `large_gam`.
+    # RE-MEASURED 2026-10-06 (bd 3c6m.78): CQ's own sin leaf is retired, so THIS
+    # census (openlibm bodies only) blocks at openlibm's `sin` again. Through cqc
+    # the bundle forwards `sin` to its direct Bennett-backed route, and a quantum
+    # tgamma(q) there stops at `__log__D { double, double } (double)` (b_log.c:440):
+    # the same aggregate fp-return layer `large_gam` showed.
     "tgammaf.f32":    ("lever-gap",
-                       "`large_gam { double, double } (double)`: cq specialization: floating-point "
+                       "here: openlibm `sin` (unsupported instruction; cqc takes the direct route "
+                       "instead). The layer behind it, and cqc's first blocker: "
+                       "`large_gam`/`__log__D { double, double } (double)`: cq specialization: floating-point "
                        "quantum argument or return has no reversible copy — an AGGREGATE-typed fp "
                        "return under quantum lift. Needs multi-value/struct return support in the "
                        "Phase-6 specializer (or SROA-ing the pair), NOT the fp-range pruning the "
                        "previous ref named"),
     "tgamma.f64":     ("lever-gap",
-                       "same single blocker as tgammaf.f32 (tgammaf is (float)tgamma(x)) — both "
-                       "advanced together in bd tkmn Inc 1 and again in bd guwr. `large_gam`'s "
+                       "same blockers as tgammaf.f32 (tgammaf is (float)tgamma(x)): openlibm `sin` "
+                       "here, then (cqc's first blocker) `large_gam`/`__log__D`'s "
                        "{double,double} return is the layer; b_tgamma.c:200's bounded loop and the "
                        "depth-1 self-recursion sit BEHIND it and are still UNMEASURED"),
     # RETIRED 2026-08-10 (bd k710 SPENT): "nexttowardf.f32" now reaches `opt` exit
@@ -591,15 +553,8 @@ def check_scope(results):
     # keol classification from reading as SCOPE STALE the moment it starts firing.
     declines = {k for k, v in results.items()
                 if v["status"] in ("decline", "no-body")}
-    # bd guwr: a CQ-PROVIDED cell stops declining because the pipeline stopped
-    # injecting UPSTREAM's body — not because upstream's body became lowerable.
-    # Its SCOPE entry (openlibm's k_rem_pio2.c is decided-decline) is therefore
-    # still TRUE and is deliberately RETAINED, re-attached to the cell record as
-    # `upstream_scope`. Dropping it would erase the only record of why CQ ships
-    # its own leaf. So these are exempt from the staleness sweep — and ONLY these.
-    cqcells = {k for k, v in results.items() if v.get("provider") == "cq"}
     missing  = sorted(declines - set(SCOPE))
-    stale    = sorted(set(SCOPE) - declines - cqcells)
+    stale    = sorted(set(SCOPE) - declines)
     # bd 0bp8 — the THIRD drift direction, which this function did not check and
     # which the BY SCOPE report silently swallows: a label that is not in the
     # vocabulary. The report loop iterates a hardcoded tuple, so a typo'd or
@@ -625,9 +580,6 @@ def main():
     print("indexing openlibm corpus...", file=sys.stderr)
     defmap = WP.build_defmap()
     print(f"  {len(defmap)} syms / {len(list(WP.BC.glob('*.bc')))} bc", file=sys.stderr)
-    print(f"  CQ-PROVIDED leaves injected: {sorted(WP.cq_provided_shims())} "
-          f"(skipped: {WP._CQ_SKIPPED or 'none'})", file=sys.stderr)
-    up_defmap = None          # built lazily; only the A/B below needs it
     results = {}
     buckets = defaultdict(list)
     n_cells = 0
@@ -677,8 +629,7 @@ def main():
                 rec = {"status": "no-body", "bucket": "corpus-gap (no body)",
                        "diag": f"{spelling}: no definition in the corpus defmap "
                                f"— NOT PROBED, so this cell has no measured "
-                               f"blocker (bd keol)",
-                       "provider": "cq" if spelling in CQPROV else "openlibm"}
+                               f"blocker (bd keol)"}
                 if key in SCOPE:
                     rec["scope"], rec["scope_ref"] = SCOPE[key]
                 results[key] = rec
@@ -688,47 +639,15 @@ def main():
                       file=sys.stderr)
                 continue
 
-            linked_cq = []
-            st, diag, src = WP.probe(spelling, rw, args, 0, defmap,
-                                     deps_out=linked_cq)
+            st, diag, src = WP.probe(spelling, rw, args, 0, defmap)
             b = bucket(st, diag)
-            provider = "cq" if spelling in CQPROV else "openlibm"
-            rec = {"status": st, "bucket": b, "diag": diag, "provider": provider}
-            if provider == "cq":
-                # The upstream ruling stays attached to the cell (see check_scope).
-                if key in SCOPE:
-                    rec["upstream_scope"], rec["upstream_scope_ref"] = SCOPE[key]
-            else:
-                if linked_cq:
-                    # A/B: LINKED is not RESTS-ON. Re-probe upstream-only and let
-                    # the status difference decide (bd guwr).
-                    #
-                    # `rests_on_cq` means exactly "this cell's COVERAGE depends on
-                    # a CQ leaf" — status or bucket changed. It deliberately does
-                    # NOT fire when a still-declining cell merely got a DIFFERENT
-                    # first blocker: measured 2026-07-31, `tgammal.f80` moved from
-                    # blocking at `sinl` to blocking at `stirf`, same bucket, same
-                    # decline. That move is real and worth knowing, but it is not a
-                    # coverage dependency and folding it in would inflate the audit
-                    # list with cells the CQ leaves did not cover. Blocker-only
-                    # moves are recoverable by diffing the `diag` field against the
-                    # previous census json, which is the comparison every gate runs
-                    # anyway — they are not lost, just not labelled here.
-                    if up_defmap is None:
-                        up_defmap = WP.build_defmap(cq_provided=False)
-                    ust, udiag, _ = WP.probe(spelling, rw, args, 0, up_defmap)
-                    rec["cq_linked"] = sorted(set(linked_cq))
-                    if ust != st or bucket(ust, udiag) != b:
-                        rec["rests_on_cq"] = True
-                        rec["upstream_status"], rec["upstream_diag"] = ust, udiag
-                if st == "decline" and key in SCOPE:
-                    rec["scope"], rec["scope_ref"] = SCOPE[key]
+            rec = {"status": st, "bucket": b, "diag": diag}
+            if st == "decline" and key in SCOPE:
+                rec["scope"], rec["scope_ref"] = SCOPE[key]
             results[key] = rec
             buckets[b].append(key)
             n_cells += 1
-            tag = "  [CQ-PROVIDED]" if provider == "cq" else (
-                  "  [rests on CQ leaf]" if rec.get("rests_on_cq") else "")
-            print(f"  {spelling:12s} {width:4s} {b}{tag}", file=sys.stderr)
+            print(f"  {spelling:12s} {width:4s} {b}", file=sys.stderr)
     # Write DIRECTLY to the opt-level-named authoritative baseline, in this
     # script's own directory. This used to write a fixed "full_census_results.json"
     # into the CWD and the real baseline (full_census_O1.json) was produced by a
@@ -739,101 +658,33 @@ def main():
     json.dump(results, open(out, "w"), indent=1)
     print(f"wrote {out.name}", file=sys.stderr)
     print(f"\n=== FULL-SURFACE CENSUS: {n_cells} injectable cells ===")
-    # -----------------------------------------------------------------------
-    # THREE DISJOINT ROWS — never merged (Rule 18 amendment (iii), owner
-    # 2026-07-31; bd `libm-scoreboard-two-numbers` / `guwr`). A single merged
-    # headline is the retired 165/174 "95%" overclaim recurring and is a bug.
     # Row 1 (RECOGNITION) is not a census cell at all — it has no injectable
     # body — so it is named here only so the reader knows what this file does
-    # NOT count; probe.py owns its number.
-    # -----------------------------------------------------------------------
-    cq   = {k: v for k, v in results.items() if v.get("provider") == "cq"}
-    inj  = {k: v for k, v in results.items() if v.get("provider") != "cq"}
-    # bd keol: `no-body` must be subtracted from the NUMERATOR explicitly. A
-    # not-equal-to-"decline" test silently counts every NEW status as COVERED,
-    # so introducing the keol classification would have moved this row 97 -> 98
-    # with no compiler change — the exact soft-overclaim the three-row split and
-    # the CONTINUITY line below exist to prevent. A cell with no injectable body
-    # is neither covered nor declining; it is UNMEASURED.
+    # NOT count; probe.py owns its number. Every cell here is openlibm's body:
+    # CQ ships no C implementation of a library function (bd 3c6m.78).
     #
-    # It stays in the DENOMINATOR, which preserves this row's published meaning
-    # bit-for-bit (before keol, `nexttowardl.f80` was a `decline`: in the
-    # denominator, out of the numerator). The stricter "can openlibm's body be
-    # lowered" denominator that drops it too is one lower, and the README states
-    # both.
-    # ONE predicate, used everywhere "is this cell covered?" is asked, so the
-    # numerator and the A/B audit below cannot drift apart (Rule 14).
-    # IT NOW LIVES IN `probe.py` (bd `5ft3`). This file used to define its own
-    # copy, and probe.py kept the loose `!= "decline"` form it was written to
-    # replace — so the two scoreboard producers disagreed by exactly the
-    # `no-body` cell (probe said 101/120, this said 100/120) and the README badge
-    # generator was the one that was wrong. Importing rather than mirroring is
-    # what makes "ONE predicate" true instead of aspirational.
-    COVERED_EXCL = P.COVERED_EXCL
+    # bd keol: `no-body` must be subtracted from the NUMERATOR explicitly. A
+    # not-equal-to-"decline" test silently counts every NEW status as COVERED.
+    # A cell with no injectable body is neither covered nor declining; it is
+    # UNMEASURED. It stays in the DENOMINATOR.
+    # ONE predicate, used everywhere "is this cell covered?" is asked. It lives
+    # in `probe.py` (bd `5ft3`): importing rather than mirroring is what makes
+    # "ONE predicate" true instead of aspirational.
     is_covered = P.is_covered
-    cov  = lambda d: sum(1 for v in d.values() if is_covered(v["status"]))
-    icov, ntot = cov(inj), len(inj)
-    ccov, ctot = cov(cq), len(cq)
+    icov, ntot = sum(1 for v in results.values() if is_covered(v["status"])), len(results)
     pct  = lambda a, b: f"{round(100*a/b)}%" if b else "n/a"
-    print("\nTHREE DISJOINT ROWS — never merged (Rule 18 amendment (iii)):")
+    print("\nTWO DISJOINT ROWS — never merged:")
     print(f"  1. RECOGNITION  — the hardware keep-set; NOT a cell here (no injectable")
     print(f"                    body). A FIXED FLOOR, never progress. See probe.py.")
-    # bd keol: split the non-covered remainder. `ntot-icov` used to be printed
-    # flatly as "decline", which is now wrong by one and wrong in KIND: a
-    # `no-body` cell did not decline, it was never measured. Naming them apart
-    # here is the whole point of the keol classification — a reader must not have
-    # to know it to avoid scoping compiler work against a missing .bc.
-    inj_decl = sum(1 for v in inj.values() if v["status"] == "decline")
-    inj_nb   = sum(1 for v in inj.values() if v["status"] == "no-body")
+    inj_decl = sum(1 for v in results.values() if v["status"] == "decline")
+    inj_nb   = sum(1 for v in results.values() if v["status"] == "no-body")
     tail = f"{inj_decl} decline" + (f" + {inj_nb} no-body (NOT probed)" if inj_nb else "")
     print(f"  2. INJECTION    — real upstream openlibm bodies, source-injected:")
     print(f"                    {icov}/{ntot} covered ({pct(icov,ntot)}), "
           f"{tail}.  *** THE CAMPAIGN NUMBER ***")
-    print(f"  3. CQ-PROVIDED  — CQ ships the leaf; upstream's body is NOT injected:")
-    print(f"                    {ccov}/{ctot} covered ({pct(ccov,ctot)}) — "
-          f"{', '.join(sorted(cq)) or 'none'}")
-    rej = P.cq_provided_rejected()
-    if rej:
-        print(f"                    NOT qualified (owner-ruled stem, condition (ii) "
-              f"unmet): {', '.join(sorted(rej))}")
-    # CONTINUITY — the one way this change could soft-overclaim, stated in the
-    # output rather than left for a reader to reconstruct. The CQ-provided cells
-    # were ALL declines before the amendment, so moving them out of the injection
-    # denominator raises the injection PERCENTAGE with zero compiler work.
-    print(f"\n  CONTINUITY: on the pre-amendment denominator (all {n_cells} cells "
-          f"counted as injection) this reads {icov}/{n_cells} ({pct(icov,n_cells)}).")
-    print(f"  The {ctot} CQ-provided cells were ALL declines before the amendment, so any "
-          f"gap between\n  those two percentages is DENOMINATOR, NOT compiler work. "
-          f"Quote both or neither.")
-    # The audit question the third row exists to keep answerable, split into the
-    # two things it could mean — because they carry VERY different weight and
-    # printing them as one number reads as an overclaim in whichever direction the
-    # reader guesses.
-    covdep = sorted(k for k, v in inj.items() if v.get("rests_on_cq")
-                    and is_covered(v["status"]) != is_covered(v["upstream_status"]))
-    moved  = sorted(k for k, v in inj.items() if v.get("rests_on_cq") and k not in covdep)
-    print(f"\n  INJECTION cells whose COVERAGE depends on a CQ-provided leaf "
-          f"(A/B-measured, upstream-only re-probe): {len(covdep)}")
-    for k in covdep:
-        print(f"      {k}: with CQ leaf -> {inj[k]['status'][:38]} | "
-              f"upstream-only -> {inj[k]['upstream_status'][:38]}")
-    if not covdep:
-        print("      NONE. *** The injection numerator above is entirely independent "
-              "of the amendment. ***")
-    print(f"\n  INJECTION cells that still decline but whose FIRST BLOCKER MOVED: "
-          f"{len(moved)}")
-    for k in moved:
-        print(f"      {k}: {bucket(inj[k]['upstream_status'], inj[k]['upstream_diag'])}"
-              f"  ->  {inj[k]['bucket']}")
-    print("      (Not coverage — a layer was cleared and the next one is now visible.\n"
-          "       A same-BUCKET blocker move is invisible here by construction; recover\n"
-          "       those by diffing the `diag` field against the previous census json.)")
-    print("      Precedent for depending on a leaf at all: an injected body calling a\n"
-          "      hardware keep-set fn already counts as injection-covered — that is why\n"
-          "      `ceil` does not block `tgamma`. Listed so the dependency is auditable.")
     print()
     comp = len(buckets.get("COMPILES", []))
-    print(f"RAW BUCKET TALLY (all {n_cells} cells, both providers): "
+    print(f"RAW BUCKET TALLY (all {n_cells} cells): "
           f"plain-COMPILES {comp}, other {n_cells-comp}")
     print("NB `COMPILES` is the plain bucket ONLY — a Phase-6 spec-clone survivor "
           "lands in\n   `COMPILES (spec-clone)` and is covered but NOT in this "

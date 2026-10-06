@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 860 maintained source files, 6716 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 771 maintained source files, 6464 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -37,11 +37,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/inplace_twin_matrix.py` — 1790 physical lines
 - `ir-pass/src/Specialization.cpp` — 1787 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
-- `tools/library_coverage/probe.py` — 1476 physical lines
 - `ir-pass/src/OpcodeLowering.cpp` — 1452 physical lines
 - `ir-pass/src/SelectClassify.cpp` — 1446 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
 - `runtime/cq_runtime.c` — 1403 physical lines
+- `tools/library_coverage/probe.py` — 1219 physical lines
 - `ir-pass/src/ChainWalk.cpp` — 1208 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
 - `ir-pass/src/ArithLowering.cpp` — 1189 physical lines
@@ -52,7 +52,6 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/golden_multiset_audit_test.py` — 948 physical lines
 - `ir-pass/src/ControlDetect.cpp` — 910 physical lines
 - `tools/record_census/shipped_guard_model.py` — 878 physical lines
-- `tools/library_coverage/full_surface/full_census.py` — 877 physical lines
 - `ir-pass/src/IOSinkLowering.cpp` — 862 physical lines
 - `tools/trace_twin_equiv.py` — 843 physical lines
 - `tools/angle_select_twin_matrix.py` — 840 physical lines
@@ -60,6 +59,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `runtime/cq_runtime.h` — 772 physical lines
 - `ir-pass/include/ControlPlan.h` — 736 physical lines
 - `tools/cq_stage_cache_test.py` — 730 physical lines
+- `tools/library_coverage/full_surface/full_census.py` — 728 physical lines
 - `ir-pass/include/ChainWalk.h` — 700 physical lines
 - `ir-pass/src/AngleSelectEmit.cpp` — 673 physical lines
 - `ir-pass/src/MergePhiPeel.cpp` — 663 physical lines
@@ -71,19 +71,17 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SwitchClassify.cpp` — 621 physical lines
 - `ir-pass/src/MeasureLowering.cpp` — 614 physical lines
 - `tools/migrate_phi_fixtures_rederive.py` — 612 physical lines
-- `tools/library_coverage/full_surface/wprobe.py` — 606 physical lines
 - `ir-pass/src/WidthDispatch.cpp` — 581 physical lines
 - `tests/e2e/slice_libm_real_asinhl.c` — 581 physical lines
 - `ir-pass/src/AbortParkEmit.cpp` — 580 physical lines
-- `tests/e2e/slice_hybrid_lgammal.c` — 578 physical lines
 - `tests/e2e/slice_libm_real_acoshl.c` — 575 physical lines
 - `ir-pass/src/IntrinsicLowering.cpp` — 546 physical lines
 - `ir-pass/src/CompareLowering.cpp` — 534 physical lines
 - `ir-pass/include/ArmAnalysis.h` — 531 physical lines
 - `ir-pass/include/RailBankPromote.h` — 528 physical lines
+- `tools/library_coverage/full_surface/wprobe.py` — 515 physical lines
 - `tests/e2e/railbank_dynamic_matrix.c` — 507 physical lines
 - `tests/e2e/slice_libm_real_lgammaf.c` — 506 physical lines
-- `tools/library_coverage/inject_census.py` — 505 physical lines
 - `ir-pass/src/CtlzIdiomPrepass.cpp` — 497 physical lines
 - `tests/e2e/slice_libm_real_lgamma.c` — 497 physical lines
 - `tools/cq_stage_cache.py` — 495 physical lines
@@ -4760,332 +4758,6 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_bitint.c:67` — `slice`
 - `tests/e2e/slice_bitint.c:81` — `main`
 
-### `tests/e2e/slice_branchless_acos.c` (75 lines)
-
-- `tests/e2e/slice_branchless_acos.c:24` — `batan`
-- `tests/e2e/slice_branchless_acos.c:62` — `basin`
-- `tests/e2e/slice_branchless_acos.c:68` — `bacos`
-- `tests/e2e/slice_branchless_acos.c:71` — `slice`
-- `tests/e2e/slice_branchless_acos.c:75` — `main`
-
-### `tests/e2e/slice_branchless_acosh.c` (72 lines)
-
-- `tests/e2e/slice_branchless_acosh.c:30` — `blog1p`
-- `tests/e2e/slice_branchless_acosh.c:63` — `bacosh`
-- `tests/e2e/slice_branchless_acosh.c:68` — `slice`
-- `tests/e2e/slice_branchless_acosh.c:72` — `main`
-
-### `tests/e2e/slice_branchless_asin.c` (74 lines)
-
-- `tests/e2e/slice_branchless_asin.c:28` — `batan`
-- `tests/e2e/slice_branchless_asin.c:65` — `basin`
-- `tests/e2e/slice_branchless_asin.c:70` — `slice`
-- `tests/e2e/slice_branchless_asin.c:74` — `main`
-
-### `tests/e2e/slice_branchless_asinh.c` (78 lines)
-
-- `tests/e2e/slice_branchless_asinh.c:34` — `blog1p`
-- `tests/e2e/slice_branchless_asinh.c:67` — `basinh`
-- `tests/e2e/slice_branchless_asinh.c:74` — `slice`
-- `tests/e2e/slice_branchless_asinh.c:78` — `main`
-
-### `tests/e2e/slice_branchless_atan.c` (68 lines)
-
-- `tests/e2e/slice_branchless_atan.c:28` — `batan`
-- `tests/e2e/slice_branchless_atan.c:64` — `slice`
-- `tests/e2e/slice_branchless_atan.c:68` — `main`
-
-### `tests/e2e/slice_branchless_atan2.c` (75 lines)
-
-- `tests/e2e/slice_branchless_atan2.c:29` — `batan`
-- `tests/e2e/slice_branchless_atan2.c:66` — `batan2`
-- `tests/e2e/slice_branchless_atan2.c:71` — `slice`
-- `tests/e2e/slice_branchless_atan2.c:75` — `main`
-
-### `tests/e2e/slice_branchless_atan2_cq.c` (69 lines)
-
-- `tests/e2e/slice_branchless_atan2_cq.c:23` — `batan`
-- `tests/e2e/slice_branchless_atan2_cq.c:60` — `batan2`
-- `tests/e2e/slice_branchless_atan2_cq.c:65` — `slice`
-- `tests/e2e/slice_branchless_atan2_cq.c:69` — `main`
-
-### `tests/e2e/slice_branchless_atan2_qq.c` (72 lines)
-
-- `tests/e2e/slice_branchless_atan2_qq.c:25` — `batan`
-- `tests/e2e/slice_branchless_atan2_qq.c:62` — `batan2`
-- `tests/e2e/slice_branchless_atan2_qq.c:67` — `slice`
-- `tests/e2e/slice_branchless_atan2_qq.c:72` — `main`
-
-### `tests/e2e/slice_branchless_atanh.c` (74 lines)
-
-- `tests/e2e/slice_branchless_atanh.c:32` — `blog1p`
-- `tests/e2e/slice_branchless_atanh.c:65` — `batanh`
-- `tests/e2e/slice_branchless_atanh.c:70` — `slice`
-- `tests/e2e/slice_branchless_atanh.c:74` — `main`
-
-### `tests/e2e/slice_branchless_cbrt.c` (58 lines)
-
-- `tests/e2e/slice_branchless_cbrt.c:23` — `bcbrt`
-- `tests/e2e/slice_branchless_cbrt.c:54` — `slice`
-- `tests/e2e/slice_branchless_cbrt.c:58` — `main`
-
-### `tests/e2e/slice_branchless_cos.c` (64 lines)
-
-- `tests/e2e/slice_branchless_cos.c:27` — `bcos`
-- `tests/e2e/slice_branchless_cos.c:60` — `slice`
-- `tests/e2e/slice_branchless_cos.c:64` — `main`
-
-### `tests/e2e/slice_branchless_cosh.c` (73 lines)
-
-- `tests/e2e/slice_branchless_cosh.c:32` — `bexpm1`
-- `tests/e2e/slice_branchless_cosh.c:65` — `bcosh`
-- `tests/e2e/slice_branchless_cosh.c:69` — `slice`
-- `tests/e2e/slice_branchless_cosh.c:73` — `main`
-
-### `tests/e2e/slice_branchless_cosl.c` (66 lines)
-
-- `tests/e2e/slice_branchless_cosl.c:26` — `bcosl`
-- `tests/e2e/slice_branchless_cosl.c:62` — `slice`
-- `tests/e2e/slice_branchless_cosl.c:66` — `main`
-
-### `tests/e2e/slice_branchless_erf.c` (160 lines)
-
-- `tests/e2e/slice_branchless_erf.c:39` — `bexpm1`
-- `tests/e2e/slice_branchless_erf.c:70` — `bexp`
-- `tests/e2e/slice_branchless_erf.c:89` — `berf`
-- `tests/e2e/slice_branchless_erf.c:156` — `slice`
-- `tests/e2e/slice_branchless_erf.c:160` — `main`
-
-### `tests/e2e/slice_branchless_erfc.c` (158 lines)
-
-- `tests/e2e/slice_branchless_erfc.c:33` — `bexpm1`
-- `tests/e2e/slice_branchless_erfc.c:64` — `bexp`
-- `tests/e2e/slice_branchless_erfc.c:83` — `berfc`
-- `tests/e2e/slice_branchless_erfc.c:154` — `slice`
-- `tests/e2e/slice_branchless_erfc.c:158` — `main`
-
-### `tests/e2e/slice_branchless_exp.c` (31 lines)
-
-- `tests/e2e/slice_branchless_exp.c:15` — `bexp`
-- `tests/e2e/slice_branchless_exp.c:27` — `slice`
-- `tests/e2e/slice_branchless_exp.c:31` — `main`
-
-### `tests/e2e/slice_branchless_exp2.c` (43 lines)
-
-- `tests/e2e/slice_branchless_exp2.c:23` — `bexp`
-- `tests/e2e/slice_branchless_exp2.c:36` — `bexp2`
-- `tests/e2e/slice_branchless_exp2.c:39` — `slice`
-- `tests/e2e/slice_branchless_exp2.c:43` — `main`
-
-### `tests/e2e/slice_branchless_expm1.c` (68 lines)
-
-- `tests/e2e/slice_branchless_expm1.c:32` — `bexpm1`
-- `tests/e2e/slice_branchless_expm1.c:64` — `slice`
-- `tests/e2e/slice_branchless_expm1.c:68` — `main`
-
-### `tests/e2e/slice_branchless_fdim.c` (29 lines)
-
-- `tests/e2e/slice_branchless_fdim.c:22` — `bfdim`
-- `tests/e2e/slice_branchless_fdim.c:25` — `slice`
-- `tests/e2e/slice_branchless_fdim.c:29` — `main`
-
-### `tests/e2e/slice_branchless_fdim_cq.c` (17 lines)
-
-- `tests/e2e/slice_branchless_fdim_cq.c:10` — `bfdim`
-- `tests/e2e/slice_branchless_fdim_cq.c:13` — `slice`
-- `tests/e2e/slice_branchless_fdim_cq.c:17` — `main`
-
-### `tests/e2e/slice_branchless_fdim_qq.c` (17 lines)
-
-- `tests/e2e/slice_branchless_fdim_qq.c:9` — `bfdim`
-- `tests/e2e/slice_branchless_fdim_qq.c:12` — `slice`
-- `tests/e2e/slice_branchless_fdim_qq.c:17` — `main`
-
-### `tests/e2e/slice_branchless_fmod.c` (30 lines)
-
-- `tests/e2e/slice_branchless_fmod.c:23` — `bfmod`
-- `tests/e2e/slice_branchless_fmod.c:26` — `slice`
-- `tests/e2e/slice_branchless_fmod.c:30` — `main`
-
-### `tests/e2e/slice_branchless_fmod_cq.c` (16 lines)
-
-- `tests/e2e/slice_branchless_fmod_cq.c:9` — `bfmod`
-- `tests/e2e/slice_branchless_fmod_cq.c:12` — `slice`
-- `tests/e2e/slice_branchless_fmod_cq.c:16` — `main`
-
-### `tests/e2e/slice_branchless_fmod_qq.c` (17 lines)
-
-- `tests/e2e/slice_branchless_fmod_qq.c:9` — `bfmod`
-- `tests/e2e/slice_branchless_fmod_qq.c:12` — `slice`
-- `tests/e2e/slice_branchless_fmod_qq.c:17` — `main`
-
-### `tests/e2e/slice_branchless_hypot.c` (38 lines)
-
-- `tests/e2e/slice_branchless_hypot.c:26` — `bhypot`
-- `tests/e2e/slice_branchless_hypot.c:34` — `slice`
-- `tests/e2e/slice_branchless_hypot.c:38` — `main`
-
-### `tests/e2e/slice_branchless_hypot_cq.c` (24 lines)
-
-- `tests/e2e/slice_branchless_hypot_cq.c:12` — `bhypot`
-- `tests/e2e/slice_branchless_hypot_cq.c:20` — `slice`
-- `tests/e2e/slice_branchless_hypot_cq.c:24` — `main`
-
-### `tests/e2e/slice_branchless_hypot_qq.c` (22 lines)
-
-- `tests/e2e/slice_branchless_hypot_qq.c:9` — `bhypot`
-- `tests/e2e/slice_branchless_hypot_qq.c:17` — `slice`
-- `tests/e2e/slice_branchless_hypot_qq.c:22` — `main`
-
-### `tests/e2e/slice_branchless_log.c` (63 lines)
-
-- `tests/e2e/slice_branchless_log.c:34` — `blog`
-- `tests/e2e/slice_branchless_log.c:59` — `slice`
-- `tests/e2e/slice_branchless_log.c:63` — `main`
-
-### `tests/e2e/slice_branchless_log10.c` (64 lines)
-
-- `tests/e2e/slice_branchless_log10.c:21` — `blog10`
-- `tests/e2e/slice_branchless_log10.c:60` — `slice`
-- `tests/e2e/slice_branchless_log10.c:64` — `main`
-
-### `tests/e2e/slice_branchless_log1p.c` (63 lines)
-
-- `tests/e2e/slice_branchless_log1p.c:27` — `blog1p`
-- `tests/e2e/slice_branchless_log1p.c:59` — `slice`
-- `tests/e2e/slice_branchless_log1p.c:63` — `main`
-
-### `tests/e2e/slice_branchless_log2.c` (66 lines)
-
-- `tests/e2e/slice_branchless_log2.c:25` — `blog2`
-- `tests/e2e/slice_branchless_log2.c:62` — `slice`
-- `tests/e2e/slice_branchless_log2.c:66` — `main`
-
-### `tests/e2e/slice_branchless_logb.c` (32 lines)
-
-- `tests/e2e/slice_branchless_logb.c:22` — `blogb`
-- `tests/e2e/slice_branchless_logb.c:28` — `slice`
-- `tests/e2e/slice_branchless_logb.c:32` — `main`
-
-### `tests/e2e/slice_branchless_logl.c` (77 lines)
-
-- `tests/e2e/slice_branchless_logl.c:33` — `blogl`
-- `tests/e2e/slice_branchless_logl.c:73` — `slice`
-- `tests/e2e/slice_branchless_logl.c:77` — `main`
-
-### `tests/e2e/slice_branchless_nextafter.c` (44 lines)
-
-- `tests/e2e/slice_branchless_nextafter.c:27` — `bnextafter`
-- `tests/e2e/slice_branchless_nextafter.c:40` — `slice`
-- `tests/e2e/slice_branchless_nextafter.c:44` — `main`
-
-### `tests/e2e/slice_branchless_nextafter_cq.c` (28 lines)
-
-- `tests/e2e/slice_branchless_nextafter_cq.c:11` — `bnextafter`
-- `tests/e2e/slice_branchless_nextafter_cq.c:24` — `slice`
-- `tests/e2e/slice_branchless_nextafter_cq.c:28` — `main`
-
-### `tests/e2e/slice_branchless_nextafter_qq.c` (29 lines)
-
-- `tests/e2e/slice_branchless_nextafter_qq.c:11` — `bnextafter`
-- `tests/e2e/slice_branchless_nextafter_qq.c:24` — `slice`
-- `tests/e2e/slice_branchless_nextafter_qq.c:29` — `main`
-
-### `tests/e2e/slice_branchless_pow.c` (92 lines)
-
-- `tests/e2e/slice_branchless_pow.c:27` — `bexp`
-- `tests/e2e/slice_branchless_pow.c:41` — `bexp2`
-- `tests/e2e/slice_branchless_pow.c:46` — `blog2`
-- `tests/e2e/slice_branchless_pow.c:85` — `bpow`
-- `tests/e2e/slice_branchless_pow.c:88` — `slice`
-- `tests/e2e/slice_branchless_pow.c:92` — `main`
-
-### `tests/e2e/slice_branchless_pow_cq.c` (78 lines)
-
-- `tests/e2e/slice_branchless_pow_cq.c:13` — `bexp`
-- `tests/e2e/slice_branchless_pow_cq.c:27` — `bexp2`
-- `tests/e2e/slice_branchless_pow_cq.c:32` — `blog2`
-- `tests/e2e/slice_branchless_pow_cq.c:71` — `bpow`
-- `tests/e2e/slice_branchless_pow_cq.c:74` — `slice`
-- `tests/e2e/slice_branchless_pow_cq.c:78` — `main`
-
-### `tests/e2e/slice_branchless_pow_qq.c` (77 lines)
-
-- `tests/e2e/slice_branchless_pow_qq.c:11` — `bexp`
-- `tests/e2e/slice_branchless_pow_qq.c:25` — `bexp2`
-- `tests/e2e/slice_branchless_pow_qq.c:30` — `blog2`
-- `tests/e2e/slice_branchless_pow_qq.c:69` — `bpow`
-- `tests/e2e/slice_branchless_pow_qq.c:72` — `slice`
-- `tests/e2e/slice_branchless_pow_qq.c:77` — `main`
-
-### `tests/e2e/slice_branchless_remainder.c` (31 lines)
-
-- `tests/e2e/slice_branchless_remainder.c:24` — `bremainder`
-- `tests/e2e/slice_branchless_remainder.c:27` — `slice`
-- `tests/e2e/slice_branchless_remainder.c:31` — `main`
-
-### `tests/e2e/slice_branchless_remainder_cq.c` (16 lines)
-
-- `tests/e2e/slice_branchless_remainder_cq.c:9` — `bremainder`
-- `tests/e2e/slice_branchless_remainder_cq.c:12` — `slice`
-- `tests/e2e/slice_branchless_remainder_cq.c:16` — `main`
-
-### `tests/e2e/slice_branchless_remainder_qq.c` (18 lines)
-
-- `tests/e2e/slice_branchless_remainder_qq.c:10` — `bremainder`
-- `tests/e2e/slice_branchless_remainder_qq.c:13` — `slice`
-- `tests/e2e/slice_branchless_remainder_qq.c:18` — `main`
-
-### `tests/e2e/slice_branchless_scalbln.c` (33 lines)
-
-- `tests/e2e/slice_branchless_scalbln.c:23` — `bscalbln`
-- `tests/e2e/slice_branchless_scalbln.c:29` — `slice`
-- `tests/e2e/slice_branchless_scalbln.c:33` — `main`
-
-### `tests/e2e/slice_branchless_scalbn.c` (34 lines)
-
-- `tests/e2e/slice_branchless_scalbn.c:24` — `bscalbn`
-- `tests/e2e/slice_branchless_scalbn.c:30` — `slice`
-- `tests/e2e/slice_branchless_scalbn.c:34` — `main`
-
-### `tests/e2e/slice_branchless_sin.c` (67 lines)
-
-- `tests/e2e/slice_branchless_sin.c:31` — `bsin`
-- `tests/e2e/slice_branchless_sin.c:63` — `slice`
-- `tests/e2e/slice_branchless_sin.c:67` — `main`
-
-### `tests/e2e/slice_branchless_sinh.c` (74 lines)
-
-- `tests/e2e/slice_branchless_sinh.c:32` — `bexpm1`
-- `tests/e2e/slice_branchless_sinh.c:65` — `bsinh`
-- `tests/e2e/slice_branchless_sinh.c:70` — `slice`
-- `tests/e2e/slice_branchless_sinh.c:74` — `main`
-
-### `tests/e2e/slice_branchless_sinl.c` (70 lines)
-
-- `tests/e2e/slice_branchless_sinl.c:31` — `bsinl`
-- `tests/e2e/slice_branchless_sinl.c:66` — `slice`
-- `tests/e2e/slice_branchless_sinl.c:70` — `main`
-
-### `tests/e2e/slice_branchless_tan.c` (63 lines)
-
-- `tests/e2e/slice_branchless_tan.c:29` — `btan`
-- `tests/e2e/slice_branchless_tan.c:59` — `slice`
-- `tests/e2e/slice_branchless_tan.c:63` — `main`
-
-### `tests/e2e/slice_branchless_tanh.c` (83 lines)
-
-- `tests/e2e/slice_branchless_tanh.c:38` — `bexpm1`
-- `tests/e2e/slice_branchless_tanh.c:71` — `btanh`
-- `tests/e2e/slice_branchless_tanh.c:79` — `slice`
-- `tests/e2e/slice_branchless_tanh.c:83` — `main`
-
-### `tests/e2e/slice_branchless_tanl.c` (74 lines)
-
-- `tests/e2e/slice_branchless_tanl.c:33` — `btanl`
-- `tests/e2e/slice_branchless_tanl.c:70` — `slice`
-- `tests/e2e/slice_branchless_tanl.c:74` — `main`
-
 ### `tests/e2e/slice_byref_inline.c` (18 lines)
 
 - `tests/e2e/slice_byref_inline.c:9` — `mysplit`
@@ -5971,16 +5643,6 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_grover_oracle_uncompute.c:34` — `slice`
 - `tests/e2e/slice_grover_oracle_uncompute.c:52` — `main`
 
-### `tests/e2e/slice_hybrid_lgammal.c` (578 lines)
-
-- `tests/e2e/slice_hybrid_lgammal.c:114` — `bsinl`
-- `tests/e2e/slice_hybrid_lgammal.c:150` — `bcosl`
-- `tests/e2e/slice_hybrid_lgammal.c:187` — `blogl`
-- `tests/e2e/slice_hybrid_lgammal.c:343` — `olm_sin_pi`
-- `tests/e2e/slice_hybrid_lgammal.c:410` — `olm_lgammal_r`
-- `tests/e2e/slice_hybrid_lgammal.c:569` — `slice`
-- `tests/e2e/slice_hybrid_lgammal.c:575` — `main`
-
 ### `tests/e2e/slice_i128_mulhi.c` (26 lines)
 
 - `tests/e2e/slice_i128_mulhi.c:20` — `slice`
@@ -6736,11 +6398,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_libm_real_scalblnl.c:88` — `slice`
 - `tests/e2e/slice_libm_real_scalblnl.c:93` — `main`
 
-### `tests/e2e/slice_libm_real_scalbn.c` (76 lines)
+### `tests/e2e/slice_libm_real_scalbn.c` (75 lines)
 
-- `tests/e2e/slice_libm_real_scalbn.c:33` — `olm_scalbn`
-- `tests/e2e/slice_libm_real_scalbn.c:72` — `slice`
-- `tests/e2e/slice_libm_real_scalbn.c:76` — `main`
+- `tests/e2e/slice_libm_real_scalbn.c:32` — `olm_scalbn`
+- `tests/e2e/slice_libm_real_scalbn.c:71` — `slice`
+- `tests/e2e/slice_libm_real_scalbn.c:75` — `main`
 
 ### `tests/e2e/slice_libm_real_scalbnf.c` (67 lines)
 
@@ -8164,174 +7826,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/labreport/figures/session_landings.py:42` — `count_add_tests`
 - `tools/labreport/figures/session_landings.py:50` — `main`
 
-### `tools/libm_bundle.py` (119 lines)
+### `tools/libm_bundle.py` (122 lines)
 
-- `tools/libm_bundle.py:34` — `main`
-- `tools/libm_bundle.py:98` — `main.internalize`
-
-### `tools/library_coverage/branchless/acos.c` (37 lines)
-
-- `tools/library_coverage/branchless/acos.c:35` — `acos`
-
-### `tools/library_coverage/branchless/acosh.c` (50 lines)
-
-- `tools/library_coverage/branchless/acosh.c:46` — `acosh`
-
-### `tools/library_coverage/branchless/asin.c` (53 lines)
-
-- `tools/library_coverage/branchless/asin.c:49` — `asin`
-
-### `tools/library_coverage/branchless/asinh.c` (63 lines)
-
-- `tools/library_coverage/branchless/asinh.c:57` — `asinh`
-
-### `tools/library_coverage/branchless/atan.c` (92 lines)
-
-- `tools/library_coverage/branchless/atan.c:50` — `atan`
-
-### `tools/library_coverage/branchless/atan2.c` (49 lines)
-
-- `tools/library_coverage/branchless/atan2.c:45` — `atan2`
-
-### `tools/library_coverage/branchless/atanh.c` (49 lines)
-
-- `tools/library_coverage/branchless/atanh.c:45` — `atanh`
-
-### `tools/library_coverage/branchless/cbrt.c` (65 lines)
-
-- `tools/library_coverage/branchless/cbrt.c:27` — `cbrt`
-
-### `tools/library_coverage/branchless/cos.c` (77 lines)
-
-- `tools/library_coverage/branchless/cos.c:43` — `cos`
-
-### `tools/library_coverage/branchless/cosh.c` (52 lines)
-
-- `tools/library_coverage/branchless/cosh.c:49` — `cosh`
-
-### `tools/library_coverage/branchless/cosl.c` (83 lines)
-
-- `tools/library_coverage/branchless/cosl.c:46` — `cosl`
-
-### `tools/library_coverage/branchless/erf.c` (151 lines)
-
-- `tools/library_coverage/branchless/erf.c:54` — `bexp`
-- `tools/library_coverage/branchless/erf.c:73` — `erf`
-
-### `tools/library_coverage/branchless/erfc.c` (147 lines)
-
-- `tools/library_coverage/branchless/erfc.c:46` — `bexp`
-- `tools/library_coverage/branchless/erfc.c:65` — `erfc`
-
-### `tools/library_coverage/branchless/exp.c` (27 lines)
-
-- `tools/library_coverage/branchless/exp.c:16` — `exp`
-
-### `tools/library_coverage/branchless/exp2.c` (37 lines)
-
-- `tools/library_coverage/branchless/exp2.c:35` — `exp2`
-
-### `tools/library_coverage/branchless/expm1.c` (79 lines)
-
-- `tools/library_coverage/branchless/expm1.c:41` — `expm1`
-
-### `tools/library_coverage/branchless/fdim.c` (30 lines)
-
-- `tools/library_coverage/branchless/fdim.c:28` — `fdim`
-
-### `tools/library_coverage/branchless/fmod.c` (30 lines)
-
-- `tools/library_coverage/branchless/fmod.c:28` — `fmod`
-
-### `tools/library_coverage/branchless/hypot.c` (39 lines)
-
-- `tools/library_coverage/branchless/hypot.c:32` — `hypot`
-
-### `tools/library_coverage/branchless/log.c` (47 lines)
-
-- `tools/library_coverage/branchless/log.c:23` — `log`
-
-### `tools/library_coverage/branchless/log10.c` (58 lines)
-
-- `tools/library_coverage/branchless/log10.c:19` — `log10`
-
-### `tools/library_coverage/branchless/log1p.c` (65 lines)
-
-- `tools/library_coverage/branchless/log1p.c:31` — `log1p`
-
-### `tools/library_coverage/branchless/log2.c` (64 lines)
-
-- `tools/library_coverage/branchless/log2.c:27` — `log2`
-
-### `tools/library_coverage/branchless/logb.c` (36 lines)
-
-- `tools/library_coverage/branchless/logb.c:31` — `logb`
-
-### `tools/library_coverage/branchless/logl.c` (111 lines)
-
-- `tools/library_coverage/branchless/logl.c:66` — `logl`
-
-### `tools/library_coverage/branchless/nextafter.c` (48 lines)
-
-- `tools/library_coverage/branchless/nextafter.c:36` — `nextafter`
-
-### `tools/library_coverage/branchless/pow.c` (38 lines)
-
-- `tools/library_coverage/branchless/pow.c:36` — `pow`
-
-### `tools/library_coverage/branchless/remainder.c` (32 lines)
-
-- `tools/library_coverage/branchless/remainder.c:30` — `remainder`
-
-### `tools/library_coverage/branchless/scalbln.c` (32 lines)
-
-- `tools/library_coverage/branchless/scalbln.c:27` — `scalbln`
-
-### `tools/library_coverage/branchless/scalbn.c` (34 lines)
-
-- `tools/library_coverage/branchless/scalbn.c:29` — `scalbn`
-
-### `tools/library_coverage/branchless/sin.c` (96 lines)
-
-- `tools/library_coverage/branchless/sin.c:61` — `sin`
-
-### `tools/library_coverage/branchless/sinh.c` (53 lines)
-
-- `tools/library_coverage/branchless/sinh.c:49` — `sinh`
-
-### `tools/library_coverage/branchless/sinl.c` (111 lines)
-
-- `tools/library_coverage/branchless/sinl.c:73` — `sinl`
-
-### `tools/library_coverage/branchless/tan.c` (95 lines)
-
-- `tools/library_coverage/branchless/tan.c:62` — `tan`
-
-### `tools/library_coverage/branchless/tanh.c` (57 lines)
-
-- `tools/library_coverage/branchless/tanh.c:50` — `tanh`
-
-### `tools/library_coverage/branchless/tanl.c` (118 lines)
-
-- `tools/library_coverage/branchless/tanl.c:82` — `tanl`
-
-### `tools/library_coverage/census_to_tickets.py` (354 lines)
-
-- `tools/library_coverage/census_to_tickets.py:91` — `bd`
-- `tools/library_coverage/census_to_tickets.py:99` — `bd_json`
-- `tools/library_coverage/census_to_tickets.py:104` — `resolve_id`
-- `tools/library_coverage/census_to_tickets.py:110` — `blocking_loc_of`
-- `tools/library_coverage/census_to_tickets.py:124` — `build_body`
-- `tools/library_coverage/census_to_tickets.py:150` — `build_acceptance`
-- `tools/library_coverage/census_to_tickets.py:156` — `title_of`
-- `tools/library_coverage/census_to_tickets.py:160` — `metadata_json`
-- `tools/library_coverage/census_to_tickets.py:169` — `load_census`
-- `tools/library_coverage/census_to_tickets.py:182` — `existing_tickets`
-- `tools/library_coverage/census_to_tickets.py:193` — `main`
-- `tools/library_coverage/census_to_tickets.py:248` — `main.dep_flags`
-- `tools/library_coverage/census_to_tickets.py:255` — `main.write_body`
-- `tools/library_coverage/census_to_tickets.py:261` — `main.refresh_args`
-- `tools/library_coverage/census_to_tickets.py:272` — `main.reconcile_lever`
+- `tools/libm_bundle.py:37` — `main`
+- `tools/libm_bundle.py:101` — `main.internalize`
 
 ### `tools/library_coverage/full_surface/batch_dump.py` (58 lines)
 
@@ -8350,13 +7848,13 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tools/library_coverage/full_surface/dump_ir.py:15` — `dump`
 
-### `tools/library_coverage/full_surface/full_census.py` (877 lines)
+### `tools/library_coverage/full_surface/full_census.py` (728 lines)
 
-- `tools/library_coverage/full_surface/full_census.py:28` — `cell_args`
-- `tools/library_coverage/full_surface/full_census.py:43` — `ret_width`
-- `tools/library_coverage/full_surface/full_census.py:70` — `bucket`
-- `tools/library_coverage/full_surface/full_census.py:585` — `check_scope`
-- `tools/library_coverage/full_surface/full_census.py:624` — `main`
+- `tools/library_coverage/full_surface/full_census.py:20` — `cell_args`
+- `tools/library_coverage/full_surface/full_census.py:35` — `ret_width`
+- `tools/library_coverage/full_surface/full_census.py:62` — `bucket`
+- `tools/library_coverage/full_surface/full_census.py:547` — `check_scope`
+- `tools/library_coverage/full_surface/full_census.py:579` — `main`
 
 ### `tools/library_coverage/full_surface/keol_selfcheck.py` (112 lines)
 
@@ -8398,35 +7896,24 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/library_coverage/full_surface/synth_census.py:109` — `needs_control_plus`
 - `tools/library_coverage/full_surface/synth_census.py:161` — `base_of`
 
-### `tools/library_coverage/full_surface/wprobe.py` (606 lines)
+### `tools/library_coverage/full_surface/wprobe.py` (515 lines)
 
-- `tools/library_coverage/full_surface/wprobe.py:72` — `_alias_shim_dir`
-- `tools/library_coverage/full_surface/wprobe.py:121` — `_keep_shim_dir`
-- `tools/library_coverage/full_surface/wprobe.py:127` — `_synth_keep_shim`
-- `tools/library_coverage/full_surface/wprobe.py:161` — `keep_shims`
-- `tools/library_coverage/full_surface/wprobe.py:243` — `_cq_shim_dir`
-- `tools/library_coverage/full_surface/wprobe.py:249` — `_synth_cq_shim`
-- `tools/library_coverage/full_surface/wprobe.py:267` — `cq_provided_shims`
-- `tools/library_coverage/full_surface/wprobe.py:293` — `_parse_define_sig`
-- `tools/library_coverage/full_surface/wprobe.py:331` — `_synth_alias_shim`
-- `tools/library_coverage/full_surface/wprobe.py:351` — `build_defmap`
-- `tools/library_coverage/full_surface/wprobe.py:417` — `undefined_syms`
-- `tools/library_coverage/full_surface/wprobe.py:426` — `closure_link`
-- `tools/library_coverage/full_surface/wprobe.py:449` — `make_src`
-- `tools/library_coverage/full_surface/wprobe.py:465` — `make_src.proto_t`
-- `tools/library_coverage/full_surface/wprobe.py:490` — `probe`
-
-### `tools/library_coverage/inject_census.py` (505 lines)
-
-- `tools/library_coverage/inject_census.py:71` — `build_authored_bc`
-- `tools/library_coverage/inject_census.py:88` — `build_symbol_index`
-- `tools/library_coverage/inject_census.py:99` — `undefined_syms`
-- `tools/library_coverage/inject_census.py:106` — `closure_link`
-- `tools/library_coverage/inject_census.py:134` — `run_one`
-- `tools/library_coverage/inject_census.py:267` — `_mask_label`
-- `tools/library_coverage/inject_census.py:274` — `run_fn`
-- `tools/library_coverage/inject_census.py:371` — `lever_of`
-- `tools/library_coverage/inject_census.py:382` — `bucket_of`
+- `tools/library_coverage/full_surface/wprobe.py:71` — `_alias_shim_dir`
+- `tools/library_coverage/full_surface/wprobe.py:120` — `_keep_shim_dir`
+- `tools/library_coverage/full_surface/wprobe.py:126` — `_synth_keep_shim`
+- `tools/library_coverage/full_surface/wprobe.py:160` — `keep_shims`
+- `tools/library_coverage/full_surface/wprobe.py:195` — `intrinsic_rows`
+- `tools/library_coverage/full_surface/wprobe.py:204` — `direct_routes`
+- `tools/library_coverage/full_surface/wprobe.py:209` — `_synth_direct_shim`
+- `tools/library_coverage/full_surface/wprobe.py:220` — `direct_shims`
+- `tools/library_coverage/full_surface/wprobe.py:228` — `_parse_define_sig`
+- `tools/library_coverage/full_surface/wprobe.py:266` — `_synth_alias_shim`
+- `tools/library_coverage/full_surface/wprobe.py:286` — `build_defmap`
+- `tools/library_coverage/full_surface/wprobe.py:341` — `undefined_syms`
+- `tools/library_coverage/full_surface/wprobe.py:350` — `closure_link`
+- `tools/library_coverage/full_surface/wprobe.py:369` — `make_src`
+- `tools/library_coverage/full_surface/wprobe.py:385` — `make_src.proto_t`
+- `tools/library_coverage/full_surface/wprobe.py:410` — `probe`
 
 ### `tools/library_coverage/loop_bounds/LoopBoundProbe.cpp` (471 lines)
 
@@ -8494,62 +7981,54 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/library_coverage/loop_bounds/sweep_cells.py:183` — `run_cell`
 - `tools/library_coverage/loop_bounds/sweep_cells.py:272` — `main`
 
-### `tools/library_coverage/probe.py` (1476 lines)
+### `tools/library_coverage/probe.py` (1219 lines)
 
-- `tools/library_coverage/probe.py:149` — `_c_fn_body`
-- `tools/library_coverage/probe.py:168` — `_leaf_in_sync`
-- `tools/library_coverage/probe.py:191` — `_cq_provided_evidence`
-- `tools/library_coverage/probe.py:214` — `cq_provided_cells`
-- `tools/library_coverage/probe.py:226` — `cq_provided_rejected`
-- `tools/library_coverage/probe.py:241` — `_injection_scoreboard`
-- `tools/library_coverage/probe.py:248` — `_full_surface_scoreboard`
-- `tools/library_coverage/probe.py:284` — `_cq_provided_scoreboard`
-- `tools/library_coverage/probe.py:307` — `cqc_census_lines`
-- `tools/library_coverage/probe.py:333` — `mathh_union_scoreboard`
-- `tools/library_coverage/probe.py:397` — `scoreboard_lines`
-- `tools/library_coverage/probe.py:626` — `B`
-- `tools/library_coverage/probe.py:731` — `Lib`
-- `tools/library_coverage/probe.py:752` — `St`
-- `tools/library_coverage/probe.py:847` — `c_type`
-- `tools/library_coverage/probe.py:858` — `is_mixable`
-- `tools/library_coverage/probe.py:861` — `sample_literal`
-- `tools/library_coverage/probe.py:868` — `expand_variants`
-- `tools/library_coverage/probe.py:880` — `mixtures`
-- `tools/library_coverage/probe.py:894` — `mixture_label`
-- `tools/library_coverage/probe.py:905` — `gen_program`
-- `tools/library_coverage/probe.py:954` — `_run`
-- `tools/library_coverage/probe.py:965` — `first_error`
-- `tools/library_coverage/probe.py:972` — `classify`
-- `tools/library_coverage/probe.py:1008` — `probe_cell`
-- `tools/library_coverage/probe.py:1056` — `rollup`
-- `tools/library_coverage/probe.py:1071` — `static_row`
-- `tools/library_coverage/probe.py:1082` — `probe_library`
-- `tools/library_coverage/probe.py:1113` — `run`
-- `tools/library_coverage/probe.py:1154` — `_lowers`
-- `tools/library_coverage/probe.py:1157` — `summarize`
-- `tools/library_coverage/probe.py:1187` — `bucket_table`
-- `tools/library_coverage/probe.py:1200` — `backend_bucket_table`
-- `tools/library_coverage/probe.py:1221` — `category_tables`
-- `tools/library_coverage/probe.py:1253` — `write_library_page`
-- `tools/library_coverage/probe.py:1270` — `aggregate`
-- `tools/library_coverage/probe.py:1284` — `_spec_backend_map`
-- `tools/library_coverage/probe.py:1297` — `render`
-- `tools/library_coverage/probe.py:1317` — `write_index`
-- `tools/library_coverage/probe.py:1384` — `update_readme`
-- `tools/library_coverage/probe.py:1436` — `bless`
-- `tools/library_coverage/probe.py:1459` — `main`
+- `tools/library_coverage/probe.py:95` — `_full_surface_scoreboard`
+- `tools/library_coverage/probe.py:124` — `cqc_census_lines`
+- `tools/library_coverage/probe.py:150` — `mathh_union_scoreboard`
+- `tools/library_coverage/probe.py:213` — `scoreboard_lines`
+- `tools/library_coverage/probe.py:369` — `B`
+- `tools/library_coverage/probe.py:474` — `Lib`
+- `tools/library_coverage/probe.py:495` — `St`
+- `tools/library_coverage/probe.py:590` — `c_type`
+- `tools/library_coverage/probe.py:601` — `is_mixable`
+- `tools/library_coverage/probe.py:604` — `sample_literal`
+- `tools/library_coverage/probe.py:611` — `expand_variants`
+- `tools/library_coverage/probe.py:623` — `mixtures`
+- `tools/library_coverage/probe.py:637` — `mixture_label`
+- `tools/library_coverage/probe.py:648` — `gen_program`
+- `tools/library_coverage/probe.py:697` — `_run`
+- `tools/library_coverage/probe.py:708` — `first_error`
+- `tools/library_coverage/probe.py:715` — `classify`
+- `tools/library_coverage/probe.py:751` — `probe_cell`
+- `tools/library_coverage/probe.py:799` — `rollup`
+- `tools/library_coverage/probe.py:814` — `static_row`
+- `tools/library_coverage/probe.py:825` — `probe_library`
+- `tools/library_coverage/probe.py:856` — `run`
+- `tools/library_coverage/probe.py:897` — `_lowers`
+- `tools/library_coverage/probe.py:900` — `summarize`
+- `tools/library_coverage/probe.py:930` — `bucket_table`
+- `tools/library_coverage/probe.py:943` — `backend_bucket_table`
+- `tools/library_coverage/probe.py:964` — `category_tables`
+- `tools/library_coverage/probe.py:996` — `write_library_page`
+- `tools/library_coverage/probe.py:1013` — `aggregate`
+- `tools/library_coverage/probe.py:1027` — `_spec_backend_map`
+- `tools/library_coverage/probe.py:1040` — `render`
+- `tools/library_coverage/probe.py:1060` — `write_index`
+- `tools/library_coverage/probe.py:1127` — `update_readme`
+- `tools/library_coverage/probe.py:1179` — `bless`
+- `tools/library_coverage/probe.py:1202` — `main`
 
-### `tools/library_coverage/runtime_census.py` (278 lines)
+### `tools/library_coverage/runtime_census.py` (262 lines)
 
 - `tools/library_coverage/runtime_census.py:32` — `run`
 - `tools/library_coverage/runtime_census.py:37` — `variants`
 - `tools/library_coverage/runtime_census.py:54` — `source`
-- `tools/library_coverage/runtime_census.py:89` — `direct_routes`
-- `tools/library_coverage/runtime_census.py:107` — `calls_in`
-- `tools/library_coverage/runtime_census.py:118` — `measure`
-- `tools/library_coverage/runtime_census.py:185` — `render_report`
-- `tools/library_coverage/runtime_census.py:226` — `sha256`
-- `tools/library_coverage/runtime_census.py:230` — `main`
+- `tools/library_coverage/runtime_census.py:94` — `calls_in`
+- `tools/library_coverage/runtime_census.py:105` — `measure`
+- `tools/library_coverage/runtime_census.py:170` — `render_report`
+- `tools/library_coverage/runtime_census.py:211` — `sha256`
+- `tools/library_coverage/runtime_census.py:215` — `main`
 
 ### `tools/link_smoke_selftest.py` (142 lines)
 
@@ -9071,9 +8550,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/scrub_guard_batch.py:38` — `alias_identity`
 - `tools/scrub_guard_batch.py:44` — `identify_root`
 
-### `tools/slice_census_sync_check.py` (195 lines)
+### `tools/slice_census_sync_check.py` (185 lines)
 
-- `tools/slice_census_sync_check.py:64` — `main`
+- `tools/slice_census_sync_check.py:63` — `main`
 
 ### `tools/taintset_scrub_guard.py` (2758 lines)
 

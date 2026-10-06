@@ -170,9 +170,10 @@ if(TARGET cq-opt)
 endif()
 
 # The math.h bundle tools/cqc injects (bd 3c6m.72): openlibm built to bitcode
-# at a pinned commit, every body renamed __cq_libm_<name>, CQ's owner-ruled
-# trig bodies in place of openlibm's sin/cos/tan. The pass binds only a call
-# with a quantum operand to it; classical calls keep the system libm.
+# at a pinned commit, every body renamed __cq_libm_<name>; a name with a direct
+# backend route at a width (tools/intrinsic_table.yaml) forwards to its intrinsic
+# (bd 3c6m.78). The pass binds only a call with a quantum operand to it;
+# classical calls keep the system libm.
 set(CQ_OPENLIBM_COMMIT 5fe399749f9276eaa0b8403e507470da05cbbb3f)
 set(CQ_OPENLIBM_SOURCE_DIR "" CACHE PATH
     "openlibm checkout at ${CQ_OPENLIBM_COMMIT} (empty: fetch it at configure time)")
@@ -204,9 +205,7 @@ add_custom_command(
             "${_CQ_LIBM_TOOLS}/full_surface/build_corpus.py"
             "${_CQ_LIBM_TOOLS}/full_surface/wprobe.py"
             "${_CQ_LIBM_TOOLS}/probe.py"
-            "${_CQ_LIBM_TOOLS}/branchless/sin.c" "${_CQ_LIBM_TOOLS}/branchless/cos.c"
-            "${_CQ_LIBM_TOOLS}/branchless/tan.c" "${_CQ_LIBM_TOOLS}/branchless/sinl.c"
-            "${_CQ_LIBM_TOOLS}/branchless/cosl.c" "${_CQ_LIBM_TOOLS}/branchless/tanl.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/intrinsic_table.yaml"
     COMMENT "Building the math.h bundle (openlibm ${CQ_OPENLIBM_COMMIT})"
     VERBATIM)
 add_custom_target(cq_libm_bundle ALL DEPENDS "${_CQ_LIBM_DIR}/cq_libm.bc")

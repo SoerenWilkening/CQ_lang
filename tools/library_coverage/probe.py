@@ -49,7 +49,6 @@ COVERAGE_MD = HERE / "COVERAGE.md"
 COVERAGE_DIR = HERE / "coverage"
 GOLDENS = HERE / "goldens"
 README = ROOT / "README.md"
-INJECTION_SUMMARY = HERE / "injection_summary.json"   # written by inject_census.py
 CQC_CENSUS = HERE / "runtime_census.json"             # written by runtime_census.py
 TIMEOUT = 40
 
@@ -74,7 +73,7 @@ HARDWARE_KEEP_SET = ("sqrt fabs copysign floor ceil trunc round rint nearbyint "
 # THE covered-cell predicate — ONE definition, for BOTH scoreboard producers.
 #
 # It lives HERE and not in `full_surface/full_census.py` because that module
-# already imports THIS one (`P.HARDWARE_KEEP_SET`, `P.cq_provided_cells()`), so
+# already imports THIS one (`P.HARDWARE_KEEP_SET`), so
 # the dependency only runs one way; defining it there and importing it here
 # would be a cycle.
 #
@@ -93,161 +92,9 @@ HARDWARE_KEEP_SET = ("sqrt fabs copysign floor ceil trunc round rint nearbyint "
 COVERED_EXCL = ("decline", "no-body")
 is_covered = lambda st: st not in COVERED_EXCL
 
-# ---------------------------------------------------------------------------
-# The CQ-PROVIDED set — Rule 18 AMENDMENT (owner ruling 2026-07-31, bd `guwr`).
-#
-# A THIRD category beside recognition and injection: a function whose reversible
-# implementation *CQ itself ships*, and for which the pipeline injects CQ's leaf
-# INSTEAD OF upstream's body. Rule 18's two keep/cut conditions are independent,
-# and for the trig family only condition (1) fails — Bennett backs sin/cos/tan
-# with a CONCRETE BRANCHLESS gate sequence (rev e15ea23: soft_sin fsin.jl:683,
-# soft_cos :739, soft_tan ftan.jl:200, _rp_paynehanek :468; zero for/while), so
-# condition (2) holds robustly. What is ruled out is openlibm's SOURCE FORM
-# (k_rem_pio2.c's nested data-dependent-trip loops), not the function.
-#
-# NOTHING ELSE ABOUT RULE 18 RELAXES. Admission needs ALL THREE of (i) Bennett
-# concrete-branchless backing, (ii) a CQ leaf VERIFIED BY A COMMITTED e2e GOLDEN
-# AT THAT WIDTH, (iii) recorded as CQ-PROVIDED and NEVER merged into injection —
-# *plus an explicit owner ruling per function*. It is not developer discretion
-# and not an escape hatch (Rule 17): authoring a leaf is not a substitute for the
-# lowering work, and a name-recognizer for a library fn stays FICTION (Rule 18
-# retires it — do NOT build one; the only thing that changes here is WHICH SOURCE
-# IS INJECTED).
-#
-# (i) and the owner ruling are the human half and live in this tuple, per STEM.
-# (ii) is the mechanical half and is MEASURED ON DISK by cq_provided_cells()
-# below — never a hand-maintained spelling list, because a hand list is exactly
-# how a "verified at that width" claim rots into an assertion. Day one this
-# qualifies exactly 6 cells (sin/cos/tan.f64 + sinl/cosl/tanl.f80) and REJECTS
-# sinf/cosf/tanf, which have no f32 leaf anywhere in the corpus (bd `eur4`).
-#
-# "9" IS A TRIPWIRE, NOT A CAP (owner ruling 2026-08-10). This comment used to end
-# "If a change makes this 'cover' 9, condition (ii) has been broken", which read
-# literally forbade bd `eur4` from ever succeeding. The ruling is per STEM and
-# condition (ii) is per WIDTH, so authoring three REAL f32 leaves (+ slices,
-# goldens, whole-token ctest rows, in-sync bodies) takes this to 9 LEGITIMATELY.
-# What would mean condition (ii) is broken: reaching 9 WITHOUT that evidence —
-# i.e. cq_provided_cells() crediting a width whose leaf/slice/golden/registration
-# is missing or whose body has drifted from the twin the golden pins.
-# And note what eur4 is WORTH before quoting it: sinf/cosf/tanf are DECLINES
-# today, so admitting them leaves the injection NUMERATOR unchanged and only
-# shrinks its denominator. Row-3 movement, never injection progress.
-#
-# DECLINED 2026-08-10 (owner ruling): the `log` stem. `log` and `logl` BOTH pass
-# condition (ii) on disk today — and both cells are ALREADY `COMPILES` by real
-# openlibm injection, so admitting the stem would move two COVERED cells out of
-# the injection row to buy one (lgammal.f80): campaign number 97 -> 96. The
-# logl-only variant is flat, not +1. The amendment's grounding also does not
-# reach it: CQ-PROVIDED exists because openlibm's SOURCE FORM is un-injectable
-# (trig's Payne-Hanek), and log's source form works and is injected today.
-# Do not re-propose without new measurement. See CLAUDE.md Rule 18 amendment.
-CQ_PROVIDED_RULED = ("sin", "cos", "tan")     # owner ruling 2026-07-31 (bd guwr)
-CQ_PROVIDED_VARIANTS = ("f", "", "l")         # spelling suffixes, as MATHH_SPEC
-BRANCHLESS_DIR = HERE / "branchless"
-E2E_DIR = ROOT / "tests" / "e2e"
-
-def _c_fn_body(text, fname):
-    """The brace-balanced body of `<type> <fname>(...)` in C source `text`, with
-    comments stripped; None if absent. Deliberately dumb — it only has to handle
-    the one shape every branchless leaf is written in."""
-    s = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    s = re.sub(r"//[^\n]*", "", s)
-    m = re.search(r"\b\w[\w ]*\b\s+%s\s*\([^)]*\)\s*\{" % re.escape(fname), s)
-    if not m:
-        return None
-    i, depth = s.index("{", m.start()), 0
-    for j in range(i, len(s)):
-        if s[j] == "{":
-            depth += 1
-        elif s[j] == "}":
-            depth -= 1
-            if depth == 0:
-                return re.sub(r"\s+", " ", s[i:j + 1]).strip()
-    return None
-
-def _leaf_in_sync(spelling, leaf, slice_):
-    """Condition (ii)'s NO-DRIFT clause, measured rather than trusted.
-
-    The census injects `branchless/<spelling>.c` while the committed golden pins
-    `tests/e2e/slice_branchless_<spelling>.c`, which carries a RENAMED COPY of the
-    same body (`sin` -> `bsin`). Two files holding one algorithm is a drift hazard
-    with a nasty signature: edit the leaf and the census silently starts measuring
-    a body no golden has ever verified, while "verified at that width" still reads
-    true. So the bodies are compared structurally — comments and whitespace
-    normalized away, the NAME ignored (it must differ) — and a mismatch DEMOTES the
-    cell out of the CQ-provided set entirely. Measured 2026-07-31: all 6 identical.
-    """
-    try:
-        lb = _c_fn_body(leaf.read_text(), spelling)
-        st = slice_.read_text()
-    except Exception:
-        return False
-    if lb is None:
-        return False
-    names = set(re.findall(r"\b(?:float|double|long double)\s+(\w+)\s*\(",
-                           re.sub(r"/\*.*?\*/", "", st, flags=re.S)))
-    return any(_c_fn_body(st, n) == lb for n in names)
-
-def _cq_provided_evidence(spelling):
-    """Condition (ii) evidence for ONE spelling, measured on disk. Returns a dict
-    of {requirement: path-or-None}; a requirement mapping to None is unmet."""
-    leaf   = BRANCHLESS_DIR / f"{spelling}.c"
-    slice_ = E2E_DIR / f"slice_branchless_{spelling}.c"
-    golden = E2E_DIR / f"slice_branchless_{spelling}.expected.log"
-    cml    = E2E_DIR / "CMakeLists.txt"
-    # WHOLE-TOKEN match: `e2e-slice-branchless-sin` is a PREFIX of
-    # `…-sinl`, so a substring test would credit sin.f64 with sinl.f80's
-    # registration (and vice versa on any future stem/suffix collision).
-    try:
-        registered = re.search(rf"e2e-slice-branchless-{re.escape(spelling)}(?![-\w])",
-                               cml.read_text()) is not None
-    except Exception:
-        registered = False
-    in_sync = (leaf.is_file() and slice_.is_file()
-               and _leaf_in_sync(spelling, leaf, slice_))
-    return {"leaf": leaf if leaf.is_file() else None,
-            "slice": slice_ if slice_.is_file() else None,
-            "golden": golden if golden.is_file() else None,
-            "ctest": cml if registered else None,
-            "in-sync": leaf if in_sync else None}
-
-def cq_provided_cells():
-    """spelling -> leaf source Path, for every OWNER-RULED stem x width variant
-    whose condition-(ii) evidence is ALL present. Mechanical; see above."""
-    out = {}
-    for stem in CQ_PROVIDED_RULED:
-        for suf in CQ_PROVIDED_VARIANTS:
-            spelling = stem + suf
-            ev = _cq_provided_evidence(spelling)
-            if all(v is not None for v in ev.values()):
-                out[spelling] = ev["leaf"]
-    return out
-
-def cq_provided_rejected():
-    """spelling -> sorted list of UNMET condition-(ii) requirements, for every
-    owner-ruled stem x width that does NOT qualify. Printed beside the covered
-    set so the gap is visible rather than silently absent (the honesty rule cuts
-    both ways: an unqualified width must read as NOT COVERED, loudly)."""
-    out = {}
-    for stem in CQ_PROVIDED_RULED:
-        for suf in CQ_PROVIDED_VARIANTS:
-            spelling = stem + suf
-            ev = _cq_provided_evidence(spelling)
-            missing = sorted(k for k, v in ev.items() if v is None)
-            if missing:
-                out[spelling] = missing
-    return out
-
-def _injection_scoreboard():
-    """Read the committed injection scoreboard (inject_census.py) if present."""
-    try:
-        return json.loads(INJECTION_SUMMARY.read_text())
-    except Exception:
-        return None
-
 def _full_surface_scoreboard():
     """The AUTHORITATIVE full-surface REAL-openlibm injection scoreboard (bd 3c6m.49/
-    .50/.14), superseding the double-only authored-branchless number. Reads the
+    .50/.14). Reads the
     committed census outputs: compiles/total from the all-widths **O1** baseline
     `full_surface/full_census_O1.json` (bd vuy6, 2026-07-25 — the reconciled file every
     published number is quoted from), falling back to the older **O2**
@@ -255,52 +102,22 @@ def _full_surface_scoreboard():
     real-openlibm goldens `tests/e2e/slice_libm_real_*.expected.log`.
     Returns (compiles, total, verified) or None.
 
-    Three subtleties, all load-bearing (bd 3c6m.58, guwr):
+    Two subtleties, both load-bearing (bd 3c6m.58):
       * a cell is injection-covered iff it did NOT decline — `full_census.py` records the
         Phase-6 spec-clone survivors as `exit0-spec:[...]` rather than plain `COMPILES`
         (bucket() maps them to "COMPILES (spec-clone)"), so counting == "COMPILES" would
         undercount by exactly those cells;
       * `compiles` and `verified` MUST come from the same generation of the census. Reading
         `compiles` from the stale O2 snapshot while globbing `verified` live produced the
-        incoherent "48 injection-covered, 68 verified" (verified > injection-covered);
-      * *** CQ-PROVIDED CELLS ARE EXCLUDED *** (Rule 18 amendment (iii), owner 2026-07-31).
-        They are probed against CQ's OWN leaf, not upstream's body, so counting them here
-        would answer the injection question with a cell that never asked it — the exact
-        merge the amendment forbids and the retired 165/174 overclaim in miniature. A
-        pre-amendment census json has no `provider` key; those cells default to openlibm,
-        which is correct for every one of them."""
+        incoherent "48 injection-covered, 68 verified" (verified > injection-covered)."""
     try:
         fs = HERE / "full_surface"
         o1 = fs / "full_census_O1.json"
         fb = json.loads((o1 if o1.exists() else fs / "first_blocker_refreshed.json").read_text())
-        inj = {k: v for k, v in fb.items() if v.get("provider", "openlibm") != "cq"}
-        compiles = sum(1 for v in inj.values() if is_covered(v.get("status", "decline")))
-        total = len(inj)
+        compiles = sum(1 for v in fb.values() if is_covered(v.get("status", "decline")))
+        total = len(fb)
         verified = len(list((ROOT / "tests" / "e2e").glob("slice_libm_real_*.expected.log")))
         return (compiles, total, verified)
-    except Exception:
-        return None
-
-def _cq_provided_scoreboard():
-    """The THIRD row (Rule 18 amendment, bd `guwr`): (covered, total, verified).
-    `covered` = CQ-provided census cells that did not decline; `verified` = cells
-    whose committed `slice_branchless_*` e2e golden exists — which is condition
-    (ii) itself, so for an admitted cell the two coincide BY CONSTRUCTION. That is
-    a property of the gate, not a coincidence, and it is why this row can never be
-    quoted as compiler progress: it moves only when a leaf is authored."""
-    try:
-        fs = HERE / "full_surface"
-        o1 = fs / "full_census_O1.json"
-        fb = json.loads((o1 if o1.exists() else fs / "first_blocker_refreshed.json").read_text())
-        cq = {k: v for k, v in fb.items() if v.get("provider") == "cq"}
-        if not cq:
-            return None
-        # Same predicate as row (2). No CQ-provided cell carries `no-body` today
-        # (all 6 are COMPILES), so this changes no number now — it is here so a
-        # future status cannot enter THIS numerator by default either.
-        covered = sum(1 for v in cq.values() if is_covered(v.get("status", "decline")))
-        verified = len(cq_provided_cells())
-        return (covered, len(cq), verified)
     except Exception:
         return None
 
@@ -332,20 +149,19 @@ def cqc_census_lines(md_link="tools/library_coverage/runtime_census.md",
 
 def mathh_union_scoreboard():
     """THE HEADLINE (owner ruling 2026-08-22, bd `fhas`): whole-`math.h` coverage across
-    ALL routes — recognition keep-set + injection + CQ-PROVIDED + macros — over the full
+    ALL routes — recognition keep-set + injection + macros — over the full
     183-cell modelled surface. Returns (covered, total, breakdown-list) or None.
 
     *** THIS REVERSES A STANDING RULING, AND THE RULING IT REVERSES WAS RIGHT ABOUT A
     REAL HAZARD. *** Until today a merged headline was a documented BUG here: the retired
-    `165/174` (95%) overclaim is what merging produced, and rows (1)/(3) move without any
-    compiler work (recognition is a fixed floor; CQ-PROVIDED moves only when a leaf is
-    authored). The owner asked for the merged number anyway, on 2026-08-22, and it is
+    `165/174` (95%) overclaim is what merging produced, and row (1) moves without any
+    compiler work (recognition is a fixed floor). The owner asked for the merged number
+    anyway, on 2026-08-22, and it is
     honest under ONE phrasing and dishonest under another:
 
         TRUE   "CQ compiles 158/183 math.h cells"      <- a user calling sqrt() works
         FALSE  "CQ compiled openlibm's body for 158"   <- 42 have NO injectable body at
-                                                          all (Rule 18) and 6 use CQ's
-                                                          OWN leaf, not upstream's
+                                                          all (Rule 18)
 
     So the mitigation is structural, not a promise: this function returns the BREAKDOWN
     with the total, every caller prints them together, and the injection row keeps its
@@ -372,7 +188,7 @@ def mathh_union_scoreboard():
         for r in rows:
             v = cen.get(r.get("name"))
             if v is not None:
-                b = "CQ-PROVIDED" if v.get("provider") == "cq" else "injection"
+                b = "injection"
                 ok = is_covered(v.get("status", "decline"))
             elif r.get("rollup") == "no-taintable-input":
                 b, ok = "nan (by design)", False   # nothing to taint; counted, not hidden
@@ -387,29 +203,25 @@ def mathh_union_scoreboard():
             a = acc.setdefault(b, [0, 0])
             a[1] += 1
             a[0] += 1 if ok else 0
-        order = ["injection", "CQ-PROVIDED", "recognition keep-set",
+        order = ["injection", "recognition keep-set",
                  "type-generic macros", "nan (by design)"]
         brk = [(b, acc[b][0], acc[b][1]) for b in order if b in acc]
         return (sum(c for _, c, _ in brk), sum(t for _, _, t in brk), brk)
     except Exception:
         return None
 
-def scoreboard_lines(short=False, census_link="tools/library_coverage/INJECTION-CENSUS.md"):
+def scoreboard_lines(short=False, census_link="tools/library_coverage/FULL_DEPTH_CENSUS.md"):
     """The coverage-scoreboard note. Since the owner ruling of 2026-08-22 (bd `fhas`) it
     LEADS with the whole-`math.h` union (`mathh_union_scoreboard`) and then prints the
     rows as its COMPOSITION — they stay separately measured and separately quotable, and
     the injection row keeps its own number, but they are no longer forbidden to sum.
     Emitted into the README badge, COVERAGE.md, and the math.h detail page — `census_link`
-    is the INJECTION-CENSUS.md path RELATIVE to each. Every number here is derived, so a
-    new category cannot silently falsify a hard-coded one."""
-    inj = _injection_scoreboard()
-    if inj is not None:
-        n, m = inj["injection_compiles"], inj["injection_candidates"]
-        injnum = (f"**{n}/{m}**" + (" (an honest floor)" if n == 0 else ""))
-    else:
-        injnum = "**see the source-injection census**"
-    census = census_link
-    full_census = census_link.replace("INJECTION-CENSUS.md", "FULL_DEPTH_CENSUS.md")
+    is the FULL_DEPTH_CENSUS.md path RELATIVE to each. Every number here is derived, so a
+    new category cannot silently falsify a hard-coded one.
+
+    There is no row for library code CQ writes itself: CQ ships no C implementation of a
+    library function (owner clarification 2026-10-06, bd `3c6m.78`; CLAUDE.md R14)."""
+    full_census = census_link
     fs = _full_surface_scoreboard()
     if fs is not None:
         fc, ft, fv = fs
@@ -418,41 +230,7 @@ def scoreboard_lines(short=False, census_link="tools/library_coverage/INJECTION-
         ftxt = str(ft)
     else:
         fsnum, fc, ft, ftxt = "**see the full-surface census**", 0, 0, "the injectable"
-    cq = _cq_provided_scoreboard()
-    if cq is not None:
-        cc, ct, cv = cq
-        cqnum = f"**{cc}/{ct} CQ-provided ({cv} with a committed e2e golden)**"
-        cqrow = (f"**CQ-PROVIDED** — {cqnum}: functions whose reversible implementation "
-                 f"**CQ itself ships** (`tools/library_coverage/branchless/`), for which the "
-                 f"pipeline injects **CQ's leaf instead of upstream's body** (Rule 18 "
-                 f"amendment, owner 2026-07-31, bd `guwr`). Admission needs Bennett "
-                 f"concrete-branchless backing **and** a CQ leaf verified by a committed e2e "
-                 f"golden **at that width** **and** an explicit owner ruling per function — "
-                 f"today exactly `sin`/`cos`/`tan` at f64+f80; `sinf`/`cosf`/`tanf` are "
-                 f"**rejected** (no f32 leaf, bd `eur4`). This row moves only when a leaf is "
-                 f"authored, so like recognition it is **never campaign progress**, and it is "
-                 f"**never merged into (2)**.")
-        cqshort = (f" A **third** row, **CQ-PROVIDED** ({cqnum}), covers functions whose "
-                   f"reversible leaf **CQ ships itself** and injects instead of upstream's "
-                   f"body (Rule 18 amendment, bd `guwr`) — `sin`/`cos`/`tan` at f64+f80 "
-                   f"only; it is **never merged into** the injection number and is not "
-                   f"campaign progress.")
-        # bd `aik2`: the 4th term was `6 int-ret/str`, a PRE-`bcv4` FOSSIL. When 123
-        # cells were probed that reconciled — 42 + 123 + 12 + 6 = 183 — because the
-        # 6 excluded were 3 `nan` PLUS the 3 int-return `ilogb` cells the harness
-        # skipped. bd `bcv4` (2026-08-10) admitted those 3 into the probed set, so
-        # the probed count went 123 -> 126 and the excluded bucket 6 -> 3, leaving
-        # only `nan`. The term was never updated, so the printed decomposition summed
-        # to 186 against a stated 183-cell surface. Now: 120 + 6 + 42 + 12 + 3 = 183.
-        # Authoritative block: full_surface/README.md §"What `120` is".
-        denom = (f"`{ftxt} injection + {ct} CQ-provided + 42 recognition + 12 macros + "
-                 f"3 nan`")
-        nrows = "Three"
-    else:
-        cqrow, cqshort, nrows = None, "", "Two"
-        # Pre-amendment shape: the 6 CQ-PROVIDED cells are still inside `ftxt` here,
-        # so the same 183 reconciles as ftxt + 42 + 12 + 3.
-        denom = f"`{ftxt} injectable + 42 recognition + 12 macros + 3 nan`"
+    denom = f"`{ftxt} injectable + 42 recognition + 12 macros + 3 nan`"
     # THE HEADLINE — owner ruling 2026-08-22 (bd `fhas`). Built here so every consumer
     # gets the total and its composition in the SAME sentence; see mathh_union_scoreboard
     # for why that pairing is the whole mitigation and not decoration.
@@ -469,21 +247,20 @@ def scoreboard_lines(short=False, census_link="tools/library_coverage/INJECTION-
                     f"`math.h` cells\"* — which is true, a user calling `sqrt()` gets a "
                     f"real lowering. It is **NOT** *\"CQ compiled openlibm's body {mc} "
                     f"times\"*: the recognition cells have **no injectable body at all** "
-                    f"(Rule 18) and the CQ-PROVIDED cells use **CQ's own leaf**, not "
-                    f"upstream's. Sensitivity, so the figure is never quoted barer than it "
+                    f"(Rule 18). Sensitivity, so the figure is never quoted barer than it "
                     f"is: **-3** if `fma{{,f,l}}`'s *partial* cells are excluded, and the "
                     f"3 by-design `nan` cells arguably do not belong in a denominator at "
                     f"all (nothing to taint). **The campaign number for COMPILER progress "
-                    f"remains the injection row alone** — rows (1) and (3) move with no "
+                    f"remains the injection row alone** — row (1) moves with no "
                     f"compiler work.\n>")
     else:
         headline = "> ## `math.h` coverage: **see the full-surface census**\n>"
-    cqc_head = cqc_census_lines(census_link.replace("INJECTION-CENSUS.md", "runtime_census.md"),
+    cqc_head = cqc_census_lines(census_link.replace("FULL_DEPTH_CENSUS.md", "runtime_census.md"),
                                 lab="below")
     if cqc_head is not None:
         headline = "\n".join(cqc_head) + "\n\n" + headline
     head = (f"{headline}\n"
-            f"> **{nrows} separately-measured coverage scoreboards "
+            f"> **Two separately-measured coverage scoreboards "
             f"(bd `libm-scoreboard-two-numbers`) — summable ONLY as above, never "
             f"silently blended.**")
     if short:
@@ -493,14 +270,10 @@ def scoreboard_lines(short=False, census_link="tools/library_coverage/INJECTION-
                 f"floor, not injection progress*. The **AUTHORITATIVE libm-campaign number** is "
                 f"the full-surface REAL-openlibm injection census: {fsnum} of the reconciled "
                 f"{ftxt}-cell surface ([full-depth census]({full_census}) §11) — the injectable "
-                f"subset of this table's denominator ({denom}).{cqshort} "
-                f"The double-only authored-branchless number "
-                f"({injnum}, [source-injection census]({census})) is a hand-written-substitute "
-                f"subset, superseded by the full-surface census. The three sets are disjoint; a "
+                f"subset of this table's denominator ({denom}). The two sets are disjoint; a "
                 f"library function that declines under injection stays declined (and ticketed), "
                 f"never counted via recognition."]
-    cqitem = [cqrow and f"3. {cqrow}"]
-    return [x for x in [
+    return [
         head, "",
         f"1. **Recognition-covered** — the hardware keep-set (`{HARDWARE_KEEP_SET}` + "
         "variants): functions that lower because `clang -O1` emits a hardware-backed intrinsic "
@@ -510,57 +283,27 @@ def scoreboard_lines(short=False, census_link="tools/library_coverage/INJECTION-
         f"2. **Injection-covered (AUTHORITATIVE campaign number)** — genuine REAL off-the-shelf "
         f"openlibm bodies compiled by **source injection** (Rule 18) at every width, over the "
         f"reconciled {ftxt}-cell full-surface census (bd `3c6m.49`/`.50`/`.14`): {fsnum} "
-        f"([full-depth census]({full_census}) §11). The two numbers are still measured "
+        f"([full-depth census]({full_census}) §11). The two numbers are measured "
         f"SEPARATELY and must never be conflated (bd `libm-scoreboard-two-numbers`): "
         f"*injection-covered* = the census `default<O1>` pipeline accepts the real body; "
         f"*verified* = a committed `slice_libm_real_*` golden LINKS, RUNS and byte-matches at "
         f"the true `clang -O1 → cq-lowering` ship floor. A census-COMPILES is only "
         f"an UPPER BOUND on the ship floor (the census cleanup can pre-flatten control the ship "
-        f"floor leaves — that gap is exactly what sank `log1p{{,f}}`/`atanh{{,f}}` under the "
-        f"older O2 baseline). bd `3c6m.58` discharged that bound for the 68-cell baseline (the "
-        f"last 15 cells goldened, all 15 held); bd `3c6m.60` then RE-OPENED it by exactly one "
-        f"cell — of the 12 the keep-set harness fix unblocked, 11 goldened and hold while "
-        f"`hypotl.f80` census-COMPILED but DECLINED at the plain -O1 ship floor. bd `3c6m.61` "
-        f"CLOSED that last census-pipeline-only cell: its blocker turned out NOT to be the "
-        f"control shape it was filed under (PredMux's root region reduced the 5-way funnel all "
-        f"along) but a single arm-resident `icmp eq i80` — the fp80 Inf/NaN mantissa test — now "
-        f"lowered on the already-frozen `_hl` compare grid. **The gap is 0 again**: every "
-        f"injection-covered cell has a committed ship-floor golden. The two numbers are still "
-        f"measured SEPARATELY and printed apart on purpose — that they coincide today is a "
-        f"MEASUREMENT, not an invariant. NB the census's **{ftxt}** is the INJECTABLE "
-        f"subset of this table's **183-cell** surface ({denom}); it is a different, tighter "
-        f"denominator than the recognition columns below — not the same 174/183. "
-        f"*(That breakdown reconciles exactly — it summed to 186 until bd `aik2` replaced a "
-        f"pre-`bcv4` `6 int-ret/str` term with the `3 nan` that actually remains excluded. "
-        f"The authoritative decomposition is the block in "
+        f"floor leaves). That they coincide is a MEASUREMENT, not an invariant. NB the "
+        f"census's **{ftxt}** is the INJECTABLE subset of this table's **183-cell** surface "
+        f"({denom}); it is a different, tighter denominator than the recognition columns "
+        f"below. *(The authoritative decomposition is the block in "
         f"`full_surface/README.md` §\"What `{ftxt}` is\". **The single source of truth for "
-        f"every figure on this line is the census run itself** (`full_census_O1.json`) — "
-        f"a line that asserts AUTHORITY is exactly the one to re-derive rather than trust, "
-        f"which is how the hand-copied variant of it sat three increments stale at `97/117` "
-        f"until 2026-08-22. This page is REGENERATED WHOLESALE, so corrections belong in "
-        f"`probe.py`, never in the rendered markdown.)*",
-        *[x for x in cqitem if x],
-        f"{4 if cqrow else 3}. **Authored-branchless doubles** — the earlier double-only "
-        f"injection number, {injnum} of the `math.h` double surface "
-        f"([source-injection census]({census})): these are our HAND-WRITTEN branchless "
-        f"substitutes (`branchless/`), a subset **superseded** by the real-openlibm "
-        f"full-surface census in (2).",
+        f"every figure on this line is the census run itself** (`full_census_O1.json`). This "
+        f"page is REGENERATED WHOLESALE, so corrections belong in `probe.py`, never in the "
+        f"rendered markdown.)*",
         "",
-        (("**How (3) differs from the superseded (4)** — they draw on the same `branchless/` "
-          "corpus, so the distinction is the whole point. (4) counted **every** hand-written "
-          "substitute **as injection coverage**, ungated; that is the retired overclaim and it "
-          "stays retired. (3) counts a spelling **only** when Bennett backs it with a concrete "
-          "branchless gate sequence, a committed e2e golden verifies CQ's leaf **at that "
-          "width**, and the owner has ruled on that function by name — and it counts it in its "
-          "**own row**, never as injection. Six cells qualify; three (`sinf`/`cosf`/`tanf`) are "
-          "rejected by the same gate.") if cqrow else None),
-        ("" if cqrow else None),
         "The sets are **disjoint** (a fn is counted in at most one). A library function "
         "that declines under injection stays declined — and is ticketed (bd `3c6m.9`) — until "
         "its *injected body* lowers; recognition is **never** a fallback for a hard injection, "
-        "and neither is authoring a CQ leaf (Rule 17: a substitute is not the lowering work). "
+        "and CQ never substitutes its own C implementation for a library body (bd `3c6m.78`). "
         "A single merged headline (the retired `165/174` 95%-overclaim) is treated as a bug.",
-    ] if x is not None]
+    ]
 
 # ---------------------------------------------------------------------------
 # The BACKEND axis (bd e4jv). Three static tiers classifying whether a correct
@@ -989,7 +732,7 @@ def classify(stage, variant, combo, stderr):
             return ("math-result-as-angle hazard", raw)
         # p119 (Rule 18): a by-ref math out-param (frexp/modf/remquo) and any direct
         # libm / transcendental call is a LIBRARY function — recognition is retired;
-        # it must be SOURCE-INJECTED (see INJECTION-CENSUS.md), NOT given a template.
+        # it must be SOURCE-INJECTED (see FULL_DEPTH_CENSUS.md), NOT given a template.
         if byref:
             return ("library function (by-ref) — source-injection required (Rule 18)", raw)
         if "unknown callee" in low or ("unknown" in low and "call" in low):
@@ -1259,7 +1002,7 @@ def write_library_page(lib, s):
     # For math.h, the number above is the RECOGNITION floor — state the disjoint
     # injection scoreboard so this page can't be read as merged coverage (owner rule).
     if lib["slug"] == "mathh":
-        lines += scoreboard_lines(short=True, census_link="../INJECTION-CENSUS.md") + [""]
+        lines += scoreboard_lines(short=True, census_link="../FULL_DEPTH_CENSUS.md") + [""]
     lines += bucket_table(s)
     lines += ["", "---", ""]
     lines += backend_bucket_table(s)
@@ -1331,7 +1074,7 @@ def write_index(per_lib, agg):
          "openlibm bodies the **source-injection census** compiles. Both are true of "
          "`math.h`; they answer different questions, which is why neither replaces the "
          "other.*", "",
-         *scoreboard_lines(short=False, census_link="INJECTION-CENSUS.md"), "",
+         *scoreboard_lines(short=False, census_link="FULL_DEPTH_CENSUS.md"), "",
          "Coverage has **two orthogonal axes** (bd e4jv). **Lowering** = *every* applicable "
          "classical/quantum (C/Q) argument mixture lowers, links, runs, **and** matches a committed "
          "golden trace — the compiler emits the right reversible-template call sequence. But the "

@@ -4,8 +4,8 @@
 ; this fixture's former `f64` decline and its p119 "never re-add a transcendental
 ; template" note. The direct route is `double` ONLY, so a tainted
 ; `@llvm.sin.f80` (long double) with no injected body still rides the loud
-; kMsgUnknownCallee escape decline; through tools/cqc it binds CQ's branchless
-; sinl source instead (LibmBinding.h).
+; kMsgUnknownCallee escape decline; through tools/cqc it binds openlibm's sinl
+; source instead (LibmBinding.h), which does not lower yet (bd 3c6m.79).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq taint escape: tainted value consumed by an unknown callee

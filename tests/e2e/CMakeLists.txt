@@ -1117,419 +1117,6 @@ add_test(NAME e2e-slice-bitcast-words
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_bitcast_words.expected.log")
 
-# bd 3c6m.7 / p119: the FIRST transcendental compiled by SOURCE INJECTION (Rule 18) —
-# a BRANCHLESS soft-exp (select range reduction, no tables/control/scratch) inlined to
-# stock reversible opcodes. Load-bearing on BOTH p119 unlocks: p119.6
-# (cq_template_fptosi_f64_to_i32 on the kjd1 fp-select merge) AND p119.7
-# (cq_template_bitcast_i64_to_f64 for the 2^n INSERT_WORDS scale). The golden pins the
-# whole branchless-exp reversible-opcode stream end-to-end.
-add_test(NAME e2e-slice-branchless-exp
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_exp.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_exp.expected.log")
-
-# bd 3c6m.10 / L1: the SECOND source-injected transcendental — a BRANCHLESS soft-log
-# (musl's core algorithm, special-case branches removed). Range reduction is the
-# canonical boundary-shift bit trick: pure i64 add/ashr/and on the punned bit pattern
-# (ZERO selects, zero control flow), round-tripping BOTH p119.7 bitcast directions
-# (f64->i64 EXTRACT_WORDS and i64->f64 INSERT_WORDS), then musl's minimax R(z) on
-# s=f/(2+f) as straight-line fp arithmetic (fdiv QQ + fmuladd keep-set contraction).
-# The golden pins the whole branchless-log reversible-opcode stream end-to-end.
-add_test(NAME e2e-slice-branchless-log
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_log.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_log.expected.log")
-
-# bd 3c6m.10 / L1 (batch cbrt/log1p/expm1): three more source-injected
-# transcendentals landed by the branchless-authored body spine. Corpus twins in
-# tools/library_coverage/branchless/{cbrt,log1p,expm1}.c — each body kept in sync.
-
-# cbrt: FreeBSD/openlibm's s_cbrt.c, special-case branches removed. ZERO selects —
-# the rough seed "divides the exponent by 3" as an integer udiv on the punned high
-# word (hx/3 + Kahan B1), the sign rides a bit, the 23-bit round is add+mask on the
-# pattern; clang folds the sign-clear to the hardware-kept @llvm.fabs
-# (cq_template_fabs_f64). Both p119.7 bitcast directions, twice. <=1 ulp vs host libm.
-add_test(NAME e2e-slice-branchless-cbrt
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_cbrt.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_cbrt.expected.log")
-
-# log1p: openlibm's near-0 range-reduction branch thicket dissolved by an EXACT
-# Knuth 2Sum (1+x == u+c) + the branchless soft-log of u + the c/u correction —
-# ZERO selects, zero control flow. <=2 ulp vs host libm incl. the near-0 region.
-add_test(NAME e2e-slice-branchless-log1p
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_log1p.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_log1p.expected.log")
-
-# expm1: openlibm's per-k reconstruction thicket replaced by the single
-# cancellation-free identity 2^n*(1+expm1(r)) - 1 = scale*Pr + (scale-1), keeping
-# openlibm's accurate Q1..Q5 primary. The ONLY control is exp's round-bias fp
-# select (the kjd1 controlled-copy merge). <=2 ulp vs host libm incl. near 0.
-add_test(NAME e2e-slice-branchless-expm1
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_expm1.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_expm1.expected.log")
-
-# bd 3c6m.21 / L1: atan by SOURCE INJECTION. openlibm's 5-segment |x| branch
-# ladder (the L6-nested-ctrl blocker) replaced by Cephes's 3-segment reduction
-# rendered branchless: the reduced arg xr = N/D is ONE unconditional division
-# with N,D from CONSTANT-operand selects (so clang keeps them selects, not
-# branches — a division on a bare select arm would SimplifyCFG-branch-ify into
-# tainted control flow), then Cephes's degree-4/5 rational R(z) as straight-line
-# fmuladd + fdiv, with the sign on a copysign keep-set leaf. 5 fp-select merges.
-# <=1.15 ulp vs host libm (dense breakpoint + tail sweeps).
-add_test(NAME e2e-slice-branchless-atan
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_atan.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_atan.expected.log")
-
-# bd 3c6m.47 / L1: tanh by SOURCE INJECTION. openlibm's 4-range |x| branch (the
-# L6-nested-ctrl blocker) replaced by its OWN |x|<1 kernel made valid for all x:
-# tanh(|x|) = -t/(t+2), t = expm1(-2|x|). expm1 is inlined (the branchless kernel,
-# == branchless/expm1.c). Saturation is branchless via fmin(|x|,20) — which ALSO
-# keeps expm1's arg in-domain (load-bearing for correctness, not just speed). The
-# only control is expm1's round-bias fp select. <=3.1 ulp vs host libm (worst
-# ~3.05 near |x|=0.125, inherited from the branchless expm1 kernel).
-add_test(NAME e2e-slice-branchless-tanh
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_tanh.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_tanh.expected.log")
-
-# bd 3c6m.37 / 3c6m.35 / L1: log2 and log10 by SOURCE INJECTION. openlibm's
-# e_log2.c/e_log10.c are ALREADY branchless in their core — the ONLY control flow
-# is the leading special-case ladder (x subnormal / x<=0 / inf / NaN / x==1 —
-# src/e_log{2,10}.c:50, the L6-nested-ctrl census blocker). These bodies remove
-# exactly those data-dependent branches: the {k,1+f} decomposition is the
-# canonical full-64-bit boundary-shift bit trick (== branchless/log.c, ZERO
-# selects), then openlibm's VERBATIM extra-precision combining — log(m)=hi+lo
-# (SET_LOW_WORD via a bitcast+and+bitcast round-trip) scaled by 1/ln2 resp.
-# 1/ln10 and k (resp. k*log10(2)) added by a Dekker two-sum. All straight-line
-# fp + both p119.7 bitcast directions, zero control flow. ~1 ulp on finite
-# normal x>0; log2 is exact at powers of two (k integer-exact, m==1 => log2 m==0).
-add_test(NAME e2e-slice-branchless-log2
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_log2.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_log2.expected.log")
-
-add_test(NAME e2e-slice-branchless-log10
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_log10.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_log10.expected.log")
-
-# bd 3c6m.23/.18/.20/.22/.45/.26 / L2-closure: the L2-CLOSURE batch — six compound
-# transcendentals by SOURCE INJECTION, each a branchless body that CALLS an L1 leaf
-# (atanh/acosh/asinh -> log1p; atan2 -> atan; sinh/cosh -> expm1) resolved by the
-# census closure-link and inlined (mirrors tanh->expm1). Each slice inlines a static
-# twin of BOTH the compound body AND the leaf, kept in sync with the corpus twins in
-# tools/library_coverage/branchless/. All overflow-safe + cancellation-free renderings
-# (see per-file headers); <=2.33 ulp vs host libm across their finite domains.
-add_test(NAME e2e-slice-branchless-atanh
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_atanh.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_atanh.expected.log")
-
-add_test(NAME e2e-slice-branchless-acosh
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_acosh.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_acosh.expected.log")
-
-add_test(NAME e2e-slice-branchless-asinh
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_asinh.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_asinh.expected.log")
-
-add_test(NAME e2e-slice-branchless-atan2
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_atan2.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_atan2.expected.log")
-
-# bd 3c6m.48: the OTHER two taint masks of atan2. The census now certifies a
-# multi-arg fn's COMPILES only if EVERY tainted-double combination lowers (each mask
-# is a distinct unitary), so each accepted combination gets its own linked golden.
-# slice_branchless_atan2.c pins (q,c) [y tainted, x const]; these pin (c,q) [y const,
-# x tainted — exercises the fdiv_lh literal/handle division + an x-tainted quadrant
-# merge] and (q,q) [both tainted, two qubits — handle/handle fdiv + a NESTED
-# tainted-condition quadrant select, inner (y<0)?±PI merge feeding the outer (x<0)?
-# merge as a copy source]. Both are pure value-embeddings (0 controlled rotations,
-# balanced flag frees; the quadrant/off DATA rails left allocated, never dirty-freed).
-add_test(NAME e2e-slice-branchless-atan2-cq
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_atan2_cq.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_atan2_cq.expected.log")
-
-add_test(NAME e2e-slice-branchless-atan2-qq
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_atan2_qq.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_atan2_qq.expected.log")
-
-add_test(NAME e2e-slice-branchless-sinh
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_sinh.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_sinh.expected.log")
-
-add_test(NAME e2e-slice-branchless-cosh
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_cosh.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_cosh.expected.log")
-
-# bd 3c6m.27/.28 / L2-closure: erf + erfc — the deepest branchy libm body
-# (openlibm s_erf.c: FIVE |x| segments + an exp-based asymptotic). Rendered
-# branchless via the atan pattern: CONSTANT-operand fp selects producing 0/1
-# regime weights that feed an UNCONDITIONAL weighted sum (so clang -O1 cannot
-# branch-ify the expensive exp regime onto one arm), over openlibm's own minimax
-# coefficients. The exp asymptotic uses the L2-closure spine — exp(y) via the
-# branchless expm1 leaf (exp(y)=2^n*(expm1(r)+1), r near 0). Each slice inlines a
-# static twin of BOTH the body AND the leaf, kept in sync with the corpus twins
-# tools/library_coverage/branchless/{erf,erfc,expm1}.c. Faithful branchless erf/erfc
-# over openlibm's coefficients (spot-checked to a few ulp; runtime is trace-only).
-# The ONLY layer that LINKS the whole erf/erfc opcode stream.
-add_test(NAME e2e-slice-branchless-erf
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_erf.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_erf.expected.log")
-
-add_test(NAME e2e-slice-branchless-erfc
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_erfc.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_erfc.expected.log")
-
-# bd 3c6m.44/.25 / L1: sin + cos by SOURCE INJECTION. openlibm's sin/cos reduce
-# with Payne–Hanek, storing the split product into a multi-word scratch double[]
-# (e_rem_pio2.c:174 — the L5-shadow `tainted value stored to memory` blocker).
-# Replaced by a REGISTER-ONLY, BRANCHLESS Cody–Waite reduction (fn=rint(x·2/π),
-# 2-term ≈66-bit π/2) + fdlibm k_sin/k_cos kernels, with the quadrant (fn mod 4)
-# derived ENTIRELY in fp (floor keep-set, no fptosi) and blended by CONSTANT-
-# operand fp selects into an UNCONDITIONAL weighted sum (the atan/erf pattern, the
-# kjd1 fp-DATA select controlled-copy merge). cos = sin(x+π/2) reuses the sin
-# weights on (fn+1). fmin/fmax clamp the reduced arg so the body is FINITE for
-# every double (no in-domain NaN/Inf). Corpus twins:
-# tools/library_coverage/branchless/{sin,cos}.c — keep textually in sync.
-add_test(NAME e2e-slice-branchless-sin
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_sin.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_sin.expected.log")
-
-add_test(NAME e2e-slice-branchless-cos
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_cos.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_cos.expected.log")
-
-# bd 20xt.8 Inc 1: the ld80 (x86_fp80) branchless-leaf twins of {sin,cos} — the
-# Bennett-parity path for the lgammal hybrid slice. Same 2-term Cody–Waite
-# reduction + fp-const-select quadrant blend as the f64 bodies, retyped to
-# `long double` with the ld80 rem_pio2l constants (39-bit pio2_1 kept `double`,
-# NEGATIVE tail) and the grown ld80 k_sinl (S1..S8) / k_cosl (C1..C7) kernels.
-# PURE-REGISTER: the rintl/floorl/fminl/fmaxl keep-set leaves lower to
-# cq_template_*_f80 (curated intrinsic bodies) and the fp selects to
-# cqrt_copy_f80_controlled (kjd1) — no Shadow/i80/memcpy. A DISJOINT
-# hybrid/authored-leaf provenance, never quoted with the real-openlibm goldens.
-# Corpus twins: tools/library_coverage/branchless/{sinl,cosl}.c — keep in sync.
-add_test(NAME e2e-slice-branchless-sinl
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_sinl.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_sinl.expected.log")
-
-add_test(NAME e2e-slice-branchless-cosl
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_cosl.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_cosl.expected.log")
-
-# bd 20xt.9: the ld80 (x86_fp80) branchless-leaf tan twin — the missing trio leaf
-# beside sinl/cosl. Reuses the SAME rem_pio2l reduction + k_sinl/k_cosl kernels;
-# tan is π-periodic so only fn mod 2 matters — reconstructed as the RATIO S/C (even)
-# or -C/S (odd), NOT openlibm's branchy ld80/k_tanl.c polynomial. The tanl-specific
-# op is ONE unconditional QQ division num/den -> cq_template_fdiv_f80; the parity
-# blend is a kjd1 const-operand fp select -> cqrt_copy_f80_controlled. PURE-REGISTER,
-# DISJOINT hybrid/authored-leaf provenance (census tanl.f80 stays declined, no delta),
-# never quoted with the real-openlibm goldens. Corpus twin:
-# tools/library_coverage/branchless/tanl.c — keep in sync.
-add_test(NAME e2e-slice-branchless-tanl
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_tanl.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_tanl.expected.log")
-
-# bd 20xt.8 Inc 2: the ld80 (x86_fp80) branchless-leaf natural-log twin — the
-# third Bennett-parity leaf for the lgammal hybrid slice. e_logl.c's small-exponent
-# path log(1+f)=f−½f²+f³P(f)/Q(f) taken UNCONDITIONALLY (faithful over the whole
-# centered mantissa for every exponent — the f64 branchless/log.c single-path move),
-# with the ld80 P[7]/Q[6]/C1/C2 coefficients. PURE-REGISTER: the frexp mantissa/
-# exponent split is a `union IEEEl2bits` bit-cast that SROA promotes to reversible
-# cq_template_{bitcast,lshr,shl,and,or,trunc,zext}_i80/i64/i32 surgery on the f80
-# (NO Shadow/qram/alloca — a 10-byte fp80 memcpy is deliberately avoided), the √2/2
-# centering is ONE constant-operand fp select → cqrt_copy_f80_controlled (kjd1), and
-# k is carried to fp with sitofp i32→f80. A DISJOINT hybrid/authored-leaf provenance,
-# never quoted with the real-openlibm goldens. Corpus twin:
-# tools/library_coverage/branchless/logl.c — keep in sync.
-add_test(NAME e2e-slice-branchless-logl
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_logl.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_logl.expected.log")
-
-# bd 20xt.8 Inc 4: the ld80 (x86_fp80) HYBRID lgammal slice — promotes the census
-# cell lgammal.f80 COMPILES→VERIFIED. The REAL openlibm ld80/e_lgammal_r.c outer
-# ladder (sin_pi reflection helper + the [1.5,2.5] rational / x≥8 asymptotic /
-# negative-x reflection branch ladder + every poly coefficient, VERBATIM; the only
-# mechanical edits are the GET_LDOUBLE_WORDS union word-read shim, u_int32_t, the
-# olm_ entry renames, and the inner sinl/cosl/logl→bsinl/bcosl/blogl +
-# floorl/fabsl→__builtin_* renames) wrapped around the THREE AUTHORED branchless
-# leaves bsinl/bcosl/blogl (textually identical to slice_branchless_{sinl,cosl,logl}.c;
-# always_inline so clang -O1 inlines them into the tainted seed — never spec-cloned,
-# the inline-not-cloned lesson). A DISJOINT hybrid/authored-leaf provenance —
-# NEVER quoted alongside the real-openlibm goldens; the census cell STAYS declined
-# (the ld80 census injects real openlibm sinl/cosl (Payne–Hanek) + logl, none of
-# which lowers), so NO census delta. Lowers PURE-REGISTER: opt exit 0, verify-clean,
-# 0 qram/Shadow/alloca, 0 spec-clones, 1 ry + 1 measure, deterministic. Corpus twins
-# tools/library_coverage/branchless/{sinl,cosl,logl}.c — keep in sync.
-add_test(NAME e2e-slice-hybrid-lgammal
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_hybrid_lgammal.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_hybrid_lgammal.expected.log")
-
-# bd 3c6m.46/.30/.19/.17: tan + exp2 + asin + acos by SOURCE INJECTION, all
-# single-arg. tan (L1) REUSES the sin/cos Cody–Waite reduction and reconstructs
-# tan as a RATIO of the SAME k_sin/k_cos kernels — tan is π-periodic so only the
-# PARITY of fn matters (fn even → S/C, fn odd → −C/S), built by ONE constant-operand
-# fp select feeding two UNCONDITIONAL weighted sums + ONE division (no k_tan table,
-# no Payne–Hanek scratch → sidesteps the L5-shadow blocker). exp2/asin/acos are
-# L2-closures: exp2(x)=exp(x·ln2) (dissolves the s_exp2 table, L5-qrom), asin(x)=
-# atan(x/√(fmax(1−x²,TINY))) (the fmax clamp kills the |x|→1 NaN — dissolves the
-# e_asin nested-if ladder, L6-nested-ctrl), acos(x)=π/2−asin(x). Each slice inlines
-# static twins of its leaf(s); corpus twins tools/library_coverage/branchless/
-# {tan,exp2,exp,asin,acos,atan}.c — keep textually in sync. All four lower to PURE
-# value-embedding traces (0 controlled rotations, balanced flag frees, one measure).
-add_test(NAME e2e-slice-branchless-tan
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_tan.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_tan.expected.log")
-
-add_test(NAME e2e-slice-branchless-exp2
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_exp2.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_exp2.expected.log")
-
-add_test(NAME e2e-slice-branchless-asin
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_asin.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_asin.expected.log")
-
-add_test(NAME e2e-slice-branchless-acos
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_acos.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_acos.expected.log")
-
-# bd 3c6m Batch A (.38/.16/.43/.42/.32/.41/.33): the EASY branchless injection
-# decliners flipped decline→COMPILES (injection scoreboard 23→30). Each is a keep-set
-# identity that dissolves openlibm's special-case control flow with ZERO selects:
-#   logb  = (double)(((bits>>52)&0x7FF)-1023)         [field extract]
-#   fdim  = fmax(x-y, 0)                               [keep-set fmax]
-#   scalbn/scalbln = x * bitcast((n+1023)<<52)         [INSERT_WORDS scale, n classical]
-#   fmod approximation = x - trunc(x/y)*y              [keep-set trunc]
-#   remainder = x - rint(x/y)*y                        [keep-set rint]
-#   hypot = fmax(|x|,|y|)*sqrt(1+(fmin/fmax)^2)         [overflow-safe, keep-set fmax/fmin/sqrt]
-# The four 2-arg expressions (fdim/fmod approximation/remainder/hypot) get a golden PER accepted taint mask
-# (qc/cq/qq — 3c6m.48: each mask is a distinct unitary). All traces are PURE
-# value-embeddings (0 selects → 0 controlled rotations, 0 flags, single measure).
-# Corpus twins tools/library_coverage/branchless/{logb,fdim,scalbn,scalbln,fmod,
-# remainder,hypot}.c — keep textually in sync.
-add_test(NAME e2e-slice-branchless-logb
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_logb.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_logb.expected.log")
-
 add_test(NAME e2e-slice-libm-real-scalbn
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -2178,184 +1765,6 @@ add_test(NAME e2e-slice-libm-real-tanhf
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_tanhf.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_tanhf.expected.log")
-
-add_test(NAME e2e-slice-branchless-scalbn
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_scalbn.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_scalbn.expected.log")
-
-add_test(NAME e2e-slice-branchless-scalbln
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_scalbln.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_scalbln.expected.log")
-
-add_test(NAME e2e-slice-branchless-fdim
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_fdim.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_fdim.expected.log")
-
-add_test(NAME e2e-slice-branchless-fdim-cq
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_fdim_cq.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_fdim_cq.expected.log")
-
-add_test(NAME e2e-slice-branchless-fdim-qq
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_fdim_qq.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_fdim_qq.expected.log")
-
-add_test(NAME e2e-slice-branchless-fmod
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_fmod.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_fmod.expected.log")
-
-add_test(NAME e2e-slice-branchless-fmod-cq
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_fmod_cq.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_fmod_cq.expected.log")
-
-add_test(NAME e2e-slice-branchless-fmod-qq
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_fmod_qq.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_fmod_qq.expected.log")
-
-add_test(NAME e2e-slice-branchless-remainder
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_remainder.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_remainder.expected.log")
-
-add_test(NAME e2e-slice-branchless-remainder-cq
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_remainder_cq.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_remainder_cq.expected.log")
-
-add_test(NAME e2e-slice-branchless-remainder-qq
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_remainder_qq.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_remainder_qq.expected.log")
-
-add_test(NAME e2e-slice-branchless-hypot
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_hypot.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_hypot.expected.log")
-
-add_test(NAME e2e-slice-branchless-hypot-cq
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_hypot_cq.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_hypot_cq.expected.log")
-
-add_test(NAME e2e-slice-branchless-hypot-qq
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_hypot_qq.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_hypot_qq.expected.log")
-
-# bd 3c6m Batch B (.40): pow by SOURCE INJECTION — the L2-closure pow(x,y) =
-# exp2(y·log2(x)) [x>0], dissolving openlibm e_pow.c's sign/parity/overflow ladder +
-# table-driven log/exp. BOTH leaves are authored branchless (log2 fully branchless;
-# exp2→exp contributes ONE fp round-bias select — the kjd1 accept shape). Golden per
-# accepted taint mask (qc/cq/qq — 3c6m.48); each is a PURE value-embedding (0 controlled
-# rotations, single balanced flag, one measure). Injection scoreboard 30→31. Corpus twins
-# tools/library_coverage/branchless/{pow,log2,exp2,exp}.c — keep textually in sync.
-add_test(NAME e2e-slice-branchless-pow
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_pow.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_pow.expected.log")
-
-add_test(NAME e2e-slice-branchless-pow-cq
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_pow_cq.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_pow_cq.expected.log")
-
-add_test(NAME e2e-slice-branchless-pow-qq
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_pow_qq.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_pow_qq.expected.log")
-
-# bd 3c6m Batch C (.39): nextafter by SOURCE INJECTION — the L5-shadow wildcard. openlibm
-# s_nextafter.c is a ladder of data-dependent branches (x==y early-out, x==0 subnormal
-# seed, over/underflow flag raises). This body renders the one-ULP bit step FULLY
-# ARITHMETIC (dir = (y>x)-(y<x); step = dir*(1-2*sign(x)); bitcast(bits(x)+step)) — the
-# comparisons are fcmp->zext, the sign is a bit shift, no selects in the source. Golden per
-# accepted taint mask (qc/cq/qq — 3c6m.48): qc/qq are fully arithmetic (0 flags); cq (x
-# const) is where clang materializes bits(x)+up as an INTEGER const-select over the tainted
-# `up` flag — one balanced cqrt_copy_i64_controlled merge (the base-4.4 integer select
-# accept shape). Each a PURE value-embedding (0 controlled rotations, single measure).
-# Injection scoreboard 31→32 (COMPLETE injection surface). Corpus twin
-# tools/library_coverage/branchless/nextafter.c — keep textually in sync.
-add_test(NAME e2e-slice-branchless-nextafter
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_nextafter.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_nextafter.expected.log")
-
-add_test(NAME e2e-slice-branchless-nextafter-cq
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_nextafter_cq.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_nextafter_cq.expected.log")
-
-add_test(NAME e2e-slice-branchless-nextafter-qq
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_nextafter_qq.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_nextafter_qq.expected.log")
 
 # Phase 7.2 Increment 3 (test_C_libtooling-65wb.3): the controlled abort/exit PARK
 # CASCADE (PRD-7.2 §2.8). `if (q > 5) abort();` lowers to flag mint -> graveyard
@@ -4322,7 +3731,6 @@ add_test(NAME e2e-slice-libm-keep-truncl
 # faithfulness + trace-soundness audit.
 # ---------------------------------------------------------------------------
 
-
 # fdim.f64 — f64 sibling of the verified fdiml.f80: union IEEEd2bits is SROA-promoted
 # by clang -O1 to `bitcast double to i64`, so the isnan OR-of-negations lands on the plain
 # integer-extraction surface and both merges are controlled-XOR copies.
@@ -4334,7 +3742,6 @@ add_test(NAME e2e-slice-libm-real-fdim
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_fdim.expected.log")
 
-
 # fdimf.f32 — f32 sibling; __isnanf's SINGLE 23-bit mantissa test (not the manl/manh pair).
 add_test(NAME e2e-slice-libm-real-fdimf
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
@@ -4343,7 +3750,6 @@ add_test(NAME e2e-slice-libm-real-fdimf
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_fdimf.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_fdimf.expected.log")
-
 
 # frexp.f64 — BY-REF cell. NOTE the census probe declares the out-param but never READS it, so
 # clang -O1 DCEs every *eptr store before cq-lowering runs: this golden verifies the MANTISSA
@@ -4357,7 +3763,6 @@ add_test(NAME e2e-slice-libm-real-frexp
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_frexp.expected.log")
 
-
 # frexpf.f32 — f32 by-ref sibling; same dead-out-param scope caveat as frexp.f64.
 add_test(NAME e2e-slice-libm-real-frexpf
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
@@ -4366,7 +3771,6 @@ add_test(NAME e2e-slice-libm-real-frexpf
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_frexpf.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_frexpf.expected.log")
-
 
 # frexpl.f80 — ld80 by-ref: union IEEEl2bits read AND write-back (u.bits.exp = 0x3ffe field insert)
 # under a 3-way switch on the tainted exponent -- the promoteFp80Union RMW (3c6m.51).
@@ -4378,7 +3782,6 @@ add_test(NAME e2e-slice-libm-real-frexpl
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_frexpl.expected.log")
 
-
 # modfl.f80 — ld80 sibling of the verified modf.f64/modff.f32: openbsd GET/SET_LDOUBLE_WORDS RMW
 # across a 3-band exponent dispatch. Same dead-out-param scope caveat.
 add_test(NAME e2e-slice-libm-real-modfl
@@ -4388,7 +3791,6 @@ add_test(NAME e2e-slice-libm-real-modfl
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_modfl.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_modfl.expected.log")
-
 
 # lroundl.f80 — ld80 sibling of the verified lround.f64. The INRANGE macro is vendored VERBATIM and
 # clang DEMONSTRATES the compile-time-TRUE fold (LONG_MAX + 0.5 is computed in DOUBLE by the
@@ -4402,7 +3804,6 @@ add_test(NAME e2e-slice-libm-real-lroundl
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_lroundl.expected.log")
 
-
 # llroundl.f80 — long long instantiation of the same s_lround.c template; trace is byte-identical to
 # lroundl (long and long long are both i64 on LP64, so the fptosi is the same).
 add_test(NAME e2e-slice-libm-real-llroundl
@@ -4412,7 +3813,6 @@ add_test(NAME e2e-slice-libm-real-llroundl
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_llroundl.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_llroundl.expected.log")
-
 
 # nextafter.f64 — VOLATILE-LOCAL cell: `volatile double t; t = x*x;` is fdlibm's underflow-flag-raise
 # idiom -- the bd zco4 Inc 1 promoteVolatileScalarLocals shape. Plus the hi/lo
@@ -4425,7 +3825,6 @@ add_test(NAME e2e-slice-libm-real-nextafter
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nextafter.expected.log")
 
-
 # nextafterf.f32 — f32 sibling: single-word ulp walk, same volatile underflow-raise idiom.
 add_test(NAME e2e-slice-libm-real-nextafterf
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
@@ -4434,7 +3833,6 @@ add_test(NAME e2e-slice-libm-real-nextafterf
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nextafterf.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nextafterf.expected.log")
-
 
 # ---------------------------------------------------------------------------
 # bd 3c6m.67 — THE FOUR XOR-CONDITION CELLS, on the bodies openlibm ACTUALLY
@@ -4461,7 +3859,6 @@ add_test(NAME e2e-slice-libm-real-nextafterl
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nextafterl.expected.log")
 
-
 # nexttowardl.f80 — IS nextafterl: `openlibm_strong_reference(nextafterl,
 # nexttowardl)` at src/s_nextafterl.c:80, one body under two declared names. The
 # golden is byte-identical to nextafterl's by construction (verified, not
@@ -4473,7 +3870,6 @@ add_test(NAME e2e-slice-libm-real-nexttowardl
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttowardl.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttowardl.expected.log")
-
 
 # nexttoward.f64 — the MIXED-WIDTH cell: f64 argument read through the
 # EXTRACT_WORDS memcpy idiom, f80 argument through `union IEEEl2bits`, so one
@@ -4488,7 +3884,6 @@ add_test(NAME e2e-slice-libm-real-nexttoward
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttoward.expected.log")
 
-
 # nexttowardf.f32 — the cell that declined FLAT rather than nested, purely
 # because its xor diamond is the OUTERMOST region (PredMux never invoked, 0
 # leaves). Same construct as its three siblings; the different bucket was an
@@ -4502,7 +3897,6 @@ add_test(NAME e2e-slice-libm-real-nexttowardf
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttowardf.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttowardf.expected.log")
-
 
 # ===========================================================================
 # THE `slice_libm_ld80_*` FAMILY — REAL openlibm source, but NOT a coverage claim
@@ -4541,7 +3935,6 @@ add_test(NAME e2e-slice-libm-ld80-nextafterl
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_ld80_nextafterl.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_ld80_nextafterl.expected.log")
-
 
 # nexttoward (ld80 variant) — the only MIXED-WIDTH body in the suite (C11 7.12.11 fixes arg 2 at long
 # double): drives BOTH the f64 memcpy word shim and the ld80 union in one function, plus the
@@ -4585,7 +3978,6 @@ add_test(NAME e2e-slice-libm-ld80-nexttowardf
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_ld80_nexttowardf.expected.log")
 
-
 # expm1l.f80 — ld80 exp kernel in Cephes rational form: Cody-Waite reduction via @llvm.floor.f80,
 # a P4/Q4 rational core, and 2^k reassembly through ldexpl==scalbnl -- one of the cells bd
 # vuy6's module-asm .set alias resolution unmasked.
@@ -4597,7 +3989,6 @@ add_test(NAME e2e-slice-libm-real-expm1l
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_expm1l.expected.log")
 
-
 # tanhl.f80 — four-band |x| dispatch over the inner expm1l; fp80 selects ride the kjd1
 # cqrt_copy_f80_controlled family.
 add_test(NAME e2e-slice-libm-real-tanhl
@@ -4607,7 +3998,6 @@ add_test(NAME e2e-slice-libm-real-tanhl
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_tanhl.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_tanhl.expected.log")
-
 
 # sinhl.f80 — four-band dispatch over BOTH inner kernels (expm1l and expl). Census status is
 # `exit0-spec:['expl']` (expl stays outlined as a Phase-6 spec clone under the census harness);
@@ -5790,7 +5180,6 @@ add_test(NAME e2e-z0re-angle-select-runtime-base-exact-inplace-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_exact.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_exact_inplace.expected.log")
 
-
 # ============================================================================
 # bd test_C_libtooling-l4x4, sub-increment l4x4.b — THE IN-PLACE CONTROLLED-Ry
 # ARM AND THE CONTROLLED STATE PREP ON A BARE `_Bool` (RAIL-ROOT) CONDITION,
@@ -5905,7 +5294,6 @@ add_test(NAME e2e-slice-control-stateprep-bool-under-int-compare-fused
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_stateprep_bool_under_int_compare_fused.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_stateprep_bool_under_int_compare_fused.expected.log")
-
 
 # ============================================================================
 # bd `boi6` sub-increment D-B / Track M (2026-09-13) — THE REGION-MERGE-phi RAIL
@@ -6043,7 +5431,6 @@ add_test(NAME e2e-cascade-select-in-loop-twin-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_select_in_loop_outside_prep.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_select_in_loop_outside_prep_unrolled_twin.expected.log")
-
 
 # ============================================================================
 # bd test_C_libtooling-3qlq Increment 1 — REGISTER-FREE `cq_phi` (PRD S6.5).
@@ -6659,8 +6046,6 @@ add_test(NAME e2e-phase-bool-loop-iterlocal-twin-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_loop_iterlocal.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_loop_iterlocal_unrolled.expected.log")
-
-
 
 # bd 3qlq Inc 1, the SECOND C-1 review round. Each was a rolled != unrolled
 # DIVERGENCE on 542d588 AND on the round-1 C-1 fix (32 vs 38, and 41 vs 47).

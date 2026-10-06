@@ -2,10 +2,13 @@
 """Build the math.h bundle that tools/cqc injects (bd 3c6m.72).
 
 The bundle is one bitcode module holding the openlibm bodies for every math.h
-spelling, resolved exactly as the coverage census resolves them
+spelling, resolved as the coverage census resolves them
 (`full_surface/wprobe.build_defmap`): hardware-mapped names forward to their
-LLVM intrinsic, openlibm's `.set` aliases become real definitions, and the
-owner-ruled CQ trig bodies (bd guwr) replace openlibm's sin/cos/tan.
+LLVM intrinsic and openlibm's `.set` aliases become real definitions. A name
+with a direct backend route at a width (`sin` on a double, Bennett.jl as
+reference) forwards to its intrinsic too, so a lifted body that calls it
+reaches the same one-call lowering as a user's call (bd 3c6m.78). Every other
+body is openlibm's source: CQ ships no C implementation of a math function.
 
 Every definition is renamed `__cq_libm_<name>`, so linking the bundle into a
 user module never changes which function a classical call reaches: the pass
@@ -54,7 +57,7 @@ def main():
 
     names = sorted({spec['base'] + suf for spec in P.MATHH_SPEC
                     if 'macro' not in spec['flags'] for suf in spec['variants']})
-    defmap = WP.build_defmap()
+    defmap = WP.build_defmap(direct=True)
     missing = [n for n in names if n not in defmap]
     with tempfile.TemporaryDirectory(prefix='cq_libm_bundle_') as td:
         wd = Path(td)

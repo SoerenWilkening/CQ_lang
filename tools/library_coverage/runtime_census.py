@@ -86,20 +86,7 @@ def source(cell):
 CQC = ROOT/'tools/cqc'
 
 
-def direct_routes():
-    """(function, width) pairs a tainted math.h call lowers to ONE template for: every
-    floating-point row of tools/intrinsic_table.yaml (the hardware survivors and,
-    since bd 3c6m.71, the Bennett-backed f64 sin/cos/tan). Read from the table, the
-    one spelling of that set."""
-    rows = (ROOT/'tools/intrinsic_table.yaml').read_text()
-    out = set()
-    for m in re.finditer(r'^\s*- \{ op: (\w+),[^}]*widths: \[([^\]]*)\]', rows, re.M):
-        out |= {(m.group(1), w.strip()) for w in m.group(2).split(',')
-                if w.strip() in ('f32', 'f64', 'f80')}
-    return out
-
-
-DIRECT = direct_routes()
+DIRECT = WP.direct_routes()  # the one spelling of the direct-route set (R12)
 STAGE_STATUS = {'compile': 'build-fail', 'link-ir': 'link-fail', 'lower': 'decline',
                 'link': 'runtime-link-fail'}
 
@@ -115,7 +102,7 @@ def calls_in(ir, fn):
             if not x.startswith(('cq_', 'cqrt_', '__cq_q_', 'llvm.dbg.', 'llvm.lifetime.'))}
 
 
-def measure(cell, cq_provided, evidence_dir, cqc=CQC):
+def measure(cell, evidence_dir, cqc=CQC):
     src, main = source(cell)
     row = {k: cell[k] for k in ('cell', 'name', 'mix')}
     row.update(source_sha256=hashlib.sha256(src.encode()).hexdigest(),
@@ -123,8 +110,6 @@ def measure(cell, cq_provided, evidence_dir, cqc=CQC):
     provider = 'macro' if cell['macro'] else 'source-injected'
     if cell['base'] in WP.HARDWARE_KEEPS:
         provider = 'intrinsic'
-    if cell['name'] in cq_provided:
-        provider = 'CQ-provided'
     if (cell['base'], cell['width']) in DIRECT:  # the direct route wins (R14)
         provider = 'intrinsic'
     if cell['base'] == 'nan':
@@ -240,11 +225,10 @@ def main():
     if args.render_existing:
         render_report(args.output, json.loads(args.output.read_text()))
         return 0
-    cq_provided = set(P.cq_provided_cells())
     cells = [c for c in variants() if not args.filter or c['base'] in args.filter.split(',')]
     results = []
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        for row in pool.map(lambda c: measure(c, cq_provided, args.evidence_dir, args.cqc), cells):
+        for row in pool.map(lambda c: measure(c, args.evidence_dir, args.cqc), cells):
             results.append(row)
             print(row['cell'], row['mix'], row['status'], flush=True)
     groups = {}

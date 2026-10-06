@@ -8,6 +8,12 @@
 > because the capability→function *map* and the peel methodology are still the best
 > analysis of WHY cells decline — that part has aged well; the tallies have not.
 >
+> **⚡ CURRENT AUTHORITATIVE NUMBERS (re-measured 2026-10-06, bd `3c6m.78`, from
+> `full_surface/full_census_O1.json`):** **(2) INJECTION — 101 / 126 (80%)**, 25
+> decline. The CQ-provided row (3) is retired: CQ ships no C implementation of a
+> library function, so `sin`/`cos`/`tan`.f64 and `sinl`/`cosl`/`tanl`.f80 are measured
+> on openlibm's body again and decline. The block below is the 2026-08-23 state.
+>
 > **⚡ CURRENT AUTHORITATIVE NUMBERS (re-derived 2026-08-23 from
 > `full_surface/full_census_O1.json`; three-row split from bd `guwr`, 2026-07-31):**
 > THREE disjoint rows, never merged (owner ruling; the retired `165/174` overclaim is

@@ -53,7 +53,7 @@ A function counts as compiled only when it compiles for **non-trivial input**:
   and a multiply, and is **not** covered.
 
 The number is computed by the census tooling, never hand-copied, and is published with
-its composition (source-injected, CQ-provided, intrinsic-lowered). A library function
+its composition (source-injected, intrinsic-lowered). A library function
 means its real source injected before `cq-lowering`, never recognition by name. The
 figures published before 2026-09-30 were scored without the non-trivial-input rule and
 are a baseline to re-score, not the current number.
@@ -64,8 +64,11 @@ provided by Bennett.jl. An LLVM name or a generated trace template alone is insu
 When that route is absent, lift available source and build the missing lowering. Missing
 implementation is a compiler gap under goal 1 and earns no coverage credit.
 
-CQ-provided implementations count in their own component, with their numerical
-accuracy and range limits published. Retaining an approximation is an owner decision.
+A "hand-written" function means exactly that direct route: the compiler emits one call,
+`cq_template_<fn>_<W>`, and a circuit backend supplies the reversible circuit, with
+Bennett.jl as the reference (never linked). CQ never writes its own implementation of a
+library function in place of the real source.
+
 Publish both scalar-input C/Q coverage and broader API coverage including classical-only
 `nan`/`nanf`/`nanl`; report those three constructors separately as well.
 

@@ -1,6 +1,6 @@
 # math.h coverage through cqc
 
-**82/180 scalar-input cells compile through `tools/cqc` for every runtime C/Q mixture.**
+**79/180 scalar-input cells compile through `tools/cqc` for every runtime C/Q mixture.**
 
 Each probe is compiled by the user-facing driver `tools/cqc`, so this is the number a user
 gets. It counts build, lowering, link and trace-run success. It does not certify numerical
@@ -8,14 +8,13 @@ or unitary semantics. No new goldens were blessed.
 
 | Provider | Accepted for every mixture | Cells |
 | --- | ---: | ---: |
-| source-injected | 24 | 117 |
+| source-injected | 24 | 120 |
 | intrinsic | 45 | 48 |
-| CQ-provided | 3 | 3 |
 | classical-only | 3 | 3 |
 | macro | 10 | 12 |
 
-Measured 483 probes: 352 accepted; 131 did not accept.
-Structural free-check passes: 352. The classical-only nan row is not in the scalar total.
+Measured 483 probes: 349 accepted; 134 did not accept.
+Structural free-check passes: 349. The classical-only nan row is not in the scalar total.
 The macro cells retain the historical f64 scope of the 183-cell model.
 
 ## Reproduction
@@ -34,8 +33,11 @@ fenv remains outside the CQ model (CLAUDE R16).
 | Cell | Failing mixtures | First diagnostic |
 | --- | --- | --- |
 | cosf.f32 | Q | error: <unknown>:0:0: in function __cq_libm_cosf float (float): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction) |
+| cosl.f80 | Q | error: <unknown>:0:0: in function __cq_libm_cosl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction) |
 | sinf.f32 | Q | error: <unknown>:0:0: in function __cq_libm_sinf float (float): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction) |
+| sinl.f80 | Q | error: <unknown>:0:0: in function __cq_libm_sinl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction) |
 | tanf.f32 | Q | error: <unknown>:0:0: in function __cq_libm_tanf float (float): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction) |
+| tanl.f80 | Q | error: <unknown>:0:0: in function __cq_libm_tanl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction) |
 | atan2f.f32 | CQ | error: _deps/cq_openlibm-src/src/e_atan2f.c:43:20: in function __cq_q___cq_libm_atan2f_10 i32 (float, i32): cq specialization: callee contains tainted control flow under quantum lift |
 | atan2.f64 | CQ | error: _deps/cq_openlibm-src/src/e_atan2.c:71:37: in function __cq_q___cq_libm_atan2_10 i32 (double, i32): cq specialization: callee contains tainted control flow under quantum lift |
 | atan2l.f80 | CQ | error: _deps/cq_openlibm-src/src/e_atan2l.c:61:32: in function __cq_q___cq_libm_atan2l_10 i32 (x86_fp80, i32): cq specialization: callee contains tainted control flow under quantum lift |
@@ -99,7 +101,7 @@ fenv remains outside the CQ model (CLAUDE R16).
 | erfcl.f80 | Q | error: _deps/cq_openlibm-src/src/polevll.c:78:6: in function __cq_libm___polevll x86_fp80 (x86_fp80, ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access) |
 | tgammaf.f32 | Q | error: _deps/cq_openlibm-src/bsdsrc/b_log.c:440:6: in function __cq_libm___log__D { double, double } (double): cq specialization: floating-point quantum argument or return has no reversible copy |
 | tgamma.f64 | Q | error: _deps/cq_openlibm-src/bsdsrc/b_log.c:440:6: in function __cq_libm___log__D { double, double } (double): cq specialization: floating-point quantum argument or return has no reversible copy |
-| tgammal.f80 | Q | error: _deps/cq_openlibm-src/src/polevll.c:78:6: in function __cq_libm___polevll x86_fp80 (x86_fp80, ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access) |
+| tgammal.f80 | Q | error: <unknown>:0:0: in function __cq_libm_sinl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction) |
 | lgammaf.f32 | Q | error: _deps/cq_openlibm-src/src/e_lgammaf_r.c:149:12: in function __cq_libm_lgammaf_r float (float, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access) |
 | lgamma.f64 | Q | error: _deps/cq_openlibm-src/src/e_lgamma_r.c:216:12: in function __cq_libm_lgamma_r double (double, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access) |
 | lgammal.f80 | Q | error: _deps/cq_openlibm-src/ld80/e_lgammal_r.c:276:13: in function __cq_libm_lgammal_r x86_fp80 (x86_fp80, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access) |
