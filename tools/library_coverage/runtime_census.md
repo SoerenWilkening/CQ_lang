@@ -8,9 +8,9 @@ or unitary semantics. No new goldens were blessed.
 
 | Provider | Accepted for every mixture | Cells |
 | --- | ---: | ---: |
-| source-injected | 19 | 120 |
-| CQ-provided | 6 | 6 |
-| intrinsic | 36 | 42 |
+| source-injected | 16 | 117 |
+| intrinsic | 42 | 48 |
+| CQ-provided | 3 | 3 |
 | classical-only | 3 | 3 |
 | macro | 10 | 12 |
 

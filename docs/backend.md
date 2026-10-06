@@ -627,11 +627,18 @@ external definition of the name wins), and the specializer lifts it like any
 visible classical callee (§7.2; no inlining). A lifted math.h call inherits the
 lifter's open stale-argument defect (bd `r2j3.6`). A classical call keeps its callee and the
 system libm, and the pass erases every bundle body nothing uses, so a purely
-classical program is unchanged. A curated hardware intrinsic keeps its direct
-template. For `sin`, `cos` and `tan` at `f64`/`f80` the bundle carries CQ's own
-branchless leaf (`tools/library_coverage/branchless/`), which the census reports
-as **CQ-provided** and never as upstream injection (`CLAUDE.md` R14,
-`tools/library_coverage/probe.py`). The census (`runtime_census.py`) compiles
+classical program is unchanged. A curated intrinsic keeps its direct template,
+and a tainted unary libcall whose intrinsic is curated at its width (`@sin(double)`
+on a `-fmath-errno` target) is rewritten to it first. Since bd `3c6m.71` (owner
+ruling 2026-10-06) the curated set includes `sin`, `cos`, `tan`, `asin`, `acos`
+and `atan` at `f64` only: one backend call `cq_template_<fn>_f64` whose reference
+circuit is Bennett.jl's `soft_<fn>` (musl ports, ≤1 ULP reference; the contracts
+are recorded in `tools/intrinsic_table.yaml`). `atan2` has no LLVM 19 intrinsic and
+is not on this route yet (bd `3c6m.77`).
+For `sinl`, `cosl` and `tanl` the bundle carries CQ's own branchless leaf
+(`tools/library_coverage/branchless/`), which the census reports as
+**CQ-provided** and never as upstream injection (`CLAUDE.md` R14,
+`tools/library_coverage/probe.py`); `sinf`, `cosf` and `tanf` get openlibm's source. The census (`runtime_census.py`) compiles
 every probe through `tools/cqc`; per NORTHSTAR goal 2 a function counts only when
 it compiles for non-trivial input.
 

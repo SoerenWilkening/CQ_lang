@@ -86,6 +86,18 @@ StringRef intrinsicStem(Intrinsic::ID id) {
   // sharing the cross-width TEMPLATE surface (cq_template_<stem>_<from>_to_<to>).
   case Intrinsic::lrint:      return "lrint";
   case Intrinsic::llrint:     return "llrint";
+  // bd 3c6m.71 (owner ruling 2026-10-06, CLAUDE R14 Bennett route): f64 trig
+  // and inverse trig lower to ONE backend call; the reference circuits are
+  // Bennett.jl soft_sin/cos/tan/asin/acos/atan (contracts in
+  // tools/intrinsic_table.yaml).
+  // `isBennettF64Intrinsic` restricts these to f64: every other width keeps
+  // source injection.
+  case Intrinsic::sin:        return "sin";
+  case Intrinsic::cos:        return "cos";
+  case Intrinsic::tan:        return "tan";
+  case Intrinsic::asin:       return "asin";
+  case Intrinsic::acos:       return "acos";
+  case Intrinsic::atan:       return "atan";
   default:                    return {};
   }
 }
@@ -126,6 +138,18 @@ bool isCuratedFpIntrinsic(Intrinsic::ID id) {
   }
 }
 
+// bd 3c6m.71: the Bennett-backed transcendentals, admitted at f64 ONLY
+// (Bennett.jl has no binary32/x87 soft_sin). PER-ID like the survivors above.
+bool isBennettF64Intrinsic(Intrinsic::ID id) {
+  switch (id) {
+  case Intrinsic::sin:  case Intrinsic::cos:  case Intrinsic::tan:
+  case Intrinsic::asin: case Intrinsic::acos: case Intrinsic::atan:
+    return true;
+  default:
+    return false;
+  }
+}
+
 IntrinKind intrinsicKind(Intrinsic::ID id) {
   switch (id) {
   case Intrinsic::bswap:
@@ -140,6 +164,8 @@ IntrinKind intrinsicKind(Intrinsic::ID id) {
   case Intrinsic::floor: case Intrinsic::ceil:   case Intrinsic::trunc:
   case Intrinsic::round: case Intrinsic::rint:   case Intrinsic::nearbyint:
   case Intrinsic::fabs:
+  case Intrinsic::sin: case Intrinsic::cos:  case Intrinsic::tan:
+  case Intrinsic::asin: case Intrinsic::acos: case Intrinsic::atan:
     return IntrinKind::Unary;
   case Intrinsic::fshl:
   case Intrinsic::fshr:
@@ -186,6 +212,8 @@ bool intrinsicCommutative(Intrinsic::ID id) {
 // false => the call rides the loud kMsgUnknownCallee escape decline, never an
 // unresolved cq_template_<op>_<W>).
 bool widthInTableSet(Intrinsic::ID id, StringRef W) {
+  if (isBennettF64Intrinsic(id))
+    return W == "f64";
   if (isCuratedFpIntrinsic(id))
     // bd 3c6m.4 admits the long-double width f80 (the survivor `…l` math.h
     // variants: sqrtl/floorl/copysignl/fmal/… lower to `@llvm.<fn>.f80` on

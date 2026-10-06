@@ -22,9 +22,11 @@
 // definition of the spelling (or an external alias of one) wins over the bundle
 // on the intrinsic route, since under C linkage it is the function the call
 // names; an ifunc binds nothing (loud); a private (local-linkage) function of
-// that name is some TU's helper and never binds. A curated hardware
-// intrinsic (`isCuratedReversibleIntrinsic`: sqrt, floor, fma, …) keeps its
-// direct template. A type or calling-convention mismatch (`llvm.frexp` returns
+// that name is some TU's helper and never binds. A curated intrinsic
+// (`isCuratedReversibleIntrinsic`: sqrt, floor, fma, …, and since bd 3c6m.71
+// the Bennett-backed f64 sin/cos/tan) keeps its direct template, and a tainted
+// unary libcall whose intrinsic is curated at its width (`@sin(double)` on a
+// -fmath-errno target) is first rewritten to that intrinsic. A type or calling-convention mismatch (`llvm.frexp` returns
 // an aggregate, libm `frexp` writes through a pointer) or a missing body binds
 // nothing, and the call still fails loudly as an unknown callee.
 //

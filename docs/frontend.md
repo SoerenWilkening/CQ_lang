@@ -800,7 +800,9 @@ The IR pass uses different mechanisms depending on what is visible at pass time.
   `clang -O1` turns into an `@llvm.*` intrinsic (`sqrt`, `fabs`, `floor`, the
   integer bit intrinsics `ctpop`/`ctlz`/`cttz`/`bswap`, `smin`/`umax`, …) lower
   directly to a template (measured: `sqrt(x)` on a tainted `double` gives
-  `cq_template_sqrt_f64(h0) -> h1`).
+  `cq_template_sqrt_f64(h0) -> h1`). So do `sin`, `cos`, `tan`, `asin`, `acos`
+  and `atan` on a tainted `double`, whose circuit a backend supplies with Bennett.jl as reference
+  ([`backend.md`](./backend.md) §7.1).
 
 ### 6.3 What lifting does not cover
 

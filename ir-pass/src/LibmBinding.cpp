@@ -111,6 +111,43 @@ Function *libmBodyFor(const CallInst &CI, Module &M) {
   return Body;
 }
 
+// A unary libcall `@<name>(T) -> T` whose LLVM intrinsic is curated at T (the
+// hardware survivors, and since bd 3c6m.71 the Bennett-backed f64 sin/cos/tan)
+// is rewritten to that intrinsic, so a -fmath-errno target (Linux's default,
+// where clang emits `@sin(double)`) reaches the same direct route as darwin's
+// `@llvm.sin.f64`. Only for a TAINTED call: errno from a quantum operand has no
+// classical meaning, and the classical twin keeps its libcall. Returns true
+// when it rewrote; a width the table does not admit is left untouched.
+bool toCuratedIntrinsic(CallInst &CI, Module &M) {
+  Function *Callee = CI.getCalledFunction();
+  if (!Callee || !Callee->isDeclaration() || Callee->isIntrinsic())
+    return false;
+  FunctionType *FT = CI.getFunctionType();
+  Type *Ty = FT->getReturnType();
+  std::string Suffix;
+  if (FT->isVarArg() || FT->getNumParams() != 1 || FT->getParamType(0) != Ty ||
+      !libmSuffix(Ty, Suffix))
+    return false;
+  StringRef Base = Callee->getName();
+  if (!Suffix.empty() && !Base.consume_back(Suffix))
+    return false;
+  const Intrinsic::ID ID = Function::lookupIntrinsicID(("llvm." + Base).str());
+  if (ID == Intrinsic::not_intrinsic || !Intrinsic::isOverloaded(ID))
+    return false;
+  Function *Decl = Intrinsic::getDeclaration(&M, ID, {Ty});
+  if (Decl->getFunctionType() != FT)
+    return false;
+  CI.setCalledFunction(Decl);
+  if (isCuratedReversibleIntrinsic(&CI)) {
+    CI.setAttributes(CI.getAttributes().removeFnAttributes(CI.getContext()));
+    return true;
+  }
+  CI.setCalledFunction(Callee);  // not admitted at this width: undo.
+  if (Decl->use_empty())
+    Decl->eraseFromParent();
+  return false;
+}
+
 bool hasTaintedOperand(const CallInst &CI, const TaintSet &taint) {
   for (const Value *Arg : CI.args())
     if (taint.Tainted.count(Arg))
@@ -126,7 +163,12 @@ bool bindRound(Module &M, const TaintSet &taint) {
   bool Changed = false;
   for (Function &F : M)
     for (Instruction &I : instructions(F))
-      if (auto *CI = dyn_cast<CallInst>(&I); CI && hasTaintedOperand(*CI, taint))
+      if (auto *CI = dyn_cast<CallInst>(&I); CI && hasTaintedOperand(*CI, taint)) {
+        // The direct route keeps priority over injection (CLAUDE R14).
+        if (toCuratedIntrinsic(*CI, M)) {
+          Changed = true;
+          continue;
+        }
         if (Function *Body = libmBodyFor(*CI, M)) {
           CI->setCalledFunction(Body);
           // A libcall's call-site facts (`memory(none)`, …) describe the
@@ -135,6 +177,7 @@ bool bindRound(Module &M, const TaintSet &taint) {
               CI->getAttributes().removeFnAttributes(CI->getContext()));
           Changed = true;
         }
+      }
   return Changed;
 }
 

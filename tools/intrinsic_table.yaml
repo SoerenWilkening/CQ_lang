@@ -62,9 +62,10 @@
 # fma/fmuladd family (wd2p) is curated below.
 #
 # EXCLUDED — LIBRARY functions, compiled by SOURCE INJECTION not recognition
-# (p119): the transcendentals sin/cos/tan/asin/acos/atan/sinh/cosh/tanh/exp/exp2/
-# log/log2/log10 and pow (all tail-call a libcall) — a tainted un-injected call to
-# these declines loudly (kMsgUnknownCallee). Also excluded: *.with.overflow
+# (p119): the transcendentals sinh/cosh/tanh/exp/exp2/log/log2/log10, pow and
+# atan2, and sin/cos/tan/asin/acos/atan at every width but f64 (bd 3c6m.71 rows)
+# — tools/cqc injects their source; a tainted call with no injected body
+# declines loudly (kMsgUnknownCallee). Also excluded: *.with.overflow
 # ({iN,i1} aggregate), direct-libm @calls (cbrt/erf/atan2/hypot/…), vector/`i128`-fp
 # widths, the general (x!=y) funnel shift. Curation is by EXACT Intrinsic::ID —
 # NEVER by name prefix.
@@ -177,6 +178,32 @@ intrinsics:
   # binary NON-commutative fp copysign (operand order is semantic), qq+hl+lh.
   # p119: pow REMOVED — it codegens to a libcall (library function, source-injected).
   - { op: copysign, llvm_id: copysign, class: 2, reversibility: pure_noninjective, arity: binary, commutative: false, widths: [f16,f32,f64,f80], variants: [fwd_qq, fwd_hl, fwd_lh, unc_qq, unc_hl, unc_lh] }
+
+  # ---- bd 3c6m.71: Bennett-backed f64 trig (Class 2, fwd / unc only) --------
+  # Owner ruling 2026-10-06 (CLAUDE R14, Bennett route): a tainted `double`
+  # sin/cos/tan lowers to ONE backend call; the circuit is the backend's. The
+  # reference implementation is Bennett.jl src/softfloat/{fsin,ftan}.jl
+  # soft_sin/soft_cos/soft_tan at commit 824458d10e879c3fef673c231a02e5461dac667f.
+  # NUMERICAL CONTRACT (from those headers): a faithful port of musl
+  # sin.c/cos.c/tan.c/__rem_pio2(_large).c over the FULL binary64 range
+  # (Cody-Waite reduction to |x| < 2^28*pi/2, Payne-Hanek beyond), <= 1 ULP
+  # reference accuracy, bit-exact vs Linux's system libm; NaN -> NaN,
+  # +-Inf -> NaN, sin/tan(+-0) = +-0, cos(+-0) = 1. f64 ONLY: Bennett has no
+  # binary32 or x87 version, so sinf/sinl (and cos/tan) keep source injection
+  # (openlibm, CQ's branchless sinl/cosl/tanl). Class-2 additive producers like
+  # sqrt: the `_unc` recomputes f(live source); the angle fence stays upstream.
+  - { op: sin, llvm_id: sin, class: 2, reversibility: pure_noninjective, arity: unary, widths: [f64], variants: [fwd, unc] }
+  - { op: cos, llvm_id: cos, class: 2, reversibility: pure_noninjective, arity: unary, widths: [f64], variants: [fwd, unc] }
+  - { op: tan, llvm_id: tan, class: 2, reversibility: pure_noninjective, arity: unary, widths: [f64], variants: [fwd, unc] }
+  # Inverse trig (owner 2026-10-06), same route and pin: Bennett.jl
+  # src/softfloat/{fasin,facos,fatan}.jl soft_asin/soft_acos/soft_atan, musl
+  # asin.c/acos.c/atan.c ports. asin/acos: <= 1 ULP reference on [-1, 1], NaN
+  # outside it, bit-exact at +-0, +-1 and the tiny-argument path; atan: <= 1 ULP
+  # reference over the full binary64 range. clang 19 emits @llvm.{asin,acos,atan}.
+  # atan2 has no LLVM 19 intrinsic (a plain @atan2 libcall) and is not here (bd 3c6m.77).
+  - { op: asin, llvm_id: asin, class: 2, reversibility: pure_noninjective, arity: unary, widths: [f64], variants: [fwd, unc] }
+  - { op: acos, llvm_id: acos, class: 2, reversibility: pure_noninjective, arity: unary, widths: [f64], variants: [fwd, unc] }
+  - { op: atan, llvm_id: atan, class: 2, reversibility: pure_noninjective, arity: unary, widths: [f64], variants: [fwd, unc] }
 
   # ---- wd2p: ternary fp fma/fmuladd (Class 2, fwd / unc only) --------------
   # fma(a,b,c) = a*b + c. BOTH llvm.fma (must-fuse) and llvm.fmuladd (may-fuse,

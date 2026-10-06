@@ -3,22 +3,22 @@
     "definition": "Every runtime C/Q mixture builds, lowers, links and trace-runs through tools/cqc; not unitary verified.",
     "driver": "tools/cqc",
     "driver_sha256": "a62e77deaf3f7f1b8b24d11c4c38d02b07279f499ef555946549daafcb081f8b",
-    "pass_sha256": "07b4a1092a089403a043c26249871c8e84fa8c2007d118127085568be643bd31",
-    "cq_commit": "4fd6c7f33b6e866a93f3dd21cda4656ccf7672b8",
+    "pass_sha256": "9b3c95bb99f422040e1d5d71c054ae27bd59bfa495aa945622a746f629727e82",
+    "cq_commit": "cd241a67b3f9d5dcc0462610d0633007d2c145c4",
     "llvm_version": "Homebrew clang version 19.1.7"
   },
   "score": {
     "source-injected": {
-      "covered": 19,
-      "total": 120
-    },
-    "CQ-provided": {
-      "covered": 6,
-      "total": 6
+      "covered": 16,
+      "total": 117
     },
     "intrinsic": {
-      "covered": 36,
-      "total": 42
+      "covered": 42,
+      "total": 48
+    },
+    "CQ-provided": {
+      "covered": 3,
+      "total": 3
     },
     "classical-only": {
       "covered": 3,
@@ -121,7 +121,7 @@
       "source_sha256": "a852e124482a7a8bf0cc5bd826b48e0b5a52849310508b6c33b3041be92ccef0",
       "status": "COMPILES",
       "diagnostic": "",
-      "provider": "CQ-provided",
+      "provider": "intrinsic",
       "intrinsics": [
         "abs.i32",
         "ceil.f32",
@@ -196,7 +196,7 @@
       "source_sha256": "1b6c6ce872f98d240e4322360e12416655079bfdea3aded6ebba8f4f2ab98256",
       "status": "COMPILES",
       "diagnostic": "",
-      "provider": "CQ-provided",
+      "provider": "intrinsic",
       "intrinsics": [
         "abs.i32",
         "ceil.f32",
@@ -258,9 +258,9 @@
       "raw_callees": [
         "llvm.cos.f64"
       ],
-      "spec_clone": true,
-      "trace_sha256": "c2a2e109849eaecfe1dd035349aee02d1d0cbd40cf4293c4aa4a576b68a3d76e",
-      "trace_lines": 156,
+      "spec_clone": false,
+      "trace_sha256": "51a2d742268be20826a2608d44d72d83861f9dfb39b8ea71633ddd8bf3c7ae06",
+      "trace_lines": 4,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -505,7 +505,7 @@
       "source_sha256": "ad93a578a9f5d361dcf0cf12c24cef77a6eb8d44762c487c2fca4e50adf28985",
       "status": "COMPILES",
       "diagnostic": "",
-      "provider": "CQ-provided",
+      "provider": "intrinsic",
       "intrinsics": [
         "abs.i32",
         "ceil.f32",
@@ -580,7 +580,7 @@
       "source_sha256": "73d0fd66291692034a693d6b7dda9222b393a8186cd5cdfdd910bdde55266bd3",
       "status": "COMPILES",
       "diagnostic": "",
-      "provider": "CQ-provided",
+      "provider": "intrinsic",
       "intrinsics": [
         "abs.i32",
         "ceil.f32",
@@ -642,9 +642,9 @@
       "raw_callees": [
         "llvm.sin.f64"
       ],
-      "spec_clone": true,
-      "trace_sha256": "7ae2237f1e70a112ceaab12b8bfc442ac767b32dc7c3a7c0bf9d0b432483d93a",
-      "trace_lines": 153,
+      "spec_clone": false,
+      "trace_sha256": "51333f1b5ebcebfbd527bafff99c5a92f3696aae5904b2b779f6ea1d6213f4b2",
+      "trace_lines": 4,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -889,7 +889,7 @@
       "source_sha256": "4b6e94defca829593e1b4bf7e9d5cf3649a3676460400a721b2ed6fd75ccd21e",
       "status": "COMPILES",
       "diagnostic": "",
-      "provider": "CQ-provided",
+      "provider": "intrinsic",
       "intrinsics": [
         "abs.i32",
         "ceil.f32",
@@ -964,7 +964,7 @@
       "source_sha256": "f89e69ea3ecb6f8d6f9541cc616d439953a6b7f4f71dfaa278fce5202c0111e8",
       "status": "COMPILES",
       "diagnostic": "",
-      "provider": "CQ-provided",
+      "provider": "intrinsic",
       "intrinsics": [
         "abs.i32",
         "ceil.f32",
@@ -1026,9 +1026,9 @@
       "raw_callees": [
         "llvm.tan.f64"
       ],
-      "spec_clone": true,
-      "trace_sha256": "c46d5b238c249d7041a92ef9c5739dad564183619167a09bb2232594610037eb",
-      "trace_lines": 140,
+      "spec_clone": false,
+      "trace_sha256": "be956b6c680ca8c2a2d24a0001dd1256c40932c9111a902a43ef204a6a08293c",
+      "trace_lines": 4,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -1339,7 +1339,7 @@
       "source_sha256": "e507084f3660b5251cb26fe9854466acdfa1e4ee780bcb06c6fd28f33d296239",
       "status": "COMPILES",
       "diagnostic": "",
-      "provider": "source-injected",
+      "provider": "intrinsic",
       "intrinsics": [
         "abs.i32",
         "acos.f64",
@@ -1414,7 +1414,7 @@
       "source_sha256": "3395de21fc26f6a96bf183fbe0c02085f327f8e8b5c1d981ee1cfb5ac37dbfb2",
       "status": "COMPILES",
       "diagnostic": "",
-      "provider": "source-injected",
+      "provider": "intrinsic",
       "intrinsics": [
         "abs.i32",
         "acos.f64",
@@ -1476,9 +1476,9 @@
       "raw_callees": [
         "llvm.acos.f64"
       ],
-      "spec_clone": true,
-      "trace_sha256": "53319f66822df743771008fcb84eb90162b33145099810cd070033648497ab47",
-      "trace_lines": 375,
+      "spec_clone": false,
+      "trace_sha256": "29c8bf8814e52c911fee301216dbfc214d1c5816d3e853a9d8b565ea1dcdbda7",
+      "trace_lines": 4,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -1789,7 +1789,7 @@
       "source_sha256": "4e50f5acf7b22f17cbd9a71ca2dcd02273dba3034919b1a385d42c14bfdad271",
       "status": "COMPILES",
       "diagnostic": "",
-      "provider": "source-injected",
+      "provider": "intrinsic",
       "intrinsics": [
         "abs.i32",
         "asin.f64",
@@ -1864,7 +1864,7 @@
       "source_sha256": "79a052561b43cceb7b2b5b549af0aa751e41f27d5dda00f283a818729f495101",
       "status": "COMPILES",
       "diagnostic": "",
-      "provider": "source-injected",
+      "provider": "intrinsic",
       "intrinsics": [
         "abs.i32",
         "asin.f64",
@@ -1926,9 +1926,9 @@
       "raw_callees": [
         "llvm.asin.f64"
       ],
-      "spec_clone": true,
-      "trace_sha256": "41f9dfc0f0a4eec2e86cbed9a3d5737f345d07ea920c96806ca27693140824a3",
-      "trace_lines": 348,
+      "spec_clone": false,
+      "trace_sha256": "7e140912c129ddd77b0beab8cee6e472517fed87e49e24e15e0c6766ac08db3d",
+      "trace_lines": 4,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -2239,7 +2239,7 @@
       "source_sha256": "99941db0adeb151be2d9a17ab6136707a53d2a495b80448c391224f73d4b87a8",
       "status": "COMPILES",
       "diagnostic": "",
-      "provider": "source-injected",
+      "provider": "intrinsic",
       "intrinsics": [
         "abs.i32",
         "atan.f64",
@@ -2314,7 +2314,7 @@
       "source_sha256": "912b89cc34000305831229cee448f6e977fd17150df732e324b69305297771bc",
       "status": "COMPILES",
       "diagnostic": "",
-      "provider": "source-injected",
+      "provider": "intrinsic",
       "intrinsics": [
         "abs.i32",
         "atan.f64",
@@ -2376,9 +2376,9 @@
       "raw_callees": [
         "llvm.atan.f64"
       ],
-      "spec_clone": true,
-      "trace_sha256": "6ff189e9db9d984ef18bc6136578ed00e005a4957302ed9761850345e8b590c2",
-      "trace_lines": 838,
+      "spec_clone": false,
+      "trace_sha256": "93589e081bbc910da73286460df3f5d2c0ab49d5280f3713c1a592d062704874",
+      "trace_lines": 4,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -8196,7 +8196,7 @@
       "mix": "CQ",
       "source_sha256": "7d57a0814d618132e49bd9c8547925b36b36cda5bceb5bf74930c75512eb4b46",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ed8wxkso/probe.c:5:13: in function probe float (float, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_9z2exz86/probe.c:5:13: in function probe float (float, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -8214,7 +8214,7 @@
       "mix": "QQ",
       "source_sha256": "194837992989293e8214654022f73d16d2ef0a743233e312f9426f432debf292",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_9eubmo0_/probe.c:6:13: in function probe float (float, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_vq4gmr46/probe.c:6:13: in function probe float (float, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -8297,7 +8297,7 @@
       "mix": "CQ",
       "source_sha256": "c571fef6c41570d0402aef8b9b61f502c8569707163361afc4ce90ea5b874420",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_2al0gj9p/probe.c:5:14: in function probe double (double, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_0nrr10hx/probe.c:5:14: in function probe double (double, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -8315,7 +8315,7 @@
       "mix": "QQ",
       "source_sha256": "ffa2c044dfc8afd6405c385abe4f34c536c0b6a45622c2527b2eeb510e46f4c2",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_utg_hk4e/probe.c:6:14: in function probe double (double, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_vlkex2_h/probe.c:6:14: in function probe double (double, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -8398,7 +8398,7 @@
       "mix": "CQ",
       "source_sha256": "3ac17d1124194610da24940873eec2c5ac156f6fd85becd24e2bab8c750256a6",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_8odrvm41/probe.c:5:19: in function probe x86_fp80 (x86_fp80, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_g_hqa_0b/probe.c:5:19: in function probe x86_fp80 (x86_fp80, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -8416,7 +8416,7 @@
       "mix": "QQ",
       "source_sha256": "e27bf548f6f7eb81a70c85be106eb862c2051d38cfb83dc69529f9b3e47478a1",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_tsanzykr/probe.c:6:19: in function probe x86_fp80 (x86_fp80, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_eq0kfaj3/probe.c:6:19: in function probe x86_fp80 (x86_fp80, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -15107,7 +15107,7 @@
       "mix": "Q",
       "source_sha256": "442cd896b4a6fb675e7c30c17ced585c0a106e432d740c5c9c6ed87a9b10f69c",
       "status": "decline",
-      "diagnostic": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_2g1bd2uu/probe.c:2:13: warning: incompatible redeclaration of library function 'llrintf' [-Wincompatible-library-redeclaration]\n    2 | extern long llrintf(float);\n      |             ^\n/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_2g1bd2uu/probe.c:2:13: note: 'llrintf' is a builtin with type 'long long (float)'\n1 warning generated.\nerror: <unknown>:0:0: in function __cq_libm_llrintf i64 (float): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_x1z1c6hg/probe.c:2:13: warning: incompatible redeclaration of library function 'llrintf' [-Wincompatible-library-redeclaration]\n    2 | extern long llrintf(float);\n      |             ^\n/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_x1z1c6hg/probe.c:2:13: note: 'llrintf' is a builtin with type 'long long (float)'\n1 warning generated.\nerror: <unknown>:0:0: in function __cq_libm_llrintf i64 (float): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "intrinsic"
     },
     {
@@ -15190,7 +15190,7 @@
       "mix": "Q",
       "source_sha256": "95e3330318cb8e82f0a71ab188f52d295dfd0f8b09d33651b8fa3fd73569fb15",
       "status": "decline",
-      "diagnostic": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_xhbuzkur/probe.c:2:13: warning: incompatible redeclaration of library function 'llrint' [-Wincompatible-library-redeclaration]\n    2 | extern long llrint(double);\n      |             ^\n/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_xhbuzkur/probe.c:2:13: note: 'llrint' is a builtin with type 'long long (double)'\n1 warning generated.\nerror: <unknown>:0:0: in function __cq_libm_llrint i64 (double): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ehfju4m7/probe.c:2:13: warning: incompatible redeclaration of library function 'llrint' [-Wincompatible-library-redeclaration]\n    2 | extern long llrint(double);\n      |             ^\n/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ehfju4m7/probe.c:2:13: note: 'llrint' is a builtin with type 'long long (double)'\n1 warning generated.\nerror: <unknown>:0:0: in function __cq_libm_llrint i64 (double): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "intrinsic"
     },
     {
@@ -15273,7 +15273,7 @@
       "mix": "Q",
       "source_sha256": "20098b10e719f1a94b49b5e7550a21d8c7a01b9ed32b967ac566f993f2bd7c58",
       "status": "decline",
-      "diagnostic": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_smgtv6cm/probe.c:2:13: warning: incompatible redeclaration of library function 'llrintl' [-Wincompatible-library-redeclaration]\n    2 | extern long llrintl(long double);\n      |             ^\n/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_smgtv6cm/probe.c:2:13: note: 'llrintl' is a builtin with type 'long long (long double)'\n1 warning generated.\nerror: <unknown>:0:0: in function __cq_libm_llrintl i64 (x86_fp80): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_t3m2w_t5/probe.c:2:13: warning: incompatible redeclaration of library function 'llrintl' [-Wincompatible-library-redeclaration]\n    2 | extern long llrintl(long double);\n      |             ^\n/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_t3m2w_t5/probe.c:2:13: note: 'llrintl' is a builtin with type 'long long (long double)'\n1 warning generated.\nerror: <unknown>:0:0: in function __cq_libm_llrintl i64 (x86_fp80): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "intrinsic"
     },
     {
@@ -15608,7 +15608,7 @@
       "mix": "Q",
       "source_sha256": "6ffb65acab2b80a0abd18cff1bd69a2977eda13a3a33bdd1be7284bfe03ba455",
       "status": "decline",
-      "diagnostic": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_6icosmr1/probe.c:2:13: warning: incompatible redeclaration of library function 'llroundf' [-Wincompatible-library-redeclaration]\n    2 | extern long llroundf(float);\n      |             ^\n/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_6icosmr1/probe.c:2:13: note: 'llroundf' is a builtin with type 'long long (float)'\n1 warning generated.\nerror: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_llroundf i64 (float): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_wqy0t047/probe.c:2:13: warning: incompatible redeclaration of library function 'llroundf' [-Wincompatible-library-redeclaration]\n    2 | extern long llroundf(float);\n      |             ^\n/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_wqy0t047/probe.c:2:13: note: 'llroundf' is a builtin with type 'long long (float)'\n1 warning generated.\nerror: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_llroundf i64 (float): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -15691,7 +15691,7 @@
       "mix": "Q",
       "source_sha256": "b436a548efe9de93f35693be74db476b819e3f7fa5c28534a29b11d2036ef76e",
       "status": "decline",
-      "diagnostic": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_85xraypc/probe.c:2:13: warning: incompatible redeclaration of library function 'llround' [-Wincompatible-library-redeclaration]\n    2 | extern long llround(double);\n      |             ^\n/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_85xraypc/probe.c:2:13: note: 'llround' is a builtin with type 'long long (double)'\n1 warning generated.\nerror: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_llround i64 (double): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_o4aj7c0f/probe.c:2:13: warning: incompatible redeclaration of library function 'llround' [-Wincompatible-library-redeclaration]\n    2 | extern long llround(double);\n      |             ^\n/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_o4aj7c0f/probe.c:2:13: note: 'llround' is a builtin with type 'long long (double)'\n1 warning generated.\nerror: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_llround i64 (double): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -15774,7 +15774,7 @@
       "mix": "Q",
       "source_sha256": "2db3379de80fce36222b20c2cb6f5a9e0b25982d09f51170c750710d78a2765d",
       "status": "decline",
-      "diagnostic": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_vwu8_auo/probe.c:2:13: warning: incompatible redeclaration of library function 'llroundl' [-Wincompatible-library-redeclaration]\n    2 | extern long llroundl(long double);\n      |             ^\n/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_vwu8_auo/probe.c:2:13: note: 'llroundl' is a builtin with type 'long long (long double)'\n1 warning generated.\nerror: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_llroundl i64 (x86_fp80): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_vfhpeq8u/probe.c:2:13: warning: incompatible redeclaration of library function 'llroundl' [-Wincompatible-library-redeclaration]\n    2 | extern long llroundl(long double);\n      |             ^\n/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_vfhpeq8u/probe.c:2:13: note: 'llroundl' is a builtin with type 'long long (long double)'\n1 warning generated.\nerror: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_llroundl i64 (x86_fp80): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -22331,7 +22331,7 @@
       "mix": "Q",
       "source_sha256": "b8d6b1959879ba9f0107996e48c667b97f5749777cd74c4c56def558d5e83fae",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ogh05alz/probe.c:5:11: in function probe i32 (double): cq taint escape: tainted value consumed by an unknown callee\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_j3i5kqvd/probe.c:5:11: in function probe i32 (double): cq taint escape: tainted value consumed by an unknown callee\n\ncqc: stage lower failed\n",
       "provider": "macro"
     },
     {

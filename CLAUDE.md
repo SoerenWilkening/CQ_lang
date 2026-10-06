@@ -169,7 +169,8 @@ This differs from accepting an unsupported opaque primitive.
 Publish source-injected, CQ-provided and eligible intrinsic-lowered components
 separately, following NORTHSTAR goal 2's runtime operands and every C/Q mixture.
 The owner retains the CQ-provided `sin` approximation and accepts its reported
-accuracy; publish its range and special-value behavior. Hand-authored bodies can
+accuracy; publish its range and special-value behavior. Since 2026-10-06 it serves
+`long double` only: `double` sin/cos/tan/asin/acos/atan lower directly to a Bennett-backed template (bd `3c6m.71`). Hand-authored bodies can
 count as CQ-provided when their numerical contract and runtime mixtures hold, independently
 of lifting upstream source. Review substitute tests without breaking provider qualification.
 Counts come from census tooling, never hand-copied. Pipeline success does not certify

@@ -9,17 +9,17 @@
 ; RUN: %filecheck %s < %t.ll
 ; RUN: %filecheck %s --check-prefix=GONE < %t.ll
 ; CHECK:     define double @example(double %c)
-; CHECK:     call double @llvm.sin.f64(double %c)
+; CHECK:     call double @llvm.exp.f64(double %c)
 ; GONE-NOT:  __cq_libm_
-declare double @llvm.sin.f64(double)
+declare double @llvm.exp.f64(double)
 
-define double @__cq_libm_sin(double %x) {
+define double @__cq_libm_exp(double %x) {
   %y = fmul double %x, 2.000000e+00
   ret double %y
 }
 @__cq_libm_tab = global double 1.0
 
 define double @example(double %c) {
-  %k = call double @llvm.sin.f64(double %c)
+  %k = call double @llvm.exp.f64(double %c)
   ret double %k
 }

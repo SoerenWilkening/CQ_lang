@@ -84,6 +84,22 @@ def source(cell):
 
 
 CQC = ROOT/'tools/cqc'
+
+
+def direct_routes():
+    """(function, width) pairs a tainted math.h call lowers to ONE template for: every
+    floating-point row of tools/intrinsic_table.yaml (the hardware survivors and,
+    since bd 3c6m.71, the Bennett-backed f64 sin/cos/tan). Read from the table, the
+    one spelling of that set."""
+    rows = (ROOT/'tools/intrinsic_table.yaml').read_text()
+    out = set()
+    for m in re.finditer(r'^\s*- \{ op: (\w+),[^}]*widths: \[([^\]]*)\]', rows, re.M):
+        out |= {(m.group(1), w.strip()) for w in m.group(2).split(',')
+                if w.strip() in ('f32', 'f64', 'f80')}
+    return out
+
+
+DIRECT = direct_routes()
 STAGE_STATUS = {'compile': 'build-fail', 'link-ir': 'link-fail', 'lower': 'decline',
                 'link': 'runtime-link-fail'}
 
@@ -109,6 +125,8 @@ def measure(cell, cq_provided, evidence_dir, cqc=CQC):
         provider = 'intrinsic'
     if cell['name'] in cq_provided:
         provider = 'CQ-provided'
+    if (cell['base'], cell['width']) in DIRECT:  # the direct route wins (R14)
+        provider = 'intrinsic'
     if cell['base'] == 'nan':
         provider = 'classical-only'
     row['provider'] = provider
