@@ -1,6 +1,6 @@
 # math.h coverage through cqc
 
-**79/180 scalar-input cells compile through `tools/cqc` for every runtime C/Q mixture.**
+**82/180 scalar-input cells compile through `tools/cqc` for every runtime C/Q mixture.**
 
 Each probe is compiled by the user-facing driver `tools/cqc`, so this is the number a user
 gets. It counts build, lowering, link and trace-run success. It does not certify numerical
@@ -9,13 +9,13 @@ or unitary semantics. No new goldens were blessed.
 | Provider | Accepted for every mixture | Cells |
 | --- | ---: | ---: |
 | source-injected | 24 | 117 |
-| intrinsic | 42 | 48 |
+| intrinsic | 45 | 48 |
 | CQ-provided | 3 | 3 |
 | classical-only | 3 | 3 |
 | macro | 10 | 12 |
 
-Measured 483 probes: 349 accepted; 134 did not accept.
-Structural free-check passes: 349. The classical-only nan row is not in the scalar total.
+Measured 483 probes: 352 accepted; 131 did not accept.
+Structural free-check passes: 352. The classical-only nan row is not in the scalar total.
 The macro cells retain the historical f64 scope of the 183-cell model.
 
 ## Reproduction
@@ -103,9 +103,6 @@ fenv remains outside the CQ model (CLAUDE R16).
 | lgammaf.f32 | Q | error: _deps/cq_openlibm-src/src/e_lgammaf_r.c:149:12: in function __cq_libm_lgammaf_r float (float, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access) |
 | lgamma.f64 | Q | error: _deps/cq_openlibm-src/src/e_lgamma_r.c:216:12: in function __cq_libm_lgamma_r double (double, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access) |
 | lgammal.f80 | Q | error: _deps/cq_openlibm-src/ld80/e_lgammal_r.c:276:13: in function __cq_libm_lgammal_r x86_fp80 (x86_fp80, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access) |
-| llrintf.f32 | Q | error: <unknown>:0:0: in function __cq_libm_llrintf i64 (float): cq specialization: floating-point quantum argument or return has no reversible copy |
-| llrint.f64 | Q | error: <unknown>:0:0: in function __cq_libm_llrint i64 (double): cq specialization: floating-point quantum argument or return has no reversible copy |
-| llrintl.f80 | Q | error: <unknown>:0:0: in function __cq_libm_llrintl i64 (x86_fp80): cq specialization: floating-point quantum argument or return has no reversible copy |
 | lroundf.f32 | Q | error: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_lroundf i64 (float): cq specialization: floating-point quantum argument or return has no reversible copy |
 | lround.f64 | Q | error: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_lround i64 (double): cq specialization: floating-point quantum argument or return has no reversible copy |
 | lroundl.f80 | Q | error: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_lroundl i64 (x86_fp80): cq specialization: floating-point quantum argument or return has no reversible copy |

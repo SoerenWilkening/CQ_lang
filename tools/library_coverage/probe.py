@@ -680,9 +680,9 @@ MATHH_SPEC = [
     B("nearbyint", "nearest_int", ["fp"], backend="synthesizable"),
     B("rint", "nearest_int", ["fp"], backend="synthesizable"),
     B("lrint", "nearest_int", ["fp"], ret="long", backend="synthesizable"),
-    B("llrint", "nearest_int", ["fp"], ret="long", backend="synthesizable"),
+    B("llrint", "nearest_int", ["fp"], ret="llong", backend="synthesizable"),  # long long (C11 7.12.9.5/7)
     B("lround", "nearest_int", ["fp"], ret="long", backend="synthesizable"),
-    B("llround", "nearest_int", ["fp"], ret="long", backend="synthesizable"),
+    B("llround", "nearest_int", ["fp"], ret="llong", backend="synthesizable"),  # long long (C11 7.12.9.5/7)
     # --- remainder --- (standard: modulo = stock reversible integer-style arithmetic)
     B("fmod", "remainder", ["fp", "fp"], flags=("errno",), backend="standard"),        # frem opcode
     B("remainder", "remainder", ["fp", "fp"], flags=("errno",), backend="standard"),
