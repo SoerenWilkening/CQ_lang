@@ -1,0 +1,86 @@
+\labsessionheader{2026-10-06}{Lifting math.h bodies with control flow: switch, constant-arm selects, classical control}%
+  {f49c2ea3}{n/a}{none}
+
+\subsection*{Goal}
+\bd{p3kd.7} listed 57 math.h cells (105 probes) whose injected openlibm body the lifter
+refused with ``callee contains tainted control flow under quantum lift''. The session
+measured why, split the bucket by mechanism and built the two largest pieces. Force-inlining
+the same bodies at the top level compiled about 50 of the probes, so most of the bucket was a
+lifting gap against the inline twin; the CQ/QC mixtures also fail inlined.
+
+\subsection*{Owner rulings this session}
+\begin{itemize}
+  \item Classical control inside a lifted body lowers by speculation and a classical choice of
+  rail: both arms run, the merge becomes a \texttt{select} between rail handles, the Bennett
+  wrap reverses every arm. A per-path wrap was the rejected alternative (bd memory
+  \texttt{owner-ruling-clone-classical-control-2026-10-06}).
+\end{itemize}
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \commit{0cbbb1d0} --- \bd{p3kd.7.1} --- detection mirrors the clone emitters:
+  \texttt{scanBody} admits \texttt{switch} and \texttt{unreachable} and every select a mask could
+  lower (\texttt{isAdmissibleCloneSelect} replaces \texttt{isLiftableSelect} and
+  \texttt{isLiftableFpSelect}); a clone with no \texttt{ret} now declines loudly.
+  \item \commit{38796903} --- \bd{p3kd.7.2} --- clone-mode PredMux roots at classical
+  branches and switches and freezes classical edge literals; a classical-condition select over a
+  quantum arm becomes a select of rail handles after \texttt{lowerOps}
+  (\fpath{CloneRailSelect.h}).
+  \item \commit{3d9afc6f} --- census re-measured through \texttt{cqc} at \commit{38796903}; \commit{f49c2ea3} regenerates CODE\_MAP.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \foverdecline\ \texttt{scanBody} was stricter than the emitter it guards: the clone
+  path already lowered constant-arm integer selects and tainted switches. Measured with an
+  env-gated experiment build before any design work: 13 of 105 probes compiled from that alone.
+  \item \fdoc\ A no-\texttt{ret} clone reached \texttt{emitBennettWrap}, which returned false
+  silently while \texttt{buildClone} dropped the result (review round 1). Round 2 showed my
+  ``unreachable by construction'' comment false: a terminator is a liveness root, so the
+  parameter stays live. Now a loud decline with a fixture.
+  \item \fpreexisting\ PredMux speculation passes an unreached arm's classical value
+  (\texttt{fptosi} out of range, \texttt{shl} by $\ge$ width) unfrozen as a gate's \texttt{\_hl}
+  literal to both the forward template and its adjoint; LLVM poison may differ per use. Masked
+  today by \texttt{-O0} compilation of the lowered IR. Classical control adds to this
+  population. Filed as \bd{p3kd.7.7}; only edge literals and rail-select conditions are frozen.
+  \item \fdoc\ L9: more callees lift, so more programs reach the open lifted-call defects
+  \bd{r2j3.6} and \bd{r2j3.7}.
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+math.h cells via cqc & 79/180 (was 71/180) & \measured{runtime\_census.py --output tools/library\_coverage/runtime\_census.json} \\
+\quad source-injected & 24/117 (was 16/117) & same \\
+p3kd.7 probes compiling & 36/105 (13 after 7.1) & \measured{cq-opt over the 105 probe modules} \\
+remaining p3kd.7 probes & 69 & 36 E4, 14 non-revers., 10 undef return, 4 loop, 4 cond, 1 cast \\
+ctest entries & 602 & \measured{ctest --test-dir build -N | tail -1} \\
+lit fixtures / e2e goldens & 2703 / 487 & \measured{ls ir-pass/test/*.ll | wc -l; ls tests/e2e/*.expected.log | wc -l} \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+\begin{itemize}
+  \item \bd{p3kd.7.1}: lit red 8 of 10 failing, green 909/910 (the failure a decline-to-accept
+  flip, re-spelled to keep its subject), final 912/912; ctest \texttt{e2e-slice-spec-switch-mux} 1/1. Mutants: no-op passes,
+  undef-arm and unreachable mutants killed, the vector-clause mutant survived because the width
+  clause already refuses vectors, so that clause was removed (MISSED 1, a redundant clause).
+  \item \bd{p3kd.7.2}: lit red 6 of 7 failing, green 916/917 (the failure a decline-to-accept flip, re-pinned after reading its lowering: \fpath{spec_accept_predicted_quantum_some_paths.ll}, which now matches its hand-inlined twin), final 3/3; ctest \texttt{e2e-slice-spec-switch-mux} and \texttt{e2e-slice-spec-classical-ctl} 2/2. Mutants: no-op passes; literal
+  freeze, clone scoping and arm materialization killed (MISSED 0).
+  \item Adversarial review: \bd{p3kd.7.1} two rounds, \bd{p3kd.7.2} three rounds, six probe
+  programs a round; no silent miscompile found. Findings were a silent no-return path (fixed),
+  false or stale comments (fixed), two loud declines without a fixture (pinned or filed) and
+  the latent poison hygiene above (filed).
+  \item Batch gate: \texttt{ctest -LE maintenance -j6} 598/599; the failure was \texttt{code\_map\_drift} (I regenerated CODE\_MAP before staging the new files), fixed in \commit{f49c2ea3}, after which \texttt{update\_code\_map.py --check} is clean (run directly, not re-run under ctest); \texttt{cq-opt-equivalence-full} 2703 fixtures, 0 mismatches.
+\end{itemize}
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item \bd{p3kd.7.3} (E4 refusals in clones: nested and classical calls, transiently retyped
+  fp80 parameters, i80 compares, table reads; 36 probes), \bd{p3kd.7.4} (loops in clones),
+  \bd{p3kd.7.5} (logical-select conditions), \bd{p3kd.7.6} (cbrtl \texttt{bitcast i80}),
+  \bd{p3kd.7.7} (poison hygiene). Outside p3kd.7: \bd{p3kd.8} undef returns (expm1 family,
+  exp2, exp2l), \bd{p3kd.6} non-reversibilizable constructs.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+None.
