@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 776 maintained source files, 6494 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 776 maintained source files, 6495 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -1071,23 +1071,24 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `ir-pass/src/SpecializeSeed.cpp:18` — `seedClone`
 
-### `ir-pass/src/SpeculationSafety.cpp` (292 lines)
+### `ir-pass/src/SpeculationSafety.cpp` (315 lines)
 
-- `ir-pass/src/SpeculationSafety.cpp:30` — `scalar`
-- `ir-pass/src/SpeculationSafety.cpp:34` — `inertAttrs`
-- `ir-pass/src/SpeculationSafety.cpp:51` — `argAttrsAreInert`
-- `ir-pass/src/SpeculationSafety.cpp:57` — `returnAttrsHold`
-- `ir-pass/src/SpeculationSafety.cpp:80` — `basicCallContractHolds`
-- `ir-pass/src/SpeculationSafety.cpp:91` — `callContractIsInert`
-- `ir-pass/src/SpeculationSafety.cpp:101` — `intrinsicContractHolds`
-- `ir-pass/src/SpeculationSafety.cpp:125` — `totalCall`
-- `ir-pass/src/SpeculationSafety.cpp:168` — `definedWithoutContext`
-- `ir-pass/src/SpeculationSafety.cpp:203` — `needsStableUse`
-- `ir-pass/src/SpeculationSafety.cpp:216` — `stabilize`
-- `ir-pass/src/SpeculationSafety.cpp:241` — `freezeDischargesHoistedArg`
-- `ir-pass/src/SpeculationSafety.cpp:245` — `classicalCallCanBeSpeculated`
-- `ir-pass/src/SpeculationSafety.cpp:249` — `markSpeculatedValue`
-- `ir-pass/src/SpeculationSafety.cpp:266` — `stabilizeSpeculatedValues`
+- `ir-pass/src/SpeculationSafety.cpp:31` — `scalar`
+- `ir-pass/src/SpeculationSafety.cpp:35` — `inertAttrs`
+- `ir-pass/src/SpeculationSafety.cpp:52` — `argAttrsAreInert`
+- `ir-pass/src/SpeculationSafety.cpp:58` — `returnAttrsHold`
+- `ir-pass/src/SpeculationSafety.cpp:81` — `basicCallContractHolds`
+- `ir-pass/src/SpeculationSafety.cpp:92` — `callContractIsInert`
+- `ir-pass/src/SpeculationSafety.cpp:102` — `intrinsicContractHolds`
+- `ir-pass/src/SpeculationSafety.cpp:126` — `totalCall`
+- `ir-pass/src/SpeculationSafety.cpp:169` — `definedWithoutContext`
+- `ir-pass/src/SpeculationSafety.cpp:204` — `needsStableUse`
+- `ir-pass/src/SpeculationSafety.cpp:217` — `stabilize`
+- `ir-pass/src/SpeculationSafety.cpp:241` — `stableConstant`
+- `ir-pass/src/SpeculationSafety.cpp:256` — `freezeDischargesHoistedArg`
+- `ir-pass/src/SpeculationSafety.cpp:260` — `classicalCallCanBeSpeculated`
+- `ir-pass/src/SpeculationSafety.cpp:264` — `markSpeculatedValue`
+- `ir-pass/src/SpeculationSafety.cpp:287` — `stabilizeSpeculatedValues`
 
 ### `ir-pass/src/StageList.cpp` (327 lines)
 

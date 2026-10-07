@@ -1,0 +1,28 @@
+{
+  "issue": "test_C_libtooling-p3kd.7.7.1",
+  "threads": 1,
+  "lit_invocations": 2,
+  "red": {
+    "configuration_aborted": "anchored filter did not match full lit test name",
+    "fixtures_executed": 0
+  },
+  "green": {
+    "fixtures": 1,
+    "passed": 1,
+    "filter": "spec_predmux_stable_raw_constant.ll$"
+  },
+  "final": {
+    "invocations": 0,
+    "reason": "no code changes since green"
+  },
+  "mutation": {
+    "noop": "existing successful green fixture reused",
+    "real": 1,
+    "MISSED": 0
+  },
+  "original_issue_suite_reruns": 0,
+  "census_interrupted": {
+    "rows": 388,
+    "reason": "R3 dependency hole required source correction; no partial census published"
+  }
+}

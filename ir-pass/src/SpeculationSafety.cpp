@@ -26,6 +26,7 @@ using namespace llvm;
 namespace cq {
 namespace {
 constexpr char Mark[] = "cq.speculated";
+constexpr char StableConstant[] = "cq.speculated.constant";
 
 bool scalar(Type *T) {
   return T->isIntegerTy() || T->isFloatingPointTy();
@@ -233,6 +234,20 @@ Value *stabilize(Value *V, const TaintSet &Taint, Function &F) {
   });
   return Frozen;
 }
+
+// Normalize source constants before their quantum consumer is erased. At this
+// point scalar operands are source values, so no emitted handle/literal ABI
+// classification is needed. Cache only our own freezes in this function.
+Value *stableConstant(Constant *K, Function &F) {
+  for (Instruction &I : F.getEntryBlock())
+    if (auto *Fr = dyn_cast<FreezeInst>(&I);
+        Fr && Fr->getMetadata(StableConstant) && Fr->getOperand(0) == K)
+      return Fr;
+  auto *Fr = new FreezeInst(K, "literal.stable",
+                           &*F.getEntryBlock().getFirstInsertionPt());
+  Fr->setMetadata(StableConstant, MDNode::get(F.getContext(), {}));
+  return Fr;
+}
 } // namespace
 
 // Same effective call-site/callee union as the original 9hea predicate.
@@ -254,12 +269,18 @@ void markSpeculatedValue(Instruction &Root) {
   SmallVector<Instruction *, 16> Work{&Root};
   while (!Work.empty()) {
     Instruction *I = Work.pop_back_val();
-    if (!scalar(I->getType()) || I->getMetadata(Mark))
+    if (!scalar(I->getType()) || I->getMetadata(Mark) ||
+        I->getMetadata(StableConstant))
       continue;
     I->setMetadata(Mark, MDNode::get(I->getContext(), {}));
-    for (Value *V : I->operands())
-      if (auto *Op = dyn_cast<Instruction>(V))
+    for (Use &U : I->operands()) {
+      Value *V = U.get();
+      if (auto *K = dyn_cast<Constant>(V);
+          K && scalar(K->getType()) && slotCarriesUndef(K))
+        U.set(stableConstant(K, *I->getFunction()));
+      else if (auto *Op = dyn_cast<Instruction>(V))
         Work.push_back(Op);
+    }
   }
 }
 
@@ -276,7 +297,9 @@ void stabilizeSpeculatedValues(Function &F, const TaintSet &Taint) {
         }
   SmallVector<Instruction *, 16> Sources;
   for (Instruction &I : instructions(F))
-    if (I.getMetadata(Mark)) {
+    if (I.getMetadata(StableConstant)) {
+      I.setMetadata(StableConstant, nullptr);
+    } else if (I.getMetadata(Mark)) {
       I.setMetadata(Mark, nullptr);
       Sources.push_back(&I);
     }

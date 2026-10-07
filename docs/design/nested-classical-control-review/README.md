@@ -35,6 +35,16 @@ acquire uses of another function's SSA values. Clone stabilization precedes
 forward capture, and main stabilization follows adjoint emission in both pass
 entries. The proof walks use visited worklists.
 
+R3's follow-up found that an erased quantum operation could lose its marker
+while a raw poison constant survived as a gate literal. The existing pairing
+guard deliberately accepts one unpaired literal slot; it cannot discharge this
+speculative-definedness obligation. `p3kd.7.7.1` freezes raw scalar constants
+while marking their source operands, before handle lowering. Each function
+caches one freeze per typed constant and replaces only the selected source
+operand uses. This avoids cross-function SSA references and runtime ABI guesses.
+The new `spec_predmux_stable_raw_constant.ll` pins the single-slot case in two
+functions. The established straight-line single-slot allowance is unchanged.
+
 Bennett.jl at `824458d10e879c3fef673c231a02e5461dac667f` supplies the edge
 predicate and incoming-value circuit construction in `src/lowering/phi.jl`.
 BennettVM.jl at `23d28e6471f9cf5d8a22177d08260ca86adfe841` supplies the SSA
@@ -55,7 +65,7 @@ freeing scratch, while its result and borrowed input remain available. Trace
 and free checks complement the edge-transfer argument; they do not establish
 numerical primitive implementations or simulate the unitary.
 
-The three historical fixtures whose sole restriction was `E6-classicalbr` now
+The four historical fixtures whose sole restriction was `E6-classicalbr` now
 pin positive edge transfers, including one-input and equal-input classical PHIs.
 Their filenames remain for existing historical references. The effectful-call
 fixture still fails loudly. Review reports and measured validation are retained
