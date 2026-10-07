@@ -184,3 +184,38 @@ borrowed parameters, late data reads of conditions, nested mirrors, FP signature
 replacement and attributes, `inBennettClone`, and newly created/grown-mask round-2
 clones. Invalid or blocked probes are identified in their reports and earn no
 coverage credit.
+
+## Full user-driver census after merge
+
+Measured once at main `92e9f0ec` with
+`python3 tools/library_coverage/runtime_census.py --output tools/library_coverage/runtime_census.json --jobs 6 --evidence-dir /tmp/p3kd78-census-evidence`:
+
+| Provider | Before | After |
+| --- | ---: | ---: |
+| Source-injected | 24/120 | 28/120 |
+| Intrinsic | 48/48 | 48/48 |
+| Macro | 10/12 | 10/12 |
+| Scalar total | 82/180 | 86/180 |
+| Classical-only constructors (outside scalar total) | 3/3 | 3/3 |
+
+Of 483 runtime-mixture probes, 362 accept and 121 decline; all accepted probes
+pass the structural free check. Ten mixtures changed from decline to accept,
+with no acceptance regressions. The newly complete cells are ilogb, ilogbf,
+cbrtl and nextafter. nextafterl and nexttoward/nexttowardf/nexttowardl also gain
+QQ acceptance, while their CQ mixtures still fail shared control lowering.
+The FMA CCQ mixtures from `4c323c3c` accept at all three published widths.
+
+Remaining first blockers: 43 body-construct/memory, 33 shared control (13 nested),
+18 undef/poison returns, 14 argument/return ABI, nine frem source-lowering gaps,
+two shared loop/control, and two macro unknown-callee failures. ilogbl/logbl
+remain the two loop/control probes under p3kd.7.4 and 8h7d. The shared control
+carriers in p3kd.7.3 and p3kd.7.5 are re-attributed to dm7f.15/dm7f.16; unresolved
+i80/speculation and i1 rail-select conditions stay open behind those first
+blockers. cbrtl's p3kd.7.6 and the P0 width bug p3kd.7.10 are fixed.
+
+A read-only audit of the saved census IR, using the original library signatures,
+checks 318 direct FP-parameter copies in 247 clone bodies/twins across 73
+FP-bearing accepted probes: zero wrong widths. None of 29,943 clone frees names
+a parameter. [Audit and validation evidence](clone-one-pipeline-review/validation/README.md)
+records the exact scope. SelectMergeEmit's omitted const-zero-arm optimization
+is filed as p3kd.7.11; its redundant copy accounts for some clone gate-count growth.

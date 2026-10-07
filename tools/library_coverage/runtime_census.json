@@ -3,13 +3,13 @@
     "definition": "Every runtime C/Q mixture builds, lowers, links and trace-runs through tools/cqc; not unitary verified.",
     "driver": "tools/cqc",
     "driver_sha256": "a62e77deaf3f7f1b8b24d11c4c38d02b07279f499ef555946549daafcb081f8b",
-    "pass_sha256": "52799bb7a29c78f9857fd6fa8b4388baf4a8e8086aa148eb0708293383d7e885",
-    "cq_commit": "4c323c3c7af627c88e9d24dbaaf4e9ec1eb9ed01",
+    "pass_sha256": "ab94cd35c249887b029528857202a9f26b9eb6f7deb70375d697305e8a27b776",
+    "cq_commit": "92e9f0ecfe7d1194b51cd6294fdd98f5d24eaf83",
     "llvm_version": "Homebrew clang version 19.1.7"
   },
   "score": {
     "source-injected": {
-      "covered": 24,
+      "covered": 28,
       "total": 120
     },
     "intrinsic": {
@@ -1203,8 +1203,8 @@
         "llvm.acos.f32"
       ],
       "spec_clone": true,
-      "trace_sha256": "6eb878d4d50627958666665cbee988c342052e2351b23f059c10a6c875f462be",
-      "trace_lines": 309,
+      "trace_sha256": "f262d886bd3c8a62014cb5534cca6c31bf1133621585418e84fba2902c057313",
+      "trace_lines": 298,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -1525,8 +1525,8 @@
         "llvm.acos.f80"
       ],
       "spec_clone": true,
-      "trace_sha256": "3c6e5621cac401a69044e66fcc3c0a3d52b6a67cc089df5100a6912833802b38",
-      "trace_lines": 455,
+      "trace_sha256": "2db79f19970ff360604c467718332e964a346adfb286a820053c405133791eb9",
+      "trace_lines": 444,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -1687,8 +1687,8 @@
         "llvm.asin.f32"
       ],
       "spec_clone": true,
-      "trace_sha256": "a18ebcb182855ab9fdc696f21e7cb5b23c1e2904fd7f36c1de359d8b3b1c632a",
-      "trace_lines": 237,
+      "trace_sha256": "f3f52c1b7dec41c9c502149cdde91571fbe78c47c1b158df81d9d6c3427badec",
+      "trace_lines": 227,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -2009,8 +2009,8 @@
         "llvm.asin.f80"
       ],
       "spec_clone": true,
-      "trace_sha256": "199aaa166963df9731792f046b330778a58ad3817d65e65173113785db7a8466",
-      "trace_lines": 422,
+      "trace_sha256": "5aca6588904be2354b955f756a32e4244de29741efb170cc8654dcbd2b2fc1e4",
+      "trace_lines": 410,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -2171,8 +2171,8 @@
         "llvm.atan.f32"
       ],
       "spec_clone": true,
-      "trace_sha256": "5d1230a90ff035682f63b1c546d7fa72a0e5b0ef080a99aef29cd9305f6f9863",
-      "trace_lines": 749,
+      "trace_sha256": "1d62ef60a280f7ecf2f9ab2d9a74d57126f60857f4f854c82646b3d639872459",
+      "trace_lines": 722,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -2493,8 +2493,8 @@
         "llvm.atan.f80"
       ],
       "spec_clone": true,
-      "trace_sha256": "575e68fd46de402b9507b753b7975989bbcc22c32cba995f69ca5e8051a55f8c",
-      "trace_lines": 875,
+      "trace_sha256": "0a9318f2d21e7946df6d578894fc9b33a5bc956025535e0941bd04b593f0c7e4",
+      "trace_lines": 848,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -2584,7 +2584,7 @@
       "mix": "CQ",
       "source_sha256": "202363474bae4e08803d03aba977d335f328fba63e3775e6615031e4cb4fcd3a",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/e_atan2f.c:43:20: in function __cq_q___cq_libm_atan2f_10 i32 (float, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/e_atan2f.c:43:20: in function __cq_q___cq_libm_atan2f_10 float (float, float): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -2662,8 +2662,8 @@
         "atan2f"
       ],
       "spec_clone": true,
-      "trace_sha256": "033878bdfa519206ffc9565765a7b2a09afdb11c497584da49c9ea12b6c9307f",
-      "trace_lines": 4136,
+      "trace_sha256": "24c163c2b1fb5f644f4aec645adfd125bbbd61396f613f7d14b7e553e8a77e5c",
+      "trace_lines": 3984,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -2742,8 +2742,8 @@
         "atan2f"
       ],
       "spec_clone": true,
-      "trace_sha256": "e00ec271199a2bc1dbd14fc0a0a1084101c28cfc012d916737ea049e480c12de",
-      "trace_lines": 4509,
+      "trace_sha256": "146123f94ebe739231e12698b1a4cb277498db7c3bdc498bda799200f8c9513e",
+      "trace_lines": 4357,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -2833,7 +2833,7 @@
       "mix": "CQ",
       "source_sha256": "a993b9c106dbfd233ab2d8f4db7d92b0534adbfba2a2e2a3a2ab8e2851f32dd7",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/e_atan2.c:71:37: in function __cq_q___cq_libm_atan2_10 i32 (double, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/e_atan2.c:71:37: in function __cq_q___cq_libm_atan2_10 double (double, double): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -2911,8 +2911,8 @@
         "atan2"
       ],
       "spec_clone": true,
-      "trace_sha256": "443bc0ae8c8496d115e3bba4fc8ae4ef954c72d4f295c9ec5a4589737bcf4f86",
-      "trace_lines": 1241,
+      "trace_sha256": "4ae374bc7fae386faae6d14d627d43e091578e3342cfb31900d066bd27b63555",
+      "trace_lines": 1197,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -2991,8 +2991,8 @@
         "atan2"
       ],
       "spec_clone": true,
-      "trace_sha256": "97ddda94fd0f73912335f1137d8bf8e02a48ef52a6d3661ea7b0470d3aef19b5",
-      "trace_lines": 1882,
+      "trace_sha256": "ba4b46c3063ec3bf18524cd1770a534c70546d3acbfad459247b989630162647",
+      "trace_lines": 1838,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -3082,7 +3082,7 @@
       "mix": "CQ",
       "source_sha256": "eef83f0fa8cc0f1451b73927434044ebad630844def288abd4cb8bb28de983c5",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/e_atan2l.c:61:32: in function __cq_q___cq_libm_atan2l_10 i32 (x86_fp80, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/e_atan2l.c:61:32: in function __cq_q___cq_libm_atan2l_10 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -3160,8 +3160,8 @@
         "atan2l"
       ],
       "spec_clone": true,
-      "trace_sha256": "ae5bf20c4e8deafb7dc860b3666243f3d77f797b2a0dfdbd375d188e9962ceaa",
-      "trace_lines": 6134,
+      "trace_sha256": "62ddad8f10fd4a68077f046739f3737a1b6da998a2d9cf0faf8a3dfb3944a0d1",
+      "trace_lines": 5982,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -3240,8 +3240,8 @@
         "atan2l"
       ],
       "spec_clone": true,
-      "trace_sha256": "bbf029ca453d56f5a525dc49bb644b764e6b786fd5f7378767ef888a404fe694",
-      "trace_lines": 7309,
+      "trace_sha256": "5f9dedfa3370ad9024bc0032ebfc99df870507caab765e6e000397f65cce377e",
+      "trace_lines": 7157,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -4052,7 +4052,7 @@
       "mix": "Q",
       "source_sha256": "eed434b08795dce487ec77e2d0f152ab1b87f36a022717879db6c942ecd844e2",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/ld80/s_tanhl.c:55:5: in function __cq_q___cq_libm_tanhl_1 i32 (i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/s_scalbnl.c:53:17: in function __cq_q___cq_libm_scalbnl_10 x86_fp80 (x86_fp80, i32): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -5013,8 +5013,8 @@
         "llvm.exp.f32"
       ],
       "spec_clone": true,
-      "trace_sha256": "0cfa2d520cee84e9ffcc339e18cc47942aea1b674f5e2f2f967e87bf13685cca",
-      "trace_lines": 1373,
+      "trace_sha256": "9caed4a5ca8307e3445ca3e9c95a2ae6a3dce813ba80ffc78fdd6e813e319557",
+      "trace_lines": 1344,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -5175,8 +5175,8 @@
         "llvm.exp.f64"
       ],
       "spec_clone": true,
-      "trace_sha256": "5e531b9907e3694e3ec8baad19123d4ac5d5dbbe4b1fcd059d5d862af33025af",
-      "trace_lines": 1407,
+      "trace_sha256": "ee9e95d96eeb12293e4b4be5a1d464472f61ce979f17efbd39e17650fc9177e7",
+      "trace_lines": 1376,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -5427,8 +5427,8 @@
         "llvm.exp2.f32"
       ],
       "spec_clone": true,
-      "trace_sha256": "02283bba26a379f5f0f64c2bf6fbcf87dc55aaf28a4ee98d4801bbfec0218b25",
-      "trace_lines": 253,
+      "trace_sha256": "d47bd1c1276c3137396a690c9f896efa3d0056bfae584cb4bb3a1c4dccc66b9e",
+      "trace_lines": 245,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -5876,7 +5876,7 @@
       "mix": "Q",
       "source_sha256": "b49521884531802c8a7ac002012ff5ac020d561fb0b32490f85244bfadb9c71d",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_scalbnl.c:49:13: in function __cq_q___cq_libm_scalbnl_10 i32 (x86_fp80, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/s_scalbnl.c:53:17: in function __cq_q___cq_libm_scalbnl_10 x86_fp80 (x86_fp80, i32): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -6036,8 +6036,8 @@
         "llvm.log.f32"
       ],
       "spec_clone": true,
-      "trace_sha256": "0bc1f9af0c97dfa3ce3dcc707f282b0736e44915ccd2bf1a97f78a669c3739cc",
-      "trace_lines": 839,
+      "trace_sha256": "f23f04657111cd54ccdf8046b854439cc542e7d50f0b29f997c1e3b8490763ca",
+      "trace_lines": 814,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -6198,8 +6198,8 @@
         "llvm.log.f64"
       ],
       "spec_clone": true,
-      "trace_sha256": "a31e96d47a8f8860a629a81a4bf1ab1812c927d64368d30fe4b9c35fba0f363c",
-      "trace_lines": 887,
+      "trace_sha256": "53659af99652fefc39e8555d9233a4ad9ac9ae8888c6f7f1a9c7eb7dd2462f8c",
+      "trace_lines": 863,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -6450,8 +6450,8 @@
         "llvm.log10.f32"
       ],
       "spec_clone": true,
-      "trace_sha256": "2b829e044b2bf19f3b756721c08df523a362472564b7b158f4cb8befd86f8221",
-      "trace_lines": 369,
+      "trace_sha256": "01708173448e47719dbd2f7ad05571a3a0dd8c8e6c190d1fbed93d9ab4924313",
+      "trace_lines": 357,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -6612,8 +6612,8 @@
         "llvm.log10.f64"
       ],
       "spec_clone": true,
-      "trace_sha256": "657274123125b4e6859d15e72ee5f22cf17c28aef3d491d261ab26cc7e260dc4",
-      "trace_lines": 440,
+      "trace_sha256": "0c117e02101127921ca84dec258c096773a2f14086bec869af3961c3c4883043",
+      "trace_lines": 428,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -6864,8 +6864,8 @@
         "llvm.log2.f32"
       ],
       "spec_clone": true,
-      "trace_sha256": "3e7086df8fca28206886e7f1a6b024696d9342929c712e60eacf2c6ff49ad2e8",
-      "trace_lines": 366,
+      "trace_sha256": "51e3a058664ec2127efc6c70dd7f541073df0ff7599e5091174e9896208f3c1d",
+      "trace_lines": 354,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -7026,8 +7026,8 @@
         "llvm.log2.f64"
       ],
       "spec_clone": true,
-      "trace_sha256": "074674bcac20a242c50d62cc6ce378bef44c71bd8b572e64c8c2d51e363ef6da",
-      "trace_lines": 434,
+      "trace_sha256": "649710f1f30195059860ca513c7b0eb1a96e12fa4c249663ddaaaacd14b32f09",
+      "trace_lines": 422,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -7543,8 +7543,8 @@
         "logbf"
       ],
       "spec_clone": true,
-      "trace_sha256": "03c170ddeab52f723efc006dd21d02805abc3ea7453561ddd476570485fc0694",
-      "trace_lines": 114,
+      "trace_sha256": "49fb11ca8152378f38f58bad8779bc92ded33bd53134dbc14dca68fbc214fc02",
+      "trace_lines": 108,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -7703,8 +7703,8 @@
         "logb"
       ],
       "spec_clone": true,
-      "trace_sha256": "ac33d083f7b36fda6197203b9462e757e1199789b155538870a5a4c3c74907c9",
-      "trace_lines": 129,
+      "trace_sha256": "f5c5d03d3947c2c86b0c5c913d42cdc7e487cf09f33ead92b6d17cc541716f46",
+      "trace_lines": 123,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -7794,7 +7794,7 @@
       "mix": "Q",
       "source_sha256": "8f7fab89b87ce68cb87f30b5db4d22b4485246bad3c9b7963371246fcc4763e8",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_logbl.c:29:7: in function __cq_q___cq_libm_logbl_1 i32 (i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/s_logbl.c:40:4: in function __cq_q___cq_libm_logbl_1 x86_fp80 (x86_fp80): cq controlled lowering: loop under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -7882,9 +7882,80 @@
       "name": "ilogbf",
       "mix": "Q",
       "source_sha256": "492a791624bb492953999d14b57651581560233520599ed8b85cf1fa9d36ac6a",
-      "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_ilogbf.c:31:5: in function __cq_q___cq_libm_ilogbf_1 i32 (i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
-      "provider": "source-injected"
+      "status": "COMPILES",
+      "diagnostic": "",
+      "provider": "source-injected",
+      "intrinsics": [
+        "abs.i32",
+        "acos.f64",
+        "asin.f64",
+        "atan.f64",
+        "ceil.f32",
+        "ceil.f64",
+        "ceil.f80",
+        "copysign.f32",
+        "copysign.f64",
+        "copysign.f80",
+        "cos.f64",
+        "fabs.f32",
+        "fabs.f64",
+        "fabs.f80",
+        "floor.f32",
+        "floor.f64",
+        "floor.f80",
+        "fma.f32",
+        "fma.f64",
+        "fma.f80",
+        "fmuladd.f32",
+        "fmuladd.f64",
+        "fmuladd.f80",
+        "fshl.i32",
+        "lifetime.end.p0",
+        "lifetime.start.p0",
+        "llrint.i64.f32",
+        "llrint.i64.f64",
+        "llrint.i64.f80",
+        "lrint.i64.f32",
+        "lrint.i64.f64",
+        "lrint.i64.f80",
+        "maxnum.f32",
+        "maxnum.f64",
+        "maxnum.f80",
+        "minnum.f32",
+        "minnum.f64",
+        "minnum.f80",
+        "nearbyint.f32",
+        "nearbyint.f64",
+        "nearbyint.f80",
+        "rint.f32",
+        "rint.f64",
+        "rint.f80",
+        "round.f32",
+        "round.f64",
+        "round.f80",
+        "sin.f64",
+        "smax.i32",
+        "smax.i64",
+        "smin.i32",
+        "smin.i64",
+        "sqrt.f32",
+        "sqrt.f64",
+        "sqrt.f80",
+        "tan.f64",
+        "trunc.f32",
+        "trunc.f64",
+        "trunc.f80",
+        "umax.i32",
+        "umin.i32"
+      ],
+      "raw_callees": [
+        "ilogbf"
+      ],
+      "spec_clone": true,
+      "trace_sha256": "3ffd440451d45a5ad1cf81479e1858a1c669267b2e5bd35da0b41d25cd01ebdd",
+      "trace_lines": 88,
+      "free_check_exit": 0,
+      "free_check": ""
     },
     {
       "cell": "ilogb.f64",
@@ -7971,9 +8042,80 @@
       "name": "ilogb",
       "mix": "Q",
       "source_sha256": "6f3b183ede3e0aef8b588c62d171cc04acf07efbd4adea5c7e91bae63df71f70",
-      "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_ilogb.c:35:5: in function __cq_q___cq_libm_ilogb_1 i32 (i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
-      "provider": "source-injected"
+      "status": "COMPILES",
+      "diagnostic": "",
+      "provider": "source-injected",
+      "intrinsics": [
+        "abs.i32",
+        "acos.f64",
+        "asin.f64",
+        "atan.f64",
+        "ceil.f32",
+        "ceil.f64",
+        "ceil.f80",
+        "copysign.f32",
+        "copysign.f64",
+        "copysign.f80",
+        "cos.f64",
+        "fabs.f32",
+        "fabs.f64",
+        "fabs.f80",
+        "floor.f32",
+        "floor.f64",
+        "floor.f80",
+        "fma.f32",
+        "fma.f64",
+        "fma.f80",
+        "fmuladd.f32",
+        "fmuladd.f64",
+        "fmuladd.f80",
+        "fshl.i32",
+        "lifetime.end.p0",
+        "lifetime.start.p0",
+        "llrint.i64.f32",
+        "llrint.i64.f64",
+        "llrint.i64.f80",
+        "lrint.i64.f32",
+        "lrint.i64.f64",
+        "lrint.i64.f80",
+        "maxnum.f32",
+        "maxnum.f64",
+        "maxnum.f80",
+        "minnum.f32",
+        "minnum.f64",
+        "minnum.f80",
+        "nearbyint.f32",
+        "nearbyint.f64",
+        "nearbyint.f80",
+        "rint.f32",
+        "rint.f64",
+        "rint.f80",
+        "round.f32",
+        "round.f64",
+        "round.f80",
+        "sin.f64",
+        "smax.i32",
+        "smax.i64",
+        "smin.i32",
+        "smin.i64",
+        "sqrt.f32",
+        "sqrt.f64",
+        "sqrt.f80",
+        "tan.f64",
+        "trunc.f32",
+        "trunc.f64",
+        "trunc.f80",
+        "umax.i32",
+        "umin.i32"
+      ],
+      "raw_callees": [
+        "ilogb"
+      ],
+      "spec_clone": true,
+      "trace_sha256": "ed4679123c9701420d96185ec438e04bb771543f5fc30a7aa0d02c8bf171a4ed",
+      "trace_lines": 177,
+      "free_check_exit": 0,
+      "free_check": ""
     },
     {
       "cell": "ilogbl.f80",
@@ -8061,7 +8203,7 @@
       "mix": "Q",
       "source_sha256": "990fa3fbfa7334ab279677f86c53d3bb56610077e6fcb7d4445d7916e7e0dd12",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_ilogbl.c:32:7: in function __cq_q___cq_libm_ilogbl_1 i32 (i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/s_ilogbl.c:41:4: in function __cq_q___cq_libm_ilogbl_1 i32 (x86_fp80): cq controlled lowering: loop under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -8150,7 +8292,7 @@
       "mix": "CQ",
       "source_sha256": "4aa16fdccffa1d9ffb5b6d96d7bb3f86a9258ff865ee328ff22f962bc0c17eca",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_scalbnf.c:35:13: in function __cq_q___cq_libm_scalbnf_10 i32 (float, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/s_scalbnf.c:40:17: in function __cq_q___cq_libm_scalbnf_10 float (float, i32): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -8228,8 +8370,8 @@
         "ldexpf"
       ],
       "spec_clone": true,
-      "trace_sha256": "b1bc667e104778bfdd94f0d77e71cf9d01bec2534bd7a7adef9effe65b567909",
-      "trace_lines": 1069,
+      "trace_sha256": "4cad31ff7c6090681211db4a0e654ed4d4b0f0790f3f049ff509fb94ebf92009",
+      "trace_lines": 1029,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -8308,8 +8450,8 @@
         "ldexpf"
       ],
       "spec_clone": true,
-      "trace_sha256": "867228f3826399f44e8ed964300e37e4e5392682b03e8e1613c6610d9fa5f180",
-      "trace_lines": 1167,
+      "trace_sha256": "a813b7b5ba8b841cfbf1b421e7218043472285d2af97feda6de56fca6420d1c3",
+      "trace_lines": 1127,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -8399,7 +8541,7 @@
       "mix": "CQ",
       "source_sha256": "08eae10e4c49f22233cf7d2d2a25da383426fc054867812f624527e87930c1a5",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_scalbn.c:39:13: in function __cq_q___cq_libm_scalbn_10 i32 (double, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/s_scalbn.c:44:17: in function __cq_q___cq_libm_scalbn_10 double (double, i32): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -8477,8 +8619,8 @@
         "ldexp"
       ],
       "spec_clone": true,
-      "trace_sha256": "7c59cc1901b0f01addffa4ecdc01f8c610beb3eb6ce452da78d12cd662dbb1fd",
-      "trace_lines": 1171,
+      "trace_sha256": "5cfacd16dd96234dde71bf5853db6218bb83b72c1cc82670ba45b4cfed256d18",
+      "trace_lines": 1131,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -8557,8 +8699,8 @@
         "ldexp"
       ],
       "spec_clone": true,
-      "trace_sha256": "92ab0bd9a6a3ee8a0eebddba46110b69af8251f605584d328c2fcdbe02acb1bd",
-      "trace_lines": 1269,
+      "trace_sha256": "06e8511ef88c4119b178a7562b2462eaed8a418fab45d47f362e3b886c81dda4",
+      "trace_lines": 1229,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -8648,7 +8790,7 @@
       "mix": "CQ",
       "source_sha256": "6690b29c7e4443243685a633b8f6b0af0ea88de197ee171e38eb1b527369f98f",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_scalbnl.c:49:13: in function __cq_q___cq_libm_scalbnl_10 i32 (x86_fp80, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/s_scalbnl.c:53:17: in function __cq_q___cq_libm_scalbnl_10 x86_fp80 (x86_fp80, i32): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -8726,8 +8868,8 @@
         "ldexpl"
       ],
       "spec_clone": true,
-      "trace_sha256": "d4e9938d81791f6f49ab6d61d2411c8a078781ed7336cf77e3875a057b32e856",
-      "trace_lines": 1209,
+      "trace_sha256": "ff683c3d0e643cf68fd6764c6be8cfb125e00e23f2e664c2dc90300965bfeb4b",
+      "trace_lines": 1173,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -8806,8 +8948,8 @@
         "ldexpl"
       ],
       "spec_clone": true,
-      "trace_sha256": "0d57bc42c7c3a9ad21fccfe541e42860b9c138d8edfac0951b9189d9a82eff6b",
-      "trace_lines": 1299,
+      "trace_sha256": "03f050165dc4b1659b664eb7955e2c50c4cd61139e72ffbc0eb47161cd6c972c",
+      "trace_lines": 1263,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -8897,7 +9039,7 @@
       "mix": "CQ",
       "source_sha256": "1bddf09a04b0739db712e0167606ce96ffddab8b650fe70a83801f191e330400",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_scalbnf.c:35:13: in function __cq_q___cq_libm_scalbnf_10 i32 (float, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/s_scalbnf.c:40:17: in function __cq_q___cq_libm_scalbnf_10 float (float, i32): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -8975,8 +9117,8 @@
         "scalbnf"
       ],
       "spec_clone": true,
-      "trace_sha256": "654688aaf2d0c000ad42d1388d88f01f82eefe30db89d9d65240beea2aabfb4b",
-      "trace_lines": 535,
+      "trace_sha256": "71468ec9e208ab9663e66aa984e31cb823839b6eaf21099b51d25cb6593d6d33",
+      "trace_lines": 515,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -9055,8 +9197,8 @@
         "scalbnf"
       ],
       "spec_clone": true,
-      "trace_sha256": "126e0d28a53cce11b8a69b1e70884f99c3ee55ff6c724671d90da87da3fdcf95",
-      "trace_lines": 585,
+      "trace_sha256": "62acdefbe07b0a93e03a3c6dbc7531570eb27a19fc1f99fe12b7911648ef2a7d",
+      "trace_lines": 565,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -9146,7 +9288,7 @@
       "mix": "CQ",
       "source_sha256": "b5e90a2058a51f6b6fc5b003e505d28d1f37a037a181eac48e8050971de74821",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_scalbn.c:39:13: in function __cq_q___cq_libm_scalbn_10 i32 (double, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/s_scalbn.c:44:17: in function __cq_q___cq_libm_scalbn_10 double (double, i32): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -9224,8 +9366,8 @@
         "scalbn"
       ],
       "spec_clone": true,
-      "trace_sha256": "84cf74ea02a5f3c963d2d0a8a0ecf24579d5d3c99cd8254a1a139cf13296a5cd",
-      "trace_lines": 586,
+      "trace_sha256": "4a71cacb7212a41fee3688bfc3c3eb6342f0196a5699e7e40dfc70b0f157e111",
+      "trace_lines": 566,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -9304,8 +9446,8 @@
         "scalbn"
       ],
       "spec_clone": true,
-      "trace_sha256": "6779c47e699b8c6ecde7b704e58fddb972b8ac7132a08cd53eec2df342fbe210",
-      "trace_lines": 636,
+      "trace_sha256": "806ac52accb5cbf8f94708806ba94df87b6bb0b1ffe0b22bb0401223d3edd045",
+      "trace_lines": 616,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -9395,7 +9537,7 @@
       "mix": "CQ",
       "source_sha256": "b46aaaf538c3ea1bd62806f36479f7a821147552a94cd893ed0d2fff88492f43",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_scalbnl.c:49:13: in function __cq_q___cq_libm_scalbnl_10 i32 (x86_fp80, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/s_scalbnl.c:53:17: in function __cq_q___cq_libm_scalbnl_10 x86_fp80 (x86_fp80, i32): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -9473,8 +9615,8 @@
         "scalbnl"
       ],
       "spec_clone": true,
-      "trace_sha256": "147c745257158b88db52b47eebd7e8678132d0ba553e2b4309474182c1466650",
-      "trace_lines": 605,
+      "trace_sha256": "dbe583e120f8bc9fab6aa3a7aef66531b5cf00d224a72536427de9bdffc02fa9",
+      "trace_lines": 587,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -9553,8 +9695,8 @@
         "scalbnl"
       ],
       "spec_clone": true,
-      "trace_sha256": "389128d7efa4e552da092c5a431c2243b0c20552ea72f6bc0917bf6f1a050282",
-      "trace_lines": 651,
+      "trace_sha256": "a94f6e49cc866948f90a16a539a45506e230488786bc29b8aaeae15d232b0636",
+      "trace_lines": 633,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -9644,7 +9786,7 @@
       "mix": "CQ",
       "source_sha256": "7d57a0814d618132e49bd9c8547925b36b36cda5bceb5bf74930c75512eb4b46",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_m6psfsan/probe.c:5:13: in function probe float (float, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_elynotfw/probe.c:5:13: in function probe float (float, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -9722,8 +9864,8 @@
         "scalblnf"
       ],
       "spec_clone": true,
-      "trace_sha256": "b1bc667e104778bfdd94f0d77e71cf9d01bec2534bd7a7adef9effe65b567909",
-      "trace_lines": 1069,
+      "trace_sha256": "4cad31ff7c6090681211db4a0e654ed4d4b0f0790f3f049ff509fb94ebf92009",
+      "trace_lines": 1029,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -9733,7 +9875,7 @@
       "mix": "QQ",
       "source_sha256": "194837992989293e8214654022f73d16d2ef0a743233e312f9426f432debf292",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_f1qfpu_l/probe.c:6:13: in function probe float (float, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_o8x4876m/probe.c:6:13: in function probe float (float, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -9822,7 +9964,7 @@
       "mix": "CQ",
       "source_sha256": "c571fef6c41570d0402aef8b9b61f502c8569707163361afc4ce90ea5b874420",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census__ce79g25/probe.c:5:14: in function probe double (double, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_jueknhp0/probe.c:5:14: in function probe double (double, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -9900,8 +10042,8 @@
         "scalbln"
       ],
       "spec_clone": true,
-      "trace_sha256": "7c59cc1901b0f01addffa4ecdc01f8c610beb3eb6ce452da78d12cd662dbb1fd",
-      "trace_lines": 1171,
+      "trace_sha256": "5cfacd16dd96234dde71bf5853db6218bb83b72c1cc82670ba45b4cfed256d18",
+      "trace_lines": 1131,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -9911,7 +10053,7 @@
       "mix": "QQ",
       "source_sha256": "ffa2c044dfc8afd6405c385abe4f34c536c0b6a45622c2527b2eeb510e46f4c2",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_4vkx6jxz/probe.c:6:14: in function probe double (double, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_bqa9_v_u/probe.c:6:14: in function probe double (double, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -10000,7 +10142,7 @@
       "mix": "CQ",
       "source_sha256": "3ac17d1124194610da24940873eec2c5ac156f6fd85becd24e2bab8c750256a6",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census__yov4io2/probe.c:5:19: in function probe x86_fp80 (x86_fp80, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_eowqkv8j/probe.c:5:19: in function probe x86_fp80 (x86_fp80, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -10078,8 +10220,8 @@
         "scalblnl"
       ],
       "spec_clone": true,
-      "trace_sha256": "d4e9938d81791f6f49ab6d61d2411c8a078781ed7336cf77e3875a057b32e856",
-      "trace_lines": 1209,
+      "trace_sha256": "ff683c3d0e643cf68fd6764c6be8cfb125e00e23f2e664c2dc90300965bfeb4b",
+      "trace_lines": 1173,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -10089,7 +10231,7 @@
       "mix": "QQ",
       "source_sha256": "e27bf548f6f7eb81a70c85be106eb862c2051d38cfb83dc69529f9b3e47478a1",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_51e5hkzt/probe.c:6:19: in function probe x86_fp80 (x86_fp80, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_mevoeyz0/probe.c:6:19: in function probe x86_fp80 (x86_fp80, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -10713,7 +10855,7 @@
       "mix": "CQ",
       "source_sha256": "167ef145be52c42db144431753ec1a190ef24dd27ecddb8397afd5b2acb2d475",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/e_powf.c:72:5: in function __cq_q___cq_libm_powf_10 i32 (float, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/e_powf.c:72:5: in function __cq_q___cq_libm_powf_10 float (float, float): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -10792,8 +10934,8 @@
         "llvm.pow.f32"
       ],
       "spec_clone": true,
-      "trace_sha256": "c618f29395426696aaf4f031149113dc7847b2ee6492cbb6b0496071eba4b05d",
-      "trace_lines": 6227,
+      "trace_sha256": "b1553f73b6f5b7d4ac4f8dfe00eb44669ffffc276336cc65b07159bba4aa0214",
+      "trace_lines": 6121,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -10873,8 +11015,8 @@
         "llvm.pow.f32"
       ],
       "spec_clone": true,
-      "trace_sha256": "279650895b37b347ece714f02a2c3c7b8b3c6b749c7d891ba289f7ad129ee4ed",
-      "trace_lines": 7837,
+      "trace_sha256": "b4f5f2697532cce0b169e5c5e96ae79fee77e00474a3c58d9085ba72ca80f848",
+      "trace_lines": 7721,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -10965,7 +11107,7 @@
       "mix": "CQ",
       "source_sha256": "31618ce15cfb6f322bc7d99ccf4f745cd85986b042cec3374df7853490803132",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/e_pow.c:112:5: in function __cq_q___cq_libm_pow_10 i32 (double, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/e_pow.c:112:5: in function __cq_q___cq_libm_pow_10 double (double, double): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -11044,8 +11186,8 @@
         "llvm.pow.f64"
       ],
       "spec_clone": true,
-      "trace_sha256": "518883b069b6591f203131a00ef46d9a2232f2d9ca21a72020e2567797e8f1cf",
-      "trace_lines": 11867,
+      "trace_sha256": "35e1e87867532516dc070893e98e482fc79ceb98b1491c831f682e5a2c529d1b",
+      "trace_lines": 11747,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -11125,8 +11267,8 @@
         "llvm.pow.f64"
       ],
       "spec_clone": true,
-      "trace_sha256": "525da1460549ccfe129a2e45f1d8648d8095601d6101f7d0b44f444b1d5d5bab",
-      "trace_lines": 15592,
+      "trace_sha256": "ee68469114cb0cd25801848e184e6c245f10c8523678328ab1904b348bbdb855",
+      "trace_lines": 15458,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -12353,8 +12495,8 @@
         "cbrtf"
       ],
       "spec_clone": true,
-      "trace_sha256": "4ff91415e680f5d069b149f27f5cb4e402f661beb5e70fc0482c6b0cdbf97392",
-      "trace_lines": 206,
+      "trace_sha256": "d17e10a3031eae989f711d1e0dd67403e70ecc5e7af5657f70ff6efbfe269ca5",
+      "trace_lines": 198,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -12513,8 +12655,8 @@
         "cbrt"
       ],
       "spec_clone": true,
-      "trace_sha256": "d0edef79df639f7411f9cf7111da9ebae5832c81542c20487463ef18210cee51",
-      "trace_lines": 236,
+      "trace_sha256": "543cd0cfdc8972f1ea0efe8079655ff107fc9a98d8161f3c6f160396704c52ba",
+      "trace_lines": 228,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -12603,9 +12745,80 @@
       "name": "cbrtl",
       "mix": "Q",
       "source_sha256": "fa4259d1d5c37ea75c47dad1b08f31250ed794e728b5638fde761dbac0214b15",
-      "status": "decline",
-      "diagnostic": "error: <unknown>:0:0: in function __cq_q___cq_libm_cbrtl_1 i32 (i32): no template for opcode 'bitcast i80' in tainted context\n\ncqc: stage lower failed\n",
-      "provider": "source-injected"
+      "status": "COMPILES",
+      "diagnostic": "",
+      "provider": "source-injected",
+      "intrinsics": [
+        "abs.i32",
+        "acos.f64",
+        "asin.f64",
+        "atan.f64",
+        "ceil.f32",
+        "ceil.f64",
+        "ceil.f80",
+        "copysign.f32",
+        "copysign.f64",
+        "copysign.f80",
+        "cos.f64",
+        "fabs.f32",
+        "fabs.f64",
+        "fabs.f80",
+        "floor.f32",
+        "floor.f64",
+        "floor.f80",
+        "fma.f32",
+        "fma.f64",
+        "fma.f80",
+        "fmuladd.f32",
+        "fmuladd.f64",
+        "fmuladd.f80",
+        "fshl.i32",
+        "lifetime.end.p0",
+        "lifetime.start.p0",
+        "llrint.i64.f32",
+        "llrint.i64.f64",
+        "llrint.i64.f80",
+        "lrint.i64.f32",
+        "lrint.i64.f64",
+        "lrint.i64.f80",
+        "maxnum.f32",
+        "maxnum.f64",
+        "maxnum.f80",
+        "minnum.f32",
+        "minnum.f64",
+        "minnum.f80",
+        "nearbyint.f32",
+        "nearbyint.f64",
+        "nearbyint.f80",
+        "rint.f32",
+        "rint.f64",
+        "rint.f80",
+        "round.f32",
+        "round.f64",
+        "round.f80",
+        "sin.f64",
+        "smax.i32",
+        "smax.i64",
+        "smin.i32",
+        "smin.i64",
+        "sqrt.f32",
+        "sqrt.f64",
+        "sqrt.f80",
+        "tan.f64",
+        "trunc.f32",
+        "trunc.f64",
+        "trunc.f80",
+        "umax.i32",
+        "umin.i32"
+      ],
+      "raw_callees": [
+        "cbrtl"
+      ],
+      "spec_clone": true,
+      "trace_sha256": "21d128e115e9c5039a14d9cf26e020cbaf05c467ba4b3aea5e82a93411b45698",
+      "trace_lines": 727,
+      "free_check_exit": 0,
+      "free_check": ""
     },
     {
       "cell": "hypotf.f32",
@@ -12693,7 +12906,7 @@
       "mix": "CQ",
       "source_sha256": "e59e6bdaa1c13582d9fbc3b898056058ba1dda4f403ba1d37a2b5636bff537a8",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/e_hypotf.c:36:5: in function __cq_q___cq_libm_hypotf_10 i32 (float, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/e_hypotf.c:36:5: in function __cq_q___cq_libm_hypotf_10 float (float, float): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -12702,7 +12915,7 @@
       "mix": "QC",
       "source_sha256": "749ec0708db834b4031bac1831b188db5f6ad77f243a8ea4c42b16d3d578fe75",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/e_hypotf.c:36:5: in function __cq_q___cq_libm_hypotf_01 i32 (i32, float): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/e_hypotf.c:36:5: in function __cq_q___cq_libm_hypotf_01 float (float, float): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -12780,8 +12993,8 @@
         "hypotf"
       ],
       "spec_clone": true,
-      "trace_sha256": "20ecb9b1157e3145e81cc1794d293a2733653749158b2c831f720d9fd4f6473a",
-      "trace_lines": 1325,
+      "trace_sha256": "61f8792fd50c40b05e869ac3de5f5bdf0dffab4028f3e05a29b7c449417064ed",
+      "trace_lines": 1278,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -12871,7 +13084,7 @@
       "mix": "CQ",
       "source_sha256": "917d8cfd9ae8911e555e889793ef25ef5c4537e94cac66ddd2a3b0a1b02a0fff",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/e_hypot.c:67:5: in function __cq_q___cq_libm_hypot_10 i32 (double, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/e_hypot.c:67:5: in function __cq_q___cq_libm_hypot_10 double (double, double): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -12880,7 +13093,7 @@
       "mix": "QC",
       "source_sha256": "2d70529ef447a856775046eced2e52d95dac72162790e3b3399221d561d5fd1a",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/e_hypot.c:67:5: in function __cq_q___cq_libm_hypot_01 i32 (i32, double): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/e_hypot.c:67:5: in function __cq_q___cq_libm_hypot_01 double (double, double): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -12958,8 +13171,8 @@
         "hypot"
       ],
       "spec_clone": true,
-      "trace_sha256": "d0f159f517a8509acdb9143a2e58d68b11361697ada2dfb02aff55fe0da338ef",
-      "trace_lines": 1484,
+      "trace_sha256": "5c53cbd0cdc90211d660f4e8ae1f2618b172befd4a3db5978efb9d5c4030ea60",
+      "trace_lines": 1431,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -13049,7 +13262,7 @@
       "mix": "CQ",
       "source_sha256": "004273fc19e35e0bb7a1b70a3be537c5c5227c13c679700aae6585d5c7979009",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/e_hypotl.c:61:5: in function __cq_q___cq_libm_hypotl_10 i32 (x86_fp80, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/e_hypotl.c:61:5: in function __cq_q___cq_libm_hypotl_10 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -13058,7 +13271,7 @@
       "mix": "QC",
       "source_sha256": "a01ae00935fd75ec4cbee4c1aea9fca32510ad196c8e714cbf7c92ca8d1848b3",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/e_hypotl.c:61:5: in function __cq_q___cq_libm_hypotl_01 i32 (i32, x86_fp80): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/e_hypotl.c:61:5: in function __cq_q___cq_libm_hypotl_01 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -13067,7 +13280,7 @@
       "mix": "QQ",
       "source_sha256": "02665a95db4d05d06a17ce4dd247170d6b0ae45c264661840147f73ba6234719",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/e_hypotl.c:61:5: in function __cq_q___cq_libm_hypotl_11 i32 (i32, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/e_hypotl.c:61:5: in function __cq_q___cq_libm_hypotl_11 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -13225,8 +13438,8 @@
         "erff"
       ],
       "spec_clone": true,
-      "trace_sha256": "01f351c2f1649152fee1ab4cd41b3c9894d2ed790c279fec6daa5c6ff4990427",
-      "trace_lines": 6072,
+      "trace_sha256": "1f2f8f138f48c9decd03964796ed921f4b845bfa796299f9d9d17c96a4bb8749",
+      "trace_lines": 5936,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -13385,8 +13598,8 @@
         "erf"
       ],
       "spec_clone": true,
-      "trace_sha256": "c01b68cc11c857b49e61a9ea29b36e37060bf280ea8eca1d9c3895202874c319",
-      "trace_lines": 6280,
+      "trace_sha256": "db217fc0f83cb7320264275a295dc51831663f354763fb2ce17b843e8550060b",
+      "trace_lines": 6136,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -13634,8 +13847,8 @@
         "erfcf"
       ],
       "spec_clone": true,
-      "trace_sha256": "894c9c1f01068fc38fb983fad93c3980adba6e3f5966b54d4dddaa5c76b29bf5",
-      "trace_lines": 6064,
+      "trace_sha256": "804946249579fa86aed29b65142b567ad4532052ee3621a744cffe43195e0254",
+      "trace_lines": 5925,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -13794,8 +14007,8 @@
         "erfc"
       ],
       "spec_clone": true,
-      "trace_sha256": "02801b95904254d4b5bbc7b48f0104b093b29101a55d288bf5bc0aba01e05e38",
-      "trace_lines": 6308,
+      "trace_sha256": "81af5055bcf3d188aa7fc1d4aab69c46719048116048bc7d77c4a606778716be",
+      "trace_lines": 6161,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -19203,7 +19416,7 @@
       "mix": "CQ",
       "source_sha256": "0ac8842c4eedde3205b9ae594e34adca4b33763118dfa8ca93bdcd51f9f10db9",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/e_remainderf.c:40:5: in function __cq_q___cq_libm_remainderf_10 i32 (float, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/e_remainderf.c:40:5: in function __cq_q___cq_libm_remainderf_10 float (float, float): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -19212,7 +19425,7 @@
       "mix": "QC",
       "source_sha256": "327cbed2d7ea9a59bf4150b6b415c7e53caa9d097835e328bc1f8362b8d01de5",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/e_remainderf.c:40:5: in function __cq_q___cq_libm_remainderf_01 i32 (i32, float): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/e_remainderf.c:41:21: in function __cq_q___cq_libm_remainderf_01 float (float, float): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -19221,7 +19434,7 @@
       "mix": "QQ",
       "source_sha256": "84819001c50b1867dd23f9aa86732eb21c3916190c2107e4cda1147796a0f6d4",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/e_remainderf.c:40:5: in function __cq_q___cq_libm_remainderf_11 i32 (i32, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/e_remainderf.c:40:5: in function __cq_q___cq_libm_remainderf_11 float (float, float): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -19310,7 +19523,7 @@
       "mix": "CQ",
       "source_sha256": "06f9fe50293b1c1fe1c8f2a11053fd339502f3a8f8cf0721e1f82a8bc4168ab4",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/e_remainder.c:48:5: in function __cq_q___cq_libm_remainder_10 i32 (double, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/e_remainder.c:48:5: in function __cq_q___cq_libm_remainder_10 double (double, double): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -19319,7 +19532,7 @@
       "mix": "QC",
       "source_sha256": "6869c54ea5dfbf5d73030cb8ed18de4708e99b4d341bc4be71162bdc7e3779c0",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/e_remainder.c:48:5: in function __cq_q___cq_libm_remainder_01 i32 (i32, double): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/e_remainder.c:49:21: in function __cq_q___cq_libm_remainder_01 double (double, double): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -19328,7 +19541,7 @@
       "mix": "QQ",
       "source_sha256": "6125dba69b3490396c07f89a16156b670cbc50b4e74181d7ea2116b3fa385791",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/e_remainder.c:48:5: in function __cq_q___cq_libm_remainder_11 i32 (i32, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/e_remainder.c:48:5: in function __cq_q___cq_libm_remainder_11 double (double, double): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -20874,8 +21087,8 @@
         "nextafterf"
       ],
       "spec_clone": true,
-      "trace_sha256": "a6966b8568da2992b98966fdddb4e9660ec00c521e70d1c6438eb7c172e27cf4",
-      "trace_lines": 350,
+      "trace_sha256": "b978cca3a4c01662d89d1bb5aa8c2919f152b1e95f49fa77dd4a8e0a45ea231d",
+      "trace_lines": 336,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -20954,8 +21167,8 @@
         "nextafterf"
       ],
       "spec_clone": true,
-      "trace_sha256": "00a3278ceecea9e176964e7490b0be545e42d2a2df9a56fe01fa3abfea518783",
-      "trace_lines": 394,
+      "trace_sha256": "6875f1ee42bfeb79c3ba17b0df61255ea0a28470e6a1a58331adfb2d357e55c6",
+      "trace_lines": 380,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -21034,8 +21247,8 @@
         "nextafterf"
       ],
       "spec_clone": true,
-      "trace_sha256": "0e8d6fca9f736828308ad5e1359561ea5a902624bb0d2c168590d403887f5637",
-      "trace_lines": 458,
+      "trace_sha256": "7983b3e491c3361daec82868e608345cdfe8ddcd82cf3b4c779d6cea0d844ca7",
+      "trace_lines": 444,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -21124,27 +21337,240 @@
       "name": "nextafter",
       "mix": "CQ",
       "source_sha256": "4ac79bd91e6bb9c7d3c59bf2687fd0dcc4ed7997602e035cf0fda26d811704ea",
-      "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_nextafter.c:40:22: in function __cq_q___cq_libm_nextafter_10 i32 (double, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
-      "provider": "source-injected"
+      "status": "COMPILES",
+      "diagnostic": "",
+      "provider": "source-injected",
+      "intrinsics": [
+        "abs.i32",
+        "acos.f64",
+        "asin.f64",
+        "atan.f64",
+        "ceil.f32",
+        "ceil.f64",
+        "ceil.f80",
+        "copysign.f32",
+        "copysign.f64",
+        "copysign.f80",
+        "cos.f64",
+        "fabs.f32",
+        "fabs.f64",
+        "fabs.f80",
+        "floor.f32",
+        "floor.f64",
+        "floor.f80",
+        "fma.f32",
+        "fma.f64",
+        "fma.f80",
+        "fmuladd.f32",
+        "fmuladd.f64",
+        "fmuladd.f80",
+        "fshl.i32",
+        "lifetime.end.p0",
+        "lifetime.start.p0",
+        "llrint.i64.f32",
+        "llrint.i64.f64",
+        "llrint.i64.f80",
+        "lrint.i64.f32",
+        "lrint.i64.f64",
+        "lrint.i64.f80",
+        "maxnum.f32",
+        "maxnum.f64",
+        "maxnum.f80",
+        "minnum.f32",
+        "minnum.f64",
+        "minnum.f80",
+        "nearbyint.f32",
+        "nearbyint.f64",
+        "nearbyint.f80",
+        "rint.f32",
+        "rint.f64",
+        "rint.f80",
+        "round.f32",
+        "round.f64",
+        "round.f80",
+        "sin.f64",
+        "smax.i32",
+        "smax.i64",
+        "smin.i32",
+        "smin.i64",
+        "sqrt.f32",
+        "sqrt.f64",
+        "sqrt.f80",
+        "tan.f64",
+        "trunc.f32",
+        "trunc.f64",
+        "trunc.f80",
+        "umax.i32",
+        "umin.i32"
+      ],
+      "raw_callees": [
+        "nextafter"
+      ],
+      "spec_clone": true,
+      "trace_sha256": "5fe007468246654170dfd624b043a4ffae3f74bda101aaa70fd700b93fdc18dc",
+      "trace_lines": 1374,
+      "free_check_exit": 0,
+      "free_check": ""
     },
     {
       "cell": "nextafter.f64",
       "name": "nextafter",
       "mix": "QC",
       "source_sha256": "dad7a79835d2def4a8f57789a1c6186bdf40ea5c4e25affc96f0880619a7f6eb",
-      "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_nextafter.c:40:22: in function __cq_q___cq_libm_nextafter_01 i32 (i32, double): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
-      "provider": "source-injected"
+      "status": "COMPILES",
+      "diagnostic": "",
+      "provider": "source-injected",
+      "intrinsics": [
+        "abs.i32",
+        "acos.f64",
+        "asin.f64",
+        "atan.f64",
+        "ceil.f32",
+        "ceil.f64",
+        "ceil.f80",
+        "copysign.f32",
+        "copysign.f64",
+        "copysign.f80",
+        "cos.f64",
+        "fabs.f32",
+        "fabs.f64",
+        "fabs.f80",
+        "floor.f32",
+        "floor.f64",
+        "floor.f80",
+        "fma.f32",
+        "fma.f64",
+        "fma.f80",
+        "fmuladd.f32",
+        "fmuladd.f64",
+        "fmuladd.f80",
+        "fshl.i32",
+        "lifetime.end.p0",
+        "lifetime.start.p0",
+        "llrint.i64.f32",
+        "llrint.i64.f64",
+        "llrint.i64.f80",
+        "lrint.i64.f32",
+        "lrint.i64.f64",
+        "lrint.i64.f80",
+        "maxnum.f32",
+        "maxnum.f64",
+        "maxnum.f80",
+        "minnum.f32",
+        "minnum.f64",
+        "minnum.f80",
+        "nearbyint.f32",
+        "nearbyint.f64",
+        "nearbyint.f80",
+        "rint.f32",
+        "rint.f64",
+        "rint.f80",
+        "round.f32",
+        "round.f64",
+        "round.f80",
+        "sin.f64",
+        "smax.i32",
+        "smax.i64",
+        "smin.i32",
+        "smin.i64",
+        "sqrt.f32",
+        "sqrt.f64",
+        "sqrt.f80",
+        "tan.f64",
+        "trunc.f32",
+        "trunc.f64",
+        "trunc.f80",
+        "umax.i32",
+        "umin.i32"
+      ],
+      "raw_callees": [
+        "nextafter"
+      ],
+      "spec_clone": true,
+      "trace_sha256": "3f6f256f905a915b436d3f70f3694bbb3716b2ffb1bc63105cb134200c515a51",
+      "trace_lines": 1580,
+      "free_check_exit": 0,
+      "free_check": ""
     },
     {
       "cell": "nextafter.f64",
       "name": "nextafter",
       "mix": "QQ",
       "source_sha256": "59459c79723b0c8b13fa25aa73b861aa31f554867bb5166654986e9297d99508",
-      "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_nextafter.c:40:22: in function __cq_q___cq_libm_nextafter_11 i32 (i32, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
-      "provider": "source-injected"
+      "status": "COMPILES",
+      "diagnostic": "",
+      "provider": "source-injected",
+      "intrinsics": [
+        "abs.i32",
+        "acos.f64",
+        "asin.f64",
+        "atan.f64",
+        "ceil.f32",
+        "ceil.f64",
+        "ceil.f80",
+        "copysign.f32",
+        "copysign.f64",
+        "copysign.f80",
+        "cos.f64",
+        "fabs.f32",
+        "fabs.f64",
+        "fabs.f80",
+        "floor.f32",
+        "floor.f64",
+        "floor.f80",
+        "fma.f32",
+        "fma.f64",
+        "fma.f80",
+        "fmuladd.f32",
+        "fmuladd.f64",
+        "fmuladd.f80",
+        "fshl.i32",
+        "lifetime.end.p0",
+        "lifetime.start.p0",
+        "llrint.i64.f32",
+        "llrint.i64.f64",
+        "llrint.i64.f80",
+        "lrint.i64.f32",
+        "lrint.i64.f64",
+        "lrint.i64.f80",
+        "maxnum.f32",
+        "maxnum.f64",
+        "maxnum.f80",
+        "minnum.f32",
+        "minnum.f64",
+        "minnum.f80",
+        "nearbyint.f32",
+        "nearbyint.f64",
+        "nearbyint.f80",
+        "rint.f32",
+        "rint.f64",
+        "rint.f80",
+        "round.f32",
+        "round.f64",
+        "round.f80",
+        "sin.f64",
+        "smax.i32",
+        "smax.i64",
+        "smin.i32",
+        "smin.i64",
+        "sqrt.f32",
+        "sqrt.f64",
+        "sqrt.f80",
+        "tan.f64",
+        "trunc.f32",
+        "trunc.f64",
+        "trunc.f80",
+        "umax.i32",
+        "umin.i32"
+      ],
+      "raw_callees": [
+        "nextafter"
+      ],
+      "spec_clone": true,
+      "trace_sha256": "7eeeb9f930fc8257e9f16847f256270aee424b864f48e638f4545387a0f8e56d",
+      "trace_lines": 1816,
+      "free_check_exit": 0,
+      "free_check": ""
     },
     {
       "cell": "nextafterl.f80",
@@ -21232,7 +21658,7 @@
       "mix": "CQ",
       "source_sha256": "6df5c76474aba018bb2bb05f6d8a33aa2a964fe9eff3477e3e2ed8bf25b3c18e",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_nextafterl.c:42:29: in function __cq_q___cq_libm_nextafterl_10 i32 (x86_fp80, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/s_nextafterl.c:42:29: in function __cq_q___cq_libm_nextafterl_10 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -21310,8 +21736,8 @@
         "nextafterl"
       ],
       "spec_clone": true,
-      "trace_sha256": "15e7ee167837d1f1efe0bb9c4380db31ed59783b41a4672d885aff25b91eadb8",
-      "trace_lines": 1677,
+      "trace_sha256": "87784c07fede382db3014a334f1d730e64caec54ad869cb0583ac9c332a29b5c",
+      "trace_lines": 1653,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -21320,9 +21746,80 @@
       "name": "nextafterl",
       "mix": "QQ",
       "source_sha256": "c953c3298294c080717294a218555392d244493a432c88b1ea09cea41319cf2b",
-      "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_nextafterl.c:42:29: in function __cq_q___cq_libm_nextafterl_11 i32 (i32, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
-      "provider": "source-injected"
+      "status": "COMPILES",
+      "diagnostic": "",
+      "provider": "source-injected",
+      "intrinsics": [
+        "abs.i32",
+        "acos.f64",
+        "asin.f64",
+        "atan.f64",
+        "ceil.f32",
+        "ceil.f64",
+        "ceil.f80",
+        "copysign.f32",
+        "copysign.f64",
+        "copysign.f80",
+        "cos.f64",
+        "fabs.f32",
+        "fabs.f64",
+        "fabs.f80",
+        "floor.f32",
+        "floor.f64",
+        "floor.f80",
+        "fma.f32",
+        "fma.f64",
+        "fma.f80",
+        "fmuladd.f32",
+        "fmuladd.f64",
+        "fmuladd.f80",
+        "fshl.i32",
+        "lifetime.end.p0",
+        "lifetime.start.p0",
+        "llrint.i64.f32",
+        "llrint.i64.f64",
+        "llrint.i64.f80",
+        "lrint.i64.f32",
+        "lrint.i64.f64",
+        "lrint.i64.f80",
+        "maxnum.f32",
+        "maxnum.f64",
+        "maxnum.f80",
+        "minnum.f32",
+        "minnum.f64",
+        "minnum.f80",
+        "nearbyint.f32",
+        "nearbyint.f64",
+        "nearbyint.f80",
+        "rint.f32",
+        "rint.f64",
+        "rint.f80",
+        "round.f32",
+        "round.f64",
+        "round.f80",
+        "sin.f64",
+        "smax.i32",
+        "smax.i64",
+        "smin.i32",
+        "smin.i64",
+        "sqrt.f32",
+        "sqrt.f64",
+        "sqrt.f80",
+        "tan.f64",
+        "trunc.f32",
+        "trunc.f64",
+        "trunc.f80",
+        "umax.i32",
+        "umin.i32"
+      ],
+      "raw_callees": [
+        "nextafterl"
+      ],
+      "spec_clone": true,
+      "trace_sha256": "f9c0b9841ac817f94943eaba77cd58dbd20dd77ae6c882b0cc232b377cc609c5",
+      "trace_lines": 1830,
+      "free_check_exit": 0,
+      "free_check": ""
     },
     {
       "cell": "nexttowardf.f32",
@@ -21410,7 +21907,7 @@
       "mix": "CQ",
       "source_sha256": "cdabdda4d612a0bc23c43bfe7f89232c19328a55c58d900430b1515ec3cc2321",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_nexttowardf.c:35:21: in function __cq_q___cq_libm_nexttowardf_10 i32 (float, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/s_nexttowardf.c:45:5: in function __cq_q___cq_libm_nexttowardf_10 float (float, x86_fp80): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -21488,8 +21985,8 @@
         "nexttowardf"
       ],
       "spec_clone": true,
-      "trace_sha256": "03fa5f7ccd64fca2c4f3504093673001cb520cbcf4c40d5ee73d9e804caf690a",
-      "trace_lines": 374,
+      "trace_sha256": "47a6f8c8c4b6a5c69bb3b5a3a7d24bb6ea6adc26f050d840c859ced631fe9e78",
+      "trace_lines": 360,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -21498,9 +21995,80 @@
       "name": "nexttowardf",
       "mix": "QQ",
       "source_sha256": "557983c75aea208b234585806b668c0909212a20f9f67cd3c80944e4cb595299",
-      "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_nexttowardf.c:35:21: in function __cq_q___cq_libm_nexttowardf_11 i32 (i32, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
-      "provider": "source-injected"
+      "status": "COMPILES",
+      "diagnostic": "",
+      "provider": "source-injected",
+      "intrinsics": [
+        "abs.i32",
+        "acos.f64",
+        "asin.f64",
+        "atan.f64",
+        "ceil.f32",
+        "ceil.f64",
+        "ceil.f80",
+        "copysign.f32",
+        "copysign.f64",
+        "copysign.f80",
+        "cos.f64",
+        "fabs.f32",
+        "fabs.f64",
+        "fabs.f80",
+        "floor.f32",
+        "floor.f64",
+        "floor.f80",
+        "fma.f32",
+        "fma.f64",
+        "fma.f80",
+        "fmuladd.f32",
+        "fmuladd.f64",
+        "fmuladd.f80",
+        "fshl.i32",
+        "lifetime.end.p0",
+        "lifetime.start.p0",
+        "llrint.i64.f32",
+        "llrint.i64.f64",
+        "llrint.i64.f80",
+        "lrint.i64.f32",
+        "lrint.i64.f64",
+        "lrint.i64.f80",
+        "maxnum.f32",
+        "maxnum.f64",
+        "maxnum.f80",
+        "minnum.f32",
+        "minnum.f64",
+        "minnum.f80",
+        "nearbyint.f32",
+        "nearbyint.f64",
+        "nearbyint.f80",
+        "rint.f32",
+        "rint.f64",
+        "rint.f80",
+        "round.f32",
+        "round.f64",
+        "round.f80",
+        "sin.f64",
+        "smax.i32",
+        "smax.i64",
+        "smin.i32",
+        "smin.i64",
+        "sqrt.f32",
+        "sqrt.f64",
+        "sqrt.f80",
+        "tan.f64",
+        "trunc.f32",
+        "trunc.f64",
+        "trunc.f80",
+        "umax.i32",
+        "umin.i32"
+      ],
+      "raw_callees": [
+        "nexttowardf"
+      ],
+      "spec_clone": true,
+      "trace_sha256": "d7b785d19afe400ee1236d321c605bbc7d71b34c146a52c0f12fcaaddaa5ec0c",
+      "trace_lines": 485,
+      "free_check_exit": 0,
+      "free_check": ""
     },
     {
       "cell": "nexttoward.f64",
@@ -21588,7 +22156,7 @@
       "mix": "CQ",
       "source_sha256": "f8a571512efa4d5ff20d2c4f2967ca2d470a69bb1b3eee15bb8efffa8f6a1fe5",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_nexttoward.c:44:22: in function __cq_q___cq_libm_nexttoward_10 i32 (double, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/s_nexttoward.c:44:22: in function __cq_q___cq_libm_nexttoward_10 double (double, x86_fp80): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -21666,8 +22234,8 @@
         "nexttoward"
       ],
       "spec_clone": true,
-      "trace_sha256": "15c153a697c5316d45dfa470139d96036cd1f07b1443d79560ceb22ce63a563b",
-      "trace_lines": 783,
+      "trace_sha256": "c95beb5fa46ab9fb429597f914487b2f2ddf16afc66bd7706b146e0af397a2ff",
+      "trace_lines": 767,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -21676,9 +22244,80 @@
       "name": "nexttoward",
       "mix": "QQ",
       "source_sha256": "aa7484496ff7346d42b8173a84f233b98d47697f6c9c432a188b4e70cff7d68e",
-      "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_nexttoward.c:44:22: in function __cq_q___cq_libm_nexttoward_11 i32 (i32, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
-      "provider": "source-injected"
+      "status": "COMPILES",
+      "diagnostic": "",
+      "provider": "source-injected",
+      "intrinsics": [
+        "abs.i32",
+        "acos.f64",
+        "asin.f64",
+        "atan.f64",
+        "ceil.f32",
+        "ceil.f64",
+        "ceil.f80",
+        "copysign.f32",
+        "copysign.f64",
+        "copysign.f80",
+        "cos.f64",
+        "fabs.f32",
+        "fabs.f64",
+        "fabs.f80",
+        "floor.f32",
+        "floor.f64",
+        "floor.f80",
+        "fma.f32",
+        "fma.f64",
+        "fma.f80",
+        "fmuladd.f32",
+        "fmuladd.f64",
+        "fmuladd.f80",
+        "fshl.i32",
+        "lifetime.end.p0",
+        "lifetime.start.p0",
+        "llrint.i64.f32",
+        "llrint.i64.f64",
+        "llrint.i64.f80",
+        "lrint.i64.f32",
+        "lrint.i64.f64",
+        "lrint.i64.f80",
+        "maxnum.f32",
+        "maxnum.f64",
+        "maxnum.f80",
+        "minnum.f32",
+        "minnum.f64",
+        "minnum.f80",
+        "nearbyint.f32",
+        "nearbyint.f64",
+        "nearbyint.f80",
+        "rint.f32",
+        "rint.f64",
+        "rint.f80",
+        "round.f32",
+        "round.f64",
+        "round.f80",
+        "sin.f64",
+        "smax.i32",
+        "smax.i64",
+        "smin.i32",
+        "smin.i64",
+        "sqrt.f32",
+        "sqrt.f64",
+        "sqrt.f80",
+        "tan.f64",
+        "trunc.f32",
+        "trunc.f64",
+        "trunc.f80",
+        "umax.i32",
+        "umin.i32"
+      ],
+      "raw_callees": [
+        "nexttoward"
+      ],
+      "spec_clone": true,
+      "trace_sha256": "efc34098a551e4df6084cbfa1e7e28650ea5f171ff2d061b64c108f60f79222f",
+      "trace_lines": 913,
+      "free_check_exit": 0,
+      "free_check": ""
     },
     {
       "cell": "nexttowardl.f80",
@@ -21766,7 +22405,7 @@
       "mix": "CQ",
       "source_sha256": "70878d3bd5b25e3d34beece4d300ce4b2bc94c363b0ae232f723010cc776ccfd",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_nextafterl.c:42:29: in function __cq_q___cq_libm_nextafterl_10 i32 (x86_fp80, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/s_nextafterl.c:42:29: in function __cq_q___cq_libm_nextafterl_10 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -21844,8 +22483,8 @@
         "nexttowardl"
       ],
       "spec_clone": true,
-      "trace_sha256": "beec7f2ad7a2e8cf09fb7d8150ee84a20a683435a54c49b867d441edaa75bec0",
-      "trace_lines": 3353,
+      "trace_sha256": "968c5fd5534591a7fbcf6f6f0785491294162c0ea53a474b24d163d68c2842e2",
+      "trace_lines": 3305,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -21854,9 +22493,80 @@
       "name": "nexttowardl",
       "mix": "QQ",
       "source_sha256": "8beda53529cd04133c3d4556200f06fa728359cc987f9f695a7b0be3cdfa4d52",
-      "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_nextafterl.c:42:29: in function __cq_q___cq_libm_nextafterl_11 i32 (i32, i32): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
-      "provider": "source-injected"
+      "status": "COMPILES",
+      "diagnostic": "",
+      "provider": "source-injected",
+      "intrinsics": [
+        "abs.i32",
+        "acos.f64",
+        "asin.f64",
+        "atan.f64",
+        "ceil.f32",
+        "ceil.f64",
+        "ceil.f80",
+        "copysign.f32",
+        "copysign.f64",
+        "copysign.f80",
+        "cos.f64",
+        "fabs.f32",
+        "fabs.f64",
+        "fabs.f80",
+        "floor.f32",
+        "floor.f64",
+        "floor.f80",
+        "fma.f32",
+        "fma.f64",
+        "fma.f80",
+        "fmuladd.f32",
+        "fmuladd.f64",
+        "fmuladd.f80",
+        "fshl.i32",
+        "lifetime.end.p0",
+        "lifetime.start.p0",
+        "llrint.i64.f32",
+        "llrint.i64.f64",
+        "llrint.i64.f80",
+        "lrint.i64.f32",
+        "lrint.i64.f64",
+        "lrint.i64.f80",
+        "maxnum.f32",
+        "maxnum.f64",
+        "maxnum.f80",
+        "minnum.f32",
+        "minnum.f64",
+        "minnum.f80",
+        "nearbyint.f32",
+        "nearbyint.f64",
+        "nearbyint.f80",
+        "rint.f32",
+        "rint.f64",
+        "rint.f80",
+        "round.f32",
+        "round.f64",
+        "round.f80",
+        "sin.f64",
+        "smax.i32",
+        "smax.i64",
+        "smin.i32",
+        "smin.i64",
+        "sqrt.f32",
+        "sqrt.f64",
+        "sqrt.f80",
+        "tan.f64",
+        "trunc.f32",
+        "trunc.f64",
+        "trunc.f80",
+        "umax.i32",
+        "umin.i32"
+      ],
+      "raw_callees": [
+        "nexttowardl"
+      ],
+      "spec_clone": true,
+      "trace_sha256": "1f1fae7642a04d06456e128b35bd7287d029f279ead4340957c0fefc68bd826a",
+      "trace_lines": 3657,
+      "free_check_exit": 0,
+      "free_check": ""
     },
     {
       "cell": "fdimf.f32",
@@ -22013,8 +22723,8 @@
         "fdimf"
       ],
       "spec_clone": true,
-      "trace_sha256": "2dbadd5c82770d72192f24d58b73cefd65a870a2fcad73ea4fc40fc9d12d7540",
-      "trace_lines": 85,
+      "trace_sha256": "174488eed619fd00c4c994be89388a36f40ac446af0748bd5181f24e0467ea84",
+      "trace_lines": 82,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -22024,7 +22734,7 @@
       "mix": "QC",
       "source_sha256": "2484d4dfeac8ddd9c70fc31f1d66012e0b2275180e693328180d87e1816e6830",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_fdim.c:45:1: in function __cq_q___cq_libm_fdimf_01 i32 (i32, float): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/s_fdim.c:45:1: in function __cq_q___cq_libm_fdimf_01 float (float, float): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -22102,8 +22812,8 @@
         "fdimf"
       ],
       "spec_clone": true,
-      "trace_sha256": "4e0fef851cae28611adad4955f5b25763917862f9295def2d37601cf0638b3bb",
-      "trace_lines": 149,
+      "trace_sha256": "3f09d6c41c9fcf8951e23cb4052c0c2f51f407ee1762f21a0e69709e14c3f100",
+      "trace_lines": 144,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -22262,8 +22972,8 @@
         "fdim"
       ],
       "spec_clone": true,
-      "trace_sha256": "d3ed9f04c9a971e1d30aa9d51cb6b70a40658c3dc04798a17aa07394bef262d6",
-      "trace_lines": 85,
+      "trace_sha256": "e104bbf6b0e26f1a91408eba1dbd39531d793214554926c946ae5282c5bef1a7",
+      "trace_lines": 82,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -22273,7 +22983,7 @@
       "mix": "QC",
       "source_sha256": "ae0ee5ab996f06b5e1e815c65df6ee8fa0f2e8522c6c8475d7be86fe7155bffe",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_fdim.c:44:1: in function __cq_q___cq_libm_fdim_01 i32 (i32, double): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/s_fdim.c:44:1: in function __cq_q___cq_libm_fdim_01 double (double, double): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -22351,8 +23061,8 @@
         "fdim"
       ],
       "spec_clone": true,
-      "trace_sha256": "a2845c551e6b40722b46c8111156e8e6780f3a105981f2c99b693211789e2efd",
-      "trace_lines": 149,
+      "trace_sha256": "ae1fe3ef834ee03267513a89415fed5d6de0d00021496518d84cf7154f8c3cbe",
+      "trace_lines": 144,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -22511,8 +23221,8 @@
         "fdiml"
       ],
       "spec_clone": true,
-      "trace_sha256": "149c81eb4e665cf8ea24056f406ae82214bfda05bdba03c9c58060bd5fa84974",
-      "trace_lines": 143,
+      "trace_sha256": "02ea1b96dcebbdbe34ce31aa43248acb4b53a62df4198118eea75fd23db38462",
+      "trace_lines": 138,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -22522,7 +23232,7 @@
       "mix": "QC",
       "source_sha256": "8cde8d847e14ef01ada36b23d78b0d06f85088c4c0df1f8c06fb04f589d17e0b",
       "status": "decline",
-      "diagnostic": "error: _deps/cq_openlibm-src/src/s_fdim.c:47:1: in function __cq_q___cq_libm_fdiml_01 i32 (i32, x86_fp80): cq specialization: callee contains tainted control flow under quantum lift\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: _deps/cq_openlibm-src/src/s_fdim.c:47:1: in function __cq_q___cq_libm_fdiml_01 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -22600,8 +23310,8 @@
         "fdiml"
       ],
       "spec_clone": true,
-      "trace_sha256": "f460c47ffea982b9c466cc8845bc92f3d3eb4484c556b6e20970ae2b7cfd054f",
-      "trace_lines": 265,
+      "trace_sha256": "ad90ea8cfd8e55421cc31e2804b8df1d1e43949be0a6e27e3ca3f3a4665af2b2",
+      "trace_lines": 256,
       "free_check_exit": 0,
       "free_check": ""
     },
@@ -26771,7 +27481,7 @@
       "mix": "Q",
       "source_sha256": "b8d6b1959879ba9f0107996e48c667b97f5749777cd74c4c56def558d5e83fae",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_qglbe4zy/probe.c:5:11: in function probe i32 (double): cq taint escape: tainted value consumed by an unknown callee\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_0c2harxk/probe.c:5:11: in function probe i32 (double): cq taint escape: tainted value consumed by an unknown callee\n\ncqc: stage lower failed\n",
       "provider": "macro"
     },
     {

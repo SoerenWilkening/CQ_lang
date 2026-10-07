@@ -1,0 +1,107 @@
+Test project /Users/sorenwilkening/Desktop/Projects/CQ_lang/build
+      Start 104: e2e-spec-scrub-dangling-key
+      Start 427: e2e-slice-control-phase-onward-perbit-loop-mixed
+      Start 428: e2e-slice-control-phase-onward-perbit-loop-mixed-unrolled
+      Start 245: e2e-slice-specialize-transitive
+      Start 235: e2e-slice-specialize-fp-select
+      Start 237: e2e-slice-specialize-fp-select-fcmp
+ 1/51 Test #245: e2e-slice-specialize-transitive .............................   Passed    3.15 sec
+      Start 103: e2e-spec-fp80-union
+ 2/51 Test #428: e2e-slice-control-phase-onward-perbit-loop-mixed-unrolled ...   Passed    3.53 sec
+      Start 234: e2e-slice-specialize-multiexit-fp80
+ 3/51 Test #427: e2e-slice-control-phase-onward-perbit-loop-mixed ............   Passed    3.93 sec
+      Start 244: e2e-slice-specialize-multiarg
+ 4/51 Test #237: e2e-slice-specialize-fp-select-fcmp .........................   Passed    4.33 sec
+      Start 175: e2e-slice-specialize-2file
+ 5/51 Test #235: e2e-slice-specialize-fp-select ..............................   Passed    4.74 sec
+      Start 177: e2e-slice-specialize-twoarm-select
+ 6/51 Test #104: e2e-spec-scrub-dangling-key .................................   Passed    5.14 sec
+      Start 105: e2e-spec-fp-arg
+ 7/51 Test #103: e2e-spec-fp80-union .........................................   Passed    2.43 sec
+      Start 173: e2e-slice-multi-zerolib
+ 8/51 Test #234: e2e-slice-specialize-multiexit-fp80 .........................   Passed    2.55 sec
+      Start 236: e2e-slice-specialize-fp-select-const
+ 9/51 Test #244: e2e-slice-specialize-multiarg ...............................   Passed    2.60 sec
+      Start 176: e2e-slice-specialize-select
+10/51 Test #175: e2e-slice-specialize-2file ..................................   Passed    2.60 sec
+      Start 240: e2e-slice-specialize-intrinsic
+11/51 Test #105: e2e-spec-fp-arg .............................................   Passed    2.20 sec
+      Start 174: e2e-slice-multi-2file
+12/51 Test #177: e2e-slice-specialize-twoarm-select ..........................   Passed    3.00 sec
+      Start 192: e2e-slice-spec-dropped-arg-volatile-global
+13/51 Test #173: e2e-slice-multi-zerolib .....................................   Passed    2.60 sec
+      Start 198: e2e-slice-spec-predicted-classical-round2
+14/51 Test #236: e2e-slice-specialize-fp-select-const ........................   Passed    2.57 sec
+      Start 178: e2e-slice-spec-lift-quantum-base
+15/51 Test #176: e2e-slice-specialize-select .................................   Passed    2.53 sec
+      Start 182: e2e-slice-spec-dropped-arg-boolsel
+16/51 Test #240: e2e-slice-specialize-intrinsic ..............................   Passed    2.55 sec
+      Start 243: e2e-slice-spec-qrom-read-arm-escape
+17/51 Test #174: e2e-slice-multi-2file .......................................   Passed    2.78 sec
+      Start 185: e2e-slice-spec-dropped-arg-inplace
+18/51 Test #192: e2e-slice-spec-dropped-arg-volatile-global ..................   Passed    2.95 sec
+      Start  95: e2e-slice-libm-real-coshl
+19/51 Test #198: e2e-slice-spec-predicted-classical-round2 ...................   Passed    3.11 sec
+      Start  97: e2e-slice-libm-real-atan2l
+20/51 Test #178: e2e-slice-spec-lift-quantum-base ............................   Passed    3.13 sec
+      Start 207: e2e-slice-spec-dropped-arg-byval-slot
+21/51 Test #182: e2e-slice-spec-dropped-arg-boolsel ..........................   Passed    3.12 sec
+      Start 208: e2e-slice-spec-dropped-arg-musttail-inner
+22/51 Test #243: e2e-slice-spec-qrom-read-arm-escape .........................   Passed    3.12 sec
+      Start 190: e2e-slice-spec-dropped-arg-dead-smax
+23/51 Test #185: e2e-slice-spec-dropped-arg-inplace ..........................   Passed    2.92 sec
+      Start 382: e2e-slice-z0re-runtime-seed-prep-spec
+24/51 Test  #95: e2e-slice-libm-real-coshl ...................................   Passed    2.79 sec
+      Start 246: e2e-slice-classical-call-under-control
+25/51 Test  #97: e2e-slice-libm-real-atan2l ..................................   Passed    2.60 sec
+      Start 179: e2e-slice-spec-lift-scrubbed-elsewhere
+26/51 Test #207: e2e-slice-spec-dropped-arg-byval-slot .......................   Passed    2.53 sec
+      Start 106: e2e-predmux-purecallee-i80cmp
+27/51 Test #208: e2e-slice-spec-dropped-arg-musttail-inner ...................   Passed    2.52 sec
+      Start 199: e2e-slice-spec-predicted-classical-round2-twin
+28/51 Test #190: e2e-slice-spec-dropped-arg-dead-smax ........................   Passed    2.60 sec
+      Start 195: e2e-slice-spec-predicted-classical-branch
+29/51 Test #382: e2e-slice-z0re-runtime-seed-prep-spec .......................   Passed    2.60 sec
+      Start 188: e2e-slice-spec-dropped-arg-volatile-char
+30/51 Test #246: e2e-slice-classical-call-under-control ......................   Passed    2.55 sec
+      Start 230: e2e-slice-spec-clone-read-nested
+31/51 Test #179: e2e-slice-spec-lift-scrubbed-elsewhere ......................   Passed    2.58 sec
+      Start 196: e2e-slice-spec-predicted-classical-branch-twin
+32/51 Test #106: e2e-predmux-purecallee-i80cmp ...............................   Passed    2.60 sec
+      Start 227: e2e-slice-spec-clone-consumes-chain-rail
+33/51 Test #199: e2e-slice-spec-predicted-classical-round2-twin ..............   Passed    2.59 sec
+      Start 224: e2e-slice-spec-clone-read-in-window
+34/51 Test #195: e2e-slice-spec-predicted-classical-branch ...................   Passed    2.53 sec
+      Start 233: e2e-slice-spec-clone-consumer-after-ry
+35/51 Test #188: e2e-slice-spec-dropped-arg-volatile-char ....................   Passed    2.37 sec
+      Start 385: e2e-slice-z0re-angle-select-runtime-base-spec
+36/51 Test #230: e2e-slice-spec-clone-read-nested ............................   Passed    2.44 sec
+      Start 249: e2e-slice-control-spec-newcand
+37/51 Test #196: e2e-slice-spec-predicted-classical-branch-twin ..............   Passed    2.39 sec
+      Start 250: e2e-slice-control-spec-chained-ctl
+38/51 Test #227: e2e-slice-spec-clone-consumes-chain-rail ....................   Passed    2.37 sec
+      Start 248: e2e-slice-control-spec-replan
+39/51 Test #224: e2e-slice-spec-clone-read-in-window .........................   Passed    2.38 sec
+      Start 247: e2e-slice-control-cond-onward-ctl-phase
+40/51 Test #233: e2e-slice-spec-clone-consumer-after-ry ......................   Passed    2.45 sec
+      Start 211: e2e-slice-spec-dropped-arg-musttail-return
+41/51 Test #385: e2e-slice-z0re-angle-select-runtime-base-spec ...............   Passed    2.57 sec
+      Start 220: e2e-slice-spec-musttail-clone-live-arg
+42/51 Test #249: e2e-slice-control-spec-newcand ..............................   Passed    2.60 sec
+      Start 217: e2e-slice-spec-musttail-clone-partial-drop
+43/51 Test #250: e2e-slice-control-spec-chained-ctl ..........................   Passed    2.80 sec
+      Start 214: e2e-slice-spec-musttail-rhk5-window
+44/51 Test #248: e2e-slice-control-spec-replan ...............................   Passed    2.86 sec
+      Start 239: e2e-slice-spec-classical-ctl
+45/51 Test #247: e2e-slice-control-cond-onward-ctl-phase .....................   Passed    2.99 sec
+      Start 238: e2e-slice-spec-switch-mux
+46/51 Test #211: e2e-slice-spec-dropped-arg-musttail-return ..................   Passed    2.90 sec
+47/51 Test #220: e2e-slice-spec-musttail-clone-live-arg ......................   Passed    2.90 sec
+48/51 Test #217: e2e-slice-spec-musttail-clone-partial-drop ..................   Passed    2.79 sec
+49/51 Test #214: e2e-slice-spec-musttail-rhk5-window .........................   Passed    2.56 sec
+50/51 Test #239: e2e-slice-spec-classical-ctl ................................   Passed    2.64 sec
+51/51 Test #238: e2e-slice-spec-switch-mux ...................................   Passed    2.50 sec
+
+100% tests passed, 0 tests failed out of 51
+
+Total Test time (real) =  25.22 sec

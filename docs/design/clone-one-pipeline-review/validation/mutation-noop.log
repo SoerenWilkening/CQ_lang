@@ -1,0 +1,8 @@
+-- Testing: 1 of 2701 tests, 1 workers --
+PASS: CQ IR-pass :: spec_accept_clone_main_condtree.ll (1 of 1)
+
+Testing Time: 0.33s
+
+Total Discovered Tests: 2701
+  Excluded: 2700 (99.96%)
+  Passed  :    1 (0.04%)

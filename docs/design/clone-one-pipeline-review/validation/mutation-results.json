@@ -1,0 +1,25 @@
+[
+  {
+    "mutant": "noop",
+    "exit": 0,
+    "fixture": "spec_accept_clone_main_condtree"
+  },
+  {
+    "mutant": "elision-removed",
+    "exit": 1,
+    "fixture": "spec_accept_clone_main_condtree",
+    "killed": true
+  },
+  {
+    "mutant": "early-retype",
+    "exit": 1,
+    "fixture": "spec_accept_multiexit_fp",
+    "killed": true
+  },
+  {
+    "mutant": "chain-skipped",
+    "exit": 1,
+    "fixture": "spec_accept_clone_main_condtree",
+    "killed": true
+  }
+]

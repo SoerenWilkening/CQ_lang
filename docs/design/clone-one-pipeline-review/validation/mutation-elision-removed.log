@@ -1,0 +1,25 @@
+-- Testing: 1 of 2701 tests, 1 workers --
+FAIL: CQ IR-pass :: spec_accept_clone_main_condtree.ll (1 of 1)
+******************** TEST 'CQ IR-pass :: spec_accept_clone_main_condtree.ll' FAILED ********************
+Exit Code: 1
+
+Command Output (stderr):
+--
+RUN: at line 25: /Users/sorenwilkening/Desktop/Projects/CQ_lang/build/ir-pass/cq-opt -load-pass-plugin /Users/sorenwilkening/Desktop/Projects/CQ_lang/build/ir-pass/libCQPass.so -passes=cq-lowering -S /Users/sorenwilkening/Desktop/Projects/CQ_lang/ir-pass/test/spec_accept_clone_main_condtree.ll > /Users/sorenwilkening/Desktop/Projects/CQ_lang/build/ir-pass/test/Output/spec_accept_clone_main_condtree.ll.tmp.ll
++ /Users/sorenwilkening/Desktop/Projects/CQ_lang/build/ir-pass/cq-opt -load-pass-plugin /Users/sorenwilkening/Desktop/Projects/CQ_lang/build/ir-pass/libCQPass.so -passes=cq-lowering -S /Users/sorenwilkening/Desktop/Projects/CQ_lang/ir-pass/test/spec_accept_clone_main_condtree.ll
+error: <unknown>:0:0: in function __cq_q_sel_1 i32 (i32): cq specialization: clone body contains an un-invertible primitive under quantum lift
+
+
+--
+
+********************
+********************
+Failed Tests (1):
+  CQ IR-pass :: spec_accept_clone_main_condtree.ll
+
+
+Testing Time: 1.41s
+
+Total Discovered Tests: 2701
+  Excluded: 2700 (99.96%)
+  Failed  :    1 (0.04%)
