@@ -127,7 +127,7 @@ bool unsupportedWidth(Type *T) {
 // bd p3kd.7.1 — the select gate, which asks only what the clone emitter cannot
 // answer for itself. `scanBody` runs before any clone exists and is MASK-BLIND:
 // one body verdict serves every call site, so it cannot know whether a select's
-// condition or arms are quantum at a given site. `lowerCloneSelect`
+// condition or arms are quantum at a given site. The clone pipeline
 // (Specialization.cpp) can, and it already disposes of every select by taint:
 //   * all classical → left as a classical select;
 //   * classical condition over a quantum arm → since bd p3kd.7.2 a classical
@@ -700,7 +700,7 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
       return SpecReject::NonReversibilizable;
     }
     // Control muxes. A PHI join is a diamond merge (5po2 I1) — the clone's PredMux
-    // flatten dissolves it into a `select` the two-arm `lowerCloneSelect` lowers.
+    // flatten dissolves it into a `select` main's control chain lowers (bd p3kd.7.8).
     // Its incomings are proven by the per-block whitelist (they are body ops in
     // the arms). Accept it as a flattenable construct, but keep the width/vector
     // fence (a phi is not a BinaryOperator/Cast, so it skips the width gates
@@ -716,7 +716,8 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
       continue;
     }
     // A SELECT is a straight-line mux, disposed of by taint in the clone
-    // (`lowerCloneSelect`); detection refuses only the shapes no mask can lower
+    // (main's control chain, or `recordCloneRailSelects` for a classical
+    // condition); detection refuses only the shapes no mask can lower
     // (`isAdmissibleCloneSelect`, bd p3kd.7.1).
     if (auto *SI = dyn_cast<SelectInst>(&I)) {
       if (isAdmissibleCloneSelect(*SI))

@@ -1011,8 +1011,8 @@ struct TaintSet {
   // parameters of each clone it built are DEAD (bit i set ⇔ parameter i reaches no
   // live root of the clone body), computed by the ONE liveness predicate
   // (`DeadValueLiveness.h`) on the clone's STOCK-OPCODE body — after its control
-  // flattening and inner-call retargeting, before `lowerCloneSelect`/`lowerOps`
-  // turn every read into a runtime call. Written ONLY by `buildClone`; read by
+  // flattening and inner-call retargeting, before `lowerOps`
+  // turns every read into a runtime call. Written ONLY by `buildClone`; read by
   // `isRecordedDeadSlot` (the liveness predicate's call-slot rule), the
   // phantom-read resolution `resolvePhantomCloneArgReads`, and M-C's
   // `priorUseIsSettled` arm (d0). A function without an entry is a function the

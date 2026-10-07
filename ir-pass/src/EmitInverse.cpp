@@ -328,6 +328,17 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     CallInst *UncCall = B.CreateCall(Unc, Args);
     if (DebugLoc DL = Forward->getDebugLoc())
       UncCall->setDebugLoc(DL);
+    // The forward's ABI extension attributes ride along, one slot right (the
+    // `out` rail is slot 0): an `i1` classical literal reaches the runtime's
+    // `bool` only through `zeroext` (CondLiteral round-2 F-2 measured garbage
+    // high bits without it), and the adjoint must read the literal the forward
+    // read. bd p3kd.7.8: the ONE spelling — `stripCondLiteralNode` stamped its own
+    // strip and the clone's select lowering stamped the declaration, and the
+    // clone's mechanical Bennett reverse, which mints through here, had neither.
+    for (unsigned I = 0, E = Forward->arg_size(); I < E; ++I)
+      for (Attribute::AttrKind K : {Attribute::ZExt, Attribute::SExt})
+        if (Forward->paramHasAttr(I, K))
+          UncCall->addParamAttr(I + 1, K);
     return minted(UncCall);
   }
 

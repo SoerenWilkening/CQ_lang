@@ -11,6 +11,11 @@
 ; Loud, character for character. Building it needs an `xor` literal template (a
 ; gap shared with the top level, not a physics limit).
 ;
+; bd p3kd.7.8: the clone's own condition network (`mintCondNetwork`, whose
+; per-leaf fence owned the old message) is removed; the clone runs main's control
+; chain, which refuses the region first. Measured: main gives the same message for the body inlined into the caller.
+; The `xor` literal gap stands (shared with the top level).
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -40,4 +45,4 @@ entry:
   ret i32 %m
 }
 
-; CHECK: error{{.*}}in function __cq_q_helper_01{{.*}}cq specialization: classical compare leaf in a quantum condition under quantum lift
+; CHECK: error{{.*}}in function __cq_q_helper_01{{.*}}cq controlled lowering: control flow under quantum control

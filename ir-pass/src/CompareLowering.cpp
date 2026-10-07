@@ -352,10 +352,11 @@ StringRef logicalOperandWidth(Value *V, TaintSet &taint) {
 // row — the n0ui phantom-mint class) and i1 (a compare OVER i1 values is the
 // non-canonical boolean-NOT evasion the top-level i1-operand fence declines
 // — SelectClassify gate order; fencing it HERE keeps the clone path
-// symmetric, where mintCondNetwork has no later i1 gate and an i1 QQ mint
+// symmetric (the clone path ran `mintCondNetwork` until bd p3kd.7.8; it now
+// runs main's emitters), where an i1 QQ mint
 // would name an off-grid `cq_template_icmp_<pred>_i1(h,h)`). Shared by
-// detection (compareFlagMintable) and emission (SelectMergeEmit /
-// mintCondNetwork) so the paths cannot drift.
+// detection (compareFlagMintable) and emission (SelectMergeEmit / CondTreeEmit)
+// so the paths cannot drift.
 StringRef qqSelectLeafWidth(CmpInst *cmp, TaintSet &taint) {
   Value *A = cmp->getOperand(0);
   Value *B = cmp->getOperand(1);

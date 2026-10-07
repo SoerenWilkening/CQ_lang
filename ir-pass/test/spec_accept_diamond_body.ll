@@ -15,6 +15,17 @@
 ; stream + frees scratch. No phase arm is possible (a clone body is
 ; rotation-free), so this is always a value/method-B merge.
 ;
+; bd p3kd.7.8: `lowerCloneSelect` is gone; main's stage list lowers each flattened
+; mux by the 4.4 `SelectMergeEmit` controlled-copy merge, and the Bennett wrap elides
+; each merge's trailing `cqrt_x` strip (the flag is left negated in the forward and
+; restored by the mirror's replayed `cqrt_x`). Hand trace, |b>: S1 = [b>5]·(b+1) ⊕
+; ¬[b>5]·(b+3), S2 likewise with b+2/b+4, XOR = S1^S2 copied out; the exact mirror
+; returns XOR, S2, F2, S1, F1 and the four arm rails to |0> before their frees. The
+; whole clone body is pinned by CHECK-NEXT, which is what proves no br/phi/select
+; survives (the former trailing CHECK-NOTs scanned only the declarations after `ret`,
+; and the decline-text ones read stdout, where no diagnostic goes; a loud decline
+; fails the RUN line itself).
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
@@ -51,38 +62,55 @@ entry:
 ; The call retargets to the mangled clone; phase + measure land on its result.
 ; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @__cq_q_helper_1(i32 %{{[a-zA-Z0-9_.]+}})
 ;
-; Clone: the flattened diamond is a single straight-line block (no br/phi/select
-; survives). The two merge phis lower to two controlled-XOR muxes (flag kept
-; LIVE), an `xor` recombines them, the result copies out to the escaping rail,
-; and the Bennett reverse plays every `_unc` (LIFO) before freeing each scratch
-; rail at |0> — returning the basis copy.
-; CHECK:     define internal i32 @__cq_q_helper_1(i32 %b)
-; the four speculated arm values:
-; CHECK:     call i32 @cq_template_add_i32_hl(i32 %b, i32 3)
-; mux 1 (phi %pa): flag · copy T · ¬flag bracket · copy F:
-; CHECK:     %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %b, i32 5)
-; CHECK:     %[[S1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F1]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[S1]])
-; CHECK:     call void @cqrt_x(i32 %[[F1]])
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F1]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[S1]])
-; CHECK:     call void @cqrt_x(i32 %[[F1]])
+; Clone: the flattened diamond is a single straight-line block. The four arm
+; values are speculated, each merge phi lowers to one controlled-copy mux (flag ·
+; copy T · `cqrt_x` · copy F; strip elided), an `xor` recombines them, the result
+; copies out, the exact mirror replays the stream, and every |0> rail is freed.
+; CHECK-LABEL: define internal i32 @__cq_q_helper_1(i32 %b)
+; CHECK-NEXT:  entry:
+; CHECK-NEXT:  %[[A2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %b, i32 3)
+; CHECK-NEXT:  %[[D2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %b, i32 4)
+; CHECK-NEXT:  %[[A1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %b, i32 1)
+; CHECK-NEXT:  %[[D1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %b, i32 2)
+; mux 1 (phi %pa):
+; CHECK-NEXT:  %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %b, i32 5)
+; CHECK-NEXT:  %[[S1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F1]], i32 %[[A1]], i32 %[[S1]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[F1]])
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F1]], i32 %[[A2]], i32 %[[S1]])
 ; mux 2 (phi %pd):
-; CHECK:     %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %b, i32 5)
-; CHECK:     %[[S2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F2]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[S2]])
+; CHECK-NEXT:  %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %b, i32 5)
+; CHECK-NEXT:  %[[S2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F2]], i32 %[[D1]], i32 %[[S2]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[F2]])
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F2]], i32 %[[D2]], i32 %[[S2]])
 ; recombine + copy-out:
-; CHECK:     %[[XOR:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i32(i32 %[[S1]], i32 %[[S2]])
-; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_copy_i32(i32 %[[XOR]], i32 %[[OUT]])
-; Bennett reverse (LIFO): recombine first, both flags stripped by their _unc:
-; CHECK:     call void @cq_template_xor_i32_unc(i32 %[[XOR]], i32 %[[S1]], i32 %[[S2]])
-; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F2]], i32 %b, i32 5)
-; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F1]], i32 %b, i32 5)
+; CHECK-NEXT:  %[[XOR:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i32(i32 %[[S1]], i32 %[[S2]])
+; CHECK-NEXT:  %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT:  call void @cqrt_copy_i32(i32 %[[XOR]], i32 %[[OUT]])
+; Bennett mirror (LIFO):
+; CHECK-NEXT:  call void @cq_template_xor_i32_unc(i32 %[[XOR]], i32 %[[S1]], i32 %[[S2]])
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F2]], i32 %[[D2]], i32 %[[S2]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[F2]])
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F2]], i32 %[[D1]], i32 %[[S2]])
+; CHECK-NEXT:  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F2]], i32 %b, i32 5)
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F1]], i32 %[[A2]], i32 %[[S1]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[F1]])
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F1]], i32 %[[A1]], i32 %[[S1]])
+; CHECK-NEXT:  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F1]], i32 %b, i32 5)
+; CHECK-NEXT:  call void @cq_template_add_i32_hl_unc(i32 %[[D1]], i32 %b, i32 2)
+; CHECK-NEXT:  call void @cq_template_add_i32_hl_unc(i32 %[[A1]], i32 %b, i32 1)
+; CHECK-NEXT:  call void @cq_template_add_i32_hl_unc(i32 %[[D2]], i32 %b, i32 4)
+; CHECK-NEXT:  call void @cq_template_add_i32_hl_unc(i32 %[[A2]], i32 %b, i32 3)
 ; every scratch rail freed at |0>, then the basis copy returns:
-; CHECK:     call void @cqrt_free
-; CHECK:     ret i32 %[[OUT]]
-; CHECK-NOT: under quantum lift
-; CHECK-NOT: under quantum control
-; CHECK-NOT: br i1
-; CHECK-NOT: = phi
-; CHECK-NOT: = select
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[A2]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[D2]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[A1]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[D1]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[F1]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[S1]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[F2]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[S2]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[XOR]])
+; CHECK-NEXT:  ret i32 %[[OUT]]
+; CHECK-NEXT:  }

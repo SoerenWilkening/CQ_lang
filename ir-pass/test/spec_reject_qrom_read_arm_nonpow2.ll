@@ -13,8 +13,13 @@
 ; [0,N)) is thus NEVER emitted — the blocker-c OOB discipline is intact under the
 ; bypass (this is the Rule-13 "bypass didn't weaken bounds" probe).
 ;
+; bd p3kd.7.8: the clone now runs main's stage list; main's control chain refuses
+; the region before the clone backstop is asked. With the body inlined into the
+; caller main refuses it too (`nested control flow under quantum control`, the
+; same owner; the inlined shape nests one level deeper). Still no QROM read.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK:     error{{.*}}callee contains tainted control flow under quantum lift
+; CHECK:     error{{.*}}cq controlled lowering: control flow under quantum control
 ; CHECK-NOT: cqrt_qram_load_f64
 
 @tbl3 = internal unnamed_addr constant [3 x double] [double 1.0, double 2.0, double 3.0], align 16

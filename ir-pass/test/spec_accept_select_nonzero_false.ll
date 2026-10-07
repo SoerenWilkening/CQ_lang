@@ -10,6 +10,18 @@
 ;
 ; Trace check, |b>: flag = [b < 5]; sel = flag·b ⊕ ¬flag·7 = (b<5) ? b : 7.
 ;
+; bd p3kd.7.8: the clone is now lowered by MAIN's stage list (main's 4.4
+; CondTreeEmit flag + SelectMergeEmit controlled-copy merge; `lowerCloneSelect` is
+; gone). The two-copy stream and the |7> materialization are unchanged; what moved
+; is the bracket: main's merge strips its flag (trailing `cqrt_x`, compare `_unc`,
+; free) and inside a clone the Bennett wrap elides that strip, so the forward ends
+; with the bracket OPEN (flag = [b>=5]) and the mirror's first `cqrt_x` closes it.
+; Hand trace, |b>: forward sel = (b<5)?b:7, out = sel; mirror: sel ^= [b>=5]·7,
+; flag→[b<5], sel ^= [b<5]·b (sel = 0), the `_unc` zeroes the flag. Flag and sel
+; are |0> at their frees; the |7> rail K7 is never written and is NOT freed (a
+; non-zero constant rail stays allocated), which the full-body CHECK-NEXT pin
+; through `}` enforces.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll
 declare i32 @cq_theta_si32(i32, double)
@@ -38,10 +50,10 @@ entry:
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT:  %[[K7:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 7)
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[K7]], i32 %[[SEL]])
-; CHECK-NEXT:  call void @cqrt_x(i32 %[[F]])
+; Bennett copy-out; the merge's flag strip was elided, the bracket is still open.
 ; CHECK-NEXT:  %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT:  call void @cqrt_copy_i32(i32 %[[SEL]], i32 %[[OUT]])
-; CHECK-NEXT:  call void @cqrt_x(i32 %[[F]])
+; The exact mirror: both copies in reverse order, the `cqrt_x` between them.
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[K7]], i32 %[[SEL]])
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %b, i32 %[[SEL]])

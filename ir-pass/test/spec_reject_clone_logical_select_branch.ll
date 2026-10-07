@@ -10,8 +10,13 @@
 ; this spelling; this fixture flips when the clone's condition network takes it
 ; (bd p3kd.7.5).
 ;
+; bd p3kd.7.8: the clone now runs main's stage list; the region PredMux leaves
+; reaches main's control chain, which refuses this nest (`control flow under
+; quantum control`) before the clone backstop is asked. Measured: main gives the same message for the body inlined into the caller.
+; Still a goal-1 gap; the logical-select spelling itself is now main's (p3kd.7.5).
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error: <unknown>:0:0: in function __cq_q_helper_1 i32 (i32): cq specialization: callee contains tainted control flow under quantum lift
+; CHECK: error: <unknown>:0:0: in function __cq_q_helper_1 i32 (i32): cq controlled lowering: control flow under quantum control
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 

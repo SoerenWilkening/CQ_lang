@@ -9,7 +9,6 @@ cqrt_copy_f80_controlled(h3, h5, h4)
 cqrt_x(h3)
 cqrt_alloc_f80(0x0p+0) -> h6
 cqrt_copy_f80_controlled(h3, h6, h4)
-cqrt_x(h3)
 cq_template_fcmp_ule_f80_hl(h0, 0xb.17p+10) -> h7
 cq_template_fcmp_uge_f80_hl(h0, -0xb.22p+10) -> h8
 cqrt_alloc_i1(0) -> h9
@@ -18,17 +17,14 @@ cqrt_alloc_f80(0x0p+0) -> h10
 cqrt_copy_f80_controlled(h9, h2, h10)
 cqrt_x(h9)
 cqrt_copy_f80_controlled(h9, h4, h10)
-cqrt_x(h9)
 cqrt_alloc_f80(0x0p+0) -> h11
 cqrt_copy_f80(h10, h11)
-cqrt_x(h9)
 cqrt_copy_f80_controlled(h9, h4, h10)
 cqrt_x(h9)
 cqrt_copy_f80_controlled(h9, h2, h10)
 cqrt_toffoli(h7, h8, h9)
 cq_template_fcmp_uge_f80_hl_unc(h8, h0, -0xb.22p+10)
 cq_template_fcmp_ule_f80_hl_unc(h7, h0, 0xb.17p+10)
-cqrt_x(h3)
 cqrt_copy_f80_controlled(h3, h6, h4)
 cqrt_x(h3)
 cqrt_copy_f80_controlled(h3, h5, h4)
@@ -39,6 +35,7 @@ cqrt_free(h1)
 cqrt_free(h2)
 cqrt_free(h3)
 cqrt_free(h4)
+cqrt_free(h6)
 cqrt_free(h7)
 cqrt_free(h8)
 cqrt_free(h9)

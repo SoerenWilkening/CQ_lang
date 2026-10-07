@@ -32,6 +32,24 @@
 ; Decline twin: spec_reject_clone_classical_leaf_xor.ll (a classical leaf under an
 ; `xor` node, which has no `_hl` literal template, keeps this fence's message).
 ;
+; bd p3kd.7.8: the clone is now lowered by MAIN's stage list; `lowerCloneSelect`
+; (named above) is gone. The SAME literal owners now answer through main's 4.4
+; path: SelectClassify admits c2 with `condLiteralAdmissible`, CondTreeEmit mints
+; the mixed node with `emitCondLiteralNode`, SelectMergeEmit does the two copies.
+; What moved: main's merge strips its own network inline (trailing `cqrt_x(gl)`,
+; then the `_unc`s and frees); inside a clone the Bennett wrap elides that strip,
+; so the forward ends with the bracket OPEN (gl = ¬cond) and the mirror's single
+; `cqrt_x` closes it. The trace above still holds with that one change: forward
+; out = cond ? v+1 : v+2; the mirror XORs [¬cond]·(v+2) then (after gl→cond)
+; cond·(v+1) back (out = 0), `and_i1_hl_unc` reads the SAME literal c2 and zeroes
+; gl, then f1 and the arms R1/R2 are `_unc`'d; all five freed rails are |0>.
+; The adjoint's literal must reach the runtime `bool` with `zeroext`, like the
+; forward's. This fixture caught its loss in the first p3kd.7.8 draft (the wrap
+; elides main's strip, which stamped it, and the mirror minted the `_unc` bare;
+; the removed path had stamped the DECLARATION). Fixed at the one spelling:
+; `emitInverseCall` carries the forward's `zeroext`/`signext` to the `_unc`'s
+; slots, so it is pinned on the mirror's CALL now (the declaration stays bare).
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=ERR --allow-empty < %t.err
@@ -83,22 +101,27 @@ entry:
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[GL]], i32 %[[R1]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[GL]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[GL]], i32 %[[R2]], i32 %[[OUT]])
-; CHECK-NEXT: call void @cqrt_x(i32 %[[GL]])
-; Bennett copy-out, then the reverse.
+; Bennett copy-out (the merge's strip was elided: the bracket is still open), then
+; the exact mirror.
 ; CHECK-NEXT: %[[RES:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT: call void @cqrt_copy_i32(i32 %[[OUT]], i32 %[[RES]])
-; CHECK-NEXT: call void @cqrt_x(i32 %[[GL]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[GL]], i32 %[[R2]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[GL]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[GL]], i32 %[[R1]], i32 %[[OUT]])
-; CHECK-NEXT: call void @cq_template_and_i1_hl_unc(i32 %[[GL]], i32 %[[F1]], i1 %[[C2]])
+; CHECK-NEXT: call void @cq_template_and_i1_hl_unc(i32 %[[GL]], i32 %[[F1]], i1 zeroext %[[C2]])
 ; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F1]], i32 %b, i32 5)
+; The arm `_unc`s (order-free: the forward order of R1/R2 is not pinned), then
+; every freed rail.
+; CHECK-DAG: call void @cq_template_add_i32_hl_unc(i32 %[[R1]], i32 %b, i32 1)
+; CHECK-DAG: call void @cq_template_add_i32_hl_unc(i32 %[[R2]], i32 %b, i32 2)
+; CHECK-DAG: call void @cqrt_free(i32 %[[R1]])
+; CHECK-DAG: call void @cqrt_free(i32 %[[R2]])
 ; CHECK-DAG: call void @cqrt_free(i32 %[[GL]])
 ; CHECK-DAG: call void @cqrt_free(i32 %[[F1]])
 ; CHECK-DAG: call void @cqrt_free(i32 %[[OUT]])
 ; CHECK:     ret i32 %[[RES]]
+; CHECK-NEXT: }
 ;
 ; The phantom classical-value-as-handle is never minted, anywhere in the module.
 ; PHANTOM-NOT: cq_template_icmp_sgt_i32_hl(i32 %k
 ; The adjoint's `bool` literal is zero-extended by its declaration.
-; CHECK:     declare void @cq_template_and_i1_hl_unc(i32, i32, i1 zeroext)

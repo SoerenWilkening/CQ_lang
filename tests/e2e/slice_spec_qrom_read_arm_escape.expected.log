@@ -14,10 +14,8 @@ cqrt_alloc_f64(0x0p+0) -> h9
 cqrt_copy_f64_controlled(h8, h7, h9)
 cqrt_x(h8)
 cqrt_copy_f64_controlled(h8, h0, h9)
-cqrt_x(h8)
 cqrt_alloc_f64(0x0p+0) -> h10
 cqrt_copy_f64(h9, h10)
-cqrt_x(h8)
 cqrt_copy_f64_controlled(h8, h0, h9)
 cqrt_x(h8)
 cqrt_copy_f64_controlled(h8, h7, h9)

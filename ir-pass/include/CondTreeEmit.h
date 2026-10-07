@@ -4,7 +4,8 @@
 // bd test_C_libtooling-3qlq Inc 1 part B (PRD `retire-swap-route-PRD.md` §6.2
 // row P3). Before this TU the network lived ONLY inside `SelectMergeEmit.cpp`
 // (steps 1 and 5) with a second, partial copy in `Specialization.cpp`
-// (`mintCondNetwork`, forward-only). P3 needs the SAME network for a `br`
+// (`mintCondNetwork`, forward-only; removed by bd p3kd.7.8, when lifted clones
+// started running main's control chain). P3 needs the SAME network for a `br`
 // condition, so it is lifted here rather than copied a third time — the
 // duplicated-lowering prohibition, and the reason the 4.4 select goldens are the
 // witness that the lift is a REFACTOR: with `AllowQQLeaves = true` the emitted

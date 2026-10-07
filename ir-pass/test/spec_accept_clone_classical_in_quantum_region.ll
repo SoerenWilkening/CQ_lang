@@ -14,6 +14,14 @@
 ;   sel3 = [b>0 ∧ u]·(b+1) ⊕ ¬[b>0 ∧ u]·sel
 ; b>0, u → b+1; b>0, ¬u → 3b; b<=0 → 5.
 ;
+; bd p3kd.7.8: main's stage list now lowers the clone, so each mux is the 4.4
+; `SelectMergeEmit` controlled-copy merge and the Bennett wrap elides each merge's
+; trailing `cqrt_x` strip (it writes only the guard rail after its last read); the
+; frozen literals, the dropped `nsw` and the `and_i1_hl` literal node are unchanged.
+; Hand trace: forward leaves G0 negated, SEL = G0·3b ⊕ ¬G0·5, SEL3 = G1·(b+1) ⊕ ¬G1·SEL
+; (as above); the mirror replays copy, `cqrt_x`, copy and `and`/`icmp` `_unc` per mux in
+; reverse, restoring every rail to |0> before its free; the |5> rail stays allocated.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll
 declare i32 @cq_theta_si32(i32, double)
@@ -61,7 +69,6 @@ entry:
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[G0]])
 ; CHECK-NEXT:  %[[K5:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 5)
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G0]], i32 %[[K5]], i32 %[[SEL]])
-; CHECK-NEXT:  call void @cqrt_x(i32 %[[G0]])
 ; CHECK-NEXT:  %[[FU:[a-zA-Z0-9_.]+]] = freeze i1 %[[U]]
 ; CHECK-NEXT:  %[[T1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %b, i32 0)
 ; CHECK-NEXT:  %[[G1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i1_hl(i32 %[[T1]], i1 zeroext %[[FU]])
@@ -69,10 +76,29 @@ entry:
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G1]], i32 %[[A1]], i32 %[[SEL3]])
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[G1]])
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G1]], i32 %[[SEL]], i32 %[[SEL3]])
-; CHECK-NEXT:  call void @cqrt_x(i32 %[[G1]])
 ; CHECK-NEXT:  %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT:  call void @cqrt_copy_i32(i32 %[[SEL3]], i32 %[[OUT]])
-; CHECK:       call void @cq_template_and_i1_hl_unc(i32 %[[G1]], i32 %[[T1]], i1 %[[FU]])
-; CHECK:       call void @cq_template_and_i1_hl_unc(i32 %[[G0]], i32 %[[T0]], i1 %[[FNU]])
-; CHECK:       call void @cqrt_free(i32 %[[SEL3]])
+; the exact mirror (reverse order, involutions replayed, templates by their `_unc`):
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G1]], i32 %[[SEL]], i32 %[[SEL3]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[G1]])
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G1]], i32 %[[A1]], i32 %[[SEL3]])
+; CHECK-NEXT:  call void @cq_template_and_i1_hl_unc(i32 %[[G1]], i32 %[[T1]], i1 zeroext %[[FU]])
+; CHECK-NEXT:  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[T1]], i32 %b, i32 0)
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G0]], i32 %[[K5]], i32 %[[SEL]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[G0]])
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G0]], i32 %[[M3]], i32 %[[SEL]])
+; CHECK-NEXT:  call void @cq_template_and_i1_hl_unc(i32 %[[G0]], i32 %[[T0]], i1 zeroext %[[FNU]])
+; CHECK-NEXT:  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[T0]], i32 %b, i32 0)
+; CHECK-NEXT:  call void @cq_template_add_i32_hl_unc(i32 %[[A1]], i32 %b, i32 1)
+; CHECK-NEXT:  call void @cq_template_mul_i32_hl_unc(i32 %[[M3]], i32 %b, i32 3)
+; every |0> rail freed in program order; the |5> rail [[K5]] is never freed:
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[M3]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[A1]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[T0]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[G0]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[SEL]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[T1]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[G1]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[SEL3]])
 ; CHECK-NEXT:  ret i32 %[[OUT]]
+; CHECK-NEXT:  }

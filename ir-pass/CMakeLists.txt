@@ -47,6 +47,7 @@ add_library(CQPass MODULE
   src/ArmClassify.cpp
   src/ArmHomogeneity.cpp
   src/BennettWrap.cpp
+  src/StageList.cpp
   # bd 5c5b: clause (a) of the record-freeze invariant (a rail born |0⟩).
   src/BirthFreeze.cpp
   src/BreakReversePlay.cpp

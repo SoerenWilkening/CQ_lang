@@ -5,11 +5,21 @@
 ; 20xt.3 admits a `ConstantFP` arm: the derived TRUE arm (`sitofp`, tainted) is
 ; threaded AS-IS — captured + reverse-played (`sitofp_unc`) + freed proven-|0>;
 ; the FALSE `ConstantFP` 0.0 is materialized to a fresh `cqrt_alloc_f64(0.0)`
-; |const⟩ rail and controlled-copied, then LEFT allocated (leaked, Rule 6). This is
+; |const⟩ rail and controlled-copied, then (before p3kd.7.8) LEFT allocated. This is
 ; the value/const half of the widening (spec_accept_fp_select_constconst_f80.ll is
 ; const/const). The consumer is a `fptosi` (an i32-return clone that fully lowers),
 ; NOT the former declaration-only `@ilogb` (which would now decline LATER as a
 ; nested call — the reason the reject fixture used it to isolate the SELECT gate).
+;
+; bd p3kd.7.8: main's 4.4 `SelectMergeEmit` now lowers the clone's select. The TRUE arm
+; is still threaded as-is and the FALSE `ConstantFP` still gets its own materialized
+; rail, but +0.0 has all-zero bits, so that rail is |0> (`isNullValue`, +0.0 only), is
+; only ever a copy SOURCE, and the wrap now frees it with the other |0> rails; a
+; non-zero constant rail is still left allocated (spec_accept_select_const_arms_int.ll).
+; The merge's trailing `cqrt_x` strip is elided in the forward, and the fptosi reads SEL.
+; Hand trace, |n>: SEL = [n<0]·(double)n ⊕ ¬[n<0]·0.0; R = fptosi(SEL) copied out; the
+; mirror zeroes R, undoes both copies around the replayed `cqrt_x`, then the compare
+; and sitofp `_unc`s; every freed rail is |0>.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 declare i32 @cq_theta_si32(i32, double)
@@ -28,22 +38,32 @@ define void @example(i32 %u0) {
   ret void
 }
 
-; CHECK: define internal i32 @__cq_q_mhelper_1(i32 %n)
+; CHECK-LABEL: define internal i32 @__cq_q_mhelper_1(i32 %n)
 ; The derived TRUE arm (tainted) is a data template — threaded AS-IS as a copy src.
-; CHECK: %[[X:.*]] = call i32 @cq_template_sitofp_i32_to_f64(i32 %n)
-; CHECK: %[[F:.*]] = call i32 @cq_template_icmp_slt_i32_hl(i32 %n, i32 0)
-; CHECK-NEXT: %[[SEL:.*]] = call i32 @cqrt_alloc_f64(double 0.000000e+00)
+; CHECK-NEXT: %[[X:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sitofp_i32_to_f64(i32 %n)
+; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_slt_i32_hl(i32 %n, i32 0)
+; CHECK-NEXT: %[[SEL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double 0.000000e+00)
 ; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %[[F]], i32 %[[X]], i32 %[[SEL]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; The FALSE ConstantFP (0.0) materialized to its OWN |const> rail, ¬flag-copied.
-; CHECK-NEXT: %[[FC:.*]] = call i32 @cqrt_alloc_f64(double 0.000000e+00)
+; The FALSE ConstantFP (0.0) materialized to its OWN rail, ¬flag-copied (strip elided).
+; CHECK-NEXT: %[[FC:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double 0.000000e+00)
+; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %[[F]], i32 %[[FC]], i32 %[[SEL]])
+; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fptosi_f64_to_i32(i32 %[[SEL]])
+; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32(i32 %[[R]], i32 %[[OUT]])
+; Bennett mirror: the derived arm IS reversed (sitofp `_unc`); no gate ever writes the
+; materialized rail [[FC]] (it is only a copy source).
+; CHECK-NEXT: call void @cq_template_fptosi_f64_to_i32_unc(i32 %[[R]], i32 %[[SEL]])
 ; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %[[F]], i32 %[[FC]], i32 %[[SEL]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: %[[R:.*]] = call i32 @cq_template_fptosi_f64_to_i32(i32 %[[SEL]])
-; Bennett reverse: the derived arm IS reversed (sitofp `_unc`) and freed; the
-; materialized |const> rail [[FC]] is NEVER reversed and NEVER freed (leaked).
-; CHECK: call void @cq_template_sitofp_i32_to_f64_unc(i32 %[[X]], i32 %n)
-; CHECK: call void @cqrt_free(i32 %[[X]])
-; CHECK: call void @cqrt_free(i32 %[[SEL]])
-; CHECK-NOT: call void @cqrt_free(i32 %[[FC]])
-; CHECK: ret
+; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %[[F]], i32 %[[X]], i32 %[[SEL]])
+; CHECK-NEXT: call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[F]], i32 %n, i32 0)
+; CHECK-NEXT: call void @cq_template_sitofp_i32_to_f64_unc(i32 %[[X]], i32 %n)
+; Every |0> rail freed, the +0.0 rail [[FC]] included:
+; CHECK-NEXT: call void @cqrt_free(i32 %[[X]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[SEL]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[FC]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[R]])
+; CHECK-NEXT: ret i32 %[[OUT]]
+; CHECK-NEXT: }

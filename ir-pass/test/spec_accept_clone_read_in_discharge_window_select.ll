@@ -13,6 +13,14 @@
 ; compare with; this file pins the discharge and the unchanged clone body, and the
 ; family battery records the member's 2b/entangle.py result (TRACK_RHK5.md §5.2).
 ;
+; bd p3kd.7.8: main's 4.4 `SelectMergeEmit` now lowers the clone's select (the clone-only
+; `lowerCloneSelect` and its one-copy const-zero fast path are gone): the false arm 0 is
+; materialized as a |0> rail and ¬flag-copied (XOR of 0, the identity), and the wrap
+; mirrors both copies inside the re-played `cqrt_x`. `%k` is still only a compare
+; operand, a copy SOURCE and an `_unc` read slot, so the caller's discharge is unchanged.
+; Hand trace: SEL = [k>3]·k ⊕ ¬[k>3]·0; the mirror undoes the zero copy, restores the flag,
+; undoes the k copy (SEL = 0), the `_unc` zeroes the flag; all three rails free at |0>.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s --check-prefix=LOWER < %t.cqd0.ll
@@ -67,13 +75,20 @@ define i32 @h(i32 %a, i32 %k) {
 ; LOWER-NEXT: call void @cqrt_ry_i32(i32 %h, double 0x3FE6666666666666)
 ;
 ; CLONE-LABEL: define internal i32 @__cq_q_h_10(i32 %a, i32 %k)
-; CLONE-NEXT: %h_cmp = call i32 @cq_template_icmp_sgt_i32_hl(i32 %k, i32 3)
-; CLONE-NEXT: %cqq.sel = call i32 @cqrt_alloc_i32(i32 0)
-; CLONE-NEXT: call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %k, i32 %cqq.sel)
-; CLONE-NEXT: %cqq.out = call i32 @cqrt_alloc_i32(i32 0)
-; CLONE-NEXT: call void @cqrt_copy_i32(i32 %cqq.sel, i32 %cqq.out)
-; CLONE-NEXT: call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %k, i32 %cqq.sel)
-; CLONE-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp, i32 %k, i32 3)
-; CLONE-NEXT: call void @cqrt_free(i32 %h_cmp)
-; CLONE-NEXT: call void @cqrt_free(i32 %cqq.sel)
-; CLONE-NEXT: ret i32 %cqq.out
+; CLONE-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %k, i32 3)
+; CLONE-NEXT: %[[SEL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CLONE-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %k, i32 %[[SEL]])
+; CLONE-NEXT: call void @cqrt_x(i32 %[[F]])
+; CLONE-NEXT: %[[K0:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CLONE-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[K0]], i32 %[[SEL]])
+; CLONE-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CLONE-NEXT: call void @cqrt_copy_i32(i32 %[[SEL]], i32 %[[OUT]])
+; CLONE-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[K0]], i32 %[[SEL]])
+; CLONE-NEXT: call void @cqrt_x(i32 %[[F]])
+; CLONE-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %k, i32 %[[SEL]])
+; CLONE-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %k, i32 3)
+; CLONE-NEXT: call void @cqrt_free(i32 %[[F]])
+; CLONE-NEXT: call void @cqrt_free(i32 %[[SEL]])
+; CLONE-NEXT: call void @cqrt_free(i32 %[[K0]])
+; CLONE-NEXT: ret i32 %[[OUT]]
+; CLONE-NEXT: }

@@ -10,6 +10,16 @@
 ; This was the I1 decline fixture `spec_reject_diamond_multiexit.ll`, flipped to
 ; accept when I2 landed.
 ;
+; bd p3kd.7.8: the flattened select is now lowered by MAIN's 4.4 SelectMergeEmit
+; (the clone-only `lowerCloneSelect` is gone): the same two-copy merge, the out
+; rail is SelectMergeEmit's, and main's inline strip (closing `cqrt_x`, compare
+; `_unc` + free) is elided by the Bennett wrap, whose reverse is now the EXACT
+; mirror (both copies and the `cqrt_x` replayed). Trace on |b>: f = [b>100]; out
+; gets 999 under f, then (f flipped) b+7 under ¬f, so out = b>100 ? 999 : b+7, the
+; source's two returns; the mirror un-copies b+7, re-flips f, un-copies 999 (out
+; -> |0>), then the compare and add `_unc`s zero f and a. The |999> sentinel rail
+; is only ever read, stays |999>, and is never freed (R5); the result never freed.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -34,24 +44,30 @@ entry:
 }
 
 ; The tainted-arg clone lifts the multi-exit controlled-return to a reversible mux.
-; CHECK: define internal i32 @__cq_q_helper_1(i32 %b)
+; The CHECK-NEXT chain covers the whole clone body, so it also proves the |999>
+; sentinel rail K is never freed.
+; CHECK-LABEL: define internal i32 @__cq_q_helper_1(i32 %b)
+; CHECK-NEXT: entry:
 ; the tainted fall-through, the guard flag, the |0> out rail, the materialized
-; classical sentinel, and the forward-only controlled-XOR mux:
-; CHECK: %h_op = call i32 @cq_template_add_i32_hl(i32 %b, i32 7)
-; CHECK: %h_cmp = call i32 @cq_template_icmp_sgt_i32_hl(i32 %b, i32 100)
-; CHECK: %cqq.sel = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK: %selop = call i32 @cqrt_alloc_i32(i32 999)
-; CHECK: call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %selop, i32 %cqq.sel)
-; CHECK: call void @cqrt_x(i32 %h_cmp)
-; CHECK: call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %h_op, i32 %cqq.sel)
-; CHECK: call void @cqrt_x(i32 %h_cmp)
-; the Bennett copy-out then the single reverse (copy⁻¹, icmp `_unc`, add `_unc`):
-; CHECK: %cqq.out = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK: call void @cqrt_copy_i32(i32 %cqq.sel, i32 %cqq.out)
-; CHECK: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp, i32 %b, i32 100)
-; CHECK: call void @cq_template_add_i32_hl_unc(i32 %h_op, i32 %b, i32 7)
-; every proven-|0> rail freed (the materialized |const⟩ selop is left allocated):
-; CHECK: call void @cqrt_free(i32 %h_op)
-; CHECK: call void @cqrt_free(i32 %h_cmp)
-; CHECK: call void @cqrt_free(i32 %cqq.sel)
-; CHECK: ret i32 %cqq.out
+; classical sentinel, and the two-copy controlled-XOR mux:
+; CHECK-NEXT: %[[A:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %b, i32 7)
+; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %b, i32 100)
+; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: %[[K:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 999)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[K]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[A]], i32 %[[OUT]])
+; the Bennett copy-out, then the exact mirror (copies, x, icmp `_unc`, add `_unc`):
+; CHECK-NEXT: %[[RES:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32(i32 %[[OUT]], i32 %[[RES]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[A]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[K]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %b, i32 100)
+; CHECK-NEXT: call void @cq_template_add_i32_hl_unc(i32 %[[A]], i32 %b, i32 7)
+; every proven-|0> rail freed (the materialized |999> rail K is left allocated):
+; CHECK-NEXT: call void @cqrt_free(i32 %[[A]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT]])
+; CHECK-NEXT: ret i32 %[[RES]]
+; CHECK-NEXT: }

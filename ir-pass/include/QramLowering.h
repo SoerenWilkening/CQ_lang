@@ -162,7 +162,7 @@ enum class QromClaim { No, Provable, NeedsMask };
 // carve/signpost callers pass false and keep the fence (a real top-level escape).
 // `OutIndexBecomesOpaque` (bd 20xt.7, optional): when non-null, receives whether a
 // CLAIMED read's index is currently untainted — i.e. region-internal-phi-derived, so
-// the flatten + `lowerCloneSelect` lower it to an opaque `cqrt_alloc_i64` handle the
+// the flatten + the 4.4 merge lower it to an opaque `cqrt_alloc_i64` handle the
 // emitter's bounds re-proof cannot see. The E4 Provable-pow2 clone-read mask uses it
 // to mask ONLY that opaque case (a source-masked, already-tainted Provable index
 // keeps its raw op and is re-proven directly — masking it would be a redundant

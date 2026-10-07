@@ -28,8 +28,8 @@ struct TaintSet;
 // OVER-approximation of the `ReturnTainted` verdict `buildClone` later computes: every
 // clone stage after `seedClone` either removes taint (the inner classical-clone scrub,
 // the dead-slot deletion) or replaces a value already in the closure (the PredMux
-// flatten's selects replace φs / branches the closure reaches; `lowerCloneSelect`,
-// `lowerQramReads` and `lowerOps` RAUW members of the closure). So `false` means the
+// flatten's selects replace φs / branches the closure reaches; main's control
+// chain, `lowerQramReads` and `lowerOps` RAUW members of the closure). So `false` means the
 // clone's return is classical. Two consumers, and the first is no longer the only one:
 //   * `cloneFor` — the fp-return signature (i32 handle vs the fp value);
 //   * `specCallResultPredictedClassical` below — the propagation-time classical verdict
@@ -75,6 +75,15 @@ bool specCallResultPredictedClassical(const llvm::CallInst &CI,
 // `(callee, mask)` cache: a cache hit must NOT re-clone (this always mints a
 // fresh clone). The clone is inserted into `Cand.Callee`'s module.
 llvm::Function *cloneFor(const SpecCandidate &Cand);
+
+// bd p3kd.7.8: install the clone's fp-ABI signature (a tainted fp param or a
+// predicted-tainted fp return becomes an i32 handle) AFTER main's stage list ran
+// on the clone. Replaces `Clone` in place (same module position, name, attrs,
+// metadata; the body is spliced, so body values keep their identity) and returns
+// the new function, or `Clone` itself when no slot changes. The caller re-keys
+// every record held on the old function or its arguments.
+llvm::Function *retypeCloneSignature(llvm::Function *Clone,
+                                     const SpecCandidate &Cand);
 
 // Strip the function/return attributes a pure-classical body carried but the
 // quantum-lowered body invalidates (`memory(none)`/`willreturn`/`nofree`, the

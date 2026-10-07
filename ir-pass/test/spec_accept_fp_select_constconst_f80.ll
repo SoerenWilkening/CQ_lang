@@ -14,6 +14,20 @@
 ; (Hand-written: clang -O1 const-folds a const-cond fp select and never emits the
 ; select; this pins the shape that survives a genuine tainted-cond overflow arm.)
 ;
+; bd p3kd.7.8: the clone is now lowered by MAIN's stage list (main's 4.4
+; CondTreeEmit flag + SelectMergeEmit merge, which materializes each constant arm
+; through the same SelectMergeEmit `materializeCopySource` named above). The
+; two-copy stream and both |const> materializations are unchanged. What moved: the
+; merge's own flag strip (trailing `cqrt_x`, compare `_unc`, free) is elided inside a
+; clone, so the forward ends with the bracket OPEN (F = [n<=0]) and the mirror's
+; single `cqrt_x` between the two copies closes it. Hand trace, |n>: SEL = [n>0]·T
+; ⊕ [n<=0]·FA = (n>0)?+pi/2:-pi/2 (f80 bit patterns), R = fptosi(SEL); the mirror's
+; fptosi `_unc` zeroes R, the ¬flag copy XORs FA back, F→[n>0], the flag copy XORs
+; T back (SEL = +0.0, all bits 0), the `_unc` zeroes F. F, SEL and R are |0> at
+; their frees; T and FA (non-zero constants) stay allocated, which the full-body
+; CHECK-NEXT pin through `}` enforces (it replaces the old CHECK-NOTs, which scanned
+; only the window between SEL's free and the `ret`).
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -30,29 +44,33 @@ define void @example(i32 %u0) {
   ret void
 }
 
-; CHECK: define internal i32 @__cq_q_mhelper_1(i32 %n)
+; CHECK-LABEL: define internal i32 @__cq_q_mhelper_1(i32 %n)
 ; The sgt flag over the tainted param, then the |0> f80 out rail.
-; CHECK: %[[F:.*]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %n, i32 0)
-; CHECK-NEXT: %[[SEL:.*]] = call i32 @cqrt_alloc_f80(x86_fp80 0xK00000000000000000000)
+; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %n, i32 0)
+; CHECK-NEXT: %[[SEL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 0xK00000000000000000000)
 ; TRUE const (+pi/2) materialized to its own |const> rail, copied on the flag.
-; CHECK-NEXT: %[[T:.*]] = call i32 @cqrt_alloc_f80(x86_fp80 0xK3FFFC90FDAA22168C235)
+; CHECK-NEXT: %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 0xK3FFFC90FDAA22168C235)
 ; CHECK-NEXT: call void @cqrt_copy_f80_controlled(i32 %[[F]], i32 %[[T]], i32 %[[SEL]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; FALSE const (-pi/2) materialized to its own |const> rail, copied on the ¬flag.
-; CHECK-NEXT: %[[FA:.*]] = call i32 @cqrt_alloc_f80(x86_fp80 0xKBFFFC90FDAA22168C235)
+; CHECK-NEXT: %[[FA:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 0xKBFFFC90FDAA22168C235)
+; CHECK-NEXT: call void @cqrt_copy_f80_controlled(i32 %[[F]], i32 %[[FA]], i32 %[[SEL]])
+; The fptosi reads the merge rail (p119.6 clone-HandleWidth), then copy-out.
+; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fptosi_f80_to_i32(i32 %[[SEL]])
+; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32(i32 %[[R]], i32 %[[OUT]])
+; Bennett reverse, the exact mirror: the fptosi `_unc`, the self-inverse copies
+; (reading the STILL-LIVE materialized const rails) around the closing `cqrt_x`,
+; the flag `_unc`, then the proven-|0> frees.
+; CHECK-NEXT: call void @cq_template_fptosi_f80_to_i32_unc(i32 %[[R]], i32 %[[SEL]])
 ; CHECK-NEXT: call void @cqrt_copy_f80_controlled(i32 %[[F]], i32 %[[FA]], i32 %[[SEL]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; The fptosi reads the merge rail (p119.6 clone-HandleWidth), then copy-out.
-; CHECK-NEXT: %[[R:.*]] = call i32 @cq_template_fptosi_f80_to_i32(i32 %[[SEL]])
-; CHECK: call void @cqrt_copy_i32(i32 %[[R]], i32 %[[OUT:.*]])
-; Bennett reverse: the fptosi `_unc`, the re-bracketed self-inverse copies (reading
-; the STILL-LIVE materialized const rails), the flag `_unc`, then proven-|0> frees.
-; CHECK: call void @cq_template_fptosi_f80_to_i32_unc(i32 %[[R]], i32 %[[SEL]])
-; CHECK: call void @cqrt_copy_f80_controlled(i32 %[[F]], i32 %[[FA]], i32 %[[SEL]])
-; CHECK: call void @cqrt_copy_f80_controlled(i32 %[[F]], i32 %[[T]], i32 %[[SEL]])
-; CHECK: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %n, i32 0)
-; CHECK: call void @cqrt_free(i32 %[[SEL]])
-; The two |const> rails ([[T]], [[FA]]) are LEAKED — never freed (Rule 6).
-; CHECK-NOT: call void @cqrt_free(i32 %[[T]])
-; CHECK-NOT: call void @cqrt_free(i32 %[[FA]])
-; CHECK: ret i32 %[[OUT]]
+; CHECK-NEXT: call void @cqrt_copy_f80_controlled(i32 %[[F]], i32 %[[T]], i32 %[[SEL]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %n, i32 0)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[SEL]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[R]])
+; The two |const> rails ([[T]], [[FA]]) are LEAKED — never freed (Rule 6): the
+; body ends here.
+; CHECK-NEXT: ret i32 %[[OUT]]
+; CHECK-NEXT: }

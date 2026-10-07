@@ -12,6 +12,15 @@
 ;
 ; Trace check, |b> and classical c: c<0 → −c; c>=0 ∧ b>c → b−c; otherwise 0.
 ;
+; bd p3kd.7.8: main's stage list now lowers the clone, so the quantum merge goes
+; through main's SelectMergeEmit: the forward's trailing `cqrt_x(g)` strip is elided
+; by the Bennett wrap (the flag stays at ¬g until the mirror's `cqrt_x` restores it),
+; the reverse is the exact mirror, and the constant-0 arm's |0> rail is now freed
+; with the others. Hand trace: out = g ? b−c : 0 (the second copy reads |0>); the
+; classical select picks |−c> when c<0 and `out` otherwise; the mirror replays the
+; 0-copy, `cqrt_x(g)`, the (b−c)-copy (out back to 0), then the and/icmp/sub `_unc`s,
+; so every freed rail is |0>. The |−c> rail stays allocated (non-zero constant).
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll
 declare i32 @cq_theta_si32(i32, double)
@@ -56,22 +65,21 @@ entry:
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[G]])
 ; CHECK-NEXT:  %[[K0:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[K0]], i32 %[[SEL]])
-; CHECK-NEXT:  call void @cqrt_x(i32 %[[G]])
 ; CHECK-NEXT:  %[[KNC:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[NC]])
 ; CHECK-NEXT:  %[[FC:[a-zA-Z0-9_.]+]] = freeze i1 %[[CC]]
 ; CHECK-NEXT:  %[[RS:[a-zA-Z0-9_.]+]] = select i1 %[[FC]], i32 %[[KNC]], i32 %[[SEL]]
 ; CHECK-NEXT:  %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT:  call void @cqrt_copy_i32(i32 %[[RS]], i32 %[[OUT]])
-; CHECK-NEXT:  call void @cqrt_x(i32 %[[G]])
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[K0]], i32 %[[SEL]])
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[G]])
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[D]], i32 %[[SEL]])
-; CHECK-NEXT:  call void @cq_template_and_i1_hl_unc(i32 %[[G]], i32 %[[T]], i1 %[[GE]])
+; CHECK-NEXT:  call void @cq_template_and_i1_hl_unc(i32 %[[G]], i32 %[[T]], i1 zeroext %[[GE]])
 ; CHECK-NEXT:  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[T]], i32 %b, i32 %c)
 ; CHECK-NEXT:  call void @cq_template_sub_i32_hl_unc(i32 %[[D]], i32 %b, i32 %c)
 ; CHECK-NEXT:  call void @cqrt_free(i32 %[[D]])
 ; CHECK-NEXT:  call void @cqrt_free(i32 %[[T]])
 ; CHECK-NEXT:  call void @cqrt_free(i32 %[[G]])
 ; CHECK-NEXT:  call void @cqrt_free(i32 %[[SEL]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[K0]])
 ; CHECK-NEXT:  ret i32 %[[OUT]]
 ; CHECK-NEXT:  }

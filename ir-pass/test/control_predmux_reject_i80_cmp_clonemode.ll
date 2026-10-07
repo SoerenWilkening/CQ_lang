@@ -28,6 +28,13 @@
 ; select in the arm, SpecializeReject declines BEFORE the clone is ever built
 ; and the fixture would pin nothing. The shape is load-bearing; do not "tidy" it.
 ;
+; bd p3kd.7.8: the clone now runs main's stage list. The clone-mode PredMux keeps
+; this fence (`AdmitI80Compare = !ClaimAll`), so the region still leaves at E4 (the
+; DBG line, unchanged) and main's control chain then refuses it (`value-arm
+; swap-route`) before the clone backstop is asked. Main compiles the same body
+; inlined into the caller (measured): the divergence is exactly this scope fence,
+; which waits on its own probe family (bd 3c6m.14.1), not a new decline.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; RUN: env CQ_PREDMUX_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering \
 ; RUN:   -S %s -o /dev/null 2>&1 | %filecheck %s --check-prefix=DBG
@@ -63,7 +70,7 @@ entry:
   ret i32 %m
 }
 
-; CHECK: error{{.*}}: cq specialization: callee contains tainted control flow under quantum lift
+; CHECK: error{{.*}}in function __cq_q_leaf_1 {{.*}}: cq controlled lowering: value-arm swap-route under quantum control
 
 ; The discriminating line, and the reason this fixture is worth its weight: with
 ; the fence removed there is NO leave line at all here (the region is claimed and

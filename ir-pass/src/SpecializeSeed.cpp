@@ -28,9 +28,12 @@ TaintSet seedClone(Function *Clone, SpecMask Mask) {
       Worklist.push_back(&A);
   }
 
-  // Forward propagation SCOPED to the clone body. The accepted body is pure
-  // straight-line value code (no rotations → no arg-1-angle edge to skip, no
-  // measure sink), so this is the plain transitive-user closure. Users live in
+  // Forward propagation SCOPED to the clone body. The accepted body holds no
+  // rotation, phase or measure (`scanBody` refuses every `cq_*` primitive), so
+  // there is no arg-1-angle edge to skip and no measure sink: this is the plain
+  // transitive-user closure. The body may still hold control flow (branches,
+  // switches, selects, loops since bd p3kd.7.1/7.8); taint crosses a phi or a
+  // select through its def-use edges like any other user. Users live in
   // `Clone` (params are clone-local); the function-scope guard is defensive.
   while (!Worklist.empty()) {
     Value *V = Worklist.back();

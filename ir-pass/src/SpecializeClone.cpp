@@ -168,10 +168,10 @@ bool predictReturnTainted(Function *Callee, SpecMask Mask) {
   // (a) 5po2 I2 (Rule-13 CONFIRMED-finding fix): a return that is CONTROL-DEPENDENT
   //     on a tainted branch — e.g. a CONSTANT returned only on `if(q>C) return K`, or
   //     a merge-phi of constants under a tainted diamond — becomes a TAINTED data-mux
-  //     out rail in `lowerCloneSelect`, even though the constant itself is not
+  //     out rail in the clone's select lowering, even though the constant itself is not
   //     param-derived (a constant / const-phi is not a param user, so the forward
   //     closure above never reaches it). UNDER-predicting classical made `cloneFor`
-  //     keep the fp return type while `lowerCloneSelect` minted an i32 handle → a
+  //     keep the fp return type while that lowering minted an i32 handle → a
   //     mistyped `ret` (a verify-DIRTY / broken module, exit 134). Over-approximate:
   //     if ANY conditional terminator is tainted (a tainted-controlled diamond),
   //     predict the return tainted. SOUND one-directional — an OVER-prediction is
@@ -257,34 +257,51 @@ bool specCallResultPredictedClassical(const CallInst &CI, const TaintSet &taint)
   return !predictReturnTainted(Callee, Mask);
 }
 
-// Clone + mangle + internal linkage. Two paths (bd 3c6m.54):
+// Clone + mangle + internal linkage, VERBATIM: `CloneFunction` copies the
+// callee's signature as-is. The `_q1` suffix is the DD-5 `__cq_q_<callee>_<mask>`
+// mangle; `InternalLinkage` keeps it file-local so `llvm-link` of the
+// multi-file program does not export it.
 //
-//   * VERBATIM (the historical path, byte-identical): when no tainted argument or
-//     return needs an fp→i32-handle rewrite (every INTEGER clone), `CloneFunction`
-//     copies the callee's signature as-is. The `_q1` suffix is the DD-5
-//     `__cq_q_<callee>_<mask>` mangle; `InternalLinkage` keeps it file-local so
-//     `llvm-link` of the multi-file program does not export it. Existing integer
-//     spec fixtures pin this output.
-//
-//   * fp-ABI REWRITE: when a tainted argument (or the return) is a reversible-fp
-//     width {f16,f32,f64,f80}, the runtime handle is still i32 (Rule 15), so the
-//     clone SIGNATURE must carry i32 in those slots. A fresh `Function::Create` +
-//     `CloneFunctionInto` remaps each old arg → new arg; a rewritten fp→i32 slot
-//     is a CROSS-type operand substitution (untyped, no RAUW assert), laundered
-//     when `lowerOps` rewrites the transiently-mistyped fp body ops to i32-handle
-//     `cq_template_*` — the SAME transient-mismatch discipline the theta
-//     RAUW-to-handle relies on (RotationLowering §1). The return is rewritten to
-//     i32 only when `predictReturnTainted` (a classical fp return stays fp and is
-//     returned verbatim; the copy width is recovered from the ORIGINAL callee
-//     return type in `buildClone`).
+// bd p3kd.7.8 (owner ruling owner-ruling-clone-pipeline-q1q2-2026-10-07): a
+// tainted fp param or return is NOT retyped here any more. The clone keeps its
+// fp signature while main's stage list runs on it (`lowerCloneControl`), so every
+// stage reads well-typed IR; `retypeCloneSignature` installs the i32-handle
+// signature afterwards. Retyping first left `fadd i32`, `fcmp oeq i32` and
+// `bitcast i32 to i64` in the body, which PredMux's condition grammar refused
+// (measured, docs/design/clone-one-pipeline.md).
 Function *cloneFor(const SpecCandidate &Cand) {
+  ValueToValueMapTy VMap;
+  Function *Clone = CloneFunction(Cand.Callee, VMap);
+  Clone->setName(mangleSpecName(Cand.Callee, Cand.Mask));
+  Clone->setLinkage(GlobalValue::InternalLinkage);
+  stripStaleClassicalAttrs(Clone);
+  return Clone;
+}
+
+// The fp-ABI signature (bd 3c6m.54): a tainted argument (or the return) at a
+// reversible-fp width {f16,f32,f64,f80} is an i32 runtime handle (Rule 15), so
+// the clone's SIGNATURE carries i32 in those slots. The return is rewritten only
+// when `predictReturnTainted` (a classical fp return stays fp and is returned
+// verbatim; the copy width is recovered from the ORIGINAL callee return type in
+// `buildClone`).
+//
+// The new function takes the old one's place in the module's function list (so
+// the printed module order is unchanged), its name, attributes and metadata,
+// and the old body by `splice` (every instruction keeps its identity, so taint
+// keyed on body values stays valid). A rewritten fp->i32 slot is a CROSS-type
+// operand substitution (`Use::set`, untyped, no RAUW assert), laundered when
+// `lowerOps` rewrites the transiently-mistyped fp body ops to i32-handle
+// `cq_template_*`: the SAME transient-mismatch discipline the theta
+// RAUW-to-handle relies on (RotationLowering §1), and the state `cloneFor`
+// produced before bd p3kd.7.8. Returns `Clone` itself when no slot changes.
+Function *retypeCloneSignature(Function *Clone, const SpecCandidate &Cand) {
   Function *Callee = Cand.Callee;
   LLVMContext &Ctx = Callee->getContext();
   Type *I32 = Type::getInt32Ty(Ctx);
 
   SmallVector<Type *, 8> ParamTys;
   bool NeedsRewrite = false;
-  for (Argument &A : Callee->args()) {
+  for (Argument &A : Clone->args()) {
     Type *T = A.getType();
     const bool Tainted = (Cand.Mask & (SpecMask(1) << A.getArgNo())) != 0;
     if (Tainted && abiWidthHasReversibleFpCopy(abiWidthFromType(T))) {
@@ -294,53 +311,52 @@ Function *cloneFor(const SpecCandidate &Cand) {
       ParamTys.push_back(T);  // classical pass-through / i32 handle — kept.
     }
   }
-  Type *RetTy = Callee->getReturnType();
+  Type *RetTy = Clone->getReturnType();
   Type *NewRetTy = RetTy;
   if (abiWidthHasReversibleFpCopy(abiWidthFromType(RetTy)) &&
       predictReturnTainted(Callee, Cand.Mask)) {
     NewRetTy = I32;  // tainted fp return → i32 copy-out handle.
     NeedsRewrite = true;
   }
-
-  if (!NeedsRewrite) {
-    ValueToValueMapTy VMap;
-    Function *Clone = CloneFunction(Callee, VMap);
-    Clone->setName(mangleSpecName(Callee, Cand.Mask));
-    Clone->setLinkage(GlobalValue::InternalLinkage);
-    stripStaleClassicalAttrs(Clone);
+  if (!NeedsRewrite)
     return Clone;
-  }
 
   FunctionType *FT = FunctionType::get(NewRetTy, ParamTys, /*isVarArg=*/false);
-  Function *Clone =
-      Function::Create(FT, GlobalValue::InternalLinkage,
-                       mangleSpecName(Callee, Cand.Mask), Callee->getParent());
-  ValueToValueMapTy VMap;
-  auto NewArg = Clone->arg_begin();
-  for (Argument &A : Callee->args()) {
-    NewArg->setName(A.getName());
-    VMap[&A] = &*NewArg;
-    ++NewArg;
+  Function *New = Function::Create(FT, Clone->getLinkage(),
+                                   Clone->getAddressSpace());
+  Clone->getParent()->getFunctionList().insert(Clone->getIterator(), New);
+  New->takeName(Clone);
+  New->copyAttributesFrom(Clone);
+  New->copyMetadata(Clone, 0);
+  New->splice(New->begin(), Clone);
+  for (unsigned i = 0, n = Clone->arg_size(); i < n; ++i) {
+    Argument *OldA = Clone->getArg(i);
+    Argument *NewA = New->getArg(i);
+    NewA->takeName(OldA);
+    if (OldA->getType() == NewA->getType()) {
+      OldA->replaceAllUsesWith(NewA);
+      continue;
+    }
+    SmallVector<Use *, 8> Uses;
+    for (Use &U : OldA->uses())
+      Uses.push_back(&U);
+    for (Use *U : Uses)
+      U->set(NewA);  // cross-type: see the header comment.
   }
-  SmallVector<ReturnInst *, 1> Returns;
-  CloneFunctionInto(Clone, Callee, VMap,
-                    CloneFunctionChangeType::LocalChangesOnly, Returns);
-  stripStaleClassicalAttrs(Clone);
   // A rewritten (fp→i32) param/return may carry a source type-specific attribute
-  // `CloneFunctionInto` copied verbatim; drop the whole attr set on any slot whose
-  // type CHANGED so no fp-typed attr rides onto the i32 handle (a malformed-module
-  // abort otherwise). Slots left at their original type keep their attrs.
-  for (unsigned i = 0, n = Callee->arg_size(); i < n; ++i)
-    if (Callee->getArg(i)->getType() != Clone->getArg(i)->getType())
-      Clone->setAttributes(Clone->getAttributes().removeParamAttributes(Ctx, i));
+  // (`nofpclass`, …) `copyAttributesFrom` copied verbatim; drop the whole attr set
+  // on any slot whose type CHANGED so no fp-typed attr rides onto the i32 handle
+  // (a malformed-module abort otherwise). Slots left at their original type keep
+  // their attrs.
+  for (unsigned i = 0, n = Clone->arg_size(); i < n; ++i)
+    if (Clone->getArg(i)->getType() != New->getArg(i)->getType())
+      New->setAttributes(New->getAttributes().removeParamAttributes(Ctx, i));
   if (NewRetTy != RetTy)
-    Clone->setAttributes(Clone->getAttributes().removeAttributesAtIndex(
+    New->setAttributes(New->getAttributes().removeAttributesAtIndex(
         Ctx, AttributeList::ReturnIndex));
-  // InternalLinkage requires dso_local — set LAST (CloneFunctionInto copies the
-  // source function's flags, which for an externally-visible callee are not
-  // dso_local). The verbatim CloneFunction path inherits this from the callee.
-  Clone->setDSOLocal(true);
-  return Clone;
+  New->setDSOLocal(true);
+  Clone->eraseFromParent();
+  return New;
 }
 
 }  // namespace cq

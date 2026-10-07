@@ -1447,8 +1447,8 @@ QromClaim classifyQromReadUnderControlImpl(
   // bd 20xt.7: does the index become an OPAQUE handle after the flatten? A
   // CURRENTLY-UNTAINTED claimed index is region-internal-phi-derived (the taint
   // gate above admitted it only via `indexWillTaintAfterFlatten`), so the flatten
-  // converts its phi to a select and `lowerCloneSelect` lowers it to a
-  // `cqrt_alloc_i64` handle whose known-bits the emitter's `qromIndexKnownInBounds`
+  // converts its phi to a select and main's control chain (the 4.4 merge, bd
+  // p3kd.7.8) lowers it to a `cqrt_alloc_i64` handle whose known-bits the emitter's `qromIndexKnownInBounds`
   // re-proof cannot see — that read (if Provable, pow2) NEEDS the identity mask to
   // carry its bounds proof forward. A CURRENTLY-TAINTED index is a straight-line
   // data computation (e.g. a source `& 3`): its raw op SURVIVES to the gep, so the

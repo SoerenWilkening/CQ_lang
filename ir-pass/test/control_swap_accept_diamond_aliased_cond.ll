@@ -30,16 +30,49 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOCASEB < %t.cqd0.ll
 ;
+; bd p3kd.7.8: the clone is now lowered by MAIN's stage list, so the flattened
+; select goes through main's 4.4 path (SelectMergeEmit), not the removed
+; `lowerCloneSelect`: the merge rail is `%out` (was `%cqq.sel`), the constant 0.0
+; arm is materialized as a |0> rail, the forward's trailing `cqrt_x` strip is elided
+; by the Bennett wrap, and the reverse is the exact mirror. The aliased-slot
+; property is unchanged: `fcmp uno` reads %h_cast in BOTH slots and writes the
+; FRESH %h_cmp (CASE A), and %h_cmp is only ever a control, never a written rail.
+; Hand trace, |n>: h_cast=(double)n, h_cmp=c=isnan; copy_c(c,0.0) then
+; copy_c(!c,h_cast) leaves out = c ? 0.0 : x, the phi; fptosi to the result,
+; copy-out; the mirror undoes fptosi, both copies (flag back to c), the fcmp and
+; the sitofp, so every freed rail is |0> (the 0.0 rail is all-zero bits).
+;
 ; The diamond is flattened and the aliased leaf mints CASE A — aliased READ slots,
-; FRESH out rail (%h_cmp):
-; CHECK: %h_cast = call i32 @cq_template_sitofp_i32_to_f64(i32 %{{[a-z0-9]+}})
-; CHECK: %h_cmp = call i32 @cq_template_fcmp_uno_f64(i32 %h_cast, i32 %h_cast)
-; CHECK: call void @cqrt_copy_f64_controlled(i32 %h_cmp, i32 %{{[a-z0-9.]+}}, i32 %cqq.sel)
-; CHECK: call void @cqrt_x(i32 %h_cmp)
-; CHECK: call void @cqrt_copy_f64_controlled(i32 %h_cmp, i32 %h_cast, i32 %cqq.sel)
-; CHECK: call void @cqrt_x(i32 %h_cmp)
-; CHECK: call void @cq_template_fcmp_uno_f64_unc(i32 %h_cmp, i32 %h_cast, i32 %h_cast)
-; CHECK: call void @cqrt_free(i32 %h_cmp)
+; FRESH out rail (%h_cmp). The rail names are pinned literally (not FileCheck
+; variables) because the NOCASEB prefix below is *-NOT-only and cannot bind a
+; variable: the literal positives keep those NOTs anchored to real names.
+; CHECK-LABEL: define void @example(
+; CHECK:       call i32 @__cq_q_mhelper_1(i32 %
+; CHECK-LABEL: define internal i32 @__cq_q_mhelper_1(i32 %n)
+; CHECK-NEXT:  entry:
+; CHECK-NEXT:  %h_cast = call i32 @cq_template_sitofp_i32_to_f64(i32 %n)
+; CHECK-NEXT:  %h_cmp = call i32 @cq_template_fcmp_uno_f64(i32 %h_cast, i32 %h_cast)
+; CHECK-NEXT:  %out = call i32 @cqrt_alloc_f64(double 0.000000e+00)
+; CHECK-NEXT:  %[[K0:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double 0.000000e+00)
+; CHECK-NEXT:  call void @cqrt_copy_f64_controlled(i32 %h_cmp, i32 %[[K0]], i32 %out)
+; CHECK-NEXT:  call void @cqrt_x(i32 %h_cmp)
+; CHECK-NEXT:  call void @cqrt_copy_f64_controlled(i32 %h_cmp, i32 %h_cast, i32 %out)
+; CHECK-NEXT:  %[[R:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fptosi_f64_to_i32(i32 %out)
+; CHECK-NEXT:  %[[CO:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT:  call void @cqrt_copy_i32(i32 %[[R]], i32 %[[CO]])
+; CHECK-NEXT:  call void @cq_template_fptosi_f64_to_i32_unc(i32 %[[R]], i32 %out)
+; CHECK-NEXT:  call void @cqrt_copy_f64_controlled(i32 %h_cmp, i32 %h_cast, i32 %out)
+; CHECK-NEXT:  call void @cqrt_x(i32 %h_cmp)
+; CHECK-NEXT:  call void @cqrt_copy_f64_controlled(i32 %h_cmp, i32 %[[K0]], i32 %out)
+; CHECK-NEXT:  call void @cq_template_fcmp_uno_f64_unc(i32 %h_cmp, i32 %h_cast, i32 %h_cast)
+; CHECK-NEXT:  call void @cq_template_sitofp_i32_to_f64_unc(i32 %h_cast, i32 %n)
+; CHECK-NEXT:  call void @cqrt_free(i32 %h_cast)
+; CHECK-NEXT:  call void @cqrt_free(i32 %h_cmp)
+; CHECK-NEXT:  call void @cqrt_free(i32 %out)
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[K0]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[R]])
+; CHECK-NEXT:  ret i32 %[[CO]]
+; CHECK-NEXT:  }
 ;
 ; CASE B must never appear — an input aliasing the rail the gate WRITES (a
 ; controlled copy or cswap whose control is also a written rail cannot be
@@ -49,7 +82,8 @@
 ; NOCASEB-NOT: @cq_template_fcmp_uno_f64_unc(i32 %h_cast, i32 %h_cast
 ; NOCASEB-NOT: @cqrt_cswap(i32 %h_cmp, i32 %h_cmp
 ; NOCASEB-NOT: @cqrt_copy_f64_controlled(i32 %h_cmp, i32 %h_cmp
-; NOCASEB-NOT: @cqrt_copy_f64_controlled(i32 %h_cmp, i32 %cqq.sel, i32 %cqq.sel)
+; NOCASEB-NOT: @cqrt_copy_f64_controlled(i32 %h_cmp, i32 %{{[a-zA-Z0-9_.]+}}, i32 %h_cmp)
+; NOCASEB-NOT: @cqrt_copy_f64_controlled(i32 %h_cmp, i32 %out, i32 %out)
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @mhelper(i32 %n) {

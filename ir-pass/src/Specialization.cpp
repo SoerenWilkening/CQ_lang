@@ -21,6 +21,9 @@
 #include "SpecializePlan.h"
 #include "SpecializeReject.h"
 #include "SpecializeSeed.h"
+#include "SpecializeDetect.h"   // detectSpecializations (the clone's own plan)
+#include "StageList.h"          // runLoopPrepasses / runControlChain (bd p3kd.7.8)
+#include "ControlPlan.h"        // the plan runControlChain returns
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
 
@@ -64,492 +67,33 @@ static constexpr char kMsgPhantomArgRead[] =
 
 namespace {
 
-// A forward `cq_template_*` data call minted into the clone (exclude the void
-// `_unc` / fresh-minting `_inv` adjoint twins, though none exist at capture time
-// — BennettWrap mints them after). Used to build the forward stream + scratch
-// rails for the Bennett wrap.
-bool isForwardTemplate(const CallInst *CI) {
-  const Function *F = CI->getCalledFunction();
-  if (!F)
-    return false;
-  StringRef N = F->getName();
-  return N.starts_with("cq_template_") && !N.ends_with("_unc") &&
-         !N.ends_with("_inv");
-}
-
-// bd 20xt.4: a forward `cqrt_qram_load_<W>(arr, idx)` minted into the clone by
-// `lowerQramReads` — a reversible data producer (Toffoli copy-out) whose result is
-// a dead value rail the Bennett wrap reverses (via `cqrt_qram_load_<W>_unc`, which
-// un-copies the rail using the preserved cell) and then frees. Captured like an
-// `isForwardTemplate` result (ForwardStream + ScratchRails). NOT the array-handle
-// `cqrt_qram_alloc_<W>` (a CLASSICAL resource token — never tainted, never reversed
-// or freed, matching the top-level `isQramArrayHandle` disposition) and NOT the
-// `_unc` twin (a reverse-only op the wrap mints itself).
-bool isForwardQramLoad(const CallInst *CI) {
-  const Function *F = CI->getCalledFunction();
-  if (!F)
-    return false;
-  StringRef N = F->getName();
-  return N.starts_with("cqrt_qram_load_") && !N.ends_with("_unc");
-}
-
-// Scrub `V` from every clone taint work-list (mirror of SwapRouteEmit/
-// SelectMergeEmit::scrubTaint) so a later stage never dereferences a freed
-// pointer after lowerCloneSelect erases the dead condition tree.
-void scrubCloneTaint(Instruction *I, TaintSet &ct) {
-  ct.Tainted.erase(I);
-  ct.BirthOrder.erase(I);
-  ct.StaleDeclined.erase(I);
-  ct.HandleWidth.erase(I);
-}
-
-// 5po2 I2: mint the tainted select's condition NETWORK forward-only inside the
-// clone, returning the ROOT flag that gates the copies. Mirrors the top-level
-// `emitSelectRegion` step-1 network mint (Rule 14 — same `collectCondTree`
-// grammar, same leaf/AND/OR ops), with the ONE clone difference: NOTHING is
-// stripped here (no `_inv`, no free) — every leaf flag and node ancilla is kept
-// LIVE and captured for the SINGLE Bennett-wrap reverse (H1). Post-order over the
-// and/or tree: each `CmpInst` leaf mints its HL flag (`lowerCompareToFlag`, a
-// `cq_template_icmp_*` the wrap captures via `isForwardTemplate` automatically),
-// each node conjoins onto a fresh |0> i1 ancilla — AND: `toffoli(l,r,g)`; OR:
-// `cnot(l,g); cnot(r,g); toffoli(l,r,g)`. The node toffoli/cnot mints join
-// `NodeMints` (ForwardStream reverse-only — self-inverse, `cqrt_toffoli`/
-// `cqrt_cnot` are in `isInverseEmittable` post-I2) and the i1 ancilla allocs join
-// `NodeRails` (ScratchRails — the wrap frees them after the reverse zeroes them).
-// A single-leaf tree mints exactly the pre-I2 single flag (no ancilla), so the
-// existing one-flag fixtures are byte-identical. bd p3kd.3: a CLASSICAL LITERAL
-// child of an `and`/`or` node (`Tree.LiteralLeaves`, collected by
-// `lowerCloneSelect` with `condLiteralAdmissible`) is never walked and never
-// minted; its node is the top-level 4.4 select's `emitCondLiteralNode`,
-// `gl = cq_template_<and|or>_i1_hl(flag, literal)`, a forward data template the
-// wrap captures (`isForwardTemplate`) and reverses with the SAME SSA literal.
-// Returns null after a diagnosed leaf (unsupported width/predicate, or a per-leaf
-// Q+Q compare).
-Value *mintCondNetwork(Value *Root, const CondTree &Tree, WidthDispatch &wd,
-                       ControlledSymbols &csyms, TaintSet &ct, SelectInst *SI,
-                       IRBuilder<> &B, const DebugLoc &DL,
-                       SmallPtrSetImpl<CallInst *> &NodeMints,
-                       SmallPtrSetImpl<Value *> &NodeRails) {
-  auto stamp = [&](CallInst *C) {
-    if (DL)
-      C->setDebugLoc(DL);
-    return C;
-  };
-  // Per-leaf taint fence.
-  //   * A Q+Q leaf (BOTH operands tainted) mints the QQ compare template when
-  //     its shared logical width resolves in-surface (bd adia — the shared
-  //     `qqSelectLeafWidth` gate, mirroring the top-level select path); an
-  //     off-surface Q+Q (width mismatch, i1/i80/i128) still loud-declines.
-  //   * An ALL-CLASSICAL leaf (NEITHER operand tainted) — reachable inside a COMPOUND
-  //     tree whose taint comes from a SIBLING leaf (`lowerCloneSelect`'s `CondT` is
-  //     true if ANY leaf touches taint) — would fall into `lowerCompareToFlag`'s Q+C
-  //     branch with both operands classical, landing the classical runtime value in
-  //     the i32 HANDLE slot (`cq_template_icmp_..._hl(i32 %classical, k)`): a phantom
-  //     rail ID aliasing an unrelated qubit — a verify-clean WRONG UNITARY (the §5.2
-  //     classical-operand-as-handle prohibition; the Rule-13 CONFIRMED finding). The
-  //     bd p3kd.3: a classical child of an `and`/`or` node is now a LITERAL (see
-  //     above) and never reaches this loop, exactly as at the top level (CondLiteral.h).
-  //     What still does is a classical leaf the literal grammar does not offer —
-  //     under an `xor` node (no `cq_template_xor_i1_hl`), or in a tree the literal
-  //     grammar failed to collect — and the fence keeps refusing it
-  //     (spec_reject_clone_classical_leaf_xor.ll).
-  for (CmpInst *Leaf : Tree.Leaves) {
-    bool T0 = ct.Tainted.count(Leaf->getOperand(0));
-    bool T1 = ct.Tainted.count(Leaf->getOperand(1));
-    if (T0 && T1) {
-      // bd adia (3c6m.55 Lever C): a Q+Q leaf is mintable when its shared logical width
-      // resolves in-surface (qqSelectLeafWidth — the same predicate the
-      // top-level select path gates on); the QQ mint below then passes the
-      // width through. Off-surface Q+Q still declines loudly.
-      if (qqSelectLeafWidth(Leaf, ct).empty()) {
-        SI->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
-            *SI->getFunction(),
-            "cq specialization: quantum-quantum compare condition under "
-            "quantum lift",
-            SI->getDebugLoc()));
-        return nullptr;
-      }
-    }
-    if (!T0 && !T1) {
-      SI->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
-          *SI->getFunction(),
-          "cq specialization: classical compare leaf in a quantum condition under "
-          "quantum lift",
-          SI->getDebugLoc()));
-      return nullptr;
-    }
-  }
-  // bd p3kd.3 — a classical LITERAL child, by MEMBERSHIP of the tree the caller
-  // collected (the CondTreeEmit `isLit` spelling).
-  auto isLit = [&Tree](const Value *V) {
-    return llvm::is_contained(Tree.LiteralLeaves, V);
-  };
-  // The i1 ancilla allocator is resolved only for a node that conjoins two flags
-  // (a literal node mints its own rail), so a literal-only network declares none.
-  FunctionCallee AllocI1;
-  if (llvm::any_of(Tree.Nodes, [&](Instruction *N) {
-        return !isLit(N->getOperand(0)) && !isLit(N->getOperand(1));
-      })) {
-    AllocI1 = wd.allocFn("i1");
-    if (!AllocI1)
-      return nullptr;  // no i1 ancilla allocator (unreachable — defensive).
-  }
-  Type *I1Ty = Type::getInt1Ty(SI->getContext());
-  DenseMap<Value *, Value *> FlagOf;  // tree value → rail (shared leaf minted once)
-  SmallVector<std::pair<Value *, bool>, 8> Stack;
-  Stack.push_back({Root, false});
-  while (!Stack.empty()) {
-    auto [V, ChildrenDone] = Stack.pop_back_val();
-    if (ChildrenDone) {
-      // AllowLogicalSelect is OFF for this caller (see SelectClassify.h), so
-      // every node here is a `BinaryOperator` by construction. bd
-      // test_C_libtooling-3qlq Inc 1 part B lifted the SELECT-path network into
-      // `CondTreeEmit`; this forward-ONLY clone variant (flags kept LIVE for the
-      // single Bennett-wrap reverse, its own `cqq.g` ancilla name, its own
-      // NodeMints/NodeRails capture) is deliberately NOT folded into it in this
-      // increment — the shapes differ in what they DO NOT emit, and unifying
-      // them would move the specialization goldens. Filed as a follow-on.
-      auto *BO = cast<BinaryOperator>(V);
-      // bd p3kd.3 — a MIXED node: `gl = cq_template_<and|or>_i1_hl(f, lit)` on the
-      // other child's flag, the classical bit in the `_hl` literal slot (Rule 15:
-      // never a handle). `collectCondTree` offers a literal only under `and`/`or`
-      // and never both children, so a miss below is detection/emission drift.
-      if (isLit(BO->getOperand(0)) || isLit(BO->getOperand(1))) {
-        const bool LitIsL = isLit(BO->getOperand(0));
-        Value *Lit = BO->getOperand(LitIsL ? 0 : 1);
-        Value *Q = BO->getOperand(LitIsL ? 1 : 0);
-        Value *QF = isLit(Q) ? nullptr : FlagOf.lookup(Q);
-        CallInst *G = QF ? emitCondLiteralNode(B, BO->getOpcode(), QF, Lit, wd,
-                                               ct, DL)
-                         : nullptr;
-        if (!G) {
-          SI->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
-              *SI->getFunction(),
-              "cq specialization: classical compare leaf in a quantum condition "
-              "under quantum lift",
-              SI->getDebugLoc()));
-          return nullptr;
-        }
-        // The Bennett wrap reverses G through `emitInverseCall`'s DD-3 adjoint
-        // `<forward>_unc(out, f, lit)`, minted with NO call-site attributes, while
-        // the runtime takes `bool b_classical` (Clang: `zeroext`; CondLiteral's
-        // round-2 F-2 measured garbage high bits without it). `emitCondLiteralNode`
-        // stamps the forward call; the adjoint (and every copy of it the twin
-        // synthesis makes) gets it from the DECLARATION, which call lowering reads.
-        // The type is exactly the one `emitInverseCall` builds, so it reuses this.
-        Type *UncParams[] = {G->getType(), QF->getType(), Lit->getType()};
-        FunctionCallee Unc = SI->getModule()->getOrInsertFunction(
-            (G->getCalledFunction()->getName() + "_unc").str(),
-            FunctionType::get(Type::getVoidTy(SI->getContext()), UncParams,
-                              /*isVarArg=*/false));
-        if (auto *UF = dyn_cast<Function>(Unc.getCallee()))
-          UF->addParamAttr(2, Attribute::ZExt);
-        FlagOf[V] = G;
-        continue;
-      }
-      Value *L = FlagOf.lookup(BO->getOperand(0));
-      Value *Rv = FlagOf.lookup(BO->getOperand(1));
-      CallInst *G =
-          stamp(B.CreateCall(AllocI1, {Constant::getNullValue(I1Ty)}, "cqq.g"));
-      NodeRails.insert(G);
-      // *** bd 3c6m.67 — THE XOR NODE MUST BE MIRRORED HERE TOO. ***
-      // This is the SECOND consumer of `collectCondTree` (the clone/lift path),
-      // and widening that one grammar without this switch would have emitted
-      // OR's `toffoli(L,Rv,G)` for an xor node — computing `L ∧ Rv` where the
-      // source says `L ⊕ Rv`, verify-clean, with every rail still pairing. The
-      // grammar and its emitters are coupled: a future node kind added to
-      // `collectCondTree` owes an arm HERE as well as in `SelectMergeEmit`
-      // (Rule 14 — one grammar, and every emitter that reads it).
-      const auto Opc = BO->getOpcode();
-      if (Opc == Instruction::Or || Opc == Instruction::Xor) {
-        NodeMints.insert(stamp(B.CreateCall(csyms.cnotFn(), {L, G})));
-        NodeMints.insert(stamp(B.CreateCall(csyms.cnotFn(), {Rv, G})));
-      }
-      if (Opc != Instruction::Xor)
-        NodeMints.insert(stamp(B.CreateCall(csyms.toffoliFn(), {L, Rv, G})));
-      FlagOf[V] = G;
-      continue;
-    }
-    if (FlagOf.count(V))
-      continue;  // shared subtree — its rail is minted once and reused.
-    if (auto *Leaf = dyn_cast<CmpInst>(V)) {
-      // Rule-13 re-clear note (2026-07-17): a leaf comparing an i1 value (e.g.
-      // `icmp eq i1 %innerflag, false` — a NOT over a tainted sub-compare) is
-      // accepted here where the top-level `SelectClassify` (SelectClassify.cpp:462)
-      // fences it. Sound TODAY: the inner producer lowers independently to a flag
-      // handle in the data position, which fills this leaf's handle slot, and the
-      // `i1_hl` template + its `_unc` exist and reverse coherently. If compare
-      // lowering ever changes how an i1-operand compare is minted, RE-REVIEW this
-      // acceptance (it is an asymmetry vs the top level, not a miscompile today).
-      // (Track A.1, F-A1R2-1) `Unruled`, and it is inert either way: this mint
-      // passes the CLONE's `cloneTaint`, so the record lands in a `TaintSet`
-      // `reverifyCmpCondReads` never reads, and `specialize` runs after that
-      // stage. Spelled rather than defaulted so the enumeration is complete in
-      // the source (IMPL_A1.md §7 O-5).
-      Value *F = lowerCompareToFlag(Leaf, wd, ct,
-                                    /*qqWidth=*/qqSelectLeafWidth(Leaf, ct),
-                                    /*inverse=*/false, /*before=*/SI,
-                                    /*negate=*/false,
-                                    /*railToStrip=*/nullptr,
-                                    /*readKind=*/CondReadKind::Unruled);
-      if (!F)
-        return nullptr;  // lowerCompareToFlag already diagnosed (width/predicate).
-      FlagOf[V] = F;
-      continue;
-    }
-    auto *BO = cast<BinaryOperator>(V);  // grammar proven by collectCondTree.
-    Stack.push_back({V, true});
-    // A literal child is read by its node's `_hl` mint, never walked: walking it
-    // would mint the phantom `cq_template_icmp_*_hl(i32 %classical, k)` the fence
-    // above exists to refuse.
-    if (!isLit(BO->getOperand(1)))
-      Stack.push_back({BO->getOperand(1), false});
-    if (!isLit(BO->getOperand(0)))
-      Stack.push_back({BO->getOperand(0), false});
-  }
-  return FlagOf.lookup(Root);
-}
-
-// 5po2: lower each LIFTABLE tainted `select` in `Clone` to a 4.4 controlled-XOR
-// copy, run in `buildClone` AFTER `seedClone`/the inner-clone drain and BEFORE
-// `lowerOps` (so the fresh `cq_template_icmp` flag mint is an ordinary data
-// template `lowerOps`/the wrap already understand, and the stock `icmp` feeding
-// the select is consumed before `lowerOps` would lower a spurious dead compare).
+// bd p3kd.7.2: record each CLASSICAL-condition `select` over a quantum arm in
+// `Clone` (a classical choice of rail; owner ruling 2026-10-06, kept for clones by
+// the 2026-10-07 Q1 ruling). After `lowerOps` it becomes a select of rail handles
+// (`rewriteRailSelects`, CloneRailSelect.h, which carries the soundness argument).
+// The arm taint is read now, while the quantum arms are still their source-typed
+// producers. A whole-classical select is left for the backend.
 //
-// I1 shapes: `select(icmp(param,k), param, 0)` → one controlled copy
-// `out = flag ? param : 0`; `select(icmp, derived, derived)` (int or fp) → the
-// full 4.4 two-copy stream. I2 GENERALIZES two axes, keeping every emitted call
-// FORWARD-ONLY (flags LIVE, no local strip — the Bennett wrap owns the single
-// reverse, H1):
-//   * COMPOUND condition — the condition is generalized from a single `ICmpInst`
-//     to a `collectCondTree` and/or-tree (the PredMux-flattened nested-guard edge
-//     predicate `¬g1∧g2`), minted forward-only by `mintCondNetwork` (leaf
-//     `cq_template_icmp` flags + `cqrt_toffoli`/`cqrt_cnot` conjunctions).
-//   * CLASSICAL arm — a non-tainted (constant sentinel / classical-runtime) arm is
-//     materialized into a copy-source rail via `materializeCopySource` (Rule 14).
-//     The materialized |const⟩ rail is SEPARABLE classical data — left ALLOCATED,
-//     never freed (Rule 6; the SAME behavior the top-level `emitSelectRegion`
-//     exhibits, so int/fp are uniform and no fp-`xorc` clean is needed). It is
-//     captured into NEITHER stream/rail set (leaked); the copy that reads it IS in
-//     `CopyOps` and the Bennett reverse re-reads the still-live |const⟩.
-//
-// Trichotomy (taint re-proof; the SHAPE gate in SpecializeReject is taint-blind):
-//   * condition classical AND both arms classical → whole-classical select, LEAVE
-//     for the backend (taint is the only Q/C boundary).
-//   * condition classical AND some arm tainted → classical control over quantum
-//     data. Since bd p3kd.7.2 RECORDED into `RailSels` and left in place: after
-//     `lowerOps` it becomes a select of rail handles (`rewriteRailSelects`,
-//     CloneRailSelect.h, which carries the soundness argument).
-//   * condition tainted → emit; each arm is a handle (tainted, threaded as-is) or a
-//     materialized rail (classical). NO decline — a tainted-condition mux over any
-//     mix of tainted/classical arms is the 4.4/4.5 data-mux (the sentinel case).
-//
-// `CopyOps` collects the void controlled copies + the `cqrt_x` ¬flag brackets
-// (ForwardStream reverse-only); `OutRails` the out alloc + the i1 network ancilla
-// allocs (ScratchRails); `NodeMints` the `cqrt_toffoli`/`cqrt_cnot` network mints
-// (ForwardStream reverse-only). The buildClone capture wires each into the wrap.
-void lowerCloneSelect(Function &Clone, TaintSet &cloneTaint, WidthDispatch &wd,
-                      SmallPtrSetImpl<CallInst *> &CopyOps,
-                      SmallPtrSetImpl<Value *> &OutRails,
-                      SmallPtrSetImpl<CallInst *> &XBrackets,
-                      SmallPtrSetImpl<CallInst *> &NodeMints,
-                      SmallVectorImpl<RailSelectRecord> &RailSels) {
-  ControlledSymbols csyms(*Clone.getParent(), wd);
-  SmallVector<SelectInst *, 4> Selects;  // snapshot before mutation
+// bd p3kd.7.8: this used to be `lowerCloneSelect`, which also lowered every
+// TAINTED-condition select itself (a forward-only controlled-copy merge over its
+// own condition-network mint, `mintCondNetwork`): a second spelling of the 4.4
+// `SelectMergeEmit` path and of the `collectCondTree` grammar (R12; bd p3kd.7.5).
+// Main's control chain now runs on the clone first and lowers every such select
+// or declines it loudly, so that path stopped firing (measured: 39 fixture
+// outputs used it before the change, 0 after, over all 2699 `ir-pass/test`
+// fixtures, 491 e2e slices and the census probes) and was removed. A tainted
+// select that survives is refused by `buildClone`'s "no tainted select survives"
+// backstop.
+void recordCloneRailSelects(Function &Clone, const TaintSet &cloneTaint,
+                            SmallVectorImpl<RailSelectRecord> &RailSels) {
   for (BasicBlock &BB : Clone)
     for (Instruction &I : BB)
-      if (auto *SI = dyn_cast<SelectInst>(&I))
-        Selects.push_back(SI);
-
-  for (SelectInst *SI : Selects) {
-    // bd p3kd.7.2: a CLASSICAL condition (outside the clone's taint closure, so
-    // independent of every quantum parameter) over a quantum arm is a classical
-    // choice of rail. Asked BEFORE the condition grammar: a classical condition
-    // never mints a flag, so its shape is irrelevant. Record it with the arm taint
-    // read now, while the quantum arms are still their source-typed producers.
-    {
-      const bool TQ = cloneTaint.Tainted.count(SI->getTrueValue());
-      const bool FQ = cloneTaint.Tainted.count(SI->getFalseValue());
-      if (!cloneTaint.Tainted.count(SI->getCondition()) && (TQ || FQ)) {
-        RailSels.push_back(RailSelectRecord{WeakVH(SI), TQ, FQ});
-        continue;
+      if (auto *SI = dyn_cast<SelectInst>(&I)) {
+        const bool TQ = cloneTaint.Tainted.count(SI->getTrueValue());
+        const bool FQ = cloneTaint.Tainted.count(SI->getFalseValue());
+        if (!cloneTaint.Tainted.count(SI->getCondition()) && (TQ || FQ))
+          RailSels.push_back(RailSelectRecord{WeakVH(SI), TQ, FQ});
       }
-    }
-    // The condition must be a `collectCondTree`-recognized `CmpInst` / and/or tree.
-    // Anything off-grammar (a bare i1 phi/trunc/xor after a partial flatten) is not
-    // a lifted shape — leave it; the buildClone "no tainted select survives" backstop
-    // declines a surviving tainted select loudly.
-    CondTree Tree;
-    // bd 3qlq.4: a tree carrying a RAIL LEAF (a bare `_Bool` register as the
-    // condition) is skipped exactly as an off-grammar condition was before the
-    // grammar admitted it — this lift mints per COMPARE leaf and has no
-    // rail-leaf lowering; the disposition here is deliberately UNCHANGED.
-    // bd `boi6` (D-B) / Track M: the same for a REGION-MERGE-φ leaf. `AllowRailPhi`
-    // is not passed here, so such a tree is ALREADY off-grammar and this clause is
-    // the belt to that braces — but the obligation the `CondTree` header states is
-    // that every consumer DECIDE on the field explicitly, and a consumer whose
-    // decision is implicit in a defaulted argument is the kind of "absence of a
-    // decision that hardened by repetition" this project has been bitten by (the
-    // missing `xor i1` node, bd 3c6m.67). The decision is: SKIP.
-    if (!collectCondTree(SI->getCondition(), Tree) ||
-        !Tree.RailLeaves.empty() || !Tree.RailPhiLeaves.empty()) {
-      // bd p3kd.7.2: in clone mode PredMux freezes a classical edge literal
-      // (PredMuxFlatten `literal`), and a `freeze` is no compare leaf, so the
-      // plain grammar refuses a quantum condition that carries one. The literal
-      // grammar below reads it as the classical input it is; ask it here too,
-      // for a QUANTUM condition only (a classical one was recorded above).
-      Tree = CondTree();
-      if (!cloneTaint.Tainted.count(SI->getCondition()) ||
-          !collectCondTree(SI->getCondition(), Tree,
-                           /*AllowLogicalSelect=*/false, /*AllowRailPhi=*/false,
-                           [&cloneTaint](Value *V) {
-                             return condLiteralAdmissible(V, cloneTaint);
-                           }) ||
-          !Tree.RailLeaves.empty() || !Tree.RailPhiLeaves.empty())
-        continue;
-    }
-    const bool IsFp = SI->getType()->isFloatingPointTy();
-
-    // Taint trichotomy. `CondT` = ANY leaf compares a tainted operand (the whole
-    // network is then a quantum flag); `TrueT`/`FalseT` = arm carries taint.
-    bool CondT = false;
-    for (CmpInst *Leaf : Tree.Leaves)
-      if (cloneTaint.Tainted.count(Leaf->getOperand(0)) ||
-          cloneTaint.Tainted.count(Leaf->getOperand(1))) {
-        CondT = true;
-        break;
-      }
-    bool TrueT = cloneTaint.Tainted.count(SI->getTrueValue());
-    bool FalseT = cloneTaint.Tainted.count(SI->getFalseValue());
-    if (!CondT) {
-      if (!TrueT && !FalseT)
-        continue;  // whole-classical select — leave for the backend.
-      // A classical compare tree over a quantum arm whose condition VALUE is
-      // nonetheless tainted (a quantum non-compare leaf the grammar skips) — the
-      // rail-select record above takes every select whose condition value is
-      // classical, so this is defensive. Loud, never a guess.
-      Clone.getContext().diagnose(DiagnosticInfoUnsupported(
-          Clone,
-          "cq specialization: mixed classical/quantum select under quantum lift",
-          SI->getDebugLoc()));
-      continue;  // loud decline (opt exits non-zero) — never a partial emit.
-    }
-
-    // bd p3kd.3 — the condition is quantum: re-collect it with the top-level 4.4
-    // select's LITERAL rule (`condLiteralAdmissible`, CondLiteral.h, asked of the
-    // CLONE's taint), so a classical child of an `and`/`or` node is the network's
-    // classical input rather than a compare leaf to mint. The trichotomy above keeps
-    // reading the plain tree, so every classical-condition verdict is unchanged. A
-    // tree the literal grammar does not collect (a node with two literal children,
-    // reachable only under an `xor`) keeps the plain tree, whose classical leaf the
-    // per-leaf fence in `mintCondNetwork` refuses. The clone's taint is FINAL here:
-    // `specialize` runs after the round-2 fixpoint and `declineQuantumCondLiterals`,
-    // and the clone's mask is fixed at its build, so no later round can make this
-    // literal quantum (L1).
-    {
-      CondTree LitTree;
-      auto IsLit = [&cloneTaint](Value *V) {
-        return condLiteralAdmissible(V, cloneTaint);
-      };
-      if (collectCondTree(SI->getCondition(), LitTree,
-                          /*AllowLogicalSelect=*/false, /*AllowRailPhi=*/false,
-                          IsLit) &&
-          LitTree.RailLeaves.empty() && LitTree.RailPhiLeaves.empty())
-        Tree = std::move(LitTree);
-    }
-
-    StringRef Abi = abiWidthFromType(SI->getType());  // "i32" | "f16..f80"
-    FunctionCallee Alloc = wd.allocFn(Abi);
-    Type *RailTy = Abi.empty() ? nullptr : wd.llvmWidthType(Abi);
-    FunctionCallee Copy =
-        IsFp ? csyms.copyControlledFpFn(Abi) : csyms.copyControlledFn(Abi);
-    if (!Alloc || !RailTy || !Copy)
-      continue;  // unsupported width past the gate — leave for the loud backstop.
-    const DebugLoc DL = SI->getDebugLoc();
-    IRBuilder<> B(SI);  // every stream call lands immediately before the select.
-    auto stamp = [&](CallInst *C) {
-      if (DL)
-        C->setDebugLoc(DL);
-    };
-
-    // 1. MINT the condition NETWORK forward-only — kept LIVE (the Bennett reverse
-    //    plays its adjoint, NOT a local strip). Reuses `mintCondNetwork`.
-    Value *Flag = mintCondNetwork(SI->getCondition(), Tree, wd, csyms, cloneTaint,
-                                  SI, B, DL, NodeMints, OutRails);
-    if (!Flag)
-      continue;  // mintCondNetwork already diagnosed (Q+Q / width / predicate).
-
-    // 2. ALLOC the |0> out rail (i32 or fp). It joins `cloneTaint` so the RAUW'd
-    //    select result classifies as a quantum handle / ReturnTainted holds.
-    CallInst *Out = B.CreateCall(Alloc, {Constant::getNullValue(RailTy)}, "cqq.sel");
-    stamp(Out);
-    cloneTaint.Tainted.insert(Out);
-    cloneTaint.BirthOrder[Out] = cloneTaint.NextBirth++;
-    // bd adia (3c6m.55 Lever C): record the out-rail's LOGICAL ABI width — the p119.6
-    // downstream-consumer invariant, clone edition (a later cast/Q+Q compare
-    // off the RAUW'd select otherwise reads the laundered i32 and declines).
-    cloneTaint.HandleWidth[Out] = Abi;
-    OutRails.insert(Out);
-
-    // The increment-1 ONE-COPY fast path: a single-leaf tree, a const-ZERO false
-    // arm, and a tainted true arm needs no ¬flag copy (out starts |0>, false→0 is
-    // a no-op). Byte-identical to the pre-I2 stream; keeps the I1 fixtures pinned.
-    auto *FalseC = dyn_cast<ConstantInt>(SI->getFalseValue());
-    const bool OneCopy = !IsFp && Tree.Nodes.empty() && FalseC &&
-                         FalseC->isZero() && TrueT;
-
-    // 3. The controlled copies (materialize a classical arm to a copy-source rail).
-    //    A tainted arm is threaded AS-IS — the later (taint-gated) `lowerOps` RAUWs
-    //    its fp producer (sitofp/fneg) to an i32 handle, so the copy's `src` becomes
-    //    well-typed (the deferred-RAUW the top-level 4.4 emitter also relies on). A
-    //    materialized |const⟩ rail is separable classical data — left allocated,
-    //    NOT captured (leaked; Rule 6), the copy reading it is captured and reversed.
-    if (OneCopy) {
-      // out = flag ? param : 0 — one copy (false arm is const 0, no ¬flag bracket).
-      CallInst *CC = B.CreateCall(Copy, {Flag, SI->getTrueValue(), Out});
-      stamp(CC);
-      CopyOps.insert(CC);
-    } else {
-      // out = flag ? T : F — copy T on flag, then the ¬flag `cqrt_x`-bracketed copy
-      // of F. The bracket encloses ONLY the second copy (SelectMergeEmit §16.3
-      // order); both `cqrt_x` are captured into `XBrackets` so the Bennett reverse
-      // re-brackets them (the kmdc dropped-bracket hazard).
-      Value *TrueSrc =
-          materializeCopySource(SI->getTrueValue(), Alloc, cloneTaint, B, DL);
-      CallInst *CopyT = B.CreateCall(Copy, {Flag, TrueSrc, Out});
-      stamp(CopyT);
-      CopyOps.insert(CopyT);
-      CallInst *X1 = B.CreateCall(csyms.xFn(), {Flag});
-      stamp(X1);
-      XBrackets.insert(X1);
-      Value *FalseSrc =
-          materializeCopySource(SI->getFalseValue(), Alloc, cloneTaint, B, DL);
-      CallInst *CopyF = B.CreateCall(Copy, {Flag, FalseSrc, Out});
-      stamp(CopyF);
-      CopyOps.insert(CopyF);
-      CallInst *X2 = B.CreateCall(csyms.xFn(), {Flag});
-      stamp(X2);
-      XBrackets.insert(X2);
-    }
-
-    // 4. REWIRE + erase the select and cascade-erase the now-dead condition tree
-    //    (root-first, use_empty-guarded — a SHARED leaf/node also read as data keeps
-    //    its other users, exactly as `emitSelectRegion` step 6). Scrub each from
-    //    cloneTaint so `lowerOps`/the capture never deref a freed pointer.
-    SI->replaceAllUsesWith(Out);
-    scrubCloneTaint(SI, cloneTaint);
-    SI->eraseFromParent();
-    for (Instruction *N : llvm::reverse(Tree.Nodes))
-      if (N->use_empty()) {
-        scrubCloneTaint(N, cloneTaint);
-        N->eraseFromParent();
-      }
-    for (CmpInst *Leaf : llvm::reverse(Tree.Leaves))
-      if (Leaf->use_empty()) {
-        scrubCloneTaint(Leaf, cloneTaint);
-        Leaf->eraseFromParent();
-      }
-  }
 }
 
 // Rebuild `ct.Tainted` from the persistent tainted params via the SAME forward
@@ -590,7 +134,7 @@ void reseedCloneTaintFromParams(Function &Clone,
 // ladder. A rotation-free value clone: the merge is a pure phi + one `ret` (NO
 // controlled gates — the 65wb controlled-return substrate specialized to a value
 // body; the phi becomes a chained select under PredMux, then the 4.4/4.5
-// controlled-copy mux under `lowerCloneSelect`). Identities (returns, their values,
+// controlled-copy mux under main's control chain, bd p3kd.7.8). Identities (returns, their values,
 // the parents) are captured BEFORE the first mutation (Rule 9 / H3). Idempotent: a
 // single-`ret` body (the common `clang -O1` shape) is left byte-untouched. Purely
 // structural — the new phi's taint is recovered by `reseedCloneTaintFromParams`
@@ -620,7 +164,7 @@ void normalizeReturnMerge(Function &Clone) {
 
 // 5po2 I1: flatten any PredMux-claimable acyclic tainted VALUE diamond in the
 // rotation-free clone body into straight-line `select` muxes, BEFORE the inner
-// drain / `lowerCloneSelect` / `lowerOps`. Reuses the module PredMux flattener
+// drain / main's control chain / `lowerOps`. Reuses the module PredMux flattener
 // (`flattenPredMuxRegions`, Rule 14) driven with the DISJOINT `cloneTaint`: it
 // only claims a function whose terminator is tainted UNDER THAT set, so only THIS
 // clone's diamonds flatten and every other function (caller, sibling clones) is
@@ -646,7 +190,8 @@ void normalizeReturnMerge(Function &Clone) {
 // source-located (Prime Directive; never a partial clone). Returns true on a
 // clean flatten (or a body with no tainted control at all), false if control
 // survives (the caller declines + retargets to keep the site consistent).
-bool lowerCloneControl(Function &Clone, Module &M, TaintSet &ct) {
+bool lowerCloneControl(Function &Clone, Module &M, WidthDispatch &wd,
+                       TaintSet &ct) {
   // Capture the tainted params ONCE — they persist across every flatten erasure.
   SmallVector<Argument *, 8> TaintedParams;
   for (Argument &A : Clone.args())
@@ -680,9 +225,26 @@ bool lowerCloneControl(Function &Clone, Module &M, TaintSet &ct) {
   // to claim in a non-clone function and therefore never to convert a φ the
   // module-level record holds. Same species of argument, same disposition.
   PredMuxRailPhiRecord cloneRailPhiRec;
+  auto Reseed = [&] { reseedCloneTaintFromParams(Clone, TaintedParams, ct); };
   while (flattenPredMuxRegions(M, ct, /*claimAll=*/true, &cloneRailPhiRec))
-    reseedCloneTaintFromParams(Clone, TaintedParams, ct);
-  // The re-ask, immediately after this driver's own fixpoint — the only slot
+    Reseed();
+
+  // bd p3kd.7.8 (owner direction owner-direction-clone-one-pipeline-2026-10-07):
+  // the clone body is a classical body with tainted inputs, which main already
+  // lowers, so it runs MAIN'S stage list (StageList.h), in main's order, under the
+  // clone's own `ct`: the loop pre-passes (unroll, ctlz idiom), then `lowerLoops`
+  // through control emission, `repropagateControlMerges` and the L1 re-asks. The
+  // scope: re-derive taint by the param-rooted reseed (a clone has no
+  // `cq_theta` root, so `propagate` would find none), keep the p3kd.7.2
+  // speculation of classical control (claimAll; owner ruling 2026-10-07 Q1), and
+  // skip the cross-boundary return fence (returning a handle is the clone's
+  // contract). The fp params are still fp here (`retypeCloneSignature` runs after
+  // this returns), so every stage reads well-typed IR.
+  StageScope Scope{Reseed};
+  Scope.ClaimAll = true;
+  Scope.LiftedClone = true;
+  runLoopPrepasses(M, ct, cloneRailPhiRec, Scope);
+  // The re-ask, immediately after this driver's own fixpoints — the only slot
   // that can, since `specialize()` runs after `detectControlRegions` and after
   // `repropagateControlMerges`, so the module-level re-ask is long past. Loud;
   // the `false` return is what the caller's existing decline+retarget path
@@ -690,6 +252,36 @@ bool lowerCloneControl(Function &Clone, Module &M, TaintSet &ct) {
   // exit (`opt`'s does — bd `br4a`).
   if (declineConvertedRailPhiLeaves(cloneRailPhiRec))
     return false;
+  // bd p3kd.7.2: PredMux freezes a CLASSICAL edge literal in clone mode
+  // (PredMuxFlatten `literal`); a later round's φ conversion can make that
+  // literal quantum (the rule-(B) shape: a branch on a region-internal φ). A
+  // quantum value is a basis-state value on every basis state, never poison, so
+  // a freeze over one is the identity; drop it, so the condition grammar reads the
+  // compare beneath. The callee body holds no `freeze` of its own (`scanBody`
+  // refuses it), so every freeze here is PredMux's. bd p3kd.7.8: done BEFORE main's
+  // control chain, whose condition grammar refuses a `freeze` (measured: hypotf QQ
+  // declined `control flow under quantum control` on `and i1 …, freeze(icmp …)`
+  // while this ran after the chain). Each erase drops the freeze's own `ct` entry.
+  for (BasicBlock &BB : Clone)
+    for (Instruction &I : llvm::make_early_inc_range(BB))
+      if (auto *Fr = dyn_cast<FreezeInst>(&I))
+        if (ct.Tainted.count(Fr->getOperand(0))) {
+          Fr->replaceAllUsesWith(Fr->getOperand(0));
+          ct.Tainted.erase(Fr);
+          Fr->eraseFromParent();
+        }
+
+  // The clone's own plan, built exactly where main builds its plan (after the
+  // pre-passes, before the chain), so the chain's guards know the body's
+  // nested lift sites. The sites themselves are lifted by `buildClone`'s
+  // depth-first inner-call loop, never by `specialize()` on this plan.
+  SpecPlan ClonePlan;
+  detectSpecializations(M, ct, wd, ClonePlan);
+  // After this no stage re-derives `ct` from the params: the control emitters
+  // insert the rails they mint (a merge `%out` is WRITTEN by its copies, so no
+  // def-use closure from a param reaches it) and main never re-propagates after
+  // emission either (only the additive `repropagateControlMerges`).
+  runControlChain(M, wd, ct, ClonePlan, Scope);
 
   // PredMux replaces the merge phis with selects and rewrites the branch to an
   // UNCONDITIONAL edge into the (surviving) merge block, so a flattened diamond is
@@ -708,32 +300,14 @@ bool lowerCloneControl(Function &Clone, Module &M, TaintSet &ct) {
         Merged = true;
   }
 
-  // bd p3kd.7.2: PredMux freezes a CLASSICAL edge literal in clone mode
-  // (PredMuxFlatten `literal`); a later round's φ conversion can make that
-  // literal quantum (the rule-(B) shape: a branch on a region-internal φ). A
-  // quantum value is a basis-state value on every basis state, never poison, so
-  // a freeze over one is the identity; drop it, so the condition grammar reads the
-  // compare beneath. The callee body holds no `freeze` of its own (`scanBody`
-  // refuses it), so every freeze here is PredMux's.
-  // The unconditional re-seed below drops any stale taint entry.
-  for (BasicBlock &BB : Clone)
-    for (Instruction &I : llvm::make_early_inc_range(BB))
-      if (auto *Fr = dyn_cast<FreezeInst>(&I))
-        if (ct.Tainted.count(Fr->getOperand(0))) {
-          Fr->replaceAllUsesWith(Fr->getOperand(0));
-          ct.Tainted.erase(Fr);
-          Fr->eraseFromParent();
-        }
-
   // Rule-9 lifetime hygiene: `MergeBlockIntoPredecessor` RAUWs+erases a folded
-  // block's single-incoming PHI. Were that phi tainted, its freed pointer would
-  // linger in `ct.Tainted` and be carried (as a stale pointer) into every later
-  // stage — the exact block-lifetime hazard class this codebase treats as
-  // unforgivable. One final param-rooted reseed drops any freed pointer and
-  // recovers the full live set (every clone value is param-derived). Cheap and
-  // unconditional so the invariant "no stage after this reads a freed `ct` entry"
-  // holds by construction, not by the fold's incidental non-reuse of the slot.
-  reseedCloneTaintFromParams(Clone, TaintedParams, ct);
+  // block's single-incoming PHI. `ct.Tainted` is self-cleaning
+  // (`ScrubOnDelete.h`), so the erased phi's key is dropped at the deletion and
+  // no later stage reads a freed entry. ⚠ bd p3kd.7.8: this used to be a final
+  // CLEAR + param-rooted reseed. Since the clone runs main's control chain that
+  // is wrong: the chain's emitters taint the rails they mint (a merge `%out` is
+  // written by its copies, not computed from a param), and a def-use closure from
+  // the params loses them (measured: the clone's return then read as classical).
 
   // Backstop: a FULLY-flattened acyclic value region now collapses to exactly ONE
   // straight-line block. Any surviving block is unflattened control PredMux
@@ -986,9 +560,34 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
 
   TaintSet cloneTaint = seedClone(Clone, Mask);
 
-  // fp-ABI param HandleWidth (bd 3c6m.54): a tainted fp param rewritten to i32 in
-  // `cloneFor` carries an fp logical width the clone body needs when a CAST reads
-  // it directly (`getSrcTy()` reads the laundered i32; the width is recovered from
+  // 5po2 I1: flatten a PredMux-claimable tainted VALUE diamond in the clone body
+  // to straight-line selects FIRST, and run main's stage list (bd p3kd.7.8) —
+  // before the inner drain and `lowerOps` all see a flattened straight-line body. An off-pattern control
+  // shape (multi-exit / loop / non-claimable) LOUD-declines here; retarget the
+  // site (keeping it consistent so no secondary crash precedes the DS_Error) and
+  // return — `opt` exits non-zero on the diagnostic and the module is rejected.
+  if (!lowerCloneControl(*Clone, M, wd, cloneTaint)) {
+    plan.Cache[Key].ReturnTainted = false;
+    retargetSite(Site, Clone);
+    return SpecRecord{Clone, false};
+  }
+
+  // bd p3kd.7.8: the fp-ABI signature, installed only now that main's stages
+  // have run on the well-typed body (owner ruling 2026-10-07 Q2). The function is
+  // replaced in place; re-key every record held on the old one or its params.
+  if (Function *Retyped = retypeCloneSignature(Clone, SpecCandidate{Site, Callee, Mask});
+      Retyped != Clone) {
+    Clone = Retyped;
+    plan.Cache[Key].Clone = Clone;
+    taint.SpecHandleArgMask[Clone] = Mask;
+    for (Argument &A : Clone->args())
+      if (Mask & (SpecMask(1) << A.getArgNo()))
+        cloneTaint.Tainted.insert(&A);
+  }
+
+  // fp-ABI param HandleWidth (bd 3c6m.54): a tainted fp param rewritten to i32
+  // carries an fp logical width the clone body needs when a CAST reads it directly
+  // (`getSrcTy()` reads the laundered i32; the width is recovered from
   // `HandleWidth`, exactly the theta-handle mechanism RotationLowering uses). Record
   // it here so `lowerOps` on the clone body resolves `fptrunc`/`bitcast fp<->i80`/…
   // off an fp param to the correct `cq_template_<op>_f<W>_...` rather than declining.
@@ -997,18 +596,6 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
     if (Clone->getArg(i)->getType()->isIntegerTy(32) &&
         abiWidthHasReversibleFpCopy(OrigW))
       cloneTaint.HandleWidth[Clone->getArg(i)] = OrigW;
-  }
-
-  // 5po2 I1: flatten a PredMux-claimable tainted VALUE diamond in the clone body
-  // to straight-line selects FIRST — before the inner drain, `lowerCloneSelect`,
-  // and `lowerOps` all see a flattened straight-line body. An off-pattern control
-  // shape (multi-exit / loop / non-claimable) LOUD-declines here; retarget the
-  // site (keeping it consistent so no secondary crash precedes the DS_Error) and
-  // return — `opt` exits non-zero on the diagnostic and the module is rejected.
-  if (!lowerCloneControl(*Clone, M, cloneTaint)) {
-    plan.Cache[Key].ReturnTainted = false;
-    retargetSite(Site, Clone);
-    return SpecRecord{Clone, false};
   }
 
   // Depth-first transitive worklist (3.3): specialize each inner tainted-arg call
@@ -1029,8 +616,8 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
       continue;  // indirect call with classical args — left as a classical subcall.
     // A curated reversible llvm.* idiom intrinsic (Phase 7.1-E) is a tainted
     // DATA OP lowered IN PLACE by the `lowerOps(M, …)` below (to a
-    // `cq_template_<op>_<W>` producer the wrap then captures via
-    // `isForwardTemplate`), NEVER a nested specialization candidate. Its callee
+    // `cq_template_<op>_<W>` producer the wrap then reverses), NEVER a nested
+    // specialization candidate. Its callee
     // is an llvm INTRINSIC DECLARATION with no body, so it must be skipped here
     // BEFORE `classifyCandidate`/`scanBody` — those require a visible definition
     // (`!isDeclaration()`, see the SpecializeReject.h contract) and would
@@ -1041,6 +628,12 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
     // body, this loop must mirror that — lower it in place, do not recurse.
     // [[7-1-E-intrinsics-frozen-clearance]]
     if (isCuratedReversibleIntrinsic(Inner))
+      continue;
+    // bd p3kd.7.8: a runtime gate main's control chain minted in this body is
+    // not a lift site (it has no body to clone; `classifyCandidate` on it read a
+    // null location and crashed in the spike).
+    if (InnerCallee->getName().starts_with("cqrt_") ||
+        InnerCallee->getName().starts_with("cq_template_"))
       continue;
     // p119: a DIRECT-libm call in a clone body is a LIBRARY function (removed from
     // recognition). It has no visible body, so it falls through to the loud
@@ -1094,7 +687,8 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
     //     r1B F-EB-9 shape).
     //   * the `BirthOrder` migration of `OldInner` onto `Inner` — DEAD BY
     //     CONSTRUCTION, on every binary: `cloneTaint.BirthOrder` is written only
-    //     by `lowerCloneSelect` / `lowerQramReads` / `lowerOps`, all of which run
+    //     by `lowerQramReads` / `lowerOps` (and, before bd p3kd.7.8, the clone's own
+    //     select lowering), all of which run
     //     AFTER this loop, so it never holds an inner call here (r1A's I1 logged
     //     no lookup hit at it on the corpus). A lookup MOVED before the erase would
     //     be dead too, so it is deleted rather than moved; the stream is unchanged
@@ -1134,9 +728,13 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
   // taken with the pass's ONE liveness predicate (`DeadValueLiveness.h`) on the
   // clone body as it is HERE: control flattened (`lowerCloneControl`), inner
   // tainted-arg calls retargeted to their own clones (whose records this
-  // predicate's call-slot rule already consults), and every read still a STOCK
-  // OPCODE. Not later: `lowerCloneSelect`/`lowerOps` turn reads into runtime
-  // calls, which are roots, and would make every parameter live. A slot recorded
+  // predicate's call-slot rule already consults), and every read outside a
+  // lowered control region still a STOCK OPCODE. Not later: `lowerOps` turns reads
+  // into runtime calls, which are roots, and would make every parameter live.
+  // ⚠ bd p3kd.7.8: main's control chain now runs before this record, so the
+  // reads inside a lowered region are already runtime gates and count as roots.
+  // That only ever makes a parameter LIVE that a stock-opcode body might have
+  // shown dead (the safe direction: the caller keeps passing the real handle). A slot recorded
   // here is one no LIVE ROOT of the clone reads — and, since bd vsfp round 4 (bd
   // sqjq), one whose VALUE the built clone never observes, because the dead cone
   // below is deleted right after the record (⚠ round 3 wrote "never reads" of the
@@ -1269,34 +867,16 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
               stripUnreadSlotValueConstraints(*CB, CB->getArgOperandNo(&U));
   }
 
-  // 5po2: lift any LIFTABLE tainted `select` in the clone body to a 4.4
-  // controlled-XOR copy BEFORE `lowerOps` — so the fresh `cq_template_icmp` flag
-  // mint is an ordinary data template the wrap captures/reverses, and the stock
-  // `icmp` feeding the select is consumed before `lowerOps` would lower a dead
-  // compare. `SelectCopyOps` (the void controlled copies) and `SelectOutRails`
-  // (the out allocs) steer the Bennett capture below.
-  SmallPtrSet<CallInst *, 4> SelectCopyOps;
-  SmallPtrSet<Value *, 4> SelectOutRails;
-  // kmdc: the fp two-arm select's ¬flag `cqrt_x` brackets — ForwardStream-only
-  // reverse-only ops the Bennett reverse must re-play (they mint no rail). Held
-  // separately because `isForwardTemplate` matches only `cq_template_` names, so
-  // without this set the reverse would DROP them → dirty out-rail / hidden measure.
-  SmallPtrSet<CallInst *, 4> SelectXBrackets;
-  // 5po2 I2: the compound-condition network's `cqrt_toffoli`/`cqrt_cnot` conjunction
-  // mints — ForwardStream-only reverse-only ops (self-inverse; their i1 ancilla
-  // allocs land in `SelectOutRails` as ScratchRails). Same NON-`cq_template_` reason
-  // as `SelectXBrackets`: without this set the Bennett reverse drops them → a dirty
-  // ancilla free (Rule 6) / a wrong-flag replay of the copies.
-  SmallPtrSet<CallInst *, 4> SelectNodeMints;
   // bd p3kd.7.2: classical-condition selects over quantum arms, rewritten to rail
-  // handle selects after `lowerOps` (CloneRailSelect.h).
+  // handle selects after `lowerOps` (CloneRailSelect.h). Every tainted-condition
+  // select was lowered (or declined) by main's control chain in
+  // `lowerCloneControl`.
   SmallVector<RailSelectRecord, 4> RailSels;
-  lowerCloneSelect(*Clone, cloneTaint, wd, SelectCopyOps, SelectOutRails,
-                   SelectXBrackets, SelectNodeMints, RailSels);
+  recordCloneRailSelects(*Clone, cloneTaint, RailSels);
 
   // 5po2 I1 over-accept backstop: after select lowering NO tainted `select` may
-  // survive. A PredMux-flattened mux at an unsupported width / off-shape that
-  // `lowerCloneSelect` could not lower (it `continue`s past an unrecognized shape)
+  // survive except a recorded classical-condition rail select (bd p3kd.7.2). A
+  // tainted-condition select main's control chain neither lowered nor declined
   // would otherwise reach the Bennett wrap as a raw select — a broken / verify-
   // dirty clone. LOUD-decline it source-located (Prime Directive; retarget to keep
   // the site consistent before the DS_Error exits opt non-zero).
@@ -1334,13 +914,12 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
   // so they are untouched; already-lowered sibling clones are in disjoint
   // `cloneTaint`s, so they are untouched too.
   // `inBennettClone=true` (bd test_C_libtooling-6uqc Inc 2a): the M-C in-place
-  // reassignment must NOT fire inside a clone body. The wrap below captures the
-  // forward stream by SCANNING for `isForwardTemplate`/clone-call/select-op
-  // members, and a void `cqrt_addc_<W>` is none of them — it would be silently
-  // omitted from `ForwardStream`, never reversed, and would leave a BORROWED
-  // clone argument permanently shifted, breaking `|x>|0> -> |x>|f(x)>` for every
-  // caller AND the synthesized `_unc` twin. Out-of-place inside a clone is
-  // correct and is what ships today.
+  // reassignment does NOT fire inside a clone body. It was introduced because the
+  // wrap then captured a curated stream that a void `cqrt_addc_<W>` was not in,
+  // so a BORROWED clone argument would have stayed shifted. Since bd p3kd.7.8 the
+  // wrap reverses every gate (an in-place `cqrt_addc_<W>` included, it is in
+  // `isInverseEmittable`), so that hazard is gone; the flag stays because
+  // out-of-place is what ships and what the clone goldens pin.
   lowerOps(M, wd, cloneTaint, /*inBennettClone=*/true);
 
   // bd p3kd.7.2: every quantum arm is an i32 handle now; route the recorded
@@ -1352,40 +931,14 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
     return SpecRecord{Clone, false};
   }
 
-  // Capture the forward stream + scratch rails in program order: data templates
-  // AND the `ReturnTainted` inner clone calls (each a reversible rail the wrap
-  // reverses via its twin and frees). 5po2 adds two off-1:1 kinds: a controlled
-  // copy (`SelectCopyOps`) is a REVERSE-ONLY forward op (played self-inverse to
-  // zero the out rail, mints no rail → ForwardStream only), and the select out
-  // alloc (`SelectOutRails`) is a rail to FREE but not a forward op (zeroed by
-  // that copy's reverse → ScratchRails only).
-  SmallVector<CallInst *, 8> ForwardStream;
-  SmallVector<Value *, 8> ScratchRails;
-  for (BasicBlock &BB : *Clone)
-    for (Instruction &I : BB)
-      if (auto *CI = dyn_cast<CallInst>(&I)) {
-        if (isForwardTemplate(CI) || TaintedCloneCalls.count(CI) ||
-            isForwardQramLoad(CI)) {
-          // bd 20xt.4: a `cqrt_qram_load_<W>` joins the data-template/inner-clone
-          // family — a reversible producer the wrap reverses (its `_unc`) then frees
-          // (the value rail). Its array-handle `cqrt_qram_alloc_<W>` is neither
-          // `isForwardTemplate` nor a select op, so it is naturally EXCLUDED here
-          // (a classical resource token — never reversed or freed).
-          ForwardStream.push_back(CI);
-          ScratchRails.push_back(CI);
-        } else if (SelectCopyOps.count(CI) || SelectXBrackets.count(CI) ||
-                   SelectNodeMints.count(CI)) {
-          // A controlled copy, an fp-select ¬flag `cqrt_x` bracket, OR (5po2 I2) a
-          // compound-condition `cqrt_toffoli`/`cqrt_cnot` network mint: reverse-only
-          // (self-inverse, mints no rail) → ForwardStream, never ScratchRails.
-          ForwardStream.push_back(CI);
-        } else if (SelectOutRails.count(CI)) {
-          // The select out rail AND (5po2 I2) the i1 network ancilla allocs: a rail
-          // to FREE, zeroed by the reverse (the copy/node adjoint) → ScratchRails.
-          ScratchRails.push_back(CI);
-        }
-      }
-
+  // bd p3kd.7.8: the wrap captures the forward itself — EVERY runtime gate of
+  // the single-block body, including what main's control chain minted (flags,
+  // Toffoli networks, controlled copies, their inline strips) — and reverses it
+  // mechanically (BennettWrap.h; owner ruling
+  // owner-ruling-clone-reversal-mechanical-2026-10-07). It used to read a stream
+  // curated from `isForwardTemplate`, `TaintedCloneCalls`, `isForwardQramLoad` and
+  // the `lowerCloneSelect` sets, which would have dropped every emitter gate from
+  // the reversal.
   auto *Ret = dyn_cast<ReturnInst>(Clone->getEntryBlock().getTerminator());
   Value *RV = Ret ? Ret->getReturnValue() : nullptr;
   bool ReturnTainted = RV && cloneTaint.Tainted.count(RV);
@@ -1426,7 +979,7 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
   // 5po2 I2 SYMMETRIC fp-ABI mispredict guard (predict-FALSE / actual-TRUE, the
   // Rule-13 CONFIRMED-finding backstop): a tainted-controlled return that
   // `predictReturnTainted` UNDER-predicted classical (so `cloneFor` kept the fp
-  // return type) but `lowerCloneSelect` DID mint a tainted i32 out rail — the clone
+  // return type) but a control emitter DID mint a tainted i32 out rail — the clone
   // declares an fp return yet `emitBennettWrap` would set `ret i32` (a mistyped,
   // broken module, exit 134, NO house diagnostic). The `predictReturnTainted`
   // tainted-terminator over-approximation now precludes this (any tainted diamond →
@@ -1447,7 +1000,7 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
   // Every `false` is a diagnosed decline (BennettWrap.cpp); keep the site
   // consistent, as the other clone declines do, so no secondary crash precedes the
   // DS_Error (bd p3kd.7.1 review round 1, F1: the result used to be dropped).
-  if (!emitBennettWrap(*Clone, ForwardStream, ResultRail, ScratchRails, RetW, wd,
+  if (!emitBennettWrap(*Clone, TaintedCloneCalls, ResultRail, RetW, wd,
                        cloneTaint)) {
     plan.Cache[Key].ReturnTainted = false;
     retargetSite(Site, Clone);

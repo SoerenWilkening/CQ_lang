@@ -3,6 +3,17 @@
    straight into cq_measure with no gate between. The specialisation itself (the
    clone + Bennett wrap) is unaffected; only the onward phase line leaves the golden.
    (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
+
+/* bd p3kd.7.8 (2026-10-07): the lifted clone now runs MAIN'S stage list, so its
+   tainted select lowers through main's 4.4 merge (CondTreeEmit/SelectMergeEmit)
+   and the Bennett wrap reverses it mechanically. Two trace changes, golden
+   regenerated deliberately: the merge's trailing ¬flag `cqrt_x` (nothing reads
+   the flag after the second copy) and its mirror at the start of the reverse are
+   elided as a pair; where an arm is a constant zero, its materialized |0> rail
+   is copied (a no-op) and now freed after the reverse. Every other gate is
+   unchanged. The descriptions above are
+   the pre-p3kd.7.8 stream. */
+
 /* spec_twoarm_caller.c — the CQ translation unit for the Phase 6 / issue 5po2 I1
    golden: a plain C if/else with two DERIVED arms lifted into a reversible
    quantum clone. Mirrors spec_select_caller's quantum core (theta -> helper ->

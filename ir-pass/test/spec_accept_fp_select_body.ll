@@ -14,12 +14,29 @@
 ; fp value never reaches a rotation angle; the RetW=="i32" gate keeps fp
 ; clone-internal (see the kmdc PRD). The flag is kept LIVE for the Bennett reverse.
 ;
-; THE LOAD-BEARING PIN (the kmdc CONFIRMED hazard): the two ¬flag `cqrt_x` brackets
-; MUST appear in the Bennett REVERSE too (a palindrome). `isForwardTemplate`
-; matches only `cq_template_` names, so without the dedicated `SelectXBrackets`
-; capture the reverse would DROP them → replay `[copy_F, copy_T]` at the wrong
+; THE LOAD-BEARING PIN (the kmdc CONFIRMED hazard): the ¬flag `cqrt_x` bracket
+; MUST appear in the Bennett REVERSE too (the mirror). Historically (pre-p3kd.7.8)
+; `isForwardTemplate` matched only `cq_template_` names, so without the dedicated
+; `SelectXBrackets` capture the reverse would DROP the brackets → replay `[copy_F, copy_T]` at the wrong
 ; polarity → `out = arm_T ^ arm_F ≠ 0` → a dirty free / hidden measurement (Rule 6),
-; verify-clean. The CNT check pins EXACTLY four `cqrt_x` (2 forward + 2 reverse).
+; verify-clean. The CNT check pins EXACTLY two `cqrt_x` (1 forward + 1 reverse).
+;
+; bd p3kd.7.8: `lowerCloneSelect` and its `SelectXBrackets` capture are gone; main's
+; stage list lowers the clone (SelectMergeEmit), and the Bennett wrap builds the
+; reverse as the EXACT mirror of the whole forward. The forward's closing `cqrt_x`
+; strip is elided (it writes only the flag after the flag's last forward read), so
+; the forward leaves the flag at ¬c and the mirror's single `cqrt_x` restores it
+; between the two reverse copies: one bracket each way, not two. Hand trace, |n>:
+; x=(double)n, nx=−x, flag=c=[n<0]; copy_c(c,nx) then copy_c(¬c,x) gives out=|x|;
+; fcmp/zext, copy-out; the mirror undoes zext, fcmp, copy_c(¬c,x), `cqrt_x` (flag
+; back to c), copy_c(c,nx) (out back to 0), then the icmp/fneg/sitofp `_unc`s, so
+; all six freed rails are |0>. Dropping the reverse bracket would replay both
+; copies at polarity ¬c and leave out = x ⊕ nx ≠ 0 at its free: the CHECK-NEXT body
+; and the CNT count both catch it. The old trailing `CHECK-NOT: = select` / `under
+; quantum lift` scanned only the text after the clone's `ret` (and the diagnostic
+; goes to stderr, which is not captured; a decline already fails the first RUN by
+; its non-zero exit), so they pinned nothing; the CHECK-NEXT body now excludes a
+; leftover select from the clone.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
@@ -47,39 +64,46 @@ entry:
 }
 
 ; Caller retargets to the mangled clone.
-; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @__cq_q_mhelper_1(i32 %[[H:[a-zA-Z0-9_.]+]])
-; CHECK:     call i32 @cqrt_measure_i32(i32 %[[R]])
+; CHECK-LABEL: define i32 @example(
+; CHECK:       %[[R:[a-zA-Z0-9_.]+]] = call i32 @__cq_q_mhelper_1(i32 %[[H:[a-zA-Z0-9_.]+]])
+; CHECK:       call i32 @cqrt_measure_i32(i32 %[[R]])
 
-; Clone body — the fp rail + FORWARD two-arm stream (copy_T, ¬flag bracket, copy_F, bracket).
-; CHECK:     define internal i32 @__cq_q_mhelper_1(i32 %n)
-; CHECK:     %[[FLAG:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_slt_i32_hl(i32 %n, i32 0)
-; CHECK:     %[[SEL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double 0.000000e+00)
-; CHECK:     call void @cqrt_copy_f64_controlled(i32 %[[FLAG]], i32 %[[T:[a-zA-Z0-9_.]+]], i32 %[[SEL]])
-; CHECK:     call void @cqrt_x(i32 %[[FLAG]])
-; CHECK:     call void @cqrt_copy_f64_controlled(i32 %[[FLAG]], i32 %[[F:[a-zA-Z0-9_.]+]], i32 %[[SEL]])
-; CHECK:     call void @cqrt_x(i32 %[[FLAG]])
-; CHECK:     %[[CMP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fcmp_ogt_f64_hl(i32 %[[SEL]], double 1.000000e+00)
-; CHECK:     call i32 @cq_template_zext_i1_to_i32(i32 %[[CMP]])
+; Clone body — the fp rail + FORWARD two-arm stream (copy_T, ¬flag bracket, copy_F;
+; the closing bracket is elided), then the copy-out.
+; CHECK-LABEL: define internal i32 @__cq_q_mhelper_1(i32 %n)
+; CHECK-NEXT:  entry:
+; CHECK-NEXT:  %[[X:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sitofp_i32_to_f64(i32 %n)
+; CHECK-NEXT:  %[[T:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fneg_f64(i32 %[[X]])
+; CHECK-NEXT:  %[[FLAG:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_slt_i32_hl(i32 %n, i32 0)
+; CHECK-NEXT:  %[[SEL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double 0.000000e+00)
+; CHECK-NEXT:  call void @cqrt_copy_f64_controlled(i32 %[[FLAG]], i32 %[[T]], i32 %[[SEL]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[FLAG]])
+; CHECK-NEXT:  call void @cqrt_copy_f64_controlled(i32 %[[FLAG]], i32 %[[X]], i32 %[[SEL]])
+; CHECK-NEXT:  %[[CMP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fcmp_ogt_f64_hl(i32 %[[SEL]], double 1.000000e+00)
+; CHECK-NEXT:  %[[Z:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i1_to_i32(i32 %[[CMP]])
+; CHECK-NEXT:  %[[CO:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT:  call void @cqrt_copy_i32(i32 %[[Z]], i32 %[[CO]])
 
-; Bennett REVERSE — the PALINDROME: zext _unc, fcmp _unc, then bracket, copy_F,
-; bracket, copy_T (the brackets are NOT dropped), then the compare/fneg/sitofp _unc.
-; CHECK:     call void @cq_template_zext_i1_to_i32_unc(
-; CHECK:     call void @cq_template_fcmp_ogt_f64_hl_unc(i32 %[[CMP]], i32 %[[SEL]], double 1.000000e+00)
-; CHECK:     call void @cqrt_x(i32 %[[FLAG]])
-; CHECK:     call void @cqrt_copy_f64_controlled(i32 %[[FLAG]], i32 %[[F]], i32 %[[SEL]])
-; CHECK:     call void @cqrt_x(i32 %[[FLAG]])
-; CHECK:     call void @cqrt_copy_f64_controlled(i32 %[[FLAG]], i32 %[[T]], i32 %[[SEL]])
-; CHECK:     call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[FLAG]], i32 %n, i32 0)
-; CHECK:     call void @cq_template_fneg_f64_unc(
-; CHECK:     call void @cq_template_sitofp_i32_to_f64_unc(
-; CHECK:     call void @cqrt_free(i32 %[[SEL]])
-; CHECK:     ret i32
+; Bennett REVERSE — the MIRROR: zext _unc, fcmp _unc, then copy_F, the bracket,
+; copy_T (the bracket is NOT dropped), then the compare/fneg/sitofp _unc, the frees.
+; CHECK-NEXT:  call void @cq_template_zext_i1_to_i32_unc(i32 %[[Z]], i32 %[[CMP]])
+; CHECK-NEXT:  call void @cq_template_fcmp_ogt_f64_hl_unc(i32 %[[CMP]], i32 %[[SEL]], double 1.000000e+00)
+; CHECK-NEXT:  call void @cqrt_copy_f64_controlled(i32 %[[FLAG]], i32 %[[X]], i32 %[[SEL]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[FLAG]])
+; CHECK-NEXT:  call void @cqrt_copy_f64_controlled(i32 %[[FLAG]], i32 %[[T]], i32 %[[SEL]])
+; CHECK-NEXT:  call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[FLAG]], i32 %n, i32 0)
+; CHECK-NEXT:  call void @cq_template_fneg_f64_unc(i32 %[[T]], i32 %[[X]])
+; CHECK-NEXT:  call void @cq_template_sitofp_i32_to_f64_unc(i32 %[[X]], i32 %n)
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[X]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[T]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[FLAG]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[SEL]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[CMP]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[Z]])
+; CHECK-NEXT:  ret i32 %[[CO]]
+; CHECK-NEXT:  }
 
-; No leftover raw select, no decline.
-; CHECK-NOT: = select
-; CHECK-NOT: under quantum lift
-
-; EXACTLY four cqrt_x — 2 forward brackets + 2 reverse brackets. A dropped-bracket
-; regression would leave only 2 (the reverse pair missing).
-; CNT-COUNT-4: call void @cqrt_x(
+; EXACTLY two cqrt_x — 1 forward bracket + 1 reverse bracket. A dropped-bracket
+; regression would leave only 1 (the reverse one missing).
+; CNT-COUNT-2: call void @cqrt_x(
 ; CNT-NOT:     call void @cqrt_x(

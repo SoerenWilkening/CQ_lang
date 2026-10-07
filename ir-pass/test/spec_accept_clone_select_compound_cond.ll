@@ -18,6 +18,16 @@
 ; reverse replays the copies (out → |0>), the toffoli (g → |0>), both compare
 ; `_unc`s and both arm `_unc`s; every freed rail is |0>.
 ;
+; bd p3kd.7.8: `lowerCloneSelect` is gone; the clone's select is lowered by MAIN's
+; 4.4 path (CondTreeEmit's toffoli node + SelectMergeEmit's two-copy merge, the
+; same code as a top-level select). Main's inline strip (the closing `cqrt_x(g)`,
+; the toffoli/compare `_unc`s and frees) writes only rails after their last read,
+; so the Bennett wrap elides it; the forward ends with g still flipped. Trace: out
+; = g ? 3·va : vb⊕6 as above; the mirror un-copies vb⊕6 under the flipped g, re-
+; flips g, un-copies 3·va (out -> |0>), the toffoli zeroes g, then the compare and
+; arm `_unc`s zero f2, f1, e, t; the six frees (program order) all see |0>, and
+; the result rail is never freed. The CHECK-NEXT chain now runs to the `ret`.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=ERR --allow-empty < %t.err
@@ -60,18 +70,21 @@ define i32 @f(i32 noundef %u, i32 noundef %v) {
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[T]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[E]], i32 %[[OUT]])
-; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
+; The Bennett copy-out, then the exact mirror of the forward:
 ; CHECK-NEXT: %[[RES:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT: call void @cqrt_copy_i32(i32 %[[OUT]], i32 %[[RES]])
-; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[E]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[T]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[F1]], i32 %[[F2]], i32 %[[G]])
 ; CHECK-NEXT: call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[F2]], i32 %b, i32 9)
 ; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F1]], i32 %a, i32 5)
-; CHECK-DAG: call void @cqrt_free(i32 %[[G]])
-; CHECK-DAG: call void @cqrt_free(i32 %[[F1]])
-; CHECK-DAG: call void @cqrt_free(i32 %[[F2]])
-; CHECK-DAG: call void @cqrt_free(i32 %[[OUT]])
-; CHECK:     ret i32 %[[RES]]
+; CHECK-NEXT: call void @cq_template_xor_i32_hl_unc(i32 %[[E]], i32 %b, i32 6)
+; CHECK-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %[[T]], i32 %a, i32 3)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[T]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[E]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F1]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F2]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[G]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT]])
+; CHECK-NEXT: ret i32 %[[RES]]

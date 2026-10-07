@@ -10,6 +10,11 @@
 ; in a clone are a later increment (7.3 territory inside specialization); over-
 ; declining is safe (Prime Directive).
 ;
+; bd p3kd.7.8: a lifted clone now runs main's stage list, so the loop reaches
+; `lowerLoops`, which refuses a loop whose exit test is quantum (Q1, NORTHSTAR
+; goal 1: a quantum-bounded loop needs a bound) before the clone backstop is asked.
+; Measured: main gives the same message for the body inlined into the caller.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -36,4 +41,4 @@ entry:
   ret i32 %m
 }
 
-; CHECK: error{{.*}}cq specialization: callee contains tainted control flow under quantum lift
+; CHECK: error{{.*}}in function __cq_q_helper_1 {{.*}}cq controlled lowering: loop under quantum control

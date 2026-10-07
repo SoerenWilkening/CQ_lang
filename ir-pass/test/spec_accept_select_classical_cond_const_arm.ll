@@ -2,12 +2,20 @@
 ; spec_reject_select_mixed_param.ll, the 5po2 slice-1 load-bearing safety gate):
 ; `select(icmp(c, 5), b, 0)` with `b` quantum and `c` classical. A classical choice
 ; of rail (owner ruling 2026-10-06; CloneRailSelect.h): the constant arm 0 is
-; materialized to its own rail (left allocated, separable classical data) and the
-; select picks either the BORROWED parameter `b` or that rail. The copy-out reads
-; the chosen rail and never writes it; there is no forward gate, so nothing is
-; reversed and nothing is freed (the copy-out rail is returned).
+; materialized to its own |0> rail (separable classical data) and the select
+; picks either the BORROWED parameter `b` or that rail. The copy-out reads the
+; chosen rail and never writes it; there is no forward gate, so nothing is
+; reversed; the copy-out rail is returned and the |0> arm rail is freed.
 ;
 ; Trace check: out = (c < 5) ? b : 0, the source.
+;
+; bd p3kd.7.8: main's stage list now lowers the clone and the Bennett wrap frees
+; every |0> rail still live after the (empty) mirror, in program order. The
+; constant-0 arm's rail is allocated |0> and only ever READ (by the copy-out, when
+; c >= 5), so it is still |0> and is now freed right after the copy-out instead of
+; being left allocated. A non-zero constant arm would still stay allocated. The
+; borrowed parameter `b` is never written or freed, and there is still no forward
+; gate and no reverse.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll
@@ -37,5 +45,6 @@ entry:
 ; CHECK-NEXT:  %[[S:[a-zA-Z0-9_.]+]] = select i1 %[[FC]], i32 %b, i32 %[[K]]
 ; CHECK-NEXT:  %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT:  call void @cqrt_copy_i32(i32 %[[S]], i32 %[[OUT]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[K]])
 ; CHECK-NEXT:  ret i32 %[[OUT]]
 ; CHECK-NEXT:  }

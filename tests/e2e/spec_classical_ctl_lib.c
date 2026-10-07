@@ -6,6 +6,17 @@
                inside a classical one, sharing its merge (fdim/scalbn).
      pick:     a switch on the classical `mode` choosing between three quantum
                computations of `x`. */
+
+/* bd p3kd.7.8 (2026-10-07): the lifted clone now runs MAIN'S stage list, so its
+   tainted select lowers through main's 4.4 merge (CondTreeEmit/SelectMergeEmit)
+   and the Bennett wrap reverses it mechanically. Two trace changes, golden
+   regenerated deliberately: the merge's trailing ¬flag `cqrt_x` (nothing reads
+   the flag after the second copy) and its mirror at the start of the reverse are
+   elided as a pair; where an arm is a constant zero, its materialized |0> rail
+   is copied (a no-op) and now freed after the reverse. Every other gate is
+   unchanged. The descriptions above are
+   the pre-p3kd.7.8 stream. */
+
 int clampsub(int x, int lim) {
     if (lim < 0)
         return -lim;

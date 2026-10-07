@@ -9,10 +9,8 @@ cqrt_copy_f80_controlled(h4, h0, h5)
 cqrt_x(h4)
 cqrt_alloc_f80(0x8p-3) -> h6
 cqrt_copy_f80_controlled(h4, h6, h5)
-cqrt_x(h4)
 cqrt_alloc_f80(0x0p+0) -> h7
 cqrt_copy_f80(h5, h7)
-cqrt_x(h4)
 cqrt_copy_f80_controlled(h4, h6, h5)
 cqrt_x(h4)
 cqrt_copy_f80_controlled(h4, h0, h5)

@@ -133,11 +133,9 @@ void stripCondLiteralNode(IRBuilder<> &B, CallInst *Tpl, WidthDispatch &wd,
   // rail is LEFT ALLOCATED (a Rule-6 leak), never freed dirty.
   if (!emitInverseCall(B, Tpl, wd, /*CurHandle=*/nullptr, &taint.SpineOps))
     return;
-  // The `_unc` just minted sits immediately before the insertion point; its
-  // literal is arg 2 (`_unc(out, h, lit)`) — same `zeroext` as the forward.
-  if (auto *Unc = dyn_cast<CallInst>(&*std::prev(B.GetInsertPoint())))
-    if (Unc->arg_size() == 3 && Unc->getArgOperand(2) == Tpl->getArgOperand(1))
-      Unc->addParamAttr(2, Attribute::ZExt);
+  // The `_unc`'s literal (arg 2) carries the forward's `zeroext`:
+  // `emitInverseCall` copies the forward's extension attributes (bd p3kd.7.8,
+  // the one spelling; this function stamped its own strip before).
   CallInst *Free = B.CreateCall(wd.freeFn(), {Tpl});
   if (DebugLoc DL = Tpl->getDebugLoc())
     Free->setDebugLoc(DL);

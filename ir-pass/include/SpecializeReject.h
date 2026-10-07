@@ -15,7 +15,7 @@
 // Accepted body set (the open Rule-13 item, IMPLEMENTATION_PLAN §8): a VISIBLE,
 // PURELY-CLASSICAL, NON-RECURSIVE value function — no `cq_*` primitive, no
 // measurement, in-body control only of the kinds the clone's PredMux flatten and
-// `lowerCloneSelect` collapse to straight-line (`br`/`switch`/`unreachable`
+// main's control chain (bd p3kd.7.8) collapse to straight-line (`br`/`switch`/`unreachable`
 // terminators, `phi`/`select` muxes; a shape they leave declines loudly at the
 // clone, bd p3kd.7.1), no fp/i128/vector/half quantum ABI, no
 // non-reversibilizable construct, every forward gate `isInverseEmittable`, and

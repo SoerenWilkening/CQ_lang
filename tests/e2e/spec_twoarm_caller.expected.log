@@ -9,10 +9,8 @@ cqrt_alloc_i32(0) -> h6
 cqrt_copy_i32_controlled(h5, h2, h6)
 cqrt_x(h5)
 cqrt_copy_i32_controlled(h5, h4, h6)
-cqrt_x(h5)
 cqrt_alloc_i32(0) -> h7
 cqrt_copy_i32(h6, h7)
-cqrt_x(h5)
 cqrt_copy_i32_controlled(h5, h4, h6)
 cqrt_x(h5)
 cqrt_copy_i32_controlled(h5, h2, h6)

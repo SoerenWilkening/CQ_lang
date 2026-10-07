@@ -25,6 +25,15 @@
 ; b^6, the source's value on every basis state; the Bennett reverse returns every
 ; scratch rail to |0> before its free.
 ;
+; bd p3kd.7.8: the clone now runs main's stage list, so the select lowers through
+; main's 4.4 path (SelectClassify / CondTreeEmit / SelectMergeEmit; `lowerCloneSelect`
+; is removed) and the Bennett wrap reverses it mechanically: the forward ends with
+; the merge's bracket open (gl = ¬cond, main's strip elided), the mirror's single
+; `cqrt_x` closes it, `and_i1_hl_unc` reads the same literal `k > 3` (with the
+; forward's `zeroext`, carried by `emitInverseCall`) and zeroes gl, then the flag
+; and the arms are `_unc`'d and every |0> rail is freed. Hand-traced on basis
+; states: out = gl ? 3b : b^6, and every freed rail is |0> at its free.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=ERR --allow-empty < %t.err
@@ -67,23 +76,20 @@ define i32 @f(i32 noundef %u, i32 noundef %k) {
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[GL]], i32 %[[T]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[GL]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[GL]], i32 %[[E]], i32 %[[OUT]])
-; CHECK-NEXT: call void @cqrt_x(i32 %[[GL]])
 ; CHECK-NEXT: %[[RES:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT: call void @cqrt_copy_i32(i32 %[[OUT]], i32 %[[RES]])
-; CHECK-NEXT: call void @cqrt_x(i32 %[[GL]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[GL]], i32 %[[E]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[GL]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[GL]], i32 %[[T]], i32 %[[OUT]])
-; CHECK-NEXT: call void @cq_template_and_i1_hl_unc(i32 %[[GL]], i32 %[[F1]], i1 %[[C2]])
+; CHECK-NEXT: call void @cq_template_and_i1_hl_unc(i32 %[[GL]], i32 %[[F1]], i1 zeroext %[[C2]])
 ; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F1]], i32 %b, i32 5)
 ; CHECK-NEXT: call void @cq_template_xor_i32_hl_unc(i32 %[[E]], i32 %b, i32 6)
 ; CHECK-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %[[T]], i32 %b, i32 3)
-; CHECK-DAG: call void @cqrt_free(i32 %[[GL]])
-; CHECK-DAG: call void @cqrt_free(i32 %[[F1]])
-; CHECK-DAG: call void @cqrt_free(i32 %[[OUT]])
-; CHECK-DAG: call void @cqrt_free(i32 %[[T]])
-; CHECK-DAG: call void @cqrt_free(i32 %[[E]])
-; CHECK:     ret i32 %[[RES]]
-; CHECK:     declare void @cq_template_and_i1_hl_unc(i32, i32, i1 zeroext)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[T]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[E]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F1]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[GL]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT]])
+; CHECK-NEXT: ret i32 %[[RES]]
 ;
 ; PHANTOM-NOT: cq_template_icmp_sgt_i32_hl(i32 %k

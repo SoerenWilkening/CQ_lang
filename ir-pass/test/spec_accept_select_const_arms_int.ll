@@ -15,6 +15,13 @@
 ; Trace check, |b> basis state: flag = [b > 5]; sel = flag·7 ⊕ ¬flag·9; out = sel.
 ; Reverse: ¬flag·9 then flag·7 restore sel to |0>; the `_unc` restores the flag.
 ;
+; bd p3kd.7.8: `lowerCloneSelect` is gone; main's 4.4 `SelectMergeEmit` lowers the
+; select with the same |7> and |9> source rails (still never reversed, never freed).
+; The merge's trailing `cqrt_x` strip is elided in the forward (it writes only the
+; flag after its last read), so the flag is still negated at the copy-out and the
+; mirror opens with the ¬flag copy and ONE `cqrt_x`, not a re-bracket; the trace
+; above is otherwise unchanged.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll
 declare i32 @cq_theta_si32(i32, double)
@@ -49,10 +56,8 @@ entry:
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT:  %[[K9:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 9)
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[K9]], i32 %[[SEL]])
-; CHECK-NEXT:  call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT:  %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT:  call void @cqrt_copy_i32(i32 %[[SEL]], i32 %[[OUT]])
-; CHECK-NEXT:  call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[K9]], i32 %[[SEL]])
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[K7]], i32 %[[SEL]])

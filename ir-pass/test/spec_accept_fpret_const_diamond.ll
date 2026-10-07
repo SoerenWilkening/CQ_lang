@@ -12,8 +12,20 @@
 ; predict the return tainted ⇒ `cloneFor` rewrites the return to i32. The clone
 ; MATERIALIZES both fp sentinels (leaked |const⟩ rails), muxes via
 ; `cqrt_copy_f80_controlled`, copies out via `cqrt_copy_f80`, and returns the i32
-; handle. (A genuine separate-`ret` multi-exit fp form declines cleanly via the
-; `normalizeReturnMerge` type-guard — `spec_reject_multiexit_fp.ll`.)
+; handle. (A genuine separate-`ret` multi-exit fp form used to decline via the
+; `normalizeReturnMerge` type-guard; since bd p3kd.7.8 it lowers too —
+; `spec_accept_multiexit_fp.ll`, formerly `spec_reject_multiexit_fp.ll`.)
+;
+; bd p3kd.7.8: main's stage list now lowers the clone. The clone keeps its
+; `x86_fp80` signature during main's stages and `retypeCloneSignature` installs
+; the i32 handle afterwards (still gated on `predictReturnTainted`); the merge is
+; main's SelectMergeEmit (rail `%out`, was `%cqq.sel`), the forward's closing
+; `cqrt_x` strip is elided by the Bennett wrap, and the reverse is the exact
+; mirror. Hand trace, flag t=[x>C]: copy_c(t,|1.0>) then copy_c(¬t,|0.75>) gives
+; out = t ? 1.0 : 0.75; copy-out; the mirror replays copy_c(¬t,|0.75>), `cqrt_x`
+; (flag back to t), copy_c(t,|1.0>) (out back to 0) and the fcmp `_unc`, so the
+; flag and `out` are |0> at their frees. The |1.0>/|0.75> rails are non-zero
+; constants and stay allocated (CHECK-NEXT body: no free for them).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 declare x86_fp80 @cq_theta_f80(x86_fp80, double)
@@ -40,16 +52,29 @@ entry:
   ret x86_fp80 %m
 }
 
+; the caller passes the handle and measures the returned handle:
+; CHECK-LABEL: define x86_fp80 @example(
+; CHECK:       %[[R:[a-zA-Z0-9_.]+]] = call i32 @__cq_q_helper_1(i32 %
+; CHECK:       call x86_fp80 @cqrt_measure_f80(i32 %[[R]])
 ; the tainted-controlled const-return clone is rewritten to an i32-handle return:
-; CHECK: define internal i32 @__cq_q_helper_1(i32 %x)
-; CHECK: %h_cmp = call i32 @cq_template_fcmp_ogt_f80_hl(i32 %x, x86_fp80 0xK4005C700000000000000)
+; CHECK-LABEL: define internal i32 @__cq_q_helper_1(i32 %x)
+; CHECK-NEXT:  entry:
+; CHECK-NEXT:  %[[FL:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fcmp_ogt_f80_hl(i32 %x, x86_fp80 0xK4005C700000000000000)
 ; both fp sentinels materialized into leaked |const⟩ rails, muxed on the flag:
-; CHECK: %selop = call i32 @cqrt_alloc_f80(x86_fp80 0xK3FFF8000000000000000)
-; CHECK: call void @cqrt_copy_f80_controlled(i32 %h_cmp, i32 %selop, i32 %cqq.sel)
-; CHECK: %selop1 = call i32 @cqrt_alloc_f80(x86_fp80 0xK3FFE8000000000000000)
-; CHECK: call void @cqrt_copy_f80_controlled(i32 %h_cmp, i32 %selop1, i32 %cqq.sel)
-; the fp copy-out to the i32 handle + the single Bennett reverse + frees:
-; CHECK: %cqq.out = call i32 @cqrt_alloc_f80(x86_fp80 0xK00000000000000000000)
-; CHECK: call void @cqrt_copy_f80(i32 %cqq.sel, i32 %cqq.out)
-; CHECK: call void @cq_template_fcmp_ogt_f80_hl_unc(i32 %h_cmp, i32 %x, x86_fp80 0xK4005C700000000000000)
-; CHECK: ret i32 %cqq.out
+; CHECK-NEXT:  %[[SEL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 0xK00000000000000000000)
+; CHECK-NEXT:  %[[K1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 0xK3FFF8000000000000000)
+; CHECK-NEXT:  call void @cqrt_copy_f80_controlled(i32 %[[FL]], i32 %[[K1]], i32 %[[SEL]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[FL]])
+; CHECK-NEXT:  %[[K2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 0xK3FFE8000000000000000)
+; CHECK-NEXT:  call void @cqrt_copy_f80_controlled(i32 %[[FL]], i32 %[[K2]], i32 %[[SEL]])
+; the fp copy-out to the i32 handle + the single Bennett mirror + frees:
+; CHECK-NEXT:  %[[CO:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 0xK00000000000000000000)
+; CHECK-NEXT:  call void @cqrt_copy_f80(i32 %[[SEL]], i32 %[[CO]])
+; CHECK-NEXT:  call void @cqrt_copy_f80_controlled(i32 %[[FL]], i32 %[[K2]], i32 %[[SEL]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[FL]])
+; CHECK-NEXT:  call void @cqrt_copy_f80_controlled(i32 %[[FL]], i32 %[[K1]], i32 %[[SEL]])
+; CHECK-NEXT:  call void @cq_template_fcmp_ogt_f80_hl_unc(i32 %[[FL]], i32 %x, x86_fp80 0xK4005C700000000000000)
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[FL]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[SEL]])
+; CHECK-NEXT:  ret i32 %[[CO]]
+; CHECK-NEXT:  }

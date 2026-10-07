@@ -20,7 +20,7 @@
 // The rewrite runs AFTER `lowerOps`, when every quantum arm is the i32 handle of
 // its lowered producer; building it earlier would mix still-fp quantum operands
 // with i32 handles (measured on the prototype: a verifier abort on pow/powf QC).
-// `lowerCloneSelect` RECORDS the selects (with the per-arm taint it read) and
+// `recordCloneRailSelects` RECORDS the selects (with the per-arm taint it read) and
 // leaves them in place; the clone's "no tainted select survives" backstop skips
 // recorded ones.
 

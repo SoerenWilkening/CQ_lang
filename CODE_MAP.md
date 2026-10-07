@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 771 maintained source files, 6472 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 773 maintained source files, 6475 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -33,21 +33,21 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/TaintPropagation.h` — 2254 physical lines
 - `tools/golden_multiset_audit.py` — 2211 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1964 physical lines
-- `ir-pass/src/CQLoweringPass.cpp` — 1869 physical lines
 - `tools/inplace_twin_matrix.py` — 1790 physical lines
-- `ir-pass/src/Specialization.cpp` — 1787 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
+- `ir-pass/src/CQLoweringPass.cpp` — 1497 physical lines
 - `ir-pass/src/OpcodeLowering.cpp` — 1452 physical lines
 - `ir-pass/src/SelectClassify.cpp` — 1446 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
 - `runtime/cq_runtime.c` — 1403 physical lines
+- `ir-pass/src/Specialization.cpp` — 1340 physical lines
 - `tools/library_coverage/probe.py` — 1219 physical lines
 - `ir-pass/src/ChainWalk.cpp` — 1208 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
 - `ir-pass/src/ArithLowering.cpp` — 1189 physical lines
 - `tools/loop_twin_matrix_quarantine_test.py` — 1110 physical lines
 - `ir-pass/src/BreakReversePlay.cpp` — 1007 physical lines
-- `ir-pass/src/SpecializeReject.cpp` — 953 physical lines
+- `ir-pass/src/SpecializeReject.cpp` — 954 physical lines
 - `ir-pass/src/WireWalk.cpp` — 948 physical lines
 - `tools/golden_multiset_audit_test.py` — 948 physical lines
 - `ir-pass/src/ControlDetect.cpp` — 910 physical lines
@@ -76,7 +76,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/AbortParkEmit.cpp` — 580 physical lines
 - `tests/e2e/slice_libm_real_acoshl.c` — 575 physical lines
 - `ir-pass/src/IntrinsicLowering.cpp` — 560 physical lines
-- `ir-pass/src/CompareLowering.cpp` — 534 physical lines
+- `ir-pass/src/CompareLowering.cpp` — 535 physical lines
 - `ir-pass/include/ArmAnalysis.h` — 531 physical lines
 - `ir-pass/include/RailBankPromote.h` — 528 physical lines
 - `tools/library_coverage/full_surface/wprobe.py` — 515 physical lines
@@ -93,10 +93,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/record_census/census_common.py` — 468 physical lines
 - `ir-pass/src/DagTraversal.cpp` — 458 physical lines
 - `ir-pass/src/SelectMergeEmit.cpp` — 456 physical lines
+- `ir-pass/src/EmitInverse.cpp` — 453 physical lines
 - `tests/e2e/slice_libm_real_atanhl.c` — 453 physical lines
 - `tests/e2e/slice_libm_real_erfcl.c` — 451 physical lines
 - `tools/predmux_probe_gen.py` — 450 physical lines
-- `ir-pass/src/EmitInverse.cpp` — 442 physical lines
 - `tests/e2e/slice_libm_real_pow.c` — 439 physical lines
 - `tools/record_census/source_ir.py` — 434 physical lines
 - `tests/e2e/slice_libm_real_erfl.c` — 432 physical lines
@@ -306,10 +306,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArmHomogeneity.cpp:132` — `midIsPurePhase`
 - `ir-pass/src/ArmHomogeneity.cpp:170` — `treeHomogeneous`
 
-### `ir-pass/src/BennettWrap.cpp` (133 lines)
+### `ir-pass/src/BennettWrap.cpp` (272 lines)
 
-- `ir-pass/src/BennettWrap.cpp:44` — `diagnose`
-- `ir-pass/src/BennettWrap.cpp:51` — `emitBennettWrap`
+- `ir-pass/src/BennettWrap.cpp:49` — `diagnose`
+- `ir-pass/src/BennettWrap.cpp:66` — `classify`
+- `ir-pass/src/BennettWrap.cpp:94` — `isZeroAlloc`
+- `ir-pass/src/BennettWrap.cpp:101` — `gateTargets`
+- `ir-pass/src/BennettWrap.cpp:140` — `elideForwardStrips`
+- `ir-pass/src/BennettWrap.cpp:196` — `emitBennettWrap`
 
 ### `ir-pass/src/BirthFreeze.cpp` (36 lines)
 
@@ -354,12 +358,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ByRefInline.cpp:255` — `cloneExpr`
 - `ir-pass/src/ByRefInline.cpp:277` — `lowerByRefInline`
 
-### `ir-pass/src/CQLoweringPass.cpp` (1869 lines)
+### `ir-pass/src/CQLoweringPass.cpp` (1497 lines)
 
-- `ir-pass/src/CQLoweringPass.cpp:58` — `eraseDeadDecls`
-- `ir-pass/src/CQLoweringPass.cpp:92` — `declineSurvivingIntrinsicCalls`
-- `ir-pass/src/CQLoweringPass.cpp:118` — `CQLoweringPass::run`
-- `ir-pass/src/CQLoweringPass.cpp:1313` — `CQLoweringPass::runOnFunction`
+- `ir-pass/src/CQLoweringPass.cpp:59` — `eraseDeadDecls`
+- `ir-pass/src/CQLoweringPass.cpp:93` — `declineSurvivingIntrinsicCalls`
+- `ir-pass/src/CQLoweringPass.cpp:119` — `CQLoweringPass::run`
+- `ir-pass/src/CQLoweringPass.cpp:1046` — `CQLoweringPass::runOnFunction`
 
 ### `ir-pass/src/CastLowering.cpp` (135 lines)
 
@@ -400,28 +404,28 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/CloneRailSelect.cpp:28` — `isRecordedRailSelect`
 - `ir-pass/src/CloneRailSelect.cpp:36` — `rewriteRailSelects`
 
-### `ir-pass/src/CompareLowering.cpp` (534 lines)
+### `ir-pass/src/CompareLowering.cpp` (535 lines)
 
 - `ir-pass/src/CompareLowering.cpp:46` — `promote`
 - `ir-pass/src/CompareLowering.cpp:58` — `isDataPositionCompare`
 - `ir-pass/src/CompareLowering.cpp:80` — `lowerCompareImpl`
 - `ir-pass/src/CompareLowering.cpp:330` — `lowerCompareToFlag`
 - `ir-pass/src/CompareLowering.cpp:342` — `logicalOperandWidth`
-- `ir-pass/src/CompareLowering.cpp:359` — `qqSelectLeafWidth`
-- `ir-pass/src/CompareLowering.cpp:371` — `compareFlagMintable`
-- `ir-pass/src/CompareLowering.cpp:401` — `lowerCompareToFlagRail`
-- `ir-pass/src/CompareLowering.cpp:419` — `emitEqFlag`
-- `ir-pass/src/CompareLowering.cpp:472` — `rewriteCompare`
+- `ir-pass/src/CompareLowering.cpp:360` — `qqSelectLeafWidth`
+- `ir-pass/src/CompareLowering.cpp:372` — `compareFlagMintable`
+- `ir-pass/src/CompareLowering.cpp:402` — `lowerCompareToFlagRail`
+- `ir-pass/src/CompareLowering.cpp:420` — `emitEqFlag`
+- `ir-pass/src/CompareLowering.cpp:473` — `rewriteCompare`
 
-### `ir-pass/src/CondLiteral.cpp` (172 lines)
+### `ir-pass/src/CondLiteral.cpp` (170 lines)
 
 - `ir-pass/src/CondLiteral.cpp:41` — `collectI1Cone`
 - `ir-pass/src/CondLiteral.cpp:60` — `markPredictedTaintCone`
 - `ir-pass/src/CondLiteral.cpp:73` — `condLiteralAdmissible`
 - `ir-pass/src/CondLiteral.cpp:105` — `emitCondLiteralNode`
 - `ir-pass/src/CondLiteral.cpp:130` — `stripCondLiteralNode`
-- `ir-pass/src/CondLiteral.cpp:146` — `declineQuantumCondLiterals`
-- `ir-pass/src/CondLiteral.cpp:160` — `stripPredMuxPredictedMarks`
+- `ir-pass/src/CondLiteral.cpp:144` — `declineQuantumCondLiterals`
+- `ir-pass/src/CondLiteral.cpp:158` — `stripPredMuxPredictedMarks`
 
 ### `ir-pass/src/CondTreeEmit.cpp` (371 lines)
 
@@ -493,11 +497,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/DeadValueLiveness.cpp:262` — `deadParamMask`
 - `ir-pass/src/DeadValueLiveness.cpp:270` — `deleteDeadCones`
 
-### `ir-pass/src/EmitInverse.cpp` (442 lines)
+### `ir-pass/src/EmitInverse.cpp` (453 lines)
 
 - `ir-pass/src/EmitInverse.cpp:42` — `isInverseEmittable`
 - `ir-pass/src/EmitInverse.cpp:181` — `emitInverseCall`
-- `ir-pass/src/EmitInverse.cpp:425` — `emitInverseChain`
+- `ir-pass/src/EmitInverse.cpp:436` — `emitInverseChain`
 
 ### `ir-pass/src/EqFoldArm.cpp` (152 lines)
 
@@ -1010,38 +1014,35 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SelectMergeEmit.cpp:101` — `declineQuantumCopySources`
 - `ir-pass/src/SelectMergeEmit.cpp:117` — `emitSelectRegion`
 
-### `ir-pass/src/Specialization.cpp` (1787 lines)
+### `ir-pass/src/Specialization.cpp` (1340 lines)
 
-- `ir-pass/src/Specialization.cpp:71` — `isForwardTemplate`
-- `ir-pass/src/Specialization.cpp:88` — `isForwardQramLoad`
-- `ir-pass/src/Specialization.cpp:99` — `scrubCloneTaint`
-- `ir-pass/src/Specialization.cpp:128` — `mintCondNetwork`
-- `ir-pass/src/Specialization.cpp:351` — `lowerCloneSelect`
-- `ir-pass/src/Specialization.cpp:564` — `reseedCloneTaintFromParams`
-- `ir-pass/src/Specialization.cpp:598` — `normalizeReturnMerge`
-- `ir-pass/src/Specialization.cpp:649` — `lowerCloneControl`
-- `ir-pass/src/Specialization.cpp:777` — `scrubForwardCone`
-- `ir-pass/src/Specialization.cpp:836` — `synthUncomputeTwin`
-- `ir-pass/src/Specialization.cpp:883` — `ensureTwin`
-- `ir-pass/src/Specialization.cpp:940` — `retargetSite`
-- `ir-pass/src/Specialization.cpp:967` — `resolveSite`
-- `ir-pass/src/Specialization.cpp:978` — `buildClone`
-- `ir-pass/src/Specialization.cpp:1471` — `shouldSpecialize`
-- `ir-pass/src/Specialization.cpp:1493` — `isQuantumCallerValue`
-- `ir-pass/src/Specialization.cpp:1499` — `isRuntimeCall`
-- `ir-pass/src/Specialization.cpp:1528` — `isCopyDestination`
-- `ir-pass/src/Specialization.cpp:1559` — `userProgramReads`
-- `ir-pass/src/Specialization.cpp:1592` — `resolvePhantomCloneArgReads`
-- `ir-pass/src/Specialization.cpp:1686` — `specialize`
+- `ir-pass/src/Specialization.cpp:87` — `recordCloneRailSelects`
+- `ir-pass/src/Specialization.cpp:108` — `reseedCloneTaintFromParams`
+- `ir-pass/src/Specialization.cpp:142` — `normalizeReturnMerge`
+- `ir-pass/src/Specialization.cpp:193` — `lowerCloneControl`
+- `ir-pass/src/Specialization.cpp:351` — `scrubForwardCone`
+- `ir-pass/src/Specialization.cpp:410` — `synthUncomputeTwin`
+- `ir-pass/src/Specialization.cpp:457` — `ensureTwin`
+- `ir-pass/src/Specialization.cpp:514` — `retargetSite`
+- `ir-pass/src/Specialization.cpp:541` — `resolveSite`
+- `ir-pass/src/Specialization.cpp:552` — `buildClone`
+- `ir-pass/src/Specialization.cpp:1024` — `shouldSpecialize`
+- `ir-pass/src/Specialization.cpp:1046` — `isQuantumCallerValue`
+- `ir-pass/src/Specialization.cpp:1052` — `isRuntimeCall`
+- `ir-pass/src/Specialization.cpp:1081` — `isCopyDestination`
+- `ir-pass/src/Specialization.cpp:1112` — `userProgramReads`
+- `ir-pass/src/Specialization.cpp:1145` — `resolvePhantomCloneArgReads`
+- `ir-pass/src/Specialization.cpp:1239` — `specialize`
 
-### `ir-pass/src/SpecializeClone.cpp` (346 lines)
+### `ir-pass/src/SpecializeClone.cpp` (362 lines)
 
 - `ir-pass/src/SpecializeClone.cpp:41` — `stripStaleClassicalAttrs`
 - `ir-pass/src/SpecializeClone.cpp:103` — `mangleSpecName`
 - `ir-pass/src/SpecializeClone.cpp:119` — `taintArgMask`
 - `ir-pass/src/SpecializeClone.cpp:140` — `predictReturnTainted`
 - `ir-pass/src/SpecializeClone.cpp:234` — `specCallResultPredictedClassical`
-- `ir-pass/src/SpecializeClone.cpp:280` — `cloneFor`
+- `ir-pass/src/SpecializeClone.cpp:272` — `cloneFor`
+- `ir-pass/src/SpecializeClone.cpp:297` — `retypeCloneSignature`
 
 ### `ir-pass/src/SpecializeDetect.cpp` (367 lines)
 
@@ -1055,7 +1056,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SpecializeDetect.cpp:162` — `dropDeadCallArguments`
 - `ir-pass/src/SpecializeDetect.cpp:278` — `detectSpecializations`
 
-### `ir-pass/src/SpecializeReject.cpp` (953 lines)
+### `ir-pass/src/SpecializeReject.cpp` (954 lines)
 
 - `ir-pass/src/SpecializeReject.cpp:55` — `buildIntrinsicSets`
 - `ir-pass/src/SpecializeReject.cpp:82` — `touchesVector`
@@ -1064,12 +1065,17 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SpecializeReject.cpp:171` — `isAdmissibleCloneSelect`
 - `ir-pass/src/SpecializeReject.cpp:349` — `returnDerivesFromUndef`
 - `ir-pass/src/SpecializeReject.cpp:380` — `scanBody`
-- `ir-pass/src/SpecializeReject.cpp:873` — `classifyCandidate`
-- `ir-pass/src/SpecializeReject.cpp:916` — `diagnoseReject`
+- `ir-pass/src/SpecializeReject.cpp:874` — `classifyCandidate`
+- `ir-pass/src/SpecializeReject.cpp:917` — `diagnoseReject`
 
-### `ir-pass/src/SpecializeSeed.cpp` (50 lines)
+### `ir-pass/src/SpecializeSeed.cpp` (53 lines)
 
 - `ir-pass/src/SpecializeSeed.cpp:18` — `seedClone`
+
+### `ir-pass/src/StageList.cpp` (327 lines)
+
+- `ir-pass/src/StageList.cpp:27` — `runLoopPrepasses`
+- `ir-pass/src/StageList.cpp:84` — `runControlChain`
 
 ### `ir-pass/src/SwapRouteEmit.cpp` (3147 lines)
 
@@ -4451,10 +4457,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/onward_perbit_mixed_lib.c:11` — `ext_f`
 
-### `tests/e2e/predmux_purecallee_i80cmp_caller.c` (80 lines)
+### `tests/e2e/predmux_purecallee_i80cmp_caller.c` (91 lines)
 
-- `tests/e2e/predmux_purecallee_i80cmp_caller.c:60` — `slice`
-- `tests/e2e/predmux_purecallee_i80cmp_caller.c:76` — `main`
+- `tests/e2e/predmux_purecallee_i80cmp_caller.c:71` — `slice`
+- `tests/e2e/predmux_purecallee_i80cmp_caller.c:87` — `main`
 
 ### `tests/e2e/predmux_purecallee_i80cmp_lib.c` (61 lines)
 
@@ -5853,14 +5859,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_libm_real_atan2f.c:181` — `slice`
 - `tests/e2e/slice_libm_real_atan2f.c:185` — `main`
 
-### `tests/e2e/slice_libm_real_atan2l.c` (289 lines)
+### `tests/e2e/slice_libm_real_atan2l.c` (300 lines)
 
-- `tests/e2e/slice_libm_real_atan2l.c:120` — `T_even`
-- `tests/e2e/slice_libm_real_atan2l.c:128` — `T_odd`
-- `tests/e2e/slice_libm_real_atan2l.c:141` — `olm_atanl`
-- `tests/e2e/slice_libm_real_atan2l.c:206` — `olm_atan2l`
-- `tests/e2e/slice_libm_real_atan2l.c:281` — `slice`
-- `tests/e2e/slice_libm_real_atan2l.c:286` — `main`
+- `tests/e2e/slice_libm_real_atan2l.c:131` — `T_even`
+- `tests/e2e/slice_libm_real_atan2l.c:139` — `T_odd`
+- `tests/e2e/slice_libm_real_atan2l.c:152` — `olm_atanl`
+- `tests/e2e/slice_libm_real_atan2l.c:217` — `olm_atan2l`
+- `tests/e2e/slice_libm_real_atan2l.c:292` — `slice`
+- `tests/e2e/slice_libm_real_atan2l.c:297` — `main`
 
 ### `tests/e2e/slice_libm_real_atanf.c` (107 lines)
 
@@ -5939,17 +5945,17 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_libm_real_coshf.c:284` — `slice`
 - `tests/e2e/slice_libm_real_coshf.c:288` — `main`
 
-### `tests/e2e/slice_libm_real_coshl.c` (357 lines)
+### `tests/e2e/slice_libm_real_coshl.c` (368 lines)
 
-- `tests/e2e/slice_libm_real_coshl.c:116` — `olm_isnanl`
-- `tests/e2e/slice_libm_real_coshl.c:125` — `olm_polevll`
-- `tests/e2e/slice_libm_real_coshl.c:145` — `olm_scalbnl`
-- `tests/e2e/slice_libm_real_coshl.c:173` — `olm_ldexpl`
-- `tests/e2e/slice_libm_real_coshl.c:196` — `olm_expl`
-- `tests/e2e/slice_libm_real_coshl.c:254` — `olm_expm1l`
-- `tests/e2e/slice_libm_real_coshl.c:306` — `olm_coshl`
-- `tests/e2e/slice_libm_real_coshl.c:349` — `slice`
-- `tests/e2e/slice_libm_real_coshl.c:354` — `main`
+- `tests/e2e/slice_libm_real_coshl.c:127` — `olm_isnanl`
+- `tests/e2e/slice_libm_real_coshl.c:136` — `olm_polevll`
+- `tests/e2e/slice_libm_real_coshl.c:156` — `olm_scalbnl`
+- `tests/e2e/slice_libm_real_coshl.c:184` — `olm_ldexpl`
+- `tests/e2e/slice_libm_real_coshl.c:207` — `olm_expl`
+- `tests/e2e/slice_libm_real_coshl.c:265` — `olm_expm1l`
+- `tests/e2e/slice_libm_real_coshl.c:317` — `olm_coshl`
+- `tests/e2e/slice_libm_real_coshl.c:360` — `slice`
+- `tests/e2e/slice_libm_real_coshl.c:365` — `main`
 
 ### `tests/e2e/slice_libm_real_erf.c` (224 lines)
 
@@ -6945,10 +6951,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_spec_qram_read_under_control.c:32` — `lookup`
 - `tests/e2e/slice_spec_qram_read_under_control.c:37` — `main`
 
-### `tests/e2e/slice_spec_qrom_read_arm_escape.c` (52 lines)
+### `tests/e2e/slice_spec_qrom_read_arm_escape.c` (63 lines)
 
-- `tests/e2e/slice_spec_qrom_read_arm_escape.c:36` — `reduce`
-- `tests/e2e/slice_spec_qrom_read_arm_escape.c:47` — `main`
+- `tests/e2e/slice_spec_qrom_read_arm_escape.c:47` — `reduce`
+- `tests/e2e/slice_spec_qrom_read_arm_escape.c:58` — `main`
 
 ### `tests/e2e/slice_theta_add_measure.c` (10 lines)
 
@@ -7081,10 +7087,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/spec_classical_ctl_caller.c:19` — `slice`
 - `tests/e2e/spec_classical_ctl_caller.c:25` — `main`
 
-### `tests/e2e/spec_classical_ctl_lib.c` (24 lines)
+### `tests/e2e/spec_classical_ctl_lib.c` (35 lines)
 
-- `tests/e2e/spec_classical_ctl_lib.c:9` — `clampsub`
-- `tests/e2e/spec_classical_ctl_lib.c:15` — `pick`
+- `tests/e2e/spec_classical_ctl_lib.c:20` — `clampsub`
+- `tests/e2e/spec_classical_ctl_lib.c:26` — `pick`
 
 ### `tests/e2e/spec_clone_read_nested_lib.c` (26 lines)
 
@@ -7134,24 +7140,24 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/spec_fp_arg_lib.c:19` — `lpoly`
 
-### `tests/e2e/spec_fp_select_caller.c` (18 lines)
+### `tests/e2e/spec_fp_select_caller.c` (29 lines)
 
-- `tests/e2e/spec_fp_select_caller.c:12` — `slice`
-- `tests/e2e/spec_fp_select_caller.c:18` — `main`
+- `tests/e2e/spec_fp_select_caller.c:23` — `slice`
+- `tests/e2e/spec_fp_select_caller.c:29` — `main`
 
-### `tests/e2e/spec_fp_select_const_caller.c` (23 lines)
+### `tests/e2e/spec_fp_select_const_caller.c` (34 lines)
 
-- `tests/e2e/spec_fp_select_const_caller.c:17` — `slice`
-- `tests/e2e/spec_fp_select_const_caller.c:23` — `main`
+- `tests/e2e/spec_fp_select_const_caller.c:28` — `slice`
+- `tests/e2e/spec_fp_select_const_caller.c:34` — `main`
 
 ### `tests/e2e/spec_fp_select_const_lib.c` (20 lines)
 
 - `tests/e2e/spec_fp_select_const_lib.c:18` — `mhelper`
 
-### `tests/e2e/spec_fp_select_fcmp_caller.c` (36 lines)
+### `tests/e2e/spec_fp_select_fcmp_caller.c` (47 lines)
 
-- `tests/e2e/spec_fp_select_fcmp_caller.c:30` — `slice`
-- `tests/e2e/spec_fp_select_fcmp_caller.c:36` — `main`
+- `tests/e2e/spec_fp_select_fcmp_caller.c:41` — `slice`
+- `tests/e2e/spec_fp_select_fcmp_caller.c:47` — `main`
 
 ### `tests/e2e/spec_fp_select_fcmp_lib.c` (49 lines)
 
@@ -7174,9 +7180,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/spec_multiexit_caller.c:14` — `slice`
 - `tests/e2e/spec_multiexit_caller.c:20` — `main`
 
-### `tests/e2e/spec_multiexit_lib.c` (35 lines)
+### `tests/e2e/spec_multiexit_lib.c` (46 lines)
 
-- `tests/e2e/spec_multiexit_lib.c:30` — `mini_expl`
+- `tests/e2e/spec_multiexit_lib.c:41` — `mini_expl`
 
 ### `tests/e2e/spec_musttail_clone_live_arg_lib.c` (15 lines)
 
@@ -7245,28 +7251,28 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/spec_select_caller.c:24` — `slice`
 - `tests/e2e/spec_select_caller.c:33` — `main`
 
-### `tests/e2e/spec_select_lib.c` (24 lines)
+### `tests/e2e/spec_select_lib.c` (35 lines)
 
-- `tests/e2e/spec_select_lib.c:20` — `foo`
+- `tests/e2e/spec_select_lib.c:31` — `foo`
 
-### `tests/e2e/spec_switch_mux_caller.c` (31 lines)
+### `tests/e2e/spec_switch_mux_caller.c` (42 lines)
 
-- `tests/e2e/spec_switch_mux_caller.c:25` — `slice`
-- `tests/e2e/spec_switch_mux_caller.c:31` — `main`
+- `tests/e2e/spec_switch_mux_caller.c:36` — `slice`
+- `tests/e2e/spec_switch_mux_caller.c:42` — `main`
 
 ### `tests/e2e/spec_switch_mux_lib.c` (23 lines)
 
 - `tests/e2e/spec_switch_mux_lib.c:10` — `smux`
 - `tests/e2e/spec_switch_mux_lib.c:23` — `cmux`
 
-### `tests/e2e/spec_twoarm_caller.c` (33 lines)
+### `tests/e2e/spec_twoarm_caller.c` (44 lines)
 
-- `tests/e2e/spec_twoarm_caller.c:24` — `slice`
-- `tests/e2e/spec_twoarm_caller.c:33` — `main`
+- `tests/e2e/spec_twoarm_caller.c:35` — `slice`
+- `tests/e2e/spec_twoarm_caller.c:44` — `main`
 
-### `tests/e2e/spec_twoarm_lib.c` (27 lines)
+### `tests/e2e/spec_twoarm_lib.c` (38 lines)
 
-- `tests/e2e/spec_twoarm_lib.c:22` — `helper`
+- `tests/e2e/spec_twoarm_lib.c:33` — `helper`
 
 ### `tests/e2e/specialize_caller.c` (27 lines)
 

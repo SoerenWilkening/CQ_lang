@@ -46,6 +46,17 @@
    the promoteFp80Union pass owns it, never a memcpy word shim (3c6m.51). The
    olm_atanl body is byte-identical to slice_libm_real_atanl.c (same vendored
    ld80/s_atanl.c). */
+
+/* bd p3kd.7.8 (2026-10-07): the lifted clone now runs MAIN'S stage list, so its
+   tainted select lowers through main's 4.4 merge (CondTreeEmit/SelectMergeEmit)
+   and the Bennett wrap reverses it mechanically. Two trace changes, golden
+   regenerated deliberately: the merge's trailing ¬flag `cqrt_x` (nothing reads
+   the flag after the second copy) and its mirror at the start of the reverse are
+   elided as a pair; where an arm is a constant zero, its materialized |0> rail
+   is copied (a no-op) and now freed after the reverse. Every other gate is
+   unchanged. The descriptions above are
+   the pre-p3kd.7.8 stream. */
+
 #include <stdint.h>
 
 /* openlibm src/amd64_fpmath.h (verbatim — BOTH views; the fp80 pass owns the

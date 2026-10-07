@@ -10,32 +10,26 @@ cqrt_copy_i32_controlled(h5, h4, h6)
 cqrt_x(h5)
 cqrt_alloc_i32(3) -> h7
 cqrt_copy_i32_controlled(h5, h7, h6)
-cqrt_x(h5)
 cq_template_icmp_eq_i32_hl(h1, 2) -> h8
 cqrt_alloc_i32(0) -> h9
 cqrt_copy_i32_controlled(h8, h3, h9)
 cqrt_x(h8)
 cqrt_copy_i32_controlled(h8, h6, h9)
-cqrt_x(h8)
 cq_template_icmp_eq_i32_hl(h1, 3) -> h10
 cqrt_alloc_i32(0) -> h11
 cqrt_copy_i32_controlled(h10, h2, h11)
 cqrt_x(h10)
 cqrt_copy_i32_controlled(h10, h9, h11)
-cqrt_x(h10)
 cqrt_alloc_i32(0) -> h12
 cqrt_copy_i32(h11, h12)
-cqrt_x(h10)
 cqrt_copy_i32_controlled(h10, h9, h11)
 cqrt_x(h10)
 cqrt_copy_i32_controlled(h10, h2, h11)
 cq_template_icmp_eq_i32_hl_unc(h10, h1, 3)
-cqrt_x(h8)
 cqrt_copy_i32_controlled(h8, h6, h9)
 cqrt_x(h8)
 cqrt_copy_i32_controlled(h8, h3, h9)
 cq_template_icmp_eq_i32_hl_unc(h8, h1, 2)
-cqrt_x(h5)
 cqrt_copy_i32_controlled(h5, h7, h6)
 cqrt_x(h5)
 cqrt_copy_i32_controlled(h5, h4, h6)
@@ -61,10 +55,8 @@ cqrt_copy_i32_controlled(h13, h15, h14)
 cqrt_x(h13)
 cqrt_alloc_i32(9) -> h16
 cqrt_copy_i32_controlled(h13, h16, h14)
-cqrt_x(h13)
 cqrt_alloc_i32(0) -> h17
 cqrt_copy_i32(h14, h17)
-cqrt_x(h13)
 cqrt_copy_i32_controlled(h13, h16, h14)
 cqrt_x(h13)
 cqrt_copy_i32_controlled(h13, h15, h14)

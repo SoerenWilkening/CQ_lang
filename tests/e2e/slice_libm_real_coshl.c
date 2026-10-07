@@ -56,6 +56,17 @@
    (huge_*, C1/C2_*, MAXLOGL_*), intra-body calls retargeted to the olm_ names
    or to the keep builtins above, u_int32_t mapped to stdint. No
    constant/branch/expression changed. */
+
+/* bd p3kd.7.8 (2026-10-07): golden regenerated deliberately. Besides the
+   elided ¬flag `cqrt_x` pairs (the lifted clone now runs main's stage list and
+   its merges are main's), three merges in `__cq_q_olm_expl_1` changed from
+   `cqrt_copy_i32_controlled` to `cqrt_copy_f80_controlled`. The OLD golden was
+   WRONG: `cloneFor` retyped the f80 parameter to an i32 handle before the
+   clone's own select lowering ran, which then read the merge width off that
+   arm and copied 32 of the 80 bits of `select(c, x, r)` (a verify-clean silent
+   miscompile pinned by this golden). The retype now runs after main's stages
+   (owner ruling 2026-10-07, Q2), so the merge is f80. */
+
 #include <stdint.h>
 
 typedef uint32_t u_int32_t;

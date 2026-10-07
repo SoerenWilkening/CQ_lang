@@ -1,4 +1,5 @@
-// BennettWrap.cpp — the thin Bennett compute-copy-uncompute synthesizer (DD-3).
+// BennettWrap.cpp — the Bennett compute-copy-uncompute synthesizer (DD-3); see
+// BennettWrap.h for the mechanical reverse (bd p3kd.7.8).
 
 #include "BennettWrap.h"
 
@@ -6,13 +7,17 @@
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
 
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
+
+#include <optional>
 
 using namespace llvm;
 
@@ -46,43 +51,184 @@ void diagnose(Instruction *Where, StringRef Msg) {
       *Where->getFunction(), Msg, Where->getDebugLoc()));
 }
 
+// What one captured forward call is, for the reverse.
+enum class GateKind {
+  Skip,    // classical: a non-runtime call, a QRAM array token, a classical
+           // inner clone call (it restored its inputs)
+  Mint,    // `h = T(…)`: a template / QRAM load / lifted inner clone call
+  Unc,     // `T_unc(h, …)`: a template rail zeroed in the forward (an emitter strip)
+  Alloc,   // `g = cqrt_alloc_<W>(c)`
+  Free,    // `cqrt_free(h)`
+  Gate,    // anything else `emitInverseCall` inverts (involutions, QRAM store, …)
+  Unknown, // nothing inverts it: decline
+};
+
+GateKind classify(CallInst *CI, const SmallPtrSetImpl<CallInst *> &LiftedCalls) {
+  Function *F = CI->getCalledFunction();
+  if (!F)
+    return GateKind::Skip;  // an indirect call in a lifted body is classical.
+  StringRef N = F->getName();
+  if (N.starts_with("__cq_q_"))
+    return N.ends_with("_unc") ? GateKind::Unknown
+           : LiftedCalls.count(CI) ? GateKind::Mint
+                                   : GateKind::Skip;
+  if (!N.starts_with("cqrt_") && !N.starts_with("cq_template_"))
+    return GateKind::Skip;  // classical computation, run once in the forward.
+  if (N.starts_with("cqrt_qram_alloc_"))
+    return GateKind::Skip;  // the classical array-handle token (bd 20xt.4).
+  if (N == "cqrt_free")
+    return GateKind::Free;
+  if (N.starts_with("cqrt_alloc_"))
+    return GateKind::Alloc;
+  if (N.starts_with("cq_template_") && N.ends_with("_unc") &&
+      !N.contains("_controlled") && !CI->arg_empty())
+    return GateKind::Unc;
+  if (!isInverseEmittable(CI))
+    return GateKind::Unknown;
+  if (!CI->getType()->isVoidTy() &&
+      (N.starts_with("cq_template_") || N.starts_with("cqrt_qram_load_")))
+    return GateKind::Mint;
+  return GateKind::Gate;
+}
+
+bool isZeroAlloc(const CallInst *CI) {
+  const auto *C = dyn_cast<Constant>(CI->getArgOperand(0));
+  return C && C->isNullValue();
+}
+
+// The rails a gate WRITES, for the strip elision below. `std::nullopt` means
+// "not known": every handle operand is then treated as both read and written.
+std::optional<SmallVector<Value *, 2>> gateTargets(CallInst *CI,
+                                                   GateKind K) {
+  StringRef N = CI->getCalledFunction()->getName();
+  auto arg = [&](unsigned I) { return CI->getArgOperand(I); };
+  if (K == GateKind::Mint || K == GateKind::Alloc)
+    return SmallVector<Value *, 2>{};  // writes only its own fresh result
+  if (K == GateKind::Unc)
+    return SmallVector<Value *, 2>{arg(0)};
+  if (N == "cqrt_x" && CI->arg_size() == 1)
+    return SmallVector<Value *, 2>{arg(0)};
+  if (N == "cqrt_cnot" && CI->arg_size() == 2)
+    return SmallVector<Value *, 2>{arg(1)};
+  if (N == "cqrt_toffoli" && CI->arg_size() == 3)
+    return SmallVector<Value *, 2>{arg(2)};
+  if (N.starts_with("cqrt_copy_") && N.ends_with("_controlled") &&
+      CI->arg_size() == 3)
+    return SmallVector<Value *, 2>{arg(2)};
+  return std::nullopt;
+}
+
+// STRIP ELISION. Main's control emitters strip their condition networks and
+// arm chains inline (`stripCondNetwork`, the chain `_unc`) and free the rails,
+// which suits main, where nothing reverses the region later. Inside a lifted
+// clone the Bennett reverse replays the whole forward anyway, and a rail the
+// forward freed must then be re-minted, so the replayed gates read a different
+// rail than the forward ones and stage 2b cannot pair them.
+//
+// For a rail R the forward frees, delete every gate after R's LAST READ that
+// writes R and nothing else, together with the free. Sound because a lifted
+// clone's body is a permutation of basis states (`scanBody` rejects every phase
+// and rotation primitive): a gate that writes only R, after nothing reads R any
+// more, changes no other rail at any later point, so the copy-out sees the same
+// values; the mirror reverse then undoes the writes R keeps, R ends `|0>` and
+// (e) frees it. A rail with a non-call user (a rail select reads it through the
+// select), a write after its last read that also writes another rail, or an
+// unknown gate touching it keeps its strip; the reverse re-mints it instead.
+// Frees are taken in program order on the live body, so deleting one rail's
+// strip (which READ an earlier rail, e.g. a node toffoli reading its leaf flags)
+// can expose the next rail's strip.
+void elideForwardStrips(BasicBlock &BB,
+                        const SmallPtrSetImpl<CallInst *> &LiftedCalls) {
+  SmallVector<CallInst *, 16> Frees;
+  for (Instruction &I : BB)
+    if (auto *CI = dyn_cast<CallInst>(&I))
+      if (CI->getCalledFunction() &&
+          CI->getCalledFunction()->getName() == "cqrt_free")
+        Frees.push_back(CI);
+  for (CallInst *Free : Frees) {
+    Value *R = Free->getArgOperand(0);
+    auto *Minter = dyn_cast<CallInst>(R);
+    if (!Minter || Minter->getParent() != &BB)
+      continue;
+    bool OK = true;
+    for (User *U : R->users())
+      if (!isa<CallInst>(U))
+        OK = false;
+    SmallVector<CallInst *, 4> Writes;  // writes of R after its last read
+    for (Instruction *I = Minter->getNextNode(); OK && I != Free;
+         I = I->getNextNode()) {
+      auto *CI = dyn_cast<CallInst>(I);
+      if (!CI || !CI->getCalledFunction() || !is_contained(CI->args(), R))
+        continue;
+      const GateKind K = classify(CI, LiftedCalls);
+      auto T = gateTargets(CI, K);
+      if (!T) {
+        OK = false;
+        break;
+      }
+      const bool WritesR = is_contained(*T, R);
+      bool ReadsR = false;
+      for (Value *A : CI->args())
+        if (A == R && !WritesR)
+          ReadsR = true;
+      if (ReadsR) {
+        Writes.clear();  // a later read: the earlier writes are not strips
+        continue;
+      }
+      if (WritesR) {
+        if (T->size() != 1) {
+          OK = false;
+          break;
+        }
+        Writes.push_back(CI);
+      }
+    }
+    if (!OK || Writes.empty())
+      continue;
+    for (CallInst *W : Writes)
+      W->eraseFromParent();
+    Free->eraseFromParent();
+  }
+}
+
 }  // namespace
 
-bool emitBennettWrap(Function &Clone, ArrayRef<CallInst *> ForwardStream,
-                     Value *ResultRail, ArrayRef<Value *> ScratchRails,
-                     StringRef RetAbiWidth, WidthDispatch &wd,
+bool emitBennettWrap(Function &Clone, const SmallPtrSetImpl<CallInst *> &LiftedCalls,
+                     Value *ResultRail, StringRef RetAbiWidth, WidthDispatch &wd,
                      TaintSet &cloneTaint) {
-  // The accepted body is a single straight-line BB terminated by `ret`.
+  // The accepted body is ONE block terminated by `ret` (`lowerCloneControl`'s
+  // backstop): main's stages flatten a lowered region, so the forward is a
+  // straight-line gate stream.
   auto *Ret = dyn_cast<ReturnInst>(Clone.getEntryBlock().getTerminator());
-  if (!Ret) {
+  if (!Ret || Clone.size() != 1) {
     diagnose(Clone.getEntryBlock().getTerminator(), kMsgCloneNoReturn);
     return false;
   }
 
-  // (a) Pre-scan the WHOLE forward stream BEFORE any mutation. A single
-  //     un-invertible primitive declines loudly with NO emission — never a
-  //     half-reversed chain (C11). Post-WI-0 compares pass this scan.
-  for (CallInst *Fwd : ForwardStream)
-    if (!isInverseEmittable(Fwd)) {
-      diagnose(Fwd, kMsgCloneUninvertible);
+  elideForwardStrips(Clone.getEntryBlock(), LiftedCalls);
+
+  // (a) Capture and pre-scan. After the elision no rail is zeroed or freed inside
+  // the forward. One that still is (an emitter strip the elision could not prove
+  // deletable) would need the reverse to re-mint it, and no measured input needs
+  // that (0 of 2699 fixtures, 491 + 48 slices, the census probes, 2026-10-07): it
+  // fails LOUDLY rather than ship an untested adjoint path (R1, R10).
+  SmallVector<std::pair<CallInst *, GateKind>, 64> Fwd;
+  for (Instruction &I : Clone.getEntryBlock()) {
+    auto *CI = dyn_cast<CallInst>(&I);
+    if (!CI)
+      continue;
+    const GateKind K = classify(CI, LiftedCalls);
+    if (K == GateKind::Unknown || K == GateKind::Free || K == GateKind::Unc) {
+      diagnose(CI, kMsgCloneUninvertible);
       return false;
     }
+    if (K != GateKind::Skip)
+      Fwd.emplace_back(CI, K);
+  }
 
   IRBuilder<> B(Ret);
-
-  // (b)+(c) Copy the result rail out, BEFORE the reverse (the reverse zeroes the
-  //     result rail in place; copy-after-reverse would copy |0>). Only when the
-  //     return carries taint — a classical / no-output return has no handle to
-  //     copy (`ResultRail` is null then).
   Value *Out = nullptr;
   if (ResultRail) {
-    // `RetAbiWidth` is the ORIGINAL callee return width — i32 for an int clone, or
-    // a reversible-fp width {f16,f32,f64,f80} for an fp-tainted return whose clone
-    // signature was rewritten to i32 (bd 3c6m.54). `copyFnClone` admits exactly
-    // that set ({i32} ∪ reversible-fp) and mints `cqrt_copy_<W>` (the width selects
-    // the symbol; both handles are i32). `allocFn` already admits fp. So an fp
-    // return allocs an fp |0> rail (`cqrt_alloc_f<W>(0.0)` → i32 handle) and copies
-    // the fp bit-pattern out via `cqrt_copy_f<W>`; the clone returns the i32 `Out`.
     FunctionCallee Alloc = wd.allocFn(RetAbiWidth);
     FunctionCallee Copy = wd.copyFnClone(RetAbiWidth);
     Type *WTy = wd.llvmWidthType(RetAbiWidth);
@@ -90,39 +236,32 @@ bool emitBennettWrap(Function &Clone, ArrayRef<CallInst *> ForwardStream,
       diagnose(Ret, kMsgCloneNoCopy);  // i128/i64/fp128 return — gated earlier, defensive.
       return false;
     }
+    // (b) out = alloc(0); (c) copy(result, out). Copy BEFORE reverse.
     Out = B.CreateCall(Alloc, {Constant::getNullValue(WTy)}, "cqq.out");
     B.CreateCall(Copy, {ResultRail, Out});
   }
 
-  // (d) Reverse-program-order adjoint (void `_unc`). Check the bool and return
-  //     BEFORE any free — defends against a half-reversed chain (unreachable
-  //     after the step-(a) pre-scan over the SAME predicate, C11).
-  if (!emitInverseChain(B, ForwardStream, wd)) {
-    diagnose(Ret, kMsgCloneUninvertible);
-    return false;
+  // (d) The reverse: every captured gate's adjoint, in reverse program order. An
+  // alloc has none here (its rail is freed in (e) once the reverse zeroed it).
+  for (auto It = Fwd.rbegin(); It != Fwd.rend(); ++It) {
+    if (It->second == GateKind::Alloc)
+      continue;
+    if (!emitInverseCall(B, It->first, wd, /*CurHandle=*/nullptr, /*Rec=*/nullptr)) {
+      diagnose(It->first, kMsgCloneUninvertible);
+      return false;
+    }
   }
 
-  // (e) Free each scratch rail — exactly the set whose `_unc` ran (every forward
-  //     result, incl. the result rail (d) zeroed in place) — ONLY after the
-  //     COMPLETE reverse returned true, never interleaved (Rule 6). `Out`
-  //     escapes via `ret` (not in `ScratchRails`); borrowed params are read-only
-  //     (never produced by the forward stream, so never here).
-  // bd urlv audit — NO KEPT-CARRIER RECORD REACHES A `ScratchRails` MEMBER, and
-  // this one is excluded a step earlier than the other emitters': these rails live
-  // inside a Phase-6 CLONE BODY, which the whole-DAG spine never walks, and each is
-  // inserted into `ControlOwnedRails` on the line below. The clone body mints no
-  // `cqrt_tape_write_*` (only `IOSinkLowering` and `AbortParkEmit` do) and the only
-  // copy here writes the escaping `Out`, reading a rail this loop then zeroes by its
-  // own `_unc` chain. The bd 261j(a) freeze is not owed here (bd memory
-  // [record-freeze-invariant-2026-08-10]).
+  // (e) Free every rail the forward minted, in program order: a template / QRAM
+  // load / lifted-call result and a `|0>` alloc, each zeroed by (d). A non-zero
+  // or runtime-valued alloc is a `|v>` product rail and stays allocated (R5).
   FunctionCallee Free = wd.freeFn();
-  for (Value *Rail : ScratchRails) {
-    B.CreateCall(Free, {Rail});
-    cloneTaint.ControlOwnedRails.insert(Rail);  // defense-in-depth (DD-2).
+  for (auto &[CI, K] : Fwd) {
+    if (K != GateKind::Mint && !(K == GateKind::Alloc && isZeroAlloc(CI)))
+      continue;
+    B.CreateCall(Free, {CI});
+    cloneTaint.ControlOwnedRails.insert(CI);  // defense-in-depth (DD-2).
   }
-
-  // Return the basis-valued copy instead of the (now-zeroed-and-freed) result
-  // rail. `Out` dominates `ret` (it is the alloc above).
   if (Out) {
     cloneTaint.ControlOwnedRails.insert(Out);
     Ret->setOperand(0, Out);

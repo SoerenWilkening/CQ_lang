@@ -3689,7 +3689,7 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
         // effect is to carry the flatten's bounds proof to the EMITTER. The index
         // becomes opaque iff it is region-internal-phi-derived (currently untainted,
         // admitted only via `indexWillTaintAfterFlatten`): the flatten +
-        // `lowerCloneSelect` lower it to a `cqrt_alloc_i64` handle whose known-bits
+        // 4.4 merge (main's control chain, bd p3kd.7.8) lower it to a `cqrt_alloc_i64` handle whose known-bits
         // `lowerQramReads`' `qromIndexKnownInBounds` re-proof cannot see, so it would
         // else loud-decline `kMsgQramCloneUnbounded` (a loud but confusing
         // claim/emit divergence). A CURRENTLY-TAINTED Provable index (a source
