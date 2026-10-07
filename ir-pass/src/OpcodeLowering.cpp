@@ -1306,11 +1306,10 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint,
           // NOT GATED ON `!inBennettClone`, unlike (1b) above: the Phase-2
           // dispatch (`taint.InPlaceRailOps.count(BO) || InPlaceReassign.count(BO)`)
           // honours the marking UNCONDITIONALLY, so gating here would leave a hole
-          // exactly where the dispatch has none. It is INERT either way —
-          // `seedClone` builds a FRESH `TaintSet` (`SpecializeSeed.h`) and clones
-          // are built long after `lowerLoops`, so no clone instruction can be in
-          // `taint.InPlaceRailOps` — and that inertness was MEASURED (the whole
-          // fixture corpus and all 43 eqpx reproducers move only the members).
+          // exactly where the dispatch has none. Before p3kd.7.8, clones were
+          // built after main's `lowerLoops` and their fresh `TaintSet` had no
+          // such marks. A clone now runs `lowerLoops` through `runControlChain`,
+          // so its marks must receive this recheck too (review finding R2-1).
           if (auto *BO = dyn_cast<BinaryOperator>(&I);
               BO && taint.InPlaceRailOps.count(BO) &&
               !taint.PreLoopCommittedInPlaceOps.count(BO)) {

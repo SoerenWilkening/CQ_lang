@@ -36,7 +36,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/inplace_twin_matrix.py` — 1790 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
 - `ir-pass/src/CQLoweringPass.cpp` — 1497 physical lines
-- `ir-pass/src/OpcodeLowering.cpp` — 1452 physical lines
+- `ir-pass/src/OpcodeLowering.cpp` — 1451 physical lines
 - `ir-pass/src/SelectClassify.cpp` — 1446 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
 - `runtime/cq_runtime.c` — 1403 physical lines
@@ -306,14 +306,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArmHomogeneity.cpp:132` — `midIsPurePhase`
 - `ir-pass/src/ArmHomogeneity.cpp:170` — `treeHomogeneous`
 
-### `ir-pass/src/BennettWrap.cpp` (272 lines)
+### `ir-pass/src/BennettWrap.cpp` (275 lines)
 
 - `ir-pass/src/BennettWrap.cpp:49` — `diagnose`
 - `ir-pass/src/BennettWrap.cpp:66` — `classify`
 - `ir-pass/src/BennettWrap.cpp:94` — `isZeroAlloc`
 - `ir-pass/src/BennettWrap.cpp:101` — `gateTargets`
-- `ir-pass/src/BennettWrap.cpp:140` — `elideForwardStrips`
-- `ir-pass/src/BennettWrap.cpp:196` — `emitBennettWrap`
+- `ir-pass/src/BennettWrap.cpp:143` — `elideForwardStrips`
+- `ir-pass/src/BennettWrap.cpp:199` — `emitBennettWrap`
 
 ### `ir-pass/src/BirthFreeze.cpp` (36 lines)
 
@@ -712,7 +712,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/MergePhiPeel.cpp:261` — `phiPeelable`
 - `ir-pass/src/MergePhiPeel.cpp:312` — `peelIndependentMergePhis`
 
-### `ir-pass/src/OpcodeLowering.cpp` (1452 lines)
+### `ir-pass/src/OpcodeLowering.cpp` (1451 lines)
 
 - `ir-pass/src/OpcodeLowering.cpp:81` — `diagnoseStaleRecord`
 - `ir-pass/src/OpcodeLowering.cpp:95` — `diagnosePreLoopCommitStale`

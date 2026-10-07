@@ -1,6 +1,6 @@
 # Lifted clones on main's stage list (bd p3kd.7.8): spike measurements
 
-Status: design note for owner sign-off, 2026-10-07. Owner direction:
+Status: historical spike followed by the reviewed implementation, 2026-10-07. Owner direction:
 bd memory `owner-direction-clone-one-pipeline-2026-10-07`. Non-normative where
 it disagrees with `NORTHSTAR.md`.
 
@@ -131,3 +131,56 @@ Defer the retype (Q2). Keep the p3kd.7.2 speculation for clones; decide
 `dm7f.15`/`dm7f.16` for main as the same mechanism (Q1). Land the driver, the
 deferred retype, the reversal by `uncompute()` and the loud capture check as one
 reviewed core change. bd memory `owner-ruling-clone-pipeline-q1q2-2026-10-07`.
+
+## Superseding reversal ruling and reviewed implementation
+
+The owner subsequently required a mechanical Bennett mirror, superseding the
+`uncompute()` recommendation above: main's uncompute spine does not reverse
+ControlOwned merge rails. See bd memory
+`owner-ruling-clone-reversal-mechanical-2026-10-07`. The single-block requirement
+therefore remains a compiler gap under p3kd.7.9.
+
+`StageList` now owns the loop prepasses and control-chain order used by both pass
+entry points and `lowerCloneControl`. Clone speculation remains `claimAll=true`
+under the Q1 ruling. The clone stays well typed while those stages run;
+`retypeCloneSignature` then replaces masked FP arguments and re-keys the taint,
+width, cache and mask records before data lowering. Clone-only condition-network
+and select emitters were removed; p3kd.7.2's classical rail selects remain.
+
+The wrapper elides owners' inline strips, captures the complete forward gate
+stream, copies the result out, and emits each inverse in reverse order. Surviving
+forward frees, adjoints or unrecognized runtime calls fail loudly. For a basis
+label, each accepted gate is a phase-free permutation: retaining scratch changes
+no result read before its owner's strip. After its last read, an omitted strip
+writes only the scratch being retained. The argument also relies on owners
+forbidding later reads after a scratch free; it is an optimization over these
+emitters, not a general dead-call rule. The full mirror clears scratch before
+free, preserves borrowed parameters and leaves the escaping result allocated.
+
+The H1--H7 spike table describes risks, not grants to parameter roots. Review
+confirmed conservative H1--H4 behavior, preservation of attributes through the
+stages (H5), and parameter-rooted reseeding before emission (H7). H6's scope needs
+a narrower statement: static unrolling can act on the reachable callee cone,
+including an original nested callee, under its existing U1--U8 safety checks.
+Prediction metadata cleanup is module-wide. These exceptions are now documented
+in StageList rather than described as blanket clone-only mutation.
+
+Deferred retyping also fixes the P0 width miscompile p3kd.7.10: the earlier
+clone-select route used i32 controlled copies for some FP64/FP80 inputs. A
+verify-clean IR and the coshl golden had concealed the truncated copies. The
+reviewed golden changes use the logical FP width. Inverse literal slots retain
+effective `zeroext`/`signext` through the shared inverse emitter.
+
+Validation on the implementation branch: 39/39 live changed/new lit fixtures;
+51/51 distinct scoped e2e slices (12 regenerated goldens plus 48 multi-TU slices,
+nine overlapping). One mistaken lit filter selected zero tests before correction.
+Mutation validation ran one passing no-op and three killed mutants: strip
+elision removed, FP retype moved early, and the clone control chain skipped.
+MISSED: 0/3. No behavioral source change followed green.
+
+[Four independent adversarial rounds](clone-one-pipeline-review/README.md) each
+accepted, with 6, 6, 6 and 2 fresh lowering executions. They cover H1--H7, aliased
+borrowed parameters, late data reads of conditions, nested mirrors, FP signature
+replacement and attributes, `inBennettClone`, and newly created/grown-mask round-2
+clones. Invalid or blocked probes are identified in their reports and earn no
+coverage credit.

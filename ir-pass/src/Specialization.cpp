@@ -945,12 +945,12 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
   Value *ResultRail = ReturnTainted ? RV : nullptr;
   // The copy-out width is the ORIGINAL callee return width (e.g. "f80"), NOT the
   // clone's declared return type: a tainted fp return had its clone signature
-  // rewritten to i32 in `cloneFor`, so `Clone->getReturnType()` is i32, but the
+  // rewritten to i32 by `retypeCloneSignature`, so its declared type is i32, but the
   // ResultRail is an fp-width quantum value that must copy out via `cqrt_copy_f<W>`
   // (bd 3c6m.54). For an int/void return this equals the clone's own width.
   StringRef RetW = abiWidthFromType(Callee->getReturnType());
 
-  // fp-ABI mispredict guard (bd 3c6m.54): `cloneFor` rewrote a reversible-fp
+  // fp-ABI mispredict guard (bd 3c6m.54): `retypeCloneSignature` rewrote a reversible-fp
   // return to an i32 handle ONLY when `predictReturnTainted` (a sound over-approx)
   // said tainted. The single gap is a `predict==true`/`actual==false` mispredict —
   // an inner tainted-arg clone that returns classical, feeding the whole return
@@ -978,7 +978,7 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
 
   // 5po2 I2 SYMMETRIC fp-ABI mispredict guard (predict-FALSE / actual-TRUE, the
   // Rule-13 CONFIRMED-finding backstop): a tainted-controlled return that
-  // `predictReturnTainted` UNDER-predicted classical (so `cloneFor` kept the fp
+  // `predictReturnTainted` UNDER-predicted classical (so retyping kept the fp
   // return type) but a control emitter DID mint a tainted i32 out rail — the clone
   // declares an fp return yet `emitBennettWrap` would set `ret i32` (a mistyped,
   // broken module, exit 134, NO house diagnostic). The `predictReturnTainted`

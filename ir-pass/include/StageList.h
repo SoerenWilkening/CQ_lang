@@ -6,9 +6,11 @@
 // with their own `StageScope`: how taint is re-derived after a stage rewrites the
 // IR (module `propagate`, the shim's filtered `propagate`, a clone's param-rooted
 // reseed), the PredMux mode of the nested fixpoints, and the two stages one
-// caller does not run. Every stage is module-scoped and acts only on values in
-// the `TaintSet` it is given, so a clone's disjoint `cloneTaint` scopes the whole
-// sequence to the clone (the precedent `lowerOps(M, wd, cloneTaint)` relies on).
+// caller does not run. Control emission uses the supplied taint to select the
+// clone's values. The static-loop prepass also follows the reachable callee
+// cone and may rewrite an original nested callee under its per-loop U1-U8
+// fences; prediction-metadata cleanup scans the module. Neither has a blanket
+// clone-only scope (p3kd.7.8 adversarial review R1-1).
 #ifndef CQ_IRPASS_STAGE_LIST_H_
 #define CQ_IRPASS_STAGE_LIST_H_
 

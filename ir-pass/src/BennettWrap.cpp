@@ -133,7 +133,10 @@ std::optional<SmallVector<Value *, 2>> gateTargets(CallInst *CI,
 // values; the mirror reverse then undoes the writes R keeps, R ends `|0>` and
 // (e) frees it. A rail with a non-call user (a rail select reads it through the
 // select), a write after its last read that also writes another rail, or an
-// unknown gate touching it keeps its strip; the reverse re-mints it instead.
+// unknown gate touching it keeps its strip and reaches the loud capture check.
+// This is an emitter-strip optimization: the emitting owner already guarantees
+// no use of its scratch after the free. The scan below relies on that invariant
+// and finds the last read before the free, not a last read in arbitrary IR.
 // Frees are taken in program order on the live body, so deleting one rail's
 // strip (which READ an earlier rail, e.g. a node toffoli reading its leaf flags)
 // can expose the next rail's strip.
@@ -210,7 +213,7 @@ bool emitBennettWrap(Function &Clone, const SmallPtrSetImpl<CallInst *> &LiftedC
   // (a) Capture and pre-scan. After the elision no rail is zeroed or freed inside
   // the forward. One that still is (an emitter strip the elision could not prove
   // deletable) would need the reverse to re-mint it, and no measured input needs
-  // that (0 of 2699 fixtures, 491 + 48 slices, the census probes, 2026-10-07): it
+  // that in the fixtures, e2e slices and census probes exercised on 2026-10-07: it
   // fails LOUDLY rather than ship an untested adjoint path (R1, R10).
   SmallVector<std::pair<CallInst *, GateKind>, 64> Fwd;
   for (Instruction &I : Clone.getEntryBlock()) {
