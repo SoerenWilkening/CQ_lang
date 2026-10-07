@@ -7807,7 +7807,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/keepset_vendor_check.py:177` — `scan`
 - `tools/keepset_vendor_check.py:203` — `main`
 
-### `tools/labreport/build.py` (258 lines)
+### `tools/labreport/build.py` (260 lines)
 
 - `tools/labreport/build.py:47` — `die`
 - `tools/labreport/build.py:52` — `sha256`
@@ -7817,11 +7817,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/labreport/build.py:94` — `sealable_files`
 - `tools/labreport/build.py:101` — `verify_manifest`
 - `tools/labreport/build.py:119` — `run_tex`
-- `tools/labreport/build.py:144` — `_balanced_groups`
-- `tools/labreport/build.py:171` — `label_pages`
-- `tools/labreport/build.py:188` — `check_budgets`
-- `tools/labreport/build.py:219` — `seal`
-- `tools/labreport/build.py:233` — `main`
+- `tools/labreport/build.py:146` — `_balanced_groups`
+- `tools/labreport/build.py:173` — `label_pages`
+- `tools/labreport/build.py:190` — `check_budgets`
+- `tools/labreport/build.py:221` — `seal`
+- `tools/labreport/build.py:235` — `main`
 
 ### `tools/labreport/figures/corpus_growth.py` (48 lines)
 

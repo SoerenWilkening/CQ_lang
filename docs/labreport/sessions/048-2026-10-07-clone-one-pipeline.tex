@@ -1,0 +1,159 @@
+\labsessionheader{2026-10-07}{One stage list for lifted clones; mechanical reversal and FP width repair}%
+  {11e71cdb}{n/a}{docs/design/clone-one-pipeline.md}
+
+\subsection*{Goal}
+Finish \bd{3c6m.73} and \bd{p3kd.7.8}: admit FMA with a classical product and
+quantum addend, then lower lifted classical callees with main's stages. The clone
+pipeline had omitted loop and control mechanisms that main already ran. It also
+retyped FP parameters before those stages could inspect their well-typed source
+operations. This continuation reviewed the prepared implementation, merged it,
+and measured acceptance through the user-facing driver.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \commit{4c323c3c} --- \bd{3c6m.73}: the LLQ FMA shape and inverse at
+  f16/f32/f64/f80. A runtime classical product and quantum addend now reach the
+  reversible template; ordinary \texttt{x*y+q} can use the same intrinsic shape.
+  The earlier implementation record reports mutation MISSED 0/2. This continuation
+  remeasured all published FMA mixtures in the full \texttt{cqc} census.
+  \item \commit{92e9f0ec} --- merged \bd{p3kd.7.8}, implementation
+  \commit{bae428e8} plus review closure \commit{874b822b}. \texttt{StageList}
+  owns the loop prepasses and control-chain order used by both main entry points
+  and \texttt{lowerCloneControl}. FP signature replacement follows those stages;
+  it re-keys parameter taint, widths, specialization masks and the clone cache.
+  \item The wrapper elides emitter-owned forward strips, copies out, and
+  mechanically mirrors every captured gate. Surviving frees, adjoints or unknown
+  runtime gates fail loudly. Clone-only select/network emission is removed;
+  classical rail selects remain under the earlier speculation ruling. Effective
+  literal \texttt{zeroext}/\texttt{signext} travels through the shared inverse
+  emitter. Freeze removal precedes the shared chain.
+  \item \commit{11e71cdb} --- full census, regenerated coverage headlines and
+  saved review/validation evidence. The prepared change had updated the affected
+  fixtures and reviewed each changed e2e golden; scoped green checked them here.
+\end{itemize}
+
+\subsection*{Spike and owner rulings}
+The historical spike \commit{f57a1757} is preserved in
+\fpath{docs/design/clone-one-pipeline.md}, with its commands and measurements;
+it was not rerun during this continuation. Running main's stages exposed control
+emitters' condition flags and copies that the old flat capture would silently
+omit. Deferring FP retyping let further cells reach the wrapper. Changing
+\texttt{claimAll} did not improve that measured set.
+
+The owner required deferred retyping and retained clone speculation in
+\texttt{owner-ruling-clone-pipeline-q1q2-2026-10-07}. The subsequent
+\texttt{owner-ruling-clone-reversal-mechanical-2026-10-07} superseded the proposed
+use of main's \texttt{uncompute()}: its spine does not reverse ControlOwned
+merge rails. The landed wrapper therefore mirrors the complete phase-free gate
+stream. The single-block restriction remains a compiler gap, \bd{p3kd.7.9}.
+
+\subsection*{Findings and correctness argument}
+\begin{itemize}
+  \item \fconfirmed\ \bd{p3kd.7.10}, pre-existing: early FP-to-i32 retyping
+  made the old clone select emitter choose integer copies for FP inputs. Copies
+  at i32 truncated FP64/FP80 data while LLVM verification passed. The coshl golden
+  had pinned this error. Deferred retyping and shared SelectMergeEmit repair it;
+  the P0 issue is closed after merge and the saved-IR audit below.
+  \item Strip elision depends on basis permutations and emitter ownership.
+  After a scratch rail's last read, an omitted strip writes only that rail; the
+  result copy is unchanged. Retaining scratch lets the exact mirror undo the
+  entire forward sequence. Owners must forbid a later read after the scratch
+  free. Borrowed parameters never enter the scratch-free list. Nonzero classical
+  materializations remain allocated under the existing policy.
+  \item Four independent review rounds accepted, using 6, 6, 6 and 2 fresh
+  lowering executions. They attacked theta-root assumptions H1--H7, aliased
+  parameters, FP signature replacement and attributes, clone flags, late reads
+  of conditions, nested mirrors, and round-2 clones. The last round witnessed
+  both a newly discovered candidate and mask growth from 10 to 11 with QQ XOR.
+  One round-2 probe was malformed and one QROM probe had weakened integer-root
+  coverage; neither earns the intended coverage. Later rounds filled the FP80
+  and round-2 reachability gaps. Inputs, outputs and reports are committed under
+  \fpath{docs/design/clone-one-pipeline-review/}.
+  \item \fdoc\ Static unrolling can mutate the reachable original-callee cone
+  under its U1--U8 checks; prediction metadata cleanup is module-wide. The
+  StageList scope comment now names these exceptions. An OpcodeLowering comment
+  also incorrectly called clone loop marks inert; the shared stages make its
+  existing unconditional recheck necessary. These were comment corrections;
+  no behavioral change followed green.
+\end{itemize}
+
+\subsection*{Measurements}
+The fresh census command was
+\measured{python3 tools/library\_coverage/runtime\_census.py --output tools/library\_coverage/runtime\_census.json --jobs 6 --evidence-dir /tmp/p3kd78-census-evidence}.
+It built, lowered, linked and trace-ran each accepted mixture; it blesses no new
+golden and does not prove every library function's numerical semantics.
+
+\begin{tabular}{@{}lr@{}}\toprule
+Quantity & Measured value \\ \midrule
+Scalar-input cells & 86/180 (baseline JSON: 82/180) \\
+Source-injected / intrinsic / macro & 28/120 / 48/48 / 10/12 \\
+Classical-only constructors, outside scalar total & 3/3 \\
+Runtime-mixture probes & 362 accepted / 121 declined \\
+New acceptances / acceptance regressions & 10 / 0 \\
+Accepted structural free checks & 362/362 \\
+Borrowed FP parameters / direct copies audited & 265 / 318 \\
+Clone bodies and twins / clone frees audited & 247 / 29,943 \\
+Wrong direct FP copy widths / parameter frees & 0 / 0 \\
+Lit fixtures / e2e goldens / ctest entries & 2701 / 436 / 551 \\
+\bottomrule\end{tabular}
+
+The baseline is the committed \commit{4c323c3c} census. The saved-IR audit uses
+original signatures from \fpath{build/libm/cq_libm.bc}, disassembled with
+\measured{llvm-dis build/libm/cq\_libm.bc -o /tmp/p3kd78-libm-bundle.ll};
+\fpath{docs/design/clone-one-pipeline-review/validation/census-audit.py} reads
+those signatures and 73 accepted FP-bearing probe outputs without rerunning
+lowering. Counts of fixtures and goldens came from Python Path globs; ctest
+registration came from \measured{ctest --test-dir build -N}.
+
+The newly complete cells are \texttt{ilogb}, \texttt{ilogbf}, \texttt{cbrtl} and
+\texttt{nextafter}. QQ also newly accepts for \texttt{nextafterl} and
+\texttt{nexttoward}/\texttt{nexttowardf}/\texttt{nexttowardl}. All FMA mixtures,
+including CCQ, accept at the three published widths.
+
+\subsection*{Verification run}
+\begin{itemize}
+  \item Built CQPass, cq-opt, cq-opt-debugalloc and cq-scrub-selftest.
+  Green lit: 39/39 live changed/new fixtures selected from the branch diff.
+  Green ctest: 51/51 distinct named slices, covering the 12 regenerated goldens
+  and 48 multi-TU slices (nine overlaps). Exact names and logs are committed.
+  One mistaken lit filter selected zero tests before correction.
+  \item R10: one passing no-op, then three real mutants, each against only its
+  killing fixture. Removing strip elision and skipping the clone control chain
+  fail \texttt{spec\_accept\_clone\_main\_condtree}; moving retyping early fails
+  \texttt{spec\_accept\_multiexit\_fp}. MISSED 0/3. Sources were restored
+  byte-for-byte and all four targets rebuilt before review.
+  \item Continuation invocations: one actual green lit, one scoped green ctest,
+  one zero-test selection error, one no-op and three real-mutant lit runs.
+  Earlier red/config attempts remain separately recorded in bd. Reviewers reran
+  no implementer fixture, suite or census; their total is 20 fresh cq-opt runs.
+  No behavioral change after green required a final fixture invocation.
+  \item Batch gate: \measured{ctest --test-dir build -LE maintenance -j6 --output-on-failure}
+  passed 548/548 (641.63 seconds). \measured{cmake --build build --target cq-opt-equivalence-full -j8}
+  compared all 2701 fixtures, with zero stdout/stderr/exit mismatches.
+  \measured{python3 tools/update\_code\_map.py --check} was clean.
+  Two preparatory build invocations were interrupted before equivalence began;
+  one completed parallel build ran the full sweep once. The rebuilt plugin hash
+  matches the binary measured by the census. Maintenance mutant shards were
+  excluded by the requested batch gate; their implementation was unchanged.
+\end{itemize}
+
+\subsection*{Remaining work}
+\begin{itemize}
+  \item \bd{p3kd.7.3}/\bd{p3kd.7.5}: surviving carriers reach shared control
+  or nested-control failures, re-attributed to \bd{dm7f.15}/\bd{dm7f.16}.
+  i80/speculation and i1 rail-select conditions remain open behind first blockers.
+  \bd{p3kd.7.4}/\bd{8h7d}: ilogbl/logbl Q still fail shared loop/control.
+  \bd{p3kd.7.6} is fixed by cbrtl acceptance.
+  \item \bd{p3kd.7.9}: accept path-independent gate streams with classical
+  multi-block control. New \bd{p3kd.7.11}: omit SelectMergeEmit's all-zero arm
+  materialization and redundant controlled copy; clone gate counts grew after
+  replacing the former optimized clone route with the shared emitter.
+  \item \bd{6hry}, fixed while building this entry: TeX printed non-UTF8
+  diagnostic bytes and the Python wrapper raised UnicodeDecodeError before
+  inspecting the return code. Log decoding now replaces invalid bytes; TeX
+  failure status and page-budget checks remain enforced.
+  \item Census first blockers: 43 body-construct/memory, 33 shared control
+  (13 nested), 18 undef/poison returns, 14 argument/return ABI, nine frem gaps,
+  two loop/control and two macro unknown-callee failures. These are compiler
+  gaps under NORTHSTAR; none is reclassified as a physics prohibition.
+\end{itemize}

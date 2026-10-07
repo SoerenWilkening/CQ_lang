@@ -130,7 +130,9 @@ def run_tex() -> None:
     else:
         die("neither latexmk nor pdflatex on PATH (TeX Live: /Library/TeX/texbin)")
     for c in runs:
-        r = subprocess.run(c, cwd=ROOT, env=env, capture_output=True, text=True)
+        # TeX can print font-encoded glyph bytes in diagnostics.
+        r = subprocess.run(c, cwd=ROOT, env=env, capture_output=True, text=True,
+                           errors="replace")
         if r.returncode != 0:
             log = BUILD / f"{MAIN}.log"
             tail = log.read_text(errors="replace").splitlines()[-40:] if log.exists() else r.stdout.splitlines()[-40:]
