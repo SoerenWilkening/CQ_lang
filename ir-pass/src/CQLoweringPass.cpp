@@ -754,6 +754,11 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
     adjudicateTaintDelta(M, wd, taint, plan6, PeelDelta);
   }
 
+  if (::getenv("CQ_SPIKE_MAINPRE"))
+    if (Function *PF = M.getFunction("probe")) {
+      llvm::errs() << "=== SPIKE main probe before detectControlRegions ===\n";
+      PF->print(llvm::errs());
+    }
   ControlPlan plan = detectControlRegions(M, wd, taint);
   lowerControlRegions(M, wd, taint, plan);
 

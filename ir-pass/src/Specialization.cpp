@@ -22,6 +22,15 @@
 #include "SpecializeReject.h"
 #include "SpecializeSeed.h"
 #include "TaintPropagation.h"
+#include "ControlPlan.h"
+#include "SwapRouteEmit.h"
+#include "LoopPlan.h"
+#include "LoopUnrollPrepass.h"
+#include "CtlzIdiomPrepass.h"
+#include "MergePhiPeel.h"
+#include "SpecializeDetect.h"
+#include "llvm/Support/raw_ostream.h"
+#include <cstdlib>
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/DenseMap.h"
@@ -646,7 +655,7 @@ void normalizeReturnMerge(Function &Clone) {
 // source-located (Prime Directive; never a partial clone). Returns true on a
 // clean flatten (or a body with no tainted control at all), false if control
 // survives (the caller declines + retargets to keep the site consistent).
-bool lowerCloneControl(Function &Clone, Module &M, TaintSet &ct) {
+bool lowerCloneControl(Function &Clone, Module &M, TaintSet &ct, WidthDispatch &wd) {
   // Capture the tainted params ONCE — they persist across every flatten erasure.
   SmallVector<Argument *, 8> TaintedParams;
   for (Argument &A : Clone.args())
@@ -658,6 +667,44 @@ bool lowerCloneControl(Function &Clone, Module &M, TaintSet &ct) {
   // scoped PredMux fixpoint claims (with `claimAll` — inside a clone every acyclic
   // SESE tainted diamond must flatten). Idempotent on a single-`ret` body.
   normalizeReturnMerge(Clone);
+
+  // SPIKE (Q2): a well-typed fp placeholder per retyped fp param while main's
+  // stages run; restored to the i32 param (the old transient form) at the end.
+  SmallVector<std::pair<Argument *, CallInst *>, 4> FpPlaceholders;
+  if (::getenv("CQ_SPIKE_FPARG")) {
+    IRBuilder<> EB(&*Clone.getEntryBlock().getFirstInsertionPt());
+    for (Argument *A : TaintedParams) {
+      auto WIt = ct.HandleWidth.find(A);
+      if (WIt == ct.HandleWidth.end() || !A->getType()->isIntegerTy(32))
+        continue;
+      Type *FpTy = nullptr;
+      StringRef W = WIt->second;
+      if (W == "f32") FpTy = EB.getFloatTy();
+      else if (W == "f64") FpTy = EB.getDoubleTy();
+      else if (W == "f80") FpTy = Type::getX86_FP80Ty(Clone.getContext());
+      if (!FpTy) continue;
+      SmallVector<Use *, 8> Uses;
+      for (Use &U : A->uses()) Uses.push_back(&U);
+      FunctionCallee PH = Clone.getParent()->getOrInsertFunction(
+          ("__cq_spike_fparg_" + W).str(), FunctionType::get(FpTy, {A->getType()}, false));
+      CallInst *C = EB.CreateCall(PH, {A}, "fparg");
+      C->setDoesNotAccessMemory();
+      C->setDoesNotThrow();
+      for (Use *U : Uses) U->set(C);
+      ct.Tainted.insert(C);
+      FpPlaceholders.emplace_back(A, C);
+    }
+  }
+  auto restoreFpArgs = [&] {
+    for (auto &[A, C] : FpPlaceholders) {
+      SmallVector<Use *, 8> Uses;
+      for (Use &U : C->uses()) Uses.push_back(&U);
+      for (Use *U : Uses) U->set(A);
+      ct.Tainted.erase(C);
+      C->eraseFromParent();
+    }
+    FpPlaceholders.clear();
+  };
 
   // bd `test_C_libtooling-woa0` — the SEVENTH `flattenPredMuxRegions` call site,
   // and it gets its OWN cross-claim record + its OWN re-ask rather than a
@@ -680,8 +727,48 @@ bool lowerCloneControl(Function &Clone, Module &M, TaintSet &ct) {
   // to claim in a non-clone function and therefore never to convert a φ the
   // module-level record holds. Same species of argument, same disposition.
   PredMuxRailPhiRecord cloneRailPhiRec;
-  while (flattenPredMuxRegions(M, ct, /*claimAll=*/true, &cloneRailPhiRec))
+  auto reseed = [&] {
     reseedCloneTaintFromParams(Clone, TaintedParams, ct);
+  };
+  while (flattenPredMuxRegions(M, ct, /*claimAll=*/!::getenv("CQ_SPIKE_MAINMODE"), &cloneRailPhiRec))
+    reseed();
+  // SPIKE p3kd.7.8: main's stage list under the clone taint.
+  const bool Spike = !::getenv("CQ_SPIKE_OFF");
+  if (Spike) {
+    while (unrollConstTripLoops(M, ct)) {
+      reseed();
+      while (flattenPredMuxRegions(M, ct, /*claimAll=*/!::getenv("CQ_SPIKE_MAINMODE"), &cloneRailPhiRec))
+        reseed();
+    }
+    while (recognizeCtlzIdiomLoops(M, ct)) {
+      reseed();
+      while (flattenPredMuxRegions(M, ct, /*claimAll=*/!::getenv("CQ_SPIKE_MAINMODE"), &cloneRailPhiRec))
+        reseed();
+    }
+    SpecPlan localPlan;
+    if (::getenv("CQ_SPIKE_DETECT"))
+      detectSpecializations(M, ct, wd, localPlan);
+    lowerLoops(M, wd, ct);
+    {
+      SmallPtrSet<Value *, 32> PeelDelta;
+      unifyTaintedReturns(M, ct, &PeelDelta);
+      peelIndependentMergePhis(M, ct, &PeelDelta);
+      if (::getenv("CQ_SPIKE_ADJ"))
+        adjudicateTaintDelta(M, wd, ct, localPlan, PeelDelta);
+    }
+    if (::getenv("CQ_SPIKE_PRE")) {
+      llvm::errs() << "=== SPIKE clone before detectControlRegions ===\n";
+      Clone.print(llvm::errs());
+    }
+    ControlPlan plan = detectControlRegions(M, wd, ct);
+    lowerControlRegions(M, wd, ct, plan);
+    collapseFlattenedLoopRails(M, wd, ct);
+    repropagateControlMerges(M, wd, ct, localPlan);
+    if (::getenv("CQ_SPIKE_DBG")) {
+      llvm::errs() << "=== SPIKE clone after main stages ===\n";
+      Clone.print(llvm::errs());
+    }
+  }
   // The re-ask, immediately after this driver's own fixpoint — the only slot
   // that can, since `specialize()` runs after `detectControlRegions` and after
   // `repropagateControlMerges`, so the module-level re-ask is long past. Loud;
@@ -691,6 +778,7 @@ bool lowerCloneControl(Function &Clone, Module &M, TaintSet &ct) {
   if (declineConvertedRailPhiLeaves(cloneRailPhiRec))
     return false;
 
+  restoreFpArgs();
   // PredMux replaces the merge phis with selects and rewrites the branch to an
   // UNCONDITIONAL edge into the (surviving) merge block, so a flattened diamond is
   // 2+ straight-line blocks joined by unconditional `br`s — not yet the single
@@ -1005,7 +1093,7 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
   // shape (multi-exit / loop / non-claimable) LOUD-declines here; retarget the
   // site (keeping it consistent so no secondary crash precedes the DS_Error) and
   // return — `opt` exits non-zero on the diagnostic and the module is rejected.
-  if (!lowerCloneControl(*Clone, M, cloneTaint)) {
+  if (!lowerCloneControl(*Clone, M, cloneTaint, wd)) {
     plan.Cache[Key].ReturnTainted = false;
     retargetSite(Site, Clone);
     return SpecRecord{Clone, false};
@@ -1041,6 +1129,10 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
     // body, this loop must mirror that — lower it in place, do not recurse.
     // [[7-1-E-intrinsics-frozen-clearance]]
     if (isCuratedReversibleIntrinsic(Inner))
+      continue;
+    // SPIKE: a runtime gate minted by main's control stages is not a lift site.
+    if (InnerCallee->getName().starts_with("cqrt_") ||
+        InnerCallee->getName().starts_with("cq_template_"))
       continue;
     // p119: a DIRECT-libm call in a clone body is a LIBRARY function (removed from
     // recognition). It has no visible body, so it falls through to the loud
@@ -1386,6 +1478,26 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
         }
       }
 
+  {
+    SmallPtrSet<CallInst *, 16> Known;
+    for (CallInst *C : ForwardStream) Known.insert(C);
+    for (Value *V : ScratchRails) if (auto *C = dyn_cast<CallInst>(V)) Known.insert(C);
+    for (BasicBlock &BB : *Clone)
+      for (Instruction &I : BB)
+        if (auto *CI = dyn_cast<CallInst>(&I))
+          if (Function *F = CI->getCalledFunction()) {
+            StringRef N = F->getName();
+            if ((N.starts_with("cqrt_") || N.starts_with("cq_template_")) &&
+                !Known.count(CI) && !N.starts_with("cqrt_qram_alloc_")) {
+              Clone->getContext().diagnose(DiagnosticInfoUnsupported(
+                  *Clone, ("SPIKE: gate the Bennett wrap does not reverse: " + N).str(),
+                  CI->getDebugLoc()));
+              plan.Cache[Key].ReturnTainted = false;
+              retargetSite(Site, Clone);
+              return SpecRecord{Clone, false};
+            }
+          }
+  }
   auto *Ret = dyn_cast<ReturnInst>(Clone->getEntryBlock().getTerminator());
   Value *RV = Ret ? Ret->getReturnValue() : nullptr;
   bool ReturnTainted = RV && cloneTaint.Tainted.count(RV);
