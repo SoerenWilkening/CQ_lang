@@ -25,6 +25,7 @@ StringRef shapeSuffix(Shape shape) {
   case Shape::TernaryQQL: return "_qql";
   case Shape::TernaryQLQ: return "_qlq";
   case Shape::TernaryQLL: return "_qll";
+  case Shape::TernaryLLQ: return "_llq";
   case Shape::QQ:
   case Shape::Unary:
   case Shape::TernaryQQQ:
@@ -72,7 +73,7 @@ bool isHandleSlot(StringRef symbol, unsigned argIdx) {
   // but the SLOT LAYOUT is spelled here and in `WidthDispatch::dataTemplateFn`'s
   // FunctionType construction, which are the only two places that know it. This
   // assert is what stops a third shape being added to one and not the other.
-  static_assert(static_cast<int>(Shape::TernaryQLL) == 7,
+  static_assert(static_cast<int>(Shape::TernaryLLQ) == 8,
                 "new Shape added — extend the handle-slot table below");
   if (!symbol.starts_with("cq_template_"))
     return false;  // the `cqrt_*` core ABI is not this grammar — fail closed.
@@ -97,14 +98,15 @@ bool isHandleSlot(StringRef symbol, unsigned argIdx) {
   //   QQL (handle, handle, literal)          → 0b011
   //   QLQ (handle, literal, handle)          → 0b101
   //   QLL (handle, literal, literal)         → 0b001
-  // (the fma first slot is always a handle — see the `Shape` doc comment).
+  //   LLQ (literal, literal, handle)         → 0b100
+  // (a product holding a handle puts it first — see the `Shape` doc comment).
   static const struct {
     Shape S;
     unsigned Mask;
   } Table[] = {
       {Shape::HL, 0b001},         {Shape::LH, 0b010},
       {Shape::TernaryQQL, 0b011}, {Shape::TernaryQLQ, 0b101},
-      {Shape::TernaryQLL, 0b001},
+      {Shape::TernaryQLL, 0b001}, {Shape::TernaryLLQ, 0b100},
   };
   for (const auto &Row : Table)
     if (N.ends_with(shapeSuffix(Row.S)))

@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 771 maintained source files, 6464 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 771 maintained source files, 6472 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -25,11 +25,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/TaintPropagation.cpp` — 3339 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 3160 physical lines
 - `ir-pass/src/SwapRouteEmit.cpp` — 3147 physical lines
-- `runtime/cq_link_smoke.c` — 2885 physical lines
+- `runtime/cq_link_smoke.c` — 2893 physical lines
 - `tools/taintset_scrub_guard.py` — 2758 physical lines
 - `ir-pass/src/RotationLowering.cpp` — 2549 physical lines
+- `runtime/cq_intrinsic_templates.c` — 2475 physical lines
 - `runtime/cq_templates.h` — 2437 physical lines
-- `runtime/cq_intrinsic_templates.c` — 2427 physical lines
 - `ir-pass/include/TaintPropagation.h` — 2254 physical lines
 - `tools/golden_multiset_audit.py` — 2211 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1964 physical lines
@@ -71,11 +71,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SwitchClassify.cpp` — 621 physical lines
 - `ir-pass/src/MeasureLowering.cpp` — 614 physical lines
 - `tools/migrate_phi_fixtures_rederive.py` — 612 physical lines
-- `ir-pass/src/WidthDispatch.cpp` — 581 physical lines
+- `ir-pass/src/WidthDispatch.cpp` — 589 physical lines
 - `tests/e2e/slice_libm_real_asinhl.c` — 581 physical lines
 - `ir-pass/src/AbortParkEmit.cpp` — 580 physical lines
 - `tests/e2e/slice_libm_real_acoshl.c` — 575 physical lines
-- `ir-pass/src/IntrinsicLowering.cpp` — 546 physical lines
+- `ir-pass/src/IntrinsicLowering.cpp` — 560 physical lines
 - `ir-pass/src/CompareLowering.cpp` — 534 physical lines
 - `ir-pass/include/ArmAnalysis.h` — 531 physical lines
 - `ir-pass/include/RailBankPromote.h` — 528 physical lines
@@ -88,7 +88,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/DeadValueLiveness.cpp` — 494 physical lines
 - `ir-pass/include/LiteralIntegrity.h` — 489 physical lines
 - `tests/e2e/railbank_deadcell_matrix.c` — 482 physical lines
-- `tools/gen_templates.py` — 473 physical lines
+- `tools/gen_templates.py` — 477 physical lines
 - `tools/library_coverage/loop_bounds/LoopBoundProbe.cpp` — 471 physical lines
 - `tools/record_census/census_common.py` — 468 physical lines
 - `ir-pass/src/DagTraversal.cpp` — 458 physical lines
@@ -101,9 +101,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/record_census/source_ir.py` — 434 physical lines
 - `tests/e2e/slice_libm_real_erfl.c` — 432 physical lines
 - `tools/record_census/census_02_mc_population.py` — 430 physical lines
+- `runtime/cq_intrinsic_templates.h` — 427 physical lines
 - `ir-pass/include/WireWalk.h` — 424 physical lines
 - `ir-pass/tools/scrub_selftest.cpp` — 423 physical lines
-- `runtime/cq_intrinsic_templates.h` — 419 physical lines
 - `tests/e2e/slice_libm_real_powf.c` — 418 physical lines
 - `tools/install_cq.py` — 402 physical lines
 
@@ -572,7 +572,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/IOSinkLowering.cpp:463` — `armIOSink`
 - `ir-pass/src/IOSinkLowering.cpp:473` — `lowerControlledIOSinks`
 
-### `ir-pass/src/IntrinsicLowering.cpp` (546 lines)
+### `ir-pass/src/IntrinsicLowering.cpp` (560 lines)
 
 - `ir-pass/src/IntrinsicLowering.cpp:32` — `intrinsicStem`
 - `ir-pass/src/IntrinsicLowering.cpp:109` — `isCrossWidthLibmIntrinsic`
@@ -1189,15 +1189,15 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/TaintPropagation.cpp:3245` — `declineQuantumReturnCalls`
 - `ir-pass/src/TaintPropagation.cpp:3303` — `declineScrubbedHandleReads`
 
-### `ir-pass/src/TemplateName.cpp` (143 lines)
+### `ir-pass/src/TemplateName.cpp` (145 lines)
 
 - `ir-pass/src/TemplateName.cpp:19` — `shapeSuffix`
-- `ir-pass/src/TemplateName.cpp:41` — `ctrlInvSuffix`
-- `ir-pass/src/TemplateName.cpp:49` — `dataName`
-- `ir-pass/src/TemplateName.cpp:60` — `compareName`
-- `ir-pass/src/TemplateName.cpp:69` — `isHandleSlot`
-- `ir-pass/src/TemplateName.cpp:117` — `isUncHandleSlot`
-- `ir-pass/src/TemplateName.cpp:133` — `castName`
+- `ir-pass/src/TemplateName.cpp:42` — `ctrlInvSuffix`
+- `ir-pass/src/TemplateName.cpp:50` — `dataName`
+- `ir-pass/src/TemplateName.cpp:61` — `compareName`
+- `ir-pass/src/TemplateName.cpp:70` — `isHandleSlot`
+- `ir-pass/src/TemplateName.cpp:119` — `isUncHandleSlot`
+- `ir-pass/src/TemplateName.cpp:135` — `castName`
 
 ### `ir-pass/src/Uncomputation.cpp` (3160 lines)
 
@@ -1233,7 +1233,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Uncomputation.cpp:2988` — `uncompute`
 - `ir-pass/src/Uncomputation.cpp:3084` — `planInteriorDischarges`
 
-### `ir-pass/src/WidthDispatch.cpp` (581 lines)
+### `ir-pass/src/WidthDispatch.cpp` (589 lines)
 
 - `ir-pass/src/WidthDispatch.cpp:51` — `typeForAbiWidth`
 - `ir-pass/src/WidthDispatch.cpp:80` — `WidthDispatch::allSuffixes`
@@ -1263,11 +1263,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/WidthDispatch.cpp:405` — `WidthDispatch::rzRtFn`
 - `ir-pass/src/WidthDispatch.cpp:418` — `WidthDispatch::llvmWidthType`
 - `ir-pass/src/WidthDispatch.cpp:425` — `WidthDispatch::dataTemplateFn`
-- `ir-pass/src/WidthDispatch.cpp:487` — `WidthDispatch::compareTemplateFn`
-- `ir-pass/src/WidthDispatch.cpp:509` — `WidthDispatch::castTemplateFn`
-- `ir-pass/src/WidthDispatch.cpp:524` — `WidthDispatch::freeFn`
-- `ir-pass/src/WidthDispatch.cpp:533` — `WidthDispatch::addTemplate`
-- `ir-pass/src/WidthDispatch.cpp:544` — `WidthDispatch::frontEndIntrinsicNames`
+- `ir-pass/src/WidthDispatch.cpp:495` — `WidthDispatch::compareTemplateFn`
+- `ir-pass/src/WidthDispatch.cpp:517` — `WidthDispatch::castTemplateFn`
+- `ir-pass/src/WidthDispatch.cpp:532` — `WidthDispatch::freeFn`
+- `ir-pass/src/WidthDispatch.cpp:541` — `WidthDispatch::addTemplate`
+- `ir-pass/src/WidthDispatch.cpp:552` — `WidthDispatch::frontEndIntrinsicNames`
 
 ### `ir-pass/src/WireWalk.cpp` (948 lines)
 
@@ -1325,7 +1325,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/tools/scrub_selftest.cpp:187` — `checkList`
 - `ir-pass/tools/scrub_selftest.cpp:214` — `main`
 
-### `runtime/cq_intrinsic_templates.c` (2427 lines)
+### `runtime/cq_intrinsic_templates.c` (2475 lines)
 
 - `runtime/cq_intrinsic_templates.c:7` — `cq_template_abs_i16`
 - `runtime/cq_intrinsic_templates.c:14` — `cq_template_abs_i16_unc`
@@ -1437,297 +1437,305 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `runtime/cq_intrinsic_templates.c:656` — `cq_template_floor_f80`
 - `runtime/cq_intrinsic_templates.c:663` — `cq_template_floor_f80_unc`
 - `runtime/cq_intrinsic_templates.c:668` — `cq_template_fma_f16`
-- `runtime/cq_intrinsic_templates.c:675` — `cq_template_fma_f16_qll`
-- `runtime/cq_intrinsic_templates.c:682` — `cq_template_fma_f16_qll_unc`
-- `runtime/cq_intrinsic_templates.c:687` — `cq_template_fma_f16_qlq`
-- `runtime/cq_intrinsic_templates.c:694` — `cq_template_fma_f16_qlq_unc`
-- `runtime/cq_intrinsic_templates.c:699` — `cq_template_fma_f16_qql`
-- `runtime/cq_intrinsic_templates.c:706` — `cq_template_fma_f16_qql_unc`
-- `runtime/cq_intrinsic_templates.c:711` — `cq_template_fma_f16_unc`
-- `runtime/cq_intrinsic_templates.c:716` — `cq_template_fma_f32`
-- `runtime/cq_intrinsic_templates.c:723` — `cq_template_fma_f32_qll`
-- `runtime/cq_intrinsic_templates.c:730` — `cq_template_fma_f32_qll_unc`
-- `runtime/cq_intrinsic_templates.c:735` — `cq_template_fma_f32_qlq`
-- `runtime/cq_intrinsic_templates.c:742` — `cq_template_fma_f32_qlq_unc`
-- `runtime/cq_intrinsic_templates.c:747` — `cq_template_fma_f32_qql`
-- `runtime/cq_intrinsic_templates.c:754` — `cq_template_fma_f32_qql_unc`
-- `runtime/cq_intrinsic_templates.c:759` — `cq_template_fma_f32_unc`
-- `runtime/cq_intrinsic_templates.c:764` — `cq_template_fma_f64`
-- `runtime/cq_intrinsic_templates.c:771` — `cq_template_fma_f64_qll`
-- `runtime/cq_intrinsic_templates.c:778` — `cq_template_fma_f64_qll_unc`
-- `runtime/cq_intrinsic_templates.c:783` — `cq_template_fma_f64_qlq`
-- `runtime/cq_intrinsic_templates.c:790` — `cq_template_fma_f64_qlq_unc`
-- `runtime/cq_intrinsic_templates.c:795` — `cq_template_fma_f64_qql`
-- `runtime/cq_intrinsic_templates.c:802` — `cq_template_fma_f64_qql_unc`
-- `runtime/cq_intrinsic_templates.c:807` — `cq_template_fma_f64_unc`
-- `runtime/cq_intrinsic_templates.c:812` — `cq_template_fma_f80`
-- `runtime/cq_intrinsic_templates.c:819` — `cq_template_fma_f80_qll`
-- `runtime/cq_intrinsic_templates.c:826` — `cq_template_fma_f80_qll_unc`
-- `runtime/cq_intrinsic_templates.c:831` — `cq_template_fma_f80_qlq`
-- `runtime/cq_intrinsic_templates.c:838` — `cq_template_fma_f80_qlq_unc`
-- `runtime/cq_intrinsic_templates.c:843` — `cq_template_fma_f80_qql`
-- `runtime/cq_intrinsic_templates.c:850` — `cq_template_fma_f80_qql_unc`
-- `runtime/cq_intrinsic_templates.c:855` — `cq_template_fma_f80_unc`
-- `runtime/cq_intrinsic_templates.c:860` — `cq_template_fmax_f16`
-- `runtime/cq_intrinsic_templates.c:867` — `cq_template_fmax_f16_hl`
-- `runtime/cq_intrinsic_templates.c:874` — `cq_template_fmax_f16_hl_unc`
-- `runtime/cq_intrinsic_templates.c:879` — `cq_template_fmax_f16_unc`
-- `runtime/cq_intrinsic_templates.c:884` — `cq_template_fmax_f32`
-- `runtime/cq_intrinsic_templates.c:891` — `cq_template_fmax_f32_hl`
-- `runtime/cq_intrinsic_templates.c:898` — `cq_template_fmax_f32_hl_unc`
-- `runtime/cq_intrinsic_templates.c:903` — `cq_template_fmax_f32_unc`
-- `runtime/cq_intrinsic_templates.c:908` — `cq_template_fmax_f64`
-- `runtime/cq_intrinsic_templates.c:915` — `cq_template_fmax_f64_hl`
-- `runtime/cq_intrinsic_templates.c:922` — `cq_template_fmax_f64_hl_unc`
-- `runtime/cq_intrinsic_templates.c:927` — `cq_template_fmax_f64_unc`
-- `runtime/cq_intrinsic_templates.c:932` — `cq_template_fmax_f80`
-- `runtime/cq_intrinsic_templates.c:939` — `cq_template_fmax_f80_hl`
-- `runtime/cq_intrinsic_templates.c:946` — `cq_template_fmax_f80_hl_unc`
-- `runtime/cq_intrinsic_templates.c:951` — `cq_template_fmax_f80_unc`
-- `runtime/cq_intrinsic_templates.c:956` — `cq_template_fmin_f16`
-- `runtime/cq_intrinsic_templates.c:963` — `cq_template_fmin_f16_hl`
-- `runtime/cq_intrinsic_templates.c:970` — `cq_template_fmin_f16_hl_unc`
-- `runtime/cq_intrinsic_templates.c:975` — `cq_template_fmin_f16_unc`
-- `runtime/cq_intrinsic_templates.c:980` — `cq_template_fmin_f32`
-- `runtime/cq_intrinsic_templates.c:987` — `cq_template_fmin_f32_hl`
-- `runtime/cq_intrinsic_templates.c:994` — `cq_template_fmin_f32_hl_unc`
-- `runtime/cq_intrinsic_templates.c:999` — `cq_template_fmin_f32_unc`
-- `runtime/cq_intrinsic_templates.c:1004` — `cq_template_fmin_f64`
-- `runtime/cq_intrinsic_templates.c:1011` — `cq_template_fmin_f64_hl`
-- `runtime/cq_intrinsic_templates.c:1018` — `cq_template_fmin_f64_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1023` — `cq_template_fmin_f64_unc`
-- `runtime/cq_intrinsic_templates.c:1028` — `cq_template_fmin_f80`
-- `runtime/cq_intrinsic_templates.c:1035` — `cq_template_fmin_f80_hl`
-- `runtime/cq_intrinsic_templates.c:1042` — `cq_template_fmin_f80_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1047` — `cq_template_fmin_f80_unc`
-- `runtime/cq_intrinsic_templates.c:1052` — `cq_template_fshl_i16_hl`
-- `runtime/cq_intrinsic_templates.c:1059` — `cq_template_fshl_i16_hl_inv`
-- `runtime/cq_intrinsic_templates.c:1066` — `cq_template_fshl_i16_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1071` — `cq_template_fshl_i16_qql`
-- `runtime/cq_intrinsic_templates.c:1078` — `cq_template_fshl_i16_qql_unc`
-- `runtime/cq_intrinsic_templates.c:1083` — `cq_template_fshl_i32_hl`
-- `runtime/cq_intrinsic_templates.c:1090` — `cq_template_fshl_i32_hl_inv`
-- `runtime/cq_intrinsic_templates.c:1097` — `cq_template_fshl_i32_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1102` — `cq_template_fshl_i32_qql`
-- `runtime/cq_intrinsic_templates.c:1109` — `cq_template_fshl_i32_qql_unc`
-- `runtime/cq_intrinsic_templates.c:1114` — `cq_template_fshl_i64_hl`
-- `runtime/cq_intrinsic_templates.c:1121` — `cq_template_fshl_i64_hl_inv`
-- `runtime/cq_intrinsic_templates.c:1128` — `cq_template_fshl_i64_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1133` — `cq_template_fshl_i64_qql`
-- `runtime/cq_intrinsic_templates.c:1140` — `cq_template_fshl_i64_qql_unc`
-- `runtime/cq_intrinsic_templates.c:1145` — `cq_template_fshl_i8_hl`
-- `runtime/cq_intrinsic_templates.c:1152` — `cq_template_fshl_i8_hl_inv`
-- `runtime/cq_intrinsic_templates.c:1159` — `cq_template_fshl_i8_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1164` — `cq_template_fshl_i8_qql`
-- `runtime/cq_intrinsic_templates.c:1171` — `cq_template_fshl_i8_qql_unc`
-- `runtime/cq_intrinsic_templates.c:1176` — `cq_template_fshr_i16_hl`
-- `runtime/cq_intrinsic_templates.c:1183` — `cq_template_fshr_i16_hl_inv`
-- `runtime/cq_intrinsic_templates.c:1190` — `cq_template_fshr_i16_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1195` — `cq_template_fshr_i16_qql`
-- `runtime/cq_intrinsic_templates.c:1202` — `cq_template_fshr_i16_qql_unc`
-- `runtime/cq_intrinsic_templates.c:1207` — `cq_template_fshr_i32_hl`
-- `runtime/cq_intrinsic_templates.c:1214` — `cq_template_fshr_i32_hl_inv`
-- `runtime/cq_intrinsic_templates.c:1221` — `cq_template_fshr_i32_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1226` — `cq_template_fshr_i32_qql`
-- `runtime/cq_intrinsic_templates.c:1233` — `cq_template_fshr_i32_qql_unc`
-- `runtime/cq_intrinsic_templates.c:1238` — `cq_template_fshr_i64_hl`
-- `runtime/cq_intrinsic_templates.c:1245` — `cq_template_fshr_i64_hl_inv`
-- `runtime/cq_intrinsic_templates.c:1252` — `cq_template_fshr_i64_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1257` — `cq_template_fshr_i64_qql`
-- `runtime/cq_intrinsic_templates.c:1264` — `cq_template_fshr_i64_qql_unc`
-- `runtime/cq_intrinsic_templates.c:1269` — `cq_template_fshr_i8_hl`
-- `runtime/cq_intrinsic_templates.c:1276` — `cq_template_fshr_i8_hl_inv`
-- `runtime/cq_intrinsic_templates.c:1283` — `cq_template_fshr_i8_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1288` — `cq_template_fshr_i8_qql`
-- `runtime/cq_intrinsic_templates.c:1295` — `cq_template_fshr_i8_qql_unc`
-- `runtime/cq_intrinsic_templates.c:1300` — `cq_template_nearbyint_f16`
-- `runtime/cq_intrinsic_templates.c:1307` — `cq_template_nearbyint_f16_unc`
-- `runtime/cq_intrinsic_templates.c:1312` — `cq_template_nearbyint_f32`
-- `runtime/cq_intrinsic_templates.c:1319` — `cq_template_nearbyint_f32_unc`
-- `runtime/cq_intrinsic_templates.c:1324` — `cq_template_nearbyint_f64`
-- `runtime/cq_intrinsic_templates.c:1331` — `cq_template_nearbyint_f64_unc`
-- `runtime/cq_intrinsic_templates.c:1336` — `cq_template_nearbyint_f80`
-- `runtime/cq_intrinsic_templates.c:1343` — `cq_template_nearbyint_f80_unc`
-- `runtime/cq_intrinsic_templates.c:1348` — `cq_template_rint_f16`
-- `runtime/cq_intrinsic_templates.c:1355` — `cq_template_rint_f16_unc`
-- `runtime/cq_intrinsic_templates.c:1360` — `cq_template_rint_f32`
-- `runtime/cq_intrinsic_templates.c:1367` — `cq_template_rint_f32_unc`
-- `runtime/cq_intrinsic_templates.c:1372` — `cq_template_rint_f64`
-- `runtime/cq_intrinsic_templates.c:1379` — `cq_template_rint_f64_unc`
-- `runtime/cq_intrinsic_templates.c:1384` — `cq_template_rint_f80`
-- `runtime/cq_intrinsic_templates.c:1391` — `cq_template_rint_f80_unc`
-- `runtime/cq_intrinsic_templates.c:1396` — `cq_template_round_f16`
-- `runtime/cq_intrinsic_templates.c:1403` — `cq_template_round_f16_unc`
-- `runtime/cq_intrinsic_templates.c:1408` — `cq_template_round_f32`
-- `runtime/cq_intrinsic_templates.c:1415` — `cq_template_round_f32_unc`
-- `runtime/cq_intrinsic_templates.c:1420` — `cq_template_round_f64`
-- `runtime/cq_intrinsic_templates.c:1427` — `cq_template_round_f64_unc`
-- `runtime/cq_intrinsic_templates.c:1432` — `cq_template_round_f80`
-- `runtime/cq_intrinsic_templates.c:1439` — `cq_template_round_f80_unc`
-- `runtime/cq_intrinsic_templates.c:1444` — `cq_template_sadd_sat_i16`
-- `runtime/cq_intrinsic_templates.c:1451` — `cq_template_sadd_sat_i16_hl`
-- `runtime/cq_intrinsic_templates.c:1458` — `cq_template_sadd_sat_i16_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1463` — `cq_template_sadd_sat_i16_unc`
-- `runtime/cq_intrinsic_templates.c:1468` — `cq_template_sadd_sat_i32`
-- `runtime/cq_intrinsic_templates.c:1475` — `cq_template_sadd_sat_i32_hl`
-- `runtime/cq_intrinsic_templates.c:1482` — `cq_template_sadd_sat_i32_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1487` — `cq_template_sadd_sat_i32_unc`
-- `runtime/cq_intrinsic_templates.c:1492` — `cq_template_sadd_sat_i64`
-- `runtime/cq_intrinsic_templates.c:1499` — `cq_template_sadd_sat_i64_hl`
-- `runtime/cq_intrinsic_templates.c:1506` — `cq_template_sadd_sat_i64_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1511` — `cq_template_sadd_sat_i64_unc`
-- `runtime/cq_intrinsic_templates.c:1516` — `cq_template_sadd_sat_i8`
-- `runtime/cq_intrinsic_templates.c:1523` — `cq_template_sadd_sat_i8_hl`
-- `runtime/cq_intrinsic_templates.c:1530` — `cq_template_sadd_sat_i8_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1535` — `cq_template_sadd_sat_i8_unc`
-- `runtime/cq_intrinsic_templates.c:1540` — `cq_template_sin_f64`
-- `runtime/cq_intrinsic_templates.c:1547` — `cq_template_sin_f64_unc`
-- `runtime/cq_intrinsic_templates.c:1552` — `cq_template_smax_i16`
-- `runtime/cq_intrinsic_templates.c:1559` — `cq_template_smax_i16_hl`
-- `runtime/cq_intrinsic_templates.c:1566` — `cq_template_smax_i16_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1571` — `cq_template_smax_i16_unc`
-- `runtime/cq_intrinsic_templates.c:1576` — `cq_template_smax_i32`
-- `runtime/cq_intrinsic_templates.c:1583` — `cq_template_smax_i32_hl`
-- `runtime/cq_intrinsic_templates.c:1590` — `cq_template_smax_i32_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1595` — `cq_template_smax_i32_unc`
-- `runtime/cq_intrinsic_templates.c:1600` — `cq_template_smax_i64`
-- `runtime/cq_intrinsic_templates.c:1607` — `cq_template_smax_i64_hl`
-- `runtime/cq_intrinsic_templates.c:1614` — `cq_template_smax_i64_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1619` — `cq_template_smax_i64_unc`
-- `runtime/cq_intrinsic_templates.c:1624` — `cq_template_smax_i8`
-- `runtime/cq_intrinsic_templates.c:1631` — `cq_template_smax_i8_hl`
-- `runtime/cq_intrinsic_templates.c:1638` — `cq_template_smax_i8_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1643` — `cq_template_smax_i8_unc`
-- `runtime/cq_intrinsic_templates.c:1648` — `cq_template_smin_i16`
-- `runtime/cq_intrinsic_templates.c:1655` — `cq_template_smin_i16_hl`
-- `runtime/cq_intrinsic_templates.c:1662` — `cq_template_smin_i16_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1667` — `cq_template_smin_i16_unc`
-- `runtime/cq_intrinsic_templates.c:1672` — `cq_template_smin_i32`
-- `runtime/cq_intrinsic_templates.c:1679` — `cq_template_smin_i32_hl`
-- `runtime/cq_intrinsic_templates.c:1686` — `cq_template_smin_i32_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1691` — `cq_template_smin_i32_unc`
-- `runtime/cq_intrinsic_templates.c:1696` — `cq_template_smin_i64`
-- `runtime/cq_intrinsic_templates.c:1703` — `cq_template_smin_i64_hl`
-- `runtime/cq_intrinsic_templates.c:1710` — `cq_template_smin_i64_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1715` — `cq_template_smin_i64_unc`
-- `runtime/cq_intrinsic_templates.c:1720` — `cq_template_smin_i8`
-- `runtime/cq_intrinsic_templates.c:1727` — `cq_template_smin_i8_hl`
-- `runtime/cq_intrinsic_templates.c:1734` — `cq_template_smin_i8_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1739` — `cq_template_smin_i8_unc`
-- `runtime/cq_intrinsic_templates.c:1744` — `cq_template_sqrt_f16`
-- `runtime/cq_intrinsic_templates.c:1751` — `cq_template_sqrt_f16_unc`
-- `runtime/cq_intrinsic_templates.c:1756` — `cq_template_sqrt_f32`
-- `runtime/cq_intrinsic_templates.c:1763` — `cq_template_sqrt_f32_unc`
-- `runtime/cq_intrinsic_templates.c:1768` — `cq_template_sqrt_f64`
-- `runtime/cq_intrinsic_templates.c:1775` — `cq_template_sqrt_f64_unc`
-- `runtime/cq_intrinsic_templates.c:1780` — `cq_template_sqrt_f80`
-- `runtime/cq_intrinsic_templates.c:1787` — `cq_template_sqrt_f80_unc`
-- `runtime/cq_intrinsic_templates.c:1792` — `cq_template_ssub_sat_i16`
-- `runtime/cq_intrinsic_templates.c:1799` — `cq_template_ssub_sat_i16_hl`
-- `runtime/cq_intrinsic_templates.c:1806` — `cq_template_ssub_sat_i16_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1811` — `cq_template_ssub_sat_i16_lh`
-- `runtime/cq_intrinsic_templates.c:1818` — `cq_template_ssub_sat_i16_lh_unc`
-- `runtime/cq_intrinsic_templates.c:1823` — `cq_template_ssub_sat_i16_unc`
-- `runtime/cq_intrinsic_templates.c:1828` — `cq_template_ssub_sat_i32`
-- `runtime/cq_intrinsic_templates.c:1835` — `cq_template_ssub_sat_i32_hl`
-- `runtime/cq_intrinsic_templates.c:1842` — `cq_template_ssub_sat_i32_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1847` — `cq_template_ssub_sat_i32_lh`
-- `runtime/cq_intrinsic_templates.c:1854` — `cq_template_ssub_sat_i32_lh_unc`
-- `runtime/cq_intrinsic_templates.c:1859` — `cq_template_ssub_sat_i32_unc`
-- `runtime/cq_intrinsic_templates.c:1864` — `cq_template_ssub_sat_i64`
-- `runtime/cq_intrinsic_templates.c:1871` — `cq_template_ssub_sat_i64_hl`
-- `runtime/cq_intrinsic_templates.c:1878` — `cq_template_ssub_sat_i64_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1883` — `cq_template_ssub_sat_i64_lh`
-- `runtime/cq_intrinsic_templates.c:1890` — `cq_template_ssub_sat_i64_lh_unc`
-- `runtime/cq_intrinsic_templates.c:1895` — `cq_template_ssub_sat_i64_unc`
-- `runtime/cq_intrinsic_templates.c:1900` — `cq_template_ssub_sat_i8`
-- `runtime/cq_intrinsic_templates.c:1907` — `cq_template_ssub_sat_i8_hl`
-- `runtime/cq_intrinsic_templates.c:1914` — `cq_template_ssub_sat_i8_hl_unc`
-- `runtime/cq_intrinsic_templates.c:1919` — `cq_template_ssub_sat_i8_lh`
-- `runtime/cq_intrinsic_templates.c:1926` — `cq_template_ssub_sat_i8_lh_unc`
-- `runtime/cq_intrinsic_templates.c:1931` — `cq_template_ssub_sat_i8_unc`
-- `runtime/cq_intrinsic_templates.c:1936` — `cq_template_tan_f64`
-- `runtime/cq_intrinsic_templates.c:1943` — `cq_template_tan_f64_unc`
-- `runtime/cq_intrinsic_templates.c:1948` — `cq_template_trunc_f16`
-- `runtime/cq_intrinsic_templates.c:1955` — `cq_template_trunc_f16_unc`
-- `runtime/cq_intrinsic_templates.c:1960` — `cq_template_trunc_f32`
-- `runtime/cq_intrinsic_templates.c:1967` — `cq_template_trunc_f32_unc`
-- `runtime/cq_intrinsic_templates.c:1972` — `cq_template_trunc_f64`
-- `runtime/cq_intrinsic_templates.c:1979` — `cq_template_trunc_f64_unc`
-- `runtime/cq_intrinsic_templates.c:1984` — `cq_template_trunc_f80`
-- `runtime/cq_intrinsic_templates.c:1991` — `cq_template_trunc_f80_unc`
-- `runtime/cq_intrinsic_templates.c:1996` — `cq_template_uadd_sat_i16`
-- `runtime/cq_intrinsic_templates.c:2003` — `cq_template_uadd_sat_i16_hl`
-- `runtime/cq_intrinsic_templates.c:2010` — `cq_template_uadd_sat_i16_hl_unc`
-- `runtime/cq_intrinsic_templates.c:2015` — `cq_template_uadd_sat_i16_unc`
-- `runtime/cq_intrinsic_templates.c:2020` — `cq_template_uadd_sat_i32`
-- `runtime/cq_intrinsic_templates.c:2027` — `cq_template_uadd_sat_i32_hl`
-- `runtime/cq_intrinsic_templates.c:2034` — `cq_template_uadd_sat_i32_hl_unc`
-- `runtime/cq_intrinsic_templates.c:2039` — `cq_template_uadd_sat_i32_unc`
-- `runtime/cq_intrinsic_templates.c:2044` — `cq_template_uadd_sat_i64`
-- `runtime/cq_intrinsic_templates.c:2051` — `cq_template_uadd_sat_i64_hl`
-- `runtime/cq_intrinsic_templates.c:2058` — `cq_template_uadd_sat_i64_hl_unc`
-- `runtime/cq_intrinsic_templates.c:2063` — `cq_template_uadd_sat_i64_unc`
-- `runtime/cq_intrinsic_templates.c:2068` — `cq_template_uadd_sat_i8`
-- `runtime/cq_intrinsic_templates.c:2075` — `cq_template_uadd_sat_i8_hl`
-- `runtime/cq_intrinsic_templates.c:2082` — `cq_template_uadd_sat_i8_hl_unc`
-- `runtime/cq_intrinsic_templates.c:2087` — `cq_template_uadd_sat_i8_unc`
-- `runtime/cq_intrinsic_templates.c:2092` — `cq_template_umax_i16`
-- `runtime/cq_intrinsic_templates.c:2099` — `cq_template_umax_i16_hl`
-- `runtime/cq_intrinsic_templates.c:2106` — `cq_template_umax_i16_hl_unc`
-- `runtime/cq_intrinsic_templates.c:2111` — `cq_template_umax_i16_unc`
-- `runtime/cq_intrinsic_templates.c:2116` — `cq_template_umax_i32`
-- `runtime/cq_intrinsic_templates.c:2123` — `cq_template_umax_i32_hl`
-- `runtime/cq_intrinsic_templates.c:2130` — `cq_template_umax_i32_hl_unc`
-- `runtime/cq_intrinsic_templates.c:2135` — `cq_template_umax_i32_unc`
-- `runtime/cq_intrinsic_templates.c:2140` — `cq_template_umax_i64`
-- `runtime/cq_intrinsic_templates.c:2147` — `cq_template_umax_i64_hl`
-- `runtime/cq_intrinsic_templates.c:2154` — `cq_template_umax_i64_hl_unc`
-- `runtime/cq_intrinsic_templates.c:2159` — `cq_template_umax_i64_unc`
-- `runtime/cq_intrinsic_templates.c:2164` — `cq_template_umax_i8`
-- `runtime/cq_intrinsic_templates.c:2171` — `cq_template_umax_i8_hl`
-- `runtime/cq_intrinsic_templates.c:2178` — `cq_template_umax_i8_hl_unc`
-- `runtime/cq_intrinsic_templates.c:2183` — `cq_template_umax_i8_unc`
-- `runtime/cq_intrinsic_templates.c:2188` — `cq_template_umin_i16`
-- `runtime/cq_intrinsic_templates.c:2195` — `cq_template_umin_i16_hl`
-- `runtime/cq_intrinsic_templates.c:2202` — `cq_template_umin_i16_hl_unc`
-- `runtime/cq_intrinsic_templates.c:2207` — `cq_template_umin_i16_unc`
-- `runtime/cq_intrinsic_templates.c:2212` — `cq_template_umin_i32`
-- `runtime/cq_intrinsic_templates.c:2219` — `cq_template_umin_i32_hl`
-- `runtime/cq_intrinsic_templates.c:2226` — `cq_template_umin_i32_hl_unc`
-- `runtime/cq_intrinsic_templates.c:2231` — `cq_template_umin_i32_unc`
-- `runtime/cq_intrinsic_templates.c:2236` — `cq_template_umin_i64`
-- `runtime/cq_intrinsic_templates.c:2243` — `cq_template_umin_i64_hl`
-- `runtime/cq_intrinsic_templates.c:2250` — `cq_template_umin_i64_hl_unc`
-- `runtime/cq_intrinsic_templates.c:2255` — `cq_template_umin_i64_unc`
-- `runtime/cq_intrinsic_templates.c:2260` — `cq_template_umin_i8`
-- `runtime/cq_intrinsic_templates.c:2267` — `cq_template_umin_i8_hl`
-- `runtime/cq_intrinsic_templates.c:2274` — `cq_template_umin_i8_hl_unc`
-- `runtime/cq_intrinsic_templates.c:2279` — `cq_template_umin_i8_unc`
-- `runtime/cq_intrinsic_templates.c:2284` — `cq_template_usub_sat_i16`
-- `runtime/cq_intrinsic_templates.c:2291` — `cq_template_usub_sat_i16_hl`
-- `runtime/cq_intrinsic_templates.c:2298` — `cq_template_usub_sat_i16_hl_unc`
-- `runtime/cq_intrinsic_templates.c:2303` — `cq_template_usub_sat_i16_lh`
-- `runtime/cq_intrinsic_templates.c:2310` — `cq_template_usub_sat_i16_lh_unc`
-- `runtime/cq_intrinsic_templates.c:2315` — `cq_template_usub_sat_i16_unc`
-- `runtime/cq_intrinsic_templates.c:2320` — `cq_template_usub_sat_i32`
-- `runtime/cq_intrinsic_templates.c:2327` — `cq_template_usub_sat_i32_hl`
-- `runtime/cq_intrinsic_templates.c:2334` — `cq_template_usub_sat_i32_hl_unc`
-- `runtime/cq_intrinsic_templates.c:2339` — `cq_template_usub_sat_i32_lh`
-- `runtime/cq_intrinsic_templates.c:2346` — `cq_template_usub_sat_i32_lh_unc`
-- `runtime/cq_intrinsic_templates.c:2351` — `cq_template_usub_sat_i32_unc`
-- `runtime/cq_intrinsic_templates.c:2356` — `cq_template_usub_sat_i64`
-- `runtime/cq_intrinsic_templates.c:2363` — `cq_template_usub_sat_i64_hl`
-- `runtime/cq_intrinsic_templates.c:2370` — `cq_template_usub_sat_i64_hl_unc`
-- `runtime/cq_intrinsic_templates.c:2375` — `cq_template_usub_sat_i64_lh`
-- `runtime/cq_intrinsic_templates.c:2382` — `cq_template_usub_sat_i64_lh_unc`
-- `runtime/cq_intrinsic_templates.c:2387` — `cq_template_usub_sat_i64_unc`
-- `runtime/cq_intrinsic_templates.c:2392` — `cq_template_usub_sat_i8`
-- `runtime/cq_intrinsic_templates.c:2399` — `cq_template_usub_sat_i8_hl`
-- `runtime/cq_intrinsic_templates.c:2406` — `cq_template_usub_sat_i8_hl_unc`
-- `runtime/cq_intrinsic_templates.c:2411` — `cq_template_usub_sat_i8_lh`
-- `runtime/cq_intrinsic_templates.c:2418` — `cq_template_usub_sat_i8_lh_unc`
-- `runtime/cq_intrinsic_templates.c:2423` — `cq_template_usub_sat_i8_unc`
+- `runtime/cq_intrinsic_templates.c:675` — `cq_template_fma_f16_llq`
+- `runtime/cq_intrinsic_templates.c:682` — `cq_template_fma_f16_llq_unc`
+- `runtime/cq_intrinsic_templates.c:687` — `cq_template_fma_f16_qll`
+- `runtime/cq_intrinsic_templates.c:694` — `cq_template_fma_f16_qll_unc`
+- `runtime/cq_intrinsic_templates.c:699` — `cq_template_fma_f16_qlq`
+- `runtime/cq_intrinsic_templates.c:706` — `cq_template_fma_f16_qlq_unc`
+- `runtime/cq_intrinsic_templates.c:711` — `cq_template_fma_f16_qql`
+- `runtime/cq_intrinsic_templates.c:718` — `cq_template_fma_f16_qql_unc`
+- `runtime/cq_intrinsic_templates.c:723` — `cq_template_fma_f16_unc`
+- `runtime/cq_intrinsic_templates.c:728` — `cq_template_fma_f32`
+- `runtime/cq_intrinsic_templates.c:735` — `cq_template_fma_f32_llq`
+- `runtime/cq_intrinsic_templates.c:742` — `cq_template_fma_f32_llq_unc`
+- `runtime/cq_intrinsic_templates.c:747` — `cq_template_fma_f32_qll`
+- `runtime/cq_intrinsic_templates.c:754` — `cq_template_fma_f32_qll_unc`
+- `runtime/cq_intrinsic_templates.c:759` — `cq_template_fma_f32_qlq`
+- `runtime/cq_intrinsic_templates.c:766` — `cq_template_fma_f32_qlq_unc`
+- `runtime/cq_intrinsic_templates.c:771` — `cq_template_fma_f32_qql`
+- `runtime/cq_intrinsic_templates.c:778` — `cq_template_fma_f32_qql_unc`
+- `runtime/cq_intrinsic_templates.c:783` — `cq_template_fma_f32_unc`
+- `runtime/cq_intrinsic_templates.c:788` — `cq_template_fma_f64`
+- `runtime/cq_intrinsic_templates.c:795` — `cq_template_fma_f64_llq`
+- `runtime/cq_intrinsic_templates.c:802` — `cq_template_fma_f64_llq_unc`
+- `runtime/cq_intrinsic_templates.c:807` — `cq_template_fma_f64_qll`
+- `runtime/cq_intrinsic_templates.c:814` — `cq_template_fma_f64_qll_unc`
+- `runtime/cq_intrinsic_templates.c:819` — `cq_template_fma_f64_qlq`
+- `runtime/cq_intrinsic_templates.c:826` — `cq_template_fma_f64_qlq_unc`
+- `runtime/cq_intrinsic_templates.c:831` — `cq_template_fma_f64_qql`
+- `runtime/cq_intrinsic_templates.c:838` — `cq_template_fma_f64_qql_unc`
+- `runtime/cq_intrinsic_templates.c:843` — `cq_template_fma_f64_unc`
+- `runtime/cq_intrinsic_templates.c:848` — `cq_template_fma_f80`
+- `runtime/cq_intrinsic_templates.c:855` — `cq_template_fma_f80_llq`
+- `runtime/cq_intrinsic_templates.c:862` — `cq_template_fma_f80_llq_unc`
+- `runtime/cq_intrinsic_templates.c:867` — `cq_template_fma_f80_qll`
+- `runtime/cq_intrinsic_templates.c:874` — `cq_template_fma_f80_qll_unc`
+- `runtime/cq_intrinsic_templates.c:879` — `cq_template_fma_f80_qlq`
+- `runtime/cq_intrinsic_templates.c:886` — `cq_template_fma_f80_qlq_unc`
+- `runtime/cq_intrinsic_templates.c:891` — `cq_template_fma_f80_qql`
+- `runtime/cq_intrinsic_templates.c:898` — `cq_template_fma_f80_qql_unc`
+- `runtime/cq_intrinsic_templates.c:903` — `cq_template_fma_f80_unc`
+- `runtime/cq_intrinsic_templates.c:908` — `cq_template_fmax_f16`
+- `runtime/cq_intrinsic_templates.c:915` — `cq_template_fmax_f16_hl`
+- `runtime/cq_intrinsic_templates.c:922` — `cq_template_fmax_f16_hl_unc`
+- `runtime/cq_intrinsic_templates.c:927` — `cq_template_fmax_f16_unc`
+- `runtime/cq_intrinsic_templates.c:932` — `cq_template_fmax_f32`
+- `runtime/cq_intrinsic_templates.c:939` — `cq_template_fmax_f32_hl`
+- `runtime/cq_intrinsic_templates.c:946` — `cq_template_fmax_f32_hl_unc`
+- `runtime/cq_intrinsic_templates.c:951` — `cq_template_fmax_f32_unc`
+- `runtime/cq_intrinsic_templates.c:956` — `cq_template_fmax_f64`
+- `runtime/cq_intrinsic_templates.c:963` — `cq_template_fmax_f64_hl`
+- `runtime/cq_intrinsic_templates.c:970` — `cq_template_fmax_f64_hl_unc`
+- `runtime/cq_intrinsic_templates.c:975` — `cq_template_fmax_f64_unc`
+- `runtime/cq_intrinsic_templates.c:980` — `cq_template_fmax_f80`
+- `runtime/cq_intrinsic_templates.c:987` — `cq_template_fmax_f80_hl`
+- `runtime/cq_intrinsic_templates.c:994` — `cq_template_fmax_f80_hl_unc`
+- `runtime/cq_intrinsic_templates.c:999` — `cq_template_fmax_f80_unc`
+- `runtime/cq_intrinsic_templates.c:1004` — `cq_template_fmin_f16`
+- `runtime/cq_intrinsic_templates.c:1011` — `cq_template_fmin_f16_hl`
+- `runtime/cq_intrinsic_templates.c:1018` — `cq_template_fmin_f16_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1023` — `cq_template_fmin_f16_unc`
+- `runtime/cq_intrinsic_templates.c:1028` — `cq_template_fmin_f32`
+- `runtime/cq_intrinsic_templates.c:1035` — `cq_template_fmin_f32_hl`
+- `runtime/cq_intrinsic_templates.c:1042` — `cq_template_fmin_f32_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1047` — `cq_template_fmin_f32_unc`
+- `runtime/cq_intrinsic_templates.c:1052` — `cq_template_fmin_f64`
+- `runtime/cq_intrinsic_templates.c:1059` — `cq_template_fmin_f64_hl`
+- `runtime/cq_intrinsic_templates.c:1066` — `cq_template_fmin_f64_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1071` — `cq_template_fmin_f64_unc`
+- `runtime/cq_intrinsic_templates.c:1076` — `cq_template_fmin_f80`
+- `runtime/cq_intrinsic_templates.c:1083` — `cq_template_fmin_f80_hl`
+- `runtime/cq_intrinsic_templates.c:1090` — `cq_template_fmin_f80_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1095` — `cq_template_fmin_f80_unc`
+- `runtime/cq_intrinsic_templates.c:1100` — `cq_template_fshl_i16_hl`
+- `runtime/cq_intrinsic_templates.c:1107` — `cq_template_fshl_i16_hl_inv`
+- `runtime/cq_intrinsic_templates.c:1114` — `cq_template_fshl_i16_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1119` — `cq_template_fshl_i16_qql`
+- `runtime/cq_intrinsic_templates.c:1126` — `cq_template_fshl_i16_qql_unc`
+- `runtime/cq_intrinsic_templates.c:1131` — `cq_template_fshl_i32_hl`
+- `runtime/cq_intrinsic_templates.c:1138` — `cq_template_fshl_i32_hl_inv`
+- `runtime/cq_intrinsic_templates.c:1145` — `cq_template_fshl_i32_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1150` — `cq_template_fshl_i32_qql`
+- `runtime/cq_intrinsic_templates.c:1157` — `cq_template_fshl_i32_qql_unc`
+- `runtime/cq_intrinsic_templates.c:1162` — `cq_template_fshl_i64_hl`
+- `runtime/cq_intrinsic_templates.c:1169` — `cq_template_fshl_i64_hl_inv`
+- `runtime/cq_intrinsic_templates.c:1176` — `cq_template_fshl_i64_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1181` — `cq_template_fshl_i64_qql`
+- `runtime/cq_intrinsic_templates.c:1188` — `cq_template_fshl_i64_qql_unc`
+- `runtime/cq_intrinsic_templates.c:1193` — `cq_template_fshl_i8_hl`
+- `runtime/cq_intrinsic_templates.c:1200` — `cq_template_fshl_i8_hl_inv`
+- `runtime/cq_intrinsic_templates.c:1207` — `cq_template_fshl_i8_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1212` — `cq_template_fshl_i8_qql`
+- `runtime/cq_intrinsic_templates.c:1219` — `cq_template_fshl_i8_qql_unc`
+- `runtime/cq_intrinsic_templates.c:1224` — `cq_template_fshr_i16_hl`
+- `runtime/cq_intrinsic_templates.c:1231` — `cq_template_fshr_i16_hl_inv`
+- `runtime/cq_intrinsic_templates.c:1238` — `cq_template_fshr_i16_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1243` — `cq_template_fshr_i16_qql`
+- `runtime/cq_intrinsic_templates.c:1250` — `cq_template_fshr_i16_qql_unc`
+- `runtime/cq_intrinsic_templates.c:1255` — `cq_template_fshr_i32_hl`
+- `runtime/cq_intrinsic_templates.c:1262` — `cq_template_fshr_i32_hl_inv`
+- `runtime/cq_intrinsic_templates.c:1269` — `cq_template_fshr_i32_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1274` — `cq_template_fshr_i32_qql`
+- `runtime/cq_intrinsic_templates.c:1281` — `cq_template_fshr_i32_qql_unc`
+- `runtime/cq_intrinsic_templates.c:1286` — `cq_template_fshr_i64_hl`
+- `runtime/cq_intrinsic_templates.c:1293` — `cq_template_fshr_i64_hl_inv`
+- `runtime/cq_intrinsic_templates.c:1300` — `cq_template_fshr_i64_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1305` — `cq_template_fshr_i64_qql`
+- `runtime/cq_intrinsic_templates.c:1312` — `cq_template_fshr_i64_qql_unc`
+- `runtime/cq_intrinsic_templates.c:1317` — `cq_template_fshr_i8_hl`
+- `runtime/cq_intrinsic_templates.c:1324` — `cq_template_fshr_i8_hl_inv`
+- `runtime/cq_intrinsic_templates.c:1331` — `cq_template_fshr_i8_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1336` — `cq_template_fshr_i8_qql`
+- `runtime/cq_intrinsic_templates.c:1343` — `cq_template_fshr_i8_qql_unc`
+- `runtime/cq_intrinsic_templates.c:1348` — `cq_template_nearbyint_f16`
+- `runtime/cq_intrinsic_templates.c:1355` — `cq_template_nearbyint_f16_unc`
+- `runtime/cq_intrinsic_templates.c:1360` — `cq_template_nearbyint_f32`
+- `runtime/cq_intrinsic_templates.c:1367` — `cq_template_nearbyint_f32_unc`
+- `runtime/cq_intrinsic_templates.c:1372` — `cq_template_nearbyint_f64`
+- `runtime/cq_intrinsic_templates.c:1379` — `cq_template_nearbyint_f64_unc`
+- `runtime/cq_intrinsic_templates.c:1384` — `cq_template_nearbyint_f80`
+- `runtime/cq_intrinsic_templates.c:1391` — `cq_template_nearbyint_f80_unc`
+- `runtime/cq_intrinsic_templates.c:1396` — `cq_template_rint_f16`
+- `runtime/cq_intrinsic_templates.c:1403` — `cq_template_rint_f16_unc`
+- `runtime/cq_intrinsic_templates.c:1408` — `cq_template_rint_f32`
+- `runtime/cq_intrinsic_templates.c:1415` — `cq_template_rint_f32_unc`
+- `runtime/cq_intrinsic_templates.c:1420` — `cq_template_rint_f64`
+- `runtime/cq_intrinsic_templates.c:1427` — `cq_template_rint_f64_unc`
+- `runtime/cq_intrinsic_templates.c:1432` — `cq_template_rint_f80`
+- `runtime/cq_intrinsic_templates.c:1439` — `cq_template_rint_f80_unc`
+- `runtime/cq_intrinsic_templates.c:1444` — `cq_template_round_f16`
+- `runtime/cq_intrinsic_templates.c:1451` — `cq_template_round_f16_unc`
+- `runtime/cq_intrinsic_templates.c:1456` — `cq_template_round_f32`
+- `runtime/cq_intrinsic_templates.c:1463` — `cq_template_round_f32_unc`
+- `runtime/cq_intrinsic_templates.c:1468` — `cq_template_round_f64`
+- `runtime/cq_intrinsic_templates.c:1475` — `cq_template_round_f64_unc`
+- `runtime/cq_intrinsic_templates.c:1480` — `cq_template_round_f80`
+- `runtime/cq_intrinsic_templates.c:1487` — `cq_template_round_f80_unc`
+- `runtime/cq_intrinsic_templates.c:1492` — `cq_template_sadd_sat_i16`
+- `runtime/cq_intrinsic_templates.c:1499` — `cq_template_sadd_sat_i16_hl`
+- `runtime/cq_intrinsic_templates.c:1506` — `cq_template_sadd_sat_i16_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1511` — `cq_template_sadd_sat_i16_unc`
+- `runtime/cq_intrinsic_templates.c:1516` — `cq_template_sadd_sat_i32`
+- `runtime/cq_intrinsic_templates.c:1523` — `cq_template_sadd_sat_i32_hl`
+- `runtime/cq_intrinsic_templates.c:1530` — `cq_template_sadd_sat_i32_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1535` — `cq_template_sadd_sat_i32_unc`
+- `runtime/cq_intrinsic_templates.c:1540` — `cq_template_sadd_sat_i64`
+- `runtime/cq_intrinsic_templates.c:1547` — `cq_template_sadd_sat_i64_hl`
+- `runtime/cq_intrinsic_templates.c:1554` — `cq_template_sadd_sat_i64_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1559` — `cq_template_sadd_sat_i64_unc`
+- `runtime/cq_intrinsic_templates.c:1564` — `cq_template_sadd_sat_i8`
+- `runtime/cq_intrinsic_templates.c:1571` — `cq_template_sadd_sat_i8_hl`
+- `runtime/cq_intrinsic_templates.c:1578` — `cq_template_sadd_sat_i8_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1583` — `cq_template_sadd_sat_i8_unc`
+- `runtime/cq_intrinsic_templates.c:1588` — `cq_template_sin_f64`
+- `runtime/cq_intrinsic_templates.c:1595` — `cq_template_sin_f64_unc`
+- `runtime/cq_intrinsic_templates.c:1600` — `cq_template_smax_i16`
+- `runtime/cq_intrinsic_templates.c:1607` — `cq_template_smax_i16_hl`
+- `runtime/cq_intrinsic_templates.c:1614` — `cq_template_smax_i16_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1619` — `cq_template_smax_i16_unc`
+- `runtime/cq_intrinsic_templates.c:1624` — `cq_template_smax_i32`
+- `runtime/cq_intrinsic_templates.c:1631` — `cq_template_smax_i32_hl`
+- `runtime/cq_intrinsic_templates.c:1638` — `cq_template_smax_i32_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1643` — `cq_template_smax_i32_unc`
+- `runtime/cq_intrinsic_templates.c:1648` — `cq_template_smax_i64`
+- `runtime/cq_intrinsic_templates.c:1655` — `cq_template_smax_i64_hl`
+- `runtime/cq_intrinsic_templates.c:1662` — `cq_template_smax_i64_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1667` — `cq_template_smax_i64_unc`
+- `runtime/cq_intrinsic_templates.c:1672` — `cq_template_smax_i8`
+- `runtime/cq_intrinsic_templates.c:1679` — `cq_template_smax_i8_hl`
+- `runtime/cq_intrinsic_templates.c:1686` — `cq_template_smax_i8_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1691` — `cq_template_smax_i8_unc`
+- `runtime/cq_intrinsic_templates.c:1696` — `cq_template_smin_i16`
+- `runtime/cq_intrinsic_templates.c:1703` — `cq_template_smin_i16_hl`
+- `runtime/cq_intrinsic_templates.c:1710` — `cq_template_smin_i16_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1715` — `cq_template_smin_i16_unc`
+- `runtime/cq_intrinsic_templates.c:1720` — `cq_template_smin_i32`
+- `runtime/cq_intrinsic_templates.c:1727` — `cq_template_smin_i32_hl`
+- `runtime/cq_intrinsic_templates.c:1734` — `cq_template_smin_i32_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1739` — `cq_template_smin_i32_unc`
+- `runtime/cq_intrinsic_templates.c:1744` — `cq_template_smin_i64`
+- `runtime/cq_intrinsic_templates.c:1751` — `cq_template_smin_i64_hl`
+- `runtime/cq_intrinsic_templates.c:1758` — `cq_template_smin_i64_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1763` — `cq_template_smin_i64_unc`
+- `runtime/cq_intrinsic_templates.c:1768` — `cq_template_smin_i8`
+- `runtime/cq_intrinsic_templates.c:1775` — `cq_template_smin_i8_hl`
+- `runtime/cq_intrinsic_templates.c:1782` — `cq_template_smin_i8_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1787` — `cq_template_smin_i8_unc`
+- `runtime/cq_intrinsic_templates.c:1792` — `cq_template_sqrt_f16`
+- `runtime/cq_intrinsic_templates.c:1799` — `cq_template_sqrt_f16_unc`
+- `runtime/cq_intrinsic_templates.c:1804` — `cq_template_sqrt_f32`
+- `runtime/cq_intrinsic_templates.c:1811` — `cq_template_sqrt_f32_unc`
+- `runtime/cq_intrinsic_templates.c:1816` — `cq_template_sqrt_f64`
+- `runtime/cq_intrinsic_templates.c:1823` — `cq_template_sqrt_f64_unc`
+- `runtime/cq_intrinsic_templates.c:1828` — `cq_template_sqrt_f80`
+- `runtime/cq_intrinsic_templates.c:1835` — `cq_template_sqrt_f80_unc`
+- `runtime/cq_intrinsic_templates.c:1840` — `cq_template_ssub_sat_i16`
+- `runtime/cq_intrinsic_templates.c:1847` — `cq_template_ssub_sat_i16_hl`
+- `runtime/cq_intrinsic_templates.c:1854` — `cq_template_ssub_sat_i16_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1859` — `cq_template_ssub_sat_i16_lh`
+- `runtime/cq_intrinsic_templates.c:1866` — `cq_template_ssub_sat_i16_lh_unc`
+- `runtime/cq_intrinsic_templates.c:1871` — `cq_template_ssub_sat_i16_unc`
+- `runtime/cq_intrinsic_templates.c:1876` — `cq_template_ssub_sat_i32`
+- `runtime/cq_intrinsic_templates.c:1883` — `cq_template_ssub_sat_i32_hl`
+- `runtime/cq_intrinsic_templates.c:1890` — `cq_template_ssub_sat_i32_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1895` — `cq_template_ssub_sat_i32_lh`
+- `runtime/cq_intrinsic_templates.c:1902` — `cq_template_ssub_sat_i32_lh_unc`
+- `runtime/cq_intrinsic_templates.c:1907` — `cq_template_ssub_sat_i32_unc`
+- `runtime/cq_intrinsic_templates.c:1912` — `cq_template_ssub_sat_i64`
+- `runtime/cq_intrinsic_templates.c:1919` — `cq_template_ssub_sat_i64_hl`
+- `runtime/cq_intrinsic_templates.c:1926` — `cq_template_ssub_sat_i64_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1931` — `cq_template_ssub_sat_i64_lh`
+- `runtime/cq_intrinsic_templates.c:1938` — `cq_template_ssub_sat_i64_lh_unc`
+- `runtime/cq_intrinsic_templates.c:1943` — `cq_template_ssub_sat_i64_unc`
+- `runtime/cq_intrinsic_templates.c:1948` — `cq_template_ssub_sat_i8`
+- `runtime/cq_intrinsic_templates.c:1955` — `cq_template_ssub_sat_i8_hl`
+- `runtime/cq_intrinsic_templates.c:1962` — `cq_template_ssub_sat_i8_hl_unc`
+- `runtime/cq_intrinsic_templates.c:1967` — `cq_template_ssub_sat_i8_lh`
+- `runtime/cq_intrinsic_templates.c:1974` — `cq_template_ssub_sat_i8_lh_unc`
+- `runtime/cq_intrinsic_templates.c:1979` — `cq_template_ssub_sat_i8_unc`
+- `runtime/cq_intrinsic_templates.c:1984` — `cq_template_tan_f64`
+- `runtime/cq_intrinsic_templates.c:1991` — `cq_template_tan_f64_unc`
+- `runtime/cq_intrinsic_templates.c:1996` — `cq_template_trunc_f16`
+- `runtime/cq_intrinsic_templates.c:2003` — `cq_template_trunc_f16_unc`
+- `runtime/cq_intrinsic_templates.c:2008` — `cq_template_trunc_f32`
+- `runtime/cq_intrinsic_templates.c:2015` — `cq_template_trunc_f32_unc`
+- `runtime/cq_intrinsic_templates.c:2020` — `cq_template_trunc_f64`
+- `runtime/cq_intrinsic_templates.c:2027` — `cq_template_trunc_f64_unc`
+- `runtime/cq_intrinsic_templates.c:2032` — `cq_template_trunc_f80`
+- `runtime/cq_intrinsic_templates.c:2039` — `cq_template_trunc_f80_unc`
+- `runtime/cq_intrinsic_templates.c:2044` — `cq_template_uadd_sat_i16`
+- `runtime/cq_intrinsic_templates.c:2051` — `cq_template_uadd_sat_i16_hl`
+- `runtime/cq_intrinsic_templates.c:2058` — `cq_template_uadd_sat_i16_hl_unc`
+- `runtime/cq_intrinsic_templates.c:2063` — `cq_template_uadd_sat_i16_unc`
+- `runtime/cq_intrinsic_templates.c:2068` — `cq_template_uadd_sat_i32`
+- `runtime/cq_intrinsic_templates.c:2075` — `cq_template_uadd_sat_i32_hl`
+- `runtime/cq_intrinsic_templates.c:2082` — `cq_template_uadd_sat_i32_hl_unc`
+- `runtime/cq_intrinsic_templates.c:2087` — `cq_template_uadd_sat_i32_unc`
+- `runtime/cq_intrinsic_templates.c:2092` — `cq_template_uadd_sat_i64`
+- `runtime/cq_intrinsic_templates.c:2099` — `cq_template_uadd_sat_i64_hl`
+- `runtime/cq_intrinsic_templates.c:2106` — `cq_template_uadd_sat_i64_hl_unc`
+- `runtime/cq_intrinsic_templates.c:2111` — `cq_template_uadd_sat_i64_unc`
+- `runtime/cq_intrinsic_templates.c:2116` — `cq_template_uadd_sat_i8`
+- `runtime/cq_intrinsic_templates.c:2123` — `cq_template_uadd_sat_i8_hl`
+- `runtime/cq_intrinsic_templates.c:2130` — `cq_template_uadd_sat_i8_hl_unc`
+- `runtime/cq_intrinsic_templates.c:2135` — `cq_template_uadd_sat_i8_unc`
+- `runtime/cq_intrinsic_templates.c:2140` — `cq_template_umax_i16`
+- `runtime/cq_intrinsic_templates.c:2147` — `cq_template_umax_i16_hl`
+- `runtime/cq_intrinsic_templates.c:2154` — `cq_template_umax_i16_hl_unc`
+- `runtime/cq_intrinsic_templates.c:2159` — `cq_template_umax_i16_unc`
+- `runtime/cq_intrinsic_templates.c:2164` — `cq_template_umax_i32`
+- `runtime/cq_intrinsic_templates.c:2171` — `cq_template_umax_i32_hl`
+- `runtime/cq_intrinsic_templates.c:2178` — `cq_template_umax_i32_hl_unc`
+- `runtime/cq_intrinsic_templates.c:2183` — `cq_template_umax_i32_unc`
+- `runtime/cq_intrinsic_templates.c:2188` — `cq_template_umax_i64`
+- `runtime/cq_intrinsic_templates.c:2195` — `cq_template_umax_i64_hl`
+- `runtime/cq_intrinsic_templates.c:2202` — `cq_template_umax_i64_hl_unc`
+- `runtime/cq_intrinsic_templates.c:2207` — `cq_template_umax_i64_unc`
+- `runtime/cq_intrinsic_templates.c:2212` — `cq_template_umax_i8`
+- `runtime/cq_intrinsic_templates.c:2219` — `cq_template_umax_i8_hl`
+- `runtime/cq_intrinsic_templates.c:2226` — `cq_template_umax_i8_hl_unc`
+- `runtime/cq_intrinsic_templates.c:2231` — `cq_template_umax_i8_unc`
+- `runtime/cq_intrinsic_templates.c:2236` — `cq_template_umin_i16`
+- `runtime/cq_intrinsic_templates.c:2243` — `cq_template_umin_i16_hl`
+- `runtime/cq_intrinsic_templates.c:2250` — `cq_template_umin_i16_hl_unc`
+- `runtime/cq_intrinsic_templates.c:2255` — `cq_template_umin_i16_unc`
+- `runtime/cq_intrinsic_templates.c:2260` — `cq_template_umin_i32`
+- `runtime/cq_intrinsic_templates.c:2267` — `cq_template_umin_i32_hl`
+- `runtime/cq_intrinsic_templates.c:2274` — `cq_template_umin_i32_hl_unc`
+- `runtime/cq_intrinsic_templates.c:2279` — `cq_template_umin_i32_unc`
+- `runtime/cq_intrinsic_templates.c:2284` — `cq_template_umin_i64`
+- `runtime/cq_intrinsic_templates.c:2291` — `cq_template_umin_i64_hl`
+- `runtime/cq_intrinsic_templates.c:2298` — `cq_template_umin_i64_hl_unc`
+- `runtime/cq_intrinsic_templates.c:2303` — `cq_template_umin_i64_unc`
+- `runtime/cq_intrinsic_templates.c:2308` — `cq_template_umin_i8`
+- `runtime/cq_intrinsic_templates.c:2315` — `cq_template_umin_i8_hl`
+- `runtime/cq_intrinsic_templates.c:2322` — `cq_template_umin_i8_hl_unc`
+- `runtime/cq_intrinsic_templates.c:2327` — `cq_template_umin_i8_unc`
+- `runtime/cq_intrinsic_templates.c:2332` — `cq_template_usub_sat_i16`
+- `runtime/cq_intrinsic_templates.c:2339` — `cq_template_usub_sat_i16_hl`
+- `runtime/cq_intrinsic_templates.c:2346` — `cq_template_usub_sat_i16_hl_unc`
+- `runtime/cq_intrinsic_templates.c:2351` — `cq_template_usub_sat_i16_lh`
+- `runtime/cq_intrinsic_templates.c:2358` — `cq_template_usub_sat_i16_lh_unc`
+- `runtime/cq_intrinsic_templates.c:2363` — `cq_template_usub_sat_i16_unc`
+- `runtime/cq_intrinsic_templates.c:2368` — `cq_template_usub_sat_i32`
+- `runtime/cq_intrinsic_templates.c:2375` — `cq_template_usub_sat_i32_hl`
+- `runtime/cq_intrinsic_templates.c:2382` — `cq_template_usub_sat_i32_hl_unc`
+- `runtime/cq_intrinsic_templates.c:2387` — `cq_template_usub_sat_i32_lh`
+- `runtime/cq_intrinsic_templates.c:2394` — `cq_template_usub_sat_i32_lh_unc`
+- `runtime/cq_intrinsic_templates.c:2399` — `cq_template_usub_sat_i32_unc`
+- `runtime/cq_intrinsic_templates.c:2404` — `cq_template_usub_sat_i64`
+- `runtime/cq_intrinsic_templates.c:2411` — `cq_template_usub_sat_i64_hl`
+- `runtime/cq_intrinsic_templates.c:2418` — `cq_template_usub_sat_i64_hl_unc`
+- `runtime/cq_intrinsic_templates.c:2423` — `cq_template_usub_sat_i64_lh`
+- `runtime/cq_intrinsic_templates.c:2430` — `cq_template_usub_sat_i64_lh_unc`
+- `runtime/cq_intrinsic_templates.c:2435` — `cq_template_usub_sat_i64_unc`
+- `runtime/cq_intrinsic_templates.c:2440` — `cq_template_usub_sat_i8`
+- `runtime/cq_intrinsic_templates.c:2447` — `cq_template_usub_sat_i8_hl`
+- `runtime/cq_intrinsic_templates.c:2454` — `cq_template_usub_sat_i8_hl_unc`
+- `runtime/cq_intrinsic_templates.c:2459` — `cq_template_usub_sat_i8_lh`
+- `runtime/cq_intrinsic_templates.c:2466` — `cq_template_usub_sat_i8_lh_unc`
+- `runtime/cq_intrinsic_templates.c:2471` — `cq_template_usub_sat_i8_unc`
 
 ### `runtime/cq_libm_templates.c` (78 lines)
 
@@ -1744,9 +1752,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `runtime/cq_libm_templates.c:67` — `cq_template_lrint_f80_to_i64`
 - `runtime/cq_libm_templates.c:74` — `cq_template_lrint_f80_to_i64_unc`
 
-### `runtime/cq_link_smoke.c` (2885 lines)
+### `runtime/cq_link_smoke.c` (2893 lines)
 
-- `runtime/cq_link_smoke.c:2878` — `main`
+- `runtime/cq_link_smoke.c:2886` — `main`
 
 ### `runtime/cq_runtime.c` (1403 lines)
 
@@ -7376,13 +7384,13 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/package-consumer/main.c:9` — `main`
 
-### `tools/abi_codegen.py` (322 lines)
+### `tools/abi_codegen.py` (344 lines)
 
-- `tools/abi_codegen.py:125` — `arg_exprs`
-- `tools/abi_codegen.py:149` — `signature`
-- `tools/abi_codegen.py:181` — `stub_body`
-- `tools/abi_codegen.py:245` — `_unc_signature`
-- `tools/abi_codegen.py:275` — `_unc_body`
+- `tools/abi_codegen.py:127` — `arg_exprs`
+- `tools/abi_codegen.py:151` — `signature`
+- `tools/abi_codegen.py:185` — `stub_body`
+- `tools/abi_codegen.py:257` — `_unc_signature`
+- `tools/abi_codegen.py:290` — `_unc_body`
 
 ### `tools/angle_select_twin_matrix.py` (840 lines)
 
@@ -7604,22 +7612,22 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check_test.py:3467` — `main`
 - `tools/free_pairing_check_test.py:3505` — `main.counted`
 
-### `tools/gen_templates.py` (473 lines)
+### `tools/gen_templates.py` (477 lines)
 
-- `tools/gen_templates.py:110` — `_emit_variants`
-- `tools/gen_templates.py:131` — `enumerate_all`
-- `tools/gen_templates.py:143` — `enumerate_all.emit`
-- `tools/gen_templates.py:171` — `_emit_mixed_variants`
-- `tools/gen_templates.py:191` — `enumerate_libm`
-- `tools/gen_templates.py:247` — `enumerate_intrinsics`
-- `tools/gen_templates.py:277` — `banner`
-- `tools/gen_templates.py:284` — `emit_header`
-- `tools/gen_templates.py:295` — `emit_source`
-- `tools/gen_templates.py:314` — `emit_smoke`
-- `tools/gen_templates.py:401` — `load_yaml`
-- `tools/gen_templates.py:407` — `write_artifacts`
-- `tools/gen_templates.py:428` — `check_mode`
-- `tools/gen_templates.py:450` — `main`
+- `tools/gen_templates.py:114` — `_emit_variants`
+- `tools/gen_templates.py:135` — `enumerate_all`
+- `tools/gen_templates.py:147` — `enumerate_all.emit`
+- `tools/gen_templates.py:175` — `_emit_mixed_variants`
+- `tools/gen_templates.py:195` — `enumerate_libm`
+- `tools/gen_templates.py:251` — `enumerate_intrinsics`
+- `tools/gen_templates.py:281` — `banner`
+- `tools/gen_templates.py:288` — `emit_header`
+- `tools/gen_templates.py:299` — `emit_source`
+- `tools/gen_templates.py:318` — `emit_smoke`
+- `tools/gen_templates.py:405` — `load_yaml`
+- `tools/gen_templates.py:411` — `write_artifacts`
+- `tools/gen_templates.py:432` — `check_mode`
+- `tools/gen_templates.py:454` — `main`
 
 ### `tools/gen_templates_test.py` (400 lines)
 

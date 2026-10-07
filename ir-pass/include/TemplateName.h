@@ -44,13 +44,15 @@ namespace cq {
 //   * LH    — classical literal on the left, handle on the right (`_lh`).
 //             Non-commutative binary ops only; never compares.
 //   * Unary — single operand (fneg / casts). No shape suffix.
-//   * Ternary{QQQ,QQL,QLQ,QLL} — the fma `a*b + c` family (wd2p). The product's
-//             first slot is ALWAYS a handle (the recognizer canonicalizes the
-//             commutative pair handle-before-literal); the second product slot
-//             and the positional addend are each handle (`q`) or literal (`l`).
-//             `QQQ` carries no shape suffix (bare base, like binary QQ); the
-//             mixed forms spell `_qql`/`_qlq`/`_qll`. Data ops only — never
-//             compares/casts.
+//   * Ternary{QQQ,QQL,QLQ,QLL} — the fma `a*b + c` family (wd2p). When the
+//             product holds a handle, its first slot is ALWAYS a handle (the
+//             recognizer canonicalizes the commutative pair handle-before-literal);
+//             the second product slot and the positional addend are each handle
+//             (`q`) or literal (`l`). `QQQ` carries no shape suffix (bare base,
+//             like binary QQ); the mixed forms spell `_qql`/`_qlq`/`_qll`.
+//   * TernaryLLQ — the fma with an all-classical product and a quantum addend
+//             (bd 3c6m.73): `_llq` (literal, literal, handle), product order kept.
+//             Data ops only — never compares/casts.
 enum class Shape {
   QQ,
   HL,
@@ -60,6 +62,7 @@ enum class Shape {
   TernaryQQL,
   TernaryQLQ,
   TernaryQLL,
+  TernaryLLQ,
 };
 
 // Controlled / inverse axis (Phase 4, PRD §2.8). Both default to the
@@ -92,7 +95,7 @@ std::string compareName(llvm::StringRef op, llvm::StringRef pred,
 //
 // THE INVERSE OF `shapeSuffix`, and deliberately the same table read the other
 // way (Rule 14): `_hl` → slot 0, `_lh` → slot 1, `_qql` → {0,1}, `_qlq` → {0,2},
-// `_qll` → {0}; NO shape suffix (QQ / Unary / cast / TernaryQQQ) → every slot.
+// `_qll` → {0}, `_llq` → {2}; NO shape suffix (QQ / Unary / cast / TernaryQQQ) → every slot.
 // FORWARD, UNCONTROLLED SYMBOLS ONLY: a `_controlled` form prepends a flag and an
 // `_inv`/`_unc` twin takes the rail out-first, so both SHIFT the slots and both
 // answer `false` here rather than confidently and wrongly.

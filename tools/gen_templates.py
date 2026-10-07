@@ -98,10 +98,14 @@ VARIANT_INFO = {
     "fwd_qql": ("_qql",     "qql"),
     "fwd_qlq": ("_qlq",     "qlq"),
     "fwd_qll": ("_qll",     "qll"),
+    # bd 3c6m.73: an all-classical product with a quantum addend (literal,
+    # literal, handle); the product keeps its source order.
+    "fwd_llq": ("_llq",     "llq"),
     "unc_qqq": ("_unc",     "uqqq"),
     "unc_qql": ("_qql_unc", "uqql"),
     "unc_qlq": ("_qlq_unc", "uqlq"),
     "unc_qll": ("_qll_unc", "uqll"),
+    "unc_llq": ("_llq_unc", "ullq"),
 }
 
 
@@ -122,8 +126,8 @@ def _emit_variants(rows, base, kind, variants, extra):
         # types them all (the product addend and/or the literal factor).
         row["classical_w"] = (extra.get("width")
                               if shape in ("hl", "lh", "chl", "clh", "uhl", "ulh",
-                                           "qql", "qlq", "qll",
-                                           "uqql", "uqlq", "uqll")
+                                           "qql", "qlq", "qll", "llq",
+                                           "uqql", "uqlq", "uqll", "ullq")
                               else None)
         rows.append(row)
 

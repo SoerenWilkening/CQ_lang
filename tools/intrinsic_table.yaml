@@ -42,10 +42,10 @@
 #             lowered as the _hl shape (handle, iN n). A dynamic (tainted) n or
 #             arg0!=arg1 is NOT this idiom and declines.
 #   ternary — fma/fmuladd: a*b + c. The product pair (a,b) is COMMUTATIVE
-#             (canonicalized handle-before-literal so the first slot is always a
-#             handle); the addend c is POSITIONAL. 4 shapes qqq/qql/qlq/qll keyed
-#             by (pair) x (addend) — the all-literal product folds to a constant
-#             (never an fma). The void `_unc` twin (uqqq/uqql/uqlq/uqll) prepends
+#             (canonicalized handle-before-literal so a handle is always first);
+#             the addend c is POSITIONAL. Shapes qqq/qql/qlq/qll keyed by (pair) x
+#             (addend), plus llq for an all-classical product (runtime factors, bd
+#             3c6m.73). The void `_unc` twin (uqqq/uqql/uqlq/uqll/ullq) prepends
 #             `out` and recomputes f(sources) — the SAME Class-2 model as binary.
 #
 # ----------------------------------------------------------------------------
@@ -210,11 +210,12 @@ intrinsics:
   # the default -O1 contraction of `a*b+c`) map to this single `fma` stem — the
   # trace-only runtime does not distinguish the rounding mode (a Phase-9 backend
   # concern). The product pair (a,b) is COMMUTATIVE; the addend c is POSITIONAL.
-  # The recognizer canonicalizes the pair handle-before-literal, so the first slot
-  # is ALWAYS a handle → exactly 4 shapes qqq/qql/qlq/qll (the all-literal product
-  # folds to a constant, no fma). Class-2 recompute-from-live-source: the void
+  # The recognizer canonicalizes the pair handle-before-literal, so a product that
+  # holds a handle puts it first → 4 shapes qqq/qql/qlq/qll. An all-classical
+  # product with a quantum addend is the 5th shape llq (bd 3c6m.73: runtime factors
+  # do not fold, e.g. fma(x0, x1, q) or the contraction of x*y + q). Class-2 recompute-from-live-source: the void
   # `_unc(out,a,b,c)` recomputes a*b+c from the still-LIVE sources and XORs the out
   # rail to |0> (it NEVER recovers an input — source-liveness, Rule 8). This is the
   # FIRST 3-operand template shape (the one abi_codegen edit, PRD-iw81.4 §4.3).
-  - { op: fma, llvm_id: fma, class: 2, reversibility: pure_noninjective, arity: ternary, widths: [f16,f32,f64,f80], variants: [fwd_qqq, fwd_qql, fwd_qlq, fwd_qll, unc_qqq, unc_qql, unc_qlq, unc_qll] }
+  - { op: fma, llvm_id: fma, class: 2, reversibility: pure_noninjective, arity: ternary, widths: [f16,f32,f64,f80], variants: [fwd_qqq, fwd_qql, fwd_qlq, fwd_qll, fwd_llq, unc_qqq, unc_qql, unc_qlq, unc_qll, unc_llq] }
 # -- End of intrinsic table ----------------------------------------------------

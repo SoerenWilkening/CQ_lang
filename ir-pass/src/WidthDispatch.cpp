@@ -480,6 +480,14 @@ FunctionCallee WidthDispatch::dataTemplateFn(StringRef stem, StringRef abiWidth,
     return M.getOrInsertFunction(
         Name, FunctionType::get(Handle, {Handle, B, C}, false));
   }
+  case Shape::TernaryLLQ: {
+    // fma all-classical product, quantum addend (bd 3c6m.73): (W, W, i32) -> i32.
+    Type *Classical = llvmWidthType(abiWidth);
+    if (!Classical)
+      return FunctionCallee();
+    return M.getOrInsertFunction(
+        Name, FunctionType::get(Handle, {Classical, Classical, Handle}, false));
+  }
   }
   return FunctionCallee();
 }

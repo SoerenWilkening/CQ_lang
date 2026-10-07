@@ -395,7 +395,7 @@ bool rewriteIntrinsic(CallInst *CI, WidthDispatch &wd, TaintSet &taint) {
     // — a tainted+classical-runtime mix has NO qql shape (the amount is the literal
     // slot; a second literal data operand would be a different, ungenerated shape),
     // so decline it loudly rather than mint a phantom symbol (the SAME pattern as
-    // the fma all-literal-product / binary all-classical guards below). The amount
+    // the binary all-classical guard below). The amount
     // n rides the qql literal slot at its own iN width (matching the generated sig).
     const bool P0T = taint.Tainted.count(P0) != 0;
     const bool P1T = taint.Tainted.count(P1) != 0;
@@ -434,14 +434,28 @@ bool rewriteIntrinsic(CallInst *CI, WidthDispatch &wd, TaintSet &taint) {
     const bool P0T = taint.Tainted.count(P0) != 0;
     const bool P1T = taint.Tainted.count(P1) != 0;
     const bool AddT = taint.Tainted.count(Add) != 0;
-    // The product pair must carry >=1 handle — every curated shape (qqq/qql/qlq/
-    // qll) begins with a handle in slot A. An all-classical product (both literal,
-    // taint reaching ONLY via the addend) has NO ternary shape: decline loudly
-    // rather than mint a phantom `llq` symbol. Defensive — clang const-folds a
-    // literal*literal product, so a real fma never lands here.
+    // An all-classical product (taint reaching ONLY via the addend) is the `llq`
+    // shape (bd 3c6m.73): `fma(x0, x1, q)` and the -O1 contraction of `x*y + q`
+    // with runtime x, y. Both factors pass as literals in source order, never
+    // pre-multiplied (fma rounds a*b+c once). With no tainted operand at all there
+    // is no handle to read, so decline loudly (defensive: the driver only enqueues
+    // a tainted call, and taint reaches it through an operand).
     if (!P0T && !P1T) {
-      diagnoseNoTemplate(CI);
-      return false;
+      if (!AddT) {
+        diagnoseNoTemplate(CI);
+        return false;
+      }
+      FunctionCallee Callee = wd.dataTemplateFn(Stem, W, Shape::TernaryLLQ);
+      if (!Callee) {
+        diagnoseNoTemplate(CI);
+        return false;
+      }
+      CallInst *T = Builder.CreateCall(Callee, {P0, P1, Add}, "h_intr");
+      if (DebugLoc DL = CI->getDebugLoc())
+        T->setDebugLoc(DL);
+      CI->replaceAllUsesWith(T);
+      promote(T, CI, taint, W);
+      return true;
     }
     // Canonicalize the commutative product pair so slot A is ALWAYS a handle: a
     // literal factor moves to slot B; two handles order by BirthOrder (lower → A)
