@@ -2,6 +2,7 @@
 // BennettWrap.h for the mechanical reverse (bd p3kd.7.8).
 
 #include "BennettWrap.h"
+#include "SpeculationSafety.h"
 
 #include "EmitInverse.h"
 #include "TaintPropagation.h"
@@ -208,6 +209,7 @@ bool emitBennettWrap(Function &Clone, const SmallPtrSetImpl<CallInst *> &LiftedC
     return false;
   }
 
+  stabilizeSpeculatedValues(Clone, cloneTaint);
   elideForwardStrips(Clone.getEntryBlock(), LiftedCalls);
 
   // (a) Capture and pre-scan. After the elision no rail is zeroed or freed inside

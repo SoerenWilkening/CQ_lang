@@ -1,29 +1,20 @@
-; control_predmux_reject_equal_incomings_phi.ll — DECLINE (bd q2wk, PRD §4.4b
-; rule (B), residual (c)). The sibling of
-; control_predmux_reject_degenerate_phi_classical.ll: there the phi has ONE
-; incoming block, here it has TWO — so the `In.size() > 1` reasoning that
-; explains the degenerate case does NOT cover this one, which is exactly why the
-; Rule-13 round called it out as separately unpinned.
-;
-; `%ph` has two unique incoming BLOCKS but only ONE distinct incoming VALUE.
-; `convertPhis`' select-chain path seeds `Acc = In.back().second` and then skips
-; every incoming with `In[I].second == Acc` (the bd-adia `select(EP,x,x) = x`
-; guard), so the phi is RAUW'd straight to that one value — here the FUNCTION
-; ARGUMENT `%arg`, genuinely classical and a runtime (non-constant) value. A
-; region-internal phi that converts to nothing tainted is precisely the shape
-; rule (B) must NOT admit on its "the flatten will taint it" proof.
-;
-; `valueWillTaintAfterFlatten` therefore recurses into the sole value instead of
-; answering true at the phi, so this leaves at `gate=E6-classicalbr` with the
-; region UNTOUCHED (detect-before-mutate) and `ControlDetect` owns the decline.
-;
-; Reachability is thin — `clang -O1` folds a trivially-equal phi away — so this
-; needs the phi to be materialized late (a prior fixpoint round's
-; `simplifyFlattenResiduesInFunction` RAUW making two arms syntactically equal).
-; It is pinned anyway: the residual class is what rule (B)'s soundness argument
-; is quantified over, and an unpinned member of it can silently widen.
-;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; control_predmux_reject_equal_incomings_phi.ll — ACCEPT: equal incoming classical phi (dm7f.16.1).
+; The historical q2wk fence refused a false prediction of phi taint.
+; dm7f.16.1 admits the genuinely classical condition after the equal-value
+; phi reduces to arg. Splitting g=(q>5) by q<100 does not change the incoming
+; arg. With c=(arg==0), edge values are q for g&&c, q*7 for g&&!c, q+3 for !g.
+; PredMux sums incoming edge predicates and captures values before selecting
+; into fresh rails. Its classical literal stays stable; borrowed q survives.
+; Filename retained for historical references to the retired fence.
+; RUN: %cq-opt -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; CHECK-LABEL: define i32 @probe(
+; CHECK-DAG: call i32 @cq_template_mul_i32_hl
+; CHECK-DAG: call i32 @cq_template_add_i32_hl
+; CHECK-DAG: freeze i1
+; CHECK: call void @cqrt_copy_i32_controlled
+; CHECK: call i32 @cqrt_measure_i32
+; CHECK: ret i32
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
@@ -60,9 +51,3 @@ J:
   %m = call i32 @cq_measure_si32(i32 %r)
   ret i32 %m
 }
-
-; CHECK: error{{.*}}cq controlled lowering: nested control flow under quantum control
-; Nothing lowered — the region is LEFT unclaimed, so no rail is allocated and no
-; template is minted before the decline.
-; CHECK-NOT: cqrt_
-; CHECK-NOT: cq_template_

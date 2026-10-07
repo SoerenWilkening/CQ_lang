@@ -44,14 +44,15 @@
 //   E4 — pure speculatable dataflow at TEMPLATE-SUPPORTED widths:
 //        arithmetic/bit/compare/cast/select/fneg/freeze/phi + curated
 //        memory(none) intrinsics; int division only by a nonzero (and, for
-//        signed, non-minus-one) constant. No loads (v1), no stores, no other
-//        calls (any @cq_* call therefore excludes the shape). The width gate
+//        signed, non-minus-one) constant. No loads (v1), no stores. Calls
+//        use the owning pure quantum-callee or total classical-call proof.
+//        Any @cq_* call excludes the shape. The width gate
 //        on INTERMEDIATE ops (not just merges/conditions) is a Rule-13
 //        clearance hardening: an fp128 arm op would only decline loudly
 //        post-flatten at lowerOps; gating it here keeps the whole ladder
 //        detect-before-mutate (a claimed region can never half-lower).
-//   E6 — every internal conditional terminator is tainted AND its condition
-//        is a supported compare/and/or tree (so the false-edge literal can be
+//   E6 — quantum and nested classical conditions use the same supported
+//        compare/and/or tree (so the false-edge literal can be
 //        built by leaf predicate inversion — the no-NOT invariant).
 //   E7 — every phi being converted has a mux-lowerable scalar type.
 //
@@ -77,6 +78,7 @@
 #include "IntrinsicLowering.h"
 #include "PoisonFacts.h"  // curatedIntrinsicCanBePoison (lifted, bd s6ao)
 #include "LiteralIntegrity.h"  // valueCarriesUndef (lifted); declineAddressTakenBlocks
+#include "SpeculationSafety.h"
 #include "OpcodeSupport.h"  // abiWidthFromType, binaryStem, castInScope, i80BinaryInScope
 #include "GuardedClassicalRead.h"  // bd xdu2.8 — the arm-guarded runtime-VLA read
 #include "QramLowering.h"
@@ -755,11 +757,12 @@ ConeNode classifyConeNode(const Value *V) {
     // whose poison rides an immarg no drop can reach.
     //
     // NOTE `isCuratedReversibleIntrinsic` requires a real `IntrinsicInst`
-    // (IntrinsicLowering.cpp), so after bd 3c6m.14.2 EVERY call this clause can
-    // admit is an `llvm.*` intrinsic. That is what closes bd 94on(a) on this
-    // surface — see the note on the return-attribute drop in `stripPoisonCone`.
-    return isCuratedReversibleIntrinsic(Call) && Call->doesNotAccessMemory() &&
-                   !curatedIntrinsicCanBePoison(Call)
+    // (IntrinsicLowering.cpp). dm7f.16.1 additionally admits exact classical
+    // bodies proven total with their effective parameter/return contracts.
+    // The poison-free requirement still closes bd 94on(a) on this surface.
+    return ((isCuratedReversibleIntrinsic(Call) && Call->doesNotAccessMemory() &&
+                    !curatedIntrinsicCanBePoison(Call)) ||
+            classicalCallCanBeSpeculated(Call))
                ? ConeNode::Interior
                : ConeNode::Fail;
   }
@@ -3542,7 +3545,7 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
   const PhiCondScope Scope{&R.InRegion, R.Entry, &R.BoolAlgPhis,
                            &R.RailPhiLeaves};
   for (BasicBlock *B : R.InRegion) {
-    // E6: every conditional terminator tainted, with an invertible condition.
+    // E6: every conditional terminator has an invertible supported condition.
     const Instruction *Term = B->getTerminator();
     if (const auto *BI = dyn_cast<BranchInst>(Term)) {
       if (BI->isConditional()) {
@@ -3607,17 +3610,13 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
         // TRIGGER: the day any stage can make an edge literal constant AFTER E6
         // (a late fold inside `run()`, or E6 admitting a non-folded constant
         // branch), this record gains a subject and owes a decline fixture.
-        // Not in clone mode (`ClaimAll`): no data-select classifier runs in a
-        // clone body.
-        // bd p3kd.7.2: in clone mode (`ClaimAll`) a classical branch is
-        // if-converted like a tainted one (see `isConditionalCtrlTerm`).
+        // Only record actual predicted taint in main. Genuine nested classical
+        // conditions are now admitted by the shared grammar (dm7f.16.1).
+        // ClaimAll still adds classical ROOTS only for lifted clones.
         if (!ClaimAll && !Taint.Tainted.count(BI->getCondition()) &&
             !isa<ConstantInt>(BI->getCondition()) &&
-            !valueWillTaintAfterFlatten(BI->getCondition(), Taint, R.InRegion,
-                                        R.Entry))
-          return leave("E6-classicalbr", BI);  // classical control inside a tainted region: mixed
-        if (!ClaimAll && !Taint.Tainted.count(BI->getCondition()) &&
-            !isa<ConstantInt>(BI->getCondition()))
+            valueWillTaintAfterFlatten(BI->getCondition(), Taint, R.InRegion,
+                                      R.Entry))
           R.PredictedConds.emplace_back(BI->getCondition());
         if (!isSupportedCondTree(BI->getCondition(), 0, &Scope))
           return leave("E6-condtree", BI);
@@ -3807,8 +3806,10 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
         // program, here it does not. `reject_i80_cmp_clonemode.ll` still
         // declines, with a byte-identical message, DBG leave line and exit code
         // (diffed, not assumed).
-        if (TaintedArg && isTemplateWidthType(CI->getType()) &&
-            isSpeculatablePureCalleeBody(CI->getCalledFunction()))
+        if (isTemplateWidthType(CI->getType()) &&
+            ((TaintedArg &&
+              isSpeculatablePureCalleeBody(CI->getCalledFunction())) ||
+             (!TaintedArg && classicalCallCanBeSpeculated(CI))))
           continue;
         return leave("E4-dataflow", &I);
       }
@@ -3873,12 +3874,11 @@ public:
   // recorded as a condition-tree rail leaf. Null when the driver does not police
   // the property; the flattener's behaviour is otherwise identical either way —
   // it only ever WRITES a bool, never reads one back.
-  // `Taint` is read by `maskQromIndex` (a logical-width query) and, in clone mode,
-  // by `literal` (is an edge's condition classical, so its literal is frozen; bd
-  // p3kd.7.2).
+  // `Taint` is read by `maskQromIndex` (logical width) and by `literal`
+  // (classical edge literals are stabilized in main and clones).
   RegionFlattener(PredMuxRegion &R, IRBuilder<> &B, PredMuxRailPhiRecord *Rec,
-                  TaintSet &Taint, bool CloneMode = false)
-      : R(R), B(B), Rec(Rec), Taint(Taint), CloneMode(CloneMode) {}
+                  TaintSet &Taint)
+      : R(R), B(B), Rec(Rec), Taint(Taint) {}
 
   void run() {
     // Process arm blocks in topological order: convert phis to select
@@ -3949,9 +3949,6 @@ private:
   IRBuilder<> &B;
   PredMuxRailPhiRecord *Rec = nullptr;  // bd woa0 — write-only, may be null
   TaintSet &Taint;
-  // bd p3kd.7.2: flattening a Bennett clone (`ClaimAll`), where classical
-  // conditions are if-converted too (see `literal`).
-  bool CloneMode = false;
   DenseMap<BasicBlock *, Value *> BlockPred;   // nullptr = ⊤ (entry)
   DenseMap<std::pair<BasicBlock *, unsigned>, Value *> LitCache;
   SmallVector<WeakTrackingVH, 32> MaybeDead;
@@ -3992,25 +3989,13 @@ private:
         L = track(B.CreateICmpEQ(SI->getCondition(), CV));
       }
     }
-    // bd p3kd.7.2 — FREEZE A CLASSICAL EDGE LITERAL IN CLONE MODE. A classical
-    // condition in a block the flatten speculates is evaluated on basis states
-    // that never reach the block, where its classical cone may be poison (a
-    // shift by an out-of-range amount, an `nsw` overflow). The edge predicate is
-    // `and(BP, lit)`, and LLVM's `and i1 false, poison` is POISON, not false, so
-    // an unreached block's predicate would not be false and the merge chain could
-    // pick its value. `freeze` makes the literal an arbitrary but fixed bit, so
-    // the conjunction with a false block predicate is false. Identity on a
-    // non-poison literal; a tainted literal is untouched (it becomes a flag
-    // template, total on every basis state), so every clone with only quantum
-    // control is byte-identical. Clone mode needs it because there the select
-    // chain over classical predicates becomes a classical choice of RAIL
-    // (CloneRailSelect.h). This freezes EDGE LITERALS only: another speculated
-    // classical value that becomes a gate's `_hl` literal (a `fptosi` or `shl` in
-    // an unreached arm) is not frozen, so its forward gate and adjoint rely on
-    // reading one value for one SSA use pair, which holds when the lowered IR is
-    // compiled without optimization; the same holds for PredMux speculation under
-    // quantum control (bd p3kd.7.7, a latent hazard, filed at review).
-    if (CloneMode && !isa<Constant>(L) && !isGuaranteedNotToBePoison(L)) {
+    // A speculative classical edge must be one stable bit: and(false, poison)
+    // is poison, while and(false, freeze(poison)) is false on the untaken edge.
+    // The cache shares this literal across edge uses. Quantum predicates remain
+    // flag templates. SpeculationSafety separately proves or freezes scalar
+    // gate literals and call arguments before clone capture / after main adjoints
+    // (dm7f.16.1, p3kd.7.7); these obligations also apply under optimization.
+    if (!isa<Constant>(L) && !isGuaranteedNotToBePoison(L)) {
       // Classical-ness is the TERMINATOR's condition's: `L` is usually a fresh
       // compare or negation the next re-seed has not tainted yet.
       const Value *Cond =
@@ -4912,6 +4897,8 @@ private:
         }
       }
       P->replaceAllUsesWith(Acc);
+      if (auto *I = dyn_cast<Instruction>(Acc))
+        markSpeculatedValue(*I);
       P->eraseFromParent();
     }
   }
@@ -4926,6 +4913,7 @@ private:
       if (I.isTerminator())
         continue;
       I.dropPoisonGeneratingFlags();
+      markSpeculatedValue(I);
       I.moveBefore(T);
       track(&I);
     }
@@ -5485,7 +5473,7 @@ bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll,
         markPredictedTaintCone(PC);
       IRBuilder<> Builder(T);
       Builder.SetCurrentDebugLocation(T->getDebugLoc());
-      RegionFlattener(R, Builder, Rec, Taint, /*CloneMode=*/ClaimAll).run();
+      RegionFlattener(R, Builder, Rec, Taint).run();
       // bd adia (3c6m.55 Lever C): collapse fold residues the flatten materialized
       // (a select chain over constant incomings folds to a constant, leaving
       // a constant-operand compare feeding a "classical" branch that would

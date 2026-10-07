@@ -8423,61 +8423,6 @@ PhaseKickbackDisp classifyPhaseKickbackNest(
 // otherwise decline the same shape as a §3c clobber — a safe over-decline, but
 // not the 6.5 lowering).
 // bd 9hea — see ArmClassify.h for the full contract. Whitelist by construction.
-bool freezeDischargesHoistedArg(const llvm::CallBase *Call, unsigned Ai) {
-  if (!Call->paramHasAttr(Ai, Attribute::NoUndef))
-    return false;  // nothing to discharge — poison here is simply not UB.
-
-  // *** AUDIT THE SAME SET THE TRIGGER READ, WHICH IS THE UNION — NOT THE CALL SITE.
-  // THE FIRST DRAFT OF THIS FUNCTION GOT THIS WRONG AND IT WAS A LIVE OVER-ACCEPT
-  // (bd 9hea Rule-13 blocker). *** `CallBase::paramHasAttr` FALLS BACK to the
-  // callee's `AttributeList` (InstrTypes.h), while `CallBase::getAttributes()` does
-  // NOT — it is the call site alone. Auditing the narrower set while triggering off
-  // the wider one meant a callee-side `range`/`nonnull`/`align`/`dereferenceable`/
-  // `nofpclass` was INVISIBLE here: the loop saw only `{noundef}`, hit `continue`,
-  // and returned true while the attribute bound in full force.
-  // MEASURED, one token: deleting `range(i32 0, 10)` from the CALL SITE of
-  // `..._reject_frozen_arg_range.ll` — leaving it on the `define` — flipped that
-  // module from a loud decline to an accept that froze the argument. And it is
-  // reachable from ordinary legal C through the real multi-TU pipeline, because a
-  // gnu attribute on a definition in one TU need not appear on the prototype in
-  // another: `clang -O1` emits `nonnull` on the definition and NOT on the call site,
-  // and the hoist then called a `nonnull` parameter with an arbitrary pointer on a
-  // guard of ZERO amplitude — bd wve8's own finding, one attribute lookup over.
-  // *** CALLEE-SIDE IS THE CANONICAL HOME FOR A PARAMETER ATTRIBUTE, and for the
-  // `speculatable`-declaration totality route it is the ONLY place one can live. ***
-  //
-  // `freeze` yields SOME defined value and promises nothing further, so every OTHER
-  // attribute on the parameter must be one an arbitrary defined value cannot
-  // violate. Enumerate the INERT ones and refuse anything unlisted (never the
-  // converse — bd s6ao). The four admitted are ABI/calling-convention only: they
-  // describe how the value is passed, not which values are legal.
-  const auto inertSet = [](const llvm::AttributeSet &AS) {
-    for (const llvm::Attribute &A : AS) {
-      if (!A.isEnumAttribute())
-        return false;  // parameterised (range/align/byval/...) or string — refuse.
-      switch (A.getKindAsEnum()) {
-      case Attribute::NoUndef:
-      case Attribute::ZExt:
-      case Attribute::SExt:
-      case Attribute::InReg:
-        continue;  // freeze-inert.
-      default:
-        return false;  // every poison-conditional fact lands here.
-      }
-    }
-    return true;
-  };
-
-  // An INDIRECT call has no callee set to audit, so there is no way to know what the
-  // parameter asserts — refuse outright rather than audit half the union.
-  const llvm::Function *Callee = Call->getCalledFunction();
-  if (!Callee)
-    return false;
-
-  return inertSet(Call->getAttributes().getParamAttrs(Ai)) &&
-         (Ai >= Callee->arg_size() ||
-          inertSet(Callee->getAttributes().getParamAttrs(Ai)));
-}
 
 ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
                                            TaintSet &Taint) {

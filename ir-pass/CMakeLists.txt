@@ -87,6 +87,7 @@ add_library(CQPass MODULE
   src/OpcodeSupport.cpp
   src/Plugin.cpp
   src/PredMuxFlatten.cpp
+  src/SpeculationSafety.cpp
   src/QramIndexWidth.cpp
   src/QramLowering.cpp
   # bd r2j3.3: the record-window half of the bd 261j(a) freeze.

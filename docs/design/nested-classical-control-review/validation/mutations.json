@@ -1,0 +1,15 @@
+[
+  {
+    "tag": "mutant-noop",
+    "lower_exit": 0,
+    "check_exit": 0,
+    "output_bytes": 4556
+  },
+  {
+    "tag": "mutant-disable-stabilization",
+    "lower_exit": 0,
+    "check_exit": 1,
+    "output_bytes": 4687,
+    "MISSED": false
+  }
+]

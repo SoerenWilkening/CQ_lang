@@ -1,0 +1,45 @@
+{
+  "threads": 1,
+  "issue": "test_C_libtooling-dm7f.16.1",
+  "lit_invocations": 3,
+  "red": {
+    "lit_configuration_aborted": true,
+    "fixtures_executed_by_lit": 0,
+    "direct_baseline_lowerings": 3,
+    "expected_positive_failures": 2,
+    "effectful_gap_failure": 1
+  },
+  "between_checkpoints": {
+    "completed_lowering_probes": 3,
+    "configuration_reject_missing_passes": 1
+  },
+  "green": {
+    "fixtures": 11,
+    "passed": 9,
+    "failed": 2,
+    "failures": "assertions for absent caller-side inverse of escaping measured result and incorrect _hh spelling; compiler lowering succeeded"
+  },
+  "final": {
+    "fixtures": 2,
+    "passed": 2,
+    "scope": "only corrected failed assertions; passing nine not rerun"
+  },
+  "review_rounds": 3,
+  "reviewer_probes": [
+    0,
+    0,
+    0
+  ],
+  "mutation": {
+    "noop": 1,
+    "real": 1,
+    "MISSED": 0
+  },
+  "linked_preparation": {
+    "trace_lines": 108,
+    "free_sites": 12,
+    "verified_frees": 12,
+    "violations": 0,
+    "unproven": 0
+  }
+}

@@ -7073,3 +7073,12 @@ add_test(NAME e2e-loop-condtree-select-hoisted-literal-twin-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_condtree_select_hoisted_literal.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_condtree_select_hoisted_literal_unrolled.expected.log")
+
+# dm7f.16.1: shared nested classical control and retained classifier calls.
+add_test(NAME e2e-slice-nested-classical-call
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_nested_classical_call.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_nested_classical_call.expected.log")

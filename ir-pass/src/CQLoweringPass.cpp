@@ -5,6 +5,7 @@
 // `i16` / `i64` / `f32` / `f64`.
 
 #include "CQLoweringPass.h"
+#include "SpeculationSafety.h"
 
 #include "ArithLowering.h"
 #include "ArmAnalysis.h"      // reverifyRailCondReads (bd r9e5 1b-B.1 round 2)
@@ -928,6 +929,9 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // Phase 5 (PRD §2.8): per-op uncomputation runs LAST, after every other
   // mutation has settled `taint` into its final post-lowering state.
   uncompute(M, wd, taint);
+  for (Function &F : M)
+    if (!F.isDeclaration())
+      stabilizeSpeculatedValues(F, taint);
   // libcqops b6a — every QRAM call (forward and `_unc`) whose index is not a
   // 32-bit rail gets its own `cast; call; cast_unc; free` bracket. AFTER
   // `uncompute` so no cast rail is ever a live record in the DAG it planned, and
@@ -1444,6 +1448,9 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // Phase 5 (PRD §2.8): uncomputation runs LAST in this entry point too — miss
   // one and unit-level callers diverge from `run()`.
   uncompute(M, wd, taint);
+  for (Function &F : M)
+    if (!F.isDeclaration())
+      stabilizeSpeculatedValues(F, taint);
   // libcqops b6a — mirrored from `run()` (twin-pipeline parity, WI-1.12).
   bracketQramIndexCasts(M, wd, taint);
   // bd xy9n — mirrored from `run()` (twin-pipeline parity, WI-1.12): miss it and
