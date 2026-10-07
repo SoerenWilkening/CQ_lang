@@ -1,6 +1,6 @@
 # math.h coverage through cqc
 
-**79/180 scalar-input cells compile through `tools/cqc` for every runtime C/Q mixture.**
+**82/180 scalar-input cells compile through `tools/cqc` for every runtime C/Q mixture.**
 
 Each probe is compiled by the user-facing driver `tools/cqc`, so this is the number a user
 gets. It counts build, lowering, link and trace-run success. It does not certify numerical
@@ -9,12 +9,12 @@ or unitary semantics. No new goldens were blessed.
 | Provider | Accepted for every mixture | Cells |
 | --- | ---: | ---: |
 | source-injected | 24 | 120 |
-| intrinsic | 45 | 48 |
+| intrinsic | 48 | 48 |
 | classical-only | 3 | 3 |
 | macro | 10 | 12 |
 
-Measured 483 probes: 349 accepted; 134 did not accept.
-Structural free-check passes: 349. The classical-only nan row is not in the scalar total.
+Measured 483 probes: 352 accepted; 131 did not accept.
+Structural free-check passes: 352. The classical-only nan row is not in the scalar total.
 The macro cells retain the historical f64 scope of the 183-cell model.
 
 ## Reproduction
@@ -128,8 +128,5 @@ fenv remains outside the CQ model (CLAUDE R16).
 | fdimf.f32 | QC | error: _deps/cq_openlibm-src/src/s_fdim.c:45:1: in function __cq_q___cq_libm_fdimf_01 i32 (i32, float): cq specialization: callee contains tainted control flow under quantum lift |
 | fdim.f64 | QC | error: _deps/cq_openlibm-src/src/s_fdim.c:44:1: in function __cq_q___cq_libm_fdim_01 i32 (i32, double): cq specialization: callee contains tainted control flow under quantum lift |
 | fdiml.f80 | QC | error: _deps/cq_openlibm-src/src/s_fdim.c:47:1: in function __cq_q___cq_libm_fdiml_01 i32 (i32, x86_fp80): cq specialization: callee contains tainted control flow under quantum lift |
-| fmaf.f32 | CCQ | error: <unknown>:0:0: in function probe float (float, float, float): no template for opcode 'call float' in tainted context |
-| fma.f64 | CCQ | error: <unknown>:0:0: in function probe double (double, double, double): no template for opcode 'call double' in tainted context |
-| fmal.f80 | CCQ | error: <unknown>:0:0: in function probe x86_fp80 (x86_fp80, x86_fp80, x86_fp80): no template for opcode 'call x86_fp80' in tainted context |
 | fpclassify.f64 | Q | error: probe.c:5:11: in function probe i32 (double): cq taint escape: tainted value consumed by an unknown callee |
 | isnormal.f64 | Q | error: /Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk/usr/include/math.h:263:36: in function probe i32 (double): cq taint escape: tainted value consumed by an unknown callee |
