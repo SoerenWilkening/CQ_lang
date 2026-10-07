@@ -143,6 +143,17 @@ something (7.4 `break`: 13 holes over three rounds; one core function: 8 finding
 calling the one owning predicate, never by re-deriving its answer. A second spelling of a
 predicate is a defect.
 
+Before designing a lowering, consult both implementation ground truths:
+[Bennett.jl](https://github.com/tobiasosborne/Bennett.jl) and
+[BennettVM.jl](https://github.com/tobiasosborne/BennettVM.jl). Check the current source
+and adversarial tests, record each checkout's revision, and cite the matching mechanism
+in the bd issue/design. BennettVM's CFG/SSA transfers, loop structure, call/aggregate
+ABI and memory models inform precise compilation; translate them into CQ's compile-time
+gate and adjoint emission. Consult Bennett.jl for the corresponding circuit construction.
+Reference limitations never justify a physics decline, and a successful classical
+round-trip alone never proves CQ's unitary. The source/test map and evidence limits are
+in [reversible-lowering-ground-truth.md](docs/design/reversible-lowering-ground-truth.md).
+
 **R13 — Width-only ABI; edit the YAML.** `tools/opcode_table.yaml` →
 `tools/gen_templates.py` → `runtime/cq_templates.{h,c}` (SHA-256 drift check
 `gen_templates.py --check`). Never edit the generated files. Signedness lives in the
@@ -158,8 +169,10 @@ quantum call to that body and lifts it (no inlining).
 **"Hand-written" means a backend circuit, never CQ-written C** (owner, 2026-10-06).
 A hand-written function lowers to ONE call, `cq_template_<fn>_<W>` plus its `_unc`,
 and a circuit backend supplies the reversible circuit. Bennett.jl's implementation is
-the reference and is never linked. The lowered IR shows that single call, not the
-function's arithmetic. CQ never writes its own C or IR version of a library function
+the circuit reference; BennettVM.jl complements it for lowering semantics and ABI
+reconciliation. Both are consulted as source and tests, never linked. The lowered IR
+shows that single call, not the function's arithmetic. CQ never writes its own C or IR
+version of a library function
 to stand in for the real source. The retired CQ-provided component
 (`tools/library_coverage/branchless/`, bd `guwr`) did exactly that and was removed by
 bd `3c6m.78`.

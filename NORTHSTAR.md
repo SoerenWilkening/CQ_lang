@@ -58,6 +58,15 @@ means its real source injected before `cq-lowering`, never recognition by name. 
 figures published before 2026-09-30 were scored without the non-trivial-input rule and
 are a baseline to re-score, not the current number.
 
+[Bennett.jl](https://github.com/tobiasosborne/Bennett.jl) and
+[BennettVM.jl](https://github.com/tobiasosborne/BennettVM.jl) are implementation ground
+truth for reversible lowering. Consult both before designing a lowering, and cite the
+relevant source and tests at a recorded revision. Bennett.jl supplies circuit mechanisms;
+BennettVM.jl also supplies precise CFG/SSA, loop, call/aggregate ABI and memory lowering.
+Apply those semantics to CQ's compile-time circuit and adjoint emission (principles 4
+and 7). A reference implementation's unsupported shapes remain CQ compiler gaps under
+goal 1; its coverage is not CQ coverage.
+
 Direct intrinsic or opcode lowering requires either an approved plausible hardware
 route with no intrinsic implementation source to inject, or a reversible implementation
 provided by Bennett.jl. An LLVM name or a generated trace template alone is insufficient.
