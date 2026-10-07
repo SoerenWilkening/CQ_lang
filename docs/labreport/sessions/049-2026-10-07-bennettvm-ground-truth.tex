@@ -1,0 +1,62 @@
+\labsessionheader{2026-10-07}{BennettVM as a reference for precise compilation}%
+  {75255870}{n/a}{docs/design/reversible-lowering-ground-truth.md}
+
+\subsection*{Goal}
+The owner requested BennettVM.jl as implementation ground truth alongside
+Bennett.jl, with the corresponding knowledge recorded on the existing beads.
+The intended use is precise compiler lowering: CFG/SSA transfers, loop state,
+call and aggregate ABIs, and memory semantics applied to CQ's compile-time
+gate and adjoint emission.
+
+\subsection*{What landed}
+\commit{75255870} --- \bd{iovd}: NORTHSTAR goal 2 and CLAUDE R12 now require
+consulting both repositories and recording the source/test revision. R14 names
+their complementary circuit and ABI roles. The evidence map is
+\fpath{docs/design/reversible-lowering-ground-truth.md}.
+The existing consultation memory was extended in place; a dated owner-ruling
+memory records this instruction.
+
+Beads received mechanism-specific notes on the function-lifting and control
+umbrellas, shared classical/nested control, clone-condition survivors,
+path-independent gate streams, bounded loops, memory and aggregate/return ABI.
+Poison and primitive-eligibility issues received the limits of the new evidence.
+The annotations preserve existing issue states and measured census attribution.
+
+\subsection*{Findings}
+Source inspection used Bennett.jl at
+\texttt{824458d10e879c3fef673c231a02e5461dac667f} and BennettVM.jl at
+\texttt{23d28e6471f9cf5d8a22177d08260ca86adfe841}. These are source evidence
+pins; BennettVM's documentary upstream validation pin is \texttt{f904d0d}.
+The two newly inspected heads were not built together.
+
+\begin{itemize}
+  \item \fdoc\ BennettVM ADR 0022 and its multi-use PHI regression require
+  non-destructive transfers: preserve an incoming with later uses, and capture
+  all parallel inputs before assigning destinations. Its generic edge/PHI
+  ingest and genuine nested-loop fixture provide concrete lowering references.
+  \item \fdoc\ Current VM source supports field-wise inner aggregate returns,
+  heterogeneous insert-bits chains and consumed-sret reconciliation. Its
+  historical coverage matrix still describes some of these paths as deferred.
+  Capability claims must follow the pinned source and relevant tests.
+  \item \fdoc\ The literal-certification regression records wrong forward
+  answers that reversed cleanly. A classical round-trip alone cannot establish
+  the forward semantics or CQ's unitary; the existing R2 evidence remains
+  necessary. The VM's Float32 rejection, bit-model freeze treatment and
+  checkpoint-replay SoftCall do not settle CQ's poison or f32/f80 circuit gaps.
+\end{itemize}
+
+\subsection*{Verification run}
+\measured{git diff --check} and
+\measured{python3 tools/update\_code\_map.py --check} completed cleanly.
+Read-back through \texttt{bd show --json} confirmed the requested annotations
+and retained issue states; the Python inspection checked every pinned source/test
+path against the complete tracked checkouts. No lowering, fixture, numerical
+contract or acceptance predicate changed. There were no lit, ctest, Julia-test
+or census invocations in this documentation session. The upstream tests are
+inspected reference evidence, not tests run here.
+
+\subsection*{Remaining work}
+The annotated compiler gaps remain open under \bd{p3kd}, \bd{dm7f},
+\bd{8h7d}, \bd{wrwo} and \bd{01po}; the source/intrinsic work remains
+\bd{3c6m.68} and \bd{3c6m.79}. This record reports reference knowledge,
+with no new CQ capability or coverage claim.
