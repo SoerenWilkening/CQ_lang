@@ -16,7 +16,7 @@
 ;
 ; ⚠ CORRECTED 2026-09-11 by the Rule-13 round-1 review (finding D1-DOC): the
 ; earlier wording here cited CLAUDE.md's f64/angle miscompile family ("a
-; floating-point merge phi is an ANGLE, not data — do not cross these wires") as the
+; floating-point merge phi is an ANGLE, not data — do not cross these wires"; (wording retired from CLAUDE.md R3 on 2026-10-08: fp merge values can carry data; angle use is decided at rotation consumers)) as the
 ; reason. That framing is NOT what the measurement shows. The reviewer ran the
 ; one-phi module (`d01_tail_onephi.c`) against its two-phi sibling
 ; (`d02_tail_twophi.c`, where the SAME angle phi sits beside a data mux so the peel

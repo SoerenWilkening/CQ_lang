@@ -10,7 +10,7 @@
 ; classical `double` literal as always (Rule 3), and there is no fp DATA merge
 ; anywhere in the region (a kickback merges no data at all). The f64-merge-phi
 ; miscompile family (`isFPOrFPVectorTy`, "a floating-point merge phi is an ANGLE,
-; not data") is about a different wire and keeps its declines.
+; not data", (wording retired from CLAUDE.md R3 on 2026-10-08: fp merge values can carry data; angle use is decided at rotation consumers)) is about a different wire and keeps its declines.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll

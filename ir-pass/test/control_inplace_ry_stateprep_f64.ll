@@ -6,7 +6,7 @@
 ;
 ; ⚠ THE MERGE φ IS A `double` AND IT IS A REGISTER, NOT AN ANGLE. That
 ; distinction is the f64 silent-miscompile family (CLAUDE.md: "a floating-point
-; merge φ is an angle, not data" applies to the ANGLE-φ path); here the φ carries
+; merge φ is an angle, not data" (wording retired from CLAUDE.md R3 on 2026-10-08: fp merge values can carry data; angle use is decided at rotation consumers) applies to the ANGLE-φ path); here the φ carries
 ; the muxed VARIABLE, and the `isFPOrFPVectorTy` decline sits on the VALUE-arm
 ; path only. The angle slot of both thetas is a `ConstantFP` and is never
 ; propagated taint (Rule 3, per-operand-use).

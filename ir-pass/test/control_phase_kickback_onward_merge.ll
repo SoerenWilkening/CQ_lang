@@ -28,7 +28,7 @@
 ; `cqrt_alloc_f64(0x1.ccccccccccccdp-1)` … `cqrt_copy_f64_controlled(...)`, i.e. a
 ; ROTATION ANGLE materialised on a quantum f64 rail, an operand of nothing and
 ; never freed. That is the Rule-3 wire-crossing `CLAUDE.md` names outright: "a
-; floating-point merge phi is an angle, not data — do not cross these wires."
+; floating-point merge phi is an angle, not data — do not cross these wires." (wording retired from CLAUDE.md R3 on 2026-10-08: fp merge values can carry data; angle use is decided at rotation consumers)
 ; `opt` exit 0, verify-clean, STRICT stage 2b PASS, linked, 23 trace lines.
 ;
 ; NEITHER FENCE COULD SEE IT, both for structural reasons: at the old position the
