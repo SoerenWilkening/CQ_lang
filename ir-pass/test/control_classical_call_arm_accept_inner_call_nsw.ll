@@ -7,7 +7,7 @@
 ; DEFINED parameter, and the only poison (`mul nsw`) reaches f's result, which is never
 ; merged on a shielded state. The first bwfp rule ("any `noundef` in the call tree needs
 ; the strict totality proof") declined this ordinary C; the poison-flow analysis
-; (SpeculationSafety.cpp `poisonFlow`) accepts it, as e0af16ed did.
+; (PoisonFlow.cpp since dm7f.21) accepts it, as e0af16ed did.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll

@@ -8,14 +8,14 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 784 maintained source files, 6526 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 790 maintained source files, 6556 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
 The entries below are an inventory for decomposition work. Generated files and test/tooling sources are listed too; they are not silently treated as application logic.
 
 - `runtime/cq_templates.c` — 15665 physical lines
-- `ir-pass/src/ArmClassify.cpp` — 9975 physical lines
+- `ir-pass/src/ArmClassify.cpp` — 9974 physical lines
 - `ir-pass/src/LoopLowering.cpp` — 8062 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5555 physical lines
 - `tools/loop_twin_matrix.py` — 4115 physical lines
@@ -104,7 +104,6 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `runtime/cq_intrinsic_templates.h` — 427 physical lines
 - `ir-pass/include/WireWalk.h` — 424 physical lines
 - `ir-pass/tools/scrub_selftest.cpp` — 423 physical lines
-- `ir-pass/src/CallContract.cpp` — 421 physical lines
 - `tests/e2e/slice_libm_real_powf.c` — 418 physical lines
 - `tools/install_cq.py` — 402 physical lines
 
@@ -236,69 +235,69 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArithLowering.cpp:983` — `lateReassignShape`
 - `ir-pass/src/ArithLowering.cpp:1023` — `lowerLateReassignments`
 
-### `ir-pass/src/ArmClassify.cpp` (9975 lines)
+### `ir-pass/src/ArmClassify.cpp` (9974 lines)
 
-- `ir-pass/src/ArmClassify.cpp:81` — `isCallToPrefix`
-- `ir-pass/src/ArmClassify.cpp:108` — `isPhiCall`
-- `ir-pass/src/ArmClassify.cpp:109` — `isThetaCall`
-- `ir-pass/src/ArmClassify.cpp:132` — `constantAngleIsNonFinite`
-- `ir-pass/src/ArmClassify.cpp:160` — `walkPhaseSpine`
-- `ir-pass/src/ArmClassify.cpp:192` — `armBlockIsPureSpine`
-- `ir-pass/src/ArmClassify.cpp:226` — `isValueChangingOp`
-- `ir-pass/src/ArmClassify.cpp:281` — `condProvenance`
-- `ir-pass/src/ArmClassify.cpp:326` — `diagonalAliasHit`
-- `ir-pass/src/ArmClassify.cpp:464` — `forwardRailHop`
-- `ir-pass/src/ArmClassify.cpp:535` — `railWireClosure`
-- `ir-pass/src/ArmClassify.cpp:644` — `cannotFollowGate`
-- `ir-pass/src/ArmClassify.cpp:753` — `recordLivePerActivation`
-- `ir-pass/src/ArmClassify.cpp:783` — `rotationAngleIsTainted`
-- `ir-pass/src/ArmClassify.cpp:809` — `inPlaceRotationArmTheta`
-- `ir-pass/src/ArmClassify.cpp:984` — `f2Exact`
-- `ir-pass/src/ArmClassify.cpp:999` — `f2Range`
-- `ir-pass/src/ArmClassify.cpp:1014` — `f2Refine`
-- `ir-pass/src/ArmClassify.cpp:1059` — `f2Note`
-- `ir-pass/src/ArmClassify.cpp:1090` — `foldCuratedTrigF64`
-- `ir-pass/src/ArmClassify.cpp:1118` — `f2NoteConst`
-- `ir-pass/src/ArmClassify.cpp:1132` — `f2Model`
-- `ir-pass/src/ArmClassify.cpp:1892` — `availableAtAnF2Slot`
-- `ir-pass/src/ArmClassify.cpp:1903` — `collectStatePrepPhiDescendants`
-- `ir-pass/src/ArmClassify.cpp:2030` — `fcmpEqualityHoldsOnEdge`
-- `ir-pass/src/ArmClassify.cpp:2151` — `f2SeedPinnedByLiveRegister`
-- `ir-pass/src/ArmClassify.cpp:2539` — `walkValueChain`
-- `ir-pass/src/ArmClassify.cpp:2703` — `valueArmIsPureChain`
-- `ir-pass/src/ArmClassify.cpp:2786` — `declAnchor`
-- `ir-pass/src/ArmClassify.cpp:2815` — `taintedAngleGate`
-- `ir-pass/src/ArmClassify.cpp:2881` — `wireGainsNonDiagonalGate`
-- `ir-pass/src/ArmClassify.cpp:3191` — `anyInstructionInGap`
-- `ir-pass/src/ArmClassify.cpp:3241` — `isChainedThetaCall`
-- `ir-pass/src/ArmClassify.cpp:3250` — `chainedThetaBetweenDefAndBranch`
-- `ir-pass/src/ArmClassify.cpp:3324` — `condRailMembers`
-- `ir-pass/src/ArmClassify.cpp:3372` — `railRelabellingGateOn`
-- `ir-pass/src/ArmClassify.cpp:3445` — `crossBlockCompareMintable`
-- `ir-pass/src/ArmClassify.cpp:3461` — `condWireDisposition`
-- `ir-pass/src/ArmClassify.cpp:3590` — `railCondWireDisposition`
-- `ir-pass/src/ArmClassify.cpp:3655` — `railWireNamesBackward`
-- `ir-pass/src/ArmClassify.cpp:3736` — `railMeasuredBeforeReadPoint`
-- `ir-pass/src/ArmClassify.cpp:3837` — `condCmpOperandSeeds`
-- `ir-pass/src/ArmClassify.cpp:3897` — `condCmpMeasuredBeforeReadPoint`
-- `ir-pass/src/ArmClassify.cpp:3916` — `markRailCondRead`
-- `ir-pass/src/ArmClassify.cpp:4037` — `declineRound2TaintedArmCone`
-- `ir-pass/src/ArmClassify.cpp:4091` — `isRuntimeStatePrepSeed`
-- `ir-pass/src/ArmClassify.cpp:4125` — `declineRound2QuantumPrepSeeds`
-- `ir-pass/src/ArmClassify.cpp:4141` — `reverifyRailCondReads`
-- `ir-pass/src/ArmClassify.cpp:4278` — `reverifyCmpCondReads`
-- `ir-pass/src/ArmClassify.cpp:4511` — `markCmpCondRead`
-- `ir-pass/src/ArmClassify.cpp:4568` — `comparePredLowerable`
-- `ir-pass/src/ArmClassify.cpp:4613` — `condDataUseDisposition`
-- `ir-pass/src/ArmClassify.cpp:4742` — `straightThroughConstFoldHandle`
-- `ir-pass/src/ArmClassify.cpp:4909` — `iterationLocalRollable`
-- `ir-pass/src/ArmClassify.cpp:4969` — `classifyArms`
-- `ir-pass/src/ArmClassify.cpp:7055` — `phaseAngleTail`
-- `ir-pass/src/ArmClassify.cpp:7164` — `classifyPhaseKickback`
-- `ir-pass/src/ArmClassify.cpp:8160` — `classifyPhaseKickbackNest`
-- `ir-pass/src/ArmClassify.cpp:8485` — `classifyClassicalCallArm`
-- `ir-pass/src/ArmClassify.cpp:9033` — `angleSelectArmsAdmissible`
-- `ir-pass/src/ArmClassify.cpp:9254` — `classifyAngleSelect`
+- `ir-pass/src/ArmClassify.cpp:82` — `isCallToPrefix`
+- `ir-pass/src/ArmClassify.cpp:109` — `isPhiCall`
+- `ir-pass/src/ArmClassify.cpp:110` — `isThetaCall`
+- `ir-pass/src/ArmClassify.cpp:133` — `constantAngleIsNonFinite`
+- `ir-pass/src/ArmClassify.cpp:161` — `walkPhaseSpine`
+- `ir-pass/src/ArmClassify.cpp:193` — `armBlockIsPureSpine`
+- `ir-pass/src/ArmClassify.cpp:227` — `isValueChangingOp`
+- `ir-pass/src/ArmClassify.cpp:282` — `condProvenance`
+- `ir-pass/src/ArmClassify.cpp:327` — `diagonalAliasHit`
+- `ir-pass/src/ArmClassify.cpp:465` — `forwardRailHop`
+- `ir-pass/src/ArmClassify.cpp:536` — `railWireClosure`
+- `ir-pass/src/ArmClassify.cpp:645` — `cannotFollowGate`
+- `ir-pass/src/ArmClassify.cpp:754` — `recordLivePerActivation`
+- `ir-pass/src/ArmClassify.cpp:784` — `rotationAngleIsTainted`
+- `ir-pass/src/ArmClassify.cpp:810` — `inPlaceRotationArmTheta`
+- `ir-pass/src/ArmClassify.cpp:985` — `f2Exact`
+- `ir-pass/src/ArmClassify.cpp:1000` — `f2Range`
+- `ir-pass/src/ArmClassify.cpp:1015` — `f2Refine`
+- `ir-pass/src/ArmClassify.cpp:1060` — `f2Note`
+- `ir-pass/src/ArmClassify.cpp:1091` — `foldCuratedTrigF64`
+- `ir-pass/src/ArmClassify.cpp:1119` — `f2NoteConst`
+- `ir-pass/src/ArmClassify.cpp:1133` — `f2Model`
+- `ir-pass/src/ArmClassify.cpp:1893` — `availableAtAnF2Slot`
+- `ir-pass/src/ArmClassify.cpp:1904` — `collectStatePrepPhiDescendants`
+- `ir-pass/src/ArmClassify.cpp:2031` — `fcmpEqualityHoldsOnEdge`
+- `ir-pass/src/ArmClassify.cpp:2152` — `f2SeedPinnedByLiveRegister`
+- `ir-pass/src/ArmClassify.cpp:2540` — `walkValueChain`
+- `ir-pass/src/ArmClassify.cpp:2704` — `valueArmIsPureChain`
+- `ir-pass/src/ArmClassify.cpp:2787` — `declAnchor`
+- `ir-pass/src/ArmClassify.cpp:2816` — `taintedAngleGate`
+- `ir-pass/src/ArmClassify.cpp:2882` — `wireGainsNonDiagonalGate`
+- `ir-pass/src/ArmClassify.cpp:3192` — `anyInstructionInGap`
+- `ir-pass/src/ArmClassify.cpp:3242` — `isChainedThetaCall`
+- `ir-pass/src/ArmClassify.cpp:3251` — `chainedThetaBetweenDefAndBranch`
+- `ir-pass/src/ArmClassify.cpp:3325` — `condRailMembers`
+- `ir-pass/src/ArmClassify.cpp:3373` — `railRelabellingGateOn`
+- `ir-pass/src/ArmClassify.cpp:3446` — `crossBlockCompareMintable`
+- `ir-pass/src/ArmClassify.cpp:3462` — `condWireDisposition`
+- `ir-pass/src/ArmClassify.cpp:3591` — `railCondWireDisposition`
+- `ir-pass/src/ArmClassify.cpp:3656` — `railWireNamesBackward`
+- `ir-pass/src/ArmClassify.cpp:3737` — `railMeasuredBeforeReadPoint`
+- `ir-pass/src/ArmClassify.cpp:3838` — `condCmpOperandSeeds`
+- `ir-pass/src/ArmClassify.cpp:3898` — `condCmpMeasuredBeforeReadPoint`
+- `ir-pass/src/ArmClassify.cpp:3917` — `markRailCondRead`
+- `ir-pass/src/ArmClassify.cpp:4038` — `declineRound2TaintedArmCone`
+- `ir-pass/src/ArmClassify.cpp:4092` — `isRuntimeStatePrepSeed`
+- `ir-pass/src/ArmClassify.cpp:4126` — `declineRound2QuantumPrepSeeds`
+- `ir-pass/src/ArmClassify.cpp:4142` — `reverifyRailCondReads`
+- `ir-pass/src/ArmClassify.cpp:4279` — `reverifyCmpCondReads`
+- `ir-pass/src/ArmClassify.cpp:4512` — `markCmpCondRead`
+- `ir-pass/src/ArmClassify.cpp:4569` — `comparePredLowerable`
+- `ir-pass/src/ArmClassify.cpp:4614` — `condDataUseDisposition`
+- `ir-pass/src/ArmClassify.cpp:4743` — `straightThroughConstFoldHandle`
+- `ir-pass/src/ArmClassify.cpp:4910` — `iterationLocalRollable`
+- `ir-pass/src/ArmClassify.cpp:4970` — `classifyArms`
+- `ir-pass/src/ArmClassify.cpp:7056` — `phaseAngleTail`
+- `ir-pass/src/ArmClassify.cpp:7165` — `classifyPhaseKickback`
+- `ir-pass/src/ArmClassify.cpp:8161` — `classifyPhaseKickbackNest`
+- `ir-pass/src/ArmClassify.cpp:8486` — `classifyClassicalCallArm`
+- `ir-pass/src/ArmClassify.cpp:9032` — `angleSelectArmsAdmissible`
+- `ir-pass/src/ArmClassify.cpp:9253` — `classifyAngleSelect`
 
 ### `ir-pass/src/ArmHomogeneity.cpp` (217 lines)
 
@@ -370,27 +369,24 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/CQLoweringPass.cpp:122` — `CQLoweringPass::run`
 - `ir-pass/src/CQLoweringPass.cpp:1061` — `CQLoweringPass::runOnFunction`
 
-### `ir-pass/src/CallContract.cpp` (421 lines)
+### `ir-pass/src/CallContract.cpp` (307 lines)
 
-- `ir-pass/src/CallContract.cpp:33` — `speculationScalar`
-- `ir-pass/src/CallContract.cpp:38` — `inertAttrs`
-- `ir-pass/src/CallContract.cpp:59` — `returnsParam`
-- `ir-pass/src/CallContract.cpp:72` — `paramAttrsHold`
-- `ir-pass/src/CallContract.cpp:93` — `argAttrsAreInert`
-- `ir-pass/src/CallContract.cpp:101` — `rangeProven`
-- `ir-pass/src/CallContract.cpp:119` — `returnAttrsHold`
-- `ir-pass/src/CallContract.cpp:140` — `basicCallContractHolds`
-- `ir-pass/src/CallContract.cpp:149` — `paramContractIsInert`
-- `ir-pass/src/CallContract.cpp:157` — `intrinsicResultRange`
-- `ir-pass/src/CallContract.cpp:189` — `callSiteReturnHolds`
-- `ir-pass/src/CallContract.cpp:228` — `poisonFlow`
-- `ir-pass/src/CallContract.cpp:336` — `hoistUBWithPoisonArgs`
-- `ir-pass/src/CallContract.cpp:350` — `callContractIsInert`
-- `ir-pass/src/CallContract.cpp:360` — `intrinsicContractHolds`
-- `ir-pass/src/CallContract.cpp:384` — `callExecutionIsDefined`
-- `ir-pass/src/CallContract.cpp:392` — `hoistedArgPoisonIsUB`
-- `ir-pass/src/CallContract.cpp:402` — `freezeDischargesHoistedArg`
-- `ir-pass/src/CallContract.cpp:406` — `hoistedCallTreeIsUBFree`
+- `ir-pass/src/CallContract.cpp:31` — `speculationScalar`
+- `ir-pass/src/CallContract.cpp:35` — `inertAttrs`
+- `ir-pass/src/CallContract.cpp:57` — `returnsParam`
+- `ir-pass/src/CallContract.cpp:70` — `paramAttrsHold`
+- `ir-pass/src/CallContract.cpp:97` — `coneFlagsProven`
+- `ir-pass/src/CallContract.cpp:124` — `composedRange`
+- `ir-pass/src/CallContract.cpp:171` — `rangeProven`
+- `ir-pass/src/CallContract.cpp:182` — `argAttrsAreInert`
+- `ir-pass/src/CallContract.cpp:189` — `returnAttrsHold`
+- `ir-pass/src/CallContract.cpp:210` — `basicCallContractHolds`
+- `ir-pass/src/CallContract.cpp:215` — `paramContractIsInert`
+- `ir-pass/src/CallContract.cpp:224` — `intrinsicResultRange`
+- `ir-pass/src/CallContract.cpp:257` — `callSiteReturnHolds`
+- `ir-pass/src/CallContract.cpp:275` — `callContractIsInert`
+- `ir-pass/src/CallContract.cpp:289` — `intrinsicContractHolds`
+- `ir-pass/src/CallContract.cpp:299` — `callExecutionIsDefined`
 
 ### `ir-pass/src/CastLowering.cpp` (135 lines)
 
@@ -420,11 +416,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ChainWalk.cpp:1132` — `formalLabelPreserved`
 - `ir-pass/src/ChainWalk.cpp:1197` — `cloneCallPreservesArg`
 
-### `ir-pass/src/ClassicalCallArmEmit.cpp` (282 lines)
+### `ir-pass/src/ClassicalCallArmEmit.cpp` (318 lines)
 
-- `ir-pass/src/ClassicalCallArmEmit.cpp:61` — `scrubTaint`
-- `ir-pass/src/ClassicalCallArmEmit.cpp:74` — `bailLoud`
-- `ir-pass/src/ClassicalCallArmEmit.cpp:83` — `emitClassicalCallArmRegion`
+- `ir-pass/src/ClassicalCallArmEmit.cpp:66` — `scrubTaint`
+- `ir-pass/src/ClassicalCallArmEmit.cpp:79` — `bailLoud`
+- `ir-pass/src/ClassicalCallArmEmit.cpp:88` — `emitClassicalCallArmRegion`
 
 ### `ir-pass/src/CloneRailSelect.cpp` (94 lines)
 
@@ -533,6 +529,19 @@ The entries below are an inventory for decomposition work. Generated files and t
 ### `ir-pass/src/EqFoldArm.cpp` (152 lines)
 
 - `ir-pass/src/EqFoldArm.cpp:27` — `tryEqFoldArm`
+
+### `ir-pass/src/FlagProof.cpp` (179 lines)
+
+- `ir-pass/src/FlagProof.cpp:27` — `flagFreeQuery`
+- `ir-pass/src/FlagProof.cpp:34` — `operandBits`
+- `ir-pass/src/FlagProof.cpp:38` — `signBits`
+- `ir-pass/src/FlagProof.cpp:46` — `maxShift`
+- `ir-pass/src/FlagProof.cpp:54` — `neverOverflows`
+- `ir-pass/src/FlagProof.cpp:60` — `wrapProven`
+- `ir-pass/src/FlagProof.cpp:95` — `exactProven`
+- `ir-pass/src/FlagProof.cpp:105` — `intrinsicSemanticsCanPoison`
+- `ir-pass/src/FlagProof.cpp:120` — `poisonFlagsProven`
+- `ir-pass/src/FlagProof.cpp:150` — `createsPoison`
 
 ### `ir-pass/src/Fp80Union.cpp` (1442 lines)
 
@@ -807,6 +816,21 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/PoisonFacts.cpp:88` — `evalNode`
 - `ir-pass/src/PoisonFacts.cpp:289` — `unconditionalMax`
 - `ir-pass/src/PoisonFacts.cpp:330` — `indexBoundIsPoisonConditional`
+
+### `ir-pass/src/PoisonFlow.cpp` (400 lines)
+
+- `ir-pass/src/PoisonFlow.cpp:91` — `cfgCyclic`
+- `ir-pass/src/PoisonFlow.cpp:100` — `freezable`
+- `ir-pass/src/PoisonFlow.cpp:109` — `ask`
+- `ir-pass/src/PoisonFlow.cpp:137` — `walkBody`
+- `ir-pass/src/PoisonFlow.cpp:280` — `solve`
+- `ir-pass/src/PoisonFlow.cpp:310` — `hoistUBWithPoisonArgs`
+- `ir-pass/src/PoisonFlow.cpp:325` — `hoistedArgPoisonIsUB`
+- `ir-pass/src/PoisonFlow.cpp:335` — `freezeDischargesHoistedArg`
+- `ir-pass/src/PoisonFlow.cpp:339` — `hoistedCallTreeIsUBFree`
+- `ir-pass/src/PoisonFlow.cpp:355` — `classicalCallHoistRoute`
+- `ir-pass/src/PoisonFlow.cpp:382` — `TwinPlanner::edits`
+- `ir-pass/src/PoisonFlow.cpp:395` — `TwinPlanner::forget`
 
 ### `ir-pass/src/PredMuxFlatten.cpp` (5555 lines)
 
@@ -1121,17 +1145,31 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `ir-pass/src/SpecializeSeed.cpp:16` — `seedClone`
 
-### `ir-pass/src/SpeculationSafety.cpp` (232 lines)
+### `ir-pass/src/SpeculationSafety.cpp` (238 lines)
 
 - `ir-pass/src/SpeculationSafety.cpp:38` — `totalCall`
-- `ir-pass/src/SpeculationSafety.cpp:81` — `definedWithoutContext`
-- `ir-pass/src/SpeculationSafety.cpp:116` — `needsStableUse`
-- `ir-pass/src/SpeculationSafety.cpp:129` — `stabilize`
-- `ir-pass/src/SpeculationSafety.cpp:153` — `stableConstant`
-- `ir-pass/src/SpeculationSafety.cpp:165` — `classicalCallCanBeSpeculated`
-- `ir-pass/src/SpeculationSafety.cpp:169` — `refreshSpeculationTaint`
-- `ir-pass/src/SpeculationSafety.cpp:181` — `markSpeculatedValue`
-- `ir-pass/src/SpeculationSafety.cpp:204` — `stabilizeSpeculatedValues`
+- `ir-pass/src/SpeculationSafety.cpp:87` — `definedWithoutContext`
+- `ir-pass/src/SpeculationSafety.cpp:122` — `needsStableUse`
+- `ir-pass/src/SpeculationSafety.cpp:135` — `stabilize`
+- `ir-pass/src/SpeculationSafety.cpp:159` — `stableConstant`
+- `ir-pass/src/SpeculationSafety.cpp:171` — `classicalCallCanBeSpeculated`
+- `ir-pass/src/SpeculationSafety.cpp:175` — `refreshSpeculationTaint`
+- `ir-pass/src/SpeculationSafety.cpp:187` — `markSpeculatedValue`
+- `ir-pass/src/SpeculationSafety.cpp:210` — `stabilizeSpeculatedValues`
+
+### `ir-pass/src/SpeculationTwin.cpp` (237 lines)
+
+- `ir-pass/src/SpeculationTwin.cpp:44` — `twinName`
+- `ir-pass/src/SpeculationTwin.cpp:48` — `isTwinOf`
+- `ir-pass/src/SpeculationTwin.cpp:56` — `findTwin`
+- `ir-pass/src/SpeculationTwin.cpp:70` — `keepInertReturn`
+- `ir-pass/src/SpeculationTwin.cpp:83` — `callSpeculationTwin`
+- `ir-pass/src/SpeculationTwin.cpp:93` — `applyEdits`
+- `ir-pass/src/SpeculationTwin.cpp:108` — `noEdits`
+- `ir-pass/src/SpeculationTwin.cpp:112` — `editCount`
+- `ir-pass/src/SpeculationTwin.cpp:122` — `editSites`
+- `ir-pass/src/SpeculationTwin.cpp:132` — `cloneTwin`
+- `ir-pass/src/SpeculationTwin.cpp:174` — `getOrCreateSpeculationTwin`
 
 ### `ir-pass/src/StageList.cpp` (328 lines)
 

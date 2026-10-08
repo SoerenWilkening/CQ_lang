@@ -88,8 +88,12 @@ add_library(CQPass MODULE
   src/Plugin.cpp
   src/PredMuxFlatten.cpp
   src/SpeculationSafety.cpp
-  # bd bwfp: call contracts + the 6.5 poison dataflow (split from SpeculationSafety).
+  # bd bwfp: call contracts (split from SpeculationSafety).
   src/CallContract.cpp
+  # bd dm7f.21: flag proofs, the poison dataflow and the speculation-safe twin.
+  src/FlagProof.cpp
+  src/PoisonFlow.cpp
+  src/SpeculationTwin.cpp
   # bd 3c6m.82: a failure inside a lifted body notes the user's call site.
   src/LiftDiagnostics.cpp
   # bd r2j3.20 (etj3): zeroext/signext on narrow runtime parameters.

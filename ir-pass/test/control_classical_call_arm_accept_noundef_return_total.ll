@@ -1,5 +1,6 @@
 ; control_classical_call_arm_accept_noundef_return_total.ll — ACCEPT (bd test_C_libtooling-bwfp).
-; The positive twin of control_classical_call_arm_reject_noundef_return_poison.ll.
+; The positive twin of control_classical_call_arm_twin_accept_noundef_return_poison.ll
+; (a bwfp decline until dm7f.21 hoisted a speculation-safe twin there).
 ; `@pf`'s return is `noundef`, and its body creates no poison, so a defined argument
 ; gives a defined result. The argument `%a` is `add nsw` (poison on overflow) and
 ; `@pf`'s parameter is NOT `noundef`, but its poison would flow through the body to the

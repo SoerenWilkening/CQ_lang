@@ -1,5 +1,5 @@
 // SpeculationSafety.cpp — dm7f.16.1 / p3kd.7.7. The call contracts and the
-// 6.5 poison dataflow live in CallContract.cpp (bd bwfp).
+// 6.5 poison dataflow live in CallContract.cpp / PoisonFlow.cpp (bd bwfp, dm7f.21).
 // BennettVM's taken edges establish SSA semantics, not speculative totality.
 // The fixed CQ script must be total on untaken arms, and every literal must
 // have one SSA identity shared by the forward gates and their adjoints.
@@ -8,8 +8,8 @@
 #include "CallContract.h"
 
 #include "ArmClassify.h"
+#include "FlagProof.h"  // createsPoison (bd dm7f.20)
 #include "LiteralIntegrity.h"
-#include "PoisonFacts.h"
 #include "PredMuxFlatten.h"
 #include "TaintPropagation.h"
 
@@ -56,19 +56,25 @@ bool totalCall(const CallInst *Root) {
             return false;
       if (I.isTerminator())
         continue;
+      // bd dm7f.20: poison is asked of the owner the 6.5 dataflow asks
+      // (`createsPoison`: flags off, each flag proven from its OPERANDS, a
+      // ctlz/cttz/abs poison immarg from a non-zero / non-INT_MIN operand, LLVM's
+      // "no poison" for a `noundef` call never trusted). The strict walk refused
+      // every CFG cycle in this tree, so the operand proofs are admissible; every
+      // `range`/`returned` they read is proven above or by the call contracts.
       if (const auto *C = dyn_cast<CallInst>(&I)) {
         if (!basicCallContractHolds(C))
           return false;
         if (C->getCalledFunction()->isIntrinsic()) {
-          if (!intrinsicContractHolds(C) || curatedIntrinsicCanBePoison(C) ||
-              canCreateUndefOrPoison(cast<Operator>(C)))
+          if (!intrinsicContractHolds(C) ||
+              createsPoison(*C, /*AllowProofs=*/true))
             return false;
         } else {
           if (!callContractIsInert(C))
             return false;
           Work.push_back(C->getCalledFunction());
         }
-      } else if (canCreateUndefOrPoison(cast<Operator>(&I))) {
+      } else if (createsPoison(I, /*AllowProofs=*/true)) {
         return false;
       }
     }

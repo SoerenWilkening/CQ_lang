@@ -36,7 +36,8 @@
 #include "LoopPlan.h"          // railPhiRootMint (Inc 3 R7-loop clause (b'))
 #include "OpcodeSupport.h"
 #include "PredMuxFlatten.h"
-#include "SpeculationSafety.h"  // hoistedCallTreeIsUBFree / hoistedArgPoisonIsUB (bd bwfp)
+#include "PoisonFlow.h"  // classicalCallHoistRoute (bd dm7f.21)
+#include "SpeculationSafety.h"  // hoistedArgPoisonIsUB (bd bwfp)
 #include "RailBankPromote.h"  // isRailBankSeedAlloc
 #include "RotationLowering.h"  // suffixFromName (2b angle-select S5)
 #include "SelectClassify.h"    // CondTree (2b angle-select S4)
@@ -8666,10 +8667,10 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
   // source did take is the value the source itself computed. That asymmetry is
   // pinned deliberately by control_classical_call_arm_accept_poisonselect_callee.ll,
   // which KEEPS a poison-producing `shl` in the callee and still lowers. ⚠ It
-  // holds only while no `noundef` SINK sits in the call tree (bd bwfp): a
-  // `noundef` return turns the poison result into UB at the callee's own `ret`
-  // (control_classical_call_arm_reject_noundef_return_poison.ll), so the hoist
-  // asks whether poison reaches such a sink (`hoistedCallTreeIsUBFree`, below).
+  // holds only while no `noundef` SINK sees poison (bd bwfp): a `noundef` return
+  // turns it into UB at the callee's own `ret`, so such a callee is hoisted as a
+  // twin with that `ret` frozen (bd dm7f.21, `classicalCallHoistRoute` below;
+  // control_classical_call_arm_twin_accept_noundef_return_poison.ll).
   //
   // COST, MEASURED, AND STATED IN FULL — an earlier draft said only "what narrows
   // is the OPAQUE-DECLARATION shape", which is false. Six shapes accepted before
@@ -8702,14 +8703,12 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
   }
   // bd bwfp — the two proofs above are about the CALLEE BODY's memory, control
   // and division. They do not see a mismatched calling convention (UB at the
-  // call), nor POISON reaching a `noundef` sink in the call tree (the callee's
-  // `noundef` return, an inner call's `noundef` parameter): the paragraph below
-  // ("the RESULT's definedness is a different question") holds only without such
-  // a sink. Measured on e0af16ed: a `noundef`-return callee with a variable `shl`
-  // was hoisted out of a zero-amplitude guard, executing `ret noundef poison`.
-  // The question is owned by SpeculationSafety (PredMux's nested hoist asks the
-  // same call-site contract).
-  if (!hoistedCallTreeIsUBFree(Call)) {
+  // call), nor POISON reaching a `noundef` sink in the call tree (measured on
+  // e0af16ed: `ret noundef poison` hoisted out of a zero-amplitude guard). bd
+  // dm7f.21 (owner ruling 2026-10-08): a sink a `freeze` discharges no longer
+  // declines; the emitter hoists the callee's speculation-safe twin instead.
+  // `classicalCallHoistRoute` (PoisonFlow.h) owns the question; the emitter asks it.
+  if (classicalCallHoistRoute(Call) == HoistRoute::Unsafe) {
     diagnoseUnderControl(Call, "control flow");
     return ClassicalCallDisp::Declined;
   }

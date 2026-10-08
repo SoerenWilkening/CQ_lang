@@ -2,7 +2,9 @@
 // 6.5 classical-call-under-quantum-control region (DD-7, PRD §2.13): a pure
 // classical call inside a tainted-condition diamond arm runs classically and its
 // i32 result routes into the controlled register via the 4.4 controlled-XOR copy
-// merge over a FLATTENED diamond. NO clone, NO cswap/route, NO reverse-play.
+// merge over a FLATTENED diamond. NO Bennett clone (a classical speculation-safe
+// twin of the callee may be hoisted instead, bd dm7f.21), NO cswap/route, NO
+// reverse-play.
 //
 // Correctness rests on analytic state reasoning, NOT on `opt -verify` (Rule 2),
 // and is the diamond twin of `SelectMergeEmit`'s argument: with `%out`
@@ -29,9 +31,11 @@
 #include "ControlPlan.h"        // ControlRegion / diagnoseUnderControl
 #include "ControlledSymbols.h"  // copyControlledFn / xFn
 #include "OpcodeSupport.h"      // abiWidthFromType
+#include "PoisonFlow.h"         // classicalCallHoistRoute (bd dm7f.21; claim+emit share it)
 #include "RegionFlatten.h"      // flattenRegion
 #include "SelectMergeEmit.h"    // materializeCopySource (shared, WI-5.1)
 #include "SpeculationSafety.h"  // hoistedArgPoisonIsUB (bd bwfp; claim+emit share it)
+#include "SpeculationTwin.h"    // getOrCreateSpeculationTwin (bd dm7f.21)
 #include "TaintPropagation.h"   // TaintSet
 #include "WidthDispatch.h"      // allocFn / freeFn / llvmWidthType
 
@@ -40,6 +44,7 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstrTypes.h"
@@ -173,6 +178,33 @@ void emitClassicalCallArmRegion(const ControlRegion &R, WidthDispatch &wd,
       NeedFreeze.push_back(Ai);
     }
 
+  // bd dm7f.21 — THE ROUTE, asked here as the claim asked it: before any mutation
+  // of this function (the call is still in the arm). A callee whose own `noundef`
+  // sinks may see poison is hoisted as its speculation-safe twin
+  // (SpeculationTwin.h), built now so a failure leaves this function untouched.
+  Function *Twin = nullptr;
+  switch (classicalCallHoistRoute(Call)) {
+  case HoistRoute::Unsafe:
+    return bailLoud(R);  // the classifier declined it; unreachable
+  case HoistRoute::Direct:
+    break;
+  case HoistRoute::Twin:
+    Twin = getOrCreateSpeculationTwin(*Call->getCalledFunction());
+    if (!Twin) {
+      // An internal invariant, never an ordinary decline: the claim routed only a
+      // strict-walk callee here, whose sinks are all freezable and whose edit
+      // sites are each edited once, so the builder cannot refuse it. No fixture
+      // reaches this (R11 round 3 F3); the distinct message names it if one does.
+      Call->getContext().diagnose(DiagnosticInfoUnsupported(
+          *Call->getFunction(),
+          "cq controlled lowering: internal invariant: speculation twin did not "
+          "converge",
+          Call->getDebugLoc()));
+      return;
+    }
+    break;
+  }
+
   Call->moveBefore(BI);
 
   // `freeze` each recorded argument, immediately before the now-unconditional call.
@@ -187,6 +219,10 @@ void emitClassicalCallArmRegion(const ControlRegion &R, WidthDispatch &wd,
       Fr->setDebugLoc(DL);
     Call->setArgOperand(Ai, Fr);
   }
+  // The root's arguments are frozen exactly as before (bd 9hea); the twin's own
+  // `ret`s are frozen inside it, so the hoisted result is defined.
+  if (Twin)
+    callSpeculationTwin(*Call, *Twin);
 
   IRBuilder<> B(BI);  // every emitted call lands before the conditional br.
   auto stamp = [&DL](CallInst *C) {
