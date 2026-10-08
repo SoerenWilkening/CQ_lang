@@ -36,9 +36,10 @@ namespace cq {
 
 class WidthDispatch;
 struct TaintSet;
+struct SpecPlan;
 
-// Straight-line stale-record guard (test_C_libtooling-uzb) — PURE ANALYSIS,
-// mutates no IR; must run BEFORE any lowering (Rule 9): it needs SSA-record
+// Straight-line stale-record guard (test_C_libtooling-uzb) — PURE ANALYSIS but
+// for one move (below); must run BEFORE any lowering (Rule 9): it needs SSA-record
 // identity (rotation lowering's RAUW collapses the pre-Ry and post-Ry values
 // onto one i32 handle) and the original schedule (the positions templates and
 // ry calls will be emitted at). For every instruction `lowerOps` would lower,
@@ -53,7 +54,48 @@ struct TaintSet;
 // (MINT_AT_COMPARE.md §4 residual exposure; oracle P2 fidelity cos^2(t2/2)).
 // Branch/select-condition compares are excluded — they are Phase 4's, and
 // ArmClassify's provenance-seeded wire walk owns their stale check.
-void declineStaleRecordOps(llvm::Module &M, TaintSet &taint);
+//
+// THE READER FAMILIES IT ASKS (one policy, one diagnostic, `checkStaleReads`): a
+// pure op's operands; a QRAM access's index and stored value (bd r2j3.2); and,
+// since bd test_C_libtooling-r2j3.6, a LIFTED (Phase-6) call's quantum arguments
+// (`liftedCallReads`: a `plan6` site, or a call to a built clone), which the clone
+// reads at the call. Before r2j3.6 nothing asked the third, and `q2 = q;
+// cq_theta(&q2, .3); r = f(q);` ran f on the rotated register at exit 0. A lifted
+// call OFF tainted control is asked with WireWalk's reader policy
+// (`RequireEmitDominance=false`, as bd 3d8q's readers are), so a gate in a
+// CFG-exclusive sibling arm does not stale it; under tainted control (EXACT control
+// dependence, `controlDependsOnTaintedBranch`, review round 2 R2-3) it keeps the
+// pure-op policy (bd r2j3.6 review round 1 F1; the argument is at the sweep).
+//
+// `PlaceLiftedReads` — OWNER RULING bd 57ch (A): a stale read that can be moved
+// before its staling gate must compile, placed there. When set (the EARLY slot in
+// both entry points, and only there), a stale lifted call is first moved to just
+// before its earliest staling gate, with the classical operand chain it needs, if
+// `staleReadInsertPoint` (StaleReadPlacement.h) proves the move legal; the stale
+// verdict is then taken where the call stands, so
+// one still stale there (a loop carrying the gate around) declines. This is the
+// one IR mutation of the stage.
+// `adjudicateTaintDelta` passes false: a round-2 slot runs on emitted IR, and only
+// re-asks the call where it stands (a moved one included).
+void declineStaleRecordOps(llvm::Module &M, TaintSet &taint,
+                           const SpecPlan &plan6, bool PlaceLiftedReads);
+
+// bd r2j3.6 review round 2 R2-2 — THE L1 RE-ASK of the lifted-call policy choice.
+// The early sweep picks the reader policy for a lifted call whose block is not
+// control-dependent on a tainted branch; round 2 (`repropagateControlMerges`) can
+// taint that branch (a 6.5 `%out`, a 7.4 break-escape register) and its detection
+// then emits the region. This asks every lifted call that is under tainted control
+// NOW the pure-op question and declines a stale one. "Lifted" is a `plan6` site,
+// a built clone's call, or (review round 3 R3-2) a call detection WOULD admit on
+// current taint (`isProvenSpecSite`): a bd 9paa round-2 candidate reaches `plan6`
+// only in `adjudicateTaintDelta`, AFTER round-2 detection. Called immediately before
+// EVERY `detectControlRegions`: round 1 (`runControlChain`, StageList.cpp — the
+// early sweep's taint can have grown by the peel there, and `adjudicateTaintDelta`
+// returns early when nothing was peeled) and each iteration of round 2
+// (`detectAndLowerOnwardControl`). `runControlChain` serves both entry points and
+// the clone pipeline.
+void declineTaintedArmLiftedReads(llvm::Module &M, WidthDispatch &wd,
+                                  TaintSet &taint, const SpecPlan &plan6);
 
 // (bd test_C_libtooling-3d8q, P1) THE STALE-READER BACKSTOP, in two halves.
 //

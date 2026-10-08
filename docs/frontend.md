@@ -336,6 +336,39 @@ with a warning. Until that lowering exists the refusal below is a compiler gap
 (R1), and the old justification, that the read would need a copy of an unknown
 quantum state, is superseded.
 
+The first slice of that placement exists (bd `r2j3.6`): a **lifted call** (a
+plain function the compiler specializes, §6, including a `math.h` call `cqc`
+binds to injected source) that reads a stale name is moved to just before the
+gate when it is in the gate's block, its other operands exist there or are
+classical values it can carry along, it returns normally, nothing between
+conflicts with it in memory, and it is then fresh. `int q2 = q;
+cq_theta(&q2, .3); int r = f(q);` compiles to the circuit of `int r = f(q);
+int q2 = q; cq_theta(&q2, .3);`. A lifted call that cannot be moved that way
+(`f(q, k)` with `k` measured after the gate, a call in a later block, a read
+across a loop's back edge) is refused with the pure-op string below. So is one
+whose move would cross, in either direction, a volatile access, a fence, an atomic
+access of any ordering on an object that may be visible outside its function (a
+global, a pointer argument, a local whose address escapes), or a call that may
+perform one: a call that may not return (`printf`, `puts`), an external function
+LLVM does not know to touch no memory, an indirect call, inline asm, a volatile
+`memcpy`, or a visible function whose body (or a function it calls) does one of
+those things. A visible helper that only reads and writes ordinary memory, an
+atomic on a local whose address never escapes, a non-volatile `memcpy`, a stack
+array's lifetime markers and a call LLVM proves touches no memory are crossed, at
+any call depth. Owner ruling 2026-10-08, clarified the same day: gate emission is
+ordered against observable volatile, atomic and fence events (bd memory
+`owner-ruling-gates-ordered-vs-volatile-atomic-2026-10-08`).
+Pure ops, QRAM accesses, rotation and measurement readers are still refused.
+
+**What the compiler sees is the `-O1` schedule, not the source order.** Writing the
+read first does not guarantee it compiles: `int r = f(q); int q2 = q;
+cq_theta(&q2, .3); if (c) use(r);` reaches the pass with the side-effect-free
+call sunk into the `if` arm, after the gate, which is the module the program that
+writes the call in the arm produces. That read is refused today (it sits in a later
+block and does not run on every path through the gate); whether it should be placed
+before the gate on both paths or kept as a snapshot on one is an open owner
+question (bd `r2j3.6` follow-up F7).
+
 ```c
 int q = seed; cq_theta(&q, 0.3);
 int mark = q;              /* a C copy, but in IR the same wire as q */
@@ -362,7 +395,7 @@ diagnostic, because different stages are the first to see the violation:
 |---|---|---|
 | the stale-record fence for an in-place rotation arm under quantum control | `ArmClassify.cpp` | `stale rail record read past a controlled Ry` |
 | a rail record read at a position where the register no longer holds it, inside a classically-bounded loop | `LoopLowering.cpp` | `cq loop lowering: rail record read past an in-place gate on the same rail` |
-| the pass-wide guard: a tainted pure op, or a QRAM access's index register or stored value (`tbl[mark]`, `arr[i] = mark`), scheduled past a non-diagonal wire gate | `OpcodeLowering.cpp` | `cq opcode lowering: operand predates a non-diagonal gate` |
+| the pass-wide guard: a tainted pure op, a QRAM access's index register or stored value (`tbl[mark]`, `arr[i] = mark`), or a lifted call's quantum argument (`f(mark)`, when it cannot be placed before the gate) scheduled past a non-diagonal wire gate | `OpcodeLowering.cpp` | `cq opcode lowering: operand predates a non-diagonal gate` |
 | the same guard for a `cq_theta` operand or a `cq_measure` operand | `OpcodeLowering.cpp` | `cq opcode lowering: rotation/measure operand predates a non-diagonal gate` |
 
 A program that trips any of them is asking for a value the hardware no longer

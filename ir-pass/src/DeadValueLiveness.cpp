@@ -32,8 +32,6 @@ using namespace llvm;
 
 namespace cq {
 
-namespace {
-
 bool isFrontEndIntrinsicSite(const CallBase &CB, const TaintSet &taint) {
   const auto *CI = dyn_cast<CallInst>(&CB);
   if (!CI)
@@ -41,6 +39,8 @@ bool isFrontEndIntrinsicSite(const CallBase &CB, const TaintSet &taint) {
   return taint.ThetaCalls.contains(CI) || taint.PhiCalls.contains(CI) ||
          taint.PhaseCalls.contains(CI) || taint.MeasureCalls.contains(CI);
 }
+
+namespace {
 
 // An "empty arm": nothing but its unconditional branch (debug intrinsics aside).
 bool isEmptyUncondArm(const BasicBlock &B) {

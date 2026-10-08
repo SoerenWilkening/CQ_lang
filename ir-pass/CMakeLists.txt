@@ -96,6 +96,10 @@ add_library(CQPass MODULE
   src/SpeculationTwin.cpp
   # bd 3c6m.82: a failure inside a lifted body notes the user's call site.
   src/LiftDiagnostics.cpp
+  # bd r2j3.6: the lifted-call stale reader + the 57ch (A) placement legality.
+  src/LiftedCallReads.cpp
+  src/StaleReadPlacement.cpp
+  src/TaintedControlDependence.cpp
   # bd r2j3.20 (etj3): zeroext/signext on narrow runtime parameters.
   src/RuntimeNarrowABI.cpp
   src/QramIndexWidth.cpp

@@ -36,6 +36,7 @@
 #include "RailBankPromote.h"  // isRailBankAlloca/railBankOfPointer (bd zujr, L3)
 #include "SelectMergeEmit.h"   // materializeCopySource (bd zujr, the promotion)
 #include "QramLowering.h"  // instUnderTaintedControl (bd wt8u, the hand-off)
+#include "TaintedControlDependence.h"  // isTaintedBranchTerminator (bd r2j3.6)
 #include "AbortParkEmit.h"  // isAbortParkCondition (bd dm7f.7)
 
 #include "llvm/IR/IRBuilder.h"
@@ -1985,15 +1986,10 @@ std::optional<FusedExit> decomposeFusedExit(Value *C) {
   return std::nullopt;
 }
 
-// The exiting block's terminator condition is tainted (a `br`/`switch` on a
-// q-derived value). The unit of the multi-site count (B1) and of `taintedExit`.
-bool isTaintedExitingTerminator(const Instruction *T, const TaintSet &taint) {
-  if (const auto *BI = dyn_cast<BranchInst>(T))
-    return BI->isConditional() && taint.Tainted.count(BI->getCondition());
-  if (const auto *SI = dyn_cast<SwitchInst>(T))
-    return taint.Tainted.count(SI->getCondition());
-  return false;
-}
+// An exiting block's terminator condition is tainted (a `br`/`switch` on a
+// q-derived value) — the unit of the multi-site count (B1) and of `taintedExit` —
+// is asked with `isTaintedBranchTerminator` (TaintedControlDependence.h), which
+// replaced the identical `isTaintedExitingTerminator` here (bd r2j3.6 R4-2).
 
 // Does any strictly-deeper subloop of `L` contain a tainted value? Such a loop
 // is a NESTED quantum loop; a break alongside it crosses loops (B4 — nested-loop
@@ -2829,7 +2825,7 @@ bool tryBreak(Loop *L, Function &F, TaintSet &taint, WidthDispatch &wd,
   Instruction *TheExitT = nullptr;
   BasicBlock *TheExitB = nullptr;
   for (BasicBlock *EB : Exiting)
-    if (isTaintedExitingTerminator(EB->getTerminator(), taint)) {
+    if (isTaintedBranchTerminator(EB->getTerminator(), taint)) {
       ++TaintedExiting;
       TheExitT = EB->getTerminator();
       TheExitB = EB;
@@ -2963,7 +2959,7 @@ bool tryBreak(Loop *L, Function &F, TaintSet &taint, WidthDispatch &wd,
   // is not the proven invertible single-break shape (ride L1).
   for (BasicBlock *BB : L->blocks()) {
     Instruction *T = BB->getTerminator();
-    if (T != TheExitT && isTaintedExitingTerminator(T, taint))
+    if (T != TheExitT && isTaintedBranchTerminator(T, taint))
       return false;  // a second tainted br/switch (non-exiting control) in body.
     if (auto *BrI = dyn_cast<BranchInst>(T))
       if (T != TheExitT && BrI->isConditional() &&
@@ -3025,16 +3021,8 @@ bool tryBreak(Loop *L, Function &F, TaintSet &taint, WidthDispatch &wd,
   return true;
 }
 
-// Is `T` a conditional `br` / `switch` on a TAINTED condition? (`tryCaseA`'s
-// gate L2 and the hand-off below ask the same question of a terminator.)
-bool isTaintedBranchTerminator(const Instruction *T, const TaintSet &taint) {
-  if (const auto *BI = dyn_cast<BranchInst>(T))
-    return BI->isConditional() &&
-           taint.Tainted.count(const_cast<Value *>(BI->getCondition()));
-  if (const auto *SI = dyn_cast<SwitchInst>(T))
-    return taint.Tainted.count(const_cast<Value *>(SI->getCondition())) != 0;
-  return false;
-}
+// (`isTaintedBranchTerminator` — `tryCaseA`'s gate L2 and the hand-off below — is
+// TaintedControlDependence.h's, the shared spelling since bd r2j3.6 R3-3(d).)
 
 // bd `test_C_libtooling-wt8u` — IS THIS CONSUMER OF A RAIL VALUE THE CONTROL
 // CHAIN'S, NOT THE LOOP'S? True for an instruction OUTSIDE `L` that is either

@@ -10,6 +10,7 @@
 #include "LoopPlan.h"
 #include "LoopUnrollPrepass.h"
 #include "MergePhiPeel.h"
+#include "OpcodeLowering.h"   // declineTaintedArmLiftedReads (bd r2j3.6 R2-2)
 #include "PredMuxFlatten.h"
 #include "ReturnMerge.h"      // unifyTaintedReturns
 #include "SelectMergeEmit.h"  // declineQuantumCopySources
@@ -186,6 +187,9 @@ std::unique_ptr<ControlPlan> runControlChain(Module &M, WidthDispatch &wd,
     peelIndependentMergePhis(M, taint, &PeelDelta);
     adjudicateTaintDelta(M, wd, taint, plan6, PeelDelta);
   }
+  // bd r2j3.6 R2-2: the lifted-call policy re-ask, before EVERY detection (here,
+  // and in `detectAndLowerOnwardControl`'s round-2 fixpoint). See OpcodeLowering.h.
+  declineTaintedArmLiftedReads(M, wd, taint, plan6);
 
   // Heap-allocated so the plan is built in place (guaranteed elision) and never
   // moved after `detectControlRegions` returns; the caller keeps it for

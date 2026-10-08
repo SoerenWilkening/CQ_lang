@@ -578,12 +578,12 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // (clone-on-taint) or already loud-declined (carve-out, C-Plan).
   declineTaintEscapes(M, taint, plan6);
 
-  // Straight-line stale-record guard (test_C_libtooling-uzb): pure analysis,
-  // FIRST — before any mutation — because it needs SSA-record identity
-  // (rotation lowering's RAUW collapses the pre-/post-Ry values onto one i32
-  // handle) and the original schedule (= the emitted opaque-call stream). It
-  // diagnoses loudly and marks `taint.StaleDeclined` for `lowerOps` to skip.
-  declineStaleRecordOps(M, taint);
+  // Straight-line stale-record guard (test_C_libtooling-uzb), before any LOWERING:
+  // it needs SSA-record identity (rotation lowering's RAUW merges pre-/post-Ry
+  // values into one i32 handle) and the schedule (= the emitted call stream). Its
+  // one mutation (bd r2j3.6, 57ch (A)) moves a stale lifted call before its gate;
+  // it diagnoses loudly and marks `taint.StaleDeclined` for `lowerOps` to skip.
+  declineStaleRecordOps(M, taint, plan6, /*PlaceLiftedReads=*/true);  // bd r2j3.6
 
   // (bd test_C_libtooling-3d8q, P1) THE STALE-READER ANALYSIS — pure analysis,
   // no diagnostic, paired with `declineRecordedStaleQuantumReaders` far below.
@@ -1303,7 +1303,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // `lowerOps`, which also walks all of `M` (only the rotation/measure work
   // lists above are F-restricted).
   declineTaintEscapes(M, taint, plan6);
-  declineStaleRecordOps(M, taint);
+  declineStaleRecordOps(M, taint, plan6, /*PlaceLiftedReads=*/true);  // bd r2j3.6
 
   // (bd test_C_libtooling-3d8q, P1) THE STALE-READER ANALYSIS — pure analysis,
   // no diagnostic, paired with `declineRecordedStaleQuantumReaders` far below.

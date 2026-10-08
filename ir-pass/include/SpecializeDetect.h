@@ -31,6 +31,7 @@
 
 namespace llvm {
 class CallBase;
+class CallInst;
 class Module;
 class Value;
 }  // namespace llvm
@@ -117,6 +118,18 @@ void detectSpecializations(llvm::Module &M, const TaintSet &taint,
 // (`taint.SpecDeadArgMask`), neutralises every slot the clone never reads, and
 // declines a quantum operand the user program then no longer reads.
 bool dropDeadCallArguments(llvm::Module &M, const TaintSet &taint);
+
+// Would `detectSpecializations` admit `CI` as a proven-Accept site on `taint` NOW:
+// its shape filter (a direct call to a definition, not a front-end intrinsic site,
+// reading a tainted value) and `classifyCandidate` == Accept? No diagnostic and no
+// plan entry. NOT strictly pure: `scanBody` asks `wd.copyFn("i32")`
+// (SpecializeReject.cpp), which can insert a `declare @cqrt_copy_i32` into the module
+// on first use — harmless (round-1 detection does the same, and nothing reads the
+// declaration's presence as evidence). The same two predicates detection asks, shared rather than re-spelled
+// (bd r2j3.6 review round 3 R3-2): the lifted-call stale re-ask before round-2
+// detection asks it of a call bd 9paa will only add to `plan6` after that detection.
+bool isProvenSpecSite(llvm::CallInst &CI, const TaintSet &taint,
+                      WidthDispatch &wd);
 
 // NULL-SOUNDNESS of argument slot `A` of `CB` (bd vsfp round 6, bd `w7nm`): is a
 // null constant in this slot well-defined whatever the callee does with it, given

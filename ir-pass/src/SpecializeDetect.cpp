@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <optional>
 #include <string>
 
 using namespace llvm;
@@ -277,32 +278,61 @@ bool dropDeadCallArguments(Module &M, const TaintSet &taint) {
   return Changed;
 }
 
+namespace {
+
+// SHAPE filter, decline-by-default, and the §2.2 taint signature. Only a DIRECT
+// `CallInst` (the `dyn_cast<CallInst>` narrowing excludes `InvokeInst`/`CallBrInst`),
+// with a non-null callee (excludes indirect), to a DEFINITION (excludes
+// declaration-only / opaque externs — the DD-2 no-IR contract), not a front-end
+// intrinsic site, reading a tainted value is a candidate. A site failing any of these
+// is SILENTLY not a candidate; the carve-out fires `kMsgUnknownCallee` for it. `mask
+// == 0` cannot happen once `readsTainted` holds except past the mask's width; a value
+// used ONLY as a classical angle never entered `taint.Tainted`, so the mask is purely
+// the quantum-arg bits. Shared by detection and `isProvenSpecSite` (bd r2j3.6 R3-2).
+// `Intrinsics` is `intrinsicSites(taint)`, built ONCE per caller (the membership test
+// `dropDeadCallArguments` uses too; review round 4 R4-2: per-call scans of the four
+// call lists would make detection quadratic).
+std::optional<SpecCandidate>
+candidateShape(Instruction &I, const TaintSet &taint,
+               const SmallPtrSetImpl<const CallInst *> &Intrinsics) {
+  auto *CI = dyn_cast<CallInst>(&I);
+  if (!CI || Intrinsics.count(CI))
+    return std::nullopt;  // a front-end intrinsic, never a specialization candidate.
+  Function *Callee = CI->getCalledFunction();
+  if (!Callee || Callee->isDeclaration() || !readsTainted(CI, taint))
+    return std::nullopt;  // no tainted operand — not in the taint-escape domain.
+  const SpecMask Mask = taintArgMask(CI, taint);
+  if (Mask == 0)
+    return std::nullopt;
+  return SpecCandidate{CI, Callee, Mask};
+}
+
+}  // namespace
+
+bool isProvenSpecSite(CallInst &CI, const TaintSet &taint, WidthDispatch &wd) {
+  // The set costs one pass over the four call lists per query; the re-ask asks this
+  // only of a tainted-argument call under tainted control that is not in `plan6`.
+  std::optional<SpecCandidate> Cand =
+      candidateShape(CI, taint, intrinsicSites(taint));
+  Instruction *Where = nullptr;
+  std::string Kind;
+  return Cand && classifyCandidate(*Cand, taint, wd, Where, Kind) ==
+                     SpecReject::Accept;
+}
+
 void detectSpecializations(Module &M, const TaintSet &taint, WidthDispatch &wd,
                            SpecPlan &out,
                            const SmallPtrSetImpl<Value *> *reseed) {
   SmallPtrSet<const CallInst *, 16> Intrinsics = intrinsicSites(taint);
-
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
     for (BasicBlock &BB : F) {
       for (Instruction &I : BB) {
-        // SHAPE filter, decline-by-default. Only a DIRECT `CallInst` (the
-        // `dyn_cast<CallInst>` narrowing excludes `InvokeInst`/`CallBrInst`),
-        // with a non-null callee (excludes indirect), to a DEFINITION (excludes
-        // declaration-only / opaque externs — the DD-2 no-IR contract) is a
-        // candidate. A site failing any of these is SILENTLY not a candidate;
-        // the carve-out fires `kMsgUnknownCallee` for it.
-        auto *CI = dyn_cast<CallInst>(&I);
-        if (!CI)
+        std::optional<SpecCandidate> Shape = candidateShape(I, taint, Intrinsics);
+        if (!Shape)
           continue;
-        if (Intrinsics.count(CI))
-          continue;  // a front-end intrinsic, never a specialization candidate.
-        Function *Callee = CI->getCalledFunction();
-        if (!Callee || Callee->isDeclaration())
-          continue;
-        if (!readsTainted(CI, taint))
-          continue;  // no tainted operand — not in the taint-escape domain.
+        CallInst *CI = Shape->Site;
 
         // ── Round-2 re-detection (bd 9paa) ─────────────────────────────────
         // A NON-null `reseed` marks the SECOND propagation pass
@@ -340,15 +370,8 @@ void detectSpecializations(Module &M, const TaintSet &taint, WidthDispatch &wd,
             continue;
         }
 
-        // The §2.2 taint signature. `mask == 0` cannot happen here
-        // (`readsTainted` is true), but a value used ONLY as a classical angle
-        // never entered `taint.Tainted`, so the mask is purely the quantum-arg
-        // bits.
-        SpecMask Mask = taintArgMask(CI, taint);
-        if (Mask == 0)
-          continue;
-
-        SpecCandidate Cand{CI, Callee, Mask};
+        // The §2.2 taint signature is `Shape->Mask` (see `candidateShape`).
+        const SpecCandidate &Cand = *Shape;
         Instruction *Where = nullptr;
         std::string Kind;
         LiftSite Lifting(CI);  // bd 3c6m.82: a reject in the body notes this call.

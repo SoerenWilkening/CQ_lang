@@ -95,6 +95,12 @@ struct TaintSet;
 // Is `I` a liveness ROOT? See the header comment for the complete list.
 bool isLivenessRoot(const llvm::Instruction &I, const TaintSet &taint);
 
+// Is `CB` a front-end intrinsic call site (`cq_theta_*`, `cq_measure_*`, `cq_phi`),
+// by MEMBERSHIP in the sets `propagate` collected — never by name prefix? Exported
+// for the bd r2j3.6 stale-read placement (StaleReadPlacement.cpp), which asks the
+// same question.
+bool isFrontEndIntrinsicSite(const llvm::CallBase &CB, const TaintSet &taint);
+
 // Is argument slot `ArgNo` of call `CB` RECORDED as a slot its callee never reads?
 // True only for a callee `buildClone` recorded (`taint.SpecDeadArgMask`) with bit
 // `ArgNo` set; false for every other call, slot and callee (including a slot past

@@ -2389,7 +2389,7 @@ namespace {
 // bead 9paa).
 void detectAndLowerOnwardControl(Module &M, WidthDispatch &wd, TaintSet &taint,
                                  const FnSet &ThetaFns, const FnSet &PhiFns,
-                                 const FnSet &MeasureFns) {
+                                 const FnSet &MeasureFns, const SpecPlan &plan6) {
   while (true) {
     // bd test_C_libtooling-b6ap — THE MULTI-PHI MERGE PEEL, THE ROUND-2 CALL
     // SITE (`MergePhiPeel.cpp`). CLAUDE.md's standing lesson "a stage that runs
@@ -2409,10 +2409,9 @@ void detectAndLowerOnwardControl(Module &M, WidthDispatch &wd, TaintSet &taint,
     // is called immediately before EVERY `detectControlRegions` call in the tree
     // (here, `CQLoweringPass::run`, and the second entry point).
     //
-    // Idempotent on an unchanged module: after a successful peel the merge holds
-    // at most one phi, so the >=2-phi containment gate refuses the same site on
-    // the next iteration. It is NOT a no-op to re-call, because each iteration's
-    // lowering can create a fresh fused region.
+    // Idempotent on an unchanged module: after a successful peel the merge holds at
+    // most one phi, so the >=2-phi containment gate refuses the same site next
+    // iteration. NOT a no-op to re-call: each lowering can create a fresh fused region.
     //
     // ⚠ `Delta = nullptr` HERE, AND IT IS AN INCLUSION ARGUMENT, NOT AN OMISSION
     // (bd b6ap Rule-13 ROUND-1 finding F-B6-1). The peel GROWS TAINT, and its
@@ -2435,6 +2434,7 @@ void detectAndLowerOnwardControl(Module &M, WidthDispatch &wd, TaintSet &taint,
     // `Tainted − beforeTaint` reseed the sole caller adjudicates.
     unifyTaintedReturns(M, taint, /*Delta=*/nullptr);
     peelIndependentMergePhis(M, taint, /*Delta=*/nullptr);
+    declineTaintedArmLiftedReads(M, wd, taint, plan6);  // bd r2j3.6 R2-2 (L1 re-ask)
     ControlPlan plan2 = detectControlRegions(M, wd, taint);
     if (plan2.Regions.empty())
       break;  // fixpoint: no new onward control region emitted.
@@ -2678,7 +2678,7 @@ void adjudicateTaintDelta(Module &M, WidthDispatch &wd, TaintSet &taint,
   replanReseedSpecialization(taint, wd, plan6, live);
   detectSpecializations(M, taint, wd, plan6, &live);
   declineTaintEscapes(M, taint, plan6);
-  declineStaleRecordOps(M, taint);
+  declineStaleRecordOps(M, taint, plan6, /*PlaceLiftedReads=*/false);  // r2j3.6
   // (bd test_C_libtooling-3d8q) THE STALE-READER ANALYSIS, DELTA-SCOPED. Every
   // taint-GROWTH event owes the L1 question, and for the reader fence the answer
   // is: ask it only of the values that just BECAME tainted. A reader seeded on a
@@ -2786,7 +2786,7 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
   // as an `_hl` classical literal (`cq_template_mul_i32_hl(q, %out2)` = q × the rail's
   // handle-TAG, a verify-clean wrong unitary, bd afmv). Computing `reseed` AFTER this
   // (so it captures the `%out2` rails) is exactly what closes that hole.
-  detectAndLowerOnwardControl(M, wd, taint, ThetaFns, PhiFns, MeasureFns);
+  detectAndLowerOnwardControl(M, wd, taint, ThetaFns, PhiFns, MeasureFns, plan6);
 
   // Round-2 reseed set — computed AFTER the by-ref re-run AND the yn71 control
   // fixpoint, so it captures the WHOLE round-2 taint delta: the merge out-rails, the

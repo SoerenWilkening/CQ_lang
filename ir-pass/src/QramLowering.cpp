@@ -15,6 +15,7 @@
 #include "OpcodeSupport.h"      // abiWidthFromType / widthHasReversibleCopy
 #include "PoisonFacts.h"        // indexBoundIsPoisonConditional (bd s6ao)
 #include "QramIndexWidth.h"     // resolveQramIndex / tagQramIndexCast (libcqops b6a)
+#include "TaintedControlDependence.h"  // isTaintedBranchTerminator (bd r2j3.6)
 #include "TaintPropagation.h"   // TaintSet
 #include "WidthDispatch.h"
 #include "WireWalk.h"         // provablyBefore (bd r2j3.15: the initializer test)
@@ -700,16 +701,19 @@ struct ShadowAccess {
 
 }  // namespace
 
-// Is `I` genuinely CONTROL-DEPENDENT on a tainted-condition branch? 7.5 lowers
+// Is `I` possibly CONTROL-DEPENDENT on a tainted-condition branch? 7.5 lowers
 // STRAIGHT-LINE memory only (§2.11); a CONDITIONALLY-executed access inside a
 // tainted-control region (e.g. the const `@switch.table` gep/load of a clang-folded
 // jump table, control_swap_reject_switch_jumptable.ll) is NOT ours and declines at
 // the escape guard.
 //
-// The test is CONTROL DEPENDENCE, not mere dominance: `I` is under control of a
-// tainted br at block `B` iff `B` strictly dominates `I`'s block AND `I`'s block
-// does NOT post-dominate `B` (i.e. some path leaving `B` bypasses `I` — the access
-// is genuinely conditional). A block that POST-DOMINATES the tainted br (the merge
+// ⚠ AN OVER-APPROXIMATION of control dependence (bd r2j3.6 R3-3(b); the exact test
+// is TaintedControlDependence.h's): `I` counts as under a tainted br at block `B`
+// iff `B` strictly dominates `I`'s block AND `I`'s block does NOT post-dominate `B`
+// (some path leaving `B` bypasses `I`). That also holds for a block after `B`'s
+// merge inside an unrelated classical `if` (measured in r2j3.6 review round 2, probe
+// p4_prior_phase_sibling; the effect on this file's customers is unmeasured, F9).
+// A block that POST-DOMINATES the tainted br (the merge
 // and everything after it) is reached on EVERY path, so it is unconditional /
 // straight-line and NOT under control — a load `arr[q]` sitting after an
 // `if(q<k){arr[i]=v;}` diamond executes regardless of the branch. Keying on plain
@@ -730,15 +734,8 @@ bool instUnderTaintedControl(const Instruction *I, const TaintSet &taint,
   std::optional<PostDominatorTree> PDT;
   for (DomTreeNode *D = Node->getIDom(); D; D = D->getIDom()) {
     BasicBlock *B = D->getBlock();
-    const Instruction *T = B->getTerminator();
-    bool TaintedBr = false;
-    if (const auto *BI = dyn_cast<BranchInst>(T))
-      TaintedBr = BI->isConditional() &&
-                  taint.Tainted.count(const_cast<Value *>(BI->getCondition()));
-    else if (const auto *SI = dyn_cast<SwitchInst>(T))
-      TaintedBr = taint.Tainted.count(const_cast<Value *>(SI->getCondition()));
-    if (!TaintedBr)
-      continue;
+    if (!isTaintedBranchTerminator(B->getTerminator(), taint))
+      continue;  // the shared spelling (TaintedControlDependence.h, bd r2j3.6)
     if (!PDT)
       PDT.emplace(*IB->getParent());
     // Control-dependent iff `I`'s block does NOT post-dominate the tainted br `B`

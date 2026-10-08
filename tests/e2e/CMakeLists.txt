@@ -2305,6 +2305,16 @@ add_test(NAME e2e-slice-specialize-twoarm-select
 #   the 2-TU side prints that same warning and its twin does not (bd hgwx: the
 #   classical-verdict clone call reads as a live user of `q`), and nothing here
 #   can see a stderr difference.
+# bd r2j3.6 / owner ruling 57ch (A): a STALE lifted call (`q2 = q; cq_theta(&q2, .3);
+# r = f(q)`) is PLACED before its staling gate; the golden pins the clone's whole
+# Bennett block between the two Ry (before r2j3.6 it ran after the second Ry).
+add_test(NAME e2e-slice-stale-speccall-placed
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_stale_speccall_placed.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_stale_speccall_placed.expected.log")
 add_test(NAME e2e-slice-spec-lift-quantum-base
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
