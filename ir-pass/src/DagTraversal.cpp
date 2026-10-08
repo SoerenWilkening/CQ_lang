@@ -7,6 +7,7 @@
 
 #include "BirthFreeze.h"        // step 3d (bd 5c5b)
 #include "ChainWalk.h"          // isInPlaceGateOn / isAllocMint / isMeasureSink
+#include "CloneProducer.h"      // bd p3kd.13 — a clone result as a producer
 #include "RecordWindowFreeze.h"  // step 3c (bd r2j3.3)
 #include "TaintPropagation.h"
 
@@ -70,20 +71,16 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
     // EVERY WALKED HANDLE, not only of the step-3 `Rails` set below.
     //
     // The step-3 copy (the `Rails` scan further down this function) is asked
-    // over `D.Rails` = roots ∪ template producers, while the thing it must
-    // suppress — `emitDagReversal`'s
-    // `emitInverseCall` — iterates `D.Calls`, and those two sets are NOT equal
-    // (the header note at `Uncomputation.cpp`'s `emitDagReversal` names the
-    // difference explicitly and closes the `cqrt_free` half of it with an
-    // `D.Rails` intersection, bd uow0). A `@__cq_q_<callee>_<mask>`
-    // specialization-clone RESULT is in the difference: `isTemplateProducer`
-    // stops at `cq_template_*`/`cqrt_qram_load_*`, so a clone result is never a
-    // rail — yet a `cqrt_ry_<W>_controlled` on it IS in `D.Calls` (it enters at
-    // the `isInPlaceGateOn` line just below), and Inc 0 made that gate
-    // `isInverseEmittable`. So the ADJOINT half of the uow0 gap acquired a
-    // customer this increment, and asking the freeze only at step 3 would never
-    // see it: the spine would emit `cqrt_ry_<W>_controlled(f, h, -θ)` naming a
-    // flag the region already `cqrt_free`d (finding-A's use-after-free, verbatim).
+    // over `D.Rails` = roots ∪ producers, while the thing it must suppress —
+    // `emitDagReversal`'s `emitInverseCall` — iterates `D.Calls`, and those two
+    // sets are NOT equal (`emitDagReversal`'s header; its `cqrt_free` half is
+    // closed by a `D.Rails` intersection, bd uow0). A `@__cq_q_<callee>_<mask>`
+    // clone RESULT was the difference's member until bd p3kd.13 made an OWNED one
+    // a rail (`isCloneProducer`); an unowned one now closes nothing (below). A
+    // `cqrt_ry_<W>_controlled` on either IS in `D.Calls` (the `isInPlaceGateOn`
+    // line just below) and `isInverseEmittable`, so asking the freeze only at
+    // step 3 could miss it: the spine would emit `cqrt_ry_<W>_controlled(f, h,
+    // -θ)` naming a flag the region already `cqrt_free`d (finding-A's UAF).
     //
     // It does not fire at HEAD — measured on three C reproducers (a `noinline`
     // callee whose clone result is the rotated base): all three accept and the
@@ -143,6 +140,8 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
             }
         }
     auto *CI = dyn_cast<CallInst>(H);
+    if (CI && isUnownableCloneCall(CI, taint))
+      D.NotClosed = true;  // bd p3kd.13: no twin to adjoint it with — leak.
     if (CI && !isAllocMint(CI)) {
       if (SeenGates.insert(CI).second)
         D.Calls.push_back(CI);
@@ -173,18 +172,17 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
     return taint.BirthOrder.lookup(A) < taint.BirthOrder.lookup(B);
   });
 
-  // 3. Closure / measure / escape analysis over every RAIL (a root or a template
-  //    producer's result — the values the DAG zeroes and frees; rotations mint no
-  //    rail). Every forward consumer of a rail must itself be a recovered gate;
-  //    anything else means the rail is owned outside the DAG.
-  //    EXPORTED as `D.Rails` (bd uow0 Rule-13 round 2): the driver frees by
-  //    `railOf(G)` over `D.Calls`, which is NOT the same set, and a value in the
-  //    difference would be freed carrying none of the verdicts this scan sets.
+  // 3. Closure / measure / escape analysis over every RAIL (a root, a template
+  //    producer's result or, since bd p3kd.13, an owned clone result — the values
+  //    the DAG zeroes and frees; rotations mint no rail). Every forward consumer
+  //    of a rail must itself be a recovered gate; anything else means the rail is
+  //    owned outside the DAG. EXPORTED as `D.Rails` (bd uow0 round 2): the driver
+  //    frees by `railOf(G)` over `D.Calls`, which is NOT the same set.
   SmallPtrSet<Value *, 16> &Rails = D.Rails;
   for (Value *R : D.Roots)
     Rails.insert(R);
   for (CallInst *G : D.Calls)
-    if (isTemplateProducer(G))
+    if (isTemplateProducer(G) || isCloneProducer(G, taint))
       Rails.insert(G);
 
   for (Value *R : Rails) {
@@ -385,19 +383,13 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
     SmallPtrSet<Value *, 8> Correlated;
     SmallVector<Value *, 8> CWork;
     // Seed: Rails ∪ {railOf(G)}. Those sets are NOT the same — a tainted non-alloc
-    // CallInst enters `D.Calls` above but only a `cq_template_*`/`cqrt_qram_load_*`
-    // enters `Rails`, while `emitDagReversal` frees by railOf. Seeding from `Rails`
-    // alone would be incomplete on its own terms.
-    //
-    // THIS USED TO SAY the gap is "empty today only because a DOWNSTREAM guard —
-    // `isInverseEmittable` — removes it". THAT IS FALSE and was corrected here (bd
-    // uow0 Rule-13 round 2): `isInverseEmittable` explicitly ACCEPTS the one
-    // emitter-mintable member, a `@__cq_q_<callee>_<mask>` specialization-clone
-    // call. What actually keeps the gap empty is that no accepted input reaches such
-    // a rail (both routes decline loudly), and the driver no longer rests on that:
-    // it intersects its freeable set with `D.Rails`. Seeding WIDELY here is still
-    // right — the freeze is a subtraction, so over-seeding can only over-freeze,
-    // which is a leak.
+    // CallInst enters `D.Calls` above but only a producer enters `Rails`, while
+    // `emitDagReversal` frees by railOf. Seeding from `Rails` alone would be
+    // incomplete on its own terms. (`isInverseEmittable` ACCEPTS a `__cq_q_` clone
+    // call — bd uow0 round 2 corrected a note that said it removes it; since bd
+    // p3kd.13 an owned clone result is a rail and an unowned one sets
+    // `NotClosed`.) Seeding WIDELY is right: the freeze is a subtraction, so
+    // over-seeding can only over-freeze, which is a leak.
     auto seedIfRecorded = [&](Value *R) {
       if (!R || Correlated.count(R))
         return;
@@ -423,7 +415,7 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
 
     for (CallInst *G : D.Calls) {
       Value *R = railOf(G);
-      if (Correlated.count(R) && !preservesBasisUnderRecord(G))
+      if (Correlated.count(R) && !cloneGatePreservesBasis(G, taint))
         D.FrozenRails.insert(R);
     }
 
@@ -451,7 +443,7 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
   freezeRecordWindowReaders(D, AncEdges, DT);
 
   // 3d. BIRTH FREEZE (bd 5c5b): clause (a), "R starts at |0⟩". BirthFreeze.h.
-  freezeUnprovenBirths(D);
+  freezeUnprovenBirths(D, taint);
   return D;
 }
 

@@ -395,16 +395,14 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     return minted(UncCall);
   }
 
-  // Phase 6.3 transitive: a specialization CLONE call `@__cq_q_<callee>_<mask>`
-  // → its void `_unc` twin `@__cq_q_..._unc(out, args…)`. Slot convention mirrors
-  // the data-template case: `out` (this forward call's OWN result handle — the
-  // entangled rail to zero) is arg 0, then the forward operands in their original
-  // order. The twin runs `out ^= f(args)`, zeroing `out` (it held `f(args)`) and
-  // leaving the borrowed inputs pristine. Its FunctionType is
-  // `void(i32 out, <forward arg types…>)`, matching the specializer-synthesized
-  // body, so `getOrInsertFunction` resolves the existing definition (never a
-  // dangling decl — the twin is synthesized first, depth-first). `CurHandle` is
-  // ignored: the twin reads the live sources and mints nothing.
+  // Phase 6.3 / bd p3kd.13: a specialization CLONE call `@__cq_q_<callee>_<mask>`
+  // → its void twin `@__cq_q_..._unc(out, args…)`, the data-template slot order
+  // (`out`, this call's OWN result rail, then the forward operands). The twin runs
+  // `out ^= f(args)`, zeroing `out`, borrowed inputs pristine. Its type `void(i32
+  // out, <forward arg types…>)` matches the synthesized body (synthesized first).
+  // It has the clone's CALLING CONVENTION (`fastcc` for a `static` callee); the
+  // call takes the TWIN's, since a mismatch is UB `-verify` misses. bd p3kd.13 also
+  // fixed the 6.3 INNER twin calls this way (`ccc` call of a `fastcc` twin, latent).
   if (Name.starts_with("__cq_q_") && !Name.ends_with("_unc")) {
     SmallVector<Value *, 4> Args;
     SmallVector<Type *, 4> ParamTys;
@@ -420,6 +418,8 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     FunctionCallee Unc =
         Forward->getModule()->getOrInsertFunction((Name + "_unc").str(), FT);
     CallInst *UncCall = B.CreateCall(Unc, Args);
+    if (auto *TF = dyn_cast<Function>(Unc.getCallee()))
+      UncCall->setCallingConv(TF->getCallingConv());  // the twin's, not the call's
     if (DebugLoc DL = Forward->getDebugLoc())
       UncCall->setDebugLoc(DL);
     return minted(UncCall);

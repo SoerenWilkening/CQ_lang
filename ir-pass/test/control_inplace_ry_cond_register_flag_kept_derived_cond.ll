@@ -27,13 +27,15 @@
 ;
 ; @lifted_observed — CASE: STRIPPED.
 ;   `int t = h(q); if (t > 13) cq_theta(&q, .9); … cq_measure(t)` (added by
-;   review round 1, F1). A lifted call's `__cq_q_*` result is never discharged
-;   by the spine (bd ln16), so it stands at the gate. Here the PROGRAM keeps it:
+;   review round 1, F1). A lifted call's `__cq_q_*` result is a record the spine
+;   discharges when it is dead before the gate (bd p3kd.13, CloneProducer.h);
+;   this one is read after the gate, so it stands there. The PROGRAM keeps it:
 ;   `t` is measured after the gate, the record is the source's own data, and the
 ;   chain postcondition (`declineUndischargedKeptFlagChains`, M-A's
 ;   `recordIsExemptAt` clause 3) admits it. The flag is stripped against `t`
 ;   after the gate. Its twin with `t` unread is
-;   control_inplace_ry_reject_cond_register_lifted_chain.ll, which DECLINES.
+;   control_inplace_ry_reject_cond_register_lifted_chain.ll, which DECLINED
+;   until bd p3kd.13 and now discharges `t` before the gate (an accept).
 ;
 ; M-A warns once per gate. For @discharged that is the kept flag. For the two
 ; STRIPPED functions it is an over-warn on the transient flag, whose strip runs
