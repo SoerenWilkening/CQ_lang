@@ -80,7 +80,9 @@ merge:
 ; The global implicit-check-not directives above carry the negative over the whole
 ; module, so a later reordering of these positives cannot silently close the
 ; window (that window bug shipped once already in the tape-fixture family).
-; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u)
+; CHECK: %u.stable = freeze i32 %u
+; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u.stable)
 ; CHECK:     %[[CC:[a-zA-Z0-9_.]+]] = add i32 %c, 1
-; CHECK:     call i32 @cq_template_add_i32_hl(i32 %[[Q]], i32 %[[CC]])
+; CHECK-NEXT: %[[CF:[a-zA-Z0-9_.]+]] = freeze i32 %[[CC]]
+; CHECK:     call i32 @cq_template_add_i32_hl(i32 %[[Q]], i32 %[[CF]])
 ; CHECK-NOT: br i1

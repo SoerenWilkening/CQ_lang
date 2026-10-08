@@ -40,7 +40,8 @@ merge:
 ;   out5 = (q≤5)      ? r0 : out       [outer select, inverted-leaf flag]
 ; — the unused fallback predicate (c1 ∧ q<9) is dead-swept, so NO slt-9
 ; compare and only ONE conjunction ancilla appear.
-; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK: %u0.stable = freeze i32 %u0
+; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0.stable)
 ; CHECK:     %[[R0:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[Q]], i32 3)
 ; CHECK:     %[[R1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[Q]], i32 1)
 ; CHECK:     %[[R2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[Q]], i32 2)

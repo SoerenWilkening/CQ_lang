@@ -92,11 +92,12 @@ entry:
 ;
 ; CHECK-LABEL: define internal i32 @__cq_q_helper_01(i32 %b, i32 %k)
 ; The classical leaf stays a stock compare on the classical parameter.
-; CHECK-DAG: %[[C2:[a-zA-Z0-9_.]+]] = icmp sgt i32 %k, 3
+; CHECK: %[[C2:[a-zA-Z0-9_.]+]] = icmp sgt i32 %k, 3
+; CHECK-NEXT: %[[CF:[a-zA-Z0-9_.]+]] = freeze i1 %[[C2]]
 ; CHECK-DAG: %[[R1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %b, i32 1)
 ; CHECK-DAG: %[[R2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %b, i32 2)
 ; CHECK:     %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %b, i32 5)
-; CHECK-NEXT: %[[GL:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i1_hl(i32 %[[F1]], i1 zeroext %[[C2]])
+; CHECK-NEXT: %[[GL:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i1_hl(i32 %[[F1]], i1 zeroext %[[CF]])
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[GL]], i32 %[[R1]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[GL]])
@@ -108,7 +109,7 @@ entry:
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[GL]], i32 %[[R2]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[GL]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[GL]], i32 %[[R1]], i32 %[[OUT]])
-; CHECK-NEXT: call void @cq_template_and_i1_hl_unc(i32 %[[GL]], i32 %[[F1]], i1 zeroext %[[C2]])
+; CHECK-NEXT: call void @cq_template_and_i1_hl_unc(i32 %[[GL]], i32 %[[F1]], i1 zeroext %[[CF]])
 ; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F1]], i32 %b, i32 5)
 ; The arm `_unc`s (order-free: the forward order of R1/R2 is not pinned), then
 ; every freed rail.

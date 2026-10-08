@@ -58,8 +58,9 @@
 ; CHECK:      %[[LIT:[0-9]+]] = icmp eq i32 %1, %0
 ; CHECK:      %cq.gr.addr = select i1 %cq.gr.inb, ptr %cq.gr.cell, ptr @cq.guarded.read.zero
 ; CHECK-NEXT: %[[LD:[0-9]+]] = load i32, ptr %cq.gr.addr
-; CHECK-NEXT: %[[OPA:h_op[0-9]*]] = call i32 @cq_template_add_i32_hl(i32 %[[A:[0-9]+]], i32 %[[LD]])
-; CHECK-NEXT: %[[OPZ:h_op[0-9]*]] = call i32 @cq_template_sub_i32_hl(i32 %[[Z:[0-9]+]], i32 %[[LD]])
+; CHECK-NEXT: %[[LDF:[a-z0-9_.]+]] = freeze i32 %[[LD]]
+; CHECK-NEXT: %[[OPA:h_op[0-9]*]] = call i32 @cq_template_add_i32_hl(i32 %[[A:[0-9]+]], i32 %[[LDF]])
+; CHECK-NEXT: %[[OPZ:h_op[0-9]*]] = call i32 @cq_template_sub_i32_hl(i32 %[[Z:[0-9]+]], i32 %[[LDF]])
 ; CHECK-NEXT: %[[F1:h_cmp[0-9]*]] = call i32 @cq_template_icmp_ne_i32_hl(i32 %[[H]], i32 0)
 ; CHECK-NEXT: %[[G1:gl[0-9]*]] = call i32 @cq_template_and_i1_hl(i32 %[[F1]], i1 zeroext %[[LIT]])
 ; CHECK-NEXT: %[[O1:out[0-9]*]] = call i32 @cqrt_alloc_i32(i32 0)

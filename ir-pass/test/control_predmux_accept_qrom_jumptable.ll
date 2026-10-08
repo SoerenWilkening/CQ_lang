@@ -39,8 +39,9 @@ merge:
   ret i32 %m
 }
 
+; CHECK: %u0.stable = freeze i32 %u0
 ; CHECK:     %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 4)
-; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0.stable)
 ; CHECK:     %[[MSK:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[Q]], i32 3)
 ; CHECK-NEXT: call i32 @cqrt_qram_load_i32(i32 %[[T]], i32 %[[MSK]])
 ; CHECK-NEXT: call void @cq_template_and_i32_hl_unc(i32 %[[MSK]], i32 %[[Q]], i32 3)

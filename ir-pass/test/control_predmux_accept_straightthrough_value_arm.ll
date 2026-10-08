@@ -86,7 +86,8 @@ merge:
 ; `%h` (the LIVE QUBIT) instead of `%selop` (the constant rail) PASSED, i.e. the
 ; fixture admitted `out = [q!=0] ? q+1 : q` while its header advertised
 ; `out = [q!=0] ? q+1 : 0` as "the only correctness argument that counts here".
-; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK: %u0.stable = freeze i32 %u0
+; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0.stable)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
 ; CHECK:     %[[SUM:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 1)
 ; CHECK:     %[[FLAG:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_ne_i32_hl(i32 %[[H]], i32 0)

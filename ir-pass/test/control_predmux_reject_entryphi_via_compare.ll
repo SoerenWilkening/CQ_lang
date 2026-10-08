@@ -1,32 +1,12 @@
-; control_predmux_reject_entryphi_via_compare.ll — DECLINE (bd q2wk, PRD §4.4b
-; rule (B)). The sibling of control_predmux_reject_i1phi_entry_block.ll: there the
-; ENTRY-block phi is used DIRECTLY as a branch condition and rule (A)'s
-; `isConvertiblePhiCond` fences it; here the same entry phi is hidden behind one
-; `icmp`, so rule (A) never sees a phi at all and only rule (B)'s gate decides.
-;
-; This shape is the q2wk Rule-13 finding that FOUR of six independent adversarial
-; lenses reported. `valueWillTaintAfterFlatten` answered "the flatten will taint
-; this" for ANY region-internal phi — but `RegionFlattener::run()` converts the
-; phis of every region block EXCEPT `R.Entry`, so an entry phi survives the
-; flatten unconverted and the condition stays a CLASSICAL runtime i1. The E6
-; gate was therefore admitting the region on a promise the code did not keep.
-; The fix passes `R.Entry` into the shared predicate, so this declines at the
-; CLAIM gate — detect-before-mutate, nothing flattened.
-;
-; Why it matters even though no lens could build a wrong unitary from it: with a
-; surviving select the shape was caught downstream by SelectClassify's GATE-2
-; untainted-leaf check, but in a select-free region (an i1 merge phi takes the
-; boolean-algebra path) it COMPILED SILENTLY where the pre-q2wk plugin declined —
-; sound, because a classical runtime operand rides the sanctioned `_hl` literal
-; slot and is never promoted to a qubit handle, but an accept wider than the
-; increment's own correctness argument. Over-declining is safe; that asymmetry is
-; not.
-;
-; %eph is admissible on every OTHER count — 2 unique incoming blocks, integer,
-; region-internal — so the ENTRY-block placement is the sole load-bearing
-; rejection, exactly as in the rule-(A) twin.
-;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; control_predmux_reject_entryphi_via_compare.ll — ACCEPT (dm7f.16.1).
+; The classical entry PHI remains a scalar literal. Let H=(q>5),
+; C=((g?arg:9)==0), and A=C?q+1:3q. The measured result is H?(2*A+7):q.
+; Shared nested classical conditions admit C; the entry PHI is not a rail.
+
+; Historical filename retained.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
@@ -66,8 +46,19 @@ merge:                                 ; 2 merge phis = the PredMux claim witnes
   ret i32 %m
 }
 
-; CHECK: error{{.*}}cq controlled lowering: control flow under quantum control
-; Nothing lowered: the region is LEFT unclaimed, so no rail is allocated and no
-; template is minted before the decline.
-; CHECK-NOT: cqrt_
-; CHECK-NOT: cq_template_
+
+; CHECK-LABEL: define i32 @probe(
+; CHECK: %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(
+; CHECK: br i1 %g, label %pa, label %pb
+; CHECK: rentry:
+; CHECK: %eph = phi i32 [ %arg, %pa ], [ 9, %pb ]
+; CHECK: icmp eq i32 %eph, 0
+; CHECK-DAG: %[[ADD:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[Q]], i32 1)
+; CHECK-DAG: %[[MUL:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[Q]], i32 3)
+; CHECK: call void @cqrt_copy_i32_controlled(i32 %[[G:[a-zA-Z0-9_.]+]], i32 %[[ADD]], i32 %[[A:[a-zA-Z0-9_.]+]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[MUL]], i32 %[[A]])
+; CHECK: call i32 @cq_template_add_i32_hl(i32 %[[A]], i32 7)
+; CHECK: call void @cqrt_copy_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[Q]],
+; CHECK: call i32 @cq_template_add_i32(
+; CHECK: call i32 @cqrt_measure_i32(

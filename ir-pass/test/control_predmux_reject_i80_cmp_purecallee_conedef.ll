@@ -1,50 +1,12 @@
-; control_predmux_reject_i80_cmp_purecallee_conedef.ll — DECLINE (bd 3c6m.14.2).
-;
-; *** THIS FILE WAS AN ACCEPT FIXTURE ONE SESSION AGO, AND THE REVERSAL IS THE
-; POINT. *** bd 3c6m.14.1 shipped it as
-; control_predmux_accept_i80_cmp_purecallee_conedef.ll, pinning surface S4 —
-; `coneDefinedAfterFlagDrop`'s admission of a call in a poison-shielded cone on
-; the strength of `isSpeculatablePureCalleeBody`. bd 3c6m.14.2 DELETED that
-; admission. Read the clause in PredMuxFlatten.cpp for the full argument; the
-; short version, and the reason a fixture flipped polarity rather than being
-; patched:
-;
-;  * The purity proof answers "pure + total + terminating", which is NOT
-;    "returns a defined value". It reaches its verdict through
-;    `isSpeculatableDataflow` (variable-amount shifts and fp->int casts admitted
-;    unconditionally) and it SKIPS TERMINATORS, so `ret i32 poison` passes
-;    VACUOUSLY. Both faces were exhibited END-TO-END as verify-clean silent
-;    miscompiles — see control_predmux_reject_selectform_purecallee_retpoison.ll
-;    and ..._inherentpoison.ll.
-;  * A definedness proof over an arbitrary callee body was WRITTEN FIRST, as the
-;    ticket proposed. Its own Rule-13 round found a fresh verify-clean silent
-;    miscompile inside it — a curated `ctlz(0, true)` whose poison rides an
-;    IMMARG that no `drop*` API can strip — plus an unsound `getZExtValue`
-;    shift-width check, in ~40 lines of new proof serving ZERO measured inputs.
-;  * MEASURED before choosing, which is what the ticket asked for: the clause was
-;    reached by 1 of 949 ir-pass fixtures (this one) and 0 of 238 e2e slices, and
-;    of the 39 poison-shielded select-forms `clang -O1` emits across 248 real
-;    openlibm TUs, the 5 with a call in the shielded cone carry ONLY curated
-;    intrinsics. The surface was empty.
-;
-; WHAT DID *NOT* REGRESS, because it is a different surface and the ticket
-; conflated the two: the pure-callee admission at S1 —
-; `recoverRegion`'s E4 CALL admission, where the call sits in an ARM rather than
-; in a shielded CONDITION cone — is untouched. That is the plain -O1
-; expl→floorl / coshl→expl shape, and lowering_predmux_speccall_flatten.ll,
-; lowering_fp80_union_seed_purecall_i80cmp.ll and the multi-TU e2e slice
-; e2e-predmux-purecallee-i80cmp all still pass. S1/S2/S3/S5 keep the bd 3c6m.14.1
-; `AdmitI80Compare=true` widening in full; only S4 is gone.
-;
-; The i80 compare below is therefore no longer load-bearing for this file's
-; verdict — a callee with NOTHING but an `add` declines here too. It is kept
-; verbatim so the fixture still names the exact module bd 3c6m.14.1 cleared, and
-; so a future agent re-widening the clause sees its own history.
-;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; RUN: env CQ_PREDMUX_DBG=1 not %cq-opt -load-pass-plugin %cq-pass \
-; RUN:   -passes=cq-lowering -S %s -o /dev/null 2>&1 | %filecheck %s --check-prefix=DBG
-; CHECK: error{{.*}}cq controlled lowering: control flow under quantum control
+; control_predmux_reject_i80_cmp_purecallee_conedef.ll — ACCEPT (dm7f.16.1).
+; The former purity-only shield proof was unsound (bd 3c6m.14.2). The new
+; total-call owner proves this exact branchless body defined, including its ret.
+; Let c=(q>3)&&(leaf(q)>0). Results are q+7 and 3q on c, q otherwise.
+; Bind the callee result in the shield compare and retain clone-on-taint.
+; Retpoison, unsafe casts/shifts and poison-immarg siblings remain negatives.
+; Historical filename retained.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
 
 target datalayout = "e-m:o-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx"
@@ -83,6 +45,54 @@ merge:                                    ; 2 merge phis = the W3 claim witness
   ret i32 %m2
 }
 
-; The gate is still E6-condtree — the shielded-cone proof — and the decline is
-; still detect-before-mutate. What changed is the ANSWER, not the site.
-; DBG: leave @probe entry=entry merge=merge gate=E6-condtree
+
+; CHECK-LABEL: define i32 @probe(
+; CHECK: %[[U:[a-zA-Z0-9_.]+]] = freeze i32 %u
+; CHECK: %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[U]])
+; CHECK: %[[R:[a-zA-Z0-9_.]+]] = call i32 @__cq_q_leaf_1(i32 %[[Q]])
+; CHECK: %[[ADD:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[Q]], i32 7)
+; CHECK: %[[MUL:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[Q]], i32 3)
+; CHECK: %[[A0:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 3)
+; CHECK: %[[B0:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[R]], i32 0)
+; CHECK: %[[G0:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[A0]], i32 %[[B0]], i32 %[[G0]])
+; CHECK-NEXT: %[[O0:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G0]], i32 %[[ADD]], i32 %[[O0]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[G0]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G0]], i32 %[[Q]], i32 %[[O0]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[G0]])
+; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[A0]], i32 %[[B0]], i32 %[[G0]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[G0]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[B0]], i32 %[[R]], i32 0)
+; CHECK: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[A0]], i32 %[[Q]], i32 3)
+; CHECK: %[[A1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 3)
+; CHECK: %[[B1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[R]], i32 0)
+; CHECK: %[[G1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[A1]], i32 %[[B1]], i32 %[[G1]])
+; CHECK-NEXT: %[[O1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G1]], i32 %[[MUL]], i32 %[[O1]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[G1]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G1]], i32 %[[Q]], i32 %[[O1]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[G1]])
+; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[A1]], i32 %[[B1]], i32 %[[G1]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[G1]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[B1]], i32 %[[R]], i32 0)
+; CHECK: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[A1]], i32 %[[Q]], i32 3)
+; CHECK: %[[SUM:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32(i32 %[[O0]], i32 %[[O1]])
+; CHECK: call i32 @cqrt_measure_i32(i32 %[[SUM]])
+; CHECK-LABEL: define internal i32 @__cq_q_leaf_1(i32 %a)
+; CHECK: %[[Z:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i32_to_i80(i32 %a)
+; CHECK-NEXT: %[[MASK:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i80_hl(i32 %[[Z]], i80 4294967295)
+; CHECK-NEXT: %[[EQ:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i80_hl(i32 %[[MASK]], i80 555)
+; CHECK-NEXT: %[[W:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i1_to_i32(i32 %[[EQ]])
+; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32(i32 %[[W]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cq_template_zext_i1_to_i32_unc(i32 %[[W]], i32 %[[EQ]])
+; CHECK-NEXT: call void @cq_template_icmp_eq_i80_hl_unc(i32 %[[EQ]], i32 %[[MASK]], i80 555)
+; CHECK-NEXT: call void @cq_template_and_i80_hl_unc(i32 %[[MASK]], i32 %[[Z]], i80 4294967295)
+; CHECK-NEXT: call void @cq_template_zext_i32_to_i80_unc(i32 %[[Z]], i32 %a)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[Z]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[MASK]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[EQ]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[W]])
+; CHECK-NEXT: ret i32 %[[OUT]]

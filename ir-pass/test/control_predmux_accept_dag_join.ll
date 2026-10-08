@@ -45,7 +45,8 @@ merge:
 ; select — the cleared per-select flag lifecycle), the const arm preloads a
 ; literal rail, the speculated add recombines the two muxed rails (QQ
 ; template), then the return chain applies rm = (c1∧¬c2)?t1:((¬c1∧¬c3)?t3:w):
-; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK: %u0.stable = freeze i32 %u0
+; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0.stable)
 ; u-mux: flag c1∧c2 picks t1 over t2
 ; CHECK:     %[[C1A:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 5)
 ; CHECK:     %[[C2A:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 7)

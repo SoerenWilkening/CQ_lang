@@ -41,7 +41,8 @@ merge:
 ;   out   = (q==7)          ? a2 : a3
 ;   out4  = (q==0 ∧ q<9)    ? a1 : out
 ;   out10 = (q==0 ∧ q≥9)    ? a0 : out4
-; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK: %u0.stable = freeze i32 %u0
+; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0.stable)
 ; CHECK:     %[[E7:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 7)
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[E7]],
 ; CHECK:     call void @cqrt_x(i32 %[[E7]])

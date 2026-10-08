@@ -3996,8 +3996,8 @@ private:
     // gate literals and call arguments before clone capture / after main adjoints
     // (dm7f.16.1, p3kd.7.7); these obligations also apply under optimization.
     if (!isa<Constant>(L) && !isGuaranteedNotToBePoison(L)) {
-      // Classical-ness is the TERMINATOR's condition's: `L` is usually a fresh
-      // compare or negation the next re-seed has not tainted yet.
+      // convertPhis refreshes the owning taint after every replacement; a
+      // fresh quantum predicate must never become a classical frozen literal.
       const Value *Cond =
           isa<BranchInst>(Term) ? cast<BranchInst>(Term)->getCondition()
                                 : cast<SwitchInst>(Term)->getCondition();
@@ -4576,7 +4576,9 @@ private:
     // path-predicate φ the flatten converts; it is an OPAQUE i1 REGISTER read as a
     // CONTROL — the same kind of thing as a rail LEAF — so it takes the rail
     // leaf's route.
-    if (isCondRailLeaf(V) || isStructuralRailPhi(V))
+    // A compiler-created classical freeze is an opaque stable bit. Moving
+    // negation beneath it would choose a different value for poison/undef.
+    if (isa<FreezeInst>(V) || isCondRailLeaf(V) || isStructuralRailPhi(V))
       return track(B.CreateXor(V, ConstantInt::getTrue(V->getContext())));
     auto *BO = cast<BinaryOperator>(V);
     if (BO->getOpcode() == Instruction::Xor) {
@@ -4900,6 +4902,7 @@ private:
       if (auto *I = dyn_cast<Instruction>(Acc))
         markSpeculatedValue(*I);
       P->eraseFromParent();
+      refreshSpeculationTaint(*D->getParent(), Taint);
     }
   }
 

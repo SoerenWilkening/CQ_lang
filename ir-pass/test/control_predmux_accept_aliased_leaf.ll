@@ -38,7 +38,8 @@
 ; RUN: %filecheck %s --check-prefix=NOCASEB < %t.cqd0.ll
 ;
 ; CASE A, pinned — note the inverted predicate:
-; CHECK: %h = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK: %u0.stable = freeze i32 %u0
+; CHECK: %h = call i32 @cqrt_alloc_i32(i32 %u0.stable)
 ; CHECK: %h_op = call i32 @cq_template_add_i32_hl(i32 %h, i32 7)
 ; CHECK: %h_cmp = call i32 @cq_template_icmp_ne_i32(i32 %h, i32 %h)
 ; CHECK: %out = call i32 @cqrt_alloc_i32(i32 0)

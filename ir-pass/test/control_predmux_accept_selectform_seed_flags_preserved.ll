@@ -61,7 +61,8 @@ merge:
 ; so the narrowing left the value wiring alone and only stopped MUTATING it.
 ; LLVM prints the flags in canonical `nuw nsw` order regardless of source order.
 ; CHECK:      %[[SEED:[a-zA-Z0-9_.]+]] = add nuw nsw i32 %u, 1
-; CHECK-NEXT: %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[SEED]])
+; CHECK-NEXT: %[[SF:[a-zA-Z0-9_.]+]] = freeze i32 %[[SEED]]
+; CHECK-NEXT: %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[SF]])
 
 ; And the region really did flatten — otherwise the CHECK above is vacuous,
 ; because an unclaimed region never calls stripPoisonCone at all.

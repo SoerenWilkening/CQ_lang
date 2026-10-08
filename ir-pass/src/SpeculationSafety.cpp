@@ -261,6 +261,18 @@ bool classicalCallCanBeSpeculated(const CallInst *Call) {
   return totalCall(Call);
 }
 
+void refreshSpeculationTaint(Function &F, TaintSet &Taint) {
+  SmallVector<Value *, 32> Seeds;
+  for (Value *V : Taint.Tainted)
+    if (auto *I = dyn_cast<Instruction>(V); I && I->getFunction() == &F)
+      Seeds.push_back(V);
+    else if (auto *A = dyn_cast<Argument>(V); A && A->getParent() == &F)
+      Seeds.push_back(V);
+  // The existing propagation owner follows fresh users without a depth limit
+  // and preserves source/clone parameter rules. Constants are never seeds.
+  propagateFromSeeds(Taint, Seeds);
+}
+
 void markSpeculatedValue(Instruction &Root) {
   // Include pre-existing entry/dominator producers: they can become new gate
   // literals even though only their quantum consumer moved. Arguments are

@@ -94,10 +94,11 @@ merge:
 ; CHECK:      %[[BELOW:[a-zA-Z0-9_.]+]] = add i32 %c, 1
 ; CHECK-NEXT: %[[PC:[a-zA-Z0-9_.]+]] = call i32 @llvm.ctpop.i32(i32 %[[BELOW]])
 ; CHECK-NEXT: %[[CC:[a-zA-Z0-9_.]+]] = add i32 %[[PC]], 1
+; CHECK:      %[[CCF:[a-zA-Z0-9_.]+]] = freeze i32 %[[CC]]
 
 ; A curated intrinsic node is INTERIOR, not a leaf — the walk must recurse
 ; through it to have reached %cc at all. The classical call survives verbatim
 ; into emission (it is not tainted, so no template replaces it) and lands in the
 ; `_hl` LITERAL slot.
-; CHECK:      call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 %[[CC]])
+; CHECK:      call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 %[[CCF]])
 ; CHECK:      call void @cqrt_toffoli(

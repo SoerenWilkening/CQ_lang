@@ -1,13 +1,11 @@
-; lowering_predmux_leave_speccall_classicalargs.ll — DECLINE probe (bd adia,
-; the 6.5 ANTI-OVERLAP fence): the E4 pending-spec admit requires ≥1 TAINTED
-; call argument. An all-classical-args pure call in a tainted arm is the 6.5
-; classical-call-arm owner's territory (flat diamonds) — PredMux must NOT
-; steal it, in ANY nesting. Here the nested shape has no shipped owner, so
-; the region is left and the existing loud nested-control decline fires,
-; char-for-char — never a silent claim.
-;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq controlled lowering: nested control flow under quantum control
+; lowering_predmux_leave_speccall_classicalargs.ll — ACCEPT (dm7f.16.1).
+; The shared owner retains total purefn(u)=3*u+7 (wrapping i32).
+; Output is purefn(u) for q>10, q for 5<q<=10, and zero otherwise.
+; Classical calls inside nested quantum value arms use the common edge mux.
+; Historical filename retained.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @purefn(i32 %a) {
@@ -34,3 +32,18 @@ merge:
   %m = call i32 @cq_measure_si32(i32 %p2)
   ret i32 %m
 }
+
+; CHECK-LABEL: define i32 @example(
+; CHECK: %[[U:[a-zA-Z0-9_.]+]] = freeze i32 %u
+; CHECK: %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[U]])
+; CHECK: %[[V:[a-zA-Z0-9_.]+]] = call i32 @purefn(i32 %[[U]])
+; CHECK-DAG: call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 5)
+; CHECK-DAG: call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 10)
+; CHECK: %[[S:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[V]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G:[a-zA-Z0-9_.]+]], i32 %[[S]], i32 %[[INNER:[a-zA-Z0-9_.]+]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[Q]], i32 %[[INNER]])
+; CHECK: call void @cqrt_copy_i32_controlled(i32 %[[OUTG:[a-zA-Z0-9_.]+]], i32 %[[INNER]], i32 %[[OUT:[a-zA-Z0-9_.]+]])
+; CHECK: %[[ZERO:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[OUTG]], i32 %[[ZERO]], i32 %[[OUT]])
+; CHECK: call i32 @cqrt_measure_i32(i32 %[[OUT]])

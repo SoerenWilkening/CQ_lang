@@ -1,0 +1,43 @@
+{
+  "ctest_overrides": [
+    {
+      "file": "build/tests/frontend/CTestTestfile.cmake",
+      "before": "add_test([=[frontend-lit]=] \"/usr/local/Frameworks/Python.framework/Versions/3.14/bin/python3.14\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/tests/frontend/run_lit.py\" \"/Users/sorenwilkening/.pyenv/shims/lit\" \"-v\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/build/tests/frontend\")",
+      "after": "add_test([=[frontend-lit]=] \"/usr/local/Frameworks/Python.framework/Versions/3.14/bin/python3.14\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/tests/frontend/run_lit.py\" \"/Users/sorenwilkening/.pyenv/shims/lit\" \"-v\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/build/tests/frontend\" \"-j\" \"1\")"
+    },
+    {
+      "file": "build/tests/e2e/CTestTestfile.cmake",
+      "before": "add_test([=[e2e-loop-twin-matrix]=] \"/Users/sorenwilkening/.pyenv/versions/3.11.9/bin/python3\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/tools/loop_twin_matrix.py\" \"--clang\" \"/usr/local/opt/llvm@19/bin/clang\" \"--opt\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/build/ir-pass/cq-opt\" \"--plugin\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/build/ir-pass/libCQPass.so\" \"--include\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/include\" \"--runtime\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/build/runtime/libcq_runtime.a\" \"--templates\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/build/runtime/libcq_templates.a\" \"--phi-surface\" \"void\" \"--jobs\" \"6\")",
+      "after": "add_test([=[e2e-loop-twin-matrix]=] \"/Users/sorenwilkening/.pyenv/versions/3.11.9/bin/python3\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/tools/loop_twin_matrix.py\" \"--clang\" \"/usr/local/opt/llvm@19/bin/clang\" \"--opt\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/build/ir-pass/cq-opt\" \"--plugin\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/build/ir-pass/libCQPass.so\" \"--include\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/include\" \"--runtime\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/build/runtime/libcq_runtime.a\" \"--templates\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/build/runtime/libcq_templates.a\" \"--phi-surface\" \"void\" \"--jobs\" \"1\")"
+    },
+    {
+      "file": "build/ir-pass/CTestTestfile.cmake",
+      "before": "add_test([=[taintset-scrub-guard]=] \"/Users/sorenwilkening/.pyenv/shims/python3\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/ir-pass/../tools/taintset_scrub_guard.py\" \"--compile-commands\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/build/compile_commands.json\" \"--jobs\" \"2\")",
+      "after": "add_test([=[taintset-scrub-guard]=] \"/Users/sorenwilkening/.pyenv/shims/python3\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/ir-pass/../tools/taintset_scrub_guard.py\" \"--compile-commands\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/build/compile_commands.json\" \"--jobs\" \"1\")"
+    },
+    {
+      "file": "build/ir-pass/test/CTestTestfile.cmake",
+      "before": "add_test([=[ir-pass-lit]=] \"/Users/sorenwilkening/.pyenv/shims/lit\" \"-v\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/build/ir-pass/test\")",
+      "after": "add_test([=[ir-pass-lit]=] \"/Users/sorenwilkening/.pyenv/shims/lit\" \"-v\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/build/ir-pass/test\" \"-j\" \"1\")"
+    },
+    {
+      "file": "build/ir-pass/test/CTestTestfile.cmake",
+      "before": "add_test([=[cq-opt-equivalence]=] \"/Users/sorenwilkening/.pyenv/shims/python3\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/tools/cq_opt_equivalence.py\" \"--opt\" \"/usr/local/opt/llvm@19/bin/opt\" \"--cq-opt\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/build/ir-pass/cq-opt\" \"--plugin\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/build/ir-pass/libCQPass.so\" \"--fixtures\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/ir-pass/test\" \"--stride\" \"8\")",
+      "after": "add_test([=[cq-opt-equivalence]=] \"/Users/sorenwilkening/.pyenv/shims/python3\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/tools/cq_opt_equivalence.py\" \"--opt\" \"/usr/local/opt/llvm@19/bin/opt\" \"--cq-opt\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/build/ir-pass/cq-opt\" \"--plugin\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/build/ir-pass/libCQPass.so\" \"--fixtures\" \"/Users/sorenwilkening/Desktop/Projects/CQ_lang/ir-pass/test\" \"--stride\" \"1\" \"--jobs\" \"1\")"
+    }
+  ],
+  "temporary_source_overrides": [
+    "cq_stage_cache_test.py independent-group worker count 6 -> 1",
+    "taintset_scrub_guard.py configuration, preprocessing and record-query worker counts -> 1; same assertions/configurations, restore both after gate"
+  ],
+  "environment": {
+    "CQ_MATRIX_JOBS": "1",
+    "CQ_GUARD_JOBS": "1",
+    "OMP_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "VECLIB_MAXIMUM_THREADS": "1",
+    "NUMEXPR_NUM_THREADS": "1",
+    "CMAKE_BUILD_PARALLEL_LEVEL": "1"
+  }
+}

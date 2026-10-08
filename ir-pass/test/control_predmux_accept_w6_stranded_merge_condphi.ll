@@ -86,7 +86,8 @@ out:
 ; polarities of every leaf are minted (the no-NOT invariant pushes each negation
 ; to the leaves): the FINAL answer mux needs `inf`/`hi`/`lo`/`hb` positive, the
 ; interior join mux needs them all inverted.
-; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK: %u0.stable = freeze i32 %u0
+; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0.stable)
 ; CHECK-DAG: call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 32767)
 ; CHECK-DAG: call i32 @cq_template_icmp_ne_i32_hl(i32 %[[Q]], i32 32767)
 ; CHECK-DAG: call i32 @cq_template_icmp_ne_i32_hl(i32 %[[Q]], i32 0)

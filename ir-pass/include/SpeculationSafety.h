@@ -18,5 +18,7 @@ bool classicalCallCanBeSpeculated(const llvm::CallInst *Call);
 // before the clone mirror, or after main's adjoints have been emitted.
 void markSpeculatedValue(llvm::Instruction &I);
 void stabilizeSpeculatedValues(llvm::Function &F, const TaintSet &Taint);
+// PHI replacement creates predicate users before the outer pass re-seeds taint.
+void refreshSpeculationTaint(llvm::Function &F, TaintSet &Taint);
 }
 #endif

@@ -1,0 +1,22 @@
+[
+  {
+    "mutant": "disable owning PHI taint refresh",
+    "killing_fixture": "e2e-slice-libm-real-log1p",
+    "exit": 8,
+    "killed": true,
+    "noop": "reuse preceding successful green of exactly this fixture",
+    "command": [
+      "ctest",
+      "--test-dir",
+      "build",
+      "-j1",
+      "-R",
+      "^e2e-slice-libm-real-log1p$",
+      "--output-on-failure"
+    ]
+  },
+  {
+    "restore_build_exit": 0,
+    "source_byte_exact": true
+  }
+]

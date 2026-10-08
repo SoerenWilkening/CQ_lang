@@ -1,37 +1,12 @@
-; control_predmux_reject_undef_freeze_phi.ll — DECLINE (bd q2wk, PRD §4.4b
-; rule (B), residual (e)). The FIFTH residual, found by the DELTA Rule-13 round
-; reviewing the fix that was supposed to have closed the class — which is the
-; point of running a delta round at all.
-;
-; THE GAP WAS A DISAGREEMENT ABOUT *WHEN* undef IS NORMALIZED.
-; `convertPhis` freezes every `isa<UndefValue>` incoming (which includes
-; `PoisonValue`) to `Constant::getNullValue(P->getType())` BEFORE it builds its
-; `In` list. The rule-(B) fence walked `P->getIncomingValue(K)` RAW. So a phi
-; whose incomings become identical only AFTER the freeze read as "not all equal"
-; to the fence — answer: will taint — while the flatten RAUW'd it to a plain
-; constant — answer: stays classical.
-;
-; Here `%sp = phi i32 [ 0, %a1 ], [ undef, %a2 ]` RAUWs to the constant 0, so
-; `%cc = icmp eq i32 0, %k` is a fully CLASSICAL, argument-derived runtime i1.
-; And because every merge phi is i1, `convertPhis` takes the boolean-algebra path
-; and mints NO select — so SelectClassify's GATE-2 untainted-leaf backstop never
-; runs and the module COMPILED SILENTLY (rc 0) where the pre-q2wk plugin
-; declined. That is verbatim the failure mode
-; control_predmux_reject_i1cmp_shield_phi.ll's header calls "the thing to close".
-;
-; Not a miscompile — freezing undef to zero is the sanctioned treatment (the
-; source had no defined result on that path) and the emitted network is a legal
-; refinement — but an accept strictly wider than the argument justifying it,
-; which is the criterion the whole fence round was applied under.
-;
-; THE RULE THIS PINS, and the reason it is stated as a rule rather than a patch:
-; the fence must MIRROR `convertPhis`' `In`-list construction VERBATIM. Any future
-; normalization `convertPhis` grows — a new freeze, a new dedup, a new fold — must
-; be mirrored in the fence or it reopens exactly this gap. Two shapes are covered
-; below: `[0, undef]` (a constant meeting an undef) and `[undef, poison]` (two
-; distinct uniqued Values that both freeze to the same zero).
-;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; control_predmux_reject_undef_freeze_phi.ll — ACCEPT (dm7f.16.1).
+; Existing [0,undef]->0 PHI normalization is a legal refinement.
+; Then c=(k==0), g=(q>5) select equality tuples (7,70) on g&&c,
+; (9,90) on g&&!c, and (11,110) on !g. Nested classical control
+; now has the shared admission argument; borrowed q supplies every compare.
+; Historical filename retained.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
@@ -73,7 +48,17 @@ merge:                                       ; all-i1 ⇒ BoolAlg, no select min
   ret i32 %m
 }
 
-; CHECK: error{{.*}}cq controlled lowering: nested control flow under quantum control
-; Nothing lowered — detect-before-mutate.
-; CHECK-NOT: cqrt_
-; CHECK-NOT: cq_template_
+
+; CHECK-LABEL: define i32 @probe(
+; CHECK: %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(
+; CHECK-DAG: icmp eq i32 0, %k
+; CHECK-DAG: %[[E7:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 7)
+; CHECK-DAG: %[[E70:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 70)
+; CHECK-DAG: %[[E9:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 9)
+; CHECK-DAG: %[[E90:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 90)
+; CHECK-DAG: %[[E11:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 11)
+; CHECK-DAG: %[[E110:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 110)
+; CHECK: %[[Z1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i1_to_i32(
+; CHECK: %[[Z2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i1_to_i32(
+; CHECK: %[[SUM:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32(i32 %[[Z1]], i32 %[[Z2]])
+; CHECK: call i32 @cqrt_measure_i32(i32 %[[SUM]])

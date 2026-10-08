@@ -89,7 +89,8 @@ merge:                                  ; 2 merge phis = the W3 claim witness
 ; the purity/totality proof buys) and the diamond is gone. The two
 ; --implicit-check-not flags on the RUN line carry the flattening assertion.
 ; ---------------------------------------------------------------------------
-; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 %u0)
+; CHECK: %u0.stable = freeze x86_fp80 %u0
+; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 %u0.stable)
 ; CHECK:      call void @cqrt_ry_f80(i32 %[[Q]], double 5.000000e-01)
 
 ; The ELSE-arm value. It is bound HERE, before the call, because it is the ¬flag

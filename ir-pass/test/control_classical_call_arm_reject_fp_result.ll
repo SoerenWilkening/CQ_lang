@@ -1,16 +1,11 @@
-; control_classical_call_arm_reject_fp_result.ll — fp-result reject (DD-7 /
-; WI-5.5, the f64 trap): a PURE classical call inside a tainted-condition diamond
-; arm whose result is FLOATING-POINT. The merge `φ` is then `double`, which has a
-; VALID `abiWidthFromType` ("f64") yet NO `cqrt_copy_<W>_controlled` — an fp value
-; under tainted control is categorically a rotation ANGLE, never routable data
-; (the f64 silent-miscompile family). `classifyClassicalCallArm` ACCEPTS the
-; structural shape (pure, all-classical-args), and the EMITTER then gates on
-; `copyControlledFn` NON-NULL — the integer-only guard — declining loudly BEFORE
-; any mutation. The gate is on `copyControlledFn`, NOT on `abiWidthFromType`
-; non-empty (keying on the latter is the f64 trap). NEVER lowered.
-;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}control flow under quantum control
+; control_classical_call_arm_reject_fp_result.ll — ACCEPT (dm7f.16.1).
+; A retained total classical f64 call supplies data in a quantum value arm.
+; The measured value is 107.0 when q>5 and borrowed q otherwise. This
+; reaches shared f64 controlled-copy lowering; no rotation-angle use occurs.
+; Historical filename retained.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+
 declare double @cq_theta_f64(double, double)
 declare double @cq_measure_f64(double)
 ; bd wve8 — DEFINED, not declared, and it is LOAD-BEARING for what this fixture
@@ -42,3 +37,18 @@ merge:
 }
 
 attributes #0 = { nounwind willreturn memory(none) }
+
+; CHECK-LABEL: define double @example(
+; CHECK: %[[U:[a-zA-Z0-9_.]+]] = freeze double %u0
+; CHECK: %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double %[[U]])
+; CHECK: %[[R:[a-zA-Z0-9_.]+]] = call double @fp_f(double 7.000000e+00)
+; CHECK: %[[G:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fcmp_ogt_f64_hl(i32 %[[Q]], double 5.000000e+00)
+; CHECK: %[[O:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double 0.000000e+00)
+; CHECK: %[[S:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double %[[R]])
+; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %[[G]], i32 %[[S]], i32 %[[O]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
+; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %[[G]], i32 %[[Q]], i32 %[[O]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
+; CHECK: call void @cq_template_fcmp_ogt_f64_hl_unc(i32 %[[G]], i32 %[[Q]], double 5.000000e+00)
+; CHECK: call void @cqrt_free(i32 %[[G]])
+; CHECK: call double @cqrt_measure_f64(i32 %[[O]])

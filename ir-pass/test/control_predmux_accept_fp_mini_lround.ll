@@ -32,7 +32,8 @@ merge:
 ; ¬ugt = ole — note the ole leaf compares the SPECULATED %a rail, an HL flag on
 ; a derived wire); the f64 merges route through the kjd1 fp controlled-copy
 ; family; the post-merge fptosi lowers via the cast grammar:
-; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double %u0)
+; CHECK: %u0.stable = freeze double %u0
+; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double %u0.stable)
 ; CHECK:     %[[A:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fadd_f64_hl(i32 %[[Q]], double 5.000000e-01)
 ; CHECK:     %[[B:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fneg_f64(i32 %[[Q]])
 ; inner select: c1∧¬c2 = ogt(q,0) ∧ ole(a,1) — one Toffoli conjunction:

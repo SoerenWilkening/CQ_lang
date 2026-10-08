@@ -61,7 +61,8 @@ merge:                                  ; 2 merge phis = the W3 PredMux claim wi
 ; load-bearing is now captured and named.
 
 ; The tainted rail, and the fp80 bit-pattern extract chain off it.
-; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 %u0)
+; CHECK: %u0.stable = freeze x86_fp80 %u0
+; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 %u0.stable)
 ; CHECK:     %[[CAST:[a-zA-Z0-9_.]+]] = call i32 @cq_template_bitcast_f80_to_i80(i32 %[[Q]])
 ; CHECK:     %[[MAN:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i80_hl(i32 %[[CAST]], i80 18446744073709551615)
 

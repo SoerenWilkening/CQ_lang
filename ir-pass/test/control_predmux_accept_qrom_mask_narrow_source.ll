@@ -69,8 +69,9 @@ merge:
   ret i32 %m
 }
 ; CHECK-LABEL: define i32 @sext_i8_n4(
+; CHECK: %u0.stable = freeze i8 %u0
 ; CHECK:      %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 4)
-; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i8(i8 %u0)
+; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i8(i8 %u0.stable)
 ; CHECK:      %[[M:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i8_hl(i32 %[[Q]], i8 3)
 ; CHECK-NEXT: %[[X:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i8_to_i32(i32 %[[M]])
 ; CHECK-NEXT: call i32 @cqrt_qram_load_i32(i32 %[[T]], i32 %[[X]])
@@ -100,8 +101,9 @@ merge:
   ret i16 %m
 }
 ; CHECK-LABEL: define i16 @zext_i16_n8(
+; CHECK: %u0.stable = freeze i16 %u0
 ; CHECK:      %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i16(i32 8)
-; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i16(i16 %u0)
+; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i16(i16 %u0.stable)
 ; CHECK:      %[[M:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i16_hl(i32 %[[Q]], i16 7)
 ; CHECK-NEXT: %[[X:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i16_to_i32(i32 %[[M]])
 ; CHECK-NEXT: call i32 @cqrt_qram_load_i16(i32 %[[T]], i32 %[[X]])
@@ -133,8 +135,9 @@ merge:
   ret i8 %m
 }
 ; CHECK-LABEL: define i8 @sext_i8_n256(
+; CHECK: %u0.stable = freeze i8 %u0
 ; CHECK:      %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i8(i32 256)
-; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i8(i8 %u0)
+; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i8(i8 %u0.stable)
 ; CHECK:      %[[X:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i8_to_i32(i32 %[[Q]])
 ; CHECK-NEXT: call i32 @cqrt_qram_load_i8(i32 %[[T]], i32 %[[X]])
 ; CHECK-NEXT: call void @cq_template_zext_i8_to_i32_unc(i32 %[[X]], i32 %[[Q]])
@@ -197,8 +200,9 @@ merge:
 ; CHECK-LABEL: define i32 @zext_i1_n1(
 ; CHECK:      %[[G:[a-zA-Z0-9_.]+]] = getelementptr [1 x i32], ptr @t1, i64 0, i64 %{{[a-zA-Z0-9_.]+}}
 ; CHECK-NEXT: %[[V:[a-zA-Z0-9_.]+]] = load i32, ptr %[[G]], align 4
+; CHECK-NEXT: %[[VF:[a-zA-Z0-9_.]+]] = freeze i32 %[[V]]
 ; CHECK:      %[[H:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_ult_i32_hl(
-; CHECK:      %[[S:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[V]])
+; CHECK:      %[[S:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[VF]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[H]], i32 %[[S]],
 ; NARROW-LABEL: define i32 @zext_i1_n1(
 ; NARROW-NOT: qram
@@ -325,8 +329,9 @@ merge:
   ret i32 %m
 }
 ; CHECK-LABEL: define i32 @entry_cast(
+; CHECK: %u0.stable = freeze i32 %u0
 ; CHECK:      %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 4)
-; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0.stable)
 ; CHECK:      %[[M:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[Q]], i32 3)
 ; CHECK-NEXT: call i32 @cqrt_qram_load_i32(i32 %[[T]], i32 %[[M]])
 ; NARROW-LABEL: define i32 @entry_cast(
@@ -380,8 +385,9 @@ merge:
   ret i32 %m
 }
 ; CHECK-LABEL: define i32 @shared_cast(
+; CHECK: %u0.stable = freeze i32 %u0
 ; CHECK:      %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 4)
-; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0.stable)
 ; CHECK:      %[[E:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sext_i32_to_i64(i32 %[[Q]])
 ; CHECK:      (i32 %[[E]], i64 5)
 ; CHECK:      %[[M:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[Q]], i32 3)

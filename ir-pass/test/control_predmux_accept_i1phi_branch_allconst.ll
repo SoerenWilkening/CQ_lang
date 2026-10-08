@@ -71,7 +71,8 @@ merge:
 ; ∧true term %p = EP(%a→%sc) = c1 ∧ ¬c2; ¬c1 and c3 remain only inside the
 ; block predicate P(%sc) (the ∨ of all three reaching edges), never as a %p
 ; term — that is the ∧false drop.
-; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK: %u0.stable = freeze i32 %u0
+; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0.stable)
 ; CHECK-DAG: call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 5)
 ; CHECK-DAG: call i32 @cq_template_icmp_slt_i32_hl(i32 %[[Q]], i32 100)
 ; CHECK-DAG: call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 42)

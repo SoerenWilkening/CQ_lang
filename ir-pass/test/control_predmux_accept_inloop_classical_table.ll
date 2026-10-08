@@ -61,8 +61,10 @@
 ; The classical loads survive as LOADS and feed the literal slot of an `_hl`
 ; template. The handle is operand 0; the classical value is operand 1.
 ; CHECK-DAG: load i32, ptr %{{.*}}
-; CHECK-DAG: call i32 @cq_template_sub_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 %z)
-; CHECK-DAG: call i32 @cq_template_add_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 %p)
+; CHECK-DAG: %z.stable = freeze i32 %z
+; CHECK-DAG: %p.stable = freeze i32 %p
+; CHECK-DAG: call i32 @cq_template_sub_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 %z.stable)
+; CHECK-DAG: call i32 @cq_template_add_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 %p.stable)
 ;
 ; The loop stays ROLLED.
 ; CHECK: br i1 %{{.*}}, label %exit, label %head

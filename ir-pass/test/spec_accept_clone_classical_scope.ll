@@ -57,9 +57,10 @@ go:
 ; The clone alone is flattened.
 ; CHECK-LABEL: define internal i32 @__cq_q_helper_01(i32 %b, i32 %c)
 ; CHECK-NEXT:  entry:
-; CHECK-NEXT:  %[[CC:[a-zA-Z0-9_.]+]] = icmp sgt i32 %c, 0
-; CHECK-NEXT:  %[[N:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sub_i32_hl(i32 %b, i32 %c)
-; CHECK-NEXT:  %[[P:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %b, i32 %c)
+; CHECK-NEXT:  %[[CS:[a-zA-Z0-9_.]+]] = freeze i32 %c
+; CHECK-NEXT:  %[[CC:[a-zA-Z0-9_.]+]] = icmp sgt i32 %[[CS]], 0
+; CHECK-NEXT:  %[[N:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sub_i32_hl(i32 %b, i32 %[[CS]])
+; CHECK-NEXT:  %[[P:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %b, i32 %[[CS]])
 ; CHECK-NEXT:  %[[FC:[a-zA-Z0-9_.]+]] = freeze i1 %[[CC]]
 ; CHECK-NEXT:  %[[S:[a-zA-Z0-9_.]+]] = select i1 %[[FC]], i32 %[[P]], i32 %[[N]]
 ; CHECK-NEXT:  %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)

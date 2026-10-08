@@ -74,7 +74,8 @@ merge:                                  ; 2 merge phis = the W3 claim witness
 ; copy sources of the caller merge are bound — a Rule-13 lens caught the first
 ; draft asserting only a bare `call void @cqrt_copy_f80_controlled(`, under which
 ; an arm inversion in the caller passed green.
-; CHECK:       %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 %u0)
+; CHECK: %u0.stable = freeze x86_fp80 %u0
+; CHECK:       %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 %u0.stable)
 ; CHECK:       %[[K2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fmul_f80_hl(i32 %[[Q]], x86_fp80 0xK40008000000000000000)
 ; CHECK:       %[[R:[a-zA-Z0-9_.]+]] = call i32 @__cq_q_leaf_1(i32 %[[Q]])
 ; CHECK:       %[[K1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fadd_f80_hl(i32 %[[R]], x86_fp80 0xKBFFE8000000000000000)

@@ -42,7 +42,8 @@ merge:
 ;   out   = (¬c1∧¬c2)∧c3 ? e3 : e4     [two chained Toffolis]
 ;   out10 = ¬c1∧c2       ? e2 : out
 ;   out14 = c1           ? e1 : out10
-; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i64(i64 %u0)
+; CHECK: %u0.stable = freeze i64 %u0
+; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i64(i64 %u0.stable)
 ; CHECK:     %[[NC1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sle_i64_hl(i32 %[[Q]], i64 100)
 ; CHECK:     %[[NC2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sle_i64_hl(i32 %[[Q]], i64 50)
 ; CHECK:     %[[G1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)

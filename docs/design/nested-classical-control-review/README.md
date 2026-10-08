@@ -70,3 +70,47 @@ pin positive edge transfers, including one-input and equal-input classical PHIs.
 Their filenames remain for existing historical references. The effectful-call
 fixture still fails loudly. Review reports and measured validation are retained
 in this directory; the broader `dm7f.16` and `p3kd.7.7` scopes remain open.
+
+The full census at `9944c329` measures **100/180 scalar cells**, with source
+coverage 42/120, intrinsic coverage 48/48 and macro coverage 10/12, plus the
+classical-only 3/3 outside that total. All 378 accepted probes pass the structural
+free check; 105 of 483 probes still decline. Compared with the committed census,
+16 mixtures newly accept and 14 cells become complete, with no acceptance
+regressions. The completed cells are `tanhl`, `expm1l`, all widths of `ldexp`
+and `scalbn`, and f32/f64 `pow`, `hypot` and `fdim`. `fdiml` remains blocked.
+
+Remaining first blockers are 43 body/memory, 17 shared control (eight nested),
+18 undefined returns, 14 argument/return ABI, nine `frem`, two loop control and
+two unknown macro callees. Their exact diagnostics and mixtures are in
+[validation/census-audit.json](validation/census-audit.json); the full data is
+[runtime_census.json](../../../tools/library_coverage/runtime_census.json).
+Acceptance and structural checks do not establish numerical or unitary behavior.
+
+The census command used `--jobs 1` at nice level 19. The batch uses `ctest -j1`,
+lit `-j1`, and one worker in every inner harness. Its equivalence entry runs
+`--stride 1 --jobs 1` once, replacing the usual sampled comparison and supplying
+the full required comparison. Temporary scheduling overrides preserve all
+assertions and are restored byte-for-byte after the gate; their exact settings
+are recorded in [validation/serial-scheduling.json](validation/serial-scheduling.json).
+
+The single serial batch at `9944c329` passed 539 of 549 entries, including
+all 2709 driver equivalence comparisons with zero mismatches. Eight real-libm
+slices exposed stale taint after boolean PHI replacement: a fresh quantum
+predicate could be frozen as classical, then reach a binary-only negation
+assumption. `dm7f.16.2` refreshes the existing taint owner after replacement
+and erasure, before another edge literal is classified. Genuine frozen bits
+are negated opaquely with xor against true. No bounded ancestry rejection or
+runtime state is introduced. Three independent analytic follow-ups cleared
+the correction; the outer specialization fixpoint and final literal checks
+remain in force.
+
+Only the failed batch subjects were rerun: scoped green passed 56 of 58 IR
+fixtures and all nine failed slices; final passed the two remaining typed
+seed assertions. Bare scalar inputs and unproved loads now have positively
+checked freezes feeding the same literal slots. Two exact gate-stream twins
+use matching noundef seeds for their defined-input comparison. Six historical
+negatives now assert valid shared classical-control/call lowerings. The
+nexttoward golden changes only an unused undef allocation seed to +0.0, with
+the selected-edge argument recorded in the R3 follow-up. The passing batch
+entries and full driver comparison were not rerun after this correction.
+See [validation/batch.json](validation/batch.json) for commit-qualified counts.

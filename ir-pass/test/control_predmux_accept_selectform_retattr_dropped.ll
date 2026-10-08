@@ -90,8 +90,9 @@ merge:
 ; the `range` is gone, carried by the global implicit-check-not above. Matching
 ; the call positively as well means a strip that deleted it could not pass.
 ; CHECK:      %[[PC:[a-zA-Z0-9_.]+]] = call i32 @llvm.ctpop.i32(i32 %c)
+; CHECK:      %[[PCF:[a-zA-Z0-9_.]+]] = freeze i32 %[[PC]]
 
 ; The region really did flatten, so the assertions above are not vacuous, and
 ; the surviving classical value really does land in the `_hl` LITERAL slot.
-; CHECK:      call i32 @cq_template_icmp_sgt_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[PC]])
+; CHECK:      call i32 @cq_template_icmp_sgt_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[PCF]])
 ; CHECK:      call void @cqrt_toffoli(

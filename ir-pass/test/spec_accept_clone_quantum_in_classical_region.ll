@@ -54,11 +54,12 @@ entry:
 
 ; CHECK-LABEL: define internal i32 @__cq_q_helper_01(i32 %b, i32 %c)
 ; CHECK-NEXT:  entry:
-; CHECK-NEXT:  %[[CC:[a-zA-Z0-9_.]+]] = icmp slt i32 %c, 0
-; CHECK-NEXT:  %[[D:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sub_i32_hl(i32 %b, i32 %c)
-; CHECK-NEXT:  %[[NC:[a-zA-Z0-9_.]+]] = sub i32 0, %c
-; CHECK-NEXT:  %[[GE:[a-zA-Z0-9_.]+]] = icmp sge i32 %c, 0
-; CHECK-NEXT:  %[[T:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %b, i32 %c)
+; CHECK-NEXT:  %[[CS:[a-zA-Z0-9_.]+]] = freeze i32 %c
+; CHECK-NEXT:  %[[CC:[a-zA-Z0-9_.]+]] = icmp slt i32 %[[CS]], 0
+; CHECK-NEXT:  %[[D:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sub_i32_hl(i32 %b, i32 %[[CS]])
+; CHECK-NEXT:  %[[NC:[a-zA-Z0-9_.]+]] = sub i32 0, %[[CS]]
+; CHECK-NEXT:  %[[GE:[a-zA-Z0-9_.]+]] = icmp sge i32 %[[CS]], 0
+; CHECK-NEXT:  %[[T:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %b, i32 %[[CS]])
 ; CHECK-NEXT:  %[[G:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i1_hl(i32 %[[T]], i1 zeroext %[[GE]])
 ; CHECK-NEXT:  %[[SEL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[D]], i32 %[[SEL]])
@@ -74,8 +75,8 @@ entry:
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[G]])
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[D]], i32 %[[SEL]])
 ; CHECK-NEXT:  call void @cq_template_and_i1_hl_unc(i32 %[[G]], i32 %[[T]], i1 zeroext %[[GE]])
-; CHECK-NEXT:  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[T]], i32 %b, i32 %c)
-; CHECK-NEXT:  call void @cq_template_sub_i32_hl_unc(i32 %[[D]], i32 %b, i32 %c)
+; CHECK-NEXT:  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[T]], i32 %b, i32 %[[CS]])
+; CHECK-NEXT:  call void @cq_template_sub_i32_hl_unc(i32 %[[D]], i32 %b, i32 %[[CS]])
 ; CHECK-NEXT:  call void @cqrt_free(i32 %[[D]])
 ; CHECK-NEXT:  call void @cqrt_free(i32 %[[T]])
 ; CHECK-NEXT:  call void @cqrt_free(i32 %[[G]])

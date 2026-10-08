@@ -55,8 +55,10 @@
 ; qubit handle (§5.2). ⚠ That is a claim about the OPERAND SLOT. A table value used
 ; as an ARM OF THE MERGE is materialised on a rail by the ordinary 4.4 data mux and
 ; that is sound — see the in-loop sibling's header (Rule-13 round 1 R4-P2-2).
-; CHECK-DAG: call i32 @cq_template_sub_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 %z)
-; CHECK-DAG: call i32 @cq_template_add_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 %p)
+; CHECK-DAG: %z.stable = freeze i32 %z
+; CHECK-DAG: %p.stable = freeze i32 %p
+; CHECK-DAG: call i32 @cq_template_sub_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 %z.stable)
+; CHECK-DAG: call i32 @cq_template_add_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 %p.stable)
 ; Families that must be ABSENT entirely — these CAN be negatives.
 ; NEG-NOT: cqrt_rz
 ; NEG-NOT: cqrt_cswap

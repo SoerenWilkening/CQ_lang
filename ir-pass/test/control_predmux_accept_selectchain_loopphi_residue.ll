@@ -55,5 +55,6 @@ lexit:
 }
 
 ; Lowers without crashing: the theta rail allocates and the measure fires.
-; CHECK: call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK: %u0.stable = freeze i32 %u0
+; CHECK: call i32 @cqrt_alloc_i32(i32 %u0.stable)
 ; CHECK: call i32 @cqrt_measure_i32(

@@ -38,7 +38,8 @@ merge:
 }
 
 ; %flag = or(and(c1∧c2, ca), and(c1∧¬c2, cb)); ¬c2 = NaN-correct uge:
-; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double %u0)
+; CHECK: %u0.stable = freeze double %u0
+; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double %u0.stable)
 ; CHECK-DAG: call i32 @cq_template_fcmp_ogt_f64_hl(i32 %[[Q]], double 1.000000e+00)
 ; CHECK-DAG: call i32 @cq_template_fcmp_olt_f64_hl(i32 %[[Q]], double 4.000000e+00)
 ; CHECK-DAG: call i32 @cq_template_fcmp_oeq_f64_hl(i32 %[[Q]], double 2.000000e+00)

@@ -1,0 +1,621 @@
+{
+  "commit": "9944c3297f79c85ac4e22e570a551d783fb13047",
+  "census_sha256": "f194f55409531b17c3e55da1d96394d357c7c5aea99c6c16dc1988934082e35a",
+  "baseline_commit": "92e9f0ecfe7d1194b51cd6294fdd98f5d24eaf83",
+  "baseline_score": {
+    "source-injected": {
+      "covered": 28,
+      "total": 120
+    },
+    "intrinsic": {
+      "covered": 48,
+      "total": 48
+    },
+    "classical-only": {
+      "covered": 3,
+      "total": 3
+    },
+    "macro": {
+      "covered": 10,
+      "total": 12
+    }
+  },
+  "score": {
+    "source-injected": {
+      "covered": 42,
+      "total": 120
+    },
+    "intrinsic": {
+      "covered": 48,
+      "total": 48
+    },
+    "classical-only": {
+      "covered": 3,
+      "total": 3
+    },
+    "macro": {
+      "covered": 10,
+      "total": 12
+    }
+  },
+  "probe_count": 483,
+  "status_counts": {
+    "COMPILES": 378,
+    "decline": 105
+  },
+  "changes": [
+    {
+      "cell": "tanhl.f80",
+      "mix": "Q",
+      "before": "decline",
+      "after": "COMPILES"
+    },
+    {
+      "cell": "expm1l.f80",
+      "mix": "Q",
+      "before": "decline",
+      "after": "COMPILES"
+    },
+    {
+      "cell": "ldexpf.f32",
+      "mix": "CQ",
+      "before": "decline",
+      "after": "COMPILES"
+    },
+    {
+      "cell": "ldexp.f64",
+      "mix": "CQ",
+      "before": "decline",
+      "after": "COMPILES"
+    },
+    {
+      "cell": "ldexpl.f80",
+      "mix": "CQ",
+      "before": "decline",
+      "after": "COMPILES"
+    },
+    {
+      "cell": "scalbnf.f32",
+      "mix": "CQ",
+      "before": "decline",
+      "after": "COMPILES"
+    },
+    {
+      "cell": "scalbn.f64",
+      "mix": "CQ",
+      "before": "decline",
+      "after": "COMPILES"
+    },
+    {
+      "cell": "scalbnl.f80",
+      "mix": "CQ",
+      "before": "decline",
+      "after": "COMPILES"
+    },
+    {
+      "cell": "powf.f32",
+      "mix": "CQ",
+      "before": "decline",
+      "after": "COMPILES"
+    },
+    {
+      "cell": "pow.f64",
+      "mix": "CQ",
+      "before": "decline",
+      "after": "COMPILES"
+    },
+    {
+      "cell": "hypotf.f32",
+      "mix": "CQ",
+      "before": "decline",
+      "after": "COMPILES"
+    },
+    {
+      "cell": "hypotf.f32",
+      "mix": "QC",
+      "before": "decline",
+      "after": "COMPILES"
+    },
+    {
+      "cell": "hypot.f64",
+      "mix": "CQ",
+      "before": "decline",
+      "after": "COMPILES"
+    },
+    {
+      "cell": "hypot.f64",
+      "mix": "QC",
+      "before": "decline",
+      "after": "COMPILES"
+    },
+    {
+      "cell": "fdimf.f32",
+      "mix": "QC",
+      "before": "decline",
+      "after": "COMPILES"
+    },
+    {
+      "cell": "fdim.f64",
+      "mix": "QC",
+      "before": "decline",
+      "after": "COMPILES"
+    }
+  ],
+  "new_complete_cells": [
+    "tanhl.f80",
+    "expm1l.f80",
+    "ldexpf.f32",
+    "ldexp.f64",
+    "ldexpl.f80",
+    "scalbnf.f32",
+    "scalbn.f64",
+    "scalbnl.f80",
+    "powf.f32",
+    "pow.f64",
+    "hypotf.f32",
+    "hypot.f64",
+    "fdimf.f32",
+    "fdim.f64"
+  ],
+  "acceptance_regressions": [],
+  "diagnostic_changes": [],
+  "first_blocker_counts": {
+    "body-or-memory": 43,
+    "nested-control": 8,
+    "shared-control": 9,
+    "undefined-return": 18,
+    "loop-control": 2,
+    "argument-or-return-ABI": 14,
+    "frem": 9,
+    "unknown-callee": 2
+  },
+  "blockers": [
+    {
+      "diagnostic": "/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk/usr/include/math.h:263:36: in function probe i32 (double): cq taint escape: tainted value consumed by an unknown callee",
+      "probes": [
+        "isnormal.f64 Q"
+      ]
+    },
+    {
+      "diagnostic": "<unknown>:0:0: in function __cq_libm_cosf float (float): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
+      "probes": [
+        "cosf.f32 Q"
+      ]
+    },
+    {
+      "diagnostic": "<unknown>:0:0: in function __cq_libm_cosl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
+      "probes": [
+        "cosl.f80 Q"
+      ]
+    },
+    {
+      "diagnostic": "<unknown>:0:0: in function __cq_libm_log10l x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
+      "probes": [
+        "log10l.f80 Q"
+      ]
+    },
+    {
+      "diagnostic": "<unknown>:0:0: in function __cq_libm_log1pl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
+      "probes": [
+        "atanhl.f80 Q",
+        "log1pl.f80 Q"
+      ]
+    },
+    {
+      "diagnostic": "<unknown>:0:0: in function __cq_libm_log2l x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
+      "probes": [
+        "log2l.f80 Q"
+      ]
+    },
+    {
+      "diagnostic": "<unknown>:0:0: in function __cq_libm_logl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
+      "probes": [
+        "acoshl.f80 Q",
+        "asinhl.f80 Q",
+        "logl.f80 Q"
+      ]
+    },
+    {
+      "diagnostic": "<unknown>:0:0: in function __cq_libm_powl x86_fp80 (x86_fp80, x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
+      "probes": [
+        "powl.f80 CQ",
+        "powl.f80 QC",
+        "powl.f80 QQ"
+      ]
+    },
+    {
+      "diagnostic": "<unknown>:0:0: in function __cq_libm_remainderl x86_fp80 (x86_fp80, x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
+      "probes": [
+        "remainderl.f80 CQ",
+        "remainderl.f80 QC",
+        "remainderl.f80 QQ"
+      ]
+    },
+    {
+      "diagnostic": "<unknown>:0:0: in function __cq_libm_sinf float (float): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
+      "probes": [
+        "sinf.f32 Q"
+      ]
+    },
+    {
+      "diagnostic": "<unknown>:0:0: in function __cq_libm_sinl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
+      "probes": [
+        "sinl.f80 Q",
+        "tgammal.f80 Q"
+      ]
+    },
+    {
+      "diagnostic": "<unknown>:0:0: in function __cq_libm_tanf float (float): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
+      "probes": [
+        "tanf.f32 Q"
+      ]
+    },
+    {
+      "diagnostic": "<unknown>:0:0: in function __cq_libm_tanl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
+      "probes": [
+        "tanl.f80 Q"
+      ]
+    },
+    {
+      "diagnostic": "<unknown>:0:0: in function probe double (double, double): no template for opcode 'frem double' in tainted context",
+      "probes": [
+        "fmod.f64 CQ",
+        "fmod.f64 QC",
+        "fmod.f64 QQ"
+      ]
+    },
+    {
+      "diagnostic": "<unknown>:0:0: in function probe float (float, float): no template for opcode 'frem float' in tainted context",
+      "probes": [
+        "fmodf.f32 CQ",
+        "fmodf.f32 QC",
+        "fmodf.f32 QQ"
+      ]
+    },
+    {
+      "diagnostic": "<unknown>:0:0: in function probe x86_fp80 (x86_fp80, x86_fp80): no template for opcode 'frem x86_fp80' in tainted context",
+      "probes": [
+        "fmodl.f80 CQ",
+        "fmodl.f80 QC",
+        "fmodl.f80 QQ"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/bsdsrc/b_log.c:440:6: in function __cq_libm___log__D { double, double } (double): cq specialization: floating-point quantum argument or return has no reversible copy",
+      "probes": [
+        "tgammaf.f32 Q",
+        "tgamma.f64 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/ld80/e_lgammal_r.c:276:13: in function __cq_libm_lgammal_r x86_fp80 (x86_fp80, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)",
+      "probes": [
+        "lgammal.f80 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/ld80/s_exp2l.c:295:1: in function __cq_libm_exp2l x86_fp80 (x86_fp80): cq specialization: callee return value denotes no value (undef/poison)",
+      "probes": [
+        "exp2l.f80 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/e_atan2.c:71:37: in function __cq_q___cq_libm_atan2_10 double (double, double): cq controlled lowering: control flow under quantum control",
+      "probes": [
+        "atan2.f64 CQ"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/e_atan2f.c:43:20: in function __cq_q___cq_libm_atan2f_10 float (float, float): cq controlled lowering: nested control flow under quantum control",
+      "probes": [
+        "atan2f.f32 CQ"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/e_atan2l.c:61:32: in function __cq_q___cq_libm_atan2l_10 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: nested control flow under quantum control",
+      "probes": [
+        "atan2l.f80 CQ"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/e_hypotl.c:61:5: in function __cq_q___cq_libm_hypotl_01 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: nested control flow under quantum control",
+      "probes": [
+        "hypotl.f80 QC"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/e_hypotl.c:61:5: in function __cq_q___cq_libm_hypotl_10 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: nested control flow under quantum control",
+      "probes": [
+        "hypotl.f80 CQ"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/e_hypotl.c:61:5: in function __cq_q___cq_libm_hypotl_11 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: nested control flow under quantum control",
+      "probes": [
+        "hypotl.f80 QQ"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/e_lgamma_r.c:216:12: in function __cq_libm_lgamma_r double (double, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)",
+      "probes": [
+        "lgamma.f64 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/e_lgammaf_r.c:149:12: in function __cq_libm_lgammaf_r float (float, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)",
+      "probes": [
+        "lgammaf.f32 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/e_remainder.c:48:5: in function __cq_q___cq_libm_remainder_10 double (double, double): cq controlled lowering: control flow under quantum control",
+      "probes": [
+        "remainder.f64 CQ"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/e_remainder.c:48:5: in function __cq_q___cq_libm_remainder_11 double (double, double): cq controlled lowering: nested control flow under quantum control",
+      "probes": [
+        "remainder.f64 QQ"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/e_remainder.c:49:21: in function __cq_q___cq_libm_remainder_01 double (double, double): cq controlled lowering: control flow under quantum control",
+      "probes": [
+        "remainder.f64 QC"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/e_remainderf.c:40:5: in function __cq_q___cq_libm_remainderf_10 float (float, float): cq controlled lowering: nested control flow under quantum control",
+      "probes": [
+        "remainderf.f32 CQ"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/e_remainderf.c:40:5: in function __cq_q___cq_libm_remainderf_11 float (float, float): cq controlled lowering: nested control flow under quantum control",
+      "probes": [
+        "remainderf.f32 QQ"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/e_remainderf.c:41:21: in function __cq_q___cq_libm_remainderf_01 float (float, float): cq controlled lowering: control flow under quantum control",
+      "probes": [
+        "remainderf.f32 QC"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/polevll.c:78:6: in function __cq_libm___polevll x86_fp80 (x86_fp80, ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)",
+      "probes": [
+        "coshl.f80 Q",
+        "sinhl.f80 Q",
+        "expl.f80 Q",
+        "erfl.f80 Q",
+        "erfcl.f80 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_exp2.c:392:1: in function __cq_libm_exp2 double (double): cq specialization: callee return value denotes no value (undef/poison)",
+      "probes": [
+        "exp2.f64 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_expm1.c:217:1: in function __cq_libm_expm1 double (double): cq specialization: callee return value denotes no value (undef/poison)",
+      "probes": [
+        "cosh.f64 Q",
+        "sinh.f64 Q",
+        "tanh.f64 Q",
+        "expm1.f64 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_expm1f.c:123:1: in function __cq_libm_expm1f float (float): cq specialization: callee return value denotes no value (undef/poison)",
+      "probes": [
+        "coshf.f32 Q",
+        "sinhf.f32 Q",
+        "tanhf.f32 Q",
+        "expm1f.f32 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_fdim.c:47:1: in function __cq_q___cq_libm_fdiml_01 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: control flow under quantum control",
+      "probes": [
+        "fdiml.f80 QC"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_frexp.c:40:8: in function __cq_libm_frexp double (double, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)",
+      "probes": [
+        "frexp.f64 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_frexpf.c:32:8: in function __cq_libm_frexpf float (float, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)",
+      "probes": [
+        "frexpf.f32 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_frexpl.c:48:8: in function __cq_libm_frexpl x86_fp80 (x86_fp80, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)",
+      "probes": [
+        "frexpl.f80 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_ilogbl.c:41:4: in function __cq_q___cq_libm_ilogbl_1 i32 (x86_fp80): cq controlled lowering: loop under quantum control",
+      "probes": [
+        "ilogbl.f80 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_log1p.c:175:1: in function __cq_libm_log1p double (double): cq specialization: callee return value denotes no value (undef/poison)",
+      "probes": [
+        "acosh.f64 Q",
+        "asinh.f64 Q",
+        "atanh.f64 Q",
+        "log1p.f64 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_log1pf.c:114:1: in function __cq_libm_log1pf float (float): cq specialization: callee return value denotes no value (undef/poison)",
+      "probes": [
+        "acoshf.f32 Q",
+        "asinhf.f32 Q",
+        "atanhf.f32 Q",
+        "log1pf.f32 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_logbl.c:40:4: in function __cq_q___cq_libm_logbl_1 x86_fp80 (x86_fp80): cq controlled lowering: loop under quantum control",
+      "probes": [
+        "logbl.f80 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_llround i64 (double): cq specialization: floating-point quantum argument or return has no reversible copy",
+      "probes": [
+        "llround.f64 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_llroundf i64 (float): cq specialization: floating-point quantum argument or return has no reversible copy",
+      "probes": [
+        "llroundf.f32 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_llroundl i64 (x86_fp80): cq specialization: floating-point quantum argument or return has no reversible copy",
+      "probes": [
+        "llroundl.f80 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_lround i64 (double): cq specialization: floating-point quantum argument or return has no reversible copy",
+      "probes": [
+        "lround.f64 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_lroundf i64 (float): cq specialization: floating-point quantum argument or return has no reversible copy",
+      "probes": [
+        "lroundf.f32 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_lroundl i64 (x86_fp80): cq specialization: floating-point quantum argument or return has no reversible copy",
+      "probes": [
+        "lroundl.f80 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_modf.c:38:10: in function __cq_libm_modf double (double, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)",
+      "probes": [
+        "modf.f64 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_modff.c:34:10: in function __cq_libm_modff float (float, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)",
+      "probes": [
+        "modff.f32 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_modfl.c:67:10: in function __cq_libm_modfl x86_fp80 (x86_fp80, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)",
+      "probes": [
+        "modfl.f80 Q"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_nextafterl.c:42:29: in function __cq_q___cq_libm_nextafterl_10 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: control flow under quantum control",
+      "probes": [
+        "nextafterl.f80 CQ",
+        "nexttowardl.f80 CQ"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_nexttoward.c:44:22: in function __cq_q___cq_libm_nexttoward_10 double (double, x86_fp80): cq controlled lowering: control flow under quantum control",
+      "probes": [
+        "nexttoward.f64 CQ"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_nexttowardf.c:45:5: in function __cq_q___cq_libm_nexttowardf_10 float (float, x86_fp80): cq controlled lowering: control flow under quantum control",
+      "probes": [
+        "nexttowardf.f32 CQ"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_remquo.c:54:8: in function __cq_libm_remquo double (double, double, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)",
+      "probes": [
+        "remquo.f64 CQ",
+        "remquo.f64 QC",
+        "remquo.f64 QQ"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_remquof.c:50:11: in function __cq_libm_remquof float (float, float, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)",
+      "probes": [
+        "remquof.f32 CQ",
+        "remquof.f32 QC",
+        "remquof.f32 QQ"
+      ]
+    },
+    {
+      "diagnostic": "_deps/cq_openlibm-src/src/s_remquol.c:99:8: in function __cq_libm_remquol x86_fp80 (x86_fp80, x86_fp80, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)",
+      "probes": [
+        "remquol.f80 CQ",
+        "remquol.f80 QC",
+        "remquol.f80 QQ"
+      ]
+    },
+    {
+      "diagnostic": "probe.c:5:11: in function probe i32 (double): cq taint escape: tainted value consumed by an unknown callee",
+      "probes": [
+        "fpclassify.f64 Q"
+      ]
+    },
+    {
+      "diagnostic": "probe.c:5:13: in function probe float (float, i64): cq specialization: floating-point quantum argument or return has no reversible copy",
+      "probes": [
+        "scalblnf.f32 CQ"
+      ]
+    },
+    {
+      "diagnostic": "probe.c:5:14: in function probe double (double, i64): cq specialization: floating-point quantum argument or return has no reversible copy",
+      "probes": [
+        "scalbln.f64 CQ"
+      ]
+    },
+    {
+      "diagnostic": "probe.c:5:19: in function probe x86_fp80 (x86_fp80, i64): cq specialization: floating-point quantum argument or return has no reversible copy",
+      "probes": [
+        "scalblnl.f80 CQ"
+      ]
+    },
+    {
+      "diagnostic": "probe.c:6:13: in function probe float (float, i64): cq specialization: floating-point quantum argument or return has no reversible copy",
+      "probes": [
+        "scalblnf.f32 QQ"
+      ]
+    },
+    {
+      "diagnostic": "probe.c:6:14: in function probe double (double, i64): cq specialization: floating-point quantum argument or return has no reversible copy",
+      "probes": [
+        "scalbln.f64 QQ"
+      ]
+    },
+    {
+      "diagnostic": "probe.c:6:19: in function probe x86_fp80 (x86_fp80, i64): cq specialization: floating-point quantum argument or return has no reversible copy",
+      "probes": [
+        "scalblnl.f80 QQ"
+      ]
+    }
+  ],
+  "issues": [],
+  "validation_limits": "Acceptance, link and trace success plus structural free checks; not numerical or unitary verification. Completed p3kd.7.8 width/free census audit not repeated.",
+  "execution": {
+    "jobs": 1,
+    "nice": 19,
+    "command": "python3 tools/library_coverage/runtime_census.py --output tools/library_coverage/runtime_census.json --jobs 1 --evidence-dir /tmp/dm7f16/census-final-evidence"
+  }
+}

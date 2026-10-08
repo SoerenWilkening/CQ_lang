@@ -40,7 +40,8 @@ merge:
   ret i32 %m
 }
 
-; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK: %u0.stable = freeze i32 %u0
+; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0.stable)
 ; CHECK-DAG: call i32 @cq_template_and_i1(
 ; CHECK-DAG: call i32 @cq_template_or_i1(
 ; CHECK:     call i32 @cq_template_zext_i1_to_i32(

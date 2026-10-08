@@ -41,7 +41,8 @@ merge:
   ret double %m
 }
 
-; CHECK:     call i32 @cq_template_fmul_f64_hl(i32 %{{[a-zA-Z0-9_.]+}}, double %rt)
+; CHECK:     %rt.stable = freeze double %rt
+; CHECK:     call i32 @cq_template_fmul_f64_hl(i32 %{{[a-zA-Z0-9_.]+}}, double %rt.stable)
 ; CHECK:     call void @cqrt_copy_f64_controlled(
 ; CHECK:     call double @cqrt_measure_f64(
 ; CHECK-NOT: alloca double

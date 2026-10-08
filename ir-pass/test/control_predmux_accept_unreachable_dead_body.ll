@@ -53,7 +53,8 @@ merge:
 
 ; Flattens exactly as the empty-unreachable twin; the dead pure body is swept —
 ; 424242 never reaches a template, no CFG survives.
-; CHECK:     call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK: %u0.stable = freeze i32 %u0
+; CHECK:     call i32 @cqrt_alloc_i32(i32 %u0.stable)
 ; CHECK:     call void @cqrt_copy_i32_controlled(
 ; CHECK:     call i32 @cqrt_measure_i32(
 ; CHECK-NOT: 424242

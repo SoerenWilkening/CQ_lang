@@ -42,7 +42,8 @@ m2:
 
 ; both regions flatten; the second's conditions read the FIRST region's muxed
 ; out-rail (onward control on %out — the yn71/dugh round-2 substrate):
-; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK: %u0.stable = freeze i32 %u0
+; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0.stable)
 ; CHECK-DAG: call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_copy_i32_controlled(
 ; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl(

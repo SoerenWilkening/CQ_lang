@@ -56,7 +56,8 @@ merge:
 ; must read THAT rail — `%[[R]]`, never `%[[Q]]`. Substituting the raw rail there
 ; is exactly the corruption the retpoison exhibit produced verify-clean, so this
 ; slot is bound and never a wildcard.
-; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u)
+; CHECK: %u.stable = freeze i32 %u
+; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u.stable)
 ; CHECK:      %[[R:[a-zA-Z0-9_.]+]] = call i32 @cq_template_ctlz_i32(i32 %[[Q]])
 ; CHECK:      %[[ADD:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[Q]], i32 7)
 ; CHECK:      %[[MUL:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[Q]], i32 3)

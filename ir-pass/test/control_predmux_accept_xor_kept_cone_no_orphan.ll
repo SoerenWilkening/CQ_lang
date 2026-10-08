@@ -72,7 +72,8 @@ merge:
 ; residue and the measure are all that survive. Since M-C (bd
 ; test_C_libtooling-6uqc Inc 2a) that residue is the IN-PLACE `cqrt_addc_i32`,
 ; so the measurement reads the rail itself and the module allocates exactly ONE:
-; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK: %u0.stable = freeze i32 %u0
+; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0.stable)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
 ; CHECK:     call void @cqrt_addc_i32(i32 %[[Q]], i32 0)
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])

@@ -42,8 +42,9 @@ merge:
   ret i8 %m
 }
 ; CHECK-LABEL: define i8 @sext_i8_n512(
+; CHECK: %u0.stable = freeze i8 %u0
 ; CHECK:      %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i8(i32 512)
-; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i8(i8 %u0)
+; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i8(i8 %u0.stable)
 ; CHECK-NOT:  cq_template_and_i8
 ; CHECK:      %[[E:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sext_i8_to_i64(i32 %[[Q]])
 ; CHECK-NEXT: %[[M:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i64_hl(i32 %[[E]], i64 511)
@@ -72,8 +73,9 @@ merge:
   ret i8 %m
 }
 ; CHECK-LABEL: define i8 @sext_i32_n2p31(
+; CHECK: %u0.stable = freeze i32 %u0
 ; CHECK:      %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i8(i32 -2147483648)
-; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0.stable)
 ; CHECK-NOT:  _to_i64
 ; CHECK:      %[[M:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[Q]], i32 2147483647)
 ; CHECK-NEXT: call i32 @cqrt_qram_load_i8(i32 %[[T]], i32 %[[M]])
@@ -97,8 +99,9 @@ merge:
   ret i8 %m
 }
 ; CHECK-LABEL: define i8 @sext_i32_n2p32(
+; CHECK: %u0.stable = freeze i32 %u0
 ; CHECK:      %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i8(i32 0)
-; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0.stable)
 ; CHECK-NOT:  cq_template_and_i32
 ; CHECK:      %[[E:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sext_i32_to_i64(i32 %[[Q]])
 ; CHECK-NEXT: %[[M:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i64_hl(i32 %[[E]], i64 4294967295)

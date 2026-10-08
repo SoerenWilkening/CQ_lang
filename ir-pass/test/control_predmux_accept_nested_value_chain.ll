@@ -46,7 +46,8 @@ merge:
 ; rail. Uses of the RESULT never disqualify; only a use of the PARENT after the
 ; op does.
 ;
-; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK: %u0.stable = freeze i32 %u0
+; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0.stable)
 ; CHECK:     %[[T1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[Q]], i32 7)
 ; CHECK:     call void @cqrt_addc_i32(i32 %[[T1]], i32 11)
 ; CHECK:     %[[T2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[T1]], i32 5)

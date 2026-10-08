@@ -76,7 +76,8 @@ merge:
 ; the FALSE literal is ¬(%p ∧ c3) = ¬%p ∨ ¬c3, pushed through the phi's ∨/∧
 ; tree to inverted-predicate leaves (sge 3 / sle 8 / sge 100, plus sle 5 and
 ; eq 7 for the ¬EP legs) — the mixed-tree De Morgan, no NOT anywhere:
-; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK: %u0.stable = freeze i32 %u0
+; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0.stable)
 ; CHECK-DAG: call i32 @cq_template_icmp_sle_i32_hl(i32 %[[Q]], i32 5)
 ; CHECK-DAG: call i32 @cq_template_icmp_sge_i32_hl(i32 %[[Q]], i32 3)
 ; CHECK-DAG: call i32 @cq_template_icmp_sle_i32_hl(i32 %[[Q]], i32 8)

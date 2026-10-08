@@ -365,7 +365,7 @@ cq_template_or_i64(h108, h109) -> h110
 cq_template_bitcast_i64_to_f64(h110) -> h111
 cq_template_fcmp_une_f64(h106, h0) -> h112
 cqrt_alloc_f64(0x0p+0) -> h113
-cqrt_alloc_f64(0x1.100000002p-1038) -> h114
+cqrt_alloc_f64(0x0p+0) -> h114
 cqrt_copy_f64_controlled(h112, h114, h113)
 cqrt_x(h112)
 cqrt_copy_f64_controlled(h112, h111, h113)
