@@ -66,10 +66,22 @@
 ; `NOFREEREC` prefix below pins alongside the gate that IS now emitted. The file KEEPS its
 ; `reject_` name deliberately — see RotationLowering.h, which also states what
 ; the ruling does NOT cover (every wrong-value and dirty-free guard stays loud).
+;
+; ⚠ NOW DISCHARGED, SILENT (bd test_C_libtooling-p3kd.13, 2026-10-08). The returned
+; `cqq.out` rail is an uncompute-spine PRODUCER (CloneProducer.h): its forward
+; consumer is the `mul`, so the M-B interior partition places the clone's Bennett
+; twin `@__cq_q_inner_1_unc(%r, %h)` (`out ^= x + 3`) and `cqrt_free(%r)` right
+; after it — BEFORE the chained Ry. The record this file was written to catch is
+; gone at the gate, so M-A has nothing to report: the stream is the hand-inlined
+; twin's (`int r = a + 3; int u = r * 2;`), which discharges its `add` rail the
+; same way. Everything above about WHY the rail counts as a record still holds;
+; what changed is that the compiler now uncomputes it. M-A's view of a clone
+; return rail that CANNOT be discharged (its twin not synthesizable) is pinned by
+; spec_intermediate_unc_warn_twin_unsynthesizable.ll (@data_chain, this program
+; with an undef-scratch callee), which keeps the warning.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
-; RUN: %filecheck %s --check-prefix=WARN < %t.err
+; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s --check-prefix=LOWER < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=NOFREEREC < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
@@ -89,19 +101,15 @@ define internal fastcc i32 @inner(i32 %x) {
   ret i32 %a
 }
 
-; WARN: warning{{.*}}in function main{{.*}}cq rotation lowering: non-diagonal gate over a live derived record
-; ONE report per offending GATE, never per record (the message carries the
-; gate's !dbg, so a second record on the same rotation would print a duplicate).
-; WARN-NOT: warning
+; No warning, no error (bd p3kd.13 — see the note above the RUN lines).
+; SILENT-NOT: {{.}}
 ;
-; THE PROGRAM LOWERS. `opt` exits zero and the gate is in the stream:
+; THE PROGRAM LOWERS, and the copy rail is uncomputed by the twin and freed
+; between its last reader and the gate:
 ; LOWER-LABEL: define{{.*}}@main(
-; LOWER: call void @cqrt_ry_i32(i32 %h, double 0x3FE6666666666666)
-; and the record is LEFT ALLOCATED — never freed dirty (Rule 6), which is the
-; whole of what the ruling changes about the emitted circuit.
-; NOFREEREC-NOT: call void @cqrt_free(i32 %r)
-; It is its OWN prefix, with no positive directive, so its window is the
-; WHOLE lowered module rather than the span after the gate — a free emitted
-; BEFORE the rotation would be caught too. That is also the spelling
-; tools/fixture_guard_liveness.py recognizes (`NOFREE*`), which counts it as
-; unanchored-and-therefore-not-dead rather than passing over it in silence.
+; LOWER:      %r = call fastcc i32 @__cq_q_inner_1(i32 %h)
+; LOWER-NEXT: %[[U:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %r, i32 2)
+; LOWER-NEXT: call fastcc void @__cq_q_inner_1_unc(i32 %r, i32 %h)
+; LOWER-NEXT: call void @cqrt_free(i32 %r)
+; LOWER-NEXT: call i32 @cqrt_measure_i32(i32 %[[U]])
+; LOWER-NEXT: call void @cqrt_ry_i32(i32 %h, double 0x3FE6666666666666)

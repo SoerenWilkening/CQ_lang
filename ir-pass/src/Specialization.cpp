@@ -1360,4 +1360,7 @@ void specialize(Module &M, WidthDispatch &wd, TaintSet &taint, SpecPlan &plan) {
   }
 }
 
+// bd p3kd.13 — see Specialization.h. The one twin recipe, exported unchanged.
+Function *synthesizeCloneUncTwin(Function &C) { return synthUncomputeTwin(C); }
+
 }  // namespace cq

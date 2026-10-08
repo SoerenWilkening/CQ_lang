@@ -67,8 +67,12 @@ struct FreePoint {
 // Compute the free point for `Terminal` in `F`. `PDT` is the function's
 // post-dominator tree (built once by the caller). `taint` is consumed by the
 // Step-3 measure/escape classification (unused in the Step-1 basic form).
+// `Suppressed` non-null (bd p3kd.13, a clone-result terminal or a planning probe):
+// every loud reject returns its non-Insert kind WITHOUT diagnosing and sets
+// `*Suppressed` — the caller leaves the rail allocated rather than add a decline.
 FreePoint computeFreePoint(llvm::Value *Terminal, llvm::Function &F,
-                           llvm::PostDominatorTree &PDT, const TaintSet &taint);
+                           llvm::PostDominatorTree &PDT, const TaintSet &taint,
+                           bool *Suppressed = nullptr);
 
 }  // namespace cq
 

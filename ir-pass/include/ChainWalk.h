@@ -628,12 +628,12 @@ bool isRecordedStripReaderOf(const llvm::CallInst *C, const llvm::Value *R,
 //        formal not also passed as the destination;
 //   (B4) a call to another function this predicate proves, recursively — an inner
 //        clone call or an inner `_unc` twin call, formal for formal, under (C1)/(C2).
-// ANYTHING ELSE refuses the whole call: a `ret` or φ/select of the formal (an
-// alias escaping the body), a store, a cast or classical op (an alias the walk
+// ANYTHING ELSE refuses the call: a `ret`/φ of the formal (an escaping alias; a
+// `select` alias is walked since bd p3kd.13), a store, a cast or classical op (an alias the walk
 // would lose track of — `spec_leak_clone_read_twin_alias.ll`), `cqrt_x`, a copy
 // DESTINATION, a rotation, a measure, a free, a toffoli/cnot target or control, a
-// formal in an adjoint's slot 0 or literal slot, and ANY name-shaped callee that
-// the module DEFINES. (B1) deliberately does NOT ask which slot of a forward
+// formal in an adjoint's slot 0 or literal slot, and ANY name-shaped callee the
+// module DEFINES. (B1) deliberately does NOT ask which slot of a forward
 // producer holds the formal — it is `preservesBorrowedParent` clause (2)'s own
 // test, and a producer has no writing slot at all, so the slot cannot bear on the
 // LABEL; `isInteriorConsumer` (b)'s handle-slot fence answers a different question
