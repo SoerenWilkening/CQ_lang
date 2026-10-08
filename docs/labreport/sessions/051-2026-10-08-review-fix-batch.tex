@@ -1,0 +1,167 @@
+\labsessionheader{2026-10-08}{Review-fix batch: nested-lift miscompile, hoist UB and five review rounds}%
+  {c574fc04}{6e052118-8567-448e-8554-b7d033b34ea0}{none}
+
+\subsection*{Goal}
+Close the batch of fixes filed by the 2026-10-08 review of the 2026-10-06..08 work:
+one P0 silent miscompile (\bd{r2j3.19}), the 6.5 hoist's speculation predicate
+(\bd{bwfp}), FP switch merges (\bd{dm7f.17}), the F2 trig fold (\bd{dm7f.18}),
+\texttt{exp10} (\bd{3c6m.81}), located diagnostics in lifted bodies
+(\bd{3c6m.82}), f16 clone selects (\bd{p3kd.12}), the narrow runtime ABI
+(\bd{r2j3.20}, the old \texttt{etj3}) and the records (\bd{fdq8}). A previous
+session implemented these and ran R11 rounds 1--2 in a separate worktree. This
+session ran rounds 3--5, the checkpoints, the census and the batch gate.
+
+\subsection*{What landed}
+\begin{itemize}
+\item \commit{c574fc04} --- all nine issues in one reviewed commit (see the bd
+notes per issue). Two files over the 400-line limit were split without semantic
+change: the call contracts and the 6.5 poison dataflow moved from
+\fpath{ir-pass/src/SpeculationSafety.cpp} to \fpath{ir-pass/src/CallContract.cpp},
+and the return-taint predictor moved to \fpath{ir-pass/src/SpecializePredict.cpp}.
+\end{itemize}
+
+\subsection*{Findings (R11 rounds 3--5)}
+Round 3 used three independent reviewers on the snapshot binary (six probes each).
+Rounds 4 and 5 reviewed only the delta of the preceding fixes. Every round found
+something, and two of the three UB holes were introduced by the preceding round's fix.
+\begin{itemize}
+\item \fconfirmed\ (IR-only, round 3) \bd{bwfp}: an unproven value-constraining
+\emph{return} attribute (\texttt{range}, \texttt{nofpclass}) on an inner callee
+or on the hoisted call site makes poison that reached a \texttt{noundef} sink. The
+round-2 code declined it by accident; the round-3 rewrite reopened it. Now a poison
+source; three decline fixtures (\texttt{\dots\_retattr\_*}).
+\item \fconfirmed\ (IR-only, round 4): admitting \texttt{returned} as inert let a
+false \texttt{returned} ``prove'' a false \texttt{range}, because LLVM's known bits
+read the call as its argument. This was a new PredMux accept relative to
+\commit{e0af16ed}. \texttt{returned} is now admitted only when every \texttt{ret}
+returns that parameter; two decline fixtures.
+\item \fconfirmed\ (IR-only, round 5): LLVM~19 \texttt{canCreateUndefOrPoison}
+answers ``no poison'' for a \texttt{noundef} ctlz/cttz/abs whatever its poison flag.
+The round-4 range proof removed the accident that had declined ctlz/cttz. Now
+asked of \texttt{curatedIntrinsicCanBePoison}, as \texttt{totalCall} does.
+\item \foverdecline\ (round 3, fixed): clang's \texttt{noundef range(i32 1, 3)}
+on \texttt{x > 0 ? 1 : 2} and \texttt{range(i32 0, 10)} on \texttt{x \% 10u}
+were unproven by known bits alone, and a multi-TU \texttt{returned} parameter was
+refused. The range proof now intersects \texttt{computeConstantRange} with known
+bits in both signednesses. (Round 4) LLVM~19 stamps a call-site
+\texttt{range(i32 0, 33)} on ctpop/ctlz/cttz; it is now proven from the
+intrinsic's semantics. Accept fixtures plus a narrowed-range decline twin.
+\item \foverdecline\ (round 5, filed \bd{dm7f.21}, P1): ordinary C that
+\commit{e0af16ed} accepted now declines loudly when a poison-capable value reaches
+a \texttt{noundef} sink inside the hoisted callee. Example:
+\texttt{int f(int x)\{return g(x+1);\}} (for \texttt{x = INT\_MAX} the hoisted call is
+immediate UB on basis states the guard excluded). Provable flags (\texttt{nneg}
+casts, \texttt{trunc nuw}) are also still treated as poison. The census below
+contains none of these shapes.
+\item \fpreexisting\ filed: integer-only switch twins of W8 decline
+(\bd{dm7f.19}); PredMux's strict call path declines popcount, abs and an inlined
+\texttt{+1u} that the 6.5 path accepts (\bd{dm7f.20}); \texttt{blockPred} ORs a
+grouped case's predicate twice (\bd{4bnd}).
+\item Instrument (R17): the stage-2b census built its ``returned'' set module-wide
+by local name, so a dirty template rail in \texttt{main} counted as returned when
+another function returned a value of the same name (reviewer probe: census 0, true
+1). Now per function; the self-test gained that case and a pin for the clone-data
+clause. Both mutants were killed.
+\item The census renderer took the first stderr line containing ``error'', which
+since \bd{3c6m.82} is the note (``the error below is inside \dots''). It now takes
+\texttt{error:}, as \fpath{probe.py} does.
+\item \fdoc\ \texttt{LiftDiagnostics}: nested scopes would print each note twice, and
+\texttt{HasErrors} stayed on the wrapper; both are latent and now fixed. Comments
+corrected in \fpath{ArmClassify.cpp}, \fpath{ControlDetect.cpp} (W8 claims only when
+E2--E7 pass), the trig fold (single-host libm assumption) and the narrow slice.
+\end{itemize}
+
+\textbf{Owner ruling (R14, \bd{3c6m.81}).} A quantum \texttt{exp10} of every spelling,
+including a user-written GNU \texttt{exp10}, lifts openlibm's real \texttt{pow}
+as \texttt{pow(10, x)}. The numerical contract is openlibm \texttt{pow(10,x)}, which
+can differ from the system \texttt{exp10} in the last ulp. It is recorded in bd
+memory \texttt{exp10-binds-pow-owner-ruling}.
+
+\textbf{Disclosures (L9).} Clones now derive their taint through main's propagation
+and inherit its sticky/settle machinery (\bd{r2j3.19}). W8 admits FP switches
+inside a loop body, which leaves garbage rails allocated (the fixture header says
+so). \bd{bwfp} adds declines of shapes \commit{e0af16ed} accepted (above,
+\bd{dm7f.21}). The narrow-ABI fix changed one golden:
+\fpath{slice_loop_carried_handle_narrow} lines 7, 22 and 37, \texttt{65533}
+$\to$ \texttt{-3} (the same i16 bits; regenerated deliberately, diff checked to be
+exactly those three lines).
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+IR lit fixtures & 2738 & \measured{ls ir-pass/test/*.ll | wc -l} \\
+e2e goldens & 437 & \measured{ls tests/e2e/*.expected.log | wc -l} \\
+ctest entries & 553 & \measured{ctest -{}-test-dir build -N | tail -1} \\
+census probes accepted / declined & 378 / 105 & \measured{runtime\_census.py -{}-jobs 6} \\
+scalar math.h cells & 100/180 & \measured{(same; 42/120 source, 48/48 intrinsic, 10/12 macro)} \\
+census status flips vs \commit{e0af16ed} & 0 & \measured{JSON diff by (cell, mix)} \\
+blocker \texttt{error:} lines changed & 0 of 105 & \measured{(same)} \\
+declines preceded by a user-site note & 88 of 105 & \measured{(same)} \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+Red for the new fixtures was shown by hand (\texttt{cq-opt} plus FileCheck)
+against the snapshot binary of each round. Green was one lit invocation whose
+filter selected 874 of 2738 fixtures, with no failure reported (quiet mode prints no
+per-category counts). It was followed by one ctest invocation over 200 entries
+(clone, libm, classical-call, switch and PredMux slices, runtime, the stage-2b
+self-test, both census sync gates). 199 passed; \texttt{e2e-census-headline-sync}
+failed as expected, since the pages still said 86/180. After the census and
+\texttt{probe.py render} the script reports four pages matching 100/180.
+
+Mutation: four lit invocations aborted at configuration and ran no fixture, because
+lit's stale-binary guard refused when only \texttt{cq-opt} had been rebuilt. Then
+four real mutants (unverified \texttt{returned}, unchecked intrinsic range, the
+curated poison flag dropped, the note's same-function test dropped) each ran only
+their killing fixture: all killed, \textbf{MISSED 0/4}. The green run is the no-op
+control. After restoring the sources, the rebuilt \texttt{cq-opt} reproduced the
+pre-mutation hash.
+
+The full census ran once with the final binary (\texttt{-{}-jobs 6}, 6\,min wall).
+
+The batch gate ran once. \measured{ctest -{}-test-dir build -LE maintenance -j6}
+passed 548 of 550 entries in 727\,s, and
+\measured{cmake -{}-build build -{}-target cq-opt-equivalence-full} compared 2738
+fixtures with 0 mismatches. The two failures:
+\begin{itemize}
+\item \texttt{code\_map\_drift}: the census-renderer edit shifted lines after
+the map was regenerated.
+\item \texttt{ir-pass-lit}: 2735 passed, 1 expected failure and 2 failures. Both are
+W8 flips under a \texttt{control\_swap\_} prefix that the green filter did not
+select (a filter gap):
+\begin{itemize}
+\item \fpath{control_swap_reject_switch_angle.ll} still declines, now with the
+angle fence's message.
+\item \fpath{control_swap_reject_switch_fpdata.ll} now \emph{accepts}. Its select
+chain was checked by trace reasoning before the expectation changed (R10). It is
+renamed to\newline \fpath{control_predmux_accept_switch_fp_merge_const.ll}, and a
+NOFREE prefix, attacked with a planted free, pins that the q-dependent rail is never
+freed.
+\end{itemize}
+\end{itemize}
+Only the failed subjects were rerun: lit on the two fixtures (2 passed) and
+\texttt{code\_map\_drift} (passed) after the map was regenerated. Because
+\fpath{TaintPropagation.h} changed,
+\measured{ctest -{}-test-dir build -L maintenance -j6} also ran: 3 of 3 passed (383\,s).
+
+Reviewer probes: round 3 used 6, 6 and 6; round 4 used 6 and 5; round 5 used six
+batches, about 82 \texttt{cq-opt} runs in all. No reviewer ran lit or ctest.
+Acceptance, linking, trace comparison and stage-2b do not establish a correct
+unitary.
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+\item \bd{dm7f.21} (P1): a speculation-safe lowering for poison reaching a callee's
+\texttt{noundef} sinks (freeze inside, as \bd{9hea} does at the root), plus flag
+proofs. Owner input welcome on whether the 6.5 hoist may take a classical callee's
+own UB as the source's.
+\item \bd{dm7f.19}, \bd{dm7f.20}, \bd{4bnd}; earlier follow-ups \bd{f7pj},
+\bd{femr}, \bd{yhm9}, \bd{dt0r} remain open.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+Entry 048 cites \commit{92e9f0ec} and \commit{11e71cdb} (its header and ``What
+landed''). Neither is reachable from any branch, because \texttt{git pull -{}-rebase}
+flattened them. Their trees equal \commit{874b822b} and \commit{0bc83ee4}
+respectively (\measured{git rev-parse <c>\^{}\{tree\}}). The design records citing
+them carry the same note (\bd{fdq8}).
