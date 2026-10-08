@@ -71,7 +71,7 @@ Their filenames remain for existing historical references. The effectful-call
 fixture still fails loudly. Review reports and measured validation are retained
 in this directory; the broader `dm7f.16` and `p3kd.7.7` scopes remain open.
 
-The full census at `9944c329` measures **100/180 scalar cells**, with source
+The final full census at `af5f42d2` measures **100/180 scalar cells**, with source
 coverage 42/120, intrinsic coverage 48/48 and macro coverage 10/12, plus the
 classical-only 3/3 outside that total. All 378 accepted probes pass the structural
 free check; 105 of 483 probes still decline. Compared with the committed census,
@@ -114,3 +114,8 @@ nexttoward golden changes only an unused undef allocation seed to +0.0, with
 the selected-edge argument recorded in the R3 follow-up. The passing batch
 entries and full driver comparison were not rerun after this correction.
 See [validation/batch.json](validation/batch.json) for commit-qualified counts.
+
+The final census after the reviewed PHI correction has the same verdicts as
+the preceding `9944c329` measurement: 100/180 cells and 378/483 accepted
+probes, with no acceptance regression or structural free-check issue. Both
+completed censuses ran with one worker; the final audit names `af5f42d2`.

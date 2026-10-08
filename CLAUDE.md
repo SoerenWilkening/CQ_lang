@@ -58,8 +58,9 @@ evidence.
   compile, as an angle register driving a bit-controlled rotation ladder (bd `94ad`).
   Until that lowering exists, do not
   "fix" a quantum angle ad hoc by allocating a qubit for the f64 or propagating taint
-  through it. That is the f64/angle miscompile family. Integer merge φ is data;
-  floating-point merge φ is an angle. Test with `isFPOrFPVectorTy()`.
+  through it. That is the f64/angle miscompile family. Integer and floating-point
+  merge values can carry quantum data. Determine angle use from rotation-angle
+  consumers through the shared taint and carrier checks.
 - Casts are representation changes, never measurements.
 
 **R4 — No fork, no rewriter, no new intrinsics.** Stock LLVM 19, out-of-tree MODULE

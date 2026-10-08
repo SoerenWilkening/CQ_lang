@@ -1,0 +1,154 @@
+\labsessionheader{2026-10-08}{Shared nested classical control and fixed clone scripts}%
+  {af5f42d2}{n/a}{docs/design/nested-classical-control-review/README.md}
+
+\subsection*{Goal}
+Lower one actual optimized nested classical-control shape through the shared
+main/clone owners, using the recorded census customers under \bd{dm7f.16},
+\bd{p3kd.7.3} and \bd{p3kd.7.5}. Respect the owner's quiet-machine request:
+all tests and builds use one worker, and the final census and batch run at low
+priority without another test workload.
+
+\subsection*{What landed}
+\begin{itemize}
+\item \commit{a6bee2d9} --- \bd{dm7f.16.1}: shared supported classical
+conditions and exact total scalar calls inside quantum value arms;
+\fpath{ir-pass/src/SpeculationSafety.cpp} owns definedness and stable literals.
+\item \commit{9944c329} --- \bd{p3kd.7.7.1}: freeze raw scalar source
+constants before lowering erases their quantum consumers. The existing
+single-slot literal allowance and cross-function undef duplication fence remain.
+\end{itemize}
+
+For \texttt{g=x>y}, \texttt{c=y>3}, the incoming values are \texttt{x-y}
+on \texttt{g AND c}, \texttt{x+y} on \texttt{g AND NOT c}, and
+\texttt{y} on \texttt{NOT g}. Edge predicates select fresh controlled-copy
+outputs while retaining borrowed sources. The optimized noinline classifier
+remains an ordinary call. Tainted library calls still use injected source and
+clone-on-taint. Clone adjoints mechanically mirror the captured phase-free gate
+stream; source FP widths and zero-before-free obligations stay with their
+existing owners.
+
+Bennett.jl at \texttt{824458d10e879c3fef673c231a02e5461dac667f}
+supplies the edge/mux construction. BennettVM.jl at
+\texttt{23d28e6471f9cf5d8a22177d08260ca86adfe841} supplies edge-specific
+PHI tuples, capture-before-assign and preservation of multi-use SSA sources;
+the relevant source and adversarial fixtures were inspected. CQ compiles these
+semantics into a fixed script and compile-time adjoints. No runtime VM,
+execution history, checkpoint or replay mechanism is introduced.
+
+\subsection*{Review findings}
+Three independent R11 rounds, followed by analytic checks of the late constant
+correction, used zero tests, builds or targeted probes. R1 exposed inner
+\texttt{noundef} argument obligations, constant RAUW scope, entry producers,
+recursive proof walks, effective \texttt{noreturn} and duplicated predicates.
+R3 exposed calling-convention mismatch, nested call poison flags, intrinsic
+immediate-UB contracts and the risk of a vacuous declaration range proof.
+The shared owner now checks those contracts and uses visited proof worklists.
+
+R3's follow-up found an untaken \texttt{xor(q,poison)} arm whose erased source
+marker left a single raw gate literal. The result escaped, so there was no
+second literal slot for the existing pairing guard to catch. The correction
+normalizes selected scalar source operand Uses with one entry freeze per typed
+constant per function, before handle lowering. Surviving speculative producers
+and admitted call arguments get a non-poison proof without use/path assumptions
+or a stable freeze. Within-function forward and inverse uses share that SSA
+value. Separate clone/twin invocations retain their existing undef fence.
+
+\subsection*{Scoped verification}
+\bd{dm7f.16.1} used all three scoped lit invocations: red aborted configuration
+before any fixture; green ran eleven fixtures with nine passes and two incorrect
+assertions; final ran only those two corrected failed fixtures and both passed.
+The assertions had assumed a caller inverse for a measured escaping result and
+an \texttt{\_hh} spelling for Q+Q add. The passing nine were not rerun.
+Three direct baseline lowerings and three intermediate completed probes were
+recorded, plus one missing-passes CLI rejection. One linked golden preparation
+produced 108 trace lines; all twelve free sites were verified, with no violation
+or unproven free.
+
+\bd{p3kd.7.7.1} used two scoped lit invocations: red's full-name anchor matched
+no fixture; green's corrected suffix filter passed the single new fixture.
+No final scoped run was needed because the code did not change after green.
+Mutation validation used no-op evidence and three real mutants over the session, each
+real mutant against only its killing fixture. All were killed (MISSED 0/3);
+successful scoped green runs supplied later no-op evidence without another run.
+Mutant sources were restored byte-for-byte and the four compiler targets were
+rebuilt serially. The third mutant disabled the PHI taint refresh; only its
+log1p fixture ran and killed it with a loud decline. An initial build attempt
+named an unavailable target and aborted before that mutant test; the same
+mutant was then built with the correct target. No separate completed \bd{p3kd.7.8} validation was repeated.
+The interrupted census stopped after 388 rows when the late review required a
+correction; no partial coverage report was published.
+
+
+\subsection*{Single serial batch and correction}
+\commit{af5f42d2} --- \bd{dm7f.16.2}: the single batch at
+\commit{9944c329} passed 539 of 549 CTest entries. IR lit discovered 2709:
+2650 passed, one expected failure, and 58 failed. Eight real-libm slices
+crashed; one ld80 nexttoward trace had an unused undef seed drift.
+
+PHI RAUW creates a new predicate before the outer driver's next taint fixpoint.
+The stale set classified that quantum predicate as classical and froze it;
+negation then assumed a binary operator and read a unary freeze's absent
+operand. The correction erases the replaced PHI, snapshots live same-function
+quantum instructions/arguments and invokes the existing taint propagation owner.
+Constants stay classical. Frozen classical bits are negated opaquely with
+\texttt{xor true}, retaining their choice. The outer specialization fixpoint
+and final literal checks remain. Three independent analytic follow-ups cleared
+this correction, with zero reviewer executions.
+
+Only failed subjects were rerun. Scoped green: 56/58 IR fixtures and all nine
+failed slices passed. Final: the two corrected i8/i16 seed assertions passed.
+These are two additional scoped invocations under \bd{dm7f.16.2}, with the
+batch supplying red evidence. The 539 passing entries were not rerun.
+Assertions retain source widths, exact copy sources and paired inverse literals.
+Two gate-stream twins use matching noundef seeds for their defined-input axis;
+other bare inputs retain their contracts. Six historical negatives now assert
+supported classical conditions/calls. Nexttoward's sole golden change is h114
+from register residue to +0.0: its source select is read only on its defined
+predecessor, so the arbitrary arm cannot reach the selected result.
+
+The batch's equivalence entry compared all 2709 fixtures with zero driver
+mismatches, \texttt{--stride 1 --jobs 1}, at \commit{9944c329}. That full
+comparison was not repeated after the PHI correction. Temporary serial harness
+settings were restored byte-for-byte. All inner test workers and numerical
+thread settings were one. Exact counts, settings, reviewer reports and mutation
+results are under \fpath{docs/design/nested-classical-control-review/}.
+
+The operating manual's stale type-only claim that every floating-point merge
+is an angle was corrected after R3 checked the shared owners: FP merges can
+carry data; carrier consumers determine angle use. The unsupported quantum
+rotation-angle gap and its loud diagnostic remain.
+
+
+\subsection*{Final census}
+The full census at \commit{af5f42d2} completed all 483 probes:
+378 compile and 105 decline. All accepted probes pass the structural free
+check, with no harness, timeout or crash issue. Scalar coverage is
+\textbf{100/180}, versus the committed baseline's 86/180:
+source 42/120, intrinsic 48/48, macro 10/12; classical-only 3/3 is outside
+that total. Sixteen mixtures newly accept, completing fourteen source cells;
+there are no acceptance regressions or changed blocker diagnostics. Verdicts
+match the preceding completed \commit{9944c329} census.
+
+\measured{python3 tools/library\_coverage/runtime\_census.py --output
+ tools/library\_coverage/runtime\_census.json --jobs 1 --evidence-dir
+ /tmp/dm7f16/census-af5f42d2-evidence}
+ran at nice19 with numerical thread settings one. This session completed two
+full censuses, with the earlier interrupted 388-row run explicitly unpublished.
+The final regeneration follows the reviewed PHI correction. Current measured
+blockers are in the committed JSON and
+\fpath{docs/design/nested-classical-control-review/validation/census-audit.json}.
+Acceptance, linking, trace comparison and structural free checks do not establish
+numerical primitive behavior or the full unitary.
+
+\subsection*{Remaining work and handoff}
+Focused \bd{dm7f.16.1}, \bd{p3kd.7.7.1} and \bd{dm7f.16.2} are complete.
+The umbrellas remain open. First blockers across the 105 declining probes are
+43 body/memory, 17 shared control (eight nested), 18 undefined returns,
+14 argument/return ABI, nine frem, two loop control and two unknown macro
+callees. Exact rows and diagnostics, rather than predicted gains, now annotate
+\bd{p3kd.7}, \bd{p3kd.7.3--7.5}, \bd{p3kd.7.7}, \bd{p3kd.7.9},
+\bd{dm7f.15}, \bd{dm7f.16}, \bd{p3kd.6}, \bd{p3kd.8} and \bd{p3kd.9}.
+Further control or call work must keep the existing speculation ruling,
+source injection, clone-on-taint, borrowed ownership and compile-time reversal.
+The untracked agent directories are preserved. No completed width-bug audit
+was separately repeated; no new simulator or runtime execution model was added.

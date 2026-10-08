@@ -1,6 +1,6 @@
 # math.h coverage through cqc
 
-**86/180 scalar-input cells compile through `tools/cqc` for every runtime C/Q mixture.**
+**100/180 scalar-input cells compile through `tools/cqc` for every runtime C/Q mixture.**
 
 Each probe is compiled by the user-facing driver `tools/cqc`, so this is the number a user
 gets. It counts build, lowering, link and trace-run success. It does not certify numerical
@@ -8,20 +8,20 @@ or unitary semantics. No new goldens were blessed.
 
 | Provider | Accepted for every mixture | Cells |
 | --- | ---: | ---: |
-| source-injected | 28 | 120 |
+| source-injected | 42 | 120 |
 | intrinsic | 48 | 48 |
 | classical-only | 3 | 3 |
 | macro | 10 | 12 |
 
-Measured 483 probes: 362 accepted; 121 did not accept.
-Structural free-check passes: 362. The classical-only nan row is not in the scalar total.
+Measured 483 probes: 378 accepted; 105 did not accept.
+Structural free-check passes: 378. The classical-only nan row is not in the scalar total.
 The macro cells retain the historical f64 scope of the 183-cell model.
 
 ## Reproduction
 
 ```sh
-cmake --build build -j8
-python3 tools/library_coverage/runtime_census.py --output tools/library_coverage/runtime_census.json
+cmake --build build -j1
+python3 tools/library_coverage/runtime_census.py --output tools/library_coverage/runtime_census.json --jobs 1
 ```
 
 Driver, pass and LLVM hashes are in the adjacent JSON metadata. Classical operands and
@@ -49,7 +49,6 @@ fenv remains outside the CQ model (CLAUDE R16).
 | sinhl.f80 | Q | error: _deps/cq_openlibm-src/src/polevll.c:78:6: in function __cq_libm___polevll x86_fp80 (x86_fp80, ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access) |
 | tanhf.f32 | Q | error: _deps/cq_openlibm-src/src/s_expm1f.c:123:1: in function __cq_libm_expm1f float (float): cq specialization: callee return value denotes no value (undef/poison) |
 | tanh.f64 | Q | error: _deps/cq_openlibm-src/src/s_expm1.c:217:1: in function __cq_libm_expm1 double (double): cq specialization: callee return value denotes no value (undef/poison) |
-| tanhl.f80 | Q | error: _deps/cq_openlibm-src/src/s_scalbnl.c:53:17: in function __cq_q___cq_libm_scalbnl_10 x86_fp80 (x86_fp80, i32): cq controlled lowering: control flow under quantum control |
 | acoshf.f32 | Q | error: _deps/cq_openlibm-src/src/s_log1pf.c:114:1: in function __cq_libm_log1pf float (float): cq specialization: callee return value denotes no value (undef/poison) |
 | acosh.f64 | Q | error: _deps/cq_openlibm-src/src/s_log1p.c:175:1: in function __cq_libm_log1p double (double): cq specialization: callee return value denotes no value (undef/poison) |
 | acoshl.f80 | Q | error: <unknown>:0:0: in function __cq_libm_logl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction) |
@@ -64,7 +63,6 @@ fenv remains outside the CQ model (CLAUDE R16).
 | exp2l.f80 | Q | error: _deps/cq_openlibm-src/ld80/s_exp2l.c:295:1: in function __cq_libm_exp2l x86_fp80 (x86_fp80): cq specialization: callee return value denotes no value (undef/poison) |
 | expm1f.f32 | Q | error: _deps/cq_openlibm-src/src/s_expm1f.c:123:1: in function __cq_libm_expm1f float (float): cq specialization: callee return value denotes no value (undef/poison) |
 | expm1.f64 | Q | error: _deps/cq_openlibm-src/src/s_expm1.c:217:1: in function __cq_libm_expm1 double (double): cq specialization: callee return value denotes no value (undef/poison) |
-| expm1l.f80 | Q | error: _deps/cq_openlibm-src/src/s_scalbnl.c:53:17: in function __cq_q___cq_libm_scalbnl_10 x86_fp80 (x86_fp80, i32): cq controlled lowering: control flow under quantum control |
 | logl.f80 | Q | error: <unknown>:0:0: in function __cq_libm_logl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction) |
 | log10l.f80 | Q | error: <unknown>:0:0: in function __cq_libm_log10l x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction) |
 | log2l.f80 | Q | error: <unknown>:0:0: in function __cq_libm_log2l x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction) |
@@ -73,12 +71,6 @@ fenv remains outside the CQ model (CLAUDE R16).
 | log1pl.f80 | Q | error: <unknown>:0:0: in function __cq_libm_log1pl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction) |
 | logbl.f80 | Q | error: _deps/cq_openlibm-src/src/s_logbl.c:40:4: in function __cq_q___cq_libm_logbl_1 x86_fp80 (x86_fp80): cq controlled lowering: loop under quantum control |
 | ilogbl.f80 | Q | error: _deps/cq_openlibm-src/src/s_ilogbl.c:41:4: in function __cq_q___cq_libm_ilogbl_1 i32 (x86_fp80): cq controlled lowering: loop under quantum control |
-| ldexpf.f32 | CQ | error: _deps/cq_openlibm-src/src/s_scalbnf.c:40:17: in function __cq_q___cq_libm_scalbnf_10 float (float, i32): cq controlled lowering: control flow under quantum control |
-| ldexp.f64 | CQ | error: _deps/cq_openlibm-src/src/s_scalbn.c:44:17: in function __cq_q___cq_libm_scalbn_10 double (double, i32): cq controlled lowering: control flow under quantum control |
-| ldexpl.f80 | CQ | error: _deps/cq_openlibm-src/src/s_scalbnl.c:53:17: in function __cq_q___cq_libm_scalbnl_10 x86_fp80 (x86_fp80, i32): cq controlled lowering: control flow under quantum control |
-| scalbnf.f32 | CQ | error: _deps/cq_openlibm-src/src/s_scalbnf.c:40:17: in function __cq_q___cq_libm_scalbnf_10 float (float, i32): cq controlled lowering: control flow under quantum control |
-| scalbn.f64 | CQ | error: _deps/cq_openlibm-src/src/s_scalbn.c:44:17: in function __cq_q___cq_libm_scalbn_10 double (double, i32): cq controlled lowering: control flow under quantum control |
-| scalbnl.f80 | CQ | error: _deps/cq_openlibm-src/src/s_scalbnl.c:53:17: in function __cq_q___cq_libm_scalbnl_10 x86_fp80 (x86_fp80, i32): cq controlled lowering: control flow under quantum control |
 | scalblnf.f32 | CQ, QQ | error: probe.c:5:13: in function probe float (float, i64): cq specialization: floating-point quantum argument or return has no reversible copy |
 | scalbln.f64 | CQ, QQ | error: probe.c:5:14: in function probe double (double, i64): cq specialization: floating-point quantum argument or return has no reversible copy |
 | scalblnl.f80 | CQ, QQ | error: probe.c:5:19: in function probe x86_fp80 (x86_fp80, i64): cq specialization: floating-point quantum argument or return has no reversible copy |
@@ -88,11 +80,7 @@ fenv remains outside the CQ model (CLAUDE R16).
 | modff.f32 | Q | error: _deps/cq_openlibm-src/src/s_modff.c:34:10: in function __cq_libm_modff float (float, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access) |
 | modf.f64 | Q | error: _deps/cq_openlibm-src/src/s_modf.c:38:10: in function __cq_libm_modf double (double, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access) |
 | modfl.f80 | Q | error: _deps/cq_openlibm-src/src/s_modfl.c:67:10: in function __cq_libm_modfl x86_fp80 (x86_fp80, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access) |
-| powf.f32 | CQ | error: _deps/cq_openlibm-src/src/e_powf.c:72:5: in function __cq_q___cq_libm_powf_10 float (float, float): cq controlled lowering: nested control flow under quantum control |
-| pow.f64 | CQ | error: _deps/cq_openlibm-src/src/e_pow.c:112:5: in function __cq_q___cq_libm_pow_10 double (double, double): cq controlled lowering: control flow under quantum control |
 | powl.f80 | CQ, QC, QQ | error: <unknown>:0:0: in function __cq_libm_powl x86_fp80 (x86_fp80, x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction) |
-| hypotf.f32 | CQ, QC | error: _deps/cq_openlibm-src/src/e_hypotf.c:36:5: in function __cq_q___cq_libm_hypotf_10 float (float, float): cq controlled lowering: nested control flow under quantum control |
-| hypot.f64 | CQ, QC | error: _deps/cq_openlibm-src/src/e_hypot.c:67:5: in function __cq_q___cq_libm_hypot_10 double (double, double): cq controlled lowering: nested control flow under quantum control |
 | hypotl.f80 | CQ, QC, QQ | error: _deps/cq_openlibm-src/src/e_hypotl.c:61:5: in function __cq_q___cq_libm_hypotl_10 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: nested control flow under quantum control |
 | erfl.f80 | Q | error: _deps/cq_openlibm-src/src/polevll.c:78:6: in function __cq_libm___polevll x86_fp80 (x86_fp80, ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access) |
 | erfcl.f80 | Q | error: _deps/cq_openlibm-src/src/polevll.c:78:6: in function __cq_libm___polevll x86_fp80 (x86_fp80, ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access) |
@@ -121,8 +109,6 @@ fenv remains outside the CQ model (CLAUDE R16).
 | nexttowardf.f32 | CQ | error: _deps/cq_openlibm-src/src/s_nexttowardf.c:45:5: in function __cq_q___cq_libm_nexttowardf_10 float (float, x86_fp80): cq controlled lowering: control flow under quantum control |
 | nexttoward.f64 | CQ | error: _deps/cq_openlibm-src/src/s_nexttoward.c:44:22: in function __cq_q___cq_libm_nexttoward_10 double (double, x86_fp80): cq controlled lowering: control flow under quantum control |
 | nexttowardl.f80 | CQ | error: _deps/cq_openlibm-src/src/s_nextafterl.c:42:29: in function __cq_q___cq_libm_nextafterl_10 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: control flow under quantum control |
-| fdimf.f32 | QC | error: _deps/cq_openlibm-src/src/s_fdim.c:45:1: in function __cq_q___cq_libm_fdimf_01 float (float, float): cq controlled lowering: control flow under quantum control |
-| fdim.f64 | QC | error: _deps/cq_openlibm-src/src/s_fdim.c:44:1: in function __cq_q___cq_libm_fdim_01 double (double, double): cq controlled lowering: control flow under quantum control |
 | fdiml.f80 | QC | error: _deps/cq_openlibm-src/src/s_fdim.c:47:1: in function __cq_q___cq_libm_fdiml_01 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: control flow under quantum control |
 | fpclassify.f64 | Q | error: probe.c:5:11: in function probe i32 (double): cq taint escape: tainted value consumed by an unknown callee |
 | isnormal.f64 | Q | error: /Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk/usr/include/math.h:263:36: in function probe i32 (double): cq taint escape: tainted value consumed by an unknown callee |

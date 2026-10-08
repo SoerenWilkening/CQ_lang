@@ -26,3 +26,10 @@ so this review does not claim to have read those missing outputs. Positive
 assertions were subsequently validated by the implementer's scoped green.
 
 **0 tests, probes, builds, mutations or edits by this reviewer.**
+
+R3 also confirmed the CLAUDE R3 correction: scalar FP merges can be quantum
+data. `SelectMergeEmit` uses `copyControlledFpFn` with source ABI width;
+`SelectClassify` follows value carriers to rotation-angle consumers;
+`RotationLowering` still fails loudly for the unsupported tainted-angle gap.
+This repairs the stale type-only sentence while retaining the existing angle
+restriction and its status as a compiler gap. No extra execution was used.

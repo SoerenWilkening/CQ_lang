@@ -1,6 +1,6 @@
 {
-  "commit": "9944c3297f79c85ac4e22e570a551d783fb13047",
-  "census_sha256": "f194f55409531b17c3e55da1d96394d357c7c5aea99c6c16dc1988934082e35a",
+  "commit": "af5f42d239cd9c971186209e2caab96e082a9a1b",
+  "census_sha256": "72f06994c449b46bc11a9d880b3d2517851e0145312b25d0d91089c14b6695c1",
   "baseline_commit": "92e9f0ecfe7d1194b51cd6294fdd98f5d24eaf83",
   "baseline_score": {
     "source-injected": {
@@ -616,6 +616,28 @@
   "execution": {
     "jobs": 1,
     "nice": 19,
-    "command": "python3 tools/library_coverage/runtime_census.py --output tools/library_coverage/runtime_census.json --jobs 1 --evidence-dir /tmp/dm7f16/census-final-evidence"
+    "command": "python3 tools/library_coverage/runtime_census.py --output tools/library_coverage/runtime_census.json --jobs 1 --evidence-dir /tmp/dm7f16/census-af5f42d2-evidence"
+  },
+  "preceding_measurement": {
+    "commit": "9944c3297f79c85ac4e22e570a551d783fb13047",
+    "score": {
+      "source-injected": {
+        "covered": 42,
+        "total": 120
+      },
+      "intrinsic": {
+        "covered": 48,
+        "total": 48
+      },
+      "classical-only": {
+        "covered": 3,
+        "total": 3
+      },
+      "macro": {
+        "covered": 10,
+        "total": 12
+      }
+    },
+    "status_changes": []
   }
 }

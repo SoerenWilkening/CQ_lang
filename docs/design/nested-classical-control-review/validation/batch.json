@@ -103,7 +103,8 @@
       "control_predmux_accept_qrom_mask_width_bounds.ll"
     ],
     "final_ir_passed": 2,
-    "additional_scoped_invocations": 2
+    "additional_scoped_invocations": 2,
+    "compiler_commit": "af5f42d2"
   },
   "limitations": "Single full batch at 9944c329; only failed fixtures/slices were rerun after PHI correction. Full 2709-driver comparison was not rerun after correction. Tests and every internal harness use one worker; numeric thread envs are 1. No completed p3kd.7.8 validation repeated."
 }
