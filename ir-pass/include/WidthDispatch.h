@@ -90,10 +90,11 @@ public:
   // Reversible-copy resolver (Phase 4.2, PRD Part II §8.1 — the design's
   // only new ABI). Signature `void(i32 src, i32 dst)` — handles are always
   // i32; the width only selects the symbol name. INTEGER ABI widths only
-  // ({i1,i8,i16,i32,i64}): an FP merge phi under tainted control is
-  // categorically an angle, never data (the f64 miscompile family), so
-  // `f32`/`f64` return a null FunctionCallee (caller diagnoses) rather
-  // than minting dead ABI. Emitted by the 4.5 switch-value preload and
+  // ({i1,i8,i16,i32,i64}): its two callers (the 4.5 switch-value preload
+  // and `BreakReversePlay`) are integer-only, so `f32`/`f64` return a null
+  // FunctionCallee (caller diagnoses) rather than minting dead ABI. (This
+  // used to say an fp merge "is categorically an angle"; fp merges carry data,
+  // CLAUDE.md R3, and the fp copies have their own resolvers.) Emitted by the 4.5 switch-value preload and
   // `BreakReversePlay` (no longer by the retired value-arm swap route).
   llvm::FunctionCallee copyFn(llvm::StringRef abiWidth) const;        // @cqrt_copy_<W>
 

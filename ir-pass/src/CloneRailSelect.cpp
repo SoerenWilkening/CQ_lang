@@ -69,9 +69,11 @@ bool rewriteRailSelects(ArrayRef<RailSelectRecord> Recs, TaintSet &ct,
     Value *Fv = railOf(SI->getFalseValue(), R.FalseQuantum);
     // A classical condition the flatten speculated may be poison on a basis
     // state that never reaches its block; freezing it keeps the choice to one of
-    // the two rails (never an arbitrary handle). The edge literals the condition
-    // is built from are already frozen (PredMuxFlatten `literal`), so this fires
-    // only for a condition with another poison source.
+    // the two rails (never an arbitrary handle). PredMux freezes only the edge
+    // literals it cannot prove defined (`literal`), so this also fires for an
+    // unfrozen compare it built, e.g. a classical switch's `icmp eq %mode, k` in
+    // the entry block (spec_accept_clone_switch_classical_scrutinee.ll), where it
+    // is the identity.
     Value *C = SI->getCondition();
     if (!isGuaranteedNotToBePoison(C))
       C = B.CreateFreeze(C, "cqq.rsel.c");

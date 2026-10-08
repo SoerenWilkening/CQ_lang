@@ -1,12 +1,17 @@
-; spec_reject_predicted_classical_inner_clone.ll — DECLINE (bd test_C_libtooling-cepm (residual)).
-; The predictor OVER-approximates through an INNER call's result: `h2(a,k) = h(a,k) * 2` with `h`
-; the reading callee (classical return). `predictReturnTainted(h2, 01)` follows `a` into `h(a, k)`
-; and on through its result to `h2`'s `ret` — TRUE — so `t = h2(q, m)` is tainted conservatively
-; as before bd cepm, the 4.4 emitter mints a flag on it, `specialize()` proves the clone classical,
-; and bd l3oi's fence refuses the integer read as a register. A SAFE over-decline that bd cepm does
-; not remove (the predictor is not recursive). RETIREMENT TRIGGER (L8): a predictor that asks the
-; inner callee's own prediction turns this into an ACCEPT — re-derive it (its twin, in2T.c,
-; accepts), do not delete it; the l3oi fence then needs another subject.
+; spec_reject_predicted_classical_inner_clone.ll — ACCEPT since bd test_C_libtooling-r2j3.19
+; (2026-10-08). The FILENAME IS HISTORY and is kept on purpose (CLAUDE.md L7: a `git mv` of a
+; fixture can be resurrected by a merge under its old verdict); rename it in a change that does
+; nothing else.
+; WHAT IT PINNED: the predictor OVER-approximated through an INNER call's result:
+; `h2(a,k) = h(a,k) * 2` with `h` the reading callee (classical return).
+; `predictReturnTainted(h2, 01)` followed `a` into `h(a, k)` and on through its result to `h2`'s
+; `ret`, so `t = h2(q, m)` was tainted conservatively, the 4.4 emitter minted a flag on it,
+; `specialize()` proved the clone classical, and bd l3oi's fence refused the integer read as a
+; register: a SAFE over-decline (bd cepm residual). Its RETIREMENT TRIGGER fired: the predictor now
+; asks an inner lift site's own prediction (`predictReturnTaintedImpl`, SpecializeClone.cpp), so
+; `t` stays classical from propagation on, as in the hand-inlined twin (in2T.c), and the module
+; lowers. The l3oi fence keeps its subjects (taint_reject_scrubbed_handle_*.ll; one clone level
+; down, spec_reject_clone_inner_scrubbed_handle.ll): a tainted branch the clone's flatten removes.
 ;
 ; 6 TUs, each `clang -O1`, llvm-linked as tests/e2e/run_slice_multi.sh does.
 ; Caller TU (-include CQ.h):
@@ -32,13 +37,17 @@
 ;   int h(int a, int k);
 ;   int h2(int a, int k) { int u = h(a, k); return u * 2; }
 ;
-; Oracle 9a230646: the same DECLINE (byte-identical first error line).
-; Hand-inlined twin (in2T.c) ACCEPTS: an over-decline, filed on bd cepm.
+; Hand-inlined twin (in2T.c) ACCEPTS, and so does this module now.
 ; Regenerate: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/cepm_probes/mkprobes.py + gen.sh in2C, then mkfix.py.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s
-; CHECK: cq taint escape: classical call result used as a quantum register
+; Oracle 9a230646 and e0af16ed: DECLINE `classical call result used as a quantum register`.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; CHECK-LABEL: define i32 @main(
+; CHECK:       %[[T:[0-9]+]] = tail call i32 @__cq_q_h2_01(
+; CHECK-NEXT:  icmp sgt i32 %[[T]], 3
+; CHECK-NOT:   cq_template_icmp_sgt_i32_hl
+; CHECK:       call i32 @cqrt_measure_i32(
 
 ; ModuleID = 'llvm-link'
 source_filename = "llvm-link"

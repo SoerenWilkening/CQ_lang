@@ -3,6 +3,8 @@
 
 #include "SpecializeDetect.h"
 
+#include "LiftDiagnostics.h"  // LiftSite (bd 3c6m.82)
+
 #include "CalleeBody.h"  // calleeBodyTrusted (bd p3kd.2)
 #include "DeadValueLiveness.h"
 #include "Specialization.h"  // shouldSpecialize (bd 9paa round-2 Pending dedup)
@@ -349,6 +351,7 @@ void detectSpecializations(Module &M, const TaintSet &taint, WidthDispatch &wd,
         SpecCandidate Cand{CI, Callee, Mask};
         Instruction *Where = nullptr;
         std::string Kind;
+        LiftSite Lifting(CI);  // bd 3c6m.82: a reject in the body notes this call.
         SpecReject Why = classifyCandidate(Cand, taint, wd, Where, Kind);
         if (Why == SpecReject::Accept) {
           out.Pending.push_back(Cand);

@@ -1,5 +1,6 @@
 // SpecializeClone.cpp — clone mechanics + the shared DD-5 mask/mangle helpers
-// (`mangleSpecName` / `taintArgMask`, declared in `SpecializePlan.h`).
+// (`mangleSpecName` / `taintArgMask`, declared in `SpecializePlan.h`). The
+// return-taint predictor (SpecializeClone.h) lives in SpecializePredict.cpp.
 
 #include "SpecializeClone.h"
 
@@ -8,6 +9,7 @@
 #include "SpecializePlan.h"
 #include "TaintPropagation.h"
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Attributes.h"
@@ -123,138 +125,6 @@ SpecMask taintArgMask(const CallInst *Site, const TaintSet &taint) {
     if (taint.Tainted.count(const_cast<Value *>(Site->getArgOperand(i))))
       Mask |= (SpecMask(1) << i);
   return Mask;
-}
-
-// bd 3c6m.54 — the fp-ABI RETURN-taint predictor: does the (single-block, per
-// `scanBody`) callee's return value derive from a masked-tainted parameter? A
-// pure forward transitive-user closure from the masked params — the EXACT closure
-// `seedClone` builds on the clone (isomorphic under the verbatim/remap clone), so
-// this reproduces the clone's pre-drain return-taint. It is a sound
-// OVER-approximation of the final `ReturnTainted`: the intra-clone inner-call
-// scrub (`scrubForwardCone`) only REMOVES taint, so `predict==false` ⟹ the return
-// is genuinely classical (never rewritten to i32 → stays fp, returned verbatim),
-// while a `predict==true`/`actual==false` mispredict (an inner tainted-arg clone
-// that returns classical, feeding the whole return — unreachable in the
-// always-inlined census cells, which have no inner calls) is caught by the LOUD
-// mispredict guard in `buildClone`, never a silent miscompile.
-bool predictReturnTainted(Function *Callee, SpecMask Mask) {
-  // Collect the return value(s). Pre-5po2-I1 this read ONLY the entry-block
-  // terminator (a single-block callee, guaranteed by `scanBody`). I1 accepts a
-  // MULTI-BLOCK value diamond whose `ret` lives in the exit/merge block, NOT the
-  // entry terminator (a `br`) — reading the entry terminator alone under-predicts
-  // "classical", so `cloneFor` would keep an fp return type while `emitBennettWrap`
-  // copies out to an i32 handle: a mistyped `ret` (broken module). Scan ALL blocks
-  // and OVER-approximate: predict tainted if ANY reachable return value derives
-  // from a masked param. Soundness is one-directional — an over-prediction is
-  // caught by the loud mispredict guard in `buildClone`; an UNDER-prediction is
-  // the broken module. A single-block callee's entry `ret` is found first, so its
-  // result is byte-identical to the pre-I1 behavior.
-  SmallPtrSet<Value *, 16> Tainted;
-  std::vector<Value *> WL;
-  for (Argument &A : Callee->args())
-    if ((Mask & (SpecMask(1) << A.getArgNo())) && Tainted.insert(&A).second)
-      WL.push_back(&A);
-  while (!WL.empty()) {
-    Value *V = WL.back();
-    WL.pop_back();
-    for (User *U : V->users()) {
-      auto *I = dyn_cast<Instruction>(U);
-      if (!I || I->getFunction() != Callee)
-        continue;
-      if (Tainted.insert(I).second)
-        WL.push_back(I);
-    }
-  }
-  // (a) 5po2 I2 (Rule-13 CONFIRMED-finding fix): a return that is CONTROL-DEPENDENT
-  //     on a tainted branch — e.g. a CONSTANT returned only on `if(q>C) return K`, or
-  //     a merge-phi of constants under a tainted diamond — becomes a TAINTED data-mux
-  //     out rail in the clone's select lowering, even though the constant itself is not
-  //     param-derived (a constant / const-phi is not a param user, so the forward
-  //     closure above never reaches it). UNDER-predicting classical made `cloneFor`
-  //     keep the fp return type while that lowering minted an i32 handle → a
-  //     mistyped `ret` (a verify-DIRTY / broken module, exit 134). Over-approximate:
-  //     if ANY conditional terminator is tainted (a tainted-controlled diamond),
-  //     predict the return tainted. SOUND one-directional — an OVER-prediction is
-  //     caught by the `buildClone` fp-mispredict guards (a clean decline); an
-  //     UNDER-prediction is the broken module. ⚠ "Affects ONLY the fp-return
-  //     rewrite … inert for an int/void return" stood here and is FALSE since bd
-  //     cepm: `specCallResultPredictedClassical` (below) asks this for EVERY
-  //     would-be Phase-6 site at propagation, whatever its return type, and a
-  //     `false` there leaves the call's RESULT classical. An UNDER-prediction
-  //     there is caught by `specialize()`'s `kMsgPredictedClassicalQuantum`
-  //     check (a loud decline, never a silent one); an over-prediction there is
-  //     the pre-cepm conservative taint (the scrub + bd l3oi's fence).
-  for (BasicBlock &BB : *Callee) {
-    const Instruction *T = BB.getTerminator();
-    if (const auto *BI = dyn_cast<BranchInst>(T)) {
-      if (BI->isConditional() && Tainted.count(BI->getCondition()))
-        return true;
-    } else if (const auto *SW = dyn_cast<SwitchInst>(T)) {
-      if (Tainted.count(SW->getCondition()))
-        return true;
-    }
-  }
-  // (b) the param-derived return (the pre-I2 single-block / straight-line case). A
-  //     constant RV is never in `Tainted`, so the `!isa<Constant>` filter is
-  //     subsumed by the membership test.
-  for (BasicBlock &BB : *Callee)
-    if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
-      if (Value *RV = R->getReturnValue(); RV && Tainted.count(RV))
-        return true;
-  return false;
-}
-
-// bd `test_C_libtooling-cepm` / bd `test_C_libtooling-3zr4` — see SpecializeClone.h
-// for the contract and the two backstops. Every conjunct below narrows the set of
-// calls the prediction is asked about (a false return keeps today's conservative
-// taint), so each is the SAFE direction on its own:
-//   * a DIRECT `CallInst` to a LIFTABLE (`calleeBodyTrusted(…, Execute)`: exact, or
-//     ODR-derefinable and not interposable — bd p3kd.2), non-intrinsic, non-variadic
-//     DEFINITION, called
-//     with the callee's own function type and of arity ≤ `kSpecMaxArity` — the
-//     candidate shape `detectSpecializations` / `scanBody` accept (an invoke, an
-//     indirect call, a declaration, an interposable body, a vararg tail — whose
-//     argument `taintArgMask` would count and `predictReturnTainted` would not see
-//     — and a 65th parameter the mask cannot hold all keep their taint);
-//   * a non-VOID result (a void call carries no value; tainting it is today's
-//     behaviour and nothing reads it);
-//   * not a front-end intrinsic site, by MEMBERSHIP (a module may DEFINE
-//     `cq_theta_si32`), and not a callee in a reserved namespace (`cq_`, `__cq_`,
-//     `cqrt_` — the name used ONLY to keep taint, the conservative direction, the
-//     `DeadValueLiveness.h` roots precedent);
-//   * ≥1 argument in `taint.Tainted` (an operand-bundle-only read keeps its taint);
-//   * and the predictor says the return is classical.
-// ⚠ NOT EXCLUDED, AND WHY (L8 retirement trigger): a `naked` callee. Its parameters
-// have no IR uses (the verifier forbids them), so the predictor calls its return
-// classical even though its inline asm reads the argument REGISTERS (bd ctz4's
-// hazard). Sound today only because `scanBody` declines inline asm, so such a site
-// is refused loudly at detection whatever its result's taint — the SAME trigger
-// `nullSafeSlot` carries (SpecializeDetect.h): the day `scanBody` admits inline asm,
-// add `!Callee->hasFnAttribute(Attribute::Naked)` here in the same change.
-bool specCallResultPredictedClassical(const CallInst &CI, const TaintSet &taint) {
-  Function *Callee = CI.getCalledFunction();
-  // `Execute` (bd p3kd.2, CalleeBody.h): the prediction is about the body that
-  // runs at a site that is specialized (retargeted to its clone) or declined, so
-  // it asks exactly what `scanBody` asks of a TOP callee; a derefinable ODR body
-  // is admitted by both or by neither.
-  if (!Callee || Callee->isIntrinsic() ||
-      !calleeBodyTrusted(Callee, CalleeBodyUse::Execute) || Callee->isVarArg())
-    return false;
-  if (CI.getType()->isVoidTy() ||
-      CI.getFunctionType() != Callee->getFunctionType() ||
-      Callee->arg_size() > kSpecMaxArity)
-    return false;
-  CallInst *Site = const_cast<CallInst *>(&CI);
-  if (taint.ThetaCalls.contains(Site) || taint.PhiCalls.contains(Site) ||
-      taint.PhaseCalls.contains(Site) || taint.MeasureCalls.contains(Site))
-    return false;
-  const StringRef N = Callee->getName();
-  if (N.starts_with("cq_") || N.starts_with("__cq_") || N.starts_with("cqrt_"))
-    return false;
-  const SpecMask Mask = taintArgMask(&CI, taint);
-  if (Mask == 0)
-    return false;
-  return !predictReturnTainted(Callee, Mask);
 }
 
 // Clone + mangle + internal linkage, VERBATIM: `CloneFunction` copies the

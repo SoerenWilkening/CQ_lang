@@ -2,6 +2,8 @@
 
 #include "Specialization.h"
 
+#include "LiftDiagnostics.h"  // LiftSite (bd 3c6m.82)
+
 #include "BennettWrap.h"
 #include "CloneRailSelect.h"    // rewriteRailSelects (bd p3kd.7.2)
 #include "CompareLowering.h"
@@ -16,7 +18,6 @@
 #include "QramLowering.h"      // lowerQramReads (bd 20xt.4 spec-callee QROM read)
 #include "ReturnMerge.h"       // mergeReturnBlocks (bd dm7f.5 — the shared ret merge)
 #include "SelectClassify.h"    // collectCondTree / CondTree (5po2 I2 compound cond)
-#include "SelectMergeEmit.h"   // materializeCopySource (5po2 I2 classical arm)
 #include "SpecializeClone.h"
 #include "SpecializePlan.h"
 #include "SpecializeReject.h"
@@ -65,6 +66,13 @@ static constexpr char kMsgPhantomArgRead[] =
     "cq specialization: quantum argument to a parameter the lifted callee never "
     "reads";
 
+// bd `test_C_libtooling-cepm` — the check on the propagation-time classical
+// prediction (`specialize()`); see there. Since bd r2j3.19 `buildClone`'s inner
+// drain asks it too: a clone's taint now carries the same prediction.
+static constexpr char kMsgPredictedClassicalQuantum[] =
+    "cq specialization: lifted callee returns a quantum register where "
+    "propagation predicted a classical result";
+
 namespace {
 
 // bd p3kd.7.2: record each CLASSICAL-condition `select` over a quantum arm in
@@ -96,8 +104,9 @@ void recordCloneRailSelects(Function &Clone, const TaintSet &cloneTaint,
       }
 }
 
-// Rebuild `ct.Tainted` from the persistent tainted params via the SAME forward
-// transitive-user closure `seedClone` uses (Rule 14). A full rebuild
+// Rebuild `ct.Tainted` from the persistent tainted params with the SAME drain
+// `seedClone` uses (`propagateFromParams`, Rule 14): the clone's `propagate`,
+// exactly as main re-runs `propagate` after each of these stages. A full rebuild
 // (clear-then-seed) is required after a PredMux flatten, not a merge: the flatten
 // ERASED the diamond blocks, so the pre-flatten `ct.Tainted` holds dangling
 // instruction pointers — reading their `users()` would be a use-after-free. The
@@ -105,25 +114,9 @@ void recordCloneRailSelects(Function &Clone, const TaintSet &cloneTaint,
 // (transitively) from them, so a param-rooted re-closure recovers the full set.
 // `HandleWidth`/`BirthOrder` are keyed on persistent params/rails (never the
 // erased body values), so they are preserved untouched.
-void reseedCloneTaintFromParams(Function &Clone,
-                                ArrayRef<Argument *> TaintedParams,
+void reseedCloneTaintFromParams(ArrayRef<Argument *> TaintedParams,
                                 TaintSet &ct) {
-  ct.Tainted.clear();
-  std::vector<Value *> WL;
-  for (Argument *A : TaintedParams)
-    if (ct.Tainted.insert(A).second)
-      WL.push_back(A);
-  while (!WL.empty()) {
-    Value *V = WL.back();
-    WL.pop_back();
-    for (User *U : V->users()) {
-      auto *I = dyn_cast<Instruction>(U);
-      if (!I || I->getFunction() != &Clone)
-        continue;
-      if (ct.Tainted.insert(I).second)
-        WL.push_back(I);
-    }
-  }
+  propagateFromParams(ct, TaintedParams);
 }
 
 // 5po2 I2: normalize genuine multi-EXIT `ret` control — N `ret`s in distinct
@@ -225,7 +218,7 @@ bool lowerCloneControl(Function &Clone, Module &M, WidthDispatch &wd,
   // to claim in a non-clone function and therefore never to convert a φ the
   // module-level record holds. Same species of argument, same disposition.
   PredMuxRailPhiRecord cloneRailPhiRec;
-  auto Reseed = [&] { reseedCloneTaintFromParams(Clone, TaintedParams, ct); };
+  auto Reseed = [&] { reseedCloneTaintFromParams(TaintedParams, ct); };
   while (flattenPredMuxRegions(M, ct, /*claimAll=*/true, &cloneRailPhiRec))
     Reseed();
 
@@ -319,9 +312,11 @@ bool lowerCloneControl(Function &Clone, Module &M, WidthDispatch &wd,
   // INSIDE a clone's loop, but the loop itself survives, so `Clone.size() != 1`
   // still fires. It is the SIZE check that holds the line, not E2 (Rule-13 round
   // 1 F-1). Round 2 DID probe it: a clone hosting an in-loop diamond emits a
-  // gate stream byte-identical to the oracle's (103 calls), and both
-  // `spec_reject_clone_loop.ll` and `lowering_ctlz_idiom_reject_callee_arg_taint.ll`
-  // still decline.
+  // gate stream byte-identical to the oracle's (103 calls), and
+  // `spec_reject_clone_loop.ll` still declined. ⚠ Since bd p3kd.7.8 neither
+  // pins THIS check: the clone runs main's loop stages first, so
+  // `spec_reject_clone_loop.ll` declines in `lowerLoops`, and the ctlz fixture
+  // is an accept (`lowering_ctlz_idiom_accept_callee_arg_taint.ll`).
   //
   // LOUD-decline (Prime Directive; never a partial clone). Point at a
   // surviving conditional `br` for the best `!dbg`, else the entry terminator.
@@ -641,7 +636,9 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
     // be source-injected to lower, never recognized by name).
     // The inner's taint mask is read from THIS clone's seeded `cloneTaint`, after
     // any earlier sibling's classical-result scrub (process in program order so a
-    // downstream inner sees the corrected taint).
+    // downstream inner's MASK sees the corrected taint). ⚠ Only its mask: main's
+    // control chain has already run on this body (bd p3kd.7.8), so a gate it built
+    // on a result scrubbed here is caught by the fence after this loop (r2j3.19).
     SpecMask InnerMask = taintArgMask(Inner, cloneTaint);
     if (InnerMask == 0)
       continue;  // all-classical args — an ordinary classical subcall, not lifted.
@@ -661,8 +658,25 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
 
     CallInst *OldInner = Inner;
     StringRef InnerOrigW = abiWidthFromType(Inner->getType());  // pre-rebuild width.
+    // bd r2j3.19: `specialize()`'s check on the propagation-time prediction, one
+    // clone level down. The clone's taint now carries the prediction
+    // (`propagateFromParams`), so main's control chain read a site predicted
+    // classical as an integer; a clone that returns a register after all makes
+    // that reading wrong. Asked on the call as propagation left it, before
+    // `resolveSite` can rebuild it. ⚠ NO KNOWN WITNESS (review round 1 F1): it
+    // needs an inner site's mask to grow after the clone's last fresh drain, and a
+    // clone reseeds by a FULL `propagateFromParams` after every PredMux flatten,
+    // so only the chain's round-2 growth remains, which PredMux leaves almost
+    // nothing to act on. A backstop, unpinned by a fixture; the day a clone-level
+    // round-2 mask-growth fixture exists (cf. main's
+    // spec_reject_predicted_classical_round2_mask_growth.ll), it pins this.
+    const bool ResultWasTainted =
+        Inner->getType()->isVoidTy() || cloneTaint.Tainted.count(Inner);
     SpecRecord Rec =
         resolveSite(Inner, InnerCallee, InnerMask, M, wd, taint, plan);
+    if (Rec.ReturnTainted && !ResultWasTainted)
+      Clone->getContext().diagnose(DiagnosticInfoUnsupported(
+          *Clone, kMsgPredictedClassicalQuantum, Inner->getDebugLoc()));
     // fp-ABI intra-clone taint migration (bd 3c6m.54): if retargeting REBUILT the
     // inner call (an fp-tainted return rewritten to an i32 handle), the fresh
     // `CallInst` is a NEW value absent from THIS outer clone's `cloneTaint` —
@@ -722,6 +736,18 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
         Roots.insert(T);
       scrubForwardCone(Inner, cloneTaint, Roots);
     }
+  }
+
+  // bd r2j3.19: bd l3oi's fence on THIS clone's taint. The module-level call
+  // (CQLoweringPass) reads only module taint, and main's control chain ran on
+  // this body before the drain above, so a result the drain proved classical
+  // may already be an operand of a gate the chain emitted (the predictor's
+  // over-approximation: a tainted branch the inner clone's flatten removes).
+  // The clone handle masks are recorded in the module taint.
+  if (declineScrubbedHandleReads(M, cloneTaint, &taint)) {
+    plan.Cache[Key].ReturnTainted = false;
+    retargetSite(Site, Clone);
+    return SpecRecord{Clone, false};
   }
 
   // bd `test_C_libtooling-vsfp` round 2 — THE SPECIALIZER'S DEAD-SLOT RECORD,
@@ -1028,14 +1054,8 @@ bool shouldSpecialize(const CallInst *CI, const SpecPlan &plan) {
   return false;
 }
 
-// (`kMsgPhantomArgRead` is defined at the top of this file since bd `nlfd`:
-// `buildClone` asks it too.)
-
-// bd `test_C_libtooling-cepm` — the check on the propagation-time classical
-// prediction (`specialize()`); see there.
-static constexpr char kMsgPredictedClassicalQuantum[] =
-    "cq specialization: lifted callee returns a quantum register where "
-    "propagation predicted a classical result";
+// (`kMsgPhantomArgRead` and `kMsgPredictedClassicalQuantum` are defined at the
+// top of this file: `buildClone` asks them too.)
 
 namespace {
 
@@ -1257,8 +1277,11 @@ void specialize(Module &M, WidthDispatch &wd, TaintSet &taint, SpecPlan &plan) {
     // the new one is not in `Tainted`).
     const bool ResultWasTainted =
         Cand.Site->getType()->isVoidTy() || taint.Tainted.count(Cand.Site);
-    SpecRecord Rec =
-        resolveSite(Cand.Site, Cand.Callee, Cand.Mask, M, wd, taint, plan);
+    SpecRecord Rec = [&] {
+      // bd 3c6m.82: an error anywhere in this lift notes the user's call.
+      LiftSite Lifting(Cand.Site);
+      return resolveSite(Cand.Site, Cand.Callee, Cand.Mask, M, wd, taint, plan);
+    }();
     // THE CHECK ON THE PROPAGATION-TIME PREDICTION (bd cepm / bd 3zr4). Propagation
     // leaves a site's RESULT classical when `predictReturnTainted` says the clone
     // returns a classical value (`specCallResultPredictedClassical`), and every stage

@@ -5,6 +5,8 @@
 // `i16` / `i64` / `f32` / `f64`.
 
 #include "CQLoweringPass.h"
+#include "LiftDiagnostics.h"  // LiftDiagnosticScope (bd 3c6m.82)
+#include "RuntimeNarrowABI.h"  // RuntimeNarrowABIOnExit (bd r2j3.20)
 #include "SpeculationSafety.h"
 
 #include "ArithLowering.h"
@@ -118,6 +120,9 @@ bool declineSurvivingIntrinsicCalls(Module &M, WidthDispatch &wd) {
 }  // namespace
 
 PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
+  // bd 3c6m.82: an error inside a lifted body is preceded by a note at the
+  // user's call (LiftDiagnostics.h).
+  LiftDiagnosticScope LiftNotes(M.getContext());
   WidthDispatch wd(M);
   TaintSet taint = propagate(M, wd);
 
@@ -133,6 +138,12 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
       taint.PhaseCalls.empty() && taint.MeasureCalls.empty())
     return eraseUnusedLibmBodies(M, /*KeepBindable=*/false) ? PreservedAnalyses::none()
                                     : PreservedAnalyses::all();
+
+  // bd r2j3.20 (etj3): every runtime declaration gets its C prototype's narrow
+  // extension when the pass returns, whichever stage minted it. AFTER the
+  // passthrough early-out, which must leave a quantum-free module byte-identical
+  // (review round 2 F5).
+  RuntimeNarrowABIOnExit NarrowABI(M);
 
   // bd `test_C_libtooling-3c6m.72` — a quantum math.h call reaches the body
   // `tools/cqc` injected (`__cq_libm_<name>`); a classical one keeps the system
@@ -1054,11 +1065,13 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // functions); this wrapper preserves the historical Function&
   // signature by routing through a single-function "module view."
   Module &M = *F.getParent();
+  LiftDiagnosticScope LiftNotes(M.getContext());  // bd 3c6m.82, as in run()
   WidthDispatch wd(M);
   TaintSet taint = propagate(M, wd);
   if (taint.ThetaCalls.empty() && taint.PhiCalls.empty() &&
       taint.PhaseCalls.empty() && taint.MeasureCalls.empty())
     return eraseUnusedLibmBodies(M, /*KeepBindable=*/false);
+  RuntimeNarrowABIOnExit NarrowABI(M);  // bd r2j3.20, after passthrough, as in run()
   bindLibmCalls(M, taint, wd);  // bd 3c6m.72 — see run().
   eraseUnusedLibmBodies(M, /*KeepBindable=*/true);
 

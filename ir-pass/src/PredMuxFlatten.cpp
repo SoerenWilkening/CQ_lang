@@ -32,7 +32,9 @@
 //        distinct incomings, which ArmClassify's fp fence categorically
 //        declines; and — W7, bd 0rwu — the flat sole-2-incoming INTEGER-phi
 //        diamond whose ENTRY-edge incoming is a ConstantInt and whose other
-//        incoming is a region-INTERIOR instruction, the fdlibm __isnanl tail).
+//        incoming is a region-INTERIOR instruction, the fdlibm __isnanl tail;
+//        and — W8, bd dm7f.17 — a switch with a SCALAR-FP merge phi, which no
+//        4.5 owner accepts).
 //        Every OTHER flat sole-2-incoming-phi INTEGER diamond (a non-constant
 //        straight-through — the 4.2 value-arm accepts — and the a8c0
 //        empty-arm const-fold re-anchor), a straight-line-arm switch, and the
@@ -3098,14 +3100,28 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
     // Straight-line-arm switches are 4.5 territory (phase/value/data-mux/
     // eq-fold) — claim only when an arm hosts further tainted control (or a
     // claimable read, which 4.5 never accepts).
-    Claim = NestedTainted || ClaimableRead;
+    //
+    // W8 (bd dm7f.17) — or when a merge phi is a SCALAR-FP muxable value: the
+    // switch analogue of W5. No 4.5 owner accepts one, by construction of
+    // `SwitchClassify`: a sole merge phi must pass G4 (integer only), two or
+    // more phis are the C1 multi-phi decline, and the phase switch requires a
+    // merge with NO phi. The flattened selects are the kjd1 fp controlled-copy
+    // substrate, and SelectClassify's gate 3 decides angle use at the rotation
+    // consumers (CLAUDE.md R3, owner ruling 2026-10-08), so the type-only
+    // "an fp merge is an angle" fence no longer stands between a C switch over
+    // `double` data and its lowering.
+    bool FpMerge = false;
+    for (const PHINode &P : Mg->phis())
+      if (P.getType()->isFloatingPointTy() && isMuxableType(P.getType()))
+        FpMerge = true;
+    Claim = NestedTainted || ClaimableRead || FpMerge;
   } else {
     // W5 (bd vyqi) — a br-rooted flat region whose merge holds EXACTLY ONE
     // 2-incoming SCALAR-FP (muxable) phi with DISTINCT incomings: the
     // distilled log10l `z` accumulator diamond/triangle the zco4 promotion
     // exposed. No shipped owner ever ACCEPTS this shape — ArmClassify's 4.2
-    // value path categorically declines an fp-typed merge (the fp-angle
-    // fence), and every fp-merge shape the `br` control owners DO accept
+    // value path declines an fp-typed merge (its emitter is integer-only;
+    // the fence was once read as an angle rule, CLAUDE.md R3), and every fp-merge shape the `br` control owners DO accept
     // (phase arms, the eq-fold and a8c0 re-anchor diamonds) holds a
     // `cq_phi`/`cq_theta` CALL inside an arm, which E4 excludes from any
     // PredMux claim; the 6.5 classical-call arm is i32-only. The
@@ -3750,13 +3766,17 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
         return leave("E4-gep", &I);
       }
       // bd adia (Lever C) — a PENDING-SPECIALIZATION call is speculatable
-      // dataflow: DIRECT, ≥1 TAINTED argument (an all-classical pure call in
-      // an arm stays with its 6.5 classical-call-arm owner — anti-overlap),
-      // a template-width result, and a callee body passing the pure/acyclic/
+      // dataflow: DIRECT, ≥1 TAINTED argument, a template-width result, and a
+      // callee body passing the pure/acyclic/
       // all-speculatable proof (a pure total terminating function of its
       // arguments — the same class Phase-6 clones; under quantum control the
       // call executes on every basis state, exactly as every other
       // speculated arm op). An off-proof call still excludes the region.
+      // ⚠ An all-classical call is admitted too since dm7f.16.1 (a6bee2d9) when
+      // `classicalCallCanBeSpeculated` proves it total; the comment here used to
+      // say it "stays with its 6.5 owner — anti-overlap". The two owners now
+      // overlap on a lone classical-call arm: PredMux takes the region when its
+      // claim witness fires, 6.5 otherwise (bd bwfp).
       if (auto *CI = dyn_cast<CallInst>(&I)) {
         if (isCuratedReversibleIntrinsic(CI) && CI->doesNotAccessMemory())
           continue;

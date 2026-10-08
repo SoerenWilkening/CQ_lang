@@ -36,6 +36,7 @@
 #include "LoopPlan.h"          // railPhiRootMint (Inc 3 R7-loop clause (b'))
 #include "OpcodeSupport.h"
 #include "PredMuxFlatten.h"
+#include "SpeculationSafety.h"  // hoistedCallTreeIsUBFree / hoistedArgPoisonIsUB (bd bwfp)
 #include "RailBankPromote.h"  // isRailBankSeedAlloc
 #include "RotationLowering.h"  // suffixFromName (2b angle-select S5)
 #include "SelectClassify.h"    // CondTree (2b angle-select S4)
@@ -67,6 +68,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>  // foldCuratedTrigF64 (bd dm7f.18)
 #include <memory>  // unique_ptr (the per-function DominatorTree cache, bd r9e5 1b-B.1)
 #include <utility>
 
@@ -1073,6 +1075,46 @@ void f2Note(Value *V, ConstantRange R, F2State &S) {
   S.WL.push_back(V);
 }
 
+// bd dm7f.18 — the four curated f64 trig ids LLVM 19 cannot fold, evaluated the
+// way ConstantFolding evaluates the `tan`/`asin`/`acos`/`atan` LIBCALLS
+// (`ConstantFoldFP`: host libm on the double, no fold for a NaN or infinite
+// result). A `-fmath-errno` frontend (Linux) emits and folds those libcalls
+// before the pass binds them to these intrinsics, so the fold is what clang
+// could have substituted. On darwin clang emits the intrinsics and folds
+// nothing (review round 2 F4): there the fold only adds a decline for a seed
+// that is bit-equal to the value, the safe direction. This fold refuses only
+// NaN/inf results while LLVM also refuses underflow and non-finite inputs, a
+// superset (also safe). ASSUMPTION: frontend and pass run on ONE host libm. IR
+// folded by another libm (glibc, `-fmath-errno`) and lowered here could differ
+// by an ulp, so F2 would miss a substituted seed (review round 3).
+Constant *foldCuratedTrigF64(const CallInst *CI, ArrayRef<Constant *> Ops) {
+  const auto *II = dyn_cast<IntrinsicInst>(CI);
+  const auto *X = Ops.size() == 1 ? dyn_cast<ConstantFP>(Ops[0]) : nullptr;
+  if (!II || !X || !X->getType()->isDoubleTy())
+    return nullptr;
+  const double V = X->getValueAPF().convertToDouble();
+  double R;
+  switch (II->getIntrinsicID()) {
+  case Intrinsic::tan:
+    R = std::tan(V);
+    break;
+  case Intrinsic::asin:
+    R = std::asin(V);
+    break;
+  case Intrinsic::acos:
+    R = std::acos(V);
+    break;
+  case Intrinsic::atan:
+    R = std::atan(V);
+    break;
+  default:
+    return nullptr;
+  }
+  if (std::isnan(R) || std::isinf(R))
+    return nullptr;
+  return ConstantFP::get(X->getType(), R);
+}
+
 void f2NoteConst(Value *V, Constant *C, F2State &S) {
   if (auto *CI = dyn_cast<ConstantInt>(C)) {
     f2Note(V, ConstantRange(CI->getValue()), S);
@@ -1132,16 +1174,27 @@ bool f2Model(Instruction *I, F2State &S, const DataLayout &DL,
     // evidence that the value is unknowable. So a pinned operand feeding one we
     // could not evaluate takes the conservative DECLINE.
     //
-    // MEASURED at LLVM 19: this branch has NO live customer — all 16 integer
-    // idiom ids and the 13 curated fp ids ARE `canConstantFoldCallTo`-able
-    // (round-4 review's `h/hi01`-`hi16`, re-confirmed here by `p/fdf.ll`, whose
-    // plain `@llvm.bswap.i32` DECLINES through the exact fold). It is defence in
-    // depth with a red-green fixture, which is the point: the previous shape had
-    // neither.
+    // ⚠ "MEASURED at LLVM 19: this branch has NO live customer" stood here and
+    // went false with 66f18d19 (bd dm7f.18): the curated set gained
+    // `llvm.tan`/`asin`/`acos`/`atan`, which LLVM 19 does NOT fold (it folds
+    // `llvm.sin`/`cos`, and the `tan`/`asin`/`acos`/`atan` LIBCALLS a
+    // `-fmath-errno` frontend emits).
+    // So those four are folded here with the host libm, exactly as
+    // ConstantFolding folds the libcalls (`ConstantFoldFP`: a NaN/inf result is
+    // left unfolded), and F2 compares the value instead of declining blind
+    // (control_inplace_ry_accept_stateprep_curated_trig_fold.ll and its
+    // `_equal` decline twin). A curated id neither LLVM nor this fold can
+    // evaluate keeps the conservative decline below.
     if (!Callee || !canConstantFoldCallTo(CB, Callee)) {
       const auto *CI = dyn_cast<CallInst>(CB);
-      if (CI && isCuratedReversibleIntrinsic(CI))
+      if (CI && isCuratedReversibleIntrinsic(CI)) {
+        if (AllConst)
+          if (Constant *R = foldCuratedTrigF64(CI, Ops)) {
+            f2NoteConst(I, R, S);
+            return true;
+          }
         return !AnyPinnedOperand;
+      }
       return true;
     }
     if (AllConst)
@@ -2479,9 +2532,10 @@ bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
 // either way; the fallback only picks WHICH safe string fires).
 //
 // FP chains are walked like integer ones (fadd/fmul/… are supported stems) —
-// the CALLER declines any FP-typed merge as an angle (`control flow`) before
-// reading the base; never key the decision on abiWidthFromType() validity
-// (f64 has a valid width yet is an angle — the f64 miscompile family).
+// the CALLER declines an FP-typed merge (`control flow`) before reading the
+// base: the 4.2 emitter is integer-only and PredMux owns scalar-fp merges
+// (bd dm7f.17). That is a lowering gap, not an angle rule — angle use is
+// decided at the rotation consumers (CLAUDE.md R3).
 ValueChain walkValueChain(Value *ArmIncoming, const BasicBlock *ArmBB,
                           TaintSet &Taint, Value *RoutedHint) {
   ValueChain C;
@@ -6640,10 +6694,15 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
           declineArm(declAnchor(Region), "mixed phase/value arm");
           return ArmDisposition::Declined;
         }
-        // An FP-typed merge under tainted control is categorically an ANGLE,
-        // never routable data — even though f64 has a valid ABI width (the
-        // f64 silent-miscompile family; PRD §8.1). isFPOrFPVectorTy, not the
-        // scalar-only isFloatingPointTy (which misses <2 x double>).
+        // ⚠ "An FP-typed merge under tainted control is categorically an ANGLE"
+        // stood here and is FALSE (owner ruling 2026-10-08, CLAUDE.md R3): an fp
+        // merge can carry quantum data, and angle use is decided at the rotation
+        // consumers. Scalar-fp value diamonds are PredMux's (witness W5; W8 for
+        // a switch), flattened to selects whose gate 3 refuses an angle reach and
+        // whose kjd1 fp controlled copy lowers the data. A shape PredMux leaves
+        // reaches this fence, and the 4.2 value emitter is integer-only
+        // (`emitValueRegion`'s pre-flight), so it declines here as a LOWERING GAP,
+        // not as an angle (bd dm7f.17).
         if (MergePhi->getType()->isFPOrFPVectorTy()) {
           declineArm(declAnchor(Region), "control flow");
           return ArmDisposition::Declined;
@@ -6656,8 +6715,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // it (null FunctionCallee AFTER the route bracket was emitted — a
         // crash-on-valid-input, violating detect-before-mutate). The width
         // check is NECESSARY-not-sufficient and runs only AFTER the FP
-        // decline above — never key the DECISION on abiWidthFromType()
-        // validity (f64 has a valid width yet is an angle, the f64 trap).
+        // decline above (f64 has a valid width, and this emitter has no fp copy).
         // n0ui Tier-1: `widthHasReversibleCopy`, NOT `.empty()` — i128 is a
         // recognized intermediate width with no `cqrt_copy_i128`, so a tainted
         // i128 value-merge phi must still DECLINE here (same fence as the
@@ -8607,7 +8665,11 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
   // the hoisted value never reaches `%out`. What reaches `%out` on the states the
   // source did take is the value the source itself computed. That asymmetry is
   // pinned deliberately by control_classical_call_arm_accept_poisonselect_callee.ll,
-  // which KEEPS a poison-producing `shl` in the callee and still lowers.
+  // which KEEPS a poison-producing `shl` in the callee and still lowers. ⚠ It
+  // holds only while no `noundef` SINK sits in the call tree (bd bwfp): a
+  // `noundef` return turns the poison result into UB at the callee's own `ret`
+  // (control_classical_call_arm_reject_noundef_return_poison.ll), so the hoist
+  // asks whether poison reaches such a sink (`hoistedCallTreeIsUBFree`, below).
   //
   // COST, MEASURED, AND STATED IN FULL — an earlier draft said only "what narrows
   // is the OPAQUE-DECLARATION shape", which is false. Six shapes accepted before
@@ -8635,6 +8697,19 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
   }
   if (!llvm::isSafeToSpeculativelyExecute(Call) &&
       !isSpeculatableTotalCallee(Callee)) {
+    diagnoseUnderControl(Call, "control flow");
+    return ClassicalCallDisp::Declined;
+  }
+  // bd bwfp — the two proofs above are about the CALLEE BODY's memory, control
+  // and division. They do not see a mismatched calling convention (UB at the
+  // call), nor POISON reaching a `noundef` sink in the call tree (the callee's
+  // `noundef` return, an inner call's `noundef` parameter): the paragraph below
+  // ("the RESULT's definedness is a different question") holds only without such
+  // a sink. Measured on e0af16ed: a `noundef`-return callee with a variable `shl`
+  // was hoisted out of a zero-amplitude guard, executing `ret noundef poison`.
+  // The question is owned by SpeculationSafety (PredMux's nested hoist asks the
+  // same call-site contract).
+  if (!hoistedCallTreeIsUBFree(Call)) {
     diagnoseUnderControl(Call, "control flow");
     return ClassicalCallDisp::Declined;
   }
@@ -8697,8 +8772,11 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
   // SAME PREDICATE — read its header for why that sharing is load-bearing, why the
   // attribute test is a WHITELIST, and why both callers must query BEFORE the hoist
   // (bd iwz1: post-hoist the predicate self-licenses, 0 -> 1).
+  // bd bwfp: `hoistedArgPoisonIsUB` widens "a `noundef` parameter" to each
+  // argument whose poison the call tree forwards to a `noundef` sink (a per-
+  // argument dataflow over the bodies); the emitter asks the same predicate.
   for (unsigned Ai = 0, Ae = Call->arg_size(); Ai != Ae; ++Ai)
-    if (Call->paramHasAttr(Ai, Attribute::NoUndef) &&
+    if (hoistedArgPoisonIsUB(Call, Ai) &&
         !llvm::isGuaranteedNotToBeUndefOrPoison(Call->getArgOperand(Ai)) &&
         !freezeDischargesHoistedArg(Call, Ai)) {
       diagnoseUnderControl(Call, "control flow");

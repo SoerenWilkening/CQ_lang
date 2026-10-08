@@ -639,5 +639,6 @@
       }
     },
     "status_changes": []
-  }
+  },
+  "baseline_commit_note": "92e9f0ec is not in history (rebased away); its tree equals 874b822b (review 2026-10-08)"
 }

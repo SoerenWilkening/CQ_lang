@@ -13,9 +13,12 @@
 ; i32-handle clone ABI.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; bd 3c6m.82 (LiftDiagnostics.h): this error is located in the USER's function while the
+; re-plan lifts the site, so no "lifted from here" note precedes it (a note would print first).
+; CHECK-NOT: note:
 ; CHECK: error{{.*}}cq specialization: floating-point quantum argument or return has no reversible copy
-; CHECK-NOT: under quantum control
-; CHECK-NOT: unknown callee
+; (R10, 2026-10-08: the CHECK-NOT lines that followed the error were removed as vacuous —
+; opt exits on the first DS_Error, so nothing can follow it.)
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 ; bd wve8 — DEFINED, not declared. The 6.5 arm HOISTS this call out of its

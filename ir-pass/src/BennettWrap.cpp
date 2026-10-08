@@ -204,8 +204,17 @@ bool emitBennettWrap(Function &Clone, const SmallPtrSetImpl<CallInst *> &LiftedC
   // backstop): main's stages flatten a lowered region, so the forward is a
   // straight-line gate stream.
   auto *Ret = dyn_cast<ReturnInst>(Clone.getEntryBlock().getTerminator());
-  if (!Ret || Clone.size() != 1) {
+  if (!Ret && Clone.size() == 1) {
     diagnose(Clone.getEntryBlock().getTerminator(), kMsgCloneNoReturn);
+    return false;
+  }
+  // A body that still has blocks is surviving control, not a missing `ret`
+  // (review 2026-10-08: the message used to say "never returns" here too).
+  // `lowerCloneControl`'s size backstop fires first today, with this string.
+  if (!Ret || Clone.size() != 1) {
+    diagnose(Clone.getEntryBlock().getTerminator(),
+             "cq specialization: callee contains tainted control flow under "
+             "quantum lift");
     return false;
   }
 

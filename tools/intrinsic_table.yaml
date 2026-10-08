@@ -209,7 +209,10 @@ intrinsics:
   # fma(a,b,c) = a*b + c. BOTH llvm.fma (must-fuse) and llvm.fmuladd (may-fuse,
   # the default -O1 contraction of `a*b+c`) map to this single `fma` stem — the
   # trace-only runtime does not distinguish the rounding mode (a Phase-9 backend
-  # concern). The product pair (a,b) is COMMUTATIVE; the addend c is POSITIONAL.
+  # concern). NUMERICAL CONTRACT (R14, 2026-10-08 review): the stem's circuit MUST
+  # be a FUSED multiply-add, rounded ONCE. That is exact for llvm.fma and a
+  # permitted realization of llvm.fmuladd; a multiply-then-add circuit would
+  # mis-round every llvm.fma site. The product pair (a,b) is COMMUTATIVE; the addend c is POSITIONAL.
   # The recognizer canonicalizes the pair handle-before-literal, so a product that
   # holds a handle puts it first → 4 shapes qqq/qql/qlq/qll. An all-classical
   # product with a quantum addend is the 5th shape llq (bd 3c6m.73: runtime factors

@@ -15,7 +15,9 @@
 // and its result is never freed (it is no minted rail).
 // So the select itself stays a classical `select`, retyped to choose between i32
 // handles, with each classical arm materialized to a |v> rail first
-// (`materializeCopySource`, left allocated as separable classical data).
+// (`materializeCopySource`). The Bennett wrap frees a constant-ZERO arm after
+// the reverse (a provably |0> rail, R5); any other materialized arm stays
+// allocated as separable classical data.
 //
 // The rewrite runs AFTER `lowerOps`, when every quantum arm is the i32 handle of
 // its lowered producer; building it earlier would mix still-fp quantum operands

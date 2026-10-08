@@ -304,9 +304,10 @@ done
 # Stage 2: llvm-link the per-TU IR into one module — gives the specializer the
 # un-inlined callee bodies (llvm-link, not a multi-input clang invocation).
 # A program that uses a CQ primitive (`cq_*`) also gets the math.h bundle
-# (bd 3c6m.72): every body under a private `__cq_libm_<name>`, so no classical
-# call changes callee; the pass binds a call with a quantum operand to its body
-# and erases the bodies nothing uses. A purely classical program never sees the
+# (bd 3c6m.72): every body under the prefixed name `__cq_libm_<name>` (external
+# until the pass internalizes the survivors), so no classical call changes
+# callee; the pass binds a call with a quantum operand to its body and erases
+# the bodies nothing uses. A purely classical program never sees the
 # bundle, so its module is exactly what it was (owner ruling 2026-10-06).
 # Bitcode even under --emit-ll: llvm-nm reads no textual IR.
 user_ir="$work/$out_base.user.bc"

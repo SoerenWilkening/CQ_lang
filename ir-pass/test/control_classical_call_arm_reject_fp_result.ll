@@ -28,7 +28,7 @@ entry:
   %c = fcmp ogt double %q, 5.000000e+00
   br i1 %c, label %arm, label %merge
 arm:
-  %r = call double @fp_f(double 7.000000e+00)   ; PURE but fp result — angle, not data
+  %r = call double @fp_f(double 7.000000e+00)   ; PURE, fp result: data (CLAUDE.md R3, 2026-10-08)
   br label %merge
 merge:
   %y = phi double [ %r, %arm ], [ %q, %entry ]

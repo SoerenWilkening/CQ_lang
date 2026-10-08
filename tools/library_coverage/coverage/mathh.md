@@ -6,9 +6,9 @@ The C standard math library — the flagship demonstrator: pure, mostly-total nu
 
 **Compiles: 52/183 (28.4%)** — of which **golden-verified: 45/183 (24.6%)**.
 
-> ## `math.h` coverage through `cqc`: **86/180 scalar-input cells (48%)**
+> ## `math.h` coverage through `cqc`: **100/180 scalar-input cells (56%)**
 >
-> **28/120** source-injected · **48/48** intrinsic · **3/3** classical-only · **10/12** macro. A cell counts when every runtime C/Q mixture builds, lowers, links and trace-runs through `tools/cqc`, the driver a user runs ([detail](../runtime_census.md); regenerate with `python3 tools/library_coverage/runtime_census.py --output tools/library_coverage/runtime_census.json`). The `nan` row is classical-only and outside the scalar total.
+> **42/120** source-injected · **48/48** intrinsic · **3/3** classical-only · **10/12** macro. A cell counts when every runtime C/Q mixture builds, lowers, links and trace-runs through `tools/cqc`, the driver a user runs ([detail](../runtime_census.md); regenerate with `python3 tools/library_coverage/runtime_census.py --output tools/library_coverage/runtime_census.json`). The `nan` row is classical-only and outside the scalar total.
 >
 > The lab-harness scoreboards below inject openlibm bodies `cqc` does not ship (bd `3c6m.70`, `3c6m.72`). They measure what the compiler can lower inside that harness, not what a user can compile.
 

@@ -152,9 +152,10 @@ std::unique_ptr<ControlPlan> runControlChain(Module &M, WidthDispatch &wd,
   // ⚠ AND THE PEEL GROWS TAINT, SO ITS DELTA IS ADJUDICATED — bd b6ap Rule-13
   // ROUND-1 finding F-B6-1, a CONFIRMED plain-C silent miscompile in five consumer
   // classes. The peel turns a CLASSICAL merge phi into a QUANTUM `select`, and
-  // `detectSpecializations` (:321), `declineTaintEscapes` (:330) and
-  // `declineStaleRecordOps` (:337) are pure-analysis pre-passes that ran ~90 lines
-  // ago on the premise that `propagate` had settled — so without this call a
+  // `detectSpecializations`, `declineTaintEscapes` and `declineStaleRecordOps`
+  // (the `:NNN` marks below are line numbers in the pre-p3kd.7.8
+  // CQLoweringPass.cpp this block was moved from) are pure-analysis pre-passes
+  // that ran earlier on the premise that `propagate` had settled — so without this call a
   // `store`, an unknown callee, a visible-body callee or a STALE-MASK Phase-6
   // clone consumes the new rail's runtime HANDLE TAG as a classical integer, at
   // `opt` exit 0, verify-clean and STRICT stage-2b `0 violation(s)`.

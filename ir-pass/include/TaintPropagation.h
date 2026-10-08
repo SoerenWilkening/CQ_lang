@@ -1748,7 +1748,14 @@ bool declineQuantumReturnCalls(llvm::Module &M, const TaintSet &taint);
 // `specialize()`; `lowerOps`/`lowerRotations` run after it and see the scrubbed
 // value as classical, so any LATER use is a correct `_hl` literal. Returns true
 // iff it declined.
-bool declineScrubbedHandleReads(llvm::Module &M, const TaintSet &taint);
+//
+// bd r2j3.19: a lifted clone asks the same question of its OWN taint after its
+// inner-call drain (`buildClone`), because main's control chain has already
+// emitted gates on the clone body by then. `HandleMasks` names the set that holds
+// `SpecHandleArgMask` (the module taint; a clone's own set never records one);
+// null means `taint` itself.
+bool declineScrubbedHandleReads(llvm::Module &M, const TaintSet &taint,
+                                const TaintSet *HandleMasks = nullptr);
 
 // bd `test_C_libtooling-d88e` — the RE-ASK of every one-register merge-phi lift
 // (`taint.LiftedMergePhis`) at FINAL taint, i.e. after `specialize()`'s scrub.
@@ -2073,6 +2080,18 @@ void repropagateControlMerges(llvm::Module &M, WidthDispatch &wd,
 // pays nothing.
 void propagateFromSeeds(TaintSet &taint, llvm::ArrayRef<llvm::Value *> Seeds,
                         llvm::SmallPtrSetImpl<llvm::Value *> *Delta = nullptr);
+
+// bd r2j3.19 — A LIFTED CLONE'S `propagate`. A clone has no `cq_theta` root: its
+// quantum inputs are the masked parameters. This rebuilds `taint.Tainted` from
+// `Params` with the same drain `propagate()` runs (generation 0, the call-result
+// prediction and its settle step), and resets the prediction record as a fresh
+// `propagate()` does. Before this, a clone used a plain def-use closure that
+// tainted every inner call's result, so main's control chain (run on the clone
+// since bd p3kd.7.8) built gates on an inner clone's CLASSICAL result before the
+// inner drain could scrub it. `HandleWidth`, `BirthOrder` and the scrub record are
+// left untouched.
+void propagateFromParams(TaintSet &taint,
+                         llvm::ArrayRef<llvm::Argument *> Params);
 
 // bd `test_C_libtooling-b6ap`, Rule-13 ROUND-1 finding F-B6-1 — ADJUDICATE A
 // TAINT DELTA. **The one spelling of "taint just grew; ask the stages that own

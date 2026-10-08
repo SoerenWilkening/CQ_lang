@@ -14,14 +14,15 @@ or unitary semantics. No new goldens were blessed.
 | macro | 10 | 12 |
 
 Measured 483 probes: 378 accepted; 105 did not accept.
-Structural free-check passes: 378. The classical-only nan row is not in the scalar total.
+Structural free-check passes: 378, of which 267 had no `cqrt_free` site to check.
+The classical-only nan row is not in the scalar total.
 The macro cells retain the historical f64 scope of the 183-cell model.
 
 ## Reproduction
 
 ```sh
-cmake --build build -j1
-python3 tools/library_coverage/runtime_census.py --output tools/library_coverage/runtime_census.json --jobs 1
+cmake --build build -j8
+python3 tools/library_coverage/runtime_census.py --output tools/library_coverage/runtime_census.json
 ```
 
 Driver, pass and LLVM hashes are in the adjacent JSON metadata. Classical operands and

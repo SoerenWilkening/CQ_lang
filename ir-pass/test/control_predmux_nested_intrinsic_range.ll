@@ -1,6 +1,11 @@
 ; dm7f.16.1 R11 round 3: an intrinsic declaration cannot prove a call-site range.
 ; ctpop can return 1..32. The false range makes that result poison; returning it
 ; as noundef causes immediate UB. An untaken source arm stays defined.
+; ⚠ (review 2026-10-08) TWO clauses refuse this call, so it cannot pin either alone:
+; `intrinsicContractHolds`' return-attribute clause, and `canCreateUndefOrPoison`, which
+; in LLVM 19 counts return attributes as poison-generating. Deleting one is MISSED.
+; For a SCALAR return every non-inert return attribute is poison-generating, so the
+; first clause is redundant there; it pins the conjunction only.
 ; RUN: not %cq-opt -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: cq controlled lowering: control flow under quantum control
 

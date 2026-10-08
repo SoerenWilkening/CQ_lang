@@ -4,7 +4,7 @@ cqrt_alloc_i1(0) -> h2
 cqrt_ry_i1_controlled(h1, h2, 0x1p-1)
 cq_template_icmp_sgt_i16_hl_unc(h1, h0, 2)
 cqrt_free(h1)
-cq_template_add_i16_hl(h0, 65533) -> h3
+cq_template_add_i16_hl(h0, -3) -> h3
 cqrt_alloc_i1(0) -> h4
 cqrt_cnot(h2, h4)
 cqrt_alloc_i16(0) -> h5
@@ -19,7 +19,7 @@ cqrt_alloc_i1(0) -> h7
 cqrt_ry_i1_controlled(h6, h7, 0x1p-1)
 cq_template_icmp_sgt_i16_hl_unc(h6, h5, 2)
 cqrt_free(h6)
-cq_template_add_i16_hl(h5, 65533) -> h8
+cq_template_add_i16_hl(h5, -3) -> h8
 cqrt_alloc_i1(0) -> h9
 cqrt_cnot(h7, h9)
 cqrt_alloc_i16(0) -> h10
@@ -34,7 +34,7 @@ cqrt_alloc_i1(0) -> h12
 cqrt_ry_i1_controlled(h11, h12, 0x1p-1)
 cq_template_icmp_sgt_i16_hl_unc(h11, h10, 2)
 cqrt_free(h11)
-cq_template_add_i16_hl(h10, 65533) -> h13
+cq_template_add_i16_hl(h10, -3) -> h13
 cqrt_alloc_i1(0) -> h14
 cqrt_cnot(h12, h14)
 cqrt_alloc_i16(0) -> h15

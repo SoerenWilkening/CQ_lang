@@ -838,8 +838,14 @@ ControlPlan detectControlRegions(Module &M, WidthDispatch &wd,
           // cycle (inside a loop body) declines with the accurate loop message
           // (mirrors the `br` Diamond/IfElse guard) before the G-ladder fires its
           // generic `control flow`; no in-loop switch is ever soundly ACCEPTED
-          // (the N-way merge would flatten across the backedge), so this
-          // only sharpens an already-declining path.
+          // BY THIS 4.5 PATH (the N-way merge would flatten across the
+          // backedge), so this only sharpens an already-declining path. ⚠ Since
+          // bd dm7f.17 an in-loop switch with a SCALAR-FP merge is claimed
+          // earlier by PredMux (witness W8, with E2's admission of a region
+          // strictly inside one loop body) WHEN its E2–E7 gates pass
+          // (control_predmux_accept_switch_fp_merge_inloop.ll); an arm with a
+          // store, a non-curated call or a rotation, or a classical nested
+          // switch, still reaches this decline.
           if (regionEntryInLoop(SI)) {
             diagnoseUnderControl(SI, "control flow inside a loop body");
           } else {

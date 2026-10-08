@@ -6,8 +6,10 @@
 // `cloneTaint` — its `Value*` are NEVER unioned into the original module `taint`
 // (C-Taint: the disjoint-TaintSet boundary is what prevents the clone-body
 // double-uncompute, DD-2) — by inserting each masked `clone->getArg(i)` and
-// running the forward worklist SCOPED to the clone body. The original module is
-// never re-walked.
+// running main's forward drain from them (`propagateFromParams`, bd r2j3.19:
+// the call-result prediction included). Every user of a clone value lives in
+// the clone, and the clone has no caller while it is built, so the walk never
+// leaves it. The original module is never re-walked.
 
 #ifndef CQ_IRPASS_SPECIALIZE_SEED_H_
 #define CQ_IRPASS_SPECIALIZE_SEED_H_

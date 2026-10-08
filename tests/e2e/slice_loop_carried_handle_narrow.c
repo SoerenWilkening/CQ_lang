@@ -26,14 +26,13 @@
 // An `i32` suffix on any of those four would be the defect
 // `CompareLowering.cpp` refuses in writing (*"NEVER default empty -> i32"*).
 //
-// ⚠ THE `i16` LITERAL RENDERS UNSIGNED (`65533` for `-3`) AND THAT IS
-// PRE-EXISTING, NOT THIS INCREMENT'S.  The lowered IR carries `i16 -3` against
-// `declare i32 @cq_template_add_i16_hl(i32, i16)`; the runtime's C definition
-// takes an `int16_t`, which Clang's x86-64 ABI marks `signext`, and the pass
-// emits the literal operand with no extension attribute.  MEASURED on the ORACLE
-// binary with a LOOP-FREE program that has no carried handle at all, so it is
-// not reachable from anything here.  Filed separately; do not "fix" it by
-// editing this golden.
+// THE `i16` LITERAL RENDERS `-3`.  Until bd r2j3.20 (etj3, 2026-10-08) it
+// rendered `65533`: the pass declared `@cq_template_add_i16_hl(i32, i16)` with
+// no extension attribute while the runtime's C definition takes an `int16_t`
+// (`signext` in Clang's x86-64 ABI), so the caller never sign-extended the
+// literal.  `RuntimeNarrowABI` now stamps `signext`/`zeroext` on every narrow
+// runtime parameter and return.  The `add` is identical mod 2^16, so only these
+// three trace lines changed when the golden was regenerated.
 //
 // The stream is the `int` cascade's stream modulo the width token — 50 trace
 // lines, STRICT stage 2b `2 verified, 0 violation(s), 0 unproven`.

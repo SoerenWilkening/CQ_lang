@@ -16,8 +16,8 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported width)
-; CHECK-NOT: cqrt_copy_f64_controlled
-; CHECK-NOT: cq_template_fcmp
+; (R10, 2026-10-08: the CHECK-NOT lines that followed the error were removed as vacuous —
+; opt exits on the first DS_Error and prints no IR, so nothing can follow it.)
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @mhelper(i32 %n) {

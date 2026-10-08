@@ -8,8 +8,13 @@
 ; string does not contain the old one.
 ; OLD: rotation angle under quantum control
 ; NEW: cq controlled lowering: control flow under quantum control
+; bd dm7f.17 (2026-10-08): RE-SPELLED again. PredMux witness W8 now flattens a
+; tainted-scrutinee switch with a scalar-FP merge into a select chain, so the angle
+; fence (`declineTaintedAngle`) refuses the quantum-dependent `cq_phi` angle first.
+; Same construct, still a loud decline (lowering a switch-merged phase by kickback
+; remains a goal-1 gap). OLD: control flow under quantum control.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq controlled lowering: control flow under quantum control
+; CHECK: error{{.*}}cq controlled lowering: rotation angle under quantum control
 ; 3qlq: migrated from register cq_phi (angle select -> void call on the select (PRD P2))
 declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)

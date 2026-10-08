@@ -2417,6 +2417,45 @@ define i32 @c() {
 }
 """
 
+# Review round 3 (2026-10-08): a dirty template rail whose LOCAL NAME another
+# function returns. `@g`'s `ret i32 %r` is not `@main`'s `%r`; a module-wide
+# returned set discharged it and reported 0 dirty.
+CENSUS_TEMPLATE_NAME_COLLISION = """\
+declare i32 @cqrt_alloc_i32(i32)
+declare void @cqrt_ry_i32(i32, double)
+declare i32 @cq_template_add_i32_hl(i32, i32)
+declare i32 @cqrt_measure_i32(i32)
+define i32 @g(i32 %x) {
+  %r = add i32 %x, 1
+  ret i32 %r
+}
+define i32 @main() {
+  %h = call i32 @cqrt_alloc_i32(i32 3)
+  call void @cqrt_ry_i32(i32 %h, double 5.0e-1)
+  %r = call i32 @cq_template_add_i32_hl(i32 %h, i32 1)
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  %c = call i32 @g(i32 %m)
+  ret i32 %c
+}
+"""
+
+# bd r2j3.19 round 2 F2: a Phase-6 clone whose result is not an i32 returns
+# CLASSICAL data and mints no rail (`_clone_returns_data`); its i32 sibling, the
+# control, is a rail mint left dirty. Deleting the clause makes this (1,1,2,2).
+CENSUS_CLONE_RETURNS_DATA = """\
+declare i32 @cqrt_alloc_i32(i32)
+declare double @__cq_q_f_01(i32)
+declare i32 @__cq_q_k_01(i32)
+declare i32 @cqrt_measure_i32(i32)
+define i32 @main() {
+  %h = call i32 @cqrt_alloc_i32(i32 0)
+  %d = call double @__cq_q_f_01(i32 %h)
+  %k = call i32 @__cq_q_k_01(i32 %h)
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  ret i32 %m
+}
+"""
+
 CENSUS_CASES = [
     # name,                         module,                      (mint, leak, tmpl, dirty, unresolved)
     ("rixk-inlined-dead-body",      CENSUS_INLINED_DEAD_BODY,    (3, 3, 0, 0, False)),
@@ -2435,6 +2474,8 @@ CENSUS_CASES = [
     ("1739h1-template-escaped",     CENSUS_TEMPLATE_ESCAPED,     (1, 1, 1, 0, False)),
     ("1739h1-template-returned",    CENSUS_TEMPLATE_RETURNED,    (1, 1, 1, 0, False)),
     ("1739h1-tape-kept-by-design",  CENSUS_TAPE_KEPT,            (1, 1, 0, 0, False)),
+    ("rev3-returned-name-collision", CENSUS_TEMPLATE_NAME_COLLISION, (1, 1, 1, 1, False)),
+    ("r2j3.19-clone-returns-data",  CENSUS_CLONE_RETURNS_DATA,   (1, 1, 1, 1, False)),
 ]
 
 

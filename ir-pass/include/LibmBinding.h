@@ -2,7 +2,7 @@
 // (bd test_C_libtooling-3c6m.72, NORTHSTAR goal 2, CLAUDE R14).
 //
 // `tools/cqc` links the math.h bundle (`tools/libm_bundle.py`) into every
-// program that uses a CQ primitive: every openlibm (or owner-ruled CQ trig) body is present as a function
+// program that uses a CQ primitive: every openlibm body is present as a function
 // `__cq_libm_<name>` (external linkage only so `llvm-link` keeps it; no libm
 // symbol is ever redefined). A classical call keeps its callee, so a
 // purely classical program reaches the system libm exactly as before (owner

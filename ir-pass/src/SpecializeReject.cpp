@@ -150,9 +150,13 @@ bool unsupportedWidth(Type *T) {
 //     names a vector type, so the width clause below refuses it (a separate
 //     vector test was a redundant clause: its mutant survived,
 //     spec_reject_select_vector.ll);
-//   * a width with no ABI name (pointer, fp128, i256 and up), and an fp width
-//     outside {f32, f64, f80}: f16 has the runtime symbols but no tested clone
-//     coverage (spec_reject_fp_select_f16.ll);
+//   * a width with no ABI name (pointer, fp128, i256 and up). ⚠ f16 is ADMITTED
+//     since bd p3kd.12 (2026-10-08): it was refused here for "no tested clone
+//     coverage" while the phi gate below (`unsupportedWidth`) admitted it, so the
+//     SAME `b > 0 ? b + 1 : 2` on a quantum `half` lifted as a phi diamond and
+//     declined as a select — two answers to one width question (R12). Both forms
+//     are pinned now (spec_reject_fp_select_f16.ll, an accept under its historical
+//     name, and spec_accept_clone_f16_phi_merge.ll);
 //   * an arm that is a constant other than a `ConstantInt`/`ConstantFP` (undef,
 //     poison, a ConstantExpr): it has no basis value to materialize, and a twin
 //     re-reading an undef would see a different one (bd xy9n)
@@ -172,8 +176,6 @@ bool isAdmissibleCloneSelect(const SelectInst &SI) {
   Type *Ty = SI.getType();
   const StringRef W = abiWidthFromType(Ty);
   if (W.empty())
-    return false;
-  if (Ty->isFloatingPointTy() && W != "f32" && W != "f64" && W != "f80")
     return false;
   auto armAdmissible = [](const Value *A) {
     return !isa<Constant>(A) || isa<ConstantInt>(A) || isa<ConstantFP>(A);
@@ -704,7 +706,7 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
     // Its incomings are proven by the per-block whitelist (they are body ops in
     // the arms). Accept it as a flattenable construct, but keep the width/vector
     // fence (a phi is not a BinaryOperator/Cast, so it skips the width gates
-    // below): an i128/half/fp128/vector merge has no reversible copy and would
+    // below): an i128/fp128/vector merge has no reversible copy and would
     // survive the flatten as an unlowerable select → reject at the phi, precise.
     if (auto *PH = dyn_cast<PHINode>(&I)) {
       if (touchesVector(I) || unsupportedWidth(PH->getType())) {

@@ -88,6 +88,12 @@ add_library(CQPass MODULE
   src/Plugin.cpp
   src/PredMuxFlatten.cpp
   src/SpeculationSafety.cpp
+  # bd bwfp: call contracts + the 6.5 poison dataflow (split from SpeculationSafety).
+  src/CallContract.cpp
+  # bd 3c6m.82: a failure inside a lifted body notes the user's call site.
+  src/LiftDiagnostics.cpp
+  # bd r2j3.20 (etj3): zeroext/signext on narrow runtime parameters.
+  src/RuntimeNarrowABI.cpp
   src/QramIndexWidth.cpp
   src/QramLowering.cpp
   # bd r2j3.3: the record-window half of the bd 261j(a) freeze.
@@ -103,6 +109,7 @@ add_library(CQPass MODULE
   src/SelectMergeEmit.cpp
   src/Specialization.cpp
   src/SpecializeClone.cpp
+  src/SpecializePredict.cpp
   src/SpecializeDetect.cpp
   src/SpecializeReject.cpp
   src/SpecializeSeed.cpp

@@ -15,6 +15,7 @@
 #include "RailBankPromote.h"  // railBankOfPointer / isRailBankAlloca / the W1 second half
 #include "RotationLowering.h"  // normalizeUndefRotationSeed (bd z9t1)
 #include "SpecializeClone.h"    // specCallResultPredictedClassical (bd cepm / 3zr4)
+#include "LiftDiagnostics.h"    // LiftSite (bd 3c6m.82)
 #include "SpecializeDetect.h"   // detectSpecializations (9paa round-2 re-detection)
 #include "SpecializePlan.h"
 #include "SpecializeReject.h"  // classifyCandidate / diagnoseReject (0vvq Inc 2 re-plan)
@@ -1313,8 +1314,9 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
             //     to opcodes before this pass), never carved by name. So a tainted
             //     un-injected libm call is NOT carved here: it falls through to the
             //     loud kMsgUnknownCallee decline below (the correct, safe outcome —
-            //     you did not inject the source). Only the hardware-backed
-            //     intrinsics carved above (isCuratedReversibleIntrinsic) survive.
+            //     you did not inject the source). Only the intrinsics carved
+            //     above (isCuratedReversibleIntrinsic: the hardware keep-set and,
+            //     since bd 3c6m.71, the Bennett-backed f64 trig) survive.
           }
           // 1d-Phase7.6. Recognized I/O output sinks (`printf` / `putchar`)
           //     consuming a tainted INTEGER-SCALAR arg are OWNED by
@@ -2520,6 +2522,7 @@ void replanReseedSpecialization(TaintSet &taint, WidthDispatch &wd,
     SpecCandidate ReCand{Site, Cand.Callee, NewMask};
     Instruction *Where = nullptr;
     std::string Kind;
+    LiftSite Lifting(Site);  // bd 3c6m.82: a reject in the body notes this call.
     SpecReject Why = classifyCandidate(ReCand, taint, wd, Where, Kind);
     if (Why == SpecReject::Accept) {
       Cand.Mask = NewMask;  // RE-PLAN — the driver clones the Q+Q body transitively.
@@ -2586,6 +2589,23 @@ void propagateFromSeeds(TaintSet &taint, ArrayRef<Value *> Seeds,
       if (!beforeTaint.count(V))
         Delta->insert(V);
   }
+}
+
+// bd r2j3.19 — see the header. A clone body holds no `cq_theta`/`cq_phi`/
+// `cq_measure` call (`scanBody` refuses every `cq_*` primitive), so the three
+// function sets are empty, as `propagateFromSeeds` would build them from a clone's
+// empty call lists.
+void propagateFromParams(TaintSet &taint, ArrayRef<Argument *> Params) {
+  taint.Tainted.clear();
+  taint.SpecPredictedClassical.clear();
+  taint.SpecPredictGeneration = 0;
+  std::vector<Value *> Worklist;
+  for (Argument *A : Params)
+    if (taint.Tainted.insert(A).second)
+      Worklist.push_back(A);
+  FnSet ThetaFns, PhiFns, MeasureFns;
+  propagateWorklist(Worklist, ThetaFns, PhiFns, MeasureFns, taint,
+                    /*skipRuntimeCalls=*/false);
 }
 
 // bd `test_C_libtooling-b6ap`, F-B6-1 — see the header. This is the round-2
@@ -3300,8 +3320,11 @@ bool declineQuantumReturnCalls(Module &M, const TaintSet &taint) {
 static constexpr char kMsgScrubbedHandle[] =
     "cq taint escape: classical call result used as a quantum register";
 
-bool declineScrubbedHandleReads(Module &M, const TaintSet &taint) {
+bool declineScrubbedHandleReads(Module &M, const TaintSet &taint,
+                                const TaintSet *HandleMasks) {
   (void)M;
+  const auto &SpecHandleArgMask =
+      (HandleMasks ? *HandleMasks : taint).SpecHandleArgMask;
   for (const WeakVH &H : taint.ScrubbedByReturnTaint) {
     Value *V = H;
     if (!V || taint.Tainted.count(V))
@@ -3320,8 +3343,8 @@ bool declineScrubbedHandleReads(Module &M, const TaintSet &taint) {
       // handle in every MASKED argument slot. Identified by the specializer's
       // own record (`SpecHandleArgMask`), never by the `__cq_q_` name prefix.
       if (!Reads) {
-        auto It = taint.SpecHandleArgMask.find(Callee);
-        if (It != taint.SpecHandleArgMask.end())
+        auto It = SpecHandleArgMask.find(Callee);
+        if (It != SpecHandleArgMask.end())
           for (unsigned A = 0, E = CB->arg_size(); A < E && A < 64; ++A)
             if (CB->getArgOperand(A) == V && ((It->second >> A) & 1))
               Reads = true;

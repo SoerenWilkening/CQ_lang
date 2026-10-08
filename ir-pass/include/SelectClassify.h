@@ -18,8 +18,9 @@
 //      NO downstream backstop — `declineTaintedAngle` runs after the select's
 //      product is RAUW'd to an untainted handle, so the angle MUST be caught
 //      here, pre-mutation; the f64/angle miscompile family);
-//   4. ABI-width scalar-integer result, AFTER the FP-use fence (the f64 trap:
-//      f64 has a valid width yet is an angle);
+//   4. ABI-width scalar result with a controlled copy — integer {i1..i64} or
+//      scalar fp {f16..f80} — AFTER gate 3 (gate 3 decides angle use at the
+//      rotation consumers; the result type alone never does, CLAUDE.md R3);
 //   5. conservative coherent-operand default — no tainted value operand has a
 //      downstream rotation/gate beyond the select (the channel-B dephasing
 //      case); cleared/widened only by the §8 Rule-13 review;

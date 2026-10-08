@@ -140,10 +140,10 @@ FunctionCallee WidthDispatch::copyFn(StringRef abiWidth) const {
   // Signature: void(i32 src, i32 dst). Mirrors cqrt_copy_<W> in
   // runtime/cq_runtime.h (Phase 4.2, PRD Part II §8.1 — the design's only
   // new ABI). The width only selects the symbol name — both handles are
-  // i32 for every ABI width. INTEGER widths only: an FP merge phi under
-  // tainted control is categorically an angle, never data (the f64
-  // miscompile family), so f32/f64 — and any unknown width — return a
-  // null callee (caller diagnoses) rather than minting dead ABI.
+  // i32 for every ABI width. INTEGER widths only (see the header: its callers
+  // are integer-only; fp merges carry data and have their own copy resolvers),
+  // so f32/f64 — and any unknown width — return a null callee (caller
+  // diagnoses) rather than minting dead ABI.
   LLVMContext &Ctx = M.getContext();
   Type *Ty = typeForAbiWidth(abiWidth, Ctx);
   // i128 no-clone fence (n0ui Tier-1): i128 is now a recognized template width,
@@ -152,8 +152,8 @@ FunctionCallee WidthDispatch::copyFn(StringRef abiWidth) const {
   // select / switch / merge therefore has no reversible copy and must DECLINE
   // (the control classifiers null-check this callee), never mint a phantom
   // `cqrt_copy_i128`. Gate on bit-width > 64 (not a name compare) so any future
-  // >64-bit width inherits the fence. Generalizes the f16-angle fence: fp widths
-  // (and now wide ints) have no data-copy under tainted control.
+  // >64-bit width inherits the fence. Fp widths
+  // (and now wide ints) have no copy through THIS resolver.
   if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
     return FunctionCallee();
   return M.getOrInsertFunction(

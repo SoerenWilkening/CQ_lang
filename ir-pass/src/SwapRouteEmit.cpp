@@ -383,7 +383,7 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
   // fence categorically declines"), so a `clang -O1` fp diamond never reaches
   // detection at all (measured: a hand-IR `phi double` diamond lowers to
   // `cqrt_copy_f64_controlled` on BOTH binaries); and (2) for a shape PredMux
-  // will not claim, `classifyArms`' `isFPOrFPVectorTy` angle fence declines
+  // will not claim, `classifyArms`' `isFPOrFPVectorTy` fp fence declines
   // first (measured on an `fp128` arm: `value-arm swap-route`, identical on
   // both binaries — it does not even reach the fp merge fence). Note the
   // DIRECTION if the lift ever narrows: this pre-flight is STRICTER than the

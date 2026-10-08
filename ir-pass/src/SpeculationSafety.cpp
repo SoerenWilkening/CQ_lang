@@ -1,8 +1,11 @@
-// SpeculationSafety.cpp — dm7f.16.1 / p3kd.7.7.
+// SpeculationSafety.cpp — dm7f.16.1 / p3kd.7.7. The call contracts and the
+// 6.5 poison dataflow live in CallContract.cpp (bd bwfp).
 // BennettVM's taken edges establish SSA semantics, not speculative totality.
 // The fixed CQ script must be total on untaken arms, and every literal must
 // have one SSA identity shared by the forward gates and their adjoints.
 #include "SpeculationSafety.h"
+
+#include "CallContract.h"
 
 #include "ArmClassify.h"
 #include "LiteralIntegrity.h"
@@ -10,6 +13,10 @@
 #include "PredMuxFlatten.h"
 #include "TaintPropagation.h"
 
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/PostOrderIterator.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/ValueTracking.h"
@@ -27,101 +34,6 @@ namespace cq {
 namespace {
 constexpr char Mark[] = "cq.speculated";
 constexpr char StableConstant[] = "cq.speculated.constant";
-
-bool scalar(Type *T) {
-  return T->isIntegerTy() || T->isFloatingPointTy();
-}
-
-bool inertAttrs(AttributeSet AS) {
-  for (Attribute A : AS) {
-    if (!A.isEnumAttribute())
-      return false;
-    switch (A.getKindAsEnum()) {
-    case Attribute::NoUndef:
-    case Attribute::ZExt:
-    case Attribute::SExt:
-    case Attribute::InReg:
-      break;
-    default:
-      return false;
-    }
-  }
-  return true;
-}
-
-bool argAttrsAreInert(const CallBase *C, unsigned N) {
-  const Function *F = C->getCalledFunction();
-  return F && inertAttrs(C->getAttributes().getParamAttrs(N)) &&
-         (N >= F->arg_size() || inertAttrs(F->getAttributes().getParamAttrs(N)));
-}
-
-bool returnAttrsHold(AttributeSet AS, const Function &F) {
-  for (Attribute A : AS) {
-    if (A.hasAttribute(Attribute::Range)) {
-      for (const BasicBlock &BB : F)
-        if (const auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
-          if (!R->getReturnValue()->getType()->isIntegerTy() ||
-              !A.getRange().contains(ConstantRange::fromKnownBits(
-                  computeKnownBits(R->getReturnValue(),
-                                   F.getParent()->getDataLayout(), 0, nullptr,
-                                   nullptr, nullptr, /*UseInstrInfo=*/false),
-                  /*IsSigned=*/false))) {
-            if (::getenv("CQ_PREDMUX_DBG"))
-              errs() << "CQ_PREDMUX_DBG: classical call return range unproven @"
-                     << F.getName() << "\n";
-            return false;
-          }
-    } else if (!inertAttrs(AttributeSet::get(F.getContext(), {A}))) {
-      return false;
-    }
-  }
-  return true;
-}
-
-bool basicCallContractHolds(const CallInst *C) {
-  const Function *F = C ? C->getCalledFunction() : nullptr;
-  if (!F || !scalar(C->getType()) || C->hasOperandBundles() ||
-      C->hasPoisonGeneratingFlags() || C->hasPoisonGeneratingMetadata() ||
-      C->getCallingConv() != F->getCallingConv() ||
-      C->doesNotReturn() || C->isConvergent() || C->cannotDuplicate() ||
-      C->isMustTailCall() || C->hasFnAttr(Attribute::ReturnsTwice))
-    return false;
-  return true;
-}
-
-bool callContractIsInert(const CallInst *C) {
-  if (!basicCallContractHolds(C))
-    return false;
-  const Function *F = C->getCalledFunction();
-  for (unsigned N = 0; N != C->arg_size(); ++N)
-    if (!scalar(C->getArgOperand(N)->getType()) || !argAttrsAreInert(C, N))
-      return false;
-  return returnAttrsHold(C->getAttributes().getRetAttrs(), *F);
-}
-
-bool intrinsicContractHolds(const CallInst *C) {
-  const Function *F = C->getCalledFunction();
-  // A declaration has no return dataflow with which to prove a range. Keep
-  // intrinsic semantics separate from exact-body proofs; no vacuous proof.
-  if (C->hasPoisonGeneratingReturnAttributes() ||
-      !inertAttrs(C->getAttributes().getRetAttrs()) ||
-      !inertAttrs(F->getAttributes().getRetAttrs()))
-    return false;
-  for (unsigned N = 0; N != C->arg_size(); ++N) {
-    if (!scalar(C->getArgOperand(N)->getType()))
-      return false;
-    for (AttributeSet AS : {C->getAttributes().getParamAttrs(N),
-                            F->getAttributes().getParamAttrs(N)})
-      for (Attribute A : AS)
-        if (A.hasAttribute(Attribute::ImmArg)) {
-          if (!isa<Constant>(C->getArgOperand(N)))
-            return false;
-        } else if (!inertAttrs(AttributeSet::get(F->getContext(), {A}))) {
-          return false;
-        }
-  }
-  return true;
-}
 
 bool totalCall(const CallInst *Root) {
   if (!callContractIsInert(Root) ||
@@ -215,7 +127,7 @@ bool needsStableUse(const Instruction &I) {
 }
 
 Value *stabilize(Value *V, const TaintSet &Taint, Function &F) {
-  if (!scalar(V->getType()) || Taint.Tainted.count(V) ||
+  if (!speculationScalar(V->getType()) || Taint.Tainted.count(V) ||
       definedWithoutContext(V))
     return V;
   Instruction *At = &*F.getEntryBlock().getFirstInsertionPt();
@@ -250,13 +162,6 @@ Value *stableConstant(Constant *K, Function &F) {
 }
 } // namespace
 
-// Same effective call-site/callee union as the original 9hea predicate.
-// Total classical speculation additionally stabilizes parameters without
-// noundef: their bodies may pass them onward to a constrained inner call.
-bool freezeDischargesHoistedArg(const CallBase *C, unsigned N) {
-  return C->paramHasAttr(N, Attribute::NoUndef) && argAttrsAreInert(C, N);
-}
-
 bool classicalCallCanBeSpeculated(const CallInst *Call) {
   return totalCall(Call);
 }
@@ -281,14 +186,14 @@ void markSpeculatedValue(Instruction &Root) {
   SmallVector<Instruction *, 16> Work{&Root};
   while (!Work.empty()) {
     Instruction *I = Work.pop_back_val();
-    if (!scalar(I->getType()) || I->getMetadata(Mark) ||
+    if (!speculationScalar(I->getType()) || I->getMetadata(Mark) ||
         I->getMetadata(StableConstant))
       continue;
     I->setMetadata(Mark, MDNode::get(I->getContext(), {}));
     for (Use &U : I->operands()) {
       Value *V = U.get();
       if (auto *K = dyn_cast<Constant>(V);
-          K && scalar(K->getType()) && slotCarriesUndef(K))
+          K && speculationScalar(K->getType()) && slotCarriesUndef(K))
         U.set(stableConstant(K, *I->getFunction()));
       else if (auto *Op = dyn_cast<Instruction>(V))
         Work.push_back(Op);
@@ -301,7 +206,7 @@ void stabilizeSpeculatedValues(Function &F, const TaintSet &Taint) {
     return;
   F.setMetadata(Mark, nullptr);
   for (Argument &A : F.args())
-    if (scalar(A.getType()))
+    if (speculationScalar(A.getType()))
       for (const User *U : A.users())
         if (const auto *C = dyn_cast<CallInst>(U); C && isEmittedRuntimeCallee(C)) {
           stabilize(&A, Taint, F);

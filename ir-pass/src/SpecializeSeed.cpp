@@ -5,48 +5,28 @@
 #include "SpecializePlan.h"
 #include "TaintPropagation.h"
 
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Argument.h"
 #include "llvm/IR/Function.h"
-#include "llvm/IR/Instructions.h"
-
-#include <vector>
 
 using namespace llvm;
 
 namespace cq {
 
 TaintSet seedClone(Function *Clone, SpecMask Mask) {
+  // Seed each masked parameter. A classical pass-through param is NOT seeded.
+  // bd r2j3.19: the forward closure is main's own drain (`propagateFromParams`),
+  // not a plain def-use closure. A clone body runs main's control chain (bd
+  // p3kd.7.8), so an inner lift site whose callee provably returns a classical
+  // value must stay classical here, as `specCallResultPredictedClassical` leaves
+  // it at module level; the plain closure tainted it and the chain built gates on
+  // the integer before the inner drain could scrub it.
+  SmallVector<Argument *, 8> Params;
+  for (Argument &A : Clone->args())
+    if (Mask & (SpecMask(1) << A.getArgNo()))
+      Params.push_back(&A);
   TaintSet ct;
-  std::vector<Value *> Worklist;
-
-  // Seed each masked parameter (the insert-then-push idiom, mirroring
-  // `collectAndSeed`). A classical pass-through param is NOT seeded.
-  for (Argument &A : Clone->args()) {
-    if (!(Mask & (SpecMask(1) << A.getArgNo())))
-      continue;
-    if (ct.Tainted.insert(&A).second)
-      Worklist.push_back(&A);
-  }
-
-  // Forward propagation SCOPED to the clone body. The accepted body holds no
-  // rotation, phase or measure (`scanBody` refuses every `cq_*` primitive), so
-  // there is no arg-1-angle edge to skip and no measure sink: this is the plain
-  // transitive-user closure. The body may still hold control flow (branches,
-  // switches, selects, loops since bd p3kd.7.1/7.8); taint crosses a phi or a
-  // select through its def-use edges like any other user. Users live in
-  // `Clone` (params are clone-local); the function-scope guard is defensive.
-  while (!Worklist.empty()) {
-    Value *V = Worklist.back();
-    Worklist.pop_back();
-    for (User *U : V->users()) {
-      auto *I = dyn_cast<Instruction>(U);
-      if (!I || I->getFunction() != Clone)
-        continue;
-      if (ct.Tainted.insert(I).second)
-        Worklist.push_back(I);
-    }
-  }
-
+  propagateFromParams(ct, Params);
   return ct;
 }
 

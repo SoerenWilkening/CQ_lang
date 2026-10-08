@@ -193,7 +193,7 @@ This differs from accepting an unsupported opaque primitive.
 Publish source-injected and eligible intrinsic-lowered components separately,
 following NORTHSTAR goal 2's runtime operands and every C/Q mixture. Direct routes
 today: the hardware keep-set and `double` sin/cos/tan/asin/acos/atan (bd `3c6m.71`,
-contracts in `tools/intrinsic_table.yaml`). The `cqc` bundle forwards those names to
+contracts in `tools/intrinsic_table.yaml`; `lrint`/`llrint` in `tools/libm_table.yaml`). The `cqc` bundle forwards those names to
 their intrinsics, so a lifted body's own `sin` call takes the same route. `float` and
 `long double` trig have no route yet (bd `3c6m.79`).
 Counts come from census tooling, never hand-copied. Pipeline success does not certify
@@ -306,7 +306,7 @@ touching it.
 which-path rails), `a3z7` (a dtzb-mutated `cq_theta` result carried through a rail φ),
 `yiid` (reading a name after measuring it), `4e4p` (function-pointer `cq_theta` drops
 `nomerge`), `uw5u` (`int m=(t==s)?t:s; cq_theta(&m, θ)` folds), `9oob` (a user `__cq_q_*_unc` twin
-with a wrong body is trusted), the twin half of `kyy1`, `jlf8`, `yldg`, `etj3`, and
+with a wrong body is trusted), the twin half of `kyy1`, `jlf8`, `yldg`, and
 `r2j3.6` (a lifted call reads a stale tainted argument: `int q2=q; cq_theta(&q2,.3); f(q)`;
 since 2026-10-06 every math.h call `cqc` lifts, e.g. `cbrt(q)`, is also exposed) and
 `r2j3.7` (a dead tainted pure op is never uncomputed, a live copy of its source), both filed
@@ -321,7 +321,10 @@ leak returns may dephase a parent rotated later). Latent, not yet built
 from C (section D): `hp0x` (the 6.5 classical-call argument clause keys on `noundef` alone,
 so a `dereferenceable` parameter without `noundef` is hoisted with poison). Instrument gap:
 `r2j3.4` (stage 2b certifies a diagonal phase inside a superposing restore window).
-`r2j3.1`–`r2j3.3` and `r2j3.5` were fixed 2026-10-01 (lab report 035).
+`r2j3.1`–`r2j3.3` and `r2j3.5` were fixed 2026-10-01 (lab report 035); `r2j3.19` (a nested
+lift's control chain read an inner clone's classical result as a qubit handle, found by the
+2026-10-08 review) and `etj3` (narrow runtime arguments passed without `signext`/`zeroext`,
+`r2j3.20`) were fixed 2026-10-08.
 `cfmv` (a user `cq_theta` erased by a residue simplifier) was closed 2026-09-18 with no
 recorded reason: re-verify before trusting it. Over-declines to remove are tracked in the
 goal-1 umbrellas `dm7f` (control flow), `8h7d` (loops), `p3kd` (function lifting) and

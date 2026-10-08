@@ -129,6 +129,12 @@ def measure(cell, evidence_dir, cqc=CQC):
                 status = STAGE_STATUS.get(stage.group(1), 'harness-error') if stage else 'harness-error'
                 if status == 'decline' and re.search(r'Stack dump|PLEASE submit', r.stderr):
                     status = 'compiler-crash'
+                # A decline is the pass's own located diagnostic. A lower-stage
+                # failure without one (a plugin that failed to load, a relink
+                # under a running census) is a harness failure, never a decline
+                # (2026-10-08 review, R17).
+                elif status == 'decline' and not re.search(r'error: .*in function ', r.stderr):
+                    status = 'harness-error'
                 row.update(status=status, diagnostic=r.stderr)
                 return row
             combined = (wd/'probe.combined.ll').read_text()
@@ -150,10 +156,15 @@ def measure(cell, evidence_dir, cqc=CQC):
             row['trace_lines'] = len(r.stdout.splitlines())
             # Structural discharge is evidence, not a substitute for a unitary
             # proof or a current golden for every runtime parameter mixture.
-            r = run([sys.executable, ROOT/'tools/free_pairing_check.py', '--stats', '-q',
+            # Not `-q`: a clean -q run prints nothing, and the census stored ''
+            # for every row, so a probe with no rail to check read as a pass
+            # (2026-10-08 review, R17). Keep the summary and its site count.
+            r = run([sys.executable, ROOT/'tools/free_pairing_check.py', '--stats',
                      wd/'probe.lowered.ll'])
             row['free_check_exit'] = r.returncode
             row['free_check'] = r.stdout.strip() + r.stderr.strip()
+            sites = re.search(r'(\d+) cqrt_free site\(s\)', row['free_check'])
+            row['free_sites'] = int(sites.group(1)) if sites else None
             row['status'] = 'COMPILES'
             if evidence_dir:
                 dest = evidence_dir/(cell['cell']+'-'+cell['mix'])
@@ -182,8 +193,10 @@ def render_report(path, data):
         lines.append(f"| {provider} | {tally['covered']} | {tally['total']} |")
     accepted = sum(r['status'] == 'COMPILES' for r in rows)
     checks = sum(r.get('free_check_exit') == 0 for r in rows)
+    vacuous = sum(r.get('free_check_exit') == 0 and not r.get('free_sites') for r in rows)
     lines += ['', f"Measured {len(rows)} probes: {accepted} accepted; {len(rows)-accepted} did not accept.",
-              f"Structural free-check passes: {checks}. The classical-only nan row is not in the scalar total.",
+              f"Structural free-check passes: {checks}, of which {vacuous} had no `cqrt_free` site to check.",
+              'The classical-only nan row is not in the scalar total.',
               'The macro cells retain the historical f64 scope of the 183-cell model.', '',
               '## Reproduction', '', '```sh',
               'cmake --build build -j8',
@@ -199,7 +212,9 @@ def render_report(path, data):
     for name, group in groups.items():
         failed = [r for r in group if r['status'] != 'COMPILES']
         if failed:
-            diag = next((l for l in failed[0]['diagnostic'].splitlines() if 'error' in l),
+            # `error:`, as probe.py's `first_error`: since bd 3c6m.82 a located
+            # note ("the error below is inside ... lifted from here") precedes it.
+            diag = next((l for l in failed[0]['diagnostic'].splitlines() if 'error:' in l),
                         failed[0]['diagnostic'])
             diag = re.sub(r'/private/tmp/cq_runtime_census_[^/]+/', '', diag)
             diag = re.sub(r'/(?:private/)?var/folders/\S*?cq_runtime_census_[^/]+/', '', diag)
@@ -222,10 +237,20 @@ def main():
                         help='Driver to measure (default tools/cqc; a mutant for R17 checks).')
     parser.add_argument('--evidence-dir', type=Path)
     args = parser.parse_args()
+    canonical = (HERE/'runtime_census.json').resolve()
+    if args.filter and not args.render_existing and args.output.resolve() == canonical:
+        parser.error('--filter is a debug run; give --output a path other than the published census')
     if args.render_existing:
         render_report(args.output, json.loads(args.output.read_text()))
         return 0
     cells = [c for c in variants() if not args.filter or c['base'] in args.filter.split(',')]
+    if not args.filter and len({c['cell'] for c in cells}) != 183:
+        parser.error('the model has %d cells, expected 183' % len({c['cell'] for c in cells}))
+    build = ROOT/'build'
+    pinned = {'pass_sha256': WP.PASS, 'bundle_sha256': build/'libm/cq_libm.bc',
+              'templates_sha256': build/'runtime/libcq_templates.a',
+              'runtime_sha256': build/'runtime/libcq_runtime.a'}
+    before = {k: sha256(v) for k, v in pinned.items()}
     results = []
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
         for row in pool.map(lambda c: measure(c, args.evidence_dir, args.cqc), cells):
@@ -245,14 +270,24 @@ def main():
                 'driver': str(args.cqc.resolve().relative_to(ROOT)) if args.cqc.resolve().is_relative_to(ROOT)
                           else str(args.cqc),
                 'driver_sha256': sha256(args.cqc),
-                'pass_sha256': sha256(WP.PASS),
+                **before,
+                'filter': args.filter,
                 'cq_commit': run(['git', '-C', ROOT, 'rev-parse', 'HEAD']).stdout.strip(),
+                'cq_tree_dirty': bool(run(['git', '-C', ROOT, 'status', '--porcelain',
+                                           '--untracked-files=no']).stdout.strip()),
                 'llvm_version': run([WP.CLANG, '--version']).stdout.splitlines()[0]}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     document = {'metadata': metadata, 'score': tally, 'results': results}
     args.output.write_text(json.dumps(document, indent=2)+'\n')
     render_report(args.output, document)
     print(json.dumps(tally, indent=2))
+    # A binary rebuilt while the census ran measured two compilers (R15: never
+    # relink under a running measurement); the record is not one census.
+    after = {k: sha256(v) for k, v in pinned.items()}
+    if after != before:
+        print('census: build artifacts changed during the run: '
+              + ', '.join(k for k in before if before[k] != after[k]), file=sys.stderr)
+        return 1
     if any(r['status'] in ('harness-error', 'timeout', 'compiler-crash') for r in results):
         return 1
     return 0

@@ -187,7 +187,7 @@ coverage credit.
 
 ## Full user-driver census after merge
 
-Measured once at main `92e9f0ec` with
+Measured once at main `92e9f0ec` (a local merge commit that `git pull --rebase` flattened; it is in no branch. Its tree equals 874b822b, review 2026-10-08) with
 `python3 tools/library_coverage/runtime_census.py --output tools/library_coverage/runtime_census.json --jobs 6 --evidence-dir /tmp/p3kd78-census-evidence`:
 
 | Provider | Before | After |

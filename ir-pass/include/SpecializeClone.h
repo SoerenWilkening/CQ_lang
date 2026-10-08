@@ -23,15 +23,17 @@ struct TaintSet;
 
 // The RETURN-TAINT PREDICTOR (bd 3c6m.54, 5po2 I2): does `Callee`'s return value,
 // with the parameters in `Mask` quantum, carry taint? A pure forward transitive-user
-// closure from the masked parameters — the closure `seedClone` builds on the clone —
-// plus "any conditional terminator in that closure ⇒ tainted". A sound
+// closure from the masked parameters — the closure `seedClone` builds on the clone, an
+// inner lift site predicted classical included (bd r2j3.19: it asks the inner site's
+// own prediction) — plus "any conditional terminator in that closure ⇒ tainted". A sound
 // OVER-approximation of the `ReturnTainted` verdict `buildClone` later computes: every
 // clone stage after `seedClone` either removes taint (the inner classical-clone scrub,
 // the dead-slot deletion) or replaces a value already in the closure (the PredMux
 // flatten's selects replace φs / branches the closure reaches; main's control
 // chain, `lowerQramReads` and `lowerOps` RAUW members of the closure). So `false` means the
 // clone's return is classical. Two consumers, and the first is no longer the only one:
-//   * `cloneFor` — the fp-return signature (i32 handle vs the fp value);
+//   * `retypeCloneSignature` — the fp-return signature (i32 handle vs the fp value);
+//     since bd p3kd.7.8 it runs after main's stages, not in `cloneFor`;
 //   * `specCallResultPredictedClassical` below — the propagation-time classical verdict
 //     for a would-be Phase-6 site's RESULT (bd cepm / bd 3zr4).
 // Defined in SpecializeClone.cpp.

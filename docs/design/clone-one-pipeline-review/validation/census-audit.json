@@ -604,5 +604,6 @@
     "copies_from_borrowed_fp": 318
   },
   "fp_probe_count": 73,
-  "issues": []
+  "issues": [],
+  "commit_note": "92e9f0ec is not in history (rebased away); its tree equals 874b822b (review 2026-10-08)"
 }

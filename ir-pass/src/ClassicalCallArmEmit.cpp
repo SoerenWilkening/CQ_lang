@@ -31,6 +31,7 @@
 #include "OpcodeSupport.h"      // abiWidthFromType
 #include "RegionFlatten.h"      // flattenRegion
 #include "SelectMergeEmit.h"    // materializeCopySource (shared, WI-5.1)
+#include "SpeculationSafety.h"  // hoistedArgPoisonIsUB (bd bwfp; claim+emit share it)
 #include "TaintPropagation.h"   // TaintSet
 #include "WidthDispatch.h"      // allocFn / freeFn / llvmWidthType
 
@@ -163,7 +164,7 @@ void emitClassicalCallArmRegion(const ControlRegion &R, WidthDispatch &wd,
   // construction rather than by coincidence.
   SmallVector<unsigned, 4> NeedFreeze;
   for (unsigned Ai = 0, Ae = Call->arg_size(); Ai != Ae; ++Ai)
-    if (Call->paramHasAttr(Ai, Attribute::NoUndef) &&
+    if (hoistedArgPoisonIsUB(Call, Ai) &&
         !llvm::isGuaranteedNotToBeUndefOrPoison(Call->getArgOperand(Ai))) {
       // The classifier declined anything this predicate refuses, so a false here is
       // unreachable; bail loudly rather than hoist an un-frozen poison argument.

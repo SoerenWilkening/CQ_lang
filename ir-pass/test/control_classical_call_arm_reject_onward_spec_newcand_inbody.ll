@@ -18,8 +18,8 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq specialization: callee contains tainted control flow under quantum lift
-; CHECK-NOT: unknown callee
-; CHECK-NOT: under quantum control
+; (R10, 2026-10-08: the CHECK-NOT lines that followed the error were removed as vacuous —
+; opt exits on the first DS_Error and prints no IR, so nothing can follow it.)
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 ; bd wve8 — DEFINED, not declared. The 6.5 arm HOISTS this call out of its

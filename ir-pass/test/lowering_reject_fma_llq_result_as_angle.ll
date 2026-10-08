@@ -22,4 +22,5 @@ entry:
 }
 
 ; CHECK: error{{.*}}cq rotation lowering: unsupported quantum-derived rotation angle
-; CHECK-NOT: cq_template_fma
+; (R10, 2026-10-08: the CHECK-NOT lines that followed the error were removed as vacuous —
+; opt exits on the first DS_Error and prints no IR, so nothing can follow it.)

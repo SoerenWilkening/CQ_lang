@@ -4451,6 +4451,14 @@ add_test(NAME e2e-census-slice-sync
   COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/slice_census_sync_check.py"
           --root "${CMAKE_SOURCE_DIR}")
 
+# 2026-10-08 review (R17): the published math.h headline (README, COVERAGE.md,
+# coverage/mathh.md, runtime_census.md) must equal the committed cqc census. A census
+# re-run that was never rendered left three pages 14 cells low with every gate
+# green. Pure Python over committed files.
+add_test(NAME e2e-census-headline-sync
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/library_coverage/headline_sync_check.py"
+          --root "${CMAKE_SOURCE_DIR}")
+
 # ===========================================================================
 # bd test_C_libtooling-8h7d.5 (Phase 7.3 Increment 3) — TAINTED CONTROL FLOW
 # INSIDE A CLASSICALLY-BOUNDED LOOP, lowered ROLLED.

@@ -30,6 +30,10 @@
 ; enqueues on, so the "what CQ lowers" set and the "what F2 refuses to guess at"
 ; set cannot drift (Rule 14).
 ;
+; ⚠ 2026-10-08 (bd dm7f.18): 66f18d19 added `llvm.tan`/`asin`/`acos`/`atan` to the
+; curated set, and LLVM 19 cannot fold those four; F2 now folds them with the host
+; libm (control_inplace_ry_accept_stateprep_curated_trig_fold.ll), so the sentence
+; below holds again for every curated id this F2 can meet with constant operands.
 ; NO LIVE CUSTOMER TODAY, SAID OUT LOUD. At LLVM 19 all 16 integer idiom ids and
 ; the 13 curated fp ids ARE `canConstantFoldCallTo`-able (R4's `h/hi01`-`hi16`;
 ; and `..._reject_stateprep_intrinsic_bswap.ll` declines through the EXACT fold,

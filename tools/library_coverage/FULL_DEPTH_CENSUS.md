@@ -148,7 +148,8 @@
 
 **bd 3c6m.50 · 2026-07-11 · branch `3c6m.13-qrom-under-control-signpost`**
 
-> Companion to `full_surface/INJECTION-CENSUS.md` (first-blocker census, 3c6m.49)
+> Companion to `full_surface/INJECTION-CENSUS.md` (first-blocker census, 3c6m.49; retired by
+> b2986d04, read it with `git show b2986d04^:tools/library_coverage/INJECTION-CENSUS.md`)
 > and bd memory `libm-full-depth-peel-census-2026-07-11`. This census peels
 > *every* decline layer per cell, so the capability-combination → function map is
 > exact — fixing the first-blocker mis-routing that flipped 18 cells L5→L6 (3c6m.13).
@@ -292,7 +293,9 @@ raw `-emit-llvm` corpus build does not reproduce, so they surfaced as spurious
 
 **Scope boundary (Step 0d):** `complex.h` (csin/cexp/cabs…), `fenv.h`
 (fesetround…), and non-ISO extensions (sincos/exp10/Bessel j0/y0/drem/scalb) are
-**out of scope** for this pass — named as a follow-on surface.
+**out of scope** for this pass — named as a follow-on surface. (Since bd 3c6m.81, a
+quantum `exp10`/`exp10f`/`exp10l` call lifts openlibm's real `pow` body as `pow(10, x)`,
+owner ruling 2026-10-08; exp10 is still not a census cell.)
 
 ---
 

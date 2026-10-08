@@ -501,10 +501,13 @@ void classifySwitchRegion(SwitchInst *SI, TaintSet &taint, ControlPlan &plan) {
   if (mergeReachesRotationArg1(P))
     return diagnoseUnderControl(SI, "rotation angle");
 
-  // G4 — ABI-width scalar-integer merge, AFTER the FP-use fence. Rejects fp-as-data
-  // / vector / i128 / pointer / aggregate (the f64 trap: f64 has a valid width yet
-  // is an angle, so never key on width alone). `isFPOrFPVectorTy`, not the
-  // scalar-only `isFloatingPointTy` (which misses `<2 x double>`).
+  // G4 — ABI-width scalar-integer merge, AFTER the FP-use fence. Rejects fp data /
+  // vector / i128 / pointer / aggregate. ⚠ The fp half is NOT an angle rule any
+  // more (owner ruling 2026-10-08, CLAUDE.md R3; it read "f64 has a valid width yet
+  // is an angle"): angle use is G3's consumer walk above. A scalar-fp merge is
+  // PredMux's (witness W8, bd dm7f.17), which flattens the switch to the kjd1 fp
+  // select merge; the 4.5 emitters below are integer-only (XOR deltas of
+  // `ConstantInt`s), so an fp switch PredMux leaves declines here as a LOWERING GAP.
   Type *T = P->getType();
   // n0ui Tier-1: `widthHasReversibleCopy`, NOT `.empty()` — i128 is a recognized
   // intermediate width with no `cqrt_copy_i128`, so a tainted i128 switch data-mux

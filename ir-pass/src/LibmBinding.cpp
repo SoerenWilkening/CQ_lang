@@ -9,6 +9,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalAlias.h"
 #include "llvm/IR/GlobalVariable.h"
@@ -70,6 +71,35 @@ bool callableAs(const Function *Body, const CallInst &CI) {
          Body->getCallingConv() == CI.getCallingConv();
 }
 
+// bd 3c6m.81 — clang -O1's library-call simplifier rewrites `pow(10.0, x)` to
+// `exp10(x)` (`@llvm.exp10.*` on darwin, an `exp10` libcall elsewhere). C17
+// math.h has no `exp10`, so the bundle defines none; the function the user wrote
+// is `pow`. The `pow` spelling of an `exp10` spelling, or empty. NUMERICAL
+// CONTRACT: the lifted value is openlibm's `pow(10, x)`. An `exp10` the user
+// wrote directly (a GNU extension) binds the same way; the classical twin of
+// that call still reaches the system `exp10`, and the two may differ in the last
+// ulp (review round 2). OWNER RULING 2026-10-08 (R14, review round 3): lifting
+// the real `pow` source as `pow(10, x)` is compliant for EVERY exp10 spelling
+// (on Linux the rewrite and a user's `exp10` are one libcall); this contract
+// is recorded in bd memory `exp10-binds-pow-owner-ruling`.
+std::string powOfExp10(StringRef Name) {
+  for (StringRef Sfx : {"", "f", "l"})
+    if (Name == ("exp10" + Sfx).str() || Name == ("__exp10" + Sfx).str())
+      return ("pow" + Sfx).str();
+  return {};
+}
+
+// The bundle's `pow` body for a unary `exp10` call `T(T)`: `T(T, T)`, same
+// calling convention.
+bool callableAsPowOf(const Function *Body, const CallInst &CI) {
+  Type *T = CI.getType();
+  return Body && !Body->isDeclaration() && CI.arg_size() == 1 &&
+         CI.getArgOperand(0)->getType() == T &&
+         Body->getFunctionType() ==
+             FunctionType::get(T, {T, T}, /*isVarArg=*/false) &&
+         Body->getCallingConv() == CI.getCallingConv();
+}
+
 // The body this call binds to when an operand is tainted, or null: the ONE
 // spelling of the binding question (R12), asked by the binder (with taint) and
 // by the early sweep (whatever the taint).
@@ -106,9 +136,16 @@ Function *libmBodyFor(const CallInst &CI, Module &M) {
       return callableAs(Own, CI) ? Own : nullptr;  // an ifunc: nullptr, loud.
     }
   Function *Body = M.getFunction(kBundlePrefix + Name);
-  if (!callableAs(Body, CI) || Body->hasLocalLinkage())
-    return nullptr;
-  return Body;
+  if (callableAs(Body, CI) && !Body->hasLocalLinkage())
+    return Body;
+  // bd 3c6m.81: an `exp10` spelling with no body of its own binds `pow`, and
+  // the binder passes the base 10 (`bindRound`). Its arity tells it apart.
+  if (const std::string Pow = powOfExp10(Name); !Pow.empty()) {
+    Function *PowBody = M.getFunction(kBundlePrefix + Pow);
+    if (callableAsPowOf(PowBody, CI) && !PowBody->hasLocalLinkage())
+      return PowBody;
+  }
+  return nullptr;
 }
 
 // A unary libcall `@<name>(T) -> T` whose LLVM intrinsic is curated at T (the
@@ -162,7 +199,7 @@ bool hasTaintedOperand(const CallInst &CI, const TaintSet &taint) {
 bool bindRound(Module &M, const TaintSet &taint) {
   bool Changed = false;
   for (Function &F : M)
-    for (Instruction &I : instructions(F))
+    for (Instruction &I : make_early_inc_range(instructions(F)))
       if (auto *CI = dyn_cast<CallInst>(&I); CI && hasTaintedOperand(*CI, taint)) {
         // The direct route keeps priority over injection (CLAUDE R14).
         if (toCuratedIntrinsic(*CI, M)) {
@@ -170,6 +207,20 @@ bool bindRound(Module &M, const TaintSet &taint) {
           continue;
         }
         if (Function *Body = libmBodyFor(*CI, M)) {
+          if (Body->arg_size() != CI->arg_size()) {
+            // bd 3c6m.81: `exp10(x)` is the user's `pow(10, x)`. A fresh call
+            // (the operand list grows); its attributes are dropped for the
+            // reason below. The early-increment range survives the erase.
+            Type *T = CI->getType();
+            auto *Pow = CallInst::Create(
+                Body, {ConstantFP::get(T, 10.0), CI->getArgOperand(0)},
+                CI->getName(), CI);
+            Pow->copyMetadata(*CI);  // `!dbg` and every other kind
+            CI->replaceAllUsesWith(Pow);
+            CI->eraseFromParent();
+            Changed = true;
+            continue;
+          }
           CI->setCalledFunction(Body);
           // A libcall's call-site facts (`memory(none)`, …) describe the
           // library contract, not this body, which may write its own memory.

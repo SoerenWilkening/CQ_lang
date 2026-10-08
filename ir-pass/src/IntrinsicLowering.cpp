@@ -57,8 +57,9 @@ StringRef intrinsicStem(Intrinsic::ID id) {
   // injection. NB the keep/cut line is measured on the PROJECT pipeline: native
   // `clang -O1` with `-fno-math-errno` (the darwin default), where a survivor
   // appears as `@llvm.<fn>` and lowers. On a `-fmath-errno` target clang emits a
-  // DIRECT `@sqrt`/`@lrint` libcall instead → the recognizer does not fire and the
-  // program over-declines (the SAFE side of the Prime Directive), never mislowers.
+  // DIRECT `@sqrt`/`@lrint` libcall instead; since bd 3c6m.72 the libm binder
+  // rewrites a TAINTED one to its curated intrinsic (`toCuratedIntrinsic`,
+  // LibmBinding.cpp), so it reaches the same route.
   // KEPT: sqrt (sqrtsd) · the rounding family floor/ceil/trunc/round/
   // rint/nearbyint (roundsd / inline) · fabs/copysign (bitmask) · fmin/fmax
   // (minnum/maxnum, inline) · fma+fmuladd (the a*b+c contraction → mulsd+addsd,
@@ -119,8 +120,10 @@ bool isCrossWidthLibmIntrinsic(Intrinsic::ID id) {
 
 // The 13 curated fp-math survivor IDs (p119, Rule 18): sqrt + the rounding family
 // (floor/ceil/trunc/round/rint/nearbyint) + fabs + copysign + fmin/fmax
-// (minnum/maxnum) + fma/fmuladd. The transcendentals + pow were removed (library
-// functions — source-injected, not recognized). Used ONLY by widthInTableSet to
+// (minnum/maxnum) + fma/fmuladd. The transcendentals + pow were removed from THIS
+// set (library functions — source-injected, not recognized); the six f64 ones
+// that have a Bennett.jl circuit are the separate `isBennettF64Intrinsic` set
+// below (bd 3c6m.71). Used ONLY by widthInTableSet to
 // admit {f16,f32,f64,f80} PER-ID — never a blanket fp open, so every NON-curated
 // fp path keeps the full f64 angle/data fence.
 bool isCuratedFpIntrinsic(Intrinsic::ID id) {
@@ -159,7 +162,9 @@ IntrinKind intrinsicKind(Intrinsic::ID id) {
   case Intrinsic::cttz:
   case Intrinsic::abs:
   // p119 unary fp-math survivors (one fp data handle, no immarg flag): sqrt + the
-  // rounding family + fabs. Transcendentals removed (library → source-injected).
+  // rounding family + fabs; and since bd 3c6m.71 the Bennett-backed f64
+  // transcendentals (`isBennettF64Intrinsic`). Every other transcendental is a
+  // library function, lifted from injected source.
   case Intrinsic::sqrt:
   case Intrinsic::floor: case Intrinsic::ceil:   case Intrinsic::trunc:
   case Intrinsic::round: case Intrinsic::rint:   case Intrinsic::nearbyint:
@@ -246,7 +251,7 @@ bool isCuratedReversibleIntrinsic(const CallInst *CI) {
     return false;
   const Intrinsic::ID id = II->getIntrinsicID();
   if (intrinsicStem(id).empty())
-    return false;  // not a curated id (e.g. *.with.overflow, sin, memcpy).
+    return false;  // not a curated id (e.g. *.with.overflow, exp, memcpy).
                    // NB `sqrt` IS curated (see intrinsicStem above) — it was
                    // added by the iw81.4.b fp-math family AFTER this comment
                    // was first written, and named the wrong example until

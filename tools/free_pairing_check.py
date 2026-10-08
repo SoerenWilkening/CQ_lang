@@ -3608,14 +3608,37 @@ def live_functions(funcs, text):
     return seen, False
 
 
+# 2026-10-08 review (bd r2j3.19 round 2 F2): a Phase-6 clone whose result is not
+# an i32 handle returns CLASSICAL data (a clone returns a rail only as an i32
+# handle, R13), so it mints no rail. Census only; verification never reads this.
+_CALL_RET_TY = re.compile(
+    r"=\s*(?:tail |musttail |notail )?call\s+(?:[a-z_]+(?:\([^)]*\))?\s+)*([^\s@]+)\s+@")
+
+
+def _clone_returns_data(c):
+    if not c.sym.startswith("__cq_q_"):
+        return False
+    m = _CALL_RET_TY.search(c.text)
+    return bool(m) and m.group(1) != "i32"
+
+
+def _returned_by(fn):
+    """The values `fn` ITSELF returns. Per function, like `rail_defs`: LLVM
+    reuses local names (`%r`, `%0`) across functions, so a module-wide set let
+    another function's `ret i32 %r` discharge a dirty rail here and the census
+    report 0 (review round 3, 2026-10-08)."""
+    return {m.group(1) for _lbl, _calls, term in fn.blocks
+            for m in [RET_VALUE_RE.match(term)] if m}
+
+
 def census_of(funcs, text):
     """The reported census over the functions that can actually execute."""
     live, unresolved = live_functions(funcs, text)
-    returned = set(RET_VALUE_RE.findall(text))
     minted = leaked = tmpl_minted = tmpl_dirty = 0
     for fn in funcs:
         if fn.name not in live:
             continue
+        returned = _returned_by(fn)
         freed, uncd, measured, escaped = set(), set(), set(), set()
         mints = []
         for _lbl, calls, _term in fn.blocks:
@@ -3635,7 +3658,7 @@ def census_of(funcs, text):
                     uncd.update(c.vals)        # generous: the ABI names no rail
                 elif eff.role == "measure" and c.vals:
                     measured.add(c.vals[0])
-                if c.res and eff.mints == "rail":
+                if c.res and eff.mints == "rail" and not _clone_returns_data(c):
                     mints.append((c.res, eff.role, c.sym))
         for res, role, sym in mints:
             if role == "alloc":

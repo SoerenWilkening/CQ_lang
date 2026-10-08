@@ -21,7 +21,7 @@ one zero-test selection error, one no-op lit and three real-mutant lit runs.
 The earlier red/config attempts and separate 3c6m.73 mutation counts remain in
 the bd issue's historical notes. Later batch verification is recorded in lab 048.
 
-The full census at main `92e9f0ec` accepted 362/483 probes, completing 86/180
+The full census at main `92e9f0ec` (a local merge commit that `git pull --rebase` flattened; it is in no branch. Its tree equals 874b822b, review 2026-10-08) accepted 362/483 probes, completing 86/180
 scalar cells. It saved accepted IR with `--evidence-dir /tmp/p3kd78-census-evidence`.
 The ten new acceptances and remaining first diagnostics are in `census-audit.json`.
 `census-audit.py` reads saved IR; it never invokes lowering. It attributes clone
