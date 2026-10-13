@@ -1,24 +1,35 @@
-; control_classical_call_arm_reject_onward_spec_i16arg.ll — DECLINE (bd 0vvq Increment 2,
-; the re-plan's scope boundary). A 6.5 classical-call arm's `%out` is NARROWED
-; (`trunc i32 %out to i16`) and passed to a Phase-6 candidate `@ipow16(i32, i16)`. At
-; round 1 the merge is untainted, so `%y16` is a classical i16 arg and the candidate is
-; masked `0b01` (Accept — arg0 the theta handle is i32). The round-2 re-plan recomputes the
-; mask to `0b11` (the narrowed `%out` is now quantum) and re-classifies: `classifyCandidate`
-; step (A) requires EVERY tainted argument to arrive as an i32 handle (Rule 15, the runtime
-; ABI), but arg1 is a TAINTED i16 — no i32-handle representation. So the re-plan CANNOT
-; unfreeze it: it declines LOUDLY with the precise specialization ABI message (NOT dugh's
-; generic "under quantum control", NOT the escape net's "unknown callee"), marks it
-; Diagnosed, and drops it from Pending so the driver never clones a stale-mask body.
-; Over-decline is safe (Prime Directive): a narrowed / non-i32 reseed value is outside the
-; i32-handle clone ABI.
+; control_classical_call_arm_reject_onward_spec_i16arg.ll — ACCEPT since bd p3kd.9 (the
+; historical name is kept; it was a DECLINE, bd 0vvq Increment 2, the re-plan's scope
+; boundary). A 6.5 classical-call arm's `%out` is NARROWED (`trunc i32 %out to i16`) and
+; passed to a Phase-6 candidate `@ipow16(i32, i16)`. At round 1 the merge is untainted, so
+; `%y16` is a classical i16 arg and the candidate is masked `0b01`. The round-2 re-plan
+; recomputes the mask to `0b11` (the narrowed `%out` is now quantum) and re-classifies.
+; Until p3kd.9 `classifyCandidate` step (A) admitted only an i32 or fp tainted argument and
+; this declined `floating-point quantum argument or return has no reversible copy`; i16 is
+; now a lift-boundary width (`liftHandleWidth`: it has `cqrt_copy_i16`), so the re-plan
+; lifts it with the grown mask.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; bd 3c6m.82 (LiftDiagnostics.h): this error is located in the USER's function while the
-; re-plan lifts the site, so no "lifted from here" note precedes it (a note would print first).
-; CHECK-NOT: note:
-; CHECK: error{{.*}}cq specialization: floating-point quantum argument or return has no reversible copy
-; (R10, 2026-10-08: the CHECK-NOT lines that followed the error were removed as vacuous —
-; opt exits on the first DS_Error, so nothing can follow it.)
+; Semantic evidence (read off the lowered IR, 2b clean: 5 verified, 0 violation(s)): the
+; caller builds the 6.5 merge rail `%out` = (q > 3) ? f(a) : 5 exactly as before, mints
+; `%t = trunc_i32_to_i16(%out)`, calls `__cq_q_ipow16_11(h_q, %t)`, then uncomputes `%t`
+; (`trunc_i32_to_i16_unc`) and frees it. The clone's i16 slot is the retyped i32 handle
+; with logical width i16 in `HandleWidth`, so its `sext` lowers to
+; `cq_template_sext_i16_to_i32`; it computes base*base + sext(exp) and is Bennett-wrapped
+; (copy out, reverse, free scratch). The merge rail stays allocated (a control-owned rail,
+; the leak main accepts at top level).
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; CHECK-LABEL: define void @example(
+; CHECK:     %[[T:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i32_to_i16(i32 %[[OUT:[a-zA-Z0-9_.]+]])
+; CHECK:     %[[Z:[a-zA-Z0-9_.]+]] = call i32 @__cq_q_ipow16_11(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[T]])
+; CHECK:     call void @cq_template_trunc_i32_to_i16_unc(i32 %[[T]], i32 %[[OUT]])
+; CHECK:     call void @cqrt_free(i32 %[[T]])
+; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Z]])
+; CHECK-LABEL: define internal i32 @__cq_q_ipow16_11(i32 %base, i32 %exp)
+; CHECK:     call i32 @cq_template_sext_i16_to_i32(i32 %exp)
+; CHECK:     call void @cqrt_copy_i32(
+; CHECK:     call void @cq_template_sext_i16_to_i32_unc(
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 ; bd wve8 — DEFINED, not declared. The 6.5 arm HOISTS this call out of its

@@ -136,6 +136,8 @@ add_library(CQPass MODULE
   src/TerminalGroups.cpp
   src/TemplateName.cpp
   src/Uncomputation.cpp
+  # bd p3kd.8: does an undef phi incoming reach a returned value (scanBody).
+  src/UndefReach.cpp
   src/WidthDispatch.cpp
   src/WireWalk.cpp
 )

@@ -243,11 +243,13 @@ bool emitBennettWrap(Function &Clone, const SmallPtrSetImpl<CallInst *> &LiftedC
   IRBuilder<> B(Ret);
   Value *Out = nullptr;
   if (ResultRail) {
+    // The copy-out over the lift-boundary widths (bd p3kd.9): `copyFnClone` is the
+    // one resolver, null outside `liftHandleWidth`.
     FunctionCallee Alloc = wd.allocFn(RetAbiWidth);
     FunctionCallee Copy = wd.copyFnClone(RetAbiWidth);
     Type *WTy = wd.llvmWidthType(RetAbiWidth);
     if (!Alloc || !Copy || !WTy) {
-      diagnose(Ret, kMsgCloneNoCopy);  // i128/i64/fp128 return — gated earlier, defensive.
+      diagnose(Ret, kMsgCloneNoCopy);  // i128/fp128 return — gated earlier, defensive.
       return false;
     }
     // (b) out = alloc(0); (c) copy(result, out). Copy BEFORE reverse.

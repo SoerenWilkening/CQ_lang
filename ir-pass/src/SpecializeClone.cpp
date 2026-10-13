@@ -5,7 +5,7 @@
 #include "SpecializeClone.h"
 
 #include "CalleeBody.h"     // calleeBodyTrusted (bd p3kd.2)
-#include "OpcodeSupport.h"  // abiWidthFromType, abiWidthHasReversibleFpCopy
+#include "OpcodeSupport.h"  // abiWidthFromType, widthHasReversibleCopy, abiWidthHasReversibleFpCopy
 #include "SpecializePlan.h"
 #include "TaintPropagation.h"
 
@@ -27,6 +27,12 @@
 using namespace llvm;
 
 namespace cq {
+
+bool liftHandleWidth(StringRef W) {
+  return widthHasReversibleCopy(W) || abiWidthHasReversibleFpCopy(W);
+}
+
+bool liftRetypedWidth(StringRef W) { return W != "i32" && liftHandleWidth(W); }
 
 // Strip the function/return attributes the ORIGINAL pure-classical body carried
 // but the quantum-lowered body INVALIDATES. The lowered clone calls side-
@@ -148,22 +154,24 @@ Function *cloneFor(const SpecCandidate &Cand) {
   return Clone;
 }
 
-// The fp-ABI signature (bd 3c6m.54): a tainted argument (or the return) at a
-// reversible-fp width {f16,f32,f64,f80} is an i32 runtime handle (Rule 15), so
-// the clone's SIGNATURE carries i32 in those slots. The return is rewritten only
-// when `predictReturnTainted` (a classical fp return stays fp and is returned
-// verbatim; the copy width is recovered from the ORIGINAL callee return type in
-// `buildClone`).
+// The handle-ABI signature (bd 3c6m.54 for fp, bd p3kd.9 for the non-i32 integer
+// widths): a tainted argument (or the return) at a retyped lift-boundary width
+// (`liftRetypedWidth`: i1/i8/i16/i64 and f16/f32/f64/f80) is an i32 runtime handle
+// (Rule 15), so the clone's SIGNATURE carries i32 in those slots. The return is
+// rewritten only when `predictReturnTainted` (a classical return stays at its
+// width and is returned verbatim; the copy width is recovered from the ORIGINAL
+// callee return type in `buildClone`).
 //
 // The new function takes the old one's place in the module's function list (so
 // the printed module order is unchanged), its name, attributes and metadata,
 // and the old body by `splice` (every instruction keeps its identity, so taint
-// keyed on body values stays valid). A rewritten fp->i32 slot is a CROSS-type
-// operand substitution (`Use::set`, untyped, no RAUW assert), laundered when
-// `lowerOps` rewrites the transiently-mistyped fp body ops to i32-handle
+// keyed on body values stays valid). A rewritten fp->i32 or iN->i32 slot is a
+// CROSS-type operand substitution (`Use::set`, untyped, no RAUW assert), laundered
+// when `lowerOps` rewrites the transiently-mistyped body ops to i32-handle
 // `cq_template_*`: the SAME transient-mismatch discipline the theta
-// RAUW-to-handle relies on (RotationLowering §1), and the state `cloneFor`
-// produced before bd p3kd.7.8. Returns `Clone` itself when no slot changes.
+// RAUW-to-handle relies on (RotationLowering §1, where an `i64` theta result is
+// replaced by its i32 handle the same way), and the state `cloneFor` produced
+// before bd p3kd.7.8. Returns `Clone` itself when no slot changes.
 Function *retypeCloneSignature(Function *Clone, const SpecCandidate &Cand) {
   Function *Callee = Cand.Callee;
   LLVMContext &Ctx = Callee->getContext();
@@ -174,8 +182,8 @@ Function *retypeCloneSignature(Function *Clone, const SpecCandidate &Cand) {
   for (Argument &A : Clone->args()) {
     Type *T = A.getType();
     const bool Tainted = (Cand.Mask & (SpecMask(1) << A.getArgNo())) != 0;
-    if (Tainted && abiWidthHasReversibleFpCopy(abiWidthFromType(T))) {
-      ParamTys.push_back(I32);  // fp handle → i32 (Rule 15).
+    if (Tainted && liftRetypedWidth(abiWidthFromType(T))) {
+      ParamTys.push_back(I32);  // fp / iN handle → i32 (Rule 15).
       NeedsRewrite = true;
     } else {
       ParamTys.push_back(T);  // classical pass-through / i32 handle — kept.
@@ -183,9 +191,9 @@ Function *retypeCloneSignature(Function *Clone, const SpecCandidate &Cand) {
   }
   Type *RetTy = Clone->getReturnType();
   Type *NewRetTy = RetTy;
-  if (abiWidthHasReversibleFpCopy(abiWidthFromType(RetTy)) &&
+  if (liftRetypedWidth(abiWidthFromType(RetTy)) &&
       predictReturnTainted(Callee, Cand.Mask)) {
-    NewRetTy = I32;  // tainted fp return → i32 copy-out handle.
+    NewRetTy = I32;  // tainted fp / iN return → i32 copy-out handle.
     NeedsRewrite = true;
   }
   if (!NeedsRewrite)
@@ -213,10 +221,11 @@ Function *retypeCloneSignature(Function *Clone, const SpecCandidate &Cand) {
     for (Use *U : Uses)
       U->set(NewA);  // cross-type: see the header comment.
   }
-  // A rewritten (fp→i32) param/return may carry a source type-specific attribute
-  // (`nofpclass`, …) `copyAttributesFrom` copied verbatim; drop the whole attr set
-  // on any slot whose type CHANGED so no fp-typed attr rides onto the i32 handle
-  // (a malformed-module abort otherwise). Slots left at their original type keep
+  // A rewritten (fp→i32 / iN→i32) param/return may carry a source type-specific
+  // attribute (`nofpclass`, a `range(i64 …)`, `signext`/`zeroext` on an i8/i16, …)
+  // `copyAttributesFrom` copied verbatim; drop the whole attr set on any slot whose
+  // type CHANGED so no source-typed attr rides onto the i32 handle (a
+  // malformed-module abort otherwise). Slots left at their original type keep
   // their attrs.
   for (unsigned i = 0, n = Clone->arg_size(); i < n; ++i)
     if (Clone->getArg(i)->getType() != New->getArg(i)->getType())

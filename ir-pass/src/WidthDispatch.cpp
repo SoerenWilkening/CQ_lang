@@ -4,6 +4,7 @@
 #include "WidthDispatch.h"
 
 #include "OpcodeSupport.h"  // widthHasQramCell (the fp-as-bitpattern cell fence, bd 38t2)
+#include "SpecializeClone.h"  // liftHandleWidth (bd p3kd.9 — copyFnClone's width set)
 #include "TemplateName.h"
 
 #include "llvm/IR/DataLayout.h"
@@ -184,15 +185,16 @@ FunctionCallee WidthDispatch::copyFnCell(StringRef abiWidth) const {
 }
 
 FunctionCallee WidthDispatch::copyFnClone(StringRef abiWidth) const {
-  // bd 3c6m.54 — the CLONE copy-out variant of copyFn. Mints the SAME
-  // `cqrt_copy_<W>` symbol (void(i32 src, i32 dst)) over the Phase-6 spec RETURN
-  // set: i32 (every int-return clone) PLUS the reversible-fp widths
-  // {f16,f32,f64,f80} (`abiWidthHasReversibleFpCopy`), for `emitBennettWrap`'s
-  // fp-tainted clone-return copy-out. CLONE-LOCAL: only the Bennett wrap calls it,
-  // so the fp admit never reaches the integer-only value-arm/select/switch/loop
-  // copy paths (which keep the shared `copyFn` integer null-fence — the live
-  // f64-angle classifier there). For i32 it is byte-identical to `copyFn`.
-  if (abiWidth != "i32" && !abiWidthHasReversibleFpCopy(abiWidth))
+  // bd 3c6m.54 / bd p3kd.9 — the CLONE copy-out variant of copyFn. Mints the SAME
+  // `cqrt_copy_<W>` symbol (void(i32 src, i32 dst)) over the lift-boundary widths
+  // (`liftHandleWidth`, the one spelling: integer {i1,i8,i16,i32,i64} PLUS the
+  // reversible-fp widths {f16,f32,f64,f80}), for `emitBennettWrap`'s tainted
+  // clone-return copy-out; it is the only resolver the wrap asks. CLONE-LOCAL:
+  // only the Bennett wrap calls it, so the fp admit never reaches the integer-only
+  // value-arm/select/switch/loop copy paths (which keep the shared `copyFn` integer
+  // null-fence — the live f64-angle classifier there). For an integer width it is
+  // byte-identical to `copyFn`.
+  if (!liftHandleWidth(abiWidth))
     return FunctionCallee();
   LLVMContext &Ctx = M.getContext();
   return M.getOrInsertFunction(

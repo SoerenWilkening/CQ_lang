@@ -5,6 +5,14 @@
 ; the tainted `bool` argument reaches the Phase-6 specializer first, which declines
 ; with its own string (pinned here, the owner that speaks first).
 ;
+; bd p3kd.9 (2026-10-13): a tainted `_Bool` (i1) argument is now a lift-boundary
+; handle (`liftHandleWidth`: it has `cqrt_copy_i1`), so the per-site ABI check no
+; longer speaks first. The next owner is the body scan: `slice` itself calls
+; `cq_theta`/`cq_measure`, and lifting stays classical-callee-only (owner ruling
+; owner-ruling-lift-classical-only-2026-10-06), so it declines `callee contains a
+; quantum primitive`. Still a loud decline of the same program, now on its true
+; ground; the expectation moved with the capability change (R10).
+;
 ; Source (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
 ;   __attribute__((noinline)) int g(int k) { cq_theta(&k, 0.7); return k; }
@@ -18,7 +26,7 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
-; CHECK: cq specialization: floating-point quantum argument or return has no reversible copy
+; CHECK: cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted
 
 ; ModuleID = '/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a2b9793f123da59f8/te_scratch/r3/r04_boolarg.c'
 source_filename = "/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a2b9793f123da59f8/te_scratch/r3/r04_boolarg.c"

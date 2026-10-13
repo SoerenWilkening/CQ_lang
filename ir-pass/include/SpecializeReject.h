@@ -17,7 +17,8 @@
 // measurement, in-body control only of the kinds the clone's PredMux flatten and
 // main's control chain (bd p3kd.7.8) collapse to straight-line (`br`/`switch`/`unreachable`
 // terminators, `phi`/`select` muxes; a shape they leave declines loudly at the
-// clone, bd p3kd.7.1), no fp/i128/vector/half quantum ABI, no
+// clone, bd p3kd.7.1), no quantum argument or return outside the lift-boundary
+// widths (`liftHandleWidth`, SpecializeClone.h: i1..i64, f16..f80), no
 // non-reversibilizable construct, every forward gate `isInverseEmittable`, and
 // (bd 3p2a) a RETURNED VALUE that actually denotes a value — the whitelist scans
 // instruction OPCODES and used to `continue` past every terminator, so a body of

@@ -1,21 +1,30 @@
-; control_classical_call_arm_reject_onward_spec_newcand_fparg.ll — DECLINE (bd 9paa,
-; the round-2 DETECTION step-(A) ABI boundary). A 6.5 classical-call arm's `%out` is
-; NARROWED (`trunc i32 %out to i16`) and passed as the SOLE argument of a wholly-new
-; candidate `@g16(i16)`. Because `g16`'s arg was classical at round 1, it is a round-2 NEW
-; candidate (never in Pending — distinct from the re-plan's `reject_onward_spec_i16arg.ll`,
-; where `ipow16` is a ROUND-1 candidate re-planned to FpAbi). The round-2
-; `detectSpecializations` (9paa) DETECTS it (reads the reseed `%y16`), but
-; `classifyCandidate` step (A) requires every TAINTED argument to arrive as an i32 handle
-; (Rule 15, the runtime ABI): arg0 is a TAINTED i16, no i32-handle representation. So
-; detection LOUD-DECLINES it with the precise specialization ABI message and records it
-; Diagnosed, so the re-run `declineTaintEscapes` carve suppresses the generic
-; `kMsgUnknownCallee`. Over-decline is safe (Prime Directive): a narrowed reseed value is
-; outside the i32-handle clone ABI.
+; control_classical_call_arm_reject_onward_spec_newcand_fparg.ll — ACCEPT since bd p3kd.9
+; (the historical name is kept; it was a DECLINE, bd 9paa, the round-2 DETECTION step-(A)
+; ABI boundary). A 6.5 classical-call arm's `%out` is NARROWED (`trunc i32 %out to i16`) and
+; passed as the SOLE argument of a wholly-new candidate `@g16(i16)`. Because `g16`'s arg was
+; classical at round 1, it is a round-2 NEW candidate (never in Pending — distinct from the
+; re-plan's `reject_onward_spec_i16arg.ll`, where `ipow16` is a ROUND-1 candidate). The
+; round-2 `detectSpecializations` (9paa) DETECTS it (reads the reseed `%y16`). Until p3kd.9
+; `classifyCandidate` step (A) admitted only an i32 or fp tainted argument and this declined
+; `floating-point quantum argument or return has no reversible copy`; i16 is now a
+; lift-boundary width (`liftHandleWidth`), so round-2 detection lifts it.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq specialization: floating-point quantum argument or return has no reversible copy
-; CHECK-NOT: unknown callee
-; CHECK-NOT: under quantum control
+; Semantic evidence (read off the lowered IR, 2b clean: 4 verified, 0 violation(s)): the
+; caller builds the merge rail `%out` = (q > 3) ? f(a) : 5, mints
+; `%t = trunc_i32_to_i16(%out)`, calls `__cq_q_g16_1(%t)` and uncomputes and frees `%t`
+; after it. The clone reads the i16 handle through `cq_template_sext_i16_to_i32` (its
+; logical width recorded in `HandleWidth`), squares it and is Bennett-wrapped.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; CHECK-LABEL: define void @example(
+; CHECK:     %[[T:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i32_to_i16(i32 %[[OUT:[a-zA-Z0-9_.]+]])
+; CHECK:     %[[Z:[a-zA-Z0-9_.]+]] = call i32 @__cq_q_g16_1(i32 %[[T]])
+; CHECK:     call void @cq_template_trunc_i32_to_i16_unc(i32 %[[T]], i32 %[[OUT]])
+; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Z]])
+; CHECK-LABEL: define internal i32 @__cq_q_g16_1(i32 %v)
+; CHECK:     call i32 @cq_template_sext_i16_to_i32(i32 %v)
+; CHECK:     call void @cqrt_copy_i32(
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 ; bd wve8 — DEFINED, not declared. The 6.5 arm HOISTS this call out of its

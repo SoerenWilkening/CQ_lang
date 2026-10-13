@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 804 maintained source files, 6598 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 806 maintained source files, 6610 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -40,14 +40,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SelectClassify.cpp` — 1446 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
 - `runtime/cq_runtime.c` — 1403 physical lines
-- `ir-pass/src/Specialization.cpp` — 1366 physical lines
+- `ir-pass/src/Specialization.cpp` — 1380 physical lines
 - `tools/library_coverage/probe.py` — 1219 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
 - `ir-pass/src/ArithLowering.cpp` — 1189 physical lines
 - `tools/loop_twin_matrix_quarantine_test.py` — 1110 physical lines
 - `ir-pass/src/ChainWalk.cpp` — 1061 physical lines
 - `ir-pass/src/BreakReversePlay.cpp` — 1007 physical lines
-- `ir-pass/src/SpecializeReject.cpp` — 956 physical lines
+- `ir-pass/src/SpecializeReject.cpp` — 1005 physical lines
 - `ir-pass/src/WireWalk.cpp` — 948 physical lines
 - `tools/golden_multiset_audit_test.py` — 948 physical lines
 - `ir-pass/src/ControlDetect.cpp` — 916 physical lines
@@ -71,7 +71,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SwitchClassify.cpp` — 624 physical lines
 - `ir-pass/src/MeasureLowering.cpp` — 614 physical lines
 - `tools/migrate_phi_fixtures_rederive.py` — 612 physical lines
-- `ir-pass/src/WidthDispatch.cpp` — 589 physical lines
+- `ir-pass/src/WidthDispatch.cpp` — 591 physical lines
 - `tests/e2e/slice_libm_real_asinhl.c` — 581 physical lines
 - `ir-pass/src/AbortParkEmit.cpp` — 580 physical lines
 - `tests/e2e/slice_libm_real_acoshl.c` — 575 physical lines
@@ -201,10 +201,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `ir-pass/include/TaintPropagation.h:679` — `isPeelClone`
 
-### `ir-pass/include/WidthDispatch.h` (246 lines)
+### `ir-pass/include/WidthDispatch.h` (247 lines)
 
-- `ir-pass/include/WidthDispatch.h:228` — `i32Ty`
-- `ir-pass/include/WidthDispatch.h:229` — `context`
+- `ir-pass/include/WidthDispatch.h:229` — `i32Ty`
+- `ir-pass/include/WidthDispatch.h:230` — `context`
 
 ### `ir-pass/src/AbortParkEmit.cpp` (580 lines)
 
@@ -317,7 +317,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArmHomogeneity.cpp:132` — `midIsPurePhase`
 - `ir-pass/src/ArmHomogeneity.cpp:170` — `treeHomogeneous`
 
-### `ir-pass/src/BennettWrap.cpp` (286 lines)
+### `ir-pass/src/BennettWrap.cpp` (288 lines)
 
 - `ir-pass/src/BennettWrap.cpp:50` — `diagnose`
 - `ir-pass/src/BennettWrap.cpp:67` — `classify`
@@ -1104,7 +1104,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SelectMergeEmit.cpp:101` — `declineQuantumCopySources`
 - `ir-pass/src/SelectMergeEmit.cpp:117` — `emitSelectRegion`
 
-### `ir-pass/src/Specialization.cpp` (1366 lines)
+### `ir-pass/src/Specialization.cpp` (1380 lines)
 
 - `ir-pass/src/Specialization.cpp:95` — `recordCloneRailSelects`
 - `ir-pass/src/Specialization.cpp:117` — `reseedCloneTaintFromParams`
@@ -1113,25 +1113,27 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Specialization.cpp:346` — `scrubForwardCone`
 - `ir-pass/src/Specialization.cpp:405` — `synthUncomputeTwin`
 - `ir-pass/src/Specialization.cpp:452` — `ensureTwin`
-- `ir-pass/src/Specialization.cpp:509` — `retargetSite`
-- `ir-pass/src/Specialization.cpp:536` — `resolveSite`
-- `ir-pass/src/Specialization.cpp:547` — `buildClone`
-- `ir-pass/src/Specialization.cpp:1050` — `shouldSpecialize`
-- `ir-pass/src/Specialization.cpp:1066` — `isQuantumCallerValue`
-- `ir-pass/src/Specialization.cpp:1072` — `isRuntimeCall`
-- `ir-pass/src/Specialization.cpp:1101` — `isCopyDestination`
-- `ir-pass/src/Specialization.cpp:1132` — `userProgramReads`
-- `ir-pass/src/Specialization.cpp:1165` — `resolvePhantomCloneArgReads`
-- `ir-pass/src/Specialization.cpp:1259` — `specialize`
-- `ir-pass/src/Specialization.cpp:1364` — `synthesizeCloneUncTwin`
+- `ir-pass/src/Specialization.cpp:518` — `retargetSite`
+- `ir-pass/src/Specialization.cpp:547` — `resolveSite`
+- `ir-pass/src/Specialization.cpp:558` — `buildClone`
+- `ir-pass/src/Specialization.cpp:1062` — `shouldSpecialize`
+- `ir-pass/src/Specialization.cpp:1078` — `isQuantumCallerValue`
+- `ir-pass/src/Specialization.cpp:1084` — `isRuntimeCall`
+- `ir-pass/src/Specialization.cpp:1113` — `isCopyDestination`
+- `ir-pass/src/Specialization.cpp:1144` — `userProgramReads`
+- `ir-pass/src/Specialization.cpp:1177` — `resolvePhantomCloneArgReads`
+- `ir-pass/src/Specialization.cpp:1271` — `specialize`
+- `ir-pass/src/Specialization.cpp:1378` — `synthesizeCloneUncTwin`
 
-### `ir-pass/src/SpecializeClone.cpp` (232 lines)
+### `ir-pass/src/SpecializeClone.cpp` (241 lines)
 
-- `ir-pass/src/SpecializeClone.cpp:43` — `stripStaleClassicalAttrs`
-- `ir-pass/src/SpecializeClone.cpp:105` — `mangleSpecName`
-- `ir-pass/src/SpecializeClone.cpp:121` — `taintArgMask`
-- `ir-pass/src/SpecializeClone.cpp:142` — `cloneFor`
-- `ir-pass/src/SpecializeClone.cpp:167` — `retypeCloneSignature`
+- `ir-pass/src/SpecializeClone.cpp:31` — `liftHandleWidth`
+- `ir-pass/src/SpecializeClone.cpp:35` — `liftRetypedWidth`
+- `ir-pass/src/SpecializeClone.cpp:49` — `stripStaleClassicalAttrs`
+- `ir-pass/src/SpecializeClone.cpp:111` — `mangleSpecName`
+- `ir-pass/src/SpecializeClone.cpp:127` — `taintArgMask`
+- `ir-pass/src/SpecializeClone.cpp:148` — `cloneFor`
+- `ir-pass/src/SpecializeClone.cpp:175` — `retypeCloneSignature`
 
 ### `ir-pass/src/SpecializeDetect.cpp` (393 lines)
 
@@ -1154,17 +1156,17 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SpecializePredict.cpp:161` — `predictReturnTainted`
 - `ir-pass/src/SpecializePredict.cpp:195` — `specCallResultPredictedClassical`
 
-### `ir-pass/src/SpecializeReject.cpp` (956 lines)
+### `ir-pass/src/SpecializeReject.cpp` (1005 lines)
 
-- `ir-pass/src/SpecializeReject.cpp:55` — `buildIntrinsicSets`
-- `ir-pass/src/SpecializeReject.cpp:82` — `touchesVector`
-- `ir-pass/src/SpecializeReject.cpp:97` — `firstEHConstruct`
-- `ir-pass/src/SpecializeReject.cpp:123` — `unsupportedWidth`
-- `ir-pass/src/SpecializeReject.cpp:175` — `isAdmissibleCloneSelect`
-- `ir-pass/src/SpecializeReject.cpp:351` — `returnDerivesFromUndef`
-- `ir-pass/src/SpecializeReject.cpp:382` — `scanBody`
-- `ir-pass/src/SpecializeReject.cpp:876` — `classifyCandidate`
-- `ir-pass/src/SpecializeReject.cpp:919` — `diagnoseReject`
+- `ir-pass/src/SpecializeReject.cpp:57` — `buildIntrinsicSets`
+- `ir-pass/src/SpecializeReject.cpp:84` — `touchesVector`
+- `ir-pass/src/SpecializeReject.cpp:99` — `firstEHConstruct`
+- `ir-pass/src/SpecializeReject.cpp:125` — `unsupportedWidth`
+- `ir-pass/src/SpecializeReject.cpp:177` — `isAdmissibleCloneSelect`
+- `ir-pass/src/SpecializeReject.cpp:370` — `returnDerivesFromUndef`
+- `ir-pass/src/SpecializeReject.cpp:421` — `scanBody`
+- `ir-pass/src/SpecializeReject.cpp:920` — `classifyCandidate`
+- `ir-pass/src/SpecializeReject.cpp:968` — `diagnoseReject`
 
 ### `ir-pass/src/SpecializeSeed.cpp` (33 lines)
 
@@ -1389,41 +1391,54 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Uncomputation.cpp:3058` — `uncompute`
 - `ir-pass/src/Uncomputation.cpp:3127` — `planInteriorDischarges`
 
-### `ir-pass/src/WidthDispatch.cpp` (589 lines)
+### `ir-pass/src/UndefReach.cpp` (267 lines)
 
-- `ir-pass/src/WidthDispatch.cpp:51` — `typeForAbiWidth`
-- `ir-pass/src/WidthDispatch.cpp:80` — `WidthDispatch::allSuffixes`
-- `ir-pass/src/WidthDispatch.cpp:93` — `WidthDispatch::abiWidthFor`
-- `ir-pass/src/WidthDispatch.cpp:104` — `WidthDispatch::llvmTypeFor`
-- `ir-pass/src/WidthDispatch.cpp:109` — `WidthDispatch::thetaFn`
-- `ir-pass/src/WidthDispatch.cpp:113` — `WidthDispatch::phiFn`
-- `ir-pass/src/WidthDispatch.cpp:117` — `WidthDispatch::phaseFn`
-- `ir-pass/src/WidthDispatch.cpp:123` — `WidthDispatch::measureFn`
-- `ir-pass/src/WidthDispatch.cpp:127` — `WidthDispatch::allocFn`
-- `ir-pass/src/WidthDispatch.cpp:139` — `WidthDispatch::copyFn`
-- `ir-pass/src/WidthDispatch.cpp:166` — `WidthDispatch::copyFnCell`
-- `ir-pass/src/WidthDispatch.cpp:186` — `WidthDispatch::copyFnClone`
-- `ir-pass/src/WidthDispatch.cpp:205` — `WidthDispatch::addcFn`
-- `ir-pass/src/WidthDispatch.cpp:222` — `WidthDispatch::xorcFn`
-- `ir-pass/src/WidthDispatch.cpp:236` — `WidthDispatch::tapeAllocFn`
-- `ir-pass/src/WidthDispatch.cpp:246` — `WidthDispatch::tapeWriteFn`
-- `ir-pass/src/WidthDispatch.cpp:264` — `WidthDispatch::qramAllocFn`
-- `ir-pass/src/WidthDispatch.cpp:285` — `WidthDispatch::qramLoadFn`
-- `ir-pass/src/WidthDispatch.cpp:297` — `WidthDispatch::qramLoadUncFn`
-- `ir-pass/src/WidthDispatch.cpp:313` — `WidthDispatch::qramStoreFn`
-- `ir-pass/src/WidthDispatch.cpp:328` — `WidthDispatch::qramStoreUncFn`
-- `ir-pass/src/WidthDispatch.cpp:345` — `WidthDispatch::qramStoreControlledFn`
-- `ir-pass/src/WidthDispatch.cpp:361` — `WidthDispatch::qramStoreControlledUncFn`
-- `ir-pass/src/WidthDispatch.cpp:377` — `WidthDispatch::measureRtFn`
-- `ir-pass/src/WidthDispatch.cpp:389` — `WidthDispatch::ryRtFn`
-- `ir-pass/src/WidthDispatch.cpp:405` — `WidthDispatch::rzRtFn`
-- `ir-pass/src/WidthDispatch.cpp:418` — `WidthDispatch::llvmWidthType`
-- `ir-pass/src/WidthDispatch.cpp:425` — `WidthDispatch::dataTemplateFn`
-- `ir-pass/src/WidthDispatch.cpp:495` — `WidthDispatch::compareTemplateFn`
-- `ir-pass/src/WidthDispatch.cpp:517` — `WidthDispatch::castTemplateFn`
-- `ir-pass/src/WidthDispatch.cpp:532` — `WidthDispatch::freeFn`
-- `ir-pass/src/WidthDispatch.cpp:541` — `WidthDispatch::addTemplate`
-- `ir-pass/src/WidthDispatch.cpp:552` — `WidthDispatch::frontEndIntrinsicNames`
+- `ir-pass/src/UndefReach.cpp:38` — `acyclicRegionRPO`
+- `ir-pass/src/UndefReach.cpp:76` — `reachesReturn`
+- `ir-pass/src/UndefReach.cpp:107` — `exactConstant`
+- `ir-pass/src/UndefReach.cpp:115` — `assumeBranchTo`
+- `ir-pass/src/UndefReach.cpp:135` — `seedPathConditions`
+- `ir-pass/src/UndefReach.cpp:153` — `factOf`
+- `ir-pass/src/UndefReach.cpp:167` — `evaluate`
+- `ir-pass/src/UndefReach.cpp:221` — `markEdge`
+- `ir-pass/src/UndefReach.cpp:227` — `visitTerminator`
+- `ir-pass/src/UndefReach.cpp:263` — `undefIncomingReachesReturn`
+
+### `ir-pass/src/WidthDispatch.cpp` (591 lines)
+
+- `ir-pass/src/WidthDispatch.cpp:52` — `typeForAbiWidth`
+- `ir-pass/src/WidthDispatch.cpp:81` — `WidthDispatch::allSuffixes`
+- `ir-pass/src/WidthDispatch.cpp:94` — `WidthDispatch::abiWidthFor`
+- `ir-pass/src/WidthDispatch.cpp:105` — `WidthDispatch::llvmTypeFor`
+- `ir-pass/src/WidthDispatch.cpp:110` — `WidthDispatch::thetaFn`
+- `ir-pass/src/WidthDispatch.cpp:114` — `WidthDispatch::phiFn`
+- `ir-pass/src/WidthDispatch.cpp:118` — `WidthDispatch::phaseFn`
+- `ir-pass/src/WidthDispatch.cpp:124` — `WidthDispatch::measureFn`
+- `ir-pass/src/WidthDispatch.cpp:128` — `WidthDispatch::allocFn`
+- `ir-pass/src/WidthDispatch.cpp:140` — `WidthDispatch::copyFn`
+- `ir-pass/src/WidthDispatch.cpp:167` — `WidthDispatch::copyFnCell`
+- `ir-pass/src/WidthDispatch.cpp:187` — `WidthDispatch::copyFnClone`
+- `ir-pass/src/WidthDispatch.cpp:207` — `WidthDispatch::addcFn`
+- `ir-pass/src/WidthDispatch.cpp:224` — `WidthDispatch::xorcFn`
+- `ir-pass/src/WidthDispatch.cpp:238` — `WidthDispatch::tapeAllocFn`
+- `ir-pass/src/WidthDispatch.cpp:248` — `WidthDispatch::tapeWriteFn`
+- `ir-pass/src/WidthDispatch.cpp:266` — `WidthDispatch::qramAllocFn`
+- `ir-pass/src/WidthDispatch.cpp:287` — `WidthDispatch::qramLoadFn`
+- `ir-pass/src/WidthDispatch.cpp:299` — `WidthDispatch::qramLoadUncFn`
+- `ir-pass/src/WidthDispatch.cpp:315` — `WidthDispatch::qramStoreFn`
+- `ir-pass/src/WidthDispatch.cpp:330` — `WidthDispatch::qramStoreUncFn`
+- `ir-pass/src/WidthDispatch.cpp:347` — `WidthDispatch::qramStoreControlledFn`
+- `ir-pass/src/WidthDispatch.cpp:363` — `WidthDispatch::qramStoreControlledUncFn`
+- `ir-pass/src/WidthDispatch.cpp:379` — `WidthDispatch::measureRtFn`
+- `ir-pass/src/WidthDispatch.cpp:391` — `WidthDispatch::ryRtFn`
+- `ir-pass/src/WidthDispatch.cpp:407` — `WidthDispatch::rzRtFn`
+- `ir-pass/src/WidthDispatch.cpp:420` — `WidthDispatch::llvmWidthType`
+- `ir-pass/src/WidthDispatch.cpp:427` — `WidthDispatch::dataTemplateFn`
+- `ir-pass/src/WidthDispatch.cpp:497` — `WidthDispatch::compareTemplateFn`
+- `ir-pass/src/WidthDispatch.cpp:519` — `WidthDispatch::castTemplateFn`
+- `ir-pass/src/WidthDispatch.cpp:534` — `WidthDispatch::freeFn`
+- `ir-pass/src/WidthDispatch.cpp:543` — `WidthDispatch::addTemplate`
+- `ir-pass/src/WidthDispatch.cpp:554` — `WidthDispatch::frontEndIntrinsicNames`
 
 ### `ir-pass/src/WireWalk.cpp` (948 lines)
 

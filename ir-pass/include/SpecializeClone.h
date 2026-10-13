@@ -12,6 +12,8 @@
 
 #include "SpecializePlan.h"
 
+#include "llvm/ADT/StringRef.h"
+
 namespace llvm {
 class CallInst;
 class Function;
@@ -20,6 +22,28 @@ class Function;
 namespace cq {
 
 struct TaintSet;
+
+// bd p3kd.9 — THE LIFT-BOUNDARY HANDLE WIDTHS, the one spelling (Rule 14). A
+// tainted argument or return of ABI width `W` (`abiWidthFromType`) crosses a
+// lifted call as an i32 runtime handle (Rule 15) iff `W` has a reversible
+// copy-out, `cqrt_copy_<W>`: the integer widths {i1,i8,i16,i32,i64}
+// (`widthHasReversibleCopy`) and the fp widths {f16,f32,f64,f80}
+// (`abiWidthHasReversibleFpCopy`). The copy is what the Bennett wrap copies a
+// tainted return out with, and every member already has an alloc, a measure and
+// its templates at the top level, where a `cq_theta` result of that width is an
+// i32 handle with its logical width in `HandleWidth`; a clone parameter or result
+// is the same thing one call boundary away. Before p3kd.9 the set was i32 plus the
+// fp widths (bd 3c6m.54), so a `long` argument or return (scalbln, lround,
+// llround) declined `floating-point quantum argument or return has no reversible
+// copy`. i128 (no `cqrt_copy_i128`), fp128, vectors, pointers and aggregates stay
+// out and decline with that message (spec_reject_int_abi_i128_arg.ll).
+bool liftHandleWidth(llvm::StringRef W);
+
+// A lift-boundary width other than i32: its clone slot is RETYPED to the i32 handle
+// by `retypeCloneSignature`, and its logical width is recorded in `HandleWidth` on
+// the retyped parameter (`buildClone`) and on the rebuilt call (`specialize`, the
+// inner drain). i32 is the handle type itself and is never retyped.
+bool liftRetypedWidth(llvm::StringRef W);
 
 // The RETURN-TAINT PREDICTOR (bd 3c6m.54, 5po2 I2): does `Callee`'s return value,
 // with the parameters in `Mask` quantum, carry taint? A pure forward transitive-user
@@ -32,7 +56,8 @@ struct TaintSet;
 // flatten's selects replace φs / branches the closure reaches; main's control
 // chain, `lowerQramReads` and `lowerOps` RAUW members of the closure). So `false` means the
 // clone's return is classical. Two consumers, and the first is no longer the only one:
-//   * `retypeCloneSignature` — the fp-return signature (i32 handle vs the fp value);
+//   * `retypeCloneSignature` — the retyped-return signature (i32 handle vs the
+//     fp / non-i32 integer value);
 //     since bd p3kd.7.8 it runs after main's stages, not in `cloneFor`;
 //   * `specCallResultPredictedClassical` below — the propagation-time classical verdict
 //     for a would-be Phase-6 site's RESULT (bd cepm / bd 3zr4).
@@ -78,9 +103,10 @@ bool specCallResultPredictedClassical(const llvm::CallInst &CI,
 // fresh clone). The clone is inserted into `Cand.Callee`'s module.
 llvm::Function *cloneFor(const SpecCandidate &Cand);
 
-// bd p3kd.7.8: install the clone's fp-ABI signature (a tainted fp param or a
-// predicted-tainted fp return becomes an i32 handle) AFTER main's stage list ran
-// on the clone. Replaces `Clone` in place (same module position, name, attrs,
+// bd p3kd.7.8: install the clone's handle-ABI signature (a tainted param or a
+// predicted-tainted return at a `liftRetypedWidth` width — fp since bd 3c6m.54,
+// i1/i8/i16/i64 since bd p3kd.9 — becomes an i32 handle) AFTER main's stage list
+// ran on the clone. Replaces `Clone` in place (same module position, name, attrs,
 // metadata; the body is spliced, so body values keep their identity) and returns
 // the new function, or `Clone` itself when no slot changes. The caller re-keys
 // every record held on the old function or its arguments.

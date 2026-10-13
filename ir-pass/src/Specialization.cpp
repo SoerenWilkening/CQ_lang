@@ -496,8 +496,9 @@ void ensureTwin(Function *Clone) {
 }
 
 // Retarget `Site` to `Clone`. USUALLY `setCalledFunction` suffices — but when the
-// clone's RETURN type differs from the call's own result type (an fp-tainted return
-// rewritten to an i32 handle, bd 3c6m.54), the `CallInst`'s Value type is IMMUTABLE
+// clone's RETURN type differs from the call's own result type (a tainted fp return
+// rewritten to an i32 handle, bd 3c6m.54, or a tainted i1/i8/i16/i64 one, bd
+// p3kd.9), the `CallInst`'s Value type is IMMUTABLE
 // (`setCalledFunction` updates only the called operand + FunctionType), so a stale
 // fp result would flow to the consumer (e.g. `cq_measure_f64` reads an fp, not an
 // i32 handle). Replace the call with a fresh i32-returning one and cross-type RAUW
@@ -506,14 +507,24 @@ void ensureTwin(Function *Clone) {
 // verbatim (a still-fp arg becomes its i32 handle later, via lowerRotations/
 // lowerOps — the same transient-mismatch the plain `setCalledFunction` arg path
 // already relies on). Updates `Site` in place to the live call.
+//
+// bd r2j3.25: the call takes the CLONE's calling convention on both paths. A
+// `static` callee is `internal fastcc` after clang -O1, and `CloneFunction` /
+// `retypeCloneSignature` (`copyAttributesFrom`) give the clone that convention,
+// while `CreateCall` mints a default `ccc` call: a calling-convention mismatch is
+// undefined behaviour that `-verify` does not report (slice_libm_real_coshl's
+// `@__cq_q_olm_expl_1`). `EmitInverse` already makes a twin call take the twin's
+// convention; this is the forward half (spec_accept_callconv_fastcc_retarget.ll).
 void retargetSite(CallInst *&Site, Function *Clone) {
   if (Site->getType() == Clone->getReturnType()) {
     Site->setCalledFunction(Clone);
+    Site->setCallingConv(Clone->getCallingConv());
     return;
   }
   SmallVector<Value *, 8> Args(Site->args());
   IRBuilder<> B(Site);
   CallInst *NewCall = B.CreateCall(Clone, Args);
+  NewCall->setCallingConv(Clone->getCallingConv());
   if (DebugLoc DL = Site->getDebugLoc())
     NewCall->setDebugLoc(DL);
   Site->replaceAllUsesWith(NewCall);  // cross-type: old fp result → new i32 handle.
@@ -580,16 +591,16 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
         cloneTaint.Tainted.insert(&A);
   }
 
-  // fp-ABI param HandleWidth (bd 3c6m.54): a tainted fp param rewritten to i32
-  // carries an fp logical width the clone body needs when a CAST reads it directly
-  // (`getSrcTy()` reads the laundered i32; the width is recovered from
-  // `HandleWidth`, exactly the theta-handle mechanism RotationLowering uses). Record
-  // it here so `lowerOps` on the clone body resolves `fptrunc`/`bitcast fp<->i80`/…
-  // off an fp param to the correct `cq_template_<op>_f<W>_...` rather than declining.
+  // Retyped-param HandleWidth (bd 3c6m.54 for fp, bd p3kd.9 for i1/i8/i16/i64): a
+  // tainted param rewritten to i32 carries a logical width the clone body needs
+  // when a CAST reads it directly (`getSrcTy()` reads the laundered i32; the width
+  // is recovered from `HandleWidth`, exactly the theta-handle mechanism
+  // RotationLowering uses). Record it here so `lowerOps` on the clone body
+  // resolves `fptrunc`/`bitcast fp<->i80`/`trunc i64`/… off such a param to the
+  // correct `cq_template_<op>_<W>_...` rather than reading i32 or declining.
   for (unsigned i = 0, n = Callee->arg_size(); i < n; ++i) {
     StringRef OrigW = abiWidthFromType(Callee->getArg(i)->getType());
-    if (Clone->getArg(i)->getType()->isIntegerTy(32) &&
-        abiWidthHasReversibleFpCopy(OrigW))
+    if (Clone->getArg(i)->getType()->isIntegerTy(32) && liftRetypedWidth(OrigW))
       cloneTaint.HandleWidth[Clone->getArg(i)] = OrigW;
   }
 
@@ -685,10 +696,10 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
     // wrong template shape (an i32 handle lands in an fp literal slot → a broken
     // module, the Rule-13 finding). Mirror the module-level re-seed `specialize`
     // does for a top-level rebuilt result: register the new call as a tainted i32
-    // handle and record its fp logical width in `HandleWidth` so a later outer
-    // op/cast off it resolves the right `cq_template_*_f<W>`. The integer path
-    // never rebuilds (`setCalledFunction` keeps the pointer), so this is inert
-    // there.
+    // handle and record its logical width in `HandleWidth` so a later outer
+    // op/cast off it resolves the right `cq_template_*_<W>`. An i32 return never
+    // rebuilds (`setCalledFunction` keeps the pointer), so this is inert there;
+    // since bd p3kd.9 an i1/i8/i16/i64 return rebuilds exactly like an fp one.
     //
     // ⚠ TWO STATEMENTS WERE DELETED HERE, AND WHY (bd 8e5r, Rule-13 r1A F-EA-7):
     //   * `cloneTaint.Tainted.erase(OldInner)` — `OldInner` was already
@@ -709,7 +720,7 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
     //     by construction (and measured: corpus A/B, TRACK_8E5R.md §13).
     if (Inner != OldInner) {
       cloneTaint.Tainted.insert(Inner);
-      if (Rec.ReturnTainted && abiWidthHasReversibleFpCopy(InnerOrigW))
+      if (Rec.ReturnTainted && liftRetypedWidth(InnerOrigW))
         cloneTaint.HandleWidth[Inner] = InnerOrigW;
     }
     if (Rec.ReturnTainted) {
@@ -987,8 +998,10 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
   // `ret`; this house decline is the Rule-1 loud-and-located form). Over-decline
   // is safe (Prime Directive): a classical-fp-return-with-fp-args clone is outside
   // the shipped target shape.
+  // bd p3kd.9: the same holds for every retyped width (`liftRetypedWidth`), an
+  // i64 return included; the message keeps its historical "floating-point" text.
   if (!ReturnTainted && Clone->getReturnType()->isIntegerTy(32) &&
-      abiWidthHasReversibleFpCopy(RetW)) {
+      liftRetypedWidth(RetW)) {
     Clone->getContext().diagnose(DiagnosticInfoUnsupported(
         *Clone,
         "cq specialization: floating-point return-taint could not be proven "
@@ -1011,8 +1024,7 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
   // tainted-terminator over-approximation now precludes this (any tainted diamond →
   // predict true → i32 signature), so this is defense-in-depth: decline LOUDLY,
   // never emit a broken `ret`. Over-decline safe (Prime Directive).
-  if (ReturnTainted && !Clone->getReturnType()->isIntegerTy(32) &&
-      abiWidthHasReversibleFpCopy(abiWidthFromType(Clone->getReturnType()))) {
+  if (ReturnTainted && liftRetypedWidth(abiWidthFromType(Clone->getReturnType()))) {
     Clone->getContext().diagnose(DiagnosticInfoUnsupported(
         *Clone,
         "cq specialization: floating-point return-taint could not be proven "
@@ -1318,8 +1330,10 @@ void specialize(Module &M, WidthDispatch &wd, TaintSet &taint, SpecPlan &plan) {
     // fptosi i32". Recorded HERE (not in `buildClone`) so BOTH the build AND the
     // cache-HIT path are covered (a cache hit skips `buildClone` — the Rule-13
     // cache-hit gap). A caller fp ARITH / MEASURE reads the width from its own type
-    // and never consults this; harmless there.
-    if (Rec.ReturnTainted && abiWidthHasReversibleFpCopy(OrigW))
+    // and never consults this; harmless there. bd p3kd.9: the same for a retyped
+    // i1/i8/i16/i64 return — `(int)lround(q)` is `trunc i64 %r to i32`
+    // (spec_accept_int_abi_i64_return.ll).
+    if (Rec.ReturnTainted && liftRetypedWidth(OrigW))
       taint.HandleWidth[Cand.Site] = OrigW;
   }
 

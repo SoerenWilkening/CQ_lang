@@ -16,8 +16,10 @@
 #include "OpcodeSupport.h"
 #include "QramLowering.h"
 #include "ReturnMerge.h"        // mustTailForwardBlocksDemotion (bd dm7f.5 ruling)
+#include "SpecializeClone.h"    // liftHandleWidth (bd p3kd.9)
 #include "SpecializePlan.h"
 #include "TaintPropagation.h"
+#include "UndefReach.h"         // undefIncomingReachesReturn (bd p3kd.8)
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
@@ -348,6 +350,23 @@ bool isAdmissibleCloneSelect(const SelectInst &SI) {
 // fp80-union idiom this project is built on. Do NOT swap in `valueCarriesUndef`
 // — its one caller is the PredMux cone predicate, where the over-decline is
 // PRE-EXISTING and removing it would be an accept WIDENING (bd ajw7).
+//
+// ─── bd p3kd.8: A PHI INCOMING IS ASKED SEMANTICALLY ─────────────────────────
+//
+// An undef/poison constant met as a PHI INCOMING no longer declines by being in
+// the cone: it exists only on executions that take its edge, and clang -O1 emits
+// it for a variable left uninitialized on a path that never reads it (openlibm
+// log1p's correction `c` when `k == 0`; acosh/asinh/atanh lift through it). It
+// declines only when `undefIncomingReachesReturn` (UndefReach.h, which carries the
+// soundness argument) finds it reaching a returned value on some execution through
+// that edge. That predicate is monotone against this walk — a TRUE there means the
+// undef reached a `ret` through operand edges this walk also follows — so the
+// refinement only removes declines. Every other undef position (an ordinary
+// operand, a select arm, a call argument) keeps the walk's syntactic verdict; the
+// select arm is refused at detection anyway (`isAdmissibleCloneSelect`).
+// Pinned by spec_accept_undef_phi_dead_on_edge.ll (accept),
+// spec_reject_undef_phi_live_on_edge.ll (decline) and
+// spec_accept_undef_phi_controls_branch_ub.ll (no tightening).
 bool returnDerivesFromUndef(const Value *RV) {
   SmallPtrSet<const Value *, 16> Seen;
   SmallVector<const Value *, 16> WL;
@@ -361,6 +380,26 @@ bool returnDerivesFromUndef(const Value *RV) {
     const auto *I = dyn_cast<Instruction>(V);
     if (!I)
       continue;  // Argument / Constant / global — a leaf, already tested above.
+    if (const auto *PN = dyn_cast<PHINode>(I)) {
+      for (unsigned K = 0, E = PN->getNumIncomingValues(); K != E; ++K) {
+        const Value *In = PN->getIncomingValue(K);
+        if (!slotCarriesUndef(In)) {
+          WL.push_back(In);
+          continue;
+        }
+        // Only a whole-value `undef`/`poison` incoming is refined: that is exactly
+        // what the clone's PredMux flatten freezes to zero (`convertPhis` and
+        // `isConvertiblePhiCond` both test `isa<UndefValue>` on the incoming,
+        // PredMuxFlatten.cpp), and the soundness argument needs the frozen value.
+        // A ConstantExpr or aggregate that merely CARRIES undef is not frozen, so
+        // it keeps the walk's syntactic decline (R1 review F1). ⚠ R12 debt: the
+        // two PredMux sites spell this test inline; no shared predicate exists to
+        // call, and adding one means editing PredMuxFlatten.cpp (outside lane L4).
+        if (!isa<UndefValue>(In) || undefIncomingReachesReturn(*PN, K))
+          return true;
+      }
+      continue;
+    }
     for (const Value *Op : I->operands())
       WL.push_back(Op);
   }
@@ -477,16 +516,21 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
   //         `cloneFor`). The escaping fp return is thus ALWAYS an i32 handle, so
   //         the top-level `declineTaintedAngle` fence backstops any caller-angle
   //         misuse (the f64-angle family; 3c6m.54 PRD §ANGLE-SAFETY).
-  //     Still declines FpAbi: fp128 / vector / half-of-nothing → empty or
-  //     non-reversible `abiWidthFromType`; non-i32 int (i16/i64/i128) → no
-  //     reversible i32-handle copy-out in the shipped scope. `void` is a classical
-  //     no-output — exempt.
+  //     bd p3kd.9: and every other lift-boundary width (`liftHandleWidth`,
+  //     SpecializeClone.h): the integer widths i1/i8/i16/i64 copy out through
+  //     `cqrt_copy_<W>` to an i32 handle exactly as the fp widths do, so a `long`
+  //     return (lround, llround) lifts. Still declines FpAbi: fp128 / vector /
+  //     aggregate / pointer → empty `abiWidthFromType`; i128 → no `cqrt_copy_i128`.
+  //     `void` is a classical no-output — exempt. The `wd.copyFn` call on an i32
+  //     return is kept from the pre-p3kd.9 spelling only for its side effect (it
+  //     declares `cqrt_copy_i32` at detection), so existing outputs stay
+  //     byte-identical; the verdict is `liftHandleWidth`'s.
   Type *RetTy = Callee->getReturnType();
   if (!RetTy->isVoidTy()) {
     StringRef RetW = abiWidthFromType(RetTy);
-    const bool IntI32 = RetW == "i32" && wd.copyFn(RetW);
-    const bool RevFp = abiWidthHasReversibleFpCopy(RetW);
-    if (!IntI32 && !RevFp) {
+    if (RetW == "i32")
+      (void)wd.copyFn(RetW);
+    if (!liftHandleWidth(RetW)) {
       WhereOut = Callee->getEntryBlock().getTerminator();
       return SpecReject::FpAbi;
     }
@@ -891,17 +935,22 @@ SpecReject classifyCandidate(const SpecCandidate &Cand, const TaintSet &taint,
   //     Inside the clone the fp arg is only ever a template arg-0 DATA operand —
   //     never a rotation angle (a clone body is rotation-free; `scanBody` rejects
   //     every cq_theta/cq_phi), so the f64-angle family cannot arm here.
-  //     A classical pass-through arg (mask bit clear) may be any width. Still
-  //     declines FpAbi: a tainted i16/i64/i128 (no reversible i32-handle copy in
-  //     the shipped scope) and a tainted fp128/vector. This is the one check that
-  //     needs the call's concrete taint mask — verified for the top candidate at
-  //     detection and every inner candidate at specialize-time.
+  //     A classical pass-through arg (mask bit clear) may be any width. bd p3kd.9:
+  //     every lift-boundary width (`liftHandleWidth`, SpecializeClone.h) is a
+  //     handle, so a tainted i1/i8/i16/i64 is retyped to i32 like an fp one (the
+  //     scalbln `long n`). Still declines FpAbi: a tainted i128 (no
+  //     `cqrt_copy_i128`, spec_reject_int_abi_i128_arg.ll) and a tainted
+  //     fp128/vector/pointer/aggregate. This is the one check that needs the
+  //     call's concrete taint mask — verified for the top candidate at detection
+  //     and every inner candidate at specialize-time. An inner site may read an
+  //     already-retyped parameter of its clone (an i32 handle standing for an i64);
+  //     it is admitted as i32, and the inner callee's own parameter type decides
+  //     its retype, so both readings agree.
   for (unsigned i = 0, n = Cand.Site->arg_size(); i < n; ++i) {
     if (!(Cand.Mask & (SpecMask(1) << i)))
       continue;  // classical pass-through arg — any width is fine.
     Type *ArgTy = Cand.Site->getArgOperand(i)->getType();
-    if (!ArgTy->isIntegerTy(32) &&
-        !abiWidthHasReversibleFpCopy(abiWidthFromType(ArgTy))) {
+    if (!liftHandleWidth(abiWidthFromType(ArgTy))) {
       WhereOut = Cand.Site;
       return SpecReject::FpAbi;
     }
