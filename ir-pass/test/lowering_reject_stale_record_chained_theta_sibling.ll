@@ -1,3 +1,18 @@
+; lowering_reject_stale_record_chained_theta_sibling.ll — DECLINE since bd test_C_libtooling-57ch.3 (batch 053;
+; the diagnostic changed: the stale read is placed, a different hazard remains).
+;
+; The stale `add` is now PLACED (57ch.3) between `%q2` and `%q3`, where it reads
+; `%q2`'s record. What still declines is the fan-out itself: `%q3` is a `cq_theta`
+; READER of `%q` after `%q2` consumed it (one record into two in-place gates), which
+; no placement can fix (moving `%q3` stales `%q2`): 57ch (B). The reader fence
+; owns it, with its own string. The read-first twin declines identically.
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+;
+; CHECK: error{{.*}}cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+;
+; ── HISTORY: the pre-batch-053 header, kept verbatim (its verdict text is
+; superseded by the block above) ──
 ; lowering_reject_stale_record_chained_theta_sibling.ll — DECLINE: the
 ; sibling-Ry-behind-a-CHAINED-theta over-accept that test_C_libtooling-6j1
 ; left open and test_C_libtooling-6vk closes (surface S1, straight-line, NO
@@ -21,7 +36,6 @@
 ; pinned by lowering_stale_record_chained_theta_onancestry.ll. Guard:
 ; WireWalk::findNonDiagonalWireGate via OpcodeLowering::declineStaleRecordOps.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
@@ -34,5 +48,3 @@ entry:
   %m  = call i32 @cq_measure_si32(i32 %d)
   ret i32 %m
 }
-
-; CHECK: error{{.*}}cq opcode lowering: operand predates a non-diagonal gate

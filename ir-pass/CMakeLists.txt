@@ -107,6 +107,8 @@ add_library(CQPass MODULE
   # bd r2j3.6: the lifted-call stale reader + the 57ch (A) placement legality.
   src/LiftedCallReads.cpp
   src/StaleReadPlacement.cpp
+  # bd 57ch.1/.4 (batch 053): the placement slot, span and returns-normally proof.
+  src/StaleReadRegion.cpp
   src/TaintedControlDependence.cpp
   # bd r2j3.20 (etj3): zeroext/signext on narrow runtime parameters.
   src/RuntimeNarrowABI.cpp

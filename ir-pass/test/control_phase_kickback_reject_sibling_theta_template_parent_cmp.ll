@@ -1,3 +1,18 @@
+; control_phase_kickback_reject_sibling_theta_template_parent_cmp.ll — DECLINE since bd test_C_libtooling-57ch.3 (batch 053;
+; the diagnostic changed: the stale read is placed, a different hazard remains).
+;
+; The stale `zext %b` is now PLACED (57ch.3) before `%c`. What still declines is
+; the condition wire: `%cmp` derives from `%b`, whose rail `%c` relabels (the fan-out
+; of `%t`) before the kickback consumes the condition — the condition-wire fence
+; (`2c`). The read-first twin (the `zext` written before `%c`, batch-053 L3 probe)
+; declines with the same string on the pre-053 binary.
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+;
+; CHECK: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+;
+; ── HISTORY: the pre-batch-053 header, kept verbatim (its verdict text is
+; superseded by the block above) ──
 ; control_phase_kickback_reject_sibling_theta_template_parent_cmp.ll — DECLINE
 ; (bd 3qlq.4, F-1b-1's COMPARE twin — the PRE-EXISTING half): the same two
 ; sibling in-place Ry on a template parent, with the branch on `zext(b) == 1`.
@@ -12,7 +27,6 @@
 ; ⚠ A `DS_Error` decline writes 0 bytes to stdout, so every IR-text negative a
 ; decline fixture could carry is VACUOUS; what pins "no silent lowering" here is
 ; the `not` inversion on the RUN line (exit non-zero) plus the string.
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 
 declare void @cq_phi(double)
 declare i1 @cq_theta_i1(i1, double)
@@ -37,5 +51,3 @@ merge:
   %zz = zext i1 %m to i32
   ret i32 %zz
 }
-
-; CHECK: cq opcode lowering: operand predates a non-diagonal gate

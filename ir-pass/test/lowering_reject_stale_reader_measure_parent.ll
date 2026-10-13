@@ -16,6 +16,15 @@
 ; `lowering_bitcast_measure_after_rerotate.ll` — read that file's header before
 ; re-opening this.
 ;
+; ⚠ BATCH 053 (bd 57ch.3): owner ruling bd 57ch (A) names the measure reader, and
+; this module is placeable (`cq_measure(%q)` before `%a`); it is NOT placed, on
+; purpose. The placed program gates a MEASURED handle (`measure(h); ry(h, .5)`),
+; which the project calls ill-formed ("measured ⇒ done", FreePoint.cpp §2.5) and
+; which the owner's yiid ruling (2026-09-14) lowers by re-preparation, a lowering not
+; built (bd yiid, an open silent miscompile in r2j3 A). RETIREMENT TRIGGER (L7): the
+; yiid re-prep lowering; then place the measure reader (OpcodeLowering.cpp) and flip
+; this file to an accept.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq opcode lowering: rotation/measure operand predates a non-diagonal gate
 

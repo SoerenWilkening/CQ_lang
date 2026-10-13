@@ -37,6 +37,7 @@
 #include "LiftCoverage.h"        // the post-lift per-use exemption (bd r2j3.11)
 #include "LiftedCallReads.h"     // the lifted-call reader family (bd r2j3.6)
 #include "StaleReadPlacement.h"  // 57ch (A) placement legality (bd r2j3.6)
+#include "StaleReadRegion.h"     // instructionMayReach (batch 053 round-1 F1)
 #include "TaintedControlDependence.h"  // exact tainted control (bd r2j3.6 R2-3)
 // bd test_C_libtooling-eqpx — `inPlaceValueRailOperand` (G2), the ONE spelling of
 // the dtzb shape test that every `taint.InPlaceRailOps` writer proved with. The
@@ -54,7 +55,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/AssumptionCache.h"   // leg 1b's SCEV (bd 3d8q F-D2-2)
-#include "llvm/Analysis/CFG.h"  // isPotentiallyReachable (bd 3d8q mutual-exclusion leg)
+#include "llvm/Analysis/CFG.h"  // (leg 1 moved to instructionMayReach, batch 053 F1)
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/PostDominators.h"    // gateFollowsRead (bd r2j3.2 F1)
 #include "llvm/Analysis/ScalarEvolution.h"   // leg 1b (bd 3d8q F-D2-2)
@@ -338,27 +339,51 @@ void stalingGates(Instruction &I, Value *Op, TaintSet &taint, DominatorTree &DT,
 }
 
 // OWNER RULING bd 57ch (A), first customer bd r2j3.6: move a stale read `I`, with
-// the classical operand chain it needs, to the slot `staleReadInsertPoint` proves
-// legal (StaleReadPlacement.h). Freshness there is NOT assumed: the caller's verdict
-// is taken at the new slot. Moves within one block keep `DT`/`PDT` valid.
+// the operand chain it needs, to the slot `staleReadInsertPoint` proves legal
+// (StaleReadPlacement.h; across blocks since bd 57ch.1). Freshness there is NOT
+// assumed: the caller's verdict is taken at the new slot, and every carried TAINTED
+// read is re-asked there (`Carried` receives what moved). Moving instructions never
+// changes the CFG, so `DT`/`PDT` stay valid.
+void placeBeforeStalers(Instruction &I, ArrayRef<CallInst *> Stalers,
+                        TaintSet &taint, DominatorTree &DT,
+                        std::optional<PostDominatorTree> &PDT,
+                        SmallVectorImpl<Instruction *> &Carried) {
+  Carried.clear();
+  if (Stalers.empty())
+    return;
+  if (!PDT)
+    PDT.emplace(*I.getFunction());
+  Instruction *At = staleReadInsertPoint(I, Stalers, taint, DT, *PDT, Carried);
+  if (!At) {
+    Carried.clear();
+    return;
+  }
+  for (Instruction *C : Carried)  // definitions first, so their order is kept.
+    C->moveBefore(At);
+  I.moveBefore(At);
+}
+
 void placeBeforeStalers(Instruction &I, ArrayRef<Value *> Reads, TaintSet &taint,
                         DominatorTree &DT, std::optional<PostDominatorTree> &PDT,
-                        bool RequireEmitDominance) {
+                        bool RequireEmitDominance,
+                        SmallVectorImpl<Instruction *> &Carried) {
   SmallVector<CallInst *, 4> Stalers;
   bool Gated = false, Lifted = false;
   for (Value *Op : Reads)
     stalingGates(I, Op, taint, DT, PDT, /*LC=*/nullptr, RequireEmitDominance,
                  Stalers, Gated, Lifted);
-  SmallVector<Instruction *, 4> Carried;
-  Instruction *At = Stalers.empty()
-                        ? nullptr
-                        : staleReadInsertPoint(I, Stalers, taint, DT, Carried);
-  if (!At)
-    return;
-  for (Instruction *C : Carried)  // program order, so their order is kept.
-    C->moveBefore(At);
-  I.moveBefore(At);
+  placeBeforeStalers(I, Stalers, taint, DT, PDT, Carried);
 }
+
+bool checkStaleOp(Instruction &I, TaintSet &taint, DominatorTree &DT,
+                  std::optional<PostDominatorTree> &PDT, const LiftCoverage *LC,
+                  bool Place = false);
+
+// bd 57ch.3: a TAINTED read the placement carried to the new slot is re-asked
+// there with its own family's policy (a pure op; a QRAM access). A `gep` is no
+// reader of its own: the access that consumes it is asked. Never placed again.
+void reaskCarried(ArrayRef<Instruction *> Carried, TaintSet &taint,
+                  DominatorTree &DT, std::optional<PostDominatorTree> &PDT);
 
 // `UnderTC` (a lifted call, bd r2j3.6 R2-3): the EXACT "under tainted control"
 // answer (`controlDependsOnTaintedBranch`); it picks the policy (pure-op when true,
@@ -371,8 +396,11 @@ bool checkStaleReads(Instruction &I, ArrayRef<Value *> Reads, TaintSet &taint,
   if (taint.StaleDeclined.count(&I))
     return false;  // already declined — idempotent across the post-lift re-sweep.
   const bool RequireEmitDominance = !UnderTC || *UnderTC;
-  if (Place)
-    placeBeforeStalers(I, Reads, taint, DT, PDT, RequireEmitDominance);
+  if (Place) {
+    SmallVector<Instruction *, 4> Carried;
+    placeBeforeStalers(I, Reads, taint, DT, PDT, RequireEmitDominance, Carried);
+    reaskCarried(Carried, taint, DT, PDT);
+  }
   bool Lifted = false;
   for (Value *Op : Reads) {
     SmallVector<CallInst *, 4> Stalers;
@@ -404,9 +432,11 @@ bool checkStaleReads(Instruction &I, ArrayRef<Value *> Reads, TaintSet &taint,
 }
 
 // `T` runs after `I` on every trace that runs both, and the two are never
-// alternatives of one branch. Leg 1 of the walk's proof, `!isPotentiallyReachable
-// (T, I)` (conservative toward "reachable", so exact in this direction), means no
-// path runs `T` and then `I`. The precondition it replaces also excluded paths that
+// alternatives of one branch. Leg 1 of the walk's proof, "`I` is not reachable
+// from `T`", means no path runs `T` and then `I`; asked EXACTLY since batch 053
+// round-1 F1 (`instructionMayReach`, StaleReadRegion.h: LLVM's capped
+// `isPotentiallyReachable` said "reachable" past 32 blocks and refused the grant).
+// The precondition it replaces also excluded paths that
 // reach `T` without `I`. `T` post-dominating `I` keeps the part of that which
 // flattening can break: `I` and `T` in SIBLING arms of a tainted branch, which a
 // control emitter runs in sequence. Every path from `I` passes `T`, so `T` is after
@@ -421,16 +451,44 @@ bool checkStaleReads(Instruction &I, ArrayRef<Value *> Reads, TaintSet &taint,
 // to dominate it.
 bool gateFollowsRead(const Instruction &I, const CallInst *T,
                      const DominatorTree &DT, const PostDominatorTree &PDT) {
-  return PDT.dominates(T, &I) &&
-         !isPotentiallyReachable(T, &I, /*ExclusionSet=*/nullptr, &DT);
+  (void)DT;
+  return PDT.dominates(T, &I) && !instructionMayReach(T, &I);
 }
 
 bool checkStaleOp(Instruction &I, TaintSet &taint, DominatorTree &DT,
-                  std::optional<PostDominatorTree> &PDT,
-                  const LiftCoverage *LC) {
+                  std::optional<PostDominatorTree> &PDT, const LiftCoverage *LC,
+                  bool Place) {
   SmallVector<Value *, 4> Ops(I.operand_values());
-  return checkStaleReads(I, Ops, taint, DT, PDT, /*InPlace=*/false, LC);
+  return checkStaleReads(I, Ops, taint, DT, PDT, /*InPlace=*/false, LC, Place);
 }
+
+void reaskCarried(ArrayRef<Instruction *> Carried, TaintSet &taint,
+                  DominatorTree &DT, std::optional<PostDominatorTree> &PDT) {
+  SmallVector<Value *, 4> Reads;
+  for (Instruction *C : Carried) {
+    Reads.clear();
+    if (inLowerOpsScope(*C, taint))
+      checkStaleOp(*C, taint, DT, PDT, /*LC=*/nullptr);
+    else if (qramAccessReads(*C, taint, Reads))
+      checkStaleReads(*C, Reads, taint, DT, PDT, /*InPlace=*/true);
+  }
+}
+
+// ⚠ THE ROTATION AND MEASURE READERS ARE NOT PLACED (bd 57ch.3, batch 053),
+// though owner ruling bd 57ch (A) names them. The staler of a stale `cq_measure`
+// reader is a non-diagonal gate on the very register it measures, so the placed
+// program is `measure(q); Ry(q)`: a gate on a MEASURED handle. The project's
+// contract calls that ill-formed ("measured ⇒ done", FreePoint.cpp §2.5) and the
+// owner's yiid ruling (2026-09-14) requires it to lower as a fresh `cqrt_alloc`
+// seeded from the outcome; that re-prep lowering is not built, and the in-place
+// stream it would get instead is bd yiid, an OPEN silent miscompile (r2j3 A).
+// MEASURED (batch 053 L3, a draft that placed them): 13 fixtures declined by the
+// R6 / loop rail-record fences and 4 by this fence's reader string lowered at exit
+// 0 to `measure(h); ry(h, ·); …`, and `main` escapes FreePoint's check entirely.
+// RETIREMENT TRIGGER (L7): the yiid re-prep lowering; then place the measure
+// reader here with the reader policy's staler set (`RequireEmitDominance=false`).
+// The `cq_theta` reader never places: its staler consumes the very record it reads
+// (a fan-out into two in-place gates), so moving it stales the staler (57ch (B)).
 
 void declineStaleRecordOpsImpl(Module &M, TaintSet &taint, const LiftCoverage *LC,
                                const SpecPlan *Plan, bool PlaceLiftedReads);
@@ -488,10 +546,13 @@ void declineStaleRecordOpsImpl(Module &M, TaintSet &taint, const LiftCoverage *L
   //     own fresh rail — matching SSA semantics — and the later Ry on `q`'s
   //     wire cannot touch that rail (fixture
   //     lowering_stale_record_add_before_theta.ll pins this boundary).
-  //   * the same op SCHEDULED AFTER the chained theta declines: the
+  //   * the same op SCHEDULED AFTER the chained theta is stale: the
   //     template would read the post-Ry basis while `%d` denotes the
-  //     pre-Ry record (the confirmed verify-clean miscompile; fixture
-  //     lowering_reject_stale_record_add.ll).
+  //     pre-Ry record (the confirmed verify-clean miscompile). Since bd 57ch.3
+  //     (batch 053) the early slot PLACES it before the theta when legal, which
+  //     gives the first bullet's stream (lowering_reject_stale_record_add.ll,
+  //     verdict inverted); an unplaceable one still declines here
+  //     (lowering_stale_record_reject_needs_both.ll).
   //   * a position-FREE rule would over-decline the first shape — a
   //     legitimate use-then-re-rotate program — for no soundness gain.
   // Diagonal gates (Rz) on the wire are basis-preserving and never trigger
@@ -566,10 +627,13 @@ void declineStaleRecordOpsImpl(Module &M, TaintSet &taint, const LiftCoverage *L
           continue;
         if (!DT)
           DT.emplace(F);  // every form always has a tainted read.
+        // bd 57ch.3: at the early slot (`PlaceLiftedReads`) every reader family
+        // but the `cq_theta` one is placed before its staler when legal.
         if (PureOp) {
-          checkStaleOp(I, taint, *DT, PDT, LC);
+          checkStaleOp(I, taint, *DT, PDT, LC, PlaceLiftedReads);
         } else if (Qram) {
-          checkStaleReads(I, Reads, taint, *DT, PDT, /*InPlace=*/true, LC);
+          checkStaleReads(I, Reads, taint, *DT, PDT, /*InPlace=*/true, LC,
+                          PlaceLiftedReads);
         } else {
           if (!PDT)
             PDT.emplace(F);

@@ -21,6 +21,19 @@
 ; the gate sits in the arm, the call in the merge block, and the post-lift re-sweep
 ; never places. Loud, with the one stale-record string.
 ; RETIREMENT TRIGGER (L7): cross-block placement (57ch (A) beyond one block) or 57ch (B).
+; ⚠ BATCH 053: cross-block placement (bd 57ch.1) is built and does NOT retire this
+; file: no single program point has `r`'s record current on both paths (after
+; `.125` on the arm path, `%4` on the other). OWNER RULING 2026-10-13 (bd 57ch.2;
+; bd memory owner-ruling-stale-reads-batch053-2026-10-13 item 1): a CLASSICAL merge
+; duplicates the read into each incoming path (here: `g` between the two arm Ry, and
+; `g(%4)` on the split edge `%2 -> %8`), a tainted merge places it between the
+; controlled gates. NOT BUILT in batch 053 (lane L3): the duplicated reads produce
+; two clone results merged by a classical-condition phi over two DISTINCT registers,
+; which `declineClassicalMuxes` refuses (bd dm7f.15, lane L5's file), and whose
+; path-dependent uncompute no stage owns; and the read is only exposed after the
+; one-register lift, by the post-lift re-sweep, which never places. RETIREMENT
+; TRIGGER (revised): dm7f.15's handle-variable phi plus a placement at the post-lift
+; slot (or 57ch (B)).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s

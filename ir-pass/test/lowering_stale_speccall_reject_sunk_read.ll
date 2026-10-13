@@ -22,6 +22,20 @@
 ; post-dominate the gate). A read-first program can therefore still be refused.
 ; RETIREMENT TRIGGER (L7): the owner ruling on that question (follow-up F7 of
 ; r2j3.6), then the lowering it rules for.
+; OWNER RULING 2026-10-13 (bd aabo; bd memory owner-ruling-stale-reads-batch053-
+; 2026-10-13 item 3): follow the -O1 IR (an arm-only read): hoist the read before the
+; gate under the arm's own classical condition when that condition is computable
+; before the gate (`%5` here), else 57ch (B). NOT BUILT in batch 053 (lane L3), and
+; why, measured on the pre-053 binary with hand IR of the two realisations:
+;   * a conditional block before the gate plus `phi [%r, %rd], [poison, %entry]` at
+;     its join declines `cq taint escape: tainted value muxed by a classical-condition
+;     phi` (`declineClassicalMuxes`, TaintPropagation.cpp, bd dm7f.15's ground);
+;   * duplicating the gate into both successor paths (read, Ry, measure on the arm
+;     path; Ry alone on the other; a one-register merge phi) LOWERS (exit 0, the
+;     lyyf live-record warning), but it mints new `cq_theta` sites after
+;     `propagate`, which needs a re-propagation slot after the early stale sweep
+;     (CQLoweringPass.cpp) — outside the lane's file set.
+; Either route closes this file; until then it stays loud.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s

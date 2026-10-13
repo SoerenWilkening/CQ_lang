@@ -1,3 +1,25 @@
+; lowering_qram_reject_stale_store_value.ll — ACCEPT since bd test_C_libtooling-57ch.3 (batch 053;
+; owner ruling bd 57ch (A)). ⚠ VERDICT INVERTED: this file declined before batch 053.
+;
+; The stale QRAM access is PLACED before its staling gate with the address `gep`
+; (and any widening) it needs (StaleReadPlacement.h clause (b), a carried tainted
+; read): the QRAM call is minted at its new position, so it reads the index (and
+; stored value) register's pre-gate label, the stream the read-first program
+; lowers to.
+; The STORE of the stale VALUE register moves before the Ry on that register.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck --check-prefix=WARN --allow-empty %s < %t.err
+; WARN-NOT: {{error|warning}}
+;
+; CHECK:      call void @cqrt_ry_i32(i32 %[[Q:[a-z0-9]+]], double 5.000000e-01)
+; CHECK:      call void @cqrt_qram_store_i32(i32 %{{[a-z0-9]+}}, i32 %{{[a-z0-9]+}}, i32 %[[Q]])
+; CHECK-NOT:  @cqrt_ry_i32
+; CHECK:      call void @cqrt_ry_i32(i32 %[[Q]], double 3.000000e-01)
+;
+; ── HISTORY: the pre-batch-053 header, kept verbatim (its verdict text is
+; superseded by the block above) ──
 ; lowering_qram_reject_stale_store_value.ll — DECLINE (bd
 ; test_C_libtooling-r2j3.2, the same consumer's other read): a Shadow store
 ; copies its VALUE register into the cell AT THE STORE, so a stored value whose
@@ -10,8 +32,6 @@
 ; MEASURED on the pre-fix binary: exit 0, `cqrt_qram_store_i32(a0, …, h5)` after
 ; both `ry(h5, ·)`.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq opcode lowering: operand predates a non-diagonal gate
 
 declare i64 @cq_theta_sl(i64, double)
 declare i32 @cq_theta_si32(i32, double)

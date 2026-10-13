@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 809 maintained source files, 6635 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 811 maintained source files, 6657 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -36,7 +36,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/inplace_twin_matrix.py` — 1790 physical lines
 - `ir-pass/src/CQLoweringPass.cpp` — 1517 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
-- `ir-pass/src/OpcodeLowering.cpp` — 1450 physical lines
+- `ir-pass/src/OpcodeLowering.cpp` — 1514 physical lines
 - `ir-pass/src/SelectClassify.cpp` — 1446 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
 - `runtime/cq_runtime.c` — 1403 physical lines
@@ -793,29 +793,31 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/MergePhiPeel.cpp:261` — `phiPeelable`
 - `ir-pass/src/MergePhiPeel.cpp:312` — `peelIndependentMergePhis`
 
-### `ir-pass/src/OpcodeLowering.cpp` (1450 lines)
+### `ir-pass/src/OpcodeLowering.cpp` (1514 lines)
 
-- `ir-pass/src/OpcodeLowering.cpp:85` — `diagnoseStaleRecord`
-- `ir-pass/src/OpcodeLowering.cpp:99` — `diagnosePreLoopCommitStale`
-- `ir-pass/src/OpcodeLowering.cpp:115` — `diagnoseRailOpStale`
-- `ir-pass/src/OpcodeLowering.cpp:138` — `diagnoseStaleQuantumReader`
-- `ir-pass/src/OpcodeLowering.cpp:153` — `diagnoseStaleTapeReader`
-- `ir-pass/src/OpcodeLowering.cpp:168` — `tapeReaderRecordOperand`
-- `ir-pass/src/OpcodeLowering.cpp:208` — `staleReaderRecordOperand`
-- `ir-pass/src/OpcodeLowering.cpp:234` — `inLowerOpsScope`
-- `ir-pass/src/OpcodeLowering.cpp:303` — `stalingGates`
-- `ir-pass/src/OpcodeLowering.cpp:344` — `placeBeforeStalers`
-- `ir-pass/src/OpcodeLowering.cpp:367` — `checkStaleReads`
-- `ir-pass/src/OpcodeLowering.cpp:422` — `gateFollowsRead`
-- `ir-pass/src/OpcodeLowering.cpp:428` — `checkStaleOp`
-- `ir-pass/src/OpcodeLowering.cpp:440` — `declineStaleRecordOps`
-- `ir-pass/src/OpcodeLowering.cpp:445` — `declineTaintedArmLiftedReads`
-- `ir-pass/src/OpcodeLowering.cpp:475` — `declineStaleRecordOpsImpl`
-- `ir-pass/src/OpcodeLowering.cpp:591` — `declineLiftedStaleRecordOps`
-- `ir-pass/src/OpcodeLowering.cpp:672` — `recordStaleQuantumReaders`
-- `ir-pass/src/OpcodeLowering.cpp:679` — `recordStaleQuantumReadersImpl`
-- `ir-pass/src/OpcodeLowering.cpp:1050` — `declineRecordedStaleQuantumReaders`
-- `ir-pass/src/OpcodeLowering.cpp:1112` — `lowerOps`
+- `ir-pass/src/OpcodeLowering.cpp:86` — `diagnoseStaleRecord`
+- `ir-pass/src/OpcodeLowering.cpp:100` — `diagnosePreLoopCommitStale`
+- `ir-pass/src/OpcodeLowering.cpp:116` — `diagnoseRailOpStale`
+- `ir-pass/src/OpcodeLowering.cpp:139` — `diagnoseStaleQuantumReader`
+- `ir-pass/src/OpcodeLowering.cpp:154` — `diagnoseStaleTapeReader`
+- `ir-pass/src/OpcodeLowering.cpp:169` — `tapeReaderRecordOperand`
+- `ir-pass/src/OpcodeLowering.cpp:209` — `staleReaderRecordOperand`
+- `ir-pass/src/OpcodeLowering.cpp:235` — `inLowerOpsScope`
+- `ir-pass/src/OpcodeLowering.cpp:304` — `stalingGates`
+- `ir-pass/src/OpcodeLowering.cpp:347` — `placeBeforeStalers`
+- `ir-pass/src/OpcodeLowering.cpp:366` — `placeBeforeStalers`
+- `ir-pass/src/OpcodeLowering.cpp:392` — `checkStaleReads`
+- `ir-pass/src/OpcodeLowering.cpp:452` — `gateFollowsRead`
+- `ir-pass/src/OpcodeLowering.cpp:458` — `checkStaleOp`
+- `ir-pass/src/OpcodeLowering.cpp:465` — `reaskCarried`
+- `ir-pass/src/OpcodeLowering.cpp:498` — `declineStaleRecordOps`
+- `ir-pass/src/OpcodeLowering.cpp:503` — `declineTaintedArmLiftedReads`
+- `ir-pass/src/OpcodeLowering.cpp:533` — `declineStaleRecordOpsImpl`
+- `ir-pass/src/OpcodeLowering.cpp:655` — `declineLiftedStaleRecordOps`
+- `ir-pass/src/OpcodeLowering.cpp:736` — `recordStaleQuantumReaders`
+- `ir-pass/src/OpcodeLowering.cpp:743` — `recordStaleQuantumReadersImpl`
+- `ir-pass/src/OpcodeLowering.cpp:1114` — `declineRecordedStaleQuantumReaders`
+- `ir-pass/src/OpcodeLowering.cpp:1176` — `lowerOps`
 
 ### `ir-pass/src/OpcodeSupport.cpp` (342 lines)
 
@@ -1214,16 +1216,39 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/StageList.cpp:28` — `runLoopPrepasses`
 - `ir-pass/src/StageList.cpp:85` — `runControlChain`
 
-### `ir-pass/src/StaleReadPlacement.cpp` (240 lines)
+### `ir-pass/src/StaleReadPlacement.cpp` (363 lines)
 
-- `ir-pass/src/StaleReadPlacement.cpp:28` — `isFrontEndSite`
-- `ir-pass/src/StaleReadPlacement.cpp:33` — `isMustTail`
-- `ir-pass/src/StaleReadPlacement.cpp:49` — `memoryEffectsOf`
-- `ir-pass/src/StaleReadPlacement.cpp:70` — `isObservableOrderedEvent`
-- `ir-pass/src/StaleReadPlacement.cpp:113` — `bodyHoldsNoOrderedEvent`
-- `ir-pass/src/StaleReadPlacement.cpp:127` — `callCrossable`
-- `ir-pass/src/StaleReadPlacement.cpp:148` — `carriableEffects`
-- `ir-pass/src/StaleReadPlacement.cpp:156` — `staleReadInsertPoint`
+- `ir-pass/src/StaleReadPlacement.cpp:33` — `isFrontEndSite`
+- `ir-pass/src/StaleReadPlacement.cpp:38` — `isMustTail`
+- `ir-pass/src/StaleReadPlacement.cpp:54` — `declaredEffectsOf`
+- `ir-pass/src/StaleReadPlacement.cpp:69` — `memoryEffectsOf`
+- `ir-pass/src/StaleReadPlacement.cpp:78` — `returnsNormally`
+- `ir-pass/src/StaleReadPlacement.cpp:91` — `crossableForTermination`
+- `ir-pass/src/StaleReadPlacement.cpp:104` — `isLocalObject`
+- `ir-pass/src/StaleReadPlacement.cpp:118` — `localPointerArgs`
+- `ir-pass/src/StaleReadPlacement.cpp:148` — `isObservableOrderedEvent`
+- `ir-pass/src/StaleReadPlacement.cpp:191` — `bodyHoldsNoOrderedEvent`
+- `ir-pass/src/StaleReadPlacement.cpp:208` — `callCrossable`
+- `ir-pass/src/StaleReadPlacement.cpp:230` — `carriableEffects`
+- `ir-pass/src/StaleReadPlacement.cpp:241` — `carriableTaintedRead`
+- `ir-pass/src/StaleReadPlacement.cpp:257` — `carriable`
+- `ir-pass/src/StaleReadPlacement.cpp:272` — `staleReadInsertPoint`
+
+### `ir-pass/src/StaleReadRegion.cpp` (279 lines)
+
+- `ir-pass/src/StaleReadRegion.cpp:27` — `closedTerminator`
+- `ir-pass/src/StaleReadRegion.cpp:37` — `spanBlocks`
+- `ir-pass/src/StaleReadRegion.cpp:77` — `blockReachesAvoiding`
+- `ir-pass/src/StaleReadRegion.cpp:92` — `instructionMayReach`
+- `ir-pass/src/StaleReadRegion.cpp:100` — `PlacementSpan::sameBlock`
+- `ir-pass/src/StaleReadRegion.cpp:102` — `PlacementSpan::inSpan`
+- `ir-pass/src/StaleReadRegion.cpp:116` — `PlacementSpan::mayRunBefore`
+- `ir-pass/src/StaleReadRegion.cpp:126` — `PlacementSpan::crossed`
+- `ir-pass/src/StaleReadRegion.cpp:144` — `stalePlacementSpan`
+- `ir-pass/src/StaleReadRegion.cpp:209` — `bodyProvablyReturns`
+- `ir-pass/src/StaleReadRegion.cpp:243` — `moduleHasReturnsTwiceCall`
+- `ir-pass/src/StaleReadRegion.cpp:255` — `callTerminationCrossable`
+- `ir-pass/src/StaleReadRegion.cpp:265` — `callProvablyReturns`
 
 ### `ir-pass/src/SwapRouteEmit.cpp` (3162 lines)
 

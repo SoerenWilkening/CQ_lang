@@ -1,3 +1,27 @@
+; lowering_stale_speccall_reject_independent_quantum_operand.ll — ACCEPT since bd test_C_libtooling-57ch.6 (batch 053;
+; owner ruling bd 57ch (A)). ⚠ VERDICT INVERTED: this file declined before batch 053.
+;
+; The placement now CARRIES the independent register's mint with the call
+; (StaleReadPlacement.h clause (b)): `p` is minted in the span and touched by no
+; other gate, so its gate commutes with the staling gate. Two-gate spelling:
+; lowering_stale_speccall_independent_gates_placed_accept.ll.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck --check-prefix=WARN --allow-empty %s < %t.err
+; WARN-NOT: {{error|warning}}
+;
+; CHECK-LABEL: define i32 @main(
+; CHECK:      %[[H:[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
+; CHECK-NEXT: %[[P:[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[P]], double 0x3FE6666666666666)
+; CHECK-NEXT: %[[R:[0-9]+]] = tail call i32 @__cq_q_f_11(i32 noundef %[[H]], i32 noundef %[[P]])
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 3.000000e-01)
+; CHECK:      call i32 @cqrt_measure_i32(i32 %[[R]])
+;
+; ── HISTORY: the pre-batch-053 header, kept verbatim (its verdict text is
+; superseded by the block above) ──
 ; lowering_stale_speccall_reject_independent_quantum_operand.ll — DECLINE (bd
 ; test_C_libtooling-r2j3.6, review round 2 R2-4: recorded, not built).
 ;
@@ -21,9 +45,6 @@
 ; RETIREMENT TRIGGER (L7): r2j3.6 follow-up F8 (carry an independent register's
 ; mint and gates along when they commute with the staling gate) flips this file.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s
-; CHECK: in function main i32 (): cq opcode lowering: operand predates a non-diagonal gate
 
 define i32 @f(i32 noundef %0, i32 noundef %1) local_unnamed_addr #0 {
   %3 = mul nsw i32 %0, 3

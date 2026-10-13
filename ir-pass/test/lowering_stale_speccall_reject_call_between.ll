@@ -19,6 +19,14 @@
 ; refusal conservative, an OVER-DECLINE under NORTHSTAR goal 1 kept loud.
 ; RETIREMENT TRIGGER (L7): a placement that may cross a call LLVM cannot prove
 ; returns (e.g. by knowing the C library's contract) flips this file to an accept.
+; BATCH 053 (bd 57ch.4): crossing a call PROVED to return (`willreturn`, or an
+; acyclic trusted body: `callProvablyReturns`) is built; `puts` is neither, and it
+; is an opaque declaration that may touch memory (`callCrossable` refuses it on the
+; 2026-10-08 ordering ruling too). The 57ch.4 OWNER RULING (2026-10-13) makes a
+; `nounwind` call in a module with no `returns_twice` call crossable for
+; termination (`callTerminationCrossable`), so `puts`'s possible non-return no longer
+; blocks; what still declines is the ordered-event test, unchanged. RETIREMENT
+; TRIGGER (L7, revised): a crossing rule for an opaque I/O call, or 57ch (B).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s

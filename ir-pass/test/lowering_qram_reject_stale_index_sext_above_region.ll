@@ -1,3 +1,27 @@
+; lowering_qram_reject_stale_index_sext_above_region.ll — ACCEPT since bd test_C_libtooling-57ch.1 and 57ch.3 (batch 053;
+; owner ruling bd 57ch (A)). ⚠ VERDICT INVERTED: this file declined before batch 053.
+;
+; The stale QRAM access is PLACED before its staling gate with the address `gep`
+; (and any widening) it needs (StaleReadPlacement.h clause (b), a carried tainted
+; read): the QRAM call is minted at its new position, so it reads the index (and
+; stored value) register's pre-gate label, the stream the read-first program
+; lowers to.
+; The staler is the in-place controlled Ry in a TAINTED arm and the load is after
+; the merge: the slot is the terminator of the block that dominates both (bd
+; 57ch.1), so the QRAM call reads `q` before the region.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck --check-prefix=WARN --allow-empty %s < %t.err
+; WARN-NOT: {{error|warning}}
+;
+; CHECK:      call void @cqrt_ry_i32(i32 %[[H:[a-z0-9]+]], double 5.000000e-01)
+; CHECK:      %[[V:[0-9]+]] = call i32 @cqrt_qram_load_i32(i32 %{{[a-z0-9]+}}, i32 %[[H]])
+; CHECK:      call void @cqrt_ry_i32_controlled(i32 %{{[a-z_0-9]+}}, i32 %[[H]], double 3.000000e-01)
+; CHECK:      call i32 @cqrt_measure_i32(i32 %[[V]])
+;
+; ── HISTORY: the pre-batch-053 header, kept verbatim (its verdict text is
+; superseded by the block above) ──
 ; lowering_qram_reject_stale_index_sext_above_region.ll — DECLINE (bd
 ; test_C_libtooling-r2j3.2): the widening `sext` of the index sits ABOVE a
 ; tainted-condition region whose arm rotates the index register in place (an
@@ -11,8 +35,6 @@
 ; which no wire walk recognises as a gate. Pins that the sweep seeds the STRIPPED
 ; register (seeding only the `sext` finds nothing here).
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq opcode lowering: operand predates a non-diagonal gate
 
 @tbl = internal unnamed_addr constant [8 x i32] [i32 3, i32 1, i32 4, i32 1, i32 5, i32 9, i32 2, i32 6], align 16
 

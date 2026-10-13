@@ -1,3 +1,29 @@
+; lowering_stale_speccall_reject_maynot_return.ll — ACCEPT since bd test_C_libtooling-57ch.4 (the moved-call termination proof) (batch 053;
+; owner ruling bd 57ch (A)). ⚠ VERDICT INVERTED: this file declined before batch 053.
+;
+; `callProvablyReturns` (StaleReadRegion.h) proves the MOVED call returns from its
+; trusted body: acyclic, only `br`/`ret`, every instruction returns normally. That
+; is the "the clone is a finite circuit" trigger below. A CROSSED call that may not
+; return is a different question, ruled by the owner on 2026-10-13
+; (`callTerminationCrossable`: `nounwind` and no `returns_twice` call in the module;
+; lowering_stale_speccall_reject_crossed_maynot_return_callee.ll accepts,
+; lowering_stale_speccall_reject_crossed_maynot_return_setjmp.ll declines).
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck --check-prefix=WARN --allow-empty %s < %t.err
+; WARN-NOT: {{error|warning}}
+;
+; CHECK-LABEL: define i32 @main(
+; CHECK:      %[[H:[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
+; CHECK-NEXT: %[[R:[0-9]+]] = tail call i32 @__cq_q_f_1(i32 noundef %[[H]])
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 3.000000e-01)
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[H]])
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[R]])
+;
+; ── HISTORY: the pre-batch-053 header, kept verbatim (its verdict text is
+; superseded by the block above) ──
 ; lowering_stale_speccall_reject_maynot_return.ll — DECLINE (bd test_C_libtooling-r2j3.6):
 ; a stale lifted call that LLVM cannot prove returns. Hand IR: the callee's summary
 ; omits `willreturn` (what -O1 infers for a body whose loop it cannot bound), its body
@@ -11,9 +37,6 @@
 ; RETIREMENT TRIGGER (L7): a placement that takes "the clone is a finite circuit" as
 ; the call's termination proof flips this file to an accept.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s
-; CHECK: in function main i32 (): cq opcode lowering: operand predates a non-diagonal gate
 
 define i32 @f(i32 noundef %0) local_unnamed_addr #0 {
   %2 = mul nsw i32 %0, 3

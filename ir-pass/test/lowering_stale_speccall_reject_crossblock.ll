@@ -17,12 +17,17 @@
 ; own block, so it fails loudly with the one stale-record string. That is an
 ; OVER-DECLINE (NORTHSTAR goal 1; 57ch (A) says it must compile), kept loud until the
 ; cross-block placement is built.
-; RETIREMENT TRIGGER (L7): cross-block placement for 57ch (A) of a read that
-; POST-DOMINATES its gate (this file: the call sits at the merge); flip this file to
-; an accept with the clone call before `ry(h, .3)` in that change. That trigger
-; does NOT cover a read in a conditional arm after its gate, which does not
-; post-dominate it (lowering_stale_speccall_reject_sunk_read.ll): that shape waits on
-; an owner ruling (r2j3.6 follow-up F7), not on this lowering.
+; ⚠ BATCH 053 (bd 57ch.1) BUILT THAT CROSS-BLOCK PLACEMENT, AND THIS FILE STILL
+; DECLINES, for a reason the original trigger did not name: the span the call would
+; cross holds `puts`, an opaque declaration that may touch memory (it may perform an
+; observable event, owner ruling 2026-10-08). The 57ch.4 ruling of 2026-10-13 makes
+; its possible non-return crossable (`nounwind`, no `returns_twice`), but not its
+; possible ordered events: `callCrossable` still refuses it. The cross-block accept
+; with a store in the arm instead of `puts` is
+; lowering_stale_speccall_crossblock_placed_accept.ll.
+; RETIREMENT TRIGGER (L7, revised batch 053): a crossing rule for an opaque I/O call
+; (its body's ordered events), or 57ch (B). The sunk-read shape is
+; lowering_stale_speccall_reject_sunk_read.ll (bd aabo).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s

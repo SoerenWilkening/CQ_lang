@@ -1,3 +1,27 @@
+; lowering_qram_reject_stale_index_i64.ll — ACCEPT since bd test_C_libtooling-57ch.3 (batch 053;
+; owner ruling bd 57ch (A)). ⚠ VERDICT INVERTED: this file declined before batch 053.
+;
+; The stale QRAM access is PLACED before its staling gate with the address `gep`
+; (and any widening) it needs (StaleReadPlacement.h clause (b), a carried tainted
+; read): the QRAM call is minted at its new position, so it reads the index (and
+; stored value) register's pre-gate label, the stream the read-first program
+; lowers to.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck --check-prefix=WARN --allow-empty %s < %t.err
+; WARN-NOT: {{error|warning}}
+;
+; CHECK:      call void @cqrt_ry_i64(i32 %[[H:[a-z0-9]+]], double 5.000000e-01)
+; CHECK-NEXT: %[[X:[a-z0-9]+]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[H]])
+; CHECK-NEXT: %[[V:[0-9]+]] = call i32 @cqrt_qram_load_i32(i32 %{{[a-z0-9]+}}, i32 %[[X]])
+; CHECK-NEXT: call void @cq_template_trunc_i64_to_i32_unc(i32 %[[X]], i32 %[[H]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[X]])
+; CHECK-NEXT: call void @cqrt_ry_i64(i32 %[[H]], double 3.000000e-01)
+; CHECK:      call i32 @cqrt_measure_i32(i32 %[[V]])
+;
+; ── HISTORY: the pre-batch-053 header, kept verbatim (its verdict text is
+; superseded by the block above) ──
 ; lowering_qram_reject_stale_index_i64.ll — DECLINE: a bare i64 QRAM index read
 ; AFTER an in-place `cq_theta` on its register (bd test_C_libtooling-r2j3.2, P1
 ; silent miscompile). Plain C, clang -O1:
@@ -17,8 +41,6 @@
 ; RETIREMENT TRIGGER: this flips to ACCEPT when the stale-read lowering exists
 ; (owner question filed with r2j3.2); until then it must fail loudly.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: stale.c:5:11:{{.*}}cq opcode lowering: operand predates a non-diagonal gate
 
 @tbl = internal unnamed_addr constant [8 x i32] [i32 3, i32 1, i32 4, i32 1, i32 5, i32 9, i32 2, i32 6], align 16
 

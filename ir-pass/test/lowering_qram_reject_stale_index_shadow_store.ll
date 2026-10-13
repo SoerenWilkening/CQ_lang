@@ -1,3 +1,27 @@
+; lowering_qram_reject_stale_index_shadow_store.ll — ACCEPT since bd test_C_libtooling-57ch.3 (batch 053;
+; owner ruling bd 57ch (A)). ⚠ VERDICT INVERTED: this file declined before batch 053.
+;
+; The stale QRAM access is PLACED before its staling gate with the address `gep`
+; (and any widening) it needs (StaleReadPlacement.h clause (b), a carried tainted
+; read): the QRAM call is minted at its new position, so it reads the index (and
+; stored value) register's pre-gate label, the stream the read-first program
+; lowers to.
+; The STORE moves; it crosses no other memory access (the later load stays after).
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck --check-prefix=WARN --allow-empty %s < %t.err
+; WARN-NOT: {{error|warning}}
+;
+; CHECK:      call void @cqrt_ry_i64(i32 %[[Q:[a-z0-9]+]], double 5.000000e-01)
+; CHECK:      %[[X:[a-z0-9]+]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[Q]])
+; CHECK-NEXT: call void @cqrt_qram_store_i32(i32 %{{[a-z0-9]+}}, i32 %[[X]], i32 %{{[a-z0-9]+}})
+; CHECK-NOT:  @cqrt_ry_i64(i32 %[[Q]]
+; CHECK:      call void @cqrt_ry_i64(i32 %[[Q]], double 3.000000e-01)
+; CHECK:      call i32 @cqrt_qram_load_i32(
+;
+; ── HISTORY: the pre-batch-053 header, kept verbatim (its verdict text is
+; superseded by the block above) ──
 ; lowering_qram_reject_stale_index_shadow_store.ll — DECLINE (bd
 ; test_C_libtooling-r2j3.2): a Shadow (local-array) STORE whose bare i64 index
 ; register was rotated in place before the store. clang -O1 of
@@ -10,8 +34,6 @@
 ; MEASURED on the pre-fix binary: exit 0, `cqrt_qram_store_i32(a0, trunc(h1), …)`
 ; after both `ry(h1, ·)`, i.e. the store writes through the rotated register.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq opcode lowering: operand predates a non-diagonal gate
 
 declare i64 @cq_theta_sl(i64, double)
 declare i32 @cq_measure_si32(i32)
