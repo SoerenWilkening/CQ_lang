@@ -20,8 +20,8 @@
 ; sin²θ/2 ≈ 0.115 where the source gives 0 (the dead-record-live-across-move
 ; ruling of 2026-10-05). Stage 2b was clean; two M-A `live derived record`
 ; warnings fired, neither naming the store. Main declines this function loudly.
-; NOW (`neverWorse`): under `!TmplOk` the union's first frontier must cut nothing
-; (`GroupProbe::Cut` empty; R11 r7 — r6 asked this of QRAM stores only, which the
+; NOW (`neverWorse`): under `!TmplOk` the union must leave nothing cut
+; (`GroupProbe::Cut` empty; R11 r7-r8 — r6 asked this of QRAM stores only, which the
 ; measured-rail half of the cut escaped: ..._reject_measured_rail_cut.ll). It
 ; borrows the array and cuts the store, so the group splits and the template
 ; terminal gets main's decline. The store-only-the-clone-reaches form is

@@ -28,10 +28,10 @@ void GroupProbe::addPlan(const DataDag &D) {
       Frees.insert(R);
 }
 
-void GroupProbe::setCut(const DataDag &D, const DataDag &DR) {
-  SmallPtrSet<const CallInst *, 16> Kept(DR.Calls.begin(), DR.Calls.end());
+void GroupProbe::setCut(const DataDag &D,
+                        const SmallPtrSetImpl<Value *> &Exempt) {
   for (CallInst *G : D.Calls)
-    if (!Kept.count(G) && !D.MeasuredRails.count(railOf(G)))
+    if (!Gates.count(G) && !Exempt.count(railOf(G)))
       Cut.insert(G);
 }
 
@@ -45,11 +45,11 @@ bool within(const SubT &Sub, const SupT &Sup) {
 // The bd kyy1 "never worse" test — the header's two cases. `T` is the template
 // terminals' ProbeAsLoud, `TmplOk` its verdict; `U` is the union's Probe.
 // Under `!TmplOk`, `U.Cut` EMPTY — not `within(U.Cut, U.Gates)`, which is the same
-// predicate spelt as if it could differ: every plan walks inside the first
-// borrowed DAG, so no member of `Cut` is ever in `Gates`, and the M-B interior
-// partition's plans (which reverse a cut template record) run after every group
-// and are never recorded here (R11 r7). Only the union's cut is asked: it is the
-// group's emission that would leave a cut record unreversed where main declines.
+// predicate spelt as if it could differ: `Cut` is taken AFTER the plans commit and
+// excludes `Gates` by construction, and the M-B interior partition's plans (which
+// may reverse a cut template record) run after every group and are never
+// recorded here (R11 r7). Only the union's cut is asked: it is the group's
+// emission that would leave a cut record unreversed where main declines.
 bool neverWorse(const GroupProbe &U, const GroupProbe &T, bool TmplOk) {
   if (TmplOk)
     return within(T.Gates, U.Gates) && within(T.Frees, U.Frees);

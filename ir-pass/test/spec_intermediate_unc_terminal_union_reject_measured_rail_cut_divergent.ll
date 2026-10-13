@@ -34,8 +34,8 @@
 ; record a dephases k where the source does not (the dead-record-live-across-move
 ; ruling of 2026-10-05). It was a new customer of the bd r2j3.23 stream where main
 ; declines.
-; NOW (`neverWorse`, TerminalGroups.cpp): under `!TmplOk` the union's first frontier
-; must cut nothing (`GroupProbe::Cut` empty). It cuts the load, so the group splits
+; NOW (`neverWorse`, TerminalGroups.cpp): under `!TmplOk` the union must leave
+; nothing cut (`GroupProbe::Cut` empty). It cuts the load, so the group splits
 ; and the template terminals get main's decline.
 ; NOT FIXED HERE: bd r2j3.23 (main's own planner, all-template; probe q5 `qk`).
 ; RETIREMENT TRIGGERS. (a) bd r2j3.23 lands: re-measure main; the `Cut` clause may

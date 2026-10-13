@@ -32,13 +32,13 @@
 ; wrong (the dead-record-live-across-move ruling of 2026-10-05). e075f4ff's store
 ; clause could not see it: a load is no store, and it was the MEASURED-RAIL half of
 ; the first frontier that cut it.
-; NOW (`neverWorse`, TerminalGroups.cpp): under `!TmplOk` the union's first frontier
-; must cut nothing (`GroupProbe::Cut` empty). It cuts the load, so the group splits
+; NOW (`neverWorse`, TerminalGroups.cpp): under `!TmplOk` the union must leave
+; nothing cut (`GroupProbe::Cut` empty). It cuts the load, so the group splits
 ; and the template terminal gets main's decline.
 ; NOT FIXED HERE: the all-template twin (probe q5 `qk`, `int r = v * 7` in place of
 ; the clone call) is main's own planner and emits the same wrong stream at rc 0 —
 ; bd r2j3.23, pre-existing, unit D.
-; RETIREMENT TRIGGER: bd r2j3.23 lands (a record the first frontier cuts is reversed
+; RETIREMENT TRIGGER: bd r2j3.23 lands (a record a frontier borrow cuts is reversed
 ; before its parent's next move, or the pass fails loudly; or M-B admits a QRAM-load
 ; interior). Re-measure main: the `Cut` clause may then relax and this function
 ; lower, and an accept must show `cqrt_qram_load_i32_unc` before

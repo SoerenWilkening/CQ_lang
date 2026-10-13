@@ -31,8 +31,8 @@
 ; r reads the MEASURED p, so the union is measured upstream: its first frontier
 ; borrows the array (and p), the fixpoint plans {t2, q}, {t1, u} and {r, v}, and
 ; `arr[k] = 7` is never walked.
-; WHAT THIS PINS: `neverWorse` (TerminalGroups.cpp) must ask what the UNION's first
-; frontier cuts, not what the template terminals reach — here they reach no store.
+; WHAT THIS PINS: `neverWorse` (TerminalGroups.cpp) must ask what the UNION leaves
+; cut, not what the template terminals reach — here they reach no store.
 ; Shipped at e075f4ff as `U.Stores ⊆ U.Gates`; since R11 r7 the `GroupProbe::Cut`
 ; clause, which subsumes it. RED (mutant m1 of R11 r7, cq-opt 37397131): the
 ; template-only clause `within(T.Stores, U.Gates)` in its place — the R11 r6

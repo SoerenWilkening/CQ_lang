@@ -20,8 +20,9 @@
 ; @fr is the `!TmplOk` branch's ACCEPT direction (R11 r5; the decline direction is
 ;   the spec_intermediate_unc_terminal_union_reject_* family — borrowed_divergent,
 ;   measured_store, clone_store, measured_rail_cut{,_divergent}): the union's first
-;   frontier borrows only the measured q and cuts nothing but q's own Rys
-;   (`GroupProbe::Cut` empty, R11 r7), and only the fixpoint forces `a`.
+;   frontier borrows only the measured q and cuts nothing but q's own Rys, and
+;   only the fixpoint forces `a`, whose borrow cuts nothing but a's own `add`: so
+;   `GroupProbe::Cut`, taken against the FINAL frontier since R11 r8, is empty.
 ;   A mutant requiring the union to reverse-play that whole first DAG declines @fr
 ;   (measured, snapshot 4433275d: rc 1, `dead chain would free a measured register`).
 ; Stage 2b on this module: 8 frees verified, 0 violations; 2 rails left dirty —

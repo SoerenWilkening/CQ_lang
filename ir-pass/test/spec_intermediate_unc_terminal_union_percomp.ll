@@ -18,8 +18,9 @@
 ; upstream, so their one plan (no fixpoint) sits past the merge and DECLINES — main
 ; on this module: rc 1, `dead chain spans divergent control-flow arms` (measured,
 ; no-B binary). The clone terminal r reads the MEASURED w, so the union is measured
-; upstream; its first frontier borrows only w and cuts nothing but w's own Ry
-; (`GroupProbe::Cut` empty, R11 r7), the whole-group retry refuses on the
+; upstream; its first frontier borrows only w and cuts nothing but w's own Ry and
+; the fixpoint borrows nothing more (`GroupProbe::Cut` empty), the whole-group
+; retry refuses on the
 ; same divergence, and the fixpoint plans {t2, q}, {t1, u} and {r} each at its own
 ; anchor — every check main's planner asks is asked of each component.
 ; LIFO per component (pinned below): t2 and q reversed BEFORE the branch; t1 and u

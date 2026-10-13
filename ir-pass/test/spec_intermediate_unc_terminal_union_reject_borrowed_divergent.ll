@@ -26,7 +26,7 @@
 ; itself measured) and spec_intermediate_unc_terminal_union_reject_clone_store.ll
 ; (a store only the clone terminal's walk reaches).
 ; NOW (`neverWorse`, TerminalGroups.cpp): when the template plan does not emit, the
-; union's first frontier must cut nothing (`GroupProbe::Cut` empty; R11 r7, which
+; union must leave nothing cut (`GroupProbe::Cut` empty; R11 r7-r8, which
 ; subsumes r5's first-DAG containment and r6's store clause). Here it cuts the
 ; conditional store and q's prep Ry behind it, so the group splits and the template
 ; terminals get main's decline.

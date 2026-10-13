@@ -1249,9 +1249,16 @@ bool recordLiveAcrossMove(CallInst *G, Value *R, Value *P, Instruction *At,
 // have stopped before G), and the frontier is bounded by the function's values.
 // A round where every terminal is borrowed returns true with NO plan: every
 // terminal is a kept record and nothing is reversed or freed.
+//
+// `Frontier` is IN/OUT (bd p3kd.13, R11 r8): on `true` it is the FINAL frontier
+// the plans were judged against. Each member's kind is structural, so it is not
+// recorded twice: a QRAM array root (`isQramArrayHandle`, the predicate that
+// seeded it), else a measured rail, an open root or a forced record — the ruled
+// dispositions whose OWN gates the terminal-union probe exempts from
+// `GroupProbe::Cut` (TerminalGroups.h). Planning stays side-effect-free.
 bool planFrontierFixpoint(Function &F, ArrayRef<Value *> InsertTerms,
                           ArrayRef<Instruction *> InsertAts,
-                          InteriorPlan Frontier,
+                          InteriorPlan &Frontier,
                           const SmallPtrSetImpl<Value *> &Measured,
                           TaintSet &taint, DominatorTree &DT,
                           PostDominatorTree &PDT, LoopInfo &LI, bool IterLocal,
@@ -1383,6 +1390,20 @@ bool reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
 
   // 3. Recover the whole forward DAG (union over all Insert terminals).
   DataDag D = recoverDataDag(InsertTerms, taint, DT);
+  // R11 r8 — a probe's `Cut` is asked ONCE, of the COMMITTED plans, on every path
+  // that commits: what of the whole walk `D` no plan reverse-plays, beyond the
+  // ruled dispositions' own gates (`Borrowed` minus the QRAM array roots). A
+  // final-outcome gate set (L3), so a borrow path added later is covered too.
+  auto finish = [&](bool Ok, const SmallPtrSetImpl<Value *> &Borrowed) {
+    if (Ok && Probing) {
+      SmallPtrSet<Value *, 8> Exempt;
+      for (Value *B : Borrowed)
+        if (!isQramArrayHandle(B))
+          Exempt.insert(B);
+      Probe->setCut(D, Exempt);
+    }
+    return Ok;
+  };
   if (D.MeasuredUpstream) {
     // bd test_C_libtooling-01po.4 — THE QRAM-ARRAY FRONTIER RETRY. A load's
     // reversal needs the ARRAY's state at the load (and its index), not the
@@ -1458,14 +1479,12 @@ bool reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
       Frontier.Borrowed.insert(R);
     if (!Frontier.Borrowed.empty()) {
       DataDag DR = recoverDataDag(InsertTerms, taint, DT, &Frontier);
-      if (Probing)
-        Probe->setCut(D, DR);  // what this first borrow cuts (R11 r7, GroupProbe)
       Instruction *AtR = nullptr;
       SmallVector<Value *, 4> Ignored;  // whole-group retry: no widening
       if (judgeFrontierPlan(F, DR, InsertAts, Frontier.Borrowed,
                             D.MeasuredRails, taint, DT, PDT, LI, IterLocal, AtR,
                             Ignored) == FrontierVerdict::Emit) {
-        return commit(DR, AtR);
+        return finish(commit(DR, AtR), Frontier.Borrowed);
       }
       // bd test_C_libtooling-01po.12 / 01po.8 — the whole group refused; plan
       // again PER COMPONENT of the reduced DAG, each at its own reversal point,
@@ -1480,7 +1499,7 @@ bool reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
         bool All = !Plans.empty();
         for (FrontierComponentPlan &P : Plans)
           All = commit(P.D, P.At) && All;
-        return All;
+        return finish(All, Frontier.Borrowed);  // the FINAL frontier (r8)
       }
     }
     if (Loud)
@@ -1507,7 +1526,7 @@ bool reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
   }
 
   // 5. Reverse the whole DAG once at `At`.
-  return commit(D, At);
+  return finish(commit(D, At), SmallPtrSet<Value *, 1>());
 }
 
 namespace {
