@@ -51,7 +51,8 @@ struct TaintSet;
 //            `!TmplOk` and the union must leave nothing cut (`Cut`): it
 //            reverse-plays g, meeting the conflict, unless g's rail is exempt: a
 //            FORCED record or an open root of its frontier fixpoint, or a register
-//            root cut under one (r9), so g is not reverse-played. That needs, at
+//            root (r9; cut under any exempt rail, a measured one included), so g
+//            is not reverse-played. That needs, at
 //            once, a conflict
 //            with an adjoint minted before uncompute (BreakReversePlay/CondLiteral)
 //            or an earlier group's reversal, and a moved borrowed parent (or an
@@ -178,7 +179,9 @@ bool reverseTerminalGroup(llvm::Function &F, llvm::ArrayRef<llvm::CallInst *> Te
 //   * a rail measured on every path only JOINTLY, by several measurements none of
 //     which post-dominates it (`measuredOnEveryPath`, r9): its own gates count.
 // (r9's F2 removed one class: a register ROOT's own gates, cut under a forced
-// record, now count as nothing — spec_intermediate_unc_terminal_union_forced_root.ll.)
+// record or under a rail measured on every path, now count as nothing —
+// spec_intermediate_unc_terminal_union_forced_root.ll pins the forced case; R11
+// r10 probe p1 checked the measured case, which no fixture pins.)
 // Retirement trigger: unit D (bd r2j3.21 / r2j3.23 / r2j3.24) — once main's
 // planner names a cut record that would be left unreversed before its parent's
 // next move (a planner-side `firstHazardousCutRecord`), this clause asks that
