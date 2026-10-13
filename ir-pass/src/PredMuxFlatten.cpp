@@ -86,6 +86,7 @@
 #include "QramLowering.h"
 #include "SelectClassify.h"  // isCondRailLeaf (bd fn1q inc 2 — the ONE spelling, Rule 14)
 #include "TaintPropagation.h"
+#include "TaintedControlDependence.h"  // isTaintedBranchTerminator (bd dm7f.24)
 
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
@@ -125,16 +126,11 @@ namespace {
 // Eligibility predicates (pure — detect-before-mutate, Rule 9)
 // ---------------------------------------------------------------------------
 
-// A tainted conditional terminator: the only two shapes PredMux roots or
-// admits inside a region. (Everything else — ret/unreachable/invoke/… — fails
-// E3 and leaves.)
-bool isTaintedCtrlTerm(const Instruction *T, const TaintSet &Taint) {
-  if (const auto *BI = dyn_cast<BranchInst>(T))
-    return BI->isConditional() && Taint.Tainted.count(BI->getCondition());
-  if (const auto *SI = dyn_cast<SwitchInst>(T))
-    return Taint.Tainted.count(SI->getCondition());
-  return false;
-}
+// A tainted conditional terminator — the only two shapes PredMux roots or admits
+// inside a region (everything else — ret/unreachable/invoke/… — fails E3 and
+// leaves) — is asked with `isTaintedBranchTerminator`
+// (TaintedControlDependence.h), which replaced the identical file-local
+// `isTaintedCtrlTerm` here (bd dm7f.24, R12: one spelling).
 
 // bd p3kd.7.2 (owner ruling 2026-10-06, bd memory
 // owner-ruling-clone-classical-control-2026-10-06) — the CLONE-MODE root set.
@@ -3064,7 +3060,7 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
     const Instruction *Term = B->getTerminator();
     if ((isa<BranchInst>(Term) && cast<BranchInst>(Term)->isConditional()) ||
         isa<SwitchInst>(Term))
-      if (isTaintedCtrlTerm(Term, Taint))
+      if (isTaintedBranchTerminator(Term, Taint))
         NestedTainted = true;
   }
   unsigned NumMergePhis = 0;
@@ -3467,7 +3463,7 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
     // anti-overlap argument rests on `ControlDetect`'s `hasTaintedCondBranch`,
     // which is `dyn_cast<BranchInst>` + `isConditional()` + tainted — it is FALSE
     // for a block ending in a tainted `switch`. Generalizing this to the
-    // switch-aware `isTaintedCtrlTerm` (used one screen up, so the edit looks
+    // switch-aware `isTaintedBranchTerminator` (used one screen up, so the edit looks
     // harmless) would silently void the whole paragraph above: a merge ending in
     // a tainted switch is 4.5 `SwitchClassify` territory, NOT a categorical
     // decline. That shape is a deliberate residual, filed as bd `ih70`.
@@ -5425,7 +5421,7 @@ bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll,
     // too (see `isConditionalCtrlTerm`).
     const bool CloneBody = ClaimAll && hasTaintedArgument(F, Taint);
     auto isRoot = [&](const Instruction *T) {
-      return isTaintedCtrlTerm(T, Taint) ||
+      return isTaintedBranchTerminator(T, Taint) ||
              (CloneBody && isConditionalCtrlTerm(T));
     };
     bool HasTaintedCtrl = false;

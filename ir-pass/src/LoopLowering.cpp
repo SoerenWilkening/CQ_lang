@@ -1345,13 +1345,8 @@ Instruction *taintedExit(Loop *L, const TaintSet &taint) {
   L->getExitingBlocks(Exiting);
   for (BasicBlock *EB : Exiting) {
     Instruction *T = EB->getTerminator();
-    if (auto *BI = dyn_cast<BranchInst>(T)) {
-      if (BI->isConditional() && taint.Tainted.count(BI->getCondition()))
-        return T;
-    } else if (auto *SI = dyn_cast<SwitchInst>(T)) {
-      if (taint.Tainted.count(SI->getCondition()))
-        return T;
-    }
+    if (isTaintedBranchTerminator(T, taint))  // bd dm7f.24: the one spelling.
+      return T;
   }
   return nullptr;
 }
@@ -2959,15 +2954,10 @@ bool tryBreak(Loop *L, Function &F, TaintSet &taint, WidthDispatch &wd,
   // is not the proven invertible single-break shape (ride L1).
   for (BasicBlock *BB : L->blocks()) {
     Instruction *T = BB->getTerminator();
+    // (bd dm7f.24: the inline `br`/`switch` re-test that followed this line was
+    // the same predicate spelled a second time, and is gone — R12.)
     if (T != TheExitT && isTaintedBranchTerminator(T, taint))
       return false;  // a second tainted br/switch (non-exiting control) in body.
-    if (auto *BrI = dyn_cast<BranchInst>(T))
-      if (T != TheExitT && BrI->isConditional() &&
-          taint.Tainted.count(BrI->getCondition()))
-        return false;
-    if (auto *SwI = dyn_cast<SwitchInst>(T))
-      if (T != TheExitT && taint.Tainted.count(SwI->getCondition()))
-        return false;
     for (Instruction &I : *BB) {
       if (isa<GetElementPtrInst>(I) || isa<LoadInst>(I) || isa<StoreInst>(I))
         for (Value *Op : I.operands())
@@ -3566,13 +3556,8 @@ bool markIfIterationLocal(Loop *L, TaintSet &taint, LoopInfo &LI) {
   for (BasicBlock *BB : L->blocks()) {
     // (L2) tainted control in the body ⇒ the existing ControlDetect owner's.
     Instruction *T = BB->getTerminator();
-    if (auto *BI = dyn_cast<BranchInst>(T)) {
-      if (BI->isConditional() && taint.Tainted.count(BI->getCondition()))
-        return false;
-    } else if (auto *SI = dyn_cast<SwitchInst>(T)) {
-      if (taint.Tainted.count(SI->getCondition()))
-        return false;
-    }
+    if (isTaintedBranchTerminator(T, taint))  // bd dm7f.24: the one spelling.
+      return false;
     if (LI.getLoopFor(BB) != L) {
       // A strictly-deeper SUBLOOP with quantum content is a NESTED quantum loop,
       // not a single-level iteration-local loop: a value rotated by the subloop
@@ -5147,13 +5132,9 @@ bool railLocalQualifies(Loop *L, TaintSet &taint, LoopInfo &LI,
   };
   for (BasicBlock *BB : L->blocks()) {
     Instruction *T = BB->getTerminator();
-    if (auto *BI = dyn_cast<BranchInst>(T)) {
-      if (BI->isConditional() && taint.Tainted.count(BI->getCondition()))
-        return refuse(T);  // (L2) tainted control still standing — not ours.
-    } else if (auto *SI = dyn_cast<SwitchInst>(T)) {
-      if (taint.Tainted.count(SI->getCondition()))
-        return refuse(T);
-    }
+    // (L2) tainted control still standing — not ours (bd dm7f.24: one spelling).
+    if (isTaintedBranchTerminator(T, taint))
+      return refuse(T);
     if (LI.getLoopFor(BB) != L) {
       // A strictly-deeper SUBLOOP with quantum content runs its gates N times
       // per outer iteration while the spine would reverse them ONCE — the

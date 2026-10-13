@@ -35,9 +35,15 @@ struct TaintSet;
 // from LoopLowering.cpp (bd r2j3.6 review rounds 3-4): `controlDependsOnTaintedBranch`
 // below, `instUnderTaintedControl` (QramLowering.cpp) and LoopLowering's `tryCaseA`
 // gate L2, wt8u hand-off and break-exit count (the former `isTaintedExitingTerminator`)
-// ask it. ⚠ NOT YET THE ONLY SPELLING: identical bodies remain as
-// `isTaintedCtrlTerm` (PredMuxFlatten.cpp) and `isTaintedControlTerminator`
-// (ReturnMerge.cpp); consolidating them is an r2j3.6 follow-up.
+// ask it. bd dm7f.24 moved these identical bodies onto it: PredMux's
+// `isTaintedCtrlTerm` (region roots and the W NestedTainted witness), ReturnMerge's
+// `isTaintedControlTerminator` (`classifyExits`), and in LoopLowering the inline
+// break-body re-test, `taintedExit`, Case B's gate L2 and the in-loop rail mark's L2
+// refusal. ⚠ NOT YET THE ONLY SPELLING — R12 debt, outside that change's file set:
+// identical bodies remain in ByRefInline.cpp (`underTaintedControl`'s inner test,
+// whose comment cites a `ByRefMath.cpp` that no longer exists) and QramLowering.cpp
+// (`readInsideTaintedRegion`), and TaintPropagation's `terminatorIsClassical` is the
+// same test negated over br/switch. Merging them is a filed follow-up.
 bool isTaintedBranchTerminator(const llvm::Instruction *T, const TaintSet &taint);
 
 // True iff `I`'s block is (transitively) control-dependent on a terminator for which

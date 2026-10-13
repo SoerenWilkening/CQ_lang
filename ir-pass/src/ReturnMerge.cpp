@@ -4,7 +4,8 @@
 #include "ReturnMerge.h"
 
 #include "ControlPlan.h"        // diagnoseUnderControl
-#include "ControlShape.h"       // hasTaintedCondBranch, regionEntryInLoop
+#include "ControlShape.h"       // regionEntryInLoop
+#include "TaintedControlDependence.h"  // isTaintedBranchTerminator (bd dm7f.24)
 #include "TaintPropagation.h"   // TaintSet, propagateFromSeeds
 
 #include "llvm/ADT/DepthFirstIterator.h"
@@ -92,16 +93,13 @@ StringRef mustTailForwardBlocksDemotion(const CallInst *CI) {
 
 namespace {
 
-// Is `Term` a tainted-control terminator — the two `detectControlRegions`
-// dispatches (`br i1` via the shared `hasTaintedCondBranch`, and `switch` on a
-// tainted scrutinee)? A `select` is not control flow and ends no block.
-bool isTaintedControlTerminator(Instruction *Term, TaintSet &taint) {
-  if (hasTaintedCondBranch(Term->getParent(), taint))
-    return true;
-  if (auto *SI = dyn_cast<SwitchInst>(Term))
-    return taint.Tainted.count(SI->getCondition());
-  return false;
-}
+// A tainted-control terminator — the two `detectControlRegions` dispatches (a
+// conditional `br` and a `switch` on a tainted condition; a `select` is not
+// control flow and ends no block) — is asked with `isTaintedBranchTerminator`
+// (TaintedControlDependence.h), which replaced the identical file-local
+// `isTaintedControlTerminator` here (bd dm7f.24, R12). Its one caller passes a
+// block's own terminator, so the old `hasTaintedCondBranch(Term->getParent())`
+// spelling read the same instruction.
 
 // Are two or more distinct `ret` blocks reachable from `Term`'s block? An exact
 // walk (LLVM's `depth_first`, each block once) — not `isPotentiallyReachable`,
@@ -175,7 +173,7 @@ ExitDisp classifyExits(Function &F, TaintSet &taint,
   std::optional<PostDominatorTree> PDT;  // built on the first candidate only
   for (BasicBlock &BB : F) {
     Instruction *T = BB.getTerminator();
-    if (!T || !isTaintedControlTerminator(T, taint) || !reachesTwoReturns(T))
+    if (!T || !isTaintedBranchTerminator(T, taint) || !reachesTwoReturns(T))
       continue;
     if (!PDT)
       PDT.emplace(F);
