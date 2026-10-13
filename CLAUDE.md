@@ -132,10 +132,24 @@ Twin disagreement remains a failure to investigate.
 **R11 — Core lowering changes get adversarial review, not just green tests.** Core =
 `TaintPropagation`, the control emitters, `FreePoint`, `EmitInverse`, `ChainWalk`,
 `Uncomputation`, `RotationLowering`, `MergePhiPeel`, the condition-wire fences. Before
-merging, clear the change via an independent reviewer using analytic or trace-level
-reasoning. Budget ≥3 rounds up front: the measured hit rate says the next round finds
-something (7.4 `break`: 13 holes over three rounds; one core function: 8 findings over
-6 rounds, two introduced by fixes). A green suite alone never clears a core change.
+merging, clear the change through independent reviewers who use analytic or trace-level
+reasoning. The review has two rounds (owner ruling 2026-10-13, bd memory
+`owner-ruling-r11-wide-then-narrow-2026-10-13`):
+
+- **Round 1 is wide.** Two or three reviewers work in parallel over the WHOLE change,
+  each with a disjoint set of hypotheses and at most six probes. Every finding names
+  the invariant it breaks. The fix restores that invariant, typically with a
+  final-outcome gate-set check (L3), and never patches the one probe.
+- **Round 2 is narrow.** One reviewer reads the fix delta only. Stop when it is clean;
+  otherwise repeat round 2 on the new delta.
+
+A non-core change gets round 1 with one reviewer.
+
+Why two rounds and not one: fixes introduce bugs. In one core function, 2 of 8
+findings came from fixes. Why not more: batch 052's `p3kd.13` took ten delta-only rounds
+because each fix patched one path of a single hole class and each round saw only its own
+delta; a round-8 hole had existed since round 5. A green suite alone never clears a core
+change.
 
 **R12 — Reuse before reinvention.** Check `OpcodeSupport`/`ArithLowering`/`CompareLowering`/
 `CastLowering`, the `EmitInverse` adjoint spine, the uncompute spine
@@ -222,8 +236,8 @@ runs only the fixture written to kill it. Between checkpoints, run no lit or cte
 and read the IR. Never re-run a passing set to confirm. Never run `ir-pass-lit` or a
 label tier while iterating. Keep probe matrices to the shapes that test a stated
 hypothesis. Reviewers re-run none of the implementer's tests (no suites, no fixtures, no
-corpus re-lowering); a review round is at most six targeted probes on the highest-risk
-hypotheses, reported findings-first. Report the invocation count. Exceeding the budget
+corpus re-lowering). Each reviewer in a round runs at most six targeted probes on the
+highest-risk hypotheses in its own disjoint set and reports findings first (R11). Report the invocation count. Exceeding the budget
 needs the owner's approval. A coordinator assigns each parallel unit a disjoint
 fixture/slice set and runs the one batch gate below.
 
