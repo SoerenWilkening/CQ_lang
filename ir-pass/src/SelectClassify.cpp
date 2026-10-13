@@ -1302,18 +1302,12 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   // (bd test_C_libtooling-drbq Inc 2b, control-in-place-PRD §12.3). ONE angle
   // shape now LOWERS — a `double` select over two CLASSICAL angles whose SOLE
   // user is the arg-1 slot of a chained `cq_theta`/`cq_phi`, under a bare
-  // single-user tainted compare, all three in one block. It is emitted BY
-  // DIFFERENCE (`R(h,B); f = icmp; R_controlled(f,h,A−B); icmp_unc; free`), which
-  // is exact IN REAL ARITHMETIC by angle additivity on one axis (in IEEE double
-  // the realized true-arm angle is `B + fl(A-B)`, `|delta| <= 1/2 ulp(A-B)`, so
-  // BOTH ARMS MUST BE `ConstantFP` and their evaluated residual must sit under a
-  // placeholder 2^-40 rad; a RUN-TIME arm DECLINES right here, because the
-  // synthesized `fsub` carries an error UNBOUNDED in absolute radians and can be
-  // `inf`/`NaN` from two FINITE arms — round-1 Rule-13 review lens L7-F1,
-  // both-halves wording from the round-2 one lens R1 item 1, constant-arms-only
-  // narrowing from the CLEARANCE review, finding F-11 / owner option (2)) and is
-  // byte-identical to the
-  // manual by-difference twin the Inc-1/2a in-place diamond already lowers. It is
+  // single-user tainted compare, all three in one block. Since bd dm7f.6 (owner
+  // ruling 2026-10-13) it is emitted in the X-BRACKET form (`f = icmp;
+  // R_controlled(f,h,A); x(f); R_controlled(f,h,B); x(f); icmp_unc; free`),
+  // byte-identical to the if/else in-place Ry arm; each arm reaches one gate
+  // verbatim, so run-time and non-finite arms are admitted (the by-difference
+  // stream, its 2^-40 bound and its constant-arms-only admission are retired). It is
   // the IR `clang -O1` makes of `cq_theta(&r, q==5 ? A : B);` and of
   // `if (q==5) cq_phi(A); else cq_phi(B);` (SimplifyCFG merges the phase arms into
   // ONE call with a select on the ANGLE). ⚠ Since bd test_C_libtooling-fmt3

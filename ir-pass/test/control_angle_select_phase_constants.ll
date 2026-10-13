@@ -15,11 +15,9 @@
 ; `e^{i(A−B)}`, which is what `P(A)`-on-1 / `P(B)`-on-0 produces, times an
 ; unobservable global phase.
 ;
-; CONTRAST WITH THE Ry STEM, which is UNCHANGED and must stay so: 2b lowers that
-; one BY DIFFERENCE (`R(h,B)` unconditional + one `R_controlled(f,h,A−B)`), which
-; realizes `A − B` as a `double` the source never wrote — hence its whole
-; arm-value fence and the clearance narrowing to CONSTANT arms (finding F-11).
-; None of that has a subject here; see `control_angle_select_phase_runtime.ll`.
+; CONTRAST WITH THE Ry STEM: since bd dm7f.6 it performs no arithmetic either
+; (the X-bracket form `R_controlled(f,h,A); x(f); R_controlled(f,h,B); x(f)`), so
+; the by-difference arm-value fence it once needed is retired on both stems.
 ;
 ; THERE IS NO POLARITY CASE. A `select` means "A when the condition is 1", full
 ; stop — unlike a `br` diamond, whose gate arm `clang -O1` often makes the FALSE

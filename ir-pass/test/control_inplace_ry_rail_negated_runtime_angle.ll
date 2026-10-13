@@ -17,12 +17,11 @@
 ; bit — and `fneg` of a finite value is finite, so the identity `Ry(θ)·Ry(−θ) = I`
 ; can only fail on an angle that was ALREADY non-finite, which is an ill-formed
 ; CQ program in every spelling (`Ry(NaN)` lands on the taken branch of the
-; compare twin too). The constant case is the one the compiler can SEE, and it
-; declines. The residual — a run-time angle that is non-finite AT RUN TIME — and
-; the owner option that removes it for every angle (the 1b-B.1 `CopyRailRoot`
-; ancilla with the `cqrt_x` bracket ON THE ANCILLA, which fires exactly ONE
-; rotation) are recorded at the clause in `ArmClassify.cpp` and in
-; `FIX_l4x4b_R1.md`.
+; compare twin too). The constant case used to decline (F-1); bd dm7f.6 retired
+; that clause under owner ruling 2026-10-13 (`owner-ruling-nonfinite-angle-
+; identity`: a non-finite rotation is the identity, so `Ry(θ)·Ry(−θ)` is `I·I`
+; for every θ), so constant and run-time non-finite angles now share this
+; accept (`control_inplace_ry_rail_negated_{inf,nan,neginf}_angle.ll`).
 ;
 ; THE `fneg` IS IN THE ASSERTIONS ON PURPOSE: it is the ONE instruction the
 ; emitter inserts between the two gates, it is CLASSICAL, and the round-1 review

@@ -10,7 +10,12 @@
    by-difference form the emitter produces is the `==` one with a NEGATIVE
    difference. Writing the twin as `q != 5` would produce a `cqrt_x`-bracketed
    diamond and a DIFFERENT (also correct) stream, which would make the
-   comparison meaningless. */
+   comparison meaningless.
+
+   ⚠ HISTORY SINCE bd dm7f.6: the subject emits the X-bracket stream of the
+   if/else (`slice_control_angle_select_ry_ne.c`), which is now its byte twin
+   (`e2e-angle-select-ry-ne-twin-identical`); this file still pins the
+   by-difference in-place diamond on its own. */
 int slice(void) {
     int q = 3;
     int r = 7;

@@ -50,9 +50,11 @@ entry:
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
 ; the derived condition rail
 ; CHECK-NEXT: %[[D:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[Q]], i32 -6)
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_ult_i32_hl(i32 %[[D]], i32 94)
-; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 0x3FE3333333333334)
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cq_template_icmp_ult_i32_hl_unc(i32 %[[F]], i32 %[[D]], i32 94)
 ; the derived rail is uncomputed and freed by the whole-DAG spine, AFTER the
 ; strip has read it
@@ -70,7 +72,6 @@ entry:
 
 ; NOROUTE:     define{{.*}}@example
 ; NOROUTE-NOT: call void @cqrt_cswap
-; NOROUTE-NOT: call void @cqrt_x
 ; NOROUTE-NOT: select
 
 ; TWO frees: the derived condition rail and the flag. The two REGISTERS are left

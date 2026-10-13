@@ -25,9 +25,9 @@
 ; by-difference stream (unconditional `rz(q, b)` plus `rz_controlled(f, q,
 ; a - b)`, with its Sterbenz exactness argument, constant-arm fence and the
 ; ROUND-2 / CLEARANCE corrections once recorded here) is pre-3qlq history for
-; this stem; the clearance's CONSTANT-arms-only narrowing now binds the Ry stem
-; (`control_angle_select_reject_runtime_arms.ll`), while the phase stem admits
-; run-time arms (`control_angle_select_phase_runtime.ll`).
+; this stem; the Ry stem's constant-arms-only narrowing was retired by bd dm7f.6
+; (X-bracket form, `control_angle_select_ry_runtime_arms.ll`), and the phase stem
+; admits run-time arms (`control_angle_select_phase_runtime.ll`).
 ;
 ; NOTHING QUANTUM ENTERS THE ANGLE SLOT — every angle emitted is a classical
 ; constant (`0.75`, `0.25`), which is what the f64/angle prohibition (Rule 3)

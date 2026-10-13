@@ -16,8 +16,8 @@
 ;
 ; WHY THE PROPERTY NO LONGER EXISTS: under kickback NOTHING IS SUBTRACTED.  Each
 ; `ConstantFP` arm reaches its OWN `cqrt_rz_i1` VERBATIM under its own polarity
-; bracket, so delta is 0 BY CONSTRUCTION and the `2^-40`
-; `kAngleSelectMaxRoundingRad` fence has no object.  Per branch, with
+; bracket, so delta is 0 BY CONSTRUCTION and the 2^-40 residual bound (retired
+; outright by bd dm7f.6) has no object.  Per branch, with
 ; `f = [q == 5]` and `Rz = diag(1, e^{i0})`: on `q == 5` the first gate sees |0>
 ; (a no-op) and the second applies `e^{i·1.0}`; on `q != 5` the bracket reverses
 ; the roles and the branch gets `e^{i·1e300}`.  The two angles below are the
@@ -25,8 +25,8 @@
 ;
 ; ⚠ THIS CELL DOES **NOT** DEPEND ON PRD §12 Q3 — both arms are `ConstantFP`, so
 ; it stands however the owner answers the run-time-arm question.  Its `fsub`-fence
-; sibling `control_angle_select_reject_rounding_pi_1e16.ll` is the Ry stem and is
-; UNAFFECTED; that stem still lowers by difference and still performs the `fsub`.
+; sibling, the Ry stem's pi/1e16 cell, was a decline until bd dm7f.6 made that
+; stem arithmetic-free too (X-bracket form); it is now `control_angle_select_ry_verbatim_pi_1e16.ll`.
 ;
 ; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
 ; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)
@@ -111,7 +111,7 @@ entry:
 ; NOROUTE-NOT: cq_phi_
 ;   ^ the register form is a RESERVED NAME and declines (round-1 F-L6-1)
 ; NOROUTE-NOT: fsub double
-;   ^ the 2b BY-DIFFERENCE arithmetic. A kickback passes each arm's angle to its OWN gate VERBATIM, so no `fl(A-B)` is ever computed and the whole 2b residual (unbounded absolute-radian error, inf/NaN from two finite arms, the 2^-40 kAngleSelectMaxRoundingRad fence) has no object. This is the instruction a reviewer re-enabling the by-difference path would reintroduce.
+;   ^ the 2b BY-DIFFERENCE arithmetic. A kickback passes each arm's angle to its OWN gate VERBATIM, so no `fl(A-B)` is ever computed and the whole 2b residual (unbounded absolute-radian error, inf/NaN from two finite arms, the 2^-40 residual bound that bd dm7f.6 retired) has no object. This is the instruction a reviewer re-enabling the by-difference path would reintroduce.
 ; NOROUTE-NOT: fadd double
 ;   ^ the other half of the by-difference arithmetic (the unconditional twin's angle recombination).
 

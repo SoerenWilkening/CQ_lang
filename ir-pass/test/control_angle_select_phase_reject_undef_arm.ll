@@ -9,10 +9,12 @@
 ; angles (it emits `P(B)` on `¬f` and `P(A)` on `f`, each value passed through
 ; verbatim), so every clause of that fence has no subject. That is TRUE of the
 ; non-finite-arm, non-finite-difference, rounding-bound and constant-arms-only
-; clauses — all four fence the `A − B` subtraction that only the Ry stem
-; performs — and FALSE of clause (1), `valueCarriesUndef`, which is about a value
-; that is not a NUMBER AT ALL. Passing it through verbatim is exactly how it
-; reaches a gate slot.
+; clauses — all four fenced the `A − B` subtraction the Ry stem then performed —
+; and FALSE of clause (1), `valueCarriesUndef`, which is about a value that is not
+; a NUMBER AT ALL. Passing it through verbatim is exactly how it reaches a gate
+; slot. (Since bd dm7f.6 the four are retired with that subtraction and clause
+; (1) is `angleSelectArmsDefined`, asked for BOTH stems; this decline is
+; unchanged.)
 ;
 ; MEASURED at the increment's HEAD: this module emitted
 ; `call void @cqrt_rz_i1(i32 %f, double undef)` — a gate whose angle operand

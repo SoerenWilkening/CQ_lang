@@ -1,6 +1,17 @@
 #!/usr/bin/env python3
 """angle_select_twin_matrix.py — the ANGLE-SELECT-EQUALS-BY-DIFFERENCE witness.
 
+*** RETIRED by bd test_C_libtooling-dm7f.6 (2026-10-13). *** Its oracle, the
+by-difference twin `R(r, B); if (c) R(r, A - B);`, is no longer the stream the
+compiler emits: the Ry angle select is lowered in the X-bracket form of the
+if/else in-place Ry arm (owner ruling 2026-10-13,
+`owner-ruling-angle-select-xbracket`), run-time arms are accepted, and the twin
+shared the very rounding it was meant to witness (bd memory
+`by-difference-twin-blind-to-arithmetic`). The witness now lives in the e2e byte
+gates `e2e-angle-select-ry{,-ne,-forward-loop}-twin-identical`, which compare
+the ternary spelling with the IF/ELSE spelling. `main()` exits without running.
+The text below is the instrument's history, kept for its measured tables.
+
 bd `test_C_libtooling-drbq` Increment 2b (angle-select by difference, both
 rotation stems). Committed as an INSTRUMENT, not as a ctest gate — an owner cost
 decision is pending (bd `drbq.9`), the same status
@@ -713,6 +724,8 @@ def _star(t):
 
 
 def main():
+    sys.exit("angle_select_twin_matrix.py is RETIRED (bd dm7f.6): see the module "
+             "docstring; the e2e twin gates replace it.")
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=os.getcwd())
     ap.add_argument("--include-dir", default="",

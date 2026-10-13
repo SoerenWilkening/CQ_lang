@@ -11,8 +11,11 @@
    f = 0: Ry(.25)|6⟩; f = 1: Ry(.25 + .5) = Ry(.75)|6⟩ — the runtime-base angle
    select's by-difference stream exactly (.75 − .25 = .5 is exact in binary64). This
    golden is produced byte for byte by the frozen ORACLE (main 9a230646) — measured,
-   TRACK_Z0RE.md §R2 — so `e2e-z0re-angle-select-runtime-base-exact-inplace-identical`
-   compares the z0re stream against cleared code, not against itself. */
+   TRACK_Z0RE.md §R2. Since bd dm7f.6 the angle select emits the X-bracket
+   stream (`mint; alloc(6); cRy(.75); x; cRy(.25); x`), so the two goldens are the
+   same unitary but no longer the same bytes, and the byte gate is retired (see
+   tests/e2e/CMakeLists.txt: the if/else spelling that would match declines
+   `if/else state prep allocates two rails`, bd gjn2). */
 __attribute__((noinline)) int slice(int m) {
     int q = m; cq_theta(&q, 0.5);
     int r = 6; cq_theta(&r, 0.25);

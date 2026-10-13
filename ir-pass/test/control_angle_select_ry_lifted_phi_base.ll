@@ -56,7 +56,6 @@ join:
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[QC]], double 5.000000e-01)
 ; CHECK:      %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 7)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 2.500000e-01)
-; CHECK:      call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
 ; the CONDITION REGISTER: `%[[QC]]` was ANCHORED above at its own `cqrt_alloc`,
 ; so the mint and the strip must both name THAT rail — not merely the same one as
 ; each other (round-1 Rule-13 review L6-N3 closed mint-vs-strip DISAGREEMENT; the
@@ -67,8 +66,11 @@ join:
 ; relabels the very rail being compared, so the strip does not recompute the
 ; predicate the mint read, the flag does not return to |0> and its `cqrt_free` is
 ; a hidden measurement).
-; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[QC]], i32 5)
-; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 0x3FE3333333333334)
+; CHECK:      %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[QC]], i32 5)
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[QC]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; A STRAY ROTATION AFTER THE EMITTED STREAM was invisible to every one of the 17
@@ -82,7 +84,6 @@ join:
 
 ; NOROUTE:     define{{.*}}@example
 ; NOROUTE-NOT: call void @cqrt_cswap
-; NOROUTE-NOT: call void @cqrt_x
 ; NOROUTE-NOT: select
 ; the one-register phi is LIFTED, not left as a quantum mux
 ; NOROUTE-NOT: phi i32

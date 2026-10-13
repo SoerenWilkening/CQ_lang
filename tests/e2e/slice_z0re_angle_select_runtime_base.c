@@ -4,12 +4,12 @@
      int t = m + 1; int r; if (q > 3) { r = t; cq_theta(&r, .7); } else { r = t; cq_theta(&r, .2); }
 
    `-O1` sinks the two thetas into ONE `@cq_theta_*(t, select(q > 3, .7, .2))`.
-   Expected stream (by difference on a FRESH rail): alloc(t); ry(h, .2) — the
-   else-arm angle, UNCONDITIONAL; the flag from `q > 3`; ry_controlled(f, h,
-   fl(.7 - .2)); the flag stripped and freed. On f=1 the rail sees Ry(.2)·Ry(.5) =
-   Ry(.7), on f=0 Ry(.2): the source's if/else on ONE rail prepared at |t⟩ on both
-   branches. The trailing `+ t` reads the classical base AFTER the gate — legal, it is
-   not a record of the rotated rail.
+   Expected stream (on a FRESH rail; X-bracket since bd dm7f.6, golden
+   regenerated from the by-difference `fl(.7 - .2)` gate): the flag from `q > 3`;
+   alloc(t); ry_controlled(f, h, .7); x(f); ry_controlled(f, h, .2); x(f); the
+   flag stripped and freed. On f=1 the rail sees Ry(.7), on f=0 Ry(.2): the
+   source's if/else on ONE rail prepared at |t⟩ on both branches. The trailing `+ t` reads the classical base
+   AFTER the gate — legal, it is not a record of the rotated rail.
    bd test_C_libtooling-z0re — OWNER RULING 2026-09-28, option (a): a RUNTIME
    state-prep seed (PRD §14.11 Q2, bd drbq.14) and an UNTAINTED Ry-stem angle-select
    base are admitted on the DIRECT path, so the hand-inlined twin and the

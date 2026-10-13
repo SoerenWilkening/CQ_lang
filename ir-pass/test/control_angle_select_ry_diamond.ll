@@ -1,5 +1,6 @@
-; control_angle_select_ry_diamond.ll — ACCEPT spec, the FLAGSHIP angle-select by
-; difference (control-in-place-PRD §12.3, bd test_C_libtooling-drbq Inc 2b).
+; control_angle_select_ry_diamond.ll — ACCEPT spec, the FLAGSHIP Ry angle select
+; (control-in-place-PRD §12.3, bd test_C_libtooling-drbq Inc 2b; X-bracket form
+; since bd dm7f.6, owner ruling 2026-10-13).
 ;
 ;     int q = 3; cq_theta(&q,.5); int r = 7; cq_theta(&r,.25);
 ;     if (q == 5) cq_theta(&r, .9); else cq_theta(&r, .3);
@@ -19,40 +20,27 @@
 ; measured to give the pre-fmt3 fold's function bodies). The IR and this fixture are
 ; unchanged; only the C spelling that reaches them moved.
 ;
-; LOWERED BY DIFFERENCE (control-in-place-PRD §12.3): `R(h, B)` unconditional,
-; the ordinary flag mint, ONE `cqrt_ry_<W>_controlled(f, h, A-B)`, the
-; ordinary `_unc` strip, ONE `cqrt_free`. Exact IN REAL ARITHMETIC by angle
-; additivity on one axis (`R(A) = R(B).R(A-B)`) — in IEEE double the emitted
-; true-arm angle is `B + fl(A-B)`, so `|delta| <= 1/2 ulp(A-B)`; constant arms
-; are fenced at the placeholder `kAngleSelectMaxRoundingRad` = 2^-40 rad, and a
-; RUN-TIME arm DECLINES — the accept class is CONSTANT arms only, because for a
-; run-time arm the compiler would synthesize an `fsub` the source never wrote
-; whose error is unbounded in absolute radians and whose result can be
-; `inf`/`NaN` from two FINITE arms (round-1 Rule-13 review lens L7-F1 for the
-; bound; the Rule-13 CLEARANCE review, finding F-11 / owner option (2), for the
-; narrowing — an earlier version of this line said "runtime arms carry the
-; bound"; see `control_angle_select_accept_rounding_flagship_bound.ll`). No CFG
-; surgery, no route, no work rail, no `cqrt_x` bracket (a select always means
-; "A when the flag is 1", so there is no polarity case at all).
+; LOWERED IN THE X-BRACKET FORM (bd dm7f.6, owner ruling 2026-10-13): the
+; ordinary flag mint, `cqrt_ry_<W>_controlled(f, h, A)`, `cqrt_x(f);
+; cqrt_ry_<W>_controlled(f, h, B); cqrt_x(f)`, the ordinary `_unc` strip, ONE
+; `cqrt_free`: byte for byte the if/else in-place Ry arm's stream. f = 1 fires
+; `R(.9)` only, f = 0 `R(.3)` only; each slot holds a double the source wrote.
+; No CFG surgery, no route, no work rail; the `cqrt_x` pair is on the flag
+; ancilla, not a polarity fix (a select always means "A when the flag is 1").
+;
+; REGENERATED for dm7f.6: this file pinned the drbq Inc-2b by-difference stream,
+; one controlled gate at the folded `fl(.9 - .3) = 0x3FE3333333333334` (one ulp
+; above `.6`), and its byte twin `cq_theta(&r,.3); if (q==5) cq_theta(&r,.9-.3);`.
+; Its oracle is now the if/else spelling (`slice_control_angle_select_ry.c`).
 ;
 ; ORACLE DISPOSITION: RED on the pre-2b binary — it declines `rotation angle
 ; under quantum control` at SelectClassify's gate 3 (Rule 12 red-green).
-;
-; THE CENTRAL WITNESS IS BYTE IDENTITY, NOT THIS FIXTURE. The stream below is
-; byte-for-byte the MANUAL by-difference twin
-;     cq_theta(&r, .3); if (q == 5) cq_theta(&r, .9 - .3);
-; which is an ordinary Inc-1 in-place DIAMOND the PRE-2b binary already lowers.
-; Measured on the C forms of both, whole `define` bodies identical, and gated at
-; the e2e layer by `e2e-angle-select-ry-twin-identical`. In particular the
-; folded difference constant is `0x3FE3333333333334` — the APFloat subtract the
-; IRBuilder constant folder performs equals `clang`'s own evaluation of
-; `0.9 - 0.3` bit for bit, which is what makes the diff EXACT and not merely
-; close.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT     < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=CRY     < %t.cqd0.ll
 ; 3qlq: migrated from register cq_phi (dead declare erased)
 
 declare i32 @cq_theta_si32(i32, double)
@@ -80,15 +68,14 @@ entry:
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
 ; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
-; the UNCONDITIONAL twin at the FALSE-arm angle B — emitted BEFORE the mint, which
-; is what makes the stream identical to the manual by-difference diamond's
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
 ; flag mint, unchanged from every other control path
+; the two CONTROLLED gates, in place on r's own register: `A` on f = 1, then
+; `B` inside the flag bracket (f = 0). Both the source's doubles.
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 5)
-; the DIFFERENCE gate, in place on r's own register. The constant is the folded
-; `0.9 - 0.3` — pinned as BITS, not as a decimal, because that identity is the
-; witness.
-; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 0x3FE3333333333334)
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; strip + free: the Ry landed on a rail disjoint from every condition rail (S8),
 ; so icmp_inv(q) returns the flag to |0> and it is freed clean
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
@@ -104,20 +91,22 @@ entry:
 ; CHECK-NOT: call void @cqrt_ry_
 ; CHECK-NOT: call void @cqrt_rz_
 
-; NO route, no work rail, no select or data mux left standing, and no SECOND
-; uncontrolled Ry at the TRUE-arm angle (emitting `ry(r,.9)` unconditionally
-; would fire the true arm on both branches — the shape the difference form
-; exists to avoid). Anchored at `define` so FileCheck scans the whole body.
+; NO route, no work rail, no select or data mux left standing, no arithmetic on
+; an arm, and no uncontrolled Ry at the TRUE-arm angle or at `-B` (either would
+; fire on both branches). Anchored at `define` so FileCheck scans the whole body.
 ; NOROUTE:     define{{.*}}@example
 ; NOROUTE-NOT: call void @cqrt_cswap
-; NOROUTE-NOT: call void @cqrt_x
 ; NOROUTE-NOT: call void @cqrt_copy
 ; NOROUTE-NOT: select
-; NOROUTE-NOT: call void @cqrt_ry_i32(i32 %h1, double 9.000000e-01)
+; NOROUTE-NOT: fsub
+; NOROUTE-NOT: call void @cqrt_ry_i32(i32 %{{[a-zA-Z0-9_.]+}}, double 9.000000e-01)
+; NOROUTE-NOT: double -
 
 ; EXACT counts: two allocs (the two source registers, no work rail), ONE free
-; (the flag), ONE controlled rotation.
+; (the flag), TWO controlled rotations.
 ; CNT-COUNT-2: call i32 @cqrt_alloc_i32(
 ; CNT-NOT:     call i32 @cqrt_alloc_i32(
 ; CNT-COUNT-1: call void @cqrt_free(
 ; CNT-NOT:     call void @cqrt_free(
+; CRY-COUNT-2: call void @cqrt_ry_i32_controlled(
+; CRY-NOT:     call void @cqrt_ry_i32_controlled(

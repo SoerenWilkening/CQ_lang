@@ -109,32 +109,6 @@ bool isCallToPrefix(const Value *V, StringRef Prefix) {
 bool isPhiCall(const Value *V) { return isCallToPrefix(V, "cq_phi_"); }
 bool isThetaCall(const Value *V) { return isCallToPrefix(V, "cq_theta_"); }
 
-// A CONSTANT rotation angle that is NOT A FINITE NUMBER (`+inf`, `-inf`, NaN).
-//
-// *** ONE SPELLING, SHARED BY THE TWO FENCES THAT DUPLICATE AN ANGLE (Rule 14).
-// *** It is called by `angleSelectArmsAdmissible`'s clauses (2a)/(2b) — bd drbq
-// Inc 2b's by-difference arm fence, where it has shipped since that increment's
-// round-1 Rule-13 review — and by the l4x4.b NEGATED-rail-arm clause in
-// `classifyArms`, added by l4x4.b's round-1 Rule-13 review (finding F-1). Both
-// callers emit ONE user angle into TWO gate slots, and in both the composition
-// on the slot the source leaves ALONE is `Ry(θ)·Ry(−θ)` / `R(B)·R(A−B)` — an
-// identity for every FINITE `θ`, and NaN for a non-finite one. Extracted as a
-// helper rather than re-spelled because the l4x4.b review found this clause
-// missing at the second site, and a second spelling is how they drift apart.
-//
-// `dyn_cast_or_null` on purpose: the l4x4.b caller reads `getArgOperand(1)` of a
-// theta whose arity its own caller has already established, but a null here must
-// answer "not a non-finite constant" (i.e. fall through to the other fences)
-// rather than crash — and a non-constant (run-time) angle is likewise NOT this
-// clause's subject. Each caller states its own disposition for a run-time angle:
-// the angle select REFUSES it at (2c) (the Inc-2b clearance blocker F-11,
-// because `fsub` can manufacture a non-finite value FROM TWO FINITE ONES);
-// l4x4.b ACCEPTS it, because `fneg` provably cannot (see that clause).
-bool constantAngleIsNonFinite(const Value *Angle) {
-  const auto *C = dyn_cast_or_null<ConstantFP>(Angle);
-  return C && !C->getValueAPF().isFinite();
-}
-
 }  // namespace
 
 // The per-arm analyses below are de-anonymized into the named `cq` namespace
@@ -4121,7 +4095,7 @@ bool isRuntimeStatePrepSeed(Value *V, const TaintSet &Taint) {
 // nothing about a literal seed, which cannot turn quantum and is never recorded.
 //
 // Anchored at the SOURCE theta, which is the hoisted user `cq_theta` (it keeps
-// the arm's `!dbg`) or the angle select's unconditional twin (stamped with the
+// the arm's `!dbg`) or the angle select's true-arm controlled gate `TA` (stamped with the
 // select's `!dbg`), so the diagnostic points at the user's own rotation.
 bool declineRound2QuantumPrepSeeds(Module &M, TaintSet &Taint) {
   (void)M;  // the record is module-wide already; kept for the slot's signature.
@@ -5503,95 +5477,16 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         declineArm(T, "rotation angle");
         return ArmDisposition::Declined;
       }
-      // ---- l4x4.b ROUND-1 RULE-13 REVIEW, FINDING F-1 (OVER-ACCEPT-ARGUED) —
-      //      A NON-FINITE **CONSTANT** ANGLE ON THE NEGATED FORM. The clause
-      //      above fenced the `undef` half of its own argument and stopped one
-      //      conjunct short; this is the other half, and it was a wrong unitary
-      //      on a branch the source leaves ALONE.
-      //
-      //      MEASURED at 267937d (`review_l4x4b_r1_probes/x01_neg_inf_angle.c`,
-      //      `x02_neg_nan_angle.c` — plain C at `-O1`, `opt` exit 0,
-      //      verify-clean, stage-2b clean):
-      //
-      //          _Bool b; cq_theta(&b,.5); int r; cq_theta(&r,.25);
-      //          if (!b) cq_theta(&r, __builtin_inf());
-      //        ->  cqrt_ry_i32(%h1, +inf)
-      //            cqrt_ry_i32_controlled(%h, %h1, -inf)
-      //
-      //      On the `b = 1` branch the SOURCE IS THE IDENTITY and the emitted
-      //      pair is `Ry(−inf)·Ry(+inf)`, which is NaN — not `I`. Same for NaN.
-      //      The anti-control identity `Ry(θ)·Ry(−θ) = I` that licenses the whole
-      //      negated form (SCOPE §2.3 option A) holds for every FINITE `θ` and
-      //      for NOTHING ELSE. ZERO IS FINITE and is the accept, not an edge
-      //      case: `Ry(0)·Ry(−0) = I` exactly (pinned, `..._negated_zero_angle`).
-      //
-      //      THE COMPARE TWIN IS FAITHFUL, which is what makes this l4x4.b's and
-      //      not a pre-existing disposition: it brackets ONE gate with `cqrt_x`
-      //      (`x(f); cry(f,h1,+inf); x(f)`), so its non-firing branch is
-      //      untouched — measured on the ORACLE, `x01c_neg_inf_cmp.c`.
-      //
-      //      ASKED WITH THE SHARED `constantAngleIsNonFinite` (Rule 14) — the
-      //      SAME spelling `angleSelectArmsAdmissible`'s clauses (2a)/(2b) use,
-      //      now literally the same function. That sibling emitter is the only
-      //      other place in the tree that puts ONE user angle into TWO gate
-      //      slots, and it has had this fence since the Inc-2b round-1 review;
-      //      l4x4.b shipped the `undef` half of the same argument without it.
-      //      Same string as the `undef` clause and as the angle-select family's
-      //      own non-finite decline (`rotation angle`) — NO NEW DIAGNOSTIC.
-      //
-      //      *** A RUN-TIME ANGLE KEEPS ACCEPTING, AND THE F-11 STRUCTURE DOES
-      //      NOT TRANSFER. *** Inc 2b refuses run-time arms outright at (2c)
-      //      because `fsub` MANUFACTURES a non-finite value FROM TWO FINITE ONES
-      //      (measured there: `±8.98846567431158e307` emits a controlled gate at
-      //      `inf`), so its precondition is DISPROVEN on well-formed inputs and
-      //      no compile-time fence can see it. Here the emitter performs `fneg`,
-      //      which flips ONE SIGN BIT: `fneg` of a finite value is finite, of an
-      //      infinity the other infinity, of a NaN a NaN — it cannot leave the
-      //      finite class. So the ONLY input that breaks the identity is an angle
-      //      that was ALREADY non-finite, i.e. an ill-formed CQ program in EVERY
-      //      spelling (`Ry(NaN)` lands on the taken branch of the compare twin
-      //      too, and an uncontrolled `cq_theta(&q, inf)` lowers to
-      //      `cqrt_ry_<W>(h, inf)` on every binary in the tree — the distinction
-      //      `control_angle_select_reject_inf_arm.ll`'s header already draws).
-      //      What the negated form adds is that it ALSO corrupts the untaken
-      //      branch of that already-ill-formed program, and for a CONSTANT the
-      //      compiler can SEE it, so it declines. For a run-time angle it cannot,
-      //      and the Prime Directive's "decline what you cannot prove" would here
-      //      refuse every run-time angle to protect a program that is broken
-      //      anyway — a total over-decline of the shipped accept class (Rule 17).
-      //
-      //      A `double` `ConstantExpr` (a relocatable address bitcast to double —
-      //      a LINK-TIME constant this compiler cannot read) is NOT a
-      //      `ConstantFP` and therefore rides with the run-time class here, by
-      //      the same argument: the emitter's `CreateFNeg` puts `E` in one slot
-      //      and `-E` in the other, whatever `E` turns out to be, so the two
-      //      slots still cancel for every finite `E`. ⚠ THAT IS THE OPPOSITE
-      //      DISPOSITION FROM `angleSelectArmsAdmissible`'s clause (1b), WHICH
-      //      REFUSES IT — and the difference is not an oversight: 2b EVALUATES
-      //      `A − B` at compile time, so a value it cannot read makes clauses
-      //      (2a)/(2b)/(3) silently not run; here nothing is evaluated, the
-      //      cancellation is structural, and an unreadable constant is in exactly
-      //      the position a run-time one is. Hand-IR-only either way (every C
-      //      punning idiom goes through a `load`).
-      //
-      //      *** RESIDUAL, RECORDED RATHER THAN FENCED: a run-time angle whose
-      //      value is non-finite AT RUN TIME. *** The alternative that removes it
-      //      entirely for every angle is SCOPE §2.3 OPTION B, the 1b-B.1
-      //      `CopyRailRoot` ancilla with the `cqrt_x` bracket ON THE ANCILLA (not
-      //      on the user register, which Inc 1b forbids):
-      //          bf = cqrt_alloc_i1(0); cqrt_cnot(h_b, bf); cqrt_x(bf);
-      //          cqrt_ry_<W>_controlled(bf, h_r, θ);
-      //          cqrt_x(bf); cqrt_cnot(h_b, bf); cqrt_free(bf)
-      //      — 4 extra gates and 1 ancilla, and it fires exactly ONE rotation, so
-      //      it is exact for EVERY angle including non-finite and run-time ones.
-      //      *** OWNER OPTION. NOT BUILT (see IMPL_l4x4b.md §8 Q8 and
-      //      FIX_l4x4b_R1.md, both under
-      //      docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/). ***
-      if (RailCond && Region.ArmNegated && !Region.ArmFalse &&
-          constantAngleIsNonFinite(T->getArgOperand(1))) {
-        declineArm(T, "rotation angle");
-        return ArmDisposition::Declined;
-      }
+      // ---- l4x4.b round-1 finding F-1 declined a non-finite CONSTANT angle here
+      //      (the negated rail form emits `ry(h, θ); cry(h_b, h, −θ)`, so on the
+      //      `b = 1` branch the source's identity was `Ry(+inf)·Ry(−inf)`). RETIRED
+      //      by owner ruling 2026-10-13 (`owner-ruling-nonfinite-angle-identity`):
+      //      a rotation by a non-finite angle is the IDENTITY (a backend
+      //      contract), so that pair is `I·I` and the cancellation holds for every
+      //      angle, finite or not, constant or run-time. Fixture:
+      //      `control_inplace_ry_rail_negated_inf_angle.ll` (was `..._reject_...`).
+      //      The `undef` clause above stays: an undef angle is not a value at
+      //      all, and it would fill two slots read as two values (bd xy9n).
       // R7 — the ziov SHARED condition flag. On that path `emitRegion` SKIPS
       // the strip+free because a downstream data lineage owns the flag; the
       // flag is then a LIVE record of the pre-Ry condition past the region,
@@ -6395,7 +6290,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // `railPhiRootMint`'s peel is defined over exactly that set.
         //
         // ⚠ THE RECIPE IS SHARED; THE SET IS NOT (bd drbq Inc 3, round-1 lens
-        // L5 Q4). `AngleSelectEmit` inserts the unconditional twin rotation it
+        // L5 Q4). `AngleSelectEmit` inserts the true-arm controlled gate `TA` it
         // mints into `ThetaCalls`/`PhiCalls`, and it runs after this stage and
         // before `collapseFlattenedLoopRails` — so ROUND 2 SEES A STRICT
         // SUPERSET of what is built here. That direction is SAFE, and the
@@ -8824,68 +8719,50 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
 }
 
 
-// ---- ANGLE-SELECT BY DIFFERENCE (control-in-place-PRD §12.3, bd
-//      test_C_libtooling-drbq Inc 2b) — BOTH ROTATION STEMS ------------------
+// ---- ANGLE SELECT (control-in-place-PRD §12.3, bd test_C_libtooling-drbq
+//      Inc 2b; X-BRACKET Ry stem since bd dm7f.6) — BOTH STEMS --------------
 //
 // THE SHAPE, which is what `clang -O1` makes of the C the user writes:
 //
 //     cq_theta(&r, q == 5 ? A : B);                  // the select, written out
-//     if (q == 5) cq_phi(A); else cq_phi(B);            // Rz stem: still merged
+//     if (q == 5) cq_phi(A); else cq_phi(B);            // phase stem: still merged
 //
-// ⚠ CHANGED 2026-09-28 (bd test_C_libtooling-fmt3, owner ruling, option B): the
-// if/else `if (q == 5) cq_theta(&r, A); else cq_theta(&r, B);` NO LONGER
-// reaches this function. `include/CQ.h` puts `nomerge` on every `cq_theta_*`
-// (the same merge could erase a branch and hand the pass a different program),
-// so that if/else stays an if/else and lowers through the in-place Ry arm. For
+// `include/CQ.h` puts `nomerge` on every `cq_theta_*` (bd fmt3, 2026-09-28), so
+// the Ry if/else stays an if/else and lowers through the in-place Ry arm; for
 // `cq_phi` (no `nomerge`) SimplifyCFG still merges the two arms into ONE call
 // whose ANGLE is a select, so the branch CFG is GONE before the pass runs
-// (Rule 9) and there is no diamond left. Either way the IR is (Ry stem shown):
+// (Rule 9). Either way the IR is (Ry stem shown):
 //
 //     %c = icmp eq i32 %q, 5
 //     %a = select i1 %c, double A, double B          ; A, B CLASSICAL
 //     %t = call i32 @cq_theta_si32(i32 %r, double %a) ; %r TAINTED, %a ONLY arg-1
 //
-// THE REGISTER-FREE PHASE STEM `cq_phi(c ? A : B)` IS A KICKBACK, not by
-// difference: `cqrt_rz_i1` on the flag, `P(B)` on ¬f and `P(A)` on f, each
-// angle verbatim (see the `IsPhase` split in the body). THE Ry LOWERING IS ANGLE
-// ADDITIVITY ON ONE AXIS, not a new mechanism: `Ry(A) = Ry(B)·Ry(A−B)` (the
-// retired `cq_phi_<sfx>` Rz stem used `Rz(A) = Rz(B)·Rz(A−B)` the same way).
-// So with `f = [pred(C)]`:
+// THE REGISTER-FREE PHASE STEM `cq_phi(c ? A : B)` IS A KICKBACK: `cqrt_rz_i1`
+// on the flag, `P(B)` on ¬f and `P(A)` on f, each angle verbatim (see the
+// `IsPhase` split in the body). THE Ry STEM (bd dm7f.6, owner ruling 2026-10-13
+// `owner-ruling-angle-select-xbracket`) is the X-BRACKET form on the flag
+// ancilla, the stream the if/else in-place Ry arm emits for the same program:
 //
-//     R(r, B)                       ; unconditional, the FALSE-arm angle
 //     f = icmp_<pred>_hl(q, 5)      ; flag mint, unchanged from every other path
-//     R_controlled(f, r, A−B)       ; the drbq Inc-1 in-place gate
+//     R_controlled(f, r, A)         ; fires on f = 1
+//     cqrt_x(f); R_controlled(f, r, B); cqrt_x(f)   ; fires on f = 0
 //     icmp_<pred>_hl_unc(f, q, 5)   ; flag strip
 //     cqrt_free(f)
 //
-// f=0 leaves `R(B)`; f=1 gives `R(B)·R(A−B) = R(A)`. There is NO polarity case:
-// `select %c, A, B` always means "A when the flag is 1", so a `!=` source (which
-// `clang` canonicalizes to `icmp eq` with the select operands SWAPPED) needs
-// nothing special and no `cqrt_x` bracket ever appears in this stream.
-//
-// WHY THIS IS NOT A NEW UNITARY CLAIM: the emitted stream is BYTE-IDENTICAL to
-// the manual by-difference twin `r = R(r, B); if (q == 5) r = R(r, A−B);`, which
-// is an Inc-1 (Ry) in-place DIAMOND (Inc-2a for the retired Rz stem) that
-// already lowered on the pre-2b binary. The increment's central witness is that byte identity, not a
-// fresh argument (see CONTROL_IN_PLACE_INC2B_NOTES.md §6).
+// Each arm's double reaches exactly ONE controlled gate: no arithmetic, no
+// freeze, and the f = 1 branch never touches `B` (nor f = 0 `A`).
+// There is NO polarity case: `select %c, A, B` always means "A when the flag is
+// 1" (a `!=` source, which `clang` canonicalizes to `icmp eq` with the select
+// operands SWAPPED, needs nothing special), and both arms are read by SSA
+// identity.
 //
 // THE FENCES, and which ones are stem-split:
 //   S1  `double` select, both data operands CLASSICAL (a tainted A/B is the
-//       f64/angle miscompile family, Rule 3), AND the arm VALUES realizable —
-//       BOTH ARMS `ConstantFP`, neither carrying undef/poison (incl. inside a
-//       ConstantExpr), neither non-finite, their difference finite, and its
-//       by-difference ROUNDING residual under `kAngleSelectMaxRoundingRad`.
-//       A RUN-TIME arm (a parameter, a load, a call result, an `fpext`, a
-//       run-time `fsub`) DECLINES: the compiler would synthesize an `fsub` the
-//       source never wrote, whose rounding error is unbounded in absolute
-//       radians and whose result can be `inf`/`NaN` from two finite arms —
-//       neither fenceable at compile time, both measured from plain C, and the
-//       manual by-difference twin of that shape declines on both binaries, so
-//       the class was reachable only through 2b. The value half is the round-1
-//       Rule-13 review's, the link-time-constant clause the round-2 one's, and
-//       the constant-arms-only narrowing the CLEARANCE review's (finding F-11,
-//       owner option (2)); see the block comment above
-//       `angleSelectArmsAdmissible`.
+//       f64/angle miscompile family, Rule 3) and DEFINED
+//       (`angleSelectArmsDefined`: no literal undef/poison, the one arm-value
+//       question left). RUN-TIME, NON-FINITE and LINK-TIME-CONSTANT arms are
+//       admitted on BOTH stems (owner ruling 2026-10-03, items (2), (4), (5));
+//       see the comment above `angleSelectArmsDefined`.
 //   S2  EXACTLY ONE user of the select: a rotation's arg-1 with a different
 //       arg-0. N consumers is a recorded follow-on — S6's positional scan is
 //       wire-blind, which makes an N-consumer accept ORDER-dependent.
@@ -8919,337 +8796,37 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
 //   S10 nothing else already claims `T` or `Sel`.
 //
 // Everything outside this returns `NotApplicable` and the caller fires its
-// pre-existing `rotation angle` decline unchanged — so no shape that declined
-// before this increment moves, except the ones this shape now LOWERS.
+// pre-existing `rotation angle` decline unchanged.
 
 
-// ---- THE ARM-VALUE FENCE (S1's second half) — bd drbq Inc 2b ROUND-1 RULE-13
-//      review, lenses L5-1 / L7-F1 / L7-F2 / L7-F6 ---------------------------
+// ---- THE ARM-VALUE QUESTION (S1's second half) ------------------------------
 //
-// NOTHING IN S1–S10 AS SHIPPED INSPECTED THE VALUES OF `A` AND `B` — only their
-// TYPE and their TAINT. Three families of arm value get through that and produce
-// a stream the source never described. All three are refused HERE, by returning
-// `NotApplicable`, so the caller's pre-existing `rotation angle` decline fires
-// and no new diagnostic string enters the dialect.
+// HISTORY, one paragraph because every clause it names is gone. The drbq Inc-2b
+// Ry stem realized `B + fl(A−B)` on the true edge, so its arm fence
+// (`angleSelectArmsAdmissible`) refused a non-finite arm, a non-finite
+// difference of finite arms, a rounding residual above a placeholder 2^-40 rad,
+// a link-time constant it could not evaluate and, after the Rule-13 clearance
+// finding F-11, every run-time arm. The owner ruling of 2026-10-03 on bd dm7f.6
+// retired the subtraction and with it every one of those clauses: no difference
+// is computed, so there is nothing to round, to overflow or to evaluate, and a
+// non-finite angle is a classical value passed to the backend (ruling item (5)).
 //
-//  (1) UNDEF / POISON. `select c, 0.9, undef` folds `fsub 0.9, undef` to a
-//      CONCRETE quiet NaN, so the DEFINED arm is destroyed by the undefined one
-//      (`Ry(undef)·Ry(NaN)` is not `Ry(0.9)` under any refinement of `undef`);
-//      `select c, poison, 0.3` puts a raw `double poison` in a gate slot.
-//      `LiteralIntegrity`'s guard 1 is CORRECT to stay silent — it counts ONE
-//      undef slot, the other being the folded NaN — which is exactly why the
-//      neighbouring `0.9, poison` and `undef, undef` cells were loud and this one
-//      was not. Asked through the SHARED `valueCarriesUndef` (Rule 14), never a
-//      bare `isa<UndefValue>`: an arm may be a `ConstantExpr` that CARRIES undef
-//      (`bitcast (i64 undef to double)`), which the bare test misses.
-//
-//  (2) A NON-FINITE CONSTANT ARM, or a NON-FINITE DIFFERENCE OF FINITE ARMS. The
-//      by-difference identity is an identity over the REALS; `+inf` / `NaN` arms
-//      and the OVERFLOW of `DBL_MAX − (−DBL_MAX)` each MANUFACTURE a value the
-//      source never named and destroy the arm that was well defined. Note the
-//      second half is not implied by the first: both arms of the overflow case
-//      are perfectly ordinary finite doubles.
-//
-//  (3) ROUNDING. `R(A) = R(B)·R(A−B)` is exact in real arithmetic; the emitted
-//      stream realizes `B + fl(A−B)`, whose error is
-//
-//          delta = A − (B + fl(A−B))          |delta| <= 1/2 ulp(A−B)
-//
-//      i.e. roughly `|A−B|·2^-53` — 2^-54 rad on the flagship `0.9 / 0.3` (which
-//      is physically nothing and IS the shape we set out to build, Rule 17), but
-//      0.858 rad on `pi / 1e16` and a full 1.0 rad on `1.0 / 1e300`, both of
-//      which the PRE-2b binary declined LOUDLY. Turning a loud refusal into a
-//      silently wrong unitary is the one unforgivable outcome, so constant arms
-//      are fenced at `kAngleSelectMaxRoundingRad` below.
-//
-//  (4) A RUN-TIME ARM AT ALL — clause (2c). *** THE ACCEPT CLASS IS CONSTANT
-//      ARMS ONLY. *** Two earlier drafts of this paragraph described run-time
-//      arms as ACCEPTED and carrying a documented residual (round-1: "the
-//      bound"; round-2: both halves, after lens R1 item 1 graded it
-//      CONFIRMED-MISCOMPILE). The independent Rule-13 CLEARANCE review then
-//      ranked it a BLOCKER (finding F-11 / B1) and the orchestrator ruled option
-//      (2): narrow to constants. Both residual halves therefore no longer exist
-//      in the shipped accept class, and the sentences that described them here
-//      are kept only as the REASON for the refusal:
-//
-//        (i)  ROUNDING — `|delta| <= 1/2 ulp(A−B)`, which is a bound on the
-//             DIFFERENCE and is UNBOUNDED in absolute radians. Measured from
-//             plain C: `pi` and `1e16` as run-time angles give a realized
-//             true-arm angle of 4.0 rad where the source wrote `Ry(pi)`, i.e.
-//             0.858 rad wrong. The CONSTANT spelling of that same pair declines
-//             at clause (3) below — so before the narrowing the fence depended
-//             on how the user SPELLED the angle.
-//        (ii) NON-FINITENESS — `fl(A−B)` can be `inf`/`NaN` from two perfectly
-//             ORDINARY FINITE arms. Measured from plain C:
-//             `+8.98846567431158e307` and its negation emit
-//             `cqrt_ry_i32_controlled(f, h, inf)`. Half an ulp does not describe
-//             `inf`, so this class is named separately and never folded into
-//             "the bound".
-//
-//      NEITHER IS FENCEABLE AT COMPILE TIME — the `fsub` happens at run time —
-//      which under the Prime Directive is a reason to DECLINE, not to accept: the
-//      precondition here is DISPROVEN on reachable plain-C inputs, not merely
-//      unproven, and the PRE-2b binary declined every one of them loudly.
-//
-//      AND THE MITIGATION THAT MADE THE EARLIER DISPOSITION LOOK REASONABLE IS
-//      FALSE (clearance observation 1). "It is the same arithmetic the manual
-//      by-difference C twin performs" is true of the ARITHMETIC and false of any
-//      PROGRAM CQ will compile: that twin, with run-time arms, DECLINES
-//      `control flow under quantum control` on BOTH binaries, because `clang -O1`
-//      sinks the `fsub` into the arm block and `inPlaceRotationArmTheta` refuses
-//      a stray op there — measured with the subtraction inline and hoisted. The
-//      only compilable "twin" is `tools/angle_select_twin_matrix.py`'s `args`
-//      cells, which take the difference in as a PARAMETER and perform no
-//      subtraction at all. So this residual was reachable ONLY through 2b.
-//
-// Both halves are retired OUTRIGHT — for run-time arms too — by the
-// two-controlled form `x(f)·R_c(f,h,B)·x(f)·R_c(f,h,A)`, which performs no
-// subtraction at all. That is option (3) of the owner-desk three-way choice in
-// notes §9/§11; option (1), widening back to run-time arms, is the one line at
-// clause (2c).
-
-// The placeholder bound on the by-difference ROUNDING error, in RADIANS.
-//
-// *** THIS IS A PLACEHOLDER ON THE OWNER'S DESK, NOT A DERIVED CONSTANT. ***
-// It is chosen to separate two measured populations and nothing more: every
-// ordinary-angle pair in this tree's fixtures, goldens and twin matrix has
-// `|delta| <= 2^-54` or `delta == 0` exactly, while every macroscopic case the
-// round-1 review found is `>= 1e-20`... and, in the cases that matter, `>= 0.85`.
-// 2^-40 rad (~9.1e-13) sits 2^14 above the first population and far below the
-// second. The ruling that would REMOVE it, and the exact alternative if the
-// answer goes the other way, are recorded verbatim in
-// `docs/prd/phase-04-swap-route-control/CONTROL_IN_PLACE_INC2B_NOTES.md` §9,
-// with the clearance record and the shipped answer in §11:
-// (i) is round-to-nearest angle arithmetic IN the semantic model (the `fenv`
-// analogue)? then this constant goes — and so does clause (2c), since the two
-// are the same question asked of a constant and of a run-time value; or (ii) if
-// the emitted stream must denote the source's angle EXACTLY, the alternative is
-// the two-controlled form `x(f)·R_c(f,h,B)·x(f)·R_c(f,h,A)` — no `fsub`, no
-// rounding, no inf/NaN manufacture, no undef fold, existing symbols only. That
-// is a PRD §12.3 design change and was NOT made in this session. What DID ship
-// is the third answer, option (2): keep this bound and refuse run-time arms
-// outright at (2c), so the fence no longer depends on how the user spelled the
-// angle.
-static const double kAngleSelectMaxRoundingRad = 0x1p-40;
-
-bool angleSelectArmsAdmissible(const Value *A, const Value *B) {
-  // Self-contained: the caller's S1 already proved the select is `double`, but
-  // this predicate is ALSO the emitter's step-0 re-ask, so it establishes its own
-  // premise rather than inheriting one. Anything else over-declines (safe).
+// WHAT REMAINS is the undef clause: an arm that is a literal `undef`/`poison`, or
+// a `ConstantExpr` carrying one (`bitcast (i64 undef to double)`), would land
+// verbatim in an emitted gate slot — twice for the Ry stem's false arm — and a
+// literal undef is materialized per use (the bd xy9n literal-integrity class).
+// Asked through the shared `valueCarriesUndef` (Rule 14), never a bare
+// `isa<UndefValue>`. It calls the NON-global-skipping variant, so an arm that is
+// the address of a global whose initializer holds `undef` is refused too (an
+// over-decline, hand IR only). A RUN-TIME arm that MAY be poison is NOT refused:
+// each arm fills exactly one gate slot, so a per-use refinement has no second
+// read to disagree with.
+bool angleSelectArmsDefined(const Value *A, const Value *B) {
+  // Self-contained: it is also the emitter's step-0 re-ask, so it establishes
+  // its own premise rather than inheriting S1's `double` test.
   if (!A || !B || !A->getType()->isDoubleTy() || !B->getType()->isDoubleTy())
     return false;
-
-  // (1) undef / poison, including a ConstantExpr that carries one.
-  //
-  // ASKED FIRST, DELIBERATELY, AND IT IS NOW BEHAVIOURALLY SUBSUMED BY (1b)
-  // BELOW (bd drbq Inc 2b ROUND-2 review, lens R1 items 4 and 5). For a `double`
-  // arm the only `Constant` subclasses are `ConstantFP`, `UndefValue` /
-  // `PoisonValue` and `ConstantExpr`, so every value this clause refuses is also
-  // refused by (1b) — no fixture can red-green this clause on its own any more,
-  // and `control_angle_select_reject_undef_constexpr_arm.ll`'s header says so
-  // rather than claiming otherwise. IT IS KEPT for two reasons that are not
-  // "otherwise we would accept": the ORDER makes `undef` the recorded reason for
-  // an arm that is both (the specific fact, with the fold-to-NaN derivation),
-  // and (1b) is the clause a future widening would narrow — admitting a
-  // link-time constant once its value is provably finite and well-rounded is the
-  // obvious next step, and it needs this clause standing underneath it.
-  //
-  // ONE PRECISION ABOUT THE RECORDED REASON (Rule-13 clearance review,
-  // non-blocking observation 8). This calls the NON-global-skipping
-  // `valueCarriesUndef`, so an arm that is a relocatable ADDRESS whose global's
-  // INITIALIZER contains `undef` is refused here as "carries undef" even though
-  // the address itself is perfectly well defined — `LiteralIntegrity.cpp`
-  // documents exactly that distinction for its slot variant. The DISPOSITION is
-  // right either way (the class is refused by (1b) two clauses down, as a
-  // link-time constant this compiler cannot evaluate), but the reason this
-  // clause records for it is the weaker of the two. Left as-is deliberately:
-  // over-declining is safe, and a global-skipping variant here would make the
-  // undef fence depend on which of two spellings a future reader picked.
-  if (valueCarriesUndef(A) || valueCarriesUndef(B))
-    return false;
-
-  const auto *CA = dyn_cast<ConstantFP>(A);
-  const auto *CB = dyn_cast<ConstantFP>(B);
-
-  // (1b) A `Constant` THAT IS NOT A `ConstantFP` — in practice a `double`-typed
-  // `ConstantExpr` such as `bitcast (i64 ptrtoint (ptr @g to i64) to double)`.
-  //
-  // *** ROUND-2 RULE-13 REVIEW FINDING (lens R1 item 5). *** The `!CA || !CB`
-  // line below used to take this class, under the comment "at least one runtime
-  // arm: no compile-time difference exists", and that sentence is FALSE of it: a
-  // relocatable address is a LINK-TIME constant, so the difference does exist —
-  // it is simply not evaluable HERE, which means clauses (2a), (2b) and (3) all
-  // silently did not run and the emitted controlled gate's angle was a
-  // reinterpreted address that may be a NaN, an infinity, or 1e300 rad from
-  // anything the source named. Nothing downstream could bound it either. So the
-  // split was by EVALUABILITY, not by constness: a genuine run-time value
-  // carried the documented residual while a constant this compiler cannot read
-  // declined. *** SINCE THE CLEARANCE NARROWING AT (2c) BOTH SIDES OF THAT SPLIT
-  // DECLINE, so this clause no longer changes a disposition — it survives to
-  // keep the REASON precise (a link-time constant is refused for being
-  // unevaluable HERE, which is a different fact from being unevaluable at all),
-  // and because it is the clause a future widening would narrow: admitting a
-  // relocatable address once its value is provably finite and well-rounded is
-  // orthogonal to owner option (1), which is about run-time values.
-  // Over-declining is safe and this class is hand-IR-only — every C punning idiom
-  // measured goes through a `load`, and a literal `bitcast (i64 K to double)` is
-  // folded to a `ConstantFP` by the LLVM-19 parser.
-  // Fixture: `control_angle_select_reject_constexpr_arm.ll`.
-  if ((isa<Constant>(A) && !CA) || (isa<Constant>(B) && !CB))
-    return false;
-
-  // (2a) a non-finite CONSTANT arm. Since the clearance narrowing at (2c) below
-  // this clause no longer changes any DISPOSITION — a module it refuses with one
-  // constant and one run-time arm would be refused two lines later anyway — but
-  // it still decides the recorded REASON, which is the whole point of the
-  // ordering (see (1)'s note): a `+inf` arm beside a parameter is the
-  // non-finite-arm case, not the run-time case. Keeping the `CA &&` / `CB &&`
-  // guards also means (2c)'s widening back (owner option (1), one line) cannot
-  // silently unfence this class along with the run-time one.
-  //
-  // ⚠ SPELLING ONLY — behaviour UNCHANGED. `constantAngleIsNonFinite(A)` is
-  // `dyn_cast<ConstantFP>` + `!isFinite()`, i.e. `CA && !CA->…isFinite()`
-  // verbatim, including the `CA &&` guard the paragraph above explains (a
-  // non-`ConstantFP` arm is NOT this clause's subject and falls through to
-  // (2c)). It became a shared helper for l4x4.b's round-1 Rule-13 finding F-1:
-  // the negated rail arm is the SECOND emitter in the tree that puts one user
-  // angle into two gate slots, it shipped without this fence, and two spellings
-  // of one question are how the second site gets forgotten again.
-  if (constantAngleIsNonFinite(A))
-    return false;
-  if (constantAngleIsNonFinite(B))
-    return false;
-  if (!CA || !CB)
-    // (2c) *** AT LEAST ONE ARM IS A GENUINE RUN-TIME VALUE — REFUSED. ***
-    //
-    // An argument, a load, a call result, an `fpext` of a float, a runtime
-    // `fsub`; after (1b) that is the only way to reach here with a
-    // non-`ConstantFP` arm. THE ACCEPT CLASS IS CONSTANT ARMS ONLY. This line
-    // shipped as `return true;` and was the Increment-2b CLEARANCE BLOCKER (bd
-    // `test_C_libtooling-drbq`, the independent Rule-13 clearance review, finding
-    // F-11 / ranked blocker B1, graded CONFIRMED-MISCOMPILE and BLOCKING;
-    // orchestrator decision on that verdict: ship option (2), narrow to constant
-    // arms). No new diagnostic string: `NotApplicable` here means the caller's
-    // pre-existing `rotation angle` decline fires, byte-identically to the
-    // PRE-2b disposition of the same module.
-    //
-    // THE REASON, and it is not "the residual is large" — it is that the
-    // precondition is DISPROVEN rather than merely unproven. The by-difference
-    // identity `R(A) = R(B)·R(A−B)` is exact over the REALS; what the machine
-    // realizes on the true edge is `B + fl(A−B)`. For a CONSTANT pair the
-    // compiler evaluates that difference and clauses (2a)/(2b)/(3) below decide
-    // it. For a RUN-TIME pair the compiler instead SYNTHESIZES AN `fsub` THE
-    // SOURCE NEVER WROTE, and two things ride on it that no compile-time fence
-    // can see:
-    //
-    //   (i)  ROUNDING, UNBOUNDED IN ABSOLUTE RADIANS. `|delta| <= 1/2 ulp(A−B)`
-    //        is a bound on the DIFFERENCE's magnitude, not on the angle the user
-    //        named. Measured from plain C with the two angles as `volatile
-    //        double`s (`clearance2b/p3/r01_rt_pi_sel.c`): `A = pi`, `B = 1e16`
-    //        emits `cqrt_ry_i32(h1, 0x1.1c37937e08p+53)` then
-    //        `cqrt_ry_i32_controlled(h2, h1, -0x1.1c37937e07ffep+53)`, i.e. a
-    //        realized true-arm angle of 4.0 rad where the source wrote `Ry(pi)`
-    //        — 0.858 rad wrong. The CONSTANT spelling of that same pair declines
-    //        at clause (3).
-    //   (ii) NON-FINITENESS, WHICH IS NOT A ROUNDING OF ANYTHING. `fl(A−B)` can
-    //        be `inf` or `NaN` from two perfectly ORDINARY FINITE arms —
-    //        `r02_rt_ovf_sel.c` (`A = +8.98846567431158e307`, `B = −A`) emits
-    //        `cqrt_ry_i32_controlled(h2, h1, inf)`; `r03_rt_nan_sel.c` puts a
-    //        run-time NaN in the slot directly. Half an ulp does not describe
-    //        either. The clearance also reproduced the class on the **Rz** stem
-    //        (`r04_rt_rz_pi_sel.c`) and on a mul-DERIVED base
-    //        (`r05_rt_ovf_mul_meas_sel.c`), and on plain function parameters with
-    //        no `volatile` at all (`clearance2b/rt/t_param_sel.c`).
-    //
-    // AND THE "IT IS THE SAME ARITHMETIC THE MANUAL TWIN PERFORMS" DEFENCE IS
-    // FALSE OF ANY PROGRAM THIS COMPILER WILL COMPILE (clearance observation 1,
-    // recorded by neither review round). The natural twin
-    // `r = R(r,B); if (c) r = R(r, A−B);` with run-time arms **DECLINES
-    // `control flow under quantum control` on BOTH binaries** — measured with the
-    // `fsub` written inline (`r01_rt_pi_twn`, `r07_twn` even at delta = 0,
-    // `rt/t_param_twin`) and hoisted before the branch (`r06`): `clang -O1` sinks
-    // it into the arm block and `inPlaceRotationArmTheta` refuses a stray op
-    // there. The only compilable "twin" is `tools/angle_select_twin_matrix.py`'s
-    // `args` cells, which take the difference in as a PARAMETER and therefore
-    // perform no subtraction at all. So the residual was reachable ONLY through
-    // 2b — it is not inherited from a shape the compiler already accepted — and
-    // the PRE-2b binary declined every one of the six reproducers loudly. Prime
-    // Directive: a disproven precondition declines.
-    //
-    // WIDENING BACK IS THE OWNER'S CALL AND IS THIS ONE LINE. Option (1) of the
-    // three-way owner-desk item (notes §9 / §11, PRD §12.3) restores `return
-    // true;`, flips `control_angle_select_reject_runtime_arms{,_rz,}.ll`,
-    // `control_angle_select_reject_runtime_one_arm.ll` and
-    // `control_swap_reject_switch_datamux_angle_runtime.ll` back to accepts, and
-    // moves the twin matrix's 16 `args` cells out of its
-    // EXPECTED-DECLINE-RUNTIME-ARMS class. It requires an explicit ruling that
-    // round-to-nearest angle arithmetic AND non-finite angle arithmetic are both
-    // IN the semantic model — the second half is the one option (1)'s stated
-    // reasoning did not reach. Option (3), the two-controlled form
-    // `x(f)·R_c(f,h,B)·x(f)·R_c(f,h,A)`, performs no subtraction at all and is
-    // exact for run-time arms too.
-    return false;
-
-  const APFloat &Av = CA->getValueAPF();
-  const APFloat NegB = neg(CB->getValueAPF());
-
-  // (2b) the DIFFERENCE must be finite. `IRBuilder`'s constant folder performs
-  // exactly this APFloat subtract at round-to-nearest, so `S` below IS the
-  // constant that will land in the controlled gate's angle slot.
-  //
-  // *** THE ORDER (2b) BEFORE (3) IS LOAD-BEARING, NOT TIDINESS *** (Rule-13
-  // clearance review, non-blocking observation 9 — recorded here because it was
-  // an unpinned premise). `APFloat::compare` on a NaN returns `cmpUnordered`,
-  // and (3)'s test is `!= cmpGreaterThan`, so a NaN `Delta` would ACCEPT. A NaN
-  // `Delta` is exactly what the TwoSum produces from a non-finite `S` (`inf −
-  // inf`), i.e. from the overflow class (2b) exists to refuse. Swapping these
-  // two clauses therefore silently re-opens the round-1 finding F-2
-  // (`reject_overflow_difference.ll`) while leaving every other fixture green —
-  // the fixture that reddens on the swap is that one, and only because (2b)
-  // still runs at all.
-  APFloat S = Av;
-  S.add(NegB, APFloat::rmNearestTiesToEven);
-  if (!S.isFinite())
-    return false;
-
-  // (3) THE ROUNDING RESIDUAL, computed EXACTLY by the TwoSum error-free
-  // transformation (Knuth). For finite `a`, `b` with `s = fl(a+b)` finite,
-  //
-  //     bb = fl(s − a) ;  e = fl(fl(a − fl(s − bb)) + fl(b − bb))
-  //
-  // gives `a + b = s + e` EXACTLY — every intermediate is representable, so `e`
-  // is not itself rounded. Apply it to `a = A`, `b = −B`:
-  //
-  //     A − B = S + e     hence     fl(A−B) = S = (A − B) − e
-  //
-  // and the angle the device realizes on the TRUE edge is
-  //
-  //     B + S = B + (A − B) − e = A − e
-  //
-  // so `delta = A − (B + S) = e`. The TwoSum residual IS the angle error; no
-  // extended precision and no simulation is needed to know it. Verified against
-  // an independent C computation of the same six operations on the round-1
-  // review's 25 measured pairs (flagship `0.9/0.3` → `-0x1p-54`, `pi/1e16` →
-  // `-0x1.b7812aeef4bap-1`, `1.0/1e300` → `0x1p+0`).
-  APFloat Bb = S;
-  Bb.subtract(Av, APFloat::rmNearestTiesToEven);
-  APFloat T1 = S;
-  T1.subtract(Bb, APFloat::rmNearestTiesToEven);
-  APFloat T2 = Av;
-  T2.subtract(T1, APFloat::rmNearestTiesToEven);
-  APFloat T3 = NegB;
-  T3.subtract(Bb, APFloat::rmNearestTiesToEven);
-  APFloat Delta = T2;
-  Delta.add(T3, APFloat::rmNearestTiesToEven);
-  Delta.clearSign();
-
-  // `> bound`, not `>=`: an exact difference (delta == 0 — Sterbenz pairs,
-  // ±0.0, equal arms, 2^60/2^59) always passes, and so does anything strictly at
-  // the bound. The test is ABSOLUTE, in radians, deliberately: a RELATIVE reading
-  // would decline `1e-20 / 1.0` (100% relative error, 1e-20 rad absolute —
-  // physically nothing) and would ACCEPT nothing extra.
-  return Delta.compare(APFloat(kAngleSelectMaxRoundingRad)) !=
-         APFloat::cmpGreaterThan;
+  return !valueCarriesUndef(A) && !valueCarriesUndef(B);
 }
 
 
@@ -9268,40 +8845,20 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   Value *B = Sel->getFalseValue();
   if (Taint.Tainted.count(A) || Taint.Tainted.count(B))
     return AngleSelectDisp::NotApplicable;
-  // ... and the arm VALUES must be realizable: BOTH arms `ConstantFP`, no
-  // undef/poison, no `Constant` that is not a `ConstantFP`, no non-finite
-  // constant arm, no non-finite difference, and a by-difference ROUNDING
-  // residual under the placeholder bound. The clauses are ORDERED, and the order
-  // is the recorded REASON rather than the disposition: undef first, link-time
-  // constant second, non-finite arm third, RUN-TIME arm fourth. See the block
-  // comment above `angleSelectArmsAdmissible`; added by the round-1 Rule-13
-  // review (lenses L5-1, L7-F1, L7-F2, L7-F6), which found that S1–S10 asked
-  // about the arms' TYPE and TAINT and never about their VALUES; extended by the
-  // round-2 one (lens R1 items 4/5), which found the `ConstantFP`-only split
-  // treating a link-time constant as a run-time value; and NARROWED TO CONSTANT
-  // ARMS ONLY by the CLEARANCE review (finding F-11 / blocker B1, owner option
-  // (2)), which found that the run-time half of that same split was a
-  // reachable-from-plain-C wrong unitary the pre-2b binary declined loudly.
+  // ... and both arms DEFINED: `angleSelectArmsDefined`, the one arm-value
+  // question left, asked for BOTH stems with ONE spelling (bd dm7f.6). Neither
+  // stem performs arithmetic on an arm, so a run-time, non-finite or link-time
+  // constant arm is admitted; a literal undef/poison one is not (the comment
+  // above `angleSelectArmsDefined`). For the phase stem this is the clause that
+  // Rule-13 round-1 finding F-L4-1 found missing: an `undef` arm reached
+  // `cqrt_rz_i1(f, double undef)` (measured, hand IR), where the pre-3qlq oracle
+  // declined.
+  if (!angleSelectArmsDefined(A, B))
+    return AngleSelectDisp::NotApplicable;
   //
-  // ⚠ ASKED FOR THE Ry STEM ONLY SINCE bd test_C_libtooling-3qlq Inc 1 — see the
-  // `IsPhase` split immediately below, and PRD `retire-swap-route-PRD.md` §3
-  // ("Angle select") + owner question Q3. The whole of
-  // `angleSelectArmsAdmissible` is a fence on the BY-DIFFERENCE lowering: it
-  // exists because 2b realizes `A − B` as a `double` the source never wrote, so
-  // an undef/link-time/non-finite/badly-rounded arm lands in a gate slot. The
-  // register-free PHASE stem performs NO ARITHMETIC ON THE ANGLES AT ALL — it
-  // emits `P(B)` on `¬f` and `P(A)` on `f`, each arm's own value passed through
-  // verbatim — so every clause of that fence has no subject, INCLUDING the 2^-40
-  // rounding bound (`kAngleSelectMaxRoundingRad`) and the constant-arms-only
-  // clause (2c) the clearance review's blocker F-11 installed. A RUN-TIME arm is
-  // therefore ADMITTED for this stem and only for it. The Ry stem is BYTE-FOR-
-  // BYTE unchanged: constant arms only, F-11 intact.
-  //
-  // The `IsPhase` test has to happen before the fence, so S2's consumer lookup
-  // is split in two: the ARG INDEX differs between the stems (a suffixed
+  // S2's consumer lookup is split by stem: the ARG INDEX differs (a suffixed
   // rotation takes `(handle, angle)` and reads the select at arg 1; the
-  // register-free phase takes `(angle)` and reads it at arg 0), which is exactly
-  // why the two cannot share one clause.
+  // register-free phase takes `(angle)` and reads it at arg 0).
   if (!Sel->hasOneUse())
     return AngleSelectDisp::NotApplicable;
   auto *T = dyn_cast<CallInst>(Sel->user_back());
@@ -9310,36 +8867,6 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   const bool IsPhase = isRegisterFreePhaseCall(T, Taint);
   if (IsPhase && (T->arg_size() != 1 || T->getArgOperand(0) != Sel))
     return AngleSelectDisp::NotApplicable;
-  if (IsPhase) {
-    // ---- THE ONE CLAUSE OF THE ARM-VALUE FENCE THAT *DOES* HAVE A SUBJECT FOR
-    // THIS STEM — Rule-13 round-1 finding F-L4-1. The paragraph above is right
-    // that the phase stem performs no arithmetic on the angles, and it was WRONG
-    // to conclude from that that the WHOLE fence has no subject: clause (1),
-    // `valueCarriesUndef`, is about a value that is not a NUMBER AT ALL, and
-    // passing it through verbatim is exactly how it reaches a gate slot.
-    // MEASURED (hand IR at this clang): an `undef`/`poison` arm reached
-    // `cqrt_rz_i1(f, double undef)` in the emitted module, where the pre-3qlq
-    // oracle declined. A `double undef` in a gate operand is the bd xy9n
-    // literal-integrity class: the `-O0` stage-3 backend may read one `undef` as
-    // two different values, so an emitted angle stops denoting the source's.
-    //
-    // WHICH CLAUSES GENUINELY HAVE NO SUBJECT HERE, named rather than waved at
-    // (the round-1 review's second half of this finding): (2a) the non-finite
-    // ARM and (2b) the non-finite DIFFERENCE and (3) the rounding bound all
-    // exist because 2b realizes `A − B` as a `double` the source never wrote —
-    // there is no subtraction on this path, so `inf` in equals `inf` out and
-    // `P(inf)` is exactly what the source asked for; and (2c), the
-    // constant-arms-only narrowing (clearance blocker F-11), fences the same
-    // subtraction and is retired for this stem by owner question Q3. Note the
-    // consequence deliberately kept: a non-finite or `ConstantExpr` arm PASSES
-    // THROUGH here, which is the SAME disposition an uncontrolled
-    // `cq_theta(&q, inf)` already has on both binaries. That is a decision, not
-    // an oversight, and `control_angle_select_phase_nonfinite_arm.ll` records it.
-    if (valueCarriesUndef(A) || valueCarriesUndef(B))
-      return AngleSelectDisp::NotApplicable;
-  } else if (!angleSelectArmsAdmissible(A, B)) {
-    return AngleSelectDisp::NotApplicable;
-  }
 
   // S2 — EXACTLY ONE user, and it is a rotation reading the select ONLY as its
   // angle. `hasOneUse` counts USES, so a select feeding both arg-0 and arg-1 of
@@ -9366,17 +8893,17 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // ---- bd `test_C_libtooling-z0re` (OWNER RULING 2026-09-28, option (a)) —
   //      A RUNTIME UNTAINTED BASE IS ADMITTED, Ry STEM ONLY.
   //
-  // The emitter's by-difference stream then reads `alloc(t); ry(h, B);
-  // ry_controlled(f, h, A−B)`: the theta is UNCONDITIONAL in the source (only
-  // its ANGLE is conditional), so the fresh rail is prepared at |t⟩ on BOTH
-  // components and rotated by `B` or by `B + (A−B) = A` — there is no "inactive
-  // component" whose `prepped vs |0⟩` disposition could be unproven (the
-  // concern this clause used to cite, which was the DIAMOND prep's, not this
-  // shape's). Every §12.3 arithmetic fence is inherited unchanged — S1's
-  // constant-arms-only `angleSelectArmsAdmissible` ran above. What is SKIPPED
+  // The emitter's stream then reads `f = mint; alloc(t); ry_controlled(f, h, A);
+  // x(f); ry_controlled(f, h, B); x(f)` (bd dm7f.6): the theta is UNCONDITIONAL in
+  // the source (only its ANGLE is conditional), so the fresh rail is prepared at
+  // |t⟩ on BOTH components and rotated by exactly `A` or exactly `B` — there is no
+  // "inactive component" whose `prepped vs |0⟩` disposition could be unproven
+  // (the concern this clause used to cite, which was the DIAMOND prep's, not
+  // this shape's). S1's arm question (`angleSelectArmsDefined`) ran above and
+  // applies unchanged. What is SKIPPED
   // for it is the base's wire closure (S7's rail prong, S8, S9 below), for the
-  // §14.5 reason: the rotated rail is MINTED by the emitter's unconditional
-  // twin, so NO pre-region SSA name for it exists — no wire to intersect with
+  // §14.5 reason: the rotated rail is MINTED by the emitter's true-arm gate
+  // (the source theta), so NO pre-region SSA name for it exists — no wire to intersect with
   // the condition's (S8), no record to read stale (S9), no pre-region rail to be
   // in a cycle (S7-rail) — and walking the classical `t` instead would
   // enumerate its CLASSICAL users as "stale records" (the literal-use-list
@@ -9592,8 +9119,10 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   //     handle live range crosses a loop backedge`. That is the same "a loud
   //     decline becomes silence" shape prong (a) above was built for, so it is
   //     stated rather than left implicit — but it IS SOUND and it is NOT 2b's:
-  //     the manual by-difference twin over the same cycle lowers on the PRE-2b
-  //     binary and the emitted `@example` bodies are BYTE-IDENTICAL, so the
+  //     the manual by-difference twin over the same cycle lowered on the PRE-2b
+  //     binary with `@example` bodies BYTE-IDENTICAL to the 2b stream of the time
+  //     (the dm7f.6 stream adds one more controlled gate on the same rail, which
+  //     the argument below covers unchanged), so the
   //     silencing belongs to Inc-1's structural freeze
   //     (`ChainWalk::railCarriesControlledRotation` stops the uncompute spine
   //     walking a rail that carries a controlled rotation), which reproduces on
@@ -9610,8 +9139,9 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   //  2. THE CONDITION REGISTER'S RAIL. Prong (iii) asks the ROTATED register's
   //     closure only. The mirror shape — the CONDITION register is the loop rail,
   //     read in the exit block, the rotated register outside — ACCEPTS
-  //     (`review2b_r2/R1/probes/s7/oa2_condrail_loop_{ry,rz}.ll`) and is again
-  //     BYTE-IDENTICAL to its manual twin on the pre-2b oracle. Sound, and stated
+  //     (`review2b_r2/R1/probes/s7/oa2_condrail_loop_{ry,rz}.ll`) and was again
+  //     BYTE-IDENTICAL to its manual twin on the pre-2b oracle (the by-difference
+  //     stream, before dm7f.6). Sound, and stated
   //     here because it is the half L2-1 happened not to land on; both
   //     `control_angle_select_reject_loop_rail_exit_block{,_rz}.ll` headers say
   //     so too.
@@ -9732,9 +9262,8 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // rail, the loop's `cq_theta(root, ·)` and the exit's `cq_measure(root)` read a
   // name the closure collects. Here the prong below called the loop gate a cycle
   // member of the base's wire, and S9 called the measure a stale record. That
-  // declined `cq_theta(&r, c ? A : B); for (…) cq_theta(&r, .1);`, whose
-  // stream is the hand-unrolled by-difference twin's
-  // (`control_angle_select_forward_rail_cycle_frozen.ll`, e2e
+  // declined `cq_theta(&r, c ? A : B); for (…) cq_theta(&r, .1);`, a sound
+  // program (`control_angle_select_forward_rail_cycle_frozen.ll`, e2e
   // `slice_control_angle_select_ry_forward_loop`).
   //
   // THE SKIP. A member (this prong) or a reader (S9) is skipped when the rail is
@@ -9771,8 +9300,9 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   //     first). Its CLOSURE leaves the rail unclaimed for any other user.
   // A dominated reader that survives is therefore a reader of a post-gate name,
   // which is what the handle holds once `lowerRotations` RAUWs the rail onto it.
-  // The emitter's twin `T0` lands immediately before `T`, so no read lies
-  // between the two and the fence's answer does not change with it.
+  // The emitter's mint, true-arm gate and opening `x(f)` land contiguously
+  // immediately before `T` (and the closing `x(f)` right after it), so no read
+  // lies between them and the fence's answer does not change with them.
   //
   // `recordStaleQuantumReaders` is NOT what makes the skip exact: it never asks a
   // `ret`, and it did not reach the pre-gate record through the exit φ and an
@@ -9925,8 +9455,9 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // the member set is `BaseWireOrder`, exactly as at the Inc-1 site.
   //
   // The barrier is sound at `T` because the emitter inserts its whole stream
-  // IMMEDIATELY BEFORE `T` (the unconditional twin, then the mint), so nothing
-  // lands between a user proven before `T` and the first relabelling gate.
+  // IMMEDIATELY BEFORE `T` (the mint, the true-arm gate, the opening `x(f)`),
+  // so nothing lands between a user proven before `T` and the first relabelling
+  // gate.
   //
   // ⚠ AND IT IS THE FLAT SPELLING ON PURPOSE, EVEN THOUGH A WEAKER ONE EXISTS
   // (bd drbq Inc 3, round-1 lens L1 Q2). `ArmClassify`'s in-loop R6 site now has

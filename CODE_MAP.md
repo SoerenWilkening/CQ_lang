@@ -8,14 +8,14 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 811 maintained source files, 6657 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 811 maintained source files, 6656 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
 The entries below are an inventory for decomposition work. Generated files and test/tooling sources are listed too; they are not silently treated as application logic.
 
 - `runtime/cq_templates.c` — 15665 physical lines
-- `ir-pass/src/ArmClassify.cpp` — 9977 physical lines
+- `ir-pass/src/ArmClassify.cpp` — 9508 physical lines
 - `ir-pass/src/LoopLowering.cpp` — 8031 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5553 physical lines
 - `tools/free_pairing_check.py` — 4161 physical lines
@@ -24,7 +24,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/QramLowering.cpp` — 4045 physical lines
 - `ir-pass/src/TaintPropagation.cpp` — 3362 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 3203 physical lines
-- `ir-pass/src/SwapRouteEmit.cpp` — 3162 physical lines
+- `ir-pass/src/SwapRouteEmit.cpp` — 3161 physical lines
 - `runtime/cq_link_smoke.c` — 2893 physical lines
 - `tools/taintset_scrub_guard.py` — 2758 physical lines
 - `ir-pass/src/RotationLowering.cpp` — 2549 physical lines
@@ -37,8 +37,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/CQLoweringPass.cpp` — 1517 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
 - `ir-pass/src/OpcodeLowering.cpp` — 1514 physical lines
-- `ir-pass/src/SelectClassify.cpp` — 1446 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
+- `ir-pass/src/SelectClassify.cpp` — 1440 physical lines
 - `runtime/cq_runtime.c` — 1403 physical lines
 - `ir-pass/src/Specialization.cpp` — 1380 physical lines
 - `tools/library_coverage/probe.py` — 1219 physical lines
@@ -53,15 +53,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ControlDetect.cpp` — 916 physical lines
 - `tools/record_census/shipped_guard_model.py` — 878 physical lines
 - `ir-pass/src/IOSinkLowering.cpp` — 862 physical lines
+- `tools/angle_select_twin_matrix.py` — 853 physical lines
 - `tools/trace_twin_equiv.py` — 843 physical lines
-- `tools/angle_select_twin_matrix.py` — 840 physical lines
 - `ir-pass/include/LoopPlan.h` — 805 physical lines
-- `runtime/cq_runtime.h` — 772 physical lines
-- `ir-pass/include/ControlPlan.h` — 736 physical lines
+- `runtime/cq_runtime.h` — 777 physical lines
 - `tools/cq_stage_cache_test.py` — 730 physical lines
 - `tools/library_coverage/full_surface/full_census.py` — 728 physical lines
+- `ir-pass/include/ControlPlan.h` — 726 physical lines
 - `ir-pass/include/ChainWalk.h` — 700 physical lines
-- `ir-pass/src/AngleSelectEmit.cpp` — 673 physical lines
 - `ir-pass/src/MergePhiPeel.cpp` — 663 physical lines
 - `ir-pass/include/ScrubOnDelete.h` — 661 physical lines
 - `ir-pass/include/QramLowering.h` — 659 physical lines
@@ -77,8 +76,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_libm_real_acoshl.c` — 575 physical lines
 - `ir-pass/src/IntrinsicLowering.cpp` — 565 physical lines
 - `ir-pass/src/CompareLowering.cpp` — 535 physical lines
-- `ir-pass/include/ArmAnalysis.h` — 531 physical lines
 - `ir-pass/include/RailBankPromote.h` — 528 physical lines
+- `ir-pass/include/ArmAnalysis.h` — 517 physical lines
 - `tools/library_coverage/full_surface/wprobe.py` — 515 physical lines
 - `tests/e2e/railbank_dynamic_matrix.c` — 507 physical lines
 - `tests/e2e/slice_libm_real_lgammaf.c` — 506 physical lines
@@ -113,9 +112,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `ir-pass/include/CalleeBody.h:68` — `calleeBodyTrusted`
 
-### `ir-pass/include/ControlPlan.h` (736 lines)
+### `ir-pass/include/ControlPlan.h` (726 lines)
 
-- `ir-pass/include/ControlPlan.h:326` — `setRoutedBase`
+- `ir-pass/include/ControlPlan.h:316` — `setRoutedBase`
 
 ### `ir-pass/include/LiftCoverage.h` (151 lines)
 
@@ -221,11 +220,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/AbortParkEmit.cpp:315` — `classifyAbortPark`
 - `ir-pass/src/AbortParkEmit.cpp:458` — `emitAbortParkRegion`
 
-### `ir-pass/src/AngleSelectEmit.cpp` (673 lines)
+### `ir-pass/src/AngleSelectEmit.cpp` (388 lines)
 
-- `ir-pass/src/AngleSelectEmit.cpp:56` — `scrubTaint`
-- `ir-pass/src/AngleSelectEmit.cpp:108` — `emitPhaseAngleSelect`
-- `ir-pass/src/AngleSelectEmit.cpp:265` — `emitAngleSelectRegion`
+- `ir-pass/src/AngleSelectEmit.cpp:42` — `scrubTaint`
+- `ir-pass/src/AngleSelectEmit.cpp:70` — `emitPhaseAngleSelect`
+- `ir-pass/src/AngleSelectEmit.cpp:185` — `emitAngleSelectRegion`
 
 ### `ir-pass/src/ArithLowering.cpp` (1189 lines)
 
@@ -242,69 +241,68 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArithLowering.cpp:983` — `lateReassignShape`
 - `ir-pass/src/ArithLowering.cpp:1023` — `lowerLateReassignments`
 
-### `ir-pass/src/ArmClassify.cpp` (9977 lines)
+### `ir-pass/src/ArmClassify.cpp` (9508 lines)
 
 - `ir-pass/src/ArmClassify.cpp:82` — `isCallToPrefix`
 - `ir-pass/src/ArmClassify.cpp:109` — `isPhiCall`
 - `ir-pass/src/ArmClassify.cpp:110` — `isThetaCall`
-- `ir-pass/src/ArmClassify.cpp:133` — `constantAngleIsNonFinite`
-- `ir-pass/src/ArmClassify.cpp:161` — `walkPhaseSpine`
-- `ir-pass/src/ArmClassify.cpp:193` — `armBlockIsPureSpine`
-- `ir-pass/src/ArmClassify.cpp:227` — `isValueChangingOp`
-- `ir-pass/src/ArmClassify.cpp:282` — `condProvenance`
-- `ir-pass/src/ArmClassify.cpp:327` — `diagonalAliasHit`
-- `ir-pass/src/ArmClassify.cpp:465` — `forwardRailHop`
-- `ir-pass/src/ArmClassify.cpp:536` — `railWireClosure`
-- `ir-pass/src/ArmClassify.cpp:645` — `cannotFollowGate`
-- `ir-pass/src/ArmClassify.cpp:754` — `recordLivePerActivation`
-- `ir-pass/src/ArmClassify.cpp:784` — `rotationAngleIsTainted`
-- `ir-pass/src/ArmClassify.cpp:810` — `inPlaceRotationArmTheta`
-- `ir-pass/src/ArmClassify.cpp:985` — `f2Exact`
-- `ir-pass/src/ArmClassify.cpp:1000` — `f2Range`
-- `ir-pass/src/ArmClassify.cpp:1015` — `f2Refine`
-- `ir-pass/src/ArmClassify.cpp:1060` — `f2Note`
-- `ir-pass/src/ArmClassify.cpp:1091` — `foldCuratedTrigF64`
-- `ir-pass/src/ArmClassify.cpp:1119` — `f2NoteConst`
-- `ir-pass/src/ArmClassify.cpp:1133` — `f2Model`
-- `ir-pass/src/ArmClassify.cpp:1893` — `availableAtAnF2Slot`
-- `ir-pass/src/ArmClassify.cpp:1904` — `collectStatePrepPhiDescendants`
-- `ir-pass/src/ArmClassify.cpp:2031` — `fcmpEqualityHoldsOnEdge`
-- `ir-pass/src/ArmClassify.cpp:2152` — `f2SeedPinnedByLiveRegister`
-- `ir-pass/src/ArmClassify.cpp:2540` — `walkValueChain`
-- `ir-pass/src/ArmClassify.cpp:2704` — `valueArmIsPureChain`
-- `ir-pass/src/ArmClassify.cpp:2787` — `declAnchor`
-- `ir-pass/src/ArmClassify.cpp:2816` — `taintedAngleGate`
-- `ir-pass/src/ArmClassify.cpp:2882` — `wireGainsNonDiagonalGate`
-- `ir-pass/src/ArmClassify.cpp:3192` — `anyInstructionInGap`
-- `ir-pass/src/ArmClassify.cpp:3242` — `isChainedThetaCall`
-- `ir-pass/src/ArmClassify.cpp:3251` — `chainedThetaBetweenDefAndBranch`
-- `ir-pass/src/ArmClassify.cpp:3325` — `condRailMembers`
-- `ir-pass/src/ArmClassify.cpp:3373` — `railRelabellingGateOn`
-- `ir-pass/src/ArmClassify.cpp:3446` — `crossBlockCompareMintable`
-- `ir-pass/src/ArmClassify.cpp:3462` — `condWireDisposition`
-- `ir-pass/src/ArmClassify.cpp:3591` — `railCondWireDisposition`
-- `ir-pass/src/ArmClassify.cpp:3656` — `railWireNamesBackward`
-- `ir-pass/src/ArmClassify.cpp:3737` — `railMeasuredBeforeReadPoint`
-- `ir-pass/src/ArmClassify.cpp:3838` — `condCmpOperandSeeds`
-- `ir-pass/src/ArmClassify.cpp:3898` — `condCmpMeasuredBeforeReadPoint`
-- `ir-pass/src/ArmClassify.cpp:3917` — `markRailCondRead`
-- `ir-pass/src/ArmClassify.cpp:4038` — `declineRound2TaintedArmCone`
-- `ir-pass/src/ArmClassify.cpp:4092` — `isRuntimeStatePrepSeed`
-- `ir-pass/src/ArmClassify.cpp:4126` — `declineRound2QuantumPrepSeeds`
-- `ir-pass/src/ArmClassify.cpp:4142` — `reverifyRailCondReads`
-- `ir-pass/src/ArmClassify.cpp:4279` — `reverifyCmpCondReads`
-- `ir-pass/src/ArmClassify.cpp:4512` — `markCmpCondRead`
-- `ir-pass/src/ArmClassify.cpp:4569` — `comparePredLowerable`
-- `ir-pass/src/ArmClassify.cpp:4614` — `condDataUseDisposition`
-- `ir-pass/src/ArmClassify.cpp:4743` — `straightThroughConstFoldHandle`
-- `ir-pass/src/ArmClassify.cpp:4910` — `iterationLocalRollable`
-- `ir-pass/src/ArmClassify.cpp:4970` — `classifyArms`
-- `ir-pass/src/ArmClassify.cpp:7056` — `phaseAngleTail`
-- `ir-pass/src/ArmClassify.cpp:7165` — `classifyPhaseKickback`
-- `ir-pass/src/ArmClassify.cpp:8161` — `classifyPhaseKickbackNest`
-- `ir-pass/src/ArmClassify.cpp:8486` — `classifyClassicalCallArm`
-- `ir-pass/src/ArmClassify.cpp:9035` — `angleSelectArmsAdmissible`
-- `ir-pass/src/ArmClassify.cpp:9256` — `classifyAngleSelect`
+- `ir-pass/src/ArmClassify.cpp:135` — `walkPhaseSpine`
+- `ir-pass/src/ArmClassify.cpp:167` — `armBlockIsPureSpine`
+- `ir-pass/src/ArmClassify.cpp:201` — `isValueChangingOp`
+- `ir-pass/src/ArmClassify.cpp:256` — `condProvenance`
+- `ir-pass/src/ArmClassify.cpp:301` — `diagonalAliasHit`
+- `ir-pass/src/ArmClassify.cpp:439` — `forwardRailHop`
+- `ir-pass/src/ArmClassify.cpp:510` — `railWireClosure`
+- `ir-pass/src/ArmClassify.cpp:619` — `cannotFollowGate`
+- `ir-pass/src/ArmClassify.cpp:728` — `recordLivePerActivation`
+- `ir-pass/src/ArmClassify.cpp:758` — `rotationAngleIsTainted`
+- `ir-pass/src/ArmClassify.cpp:784` — `inPlaceRotationArmTheta`
+- `ir-pass/src/ArmClassify.cpp:959` — `f2Exact`
+- `ir-pass/src/ArmClassify.cpp:974` — `f2Range`
+- `ir-pass/src/ArmClassify.cpp:989` — `f2Refine`
+- `ir-pass/src/ArmClassify.cpp:1034` — `f2Note`
+- `ir-pass/src/ArmClassify.cpp:1065` — `foldCuratedTrigF64`
+- `ir-pass/src/ArmClassify.cpp:1093` — `f2NoteConst`
+- `ir-pass/src/ArmClassify.cpp:1107` — `f2Model`
+- `ir-pass/src/ArmClassify.cpp:1867` — `availableAtAnF2Slot`
+- `ir-pass/src/ArmClassify.cpp:1878` — `collectStatePrepPhiDescendants`
+- `ir-pass/src/ArmClassify.cpp:2005` — `fcmpEqualityHoldsOnEdge`
+- `ir-pass/src/ArmClassify.cpp:2126` — `f2SeedPinnedByLiveRegister`
+- `ir-pass/src/ArmClassify.cpp:2514` — `walkValueChain`
+- `ir-pass/src/ArmClassify.cpp:2678` — `valueArmIsPureChain`
+- `ir-pass/src/ArmClassify.cpp:2761` — `declAnchor`
+- `ir-pass/src/ArmClassify.cpp:2790` — `taintedAngleGate`
+- `ir-pass/src/ArmClassify.cpp:2856` — `wireGainsNonDiagonalGate`
+- `ir-pass/src/ArmClassify.cpp:3166` — `anyInstructionInGap`
+- `ir-pass/src/ArmClassify.cpp:3216` — `isChainedThetaCall`
+- `ir-pass/src/ArmClassify.cpp:3225` — `chainedThetaBetweenDefAndBranch`
+- `ir-pass/src/ArmClassify.cpp:3299` — `condRailMembers`
+- `ir-pass/src/ArmClassify.cpp:3347` — `railRelabellingGateOn`
+- `ir-pass/src/ArmClassify.cpp:3420` — `crossBlockCompareMintable`
+- `ir-pass/src/ArmClassify.cpp:3436` — `condWireDisposition`
+- `ir-pass/src/ArmClassify.cpp:3565` — `railCondWireDisposition`
+- `ir-pass/src/ArmClassify.cpp:3630` — `railWireNamesBackward`
+- `ir-pass/src/ArmClassify.cpp:3711` — `railMeasuredBeforeReadPoint`
+- `ir-pass/src/ArmClassify.cpp:3812` — `condCmpOperandSeeds`
+- `ir-pass/src/ArmClassify.cpp:3872` — `condCmpMeasuredBeforeReadPoint`
+- `ir-pass/src/ArmClassify.cpp:3891` — `markRailCondRead`
+- `ir-pass/src/ArmClassify.cpp:4012` — `declineRound2TaintedArmCone`
+- `ir-pass/src/ArmClassify.cpp:4066` — `isRuntimeStatePrepSeed`
+- `ir-pass/src/ArmClassify.cpp:4100` — `declineRound2QuantumPrepSeeds`
+- `ir-pass/src/ArmClassify.cpp:4116` — `reverifyRailCondReads`
+- `ir-pass/src/ArmClassify.cpp:4253` — `reverifyCmpCondReads`
+- `ir-pass/src/ArmClassify.cpp:4486` — `markCmpCondRead`
+- `ir-pass/src/ArmClassify.cpp:4543` — `comparePredLowerable`
+- `ir-pass/src/ArmClassify.cpp:4588` — `condDataUseDisposition`
+- `ir-pass/src/ArmClassify.cpp:4717` — `straightThroughConstFoldHandle`
+- `ir-pass/src/ArmClassify.cpp:4884` — `iterationLocalRollable`
+- `ir-pass/src/ArmClassify.cpp:4944` — `classifyArms`
+- `ir-pass/src/ArmClassify.cpp:6951` — `phaseAngleTail`
+- `ir-pass/src/ArmClassify.cpp:7060` — `classifyPhaseKickback`
+- `ir-pass/src/ArmClassify.cpp:8056` — `classifyPhaseKickbackNest`
+- `ir-pass/src/ArmClassify.cpp:8381` — `classifyClassicalCallArm`
+- `ir-pass/src/ArmClassify.cpp:8824` — `angleSelectArmsDefined`
+- `ir-pass/src/ArmClassify.cpp:8833` — `classifyAngleSelect`
 
 ### `ir-pass/src/ArmHomogeneity.cpp` (217 lines)
 
@@ -1085,7 +1083,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RuntimeNarrowABI.cpp:24` — `isRuntimeSymbol`
 - `ir-pass/src/RuntimeNarrowABI.cpp:31` — `annotateRuntimeNarrowABI`
 
-### `ir-pass/src/SelectClassify.cpp` (1446 lines)
+### `ir-pass/src/SelectClassify.cpp` (1440 lines)
 
 - `ir-pass/src/SelectClassify.cpp:42` — `isCallToPrefix`
 - `ir-pass/src/SelectClassify.cpp:68` — `isPhiCall`
@@ -1250,7 +1248,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/StaleReadRegion.cpp:255` — `callTerminationCrossable`
 - `ir-pass/src/StaleReadRegion.cpp:265` — `callProvablyReturns`
 
-### `ir-pass/src/SwapRouteEmit.cpp` (3162 lines)
+### `ir-pass/src/SwapRouteEmit.cpp` (3161 lines)
 
 - `ir-pass/src/SwapRouteEmit.cpp:70` — `scrubTaint`
 - `ir-pass/src/SwapRouteEmit.cpp:131` — `intrinsicSuffix`
@@ -1259,14 +1257,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SwapRouteEmit.cpp:195` — `valueChainBase`
 - `ir-pass/src/SwapRouteEmit.cpp:310` — `emitValueRegion`
 - `ir-pass/src/SwapRouteEmit.cpp:725` — `emitInPlaceRotationRegion`
-- `ir-pass/src/SwapRouteEmit.cpp:1267` — `emitRegion`
-- `ir-pass/src/SwapRouteEmit.cpp:1707` — `collectArmPhis`
-- `ir-pass/src/SwapRouteEmit.cpp:1730` — `emitRoute`
-- `ir-pass/src/SwapRouteEmit.cpp:1856` — `emitKickbackGroup`
-- `ir-pass/src/SwapRouteEmit.cpp:1890` — `phaseAngles`
-- `ir-pass/src/SwapRouteEmit.cpp:1897` — `emitPhaseKickbackRegion`
-- `ir-pass/src/SwapRouteEmit.cpp:2306` — `emitPhaseKickbackNestRegion`
-- `ir-pass/src/SwapRouteEmit.cpp:2568` — `lowerControlRegions`
+- `ir-pass/src/SwapRouteEmit.cpp:1266` — `emitRegion`
+- `ir-pass/src/SwapRouteEmit.cpp:1706` — `collectArmPhis`
+- `ir-pass/src/SwapRouteEmit.cpp:1729` — `emitRoute`
+- `ir-pass/src/SwapRouteEmit.cpp:1855` — `emitKickbackGroup`
+- `ir-pass/src/SwapRouteEmit.cpp:1889` — `phaseAngles`
+- `ir-pass/src/SwapRouteEmit.cpp:1896` — `emitPhaseKickbackRegion`
+- `ir-pass/src/SwapRouteEmit.cpp:2305` — `emitPhaseKickbackNestRegion`
+- `ir-pass/src/SwapRouteEmit.cpp:2567` — `lowerControlRegions`
 
 ### `ir-pass/src/SwitchArmProve.cpp` (390 lines)
 
@@ -5037,60 +5035,60 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_control_abort.c:38` — `slice`
 - `tests/e2e/slice_control_abort.c:43` — `main`
 
-### `tests/e2e/slice_control_angle_select_ry.c` (70 lines)
+### `tests/e2e/slice_control_angle_select_ry.c` (77 lines)
 
-- `tests/e2e/slice_control_angle_select_ry.c:61` — `slice`
-- `tests/e2e/slice_control_angle_select_ry.c:70` — `main`
+- `tests/e2e/slice_control_angle_select_ry.c:68` — `slice`
+- `tests/e2e/slice_control_angle_select_ry.c:77` — `main`
 
 ### `tests/e2e/slice_control_angle_select_ry_derived_base.c` (57 lines)
 
 - `tests/e2e/slice_control_angle_select_ry_derived_base.c:46` — `slice`
 - `tests/e2e/slice_control_angle_select_ry_derived_base.c:57` — `main`
 
-### `tests/e2e/slice_control_angle_select_ry_derived_base_ternary.c` (28 lines)
+### `tests/e2e/slice_control_angle_select_ry_derived_base_ternary.c` (31 lines)
 
-- `tests/e2e/slice_control_angle_select_ry_derived_base_ternary.c:18` — `slice`
-- `tests/e2e/slice_control_angle_select_ry_derived_base_ternary.c:28` — `main`
+- `tests/e2e/slice_control_angle_select_ry_derived_base_ternary.c:21` — `slice`
+- `tests/e2e/slice_control_angle_select_ry_derived_base_ternary.c:31` — `main`
 
-### `tests/e2e/slice_control_angle_select_ry_forward_loop.c` (35 lines)
+### `tests/e2e/slice_control_angle_select_ry_forward_loop.c` (36 lines)
 
-- `tests/e2e/slice_control_angle_select_ry_forward_loop.c:25` — `slice`
-- `tests/e2e/slice_control_angle_select_ry_forward_loop.c:35` — `main`
+- `tests/e2e/slice_control_angle_select_ry_forward_loop.c:26` — `slice`
+- `tests/e2e/slice_control_angle_select_ry_forward_loop.c:36` — `main`
 
-### `tests/e2e/slice_control_angle_select_ry_forward_loop_unrolled_twin.c` (22 lines)
+### `tests/e2e/slice_control_angle_select_ry_forward_loop_unrolled_twin.c` (24 lines)
 
-- `tests/e2e/slice_control_angle_select_ry_forward_loop_unrolled_twin.c:10` — `slice`
-- `tests/e2e/slice_control_angle_select_ry_forward_loop_unrolled_twin.c:22` — `main`
+- `tests/e2e/slice_control_angle_select_ry_forward_loop_unrolled_twin.c:12` — `slice`
+- `tests/e2e/slice_control_angle_select_ry_forward_loop_unrolled_twin.c:24` — `main`
 
-### `tests/e2e/slice_control_angle_select_ry_ne.c` (46 lines)
+### `tests/e2e/slice_control_angle_select_ry_ne.c` (49 lines)
 
-- `tests/e2e/slice_control_angle_select_ry_ne.c:37` — `slice`
-- `tests/e2e/slice_control_angle_select_ry_ne.c:46` — `main`
+- `tests/e2e/slice_control_angle_select_ry_ne.c:40` — `slice`
+- `tests/e2e/slice_control_angle_select_ry_ne.c:49` — `main`
 
-### `tests/e2e/slice_control_angle_select_ry_ne_ternary.c` (18 lines)
+### `tests/e2e/slice_control_angle_select_ry_ne_ternary.c` (20 lines)
 
-- `tests/e2e/slice_control_angle_select_ry_ne_ternary.c:10` — `slice`
-- `tests/e2e/slice_control_angle_select_ry_ne_ternary.c:18` — `main`
+- `tests/e2e/slice_control_angle_select_ry_ne_ternary.c:12` — `slice`
+- `tests/e2e/slice_control_angle_select_ry_ne_ternary.c:20` — `main`
 
-### `tests/e2e/slice_control_angle_select_ry_ne_twin.c` (23 lines)
+### `tests/e2e/slice_control_angle_select_ry_ne_twin.c` (28 lines)
 
-- `tests/e2e/slice_control_angle_select_ry_ne_twin.c:14` — `slice`
-- `tests/e2e/slice_control_angle_select_ry_ne_twin.c:23` — `main`
+- `tests/e2e/slice_control_angle_select_ry_ne_twin.c:19` — `slice`
+- `tests/e2e/slice_control_angle_select_ry_ne_twin.c:28` — `main`
 
-### `tests/e2e/slice_control_angle_select_ry_ternary.c` (32 lines)
+### `tests/e2e/slice_control_angle_select_ry_ternary.c` (35 lines)
 
-- `tests/e2e/slice_control_angle_select_ry_ternary.c:24` — `slice`
-- `tests/e2e/slice_control_angle_select_ry_ternary.c:32` — `main`
+- `tests/e2e/slice_control_angle_select_ry_ternary.c:27` — `slice`
+- `tests/e2e/slice_control_angle_select_ry_ternary.c:35` — `main`
 
-### `tests/e2e/slice_control_angle_select_ry_twin.c` (29 lines)
+### `tests/e2e/slice_control_angle_select_ry_twin.c` (37 lines)
 
-- `tests/e2e/slice_control_angle_select_ry_twin.c:20` — `slice`
-- `tests/e2e/slice_control_angle_select_ry_twin.c:29` — `main`
+- `tests/e2e/slice_control_angle_select_ry_twin.c:28` — `slice`
+- `tests/e2e/slice_control_angle_select_ry_twin.c:37` — `main`
 
-### `tests/e2e/slice_control_angle_select_rz.c` (44 lines)
+### `tests/e2e/slice_control_angle_select_rz.c` (45 lines)
 
-- `tests/e2e/slice_control_angle_select_rz.c:35` — `slice`
-- `tests/e2e/slice_control_angle_select_rz.c:44` — `main`
+- `tests/e2e/slice_control_angle_select_rz.c:36` — `slice`
+- `tests/e2e/slice_control_angle_select_rz.c:45` — `main`
 
 ### `tests/e2e/slice_control_angle_select_rz_twin.c` (35 lines)
 
@@ -5283,10 +5281,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_control_inplace_ry_bool_loop_unrolled.c:12` — `slice`
 - `tests/e2e/slice_control_inplace_ry_bool_loop_unrolled.c:19` — `main`
 
-### `tests/e2e/slice_control_inplace_ry_bool_negated.c` (51 lines)
+### `tests/e2e/slice_control_inplace_ry_bool_negated.c` (50 lines)
 
-- `tests/e2e/slice_control_inplace_ry_bool_negated.c:41` — `slice`
-- `tests/e2e/slice_control_inplace_ry_bool_negated.c:51` — `main`
+- `tests/e2e/slice_control_inplace_ry_bool_negated.c:40` — `slice`
+- `tests/e2e/slice_control_inplace_ry_bool_negated.c:50` — `main`
 
 ### `tests/e2e/slice_control_inplace_ry_bool_negated_twin.c` (35 lines)
 
@@ -7274,15 +7272,15 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_z0re_angle_select_runtime_base.c:33` — `slice`
 - `tests/e2e/slice_z0re_angle_select_runtime_base.c:40` — `main`
 
-### `tests/e2e/slice_z0re_angle_select_runtime_base_exact.c` (40 lines)
+### `tests/e2e/slice_z0re_angle_select_runtime_base_exact.c` (42 lines)
 
-- `tests/e2e/slice_z0re_angle_select_runtime_base_exact.c:29` — `slice`
-- `tests/e2e/slice_z0re_angle_select_runtime_base_exact.c:36` — `main`
+- `tests/e2e/slice_z0re_angle_select_runtime_base_exact.c:31` — `slice`
+- `tests/e2e/slice_z0re_angle_select_runtime_base_exact.c:38` — `main`
 
-### `tests/e2e/slice_z0re_angle_select_runtime_base_exact_inplace.c` (27 lines)
+### `tests/e2e/slice_z0re_angle_select_runtime_base_exact_inplace.c` (30 lines)
 
-- `tests/e2e/slice_z0re_angle_select_runtime_base_exact_inplace.c:16` — `slice`
-- `tests/e2e/slice_z0re_angle_select_runtime_base_exact_inplace.c:23` — `main`
+- `tests/e2e/slice_z0re_angle_select_runtime_base_exact_inplace.c:19` — `slice`
+- `tests/e2e/slice_z0re_angle_select_runtime_base_exact_inplace.c:26` — `main`
 
 ### `tests/e2e/slice_z0re_angle_select_runtime_base_spec.c` (41 lines)
 
@@ -7644,23 +7642,23 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/abi_codegen.py:257` — `_unc_signature`
 - `tools/abi_codegen.py:290` — `_unc_body`
 
-### `tools/angle_select_twin_matrix.py` (840 lines)
+### `tools/angle_select_twin_matrix.py` (853 lines)
 
-- `tools/angle_select_twin_matrix.py:319` — `legal`
-- `tools/angle_select_twin_matrix.py:325` — `name`
-- `tools/angle_select_twin_matrix.py:330` — `cells`
-- `tools/angle_select_twin_matrix.py:334` — `cells.add`
-- `tools/angle_select_twin_matrix.py:350` — `quick_cells`
-- `tools/angle_select_twin_matrix.py:388` — `_gate`
-- `tools/angle_select_twin_matrix.py:395` — `gen`
-- `tools/angle_select_twin_matrix.py:509` — `run_cell`
-- `tools/angle_select_twin_matrix.py:545` — `_resid`
-- `tools/angle_select_twin_matrix.py:554` — `_diag`
-- `tools/angle_select_twin_matrix.py:559` — `classify`
-- `tools/angle_select_twin_matrix.py:693` — `_known`
-- `tools/angle_select_twin_matrix.py:705` — `_difftxt`
-- `tools/angle_select_twin_matrix.py:711` — `_star`
-- `tools/angle_select_twin_matrix.py:715` — `main`
+- `tools/angle_select_twin_matrix.py:330` — `legal`
+- `tools/angle_select_twin_matrix.py:336` — `name`
+- `tools/angle_select_twin_matrix.py:341` — `cells`
+- `tools/angle_select_twin_matrix.py:345` — `cells.add`
+- `tools/angle_select_twin_matrix.py:361` — `quick_cells`
+- `tools/angle_select_twin_matrix.py:399` — `_gate`
+- `tools/angle_select_twin_matrix.py:406` — `gen`
+- `tools/angle_select_twin_matrix.py:520` — `run_cell`
+- `tools/angle_select_twin_matrix.py:556` — `_resid`
+- `tools/angle_select_twin_matrix.py:565` — `_diag`
+- `tools/angle_select_twin_matrix.py:570` — `classify`
+- `tools/angle_select_twin_matrix.py:704` — `_known`
+- `tools/angle_select_twin_matrix.py:716` — `_difftxt`
+- `tools/angle_select_twin_matrix.py:722` — `_star`
+- `tools/angle_select_twin_matrix.py:726` — `main`
 
 ### `tools/backend_contract.py` (234 lines)
 

@@ -14,8 +14,9 @@
 ;     stops a divergence from becoming a decline AFTER mutation.
 ;
 ; (b) HANDLE TYPING. At i32 the register type and the handle type coincide, so a
-;     rotation call with the wrong one is invisible; at f64 it is not. Both
-;     `cqrt_ry_f64` calls below take an `i32` handle — that is the assertion, and
+;     rotation call with the wrong one is invisible; at f64 it is not. All three
+;     `cqrt_ry_f64` calls below (two controlled since bd dm7f.6) take an `i32`
+;     handle — that is the assertion, and
 ;     `NOROUTE-NOT: cqrt_ry_f64(double` is its negative half.
 ;
 ;     STATED CAREFULLY, BECAUSE THE OBVIOUS STRONGER CLAIM IS FALSE. The emitter
@@ -58,9 +59,11 @@ entry:
 ; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double %u1)
 ; CHECK-NEXT: call void @cqrt_ry_f64(i32 %[[R]], double 3.000000e-01)
 ; the twin, on the i32 HANDLE — this operand is what the ordering pin is about
-; CHECK-NEXT: call void @cqrt_ry_f64(i32 %[[R]], double 3.000000e-01)
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fcmp_ogt_f64_hl(i32 %[[Q]], double 5.000000e+00)
-; CHECK-NEXT: call void @cqrt_ry_f64_controlled(i32 %[[F]], i32 %[[R]], double 0x3FE3333333333334)
+; CHECK-NEXT: call void @cqrt_ry_f64_controlled(i32 %[[F]], i32 %[[R]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_f64_controlled(i32 %[[F]], i32 %[[R]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cq_template_fcmp_ogt_f64_hl_unc(i32 %[[F]], i32 %[[Q]], double 5.000000e+00)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; A STRAY ROTATION AFTER THE EMITTED STREAM was invisible to every one of the 17
@@ -77,7 +80,6 @@ entry:
 ; NOROUTE:     define{{.*}}@example
 ; NOROUTE-NOT: cqrt_ry_f64(double
 ; NOROUTE-NOT: call void @cqrt_cswap
-; NOROUTE-NOT: call void @cqrt_x
 ; NOROUTE-NOT: select
 
 ; CNT-COUNT-1: call void @cqrt_free(

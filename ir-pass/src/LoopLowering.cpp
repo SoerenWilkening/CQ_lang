@@ -486,7 +486,7 @@ bool isInPlaceGateOnArg0(const CallInst *CI, const Value *H,
 // in-place emitters". THERE ARE THREE WRITERS: `SwapRouteEmit`'s
 // `emitInPlaceRotationRegion` (the Inc-1/Inc-4 Ry arm), `SwapRouteEmit`'s
 // `emitRegion` (the Inc-2a Rz peephole) and **`AngleSelectEmit`** (Inc 2b, the
-// by-difference angle select), which records BOTH STEMS. So an angle-select
+// angle select; X-bracket form since bd dm7f.6), which records BOTH STEMS. So an angle-select
 // **Rz** entry DOES reach `isHoistedRegionArmGate` — it passes the `cq_phi_`
 // test — under an argument written for a different emitter. No consequence for
 // Inc 4 (a state-prep entry is keyed on a `cq_theta_` call and the `cq_phi_`
@@ -503,7 +503,7 @@ bool isInPlaceGateOnArg0(const CallInst *CI, const Value *H,
 // (corrected 2026-09-05, lens L4 F-L4-4) — `emitInPlaceRotationRegion` records
 // the Inc-1/Inc-4 **Ry** arm (`SwapRouteEmit.cpp`, the `cq_theta` spine),
 // `emitRegion` records the Inc-2a **Rz** arm, and `AngleSelectEmit` records the
-// Inc-2b by-difference gate at **either** stem — while
+// angle select's two X-bracket gates at **either** stem — while
 // the argument above is DIAGONAL and therefore true of the Rz stem alone. An Ry
 // relabels its target on the `f=1` branch: it is a real rail GATE, it CAN make a
 // record stale, and the "`collectRailGates` follows it as a HOP" half of the

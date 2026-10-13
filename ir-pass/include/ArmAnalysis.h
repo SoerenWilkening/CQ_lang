@@ -348,8 +348,8 @@ bool declineRound2QuantumPrepSeeds(llvm::Module &M, TaintSet &Taint);
 // condition), and `recoverRegionTree` (nested outer+inner conditions).
 bool comparePredLowerable(const llvm::CmpInst *Cmp);
 
-// ---- ANGLE-SELECT BY DIFFERENCE (control-in-place-PRD §12.3, bd
-//      test_C_libtooling-drbq Inc 2b) -----------------------------------------
+// ---- ANGLE SELECT (control-in-place-PRD §12.3, bd test_C_libtooling-drbq Inc
+//      2b; X-bracket Ry stem since bd dm7f.6) --------------------------------
 //
 // The disposition of one tainted-condition `select` that reaches a rotation's
 // ANGLE slot. THREE states, because two of them belong to different
@@ -362,9 +362,8 @@ bool comparePredLowerable(const llvm::CmpInst *Cmp);
 //                       strings, which `rotation angle` would MISLABEL); the
 //                       caller returns without adding a second one.
 //   * `NotApplicable` — nothing was emitted and nothing was pushed: the shape is
-//                       outside the 2b accept class, and the caller falls
-//                       through to its pre-existing `rotation angle` decline,
-//                       byte-identical to what it fired before this increment.
+//                       outside the accept class, and the caller falls through
+//                       to its pre-existing `rotation angle` decline.
 //
 // Hosted in `ArmClassify.cpp` rather than `SelectClassify.cpp` because its R4/R6
 // halves ARE `classifyArms`' — `railWireClosure` / `forwardRailHop` /
@@ -372,33 +371,20 @@ bool comparePredLowerable(const llvm::CmpInst *Cmp);
 // Pure analysis: no IR is mutated (Rule 9).
 enum class AngleSelectDisp { Accepted, Declined, NotApplicable };
 
-// Are the two ANGLE ARMS of a 2b select realizable by the by-difference stream?
-// FOUR refusals in one predicate, all added by the Inc-2b round-1 Rule-13 review
-// (lenses L5-1 / L7-F1 / L7-F2 / L7-F6), which found that S1–S10 asked about the
-// arms' TYPE and TAINT and never about their VALUES:
-//   * either arm carries `undef`/`poison` (asked through the SHARED
-//     `valueCarriesUndef`, so a `ConstantExpr` carrying one is caught);
-//   * either arm is a non-finite `ConstantFP`;
-//   * both arms are `ConstantFP` and their DIFFERENCE is non-finite (two finite
-//     arms CAN overflow: `DBL_MAX − (−DBL_MAX)`);
-//   * both are `ConstantFP` and the by-difference ROUNDING residual
-//     `delta = A − (B + fl(A−B))`, computed EXACTLY by TwoSum in APFloat,
-//     exceeds the placeholder bound `kAngleSelectMaxRoundingRad = 2^-40 rad`.
-// A RUN-TIME arm (a parameter, a load, a call result, an `fpext`, a run-time
-// `fsub`) is REFUSED — clause (2c), the Rule-13 CLEARANCE narrowing (finding
-// F-11, owner option (2): the accept class is CONSTANT arms only). There is no
-// compile-time difference to evaluate, so the two clauses above cannot run at
-// all, and the `fsub` the emitter would synthesize carries an error UNBOUNDED in
-// absolute radians (measured 0.858 rad from plain C) and can be `inf`/`NaN` from
-// two FINITE arms. Widening back is owner option (1), one line at (2c).
+// Are the two ANGLE ARMS of an angle select DEFINED values (both `double`, and
+// neither a literal `undef`/`poison` nor a `ConstantExpr` carrying one, asked
+// through the shared `valueCarriesUndef`)? The ONLY arm-value question left
+// (bd dm7f.6, owner ruling 2026-10-03): neither stem performs arithmetic on an
+// arm, so run-time, non-finite and link-time-constant arms all pass, and the
+// retired constant-arms-only admission and 2^-40 residual bound have no
+// counterpart. A literal undef/poison arm stays refused: it would sit in an
+// emitted gate slot (the bd xy9n literal-integrity class). Hand IR only, since
+// `clang -O1` folds a select with an undef arm away.
 //
-// TWO CALLERS, ONE SPELLING (Rule 14): `classifyAngleSelect`'s S1 (returning
-// `NotApplicable`, so the caller's pre-existing `rotation angle` decline fires
-// unchanged — no new string) and `emitAngleSelectRegion`'s step-0 re-ask (a
-// plan/IR-mismatch `control flow` decline, so no path can reach emission with a
-// bad arm). Pure analysis; the derivation is at the definition in
-// `ArmClassify.cpp`.
-bool angleSelectArmsAdmissible(const llvm::Value *A, const llvm::Value *B);
+// ONE SPELLING, TWO CALL SITES: `classifyAngleSelect`'s S1 for BOTH stems
+// (`NotApplicable`, so the caller's `rotation angle` decline fires) and
+// `emitAngleSelectRegion`'s Ry-stem step-0 re-ask. Pure analysis.
+bool angleSelectArmsDefined(const llvm::Value *A, const llvm::Value *B);
 
 // bd test_C_libtooling-3qlq Inc 1 (PRD `retire-swap-route-PRD.md` §6.2 row P1) —
 // the FLAT KICKBACK DIAMOND classifier. Same three-way disposition contract as

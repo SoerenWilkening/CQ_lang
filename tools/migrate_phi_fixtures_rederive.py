@@ -90,7 +90,7 @@ CANDIDATE_NEGATIVES = [
      "the 2b BY-DIFFERENCE arithmetic. A kickback passes each arm's angle to its "
      "OWN gate VERBATIM, so no `fl(A-B)` is ever computed and the whole 2b "
      "residual (unbounded absolute-radian error, inf/NaN from two finite arms, "
-     "the 2^-40 kAngleSelectMaxRoundingRad fence) has no object. This is the "
+     "the 2^-40 residual bound that bd dm7f.6 retired) has no object. This is the "
      "instruction a reviewer re-enabling the by-difference path would reintroduce."),
     ("fadd double",
      "the other half of the by-difference arithmetic (the unconditional twin's "

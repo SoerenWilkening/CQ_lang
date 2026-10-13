@@ -1,11 +1,12 @@
-; control_angle_select_reject_runtime_arms_rz.ll — ⚠ THE NAME IS NOW WRONG AND IS
-; KEPT ON PURPOSE. This file ACCEPTS. It is the **Rz / `cq_phi` STEM** twin of
-; `control_angle_select_reject_runtime_arms.ll`, which still DECLINES, and the
-; pair is the whole point; renaming it would break the pairing a reader follows
-; from the Ry file's header. (Retiring the misleading name is a follow-on for
-; whoever next touches this family.)
+; control_angle_select_rz_runtime_arms.ll — ACCEPT. The **Rz / `cq_phi` STEM**
+; with RUN-TIME arms. It was named `control_angle_select_reject_runtime_arms_rz.ll`
+; and kept that wrong name to stay paired with the Ry file
+; `control_angle_select_reject_runtime_arms.ll`, which declined. Since bd dm7f.6
+; (owner ruling 2026-10-03) the Ry file ACCEPTS too, as
+; `control_angle_select_ry_runtime_arms.ll`, so the pairing that justified the
+; name is gone and both files were renamed.
 ;
-; THE STEM SEPARATOR, AND IT SEPARATES THE OTHER WAY NOW.
+; THE STEM SEPARATOR, AND THE HISTORY OF IT.
 ;
 ;     if (c) cq_phi(x); else cq_phi(y);          // x, y RUN-TIME doubles
 ;
@@ -24,23 +25,20 @@
 ; KICKBACK: each arm's angle reaches its OWN `cqrt_rz_i1` on the flag, under its
 ; own polarity bracket, VERBATIM. Nothing is subtracted, nothing is rounded, and
 ; no arm value is ever combined with another, so the entire 2b residual — the
-; rounding, the `inf`/`NaN` from finite arms, the 2^-40 `kAngleSelectMaxRoundingRad`
-; fence — has no object here. Exactness is structural, not measured-and-hoped.
+; rounding, the `inf`/`NaN` from finite arms, the 2^-40 residual bound (retired
+; outright by bd dm7f.6) — has no object here. Exactness is structural, not
+; measured-and-hoped.
 ;
-; ⚠ WHAT KEEPS THIS FILE FROM BEING A DUPLICATE of the implementer's
-; `control_angle_select_phase_runtime.ll` (which accepts the same source shape):
-; that file pins the CAPABILITY; this one pins the STEM SPLIT — the Ry twin
-; `control_angle_select_reject_runtime_arms.ll` is STILL a decline
-; (`rotation angle under quantum control`, MEASURED on this same binary), because
-; the Ry stem still lowers by difference and still performs the `fsub`. Delete
-; either half and the split stops being asserted anywhere.
+; Near-duplicate of `control_angle_select_phase_runtime.ll` (same source shape);
+; this file additionally pins the four count prefixes below. The STEM SPLIT it
+; used to pin (the Ry twin declining on the same binary) no longer exists: both
+; stems perform no arithmetic on an arm since bd dm7f.6.
 ;
 ; ⚠ ORACLE DISPOSITION, and read it precisely: the pre-3qlq binary on THIS module
 ; declines `tainted value consumed by an unknown callee` — the RESERVED-NAME/
 ; unknown-prototype path, because `void @cq_phi(double)` does not exist on that
 ; surface at all. It is NOT the old `rotation angle` decline, and this file is
-; therefore NOT a red-green against the oracle; the red-green that matters is
-; against the Ry twin on the SAME binary, above.
+; therefore NOT a red-green against the oracle.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

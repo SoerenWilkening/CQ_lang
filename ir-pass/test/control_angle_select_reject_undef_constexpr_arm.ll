@@ -24,21 +24,17 @@
 ; so it descends through the `bitcast`, the `ptrtoint` and into the global's
 ; initializer and reports true; a bare `isa<UndefValue>` on the arm reports false.
 ;
-; *** WHAT THIS FIXTURE PINS, STATED HONESTLY, BECAUSE THE ROUND-2 REVIEW ALSO
-; *** MOVED THE CLAUSE STRUCTURE UNDER IT. Round 2 added clause (1b) — an arm that
-; is a `Constant` but NOT a `ConstantFP` is refused outright
-; (`control_angle_select_reject_constexpr_arm.ll`). For a `double`-typed arm the
-; only `Constant` subclasses are `ConstantFP`, `UndefValue`/`PoisonValue` and
-; `ConstantExpr`, so clause (1b) SUBSUMES clause (1) behaviourally: deleting
-; `valueCarriesUndef` would leave this file GREEN, and no fixture can red-green
-; clause (1) on its own any more. What this file DOES pin is the CLAUSE ORDER —
-; `valueCarriesUndef` is asked FIRST, so an arm that is both a `ConstantExpr` and
-; carries `undef` is refused as an UNDEF arm (the specific fact, with the
-; miscompile derivation in `control_angle_select_reject_undef_arm.ll`) rather than
-; as an unevaluable constant — and it is the shape that goes RED the moment clause
-; (1b) is narrowed to admit link-time constants, which is the obvious future
-; widening and the one that needs `valueCarriesUndef` back. See the block comment
-; above `angleSelectArmsAdmissible` in `ir-pass/src/ArmClassify.cpp`.
+; *** WHAT THIS FIXTURE PINS (rewritten for bd dm7f.6). The round-2 clause (1b),
+; which refused every non-`ConstantFP` constant arm and so subsumed this one, was
+; retired with the by-difference subtraction: a link-time constant arm now
+; ACCEPTS (`control_angle_select_ry_constexpr_arm.ll`). That leaves
+; `angleSelectArmsDefined`'s `valueCarriesUndef` as the ONLY clause that refuses
+; this module, so this file is again its red-green witness: drop the undef
+; question and this arm, a `ConstantExpr` carrying `undef`, would land verbatim in
+; an emitted gate slot. The
+; miscompile derivation is in `control_angle_select_reject_undef_arm.ll`; the
+; predicate's comment is above `angleSelectArmsDefined` in
+; `ir-pass/src/ArmClassify.cpp`.
 ;
 ; Reproducers: the original at round 1 from lens L7
 ; (`review2b/L7/ll/y3_undef_via_constexpr.ll`), the replacement from the round-2

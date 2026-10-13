@@ -1,20 +1,14 @@
-// AngleSelectEmit.cpp — see header. The by-difference lowering for an accepted
-// tainted-condition ANGLE select (control-in-place-PRD §12.3, bd
-// test_C_libtooling-drbq Increment 2b), both rotation stems.
-//
-// Reuses `lowerCompareToFlag` (mint + `_unc` strip), `wd.freeFn()` and the drbq
-// `taint.ControlledRotations` hoist-and-defer record verbatim (Rule 14). The only
-// original logic here is the EMISSION ORDER, which IS the contract: the
-// unconditional twin FIRST, then the mint, then the rewired consumer, then the
-// strip, then the free — because that order is what makes the emitted stream
-// byte-identical to the manual by-difference diamond the pre-2b binary lowers.
-// (The function is numbered 0..6 below — 0 and 0b validate, 1..5 emit, 6 erases;
-// the earlier "five-step" wording counted only the emitting half and is corrected
-// here rather than in the step numbering, round-1 review lens L6-N11.)
+// AngleSelectEmit.cpp — see header. Lowers an accepted tainted-condition ANGLE
+// select (control-in-place-PRD §12.3, bd drbq Inc 2b), both rotation stems; the
+// Ry stem is the X-bracket form since bd dm7f.6 (owner ruling 2026-10-13). Reuses
+// `lowerCompareToFlag` (mint + `_unc` strip), `wd.freeFn()` and the drbq
+// `taint.ControlledRotations` record verbatim (Rule 14); the original logic is
+// the EMISSION ORDER. Step 0 validates (loudly, before any mutation); the later
+// steps emit and erase.
 
 #include "AngleSelectEmit.h"
 
-#include "ArmAnalysis.h"       // angleSelectArmsAdmissible / comparePredLowerable
+#include "ArmAnalysis.h"       // angleSelectArmsDefined / comparePredLowerable
 #include "ChainWalk.h"         // markBranchPhaseGate (3qlq Inc 1 F-L7-1)
 #include "CompareLowering.h"   // lowerCompareToFlag + compareFlagMintable (step 0b)
 #include "SelectClassify.h"    // isCondRailLeaf / kBareRailCondReason (bd 3qlq.4)
@@ -25,16 +19,14 @@
 
 #include "llvm/ADT/STLExtras.h"     // llvm::find
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/Function.h"
-#include "llvm/IR/Module.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
-#include "llvm/ADT/StringRef.h"
-
-#include <algorithm>
+#include "llvm/IR/Module.h"
 
 using namespace llvm;
 
@@ -42,46 +34,27 @@ namespace cq {
 
 namespace {
 
-// Drop an erased instruction from every taint work-list that might still hold it
-// so a later module walk (`lowerRotations` / `lowerOps` / `uncompute`) never
-// dereferences freed memory. A per-TU mirror of `SelectMergeEmit::scrubTaint`
-// (the house style for trivial taint-set maintenance). Idempotent.
-//
-// The two erased classes here are the ANGLE SELECT itself (which IS tainted — a
-// select is a user of its tainted condition, so `propagate` marks it) and, when
-// it goes dead, the CONDITION COMPARE. Leaving a dead tainted compare standing
-// is not cosmetic: `lowerOps` would lower it into a `cq_template_icmp_*` flag
-// rail that nothing strips and nothing frees — an unpaired, condition-entangled
-// leak (the `SelectMergeEmit.cpp` step-6 discipline, verbatim).
+// Drop an erased instruction from every taint work-list (a per-TU mirror of
+// `SelectMergeEmit::scrubTaint`; idempotent). The erased classes are the ANGLE
+// SELECT and, when dead, the CONDITION COMPARE. The `CallInst` block is
+// unreachable as called (round-1 lens L5-5), kept because this TU inserts into
+// `ThetaCalls`/`PhiCalls`, so a future erase of a rotation here would need it.
 void scrubTaint(Instruction *I, TaintSet &taint) {
   taint.Tainted.erase(I);
   taint.BirthOrder.erase(I);
   taint.StaleDeclined.erase(I);
   taint.HandleWidth.erase(I);
-  // THE BLOCK BELOW IS UNREACHABLE AS CALLED and is kept as defence in depth,
-  // not as the distinguishing feature (round-1 Rule-13 review, lens L5-5 — the
-  // notes' §3(a) table presented it as what separates this scrub from its
-  // siblings, which is false). The two erased classes are a `SelectInst` and a
-  // `CmpInst`; neither is ever a `CallInst`, so the `PhiCalls`/`ThetaCalls`
-  // removal never runs today. What IS true and IS the difference from the
-  // sibling scrubs is that this TU is the only one whose emitter also INSERTS
-  // into `ThetaCalls`/`PhiCalls` (the unconditional twin), so a future erase of
-  // a rotation from here is the shape this block exists for.
   if (auto *CI = dyn_cast<CallInst>(I)) {
-    auto &PC = taint.PhiCalls;
-    PC.erase_value(CI);
-    auto &TC = taint.ThetaCalls;
-    TC.erase_value(CI);
+    taint.PhiCalls.erase_value(CI);
+    taint.ThetaCalls.erase_value(CI);
   }
 }
 
-
-// ── bd test_C_libtooling-3qlq Inc 1 — P2, the REGISTER-FREE PHASE ANGLE SELECT ─
+// ── bd 3qlq Inc 1 — P2, the REGISTER-FREE PHASE ANGLE SELECT ─────────────────
 //
-// `if (c) cq_phi(A); else cq_phi(B);` never reaches the pass as a diamond:
-// `clang -O1` sinks both calls into ONE `call void @cq_phi(double %sel)` with
-// `%sel = select i1 %c, double A, double B` (MEASURED, PRD §6.1 row 2). The
-// emitted stream, at the consumer's position, is:
+// `if (c) cq_phi(A); else cq_phi(B);` reaches the pass as ONE
+// `call void @cq_phi(double %sel)`, `%sel = select i1 %c, double A, double B`
+// (MEASURED, PRD §6.1 row 2). The stream, at the consumer's position:
 //
 //     cq_template_icmp_<pred>_<W>_hl(q, lit) -> f     ; flag mint
 //     cqrt_x(f); cqrt_rz_i1(f, B); cqrt_x(f)          ; P(B) on the f = 0 branch
@@ -89,34 +62,17 @@ void scrubTaint(Instruction *I, TaintSet &taint) {
 //     cq_template_icmp_<pred>_<W>_hl_unc(f, q, lit)   ; flag strip → |0>
 //     cqrt_free(f)
 //
-// WHY THIS IS EXACT WHERE THE BY-DIFFERENCE FORM IS NOT (PRD §3). Under
-// `Rz(θ) = diag(e^{−iθ/2}, e^{iθ/2})` the four gates give `|0⟩` the factor
-// `e^{i(B−A)/2}` and `|1⟩` the factor `e^{i(A−B)/2}` — a RELATIVE phase of
-// `e^{i(A−B)}` between the two branches, which is the same relative phase
-// `P(A)`-on-1 / `P(B)`-on-0 produces, times an unobservable global phase. No
-// `fsub` is performed, so no value the source did not name enters a gate slot:
-// `A` and `B` are passed through VERBATIM. That is the whole reason a RUN-TIME
-// arm is admitted here (owner question Q3) while the by-difference Ry stem below
-// refuses one — there, `fl(A−B)` is unbounded in absolute radians (MEASURED at
-// 0.858 rad for `π`/`1e16`) and can be `inf` from two finite arms.
-//
-// THERE IS NO POLARITY CASE. A `select` means "A when the condition is 1", full
-// stop — unlike a `br` diamond, whose gate arm `clang -O1` often makes the FALSE
-// successor (Rule 9). The `cqrt_x` bracket here is not a polarity fix: it is how
-// the `f = 0` branch's gate is expressed at all, and it is the same self-inverse
-// pair every "fires on ¬f" emission in this tree uses.
+// EXACT (PRD §3): the four gates give `|0⟩` the factor `e^{i(B−A)/2}` and `|1⟩`
+// `e^{i(A−B)/2}`, the relative phase `P(A)`-on-1 / `P(B)`-on-0 produces, times a
+// global phase. Both arms pass VERBATIM, so a RUN-TIME arm is admitted (owner
+// question Q3). NO POLARITY CASE: a `select` means "A when the condition is 1";
+// the `cqrt_x` pair is how the `f = 0` gate is expressed, not a polarity fix.
 void emitPhaseAngleSelect(SelectInst *Sel, Instruction *Cond, CallInst *T,
                           WidthDispatch &wd, TaintSet &taint) {
-  // ---- 0. RE-VALIDATE, before mutating anything (the step-0 discipline of the
-  // by-difference emitter: a mid-stream decline leaves a minted flag and a
-  // half-rewired consumer behind).
-  //
-  // bd 3qlq.4: the condition is a COMPARE (the pre-1b stream, verbatim) or the
-  // `_Bool` REGISTER itself (`RailCond`): then the register is the flag — no
-  // mint, no strip, no free — and the `¬b` gate is the diagonal `rz(b, −B)`
-  // (`X·P(B)·X = e^{iB}·P(−B)`, a global phase D2 already discards; `fneg` is
-  // exact) rather than a `cqrt_x` bracket on a user register — the invariant
-  // `SwapRouteEmit`'s `emitKickbackGroup` states.
+  // ---- 0. RE-VALIDATE, before mutating anything. bd 3qlq.4: the condition is a
+  // COMPARE or the `_Bool` REGISTER itself (`RailCond`): then the register is the
+  // flag (no mint, strip or free) and the `¬b` gate is the diagonal `rz(b, −B)`
+  // (`X·P(B)·X = e^{iB}·P(−B)`), never a `cqrt_x` on a user register.
   const bool RailCond = isCondRailLeaf(Cond);
   auto *Cmp = RailCond ? nullptr : dyn_cast<CmpInst>(Cond);
   if (!RailCond && !Cmp) {
@@ -138,10 +94,8 @@ void emitPhaseAngleSelect(SelectInst *Sel, Instruction *Cond, CallInst *T,
     diagnoseUnderControl(Sel, "control flow");
     return;
   }
-  // S4's SEMANTIC half, re-asked in lockstep (the round-1 L4-1 repair, which
-  // applies here for the identical reason: a PRECEDING region's RAUW in this
-  // same `lowerControlRegions` loop can turn the compare Q+Q between detection
-  // and now, and this emitter has no Q+Q mint either).
+  // S4's SEMANTIC half, re-asked in lockstep (round-1 L4-1: a PRECEDING region's
+  // RAUW in this loop can turn the compare Q+Q, and there is no Q+Q mint here).
   if (RailCond) {
     if (!taint.Tainted.count(Cond)) {
       diagnoseUnderControl(Sel, "control flow");
@@ -157,11 +111,7 @@ void emitPhaseAngleSelect(SelectInst *Sel, Instruction *Cond, CallInst *T,
     }
   }
   FunctionCallee Rz = wd.rzRtFn("i1");
-  // `cqrt_x` through `ControlledSymbols` — the ONE spelling of the negation
-  // bracket in this tree (Rule 14). The object is a trivial `{Module&,
-  // WidthDispatch&}` wrapper whose resolvers are `getOrInsertFunction`, i.e.
-  // idempotent, so constructing one here costs nothing and cannot mint a second
-  // symbol.
+  // `cqrt_x` through `ControlledSymbols`, the ONE spelling of the bracket.
   ControlledSymbols Csyms(*T->getModule(), wd);
   FunctionCallee X = Csyms.xFn();
   if (!Rz || !X) {
@@ -178,13 +128,8 @@ void emitPhaseAngleSelect(SelectInst *Sel, Instruction *Cond, CallInst *T,
     return C;
   };
 
-  // ---- 1. FLAG MINT, at the consumer — byte-identical to every other path's
-  // step 1 (`lowerCompareToFlag` classifies the operands by taint and applies
-  // the classical-on-left predicate flip itself).
-  // bd 3qlq.4: for a RAIL condition the flag IS the register — nothing minted.
-  // (Track A.1, F-A1R2-1) `WireRuled`: an angle select is dispatched from
-  // `SelectClassify`'s GATE 3, which runs after gate 2c has walked the leaves'
-  // `condProvenance` union at round-1 taint.
+  // ---- 1. FLAG MINT at the consumer (the RAIL is its own flag). `WireRuled`:
+  // gate 2c ruled on the leaves before gate 3 dispatched (Track A.1, F-A1R2-1).
   Value *Flag = RailCond ? static_cast<Value *>(Cond)
                          : lowerCompareToFlag(
                                Cmp, wd, taint, /*qqWidth=*/{},
@@ -192,28 +137,15 @@ void emitPhaseAngleSelect(SelectInst *Sel, Instruction *Cond, CallInst *T,
                                /*negate=*/false, /*railToStrip=*/nullptr,
                                /*readKind=*/CondReadKind::WireRuled);
   if (!Flag)
-    // UNREACHABLE for the two reasons the sibling records — the lockstep re-ask
-    // above, and `DS_Error` → `exit(1)` inside `lowerCompareToFlag`'s own
-    // failure path. Nothing has been emitted yet, so the `return` is honest
-    // defence in depth rather than a mid-stream bail.
-    return;
+    return;  // UNREACHABLE (lockstep re-ask; `DS_Error` exits). Nothing emitted.
 
-  // ---- 2. THE TWO GATES. Both RECORDED as branch-phase (kickback) gates
-  // (`ChainWalk::markBranchPhaseGate`) so the whole-DAG uncompute spine treats
-  // them as opaque and never emits their negated twins — the Rule-13 round-1
-  // CONFIRMED miscompile F-L7-1, whose reproducer lives on the sibling flat path
-  // but whose mechanism (`isInPlaceGateOn` admitting an uncontrolled `cqrt_rz_`)
-  // is shared by every producer of this symbol.
+  // ---- 2. THE TWO GATES, RECORDED as branch-phase gates so the uncompute spine
+  // never emits their negated twins (round-1 CONFIRMED miscompile F-L7-1).
   if (RailCond) {
-    // bd 3qlq.4 — on the USER'S register: `B` fires on `b == 0` in the diagonal
-    // form `rz(b, −B)` (no `cqrt_x` on a register — `emitKickbackGroup`'s
-    // invariant), then `rz(b, A)`. Two gates, no subtraction, no ancilla.
     CallInst *G0 = stamp(Bld.CreateCall(Rz, {Flag, Bld.CreateFNeg(B)}));
     markBranchPhaseGate(G0);
-    // bd test_C_libtooling-r9e5 (1b-B.1, Rule-13 ROUND-2 finding F-B1R2-1) —
-    // the FIRST gate is this region's control read of the user's register;
-    // `reverifyRailCondReads` re-asks the §14.3 ladder against it once the taint
-    // is final. The select is not a candidate anchor: step 4 below erases it.
+    // bd r9e5 (F-B1R2-1): the first gate is this region's control read of the
+    // user's register; `reverifyRailCondReads` re-asks it at final taint.
     markRailCondRead(taint, Flag, G0);
     markBranchPhaseGate(stamp(Bld.CreateCall(Rz, {Flag, A})));
   } else {
@@ -223,11 +155,8 @@ void emitPhaseAngleSelect(SelectInst *Sel, Instruction *Cond, CallInst *T,
     markBranchPhaseGate(stamp(Bld.CreateCall(Rz, {Flag, A})));
   }
 
-  // ---- 3. STRIP + FREE, after the consumer's position. Valid unconditionally:
-  // this region emits no gate on any register the compare reads, so the basis
-  // the strip recomputes is identically the basis the mint read. SKIPPED WHOLE
-  // for a RAIL flag (bd 3qlq.4): nothing was minted, the register is the
-  // user's, and freeing it would be the Rule-6 dirty free.
+  // ---- 3. STRIP + FREE after the consumer: no gate here touches a register the
+  // compare reads. SKIPPED for a RAIL flag (freeing it is the Rule-5 dirty free).
   if (!RailCond) {
     auto *Strip = dyn_cast_or_null<CallInst>(
         lowerCompareToFlag(Cmp, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
@@ -239,21 +168,12 @@ void emitPhaseAngleSelect(SelectInst *Sel, Instruction *Cond, CallInst *T,
     stamp(Post.CreateCall(wd.freeFn(), {Flag}));
   }
 
-  // ---- 4. ERASE the consumer, then the select, then the compare if it is now
-  // dead. The order is forced by the use lists (the call uses the select, the
-  // select uses the compare). Leaving a dead tainted COMPARE standing is not
-  // cosmetic — `lowerOps` would lower it into a second `cq_template_icmp_*` flag
-  // rail that nothing strips and nothing frees (the `SelectMergeEmit` step-6
-  // discipline, verbatim).
-  auto &PC = taint.PhaseCalls;
-  PC.erase_value(T);
+  // ---- 4. ERASE the consumer, the select, then the compare if dead. A RAIL
+  // condition is the user's `cq_theta_i1`, never ours to erase (F-1b-3).
+  taint.PhaseCalls.erase_value(T);
   T->eraseFromParent();
   scrubTaint(Sel, taint);
   Sel->eraseFromParent();
-  // A RAIL condition is the user's `cq_theta_i1` — never this emitter's to
-  // erase. The two kickback gates keep it live today, but that is an
-  // emission-order accident, not a fence (Rule-13 round-1 F-1b-3); the guard is
-  // the same one the three `RegionFlatten` sites carry.
   if (!isCondRailLeaf(Cond) && Cond->use_empty()) {
     scrubTaint(Cond, taint);
     Cond->eraseFromParent();
@@ -264,25 +184,11 @@ void emitPhaseAngleSelect(SelectInst *Sel, Instruction *Cond, CallInst *T,
 
 void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
                            TaintSet &taint) {
-  // ---- 0. RE-VALIDATE THE PLAN BY SSA IDENTITY, BEFORE MUTATING ANYTHING.
-  //
-  // Every decline below is LOUD and every one precedes the FIRST emitted
-  // instruction. Both halves are deliberate: a silently skipped accepted region
-  // leaves the tainted select to the backend as classical control over quantum
-  // state (Rule 1, the unforgivable outcome), and a region that declines
-  // MID-STREAM leaves a minted flag and a half-rewired gate behind — the Inc-2a
-  // round-1 F-5 finding, whose fix was to move every check ahead of the first
-  // emission. The sibling `emitInPlaceRotationRegion` states the same invariant.
-  //
-  // *** AND IT ONLY BECAME TRUE OF THIS FUNCTION IN THE 2b ROUND-1 RULE-13 REVIEW
-  // *** (lens L4-1). Step 0 as shipped asked IDENTITY only; step 0b below adds
-  // S4's SEMANTIC re-ask, which is the half a preceding region's RAUW can
-  // invalidate. Read the two together — identity alone is not "the plan describes
-  // the IR".
+  // ---- 0. RE-VALIDATE THE PLAN BY SSA IDENTITY, BEFORE MUTATING ANYTHING. A
+  // silently skipped region leaves the tainted select to the backend (Rule 1); a
+  // mid-stream decline leaves a minted flag behind (Inc-2a round-1 F-5).
   auto *Sel = dyn_cast_or_null<SelectInst>(R.Merge);
-  // bd 3qlq.4: the condition is a compare, or — for the PHASE stem only — the
-  // bare `_Bool` register (`isCondRailLeaf`). The Ry/Phi stems below keep
-  // their `CmpInst` and decline a rail with `kBareRailCondReason` (1b-C).
+  // bd 3qlq.4: a compare, or (PHASE stem only) the bare `_Bool` register.
   auto *CondI = dyn_cast_or_null<Instruction>(R.Condition);
   const bool RailCond = isCondRailLeaf(CondI);
   if (!Sel || !CondI || (!RailCond && !isa<CmpInst>(CondI))) {
@@ -294,27 +200,12 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   }
   auto *T = R.Shadow.size() == 1 ? dyn_cast<CallInst>(R.Shadow.front())
                                  : nullptr;
-  if (!T) {
-    diagnoseUnderControl(Sel, "control flow");
-    return;
-  }
-  Function *Callee = T->getCalledFunction();
+  Function *Callee = T ? T->getCalledFunction() : nullptr;
   if (!Callee) {
     diagnoseUnderControl(Sel, "control flow");
     return;
   }
-  // bd test_C_libtooling-3qlq Inc 1 (PRD §6.2 row P2) — the REGISTER-FREE
-  // BRANCH-PHASE consumer takes a DIFFERENT lowering, not a different symbol,
-  // so it forks the whole emitter rather than a `Callee` string:
-  //
-  //   x(f); rz_i1(f, B); x(f); rz_i1(f, A)
-  //
-  // `P(A)` on `f = 1`, `P(B)` on `f = 0`, EXACT, no subtraction. Everything the
-  // by-difference form below exists to fence — the `fsub` the source never
-  // wrote, its `½ ulp(A−B)` residual, the `2^-40` bound, the constant-arms-only
-  // narrowing of clearance blocker F-11 — has no subject here, which is why a
-  // RUN-TIME arm is admissible for this stem (owner question Q3) and remains
-  // refused for the Ry one.
+  // 3qlq Inc 1 (PRD §6.2 row P2): the phase consumer forks the whole emitter.
   if (isRegisterFreePhaseCall(T, taint)) {
     emitPhaseAngleSelect(Sel, CondI, T, wd, taint);
     return;
@@ -326,18 +217,13 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   auto *Cond = cast<CmpInst>(CondI);
   const StringRef CalleeName = Callee->getName();
   const bool IsTheta = CalleeName.starts_with("cq_theta_");
-  const bool IsPhi = CalleeName.starts_with("cq_phi_");
+  const bool IsPhi = CalleeName.starts_with("cq_phi_");  // retired register form
   if (!IsTheta && !IsPhi) {
     diagnoseUnderControl(Sel, "control flow");
     return;
   }
-  // The select must still be the consumer's ANGLE and nothing else; the consumer
-  // must still be the select's SOLE user; the condition must still be the
-  // select's. Detection proved all three, and detection ran before any emitter —
-  // but another region emitted earlier in this same `lowerControlRegions` loop
-  // could in principle have rewritten one of them, and "the plan does not
-  // describe the IR" must be a decline, never a dereference (the round-1 L4
-  // `RoutedBase` lesson one shape over).
+  // The select is still the consumer's ANGLE only, the consumer its SOLE user,
+  // the condition its condition (an earlier region could have rewritten one).
   if (T->arg_size() < 2 || T->getArgOperand(1) != Sel ||
       T->getArgOperand(0) == Sel || !Sel->hasOneUse() ||
       Sel->user_back() != T || Sel->getCondition() != Cond) {
@@ -345,85 +231,27 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
     return;
   }
   Value *Base = T->getArgOperand(0);
-  // The base is a live register (Inc 2b), or — bd `test_C_libtooling-z0re`,
-  // owner ruling 2026-09-28 — an UNTAINTED RUNTIME value on the Ry stem, which
-  // S3 admitted as controlled state prep on a fresh rail. A LITERAL base is still
-  // refused, as at S3 (owner ruling 2026-09-28 on bd drbq.13; S3 carries the
-  // counter-example).
-  //
-  // ⚠ ONE QUESTION, AND IT IS THE CLASSIFIER'S (Rule-13 r1B F-r1B-2, Rule 14).
-  // The first spelling RE-DERIVED `isRuntimeStatePrepSeed(Base, taint)` here,
-  // at EMISSION taint, while the L1 record below trusts the classifier's
-  // recorded verdict `R.RuntimeSeedAdmitted` — two answers to one question, over
-  // two taint sets. The two spellings differ on one transition: a region S3
-  // proved with a TAINTED base (S8/S9 over its closure, no L1 record) whose base
-  // has become untainted by emission — the first spelling admitted it here as a
-  // fresh-rail prep, this one declines it. ⚠ CORRECTED (Rule-13 r2 F-r2-3, L7):
-  // an earlier spelling of this comment called that admission a HAZARD; it is
-  // not. The same classical-becomes-quantum-is-proven transition occurring one
-  // stage LATER (after emission, via `specialize()`'s scrub) is an accepted,
-  // pinned stream (`spec_angle_select_runtime_base_side_door.ll`: S3 proves the
-  // tainted base, `T0` then lowers as a SOURCE, twin-identical), and S3's
-  // tainted-base proof is strictly stronger than the runtime-base admission. The
-  // transition is unreachable before emission today (every emitter `Tainted.erase`
-  // is erase-paired; r1B mutants M1/M2 and the implementer's R1/R2 survive), so
-  // the change is a Rule-14 one — ONE question, asked at classification — not a
-  // safety one, and it makes the two timings of one transition disagree (decline
-  // before emission, accept after), both benign. The step-0 question is now
-  // exactly the record's: an untainted base is admitted iff the CLASSIFIER
-  // admitted one. For an `AngleSelectRegion`, `RuntimeSeedAdmitted` is set only by
-  // S3's Ry stem (`IsTheta ∧ isRuntimeStatePrepSeed` at detection), so the old
-  // `IsTheta` conjunct is carried by the flag rather than re-asked (F1 also sets
-  // the flag, for `StatePrep` regions, which never reach this emitter). The reverse transition
-  // (admitted untainted, tainted by emission — a 6.5 `%out` RAUW) passes this
-  // test as a register base and is caught by the record + post-fixpoint re-ask
-  // (`declineRound2QuantumPrepSeeds`), as before.
-  const bool UntaintedBase = !taint.Tainted.count(Base);
-  if (UntaintedBase && !R.RuntimeSeedAdmitted) {
+  // A live register, or an UNTAINTED runtime base S3 admitted as state prep (bd
+  // z0re). ONE QUESTION, THE CLASSIFIER'S (r1B F-r1B-2): `R.RuntimeSeedAdmitted`.
+  // The reverse transition (tainted by an earlier 6.5 RAUW) is caught by the
+  // record below plus `declineRound2QuantumPrepSeeds`.
+  if (!taint.Tainted.count(Base) && !R.RuntimeSeedAdmitted) {
     diagnoseUnderControl(Sel, "control flow");
     return;
   }
-  // Position: one block, `Cond` before `Sel` before `T`, and a successor for `T`
-  // to hang the strip and the free on. Detection proved the ordering; the
-  // successor is asked HERE because it is an emission fact, not a shape fact
-  // (`T` has a user, so it is never a terminator — but a null next node would
-  // otherwise be a null dereference rather than a decline).
+  // One block, `Cond` < `Sel` < `T`, and a successor for the strip and the free.
   Instruction *After = T->getNextNode();
   if (T->getParent() != Sel->getParent() || Cond->getParent() != T->getParent() ||
       !Cond->comesBefore(Sel) || !Sel->comesBefore(T) || !After) {
     diagnoseUnderControl(Sel, "control flow");
     return;
   }
-  // `T` must still be in the work list `lowerRotations` walks, and the twin goes
-  // IMMEDIATELY BEFORE it there.
-  //
-  // ⚠ THE FIRST DRAFT OF THIS COMMENT SAID "ORDER IS LOAD-BEARING … appending at
-  // the END would mint an ill-typed `cqrt_*` call", AND THE MUTATION TEST SAID
-  // OTHERWISE — recorded because an overstated justification is how a real fence
-  // later gets deleted as redundant. Measured (bd drbq Inc 2b, mutation M15):
-  // replacing this with `Work.push_back(T0)` produces BYTE-IDENTICAL output on
-  // every fixture, at i8, at f64 and at i32, with `opt` exit 0. The repair is
-  // accidental and comes from `lowerRotations` itself: lowering `T` first DOES
-  // create `cqrt_ry_<W>_controlled(f, <T0, still i8/double-typed>, θ)`, but
-  // lowering `T0` on the next iteration ends with
-  // `T0->replaceAllUsesWith(Handle)`, which rewrites that very operand to the
-  // i32 handle before the verifier ever runs. The emitted STREAM order is
-  // unaffected either way, because each `cqrt_*` is inserted at its own
-  // rotation's position, not in work-list order.
-  //
-  // THE POSITION IS KEPT ANYWAY, for two reasons that are not "it would
-  // miscompile": (1) appending creates a genuinely MALFORMED instruction for the
-  // span of one loop iteration, which an assertions-ON LLVM aborts on
-  // (`CallInst::Create`'s operand-type assert) — this build is assertions-OFF,
-  // so the whole difference is invisible here and would surface only elsewhere;
-  // (2) relying on a later RAUW to repair a mistyped call is exactly the kind of
-  // accidental correctness this project records rather than depends on, and it
-  // would stop holding the moment a rotation is lowered without that RAUW.
-  // `control_angle_select_ry_{f64_fcmp,i8}.ll` pin the RESULT (every rotation
-  // call takes an i32 handle); no fixture can pin the transient.
+  // `T` must be in `lowerRotations`' work list; the new rotation goes IMMEDIATELY
+  // BEFORE it, in stream order, so `T` lowers with arg-0 already RAUW'd to the
+  // handle (appending was byte-identical only by a later RAUW repairing a
+  // transiently mistyped call, drbq Inc 2b M15 — recorded, not depended on).
   auto &Work = IsTheta ? taint.ThetaCalls : taint.PhiCalls;
-  auto Slot = llvm::find(Work, T);
-  if (Slot == Work.end()) {
+  if (llvm::find(Work, T) == Work.end()) {
     diagnoseUnderControl(Sel, "control flow");
     return;
   }
@@ -434,48 +262,17 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   }
   Value *A = Sel->getTrueValue();
   Value *B = Sel->getFalseValue();
-  if (taint.Tainted.count(A) || taint.Tainted.count(B)) {
-    diagnoseUnderControl(Sel, "control flow");  // Rule 3 — quantum in the angle.
-    return;
-  }
-  // ARM VALUES, re-asked in lockstep with S1's second half (Rule 14 — the SAME
-  // `angleSelectArmsAdmissible`, not a second spelling; verified single-spelling
-  // by the clearance review, §2, and re-verified here). Detection proved it, but
-  // the whole point of step 0 is that a plan can stop describing the IR, and an
-  // undef/poison/non-finite/badly-rounded/RUN-TIME arm reaching `CreateFSub`
-  // below is a value the source never named landing in a gate slot. Since the
-  // clearance narrowing this ALSO carries the constant-arms-only clause (2c), so
-  // there is no path on which the emitter synthesizes an `fsub` over anything
-  // but two `ConstantFP`s.
-  if (!angleSelectArmsAdmissible(A, B)) {
+  // Rule 3 (quantum in the angle), then S1's arm question in lockstep — the SAME
+  // `angleSelectArmsDefined`, not a second spelling.
+  if (taint.Tainted.count(A) || taint.Tainted.count(B) ||
+      !angleSelectArmsDefined(A, B)) {
     diagnoseUnderControl(Sel, "control flow");
     return;
   }
 
-  // ---- 0b. RE-ASK S4's SEMANTIC HALF, NOT JUST SSA IDENTITY.
-  //
-  // *** THIS IS THE ROUND-1 RULE-13 REPAIR (bd drbq Inc 2b, lens L4-1) AND IT IS
-  // THE REASON THE "NOTHING BELOW MAY DECLINE" LINE BELOW IS NOW TRUE. *** Every
-  // check above this point asks about SSA IDENTITY — is `%ang` still the
-  // consumer's angle, is `%c` still its condition. S4 also asked a SEMANTIC
-  // question that identity cannot preserve: how many operands of the compare are
-  // TAINTED, and can a flag be minted from it. Both answers can CHANGE between
-  // detection and this emitter, because another region emits first in the same
-  // `lowerControlRegions` loop:
-  //
-  //   a preceding 4.5 SwitchDataMux region RAUWs its all-`ConstantInt` merge phi
-  //   to a freshly minted TAINTED `%out` rail, and a compare that read that phi
-  //   as its CLASSICAL operand becomes Q+Q — a shape S4 refuses and this emitter
-  //   has no mint for.
-  //
-  // Before this clause the module got as far as steps 1–2 (the `fsub` and the
-  // unconditional twin, the twin already inserted into `taint.Tainted`,
-  // `BirthOrder` and the rotation work list) and only THEN bailed inside step 3,
-  // with `lowerCompareToFlag`'s MISLABELLED `no template for opcode 'icmp i1' in
-  // tainted context`. That is a MID-STREAM decline: loud today only because
-  // `DS_Error` calls `exit(1)`, i.e. because the process dies before anyone can
-  // see the half-emitted module. Fixture:
-  // `control_angle_select_reject_datamux_qq_after_rauw.ll`.
+  // ---- 0b. RE-ASK S4's SEMANTIC HALF (2b round-1 lens L4-1): a preceding 4.5
+  // SwitchDataMux region's RAUW to a TAINTED `%out` can make the compare Q+Q,
+  // which has no mint here. Fixture `..._reject_datamux_qq_after_rauw.ll`.
   const bool LTainted = taint.Tainted.count(Cond->getOperand(0)) != 0;
   const bool RTainted = taint.Tainted.count(Cond->getOperand(1)) != 0;
   if (LTainted == RTainted || !comparePredLowerable(Cond) ||
@@ -484,184 +281,102 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
     return;
   }
 
+  // `cqrt_x` through `ControlledSymbols`, the ONE spelling of the bracket.
+  ControlledSymbols Csyms(*T->getModule(), wd);
+  FunctionCallee X = Csyms.xFn();
+  if (!X) {
+    diagnoseUnderControl(Sel, "control flow");
+    return;
+  }
+
   // ---- EMISSION STARTS HERE. Nothing below may decline.
+  //
+  // THE ROUTE (owner ruling 2026-10-13, `owner-ruling-angle-select-xbracket`,
+  // superseding the subtraction-free triple of dm7f.6): the X-BRACKET form on the
+  // minted flag ancilla, the stream the if/else in-place Ry arm emits for the
+  // same program (`SwapRouteEmit::emitInPlaceRotationRegion`'s gate loop: the
+  // un-negated arm's gate, then `x(f); gate; x(f)` for the negated arm):
+  //
+  //     f = icmp_<pred>_hl(q, k); ry_c(f, h, A); x(f); ry_c(f, h, B); x(f);
+  //     icmp_<pred>_hl_unc(f, q, k); free(f)
+  //
+  // f = 1 fires `Ry(A)` only; f = 0 (the bracket inverts the ancilla) `Ry(B)`
+  // only. Each arm's double reaches exactly ONE controlled gate, verbatim: no
+  // arithmetic, no freeze (no arm is read twice), and a non-finite arm never
+  // touches the other branch. The `cqrt_x` pair is on the compiler-owned flag,
+  // never on a user register.
   const DebugLoc DL = Sel->getDebugLoc();
-  auto stamp = [&](Instruction *I) {
+  auto stamp = [&](CallInst *C) {
     if (DL)
-      I->setDebugLoc(DL);
-    return I;
+      C->setDebugLoc(DL);
+    return C;
   };
   IRBuilder<> Bld(T);  // everything lands immediately before the consumer.
 
-  // ---- 1. THE ANGLE DIFFERENCE `A − B`, computed ONCE.
-  //
-  // `IRBuilder`'s constant folder turns two `ConstantFP`s into a `ConstantFP`
-  // (APFloat subtract, IEEE round-to-nearest — the same evaluation `clang` gives
-  // the manual twin's `0.9 - 0.3`, which is why the byte-diff against the twin
-  // is exact and not merely close).
-  //
-  // SINCE THE CLEARANCE NARROWING (finding F-11, owner option (2) — constant
-  // arms only) THAT IS THE ONLY CASE THAT REACHES HERE: clause (2c) of
-  // `angleSelectArmsAdmissible` refuses a run-time arm at DETECTION and again at
-  // step 0, so this call ALWAYS folds and NO `fsub` instruction survives it —
-  // which is why no fixture in the family carries an `fsub` line any more.
-  // `CreateFSub` is kept rather than replaced by a hand-rolled APFloat subtract
-  // for two reasons: it is the same folder `clang` applies to the manual twin's
-  // `A - B` (Rule 14 — one spelling of the arithmetic, which is what makes the
-  // byte-diff against the twin exact), and if owner option (1) ever restores
-  // run-time arms this line produces a real `fsub double` again with no other
-  // change. Such an `fsub` would stay CLASSICAL — both operands untainted by the
-  // accept predicate, so `lowerOps` never sees it and `declineTaintedAngle`
-  // never fires on it — which is why the `dyn_cast<Instruction>` stamp below is
-  // kept too, presently inert.
-  Value *D = Bld.CreateFSub(A, B, "cqang");
-  if (auto *DI = dyn_cast<Instruction>(D))
-    stamp(DI);
-
-  // ---- 2. THE UNCONDITIONAL TWIN `R(base, B)`.
-  //
-  // Spelled as the SAME `@cq_theta_<sfx>` / `@cq_phi_<sfx>` callee the consumer
-  // uses, never as a `cqrt_*` runtime call: pre-`lowerRotations` the register is
-  // still a `cq_*` SSA value (for an f64 register, `double`-typed), and every
-  // pre-lowering wire walker recognizes an in-place gate by that spelling with
-  // the wire at arg 0. Inserted into the taint sets exactly as
-  // `RotationLowering` does for a minted handle, and into the rotation work list
-  // IMMEDIATELY BEFORE `T` (see the `Slot` note above).
-  CallInst *T0 = Bld.CreateCall(Callee, {Base, B});
-  stamp(T0);
-  // MEASURED INERT, KEPT AS DEFENCE IN DEPTH (round-1 Rule-13 review, lens L5-4):
-  // dropping these two lines produced 0 red fixtures and 0 output diffs. They are
-  // kept because `BirthOrder.lookup` returns 0 for an absent key rather than
-  // failing, so a future reader that orders by birth would silently sort the twin
-  // FIRST in the whole module — the kind of wrong answer that has no symptom.
-  taint.Tainted.insert(T0);
-  taint.BirthOrder[T0] = taint.NextBirth++;
-  Work.insert(Slot, T0);
-  // bd `test_C_libtooling-z0re` — THE RECORD HALF of the runtime-seed L1 re-ask,
-  // at the site that commits it. For an UNTAINTED base `T0` is the SOURCE theta
-  // (`lowerRotations` will mint `cqrt_alloc_<W>(Base)` for it); if `Base` turns
-  // quantum after the round-2 fixpoint, `T0` would lower CHAINED on it — a
-  // tainted-base select S8/S9 never vetted — and `declineRound2QuantumPrepSeeds`
-  // refuses exactly that. A tainted base (Inc 2b) owes no record. ⚠ KEYED ON
-  // THE CLASSIFIER'S VERDICT (`R.RuntimeSeedAdmitted`), never on `UntaintedBase`
-  // as asked here: a 6.5 region emitted earlier in the same loop can already
-  // have RAUW'd the base to its tainted `%out`, and then this emitter sees a
-  // "tainted" base S8/S9 never vetted (`ControlRegion::RuntimeSeedAdmitted`).
-  if (R.RuntimeSeedAdmitted)
-    taint.RuntimeSeedSourceThetas.push_back(T0);
-
-  // ---- 3. THE FLAG MINT, at the consumer.
-  //
-  // Byte-identical to every other path's step 1. `lowerCompareToFlag` classifies
-  // the operands by taint and applies the classical-on-left predicate flip
-  // itself, so a `5 == q` source mints the same `_hl` symbol a `q == 5` one does.
-  // (Track A.1, F-A1R2-1) `WireRuled`: see the sibling above — gate 2c ruled on
-  // this compare's wire before gate 3 dispatched the angle select.
+  // ---- 1. THE FLAG MINT, at the consumer. `WireRuled`: gate 2c ruled on this
+  // compare's wire before gate 3 dispatched (Track A.1, F-A1R2-1).
   Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
                                    /*inverse=*/false, /*before=*/T,
                                    /*negate=*/false, /*railToStrip=*/nullptr,
                                    /*readKind=*/CondReadKind::WireRuled);
   if (!Flag)
-    // UNREACHABLE, and say WHY rather than calling it a bail (round-1 Rule-13
-    // review, lens L1-1 / L4-1). This is NOT a "pre-emission" check — the `fsub`
-    // and the unconditional twin are already in the IR by the time control gets
-    // here, so returning would leave TWO rotations on the register and a
-    // half-rewired consumer. It is unreachable for TWO independent reasons:
-    // step 0b re-asks `compareFlagMintable` in lockstep with this call (the
-    // dry-run predicate exists for exactly that), and `lowerCompareToFlag`'s own
-    // failure path diagnoses with `DS_Error`, which `LLVMContext::diagnose`
-    // turns into `exit(1)` before this line is reached at all. The `return` is
-    // kept as defence in depth against a future `DS_Warning` re-grading, not as
-    // a decline.
-    return;
+    return;  // UNREACHABLE (step 0b's lockstep re-ask; `DS_Error` exits first).
 
-  // ---- 4. REWIRE THE CONSUMER: chain it onto the twin, give it the DIFFERENCE
-  //         angle, and record the flag so `lowerRotations` mints the CONTROLLED
-  //         rotation at this position instead of the unconditional one.
-  //
-  // The record lives on `TaintSet`, not on `ControlPlan`, for the reason drbq
-  // Inc 1 records at the field: there is not ONE plan per compilation (the yn71
-  // onward-control fixpoint builds a local `plan2`, emits it and discards it,
-  // while `lowerRotations` is handed the FIRST plan), so a plan-hosted map would
-  // silently lower an onward region's gate UNCONDITIONALLY — a wrong unitary.
-  T->setArgOperand(0, T0);
-  T->setArgOperand(1, D);
+  // ---- 2. THE TRUE-ARM GATE `R_c(f, A)`: a NEW `@cq_theta_<sfx>` on `Base`,
+  // after the mint (its control must dominate it), spelled as the consumer's own
+  // callee (pre-`lowerRotations` the register is still a `cq_*` value and every
+  // wire walker keys on that name). It goes into `lowerRotations`' work list
+  // IMMEDIATELY BEFORE `T`, so `T` lowers with its arg-0 already RAUW'd to the
+  // handle. Recorded in `BirthOrder` too (an absent key reads 0, sorting FIRST).
+  CallInst *TA = stamp(Bld.CreateCall(Callee, {Base, A}));
+  taint.Tainted.insert(TA);
+  taint.BirthOrder[TA] = taint.NextBirth++;
+  Work.insert(llvm::find(Work, T), TA);
+  // bd z0re — the RECORD half of the runtime-seed L1 re-ask: for an untainted
+  // base `TA` is the SOURCE theta (`cqrt_alloc(Base)` then the controlled Ry).
+  // Keyed on the CLASSIFIER'S verdict, never on the taint seen here (an earlier
+  // 6.5 region may have RAUW'd the base).
+  if (R.RuntimeSeedAdmitted)
+    taint.RuntimeSeedSourceThetas.push_back(TA);
+
+  // ---- 3. THE FALSE-ARM GATE `x(f); R_c(f, B); x(f)`: the consumer `T` itself,
+  // rewired onto `TA` with the FALSE arm, so `T` stays the LAST gate and every
+  // user of its result reads the post-gate register unchanged. Both gates are
+  // recorded so `lowerRotations` mints `cqrt_ry_<W>_controlled` at their
+  // positions; the register then carries a controlled Ry, so it is FROZEN:
+  // never reverse-played, never freed (`ChainWalk::railCarriesControlledRotation`).
+  // The record lives on `TaintSet`, not `ControlPlan` (drbq Inc 1): the yn71
+  // fixpoint discards its local `plan2`, so a plan-hosted map would lower an
+  // onward gate UNCONDITIONALLY. The closing `x(f)` goes right after `T`, ahead
+  // of the strip, so the flag is back to `[pred]` when the strip reads it.
+  stamp(Bld.CreateCall(X, {Flag}));
+  T->setArgOperand(0, TA);
+  T->setArgOperand(1, B);
+  taint.ControlledRotations[TA] = Flag;
   taint.ControlledRotations[T] = Flag;
+  IRBuilder<> Post(After);
+  stamp(Post.CreateCall(X, {Flag}));
 
-  // ---- 5. FLAG STRIP + FREE, after the consumer.
-  //
-  // The strip recomputes the predicate on the CONDITION's registers and XORs it
-  // back onto the flag, returning it to |0⟩ so the `cqrt_free` is clean (Rule 6).
-  // Its validity is the accept predicate's whole content:
-  //   * for `cq_phi` the gates between mint and strip are DIAGONAL, so no basis
-  //     label moves at all and the strip is valid even when the rotated register
-  //     IS a condition register (PRD §3c — the stem separator);
-  //   * for `cq_theta` S8 proved the rotated register's PHYSICAL rail is disjoint
-  //     from every rail the condition reads, so the condition's basis at the
-  //     strip is the basis the mint read (PRD §3). ⚠ For an UNTAINTED (runtime)
-  //     base (bd z0re) S8 is SKIPPED, not proved: the rotated rail is the one
-  //     `T0` mints (`cqrt_alloc_<W>(Base)`), so it is disjoint from every
-  //     condition rail BY CONSTRUCTION — the state-prep licence §14.5 gives the
-  //     diamond, and the `RuntimeSeedSourceThetas` re-ask is what keeps "fresh"
-  //     true at FINAL taint.
-  //
-  // `DischargedFlagGates` records the strip. THE JUSTIFICATION FOR THAT RECORD IS
-  // NOT S8 (round-1 Rule-13 review, lens L1-2 — the first draft said "if S8 is
-  // ever widened, this recording must be re-proved", which named the wrong
-  // trigger). What the record buys is `ChainWalk::isInteriorConsumer`'s clause
-  // (c): the `_unc` strip is a PURE READ of its slots >= 1, so a rail appearing
-  // there is not thereby a live forward consumer. That property is
-  // UNCONDITIONAL on the `cq_template_<op>_<W>_hl_unc` symbol — it holds whatever
-  // S8 says about wires. The real re-proof triggers are (i) a change to what
-  // `_hl_unc` WRITES, and (ii) a SECOND minter of that symbol with different
-  // effects. Readers: `ChainWalk.cpp:767` (that clause) and `:836`
-  // (`isInteriorTerminalHandle`); `SwapRouteEmit.cpp`'s `scrubTaint` scrubs the
-  // set for that module's erasures, and the set is a `ScrubPtrSet`.
-  //
-  // `Strip` null is UNREACHABLE for the same two reasons the mint's null is
-  // (step 0b's lockstep re-ask, and `DS_Error` → `exit(1)`); the
-  // `dyn_cast_or_null` and the `if` are defence in depth. Note what the code
-  // does NOT do if it ever were null: the `cqrt_free` below fires REGARDLESS,
-  // which on an unstripped flag would be a DIRTY free (Rule 6). Recorded rather
-  // than restructured, because restructuring it would mean choosing between a
-  // dirty free and a leaked flag on a path that cannot be taken.
+  // ---- 4. FLAG STRIP + FREE after the consumer. The strip recomputes the
+  // predicate on the condition's registers and returns the flag to |0⟩ (Rule 5),
+  // valid because S8 proved the rotated rail disjoint from every condition rail
+  // (an untainted base's rail is `TA`'s fresh mint, disjoint by construction).
+  // `DischargedFlagGates` feeds `ChainWalk::isInteriorConsumer` clause (c): the
+  // `_hl_unc` strip is a PURE READ of its slots >= 1 (re-prove on a change to
+  // what it writes). `Strip` null is unreachable; were it null, the free would
+  // be DIRTY — recorded rather than restructured.
   auto *Strip = dyn_cast_or_null<CallInst>(
       lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
                          /*before=*/After, /*negate=*/false,
                          /*railToStrip=*/Flag));
   if (Strip)
     taint.DischargedFlagGates.insert(Strip);
-  IRBuilder<> Post(After);
   stamp(Post.CreateCall(wd.freeFn(), {Flag}));
 
-  // ---- 6. ERASE THE SELECT, then the compare if it is now dead.
-  //
-  // The select's only user was the consumer's angle slot, which now names `D`,
-  // so it is dead. The compare is dead too in the canonical single-use case (the
-  // mint and the strip built FRESH template calls from its OPERANDS —
-  // `lowerCompareToFlag` does not consume the compare) and the accept predicate
-  // required exactly that one user; the `use_empty` guard is kept anyway, since
-  // a surviving user means `lowerOps` still owns it. Scrub before erasing so no
-  // later module walk dereferences freed memory.
-  //
-  // WHAT LEAVING THE COMPARE STANDING WOULD ACTUALLY COST — measured twice, and
-  // the answer moved. HISTORY (round-1 Rule-13 review, lens L5-6, which also
-  // corrected a first draft that said "a silent leak"): deleting the erase
-  // turned 14 of the 46 angle-select fixtures RED; on most shapes `lowerOps`
-  // lowered the dead tainted compare into a second `cq_template_icmp_*_hl` flag
-  // rail that nothing strips and `Uncomputation` refused with `dead chain would
-  // free a measured register`, and the one silent cell then measured was
-  // `control_angle_select_ry_lifted_phi_base.ll` (`opt` exit 0, a never-stripped,
-  // condition-entangled second flag rail, strict stage 2b and FileCheck green).
-  // That fixture carries `CNT-COUNT-1: cq_template_icmp_eq_i32_hl(` since.
-  // ⚠ RE-MEASURED 2026-10-05 by the bd ptue agent on a mutant build (reported,
-  // not re-run for this note): under the same deletion SIX cells are silent and
-  // unstripped, with or without the ptue change, and with the ptue change the
-  // other 14 formerly-loud cells lower to an identity (the compare computed,
-  // immediately `_unc`'d and freed) instead of failing. So the `dead chain`
-  // decline is no longer the loud backstop this paragraph used to name; the
-  // erase itself is what keeps the second flag rail from existing. Which of the
-  // six a FileCheck count fences was not re-established here.
+  // ---- 5. ERASE THE SELECT (its only use, `T`'s angle, now names `B`), then the
+  // compare if dead. A dead tainted compare must not stand: `lowerOps` would
+  // lower it into a second flag rail nothing strips (six silent cells measured
+  // under that deletion, bd ptue 2026-10-05). Scrub before erasing.
   scrubTaint(Sel, taint);
   Sel->eraseFromParent();
   if (Cond->use_empty()) {

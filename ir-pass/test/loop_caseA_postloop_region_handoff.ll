@@ -36,11 +36,12 @@
 ;
 ; TRACE ARGUMENT for `@slice`, hand-derived (h_q, h_r the two registers):
 ;   Ry(h_q,.5); Ry(h_r,.25)                               — the two mints
-;   Ry(h_r,.3); f1 = [q==5]; CRy(f1,h_r,.6); unc f1; free — T by difference
+;   f1 = [q==5]; CRy(f1,h_r,.9); x f1; CRy(f1,h_r,.3); x f1; unc f1; free
+;                                                    — T (bd dm7f.6 X-bracket)
 ;   loop: Ry(h_r,.1) x n                                   — rolled in place
 ;   f = [q==3]; CRy(f,h_r,.2); unc f; free f               — the region, after
 ;   measure(h_q); measure(h_r)                               the loop, on h_r
-; Every rotation is about Y on h_r, so the state is Ry(.25+.3+.6[q==5]+.1n
+; Every rotation is about Y on h_r, so the state is Ry(.25+(.9 or .3)+.1n
 ; +.2[q==3]) on h_r controlled by h_q's basis value — the source's semantics.
 ; The flag is computed from h_q, which no gate touches after its mint, so each
 ; `_unc` returns its flag to |0> before the free (R5). Linked and run from C
@@ -123,9 +124,11 @@ define i32 @slice_plain(i32 noundef %0) {
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
 ; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 2.500000e-01)
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
 ; CHECK-NEXT: %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 5)
-; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F1]], i32 %[[R]], double 0x3FE3333333333334)
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F1]], i32 %[[R]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F1]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F1]], i32 %[[R]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F1]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F1]], i32 %[[Q]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F1]])
 ; CHECK-NEXT: %[[G:[a-zA-Z0-9_.]+]] = icmp sgt i32 %0, 0

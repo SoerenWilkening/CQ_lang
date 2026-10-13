@@ -15,7 +15,8 @@
    to the if/else, so it is the same module). */
 /* 3qlq Inc 1: migrated to register-free cq_phi -- the if/else arms lose their register (P2 angle select).
    NOTE: PRD S3 retires the 2b BY-DIFFERENCE lowering for the Rz stem -- the new form
-   is `x(f); rz_i1(f,B); x(f); rz_i1(f,A)`, exact, no subtraction and no 2^-40 fence.
+   is `x(f); rz_i1(f,B); x(f); rz_i1(f,A)`, exact, no subtraction (the 2^-40 fence
+   was retired for both stems by bd dm7f.6).
    (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_angle_select_rz.c — ANGLE SELECT, `cq_phi` (Rz) stem, at the
    LINK layer (bd test_C_libtooling-drbq Increment 2b; 3qlq Inc 1 lowering).

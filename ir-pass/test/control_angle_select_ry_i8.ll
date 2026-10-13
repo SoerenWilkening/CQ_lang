@@ -5,8 +5,9 @@
 ; limit of the claim: the work-list insert POSITION is kept to avoid a transient
 ; malformed call, and does NOT change the final IR — mutation M15 measured
 ; byte-identical output with the twin appended instead). Here the register's
-; logical type is `i8` while its handle is `i32`. Both emitted `cqrt_ry_i8` calls
-; take an `i32` handle and the classical compare literal stays `i8` — the ABI's
+; logical type is `i8` while its handle is `i32`. All three emitted `cqrt_ry_i8`
+; calls (the unconditional gate and, since bd dm7f.6, two controlled ones) take an
+; `i32` handle and the classical compare literal stays `i8` — the ABI's
 ; width-only rule (Rule 15: a runtime handle is ALWAYS `i32`, the literal carries
 ; the width).
 ; ORACLE DISPOSITION: RED on the pre-2b binary (`rotation angle under quantum
@@ -37,9 +38,11 @@ entry:
 ; CHECK-NEXT: call void @cqrt_ry_i8(i32 %[[Q]], double 5.000000e-01)
 ; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i8(i8 %u1)
 ; CHECK-NEXT: call void @cqrt_ry_i8(i32 %[[R]], double 3.000000e-01)
-; CHECK-NEXT: call void @cqrt_ry_i8(i32 %[[R]], double 3.000000e-01)
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i8_hl(i32 %[[Q]], i8 5)
-; CHECK-NEXT: call void @cqrt_ry_i8_controlled(i32 %[[F]], i32 %[[R]], double 0x3FE3333333333334)
+; CHECK-NEXT: call void @cqrt_ry_i8_controlled(i32 %[[F]], i32 %[[R]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_i8_controlled(i32 %[[F]], i32 %[[R]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i8_hl_unc(i32 %[[F]], i32 %[[Q]], i8 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; A STRAY ROTATION AFTER THE EMITTED STREAM was invisible to every one of the 17
@@ -54,7 +57,6 @@ entry:
 ; NOROUTE:     define{{.*}}@example
 ; NOROUTE-NOT: cqrt_ry_i8(i8
 ; NOROUTE-NOT: call void @cqrt_cswap
-; NOROUTE-NOT: call void @cqrt_x
 ; NOROUTE-NOT: select
 
 ; CNT-COUNT-1: call void @cqrt_free(

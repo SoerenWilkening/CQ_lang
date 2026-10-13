@@ -15,12 +15,15 @@
    used to produce: ONE call, `select i1 %c, double 0.9, double 0.3` on arg-1.
    It is now the C route into `AngleSelectEmit`'s Ry stem.
 
-   ITS GOLDEN IS THE PRE-fmt3 GOLDEN OF THE if/else SLICE, BYTE FOR BYTE (moved,
-   not regenerated — measured), and `e2e-angle-select-ry-twin-identical` now
-   compares THIS golden with the unchanged by-difference twin
-   (`slice_control_angle_select_ry_twin.c`). Read the if/else slice's header for
-   the ONE-ULP note on `fl(0.9) - fl(0.3)`; it applies here unchanged.
-   STRICT stage 2b. */
+   GOLDEN REGENERATED for bd dm7f.6 (owner ruling 2026-10-13, X-bracket Ry stem):
+   `ry(r, 0.3)` plus one controlled gate at the folded `fl(0.9 - 0.3)`
+   (`0x1.3333333333334p-1`, one ulp above 0.6) became `cRy(f, r, 0.9); x(f);
+   cRy(f, r, 0.3); x(f)`, every angle the source's own double. It is now
+   byte-identical to the if/else slice's golden
+   (`slice_control_angle_select_ry.c`), which `e2e-angle-select-ry-twin-identical`
+   asserts. The by-difference twin `slice_control_angle_select_ry_twin.c` was the
+   oracle until then; it shared the rounding it was meant to witness (bd memory
+   `by-difference-twin-blind-to-arithmetic`). STRICT stage 2b. */
 int slice(void) {
     int q = 3;
     int r = 7;

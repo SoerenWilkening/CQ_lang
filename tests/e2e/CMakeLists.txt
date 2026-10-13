@@ -932,21 +932,28 @@ add_test(NAME e2e-slice-control-angle-select-ry-derived-base-ternary
 
 # THE TWIN GATES. `cmp` over committed goldens — no clang, no opt, no
 # plugin, milliseconds. Same construction as the 8h7d.5 rolled-loop twin gates.
-# Since fmt3 the SUBJECT side is the `_ternary` spelling (above).
+# Since fmt3 the SUBJECT side is the `_ternary` spelling (above). REPOINTED by
+# bd dm7f.6 (owner ruling 2026-10-13, `owner-ruling-angle-select-xbracket`): the
+# Ry angle select now emits the X-bracket stream of the if/else in-place Ry arm
+# (`cRy(f,r,A); x(f); cRy(f,r,B); x(f)`), so its oracle is the IF/ELSE spelling
+# (`slice_control_angle_select_ry{,_ne}.c`, lowered by `SwapRouteEmit`'s
+# in-place arm), byte for byte. The by-difference `_twin` slices it compared
+# against until then keep their own registrations and goldens.
 add_test(NAME e2e-angle-select-ry-twin-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ternary.expected.log"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_twin.expected.log")
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry.expected.log")
 
 add_test(NAME e2e-angle-select-ry-ne-twin-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne_ternary.expected.log"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne_twin.expected.log")
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne.expected.log")
 
 # bd 3paw — the Ry angle select followed by a classical loop that rotates the
-# SAME rail (the rolled subject) and its hand-unrolled by-difference twin (no
-# loop, no select; lowered before 3paw). The gate pins the rolled stream to the
-# oracle's byte for byte. Both STRICT stage 2b.
+# SAME rail (the rolled subject) and its hand-unrolled twin (no loop, no select;
+# respelled by bd dm7f.6 as the if/else in-place Ry arm plus three chained
+# rotations, the X-bracket stream the angle select now emits). The gate pins the
+# rolled stream to the oracle's byte for byte. Both STRICT stage 2b.
 add_test(NAME e2e-slice-control-angle-select-ry-forward-loop
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -5193,10 +5200,19 @@ add_test(NAME e2e-slice-z0re-angle-select-runtime-base-exact-inplace
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_exact_inplace.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_exact_inplace.expected.log")
-add_test(NAME e2e-z0re-angle-select-runtime-base-exact-inplace-identical
-  COMMAND "${CMAKE_COMMAND}" -E compare_files
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_exact.expected.log"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_exact_inplace.expected.log")
+# REMOVED by bd dm7f.6 (2026-10-13): `e2e-z0re-angle-select-runtime-base-exact-
+# inplace-identical`. Under the X-bracket route (owner ruling 2026-10-13) the
+# runtime-base angle select emits `mint; alloc(t); cRy(f,h,.75); x(f);
+# cRy(f,h,.25); x(f)`, and no CLEARED spelling produces those bytes: the
+# prep-plus-arm twin `slice_z0re_angle_select_runtime_base_exact_inplace.c`
+# emits `alloc; ry(.25); mint; cRy(.5)` (same unitary, different stream), and
+# the if/else spelling of the same prep (`int r = 6; if (q > 3)
+# cq_theta(&r,.75); else cq_theta(&r,.25);`) DECLINES `if/else state prep
+# allocates two rails` (measured; pinned by
+# `control_inplace_ry_reject_stateprep_nomerge_ifelse_runtime_seed.ll`, bd
+# gjn2). RETIREMENT TRIGGER: when bd gjn2 lowers the if/else two-prep, respell
+# the twin as that if/else and restore this gate. Both slices keep their own
+# registrations above.
 
 # ============================================================================
 # bd test_C_libtooling-l4x4, sub-increment l4x4.b — THE IN-PLACE CONTROLLED-Ry

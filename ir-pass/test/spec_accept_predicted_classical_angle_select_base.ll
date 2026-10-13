@@ -50,8 +50,10 @@
 ; CHECK-LABEL: define i32 @main(
 ; CHECK:       %[[T:[0-9]+]] = tail call i32 @__cq_q_h_01(
 ; CHECK:       %[[R:[A-Za-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[T]])
-; CHECK-NEXT:  call void @cqrt_ry_i32(i32 %[[R]], double 2.000000e-01)
-; CHECK:       call void @cqrt_ry_i32_controlled(i32 %{{[A-Za-z0-9_.]+}}, i32 %[[R]], double 0x3FDFFFFFFFFFFFFF)
+; CHECK-NEXT:  call void @cqrt_ry_i32_controlled(i32 %[[F:[A-Za-z0-9_.]+]], i32 %[[R]], double 0x3FE6666666666666)
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT:  call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 2.000000e-01)
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[F]])
 
 ; ModuleID = 'llvm-link'
 source_filename = "llvm-link"

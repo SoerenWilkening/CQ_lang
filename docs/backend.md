@@ -1233,6 +1233,16 @@ frontend's per-bit rotation semantics
 **prepended** as argument 0; the pass mints it only for the in-place rotation
 arm, controlled state prep and the Ry-stem angle select (§8.3).
 
+> **Non-finite angles are the identity** (owner ruling 2026-10-13, bd memory
+> `owner-ruling-nonfinite-angle-identity-2026-10-13`). Every rotation primitive
+> (`cqrt_ry_<W>`, `cqrt_rz_<W>`, their `_controlled` and `_inv` forms) given an
+> angle that is `+inf`, `-inf` or a NaN of any sign or payload MUST act as the
+> identity on its target (and, controlled, on every control value). The pass
+> relies on it: the rail-negated in-place arm emits `ry(h, θ);
+> ry_controlled(b, h, -θ)`, which is the source's rotation on both branches only
+> under this contract when θ is non-finite. The trace runtime prints the angle
+> and does not model it.
+
 > **Rz is emitted at `i1` only.** The tensored reading is the whole
 > `cqrt_rz_<W>` semantics, and it is exactly what makes a routed or controlled
 > Rz useless as an oracle: the marked phase is `(−1)^popcount(target)`, and a

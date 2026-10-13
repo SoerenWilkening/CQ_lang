@@ -13,9 +13,10 @@
 ; and `@slice_dead` is the same program returning `cq_measure(q)` only, so `r`
 ; is dead after the loop.
 ;
-; WHAT IT PINS. The select's by-difference stream on `r` (`ry(r, .3)`, the flag
-; mint from `q == 5`, `cqrt_ry_i32_controlled(f, r, fl(.9-.3))`, the `_unc`
-; strip, the flag's free), all in `entry`; then the loop body's in-place
+; WHAT IT PINS. The select's stream on `r` (`ry(r, .3)`, the flag mint from
+; `q == 5`, `cqrt_ry_i32_controlled(f, r, .9); x(f); cqrt_ry_i32_controlled(f,
+; r, .3); x(f)` — the X-bracket route of bd dm7f.6 — the strip, the free), all
+; in `entry`; then the loop body's in-place
 ; `ry(r, .1)` on the SAME handle, rolled; and no reverse-play and no free of
 ; `r`'s rail anywhere (R6: a rail that carries a controlled Ry is frozen,
 ; `ChainWalk::railCarriesControlledRotation`). `@slice_dead` is the half where
@@ -51,16 +52,16 @@
 ;
 ; SEMANTIC EVIDENCE (R2). The source's unitary on `r` is `Ry(.25)`, then `Ry(.9)`
 ; on `q == 5` and `Ry(.3)` otherwise, then `Ry(.1)` n+1 times; the stream below
-; is `Ry(.25)·Ry(.3)·cRy_f(fl(.9-.3))·Ry(.1)^(n+1)` with `f = [q == 5]` minted
-; from `q`'s rail and stripped by its `_unc` while `q` is unchanged (no gate
-; touches `q`'s rail between mint and strip). `f = 1` gives `Ry(.3+fl(.9-.3))`,
-; i.e. `Ry(.9)` up to the 2^-54 rad by-difference residual the 2b family
-; documents; `f = 0` gives `Ry(.3)`. The loop gate lowers to `cqrt_ry_i32(h_r,
-; .1)` on the one handle (`lowerRotations` RAUWs every chained `cq_theta` on the
-; rail to it). Linked witness: e2e `slice_control_angle_select_ry_forward_loop`
-; (n = 2, three trips) has a golden byte-identical to its hand-unrolled
-; by-difference twin `slice_control_angle_select_ry_forward_loop_unrolled_twin`,
-; which the pre-3paw compiler already lowered; STRICT stage 2b, 1 verified free.
+; is `Ry(.25)·[f: Ry(.9) | ¬f: Ry(.3)]·Ry(.1)^(n+1)` with `f = [q == 5]`
+; minted from `q`'s rail and stripped by its `_unc` while `q` is unchanged (no
+; gate touches `q`'s rail between mint and strip). `f = 1` gives
+; `Ry(.9)` exactly; `f = 0` gives `Ry(.3)`. The loop gate
+; lowers to `cqrt_ry_i32(h_r, .1)` on the one handle (`lowerRotations` RAUWs
+; every chained `cq_theta` on the rail to it). Linked witness: e2e
+; `slice_control_angle_select_ry_forward_loop` (n = 2, three trips), STRICT
+; stage 2b, 1 verified free. (Its golden matched its hand-unrolled
+; by-difference twin byte for byte before dm7f.6; the dm7f.6 stream adds the
+; controlled `-.3` gate, so that byte relation no longer holds.)
 ;
 ; HISTORY. This file was written (bd drbq Inc 2b, round-2 Rule-13 review, lens R1
 ; item 2) to pin S7's forward-rail gap in the pre-3qlq register form; 3qlq
@@ -126,8 +127,9 @@ define i32 @slice_dead(i32 noundef %0, i32 noundef %1, i32 noundef %2) {
 
 ; ===========================================================================
 ; THE EMITTED STREAM, IN ORDER — hand-derived from `emitAngleSelectRegion`
-; (twin `R(base, B)` before the consumer, the mint at the consumer, the strip and
-; the free after it) and `lowerRotations`, before the fix existed. Handles are
+; (the mint, `R_c(A)`, `x(f)`, the consumer `R_c(B)`, `x(f)`, the strip and
+; the free) and `lowerRotations`, before the fix existed (regenerated for bd
+; dm7f.6's X-bracket route). Handles are
 ; bound at their definition and referenced after, so the chain asserts operand
 ; IDENTITY: the controlled Ry, the strip and the free name the flag the mint
 ; produced, and the loop's Ry names `r`'s handle. Block labels are LLVM's.
@@ -136,9 +138,11 @@ define i32 @slice_dead(i32 noundef %0, i32 noundef %1, i32 noundef %2) {
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
 ; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %1)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 2.500000e-01)
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 5)
-; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 0x3FE3333333333334)
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; CHECK-NEXT: %[[G:[a-zA-Z0-9_.]+]] = icmp slt i32 %2, 0
@@ -161,9 +165,11 @@ define i32 @slice_dead(i32 noundef %0, i32 noundef %1, i32 noundef %2) {
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[DQ]], double 5.000000e-01)
 ; CHECK-NEXT: %[[DR:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %1)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[DR]], double 2.500000e-01)
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[DR]], double 3.000000e-01)
 ; CHECK-NEXT: %[[DF:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[DQ]], i32 5)
-; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[DF]], i32 %[[DR]], double 0x3FE3333333333334)
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[DF]], i32 %[[DR]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[DF]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[DF]], i32 %[[DR]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[DF]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[DF]], i32 %[[DQ]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[DF]])
 ; CHECK-NEXT: %[[DG:[a-zA-Z0-9_.]+]] = icmp slt i32 %2, 0
@@ -183,21 +189,22 @@ define i32 @slice_dead(i32 noundef %0, i32 noundef %1, i32 noundef %2) {
 ; WHOLE-FILE, PURE-NEGATIVE (no positive may enter this prefix: a positive
 ; windows every negative after it).
 ; NOROUTE-NOT: double -
-;   ^ no reverse-play of `r` (or of anything): every angle this file writes is positive
+;   ^ no reverse-play of `r` (or of anything): every angle this file writes is
+;     positive, so any adjoint (uncontrolled or controlled) carries a `-`
 ; NOROUTE-NOT: call void @cqrt_cswap
 ; NOROUTE-NOT: call void @cqrt_copy
 ; NOROUTE-NOT: call void @cqrt_rz_
 ;   ^ the Ry stem emits no phase gate
-; NOROUTE-NOT: call void @cqrt_x(
 ;   ^ a select always means "true value when the flag is 1": no polarity bracket
 ; NOROUTE-NOT: call i32 @cq_theta_
 ; NOROUTE-NOT: call i32 @cq_measure_
 ;   ^ every front-end call is lowered
 ;
 ; COUNTS — one pattern per prefix, `-COUNT-n` then `-NOT` pins exactly n.
-; One controlled Ry and one flag free per function; the free is the FLAG's (the
-; CHECK chain names it), so `r`'s rail is never freed.
-; CRYCNT-COUNT-2: call void @cqrt_ry_i32_controlled(
+; Two controlled Ry (`-.3`, `.9`; bd dm7f.6) and one flag free per function; the
+; free is the FLAG's (the CHECK chain names it), so `r`'s rail is never freed.
+; A third controlled Ry would be an adjoint (`+.3` controlled) or a stray gate.
+; CRYCNT-COUNT-4: call void @cqrt_ry_i32_controlled(
 ; CRYCNT-NOT:     call void @cqrt_ry_i32_controlled(
 ; FCNT-COUNT-2: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(

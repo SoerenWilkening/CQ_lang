@@ -20,6 +20,13 @@
    PRE-fmt3 golden byte for byte. Teaching the pass to emit the cheaper
    by-difference form for this if/else too is a follow-up bead, not a defect.
 
+   ⚠ SINCE bd dm7f.6 (owner ruling 2026-10-13, `owner-ruling-angle-select-
+   xbracket`) THE TERNARY ANGLE SELECT EMITS THIS FILE'S X-BRACKET STREAM, and
+   `e2e-angle-select-ry-twin-identical` compares
+   `slice_control_angle_select_ry_ternary.c`'s golden with THIS one, byte for
+   byte; this if/else spelling is the angle select's oracle now. Everything below
+   about the select's by-difference lowering is HISTORY.
+
    THE SOURCE IS THE POINT. This is the plain C `if/else` with a rotation on ONE
    register in each arm — the shape the increment exists for:
 

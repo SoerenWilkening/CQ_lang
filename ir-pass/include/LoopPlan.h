@@ -498,7 +498,7 @@ bool loopHasInPlaceRailStructure(
 //
 // (2) THE `GateCalls` VOCABULARIES ARE THE SAME RECIPE (θ ∪ φ from `taint`) BUT
 // NOT THE SAME SET AT THE TWO CALL TIMES. `AngleSelectEmit` INSERTS the
-// unconditional twin rotation it mints into `ThetaCalls`/`PhiCalls`, and it runs
+// true-arm controlled gate `TA` it mints into `ThetaCalls`/`PhiCalls`, and it runs
 // inside `lowerControlRegions` — AFTER `classifyArms`, BEFORE
 // `collapseFlattenedLoopRails`. So round 2's vocabulary is a strict SUPERSET of
 // detection's. THE DIRECTION IS SAFE, and here is the argument the code does not

@@ -9,12 +9,13 @@
 ; `-O1` sinks the two thetas into one reading an angle select. At round 1 `t` is a
 ; conservatively-tainted Phase-6 site, so `classifyAngleSelect` proves the TAINTED-base
 ; Ry stem (S8/S9 over `t`'s wire); after `specialize()` scrubs `t`, `lowerRotations`
-; lowers the emitter's unconditional twin as a SOURCE — `alloc(t); ry(h, .2)` — and
-; the consumer as `ry_controlled(f, h, .7 - .2)`. The hand-inlined twin used to
-; DECLINE `rotation angle` at S3's untainted-base return (no reason written there);
-; under the ruling S3 admits the runtime base and the two agree stream for stream.
-; `0x3FDFFFFFFFFFFFFF` is `fl(0.7 - 0.2)`, the difference `clang` gives the manual
-; twin, inside S1's constant-arms rounding fence.
+; lowers the emitter's true-arm gate as a controlled SOURCE — `alloc(t);
+; ry_controlled(f, h, .7)` — then `x(f); ry_controlled(f, h, .2); x(f)` (bd
+; dm7f.6 X-bracket route; regenerated from the by-difference `fl(.7 - .2)`
+; gate). The hand-inlined
+; twin used to DECLINE `rotation angle` at S3's untainted-base return (no reason
+; written there); under the ruling S3 admits the runtime base and the two agree
+; stream for stream.
 ;
 ; ⚠ HAND-WRITTEN IR for the reason `spec_stateprep_runtime_seed_side_door.ll` gives
 ; (from C the vsfp dead-argument drop makes the call `h(0, m)` and the module IS the
@@ -60,10 +61,12 @@ attributes #0 = { mustprogress nofree norecurse nosync nounwind willreturn memor
 ; CHECK-LABEL: define i32 @main(
 ; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %5)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
-; CHECK:      %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[T:[a-zA-Z0-9_.]+]])
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 2.000000e-01)
-; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 3)
-; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 0x3FDFFFFFFFFFFFFF)
+; CHECK:      %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 3)
+; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[T:[a-zA-Z0-9_.]+]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 0x3FE6666666666666)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 2.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 3)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[R]])

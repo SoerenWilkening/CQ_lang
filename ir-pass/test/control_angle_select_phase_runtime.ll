@@ -1,24 +1,16 @@
-; control_angle_select_phase_runtime.ll — ACCEPT. RUN-TIME ANGLE ARMS, admitted
-; for the REGISTER-FREE PHASE stem and ONLY for it (PRD §12 owner question Q3,
-; assumed answer YES; §3 "Angle select").
+; control_angle_select_phase_runtime.ll — ACCEPT. RUN-TIME ANGLE ARMS for the
+; REGISTER-FREE PHASE stem (PRD §12 owner question Q3, assumed answer YES; §3
+; "Angle select").
 ;
-; THE TWO STEMS NOW HAVE OPPOSITE DISPOSITIONS ON ONE INPUT SHAPE, so pin both
-; directions. Its twin `control_angle_select_ry_reject_runtime_arms.ll` is the Ry
-; half and still DECLINES; deleting either file leaves the split unpinned.
-;
-; WHY THE SPLIT IS THE ARITHMETIC AND NOT A POLICY. 2b's Ry lowering emits an
-; unconditional `R(h, B)` plus ONE `R_controlled(f, h, A−B)`, so it must COMPUTE
-; `A − B`. The clearance review (blocker F-11) measured what that costs with
-; run-time arms: the realized true-arm angle is `B + fl(A−B)`, whose error is
-; unbounded in ABSOLUTE radians — 0.858 rad from plain C with π and 1e16, i.e.
-; `Ry(π)` realized as `Ry(4.0)` — and `fl(A−B)` can be `inf` from two FINITE arms
-; (±8.99e307). Neither is fenceable at compile time, so run-time arms were
-; narrowed OUT.
+; The Ry half of this input shape used to DECLINE (its by-difference lowering
+; computed `fl(A−B)`, unbounded in absolute radians and `inf` from finite arms;
+; clearance blocker F-11). Since bd dm7f.6 (owner ruling 2026-10-03) it ACCEPTS
+; too, in the X-bracket form: `control_angle_select_ry_runtime_arms.ll`.
 ;
 ; THIS STEM SUBTRACTS NOTHING. Each arm's value is passed VERBATIM into its own
 ; `cqrt_rz_i1`, so `%a` and `%b` appear in the emitted gates unchanged and no
-; `fsub` exists anywhere in the module. There is no rounding residual to bound,
-; and `angleSelectArmsAdmissible` — the whole fence — is not asked at all.
+; `fsub` exists anywhere in the module. The only arm-value question asked is
+; `angleSelectArmsDefined` (no literal undef/poison).
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll

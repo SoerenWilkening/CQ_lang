@@ -13,7 +13,10 @@
    belongs to the select form, which moved (golden byte for byte) to
    `slice_control_angle_select_ry_ne_ternary.c` together with
    `e2e-angle-select-ry-ne-twin-identical`. Golden REGENERATED deliberately,
-   STRICT 2b: 2 verified, 0 violation.
+   STRICT 2b: 2 verified, 0 violation. ⚠ SINCE bd dm7f.6 (owner ruling
+   2026-10-13) the ternary angle select emits THIS X-bracket stream, so
+   `e2e-angle-select-ry-ne-twin-identical` now compares the ternary golden with
+   THIS one, byte for byte.
 
        if (q != 5) cq_theta(&r, 0.9); else cq_theta(&r, 0.3);
 

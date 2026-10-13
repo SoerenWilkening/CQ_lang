@@ -29,18 +29,15 @@
 ; (drbq.13's own counter-example `a1.c` measured, `fmt3_probes/src/d13a1.c`). This
 ; fixture's select shape comes from C only as `r = SEED; cq_theta(&r, c ? A : B)`.
 ;
-; What S3 would need is an Inc-2b-shaped BY-DIFFERENCE lowering on a fresh rail —
-; `alloc(SEED); cqrt_ry_<W>(h, B); cqrt_ry_<W>_controlled(f, h, A-B)` — and it
-; inherits EVERY §12.3 arithmetic concern: exact only in real arithmetic,
-; |δ| <= ½ ulp(A-B) unbounded in ABSOLUTE radians, `fl(A-B)` non-finite from two
-; FINITE arms, and the constant-arms-only narrowing (clearance finding F-11)
-; verbatim. It also inherits S1-S10 wholesale, which is a second increment's
-; worth of surface. Not folded in.
+; What S3 would need is the angle-select lowering on a fresh rail —
+; `alloc(SEED); cqrt_ry_<W>(h, B); cqrt_ry_<W>_controlled(f, h, -B);
+; cqrt_ry_<W>_controlled(f, h, A)` since bd dm7f.6 (the by-difference form it
+; replaced carried the §12.3 rounding concerns, now retired) — and it inherits
+; S1-S10 wholesale.
 ;
 ; ⚠ bd test_C_libtooling-z0re (OWNER RULING 2026-09-28, option (a)) ADMITTED THE
 ; SAME SHAPE WITH A **RUNTIME** BASE — `control_angle_select_ry_runtime_base.ll`
-; lowers `alloc(t); ry(h, B); ry_controlled(f, h, A−B)`, which is exactly the
-; lowering sketched above. THIS FILE STAYS A DECLINE, because its base is a
+; lowers exactly that stream. THIS FILE STAYS A DECLINE, because its base is a
 ; LITERAL, and the literal is refused for a measured reason rather than for scope:
 ; `-O1`'s IPSCCP can fold a live register the condition tests INTO the literal on
 ; one edge before SimplifyCFG sinks the two thetas, leaving that register live

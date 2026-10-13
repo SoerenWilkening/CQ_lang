@@ -48,7 +48,6 @@ entry:
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
 ; the read of `r`, before the gate
 ; CHECK-NEXT: %[[MM:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[R]])
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
 ; the CONDITION REGISTER: `%[[QC]]` was ANCHORED above at its own `cqrt_alloc`,
 ; so the mint and the strip must both name THAT rail — not merely the same one as
 ; each other (round-1 Rule-13 review L6-N3 closed mint-vs-strip DISAGREEMENT; the
@@ -60,7 +59,10 @@ entry:
 ; predicate the mint read, the flag does not return to |0> and its `cqrt_free` is
 ; a hidden measurement).
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[QC]], i32 5)
-; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 0x3FE3333333333334)
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[QC]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[R]])
@@ -75,7 +77,6 @@ entry:
 
 ; NOROUTE:     define{{.*}}@example
 ; NOROUTE-NOT: call void @cqrt_cswap
-; NOROUTE-NOT: call void @cqrt_x
 ; NOROUTE-NOT: select
 
 ; CNT-COUNT-1: call void @cqrt_free(

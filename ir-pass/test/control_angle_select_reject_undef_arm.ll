@@ -32,6 +32,12 @@
 ; ORACLE DISPOSITION: the pre-2b binary declined this `rotation angle` too (it
 ; declined every angle select), so the fix RESTORES the pre-2b disposition.
 ;
+; SINCE bd dm7f.6 (X-bracket Ry stem) the derivation above is history; the undef
+; arm would land verbatim in the f = 0 gate slot, a literal undef in a gate
+; operand (the bd xy9n class). The clause is now `angleSelectArmsDefined` (same
+; `valueCarriesUndef`); a LITERAL undef is the hand-IR-only class this fixture
+; keeps refused.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}rotation angle under quantum control
 ; 3qlq: migrated from register cq_phi (dead declare erased)

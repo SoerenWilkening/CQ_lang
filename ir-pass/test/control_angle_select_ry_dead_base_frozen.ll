@@ -1,6 +1,7 @@
 ; control_angle_select_ry_dead_base_frozen.ll — ACCEPT: the rotated register is
 ; NEVER READ after the gate, and it is still LEAKED rather than freed (bd drbq
-; Inc 2b; the freeze's other half).
+; Inc 2b; the freeze's other half). Since bd dm7f.6 the rail carries the two
+; X-bracketed controlled Ry (`A` on f = 1, `B` on f = 0).
 ;
 ; With no live consumer, the whole-DAG uncompute spine would ordinarily pick the
 ; register's chain as a dead terminal, reverse it and `cqrt_free` the rail. It
@@ -44,7 +45,6 @@ entry:
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[QC]], double 5.000000e-01)
 ; CHECK:      %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
 ; the CONDITION REGISTER: `%[[QC]]` was ANCHORED above at its own `cqrt_alloc`,
 ; so the mint and the strip must both name THAT rail — not merely the same one as
 ; each other (round-1 Rule-13 review L6-N3 closed mint-vs-strip DISAGREEMENT; the
@@ -56,7 +56,10 @@ entry:
 ; predicate the mint read, the flag does not return to |0> and its `cqrt_free` is
 ; a hidden measurement).
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[QC]], i32 5)
-; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 0x3FE3333333333334)
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[QC]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(
@@ -69,13 +72,11 @@ entry:
 ; CHECK-NOT: call void @cqrt_ry_
 ; CHECK-NOT: call void @cqrt_rz_
 
-; no negated-angle adjoint of either Ry on the dead register, and no free of it
+; no negated-angle adjoint of either Ry on the dead register (every source
+; angle here is positive), and no free of it.
 ; NOROUTE:     define{{.*}}@example
-; NOROUTE-NOT: double -3.000000e-01
-; NOROUTE-NOT: double 0xBFE3333333333334
+; NOROUTE-NOT: double -
 ; NOROUTE-NOT: call void @cqrt_cswap
-; no polarity bracket: a select always means "A when the flag is 1"
-; NOROUTE-NOT: call void @cqrt_x
 ; NOROUTE-NOT: select
 
 ; ONE free: the flag. NOT the dead register.

@@ -118,6 +118,11 @@ _Float16 cqrt_measure_f16(int32_t handle);  /* Phase 7.1 Increment D */
 long double cqrt_measure_f80 (int32_t handle);  /* bd 3c6m.4 — long double (x86-64) */
 
 /* -----------------------------------------------------------------
+ * NON-FINITE ANGLE CONTRACT (owner ruling 2026-10-13, docs/backend.md §11.3):
+ * a rotation (Ry or Rz, plain, controlled or inverse) whose angle is +-inf or
+ * NaN acts as the IDENTITY. The pass relies on it (the rail-negated in-place
+ * arm emits ry(h,θ); ry_controlled(b,h,-θ)). This trace runtime only prints.
+ *
  * Ry rotation — one per width. Takes a handle + double angle; void.
  * Applies Ry(angle) to each qubit of the register (backend.md §11.3);
  * the lowered theta calls emit these. Trace (no return-value suffix):

@@ -22,6 +22,10 @@
 ; `PoisonValue` is a subclass of `UndefValue`, so `valueCarriesUndef` covers both
 ; with ONE predicate and there is no second spelling to drift (Rule 14).
 ;
+; SINCE bd dm7f.6 (X-bracket Ry stem) the fold above is history: the poison
+; TRUE arm would reach the f = 1 controlled gate verbatim, still a raw `double
+; poison` in a gate slot. The decline (`angleSelectArmsDefined`) is unchanged.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}rotation angle under quantum control
 ; 3qlq: migrated from register cq_phi (dead declare erased)

@@ -1,7 +1,7 @@
 ; control_angle_select_ry_then_region.ll — ACCEPT: an angle-select gate FOLLOWED
 ; by an Inc-1 in-place rotation DIAMOND on the SAME register (bd drbq Inc 2b).
 ;
-;     cq_theta(&r, q == 5 ? .9 : .3);      // 2b, by difference
+;     cq_theta(&r, q == 5 ? .9 : .3);      // 2b angle select (dm7f.6 stream)
 ;     if (q == 6) cq_theta(&r, .8);        // Inc 1, in place
 ;
 ; A COMPOSITION FIXTURE, and the thing it actually probes is EMISSION ORDER, not
@@ -66,13 +66,15 @@ merge:
 ; it that composition is order-free. It is not; it is recorded as a follow-on.
 ; CHECK:      %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
 ; the CONDITION REGISTER, bound ONCE so the mint and the strip must name the
 ; SAME rail (round-1 Rule-13 review, L6-N3: with both spelled `%{{...}}` a strip
 ; on the WRONG register stayed green — the flag would then not return to |0> and
 ; its `cqrt_free` would be a hidden measurement, Rule 6).
 ; CHECK-NEXT: %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[QC:[a-zA-Z0-9_.]+]], i32 5)
-; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F1]], i32 %[[R]], double 0x3FE3333333333334)
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F1]], i32 %[[R]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F1]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F1]], i32 %[[R]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F1]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F1]], i32 %[[QC]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F1]])
 ; the SECOND region reads the SAME condition register — pinning `%[[QC]]` here
@@ -94,7 +96,6 @@ merge:
 ; the diamond is FLATTENED and neither region routed anything
 ; NOROUTE:     define{{.*}}@example
 ; NOROUTE-NOT: call void @cqrt_cswap
-; NOROUTE-NOT: call void @cqrt_x
 ; NOROUTE-NOT: phi i32
 ; NOROUTE-NOT: select
 ; NOROUTE-NOT: br i1

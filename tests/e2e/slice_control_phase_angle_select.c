@@ -11,11 +11,11 @@
        x(f); cqrt_rz_i1(f, 0.3); x(f); cqrt_rz_i1(f, 0.9)
 
    — P(0.9) when the flag is 1, P(0.3) when it is 0. THIS RETIRES THE 2b
-   BY-DIFFERENCE FORM FOR THE Rz STEM, and with it the `2^-40` rounding fence
-   (`kAngleSelectMaxRoundingRad`): 2b had to synthesize `fl(A-B)`, an `fsub` the
-   source never wrote whose error is unbounded in absolute radians; the kickback
-   form never realizes a difference at all. The Ry stem is UNTOUCHED — constant
-   arms only, per the 2b clearance blocker F-11.
+   BY-DIFFERENCE FORM FOR THE Rz STEM, and with it the `2^-40` rounding fence:
+   2b had to synthesize `fl(A-B)`, an `fsub` the source never wrote whose error is
+   unbounded in absolute radians; the kickback form never realizes a difference
+   at all. (The Ry stem followed in bd dm7f.6: the X-bracket form, run-time arms
+   admitted, the bound retired.)
 
    EXPECTED TRACE SHAPE: ONE mint, cqrt_x(f), cqrt_rz_i1(f, 0.3), cqrt_x(f),
    cqrt_rz_i1(f, 0.9), ONE strip, ONE free. No cswap, no `_controlled`, no fsub

@@ -137,24 +137,14 @@ struct ControlRegion {
   //
   // Lowered by `AngleSelectEmit`. The `cq_phi` stem goes by KICKBACK
   // (`x(f); rz_i1(f, B); x(f); rz_i1(f, A)`, exact, run-time arms admitted). The
-  // Ry stem goes BY DIFFERENCE, exact IN REAL ARITHMETIC by angle additivity on
-  // one axis (`Ry(A) = Ry(B)·Ry(A−B)`). In IEEE double the emitted true-arm angle
-  // is `B + fl(A−B)`, `|δ| ≤ ½ ulp(A−B)`, so **BOTH ARMS MUST BE `ConstantFP`**
-  // and their evaluated residual must sit under the placeholder
-  // `kAngleSelectMaxRoundingRad` = 2^-40 rad. A RUN-TIME arm DECLINES (`rotation
-  // angle under quantum control`): the compiler would synthesize an `fsub` the
-  // source never wrote, whose error is unbounded in absolute radians (measured
-  // 0.858 rad from plain C — `Ry(pi)` realized as `Ry(4.0)`) and whose result can
-  // be `inf`/`NaN` from two FINITE arms (measured: `inf` in the controlled gate
-  // from ±8.99e307), neither fenceable at compile time. That narrowing is the
-  // Rule-13 CLEARANCE review's (finding F-11, owner option (2)); the rounding
-  // fence itself is the round-1 review's (lens L7-F1) and the both-halves wording
-  // the round-2 one's (lens R1 item 1). The Ry stream is an
-  // UNCONDITIONAL `Ry(h, B)`, the ordinary flag mint,
-  // the drbq in-place `Ry_controlled(f, h, A−B)`, the ordinary strip, one
-  // `cqrt_free`. No CFG surgery, no hoist, no flatten, no `cqrt_x` bracket (a
-  // select always means "A when the flag is 1", so there is no polarity case),
-  // no work rail and no route.
+  // Ry stem (bd dm7f.6, owner ruling 2026-10-13) is the X-BRACKET form on the
+  // minted flag, the stream the if/else in-place Ry arm emits: the ordinary
+  // mint, `Ry_controlled(f, h, A)`, `cqrt_x(f); Ry_controlled(f, h, B);
+  // cqrt_x(f)`, the ordinary strip, one `cqrt_free`. Each arm's double reaches
+  // exactly one gate, so run-time and non-finite arms are admitted (the old
+  // by-difference stream's `fl(A−B)`, its 2^-40 bound and its constant-arms-only
+  // admission are retired). No CFG surgery, no hoist, no flatten, no polarity
+  // case (a select always means "A when the flag is 1"), no work rail, no route.
   //
   // ⚠ THE ENUMERATOR PRE-DATES THAT DESIGN. It was declared for the retired WP10
   // "Family B2" vocabulary and was read by NO src file until Inc 2b; the text

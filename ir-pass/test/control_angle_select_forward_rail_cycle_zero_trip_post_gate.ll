@@ -88,8 +88,8 @@ define i32 @slice_plain() {
   br i1 %17, label %6, label %12
 }
 
-; THE EMITTED STREAM, IN ORDER, hand-derived (the by-difference angle select of
-; `control_angle_select_forward_rail_cycle_frozen.ll`, then the in-place dtzb
+; THE EMITTED STREAM, IN ORDER, hand-derived (the X-bracket angle select
+; of `control_angle_select_forward_rail_cycle_frozen.ll`, bd dm7f.6, then the in-place dtzb
 ; `xorc` on the exit φ's collapsed name). Handles are bound at their definition.
 ; CHECK-LABEL: define i32 @slice(
 ; CHECK-NEXT: %[[N:[a-zA-Z0-9_.]+]] = load volatile i32, ptr @cq_n
@@ -97,9 +97,11 @@ define i32 @slice_plain() {
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
 ; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 7)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 2.500000e-01)
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 5)
-; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 0x3FE3333333333334)
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; CHECK-NEXT: %[[G:[a-zA-Z0-9_.]+]] = icmp sgt i32 %[[N]], 0
@@ -135,7 +137,7 @@ define i32 @slice_plain() {
 
 ; WHOLE-FILE, PURE-NEGATIVE.
 ; NEG-NOT: double -
-;   ^ no reverse-play of either rail
+;   ^ no reverse-play of either rail (every source angle is positive)
 ; NEG-NOT: call i32 @cq_template_xor
 ;   ^ the xor is the in-place dtzb `xorc` on the handle, never a fresh rail
 ; NEG-NOT: call i32 @cq_theta_

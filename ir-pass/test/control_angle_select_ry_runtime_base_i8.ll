@@ -6,9 +6,10 @@
 ;     if (q != 3) { r = t; cq_theta(&r, .7); } else { r = t; cq_theta(&r, .2); }  // r1B probe as_i8
 ;
 ; `-O1` canonicalises `!=` to `icmp eq` and swaps the select arms: `select (q == 3),
-; .2, .7`, so A = .2 (flag set), B = .7, and the by-difference stream is
-; `alloc_i8(t); ry_i8(h, .7); ry_i8_controlled(f_eq, h, fl(.2 - .7))` — f = 0 (q != 3)
-; Ry(.7), f = 1 Ry(.7 + (.2 - .7)) = Ry(.2) up to one ulp, inside S1's 2^-40 fence.
+; .2, .7`, so A = .2 (flag set), B = .7, and the stream (bd dm7f.6) is
+; `f_eq = mint; alloc_i8(t); ry_i8_controlled(f_eq, h, .2); x(f_eq);
+; ry_i8_controlled(f_eq, h, .7); x(f_eq)` — f = 0 (q != 3) Ry(.7), f = 1 Ry(.2).
+; (Regenerated: the by-difference stream had one gate at `fl(.2 - .7)`.)
 ;
 ; WHY AN IR-LEVEL PIN (round 2): the if/else spelling above reaches S3 only because
 ; SimplifyCFG MERGES the two thetas, and bd fmt3 option B (`nomerge` on `cq_theta_*`,
@@ -45,10 +46,12 @@ entry:
 
 ; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %b)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 3.000000e-01)
-; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i8(i8 %t)
-; CHECK-NEXT: call void @cqrt_ry_i8(i32 %[[R]], double 0x3FE6666666666666)
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 3)
-; CHECK-NEXT: call void @cqrt_ry_i8_controlled(i32 %[[F]], i32 %[[R]], double 0xBFDFFFFFFFFFFFFF)
+; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i8(i8 %t)
+; CHECK-NEXT: call void @cqrt_ry_i8_controlled(i32 %[[F]], i32 %[[R]], double 2.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_i8_controlled(i32 %[[F]], i32 %[[R]], double 0x3FE6666666666666)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 3)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; CHECK-NEXT: call i8 @cqrt_measure_i8(i32 %[[R]])
@@ -57,4 +60,3 @@ entry:
 
 ; NEG-NOT: = select
 ; NEG-NOT: cq_theta_
-; NEG-NOT: cqrt_x(

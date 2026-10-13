@@ -4,7 +4,9 @@
 ;     double t = atof(v[1]); int q = atoi(v[2]); cq_theta(&q, .3); double r;
 ;     if (q > 3) { r = t; cq_theta(&r, .7); } else { r = t; cq_theta(&r, .2); }  // r1B probe p2as_f64
 ;
-; Stream: `alloc_f64(t); ry_f64(h, .2); ry_f64_controlled(f, h, fl(.7 - .2))`. The fp
+; Stream: `f = mint; alloc_f64(t); ry_f64_controlled(f, h, .7); x(f);
+; ry_f64_controlled(f, h, .2); x(f)` (bd dm7f.6; was `ry_f64(h, .2)` plus one
+; gate at `fl(.7 - .2)`). The fp
 ; base is admitted under the owner's 2026-09-28 fp ruling; the seed's bits reach
 ; `cqrt_alloc_f64` unchanged (no fence compares a runtime seed's VALUE).
 ;
@@ -38,10 +40,12 @@ entry:
 
 ; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %b)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 3.000000e-01)
-; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double %t)
-; CHECK-NEXT: call void @cqrt_ry_f64(i32 %[[R]], double 2.000000e-01)
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 3)
-; CHECK-NEXT: call void @cqrt_ry_f64_controlled(i32 %[[F]], i32 %[[R]], double 0x3FDFFFFFFFFFFFFF)
+; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double %t)
+; CHECK-NEXT: call void @cqrt_ry_f64_controlled(i32 %[[F]], i32 %[[R]], double 0x3FE6666666666666)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_f64_controlled(i32 %[[F]], i32 %[[R]], double 2.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 3)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; CHECK-NEXT: call double @cqrt_measure_f64(i32 %[[R]])

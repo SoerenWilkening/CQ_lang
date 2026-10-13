@@ -6,9 +6,12 @@
    that still reaches `AngleSelectEmit`'s Ry stem, so the freeze property that
    slice was written to PROBE (the rotated out-of-place `mul` rail is never
    reverse-played or freed; exactly one `cqrt_free`, the flag's) stays probed on
-   the select path. ITS GOLDEN IS THE PRE-fmt3 GOLDEN OF THE if/else slice, byte
-   for byte (moved, not regenerated — measured), including the two expected M-A
-   `live derived record` WARNINGS (`DS_Warning`, opt exits 0). STRICT stage 2b.
+   the select path. GOLDEN REGENERATED for bd dm7f.6 (X-bracket Ry stem:
+   `cRy(f, r, 0.9); x(f); cRy(f, r, 0.3); x(f)` in place of `ry(r, 0.3)` plus one
+   gate at `fl(0.9 - 0.3)`): it is now byte-identical to the if/else slice's
+   golden (`slice_control_angle_select_ry_derived_base.c`), including the two M-A
+   `live derived record` WARNINGS (`DS_Warning`, opt exits 0). Still exactly one
+   `cqrt_free`, the flag's. STRICT stage 2b.
 
    `noinline` is there to reproduce the MODULE, not only the trace: `-O1` did not
    inline the folded if/else `slice` into `main` (the inliner ran while the body

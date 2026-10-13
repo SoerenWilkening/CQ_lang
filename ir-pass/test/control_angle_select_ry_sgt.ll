@@ -18,23 +18,12 @@
 ; measured to give the pre-fmt3 fold's function bodies). The IR and this fixture are
 ; unchanged; only the C spelling that reaches them moved.
 ;
-; LOWERED BY DIFFERENCE (control-in-place-PRD §12.3): `R(h, B)` unconditional,
-; the ordinary flag mint, ONE `cqrt_{ry,rz}_<W>_controlled(f, h, A-B)`, the
-; ordinary `_unc` strip, ONE `cqrt_free`. Exact IN REAL ARITHMETIC by angle
-; additivity on one axis (`R(A) = R(B).R(A-B)`; for `Rz = diag(1,e^{i.theta})` the
-; two diagonals multiply entrywise, so there is no global-phase residue either) —
-; in IEEE double the emitted true-arm angle is `B + fl(A-B)`, so
-; `|delta| <= 1/2 ulp(A-B)`; constant arms are fenced at the placeholder
-; `kAngleSelectMaxRoundingRad` = 2^-40 rad, and a RUN-TIME arm DECLINES — the
-; accept class is CONSTANT arms only, because for a run-time arm the compiler
-; would synthesize an `fsub` the source never wrote whose error is unbounded in
-; absolute radians and whose result can be `inf`/`NaN` from two FINITE arms
-; (round-1 Rule-13 review lens L7-F1 for the bound; the Rule-13 CLEARANCE
-; review, finding F-11 / owner option (2), for the narrowing — an earlier
-; version of this line said "runtime arms carry the bound"; see
-; `control_angle_select_accept_rounding_flagship_bound.ll`). No CFG
-; surgery, no route, no work rail, no `cqrt_x` bracket (a select always means
-; "A when the flag is 1", so there is no polarity case at all).
+; LOWERED IN THE X-BRACKET FORM (bd dm7f.6, owner ruling 2026-10-13): the
+; ordinary flag mint, `cqrt_ry_<W>_controlled(f, h, A)`, `cqrt_x(f);
+; cqrt_ry_<W>_controlled(f, h, B); cqrt_x(f)`, the ordinary `_unc` strip, ONE
+; `cqrt_free` — the if/else in-place Ry arm's stream. REGENERATED for dm7f.6 (was
+; `R(h, .3)` plus one controlled gate at `fl(.9-.3)`); the `sgt` predicate and
+; everything else are unchanged.
 ;
 ; ORACLE DISPOSITION: RED on the pre-2b binary — it declines `rotation angle
 ; under quantum control` at SelectClassify's gate 3 (Rule 12 red-green).
@@ -68,7 +57,6 @@ entry:
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[QC]], double 5.000000e-01)
 ; CHECK:      %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
 ; the CONDITION REGISTER: `%[[QC]]` was ANCHORED above at its own `cqrt_alloc`,
 ; so the mint and the strip must both name THAT rail — not merely the same one as
 ; each other (round-1 Rule-13 review L6-N3 closed mint-vs-strip DISAGREEMENT; the
@@ -80,7 +68,10 @@ entry:
 ; predicate the mint read, the flag does not return to |0> and its `cqrt_free` is
 ; a hidden measurement).
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[QC]], i32 5)
-; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 0x3FE3333333333334)
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[QC]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; A STRAY ROTATION AFTER THE EMITTED STREAM was invisible to every one of the 17
@@ -94,7 +85,6 @@ entry:
 
 ; NOROUTE:     define{{.*}}@example
 ; NOROUTE-NOT: call void @cqrt_cswap
-; NOROUTE-NOT: call void @cqrt_x
 ; NOROUTE-NOT: select
 
 ; CNT-COUNT-1: call void @cqrt_free(

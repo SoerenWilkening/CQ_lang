@@ -943,11 +943,10 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //
   //    which is the source's unitary on BOTH branches. Four things make it the
   //    right answer rather than a trick:
-  //      * EXACT, and for a stronger reason than the Inc-2b by-difference angle
-  //        select. `−θ` is an IEEE sign flip, not an `fsub`, so the whole
-  //        `½ ulp(A−B)` / `kAngleSelectMaxRoundingRad` / non-finite-difference
-  //        fence has NO SUBJECT and its constant-arms-only narrowing is not
-  //        imported. (The one literal hazard that IS real — an `undef` angle
+  //      * EXACT. `−θ` is an IEEE sign flip, not an `fsub`, so no rounding
+  //        fence has a subject (the retired Inc-2b by-difference angle select's
+  //        did), and a non-finite θ gives `I·I` on `b = 1` under the
+  //        non-finite = identity contract (owner ruling 2026-10-13). (The one literal hazard that IS real — an `undef` angle
   //        occupying two emitted slots, bd `xy9n` — is refused in `classifyArms`,
   //        before any mutation.)
   //      * WIDTH-SAFE. `cqrt_ry_<W>` is TENSORED (`docs/backend.md` §11.3), so

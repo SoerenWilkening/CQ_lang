@@ -3,11 +3,12 @@
 ; feeding BOTH a register-free `cq_phi` and a `cq_theta`.
 ;
 ; S2 is `hasOneUse` — it counts USES, not consumers — so a select read by two
-; rotations of DIFFERENT STEMS is refused. That matters because the two stems have
-; opposite arm-value fences (the Ry stem requires CONSTANT arms after the
-; clearance review's blocker F-11; the phase stem admits run-time arms under owner
-; question Q3), and one select cannot satisfy both. Pinned so a future widening of
-; S2 has to confront the stem split rather than discover it.
+; rotations of DIFFERENT STEMS is refused. The two stems used to have opposite
+; arm-value fences (constant arms only for Ry, clearance blocker F-11); since bd
+; dm7f.6 they share one (`angleSelectArmsDefined`), so what remains of the split
+; is the LOWERING: one select would need a kickback pair and an Ry triple off one
+; flag mint. Pinned so a future widening of S2 has to confront the stem split
+; rather than discover it.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error: {{.*}}cq controlled lowering: rotation angle under quantum control
 ; CHECK-NOT: cqrt_rz

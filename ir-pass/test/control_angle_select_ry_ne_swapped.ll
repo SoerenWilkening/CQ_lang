@@ -6,9 +6,12 @@
 ; `clang -O1` canonicalizes `q != 5` to `icmp eq i32 %q, 5` and then swaps the
 ; select's arms rather than inverting the condition (measured — probe p7). THE
 ; POINT OF THIS FIXTURE IS THAT NOTHING SPECIAL HAPPENS: a select ALWAYS means
-; "true value when the flag is 1", so the unconditional twin takes the FALSE
-; operand (here `.9`, the `q != 5` arm's angle) and the controlled gate takes
-; `A - B = .3 - .9 = -0.6`. There is no polarity case and NO `cqrt_x` bracket
+; "true value when the flag is 1", so the f = 1 gate takes the TRUE operand
+; `.3` and the bracketed f = 0 gate the FALSE operand `.9` (the `q != 5` arm's
+; angle), exactly the if/else in-place arm's stream (bd dm7f.6; the by-difference
+; stream this file first pinned took `fl(.3 - .9)`). A swap mutant would put
+; `.9` first.
+; There is no polarity case and NO `cqrt_x` bracket
 ; anywhere in this stream — unlike the `br`-diamond paths, where Rule 9's
 ; false-successor canonicalization forces one.
 ;
@@ -23,23 +26,10 @@
 ; measured to give the pre-fmt3 fold's function bodies). The IR and this fixture are
 ; unchanged; only the C spelling that reaches them moved.
 ;
-; LOWERED BY DIFFERENCE (control-in-place-PRD §12.3): `R(h, B)` unconditional,
-; the ordinary flag mint, ONE `cqrt_{ry,rz}_<W>_controlled(f, h, A-B)`, the
-; ordinary `_unc` strip, ONE `cqrt_free`. Exact IN REAL ARITHMETIC by angle
-; additivity on one axis (`R(A) = R(B).R(A-B)`; for `Rz = diag(1,e^{i.theta})` the
-; two diagonals multiply entrywise, so there is no global-phase residue either) —
-; in IEEE double the emitted true-arm angle is `B + fl(A-B)`, so
-; `|delta| <= 1/2 ulp(A-B)`; constant arms are fenced at the placeholder
-; `kAngleSelectMaxRoundingRad` = 2^-40 rad, and a RUN-TIME arm DECLINES — the
-; accept class is CONSTANT arms only, because for a run-time arm the compiler
-; would synthesize an `fsub` the source never wrote whose error is unbounded in
-; absolute radians and whose result can be `inf`/`NaN` from two FINITE arms
-; (round-1 Rule-13 review lens L7-F1 for the bound; the Rule-13 CLEARANCE
-; review, finding F-11 / owner option (2), for the narrowing — an earlier
-; version of this line said "runtime arms carry the bound"; see
-; `control_angle_select_accept_rounding_flagship_bound.ll`). No CFG
-; surgery, no route, no work rail, no `cqrt_x` bracket (a select always means
-; "A when the flag is 1", so there is no polarity case at all).
+; LOWERED IN THE X-BRACKET FORM (bd dm7f.6, owner ruling 2026-10-13): mint,
+; `cqrt_ry_<W>_controlled(f, h, A)`, `cqrt_x(f); ..._controlled(f, h, B);
+; cqrt_x(f)`, strip, ONE `cqrt_free`. The `cqrt_x` pair is on the flag ancilla;
+; it expresses the f = 0 gate, not a polarity fix.
 ;
 ; ORACLE DISPOSITION: RED on the pre-2b binary — it declines `rotation angle
 ; under quantum control` at SelectClassify's gate 3 (Rule 12 red-green).
@@ -70,11 +60,13 @@ entry:
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
 ; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
-; the unconditional twin takes the FALSE operand — the `q != 5` arm's own angle
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 9.000000e-01)
+; f = 1 (`q == 5`) takes the TRUE operand `.3`; the bracketed f = 0 gate the FALSE
+; operand `.9`, the `q != 5` arm's own angle
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 5)
-; A - B = 0.3 - 0.9 = -0.6, NEGATIVE and pinned as folded BITS
-; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 0xBFE3333333333334)
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; A STRAY ROTATION AFTER THE EMITTED STREAM was invisible to every one of the 17
@@ -89,7 +81,6 @@ entry:
 ; NO `cqrt_x` — the swapped-operand select needs no bracket, which is exactly
 ; what distinguishes this path from the negated `br` arm.
 ; NOROUTE:     define{{.*}}@example
-; NOROUTE-NOT: call void @cqrt_x
 ; NOROUTE-NOT: call void @cqrt_cswap
 ; NOROUTE-NOT: select
 

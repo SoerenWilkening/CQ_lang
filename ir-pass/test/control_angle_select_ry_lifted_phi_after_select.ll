@@ -81,14 +81,17 @@ define i32 @slice() local_unnamed_addr {
 declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr
 declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr
 
-; The 2b by-difference stream: unconditional R(h,B=.3), flag mint, ONE controlled
-; R(h, A−B = .6), strip, free — then the CLASSICAL guard's (now empty) blocks.
+; The angle-select stream (X-bracket since bd dm7f.6): flag mint, controlled
+; R(h,A=.9), x(f), controlled R(h,B=.3), x(f), strip, free — then the
+; CLASSICAL guard's (now empty) blocks.
 ; CHECK: %[[Q:h[0-9]*]] = call i32 @cqrt_alloc_i32(i32 3)
 ; CHECK: %[[R:h[0-9]*]] = call i32 @cqrt_alloc_i32(i32 7)
 ; CHECK: call void @cqrt_ry_i32(i32 %[[R]], double 2.500000e-01)
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
 ; CHECK-NEXT: %[[F:h_cmp[0-9]*]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 5)
-; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 0x3FE3333333333334)
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; CHECK: br i1

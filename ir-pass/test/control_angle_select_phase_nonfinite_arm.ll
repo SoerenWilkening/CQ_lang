@@ -8,13 +8,14 @@
 ; deliberate, and this file exists so nobody "fixes" it later by re-enabling the
 ; whole 2b arm-value fence on this stem.
 ;
-; WHY IT IS RIGHT HERE AND WRONG ON THE Ry STEM. `angleSelectArmsAdmissible`'s
-; non-finite clauses exist because the by-difference lowering realizes `A − B` as
+; WHY IT IS RIGHT HERE. The retired non-finite clauses of the Ry stem's old
+; arm-value fence existed because the by-difference lowering realized `A − B` as
 ; a `double` the source never wrote: two FINITE arms can produce a non-finite
-; DIFFERENCE (measured, from ±8.99e307), so the fence stops the compiler from
-; manufacturing a value the program does not name. The register-free phase stem
-; performs NO subtraction at all — `P(inf)` here is exactly the angle the source
-; asked for, `inf` in and `inf` out.
+; DIFFERENCE (measured, from ±8.99e307). The register-free phase stem performs NO
+; subtraction at all — `P(inf)` here is exactly the angle the source asked for,
+; `inf` in and `inf` out. Since bd dm7f.6 (owner ruling 2026-10-03 item (5)) the
+; Ry stem passes a non-finite arm through as well
+; (`control_angle_select_ry_inf_arm.ll`, `_nan_arm.ll`).
 ;
 ; THE PRECEDENT IS ALREADY SHIPPED AND WAS MEASURED FOR THIS FINDING: an
 ; UNCONTROLLED `cq_theta(&q, INFINITY)` passes through on BOTH binaries

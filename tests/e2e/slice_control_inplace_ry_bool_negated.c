@@ -22,9 +22,8 @@
        cqrt_ry_i32_controlled(h0, h1, −θ)   b = 1 → Ry(θ)·Ry(−θ) = I
 
    which is the source's unitary on BOTH branches. `−θ` is an IEEE SIGN FLIP, not
-   an `fsub`: the Inc-2b by-difference rounding fence (`½·ulp(A−B)`,
-   `kAngleSelectMaxRoundingRad`) has NO SUBJECT here, which is why this form does
-   not inherit that increment's constant-arms-only narrowing. It is width-safe
+   an `fsub`: no rounding fence has a subject here (the retired Inc-2b
+   by-difference angle select's 2^-40 bound did). It is width-safe
    because `cqrt_ry_<W>` is TENSORED — each of the W qubits independently sees
    `Ry(θ)Ry(−θ) = I`.
 

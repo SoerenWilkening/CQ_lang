@@ -16,7 +16,15 @@
    0x3FE3333333333334 at compile time; the 2b emitter folds `A - B` with
    `IRBuilder`'s APFloat subtract. Those agree bit for bit, which is why the
    comparison is EXACT and not merely close — a difference in the last ULP would
-   show up as a different `%a` hex float in the trace. */
+   show up as a different `%a` hex float in the trace.
+
+   ⚠ HISTORY SINCE bd dm7f.6 (owner ruling 2026-10-13). The subject now emits
+   the X-bracket stream of the if/else spelling, and
+   `e2e-angle-select-ry-twin-identical` compares it with
+   `slice_control_angle_select_ry.c` instead. This slice and its golden still pin
+   the by-difference in-place DIAMOND on their own. The shared rounding was always
+   invisible to the old comparison (bd memory
+   `by-difference-twin-blind-to-arithmetic`). */
 int slice(void) {
     int q = 3;
     int r = 7;
