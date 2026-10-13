@@ -31,12 +31,14 @@
 ; CHECK:       %[[R:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fptosi_f64_to_i32(i32 %[[OUT4]])
 ; CHECK-NEXT:  call i32 @cqrt_measure_i32(i32 %[[R]])
 ; The first merge rail is never freed: it holds q-dependent garbage (R5), and a free
-; would be a hidden measurement of q. Bracketed by its mint and the `ret`.
+; would be a hidden measurement of q. ONE positive anchor (its mint, the first
+; f64 alloc, which CHECK pins right after the icmp_eq), so the window runs to the end
+; of input and tools/fixture_guard_liveness.py can attack it (2026-10-13: the former
+; icmp/NEXT/ret spelling bound no handle on its first anchor and had two anchors, so
+; the liveness gate could not check it — failing since c574fc04, unmeasured).
 ; NOFREE-LABEL: define i32 @example(
-; NOFREE:       call i32 @cq_template_icmp_eq_i32_hl(
-; NOFREE-NEXT:  %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double 0.000000e+00)
+; NOFREE:       %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double 0.000000e+00)
 ; NOFREE-NOT:   call void @cqrt_free(i32 %[[OUT]])
-; NOFREE:       ret i32
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %u0) {

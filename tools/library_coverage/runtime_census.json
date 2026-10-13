@@ -3,12 +3,12 @@
     "definition": "Every runtime C/Q mixture builds, lowers, links and trace-runs through tools/cqc; not unitary verified.",
     "driver": "tools/cqc",
     "driver_sha256": "256229fd1964568d9a8ddc17e93ecc75aa49092769eb6f1083d7ac5ff2813d09",
-    "pass_sha256": "64530b54b44eec872173281ee45224cd2ef9b249ad6f69776d3e2820de0949a9",
-    "bundle_sha256": "a5be903739b433f9fca32e33270f83c87a0e0aa5130bf8b46e581a54b63cad87",
-    "templates_sha256": "e2ab29c6e6382b26906126ea6bc54b6cbf5af02afe81b2606e409d2ee424bfcd",
-    "runtime_sha256": "705f8fd4b2f04306073a20e2954b389c35831cc4c70e8b1695ca309166904330",
+    "pass_sha256": "ee7c46b58be59a352bd444d041664ace94d6b4306102c07233dbebaa3aa63e55",
+    "bundle_sha256": "f84bfea9ead8a123356c12a89753c9bca6a3eecd388cb5c3eaa9131a20961432",
+    "templates_sha256": "f94e156da41f19457ffcd4b78978e6a6c49ae89be4519c9f1d25be5f3430dbad",
+    "runtime_sha256": "e165ad253906c37e9bb74d9c8fc43858915ef98c9408b79e4f65fd3ac8682f88",
     "filter": "",
-    "cq_commit": "e0af16ed09c85c7605561eda86db8c07d4a52ab2",
+    "cq_commit": "820342162d4f950e8bc1ebf178f80eabc415aad2",
     "cq_tree_dirty": true,
     "llvm_version": "Homebrew clang version 19.1.7"
   },
@@ -119,7 +119,7 @@
       "mix": "Q",
       "source_sha256": "b98b79cf6a6f79bf87918fce023238dbcacdbc451ff8ab8ec325d5328301908e",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_7j_tj55x/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'cosf' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_cosf float (float): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_wsnr9w_0/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'cosf' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_cosf float (float): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -372,7 +372,7 @@
       "mix": "Q",
       "source_sha256": "518ad3a2d0f674e4263a0e7a5c38b16a90c3adf86e22da4ea1332c0cd52ac59b",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_28_e5ugo/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'cosl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_cosl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_3qazp5e_/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'cosl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_cosl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -463,7 +463,7 @@
       "mix": "Q",
       "source_sha256": "f957c047c797d4f8c4e8cbd8ca3848e21f59ed332962ca9f039fd3c15df7b00f",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_aute2vk1/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'sinf' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_sinf float (float): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_e7q0nj2f/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'sinf' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_sinf float (float): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -716,7 +716,7 @@
       "mix": "Q",
       "source_sha256": "15cbfff0253203c264021561677573dcdd5cba0d66788d7310a20cb4a57de334",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_aozzkna_/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'sinl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_sinl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_adeulrqa/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'sinl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_sinl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -807,7 +807,7 @@
       "mix": "Q",
       "source_sha256": "c4c4851088a907328ae2c3dc0b4b603b807efc4da8597f61422ad4423185a541",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_cmididlg/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'tanf' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_tanf float (float): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_z_en2mf1/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'tanf' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_tanf float (float): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -1060,7 +1060,7 @@
       "mix": "Q",
       "source_sha256": "115f6a6eef7f1dfa0477bb73a3daeaa3e07adc545c76073b1d4e6caa8f2271ab",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_zbld182j/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'tanl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_tanl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_hwqa884q/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'tanl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_tanl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -2620,7 +2620,7 @@
       "mix": "CQ",
       "source_sha256": "202363474bae4e08803d03aba977d335f328fba63e3775e6615031e4cb4fcd3a",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ui48j2zm/probe.c:5:13: in function probe float (float, float): cq specialization: the error below is inside the quantum call to 'atan2f' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_atan2f.c:43:20: in function __cq_q___cq_libm_atan2f_10 float (float, float): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_llxe2uxk/probe.c:5:13: in function probe float (float, float): cq specialization: the error below is inside the quantum call to 'atan2f' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_atan2f.c:43:20: in function __cq_q___cq_libm_atan2f_10 float (float, float): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -2872,7 +2872,7 @@
       "mix": "CQ",
       "source_sha256": "a993b9c106dbfd233ab2d8f4db7d92b0534adbfba2a2e2a3a2ab8e2851f32dd7",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_qzuxj6ua/probe.c:5:14: in function probe double (double, double): cq specialization: the error below is inside the quantum call to 'atan2' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_atan2.c:71:37: in function __cq_q___cq_libm_atan2_10 double (double, double): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_x8zoa9t6/probe.c:5:14: in function probe double (double, double): cq specialization: the error below is inside the quantum call to 'atan2' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_atan2.c:71:37: in function __cq_q___cq_libm_atan2_10 double (double, double): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -3124,7 +3124,7 @@
       "mix": "CQ",
       "source_sha256": "eef83f0fa8cc0f1451b73927434044ebad630844def288abd4cb8bb28de983c5",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_m46ul179/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'atan2l' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_atan2l.c:61:32: in function __cq_q___cq_libm_atan2l_10 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_f_d4wniz/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'atan2l' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_atan2l.c:61:32: in function __cq_q___cq_libm_atan2l_10 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -3377,7 +3377,7 @@
       "mix": "Q",
       "source_sha256": "ad0a7f44ad610f51d218707b764211c63299fb77c18c37a7f971854c12a19b43",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_9j7n3naf/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'coshf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_expm1f.c:123:1: in function __cq_libm_expm1f float (float): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_eksf41x0/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'coshf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_expm1f.c:123:1: in function __cq_libm_expm1f float (float): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -3468,7 +3468,7 @@
       "mix": "Q",
       "source_sha256": "afef7e8b52b59d96eb5e4a07b8ed4c8a99109e9244323c10f862782e56b7421a",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_5fwq95c3/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'cosh' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_expm1.c:217:1: in function __cq_libm_expm1 double (double): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_11fa9o2u/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'cosh' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_expm1.c:217:1: in function __cq_libm_expm1 double (double): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -3559,7 +3559,7 @@
       "mix": "Q",
       "source_sha256": "d00fc528c909a77d1e520a0f8224066ad71310c1c673c6fa8cc75f7bbe9a7e93",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_6yf9zpkj/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'coshl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/polevll.c:78:6: in function __cq_libm___polevll x86_fp80 (x86_fp80, ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_vgsahngx/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'coshl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/polevll.c:78:6: in function __cq_libm___polevll x86_fp80 (x86_fp80, ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -3650,7 +3650,7 @@
       "mix": "Q",
       "source_sha256": "f73f3c0006d4a4f05ae8d6fb65e9f4501b001f530018137358307c887bf88d09",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census__nhhu072/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'sinhf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_expm1f.c:123:1: in function __cq_libm_expm1f float (float): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_4clk8ak7/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'sinhf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_expm1f.c:123:1: in function __cq_libm_expm1f float (float): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -3741,7 +3741,7 @@
       "mix": "Q",
       "source_sha256": "070cf5fef0220993abb0ad8bb204cf538e5df93d11ee961340a49669ed4c276a",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_0jgj36fb/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'sinh' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_expm1.c:217:1: in function __cq_libm_expm1 double (double): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_8fvg8uun/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'sinh' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_expm1.c:217:1: in function __cq_libm_expm1 double (double): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -3832,7 +3832,7 @@
       "mix": "Q",
       "source_sha256": "e4f814aa45edd458e16a8a78c7cb50e95d126739d1e89e67f14bde62de5acab2",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_6gnhgdho/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'sinhl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/polevll.c:78:6: in function __cq_libm___polevll x86_fp80 (x86_fp80, ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_axijhsrk/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'sinhl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/polevll.c:78:6: in function __cq_libm___polevll x86_fp80 (x86_fp80, ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -3923,7 +3923,7 @@
       "mix": "Q",
       "source_sha256": "f33c872b8d450cd5b5093a9741204c667cb019c75b0b631ea73070d216e9de9f",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ahfwf22q/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'tanhf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_expm1f.c:123:1: in function __cq_libm_expm1f float (float): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_vulyd1mq/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'tanhf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_expm1f.c:123:1: in function __cq_libm_expm1f float (float): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -4014,7 +4014,7 @@
       "mix": "Q",
       "source_sha256": "0eb531f836037d3838c8178bafec8299d3f5f1ff324ca620b93df07087108f92",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_gndga2dm/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'tanh' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_expm1.c:217:1: in function __cq_libm_expm1 double (double): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ftbg0brw/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'tanh' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_expm1.c:217:1: in function __cq_libm_expm1 double (double): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -4268,7 +4268,7 @@
       "mix": "Q",
       "source_sha256": "7e42aaf892c23f0a10a5d0202607b948939d37304e63a90e9c45316a1e19d09b",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_gimz2b1c/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'acoshf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_log1pf.c:114:1: in function __cq_libm_log1pf float (float): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_1tx6t787/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'acoshf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_log1pf.c:114:1: in function __cq_libm_log1pf float (float): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -4358,7 +4358,7 @@
       "mix": "Q",
       "source_sha256": "a35201752fff1a0be589a50d641f884d6d2dd717f2d22919b273173365f07187",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_7oqx4yoq/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'acosh' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_log1p.c:175:1: in function __cq_libm_log1p double (double): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_au9x8qrd/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'acosh' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_log1p.c:175:1: in function __cq_libm_log1p double (double): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -4448,7 +4448,7 @@
       "mix": "Q",
       "source_sha256": "1ffe5ab4b8f51663f60b7a764578fa33fe9dc355f723fbd6587bb23874b75d44",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_kourmqf7/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'acoshl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_logl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_3f3byspf/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'acoshl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_logl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -4538,7 +4538,7 @@
       "mix": "Q",
       "source_sha256": "768e0e349d7a2fb6c12237655281c6d96064628a10024006935345400d8ac25a",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_pgbkwv80/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'asinhf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_log1pf.c:114:1: in function __cq_libm_log1pf float (float): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_kgocrhph/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'asinhf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_log1pf.c:114:1: in function __cq_libm_log1pf float (float): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -4628,7 +4628,7 @@
       "mix": "Q",
       "source_sha256": "dc9210482a9504e9eba4d941f95606f67d1555a5c2cdaf6e50e9ba4edaff8257",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_16mxd76_/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'asinh' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_log1p.c:175:1: in function __cq_libm_log1p double (double): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_h3pubnz8/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'asinh' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_log1p.c:175:1: in function __cq_libm_log1p double (double): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -4718,7 +4718,7 @@
       "mix": "Q",
       "source_sha256": "ecc85377ed18cc5424c236323b7d3ead1e6d7336782f1072c356ed662433ff7a",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_8woyc3i6/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'asinhl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_logl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_7f3ne076/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'asinhl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_logl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -4808,7 +4808,7 @@
       "mix": "Q",
       "source_sha256": "1320683e5a206da9271e793e5937660e92e17b62262193c6bc589dc9792414fa",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_cg04fe9c/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'atanhf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_log1pf.c:114:1: in function __cq_libm_log1pf float (float): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_3ij8jfia/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'atanhf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_log1pf.c:114:1: in function __cq_libm_log1pf float (float): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -4898,7 +4898,7 @@
       "mix": "Q",
       "source_sha256": "bd13581f6ea1b770eb9f0eb191c7624bb2043a19d76d62a034e53361604c2587",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_iwsxe1wp/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'atanh' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_log1p.c:175:1: in function __cq_libm_log1p double (double): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_fi_jm4v6/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'atanh' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_log1p.c:175:1: in function __cq_libm_log1p double (double): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -4988,7 +4988,7 @@
       "mix": "Q",
       "source_sha256": "8e87658f0e7bc1087249e13c0f5f423dd24b05ffa534bd862049343581f6bc9f",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_rr2x3r_6/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'atanhl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_log1pl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_xmd4ftd_/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'atanhl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_log1pl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -5407,7 +5407,7 @@
       "mix": "Q",
       "source_sha256": "c85eff75b388067f2ed9d6621fd2a002fb4831a3406271825ff116b3433a7dc7",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_f193a_qr/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'expl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/polevll.c:78:6: in function __cq_libm___polevll x86_fp80 (x86_fp80, ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_g04yhpvl/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'expl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/polevll.c:78:6: in function __cq_libm___polevll x86_fp80 (x86_fp80, ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -5662,7 +5662,7 @@
       "mix": "Q",
       "source_sha256": "cc075f1dc9140b65e730d7ef464f849e642bc0ab70cae7d2d7c2e04f14c08338",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_6d_byeec/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'exp2' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_exp2.c:392:1: in function __cq_libm_exp2 double (double): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ro8hf2a3/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'exp2' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_exp2.c:392:1: in function __cq_libm_exp2 double (double): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -5753,7 +5753,7 @@
       "mix": "Q",
       "source_sha256": "e70eb00e4021b9d81ad81d0086cf73a1005f160644d054c78f4d463e21b162ed",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_i7n9x_zf/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'exp2l' lifted from here\n\nerror: _deps/cq_openlibm-src/ld80/s_exp2l.c:295:1: in function __cq_libm_exp2l x86_fp80 (x86_fp80): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_br4risrk/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'exp2l' lifted from here\n\nerror: _deps/cq_openlibm-src/ld80/s_exp2l.c:295:1: in function __cq_libm_exp2l x86_fp80 (x86_fp80): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -5843,7 +5843,7 @@
       "mix": "Q",
       "source_sha256": "cf3b793d5bd5b1f81fde5cb157dd614218ee1de6a25dc6530aecf010e65d2175",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_cxb90czx/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'expm1f' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_expm1f.c:123:1: in function __cq_libm_expm1f float (float): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_9nm124qe/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'expm1f' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_expm1f.c:123:1: in function __cq_libm_expm1f float (float): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -5933,7 +5933,7 @@
       "mix": "Q",
       "source_sha256": "f6d6585a508670d459babaf302034e273fec521201b8020859135f6dd9fbf259",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_0o_y7kk6/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'expm1' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_expm1.c:217:1: in function __cq_libm_expm1 double (double): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_oxxsj7pt/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'expm1' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_expm1.c:217:1: in function __cq_libm_expm1 double (double): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -6514,7 +6514,7 @@
       "mix": "Q",
       "source_sha256": "793cf3469ce03037fb3f9097b7454dbddf6955eaf5fc52a24d79d018fb78cefe",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_dl7h98so/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'logl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_logl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_0qq_edc6/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'logl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_logl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -6933,7 +6933,7 @@
       "mix": "Q",
       "source_sha256": "ae1f19f17cb9c3716a340ff03c08c0b4b384334f94719cdf2dad42e5a9881d9c",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_y42mhu7s/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'log10l' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_log10l x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_vx0p_41p/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'log10l' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_log10l x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -7352,7 +7352,7 @@
       "mix": "Q",
       "source_sha256": "dcf0c2d85e914c45450843602569c9480cd86da28ef479c717fd5d81fee8deed",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_q1plex3r/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'log2l' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_log2l x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_8g7r75bd/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'log2l' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_log2l x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -7442,7 +7442,7 @@
       "mix": "Q",
       "source_sha256": "5c502890af24a762d4f1a0a18107db41871e6a71fe0839a9e5cb1f9af2eea02a",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ilcqjf0e/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'log1pf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_log1pf.c:114:1: in function __cq_libm_log1pf float (float): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ks55bz97/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'log1pf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_log1pf.c:114:1: in function __cq_libm_log1pf float (float): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -7532,7 +7532,7 @@
       "mix": "Q",
       "source_sha256": "8643f8ae8bc5aee24d76f08d6949d97a3ee5f292bfaf546a4230192bfdeb4208",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_grktz1f8/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'log1p' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_log1p.c:175:1: in function __cq_libm_log1p double (double): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_jt1csgkw/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'log1p' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_log1p.c:175:1: in function __cq_libm_log1p double (double): cq specialization: callee return value denotes no value (undef/poison)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -7622,7 +7622,7 @@
       "mix": "Q",
       "source_sha256": "0f221e3a86316a6baeead88722ddefb90dc2f7fc12ab6a7555d43cd3bd047f51",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_cock4fu6/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'log1pl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_log1pl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_imxfid8u/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'log1pl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_log1pl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -8036,7 +8036,7 @@
       "mix": "Q",
       "source_sha256": "8f7fab89b87ce68cb87f30b5db4d22b4485246bad3c9b7963371246fcc4763e8",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_55nkm2uw/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'logbl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_logbl.c:40:4: in function __cq_q___cq_libm_logbl_1 x86_fp80 (x86_fp80): cq controlled lowering: loop under quantum control\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_abv2sxmi/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'logbl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_logbl.c:40:4: in function __cq_q___cq_libm_logbl_1 x86_fp80 (x86_fp80): cq controlled lowering: loop under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -8450,7 +8450,7 @@
       "mix": "Q",
       "source_sha256": "990fa3fbfa7334ab279677f86c53d3bb56610077e6fcb7d4445d7916e7e0dd12",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ows8f_n4/probe.c:5:11: in function probe i32 (x86_fp80): cq specialization: the error below is inside the quantum call to 'ilogbl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_ilogbl.c:41:4: in function __cq_q___cq_libm_ilogbl_1 i32 (x86_fp80): cq controlled lowering: loop under quantum control\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_vl1sse4b/probe.c:5:11: in function probe i32 (x86_fp80): cq specialization: the error below is inside the quantum call to 'ilogbl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_ilogbl.c:41:4: in function __cq_q___cq_libm_ilogbl_1 i32 (x86_fp80): cq controlled lowering: loop under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -10484,7 +10484,7 @@
       "mix": "CQ",
       "source_sha256": "7d57a0814d618132e49bd9c8547925b36b36cda5bceb5bf74930c75512eb4b46",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_l5lvm6t5/probe.c:5:13: in function probe float (float, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_bdow_y42/probe.c:5:13: in function probe float (float, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -10574,7 +10574,7 @@
       "mix": "QQ",
       "source_sha256": "194837992989293e8214654022f73d16d2ef0a743233e312f9426f432debf292",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_6se7tzvx/probe.c:6:13: in function probe float (float, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_xd9nmd5u/probe.c:6:13: in function probe float (float, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -10664,7 +10664,7 @@
       "mix": "CQ",
       "source_sha256": "c571fef6c41570d0402aef8b9b61f502c8569707163361afc4ce90ea5b874420",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ox77qgq1/probe.c:5:14: in function probe double (double, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_x7wle1i6/probe.c:5:14: in function probe double (double, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -10754,7 +10754,7 @@
       "mix": "QQ",
       "source_sha256": "ffa2c044dfc8afd6405c385abe4f34c536c0b6a45622c2527b2eeb510e46f4c2",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_lsalx66g/probe.c:6:14: in function probe double (double, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_u01_r5_6/probe.c:6:14: in function probe double (double, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -10844,7 +10844,7 @@
       "mix": "CQ",
       "source_sha256": "3ac17d1124194610da24940873eec2c5ac156f6fd85becd24e2bab8c750256a6",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ba4haa4g/probe.c:5:19: in function probe x86_fp80 (x86_fp80, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_gu_fypke/probe.c:5:19: in function probe x86_fp80 (x86_fp80, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -10934,7 +10934,7 @@
       "mix": "QQ",
       "source_sha256": "e27bf548f6f7eb81a70c85be106eb862c2051d38cfb83dc69529f9b3e47478a1",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_x1ymjrek/probe.c:6:19: in function probe x86_fp80 (x86_fp80, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ydmx0vqi/probe.c:6:19: in function probe x86_fp80 (x86_fp80, i64): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -11024,7 +11024,7 @@
       "mix": "Q",
       "source_sha256": "8daba624d28cc57b82bbc45fa3ae7b96f0deea251fd587d3d755d988d759b57e",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_p9asszn9/probe.c:6:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'frexpf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_frexpf.c:32:8: in function __cq_libm_frexpf float (float, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_hb_l51ta/probe.c:6:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'frexpf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_frexpf.c:32:8: in function __cq_libm_frexpf float (float, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -11114,7 +11114,7 @@
       "mix": "Q",
       "source_sha256": "ae77e9d31d8d35eb223df9fa1b567988ca3df02ed9d90ed177178cc64e74ce1a",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_v0evheh7/probe.c:6:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'frexp' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_frexp.c:40:8: in function __cq_libm_frexp double (double, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_txeon6st/probe.c:6:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'frexp' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_frexp.c:40:8: in function __cq_libm_frexp double (double, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -11204,7 +11204,7 @@
       "mix": "Q",
       "source_sha256": "a3546d014db0d24e3f0ddd29b22bbe77b951461427e0edff9ad5224791450caf",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_1mtixkfm/probe.c:6:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'frexpl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_frexpl.c:48:8: in function __cq_libm_frexpl x86_fp80 (x86_fp80, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_skqnfedv/probe.c:6:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'frexpl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_frexpl.c:48:8: in function __cq_libm_frexpl x86_fp80 (x86_fp80, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -11294,7 +11294,7 @@
       "mix": "Q",
       "source_sha256": "5ea6c97552d5092995a5edf8d9fd94ac820ccfbde7bdccfd2f7693d309e58dfa",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_q_cmbw2r/probe.c:6:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'modff' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_modff.c:34:10: in function __cq_libm_modff float (float, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_f_y0v3_8/probe.c:6:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'modff' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_modff.c:34:10: in function __cq_libm_modff float (float, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -11384,7 +11384,7 @@
       "mix": "Q",
       "source_sha256": "44de4358dc14657dc6d92aee47d4fbe14cf840311f271b26658ef19cd6aa0e2c",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_9az5y6sg/probe.c:6:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'modf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_modf.c:38:10: in function __cq_libm_modf double (double, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ue6ibsdz/probe.c:6:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'modf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_modf.c:38:10: in function __cq_libm_modf double (double, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -11474,7 +11474,7 @@
       "mix": "Q",
       "source_sha256": "0720a8013f39607692431aba558bf2fe321bc7bb2aee42c5723c7ab9dcdfbab7",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_8kc73xce/probe.c:6:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'modfl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_modfl.c:67:10: in function __cq_libm_modfl x86_fp80 (x86_fp80, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_krq2seeo/probe.c:6:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'modfl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_modfl.c:67:10: in function __cq_libm_modfl x86_fp80 (x86_fp80, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -12221,7 +12221,7 @@
       "mix": "CQ",
       "source_sha256": "0c87307d9d11fbce27e1cf487a3fd0a7193261c8ee16dd03c3329590eae88a76",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_xgdcw4bs/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'powl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_powl x86_fp80 (x86_fp80, x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_znkuhvej/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'powl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_powl x86_fp80 (x86_fp80, x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -12230,7 +12230,7 @@
       "mix": "QC",
       "source_sha256": "dd7c6ebb18e79349431d2e9519f9367326833007d4fcf0b1462ca8e17db7d4c6",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_l8zeqpsq/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'powl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_powl x86_fp80 (x86_fp80, x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_78qq328b/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'powl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_powl x86_fp80 (x86_fp80, x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -12239,7 +12239,7 @@
       "mix": "QQ",
       "source_sha256": "beca12ad4c1e3d91c7c5a7bf87b2c5e6a20a97d3bfbbf57cce0db8de3911ebdc",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_g5tvt86i/probe.c:6:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'powl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_powl x86_fp80 (x86_fp80, x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ezubdqhe/probe.c:6:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'powl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_powl x86_fp80 (x86_fp80, x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -14435,7 +14435,7 @@
       "mix": "CQ",
       "source_sha256": "004273fc19e35e0bb7a1b70a3be537c5c5227c13c679700aae6585d5c7979009",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_vfb_9414/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'hypotl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_hypotl.c:61:5: in function __cq_q___cq_libm_hypotl_10 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census__zv4un_i/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'hypotl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_hypotl.c:61:5: in function __cq_q___cq_libm_hypotl_10 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -14444,7 +14444,7 @@
       "mix": "QC",
       "source_sha256": "a01ae00935fd75ec4cbee4c1aea9fca32510ad196c8e714cbf7c92ca8d1848b3",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_j53sgey2/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'hypotl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_hypotl.c:61:5: in function __cq_q___cq_libm_hypotl_01 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ndxt528p/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'hypotl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_hypotl.c:61:5: in function __cq_q___cq_libm_hypotl_01 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -14453,7 +14453,7 @@
       "mix": "QQ",
       "source_sha256": "02665a95db4d05d06a17ce4dd247170d6b0ae45c264661840147f73ba6234719",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_m36lq1s5/probe.c:6:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'hypotl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_hypotl.c:61:5: in function __cq_q___cq_libm_hypotl_11 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_9o44vpvs/probe.c:6:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'hypotl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_hypotl.c:61:5: in function __cq_q___cq_libm_hypotl_11 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -14867,7 +14867,7 @@
       "mix": "Q",
       "source_sha256": "0f4ecf3ef1212a4652564f1ea2be893cfd6da23ecc5ba1a3abe5c979ff027286",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_pynfd1uh/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'erfl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/polevll.c:78:6: in function __cq_libm___polevll x86_fp80 (x86_fp80, ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_em12ri6t/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'erfl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/polevll.c:78:6: in function __cq_libm___polevll x86_fp80 (x86_fp80, ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -15281,7 +15281,7 @@
       "mix": "Q",
       "source_sha256": "793daffc5520c3e06ecd077525231b023a798e57f15dbdca856bd2a959b74579",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_v01t7i_e/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'erfcl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/polevll.c:78:6: in function __cq_libm___polevll x86_fp80 (x86_fp80, ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_7zhie437/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'erfcl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/polevll.c:78:6: in function __cq_libm___polevll x86_fp80 (x86_fp80, ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -15371,7 +15371,7 @@
       "mix": "Q",
       "source_sha256": "b8245e3536976e07ddc5ebccb89a22a44d814de3dcecfebc8edb3fb275f3f84f",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_o111bp30/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'tgammaf' lifted from here\n\nerror: _deps/cq_openlibm-src/bsdsrc/b_log.c:440:6: in function __cq_libm___log__D { double, double } (double): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_hu1bmoyh/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'tgammaf' lifted from here\n\nerror: _deps/cq_openlibm-src/bsdsrc/b_log.c:440:6: in function __cq_libm___log__D { double, double } (double): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -15461,7 +15461,7 @@
       "mix": "Q",
       "source_sha256": "2fe3f80e96671cdcf674aea95e625c80bf59f103bf891e97ca4aa277a4417e5e",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_kxrvv6cs/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'tgamma' lifted from here\n\nerror: _deps/cq_openlibm-src/bsdsrc/b_log.c:440:6: in function __cq_libm___log__D { double, double } (double): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_9v763tx8/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'tgamma' lifted from here\n\nerror: _deps/cq_openlibm-src/bsdsrc/b_log.c:440:6: in function __cq_libm___log__D { double, double } (double): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -15551,7 +15551,7 @@
       "mix": "Q",
       "source_sha256": "c77c260f67ab961cf2dddb970499bd1a3de34d5a57208dcdaf5d7f7093725143",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_hce0k46t/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'tgammal' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_sinl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_6tnq76hi/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'tgammal' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_sinl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -15641,7 +15641,7 @@
       "mix": "Q",
       "source_sha256": "f87d7ab5838491867e6d41ec6476164097c55c7e43810c3e134239e43978fe80",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_b1ocv9wi/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'lgammaf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_lgammaf_r.c:149:12: in function __cq_libm_lgammaf_r float (float, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_4t4rsyu0/probe.c:5:13: in function probe float (float): cq specialization: the error below is inside the quantum call to 'lgammaf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_lgammaf_r.c:149:12: in function __cq_libm_lgammaf_r float (float, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -15731,7 +15731,7 @@
       "mix": "Q",
       "source_sha256": "f16f0633f119c81d817844bb5dace0afb476f4f6acd20d129f5aefc66dfde98e",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ebk0a6ez/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'lgamma' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_lgamma_r.c:216:12: in function __cq_libm_lgamma_r double (double, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_4gzm_2gf/probe.c:5:14: in function probe double (double): cq specialization: the error below is inside the quantum call to 'lgamma' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_lgamma_r.c:216:12: in function __cq_libm_lgamma_r double (double, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -15821,7 +15821,7 @@
       "mix": "Q",
       "source_sha256": "df555db677e9641ba61313749af530a6226abcb9c171e49df95ca09e799f6eb8",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_1hugbp5c/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'lgammal' lifted from here\n\nerror: _deps/cq_openlibm-src/ld80/e_lgammal_r.c:276:13: in function __cq_libm_lgammal_r x86_fp80 (x86_fp80, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_htqxj3os/probe.c:5:19: in function probe x86_fp80 (x86_fp80): cq specialization: the error below is inside the quantum call to 'lgammal' lifted from here\n\nerror: _deps/cq_openlibm-src/ld80/e_lgammal_r.c:276:13: in function __cq_libm_lgammal_r x86_fp80 (x86_fp80, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -19800,7 +19800,7 @@
       "mix": "Q",
       "source_sha256": "01700965934e5898ff981e593d9fd14baeacab0596bb9fbf7535a3c3b0d1c81a",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_tqmv1j6e/probe.c:5:12: in function probe i64 (float): cq specialization: the error below is inside the quantum call to 'lroundf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_lroundf i64 (float): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_and3dgwi/probe.c:5:12: in function probe i64 (float): cq specialization: the error below is inside the quantum call to 'lroundf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_lroundf i64 (float): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -19891,7 +19891,7 @@
       "mix": "Q",
       "source_sha256": "8bfa85a4edff772a63db8e8073409d97276363edd09c7278e4b8006b1046cd2f",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_nm2szpqa/probe.c:5:12: in function probe i64 (double): cq specialization: the error below is inside the quantum call to 'lround' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_lround i64 (double): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_2uqe895v/probe.c:5:12: in function probe i64 (double): cq specialization: the error below is inside the quantum call to 'lround' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_lround i64 (double): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -19982,7 +19982,7 @@
       "mix": "Q",
       "source_sha256": "7c31bf662063e0f66f6f48535ad5a838ded463f8dec29864b226af3e2783d1aa",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_1s_i6igf/probe.c:5:12: in function probe i64 (x86_fp80): cq specialization: the error below is inside the quantum call to 'lroundl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_lroundl i64 (x86_fp80): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_rps53dsb/probe.c:5:12: in function probe i64 (x86_fp80): cq specialization: the error below is inside the quantum call to 'lroundl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_lroundl i64 (x86_fp80): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -20073,7 +20073,7 @@
       "mix": "Q",
       "source_sha256": "fb5a699f76c292989f4ed4a88459fc0d70c95e17eb30caaa1f5c344638a0cb42",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_43cg1evb/probe.c:5:17: in function probe i64 (float): cq specialization: the error below is inside the quantum call to 'llroundf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_llroundf i64 (float): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_mpqvm85d/probe.c:5:17: in function probe i64 (float): cq specialization: the error below is inside the quantum call to 'llroundf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_llroundf i64 (float): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -20164,7 +20164,7 @@
       "mix": "Q",
       "source_sha256": "eb2d1682c225aac473074b24eef309e4b2cf6542118a5b5792786359dee5ce2b",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_4_6yt6h9/probe.c:5:17: in function probe i64 (double): cq specialization: the error below is inside the quantum call to 'llround' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_llround i64 (double): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_mnghookf/probe.c:5:17: in function probe i64 (double): cq specialization: the error below is inside the quantum call to 'llround' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_llround i64 (double): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -20255,7 +20255,7 @@
       "mix": "Q",
       "source_sha256": "4a86139976fac45cc53f94e8f823bb3c98cf0f6b6aa57fd920d1ab25f6bd6862",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_3srimlkr/probe.c:5:17: in function probe i64 (x86_fp80): cq specialization: the error below is inside the quantum call to 'llroundl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_llroundl i64 (x86_fp80): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_hhyahnzm/probe.c:5:17: in function probe i64 (x86_fp80): cq specialization: the error below is inside the quantum call to 'llroundl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_lround.c:64:3: in function __cq_libm_llroundl i64 (x86_fp80): cq specialization: floating-point quantum argument or return has no reversible copy\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -20663,7 +20663,7 @@
       "mix": "CQ",
       "source_sha256": "0ac8842c4eedde3205b9ae594e34adca4b33763118dfa8ca93bdcd51f9f10db9",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_0spcwby1/probe.c:5:13: in function probe float (float, float): cq specialization: the error below is inside the quantum call to 'remainderf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_remainderf.c:40:5: in function __cq_q___cq_libm_remainderf_10 float (float, float): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census__me_wi6a/probe.c:5:13: in function probe float (float, float): cq specialization: the error below is inside the quantum call to 'remainderf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_remainderf.c:40:5: in function __cq_q___cq_libm_remainderf_10 float (float, float): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -20672,7 +20672,7 @@
       "mix": "QC",
       "source_sha256": "327cbed2d7ea9a59bf4150b6b415c7e53caa9d097835e328bc1f8362b8d01de5",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_wz9493i4/probe.c:5:13: in function probe float (float, float): cq specialization: the error below is inside the quantum call to 'remainderf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_remainderf.c:41:21: in function __cq_q___cq_libm_remainderf_01 float (float, float): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_3u__h4rc/probe.c:5:13: in function probe float (float, float): cq specialization: the error below is inside the quantum call to 'remainderf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_remainderf.c:41:21: in function __cq_q___cq_libm_remainderf_01 float (float, float): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -20681,7 +20681,7 @@
       "mix": "QQ",
       "source_sha256": "84819001c50b1867dd23f9aa86732eb21c3916190c2107e4cda1147796a0f6d4",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_57191omd/probe.c:6:13: in function probe float (float, float): cq specialization: the error below is inside the quantum call to 'remainderf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_remainderf.c:40:5: in function __cq_q___cq_libm_remainderf_11 float (float, float): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_xd5m955k/probe.c:6:13: in function probe float (float, float): cq specialization: the error below is inside the quantum call to 'remainderf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_remainderf.c:40:5: in function __cq_q___cq_libm_remainderf_11 float (float, float): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -20771,7 +20771,7 @@
       "mix": "CQ",
       "source_sha256": "06f9fe50293b1c1fe1c8f2a11053fd339502f3a8f8cf0721e1f82a8bc4168ab4",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_mqcrqf6w/probe.c:5:14: in function probe double (double, double): cq specialization: the error below is inside the quantum call to 'remainder' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_remainder.c:48:5: in function __cq_q___cq_libm_remainder_10 double (double, double): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ivmi8u2j/probe.c:5:14: in function probe double (double, double): cq specialization: the error below is inside the quantum call to 'remainder' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_remainder.c:48:5: in function __cq_q___cq_libm_remainder_10 double (double, double): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -20780,7 +20780,7 @@
       "mix": "QC",
       "source_sha256": "6869c54ea5dfbf5d73030cb8ed18de4708e99b4d341bc4be71162bdc7e3779c0",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_8brqe37j/probe.c:5:14: in function probe double (double, double): cq specialization: the error below is inside the quantum call to 'remainder' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_remainder.c:49:21: in function __cq_q___cq_libm_remainder_01 double (double, double): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census__w7ri589/probe.c:5:14: in function probe double (double, double): cq specialization: the error below is inside the quantum call to 'remainder' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_remainder.c:49:21: in function __cq_q___cq_libm_remainder_01 double (double, double): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -20789,7 +20789,7 @@
       "mix": "QQ",
       "source_sha256": "6125dba69b3490396c07f89a16156b670cbc50b4e74181d7ea2116b3fa385791",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census__kmpxftd/probe.c:6:14: in function probe double (double, double): cq specialization: the error below is inside the quantum call to 'remainder' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_remainder.c:48:5: in function __cq_q___cq_libm_remainder_11 double (double, double): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_m4q6b_4n/probe.c:6:14: in function probe double (double, double): cq specialization: the error below is inside the quantum call to 'remainder' lifted from here\n\nerror: _deps/cq_openlibm-src/src/e_remainder.c:48:5: in function __cq_q___cq_libm_remainder_11 double (double, double): cq controlled lowering: nested control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -20879,7 +20879,7 @@
       "mix": "CQ",
       "source_sha256": "f6050db59202189516c0b2c4e44a863ef2bdd2c22f5f77970acfce34fddc1831",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_nxmp631z/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'remainderl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_remainderl x86_fp80 (x86_fp80, x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_cplfvf8g/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'remainderl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_remainderl x86_fp80 (x86_fp80, x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -20888,7 +20888,7 @@
       "mix": "QC",
       "source_sha256": "3224732a12de2bb14e5e7ca11f73ec4adafafcdd8a748882b5ce160e861f466b",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_vj1odvfn/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'remainderl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_remainderl x86_fp80 (x86_fp80, x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_c3gi_y22/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'remainderl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_remainderl x86_fp80 (x86_fp80, x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -20897,7 +20897,7 @@
       "mix": "QQ",
       "source_sha256": "7d044931da0fd92d18ebef848cde79d6d78fb413fd0aff47d0b2f437dd26e775",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_x8v7_72z/probe.c:6:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'remainderl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_remainderl x86_fp80 (x86_fp80, x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_i_59l8xt/probe.c:6:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'remainderl' lifted from here\n\nerror: <unknown>:0:0: in function __cq_libm_remainderl x86_fp80 (x86_fp80, x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -20987,7 +20987,7 @@
       "mix": "CQ",
       "source_sha256": "b3ea354d054f8132ebfcb5035433416ad5d0bc15241dabfbab8c9de222ba1fe8",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_7w4td0oe/probe.c:6:13: in function probe float (float, float): cq specialization: the error below is inside the quantum call to 'remquof' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_remquof.c:50:11: in function __cq_libm_remquof float (float, float, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_1w9fpme8/probe.c:6:13: in function probe float (float, float): cq specialization: the error below is inside the quantum call to 'remquof' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_remquof.c:50:11: in function __cq_libm_remquof float (float, float, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -20996,7 +20996,7 @@
       "mix": "QC",
       "source_sha256": "ececd82300127d501c711ca8d04d41a98ed14b3bcb932084ff0a3c1368dc8981",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_c8cl9xfp/probe.c:6:13: in function probe float (float, float): cq specialization: the error below is inside the quantum call to 'remquof' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_remquof.c:50:11: in function __cq_libm_remquof float (float, float, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_mncbflyw/probe.c:6:13: in function probe float (float, float): cq specialization: the error below is inside the quantum call to 'remquof' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_remquof.c:50:11: in function __cq_libm_remquof float (float, float, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -21005,7 +21005,7 @@
       "mix": "QQ",
       "source_sha256": "1a32312249ba0bbee45187bf986d64b1a0efe85ee433ac4050f5e692fda27e6f",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_35vd_jvh/probe.c:7:13: in function probe float (float, float): cq specialization: the error below is inside the quantum call to 'remquof' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_remquof.c:50:11: in function __cq_libm_remquof float (float, float, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_fsncq3d2/probe.c:7:13: in function probe float (float, float): cq specialization: the error below is inside the quantum call to 'remquof' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_remquof.c:50:11: in function __cq_libm_remquof float (float, float, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -21095,7 +21095,7 @@
       "mix": "CQ",
       "source_sha256": "a095272826969e5c75ffb3e513f1c104d25c8890dc01e8319340d39d59d19f71",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_0j71tza0/probe.c:6:14: in function probe double (double, double): cq specialization: the error below is inside the quantum call to 'remquo' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_remquo.c:54:8: in function __cq_libm_remquo double (double, double, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_sv_ubvk4/probe.c:6:14: in function probe double (double, double): cq specialization: the error below is inside the quantum call to 'remquo' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_remquo.c:54:8: in function __cq_libm_remquo double (double, double, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -21104,7 +21104,7 @@
       "mix": "QC",
       "source_sha256": "cf4e044597e2a2f375c40804ab6d6f23c5461446f9d29e76f322acabaaa9deff",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_cu6rpubd/probe.c:6:14: in function probe double (double, double): cq specialization: the error below is inside the quantum call to 'remquo' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_remquo.c:54:8: in function __cq_libm_remquo double (double, double, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_542vl1m8/probe.c:6:14: in function probe double (double, double): cq specialization: the error below is inside the quantum call to 'remquo' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_remquo.c:54:8: in function __cq_libm_remquo double (double, double, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -21113,7 +21113,7 @@
       "mix": "QQ",
       "source_sha256": "ed48e58a2f0f05ca0f050f47abb82033a9702e5b748bc6c2dbdaf1ba0d40e983",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_kecn8a5y/probe.c:7:14: in function probe double (double, double): cq specialization: the error below is inside the quantum call to 'remquo' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_remquo.c:54:8: in function __cq_libm_remquo double (double, double, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_r58kf6qc/probe.c:7:14: in function probe double (double, double): cq specialization: the error below is inside the quantum call to 'remquo' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_remquo.c:54:8: in function __cq_libm_remquo double (double, double, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -21203,7 +21203,7 @@
       "mix": "CQ",
       "source_sha256": "4aa50fcd82484e28ffa34ba256aacbb023657f69c0a21e9170a8996f205d9fec",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_hhq2n5hn/probe.c:6:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'remquol' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_remquol.c:99:8: in function __cq_libm_remquol x86_fp80 (x86_fp80, x86_fp80, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_q7cnb99f/probe.c:6:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'remquol' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_remquol.c:99:8: in function __cq_libm_remquol x86_fp80 (x86_fp80, x86_fp80, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -21212,7 +21212,7 @@
       "mix": "QC",
       "source_sha256": "50cab8b6ea626b16683405a2735feedc4715514016a7c6a733bccc9c140f2a15",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_53a5_mnj/probe.c:6:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'remquol' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_remquol.c:99:8: in function __cq_libm_remquol x86_fp80 (x86_fp80, x86_fp80, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_f1ys2vi5/probe.c:6:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'remquol' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_remquol.c:99:8: in function __cq_libm_remquol x86_fp80 (x86_fp80, x86_fp80, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -21221,7 +21221,7 @@
       "mix": "QQ",
       "source_sha256": "f813e742930c5e8ea5504c7fcca3ae6e99a6b6be413238cb7094b4b51dcfc464",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_673qtx08/probe.c:7:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'remquol' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_remquol.c:99:8: in function __cq_libm_remquol x86_fp80 (x86_fp80, x86_fp80, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_iyur3_eg/probe.c:7:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'remquol' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_remquol.c:99:8: in function __cq_libm_remquol x86_fp80 (x86_fp80, x86_fp80, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -22931,7 +22931,7 @@
       "mix": "CQ",
       "source_sha256": "6df5c76474aba018bb2bb05f6d8a33aa2a964fe9eff3477e3e2ed8bf25b3c18e",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_alte9hvz/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'nextafterl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_nextafterl.c:42:29: in function __cq_q___cq_libm_nextafterl_10 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_fv7tn09_/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'nextafterl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_nextafterl.c:42:29: in function __cq_q___cq_libm_nextafterl_10 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -23183,7 +23183,7 @@
       "mix": "CQ",
       "source_sha256": "cdabdda4d612a0bc23c43bfe7f89232c19328a55c58d900430b1515ec3cc2321",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_ogox8miv/probe.c:5:13: in function probe float (float, x86_fp80): cq specialization: the error below is inside the quantum call to 'nexttowardf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_nexttowardf.c:45:5: in function __cq_q___cq_libm_nexttowardf_10 float (float, x86_fp80): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_tgb9cijr/probe.c:5:13: in function probe float (float, x86_fp80): cq specialization: the error below is inside the quantum call to 'nexttowardf' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_nexttowardf.c:45:5: in function __cq_q___cq_libm_nexttowardf_10 float (float, x86_fp80): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -23435,7 +23435,7 @@
       "mix": "CQ",
       "source_sha256": "f8a571512efa4d5ff20d2c4f2967ca2d470a69bb1b3eee15bb8efffa8f6a1fe5",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_lwnu7qa5/probe.c:5:14: in function probe double (double, x86_fp80): cq specialization: the error below is inside the quantum call to 'nexttoward' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_nexttoward.c:44:22: in function __cq_q___cq_libm_nexttoward_10 double (double, x86_fp80): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_zkc_0jna/probe.c:5:14: in function probe double (double, x86_fp80): cq specialization: the error below is inside the quantum call to 'nexttoward' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_nexttoward.c:44:22: in function __cq_q___cq_libm_nexttoward_10 double (double, x86_fp80): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -23687,7 +23687,7 @@
       "mix": "CQ",
       "source_sha256": "70878d3bd5b25e3d34beece4d300ce4b2bc94c363b0ae232f723010cc776ccfd",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_c1cvbaoa/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'nexttowardl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_nextafterl.c:42:29: in function __cq_q___cq_libm_nextafterl_10 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_8vnfxmne/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'nexttowardl' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_nextafterl.c:42:29: in function __cq_q___cq_libm_nextafterl_10 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -24668,7 +24668,7 @@
       "mix": "QC",
       "source_sha256": "8cde8d847e14ef01ada36b23d78b0d06f85088c4c0df1f8c06fb04f589d17e0b",
       "status": "decline",
-      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_9epko4pt/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'fdiml' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_fdim.c:47:1: in function __cq_q___cq_libm_fdiml_01 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
+      "diagnostic": "note: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_zhu_t1yu/probe.c:5:19: in function probe x86_fp80 (x86_fp80, x86_fp80): cq specialization: the error below is inside the quantum call to 'fdiml' lifted from here\n\nerror: _deps/cq_openlibm-src/src/s_fdim.c:47:1: in function __cq_q___cq_libm_fdiml_01 x86_fp80 (x86_fp80, x86_fp80): cq controlled lowering: control flow under quantum control\n\ncqc: stage lower failed\n",
       "provider": "source-injected"
     },
     {
@@ -28970,7 +28970,7 @@
       "mix": "Q",
       "source_sha256": "b8d6b1959879ba9f0107996e48c667b97f5749777cd74c4c56def558d5e83fae",
       "status": "decline",
-      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_rqx6saqw/probe.c:5:11: in function probe i32 (double): cq taint escape: tainted value consumed by an unknown callee\n\ncqc: stage lower failed\n",
+      "diagnostic": "error: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_runtime_census_4_c86urq/probe.c:5:11: in function probe i32 (double): cq taint escape: tainted value consumed by an unknown callee\n\ncqc: stage lower failed\n",
       "provider": "macro"
     },
     {
