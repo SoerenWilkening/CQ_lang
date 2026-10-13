@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 790 maintained source files, 6551 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 790 maintained source files, 6552 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -23,7 +23,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check.py` — 3868 physical lines
 - `tools/free_pairing_check_test.py` — 3826 physical lines
 - `ir-pass/src/TaintPropagation.cpp` — 3362 physical lines
-- `ir-pass/src/Uncomputation.cpp` — 3175 physical lines
+- `ir-pass/src/Uncomputation.cpp` — 3203 physical lines
 - `ir-pass/src/SwapRouteEmit.cpp` — 3147 physical lines
 - `runtime/cq_link_smoke.c` — 2893 physical lines
 - `tools/taintset_scrub_guard.py` — 2758 physical lines
@@ -1292,39 +1292,40 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/TerminalGroups.cpp:53` — `neverWorse`
 - `ir-pass/src/TerminalGroups.cpp:61` — `reverseTerminalGroups`
 
-### `ir-pass/src/Uncomputation.cpp` (3175 lines)
+### `ir-pass/src/Uncomputation.cpp` (3203 lines)
 
 - `ir-pass/src/Uncomputation.cpp:103` — `diagnose`
 - `ir-pass/src/Uncomputation.cpp:111` — `isDataProducer`
 - `ir-pass/src/Uncomputation.cpp:138` — `isQramArrayHandle`
-- `ir-pass/src/Uncomputation.cpp:250` — `markedHeaderOf`
-- `ir-pass/src/Uncomputation.cpp:265` — `multiplicityAgrees`
-- `ir-pass/src/Uncomputation.cpp:387` — `anchorForConsumer`
-- `ir-pass/src/Uncomputation.cpp:403` — `useCompleteBeforeDischarge`
-- `ir-pass/src/Uncomputation.cpp:421` — `dagInsertPoint`
-- `ir-pass/src/Uncomputation.cpp:493` — `emitDagReversal`
-- `ir-pass/src/Uncomputation.cpp:651` — `measuredParentsReadBeforeCollapse`
-- `ir-pass/src/Uncomputation.cpp:707` — `keptRailAdjointReadsBorrowed`
-- `ir-pass/src/Uncomputation.cpp:746` — `planTerminalReversal`
-- `ir-pass/src/Uncomputation.cpp:980` — `emitTerminalReversal`
-- `ir-pass/src/Uncomputation.cpp:1007` — `judgeFrontierPlan`
-- `ir-pass/src/Uncomputation.cpp:1046` — `partitionByReducedDag`
-- `ir-pass/src/Uncomputation.cpp:1102` — `componentObservedBefore`
-- `ir-pass/src/Uncomputation.cpp:1182` — `recordLiveAcrossMove`
-- `ir-pass/src/Uncomputation.cpp:1259` — `planFrontierFixpoint`
-- `ir-pass/src/Uncomputation.cpp:1357` — `reverseTerminalGroup`
-- `ir-pass/src/Uncomputation.cpp:1550` — `preservesBorrowedParent`
-- `ir-pass/src/Uncomputation.cpp:1815` — `routeGroupFullyInside`
-- `ir-pass/src/Uncomputation.cpp:1898` — `railUnmovedInWindow`
-- `ir-pass/src/Uncomputation.cpp:2075` — `borrowedParentsUnmoved`
-- `ir-pass/src/Uncomputation.cpp:2130` — `planInteriorComponent`
-- `ir-pass/src/Uncomputation.cpp:2457` — `addDischargedRails`
-- `ir-pass/src/Uncomputation.cpp:2467` — `collectInteriorPlansMode`
-- `ir-pass/src/Uncomputation.cpp:2949` — `collectInteriorPlans`
-- `ir-pass/src/Uncomputation.cpp:2974` — `reverseInteriorGroup`
-- `ir-pass/src/Uncomputation.cpp:2989` — `collectTerminalCandidates`
-- `ir-pass/src/Uncomputation.cpp:3030` — `uncompute`
-- `ir-pass/src/Uncomputation.cpp:3099` — `planInteriorDischarges`
+- `ir-pass/src/Uncomputation.cpp:153` — `measuredOnEveryPath`
+- `ir-pass/src/Uncomputation.cpp:268` — `markedHeaderOf`
+- `ir-pass/src/Uncomputation.cpp:283` — `multiplicityAgrees`
+- `ir-pass/src/Uncomputation.cpp:405` — `anchorForConsumer`
+- `ir-pass/src/Uncomputation.cpp:421` — `useCompleteBeforeDischarge`
+- `ir-pass/src/Uncomputation.cpp:439` — `dagInsertPoint`
+- `ir-pass/src/Uncomputation.cpp:511` — `emitDagReversal`
+- `ir-pass/src/Uncomputation.cpp:669` — `measuredParentsReadBeforeCollapse`
+- `ir-pass/src/Uncomputation.cpp:725` — `keptRailAdjointReadsBorrowed`
+- `ir-pass/src/Uncomputation.cpp:764` — `planTerminalReversal`
+- `ir-pass/src/Uncomputation.cpp:998` — `emitTerminalReversal`
+- `ir-pass/src/Uncomputation.cpp:1025` — `judgeFrontierPlan`
+- `ir-pass/src/Uncomputation.cpp:1064` — `partitionByReducedDag`
+- `ir-pass/src/Uncomputation.cpp:1120` — `componentObservedBefore`
+- `ir-pass/src/Uncomputation.cpp:1200` — `recordLiveAcrossMove`
+- `ir-pass/src/Uncomputation.cpp:1279` — `planFrontierFixpoint`
+- `ir-pass/src/Uncomputation.cpp:1377` — `reverseTerminalGroup`
+- `ir-pass/src/Uncomputation.cpp:1578` — `preservesBorrowedParent`
+- `ir-pass/src/Uncomputation.cpp:1843` — `routeGroupFullyInside`
+- `ir-pass/src/Uncomputation.cpp:1926` — `railUnmovedInWindow`
+- `ir-pass/src/Uncomputation.cpp:2103` — `borrowedParentsUnmoved`
+- `ir-pass/src/Uncomputation.cpp:2158` — `planInteriorComponent`
+- `ir-pass/src/Uncomputation.cpp:2485` — `addDischargedRails`
+- `ir-pass/src/Uncomputation.cpp:2495` — `collectInteriorPlansMode`
+- `ir-pass/src/Uncomputation.cpp:2977` — `collectInteriorPlans`
+- `ir-pass/src/Uncomputation.cpp:3002` — `reverseInteriorGroup`
+- `ir-pass/src/Uncomputation.cpp:3017` — `collectTerminalCandidates`
+- `ir-pass/src/Uncomputation.cpp:3058` — `uncompute`
+- `ir-pass/src/Uncomputation.cpp:3127` — `planInteriorDischarges`
 
 ### `ir-pass/src/WidthDispatch.cpp` (589 lines)
 

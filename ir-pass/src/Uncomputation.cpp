@@ -143,6 +143,24 @@ bool isQramArrayHandle(const Value *V) {
   return Callee && Callee->getName().starts_with("cqrt_qram_alloc_");
 }
 
+// bd p3kd.13, R11 r9: is the rail `R` measured on EVERY path from its definition
+// (one measurement sink of R post-dominates it)? Only then does ptue's "a
+// measured register is never touched" cover R's own gates in the terminal-union
+// probe's `Cut` (TerminalGroups.h): measured on SOME paths, R is a live record on
+// the others (spec_intermediate_unc_terminal_union_reject_partial_measure.ll).
+// Several measurements that only jointly cover every path do not qualify — an
+// over-decline equal to main. A non-instruction rail never qualifies.
+bool measuredOnEveryPath(const Value *R, const PostDominatorTree &PDT) {
+  const auto *Def = dyn_cast<Instruction>(R);
+  if (!Def)
+    return false;
+  for (const User *U : R->users())
+    if (const auto *M = dyn_cast<CallInst>(U))
+      if (isMeasureSink(M) && PDT.dominates(M, Def))
+        return true;
+  return false;
+}
+
 // `railOf` (the rail a gate creates — the value its adjoint zeroes and the driver
 // then frees) lives in `ChainWalk` (Rule 14). The freeze DECISION (`DagTraversal`
 // step 3b) and this emission driver must agree on which rail a gate owns, so the
@@ -1253,9 +1271,11 @@ bool recordLiveAcrossMove(CallInst *G, Value *R, Value *P, Instruction *At,
 // `Frontier` is IN/OUT (bd p3kd.13, R11 r8): on `true` it is the FINAL frontier
 // the plans were judged against. Each member's kind is structural, so it is not
 // recorded twice: a QRAM array root (`isQramArrayHandle`, the predicate that
-// seeded it), else a measured rail, an open root or a forced record — the ruled
-// dispositions whose OWN gates the terminal-union probe exempts from
-// `GroupProbe::Cut` (TerminalGroups.h). Planning stays side-effect-free.
+// seeded it), a measured rail (`DataDag::MeasuredRails`), else an open root or a
+// forced record. The terminal-union probe exempts from `GroupProbe::Cut` the OWN
+// gates of the open roots and forced records, and of a measured rail only when it
+// is measured on every path (`measuredOnEveryPath`, R11 r9; TerminalGroups.h).
+// Planning stays side-effect-free.
 bool planFrontierFixpoint(Function &F, ArrayRef<Value *> InsertTerms,
                           ArrayRef<Instruction *> InsertAts,
                           InteriorPlan &Frontier,
@@ -1390,16 +1410,24 @@ bool reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
 
   // 3. Recover the whole forward DAG (union over all Insert terminals).
   DataDag D = recoverDataDag(InsertTerms, taint, DT);
-  // R11 r8 — a probe's `Cut` is asked ONCE, of the COMMITTED plans, on every path
-  // that commits: what of the whole walk `D` no plan reverse-plays, beyond the
-  // ruled dispositions' own gates (`Borrowed` minus the QRAM array roots). A
-  // final-outcome gate set (L3), so a borrow path added later is covered too.
+  // R11 r8-r9 — a probe's `Cut` is asked ONCE, of the COMMITTED plans, on every
+  // path that commits: what of the whole walk `D` no plan reverse-plays, beyond
+  // the own gates of the rails that hold no hazardous record (`GroupProbe::Cut`):
+  // the final frontier's forced records and open roots, its measured rails that
+  // are measured on EVERY path (r9 F1), and `D`'s register ROOTS (r9 F2: a
+  // `cqrt_alloc` root and its in-place gates record no other register). A QRAM
+  // array is never exempt, so neither is a store. A final-outcome gate set (L3),
+  // so a borrow path added later is covered too.
   auto finish = [&](bool Ok, const SmallPtrSetImpl<Value *> &Borrowed) {
     if (Ok && Probing) {
       SmallPtrSet<Value *, 8> Exempt;
       for (Value *B : Borrowed)
-        if (!isQramArrayHandle(B))
+        if (!isQramArrayHandle(B) &&
+            (!D.MeasuredRails.count(B) || measuredOnEveryPath(B, PDT)))
           Exempt.insert(B);
+      for (Value *R : D.Roots)
+        if (isAllocMint(R) && !isQramArrayHandle(R))
+          Exempt.insert(R);
       Probe->setCut(D, Exempt);
     }
     return Ok;

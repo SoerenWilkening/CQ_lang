@@ -1,5 +1,5 @@
 // TerminalGroups.h — how the whole-DAG spine's DEAD-TERMINAL groups are formed
-// and planned (bd test_C_libtooling-p3kd.13, R11 rounds 1-8). Internal to the
+// and planned (bd test_C_libtooling-p3kd.13, R11 rounds 1-9). Internal to the
 // uncompute spine: `Uncomputation::uncompute` calls `reverseTerminalGroups`, which
 // calls `reverseTerminalGroup` (the per-group planner, defined in Uncomputation.cpp)
 // once or more per group.
@@ -49,9 +49,10 @@ struct TaintSet;
 //            (`T.Gates ⊆ U.Gates`), meets g in its own disjointness check and
 //            refuses: the split runs, as main. Under Probe the template is
 //            `!TmplOk` and the union must leave nothing cut (`Cut`): it
-//            reverse-plays g, meeting the conflict, unless g's rail is a ruled
-//            disposition of its frontier fixpoint (a FORCED record or an open
-//            root), so g is not reverse-played. That needs, at once, a conflict
+//            reverse-plays g, meeting the conflict, unless g's rail is exempt: a
+//            FORCED record or an open root of its frontier fixpoint, or a register
+//            root cut under one (r9), so g is not reverse-played. That needs, at
+//            once, a conflict
 //            with an adjoint minted before uncompute (BreakReversePlay/CondLiteral)
 //            or an earlier group's reversal, and a moved borrowed parent (or an
 //            open root) under g. Round 4's QRAM-store exception (a rail reached
@@ -80,13 +81,18 @@ struct GroupProbe {
   // QRAM stores included) and every rail any plan frees (`Rails` − `FrozenRails`).
   llvm::SmallPtrSet<const llvm::CallInst *, 16> Gates;
   llvm::SmallPtrSet<const llvm::Value *, 16> Frees;
-  // What the COMMITTED plans leave CUT (R11 r7-r8 F1): every gate of the whole,
+  // What the COMMITTED plans leave CUT (R11 r7-r9): every gate of the whole,
   // unborrowed walk that no plan reverse-plays, minus the OWN gates (`railOf`) of
-  // the final frontier's ruled dispositions — a measured rail (bd ptue: a
-  // measured register is never touched), a FORCED record and an open root (bd
-  // 01po.8). Their ancestors still count, and so does every QRAM store (its rail
-  // is the array, never exempt): a store behind a borrowed array (bd r2j3.21), a
-  // QROM load behind a measured rail (bd r2j3.23) or behind a forced record. Taken
+  // the rails that hold no hazardous record — the final frontier's FORCED
+  // records and open roots (bd 01po.8's ruled dispositions); its measured rails
+  // measured on EVERY path, one measurement post-dominating the rail (bd ptue's
+  // "a measured register is never touched" holds only then: measured on some
+  // paths, the rail is a live record on the others, r9 F1); and the walk's
+  // `cqrt_alloc` register ROOTS, whose own gates record no other register (r9
+  // F2). Their ancestors still count, and so does every QRAM store (its rail is
+  // the array, never exempt): a store behind a borrowed array (bd r2j3.21), a
+  // QROM load behind a measured rail (bd r2j3.23) or behind a forced record, a
+  // template record of a rail measured on some paths only (bd r2j3.24). Taken
   // once, after planning, on every path that commits (`reverseTerminalGroup`):
   // a final-outcome gate set (L3), whatever borrowed the frontier. r7 measured
   // the first frontier's cut only, which is one path of it. Empty when a plan
@@ -94,8 +100,8 @@ struct GroupProbe {
   // reads only the union's, and only when the union planned out).
   llvm::SmallPtrSet<const llvm::CallInst *, 8> Cut;
   void addPlan(const DataDag &D);
-  // After the plans: `D` the whole walk, `Exempt` the final frontier minus its
-  // QRAM array roots.
+  // After the plans: `D` the whole walk, `Exempt` the rails above whose own gates
+  // do not count.
   void setCut(const DataDag &D,
               const llvm::SmallPtrSetImpl<llvm::Value *> &Exempt);
 };
@@ -134,16 +140,20 @@ bool reverseTerminalGroup(llvm::Function &F, llvm::ArrayRef<llvm::CallInst *> Te
 //         MEASURED rail, cut by the ptue borrow and refused by the M-B interior
 //         partition (..._reject_measured_rail_cut{,_divergent}.ll); r8, the same
 //         load behind a FORCED record the fixpoint borrows
-//         (..._reject_forced_cut.ll). `Cut` subsumes r6's store clause, and r5's
-//         containment is implied: with nothing cut, the template terminals' FIRST
-//         DAG lies inside the union's first DAG.
+//         (..._reject_forced_cut.ll); r9, a template record of a rail measured
+//         on SOME paths only, exempt as "measured" (..._reject_partial_measure.ll).
+//         `Cut` subsumes r6's store clause and what r5's containment was for: with
+//         nothing cut, everything the template terminals' first DAG holds (it lies
+//         in the union's whole walk) is reverse-played by a union plan (`Gates`)
+//         or is an exempt rail's own gate.
 //         The FORCED record or open root the frontier FIXPOINT borrows is itself
 //         main's ruled disposition for a closed group (bd 01po.12/01po.8; @frk in
 //         spec_intermediate_unc_terminal_union_forced.ll is the all-template
-//         control); the dead ANCESTORS its borrow cuts are not, and count in
-//         `Cut`. So a union that closes what the template plan alone leaves open
-//         (a template interior a clone call consumes) is kept when its forced
-//         record cuts nothing else, and so is one
+//         control); the dead ancestor RECORDS its borrow cuts are not, and count
+//         in `Cut` (a register ROOT among its ancestors records nothing and does
+//         not, r9 F2). So a union that closes what the template plan alone leaves
+//         open (a template interior a clone call consumes) is kept when its forced
+//         record cuts no other record, and so is one
 //         whose fixpoint plans PER COMPONENT, each at its own anchor, where the
 //         template terminals' single plan (no fixpoint: not measured upstream)
 //         declines on a divergent arm — the union is measured upstream through a
@@ -156,25 +166,32 @@ bool reverseTerminalGroup(llvm::Function &F, llvm::ArrayRef<llvm::CallInst *> Te
 // not (a template interior a clone call consumes is closed only by the union).
 //
 // THE `Cut` CLAUSE IS COARSE. Under `!TmplOk` a union that leaves anything cut
-// splits, also where nothing observable follows: a store whose index is never
-// touched again (the R11 r6 reviewer's probe P2, accepted by round 6; its r7
-// reconstruction is ..._reject_clone_store.ll without the move of k), and a cut
-// TEMPLATE record the M-B interior partition would have reversed before the move
-// (R11 r7 probe q1 `mrc`, accepted by e075f4ff; `Y = a >> 4` of r8's @fx). M-B
-// runs after every group (`uncompute`) and records nothing into a probe, so the
-// probe cannot see that discharge. Every such split is main's own verdict, an
-// over-decline only against rounds 6-7. Retirement trigger: unit D (bd r2j3.21 /
-// r2j3.23) — once main's planner names a cut record that would be left
-// unreversed before its parent's next move (a planner-side
-// `firstHazardousCutRecord`), this clause asks that predicate instead of
-// requiring `Cut` empty (a follow-up).
+// splits, also where nothing observable follows. The residual classes, each
+// main's own verdict and an over-decline only against rounds 6-8:
+//   * a store whose index is never touched again (the R11 r6 reviewer's probe P2,
+//     accepted by round 6; its r7 reconstruction is ..._reject_clone_store.ll
+//     without the move of k);
+//   * a cut TEMPLATE record the M-B interior partition would have reversed before
+//     the move (R11 r7 probe q1 `mrc`, accepted by e075f4ff; `Y = a >> 4` of r8's
+//     @fx). M-B runs after every group (`uncompute`) and records nothing into a
+//     probe, so the probe cannot see that discharge;
+//   * a rail measured on every path only JOINTLY, by several measurements none of
+//     which post-dominates it (`measuredOnEveryPath`, r9): its own gates count.
+// (r9's F2 removed one class: a register ROOT's own gates, cut under a forced
+// record, now count as nothing — spec_intermediate_unc_terminal_union_forced_root.ll.)
+// Retirement trigger: unit D (bd r2j3.21 / r2j3.23 / r2j3.24) — once main's
+// planner names a cut record that would be left unreversed before its parent's
+// next move (a planner-side `firstHazardousCutRecord`), this clause asks that
+// predicate instead of requiring `Cut` empty (a follow-up).
 //
-// NO NEW CUSTOMERS FOR bd r2j3.21 OR r2j3.23 (R11 r6 F2, r7-r8 F1; L9). Main's own bd
-// 01po.4/ptue frontier and its 01po.8 fixpoint leave a record they CUT unreversed —
-// a QRAM store behind a borrowed array (r2j3.21), a QROM load behind a borrowed
-// measured rail or forced record (r2j3.23) — and a later move of the record's
-// parent makes that observable (pre-existing, all-template: @mlgk of the r6 probe,
-// `qk` of the r7 probe q5, `fk` of the r8 probe p1).
+// NO NEW CUSTOMERS FOR bd r2j3.21, r2j3.23 OR r2j3.24 (R11 r6 F2, r7-r9 F1; L9).
+// Main's own bd 01po.4/ptue frontier and its 01po.8 fixpoint leave a record they
+// CUT unreversed — a QRAM store behind a borrowed array (r2j3.21), a QROM load
+// behind a borrowed measured rail or forced record (r2j3.23), a record of a rail
+// borrowed as "measured" though measured on some paths only (r2j3.24) — and a
+// later move of the record's parent makes that observable (pre-existing,
+// all-template: @mlgk of the r6 probe, `qk` of r7's q5, `fk` of r8's p1, `cmk` of
+// r9's p3).
 // This file adds no program to either DEFECT: per group, every cut record this
 // file leaves unreversed is one main leaves unreversed in the same group, where
 // main accepts that group:
@@ -185,7 +202,8 @@ bool reverseTerminalGroup(llvm::Function &F, llvm::ArrayRef<llvm::CallInst *> Te
 //   (2) the union under `TmplOk`: it reverse-plays every gate main's plan does, so
 //       a record it leaves unreversed is one main's plan leaves (or (1)'s);
 //   (3) the union under `!TmplOk`: its committed plans leave nothing cut beyond
-//       the own gates of a measured rail, forced record or open root (`Cut`).
+//       the own gates of a forced record, an open root, a register root, or a
+//       rail measured on every path (`Cut`).
 // A record this file reverses where main leaves it is an improvement, never a
 // customer. It does move programs between MECHANISMS (L9 disclosure, R11 r7 probe
 // P3): under `TmplOk`, a store only a clone call's operand chain reaches
