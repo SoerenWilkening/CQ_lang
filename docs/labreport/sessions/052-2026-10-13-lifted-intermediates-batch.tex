@@ -1,0 +1,128 @@
+\labsessionheader{2026-10-13}{Batch 052: speculation-safe twins, stale lifted reads, lifted intermediates}%
+  {30ecb848}{1dfad19d-2f59-49bc-a951-1ac2cde2ddf4, 3e4d871d-4135-4514-9a1e-3a2af9bf545c}{none}
+
+\subsection*{Goal}
+Land four goal-1 units as one reviewed batch:
+\begin{itemize}
+\item C: the speculation-safe callee twin for 6.5 classical calls (\bd{dm7f.21}), together with PredMux strict totality (\bd{dm7f.20}).
+\item A: stale reads by lifted calls (\bd{r2j3.6}, a known silent miscompile).
+\item B: uncomputation of lifted call results used as intermediates (\bd{p3kd.13}).
+\item D: \bd{r2j3.21}, owner-approved for this batch.
+\end{itemize}
+Session \texttt{1dfad19d} implemented A, B and C and reviewed B through R11 round~6. It stopped mid-fix. This session finished B (rounds 7--10), merged it, and ran the census and the batch gate. On the owner's instruction that the batch must end, D was deferred with its design of record.
+
+\subsection*{What landed}
+\begin{itemize}
+\item \commit{db4cf60a}: four fixture headers annotate the retired CLAUDE.md R3 fp-merge wording.
+\item \commit{12ba7c79}, \bd{dm7f.21} and \bd{dm7f.20}: the twin \texttt{\_\_cq\_specsafe\_<callee>}, which freezes the callee's noundef sinks, plus flag proofs from flag-free operand facts. \texttt{poisonFlow} now uses explicit stacks.
+\item \commit{cb97f2fe}, \bd{r2j3.6}: lifted-call reads pass the stale fence. 57ch(A) places a movable read before its gate within the same block. Every other stale read fails loudly.
+\item \commit{82034216}, \bd{p3kd.13}: a clone result is now a producer on the uncompute spine, with a LIFO Bennett \texttt{\_unc} twin and a free once the rail is provably $|0\rangle$. Terminal groups that contain a clone result are planned by side-effect-free probes (\fpath{TerminalGroups.cpp}).
+\item \commit{30ecb848}: the open-miscompile list in CLAUDE.md and the census JSON.
+\end{itemize}
+
+\textbf{Decline$\to$accept flips and their sign-offs (R10).}
+\begin{enumerate}
+\item \bd{dm7f.21}: seven \texttt{control\_classical\_call\_arm\_reject\_*} fixtures became \texttt{\dots\_twin\_accept\_*}, each with an analytic header. R11 round~1 signed them off; rounds 2--3 were clean of new flips.
+\item \bd{dm7f.20}: PredMux's strict path now accepts \texttt{popcount} and an inlined \texttt{+1u} (\texttt{control\_predmux\_strict\_*}). Three of three mutants were killed. These were reviewed with \bd{dm7f.21}.
+\item \bd{p3kd.13}: \fpath{control_inplace_ry_reject_cond_register_lifted_chain.ll} now accepts. R11 rounds 1--5 cleared it. In the same change two \texttt{live\_record\_clone} warnings became silent.
+\item \bd{p3kd.13}: when the template terminals' own plan does not emit, which is exactly where main declines, a union of template and clone terminals can now accept. Instances: @fr, @og, @le, \texttt{percomp}, and \texttt{forced\_root} (@fr2). R11 rounds 5--10 covered this case. Round~10 attacked the two exemptions and found nothing.
+\end{enumerate}
+
+\textbf{Owner rulings.}
+\begin{itemize}
+\item \texttt{owner-ruling-hoist-callee-ub-sound-2026-10-08}: the 6.5 hoist stays sound and the twin is built (option~a).
+\item \texttt{owner-ruling-gates-ordered-vs-volatile-atomic-2026-10-08}: gate emission is ordered against observable volatile, atomic and fence events. An atomic on a provably non-escaping local is not observable.
+\item \texttt{owner-ruling-qram-dropped-store-2026-10-13}, for \bd{r2j3.21}:
+  \begin{itemize}
+  \item A dropped QRAM store is reversed early when that is possible; otherwise compilation fails loudly.
+  \item Identity-store exemption: storing 0 into a provably zero array leaves no record. This rests on the documented tape contract, under which the backend tapes the old cell value and not the address.
+  \end{itemize}
+\item 2026-10-13: the batch ends. D is deferred.
+\end{itemize}
+
+\subsection*{Findings (B, R11 rounds 7--10)}
+\begin{itemize}
+\item \fconfirmed\ These came in through B's union branch that runs when the template plan does not emit, and were caught before merge. Rounds 6--9 each found a frontier borrow through which the union left a \emph{dead record} unreversed before its parent's next non-diagonal gate, at rc~0, where main declines:
+  \begin{itemize}
+  \item r6 @mlg: the array borrow of a measured template group (a QRAM store);
+  \item r7 \texttt{qc}/\texttt{pq}: the measured-rail borrow (a QROM load record);
+  \item r8 @fx: the forced-record borrow;
+  \item r9 \texttt{cm}: a rail measured on only some paths.
+  \end{itemize}
+  Each per-path patch missed the next path. Round~8 replaced them with one final-outcome set, \texttt{Cut}: every gate of the unborrowed walk that no committed plan reverse-plays, except the own gates of forced records, open roots and register roots, and of rails measured on every path (some measurement post-dominates the definition). The union must leave \texttt{Cut} empty. Seven \texttt{\dots\_union\_reject\_*} fixtures pin the paths, each mirroring main's diagnostic.
+\item \fpreexisting\ The same planner paths are silent miscompiles on main for groups made only of templates. All three are deferred, with their design of record in \bd{r2j3.21}:
+  \begin{itemize}
+  \item \bd{r2j3.21}: the 01po.4 array borrow (\texttt{mlgk});
+  \item \bd{r2j3.23}: the measured-rail and forced-record borrows (\texttt{qk}, \texttt{fk});
+  \item \bd{r2j3.24}: a partially measured rail (\texttt{cmk}).
+  \end{itemize}
+  Each compiles at rc~0, with at most unrelated M-A warnings.
+\item \foverdecline\ These are equal to main and over-decline only relative to rounds 6--8:
+  \begin{itemize}
+  \item a store whose index is never moved again;
+  \item a cut template record that M-B would discharge (\texttt{mrc}, and \texttt{Y} in @fx);
+  \item a rail measured on every path only by several measurements jointly.
+  \end{itemize}
+  Filed as \bd{p3kd.14}. Its retirement trigger is D's planner-side predicate.
+\item Composition of A and B, probed on the merged binary: when a placed stale lifted call's clone result is an intermediate, it is left allocated (a leak). It is never uncomputed by an \texttt{\_unc} that re-reads the rotated argument (scratchpad \texttt{compose/ab*.c}).
+\item \fdoc\ L9 (\fpath{TerminalGroups.h}): the union adds no program to \bd{r2j3.21}, \bd{r2j3.23} or \bd{r2j3.24}. When the template plan emits, B moves one such program (P3) onto a different path; that program keeps main's unreversed store.
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+IR lit fixtures & 2837 & \measured{ls ir-pass/test/*.ll | wc -l} \\
+e2e goldens & 439 & \measured{ls tests/e2e/*.expected.log | wc -l} \\
+ctest entries & 555 & \measured{ctest -{}-test-dir build -N | tail -1} \\
+census probes accepted / declined & 378 / 105 & \measured{runtime\_census.py -{}-jobs 6} \\
+scalar math.h cells & 100/180 & \measured{(same; 42/120 source, 48/48 intrinsic, 10/12 macro)} \\
+census status flips vs \commit{3e9b589c} & 0 & \measured{JSON diff by (cell, mix)} \\
+blocker \texttt{error:} lines changed & 0 of 105 & \measured{(same; 7 differ only in the temp path)} \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+\textbf{B.} B's final run is the owner-approved fourth. It was one lit invocation on the binary rebased onto \commit{cb97f2fe} (\texttt{cq-opt} \texttt{f4379f18}). The filter selected 302 of 2837 fixtures:
+\begin{itemize}
+\item B's set: every \texttt{spec\_intermediate\_unc\_*} fixture, \texttt{lowering\_qram*}, and every fixture naming a \texttt{cq uncompute:} diagnostic, \texttt{live derived record} or \texttt{internal invariant};
+\item for the A+C composition: all \texttt{lowering\_stale\_speccall\_*}, \texttt{control\_classical\_call\_arm\_twin\_*} and \texttt{control\_predmux\_strict\_*}, plus \fpath{lowering_predmux_purecallee_deep_chain.ll}.
+\end{itemize}
+302 passed. This included \fpath{lowering_stale_speccall_lifted_phi_accept.ll}, which A's final run had only checked by hand.
+
+Rounds 7--9 validated by red--green on the snapshot binaries, with each new fixture's red recorded in its header. Real mutants this session were 4 (no-op 1): \texttt{T.Stores} for \texttt{U.Stores}, the store clause dropped, the cut clause dropped, and the first-frontier cut. All were killed (MISSED 0).
+
+Reviewer probes per round (no reviewer ran lit or ctest):
+\begin{itemize}
+\item r7: 6;
+\item r8: 5;
+\item r9: 3 programs in 7 runs;
+\item r10: 4 probes. The round was stopped at the owner's request; H3 and H4 were not checked.
+\end{itemize}
+
+\textbf{Batch gate.} It ran once: \measured{ctest -{}-test-dir build -LE maintenance -j6} passed 551 of 552 entries, \texttt{ir-pass-lit} included. Its wall time is not a measurement, because the owner paused the run. \measured{cmake -{}-build build -{}-target cq-opt-equivalence-full}: 2837 fixtures compared, 0 mismatches. \measured{update\_code\_map.py -{}-check}: passed. The maintenance tier did not run, because no TaintSet-reachable header changed (\measured{git diff 3e9b589c HEAD -{}- <scrub files>}).
+
+The census ran once on \texttt{f4379f18}. \measured{probe.py render} wrote no page change, and \texttt{headline\_sync\_check} reports that 4 pages match 100/180.
+
+Acceptance, linking, trace comparison and stage~2b do not establish a correct unitary.
+
+The failed entry was \texttt{e2e-fixture-guard-liveness}, caused by a fixture's spelling and not by a binary. The \texttt{NOFREE} guard of \fpath{control_predmux_accept_switch_fp_merge_const.ll} had a first anchor that bound no handle, and the prefix had two anchors, so the liveness tool could not attack it. The fixture now has one anchor binding \texttt{OUT} (\commit{30ecb848}). Only the failed subjects were rerun: lit on that one fixture (1 passed) and the ctest entry (passed).
+
+\textbf{Budget overruns (R15).}
+\begin{itemize}
+\item C: 7 real mutants against a limit of 3 (4 of them by hand with \texttt{cq-opt} and FileCheck), and 4 lit/ctest commands on \bd{dm7f.21}.
+\item B: the owner-approved fourth run, and 4 real mutants this session on top of earlier rounds whose count was not recorded.
+\item A: one fixture was checked by hand only at A's final run (above). A prose line in it read as a \texttt{WARN:} directive and was reworded.
+\end{itemize}
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+\item Unit D, next batch: \bd{r2j3.21}, \bd{r2j3.23} and \bd{r2j3.24}. The design of record is in \bd{r2j3.21}'s DESIGN field. It is one owning predicate, \texttt{firstHazardousCutRecord}, over the committed plans. It reverses a cut store first, admits a QRAM-load interior in M-B, applies the identity-store exemption, and otherwise fails loudly.
+\item Follow-ups filed:
+  \begin{itemize}
+  \item from \bd{r2j3.6}: \bd{57ch.1}--\bd{57ch.7}, \bd{dm7f.23}, \bd{dm7f.24};
+  \item from \bd{dm7f.21}: \bd{dm7f.25}--\bd{dm7f.33}, \bd{r2j3.22};
+  \item from \bd{p3kd.13}: \bd{p3kd.14}--\bd{p3kd.18}, \bd{dm7f.34}, \bd{dm7f.35}, \bd{r2j3.25}.
+  \end{itemize}
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+Entry 051's batch gate reports \texttt{ir-pass-lit} with two failures, both W8 flips. It does not report that \fpath{lowering_predmux_purecallee_deep_chain.ll} was also red under lit from \commit{c574fc04} on. \texttt{cq-opt} crashed with rc~132, a stack overflow on the 60000-deep accept input in \texttt{poisonFlow}. This was measured by the batch-052 coordinator on the pre-twin binary. \commit{12ba7c79} fixes it. The same entry renamed \fpath{control_swap_reject_switch_fpdata.ll} to \fpath{control_predmux_accept_switch_fp_merge_const.ll} after its batch gate and added a \texttt{NOFREE} guard that \texttt{e2e-fixture-guard-liveness} could not check. That gate entry was failing from \commit{c574fc04} on, and no measurement recorded it. Fixed in \commit{30ecb848} (above).
