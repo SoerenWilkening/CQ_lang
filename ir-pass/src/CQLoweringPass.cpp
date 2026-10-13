@@ -12,6 +12,7 @@
 #include "ArithLowering.h"
 #include "ArmAnalysis.h"      // reverifyRailCondReads (bd r9e5 1b-B.1 round 2)
 #include "ByRefInline.h"
+#include "ClassicalRailMux.h"  // rewriteClassicalRailMuxes (bd dm7f.15 / dm7f.16)
 #include "CondLiteral.h"      // declineQuantumCondLiterals (bd xdu2.13 round 2)
 #include "SelectMergeEmit.h"  // declineQuantumCopySources (bd r2j3.14)
 #include "ControlPlan.h"
@@ -909,6 +910,12 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // strictly after `repropagateControlMerges`, so the taint it reads is FINAL.
   rewriteRailBankCellTypes(M, taint);
   lowerOps(M, wd, taint);
+  // bd dm7f.15 / dm7f.16 — every classical-condition select/phi over quantum
+  // values `declineClassicalMuxes` RECORDED becomes a select/phi of rail handles
+  // now that each quantum arm is an i32 handle, BEFORE `lowerMeasures` (which
+  // needs one). Loud if any record is left unlowered. ClassicalRailMux.h.
+  if (rewriteClassicalRailMuxes(M, taint, wd))
+    return PreservedAnalyses::none();
   lowerMeasures(M, wd, taint);
   // Phase 7.4 Inc 2 (y05j.2): the value-arm `break` capture + whole-loop
   // reverse-play, on the now-LOWERED body (i32 handles). Runs AFTER `lowerOps`
@@ -1450,6 +1457,9 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // strictly after `repropagateControlMerges`, so the taint it reads is FINAL.
   rewriteRailBankCellTypes(M, taint);
   lowerOps(M, wd, taint);
+  // bd dm7f.15 / dm7f.16 — mirrored from run() (twin-pipeline parity, WI-1.12).
+  if (rewriteClassicalRailMuxes(M, taint, wd))
+    return false;
   lowerMeasures(M, wd, taint);
   // Phase 7.4 Inc 2 (y05j.2) — twin-pipeline parity (WI-1.12): miss this and
   // unit-level callers diverge from `run()`. See run() for the staging rationale.

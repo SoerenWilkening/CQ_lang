@@ -8,6 +8,7 @@
 
 #include "TaintPropagation.h"
 
+#include "ClassicalRailMux.h"  // recordClassicalRailMux / terminatorIsClassical (bd dm7f.15)
 #include "ControlPlan.h"      // diagnoseUnderControl (dugh re-classified control)
 #include "IntrinsicLowering.h"
 #include "OpcodeLowering.h"   // declineStaleRecordOps (dugh second-round re-sweep)
@@ -1902,22 +1903,16 @@ WireChain resolveWireBase(Value *V, const SmallPtrSetImpl<CallInst *> &GateCalls
   return Chain;
 }
 
-// Defensive ownership check on a terminator: the lift only fires under
-// CLASSICAL control. Every tainted-condition br/switch/select was adjudicated
-// by ControlDetect before this guard runs (accept → SwapRouteEmit erased the
-// merge phi; decline → opt already exited at that DS_Error), so under `opt`
-// this never sees a tainted condition — but an in-process host that continues
-// past a ControlDetect decline must NOT have this lift mutate a shape another
-// owner declined (same defensive stance as the tainted-condition `continue`
-// on the select branch below). Exotic terminators (invoke/indirectbr/...)
-// are unproven shapes — not acceptable.
-bool terminatorIsClassical(const Instruction *T, const TaintSet &taint) {
-  if (const auto *BI = dyn_cast<BranchInst>(T))
-    return !BI->isConditional() || !taint.Tainted.count(BI->getCondition());
-  if (const auto *SI = dyn_cast<SwitchInst>(T))
-    return !taint.Tainted.count(SI->getCondition());
-  return false;
-}
+// Defensive ownership check on a terminator (`terminatorIsClassical`,
+// ClassicalRailMux.h since bd dm7f.15, spelled over the shared
+// `isTaintedBranchTerminator`): the lift only fires under CLASSICAL control.
+// Every tainted-condition br/switch/select was adjudicated by ControlDetect
+// before this guard runs (accept → SwapRouteEmit erased the merge phi; decline →
+// opt already exited at that DS_Error), so under `opt` this never sees a tainted
+// condition — but an in-process host that continues past a ControlDetect decline
+// must NOT have this lift mutate a shape another owner declined (same defensive
+// stance as the tainted-condition `continue` on the select branch below). Exotic
+// terminators (invoke/indirectbr/...) are unproven shapes — not acceptable.
 
 // Try the one-register lift on a LIVE tainted-reading phi. Returns true iff
 // the phi was PROVEN a pure renaming of one register's per-path current
@@ -2153,6 +2148,18 @@ void declineClassicalMuxes(Module &M, TaintSet &taint) {
   // gate-call incoming dominates it, so the gate has already fired
   // unconditionally and the untaken incoming names a record the register no
   // longer holds.
+  //
+  // bd dm7f.15 / dm7f.16 — THE RAIL ROUTER RECORD, the third accept, asked LAST
+  // (after the lift and the bd zujr carried-handle accept, which keep their own
+  // populations): a classical-condition select/phi over quantum values whose
+  // leaf rails no gate ever relabels is RECORDED here and rewritten after
+  // `lowerOps` into a select/phi of rail handles (`rewriteClassicalRailMuxes`,
+  // ClassicalRailMux.h, which carries the soundness argument and the fence). The
+  // comment's "its record/uncompute story is path-dependent and unproven" below
+  // was the old reason for declining every such mux; it now holds only for the
+  // shapes the fence refuses (a relabelled leaf, a cycle, a load leaf), which
+  // still decline here with this guard's strings.
+  beginClassicalRailMuxRecord();
   SmallPtrSet<CallInst *, 32> GateCalls;
   collectLiftGateCalls(taint, GateCalls);
   for (Function &F : M) {
@@ -2172,8 +2179,11 @@ void declineClassicalMuxes(Module &M, TaintSet &taint) {
           if (taint.Tainted.count(Sel->getCondition()))
             continue;
           if (taint.Tainted.count(Sel->getTrueValue()) ||
-              taint.Tainted.count(Sel->getFalseValue()))
+              taint.Tainted.count(Sel->getFalseValue())) {
+            if (recordClassicalRailMux(Sel, taint))
+              continue;  // bd dm7f.16 — a rail router, rewritten after lowerOps.
             diagnoseEscape(Sel, kMsgClassicalSelect);
+          }
           continue;
         }
         if (auto *Phi = dyn_cast<PHINode>(&I)) {
@@ -2185,11 +2195,12 @@ void declineClassicalMuxes(Module &M, TaintSet &taint) {
             continue;
           if (!readsTaintedValue(*Phi, taint))
             continue;
-          // The one-register renaming lifts (RAUW + erase); every other live
-          // tainted-reading phi — mixed handle/literal, distinct registers,
-          // derived fresh-rail incomings, cross-block chains, loop-reachable
-          // merges — is declined: its record/uncompute story is
-          // path-dependent and unproven.
+          // The one-register renaming lifts (RAUW + erase). Since bd dm7f.15 a
+          // mixed handle/literal, distinct-register or derived fresh-rail phi
+          // is a rail ROUTER when its leaves pass the fence (recorded below);
+          // cross-block chains, relabelled leaves and loop-reachable merges
+          // still decline: their record/uncompute story is path-dependent and
+          // unproven.
           if (liftOneRegisterMergePhi(Phi, taint, GateCalls, DT))
             continue;
           // ── bd `test_C_libtooling-zujr` — THE LOOP-CARRIED HANDLE VARIABLE ──
@@ -2210,6 +2221,10 @@ void declineClassicalMuxes(Module &M, TaintSet &taint) {
           // DEFERS, and a φ the promotion refused arrives here UNPROMOTED and
           // declines — loudly, with this same string, as it always did.
           if (taint.PromotedCarriedHandlePhis.count(Phi))
+            continue;
+          // bd dm7f.15 — a classical merge over distinct rails (or a rail and a
+          // classical value) keeps its branch as a phi of rail handles.
+          if (recordClassicalRailMux(Phi, taint))
             continue;
           diagnoseEscape(Phi, kMsgClassicalPhi);
           continue;

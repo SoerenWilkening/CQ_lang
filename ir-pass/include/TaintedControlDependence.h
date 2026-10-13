@@ -35,9 +35,12 @@ struct TaintSet;
 // from LoopLowering.cpp (bd r2j3.6 review rounds 3-4): `controlDependsOnTaintedBranch`
 // below, `instUnderTaintedControl` (QramLowering.cpp) and LoopLowering's `tryCaseA`
 // gate L2, wt8u hand-off and break-exit count (the former `isTaintedExitingTerminator`)
-// ask it. ⚠ NOT YET THE ONLY SPELLING: identical bodies remain as
-// `isTaintedCtrlTerm` (PredMuxFlatten.cpp) and `isTaintedControlTerminator`
-// (ReturnMerge.cpp); consolidating them is an r2j3.6 follow-up.
+// ask it. THE ONLY SPELLING since bd dm7f.24: PredMux's `isTaintedCtrlTerm` (region
+// roots and the W NestedTainted witness), ReturnMerge's `isTaintedControlTerminator`
+// (`classifyExits`), LoopLowering's inline break-body re-test, `taintedExit`, Case B's
+// gate L2 and the in-loop rail mark's L2 refusal, and TaintPropagation's
+// `terminatorIsClassical` (now `ClassicalRailMux.h`, the negation over br/switch)
+// were identical bodies and call this instead.
 bool isTaintedBranchTerminator(const llvm::Instruction *T, const TaintSet &taint);
 
 // True iff `I`'s block is (transitively) control-dependent on a terminator for which

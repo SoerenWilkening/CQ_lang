@@ -7,6 +7,7 @@
 #include "ArithLowering.h"
 
 #include "ChainWalk.h"      // isInPlaceGateOn (the ONE in-place-gate relation)
+#include "ClassicalRailMux.h"  // isClassicalRailMuxValue (bd dm7f.15, L5 carve-out)
 #include "DeadValueLiveness.h"  // isRecordedDeadSlot (bd vsfp r2: the ONE "slot unread")
 #include "FreePoint.h"      // blockCanRepeat (the ONE "can this block run twice")
 #include "LoopPlan.h"       // inPlaceValueRailOperand (the dtzb shape predicate)
@@ -722,6 +723,12 @@ bool inPlaceFenceHolds(const Instruction *Site, const Value *P, const Value *Imm
                        const DominatorTree &DT, const LoopInfo &LI,
                        const InteriorDischargePlan *Plan,
                        bool IgnoreSelfMarking = false) {
+  // bd dm7f.15 (lane L5 carve-out, batch 053): a classical-condition RAIL ROUTER
+  // is READ-ONLY. Its rail IS a leaf rail other names still read, so G6/G7's scan
+  // of `P`'s own users is no deadness proof for it (measured: `r = c ? q : p;
+  // t = r ^ 5;` mutated q's rail in place). Out of place instead.
+  if (isClassicalRailMuxValue(P))
+    return false;
   // G4 — THE IMMEDIATE MUST BE ONE STAGE 2b CAN PROVE CLASSICAL. `cqrt_addc_<W>`
   // declares its second parameter classical, but at W=i32 both parameters are
   // `int32_t`, so a rail handle in that slot is verify-clean AND prints as a bare

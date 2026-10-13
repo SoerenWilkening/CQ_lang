@@ -55,6 +55,9 @@ add_library(CQPass MODULE
   src/CastLowering.cpp
   src/ChainWalk.cpp
   src/ClassicalCallArmEmit.cpp
+  # bd dm7f.15 / dm7f.16 classical-condition rail routers (main functions).
+  src/ClassicalRailMux.cpp
+  src/ClassicalRailMuxFence.cpp
   # bd p3kd.13: a Phase-6 clone result as an uncompute-spine producer, and the
   # bd rhk5 clone-read proof moved out of ChainWalk.cpp.
   src/CloneProducer.cpp

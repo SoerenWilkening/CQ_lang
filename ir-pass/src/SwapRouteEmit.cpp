@@ -2688,10 +2688,25 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
   // MEASURED: without this widening the flagship two-diamond Grover customer
   // (`if (q==5) cq_phi(π); … if (q==0) cq_phi(π);` — PRD §1's own program)
   // declines `control flow`, because region 2's `Pred` IS region 1's `MergeBB`.
+  //
+  // WIDENED to `ClassicalCallArm` (bd test_C_libtooling-dm7f.22, lane L5 carve-out,
+  // batch 053). The 6.5 emitter ends in the SAME `flattenRegion(R, taint)` a
+  // diamond `BranchRegion` does, so its doomed set is the same `{Arm, MergeBB}`
+  // (`ArmFalse` null) and its `Pred` survives; and it inserts its whole stream
+  // POSITIONALLY before `Pred`'s conditional `br` (`IRBuilder<> B(BI)`, the hoisted
+  // call `moveBefore(BI)`). So emitting the LATER region first is sound for the
+  // identical reason: none of its own blocks is the earlier region's, and its
+  // stream rides the earlier region's merge splice into the earlier `Pred`, still
+  // AFTER the earlier stream (program order preserved). The lemma's three facts
+  // hold for it because `classifyClassicalCallArm` accepts only a `recoverRegion`
+  // Diamond (`soleMergePhi`'s 2-incoming merge, an arm with one predecessor ending
+  // in an unconditional `br`). What stays refused is unchanged: a real overlap (a
+  // shared arm or merge), a nest, a switch, a select, every other kind.
   auto sequentialChainAlias = [&](size_t ai, size_t bi) {
     auto reorderable = [](const ControlRegion &R) {
       return R.Kind == ControlRegion::BranchRegion ||
-             R.Kind == ControlRegion::PhaseKickback;
+             R.Kind == ControlRegion::PhaseKickback ||
+             R.Kind == ControlRegion::ClassicalCallArm;
     };
     const ControlRegion &A = Regions[ai], &B = Regions[bi];
     if (!reorderable(A) || !reorderable(B))

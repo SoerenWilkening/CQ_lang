@@ -9,6 +9,7 @@
 #include "FreePoint.h"
 
 #include "ChainWalk.h"  // isMeasureSink / isOutputSink — ONE definition (Rule 14)
+#include "ClassicalRailMux.h"  // isClassicalRailMuxRouter (bd dm7f.15, L5 carve-out)
 #include "TaintPropagation.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
@@ -218,6 +219,18 @@ FreePoint computeFreePoint(Value *Terminal, Function &F, PostDominatorTree &PDT,
         Users.push_back(I);
         continue;
       }
+    }
+    // bd dm7f.15 / dm7f.16 (lane L5 carve-out, batch 053) — a classical-condition
+    // RAIL ROUTER that `rewriteClassicalRailMuxes` BUILT (asked by identity on its
+    // own record, never by shape: every other non-call user, a bd zujr phi
+    // included, still falls to `FirstUnrecognized` below). It reads this rail on
+    // the executions its classical choice picks, AFTER every point this scan can
+    // see, so the terminal is LEFT ALLOCATED: `Escaped` — no adjoint, no free,
+    // never freed dirty (R5). The DAG closure scan gives every DAG that reaches
+    // the rail the same verdict (a non-call user → `NotClosed`).
+    if (isClassicalRailMuxRouter(I)) {
+      Escaped = true;
+      continue;
     }
     // A both-arm live-range merge φ (dead result): non-mutating, EXTENDS the live
     // range — its block joins the post-dom set, but the φ is not an insert anchor
