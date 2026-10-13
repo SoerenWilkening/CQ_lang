@@ -96,6 +96,11 @@ It runs three layers:
      own certified-dirty output is FROZEN here (R2J3_3_FROZEN) with one mutant
      row per consumer class and per restoration conjunct, each asserted by
      code, HANDLE and refusal text, against positives one operand away.
+     Since bd r2j3.4 the same layer also carries PHASE_WINDOW_MUTANTS: a
+     diagonal gate (`cqrt_rz_<W>`, its `_controlled` twin, the `cqrt_rz_i1`
+     kickback) with an operand in the cone must cancel inside the window, and
+     PHASE_WINDOW_VERDICTS pins that the refusal names only the window's
+     customer while the flag or derived rail inside it keeps verifying.
 
   3. PROOF-TARGETED SWEEP — for every free site a fixture VERIFIES, blank each
      source line that site's own proof consumed (`--explain` shows them) and
@@ -3425,6 +3430,301 @@ LIGHT_CONE_POSITIVES = [
                                  "  call void @cqrt_free(i32 %y)")),
 ]
 
+# ---------------------------------------------------------------------------
+# bd test_C_libtooling-r2j3.4 — a PHASE inside a superposing restore window.
+#
+# `Ry(-t)·Rz(φ)·Ry(t)` is not the identity (t = π/2 gives an X up to phase), so
+# a diagonal gate between the two halves of a superposing pair changes the
+# rail's POPULATIONS. The checker used to drop every diagonal call from every
+# history, so all of the mutants below VERIFIED before the fix, the first two
+# being the ticket's own measured reproducers. The rule (`_phase_closed`): a
+# diagonal call inside the window with ANY operand in the light cone — write
+# slot or control slot — must be cancelled by an adjoint diagonal inside the
+# same window with every operand held still between the two. A diagonal call
+# that touches nothing in the cone, or sits outside every superposing window,
+# stays transparent: on a rail in a computational-basis state it relabels
+# nothing (the shipped phase arms, PHASE_DIAMOND, the R6 kickback on a flag
+# that is restored by its `_unc`).
+#
+# Mutant rows use LIGHT_CONE_MUTANTS' shape and its harness (code, HANDLE,
+# LC_TAG and the arm fragment below), so a row caught by any other rule — or on
+# any other rail — fails here rather than passing as fake coverage.
+# ---------------------------------------------------------------------------
+PHASE_ARM = "takes a phase"
+
+# The ticket's (A2) reproducer, verbatim: the FREED rail is rotated, phased,
+# and rotated back. At t = π/2, φ = π this is an X up to phase: the free is a
+# reset of |1>.
+_PW_A2 = """
+define void @rzw(i32 %u) {
+  %h = call i32 @cqrt_alloc_i32(i32 %u)
+  call void @cqrt_ry_i32(i32 %h, double 1.570796e+00)
+  ; PHASE
+  call void @cqrt_ry_i32(i32 %h, double -1.570796e+00)
+  call void @cqrt_free(i32 %h)
+  ret void
+}
+"""
+
+_RZ_B = "  call void @cqrt_rz_i32(i32 %b, double {a})"
+_KICK = ("  %f = call i32 @cq_template_icmp_eq_i32_hl(i32 %b, i32 1)\n"
+         "{body}"
+         "  call void @cq_template_icmp_eq_i32_hl_unc(i32 %f, i32 %b, i32 1)\n"
+         "  call void @cqrt_free(i32 %f)")
+_DERIV = ("  %x = call i32 @cq_template_add_i32_hl(i32 %b, i32 1)\n"
+          "{body}"
+          "  call void @cq_template_add_i32_hl_unc(i32 %x, i32 %b, i32 1)\n"
+          "  call void @cqrt_free(i32 %x)")
+
+# The R6 phase arm with NO restore window around it: the user register is
+# prepared and measured, the kickback flag is minted, phased, `_unc`-stripped
+# and freed. The flag's free must keep verifying, both polarities.
+_PW_PHASE_ARM = """
+define i32 @arm(i32 %u) {
+  %h = call i32 @cqrt_alloc_i32(i32 %u)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %f = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 5)
+  call void @cqrt_rz_i1(i32 %f, double 7.000000e-01)
+  call void @cqrt_x(i32 %f)
+  call void @cqrt_rz_i1(i32 %f, double 2.000000e-01)
+  call void @cqrt_x(i32 %f)
+  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %f, i32 %h, i32 5)
+  call void @cqrt_free(i32 %f)
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  ret i32 %m
+}
+"""
+
+PHASE_WINDOW_MUTANTS = [
+    # -- the ticket's two measured reproducers -------------------------------
+    ("lc-r2j3.4-a2-rz-on-the-freed-rail-inside-its-own-restore-window",
+     _PW_A2.replace("  ; PHASE",
+                    "  call void @cqrt_rz_i32(i32 %h, double 3.141593e+00)"),
+     "A-not-reducible", PHASE_ARM, "%h"),
+    ("lc-r2j3.4-t2-rz-on-the-index-inside-the-restore-window",
+     lc(obs=_RZ_B.format(a="3.141593e+00")),
+     "T2-operand-mutated", PHASE_ARM, "%v"),
+    # -- the phase lands on a CONE rail, not on the target itself (review of
+    # U2, 2026-10-01: the cone restoration check dropped diagonals too) ------
+    ("lc-r2j3.4-kickback-on-a-flag-derived-from-the-rotated-index",
+     lc(obs=_KICK.format(
+         body="  call void @cqrt_rz_i1(i32 %f, double 1.000000e+00)\n")),
+     "T2-operand-mutated", PHASE_ARM, "%v"),
+    ("lc-r2j3.4-rz-on-a-derived-data-rail-reversed-inside-the-window",
+     lc(obs=_DERIV.format(
+         body="  call void @cqrt_rz_i32(i32 %x, double 3.000000e-01)\n")),
+     "T2-operand-mutated", PHASE_ARM, "%v"),
+    ("lc-r2j3.4-rz-on-a-cnot-copy-uncopied-inside-the-window",
+     lc(obs="  %y = call i32 @cqrt_alloc_i32(i32 0)\n"
+            "  call void @cqrt_cnot(i32 %b, i32 %y)\n"
+            "  call void @cqrt_rz_i32(i32 %y, double 3.000000e-01)\n"
+            "  call void @cqrt_cnot(i32 %b, i32 %y)\n"
+            "  call void @cqrt_free(i32 %y)"),
+     "T2-operand-mutated", PHASE_ARM, "%v"),
+    # -- the CONTROL slot: a joint phase entangles the outside rail with the
+    # rotated one even though neither label moves (bd notes, probe @rzc) -----
+    ("lc-r2j3.4-controlled-phase-from-the-rotated-index-onto-an-outside-rail",
+     lc(obs="  %y = call i32 @cqrt_alloc_i32(i32 %s)\n"
+            "  call void @cqrt_rz_i32_controlled(i32 %b, i32 %y, "
+            "double 1.000000e+00)"),
+     "T2-operand-mutated", PHASE_ARM, "%v"),
+    ("lc-r2j3.4-controlled-phase-onto-the-rotated-index-from-an-outside-flag",
+     lc(pre="  %g = call i32 @cqrt_alloc_i1(i1 true)",
+        obs="  call void @cqrt_rz_i32_controlled(i32 %g, i32 %b, "
+            "double 1.000000e+00)"),
+     "T2-operand-mutated", PHASE_ARM, "%v"),
+    # -- one row per conjunct of the CANCELLATION ------------------------------
+    ("lc-r2j3.4-phase-pair-whose-angles-do-not-negate",
+     lc(obs=_RZ_B.format(a="3.000000e-01") + "\n" +
+        _RZ_B.format(a="3.000000e-01")),
+     "T2-operand-mutated", PHASE_ARM, "%v"),
+    ("lc-r2j3.4-phase-pair-straddling-a-label-flip",
+     lc(obs=_RZ_B.format(a="3.000000e-01") + "\n"
+            "  call void @cqrt_x(i32 %b)\n" +
+            _RZ_B.format(a="-3.000000e-01") + "\n"
+            "  call void @cqrt_x(i32 %b)"),
+     "T2-operand-mutated", PHASE_ARM, "%v"),
+    ("lc-r2j3.4-phase-cancelled-only-after-the-window-closes",
+     lc(obs=_RZ_B.format(a="3.000000e-01"),
+        post=_RZ_B.format(a="-3.000000e-01")),
+     "T2-operand-mutated", PHASE_ARM, "%v"),
+    ("lc-r2j3.4-controlled-phase-pair-on-complementary-flag-branches",
+     lc(pre="  %g = call i32 @cqrt_alloc_i1(i1 true)",
+        obs="  call void @cqrt_rz_i32_controlled(i32 %g, i32 %b, "
+            "double 3.000000e-01)\n"
+            "  call void @cqrt_x(i32 %g)\n"
+            "  call void @cqrt_rz_i32_controlled(i32 %g, i32 %b, "
+            "double -3.000000e-01)\n"
+            "  call void @cqrt_x(i32 %g)"),
+     "T2-operand-mutated", PHASE_ARM, "%v"),
+    # `%y` IS restored by the window's end (the `x` bracket closes), so the
+    # restoration conjunct is satisfied and only the pair's own stability
+    # test can see that the bracket straddles ONE half of the phase pair:
+    # `rz_c(b,y,a)·X_y·rz_c(b,y,-a)·X_y` is a phase on b that depends on y.
+    # (The red run's first spelling left `%y` unrestored and was refused by
+    # the restoration conjunct instead, so it pinned nothing about this arm.)
+    ("lc-r2j3.4-controlled-phase-pair-whose-outside-rail-moved-between",
+     lc(obs="  %y = call i32 @cqrt_alloc_i32(i32 %s)\n"
+            "  call void @cqrt_rz_i32_controlled(i32 %b, i32 %y, "
+            "double 3.000000e-01)\n"
+            "  call void @cqrt_x(i32 %y)\n"
+            "  call void @cqrt_rz_i32_controlled(i32 %b, i32 %y, "
+            "double -3.000000e-01)\n"
+            "  call void @cqrt_x(i32 %y)"),
+     "T2-operand-mutated", PHASE_ARM, "%v"),
+    # -- the shipped whole-DAG spine with ONE phase adjoint dropped: the root
+    # `%h`'s restore window keeps `rz(%h_op3, .5)` uncancelled ---------------
+    ("lc-r2j3.4-uncompute-chain-phase-adjoint-dropped",
+     drop(UNCOMPUTE_CHAIN, "cqrt_rz_i32(i32 %h_op3, double -5.000000e-01)"),
+     "A-not-reducible", PHASE_ARM, "%h"),
+    # -- (T3): the minted rail's OWN restore window --------------------------
+    ("lc-r2j3.4-t3-rz-between-the-minted-rail-s-own-rotations",
+     _LC_T3.replace("  call void @cqrt_cnot(i32 %x, i32 %y)\n", "").replace(
+         "  ; CLOSE", "  call void @cqrt_rz_i32(i32 %x, double 3.000000e-01)"),
+     "T3-rail-written-before-reversal", PHASE_ARM, "%x"),
+]
+
+# Each one operand from a row above (or a shipped mechanism the rule must not
+# touch), and each MUST verify clean — every free site, zero findings.
+PHASE_WINDOW_POSITIVES = [
+    ("lc-r2j3.4-twin-a2-rotation-pair-with-nothing-between",
+     _PW_A2.replace("  ; PHASE\n", "")),
+    ("lc-r2j3.4-twin-rz-on-a-basis-state-rail",
+     _PW_A2.replace("  call void @cqrt_ry_i32(i32 %h, double 1.570796e+00)\n",
+                    "").replace(
+         "  ; PHASE\n", "").replace(
+         "  call void @cqrt_ry_i32(i32 %h, double -1.570796e+00)",
+         "  call void @cqrt_rz_i32(i32 %h, double 3.141593e+00)")),
+    ("lc-r2j3.4-twin-rz-before-the-window-opens-and-after-it-closes",
+     _PW_A2.replace("  ; PHASE\n", "").replace(
+         "  %h = call i32 @cqrt_alloc_i32(i32 %u)",
+         "  %h = call i32 @cqrt_alloc_i32(i32 %u)\n"
+         "  call void @cqrt_rz_i32(i32 %h, double 7.000000e-01)").replace(
+         "  call void @cqrt_free(i32 %h)",
+         "  call void @cqrt_rz_i32(i32 %h, double 2.000000e-01)\n"
+         "  call void @cqrt_free(i32 %h)")),
+    ("lc-r2j3.4-twin-phase-pair-cancelled-inside-the-window",
+     lc(obs=_RZ_B.format(a="3.000000e-01") + "\n" +
+        _RZ_B.format(a="-3.000000e-01"))),
+    ("lc-r2j3.4-twin-phase-pair-around-a-closed-label-bracket",
+     lc(obs=_RZ_B.format(a="3.000000e-01") + "\n"
+            "  call void @cqrt_x(i32 %b)\n"
+            "  call void @cqrt_x(i32 %b)\n" +
+            _RZ_B.format(a="-3.000000e-01"))),
+    # The whole-DAG spine's own shape (UNCOMPUTE_CHAIN's `%h_op3` pair).
+    ("lc-r2j3.4-twin-derived-rail-phase-pair-inside-the-window",
+     lc(obs=_DERIV.format(
+         body="  call void @cqrt_rz_i32(i32 %x, double 3.000000e-01)\n"
+              "  call void @cqrt_rz_i32(i32 %x, double -3.000000e-01)\n"))),
+    ("lc-r2j3.4-twin-kickback-and-its-adjoint-inside-the-window",
+     lc(obs=_KICK.format(
+         body="  call void @cqrt_rz_i1(i32 %f, double 1.000000e+00)\n"
+              "  call void @cqrt_rz_i1(i32 %f, double -1.000000e+00)\n"))),
+    ("lc-r2j3.4-twin-phase-on-a-rail-outside-the-cone",
+     lc(obs="  %y = call i32 @cqrt_alloc_i32(i32 %s)\n"
+            "  call void @cqrt_rz_i32(i32 %y, double 3.000000e-01)\n"
+            "  call void @cqrt_free(i32 %y)")),
+    ("lc-r2j3.4-twin-controlled-phase-pair-from-the-rotated-index",
+     lc(obs="  %y = call i32 @cqrt_alloc_i32(i32 %s)\n"
+            "  call void @cqrt_rz_i32_controlled(i32 %b, i32 %y, "
+            "double 3.000000e-01)\n"
+            "  call void @cqrt_rz_i32_controlled(i32 %b, i32 %y, "
+            "double -3.000000e-01)\n"
+            "  call void @cqrt_free(i32 %y)")),
+    # A diagonal on the CONTROL of a controlled-rotation pair commutes with
+    # both halves (both are block-diagonal in the flag's basis), so it is not
+    # in the target's cone and must not be asked to cancel.
+    ("lc-r2j3.4-twin-phase-on-the-control-of-a-controlled-rotation-pair",
+     lc(obs="  call void @cqrt_rz_i1(i32 %f, double 7.000000e-01)",
+        pre="  %f = call i32 @cqrt_alloc_i1(i1 true)",
+        open_="  call void @cqrt_ry_i32_controlled(i32 %f, i32 %b, "
+              "double -5.000000e-01)",
+        shut="  call void @cqrt_ry_i32_controlled(i32 %f, i32 %b, "
+             "double 5.000000e-01)")),
+    ("lc-r2j3.4-twin-r6-phase-arm-kickback-on-a-restored-flag",
+     _PW_PHASE_ARM),
+]
+
+# Precision: the refusal is a statement about the window's customer, not about
+# the module. The flag and the derived rail inside each window are template
+# rails with a clean `_unc`, and THEIR frees stay verified.
+PHASE_WINDOW_VERDICTS = {
+    "lc-r2j3.4-kickback-on-a-flag-derived-from-the-rotated-index":
+        {"%f": "OK:T1-unc-reversal", "%v": "UNPROVEN:T2-operand-mutated"},
+    "lc-r2j3.4-rz-on-a-derived-data-rail-reversed-inside-the-window":
+        {"%x": "OK:T1-unc-reversal", "%v": "UNPROVEN:T2-operand-mutated"},
+    "lc-r2j3.4-rz-on-a-cnot-copy-uncopied-inside-the-window":
+        {"%y": "OK:A2-reduces-to-identity",
+         "%v": "UNPROVEN:T2-operand-mutated"},
+    "lc-r2j3.4-uncompute-chain-phase-adjoint-dropped":
+        {"%h_fneg": "OK:T1-unc-reversal", "%h2": "OK:A2-reduces-to-identity",
+         "%h_op3": "OK:T1-unc-reversal", "%h_op": "OK:T1-unc-reversal",
+         "%h": "UNPROVEN:A-not-reducible"},
+}
+
+# SEVERITY (round-1 review F1, CLAUDE.md L2). `T1-no-reversal` is a VIOLATION
+# when the rail's own writes net to identity, and `T3-rail-written-after-
+# reversal` is one when the pre-reversal history does; both read the reduction
+# NEGATED, so the first draft's narrowing demoted them to UNPROVEN — and
+# `--allow-unproven` then passes a free with no reversal. Both now read the
+# LABEL-ONLY reduction. The `-control` rows keep the other direction honest:
+# a history that does not cancel even on labels stays UNPROVEN.
+_SEV = """
+define void @sev(i32 %u) {
+  %b = call i32 @cqrt_alloc_i32(i32 %u)
+  %x = call i32 @cq_template_add_i32_hl(i32 %b, i32 1)
+  call void @cqrt_ry_i32(i32 %x, double 1.570796e+00)
+  ; BETWEEN
+  call void @cqrt_ry_i32(i32 %x, double -1.570796e+00)
+  ; AFTER
+  call void @cqrt_free(i32 %x)
+  ret void
+}
+"""
+_SEV_UNC = ("  call void @cq_template_add_i32_hl_unc(i32 %x, i32 %b, i32 1)\n"
+            "  call void @cqrt_x(i32 %x)")
+PHASE_WINDOW_SEVERITY = [
+    ("sev-t1-no-reversal-with-a-phase-in-the-rail-s-own-window",
+     _SEV.replace("  ; BETWEEN",
+                  "  call void @cqrt_rz_i32(i32 %x, double 3.141593e+00)")
+         .replace("  ; AFTER\n", ""),
+     {"%x": "VIOLATION:T1-no-reversal"}),
+    # The r2j3.3 open-cone spelling: UNPROVEN at fc6ee653, VIOLATION again
+    # (the pre-r2j3.3 severity) now that the severity reads labels only.
+    ("sev-t1-no-reversal-with-an-open-light-cone",
+     _SEV.replace("  ; BETWEEN",
+                  "  %y = call i32 @cqrt_alloc_i32(i32 0)\n"
+                  "  call void @cqrt_cnot(i32 %x, i32 %y)")
+         .replace("  ; AFTER\n", ""),
+     {"%x": "VIOLATION:T1-no-reversal"}),
+    ("sev-t1-no-reversal-control",
+     _SEV.replace("  ; BETWEEN\n", "").replace(
+         "  call void @cqrt_ry_i32(i32 %x, double -1.570796e+00)\n", "")
+         .replace("  ; AFTER\n", ""),
+     {"%x": "UNPROVEN:T1-no-reversal"}),
+    ("sev-t3-written-after-reversal-with-a-phase-before-it",
+     _SEV.replace("  ; BETWEEN",
+                  "  call void @cqrt_rz_i32(i32 %x, double 3.141593e+00)")
+         .replace("  ; AFTER", _SEV_UNC),
+     {"%x": "VIOLATION:T3-rail-written-after-reversal"}),
+    ("sev-t3-written-after-reversal-control",
+     _SEV.replace("  ; BETWEEN\n", "").replace(
+         "  call void @cqrt_ry_i32(i32 %x, double -1.570796e+00)\n", "")
+         .replace("  ; AFTER", _SEV_UNC),
+     {"%x": "UNPROVEN:T3-rail-written-before-reversal"}),
+    # Review F3: a diagonal pair refused for `undef` text must not be recorded
+    # in the write-history `undef` ledger, or this ordinary phase refusal is
+    # reported as `A-undef-literal-pairing`.
+    ("sev-undef-angle-phase-is-not-an-undef-write-pairing",
+     _PW_A2.replace("  ; PHASE",
+                    "  call void @cqrt_rz_i32(i32 %h, double 3.000000e-01)\n"
+                    "  call void @cqrt_rz_i32(i32 %h, double undef)"),
+     {"%h": "UNPROVEN:A-not-reducible"}),
+]
+
+LIGHT_CONE_MUTANTS.extend(PHASE_WINDOW_MUTANTS)
+LIGHT_CONE_POSITIVES.extend(PHASE_WINDOW_POSITIVES)
+
 # The frozen module's OTHER three frees are sound and must keep verifying: the
 # rule is a statement about %1, not a refusal of the module.
 R2J3_3_FROZEN_VERDICTS = {
@@ -3709,7 +4009,8 @@ def main():
         elif verbose:
             print(f"  ok  t4        {name:44s} -> {n} T4 proof(s)")
 
-    # ---- layer 2h: bd r2j3.3, the superposing restore window --------------
+    # ---- layer 2h: bd r2j3.3 / r2j3.4, the superposing restore window -----
+    # (LIGHT_CONE_MUTANTS / _POSITIVES carry the r2j3.4 phase rows too.)
     n_lc = 0
     for name, text, want, arm, handle in LIGHT_CONE_MUTANTS:
         n_lc += 1
@@ -3742,6 +4043,27 @@ def main():
     if vm != R2J3_3_FROZEN_VERDICTS:
         fails.append(f"LIGHT-CONE FROZEN r2j3.3 verdicts: expected "
                      f"{R2J3_3_FROZEN_VERDICTS}, got {vm}")
+    # bd r2j3.4: the phase refusal names the window's customer and nothing
+    # else — every other free in the module keeps its verdict.
+    rows = {name: text for name, text, *_ in PHASE_WINDOW_MUTANTS}
+    for name, want in PHASE_WINDOW_VERDICTS.items():
+        n_lc += 1
+        vm = verdict_map(rows[name])
+        if vm != want:
+            fails.append(f"PHASE-WINDOW verdicts {name}: expected {want}, "
+                         f"got {vm}")
+        elif verbose:
+            print(f"  ok  phasewin  {name:52s} -> {len(want)} verdict(s)")
+    # Review F1/F3: the rule may add refusals; it may not LOWER a severity,
+    # and it may not rename an ordinary phase refusal as an undef pairing.
+    for name, text, want in PHASE_WINDOW_SEVERITY:
+        n_lc += 1
+        vm = verdict_map(text)
+        if vm != want:
+            fails.append(f"PHASE-WINDOW severity {name}: expected {want}, "
+                         f"got {vm}")
+        elif verbose:
+            print(f"  ok  severity  {name:52s} -> {want}")
 
     # ---- layer 2e: the CENSUS (bd rixk, bd 19vy, bd 1739 hole 1) ---------
     # No other layer can see this: the census is not a finding, so a census

@@ -66,7 +66,10 @@ undone:
        counts only if its LIGHT CONE closes (L): nothing between the two may
        keep a copy of the rotated-basis state — no tape record, measurement,
        unreversed template rail or unrestored CNOT target (bd r2j3.3; see
-       `StreamAnalysis.light_cone_closed`). Rule (L) lives in the reduction,
+       `StreamAnalysis.light_cone_closed`) — and nothing between them may
+       leave a PHASE on it: a diagonal gate with an operand in the cone must
+       be cancelled by its adjoint inside the window (bd r2j3.4,
+       `StreamAnalysis._phase_closed`). Rule (L) lives in the reduction,
        so it binds (A2) and (T3) exactly as it binds (T2).
   (T3) the rail itself is unchanged between mint and reversal (the `¬flag`
        `cqrt_x` bracket is such a self-cancelling pair) and is NOT written at
@@ -216,6 +219,17 @@ TWO MODELLING DECISIONS THAT ARE PHYSICS, NOT CONVENIENCE
   branch it does nothing on buys it nothing — the state is a superposition over
   both, so the target rail is dirty and entangled with the flag. Only the write
   SLOT moves (arg 1, the control taking arg 0).
+  ⚠ TRANSPARENT MEANS "ABSENT FROM THE BASIS LEDGER", NOT "IRRELEVANT" (bd
+  test_C_libtooling-r2j3.4). The argument above holds where the rails a phase
+  touches are in a computational-basis state on every branch — which is every
+  PERMUTATION reduction, because a permutation maps each branch to one branch
+  and the phase only rides along. It is FALSE between the two halves of a
+  SUPERPOSING pair: `Ry(-t)·Rz(φ)·Ry(t)` is not the identity (t = π/2 gives an
+  X up to phase). So diagonal calls stay out of every write history (the phase
+  arms need that), and rule (L) asks the phase question separately, over the
+  WHOLE restore window: every diagonal call with an operand in the window's
+  light cone — write slot OR control slot — must cancel against its adjoint
+  inside the window with its operands held still (`_phase_closed`).
 * COMMUTATION IS LIMITED TO COMPLEMENTARY FLAG BRANCHES. Two controlled writes
   to the same rail are treated as commuting only when they share a control
   register whose `cqrt_x` parity differs between them AND that register is
@@ -233,18 +247,30 @@ TWO MODELLING DECISIONS THAT ARE PHYSICS, NOT CONVENIENCE
 
 WHAT IT DOES **NOT** WITNESS  (read this before quoting the tool)
 ================================================================
-  * PHASE. Because Rz is transparent (above), a dropped or wrong-angle `rz`
-    adjoint is INVISIBLE here. That is a real miscompile — it is the golden
+  * PHASE OUTSIDE A SUPERPOSING WINDOW. Because Rz is transparent (above), a
+    dropped or wrong-angle `rz` adjoint on a rail no superposing pair is asked
+    to restore is INVISIBLE here. That is a real miscompile — it is the golden
     trace's job, and the two gates are complementary by construction: the trace
     sees the angles and not the rail identities, this file sees the rail
     identities and not the angles.
-    ⚠ AND IT IS NOT ONLY ABOUT ANGLES. Transparency is sound for a rail in a
-    basis state and FALSE between two SUPERPOSING writes: `Ry(-t)·Rz(φ)·Ry(t)`
-    changes POPULATIONS, so `ry; rz; ry⁻¹; free` VERIFIES a dirty free here,
-    before and after rule (L) — (L) closes a restore window against
-    observations, not against phases. MEASURED live on hand IR only (the
-    compiler leaves the rail allocated on the C probe); filed as bd
-    test_C_libtooling-r2j3.4.
+    INSIDE a superposing window it is NOT invisible any more (bd
+    test_C_libtooling-r2j3.4). Transparency is sound for a rail in a basis
+    state and false between two superposing writes: `Ry(-t)·Rz(φ)·Ry(t)`
+    changes POPULATIONS, and `ry; rz; ry⁻¹; free` used to VERIFY a dirty free
+    here, before and after rule (L). Rule (L) now refuses a window in which a
+    diagonal call touching the light cone is not cancelled by its adjoint
+    inside the window (`_phase_closed`), and that includes a dropped or
+    wrong-angle `rz` adjoint there — so within a window, this file DOES see
+    the angle, to the extent of "negated or not".
+    Still REFUSED although sound (over-declines), stated: a phase whose
+    cancellation is not a pairwise negation of literal angle text
+    (`rz(a); rz(b); rz(-(a+b))`, an angle spelled as an SSA value), and the
+    other deliberate refusals `light_cone_closed` lists; the angle is compared
+    as text through `is_negation`, never evaluated.
+    Still VERIFIED although dirty, stated: a phase on a rail that reaches the
+    gate through a NON-CALL alias (`%s = select …, %b, …; rz(%s, φ)` inside
+    `%b`'s window) — the NON-CALL bullet below, unchanged by this rule and
+    held in front of this file by the pass's `declineClassicalMuxes`.
   * The UNITARY. This is a structural check, not a simulator. It proves the
     emitted gate sequence has the SHAPE of a reversal; it does not evaluate it.
     Reduction-to-identity is SUFFICIENT for "unchanged", never necessary:
@@ -529,10 +555,12 @@ are zeros over the permutation class only.
   back between the load and its `_unc` — the same shape reached through (T2).
   Rule (L), `StreamAnalysis.light_cone_closed`, makes a superposing pair cancel
   only when nothing between its halves kept the rotated state, and it binds
-  this reduction wherever it runs. What is still open in the superposition
-  class: a PHASE between the two halves (bd test_C_libtooling-r2j3.4), and any
-  correct closure that is not a LIFO reversal (a Bennett recompute), which
-  over-declines. Both need more than a deeper fuzz.
+  this reduction wherever it runs. A PHASE between the two halves (bd
+  test_C_libtooling-r2j3.4) is refused by the same rule's phase conjunct,
+  `_phase_closed`. What is still open in the superposition
+  class: any correct closure that is not a LIFO reversal (a Bennett
+  recompute), or a phase cancellation that is not a pairwise negation, both of
+  which over-decline. Neither yields to a deeper fuzz.
 
 The other three measurements: verdict diff over the 237 slices, 0 moved (above);
 proof-targeted mutants planted in the SHIPPED lowered IR, 735 planted (at most 4
@@ -631,6 +659,57 @@ the same way, and its corpus figure is the one to read most carefully.
      `cone_nest` in the selftest). The first draft unioned every cone rail's
      sub-proof lines into each enclosing window and was cubic (D=500 13.5 s);
      the witness is now each cone rail's reversal line alone.
+
+THE (L) PHASE CONJUNCT (bd test_C_libtooling-r2j3.4, 2026-10-13), validated the
+same way, and the corpus figure is again the one to read with care.
+ (1) VERDICT DIFF over all 440 registered run_slice*.sh slices (392 single +
+     48 multi, rebuilt from main fc6ee653's build/tests/e2e/CTestTestfile.cmake
+     with the harness's own stage-1/2 commands, cq-opt sha256 f4379f18…), FULL
+     finding lists plus the exit code under each slice's registered flags,
+     against the pinned pre-change file: 56779 free sites, 56759 verified
+     before and after, 0 modules moved, 0 exit codes moved, all 440 exit 0
+     both sides. Comparator controls: the pre-change file against a copy of
+     itself moves nothing; the ticket's two reproducers (A2 and T2) move.
+ (2) THAT DIFF HAS NO POWER AT ALL on this rule, and it was measured before
+     the change, not assumed: the pre-change file runs the light-cone rule
+     exactly TWICE over the 440 slices (qram-load-index-record-window,
+     spec-intermediate-unc), both windows close, and NEITHER contains a single
+     diagonal call. The accept arms are exercised only by the selftest's
+     PHASE_WINDOW_POSITIVES (11 shapes, each one operand from a mutant or a
+     shipped phase mechanism) and UNCOMPUTE_CHAIN's `%h_op3` pair, the one
+     historical shipped lowering with a phase inside a window.
+ (3) ADDS REFUSALS ONLY, PER PAIR: the scan, the cone and the restoration
+     conjunct are unchanged, and the phase test is one more conjunct ANDed
+     after them, so every superposing PAIR this file now cancels the
+     pre-change file cancelled too. Stated precisely rather than rounded up:
+     the reduction is GREEDY, so a pair refused here can leave a different
+     (textually identical) stack entry for a later write to take, and "every
+     free verified now was verified before" is not proven for every input —
+     only measured (item 1) and argued (two candidates an adjoint can match
+     are the same text). The review question is whether something sound is
+     newly refused.
+ (3b) SEVERITY IS NOT NARROWED WITH IT (review round 1, F1, CLAUDE.md L2).
+     Two SEVERITY choices read the reduction NEGATED — `T1-no-reversal`'s
+     VIOLATION-if-inert and the T3 failure that pre-empts
+     `T3-rail-written-after-reversal` — and the first draft let a phase in
+     the rail's own window demote both from VIOLATION to a waivable
+     UNPROVEN, so `--allow-unproven` exited 0 on a free with no reversal.
+     Both now read the LABEL-ONLY reduction (`reduces_to_identity(cone=
+     False)`), which asks neither the light cone nor the phase. That also
+     RAISES the r2j3.3 open-cone spelling of the same two shapes from
+     UNPROVEN back to VIOLATION, the pre-r2j3.3 severity; the corpus has no
+     such site (item 2: the light-cone rule never refuses on it). Pinned by
+     PHASE_WINDOW_SEVERITY in the selftest. Every other negated use was
+     checked: `check_alloc_rail` chooses only among UNPROVEN codes, and
+     `_minted_core`'s and the cone's negations refuse in the same direction
+     as the predicate they read.
+ (4) MUTANTS: one no-op (survives all 29 r2j3.4 rows) and three real ones,
+     each run against the single row written to kill it — the conjunct
+     deleted (`…a2-rz-on-the-freed-rail…`), the pair's operand-stability test
+     dropped (`…phase-pair-straddling-a-label-flip`), the control slot made
+     blind (`…controlled-phase-from-the-rotated-index-onto-an-outside-rail`):
+     3 killed, MISSED 0. (Measured on the round-1 snapshot; the F1/F3/F4
+     fixes were not re-mutated.)
 
 USAGE
     tools/free_pairing_check.py [options] lowered1.ll [lowered2.ll ...]
@@ -1567,10 +1646,29 @@ def is_negation(a, b):
 # The analysis.
 # ---------------------------------------------------------------------------
 
+def _outward(seq, i):
+    """The members of the strictly increasing `seq` other than `seq[i]`,
+    nearest to `seq[i]` first, a tie going to the EARLIER one — the order
+    `sorted(..., key=lambda x: (abs(x - seq[i]), x))` gives, produced by a
+    two-pointer merge so a caller that stops early pays only for what it read
+    (`_phase_closed`, bd r2j3.4 review F4)."""
+    q, lo, hi = seq[i], i - 1, i + 1
+    while lo >= 0 or hi < len(seq):
+        if hi >= len(seq) or (lo >= 0 and q - seq[lo] <= seq[hi] - q):
+            yield seq[lo]
+            lo -= 1
+        else:
+            yield seq[hi]
+            hi += 1
+
+
 VIOLATION = "VIOLATION"    # demonstrably unsound
 UNPROVEN = "UNPROVEN"      # outside the structural proofs this file can give
 # The common tail of every light-cone refusal (bd r2j3.3); the selftest keys on it.
 LC_OPEN = "light cone is left open"
+# Memo-key tag of the LABEL-ONLY reduction (`reduces_to_identity(cone=False)`,
+# bd r2j3.4 review F1): the severity callers' predicate, never a proof.
+LABELS_ONLY = "labels-only"
 
 
 class Finding:
@@ -1880,7 +1978,7 @@ class StreamAnalysis:
         r = self.rails.get(name)
         return [] if r is None else [(p, c) for p, c in r.writes if lo < p < hi]
 
-    def unchanged_over(self, name, lo, hi):
+    def unchanged_over(self, name, lo, hi, cone=True):
         """(ok, witness lines) — `name`'s writes inside (lo, hi) net to identity.
 
         WHY THERE IS NO STEP BUDGET HERE (bd test_C_libtooling-xzdx, 2026-08-08)
@@ -1980,7 +2078,9 @@ class StreamAnalysis:
         is a PURE CACHE, so deleting its writes must not move a verdict, which
         is measured (all 237 slices byte-identical) rather than asserted.
         """
-        memo = (name, lo, hi)
+        # `cone=False` is the LABEL-ONLY reading (see `reduces_to_identity`);
+        # it is a different predicate, so it gets its own memo key.
+        memo = (name, lo, hi) if cone else (name, lo, hi, LABELS_ONLY)
         hit = self._stable_memo.get(memo)
         if hit is not None:
             return hit
@@ -1989,14 +2089,23 @@ class StreamAnalysis:
         self._stable_active.add(memo)
         try:
             ok, _why, lines = self.reduces_to_identity(
-                self.writes_in(name, lo, hi), name)
+                self.writes_in(name, lo, hi), name, cone)
         finally:
             self._stable_active.discard(memo)
         self._stable_memo[memo] = (ok, lines)
         return ok, lines
 
-    def adjoint_matches(self, a, b):
-        """Is call `b` the adjoint of call `a` on their shared target rail?"""
+    def adjoint_matches(self, a, b, record_undef=True):
+        """Is call `b` the adjoint of call `a` on their shared target rail?
+
+        `record_undef=False` refuses an `undef`/`poison` pair exactly as the
+        default does but leaves `undef_refused` alone. That ledger names the
+        reason at a free whose WRITE-HISTORY reduction failed, so only that
+        reduction may write it; the phase conjunct (`_phase_closed`) asks
+        about diagonal calls, which are in no write history, and recording
+        them misnamed an unrelated failure as `A-undef-literal-pairing` (bd
+        r2j3.4 review F3).
+        """
         ea = a.eff
         if ea is None or ea.adjoint_of is None:
             return False
@@ -2008,7 +2117,8 @@ class StreamAnalysis:
         # unpairable history.
         if a.sym == b.sym and len(a.args) == len(b.args) and \
                 any(carries_undef(x) for x in a.args + b.args):
-            self.undef_refused.append((a, b))
+            if record_undef:
+                self.undef_refused.append((a, b))
             return False
         if a.ctl_parity != b.ctl_parity:
             # Same gate on the complementary branch of its flag is NOT the
@@ -2060,7 +2170,7 @@ class StreamAnalysis:
                     return True
         return False
 
-    def reduces_to_identity(self, ws, target):
+    def reduces_to_identity(self, ws, target, cone=True):
         """Cancel adjoint pairs in `target`'s write history (commutation-aware).
 
         `ws` is the write history of the rail `target` over some interval, and
@@ -2070,6 +2180,20 @@ class StreamAnalysis:
         which must hold still for the pair to cancel — from the slot carrying
         `target` itself, whose stability is the very thing this reduction is
         establishing and so cannot be an input to it.
+
+        `cone=False` is the LABEL-ONLY reading, all the way down the recursion:
+        a superposing pair cancels on the label ledger alone, with rule (L) —
+        its light cone and its phase conjunct — not asked. It is NOT a proof
+        that anything is |0>, and nothing may verify a free on it. It exists
+        for exactly one kind of caller (bd r2j3.4 review F1, CLAUDE.md L2): a
+        SEVERITY decision that reads this predicate NEGATED. `T1-no-reversal`
+        and `T3-rail-written-after-reversal` are VIOLATIONs only when the
+        rail's own writes net to identity on its labels (no recognised zeroing
+        history; a phase sandwich can still permute labels, a contrived case
+        kept at main's severity); if those
+        callers read the full predicate, every narrowing of rule (L) would
+        silently demote a hard VIOLATION to a waivable UNPROVEN. Reading the
+        label-only one makes their severity independent of rule (L).
 
         Returns (ok, reason, witness) where `witness` is the set of SOURCE LINES
         the proof consumed — every cancelled pair, plus the pairs any nested
@@ -2087,12 +2211,12 @@ class StreamAnalysis:
                            for m in range(k + 1, len(stack))):
                     continue
                 ok, sub, blocker = self.pair_operands_unchanged(
-                    ck, pk, p, target)
+                    ck, pk, p, target, cone)
                 if not ok:
                     rejects.append((ck, c, f"operand {blocker} is not "
                                            f"provably unchanged between them"))
                     continue
-                if ck.eff.superposing:
+                if cone and ck.eff.superposing:
                     # bd r2j3.3: a rotation pair is the identity on `target`
                     # only if nothing between them kept a copy of the
                     # rotated-basis state. Permutation pairs skip this — they
@@ -2127,7 +2251,7 @@ class StreamAnalysis:
                     f"{cc.line}) matched but was REJECTED because {reason}")
         return False, why, frozenset(witness)
 
-    def pair_operands_unchanged(self, c1, p1, p2, target):
+    def pair_operands_unchanged(self, c1, p1, p2, target, cone=True):
         """(ok, witness, blocker) — everything `c1`'s action depends on holds.
 
         THREE operand classes, each here for a reason that was once a hole:
@@ -2170,7 +2294,7 @@ class StreamAnalysis:
             v = c1.vals[ri]
             if v not in self.rails:
                 continue
-            ok, lines = self.unchanged_over(v, p1, p2)
+            ok, lines = self.unchanged_over(v, p1, p2, cone)
             if not ok:
                 return False, frozenset(), v
             acc |= lines
@@ -2181,8 +2305,12 @@ class StreamAnalysis:
             # `v == target` is the rail under reduction, and skipping it is
             # what keeps this loop from taking its own conclusion as a premise.
             # It is also why single-write gates add NO work here: their one
-            # write slot IS the target, so only `cqrt_cswap` ever reaches
-            # `co_written_stable` at all.
+            # write slot IS the target, so among the REDUCTION's callers only
+            # `cqrt_cswap` ever reaches `co_written_stable` at all. The one
+            # other caller is the phase conjunct (`_phase_closed`, bd r2j3.4),
+            # which asks about a DIAGONAL pair with `target=None`: no slot is
+            # under reduction there, and the write slot is exactly the rail
+            # whose label must hold still for the two phases to cancel.
             #
             # THIS CLAUSE IS AN ACCEPT-ARM. It is kill-tested by the POSITIVE
             # fixture `a2-co-written-target-skip`, which the checker VERIFIES
@@ -2223,13 +2351,13 @@ class StreamAnalysis:
             # into every e2e slice means failing a CORRECT build.
             if v == target or v not in self.rails:
                 continue
-            ok, lines = self.co_written_stable(v, p1, p2, c1)
+            ok, lines = self.co_written_stable(v, p1, p2, c1, cone)
             if not ok:
                 return False, frozenset(), v
             acc |= lines
         return True, frozenset(acc), None
 
-    def co_written_stable(self, v, p1, p2, c1):
+    def co_written_stable(self, v, p1, p2, c1, cone=True):
         """(ok, witness) — co-written register `v` holds still across the pair.
 
         The same question `unchanged_over` answers, with ONE extra admission:
@@ -2297,7 +2425,8 @@ class StreamAnalysis:
         found this out the expensive way. The first draft of the budget removal
         left this edge uncached, on the argument that its population is tiny:
         `cqrt_cswap` is the only multi-write symbol in `classify()`, so nothing
-        else reaches here at all, and the whole 237-slice corpus makes just 66
+        else reaches here at all (true then; since bd r2j3.4 a diagonal pair
+        asked by `_phase_closed` reaches it too), and the whole 237-slice corpus makes just 66
         calls here against 90671 to `unchanged_over`. That argument is the
         corpus-has-no-power error in its purest form. The deleted budget was the
         only thing bounding the WORK on this edge, and without a cache the cost
@@ -2318,9 +2447,12 @@ class StreamAnalysis:
         unstated assumption, and `commutes` reads `c1`. `id()` is safe here
         precisely because it is scoped to one `StreamAnalysis`: every `c1` that
         reaches this method is an element of `self.calls`, which outlives the
-        analysis, so no id can be recycled underneath the table.
+        analysis, so no id can be recycled underneath the table. The
+        label-only reading (`cone=False`, see `reduces_to_identity`) is a
+        different predicate and carries a fifth key element.
         """
-        key = (v, p1, p2, id(c1))
+        key = (v, p1, p2, id(c1)) if cone else (v, p1, p2, id(c1),
+                                                LABELS_ONLY)
         hit = self._co_written_memo.get(key)
         if hit is not None:
             return hit
@@ -2330,7 +2462,7 @@ class StreamAnalysis:
         try:
             ws = [(p, w) for p, w in self.writes_in(v, p1, p2)
                   if not self.commutes(p, w, p1, c1)]
-            ok, _why, lines = self.reduces_to_identity(ws, v)
+            ok, _why, lines = self.reduces_to_identity(ws, v, cone)
         finally:
             self._co_written_active.discard(key)
         self._co_written_memo[key] = (ok, lines)
@@ -2367,8 +2499,15 @@ class StreamAnalysis:
             operand in the cone — read, control, classical-immediate or WRITE
             slot (a `cqrt_cswap` moves `target`'s state into its co-written
             rail through a write slot) — adds every rail it writes and the rail
-            it mints. `cqrt_free` adds nothing; a diagonal write adds nothing
-            new (its only write slot is already in the cone).
+            it mints. `cqrt_free` adds nothing. A DIAGONAL call is scanned
+            like any gate, so a controlled diagonal whose CONTROL is in the
+            cone adds its write-slot rail (an earlier version of this bullet
+            said "its only write slot is already in the cone", which is false
+            for `cqrt_rz_<W>_controlled(cone, y, …)`). That addition is
+            conservative — a diagonal relabels nothing, so it never carries
+            the rotated label into `y` — and it is kept so that bd r2j3.4's
+            change only ADDS refusals; the phase the call carries is the PHASE
+            conjunct's business (below).
           * THE CONSUMERS THAT CAN NEVER CLOSE IT. A cone rail reaching a
             measurement, the output tape (`cqrt_tape_write_<W>[_controlled]`,
             slot-blind like R1's seed), an `_inv` (it names no rail), an alloc
@@ -2385,23 +2524,59 @@ class StreamAnalysis:
             it, and its own forward operands held still — (T1a)/(T2)/(T3) in a
             window; a rail that EXISTED before it joined needs its writes from
             the joining write onward to reduce to identity (`unchanged_over`).
+          * PHASE (bd test_C_libtooling-r2j3.4, 2026-10-13). Every DIAGONAL
+            call in U with an operand in the cone at its position — write slot
+            or control slot, so a `cqrt_rz_i1` kickback on a flag derived from
+            `target` and a `cqrt_rz_<W>_controlled` whose control is a cone
+            rail both count — must be cancelled by a distinct adjoint diagonal
+            inside U with its operands held still between the two
+            (`_phase_closed`). Without this conjunct the rule above is blind to
+            phases, because diagonal calls stay out of every write history (the
+            phase arms need that), and `Ry(-t) · Rz(φ) · Ry(t)` is NOT the
+            identity: a phase between two rotations changes POPULATIONS. Before
+            it, `ry; rz; ry⁻¹; free` VERIFIED a dirty free, and so did a
+            kickback on a flag derived from the rotated rail (the U2 review's
+            `@kick` probe) and a controlled phase from it onto an outside rail
+            (`@rzc`).
 
         Why that suffices, relative to the reduction's own soundness: by
         construction no call writes a rail OUTSIDE the cone while reading one
         inside it, so the rest of the circuit evolves independently of
-        `target`'s rotated state; and every cone rail is returned, so U acts on
-        `target ⊗ cone` as the identity. Nested superposing pairs inside U reach
-        this same rule through the recursive reductions.
+        `target`'s rotated state; every cone rail is returned, so U acts on
+        `target ⊗ cone` as a PERMUTATION that is the identity on every basis
+        branch; and every phase U puts on a cone rail is cancelled by its
+        adjoint across a stretch that holds that rail's label still, so no
+        branch-dependent phase is left either. Only then is U the identity on
+        `target ⊗ cone` — the label argument alone allows a diagonal. Nested
+        superposing pairs inside U reach this same rule through the recursive
+        reductions.
 
         WHAT IT DOES **NOT** CLOSE, stated so it is not read as covering it:
-          * DIAGONAL writes inside the window. `Ry(-t) · Rz(φ) · Ry(t)` is NOT
-            the identity — the phase between two rotations changes populations —
-            and this file still drops every diagonal write from every history
-            (`if not e.diagonal`), so `ry; rz; ry⁻¹; free` VERIFIES. That is the
-            PHASE blind spot in WHAT IT DOES **NOT** WITNESS, made sharper: it
-            is not only "a wrong angle the golden sees", it is a population
-            change on a freed rail. Filed as bd test_C_libtooling-r2j3.4, not
-            closed here.
+          * A phase cancellation that is not a PAIRWISE NEGATION of literal
+            angle text: `rz(a); rz(b); rz(-(a+b))`, a cancellation by an
+            angle held in an SSA value, or one that only a non-greedy matching
+            finds. All three are REFUSED — an over-decline, the safe side.
+          * A phase that is harmless for a reason other than cancellation:
+            a controlled diagonal on the COMPLEMENTARY flag branch of a
+            controlled superposing pair (the pair is the identity on that
+            branch, so nothing there is in a rotated basis), or a phase on a
+            cone rail that has already been restored to its pre-window label.
+            Both are REFUSED as well, and no shipped lowering emits either
+            today (the pre-change file runs this rule twice on the corpus,
+            with no diagonal in either window).
+          * Two kickbacks of opposite angle on two SEPARATELY minted flags of
+            the same predicate over an unchanged register (`f1 = icmp_eq(b,1);
+            rz_i1(f1, a); …; f2 = icmp_eq(b,1); rz_i1(f2, -a)`). They cancel
+            physically — both phases are the same function of `b`'s label —
+            but `adjoint_matches` pairs by operand TEXT and `%f1` is not
+            `%f2`, so the window is REFUSED (round-1 review F2). Kept on
+            purpose: deciding that two rails carry the same function of the
+            same label is value reasoning this file does not do, an
+            instrument's failure mode is reporting a pass, and no lowering is
+            known to emit the shape.
+          * A phase that reaches the cone only through a NON-CALL alias
+            (`%s = select …, %b, …` then `rz(%s, φ)`) still VERIFIES — the
+            NON-CALL bullet below, which this conjunct inherits unchanged.
           * A rail reaching a NON-CALL instruction (`store`, `phi`, `select`,
             `ret`) inside U. Only calls are modelled, as everywhere else here,
             so the cone stops at the instruction: `%s = select i1 %c, i32 %b,
@@ -2416,7 +2591,8 @@ class StreamAnalysis:
 
         NARROWING, for `unchanged_over`'s termination argument: every query
         issued here is over `(q, rev)` or `(qj - 1, p2)` with `p1 <= qj - 1`,
-        `p1 < q < rev < p2`, and `(p1, p2)` is itself strictly inside the
+        `p1 < q < rev < p2`, or (the phase conjunct) over a diagonal pair's
+        `(lo, hi)` with `p1 < lo < hi < p2`, and `(p1, p2)` is itself strictly inside the
         interval whose reduction matched the pair — so each edge narrows by at
         least 2, and the re-entry assertion below can only fire on a future
         edge that does not. Memoised on `(target, p1, p2)`; it reads only calls
@@ -2443,9 +2619,16 @@ class StreamAnalysis:
         where = (f"{target}'s state between the superposing pair at lines "
                  f"{a.line} and {b.line}")
         cone, minted = {target: p1}, set()
+        # bd r2j3.4: every DIAGONAL call in the window (partner candidates),
+        # and the ones with an operand in the cone at their position (each of
+        # which must be cancelled — see `_phase_closed`).
+        diags, phased = [], []
         calls = self.calls
         for q in range(p1 + 1, p2):
             c = calls[q]
+            e = c.eff
+            if e is not None and e.diagonal:
+                diags.append(q)
             hit = None
             for v in c.vals:
                 if v in cone:
@@ -2453,7 +2636,8 @@ class StreamAnalysis:
                     break
             if hit is None:
                 continue
-            e = c.eff
+            if e is not None and e.diagonal:
+                phased.append((q, hit))
             role = e.role if e is not None else None
             if role == "free" or (e is None and c.sym.startswith("llvm.dbg.")):
                 # A debug intrinsic is not a gate: it names a value for the
@@ -2506,6 +2690,95 @@ class StreamAnalysis:
                     f"is not provably restored before line {b.line} "
                     f"({detail}), so that {LC_OPEN}")
             wit |= lines
+        if phased:
+            ok, lines, why = self._phase_closed(phased, diags, where)
+            if not ok:
+                return False, frozenset(), why
+            wit |= lines
+        return True, frozenset(wit), None
+
+    def _phase_closed(self, phased, diags, where):
+        """(ok, witness, why) — the PHASE conjunct of rule (L) (bd r2j3.4).
+
+        `phased` lists the diagonal calls inside the window that have an
+        operand in the light cone at their position, `diags` every diagonal
+        call inside the window. Each `phased` call must be cancelled by a
+        DISTINCT adjoint diagonal inside the same window (`adjoint_matches`:
+        same symbol and operands, negated angle, same flag parity) such that
+        everything the pair's action depends on holds still between them
+        (`pair_operands_unchanged` — the predicate every other pairing here
+        asks, called rather than re-derived). Then the two phases multiply to
+        the identity on every basis branch of their operands, and what lies
+        between them commutes with the pair; so the window's net action on the
+        cone carries no phase, and the restoration conjunct above is the whole
+        story again.
+
+        WHY THE CONE AND NOT THE TARGET ALONE. A phase on a rail DERIVED from
+        the rotated target (a kickback flag `icmp(b)`, a template `add(b)`, a
+        CNOT copy of b) is a function of b's computational label, so after the
+        derived rail is uncomputed it is a diagonal on b itself — and
+        `Ry(t)·D·Ry(-t)` is not the identity for a non-constant diagonal D.
+        WHY BOTH SLOTS. A controlled diagonal is diagonal in BOTH of its rails
+        — its phase depends on the label of each — so a cone rail in EITHER the
+        control or the write slot carries the phase.
+
+        Diagonal calls that touch nothing in the cone stay transparent, and so
+        does every diagonal outside every superposing window: on a rail in a
+        computational-basis state Rz relabels nothing, which is what the
+        shipped phase arms and the R6 kickback flag rest on.
+
+        Greedy, nearest partner first, scanning outward from the candidate
+        through `diags` (which is in stream order) — the first draft re-sorted
+        all of `diags` per candidate, super-linear in one window's diagonal
+        count (review F4). A diagonal that only a non-greedy matching could
+        cancel is refused — an over-decline, the safe side. Partners are
+        searched among ALL diagonals in the window, cone or not: a phase taken
+        on `y` before `y` joined the cone and cancelled after `y` was restored
+        is still a cancelled pair. Matching is by `adjoint_matches`, i.e. by
+        OPERAND TEXT: two kickbacks of opposite angle on two SEPARATELY minted
+        flags of the same predicate on an unchanged register cancel
+        physically, and are refused here (review F2; see `light_cone_closed`'s
+        list of deliberate refusals).
+
+        NARROWING: each pair `(lo, hi)` satisfies `p1 < lo < hi < p2`, so
+        `pair_operands_unchanged` hands `unchanged_over` and
+        `co_written_stable` a strictly narrower interval than the window — the
+        termination argument in `unchanged_over` carries over unchanged.
+        """
+        used, wit = set(), set()
+        calls = self.calls
+        index = {q: i for i, q in enumerate(diags)}
+        for q, hit in phased:
+            if q in used:
+                continue
+            partner = sub = None
+            for q2 in _outward(diags, index[q]):
+                if q2 in used:
+                    continue
+                lo, hi = (q, q2) if q < q2 else (q2, q)
+                if not self.adjoint_matches(calls[lo], calls[hi],
+                                            record_undef=False):
+                    continue
+                ok, s, _blocker = self.pair_operands_unchanged(
+                    calls[lo], lo, hi, None)
+                if ok:
+                    partner, sub = q2, s
+                    break
+            c = calls[q]
+            if partner is None:
+                return False, frozenset(), (
+                    f"{hit} — carrying {where} — takes a phase at line "
+                    f"{c.line} (`{c.text}`) that no adjoint inside the window "
+                    f"cancels with its operands held still. A diagonal gate is "
+                    f"transparent only on a rail in a computational-basis "
+                    f"state; between two superposing writes it changes "
+                    f"populations (Ry(-t)·Rz(φ)·Ry(t) is not the identity), so "
+                    f"that {LC_OPEN}")
+            used.add(q)
+            used.add(partner)
+            wit |= sub
+            wit.add(c.line)
+            wit.add(calls[partner].line)
         return True, frozenset(wit), None
 
     def _minted_closed(self, x, q, hi):
@@ -2959,10 +3232,20 @@ class StreamAnalysis:
                 self.inv_claimed.add(rev_pos)
         if rev_pos is None:
             pre = [(p, w) for p, w in r.writes if r.pos < p < pos]
-            # If the rail's own writes net to identity it DEMONSTRABLY still
-            # holds f(args) at the free; only an unrecognised write history
-            # leaves room for some other zeroing mechanism.
-            inert, _why, _wit = self.reduces_to_identity(pre, r.name)
+            # If the rail's own writes net to identity ON THEIR LABELS, no write
+            # history this file recognises as zeroing exists, so the rail is
+            # dirty for generic inputs; only an unrecognised write history
+            # leaves room for some other zeroing mechanism. A phase or open-cone
+            # sandwich can still permute labels (Ry(-pi/2)Rz(pi)Ry(pi/2) = iX),
+            # and that contrived case is knowingly reported at main's
+            # pre-r2j3.4 severity (batch-053 round-2 review). A SEVERITY choice
+            # on the NEGATED predicate, so it reads the LABEL-ONLY reduction
+            # (bd r2j3.4 review F1, CLAUDE.md L2): with the full one, a phase
+            # or an open light cone in the rail's own window demoted this
+            # VIOLATION to a waivable UNPROVEN, and `--allow-unproven` then
+            # exited 0 on a free with no reversal at all.
+            inert, _why, _wit = self.reduces_to_identity(pre, r.name,
+                                                         cone=False)
             self.add(VIOLATION if inert else UNPROVEN, "T1-no-reversal", c,
                      r.name,
                      f"rail minted at line {fwd.line} by `{fwd.text}` is freed "
@@ -2995,21 +3278,27 @@ class StreamAnalysis:
                      f"reaching this file means it did not fire.")
             return
         # (T3) rail unchanged mint->reversal, untouched reversal->free.
-        ok, why, wit = self.reduces_to_identity(
-            [(p, w) for p, w in r.writes if r.pos < p < rev_pos], r.name)
-        if not ok:
+        pre_rev = [(p, w) for p, w in r.writes if r.pos < p < rev_pos]
+        post = [(p, w) for p, w in r.writes if rev_pos < p < pos]
+        ok, why, wit = self.reduces_to_identity(pre_rev, r.name)
+        # The VIOLATION below is a SEVERITY choice gated on the T3 reduction,
+        # so a T3 failure must not pre-empt it when the failure is rule (L)'s
+        # alone (bd r2j3.4 review F1, L2 — the same hazard as T1-no-reversal's
+        # `inert`): the post-reversal write is demonstrable whenever the
+        # LABEL-ONLY reduction of the pre-reversal history succeeds.
+        if not ok and not (post and self.reduces_to_identity(
+                pre_rev, r.name, cone=False)[0]):
             self.add(UNPROVEN, "T3-rail-written-before-reversal", c, r.name,
                      f"rail minted at line {fwd.line}: {why}, so the "
                      f"{rev_kind} at line {rev.line} does not provably zero it")
             return
-        witness |= wit
-        post = [(p, w) for p, w in r.writes if rev_pos < p < pos]
         if post:
             self.add(VIOLATION, "T3-rail-written-after-reversal", c, r.name,
                      f"rail is written by `{post[0][1].text}` (line "
                      f"{post[0][1].line}) after its {rev_kind} reversal at "
                      f"line {rev.line} and before the free")
             return
+        witness |= wit
         # (T2) forward operands must be unchanged across [mint, reversal]. A
         # bracketed QRAM index is checked through to its source register.
         for v in map(pairing_register, fwd.cvals):
@@ -3039,7 +3328,11 @@ class StreamAnalysis:
 # {unchanged_over | co_written_stable -> reduces_to_identity -> ...}`, so three
 # to four — and since bd r2j3.3 the light-cone edge `reduces_to_identity ->
 # light_cone_closed -> _light_cone -> _minted_closed -> _minted_core ->
-# unchanged_over` is six. 6 is the count; `ensure_recursion_headroom` multiplies
+# unchanged_over` is six. The bd r2j3.4 phase edge `reduces_to_identity ->
+# light_cone_closed -> _light_cone -> _phase_closed -> pair_operands_unchanged
+# -> {unchanged_over | co_written_stable}` is six as well, and every pair it
+# asks about lies strictly inside the window, so it narrows like the others.
+# 6 is the count; `ensure_recursion_headroom` multiplies
 # it by the whole stream length although a level consumes at least two
 # positions, which is the margin.
 _FRAMES_PER_LEVEL = 6
