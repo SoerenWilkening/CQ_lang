@@ -18,6 +18,8 @@
 #include "Uncomputation.h"
 
 #include "ChainWalk.h"          // isTerminalHandle
+#include "CloneProducer.h"      // bd p3kd.13 — clone results as producers
+#include "TerminalGroups.h"     // reverseTerminalGroups / GroupMode (bd p3kd.13)
 #include "LoopPlan.h"           // loopExitDischargePoint (bd tu9q P2 — the ONE
                                 // spelling, shared with clause (ii-d))
 #include "DagTraversal.h"       // recoverDataDag / DataDag
@@ -139,6 +141,24 @@ bool isQramArrayHandle(const Value *V) {
     return false;
   const Function *Callee = CI->getCalledFunction();
   return Callee && Callee->getName().starts_with("cqrt_qram_alloc_");
+}
+
+// bd p3kd.13, R11 r9: is the rail `R` measured on EVERY path from its definition
+// (one measurement sink of R post-dominates it)? Only then does ptue's "a
+// measured register is never touched" cover R's own gates in the terminal-union
+// probe's `Cut` (TerminalGroups.h): measured on SOME paths, R is a live record on
+// the others (spec_intermediate_unc_terminal_union_reject_partial_measure.ll).
+// Several measurements that only jointly cover every path do not qualify — an
+// over-decline equal to main. A non-instruction rail never qualifies.
+bool measuredOnEveryPath(const Value *R, const PostDominatorTree &PDT) {
+  const auto *Def = dyn_cast<Instruction>(R);
+  if (!Def)
+    return false;
+  for (const User *U : R->users())
+    if (const auto *M = dyn_cast<CallInst>(U))
+      if (isMeasureSink(M) && PDT.dominates(M, Def))
+        return true;
+  return false;
 }
 
 // `railOf` (the rail a gate creates — the value its adjoint zeroes and the driver
@@ -485,14 +505,12 @@ Instruction *dagInsertPoint(ArrayRef<Instruction *> Ats, PostDominatorTree &PDT)
 // `railOf(G)` over `D.Calls`. Those sets are not equal, and a member of the
 // difference would be FREED having never been measure-, closure- or sink-scanned:
 // a free of a possibly-measured, possibly-still-read register (Rule 6), invisible to
-// `opt -verify`. The one emitter-mintable member is a `@__cq_q_<callee>_<mask>`
-// specialization-clone call, which `isInverseEmittable` accepts. It is unreachable
-// today (both routes decline loudly — a hand-written `__cq_q_` declaration hits
-// `cq taint escape`, and the real specializer route hits the 7.6 continued-lineage
-// decline), but "unreachable" was the prior justification and it was recorded
-// WRONGLY, as "a downstream guard removes it". Intersecting makes it structural.
+// `opt -verify`. Its one emitter-mintable member was a `@__cq_q_` clone call; since
+// bd p3kd.13 an OWNED clone result is a rail (`isCloneProducer`) and an unowned one
+// makes the DAG `NotClosed` — intersecting keeps that structural, not argued.
 void emitDagReversal(const DataDag &D, Instruction *At, WidthDispatch &wd,
                      TaintSet &taint) {
+  materializeCloneTwins(D.Calls, taint);  // bd p3kd.13: each owned clone's twin
   DenseMap<Value *, CallInst *> FirstTouch;  // rail → earliest gate reading OR writing it
   SmallPtrSet<Value *, 8> Freeable;          // rails some recovered gate WRITES
   SmallVector<std::pair<CallInst *, Value *>, 16> TouchOrder;  // deterministic
@@ -1022,8 +1040,8 @@ FrontierVerdict judgeFrontierPlan(Function &F, const DataDag &DR,
   if (planTerminalReversal(F, DR, Ats, taint, DT, PDT, LI, IterLocal, At,
                            Unused) != TerminalPlan::Emit)
     return FrontierVerdict::Refused;
-  if (!borrowedParentsUnmoved(DR, Borrowed, At, DT, taint,
-                              /*AdmitCloneCalls=*/false, &Moved))
+  if (!borrowedParentsUnmoved(DR, Borrowed, At, DT, taint,  // bd p3kd.13: rhk5 (3)
+                              /*AdmitCloneCalls=*/true, &Moved))  // for a clone producer
     return Moved.empty() ? FrontierVerdict::Refused
                          : FrontierVerdict::ParentMoved;
   if (!measuredParentsReadBeforeCollapse(DR, Measured, DT) ||
@@ -1249,9 +1267,18 @@ bool recordLiveAcrossMove(CallInst *G, Value *R, Value *P, Instruction *At,
 // have stopped before G), and the frontier is bounded by the function's values.
 // A round where every terminal is borrowed returns true with NO plan: every
 // terminal is a kept record and nothing is reversed or freed.
+//
+// `Frontier` is IN/OUT (bd p3kd.13, R11 r8): on `true` it is the FINAL frontier
+// the plans were judged against. Each member's kind is structural, so it is not
+// recorded twice: a QRAM array root (`isQramArrayHandle`, the predicate that
+// seeded it), a measured rail (`DataDag::MeasuredRails`), else an open root or a
+// forced record. The terminal-union probe exempts from `GroupProbe::Cut` the OWN
+// gates of the open roots and forced records, and of a measured rail only when it
+// is measured on every path (`measuredOnEveryPath`, R11 r9; TerminalGroups.h).
+// Planning stays side-effect-free.
 bool planFrontierFixpoint(Function &F, ArrayRef<Value *> InsertTerms,
                           ArrayRef<Instruction *> InsertAts,
-                          InteriorPlan Frontier,
+                          InteriorPlan &Frontier,
                           const SmallPtrSetImpl<Value *> &Measured,
                           TaintSet &taint, DominatorTree &DT,
                           PostDominatorTree &PDT, LoopInfo &LI, bool IterLocal,
@@ -1343,29 +1370,68 @@ bool planFrontierFixpoint(Function &F, ArrayRef<Value *> InsertTerms,
 // explicit sets are the load-bearing image of that argument, in the same spirit as
 // `ControlOwnedRails` / `OutputRails` / `GraveyardRails`: do not rest on the
 // coincidence.
-void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
+}  // namespace
+
+// bd p3kd.13: `GroupMode` and the group formation are TerminalGroups.h's; this
+// planner stays here beside the helpers it calls. Exported for that one caller.
+bool reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
                           TaintSet &taint, WidthDispatch &wd, DominatorTree &DT,
                           PostDominatorTree &PDT, LoopInfo &LI, bool IterLocal,
                           SmallPtrSetImpl<const CallInst *> &ReversedGates,
-                          SmallPtrSetImpl<Value *> &ReversedRails) {
-  if (Terminals.empty())
-    return;
+                          SmallPtrSetImpl<Value *> &ReversedRails, GroupMode Mode,
+                          GroupProbe *Probe) {
+  const bool Loud = Mode == GroupMode::Loud;
+  const bool Probing = Mode == GroupMode::Probe || Mode == GroupMode::ProbeAsLoud;
+  auto commit = [&](const DataDag &DD, Instruction *A) {  // one plan, per `Mode`
+    if (!Loud && Mode != GroupMode::ProbeAsLoud &&
+        !cloneTerminalReversalDisjoint(DD, ReversedGates, ReversedRails, taint))
+      return false;
+    if (Probing) {  // record the plan, emit nothing (TerminalGroups.h)
+      Probe->addPlan(DD);
+      return true;
+    }
+    emitTerminalReversal(DD, A, wd, taint, ReversedGates, ReversedRails);
+    return true;
+  };
 
   // 2. Classify each terminal (FreePoint owns measure/escape/loud diagnostics).
   SmallVector<Value *, 8> InsertTerms;
   SmallVector<Instruction *, 8> InsertAts;
+  bool Suppressed = false;  // a reject FreePoint would have diagnosed
   for (CallInst *Term : Terminals) {
-    FreePoint FP = computeFreePoint(Term, F, PDT, taint);
+    FreePoint FP = computeFreePoint(Term, F, PDT, taint, Loud ? nullptr : &Suppressed);
     if (FP.Kind != FreePointKind::Insert)
       continue;
     InsertTerms.push_back(Term);
     InsertAts.push_back(FP.At);
   }
-  if (InsertTerms.empty())
-    return;
+  if (InsertTerms.empty() || (Probing && Suppressed))
+    return false;
 
   // 3. Recover the whole forward DAG (union over all Insert terminals).
   DataDag D = recoverDataDag(InsertTerms, taint, DT);
+  // R11 r8-r9 — a probe's `Cut` is asked ONCE, of the COMMITTED plans, on every
+  // path that commits: what of the whole walk `D` no plan reverse-plays, beyond
+  // the own gates of the rails that hold no hazardous record (`GroupProbe::Cut`):
+  // the final frontier's forced records and open roots, its measured rails that
+  // are measured on EVERY path (r9 F1), and `D`'s register ROOTS (r9 F2: a
+  // `cqrt_alloc` root and its in-place gates record no other register). A QRAM
+  // array is never exempt, so neither is a store. A final-outcome gate set (L3),
+  // so a borrow path added later is covered too.
+  auto finish = [&](bool Ok, const SmallPtrSetImpl<Value *> &Borrowed) {
+    if (Ok && Probing) {
+      SmallPtrSet<Value *, 8> Exempt;
+      for (Value *B : Borrowed)
+        if (!isQramArrayHandle(B) &&
+            (!D.MeasuredRails.count(B) || measuredOnEveryPath(B, PDT)))
+          Exempt.insert(B);
+      for (Value *R : D.Roots)
+        if (isAllocMint(R) && !isQramArrayHandle(R))
+          Exempt.insert(R);
+      Probe->setCut(D, Exempt);
+    }
+    return Ok;
+  };
   if (D.MeasuredUpstream) {
     // bd test_C_libtooling-01po.4 — THE QRAM-ARRAY FRONTIER RETRY. A load's
     // reversal needs the ARRAY's state at the load (and its index), not the
@@ -1446,8 +1512,7 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
       if (judgeFrontierPlan(F, DR, InsertAts, Frontier.Borrowed,
                             D.MeasuredRails, taint, DT, PDT, LI, IterLocal, AtR,
                             Ignored) == FrontierVerdict::Emit) {
-        emitTerminalReversal(DR, AtR, wd, taint, ReversedGates, ReversedRails);
-        return;
+        return finish(commit(DR, AtR), Frontier.Borrowed);
       }
       // bd test_C_libtooling-01po.12 / 01po.8 — the whole group refused; plan
       // again PER COMPONENT of the reduced DAG, each at its own reversal point,
@@ -1459,14 +1524,15 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
       if (planFrontierFixpoint(F, InsertTerms, InsertAts, Frontier,
                                D.MeasuredRails, taint, DT, PDT, LI, IterLocal,
                                Plans)) {
+        bool All = !Plans.empty();
         for (FrontierComponentPlan &P : Plans)
-          emitTerminalReversal(P.D, P.At, wd, taint, ReversedGates,
-                               ReversedRails);
-        return;
+          All = commit(P.D, P.At) && All;
+        return finish(All, Frontier.Borrowed);  // the FINAL frontier (r8)
       }
     }
-    diagnose(D.UpstreamMeasure, kMsgLineageMeasured);
-    return;
+    if (Loud)
+      diagnose(D.UpstreamMeasure, kMsgLineageMeasured);
+    return false;
   }
 
   Instruction *At = nullptr;
@@ -1474,20 +1540,24 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
   switch (planTerminalReversal(F, D, InsertAts, taint, DT, PDT, LI, IterLocal,
                                At, Culprit)) {
   case TerminalPlan::Leak:
-    return;
+    return false;
   case TerminalPlan::DeclineUninvertible:
-    diagnose(Culprit, kMsgUninvertible);
-    return;
+    if (Loud)
+      diagnose(Culprit, kMsgUninvertible);
+    return false;
   case TerminalPlan::DeclineDivergent:
-    diagnose(Culprit, kMsgDivergentArm);
-    return;
+    if (Loud)
+      diagnose(Culprit, kMsgDivergentArm);
+    return false;
   case TerminalPlan::Emit:
     break;
   }
 
   // 5. Reverse the whole DAG once at `At`.
-  emitTerminalReversal(D, At, wd, taint, ReversedGates, ReversedRails);
+  return finish(commit(D, At), SmallPtrSet<Value *, 1>());
 }
+
+namespace {
 
 // ── M-B INTERIOR PARTITION (bd test_C_libtooling-6uqc Inc 5a) ────────────────
 
@@ -2210,7 +2280,7 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
     // instead would reach the same verdict on today's shapes and would rest on
     // `recordsIntoKeptCarrier` naming a surface (`tape`/`copy`) that has nothing
     // to do with why THIS rail is recorded.
-    if (!preservesBasisUnderRecord(G))
+    if (!cloneGatePreservesBasis(G, taint))  // bd p3kd.13: a clone producer too
       return false;
     // The GROUP-LEVEL at-most-once backstop over every recovered gate — the
     // third statement of the property, after the candidate MINT block (§1) and
@@ -2951,8 +3021,8 @@ void collectTerminalCandidates(Function &F, const TaintSet &taint,
   for (BasicBlock &BB : F)
     for (Instruction &I : BB) {
       auto *H = dyn_cast<CallInst>(&I);
-      if (!H || !taint.Tainted.count(H) || !isDataProducer(H))
-        continue;
+      if (!H || !taint.Tainted.count(H) || !(isDataProducer(H) || isCloneProducer(H, taint)))
+        continue;  // bd p3kd.13: an owned clone result is a producer too
       AnyTaintedProducer = true;
       if (taint.ControlOwnedRails.count(H))
         continue;  // DD-4: Phase-4 owns this rail
@@ -3015,39 +3085,12 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
     PostDominatorTree PDT(F);
     LoopInfo LI(DT);
 
-    // Partition the terminals into the REGULAR straight-line group and one group
-    // per recognized Phase-7.3 ITERATION-LOCAL loop (a terminal whose def block
-    // ∈ `IterationLocalBlocks`). The groups are reversed at INDEPENDENT insertion
-    // points: a regular straight-line terminal at the function post-dominator, an
-    // iteration-local temp IN-BODY (once per iteration). A single union point
-    // across that boundary would place an in-body free at a function-scope point
-    // (the Risk-1 hazard). Loops are kept in first-seen (BB) order for
-    // FileCheck-stable emission.
-    SmallVector<CallInst *, 8> Regular;
-    SmallVector<Loop *, 4> IterLoops;
-    DenseMap<Loop *, SmallVector<CallInst *, 4>> IterByLoop;
-    for (CallInst *Term : Terminals) {
-      Loop *L = LI.getLoopFor(Term->getParent());
-      if (L && !taint.IterationLocalBlocks.empty() &&
-          taint.IterationLocalBlocks.count(Term->getParent())) {
-        if (!IterByLoop.count(L))
-          IterLoops.push_back(L);
-        IterByLoop[L].push_back(Term);
-      } else {
-        Regular.push_back(Term);
-      }
-    }
-
-    // Every rail/gate a dead-terminal group actually reversed, so the M-B
-    // interior partition below can prove single ownership (Rule 8).
-    SmallPtrSet<const CallInst *, 16> ReversedGates;
-    SmallPtrSet<Value *, 16> ReversedRails;
-
-    reverseTerminalGroup(F, Regular, taint, wd, DT, PDT, LI, /*IterLocal=*/false,
-                         ReversedGates, ReversedRails);
-    for (Loop *L : IterLoops)
-      reverseTerminalGroup(F, IterByLoop[L], taint, wd, DT, PDT, LI,
-                           /*IterLocal=*/true, ReversedGates, ReversedRails);
+    // The dead-terminal groups (TerminalGroups.h: the regular group and one per
+    // Phase-7.3 iteration-local loop; bd p3kd.13's clone-result terminals).
+    SmallPtrSet<const CallInst *, 16> ReversedGates;  // what the groups reversed,
+    SmallPtrSet<Value *, 16> ReversedRails;           // for single ownership (Rule 8)
+    reverseTerminalGroups(F, Terminals, taint, wd, DT, PDT, LI, ReversedGates,
+                          ReversedRails);
 
     // M-B (bd 6uqc Inc 5): the INTERIOR rails — dead after their last forward
     // use, but never a terminal, so nothing above ever saw them. Runs LAST so it

@@ -3,11 +3,9 @@
 // module is the vocabulary both it and the uncompute driver consult.
 
 #include "ChainWalk.h"
-#include "CalleeBody.h"  // calleeBodyTrusted (bd p3kd.2)
-
+#include "CloneProducer.h"    // isCloneProducer (bd p3kd.13)
 #include "RailBankPromote.h"  // railStoredToRailBank (bd `xdu2` W1 D1)
-#include "RotationLowering.h" // isCopyGate — the ONE copy-write-slot owner (bd rhk5 r2)
-
+// `cloneCallPreservesArg` (bd rhk5) lives in ClonePreserves.cpp since bd p3kd.13.
 #include "TaintPropagation.h"
 #include "TemplateName.h"   // isHandleSlot / isUncHandleSlot — the ONE slot table
 
@@ -1015,23 +1013,23 @@ bool isInteriorTerminalHandle(Value *Handle, const TaintSet &taint,
   auto *H = dyn_cast<CallInst>(Handle);
   if (!H)
     return false;
-  // (I1) the rail's own PRODUCER. An uncontrolled `cq_template_*` only.
-  //
-  //  * `cqrt_alloc_<W>` is excluded because it is not a producer at all here —
-  //    the gate that gives such a rail its value is a `cqrt_ry_<W>`, which is
-  //    NOT a basis permutation, so an interior discharge of it would be a hidden
-  //    measurement (it is entangled with whatever downstream record made it
-  //    "interior"). It stays a BORROWED parent.
+  // (I1) the rail's own PRODUCER. An uncontrolled `cq_template_*`, or (bd
+  //      p3kd.13) an owned Phase-6 clone result, whose adjoint is its Bennett twin
+  //      (`isCloneProducer`, CloneProducer.h — the lift bd ln16 named).
+  //  * `cqrt_alloc_<W>` is excluded: not a producer here — its value comes from a
+  //    `cqrt_ry_<W>`, NOT a basis permutation, so an interior discharge of it would
+  //    be a hidden measurement (it is entangled with whatever downstream record
+  //    made it "interior"). It stays a BORROWED parent.
   //  * `cqrt_qram_load_<W>` is excluded BY SCOPE, not by physics: it passes
   //    `preservesBasisUnderRecord` and its `_unc` is out-first like any other,
   //    but its parents are an ARRAY handle whose in-place mutations are QRAM
   //    stores, and Inc 5 deliberately leaves the 7.5 Shadow surface alone
   //    (severance class 4 is the ruled-deferred class at the M-A guard too).
   //    Pinned by lowering_uncompute_interior_leak_qram_load.ll.
-  if (!isTemplateProducer(H) || !preservesBasisUnderRecord(H))
-    return false;
   const Function *Callee = H->getCalledFunction();
-  if (!Callee || !Callee->getName().starts_with("cq_template_"))
+  if (!isCloneProducer(H, taint) &&
+      (!isTemplateProducer(H) || !preservesBasisUnderRecord(H) || !Callee ||
+       !Callee->getName().starts_with("cq_template_")))
     return false;
   // (I2) ONE OWNER PER RAIL. A dead terminal belongs to the existing whole-DAG
   //      partition; adjointing it from both would double-uncompute the shared
@@ -1058,151 +1056,6 @@ bool isInteriorTerminalHandle(Value *Handle, const TaintSet &taint,
       HasForwardConsumer = true;
   }
   return HasForwardConsumer;
-}
-
-// ── bd test_C_libtooling-rhk5 — see the header for the whole argument ────────
-namespace {
-
-// A (function, formal-slot) pair. While it is being proved it sits on the proof
-// STACK; re-entering one is a CYCLE, which refuses (fail closed): the specializer
-// declines recursive callees, so no accepted module reaches it, and "assume the
-// formal is preserved while proving it" is exactly the kind of co-inductive
-// argument this spine does not make.
-using FormalKey = std::pair<const Function *, unsigned>;
-constexpr unsigned kMaxCloneNesting = 16;
-
-// The three answers. `NoProvisional` is a refusal that depends on the PATH that
-// reached the question — a cycle hit, or the nesting cap — and it is the one
-// answer the memo must not store (bd `tcpq`): cached, it would answer a later
-// question that reaches the same (function, slot) along a SHORTER, acyclic path.
-// A `Yes` can never be provisional: the walk is a conjunction that stops at the
-// first refusal, so any refusal anywhere below a node makes the node a refusal.
-enum class Proof { Yes, No, NoProvisional };
-
-struct ProofCtx {
-  SmallVector<FormalKey, 8> Stack;          // the path being proved (cycle test)
-  DenseMap<FormalKey, bool> Memo;           // path-INDEPENDENT verdicts only
-};
-
-Proof formalLabelPreserved(const Function &F, unsigned ArgNo,
-                           const TaintSet &taint, ProofCtx &Ctx);
-
-// (C1)/(C2) and the per-slot recursion.
-Proof clonePassPreserves(const CallInst *C, const Value *V, const TaintSet &taint,
-                         ProofCtx &Ctx) {
-  // (C1) the callee, resolved from the called OPERAND — never
-  // `getCalledFunction()`'s name, never a prefix — with an EXACT definition: a
-  // `weak`/`linkonce`/`available_externally` body can be replaced at link time
-  // by one this walk never saw (bd `fb5y`, r1A F-r1A-2: a `weak` read-only twin
-  // interposed by a strong writing one). `hasExactDefinition()` also excludes a
-  // declaration.
-  const auto *F = dyn_cast<Function>(C->getCalledOperand());
-  if (!calleeBodyTrusted(F, CalleeBodyUse::AssumeOfLinkedCall) || F->isVarArg())
-    return Proof::No;
-  auto It = taint.SpecHandleArgMask.find(F);
-  if (It == taint.SpecHandleArgMask.end())
-    return Proof::No;  // not something the specializer recorded building.
-  const uint64_t HandleSlots = It->second;
-  // (C2) `V` reaches the body only through ARGUMENT slots: inside an operand
-  // bundle it would be read by something this proof does not walk. (As the called
-  // operand it cannot appear at all: `V` is an `i32` handle and the callee a
-  // pointer — the first spelling tested that too, and r1A F-r1A-5 measured the
-  // conjunct DEAD in typed IR, so it is gone.)
-  for (unsigned B = 0, E = C->getNumOperandBundles(); B != E; ++B)
-    for (const Use &U : C->getOperandBundleAt(B).Inputs)
-      if (U.get() == V)
-        return Proof::No;
-  bool Passed = false;
-  for (unsigned K = 0, E = C->arg_size(); K != E; ++K) {
-    if (C->getArgOperand(K) != V)
-      continue;
-    Passed = true;
-    // `K >= F->arg_size()` is unreachable once varargs are refused (a call with
-    // more arguments than a non-varargs callee has parameters does not verify);
-    // it is kept only because `F.getArg(K)` below would otherwise be UB.
-    if (K >= F->arg_size() || K >= 64 || !((HandleSlots >> K) & 1))
-      return Proof::No;  // not a slot the specializer recorded as a quantum HANDLE.
-    Proof P = formalLabelPreserved(*F, K, taint, Ctx);
-    if (P != Proof::Yes)
-      return P;
-  }
-  return Passed ? Proof::Yes : Proof::No;
-}
-
-Proof formalLabelPreserved(const Function &F, unsigned ArgNo,
-                           const TaintSet &taint, ProofCtx &Ctx) {
-  const FormalKey Key{&F, ArgNo};
-  auto M = Ctx.Memo.find(Key);
-  if (M != Ctx.Memo.end())
-    return M->second ? Proof::Yes : Proof::No;
-  if (is_contained(Ctx.Stack, Key) || Ctx.Stack.size() >= kMaxCloneNesting)
-    return Proof::NoProvisional;  // a cycle, or the nesting cap — path-dependent.
-  Ctx.Stack.push_back(Key);
-  const Argument *A = F.getArg(ArgNo);
-  Proof Res = Proof::Yes;
-  for (const Use &U : A->uses()) {
-    const auto *UC = dyn_cast<CallInst>(U.getUser());
-    // A non-call user — `ret`, a φ/select, a store, a cast, a classical op — lets
-    // the handle escape this walk (an ALIAS whose later uses nothing here reads)
-    // or treats it as a number. Refuse.
-    if (!UC || !UC->isArgOperand(&U)) {
-      Res = Proof::No;
-      break;
-    }
-    const unsigned Slot = UC->getArgOperandNo(&U);
-    const auto *UCallee = dyn_cast<Function>(UC->getCalledOperand());
-    // (B1)–(B3) classify the use by its callee's NAME, and are therefore asked
-    // ONLY of a callee this module merely DECLARES — an external runtime-ABI
-    // symbol, the frozen semantics every emitter relies on. A DEFINED callee
-    // whose name looks like the runtime's is NOT the runtime: bd `fb5y` (r1A
-    // F-r1A-1, a P1) is a module-defined `cq_template_evil_i32(k){cqrt_x(k)}`
-    // admitted by name as a read. A defined callee must go through (B4) — recorded
-    // and walked — or it refuses.
-    if (UCallee && UCallee->isDeclaration()) {
-      const StringRef N = UCallee->getName();
-      // (B1) a forward reassigning producer: reads every operand, mints fresh.
-      if (isTemplateProducer(UC))
-        continue;
-      // (B2) an out-first adjoint reading the formal in a HANDLE slot >= 1.
-      if (isUncHandleSlot(N, Slot))
-        continue;
-      // (B3) a basis copy reading the formal in a READ slot: `isCopyGate` is the
-      //      ONE statement of "a `cqrt_copy_<W>[_controlled]` writes its LAST
-      //      operand and reads the others" (Rule 14 — the first spelling
-      //      re-derived it inline, r1A F-r1A-6 / r1B F-6). The formal must not be
-      //      the destination, in this slot or any other.
-      if (isCopyGate(UC)) {
-        const unsigned Last = UC->arg_size() - 1;
-        if (Slot != Last && UC->getArgOperand(Last) != A)
-          continue;
-      }
-      Res = Proof::No;
-      break;
-    }
-    // (B4) an inner clone / `_unc` twin call, proved the same way.
-    Proof Sub = clonePassPreserves(UC, A, taint, Ctx);
-    if (Sub == Proof::Yes)
-      continue;
-    Res = Sub;
-    break;
-  }
-  Ctx.Stack.pop_back();
-  if (Res != Proof::NoProvisional)
-    Ctx.Memo[Key] = (Res == Proof::Yes);
-  return Res;
-}
-
-}  // namespace
-
-bool cloneCallPreservesArg(const CallInst *C, const Value *V,
-                           const TaintSet &taint) {
-  // The memo lives for ONE query. A module-scoped cache would also be sound
-  // (bodies are final when the spine asks) but it would be keyed on `Function *`
-  // across stages that erase functions — the stale-key class bd 8e5r pins — for
-  // no measured gain: within a query the memo already makes the cost linear in
-  // the clone DAG, which is what F-r1A-3's exponential walk needed.
-  ProofCtx Ctx;
-  return clonePassPreserves(C, V, taint, Ctx) == Proof::Yes;
 }
 
 }  // namespace cq

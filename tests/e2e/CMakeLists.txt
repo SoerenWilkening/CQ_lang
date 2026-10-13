@@ -7100,3 +7100,16 @@ add_test(NAME e2e-slice-nested-classical-call
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_nested_classical_call.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_nested_classical_call.expected.log")
+
+# bd test_C_libtooling-p3kd.13: a lifted call's result consumed by another tainted
+# op is uncomputed by its Bennett twin (`@__cq_q_h_1_unc`), LIFO, and freed — a
+# template consumer, a later Ry on the source, fan-out, clone-in-clone, a mixed
+# clone/template chain, a dead rotated result and a QROM index. Stage 2b proves
+# every free pairs with a rail returned to |0>; the link proves the twin resolves.
+add_test(NAME e2e-slice-spec-intermediate-unc
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_intermediate_unc.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_intermediate_unc.expected.log")

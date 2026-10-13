@@ -2457,8 +2457,8 @@ bool warnLiveRecordRotations(Module &M, const TaintSet &taint) {
 // rails still stands at the controlled Ry, it records more of `q` than the flag
 // does (`h(q) = 3q + 1` records all of it) and the circuit dephases `q` beyond
 // what the source asks: a WRONG UNITARY that the M-A warning would only report
-// generically (review round 1 of dm7f.4, F1, `@lifted`; root cause bd ln16, a
-// `__cq_q_*` result is never an interior producer).
+// generically (review round 1 of dm7f.4, F1, `@lifted`; root cause bd ln16, fixed
+// by bd p3kd.13 except where the clone's twin cannot be synthesized).
 //
 // WHY A POSTCONDITION AND NOT A DETECTION-TIME TEST. "Is this chain rail gone
 // before the gate?" is the uncompute spine's answer, decided last; at R4 the

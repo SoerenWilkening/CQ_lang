@@ -1130,8 +1130,8 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //    refuse. Without the strip there is no `DischargedFlagGates` record, so
   //    the spine's interior discharge of a TEMPLATE condition chain lands after
   //    the mint and BEFORE the controlled Ry (measured on `(q & 3) == 1` and a
-  //    `sitofp`/`fmul`/`fcmp` chain). Not every chain gets one: a lifted call's
-  //    `__cq_q_*` result does not (bd ln16), and the late postcondition
+  //    `sitofp`/`fmul`/`fcmp` chain; a lifted call's result too since bd p3kd.13).
+  //    One whose clone twin cannot be synthesized does not, and the postcondition
   //    `declineUndischargedKeptFlagChains` refuses such a region loudly (review
   //    round 1, F1). The flag itself is never claimed: its only
   //    user is arg 0 of a `_controlled` gate (`isTerminalHandle` and

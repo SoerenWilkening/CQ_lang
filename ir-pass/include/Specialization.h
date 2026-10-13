@@ -22,6 +22,7 @@
 
 namespace llvm {
 class CallInst;
+class Function;
 class Module;
 }  // namespace llvm
 
@@ -90,6 +91,14 @@ bool shouldSpecialize(const llvm::CallInst *CI, const SpecPlan &plan);
 // before `lowerRotations` (which RAUWs every `cq_theta` result to its handle), so
 // the neutralisation happens before every stage that builds a consumer set.
 bool resolvePhantomCloneArgReads(llvm::Module &M, const TaintSet &taint);
+
+// bd test_C_libtooling-p3kd.13 — synthesize `<Clone>_unc`, the void Bennett twin
+// (`out ^= f(args)`), with the recipe the 6.3 inner-call drain uses (`ensureTwin`).
+// The caller owns every precondition: `Clone` is a wrapped ReturnTainted clone, no
+// `<Clone>_unc` symbol exists, and `findUndefOperandInBody(Clone)` is null (the bd
+// xy9n duplication fence). Its one caller is `materializeCloneTwins`
+// (CloneProducer.h), for a top-level clone result the uncompute spine owns.
+llvm::Function *synthesizeCloneUncTwin(llvm::Function &Clone);
 
 }  // namespace cq
 

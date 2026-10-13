@@ -55,6 +55,10 @@ add_library(CQPass MODULE
   src/CastLowering.cpp
   src/ChainWalk.cpp
   src/ClassicalCallArmEmit.cpp
+  # bd p3kd.13: a Phase-6 clone result as an uncompute-spine producer, and the
+  # bd rhk5 clone-read proof moved out of ChainWalk.cpp.
+  src/CloneProducer.cpp
+  src/ClonePreserves.cpp
   src/CompareLowering.cpp
   src/CondLiteral.cpp
   src/CondTreeEmit.cpp
@@ -128,6 +132,8 @@ add_library(CQPass MODULE
   src/SwitchRouteEmit.cpp
   src/SwitchValueEmit.cpp
   src/TaintPropagation.cpp
+  # bd p3kd.13: dead-terminal group formation (union probe, then the split).
+  src/TerminalGroups.cpp
   src/TemplateName.cpp
   src/Uncomputation.cpp
   src/WidthDispatch.cpp

@@ -163,7 +163,10 @@ bool blockCanRepeat(BasicBlock *BB) {
 }
 
 FreePoint computeFreePoint(Value *Terminal, Function &F, PostDominatorTree &PDT,
-                           const TaintSet &taint) {
+                           const TaintSet &taint, bool *Suppressed) {
+  auto reject = [Suppressed](Instruction *W, StringRef M) {
+    Suppressed ? void(*Suppressed = true) : diagnose(W, M);
+  };
   // Phase 7.3 Inc 2 (799w.2): is `Terminal` an ITERATION-LOCAL temp — a tainted
   // value born AND dead within one iteration of a recognized Case-B loop (its
   // def block ∈ `IterationLocalBlocks`, the loop `lowerLoops` proved sound-rolled)?
@@ -250,7 +253,7 @@ FreePoint computeFreePoint(Value *Terminal, Function &F, PostDominatorTree &PDT,
                        ? Measure->comesBefore(G)
                        : DT.dominates(Measure, G);
       if (After) {
-        diagnose(G, kMsgPostMeasure);
+        reject(G, kMsgPostMeasure);
         return {FreePointKind::Measured, nullptr};
       }
     }
@@ -270,7 +273,7 @@ FreePoint computeFreePoint(Value *Terminal, Function &F, PostDominatorTree &PDT,
   // (§2.6) An unrecognized user (e.g. a capture once a memory model exists) is a
   // HOLE, not a no-op — loud reject, never silently skipped.
   if (FirstUnrecognized) {
-    diagnose(FirstUnrecognized, kMsgUnrecognized);
+    reject(FirstUnrecognized, kMsgUnrecognized);
     return {FreePointKind::Escaped, nullptr};
   }
 
@@ -308,7 +311,7 @@ FreePoint computeFreePoint(Value *Terminal, Function &F, PostDominatorTree &PDT,
     if (blockInLoop(G->getParent(), LI)) {
       if (TermIterLocal && taint.IterationLocalBlocks.count(G->getParent()))
         continue;  // 7.3 Inc 2: an iteration-local use is recovered in-body.
-      diagnose(G, kMsgLoopBackedge);
+      reject(G, kMsgLoopBackedge);
       return {FreePointKind::Escaped, nullptr};
     }
 
@@ -320,7 +323,7 @@ FreePoint computeFreePoint(Value *Terminal, Function &F, PostDominatorTree &PDT,
   for (size_t i = 1; i < UseSites.size(); ++i) {
     Common = PDT.findNearestCommonDominator(Common, UseSites[i]->getParent());
     if (!Common) {
-      diagnose(UseSites[i], kMsgUnrecognized);
+      reject(UseSites[i], kMsgUnrecognized);
       return {FreePointKind::Escaped, nullptr};
     }
   }
@@ -346,7 +349,7 @@ FreePoint computeFreePoint(Value *Terminal, Function &F, PostDominatorTree &PDT,
   // recognizer proves in-body confinement, but this is the defense-in-depth
   // backstop: a non-in-body point declines loudly rather than mis-place.
   if (TermIterLocal && !taint.IterationLocalBlocks.count(At->getParent())) {
-    diagnose(At, kMsgLoopBackedge);
+    reject(At, kMsgLoopBackedge);
     return {FreePointKind::Escaped, nullptr};
   }
   return {FreePointKind::Insert, At};

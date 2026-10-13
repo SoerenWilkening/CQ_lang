@@ -25,8 +25,9 @@
 // against a zero-seed CLEAN sibling). Measured customers: e2e
 // slice_z0re_runtime_seed_{f64,prep,prep_literal,prep_spec}.
 //
-// THE RULE. A rail is born |0⟩ iff it is a template producer, or a
-// `cqrt_alloc_<W>` whose one seed operand is a constant with an all-zero bit
+// THE RULE. A rail is born |0⟩ iff it is a template producer, a clone producer
+// (bd p3kd.13, CloneProducer.h: the Bennett wrap's `cqrt_alloc_<W>(0)` out rail),
+// or a `cqrt_alloc_<W>` whose one seed operand is a constant with an all-zero bit
 // pattern (`Constant::isNullValue`: +0.0 qualifies, -0.0 does not; a whole-value
 // undef seed was already rewritten to that null by
 // `normalizeUndefRotationSeed`). Everything else — a runtime seed (one
@@ -52,13 +53,14 @@ class Value;
 namespace cq {
 
 struct DataDag;
+struct TaintSet;
 
 // Clause (a): does rail `R` hold |0⟩ at birth? Fail-closed — false for any rail
 // kind not named above.
-bool railBornZero(const llvm::Value *R);
+bool railBornZero(const llvm::Value *R, const TaintSet &taint);
 
 // Freeze every rail of `D` that `railBornZero` cannot prove.
-void freezeUnprovenBirths(DataDag &D);
+void freezeUnprovenBirths(DataDag &D, const TaintSet &taint);
 
 }  // namespace cq
 

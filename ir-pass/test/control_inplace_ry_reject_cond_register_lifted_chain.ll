@@ -1,4 +1,5 @@
-; control_inplace_ry_reject_cond_register_lifted_chain.ll — DECLINE: the kept-
+; control_inplace_ry_reject_cond_register_lifted_chain.ll — ACCEPT since bd p3kd.13
+; (was DECLINE; see RE-DERIVED below): the kept-
 ; flag accept (bd test_C_libtooling-dm7f.4) with a condition computed by a
 ; LIFTED CALL whose result would stand live at the controlled Ry. Review round 1
 ; of dm7f.4, finding F1 (introduced, L9).
@@ -41,10 +42,40 @@
 ; before the gate, this module should ACCEPT with `__cq_q_h_1_unc` (or its
 ; equivalent) between the mint and the controlled Ry. Re-derive it then.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK-NOT: warning
-; CHECK: error: {{.*}}cq controlled lowering: rotation arm on a condition wire under quantum control
-; CHECK-NOT: warning
+; ⚠ RE-DERIVED: NOW AN ACCEPT (bd test_C_libtooling-p3kd.13, 2026-10-08 — the
+; trigger above fired; the file keeps its `reject_` name, as the live-record
+; files do). A clone result is an uncompute-spine producer (CloneProducer.h), so
+; the M-B interior partition discharges `%t` with its Bennett twin right after the
+; flag mint (its last reader) and BEFORE the controlled Ry, while q is unrotated:
+;     %t = __cq_q_h_1(%h); f = icmp_sgt_i32_hl(%t, 13)
+;     __cq_q_h_1_unc(%t, %h); cqrt_free(%t)        ; t ^= 3q+1 -> |0>, freed honestly
+;     cry(f, %h, .9); measure(%h)
+; The kept-flag postcondition now finds the chain gone at the gate and admits the
+; module; what stands there is the owner-ruled kept flag alone, which M-A reports
+; as the warning (the same one @discharged in
+; control_inplace_ry_cond_register_flag_kept_derived_cond.ll — this module's
+; TEMPLATE twin, `(q & 3) == 1` — prints, stream for stream). The DECLINE survives
+; for a callee whose twin cannot be synthesized:
+; spec_intermediate_unc_reject_kept_flag_unsynthesizable.ll mirrors the string.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
+; RUN: %filecheck %s --check-prefix=WARN < %t.err
+; RUN: %filecheck %s < %t.ll
+; WARN: warning: {{.*}}in function lifted{{.*}}cq rotation lowering: non-diagonal gate over a live derived record
+; WARN-NOT: error
+; WARN-NOT: warning
+; CHECK-LABEL: define i32 @lifted(
+; CHECK:      %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
+; CHECK-NEXT: %[[T:[a-zA-Z0-9_.]+]] = call i32 @__cq_q_h_1(i32 %[[H]])
+; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[T]], i32 13)
+; CHECK-NEXT: call void @__cq_q_h_1_unc(i32 %[[T]], i32 %[[H]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[T]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[H]], double 9.000000e-01)
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[H]])
+; The kept flag is never freed (R5: it is not provably |0>).
+; CHECK-NOT:  call void @cqrt_free(i32 %[[F]])
+; CHECK:      ret i32
 
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
