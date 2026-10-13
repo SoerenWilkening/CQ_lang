@@ -1383,8 +1383,6 @@ bool reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
 
   // 3. Recover the whole forward DAG (union over all Insert terminals).
   DataDag D = recoverDataDag(InsertTerms, taint, DT);
-  if (Probing)
-    Probe->setWalk(D, /*Unborrowed=*/true);  // the FIRST DAG (R11 r5-r6)
   if (D.MeasuredUpstream) {
     // bd test_C_libtooling-01po.4 — THE QRAM-ARRAY FRONTIER RETRY. A load's
     // reversal needs the ARRAY's state at the load (and its index), not the
@@ -1461,7 +1459,7 @@ bool reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
     if (!Frontier.Borrowed.empty()) {
       DataDag DR = recoverDataDag(InsertTerms, taint, DT, &Frontier);
       if (Probing)
-        Probe->setWalk(DR, false);  // Loud's own first borrow: its first DAG
+        Probe->setCut(D, DR);  // what this first borrow cuts (R11 r7, GroupProbe)
       Instruction *AtR = nullptr;
       SmallVector<Value *, 4> Ignored;  // whole-group retry: no widening
       if (judgeFrontierPlan(F, DR, InsertAts, Frontier.Borrowed,

@@ -20,10 +20,11 @@
 ;   Ry, twin, free; t's Ry, `mul_unc`, free; `a`'s `add_unc`, free), t3 at its own.
 ; @le — NEW ACCEPT (main declines the same way): the union reverses t, r and `a`
 ;   IN-BODY, once per trip, against rails minted once per trip.
-; Both take the `!TmplOk` branch's ACCEPT direction (R11 r5; the decline direction is
-;   spec_intermediate_unc_terminal_union_reject_borrowed_divergent.ll and, since r6,
-;   spec_intermediate_unc_terminal_union_reject_measured_store.ll): only the
-;   union's fixpoint borrows (q1, an open root, in @og). A mutant requiring the union
+; Both take the `!TmplOk` branch's ACCEPT direction (R11 r5-r7; the decline direction
+;   is the spec_intermediate_unc_terminal_union_reject_* family): the first frontier
+;   borrows only the measured q and cuts nothing but q's own Ry (`GroupProbe::Cut`
+;   empty), and only the union's fixpoint borrows more (q1, an open root, in @og).
+;   A mutant requiring the union
 ;   to reverse-play the template terminals' whole first DAG declines @og (measured,
 ;   snapshot 4433275d: rc 1, `dead chain would free a measured register`).
 ; Stage 2b on this module: 11 frees verified, 0 violations, 0 left dirty.

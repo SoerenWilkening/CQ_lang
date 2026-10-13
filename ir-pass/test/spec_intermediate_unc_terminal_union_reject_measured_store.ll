@@ -20,9 +20,12 @@
 ; sin²θ/2 ≈ 0.115 where the source gives 0 (the dead-record-live-across-move
 ; ruling of 2026-10-05). Stage 2b was clean; two M-A `live derived record`
 ; warnings fired, neither naming the store. Main declines this function loudly.
-; NOW (`neverWorse`): under `!TmplOk` the union must reverse-play every QRAM store
-; its own or the template terminals' UNBORROWED walk reaches; here it borrows the
-; array, so the group splits and the template terminal gets main's decline.
+; NOW (`neverWorse`): under `!TmplOk` the union's first frontier must cut nothing
+; (`GroupProbe::Cut` empty; R11 r7 — r6 asked this of QRAM stores only, which the
+; measured-rail half of the cut escaped: ..._reject_measured_rail_cut.ll). It
+; borrows the array and cuts the store, so the group splits and the template
+; terminal gets main's decline. The store-only-the-clone-reaches form is
+; spec_intermediate_unc_terminal_union_reject_clone_store.ll.
 ; The all-template twin (@mlgk of the probe) is main's own planner and emits the
 ; same wrong stream at rc 0: that is bd r2j3.21, pre-existing, NOT fixed here.
 ;

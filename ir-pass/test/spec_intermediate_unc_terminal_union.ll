@@ -3,9 +3,9 @@
 ; clone-result terminal and dead template terminals in one function are planned
 ; (TerminalGroups.h). The group first PROBES the union of both kinds; the union is
 ; emitted iff it plans out and is never worse than the template terminals alone
-; (`neverWorse`, R11 rounds 4-5: when their own plan emits, the union reverse-plays
-; every gate and frees every rail it would; when it does not, the union's first DAG
-; contains theirs); otherwise the template terminals plan exactly as main and the
+; (`neverWorse`, R11 rounds 4-7: when their own plan emits, the union reverse-plays
+; every gate and frees every rail it would; when it does not, the union's first
+; frontier cuts nothing); otherwise the template terminals plan exactly as main and the
 ; clone terminals after them, silently.
 ;
 ; SOURCE (`clang -O1` IR below; review round 2 probes p3, p2 @f, p6 @e):

@@ -23,7 +23,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check.py` — 3868 physical lines
 - `tools/free_pairing_check_test.py` — 3826 physical lines
 - `ir-pass/src/TaintPropagation.cpp` — 3362 physical lines
-- `ir-pass/src/Uncomputation.cpp` — 3158 physical lines
+- `ir-pass/src/Uncomputation.cpp` — 3156 physical lines
 - `ir-pass/src/SwapRouteEmit.cpp` — 3147 physical lines
 - `runtime/cq_link_smoke.c` — 2893 physical lines
 - `tools/taintset_scrub_guard.py` — 2758 physical lines
@@ -1284,15 +1284,15 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/TemplateName.cpp:119` — `isUncHandleSlot`
 - `ir-pass/src/TemplateName.cpp:135` — `castName`
 
-### `ir-pass/src/TerminalGroups.cpp` (120 lines)
+### `ir-pass/src/TerminalGroups.cpp` (129 lines)
 
-- `ir-pass/src/TerminalGroups.cpp:23` — `GroupProbe::addPlan`
-- `ir-pass/src/TerminalGroups.cpp:30` — `GroupProbe::setWalk`
-- `ir-pass/src/TerminalGroups.cpp:38` — `within`
-- `ir-pass/src/TerminalGroups.cpp:44` — `neverWorse`
-- `ir-pass/src/TerminalGroups.cpp:52` — `reverseTerminalGroups`
+- `ir-pass/src/TerminalGroups.cpp:24` — `GroupProbe::addPlan`
+- `ir-pass/src/TerminalGroups.cpp:31` — `GroupProbe::setCut`
+- `ir-pass/src/TerminalGroups.cpp:41` — `within`
+- `ir-pass/src/TerminalGroups.cpp:53` — `neverWorse`
+- `ir-pass/src/TerminalGroups.cpp:61` — `reverseTerminalGroups`
 
-### `ir-pass/src/Uncomputation.cpp` (3158 lines)
+### `ir-pass/src/Uncomputation.cpp` (3156 lines)
 
 - `ir-pass/src/Uncomputation.cpp:103` — `diagnose`
 - `ir-pass/src/Uncomputation.cpp:111` — `isDataProducer`
@@ -1313,18 +1313,18 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Uncomputation.cpp:1182` — `recordLiveAcrossMove`
 - `ir-pass/src/Uncomputation.cpp:1252` — `planFrontierFixpoint`
 - `ir-pass/src/Uncomputation.cpp:1350` — `reverseTerminalGroup`
-- `ir-pass/src/Uncomputation.cpp:1533` — `preservesBorrowedParent`
-- `ir-pass/src/Uncomputation.cpp:1798` — `routeGroupFullyInside`
-- `ir-pass/src/Uncomputation.cpp:1881` — `railUnmovedInWindow`
-- `ir-pass/src/Uncomputation.cpp:2058` — `borrowedParentsUnmoved`
-- `ir-pass/src/Uncomputation.cpp:2113` — `planInteriorComponent`
-- `ir-pass/src/Uncomputation.cpp:2440` — `addDischargedRails`
-- `ir-pass/src/Uncomputation.cpp:2450` — `collectInteriorPlansMode`
-- `ir-pass/src/Uncomputation.cpp:2932` — `collectInteriorPlans`
-- `ir-pass/src/Uncomputation.cpp:2957` — `reverseInteriorGroup`
-- `ir-pass/src/Uncomputation.cpp:2972` — `collectTerminalCandidates`
-- `ir-pass/src/Uncomputation.cpp:3013` — `uncompute`
-- `ir-pass/src/Uncomputation.cpp:3082` — `planInteriorDischarges`
+- `ir-pass/src/Uncomputation.cpp:1531` — `preservesBorrowedParent`
+- `ir-pass/src/Uncomputation.cpp:1796` — `routeGroupFullyInside`
+- `ir-pass/src/Uncomputation.cpp:1879` — `railUnmovedInWindow`
+- `ir-pass/src/Uncomputation.cpp:2056` — `borrowedParentsUnmoved`
+- `ir-pass/src/Uncomputation.cpp:2111` — `planInteriorComponent`
+- `ir-pass/src/Uncomputation.cpp:2438` — `addDischargedRails`
+- `ir-pass/src/Uncomputation.cpp:2448` — `collectInteriorPlansMode`
+- `ir-pass/src/Uncomputation.cpp:2930` — `collectInteriorPlans`
+- `ir-pass/src/Uncomputation.cpp:2955` — `reverseInteriorGroup`
+- `ir-pass/src/Uncomputation.cpp:2970` — `collectTerminalCandidates`
+- `ir-pass/src/Uncomputation.cpp:3011` — `uncompute`
+- `ir-pass/src/Uncomputation.cpp:3080` — `planInteriorDischarges`
 
 ### `ir-pass/src/WidthDispatch.cpp` (589 lines)
 

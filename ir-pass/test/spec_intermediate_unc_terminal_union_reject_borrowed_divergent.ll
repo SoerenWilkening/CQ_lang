@@ -20,13 +20,16 @@
 ; conditional store, and rc 0 left `cqrt_qram_store_i32(arr, q, 7)` and q's prep Ry
 ; unreversed (stage 2b: 6 frees verified, 0 violations — blind to it). In THIS
 ; function that is a LEAK, not an observable wrong unitary: q is never touched again
-; (R11 r6 F3 corrects r5's "dephasing" wording). The observable form, with the
-; store's index moved before a measure, is
-; spec_intermediate_unc_terminal_union_reject_measured_store.ll.
+; (R11 r6 F3 corrects r5's "dephasing" wording). Observable forms of the class,
+; each with a store's index moved before a measure:
+; spec_intermediate_unc_terminal_union_reject_measured_store.ll (the template group
+; itself measured) and spec_intermediate_unc_terminal_union_reject_clone_store.ll
+; (a store only the clone terminal's walk reaches).
 ; NOW (`neverWorse`, TerminalGroups.cpp): when the template plan does not emit, the
-; union's first DAG must contain the template terminals' first DAG AND the union
-; must reverse every QRAM store either unborrowed walk reaches. Here both fail, so
-; the group splits and the template terminals get main's decline.
+; union's first frontier must cut nothing (`GroupProbe::Cut` empty; R11 r7, which
+; subsumes r5's first-DAG containment and r6's store clause). Here it cuts the
+; conditional store and q's prep Ry behind it, so the group splits and the template
+; terminals get main's decline.
 ; The accept direction of the same branch is pinned by
 ; spec_intermediate_unc_terminal_union_forced.ll (@fr),
 ; spec_intermediate_unc_terminal_union_open_root_loop.ll (@og, @le) and

@@ -18,9 +18,10 @@
 ; @frk — the all-template control main already lowers: @fr's disposition equals it
 ;   gate for gate, with the twin where @frk has `mul_unc`.
 ; @fr is the `!TmplOk` branch's ACCEPT direction (R11 r5; the decline direction is
-;   spec_intermediate_unc_terminal_union_reject_borrowed_divergent.ll and, since r6,
-;   spec_intermediate_unc_terminal_union_reject_measured_store.ll): the union's
-;   first DAG contains the template terminal's, and only the fixpoint forces `a`.
+;   the spec_intermediate_unc_terminal_union_reject_* family — borrowed_divergent,
+;   measured_store, clone_store, measured_rail_cut{,_divergent}): the union's first
+;   frontier borrows only the measured q and cuts nothing but q's own Rys
+;   (`GroupProbe::Cut` empty, R11 r7), and only the fixpoint forces `a`.
 ;   A mutant requiring the union to reverse-play that whole first DAG declines @fr
 ;   (measured, snapshot 4433275d: rc 1, `dead chain would free a measured register`).
 ; Stage 2b on this module: 8 frees verified, 0 violations; 2 rails left dirty —
