@@ -20,6 +20,7 @@
 
 #include "llvm/ADT/SmallVector.h"
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -32,15 +33,25 @@ class Instruction;
 
 namespace cq {
 
-// How the 6.5 arm may hoist `Call`: as written (`Direct`, no poison reaches a
-// sink once the bd 9hea root freezes run), as its callee's speculation-safe twin
-// (`Twin`), or not at all (`Unsafe`: a contract no freeze discharges — a calling
-// convention mismatch, a value-constraining parameter attribute, a cycle, a
-// bodyless callee whose sink sees poison, a non-freezable sink such as a divisor).
-// Purity and totality of the body (memory, division, CFG) are the strict walk's
-// question (`isSpeculatableTotalCallee`), asked by the claim before this.
+// How the 6.5 arm may hoist `Call`: as written (`Direct`: `willreturn`, total by
+// `speculatable` or the strict walk `isSpeculatableTotalCallee`, and no poison
+// reaches a sink once the bd 9hea root freezes run), as its callee's
+// speculation-safe twin (`Twin`: total by construction, terminating within
+// ScalarEvolution's constant max trip count, TwinTotality.h), or not at all (`Unsafe`: a contract no edit discharges — a
+// calling convention mismatch, a non-droppable parameter attribute, memory, a
+// recursive or indirect call, an inner declaration, an irreducible or unbounded
+// loop, a bodyless callee whose own contract a wrapper cannot shed). Since batch
+// 053 this is the 6.5 claim's ONE totality and termination question; the claim
+// itself keeps only memory(none) and nounwind.
 enum class HoistRoute { Unsafe, Direct, Twin };
-HoistRoute classicalCallHoistRoute(const llvm::CallInst *Call);
+HoistRoute classicalCallHoistRoute(const llvm::CallInst *Call);  // HoistRoute.cpp
+
+// The dataflow's two answers the route predicates (HoistRoute.cpp) read. Is
+// hoisting `Call` with the arguments in `PoisonArgs` possibly poison UB in the
+// ORIGINAL call tree (its own `noundef` return included)? Is a sink in `F`'s
+// twin (every parameter possibly poison) one no edit discharges?
+bool hoistUBWithPoisonArgs(const llvm::CallInst *Call, uint64_t PoisonArgs);
+bool twinFlowIsHard(const llvm::Function &F);
 
 // The edits that make one body speculation-safe, keyed by its own instructions
 // (the builder maps them onto its clone). Valid for ANY caller: every parameter

@@ -29,9 +29,10 @@
 ;
 ; WHY IT NEEDED ITS OWN FIXTURE (found by the wve8 Rule-13 round, lens
 ; over-decline): the other totality declines pin CONTENT clauses —
-; ..._reject_partial_callee.ll pins the `sdiv`-on-a-register sub-case of the body
-; walk, ..._reject_qrom_callee.ll the deferred-bounds memory op,
-; ..._reject_poisonbr_callee.ll the conditional branch. NONE of them exercises the
+; ..._reject_qrom_callee.ll pins the deferred-bounds memory op (the `sdiv`-on-a-
+; register and conditional-branch rows, ..._twin_accept_partial_callee.ll and
+; ..._twin_accept_poisonbr_callee.ll, accept as twins since batch 053; the linkage
+; guard refuses the twin too: `calleeBodyTrusted`). NONE of them exercises the
 ; linkage guard, which carries an independent soundness rationale and is the row
 ; most likely to be "simplified away" by someone reading only the body clauses.
 ;

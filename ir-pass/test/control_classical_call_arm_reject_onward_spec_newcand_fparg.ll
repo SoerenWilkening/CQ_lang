@@ -32,8 +32,8 @@ declare i32 @cq_measure_si32(i32)
 ; visible pure body is what supplies it (`isSpeculatableTotalCallee`). The old
 ; opaque `declare` carried no evidence of totality and now DECLINES — see
 ; control_classical_call_arm_reject_opaque_callee.ll (the crash it shipped) and
-; control_classical_call_arm_reject_partial_callee.ll (a VISIBLE partial body,
-; also declined). Nothing else in this fixture changes; the body is inert.
+; control_classical_call_arm_twin_accept_partial_callee.ll (a VISIBLE partial body,
+; hoisted since batch 053 only as its divisor-guarded twin). Nothing else in this fixture changes; the body is inert.
 define i32 @f(i32 %a) #0 {
   %s = add i32 %a, 100
   ret i32 %s

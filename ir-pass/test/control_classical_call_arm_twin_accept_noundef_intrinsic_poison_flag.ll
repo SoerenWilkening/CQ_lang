@@ -12,8 +12,9 @@
 ; ANALYTIC (R2): for `%k != 0` the ctlz is defined, the dropped attributes held, the
 ; `freeze` is the identity and the twin computes `f(%k)`; for `%k = 0` under a true
 ; guard the source's own call is UB; under a false guard the twin's arbitrary defined
-; value is never merged. Decline neighbour, still refused: poison at a `noundef` sink
-; inside a CYCLIC body (no twin), control_classical_call_arm_twin_reject_cyclic_speculatable.ll.
+; value is never merged. Decline neighbour, still refused: a CYCLIC body whose loop
+; has no trip bound to carry, control_classical_call_arm_twin_reject_unbounded_loop.ll
+; (a bounded one twins since batch 053: ..._twin_accept_cyclic_speculatable.ll).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll

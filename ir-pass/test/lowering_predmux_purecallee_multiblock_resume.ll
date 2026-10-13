@@ -14,7 +14,7 @@
 ;   reject_i80_cmp_purecallee_armdiamond.ll  @inner   3 blocks, verdict=1, ZERO calls
 ;   leave_speccall_recursive.ll              @purefn  call in block 2, child hits OnStack ⇒ FALSE
 ;   leave_speccall_loop.ll                   @purefn  fails the SCC test before any block walk
-;   reject_poisonbr_callee.ll                @pf      strict cond-br reject in block 0
+;   twin_accept_poisonbr_callee.ll           @pf      strict cond-br reject in block 0
 ; The one fixture with a TRUE-returning child, purecallee_memo_cost.ll, has
 ; ALL-single-block bodies (two calls in one block, hits=12) — it never leaves the
 ; block. So "a child returns TRUE and the parent then advances into a LATER block"

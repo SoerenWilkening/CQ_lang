@@ -150,13 +150,16 @@ void emitClassicalCallArmRegion(const ControlRegion &R, WidthDispatch &wd,
   //    nounwind willreturn` callee whose body was `return 100 / x;` was hoisted
   //    here and the program SIGFPEd on a source that never evaluates it (the
   //    guard has zero amplitude). `classifyClassicalCallArm` now additionally
-  //    proves TOTALITY — `isSafeToSpeculativelyExecute` (the `speculatable`
-  //    attribute, which clang really does emit on the intrinsics it lowers
-  //    builtins to) or `isSpeculatableTotalCallee` (the STRICT body walk, not the
-  //    lax `isSpeculatablePureCallee`, whose memory and terminator clauses defer
-  //    their obligation to a clone 6.5 never mints) — plus an argument clause for
-  //    `noundef` parameters. Read the full argument at that gate; if you widen it,
-  //    THIS is the line that cashes the widening.
+  //    asks `classicalCallHoistRoute` (HoistRoute.cpp) for TOTALITY: the Direct
+  //    route hoists the call itself only under `willreturn` plus
+  //    `isSafeToSpeculativelyExecute` (the `speculatable` attribute) or
+  //    `isSpeculatableTotalCallee` (the STRICT body walk, not the lax
+  //    `isSpeculatablePureCallee`, whose memory and terminator clauses defer
+  //    their obligation to a clone 6.5 never mints); the Twin route hoists a
+  //    twin total by construction (batch 053, TwinTotality.h: frozen sinks,
+  //    guarded divisors, trip counters). Plus an argument clause for `noundef`
+  //    parameters. Read the full argument at that gate; if you widen it, THIS is
+  //    the line that cashes the widening.
   // bd 9hea — COMPUTE THE FREEZE SET *BEFORE* THE MOVE, then hoist, then freeze.
   //
   // *** THE ORDER IS THE CORRECTNESS ARGUMENT, NOT A STYLE CHOICE (bd iwz1). ***
@@ -192,8 +195,9 @@ void emitClassicalCallArmRegion(const ControlRegion &R, WidthDispatch &wd,
     Twin = getOrCreateSpeculationTwin(*Call->getCalledFunction());
     if (!Twin) {
       // An internal invariant, never an ordinary decline: the claim routed only a
-      // strict-walk callee here, whose sinks are all freezable and whose edit
-      // sites are each edited once, so the builder cannot refuse it. No fixture
+      // callee the twin totality walk admits (TwinTotality.h), whose sinks are all
+      // freezable or guarded and whose edit sites are each edited once, so the
+      // builder cannot refuse it. No fixture
       // reaches this (R11 round 3 F3); the distinct message names it if one does.
       Call->getContext().diagnose(DiagnosticInfoUnsupported(
           *Call->getFunction(),

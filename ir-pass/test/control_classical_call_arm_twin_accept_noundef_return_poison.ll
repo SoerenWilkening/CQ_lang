@@ -9,9 +9,8 @@
 ; ANALYTIC (R2): for `%k < 32` the `shl` is defined, so `%v` is and the `freeze` is
 ; the identity: the twin computes `pf(%k)`; for `%k >= 32` under a true guard the
 ; source executes `ret noundef poison`, UB; under a false guard the twin's value is
-; never merged. Decline neighbour, still refused: the branch-on-poison body
-; control_classical_call_arm_reject_poisonbr_callee.ll (the strict walk refuses a
-; conditional branch before the twin is asked).
+; never merged. Neighbour: the branch-on-poison body, a decline until batch 053
+; froze the condition in a twin (control_classical_call_arm_twin_accept_poisonbr_callee.ll).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll

@@ -11,9 +11,9 @@
 ; source itself executes `g(poison)`, UB, with no behaviour to preserve; under a false
 ; guard the twin's value is never merged (the controlled copy is the identity where
 ; the flag is 0). `@g`'s result is defined for a defined argument (`mul` without
-; flags), so the twin's `ret` needs no freeze. Decline neighbour, still refused:
-; control_classical_call_arm_twin_reject_inner_param_range.ll (a `range` on the same
-; parameter, which no freeze satisfies). Contrast
+; flags), so the twin's `ret` needs no freeze. Neighbour: a `range` on the same
+; parameter, which no freeze satisfies, is dropped by redirecting to `@g`'s twin
+; since batch 053 (control_classical_call_arm_twin_accept_inner_param_range.ll). Contrast
 ; control_classical_call_arm_accept_inner_call_nsw.ll, which needs no twin at all.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll

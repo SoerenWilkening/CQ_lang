@@ -1,5 +1,6 @@
 ; control_predmux_reject_false_returned_range.ll — DECLINE (bd test_C_libtooling-bwfp).
-; R11 round 4 F1, the PredMux twin of control_classical_call_arm_reject_false_returned.ll:
+; R11 round 4 F1, the PredMux twin of control_classical_call_arm_twin_accept_false_returned.ll
+; (a 6.5 decline until batch 053, now hoisted as a speculation-safe twin; PredMux has none):
 ; the nested classical condition `f(k) == 0` sits inside the quantum arm, so PredMux's
 ; strict totality proof (`classicalCallCanBeSpeculated` -> `totalCall` ->
 ; `returnAttrsHold`) is asked. `@g`'s false `returned` let known bits "prove" `@f`'s

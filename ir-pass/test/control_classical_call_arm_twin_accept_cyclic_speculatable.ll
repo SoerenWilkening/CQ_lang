@@ -1,28 +1,35 @@
-; control_classical_call_arm_twin_reject_cyclic_speculatable.ll — DECLINE (bd dm7f.21).
-; A CYCLIC callee whose `noundef` sink sees poison: the speculation-safe twin is
-; refused (acyclic bodies only), so the 6.5 hoist declines loudly.
-;
-; IR: clang 19 -O1 of
+; control_classical_call_arm_twin_accept_cyclic_speculatable.ll — ACCEPT (bd dm7f.27;
+; was control_classical_call_arm_twin_reject_cyclic_speculatable.ll, a DECLINE since
+; bd dm7f.21).
+; A CYCLIC callee whose `noundef` sink sees poison, the `speculatable` neighbour of
+; control_classical_call_arm_twin_accept_loop_callee.ll. IR: clang 19 -O1 of
 ;   __attribute__((noinline)) int g(int v){ return v ^ 5; }
 ;   __attribute__((noinline)) int h(int x){ int s = 1; for (int i = 0; i < x; ++i) s = s * 3 + (s >> 2); return g(s); }
 ;   int ex(int k){ int q = 0; cq_theta(&q, 0.0); int y = q; if (q > 3) y = h(k); return cq_measure(y); }
-; with ONE hand edit: `@h` carries `mustprogress willreturn speculatable`. clang
-; infers neither for a counted loop, so the real-C module declines earlier, at the
-; purity gate (control_classical_call_arm_twin_reject_loop_callee.ll). The attribute
-; routes the call past the strict body walk (`isSafeToSpeculativelyExecute`), so the
-; decline below is the twin's own: the poison dataflow runs `@h`'s loop to a
-; fixpoint, the `add nsw` accumulator reaches `@g`'s `noundef` parameter (and the
-; `add nuw nsw` counter reaches the latch branch), and `classicalCallHoistRoute`
-; refuses the twin: since R11 round 1 (H2) only a body the STRICT walk admits is
-; twinned, and the strict walk refuses this CFG cycle (the twin-mode walk would too:
-; the owner ruling scopes the twin to acyclic bodies). A cyclic twin, freezing each
-; sink on every trip, is a gap, not a physics limit (R1); filed with dm7f.21.
-; Retire this row when that lands. The acyclic `speculatable` neighbour is
-; control_classical_call_arm_twin_reject_speculatable_nontotal.ll.
+; with ONE hand edit: `@h` carries `mustprogress willreturn speculatable`. The
+; attribute satisfies the Direct route's totality disjunct, but the `add nsw`
+; accumulator still reaches `@g`'s `noundef` parameter, so Direct is refused and the
+; Twin route runs: the totality walk ignores `speculatable` on a BODY (R11 round 1,
+; H2: it promises nothing about the values a freeze invents) and walks it,
+; ScalarEvolution bounds the loop, and the twin carries the trip counter and the
+; frozen sinks of the real-C row. The analytic argument is that row's.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s
-; CHECK: error: {{.*}}in function ex i32 (i32): cq controlled lowering: control flow under quantum control
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+;
+; CHECK-LABEL: define i32 @ex(
+; CHECK:       tail call i32 @__cq_specsafe_h(i32 noundef %0)
+; CHECK-NOT:   call i32 @h(
+; CHECK:       define internal noundef i32 @__cq_specsafe_h(i32 noundef %0) unnamed_addr #{{[0-9]+}} !cq.specsafe.twin ![[TW:[0-9]+]] {
+; CHECK:         %.fr2 = freeze i32 %4
+; CHECK-NEXT:    %5 = tail call i32 @g(i32 noundef %.fr2)
+; CHECK:         %cq.trip.over = icmp ugt i64 %cq.trip, 2147483646
+; CHECK-NEXT:    br i1 %cq.trip.over, label %cq.trip.exit, label %cq.trip.body
+; CHECK:         %.fr1 = freeze i1 %13
+; CHECK-NEXT:    br i1 %.fr1, label %3, label %6
+; CHECK:       cq.trip.exit:
+; CHECK-NEXT:    ret i32 0
+; CHECK:       ![[TW]] = !{ptr @h}
 
 define noundef i32 @g(i32 noundef %0) local_unnamed_addr #0 {
   %2 = xor i32 %0, 5

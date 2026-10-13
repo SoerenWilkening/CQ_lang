@@ -8572,11 +8572,12 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
   }
 
   // PURITY (§2.13 / WI-5.4): the unconditional hoist into `Pred` requires a
-  // side-effect-free, memory-independent, will-return callee.
+  // side-effect-free, memory-independent, terminating callee.
   // `doesNotAccessMemory()` (readnone) makes the result depend solely on its args;
-  // `!mayHaveSideEffects()` adds nounwind + willreturn (no throw, no infinite loop).
-  // A readonly / writing / throwing / non-returning callee DECLINES (over-decline
-  // is safe; the rejection set is load-bearing for the inert-hoist claim).
+  // `!mayThrow()` adds nounwind. A readonly / writing / throwing callee DECLINES.
+  // TERMINATION is the route's since batch 053: Direct needs `willreturn`, Twin
+  // bounds every loop of its twin by a ScalarEvolution trip counter (see the
+  // gate below). An unprovably terminating callee still declines.
   //
   // *** THIS PAIR IS NECESSARY AND IS NOT SUFFICIENT — bd wve8. *** The sentence
   // that stood here said the hoist is observationally inert "ONLY for a
@@ -8691,24 +8692,26 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
   // so the definition IS visible — the structural guarantee that slice's own
   // header describes). ZERO of the 220 single-TU stage-1 modules reach this gate
   // at all, so libm coverage is untouched.
+  // UPDATE, batch 053: of those six, the conditional branch, the CFG loop with a
+  // ScalarEvolution trip bound, the non-constant divisor and (a `speculatable`
+  // one) the declaration now ACCEPT through the Twin route; memory ops,
+  // non-exact linkage and an unbounded or irreducible loop still decline.
 
-  if (!Call->doesNotAccessMemory() || Call->mayHaveSideEffects()) {
-    diagnoseUnderControl(Call, "control flow");
-    return ClassicalCallDisp::Declined;
-  }
-  if (!llvm::isSafeToSpeculativelyExecute(Call) &&
-      !isSpeculatableTotalCallee(Callee)) {
-    diagnoseUnderControl(Call, "control flow");
-    return ClassicalCallDisp::Declined;
-  }
-  // bd bwfp — the two proofs above are about the CALLEE BODY's memory, control
-  // and division. They do not see a mismatched calling convention (UB at the
-  // call), nor POISON reaching a `noundef` sink in the call tree (measured on
-  // e0af16ed: `ret noundef poison` hoisted out of a zero-amplitude guard). bd
-  // dm7f.21 (owner ruling 2026-10-08): a sink a `freeze` discharges no longer
-  // declines; the emitter hoists the callee's speculation-safe twin instead.
-  // `classicalCallHoistRoute` (PoisonFlow.h) owns the question; the emitter asks it.
-  if (classicalCallHoistRoute(Call) == HoistRoute::Unsafe) {
+  // Batch 053 (bd dm7f.27/.29/.30/.26/.25) — PURITY stays here: memory(none) and
+  // nounwind. TERMINATION (`willreturn`) and TOTALITY (`speculatable` or the
+  // strict walk above) are now `classicalCallHoistRoute`'s (PoisonFlow.h), the one
+  // owning predicate the emitter also asks: its Direct route keeps both, and its
+  // Twin route stands in for them with a twin total and terminating by
+  // construction (TwinTotality.h: frozen branch conditions, guarded divisors,
+  // ScalarEvolution trip counters). So the paragraph above that lists a
+  // conditional branch, a CFG loop and a non-constant divisor among the declines
+  // now describes the Direct route only. The route also sees what the body proofs
+  // do not: a mismatched calling convention (UB at the call), and POISON reaching
+  // a `noundef` sink in the call tree (bd bwfp, measured on e0af16ed: `ret noundef
+  // poison` hoisted out of a zero-amplitude guard; bd dm7f.21: such a sink is
+  // frozen in the twin, owner ruling 2026-10-08).
+  if (!Call->doesNotAccessMemory() || Call->mayThrow() ||
+      classicalCallHoistRoute(Call) == HoistRoute::Unsafe) {
     diagnoseUnderControl(Call, "control flow");
     return ClassicalCallDisp::Declined;
   }

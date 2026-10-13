@@ -17,8 +17,8 @@
 ; `h(k)`; for k = 0 under a true guard the source executes `g(poison)`, immediate UB,
 ; so it has no behaviour to preserve; under a false guard the twin's arbitrary
 ; defined value is never merged (the controlled copy is the identity there).
-; Decline neighbour (a sink no freeze discharges):
-; control_classical_call_arm_twin_reject_inner_param_range.ll.
+; Decline neighbour (a contract no twin edit sheds):
+; control_classical_call_arm_twin_reject_decl_own_noundef_range.ll.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll

@@ -1,11 +1,15 @@
 // CallContract.h — bd bwfp: may a classical call run where its source did not?
 // The call-site, parameter and return contracts a hoisted call (and every call
 // in its tree) must meet. The poison dataflow behind the 6.5 hoist lives in
-// PoisonFlow.cpp (bd dm7f.21; `hoistedCallTreeIsUBFree`, `hoistedArgPoisonIsUB`:
+// PoisonFlow.cpp, its predicates in HoistRoute.cpp (bd dm7f.21, batch 053;
+// `hoistedCallTreeIsUBFree`, `hoistedArgPoisonIsUB`:
 // SpeculationSafety.h; `freezeDischargesHoistedArg`: ArmClassify.h). The strict
 // totality walk (`classicalCallCanBeSpeculated`) stays in SpeculationSafety.cpp.
 #ifndef CQ_CALL_CONTRACT_H
 #define CQ_CALL_CONTRACT_H
+
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/IR/Attributes.h"
 
 namespace llvm {
 class AttributeSet;
@@ -29,6 +33,14 @@ bool inertAttrs(llvm::AttributeSet AS);
 // also admits an intrinsic's `immarg` on a constant.
 bool argAttrsAreInert(const llvm::CallBase *C, unsigned N);
 bool paramContractIsInert(const llvm::CallInst *C, unsigned N);
+
+// bd dm7f.25: the parameter attributes a speculation-safe twin DROPS, on its own
+// parameters and at every call site pointed at it: a value constraint (`range`,
+// `nofpclass`) a frozen value may violate, and a `returned` its frozen `ret`s
+// no longer honour. Dropping one never makes a defined value poison.
+// `twinParamContractHolds` is `paramContractIsInert` once those are dropped.
+llvm::ArrayRef<llvm::Attribute::AttrKind> twinDroppedParamAttrs();
+bool twinParamContractHolds(const llvm::CallInst *C, unsigned N);
 
 // The call site's own return contract: a `range` proven from the callee body,
 // or for ctpop/ctlz/cttz from the intrinsic's semantics; otherwise only the

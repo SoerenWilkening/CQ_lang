@@ -16,7 +16,8 @@
 ; shipped a hoisted SIGFPE on a source with no UB on any basis state. The
 ; TOTALITY half is gated separately and pinned by
 ; control_classical_call_arm_reject_opaque_callee.ll (no visible body),
-; control_classical_call_arm_reject_partial_callee.ll (a visible PARTIAL body) and
+; control_classical_call_arm_twin_accept_partial_callee.ll (a visible PARTIAL body,
+; hoisted since batch 053 only as its divisor-guarded twin) and
 ; control_classical_call_arm_accept_speculatable_decl.ll (the `speculatable`
 ; accept). Do not read this file as covering that.
 ;

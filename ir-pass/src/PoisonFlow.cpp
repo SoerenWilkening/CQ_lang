@@ -2,11 +2,10 @@
 // (from CallContract.cpp) plus the speculation-safe twin mode (dm7f.21).
 #include "PoisonFlow.h"
 
-#include "ArmClassify.h"        // freezeDischargesHoistedArg (declared there, bd 9hea)
 #include "CallContract.h"
 #include "FlagProof.h"          // createsPoison
-#include "PredMuxFlatten.h"     // isSpeculatableTotalCallee
-#include "SpeculationSafety.h"  // callExecutionIsDefined, hoisted* (declared there)
+#include "SpeculationSafety.h"  // callExecutionIsDefined (declared there)
+#include "TwinTotality.h"       // TwinTotality, divisionIsTotal (batch 053)
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/PostOrderIterator.h"
@@ -46,12 +45,17 @@ namespace pflow {
 // TWIN MODE (dm7f.21) asks the same question of the callee's speculation-safe
 // twin: every parameter possibly poison, and a sink a `freeze` discharges (a
 // `ret`, a branch or switch condition, a call argument) is recorded as frozen
-// instead of counted. `Hard` is UB no freeze can discharge. A twin's every
-// may-poison `ret` is frozen and its value constraints are dropped, so its
-// result is defined for any caller. A plan read off an ORIGINAL body is only a
-// first draft: its proofs read facts (`returned`, `range`, `noundef` through a
-// `freeze`) that the twin's own edits falsify (R11 round 1, F1/F2), so the
-// builder re-asks this walk of each built twin until it plans nothing.
+// instead of counted; a divisor the twin GUARDS is discharged by the guard
+// (TwinTotality.h). `Hard` is UB no edit discharges. A twin's every may-poison
+// `ret` is frozen and its value constraints are dropped, so its result is
+// defined for any caller. An inner call is redirected to its callee's twin when
+// poison reaches a sink there, when the call site's parameter contract holds
+// only once the twin drops `range`/`nofpclass`/`returned` (dm7f.25), or when the
+// callee's own body is not total (a loop or a guarded divisor in its tree): the
+// original then never runs on a frozen value. A plan read off an ORIGINAL body
+// is only a first draft: its proofs read facts (`returned`, `range`, `noundef`
+// through a `freeze`) that the twin's own edits falsify (R11 round 1, F1/F2),
+// so the builder re-asks this walk of each built twin until it plans nothing.
 struct Flow {
   bool UB = false;
   bool Hard = false;
@@ -81,6 +85,7 @@ struct FlowCtx {
   SmallVector<Query, 16> Stack;
   DenseMap<const Function *, unsigned> Pending;  // functions on `Stack`
   std::optional<Query> Need;  // the first query a body walk could not answer
+  TwinTotality Tot;           // which originals a twin may call un-redirected
 };
 } // namespace pflow
 struct TwinPlanner::State { pflow::FlowCtx X; };
@@ -104,6 +109,12 @@ bool freezable(const Instruction &I, unsigned OpNo) {
   return C && OpNo < C->arg_size();
 }
 
+// dm7f.30: the divisor of a division the twin guards (`select(bad, 1, freeze d)`,
+// TwinTotality.h): the guard's own `freeze` discharges its poison.
+bool guarded(const Instruction &I, unsigned OpNo) {
+  return !divisionIsTotal(I) && I.getOperand(OpNo) == I.getOperand(1);
+}
+
 // A query's answer when it is known (memoized, a declaration, or a call-graph
 // cycle through a pending function); otherwise it becomes the walk's need.
 std::optional<Flow> ask(const Function &F, uint64_t Mask, bool Twin,
@@ -117,10 +128,11 @@ std::optional<Flow> ask(const Function &F, uint64_t Mask, bool Twin,
   Flow V;
   if (F.isDeclaration()) {
     // A bodyless speculatable callee: poison in, poison out; its own `noundef`
-    // return is a sink. There is no body to twin.
+    // return is a sink. Its twin is the wrapper (dm7f.26; asked only of a root:
+    // an inner declaration is the call branch's question).
     V.RetMayPoison = true;
     V.UB = Twin || (Mask && F.hasRetAttribute(Attribute::NoUndef));
-    V.Hard = Twin;
+    V.Hard = Twin && !declarationWrapperExists(F);
     return V;
   }
   if (X.Pending.lookup(&F)) {
@@ -136,11 +148,10 @@ std::optional<Flow> ask(const Function &F, uint64_t Mask, bool Twin,
 // is unanswered (`X.Need`): the caller solves it and walks this body again.
 bool walkBody(const Function &F, uint64_t Mask, bool Twin, FlowCtx &X, Flow &V,
               Plan &P) {
+  // A cyclic body gets no flag proof; its twin's loops are bounded by the
+  // counters TwinTotality.h adds (dm7f.27), the union propagation runs to a
+  // fixpoint below, and every sink is frozen on every trip.
   const bool Cyclic = cfgCyclic(F);
-  if (Twin && Cyclic) {
-    V.UB = V.Hard = true;  // acyclic bodies only
-    return true;
-  }
   SmallPtrSet<const Value *, 32> May;
   for (const Argument &A : F.args())
     if (A.getArgNo() < 64 && ((Mask >> A.getArgNo()) & 1))
@@ -174,12 +185,13 @@ bool walkBody(const Function &F, uint64_t Mask, bool Twin, FlowCtx &X, Flow &V,
             continue;
           if (Twin && freezable(I, N))
             P.Freeze.insert({&I, N});
-          else
+          else if (!(Twin && guarded(I, N)))
             hard();
         }
         if (I.isTerminator()) {
+          // An `unreachable` becomes `ret <zero>` in the twin (TwinTotality.h).
           if (Twin && !isa<ReturnInst>(I) && !isa<BranchInst>(I) &&
-              !isa<SwitchInst>(I))
+              !isa<SwitchInst>(I) && !isa<UnreachableInst>(I))
             hard();
           continue;
         }
@@ -194,10 +206,19 @@ bool walkBody(const Function &F, uint64_t Mask, bool Twin, FlowCtx &X, Flow &V,
         } else {
           if (!callExecutionIsDefined(C))
             hard();
+          const Function *G = C->getCalledFunction();
+          // dm7f.25: a contract that holds once a twin drops `range`/`nofpclass`/
+          // `returned` forces the redirect (a body's twin only: a declaration's
+          // attributes stay its own).
+          bool Drop = false;
           uint64_t M = 0;
           for (unsigned N = 0; N != C->arg_size(); ++N) {
-            if (!paramContractIsInert(C, N))
-              hard();
+            if (!paramContractIsInert(C, N)) {
+              if (Twin && G && !G->isDeclaration() && twinParamContractHolds(C, N))
+                Drop = true;
+              else
+                hard();
+            }
             // A `noundef` argument was a sink above (frozen, or UB).
             if (!mayAt(*C, N) || C->paramHasAttr(N, Attribute::NoUndef))
               continue;
@@ -208,17 +229,21 @@ bool walkBody(const Function &F, uint64_t Mask, bool Twin, FlowCtx &X, Flow &V,
             else
               V.UB = true;
           }
-          const Function *G = C->getCalledFunction();
           if (!G) {
             Pois = true;
-          } else if (G->isIntrinsic()) {
+          } else if (G->isIntrinsic() || (Twin && G->isDeclaration())) {
             // The intrinsic's own semantics (`createsPoison` proves a ctlz/cttz/
             // abs poison flag from its operand, and never trusts LLVM's "no
             // poison" for a `noundef` call, bwfp round 5 F1), then the call
             // site's return contract: a `range` LLVM's semantics imply is proven
             // (`callSiteReturnHolds`). A twin drops a site contract it cannot
-            // keep.
-            Pois = M != 0 || createsPoison(*C, /*AllowProofs=*/!Cyclic);
+            // keep. dm7f.26: a bodyless callee in a twin (the wrapper's call)
+            // alike, possibly poison through an argument or its own unproven
+            // return constraint; `declarationWrapperExists` predicts this branch.
+            Pois = M != 0 ||
+                   (G->isIntrinsic()
+                        ? createsPoison(*C, /*AllowProofs=*/!Cyclic)
+                        : !returnAttrsHold(G->getAttributes().getRetAttrs(), *G));
             bool SiteNoUndef = C->getAttributes().hasRetAttr(Attribute::NoUndef);
             const bool AttrPoison = !callSiteReturnHolds(*C);
             if (Twin && (AttrPoison || (Pois && SiteNoUndef))) {
@@ -237,7 +262,9 @@ bool walkBody(const Function &F, uint64_t Mask, bool Twin, FlowCtx &X, Flow &V,
             if (!S)
               return false;
             Pois = S->RetMayPoison || !callSiteReturnHolds(*C) || Ann;
-            if (S->UB || (Pois && C->hasRetAttr(Attribute::NoUndef))) {
+            // The original must never run on a frozen value unless it is total.
+            const bool Shape = Twin && (Drop || !X.Tot.originalTotal(*G));
+            if (S->UB || (Pois && C->hasRetAttr(Attribute::NoUndef)) || Shape) {
               const std::optional<Flow> T =
                   Twin ? ask(*G, ~uint64_t(0), /*Twin=*/true, X) : S;
               if (!T)
@@ -307,6 +334,8 @@ Flow solve(const Function &F, uint64_t Mask, bool Twin, FlowCtx &X) {
   return *ask(F, Mask, Twin, X);
 }
 
+} // namespace
+
 bool hoistUBWithPoisonArgs(const CallInst *Call, uint64_t PoisonArgs) {
   const Function *F = Call->getCalledFunction();
   if (!F)
@@ -320,60 +349,10 @@ bool hoistUBWithPoisonArgs(const CallInst *Call, uint64_t PoisonArgs) {
                          Call->hasPoisonGeneratingMetadata();
   return V.UB || (RetPoison && Call->hasRetAttr(Attribute::NoUndef));
 }
-} // namespace
 
-bool hoistedArgPoisonIsUB(const CallBase *C, unsigned N) {
-  if (C->paramHasAttr(N, Attribute::NoUndef))
-    return true;
-  const auto *CI = dyn_cast<CallInst>(C);
-  return !CI || N >= 64 || hoistUBWithPoisonArgs(CI, uint64_t(1) << N);
-}
-
-// Same effective call-site/callee union as the original 9hea predicate.
-// Total classical speculation additionally stabilizes parameters without
-// noundef: their bodies may pass them onward to a constrained inner call.
-bool freezeDischargesHoistedArg(const CallBase *C, unsigned N) {
-  return hoistedArgPoisonIsUB(C, N) && argAttrsAreInert(C, N);
-}
-
-bool hoistedCallTreeIsUBFree(const CallInst *Call) {
-  if (!callExecutionIsDefined(Call))
-    return false;
-  // A value-constraining attribute on the hoisted call's own parameter (`range`,
-  // `nonnull`, ... with `noundef`) is UB for a DEFINED argument the source's
-  // guard kept out of its domain (review round 2 F2), so only inert ones pass:
-  // the same contract an inner call must meet (review round 3 F3).
-  for (unsigned N = 0; N != Call->arg_size(); ++N)
-    if (!paramContractIsInert(Call, N))
-      return false;
-  // Every argument whose poison would be UB is frozen (`hoistedArgPoisonIsUB`);
-  // the rest may stay poison without UB by construction, so the body must be
-  // UB-free with all arguments defined.
-  return !hoistUBWithPoisonArgs(Call, 0);
-}
-
-HoistRoute classicalCallHoistRoute(const CallInst *Call) {
-  if (hoistedCallTreeIsUBFree(Call))
-    return HoistRoute::Direct;
-  const Function *F = Call->getCalledFunction();
-  if (!F || !callExecutionIsDefined(Call))
-    return HoistRoute::Unsafe;
-  for (unsigned N = 0; N != Call->arg_size(); ++N)
-    if (!paramContractIsInert(Call, N))
-      return HoistRoute::Unsafe;
-  // The twin's result is defined, but a poison-generating flag on the call site
-  // itself (fast-math) could still poison a `noundef` result. Only a body the
-  // STRICT walk admits is twinned (R11 round 1, H2): a `speculatable` attribute
-  // promises nothing about the arbitrary values a freeze yields, and the walk's
-  // constant divisors and absent memory leave the builder's re-verification
-  // (SpeculationTwin.cpp) only freezable sinks to find.
-  if (((Call->hasPoisonGeneratingFlags() || Call->hasPoisonGeneratingMetadata()) &&
-       Call->hasRetAttr(Attribute::NoUndef)) ||
-      !isSpeculatableTotalCallee(F))
-    return HoistRoute::Unsafe;
+bool twinFlowIsHard(const Function &F) {
   FlowCtx X;
-  return solve(*F, ~uint64_t(0), /*Twin=*/true, X).Hard ? HoistRoute::Unsafe
-                                                         : HoistRoute::Twin;
+  return solve(F, ~uint64_t(0), /*Twin=*/true, X).Hard;
 }
 
 TwinPlanner::TwinPlanner() : S(std::make_unique<State>()) {}

@@ -17,11 +17,12 @@ and every editor in the tree.
 
   accept   every body is speculatable; the strict walk returns TRUE and the 6.5
            classical-call arm lowers.
-  decline  the LEAF carries a conditional branch, which strict mode refuses (bd
-           wve8 deferred clause 2 — `br i1 poison` is immediate UB and the walk
-           will not speculate a branch it cannot prove defined).  The verdict is
-           FALSE and the region loud-declines.  This is the half that matters:
-           it is the exact reject the crash used to pre-empt.
+  decline  the LEAF reads constant memory, which strict mode refuses (bd wve8
+           deferred clause 1) and the speculation-safe twin refuses too (batch
+           053).  The verdict is FALSE and the region loud-declines.  This is the
+           half that matters: it is the exact reject the crash used to pre-empt.
+           (It was a conditional-branch leaf until batch 053 froze such a
+           condition in a twin, dm7f.29.)
   twin     (bd dm7f.21) the LEAF returns `add nsw` under `noundef`, so every level
            of the chain is hoisted as its speculation-safe twin
            (control_classical_call_arm_twin_accept_deep_chain.ll).
@@ -68,18 +69,19 @@ elif MODE == "twin":
         "}",
     ]
 else:
-    # A conditional branch: valid, `memory(none)`-consistent, and refused by the
-    # strict walk. The chain above it is untouched, so the FALSE has to travel
-    # all D levels back to the root — which is precisely the unwind the recursive
-    # version could not perform without a stack.
+    # A read of CONSTANT memory: `memory(none)`-consistent, refused by the strict
+    # walk (a deferred-bounds memory op) AND by the twin's totality walk (batch
+    # 053, TwinTotality.h: no memory). The chain above it is untouched, so the
+    # FALSE has to travel all D levels back to the root — which is precisely the
+    # unwind the recursive version could not perform without a stack. (Until
+    # batch 053 this leaf was a conditional branch; the twin now freezes that
+    # condition, so a branch leaf lowers as a D-deep twin chain.)
+    out = out[:3] + ["@cq.deep.tab = internal constant i32 7"] + out[3:]
     out += [
         "define i32 @f_%d(i32 %%a) #0 {" % D,
-        "  %c = icmp sgt i32 %a, 3",
-        "  br i1 %c, label %t, label %f",
-        "t:",
-        "  ret i32 %a",
-        "f:",
-        "  ret i32 0",
+        "  %v = load i32, ptr @cq.deep.tab",
+        "  %s = add i32 %v, %a",
+        "  ret i32 %s",
         "}",
     ]
 out += [

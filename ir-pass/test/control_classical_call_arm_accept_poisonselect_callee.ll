@@ -1,5 +1,6 @@
 ; control_classical_call_arm_accept_poisonselect_callee.ll — the ARM-KILL PARTNER
-; of control_classical_call_arm_reject_poisonbr_callee.ll (bd wve8), and the file
+; of control_classical_call_arm_twin_accept_poisonbr_callee.ll (bd wve8; a decline
+; until batch 053 froze the branch condition in a twin), and the file
 ; that says what the totality gate is NOT about.
 ;
 ; `@pf` here carries the IDENTICAL poison-capable computation as the reject file —

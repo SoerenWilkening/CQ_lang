@@ -59,8 +59,8 @@
 ; quantum guard, so it needs a TOTALITY proof as well as a purity one, and a
 ; visible pure body with `willreturn memory(none)` supplies it
 ; (`isSpeculatableTotalCallee`). The opaque spelling DECLINES — see
-; control_classical_call_arm_reject_opaque_callee.ll and
-; control_classical_call_arm_reject_partial_callee.ll.
+; control_classical_call_arm_reject_opaque_callee.ll (a visible partial body is
+; hoisted only as its guarded twin: control_classical_call_arm_twin_accept_partial_callee.ll).
 define range(i32 -2147483548, -2147483648) i32 @f(i32 noundef %0) local_unnamed_addr #0 {
   %2 = add nsw i32 %0, 100
   ret i32 %2

@@ -13,7 +13,7 @@
 ; and the twin returns `f(%0)`; otherwise the source's own call passes poison to a
 ; `noundef` parameter (UB) under a true guard, and the twin's value is never merged
 ; under a false one. Decline neighbour, still refused:
-; control_classical_call_arm_twin_reject_inner_param_range.ll.
+; control_classical_call_arm_twin_reject_decl_own_noundef_range.ll.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll

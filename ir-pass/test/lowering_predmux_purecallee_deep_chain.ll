@@ -49,8 +49,10 @@
 ; entry (`isSpeculatableTotalCallee`, S6), which is the widest reachable input
 ; class since bd 9hea routed 6.5 acceptance through it.
 ;   ACC  every body speculatable -> verdict=1, the 6.5 arm lowers.
-;   DEC  the LEAF carries a conditional branch (bd wve8 deferred clause 2, which
-;        strict mode refuses) -> verdict=0, and the FALSE has to travel all
+;   DEC  the LEAF reads constant memory (bd wve8 deferred clause 1, which strict
+;        mode refuses, and so does the speculation-safe twin's totality walk; it
+;        was a conditional branch until batch 053's twin froze such a condition
+;        and lowered it, dm7f.29) -> verdict=0, and the FALSE has to travel all
 ;        60000 levels back to the root. That unwind is exactly what the
 ;        recursive version could not perform, and the loud
 ;        "control flow under quantum control" it produces is exactly what the

@@ -5208,8 +5208,10 @@ bool isSpeculatablePureCallee(const Function *F) {
 //
 // The Phase-6.5 classical-call arm is the consumer for which the deferral is
 // VOID, and it is void by construction, not by accident: 6.5 is
-// clone-ORTHOGONAL — no Bennett clone (a dm7f.21 twin only adds freezes), the body
-// is never lowered, stage 3 compiles it verbatim, `ClassicalCallArmEmit` HOISTS to
+// clone-ORTHOGONAL — no Bennett clone (a dm7f.21 twin is classical: it adds
+// freezes and, since batch 053, divisor guards and trip counters, TwinTotality.h,
+// and is proven total by its own walk, not by this one), the body is never
+// lowered, stage 3 compiles it verbatim, `ClassicalCallArmEmit` HOISTS to
 // unconditional execution. Nothing downstream exists to discharge anything.
 //
 // *** THIS WAS NOT A THEORETICAL GAP. *** The first bd wve8 fix used

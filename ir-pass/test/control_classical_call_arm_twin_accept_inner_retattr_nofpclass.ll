@@ -10,8 +10,8 @@
 ; is frozen. ANALYTIC (R2): for `%k != 0` `@hc` returns 1.0 (not NaN), nothing is
 ; poison, and the twin returns `pc(%k)`; for `%k = 0` the source's own call is UB
 ; under a true guard, and the twin's value is never merged under a false one.
-; Decline neighbour, still refused: control_classical_call_arm_twin_reject_decl_noundef_return.ll
-; (an unprovable return constraint on a callee with no body to twin).
+; Decline neighbour, still refused: control_classical_call_arm_twin_reject_decl_own_noundef_range.ll
+; (an unprovable return constraint under the bodyless callee's own `noundef`).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll

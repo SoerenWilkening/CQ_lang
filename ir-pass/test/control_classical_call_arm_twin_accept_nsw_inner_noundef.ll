@@ -16,8 +16,9 @@
 ; defined value the controlled copy never merges (it is the identity where the flag
 ; is 0). The `ret` is frozen too (`@g`'s result carries an unproven `range`), so the
 ; twin's result is defined for any caller. `@f` itself is untouched for its other
-; callers. Decline neighbour: control_classical_call_arm_twin_reject_inner_param_range.ll
-; (the same sink also carrying `range`: no `freeze` can satisfy it).
+; callers. Neighbour: control_classical_call_arm_twin_accept_inner_param_range.ll (the
+; same sink also carrying `range`, which no `freeze` satisfies: batch 053 redirects
+; the call to `@g`'s twin, which drops it).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll

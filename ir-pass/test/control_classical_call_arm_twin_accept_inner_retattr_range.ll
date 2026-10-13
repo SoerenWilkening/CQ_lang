@@ -10,9 +10,9 @@
 ; not UB inside it). The dataflow still counts the unproven `range` as a source.
 ; ANALYTIC (R2): for `%k` in [0, 5) nothing is poison, the `freeze` is the identity
 ; and the twin returns `pa(%k)`; otherwise the source's own call is UB under a true
-; guard, and the twin's value is never merged under a false one. Decline neighbour,
-; still refused: control_classical_call_arm_reject_false_returned.ll (a `returned`
-; the body breaks: a parameter contract no freeze discharges).
+; guard, and the twin's value is never merged under a false one. Neighbour: a
+; `returned` the body breaks, a decline until batch 053 dropped it in the twin
+; (control_classical_call_arm_twin_accept_false_returned.ll).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll

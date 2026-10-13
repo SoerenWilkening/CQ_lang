@@ -98,6 +98,10 @@ add_library(CQPass MODULE
   src/FlagProof.cpp
   src/PoisonFlow.cpp
   src/SpeculationTwin.cpp
+  # batch 053 (dm7f.27/.29/.30): the twin's totality walk and structural edits;
+  # the 6.5 route predicates split out of PoisonFlow.cpp.
+  src/TwinTotality.cpp
+  src/HoistRoute.cpp
   # bd 3c6m.82: a failure inside a lifted body notes the user's call site.
   src/LiftDiagnostics.cpp
   # bd r2j3.6: the lifted-call stale reader + the 57ch (A) placement legality.

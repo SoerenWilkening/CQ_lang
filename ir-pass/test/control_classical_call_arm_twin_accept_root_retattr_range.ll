@@ -9,9 +9,11 @@
 ; ANALYTIC (R2): for `%k` in [0, 5) the range held, the `freeze` is the identity and
 ; the twin returns `pb(%k)` = `%k`; otherwise, under a true guard the source's own
 ; call is UB, and under a false guard the twin's value is never merged. Decline
-; neighbours, still refused: control_classical_call_arm_reject_root_param_range.ll (a
-; value constraint on the PARAMETER, which a defined argument violates) and
-; control_classical_call_arm_twin_reject_decl_noundef_return.ll (no body to twin).
+; neighbours, still refused: control_classical_call_arm_reject_frozen_arg_range.ll (a
+; value constraint on the PARAMETER fed a poison-capable argument, whose freeze the
+; claim does not license past it) and
+; control_classical_call_arm_twin_reject_decl_own_noundef_range.ll (a bodyless
+; callee's OWN `noundef range`, which no wrapper twin sheds).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll

@@ -9,6 +9,7 @@
 #include "SpeculationSafety.h"  // callExecutionIsDefined
 
 #include "llvm/ADT/SCCIterator.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/ValueTracking.h"
@@ -67,7 +68,9 @@ bool returnsParam(const Function &F, unsigned N) {
 // The one per-argument contract question: does every attribute on argument `N`
 // (call site and callee) hold for any defined value? `AllowImmArg` admits an
 // intrinsic's `immarg` on a constant (a frozen value can never feed one).
-bool paramAttrsHold(const CallBase *C, unsigned N, bool AllowImmArg) {
+// `TwinDrops` (bd dm7f.25) skips the attributes a twin drops on both sides.
+bool paramAttrsHold(const CallBase *C, unsigned N, bool AllowImmArg,
+                    bool TwinDrops = false) {
   const Function *F = C->getCalledFunction();
   if (!F)
     return false;
@@ -75,6 +78,9 @@ bool paramAttrsHold(const CallBase *C, unsigned N, bool AllowImmArg) {
                           N < F->arg_size() ? F->getAttributes().getParamAttrs(N)
                                             : AttributeSet()})
     for (Attribute A : AS) {
+      if (TwinDrops && !A.isStringAttribute() &&  // `range` is no enum attribute
+          is_contained(twinDroppedParamAttrs(), A.getKindAsEnum()))
+        continue;
       if (A.hasAttribute(Attribute::ImmArg)) {
         if (!AllowImmArg || !isa<Constant>(C->getArgOperand(N)))
           return false;
@@ -214,6 +220,16 @@ bool basicCallContractHolds(const CallInst *C) {
 
 bool paramContractIsInert(const CallInst *C, unsigned N) {
   return paramAttrsHold(C, N, /*AllowImmArg=*/true);
+}
+
+ArrayRef<Attribute::AttrKind> twinDroppedParamAttrs() {
+  static const Attribute::AttrKind Kinds[] = {
+      Attribute::Range, Attribute::NoFPClass, Attribute::Returned};
+  return Kinds;
+}
+
+bool twinParamContractHolds(const CallInst *C, unsigned N) {
+  return paramAttrsHold(C, N, /*AllowImmArg=*/true, /*TwinDrops=*/true);
 }
 
 namespace {
