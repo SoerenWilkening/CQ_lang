@@ -7671,6 +7671,16 @@ void promoteLoopCarriedHandleSeeds(Module &M, WidthDispatch &wd,
   }
 }
 
+// ⚠ CONJUNCT 2'S PREMISE IS MEASURED FALSE FOR ONE SHAPE (bd memory
+// `r7-loop-grant-twin-parity-falsified-2026-10-15`). The R7-loop grant rests on
+// "the rolled form leaks no more than its hand-unrolled twin". Since bd
+// r2j3.32 the twin of `slice_control_cascade_loop_carried_handle.c` REVERSES
+// its trip-1/trip-2 merge rails (4 rails leaked) while the rolled form cannot
+// (6): a loop-carried merge rail is the next trip's copy source, so its
+// reversal is LIFO across trips (a post-loop reverse loop, bd 8h7d.20). Conjunct
+// 2 does not see it — a merge rail is not a spine discharge candidate. The leak
+// is accepted (routing decision (b)); its composition with a later non-diagonal
+// gate on what the rails record is fenced loudly by `MergeCarriedFence.h`.
 void declineUnmarkedRolledIterLocal(Module &M, TaintSet &taint) {
   if (taint.RolledLoopRegionGates.empty())
     return;

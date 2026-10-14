@@ -15,8 +15,8 @@ Scope: 817 maintained source files, 6680 named function definitions. Build outpu
 The entries below are an inventory for decomposition work. Generated files and test/tooling sources are listed too; they are not silently treated as application logic.
 
 - `runtime/cq_templates.c` — 15665 physical lines
-- `ir-pass/src/ArmClassify.cpp` — 9508 physical lines
-- `ir-pass/src/LoopLowering.cpp` — 8031 physical lines
+- `ir-pass/src/ArmClassify.cpp` — 9515 physical lines
+- `ir-pass/src/LoopLowering.cpp` — 8041 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5553 physical lines
 - `tools/free_pairing_check_test.py` — 4203 physical lines
 - `tools/free_pairing_check.py` — 4189 physical lines
@@ -241,7 +241,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArithLowering.cpp:983` — `lateReassignShape`
 - `ir-pass/src/ArithLowering.cpp:1023` — `lowerLateReassignments`
 
-### `ir-pass/src/ArmClassify.cpp` (9508 lines)
+### `ir-pass/src/ArmClassify.cpp` (9515 lines)
 
 - `ir-pass/src/ArmClassify.cpp:82` — `isCallToPrefix`
 - `ir-pass/src/ArmClassify.cpp:109` — `isPhiCall`
@@ -297,12 +297,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArmClassify.cpp:4717` — `straightThroughConstFoldHandle`
 - `ir-pass/src/ArmClassify.cpp:4884` — `iterationLocalRollable`
 - `ir-pass/src/ArmClassify.cpp:4944` — `classifyArms`
-- `ir-pass/src/ArmClassify.cpp:6951` — `phaseAngleTail`
-- `ir-pass/src/ArmClassify.cpp:7060` — `classifyPhaseKickback`
-- `ir-pass/src/ArmClassify.cpp:8056` — `classifyPhaseKickbackNest`
-- `ir-pass/src/ArmClassify.cpp:8381` — `classifyClassicalCallArm`
-- `ir-pass/src/ArmClassify.cpp:8824` — `angleSelectArmsDefined`
-- `ir-pass/src/ArmClassify.cpp:8833` — `classifyAngleSelect`
+- `ir-pass/src/ArmClassify.cpp:6958` — `phaseAngleTail`
+- `ir-pass/src/ArmClassify.cpp:7067` — `classifyPhaseKickback`
+- `ir-pass/src/ArmClassify.cpp:8063` — `classifyPhaseKickbackNest`
+- `ir-pass/src/ArmClassify.cpp:8388` — `classifyClassicalCallArm`
+- `ir-pass/src/ArmClassify.cpp:8831` — `angleSelectArmsDefined`
+- `ir-pass/src/ArmClassify.cpp:8840` — `classifyAngleSelect`
 
 ### `ir-pass/src/ArmHomogeneity.cpp` (217 lines)
 
@@ -700,7 +700,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LiteralIntegrity.cpp:274` — `declineAddressTakenBlocks`
 - `ir-pass/src/LiteralIntegrity.cpp:327` — `removeUnreachableBlocksChecked`
 
-### `ir-pass/src/LoopLowering.cpp` (8031 lines)
+### `ir-pass/src/LoopLowering.cpp` (8041 lines)
 
 - `ir-pass/src/LoopLowering.cpp:136` — `diagnose`
 - `ir-pass/src/LoopLowering.cpp:161` — `inPlaceValueRailOperand`
@@ -769,8 +769,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LoopLowering.cpp:7090` — `iterationLocalTaintEscape`
 - `ir-pass/src/LoopLowering.cpp:7255` — `bodyHasSpineDischargeCandidate`
 - `ir-pass/src/LoopLowering.cpp:7405` — `promoteLoopCarriedHandleSeeds`
-- `ir-pass/src/LoopLowering.cpp:7674` — `declineUnmarkedRolledIterLocal`
-- `ir-pass/src/LoopLowering.cpp:7870` — `lowerLoops`
+- `ir-pass/src/LoopLowering.cpp:7684` — `declineUnmarkedRolledIterLocal`
+- `ir-pass/src/LoopLowering.cpp:7880` — `lowerLoops`
 
 ### `ir-pass/src/LoopUnrollPrepass.cpp` (303 lines)
 
@@ -793,10 +793,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/MergePhiPeel.cpp:261` — `phiPeelable`
 - `ir-pass/src/MergePhiPeel.cpp:312` — `peelIndependentMergePhis`
 
-### `ir-pass/src/MergeRailDischarge.cpp` (120 lines)
+### `ir-pass/src/MergeRailDischarge.cpp` (127 lines)
 
-- `ir-pass/src/MergeRailDischarge.cpp:35` — `emitReplay`
-- `ir-pass/src/MergeRailDischarge.cpp:77` — `dischargeMergeRails`
+- `ir-pass/src/MergeRailDischarge.cpp:36` — `emitReplay`
+- `ir-pass/src/MergeRailDischarge.cpp:78` — `dischargeMergeRails`
 
 ### `ir-pass/src/MergeStreamGates.cpp` (241 lines)
 
@@ -5127,9 +5127,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_control_angle_select_rz_twin.c:26` — `slice`
 - `tests/e2e/slice_control_angle_select_rz_twin.c:35` — `main`
 
-### `tests/e2e/slice_control_cascade_loop_carried_handle.c` (75 lines)
+### `tests/e2e/slice_control_cascade_loop_carried_handle.c` (78 lines)
 
-- `tests/e2e/slice_control_cascade_loop_carried_handle.c:63` — `main`
+- `tests/e2e/slice_control_cascade_loop_carried_handle.c:66` — `main`
 
 ### `tests/e2e/slice_control_cascade_loop_carried_handle_unrolled.c` (64 lines)
 

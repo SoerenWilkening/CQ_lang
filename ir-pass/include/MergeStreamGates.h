@@ -63,8 +63,10 @@ bool isRegister(const llvm::Value *V, const TaintSet &taint);
 // mint (`cqrt_alloc_*` / a forward `cq_template_*` producer) whose definition
 // does not dominate the φ. Such a value is only ever in the φ's register on an
 // earlier trip of a loop (a back edge); every gate that names it runs on its
-// current, freshly minted instance, a different handle. False when the handle
-// reaches memory (a load or a store), where no alias set is provable.
+// current, freshly minted instance, a different handle. Memory is crossed
+// only through a proven rail bank (its parked rails and cell loads join the
+// class); false when the handle reaches any other load or store, where no
+// alias set is provable.
 bool handleAliases(llvm::Value *X, const TaintSet &taint,
                    const llvm::DominatorTree &DT,
                    llvm::SmallPtrSetImpl<llvm::Value *> &Out);

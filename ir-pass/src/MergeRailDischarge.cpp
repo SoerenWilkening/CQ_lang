@@ -1,6 +1,7 @@
 // MergeRailDischarge.cpp — see header (bd test_C_libtooling-r2j3.32).
 
 #include "MergeRailDischarge.h"
+#include "MergeCarriedFence.h"   // fenceCarriedMergeLeaks (decision (b))
 #include "MergeStreamGates.h"    // calleeName
 #include "MergeStreamPlan.h"     // MergePlan / planMerge
 
@@ -102,18 +103,24 @@ unsigned dischargeMergeRails(Function &F, TaintSet &taint, WidthDispatch &wd) {
   DenseMap<const Instruction *, Instruction *> GroupEnd;
   PlanContext Ctx{taint, DT, PDT, LI, GroupEnd};
   unsigned N = 0;
+  SmallVector<CallInst *, 8> Left;
   for (CallInst *Out : Cands) {
     MergePlan P;
-    if (!planMerge(Out, Ctx, P))
-      continue;  // left allocated: the pre-r2j3.32 disposition.
     SmallVector<Instruction *, 16> Group;
-    Instruction *End = emitReplay(P, taint, wd, Group);
-    if (!End)
+    Instruction *End = planMerge(Out, Ctx, P)
+                           ? emitReplay(P, taint, wd, Group)
+                           : nullptr;
+    if (!End) {
+      Left.push_back(Out);  // left allocated: the pre-r2j3.32 disposition.
       continue;
+    }
     for (Instruction *I : Group)
       GroupEnd[I] = End;
     ++N;
   }
+  // A LEFT loop-carried rail is an accepted leak (decision (b), bd 8h7d.20)
+  // only while nothing after its loop acts non-diagonally on what it records.
+  fenceCarriedMergeLeaks(F, taint, Left, DT, LI);
   return N;
 }
 

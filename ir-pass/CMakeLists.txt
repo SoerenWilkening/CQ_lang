@@ -86,6 +86,7 @@ add_library(CQPass MODULE
   src/LoopUnrollPrepass.cpp
   src/MeasureLowering.cpp
   # bd r2j3.32: reverse a dead controlled-copy merge rail by stream replay.
+  src/MergeCarriedFence.cpp
   src/MergeRailDischarge.cpp
   src/MergeStreamGates.cpp
   src/MergeStreamPlan.cpp
@@ -216,6 +217,25 @@ add_executable(cq-opt-debugalloc tools/cq_debug_alloc.cpp $<TARGET_OBJECTS:cq-op
 add_dependencies(cq-opt-debugalloc cq-opt)
 target_compile_features(cq-opt-debugalloc PRIVATE cxx_std_17)
 target_link_libraries(cq-opt-debugalloc PRIVATE ${_CQ_OPT_LLVM_LIBS})
+
+# cq-merge-selftest (bd test_C_libtooling-r2j3.32, R11 round 1 + decision (b)):
+# drives `dischargeMergeRails` (the window check and the carried-merge fence)
+# directly on hand-written LOWERED IR in test/Inputs/merge_selftest/, the shapes
+# the full pass declines upstream before discharge runs (so no lit fixture
+# through %cq-opt can pin an unsound loosening of either check). The pass
+# sources are compiled in, so it tests the code the pass runs; it reads
+# test-only metadata that the pass itself never reads. Expectations live in the
+# inputs (`"cq-selftest-expect"`, a diagnostic mirrored char-for-char).
+add_executable(cq-merge-selftest tools/merge_selftest.cpp ${_CQ_PASS_SOURCES})
+target_include_directories(cq-merge-selftest PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/include" ${LLVM_INCLUDE_DIRS})
+target_compile_features(cq-merge-selftest PRIVATE cxx_std_17)
+target_compile_definitions(cq-merge-selftest PRIVATE ${LLVM_DEFINITIONS})
+target_link_libraries(cq-merge-selftest PRIVATE ${_CQ_OPT_LLVM_LIBS})
+add_test(NAME ir-pass-merge-discharge-selftest
+  COMMAND cq-merge-selftest
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/Inputs/merge_selftest/window_alias.ll"
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/Inputs/merge_selftest/carried_fence.ll")
 
 # cq-scrub-selftest (bd test_C_libtooling-8e5r / -um24 / -j8sk): the deterministic
 # per-member pin of `include/ScrubOnDelete.h` over every pointer-keyed member of
