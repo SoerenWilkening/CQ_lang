@@ -1,26 +1,17 @@
-; lowering_qram_reject_stale_index_nested_inner.ll — ACCEPT since bd test_C_libtooling-57ch.3 (batch 053;
-; owner ruling bd 57ch (A)). ⚠ VERDICT INVERTED: this file declined before batch 053.
+; lowering_qram_reject_stale_index_nested_inner.ll — DECLINE (bd test_C_libtooling-57ch.3).
 ;
-; The stale QRAM access is PLACED before its staling gate with the address `gep`
-; (and any widening) it needs (StaleReadPlacement.h clause (b), a carried tainted
-; read): the QRAM call is minted at its new position, so it reads the index (and
-; stored value) register's pre-gate label, the stream the read-first program
-; lowers to.
-; Only the INNER load is stale; the outer one reads its fresh result rail.
+; ⚠ BACK TO DECLINE (batch 053 composition fix-forward, HIGH): a draft placed the
+; stale read alone while its tainted CONSUMER (the OUTER QRAM load indexing the inner result) stayed below the gate, so
+; the placed read's rail had no valid uncompute position and stayed dirty and
+; entangled across the Ry (verify-clean dephasing; the read-first twin computes,
+; uses and uncomputes it before the gate). StaleReadPlacement.cpp clause (b')
+; now refuses a placement that leaves a minted rail with a non-measurement user
+; outside the moved set, so the stale fence declines.
+; RETIREMENT TRIGGER (L7): carrying the read's forward tainted cone (the consumer
+; with it, re-checked by (b)-(e)) flips this file to an accept with the twin's stream.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
-; RUN: %filecheck %s < %t.ll
-; RUN: %filecheck --check-prefix=WARN --allow-empty %s < %t.err
-; WARN-NOT: {{error|warning}}
-;
-; CHECK:      call void @cqrt_ry_i64(i32 %[[H:[a-z0-9]+]], double 5.000000e-01)
-; CHECK-NEXT: %[[X:[a-z0-9]+]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[H]])
-; CHECK-NEXT: %[[V:[0-9]+]] = call i32 @cqrt_qram_load_i32(i32 %{{[a-z0-9]+}}, i32 %[[X]])
-; CHECK-NEXT: call void @cq_template_trunc_i64_to_i32_unc(i32 %[[X]], i32 %[[H]])
-; CHECK-NEXT: call void @cqrt_free(i32 %[[X]])
-; CHECK-NEXT: call void @cqrt_ry_i64(i32 %[[H]], double 3.000000e-01)
-; CHECK-NEXT: %[[O:[0-9]+]] = call i32 @cqrt_qram_load_i32(i32 %{{[a-z0-9]+}}, i32 %[[V]])
-; CHECK:      call i32 @cqrt_measure_i32(i32 %[[O]])
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; CHECK: error{{.*}}cq opcode lowering: operand predates a non-diagonal gate
 ;
 ; ── HISTORY: the pre-batch-053 header, kept verbatim (its verdict text is
 ; superseded by the block above) ──

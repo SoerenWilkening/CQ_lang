@@ -1,7 +1,7 @@
-; lowering_qram_stale_index_crossblock_placed_accept.ll — ACCEPT (bd
-; test_C_libtooling-57ch.1 and -57ch.3, batch 053; owner ruling bd 57ch (A)): the
-; index computation of `tbl[q & 7]`, scheduled after the gate and a classical
-; diamond, is placed before the gate; the QROM read then reads a fresh rail.
+; lowering_qram_reject_stale_index_crossblock_consumer_below.ll — DECLINE (bd
+; test_C_libtooling-57ch.1 and -57ch.3; batch 053 composition fix-forward, HIGH).
+; Renamed from lowering_qram_stale_index_crossblock_placed_accept.ll, which pinned
+; the defect as an accept.
 ;
 ;   static const int tbl[8] = {3,1,4,1,5,9,2,6};
 ;   int g;
@@ -13,25 +13,19 @@
 ;     return (int)cq_measure(v) + (int)cq_measure(q2) + g;
 ;   }
 ;
-; The stale reader is the `and i64 %q, 7` in the merge block: a pure op reading the
-; pre-Ry record. It post-dominates the gate across an acyclic span holding only a
-; store to `g`, so it is placed before `cq_theta(&q2, .3)` (its template copies the
-; pre-Ry label). The QROM load then indexes the `and`'s fresh rail, on which no gate
-; acts: it is not stale and stays where it was. Before batch 053 the `and` declined.
+; The stale reader is the `and i64 %q, 7`; its consumer is the QROM load (through
+; the index `gep`), which is not stale and so was NOT moved. Placing the `and` alone
+; left its rail live across `cq_theta(&q2, .3)` with no valid position for its
+; `_unc` (it re-reads `q`): dirty, entangled, a verify-clean dephasing the read-first
+; twin (`and`, load and uncompute before the gate) does not have. Clause (b') of
+; StaleReadPlacement.cpp refuses a placement that leaves a minted rail with a
+; non-measurement user outside the moved set; the stale fence declines.
+; RETIREMENT TRIGGER (L7): carrying the read's forward tainted cone (here the `gep`
+; and the load, re-checked by (b)-(e)) flips this file to an accept.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
-; RUN: %filecheck %s < %t.ll
-; RUN: %filecheck --check-prefix=WARN --allow-empty %s < %t.err
-; WARN-NOT: {{error|warning}}
-;
-; CHECK-LABEL: define i32 @main(
-; CHECK:      %[[H:.*]] = call i32 @cqrt_alloc_i64(i64 0)
-; CHECK-NEXT: call void @cqrt_ry_i64(i32 %[[H]], double 5.000000e-01)
-; CHECK-NEXT: %[[A:.*]] = call i32 @cq_template_and_i64_hl(i32 %[[H]], i64 7)
-; CHECK-NEXT: call void @cqrt_ry_i64(i32 %[[H]], double 3.000000e-01)
-; CHECK:      store i32 %0, ptr @g
-; CHECK:      %[[X:.*]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[A]])
-; CHECK-NEXT: call i32 @cqrt_qram_load_i32(i32 %{{[a-z0-9]+}}, i32 %[[X]])
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s
+; CHECK: in function main i32 (i32, ptr): cq opcode lowering: operand predates a non-diagonal gate
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

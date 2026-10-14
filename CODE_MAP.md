@@ -1216,7 +1216,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/StageList.cpp:28` — `runLoopPrepasses`
 - `ir-pass/src/StageList.cpp:85` — `runControlChain`
 
-### `ir-pass/src/StaleReadPlacement.cpp` (363 lines)
+### `ir-pass/src/StaleReadPlacement.cpp` (387 lines)
 
 - `ir-pass/src/StaleReadPlacement.cpp:33` — `isFrontEndSite`
 - `ir-pass/src/StaleReadPlacement.cpp:38` — `isMustTail`
