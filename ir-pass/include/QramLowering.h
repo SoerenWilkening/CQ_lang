@@ -654,6 +654,12 @@ RailBankCarve railBankCarveVerdict(const llvm::StoreInst *SI, const TaintSet &ta
                                    llvm::ScalarEvolution &SE, const char *&outMsg,
                                    RailBankShape *outShape = nullptr);
 
+// bd 01po.19: `instReaches` (QramLowering.cpp), the EXACT CFG reachability the
+// rail-bank verdict uses ("`From` executes, then `To` executes later on some
+// path"; no 32-block budget), exported for the rail-window stage.
+bool railBankInstReaches(const llvm::Instruction *From,
+                         const llvm::Instruction *To);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_QRAM_LOWERING_H_
