@@ -215,15 +215,20 @@ constexpr char kMsgQramCloneUnbounded[] =
 //   * lowering_reject_railbank_global.ll        → kMsgBankShape
 //   * lowering_reject_railbank_vla.ll           -> kMsgBankWidth
 //   * lowering_reject_railbank_escape.ll        → kMsgBankEscape
-//   * lowering_reject_railbank_mixed_access.ll  → kMsgBankMixed
-//   * lowering_reject_railbank_nonzero_init.ll  → kMsgBankInit
-//   * lowering_reject_railbank_noninjective.ll  → kMsgBankIndex
-//   * lowering_reject_railbank_fp_cell.ll       → kMsgBankWidth
-//   * lowering_reject_railbank_nowidth_cell.ll  → kMsgBankWidth
+//   * lowering_reject_railbank_mixed_access_runtime_trip.ll → kMsgBankMixed
+//   * lowering_reject_railbank_nonzero_init_runtime_trip.ll → kMsgBankInit
+//   * lowering_reject_railbank_wrapping_index.ll → kMsgBankIndex
 //   * lowering_reject_railbank_alias.ll         → kMsgBankAlias
-//   * lowering_reject_railbank_two_stores.ll    → kMsgBankMultiStore
-//   * lowering_reject_railbank_oversized.ll     → kMsgBankTotality
-//   * lowering_reject_railbank_inloop_read.ll   → kMsgBankTotality
+//   * lowering_reject_railbank_two_stores_runtime_trip.ll   → kMsgBankMultiStore
+//   * railbank_readorder_reject_no_fact.ll      → kMsgBankTotality
+// ⚠ bd `test_C_libtooling-01po.19` (2026-10-14): a module whose array the rolled
+// bank does not own and whose indexing loops all have constant trips never
+// reaches this verdict's declines any more: `unrollQuantumArrayWalks`
+// (RailBankUnroll.h) unrolls and scalarizes it first. The constant-trip
+// originals (`_two_stores`, `_nested_walk`, `_nonzero_init`, `_mixed_access`,
+// `_noninjective`, `_fp_cell`, `_nowidth_cell`, `_oversized`, `_inloop_read`)
+// were flipped to their reviewed outcomes; the clauses stay pinned by the
+// `_runtime_trip` twins (a variable index in a loop without a constant trip).
 constexpr char kMsgBankShape[] =
     "cq rail bank: cell address has no bounded local-array provenance";
 constexpr char kMsgBankEscape[] =
@@ -246,7 +251,8 @@ constexpr char kMsgBankTotality[] =
 // §10 H-1 / H-13). Both were MEASURED as `Bank` over-accepts on the first subject
 // binary (53d1a4b6…) and both are the SAME hazard C2′/C1 name, one activation level
 // up — which is why they get their own strings rather than riding an existing one.
-//   * lowering_reject_railbank_nested_walk.ll   → kMsgBankNested
+//   * lowering_reject_railbank_nested_walk_runtime_trip.ll → kMsgBankNested
+//     (the constant-trip original compiles since bd 01po.19; see above)
 //   * lowering_reject_railbank_dynamic_object.ll → kMsgBankDynamic
 //   * lowering_reject_railbank_dynamic_{lifetime_end,stackrestore}.ll
 //                                                 → kMsgBankLifetime
@@ -2025,6 +2031,9 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
   // ── C4 (second half) — exactly ONE store site in the whole bank, and it is this
   //    one. Two writers of one bank are two rails per cell; the per-trip mint the
   //    promoter and the type rewrite are built on has no meaning for that shape.
+  //    It is a ROLLED-bank limit, not a program limit: with constant trips the
+  //    shape is unrolled and scalarized before this runs (bd 01po.19,
+  //    RailBankUnroll.h); this decline remains for a runtime trip.
   if (Stores.size() != 1 || Stores.front() != SI) {
     outMsg = kMsgBankMultiStore;
     return RailBankCarve::RejectAlias;

@@ -11,6 +11,7 @@
 // loud owner unchanged.
 
 #include "RailBankPromote.h"
+#include "RailBankUnroll.h"  // bd 01po.19: the constant-trip unroll route
 
 #include "QramLowering.h"   // railBankCarveVerdict / RailBankCarve / RailBankShape
                             // — TRACK A'S REAL CLASSIFIER. ⚠ Until the merge of
@@ -1118,7 +1119,13 @@ bool promoteRailBankCells(Module &M, WidthDispatch &wd,
       return true;
     }
   }
-  return false;
+  // bd `test_C_libtooling-01po.19`: an array the rolled bank does NOT own
+  // (several store sites, a re-executed walk, a store outside the walk) whose
+  // indexing loops all have constant trips is unrolled and scalarized instead.
+  // At the TAIL, so it runs only on a turn where no bank was promoted, and
+  // inside this fixpoint, so it inherits this stage's slot and its full
+  // re-`propagate` (the L1 argument above). See RailBankUnroll.h.
+  return unrollQuantumArrayWalks(M, taint);
 }
 
 // The seed marker is COMPILER-OWNED provenance, not an input vocabulary. Clang
