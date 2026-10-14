@@ -319,6 +319,30 @@ Instruction *staleReadInsertPoint(Instruction &I, ArrayRef<CallInst *> Stalers,
       if (auto *UI = dyn_cast<Instruction>(U); UI && !Move.count(UI) && S.inSpan(UI))
         return nullptr;
   }
+  // (b') NO MINTED RAIL OUTLIVES THE SLOT UNLESS ITS CONSUMERS MOVE (batch 053
+  // composition probe, HIGH: a placed `sitofp` whose lifted-call consumer stayed
+  // below the gate left `(double)q_pre` dirty and entangled across the Ry, its
+  // `_unc` having no valid position — a silent dephasing the read-first twin does
+  // not have). Asked as a SET (L3): every rail the placement mints (a moved tainted
+  // value that is no front-end site and no address `gep`) has all its users in the
+  // moved set, or is consumed by a MEASUREMENT (a terminal sink: the twin keeps it
+  // across the gate too, and nothing reverses it). Otherwise refuse: the stale fence
+  // declines loudly. RETIREMENT TRIGGER (L7): carrying the read's forward tainted
+  // cone with it (each member re-checked by (b)-(e)) makes these shapes place.
+  for (Instruction *M : Move) {
+    if (!taint.Tainted.count(M) || isFrontEndSite(*M, taint) ||
+        isa<GetElementPtrInst>(M))
+      continue;
+    for (User *U : M->users()) {
+      auto *UI = dyn_cast<Instruction>(U);
+      if (UI && Move.count(UI))
+        continue;
+      const auto *UC = dyn_cast_or_null<CallInst>(UI);
+      if (UC && taint.MeasureCalls.contains(const_cast<CallInst *>(UC)))
+        continue;
+      return nullptr;
+    }
+  }
   // (c) everything moved returns normally, so what it is moved above still runs
   // whenever it ran. `I` that is not a call is also no observable event itself (a
   // volatile QRAM access). (A lifted call `I` is not asked `isObservableOrderedEvent`
