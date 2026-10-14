@@ -17,8 +17,9 @@
 ; STAYS declined (feature jx32). NEVER lowered.
 ;
 ; bd p3kd.21 / bd jx32 (2026-10-14) — NOW AN ACCEPT; the file name and the
-; DECLINE text above are history. The function has no in-module use (an entry
-; point / export, `declineQuantumReturnCalls`' Escaped contract) and returns an
+; DECLINE text above are history. The function has no in-module use (an export,
+; `declineQuantumReturnCalls`' Escaped contract; `main` is NOT under it, bd r2j3.35:
+; spec_reject_gate_sub_main_return.ll) and returns an
 ; integer WIDER than 32 bits, so its tainted `ret` returns the register's i32
 ; runtime handle ZERO-EXTENDED to the declared width (`widenQuantumExportReturns`,
 ; SpecializeGateInline.h; owner ruling owner-ruling-p3kd21-gate-subroutines-2026-10-14: approved for

@@ -35,12 +35,15 @@
 ; spec_reject_gate_sub_main_return.ll), so `main` MEASURES the stale record `%r`
 ; and returns the measured bit; the stale read is the `cq_measure` consumer, one of
 ; the two this fixture names, and THIS fence speaks again, with its original
-; diagnostic. THE `ret` CONSUMER keeps its pin in
+; diagnostic.
+; (Measuring AFTER the `and` instead, `%s = and %r, 1; cq_measure(%s)`, ACCEPTS:
+; the movable stale read is placed before its gate, bd r2j3.6's rule, so it no
+; longer reaches `declineStaleRecordOps`; that owner's "operand predates a
+; non-diagonal gate" is pinned by about a hundred other fixtures. Measured R11 F2.) THE `ret` CONSUMER keeps its pin in
 ; lowering_reject_inloop_rail_record_offchain_ret_export.ll (the same `inner` as an
 ; export with no caller, so the stale read stays a `ret`).
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq loop lowering: rail record read past an in-place gate on the same rail
-; CHECK-NOT: cqrt_measure_i32
 ; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)

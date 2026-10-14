@@ -656,9 +656,6 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // taint (SpecializeGateInline.h): a site round 1 missed is loud.
   if (declineMissedGateSubroutines(M, taint, GateSt))
     return PreservedAnalyses::none();
-  // bd p3kd.21 R11 r2 F1 — re-record the main-return question on the round-2
-  // taint (decided after `specialize()`, below).
-  recordTaintedMainReturns(M, taint);
 
   // bd test_C_libtooling-3qlq Inc 1 (PRD §6.2 row P7, owner decision D2) —
   // DELETE every SURVIVING register-free `cq_phi`: an uncontrolled or
@@ -1391,7 +1388,6 @@ bool CQLoweringPass::runOnFunction(Function &F) {
       runControlChain(M, wd, taint, plan6, ChainScope);
   if (declineMissedGateSubroutines(M, taint, GateSt))  // bd p3kd.21 — see run().
     return true;
-  recordTaintedMainReturns(M, taint);  // bd p3kd.21 R11 r2 F1 — see run().
   // bd test_C_libtooling-3qlq Inc 1 (P7) mirrored in this entry point too
   // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for why the ONLY
   // sound slot is AFTER `repropagateControlMerges` and not immediately after

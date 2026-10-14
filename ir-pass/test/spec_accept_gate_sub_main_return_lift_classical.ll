@@ -26,7 +26,6 @@
 ; CHECK: [[M:%[0-9a-z.]+]] = call i32 @cqrt_measure_i32(i32 [[Q]])
 ; CHECK-NEXT: [[S:%[0-9a-z.]+]] = add nsw i32 [[M]], [[T]]
 ; CHECK-NEXT: ret i32 [[S]]
-; CHECK-NOT: cq.mainret.question
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

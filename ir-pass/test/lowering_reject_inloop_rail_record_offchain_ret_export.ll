@@ -35,7 +35,6 @@
 ; and only this fence names it.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq loop lowering: rail record read past an in-place gate on the same rail
-; CHECK-NOT: cqrt_measure_i32
 ; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)

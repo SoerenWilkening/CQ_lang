@@ -116,7 +116,7 @@ bool declineMissedGateSubroutines(llvm::Module &M, const TaintSet &taint,
                                   const GateInlineState &St);
 
 // bd p3kd.21 / bd jx32 — A QUANTUM-RETURNING EXPORT: a defined function with no
-// use in the module (an entry point or an export, `declineQuantumReturnCalls`'
+// use in the module (an export, `declineQuantumReturnCalls`'
 // Escaped contract) whose return type is an integer WIDER than 32 bits. Its
 // tainted `ret` carries the register's runtime handle (always `i32`, Rule 13),
 // zero-extended to the declared width by `widenQuantumExportReturns`, so the C
@@ -143,15 +143,12 @@ bool isProgramEntryPoint(const llvm::Function &F);
 bool widenQuantumExportReturns(llvm::Module &M);
 
 // Defined in TaintPropagation.cpp (bd p3kd.21 R11 r2 F1): the main-return
-// question. `isTaintedMainRet` is THE predicate; `declineTaintEscapes` records a
-// hit (`recordTaintedMainRet`) instead of accepting it, `recordTaintedMainReturns`
-// re-records after the round-2 fixpoint, and `declineTaintedMainReturns` decides
-// after `specialize()` (taint is final there; before it a lift-site result is
-// tainted by prediction): loud iff a `ret` of `main` is still tainted. Both entry
-// points. Returns true iff it declined.
+// question. `isTaintedMainRet` is THE predicate. `declineTaintEscapes` lets a hit
+// through untouched (a `continue`: no clause there declines or admits it), and
+// `declineTaintedMainReturns`, after `specialize()` in both entry points (taint is
+// final there; before it a lift-site result is tainted by prediction), is loud iff
+// a `ret` of `main` is still tainted. Returns true iff it declined.
 bool isTaintedMainRet(const llvm::ReturnInst &R, const TaintSet &taint);
-void recordTaintedMainRet(llvm::ReturnInst &R);
-void recordTaintedMainReturns(llvm::Module &M, const TaintSet &taint);
 bool declineTaintedMainReturns(llvm::Module &M, const TaintSet &taint);
 
 // Defined in TaintPropagation.cpp: `LaterTaintOracle::mayGain` over `taint`.

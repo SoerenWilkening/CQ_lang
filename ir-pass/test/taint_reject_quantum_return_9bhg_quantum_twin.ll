@@ -9,23 +9,28 @@
 ;   lib.c:  int h(int a, int k) { return a + k; }
 ;   main.c: (as in spec_accept_dropped_arg_9bhg_original.ll)
 ;
-; bd p3kd.21 R11 r1 fix (2026-10-15) — NOW AN ACCEPT; the file name and the
-; DECLINE text above are history. `f` holds `cq_theta` and returns `h(q, m) + cq_measure(q)`, a register it
+; bd p3kd.21 (2026-10-15) — NOW AN ACCEPT; the file name and the DECLINE text above
+; are history. `f` holds `cq_theta` and returns `h(q, m) + cq_measure(q)`, a register it
 ; rotates returned through the lifted `h`, so after the dead-argument drop's slot
-; B trigger (c) compiles its call at the site (R11 r1 item 7); `main` then
-; returns that register, the existing Escaped contract of an entry point. The register is the caller's own, and
-; the module compiles exactly as its hand-inlined twin does on the pre-change
-; binary (`f`'s body written into `main`: identical, call for call). The 3jru refusal itself is unchanged and still pinned by
-; taint_reject_quantum_return_fnptr.ll and
+; B trigger (c) compiles its call at the site (R11 r1 item 7). The register is the caller's own and the
+; module compiles as its hand-inlined twin does on the pre-change binary (`f`'s body written into `main`: identical, call for call).
+; `main` MEASURES what it returns (a register returned from `main` is refused,
+; spec_reject_gate_sub_main_return.ll; bd r2j3.35), so the stream below is the
+; accepted one plus that measurement. The 3jru refusal itself is unchanged and
+; still pinned by taint_reject_quantum_return_fnptr.ll and
 ; spec_reject_predicted_classical_round2_return_crossing.ll.
 ;
-; bd p3kd.21 R11 r2 F1 (bd r2j3.35, 2026-10-15) — A DECLINE AGAIN, on its true
-; ground. The callee is still compiled at its site, so the 3jru crossing is gone,
-; but `main` then returns the register as the process exit status, which NORTHSTAR
-; goal 1 forbids: the subject of this fixture IS that return, so it is re-expected
-; as the main-return decline (11adde57..020fc11e had accepted it).
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error: {{.*}}in function main i32 (i32, ptr): cq taint escape: quantum value returned from main without cq_measure
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; CHECK-LABEL: define i32 @main(
+; CHECK: [[Q:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i32(i32 %5)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q]], double 5.000000e-01)
+; CHECK-NEXT: [[T:%[0-9a-z_.]+]] = tail call i32 @__cq_q_h_01(i32 noundef [[Q]], i32 noundef %5)
+; CHECK-NEXT: [[M:%[0-9a-z_.]+]] = call i32 @cqrt_measure_i32(i32 [[Q]])
+; CHECK-NEXT: call void @cqrt_addc_i32(i32 [[T]], i32 [[M]])
+; CHECK-NEXT: [[MT:%[0-9a-z_.]+]] = call i32 @cqrt_measure_i32(i32 [[T]])
+; CHECK-NEXT: ret i32 [[MT]]
+; CHECK-NOT: @f(
 
 ; ModuleID = 'llvm-link'
 source_filename = "llvm-link"
@@ -51,7 +56,8 @@ define i32 @main(i32 noundef %0, ptr nocapture noundef readonly %1) local_unname
   %4 = load ptr, ptr %3, align 8, !tbaa !6
   %5 = tail call i32 @atoi(ptr nocapture noundef %4)
   %6 = tail call i32 @f(i32 noundef %5)
-  ret i32 %6
+  %cq.main.m = call i32 @cq_measure_si32(i32 %6)
+  ret i32 %cq.main.m
 }
 
 ; Function Attrs: mustprogress nofree nounwind willreturn memory(read)

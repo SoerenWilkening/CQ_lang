@@ -1449,8 +1449,8 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
           // 8mld broken-module the verifier aborts on. Reading `RV->getType()` here
           // would see i32 and MISS it (verifier SIGABRT on valid input); the function
           // return type is the stable ABI width and catches the post-RAUW mismatch.
-          // bd p3kd.21 / bd jx32: a function with no in-module use (an entry
-          // point or an export — `declineQuantumReturnCalls`' Escaped contract)
+          // bd p3kd.21 / bd jx32: a function with no in-module use OTHER than
+          // `main` (an export — `declineQuantumReturnCalls`' Escaped contract)
           // returns the register's i32 HANDLE, zero-extended to its i64+ return
           // after lowering (`widenQuantumExportReturns`, SpecializeGateInline.h;
           // owner ruling owner-ruling-p3kd21-gate-subroutines-2026-10-14: integer
@@ -1460,16 +1460,17 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
           // the process exit status, classical by definition: a register returned
           // there reaches classical code without `cq_measure`, which NORTHSTAR
           // goal 1 makes physics-forbidden (coordinator ruling from NORTHSTAR,
-          // 2026-10-15). The question is RECORDED here and decided late
-          // (`declineTaintedMainReturns`): pre-`specialize()` a lift-site result
-          // is tainted by PREDICTION, and declining on that refused programs whose
-          // `main` returns a value the specializer proves classical (R11 r2 F1
-          // decision: 16 fixtures, an over-decline a green suite had masked). FIRST,
-          // so neither the i32 Escaped contract nor the export widening admits it.
-          if (isTaintedMainRet(*Ret, taint)) {
-            recordTaintedMainRet(*Ret);
+          // 2026-10-15). THE MECHANISM IS THIS `continue` PLUS ONE LATE QUESTION:
+          // here a tainted `ret` of `main` is neither declined nor admitted by any
+          // clause below (not the i32 Escaped contract, not the export widening),
+          // and `declineTaintedMainReturns` asks the same predicate after
+          // `specialize()`, in both entry points, and declines it there if it is
+          // still tainted. Pre-`specialize()` a lift-site result is tainted by
+          // PREDICTION, and declining on that refused programs whose `main`
+          // returns a value the specializer proves classical (R11 r2 F1 decision:
+          // 17 fixtures, an over-decline a green suite had masked).
+          if (isTaintedMainRet(*Ret, taint))
             continue;
-          }
           if (RV && taint.Tainted.count(RV) &&
                    !Ret->getFunction()->getReturnType()->isIntegerTy(32) &&
                    !isQuantumReturnExport(*Ret->getFunction()))
@@ -3344,28 +3345,13 @@ bool functionReturnsTainted(const Function &F, const TaintSet &taint) {
 }
 
 // bd `test_C_libtooling-3jru` — the LOUD refusal. See TaintPropagation.h.
-// bd p3kd.21 R11 r2 F1 — the main-return question, ONE predicate (R12): asked
-// (and recorded) by `declineTaintEscapes`, re-recorded after the round-2 fixpoint
-// and decided after `specialize()` by `declineTaintedMainReturns`, both entry
-// points. The record is metadata on the `ret` (it cannot dangle).
-static constexpr char kMainRetQuestionMD[] = "cq.mainret.question";
-
+// bd p3kd.21 R11 r2 F1 — the main-return question, ONE predicate (R12):
+// `declineTaintEscapes` lets a hit through untouched (its `continue`), and
+// `declineTaintedMainReturns` asks it again after `specialize()`, in both entry
+// points, where a lift-site result's taint is the specializer's verdict.
 bool isTaintedMainRet(const ReturnInst &R, const TaintSet &taint) {
   Value *RV = R.getReturnValue();
   return RV && taint.Tainted.count(RV) && isProgramEntryPoint(*R.getFunction());
-}
-
-void recordTaintedMainRet(ReturnInst &R) {
-  R.setMetadata(kMainRetQuestionMD, MDNode::get(R.getContext(), {}));
-}
-
-void recordTaintedMainReturns(Module &M, const TaintSet &taint) {
-  for (Function &F : M)
-    if (isProgramEntryPoint(F))
-      for (BasicBlock &BB : F)
-        if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
-          if (isTaintedMainRet(*R, taint))
-            recordTaintedMainRet(*R);
 }
 
 bool declineTaintedMainReturns(Module &M, const TaintSet &taint) {
@@ -3376,9 +3362,6 @@ bool declineTaintedMainReturns(Module &M, const TaintSet &taint) {
       auto *R = dyn_cast<ReturnInst>(BB.getTerminator());
       if (!R)
         continue;
-      // Every `ret` of `main` is re-asked (a superset of the record); the
-      // record only keeps the early sites from accepting it meanwhile.
-      R->setMetadata(kMainRetQuestionMD, nullptr);
       if (isTaintedMainRet(*R, taint)) {
         F.getContext().diagnose(DiagnosticInfoUnsupported(
             F, kMsgQuantumMainReturn, R->getDebugLoc()));
@@ -3407,8 +3390,10 @@ bool declineQuantumReturnCalls(Module &M, const TaintSet &taint) {
     //    every indirect read is a points-to question this stage does not ask, and
     //    an over-decline is the loud side of it (never silent, but a gap to
     //    remove under R1, not a safe margin).
-    // A function with no use in this module (an entry point, or a cross-TU
-    // export) is untouched: its `ret` of a handle is the existing Escaped contract.
+    // A function with no use in this module (a cross-TU export) is untouched:
+    // its `ret` of a handle is the existing Escaped contract. `main` is not under
+    // it: its tainted `ret` is refused by `declineTaintedMainReturns` (bd p3kd.21
+    // R11 r2 F1).
     for (User *U : F.users()) {
       if (auto *CB = dyn_cast<CallBase>(U);
           CB && CB->getCalledOperand() == &F && CB->use_empty())
