@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 814 maintained source files, 6677 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 814 maintained source files, 6679 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -21,7 +21,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check.py` — 4161 physical lines
 - `tools/free_pairing_check_test.py` — 4148 physical lines
 - `tools/loop_twin_matrix.py` — 4115 physical lines
-- `ir-pass/src/QramLowering.cpp` — 4060 physical lines
+- `ir-pass/src/QramLowering.cpp` — 4067 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 3434 physical lines
 - `ir-pass/src/TaintPropagation.cpp` — 3362 physical lines
 - `ir-pass/src/SwapRouteEmit.cpp` — 3161 physical lines
@@ -924,67 +924,67 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/QramIndexWidth.cpp:177` — `stripForeignQramIndexTags`
 - `ir-pass/src/QramIndexWidth.cpp:184` — `bracketQramIndexCasts`
 
-### `ir-pass/src/QramLowering.cpp` (4060 lines)
+### `ir-pass/src/QramLowering.cpp` (4067 lines)
 
-- `ir-pass/src/QramLowering.cpp:274` — `instReaches`
-- `ir-pass/src/QramLowering.cpp:353` — `singleValuedClosure`
-- `ir-pass/src/QramLowering.cpp:457` — `readFollowsLoopOnEveryPath`
-- `ir-pass/src/QramLowering.cpp:557` — `readInsideTaintedRegion`
-- `ir-pass/src/QramLowering.cpp:601` — `stackRestoreMayFree`
-- `ir-pass/src/QramLowering.cpp:612` — `indexIsAddressWidth`
-- `ir-pass/src/QramLowering.cpp:624` — `scevEqualAt`
-- `ir-pass/src/QramLowering.cpp:664` — `scevEqualInLoop`
-- `ir-pass/src/QramLowering.cpp:676` — `diagnose`
-- `ir-pass/src/QramLowering.cpp:736` — `instUnderTaintedControl`
-- `ir-pass/src/QramLowering.cpp:767` — `isAllocatorCall`
-- `ir-pass/src/QramLowering.cpp:787` — `originAlloca`
-- `ir-pass/src/QramLowering.cpp:788` — `originGlobal`
-- `ir-pass/src/QramLowering.cpp:789` — `originBad`
-- `ir-pass/src/QramLowering.cpp:792` — `sameOrigin`
-- `ir-pass/src/QramLowering.cpp:814` — `walkPtrOrigin`
-- `ir-pass/src/QramLowering.cpp:877` — `isDirectOriginPtr`
-- `ir-pass/src/QramLowering.cpp:904` — `matchAddressGep`
-- `ir-pass/src/QramLowering.cpp:952` — `matchQramAccess`
-- `ir-pass/src/QramLowering.cpp:1025` — `classifyQromRead`
-- `ir-pass/src/QramLowering.cpp:1034` — `classifyShadowAccess`
-- `ir-pass/src/QramLowering.cpp:1062` — `classicalCellAccess`
-- `ir-pass/src/QramLowering.cpp:1127` — `quantumIndexedAllocas`
-- `ir-pass/src/QramLowering.cpp:1149` — `cellAccessThrough`
-- `ir-pass/src/QramLowering.cpp:1193` — `isQromReadBlockedOnlyByControl`
-- `ir-pass/src/QramLowering.cpp:1215` — `indexWillTaintAfterFlatten`
-- `ir-pass/src/QramLowering.cpp:1309` — `qromIndexKnownInBounds`
-- `ir-pass/src/QramLowering.cpp:1419` — `classifyQromReadUnderControlImpl`
-- `ir-pass/src/QramLowering.cpp:1507` — `guardedShadowStoreShapeImpl`
-- `ir-pass/src/QramLowering.cpp:1550` — `classifyQramCarve`
-- `ir-pass/src/QramLowering.cpp:1692` — `isObservedValue`
-- `ir-pass/src/QramLowering.cpp:1726` — `coherentlyEscapesToReturn`
-- `ir-pass/src/QramLowering.cpp:1770` — `railBankCellAddress`
-- `ir-pass/src/QramLowering.cpp:1790` — `wholeArrayConstantZero`
-- `ir-pass/src/QramLowering.cpp:1800` — `railBankCarveVerdictImpl`
-- `ir-pass/src/QramLowering.cpp:2470` — `qromShapedReadTaintsIndexAfterFlatten`
-- `ir-pass/src/QramLowering.cpp:2498` — `classicalTableIndexKnownInBounds`
-- `ir-pass/src/QramLowering.cpp:2524` — `runtimeAllocaReadShape`
-- `ir-pass/src/QramLowering.cpp:2593` — `unitCounterTrips`
-- `ir-pass/src/QramLowering.cpp:2615` — `classicalRuntimeAllocaReadIsInBounds`
-- `ir-pass/src/QramLowering.cpp:2639` — `valueWillTaintAfterFlatten`
-- `ir-pass/src/QramLowering.cpp:2664` — `qromReadShapeInScope`
-- `ir-pass/src/QramLowering.cpp:2710` — `qramCarveVerdict`
-- `ir-pass/src/QramLowering.cpp:2720` — `railBankCarveVerdict`
-- `ir-pass/src/QramLowering.cpp:2729` — `guardedShadowStoreShape`
-- `ir-pass/src/QramLowering.cpp:2740` — `qramAccessReads`
-- `ir-pass/src/QramLowering.cpp:2781` — `qramClassicalIndexLoads`
-- `ir-pass/src/QramLowering.cpp:2817` — `classifyQromReadUnderControl`
-- `ir-pass/src/QramLowering.cpp:2831` — `foldVolatileConstGlobalLoads`
-- `ir-pass/src/QramLowering.cpp:2950` — `foldVolatileConstAllocaLoads`
-- `ir-pass/src/QramLowering.cpp:3077` — `eraseDeadVolatileScalarStores`
-- `ir-pass/src/QramLowering.cpp:3196` — `everyLoadIsStoreDefined`
-- `ir-pass/src/QramLowering.cpp:3245` — `promoteVolatileScalarLocals`
-- `ir-pass/src/QramLowering.cpp:3369` — `lowerQramReads`
-- `ir-pass/src/QramLowering.cpp:3562` — `emitCopyOutIfDirectMeasure`
-- `ir-pass/src/QramLowering.cpp:3609` — `qramHlFn`
-- `ir-pass/src/QramLowering.cpp:3622` — `processShadowAlloca`
-- `ir-pass/src/QramLowering.cpp:4022` — `lowerShadowMemory`
-- `ir-pass/src/QramLowering.cpp:4055` — `railBankInstReaches`
+- `ir-pass/src/QramLowering.cpp:281` — `instReaches`
+- `ir-pass/src/QramLowering.cpp:360` — `singleValuedClosure`
+- `ir-pass/src/QramLowering.cpp:464` — `readFollowsLoopOnEveryPath`
+- `ir-pass/src/QramLowering.cpp:564` — `readInsideTaintedRegion`
+- `ir-pass/src/QramLowering.cpp:608` — `stackRestoreMayFree`
+- `ir-pass/src/QramLowering.cpp:619` — `indexIsAddressWidth`
+- `ir-pass/src/QramLowering.cpp:631` — `scevEqualAt`
+- `ir-pass/src/QramLowering.cpp:671` — `scevEqualInLoop`
+- `ir-pass/src/QramLowering.cpp:683` — `diagnose`
+- `ir-pass/src/QramLowering.cpp:743` — `instUnderTaintedControl`
+- `ir-pass/src/QramLowering.cpp:774` — `isAllocatorCall`
+- `ir-pass/src/QramLowering.cpp:794` — `originAlloca`
+- `ir-pass/src/QramLowering.cpp:795` — `originGlobal`
+- `ir-pass/src/QramLowering.cpp:796` — `originBad`
+- `ir-pass/src/QramLowering.cpp:799` — `sameOrigin`
+- `ir-pass/src/QramLowering.cpp:821` — `walkPtrOrigin`
+- `ir-pass/src/QramLowering.cpp:884` — `isDirectOriginPtr`
+- `ir-pass/src/QramLowering.cpp:911` — `matchAddressGep`
+- `ir-pass/src/QramLowering.cpp:959` — `matchQramAccess`
+- `ir-pass/src/QramLowering.cpp:1032` — `classifyQromRead`
+- `ir-pass/src/QramLowering.cpp:1041` — `classifyShadowAccess`
+- `ir-pass/src/QramLowering.cpp:1069` — `classicalCellAccess`
+- `ir-pass/src/QramLowering.cpp:1134` — `quantumIndexedAllocas`
+- `ir-pass/src/QramLowering.cpp:1156` — `cellAccessThrough`
+- `ir-pass/src/QramLowering.cpp:1200` — `isQromReadBlockedOnlyByControl`
+- `ir-pass/src/QramLowering.cpp:1222` — `indexWillTaintAfterFlatten`
+- `ir-pass/src/QramLowering.cpp:1316` — `qromIndexKnownInBounds`
+- `ir-pass/src/QramLowering.cpp:1426` — `classifyQromReadUnderControlImpl`
+- `ir-pass/src/QramLowering.cpp:1514` — `guardedShadowStoreShapeImpl`
+- `ir-pass/src/QramLowering.cpp:1557` — `classifyQramCarve`
+- `ir-pass/src/QramLowering.cpp:1699` — `isObservedValue`
+- `ir-pass/src/QramLowering.cpp:1733` — `coherentlyEscapesToReturn`
+- `ir-pass/src/QramLowering.cpp:1777` — `railBankCellAddress`
+- `ir-pass/src/QramLowering.cpp:1797` — `wholeArrayConstantZero`
+- `ir-pass/src/QramLowering.cpp:1807` — `railBankCarveVerdictImpl`
+- `ir-pass/src/QramLowering.cpp:2477` — `qromShapedReadTaintsIndexAfterFlatten`
+- `ir-pass/src/QramLowering.cpp:2505` — `classicalTableIndexKnownInBounds`
+- `ir-pass/src/QramLowering.cpp:2531` — `runtimeAllocaReadShape`
+- `ir-pass/src/QramLowering.cpp:2600` — `unitCounterTrips`
+- `ir-pass/src/QramLowering.cpp:2622` — `classicalRuntimeAllocaReadIsInBounds`
+- `ir-pass/src/QramLowering.cpp:2646` — `valueWillTaintAfterFlatten`
+- `ir-pass/src/QramLowering.cpp:2671` — `qromReadShapeInScope`
+- `ir-pass/src/QramLowering.cpp:2717` — `qramCarveVerdict`
+- `ir-pass/src/QramLowering.cpp:2727` — `railBankCarveVerdict`
+- `ir-pass/src/QramLowering.cpp:2736` — `guardedShadowStoreShape`
+- `ir-pass/src/QramLowering.cpp:2747` — `qramAccessReads`
+- `ir-pass/src/QramLowering.cpp:2788` — `qramClassicalIndexLoads`
+- `ir-pass/src/QramLowering.cpp:2824` — `classifyQromReadUnderControl`
+- `ir-pass/src/QramLowering.cpp:2838` — `foldVolatileConstGlobalLoads`
+- `ir-pass/src/QramLowering.cpp:2957` — `foldVolatileConstAllocaLoads`
+- `ir-pass/src/QramLowering.cpp:3084` — `eraseDeadVolatileScalarStores`
+- `ir-pass/src/QramLowering.cpp:3203` — `everyLoadIsStoreDefined`
+- `ir-pass/src/QramLowering.cpp:3252` — `promoteVolatileScalarLocals`
+- `ir-pass/src/QramLowering.cpp:3376` — `lowerQramReads`
+- `ir-pass/src/QramLowering.cpp:3569` — `emitCopyOutIfDirectMeasure`
+- `ir-pass/src/QramLowering.cpp:3616` — `qramHlFn`
+- `ir-pass/src/QramLowering.cpp:3629` — `processShadowAlloca`
+- `ir-pass/src/QramLowering.cpp:4029` — `lowerShadowMemory`
+- `ir-pass/src/QramLowering.cpp:4062` — `railBankInstReaches`
 
 ### `ir-pass/src/RailBankPromote.cpp` (1973 lines)
 
@@ -1015,24 +1015,26 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RailBankPromote.cpp:1688` — `rewriteOneBank`
 - `ir-pass/src/RailBankPromote.cpp:1955` — `rewriteRailBankCellTypes`
 
-### `ir-pass/src/RailWindow.cpp` (294 lines)
+### `ir-pass/src/RailWindow.cpp` (376 lines)
 
-- `ir-pass/src/RailWindow.cpp:37` — `dbg`
-- `ir-pass/src/RailWindow.cpp:40` — `collectAccesses`
-- `ir-pass/src/RailWindow.cpp:120` — `claims`
-- `ir-pass/src/RailWindow.cpp:161` — `ncd`
-- `ir-pass/src/RailWindow.cpp:174` — `quantizationPoint`
-- `ir-pass/src/RailWindow.cpp:218` — `declineRailWindowArrays`
+- `ir-pass/src/RailWindow.cpp:39` — `dbg`
+- `ir-pass/src/RailWindow.cpp:44` — `reachesAvoiding`
+- `ir-pass/src/RailWindow.cpp:75` — `collectAccesses`
+- `ir-pass/src/RailWindow.cpp:168` — `claims`
+- `ir-pass/src/RailWindow.cpp:240` — `ncd`
+- `ir-pass/src/RailWindow.cpp:253` — `quantizationPoint`
+- `ir-pass/src/RailWindow.cpp:299` — `declineRailWindowArrays`
 
-### `ir-pass/src/RailWindowPromote.cpp` (352 lines)
+### `ir-pass/src/RailWindowPromote.cpp` (373 lines)
 
-- `ir-pass/src/RailWindowPromote.cpp:35` — `computeWindowRegions`
-- `ir-pass/src/RailWindowPromote.cpp:73` — `storeReachesLoad`
-- `ir-pass/src/RailWindowPromote.cpp:91` — `needsPromotion`
-- `ir-pass/src/RailWindowPromote.cpp:117` — `selfValue`
-- `ir-pass/src/RailWindowPromote.cpp:141` — `railWindowNeeds`
-- `ir-pass/src/RailWindowPromote.cpp:230` — `railWindowAllNeeds`
-- `ir-pass/src/RailWindowPromote.cpp:235` — `promoteRailWindows`
+- `ir-pass/src/RailWindowPromote.cpp:35` — `railWindowDistinct`
+- `ir-pass/src/RailWindowPromote.cpp:39` — `computeWindowRegions`
+- `ir-pass/src/RailWindowPromote.cpp:77` — `storeReachesLoad`
+- `ir-pass/src/RailWindowPromote.cpp:95` — `needsPromotion`
+- `ir-pass/src/RailWindowPromote.cpp:121` — `selfValue`
+- `ir-pass/src/RailWindowPromote.cpp:145` — `railWindowNeeds`
+- `ir-pass/src/RailWindowPromote.cpp:234` — `railWindowAllNeeds`
+- `ir-pass/src/RailWindowPromote.cpp:239` — `promoteRailWindows`
 
 ### `ir-pass/src/RecordWindowFreeze.cpp` (99 lines)
 

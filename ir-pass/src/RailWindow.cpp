@@ -13,6 +13,8 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
@@ -35,6 +37,39 @@ namespace cq {
 namespace {
 
 bool dbg() { return std::getenv("CQ_RAILWINDOW_DBG") != nullptr; }
+
+// Can `From` execute and then `To`, on a path that executes none of
+// `Barriers` in between? An exact block walk (the `instReaches` discipline:
+// no budget), cut at a barrier inside a block.
+bool reachesAvoiding(const Instruction *From, const Instruction *To,
+                     const SmallPtrSetImpl<const Instruction *> &Barriers) {
+  const BasicBlock *FB = From->getParent();
+  for (auto I = std::next(From->getIterator()); I != FB->end(); ++I) {
+    if (&*I == To)
+      return true;
+    if (Barriers.count(&*I))
+      return false;
+  }
+  SmallVector<const BasicBlock *, 16> Work(succ_begin(FB), succ_end(FB));
+  SmallPtrSet<const BasicBlock *, 32> Seen;
+  while (!Work.empty()) {
+    const BasicBlock *B = Work.pop_back_val();
+    if (!Seen.insert(B).second)
+      continue;
+    bool Cut = false;
+    for (const Instruction &I : *B) {
+      if (&I == To)
+        return true;
+      if (Barriers.count(&I)) {
+        Cut = true;
+        break;
+      }
+    }
+    if (!Cut)
+      Work.append(succ_begin(B), succ_end(B));
+  }
+  return false;
+}
 
 // S1, structural half: collect the leaf accesses, or refuse the array.
 bool collectAccesses(AllocaInst *AI, const TaintSet &taint,
@@ -102,6 +137,19 @@ bool collectAccesses(AllocaInst *AI, const TaintSet &taint,
       return false;
     }
   }
+  // F4 (review round 1, R8): leaf accesses in INSTRUCTION order, never
+  // use-list order, so the diagnostic location, the preheader insertion order
+  // and the quantization-point fold are functions of the program alone.
+  DenseMap<const Instruction *, unsigned> Pos;
+  unsigned N = 0;
+  for (Instruction &I : instructions(*AI->getFunction()))
+    Pos[&I] = N++;
+  auto ByPos = [&](const Instruction *X, const Instruction *Y) {
+    return Pos.lookup(X) < Pos.lookup(Y);
+  };
+  llvm::sort(Acc.Loads, ByPos);
+  llvm::sort(Acc.Stores, ByPos);
+  llvm::sort(Acc.Others, ByPos);
   // Every leaf address is a whole cell: a byte view of a wider cell is mixed.
   for (Instruction *I : Acc.Loads)
     if (SE.getMinTrailingZeros(SE.getMinusSCEV(
@@ -131,20 +179,51 @@ bool claims(AllocaInst *AI, const TaintSet &taint, DominatorTree &DT,
   // `stackrestore`.
   SmallVector<Instruction *, 32> All(Acc.Loads.begin(), Acc.Loads.end());
   All.append(Acc.Stores.begin(), Acc.Stores.end());
+  SmallPtrSet<const Instruction *, 4> Starts, Ends;
   for (Instruction *O : Acc.Others)
     if (auto *II = dyn_cast<IntrinsicInst>(O)) {
-      bool Start = II->getIntrinsicID() == Intrinsic::lifetime_start;
-      bool End = II->getIntrinsicID() == Intrinsic::lifetime_end;
-      for (Instruction *A : All)
-        if ((Start && railBankInstReaches(A, II)) ||
-            (End && railBankInstReaches(II, A)))
-          return false;
+      if (II->getIntrinsicID() == Intrinsic::lifetime_start)
+        Starts.insert(II);
+      if (II->getIntrinsicID() == Intrinsic::lifetime_end)
+        Ends.insert(II);
     }
+  // A start that some access reaches WITHOUT passing an end re-starts live
+  // contents; an end that some access follows without a new start ends them.
+  for (Instruction *A : All) {
+    for (const Instruction *S : Starts)
+      if (reachesAvoiding(A, S, Ends))
+        return false;
+    for (const Instruction *E : Ends)
+      if (reachesAvoiding(E, A, Starts))
+        return false;
+  }
+  // F3 (a): an object declared inside a loop body. Its one start is
+  // re-executed per iteration (an end separates the iterations, checked
+  // above); it must dominate every access, and it is then the quantization
+  // point: the cells get fresh rails per iteration, the old ones are left
+  // allocated (Q3). More than one re-executed start is not modelled.
+  for (const Instruction *S : Starts)
+    if (railBankInstReaches(S, S)) {
+      if (Acc.ScopeStart)
+        return false;
+      Acc.ScopeStart = const_cast<Instruction *>(S);
+    }
+  if (Acc.ScopeStart)
+    for (Instruction *A : All)
+      if (!DT.dominates(Acc.ScopeStart, A))
+        return false;
+  // F3 (b): a runtime-sized object is released by a `stackrestore` only on a
+  // path from its allocation to one of its accesses (per object, the
+  // rail-bank Lifetime clause's question): any other `stackrestore` in the
+  // function belongs to someone else.
   if (!AI->isStaticAlloca())
     for (Instruction &I : instructions(*AI->getFunction()))
       if (auto *II = dyn_cast<IntrinsicInst>(&I))
-        if (II->getIntrinsicID() == Intrinsic::stackrestore)
-          return false;
+        if (II->getIntrinsicID() == Intrinsic::stackrestore &&
+            railBankInstReaches(AI, II))
+          for (Instruction *A : All)
+            if (railBankInstReaches(II, A))
+              return false;
   bool AnyTainted = false;
   for (StoreInst *S : Acc.Stores) {
     if (!taint.Tainted.count(S->getValueOperand()))
@@ -174,6 +253,8 @@ Instruction *ncd(DominatorTree &DT, Instruction *A, Instruction *B) {
 Instruction *quantizationPoint(const RailWindowAccesses &Acc,
                                const TaintSet &taint, DominatorTree &DT,
                                LoopInfo &LI) {
+  if (Acc.ScopeStart)
+    return Acc.ScopeStart;  // F3 (a): re-quantized per iteration.
   Instruction *Q = nullptr;
   for (StoreInst *S : Acc.Stores) {
     if (!taint.Tainted.count(S->getValueOperand()))
@@ -246,7 +327,8 @@ bool declineRailWindowArrays(Module &M, const TaintSet &taint) {
       // (-O1 routinely enters a loop straight from the previous loop's latch,
       // as dicke_n.c's init walk does): split that edge first, so Q is a point
       // executed once rather than a loop block.
-      for (StoreInst *S : Acc.Stores)
+      for (StoreInst *S : Acc.ScopeStart ? ArrayRef<StoreInst *>()
+                                         : ArrayRef<StoreInst *>(Acc.Stores))
         if (taint.Tainted.count(S->getValueOperand()))
           if (Loop *L = LI.getLoopFor(S->getParent()))
             if (!L->getOutermostLoop()->getLoopPreheader())

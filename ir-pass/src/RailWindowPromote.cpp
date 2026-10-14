@@ -32,6 +32,10 @@ using namespace llvm;
 
 namespace cq {
 
+bool railWindowDistinct(ScalarEvolution &SE, const SCEV *A, const SCEV *B) {
+  return SE.isKnownNonZero(SE.getMinusSCEV(A, B));
+}
+
 DenseMap<BasicBlock *, BasicBlock *> computeWindowRegions(Function &F,
                                                            LoopInfo &LI) {
   DenseMap<BasicBlock *, BasicBlock *> R;
@@ -210,7 +214,7 @@ std::string railWindowNeeds(Function &F, const RailWindowAccesses &Acc,
   for (auto &[E, Ss] : PerRegion)
     for (unsigned a = 0; a < Ss.size(); ++a)
       for (unsigned b = a + 1; b < Ss.size(); ++b)
-        if (!SE.isKnownNonZero(SE.getMinusSCEV(Ss[a], Ss[b]))) {
+        if (!railWindowDistinct(SE, Ss[a], Ss[b])) {
           S7 = true;
           if (std::getenv("CQ_RAILWINDOW_DBG"))
             errs() << "CQ_RAILWINDOW_DBG: alias unproven: " << *Ss[a]
@@ -275,6 +279,23 @@ unsigned promoteRailWindows(Function &F, RailWindowAccesses &Acc) {
         Classes[Key(S, S->getPointerOperand())].Stores.push_back(S);
     }
 
+  // F1 (review round 1): promotion forwards a cell across every other access
+  // of its region, which is memory-preserving only if no other address in the
+  // region can be the same cell. A region holding a pair SCEV cannot prove
+  // distinct is NOT promoted (its memory order stays as written); S7's
+  // versioning is what will split it.
+  for (auto &K1 : Order)
+    for (auto &K2 : Order)
+      if (K1.first == K2.first && K1.second != K2.second &&
+          !Pinned.count(K1.first) &&
+          !railWindowDistinct(SE, K1.second, K2.second)) {
+        Pinned.insert(K1.first);
+        if (std::getenv("CQ_RAILWINDOW_DBG")) {
+          errs() << "CQ_RAILWINDOW_DBG: region ";
+          K1.first->printAsOperand(errs(), false);
+          errs() << " not promoted: alias unproven\n";
+        }
+      }
   SmallVector<AllocaInst *, 8> Temps;
   for (auto &K : Order) {
     CellClass &C = Classes[K];

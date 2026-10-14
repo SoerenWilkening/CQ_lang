@@ -18,7 +18,15 @@
 //       `gep %q, -2` base included: the address is its SCEV, never its
 //       spelling), no tainted index (that is 7.5's QRAM axis), at least one
 //       tainted store, and NO tainted store the one rail-bank verdict calls
-//       `Bank`/`BankRaw` (the rolled bank owns those, Q5).
+//       `Bank`/`BankRaw` (the rolled bank owns those, Q5). Storage must be live
+//       at every access: no access reaches a `lifetime.start` without passing a
+//       `lifetime.end`, no `lifetime.end` reaches an access without a new
+//       start, and no `stackrestore` lies between THIS object's allocation and
+//       one of its accesses (per object, review round 1 F3 (b)). An object
+//       declared inside a loop body (its one start re-executed, an end between
+//       iterations, the start dominating every access) is a PER-ITERATION
+//       object (F3 (a)): its quantization point is that start. Accesses are
+//       kept in instruction order (F4).
 //   S2  QUANTIZATION POINT (analysis; Q1 (a), array-granular allocation). The
 //       one program point Q after which every access sees handles: the nearest
 //       common dominator of the outermost-loop preheaders of the tainted
@@ -32,8 +40,10 @@
 //       at its dominating address and written back once at every window exit,
 //       through `PromoteMemToReg` on a per-class scalar: one SSA name per cell,
 //       memory only between windows. Two classes in one window must be
-//       provably distinct cells (`ScalarEvolution::isKnownNonZero` of the
-//       address difference); otherwise the array needs S7's versioning (Q2).
+//       provably distinct cells (`railWindowDistinct`); a region with an
+//       unproven pair is NOT promoted (review round 1 F1: forwarding across a
+//       possibly-aliasing store changes memory semantics) and the array needs
+//       S7's versioning (Q2).
 //
 // ── WHY EVERY WINDOW ARRAY STILL DECLINES (and loudly) ───────────────────────
 //
@@ -71,6 +81,7 @@ class LoadInst;
 class LoopInfo;
 class Module;
 class ScalarEvolution;
+class SCEV;
 class StoreInst;
 class Type;
 }  // namespace llvm
@@ -91,7 +102,16 @@ struct RailWindowAccesses {
   llvm::SmallVector<llvm::StoreInst *, 16> Stores;
   // Whole-object initializers (memset / constant store) and lifetime markers.
   llvm::SmallVector<llvm::Instruction *, 4> Others;
+  // A per-iteration object (declared inside a loop body: its one
+  // `lifetime.start` is re-executed, every access lies between it and a
+  // `lifetime.end`): that start is the object's quantization point (F3 (a)).
+  llvm::Instruction *ScopeStart = nullptr;
 };
+
+// Are the two cell addresses provably DIFFERENT cells (S3/S7's one question,
+// review round 1 F1: asked before promotion as well as for the needs list)?
+bool railWindowDistinct(llvm::ScalarEvolution &SE, const llvm::SCEV *A,
+                        const llvm::SCEV *B);
 
 // Window regions (S3): block -> its region's entry block. A region is the
 // single-entry, back-edge-free part of one loop body (sub-loops excluded) or of

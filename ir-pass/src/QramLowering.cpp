@@ -228,9 +228,16 @@ constexpr char kMsgQramCloneUnbounded[] =
 // (`_vla`, `_nonzero_init`, `_noninjective`, `_two_stores`, `_nested_walk`,
 // `_oversized`, `_inloop_read`, `_wrapping_index`, `_dynamic_narrow_index`)
 // now pin that window decline. Those clauses remain the promoter's
-// `BankRaw`/`Reject*` separation; as DECLINE strings they are reached only by
-// an array the window model refuses (escape, mixed width, non-copyable cell,
-// storage not live, allocation in a cycle), which fails an earlier clause first.
+// `BankRaw`/`Reject*` separation, and they are STILL REACHABLE DECLINES for an
+// array the window model refuses and that passes C1/C3: an object whose
+// storage is not live at every access (a `lifetime.start` re-executed while
+// its contents are live) reaches `kMsgBankMultiStore` / `kMsgBankNested` /
+// `kMsgBankIndex`, pinned by `lowering_reject_railbank_{two_stores,
+// nested_walk,noninjective}_lifetime_restart.ll`. (⚠ CORRECTED, review round 1
+// F2: the first S1-S3 version of this comment called them unreachable, and an
+// array declared inside an outer loop reached `kMsgBankMultiStore` from plain
+// C; since F3 (a) that per-iteration shape is CLAIMED, and the remaining route
+// is the hand-IR restart above.)
 constexpr char kMsgBankShape[] =
     "cq rail bank: cell address has no bounded local-array provenance";
 constexpr char kMsgBankEscape[] =
