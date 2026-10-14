@@ -18,6 +18,8 @@
 ; it through a `CondLiteral` node): an OVER-DECLINE, filed as a follow-up of
 ; bd dm7f.52 — flip this file when the literal route reaches both consumers.
 ;
+; FOLLOW-UP: bd test_C_libtooling-dm7f.57 (a classical leaf on the Ry tree).
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 
 declare i1 @cq_measure_i1(i1)

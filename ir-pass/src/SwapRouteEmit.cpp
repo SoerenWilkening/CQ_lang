@@ -762,7 +762,16 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
       diagnoseUnderControl(MergePhi, "control flow");
     return;
   }
-  const bool RailCond = isCondRailLeaf(Cond);
+  // bd dm7f.53 — a claimed REGION-MERGE φ as the WHOLE condition is the rail's
+  // register-as-control (`classifyArms`' `PhiRootCond`, which also sets
+  // `RailLadderProven`): the φ is the register, read only as a control. It is
+  // still a live `PHINode` here (this region is emitted BEFORE the prep that
+  // owns it — the hcrg alias edge / `PrepRegionIdxs`); the prep's M-β later
+  // RAUWs it to the hoisted theta and `lowerRotations` to the handle.
+  const bool RailCond =
+      isCondRailLeaf(Cond) ||
+      (isCondRailPhiShape(Cond) && R.RailLadderProven &&
+       BI->isConditional() && BI->getCondition() == Cond);
   // bd test_C_libtooling-dm7f.52 — the third condition kind: a COMPOUND TREE,
   // re-derived through the SAME grammar and flags `classifyArms` accepted with
   // (`collectCondTree`, `AllowLogicalSelect = true`, `AllowRailPhi = true` since

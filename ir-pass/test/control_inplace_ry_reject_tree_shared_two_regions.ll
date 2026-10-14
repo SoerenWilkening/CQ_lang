@@ -18,6 +18,8 @@
 ; lowers only because -O1 fuses its two arms into one. Filed as a follow-up
 ; of bd dm7f.52 (dm7f.53 neighbourhood) — flip this file when built.
 ;
+; FOLLOW-UP: bd test_C_libtooling-dm7f.56 (a CSE'd tree root shared by two regions).
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 
 declare i1 @cq_measure_i1(i1)

@@ -12,6 +12,8 @@
 ; a loop gap, not a storage-width one. RETIREMENT TRIGGER: the day the int twin
 ; accepts, drop W4 for that shape and flip this file.
 ;
+; FOLLOW-UP: bd test_C_libtooling-dm7f.61 (the `_Bool` phi web in a loop / 8h7d).
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 
 declare i1 @cq_theta_i1(i1, double)

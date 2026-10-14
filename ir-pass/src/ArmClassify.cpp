@@ -2123,6 +2123,50 @@ bool fcmpEqualityHoldsOnEdge(FCmpInst::Predicate P, bool TrueEdge) {
 // reach it). If `nomerge` is later dropped from `CQ.h`, or another route is found
 // that erases a pinning branch WITHOUT merging two thetas, this function needs a question
 // asked of the seed's own provenance, not of the region's edges.
+// bd test_C_libtooling-dm7f.53 — THE SIBLING-CONDITION EXCLUSION (delegated
+// ruling `ruling-dm7f53-p4-sibling-cond-prep-2026-10-15`, applying
+// `owner-ruling-f2-condwire-2026-09-11` and
+// `owner-ruling-drbq14-tree-leaves-2026-10-14`). Is `V` an EQUALITY compare of a
+// `CondWire` register against a literal that is used ONLY as the condition of
+// conditional branches — a SIBLING region's condition on this region's own
+// condition wire?
+//
+// THE CUSTOMER is the Dicke counter, `if (x == 0) cq_theta(&t,.3); if (x == 1)
+// cq_theta(&t,.7);` with `t` fresh: on region 1's arm edge `x == 1` is forced
+// false, i.e. EQUAL to region 1's `_Bool` seed, so F2 refused. The byte-
+// identical -O1 rival `if (x == 0) { t = (x == 1); cq_theta(&t,.3); }` aliases
+// `t` to that compare's flag, which is |0> on every branch the arm runs in —
+// the rival is the identity on the seed and has the same unitary, exactly the
+// CondWire argument one compare over (the pin is a fact about the condition
+// register `x`, read through a snapshot of it).
+//
+// WHAT STAYS LOUD, BY CONSTRUCTION: the compare's register operand must be a
+// `CondWire` MEMBER (pointer identity), so a seed pinned through a shift, a
+// cast, a sideways `-O1` rewrite (`and x, -4`), an intrinsic or an fp value is
+// still a collider; a non-equality predicate, a non-literal other operand, or
+// ANY non-branch use (a data use would make the flag a register the program
+// keeps) also keeps the collision. Asked ONLY at F2's equality TEST
+// (`excludedAtTest`), never at the LVI anchor (the 2026-09-11 placement rule).
+bool siblingConditionCompareOnWire(const Value *V,
+                                   const SmallPtrSetImpl<Value *> &CondWire) {
+  const auto *C = dyn_cast<ICmpInst>(V);
+  if (!C || !C->isEquality())
+    return false;
+  bool OnWire = false;
+  for (unsigned K = 0; K < 2; ++K)
+    if (CondWire.count(C->getOperand(K)) &&
+        isa<ConstantInt>(C->getOperand(1 - K)))
+      OnWire = true;
+  if (!OnWire || C->use_empty())
+    return false;
+  for (const User *U : C->users()) {
+    const auto *B = dyn_cast<BranchInst>(U);
+    if (!B || !B->isConditional() || B->getCondition() != C)
+      return false;
+  }
+  return true;
+}
+
 bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
                                 TaintSet &Taint, const DominatorTree *DT,
                                 const SmallPtrSetImpl<Value *> &CondWire,
@@ -2218,8 +2262,11 @@ bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
   // right here). Each conjunct's argument is in this function's header and at
   // the walk's TEST; they are a filter on the ANSWER, never on a seed of the
   // walk (H-6).
+  // bd dm7f.53: the FOURTH conjunct, the sibling region's condition compare on
+  // this region's condition wire (`siblingConditionCompareOnWire`, its header).
   auto excludedAtTest = [&](Value *V) {
-    return CondWire.count(V) || Taint.isPeelClone(V) || PhiDesc.count(V);
+    return CondWire.count(V) || Taint.isPeelClone(V) || PhiDesc.count(V) ||
+           siblingConditionCompareOnWire(V, CondWire);
   };
 
   // ---- THE RUNTIME SEED (bd z0re) — the RELATIONAL half. See the header
@@ -2505,9 +2552,10 @@ bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
       // construction"), and they are the red-green for that: `step_cap_over`,
       // `unfoldable_curated_call`, `unevaluable_pinned_operand`,
       // `control_peel_reject_fp_stateprep`.
-      // (`excludedAtTest` is the three conjuncts `!CondWire.count(V) &&
-      // !Taint.isPeelClone(V) && !PhiDesc.count(V)`, spelled once since bd z0re
-      // so the runtime seed's relational test cannot drift from this one.)
+      // (`excludedAtTest` is the exclusion `CondWire.count(V) ||
+      // Taint.isPeelClone(V) || PhiDesc.count(V)` — plus, since bd dm7f.53,
+      // `siblingConditionCompareOnWire(V, CondWire)` — spelled once since bd
+      // z0re so the runtime seed's relational test cannot drift from this one.)
       if (V->getType() == Seed->getType() && !excludedAtTest(V) &&
           f2Exact(V, S) == Seed)
         return true;
@@ -3525,6 +3573,10 @@ bool crossBlockPhiLeafMintable(PHINode *P, const BasicBlock *Pred,
   });
 }
 
+bool crossBlockPhiLeafMintable(PHINode *P, const BasicBlock *Pred,
+                               const Instruction *Term, TaintSet &Taint,
+                               const DominatorTree *DT);
+
 CondWireDisp condWireDisposition(
     const ControlRegion &R, TaintSet &Taint,
     const SmallPtrSetImpl<Value *> &Prov, const DominatorTree *DT,
@@ -3594,8 +3646,17 @@ CondWireDisp condWireDisposition(
   // ⚠ NOTHING ELSE LOSES THE SCAN. An in-`Pred` compare, a claimed prep merge φ
   // (P′'s own customer, which needs the CFG walk precisely because it has no
   // wire-scoped admission of its own) and a rail all take it unchanged.
-  if (!CrossBlockCompare &&
-      chainedThetaBetweenDefAndBranch(Cond, R.Pred, BI, Taint))
+  // bd dm7f.53 (closes bd dm7f.62) — A CLAIMED φ ROOT DEFINED OUTSIDE `Pred`
+  // asks the WIRE-SCOPED gap, `crossBlockPhiLeafMintable` — the question the
+  // φ LEAF already asks (`condTreeLeafWindowStale`), so the root and the leaf
+  // spell one question once. Its ground is the leaf's (availability + G6, at
+  // that function). An in-`Pred` φ keeps the scan below unchanged.
+  if (CondIsClaimedRailPhi && Cond->getParent() != R.Pred) {
+    auto *P = dyn_cast<PHINode>(Cond);
+    if (!P || !crossBlockPhiLeafMintable(P, R.Pred, BI, Taint, DT))
+      return CondWireDisp::DeclineNow;
+  } else if (!CrossBlockCompare &&
+             chainedThetaBetweenDefAndBranch(Cond, R.Pred, BI, Taint))
     return CondWireDisp::DeclineNow;  // chained Ry on a live handle after the compare.
   // Position-FREE first: no gate at all is the ordinary accept path, and it
   // must not pay for a dominator query.
@@ -5441,9 +5502,9 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   // `BranchRegion` edge loop in `lowerControlRegions`, the kickback's loop one
   // `Kind` over). The customer is the Dicke cascade (reporter t6.c): `c = q0 +
   // q1` with `q1` conditionally rotated folds to `xor i1 %q0, %q1.phi`.
-  // A φ ROOT (`if (b)` with `b` a prep's merge) is NOT admitted here: such a
-  // tree has no nodes, so `CondIsTree` stays false and the region keeps
-  // `control flow` (the rail-ladder spelling for a φ root is a separate row).
+  // A φ ROOT (`if (b)` with `b` a prep's merge) has no nodes, so `CondIsTree`
+  // stays false for it; it is admitted separately as `PhiRootCond` below (the
+  // register-as-control, R11 round-1 item 2).
   //
   // Bennett.jl ground truth (824458d1): a block's path predicate is built from
   // the already-resolved predicate WIRES of its predecessors
@@ -5466,7 +5527,30 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
                       /*AllowRailPhi=*/true) &&
       !RotTree.Nodes.empty() &&
       condTreeRotationCandidate(Region, MergePhi, Taint);
-  if (!isa<CmpInst>(Region.Condition) && !RailCond && !CondIsTree) {
+  // ---- bd test_C_libtooling-dm7f.53 (round-1 item 2) — A REGION-MERGE φ AS THE
+  //      WHOLE CONDITION (`if (a) Ry(t); if (!a) Ry(t); if (t) Ry(u)` — the Dicke
+  //      cascade reaches it). It is the one-leaf tree `collectCondTree` returns
+  //      for a φ root (no node), and it lowers as a REGISTER-AS-CONTROL exactly
+  //      like the bare `_Bool` rail (`RailCond`): the φ IS t's rail, read only as
+  //      the control of `cqrt_ry_<W>_controlled`, never minted, bracketed or
+  //      freed. The admission is the φ leaf's (step 5c, CALLED through
+  //      `condTreePhiLeafRefusal`), the wire question is the kickback φ root's
+  //      (`condWireDisposition` with `CondIsClaimedRailPhi`, plus the producer
+  //      gates `condTreeCoveredPhiGates` names), and every rail-only clause
+  //      below reads `RegCond` so the φ root inherits the rail's per-arm-class
+  //      re-declines verbatim. Only for a region whose every arm is a
+  //      rotation-clause theta (`condTreeRotationCandidate`).
+  CondTree PhiRootTree;
+  const bool PhiRootCond =
+      !RailCond && !CondIsTree && isCondRailPhiShape(Region.Condition) &&
+      collectCondTree(Region.Condition, PhiRootTree,
+                      /*AllowLogicalSelect=*/true, /*AllowRailPhi=*/true) &&
+      PhiRootTree.Nodes.empty() && PhiRootTree.RailPhiLeaves.size() == 1 &&
+      condTreeRotationCandidate(Region, MergePhi, Taint);
+  // The register IS the flag: a `cq_theta_i1` rail or a claimed merge φ.
+  const bool RegCond = RailCond || PhiRootCond;
+  if (!isa<CmpInst>(Region.Condition) && !RailCond && !CondIsTree &&
+      !PhiRootCond) {
     diagnoseUnderControl(declAnchor(Region), "control flow");
     return ArmDisposition::Declined;
   }
@@ -5532,6 +5616,34 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       return ArmDisposition::Declined;
     }
   }
+  if (PhiRootCond) {
+    // Step 5c for the root, anchored at the BRANCH (a merge φ carries no
+    // `!dbg` — the kickback's `PhiAnchor` lesson).
+    auto *RootBI = Region.Pred ? dyn_cast<BranchInst>(Region.Pred->getTerminator())
+                               : nullptr;
+    if (!RootBI || !RootBI->isConditional() ||
+        RootBI->getCondition() != Region.Condition) {
+      diagnoseUnderControl(declAnchor(Region), "control flow");
+      return ArmDisposition::Declined;
+    }
+    PHINode *P = PhiRootTree.RailPhiLeaves.front();
+    unsigned PrepIdx = ControlRegion::kNoParent;
+    const PhiLeafRefusal Why =
+        Plan ? condTreePhiLeafRefusal(P, Region, *Plan, Taint, DT, PrepIdx)
+             : PhiLeafRefusal::Unclaimed;
+    if (Why == PhiLeafRefusal::Unclaimed) {
+      diagnoseUnderControl(RootBI, "control flow");
+      return ArmDisposition::Declined;
+    }
+    if (Why == PhiLeafRefusal::MeasuredEarly) {
+      diagnoseUnderControl(RootBI,
+                           "condition measured before the control route");
+      return ArmDisposition::Declined;
+    }
+    Region.PrepRegionIdxs.clear();
+    if (P->getParent() != Region.Pred)
+      Region.PrepRegionIdxs.push_back(PrepIdx);
+  }
   if (RailCond && !Region.Pred) {
     // No pred, no branch, no read point — the ladder's rungs (ii)/(iii) have
     // nothing to anchor on. Loud, never a silent skip (Rule 1).
@@ -5549,7 +5661,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   //
   // SKIPPED for a rail: there is no predicate and no `_hl` template — the
   // register is handed to `cqrt_ry_<W>_controlled` as arg-0 unchanged.
-  if (!RailCond && !CondIsTree &&
+  if (!RegCond && !CondIsTree &&
       !comparePredLowerable(cast<CmpInst>(Region.Condition))) {
     diagnoseUnderControl(declAnchor(Region), "control condition has no template");
     return ArmDisposition::Declined;
@@ -5610,7 +5722,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   // asked STRUCTURALLY by `condTreeShapeRefusal` above (a tree has no share path:
   // the shared object would be the root ancilla, stripped and freed here).
   bool HasDataUse = false;
-  if (!RailCond && !CondIsTree)
+  if (!RegCond && !CondIsTree)
     for (const User *U : Region.Condition->users())
       if (!isa<BranchInst>(U)) {
         HasDataUse = true;
@@ -5676,14 +5788,19 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   SmallPtrSet<const CallInst *, 4> CoveredPhiGates;
   if (CondIsTree && Plan)
     condTreeCoveredPhiGates(RotTree, *Plan, Taint, CoveredPhiGates);
+  if (PhiRootCond && Plan)
+    condTreeCoveredPhiGates(PhiRootTree, *Plan, Taint, CoveredPhiGates);
+  // A φ ROOT takes `condWireDisposition` with `CondIsClaimedRailPhi` — the
+  // kickback φ root's exact call (step 5c ran rung 0 above).
   const CondWireDisp WireDisp =
       RailCond ? railCondWireDisposition(Region, Taint, Prov, DT)
                : condWireDisposition(Region, Taint, Prov, DT,
-                                     /*CondIsClaimedRailPhi=*/false,
+                                     /*CondIsClaimedRailPhi=*/PhiRootCond,
                                      CoveredPhiGates.empty() ? nullptr
                                                              : &CoveredPhiGates);
   if (WireDisp == CondWireDisp::DeclineNow) {
-    diagnoseUnderControl(declAnchor(Region),
+    diagnoseUnderControl(PhiRootCond ? Region.Pred->getTerminator()
+                                     : declAnchor(Region),
                          "condition predates a non-diagonal gate");
     return ArmDisposition::Declined;
   }
@@ -5839,7 +5956,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       // register-free one is pre-peeled by `classifyPhaseKickback`, so this is
       // unreachable from C; it is written because the gate above is shared and a
       // class must never acquire an accept nobody cleared it for.
-      if (RailCond)
+      if (RegCond)
         return declineRailClass();
       SawPhaseArm = true;
       continue;
@@ -5865,7 +5982,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       // re-anchor reads a compare literal; neither has a rail analogue (a rail
       // branch DOES pin `b` on its edges, and building that re-anchor is a
       // separate increment — an unbuilt re-anchor can only OVER-decline).
-      if (RailCond)
+      if (RegCond)
         return declineRailClass();
       SawPhaseArm = true;
       continue;
@@ -6013,7 +6130,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       //     HERE (`fmt3_probes/src/n23.c`, measured) with the SAME string it got at
       //     `classifyAngleSelect`'s l4x4.a gate before — so the verdict and the
       //     diagnostic are unchanged; only the fence that speaks moved.
-      if (RailCond && Arms.size() > 1)
+      if (RegCond && Arms.size() > 1)
         return declineRailClass();
       // R2 — the angle is CLASSICAL (Rule 3). `taintedAngleGate` above walks a
       // `cq_phi` SPINE and never inspects a theta at the arm incoming, so this
@@ -6035,7 +6152,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       //      first, and the reason belongs where the second slot is created.
       //      Asked with `valueCarriesUndef` (the shared spelling, Rule 14), and
       //      only for the negated rail shape: nothing else duplicates an angle.
-      if (RailCond && Region.ArmNegated && !Region.ArmFalse &&
+      if (RegCond && Region.ArmNegated && !Region.ArmFalse &&
           valueCarriesUndef(T->getArgOperand(1))) {
         declineArm(T, "rotation angle");
         return ArmDisposition::Declined;
@@ -7094,7 +7211,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       // one contract — a second field would be the `railOf`/`isAbiQramStore`
       // drift hazard (Rule 14). Set only when the condition IS a rail, so the
       // emitter's refusal cannot be satisfied by accident.
-      if (RailCond)
+      if (RegCond)
         Region.RailLadderProven = true;
       // bd `test_C_libtooling-z0re` — CARRY the classifier's runtime-seed
       // verdict to the emitter, which records the source theta for the
@@ -7130,7 +7247,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       }
       // §2.6 — PHASE class on a rail (the if/else leaf anchor): out of l4x4.b,
       // for the same reason as its diamond sibling above.
-      if (RailCond)
+      if (RegCond)
         return declineRailClass();
       SawPhaseArm = true;
       Routed = Base;
@@ -7340,7 +7457,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // on a user register — the rail root would need the 1b-B.1 `CopyRailRoot`
         // CNOT ancilla, which `emitValueRegion` does not route through. That is a
         // whole increment with its own Rule-13 round, not a fall-through.
-        if (RailCond)
+        if (RegCond)
           return declineRailClass();
         // ACCEPT-class value arm: record the class + the ordered chain for
         // the emitter (Shadow = Region.Arm's chain, ShadowFalse =
@@ -7484,7 +7601,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   // rather than assume it, then CLAIM every logical `select i1` node so the
   // caller's tainted-select scan does not also lower it as an i1 data mux (the
   // branch phase's own accept does the same, for the same reason).
-  if (CondIsTree) {
+  if (CondIsTree || PhiRootCond) {
     if (Region.ClassArm != ArmClass::InPlaceRotation ||
         (Region.ArmFalse && Region.ClassArmFalse != ArmClass::InPlaceRotation) ||
         Region.CondOnRotatedRegister || Region.CondFlagKept ||

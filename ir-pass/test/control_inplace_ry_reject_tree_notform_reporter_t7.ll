@@ -23,6 +23,8 @@
 ; an accept whose stream is `toffoli` on (a, ¬b) — an `x` bracket on a COPY or
 ; ancilla, never a `cqrt_x` on the user's `b` — then `alloc_i1(1)` + cRy(.5).
 ;
+; FOLLOW-UP: bd test_C_libtooling-dm7f.55 (the NOT-form leaf grammar).
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 
 declare i1 @cq_theta_i1(i1, double)

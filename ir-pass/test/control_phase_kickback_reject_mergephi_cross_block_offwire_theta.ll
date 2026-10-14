@@ -1,32 +1,28 @@
-; control_phase_kickback_reject_mergephi_cross_block_offwire_theta.ll — DECLINE
-; (bd `test_C_libtooling-hn29` / `-leyd` / `-52og`, Track P′). THE ONE FILE THAT
-; SHOWS THE CFG-BOUNDED POSITIONAL SCAN IS NOT REDUNDANT WITH THE WIRE WALK.
+; control_phase_kickback_reject_mergephi_cross_block_offwire_theta.ll — **NOW AN ACCEPT**
+; (bd `test_C_libtooling-dm7f.53`, closing bd `dm7f.62`).
 ;
-; THE SHAPE: the cross-block prep-merge-φ kickback with a chained
-; `cq_theta_i1(%b0, …)` in the intervening block — a NON-DIAGONAL Ry on a live
-; handle that is NOT on the condition φ's provenance wire (`condProvenance(%b1)`
-; is `{%b1, %t}`; `%b0` is a different rail and no forward user edge reaches it).
+; ⚠ The `reject_` in the name is history (bd `gahu` precedent, L8).
 ;
-; ⚠ SO `wireGainsNonDiagonalGate` CANNOT SEE THIS GATE, IN EITHER MODE. What
-; declines it is `chainedThetaBetweenDefAndBranch`, and before Track P′ it was
-; `condWireDisposition`'s unconditional `Cond->getParent() != R.Pred` bail. That
-; is the P5 prong's documented job — *"the positional scan fires even for a theta
-; on ANOTHER wire, which no wire walk can see"* — and this file is the cross-block
-; half of it. Over-declining an off-wire gate is safe (Prime Directive); the
-; point of the file is that the scan STILL FIRES after the widening, so the
-; widening cost nothing on this axis.
+; THE SHAPE: a cross-block prep-merge-phi kickback with a chained
+; `cq_theta_i1(%b0, …)` in the gap — a Ry on the PREP'S CONTROL `b0`, which is
+; NOT on the condition phi's rail (`condProvenance(%b1) = {%b1, %t}`). The old
+; header pinned this as the proof that the WIRE-BLIND positional scan survived
+; Track P′. dm7f.53 replaced that scan, for a claimed phi defined outside
+; `Pred`, by the WIRE-SCOPED `crossBlockPhiLeafMintable` — the question the phi
+; LEAF already asks — so the root and the leaf spell one question once. Its
+; ground is `crossBlockCompareMintable`'s (drbq.12): availability (every name of
+; the phi's rail in the gap is a member) and G6 (the phi is read later, so M-C
+; refuses an in-place `add`/`xor` that could alias it). It is NOT the
+; `railCondWireDisposition` ground the old header warned against (that one
+; drops the gap question entirely; this one asks it per rail).
 ;
-; ⚠ WHAT WOULD MAKE THIS FILE GO GREEN FOR THE WRONG REASON. If someone
-; "simplifies" the φ by giving it `railCondWireDisposition`'s treatment (which
-; drops the positional prong entirely, on a structural ground argued about a
-; `cq_theta_i1` NAME and explicitly refused for a φ by bd `4aiu`), this module
-; ACCEPTS and nothing else in the tree notices. Do not transplant that ground.
-;
-; ⚠ Rule 12(b): a `DS_Error` decline writes 0 bytes to stdout, so every IR-text
-; negative a decline fixture could carry is VACUOUS. What pins "no silent
-; lowering" is the `not` inversion on the RUN line (exit non-zero) plus the
-; string, mirrored character-for-character below.
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; Trace check: b0 Ry(.5); t prepped under b0 (cRy .25 on a fresh rail); b0
+; Ry(.7) in the gap — t's rail untouched; the kickback `cqrt_rz_i1` on t's rail.
+; `if (b1) cq_phi(.9)` reads t after the gap, which is exactly t's state.
+; The on-wire twin `…_cross_block_theta.ll` still declines.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.d53.ll
+; RUN: %filecheck %s < %t.d53.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.d53.ll
 
 declare void @cq_phi(double)
 declare i1 @cq_theta_i1(i1, double)
@@ -55,4 +51,19 @@ done:
   ret i1 %m
 }
 
-; CHECK: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+; CHECK:      %[[H0:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 %u0)
+; CHECK-NEXT: call void @cqrt_ry_i1(i32 %[[H0]], double 5.000000e-01)
+; CHECK-NEXT: %[[H1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_ry_i1_controlled(i32 %[[H0]], i32 %[[H1]], double 2.500000e-01)
+; CHECK:      call void @cqrt_ry_i1(i32 %[[H0]], double 0x3FE6666666666666)
+; CHECK:      call void @cqrt_rz_i1(i32 %[[H1]], double 9.000000e-01), !cq.branchphase
+; CHECK-NEXT: %[[M:[a-zA-Z0-9_.]+]] = call i1 @cqrt_measure_i1(i32 %[[H0]])
+;
+; Whole-file, pure negatives.
+; NOROUTE-NOT: cqrt_cswap
+; NOROUTE-NOT: cqrt_copy
+; NOROUTE-NOT: call void @cqrt_x(
+; NOROUTE-NOT: call void @cqrt_free(
+; NOROUTE-NOT: call i1 @cq_theta_i1(
+; NOROUTE-NOT: call void @cq_phi(
+; NOROUTE-NOT: = phi
