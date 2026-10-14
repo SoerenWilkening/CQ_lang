@@ -11,11 +11,6 @@
 ; `reverifyCmpCondReads` over the record `lowerCompareToFlag` writes, which is
 ; the point of recording inside the shared mint rather than at each emitter.
 
-; bd p3kd.21 R11 r2 F1 (bd r2j3.35, 2026-10-15): `main` now MEASURES the value it
-; returns. A register returned from `main` reaches the process exit status without
-; `cq_measure`, which NORTHSTAR goal 1 forbids and the pass now refuses
-; (spec_reject_gate_sub_main_return.ll); the measurement is outside this fixture's
-; subject, which is unchanged.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 
 declare void @cq_phi(double)
@@ -55,8 +50,7 @@ ph:
 join:
   %mm = call i32 @cq_measure_si32(i32 %b3)
   %t = add i32 %mm, %keep
-  %cq.main.m = call i32 @cq_measure_si32(i32 %t)
-  ret i32 %cq.main.m
+  ret i32 %t
 }
 
 attributes #0 = { nounwind willreturn memory(none) }

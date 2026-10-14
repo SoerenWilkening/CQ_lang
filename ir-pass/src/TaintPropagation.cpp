@@ -1460,12 +1460,17 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
           // the process exit status, classical by definition: a register returned
           // there reaches classical code without `cq_measure`, which NORTHSTAR
           // goal 1 makes physics-forbidden (coordinator ruling from NORTHSTAR,
-          // 2026-10-15). Loud at every width, and FIRST, so neither the i32
-          // Escaped contract nor the export widening admits it.
+          // 2026-10-15). The question is RECORDED here and decided late
+          // (`declineTaintedMainReturns`): pre-`specialize()` a lift-site result
+          // is tainted by PREDICTION, and declining on that refused programs whose
+          // `main` returns a value the specializer proves classical (R11 r2 F1
+          // decision: 16 fixtures, an over-decline a green suite had masked). FIRST,
+          // so neither the i32 Escaped contract nor the export widening admits it.
+          if (isTaintedMainRet(*Ret, taint)) {
+            recordTaintedMainRet(*Ret);
+            continue;
+          }
           if (RV && taint.Tainted.count(RV) &&
-              isProgramEntryPoint(*Ret->getFunction()))
-            diagnoseEscape(&I, kMsgQuantumMainReturn);
-          else if (RV && taint.Tainted.count(RV) &&
                    !Ret->getFunction()->getReturnType()->isIntegerTy(32) &&
                    !isQuantumReturnExport(*Ret->getFunction()))
             diagnoseEscape(&I, kMsgNonI32Return);
@@ -3339,6 +3344,51 @@ bool functionReturnsTainted(const Function &F, const TaintSet &taint) {
 }
 
 // bd `test_C_libtooling-3jru` — the LOUD refusal. See TaintPropagation.h.
+// bd p3kd.21 R11 r2 F1 — the main-return question, ONE predicate (R12): asked
+// (and recorded) by `declineTaintEscapes`, re-recorded after the round-2 fixpoint
+// and decided after `specialize()` by `declineTaintedMainReturns`, both entry
+// points. The record is metadata on the `ret` (it cannot dangle).
+static constexpr char kMainRetQuestionMD[] = "cq.mainret.question";
+
+bool isTaintedMainRet(const ReturnInst &R, const TaintSet &taint) {
+  Value *RV = R.getReturnValue();
+  return RV && taint.Tainted.count(RV) && isProgramEntryPoint(*R.getFunction());
+}
+
+void recordTaintedMainRet(ReturnInst &R) {
+  R.setMetadata(kMainRetQuestionMD, MDNode::get(R.getContext(), {}));
+}
+
+void recordTaintedMainReturns(Module &M, const TaintSet &taint) {
+  for (Function &F : M)
+    if (isProgramEntryPoint(F))
+      for (BasicBlock &BB : F)
+        if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
+          if (isTaintedMainRet(*R, taint))
+            recordTaintedMainRet(*R);
+}
+
+bool declineTaintedMainReturns(Module &M, const TaintSet &taint) {
+  for (Function &F : M) {
+    if (!isProgramEntryPoint(F))
+      continue;
+    for (BasicBlock &BB : F) {
+      auto *R = dyn_cast<ReturnInst>(BB.getTerminator());
+      if (!R)
+        continue;
+      // Every `ret` of `main` is re-asked (a superset of the record); the
+      // record only keeps the early sites from accepting it meanwhile.
+      R->setMetadata(kMainRetQuestionMD, nullptr);
+      if (isTaintedMainRet(*R, taint)) {
+        F.getContext().diagnose(DiagnosticInfoUnsupported(
+            F, kMsgQuantumMainReturn, R->getDebugLoc()));
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 bool declineQuantumReturnCalls(Module &M, const TaintSet &taint) {
   for (Function &F : M) {
     if (F.isDeclaration() || !functionReturnsTainted(F, taint))

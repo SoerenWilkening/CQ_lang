@@ -656,6 +656,9 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // taint (SpecializeGateInline.h): a site round 1 missed is loud.
   if (declineMissedGateSubroutines(M, taint, GateSt))
     return PreservedAnalyses::none();
+  // bd p3kd.21 R11 r2 F1 — re-record the main-return question on the round-2
+  // taint (decided after `specialize()`, below).
+  recordTaintedMainReturns(M, taint);
 
   // bd test_C_libtooling-3qlq Inc 1 (PRD §6.2 row P7, owner decision D2) —
   // DELETE every SURVIVING register-free `cq_phi`: an uncontrolled or
@@ -830,6 +833,11 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // control emitter already read the value as a handle. Loud, and ahead of
   // everything after it except the d88e re-ask and the 2qyz re-sweep just above.
   if (declineScrubbedHandleReads(M, taint))
+    return PreservedAnalyses::none();
+  // bd p3kd.21 R11 r2 F1 — THE DECISION of the main-return question: the first
+  // slot where a lift-site result's taint is the specializer's verdict, not the
+  // prediction (SpecializeGateInline.h).
+  if (declineTaintedMainReturns(M, taint))
     return PreservedAnalyses::none();
 
   // bd `test_C_libtooling-z0re` — the GROWTH-direction twin of the l3oi re-ask
@@ -1383,6 +1391,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
       runControlChain(M, wd, taint, plan6, ChainScope);
   if (declineMissedGateSubroutines(M, taint, GateSt))  // bd p3kd.21 — see run().
     return true;
+  recordTaintedMainReturns(M, taint);  // bd p3kd.21 R11 r2 F1 — see run().
   // bd test_C_libtooling-3qlq Inc 1 (P7) mirrored in this entry point too
   // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for why the ONLY
   // sound slot is AFTER `repropagateControlMerges` and not immediately after
@@ -1427,6 +1436,8 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // control emitter already read the value as a handle. Loud, and ahead of
   // everything after it except the d88e re-ask and the 2qyz re-sweep above.
   if (declineScrubbedHandleReads(M, taint))
+    return false;
+  if (declineTaintedMainReturns(M, taint))  // bd p3kd.21 R11 r2 F1 — see run().
     return false;
   // bd `test_C_libtooling-z0re` — the runtime state-prep seed's L1 re-ask, same
   // slot as run() and for the same reason (twin-pipeline parity is MANDATORY,

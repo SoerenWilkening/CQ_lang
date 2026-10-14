@@ -33,11 +33,6 @@
 ; owner's 2026-10-05 ruling: spec_reject_musttail_forward_inalloca.ll) and the e2e slices
 ; `e2e-slice-spec-musttail-{clone-live-arg,clone-partial-drop}` (linked, twin-equivalent).;
 ;
-; bd p3kd.21 R11 r2 F1 (bd r2j3.35, 2026-10-15): `main` now MEASURES the value it
-; returns. A register returned from `main` reaches the process exit status without
-; `cq_measure`, which NORTHSTAR goal 1 forbids and the pass now refuses
-; (spec_reject_gate_sub_main_return.ll); the measurement is outside this fixture's
-; subject, which is unchanged.
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CLONE < %t.cqd0.ll
@@ -119,8 +114,7 @@ define i32 @main(i32 noundef %0, ptr nocapture noundef readonly %1) local_unname
   %14 = tail call i32 @cq_theta_si32(i32 noundef %7, double noundef 0x3FE6666666666666) #5
   %15 = tail call i32 @cq_measure_si32(i32 noundef %14) #5
   %16 = add nsw i32 %15, %9
-  %cq.main.m = call i32 @cq_measure_si32(i32 %16)
-  ret i32 %cq.main.m
+  ret i32 %16
 }
 
 ; Function Attrs: mustprogress nofree nounwind willreturn memory(read)

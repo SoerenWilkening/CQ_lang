@@ -58,11 +58,6 @@
 ; Regenerate: clang -O1 -emit-llvm -S the two TUs as above, then
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>.
 ;
-; bd p3kd.21 R11 r2 F1 (bd r2j3.35, 2026-10-15): `main` now MEASURES the value it
-; returns. A register returned from `main` reaches the process exit status without
-; `cq_measure`, which NORTHSTAR goal 1 forbids and the pass now refuses
-; (spec_reject_gate_sub_main_return.ll); the measurement is outside this fixture's
-; subject, which is unchanged.
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2> %t.vsfp.err \
 ; RUN:   | %filecheck %s
 ; RUN: %filecheck %s --check-prefix=NODROP --allow-empty < %t.vsfp.err
@@ -104,8 +99,7 @@ define i32 @main(i32 noundef %0, ptr nocapture noundef readonly %1) local_unname
   %12 = phi i32 [ %10, %9 ], [ %6, %2 ]
   %13 = tail call i32 @cq_measure_si32(i32 noundef %12) #4
   %14 = add nsw i32 %13, %7
-  %cq.main.m = call i32 @cq_measure_si32(i32 %14)
-  ret i32 %cq.main.m
+  ret i32 %14
 }
 
 ; Function Attrs: mustprogress nofree nounwind willreturn memory(read)

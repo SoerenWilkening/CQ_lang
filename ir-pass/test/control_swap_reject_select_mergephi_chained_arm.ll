@@ -35,11 +35,6 @@
 ; negative a decline fixture could carry is VACUOUS. What pins "no silent
 ; lowering" is the `not` inversion on the RUN line (exit non-zero) plus the
 ; string, mirrored character-for-character below.
-; bd p3kd.21 R11 r2 F1 (bd r2j3.35, 2026-10-15): `main` now MEASURES the value it
-; returns. A register returned from `main` reaches the process exit status without
-; `cq_measure`, which NORTHSTAR goal 1 forbids and the pass now refuses
-; (spec_reject_gate_sub_main_return.ll); the measurement is outside this fixture's
-; subject, which is unchanged.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 
 ; ModuleID = 'docs/prd/phase-04-swap-route-control/inc1-records/session-boi6/probes/p20.c'
@@ -66,8 +61,7 @@ define range(i32 -2147483646, -2147483648) i32 @main() local_unnamed_addr #0 !db
   %11 = zext i1 %10 to i32, !dbg !31
   %12 = add i32 %8, %9, !dbg !32
   %13 = add i32 %12, %11, !dbg !33
-  %cq.main.m = call i32 @cq_measure_si32(i32 %13)
-  ret i32 %cq.main.m, !dbg !34
+  ret i32 %13, !dbg !34
 }
 
 declare !dbg !35 i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr #1

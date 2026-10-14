@@ -10,11 +10,6 @@
 ; stream as the ORACLE — the known clone copy-out divergence, net unitary unchanged).
 ;
 ;
-; bd p3kd.21 R11 r2 F1 (bd r2j3.35, 2026-10-15): `main` now MEASURES the value it
-; returns. A register returned from `main` reaches the process exit status without
-; `cq_measure`, which NORTHSTAR goal 1 forbids and the pass now refuses
-; (spec_reject_gate_sub_main_return.ll); the measurement is outside this fixture's
-; subject, which is unchanged.
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NODROP --allow-empty < %t.err
@@ -60,8 +55,7 @@ define i32 @main(i32 noundef %0, ptr nocapture noundef readonly %1) local_unname
   %11 = tail call x86_fp80 @cq_measure_f80(x86_fp80 noundef %10) #4
   %12 = fptosi x86_fp80 %11 to i32
   %13 = add nsw i32 %9, %12
-  %cq.main.m = call i32 @cq_measure_si32(i32 %13)
-  ret i32 %cq.main.m
+  ret i32 %13
 }
 
 ; Function Attrs: mustprogress nofree nounwind willreturn memory(read)
@@ -105,5 +99,3 @@ attributes #4 = { nounwind }
 !9 = !{!"Simple C/C++ TBAA"}
 !10 = !{!11, !11, i64 0}
 !11 = !{!"int", !8, i64 0}
-
-declare i32 @cq_measure_si32(i32)
