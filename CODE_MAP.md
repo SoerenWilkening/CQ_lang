@@ -15,7 +15,7 @@ Scope: 815 maintained source files, 6685 named function definitions. Build outpu
 The entries below are an inventory for decomposition work. Generated files and test/tooling sources are listed too; they are not silently treated as application logic.
 
 - `runtime/cq_templates.c` — 15665 physical lines
-- `ir-pass/src/ArmClassify.cpp` — 10122 physical lines
+- `ir-pass/src/ArmClassify.cpp` — 10145 physical lines
 - `ir-pass/src/LoopLowering.cpp` — 8031 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5553 physical lines
 - `tools/free_pairing_check.py` — 4161 physical lines
@@ -30,7 +30,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RotationLowering.cpp` — 2549 physical lines
 - `runtime/cq_intrinsic_templates.c` — 2475 physical lines
 - `runtime/cq_templates.h` — 2437 physical lines
-- `ir-pass/include/TaintPropagation.h` — 2273 physical lines
+- `ir-pass/include/TaintPropagation.h` — 2278 physical lines
 - `tools/golden_multiset_audit.py` — 2211 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1964 physical lines
 - `tools/inplace_twin_matrix.py` — 1790 physical lines
@@ -196,7 +196,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/SpecializePlan.h:133` — `getHashValue`
 - `ir-pass/include/SpecializePlan.h:137` — `isEqual`
 
-### `ir-pass/include/TaintPropagation.h` (2273 lines)
+### `ir-pass/include/TaintPropagation.h` (2278 lines)
 
 - `ir-pass/include/TaintPropagation.h:679` — `isPeelClone`
 
@@ -241,7 +241,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArithLowering.cpp:983` — `lateReassignShape`
 - `ir-pass/src/ArithLowering.cpp:1023` — `lowerLateReassignments`
 
-### `ir-pass/src/ArmClassify.cpp` (10122 lines)
+### `ir-pass/src/ArmClassify.cpp` (10145 lines)
 
 - `ir-pass/src/ArmClassify.cpp:82` — `isCallToPrefix`
 - `ir-pass/src/ArmClassify.cpp:109` — `isPhiCall`
@@ -267,53 +267,53 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArmClassify.cpp:1867` — `availableAtAnF2Slot`
 - `ir-pass/src/ArmClassify.cpp:1878` — `collectStatePrepPhiDescendants`
 - `ir-pass/src/ArmClassify.cpp:2005` — `fcmpEqualityHoldsOnEdge`
-- `ir-pass/src/ArmClassify.cpp:2150` — `siblingConditionCompareOnWire`
-- `ir-pass/src/ArmClassify.cpp:2170` — `f2SeedPinnedByLiveRegister`
-- `ir-pass/src/ArmClassify.cpp:2613` — `walkValueChain`
-- `ir-pass/src/ArmClassify.cpp:2777` — `valueArmIsPureChain`
-- `ir-pass/src/ArmClassify.cpp:2860` — `declAnchor`
-- `ir-pass/src/ArmClassify.cpp:2889` — `taintedAngleGate`
-- `ir-pass/src/ArmClassify.cpp:2955` — `wireGainsNonDiagonalGate`
-- `ir-pass/src/ArmClassify.cpp:3268` — `anyInstructionInGap`
-- `ir-pass/src/ArmClassify.cpp:3318` — `isChainedThetaCall`
-- `ir-pass/src/ArmClassify.cpp:3327` — `chainedThetaBetweenDefAndBranch`
-- `ir-pass/src/ArmClassify.cpp:3401` — `condRailMembers`
-- `ir-pass/src/ArmClassify.cpp:3449` — `railRelabellingGateOn`
-- `ir-pass/src/ArmClassify.cpp:3522` — `crossBlockCompareMintable`
-- `ir-pass/src/ArmClassify.cpp:3562` — `crossBlockPhiLeafMintable`
-- `ir-pass/src/ArmClassify.cpp:3580` — `condWireDisposition`
-- `ir-pass/src/ArmClassify.cpp:3719` — `railCondWireDisposition`
-- `ir-pass/src/ArmClassify.cpp:3784` — `railWireNamesBackward`
-- `ir-pass/src/ArmClassify.cpp:3865` — `railMeasuredBeforeReadPoint`
-- `ir-pass/src/ArmClassify.cpp:3966` — `condCmpOperandSeeds`
-- `ir-pass/src/ArmClassify.cpp:4026` — `condCmpMeasuredBeforeReadPoint`
-- `ir-pass/src/ArmClassify.cpp:4045` — `markRailCondRead`
-- `ir-pass/src/ArmClassify.cpp:4166` — `declineRound2TaintedArmCone`
-- `ir-pass/src/ArmClassify.cpp:4220` — `isRuntimeStatePrepSeed`
-- `ir-pass/src/ArmClassify.cpp:4254` — `declineRound2QuantumPrepSeeds`
-- `ir-pass/src/ArmClassify.cpp:4270` — `reverifyRailCondReads`
-- `ir-pass/src/ArmClassify.cpp:4407` — `reverifyCmpCondReads`
-- `ir-pass/src/ArmClassify.cpp:4640` — `markCmpCondRead`
-- `ir-pass/src/ArmClassify.cpp:4697` — `comparePredLowerable`
-- `ir-pass/src/ArmClassify.cpp:4742` — `condDataUseDisposition`
-- `ir-pass/src/ArmClassify.cpp:4871` — `straightThroughConstFoldHandle`
-- `ir-pass/src/ArmClassify.cpp:5038` — `iterationLocalRollable`
-- `ir-pass/src/ArmClassify.cpp:5120` — `condTreeCompareLeafRefusal`
-- `ir-pass/src/ArmClassify.cpp:5149` — `condTreeRailLeafRefusal`
-- `ir-pass/src/ArmClassify.cpp:5166` — `condTreeShapeRefusal`
-- `ir-pass/src/ArmClassify.cpp:5198` — `condTreeProvenance`
-- `ir-pass/src/ArmClassify.cpp:5263` — `condTreeLeafWindowStale`
-- `ir-pass/src/ArmClassify.cpp:5286` — `condTreeTooLarge`
-- `ir-pass/src/ArmClassify.cpp:5303` — `condTreePhiLeafRefusal`
-- `ir-pass/src/ArmClassify.cpp:5346` — `condTreeCoveredPhiGates`
-- `ir-pass/src/ArmClassify.cpp:5403` — `condTreeRotationCandidate`
-- `ir-pass/src/ArmClassify.cpp:5420` — `classifyArms`
-- `ir-pass/src/ArmClassify.cpp:7658` — `phaseAngleTail`
-- `ir-pass/src/ArmClassify.cpp:7768` — `classifyPhaseKickback`
-- `ir-pass/src/ArmClassify.cpp:8670` — `classifyPhaseKickbackNest`
-- `ir-pass/src/ArmClassify.cpp:8995` — `classifyClassicalCallArm`
-- `ir-pass/src/ArmClassify.cpp:9438` — `angleSelectArmsDefined`
-- `ir-pass/src/ArmClassify.cpp:9447` — `classifyAngleSelect`
+- `ir-pass/src/ArmClassify.cpp:2163` — `siblingConditionForcedOnArmEdge`
+- `ir-pass/src/ArmClassify.cpp:2191` — `f2SeedPinnedByLiveRegister`
+- `ir-pass/src/ArmClassify.cpp:2636` — `walkValueChain`
+- `ir-pass/src/ArmClassify.cpp:2800` — `valueArmIsPureChain`
+- `ir-pass/src/ArmClassify.cpp:2883` — `declAnchor`
+- `ir-pass/src/ArmClassify.cpp:2912` — `taintedAngleGate`
+- `ir-pass/src/ArmClassify.cpp:2978` — `wireGainsNonDiagonalGate`
+- `ir-pass/src/ArmClassify.cpp:3291` — `anyInstructionInGap`
+- `ir-pass/src/ArmClassify.cpp:3341` — `isChainedThetaCall`
+- `ir-pass/src/ArmClassify.cpp:3350` — `chainedThetaBetweenDefAndBranch`
+- `ir-pass/src/ArmClassify.cpp:3424` — `condRailMembers`
+- `ir-pass/src/ArmClassify.cpp:3472` — `railRelabellingGateOn`
+- `ir-pass/src/ArmClassify.cpp:3545` — `crossBlockCompareMintable`
+- `ir-pass/src/ArmClassify.cpp:3585` — `crossBlockPhiLeafMintable`
+- `ir-pass/src/ArmClassify.cpp:3603` — `condWireDisposition`
+- `ir-pass/src/ArmClassify.cpp:3742` — `railCondWireDisposition`
+- `ir-pass/src/ArmClassify.cpp:3807` — `railWireNamesBackward`
+- `ir-pass/src/ArmClassify.cpp:3888` — `railMeasuredBeforeReadPoint`
+- `ir-pass/src/ArmClassify.cpp:3989` — `condCmpOperandSeeds`
+- `ir-pass/src/ArmClassify.cpp:4049` — `condCmpMeasuredBeforeReadPoint`
+- `ir-pass/src/ArmClassify.cpp:4068` — `markRailCondRead`
+- `ir-pass/src/ArmClassify.cpp:4189` — `declineRound2TaintedArmCone`
+- `ir-pass/src/ArmClassify.cpp:4243` — `isRuntimeStatePrepSeed`
+- `ir-pass/src/ArmClassify.cpp:4277` — `declineRound2QuantumPrepSeeds`
+- `ir-pass/src/ArmClassify.cpp:4293` — `reverifyRailCondReads`
+- `ir-pass/src/ArmClassify.cpp:4430` — `reverifyCmpCondReads`
+- `ir-pass/src/ArmClassify.cpp:4663` — `markCmpCondRead`
+- `ir-pass/src/ArmClassify.cpp:4720` — `comparePredLowerable`
+- `ir-pass/src/ArmClassify.cpp:4765` — `condDataUseDisposition`
+- `ir-pass/src/ArmClassify.cpp:4894` — `straightThroughConstFoldHandle`
+- `ir-pass/src/ArmClassify.cpp:5061` — `iterationLocalRollable`
+- `ir-pass/src/ArmClassify.cpp:5143` — `condTreeCompareLeafRefusal`
+- `ir-pass/src/ArmClassify.cpp:5172` — `condTreeRailLeafRefusal`
+- `ir-pass/src/ArmClassify.cpp:5189` — `condTreeShapeRefusal`
+- `ir-pass/src/ArmClassify.cpp:5221` — `condTreeProvenance`
+- `ir-pass/src/ArmClassify.cpp:5286` — `condTreeLeafWindowStale`
+- `ir-pass/src/ArmClassify.cpp:5309` — `condTreeTooLarge`
+- `ir-pass/src/ArmClassify.cpp:5326` — `condTreePhiLeafRefusal`
+- `ir-pass/src/ArmClassify.cpp:5369` — `condTreeCoveredPhiGates`
+- `ir-pass/src/ArmClassify.cpp:5426` — `condTreeRotationCandidate`
+- `ir-pass/src/ArmClassify.cpp:5443` — `classifyArms`
+- `ir-pass/src/ArmClassify.cpp:7681` — `phaseAngleTail`
+- `ir-pass/src/ArmClassify.cpp:7791` — `classifyPhaseKickback`
+- `ir-pass/src/ArmClassify.cpp:8693` — `classifyPhaseKickbackNest`
+- `ir-pass/src/ArmClassify.cpp:9018` — `classifyClassicalCallArm`
+- `ir-pass/src/ArmClassify.cpp:9461` — `angleSelectArmsDefined`
+- `ir-pass/src/ArmClassify.cpp:9470` — `classifyAngleSelect`
 
 ### `ir-pass/src/ArmHomogeneity.cpp` (217 lines)
 

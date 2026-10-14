@@ -1,15 +1,25 @@
-; control_inplace_ry_reject_seq_counter_f2_offwire_ordering.ll — DECLINE: sibling pin through a non-equality compare.
+; control_inplace_ry_reject_seq_counter_f2_offwire_ordering.ll — **NOW AN ACCEPT**: x == 0 then x > 5, fresh target.
 ;
-; bd test_C_libtooling-dm7f.53 — the BOUNDARY of the sibling-condition
-; exclusion (ruling-dm7f53-p4-sibling-cond-prep-2026-10-15: "seeds pinned via
-; off-wire registers (shift, cast, sideways rewrite, intrinsic, fp) stay
-; loud"). Region 1 is `if (x == 0) cq_theta(&t,.3)` with t fresh; the second
-; region's condition is forced false (= the seed) on region 1's arm edge, but
-; through a value that is NOT a `CondWire` member, so F2 keeps the collision.
+; ⚠ The `reject_` in the name is history (bd `gahu` precedent, L8): this file
+; pinned `x > 5` as a non-equality collider in 8322e472; the amended ruling
+; makes the exclusion predicate-agnostic.
 ;
-; if (x > 5) cq_theta(&t,.7);  icmp sgt x, 5 — on-wire but not an EQUALITY; the ruling covers equality only. Widen only on a ruling.
+; bd test_C_libtooling-dm7f.53, amended delegated ruling
+; `ruling-dm7f53-p4-sibling-cond-prep-amend-forced-2026-10-15`: F2's fourth
+; exclusion (`siblingConditionForcedOnArmEdge`) is predicate-agnostic — any
+; icmp of a CondWire register against a literal, used only as branch
+; conditions, that `isImpliedCondition` proves FORCED on the region's arm edge.
+; The rival `t = V` then holds V's forced value on every branch the arm runs
+; in: the identity on the seed. Collisions on the straight-through edge, fcmp,
+; off-wire registers and data-used compares stay loud.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; x == 0 -> Ry(.3); x > 5 -> Ry(.7); else |0>.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.d53.ll
+; RUN: %filecheck %s < %t.d53.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.d53.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.d53.ll
+; RUN: %filecheck %s --check-prefix=CRCNT < %t.d53.ll
 
 declare i32 @cq_theta_si32(i32, double)
 declare i1 @cq_theta_i1(i1, double)
@@ -47,4 +57,31 @@ define i32 @example() {
   ret i32 %19
 }
 
-; CHECK: cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+; CHECK:      %[[H0:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H0]], double 1.000000e+00)
+; CHECK-NEXT: %[[H1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H0]], i32 0)
+; CHECK-NEXT: %[[H2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_ry_i1_controlled(i32 %[[H1]], i32 %[[H2]], double 3.000000e-01)
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[H1]], i32 %[[H0]], i32 0)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[H1]])
+; CHECK-NEXT: %[[H3:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[H0]], i32 5)
+; CHECK-NEXT: call void @cqrt_ry_i1_controlled(i32 %[[H3]], i32 %[[H2]], double 0x3FE6666666666666)
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[H3]], i32 %[[H0]], i32 5)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[H3]])
+; CHECK-NEXT: %[[H4:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[H0]])
+; CHECK-NEXT: %[[H5:[a-zA-Z0-9_.]+]] = call i1 @cqrt_measure_i1(i32 %[[H2]])
+;
+; Whole-file, pure negatives (a positive in a prefix windows the negatives
+; after it): no route / copy / adjoint gate, every arm theta and region phi
+; consumed; FCNT/CRCNT count the frees and the controlled Ry gates.
+; NOROUTE-NOT: cqrt_cswap
+; NOROUTE-NOT: cqrt_copy
+; NOROUTE-NOT: _controlled_inv
+; NOROUTE-NOT: call i1 @cq_theta
+; NOROUTE-NOT: = phi
+; NOROUTE-NOT: = trunc
+; NOROUTE-NOT: zext i1 {{.*}} to i8
+; FCNT-COUNT-2: call void @cqrt_free(
+; FCNT-NOT:     call void @cqrt_free(
+; CRCNT-COUNT-2: call void @cqrt_ry_{{[a-z0-9]+}}_controlled(
+; CRCNT-NOT:     call void @cqrt_ry_{{[a-z0-9]+}}_controlled(

@@ -11,7 +11,8 @@
 ; arm edge the SIBLING condition `x == 1` is forced false = the seed. That pin
 ; is read through an EQUALITY compare of the condition register `x` itself, so
 ; the byte-identical -O1 rival `t = (x == 1)` (measured identical, 2026-10-14)
-; is the identity on the seed: `siblingConditionCompareOnWire`, the fourth
+; is the identity on the seed: `siblingConditionForcedOnArmEdge` (amended to
+; any forced icmp, ruling-dm7f53-p4-sibling-cond-prep-amend-forced), the fourth
 ; conjunct of F2's `excludedAtTest`. Off-wire pins stay loud
 ; (control_inplace_ry_reject_seq_counter_f2_offwire_*.ll).
 ;

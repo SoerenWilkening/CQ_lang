@@ -2126,10 +2126,23 @@ bool fcmpEqualityHoldsOnEdge(FCmpInst::Predicate P, bool TrueEdge) {
 // bd test_C_libtooling-dm7f.53 — THE SIBLING-CONDITION EXCLUSION (delegated
 // ruling `ruling-dm7f53-p4-sibling-cond-prep-2026-10-15`, applying
 // `owner-ruling-f2-condwire-2026-09-11` and
-// `owner-ruling-drbq14-tree-leaves-2026-10-14`). Is `V` an EQUALITY compare of a
-// `CondWire` register against a literal that is used ONLY as the condition of
-// conditional branches — a SIBLING region's condition on this region's own
-// condition wire?
+// `owner-ruling-drbq14-tree-leaves-2026-10-14`), AMENDED by
+// `ruling-dm7f53-p4-sibling-cond-prep-amend-forced-2026-10-15`: is `V` an
+// `icmp` (ANY predicate) of a `CondWire` register against a literal, used ONLY
+// as the condition of conditional branches — a SIBLING region's condition on
+// this region's own condition wire — whose value LLVM proves FORCED on the
+// edge `E` the collision was found on, and is `E` an ARM edge of this region?
+//
+// THE AMENDMENT: the argument is FORCEDNESS, not equality. On an arm edge where
+// `isImpliedCondition(branch condition ⇒ V)` has a definite answer, the rival
+// `t = V` aliases `t` to a flag that holds that answer on every branch the arm
+// runs in, i.e. the identity on the seed (`if (x < 3) Ry(t,.3); if (x > 5)
+// Ry(t,.7)`). Asked through F2's own machinery (`isImpliedCondition`, already
+// F2's runtime-seed test); no hand-written range logic. A collision on the
+// NON-arm (straight-through) edge is NOT excluded (the ruling's "dominating
+// edge"), and the question is per collider: F2 returns on the FIRST collider
+// that no exclusion covers, so ONE unforced or off-wire sibling keeps the
+// region loud (the set question).
 //
 // THE CUSTOMER is the Dicke counter, `if (x == 0) cq_theta(&t,.3); if (x == 1)
 // cq_theta(&t,.7);` with `t` fresh: on region 1's arm edge `x == 1` is forced
@@ -2143,15 +2156,21 @@ bool fcmpEqualityHoldsOnEdge(FCmpInst::Predicate P, bool TrueEdge) {
 // WHAT STAYS LOUD, BY CONSTRUCTION: the compare's register operand must be a
 // `CondWire` MEMBER (pointer identity), so a seed pinned through a shift, a
 // cast, a sideways `-O1` rewrite (`and x, -4`), an intrinsic or an fp value is
-// still a collider; a non-equality predicate, a non-literal other operand, or
-// ANY non-branch use (a data use would make the flag a register the program
-// keeps) also keeps the collision. Asked ONLY at F2's equality TEST
+// still a collider; an `fcmp`, a non-literal other operand, a value LLVM does
+// not prove forced on the arm edge, or ANY non-branch use (a data use would
+// make the flag a register the program keeps) also keeps the collision. Asked ONLY at F2's equality TEST
 // (`excludedAtTest`), never at the LVI anchor (the 2026-09-11 placement rule).
-bool siblingConditionCompareOnWire(const Value *V,
-                                   const SmallPtrSetImpl<Value *> &CondWire) {
+bool siblingConditionForcedOnArmEdge(const Value *V,
+                                     const SmallPtrSetImpl<Value *> &CondWire,
+                                     const ControlRegion &Region,
+                                     const BranchInst *BI, unsigned E,
+                                     const DataLayout &DL) {
   const auto *C = dyn_cast<ICmpInst>(V);
-  if (!C || !C->isEquality())
+  if (!C || !BI || !BI->isConditional())
     return false;
+  const BasicBlock *Succ = BI->getSuccessor(E);
+  if (Succ != Region.Arm && Succ != Region.ArmFalse)
+    return false;  // the straight-through edge: no arm runs there.
   bool OnWire = false;
   for (unsigned K = 0; K < 2; ++K)
     if (CondWire.count(C->getOperand(K)) &&
@@ -2164,7 +2183,9 @@ bool siblingConditionCompareOnWire(const Value *V,
     if (!B || !B->isConditional() || B->getCondition() != C)
       return false;
   }
-  return true;
+  return isImpliedCondition(BI->getCondition(), C, DL,
+                            /*LHSIsTrue=*/E == 0)
+      .has_value();
 }
 
 bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
@@ -2262,11 +2283,13 @@ bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
   // right here). Each conjunct's argument is in this function's header and at
   // the walk's TEST; they are a filter on the ANSWER, never on a seed of the
   // walk (H-6).
-  // bd dm7f.53: the FOURTH conjunct, the sibling region's condition compare on
-  // this region's condition wire (`siblingConditionCompareOnWire`, its header).
-  auto excludedAtTest = [&](Value *V) {
+  // bd dm7f.53: the FOURTH conjunct, a sibling region's condition compare on
+  // this region's condition wire, FORCED on the arm edge `E` the collision was
+  // found on (`siblingConditionForcedOnArmEdge`, its header). It is the only
+  // edge-dependent conjunct, which is why the test now takes `E`.
+  auto excludedAtTest = [&](Value *V, unsigned E) {
     return CondWire.count(V) || Taint.isPeelClone(V) || PhiDesc.count(V) ||
-           siblingConditionCompareOnWire(V, CondWire);
+           siblingConditionForcedOnArmEdge(V, CondWire, Region, BI, E, DL);
   };
 
   // ---- THE RUNTIME SEED (bd z0re) — the RELATIONAL half. See the header
@@ -2322,7 +2345,7 @@ bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
       // the LVI anchor reads — available at the branch, in function order).
       if (SeedV->getType()->isIntegerTy())
         for (Value *V : Cand) {
-          if (V->getType() != SeedV->getType() || excludedAtTest(V))
+          if (V->getType() != SeedV->getType() || excludedAtTest(V, E))
             continue;
           if (isImpliedCondition(BrCond, ICmpInst::ICMP_EQ, V, SeedV, DL,
                                  /*LHSIsTrue=*/TrueEdge)
@@ -2345,7 +2368,7 @@ bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
               continue;
             Value *H = BrFC->getOperand(1 - K);
             if (H->getType() == SeedV->getType() && Taint.Tainted.count(H) &&
-                !excludedAtTest(H))
+                !excludedAtTest(H, E))
               return true;
           }
         }
@@ -2554,9 +2577,9 @@ bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
       // `control_peel_reject_fp_stateprep`.
       // (`excludedAtTest` is the exclusion `CondWire.count(V) ||
       // Taint.isPeelClone(V) || PhiDesc.count(V)` — plus, since bd dm7f.53,
-      // `siblingConditionCompareOnWire(V, CondWire)` — spelled once since bd
+      // `siblingConditionForcedOnArmEdge(V, …, E, …)` — spelled once since bd
       // z0re so the runtime seed's relational test cannot drift from this one.)
-      if (V->getType() == Seed->getType() && !excludedAtTest(V) &&
+      if (V->getType() == Seed->getType() && !excludedAtTest(V, E) &&
           f2Exact(V, S) == Seed)
         return true;
       for (User *U : V->users()) {
