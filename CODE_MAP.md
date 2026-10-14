@@ -8,14 +8,14 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 811 maintained source files, 6663 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 811 maintained source files, 6671 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
 The entries below are an inventory for decomposition work. Generated files and test/tooling sources are listed too; they are not silently treated as application logic.
 
 - `runtime/cq_templates.c` — 15665 physical lines
-- `ir-pass/src/ArmClassify.cpp` — 9508 physical lines
+- `ir-pass/src/ArmClassify.cpp` — 9779 physical lines
 - `ir-pass/src/LoopLowering.cpp` — 8031 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5553 physical lines
 - `tools/free_pairing_check.py` — 4161 physical lines
@@ -24,7 +24,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/QramLowering.cpp` — 4045 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 3434 physical lines
 - `ir-pass/src/TaintPropagation.cpp` — 3362 physical lines
-- `ir-pass/src/SwapRouteEmit.cpp` — 3161 physical lines
+- `ir-pass/src/SwapRouteEmit.cpp` — 3286 physical lines
 - `runtime/cq_link_smoke.c` — 2893 physical lines
 - `tools/taintset_scrub_guard.py` — 2758 physical lines
 - `ir-pass/src/RotationLowering.cpp` — 2549 physical lines
@@ -50,7 +50,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SpecializeReject.cpp` — 1005 physical lines
 - `ir-pass/src/WireWalk.cpp` — 948 physical lines
 - `tools/golden_multiset_audit_test.py` — 948 physical lines
-- `ir-pass/src/ControlDetect.cpp` — 916 physical lines
+- `ir-pass/src/ControlDetect.cpp` — 917 physical lines
 - `tools/record_census/shipped_guard_model.py` — 878 physical lines
 - `ir-pass/src/IOSinkLowering.cpp` — 862 physical lines
 - `tools/angle_select_twin_matrix.py` — 853 physical lines
@@ -241,7 +241,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArithLowering.cpp:983` — `lateReassignShape`
 - `ir-pass/src/ArithLowering.cpp:1023` — `lowerLateReassignments`
 
-### `ir-pass/src/ArmClassify.cpp` (9508 lines)
+### `ir-pass/src/ArmClassify.cpp` (9779 lines)
 
 - `ir-pass/src/ArmClassify.cpp:82` — `isCallToPrefix`
 - `ir-pass/src/ArmClassify.cpp:109` — `isPhiCall`
@@ -268,41 +268,48 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArmClassify.cpp:1878` — `collectStatePrepPhiDescendants`
 - `ir-pass/src/ArmClassify.cpp:2005` — `fcmpEqualityHoldsOnEdge`
 - `ir-pass/src/ArmClassify.cpp:2126` — `f2SeedPinnedByLiveRegister`
-- `ir-pass/src/ArmClassify.cpp:2514` — `walkValueChain`
-- `ir-pass/src/ArmClassify.cpp:2678` — `valueArmIsPureChain`
-- `ir-pass/src/ArmClassify.cpp:2761` — `declAnchor`
-- `ir-pass/src/ArmClassify.cpp:2790` — `taintedAngleGate`
-- `ir-pass/src/ArmClassify.cpp:2856` — `wireGainsNonDiagonalGate`
-- `ir-pass/src/ArmClassify.cpp:3166` — `anyInstructionInGap`
-- `ir-pass/src/ArmClassify.cpp:3216` — `isChainedThetaCall`
-- `ir-pass/src/ArmClassify.cpp:3225` — `chainedThetaBetweenDefAndBranch`
-- `ir-pass/src/ArmClassify.cpp:3299` — `condRailMembers`
-- `ir-pass/src/ArmClassify.cpp:3347` — `railRelabellingGateOn`
-- `ir-pass/src/ArmClassify.cpp:3420` — `crossBlockCompareMintable`
-- `ir-pass/src/ArmClassify.cpp:3436` — `condWireDisposition`
-- `ir-pass/src/ArmClassify.cpp:3565` — `railCondWireDisposition`
-- `ir-pass/src/ArmClassify.cpp:3630` — `railWireNamesBackward`
-- `ir-pass/src/ArmClassify.cpp:3711` — `railMeasuredBeforeReadPoint`
-- `ir-pass/src/ArmClassify.cpp:3812` — `condCmpOperandSeeds`
-- `ir-pass/src/ArmClassify.cpp:3872` — `condCmpMeasuredBeforeReadPoint`
-- `ir-pass/src/ArmClassify.cpp:3891` — `markRailCondRead`
-- `ir-pass/src/ArmClassify.cpp:4012` — `declineRound2TaintedArmCone`
-- `ir-pass/src/ArmClassify.cpp:4066` — `isRuntimeStatePrepSeed`
-- `ir-pass/src/ArmClassify.cpp:4100` — `declineRound2QuantumPrepSeeds`
-- `ir-pass/src/ArmClassify.cpp:4116` — `reverifyRailCondReads`
-- `ir-pass/src/ArmClassify.cpp:4253` — `reverifyCmpCondReads`
-- `ir-pass/src/ArmClassify.cpp:4486` — `markCmpCondRead`
-- `ir-pass/src/ArmClassify.cpp:4543` — `comparePredLowerable`
-- `ir-pass/src/ArmClassify.cpp:4588` — `condDataUseDisposition`
-- `ir-pass/src/ArmClassify.cpp:4717` — `straightThroughConstFoldHandle`
-- `ir-pass/src/ArmClassify.cpp:4884` — `iterationLocalRollable`
-- `ir-pass/src/ArmClassify.cpp:4944` — `classifyArms`
-- `ir-pass/src/ArmClassify.cpp:6951` — `phaseAngleTail`
-- `ir-pass/src/ArmClassify.cpp:7060` — `classifyPhaseKickback`
-- `ir-pass/src/ArmClassify.cpp:8056` — `classifyPhaseKickbackNest`
-- `ir-pass/src/ArmClassify.cpp:8381` — `classifyClassicalCallArm`
-- `ir-pass/src/ArmClassify.cpp:8824` — `angleSelectArmsDefined`
-- `ir-pass/src/ArmClassify.cpp:8833` — `classifyAngleSelect`
+- `ir-pass/src/ArmClassify.cpp:2565` — `walkValueChain`
+- `ir-pass/src/ArmClassify.cpp:2729` — `valueArmIsPureChain`
+- `ir-pass/src/ArmClassify.cpp:2812` — `declAnchor`
+- `ir-pass/src/ArmClassify.cpp:2841` — `taintedAngleGate`
+- `ir-pass/src/ArmClassify.cpp:2907` — `wireGainsNonDiagonalGate`
+- `ir-pass/src/ArmClassify.cpp:3217` — `anyInstructionInGap`
+- `ir-pass/src/ArmClassify.cpp:3267` — `isChainedThetaCall`
+- `ir-pass/src/ArmClassify.cpp:3276` — `chainedThetaBetweenDefAndBranch`
+- `ir-pass/src/ArmClassify.cpp:3350` — `condRailMembers`
+- `ir-pass/src/ArmClassify.cpp:3398` — `railRelabellingGateOn`
+- `ir-pass/src/ArmClassify.cpp:3471` — `crossBlockCompareMintable`
+- `ir-pass/src/ArmClassify.cpp:3487` — `condWireDisposition`
+- `ir-pass/src/ArmClassify.cpp:3616` — `railCondWireDisposition`
+- `ir-pass/src/ArmClassify.cpp:3681` — `railWireNamesBackward`
+- `ir-pass/src/ArmClassify.cpp:3762` — `railMeasuredBeforeReadPoint`
+- `ir-pass/src/ArmClassify.cpp:3863` — `condCmpOperandSeeds`
+- `ir-pass/src/ArmClassify.cpp:3923` — `condCmpMeasuredBeforeReadPoint`
+- `ir-pass/src/ArmClassify.cpp:3942` — `markRailCondRead`
+- `ir-pass/src/ArmClassify.cpp:4063` — `declineRound2TaintedArmCone`
+- `ir-pass/src/ArmClassify.cpp:4117` — `isRuntimeStatePrepSeed`
+- `ir-pass/src/ArmClassify.cpp:4151` — `declineRound2QuantumPrepSeeds`
+- `ir-pass/src/ArmClassify.cpp:4167` — `reverifyRailCondReads`
+- `ir-pass/src/ArmClassify.cpp:4304` — `reverifyCmpCondReads`
+- `ir-pass/src/ArmClassify.cpp:4537` — `markCmpCondRead`
+- `ir-pass/src/ArmClassify.cpp:4594` — `comparePredLowerable`
+- `ir-pass/src/ArmClassify.cpp:4639` — `condDataUseDisposition`
+- `ir-pass/src/ArmClassify.cpp:4768` — `straightThroughConstFoldHandle`
+- `ir-pass/src/ArmClassify.cpp:4935` — `iterationLocalRollable`
+- `ir-pass/src/ArmClassify.cpp:5017` — `condTreeCompareLeafRefusal`
+- `ir-pass/src/ArmClassify.cpp:5046` — `condTreeRailLeafRefusal`
+- `ir-pass/src/ArmClassify.cpp:5063` — `condTreeShapeRefusal`
+- `ir-pass/src/ArmClassify.cpp:5095` — `condTreeProvenance`
+- `ir-pass/src/ArmClassify.cpp:5155` — `condTreeLeafWindowStale`
+- `ir-pass/src/ArmClassify.cpp:5172` — `condTreeTooLarge`
+- `ir-pass/src/ArmClassify.cpp:5186` — `condTreeRotationCandidate`
+- `ir-pass/src/ArmClassify.cpp:5203` — `classifyArms`
+- `ir-pass/src/ArmClassify.cpp:7333` — `phaseAngleTail`
+- `ir-pass/src/ArmClassify.cpp:7443` — `classifyPhaseKickback`
+- `ir-pass/src/ArmClassify.cpp:8327` — `classifyPhaseKickbackNest`
+- `ir-pass/src/ArmClassify.cpp:8652` — `classifyClassicalCallArm`
+- `ir-pass/src/ArmClassify.cpp:9095` — `angleSelectArmsDefined`
+- `ir-pass/src/ArmClassify.cpp:9104` — `classifyAngleSelect`
 
 ### `ir-pass/src/ArmHomogeneity.cpp` (217 lines)
 
@@ -485,7 +492,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `ir-pass/src/CondTreeStrip.cpp:24` — `stripCondNetwork`
 
-### `ir-pass/src/ControlDetect.cpp` (916 lines)
+### `ir-pass/src/ControlDetect.cpp` (917 lines)
 
 - `ir-pass/src/ControlDetect.cpp:57` — `diagnoseUnderControl`
 - `ir-pass/src/ControlDetect.cpp:86` — `anchorIsLocated`
@@ -501,7 +508,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ControlDetect.cpp:418` — `retLineageCarriesPhase`
 - `ir-pass/src/ControlDetect.cpp:467` — `offPatternDisposition`
 - `ir-pass/src/ControlDetect.cpp:529` — `handleBranchRegion`
-- `ir-pass/src/ControlDetect.cpp:758` — `detectControlRegions`
+- `ir-pass/src/ControlDetect.cpp:759` — `detectControlRegions`
 
 ### `ir-pass/src/ControlledSymbols.cpp` (172 lines)
 
@@ -1250,7 +1257,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/StaleReadRegion.cpp:255` — `callTerminationCrossable`
 - `ir-pass/src/StaleReadRegion.cpp:265` — `callProvablyReturns`
 
-### `ir-pass/src/SwapRouteEmit.cpp` (3161 lines)
+### `ir-pass/src/SwapRouteEmit.cpp` (3286 lines)
 
 - `ir-pass/src/SwapRouteEmit.cpp:70` — `scrubTaint`
 - `ir-pass/src/SwapRouteEmit.cpp:131` — `intrinsicSuffix`
@@ -1258,15 +1265,16 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SwapRouteEmit.cpp:176` — `phaseSpineBase`
 - `ir-pass/src/SwapRouteEmit.cpp:195` — `valueChainBase`
 - `ir-pass/src/SwapRouteEmit.cpp:310` — `emitValueRegion`
-- `ir-pass/src/SwapRouteEmit.cpp:725` — `emitInPlaceRotationRegion`
-- `ir-pass/src/SwapRouteEmit.cpp:1266` — `emitRegion`
-- `ir-pass/src/SwapRouteEmit.cpp:1706` — `collectArmPhis`
-- `ir-pass/src/SwapRouteEmit.cpp:1729` — `emitRoute`
-- `ir-pass/src/SwapRouteEmit.cpp:1855` — `emitKickbackGroup`
-- `ir-pass/src/SwapRouteEmit.cpp:1889` — `phaseAngles`
-- `ir-pass/src/SwapRouteEmit.cpp:1896` — `emitPhaseKickbackRegion`
-- `ir-pass/src/SwapRouteEmit.cpp:2305` — `emitPhaseKickbackNestRegion`
-- `ir-pass/src/SwapRouteEmit.cpp:2567` — `lowerControlRegions`
+- `ir-pass/src/SwapRouteEmit.cpp:660` — `eraseDeadCondTreeInterior`
+- `ir-pass/src/SwapRouteEmit.cpp:753` — `emitInPlaceRotationRegion`
+- `ir-pass/src/SwapRouteEmit.cpp:1367` — `emitRegion`
+- `ir-pass/src/SwapRouteEmit.cpp:1838` — `collectArmPhis`
+- `ir-pass/src/SwapRouteEmit.cpp:1861` — `emitRoute`
+- `ir-pass/src/SwapRouteEmit.cpp:1987` — `emitKickbackGroup`
+- `ir-pass/src/SwapRouteEmit.cpp:2021` — `phaseAngles`
+- `ir-pass/src/SwapRouteEmit.cpp:2028` — `emitPhaseKickbackRegion`
+- `ir-pass/src/SwapRouteEmit.cpp:2430` — `emitPhaseKickbackNestRegion`
+- `ir-pass/src/SwapRouteEmit.cpp:2692` — `lowerControlRegions`
 
 ### `ir-pass/src/SwitchArmProve.cpp` (390 lines)
 

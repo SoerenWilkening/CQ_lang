@@ -28,7 +28,10 @@
 #ifndef CQ_IRPASS_ARM_CLASSIFY_H_
 #define CQ_IRPASS_ARM_CLASSIFY_H_
 
+#include "llvm/ADT/SmallPtrSet.h"  // SmallPtrSetImpl (bd dm7f.52 ClaimedSelects)
+
 namespace llvm {
+class Instruction;
 class CallBase;
 class DominatorTree;
 class LoopInfo;
@@ -83,9 +86,17 @@ enum class ArmDisposition { Accept, Declined };
 // in-loop decline (Prime Directive). Every OTHER loop question this class owes
 // was already answered by `ControlDetect::flatRegionRollableInLoop` before
 // `Region.InLoop` was set.
-ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
-                            const llvm::DominatorTree *DT,
-                            const llvm::LoopInfo *LI);
+//
+// bd dm7f.52: `ClaimedSelects` receives every logical `select i1` NODE of an
+// accepted compound condition tree (the in-place Ry / state-prep consumer of
+// `CondTreeEmit`), exactly as `classifyPhaseKickback` fills it, so the caller's
+// tainted-select scan does not ALSO claim the node as an i1 data mux. Null is
+// allowed (no select can then be claimed; an accepted tree with a select node
+// would be scanned again — every production caller passes the set).
+ArmDisposition classifyArms(
+    ControlRegion &Region, TaintSet &Taint, const llvm::DominatorTree *DT,
+    const llvm::LoopInfo *LI,
+    llvm::SmallPtrSetImpl<llvm::Instruction *> *ClaimedSelects = nullptr);
 
 // Outcome of the 6.5 classical-call-arm recognizer (DD-7), tried by
 // `ControlDetect::handleBranchRegion` BEFORE `classifyArms`:
