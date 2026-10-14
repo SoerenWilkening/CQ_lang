@@ -44,14 +44,14 @@
 ; UNROLL-LABEL: define {{.*}} @main(
 ; UNROLL: %h = call i32 @cqrt_alloc_i1(i1 false)
 ; UNROLL: call void @cqrt_ry_i1(i32 %h, double 2.500000e-01)
-; UNROLL: %h5 = call i32 @cqrt_alloc_i1(i1 false)
-; UNROLL: call void @cqrt_ry_i1(i32 %h5, double 2.500000e-01)
-; UNROLL: %h6 = call i32 @cqrt_alloc_i1(i1 false)
-; UNROLL: call void @cqrt_ry_i1(i32 %h6, double 2.500000e-01)
+; UNROLL: %h1 = call i32 @cqrt_alloc_i1(i1 false)
+; UNROLL: call void @cqrt_ry_i1(i32 %h1, double 2.500000e-01)
+; UNROLL: %h2 = call i32 @cqrt_alloc_i1(i1 false)
+; UNROLL: call void @cqrt_ry_i1(i32 %h2, double 2.500000e-01)
 ; UNROLL: call void @cqrt_ry_i1(i32 %h, double 5.000000e-01)
-; UNROLL: call void @cqrt_ry_i1(i32 %h5, double 5.000000e-01)
-; UNROLL: call void @cqrt_ry_i1(i32 %h6, double 5.000000e-01)
-; UNROLL: %m7 = call i1 @cqrt_measure_i1(i32 %h)
+; UNROLL: call void @cqrt_ry_i1(i32 %h1, double 5.000000e-01)
+; UNROLL: call void @cqrt_ry_i1(i32 %h2, double 5.000000e-01)
+; UNROLL: %m3 = call i1 @cqrt_measure_i1(i32 %h)
 ; The dump is the module AFTER the promoter fixpoint, which now ends with the
 ; 01po.19 stage: the array is gone (scalarized), and the promoter never fired.
 ; DBG: === CQ_RAILBANK_DBG: module after promoteRailBankCells fixpoint ===

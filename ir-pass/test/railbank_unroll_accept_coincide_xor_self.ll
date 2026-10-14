@@ -5,6 +5,14 @@
 ; Trip 0: q0' = q0 ^ q2 (an out-of-place `cq_template_xor_i1`); trip 2: q2' = q2 ^ q0'
 ; = q0, the SSA value q0 itself. Measured: q0' then q2' = q0 (q1' is the constant 0).
 ;
+;
+; ⚠ L7 RETIREMENT TRIGGER (bd r2j3.33, review round 1 item 7): this file pins the
+; OUT-OF-PLACE `cq_template_xor_i1` for an array `^=`, which keeps the old target
+; rail live. That is the r2j3.33 population (a later rotation of the control dephases
+; it; lane C's dm7f.51 replaces it with an in-place CNOT). When dm7f.51 lands, the
+; xor lines below change to the in-place CNOT stream: re-derive them then, with an
+; analytic check, and do NOT read this file as evidence the out-of-place form is right.
+;
 ; SOURCE (clang -O1, verbatim below):
 ;   /* adversarial: two indices that coincide on one trip (i == 2-i at i == 1):
 ;      q[1] ^= q[1] is x ^= x, i.e. q[1] = 0 with its old rail discarded. */

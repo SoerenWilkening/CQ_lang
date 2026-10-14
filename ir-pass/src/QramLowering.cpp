@@ -221,6 +221,9 @@ constexpr char kMsgQramCloneUnbounded[] =
 //   * lowering_reject_railbank_alias.ll         → kMsgBankAlias
 //   * lowering_reject_railbank_two_stores_runtime_trip.ll   → kMsgBankMultiStore
 //   * railbank_readorder_reject_no_fact.ll      → kMsgBankTotality
+//   * lowering_reject_railbank_oversized_runtime_trip.ll    → kMsgBankTotality
+//   * lowering_reject_railbank_fp_cell_runtime_trip.ll      → kMsgBankWidth
+//   * lowering_reject_railbank_nowidth_cell_runtime_trip.ll → kMsgBankWidth
 // ⚠ bd `test_C_libtooling-01po.19` (2026-10-14): a module whose array the rolled
 // bank does not own and whose indexing loops all have constant trips never
 // reaches this verdict's declines any more: `unrollQuantumArrayWalks`

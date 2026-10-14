@@ -38,7 +38,12 @@
 ; UNROLL-LABEL: define {{.*}} @slice(
 ; UNROLL: %h = call i32 @cqrt_alloc_i1(i1 false)
 ; UNROLL: call void @cqrt_ry_i1(i32 %h, double 3.000000e-01)
-; UNROLL: %h1 = call i32 @cqrt_alloc_i32(i32 0)
+; The walk AND the read run only under the classical guard k > 0 (review round 1
+; item 6: an unconditional rotate+measure must fail this file).
+; UNROLL: %pos = icmp sgt i32 %k, 0
+; UNROLL-NEXT: br i1 %pos, label %w, label %exit
+; UNROLL: {{^}}w:
+; UNROLL-NEXT: %h1 = call i32 @cqrt_alloc_i32(i32 0)
 ; UNROLL: call void @cqrt_ry_i32(i32 %h1, double 5.000000e-01)
 ; UNROLL: %h2 = call i32 @cqrt_alloc_i32(i32 0)
 ; UNROLL: call void @cqrt_ry_i32(i32 %h2, double 5.000000e-01)
@@ -47,7 +52,9 @@
 ; UNROLL: %m = call i32 @cqrt_measure_i32(i32 %h1)
 ; UNROLL: %m4 = call i32 @cqrt_measure_i32(i32 %h2)
 ; UNROLL: %m5 = call i32 @cqrt_measure_i32(i32 %h3)
-; UNROLL: %m6 = call i1 @cqrt_measure_i1(i32 %h)
+; UNROLL: {{^}}exit:
+; UNROLL-NEXT: %res = phi i32 [ %s2.2, %w ], [ 0, %entry ]
+; UNROLL-NEXT: %m6 = call i1 @cqrt_measure_i1(i32 %h)
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

@@ -6,6 +6,12 @@
 ; The two files together pin that the clause is `abiWidthFromType(T).empty() ||
 ; !widthHasReversibleCopy(...)` and NEVER `.empty()` alone — the trap
 ; `OpcodeSupport.h` states in writing for i128.
+; ⚠ CORRECTED 2026-10-14 (bd 01po.19 review round 1): since 01po.19 neither THIS file
+; nor `lowering_reject_railbank_fp_cell.ll` pins that clause any more: both have
+; constant trips, are unrolled and scalarized, and now ACCEPT (see the FLIP block
+; below). The two halves of the clause are pinned by the runtime-trip twins
+; `lowering_reject_railbank_nowidth_cell_runtime_trip.ll` and
+; `lowering_reject_railbank_fp_cell_runtime_trip.ll`.
 ;
 ; ⚠ HAND IR, AND WHY. `_BitInt(96)` is NOT reachable on the `clang -O1` floor for
 ; this clause: `CQ.h`'s `cq_theta` is a 14-type `_Generic`, and a `_BitInt(96)`

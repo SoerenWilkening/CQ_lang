@@ -60,13 +60,13 @@
 ; UNROLL-LABEL: define {{.*}} @main(
 ; UNROLL: %h = call i32 @cqrt_alloc_f64(double 0.000000e+00)
 ; UNROLL: call void @cqrt_ry_f64(i32 %h, double 5.000000e-01)
-; UNROLL: %h4 = call i32 @cqrt_alloc_f64(double 0.000000e+00)
-; UNROLL: call void @cqrt_ry_f64(i32 %h4, double 5.000000e-01)
-; UNROLL: %h5 = call i32 @cqrt_alloc_f64(double 0.000000e+00)
-; UNROLL: call void @cqrt_ry_f64(i32 %h5, double 5.000000e-01)
+; UNROLL: %h1 = call i32 @cqrt_alloc_f64(double 0.000000e+00)
+; UNROLL: call void @cqrt_ry_f64(i32 %h1, double 5.000000e-01)
+; UNROLL: %h2 = call i32 @cqrt_alloc_f64(double 0.000000e+00)
+; UNROLL: call void @cqrt_ry_f64(i32 %h2, double 5.000000e-01)
 ; UNROLL: %m = call double @cqrt_measure_f64(i32 %h)
-; UNROLL: %m6 = call double @cqrt_measure_f64(i32 %h4)
-; UNROLL: %m7 = call double @cqrt_measure_f64(i32 %h5)
+; UNROLL: %m3 = call double @cqrt_measure_f64(i32 %h1)
+; UNROLL: %m4 = call double @cqrt_measure_f64(i32 %h2)
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

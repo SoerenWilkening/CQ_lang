@@ -9,6 +9,14 @@
 ; `cqrt_free` is emitted (the four rotated rails feed the measured xor results and are
 ; left allocated, never reset).
 ;
+;
+; ⚠ L7 RETIREMENT TRIGGER (bd r2j3.33, review round 1 item 7): this file pins the
+; OUT-OF-PLACE `cq_template_xor_i1` for an array `^=`, which keeps the old target
+; rail live. That is the r2j3.33 population (a later rotation of the control dephases
+; it; lane C's dm7f.51 replaces it with an in-place CNOT). When dm7f.51 lands, the
+; xor lines below change to the in-place CNOT stream: re-derive them then, with an
+; analytic check, and do NOT read this file as evidence the out-of-place form is right.
+;
 ; SOURCE (clang -O1, verbatim below; `f` is inlined into `main`):
 ;   /* adversarial: overwrite live, ENTANGLED cells. q[i] feeds q[i+2] (CNOT), then the
 ;      source cells are overwritten with a classical 0 inside a walk. The old rails must

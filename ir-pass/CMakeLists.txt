@@ -120,6 +120,7 @@ add_library(CQPass MODULE
   src/RailBankPromote.cpp
   # bd 01po.19: constant-trip unroll + SROA of a quantum local array.
   src/RailBankUnroll.cpp
+  src/RailBankUnrollUtil.cpp
   src/RegionFlatten.cpp
   src/RegionTreeDetect.cpp
   # bd dm7f.5: multi-exit `ret` normalization under tainted control.

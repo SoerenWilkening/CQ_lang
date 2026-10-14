@@ -6,6 +6,7 @@
 #include "RailBankUnroll.h"
 
 #include "QramLowering.h"  // railBankCarveVerdict / RailBankCarve
+#include "RailBankUnrollUtil.h"
 #include "TaintPropagation.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
@@ -38,6 +39,7 @@
 #include "llvm/Transforms/Utils/UnrollLoop.h"
 
 #include <cstdlib>
+#include <string>
 
 using namespace llvm;
 
@@ -127,35 +129,53 @@ bool isCandidate(AllocaInst *AI, const TaintSet &taint, LoopInfo &LI) {
   return false;
 }
 
-// (e) Does the ROLLED rail bank own anything in `F`? Any tainted store the ONE
-// rail-bank verdict classifies `Bank` (promoted, or promotable as is) or
-// `BankRaw` (the promoter's input) keeps the whole function out of this stage.
-bool functionHasRolledBank(Function &F, const TaintSet &taint,
-                           DominatorTree &DT, LoopInfo &LI,
-                           ScalarEvolution &SE) {
+// (e) The arrays the ROLLED rail bank owns in `F`: the object of every tainted
+// store the ONE rail-bank verdict classifies `Bank` (promoted, or promotable as
+// is) or `BankRaw` (the promoter's input). The priority is PER ARRAY (review
+// round 1, item 2): such an array is never a candidate, and no loop that STORES
+// into it is unrolled (that loop is its walk), but an unrelated array in the
+// same function is still taken.
+SmallPtrSet<AllocaInst *, 4> rolledBankAllocas(Function &F,
+                                              const TaintSet &taint,
+                                              DominatorTree &DT, LoopInfo &LI,
+                                              ScalarEvolution &SE) {
+  SmallPtrSet<AllocaInst *, 4> Out;
   for (Instruction &I : instructions(F)) {
     auto *SI = dyn_cast<StoreInst>(&I);
     if (!SI || !taint.Tainted.count(SI->getValueOperand()))
       continue;
     const char *Msg = nullptr;
-    RailBankCarve V = railBankCarveVerdict(SI, taint, DT, LI, SE, Msg);
-    if (V == RailBankCarve::Bank || V == RailBankCarve::BankRaw)
-      return true;
+    RailBankShape Shape;
+    RailBankCarve V = railBankCarveVerdict(SI, taint, DT, LI, SE, Msg, &Shape);
+    if ((V == RailBankCarve::Bank || V == RailBankCarve::BankRaw) &&
+        Shape.Alloca)
+      Out.insert(Shape.Alloca);
   }
+  return Out;
+}
+
+// Does `L` store into one of the rolled banks (it is, or contains, a bank's
+// walk)? Such a loop is left rolled for the bank.
+bool loopStoresIntoBank(const Loop *L,
+                        const SmallPtrSetImpl<AllocaInst *> &Banks) {
+  for (const BasicBlock *BB : L->blocks())
+    for (const Instruction &I : *BB)
+      if (auto *SI = dyn_cast<StoreInst>(&I))
+        for (AllocaInst *B : Banks)
+          if (storesInto(SI, B))
+            return true;
   return false;
 }
 
-// The outermost loop around `G` with a SCEV-proven exact constant trip count
-// (the `LoopUnrollPrepass` U6 proof: exact == max, so `UnrollLoop` completes).
-Loop *outermostConstTripLoop(Instruction *I, LoopInfo &LI,
-                             ScalarEvolution &SE, unsigned &TripOut) {
+// The outermost unrollable loop around `I` that does not store into a bank.
+Loop *outermostUnrollableLoop(Instruction *I, LoopInfo &LI,
+                              ScalarEvolution &SE,
+                              const SmallPtrSetImpl<AllocaInst *> &Banks,
+                              unsigned &TripOut) {
   Loop *Best = nullptr;
   for (Loop *L = LI.getLoopFor(I->getParent()); L; L = L->getParentLoop()) {
-    unsigned Trip = SE.getSmallConstantTripCount(L);
-    if (Trip == 0 || Trip > kMaxUnrollTrip ||
-        SE.getSmallConstantMaxTripCount(L) != Trip)
-      continue;
-    if (!L->isSafeToClone() || L->getHeader()->hasAddressTaken())
+    unsigned Trip = unrollTrip(L, SE, kMaxUnrollTrip);
+    if (Trip == 0 || loopStoresIntoBank(L, Banks))
       continue;
     Best = L;
     TripOut = Trip;
@@ -163,62 +183,21 @@ Loop *outermostConstTripLoop(Instruction *I, LoopInfo &LI,
   return Best;
 }
 
-// One full unroll of `L` by its exact trip. The `LoopUnrollPrepass.cpp`
-// call sequence, including its LCSSA lesson (an out-of-loop use of an in-loop
-// value is remapped through the exit LCSSA phis or it reads the FIRST trip).
-bool fullyUnroll(Function &F, Loop *L, unsigned Trip, DominatorTree &DT,
-                 LoopInfo &LI, ScalarEvolution &SE, AssumptionCache &AC) {
-  if (!L->isLoopSimplifyForm() &&
-      !simplifyLoop(L, &DT, &LI, &SE, &AC, /*MSSAU=*/nullptr,
-                    /*PreserveLCSSA=*/false))
-    return false;
-  if (!L->getLoopPreheader() || !L->getLoopLatch())
-    return false;
-  formLCSSARecursively(*L, DT, &LI, &SE);
-  TargetTransformInfo TTI(F.getParent()->getDataLayout());
-  OptimizationRemarkEmitter ORE(&F);
-  UnrollLoopOptions ULO;
-  ULO.Count = Trip;
-  ULO.Force = true;
-  ULO.Runtime = false;
-  ULO.AllowExpensiveTripCount = false;
-  ULO.UnrollRemainder = false;
-  ULO.ForgetAllSCEV = true;
-  LoopUnrollResult R = UnrollLoop(L, ULO, &LI, &SE, &DT, &AC, &TTI, &ORE,
-                                  /*PreserveLCSSA=*/true);
-  return R == LoopUnrollResult::FullyUnrolled;
-}
-
-// The stock cleanup a hand-unrolled source gets at `clang -O1`, run on the
-// trial clone only.
-void runCleanup(Function &F, bool Full) {
-  PassBuilder PB;
-  LoopAnalysisManager LAM;
-  FunctionAnalysisManager FAM;
-  CGSCCAnalysisManager CGAM;
-  ModuleAnalysisManager MAM;
-  PB.registerModuleAnalyses(MAM);
-  PB.registerCGSCCAnalyses(CGAM);
-  PB.registerFunctionAnalyses(FAM);
-  PB.registerLoopAnalyses(LAM);
-  PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
-  FunctionPassManager FPM;
-  FPM.addPass(InstSimplifyPass());
-  if (Full) {
-    FPM.addPass(SROAPass(SROAOptions::ModifyCFG));
-    FPM.addPass(EarlyCSEPass());
-    FPM.addPass(InstCombinePass());
-  }
-  FPM.addPass(SimplifyCFGPass());
-  if (Full)
-    FPM.addPass(SROAPass(SROAOptions::ModifyCFG));
-  FPM.run(F, FAM);
-}
-
-// The trial: unroll every constant-trip loop that touches `AI` (a variable
-// index with no such loop around it fails the trial), clean up, and succeed
-// iff the array is gone and nothing else was left in memory.
-bool transform(Function &F, AllocaInst *AI) {
+// The trial, on the CLONE: unroll every unrollable loop that touches `AI`,
+// clean up, and succeed iff the array is gone and nothing else was left in
+// memory. With `YieldToBanks` a loop that stores into a rolled bank is never
+// unrolled. Without it (the second trial, taken only when the first fails) such
+// a loop may be unrolled — `-O1` fuses a bank's walk with another array's walk
+// (review probe rv/p2) — but then every bank whose walk was unrolled must be
+// scalarized too, so no bank is left half rolled. Loops are chosen in INSTRUCTION order (review round
+// 1, item 1), never in `users()` order: a use list is not program order, and it
+// differs between a function and its clone.
+bool trialTransform(Function &F, AllocaInst *AI,
+                    const SmallPtrSetImpl<AllocaInst *> &Banks,
+                    bool YieldToBanks) {
+  const SmallPtrSet<AllocaInst *, 4> NoBanks;
+  const SmallPtrSetImpl<AllocaInst *> &Fence = YieldToBanks ? Banks : NoBanks;
+  SmallVector<WeakVH, 4> Touched;
   SmallPtrSet<AllocaInst *, 8> Before;
   for (Instruction &I : instructions(F))
     if (auto *A = dyn_cast<AllocaInst>(&I))
@@ -235,33 +214,46 @@ bool transform(Function &F, AllocaInst *AI) {
     TargetLibraryInfoImpl TLII(Triple(F.getParent()->getTargetTriple()));
     TargetLibraryInfo TLI(TLII);
     ScalarEvolution SE(F, TLI, AC, DT, LI);
-    // Every ACCESS of the array inside a constant-trip loop is unrolled out of
+    // Every ACCESS of the array inside an unrollable loop is unrolled out of
     // it, not only a variable-index one: a constant-index cell left inside a
     // rolled loop becomes a loop-carried register after SROA, and the
     // hand-unrolled program this stage stands in for has no such loop (F5's
-    // inner `for (v…) if (c == v) cq_theta(&q[i], …)`). A VARIABLE index with
-    // no constant-trip loop around it cannot be resolved: the trial fails.
+    // inner `for (v…) if (c == v) cq_theta(&q[i], …)`). A variable index that
+    // no loop resolves NOW may be resolved by a later round (a loop whose
+    // bound another loop computes), so it fails the trial only when no access
+    // offers an unrollable loop at all.
+    SmallVector<Instruction *, 16> AccV = arrayAccesses(A);
+    SmallPtrSet<Instruction *, 16> Acc(AccV.begin(), AccV.end());
     Loop *Pick = nullptr;
     unsigned Trip = 0;
-    for (Instruction *Acc : arrayAccesses(A)) {
-      auto *G = dyn_cast<GetElementPtrInst>(Acc);
-      bool Variable = G && !G->hasAllConstantIndices();
-      unsigned T = 0;
-      Loop *L = outermostConstTripLoop(Acc, LI, SE, T);
-      if (!L) {
-        if (Variable)
-          return false;  // a variable index no constant-trip loop resolves.
+    bool Unresolved = false;
+    for (Instruction &I : instructions(F)) {
+      if (!Acc.count(&I))
         continue;
+      unsigned T = 0;
+      if (Loop *L = outermostUnrollableLoop(&I, LI, SE, Fence, T)) {
+        Pick = L;
+        Trip = T;
+        break;
       }
-      Pick = L;
-      Trip = T;
+      auto *G = dyn_cast<GetElementPtrInst>(&I);
+      if (G && !G->hasAllConstantIndices())
+        Unresolved = true;
+    }
+    if (!Pick) {
+      if (Unresolved)
+        return false;  // a variable index no unrollable loop resolves.
       break;
     }
-    if (!Pick)
-      break;
     if (dbg())
       errs() << "CQ_RAILBANK_UNROLL_DBG: unroll trip-" << Trip << " loop at "
-             << Pick->getHeader()->getName() << " in @" << F.getName() << "\n";
+             << headerName(Pick) << " in @" << F.getName() << "\n";
+    for (AllocaInst *B : Banks) {
+      SmallPtrSet<AllocaInst *, 1> One;
+      One.insert(B);
+      if (loopStoresIntoBank(Pick, One))
+        Touched.push_back(WeakVH(B));
+    }
     if (!fullyUnroll(F, Pick, Trip, DT, LI, SE, AC))
       return false;
     runCleanup(F, /*Full=*/false);
@@ -271,11 +263,35 @@ bool transform(Function &F, AllocaInst *AI) {
   runCleanup(F, /*Full=*/true);
   if (Arr)
     return false;  // SROA could not promote the whole array.
+  for (WeakVH &B : Touched)
+    if (B)
+      return false;  // a bank whose walk was unrolled stayed in memory.
   for (Instruction &I : instructions(F))
     if (auto *A = dyn_cast<AllocaInst>(&I))
       if (!Before.count(A))
         return false;  // a partially promoted residue of the array.
   return true;
+}
+
+// ADOPT the clone's transformed body whole: `F`'s body is dropped, the clone's
+// blocks are spliced in, and `F` takes the clone's DISubprogram, which every
+// spliced `!dbg` already names (`CloneFunction` mints a fresh one; keeping
+// `F`'s old subprogram leaves every location pointing at the wrong function,
+// MEASURED as a verifier abort on `-g`). The trial IS the adoption, so there is
+// no second run to diverge (review round 1, item 1: the earlier re-run on the
+// original read a different use-list order, could fail after a successful
+// trial, and left the fixpoint spinning on an unchanged function).
+void adoptBody(Function &F, Function *C) {
+  for (BasicBlock &BB : F)
+    BB.dropAllReferences();
+  while (!F.empty())
+    F.begin()->eraseFromParent();
+  for (auto [A, CA] : zip(F.args(), C->args()))
+    CA.replaceAllUsesWith(&A);
+  F.splice(F.end(), C);
+  F.setSubprogram(C->getSubprogram());
+  C->setSubprogram(nullptr);
+  C->eraseFromParent();
 }
 
 bool hasAddressTakenBlock(const Function &F) {
@@ -290,6 +306,10 @@ bool hasAddressTakenBlock(const Function &F) {
 bool unrollQuantumArrayWalks(Module &M, const TaintSet &taint) {
   for (Function &F : M) {
     if (F.isDeclaration() || hasAddressTakenBlock(F))
+      continue;
+    // A `returns_twice` call re-runs code with no CFG edge (the rail-bank
+    // verdict refuses it for the same reason); leave such a function alone.
+    if (F.callsFunctionThatReturnsTwice())
       continue;
     bool AnyArray = false;
     for (Instruction &I : F.getEntryBlock())
@@ -308,36 +328,42 @@ bool unrollQuantumArrayWalks(Module &M, const TaintSet &taint) {
     TargetLibraryInfoImpl TLII(Triple(M.getTargetTriple()));
     TargetLibraryInfo TLI(TLII);
     ScalarEvolution SE(F, TLI, AC, DT, LI);
-    // A `returns_twice` call re-runs code with no CFG edge (the rail-bank
-    // verdict refuses it for the same reason); leave such a function alone.
-    if (F.callsFunctionThatReturnsTwice() ||
-        functionHasRolledBank(F, taint, DT, LI, SE))
-      continue;
+    SmallPtrSet<AllocaInst *, 4> Banks =
+        rolledBankAllocas(F, taint, DT, LI, SE);
     for (Instruction &I : F.getEntryBlock()) {
       auto *AI = dyn_cast<AllocaInst>(&I);
-      if (!AI || !isCandidate(AI, taint, LI))
+      if (!AI || Banks.count(AI) || !isCandidate(AI, taint, LI))
         continue;
       // THE TRIAL, on a clone: adopted whole or discarded whole, so a shape
       // this stage cannot finish reaches its existing owner byte-untouched.
       ValueToValueMapTy VMap;
       Function *C = CloneFunction(&F, VMap);
       auto *CAI = cast<AllocaInst>(VMap[AI]);
-      bool OK = transform(*C, CAI);
+      SmallPtrSet<AllocaInst *, 4> CBanks;
+      for (AllocaInst *B : Banks)
+        CBanks.insert(cast<AllocaInst>(VMap[B]));
+      bool OK = trialTransform(*C, CAI, CBanks, /*YieldToBanks=*/true);
+      if (!OK && !Banks.empty()) {
+        C->eraseFromParent();
+        VMap.clear();
+        C = CloneFunction(&F, VMap);
+        CAI = cast<AllocaInst>(VMap[AI]);
+        CBanks.clear();
+        for (AllocaInst *B : Banks)
+          CBanks.insert(cast<AllocaInst>(VMap[B]));
+        OK = trialTransform(*C, CAI, CBanks, /*YieldToBanks=*/false);
+      }
       if (dbg())
         errs() << "CQ_RAILBANK_UNROLL_DBG: @" << F.getName() << " array "
                << AI->getName() << (OK ? " scalarized" : " left for its owner")
                << "\n";
-      C->eraseFromParent();
-      if (!OK)
+      if (!OK) {
+        C->eraseFromParent();
         continue;
-      // ADOPT by re-running the same deterministic transformation on `F`. The
-      // clone's body is never spliced back: `CloneFunction` mints a fresh
-      // DISubprogram, so a spliced body's `!dbg` points at the wrong subprogram
-      // (MEASURED: the verifier aborts on any `-g` module).
-      bool Again = transform(F, AI);
-      if (dbg() && !Again)
-        errs() << "CQ_RAILBANK_UNROLL_DBG: @" << F.getName()
-               << " re-run diverged from the trial\n";
+      }
+      // `true` MEANS CHANGED: the adopted body has no `AI` (the trial proved
+      // the array gone), so `F` is not what it was.
+      adoptBody(F, C);
       return true;  // one function per call; the caller re-propagates.
     }
   }

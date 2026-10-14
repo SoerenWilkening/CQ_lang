@@ -6,6 +6,7 @@
 ;
 ; ⚠ THIS FIXTURE EXISTS BECAUSE THE CLASSIFIER GOT IT WRONG, AND IT WAS FOUND BY
 ; THE INCREMENT'S OWN ADVERSARIAL SELF-ATTACK RATHER THAN BY ANY GREEN SUITE.
+; MEASURED: on the FIRST subject binary (`cq-opt` sha256 53d1a4b6…) this module
 ; classified `Bank` — `CQ_CTRL_DBG: railbank [Bank] cells=3 abi=i8 trips=3` — with
 ; all 18 rail-bank fixtures green and the whole `ir-pass/test` corpus unmoved. The
 ; conjunct `L->getParentLoop()` was added in response, and the second subject
@@ -63,16 +64,16 @@
 ; UNROLL-LABEL: define {{.*}} @main(
 ; UNROLL: %h = call i32 @cqrt_alloc_i1(i1 false)
 ; UNROLL: call void @cqrt_ry_i1(i32 %h, double 5.000000e-01)
-; UNROLL: %h12 = call i32 @cqrt_alloc_i1(i1 false)
-; UNROLL: call void @cqrt_ry_i1(i32 %h12, double 5.000000e-01)
-; UNROLL: %h13 = call i32 @cqrt_alloc_i1(i1 false)
-; UNROLL: call void @cqrt_ry_i1(i32 %h13, double 5.000000e-01)
+; UNROLL: %h1 = call i32 @cqrt_alloc_i1(i1 false)
+; UNROLL: call void @cqrt_ry_i1(i32 %h1, double 5.000000e-01)
+; UNROLL: %h2 = call i32 @cqrt_alloc_i1(i1 false)
+; UNROLL: call void @cqrt_ry_i1(i32 %h2, double 5.000000e-01)
 ; UNROLL: call void @cqrt_ry_i1(i32 %h, double 5.000000e-01)
-; UNROLL: call void @cqrt_ry_i1(i32 %h12, double 5.000000e-01)
-; UNROLL: call void @cqrt_ry_i1(i32 %h13, double 5.000000e-01)
+; UNROLL: call void @cqrt_ry_i1(i32 %h1, double 5.000000e-01)
+; UNROLL: call void @cqrt_ry_i1(i32 %h2, double 5.000000e-01)
 ; UNROLL: %m = call i1 @cqrt_measure_i1(i32 %h)
-; UNROLL: %m14 = call i1 @cqrt_measure_i1(i32 %h12)
-; UNROLL: %m15 = call i1 @cqrt_measure_i1(i32 %h13)
+; UNROLL: %m3 = call i1 @cqrt_measure_i1(i32 %h1)
+; UNROLL: %m4 = call i1 @cqrt_measure_i1(i32 %h2)
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

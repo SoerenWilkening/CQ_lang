@@ -33,10 +33,10 @@
 ; CHECK-LABEL: define {{.*}} @main(
 ; CHECK: %h = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK: call void @cqrt_ry_i1(i32 %h, double 5.000000e-01)
-; CHECK: %h2 = call i32 @cqrt_alloc_i1(i1 false)
-; CHECK: call void @cqrt_ry_i1_controlled(i32 %h, i32 %h2, double 6.000000e-01)
+; CHECK: %h1 = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK: call void @cqrt_ry_i1_controlled(i32 %h, i32 %h1, double 6.000000e-01)
 ; CHECK: %m = call i1 @cqrt_measure_i1(i32 %h)
-; CHECK: %m3 = call i1 @cqrt_measure_i1(i32 %h2)
+; CHECK: %m2 = call i1 @cqrt_measure_i1(i32 %h1)
 ; CHECK: ret i32
 
 ; ModuleID = 'p16_one.c'

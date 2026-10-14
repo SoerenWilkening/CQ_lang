@@ -36,11 +36,11 @@
 ; UNROLL-LABEL: define {{.*}} @main(
 ; UNROLL: %h = call i32 @cqrt_alloc_i1(i1 true)
 ; UNROLL: call void @cqrt_ry_i1(i32 %h, double 5.000000e-01)
+; UNROLL: %h1 = call i32 @cqrt_alloc_i1(i1 true)
+; UNROLL: call void @cqrt_ry_i1(i32 %h1, double 5.000000e-01)
 ; UNROLL: %h2 = call i32 @cqrt_alloc_i1(i1 true)
 ; UNROLL: call void @cqrt_ry_i1(i32 %h2, double 5.000000e-01)
-; UNROLL: %h3 = call i32 @cqrt_alloc_i1(i1 true)
-; UNROLL: call void @cqrt_ry_i1(i32 %h3, double 5.000000e-01)
-; UNROLL: %m4 = call i1 @cqrt_measure_i1(i32 %h)
+; UNROLL: %m3 = call i1 @cqrt_measure_i1(i32 %h)
 ; The dump is the module AFTER the promoter fixpoint, which now ends with the
 ; 01po.19 stage: the array is gone (scalarized), and the promoter never fired.
 ; DBG: === CQ_RAILBANK_DBG: module after promoteRailBankCells fixpoint ===

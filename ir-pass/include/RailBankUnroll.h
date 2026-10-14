@@ -25,9 +25,14 @@
 // ── THE CONSTRUCTION ─────────────────────────────────────────────────────────
 //
 // When every loop that gives the array a VARIABLE index has a SCEV-proven
-// constant trip count, unroll completely every constant-trip loop that touches
-// the array (outermost first; LLVM's `UnrollLoop`, the `LoopUnrollPrepass` call
-// sequence: loop-simplify, LCSSA, `Count == exact trip`). A constant-index
+// constant MAX trip count, unroll completely every such loop that touches the
+// array (outermost first, picked in INSTRUCTION order, never use-list order;
+// LLVM's `UnrollLoop`, the `LoopUnrollPrepass` call sequence: loop-simplify,
+// LCSSA, `Count == max trip`). When the exact trip is also constant the two are
+// equal; when it is not (an early exit on a measured cell) the unproven exits
+// stay conditional branches in every copy (review round 1, item 3). A
+// variable index a later round can resolve (a loop whose bound another loop
+// computes, review probe rv/p4) does not fail the round. A constant-index
 // access inside a constant-trip loop is unrolled out too, because SROA would
 // otherwise turn its cell into a loop-carried register that the hand-unrolled
 // program does not have (F5's inner `for (v…) if (c == v) cq_theta(&q[i], …)`).
@@ -65,20 +70,27 @@
 //
 // ── WHAT STAYS LOUD ──────────────────────────────────────────────────────────
 //
-// A loop without a constant trip count, a trip above `kMaxUnrollTrip`, a
+// A loop without a constant max trip count, a trip above `kMaxUnrollTrip`, a
 // function that would grow past `kMaxFunctionInsts`, a tainted cell index (the
 // QRAM axis, 7.5), an escaping or dynamically-sized array, or a shape SROA
-// cannot fully promote is left BYTE-UNTOUCHED: the transformation is tried on a
-// clone of the function and adopted only if the array disappears completely.
+// cannot fully promote is left BYTE-UNTOUCHED: the transformation runs on a
+// clone of the function, and the clone's body is ADOPTED (spliced into the
+// function, which takes the clone's DISubprogram) only if the array disappears
+// completely. The trial IS the adoption: there is no second run to diverge, and
+// `true` always means the function changed (review round 1, item 1).
 // Those keep their existing rail-bank or generic decline; the rolled
 // generalisation for a runtime trip count is the remaining gap.
 //
 // ── PRIORITY AND SLOT ────────────────────────────────────────────────────────
 //
-// A FUNCTION any of whose tainted stores the rail-bank verdict classifies `Bank`
-// or `BankRaw` is NOT touched: the rolled rail bank owns that array, and
-// unrolling is a function-wide edit that would rewrite its walk. A function
-// that calls a `returns_twice` function is not touched either. The call sits at the
+// PER ARRAY (review round 1, item 2): an array a tainted store into which the
+// rail-bank verdict classifies `Bank` or `BankRaw` is owned by the rolled bank
+// and is never a candidate, and the first trial unrolls no loop that stores
+// into it (its walk). Only if that trial fails, because `-O1` fused the bank's
+// walk with the candidate's, does a second trial unroll it, and then every
+// bank whose walk it unrolled must be scalarized too (none is left half
+// rolled). A function that calls a `returns_twice` function is not touched.
+// The call sits at the
 // tail of `promoteRailBankCells` (so it runs only when the promoter claimed
 // nothing on this turn) and therefore inherits the promoter's slot and its L1
 // argument verbatim: it runs inside the first normaliser fixpoint, above every
