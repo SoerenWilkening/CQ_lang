@@ -6,12 +6,13 @@
 ;
 ; bd test_C_libtooling-dm7f.53, amended delegated ruling
 ; `ruling-dm7f53-p4-sibling-cond-prep-amend-forced-2026-10-15`: F2's fourth
-; exclusion (`siblingConditionForcedOnArmEdge`) is predicate-agnostic — any
+; exclusion (`siblingConditionCompareOnWire`) is predicate-agnostic — any
 ; icmp of a CondWire register against a literal, used only as branch
-; conditions, that `isImpliedCondition` proves FORCED on the region's arm edge.
+; conditions, whose value F2's own LVI edge pin forces to the CONSTANT seed.
 ; The rival `t = V` then holds V's forced value on every branch the arm runs
-; in: the identity on the seed. Collisions on the straight-through edge, fcmp,
-; off-wire registers and data-used compares stay loud.
+; in: the identity on the seed. Since `…-amend-straight-through-2026-10-15`
+; the pin may be on EITHER edge; fcmp, off-wire registers, data-used compares
+; and non-constant seeds stay loud.
 ;
 ; x == 0 -> Ry(.3); x > 5 -> Ry(.7); else |0>.
 ;
