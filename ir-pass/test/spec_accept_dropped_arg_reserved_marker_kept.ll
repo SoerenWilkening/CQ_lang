@@ -20,6 +20,9 @@
 ; wildcarded, constants — every dropped `0` and every angle — kept):
 ; Between consecutive matches NO other runtime/clone call may appear, so the
 ; runtime stream is pinned EXACTLY, not as a subsequence.
+; bd r2j3.32: the 4.4 merge rail is reversed after its last reader (its core
+; re-emitted in reverse under the same flag, the flag strip deferred past it)
+; and freed -- the four calls before that strip and the free after it.
 ; CHECK-LABEL: define {{.*}}@main(
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CHECK: call i32 @cqrt_alloc_i1(i1 %{{[a-zA-Z0-9_.]+}})
@@ -46,7 +49,17 @@
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CHECK: call void @cqrt_x(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_x(i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_copy_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_x(i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_copy_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CHECK: call void @cqrt_cnot(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_free(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CHECK: call void @cqrt_free(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}

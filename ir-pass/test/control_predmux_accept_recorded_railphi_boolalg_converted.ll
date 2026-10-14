@@ -47,14 +47,17 @@
 ; control run first). A predicate whose corpus population is empty is pinned by
 ; this file or by nothing.
 ;
+; bd r2j3.32: the grep counts of `cqrt_free`/`cqrt_x`/`cqrt_copy_*` grew by
+; exactly the discharged merge rails (each: two reversed copies, two `cqrt_x`,
+; one free); every other count is unchanged.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: grep "call i32 @cqrt_alloc_i1(" %t.cqd0.ll | count 3
 ; RUN: grep "call i32 @cqrt_alloc_i32(" %t.cqd0.ll | count 10
-; RUN: grep "call void @cqrt_free(" %t.cqd0.ll | count 7
-; RUN: grep "call void @cqrt_x(" %t.cqd0.ll | count 6
+; RUN: grep "call void @cqrt_free(" %t.cqd0.ll | count 8
+; RUN: grep "call void @cqrt_x(" %t.cqd0.ll | count 8
 ; RUN: grep "call void @cqrt_toffoli(" %t.cqd0.ll | count 4
-; RUN: grep "call void @cqrt_copy_i32_controlled(" %t.cqd0.ll | count 6
+; RUN: grep "call void @cqrt_copy_i32_controlled(" %t.cqd0.ll | count 8
 ; RUN: grep "@cqrt_measure" %t.cqd0.ll | count 5
 ; RUN: grep "@cqrt_ry" %t.cqd0.ll | count 4
 ; RUN: grep "@cq_template_icmp_sgt_i32_hl(" %t.cqd0.ll | count 4

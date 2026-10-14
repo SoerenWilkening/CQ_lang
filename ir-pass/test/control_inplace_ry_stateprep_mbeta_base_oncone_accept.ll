@@ -116,8 +116,6 @@ attributes #1 = { nounwind willreturn memory(none) }
 ; CHECK-NEXT: %selop2 = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %selop2, i32 %out1)
 ; CHECK-NEXT: call void @cqrt_x(i32 %h_cmp)
-; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %h_cmp, i32 %h, i32 1)
-; CHECK-NEXT: call void @cqrt_free(i32 %h_cmp)
 ;
 ; The round-2 state prep mints the fresh rail %h5 ...
 ; CHECK-NEXT: %h_cmp4 = call i32 @cq_template_icmp_eq_i32_hl(i32 %out1, i32 13)
@@ -133,6 +131,17 @@ attributes #1 = { nounwind willreturn memory(none) }
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %h_cmp3, i32 %h, i32 7)
 ; CHECK-NEXT: call void @cqrt_free(i32 %h_cmp3)
 ;
+; bd r2j3.32: once its last reader (the M-C product chain's zext adjoint) has
+; run, the merge rail %out1 is reversed -- the route-merge core re-emitted in
+; reverse under the SAME %h_cmp, whose strip is DEFERRED to here -- and freed.
+; CHECK:      call void @cq_template_zext_i32_to_i64_unc(i32 %h_cast, i32 %out1)
+; CHECK-NEXT: call void @cqrt_x(i32 %h_cmp)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %selop2, i32 %out1)
+; CHECK-NEXT: call void @cqrt_x(i32 %h_cmp)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %selop, i32 %out1)
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %h_cmp, i32 %h, i32 1)
+; CHECK-NEXT: call void @cqrt_free(i32 %h_cmp)
+; CHECK-NEXT: call void @cqrt_free(i32 %out1)
 ; CHECK:      %m = call i32 @cqrt_measure_i32(i32 %h)
 ; CHECK-NEXT: %m8 = call i32 @cqrt_measure_i32(i32 %h5)
 ;
@@ -142,16 +151,18 @@ attributes #1 = { nounwind willreturn memory(none) }
 ; RYCNT-NOT:     call void @cqrt_ry_i32_controlled
 ; RYCNT-NOT:     call void @cqrt_x(i32 %h5)
 ;
-; SIX frees: three compare flags and three arithmetic temporaries. NOT %h5.
-; FCNT-COUNT-6: call void @cqrt_free(
+; SEVEN frees: three compare flags, three arithmetic temporaries and (bd r2j3.32)
+; the reversed merge rail %out1. NOT %h5.
+; FCNT-COUNT-7: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
 ;
 ; FIVE allocs: %h, %out1, %selop, %selop2, %h5.
 ; ACNT-COUNT-5: call i32 @cqrt_alloc_i32
 ; ACNT-NOT:     call i32 @cqrt_alloc_i32
 ;
-; TWO cqrt_x, both the ancilla bracket of the 6.5 route merge.
-; XCNT-COUNT-2: call void @cqrt_x(
+; FOUR cqrt_x: the ancilla bracket of the 6.5 route merge, and (bd r2j3.32) its
+; reverse.
+; XCNT-COUNT-4: call void @cqrt_x(
 ; XCNT-NOT:     call void @cqrt_x(
 ;
 ; THREE measures, exactly the three the source wrote (Rule 5 — none added).

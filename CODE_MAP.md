@@ -22,7 +22,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check_test.py` — 4148 physical lines
 - `tools/loop_twin_matrix.py` — 4115 physical lines
 - `ir-pass/src/QramLowering.cpp` — 4045 physical lines
-- `ir-pass/src/Uncomputation.cpp` — 3434 physical lines
+- `ir-pass/src/Uncomputation.cpp` — 3444 physical lines
 - `ir-pass/src/TaintPropagation.cpp` — 3362 physical lines
 - `ir-pass/src/SwapRouteEmit.cpp` — 3161 physical lines
 - `runtime/cq_link_smoke.c` — 2893 physical lines
@@ -1417,40 +1417,40 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/TwinTotality.cpp:363` — `boundLoop`
 - `ir-pass/src/TwinTotality.cpp:387` — `applyTwinShape`
 
-### `ir-pass/src/Uncomputation.cpp` (3434 lines)
+### `ir-pass/src/Uncomputation.cpp` (3444 lines)
 
-- `ir-pass/src/Uncomputation.cpp:126` — `diagnose`
-- `ir-pass/src/Uncomputation.cpp:134` — `isDataProducer`
-- `ir-pass/src/Uncomputation.cpp:184` — `measuredOnEveryPath`
-- `ir-pass/src/Uncomputation.cpp:343` — `markedHeaderOf`
-- `ir-pass/src/Uncomputation.cpp:358` — `multiplicityAgrees`
-- `ir-pass/src/Uncomputation.cpp:480` — `anchorForConsumer`
-- `ir-pass/src/Uncomputation.cpp:496` — `useCompleteBeforeDischarge`
-- `ir-pass/src/Uncomputation.cpp:514` — `dagInsertPoint`
-- `ir-pass/src/Uncomputation.cpp:586` — `emitDagReversal`
-- `ir-pass/src/Uncomputation.cpp:745` — `measuredParentsReadBeforeCollapse`
-- `ir-pass/src/Uncomputation.cpp:801` — `keptRailAdjointReadsBorrowed`
-- `ir-pass/src/Uncomputation.cpp:848` — `planTerminalReversal`
-- `ir-pass/src/Uncomputation.cpp:1082` — `emitTerminalReversal`
-- `ir-pass/src/Uncomputation.cpp:1109` — `judgeFrontierPlan`
-- `ir-pass/src/Uncomputation.cpp:1149` — `partitionByReducedDag`
-- `ir-pass/src/Uncomputation.cpp:1205` — `componentObservedBefore`
-- `ir-pass/src/Uncomputation.cpp:1291` — `recordLiveAcrossMove`
-- `ir-pass/src/Uncomputation.cpp:1382` — `planFrontierFixpoint`
-- `ir-pass/src/Uncomputation.cpp:1466` — `planFrontierAttempt`
-- `ir-pass/src/Uncomputation.cpp:1561` — `reverseTerminalGroup`
-- `ir-pass/src/Uncomputation.cpp:1764` — `preservesBorrowedParent`
-- `ir-pass/src/Uncomputation.cpp:2048` — `routeGroupFullyInside`
-- `ir-pass/src/Uncomputation.cpp:2131` — `railUnmovedInWindow`
-- `ir-pass/src/Uncomputation.cpp:2309` — `borrowedParentsUnmoved`
-- `ir-pass/src/Uncomputation.cpp:2365` — `planInteriorComponent`
-- `ir-pass/src/Uncomputation.cpp:2692` — `addDischargedRails`
-- `ir-pass/src/Uncomputation.cpp:2702` — `collectInteriorPlansMode`
-- `ir-pass/src/Uncomputation.cpp:3184` — `collectInteriorPlans`
-- `ir-pass/src/Uncomputation.cpp:3211` — `reverseInteriorGroup`
-- `ir-pass/src/Uncomputation.cpp:3229` — `collectTerminalCandidates`
-- `ir-pass/src/Uncomputation.cpp:3270` — `uncompute`
-- `ir-pass/src/Uncomputation.cpp:3358` — `planInteriorDischarges`
+- `ir-pass/src/Uncomputation.cpp:129` — `diagnose`
+- `ir-pass/src/Uncomputation.cpp:137` — `isDataProducer`
+- `ir-pass/src/Uncomputation.cpp:187` — `measuredOnEveryPath`
+- `ir-pass/src/Uncomputation.cpp:346` — `markedHeaderOf`
+- `ir-pass/src/Uncomputation.cpp:361` — `multiplicityAgrees`
+- `ir-pass/src/Uncomputation.cpp:483` — `anchorForConsumer`
+- `ir-pass/src/Uncomputation.cpp:499` — `useCompleteBeforeDischarge`
+- `ir-pass/src/Uncomputation.cpp:517` — `dagInsertPoint`
+- `ir-pass/src/Uncomputation.cpp:589` — `emitDagReversal`
+- `ir-pass/src/Uncomputation.cpp:748` — `measuredParentsReadBeforeCollapse`
+- `ir-pass/src/Uncomputation.cpp:804` — `keptRailAdjointReadsBorrowed`
+- `ir-pass/src/Uncomputation.cpp:851` — `planTerminalReversal`
+- `ir-pass/src/Uncomputation.cpp:1085` — `emitTerminalReversal`
+- `ir-pass/src/Uncomputation.cpp:1112` — `judgeFrontierPlan`
+- `ir-pass/src/Uncomputation.cpp:1152` — `partitionByReducedDag`
+- `ir-pass/src/Uncomputation.cpp:1208` — `componentObservedBefore`
+- `ir-pass/src/Uncomputation.cpp:1294` — `recordLiveAcrossMove`
+- `ir-pass/src/Uncomputation.cpp:1385` — `planFrontierFixpoint`
+- `ir-pass/src/Uncomputation.cpp:1469` — `planFrontierAttempt`
+- `ir-pass/src/Uncomputation.cpp:1564` — `reverseTerminalGroup`
+- `ir-pass/src/Uncomputation.cpp:1767` — `preservesBorrowedParent`
+- `ir-pass/src/Uncomputation.cpp:2051` — `routeGroupFullyInside`
+- `ir-pass/src/Uncomputation.cpp:2134` — `railUnmovedInWindow`
+- `ir-pass/src/Uncomputation.cpp:2312` — `borrowedParentsUnmoved`
+- `ir-pass/src/Uncomputation.cpp:2368` — `planInteriorComponent`
+- `ir-pass/src/Uncomputation.cpp:2695` — `addDischargedRails`
+- `ir-pass/src/Uncomputation.cpp:2705` — `collectInteriorPlansMode`
+- `ir-pass/src/Uncomputation.cpp:3187` — `collectInteriorPlans`
+- `ir-pass/src/Uncomputation.cpp:3214` — `reverseInteriorGroup`
+- `ir-pass/src/Uncomputation.cpp:3232` — `collectTerminalCandidates`
+- `ir-pass/src/Uncomputation.cpp:3273` — `uncompute`
+- `ir-pass/src/Uncomputation.cpp:3368` — `planInteriorDischarges`
 
 ### `ir-pass/src/UndefReach.cpp` (267 lines)
 

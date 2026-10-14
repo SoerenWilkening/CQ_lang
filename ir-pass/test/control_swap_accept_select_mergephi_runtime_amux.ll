@@ -183,8 +183,6 @@ attributes #3 = { nounwind }
 ; CHECK:      %[[SELOP1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 5)
 ; CHECK:      call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[SELOP1]], i32 %[[OUT]])
 ; CHECK:      call void @cqrt_x(i32 %[[BF]])
-; CHECK:      call void @cqrt_cnot(i32 %[[H]], i32 %[[BF]])
-; CHECK:      call void @cqrt_free(i32 %[[BF]])
 ; CHECK:      %[[H_CMP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[OUT]], i32 2)
 ; CHECK:      %[[H4:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK:      call void @cqrt_ry_i1_controlled(i32 %[[H_CMP]], i32 %[[H4]], double 5.000000e-01)
@@ -198,6 +196,16 @@ attributes #3 = { nounwind }
 ; CHECK:      call void @cqrt_x(i32 %[[BF2]])
 ; CHECK:      call void @cqrt_copy_i32_controlled(i32 %[[BF2]], i32 %[[OUT]], i32 %[[OUT3]])
 ; CHECK:      call void @cqrt_x(i32 %[[BF2]])
+; bd r2j3.32: the first merge rail is the second merge's copy source and has
+; no reader after it, so it is reversed there -- its core re-emitted in reverse
+; under the SAME flag, its flag strip DEFERRED to after that, then it is freed.
+; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[SELOP1]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[SELOP]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H]], i32 %[[BF]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[BF]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT]])
 ; CHECK:      call void @cqrt_cnot(i32 %[[H4]], i32 %[[BF2]])
 ; CHECK:      call void @cqrt_free(i32 %[[BF2]])
 ; CHECK:      %[[M:[a-zA-Z0-9_.]+]] = call i1 @cqrt_measure_i1(i32 %[[H]])
@@ -237,19 +245,20 @@ attributes #3 = { nounwind }
 ; stripped compare flags are.
 ; NOFREE-NOT: call void @cqrt_free(i32 %h)
 ; NOFREE-NOT: call void @cqrt_free(i32 %h4)
-; NOFREE-NOT: call void @cqrt_free(i32 %out)
+; `%out` (the first merge rail) IS freed since bd r2j3.32 -- after its core is
+; reversed, at a proven |0>; the positive stream pins where.
 ; NOFREE-NOT: call void @cqrt_free(i32 %h_op)
 ; The MERGE-OUT rail too (round-2 finding F2-3) — freeing the user's answer
 ; register is a hidden measurement (Rule 6), and it was named by no free
 ; negative here before.
 ; NOFREE-NOT: call void @cqrt_free(i32 %out3)
-; XCNT-COUNT-4: call void @cqrt_x(
+; XCNT-COUNT-6: call void @cqrt_x(
 ; XCNT-NOT:     call void @cqrt_x(
-; FCNT-COUNT-3: call void @cqrt_free(
+; FCNT-COUNT-4: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
 ; CNOTCNT-COUNT-4: call void @cqrt_cnot(
 ; CNOTCNT-NOT:     call void @cqrt_cnot(
-; CPCNT-COUNT-4: call void @cqrt_copy_
+; CPCNT-COUNT-6: call void @cqrt_copy_
 ; CPCNT-NOT:     call void @cqrt_copy_
 ; RYCNT-COUNT-2: call void @cqrt_ry_
 ; RYCNT-NOT:     call void @cqrt_ry_

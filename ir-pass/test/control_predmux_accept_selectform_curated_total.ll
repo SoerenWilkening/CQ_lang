@@ -76,15 +76,6 @@ merge:
 ; CHECK:      call void @cqrt_x(i32 %[[G]])
 ; CHECK:      call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[Q]], i32 %[[OUT]])
 
-; Rule 6 — the AND rail cleared by the same self-inverse Toffoli, then each
-; conjunct stripped by its out-first `_unc` naming the rail the next line frees.
-; CHECK:      call void @cqrt_toffoli(i32 %[[A]], i32 %[[B]], i32 %[[G]])
-; CHECK:      call void @cqrt_free(i32 %[[G]])
-; CHECK:      call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[B]], i32 %[[R]], i32 0)
-; CHECK:      call void @cqrt_free(i32 %[[B]])
-; CHECK:      call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[A]], i32 %[[Q]], i32 3)
-; CHECK:      call void @cqrt_free(i32 %[[A]])
-
 ; Merge 2 (%p2) takes the MUL — not the ADD. Crossing the two merges' arm values
 ; is verify-clean, so both sources are bound.
 ; CHECK:      %[[A2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 3)
@@ -96,6 +87,34 @@ merge:
 ; CHECK:      call void @cqrt_x(i32 %[[G2]])
 ; CHECK:      call void @cqrt_copy_i32_controlled(i32 %[[G2]], i32 %[[Q]], i32 %[[OUT2]])
 ; CHECK:      call i32 @cq_template_add_i32(i32 %[[OUT]], i32 %[[OUT2]])
+; bd r2j3.32: the `add` (in the merge block, the straight-line successor) is
+; both rails' last reader, so each is reversed there — its core re-emitted in
+; reverse under the SAME rail G / G2, and only THEN (deferred) Rule 6's
+; strip: the AND rail cleared by the same self-inverse Toffoli, each conjunct
+; stripped by its out-first `_unc` naming the rail the next line frees — and
+; freed.
+; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[Q]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[ADD]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[A]], i32 %[[B]], i32 %[[G]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[G]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[B]], i32 %[[R]], i32 0)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[B]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[A]], i32 %[[Q]], i32 3)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[A]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[G2]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G2]], i32 %[[Q]], i32 %[[OUT2]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[G2]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G2]], i32 %[[MUL]], i32 %[[OUT2]])
+; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[A2]], i32 %[[B2]], i32 %[[G2]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[G2]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[B2]], i32 %[[R]], i32 0)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[B2]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[A2]], i32 %[[Q]], i32 3)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[A2]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT2]])
 
 ; Nothing left the region, at any gate.
 ; DBG-NOT: leave @probe

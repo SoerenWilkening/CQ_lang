@@ -102,6 +102,18 @@ declare zeroext i1 @cq_measure_i1(i1 zeroext)
 ; CHECK-NEXT: %[[H2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK-NEXT: call void @cqrt_ry_i1_controlled(i32 %[[HC]], i32 %[[H2]], double 5.000000e-01)
 ; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[HC]], i32 %[[OUT3]], i32 2)
+; bd r2j3.32: the guard's strip is %OUT3's last reader, so the second merge rail
+; is reversed right there (its core re-emitted in reverse under the same copy
+; flag, whose strip is deferred to here) and freed. The FIRST merge rail %OUT
+; stays allocated: b0 is read in the window as the control of the prep's
+; `cqrt_ry_i1_controlled`, which the replay window does not admit as a pure read.
+; CHECK-NEXT: call void @cqrt_x(i32 %[[BF2:[a-zA-Z0-9_.]+]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF2]], i32 %[[OUT]], i32 %[[OUT3]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[BF2]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF2]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[OUT3]])
+; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H1]], i32 %[[BF2]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[BF2]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT3]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[HC]])
 ; CHECK-NEXT: call i1 @cqrt_measure_i1(i32 %[[H0]])
 ; CHECK-NEXT: call i1 @cqrt_measure_i1(i32 %[[H1]])
@@ -119,9 +131,9 @@ declare zeroext i1 @cq_measure_i1(i1 zeroext)
 ; Counts, each in its OWN whole-file prefix.
 ; ACNT-COUNT-10: call i32 @cqrt_alloc_
 ; ACNT-NOT:      call i32 @cqrt_alloc_
-; FCNT-COUNT-3:  call void @cqrt_free(
+; FCNT-COUNT-4:  call void @cqrt_free(
 ; FCNT-NOT:      call void @cqrt_free(
-; XCNT-COUNT-4:  call void @cqrt_x(
+; XCNT-COUNT-6:  call void @cqrt_x(
 ; XCNT-NOT:      call void @cqrt_x(
 ; RYCNT-COUNT-4: call void @cqrt_ry_
 ; RYCNT-NOT:     call void @cqrt_ry_

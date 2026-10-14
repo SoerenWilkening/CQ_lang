@@ -98,8 +98,6 @@ define i32 @main() {
 ; CHECK-NEXT: %[[F5:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 5)
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[F5]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
-; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H0]], i32 %[[BF]])
-; CHECK-NEXT: call void @cqrt_free(i32 %[[BF]])
 ; CHECK-NEXT: %[[H1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK-NEXT: call void @cqrt_ry_i1(i32 %[[H1]], double 5.000000e-01)
 ; CHECK-NEXT: call void @cqrt_ry_i1(i32 %[[H1]], double -5.000000e-01)
@@ -111,6 +109,19 @@ define i32 @main() {
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[BF2]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF2]], i32 %[[OUT]], i32 %[[OUT2]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[BF2]])
+; bd r2j3.32: the FIRST merge rail `%out` is the second merge's copy source
+; and has no other reader, so once that core has read it it is reversed --
+; its own core re-emitted in reverse under the SAME flag, its flag strip
+; DEFERRED to after that, then `%out` freed (it used to leak; a later gate on
+; the condition register dephased against it). The second merge's strip
+; follows.
+; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[F5]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[T2]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H0]], i32 %[[BF]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[BF]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H1]], i32 %[[BF2]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[BF2]])
 ; CHECK-NEXT: %{{.*}} = call i1 @cqrt_measure_i1(i32 %[[H0]])
@@ -118,18 +129,26 @@ define i32 @main() {
 ; THE ¬flag BRACKET SCOPE is order-sensitive and verify-clean-invisible: a
 ; mis-bracket has the IDENTICAL symbol multiset. Pin cnot -> copy -> x -> copy ->
 ; x -> cnot -> free, TWICE.
+; bd r2j3.32: the first merge's strip is DEFERRED past the second merge's core
+; (which reads `%out`), after the first core's reverse; the bracket scope of
+; every core, forward and reversed, is still cnot/x-delimited exactly as below.
 ; ORD: call void @cqrt_cnot(
 ; ORD: call void @cqrt_copy_i32_controlled(
 ; ORD: call void @cqrt_x(
 ; ORD: call void @cqrt_copy_i32_controlled(
 ; ORD: call void @cqrt_x(
+; ORD: call void @cqrt_cnot(
+; ORD: call void @cqrt_copy_i32_controlled(
+; ORD: call void @cqrt_x(
+; ORD: call void @cqrt_copy_i32_controlled(
+; ORD: call void @cqrt_x(
+; ORD: call void @cqrt_x(
+; ORD: call void @cqrt_copy_i32_controlled(
+; ORD: call void @cqrt_x(
+; ORD: call void @cqrt_copy_i32_controlled(
 ; ORD: call void @cqrt_cnot(
 ; ORD: call void @cqrt_free(
-; ORD: call void @cqrt_cnot(
-; ORD: call void @cqrt_copy_i32_controlled(
-; ORD: call void @cqrt_x(
-; ORD: call void @cqrt_copy_i32_controlled(
-; ORD: call void @cqrt_x(
+; ORD: call void @cqrt_free(
 ; ORD: call void @cqrt_cnot(
 ; ORD: call void @cqrt_free(
 
@@ -153,10 +172,12 @@ define i32 @main() {
 ; this closes the gap where neither is looking.
 ; NOX-NOT: call void @cqrt_x(i32 %out3)
 ; NEITHER USER REGISTER IS FREED — `Ry(θ)|0⟩ ≠ |0⟩` (Rule 6). Only the two
-; ancillas are, and `%out`/`%out3`/`%h_op` are left allocated.
+; ancillas are, plus `%out` once reversed (bd r2j3.32); `%out3`/`%h_op` are left
+; allocated.
 ; NOFREE-NOT: call void @cqrt_free(i32 %h)
 ; NOFREE-NOT: call void @cqrt_free(i32 %h4)
-; NOFREE-NOT: call void @cqrt_free(i32 %out
+; `%out` (the first merge rail) IS freed since bd r2j3.32 -- after its core is
+; reversed, at a proven |0>; the positive stream pins where.
 ; NOFREE-NOT: call void @cqrt_free(i32 %h_op)
 ; The MERGE-OUT rail too (round-2 finding F2-3) — freeing the user's answer
 ; register is a hidden measurement (Rule 6), and it was named by no free
@@ -165,13 +186,13 @@ define i32 @main() {
 ; A rail condition mints NO compare, so it strips NOTHING; and the hoisted
 ; `add` chain is left allocated rather than adjointed.
 ; NOUNC-NOT: _unc(
-; XCNT-COUNT-4: call void @cqrt_x(
+; XCNT-COUNT-6: call void @cqrt_x(
 ; XCNT-NOT:     call void @cqrt_x(
-; FCNT-COUNT-2: call void @cqrt_free(
+; FCNT-COUNT-3: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
 ; CNOTCNT-COUNT-4: call void @cqrt_cnot(
 ; CNOTCNT-NOT:     call void @cqrt_cnot(
-; CPCNT-COUNT-4: call void @cqrt_copy_i32_controlled(
+; CPCNT-COUNT-6: call void @cqrt_copy_i32_controlled(
 ; CPCNT-NOT:     call void @cqrt_copy
 ; RYCNT-COUNT-3: call void @cqrt_ry_
 ; RYCNT-NOT:     call void @cqrt_ry_

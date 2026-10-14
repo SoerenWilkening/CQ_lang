@@ -35,8 +35,8 @@
 ;
 ; THE STREAM, read rather than counted (Rule 2). `%h` is the source rail; the 6.5
 ; arm is hoisted and route-merged into the fresh `%out1` by 4.4 mechanics (two
-; X-bracketed `cqrt_copy_i32_controlled`, then the compare strip and ONE free of
-; the flag). The ROUND-2 prep then mints `%h4 = cqrt_alloc_i32(0)` and rotates it
+; X-bracketed `cqrt_copy_i32_controlled`; since bd r2j3.32 the compare strip and
+; the flag's free are deferred until `%out1`'s core is reversed). The ROUND-2 prep then mints `%h4 = cqrt_alloc_i32(0)` and rotates it
 ; with `cqrt_ry_i32_controlled(%h_cmp3, %h4, 0.5)` off a flag minted from
 ; `%out1`; `%h4` is FROZEN (never `cqrt_x`-bracketed, never freed — correct, as
 ; `Ry(θ)|0⟩ ≠ |0⟩`, Rule 6). The collider chain lowers as ordinary quantum
@@ -109,8 +109,6 @@ attributes #1 = { nounwind willreturn memory(none) }
 ; CHECK-NEXT: call void @cqrt_x(i32 %h_cmp)
 ; CHECK:      call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %selop2, i32 %out1)
 ; CHECK-NEXT: call void @cqrt_x(i32 %h_cmp)
-; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %h_cmp, i32 %h, i32 1)
-; CHECK-NEXT: call void @cqrt_free(i32 %h_cmp)
 ;
 ; THE ROUND-2 STATE PREP: the flag is minted from the ROUND-1 OUT-RAIL %out1,
 ; the prepped rail %h4 is fresh, and it is FROZEN (no cqrt_x on it, no free).
@@ -126,6 +124,17 @@ attributes #1 = { nounwind willreturn memory(none) }
 ; CHECK-NEXT: %h_cast5 = call i32 @cq_template_zext_i32_to_i64(i32 %h4)
 ; CHECK-NEXT: %h_op = call i32 @cq_template_mul_i64(i32 %h_cast, i32 %h_cast5)
 ; CHECK-NEXT: %h_cast6 = call i32 @cq_template_trunc_i64_to_i32(i32 %h_op)
+; bd r2j3.32: once its last reader (the M-C product chain's zext adjoint) has
+; run, the merge rail %out1 is reversed -- the route-merge core re-emitted in
+; reverse under the SAME %h_cmp, whose strip is DEFERRED to here -- and freed.
+; CHECK:      call void @cq_template_zext_i32_to_i64_unc(i32 %h_cast, i32 %out1)
+; CHECK-NEXT: call void @cqrt_x(i32 %h_cmp)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %selop2, i32 %out1)
+; CHECK-NEXT: call void @cqrt_x(i32 %h_cmp)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %selop, i32 %out1)
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %h_cmp, i32 %h, i32 1)
+; CHECK-NEXT: call void @cqrt_free(i32 %h_cmp)
+; CHECK-NEXT: call void @cqrt_free(i32 %out1)
 ; CHECK:      %m = call i32 @cqrt_measure_i32(i32 %h)
 ; CHECK-NEXT: %m7 = call i32 @cqrt_measure_i32(i32 %h4)
 ; CHECK-NEXT: %m8 = call i32 @cqrt_measure_i32(i32 %h_cast6)
@@ -136,18 +145,20 @@ attributes #1 = { nounwind willreturn memory(none) }
 ; RYCNT-NOT:     call void @cqrt_ry_i32_controlled
 ; RYCNT-NOT:     call void @cqrt_x(i32 %h4)
 ;
-; FIVE frees: the two compare flags and the three arithmetic temporaries
-; (%h_op, %h_cast5, %h_cast). NEITHER %h4 NOR %out1 IS AMONG THEM — the prepped
-; rail is frozen (Ry|0> != |0>) and the out-rail carries the merged value.
-; FCNT-COUNT-5: call void @cqrt_free(
+; SIX frees: the two compare flags, the three arithmetic temporaries
+; (%h_op, %h_cast5, %h_cast) and, since bd r2j3.32, the out-rail %out1 once its
+; core is reversed (it is |0> again). %h4 IS NOT AMONG THEM — the prepped rail is
+; frozen (Ry|0> != |0>).
+; FCNT-COUNT-6: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
 ;
 ; FIVE allocs: %h, %out1, %selop, %selop2, %h4.
 ; ACNT-COUNT-5: call i32 @cqrt_alloc_i32
 ; ACNT-NOT:     call i32 @cqrt_alloc_i32
 ;
-; TWO cqrt_x, both the ancilla bracket of the 6.5 route merge.
-; XCNT-COUNT-2: call void @cqrt_x(
+; FOUR cqrt_x: the ancilla bracket of the 6.5 route merge, and (bd r2j3.32) its
+; reverse.
+; XCNT-COUNT-4: call void @cqrt_x(
 ; XCNT-NOT:     call void @cqrt_x(
 ;
 ; THREE measures, exactly the three the source wrote (Rule 5 — none added).

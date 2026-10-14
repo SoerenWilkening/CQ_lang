@@ -111,8 +111,6 @@ merge:                                  ; 2 merge phis = the W3 claim witness
 ; CHECK:      call void @cqrt_x(i32 %[[F1]])
 ; CHECK:      call void @cqrt_copy_f80_controlled(i32 %[[F1]], i32 %[[K2]], i32 %[[OUT]])
 ; CHECK:      call void @cqrt_x(i32 %[[F1]])
-; CHECK:      call void @cq_template_fcmp_olt_f80_hl_unc(i32 %[[F1]], i32 %[[Q]], x86_fp80 0xK3FFE8000000000000000)
-; CHECK:      call void @cqrt_free(i32 %[[F1]])
 
 ; The second merge phi %z2 muxes the call result against the raw rail.
 ; CHECK:      %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fcmp_olt_f80_hl(i32 %[[Q]], x86_fp80 0xK3FFE8000000000000000)
@@ -121,9 +119,24 @@ merge:                                  ; 2 merge phis = the W3 claim witness
 ; CHECK:      call void @cqrt_x(i32 %[[F2]])
 ; CHECK:      call void @cqrt_copy_f80_controlled(i32 %[[F2]], i32 %[[Q]], i32 %[[OUT2]])
 ; CHECK:      call void @cqrt_x(i32 %[[F2]])
-; CHECK:      call void @cq_template_fcmp_olt_f80_hl_unc(i32 %[[F2]], i32 %[[Q]], x86_fp80 0xK3FFE8000000000000000)
-; CHECK:      call void @cqrt_free(i32 %[[F2]])
 ; CHECK:      call i32 @cq_template_fadd_f80(i32 %[[OUT]], i32 %[[OUT2]])
+; bd r2j3.32: the fadd is both merge rails' last reader; each is then reversed
+; (core re-emitted in reverse under its still-live flag), its strip DEFERRED to
+; after that, and freed.
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F1]])
+; CHECK-NEXT: call void @cqrt_copy_f80_controlled(i32 %[[F1]], i32 %[[K2]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F1]])
+; CHECK-NEXT: call void @cqrt_copy_f80_controlled(i32 %[[F1]], i32 %[[K1]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cq_template_fcmp_olt_f80_hl_unc(i32 %[[F1]], i32 %[[Q]], x86_fp80 0xK3FFE8000000000000000)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F1]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F2]])
+; CHECK-NEXT: call void @cqrt_copy_f80_controlled(i32 %[[F2]], i32 %[[Q]], i32 %[[OUT2]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F2]])
+; CHECK-NEXT: call void @cqrt_copy_f80_controlled(i32 %[[F2]], i32 %[[R]], i32 %[[OUT2]])
+; CHECK-NEXT: call void @cq_template_fcmp_olt_f80_hl_unc(i32 %[[F2]], i32 %[[Q]], x86_fp80 0xK3FFE8000000000000000)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F2]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT2]])
 
 ; ---------------------------------------------------------------------------
 ; @__cq_q_leaf_1 — where the i80 compare actually lands. The mask is

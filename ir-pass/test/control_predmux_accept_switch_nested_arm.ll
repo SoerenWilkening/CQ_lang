@@ -47,7 +47,6 @@ merge:
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[E7]],
 ; CHECK:     call void @cqrt_x(i32 %[[E7]])
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[E7]],
-; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[E7]], i32 %[[Q]], i32 7)
 ; CHECK:     %[[E0A:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 0)
 ; CHECK:     call i32 @cq_template_icmp_slt_i32_hl(i32 %[[Q]], i32 9)
 ; CHECK:     call void @cqrt_toffoli(i32 %[[E0A]],
@@ -56,6 +55,9 @@ merge:
 ; CHECK:     call i32 @cq_template_icmp_sge_i32_hl(i32 %[[Q]], i32 9)
 ; CHECK:     call void @cqrt_toffoli(
 ; CHECK:     call void @cqrt_copy_i32_controlled(
+; bd r2j3.32: the first two merge rails are each the next merge's copy source
+; and are reversed LIFO after it; the E7 flag strip is deferred past them.
+; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[E7]], i32 %[[Q]], i32 7)
 ; CHECK:     call i32 @cqrt_measure_i32(
 ; CHECK-NOT: switch i32
 ; CHECK-NOT: br i1

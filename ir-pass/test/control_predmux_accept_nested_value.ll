@@ -54,19 +54,28 @@ merge:
 ; CHECK:     call void @cqrt_x(i32 %[[G]])
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[R2]], i32 %[[OUT]])
 ; CHECK:     call void @cqrt_x(i32 %[[G]])
-; the conjunction ancilla self-inverts and frees at |0>, then the leaves strip:
-; CHECK:     call void @cqrt_toffoli(i32 %[[C1]], i32 %[[NC2]], i32 %[[G]])
-; CHECK:     call void @cqrt_free(i32 %[[G]])
-; CHECK:     call void @cq_template_icmp_sge_i32_hl_unc(i32 %[[NC2]], i32 %[[Q]], i32 9)
-; CHECK:     call void @cqrt_free(i32 %[[NC2]])
-; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[C1]], i32 %[[Q]], i32 5)
-; CHECK:     call void @cqrt_free(i32 %[[C1]])
 ; CHECK:     %[[NC1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sle_i32_hl(i32 %[[Q]], i32 5)
 ; CHECK:     %[[OUT5:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[NC1]], i32 %[[R0]], i32 %[[OUT5]])
 ; CHECK:     call void @cqrt_x(i32 %[[NC1]])
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[NC1]], i32 %[[OUT]], i32 %[[OUT5]])
 ; CHECK:     call void @cqrt_x(i32 %[[NC1]])
+; bd r2j3.32: the inner merge rail `%out` is the outer merge's copy source and
+; has no other reader, so it is reversed right after the outer core -- its core
+; re-emitted in reverse under the SAME ancilla G -- and only then does its
+; network strip run (deferred), and `%out` is freed at |0>:
+; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[R2]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[R1]], i32 %[[OUT]])
+; the conjunction ancilla self-inverts and frees at |0>, then the leaves strip:
+; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[C1]], i32 %[[NC2]], i32 %[[G]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[G]])
+; CHECK-NEXT: call void @cq_template_icmp_sge_i32_hl_unc(i32 %[[NC2]], i32 %[[Q]], i32 9)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[NC2]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[C1]], i32 %[[Q]], i32 5)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[C1]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT]])
 ; CHECK:     call void @cq_template_icmp_sle_i32_hl_unc(i32 %[[NC1]], i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[NC1]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT5]])

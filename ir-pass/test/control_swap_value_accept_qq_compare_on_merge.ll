@@ -55,14 +55,23 @@ merge:
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[P]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; THE WIDENING: a Q+Q data compare whose LEFT operand is the merged register.
 ; It mints its own flag rail, is stripped by its own `_unc` and freed — the
 ; ordinary data-compare discipline, at the RECORDED i32 width.
 ; CHECK-NEXT: %[[E:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32(i32 %[[OUT]], i32 %[[R]])
 ; CHECK-NEXT: %[[EZ:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i1_to_i32(i32 %[[E]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_unc(i32 %[[E]], i32 %[[OUT]], i32 %[[R]])
+; bd r2j3.32: the merge rail is reversed after its last reader -- the copy
+; core re-emitted in reverse under the SAME flag, the flag strip DEFERRED to
+; after it, then the rail freed (it used to leak; a later gate on the
+; condition register dephased against it).
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[P]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[V]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[E]])
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[EZ]])
 
@@ -77,7 +86,7 @@ merge:
 
 ; TWO frees: the region's flag and the downstream data compare's own flag. The
 ; merge out-rail, `%p` and the chain final stay ALLOCATED (Rule 6).
-; FCNT-COUNT-2: call void @cqrt_free(
+; FCNT-COUNT-3: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
-; CCNT-COUNT-2: call void @cqrt_copy_i32_controlled(
+; CCNT-COUNT-4: call void @cqrt_copy_i32_controlled(
 ; CCNT-NOT:     call void @cqrt_copy_i32_controlled(

@@ -303,6 +303,10 @@ merge:
 ; CHECK:      %[[M:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[ID:[a-zA-Z0-9_.]+]], i32 3)
 ; CHECK-NEXT: %[[V:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_i32(i32 %[[T]], i32 %[[M]])
 ; CHECK-NEXT: call void @cq_template_and_i32_hl_unc(i32 %[[M]], i32 %[[ID]], i32 3)
+; bd r2j3.32: that `_unc` is the index merge rail %[[ID]]'s last reader, so the
+; rail is reversed right there (its core re-emitted in reverse, its network strip
+; deferred behind that) and freed, before the mask rail's own free.
+; CHECK:      call void @cqrt_free(i32 %[[ID]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[M]])
 ; NARROW-LABEL: define i32 @phi_i32_sext(
 ; NARROW-NOT: _to_i64

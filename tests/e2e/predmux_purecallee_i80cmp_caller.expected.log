@@ -28,15 +28,25 @@ cqrt_copy_f80_controlled(h9, h7, h10)
 cqrt_x(h9)
 cqrt_copy_f80_controlled(h9, h0, h10)
 cqrt_x(h9)
-cq_template_fcmp_olt_f80_hl_unc(h9, h0, 0x8p-4)
-cqrt_free(h9)
 cq_template_fcmp_olt_f80_hl(h0, 0x8p-4) -> h11
 cqrt_alloc_f80(0x0p+0) -> h12
 cqrt_copy_f80_controlled(h11, h8, h12)
 cqrt_x(h11)
 cqrt_copy_f80_controlled(h11, h1, h12)
 cqrt_x(h11)
+cq_template_fadd_f80(h10, h12) -> h13
+cqrt_x(h9)
+cqrt_copy_f80_controlled(h9, h0, h10)
+cqrt_x(h9)
+cqrt_copy_f80_controlled(h9, h7, h10)
+cq_template_fcmp_olt_f80_hl_unc(h9, h0, 0x8p-4)
+cqrt_free(h9)
+cqrt_free(h10)
+cqrt_x(h11)
+cqrt_copy_f80_controlled(h11, h1, h12)
+cqrt_x(h11)
+cqrt_copy_f80_controlled(h11, h8, h12)
 cq_template_fcmp_olt_f80_hl_unc(h11, h0, 0x8p-4)
 cqrt_free(h11)
-cq_template_fadd_f80(h10, h12) -> h13
+cqrt_free(h12)
 cqrt_measure_f80(h13) -> 0x0p+0
