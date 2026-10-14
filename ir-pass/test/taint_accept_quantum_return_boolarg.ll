@@ -28,29 +28,44 @@
 ;
 ; bd p3kd.21 (2026-10-14): both `g` (a used quantum return, the 3jru crossing)
 ; and `slice` (a tainted `_Bool` argument) are GATE SUBROUTINES and are compiled
-; at their call sites (SpecializeGateInline.h). Inlined, `main` rotates `r`'s
-; register in place, computes `c = (r == n)` as a compare flag, and `slice`'s
-; select `(q > 1) & c ? 10 : 7` is the 4.4 controlled-copy merge on the Toffoli
-; of the two flags; both flags are uncomputed and freed, `q` and the merge rail
-; are measured. The external `g` keeps its standalone body (an i32 return). The
-; 3jru refusal itself is unchanged and still pinned by
-; taint_reject_quantum_return_*.ll for a NON-gate callee.
+; at their call sites (SpecializeGateInline.h), and both are then erased (the
+; module defines `main`). Inlined, `main` rotates `r`'s register in place,
+; computes `c = (r == n)` as a compare flag, and `slice`'s select
+; `(q > 1) & c ? 10 : 7` is the 4.4 controlled-copy merge on the Toffoli of the
+; two flags; both flags are uncomputed and freed, `q` and the merge rail are
+; measured. The CHECKs capture every rail and pin each `_unc` right before its
+; `cqrt_free` (R11 r1 item 8, reviewer mutant M3). The 3jru refusal itself is
+; unchanged and still pinned by taint_reject_quantum_return_fnptr.ll and
+; spec_reject_predicted_classical_round2_return_crossing.ll.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll
 ; CHECK-LABEL: define i32 @main(
-; CHECK: [[R:%[0-9a-z.]+]] = call i32 @cqrt_alloc_i32(
+; CHECK: [[R:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i32(i32 %5)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[R]], double 0x3FE6666666666666)
-; CHECK: [[Q:%[0-9a-z.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK: [[N:%[0-9]+]] = tail call i32 @atoi(
+; CHECK-NEXT: [[Q:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q]], double 5.000000e-01)
-; CHECK: [[C:%[0-9a-z_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 [[R]],
-; CHECK: [[G:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
-; CHECK-NEXT: call void @cqrt_toffoli(i32 [[C]], i32 {{%[0-9a-z_.]+}}, i32 [[G]])
-; CHECK: call void @cqrt_copy_i32_controlled(i32 [[G]],
-; CHECK: call void @cqrt_copy_i32_controlled(i32 [[G]],
-; CHECK: call void @cqrt_free(i32 [[G]])
-; CHECK: call void @cqrt_free(i32 [[C]])
-; CHECK: call i32 @cqrt_measure_i32(i32 [[Q]])
+; CHECK-NEXT: [[C1:%[0-9a-z_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 [[R]], i32 [[N]])
+; CHECK-NEXT: [[C2:%[0-9a-z_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 [[Q]], i32 1)
+; CHECK-NEXT: [[G:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_toffoli(i32 [[C1]], i32 [[C2]], i32 [[G]])
+; CHECK-NEXT: [[OUT:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: [[S1:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i32(i32 10)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 [[G]], i32 [[S1]], i32 [[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 [[G]])
+; CHECK-NEXT: [[S2:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i32(i32 7)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 [[G]], i32 [[S2]], i32 [[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 [[G]])
+; CHECK-NEXT: call void @cqrt_toffoli(i32 [[C1]], i32 [[C2]], i32 [[G]])
+; CHECK-NEXT: call void @cqrt_free(i32 [[G]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 [[C2]], i32 [[Q]], i32 1)
+; CHECK-NEXT: call void @cqrt_free(i32 [[C2]])
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 [[C1]], i32 [[R]], i32 [[N]])
+; CHECK-NEXT: call void @cqrt_free(i32 [[C1]])
+; CHECK-NEXT: [[MQ:%[0-9a-z_.]+]] = call i32 @cqrt_measure_i32(i32 [[Q]])
+; CHECK-NEXT: [[MA:%[0-9a-z_.]+]] = call i32 @cqrt_measure_i32(i32 [[OUT]])
+; CHECK-NEXT: {{%[0-9]+}} = add nsw i32 [[MA]], [[MQ]]
 ; CHECK-NOT: @slice(
 ; CHECK-NOT: @g(
 

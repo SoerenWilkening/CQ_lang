@@ -27,6 +27,9 @@
 #include "SwapRouteEmit.h"     // lowerControlRegions (yn71 onward-control re-emit)
 #include "WidthDispatch.h"
 
+#include <functional>
+#include <memory>
+
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -894,6 +897,13 @@ void propagateWorklist(std::vector<Value *> &Worklist, const FnSet &ThetaFns,
 
 }  // namespace
 
+// bd p3kd.21 — see SpecializeGateInline.h. The gate-call questions are asked on
+// round-1 taint, so they ask THIS oracle too (L1: a value round 2 can taint).
+std::function<bool(Value *)> makeLaterTaintQuery(const TaintSet &taint) {
+  auto O = std::make_shared<LaterTaintOracle>(taint);
+  return [O](Value *V) { return O->mayGain(V); };
+}
+
 TaintSet propagate(Module &M, WidthDispatch &wd) {
   TaintSet out;
   FnSet ThetaFns;
@@ -1079,9 +1089,11 @@ namespace {
 //   * lowering_reject_taint_escape_store_global.ll   → kMsgStore
 //   * lowering_reject_taint_escape_gep.ll            → kMsgOther
 //   * spec_reject_gate_sub_indirect_nonI32.ll             → kMsgNonI32Return
-//     (bd p3kd.21: the three `lowering_reject_taint_escape_return_*.ll` that
-//     pinned it returned from a function with NO in-module use, which now
-//     returns its i32 handle — `isQuantumReturnExport` — and they accept.)
+//   * spec_reject_gate_sub_export_{bool,double}.ll, lowering_reject_f16_return.ll
+//     → kMsgNonI32Return (bd p3kd.21: the three i64
+//     `lowering_reject_taint_escape_return_*.ll` that pinned it returned from a
+//     function with NO in-module use, which now returns its handle zero-extended
+//     — `isQuantumReturnExport` — and they accept.)
 constexpr char kMsgUnknownCallee[] =
     "cq taint escape: tainted value consumed by an unknown callee";
 constexpr char kMsgStore[] = "cq taint escape: tainted value stored to memory";
@@ -1089,6 +1101,20 @@ constexpr char kMsgOther[] =
     "cq taint escape: tainted value reaches an unsupported instruction";
 constexpr char kMsgNonI32Return[] =
     "cq taint escape: tainted value returned at non-i32 width";
+// bd p3kd.21 (R11 r1 item 4): a function returning a register on one path and a
+// classical value on another hands its caller a value it cannot tell from a
+// handle (`ret i32 0` reads as handle 0). Loud until the classical paths are
+// materialized as registers (follow-up filed from bd p3kd.21); asked for an i64+
+// export only (see the ret clause), pinned by spec_reject_gate_sub_mixed_return.ll.
+constexpr char kMsgMixedReturn[] =
+    "cq taint escape: register returned on one path and a classical value on "
+    "another";
+}  // namespace
+
+// bd p3kd.21 — ONE spelling of the non-i32 return string (SpecializeGateInline.h).
+const char *nonI32ReturnMessage() { return kMsgNonI32Return; }
+
+namespace {
 
 // Loud `DiagnosticInfoUnsupported(DS_Error)` with the offending instruction's
 // `!dbg` — the one diagnostic surface the whole pass speaks (same idiom as
@@ -1422,15 +1448,30 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
           // return type is the stable ABI width and catches the post-RAUW mismatch.
           // bd p3kd.21 / bd jx32: a function with no in-module use (an entry
           // point or an export — `declineQuantumReturnCalls`' Escaped contract)
-          // returns the register's i32 HANDLE: its return is re-declared `i32`
-          // after lowering (`retypeQuantumExportReturns`, SpecializeGateInline.h,
-          // which also owns the loud case where a `ret` was never lowered to a
-          // handle). A function WITH a use keeps this decline: its callers read
-          // an `iN`.
+          // returns the register's i32 HANDLE, zero-extended to its i64+ return
+          // after lowering (`widenQuantumExportReturns`, SpecializeGateInline.h;
+          // owner ruling owner-ruling-p3kd21-gate-subroutines-2026-10-14: integer
+          // returns of 32 bits or wider only). A narrower or fp return, and a
+          // function WITH a use, keep this decline: its callers read an `iN`.
           if (RV && taint.Tainted.count(RV) &&
               !Ret->getFunction()->getReturnType()->isIntegerTy(32) &&
               !isQuantumReturnExport(*Ret->getFunction()))
             diagnoseEscape(&I, kMsgNonI32Return);
+          // bd p3kd.21: in an i64+ export (the population the export admission
+          // adds), a reachable untainted `ret` beside a tainted one (separate
+          // exits under classical control; `-O1` merges most into one `ret`).
+          // ⚠ The same ambiguity in an i32 function is PRE-EXISTING and is NOT
+          // declined here: dm7f.5's classical-exit fixtures
+          // (control_multiexit_musttail_classical_exit_alloca.ll,
+          // control_multiexit_untouched_reconverged.ll) accept it, so the
+          // remedy (materialize the classical exit as a register, or decline)
+          // is an owner question filed from bd p3kd.21.
+          else if (RV && !taint.Tainted.count(RV) &&
+                   isQuantumReturnExport(*Ret->getFunction()) &&
+                   (&BB == &Ret->getFunction()->getEntryBlock() ||
+                    !pred_empty(&BB)) &&
+                   functionReturnsTainted(*Ret->getFunction(), taint))
+            diagnoseEscape(&I, kMsgMixedReturn);
           continue;
         }
         if (I.isTerminator())
@@ -3266,10 +3307,10 @@ void deleteGlobalPhases(Module &M, WidthDispatch &wd, TaintSet &taint) {
 }
 
 // bd `test_C_libtooling-3jru` — character-for-character in
-// `taint_reject_quantum_return_{fnptr,9bhg_quantum_twin,volatile_flag}.ll` and
+// `taint_reject_quantum_return_fnptr.ll` and
 // `spec_reject_predicted_classical_round2_return_crossing.ll`. bd p3kd.21
 // compiles a gate subroutine at its call site, which turned the
-// `condtree_classical_leaf_reject_callee_quantum_return*.ll` pair and six
+// `condtree_classical_leaf_reject_callee_quantum_return*.ll` pair and nine
 // `taint_reject_quantum_return_*.ll` members into accepts (their file names are
 // history; `_boolarg` was renamed `taint_accept_…`).
 static constexpr char kMsgQuantumReturn[] =

@@ -231,8 +231,11 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // bank and every stage that reads the CFG or adjudicates taint, so each sees
   // the caller exactly as `clang -O1` leaves an inlined helper. Inlined code can
   // hold new dead arguments: slot B below asks again. A full re-`propagate` per
-  // round (no guard has run yet), to a fixpoint.
-  while (inlineGateSubroutines(M, taint))
+  // round (no guard has run yet), to a fixpoint. The state (inline history,
+  // round cap) lives for the whole run: the slot-B phase and the round-2 re-ask
+  // below read it.
+  GateInlineState GateSt;
+  while (inlineGateSubroutines(M, taint, GateSt, /*CrossCallResults=*/false))
     taint = propagate(M, wd);
 
   // p119: tainted by-ref MATH (frexp/modf/remquo) recognition is REMOVED — those
@@ -469,6 +472,16 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   if (dropDeadCallArguments(M, taint))
     taint = propagate(M, wd);
 
+  // bd p3kd.21 (R11 r1 item 7) — the gate-subroutine fixpoint's SECOND PHASE, the
+  // one that lets trigger (c) cross a lifted call's result (a register returned
+  // through `return h(x)`): only here, after slot B, is a call result's taint no
+  // longer the conservative prediction slot B can still null (SpecializeGateInline.h).
+  // ⚠ The stages between slot A and here (by-ref inliner, rail bank, bitcast and
+  // volatile folds) do not see code this phase inlines; such code reaches their
+  // loud downstream owners instead (a gap, disclosed in bd p3kd.21).
+  while (inlineGateSubroutines(M, taint, GateSt, /*CrossCallResults=*/true))
+    taint = propagate(M, wd);
+
   // bd 3c6m.51 — x86_fp80 union-promotion peephole (Fp80Union.cpp): the ld80 libm
   // cells extract sign/exponent/mantissa through a `union IEEEl2bits` bit-pattern
   // type-pun (`store x86_fp80` then `load iN` at const byte offsets) that LLVM
@@ -639,6 +652,10 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // emission, loop round 2, the round-2 propagation and its L1 re-asks).
   std::unique_ptr<ControlPlan> plan =
       runControlChain(M, wd, taint, plan6, StageScope{Reprop});
+  // bd p3kd.21 — the L1 RE-ASK of the gate-subroutine question on the round-2
+  // taint (SpecializeGateInline.h): a site round 1 missed is loud.
+  if (declineMissedGateSubroutines(M, taint, GateSt))
+    return PreservedAnalyses::none();
 
   // bd test_C_libtooling-3qlq Inc 1 (PRD §6.2 row P7, owner decision D2) —
   // DELETE every SURVIVING register-free `cq_phi`: an uncontrolled or
@@ -1069,8 +1086,9 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // `railbank_deadcell_reject_backstop_literal.ll`.
   if (declineNonHandleBankStores(M))
     return PreservedAnalyses::none();
-  // bd p3kd.21 / jx32: a quantum-returning export returns its i32 handle.
-  if (retypeQuantumExportReturns(M))
+  // bd p3kd.21 / jx32: a quantum-returning i64+ export returns its handle,
+  // zero-extended (SpecializeGateInline.h).
+  if (widenQuantumExportReturns(M))
     return PreservedAnalyses::none();
   eraseDeadDecls(M, wd);
   eraseUnusedLibmBodies(M, /*KeepBindable=*/false);  // bd 3c6m.72, LibmBinding.h
@@ -1160,15 +1178,12 @@ bool CQLoweringPass::runOnFunction(Function &F) {
     onlyInF(taint.PhaseCalls);
     onlyInF(taint.MeasureCalls);
   }
-  // bd p3kd.21 — gate subroutines compiled at their call site; see run().
-  // Module-wide, like the drop above (AXIS-F).
-  while (inlineGateSubroutines(M, taint)) {
-    taint = propagate(M, wd);
-    onlyInF(taint.ThetaCalls);
-    onlyInF(taint.PhiCalls);
-    onlyInF(taint.PhaseCalls);
-    onlyInF(taint.MeasureCalls);
-  }
+  // bd p3kd.21 (R11 r1 item 10): this shim does NOT compile gate subroutines at
+  // their call sites. Run after `onlyInF` the stage reads filtered membership
+  // lists, and it can erase `F` itself (an inlined local helper). A reviver must
+  // run it before `onlyInF`, never erasing `F`; until then a gate call here keeps
+  // its loud owners, and the round-2 re-ask below still names a missed one.
+  const GateInlineState GateSt;
 
   // p119: by-ref math canonicalization removed (library functions, source-injected
   // not recognized) — see run(). Twin-pipeline parity preserved by the removal in
@@ -1366,6 +1381,8 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   ChainScope.CollapseLoopRails = false;
   std::unique_ptr<ControlPlan> plan =
       runControlChain(M, wd, taint, plan6, ChainScope);
+  if (declineMissedGateSubroutines(M, taint, GateSt))  // bd p3kd.21 — see run().
+    return true;
   // bd test_C_libtooling-3qlq Inc 1 (P7) mirrored in this entry point too
   // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for why the ONLY
   // sound slot is AFTER `repropagateControlMerges` and not immediately after
@@ -1538,7 +1555,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
     return true;
   if (declineNonHandleBankStores(M))
     return true;
-  if (retypeQuantumExportReturns(M))  // bd p3kd.21 — see run().
+  if (widenQuantumExportReturns(M))  // bd p3kd.21 — see run().
     return true;
   eraseDeadDecls(M, wd);
   eraseUnusedLibmBodies(M, /*KeepBindable=*/false);  // bd 3c6m.72 — see run().

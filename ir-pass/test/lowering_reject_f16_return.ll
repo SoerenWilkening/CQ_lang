@@ -8,23 +8,13 @@
 ; decline. i32-width tainted rets stay accepted; a measured (classical) half
 ; return is untouched (lowering_measure_f16.ll covers that ACCEPT).
 ;
-; bd p3kd.21 / bd jx32 (2026-10-14) — NOW AN ACCEPT; the file name and the
-; DECLINE text above are history. The function has no in-module use (an entry
-; point / export, `declineQuantumReturnCalls`' Escaped contract), so its non-i32
-; tainted `ret` returns the register's i32 runtime HANDLE: the return is
-; re-declared `i32` after lowering (`retypeQuantumExportReturns`,
-; SpecializeGateInline.h) and the verifier-abort hazard described above cannot
-; arise (a `ret` still carrying a non-i32 value there fails loudly with the same
-; non-i32 string). The gate stream is the one the i32-typed twin of the same body
-; emits (measured on the value diamond: identical, call for call; the twin's arm
-; chain is left allocated exactly as there). The non-i32 decline remains for a
-; function WITH an in-module use: spec_reject_gate_sub_indirect_nonI32.ll.
-;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
-; RUN: %filecheck %s < %t.ll
-; CHECK-LABEL: define i32 @example(half %s)
-; CHECK: [[R:%[a-z0-9_.]+]] = call i32 @cq_template_fadd_f16_hl(
-; CHECK-NEXT: ret i32 [[R]]
+; bd p3kd.21 (R11 r1 item 4; owner ruling owner-ruling-p3kd21-gate-subroutines-2026-10-14):
+; briefly an accept on 11adde57 (the export's return re-declared `i32`), restored to
+; this decline: a C caller of a `half` export reads the FP register, never the
+; integer handle. The handle ABI is approved for integer returns of 32 bits or wider.
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; CHECK: error{{.*}}cq taint escape: tainted value returned at non-i32 width
+; CHECK-NOT: cqrt_measure_f16
 
 declare half @cq_theta_f16(half, double)
 

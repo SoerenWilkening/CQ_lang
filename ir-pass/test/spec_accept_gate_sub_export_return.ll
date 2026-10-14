@@ -1,44 +1,37 @@
 ; spec_accept_gate_sub_export_return.ll — ACCEPT (bd test_C_libtooling-p3kd.21,
-; bd jx32). EXTERNAL-LINKAGE gate subroutines with non-i32 quantum returns:
+; bd jx32; owner ruling owner-ruling-p3kd21-gate-subroutines-2026-10-14).
 ;
 ;   __attribute__((noinline)) bool ry_b(bool t, double th) { cq_theta(&t, th); return t; }
-;   long   ry_l(long t, double th)   { cq_theta(&t, th); return t; }
-;   double ry_d(double t, double th) { cq_theta(&t, th); return t; }
+;   long ry_l(long t, double th) { cq_theta(&t, th); return t; }
 ;   int main(void) { ... cq_theta(&q0, 1.0); q1 = ry_b(q1, 0.4); if (q0) q1 = ry_b(q1, 0.2); ... }
 ;
-; Before: `cq taint escape: tainted value returned at non-i32 width` on each
-; standalone body. `main`'s two calls of the noinline `ry_b` are compiled at their
-; sites (SpecializeGateInline.h), the second under `q0`'s control (a controlled
-; Ry on `q0`'s rail, never an uncontrolled `0.2`). The three definitions are then
-; exports with no in-module use: an export's tainted `ret` carries the register's
-; runtime handle, which is always `i32` (Rule 13), so its return is re-declared
-; `i32` after lowering (`retypeQuantumExportReturns`); name, linkage and
-; parameters are kept, the `zeroext` return attribute (it described the `_Bool`)
-; is dropped, and the escaping handle is never freed.
-; `clang -O1 -include CQ.h` output verbatim.
+; `main`'s two calls of the noinline `ry_b` are compiled at their sites
+; (SpecializeGateInline.h), the second under `q0`'s control (a controlled Ry on
+; `q0`'s rail, never an uncontrolled `0.2`), and `ry_b` is then ERASED: the module
+; defines `main`, so nothing outside it can call the external `ry_b` (R11 r1 item
+; 5). `ry_l` is an export with no in-module use returning a `long`: its tainted
+; `ret` returns the register's i32 handle ZERO-EXTENDED to i64, the C signature
+; unchanged (`widenQuantumExportReturns`). The escaping handle is never freed.
+; Narrower and floating-point exports keep the decline:
+; spec_reject_gate_sub_export_{bool,double}.ll. `clang -O1 -include CQ.h` output
+; verbatim.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll
+; CHECK-LABEL: define i64 @ry_l(i64 noundef %0, double noundef %1)
+; CHECK-NEXT: [[L:%[0-9a-z.]+]] = call i32 @cqrt_alloc_i64(i64 %0)
+; CHECK-NEXT: call void @cqrt_ry_i64(i32 [[L]], double %1)
+; CHECK-NEXT: [[W:%[0-9a-z.]+]] = zext i32 [[L]] to i64
+; CHECK-NEXT: ret i64 [[W]]
 ; CHECK-LABEL: define {{.*}}i32 @main(
-; CHECK: [[Q0:%[0-9a-z.]+]] = call i32 @cqrt_alloc_i1(
-; CHECK: [[Q1:%[0-9a-z.]+]] = call i32 @cqrt_alloc_i1(
-; CHECK: call void @cqrt_ry_i1(i32 [[Q1]], double 4.000000e-01)
-; CHECK-NOT: call void @cqrt_ry_i1(i32 {{.*}}, double 2.000000e-01)
-; CHECK: call void @cqrt_ry_i1_controlled(i32 [[Q0]], i32 [[Q1]], double 2.000000e-01)
-; CHECK-NOT: @ry_b(
+; CHECK: [[Q0:%[0-9a-z.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_ry_i1(i32 [[Q0]], double 1.000000e+00)
+; CHECK-NEXT: [[Q1:%[0-9a-z.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_ry_i1(i32 [[Q1]], double 4.000000e-01)
+; CHECK-NEXT: call void @cqrt_ry_i1_controlled(i32 [[Q0]], i32 [[Q1]], double 2.000000e-01)
+; CHECK-NOT: cqrt_free
 ; CHECK: ret i32 0
-; CHECK-LABEL: define i32 @ry_b(i1 noundef zeroext %0, double noundef %1)
-; CHECK: [[H:%[0-9a-z.]+]] = call i32 @cqrt_alloc_i1(i1 %0)
-; CHECK-NOT: cqrt_free
-; CHECK: ret i32 [[H]]
-; CHECK-LABEL: define i32 @ry_l(i64 noundef %0, double noundef %1)
-; CHECK: [[L:%[0-9a-z.]+]] = call i32 @cqrt_alloc_i64(i64 %0)
-; CHECK-NOT: cqrt_free
-; CHECK: ret i32 [[L]]
-; CHECK-LABEL: define i32 @ry_d(double noundef %0, double noundef %1)
-; CHECK: [[D:%[0-9a-z.]+]] = call i32 @cqrt_alloc_f64(double %0)
-; CHECK-NOT: cqrt_free
-; CHECK: ret i32 [[D]]
+; CHECK-NOT: @ry_b
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
@@ -60,14 +53,6 @@ define i64 @ry_l(i64 noundef %0, double noundef %1) local_unnamed_addr #2 {
 }
 
 declare i64 @cq_theta_sl(i64 noundef, double noundef) local_unnamed_addr #1
-
-; Function Attrs: nounwind ssp uwtable
-define double @ry_d(double noundef %0, double noundef %1) local_unnamed_addr #2 {
-  %3 = tail call double @cq_theta_f64(double noundef %0, double noundef %1) #4
-  ret double %3
-}
-
-declare double @cq_theta_f64(double noundef, double noundef) local_unnamed_addr #1
 
 ; Function Attrs: nounwind ssp uwtable
 define noundef i32 @main() local_unnamed_addr #2 {

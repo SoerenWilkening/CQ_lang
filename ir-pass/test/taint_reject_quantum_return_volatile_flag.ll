@@ -17,9 +17,31 @@
 ;   }
 ;   int main(int argc, char **argv) { return slice(atoi(argv[1]), atoi(argv[2])); }
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s
-; CHECK: cq taint escape: quantum value returned across a function boundary
+; bd p3kd.21 R11 r1 fix (2026-10-15) — NOW AN ACCEPT; the file name and the
+; DECLINE text above are history. `slice` holds `cq_theta` and returns a value its own register decides (the
+; flag mux), so its used result is compiled at the call site (trigger (c)); `main`
+; then returns that register, the existing Escaped contract of an entry point. The register is the caller's own, and
+; the module compiles exactly as its hand-inlined twin does on the pre-change
+; binary (`slice` force-inlined: accepted, the same gates; -O1 spells the flag test
+; `slt`/`or` there and `sgt`/`and` here). ⚠ The flag's compare rail stays live under the returned register, as in the
+; twin. The 3jru refusal itself is unchanged and still pinned by
+; taint_reject_quantum_return_fnptr.ll and
+; spec_reject_predicted_classical_round2_return_crossing.ll.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; CHECK-LABEL: define i32 @main(
+; CHECK: [[K:%[0-9]+]] = icmp eq i32 %5, %8
+; CHECK: [[Q:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q]], double 5.000000e-01)
+; CHECK-NEXT: [[C:%[0-9a-z_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 [[Q]], i32 1)
+; CHECK-NEXT: [[F:%[0-9a-z_.]+]] = call i32 @cq_template_and_i1_hl(i32 [[C]], i1 [[K]])
+; CHECK-NEXT: call void @cqrt_xorc_i1(i32 [[F]], i1 [[K]])
+; CHECK: [[M:%[0-9a-z_.]+]] = call i32 @cqrt_measure_i32(
+; CHECK-NEXT: [[W:%[0-9a-z_.]+]] = call i32 @cq_template_zext_i1_to_i32(i32 [[F]])
+; CHECK-NEXT: call void @cqrt_addc_i32(i32 [[W]], i32 [[M]])
+; CHECK-NEXT: ret i32 [[W]]
+; CHECK-NOT: @slice(
 
 ; ModuleID = '/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a2b9793f123da59f8/te_scratch/r4/q61_volatile_arm.c'
 source_filename = "/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a2b9793f123da59f8/te_scratch/r4/q61_volatile_arm.c"

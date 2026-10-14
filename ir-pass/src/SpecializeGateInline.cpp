@@ -5,6 +5,7 @@
 #include "SpecializeGateInline.h"
 
 #include "llvm/ADT/SCCIterator.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -12,11 +13,10 @@
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ValueTracking.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/IR/AttributeMask.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
@@ -92,120 +92,152 @@ GateSets collectGateSets(Module &M, const TaintSet &taint) {
   return S;
 }
 
-// (d): is `CB`'s block control-dependent on a tainted conditional terminator of
-// its function? A terminator `T` in block `B` governs `CB` iff `CB`'s block is
-// reachable from a successor of `B` and does not post-dominate `B`.
-bool underTaintedControl(const CallBase &CB, const PostDominatorTree &PDT,
-                         const TaintSet &taint) {
-  const BasicBlock *Site = CB.getParent();
-  for (const BasicBlock &B : *CB.getFunction()) {
-    const Instruction *T = B.getTerminator();
-    const Value *Cond = nullptr;
-    if (const auto *BI = dyn_cast_or_null<BranchInst>(T))
-      Cond = BI->isConditional() ? BI->getCondition() : nullptr;
-    else if (const auto *SI = dyn_cast_or_null<SwitchInst>(T))
-      Cond = SI->getCondition();
-    if (!Cond || !taint.Tainted.count(const_cast<Value *>(Cond)))
-      continue;
-    if (PDT.dominates(Site, &B))
-      continue;
-    for (const BasicBlock *Succ : successors(&B))
-      if (isPotentiallyReachable(Succ, Site))
-        return true;
+// The questions, asked on one taint snapshot. `MayGain` is the later-round
+// over-approximation (empty in the re-ask, where taint is final).
+struct Asker {
+  const GateSets &S;
+  const TaintSet &taint;
+  std::function<bool(Value *)> MayGain;
+  bool CrossCallResults;
+
+  bool quantum(Value *V) const {
+    return taint.Tainted.count(V) || (MayGain && MayGain(V));
   }
-  return false;
-}
 
-// (b), caller half: does the object `P` points into receive a tainted store in
-// the caller?
-bool receivesTaintedStore(const Value *P, const Function &Caller,
-                          const TaintSet &taint) {
-  const Value *Obj = getUnderlyingObject(P);
-  for (const Instruction &I : instructions(Caller))
-    if (const auto *SI = dyn_cast<StoreInst>(&I))
-      if (taint.Tainted.count(SI->getValueOperand()) &&
-          getUnderlyingObject(SI->getPointerOperand()) == Obj)
-        return true;
-  return false;
-}
-
-// (c): does a `ret` of `F` return a register `F` itself rotates? The backward
-// tainted slice of a returned value reaches a `cq_theta` result of the callee
-// without crossing a CALL RESULT. A call result is crossed by nobody: its taint
-// is propagation's conservative prediction for a lift site (bd cepm), settled by
-// the specializer after the dead-argument drop's slot B, and a ret tainted only
-// through one is not yet a quantum return (measured: `w` in
-// slice_spec_dropped_arg_musttail_return returns `h2(p, k + z)`, classical once
-// the drop nulls the dead `musttail` slot, and must stay a standalone body).
-// A call to a GATE callee that itself returns its own register is crossed (the
-// question recurses into it; a call-cycle member answers no and keeps its loud
-// owner).
-bool returnsOwnRegister(const Function &F, const GateSets &S,
-                        const TaintSet &taint,
-                        SmallPtrSetImpl<const Function *> &Visiting) {
-  if (S.Recursive.count(&F) || !Visiting.insert(&F).second)
+  // (d): is `CB`'s block control-dependent on a conditional terminator whose
+  // condition is (or can become) quantum? `T` in block `B` governs `CB` iff
+  // `CB`'s block is reachable from a successor of `B` and does not post-dominate
+  // `B`.
+  bool underQuantumControl(const CallBase &CB,
+                           const PostDominatorTree &PDT) const {
+    const BasicBlock *Site = CB.getParent();
+    for (const BasicBlock &B : *CB.getFunction()) {
+      const Instruction *T = B.getTerminator();
+      Value *Cond = nullptr;
+      if (const auto *BI = dyn_cast_or_null<BranchInst>(T))
+        Cond = BI->isConditional() ? BI->getCondition() : nullptr;
+      else if (const auto *SI = dyn_cast_or_null<SwitchInst>(T))
+        Cond = SI->getCondition();
+      if (!Cond || !quantum(Cond) || PDT.dominates(Site, &B))
+        continue;
+      for (const BasicBlock *Succ : successors(&B))
+        if (isPotentiallyReachable(Succ, Site))
+          return true;
+    }
     return false;
-  SmallVector<const Value *, 16> Work;
-  SmallPtrSet<const Value *, 32> Seen;
-  for (const BasicBlock &BB : F)
-    if (const auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
-      if (const Value *RV = R->getReturnValue())
-        Work.push_back(RV);
-  while (!Work.empty()) {
-    const Value *V = Work.pop_back_val();
-    if (!Seen.insert(V).second || !taint.Tainted.count(const_cast<Value *>(V)))
-      continue;
-    if (const auto *CI = dyn_cast<CallInst>(V)) {
-      if (taint.ThetaCalls.contains(const_cast<CallInst *>(CI)))
-        return true;
-      const Function *G = CI->getCalledFunction();
-      if (G && !G->isDeclaration() && S.Gate.count(G) &&
-          returnsOwnRegister(*G, S, taint, Visiting))
-        return true;
-      continue;  // any other call result: never crossed.
-    }
-    if (const auto *I = dyn_cast<Instruction>(V))
-      for (const Value *Op : I->operands())
-        Work.push_back(Op);
   }
-  return false;
+
+  // (b), caller half: does the object `P` points into receive a store of a
+  // value that is (or can become) quantum in the caller?
+  bool receivesQuantumStore(const Value *P, const Function &Caller) const {
+    const Value *Obj = getUnderlyingObject(P);
+    for (const Instruction &I : instructions(Caller))
+      if (const auto *SI = dyn_cast<StoreInst>(&I))
+        if (quantum(const_cast<Value *>(SI->getValueOperand())) &&
+            getUnderlyingObject(SI->getPointerOperand()) == Obj)
+          return true;
+    return false;
+  }
+
+  // (c): does a `ret` of `F` return a register `F` itself rotates? The
+  // backward tainted slice of a returned value reaches a `cq_theta` result of
+  // `F`. A call result is crossed when the call is to a gate callee that itself
+  // returns its own register (recursion guarded; a call-cycle member answers
+  // no), and, in the `CrossCallResults` phase only, through any other direct
+  // call's tainted operands (a register returned through a lifted classical
+  // call, `return h(x)` after `cq_theta(&x, …)`; R11 r1 item 7). Before slot B
+  // such a result's taint is the conservative lift-site prediction (see the
+  // header), so it is not crossed there.
+  bool returnsOwnRegister(const Function &F,
+                          SmallPtrSetImpl<const Function *> &Visiting) const {
+    if (S.Recursive.count(&F) || !Visiting.insert(&F).second)
+      return false;
+    SmallVector<const Value *, 16> Work;
+    SmallPtrSet<const Value *, 32> Seen;
+    for (const BasicBlock &BB : F)
+      if (const auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
+        if (const Value *RV = R->getReturnValue())
+          Work.push_back(RV);
+    while (!Work.empty()) {
+      const Value *V = Work.pop_back_val();
+      if (!Seen.insert(V).second ||
+          !taint.Tainted.count(const_cast<Value *>(V)))
+        continue;
+      if (const auto *CI = dyn_cast<CallInst>(V)) {
+        if (taint.ThetaCalls.contains(const_cast<CallInst *>(CI)))
+          return true;
+        const Function *G = CI->getCalledFunction();
+        if (G && !G->isDeclaration() && S.Gate.count(G) &&
+            returnsOwnRegister(*G, Visiting))
+          return true;
+        if (CrossCallResults && G && !G->isDeclaration())
+          for (const Value *A : CI->args())
+            Work.push_back(A);
+        continue;
+      }
+      if (const auto *I = dyn_cast<Instruction>(V))
+        for (const Value *Op : I->operands())
+          Work.push_back(Op);
+    }
+    return false;
+  }
+
+  bool shouldInline(CallInst &CI, const Function &Callee,
+                    std::unique_ptr<PostDominatorTree> &PDT) const {
+    bool HasPtrArg = false;
+    for (const Use &U : CI.args()) {
+      if (quantum(U.get()))
+        return true;  // (a)
+      if (U->getType()->isPointerTy()) {
+        HasPtrArg = true;
+        if (receivesQuantumStore(U.get(), *CI.getFunction()))
+          return true;  // (b), caller half
+      }
+    }
+    if (HasPtrArg && S.StoresTainted.count(&Callee))
+      return true;  // (b), callee half
+    SmallPtrSet<const Function *, 8> Visiting;
+    if (returnsOwnRegister(Callee, Visiting) &&
+        (!CI.use_empty() || !Callee.getReturnType()->isIntegerTy(32)))
+      return true;  // (c)
+    if (!PDT)
+      PDT = std::make_unique<PostDominatorTree>(*CI.getFunction());
+    return underQuantumControl(CI, *PDT);  // (d)
+  }
+};
+
+// The callee of `CI` if it is a candidate at all: a direct, non-interposable,
+// non-recursive gate subroutine other than the caller, not excluded by the
+// inline history (a site produced by inlining this same callee).
+Function *candidateCallee(CallInst &CI, const GateSets &S,
+                          const GateInlineState &St) {
+  Function *Callee = CI.getCalledFunction();
+  if (!Callee || Callee->isDeclaration() || !S.Gate.count(Callee) ||
+      S.Recursive.count(Callee) || Callee == CI.getFunction() ||
+      Callee->isInterposable())
+    return nullptr;
+  auto It = St.History.find(&CI);
+  if (It != St.History.end() && llvm::is_contained(It->second, Callee))
+    return nullptr;
+  return Callee;
 }
 
-bool shouldInline(CallInst &CI, const Function &Callee, const GateSets &S,
-                  const TaintSet &taint,
-                  std::unique_ptr<PostDominatorTree> &PDT) {
-  bool HasPtrArg = false;
-  for (const Use &U : CI.args()) {
-    if (taint.Tainted.count(U.get()))
-      return true;  // (a)
-    if (U->getType()->isPointerTy()) {
-      HasPtrArg = true;
-      if (receivesTaintedStore(U.get(), *CI.getFunction(), taint))
-        return true;  // (b), caller half
-    }
-  }
-  if (HasPtrArg && S.StoresTainted.count(&Callee))
-    return true;  // (b), callee half
-  // (c): a used tainted result is the 3jru crossing; an UNUSED one at a non-i32
-  // width is still a call to a function whose `ret` the non-i32 escape guard
-  // refuses (the callee has a use, so it is no export).
-  SmallPtrSet<const Function *, 8> Visiting;
-  if (returnsOwnRegister(Callee, S, taint, Visiting) &&
-      (!CI.use_empty() || !Callee.getReturnType()->isIntegerTy(32)))
-    return true;
-  if (!PDT)
-    PDT = std::make_unique<PostDominatorTree>(*CI.getFunction());
-  return underTaintedControl(CI, *PDT, taint);  // (d)
-}
-
-// clang's `-O1` per-function simplification (the step the CGSCC inliner runs on
-// a caller after inlining into it), over exactly the callers that changed.
+// The `-O1` per-function simplification with clang's `-O1`
+// PipelineTuningOptions (clang's CodeGenOptions: `UnrollLoops`, `VectorizeLoop`
+// and `VectorizeSLP` default off below -O2, `LoopInterleaving` follows
+// `UnrollLoops`), so `LoopFullUnrollPass` runs only when forced, as in clang.
+// No TargetMachine (see the header).
 void simplifyCallers(ArrayRef<Function *> Callers) {
+  PipelineTuningOptions PTO;
+  PTO.LoopUnrolling = false;
+  PTO.LoopInterleaving = false;
+  PTO.LoopVectorization = false;
+  PTO.SLPVectorization = false;
   LoopAnalysisManager LAM;
   FunctionAnalysisManager FAM;
   CGSCCAnalysisManager CGAM;
   ModuleAnalysisManager MAM;
-  PassBuilder PB;
+  PassBuilder PB(/*TM=*/nullptr, PTO);
   PB.registerModuleAnalyses(MAM);
   PB.registerCGSCCAnalyses(CGAM);
   PB.registerFunctionAnalyses(FAM);
@@ -217,12 +249,20 @@ void simplifyCallers(ArrayRef<Function *> Callers) {
     FPM.run(*F, FAM);
 }
 
+// Termination backstop beside the inline history (a site the -O1 run clones
+// loses its history entry).
+constexpr unsigned kMaxRounds = 64;
+
 }  // namespace
 
-bool inlineGateSubroutines(Module &M, const TaintSet &taint) {
+bool inlineGateSubroutines(Module &M, const TaintSet &taint,
+                           GateInlineState &St, bool CrossCallResults) {
+  if (++St.Rounds > kMaxRounds)
+    return false;  // what is left keeps its loud owner.
   const GateSets S = collectGateSets(M, taint);
   if (S.Gate.empty())
     return false;
+  const Asker Ask{S, taint, makeLaterTaintQuery(taint), CrossCallResults};
 
   // Decide every site on one consistent taint snapshot, then mutate.
   SmallVector<CallInst *, 8> Sites;
@@ -230,15 +270,11 @@ bool inlineGateSubroutines(Module &M, const TaintSet &taint) {
     if (F.isDeclaration())
       continue;
     std::unique_ptr<PostDominatorTree> PDT;
-    for (Instruction &I : instructions(F)) {
-      auto *CI = dyn_cast<CallInst>(&I);
-      Function *Callee = CI ? CI->getCalledFunction() : nullptr;
-      if (!Callee || Callee->isDeclaration() || !S.Gate.count(Callee) ||
-          S.Recursive.count(Callee) || Callee == &F)
-        continue;
-      if (shouldInline(*CI, *Callee, S, taint, PDT))
-        Sites.push_back(CI);
-    }
+    for (Instruction &I : instructions(F))
+      if (auto *CI = dyn_cast<CallInst>(&I))
+        if (Function *Callee = candidateCallee(*CI, S, St))
+          if (Ask.shouldInline(*CI, *Callee, PDT))
+            Sites.push_back(CI);
   }
   if (Sites.empty())
     return false;
@@ -248,11 +284,18 @@ bool inlineGateSubroutines(Module &M, const TaintSet &taint) {
   for (CallInst *CI : Sites) {
     Function *Caller = CI->getFunction();
     Function *Callee = CI->getCalledFunction();
+    // The site's history plus this callee, for every site the inline produces.
+    SmallVector<Function *, 2> Hist;
+    if (auto It = St.History.find(CI); It != St.History.end())
+      Hist = It->second;
+    Hist.push_back(Callee);
     InlineFunctionInfo IFI;
-    if (InlineFunction(*CI, IFI).isSuccess()) {
-      Callers.insert(Caller);
-      Inlined.insert(Callee);
-    }
+    if (!InlineFunction(*CI, IFI).isSuccess())
+      continue;
+    for (CallBase *New : IFI.InlinedCallSites)
+      St.History[New] = Hist;
+    Callers.insert(Caller);
+    Inlined.insert(Callee);
   }
   if (Callers.empty())
     return false;
@@ -263,12 +306,40 @@ bool inlineGateSubroutines(Module &M, const TaintSet &taint) {
     for (Function *F : Callers)
       F->print(llvm::errs());
 
-  // A local gate subroutine with no use left would be lowered standalone with
-  // classical parameters: erase it (its every call site is now caller code).
+  // A gate subroutine with no use left would be lowered standalone with
+  // classical parameters: erase it when nothing outside the module can call it
+  // (local linkage, or a whole program: the module defines `main`).
+  const Function *Main = M.getFunction("main");
+  const bool WholeProgram = Main && !Main->isDeclaration();
   for (Function *F : Inlined)
-    if (F->hasLocalLinkage() && F->use_empty())
+    if ((F->hasLocalLinkage() || WholeProgram) && F->use_empty() && F != Main)
       F->eraseFromParent();
   return true;
+}
+
+bool declineMissedGateSubroutines(Module &M, const TaintSet &taint,
+                                  const GateInlineState &St) {
+  const GateSets S = collectGateSets(M, taint);
+  if (S.Gate.empty())
+    return false;
+  const Asker Ask{S, taint, nullptr, /*CrossCallResults=*/true};
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    std::unique_ptr<PostDominatorTree> PDT;
+    for (Instruction &I : instructions(F))
+      if (auto *CI = dyn_cast<CallInst>(&I))
+        if (Function *Callee = candidateCallee(*CI, S, St))
+          if (Ask.shouldInline(*CI, *Callee, PDT)) {
+            F.getContext().diagnose(DiagnosticInfoUnsupported(
+                F,
+                "cq specialization: gate subroutine call became quantum after "
+                "call-site compilation",
+                CI->getDebugLoc()));
+            return true;
+          }
+  }
+  return false;
 }
 
 // The no-use test of `declineQuantumReturnCalls` (TaintPropagation.cpp): a
@@ -289,63 +360,39 @@ static bool onlyUsedListUsers(const Function &F) {
 }
 
 bool isQuantumReturnExport(const Function &F) {
-  Type *RT = F.getReturnType();
-  if (F.isDeclaration() || RT->isIntegerTy(32) ||
-      !(RT->isIntegerTy() || RT->isFloatingPointTy()))
+  const auto *RT = dyn_cast<IntegerType>(F.getReturnType());
+  if (F.isDeclaration() || !RT || RT->getBitWidth() <= 32)
     return false;
   return onlyUsedListUsers(F);
 }
 
-static constexpr char kMsgNonI32ReturnExport[] =
-    "cq taint escape: tainted value returned at non-i32 width";
-
-bool retypeQuantumExportReturns(Module &M) {
-  SmallVector<Function *, 2> Work;
+bool widenQuantumExportReturns(Module &M) {
   for (Function &F : M) {
     if (!isQuantumReturnExport(F))
       continue;
-    bool AnyHandle = false, AnyOther = false;
+    SmallVector<ReturnInst *, 2> Handles;
     const ReturnInst *Other = nullptr;
     for (BasicBlock &BB : F)
       if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator())) {
         Value *RV = R->getReturnValue();
         if (RV && RV->getType() != F.getReturnType() &&
             RV->getType()->isIntegerTy(32))
-          AnyHandle = true;
-        else {
-          AnyOther = true;
+          Handles.push_back(R);
+        else
           Other = R;
-        }
       }
-    if (!AnyHandle)
+    if (Handles.empty())
       continue;  // nothing returned a register: a classical function.
-    if (AnyOther) {
+    if (Other) {
       F.getContext().diagnose(DiagnosticInfoUnsupported(
-          F, kMsgNonI32ReturnExport, Other->getDebugLoc()));
+          F, nonI32ReturnMessage(), Other->getDebugLoc()));
       return true;
     }
-    Work.push_back(&F);
-  }
-  for (Function *F : Work) {
-    LLVMContext &Ctx = F->getContext();
-    SmallVector<Type *, 8> Params(F->getFunctionType()->params());
-    FunctionType *FT = FunctionType::get(Type::getInt32Ty(Ctx), Params,
-                                         F->isVarArg());
-    Function *NF = Function::Create(FT, F->getLinkage(), F->getAddressSpace(),
-                                    "", F->getParent());
-    NF->copyAttributesFrom(F);
-    // The return attributes (`zeroext`, `noundef`, `nofpclass`, …) described the
-    // `iN`; the handle carries none of them.
-    NF->setAttributes(NF->getAttributes().removeRetAttributes(Ctx, AttributeMask(NF->getAttributes().getRetAttrs())));
-    NF->setSubprogram(F->getSubprogram());
-    NF->splice(NF->end(), F);
-    for (auto [A, NA] : zip(F->args(), NF->args())) {
-      NA.takeName(&A);
-      A.replaceAllUsesWith(&NA);
+    for (ReturnInst *R : Handles) {
+      IRBuilder<> B(R);
+      R->setOperand(0, B.CreateZExt(R->getReturnValue(), F.getReturnType(),
+                                    "cq.handle.ret"));
     }
-    NF->takeName(F);
-    F->replaceAllUsesWith(NF);  // only `@llvm.used`-list entries remain.
-    F->eraseFromParent();
   }
   return false;
 }

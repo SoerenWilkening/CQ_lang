@@ -11,24 +11,38 @@
 ;
 ; bd p3kd.21 / bd jx32 (2026-10-14) — NOW AN ACCEPT; the file name and the
 ; DECLINE text above are history. The function has no in-module use (an entry
-; point / export, `declineQuantumReturnCalls`' Escaped contract), so its non-i32
-; tainted `ret` returns the register's i32 runtime HANDLE: the return is
-; re-declared `i32` after lowering (`retypeQuantumExportReturns`,
-; SpecializeGateInline.h) and the verifier-abort hazard described above cannot
-; arise (a `ret` still carrying a non-i32 value there fails loudly with the same
-; non-i32 string). The gate stream is the one the i32-typed twin of the same body
-; emits (measured on the value diamond: identical, call for call; the twin's arm
-; chain is left allocated exactly as there). The non-i32 decline remains for a
-; function WITH an in-module use: spec_reject_gate_sub_indirect_nonI32.ll.
+; point / export, `declineQuantumReturnCalls`' Escaped contract) and returns an
+; integer WIDER than 32 bits, so its tainted `ret` returns the register's i32
+; runtime handle ZERO-EXTENDED to the declared width (`widenQuantumExportReturns`,
+; SpecializeGateInline.h; owner ruling owner-ruling-p3kd21-gate-subroutines-2026-10-14: approved for
+; integer returns of 32 bits or wider only). The C signature is unchanged, so the
+; verifier-abort hazard above cannot arise. L9: this extends the escaped-handle
+; contract of i32 returns to i64 callers, cross-TU ones included. The gate stream
+; is the one the i32-typed twin of the same body emits (measured on the value
+; diamond: identical, call for call; the twin's arm chain is left allocated
+; exactly as there). The non-i32 decline remains for a narrower integer or an fp
+; return (spec_reject_gate_sub_export_{bool,double}.ll, lowering_reject_f16_return.ll)
+; and for a function WITH an in-module use (spec_reject_gate_sub_indirect_nonI32.ll).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll
-; CHECK-LABEL: define i32 @example(i64 %u0, i64 %v0)
-; CHECK: [[OUT:%[a-z0-9_.]+]] = call i32 @cqrt_alloc_i64(i64 0)
-; CHECK: call void @cqrt_copy_i64_controlled(i32 {{%[a-z0-9_.]+}}, i32 {{%[a-z0-9_.]+}}, i32 [[OUT]])
-; CHECK: call void @cqrt_copy_i64_controlled(i32 {{%[a-z0-9_.]+}}, i32 {{%[a-z0-9_.]+}}, i32 [[OUT]])
-; CHECK-NOT: call void @cqrt_free(i32 [[OUT]])
-; CHECK: ret i32 [[OUT]]
+; CHECK-LABEL: define i64 @example(i64 %u0, i64 %v0)
+; CHECK: [[Q:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i64(i64 %u0)
+; CHECK-NEXT: call void @cqrt_ry_i64(i32 [[Q]], double 5.000000e-01)
+; CHECK-NEXT: [[P:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i64(i64 %v0)
+; CHECK-NEXT: call void @cqrt_ry_i64(i32 [[P]], double 2.500000e-01)
+; CHECK-NEXT: [[V:%[0-9a-z_.]+]] = call i32 @cq_template_mul_i64_hl(i32 [[P]], i64 5)
+; CHECK-NEXT: call void @cqrt_addc_i64(i32 [[V]], i64 15)
+; CHECK-NEXT: [[C:%[0-9a-z_.]+]] = call i32 @cq_template_icmp_sgt_i64_hl(i32 [[Q]], i64 5)
+; CHECK-NEXT: [[OUT:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i64(i64 0)
+; CHECK-NEXT: call void @cqrt_copy_i64_controlled(i32 [[C]], i32 [[V]], i32 [[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 [[C]])
+; CHECK-NEXT: call void @cqrt_copy_i64_controlled(i32 [[C]], i32 [[P]], i32 [[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 [[C]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i64_hl_unc(i32 [[C]], i32 [[Q]], i64 5)
+; CHECK-NEXT: call void @cqrt_free(i32 [[C]])
+; CHECK-NEXT: [[W:%[0-9a-z_.]+]] = zext i32 [[OUT]] to i64
+; CHECK-NEXT: ret i64 [[W]]
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 

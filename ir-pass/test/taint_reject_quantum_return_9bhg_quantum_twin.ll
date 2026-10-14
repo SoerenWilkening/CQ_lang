@@ -9,9 +9,26 @@
 ;   lib.c:  int h(int a, int k) { return a + k; }
 ;   main.c: (as in spec_accept_dropped_arg_9bhg_original.ll)
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s
-; CHECK: cq taint escape: quantum value returned across a function boundary
+; bd p3kd.21 R11 r1 fix (2026-10-15) — NOW AN ACCEPT; the file name and the
+; DECLINE text above are history. `f` holds `cq_theta` and returns `h(q, m) + cq_measure(q)`, a register it
+; rotates returned through the lifted `h`, so after the dead-argument drop's slot
+; B trigger (c) compiles its call at the site (R11 r1 item 7); `main` then
+; returns that register, the existing Escaped contract of an entry point. The register is the caller's own, and
+; the module compiles exactly as its hand-inlined twin does on the pre-change
+; binary (`f`'s body written into `main`: identical, call for call). The 3jru refusal itself is unchanged and still pinned by
+; taint_reject_quantum_return_fnptr.ll and
+; spec_reject_predicted_classical_round2_return_crossing.ll.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; CHECK-LABEL: define i32 @main(
+; CHECK: [[Q:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i32(i32 %5)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q]], double 5.000000e-01)
+; CHECK-NEXT: [[T:%[0-9a-z_.]+]] = tail call i32 @__cq_q_h_01(i32 noundef [[Q]], i32 noundef %5)
+; CHECK-NEXT: [[M:%[0-9a-z_.]+]] = call i32 @cqrt_measure_i32(i32 [[Q]])
+; CHECK-NEXT: call void @cqrt_addc_i32(i32 [[T]], i32 [[M]])
+; CHECK-NEXT: ret i32 [[T]]
+; CHECK-NOT: @f(
 
 ; ModuleID = 'llvm-link'
 source_filename = "llvm-link"

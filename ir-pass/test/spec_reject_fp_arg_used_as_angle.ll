@@ -1,4 +1,9 @@
 ; spec_reject_fp_arg_used_as_angle.ll — bd 3c6m.54 ANGLE-SAFETY (Rule 3, the
+; ⚠ LINES 2-10 BELOW ARE HISTORY since bd p3kd.21 (R11 r1 item 9): `helper` holds a
+; `cq_phi`, so it is a gate subroutine compiled at its call site and never cloned;
+; the fixture now pins the quantum-angle gap instead (see the p3kd.21 note at the
+; CHECK). The clone-side argument still holds for the clones that exist: `scanBody`
+; refuses a body holding a rotation (spec_reject_gate_sub_devirt_primitive.ll).
 ; f64/angle miscompile family). Even though a tainted fp ARG is now admitted, an fp
 ; value can NEVER reach a rotation arg-1 angle INSIDE a clone: `scanBody` rejects
 ; every `cq_theta`/`cq_phi` as `QuantumPrimitive`, so a clone body is provably

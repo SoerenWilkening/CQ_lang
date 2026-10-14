@@ -11,7 +11,8 @@
 ; (SpecializeGateInline.h) and never lifted: the measurement the user wrote is
 ; the caller's own, exactly as in the hand-inlined twin. The over-accept this
 ; probe guarded against (a Bennett-lifted clone holding a measurement) still
-; cannot happen: `scanBody` still refuses it for every non-inlinable site.
+; cannot happen: `scanBody` still refuses it for every non-inlinable site
+; (pinned by spec_reject_gate_sub_devirt_measure.ll).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll

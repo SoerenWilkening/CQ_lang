@@ -34,7 +34,8 @@
 ; is a GATE SUBROUTINE, compiled at its call site (SpecializeGateInline.h), never
 ; cloned: a Bennett-wrapped clone holding the phase would still be the hazard
 ; this fixture recorded, and `scanBody` still refuses it (pinned by
-; spec_reject_gate_sub_recursive.ll's recursion owner and by every non-inlinable
+; spec_reject_gate_sub_devirt_primitive.ll, the one reachable lift of a gate
+; callee, and backstopping every other non-inlinable
 ; site). Inlined, `slice` is `if (q == 5) cq_phi(PI); return measure(q + 1)`:
 ; the phase kicks back onto the compare flag, which is uncomputed and freed, and
 ; `q + 1` is the in-place `cqrt_addc_i32` on the measured register. The
