@@ -93,7 +93,8 @@ merge:
 ; NOROUTE-NOT: cqrt_alloc_i32(i32 0)
 ; NOROUTE-NOT: cqrt_copy_i32_controlled
 
-; EXACTLY ONE free — the flag. `%out`, `%p` and the chain final are left
+; EXACTLY TWO frees — the flag and, since bd r2j3.32, the merge rail `%out`
+; once its copies are re-applied in reverse. `%p` and the chain final are left
 ; ALLOCATED (keep-source-live / the Inc-2 dirty-final leak; Rule 6).
 ; FCNT-COUNT-2: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(

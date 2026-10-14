@@ -122,16 +122,25 @@ merge:
 ; CHECK-NEXT: %[[H_CMP1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 1)
 ; CHECK-NEXT: %[[DELTA2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 10)
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[H_CMP1]], i32 %[[DELTA2]], i32 %[[OUT]])
-; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[H_CMP]], i32 %[[H]], i32 0)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[H_CMP]])
-; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[H_CMP1]], i32 %[[H]], i32 1)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[H_CMP1]])
 ; CHECK-NEXT: %[[H_CMP3:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_ne_i32_hl(i32 %[[OUT]], i32 0)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[H_CMP3]])
 ; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[H_CMP3]], double 3.000000e-01)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[H_CMP3]])
 ; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[H_CMP3]], double 9.000000e-01)
 ; CHECK-NEXT: call void @cq_template_icmp_ne_i32_hl_unc(i32 %[[H_CMP3]], i32 %[[OUT]], i32 0)
+; bd r2j3.32 (R11 round 1): the kickback strip is the data-mux rail's last
+; reader. The rail was born holding the default 3 (the preload); its two
+; XOR-delta copies are re-applied in reverse (flags still live), the eq-flag
+; strip is DEFERRED to after them, and `cqrt_xorc_i32(out, 3)` returns it
+; from |3> to |0> before the free.
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[H_CMP1]], i32 %[[DELTA2]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[H_CMP]], i32 %[[DELTA]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[H_CMP]], i32 %[[H]], i32 0)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[H_CMP]])
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[H_CMP1]], i32 %[[H]], i32 1)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[H_CMP1]])
+; CHECK-NEXT: call void @cqrt_xorc_i32(i32 %[[OUT]], i32 3)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[H_CMP3]])
 ; CHECK-NEXT: %[[M5:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[H4]])
 ; CHECK-NEXT: ret i32 %[[M5]]
@@ -174,7 +183,7 @@ merge:
 ; pattern is the only spelling that pins `exactly n`.
 ; ACNT-COUNT-2: call void @cqrt_rz_i1(
 ; ACNT-NOT:     call void @cqrt_rz_i1(
-; FCNT-COUNT-3: call void @cqrt_free(
+; FCNT-COUNT-4: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
 ; XCNT-COUNT-2: call void @cqrt_x(
 ; XCNT-NOT:     call void @cqrt_x(

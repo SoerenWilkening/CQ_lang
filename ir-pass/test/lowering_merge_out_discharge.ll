@@ -151,6 +151,20 @@
 ; CHECK:      call void @cqrt_free(i32 %[[OUT11]])
 ; CHECK:      ret i32
 
+; ── 9. The reader's block has TWO predecessors (a classical diamond). Until the
+;       R11 round-1 fix this was a leak (the replay needed a straight-line
+;       chain); the replay now lands at the nearest common post-dominator of
+;       the stream and its readers (`j`), the region entry..j being
+;       single-entry/single-exit, so it runs exactly once per forward run.
+; CHECK-LABEL: define i32 @offchain_reader(
+; CHECK:      %[[OUT12:[0-9a-zA-Z_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK:      br i1 %c, label %l, label %r
+; CHECK:      j:
+; CHECK:      call i32 @cq_template_add_i32(i32 %[[OUT12]],
+; CHECK-NEXT: call void @cqrt_x(
+; CHECK:      call void @cqrt_free(i32 %[[OUT12]])
+; CHECK:      ret i32
+
 ; ── ADVERSARIAL: each of these keeps the merge rail allocated (the Rule-6 leak,
 ;    never a dirty free). NEG lines are windowed per function.
 ; NEG-LABEL: define i32 @out_measured(
@@ -160,12 +174,6 @@
 ; NEG-LABEL: define i32 @out_returned(
 ; NEG:       %[[OUT8:[0-9a-zA-Z_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; NEG-NOT:   call void @cqrt_free(i32 %[[OUT8]])
-; NEG:       ret i32
-; The reader's block has TWO predecessors (a classical diamond): it is off the
-; straight-line chain, so no single replay point is proven.
-; NEG-LABEL: define i32 @offchain_reader(
-; NEG:       %[[OUT12:[0-9a-zA-Z_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; NEG-NOT:   call void @cqrt_free(i32 %[[OUT12]])
 ; NEG:       ret i32
 ; NEG-LABEL: define i32 @cond_rotated_before_reader(
 ; NEG:       %[[OUT9:[0-9a-zA-Z_.]+]] = call i32 @cqrt_alloc_i32(i32 0)

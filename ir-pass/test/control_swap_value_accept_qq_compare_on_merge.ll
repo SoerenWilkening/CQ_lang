@@ -84,8 +84,9 @@ merge:
 ; NOROUTE-NOT: cq_template_icmp_eq_i32_hl
 ; NOROUTE-NOT: cq_template_icmp_eq_i32_lh
 
-; TWO frees: the region's flag and the downstream data compare's own flag. The
-; merge out-rail, `%p` and the chain final stay ALLOCATED (Rule 6).
+; THREE frees: the region's flag, the downstream data compare's own flag and,
+; since bd r2j3.32, the merge out-rail once its copies are re-applied in
+; reverse. `%p` and the chain final stay ALLOCATED (Rule 6).
 ; FCNT-COUNT-3: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
 ; CCNT-COUNT-4: call void @cqrt_copy_i32_controlled(

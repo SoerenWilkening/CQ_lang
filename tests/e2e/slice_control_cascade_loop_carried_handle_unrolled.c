@@ -3,32 +3,49 @@
  * `slice_control_cascade_loop_carried_handle.c`, registered so the DIVERGENCE is
  * a committed fact rather than a claim in a header.
  *
- * ⚠ IT IS 45 LINES WHERE THE ROLLED FORM IS 50, AND THE FIVE ARE ACCOUNTED FOR
- * ONE BY ONE — this is the owner's ruling (2) of 2026-09-17 in its measured
- * form.  `clang -O1` cannot fold anything in the rolled form (it stamps
- * `llvm.loop.unroll.disable` and does not peel), and folds three things here:
+ * ⚠ IT IS 55 LINES WHERE THE ROLLED FORM IS 50 (re-measured 2026-10-15 after bd
+ * r2j3.32; it was 45 vs 50 before). `clang -O1` cannot fold anything in the
+ * rolled form (it stamps `llvm.loop.unroll.disable` and does not peel), and
+ * folds three things here, while bd r2j3.32 adds two merge-rail reversals here
+ * that the rolled form cannot make:
  *
- *   +1  the rolled form's PREHEADER `cqrt_alloc_i32(5)` — the trip-1 promotion.
+ *   -1  the rolled form's PREHEADER `cqrt_alloc_i32(5)` — the trip-1 promotion.
  *       Here `a = 5` is a literal at every use, so the same register is
  *       materialised INSIDE the trip-1 mux instead (`cqrt_alloc_i32(5) -> h4`,
  *       golden line 9) and costs no separate line.
- *   +2  TRIP 1's compare.  `a = 5` makes `a >= 3` constant TRUE, so this form
+ *   -2  TRIP 1's compare.  `a = 5` makes `a >= 3` constant TRUE, so this form
  *       emits the unconditional `cqrt_ry_i1(h0, .5)` where the rolled form emits
  *       `icmp -> alloc -> ry_controlled -> icmp_unc -> free`.  SAME UNITARY: a
  *       control that is |1> deterministically is no control.
- *   +2  TRIP 2's compare.  `a` is 5 or 2, so `a >= 3` folds to `!b0[0]`, which
+ *   -2  TRIP 2's compare.  `a` is 5 or 2, so `a >= 3` folds to `!b0[0]`, which
  *       `-O1` spells by ADDITIVITY (`ry(h5,.5); ry_controlled(h0,h5,-.5)` — fire
  *       Ry(.5) when `h0 == 0`) instead of minting a compare flag.
- *   0   TRIP 3 is IDENTICAL in both forms, gate for gate: golden lines 27-41
- *       here against 32-46 there.  That is the per-trip witness — the rolled
- *       form's stream IS the general trip, and the flat form only differs where
- *       `-O1` had a constant to fold.
+ *   +10 bd r2j3.32: the trip-1 and trip-2 `a`-mux rails `h2` and `h8` are each
+ *       read only by the NEXT trip's merge (as its copy source) and its compare,
+ *       so both are REVERSED after the trip-3 core, LIFO (`h8` first, golden
+ *       lines 36-42; then `h2`, lines 43-49): each merge's two copies re-applied
+ *       under its still-live flag, the flag's deferred strip, the rail freed.
+ *       Each trip-k merge's strip moves with it.
  *
- * LEAK PARITY, measured and not asserted: SIX undischarged rails in each form.
- * Here 2 template (`h6`, `h11`) + 4 alloc (`h2`, `h3`, `h4`, `h8`); there 3 + 3.
- * The rolled form is therefore NOT worse than its twin, which is the claim
- * `declineUnmarkedRolledIterLocal`'s conjunct 2 exists to protect and the reason
- * the R7-loop grant here is sound.
+ * TRIP 3 is gate-for-gate the rolled form's general trip up to its core (golden
+ * lines 28-35 here against the rolled form's last trip).
+ *
+ * ⚠ LEAK PARITY NO LONGER HOLDS, measured from the goldens (live at exit, never
+ * freed nor measured):
+ *   here    4 — the classical selects' constant loads `h3` (= 2) and `h4`
+ *               (= 5), and the hoisted chain rails `h6` and `h11`;
+ *   rolled  6 — the promoted seed `h0` (= 5), the chain rails `h3`, `h8`,
+ *               `h13`, and the trip-1/trip-2 `a`-mux rails `h5` and `h10`.
+ * `h5`/`h10` are ENTANGLED records of `b0[0]`/`b0[1]` that this twin reverses.
+ * The rolled form cannot reverse them per trip: `a`-mux k is read by trip k+1's
+ * merge, whose own reversal needs `a`-mux k-1 still live — the reversal is LIFO
+ * ACROSS trips, i.e. a reverse loop after the forward one, which the compiler
+ * does not emit yet. Until it does, the rolled form IS worse than its twin by
+ * two entangled rails, and the premise `declineUnmarkedRolledIterLocal`'s
+ * conjunct 2 rests on (the R7-loop grant) is FALSE for this shape — conjunct 2
+ * does not see it, because a merge rail is not a spine discharge candidate.
+ * Before bd r2j3.32 both forms leaked six (here 2 template + 4 alloc, the four
+ * including `h2` and `h8`; there 3 + 3).
  */
 #include "CQ.h"
 

@@ -5,7 +5,8 @@
 ; chain. Semantic evidence, reviewed by trace reasoning 2026-10-08 before flipping
 ; (R10): out = q==0 ? 1.0 : 2.0; g = (q!=0 & q!=1) by Toffoli; out4 = g ? 0.0 : out;
 ; so out4 = {0.0 default, 1.0 at q==0, 2.0 at q==1}, the source's phi. Stage 2b on
-; this output: 4 frees verified, 0 violations. Since bd r2j3.32 BOTH merge rails
+; the pre-r2j3.32 output: 4 frees verified, 0 violations (measured 2026-10-15 on
+; this output: 6 verified, 0 violations, 0 unproven). Since bd r2j3.32 BOTH merge rails
 ; are reversed after their last reader and freed at |0> (core re-emitted in
 ; reverse under the still-live flag, the flag strip deferred past it): `out4`
 ; after the fptosi in the merge block (the straight-line successor), then `out`,

@@ -6220,7 +6220,8 @@ add_test(NAME e2e-slice-undef-seed-uncontrolled
 # --- `slice_control_cascade_two_bools.c` — the owner's cascade, landed
 # --- 2026-09-13 — with ONE TOKEN changed (`_Bool b1 = 0;` -> `_Bool b1;`), and
 # --- `e2e-undef-seed-cascade-twin-identical` byte-diffs its golden against that
-# --- shipped one: 29 = 29. A golden of its own could only record whatever this
+# --- shipped one: 34 = 34 (29 = 29 before bd r2j3.32 reversed the a-mux rail in
+# --- both). A golden of its own could only record whatever this
 # --- compiler emits; the TWIN says the uninitialized spelling gets the circuit
 # --- the INITIALIZED program already had — the reviewed, Rule-13-cleared,
 # --- shipped one — so the rule adds an ACCEPT and not a stream. Same argument as
@@ -6760,8 +6761,9 @@ add_test(NAME e2e-slice-loop-hoisted-chain-exit-discharge-unrolled
 
 # ── bd `test_C_libtooling-zujr` — THE LOOP-CARRIED HANDLE VARIABLE ───────────
 # The owner's `example/grover/grover_oracle_uncompute.c` IN ITS LOOP FORM, and
-# its hand-unrolled twin.  50 lines against 45; the five are accounted for one by
-# one in the twin's own header (the owner ruled byte-identity an INSTRUMENT here,
+# its hand-unrolled twin.  50 lines against 55 (45 before bd r2j3.32 reversed two
+# of the twin's merge rails that the rolled form cannot yet reverse per trip);
+# every line of the difference is accounted for in the twin's own header (the owner ruled byte-identity an INSTRUMENT here,
 # not the target — `-O1` const-folds the flat form's first two trips and cannot
 # fold anything in the rolled one).  Read the rolled slice's header for the
 # invariants the golden is read by.

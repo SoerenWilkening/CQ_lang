@@ -13,7 +13,10 @@
 
 namespace llvm {
 class CallInst;
+class DominatorTree;
 class Instruction;
+class LoopInfo;
+class PostDominatorTree;
 class Value;
 }  // namespace llvm
 
@@ -23,30 +26,38 @@ struct TaintSet;
 
 struct MergePlan {
   llvm::CallInst *Out = nullptr;
-  // The closed emitted stream, inclusive.
+  // The closed emitted stream, inclusive (one block).
   llvm::Instruction *Lo = nullptr, *Hi = nullptr;
-  // Classical copy-source loads inside the core: reused, never re-emitted.
-  llvm::SmallPtrSet<llvm::Value *, 4> SrcAllocs;
   // Admitted in-place permutations on %out after the stream, program order.
   llvm::SmallVector<llvm::CallInst *, 2> InPlace;
-  // First writer .. the closing `cqrt_x` brackets (an involution on %out).
-  llvm::SmallVector<llvm::CallInst *, 8> Core;
+  // The REPLAYED subsequence of the core, forward order: every write of %out
+  // (controlled / uncontrolled basis copies) and the `cqrt_x` brackets on the
+  // stream's flags between them. Re-emitted reversed, it is the core's adjoint.
+  llvm::SmallVector<llvm::CallInst *, 8> Replay;
   // The flag strip after the core, moved to the replay point.
   llvm::SmallVector<llvm::Instruction *, 8> Post;
-  // The replay point: %out's last reader (or a whole earlier replay group).
-  llvm::Instruction *Last = nullptr;
+  // The group is inserted immediately BEFORE `At` (in the post-dominating
+  // block of the stream's single-entry/single-exit region).
+  llvm::Instruction *At = nullptr;
+  // Non-null when %out is born holding a classical seed (the 4.5 data-mux
+  // preload): `cqrt_xorc_<W>(%out, Seed)` returns it to |0> after the replay.
+  llvm::Value *Seed = nullptr;
 };
 
+struct PlanContext {
+  const TaintSet &taint;
+  llvm::DominatorTree &DT;
+  llvm::PostDominatorTree &PDT;
+  llvm::LoopInfo &LI;
+  // Every instruction of an already-emitted replay group -> that group's last
+  // instruction, so a reader inside one is passed by the whole group (LIFO).
+  const llvm::DenseMap<const llvm::Instruction *, llvm::Instruction *> &GroupEnd;
+};
 
 // Recover the closed stream around the merge rail `Out` and prove the replay
-// sound (MergeRailDischarge.h, "WHEN THE PROOF HOLDS"). `GroupEnd` maps every
-// instruction of an already-emitted replay group to that group's last
-// instruction, so a reader inside one is passed by the whole group (LIFO).
+// sound (MergeRailDischarge.h, "WHEN THE PROOF HOLDS").
 // False => leave `Out` allocated; `P` is then meaningless.
-bool planMerge(
-    llvm::CallInst *Out, const TaintSet &taint,
-    const llvm::DenseMap<const llvm::Instruction *, llvm::Instruction *> &GroupEnd,
-    MergePlan &P);
+bool planMerge(llvm::CallInst *Out, const PlanContext &Ctx, MergePlan &P);
 
 }  // namespace cq
 

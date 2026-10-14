@@ -139,11 +139,14 @@ attributes #2 = { nounwind }
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF2]], i32 %[[OUT]], i32 %[[OUT3]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[BF2]])
 ; bd r2j3.32: the FIRST merge rail `%out` is the second merge's copy source
-; and has no other reader, so once that core has read it it is reversed --
+; and has no LATER reader, so once that core has read it it is reversed --
 ; its own core re-emitted in reverse under the SAME flag, its flag strip
-; DEFERRED to after that, then `%out` freed (it used to leak; a later gate on
-; the condition register dephased against it). The second merge's strip
-; follows.
+; DEFERRED to after that, then `%out` freed (it used to leak). The second merge's strip follows.
+; NOT a full disentangle (R11 round 1, R9/L9): `%h_op = add(%out, -3)`, minted
+; from `%out` before this reversal, is never `_unc`'d and stays entangled with
+; the condition, so a later non-diagonal gate on the condition register would
+; still dephase against it (the chain-final leak, unchanged here; r2j3.7 is
+; its dead-op twin).
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[SELOP1]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])

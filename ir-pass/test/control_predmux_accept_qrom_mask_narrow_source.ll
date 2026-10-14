@@ -300,13 +300,35 @@ merge:
 }
 ; CHECK-LABEL: define i32 @phi_i32_sext(
 ; CHECK:      %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 4)
-; CHECK:      %[[M:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[ID:[a-zA-Z0-9_.]+]], i32 3)
-; CHECK-NEXT: %[[V:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_i32(i32 %[[T]], i32 %[[M]])
+; bd r2j3.32 (R11 round 1, item 7): the index merge rail %[[ID]] (its two
+; copies bound to their sources) is reversed right after its last reader, the
+; mask's `_unc`, its network strip deferred behind that, then freed — all
+; pinned with captured handles, before the mask rail's own free.
+; CHECK:      %[[R_H_CMP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[R_H:[a-zA-Z0-9_.]+]], i32 1)
+; CHECK-NEXT: %[[R_H_CMP1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_slt_i32_hl(i32 %[[R_H]], i32 9)
+; CHECK-NEXT: %[[R_G2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[R_H_CMP]], i32 %[[R_H_CMP1]], i32 %[[R_G2]])
+; CHECK-NEXT: %[[ID:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: %[[R_SELOP:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 2)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[R_G2]], i32 %[[R_SELOP]], i32 %[[ID]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[R_G2]])
+; CHECK-NEXT: %[[R_SELOP3:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 -1)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[R_G2]], i32 %[[R_SELOP3]], i32 %[[ID]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[R_G2]])
+; CHECK-NEXT: %[[M:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[ID]], i32 3)
+; CHECK-NEXT: %[[R_0:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_i32(i32 %[[T]], i32 %[[M]])
 ; CHECK-NEXT: call void @cq_template_and_i32_hl_unc(i32 %[[M]], i32 %[[ID]], i32 3)
-; bd r2j3.32: that `_unc` is the index merge rail %[[ID]]'s last reader, so the
-; rail is reversed right there (its core re-emitted in reverse, its network strip
-; deferred behind that) and freed, before the mask rail's own free.
-; CHECK:      call void @cqrt_free(i32 %[[ID]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[R_G2]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[R_G2]], i32 %[[R_SELOP3]], i32 %[[ID]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[R_G2]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[R_G2]], i32 %[[R_SELOP]], i32 %[[ID]])
+; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[R_H_CMP]], i32 %[[R_H_CMP1]], i32 %[[R_G2]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[R_G2]])
+; CHECK-NEXT: call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[R_H_CMP1]], i32 %[[R_H]], i32 9)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[R_H_CMP1]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[R_H_CMP]], i32 %[[R_H]], i32 1)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[R_H_CMP]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[ID]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[M]])
 ; NARROW-LABEL: define i32 @phi_i32_sext(
 ; NARROW-NOT: _to_i64

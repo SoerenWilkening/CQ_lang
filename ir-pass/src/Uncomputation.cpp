@@ -3293,8 +3293,12 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
     // measured `zext` rail; had that rail been returned instead, `Terminals`
     // would be empty and every interior rail invisible). The replacement gate is
     // strictly weaker and still costs a module with no tainted data nothing.
-    if (!AnyTaintedProducer)
+    if (!AnyTaintedProducer) {
+      // bd r2j3.32 round 1 — a function whose only quantum traffic is a merge
+      // (its rails are not tainted data producers) still owes the discharge.
+      dischargeMergeRails(F, taint, wd);
       continue;
+    }
 
     DominatorTree DT(F);
     PostDominatorTree PDT(F);
