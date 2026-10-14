@@ -1,6 +1,7 @@
-; spec_intermediate_unc_terminal_union_reject_borrowed_divergent.ll — DECLINE, as
-; main, character for character (bd test_C_libtooling-p3kd.13, R11 review round 5,
-; the OPEN `!TmplOk` item). Reviewer probe r4_tmplok_false_qram, @ml alone.
+; spec_intermediate_unc_terminal_union_borrowed_divergent.ll — ACCEPT, a BENIGN cut
+; left allocated (bd test_C_libtooling-p3kd.14, batch 053 unit D; formerly
+; ..._reject_borrowed_divergent.ll, a decline equal to main — R11 r5, reviewer
+; probe r4_tmplok_false_qram, @ml alone).
 ;
 ; SOURCE (`clang -O1` IR below):
 ;     __attribute__((noinline)) static int h(int a) { return a * 3 + 1; }
@@ -11,34 +12,41 @@
 ;       int b = cq_measure(v); return b + cq_measure(w); }
 ;     int main(int argc, char **argv) { (void)argv; return ml(argc); }
 ;
-; WHAT THIS PINS (snapshot d8c1c4bb, measured): a LOUD decline that had turned
-; into an accept inside the pre-existing bd 01po.4 array-borrow class (bd
-; r2j3.21). The template terminals alone decline (the conditional store at a
-; superposed index sits in a divergent arm), so `TmplOk` was false and the union was
-; accepted with no subset test. The clone terminal r reads the MEASURED w, so the
-; union's FIRST frontier borrowed the QRAM array: its DAG never reached the
-; conditional store, and rc 0 left `cqrt_qram_store_i32(arr, q, 7)` and q's prep Ry
-; unreversed (stage 2b: 6 frees verified, 0 violations — blind to it). In THIS
-; function that is a LEAK, not an observable wrong unitary: q is never touched again
-; (R11 r6 F3 corrects r5's "dephasing" wording). Observable forms of the class,
-; each with a store's index moved before a measure:
-; spec_intermediate_unc_terminal_union_reject_measured_store.ll (the template group
-; itself measured) and spec_intermediate_unc_terminal_union_reject_clone_store.ll
-; (a store only the clone terminal's walk reaches).
-; NOW (`neverWorse`, TerminalGroups.cpp): when the template plan does not emit, the
-; union must leave nothing cut (`GroupProbe::Cut` empty; R11 r7-r8, which
-; subsumes r5's first-DAG containment and r6's store clause). Here it cuts the
-; conditional store and q's prep Ry behind it, so the group splits and the template
-; terminals get main's decline.
-; The accept direction of the same branch is pinned by
-; spec_intermediate_unc_terminal_union_forced.ll (@fr),
-; spec_intermediate_unc_terminal_union_open_root_loop.ll (@og, @le) and
-; spec_intermediate_unc_terminal_union_percomp.ll.
+; THE SHAPE. The template terminals alone decline (the conditional store at a
+; superposed index sits in a divergent arm: main, rc 1), so `TmplOk` is false. The
+; union is measured upstream through w; its frontier borrows the array, so the
+; conditional store `arr[q] = 7` and q's prep Ry are CUT. R11 r5-r8 required a
+; `!TmplOk` union to leave nothing cut, which split this group into main's decline
+; — an over-decline, since q is never touched again (THE `Cut` CLAUSE IS COARSE,
+; retired).
+; NOW (bd p3kd.14, `neverWorse` asks the planner's `isHazardousCutRecord`): q's own
+; Ry is a register root's gate (exempt) and the store is a cut record no later move
+; reaches — a benign leak (Rule 5) — so the probe records no hazardous cut and the
+; union is emitted: v's copy-out, r's twin, the load `_unc` and p's prep reverse-play
+; (p frozen: recorded by the copy-out); the store and q are left allocated, never
+; reversed, never freed. The hazardous twins (a store's index moved later) are
+; spec_intermediate_unc_terminal_union_measured_store.ll and
+; spec_intermediate_unc_terminal_union_clone_store.ll, both now reversing the store.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK-NOT: warning
-; CHECK: error: {{.*}}in function ml i32 (i32): cq uncompute: dead chain spans divergent control-flow arms
-; CHECK-NOT: internal invariant
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck %s --check-prefix=NOERR --allow-empty < %t.err
+; NOERR-NOT: error
+; CHECK-LABEL: define internal fastcc i32 @ml(
+; CHECK:      %[[ARR:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 8)
+; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(
+; CHECK:      %[[P:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(
+; CHECK:      call void @cqrt_qram_store_i32(i32 %[[ARR]], i32 %[[Q]],
+; CHECK:      %[[V:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_i32(i32 %[[ARR]], i32 %[[P]])
+; CHECK:      call void @cqrt_copy_i32(i32 %[[V]],
+; CHECK:      call fastcc void @__cq_q_h_1_unc(
+; CHECK:      call void @cqrt_qram_load_i32_unc(i32 %[[V]], i32 %[[ARR]], i32 %[[P]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[V]])
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[P]], double -5.000000e-01)
+; CHECK-NOT:  cqrt_qram_store_i32_unc
+; CHECK-NOT:  call void @cqrt_ry_i32(i32 %[[Q]]
+; CHECK-NOT:  call void @cqrt_free(i32 %[[Q]])
+; CHECK:      ret i32
 
 declare void @llvm.lifetime.start.p0(i64 immarg, ptr nocapture) #2
 declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg) #3

@@ -1,6 +1,7 @@
-; spec_intermediate_unc_terminal_union_reject_measured_store.ll — DECLINE, as main,
-; character for character (bd test_C_libtooling-p3kd.13, R11 review round 6, F1).
-; Reviewer probe P5, @mlg alone.
+; spec_intermediate_unc_terminal_union_measured_store.ll — ACCEPT, the store
+; REVERSED (bd test_C_libtooling-p3kd.14 + r2j3.21, batch 053 unit D; formerly
+; ..._reject_measured_store.ll, a decline equal to main — R11 r6 F1, reviewer probe
+; P5, @mlg alone). Its retirement trigger (a) fired: the r2j3.21 fix lands.
 ;
 ; SOURCE (`clang -O1` IR below):
 ;     __attribute__((noinline)) static int h(int a) { return a * 3 + 1; }
@@ -11,28 +12,41 @@
 ;       cq_theta(&k, -0.5); return cq_measure(p) + cq_measure(k); }
 ;     int main(int argc, char **argv) { (void)argv; return mlg(argc); }
 ;
-; THE DEFECT THIS PINS (snapshot 408bf287, measured: rc 0). The template terminal t
-; is itself measured upstream (p, k), so its first frontier had already BORROWED
-; the array, and the r5 first-DAG test (`T.Walked ⊆ U.Walked`) passed vacuously for
-; the store. Its own plan refuses on the open copy v (the clone call consumes it), so
-; `TmplOk` was false and the union, closing v, was emitted: `cqrt_qram_store_i32`
-; was never reversed, then `Ry(k, -0.5)` and a measure of k — per bit P(flip) =
-; sin²θ/2 ≈ 0.115 where the source gives 0 (the dead-record-live-across-move
-; ruling of 2026-10-05). Stage 2b was clean; two M-A `live derived record`
-; warnings fired, neither naming the store. Main declines this function loudly.
-; NOW (`neverWorse`): under `!TmplOk` the union must leave nothing cut
-; (`GroupProbe::Cut` empty; R11 r7-r8 — r6 asked this of QRAM stores only, which the
-; measured-rail half of the cut escaped: ..._reject_measured_rail_cut.ll). It
-; borrows the array and cuts the store, so the group splits and the template
-; terminal gets main's decline. The store-only-the-clone-reaches form is
-; spec_intermediate_unc_terminal_union_reject_clone_store.ll.
-; The all-template twin (@mlgk of the probe) is main's own planner and emits the
-; same wrong stream at rc 0: that is bd r2j3.21, pre-existing, NOT fixed here.
+; HISTORY. Snapshot 408bf287 emitted the union at rc 0 with the store never
+; reversed before `Ry(k, -0.5)` (per bit P(flip) ≈ 0.115, the source 0); R11 r6-r8
+; then required the union to leave NOTHING cut, so the group split and the template
+; terminal got main's decline (`dead chain would free a measured register`, its
+; own plan refusing on the open copy v the clone call consumes).
+; NOW. The union's frontier borrows the array and cuts `arr[k] = 7`, a HAZARDOUS cut
+; record (k is moved later; TerminalGroups.h, CUT RECORDS), so the planner retries
+; with only the measured rails borrowed: the ARRAY IS WALKED and the store joins the
+; union's reversal, LIFO at its point — after the load's `_unc`, before the user's
+; Ry. The retry's cut is clean, the probe records no hazardous cut (`neverWorse`,
+; bd p3kd.14), and the union is emitted Silent: r's twin, t's Ry/`mul_unc`, the
+; load, the store. The all-template twin is @mlgk of
+; lowering_qram_store_dropped_record_reversed.ll (main's own planner, same stream
+; up to the twin).
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK-NOT: warning
-; CHECK: error: {{.*}}in function mlg i32 (i32): cq uncompute: dead chain would free a measured register
-; CHECK-NOT: internal invariant
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck %s --check-prefix=NOERR --allow-empty < %t.err
+; NOERR-NOT: error
+; CHECK-LABEL: define internal fastcc i32 @mlg(
+; CHECK:      %[[ARR:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 8)
+; CHECK:      %[[K:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(
+; CHECK:      call void @cqrt_qram_store_i32(i32 %[[ARR]], i32 %[[K]], i32 %[[VAL:[a-zA-Z0-9_.]+]])
+; CHECK:      %[[P:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(
+; CHECK:      %[[V:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_i32(i32 %[[ARR]], i32 %[[P]])
+; CHECK:      call fastcc void @__cq_q_h_1_unc(
+; CHECK:      call void @cq_template_mul_i32_hl_unc(
+; CHECK-NEXT: call void @cqrt_free(
+; CHECK-NEXT: call void @cqrt_qram_load_i32_unc(i32 %[[V]], i32 %[[ARR]], i32 %[[P]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[V]])
+; CHECK-NEXT: call void @cqrt_qram_store_i32_unc(i32 %[[ARR]], i32 %[[K]], i32 %[[VAL]])
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[K]], double -5.000000e-01)
+; CHECK-NOT:  call void @cqrt_free(i32 %[[K]])
+; CHECK-NOT:  call void @cqrt_free(i32 %[[ARR]])
+; CHECK:      ret i32
 
 declare void @llvm.lifetime.start.p0(i64 immarg, ptr nocapture) #2
 declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg) #3

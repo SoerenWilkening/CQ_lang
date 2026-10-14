@@ -110,10 +110,14 @@ InteriorDischargePlan planInteriorDischarges(llvm::Function &F, TaintSet &taint)
 //   * M-A clause 4, `recordIsExemptAt` (RotationLowering.cpp): a record measured
 //     at `First` is still collapsed when the gate `At` fires only if nothing
 //     writes it in between. `Opener` is the measurement.
+// `AdmitStoreReads` (bd r2j3.21): a forward QRAM store reading `P` outside its
+// array slot is label-preserving. Only the dead-terminal frontier retry passes
+// true (its array-walking plan reads a borrowed index through the store itself).
 bool railUnmovedInWindow(llvm::Value *P, llvm::CallInst *First,
                          llvm::Instruction *At, const llvm::DominatorTree &DT,
                          const TaintSet &taint, bool AdmitCloneCalls,
-                         const llvm::Instruction *Opener);
+                         const llvm::Instruction *Opener,
+                         bool AdmitStoreReads = false);
 
 }  // namespace cq
 

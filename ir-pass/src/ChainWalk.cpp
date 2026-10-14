@@ -626,6 +626,20 @@ bool preservesBasisUnderRecord(const CallInst *G) {
   return false;  // `cqrt_ry_<W>` lands here — and so does anything new.
 }
 
+// See the header (bd r2j3.21). Derived from the two predicates above, never
+// re-spelt: an in-place gate on `P` that is not a basis permutation.
+bool isNonPermutationMove(const CallInst *M, const Value *P) {
+  return M && isInPlaceGateOn(M, P) && !preservesBasisUnderRecord(M);
+}
+
+bool isQramArrayHandle(const Value *V) {
+  const auto *CI = dyn_cast_or_null<CallInst>(V);
+  if (!CI)
+    return false;
+  const Function *Callee = CI->getCalledFunction();
+  return Callee && Callee->getName().starts_with("cqrt_qram_alloc_");
+}
+
 bool isMeasureSink(const CallInst *CI) {
   const Function *Callee = CI->getCalledFunction();
   return Callee && Callee->getName().starts_with("cqrt_measure_");

@@ -91,7 +91,13 @@
 
 ; @store_value — the clone chain feeds a QRAM STORE's value slot; the cell keeps a
 ; copy (the program's array), the chain `mul`, then the clone rail, are discharged
-; LIFO right after the store, before the sources are rotated back.
+; LIFO right after the store. Since bd r2j3.21 (batch 053) the sources q and r are
+; measured WITHOUT being rotated back: the earlier form (`cq_theta(&q, -0.5);
+; cq_theta(&r, -0.5);` before the measures) left the array's store, a dead record
+; of q and r once `v = arr[p & 7]` has its copy, standing across both Rys — a
+; silent miscompile on main that now fails loudly
+; (lowering_reject_qram_store_dropped_record_clone_value.ll). Here the store is cut
+; but no later move reaches its sources: a benign leak, as before.
 ; CHECK-LABEL: define i32 @store_value(
 ; CHECK:      %[[R6:[a-zA-Z0-9_.]+]] = tail call fastcc i32 @__cq_q_h_1(i32 noundef %[[H6:[a-zA-Z0-9_.]+]])
 ; CHECK-NEXT: %[[V6:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[R6]], i32 5)
@@ -101,7 +107,8 @@
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[V6]])
 ; CHECK-NEXT: call fastcc void @__cq_q_h_1_unc(i32 %[[R6]], i32 %[[H6]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[R6]])
-; CHECK:      call void @cqrt_ry_i32(i32 %[[H6]], double -5.000000e-01)
+; CHECK-NOT:  cqrt_qram_store_i32_unc
+; CHECK:      call i32 @cqrt_measure_i32(i32 %[[H6]])
 
 ; The twin is the clone with its `out` alloc replaced by the parameter: recompute,
 ; XOR-copy into `out`, uncompute, free the scratch.
@@ -187,7 +194,6 @@ define i32 @qram_index(i32 noundef %0) {
 ; int store_value(int m) { int arr[8] = {0}; int q = 0; cq_theta(&q, 0.5);
 ;   int r = 1; cq_theta(&r, 0.5); arr[q & 7] = h(r) * 5;      /* a QRAM STORE */
 ;   int p = 4; cq_theta(&p, 0.5); int v = arr[p & 7];
-;   cq_theta(&q, -0.5); cq_theta(&r, -0.5);
 ;   return cq_measure(q) + cq_measure(r) + cq_measure(v); }
 define i32 @store_value(i32 noundef %0) {
   %2 = alloca [8 x i32], align 16
@@ -206,15 +212,13 @@ define i32 @store_value(i32 noundef %0) {
   %12 = zext nneg i32 %11 to i64
   %13 = getelementptr inbounds [8 x i32], ptr %2, i64 0, i64 %12
   %14 = load i32, ptr %13, align 4
-  %15 = tail call i32 @cq_theta_si32(i32 noundef %3, double noundef -5.000000e-01) #1
-  %16 = tail call i32 @cq_theta_si32(i32 noundef %4, double noundef -5.000000e-01) #1
-  %17 = tail call i32 @cq_measure_si32(i32 noundef %15)
-  %18 = tail call i32 @cq_measure_si32(i32 noundef %16)
-  %19 = add nsw i32 %18, %17
-  %20 = tail call i32 @cq_measure_si32(i32 noundef %14)
-  %21 = add nsw i32 %19, %20
+  %15 = tail call i32 @cq_measure_si32(i32 noundef %3)
+  %16 = tail call i32 @cq_measure_si32(i32 noundef %4)
+  %17 = add nsw i32 %16, %15
+  %18 = tail call i32 @cq_measure_si32(i32 noundef %14)
+  %19 = add nsw i32 %17, %18
   call void @llvm.lifetime.end.p0(i64 32, ptr nonnull %2)
-  ret i32 %21
+  ret i32 %19
 }
 
 declare void @llvm.lifetime.start.p0(i64 immarg, ptr nocapture)

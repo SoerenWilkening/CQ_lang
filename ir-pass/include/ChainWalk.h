@@ -308,6 +308,25 @@ bool isTemplateProducer(const llvm::CallInst *G);
 // FAILS CLOSED: anything not named in the .cpp is NOT basis-preserving.
 bool preservesBasisUnderRecord(const llvm::CallInst *G);
 
+// bd test_C_libtooling-r2j3.21 — is `M` a NON-PERMUTATION in-place gate on `P`:
+// an in-place gate (`isInPlaceGateOn`) that is not a basis permutation
+// (`preservesBasisUnderRecord`)? On today's surface that is exactly the Ry family,
+// controlled or not: THE "move" of the dead-record rulings (owner 2026-10-05 /
+// 2026-10-13). ONE spelling, two customers (R12): the frontier fixpoint's
+// forced-record test (`recordLiveAcrossMove`) and the cut-record hazard
+// (`isHazardousCutRecord`, TerminalGroups.h). An `_unc`, a measurement and a store
+// are not moves.
+bool isNonPermutationMove(const llvm::CallInst *M, const llvm::Value *P);
+
+// A QRAM array handle (`cqrt_qram_alloc_<W>` result) — a CLASSICAL resource token
+// the reversal NEVER frees (its stores reverse, but a `cqrt_free` on it would be a
+// hidden measurement of the restored cells; §2.9, Inc 1 "array-handle-never-freed").
+// The uncompute spine's ONE spelling, moved here from Uncomputation.cpp's anonymous
+// namespace by bd r2j3.21 so BirthFreeze and TerminalGroups ask it too.
+// RotationLowering's M-A walk keeps a file-local copy over `const CallInst *`
+// (pre-existing; it never includes this header).
+bool isQramArrayHandle(const llvm::Value *V);
+
 // A `@cqrt_measure_<W>` sink (the lowered measure form Phase 5 sees). A measured
 // handle is a quantum→classical sink, not a forward data consumer.
 bool isMeasureSink(const llvm::CallInst *CI);

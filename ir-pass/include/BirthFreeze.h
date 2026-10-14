@@ -32,10 +32,22 @@
 // undef seed was already rewritten to that null by
 // `normalizeUndefRotationSeed`). Everything else — a runtime seed (one
 // activation's zero is not a proof for the next), a nonzero literal, a
-// phi/select/argument root (its birth is some other rail's state at the merge),
-// a QRAM array handle (never freed anyway) — is frozen: LEFT ALLOCATED, every
-// adjoint still emitted (the Rule-6 fallback; see the suppression note in
-// `Uncomputation::emitDagReversal`).
+// phi/select/argument root (its birth is some other rail's state at the merge)
+// — is frozen: LEFT ALLOCATED, every adjoint still emitted (the Rule-6 fallback;
+// see the suppression note in `Uncomputation::emitDagReversal`).
+//
+// A QRAM ARRAY HANDLE IS NOT FROZEN HERE (bd test_C_libtooling-r2j3.21). It is
+// never freed whatever this says (`emitDagReversal` skips it by kind), so the
+// freeze bought it nothing but a WRONG ANSWER to the other question `FrozenRails`
+// answers: "is this rail KEPT entangled after the reversal?"
+// (`keptRailAdjointReadsBorrowed`, bd eqti). A walked array has every store on it
+// in `D.Calls` (an array is walked whole: its in-place gates are its stores) and
+// every load of it in the DAG (closure), so reverse-play returns it to its BIRTH
+// state — `cqrt_qram_alloc_<W>`'s fresh classical cells (QramLowering's bd r2j3.15
+// initializer proof) — a product state, whatever registers its stores read. So it
+// is kept ENTANGLED only when step 3b/3c froze it (a record into a kept carrier),
+// and `FrozenRails ∋ arr` now means exactly that. `railBornZero` still answers
+// false for it (its cells are not a freeable |0⟩ register).
 //
 // ⚠ RETIREMENT TRIGGER: a reversal that UN-SEEDS a root (an in-place
 // `cqrt_xorc_<W>`/`cqrt_addc_<W>` of the classical seed after the adjoints, the

@@ -34,7 +34,7 @@ bool railBornZero(const Value *R, const TaintSet &taint) {
 
 void freezeUnprovenBirths(DataDag &D, const TaintSet &taint) {
   for (Value *R : D.Rails)
-    if (!railBornZero(R, taint))
+    if (!railBornZero(R, taint) && !isQramArrayHandle(R))
       D.FrozenRails.insert(R);
 }
 

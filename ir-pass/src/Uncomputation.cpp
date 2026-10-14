@@ -38,6 +38,7 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/CFG.h"           // succ_begin / succ_empty (measuredOnEveryPath)
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Dominators.h"
@@ -71,6 +72,28 @@ namespace {
 // mirroring this string character-for-character.
 constexpr char kMsgLineageMeasured[] =
     "cq uncompute: dead chain would free a measured register";
+
+// bd test_C_libtooling-r2j3.21 / r2j3.23 / r2j3.24 (owner ruling
+// owner-ruling-qram-dropped-store-2026-10-13): a dead record the frontier retry
+// CUT from the reversal (TerminalGroups.h, CUT RECORDS) that no partition reverses
+// before a later non-diagonal gate on a register it records. Located at the cut
+// gate's `!dbg` (a QRAM store, a QRAM load or a template producer). Fired by the
+// planner for a store the array-walking retry cannot clear, and by `uncompute`
+// after M-B for any other record. Mirrored character for character by
+// lowering_reject_qram_store_dropped_record_{live,zero_after_store,used_after_move,
+// clone_value}.ll (the planner's store check) and
+// lowering_reject_uncompute_partial_measure_cut_record.ll (the post-M-B check).
+// R11 r1 B-F1: the planner's store check ALSO fires this message when the
+// array-walking retry cannot place the store's reversal for another reason (a store
+// that does not dominate the group's reversal point, e.g. in a classical arm); the
+// text names the hazard that made the store matter, not that placement reason.
+// Until the general
+// early-reversal schedule exists (a store `_unc` right after its last reader,
+// before the move, keeping the reader's result — a follow-up, not a physics
+// decline), every such program fails loudly instead of compiling a wrong circuit.
+constexpr char kMsgCutRecord[] =
+    "cq uncompute: dead record cut from the uncompute frontier is not reversed "
+    "before its parent's next non-diagonal gate";
 
 // WI-5 silent→loud flips (PRD §2.12; the Prime Directive — an unprovable shape
 // declines, never silently leaks a dirty rail). The negative fixtures mirror
@@ -132,33 +155,85 @@ bool isDataProducer(const CallInst *H) {
   return N.starts_with("cq_template_") && !N.contains("_controlled");
 }
 
-// A QRAM array handle (`cqrt_qram_alloc_<W>` result) — a CLASSICAL resource token
-// the reversal NEVER frees (its stores reverse, but a `cqrt_free` on it would be a
-// hidden measurement of the restored cells; §2.9, Inc 1 "array-handle-never-freed").
-bool isQramArrayHandle(const Value *V) {
-  const auto *CI = dyn_cast<CallInst>(V);
-  if (!CI)
-    return false;
-  const Function *Callee = CI->getCalledFunction();
-  return Callee && Callee->getName().starts_with("cqrt_qram_alloc_");
-}
+// `isQramArrayHandle` (a `cqrt_qram_alloc_<W>` result, a classical resource token
+// the reversal never frees) moved to ChainWalk.h by bd r2j3.21 — one spelling for
+// this file, BirthFreeze and TerminalGroups.
 
-// bd p3kd.13, R11 r9: is the rail `R` measured on EVERY path from its definition
-// (one measurement sink of R post-dominates it)? Only then does ptue's "a
-// measured register is never touched" cover R's own gates in the terminal-union
-// probe's `Cut` (TerminalGroups.h): measured on SOME paths, R is a live record on
-// the others (spec_intermediate_unc_terminal_union_reject_partial_measure.ll).
-// Several measurements that only jointly cover every path do not qualify — an
-// over-decline equal to main. A non-instruction rail never qualifies.
+// bd p3kd.13, R11 r9; bd r2j3.24: is the rail `R` measured on EVERY path from its
+// definition to a function exit? Only then does ptue's "a measured register is
+// never touched" cover R's own gates in the CUT SET (TerminalGroups.h): measured on
+// SOME paths, R is a live record on the others
+// (spec_intermediate_unc_terminal_union_reject_partial_measure.ll; the
+// all-template r2j3.24 `cmk`, lowering_reject_uncompute_partial_measure_cut_record.ll).
+// A measurement after a later move is still a use of R across that move (the
+// program's own live record), and one before it collapsed R, so either way R's own
+// gates record nothing hazardous.
+//
+// ONE POST-DOMINATING MEASUREMENT, OR SEVERAL THAT JOINTLY COVER EVERY PATH (bd
+// r2j3.24, batch 053). R11 r9 asked the first only, which was an over-decline
+// equal to the union's split; once the main planner asks the cut set too (bd
+// r2j3.21), the same narrowness DECLINED a correct all-template accept of main
+// (`if (s > 100) acc = cq_measure(q); else acc = cq_measure((unsigned)q);` then a
+// move of q's source: -O1 keeps the two differently-typed measurements apart).
+// The joint walk is a forward search from the definition that stops at a block
+// holding a measurement of R (entered from its top, so the measurement runs before
+// the block is left) and FAILS on reaching an exit, the definition's block again
+// (the next activation's rail; conservative), or a block from which no real exit
+// is reachable (an exitless cycle; R11 r1 C-F4). A non-instruction rail never
+// qualifies.
 bool measuredOnEveryPath(const Value *R, const PostDominatorTree &PDT) {
   const auto *Def = dyn_cast<Instruction>(R);
   if (!Def)
     return false;
+  SmallPtrSet<const BasicBlock *, 8> MeasBlocks;
   for (const User *U : R->users())
     if (const auto *M = dyn_cast<CallInst>(U))
-      if (isMeasureSink(M) && PDT.dominates(M, Def))
-        return true;
-  return false;
+      if (isMeasureSink(M)) {
+        if (PDT.dominates(M, Def))
+          return true;  // one measurement post-dominates the definition
+        MeasBlocks.insert(M->getParent());
+      }
+  if (MeasBlocks.empty())
+    return false;
+  const BasicBlock *DB = Def->getParent();
+  for (const Instruction *I = Def->getNextNode(); I; I = I->getNextNode())
+    if (const auto *M = dyn_cast<CallInst>(I))
+      if (isMeasureSink(M))
+        for (const Value *Op : M->args())
+          if (Op == R)
+            return true;  // unreachable past the post-dominance test; kept total
+  SmallVector<const BasicBlock *, 8> Work(succ_begin(DB), succ_end(DB));
+  if (Work.empty())
+    return false;
+  // R11 r1 C-F4: "exitless" is decided by whether a REAL exit is reachable, not by
+  // which blocks the post-dominator tree happens to root: the blocks that can reach
+  // an exit (a block with no successor), by a backward walk from the exits.
+  SmallPtrSet<const BasicBlock *, 32> ReachesExit;
+  {
+    SmallVector<const BasicBlock *, 16> Back;
+    for (const BasicBlock &BB : *DB->getParent())
+      if (succ_empty(&BB) && ReachesExit.insert(&BB).second)
+        Back.push_back(&BB);
+    while (!Back.empty()) {
+      const BasicBlock *X = Back.pop_back_val();
+      for (const BasicBlock *Pr : predecessors(X))
+        if (ReachesExit.insert(Pr).second)
+          Back.push_back(Pr);
+    }
+  }
+  (void)PDT;
+  SmallPtrSet<const BasicBlock *, 16> Seen;
+  while (!Work.empty()) {
+    const BasicBlock *B = Work.pop_back_val();
+    if (!Seen.insert(B).second)
+      continue;
+    if (MeasBlocks.count(B))
+      continue;  // every path through B measures R before leaving it
+    if (B == DB || succ_empty(B) || !ReachesExit.count(B))
+      return false;  // re-defined, an exit, or an exitless cycle: unmeasured
+    Work.append(succ_begin(B), succ_end(B));
+  }
+  return true;
 }
 
 // `railOf` (the rail a gate creates — the value its adjoint zeroes and the driver
@@ -619,7 +694,8 @@ bool borrowedParentsUnmoved(const DataDag &D,
                             const SmallPtrSetImpl<Value *> &Borrowed,
                             Instruction *At, DominatorTree &DT,
                             const TaintSet &taint, bool AdmitCloneCalls,
-                            SmallVectorImpl<Value *> *Moved = nullptr);
+                            SmallVectorImpl<Value *> *Moved = nullptr,
+                            bool AdmitStoreReads = false);
 
 // bd test_C_libtooling-ptue — may the frontier retry BORROW these measured rails?
 // True iff no measurement of a borrowed measured rail `P` can reach a gate of `D`
@@ -741,10 +817,18 @@ bool keptRailAdjointReadsBorrowed(const DataDag &D,
       }
     }
   }
+  // A QRAM ARRAY is Kept only when step 3b/3c froze it (bd r2j3.21). Until then
+  // every array was Kept, which refused every plan that WALKS one: a walked array
+  // has all its stores in `D.Calls` and all its loads in the DAG, so reverse-play
+  // returns it to its classical birth cells — a product state, never entangled
+  // with the borrowed registers its store `_unc`s read (BirthFreeze.h no longer
+  // birth-freezes it for exactly this reason). The array-borrow half of this fence
+  // is unchanged: a BORROWED array is in `Dep`, so a kept rail whose adjoint reads
+  // it still refuses (lowering_reject_qram_frozen_adjoint_reads_borrowed_array.ll).
   for (CallInst *G : D.Calls) {
     Value *R = railOf(G);
     const bool Kept = !R || isa<Constant>(R) || !D.Rails.count(R) ||
-                      D.FrozenRails.count(R) || isQramArrayHandle(R);
+                      D.FrozenRails.count(R);
     if (Kept && readsDep(G, R))
       return true;
   }
@@ -1041,7 +1125,8 @@ FrontierVerdict judgeFrontierPlan(Function &F, const DataDag &DR,
                            Unused) != TerminalPlan::Emit)
     return FrontierVerdict::Refused;
   if (!borrowedParentsUnmoved(DR, Borrowed, At, DT, taint,  // bd p3kd.13: rhk5 (3)
-                              /*AdmitCloneCalls=*/true, &Moved))  // for a clone producer
+                              /*AdmitCloneCalls=*/true, &Moved,  // for a clone producer
+                              /*AdmitStoreReads=*/true))  // bd r2j3.21: a walked array
     return Moved.empty() ? FrontierVerdict::Refused
                          : FrontierVerdict::ParentMoved;
   if (!measuredParentsReadBeforeCollapse(DR, Measured, DT) ||
@@ -1197,21 +1282,39 @@ bool componentObservedBefore(Value *P, const Instruction *M,
 // been emitted for this function's terminal groups when it is planned), with
 // `DominatorTree::dominates` only — no window collector, so no unprovable user
 // can be read as "moved" (finding F4).
+//
+// EXPORTED (TerminalGroups.h) since bd r2j3.21: the cut-record hazard
+// (`isHazardousCutRecord`) asks it as its forced-record exemption, and the move
+// test is the shared `isNonPermutationMove` (ChainWalk.h), one spelling (R12).
+}  // namespace
+
 bool recordLiveAcrossMove(CallInst *G, Value *R, Value *P, Instruction *At,
-                          DominatorTree &DT, const TaintSet &taint) {
+                          DominatorTree &DT, const TaintSet &taint,
+                          const CallInst *OnlyMove) {
   for (User *PU : P->users()) {
     auto *M = dyn_cast<CallInst>(PU);
-    if (!M || !isInPlaceGateOn(M, P) || preservesBasisUnderRecord(M) ||
+    // R11 r2 F1: `OnlyMove` asks the question of ONE move (the cut-record hazard,
+    // per (record, move)); null keeps the fixpoint's "some move of P" question.
+    if (!M || (OnlyMove && M != OnlyMove) || !isNonPermutationMove(M, P) ||
         !DT.dominates(G, M) || componentObservedBefore(P, M, DT, taint))
       continue;
     for (User *RU : R->users()) {
       auto *U = dyn_cast<Instruction>(RU);
+      // R11 r1 A-F2: a store's record (R = its array) is kept only by a later
+      // read that may observe a cell it wrote (`mayObserveStore`, TerminalGroups.h);
+      // a classical-index load of a cell it can never write, or a later store,
+      // keeps nothing.
+      if (U && isAbiQramStore(G) && R == railOf(G) &&
+          !mayObserveStore(dyn_cast<CallInst>(U), G, taint))
+        continue;
       if (U && DT.dominates(M, U) && DT.dominates(U, At))
         return true;
     }
   }
   return false;
 }
+
+namespace {
 
 // THE FRONTIER FIXPOINT — bd test_C_libtooling-01po.12 (per component) and bd
 // test_C_libtooling-01po.8 (the general retry). Asked only after the
@@ -1272,10 +1375,10 @@ bool recordLiveAcrossMove(CallInst *G, Value *R, Value *P, Instruction *At,
 // the plans were judged against. Each member's kind is structural, so it is not
 // recorded twice: a QRAM array root (`isQramArrayHandle`, the predicate that
 // seeded it), a measured rail (`DataDag::MeasuredRails`), else an open root or a
-// forced record. The terminal-union probe exempts from `GroupProbe::Cut` the OWN
-// gates of the open roots and forced records, and of a measured rail only when it
-// is measured on every path (`measuredOnEveryPath`, R11 r9; TerminalGroups.h).
-// Planning stays side-effect-free.
+// forced record. The CUT SET (`planFrontierAttempt`; TerminalGroups.h, CUT
+// RECORDS) exempts the OWN gates of the open roots and forced records, and of a
+// measured rail only when it is measured on every path (`measuredOnEveryPath`,
+// R11 r9, bd r2j3.24). Planning stays side-effect-free.
 bool planFrontierFixpoint(Function &F, ArrayRef<Value *> InsertTerms,
                           ArrayRef<Instruction *> InsertAts,
                           InteriorPlan &Frontier,
@@ -1339,6 +1442,87 @@ bool planFrontierFixpoint(Function &F, ArrayRef<Value *> InsertTerms,
   }
 }
 
+// One FRONTIER ATTEMPT of the dead-terminal driver's measured-upstream branch
+// (bd 01po.4 / ptue / 01po.12 / 01po.8), and the CUT SET of what it commits (bd
+// r2j3.21 / r2j3.23 / r2j3.24, TerminalGroups.h). Pure analysis.
+struct FrontierAttempt {
+  InteriorPlan Frontier;                         // the FINAL frontier (R11 r8)
+  SmallVector<FrontierComponentPlan, 4> Plans;   // what would be committed
+  SmallVector<CallInst *, 8> Cut;                // program order (`D.Calls`)
+  Instruction *CutAt = nullptr;                  // the group's reversal point
+  SmallPtrSet<const CallInst *, 16> Reversed;    // every gate a plan reverse-plays
+};
+
+// Seed the frontier with the measured rails (and, when `BorrowArrays`, the QRAM
+// array roots), ask the whole-group retry and then the per-component fixpoint —
+// the sequence `reverseTerminalGroup` always asked — and on success take the cut
+// set: every gate of the whole walk `D` no plan reverse-plays, minus the OWN gates
+// (`railOf`) of the final frontier's measured rails measured on EVERY path
+// (`measuredOnEveryPath`, r2j3.24) and of `D`'s `cqrt_alloc` register roots (which
+// covers the open roots). A forced record is NOT exempt (R11 r2): its keep is asked
+// per move by `isHazardousCutRecord`. A QRAM array is never exempt, so neither
+// is a store. `CutAt` is the one committed plan's point, the nearest common
+// post-dominator of several, or the terminals' own point for an empty plan set.
+bool planFrontierAttempt(Function &F, const DataDag &D,
+                         ArrayRef<Value *> InsertTerms,
+                         ArrayRef<Instruction *> InsertAts, bool BorrowArrays,
+                         TaintSet &taint, DominatorTree &DT,
+                         PostDominatorTree &PDT, LoopInfo &LI, bool IterLocal,
+                         FrontierAttempt &A) {
+  if (BorrowArrays)
+    for (Value *R : D.Roots)
+      if (isQramArrayHandle(R))
+        A.Frontier.Borrowed.insert(R);
+  for (Value *R : D.MeasuredRails)
+    A.Frontier.Borrowed.insert(R);
+  if (A.Frontier.Borrowed.empty())
+    return false;
+  DataDag DR = recoverDataDag(InsertTerms, taint, DT, &A.Frontier);
+  Instruction *AtR = nullptr;
+  SmallVector<Value *, 4> Ignored;  // whole-group retry: no widening
+  if (judgeFrontierPlan(F, DR, InsertAts, A.Frontier.Borrowed, D.MeasuredRails,
+                        taint, DT, PDT, LI, IterLocal, AtR,
+                        Ignored) == FrontierVerdict::Emit) {
+    FrontierComponentPlan P;
+    P.D = std::move(DR);
+    P.At = AtR;
+    A.Plans.push_back(std::move(P));
+  } else if (!planFrontierFixpoint(F, InsertTerms, InsertAts, A.Frontier,
+                                   D.MeasuredRails, taint, DT, PDT, LI,
+                                   IterLocal, A.Plans)) {
+    // bd 01po.12 / 01po.8 — the whole group refused and so did the per-component
+    // fixpoint (`planFrontierFixpoint`): the caller keeps today's decline.
+    return false;
+  }
+  SmallPtrSetImpl<const CallInst *> &Reversed = A.Reversed;
+  SmallVector<Instruction *, 4> PlanAts;
+  for (const FrontierComponentPlan &P : A.Plans) {
+    Reversed.insert(P.D.Calls.begin(), P.D.Calls.end());
+    PlanAts.push_back(P.At);
+  }
+  SmallPtrSet<Value *, 8> Exempt;
+  // R11 r2 audit: a FORCED record is no longer exempt wholesale. The fixpoint
+  // forced it across SOME move of its parent; whether it is kept across EACH later
+  // move is asked per move by `isHazardousCutRecord` (clause (c)). Open roots are
+  // `cqrt_alloc` roots, exempt by the root rule below.
+  for (Value *B : A.Frontier.Borrowed)
+    if (!isQramArrayHandle(B) && D.MeasuredRails.count(B) &&
+        measuredOnEveryPath(B, PDT))
+      Exempt.insert(B);
+  for (Value *R : D.Roots)
+    if (isAllocMint(R) && !isQramArrayHandle(R))
+      Exempt.insert(R);
+  for (CallInst *G : D.Calls)
+    if (!Reversed.count(G) && !Exempt.count(railOf(G)))
+      A.Cut.push_back(G);
+  if (PlanAts.size() == 1)
+    A.CutAt = PlanAts.front();
+  else
+    A.CutAt = dagInsertPoint(
+        PlanAts.empty() ? InsertAts : ArrayRef<Instruction *>(PlanAts), PDT);
+  return true;
+}
+
 // Classify + recover + reverse ONE group of data terminals at a single insertion
 // point (PRD §2.11; the body of the per-function driver, factored out so the
 // regular straight-line group and each Phase-7.3 ITERATION-LOCAL loop group are
@@ -1378,7 +1562,8 @@ bool reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
                           TaintSet &taint, WidthDispatch &wd, DominatorTree &DT,
                           PostDominatorTree &PDT, LoopInfo &LI, bool IterLocal,
                           SmallPtrSetImpl<const CallInst *> &ReversedGates,
-                          SmallPtrSetImpl<Value *> &ReversedRails, GroupMode Mode,
+                          SmallPtrSetImpl<Value *> &ReversedRails,
+                          SmallVectorImpl<CallInst *> &Pending, GroupMode Mode,
                           GroupProbe *Probe) {
   const bool Loud = Mode == GroupMode::Loud;
   const bool Probing = Mode == GroupMode::Probe || Mode == GroupMode::ProbeAsLoud;
@@ -1410,28 +1595,6 @@ bool reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
 
   // 3. Recover the whole forward DAG (union over all Insert terminals).
   DataDag D = recoverDataDag(InsertTerms, taint, DT);
-  // R11 r8-r9 — a probe's `Cut` is asked ONCE, of the COMMITTED plans, on every
-  // path that commits: what of the whole walk `D` no plan reverse-plays, beyond
-  // the own gates of the rails that hold no hazardous record (`GroupProbe::Cut`):
-  // the final frontier's forced records and open roots, its measured rails that
-  // are measured on EVERY path (r9 F1), and `D`'s register ROOTS (r9 F2: a
-  // `cqrt_alloc` root and its in-place gates record no other register). A QRAM
-  // array is never exempt, so neither is a store. A final-outcome gate set (L3),
-  // so a borrow path added later is covered too.
-  auto finish = [&](bool Ok, const SmallPtrSetImpl<Value *> &Borrowed) {
-    if (Ok && Probing) {
-      SmallPtrSet<Value *, 8> Exempt;
-      for (Value *B : Borrowed)
-        if (!isQramArrayHandle(B) &&
-            (!D.MeasuredRails.count(B) || measuredOnEveryPath(B, PDT)))
-          Exempt.insert(B);
-      for (Value *R : D.Roots)
-        if (isAllocMint(R) && !isQramArrayHandle(R))
-          Exempt.insert(R);
-      Probe->setCut(D, Exempt);
-    }
-    return Ok;
-  };
   if (D.MeasuredUpstream) {
     // bd test_C_libtooling-01po.4 — THE QRAM-ARRAY FRONTIER RETRY. A load's
     // reversal needs the ARRAY's state at the load (and its index), not the
@@ -1499,40 +1662,63 @@ bool reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
     // growing frontier (`planFrontierFixpoint`), which may end with a FORCED
     // record left allocated instead of the decline (an open root, or a rail the
     // program itself keeps live across a move of its borrowed parent).
-    InteriorPlan Frontier;
-    for (Value *R : D.Roots)
-      if (isQramArrayHandle(R))
-        Frontier.Borrowed.insert(R);
-    for (Value *R : D.MeasuredRails)
-      Frontier.Borrowed.insert(R);
-    if (!Frontier.Borrowed.empty()) {
-      DataDag DR = recoverDataDag(InsertTerms, taint, DT, &Frontier);
-      Instruction *AtR = nullptr;
-      SmallVector<Value *, 4> Ignored;  // whole-group retry: no widening
-      if (judgeFrontierPlan(F, DR, InsertAts, Frontier.Borrowed,
-                            D.MeasuredRails, taint, DT, PDT, LI, IterLocal, AtR,
-                            Ignored) == FrontierVerdict::Emit) {
-        return finish(commit(DR, AtR), Frontier.Borrowed);
-      }
-      // bd test_C_libtooling-01po.12 / 01po.8 — the whole group refused; plan
-      // again PER COMPONENT of the reduced DAG, each at its own reversal point,
-      // growing the borrowed frontier on an open rail or a moved parent (see
-      // `planFrontierFixpoint`). Reached only on the way to the decline, so no
-      // module that lowered before changes. An empty plan set means every
-      // terminal is a kept record: nothing is reversed, freed or diagnosed.
-      SmallVector<FrontierComponentPlan, 4> Plans;
-      if (planFrontierFixpoint(F, InsertTerms, InsertAts, Frontier,
-                               D.MeasuredRails, taint, DT, PDT, LI, IterLocal,
-                               Plans)) {
-        bool All = !Plans.empty();
-        for (FrontierComponentPlan &P : Plans)
-          All = commit(P.D, P.At) && All;
-        return finish(All, Frontier.Borrowed);  // the FINAL frontier (r8)
-      }
+    //
+    // bd test_C_libtooling-r2j3.21 / r2j3.23 / r2j3.24 — WHAT THE BORROW CUTS
+    // (TerminalGroups.h, CUT RECORDS). Each attempt below ends by taking the CUT
+    // SET of its committed plans, and the planner asks `isHazardousCutRecord` of
+    // it — once for the stores, once for the rest.
+    FrontierAttempt A;
+    if (!planFrontierAttempt(F, D, InsertTerms, InsertAts, /*BorrowArrays=*/true,
+                             taint, DT, PDT, LI, IterLocal, A)) {
+      if (Loud)
+        diagnose(D.UpstreamMeasure, kMsgLineageMeasured);
+      return false;
     }
+    // (1) A HAZARDOUS CUT STORE. M-B never owns a store, so it is reversed only by
+    // walking its array: retry with the MEASURED rails alone borrowed (the arrays
+    // walked, every store on them reversed LIFO at the group's reversal point —
+    // the owner's "reversed early when the group's reversal point precedes the
+    // next non-diagonal gate on the store's index or value register"), every
+    // check re-asked verbatim (`judgeFrontierPlan`, then the fixpoint), and ask the
+    // retry's own cut again. A group whose stores are all harmless keeps the
+    // array-borrowing plan, byte-identical (lowering_qram_store_measured_index_
+    // nonmain.ll, an identity store). Still hazardous: loud, at the store.
+    if (CallInst *S = firstHazardousCutRecord(A.Cut, A.CutAt, DT, taint,
+                                              /*StoresOnly=*/true, A.Reversed)) {
+      FrontierAttempt B;
+      if (!planFrontierAttempt(F, D, InsertTerms, InsertAts,
+                               /*BorrowArrays=*/false, taint, DT, PDT, LI,
+                               IterLocal, B) ||
+          firstHazardousCutRecord(B.Cut, B.CutAt, DT, taint,
+                                  /*StoresOnly=*/true, B.Reversed)) {
+        if (Loud)
+          diagnose(S, kMsgCutRecord);
+        return false;
+      }
+      A = std::move(B);
+    }
+    // (2) A HAZARDOUS CUT LOAD OR TEMPLATE RECORD. The M-B interior partition,
+    // which runs after every group, may discharge a cut template record after its
+    // last use (not yet a QRAM-load rail: follow-up), so a Loud group commits
+    // and hands it to `uncompute`'s post-M-B check, which fails loudly on one no
+    // partition reversed. A Silent group refuses (it may not add that decline); a
+    // probe records the first one for `neverWorse` (TerminalGroups.h).
+    SmallVector<CallInst *, 4> Hazards;
+    for (CallInst *G : A.Cut)
+      if (isHazardousCutRecord(G, A.CutAt, DT, taint, A.Reversed))
+        Hazards.push_back(G);
+    if (!Hazards.empty() && Mode == GroupMode::Silent)
+      return false;
+    // An empty plan set means every terminal is a kept record: nothing is
+    // reversed or freed, and the group returns false without a diagnostic.
+    bool All = !A.Plans.empty();
+    for (FrontierComponentPlan &P : A.Plans)
+      All = commit(P.D, P.At) && All;
+    if (Probing && All && !Hazards.empty())
+      Probe->HazardousCut = Hazards.front();
     if (Loud)
-      diagnose(D.UpstreamMeasure, kMsgLineageMeasured);
-    return false;
+      Pending.append(Hazards.begin(), Hazards.end());
+    return All;
   }
 
   Instruction *At = nullptr;
@@ -1553,8 +1739,8 @@ bool reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
     break;
   }
 
-  // 5. Reverse the whole DAG once at `At`.
-  return finish(commit(D, At), SmallPtrSet<Value *, 1>());
+  // 5. Reverse the whole DAG once at `At` (nothing is cut: the walk is whole).
+  return commit(D, At);
 }
 
 namespace {
@@ -1576,7 +1762,8 @@ namespace {
 // because a borrowed parent is by construction NOT walked and NOT adjointed. So
 // it must be proven un-mutated over the interval instead.
 bool preservesBorrowedParent(const CallInst *M, const Value *P,
-                             const TaintSet &taint, bool AdmitCloneCalls) {
+                             const TaintSet &taint, bool AdmitCloneCalls,
+                             bool AdmitStoreReads) {
   const Function *Callee = M->getCalledFunction();
   StringRef N = Callee ? Callee->getName() : StringRef();
   // (1) A DIAGONAL rotation. `cqrt_rz_<W>(P, θ)` writes a phase and never a basis
@@ -1722,6 +1909,24 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P,
   //         lowering_uncompute_interior_leak_unrecorded_strip_reads_parent.ll.
   if (isRecordedStripReaderOf(M, P, taint))
     return true;
+  // (5) A FORWARD ABI QRAM STORE READING `P` OUTSIDE ITS ARRAY SLOT — bd
+  //     test_C_libtooling-r2j3.21, and the reason is (2)'s. A store is in place on
+  //     its ARRAY only (`isInPlaceGateOn` matches that one slot); its index, value
+  //     and guarded path flag select a cell, supply the copied bits and gate the
+  //     write, and leave each of those registers' labels exactly as they were —
+  //     the same reading `isInteriorConsumer` (b″) has made since bd r2j3.1. A
+  //     store whose ARRAY is `P` is a relabelling of `P` and still falls through.
+  //     NEEDED by the array-walking retry: a walked array's store reading a
+  //     borrowed measured index is the FIRST gate of that index's window, and
+  //     refusing it there refused every such plan (`mlgk`,
+  //     lowering_qram_store_dropped_record_reversed.ll). ASKED ONLY THERE
+  //     (`AdmitStoreReads`, passed by `judgeFrontierPlan`): the M-B clause-(d)
+  //     scan and the M-A clause-4 window (`recordIsExemptAt`) keep main's answer,
+  //     though the same algebra would admit it for them (a follow-up).
+  if (AdmitStoreReads && isAbiQramStore(M) && !isInPlaceGateOn(M, P))
+    for (const Value *Op : M->args())
+      if (Op == P)
+        return true;
   // Everything else is a mutation for this purpose: `cqrt_ry_` (the chained
   // theta) and `cqrt_ry_<W>_controlled` (the drbq Inc-1 control-in-place arm —
   // NON-diagonal, it really does relabel P on the `f=1` branch),
@@ -1925,7 +2130,8 @@ bool routeGroupFullyInside(const CallInst *M, const Value *P, CallInst *First,
 // never being a rotation).
 bool railUnmovedInWindow(Value *P, CallInst *First, Instruction *At,
                          const DominatorTree &DT, const TaintSet &taint,
-                         bool AdmitCloneCalls, const Instruction *Opener) {
+                         bool AdmitCloneCalls, const Instruction *Opener,
+                         bool AdmitStoreReads) {
   // Proven ONCE per (`First`, `At`) pair and read by `routeGroupFullyInside`'s
   // `At`-barriered leg 1 below — see `WireWalk.h`'s `intervalAlternates` for
   // the window argument, and for why the `First`-barriered legs (that leg's
@@ -1963,7 +2169,7 @@ bool railUnmovedInWindow(Value *P, CallInst *First, Instruction *At,
                  // scan, where it would have hidden a missing proof — but it is
                  // made explicit so the two uses of reachability are not read
                  // as one rule.
-    if (preservesBorrowedParent(M, P, taint, AdmitCloneCalls))
+    if (preservesBorrowedParent(M, P, taint, AdmitCloneCalls, AdmitStoreReads))
       continue;
     // ── THE WINDOW LEMMA (bd 8h7d.5, Rule-13 ROUND 4, finding F-4) ────────
     //
@@ -2104,7 +2310,8 @@ bool borrowedParentsUnmoved(const DataDag &D,
                             const SmallPtrSetImpl<Value *> &Borrowed,
                             Instruction *At, DominatorTree &DT,
                             const TaintSet &taint, bool AdmitCloneCalls,
-                            SmallVectorImpl<Value *> *Moved) {
+                            SmallVectorImpl<Value *> *Moved,
+                            bool AdmitStoreReads) {
   for (Value *P : Borrowed) {
     CallInst *First = nullptr;
     for (CallInst *G : D.Calls) {  // forward program order (recoverDataDag §2)
@@ -2134,7 +2341,7 @@ bool borrowedParentsUnmoved(const DataDag &D,
     if (First == At)
       return false;
     if (!railUnmovedInWindow(P, First, At, DT, taint, AdmitCloneCalls,
-                             /*Opener=*/nullptr)) {
+                             /*Opener=*/nullptr, AdmitStoreReads)) {
       if (!Moved)
         return false;
       Moved->push_back(P);
@@ -2999,15 +3206,20 @@ void collectInteriorPlans(Function &F, TaintSet &taint, DominatorTree &DT,
     Plans.push_back(std::move(P));
 }
 
+// `Discharged` (OUT, bd r2j3.23) receives every gate the emitted plans
+// reverse-play, for `uncompute`'s post-M-B cut-record check.
 void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
                           DominatorTree &DT, PostDominatorTree &PDT, LoopInfo &LI,
                           const SmallPtrSetImpl<const CallInst *> &ReversedGates,
-                          const SmallPtrSetImpl<Value *> &ReversedRails) {
+                          const SmallPtrSetImpl<Value *> &ReversedRails,
+                          SmallPtrSetImpl<const CallInst *> &Discharged) {
   SmallVector<ComponentPlan, 4> Plans;
   collectInteriorPlans(F, taint, DT, PDT, LI, ReversedGates, ReversedRails,
                        Plans);
-  for (ComponentPlan &P : Plans)
+  for (ComponentPlan &P : Plans) {
     emitDagReversal(P.D, P.At, wd, taint);
+    Discharged.insert(P.D.Calls.begin(), P.D.Calls.end());
+  }
 }
 
 // Terminal-handle selection, hoisted out of `uncompute`'s driver loop so the
@@ -3089,15 +3301,34 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
     // Phase-7.3 iteration-local loop; bd p3kd.13's clone-result terminals).
     SmallPtrSet<const CallInst *, 16> ReversedGates;  // what the groups reversed,
     SmallPtrSet<Value *, 16> ReversedRails;           // for single ownership (Rule 8)
+    SmallVector<CallInst *, 4> PendingCuts;  // bd r2j3.21: hazardous cut records
     reverseTerminalGroups(F, Terminals, taint, wd, DT, PDT, LI, ReversedGates,
-                          ReversedRails);
+                          ReversedRails, PendingCuts);
 
     // M-B (bd 6uqc Inc 5): the INTERIOR rails — dead after their last forward
     // use, but never a terminal, so nothing above ever saw them. Runs LAST so it
     // sees the settled module (its clause-(d) scan reads the emitted traffic) and
     // so the dead-terminal groups keep first claim on every rail they can reach.
+    SmallPtrSet<const CallInst *, 16> Discharged;
     reverseInteriorGroup(F, taint, wd, DT, PDT, LI, ReversedGates,
-                         ReversedRails);
+                         ReversedRails, Discharged);
+
+    // bd r2j3.21 / r2j3.23 / r2j3.24 — THE POST-M-B CUT-RECORD CHECK
+    // (TerminalGroups.h, CUT RECORDS, question (2)). A Loud group committed a
+    // plan whose frontier left these dead records cut, each hazardous when its
+    // group planned (a later non-diagonal gate on a register it records, not kept
+    // across by the program). The planner already cleared every cut STORE; a cut
+    // load or template record is sound only if some partition reversed it — M-B
+    // after its last use, or a later group. Anything still
+    // standing is a wrong unitary: fail loudly at the first one. The verdicts are
+    // the planner's, recorded where they were asked (L1): nothing emitted since
+    // can create a hazard (the spine adds adjoints and frees, never a move of a
+    // register a closed plan's cut record reads), it can only remove one.
+    for (CallInst *G : PendingCuts)
+      if (!ReversedGates.count(G) && !Discharged.count(G)) {
+        diagnose(G, kMsgCutRecord);
+        break;
+      }
   }
 
   // ── bd `test_C_libtooling-tu9q` clause (ii-d)'s POSTCONDITION ──────────────

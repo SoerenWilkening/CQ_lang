@@ -1,11 +1,7 @@
-; spec_intermediate_unc_terminal_union_reject_clone_store.ll — DECLINE, as main,
-; character for character (bd test_C_libtooling-p3kd.13, R11 review round 7, the
-; F1 condition). Probe P2' of review/B7: the OBSERVABLE form of the benign-leak
-; probe P2 (P2 is this function without the last `cq_theta(&k, -0.5)` and its
-; measure: k is never touched again, so leaving the store is a leak; main 716269bc
-; and the r6-fix WIP 033efa2b, whose extra `T.Stores` clause is implied, both
-; decline P2 with this fixture's diagnostic — an over-decline against round 6
-; only, see THE `Cut` CLAUSE IS COARSE in TerminalGroups.h).
+; spec_intermediate_unc_terminal_union_clone_store.ll — ACCEPT, the store REVERSED
+; (bd test_C_libtooling-p3kd.14 + r2j3.21, batch 053 unit D; formerly
+; ..._reject_clone_store.ll, a decline equal to main — R11 r7, probe P2' of
+; review/B7). Its retirement trigger (a) fired: the r2j3.21 fix lands.
 ;
 ; SOURCE (`clang -O1` IR below):
 ;     __attribute__((noinline)) static int h(int a) { return a * 3 + 1; }
@@ -24,40 +20,38 @@
 ;       return acc + cq_measure(p) + cq_measure(k); }
 ;     int main(int argc, char **argv) { (void)argv; return mcs(argc) + mcs(argc + 4); }
 ;
-; THE SHAPE. The template terminals {t2, t1} reach NO store and are not measured
-; upstream; their one plan declines on the divergent arm (`TmplOk` false; main on
-; this module: rc 1, the diagnostic below, measured on cq-opt 716269bc). Only the
-; CLONE terminal r reaches the store, through v = arr[p] -> arr -> arr[k] = 7, and
-; r reads the MEASURED p, so the union is measured upstream: its first frontier
-; borrows the array (and p), the fixpoint plans {t2, q}, {t1, u} and {r, v}, and
-; `arr[k] = 7` is never walked.
-; WHAT THIS PINS: `neverWorse` (TerminalGroups.cpp) must ask what the UNION leaves
-; cut, not what the template terminals reach — here they reach no store.
-; Shipped at e075f4ff as `U.Stores ⊆ U.Gates`; since R11 r7 the `GroupProbe::Cut`
-; clause, which subsumes it. RED (mutant m1 of R11 r7, cq-opt 37397131): the
-; template-only clause `within(T.Stores, U.Gates)` in its place — the R11 r6
-; reviewer's proposal, and on this module the same verdict as round 6's 6e3615bf,
-; which had no store clause and whose `T.Walked ⊆ U.Walked` holds here — gives rc 0
-; with three unlocated M-A `live derived record` warnings: `cqrt_qram_store_i32(arr,
-; k, 7)` never reversed, the load, h's twin and r reversed, then
-; `cqrt_ry_i32(k, -0.5)` and a measure of k — per bit P(flip) = sin²θ/2 ≈ 0.115
-; where the source gives 0 (the dead-record-live-across-move ruling of 2026-10-05),
-; a NEW customer of bd r2j3.21 where main declines. GREEN (cq-opt e075f4ff, and
-; under the `Cut` clause): the group splits and the template terminals get main's
-; decline, the same line as main's.
-; RETIREMENT TRIGGERS. (a) bd r2j3.21 lands (the borrowed store reversed at its last
-; use, or the array-borrow retry failing loudly): re-measure main; this function may
-; then lower, and the union may relax `Cut` for a store main itself reverses.
-; (b) The dead-terminal spine stops declining a dead rotated rail in a classical arm
-; (kMsgDivergentArm, follow-up of p3kd.13): {t2, t1} then plan (`TmplOk`), the
-; `TmplOk` branch governs, and an accept must show `cqrt_qram_store_i32_unc` before
-; `cqrt_ry_i32(k, -0.5)` (or the borrow retry's loud decline). Either way this
-; fixture changes in the same reviewed capability change, never by reflex.
+; THE SHAPE. The template terminals {t2, t1} reach no store and decline on the
+; divergent arm (`TmplOk` false; main rc 1). Only the CLONE terminal r reaches the
+; store, through v = arr[p] -> arr -> arr[k] = 7, and r reads the MEASURED p, so the
+; union is measured upstream; its frontier borrows the array (and p) and the
+; fixpoint plans {t2, q}, {t1, u} and {r, v}, each at its own point. Round 7's
+; template-only store clause emitted it with the store never reversed before
+; `Ry(k, -0.5)` (rc 0, P(flip) ≈ 0.115 per bit); R11 r7-r8 then split it whenever
+; anything was cut (main's decline).
+; NOW. `arr[k] = 7` is a HAZARDOUS cut record (k is moved later), so the planner
+; retries with only the measured rails borrowed: the array is WALKED and the {r, v}
+; component reverses the store after the load's `_unc`, before the user's Ry; the
+; retry's cut is clean and the union is emitted (bd p3kd.14's `neverWorse`). The
+; benign form (k never moved again — R11 r6 probe P2) is
+; spec_intermediate_unc_terminal_union_cut_benign.ll, where the store stays.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK-NOT: warning
-; CHECK: error: {{.*}}in function mcs i32 (i32): cq uncompute: dead chain spans divergent control-flow arms
-; CHECK-NOT: internal invariant
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck %s --check-prefix=NOERR --allow-empty < %t.err
+; NOERR-NOT: error
+; CHECK-LABEL: define internal fastcc i32 @mcs(
+; CHECK:      %[[ARR:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 8)
+; CHECK:      %[[K:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(
+; CHECK:      call void @cqrt_qram_store_i32(i32 %[[ARR]], i32 %[[K]], i32 %[[VAL:[a-zA-Z0-9_.]+]])
+; CHECK:      %[[V:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_i32(i32 %[[ARR]], i32 %[[P:[a-zA-Z0-9_.]+]])
+; CHECK:      call fastcc void @__cq_q_h_1_unc(
+; CHECK-NEXT: call void @cqrt_free(
+; CHECK-NEXT: call void @cqrt_qram_load_i32_unc(i32 %[[V]], i32 %[[ARR]], i32 %[[P]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[V]])
+; CHECK-NEXT: call void @cqrt_qram_store_i32_unc(i32 %[[ARR]], i32 %[[K]], i32 %[[VAL]])
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[K]], double -5.000000e-01)
+; CHECK-NOT:  call void @cqrt_free(i32 %[[K]])
+; CHECK:      ret i32
 
 declare void @llvm.lifetime.start.p0(i64 immarg, ptr nocapture) #2
 declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg) #3

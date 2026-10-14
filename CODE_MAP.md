@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 811 maintained source files, 6656 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 811 maintained source files, 6663 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -22,8 +22,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check_test.py` — 4148 physical lines
 - `tools/loop_twin_matrix.py` — 4115 physical lines
 - `ir-pass/src/QramLowering.cpp` — 4045 physical lines
+- `ir-pass/src/Uncomputation.cpp` — 3434 physical lines
 - `ir-pass/src/TaintPropagation.cpp` — 3362 physical lines
-- `ir-pass/src/Uncomputation.cpp` — 3203 physical lines
 - `ir-pass/src/SwapRouteEmit.cpp` — 3161 physical lines
 - `runtime/cq_link_smoke.c` — 2893 physical lines
 - `tools/taintset_scrub_guard.py` — 2758 physical lines
@@ -45,7 +45,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
 - `ir-pass/src/ArithLowering.cpp` — 1189 physical lines
 - `tools/loop_twin_matrix_quarantine_test.py` — 1110 physical lines
-- `ir-pass/src/ChainWalk.cpp` — 1061 physical lines
+- `ir-pass/src/ChainWalk.cpp` — 1075 physical lines
 - `ir-pass/src/BreakReversePlay.cpp` — 1007 physical lines
 - `ir-pass/src/SpecializeReject.cpp` — 1005 physical lines
 - `ir-pass/src/WireWalk.cpp` — 948 physical lines
@@ -60,7 +60,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/cq_stage_cache_test.py` — 730 physical lines
 - `tools/library_coverage/full_surface/full_census.py` — 728 physical lines
 - `ir-pass/include/ControlPlan.h` — 726 physical lines
-- `ir-pass/include/ChainWalk.h` — 700 physical lines
+- `ir-pass/include/ChainWalk.h` — 719 physical lines
 - `ir-pass/src/MergePhiPeel.cpp` — 663 physical lines
 - `ir-pass/include/ScrubOnDelete.h` — 661 physical lines
 - `ir-pass/include/QramLowering.h` — 659 physical lines
@@ -400,7 +400,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/CastLowering.cpp:38` — `promote`
 - `ir-pass/src/CastLowering.cpp:50` — `rewriteCast`
 
-### `ir-pass/src/ChainWalk.cpp` (1061 lines)
+### `ir-pass/src/ChainWalk.cpp` (1075 lines)
 
 - `ir-pass/src/ChainWalk.cpp:31` — `markBranchPhaseGate`
 - `ir-pass/src/ChainWalk.cpp:37` — `isBranchPhaseGate`
@@ -410,15 +410,17 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ChainWalk.cpp:372` — `isAllocMint`
 - `ir-pass/src/ChainWalk.cpp:399` — `isTemplateProducer`
 - `ir-pass/src/ChainWalk.cpp:489` — `preservesBasisUnderRecord`
-- `ir-pass/src/ChainWalk.cpp:629` — `isMeasureSink`
-- `ir-pass/src/ChainWalk.cpp:634` — `isOutputSink`
-- `ir-pass/src/ChainWalk.cpp:639` — `recordsIntoKeptCarrier`
-- `ir-pass/src/ChainWalk.cpp:698` — `isCopyOutSink`
-- `ir-pass/src/ChainWalk.cpp:729` — `railOf`
-- `ir-pass/src/ChainWalk.cpp:771` — `isTerminalHandle`
-- `ir-pass/src/ChainWalk.cpp:826` — `isInteriorConsumer`
-- `ir-pass/src/ChainWalk.cpp:992` — `isRecordedStripReaderOf`
-- `ir-pass/src/ChainWalk.cpp:1009` — `isInteriorTerminalHandle`
+- `ir-pass/src/ChainWalk.cpp:631` — `isNonPermutationMove`
+- `ir-pass/src/ChainWalk.cpp:635` — `isQramArrayHandle`
+- `ir-pass/src/ChainWalk.cpp:643` — `isMeasureSink`
+- `ir-pass/src/ChainWalk.cpp:648` — `isOutputSink`
+- `ir-pass/src/ChainWalk.cpp:653` — `recordsIntoKeptCarrier`
+- `ir-pass/src/ChainWalk.cpp:712` — `isCopyOutSink`
+- `ir-pass/src/ChainWalk.cpp:743` — `railOf`
+- `ir-pass/src/ChainWalk.cpp:785` — `isTerminalHandle`
+- `ir-pass/src/ChainWalk.cpp:840` — `isInteriorConsumer`
+- `ir-pass/src/ChainWalk.cpp:1006` — `isRecordedStripReaderOf`
+- `ir-pass/src/ChainWalk.cpp:1023` — `isInteriorTerminalHandle`
 
 ### `ir-pass/src/ClassicalCallArmEmit.cpp` (322 lines)
 
@@ -1382,13 +1384,18 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/TemplateName.cpp:119` — `isUncHandleSlot`
 - `ir-pass/src/TemplateName.cpp:135` — `castName`
 
-### `ir-pass/src/TerminalGroups.cpp` (129 lines)
+### `ir-pass/src/TerminalGroups.cpp` (379 lines)
 
-- `ir-pass/src/TerminalGroups.cpp:24` — `GroupProbe::addPlan`
-- `ir-pass/src/TerminalGroups.cpp:31` — `GroupProbe::setCut`
-- `ir-pass/src/TerminalGroups.cpp:41` — `within`
-- `ir-pass/src/TerminalGroups.cpp:53` — `neverWorse`
-- `ir-pass/src/TerminalGroups.cpp:61` — `reverseTerminalGroups`
+- `ir-pass/src/TerminalGroups.cpp:38` — `storesZero`
+- `ir-pass/src/TerminalGroups.cpp:54` — `isIdentityStore`
+- `ir-pass/src/TerminalGroups.cpp:94` — `everyPathHits`
+- `ir-pass/src/TerminalGroups.cpp:133` — `mayObserveStore`
+- `ir-pass/src/TerminalGroups.cpp:160` — `isHazardousCutRecord`
+- `ir-pass/src/TerminalGroups.cpp:264` — `firstHazardousCutRecord`
+- `ir-pass/src/TerminalGroups.cpp:279` — `GroupProbe::addPlan`
+- `ir-pass/src/TerminalGroups.cpp:290` — `within`
+- `ir-pass/src/TerminalGroups.cpp:300` — `neverWorse`
+- `ir-pass/src/TerminalGroups.cpp:310` — `reverseTerminalGroups`
 
 ### `ir-pass/src/TwinTotality.cpp` (400 lines)
 
@@ -1410,40 +1417,40 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/TwinTotality.cpp:363` — `boundLoop`
 - `ir-pass/src/TwinTotality.cpp:387` — `applyTwinShape`
 
-### `ir-pass/src/Uncomputation.cpp` (3203 lines)
+### `ir-pass/src/Uncomputation.cpp` (3434 lines)
 
-- `ir-pass/src/Uncomputation.cpp:103` — `diagnose`
-- `ir-pass/src/Uncomputation.cpp:111` — `isDataProducer`
-- `ir-pass/src/Uncomputation.cpp:138` — `isQramArrayHandle`
-- `ir-pass/src/Uncomputation.cpp:153` — `measuredOnEveryPath`
-- `ir-pass/src/Uncomputation.cpp:268` — `markedHeaderOf`
-- `ir-pass/src/Uncomputation.cpp:283` — `multiplicityAgrees`
-- `ir-pass/src/Uncomputation.cpp:405` — `anchorForConsumer`
-- `ir-pass/src/Uncomputation.cpp:421` — `useCompleteBeforeDischarge`
-- `ir-pass/src/Uncomputation.cpp:439` — `dagInsertPoint`
-- `ir-pass/src/Uncomputation.cpp:511` — `emitDagReversal`
-- `ir-pass/src/Uncomputation.cpp:669` — `measuredParentsReadBeforeCollapse`
-- `ir-pass/src/Uncomputation.cpp:725` — `keptRailAdjointReadsBorrowed`
-- `ir-pass/src/Uncomputation.cpp:764` — `planTerminalReversal`
-- `ir-pass/src/Uncomputation.cpp:998` — `emitTerminalReversal`
-- `ir-pass/src/Uncomputation.cpp:1025` — `judgeFrontierPlan`
-- `ir-pass/src/Uncomputation.cpp:1064` — `partitionByReducedDag`
-- `ir-pass/src/Uncomputation.cpp:1120` — `componentObservedBefore`
-- `ir-pass/src/Uncomputation.cpp:1200` — `recordLiveAcrossMove`
-- `ir-pass/src/Uncomputation.cpp:1279` — `planFrontierFixpoint`
-- `ir-pass/src/Uncomputation.cpp:1377` — `reverseTerminalGroup`
-- `ir-pass/src/Uncomputation.cpp:1578` — `preservesBorrowedParent`
-- `ir-pass/src/Uncomputation.cpp:1843` — `routeGroupFullyInside`
-- `ir-pass/src/Uncomputation.cpp:1926` — `railUnmovedInWindow`
-- `ir-pass/src/Uncomputation.cpp:2103` — `borrowedParentsUnmoved`
-- `ir-pass/src/Uncomputation.cpp:2158` — `planInteriorComponent`
-- `ir-pass/src/Uncomputation.cpp:2485` — `addDischargedRails`
-- `ir-pass/src/Uncomputation.cpp:2495` — `collectInteriorPlansMode`
-- `ir-pass/src/Uncomputation.cpp:2977` — `collectInteriorPlans`
-- `ir-pass/src/Uncomputation.cpp:3002` — `reverseInteriorGroup`
-- `ir-pass/src/Uncomputation.cpp:3017` — `collectTerminalCandidates`
-- `ir-pass/src/Uncomputation.cpp:3058` — `uncompute`
-- `ir-pass/src/Uncomputation.cpp:3127` — `planInteriorDischarges`
+- `ir-pass/src/Uncomputation.cpp:126` — `diagnose`
+- `ir-pass/src/Uncomputation.cpp:134` — `isDataProducer`
+- `ir-pass/src/Uncomputation.cpp:184` — `measuredOnEveryPath`
+- `ir-pass/src/Uncomputation.cpp:343` — `markedHeaderOf`
+- `ir-pass/src/Uncomputation.cpp:358` — `multiplicityAgrees`
+- `ir-pass/src/Uncomputation.cpp:480` — `anchorForConsumer`
+- `ir-pass/src/Uncomputation.cpp:496` — `useCompleteBeforeDischarge`
+- `ir-pass/src/Uncomputation.cpp:514` — `dagInsertPoint`
+- `ir-pass/src/Uncomputation.cpp:586` — `emitDagReversal`
+- `ir-pass/src/Uncomputation.cpp:745` — `measuredParentsReadBeforeCollapse`
+- `ir-pass/src/Uncomputation.cpp:801` — `keptRailAdjointReadsBorrowed`
+- `ir-pass/src/Uncomputation.cpp:848` — `planTerminalReversal`
+- `ir-pass/src/Uncomputation.cpp:1082` — `emitTerminalReversal`
+- `ir-pass/src/Uncomputation.cpp:1109` — `judgeFrontierPlan`
+- `ir-pass/src/Uncomputation.cpp:1149` — `partitionByReducedDag`
+- `ir-pass/src/Uncomputation.cpp:1205` — `componentObservedBefore`
+- `ir-pass/src/Uncomputation.cpp:1291` — `recordLiveAcrossMove`
+- `ir-pass/src/Uncomputation.cpp:1382` — `planFrontierFixpoint`
+- `ir-pass/src/Uncomputation.cpp:1466` — `planFrontierAttempt`
+- `ir-pass/src/Uncomputation.cpp:1561` — `reverseTerminalGroup`
+- `ir-pass/src/Uncomputation.cpp:1764` — `preservesBorrowedParent`
+- `ir-pass/src/Uncomputation.cpp:2048` — `routeGroupFullyInside`
+- `ir-pass/src/Uncomputation.cpp:2131` — `railUnmovedInWindow`
+- `ir-pass/src/Uncomputation.cpp:2309` — `borrowedParentsUnmoved`
+- `ir-pass/src/Uncomputation.cpp:2365` — `planInteriorComponent`
+- `ir-pass/src/Uncomputation.cpp:2692` — `addDischargedRails`
+- `ir-pass/src/Uncomputation.cpp:2702` — `collectInteriorPlansMode`
+- `ir-pass/src/Uncomputation.cpp:3184` — `collectInteriorPlans`
+- `ir-pass/src/Uncomputation.cpp:3211` — `reverseInteriorGroup`
+- `ir-pass/src/Uncomputation.cpp:3229` — `collectTerminalCandidates`
+- `ir-pass/src/Uncomputation.cpp:3270` — `uncompute`
+- `ir-pass/src/Uncomputation.cpp:3358` — `planInteriorDischarges`
 
 ### `ir-pass/src/UndefReach.cpp` (267 lines)
 
