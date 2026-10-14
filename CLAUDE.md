@@ -322,7 +322,8 @@ which-path rails), `a3z7` (a dtzb-mutated `cq_theta` result carried through a ra
 `nomerge`), `uw5u` (`int m=(t==s)?t:s; cq_theta(&m, θ)` folds), `9oob` (a user `__cq_q_*_unc` twin
 with a wrong body is trusted), the twin half of `kyy1`, `jlf8`, `yldg`,
 `r2j3.7` (a dead tainted pure op is never uncomputed, a live copy of its source; filed
-2026-10-01). The three uncompute-frontier holes `r2j3.21`, `r2j3.23`, `r2j3.24` were closed
+2026-10-01), `r2j3.32` (a straight-line 4.4 select merge `%out`, e.g. `2*a` → `select a,2,0`, is
+never uncomputed after its consumer's `_unc`; a later Ry on `a` dephases; plain C, filed 2026-10-14). The three uncompute-frontier holes `r2j3.21`, `r2j3.23`, `r2j3.24` were closed
 2026-10-14 (batch 053, 04e4f09f): a cut record is reversed or the pass fails loudly, asked per
 (record, move) by `isHazardousCutRecord`; `r2j3.23`'s QROM-load shapes are loud, not yet lowered
 (`r2j3.27`). Warned rather than silent (owner ruling `lyyf`): `r2j3.8` (a reversed QRAM
