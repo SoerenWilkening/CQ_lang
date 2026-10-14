@@ -176,6 +176,14 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
   // the opposite — it is emitted BEFORE the prep (the bd `hcrg` chain edge), so
   // its φ is still a `PHINode` here and this clause is what makes it a control.
   //
+  // bd dm7f.53 — A SECOND φ-ADMITTING CALLER: `emitInPlaceRotationRegion`'s tree
+  // re-derivation now passes `AllowRailPhi = true` too (the in-place Ry / state
+  // prep under a tree with a region-merge φ leaf), with `CopyRailRoot` at its
+  // default `false` and only for a tree WITH nodes — so the "one call site" and
+  // "three call sites pass false" counts below are history (now two and two);
+  // the argument they carry (a φ ROOT never reaches `CopyRoot`/`RootIsRail`
+  // here) holds for both φ-admitting callers unchanged.
+  //
   // ⚠ WHICH OF THE THREE `isRailFlag` USES ACTUALLY HAS A φ SUBJECT — ONE
   // (Rule-13 round-1 finding F-P1-4, correcting the record, not the code). Only
   // the in-walk `FlagOf[V] = V` below can be reached with a φ. `CopyRoot`

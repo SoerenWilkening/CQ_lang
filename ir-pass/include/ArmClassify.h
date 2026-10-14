@@ -39,6 +39,7 @@ class LoopInfo;
 
 namespace cq {
 
+struct ControlPlan;
 struct ControlRegion;
 struct TaintSet;
 
@@ -93,10 +94,17 @@ enum class ArmDisposition { Accept, Declined };
 // tainted-select scan does not ALSO claim the node as an i1 data mux. Null is
 // allowed (no select can then be claimed; an accepted tree with a select node
 // would be scanned again — every production caller passes the set).
+//
+// bd dm7f.53: `Plan` (the regions detected so far) lets a compound condition
+// tree carry a REGION-MERGE φ leaf (`condTreePhiLeafRefusal` rung 0 asks it);
+// null refuses every φ leaf with `control flow`. On accept, the indices of the
+// cross-block φ leaves' prep regions are in `Region.PrepRegionIdxs` (emit THIS
+// region first — the `PhaseKickback` direction).
 ArmDisposition classifyArms(
     ControlRegion &Region, TaintSet &Taint, const llvm::DominatorTree *DT,
     const llvm::LoopInfo *LI,
-    llvm::SmallPtrSetImpl<llvm::Instruction *> *ClaimedSelects = nullptr);
+    llvm::SmallPtrSetImpl<llvm::Instruction *> *ClaimedSelects = nullptr,
+    const ControlPlan *Plan = nullptr);
 
 // Outcome of the 6.5 classical-call-arm recognizer (DD-7), tried by
 // `ControlDetect::handleBranchRegion` BEFORE `classifyArms`:

@@ -696,7 +696,7 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
         break;
       }
     }
-    if (classifyArms(R, Taint, DT, LI, &ClaimedSelects) ==
+    if (classifyArms(R, Taint, DT, LI, &ClaimedSelects, &Plan) ==
         ArmDisposition::Declined)
       return;  // ArmClassify already fired the precise diagnostic (§3c / value).
     // IN-LOOP SCOPE FENCE, part 2 — a VALUE arm inside a loop. Its

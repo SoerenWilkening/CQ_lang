@@ -765,8 +765,12 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   const bool RailCond = isCondRailLeaf(Cond);
   // bd test_C_libtooling-dm7f.52 — the third condition kind: a COMPOUND TREE,
   // re-derived through the SAME grammar and flags `classifyArms` accepted with
-  // (`collectCondTree`, `AllowLogicalSelect = true`, `AllowRailPhi = false`), so
-  // detection and emission cannot drift (Rule 12). The branch must still read
+  // (`collectCondTree`, `AllowLogicalSelect = true`, `AllowRailPhi = true` since
+  // bd dm7f.53), so detection and emission cannot drift (Rule 12). A φ leaf is
+  // still a live `PHINode` here: this region is emitted BEFORE the prep that
+  // owns it (the `BranchRegion` edge loop in `lowerControlRegions`), and
+  // `emitCondNetwork` maps it to itself as a read-only control by MEMBERSHIP of
+  // `Tree.RailPhiLeaves`. The branch must still read
   // the root the plan names (an earlier emitter's RAUW would otherwise hand us a
   // stale tree — the bd `3qps` live-anchor discipline).
   CondTree Tree;
@@ -774,7 +778,7 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
       !RailCond && !isa<CmpInst>(Cond) && BI->isConditional() &&
       BI->getCondition() == Cond &&
       collectCondTree(Cond, Tree, /*AllowLogicalSelect=*/true,
-                      /*AllowRailPhi=*/false) &&
+                      /*AllowRailPhi=*/true) &&
       !Tree.Nodes.empty();
   if (!RailCond && !isa<CmpInst>(Cond) && !TreeCond) {
     diagnoseUnderControl(CondI, "control flow");  // not compare, rail or tree.
@@ -3051,8 +3055,18 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
   // branch, which no dominance relation permits. The Kahn backstop below is the
   // enforcement rather than this paragraph: a cycle leaves regions unscheduled and
   // declines LOUDLY, lowering nothing.
+  //
+  // bd dm7f.53 — A `BranchRegion` TAKES THIS LOOP TOO. `classifyArms` records a
+  // cross-block REGION-MERGE φ leaf of an in-place Ry / state-prep condition
+  // tree with the kickback's rule and for the kickback's reason: the tree is
+  // re-derived at emission with the φ as a live control, so this region must be
+  // emitted while the φ still exists, BEFORE the prep's M-β erases it. No other
+  // `BranchRegion` writes the field, so the widening is a no-op for every
+  // region that lowered before. The cycle argument above carries unchanged
+  // (the prep's merge φ dominates this region's branch).
   for (size_t i = 0; i < N; ++i) {
-    if (Regions[i].Kind != ControlRegion::PhaseKickback)
+    if (Regions[i].Kind != ControlRegion::PhaseKickback &&
+        Regions[i].Kind != ControlRegion::BranchRegion)
       continue;
     for (unsigned P : Regions[i].PrepRegionIdxs) {
       if (P == ControlRegion::kNoParent)

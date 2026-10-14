@@ -20,6 +20,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 
+#include "BoolStorageNarrow.h" // narrowBoolStoragePhis (bd dm7f.53)
 #include "ControlShape.h"     // uncondSucc / regionEntryInLoop
 #include "PredMuxFlatten.h"   // isMuxableType (P5 — the ONE spelling, Rule 14)
 #include "SelectClassify.h"   // isCondRailLeaf (P7b)
@@ -319,6 +320,14 @@ bool peelIndependentMergePhis(Module &M, TaintSet &taint,
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
+
+    // bd dm7f.53 — the `_Bool` storage-width φ narrowing (BoolStorageNarrow.h),
+    // FIRST, so every round sees the `i1` spelling `-O1` uses for the
+    // single-diamond program. Accept-only like the peel; its seeds join the
+    // peel's one `propagateFromSeeds` below, so the taint growth is reported in
+    // the same `Delta` the caller adjudicates.
+    if (narrowBoolStoragePhis(F, taint, Seeds))
+      Changed = true;
 
     // ── DETECT (pure, no mutation — Rule 9) ─────────────────────────────────
     //

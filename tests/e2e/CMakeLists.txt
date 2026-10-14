@@ -5352,6 +5352,27 @@ add_test(NAME e2e-slice-control-stateprep-bool-under-int-compare-fused
 #   * `..._int`             the `int b1` workaround     28 lines  (the spelling
 #                           the owner refused; pinned so the widening cannot
 #                           change it)
+# bd `dm7f.53` (CQ_FINDINGS F3) — the reporter's Dicke probes t5.c / t6.c: two
+# in-place controlled-Ry regions on ONE `_Bool` (the `i8` storage-width phi web,
+# narrowed by `narrowBoolStoragePhis`), and a condition-tree leaf that is an
+# earlier region's MERGE phi (in-`Pred` and cross-block). Read each slice header
+# for the line-by-line and the analytic check.
+add_test(NAME e2e-slice-control-inplace-ry-seq-bool-t5
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_seq_bool_t5.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_seq_bool_t5.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-tree-mergephi-t6
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_tree_mergephi_t6.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_tree_mergephi_t6.expected.log")
+
 add_test(NAME e2e-slice-control-cascade-two-bools
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
