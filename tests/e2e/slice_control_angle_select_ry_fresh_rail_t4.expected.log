@@ -1,0 +1,19 @@
+cqrt_alloc_i1(0) -> h0
+cqrt_ry_i1(h0, 0x1p+0)
+cq_template_zext_i1_to_i32(h0) -> h1
+cqrt_alloc_i1(0) -> h2
+cqrt_cnot(h0, h2)
+cqrt_alloc_i1(0) -> h3
+cqrt_ry_i1_controlled(h2, h3, 0x1.6666666666666p-1)
+cqrt_x(h2)
+cqrt_ry_i1_controlled(h2, h3, 0x1.3333333333333p-2)
+cqrt_x(h2)
+cqrt_cnot(h0, h2)
+cqrt_free(h2)
+cq_template_zext_i1_to_i32(h3) -> h4
+cq_template_add_i32(h1, h4) -> h5
+cq_template_zext_i1_to_i32_unc(h4, h3)
+cqrt_free(h4)
+cqrt_measure_i1(h0) -> 0
+cqrt_measure_i1(h3) -> 0
+cqrt_measure_i32(h5) -> 0

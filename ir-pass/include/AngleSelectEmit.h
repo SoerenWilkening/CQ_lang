@@ -49,6 +49,18 @@
 // operands SWAPPED) needs nothing special. The bracket is on the compiler-owned
 // flag, never on a user register.
 //
+// bd dm7f.54 — THE CONDITION KINDS AND THE SEED. The flag above is a single
+// compare's template; for any OTHER Ry-stem condition (a bare `_Bool` rail, a
+// claimed region-merge φ — by emission time its prep's hoisted `cq_theta_i1` —
+// or a compound `and`/`or`/`xor`/logical-`select` tree) it is the root of
+// `CondTreeEmit`'s network minted at `%t` with `CopyRailRoot`, so it is always
+// an ancilla this region owns (`bf = |0>; cnot(b, bf)` for a rail root) and the
+// two gates and the bracket are unchanged; the strip is `stripCondNetwork`'s
+// exact LIFO mirror. The condition is read off the LIVE select (`R.Condition`
+// may name an erased φ). The base may also be a LITERAL seed on a `nomerge`
+// call site (`angleSelectLiteralSeedAdmissible`): `TA` is then the source
+// theta, `cqrt_alloc_<W>(SEED)` + the controlled Ry, exactly like a runtime seed.
+//
 // THE HISTORY THIS REPLACES: drbq Inc 2b emitted `Ry(B)` then one controlled
 // `Ry(fl(A−B))`, which realized `B + fl(A−B)` on the true edge (0.858 rad wrong on
 // `pi / 1e16`, `inf` from the finite arms `±DBL_MAX`) and so admitted only

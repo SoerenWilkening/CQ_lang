@@ -386,6 +386,40 @@ enum class AngleSelectDisp { Accepted, Declined, NotApplicable };
 // `emitAngleSelectRegion`'s Ry-stem step-0 re-ask. Pure analysis.
 bool angleSelectArmsDefined(const llvm::Value *A, const llvm::Value *B);
 
+// bd test_C_libtooling-dm7f.54 — is the Ry-stem consumer `T` a controlled
+// STATE PREP on a LITERAL seed that `-O1` cannot have manufactured? True iff
+// `T`'s arg-0 is a `ConstantInt` or `ConstantFP` (never undef/poison or a
+// `ConstantExpr`) AND `T` carries `nomerge` AT THE CALL SITE.
+//
+// THE HAZARD IT ANSWERS (bd drbq.13, `control_angle_select_reject_literal_base_
+// offwire_fold.ll`): IPSCCP folds a live register into a literal on one edge
+// and SimplifyCFG then SINKS the two arm thetas into ONE theta on an angle
+// select, so a literal base can be the image of `r = t` on one branch. A sink
+// needs two calls that may merge, and LLVM 19's `canSinkInstructions` refuses
+// any call whose `cannotMerge()` holds. `include/CQ.h` declares every
+// `cq_theta_*` `nomerge` (bd fmt3) and clang copies the attribute onto every
+// DIRECT call site; an INDIRECT call (bd `4e4p`, the function-pointer route)
+// has no call-site `nomerge` even after `-O1` devirtualizes it, so the call-site
+// attribute (not the callee's) is the witness that no merge happened. A
+// `nomerge` literal base is therefore the user's own `r = SEED; cq_theta(&r,
+// c ? A : B)`, a fresh rail rotated by exactly `A` or exactly `B`.
+//
+// ONE SPELLING, TWO CALL SITES: `classifyAngleSelect`'s S3 and
+// `emitAngleSelectRegion`'s step-0 re-ask. Pure analysis.
+bool angleSelectLiteralSeedAdmissible(const llvm::CallInst *T);
+
+// bd dm7f.53 — the ON-ANCESTRY PRODUCERS of every claimed region-merge φ leaf of
+// `Tree` (the arm gates of each claimed region whose merge is in the leaf's own
+// provenance), minus any gate that is staling evidence for ANOTHER leaf. Passed
+// as `Covered` to `findNonDiagonalWireGate`. Defined in `ArmClassify.cpp` (the
+// argument is there). Callers: the in-place Ry / state-prep tree, the kickback
+// φ root, and since bd dm7f.54 the Ry-stem ANGLE select (`SelectClassify` gate
+// 2c and `classifyAngleSelect` S11), so a chained region's merge φ reads the
+// same as at the `br` twin.
+void condTreeCoveredPhiGates(const CondTree &Tree, const ControlPlan &plan,
+                             TaintSet &Taint,
+                             llvm::SmallPtrSetImpl<const llvm::CallInst *> &Covered);
+
 // bd test_C_libtooling-3qlq Inc 1 (PRD `retire-swap-route-PRD.md` §6.2 row P1) —
 // the FLAT KICKBACK DIAMOND classifier. Same three-way disposition contract as
 // `classifyAbortPark` / `classifyGuardedStoreArm` / `classifyClassicalCallArm`,

@@ -5373,6 +5373,29 @@ add_test(NAME e2e-slice-control-inplace-ry-tree-mergephi-t6
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_tree_mergephi_t6.expected.log")
 
+# bd `dm7f.54` (CQ_FINDINGS F4) — the Ry ANGLE SELECT on a FRESH target and on a
+# bare `_Bool` condition (a CNOT copy flag, X-bracket form), and the two-arm
+# if/else on a `_Bool` whose golden is byte-identical to the ternary's. Read each
+# slice header for the line-by-line and the analytic check.
+foreach(_d54 slice_control_angle_select_ry_fresh_rail_t4
+             slice_control_angle_select_ry_rail_p12
+             slice_control_inplace_ry_rail_ifelse_p12_twin)
+  string(REPLACE "slice_" "" _d54n "${_d54}")
+  string(REPLACE "_" "-" _d54n "${_d54n}")
+  add_test(NAME e2e-slice-${_d54n}
+    COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+      "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+      "${CMAKE_SOURCE_DIR}/include"
+      "${CMAKE_CURRENT_SOURCE_DIR}/${_d54}.c"
+      "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+      "${CMAKE_CURRENT_SOURCE_DIR}/${_d54}.expected.log")
+endforeach()
+
+add_test(NAME e2e-angle-select-ry-rail-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_rail_p12.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_rail_ifelse_p12_twin.expected.log")
+
 add_test(NAME e2e-slice-control-cascade-two-bools
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"

@@ -69,8 +69,15 @@ extern "C" {
      `if (c) cq_theta(&r, A); else cq_theta(&r, B);`, no longer folds into
      one call with a SELECTED ANGLE; it lowers as two controlled Ry — the same
      unitary. The TERNARY spelling `cq_theta(&r, c ? A : B);` still produces
-     the select-angle call directly (no merge) and still reaches
-     AngleSelectEmit's by-difference Ry stem;
+     the select-angle call directly (no merge) and reaches AngleSelectEmit's
+     Ry stem, which emits the SAME X-bracket stream as the if/else (bd dm7f.6:
+     `ry_c(f,h,A); x(f); ry_c(f,h,B); x(f)` on a flag ancilla). Since bd
+     dm7f.54 that holds for a fresh target (`bool t = 0;`, controlled state
+     prep), a bare `_Bool` or merge-phi condition (a CNOT copy flag) and a
+     compound `&&`/`||`/`^` condition. Still declined: a NESTED ternary
+     (`c1 ? A : c2 ? B : C`), the target being the condition's own register
+     (bd dm7f.8), and a literal target reached through a FUNCTION POINTER
+     (no call-site `nomerge`, bd 4e4p);
    - over-declines: that if/else under a CLASSICAL condition inside a loop, and
      an if/else preparing the same literal on both arms (bd cx6j); a legitimate
      common-code merge on ONE register (bd 4l5q);

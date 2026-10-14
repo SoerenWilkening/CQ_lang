@@ -66,6 +66,7 @@ class ControlledSymbols;
 class WidthDispatch;
 struct TaintSet;
 struct ControlPlan;
+struct CondTree;
 
 // Emit every region in `plan.Regions` (populated by `detectControlRegions`),
 // dispatched by `Kind` and arm class as above. Mutates the module IR and `taint`
@@ -99,6 +100,14 @@ void emitKickbackGroup(llvm::IRBuilder<> &B, llvm::FunctionCallee Rz,
                        llvm::FunctionCallee X, llvm::Value *Ctl, bool CtlIsRail,
                        llvm::ArrayRef<llvm::Value *> Angles, bool Neg,
                        const llvm::DebugLoc &DL, TaintSet &taint);
+
+// The cascade-erase of a condition tree's now-DEAD interior (nodes in reverse
+// post-order, then compare leaves in reverse), skipping `Root` (compared by
+// pointer only) and anything with a surviving user. Callers: the branch phase
+// and the in-place Ry region in this file, and since bd dm7f.54 the angle
+// select's network path (`AngleSelectEmit`).
+void eraseDeadCondTreeInterior(const CondTree &Tree, const llvm::Value *Root,
+                               TaintSet &taint);
 
 }  // namespace cq
 

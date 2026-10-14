@@ -11,7 +11,9 @@
 #include "ArmAnalysis.h"       // angleSelectArmsDefined / comparePredLowerable
 #include "ChainWalk.h"         // markBranchPhaseGate (3qlq Inc 1 F-L7-1)
 #include "CompareLowering.h"   // lowerCompareToFlag + compareFlagMintable (step 0b)
+#include "CondTreeEmit.h"      // emitCondNetwork / stripCondNetwork (bd dm7f.54)
 #include "SelectClassify.h"    // isCondRailLeaf / kBareRailCondReason (bd 3qlq.4)
+#include "SwapRouteEmit.h"     // eraseDeadCondTreeInterior (bd dm7f.54)
 #include "ControlPlan.h"       // ControlRegion / diagnoseUnderControl
 #include "ControlledSymbols.h"  // xFn (3qlq Inc 1 phase angle select bracket)
 #include "TaintPropagation.h"  // TaintSet
@@ -188,33 +190,37 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // silently skipped region leaves the tainted select to the backend (Rule 1); a
   // mid-stream decline leaves a minted flag behind (Inc-2a round-1 F-5).
   auto *Sel = dyn_cast_or_null<SelectInst>(R.Merge);
-  // bd 3qlq.4: a compare, or (PHASE stem only) the bare `_Bool` register.
-  auto *CondI = dyn_cast_or_null<Instruction>(R.Condition);
-  const bool RailCond = isCondRailLeaf(CondI);
-  if (!Sel || !CondI || (!RailCond && !isa<CmpInst>(CondI))) {
-    if (R.Merge)
-      diagnoseUnderControl(R.Merge, "control flow");
-    else if (auto *A = dyn_cast_or_null<Instruction>(R.Condition))
-      diagnoseUnderControl(A, "control flow");
-    return;
-  }
   auto *T = R.Shadow.size() == 1 ? dyn_cast<CallInst>(R.Shadow.front())
                                  : nullptr;
   Function *Callee = T ? T->getCalledFunction() : nullptr;
-  if (!Callee) {
-    diagnoseUnderControl(Sel, "control flow");
+  if (!Sel || !Callee) {
+    if (R.Merge)
+      diagnoseUnderControl(R.Merge, "control flow");
     return;
   }
   // 3qlq Inc 1 (PRD §6.2 row P2): the phase consumer forks the whole emitter.
+  // bd 3qlq.4: its condition is a compare or the bare `_Bool` register, read
+  // from the plan (a phase angle select has no φ leaf, so `R.Condition` is
+  // live: nothing erases a compare or a rail before this region).
   if (isRegisterFreePhaseCall(T, taint)) {
+    auto *CondI = dyn_cast_or_null<Instruction>(R.Condition);
+    if (!CondI || (!isCondRailLeaf(CondI) && !isa<CmpInst>(CondI))) {
+      diagnoseUnderControl(Sel, "control flow");
+      return;
+    }
     emitPhaseAngleSelect(Sel, CondI, T, wd, taint);
     return;
   }
-  if (RailCond) {
-    diagnoseUnderControl(Sel, kBareRailCondReason);
-    return;
-  }
-  auto *Cond = cast<CmpInst>(CondI);
+  // ---- bd test_C_libtooling-dm7f.54 — THE Ry STEM READS ITS CONDITION OFF THE
+  // LIVE SELECT, never off `R.Condition`: for a claimed region-merge φ root
+  // (or φ leaf) the prep region emitted FIRST (the `PrepRegionIdxs` edge) has
+  // RAUW'd the φ to its hoisted `cq_theta_i1` and erased it, so the plan's raw
+  // pointer may be freed memory — exactly `SelectMergeEmit`'s H-1. A bare
+  // single COMPARE takes the shipped path; anything else (`NetCond`: a rail, a
+  // former φ, a compound tree) mints through `CondTreeEmit` below.
+  Value *CondV = Sel->getCondition();
+  auto *Cond = dyn_cast<CmpInst>(CondV);
+  const bool NetCond = !Cond;
   const StringRef CalleeName = Callee->getName();
   const bool IsTheta = CalleeName.starts_with("cq_theta_");
   const bool IsPhi = CalleeName.starts_with("cq_phi_");  // retired register form
@@ -222,11 +228,14 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
     diagnoseUnderControl(Sel, "control flow");
     return;
   }
-  // The select is still the consumer's ANGLE only, the consumer its SOLE user,
-  // the condition its condition (an earlier region could have rewritten one).
+  if (NetCond && !IsTheta) {
+    diagnoseUnderControl(Sel, kBareRailCondReason);
+    return;
+  }
+  // The select is still the consumer's ANGLE only, the consumer its SOLE user.
   if (T->arg_size() < 2 || T->getArgOperand(1) != Sel ||
       T->getArgOperand(0) == Sel || !Sel->hasOneUse() ||
-      Sel->user_back() != T || Sel->getCondition() != Cond) {
+      Sel->user_back() != T) {
     diagnoseUnderControl(Sel, "control flow");
     return;
   }
@@ -234,17 +243,58 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // A live register, or an UNTAINTED runtime base S3 admitted as state prep (bd
   // z0re). ONE QUESTION, THE CLASSIFIER'S (r1B F-r1B-2): `R.RuntimeSeedAdmitted`.
   // The reverse transition (tainted by an earlier 6.5 RAUW) is caught by the
-  // record below plus `declineRound2QuantumPrepSeeds`.
-  if (!taint.Tainted.count(Base) && !R.RuntimeSeedAdmitted) {
+  // record below plus `declineRound2QuantumPrepSeeds`. bd dm7f.54: or a
+  // `nomerge` LITERAL seed, re-asked through the classifier's ONE predicate (a
+  // literal cannot change between detection and here).
+  if (!taint.Tainted.count(Base) && !R.RuntimeSeedAdmitted &&
+      !angleSelectLiteralSeedAdmissible(T)) {
     diagnoseUnderControl(Sel, "control flow");
     return;
   }
-  // One block, `Cond` < `Sel` < `T`, and a successor for the strip and the free.
+  // One block, (`Cond` <) `Sel` < `T`, and a successor for the strip and the
+  // free. A `NetCond` root may live elsewhere (the classifier's S6 note).
   Instruction *After = T->getNextNode();
-  if (T->getParent() != Sel->getParent() || Cond->getParent() != T->getParent() ||
-      !Cond->comesBefore(Sel) || !Sel->comesBefore(T) || !After) {
+  if (T->getParent() != Sel->getParent() || !Sel->comesBefore(T) || !After ||
+      (Cond && (Cond->getParent() != T->getParent() ||
+                !Cond->comesBefore(Sel)))) {
     diagnoseUnderControl(Sel, "control flow");
     return;
+  }
+  // `NetCond`: re-derive the tree with the grammar gate 2 accepted it under
+  // (`AllowLogicalSelect`), but WITHOUT `AllowRailPhi`: by now every φ leaf is
+  // its prep's hoisted `cq_theta_i1`, a rail leaf. A φ still standing means the
+  // precedence edge was not honoured, and the walk then fails LOUDLY here
+  // rather than reading a register through a stale name.
+  CondTree Tree;
+  if (NetCond) {
+    if (!collectCondTree(CondV, Tree, /*AllowLogicalSelect=*/true,
+                         /*AllowRailPhi=*/false) ||
+        !Tree.LiteralLeaves.empty() || !Tree.RailPhiLeaves.empty()) {
+      diagnoseUnderControl(Sel, "control flow");
+      return;
+    }
+    // The caller-independent backstop `SelectMergeEmit` carries: a rail read as
+    // a control only through a classifier that asked the rail ladder.
+    if (!Tree.RailLeaves.empty() && !R.RailLadderProven) {
+      diagnoseUnderControl(Sel, kBareRailCondReason);
+      return;
+    }
+    // S4's leaf half in lockstep: exactly one tainted operand per compare leaf
+    // (no Q+Q mint on this path) and a mintable flag — before any emission.
+    for (CmpInst *Leaf : Tree.Leaves) {
+      const bool LT = taint.Tainted.count(Leaf->getOperand(0)) != 0;
+      const bool RT = taint.Tainted.count(Leaf->getOperand(1)) != 0;
+      if (LT == RT || !comparePredLowerable(Leaf) ||
+          !compareFlagMintable(Leaf, taint)) {
+        diagnoseUnderControl(Sel, "control flow");
+        return;
+      }
+    }
+    for (CallInst *Rail : Tree.RailLeaves)
+      if (!taint.Tainted.count(Rail)) {
+        diagnoseUnderControl(Sel, "control flow");
+        return;
+      }
   }
   // `T` must be in `lowerRotations`' work list; the new rotation goes IMMEDIATELY
   // BEFORE it, in stream order, so `T` lowers with arg-0 already RAUW'd to the
@@ -273,12 +323,14 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // ---- 0b. RE-ASK S4's SEMANTIC HALF (2b round-1 lens L4-1): a preceding 4.5
   // SwitchDataMux region's RAUW to a TAINTED `%out` can make the compare Q+Q,
   // which has no mint here. Fixture `..._reject_datamux_qq_after_rauw.ll`.
-  const bool LTainted = taint.Tainted.count(Cond->getOperand(0)) != 0;
-  const bool RTainted = taint.Tainted.count(Cond->getOperand(1)) != 0;
-  if (LTainted == RTainted || !comparePredLowerable(Cond) ||
-      !compareFlagMintable(Cond, taint)) {
-    diagnoseUnderControl(Sel, "control flow");
-    return;
+  if (Cond) {
+    const bool LTainted = taint.Tainted.count(Cond->getOperand(0)) != 0;
+    const bool RTainted = taint.Tainted.count(Cond->getOperand(1)) != 0;
+    if (LTainted == RTainted || !comparePredLowerable(Cond) ||
+        !compareFlagMintable(Cond, taint)) {
+      diagnoseUnderControl(Sel, "control flow");
+      return;
+    }
   }
 
   // `cqrt_x` through `ControlledSymbols`, the ONE spelling of the bracket.
@@ -315,10 +367,44 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
 
   // ---- 1. THE FLAG MINT, at the consumer. `WireRuled`: gate 2c ruled on this
   // compare's wire before gate 3 dispatched (Track A.1, F-A1R2-1).
-  Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
-                                   /*inverse=*/false, /*before=*/T,
-                                   /*negate=*/false, /*railToStrip=*/nullptr,
-                                   /*readKind=*/CondReadKind::WireRuled);
+  //
+  // bd dm7f.54 — `NetCond`: THE FLAG IS THE NETWORK ROOT, minted by the ONE
+  // network emitter every tree consumer uses (`CondTreeEmit`), at `T`, with
+  // `CopyRailRoot` so a bare rail root comes back as a `cqrt_cnot` COPY
+  // ancilla (`Σ α_x |x⟩_b |x⟩_f`) and never as the user's register. Each compare
+  // leaf mints its own flag, each node a fresh |0> ancilla, rails are read in
+  // CONTROL slots only. So the root is always an ancilla this region owns and
+  // the X bracket below is the ruling's, on a compiler-owned qubit.
+  // `LeafWireRuled`: gate 2c ruled on these leaves before gate 3 dispatched.
+  // `AllowQQLeaves = false`: the classifier refused every Q+Q leaf (S4).
+  CondNetwork Net;
+  Value *Flag = nullptr;
+  if (NetCond) {
+    switch (emitCondNetwork(CondV, Tree, wd, Csyms, taint, /*Before=*/T, DL,
+                            /*AllowQQLeaves=*/false, Net,
+                            /*CopyRailRoot=*/true, /*LeafWireRuled=*/true)) {
+    case CondNetDisp::Ok:
+      break;
+    case CondNetDisp::MintDiagnosed:
+      return;  // `lowerCompareToFlag` was already LOUD.
+    case CondNetDisp::Malformed:
+      diagnoseUnderControl(Sel, "control flow");
+      return;
+    }
+    // The inverted drift guard `SelectMergeEmit` carries: the root is about to
+    // be `cqrt_x`-bracketed, so it MUST be an ancilla (for a bare rail the copy
+    // is the network's only emission, so nothing has been emitted yet).
+    if (Net.RootIsRail || !Net.Root) {
+      diagnoseUnderControl(Sel, "control flow");
+      return;
+    }
+    Flag = Net.Root;
+  } else {
+    Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
+                              /*inverse=*/false, /*before=*/T,
+                              /*negate=*/false, /*railToStrip=*/nullptr,
+                              /*readKind=*/CondReadKind::WireRuled);
+  }
   if (!Flag)
     return;  // UNREACHABLE (step 0b's lockstep re-ask; `DS_Error` exits first).
 
@@ -365,21 +451,48 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // `_hl_unc` strip is a PURE READ of its slots >= 1 (re-prove on a change to
   // what it writes). `Strip` null is unreachable; were it null, the free would
   // be DIRTY — recorded rather than restructured.
-  auto *Strip = dyn_cast_or_null<CallInst>(
-      lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
-                         /*before=*/After, /*negate=*/false,
-                         /*railToStrip=*/Flag));
-  if (Strip)
-    taint.DischargedFlagGates.insert(Strip);
-  stamp(Post.CreateCall(wd.freeFn(), {Flag}));
+  //
+  // bd dm7f.54 — `NetCond`: `stripCondNetwork`, the exact LIFO mirror of the
+  // mint (the copy ancilla un-copied and freed first, then every node, then
+  // every compare leaf's `_unc` + free), after the closing `x(f)`. Exact for the
+  // same reason as the single compare: the only basis-moving gates here are the
+  // two Ry on the target, and S8 proved the target off every leaf wire (or the
+  // target is the fresh rail of a seed). The leaf strips are recorded in
+  // `DischargedFlagGates` exactly as the in-place Ry tree records them.
+  if (NetCond) {
+    SmallVector<CallInst *, 4> LeafStrips;
+    stripCondNetwork(Net, wd, Csyms, taint, /*Before=*/After, DL,
+                     /*AllowQQLeaves=*/false, &LeafStrips);
+    for (CallInst *S : LeafStrips)
+      taint.DischargedFlagGates.insert(S);
+  } else {
+    auto *Strip = dyn_cast_or_null<CallInst>(
+        lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
+                           /*before=*/After, /*negate=*/false,
+                           /*railToStrip=*/Flag));
+    if (Strip)
+      taint.DischargedFlagGates.insert(Strip);
+    stamp(Post.CreateCall(wd.freeFn(), {Flag}));
+  }
 
   // ---- 5. ERASE THE SELECT (its only use, `T`'s angle, now names `B`), then the
   // compare if dead. A dead tainted compare must not stand: `lowerOps` would
   // lower it into a second flag rail nothing strips (six silent cells measured
-  // under that deletion, bd ptue 2026-10-05). Scrub before erasing.
+  // under that deletion, bd ptue 2026-10-05). Scrub before erasing. bd dm7f.54:
+  // a `NetCond` tree erases its dead ROOT (never a rail: the user's register)
+  // and then its dead interior through the ONE cascade
+  // (`eraseDeadCondTreeInterior`).
   scrubTaint(Sel, taint);
   Sel->eraseFromParent();
-  if (Cond->use_empty()) {
+  if (NetCond) {
+    auto *RootI = dyn_cast<Instruction>(CondV);
+    const bool RootIsNode = RootI && !isCondRailLeaf(RootI);
+    if (RootIsNode && RootI->use_empty()) {
+      scrubTaint(RootI, taint);
+      RootI->eraseFromParent();
+    }
+    eraseDeadCondTreeInterior(Tree, CondV, taint);
+  } else if (Cond->use_empty()) {
     scrubTaint(Cond, taint);
     Cond->eraseFromParent();
   }

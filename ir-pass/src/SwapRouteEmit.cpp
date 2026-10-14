@@ -657,6 +657,10 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
 // left alone (both classifiers decline every out-of-tree use — defence in depth).
 // A single-compare "tree" (its one leaf IS the root) and a rail tree (no
 // compare leaf) erase nothing.
+// bd dm7f.54: EXPORTED (`SwapRouteEmit.h`) so the angle-select emitter's
+// network path erases its tree with this one cascade rather than a third copy.
+}  // namespace
+
 void eraseDeadCondTreeInterior(const CondTree &Tree, const Value *Root,
                                TaintSet &taint) {
   for (Instruction *N : llvm::reverse(Tree.Nodes))
@@ -670,6 +674,8 @@ void eraseDeadCondTreeInterior(const CondTree &Tree, const Value *Root,
       Leaf->eraseFromParent();
     }
 }
+
+namespace {
 
 // One content arm's phase stream on `emitRegion`'s retired-form path: whether it
 // fires on ¬flag (X-bracketed) and its ordered `@cq_phi_<sfx>` gates.
@@ -946,7 +952,47 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
       return;  // unreachable: a tree with nodes has an ancilla root.
     }
   }
-  Value *Flag = RailCond   ? Cond
+  //
+  //    ⚠ bd dm7f.54 — A RAIL (or claimed φ) ROOT WITH TWO CONTENT ARMS
+  //    (`if (b) cq_theta(&t, A); else cq_theta(&t, B);`) takes a COPY FLAG: the
+  //    network's `CopyRailRoot` mints `bf = |0>; cqrt_cnot(b, bf)` (the 4.4
+  //    select's r9e5 flag, the register read in a CONTROL slot only), and the
+  //    two gates then take the COMPARE path's X-bracket form on `bf`, per the
+  //    owner ruling `owner-ruling-angle-select-xbracket-2026-10-13`: each arm's
+  //    angle reaches exactly ONE controlled gate and the `b = 1` branch never
+  //    touches `B`, where the additivity spelling `ry(h,B); cry(b,h,−B);
+  //    cry(b,h,A)` would read `B` twice. The ternary twin
+  //    `cq_theta(&t, b ? A : B)` emits the identical stream
+  //    (`emitAngleSelectRegion`'s `NetCond`). A ONE-arm rail region keeps the
+  //    additivity form below, byte-unchanged.
+  const bool RailCopy = RailCond && Gates.size() > 1;
+  if (RailCopy) {
+    CondTree RailTree;
+    if (!collectCondTree(Cond, RailTree, /*AllowLogicalSelect=*/true,
+                         /*AllowRailPhi=*/true) ||
+        !RailTree.Nodes.empty() ||
+        RailTree.RailLeaves.size() + RailTree.RailPhiLeaves.size() != 1) {
+      diagnoseUnderControl(CondI, "control flow");
+      return;
+    }
+    switch (emitCondNetwork(Cond, RailTree, wd, csyms, taint, /*Before=*/BI,
+                            DL, /*AllowQQLeaves=*/false, Net,
+                            /*CopyRailRoot=*/true, /*LeafWireRuled=*/true)) {
+    case CondNetDisp::Ok:
+      break;
+    case CondNetDisp::MintDiagnosed:
+      return;
+    case CondNetDisp::Malformed:
+      diagnoseUnderControl(CondI, "control flow");
+      return;
+    }
+    if (Net.RootIsRail || !Net.Root || !Net.RailRootFlag) {
+      diagnoseUnderControl(CondI, "control flow");
+      return;  // unreachable: the copy is the network's only emission.
+    }
+  }
+  Value *Flag = RailCopy   ? Net.Root
+                : RailCond ? Cond
                 : TreeCond ? Net.Root
                            : lowerCompareToFlag(
                                  cast<CmpInst>(Cond), wd, taint,
@@ -1088,9 +1134,9 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
       diagnoseUnderControl(CondI, "control flow");
       return;
     }
-    if (RailCond && G.second) {
-      // `classifyArms` admits at most ONE content arm for a rail, so `Prev` is
-      // null here; the check is the Rule-1 shape, not a live protection.
+    if (RailCond && !RailCopy && G.second) {
+      // A one-arm rail region (two arms take `RailCopy`), so `Prev` is null
+      // here; the check is the Rule-1 shape, not a live protection.
       if (Prev) {
         diagnoseUnderControl(CondI, kBareRailCondReason);
         return;
@@ -1129,7 +1175,7 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
       Prev = TNeg;
       continue;
     }
-    if (!RailCond && G.second)
+    if ((!RailCond || RailCopy) && G.second)
       stamp(B.CreateCall(X, {Flag}));
     G.first->moveBefore(BI);
     if (Prev)
@@ -1144,10 +1190,12 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
     // read point is a still-standing `@cq_theta` at the re-verification's slot
     // (`CQLoweringPass` runs it BEFORE `lowerRotations`), which is what the
     // record needs.
-    if (RailCond)
+    // (bd dm7f.54: under `RailCopy` the gate reads the copy ANCILLA; the
+    // register's control read is the network's `cqrt_cnot`, recorded there.)
+    if (RailCond && !RailCopy)
       markRailCondRead(taint, Flag, G.first);
     Prev = G.first;
-    if (!RailCond && G.second)
+    if ((!RailCond || RailCopy) && G.second)
       stamp(B.CreateCall(X, {Flag}));
   }
 
@@ -1241,7 +1289,11 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //    proved the target off every leaf wire — or, for a state prep, the target
   //    is the hoisted theta's own fresh rail. Each leaf strip is recorded in
   //    `DischargedFlagGates` exactly as the branch phase records its tree's.
-  if (TreeCond) {
+  //
+  //    bd dm7f.54 — the `RailCopy` ancilla is un-copied (`cqrt_cnot(b, bf)`)
+  //    and freed by the same `stripCondNetwork`: `bf` returns to `x ⊕ x = 0` on
+  //    every basis branch, a proven-|0> free, and the register is untouched.
+  if (TreeCond || RailCopy) {
     SmallVector<CallInst *, 4> LeafStrips;
     stripCondNetwork(Net, wd, csyms, taint, /*Before=*/BI, DL,
                      /*AllowQQLeaves=*/false, &LeafStrips);
@@ -3010,8 +3062,15 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
   // ever `push_back`s, so a stale or out-of-range index is not reachable, but a
   // silent skip here would restore the over-decline with no diagnostic — so an
   // out-of-range index declines LOUDLY instead (Rule 1, never a third path).
+  //
+  // bd dm7f.54 — an `AngleSelectRegion` with a φ leaf takes THIS loop too, for
+  // the select's reason: `emitAngleSelectRegion`'s Ry stem RE-READS its tree off
+  // the live select (the `SelectMergeEmit` H-1 discipline) and needs the φ to be
+  // the prep's hoisted `cq_theta_i1` already. It is as inert as a
+  // `SelectRegion` (null block fields), so the no-cycle argument carries.
   for (size_t i = 0; i < N; ++i) {
-    if (Regions[i].Kind != ControlRegion::SelectRegion)
+    if (Regions[i].Kind != ControlRegion::SelectRegion &&
+        Regions[i].Kind != ControlRegion::AngleSelectRegion)
       continue;
     for (unsigned P : Regions[i].PrepRegionIdxs) {
       if (P == ControlRegion::kNoParent)
@@ -3137,7 +3196,10 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
       // drbq Inc 2b (control-in-place-PRD §12.3) — a tainted-condition select
       // over the classical rotation ANGLE, feeding ONE chained
       // `cq_theta`/`cq_phi`. Lowered BY DIFFERENCE (unconditional `R(h,B)`, flag
-      // mint, `R_controlled(f,h,A−B)`, strip, free): no CFG diamond, no rail, no
+      // mint, `R_controlled(f,h,A−B)`, strip, free — ⚠ HISTORY: since bd
+      // dm7f.6 the Ry stem is the X-BRACKET form, `R_c(f,h,A); x(f);
+      // R_c(f,h,B); x(f)`, and since bd dm7f.54 its flag may be a network root
+      // over a rail, a φ or a compound tree): no CFG diamond, no rail, no
       // route, no flatten, no child nest — its block fields are all null, so the
       // pre-flight above treated it as inert (the `if (!Doomed) continue;`
       // guard), exactly as for a `SelectRegion`. Dispatch + continue BEFORE the

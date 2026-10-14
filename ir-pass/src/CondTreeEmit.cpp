@@ -195,6 +195,16 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
   // — is not made at all. The other three call sites pass `AllowRailPhi = false`
   // and their `RailPhiLeaves` is empty by construction.
   //
+  // ⚠ bd dm7f.54 FALSIFIED THE PARAGRAPH ABOVE (L7): `CopyRoot` CAN NOW BE
+  // REACHED WITH A φ ROOT. `emitInPlaceRotationRegion`'s two-arm register
+  // condition (`RailCopy`) calls this with a `collectCondTree(…, AllowRailPhi =
+  // true)` tree whose ROOT is the claimed φ and `CopyRailRoot = true`, so the φ
+  // (still a live `PHINode`: that region emits BEFORE the prep) is read in the
+  // copy `cqrt_cnot`'s CONTROL slot and the root handed back is the fresh `bf`
+  // ancilla — the same read-only use a rail root gets, by the same membership
+  // test. `Out.RootIsRail` is then false, which is what that caller requires
+  // before it `cqrt_x`-brackets the root.
+  //
   // ⚠ AND THE HAZARD NARRATIVE THAT USED TO JUSTIFY WIDENING `Out.RootIsRail`
   // WAS WRONG: "a φ root reaching this function would return `RootIsRail=false`
   // and the kickback would `cqrt_x`-BRACKET the user's register" could not

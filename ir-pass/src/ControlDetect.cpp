@@ -37,6 +37,7 @@
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/InstIterator.h"  // instructions() (bd dm7f.54 pre-claim)
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
@@ -813,6 +814,26 @@ ControlPlan detectControlRegions(Module &M, WidthDispatch &wd,
     // later, in `lowerControlRegions`.
     std::optional<LoopInfo> LI;
     ClaimedSelects.clear();
+    // bd test_C_libtooling-dm7f.54 — PRE-CLAIM the logical-`select i1` NODES of
+    // every Ry-stem angle select's condition tree (`selIsRyAngleOperand`; the
+    // header there carries the argument). `-O1` spells `(a && b) ? A : B` as
+    // `%n = select i1 %a, i1 %b, i1 false` ahead of the angle select, and the
+    // scan below would otherwise classify `%n` first, as a 4.4 `i1` DATA select,
+    // and replace it with a merge rail the angle tree cannot read. Same grammar
+    // as gate 2 (`AllowLogicalSelect`, `AllowRailPhi`); a node is claimed only
+    // when its tree collects, and only the `SelectInst` nodes are claimed.
+    for (Instruction &I : instructions(F))
+      if (auto *Sel = dyn_cast<SelectInst>(&I))
+        if (taint.Tainted.count(Sel->getCondition()) &&
+            selIsRyAngleOperand(Sel)) {
+          CondTree AngleTree;
+          if (collectCondTree(Sel->getCondition(), AngleTree,
+                              /*AllowLogicalSelect=*/true,
+                              /*AllowRailPhi=*/true))
+            for (Instruction *N : AngleTree.Nodes)
+              if (isa<SelectInst>(N))
+                ClaimedSelects.insert(N);
+        }
     for (BasicBlock &BB : F) {
       Instruction *Term = BB.getTerminator();
       if (auto *BI = dyn_cast<BranchInst>(Term)) {

@@ -6188,8 +6188,16 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       //     HERE (`fmt3_probes/src/n23.c`, measured) with the SAME string it got at
       //     `classifyAngleSelect`'s l4x4.a gate before — so the verdict and the
       //     diagnostic are unchanged; only the fence that speaks moved.
-      if (RegCond && Arms.size() > 1)
-        return declineRailClass();
+      //
+      //     ⚠ RETIRED by bd dm7f.54. Neither spelling above was built: the two-arm
+      //     rail region takes a CNOT COPY FLAG (`CondTreeEmit`'s `CopyRailRoot`,
+      //     the r9e5 4.4-select flag) and the compare path's X-bracket form on
+      //     it, `bf = cnot-copy(b); cry(bf,h,A); x(bf); cry(bf,h,B); x(bf);
+      //     un-copy; free(bf)`, per `owner-ruling-angle-select-xbracket-
+      //     2026-10-13` (each angle in one gate, no `cqrt_x` on the register).
+      //     The M-β target is the compare path's (`Gates.back()`). Every other
+      //     clause of this class runs unchanged for it; a two-PREP if/else still
+      //     declines below (§14.2e, owner ruling Q4).
       // R2 — the angle is CLASSICAL (Rule 3). `taintedAngleGate` above walks a
       // `cq_phi` SPINE and never inspects a theta at the arm incoming, so this
       // is the check for this class; same predicate, same string as the phase
@@ -9501,6 +9509,19 @@ bool angleSelectArmsDefined(const Value *A, const Value *B) {
   return !valueCarriesUndef(A) && !valueCarriesUndef(B);
 }
 
+// bd dm7f.54 — the header (`ArmAnalysis.h`) carries the argument. The CALL-SITE
+// attribute list only (`getAttributes()`, never `hasFnAttr`, which also reads
+// the callee): a devirtualized indirect call names a `nomerge` callee without
+// having been protected by it when SimplifyCFG ran (bd 4e4p).
+bool angleSelectLiteralSeedAdmissible(const CallInst *T) {
+  if (!T || T->arg_size() < 2)
+    return false;
+  const Value *Seed = T->getArgOperand(0);
+  if (!isa<ConstantInt>(Seed) && !isa<ConstantFP>(Seed))
+    return false;
+  return T->getAttributes().hasFnAttr(Attribute::NoMerge);
+}
+
 
 AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
                                     TaintSet &Taint, WidthDispatch &wd,
@@ -9613,6 +9634,9 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // and a select has no edge; LLVM 19 exposes LVI's condition analysis only
   // through a branch edge or a select-OPERAND use. So the literal stays on the
   // owner's desk (bd drbq.13), refused with the string it has always had.
+  // ⚠ NARROWED by bd dm7f.54 (below): a literal on a `nomerge` call site cannot
+  // be this fold's image and is admitted; this paragraph now describes the
+  // population WITHOUT the call-site attribute.
   // A RUNTIME base cannot be the image of that CONSTANT fold: IPSCCP
   // substitutes only constants, and SimplifyCFG sinks a call only when at most
   // ONE operand needs a φ (`NumPHIInsts <= 1`), so arg-0 must already AGREE in
@@ -9645,9 +9669,27 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // NO SUBJECT for the register-free phase stem: it has no arg-0, no register
   // and therefore no state-prep ambiguity to fence. `RotBase` stays null there
   // and every clause below that reads it is `IsPhase`-guarded.
+  //
+  // ---- bd test_C_libtooling-dm7f.54 — A `nomerge` LITERAL BASE IS ADMITTED
+  //      (`angleSelectLiteralSeedAdmissible`), which NARROWS the drbq.13 decline
+  //      above to the population its counter-example lives in. That
+  //      counter-example is a SimplifyCFG SINK of two thetas, and LLVM 19 sinks
+  //      no call that `cannotMerge()`; every direct `cq_theta_*` call clang emits
+  //      from `CQ.h` carries `nomerge` at the call site (measured, stage-1 IR
+  //      `attributes #N = { nomerge nounwind }`), so such a module is the user's
+  //      `bool t = 0; cq_theta(&t, c ? A : B)` (CQ_FINDINGS F4, reporter t4). The
+  //      stream is the runtime base's with `alloc(SEED)`: a fresh rail rotated
+  //      by exactly `A` or exactly `B`. Without the call-site attribute (hand
+  //      IR; a devirtualized function pointer, bd 4e4p) the decline stands with
+  //      its string, pinned by `..._reject_literal_base_offwire_fold.ll` and
+  //      `..._reject_state_prep.ll`. A literal owes no L1 record: it can never
+  //      turn quantum.
   Value *RotBase = IsPhase ? nullptr : T->getArgOperand(0);
   const bool UntaintedBase = !IsPhase && !Taint.Tainted.count(RotBase);
-  if (UntaintedBase && !(IsTheta && isRuntimeStatePrepSeed(RotBase, Taint)))
+  const bool LiteralSeed =
+      UntaintedBase && IsTheta && angleSelectLiteralSeedAdmissible(T);
+  if (UntaintedBase && !LiteralSeed &&
+      !(IsTheta && isRuntimeStatePrepSeed(RotBase, Taint)))
     return AngleSelectDisp::NotApplicable;
 
   // S4 — a BARE lowerable compare, ONE tainted operand, ONE user.
@@ -9659,7 +9701,27 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // stream's is not), and the compare feeding a SECOND angle select (two gates
   // per arm, which `clang -O1` produces from `if(c){g1;g2}else{g3;g4}`). All
   // three are recorded follow-ons, not defects.
-  if (!Tree.Nodes.empty() || Tree.Leaves.size() + Tree.RailLeaves.size() != 1)
+  //
+  // ---- bd test_C_libtooling-dm7f.54 — THE Ry STEM TAKES EVERY CONDITION KIND
+  //      THE 4.4 SELECT TAKES: a bare `_Bool` RAIL, a claimed region-merge φ
+  //      ROOT, or a COMPOUND tree (`and`/`or`/`xor`/logical `select i1` over
+  //      compare, rail and φ leaves; `SelectClassify` collects the tree with
+  //      `AllowLogicalSelect` for an angle select). `NetCond`: the flag is the
+  //      root of `CondTreeEmit`'s network minted at `T` with `CopyRailRoot`, so
+  //      it is ALWAYS an ancilla this region owns (a rail or φ root gets the
+  //      `cqrt_cnot` copy) and the X-bracket form of the owner ruling
+  //      (`owner-ruling-angle-select-xbracket-2026-10-13`) applies verbatim: no
+  //      `cqrt_x` ever touches a user register, and each arm reaches one gate.
+  //      The bare single COMPARE keeps the shipped path byte-for-byte. The PHASE
+  //      stem keeps its shipped scope (compare or bare rail); widening it to a
+  //      tree or φ root is a separate follow-on.
+  const bool SingleCmp = Tree.Nodes.empty() && Tree.Leaves.size() == 1 &&
+                         Tree.RailLeaves.empty() && Tree.RailPhiLeaves.empty();
+  const bool NetCond = IsTheta && !SingleCmp && Tree.LiteralLeaves.empty() &&
+                       (!Tree.Nodes.empty() || Tree.RailLeaves.size() == 1 ||
+                        Tree.RailPhiLeaves.size() == 1);
+  if (!NetCond && (!Tree.Nodes.empty() || !Tree.RailPhiLeaves.empty() ||
+                   Tree.Leaves.size() + Tree.RailLeaves.size() != 1))
     return AngleSelectDisp::NotApplicable;  // a compound `&&`/`||` tree.
   // bd 3qlq.4 — the single leaf is a COMPARE (every pre-1b line below) or a
   // RAIL (`_Bool b = …; cq_theta(&b, …); if (b) cq_phi(A); else cq_phi(B);`, which
@@ -9670,12 +9732,44 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // `cqrt_ry_<W>_controlled(b, …)` controlled on the register — is follow-on
   // 1b-C and DECLINES with `kBareRailCondReason` (not `NotApplicable`, which the
   // caller would report as `rotation angle`, the wrong reason).
-  const bool RailCond = !Tree.RailLeaves.empty();
-  Instruction *Cond = RailCond ? static_cast<Instruction *>(Tree.RailLeaves.front())
-                               : static_cast<Instruction *>(Tree.Leaves.front());
-  if (Cond != Sel->getCondition())
+  // ⚠ bd dm7f.54: the `cq_theta` Ry stem on a rail no longer reaches that
+  // decline — it is `NetCond` above (the CNOT copy flag). What still declines
+  // it is the retired register-form `cq_phi_<sfx>` stem (`IsPhi`).
+  const bool RailCond = !NetCond && !Tree.RailLeaves.empty();
+  // For `NetCond`, `Cond` is the tree ROOT: a node, a rail or a φ.
+  Instruction *Cond =
+      NetCond    ? dyn_cast<Instruction>(Sel->getCondition())
+      : RailCond ? static_cast<Instruction *>(Tree.RailLeaves.front())
+                 : static_cast<Instruction *>(Tree.Leaves.front());
+  if (!Cond || Cond != Sel->getCondition())
     return AngleSelectDisp::NotApplicable;
-  if (RailCond) {
+  // The root is a value this region's emitter may ERASE (a tree node) or a
+  // register the user owns (a rail call or a claimed φ, never erased).
+  const bool NetRegRoot =
+      NetCond && (isCondRailLeaf(Cond) || isa<PHINode>(Cond));
+  if (NetCond) {
+    // A node root's ONLY user is the select: the network is minted from it and
+    // erased once dead, and a second consumer (a `br` region, a second select,
+    // a data use) would be a second owner of one predicate — the S4
+    // single-user clause, one node up.
+    if (!NetRegRoot && !Cond->hasOneUse())
+      return AngleSelectDisp::NotApplicable;
+    // Every COMPARE leaf mints through `lowerCompareToFlag` with NO Q+Q width
+    // (`AllowQQLeaves = false`, the in-place Ry tree's policy), so each must
+    // have exactly one tainted operand — asked HERE, before any emission, since
+    // a mid-network mint failure would leave sibling flags dangling (the ziov.4
+    // discipline). Gate 2 already asked predicate scope and mintability.
+    for (CmpInst *Leaf : Tree.Leaves) {
+      const bool LT = Taint.Tainted.count(Leaf->getOperand(0)) != 0;
+      const bool RT = Taint.Tainted.count(Leaf->getOperand(1)) != 0;
+      if (LT == RT || !comparePredLowerable(Leaf) ||
+          !compareFlagMintable(Leaf, Taint))
+        return AngleSelectDisp::NotApplicable;
+    }
+    for (CallInst *Rail : Tree.RailLeaves)
+      if (!Taint.Tainted.count(Rail))
+        return AngleSelectDisp::NotApplicable;
+  } else if (RailCond) {
     if (!IsPhase) {
       diagnoseUnderControl(Sel, kBareRailCondReason);
       return AngleSelectDisp::Declined;
@@ -9723,7 +9817,8 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
     // (A RAIL condition may legitimately be another region's condition too —
     // nothing is minted or erased for it, so two regions on one register do
     // not contend; the compare clause exists because a compare's flag is.)
-    if (R.Merge == Sel || (!RailCond && R.Condition == Cond))
+    // (bd dm7f.54: a `NetCond` rail or φ ROOT is a register too.)
+    if (R.Merge == Sel || (!RailCond && !NetRegRoot && R.Condition == Cond))
       return AngleSelectDisp::NotApplicable;
     for (Instruction *I : R.Shadow)
       if (I == T)
@@ -9866,6 +9961,20 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
       blockInAnyCycle(Cond->getParent())) {
     diagnoseUnderControl(Sel, "control flow inside a loop body");
     return AngleSelectDisp::Declined;
+  }
+  // bd dm7f.54 — a `NetCond` tree has more than one anchor: every LEAF is a
+  // position the network reads (a compare is re-minted from, a rail or φ is
+  // read as a control), so each is asked the same cycle question `Cond` is.
+  if (NetCond) {
+    SmallVector<Instruction *, 8> LeafAnchors(Tree.Leaves.begin(),
+                                              Tree.Leaves.end());
+    LeafAnchors.append(Tree.RailLeaves.begin(), Tree.RailLeaves.end());
+    LeafAnchors.append(Tree.RailPhiLeaves.begin(), Tree.RailPhiLeaves.end());
+    for (Instruction *L : LeafAnchors)
+      if (blockInAnyCycle(L->getParent())) {
+        diagnoseUnderControl(Sel, "control flow inside a loop body");
+        return AngleSelectDisp::Declined;
+      }
   }
 
   // S7's RAIL prong. The base's wire closure is computed HERE — BEFORE the
@@ -10044,13 +10153,22 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // gate 2c prong (c) already carry, and the same reason: a positional scan
   // that tried to be wire-aware would have to answer the rail-identity question
   // this classifier only answers later, in S8.
+  //
+  // bd dm7f.54 — FOR `NetCond` THE WINDOW STARTS AT THE SELECT. The root may
+  // sit in another block (a rail defined in the entry, a φ in a merge block, a
+  // tree whose leaves are anywhere): what this clause protected — "no gate
+  // between the mint's operands and the mint" — is asked per leaf species by
+  // the wire walks instead: gate 2c's position-free prong over every compare
+  // leaf's provenance and its per-leaf positional prong up to `Sel`, and for
+  // every rail/φ leaf the DT prong, re-asked below at `T` (the mint point).
+  // The `(Sel, T)` stretch keeps this wire-blind scan.
   BasicBlock *BB = T->getParent();
-  if (Sel->getParent() != BB || Cond->getParent() != BB)
+  if (Sel->getParent() != BB || (!NetCond && Cond->getParent() != BB))
     return AngleSelectDisp::NotApplicable;
-  if (!Cond->comesBefore(Sel) || !Sel->comesBefore(T))
+  if ((!NetCond && !Cond->comesBefore(Sel)) || !Sel->comesBefore(T))
     return AngleSelectDisp::NotApplicable;
-  for (const Instruction *I = Cond->getNextNode(); I && I != T;
-       I = I->getNextNode()) {
+  for (const Instruction *I = (NetCond ? Sel : Cond)->getNextNode();
+       I && I != T; I = I->getNextNode()) {
     const auto *CI = dyn_cast<CallInst>(I);
     if (!CI)
       continue;
@@ -10163,6 +10281,49 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
       }
     }
 
+  // S11 (bd dm7f.54) — `NetCond` ONLY: THE RAIL LADDER RE-ASKED AT THE MINT
+  // POINT. `classifySelectRegion` asked rung (ii) (not measured before) and
+  // rung (iii) (the wire's DT prong) with the SELECT as read point, which is
+  // exact for the 4.4 data select, whose stream lands before `Sel`. This
+  // stream's first read of a rail is the network's `cqrt_cnot`/node gate,
+  // emitted immediately before `T`, so both rungs are re-asked with `T` — the
+  // SAME helpers, the SAME seed sets (the leaf union's `condProvenance`), only
+  // the read point moves. A COMPARE leaf's rung (ii) moves with it
+  // (`condCmpMeasuredBeforeReadPoint`); its rung (iii) is gate 2c's
+  // position-free prong, which has no read point to move.
+  if (NetCond) {
+    SmallPtrSet<Value *, 16> RailProv;
+    for (CallInst *Rail : Tree.RailLeaves)
+      condProvenance(Rail, Taint, RailProv);
+    for (PHINode *P : Tree.RailPhiLeaves)
+      condProvenance(P, Taint, RailProv);
+    for (Value *Name : RailProv)
+      if (railMeasuredBeforeReadPoint(Name, T, Taint, DT)) {
+        diagnoseUnderControl(Sel, "condition measured before the control route");
+        return AngleSelectDisp::Declined;
+      }
+    if (condCmpMeasuredBeforeReadPoint(Tree.Leaves, T, Taint, DT)) {
+      diagnoseUnderControl(Sel, "condition measured before the control route");
+      return AngleSelectDisp::Declined;
+    }
+    if (!RailProv.empty()) {
+      SmallVector<Value *, 16> RailSeeds(RailProv.begin(), RailProv.end());
+      // The same covered producer set gate 2c used (dm7f.53's one spelling).
+      SmallPtrSet<const CallInst *, 4> CoveredPhiGates;
+      condTreeCoveredPhiGates(Tree, plan, Taint, CoveredPhiGates);
+      const SmallPtrSetImpl<const CallInst *> *Cov =
+          CoveredPhiGates.empty() ? nullptr : &CoveredPhiGates;
+      if (findNonDiagonalWireGate(RailSeeds, /*CrossValueRouting=*/true,
+                                  /*EmitPoint=*/nullptr, /*DT=*/nullptr,
+                                  &Taint, Cov) &&
+          findNonDiagonalWireGate(RailSeeds, /*CrossValueRouting=*/true,
+                                  /*EmitPoint=*/T, DT, &Taint, Cov)) {
+        diagnoseUnderControl(Sel, "condition predates a non-diagonal gate");
+        return AngleSelectDisp::Declined;
+      }
+    }
+  }
+
   ControlRegion R;
   R.Kind = ControlRegion::AngleSelectRegion;
   R.Merge = Sel;
@@ -10171,8 +10332,26 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // bd `test_C_libtooling-z0re` — the classifier's runtime-base verdict, carried
   // to `emitAngleSelectRegion` for the L1 record (see
   // `ControlRegion::RuntimeSeedAdmitted`). The Ry stem is the only one that can
-  // reach here with an untainted base (S3).
-  R.RuntimeSeedAdmitted = UntaintedBase;
+  // reach here with an untainted base (S3). bd dm7f.54: a LITERAL seed is not a
+  // runtime one (no L1 record; the emitter re-asks
+  // `angleSelectLiteralSeedAdmissible` instead).
+  R.RuntimeSeedAdmitted = UntaintedBase && !LiteralSeed;
+  // bd dm7f.54 — a `NetCond` region carries the two records a `SelectRegion`
+  // carries for the same tree: the rail ladder was asked (gate 2 + S11), and
+  // one precedence edge per claimed φ leaf so that the prep whose M-β turns the
+  // φ into its hoisted `cq_theta_i1` is emitted FIRST (the emitter re-reads its
+  // tree off the live select, exactly as `SelectMergeEmit` does). The index is
+  // the ONE owner's answer (`preppedRailPhiRegionIdx`), never re-derived.
+  if (NetCond) {
+    R.RailLadderProven =
+        !Tree.RailLeaves.empty() || !Tree.RailPhiLeaves.empty();
+    for (PHINode *P : Tree.RailPhiLeaves) {
+      const unsigned Idx = preppedRailPhiRegionIdx(P, plan);
+      if (Idx == ControlRegion::kNoParent)
+        return AngleSelectDisp::NotApplicable;  // gate 2 refused it already.
+      R.PrepRegionIdxs.push_back(Idx);
+    }
+  }
   plan.Regions.push_back(R);
   return AngleSelectDisp::Accepted;
 }
