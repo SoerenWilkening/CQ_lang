@@ -680,7 +680,7 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
     // so only the chain's round-2 growth remains, which PredMux leaves almost
     // nothing to act on. A backstop, unpinned by a fixture; the day a clone-level
     // round-2 mask-growth fixture exists (cf. main's
-    // spec_reject_predicted_classical_round2_mask_growth.ll), it pins this.
+    // spec_accept_predicted_classical_round2_mask_growth.ll), it pins this.
     const bool ResultWasTainted =
         Inner->getType()->isVoidTy() || cloneTaint.Tainted.count(Inner);
     SpecRecord Rec =

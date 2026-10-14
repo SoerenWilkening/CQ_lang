@@ -1,3 +1,30 @@
+; spec_accept_predicted_classical_round2_mask_growth.ll — ACCEPT (bd dm7f.22, batch 053; was
+; spec_reject_predicted_classical_round2_mask_growth.ll, a DECLINE under bd cepm round 1b).
+; A ROUND-2 MASK-GROWTH site: `t = h(q, y)` with `y` a 6.5 classical-call-arm merge `%out`
+; (`if (q > 5) y = ext_f(7);`). The SETTLE step (`settleSpecPredictions`) still taints `t` AT
+; ROUND 1: `LaterTaintOracle` sees `y` decided by the tainted `q > 5`, the possible mask is `11`,
+; and `predictReturnTainted(h, 11)` is quantum. `t` then decides an in-place Ry of `q2`.
+;
+; WHY THE VERDICT CHANGED (batch 053):
+;  - dm7f.22 (7d0f5de9) made a ClassicalCallArm region reorderable in lowerControlRegions'
+;    sequential-chain pre-flight. That pre-flight produced the `control flow under quantum
+;    control` decline this fixture pinned; it is gone.
+;  - The HISTORY objection (the clone's copy-out rail `copy(y + 1)` stays allocated) no longer
+;    holds: p3kd.13's `__cq_q_h_11_unc(T, q, out)` recomputes `y + 1` and copies it into the
+;    copy-out rail `T`, which returns to |0> and is freed by `cqrt_free(T)`. The HISTORY
+;    retirement trigger is met by that uncompute, not by an owner ruling.
+;  - An independent core reviewer derived the stream by hand and ruled the accept correct;
+;    stage 2b (`free_pairing_check.py`) on the output: 12 cqrt_free sites, 12 verified.
+; Pinned stream in @main: the 6.5 merge into a fresh `OUT` (`ext_f(7)` hoisted, two X-bracketed
+; `cqrt_copy_i32_controlled`, the compare strip, its free), `T = __cq_q_h_11(Q, OUT)`, the
+; `t > 3` flag `F`, `cqrt_ry_i32_controlled(F, Q2, .2)`, the flag strip, then
+; `__cq_q_h_11_unc(T, Q, OUT)` BEFORE `cqrt_free(T)`. Mutant (batch 053): blinding
+; `LaterTaintOracle` in `specCallResultMayTurnQuantum` (TaintPropagation.cpp) leaves `t`
+; classical at round 1 and this fixture declines (`kMsgPredictedClassicalQuantum`).
+; RETIREMENT TRIGGER (L7): if `T` is ever left allocated, freed before its `_unc`, or `t` stays
+; classical at round 1, re-derive the stream by hand; never regenerate the pinned lines by reflex.
+;
+; HISTORY (the header this fixture carried as a DECLINE, verbatim):
 ; spec_reject_predicted_classical_round2_mask_growth.ll — DECLINE (bd test_C_libtooling-cepm (round 1b)).
 ; bd cepm ROUND 1b — a ROUND-2 MASK-GROWTH site. `t = h(q, y)` with `y` a 6.5 classical-call-arm
 ; merge `%out` (`if (q > 5) y = ext_f(7);`), tainted only in ROUND 2. At round 1 the mask is `01`
@@ -42,10 +69,61 @@
 ; Hand-inlined twin (r2bT.c: `g(q); int t = y + 1;`) ACCEPTS with a different stream — the
 ; compiler-kept copy-out class, left for an owner ruling.
 ; Regenerate: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/cepm_probes/mkprobes.py + gen.sh r2bC, then mkfix.py.
+; (The DECLINE ran `not %cq-opt ...` and matched `cq controlled lowering: control flow under
+; quantum control`; END OF HISTORY.)
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
-; CHECK: cq controlled lowering: control flow under quantum control
+; CHECK-NOT: error:
+; CHECK-LABEL: define i32 @main(
+; CHECK:      [[Q:%[a-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 {{%[a-z0-9_.]+}})
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q]], double 5.000000e-01)
+; CHECK-NEXT: [[E:%[a-z0-9_.]+]] = tail call i32 @ext_f(i32 noundef 7)
+; CHECK-NEXT: [[C:%[a-z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 [[Q]], i32 5)
+; CHECK-NEXT: [[OUT:%[a-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: [[S1:%[a-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 [[E]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 [[C]], i32 [[S1]], i32 [[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 [[C]])
+; CHECK-NEXT: [[S0:%[a-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 [[C]], i32 [[S0]], i32 [[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 [[C]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 [[C]], i32 [[Q]], i32 5)
+; CHECK-NEXT: call void @cqrt_free(i32 [[C]])
+; CHECK-NEXT: [[T:%[a-z0-9_.]+]] = tail call i32 @__cq_q_h_11(i32 noundef [[Q]], i32 noundef [[OUT]])
+; CHECK-NEXT: [[Q2:%[a-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 {{%[a-z0-9_.]+}})
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q2]], double 4.000000e-01)
+; CHECK-NEXT: [[F:%[a-z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 [[T]], i32 3)
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 [[F]], i32 [[Q2]], double 2.000000e-01)
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 [[F]], i32 [[T]], i32 3)
+; CHECK-NEXT: call void @__cq_q_h_11_unc(i32 [[T]], i32 [[Q]], i32 [[OUT]])
+; CHECK-NEXT: call void @cqrt_free(i32 [[T]])
+; CHECK-NEXT: call void @cqrt_free(i32 [[F]])
+; CHECK-NEXT: {{%[a-z0-9_.]+}} = call i32 @cqrt_measure_i32(i32 [[Q2]])
+; CHECK-NEXT: {{%[a-z0-9_.]+}} = call i32 @cqrt_measure_i32(i32 [[Q]])
+; CHECK-NEXT: add nsw i32
+; CHECK-NEXT: {{%[a-z0-9_.]+}} = call i32 @cqrt_measure_i32(i32 [[OUT]])
+; CHECK-NEXT: add nsw i32
+; CHECK-NEXT: ret i32
+; The clone: `y + 1` into a fresh copy-out rail, the operand strip and free.
+; CHECK-LABEL: define internal i32 @__cq_q_h_11(
+; CHECK-SAME: i32 noundef [[A:%[a-z0-9_.]+]], i32 noundef [[K:%[a-z0-9_.]+]])
+; CHECK-NEXT: tail call void @__cq_q_g_1(i32 noundef [[A]])
+; CHECK-NEXT: [[HO:%[a-z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 [[K]], i32 1)
+; CHECK-NEXT: [[CO:%[a-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32(i32 [[HO]], i32 [[CO]])
+; CHECK-NEXT: call void @cq_template_add_i32_hl_unc(i32 [[HO]], i32 [[K]], i32 1)
+; CHECK-NEXT: call void @cqrt_free(i32 [[HO]])
+; CHECK-NEXT: ret i32 [[CO]]
+; Its twin: recompute `y + 1` and copy it into its first parameter (the caller's T), so T
+; returns to |0>.
+; CHECK-LABEL: define internal void @__cq_q_h_11_unc(
+; CHECK-SAME: i32 [[UO:%[a-z0-9_.]+]], i32 noundef [[UA:%[a-z0-9_.]+]], i32 noundef [[UK:%[a-z0-9_.]+]])
+; CHECK-NEXT: tail call void @__cq_q_g_1(i32 noundef [[UA]])
+; CHECK-NEXT: [[HU:%[a-z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 [[UK]], i32 1)
+; CHECK-NEXT: call void @cqrt_copy_i32(i32 [[HU]], i32 [[UO]])
+; CHECK-NEXT: call void @cq_template_add_i32_hl_unc(i32 [[HU]], i32 [[UK]], i32 1)
+; CHECK-NEXT: call void @cqrt_free(i32 [[HU]])
+; CHECK-NEXT: ret void
 
 ; ModuleID = 'llvm-link'
 source_filename = "llvm-link"
