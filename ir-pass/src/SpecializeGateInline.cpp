@@ -1,6 +1,4 @@
-// SpecializeGateInline.cpp — gate subroutines compiled at their call site (bd
-// test_C_libtooling-p3kd.21). The contract and the trigger list are in
-// SpecializeGateInline.h.
+// SpecializeGateInline.cpp — bd p3kd.21; contract and triggers in the header.
 
 #include "SpecializeGateInline.h"
 
@@ -92,8 +90,7 @@ GateSets collectGateSets(Module &M, const TaintSet &taint) {
   return S;
 }
 
-// The questions, asked on one taint snapshot. `MayGain` is the later-round
-// over-approximation (empty in the re-ask, where taint is final).
+// The questions on one taint snapshot; `MayGain` is empty in the final re-ask.
 struct Asker {
   const GateSets &S;
   const TaintSet &taint;
@@ -249,9 +246,7 @@ void simplifyCallers(ArrayRef<Function *> Callers) {
     FPM.run(*F, FAM);
 }
 
-// Termination backstop beside the inline history (a site the -O1 run clones
-// loses its history entry).
-constexpr unsigned kMaxRounds = 64;
+constexpr unsigned kMaxRounds = 64;  // backstop: a site -O1 clones loses its history
 
 }  // namespace
 
@@ -300,8 +295,7 @@ bool inlineGateSubroutines(Module &M, const TaintSet &taint,
   if (Callers.empty())
     return false;
   simplifyCallers(Callers.getArrayRef());
-  // Debug lever (env-gated, no behaviour change; the CQ_RAILBANK_DBG precedent):
-  // a module that later declines prints nothing on stdout.
+  // Debug lever (env-gated; the CQ_RAILBANK_DBG precedent).
   if (::getenv("CQ_GATEINLINE_DBG"))
     for (Function *F : Callers)
       F->print(llvm::errs());
@@ -359,9 +353,14 @@ static bool onlyUsedListUsers(const Function &F) {
   return true;
 }
 
+bool isProgramEntryPoint(const Function &F) {
+  return F.getName() == "main" && !F.isDeclaration() && !F.hasLocalLinkage();
+}
+
 bool isQuantumReturnExport(const Function &F) {
   const auto *RT = dyn_cast<IntegerType>(F.getReturnType());
-  if (F.isDeclaration() || !RT || RT->getBitWidth() <= 32)
+  if (F.isDeclaration() || !RT || RT->getBitWidth() <= 32 ||
+      isProgramEntryPoint(F))
     return false;
   return onlyUsedListUsers(F);
 }

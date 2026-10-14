@@ -19,16 +19,13 @@
 ; taint_reject_quantum_return_fnptr.ll and
 ; spec_reject_predicted_classical_round2_return_crossing.ll.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
-; RUN: %filecheck %s < %t.ll
-; CHECK-LABEL: define i32 @main(
-; CHECK: [[Q:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i32(i32 %5)
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q]], double 5.000000e-01)
-; CHECK-NEXT: [[T:%[0-9a-z_.]+]] = tail call i32 @__cq_q_h_01(i32 noundef [[Q]], i32 noundef %5)
-; CHECK-NEXT: [[M:%[0-9a-z_.]+]] = call i32 @cqrt_measure_i32(i32 [[Q]])
-; CHECK-NEXT: call void @cqrt_addc_i32(i32 [[T]], i32 [[M]])
-; CHECK-NEXT: ret i32 [[T]]
-; CHECK-NOT: @f(
+; bd p3kd.21 R11 r2 F1 (bd r2j3.35, 2026-10-15) — A DECLINE AGAIN, on its true
+; ground. The callee is still compiled at its site, so the 3jru crossing is gone,
+; but `main` then returns the register as the process exit status, which NORTHSTAR
+; goal 1 forbids: the subject of this fixture IS that return, so it is re-expected
+; as the main-return decline (11adde57..020fc11e had accepted it).
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; CHECK: error: {{.*}}in function main i32 (i32, ptr): cq taint escape: quantum value returned from main without cq_measure
 
 ; ModuleID = 'llvm-link'
 source_filename = "llvm-link"

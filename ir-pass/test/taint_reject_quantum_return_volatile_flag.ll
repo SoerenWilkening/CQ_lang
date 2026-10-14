@@ -28,20 +28,13 @@
 ; taint_reject_quantum_return_fnptr.ll and
 ; spec_reject_predicted_classical_round2_return_crossing.ll.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
-; RUN: %filecheck %s < %t.ll
-; CHECK-LABEL: define i32 @main(
-; CHECK: [[K:%[0-9]+]] = icmp eq i32 %5, %8
-; CHECK: [[Q:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q]], double 5.000000e-01)
-; CHECK-NEXT: [[C:%[0-9a-z_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 [[Q]], i32 1)
-; CHECK-NEXT: [[F:%[0-9a-z_.]+]] = call i32 @cq_template_and_i1_hl(i32 [[C]], i1 [[K]])
-; CHECK-NEXT: call void @cqrt_xorc_i1(i32 [[F]], i1 [[K]])
-; CHECK: [[M:%[0-9a-z_.]+]] = call i32 @cqrt_measure_i32(
-; CHECK-NEXT: [[W:%[0-9a-z_.]+]] = call i32 @cq_template_zext_i1_to_i32(i32 [[F]])
-; CHECK-NEXT: call void @cqrt_addc_i32(i32 [[W]], i32 [[M]])
-; CHECK-NEXT: ret i32 [[W]]
-; CHECK-NOT: @slice(
+; bd p3kd.21 R11 r2 F1 (bd r2j3.35, 2026-10-15) — A DECLINE AGAIN, on its true
+; ground. The callee is still compiled at its site, so the 3jru crossing is gone,
+; but `main` then returns the register as the process exit status, which NORTHSTAR
+; goal 1 forbids: the subject of this fixture IS that return, so it is re-expected
+; as the main-return decline (11adde57..020fc11e had accepted it).
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; CHECK: error: {{.*}}in function main i32 (i32, ptr): cq taint escape: quantum value returned from main without cq_measure
 
 ; ModuleID = '/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a2b9793f123da59f8/te_scratch/r4/q61_volatile_arm.c'
 source_filename = "/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a2b9793f123da59f8/te_scratch/r4/q61_volatile_arm.c"

@@ -127,7 +127,12 @@ bool declineMissedGateSubroutines(llvm::Module &M, const TaintSet &taint,
 // (owner ruling owner-ruling-p3kd21-gate-subroutines-2026-10-14: the widening is
 // approved for integer returns of 32 bits or wider ONLY), as does a function with
 // an in-module use.
+// `main` is never one: its return is the process exit status, and a register
+// returned there fails loudly (`declineTaintEscapes`, R11 r2 F1).
 bool isQuantumReturnExport(const llvm::Function &F);
+
+// The program entry point: an externally visible definition named `main`.
+bool isProgramEntryPoint(const llvm::Function &F);
 
 // The post-lowering half: in every `isQuantumReturnExport` function, a `ret`
 // carrying an `i32` handle returns its zero-extension. A `ret` carrying anything

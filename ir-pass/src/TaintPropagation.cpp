@@ -1106,6 +1106,9 @@ constexpr char kMsgNonI32Return[] =
 // handle (`ret i32 0` reads as handle 0). Loud until the classical paths are
 // materialized as registers (follow-up filed from bd p3kd.21); asked for an i64+
 // export only (see the ret clause), pinned by spec_reject_gate_sub_mixed_return.ll.
+// bd p3kd.21 R11 r2 F1: pinned by spec_reject_gate_sub_main_return{,_via_call}.ll.
+constexpr char kMsgQuantumMainReturn[] =
+    "cq taint escape: quantum value returned from main without cq_measure";
 constexpr char kMsgMixedReturn[] =
     "cq taint escape: register returned on one path and a classical value on "
     "another";
@@ -1453,9 +1456,18 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
           // owner ruling owner-ruling-p3kd21-gate-subroutines-2026-10-14: integer
           // returns of 32 bits or wider only). A narrower or fp return, and a
           // function WITH a use, keep this decline: its callers read an `iN`.
+          // bd p3kd.21 R11 r2 F1 — THE PROGRAM ENTRY POINT. `main`'s return is
+          // the process exit status, classical by definition: a register returned
+          // there reaches classical code without `cq_measure`, which NORTHSTAR
+          // goal 1 makes physics-forbidden (coordinator ruling from NORTHSTAR,
+          // 2026-10-15). Loud at every width, and FIRST, so neither the i32
+          // Escaped contract nor the export widening admits it.
           if (RV && taint.Tainted.count(RV) &&
-              !Ret->getFunction()->getReturnType()->isIntegerTy(32) &&
-              !isQuantumReturnExport(*Ret->getFunction()))
+              isProgramEntryPoint(*Ret->getFunction()))
+            diagnoseEscape(&I, kMsgQuantumMainReturn);
+          else if (RV && taint.Tainted.count(RV) &&
+                   !Ret->getFunction()->getReturnType()->isIntegerTy(32) &&
+                   !isQuantumReturnExport(*Ret->getFunction()))
             diagnoseEscape(&I, kMsgNonI32Return);
           // bd p3kd.21: in an i64+ export (the population the export admission
           // adds), a reachable untainted `ret` beside a tainted one (separate
@@ -3310,8 +3322,9 @@ void deleteGlobalPhases(Module &M, WidthDispatch &wd, TaintSet &taint) {
 // `taint_reject_quantum_return_fnptr.ll` and
 // `spec_reject_predicted_classical_round2_return_crossing.ll`. bd p3kd.21
 // compiles a gate subroutine at its call site, which turned the
-// `condtree_classical_leaf_reject_callee_quantum_return*.ll` pair and nine
-// `taint_reject_quantum_return_*.ll` members into accepts (their file names are
+// `condtree_classical_leaf_reject_callee_quantum_return*.ll` pair and seven
+// `taint_reject_quantum_return_*.ll` members into accepts (`_volatile_flag` and
+// `_9bhg_quantum_twin` decline instead on `main`'s return, R11 r2 F1) (their file names are
 // history; `_boolarg` was renamed `taint_accept_…`).
 static constexpr char kMsgQuantumReturn[] =
     "cq taint escape: quantum value returned across a function boundary";
