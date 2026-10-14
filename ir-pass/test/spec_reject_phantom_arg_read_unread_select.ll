@@ -15,6 +15,11 @@
 ; reader and left the read in place — one consumer too many for the spine.
 ;
 ;
+; bd p3kd.21 R11 r2 F1 (bd r2j3.35, 2026-10-15): `main` now MEASURES the value it
+; returns. A register returned from `main` reaches the process exit status without
+; `cq_measure`, which NORTHSTAR goal 1 forbids and the pass now refuses
+; (spec_reject_gate_sub_main_return.ll); the measurement is outside this fixture's
+; subject, which is unchanged.
 ; RUN: env CQ_DEADARG_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
 ; RUN:   | %filecheck %s
 ; CHECK-NOT: CQ_DEADARG_DBG
@@ -41,7 +46,8 @@ define i32 @main(i32 noundef %0, ptr nocapture noundef readonly %1) local_unname
   %12 = tail call zeroext i1 @cq_measure_i1(i1 noundef zeroext %11) #4
   %13 = zext i1 %12 to i32
   %14 = add nsw i32 %10, %13
-  ret i32 %14
+  %cq.main.m = call i32 @cq_measure_si32(i32 %14)
+  ret i32 %cq.main.m
 }
 
 ; Function Attrs: mustprogress nofree nounwind willreturn memory(read)
@@ -85,3 +91,5 @@ attributes #4 = { nounwind }
 !9 = !{!"Simple C/C++ TBAA"}
 !10 = !{!11, !11, i64 0}
 !11 = !{!"int", !8, i64 0}
+
+declare i32 @cq_measure_si32(i32)

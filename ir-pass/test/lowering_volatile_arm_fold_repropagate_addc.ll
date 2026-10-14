@@ -24,6 +24,11 @@
 ; Regenerate: clang -O1 -emit-llvm -S -I<repo>/include -include CQ.h caller.c -o <body>
 ;
 ;
+; bd p3kd.21 R11 r2 F1 (bd r2j3.35, 2026-10-15): `main` now MEASURES the value it
+; returns. A register returned from `main` reaches the process exit status without
+; `cq_measure`, which NORTHSTAR goal 1 forbids and the pass now refuses
+; (spec_reject_gate_sub_main_return.ll); the measurement is outside this fixture's
+; subject, which is unchanged.
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NODROP --allow-empty < %t.err
@@ -60,9 +65,12 @@
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CHECK: call i32 @cqrt_measure_i32(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
-; CHECK: call void @cqrt_addc_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK: call void @cqrt_addc_i32(i32 %[[OUT:[a-zA-Z0-9_.]+]], i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
-; CHECK: ret i32
+; (bd r2j3.35: `main` measures what it returns.)
+; CHECK: %[[MM:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[OUT]])
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: ret i32 %[[MM]]
 ; NODROP-NOT: CQ_DEADARG_DBG
 
 ; ModuleID = '/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/d2ac97c1-732d-4a6e-83a0-786b16babcc6/scratchpad/vsfp/r3p/stale3b.c'
@@ -87,7 +95,8 @@ define range(i32 -2147483643, -2147483648) i32 @main() local_unnamed_addr #0 {
   %6 = phi i32 [ 5, %4 ], [ 9, %0 ]
   %7 = tail call i32 @cq_measure_si32(i32 noundef %2) #3
   %8 = add nsw i32 %7, %6
-  ret i32 %8
+  %cq.main.m = call i32 @cq_measure_si32(i32 %8)
+  ret i32 %cq.main.m
 }
 
 ; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)

@@ -30,13 +30,16 @@
 ;
 ; bd p3kd.21 (2026-10-14): `inner` holds `cq_theta`, so it is a GATE SUBROUTINE and
 ; `main`'s use of its returned register compiles it at the call site
-; (SpecializeGateInline.h, trigger (c)). The stale read is then `main`'s
-; `and i32 %a, 1`, a value-op read, which `declineStaleRecordOps` owns; still loud,
-; on its true owner. THE `ret` CONSUMER this fixture was written for keeps its pin
-; in lowering_reject_inloop_rail_record_offchain_ret_export.ll (the same `inner`
-; as an export with no caller, so the stale read stays a `ret`).
+; (SpecializeGateInline.h, trigger (c)). bd p3kd.21 R11 r2 F1 (bd r2j3.35,
+; 2026-10-15): a register returned from `main` now fails loudly (NORTHSTAR goal 1,
+; spec_reject_gate_sub_main_return.ll), so `main` MEASURES the stale record `%r`
+; and returns the measured bit; the stale read is the `cq_measure` consumer, one of
+; the two this fixture names, and THIS fence speaks again, with its original
+; diagnostic. THE `ret` CONSUMER keeps its pin in
+; lowering_reject_inloop_rail_record_offchain_ret_export.ll (the same `inner` as an
+; export with no caller, so the stale read stays a `ret`).
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq opcode lowering: operand predates a non-diagonal gate
+; CHECK: error{{.*}}cq loop lowering: rail record read past an in-place gate on the same rail
 ; CHECK-NOT: cqrt_measure_i32
 ; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 declare void @cq_phi(double)
@@ -74,6 +77,7 @@ latch:                                            ; preds = %arm, %loop
 
 define i32 @main() {
   %r = call i32 @inner()
-  %s = and i32 %r, 1
+  %cq.main.m = call i32 @cq_measure_si32(i32 %r)
+  %s = and i32 %cq.main.m, 1
   ret i32 %s
 }

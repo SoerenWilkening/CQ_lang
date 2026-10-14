@@ -14,6 +14,11 @@
 ; verify-clean, `free_pairing_check.py` 0 violations, wrong. The CHECK-NOTs below
 ; pin every element of that wrong stream.
 ;
+; bd p3kd.21 R11 r2 F1 (bd r2j3.35, 2026-10-15): `main` now MEASURES the value it
+; returns. A register returned from `main` reaches the process exit status without
+; `cq_measure`, which NORTHSTAR goal 1 forbids and the pass now refuses
+; (spec_reject_gate_sub_main_return.ll); the measurement is outside this fixture's
+; subject, which is unchanged.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
@@ -23,7 +28,8 @@ define i32 @main(i32 %x, double %g) {
   %q   = call i32 @cq_theta_si32(i32 %x, double %g)
   %bad = call i32 @cqrt_addc_i32(i32 %q, i32 5)   ; NON-void fake, frozen arity
   %t   = mul i32 %q, 7                            ; dead template terminal off %q
-  ret i32 %bad
+  %cq.main.m = call i32 @cq_measure_si32(i32 %bad)
+  ret i32 %cq.main.m
 }
 
 ; The forward stream survives verbatim, and the spine emits NOTHING:
@@ -35,3 +41,5 @@ define i32 @main(i32 %x, double %g) {
 ; CHECK-NOT:  call i32 @cqrt_addc_i32(i32 %[[H]], i32 -5)
 ; CHECK-NOT:  call void @cqrt_ry_i32(i32 %[[H]], double
 ; CHECK-NOT:  call void @cqrt_free
+
+declare i32 @cq_measure_si32(i32)

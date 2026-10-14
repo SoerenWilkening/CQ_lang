@@ -43,6 +43,11 @@
 ; ⚠ A `DS_Error` decline writes 0 bytes to stdout, so the IR-text negative below
 ; is VACUOUS documentation; the property is pinned by the `not` inversion on the
 ; RUN line plus the string, mirrored character-for-character.
+; bd p3kd.21 R11 r2 F1 (bd r2j3.35, 2026-10-15): `main` now MEASURES the value it
+; returns. A register returned from `main` reaches the process exit status without
+; `cq_measure`, which NORTHSTAR goal 1 forbids and the pass now refuses
+; (spec_reject_gate_sub_main_return.ll); the measurement is outside this fixture's
+; subject, which is unchanged.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error: {{.*}}cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
 ; CHECK-NOT: cqrt_ry_i1_controlled
@@ -66,7 +71,8 @@ define i32 @main() local_unnamed_addr {
   %11 = add nsw i32 %8, %10
   %12 = add nsw i32 %11, %cz
   %13 = add nsw i32 %12, %um
-  ret i32 %13
+  %cq.main.m = call i32 @cq_measure_si32(i32 %13)
+  ret i32 %cq.main.m
 }
 
 declare i32 @cq_theta_si32(i32 noundef, double noundef)

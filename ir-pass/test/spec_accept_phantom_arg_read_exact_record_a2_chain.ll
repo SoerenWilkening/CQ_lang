@@ -12,6 +12,11 @@
 ; stream (TRACE-IDENT with the hand-inlined twin, measured).
 ;
 ;
+; bd p3kd.21 R11 r2 F1 (bd r2j3.35, 2026-10-15): `main` now MEASURES the value it
+; returns. A register returned from `main` reaches the process exit status without
+; `cq_measure`, which NORTHSTAR goal 1 forbids and the pass now refuses
+; (spec_reject_gate_sub_main_return.ll); the measurement is outside this fixture's
+; subject, which is unchanged.
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CLONE < %t.cqd0.ll
@@ -65,7 +70,8 @@ define i32 @main(i32 noundef %0, ptr nocapture noundef readonly %1) {
   %zm = tail call i32 @cq_measure_si32(i32 noundef %z)
   %16 = add nsw i32 %15, %9
   %17 = add nsw i32 %16, %zm
-  ret i32 %17
+  %cq.main.m = call i32 @cq_measure_si32(i32 %17)
+  ret i32 %cq.main.m
 }
 
 declare i32 @atoi(ptr nocapture noundef)

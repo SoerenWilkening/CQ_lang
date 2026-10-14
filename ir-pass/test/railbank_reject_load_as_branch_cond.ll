@@ -40,6 +40,11 @@
 ;   }
 ; (with `-g` the diagnostic is source-located at `d5a…:7:9`, the `if`.)
 ;
+; bd p3kd.21 R11 r2 F1 (bd r2j3.35, 2026-10-15): `main` now MEASURES the value it
+; returns. A register returned from `main` reaches the process exit status without
+; `cq_measure`, which NORTHSTAR goal 1 forbids and the pass now refuses
+; (spec_reject_gate_sub_main_return.ll); the measurement is outside this fixture's
+; subject, which is unchanged.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
 ; CHECK: cq rail bank: unsupported reader of a rail-bank cell
@@ -63,8 +68,8 @@ define range(i32 0, 3) i32 @main() local_unnamed_addr #0 {
   %9 = zext i1 %8 to i32
   %10 = add nuw nsw i32 %9, %4
   call void @llvm.lifetime.end.p0(i64 3, ptr nonnull %1) #3
-  ret i32 %10
-
+  %cq.main.m = call i32 @cq_measure_si32(i32 %10)
+  ret i32 %cq.main.m
 11:                                               ; preds = %0, %11
   %12 = phi i64 [ 0, %0 ], [ %18, %11 ]
   %13 = getelementptr inbounds [3 x i8], ptr %1, i64 0, i64 %12
@@ -111,3 +116,5 @@ attributes #3 = { nounwind }
 !12 = distinct !{!12, !13, !14}
 !13 = !{!"llvm.loop.mustprogress"}
 !14 = !{!"llvm.loop.unroll.disable"}
+
+declare i32 @cq_measure_si32(i32)
