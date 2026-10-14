@@ -1,0 +1,44 @@
+\labsessionheader{2026-10-14}{Batch 053: seven parallel goal-1 lanes, four designs}%
+  {f3490b3f}{634eca04-bbb3-40d2-90e1-88f298ff3da6}{none}
+
+\subsection*{Goal}
+Run as much parallel goal-1 work as the machine and review load allow, in disjoint file sets: seven implementer lanes (L1 uncompute spine, L2 speculation twin, L3 stale-read placement, L4 math.h lifting, L5 tainted control, L6 instrument, L7 angle select) in their own worktrees, and four read-only design passes (\bd{94ad}, \bd{wrwo}, \bd{p3kd.6}, \bd{01po.10}). Reviews followed the two-round R11 shape (owner ruling \texttt{owner-ruling-r11-wide-then-narrow-2026-10-13}).
+
+\subsection*{What landed}
+\begin{itemize}
+\item \commit{7534b695} L6, \bd{r2j3.4}: stage 2b refuses a phase inside a superposing restore window; severity choices read a label-only reduction.
+\item \commit{7d0f5de9} L5, \bd{dm7f.22} (sequential 6.5 arms reorderable) and \bd{dm7f.24} (one spelling of the tainted-branch test). The rail-mux router for \bd{dm7f.15}/\bd{dm7f.16} was built, found to need an unfinished audit, and reverted (local branch \texttt{batch053-L5-router-unreviewed}, \bd{dm7f.39}).
+\item \commit{27271489} L4, \bd{p3kd.9}, \bd{p3kd.8}, \bd{r2j3.25}: lift-boundary handle widths (i1..i64, f16..f80), undef phi on a dead edge, clone calling convention.
+\item \commit{8a46cb0b} L2, \bd{dm7f.25}, \bd{dm7f.26}, \bd{dm7f.27}, \bd{dm7f.29}, \bd{dm7f.30}, \bd{r2j3.22}: the twin admits counted loops (trip counter at SCEV's max), branches, guarded division, bodyless speculatable callees; a twin registry replaces tag trust. \bd{dm7f.33} stays loud.
+\item \commit{c2880c5f} L3, \bd{57ch.1}, \bd{57ch.3} (pure ops, QRAM), \bd{57ch.6}, \bd{57ch.7}, \bd{57ch.4}: stale-read placement across blocks, exact reachability.
+\item \commit{b35f7fcb} L7, \bd{dm7f.6}: runtime and non-finite angle-select arms compile in the X-bracket form; the non-finite-angle identity contract is documented in \fpath{docs/backend.md} \S11.3 and \fpath{runtime/cq_runtime.h}.
+\item \commit{04e4f09f} L1, \bd{r2j3.21}, \bd{r2j3.24}, \bd{p3kd.14}; \bd{r2j3.23} loud: a cut record is reversed or the pass fails loudly, asked per (record, move).
+\item \commit{1ed2e557}: two fixtures flipped by \bd{dm7f.22}, reviewed correct, renamed \texttt{spec\_accept\_*}.
+\item \commit{c67825fb}: fix-forward of a silent miscompile introduced by \commit{c2880c5f} (below).
+\item \commit{f3490b3f}: census and CLAUDE.md open-miscompile list.
+\end{itemize}
+
+\textbf{Decline$\to$accept flips and sign-offs (R10).} L2: 10 twin fixtures (round 1, three reviewers; round 2 clean). L3: 21 stale fixtures (round 1); two of them (QRAM crossblock, nested\_inner) reverted to declines by \commit{c67825fb}. L4: three round-2 ABI fixtures (round-1 reviewer derived one by hand), three i128 decline witnesses added. L5: none intended; two spec fixtures flipped by composition, signed off by a dedicated core review. L7: seven angle-select and four rail-negated fixtures (two rounds). L1: three union fixtures (rounds 1--2). Census: 24 (cell, mix) flips, all L4 cells.
+
+\textbf{Owner rulings (all recorded as bd memories).} \texttt{owner-ruling-stale-reads-batch053-2026-10-13} (57ch.2 placement, 57ch.7 not observable, aabo follows the -O1 IR); \texttt{owner-ruling-batch053-ruled-items-2026-10-13}; design rulings \texttt{owner-ruling-\{wrwo,94ad,p3kd6,01po10\}-design-2026-10-13} (all recommendations accepted); \texttt{owner-ruling-nonfinite-angle-identity-2026-10-13}; \texttt{owner-ruling-angle-select-xbracket-2026-10-13} (supersedes item 3 of 2026-10-03); \texttt{owner-ruling-57ch4-maynot-return-2026-10-13}; \texttt{owner-ruling-twin-divergence-bounded-2026-10-13}.
+
+\subsection*{Findings}
+\begin{itemize}
+\item \fconfirmed\ Composition (L8): \commit{c2880c5f} placed a stale pure op (a \texttt{sitofp}) above its gate while its consumer stayed below, leaving a template rail dirty and entangled (stage 2b census only). Reproduced by L3 alone; L4's lifting widened its population (\texttt{lround((double)q)}). Fixed forward by refusing such placements (\commit{c67825fb}); carrying the consumer cone is \bd{57ch.8}.
+\item \fconfirmed\ Round-1 and round-2 review of L1 found four paths of one hole class (an exemption asked once per register or on some path); the second narrow round followed a clause audit and was clean.
+\item \fpreexisting\ L1 found \texttt{spec\_intermediate\_unc\_user\_helper} \texttt{@store\_value} silently wrong on main; it now declines.
+\item \foverdecline\ 19 follow-ups filed: \bd{57ch.8}--\bd{57ch.10}, \bd{dm7f.36}--\bd{dm7f.46}, \bd{r2j3.27}--\bd{r2j3.30}, \bd{p3kd.19}.
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{lll}
+census source-injected covered & 63 / 120 (was 42) & \measured{runtime\_census.py -{}-jobs 6} \\
+census status flips vs \commit{fc6ee653} & +24, regressions 0 & \measured{JSON diff by (cell, mix)} \\
+headline pages & 4 match 121/180 & \measured{headline\_sync\_check.py} \\
+\end{tabular}
+
+\subsection*{Verification run}
+Per-lane lit at merge, on the composed build: L5 360/360; L4 349/351 (the two dm7f.22 flips); L2 424/426 (same two); L3 558/558, then 572/572 after the fix-forward; L7 409/409 plus 31/31 e2e, gates and runtime; L1 347/347; regenerated fixtures 34/34. Mutants: L1 3/3, L2 3/3, L3 3/3, L4 3/3, L6 3/3, L7 1/1 killed. \textbf{Batch gate:} not completed; the owner stopped the \texttt{ctest -LE maintenance} run before it finished. \measured{update\_code\_map.py -{}-check} passed. Budget: L7 used two invocations over R15; L3 and L4 verified post-review fixes with single probes, with lit run by the coordinator at merge.
+
+\subsection*{Open questions and next steps}
+Run the full batch gate on \commit{f3490b3f}. Build the designs (wrwo W1--W8, 94ad C1--C7, p3kd.6 6a--6e, 01po.10 C1--C8) per their rulings.
