@@ -322,12 +322,10 @@ which-path rails), `a3z7` (a dtzb-mutated `cq_theta` result carried through a ra
 `nomerge`), `uw5u` (`int m=(t==s)?t:s; cq_theta(&m, θ)` folds), `9oob` (a user `__cq_q_*_unc` twin
 with a wrong body is trusted), the twin half of `kyy1`, `jlf8`, `yldg`,
 `r2j3.7` (a dead tainted pure op is never uncomputed, a live copy of its source; filed
-2026-10-01), and three frontier holes in the uncompute planner, found 2026-10-08..13 by the
-`p3kd.13` review and pre-existing for all-template groups: `r2j3.21` (the 01po.4 array
-borrow drops a QRAM store record of `k` before `k`'s next non-diagonal gate), `r2j3.23` (the
-measured-rail or forced-record borrow drops a dead QRAM/QROM load record) and `r2j3.24` (a rail
-measured on only some paths is borrowed as measured). Their design of record is in
-`r2j3.21`. Warned rather than silent (owner ruling `lyyf`): `r2j3.8` (a reversed QRAM
+2026-10-01). The three uncompute-frontier holes `r2j3.21`, `r2j3.23`, `r2j3.24` were closed
+2026-10-14 (batch 053, 04e4f09f): a cut record is reversed or the pass fails loudly, asked per
+(record, move) by `isHazardousCutRecord`; `r2j3.23`'s QROM-load shapes are loud, not yet lowered
+(`r2j3.27`). Warned rather than silent (owner ruling `lyyf`): `r2j3.8` (a reversed QRAM
 call's computed index stays live until its `_unc`; deferred by the owner). Latent, masked by
 a loud decline today: `r2j3.9` (`GuardedStoreArmEmit` never discharges a hoisted tainted-arm
 value chain). Dirty-rail leak (r2j3 section B): `iwr7` (a dead `cq_template_zext` beside a
@@ -336,9 +334,9 @@ tainted select's `%out` rail and its operand chain stay dirty after a guarded st
 from C; filed 2026-10-05). Suspected, unprobed: `r2j3.17` (planTerminalReversal's silent
 leak returns may dephase a parent rotated later). Latent, not yet built
 from C (section D): `hp0x` (the 6.5 classical-call argument clause keys on `noundef` alone,
-so a `dereferenceable` parameter without `noundef` is hoisted with poison) and `r2j3.22`
-(hand IR only: `findTwin` trusts a forged `!cq.specsafe.twin` tag). Instrument gap:
-`r2j3.4` (stage 2b certifies a diagonal phase inside a superposing restore window).
+so a `dereferenceable` parameter without `noundef` is hoisted with poison). `r2j3.22` (a forged
+`!cq.specsafe.twin` tag) and the instrument gap `r2j3.4` (stage 2b certified a phase inside a
+superposing restore window) were fixed 2026-10-14 (batch 053).
 `r2j3.1`–`r2j3.3` and `r2j3.5` were fixed 2026-10-01 (lab report 035); `r2j3.19` (a nested
 lift's control chain read an inner clone's classical result as a qubit handle, found by the
 2026-10-08 review) and `etj3` (narrow runtime arguments passed without `signext`/`zeroext`,
