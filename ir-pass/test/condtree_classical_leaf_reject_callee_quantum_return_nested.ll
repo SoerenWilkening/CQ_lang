@@ -6,9 +6,24 @@
 ; `g`, so `g`'s `ret` is tainted and so is `g`'s call site (chains and recursion
 ; iterate to a fixpoint). Red on bc42274e.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s
-; CHECK: cq taint escape: quantum value returned across a function boundary
+; bd p3kd.21 (2026-10-14) — NOW AN ACCEPT; the file name and the DECLINE text
+; above are history. The returning callee is a GATE SUBROUTINE (it holds
+; `cq_theta`), so its call is compiled at the call site (SpecializeGateInline.h,
+; trigger (c): a used register return) and the 3jru crossing no longer exists: the
+; register is the caller's own. Measured: the lowered body is identical, call for
+; call, to `clang -O1` of the same source with the helper force-inlined, on the
+; pre-change binary (taint_reject_quantum_return_helper_arg.ll's twin). The 3jru
+; refusal itself is unchanged and still pinned by the members of this family whose
+; callee is not inlined (taint_reject_quantum_return_outparam.ll,
+; taint_reject_quantum_return_volatile_flag.ll, …).
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; CHECK-LABEL: define internal i32 @slice(
+; CHECK: call void @cqrt_ry_i32(i32 {{%[a-z0-9_.]+}}, double 0x3FE6666666666666)
+; CHECK: call void @cqrt_toffoli(
+; CHECK: call i32 @cqrt_measure_i32(
+; CHECK-NOT: call {{.*}}@g(
 
 define i32 @h(i32 %k) noinline {
   %t = call i32 @cq_theta_si32(i32 %k, double 7.000000e-01)

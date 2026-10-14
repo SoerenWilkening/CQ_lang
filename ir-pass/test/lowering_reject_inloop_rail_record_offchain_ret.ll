@@ -28,8 +28,15 @@
 ; `clang -O1` form (the C's `noinline static` is internalized and its argument
 ; constant-folded away; the loop body is the same rotated 2-trip do-while).
 ;
+; bd p3kd.21 (2026-10-14): `inner` holds `cq_theta`, so it is a GATE SUBROUTINE and
+; `main`'s use of its returned register compiles it at the call site
+; (SpecializeGateInline.h, trigger (c)). The stale read is then `main`'s
+; `and i32 %a, 1`, a value-op read, which `declineStaleRecordOps` owns; still loud,
+; on its true owner. THE `ret` CONSUMER this fixture was written for keeps its pin
+; in lowering_reject_inloop_rail_record_offchain_ret_export.ll (the same `inner`
+; as an export with no caller, so the stale read stays a `ret`).
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq loop lowering: rail record read past an in-place gate on the same rail
+; CHECK: error{{.*}}cq opcode lowering: operand predates a non-diagonal gate
 ; CHECK-NOT: cqrt_measure_i32
 ; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 declare void @cq_phi(double)

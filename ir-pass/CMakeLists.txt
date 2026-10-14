@@ -129,6 +129,8 @@ add_library(CQPass MODULE
   src/SpecializeClone.cpp
   src/SpecializePredict.cpp
   src/SpecializeDetect.cpp
+  # bd p3kd.21: gate subroutines compiled at their call site.
+  src/SpecializeGateInline.cpp
   src/SpecializeReject.cpp
   src/SpecializeSeed.cpp
   src/SwapRouteEmit.cpp

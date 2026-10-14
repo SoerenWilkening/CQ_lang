@@ -32,6 +32,7 @@
 #include "RotationLowering.h"
 #include "LibmBinding.h"
 #include "SpecializeDetect.h"
+#include "SpecializeGateInline.h"  // inlineGateSubroutines (bd p3kd.21)
 #include "SpecializePlan.h"
 #include "StageList.h"           // runLoopPrepasses / runControlChain (bd p3kd.7.8)
 #include "Specialization.h"
@@ -216,6 +217,22 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // `resolvePhantomCloneArgReads` after `specialize()`, asked with the SAME
   // predicate's record of the built clones.
   if (dropDeadCallArguments(M, taint))
+    taint = propagate(M, wd);
+
+  // bd `test_C_libtooling-p3kd.21` — a GATE SUBROUTINE (a callee holding
+  // `cq_theta`/`cq_phi`/`cq_measure`) whose call the standalone path cannot
+  // compile is compiled at its call site: inlined, then the caller is re-run
+  // through clang's -O1 function simplification (SpecializeGateInline.h). AFTER
+  // slot A of the dead-argument drop, so its triggers read taint with the dead
+  // cones gone (measured: before it, the conservatively tainted result of a call
+  // whose dead `musttail` operand the drop then nulls fired trigger (c) and
+  // re-shaped two accepted e2e slices, `slice_spec_dropped_arg_musttail_return`
+  // and `slice_spec_musttail_rhk5_window`); BEFORE the by-ref inliner, the rail
+  // bank and every stage that reads the CFG or adjudicates taint, so each sees
+  // the caller exactly as `clang -O1` leaves an inlined helper. Inlined code can
+  // hold new dead arguments: slot B below asks again. A full re-`propagate` per
+  // round (no guard has run yet), to a fixpoint.
+  while (inlineGateSubroutines(M, taint))
     taint = propagate(M, wd);
 
   // p119: tainted by-ref MATH (frexp/modf/remquo) recognition is REMOVED — those
@@ -1052,6 +1069,9 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // `railbank_deadcell_reject_backstop_literal.ll`.
   if (declineNonHandleBankStores(M))
     return PreservedAnalyses::none();
+  // bd p3kd.21 / jx32: a quantum-returning export returns its i32 handle.
+  if (retypeQuantumExportReturns(M))
+    return PreservedAnalyses::none();
   eraseDeadDecls(M, wd);
   eraseUnusedLibmBodies(M, /*KeepBindable=*/false);  // bd 3c6m.72, LibmBinding.h
 
@@ -1134,6 +1154,15 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // before any stage reads an argument; see run() for the slot argument and for
   // slot B. Module-wide, like `detectSpecializations` below (AXIS-F).
   if (dropDeadCallArguments(M, taint)) {
+    taint = propagate(M, wd);
+    onlyInF(taint.ThetaCalls);
+    onlyInF(taint.PhiCalls);
+    onlyInF(taint.PhaseCalls);
+    onlyInF(taint.MeasureCalls);
+  }
+  // bd p3kd.21 — gate subroutines compiled at their call site; see run().
+  // Module-wide, like the drop above (AXIS-F).
+  while (inlineGateSubroutines(M, taint)) {
     taint = propagate(M, wd);
     onlyInF(taint.ThetaCalls);
     onlyInF(taint.PhiCalls);
@@ -1508,6 +1537,8 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   if (declineSurvivingIntrinsicCalls(M, wd))
     return true;
   if (declineNonHandleBankStores(M))
+    return true;
+  if (retypeQuantumExportReturns(M))  // bd p3kd.21 — see run().
     return true;
   eraseDeadDecls(M, wd);
   eraseUnusedLibmBodies(M, /*KeepBindable=*/false);  // bd 3c6m.72 — see run().

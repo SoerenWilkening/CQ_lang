@@ -31,5 +31,13 @@ entry:
   ret double %z
 }
 
-; CHECK: error{{.*}}cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted
+; bd p3kd.21 (2026-10-14): `helper` is a GATE SUBROUTINE, compiled at its call
+; site (SpecializeGateInline.h), so the clone-side argument above no longer
+; applies to it: inlined, its `cq_phi` reads the caller's QUANTUM fp value as its
+; angle, and the decline moves to its true ground, the quantum-derived-angle gap
+; (bd 94ad; CLAUDE.md R3: never "fixed" ad hoc). The expectation moved with the
+; capability change (R10); the specializer-side fence is still enforced by
+; `scanBody` for every callee that is not inlined.
+; CHECK: error{{.*}}cq rotation lowering: unsupported quantum-derived rotation angle
+; CHECK-NOT: callee contains a quantum primitive
 ; CHECK-NOT: floating-point quantum argument or return has no reversible copy

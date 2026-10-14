@@ -1,4 +1,5 @@
-; taint_reject_quantum_return_boolarg.ll — DECLINE (bd test_C_libtooling-3jru).
+; taint_accept_quantum_return_boolarg.ll (formerly taint_reject_quantum_return_boolarg.ll)
+; — ACCEPT since bd test_C_libtooling-p3kd.21; was a DECLINE (bd test_C_libtooling-3jru).
 ;
 ; Rule-13 round 3 r04: `slice(g(x) == n)` — the literal is a `_Bool` ARGUMENT of
 ; `slice`, computed in `main` from the returned register. With the return tainted,
@@ -24,9 +25,34 @@
 ;   }
 ;   int main(int argc, char **argv) { int r = g(atoi(argv[1])); return slice(r == atoi(argv[2])); }
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s
-; CHECK: cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted
+;
+; bd p3kd.21 (2026-10-14): both `g` (a used quantum return, the 3jru crossing)
+; and `slice` (a tainted `_Bool` argument) are GATE SUBROUTINES and are compiled
+; at their call sites (SpecializeGateInline.h). Inlined, `main` rotates `r`'s
+; register in place, computes `c = (r == n)` as a compare flag, and `slice`'s
+; select `(q > 1) & c ? 10 : 7` is the 4.4 controlled-copy merge on the Toffoli
+; of the two flags; both flags are uncomputed and freed, `q` and the merge rail
+; are measured. The external `g` keeps its standalone body (an i32 return). The
+; 3jru refusal itself is unchanged and still pinned by
+; taint_reject_quantum_return_*.ll for a NON-gate callee.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; CHECK-LABEL: define i32 @main(
+; CHECK: [[R:%[0-9a-z.]+]] = call i32 @cqrt_alloc_i32(
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[R]], double 0x3FE6666666666666)
+; CHECK: [[Q:%[0-9a-z.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q]], double 5.000000e-01)
+; CHECK: [[C:%[0-9a-z_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 [[R]],
+; CHECK: [[G:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_toffoli(i32 [[C]], i32 {{%[0-9a-z_.]+}}, i32 [[G]])
+; CHECK: call void @cqrt_copy_i32_controlled(i32 [[G]],
+; CHECK: call void @cqrt_copy_i32_controlled(i32 [[G]],
+; CHECK: call void @cqrt_free(i32 [[G]])
+; CHECK: call void @cqrt_free(i32 [[C]])
+; CHECK: call i32 @cqrt_measure_i32(i32 [[Q]])
+; CHECK-NOT: @slice(
+; CHECK-NOT: @g(
 
 ; ModuleID = '/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a2b9793f123da59f8/te_scratch/r3/r04_boolarg.c'
 source_filename = "/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a2b9793f123da59f8/te_scratch/r3/r04_boolarg.c"
