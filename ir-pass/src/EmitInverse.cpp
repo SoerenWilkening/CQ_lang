@@ -40,6 +40,42 @@ namespace cq {
 // dangling one. Pre-WI-0 these were excluded and declined loudly; that exclusion is
 // gone.
 
+CallInst *forwardOfAdjoint(const CallInst *Adj) {
+  const Function *AF = Adj->getCalledFunction();
+  if (!AF || !AF->getName().ends_with("_unc"))
+    return nullptr;  // `_inv` reserve and anything else: no recipe emits it.
+  StringRef Base = AF->getName().drop_back(strlen("_unc"));
+  auto sameCallee = [&](const CallInst *F) {
+    const Function *FF = F ? F->getCalledFunction() : nullptr;
+    return FF && FF->getName() == Base;
+  };
+  // OUT-FIRST recipes (data template incl. compares, QRAM load, clone call):
+  // `<fwd>_unc(out, fwd operands...)`, `out` the forward call itself.
+  if (Adj->arg_size() >= 1)
+    if (auto *F = dyn_cast<CallInst>(Adj->getArgOperand(0));
+        F && sameCallee(F) && F->arg_size() + 1 == Adj->arg_size()) {
+      bool Same = true;
+      for (unsigned I = 0; I < F->arg_size(); ++I)
+        Same &= F->getArgOperand(I) == Adj->getArgOperand(I + 1);
+      if (Same)
+        return F;
+    }
+  // SAME-ARGS recipe (the QRAM store): `<fwd>_unc(args...)`, the forward a call
+  // to `<fwd>` with the identical operands.
+  if (Adj->arg_size() >= 1)
+    for (User *U : Adj->getArgOperand(0)->users())
+      if (auto *F = dyn_cast<CallInst>(U);
+          F && F != Adj && sameCallee(F) && isAbiQramStore(F) &&
+          F->arg_size() == Adj->arg_size()) {
+        bool Same = true;
+        for (unsigned I = 0; I < F->arg_size(); ++I)
+          Same &= F->getArgOperand(I) == Adj->getArgOperand(I);
+        if (Same)
+          return F;
+      }
+  return nullptr;
+}
+
 std::string inPlaceQQAdjointName(StringRef Name) {
   if (Name.starts_with("cqrt_add_"))
     return ("cqrt_sub_" + Name.drop_front(strlen("cqrt_add_"))).str();

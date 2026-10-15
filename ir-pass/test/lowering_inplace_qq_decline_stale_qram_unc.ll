@@ -8,6 +8,10 @@
 ; b12d4452 `_unc` scan it replaced (L2). Now every `_unc`/`_inv` after the gate is a
 ; reader of all its other handles, an unclassified reader fails closed, and an
 ; unenumerable alias set fails closed.
+; R11 round 2b (finding N2): this message is the ADJOINT branch's alone (an
+; unclassifiable reader and an unenumerable alias set have their own), and the
+; adjoint is stale because its forward `cqrt_qram_load_i32` (located by
+; EmitInverse's `forwardOfAdjoint`) predates the gate.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s

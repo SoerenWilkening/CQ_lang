@@ -149,10 +149,17 @@ bool lowerInPlaceQQ(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // it, and writes a non-user compiler record minted BEFORE the gate — an adjoint,
 // a strip, a merge replay — with no adjoint of the gate in between, is a read
 // of the relabelled register expecting its old value: a wrong unitary. R11 round
-// 2: every `_unc`/`_inv` counts (a superset of the b12d4452 scan), a reader it
-// cannot classify FAILS CLOSED, and so does an alias set `handleAliases` cannot
-// enumerate. Fails loudly (`kMsgInPlaceQQStaleAdjoint`) and returns true.
+// 2/2b: every `_unc`/`_inv` counts (a superset of the b12d4452 scan) and is stale
+// iff its FORWARD (located by EmitInverse's `forwardOfAdjoint`) predates the gate,
+// a reader it cannot classify FAILS CLOSED, and so does an alias set
+// `handleAliases` cannot enumerate. Fails loudly (`kMsgInPlaceQQStaleAdjoint`) and returns true.
 extern const char kMsgInPlaceQQStaleAdjoint[];
+// R11 round 2b (finding N2): one message per cause, so each fixture pins its
+// branch — a gate writing a record of the old value, an unclassifiable reader,
+// and an alias set `handleAliases` cannot enumerate.
+extern const char kMsgInPlaceQQStaleRecord[];
+extern const char kMsgInPlaceQQReaderUnknown[];
+extern const char kMsgInPlaceQQAliasUnknown[];
 bool declineStaleInPlaceQQReads(llvm::Module &M, const TaintSet &taint);
 
 }  // namespace cq

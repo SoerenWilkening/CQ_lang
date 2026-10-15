@@ -6,14 +6,16 @@
 ;   t ^= a; printf("%d\n", t); cq_theta(&a,.7); return cq_measure(a);
 ;
 ; The result is only TAPED. Whether it then survives is the SPINE's answer at that
-; site, asked of its own `computeFreePoint` (R12), never predicted:
-;   * in `main` it is `Escaped` (process exit reclaims everything; nothing is
-;     discharged), so out of place would leave the old `t` beside `t ^ a` and the
-;     later Ry on `a` would be dephased — 634f64b4 did exactly that, rc 0 (P(a=0)
-;     0.836 emitted vs 0.790 coherent, reviewer analytic). It converts in place;
-;   * in the helper it is `Insert`: the spine discharges the taped temporary right
-;     after the write (`_unc` + free), which is in-place followed by its own
-;     undo — out of place is exact there, and the module lowers as on 435b3bc1.
+; site, asked of its own `computeFreePoint` (R12), never predicted. The two sites
+; follow two different references, both kept by the delegated ruling
+; ruling-dm7f51-main-vs-helper-2026-10-15:
+;   * HELPER — the dead-record discipline: `Insert`, the taped temporary is
+;     reversed/discharged right after the print (`_unc` + free), which equals in
+;     place followed by that discharge; P(a=0) ≈ 0.836, the same as 435b3bc1;
+;   * MAIN — FreePoint §2.6's live-to-exit register file: `Escaped`, nothing is ever
+;     reversed, so the result lives on the user's rail; it converts in place and is
+;     never undone; P(a=0) ≈ 0.790 (634f64b4 lowered it out of place here, keeping
+;     the old `t` beside `t ^ a`, P(a=0) ≈ 0.836 — not this site's reference).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll

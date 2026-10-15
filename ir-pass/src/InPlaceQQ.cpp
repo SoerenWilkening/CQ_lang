@@ -172,12 +172,17 @@ bool dependsOnTarget(Value *S, const Value *P, const Instruction *Site,
 // `_BitInt(40) a + b` lowered as an i64 add + mask, slice_bitint).
 // A TAPE WRITE copies the value onto a kept output rail; whether the result
 // then survives is the SPINE's answer at that site, asked of its own predicate
-// (`computeFreePoint`, R12; R11 rounds 1-2, findings B-F2 / R2-F1): outside
-// `main` it is an `Insert` — the spine discharges the taped temporary right after
-// the write (measured on 435b3bc1), so out of place is exact; inside `main` it is
-// `Escaped` — nothing discharges it, and out of place would leave the old target
-// beside it (`t ^= a; printf(t); cq_theta(&a,.7)` dephased a, P(a=0) 0.836 vs
-// 0.790, rc 0). Neither answer is predicted here; the spine is asked.
+// (`computeFreePoint`, R12; R11 rounds 1-2, findings B-F2 / R2-F1). The two
+// answers follow two different references (owner-delegated ruling
+// ruling-dm7f51-main-vs-helper-2026-10-15 keeps both):
+//   * a HELPER — `Insert`: the dead-record discipline. The taped temporary is
+//     reversed/discharged right after the print, so out of place equals in place
+//     followed by that discharge (`t ^= a; printf(t); cq_theta(&a,.7)`:
+//     P(a=0) ≈ 0.836, the same as 435b3bc1);
+//   * `main` — `Escaped`: FreePoint §2.6's live-to-exit register file. Nothing is
+//     ever reversed, so the result lives on the user's rail; it converts in place
+//     and is never undone (P(a=0) ≈ 0.790).
+// Neither answer is predicted here; the spine is asked.
 bool survives(const CallInst *R, const TaintSet &taint, Function &F,
               PostDominatorTree &PDT, unsigned Depth = 0) {
   if (Depth > 16)

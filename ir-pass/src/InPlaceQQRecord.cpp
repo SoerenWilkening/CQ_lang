@@ -129,6 +129,15 @@ void transferDeadOperandMask(const BinaryOperator *BO, CallInst *T,
   setDeadMask(T, Mask);
 }
 
+const char kMsgInPlaceQQStaleRecord[] =
+    "cq in-place lowering: a gate writes a record of a register's old value "
+    "after its in-place quantum reassignment";
+const char kMsgInPlaceQQReaderUnknown[] =
+    "cq in-place lowering: a reader of an in-place reassigned register cannot "
+    "be classified";
+const char kMsgInPlaceQQAliasUnknown[] =
+    "cq in-place lowering: the aliases of an in-place reassigned register "
+    "cannot be enumerated";
 const char kMsgInPlaceQQStaleAdjoint[] =
     "cq in-place lowering: an adjoint reads a register after its in-place "
     "quantum reassignment";
@@ -151,24 +160,26 @@ bool isAdjointOf(const CallInst *I, const CallInst *G) {
 enum class LaterUse {
   NewValue,  // reads the NEW value and writes no older record: fine.
   Records,   // writes the rails in `W`; stale iff one predates the gate.
+  Adjoint,   // an adjoint whose FORWARD is `*Fwd`; stale iff it predates the gate.
   Unknown,   // a reader the classification does not know: fail closed.
 };
 
 LaterUse classifyLaterUse(const CallInst *X, const Value *V, const TaintSet &taint,
-                     SmallVectorImpl<const Value *> &W) {
+                     SmallVectorImpl<const Value *> &W, const CallInst *&Fwd) {
   const Function *Fn = X->getCalledFunction();
   if (!Fn)
     return LaterUse::Unknown;
   StringRef N = Fn->getName();
-  // An adjoint of ANY family (`cq_template_*_unc`, `cqrt_qram_load_*[_hl]_unc`,
-  // `cqrt_qram_store_*_unc`, a clone's `__cq_q_*_unc`, a `_controlled_inv`): it
-  // re-reads its operands expecting their FORWARD values, so every OTHER handle it
-  // touches is a rail whose forward ran with `V` in it.
+  // An ADJOINT of any family re-reads its operands expecting the values its
+  // FORWARD saw. It is stale exactly when that forward ran BEFORE the gate (it
+  // read `V`'s old value); a forward after the gate read the same new value the
+  // adjoint reads (R11 round 2b, finding N1: `r = t & tmp` after `t ^= c+tmp`,
+  // its `_unc` re-reading the new `t`, is fine). The forward is located by
+  // EmitInverse's own recipes (`forwardOfAdjoint`, R12); a family it cannot place
+  // (the `_inv` reserve, anything else) fails closed.
   if (N.ends_with("_unc") || N.ends_with("_inv")) {
-    for (const llvm::Use &A : X->args())
-      if (A.get() != V && A.get()->getType()->isIntegerTy(32))
-        W.push_back(A.get());
-    return LaterUse::Records;
+    Fwd = forwardOfAdjoint(X);
+    return Fwd ? LaterUse::Adjoint : LaterUse::Unknown;
   }
   if (isInPlaceQQGate(X)) {  // `V` as its SOURCE: writes its dst.
     W.push_back(X->getArgOperand(1));
@@ -220,16 +231,16 @@ bool declineStaleInPlaceQQReads(Module &M, const TaintSet &taint) {
     if (Gates.empty())
       continue;
     DominatorTree DT(F);
-    auto loud = [&](const Instruction *At) {
-      F.getContext().diagnose(DiagnosticInfoUnsupported(
-          F, kMsgInPlaceQQStaleAdjoint, At->getDebugLoc()));
+    auto loud = [&](const Instruction *At, const char *Msg) {
+      F.getContext().diagnose(
+          DiagnosticInfoUnsupported(F, Msg, At->getDebugLoc()));
       return true;
     };
     for (CallInst *G : Gates) {
       Value *P = G->getArgOperand(1);
       SmallPtrSet<Value *, 8> Names;
       if (!handleAliases(P, taint, DT, Names))
-        return loud(G);  // aliases not enumerable: fail closed.
+        return loud(G, kMsgInPlaceQQAliasUnknown);  // fail closed.
       Names.insert(P);
       SmallVector<CallInst *, 4> Undo;
       for (User *U : P->users())
@@ -247,18 +258,23 @@ bool declineStaleInPlaceQQReads(Module &M, const TaintSet &taint) {
               isInPlaceGateOn(X, V) || isAdjointOf(X, G))
             continue;  // not after G, a gate ON the new value, or G's undo.
           SmallVector<const Value *, 4> W;
-          LaterUse K = classifyLaterUse(X, V, taint, W);
-          if (K == LaterUse::NewValue)
+          const CallInst *Fwd = nullptr;
+          LaterUse K = classifyLaterUse(X, V, taint, W, Fwd);
+          if (K == LaterUse::NewValue || undoneBefore(X))
             continue;
-          bool Stale = K == LaterUse::Unknown;
+          if (K == LaterUse::Unknown)
+            return loud(X, kMsgInPlaceQQReaderUnknown);
+          if (K == LaterUse::Adjoint) {
+            if (provablyBefore(Fwd, G, DT))
+              return loud(X, kMsgInPlaceQQStaleAdjoint);
+            continue;
+          }
           for (const Value *Rec : W) {
             const auto *RI = dyn_cast<Instruction>(Rec);
             if (Rec != V && RI && provablyBefore(RI, G, DT) &&
                 !railIsUserData(Rec))
-              Stale = true;
+              return loud(X, kMsgInPlaceQQStaleRecord);
           }
-          if (Stale && !undoneBefore(X))
-            return loud(X);
         }
     }
   }

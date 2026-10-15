@@ -75,6 +75,14 @@ bool isInverseEmittable(const llvm::CallInst *Forward);
 // the emission and the post-`uncompute` stale-read check both ask it.
 std::string inPlaceQQAdjointName(llvm::StringRef Name);
 
+// bd r2j3.33 (R11 round 2b) — the FORWARD call whose adjoint `Adj` is, by the
+// recipes `emitInverseCall` emits (the inverse of those recipes, kept beside
+// them): an out-first `<fwd>_unc(out, operands…)` (data template, compare, QRAM
+// load, clone call) names its forward in slot 0; the QRAM store's same-args
+// `<fwd>_unc(arr, idx, val)` is matched to the store with identical operands.
+// Null when no recipe produced `Adj` (the `_inv` reserve, anything else).
+llvm::CallInst *forwardOfAdjoint(const llvm::CallInst *Adj);
+
 // Emit the void in-place adjoint of a single forward call at `B`'s insertion
 // point. Returns `true` iff the callee is an invertible Phase-5 target (rotation,
 // involution, or a `cq_template_*` whose `_unc` form is emitted); `false` for any

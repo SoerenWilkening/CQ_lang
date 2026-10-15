@@ -15,7 +15,9 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
-; CHECK: cq in-place lowering: an adjoint reads a register after its in-place quantum reassignment
+; R11 round 2b: the cnot is a RECORD write (not a recipe adjoint), so it fails
+; with the record message — one diagnostic per cause.
+; CHECK: cq in-place lowering: a gate writes a record of a register's old value after its in-place quantum reassignment
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
