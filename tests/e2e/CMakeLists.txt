@@ -681,6 +681,18 @@ add_test(NAME e2e-slice-select-rail-alias-cond
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_select_rail_alias_cond.expected.log")
 
+# bd dm7f.77 (dm7f.51 step 2): the reporter's |D^4_2> Dicke-state program, plain
+# C with `^=` as CNOT, pinned on its clang -O1 FOLDED circuit (owner ruling
+# owner-ruling-dicke-acceptance-folded-2026-10-14). The slice header carries the
+# analytic D^4_2 check of this golden (six weight-2 strings, amplitude 1/sqrt 6).
+add_test(NAME e2e-slice-control-dicke-d42
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_dicke_d42.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_dicke_d42.expected.log")
+
 # bd 9ymx (owner decision 2026-07-03): the tainted fp ternary INSIDE a classical
 # bounded loop -- the -O1-natural shape (LICM-hoisted compare in the guard
 # block, select in the body). Pins the per-iteration contract: 3 iterations,

@@ -11,8 +11,42 @@
 ; proves a fold that DOES do work never exposes an off-grammar operand into an
 ; accept (Prime Directive: over-accepting is the one unforgivable miscompile).
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq controlled lowering: control flow under quantum control
+; ⚠ FLIPPED TO AN ACCEPT by bd test_C_libtooling-dm7f.77 (the file keeps its
+; name, L8). The fence this pinned — the residue fold must not turn an off-grammar
+; NOT condition into an ACCEPT — still holds for the FOLD (it does not touch the
+; `xor`); what changed is that the NOT condition is now LOWERABLE on its own: the
+; select's condition `xor %t, true` is tagged a fresh REGISTER CONDITION
+; (RegCondLeaf.h), lowered out of place (`xor_i1_hl(cmp, 1)`, a fresh rail) and read
+; through the 4.4 copy flag. Every `cqrt_x` brackets an ancilla (`bf` / node `g`),
+; never the user's register `%h`.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck %s --check-prefix=NOERR --allow-empty < %t.err
+; NOERR-NOT: error
+; RUN: %filecheck %s --check-prefix=NOX < %t.ll
+; NOX-NOT:     call void @cqrt_x(i32 %h)
+; CHECK-LABEL: define i32 @probe(
+; The NOT is lowered by M-C IN PLACE on the compare flag it negates (that flag is
+; dead after it): `cqrt_xorc_i1(flag, 1)`; the flag's rail is the register
+; condition from there on (its tag moves with it, ArithLowering.cpp).
+; CHECK:       %[[N:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %h, i32 7)
+; CHECK-NEXT:  call void @cqrt_xorc_i1(i32 %[[N]], i1 true)
+; CHECK-NEXT:  %[[W:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %h, i32 5)
+; CHECK-NEXT:  %[[BF:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT:  call void @cqrt_cnot(i32 %[[N]], i32 %[[BF]])
+; ARM POLARITY (R11 round 1, C-F1), derived by hand from the source: the copy
+; merge fires its UNBRACKETED copy when the condition holds and its
+; `cqrt_x`-bracketed copy when it does not, so the first copy's source must be
+; the select's TRUE operand and the bracketed copy's source its FALSE operand.
+; `%vb = select !t2, %va, %w` with `%va` folded to `%q`: TRUE = %q (`%h`),
+; FALSE = `%w = q + 5`.
+; CHECK-NEXT:  %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %h, i32 %[[OUT]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[BF]])
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[W]], i32 %[[OUT]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[BF]])
+; CHECK:       call void @cqrt_cnot(i32 %[[N]], i32 %[[BF]])
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 

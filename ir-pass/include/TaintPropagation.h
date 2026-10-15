@@ -816,6 +816,14 @@ struct TaintSet {
   // one today: no input can reach it, so Rule 12 can supply no fixture for the
   // string, and an unmirrored decline string is its own defect). Do not narrow
   // the skip without building the input that reaches it first.
+  // ⚠ bd dm7f.77 MET THIS TRIGGER FOR ONE SPECIES AND HANDLED IT AS A CASE OF ITS
+  // OWN, case (4): a REGISTER CONDITION (RegCondLeaf.h) — a QQ xor or a fresh
+  // i1 template read as its own register by `emitInPlaceRotationRegion` or the
+  // 4.4 select — is recorded by `markRailCondRead` and is NOT RAUW'd before this
+  // reader (it is lowered by `lowerOps`, later). `reverifyRailCondReads` re-asks
+  // rungs (ii) and (iii) for it over its tagged wire (`regCondProvenance`), loud
+  // on failure; it never reaches case (3)'s skip. Every other non-call species
+  // still falls under this trigger.
   //
   // ⚠ CALLERS OF CASE (3), AND THE DIRECTION EACH USES IT IN — the L3-MIRROR
   // ledger. CLAUDE.md: *"when you ADD A CALLER to a shared predicate, read the

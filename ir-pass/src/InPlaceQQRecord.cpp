@@ -6,11 +6,13 @@
 
 #include "InPlaceQQ.h"
 
+#include "ArmAnalysis.h"       // isFrontEndThetaCall
 #include "ChainWalk.h"         // isInPlaceGateOn / isMeasureSink / isOutputSink / isTemplateProducer
 #include "CloneProducer.h"     // isCloneProducer
 #include "EmitInverse.h"       // inPlaceQQAdjointName
 #include "FreePoint.h"         // blockCanRepeat
 #include "MergeStreamGates.h"  // streamGateWrites / handleAliases
+#include "RegCondLeaf.h"       // kRegCondTag (stripped after uncompute)
 #include "TaintPropagation.h"  // TaintSet
 #include "WireWalk.h"          // provablyBefore
 
@@ -45,7 +47,7 @@ unsigned maskOf(const Instruction *I) {
   if (!MD || MD->getNumOperands() != 1)
     return 0;
   auto *C = mdconst::dyn_extract<ConstantInt>(MD->getOperand(0));
-  return C ? static_cast<unsigned>(C->getZExtValue()) & 3u : 0u;
+  return C ? static_cast<unsigned>(C->getZExtValue()) & 15u : 0u;
 }
 
 void setDeadMask(Instruction *I, unsigned Mask) {
@@ -65,12 +67,64 @@ void setDeadMask(Instruction *I, unsigned Mask) {
 // eligibility, i.e. in-place-or-loud versus out-of-place. A `BO` that can run
 // again reads `V` again unless `V` is re-defined in the same cycle, so a `V`
 // from outside `BO`'s loop is live (and an irreducible repeat is not proven).
-// A φ is never a target (Bennett: it can alias another live name).
-bool deadAfter(Value *V, BinaryOperator *BO, const DominatorTree &DT,
-               const LoopInfo &LI) {
-  if (isa<Constant>(V) || isa<PHINode>(V) ||
-      BO->getOperand(0) == BO->getOperand(1))
+// A φ is a target only when it names ONE wire (`singleWirePhiDeadAfter`, below);
+// Bennett refuses φ targets because a φ can alias another live name.
+bool isThetaChainLink(const Value *V) {
+  return isFrontEndThetaCall(V) && cast<CallInst>(V)->arg_size() >= 2;
+}
+
+// bd dm7f.77 (dm7f.51 step 2, design D2(b): "every use of every member of x's
+// wire closure") — the ONE φ that IS a register: a merge φ every incoming of
+// which is a name on ONE rotation chain (`%m = phi [Ry(%q), %q]`, a controlled
+// in-place Ry region's merge, which the region emitter collapses onto the
+// hoisted theta's rail). Bennett's reason to refuse a φ target — it can alias
+// ANOTHER live name — is answered by asking deadness of every chain member: each
+// is read only by the φ, by the next link of the chain, or provably before `BO`.
+// R11 round 1 (B-F1): a CONSTANT incoming is the same wire when it IS the seed
+// the chain's root theta starts from (`phi [Ry(false), false]`, a controlled
+// state prep's merge: the prep rail is minted at that seed and left there on the
+// other edge) — proved by identity with the root theta's arg 0 (`ConstantInt`
+// is uniqued per context). Any other constant is a different value: not one wire.
+bool singleWirePhiDeadAfter(PHINode *P, BinaryOperator *BO,
+                            const DominatorTree &DT) {
+  SmallPtrSet<Value *, 8> Wire;
+  SmallVector<Constant *, 2> Seeds;
+  Value *Root = nullptr;
+  for (Value *In : P->incoming_values()) {
+    if (auto *K = dyn_cast<Constant>(In)) {
+      Seeds.push_back(K);
+      continue;
+    }
+    Value *X = In;
+    while (isThetaChainLink(X) &&
+           isa<Instruction>(cast<CallInst>(X)->getArgOperand(0))) {
+      Wire.insert(X);
+      X = cast<CallInst>(X)->getArgOperand(0);
+    }
+    if (!isa<Instruction>(X) || (Root && Root != X))
+      return false;  // two different wires.
+    Root = X;
+    Wire.insert(X);
+  }
+  if (!Root)
     return false;
+  for (Constant *K : Seeds)
+    if (!isThetaChainLink(Root) || cast<CallInst>(Root)->getArgOperand(0) != K)
+      return false;  // a constant that is not the chain's own seed.
+  for (Value *M : Wire)
+    for (User *U : M->users()) {
+      if (U == P || Wire.count(U))
+        continue;
+      auto *UI = dyn_cast<Instruction>(U);
+      if (!UI || !provablyBefore(UI, BO, DT))
+        return false;
+    }
+  return true;
+}
+
+// The positional question every deadness answer shares.
+bool usersBefore(Value *V, BinaryOperator *BO, const DominatorTree &DT,
+                 const LoopInfo &LI) {
   if (Loop *L = LI.getLoopFor(BO->getParent())) {
     auto *VI = dyn_cast<Instruction>(V);
     if (!VI || !L->contains(VI))
@@ -88,7 +142,31 @@ bool deadAfter(Value *V, BinaryOperator *BO, const DominatorTree &DT,
   return true;
 }
 
+bool deadAfter(Value *V, BinaryOperator *BO, const DominatorTree &DT,
+               const LoopInfo &LI) {
+  if (isa<Constant>(V) || BO->getOperand(0) == BO->getOperand(1))
+    return false;
+  if (auto *P = dyn_cast<PHINode>(V); P && !singleWirePhiDeadAfter(P, BO, DT))
+    return false;
+  return usersBefore(V, BO, DT, LI);
+}
+
+// R11 round 1 (B-F1): a φ that is dead by its OWN users but is not provably one
+// wire. The late round must not silently leave it out of place when it is a user
+// register beside a surviving result (step 1's Q1: in place or LOUD).
+bool deadUnprovenPhi(Value *V, BinaryOperator *BO, const DominatorTree &DT,
+                     const LoopInfo &LI) {
+  auto *P = dyn_cast<PHINode>(V);
+  return P && BO->getOperand(0) != BO->getOperand(1) &&
+         !singleWirePhiDeadAfter(P, BO, DT) && usersBefore(V, BO, DT, LI);
+}
+
 }  // namespace
+
+bool qqOperandDeadAfter(Value *V, BinaryOperator *BO, const DominatorTree &DT,
+                        const LoopInfo &LI) {
+  return deadAfter(V, BO, DT, LI);
+}
 
 void recordDeadQQOperands(Module &M, const TaintSet &taint) {
   for (Function &F : M) {
@@ -110,9 +188,12 @@ void recordDeadQQOperands(Module &M, const TaintSet &taint) {
           LI.emplace(*DT);
         }
         unsigned Mask = 0;
-        for (unsigned Idx = 0; Idx < 2; ++Idx)
+        for (unsigned Idx = 0; Idx < 2; ++Idx) {
           if (deadAfter(BO->getOperand(Idx), BO, *DT, *LI))
             Mask |= 1u << Idx;
+          else if (deadUnprovenPhi(BO->getOperand(Idx), BO, *DT, *LI))
+            Mask |= 4u << Idx;  // bits 2-3: a dead φ not provably one wire.
+        }
         if (Mask)
           setDeadMask(BO, Mask);
       }
@@ -125,7 +206,7 @@ void transferDeadOperandMask(const BinaryOperator *BO, CallInst *T,
   if (!Mask)
     return;
   if (Swapped)
-    Mask = ((Mask & 1u) << 1) | ((Mask >> 1) & 1u);
+    Mask = ((Mask & 5u) << 1) | ((Mask >> 1) & 5u);  // swap each bit pair.
   setDeadMask(T, Mask);
 }
 
@@ -231,6 +312,13 @@ LaterUse classifyLaterUse(const CallInst *X, const Value *V, const TaintSet &tai
 // memory that is not a proven rail bank). It is a superset of b12d4452's `_unc`
 // scan: every `_unc`/`_inv` is a `Records` reader of all its other handles.
 bool declineStaleInPlaceQQReads(Module &M, const TaintSet &taint) {
+  // bd dm7f.77: the register-condition tags are records the spine read (row
+  // (c′)); `uncompute` has run, so they leave the module here.
+  for (Function &F : M)
+    for (BasicBlock &BB : F)
+      for (Instruction &I : BB)
+        for (const char *Tag : {kRegCondTag, kRegCondRailTag})
+          I.setMetadata(Tag, nullptr);
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
@@ -292,6 +380,10 @@ bool declineStaleInPlaceQQReads(Module &M, const TaintSet &taint) {
   return false;
 }
 
-unsigned deadOperandMask(const CallInst *T) { return maskOf(T); }
+unsigned deadOperandMask(const CallInst *T) { return maskOf(T) & 3u; }
+
+unsigned unprovenPhiOperandMask(const CallInst *T) {
+  return (maskOf(T) >> 2) & 3u;
+}
 
 }  // namespace cq

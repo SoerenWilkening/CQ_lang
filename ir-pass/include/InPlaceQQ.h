@@ -48,12 +48,30 @@
 //     released before the gate) and the width has an in-place symbol; else loud.
 // Target choice is by these facts, never by operand spelling.
 //
+// STEP 2 (bd test_C_libtooling-dm7f.77, dm7f.51 step 2) widened the round in four
+// places, each pinned by its own fixture:
+//   * E1 over the WIRE (design D2(b)): a merge φ whose every incoming is a name
+//     on ONE rotation chain (`phi [Ry(%q), %q]`) is a target when every chain
+//     member is dead after the op (`singleWirePhiDeadAfter`). Step 1 refused every
+//     φ, which silently miscompiled `if (a) cq_theta(&q,·); q ^= x; cq_theta(&x,·)`
+//     (lowering_inplace_qq_phi_target_accept.ll) and is what dicke.c's
+//     `q2 ^= q1` needs. A second dead operand then makes the op both-dead (loud).
+//   * E2′ (design D5): a dead FRESH REGISTER CONDITION rail (RegCondLeaf.h) is an
+//     optional target — in place on it equals out of place then its discharge,
+//     and a measured terminal's DAG would otherwise leave it standing.
+//   * G7 arm (d3) (`priorUseIsSettled`, ArithLowering.cpp, D2(b) "observed counts
+//     settled"): a prior producer whose rail is MEASURED is settled.
+//   * THE COMMIT IS HONOURED: a template carrying `!cq.regcond` (a control emitter
+//     read it as a register on the wire the commit named) converts only onto its
+//     tagged target; any other conversion Q1 demands is loud.
+//
 // Q1 — ELIGIBLE BUT NOT CONVERTED IS LOUD, at the op's `!dbg`, nothing lowered.
 // Out of place there would leave the dead user register recording the source
 // beside a surviving result — the defect above. An op whose old operand is LIVE
 // stays out of place: the fresh rail is an entangling copy, which is the program
-// (design D5). Measured loud shapes: the condition of a later region re-reading
-// the old register (the Dicke block, V5 — design D3, step 2), a prior record
+// (design D5). Measured loud shapes: a condition network re-reading the old
+// register (the Dicke block V5 was one until step 2: its xor is now committed
+// as a REGISTER CONDITION before detection, RegCondLeaf.h), a prior record
 // still to be uncomputed (G7, incl. a merge copy of `x`), an in-loop op (G5), the
 // eligible subtrahend, a self-dependent source, and both operands dead.
 //
@@ -91,6 +109,8 @@ namespace llvm {
 class BinaryOperator;
 class Value;
 class CallInst;
+class DominatorTree;
+class LoopInfo;
 class Module;
 }  // namespace llvm
 
@@ -124,6 +144,14 @@ bool isInPlaceQQGate(const llvm::CallInst *G);
 // non-permutation move (an Ry or a controlled Ry — `isNonPermutationMove`)?
 bool railIsUserData(const llvm::Value *P);
 
+// THE ONE SPELLING of "operand `V` is dead after `BO` on the current IR" that
+// `recordDeadQQOperands` records (every other user provably before `BO`, not a
+// φ, not re-read by a later trip). Exposed for the pre-detection register
+// condition commit (bd dm7f.77, RegCondLeaf.h), which asks it of IR the record
+// never saw (the `_Bool` narrowing's xors).
+bool qqOperandDeadAfter(llvm::Value *V, llvm::BinaryOperator *BO,
+                        const llvm::DominatorTree &DT, const llvm::LoopInfo &LI);
+
 // Record `!cq.qq.dead` on every integer add/sub/xor with a tainted operand.
 // Called once per entry point, before `lowerLoops`, the peel and control
 // detection (the IR the user wrote, after the pre-passes that only fold).
@@ -137,8 +165,13 @@ void transferDeadOperandMask(const llvm::BinaryOperator *BO, llvm::CallInst *T,
 // The record `transferDeadOperandMask` wrote on a template (0 when none).
 unsigned deadOperandMask(const llvm::CallInst *T);
 
+// R11 round 1 (B-F1): the operands recorded as a φ dead by its own users but NOT
+// provably one wire (bit i = operand i). Never a target; a user register beside a
+// surviving result there fails loudly (Q1), never silently out of place.
+unsigned unprovenPhiOperandMask(const llvm::CallInst *T);
+
 // The round. Returns true if any site was converted. Strips every remaining
-// `!cq.qq.dead` record before returning.
+// `!cq.qq.dead` record and `!cq.regcond` tag (bd dm7f.77) before returning.
 bool lowerInPlaceQQ(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 
 // THE POSTCONDITION (L1 / bd memory fix-that-predicts-a-later-stage-must-

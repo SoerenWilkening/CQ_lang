@@ -25,7 +25,32 @@
 ;
 ; FOLLOW-UP: bd test_C_libtooling-dm7f.55 (the NOT-form leaf grammar).
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; ⚠ FLIPPED TO AN ACCEPT by bd test_C_libtooling-dm7f.77 — the retirement trigger
+; above, for this consumer (the file keeps its name, L8; the kickback twin
+; control_phase_kickback_reject_tree_notform.ll stays declined: the branch phase
+; does not read register conditions). The condition `a & !b` holds a NOT no
+; network takes, so its own out-of-place rail is a fresh REGISTER CONDITION
+; (RegCondLeaf.h, Bennett's one-resolved-wire condition): `!b` is a `_hl` copy of
+; `b` (never a `cqrt_x` on the user's `b`), `and` onto a fresh rail, the prep
+; `alloc_i1(1)` + cRy(.5), then both discharged LIFO and freed (ChainWalk row
+; (c′)). Analytic: the textbook CNOT(a,b); CCRy(a,b -> t,.5); CNOT(a,b) and this
+; stream give identical distributions (reporter-tree twin with a later Ry on `a`:
+; control_regcond_not_tree_discharge_accept.ll).
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck %s --check-prefix=NOERR --allow-empty < %t.err
+; NOERR-NOT: error
+; RUN: %filecheck %s --check-prefix=NOX < %t.ll
+; CHECK:       %[[NB:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i1_hl(i32 %[[B:[a-zA-Z0-9_.]+]], i1 true)
+; CHECK-NEXT:  %[[C:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i1(i32 %[[A:[a-zA-Z0-9_.]+]], i32 %[[NB]])
+; CHECK-NEXT:  %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 true)
+; CHECK-NEXT:  call void @cqrt_ry_i1_controlled(i32 %[[C]], i32 %[[T]], double 5.000000e-01)
+; CHECK-NEXT:  call void @cq_template_and_i1_unc(i32 %[[C]], i32 %[[A]], i32 %[[NB]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[C]])
+; CHECK-NEXT:  call void @cq_template_xor_i1_hl_unc(i32 %[[NB]], i32 %[[B]], i1 true)
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[NB]])
+; NOX-NOT:     call void @cqrt_x(
 
 declare i1 @cq_theta_i1(i1, double)
 declare i1 @cq_measure_i1(i1)
@@ -54,4 +79,3 @@ define i32 @example() {
   ret i32 %16
 }
 
-; CHECK: cq controlled lowering: control flow under quantum control

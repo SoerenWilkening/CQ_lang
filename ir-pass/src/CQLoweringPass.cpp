@@ -10,6 +10,7 @@
 #include "SpeculationSafety.h"
 
 #include "ArithLowering.h"
+#include "BoolStorageNarrow.h"  // narrowBoolStorageModule (bd dm7f.77)
 #include "InPlaceQQ.h"  // recordDeadQQOperands (bd r2j3.33)
 #include "ArmAnalysis.h"      // reverifyRailCondReads (bd r9e5 1b-B.1 round 2)
 #include "ByRefInline.h"
@@ -569,6 +570,12 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // record and its own re-ask; see `lowerCloneControl`.
   if (declineConvertedRailPhiLeaves(railPhiRec))
     return PreservedAnalyses::none();
+  // bd dm7f.77 (dm7f.51 step 2, design D1) — the `_Bool` storage narrowing,
+  // asked once here as well as at the peel, so the pre-pass window's guards and
+  // the EARLY stale-record slot (the only one that places a stale pure read)
+  // see the `i1` spelling. See `narrowBoolStorageModule`.
+  if (narrowBoolStorageModule(M, taint))
+    taint = propagate(M, wd);
   // Debug lever (bd adia; env-gated, no behavior change): dump the module state
   // the Phase-6 spec-scan reads (post fp80/PredMux/unroll fixpoints).
   if (::getenv("CQ_SPEC_DBG")) {
@@ -1349,6 +1356,8 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // stage that could inherit ownership of the decline. See run().
   if (declineConvertedRailPhiLeaves(railPhiRec))
     return false;
+  if (narrowBoolStorageModule(M, taint))  // bd dm7f.77 — see run().
+    Reprop();
   // Phase 6 specialization pre-pass + carve-out, mirrored in this entry point
   // too (twin-pipeline parity is MANDATORY — a pre-pass wired in `run()` but not
   // here would silently diverge, WI-1.12). See run() for the rationale.

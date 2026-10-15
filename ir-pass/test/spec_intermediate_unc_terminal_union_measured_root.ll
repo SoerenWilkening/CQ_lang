@@ -22,25 +22,31 @@
 ; union is emitted: t's and r's chains reversed and freed, a reversed, R, k and p
 ; left; @crk (main's planner) emits the same stream with `mul_unc` for the twin.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
-; RUN: %filecheck %s < %t.ll
-; RUN: %filecheck %s --check-prefix=NOERR --allow-empty < %t.err
-; NOERR-NOT: error
-; CHECK-LABEL: define internal fastcc i32 @cr(
-; CHECK:      %[[K:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(
-; CHECK:      %[[K2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(
-; CHECK:      call void @cqrt_ry_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[K2]],
 ; bd r2j3.33 (dm7f.51 step 1): `p`'s old value is dead at `R = p + k` and R is
 ; measured, so R is computed IN PLACE on `p`'s rail (`k` the borrowed source); R
 ; is that rail from here on, and every later reader names it.
-; CHECK:      call void @cqrt_add_i32(i32 %[[K2]], i32 %[[R:[a-zA-Z0-9_.]+]]), !cq.inplace.qq
-; CHECK:      call fastcc void @__cq_q_h_1_unc(
-; CHECK:      call void @cq_template_add_i32_hl_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[R]], i32 2)
-; CHECK-NEXT: call void @cqrt_free(
-; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[R]])
-; CHECK-NOT:  call void @cqrt_free(i32 %[[R]])
-; CHECK-NOT:  call void @cqrt_free(i32 %[[K2]])
-; CHECK:      ret i32
+;
+; ⚠ ACCEPT → LOUD by bd test_C_libtooling-dm7f.77 (dm7f.51 step 2; the file keeps
+; its name, L8). `R = p + k` reads TWO dead rotated registers: `p` and `k`, whose
+; SSA name is the merge φ of the `if (c > 5) cq_theta(&k, .7)` region. Step 1
+; refused every φ as an in-place target (Bennett: "a φ can alias another live
+; name"), so `p` was the ONLY eligible operand and this accepted in place on `p`
+; — a tiebreak by φ-ness. dm7f.77 asks deadness of a φ over its whole rotation
+; chain (design D2(b); `singleWirePhiDeadAfter`): `phi [Ry(%k), %k]` names one
+; rail and every member is dead after the add, so BOTH operands are eligible, and
+; the delegated ruling ruling-dm7f51-both-dead-loud-2026-10-15 says that fails
+; LOUDLY (the overwritten register is not recoverable from -O1 SSA; the choice
+; changes which register is left behind). The same φ exclusion is what made main
+; 27aaf1e1 SILENTLY miscompile `if (a) cq_theta(&q, .7); q ^= x; cq_theta(&x,
+; .3)` (lowering_inplace_qq_phi_target_accept.ll: P(000) 0.8293 vs textbook
+; 0.8216). The p3kd.14 union-frontier subject above is therefore NOT pinned by
+; this file any more (flagged to the coordinator). RETIREMENT TRIGGER: the
+; owner's answer to the both-dead question (the dm7f gap issue filed with that
+; ruling: recover the lvalue via -g, or loud).
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s
+; CHECK: cq in-place lowering: both operands of a quantum reassignment are dead registers; the overwritten one is not recoverable
 
 
 define i32 @main(i32 noundef %0, ptr nocapture noundef readnone %1) local_unnamed_addr #0 {

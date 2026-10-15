@@ -27,15 +27,21 @@
 //   (W1) every incoming of every member is a member, a `zext i1 → iN`, or the
 //        constant 0 or 1 — so every member provably holds 0 or 1 on every path;
 //   (W2) every user of every member is a member, a `trunc iN → i1`, a
-//        `zext iN → iK`, or the low-bit test `icmp ne P, 0` / `icmp eq P, 1`
-//        — reads whose result is a function of bit 0 alone given (W1);
+//        `zext iN → iK`, the low-bit test `icmp ne P, 0` / `icmp eq P, 1`, or
+//        (bd dm7f.77, design D1) a BOOLEAN COMPARE `icmp eq/ne P, O` with `O`
+//        itself provably 0 or 1 — a member of the same web, a `zext i1`, or the
+//        constant 0/1 — reads whose result is a function of bit 0 alone given
+//        (W1). A Boolean compare becomes `xor i1 P', o` (`ne`) or its `xor
+//        …, true` (`eq`): dicke.c's `q2 ^= q1` arrives as `icmp ne i8 %q1.phi,
+//        (zext i1 %q2 to i8)`;
 //   (W3) at least one member is TAINTED (classical code is left byte-untouched);
 //   (W4) no member's block is on a CFG cycle (the in-loop carried-handle
 //        machinery owns loop φ, and is not widened here — a decline there stays
 //        the decline it was).
 // Then each member `P` becomes an `i1` φ `P'` with incoming `zext X` ↦ `X`,
 // constant `k` ↦ `i1 k`, member `Q` ↦ `Q'`; a `trunc P` or a low-bit test is
-// replaced by `P'` and a `zext P to iK` by `zext P' to iK`. Under (W1)
+// replaced by `P'`, a `zext P to iK` by `zext P' to iK`, and a Boolean compare
+// with `o` by its xor form (`P != O` ⇔ `P' ^ o` when both are 0 or 1). Under (W1)
 // `P ∈ {0,1}`, so `trunc P = (P != 0) = P'` and `zext P = zext P'`
 // bit-for-bit, on every path: the rewrite
 // is the identity on values and therefore on the unitary — it only removes
@@ -57,6 +63,7 @@
 
 namespace llvm {
 class Function;
+class Module;
 class Value;
 }  // namespace llvm
 
@@ -68,6 +75,18 @@ struct TaintSet;
 // every created value to `Seeds`.
 bool narrowBoolStoragePhis(llvm::Function &F, TaintSet &taint,
                            llvm::SmallVectorImpl<llvm::Value *> &Seeds);
+
+// bd dm7f.77 (dm7f.51 step 2) — the same rewrite over every function, run ONCE
+// more in BOTH entry points after the loop pre-passes and before the pre-pass
+// window's guards (`declineStaleTaintSet`, the specializer, the escape guard and
+// the EARLY stale-record slot). Why there too: the early slot is the only one
+// that PLACES a stale pure read before its staling gate (bd 57ch.3), and a
+// Boolean compare this rewrite turns into an `i1` xor (D1) is such a read in
+// dicke.c (`q3 ^= q1` scheduled after q1's controlled Ry). Narrowing only at the
+// peel left that read to `adjudicateTaintDelta`, which declines without placing.
+// Idempotent: the peel's later call finds nothing left. The caller re-propagates
+// in full (`taint = propagate(M, wd)`), the pre-pass house rule.
+bool narrowBoolStorageModule(llvm::Module &M, TaintSet &taint);
 
 }  // namespace cq
 

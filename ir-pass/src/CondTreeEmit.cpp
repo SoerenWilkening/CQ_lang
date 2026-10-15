@@ -226,6 +226,10 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
   auto isRailFlag = [&Tree](const Value *V) {
     if (isCondRailLeaf(V))
       return true;
+    // bd dm7f.77 — a REGISTER-CONDITION root, by MEMBERSHIP of the caller's
+    // tree (only the 4.4 data select opts in, `AllowRegRoot`).
+    if (llvm::is_contained(Tree.RegLeaves, V))
+      return true;
     const auto *P = dyn_cast<PHINode>(V);
     return P && llvm::is_contained(Tree.RailPhiLeaves, P);
   };

@@ -12,6 +12,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Module.h"
 
 #include "ControlShape.h"  // blockOnCycle (W4) — the one spelling
 #include "TaintPropagation.h"
@@ -40,6 +41,31 @@ bool isLowBitTest(const Value *U, const Value *P) {
     return false;
   return (C->getPredicate() == ICmpInst::ICMP_NE && K->isZero()) ||
          (C->getPredicate() == ICmpInst::ICMP_EQ && K->isOne());
+}
+
+// bd dm7f.77 (dm7f.51 step 2, design D1) — a BOOLEAN COMPARE: `icmp eq/ne P, O`
+// where `O` also provably holds 0 or 1 — a member of the same web, a `zext i1`,
+// or the constant 0 or 1 (a low-bit test is `isLowBitTest`'s, above). Under (W1)
+// `P ∈ {0,1}`, so `P != O` is the i1 xor of the two low bits and `P == O` its
+// negation: dicke's `icmp ne i8 %q1.phi, (zext i1 %q2 to i8)` is `q1 ^ q2`.
+// Returns the other operand, or null.
+Value *boolCompareOther(const Value *U, const Value *P,
+                        const SetVector<PHINode *> &Web) {
+  const auto *C = dyn_cast<ICmpInst>(U);
+  if (!C || !C->isEquality() || isLowBitTest(U, P))
+    return nullptr;
+  Value *O = C->getOperand(0) == P ? C->getOperand(1) : C->getOperand(0);
+  if (C->getOperand(0) != P && C->getOperand(1) != P)
+    return nullptr;
+  if (O == P)
+    return nullptr;  // `P == P`: constant, not a reader of P's register.
+  if (auto *Q = dyn_cast<PHINode>(O); Q && Web.count(Q))
+    return O;
+  if (isBoolZext(O))
+    return O;
+  if (auto *K = dyn_cast<ConstantInt>(O); K && K->getValue().ule(1))
+    return O;
+  return nullptr;
 }
 
 // The web containing `Seed`: every same-typed φ reachable through φ→φ incoming
@@ -85,7 +111,7 @@ bool webNarrowable(const SetVector<PHINode *> &Web, TaintSet &taint) {
         continue;
       if (isa<ZExtInst>(U))
         continue;
-      if (isLowBitTest(U, P))
+      if (isLowBitTest(U, P) || boolCompareOther(U, P, Web))
         continue;
       return false;  // (W2) — a reader of more than bit 0.
     }
@@ -132,7 +158,33 @@ void narrowWeb(const SetVector<PHINode *> &Web, TaintSet &taint,
       if (isa<PHINode>(UI))
         continue;  // a member — erased below.
       Value *Repl = NP;
-      if (auto *Z = dyn_cast<ZExtInst>(UI)) {
+      if (Value *O = boolCompareOther(UI, P, Web)) {
+        // D1: `P != O` ↦ `P' ^ o`, `P == O` ↦ `(P' ^ o) ^ 1`, `o` the low bit.
+        Value *Ov;
+        if (auto *Q = dyn_cast<PHINode>(O); Q && Web.count(Q)) {
+          Ov = New[Q];
+        } else if (isBoolZext(O)) {
+          Ov = cast<ZExtInst>(O)->getOperand(0);
+          Zexts.insert(cast<Instruction>(O));
+        } else {
+          Ov = ConstantInt::get(I1, cast<ConstantInt>(O)->getZExtValue());
+        }
+        const bool Q = taint.Tainted.count(NP) || taint.Tainted.count(Ov);
+        auto *X = BinaryOperator::CreateXor(NP, Ov, UI->getName(), UI);
+        X->setDebugLoc(UI->getDebugLoc());
+        Value *R = X;
+        if (cast<ICmpInst>(UI)->getPredicate() == ICmpInst::ICMP_EQ) {
+          auto *N = BinaryOperator::CreateXor(X, ConstantInt::getTrue(Ctx),
+                                              UI->getName() + ".not", UI);
+          N->setDebugLoc(UI->getDebugLoc());
+          R = N;
+        }
+        if (Q)
+          for (Value *V : {static_cast<Value *>(X), R})
+            if (taint.Tainted.insert(V).second)
+              Seeds.push_back(V);
+        Repl = R;
+      } else if (auto *Z = dyn_cast<ZExtInst>(UI)) {
         auto *NZ = CastInst::Create(Instruction::ZExt, NP, Z->getDestTy(),
                                     Z->getName(), UI);
         NZ->setDebugLoc(Z->getDebugLoc());
@@ -182,6 +234,15 @@ bool narrowBoolStoragePhis(Function &F, TaintSet &taint,
   for (const SetVector<PHINode *> &Web : Webs)
     narrowWeb(Web, taint, Seeds);
   return !Webs.empty();
+}
+
+bool narrowBoolStorageModule(Module &M, TaintSet &taint) {
+  bool Changed = false;
+  SmallVector<Value *, 8> Seeds;  // the caller re-propagates in full.
+  for (Function &F : M)
+    if (!F.isDeclaration())
+      Changed |= narrowBoolStoragePhis(F, taint, Seeds);
+  return Changed;
 }
 
 }  // namespace cq

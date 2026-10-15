@@ -4,6 +4,7 @@
 #include "StageList.h"
 
 #include "ArmAnalysis.h"      // reverifyRailCondReads / reverifyCmpCondReads
+#include "ArmAngleHoist.h"    // hoistArmAngleCones (bd dm7f.77)
 #include "CondLiteral.h"      // declineQuantumCondLiterals / stripPredMuxPredictedMarks
 #include "ControlPlan.h"
 #include "CtlzIdiomPrepass.h"
@@ -12,6 +13,7 @@
 #include "MergePhiPeel.h"
 #include "OpcodeLowering.h"   // declineTaintedArmLiftedReads (bd r2j3.6 R2-2)
 #include "PredMuxFlatten.h"
+#include "RegCondLeaf.h"     // commitRegisterConditions (bd dm7f.77)
 #include "ReturnMerge.h"      // unifyTaintedReturns
 #include "SelectMergeEmit.h"  // declineQuantumCopySources
 #include "SpecializePlan.h"
@@ -187,6 +189,13 @@ std::unique_ptr<ControlPlan> runControlChain(Module &M, WidthDispatch &wd,
     peelIndependentMergePhis(M, taint, &PeelDelta);
     adjudicateTaintDelta(M, wd, taint, plan6, PeelDelta);
   }
+  // bd dm7f.77 (dm7f.51 step 2, design D3) — tag the REGISTER CONDITIONS
+  // (RegCondLeaf.h) on the IR detection is about to see, here and before the
+  // round-2 detection in `detectAndLowerOnwardControl` (L1: every detection).
+  // bd dm7f.77 — and hoist each rotation arm's classical angle cone into its
+  // pred first (ArmAngleHoist.h), so the arm has the theta-only shape.
+  hoistArmAngleCones(M, taint);
+  commitRegisterConditions(M, taint);
   // bd r2j3.6 R2-2: the lifted-call policy re-ask, before EVERY detection (here,
   // and in `detectAndLowerOnwardControl`'s round-2 fixpoint). See OpcodeLowering.h.
   declineTaintedArmLiftedReads(M, wd, taint, plan6);

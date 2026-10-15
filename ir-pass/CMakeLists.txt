@@ -80,6 +80,10 @@ add_library(CQPass MODULE
   src/FreePoint.cpp
   src/InPlaceQQ.cpp
   src/InPlaceQQRecord.cpp
+  # bd dm7f.77: the register condition (dm7f.51 step 2, design D3).
+  src/RegCondLeaf.cpp
+  # bd dm7f.77: hoist a rotation arm's classical angle cone.
+  src/ArmAngleHoist.cpp
   src/IntrinsicLowering.cpp
   src/IOSinkLowering.cpp
   src/LibmBinding.cpp

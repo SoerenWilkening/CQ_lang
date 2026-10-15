@@ -24,9 +24,36 @@
 ; place BEFORE control detection, so the condition reads q4's relabelled rail as
 ; a rail leaf) flips this fixture to an accept with an analytic check.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s
-; CHECK: cq in-place lowering: quantum reassignment of a dead register is not provable in place
+; ⚠ FLIPPED TO AN ACCEPT by bd test_C_libtooling-dm7f.77 (dm7f.51 step 2, the
+; retirement trigger above; the file keeps its name, L8). The select's condition
+; `%4 = xor %1, %3` is committed before detection as a REGISTER CONDITION with
+; target q4 (dead after it; RegCondLeaf.h), the 4.4 select reads it as a register
+; root (copy flag from q4's relabelled rail), and the late round puts the xor in
+; place: CNOT(q2,q4) before, CNOT(q2,q4) after, the CCRy controlled by the
+; compare flag, every ancilla stripped and freed. Nothing re-reads the old q4.
+; ANALYTIC (scratch tracecheck.py on the trace vs ref.py on the textbook circuit
+; CNOT(q2,q4); CCRy(q4,q3 -> q2, .9); CNOT(q2,q4), identical to 12 digits):
+; P(q2,q3,q4) = 000: 0.822986929097, 001: 0.033817650941, 010: 0.078750726570,
+; 011: 0.000402196300, 100: 0.053658333595, 101: 0.002204893822,
+; 110: 0.007968285777, 111: 0.000210983898 (textbook (0,1,1) = 0.00040, the
+; out-of-place miscompile's 0.00101 the header cites is gone).
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck %s --check-prefix=NOERR --allow-empty < %t.err
+; NOERR-NOT: error
+; CHECK-LABEL: define noundef i32 @main()
+; CHECK:       call void @cqrt_ry_i1(i32 %[[Q4:[a-zA-Z0-9_.]+]], double 4.000000e-01)
+; CHECK-NEXT:  call void @cqrt_cnot(i32 %[[Q2:[a-zA-Z0-9_.]+]], i32 %[[Q4]]), !cq.inplace.qq
+; CHECK-NEXT:  %[[BF:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT:  call void @cqrt_cnot(i32 %[[Q4]], i32 %[[BF]])
+; CHECK:       %[[CMP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(
+; CHECK-NEXT:  call void @cqrt_ry_i1_controlled(i32 %[[CMP]], i32 %[[Q2]], double 9.000000e-01)
+; CHECK:       call void @cqrt_cnot(i32 %[[Q4]], i32 %[[BF]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[BF]])
+; CHECK:       call void @cqrt_free(i32 %[[CMP]])
+; CHECK-NEXT:  call void @cqrt_cnot(i32 %[[Q2]], i32 %[[Q4]]), !cq.inplace.qq
+; CHECK-NOT:   cq_template_xor
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
