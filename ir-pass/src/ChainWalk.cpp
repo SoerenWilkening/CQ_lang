@@ -1036,6 +1036,38 @@ bool isInteriorConsumer(const CallInst *C, const Value *R,
   //     `false` — no fall-through to the list below, exactly as before.
   if (taint.DischargedFlagGates.count(C))
     return isRecordedStripReaderOf(C, R, taint);
+  // (c′) bd dm7f.77 (dm7f.51 step 2) — A CONTROL READ: `cqrt_cnot` /
+  //      `cqrt_toffoli` with the rail ONLY in control slots, or a controlled
+  //      rotation `cqrt_r{y,z}_<W>_controlled` with the rail ONLY as its control
+  //      (slot 0). A control's basis label is unchanged by the gate it controls,
+  //      so the reader is finished with the rail once it has run — row (b)'s
+  //      argument, and the one the compare flag's own strip after a controlled
+  //      Ry rests on. Until bd dm7f.77 every rail read this way was a Phase-4
+  //      FLAG the emitter strips and frees (its `cqrt_free` user still
+  //      disqualifies it, below); a REGISTER CONDITION (RegCondLeaf.h) is a
+  //      program value the emitter reads but does not own, and without this row
+  //      a dead one stood allocated as a record of its parents across their
+  //      next gate: `b ^= a; if (a & b) cq_theta(&t, .5); b ^= a;
+  //      cq_theta(&a, .3)` left `a & !b` beside the later Ry on `a` (M-A
+  //      warned "non-diagonal gate over a live derived record"). The positional
+  //      half — every such read has run, never re-reads — is the driver's.
+  {
+    StringRef CN = C->getCalledFunction()->getName();
+    const bool Rot = (CN.starts_with("cqrt_ry_") || CN.starts_with("cqrt_rz_")) &&
+                     CN.ends_with("_controlled") && C->arg_size() == 3;
+    unsigned Controls = CN == "cqrt_cnot" ? 1 : CN == "cqrt_toffoli" ? 2
+                        : Rot ? 1 : 0;
+    if (Controls && C->getType()->isVoidTy()) {
+      bool Reads = false;
+      for (unsigned I = 0, E = C->arg_size(); I != E; ++I)
+        if (C->getArgOperand(I) == R) {
+          if (I >= Controls)
+            return false;  // a written slot (target / angle): not a read.
+          Reads = true;
+        }
+      return Reads;
+    }
+  }
   // Everything else DISQUALIFIES the rail, and the list of what "everything
   // else" contains is the point: `cqrt_measure_*` (observed), a
   // `cqrt_tape_write_*` / `cqrt_copy_*` (recorded into a kept carrier the

@@ -66,10 +66,51 @@ void setDeadMask(Instruction *I, unsigned Mask) {
 // again reads `V` again unless `V` is re-defined in the same cycle, so a `V`
 // from outside `BO`'s loop is live (and an irreducible repeat is not proven).
 // A φ is never a target (Bennett: it can alias another live name).
+bool isThetaChainLink(const Value *V) {
+  const auto *CI = dyn_cast<CallInst>(V);
+  const Function *F = CI ? CI->getCalledFunction() : nullptr;
+  return F && F->getName().starts_with("cq_theta_") && CI->arg_size() >= 2;
+}
+
+// bd dm7f.77 (dm7f.51 step 2, design D2(b): "every use of every member of x's
+// wire closure") — the ONE φ that IS a register: a merge φ every incoming of
+// which is a name on ONE rotation chain (`%m = phi [Ry(%q), %q]`, a controlled
+// in-place Ry region's merge, which the region emitter collapses onto the
+// hoisted theta's rail). Bennett's reason to refuse a φ target — it can alias
+// ANOTHER live name — is answered by asking deadness of every chain member: each
+// is read only by the φ, by the next link of the chain, or provably before `BO`.
+bool singleWirePhiDeadAfter(PHINode *P, BinaryOperator *BO,
+                            const DominatorTree &DT) {
+  SmallPtrSet<Value *, 8> Wire;
+  Value *Root = nullptr;
+  for (Value *In : P->incoming_values()) {
+    Value *X = In;
+    while (isThetaChainLink(X) &&
+           isa<Instruction>(cast<CallInst>(X)->getArgOperand(0))) {
+      Wire.insert(X);
+      X = cast<CallInst>(X)->getArgOperand(0);
+    }
+    if (!isa<Instruction>(X) || (Root && Root != X))
+      return false;  // a constant incoming, or two different wires.
+    Root = X;
+    Wire.insert(X);
+  }
+  for (Value *M : Wire)
+    for (User *U : M->users()) {
+      if (U == P || Wire.count(U))
+        continue;
+      auto *UI = dyn_cast<Instruction>(U);
+      if (!UI || !provablyBefore(UI, BO, DT))
+        return false;
+    }
+  return true;
+}
+
 bool deadAfter(Value *V, BinaryOperator *BO, const DominatorTree &DT,
                const LoopInfo &LI) {
-  if (isa<Constant>(V) || isa<PHINode>(V) ||
-      BO->getOperand(0) == BO->getOperand(1))
+  if (isa<Constant>(V) || BO->getOperand(0) == BO->getOperand(1))
+    return false;
+  if (auto *P = dyn_cast<PHINode>(V); P && !singleWirePhiDeadAfter(P, BO, DT))
     return false;
   if (Loop *L = LI.getLoopFor(BO->getParent())) {
     auto *VI = dyn_cast<Instruction>(V);
@@ -89,6 +130,11 @@ bool deadAfter(Value *V, BinaryOperator *BO, const DominatorTree &DT,
 }
 
 }  // namespace
+
+bool qqOperandDeadAfter(Value *V, BinaryOperator *BO, const DominatorTree &DT,
+                        const LoopInfo &LI) {
+  return deadAfter(V, BO, DT, LI);
+}
 
 void recordDeadQQOperands(Module &M, const TaintSet &taint) {
   for (Function &F : M) {

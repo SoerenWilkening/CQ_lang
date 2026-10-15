@@ -9,6 +9,7 @@
 // types here. See `SelectClassify.h` for the six-gate contract.
 
 #include "SelectClassify.h"
+#include "RegCondLeaf.h"  // isRegCondLeaf / regCondProvenance (bd dm7f.77)
 
 #include "ArmAnalysis.h"     // comparePredLowerable, diagonalAliasHit, condProvenance
 #include "CompareLowering.h" // compareFlagMintable (per-leaf width/scope fence)
@@ -737,7 +738,13 @@ bool isStructuralRailPhi(const Value *V) {
 }
 
 bool collectCondTree(Value *Root, CondTree &Tree, bool AllowLogicalSelect,
-                     bool AllowRailPhi, function_ref<bool(Value *)> IsLiteral) {
+                     bool AllowRailPhi, function_ref<bool(Value *)> IsLiteral,
+                     bool AllowRegRoot) {
+  // bd dm7f.77 — a REGISTER-CONDITION ROOT, opt-in (see the header).
+  if (AllowRegRoot && isRegCondLeaf(Root)) {
+    Tree.RegLeaves.push_back(cast<Instruction>(Root));
+    return true;
+  }
   SmallPtrSet<Value *, 8> Seen;
   SmallVector<std::pair<Value *, bool>, 8> Stack;
   Stack.push_back({Root, false});
@@ -962,6 +969,7 @@ bool collectCondTree(Value *Root, CondTree &Tree, bool AllowLogicalSelect,
       Stack.push_back({NodeL, false});  // left child visits first.
   }
   return !Tree.Leaves.empty() || !Tree.RailLeaves.empty() ||
+         !Tree.RegLeaves.empty() ||
          !Tree.RailPhiLeaves.empty();
 }
 
@@ -1032,12 +1040,17 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   // (dm7f.52); the logical `select i1` nodes were pre-claimed by
   // `ControlDetect` so they are not also classified as data selects. A data
   // select keeps FALSE, byte-unchanged.
+  // bd dm7f.77 — a DATA select admits a REGISTER-CONDITION root
+  // (RegCondLeaf.h): the V5 / Dicke block `q4 ^= q2; s = 2*q4 + q3` folds to
+  // `select i1 (xor %q2, %q4), 2, 0` with `q4` dead, and the copy merge must
+  // read q4's relabelled rail rather than rebuild the xor from the old `q4`.
   CondTree Tree;
   if (!collectCondTree(
           Sel->getCondition(), Tree,
           /*AllowLogicalSelect=*/angleMuxRoot(Sel, taint) != nullptr,
           /*AllowRailPhi=*/true,
-          [&taint](Value *V) { return condLiteralAdmissible(V, taint); }))
+          [&taint](Value *V) { return condLiteralAdmissible(V, taint); },
+          /*AllowRegRoot=*/angleMuxRoot(Sel, taint) == nullptr))
     return diagnoseUnderControl(Sel, "control flow");
   // bd `test_C_libtooling-xdu2.13` — a literal's tainted SIBLING must be a flag
   // the network MINTS (a compare leaf or a node ancilla), never a bare RAIL (a
@@ -1161,6 +1174,16 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   // its own prep region, and each owes `lowerControlRegions` its own precedence
   // edge. A scalar would keep the last and silently drop the rest (F-M1 again,
   // one construct over).
+  // bd dm7f.77 — RUNGS (i)/(ii) FOR A REGISTER-CONDITION ROOT, over BOTH names
+  // of its wire (the value and the in-place target it overwrites).
+  for (Instruction *Reg : Tree.RegLeaves) {
+    if (!taint.Tainted.count(Reg))
+      return diagnoseUnderControl(Sel, "control flow");
+    for (Value *Name : {static_cast<Value *>(Reg), regCondTarget(Reg)})
+      if (Name && railMeasuredBeforeReadPoint(Name, Sel, taint, DT))
+        return diagnoseUnderControl(
+            Sel, "condition measured before the control route");
+  }
   SmallVector<unsigned, 2> PrepIdxs;
   for (PHINode *P : Tree.RailPhiLeaves) {
     const unsigned PrepIdx = preppedRailPhiRegionIdx(P, plan);
@@ -1297,6 +1320,11 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
     // would never look at the prepped register's wire at all.
     for (PHINode *P : Tree.RailPhiLeaves)
       condProvenance(P, taint, RailProv);
+    // bd dm7f.77 — RUNG (iii) for a REGISTER-CONDITION root: its own wire
+    // (`regCondProvenance` — the value plus its in-place target, NOT the xor's
+    // source), with the rail's DT prong.
+    for (Instruction *Reg : Tree.RegLeaves)
+      regCondProvenance(Reg, taint, RailProv);
     for (const SmallPtrSet<Value *, 16> *S : {&CmpProv, &RailProv})
       for (Value *P : *S)
         if (isa<FreezeInst>(P))
@@ -1479,8 +1507,8 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   // `!Tree.RailLeaves.empty() && !R.RailLadderProven` backstop will see a rail
   // leaf and MUST see the flag. Forgetting this `||` would refuse the very accept
   // the ladder above just created (the r9e5 round-1 F-B1R1-2 shape verbatim).
-  R.RailLadderProven =
-      !Tree.RailLeaves.empty() || !Tree.RailPhiLeaves.empty();
+  R.RailLadderProven = !Tree.RailLeaves.empty() ||
+                       !Tree.RailPhiLeaves.empty() || !Tree.RegLeaves.empty();
   // F-M1 — CARRY THE ORDER OBLIGATION, do not leave the emitter to re-derive it.
   // `PrepIdxs` is rung 0's own answer (one entry per φ leaf the loop above
   // admitted, and a φ leaf cannot reach here without one); `lowerControlRegions`

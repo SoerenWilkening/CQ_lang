@@ -21,6 +21,7 @@
 #define CQ_IRPASS_ARM_ANALYSIS_H_
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 
@@ -72,8 +73,11 @@ bool armBlockIsPureSpine(const llvm::BasicBlock *ArmBB,
 // sources. Replicates the per-use arg-1 angle exclusion verbatim — the angle
 // operand of a `cq_phi` is classical and must never be collected as a condition
 // operand (the f64/angle miscompile family). Only tainted values are recorded.
+// `Stop` (bd dm7f.77, optional): a value it returns true for is collected but
+// not entered (`condProvCoveredPhiGates` stops at a claimed merge φ).
 void condProvenance(llvm::Value *Cond, TaintSet &Taint,
-                    llvm::SmallPtrSetImpl<llvm::Value *> &Out);
+                    llvm::SmallPtrSetImpl<llvm::Value *> &Out,
+                    llvm::function_ref<bool(llvm::Value *)> Stop = nullptr);
 
 // The base's first DIAGONAL-ALIAS hit in `Prov`, or null. Walks the pre-region
 // register-form `@cq_phi_<sfx>` arg-0 chain from `Routed`: rotation lowering RAUWed
@@ -447,6 +451,17 @@ bool collectAngleMux(llvm::SelectInst *Root, const TaintSet &Taint,
 void condTreeCoveredPhiGates(const CondTree &Tree, const ControlPlan &plan,
                              TaintSet &Taint,
                              llvm::SmallPtrSetImpl<const llvm::CallInst *> &Covered);
+
+// bd dm7f.77 — the same coverage for a COMPARE condition whose operand chain
+// reads a claimed region-merge φ (dicke.c's `2*q3 + q2 == 3` after a controlled
+// Ry on q2), and for a REGISTER CONDITION whose in-place target is one: the arm
+// gates of each claimed region whose merge the condition's
+// provenance reaches, minus any gate that is staling evidence on the part of
+// the provenance that does NOT pass through a claimed φ. Passed as `Covered` to
+// the condition's wire disposition.
+void condProvCoveredPhiGates(llvm::Value *Cond, const ControlPlan &plan,
+                            TaintSet &Taint,
+                            llvm::SmallPtrSetImpl<const llvm::CallInst *> &Covered);
 
 // bd test_C_libtooling-3qlq Inc 1 (PRD `retire-swap-route-PRD.md` §6.2 row P1) —
 // the FLAT KICKBACK DIAMOND classifier. Same three-way disposition contract as

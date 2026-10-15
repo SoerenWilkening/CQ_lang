@@ -12,8 +12,26 @@
 ; does not widen the accept surface for a genuinely unlowerable condition
 ; (Prime Directive: over-accepting is the one unforgivable miscompile).
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq controlled lowering: control flow under quantum control
+; ⚠ FLIPPED TO AN ACCEPT by bd test_C_libtooling-dm7f.77 (the file keeps its
+; name, L8). The fence this pinned — the residue fold must not turn an off-grammar
+; NOT condition into an ACCEPT — still holds for the FOLD (it does not touch the
+; `xor`); what changed is that the NOT condition is now LOWERABLE on its own: the
+; select's condition `xor %t, true` is tagged a fresh REGISTER CONDITION
+; (RegCondLeaf.h), lowered out of place (`xor_i1_hl(cmp, 1)`, a fresh rail) and read
+; through the 4.4 copy flag. Every `cqrt_x` brackets an ancilla (`bf` / node `g`),
+; never the user's register `%h`.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck %s --check-prefix=NOERR --allow-empty < %t.err
+; NOERR-NOT: error
+; RUN: %filecheck %s --check-prefix=NOX < %t.ll
+; NOX-NOT:     call void @cqrt_x(i32 %h)
+; CHECK-LABEL: define i32 @probe(
+; CHECK:       %[[N:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i1_hl(i32 %[[C:[a-zA-Z0-9_.]+]], i1 true)
+; CHECK:       %[[BF:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT:  call void @cqrt_cnot(i32 %[[N]], i32 %[[BF]])
+; CHECK:       call void @cqrt_cnot(i32 %[[N]], i32 %[[BF]])
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 

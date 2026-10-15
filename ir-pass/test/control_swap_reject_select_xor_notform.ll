@@ -23,11 +23,28 @@
 ; decline); they pin the diagnostic's cleanliness, while the no-mutation
 ; property lives in the `collectCondTree` detection reject itself.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}control flow under quantum control
-; CHECK-NOT: cqrt_copy
-; CHECK-NOT: cqrt_cnot
-; CHECK-NOT: cq_template_icmp
+; ⚠ FLIPPED TO AN ACCEPT by bd test_C_libtooling-dm7f.77 (the file keeps its
+; name, L8). "A materialize-a-constant-rail path that does not exist" now does,
+; one level up: the NOT condition is tagged a fresh REGISTER CONDITION
+; (RegCondLeaf.h), lowered out of place by `lowerOps` (`xor_i1_hl(c1, 1)`, a fresh
+; rail holding `!c1`, never an X on a user register), and the 4.4 select reads it
+; as a register ROOT through the copy flag (`AllowRegRoot`, SelectClassify.cpp).
+; Stream: compare, `!c1`, bf = copy, out = !c1 ? q : x, uncopy, free bf. The
+; compare and `!c1` are left allocated here because nothing follows (the spine
+; discharges them before a later gate on `q`: probed with `cq_theta(&q, .7)`).
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck %s --check-prefix=NOERR --allow-empty < %t.err
+; NOERR-NOT: error
+; CHECK:       %[[C1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q:[a-zA-Z0-9_.]+]], i32 5)
+; CHECK-NEXT:  %[[N:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i1_hl(i32 %[[C1]], i1 true)
+; CHECK-NEXT:  %[[BF:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT:  call void @cqrt_cnot(i32 %[[N]], i32 %[[BF]])
+; CHECK:       call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[Q]], i32 %[[OUT:[a-zA-Z0-9_.]+]])
+; CHECK:       call void @cqrt_cnot(i32 %[[N]], i32 %[[BF]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[BF]])
+; CHECK-NOT:   cqrt_x(i32 %[[Q]])
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 

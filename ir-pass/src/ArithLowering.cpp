@@ -5,6 +5,7 @@
 // (`OpcodeLowering`) owns collection, program order, and erase.
 
 #include "ArithLowering.h"
+#include "RegCondLeaf.h"  // isRegCondLeaf / kRegCondTag (bd dm7f.77)
 
 #include "ChainWalk.h"      // isInPlaceGateOn (the ONE in-place-gate relation)
 #include "DeadValueLiveness.h"  // isRecordedDeadSlot (bd vsfp r2: the ONE "slot unread")
@@ -274,6 +275,11 @@ bool rewriteBinary(BinaryOperator *bo, WidthDispatch &wd, TaintSet &taint) {
   // template, remapped through the BirthOrder swap, for the late in-place round.
   if (ShapeSel == Shape::QQ)
     transferDeadOperandMask(bo, T, /*Swapped=*/Lhs != A);
+  // bd dm7f.77 — carry the register-condition tag to the template (remapped
+  // through the BirthOrder swap, like the dead mask), so the late rounds, which
+  // see only the template, honour the commit: a FRESH condition stays out of
+  // place (M-C and the QQ round), a TARGET condition converts onto that operand.
+  transferRegCondTag(bo, T, /*Swapped=*/ShapeSel == Shape::QQ && Lhs != A);
   bo->replaceAllUsesWith(T);
   // Record the result handle's LOGICAL width (the binary op's own ABI width,
   // already validated non-empty at :45) so a downstream Q+Q data compare can
@@ -775,6 +781,17 @@ bool priorUseIsSettled(const Instruction *UI, const Value *P,
   // (d2) — the PLANNED discharge (see above). Asked before the already-emitted
   // scan because the two are independent witnesses of the same property and the
   // map lookup is the cheaper one; either alone settles the user.
+  // (d3) bd dm7f.77 (dm7f.51 step 2, design D2(b): "a prior reader that is
+  // OBSERVED counts settled") — for a QUANTUM source only: a producer whose rail
+  // the program MEASURES is never reversed by the spine (measured ⇒ done), so it
+  // never re-reads `P` expecting the old value; overwriting `P` after it stales
+  // nothing. dicke.c: `q4 = !q2` (measured) before `q2 ^= q1`. The step-1
+  // postcondition (`declineStaleInPlaceQQReads`) still re-asks every later
+  // adjoint and record after `uncompute`, so a wrong prediction here is loud.
+  if (QuantumSource)
+    for (const User *U : CI->users())
+      if (const auto *M = dyn_cast<CallInst>(U); M && isMeasureSink(M))
+        return true;
   if (Plan) {
     auto It = Plan->GateAt.find(CI);
     // `provablyBefore`, and NOTHING WEAKER — in particular `At == bo` is NOT
@@ -1031,6 +1048,11 @@ bool classifyInPlaceReassignment(BinaryOperator *bo, WidthDispatch &wd,
   if (Op != Instruction::Add && Op != Instruction::Sub &&
       Op != Instruction::Xor)
     return false;
+  // bd dm7f.77 — a REGISTER CONDITION with no in-place target (RegCondLeaf.h:
+  // the substituted guard `xor %c, true`) was read by a control emitter as a
+  // FRESH rail; it stays out of place, whatever this fence would say.
+  if (isRegCondLeaf(bo) && !regCondTarget(bo))
+    return false;
 
   // G2 — the SHAPE predicate (Rule 14: the dtzb one for add/xor, plus the
   // directional `sub` rule): exactly one tainted operand (the parent rail `P`),
@@ -1144,6 +1166,9 @@ bool lowerLateReassignments(Module &M, WidthDispatch &wd, TaintSet &taint) {
         Value *P = nullptr, *Imm = nullptr;
         StringRef W;
         if (!lateReassignShape(C, taint, Op, P, Imm, W))
+          continue;
+        // bd dm7f.77 — a fresh register condition stays out of place (above).
+        if (C->getMetadata(kRegCondTag))
           continue;
         // A rail ANOTHER emitter owns is never re-lowered here. Phase-4 control
         // rails, 7.6 output rails, 7.2 graveyard rails and untainted merge rails

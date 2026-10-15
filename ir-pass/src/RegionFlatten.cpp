@@ -14,6 +14,7 @@
 #include "ControlPlan.h"
 #include "LiteralIntegrity.h"  // declineAddressTakenBlocks (bd 7udx)
 #include "SelectClassify.h"    // isCondRailLeaf / isCondRailPhiShape (never erase a user's rail)
+#include "RegCondLeaf.h"       // isRegCondLeaf (bd dm7f.77)
 #include "TaintPropagation.h"
 
 #include "llvm/ADT/ArrayRef.h"
@@ -107,8 +108,11 @@ void flattenRegion(const ControlRegion &R, TaintSet &taint) {
   //    a φ is a MERGE node other instructions' SSA edges still name, and erasing
   //    one here would be exactly the "region whose predecessor is another
   //    region's merge block" family.
+  // bd dm7f.77 — nor a REGISTER CONDITION (RegCondLeaf.h): a control emitter
+  // may hold it only through a `WeakTrackingVH` (the state prep's recorded
+  // control), and `lowerOps` turns it into the register that control reads.
   if (Cond && Cond->use_empty() && !isCondRailLeaf(Cond) &&
-      !isCondRailPhiShape(Cond)) {
+      !isCondRailPhiShape(Cond) && !isRegCondLeaf(Cond)) {
     scrubTaint(Cond, taint);
     Cond->eraseFromParent();
   }
@@ -205,12 +209,12 @@ void flattenRegionTree(const ControlRegion &Outer, const ControlRegion &Inner,
   //    both rungs, for the reason spelled out in `flattenRegion` step 3 — no
   //    subject today, defence in depth against a silent re-opening.)
   if (InnerCond && InnerCond->use_empty() && !isCondRailLeaf(InnerCond) &&
-      !isCondRailPhiShape(InnerCond)) {
+      !isCondRailPhiShape(InnerCond) && !isRegCondLeaf(InnerCond)) {
     scrubTaint(InnerCond, taint);
     InnerCond->eraseFromParent();
   }
   if (OuterCond && OuterCond->use_empty() && !isCondRailLeaf(OuterCond) &&
-      !isCondRailPhiShape(OuterCond)) {
+      !isCondRailPhiShape(OuterCond) && !isRegCondLeaf(OuterCond)) {
     scrubTaint(OuterCond, taint);
     OuterCond->eraseFromParent();
   }

@@ -6,6 +6,7 @@
 #include "ChainWalk.h"         // isNonPermutationMove
 #include "FreePoint.h"         // computeFreePoint — the spine's own disposition
 #include "MergeStreamGates.h"  // streamGateWrites
+#include "RegCondLeaf.h"       // regCondTagIndex (bd dm7f.77)
 #include "WireWalk.h"          // provablyBefore
 #include "TaintPropagation.h"  // TaintSet
 #include "TemplateName.h"      // dataName — the ONE builder of the QQ symbol
@@ -268,6 +269,45 @@ Outcome decideNext(Function &F, WidthDispatch &wd, TaintSet &taint,
     for (unsigned Idx = 0; Idx < 2; ++Idx)
       if ((S.Mask >> Idx & 1u) && railIsUserData(S.C->getArgOperand(Idx)))
         Eligible.push_back(Idx);
+    // (E2′) bd dm7f.77 — design D5 ("%8 then in place on f's rail"): a dead
+    // FRESH REGISTER CONDITION rail (RegCondLeaf.h: the out-of-place xor a
+    // control stream read as the user's register) that the M-B interior plan has
+    // no adjoint for and no emitter zeroed. In place onto it is EXACTLY "out of
+    // place, then discharge it", and here nothing else discharges it: dicke.c's
+    // q3 rail (a select's register root) sits in a MEASURED terminal's DAG, which
+    // the plan withholds and the terminal spine does not reverse, so out of place
+    // left it beside the kept result, together recording q1 before its
+    // controlled Ry (dead-record ruling). Bennett.jl exclusive-reader target
+    // (operand.jl:182-221). OPTIONAL: the ONE dead operand, never loud.
+    bool DerivedTarget = false;
+    if (Eligible.empty() && (S.Mask == 1u || S.Mask == 2u)) {
+      const unsigned Idx = S.Mask == 1u ? 0 : 1;
+      auto *R = dyn_cast<CallInst>(S.C->getArgOperand(Idx));
+      if (R && isTemplateProducer(R) &&
+          regCondTagIndex(R) == static_cast<int>(kRegCondFresh) &&
+          !Plan.GateAt.count(R) &&
+          !railZeroedAndReleased(R, /*Before=*/nullptr, /*DT=*/nullptr)) {
+        Eligible.push_back(Idx);
+        DerivedTarget = true;
+      }
+    }
+    // bd dm7f.77 — HONOUR THE REGISTER-CONDITION COMMIT (RegCondLeaf.h): a
+    // control emitter read this value as a register on the wire the commit named
+    // (FRESH: its own rail; else the tagged target). Any other conversion puts
+    // the condition on a wire nobody asked about: LOUD when Q1 demands one.
+    if (const int Tag = regCondTagIndex(S.C); Tag >= 0) {
+      const bool Fresh = Tag == static_cast<int>(kRegCondFresh);
+      if (Fresh && DerivedTarget)
+        continue;
+      if (!Eligible.empty() && (Fresh || Eligible.front() != unsigned(Tag) ||
+                                Eligible.size() != 1))
+        if (!(railZeroedAndReleased(S.C, nullptr, nullptr) ||
+              Plan.GateAt.count(S.C) || !survives(S.C, taint, F, PDT))) {
+          F.getContext().diagnose(DiagnosticInfoUnsupported(
+              F, kMsgInPlaceQQRefused, S.C->getDebugLoc()));
+          return Outcome::Loud;
+        }
+    }
     if (Eligible.empty())
       continue;  // live old value (or a derived rail): out of place, D5.
     // A RESULT THAT IS DISCHARGED stays out of place, fence or no fence. An
@@ -300,10 +340,16 @@ Outcome decideNext(Function &F, WidthDispatch &wd, TaintSet &taint,
     // eligible SUBTRAHEND (`t = a - t`) has no in-place form. A source that
     // depends on `x`'s old value (E3) has no clean in-place form either. Both
     // are refusals of an eligible dead register: loud (owner Q1, ruling Q2).
-    if (S.Stem == "sub" && Idx == 1)
+    if (S.Stem == "sub" && Idx == 1) {
+      if (DerivedTarget)
+        continue;  // E2′ is optional: out of place, as before.
       return loud(kMsgInPlaceQQRefused);
-    if (dependsOnTarget(S.C->getArgOperand(1 - Idx), P, S.C, DT))
+    }
+    if (dependsOnTarget(S.C->getArgOperand(1 - Idx), P, S.C, DT)) {
+      if (DerivedTarget)
+        continue;
       return loud(kMsgInPlaceQQSelfDependent);
+    }
     // (F) the fence, asked for a QUANTUM source (G7 arms (c′)/(d4)).
     if (inPlacePositionHolds(S.C, P, taint, DT, LI, &Plan,
                              /*IgnoreSelfMarking=*/false,
@@ -315,6 +361,8 @@ Outcome decideNext(Function &F, WidthDispatch &wd, TaintSet &taint,
         return Outcome::Converted;
       }
     }
+    if (DerivedTarget)
+      continue;
     // Q1: a dead user register the fence refuses, beside a SURVIVING result —
     // never out of place.
     return loud(kMsgInPlaceQQRefused);
@@ -344,8 +392,8 @@ bool lowerInPlaceQQ(Module &M, WidthDispatch &wd, TaintSet &taint) {
   for (Function &F : M)
     for (BasicBlock &BB : F)
       for (Instruction &I : BB)
-        if (I.getMetadata(kDeadOperandTag))
-          I.setMetadata(kDeadOperandTag, nullptr);
+        for (const char *Tag : {kDeadOperandTag, kRegCondTag})
+          I.setMetadata(Tag, nullptr);  // records only; never in the output.
   return Changed;
 }
 

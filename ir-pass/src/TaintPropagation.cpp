@@ -23,6 +23,8 @@
 #include "Specialization.h"
 #include "LoopPlan.h"          // collapseFlattenedLoopRails (F-R1-1 onward pass)
 #include "MergePhiPeel.h"     // peelIndependentMergePhis (bd b6ap, ROUND-2 site)
+#include "RegCondLeaf.h"      // commitRegisterConditions (bd dm7f.77, ROUND-2 site)
+#include "ArmAngleHoist.h"    // hoistArmAngleCones (bd dm7f.77, ROUND-2 site)
 #include "ReturnMerge.h"      // unifyTaintedReturns (bd dm7f.5, ROUND-2 site)
 #include "SwapRouteEmit.h"     // lowerControlRegions (yn71 onward-control re-emit)
 #include "WidthDispatch.h"
@@ -2512,6 +2514,8 @@ void detectAndLowerOnwardControl(Module &M, WidthDispatch &wd, TaintSet &taint,
     // `Tainted − beforeTaint` reseed the sole caller adjudicates.
     unifyTaintedReturns(M, taint, /*Delta=*/nullptr);
     peelIndependentMergePhis(M, taint, /*Delta=*/nullptr);
+    hoistArmAngleCones(M, taint);        // bd dm7f.77 — see runControlChain.
+    commitRegisterConditions(M, taint);  // bd dm7f.77 — see runControlChain.
     declineTaintedArmLiftedReads(M, wd, taint, plan6);  // bd r2j3.6 R2-2 (L1 re-ask)
     ControlPlan plan2 = detectControlRegions(M, wd, taint);
     if (plan2.Regions.empty())

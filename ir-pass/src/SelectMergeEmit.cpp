@@ -211,7 +211,8 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
                        /*AllowRailPhi=*/false,
                        R.CondLiterals.empty()
                            ? function_ref<bool(Value *)>()
-                           : function_ref<bool(Value *)>(IsLit)) ||
+                           : function_ref<bool(Value *)>(IsLit),
+                       /*AllowRegRoot=*/R.RailLadderProven) ||
       Tree.LiteralLeaves.size() != R.CondLiterals.size()) {
     // Detection guarantees the shape (SelectClassify pushes only a SelectInst
     // Merge + a tree-shaped Condition); if it ever fails to hold, bail LOUDLY —
@@ -246,7 +247,8 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // must SAY the ladder was asked (`ControlRegion::RailLadderProven`, set at the
   // classifier's accept), and a rail-carrying tree without it is refused with
   // the original string, before anything is emitted (detect-before-mutate).
-  if (!Tree.RailLeaves.empty() && !R.RailLadderProven) {
+  if ((!Tree.RailLeaves.empty() || !Tree.RegLeaves.empty()) &&
+      !R.RailLadderProven) {
     diagnoseUnderControl(Sel, kBareRailCondReason);
     return;
   }

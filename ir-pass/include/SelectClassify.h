@@ -126,6 +126,13 @@ struct CondTree {
   // loop-carried header φ — bd `boi6`; and a φ NO region claimed, which is this
   // increment's own decline family).
   llvm::SmallVector<llvm::PHINode *, 2> RailPhiLeaves;
+  // bd test_C_libtooling-dm7f.77 — a REGISTER-CONDITION ROOT (`isRegCondLeaf`):
+  // a QQ `xor i1` read as its own register (RegCondLeaf.h), collected only when
+  // the caller passes `AllowRegRoot`. Like a rail leaf it mints nothing and is
+  // read only in control slots; `CondTreeEmit` admits it by MEMBERSHIP of this
+  // field. ⚠ THE SAME OBLIGATION AS `RailLeaves`: a consumer that opts in must
+  // ask the rail ladder of it (over `regCondProvenance`, not `condProvenance`).
+  llvm::SmallVector<llvm::Instruction *, 1> RegLeaves;
   llvm::SmallVector<llvm::Instruction *, 4> Nodes;
   // bd `test_C_libtooling-xdu2.13` — CLASSICAL LITERAL children of an `and`/`or`
   // node, collected ONLY when the caller passes `IsLiteral` (the 4.4 data select
@@ -286,10 +293,16 @@ bool decomposeCondNode(llvm::Value *V, llvm::Instruction::BinaryOps &Opc,
 // The classifier passes `condLiteralAdmissible`; the emitter passes MEMBERSHIP
 // of the classifier's committed `ControlRegion::CondLiterals`, so the two walks
 // cannot drift. A node whose BOTH children are literals is off-grammar.
+//
+// `AllowRegRoot` (bd test_C_libtooling-dm7f.77) — when true and `Root` is a
+// tagged REGISTER CONDITION (`isRegCondLeaf`, RegCondLeaf.h), the root is
+// recorded in `Tree.RegLeaves` and not decomposed. ROOT ONLY. False (every
+// caller but the 4.4 data select and its emitter) is byte-identical to before.
 bool collectCondTree(llvm::Value *Root, CondTree &Tree,
                      bool AllowLogicalSelect = false,
                      bool AllowRailPhi = false,
-                     llvm::function_ref<bool(llvm::Value *)> IsLiteral = nullptr);
+                     llvm::function_ref<bool(llvm::Value *)> IsLiteral = nullptr,
+                     bool AllowRegRoot = false);
 
 // Run the §0 ladder on a tainted-condition `Sel`. On ACCEPT push a
 // `ControlRegion{Kind=SelectRegion, Merge=Sel, Condition=Sel->getCondition()}`

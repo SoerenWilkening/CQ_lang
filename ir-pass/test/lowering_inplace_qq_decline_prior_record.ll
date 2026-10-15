@@ -16,9 +16,28 @@
 ; counts settled", with a post-`uncompute` re-check; bd test_C_libtooling-dm7f.76)
 ; flips this to an accept.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s
-; CHECK: cq in-place lowering: quantum reassignment of a dead register is not provable in place
+; ⚠ FLIPPED TO AN ACCEPT by bd test_C_libtooling-dm7f.77 (dm7f.51 step 2): the
+; retirement trigger above (design D2(b), bd dm7f.76) is built for the OBSERVED
+; case — a prior producer whose rail the program MEASURES is never reversed by the
+; spine, so overwriting `t` after it stales nothing (`priorUseIsSettled` arm (d3),
+; quantum source only; dicke.c needs it for `q4 = !q2 ... q2 ^= q1`). `u = 3t`
+; is minted from the old `t`, measured last, and `t ^= a` goes in place:
+; `mul_hl(t, 3)`, `cqrt_xor_i32(a, t)`, Ry on `a`. The source circuit exactly
+; (register `u` a kept record of the old `t`, register `t` overwritten in place).
+; The step-1 postcondition still re-asks every later adjoint after `uncompute`.
+; The "returned" half of D2(b) is not built (dm7f.76 stays open for it).
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck %s --check-prefix=NOERR --allow-empty < %t.err
+; NOERR-NOT: error
+; CHECK-LABEL: define noundef i32 @main()
+; CHECK:       %[[U:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[T:[a-zA-Z0-9_.]+]], i32 3)
+; CHECK-NEXT:  call void @cqrt_xor_i32(i32 %[[A:[a-zA-Z0-9_.]+]], i32 %[[T]]), !cq.inplace.qq
+; CHECK-NEXT:  call void @cqrt_ry_i32(i32 %[[A]], double 0x3FE6666666666666)
+; CHECK:       call i32 @cqrt_measure_i32(i32 %[[T]])
+; CHECK-NEXT:  call i32 @cqrt_measure_i32(i32 %[[U]])
+; CHECK-NOT:   cq_template_xor
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

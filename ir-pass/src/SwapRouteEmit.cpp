@@ -21,6 +21,7 @@
 #include "ArmAnalysis.h"         // phaseAngleTail (3qlq Inc 1 merge-tail angle phi)
 #include "CondTreeEmit.h"        // emitCondNetwork / stripCondNetwork (3qlq P3)
 #include "SelectClassify.h"      // CondTree / collectCondTree (the shared grammar)
+#include "RegCondLeaf.h"       // isRegCondLeaf (bd dm7f.77)
 #include "ArithLowering.h"       // rewriteBinary (the value-arm chain body, §4)
 #include "ArmAnalysis.h"         // comparePredLowerable (the value-arm pre-mint fence)
 #include "AngleSelectEmit.h"     // emitAngleSelectRegion (drbq Inc 2b)
@@ -774,10 +775,13 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   // still a live `PHINode` here (this region is emitted BEFORE the prep that
   // owns it — the hcrg alias edge / `PrepRegionIdxs`); the prep's M-β later
   // RAUWs it to the hoisted theta and `lowerRotations` to the handle.
+  // bd dm7f.77 — a tagged REGISTER CONDITION (RegCondLeaf.h) is the third
+  // register-as-control, on the same terms as the claimed φ: the classifier ran
+  // the ladder (`RailLadderProven`) and the branch still reads it.
   const bool RailCond =
       isCondRailLeaf(Cond) ||
-      (isCondRailPhiShape(Cond) && R.RailLadderProven &&
-       BI->isConditional() && BI->getCondition() == Cond);
+      ((isCondRailPhiShape(Cond) || isRegCondLeaf(Cond)) &&
+       R.RailLadderProven && BI->isConditional() && BI->getCondition() == Cond);
   // bd test_C_libtooling-dm7f.52 — the third condition kind: a COMPOUND TREE,
   // re-derived through the SAME grammar and flags `classifyArms` accepted with
   // (`collectCondTree`, `AllowLogicalSelect = true`, `AllowRailPhi = true` since
