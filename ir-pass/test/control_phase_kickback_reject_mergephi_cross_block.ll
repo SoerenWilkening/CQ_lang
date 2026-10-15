@@ -51,9 +51,9 @@
 ;
 ; THE FENCE IS STILL THERE AND STILL BITES — three files, each a decline:
 ;   `…_cross_block_theta.ll`         a chained Ry on the φ's own wire in `gap`;
-;   `…_cross_block_offwire_theta.ll` a chained Ry on ANOTHER wire in `gap` — the
-;                                    one no wire walk can see, so it is the file
-;                                    that proves the POSITIONAL prong survived;
+;   `…_cross_block_offwire_theta.ll` a chained Ry on ANOTHER wire in `gap` —
+;                                    ⚠ NOW AN ACCEPT (bd dm7f.53 / dm7f.62): the
+;                                    cross-block phi asks the WIRE-SCOPED gap;
 ;   `…_inloop_latch_theta.ll`        a chained Ry after the branch inside a loop,
 ;                                    reached only across the back edge.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll

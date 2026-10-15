@@ -17,10 +17,23 @@
 ; movers, neither of them this one. Read the sentence above as "…are re-argued
 ; for a borrowed one in l4x4.a".
 
-; ⚠ A `DS_Error` decline writes 0 bytes to stdout, so every IR-text negative a
-; decline fixture could carry is VACUOUS; what pins "no silent lowering" here is
-; the `not` inversion on the RUN line (exit non-zero) plus the string.
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+;
+; ⚠ FLIPPED TO AN ACCEPT BY bd test_C_libtooling-dm7f.54 (2026-10-15). THE NAME IS
+; KEPT (gahu precedent, L8): it is the l4x4.a shape, and the header above is its
+; history. It lowers, but NOT by difference and NOT controlled on the register:
+; the owner ruling `owner-ruling-angle-select-xbracket-2026-10-13` (each arm's
+; angle in exactly one controlled gate, no `cqrt_x` on a user register) is met
+; with a CNOT COPY flag, `CondTreeEmit`'s `CopyRailRoot` (the r9e5 4.4-select
+; flag): `bf = |0>; cnot(b, bf); ry_c(bf,r,.9); x(bf); ry_c(bf,r,.3); x(bf);
+; cnot(b, bf); free(bf)`. ANALYTIC: b = 1 -> r gets Ry(.9), b = 0 -> Ry(.3),
+; on the prepped `r`; bf = b on every branch and returns to 0, a proven-|0>
+; free; b sees control slots only and is never freed. The if/else twin
+; `control_inplace_ry_reject_rail_ifelse.ll` (also flipped, name kept) emits
+; the identical stream.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck %s --check-prefix=NEG < %t.ll
 
 declare void @cq_phi(double)
 declare i1 @cq_theta_i1(i1, double)
@@ -41,4 +54,22 @@ entry:
   ret i32 %s
 }
 
-; CHECK: cq controlled lowering: bare i1 register condition under quantum control
+; CHECK:      %[[B:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 %u0)
+; CHECK-NEXT: call void @cqrt_ry_i1(i32 %[[B]], double 5.000000e-01)
+; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 2.000000e-01)
+; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_cnot(i32 %[[B]], i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_cnot(i32 %[[B]], i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[R]])
+; CHECK-NEXT: call i1 @cqrt_measure_i1(i32 %[[B]])
+; CHECK-NOT:  call void @cqrt_free(
+
+; NEG-NOT: = select
+; NEG-NOT: cq_theta_
+; NEG-NOT: cq_phi

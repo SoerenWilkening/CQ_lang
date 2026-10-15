@@ -1,39 +1,37 @@
-; control_phase_kickback_reject_mergephi_chained_arm.ll — DECLINE (bd `3qps` /
-; bd `drbq.7`, Track P). THE RED-GREEN PIN THAT THE φ ADMISSION DOES NOT BYPASS
-; THE WIRE FENCE.
+; control_phase_kickback_reject_mergephi_chained_arm.ll — **NOW AN ACCEPT**
+; (bd `test_C_libtooling-dm7f.53`, discharging bd `drbq.7`'s retirement trigger).
 ;
-; ⚠ RED ON THE ORACLE FOR THE WRONG REASON, GREEN HERE FOR THE RIGHT ONE. At
-; `59ac5b7` this declined `branch phase on a bare i1 condition` — the LEAF
-; GRAMMAR refused the φ, so the wire was never examined. With the φ admitted,
-; step 5c's rung 0 PASSES (the diamond IS claimed as an `InPlaceRotation`) and
-; rung (iii) is what must own it. The string MOVES to
-; `condition predates a non-diagonal gate`; the disposition does not.
+; ⚠ THE `reject_` IN THE NAME IS HISTORY AND THE FILE IS DELIBERATELY NOT RENAMED
+; (the bd `gahu` precedent: a `git mv` can be RESURRECTED by a merge, CLAUDE.md L8).
 ;
-; WHY THIS ONE IS GENUINELY DIRTY, AND IT IS THE DISTINCTION THE WHOLE INCREMENT
-; RESTS ON. The arm theta is CHAINED — `%armv = cq_theta_i1(i1 %seed, …)` takes
-; the SEED as its arg-0 — so it is an IN-PLACE, NON-DIAGONAL Ry sitting on the
-; condition's own wire, and the merge φ names two DIFFERENT basis labels of ONE
-; register. `findNonDiagonalWireGate` answers DIRTY off-ancestry and the DT prong
-; cannot rescue it (the gate is BEFORE the branch, not after).
+; THE OLD HEADER (Track P) said this stays a DECLINE "until bd `drbq.7` lands",
+; and warned: do not fix it by NARROWING the φ's rung-(iii) seed to the arm theta
+; alone. dm7f.53 lands drbq.7 for a claimed merge-φ condition WITHOUT narrowing
+; any seed: the seed set is still `condProvenance(%b1) = {%b1, %armv, %seed}`
+; and every seed is still walked. What changed is that the CLAIMED region's arm
+; gate `%armv` is passed to `findNonDiagonalWireGate` as `Covered`
+; (`condTreeCoveredPhiGates`): skipped as EVIDENCE, its forward wire still
+; walked. The old verdict "DIRTY off-ancestry" was relative to the seed `%seed`;
+; the condition reads `%b1`, and `%armv` is the PRODUCER of `%b1`'s arm-path
+; record — it executes only before `%b1` is defined, so it cannot stale it.
+; "The merge φ names two different basis labels of ONE register" is exactly
+; what an in-place controlled Ry produces, and reading that register as a
+; control is the kickback's ordinary rail read.
 ;
-; THE ACCEPTED SHAPE IS THE OPPOSITE CASE: in
-; `control_phase_kickback_mergephi_rail.ll` the arm theta is a SOURCE
-; (`cq_theta_i1(i1 false, …)`, a CLASSICAL arg-0) and the φ's other incoming is
-; the constant seed, so `walkNonDiagonalWireGates`' backward closure stops at the
-; classical arg-0 and marks the producing theta ON-ANCESTRY EXEMPT — the wire is
-; CLEAN. Read the two files as a PAIR: same construct, opposite verdicts, and the
-; discriminator is what the arm theta's arg-0 is. That is why bd `3qps` was filed
-; as a LEAF-GRAMMAR over-decline and NOT as this fence.
+; WHAT STILL DECLINES (the cone the old header protected): a gate ON `%b1`
+; (a second Ry arm whose target is its own condition, the in-place-ARM φ family)
+; is a forward user of the seed `%b1` and is NOT covered —
+; `control_inplace_ry_reject_tree_mergephi_leaf_target.ll`; a pre-region name
+; read by another leaf keeps `%armv` as evidence (`condTreeCoveredPhiGates`'
+; enumeration) — `control_inplace_ry_reject_tree_mergephi_stale_prename.ll`.
 ;
-; ⚠ RETIREMENT TRIGGER: this stays a DECLINE until bd `drbq.7` lands. Do not
-; "fix" it by narrowing the φ's rung-(iii) seed to the arm theta alone — that
-; same cone is what refuses the in-place-ARM φ family (bd `3d8q`), and narrowing
-; it first converts an over-decline into an OVER-ACCEPT.
-; ⚠ Rule 12(b): a `DS_Error` decline writes 0 bytes to stdout, so every IR-text
-; negative a decline fixture could carry is VACUOUS. What pins "no silent
-; lowering" is the `not` inversion on the RUN line (exit non-zero) plus the
-; string, mirrored character-for-character below.
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; Trace check: b0 Ry(.5); seed Ry(.9); Ry(.2) on the seed rail under b0 (region
+; 1, emitted after the kickback, M-β); then the branch phase `cqrt_rz_i1` on that
+; SAME rail (the register IS the flag — nothing minted, stripped or freed, no
+; `cqrt_x`). Stage 2b: 2 rail mints, 2 left allocated, 0 frees.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.d53.ll
+; RUN: %filecheck %s < %t.d53.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.d53.ll
 
 declare void @cq_phi(double)
 declare i1 @cq_theta_i1(i1, double)
@@ -60,4 +58,19 @@ done:
   ret i1 %m
 }
 
-; CHECK: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+; CHECK:      %[[H0:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 %u0)
+; CHECK-NEXT: call void @cqrt_ry_i1(i32 %[[H0]], double 5.000000e-01)
+; CHECK-NEXT: %[[H1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_ry_i1(i32 %[[H1]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_ry_i1_controlled(i32 %[[H0]], i32 %[[H1]], double 2.000000e-01)
+; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[H1]], double 3.000000e-01), !cq.branchphase
+; CHECK-NEXT: %[[M:[a-zA-Z0-9_.]+]] = call i1 @cqrt_measure_i1(i32 %[[H1]])
+;
+; Whole-file, pure negatives.
+; NOROUTE-NOT: cqrt_cswap
+; NOROUTE-NOT: cqrt_copy
+; NOROUTE-NOT: call void @cqrt_x(
+; NOROUTE-NOT: call void @cqrt_free(
+; NOROUTE-NOT: call i1 @cq_theta_i1(
+; NOROUTE-NOT: call void @cq_phi(
+; NOROUTE-NOT: = phi

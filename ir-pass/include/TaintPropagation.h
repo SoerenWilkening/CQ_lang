@@ -841,6 +841,11 @@ struct TaintSet {
   //     round-2 fixpoint. So case (3) still becomes case (2) before the reader
   //     looks. `ControlPlan.h`'s `PrepRegionIdxs` block carries the same
   //     statement at the site that does the enlarging.
+  //   * bd `dm7f.53` (2026-10-15) — the `PhiRootCond` in-place Ry region
+  //     (`classifyArms`; also its φ LEAF on an in-place Ry condition tree).
+  //     **GRANTING, and it ENLARGES the population**; the premise was
+  //     re-checked: a φ in `Pred` is ordered before its prep by the bd `hcrg`
+  //     alias, a φ outside `Pred` by `PrepRegionIdxs`.
   // ⚠ WHAT WOULD MAKE THE NEXT CALLER DIFFERENT, stated so it is recognisable
   // rather than merely warned about: a recorded φ whose prep is **not in the same
   // plan**, or a prep of `SelectRegion` kind (whose emitter performs no M-β).

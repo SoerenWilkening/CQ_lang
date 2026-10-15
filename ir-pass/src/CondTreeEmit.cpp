@@ -176,6 +176,14 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
   // the opposite — it is emitted BEFORE the prep (the bd `hcrg` chain edge), so
   // its φ is still a `PHINode` here and this clause is what makes it a control.
   //
+  // bd dm7f.53 — A SECOND φ-ADMITTING CALLER: `emitInPlaceRotationRegion`'s tree
+  // re-derivation now passes `AllowRailPhi = true` too (the in-place Ry / state
+  // prep under a tree with a region-merge φ leaf), with `CopyRailRoot` at its
+  // default `false` and only for a tree WITH nodes — so the "one call site" and
+  // "three call sites pass false" counts below are history (now two and two);
+  // the argument they carry (a φ ROOT never reaches `CopyRoot`/`RootIsRail`
+  // here) holds for both φ-admitting callers unchanged.
+  //
   // ⚠ WHICH OF THE THREE `isRailFlag` USES ACTUALLY HAS A φ SUBJECT — ONE
   // (Rule-13 round-1 finding F-P1-4, correcting the record, not the code). Only
   // the in-walk `FlagOf[V] = V` below can be reached with a φ. `CopyRoot`
@@ -186,6 +194,16 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
   // site that passes `AllowRailPhi = true`, and it passes `CopyRailRoot = false`
   // — is not made at all. The other three call sites pass `AllowRailPhi = false`
   // and their `RailPhiLeaves` is empty by construction.
+  //
+  // ⚠ bd dm7f.54 FALSIFIED THE PARAGRAPH ABOVE (L7): `CopyRoot` CAN NOW BE
+  // REACHED WITH A φ ROOT. `emitInPlaceRotationRegion`'s two-arm register
+  // condition (`RailCopy`) calls this with a `collectCondTree(…, AllowRailPhi =
+  // true)` tree whose ROOT is the claimed φ and `CopyRailRoot = true`, so the φ
+  // (still a live `PHINode`: that region emits BEFORE the prep) is read in the
+  // copy `cqrt_cnot`'s CONTROL slot and the root handed back is the fresh `bf`
+  // ancilla — the same read-only use a rail root gets, by the same membership
+  // test. `Out.RootIsRail` is then false, which is what that caller requires
+  // before it `cqrt_x`-brackets the root.
   //
   // ⚠ AND THE HAZARD NARRATIVE THAT USED TO JUSTIFY WIDENING `Out.RootIsRail`
   // WAS WRONG: "a φ root reaching this function would return `RootIsRail=false`

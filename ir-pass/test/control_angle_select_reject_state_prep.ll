@@ -49,6 +49,18 @@
 ; is kept as history. OWNER RULING 2026-09-28 on bd drbq.13: the literal base
 ; STAYS DECLINED.
 ;
+; ⚠ bd test_C_libtooling-dm7f.54 (2026-10-15) NARROWED THIS DECLINE TO MODULES
+; WITHOUT A CALL-SITE `nomerge`. The counter-example is a SimplifyCFG SINK of two
+; thetas, which LLVM 19 never performs on a call that `cannotMerge()`, and every
+; direct `cq_theta_*` call clang emits from CQ.h carries `nomerge` on the call
+; site. So `bool t = 0; cq_theta(&t, c ? A : B)` from C (reporter t4, CQ_FINDINGS
+; F4) now ACCEPTS as controlled state prep (`angleSelectLiteralSeedAdmissible`;
+; `control_angle_select_ry_fresh_rail_cond.ll`, `..._ry_fresh_icmp_int.ll`).
+; This module's call site carries NO `nomerge` (hand IR, or a devirtualized
+; function pointer, bd 4e4p), so it may be the fold's image and keeps the
+; string. ⚠ L9: the admitted population inherits bd uw5u (`int m = (t == 5) ?
+; t : 5;` folds to the literal with no merge at all), already open for the plain
+; `cq_theta(&m, θ)` on the same literal.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}rotation angle under quantum control
 ; 3qlq: migrated from register cq_phi (dead declare erased)

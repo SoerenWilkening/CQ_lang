@@ -480,6 +480,38 @@ bool operandsAlias(Value *A, Value *B) {
 
 }  // namespace
 
+// bd dm7f.54 — see `SelectClassify.h`.
+bool selIsRyAngleOperand(const SelectInst *Sel) {
+  if (!Sel || !Sel->hasOneUse())
+    return false;
+  const auto *T = dyn_cast<CallInst>(Sel->user_back());
+  return T && isThetaCall(T) && T->arg_size() >= 2 &&
+         T->getArgOperand(1) == Sel && T->getArgOperand(0) != Sel;
+}
+
+// bd dm7f.54 (item E) — see `SelectClassify.h`.
+const SelectInst *angleMuxParent(const SelectInst *S, const TaintSet &taint) {
+  if (!S || !S->getType()->isDoubleTy() || !S->hasOneUse() ||
+      !taint.Tainted.count(S->getCondition()))
+    return nullptr;
+  const auto *P = dyn_cast<SelectInst>(S->user_back());
+  if (!P || !P->getType()->isDoubleTy() || P->getCondition() == S ||
+      !taint.Tainted.count(P->getCondition()))
+    return nullptr;
+  return P;
+}
+
+const SelectInst *angleMuxRoot(const SelectInst *S, const TaintSet &taint) {
+  // Bounded: a mux is a tree of single-use selects, so the walk cannot cycle
+  // in valid SSA outside a loop; the bound is defence in depth.
+  for (unsigned Depth = 0; S && Depth < 64; ++Depth) {
+    if (selIsRyAngleOperand(S))
+      return taint.Tainted.count(S->getCondition()) ? S : nullptr;
+    S = angleMuxParent(S, taint);
+  }
+  return nullptr;
+}
+
 // bd `boi6` (D-B) / Track M — RUNG 0 OF THE MERGE-φ LADDER, AND THE WHOLE PROOF.
 // The region that will turn `P` into a single physical register, or null.
 //
@@ -993,9 +1025,17 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   // accept is the §M.0 ladder below, not the walk. `AllowLogicalSelect` stays
   // FALSE (`control_swap_reject_select_i1sel_combinator.ll` is a shipped decline
   // for a data select and is a different construct's widening).
+  //
+  // bd test_C_libtooling-dm7f.54 — `AllowLogicalSelect` is TRUE for a Ry-stem
+  // ANGLE select (`selIsRyAngleOperand`), whose tree is lowered by the same
+  // `CondTreeEmit` network the in-place Ry tree uses with that grammar
+  // (dm7f.52); the logical `select i1` nodes were pre-claimed by
+  // `ControlDetect` so they are not also classified as data selects. A data
+  // select keeps FALSE, byte-unchanged.
   CondTree Tree;
   if (!collectCondTree(
-          Sel->getCondition(), Tree, /*AllowLogicalSelect=*/false,
+          Sel->getCondition(), Tree,
+          /*AllowLogicalSelect=*/angleMuxRoot(Sel, taint) != nullptr,
           /*AllowRailPhi=*/true,
           [&taint](Value *V) { return condLiteralAdmissible(V, taint); }))
     return diagnoseUnderControl(Sel, "control flow");
@@ -1268,11 +1308,23 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
                                   "condition predates a non-diagonal gate");
     if (!RailProv.empty()) {
       SmallVector<Value *, 16> RailSeeds(RailProv.begin(), RailProv.end());
+      // bd dm7f.54 — a Ry-stem ANGLE select's φ leaves take dm7f.53's
+      // on-ancestry producer set (`condTreeCoveredPhiGates`, the ONE spelling
+      // the in-place Ry tree and the kickback φ root call), so the merge φ of a
+      // CHAINED region (`if (a) cq_theta(&b,·); cq_theta(&t, b ? A : B)`)
+      // reads as its `br` twin does. EMPTY for every data select (unchanged:
+      // widening the 4.4 data select is its own increment) and for a φ-free
+      // tree.
+      SmallPtrSet<const CallInst *, 4> CoveredPhiGates;
+      if (angleMuxRoot(Sel, taint))
+        condTreeCoveredPhiGates(Tree, plan, taint, CoveredPhiGates);
+      const SmallPtrSetImpl<const CallInst *> *Cov =
+          CoveredPhiGates.empty() ? nullptr : &CoveredPhiGates;
       if (findNonDiagonalWireGate(RailSeeds, /*CrossValueRouting=*/true,
                                   /*EmitPoint=*/nullptr, /*DT=*/nullptr,
-                                  &taint) &&
+                                  &taint, Cov) &&
           (!DT || findNonDiagonalWireGate(RailSeeds, /*CrossValueRouting=*/true,
-                                          /*EmitPoint=*/Sel, DT, &taint)))
+                                          /*EmitPoint=*/Sel, DT, &taint, Cov)))
         return diagnoseUnderControl(Sel,
                                     "condition predates a non-diagonal gate");
     }
@@ -1328,6 +1380,14 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   // have their own precise strings (`control flow inside a loop body`,
   // `rotation arm on a condition wire`, `stale rail record read past a
   // controlled Ry`) that `rotation angle` would MISLABEL.
+  // bd dm7f.54 (item E) — an INNER member of a nested angle mux has passed
+  // gates 1-2c on its own condition (above); the rest of its classification
+  // belongs to the mux ROOT, which `classifyAngleSelect` runs over every member
+  // (`angleMuxRoot`'s header carries why deferring here never leaves the
+  // select unlowered).
+  if (const SelectInst *MuxRoot = angleMuxRoot(Sel, taint);
+      MuxRoot && MuxRoot != Sel)
+    return;
   if (selReachesRotationArg1(Sel, taint)) {
     switch (classifyAngleSelect(Sel, Tree, taint, wd, DT, LI, plan)) {
     case AngleSelectDisp::Accepted:

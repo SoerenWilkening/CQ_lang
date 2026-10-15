@@ -386,6 +386,68 @@ enum class AngleSelectDisp { Accepted, Declined, NotApplicable };
 // `emitAngleSelectRegion`'s Ry-stem step-0 re-ask. Pure analysis.
 bool angleSelectArmsDefined(const llvm::Value *A, const llvm::Value *B);
 
+// bd test_C_libtooling-dm7f.54 — is the Ry-stem consumer `T` a controlled
+// STATE PREP on a LITERAL seed that `-O1` cannot have manufactured? True iff
+// `T`'s arg-0 is a `ConstantInt` or `ConstantFP` (never undef/poison or a
+// `ConstantExpr`) AND `T` carries `nomerge` AT THE CALL SITE.
+//
+// THE HAZARD IT ANSWERS (bd drbq.13, `control_angle_select_reject_literal_base_
+// offwire_fold.ll`): IPSCCP folds a live register into a literal on one edge
+// and SimplifyCFG then SINKS the two arm thetas into ONE theta on an angle
+// select, so a literal base can be the image of `r = t` on one branch. A sink
+// needs two calls that may merge, and LLVM 19's `canSinkInstructions` refuses
+// any call whose `cannotMerge()` holds. `include/CQ.h` declares every
+// `cq_theta_*` `nomerge` (bd fmt3) and clang copies the attribute onto every
+// DIRECT call site; an INDIRECT call (bd `4e4p`, the function-pointer route)
+// has no call-site `nomerge` even after `-O1` devirtualizes it, so the call-site
+// attribute (not the callee's) is the witness that no merge happened.
+// ⚠ CORRECTED (round-1 review, L7): that does NOT make a `nomerge` literal base
+// the user's own `r = SEED`. A VALUE SUBSTITUTION on a dominating equality edge
+// needs no merge (`if (t == 5) cq_theta(&t, c ? A : B)` reaches the pass with
+// the literal 5). This predicate answers the merge half only; the classifier
+// also asks `angleSelectLiteralSeedPinned` (F2's question at the consumer).
+//
+// ONE SPELLING, TWO CALL SITES: `classifyAngleSelect`'s S3 and
+// `emitAngleSelectRegion`'s step-0 re-ask. Pure analysis.
+bool angleSelectLiteralSeedAdmissible(const llvm::CallInst *T);
+
+// bd dm7f.54 (item A1) — the value PROVEN EQUAL to `T`'s literal seed at `T`
+// (`LazyValueInfo` over dominating edges and assumes for an integer seed; the
+// dominating equality `fcmp` edges for an fp one) that is TAINTED, or null.
+// Pinned values that are classical now are tagged for the L1 re-ask in
+// `declineRound2QuantumPrepSeeds`. A value F2 would EXCLUDE at its test
+// (`f2ExcludedAtTest`: on `CondWire`, the angle select's condition wire, or a
+// peel clone) is not a pin — round-2 review F2, one spelling with F2. Defined
+// in `ArmClassify.cpp`.
+llvm::Value *angleSelectLiteralSeedPinned(
+    llvm::CallInst *T, const TaintSet &Taint, const llvm::DominatorTree &DT,
+    const llvm::SmallPtrSetImpl<llvm::Value *> &CondWire);
+
+// bd dm7f.54 (item E) — the NESTED ANGLE MUX rooted at the Ry angle select
+// `Root`: `Members` in PRE-ORDER (root first, true operand before false), each
+// an inner member by `angleMuxParent` (the ONE membership spelling,
+// `SelectClassify.h`); `Leaves` the non-member value operands in EMISSION
+// order (true subtree before false). A single select is the one-member mux
+// with two leaves. False when the mux exceeds `kAngleMuxMaxMembers` members.
+// Called by `classifyAngleSelect` and by `emitAngleSelectRegion`'s re-derivation
+// so the two cannot drift. Pure.
+constexpr unsigned kAngleMuxMaxMembers = 16;
+bool collectAngleMux(llvm::SelectInst *Root, const TaintSet &Taint,
+                     llvm::SmallVectorImpl<llvm::SelectInst *> &Members,
+                     llvm::SmallVectorImpl<llvm::Value *> &Leaves);
+
+// bd dm7f.53 — the ON-ANCESTRY PRODUCERS of every claimed region-merge φ leaf of
+// `Tree` (the arm gates of each claimed region whose merge is in the leaf's own
+// provenance), minus any gate that is staling evidence for ANOTHER leaf. Passed
+// as `Covered` to `findNonDiagonalWireGate`. Defined in `ArmClassify.cpp` (the
+// argument is there). Callers: the in-place Ry / state-prep tree, the kickback
+// φ root, and since bd dm7f.54 the Ry-stem ANGLE select (`SelectClassify` gate
+// 2c and `classifyAngleSelect` S11), so a chained region's merge φ reads the
+// same as at the `br` twin.
+void condTreeCoveredPhiGates(const CondTree &Tree, const ControlPlan &plan,
+                             TaintSet &Taint,
+                             llvm::SmallPtrSetImpl<const llvm::CallInst *> &Covered);
+
 // bd test_C_libtooling-3qlq Inc 1 (PRD `retire-swap-route-PRD.md` §6.2 row P1) —
 // the FLAT KICKBACK DIAMOND classifier. Same three-way disposition contract as
 // `classifyAbortPark` / `classifyGuardedStoreArm` / `classifyClassicalCallArm`,

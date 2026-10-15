@@ -41,6 +41,8 @@
 ; negative a decline fixture could carry is VACUOUS. What pins "no silent
 ; lowering" is the `not` inversion on the RUN line (exit non-zero) plus the
 ; string, mirrored character-for-character below.
+; FOLLOW-UP: bd test_C_libtooling-dm7f.60 — the 4.4 select consumer still refuses an in-place-arm merge phi that the kickback and Ry consumers admit since dm7f.53 (`condTreeCoveredPhiGates`).
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 
 ; ModuleID = 'docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r1_probes/r01_inplace_arm_bool.c'

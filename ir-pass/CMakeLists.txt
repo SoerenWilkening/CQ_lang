@@ -91,6 +91,8 @@ add_library(CQPass MODULE
   src/MergeStreamGates.cpp
   src/MergeStreamPlan.cpp
   src/MergePhiPeel.cpp
+  # bd dm7f.53: the `_Bool` storage-width phi narrowing (run by the peel).
+  src/BoolStorageNarrow.cpp
   src/PoisonFacts.cpp
   src/OpcodeLowering.cpp
   src/OpcodeSupport.cpp

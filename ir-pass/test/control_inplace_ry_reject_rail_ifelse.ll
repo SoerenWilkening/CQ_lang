@@ -40,13 +40,25 @@
 ; therefore load-bearing and the emitter backstop is the second line of defence,
 ; not the first.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; ⚠ A `DS_Error` decline writes ZERO bytes to stdout, so every IR-TEXT negative a
-; decline fixture could carry is VACUOUS — `2>&1 | FileCheck` sees the diagnostic
-; and nothing else. What pins "no silent lowering" is the `not` INVERSION on the
-; RUN line above (the pass must exit non-zero) plus the string below, mirrored
-; character-for-character against `ir-pass/src`.
-; CHECK: error: {{.*}}cq {{[a-z ]*}}lowering: bare i1 register condition under quantum control
+; ⚠ FLIPPED TO AN ACCEPT BY bd test_C_libtooling-dm7f.54 (2026-10-15), NAME KEPT
+; (gahu precedent, L8). Neither spelling the paragraphs above weigh was built:
+; the additivity chain `ry(h,B); cry(b,h,−B); cry(b,h,A)` reads `B` twice and
+; puts `Ry(B)Ry(−B)` on the `b = 1` branch, which the owner ruling
+; `owner-ruling-angle-select-xbracket-2026-10-13` retired for the angle select.
+; The two-arm rail region instead takes a CNOT COPY flag (`CondTreeEmit`'s
+; `CopyRailRoot`) and the compare path's X-bracket form on it — the ruling's
+; stream, byte-identical to the ternary twin
+; `control_angle_select_reject_rail_ry.ll` (also flipped):
+;   bf = |0>; cnot(c, bf); ry_c(bf, r, .9); x(bf); ry_c(bf, r, .3); x(bf);
+;   cnot(c, bf); free(bf)
+; ANALYTIC: c = 1 -> Ry(.9) on r, c = 0 -> Ry(.3) on r; each angle in ONE gate;
+; c is read only in the two cnot control slots and is never freed. The M-β RAUW
+; targets the last hoisted gate (the else arm's), as on the compare path.
+; The ONE-arm rail region keeps the additivity form (byte-unchanged).
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck %s --check-prefix=NEG < %t.ll
 
 declare i1 @cq_theta_i1(i1, double)
 declare i32 @cq_theta_si32(i32, double)
@@ -71,3 +83,23 @@ merge:
   %s  = add i32 %mr, %zc
   ret i32 %s
 }
+
+; CHECK:      %[[C:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_ry_i1(i32 %[[C]], double 1.100000e+00)
+; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
+; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_cnot(i32 %[[C]], i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_cnot(i32 %[[C]], i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
+; CHECK:      call i1 @cqrt_measure_i1(i32 %[[C]])
+; CHECK:      call i32 @cqrt_measure_i32(i32 %[[R]])
+; CHECK-NOT:  call void @cqrt_free(
+
+; NEG-NOT: br i1
+; NEG-NOT: phi
+; NEG-NOT: cq_theta_

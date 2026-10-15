@@ -34,7 +34,15 @@
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; ⚠ A `DS_Error` decline writes ZERO bytes to stdout; the property is pinned by the
 ; `not` on the RUN line, not by any IR-text check.
-; CHECK: error: {{.*}}cq controlled lowering: if/else state prep allocates two rails under quantum control
+; ⚠ bd test_C_libtooling-dm7f.54 (item B, 2026-10-15): the Q4 "two rails" clause no
+; longer refuses an if/else with the IDENTICAL literal seed (it lowers as the
+; one-rail ternary stream, `..._ifelse_two_preps.ll`). THIS module is the reason
+; that move is conditional: F2 is now asked on EACH ARM EDGE, and on the TRUE edge
+; `(q & -4) == 20` pins `q` to [20, 24), so F2's forward model gives
+; `%t = sdiv %q, 4` == 5 == the seed — the drbq.13 fold, unmerged. The string
+; moves from the Q4 one to F2's; the program stays LOUD (red-green: it was the Q4
+; string on the pre-B binary).
+; CHECK: error: {{.*}}cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
 
 declare i32 @cq_theta_si32(i32, double) #0
 declare i32 @cq_measure_si32(i32)

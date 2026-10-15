@@ -5352,6 +5352,60 @@ add_test(NAME e2e-slice-control-stateprep-bool-under-int-compare-fused
 #   * `..._int`             the `int b1` workaround     28 lines  (the spelling
 #                           the owner refused; pinned so the widening cannot
 #                           change it)
+# bd `dm7f.53` (CQ_FINDINGS F3) — the reporter's Dicke probes t5.c / t6.c: two
+# in-place controlled-Ry regions on ONE `_Bool` (the `i8` storage-width phi web,
+# narrowed by `narrowBoolStoragePhis`), and a condition-tree leaf that is an
+# earlier region's MERGE phi (in-`Pred` and cross-block). Read each slice header
+# for the line-by-line and the analytic check.
+add_test(NAME e2e-slice-control-inplace-ry-seq-bool-t5
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_seq_bool_t5.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_seq_bool_t5.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-tree-mergephi-t6
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_tree_mergephi_t6.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_tree_mergephi_t6.expected.log")
+
+# bd `dm7f.54` (CQ_FINDINGS F4) — the reporter's whole t4.c (a fresh-target angle
+# select on a `_Bool` and a NESTED angle mux), the Ry ANGLE SELECT on a bare
+# `_Bool` condition (a CNOT copy flag, X-bracket form), and two if/else spellings
+# whose goldens are byte-identical to their ternaries'. Read each
+# slice header for the line-by-line and the analytic check.
+foreach(_d54 slice_control_angle_select_ry_fresh_rail_t4
+             slice_control_angle_select_ry_rail_p12
+             slice_control_inplace_ry_rail_ifelse_p12_twin
+             slice_control_inplace_ry_stateprep_rail_ifelse_fresh
+             slice_control_angle_select_ry_fresh_rail_ternary)
+  string(REPLACE "slice_" "" _d54n "${_d54}")
+  string(REPLACE "_" "-" _d54n "${_d54n}")
+  add_test(NAME e2e-slice-${_d54n}
+    COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+      "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+      "${CMAKE_SOURCE_DIR}/include"
+      "${CMAKE_CURRENT_SOURCE_DIR}/${_d54}.c"
+      "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+      "${CMAKE_CURRENT_SOURCE_DIR}/${_d54}.expected.log")
+endforeach()
+
+# bd dm7f.54 item B: the fresh-target if/else (two preps of one literal seed)
+# emits the ternary's one-rail stream byte for byte.
+add_test(NAME e2e-stateprep-ifelse-fresh-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep_rail_ifelse_fresh.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_fresh_rail_ternary.expected.log")
+
+add_test(NAME e2e-angle-select-ry-rail-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_rail_p12.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_rail_ifelse_p12_twin.expected.log")
+
 add_test(NAME e2e-slice-control-cascade-two-bools
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"

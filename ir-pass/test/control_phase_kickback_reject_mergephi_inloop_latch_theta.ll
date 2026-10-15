@@ -80,4 +80,11 @@ exit:
   ret i1 %m
 }
 
-; CHECK: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+; ⚠ bd dm7f.53 MOVED THE STRING, NOT THE DISPOSITION. The cross-block phi's
+; positional prong is now the WIRE-SCOPED `crossBlockPhiLeafMintable`, which
+; does not count the latch Ry on `%b0` (off the phi's rail) against the read of
+; `%b1` — physically right: t's rail is untouched. What remains wrong with this
+; module is the latch itself: every trip re-reads the SSA name `%b0` after the
+; previous trip's Ry relabelled it (a sibling in-place Ry, bd 3d8q), and the
+; stale-reader fence owns that, loudly.
+; CHECK: cq opcode lowering: rotation/measure operand predates a non-diagonal gate
