@@ -1,0 +1,134 @@
+\labsessionheader{2026-10-16}{Batch 054: the Dicke batch (user report F1--F6, rolled quantum arrays)}%
+  {173f03cb}{55dc71b6-862e-46b0-b41f-d1a3c1ba8d1d}{.claude/pause/COORDINATOR\_STATE.md}
+\begingroup\sloppy
+
+\subsection*{Goal}
+Make the reporter's Dicke-state programs (\fpath{docs/CQ_FINDINGS.md}, findings F1--F6, the reporter's repros) compile to the right unitary in plain C: \texttt{x \textasciicircum= y} as an in-place CNOT, compound and register conditions on controlled Ry, sequential controlled-Ry regions, Ry angle select, gate subroutines, and rolled loops over \texttt{bool q[N]}. Fix the silent miscompiles the report exposed (\bd{r2j3.32}, \bd{r2j3.33}, \bd{r2j3.35}) on the way. Base \commit{b568a908}. Reviews followed the two-round R11 shape. Most decisions were first routed to a delegated decision agent (model \texttt{fable}) and went to the owner only when that agent could not decide. Every delegated ruling is listed below for the owner's veto.
+
+\subsection*{What landed (first-parent merges, \texttt{git log -{}-first-parent b568a908..HEAD})}
+\begin{itemize}[itemsep=1pt]
+\item \commit{100b3d9a} lane U, \bd{r2j3.32}: \texttt{dischargeMergeRails} reverses a straight-line 4.4/4.5 merge \texttt{\%out} after its last reader; \texttt{MergeCarriedFence} fails loudly when a gate lands on a leaked loop-carried merge rail (reverse loop: \bd{8h7d.20}). R1 3 reviewers, R2 $\times$5. Population: 101 lit outputs and 108 e2e goldens changed, additions only, stage 2b 0 violations / 0 unproven on every changed output (\commit{e314f893}).
+\item \commit{55d1bb2f} lane M, \bd{01po.19} S1--S3: claim, quantization point and window promotion. Every claimed array still declined at that point. Accepts were byte-identical over 654 alloca fixtures and 63 e2e slices.
+\item \commit{216d9bbc} lane S, \bd{p3kd.21}: gate subroutines are inlined per call site. 112 single-TU and 24 multi-TU noinline e2e programs lower byte-identically. \bd{r2j3.35}: a tainted \texttt{ret} from \texttt{main} now fails loudly.
+\item \commit{435b3bc1} lane C: \bd{dm7f.52} (compound-condition in-place Ry), \bd{dm7f.53} (sequential controlled-Ry regions, merge-phi conditions, F2 sibling forcedness), \bd{dm7f.54} (Ry angle select on a fresh or literal target, a bare \texttt{\_Bool}, trees, nested mux, fresh if/else). \commit{5df569a8}: one fixture flipped decline$\to$accept and was reviewed under R10.
+\item \commit{27aaf1e1} \bd{dm7f.51} step 1 / \bd{r2j3.33}: in-place QQ xor/add/sub when the old operand is dead. \commit{5b915f6e} step 2 (\bd{dm7f.77}): register conditions (\fpath{RegCondLeaf}), \texttt{\_Bool} narrowing, ArmAngleHoist, in-place phi targets. \textbf{\fpath{dicke.c} compiles to $|D^4_2\rangle$.}
+\item \commit{7943f2dc} \bd{r2j3.36}: the carried-merge fence now covers in-loop gates (alloc freshness, per-cell bank freshness, memory-carried rails). 3569 inputs byte-identical vs the old \texttt{cq-opt}.
+\item \commit{a3fbac74} S4 (borrowed-root cells, materialization, Q4 and stale-cell fences), \commit{0c1ac43c} S5 (in-place cell xor/add/sub, header-phi undo), \commit{d46427e4} S7 (index alias versioning, at most 8 copies), \commit{109d3b7e} S6 (quantum control on cells), \commit{e3881272} \bd{01po.19.17} (in-loop eager uncompute). \textbf{\fpath{dicke_n.c} (N=4, K=2) compiles rolled to $|D^4_2\rangle$}, and N=5, K=2 gives $|D^5_2\rangle$.
+\item \commit{4b68de46}: six heavy tests had been red on main since \commit{0c1ac43c} (\bd{01po.19.21}--\bd{.23}; the merge witnesses did not include heavy tests). They were fixed or quarantined under \texttt{ruling-red-heavy-tests}.
+\item \commit{9219feb0} \bd{dm7f.81} (owner: fix it in this batch): a classical select arm is now a literal operand of the new hand-maintained core gate \texttt{cqrt\_xorc\_<W>\_controlled}, not a \texttt{cqrt\_alloc}'d rail. An all-zero or undef arm emits no gate. fp immediates are traced as exact bit patterns.
+\item \commit{9bec75e3}: stage 2b strips \texttt{!dbg} before its end-anchored parses (\commit{7ed374ff}, \commit{b9cf6079}). \commit{d3472e2f}: RB-A quarantine re-signed after a bisect. \commit{173f03cb}: \texttt{cq-opt} refuses a triple without a datalayout. \commit{178dc8a9}: CLAUDE.md open-miscompile list.
+\end{itemize}
+
+\subsection*{Accept$\to$loud populations (disclosed per L9 and R10)}
+\begin{itemize}[itemsep=1pt]
+\item \bd{dm7f.51} step 1, measured against \commit{435b3bc1}: 9 lit fixtures and 1 e2e golden (\texttt{slice\_control\_cond\_datause}) went accept$\to$loud: 4 both-dead and 5 dependent-source. Each fixture keeps its subject through a live use of the operand. The golden gained one trailing measurement.
+\item Step 2, measured against \commit{27aaf1e1}: \texttt{spec\_intermediate\_unc\_terminal\_union\_measured\_root} went accept$\to$loud because both operands are now eligible dead registers. It needs a re-pin (\bd{dm7f.51.4}). Over the same span, 8 fixtures went decline$\to$accept and 1 accept stream changed.
+\item S4 round 1, measured against \commit{50097b47} over 3588 inputs, 58 outputs differ: 29 decline$\to$accept, 28 decline$\to$decline and 1 accept$\to$decline (a foreign \texttt{!cq.railwindow} record). No e2e golden changed.
+\item Red-test re-signing (\commit{7abd50bd}): loop-twin cell \texttt{m\_none\_kicond\_none\_none\_kflat} went DECLINE-BOTH-DIFFERENT$\to$ROLLED-ONLY (rolled side accepts after S6; trace read analytically by the implementer and a reviewer). Railbank dynamic 3/4/5/8/12/24/25 and readorder 5/7/8/9/10/14 went decline$\to$accept with per-row trace evidence (R10 review); readorder 10's driver was made a defined execution.
+\item \bd{dm7f.81}: no verdict flips. The implementer's census of changed lit outputs was 487 on the first build and 358 after the rebase onto S4--S7. In all, 495 fixtures were re-pinned and 150 e2e goldens regenerated (140 mechanical, 10 checked by hand). Round 1 then regenerated another 80 goldens, where only the fp immediate's spelling changed (exact hex). Over the 150 goldens, a scratch count (\measured{f81/qubits.py: old vs new cqrt\_alloc lines and widths}) gives $-896$ \texttt{cqrt\_alloc} and $-40{,}928$ allocated qubits. Live qubits at the end of \fpath{dicke_n}: 132$\to$4.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}[itemsep=1pt]
+\item \fconfirmed\ \textbf{Ten verify-clean silent miscompiles} were found during implementation and review and fixed before merge, except where noted:
+(1) step 1 R1: a 4.4 merge copy of the target counted as a settled prior reader (review probes \texttt{s1A/p4}, \texttt{s1B/p6}, \texttt{s1C/p6}; \commit{634f64b4});
+(2) step 1 R2: a taped (printed) result in \texttt{main} was converted out of place, a regression introduced by the round-1 fix (\commit{d5c26b12});
+(3) the step-1 merge reached main \commit{27aaf1e1} with a miscompile: \texttt{if(a) Ry(\&q); q\textasciicircum=x; Ry(\&x)} gave P(000) .8293 against the textbook .8216. Step 2 fixed it (\commit{348e245f});
+(4) step 2 R1 B-F1, the prep-seed cascade \texttt{if(a) Ry(\&b); if(b) Ry(\&c); c\textasciicircum=a; b\textasciicircum=c}: P(000) .6555 against .6709 (\commit{2123517b});
+(5--7) S4: a stale cell read across a gate (\texttt{bool a=q[0]}; the loop rotates \texttt{q}; measure \texttt{a}); a dangling quantization point after the redirect erased its store (\commit{1ee39d7b}); an uninitialized seed taken from a writer that never reaches Q (R2-F1, \commit{87d6d3ea});
+(8--9) S5: one result stored into two cells gave both cells one handle (P(q0=0) .7498 against .8356), and a write-back on one path fired the CNOT on every path (\commit{892915e1});
+(10) \bd{01po.19.17} R1 C-F1: an ascending loop's trip record leaked into the next trip's gate (\commit{594bbb32}).
+Also fenced while implementing S5: a cell updated by a classical operand had been lowered out of place (loud now, \bd{01po.19.7}).
+\item \fconfirmed\ \textbf{Instrument (R17).} Stage 2b had four fail-open holes:
+the S4 R1 A-F1 pairing on canonical cell rails verified a dirty free (\commit{44c78db4});
+the S5 B-F1 distinct-cell proof accepted stored-value spellings (\commit{892915e1});
+the \texttt{.17} B-F1 per-cell drop ignored rail moves (\commit{594bbb32});
+under \texttt{-g}, \texttt{br label \%x, !dbg} did not merge streams, so a use after \texttt{cqrt\_free} VERIFIED (\commit{b9cf6079}).
+After that fix, the slices with goldens compiled \texttt{-O1 -g} give 0 of 405 verdicts that differ from the stripped IR (3 differed before).
+\item \fpreexisting\ Process: heavy tests went unrun from \commit{0c1ac43c} until the red-test fix. The first batch gate also omitted \texttt{cq-opt-equivalence-full}, because it is a build target and not a ctest entry. It was rerun (see below).
+\item \fleak\ \bd{r2j3.40}: the \texttt{dm7f.54} angle-select condition chain is never uncomputed when \texttt{c} is measured later (reporter t4). This leak is why t4 has fidelity 0.609 in the final composition review. Also \bd{8h7d.20}: the rolled form leaks loop-carried merge rails, and the twin-parity premise is falsified (memory \texttt{r7-loop-grant-twin-parity-falsified-2026-10-15}).
+\item \fconfirmed\ Still open: \bd{r2j3.37} (silent: lifted \texttt{x = f(x, y)} keeps the old \texttt{x}). Latent: \bd{r2j3.38}, \bd{r2j3.39}, \bd{01po.19.26}.
+\item \foverdecline\ Filed: \bd{dm7f.51.1}--\bd{.5}, \bd{dm7f.73}--\bd{.82} (excluding \bd{.77} and \bd{.81}), \bd{01po.19.1}--\bd{.36} (\bd{.4}, \bd{.12} and \bd{.17} closed), \bd{8h7d.20}--\bd{.23}, \bd{01po.24}, \bd{r2j3.36.1}.
+\end{itemize}
+
+\subsection*{Dicke results}
+\fpath{dicke.c} and \fpath{dicke_n.c} (N=4, K=2) produce exactly $|D^4_2\rangle$: six weight-2 strings, each with amplitude $+0.408248$, and no leftover register. This was checked by independent state-vector replays (the implementer's and two reviewers'). \fpath{dicke_n} with N=5, K=2 gives $|D^5_2\rangle$. N=5, K=3 fails loudly (\bd{01po.19.34}). The reporter's t1--t11 compile. In the final composition review, all 13 programs matched the reviewer's analytic model. t4's fidelity of 0.609 is the \bd{r2j3.40} leak. All 13 run through \texttt{tools/cqc} with rc 0 and give stage 2b 0 violations / 0 unproven (\fpath{scratchpad/integ/}). Pinned by \texttt{e2e-slice-control-dicke-d42} and \texttt{e2e-slice-rolled-dicke-n4}.
+
+\subsection*{Rulings}
+\textbf{Owner (this session).} \texttt{owner-ruling-dm7f81-per-fixture-filecheck-2026-10-15} (an R15 exception); ``fix \bd{dm7f.81} in this batch''; ``constants stay classical literals''; ``also work on S5--S7''. Earlier in the batch: \texttt{owner-ruling-\{dicke-acceptance-folded, dm7f51-inplace-qq, p3kd21-gate-subroutines, drbq14-tree-leaves\}-2026-10-14} and \texttt{owner-ruling-01po19-rolled-\{not-unrolled, design\}-2026-10-15}.
+
+\textbf{Delegated (decision agent): for the owner's veto.}
+\begin{itemize}[itemsep=1pt]
+\item \texttt{ruling-dm7f51-step1-departures}: an in-place gate is reversible on a dead target. A dependent source on a dead root fails loudly (\bd{dm7f.75}). V5 was loud as an interim state (since fixed). D2(b) was deferred (\bd{dm7f.76}).
+\item \texttt{ruling-dm7f51-both-dead-loud}: when both QQ operands are eligible dead targets, the choice changes the unitary (P(t=0) .6837 vs .6547), so the pass fails loudly (owner question \bd{dm7f.74}).
+\item \texttt{ruling-dm7f51-main-vs-helper}: \texttt{t\textasciicircum=a; printf(t); Ry(a)} gives P(a=0) .790 in \texttt{main} and .836 in a helper. Two reference disciplines both stand. \bd{r2j3.7} is annotated.
+\item \texttt{ruling-r2j336-round1-qs}: dropped the unsound \texttt{isKnownNonZero(i-j)} exemption (narrower exemption filed as \bd{r2j3.36.1}). One bank walk. Unprovable in-loop alias classes fail closed.
+\item \texttt{ruling-dm7f81-constant-arm-xorc-imm-fp-and-runtime}: a new core gate with fp bit-pattern forms. Runtime classical arms are literals too. Only $+0.0$ is a no-op; $-0.0$ fires.
+\item \texttt{ruling-dm7f81-open-qs}: an undef/poison arm emits no gate (as in \bd{z9t1}). \texttt{trace\_twin\_equiv} rule 3: a literal-zero xorc is the identity. CloneRailSelect is filed as \bd{dm7f.82}.
+\item \texttt{ruling-01po19-s4-r1-qs}: an array that is never initialized seeds $|0\rangle$. A cell copied into another array fails loudly (\bd{01po.19.2}). A live cell temporary: \bd{01po.19.5}.
+\item \texttt{ruling-01po19-s7-version-bound} (amended): at most 8 copies per original window. Bell(3)=5 copies are accepted; a 4-class shape needing 15 fails loudly. The constant was chosen by the agent.
+\item \texttt{ruling-red-heavy-tests}: readorder case 10 accepted on a defined driver (\bd{01po.24}). RB-A twins are quarantined under \bd{8h7d.20}. Six k-axis cells are class I (\bd{01po.19.30}). The \texttt{-O2} stage-cache row is re-signed.
+\item Earlier this batch: \texttt{ruling-dm7f54-literal-base-and-ifelse-prep} narrows the \texttt{drbq.13} ruling (literal base on call-site \texttt{nomerge}) and moves the Q4 fresh if/else decline. \texttt{ruling-dm7f53-p4-sibling-cond-prep} and its amendments (\texttt{-any-const-seed}, \texttt{-forced}, \texttt{-straight-through}) cover F2 sibling forcedness.
+\end{itemize}
+
+\subsection*{Verification run}
+Reported per issue as measured in its commits. Mutants and MISSED:
+\begin{itemize}[itemsep=1pt]
+\item dm7f.51 step 1: MISSED 0 in every round, 15 invocations (mutants excluded).
+\item dm7f.51 step 2: MISSED 0 / 1 / 0. The round-1 survivor is the seed-identity check, which is unreachable behind F1's seed fence.
+\item r2j3.36: MISSED 0.
+\item S1--S3: MISSED 0. S4: MISSED 0 in each of the initial build, R1 and R2. S5: MISSED 0 and 0.
+\item S6: MISSED 1 (the idom guard is redundant with the predecessor guard), then 0 and 0.
+\item S7: MISSED 0 and 0.
+\item \texttt{.17}: MISSED 1 (an exemption of every same-loop load survives; \bd{01po.19.32}), then 0.
+\item dm7f.81 twin rule: no-op survived; the \texttt{-0}-as-zero mutant and the rule-removed mutant were killed.
+\end{itemize}
+Lit at merge: S4 451/451, S5 639/639, S7 615/615, S6 window 178/178, \texttt{.17} 899/899, dm7f.81 495/495 changed fixtures. \textbf{Budget overruns:}
+\begin{itemize}[itemsep=1pt]
+\item dm7f.51 step 2's final run used the whole \texttt{ir-pass-lit}.
+\item S5 and S6 ran extra hand FileChecks.
+\item Several reviewers ran more probes than the limit allows.
+\item dm7f.81 ran per-fixture FileCheck under the owner's exception: 1,867 + 498 runs.
+\end{itemize}
+
+\textbf{First batch gate}, measured at \commit{a19e570c} (\texttt{cq-opt} \texttt{02761e95}):
+\begin{itemize}[itemsep=1pt]
+\item \measured{ctest -LE maintenance -j6}: 566/568 passed. The two reds, \texttt{e2e-railbank-\{dynamic-admission,stale\}-matrix}, were RB-A quarantine signatures moved by dm7f.81. A bisect over first-parent merges showed they are a renumbering only, and they were re-signed in \commit{e4f266f1}.
+\item \measured{ctest -L maintenance}: 3/3.
+\item \measured{update\_code\_map.py -{}-check}: rc 0.
+\item \measured{cmake -{}-build build -{}-target cq-opt-equivalence-full}: 2/3164 mismatches. They come from triple-only fixtures, where stock \texttt{opt} infers the datalayout. Fixed in \commit{91c367f9}, which reported 0/3165 at its merge.
+\end{itemize}
+
+\subsubsection*{Batch gate (final)}
+Measured once on main \commit{173f03cb} (all code of the batch; later commits are docs only).
+\begin{tabular}{@{}lll@{}}\toprule
+Gate & Result & Command \\ \midrule
+HEAD, cq-opt sha & \commit{173f03cb}, \texttt{3cb212bb} & \measured{git log -1; shasum -a 256 build/ir-pass/cq-opt} \\
+fast + heavy tier & 568 / 568 passed (262 s) & \measured{ctest -{}-test-dir build -LE maintenance -j6} \\
+maintenance & 3 / 3 passed (345 s) & \measured{ctest -{}-test-dir build -L maintenance -j6} \\
+equivalence & 0 / 3165 mismatches & \measured{cmake -{}-build build -{}-target cq-opt-equivalence-full} \\
+code map & rc 0 & \measured{update\_code\_map.py -{}-check} \\
+install & \texttt{\textasciitilde/.local/bin/cq-opt} sha \texttt{3cb212bb} = build & \measured{install\_cq.py -{}-backend trace -{}-parallel 8; shasum} \\
+\bottomrule\end{tabular}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+ctest entries & 571 & \measured{ctest -{}-test-dir build -N | tail -1} \\
+lit fixtures (base \commit{b568a908} $\to$ now) & 2898 $\to$ 3165 & \measured{ls ir-pass/test/*.ll | wc -l} \\
+e2e goldens (base $\to$ now) & 439 $\to$ 452 & \measured{ls tests/e2e/*.expected.log | wc -l} \\
+batch diff & 925 files & \measured{git diff -{}-stat b568a908..173f03cb} \\
+\bottomrule\end{tabular}
+
+\subsection*{Open questions and next steps}
+\begin{itemize}[itemsep=1pt]
+\item Owner: \bd{dm7f.74}, both-dead QQ. Recover the lvalue via \texttt{-g}, or stay loud permanently?
+\item Owner: \bd{r2j3.7}, \texttt{main} vs helper. Should \texttt{main} run the dead-record discipline?
+\item Owner: \bd{01po.19.10}, aliased \texttt{q[i] += q[j]} ($x = 2x$ on one rail). Is an out-of-place rebind the C semantics?
+\item Next: general-K Dicke (\bd{01po.19.34}); the F5 loop-carried counter (\bd{01po.19.18}); \fpath{dicke_rt} nested runtime loop (\bd{01po.19.19}); the \bd{8h7d.20} reverse loop; \bd{r2j3.37}; \bd{r2j3.40}.
+\item Reinstall \texttt{\textasciitilde/.local/bin/cq-opt} (stale \texttt{23fa6674} at pause) and confirm the sha.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+None.
+\endgroup
