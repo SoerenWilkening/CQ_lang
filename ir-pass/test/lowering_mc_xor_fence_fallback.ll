@@ -115,8 +115,10 @@ entry:
 ; CHECK-LABEL: define i32 @qq_xor
 ; M-C's G2 still refuses two quantum operands (no `cqrt_xorc_i32` here). Since
 ; bd r2j3.33 (dm7f.51 step 1) the QUANTUM-source round takes the site instead:
-; both old operands are dead and the result is measured, so it lowers in place
-; on the lower-BirthOrder rail, `cqrt_xor_i32(src, dst)`, tagged.
+; `%q2`'s old value is dead and the result is measured, so it lowers in place on
+; `%q2`'s rail, `cqrt_xor_i32(src, dst)`, tagged. (`%q1` is kept LIVE by a second
+; measurement since R11 round 1: with BOTH operands dead the pass fails loudly —
+; ruling-dm7f51-both-dead-loud-2026-10-15, lowering_inplace_qq_decline_both_dead.ll.)
 ; CHECK-NOT:   call void @cqrt_xorc_i32(
 ; CHECK:       call void @cqrt_xor_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}), !cq.inplace.qq
 ; CHECK-NOT:   call i32 @cq_template_xor_i32(
@@ -126,6 +128,7 @@ entry:
   %q2 = call i32 @cq_theta_si32(i32 %u1, double 2.500000e-01)
   %d  = xor i32 %q1, %q2         ; TWO tainted operands - no classical immediate
   %m  = call i32 @cq_measure_si32(i32 %d)
+  %m1 = call i32 @cq_measure_si32(i32 %q1)
   ret i32 %m
 }
 

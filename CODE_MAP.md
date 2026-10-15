@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 834 maintained source files, 6762 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 838 maintained source files, 6792 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -41,8 +41,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
 - `runtime/cq_runtime.c` — 1427 physical lines
 - `ir-pass/src/Specialization.cpp` — 1380 physical lines
+- `ir-pass/src/ArithLowering.cpp` — 1274 physical lines
 - `tools/library_coverage/probe.py` — 1219 physical lines
-- `ir-pass/src/ArithLowering.cpp` — 1211 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
 - `ir-pass/src/ChainWalk.cpp` — 1124 physical lines
 - `tools/loop_twin_matrix_quarantine_test.py` — 1110 physical lines
@@ -87,7 +87,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/cq_stage_cache.py` — 495 physical lines
 - `ir-pass/src/DeadValueLiveness.cpp` — 494 physical lines
 - `ir-pass/include/LiteralIntegrity.h` — 489 physical lines
-- `ir-pass/src/EmitInverse.cpp` — 485 physical lines
+- `ir-pass/src/EmitInverse.cpp` — 489 physical lines
 - `tests/e2e/railbank_deadcell_matrix.c` — 482 physical lines
 - `tools/gen_templates.py` — 477 physical lines
 - `tools/library_coverage/loop_bounds/LoopBoundProbe.cpp` — 471 physical lines
@@ -227,21 +227,23 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/AngleSelectEmit.cpp:75` — `emitPhaseAngleSelect`
 - `ir-pass/src/AngleSelectEmit.cpp:190` — `emitAngleSelectRegion`
 
-### `ir-pass/src/ArithLowering.cpp` (1211 lines)
+### `ir-pass/src/ArithLowering.cpp` (1274 lines)
 
-- `ir-pass/src/ArithLowering.cpp:53` — `promote`
-- `ir-pass/src/ArithLowering.cpp:109` — `negateClassicalImmediate`
-- `ir-pass/src/ArithLowering.cpp:129` — `emitInPlaceReassign`
-- `ir-pass/src/ArithLowering.cpp:172` — `rewriteBinary`
-- `ir-pass/src/ArithLowering.cpp:284` — `rewriteUnary`
-- `ir-pass/src/ArithLowering.cpp:315` — `rewriteInPlaceValueRail`
-- `ir-pass/src/ArithLowering.cpp:415` — `inPlaceReassignRailOperand`
-- `ir-pass/src/ArithLowering.cpp:624` — `priorUseIsSettled`
-- `ir-pass/src/ArithLowering.cpp:724` — `inPlaceFenceHolds`
-- `ir-pass/src/ArithLowering.cpp:781` — `inPlacePositionHolds`
-- `ir-pass/src/ArithLowering.cpp:932` — `classifyInPlaceReassignment`
-- `ir-pass/src/ArithLowering.cpp:1000` — `lateReassignShape`
-- `ir-pass/src/ArithLowering.cpp:1040` — `lowerLateReassignments`
+- `ir-pass/src/ArithLowering.cpp:54` — `promote`
+- `ir-pass/src/ArithLowering.cpp:110` — `negateClassicalImmediate`
+- `ir-pass/src/ArithLowering.cpp:130` — `emitInPlaceReassign`
+- `ir-pass/src/ArithLowering.cpp:173` — `rewriteBinary`
+- `ir-pass/src/ArithLowering.cpp:285` — `rewriteUnary`
+- `ir-pass/src/ArithLowering.cpp:316` — `rewriteInPlaceValueRail`
+- `ir-pass/src/ArithLowering.cpp:416` — `inPlaceReassignRailOperand`
+- `ir-pass/src/ArithLowering.cpp:642` — `voidReaderRecordsSettled`
+- `ir-pass/src/ArithLowering.cpp:679` — `railZeroedAndReleased`
+- `ir-pass/src/ArithLowering.cpp:703` — `priorUseIsSettled`
+- `ir-pass/src/ArithLowering.cpp:787` — `inPlaceFenceHolds`
+- `ir-pass/src/ArithLowering.cpp:844` — `inPlacePositionHolds`
+- `ir-pass/src/ArithLowering.cpp:995` — `classifyInPlaceReassignment`
+- `ir-pass/src/ArithLowering.cpp:1063` — `lateReassignShape`
+- `ir-pass/src/ArithLowering.cpp:1103` — `lowerLateReassignments`
 
 ### `ir-pass/src/ArmClassify.cpp` (10736 lines)
 
@@ -572,11 +574,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/DeadValueLiveness.cpp:262` — `deadParamMask`
 - `ir-pass/src/DeadValueLiveness.cpp:270` — `deleteDeadCones`
 
-### `ir-pass/src/EmitInverse.cpp` (485 lines)
+### `ir-pass/src/EmitInverse.cpp` (489 lines)
 
-- `ir-pass/src/EmitInverse.cpp:43` — `isInverseEmittable`
-- `ir-pass/src/EmitInverse.cpp:188` — `emitInverseCall`
-- `ir-pass/src/EmitInverse.cpp:468` — `emitInverseChain`
+- `ir-pass/src/EmitInverse.cpp:43` — `inPlaceQQAdjointName`
+- `ir-pass/src/EmitInverse.cpp:51` — `isInverseEmittable`
+- `ir-pass/src/EmitInverse.cpp:196` — `emitInverseCall`
+- `ir-pass/src/EmitInverse.cpp:472` — `emitInverseChain`
 
 ### `ir-pass/src/EqFoldArm.cpp` (152 lines)
 
@@ -670,6 +673,32 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/IOSinkLowering.cpp:352` — `lowerIOSinks`
 - `ir-pass/src/IOSinkLowering.cpp:463` — `armIOSink`
 - `ir-pass/src/IOSinkLowering.cpp:473` — `lowerControlledIOSinks`
+
+### `ir-pass/src/InPlaceQQ.cpp` (328 lines)
+
+- `ir-pass/src/InPlaceQQ.cpp:34` — `isInPlaceQQSymbol`
+- `ir-pass/src/InPlaceQQ.cpp:45` — `railIsUserData`
+- `ir-pass/src/InPlaceQQ.cpp:52` — `isInPlaceQQGate`
+- `ir-pass/src/InPlaceQQ.cpp:78` — `qqShape`
+- `ir-pass/src/InPlaceQQ.cpp:107` — `writesRail`
+- `ir-pass/src/InPlaceQQ.cpp:127` — `dependsOnTarget`
+- `ir-pass/src/InPlaceQQ.cpp:173` — `survives`
+- `ir-pass/src/InPlaceQQ.cpp:193` — `convert`
+- `ir-pass/src/InPlaceQQ.cpp:217` — `decideNext`
+- `ir-pass/src/InPlaceQQ.cpp:303` — `lowerInPlaceQQ`
+
+### `ir-pass/src/InPlaceQQRecord.cpp` (229 lines)
+
+- `ir-pass/src/InPlaceQQRecord.cpp:37` — `isQQStem`
+- `ir-pass/src/InPlaceQQRecord.cpp:42` — `maskOf`
+- `ir-pass/src/InPlaceQQRecord.cpp:50` — `setDeadMask`
+- `ir-pass/src/InPlaceQQRecord.cpp:68` — `deadAfter`
+- `ir-pass/src/InPlaceQQRecord.cpp:92` — `recordDeadQQOperands`
+- `ir-pass/src/InPlaceQQRecord.cpp:121` — `transferDeadOperandMask`
+- `ir-pass/src/InPlaceQQRecord.cpp:139` — `isAdjointOf`
+- `ir-pass/src/InPlaceQQRecord.cpp:152` — `writtenRails`
+- `ir-pass/src/InPlaceQQRecord.cpp:173` — `declineStaleInPlaceQQReads`
+- `ir-pass/src/InPlaceQQRecord.cpp:227` — `deadOperandMask`
 
 ### `ir-pass/src/IntrinsicLowering.cpp` (565 lines)
 
@@ -5272,10 +5301,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_control_cascade_two_bools_uncond.c:19` — `slice`
 - `tests/e2e/slice_control_cascade_two_bools_uncond.c:34` — `main`
 
-### `tests/e2e/slice_control_cond_datause.c` (46 lines)
+### `tests/e2e/slice_control_cond_datause.c` (52 lines)
 
 - `tests/e2e/slice_control_cond_datause.c:36` — `slice`
-- `tests/e2e/slice_control_cond_datause.c:46` — `main`
+- `tests/e2e/slice_control_cond_datause.c:52` — `main`
 
 ### `tests/e2e/slice_control_cond_onward_phase.c` (82 lines)
 
@@ -6034,6 +6063,16 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/slice_i128_mulhi.c:20` — `slice`
 - `tests/e2e/slice_i128_mulhi.c:26` — `main`
+
+### `tests/e2e/slice_inplace_qq.c` (71 lines)
+
+- `tests/e2e/slice_inplace_qq.c:19` — `v6_bool`
+- `tests/e2e/slice_inplace_qq.c:28` — `v6_int`
+- `tests/e2e/slice_inplace_qq.c:37` — `add_long`
+- `tests/e2e/slice_inplace_qq.c:46` — `sub_short`
+- `tests/e2e/slice_inplace_qq.c:55` — `xor_char`
+- `tests/e2e/slice_inplace_qq.c:64` — `slice`
+- `tests/e2e/slice_inplace_qq.c:68` — `main`
 
 ### `tests/e2e/slice_intrinsic_bswap.c` (74 lines)
 

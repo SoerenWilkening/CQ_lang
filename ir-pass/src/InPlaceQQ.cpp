@@ -38,6 +38,17 @@ bool isInPlaceQQSymbol(StringRef N) {
   return false;
 }
 
+const char kMsgInPlaceQQAmbiguousTarget[] =
+    "cq in-place lowering: both operands of a quantum reassignment are dead "
+    "registers; the overwritten one is not recoverable";
+
+bool railIsUserData(const Value *P) {
+  for (const User *U : P->users())
+    if (const auto *G = dyn_cast<CallInst>(U); G && isNonPermutationMove(G, P))
+      return true;
+  return false;
+}
+
 bool isInPlaceQQGate(const CallInst *G) {
   if (!G || !G->getMetadata(kInPlaceQQTag))
     return false;
@@ -89,15 +100,6 @@ bool qqShape(CallInst *C, const TaintSet &taint, Site &S) {
   return false;
 }
 
-// Is `P`'s rail user data the spine never discharges? It carries a
-// non-permutation move (Ry or controlled Ry) — `isNonPermutationMove`, asked.
-bool railIsUserData(const Value *P) {
-  for (const User *U : P->users())
-    if (const auto *G = dyn_cast<CallInst>(U); G && isNonPermutationMove(G, P))
-      return true;
-  return false;
-}
-
 // Does gate `W` WRITE rail `V`? Asked of the owners, never re-spelt (R12): an
 // in-place gate on `V` (`isInPlaceGateOn`, which includes a converted target),
 // or a merge-stream permutation gate with `V` in a slot it writes
@@ -114,6 +116,14 @@ bool writesRail(const CallInst *W, const Value *V) {
   return false;
 }
 
+// R11 round 1 (finding A-F2) NARROWED this to what the argument above needs: a
+// USER-DATA rail other than `x` (a rotated register) is never uncomputed, so the
+// walk STOPS there — `t += a; a ^= t;` has `a`'s source `t` written by an
+// in-place gate that read `a`, yet `t` is the user's register, not a record the
+// spine must uncompute from `a`'s old value; it converts. What remains dependent
+// is an ALIAS of `x` (a φ/select/freeze reaching it) or a compiler temporary
+// whose lineage reads `x`. Such an eligible op is LOUD (ruling
+// ruling-dm7f51-step1-departures-2026-10-15 Q2), not silently out of place.
 bool dependsOnTarget(Value *S, const Value *P, const Instruction *Site,
                      const DominatorTree &DT) {
   SmallVector<Value *, 16> Work{S};
@@ -122,7 +132,7 @@ bool dependsOnTarget(Value *S, const Value *P, const Instruction *Site,
     Value *V = Work.pop_back_val();
     if (V == P)
       return true;
-    if (!Seen.insert(V).second || isa<Constant>(V))
+    if (!Seen.insert(V).second || isa<Constant>(V) || railIsUserData(V))
       continue;
     auto *I = dyn_cast<Instruction>(V);
     if (!I)
@@ -145,7 +155,7 @@ bool dependsOnTarget(Value *S, const Value *P, const Instruction *Site,
 
 // Does the out-of-place RESULT `R` SURVIVE — is its value kept by the program
 // rather than a temporary the compiler returns to |0⟩ after its last reader?
-// It survives when it is observed (measured, taped), moved by a non-permutation
+// It survives when it is observed (measured), moved by a non-permutation
 // gate (an Ry on it: user data from then on), routed or escaped by a non-call
 // user, or continued as the DEAD operand of a later QQ template whose result
 // survives (a chain `t ^= a; t ^= b`: the first result lives on in the second).
@@ -154,6 +164,12 @@ bool dependsOnTarget(Value *S, const Value *P, const Instruction *Site,
 // what the dead-record ruling asks of a dead value, and converting it would
 // leave the dead value on the user's rail where nothing undoes it (measured:
 // `_BitInt(40) a + b` lowered as an i64 add + mask, slice_bitint).
+// A TAPE WRITE does not keep it (R11 round 1, finding B-F2): `printf` copies the
+// value onto a kept output rail and the result is a temporary after it — measured
+// on 435b3bc1, the spine discharges it there (`_unc` + free right after the
+// write) outside `main`. Counting the tape as survival converted `t ^= a*3;
+// printf(t)` and then broke that discharge (a loud over-decline, and a predicted
+// "taped producer is never reversed" that is false outside `main`).
 bool survives(const CallInst *R, const TaintSet &taint, unsigned Depth = 0) {
   if (Depth > 16)
     return true;  // a pathological chain: say "kept" (in place or loud).
@@ -161,7 +177,7 @@ bool survives(const CallInst *R, const TaintSet &taint, unsigned Depth = 0) {
     const auto *C = dyn_cast<CallInst>(U);
     if (!C)
       return true;  // ret / store / φ / select: the value escapes or is routed.
-    if (isMeasureSink(C) || isOutputSink(C) || isNonPermutationMove(C, R))
+    if (isMeasureSink(C) || isNonPermutationMove(C, R))
       return true;
     Site T;
     if (qqShape(const_cast<CallInst *>(C), taint, T)) {
@@ -172,25 +188,6 @@ bool survives(const CallInst *R, const TaintSet &taint, unsigned Depth = 0) {
     }
   }
   return false;
-}
-
-// Is the out-of-place result `C` already discharged in the IR: an out-first
-// `_unc` zeroing it (slot 0) AND a `cqrt_free` of it? Both are required, as in
-// `priorUseIsSettled` arm (d): the `_unc` witnesses |0⟩, the free the release.
-bool resultDischargedInline(const CallInst *C) {
-  bool Zeroed = false, Released = false;
-  for (const User *U : C->users()) {
-    const auto *D = dyn_cast<CallInst>(U);
-    const Function *DF = D ? D->getCalledFunction() : nullptr;
-    if (!DF || D->arg_size() < 1 || D->getArgOperand(0) != C)
-      continue;
-    StringRef N = DF->getName();
-    if (N == "cqrt_free")
-      Released = true;
-    else if (N.ends_with("_unc") && N.starts_with("cq_template_"))
-      Zeroed = true;
-  }
-  return Zeroed && Released;
 }
 
 void convert(const Site &S, unsigned TargetIdx, FunctionCallee Fn,
@@ -242,24 +239,13 @@ Outcome decideNext(Function &F, WidthDispatch &wd, TaintSet &taint,
   for (const Site &S : Sites) {
     Done.insert(S.C);
     // (E) eligibility, per operand: dead after the op in the user's IR (the
-    // `!cq.qq.dead` record), a user-data rail, and a source that does not depend
-    // on its old value (which also covers every alias of it: `x ^= x`, a φ or
-    // select of it — those stay out of place, the `0` a fresh rail). `sub` is
-    // directional — only the minuend (slot 0) can be overwritten; an eligible
-    // SUBTRAHEND (`t = a - t`) has no in-place form, so it is refused like any
-    // other fence refusal, i.e. loud unless the minuend converts.
-    SmallVector<unsigned, 2> Cands;
-    bool Eligible = false;
-    for (unsigned Idx = 0; Idx < 2; ++Idx) {
-      if (!(S.Mask >> Idx & 1u) || !railIsUserData(S.C->getArgOperand(Idx)) ||
-          dependsOnTarget(S.C->getArgOperand(1 - Idx), S.C->getArgOperand(Idx),
-                          S.C, DT))
-        continue;
-      Eligible = true;
-      if (!(S.Stem == "sub" && Idx == 1))
-        Cands.push_back(Idx);
-    }
-    if (!Eligible)
+    // `!cq.qq.dead` record) and a user-data rail. (`x ^= x` reads `x` twice, so
+    // it is never dead: the `0` is a fresh rail.)
+    SmallVector<unsigned, 2> Eligible;
+    for (unsigned Idx = 0; Idx < 2; ++Idx)
+      if ((S.Mask >> Idx & 1u) && railIsUserData(S.C->getArgOperand(Idx)))
+        Eligible.push_back(Idx);
+    if (Eligible.empty())
       continue;  // live old value (or a derived rail): out of place, D5.
     // A RESULT THAT IS DISCHARGED stays out of place, fence or no fence. An
     // emitter already returned it to |0⟩ inline (a control region's chain strip),
@@ -271,33 +257,43 @@ Outcome decideNext(Function &F, WidthDispatch &wd, TaintSet &taint,
     // (uncompute, never leak). Converting would instead leave the dead result on
     // the user's rail, where nothing undoes it (measured: `_BitInt(40) a + b`
     // lowered as an i64 add + mask, slice_bitint).
-    if (resultDischargedInline(S.C) || Plan.GateAt.count(S.C) ||
-        !survives(S.C, taint))
+    if (railZeroedAndReleased(S.C, /*Before=*/nullptr, /*DT=*/nullptr) ||
+        Plan.GateAt.count(S.C) || !survives(S.C, taint))
       continue;
-    if (Cands.size() == 2) {
-      unsigned B0 = taint.BirthOrder.lookup(S.C->getArgOperand(0));
-      unsigned B1 = taint.BirthOrder.lookup(S.C->getArgOperand(1));
-      if (B0 && B1 && B1 < B0)
-        std::swap(Cands[0], Cands[1]);
-    }
-    // (F) the fence, per candidate.
-    for (unsigned Idx : Cands) {
-      Value *P = S.C->getArgOperand(Idx);
-      if (!inPlacePositionHolds(S.C, P, taint, DT, LI, &Plan))
-        continue;
+    auto loud = [&](const char *Msg) {
+      F.getContext().diagnose(
+          DiagnosticInfoUnsupported(F, Msg, S.C->getDebugLoc()));
+      return Outcome::Loud;
+    };
+    // BOTH operands eligible: which register the user overwrote is not
+    // recoverable from -O1 SSA (clang commutes; no `!dbg` without -g) and the
+    // choice changes the unitary (the leftover register differs). Loud, with no
+    // tiebreak (ruling ruling-dm7f51-both-dead-loud-2026-10-15).
+    if (Eligible.size() == 2)
+      return loud(kMsgInPlaceQQAmbiguousTarget);
+    unsigned Idx = Eligible.front();
+    Value *P = S.C->getArgOperand(Idx);
+    // `sub` is directional — only the minuend (slot 0) can be overwritten; an
+    // eligible SUBTRAHEND (`t = a - t`) has no in-place form. A source that
+    // depends on `x`'s old value (E3) has no clean in-place form either. Both
+    // are refusals of an eligible dead register: loud (owner Q1, ruling Q2).
+    if ((S.Stem == "sub" && Idx == 1) ||
+        dependsOnTarget(S.C->getArgOperand(1 - Idx), P, S.C, DT))
+      return loud(kMsgInPlaceQQRefused);
+    // (F) the fence, asked for a QUANTUM source (G7 arms (c′)/(d4)).
+    if (inPlacePositionHolds(S.C, P, taint, DT, LI, &Plan,
+                             /*IgnoreSelfMarking=*/false,
+                             /*QuantumSource=*/true)) {
       // Asked LAST: `getOrInsertFunction` declares as a side effect (G3).
-      FunctionCallee Fn = wd.qqInPlaceFn(S.Stem, S.W);
-      if (!Fn)
-        continue;
-      Done.erase(S.C);  // erased below; never leave a dangling key.
-      convert(S, Idx, Fn, taint);
-      return Outcome::Converted;
+      if (FunctionCallee Fn = wd.qqInPlaceFn(S.Stem, S.W)) {
+        Done.erase(S.C);  // erased below; never leave a dangling key.
+        convert(S, Idx, Fn, taint);
+        return Outcome::Converted;
+      }
     }
     // Q1: a dead user register the fence refuses, beside a SURVIVING result —
     // never out of place.
-    F.getContext().diagnose(DiagnosticInfoUnsupported(
-        F, kMsgInPlaceQQRefused, S.C->getDebugLoc()));
-    return Outcome::Loud;
+    return loud(kMsgInPlaceQQRefused);
   }
   return Outcome::None;
 }

@@ -15,7 +15,8 @@
 ; than mint a template per trip beside a kept old `t` per trip. Before r2j3.33:
 ; rc 0, out of place. Contrast the loop-INVARIANT operand (`t` defined outside
 ; the loop, re-read every trip): that one is live, never recorded dead, and stays
-; out of place. RETIREMENT TRIGGER: an in-loop QQ in-place lowering (rolled).
+; out of place. RETIREMENT TRIGGER: an in-loop QQ in-place lowering (rolled), bd
+; test_C_libtooling-8h7d.22.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s

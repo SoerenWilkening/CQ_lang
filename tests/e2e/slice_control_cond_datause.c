@@ -41,6 +41,12 @@ int slice(void) {
         cq_phi(0.25);       /* arm gate 1 (Rz) — cqrt_rz_i1 on the flag   */
         cq_phi(0.75);       /* arm gate 2 (Rz) — cqrt_rz_i1 on the flag   */
     }
-    return cq_measure(q + f);      /* f feeds the measured value (owns the flag) */
+    int r = cq_measure(q + f);     /* f feeds the measured value (owns the flag) */
+    /* bd r2j3.33 R11 round 1 (ruling-dm7f51-step1-departures-2026-10-15 Q2): with
+       `q` DEAD after `q + f`, whose source `f` reads `q`'s old value, the pass now
+       fails loudly (lowering_inplace_qq_decline_dependent_source.ll). This slice's
+       subject is the shared flag, so `q` is kept LIVE by a second measurement; the
+       stream is the pre-r2j3.33 one plus that one trailing `cqrt_measure_i32(h0)`. */
+    return r + cq_measure(q);
 }
 int main(void) { (void) slice(); return 0; }

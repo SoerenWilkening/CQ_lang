@@ -52,6 +52,8 @@
 
 #include "ScrubOnDelete.h"  // SpineOpSet (bd 8e5r)
 
+#include <string>
+
 namespace cq {
 
 class WidthDispatch;
@@ -67,6 +69,11 @@ class WidthDispatch;
 // (PRD §2.12, §2.10). It is the canonical ACCEPT set: `emitInverseCall` consults
 // it first, so the two can never drift (Rule 14).
 bool isInverseEmittable(const llvm::CallInst *Forward);
+
+// bd r2j3.33 — the adjoint SYMBOL of an in-place quantum-source gate: xor (and
+// the i1 `cqrt_cnot`) itself, `cqrt_add_<W>` <-> `cqrt_sub_<W>`. The ONE spelling;
+// the emission and the post-`uncompute` stale-read check both ask it.
+std::string inPlaceQQAdjointName(llvm::StringRef Name);
 
 // Emit the void in-place adjoint of a single forward call at `B`'s insertion
 // point. Returns `true` iff the callee is an invertible Phase-5 target (rotation,

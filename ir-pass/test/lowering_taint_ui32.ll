@@ -2,6 +2,11 @@
 ; source identically to @cq_theta_si32 (ui32 shares the i32 ABI). Same shape
 ; as lowering_basic.ll, differing only in the front-end suffix.
 ;
+; bd r2j3.33 R11 round 1 (ruling-dm7f51-both-dead-loud-2026-10-15): with BOTH
+; operands dead the overwritten register is not recoverable from SSA and the
+; pass fails loudly (pinned by lowering_inplace_qq_decline_both_dead.ll). This
+; fixture's subject is not that question, so `%a` is kept LIVE by a second
+; measurement; the add then lowers in place on `%b`'s rail.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ;
@@ -30,5 +35,6 @@ entry:
   %b = call i32 @cq_theta_ui32(i32 5, double 5.000000e-01)
   %c = add i32 %a, %b
   %m = call i32 @cq_measure_ui32(i32 %c)
+  %ma = call i32 @cq_measure_ui32(i32 %a)
   ret i32 %m
 }

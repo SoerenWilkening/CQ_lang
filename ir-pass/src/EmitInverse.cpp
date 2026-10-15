@@ -40,6 +40,14 @@ namespace cq {
 // dangling one. Pre-WI-0 these were excluded and declined loudly; that exclusion is
 // gone.
 
+std::string inPlaceQQAdjointName(StringRef Name) {
+  if (Name.starts_with("cqrt_add_"))
+    return ("cqrt_sub_" + Name.drop_front(strlen("cqrt_add_"))).str();
+  if (Name.starts_with("cqrt_sub_"))
+    return ("cqrt_add_" + Name.drop_front(strlen("cqrt_sub_"))).str();
+  return Name.str();  // xor and the i1 `cqrt_cnot` are their own adjoints.
+}
+
 bool isInverseEmittable(const CallInst *Forward) {
   const Function *Callee = Forward ? Forward->getCalledFunction() : nullptr;
   if (!Callee)
@@ -266,11 +274,7 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
   // `CurHandle` relabels it); the tag rides along so the adjoint is classified
   // exactly as its forward (`isInPlaceQQGate`).
   if (isInPlaceQQSymbol(Name) && Forward->arg_size() == 2) {
-    std::string InvName = Name.str();
-    if (Name.starts_with("cqrt_add_"))
-      InvName = ("cqrt_sub_" + Name.drop_front(strlen("cqrt_add_"))).str();
-    else if (Name.starts_with("cqrt_sub_"))
-      InvName = ("cqrt_add_" + Name.drop_front(strlen("cqrt_sub_"))).str();
+    std::string InvName = inPlaceQQAdjointName(Name);
     FunctionCallee InvFn = Forward->getModule()->getOrInsertFunction(
         InvName, Callee->getFunctionType());
     Value *Dst = CurHandle ? CurHandle : Forward->getArgOperand(1);

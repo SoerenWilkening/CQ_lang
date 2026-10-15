@@ -35,6 +35,11 @@
 ; pair, not one per gate (`cqrt_x` is self-inverse, so `x;g1;x;x;g2;x` and
 ; `x;g1;g2;x` are the same unitary) — two `cqrt_x`, not four.
 ;
+; bd r2j3.33 R11 round 1 (ruling-dm7f51-step1-departures-2026-10-15 Q2): a QQ
+; op whose dead operand's old value feeds its own source fails loudly (pinned
+; by lowering_inplace_qq_decline_dependent_source.ll). This fixture's subject is
+; not that question, so the operand is kept LIVE by a trailing measurement and
+; the op stays out of place exactly as before r2j3.33.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=ACNT < %t.cqd0.ll
@@ -104,6 +109,7 @@ define i32 @slice() local_unnamed_addr #0 {
   %5 = zext i1 %2 to i32
   %6 = add nsw i32 %1, %5
   %7 = tail call i32 @cq_measure_si32(i32 noundef %6) #2
+  %mq = tail call i32 @cq_measure_si32(i32 noundef %1) #2
   ret i32 %7
 }
 

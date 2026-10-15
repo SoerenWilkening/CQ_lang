@@ -24,31 +24,36 @@
 //   (E2) `x`'s rail is USER DATA (it carries a non-permutation move, an Ry —
 //        `isNonPermutationMove`). A derived rail with no rotation is a
 //        temporary the spine returns to |0⟩: out of place is already exact.
-//   (E3) `y` does not depend on `x`'s old value (`dependsOnTarget`; covers every
-//        alias, `x ^= x` included). If it does, `y` cannot be uncomputed once `x`
-//        is relabelled, so in place only trades one record for another and blocks
-//        `y`'s own discharge; that stays out of place (a self-dependent permutation
-//        such as `x ^= x >> 1` needs a dedicated circuit — a follow-up).
-//   (E4) the result SURVIVES (measured, taped, rotated, escaped, or continued as
-//        the dead operand of a later QQ op whose result survives) and is not
-//        discharged inline or by the M-B plan. A temporary result is better out of
-//        place: that is in place followed by its own adjoint at its death, which
-//        the dead-record ruling asks for and the in-place form cannot deliver.
-// An eligible op is converted iff the M-C positional fence holds on `x`
-// (`inPlacePositionHolds`: G5 not in a loop, G6 no later use of `x`, G7 every
-// prior use settled, with the M-B plan) and the width has an in-place symbol.
-// `sub` is directional: only the MINUEND can be the target. Target choice is by
-// these facts, never by operand spelling; when both qualify, the lower
-// BirthOrder rail (design D2(c)).
+//   (E3) the result SURVIVES (measured, rotated, escaped, or continued as the
+//        dead operand of a later QQ op whose result survives — a TAPE WRITE is a
+//        copy-out and does not keep it) and is not discharged inline or by the
+//        M-B plan. A temporary result is better out of place: that is in place
+//        followed by its own adjoint at its death, which the dead-record ruling
+//        asks for and the in-place form cannot deliver.
+// An ELIGIBLE op then (R11 round 1, rulings ruling-dm7f51-step1-departures-
+// 2026-10-15 and ruling-dm7f51-both-dead-loud-2026-10-15):
+//   * with BOTH operands eligible fails loudly (`kMsgInPlaceQQAmbiguousTarget`):
+//     the overwritten register is not recoverable from -O1 SSA and the choice
+//     changes the unitary — no tiebreak;
+//   * with an eligible SUBTRAHEND (`t = a - t`), or a source that depends on the
+//     target's OLD value (`dependsOnTarget`: an alias of `x`, or a compiler
+//     temporary whose lineage reads `x`; a user register stops the walk), fails
+//     loudly (`kMsgInPlaceQQRefused`): no clean in-place form exists;
+//   * otherwise converts iff the M-C positional fence holds on `x` for a QUANTUM
+//     source (`inPlacePositionHolds(..., QuantumSource=true)`: G5 not in a loop,
+//     G6 no later use of `x`, G7 every prior use settled — with arm (c′): a
+//     prior void reader is settled only if every rail it writes is user data or
+//     released before the gate) and the width has an in-place symbol; else loud.
+// Target choice is by these facts, never by operand spelling.
 //
-// Q1 — ELIGIBLE BUT NOT CONVERTED IS LOUD (`kMsgInPlaceQQRefused`, at the op's
-// `!dbg`, nothing lowered). Out of place there would leave the dead user register
-// recording the source beside a surviving result — the defect above. An op whose
-// old operand is LIVE stays out of place: the fresh rail is an entangling copy,
-// which is the program (design D5). Measured loud shapes: the condition of a
-// later region re-reading the old register (the Dicke block, V5 — design D3,
-// step 2), a prior record still to be uncomputed (G7), an in-loop op (G5), and
-// the eligible subtrahend `t = a - t`.
+// Q1 — ELIGIBLE BUT NOT CONVERTED IS LOUD, at the op's `!dbg`, nothing lowered.
+// Out of place there would leave the dead user register recording the source
+// beside a surviving result — the defect above. An op whose old operand is LIVE
+// stays out of place: the fresh rail is an entangling copy, which is the program
+// (design D5). Measured loud shapes: the condition of a later region re-reading
+// the old register (the Dicke block, V5 — design D3, step 2), a prior record
+// still to be uncomputed (G7, incl. a merge copy of `x`), an in-loop op (G5), the
+// eligible subtrahend, a self-dependent source, and both operands dead.
 //
 // WHERE AND WHEN. One round, called from `lowerLateReassignments` (the last slot
 // before `uncompute`, reached by both entry points, after the round-2 fixpoint:
@@ -61,7 +66,8 @@
 // G6/G7 refuse any read of `x`'s pre-op value that is still owed, and the
 // postcondition below catches one that a prediction let through.
 //
-// THE SPINE. On its DESTINATION the tagged gate is an in-place gate exactly like
+// THE SPINE (ruling Q1 accepted this departure from design D7). On its
+// DESTINATION the tagged gate is an in-place gate exactly like
 // the M-C `cqrt_addc_<W>` (`isInPlaceGateOn` arg 1, `preservesBasisUnderRecord`,
 // `EmitInverse` xor self / add <-> sub), with the source a BORROWED parent the way
 // a QRAM store's idx/val are: a dead target is reversed by the spine, a measured,
@@ -81,6 +87,7 @@
 
 namespace llvm {
 class BinaryOperator;
+class Value;
 class CallInst;
 class Module;
 }  // namespace llvm
@@ -96,6 +103,8 @@ inline constexpr const char kInPlaceQQTag[] = "cq.inplace.qq";
 inline constexpr const char kDeadOperandTag[] = "cq.qq.dead";
 
 extern const char kMsgInPlaceQQRefused[];
+// Both operands are eligible dead targets (ruling-dm7f51-both-dead-loud-2026-10-15).
+extern const char kMsgInPlaceQQAmbiguousTarget[];
 
 // `cqrt_{xor,add,sub}_{i8,i16,i32,i64}` — the in-place quantum-source symbols.
 bool isInPlaceQQSymbol(llvm::StringRef N);
@@ -105,6 +114,10 @@ bool isInPlaceQQSymbol(llvm::StringRef N);
 // source (read), slot 1 the destination (written). Membership, never the name
 // alone: an untagged `cqrt_cnot` is a condition-network gate.
 bool isInPlaceQQGate(const llvm::CallInst *G);
+
+// Is `P`'s rail USER DATA the spine never discharges: does it carry a
+// non-permutation move (an Ry or a controlled Ry — `isNonPermutationMove`)?
+bool railIsUserData(const llvm::Value *P);
 
 // Record `!cq.qq.dead` on every integer add/sub/xor with a tainted operand.
 // Called once per entry point, before `lowerLoops`, the peel and control
@@ -125,12 +138,15 @@ bool lowerInPlaceQQ(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 
 // THE POSTCONDITION (L1 / bd memory fix-that-predicts-a-later-stage-must-
 // reverify-there), asked after `uncompute` in both entry points. The round's
-// fence trusts a prediction about what `uncompute` will do (the M-B plan, G7 arm
-// (d2)). If it was wrong, an adjoint of a rail minted BEFORE the gate reads the
-// relabelled destination after it, without the gate having been undone first: a
-// wrong unitary. Fails loudly (`kMsgInPlaceQQStaleAdjoint`) and returns true.
+// fence trusts predictions about what `uncompute` will do (the M-B plan, G7 arm
+// (d2); a taped prior producer is never reversed, arm (d4)). Asked as a GATE SET
+// (R11 round 1): any call after the gate that reads its target, or an alias of
+// it, and writes a non-user compiler record minted BEFORE the gate — an adjoint,
+// a strip, a merge replay — with no adjoint of the gate in between, is a read
+// of the relabelled register expecting its old value: a wrong unitary. Fails
+// loudly (`kMsgInPlaceQQStaleAdjoint`) and returns true.
 extern const char kMsgInPlaceQQStaleAdjoint[];
-bool declineStaleInPlaceQQReads(llvm::Module &M);
+bool declineStaleInPlaceQQReads(llvm::Module &M, const TaintSet &taint);
 
 }  // namespace cq
 

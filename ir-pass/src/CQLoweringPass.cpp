@@ -1028,7 +1028,7 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // bd r2j3.33 — the in-place quantum-source round's POSTCONDITION: no
   // adjoint of an older rail reads a register after its in-place relabel
   // (the round trusted the M-B plan and the kept-flag arm; re-asked here).
-  if (declineStaleInPlaceQQReads(M))
+  if (declineStaleInPlaceQQReads(M, taint))
     return PreservedAnalyses::none();
   // bd test_C_libtooling-6uqc (M-A) — the LIVE-RECORD WARNING, at the
   // SAME late slot and for the SAME reason as the literal-integrity guard above:
@@ -1548,7 +1548,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // bd r2j3.33 — the in-place quantum-source round's POSTCONDITION: no
   // adjoint of an older rail reads a register after its in-place relabel
   // (the round trusted the M-B plan and the kept-flag arm; re-asked here).
-  if (declineStaleInPlaceQQReads(M))
+  if (declineStaleInPlaceQQReads(M, taint))
     return true;
   // bd test_C_libtooling-6uqc (M-A) — mirrored from `run()` (twin-pipeline
   // parity, WI-1.12): miss it and a unit-level caller loses the live-record

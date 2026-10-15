@@ -23,6 +23,12 @@
 ; be written between the stream and that point; otherwise the rail stays
 ; allocated (the pre-fix disposition).
 ;
+; bd r2j3.33 R11 round 1 (ruling-dm7f51-step1-departures-2026-10-15 Q2): @compound's
+; `u = s + y` has a source (the merge `s`, whose condition reads `y`) depending on
+; the dead `y`'s old value, which now fails loudly (pinned by
+; lowering_inplace_qq_decline_dependent_source.ll). This fixture's subject is the
+; merge discharge, so `y` is kept LIVE by a trailing measurement and the add stays
+; out of place exactly as before r2j3.33.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
 ; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s < %t.ll
@@ -236,6 +242,7 @@ define i32 @compound(i32 noundef %m, i32 noundef %n) {
   %s = select i1 %c, i32 7, i32 1
   %u = add i32 %s, %y
   %r = tail call i32 @cq_measure_si32(i32 noundef %u)
+  %ry = tail call i32 @cq_measure_si32(i32 noundef %y)
   ret i32 %r
 }
 

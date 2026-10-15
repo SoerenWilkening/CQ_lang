@@ -9,7 +9,8 @@
 #include "ChainWalk.h"      // isInPlaceGateOn (the ONE in-place-gate relation)
 #include "DeadValueLiveness.h"  // isRecordedDeadSlot (bd vsfp r2: the ONE "slot unread")
 #include "FreePoint.h"      // blockCanRepeat (the ONE "can this block run twice")
-#include "InPlaceQQ.h"      // transferDeadOperandMask / lowerInPlaceQQ (bd r2j3.33)
+#include "InPlaceQQ.h"      // transferDeadOperandMask / railIsUserData (bd r2j3.33)
+#include "MergeStreamGates.h" // streamGateWrites (bd r2j3.33 arm (c′))
 #include "LoopPlan.h"       // inPlaceValueRailOperand (the dtzb shape predicate)
 #include "OpcodeSupport.h"
 #include "TaintPropagation.h"
@@ -621,9 +622,88 @@ llvm::Value *inPlaceReassignRailOperand(BinaryOperator *bo,
 //     RAIL PLUS, under a later non-diagonal gate, COHERENCE — a reason to refuse
 //     only what must be refused. (`j02C` itself no longer reaches here: arm (d0)
 //     and bd vsfp's drop, above.)
+// (c′ — bd r2j3.33, R11 round 1 finding A-F3/B-F1/C-F1) Arm (c) for a QUANTUM
+// source. Arm (c) settles a void `cqrt_*` reader of `P` because the SPINE never
+// re-emits it — true, and beside the point once the in-place gate is a QQ one: a
+// void gate that READS `P` into some other rail leaves that rail a RECORD of
+// `P`'s old value, and the record's own discharge (a merge replay, a strip)
+// re-reads `P` after the relabel, or never happens. MEASURED: a 4.4 merge
+// `s = c ? t : b` copies `t` into `%out` by `cqrt_copy_<W>_controlled`; `t ^= a`
+// then converted, the merge replay was refused, and `%out` (= old `t` on c=1)
+// leaked beside `t'`, dephasing the later Ry on `a` with no diagnostic. So for a
+// quantum source a prior void reader is settled only if every rail it WRITES
+// (`streamGateWrites`; a controlled rotation's target; a converted QQ gate's
+// destination) is user data (a register it entangles is the program's) or is
+// RELEASED before `bo` (`cqrt_free` provably before — a compiler temporary the
+// emitter already returned to |0⟩, e.g. a condition-network flag). Anything else,
+// or a gate whose write set is unknown, is not settled. The classical-immediate
+// M-C path keeps arm (c) as shipped (its analogue is the follow-up filed with
+// this round).
+bool voidReaderRecordsSettled(const CallInst *CI, const Value *P,
+                              const Instruction *bo, const DominatorTree &DT) {
+  SmallVector<unsigned, 2> W;
+  StringRef N = CI->getCalledFunction()->getName();
+  if (isInPlaceQQGate(CI)) {
+    W.push_back(1);  // an earlier converted gate reading `P` writes its dst.
+  } else if (!streamGateWrites(CI, W)) {
+    // A controlled rotation reading `P` only as its CONTROL writes its target.
+    if (!(N.ends_with("_controlled") &&
+          (N.starts_with("cqrt_ry_") || N.starts_with("cqrt_rz_")) &&
+          CI->arg_size() == 3 && CI->getArgOperand(0) == P &&
+          CI->getArgOperand(1) != P))
+      return false;
+    W.push_back(1);
+  }
+  for (unsigned S : W) {
+    const Value *R = CI->getArgOperand(S);
+    if (R == P)
+      return false;  // writes `P` itself by a gate arm (a) did not own.
+    if (railIsUserData(R))
+      continue;
+    bool Released = false;
+    for (const User *U : R->users())
+      if (const auto *F = dyn_cast<CallInst>(U);
+          F && F->getCalledFunction() &&
+          F->getCalledFunction()->getName() == "cqrt_free" &&
+          F->arg_size() == 1 && F->getArgOperand(0) == R &&
+          provablyBefore(F, bo, DT))
+        Released = true;
+    if (!Released)
+      return false;
+  }
+  return true;
+}
+
+}  // namespace
+
+bool railZeroedAndReleased(const Value *R, const Instruction *Before,
+                           const DominatorTree *DT) {
+  bool Zeroed = false, Released = false;
+  for (const User *DU : R->users()) {
+    const auto *D = dyn_cast<CallInst>(DU);
+    if (!D || !D->getCalledFunction())
+      continue;
+    if (Before && !provablyBefore(D, Before, *DT))
+      continue;
+    StringRef DN = D->getCalledFunction()->getName();
+    if (DN == "cqrt_free" && D->arg_size() == 1 && D->getArgOperand(0) == R)
+      Released = true;
+    // The out-first `_unc` convention (DD-3): the rail being zeroed is arg 0.
+    // A QRAM store `_unc` takes its forward's args and zeroes nothing, so it is
+    // excluded exactly as `RotationLowering::isDischargeOf` excludes it.
+    else if (DN.ends_with("_unc") && !DN.starts_with("cqrt_qram_store_") &&
+             D->arg_size() >= 1 && D->getArgOperand(0) == R)
+      Zeroed = true;
+  }
+  return Zeroed && Released;
+}
+
+namespace {
+
 bool priorUseIsSettled(const Instruction *UI, const Value *P,
                        const Instruction *bo, const DominatorTree &DT,
-                       const InteriorDischargePlan *Plan, const TaintSet &taint) {
+                       const InteriorDischargePlan *Plan, const TaintSet &taint,
+                       bool QuantumSource) {
   const auto *CI = dyn_cast<CallInst>(UI);
   if (!CI)
     return false;  // (e) plain-IR use / still-unlowered tainted opcode.
@@ -640,7 +720,8 @@ bool priorUseIsSettled(const Instruction *UI, const Value *P,
 
   if (CI->getType()->isVoidTy() && N.starts_with("cqrt_") &&
       !N.starts_with("cqrt_qram_store_"))
-    return true;  // (c)
+    return QuantumSource ? voidReaderRecordsSettled(CI, P, bo, DT)  // (c′)
+                         : true;                                    // (c)
 
   // (d0) — a call that passes `P` only in slots the specializer RECORDED as dead
   // in the built clone (bd vsfp / bd hgwx; see above). Asked by CALLING the one
@@ -688,25 +769,7 @@ bool priorUseIsSettled(const Instruction *UI, const Value *P,
       return true;
   }
 
-  bool Zeroed = false, Released = false;
-  for (const User *DU : CI->users()) {
-    const auto *D = dyn_cast<CallInst>(DU);
-    if (!D || !D->getCalledFunction())
-      continue;
-    const Instruction *DI = D;
-    if (!provablyBefore(DI, bo, DT))
-      continue;
-    StringRef DN = D->getCalledFunction()->getName();
-    if (DN == "cqrt_free" && D->arg_size() == 1 && D->getArgOperand(0) == CI)
-      Released = true;
-    // The out-first `_unc` convention (DD-3): the rail being zeroed is arg 0.
-    // A QRAM store `_unc` takes its forward's args and zeroes nothing, so it is
-    // excluded exactly as `RotationLowering::isDischargeOf` excludes it.
-    else if (DN.ends_with("_unc") && !DN.starts_with("cqrt_qram_store_") &&
-             D->arg_size() >= 1 && D->getArgOperand(0) == CI)
-      Zeroed = true;
-  }
-  return Zeroed && Released;
+  return railZeroedAndReleased(CI, bo, &DT);
 }
 
 // G3–G7, THE POSITION-AWARE HALF OF THE M-C FENCE, SPELT ONCE (bd
@@ -781,7 +844,7 @@ bool inPlaceFenceHolds(const Instruction *Site, const Value *P, const Value *Imm
 bool inPlacePositionHolds(const Instruction *Site, const Value *P,
                           const TaintSet &taint, const DominatorTree &DT,
                           const LoopInfo &LI, const InteriorDischargePlan *Plan,
-                          bool IgnoreSelfMarking) {
+                          bool IgnoreSelfMarking, bool QuantumSource) {
   // G5 — the LOOP-OWNED population is untouched, from both sides.
   //   * `InPlaceRailOps` is `lowerLoops`' own proven set; the driver already
   //     routes it to the same emitter. Claiming one here would be a second
@@ -923,7 +986,7 @@ bool inPlacePositionHolds(const Instruction *Site, const Value *P,
     if (!provablyBefore(UI, Site, DT))
       return false;
     // G7 — the prior use must be settled (see `priorUseIsSettled`).
-    if (!priorUseIsSettled(UI, P, Site, DT, Plan, taint))
+    if (!priorUseIsSettled(UI, P, Site, DT, Plan, taint, QuantumSource))
       return false;
   }
   return true;

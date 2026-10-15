@@ -13,7 +13,8 @@
 ; later `_unc` re-reads `t` (`priorUseIsSettled` arm (d)). Before r2j3.33 this
 ; lowered rc 0 to `cq_template_xor_i32(h_a, h_t)` with the old `t` rail kept.
 ; RETIREMENT TRIGGER: the design's D2(b) clause ("a prior reader that is observed
-; counts settled", with a post-`uncompute` re-check) flips this to an accept.
+; counts settled", with a post-`uncompute` re-check; bd test_C_libtooling-dm7f.76)
+; flips this to an accept.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s

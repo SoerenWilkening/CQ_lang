@@ -277,7 +277,20 @@ bool inPlacePositionHolds(const llvm::Instruction *Site, const llvm::Value *P,
                           const TaintSet &taint, const llvm::DominatorTree &DT,
                           const llvm::LoopInfo &LI,
                           const InteriorDischargePlan *Plan,
-                          bool IgnoreSelfMarking = false);
+                          bool IgnoreSelfMarking = false,
+                          bool QuantumSource = false);
+
+// `QuantumSource` (bd r2j3.33, R11 round 1): the in-place gate's operand is a
+// rail, not a classical immediate. G7 then settles a prior VOID `cqrt_*` reader
+// only when every rail it writes is user data or released before `Site` (arm
+// (c′)).
+
+// Is `R` returned to |0⟩ AND released: an out-first `_unc` zeroing it (slot 0)
+// and a `cqrt_free` of it, each provably before `Before` when one is given (G7
+// arm (d)'s witness; the in-place QQ round asks it with no bound). The ONE
+// spelling of "this rail is discharged".
+bool railZeroedAndReleased(const llvm::Value *R, const llvm::Instruction *Before,
+                           const llvm::DominatorTree *DT);
 
 }  // namespace cq
 

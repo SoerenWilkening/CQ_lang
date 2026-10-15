@@ -11,7 +11,8 @@
 ; SUBTRAHEND, and `a` (the minuend) is live, so there is no in-place form, the
 ; out-of-place form keeps the old `t` recording `a` beside `t'`, and the pass
 ; fails loudly. Before r2j3.33: rc 0, `cq_template_sub_i32(h_a, h_t)`.
-; RETIREMENT TRIGGER: an in-place negate-and-add (`t := a - t`) lowering.
+; RETIREMENT TRIGGER: an in-place negate-and-add (`t := a - t`) lowering, bd
+; test_C_libtooling-dm7f.73.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s

@@ -23,6 +23,11 @@
 ;   clang -O1 -emit-llvm -S lib.c -o lib.ll      (plain C, no CQ.h)
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>
 ;
+; bd r2j3.33 R11 round 1 (ruling-dm7f51-step1-departures-2026-10-15 Q2): `u = t + q`
+; with `q` dead and its source `t = h(q, m)` depending on `q`'s old value now fails
+; loudly (lowering_inplace_qq_decline_dependent_source.ll). This control's subject
+; is the clone's slot read, so `q` is kept LIVE by a trailing measurement (not in
+; the C below) and the add stays out of place exactly as before r2j3.33.
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NODROP --allow-empty < %t.err
@@ -58,6 +63,7 @@ define i32 @main(i32 noundef %0, ptr nocapture noundef readonly %1) local_unname
 12:                                               ; preds = %10, %2
   %13 = phi i32 [ %11, %10 ], [ %8, %2 ]
   %14 = tail call i32 @cq_measure_si32(i32 noundef %13) #4
+  %mq = tail call i32 @cq_measure_si32(i32 noundef %6) #4
   ret i32 %14
 }
 

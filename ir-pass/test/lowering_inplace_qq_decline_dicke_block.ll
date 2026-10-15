@@ -19,7 +19,8 @@
 ; position (`cqrt_cnot(h4, g)` in the flag network). So the old q4 is dead in the
 ; user's IR (`!cq.qq.dead`) but the fence's G6 finds a later reader, and the first
 ; xor's result survives (it is the dead operand of the second xor, which is
-; measured). RETIREMENT TRIGGER: dm7f.51 step 2 (design D3: commit the QQ xor in
+; measured). RETIREMENT TRIGGER: dm7f.51 step 2, bd test_C_libtooling-dm7f.77
+; (design D3: commit the QQ xor in
 ; place BEFORE control detection, so the condition reads q4's relabelled rail as
 ; a rail leaf) flips this fixture to an accept with an analytic check.
 ;

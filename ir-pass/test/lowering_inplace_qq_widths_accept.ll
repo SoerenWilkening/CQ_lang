@@ -8,14 +8,15 @@
 ; Source (clang -O1 -include CQ.h), per function:
 ;   T a = 0, t = 0; cq_theta(&a, .5); cq_theta(&t, .4);
 ;   t OP= a; cq_theta(&a, .7); return cq_measure(a) + cq_measure(t);
-; and @both_dead64: `long r = t + a; cq_theta(&r, .7);` (both operands dead).
+; (The both-dead `long r = t + a` shape this file carried in b12d4452 now fails
+; loudly — ruling-dm7f51-both-dead-loud-2026-10-15 — and is pinned by
+; lowering_inplace_qq_decline_both_dead.ll.)
 ;
 ; WHAT IS PINNED, per function:
 ;   * the TARGET is chosen by liveness, never by spelling: -O1 writes the dead
 ;     `t` on the LEFT (`xor %2, %1`, `add nsw %2, %1`); BirthOrder put it in
 ;     template slot 1; the emitted gate's DESTINATION is `t`'s rail either way;
 ;   * `sub` keeps its direction: `t - a` is `cqrt_sub_<W>(h_a, h_t)` (dst -= src);
-;   * when BOTH operands are dead the lower-BirthOrder rail (`a`) is the target;
 ;   * no out-of-place template, nothing freed (rotated user data is never freed).
 ; Analytic, the 2-bit model of the dm7f.51 step-1 scratch analytic.py (one Ry per
 ; bit): in place xor P(a=0,t=0)=0.5866, add 0.6069, sub 0.5866 — the textbook
@@ -54,15 +55,6 @@
 ; CHECK-NEXT:  call void @cqrt_ry_i32(i32 %[[A]], double 0x3FE6666666666666)
 ; CHECK-NEXT:  call i32 @cqrt_measure_i32(i32 %[[A]])
 ; CHECK-NEXT:  call i32 @cqrt_measure_i32(i32 %[[T]])
-;
-; CHECK-LABEL: define i64 @both_dead64()
-; CHECK-NEXT:  %[[A:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i64(i64 0)
-; CHECK-NEXT:  call void @cqrt_ry_i64(i32 %[[A]], double 5.000000e-01)
-; CHECK-NEXT:  %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i64(i64 0)
-; CHECK-NEXT:  call void @cqrt_ry_i64(i32 %[[T]], double 4.000000e-01)
-; CHECK-NEXT:  call void @cqrt_add_i64(i32 %[[T]], i32 %[[A]]), !cq.inplace.qq
-; CHECK-NEXT:  call void @cqrt_ry_i64(i32 %[[A]], double 0x3FE6666666666666)
-; CHECK-NEXT:  call i64 @cqrt_measure_i64(i32 %[[A]])
 ;
 ; CHECK-LABEL: define signext i16 @xor16()
 ; CHECK:       %[[A:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i16(i16 0)
@@ -120,14 +112,6 @@ define i32 @sub32() local_unnamed_addr {
   ret i32 %7
 }
 
-define i64 @both_dead64() local_unnamed_addr {
-  %1 = tail call i64 @cq_theta_sl(i64 noundef 0, double noundef 5.000000e-01)
-  %2 = tail call i64 @cq_theta_sl(i64 noundef 0, double noundef 4.000000e-01)
-  %3 = add nsw i64 %2, %1
-  %4 = tail call i64 @cq_theta_sl(i64 noundef %3, double noundef 0x3FE6666666666666)
-  %5 = tail call i64 @cq_measure_sl(i64 noundef %4)
-  ret i64 %5
-}
 
 declare i64 @cq_theta_sl(i64 noundef, double noundef) local_unnamed_addr
 

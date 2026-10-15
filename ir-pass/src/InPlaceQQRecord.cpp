@@ -6,10 +6,15 @@
 
 #include "InPlaceQQ.h"
 
+#include "ChainWalk.h"         // isInPlaceGateOn
+#include "EmitInverse.h"       // inPlaceQQAdjointName
 #include "FreePoint.h"         // blockCanRepeat
+#include "MergeStreamGates.h"  // streamGateWrites / handleAliases
 #include "TaintPropagation.h"  // TaintSet
 #include "WireWalk.h"          // provablyBefore
 
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/Constants.h"
@@ -129,24 +134,43 @@ const char kMsgInPlaceQQStaleAdjoint[] =
 
 namespace {
 
-// Is `I` an adjoint of `G` on the same operands (xor/cnot itself, add <-> sub)?
+// Is `I` an adjoint of `G` on the same operands? The symbol is EmitInverse's
+// (`inPlaceQQAdjointName`, the one spelling), never re-derived here.
 bool isAdjointOf(const CallInst *I, const CallInst *G) {
-  if (!isInPlaceQQGate(I) || I == G ||
-      I->getArgOperand(0) != G->getArgOperand(0) ||
-      I->getArgOperand(1) != G->getArgOperand(1))
-    return false;
-  StringRef A = I->getCalledFunction()->getName();
-  StringRef B = G->getCalledFunction()->getName();
-  if (A.starts_with("cqrt_add_"))
-    return B == ("cqrt_sub_" + A.drop_front(strlen("cqrt_add_"))).str();
-  if (A.starts_with("cqrt_sub_"))
-    return B == ("cqrt_add_" + A.drop_front(strlen("cqrt_sub_"))).str();
-  return A == B;
+  return I != G && isInPlaceQQGate(I) &&
+         I->getArgOperand(0) == G->getArgOperand(0) &&
+         I->getArgOperand(1) == G->getArgOperand(1) &&
+         I->getCalledFunction()->getName() ==
+             inPlaceQQAdjointName(G->getCalledFunction()->getName());
+}
+
+// The rails `X` WRITES, asked of the owners: a converted QQ gate writes its
+// destination; a merge-stream permutation gate / an out-first `_unc` its
+// `streamGateWrites` slots. Anything else (a forward producer minting a FRESH
+// rail, a measurement, a controlled rotation of a user register) writes no
+// compiler record of an older value.
+void writtenRails(const CallInst *X, SmallVectorImpl<const Value *> &Out) {
+  if (isInPlaceQQGate(X)) {
+    Out.push_back(X->getArgOperand(1));
+    return;
+  }
+  SmallVector<unsigned, 2> Slots;
+  if (streamGateWrites(X, Slots))
+    for (unsigned S : Slots)
+      Out.push_back(X->getArgOperand(S));
 }
 
 }  // namespace
 
-bool declineStaleInPlaceQQReads(Module &M) {
+// THE POSTCONDITION AS A GATE SET (R11 round 1, finding A-F3/B-F1/C-F1, L3).
+// Invariant: no gate after the in-place gate `G` reads `G`'s target `P` (or any
+// alias of it — `handleAliases`, φ/select/cast routes and rail-bank cells) to
+// write a COMPILER RECORD minted BEFORE `G` — the shape of every adjoint, strip
+// and merge replay of a computation that read `P`'s OLD value — unless `G`'s own
+// adjoint ran in between (the spine reversing a dead target's DAG). A record
+// that is user data (a rotated register) is the program's entanglement and is not
+// asked. Every reader kind is asked, not only the `_unc` suffix.
+bool declineStaleInPlaceQQReads(Module &M, const TaintSet &taint) {
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
@@ -160,31 +184,41 @@ bool declineStaleInPlaceQQReads(Module &M) {
     DominatorTree DT(F);
     for (CallInst *G : Gates) {
       Value *P = G->getArgOperand(1);
-      for (User *U : P->users()) {
-        auto *X = dyn_cast<CallInst>(U);
-        const Function *XF = X ? X->getCalledFunction() : nullptr;
-        if (!XF || !XF->getName().ends_with("_unc") || X->arg_size() < 2 ||
-            X->getArgOperand(0) == P || !provablyBefore(G, X, DT))
-          continue;
-        // The rail this adjoint zeroes was minted BEFORE the relabel, so it
-        // reads `P` expecting the pre-relabel label.
-        auto *Fwd = dyn_cast<Instruction>(X->getArgOperand(0));
-        if (!Fwd || !provablyBefore(Fwd, G, DT))
-          continue;
-        // Unless `G` itself was undone first (the spine reversing `P`'s DAG
-        // emits the gate's adjoint before the older readers' `_unc`s).
-        bool Undone = false;
-        for (User *V : P->users())
-          if (auto *Inv = dyn_cast<CallInst>(V);
-              Inv && isAdjointOf(Inv, G) && provablyBefore(G, Inv, DT) &&
-              provablyBefore(Inv, X, DT))
-            Undone = true;
-        if (Undone)
-          continue;
-        F.getContext().diagnose(DiagnosticInfoUnsupported(
-            F, kMsgInPlaceQQStaleAdjoint, X->getDebugLoc()));
-        return true;
-      }
+      SmallPtrSet<Value *, 8> Names;
+      Names.insert(P);
+      SmallPtrSet<Value *, 8> Alias;
+      if (handleAliases(P, taint, DT, Alias))
+        Names.insert(Alias.begin(), Alias.end());
+      SmallVector<CallInst *, 4> Undo;
+      for (User *U : P->users())
+        if (auto *I = dyn_cast<CallInst>(U); I && isAdjointOf(I, G))
+          Undo.push_back(I);
+      for (Value *V : Names)
+        for (User *U : V->users()) {
+          auto *X = dyn_cast<CallInst>(U);
+          if (!X || X == G || !provablyBefore(G, X, DT) ||
+              isInPlaceGateOn(X, V))
+            continue;  // not after G, or a gate ON the new value, not a reader.
+          SmallVector<const Value *, 2> W;
+          writtenRails(X, W);
+          bool Stale = false;
+          for (const Value *Rec : W) {
+            const auto *RI = dyn_cast<Instruction>(Rec);
+            if (Rec == V || !RI || !provablyBefore(RI, G, DT) ||
+                railIsUserData(Rec))
+              continue;
+            Stale = true;
+          }
+          if (!Stale)
+            continue;
+          if (llvm::any_of(Undo, [&](CallInst *Inv) {
+                return provablyBefore(G, Inv, DT) && provablyBefore(Inv, X, DT);
+              }))
+            continue;
+          F.getContext().diagnose(DiagnosticInfoUnsupported(
+              F, kMsgInPlaceQQStaleAdjoint, X->getDebugLoc()));
+          return true;
+        }
     }
   }
   return false;
