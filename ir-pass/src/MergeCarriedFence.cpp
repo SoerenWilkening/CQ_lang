@@ -1,20 +1,26 @@
 // MergeCarriedFence.cpp — see header (bd test_C_libtooling-r2j3.32, r2j3.36).
 
 #include "MergeCarriedFence.h"
-#include "InPlaceQQ.h"         // isInPlaceQQGate (bd r2j3.33)
-#include "MergeStreamGates.h"  // calleeName / readsState / isRegister /
-                               // handleAliases
+#include "InPlaceQQ.h"               // isInPlaceQQGate (bd r2j3.33)
+#include "MergeCarriedFenceFresh.h"  // clause (iv), handles, path question
+#include "MergeStreamGates.h"        // calleeName / handleAliases
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/LoopInfo.h"
-#include "llvm/IR/CFG.h"
+#include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Module.h"
+#include "llvm/TargetParser/Triple.h"
+
+#include <memory>
 
 using namespace llvm;
 
@@ -27,36 +33,28 @@ const char kMsgCarriedMergeLeak[] =
 namespace {
 
 // The loop across whose back edge `Out` is carried: the outermost loop
-// containing it whose header has a φ that takes `Out`. Null: not carried.
-Loop *carriedLoop(CallInst *Out, LoopInfo &LI) {
+// containing it in which a member of `Out`'s alias class (`handleAliases`) is
+// the loop's header φ, or a rail-bank cell LOAD inside the loop (R11 round 1,
+// F2: a rail parked in a cell a later trip re-reads — S3's Q6(a) header-φ →
+// cell-load rewrite produces exactly that). An unprovable class inside a loop
+// counts as carried (fail closed: `protect` then fails loudly). Null: not
+// carried.
+Loop *carriedLoop(CallInst *Out, const TaintSet &taint, DominatorTree &DT,
+                  LoopInfo &LI) {
+  Loop *Inner = LI.getLoopFor(Out->getParent());
+  if (!Inner)
+    return nullptr;
+  SmallPtrSet<Value *, 16> Cls;
+  if (!handleAliases(Out, taint, DT, Cls))
+    return Inner->getOutermostLoop();
   Loop *Hit = nullptr;
-  for (Loop *L = LI.getLoopFor(Out->getParent()); L; L = L->getParentLoop())
-    for (User *U : Out->users())
-      if (auto *P = dyn_cast<PHINode>(U); P && P->getParent() == L->getHeader())
+  for (Loop *L = Inner; L; L = L->getParentLoop())
+    for (Value *M : Cls)
+      if ((isa<PHINode>(M) &&
+           cast<PHINode>(M)->getParent() == L->getHeader()) ||
+          (isa<LoadInst>(M) && L->contains(cast<LoadInst>(M)->getParent())))
         Hit = L;
   return Hit;
-}
-
-bool isRuntime(StringRef N) {
-  return N.starts_with("cqrt_") || N.starts_with("cq_template_");
-}
-
-// The HANDLES a call touches: every i32 register operand in a state slot
-// (`readsState`: not an alloc seed, not a template's literal), plus its i32
-// result when that result is a fresh handle (a runtime or lifted producer,
-// never a measurement's classical value).
-void handlesOf(CallInst *C, const TaintSet &taint,
-               SmallVectorImpl<Value *> &H) {
-  for (unsigned S = 0, E = C->arg_size(); S != E; ++S) {
-    Value *Op = C->getArgOperand(S);
-    if (Op->getType()->isIntegerTy(32) && readsState(C, S) &&
-        isRegister(Op, taint))
-      H.push_back(Op);
-  }
-  StringRef N = calleeName(C);
-  if (C->getType()->isIntegerTy(32) && !N.starts_with("cqrt_measure") &&
-      (isRuntime(N) || N.starts_with("__cq_q_")))
-    H.push_back(C);
 }
 
 // Is a use of a PROTECTED register in slot `S` of `C` safe? Only in a gate
@@ -69,7 +67,8 @@ bool slotAllowed(CallInst *C, unsigned S) {
   if (N.starts_with("cq_measure"))
     return true;
   bool Ctl = N.contains("_controlled");
-  if (Ctl && S == 0 && isRuntime(N))
+  if (Ctl && S == 0 &&
+      (N.starts_with("cqrt_") || N.starts_with("cq_template_")))
     return true;
   return N.starts_with("cqrt_rz") || N == "cqrt_x" || N == "cqrt_cnot" ||
          N == "cqrt_toffoli" || N == "cqrt_cswap" ||
@@ -79,71 +78,6 @@ bool slotAllowed(CallInst *C, unsigned S) {
          N.starts_with("cqrt_copy_") || N == "cqrt_free" ||
          N.starts_with("cqrt_measure_") ||
          (N.starts_with("cq_template_") && !Ctl);
-}
-
-// Is there a CFG path that runs `From`, then `To`, on which `Redef` does NOT
-// run strictly in between (bd r2j3.36)? Block-level search through LLVM's
-// `isPotentiallyReachableFromMany` with `Redef`'s block excluded (entering it
-// from the top runs `Redef`), no DT/LI shortcut (both would answer "yes" past
-// the exclusion); its block budget answers "yes" when exceeded — the
-// conservative side here. `From == To` asks for a cycle.
-bool runsWithoutRedef(const Instruction *From, const Instruction *To,
-                      const Instruction *Redef) {
-  const BasicBlock *FB = From->getParent(), *TB = To->getParent(),
-                   *RB = Redef->getParent();
-  // Straight down one block.
-  if (FB == TB && From->comesBefore(To))
-    return !(RB == FB && From->comesBefore(Redef) && Redef->comesBefore(To));
-  // Otherwise the path leaves `From`'s block by its tail and enters `To`'s
-  // block from its top.
-  if (RB == FB && From->comesBefore(Redef))
-    return false;
-  if (RB == TB && Redef->comesBefore(To))
-    return false;
-  SmallVector<BasicBlock *, 8> WL;
-  for (const BasicBlock *S : successors(FB))
-    WL.push_back(const_cast<BasicBlock *>(S));
-  if (WL.empty())
-    return false;
-  SmallPtrSet<BasicBlock *, 1> Ex;
-  Ex.insert(const_cast<BasicBlock *>(RB));
-  return isPotentiallyReachableFromMany(WL, TB, &Ex, nullptr, nullptr);
-}
-
-// FRESH AT `C` (bd r2j3.36): `V` is a `cqrt_alloc_*` result, and no use that
-// can couple its CURRENT instance to another register runs between that alloc
-// and `C`. A coupling use is any use of a member of `V`'s alias class
-// (`handleAliases`; unprovable: not fresh) other than a carrier inside the
-// class, a park into its proven rail bank, or a RUNTIME call touching one
-// handle (a local gate, a measurement, a free). A register no coupling ever
-// reached is in a product state: no gate on it can interfere branches a record
-// tells apart. Anything else — a template result (born entangled with its
-// operands), a φ, a bank load — is never fresh.
-bool freshAt(Value *V, const Instruction *C, const TaintSet &taint,
-             const DominatorTree &DT) {
-  auto *A = dyn_cast<CallInst>(V);
-  if (!A || !calleeName(A).starts_with("cqrt_alloc_"))
-    return false;
-  SmallPtrSet<Value *, 8> Cls;
-  if (!handleAliases(A, taint, DT, Cls))
-    return false;
-  for (Value *M : Cls)
-    for (User *U : M->users()) {
-      auto *I = dyn_cast<Instruction>(U);
-      if (!I)
-        return false;
-      if (Cls.count(I) || isa<StoreInst>(I))
-        continue;  // a carrier in the class; a proven bank park.
-      if (auto *K = dyn_cast<CallInst>(I); K && isRuntime(calleeName(K))) {
-        SmallVector<Value *, 4> H;
-        handlesOf(K, taint, H);
-        if (H.size() < 2)
-          continue;
-      }
-      if (runsWithoutRedef(A, I, A) && runsWithoutRedef(I, C, A))
-        return false;
-    }
-  return true;
 }
 
 }  // namespace
@@ -161,9 +95,23 @@ bool fenceCarriedMergeLeaks(Function &F, const TaintSet &taint,
     for (Instruction &I : BB)
       if (auto *C = dyn_cast<CallInst>(&I))
         Calls.push_back(C);
+  // SCEV for clause (iv)(b), built once and only when a carried rail exists
+  // (the same standalone construction RailWindow / LoopLowering use).
+  std::unique_ptr<AssumptionCache> AC;
+  std::unique_ptr<TargetLibraryInfoImpl> TLII;
+  std::unique_ptr<TargetLibraryInfo> TLI;
+  std::unique_ptr<ScalarEvolution> SE;
   for (CallInst *Out : Left) {
-    if (!carriedLoop(Out, LI))
+    Loop *TL = carriedLoop(Out, taint, DT, LI);
+    if (!TL)
       continue;
+    if (!SE) {
+      AC = std::make_unique<AssumptionCache>(F);
+      TLII = std::make_unique<TargetLibraryInfoImpl>(
+          Triple(F.getParent()->getTargetTriple()));
+      TLI = std::make_unique<TargetLibraryInfo>(*TLII);
+      SE = std::make_unique<ScalarEvolution>(F, *TLI, *AC, DT, LI);
+    }
     // THE ENTANGLEMENT CLOSURE (R11 round 2, replacing three rounds of
     // per-path closures): start from the leaked rail; any call, ANYWHERE in
     // the function, touching two or more handles one of whose alias classes is
@@ -186,7 +134,7 @@ bool fenceCarriedMergeLeaks(Function &F, const TaintSet &taint,
       Grew = false;
       for (CallInst *C : Calls) {
         SmallVector<Value *, 4> H;
-        handlesOf(C, taint, H);
+        carriedFenceHandlesOf(C, taint, H);
         if (H.size() < 2 ||
             llvm::none_of(H, [&](Value *V) { return P.count(V) != 0; }))
           continue;
@@ -198,17 +146,18 @@ bool fenceCarriedMergeLeaks(Function &F, const TaintSet &taint,
           }
       }
     }
-    // THE HAZARD (bd r2j3.36: everywhere, not only after the loop exit): a
-    // use of a protected register in a slot `slotAllowed` does not clear, at
-    // a call the rail's allocation can reach (a record can exist there; in
-    // the loop that is every call, across the back edge), unless the register
-    // is FRESH there — allocated and never coupled since (`freshAt`).
+    // THE HAZARD SET (header; bd r2j3.36: everywhere, not only after the loop
+    // exit): a use of a protected register in a slot `slotAllowed` does not
+    // clear, at a call the rail's allocation can reach (a record can exist
+    // there; in the loop that is every call, across the back edge), unless
+    // the register is FRESH there (`carriedFenceFreshAt`).
     for (CallInst *C : Calls) {
       if (!isPotentiallyReachable(Out, C, nullptr, &DT, &LI))
         continue;
       for (unsigned S = 0, E = C->arg_size(); S != E; ++S) {
         Value *V = C->getArgOperand(S);
-        if (P.count(V) && !slotAllowed(C, S) && !freshAt(V, C, taint, DT))
+        if (P.count(V) && !slotAllowed(C, S) &&
+            !carriedFenceFreshAt(V, C, TL, taint, DT, *SE))
           return loud(C);
       }
     }
