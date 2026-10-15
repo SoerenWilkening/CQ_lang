@@ -39,12 +39,17 @@
 //     (`DiagnosticInfoUnsupported`, its `!dbg`).
 // WHERE: after the loop exit, not after the first merge write. Inside the loop
 // each trip's gates are the body the control-lowering fences adjudicate per
-// trip (every in-loop source shape we probed is declined there); the bank
-// aliasing that makes every `bool b0[N]` cell one class would otherwise flag
-// the shipped trip-k state prep of b0[k] itself (predicted from the alias rule,
-// not measured). RESIDUAL, stated: an
-// in-loop non-diagonal gate on a protected register that upstream accepts is
-// not seen here.
+// trip (every in-loop source shape we probed is declined there). An in-loop
+// check would flag the shipped slice's own per-trip state prep, because the
+// closure is POSITION-INSENSITIVE (R11 round 2, revU7): the trip's fresh `b0[i]`
+// rail joins through the carried φ (an alias of `%out`) → the `icmp` template
+// that reads it → the `cqrt_ry_i1_controlled` whose target it is, although
+// that rail is entangled with no record when it is rotated (no bank hop is
+// involved). The sound in-loop rule is FLOW-SENSITIVE — protect a register
+// only once it is "entangled before" the gate in question — and is not built.
+// RESIDUAL, stated and filed (bd r2j3, "MergeCarriedFence checks only after
+// the loop exit"): an in-loop non-diagonal gate on a protected register that
+// upstream accepts is not seen here.
 // OVER-APPROXIMATES by design (position-independent closure, every controlled
 // target joins): a register entangled with the record only AFTER a gate, or
 // only as a controlled-rotation target, is still protected. Acceptable while
