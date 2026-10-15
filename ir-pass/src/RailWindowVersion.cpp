@@ -70,6 +70,7 @@
 
 #include "TaintPropagation.h"
 
+#include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/InstructionSimplify.h"
@@ -172,6 +173,52 @@ struct Analyses {
         SE(F, TLI, AC, DT, LI) {}
 };
 
+// R11 S7 A-F2: inside an aliased copy the two cells ARE one, so a user's own
+// test of them (`if (i != j)`, `railWindowCompareIsCellEquality` against a
+// dominating version guard's aliased edge) is a known classical constant.
+// Fold it, fold the branch, and drop the dead arm before any later stage sees
+// it (the arm could gate a rail the copy has measured or rebound).
+void foldAliasedUserTests(Function &F, SmallPtrSetImpl<BasicBlock *> &Alias) {
+  Analyses A(F);
+  SmallVector<std::pair<BasicBlockEdge, const SCEV *>, 8> Aliased;
+  for (BasicBlock &B : F)
+    if (auto *Br = dyn_cast<BranchInst>(B.getTerminator());
+        Br && Br->getMetadata("cq.railwindow.version"))
+      if (auto *G = dyn_cast<ICmpInst>(Br->getCondition())) {
+        const SCEV *AB = A.SE.getMinusSCEV(A.SE.getSCEV(G->getOperand(0)),
+                                           A.SE.getSCEV(G->getOperand(1)));
+        if (!isa<SCEVCouldNotCompute>(AB))
+          Aliased.push_back({BasicBlockEdge(&B, Br->getSuccessor(1)), AB});
+      }
+  SmallVector<ICmpInst *, 8> Known;
+  for (BasicBlock *BB : Alias)
+    for (Instruction &I : *BB)
+      if (auto *C = dyn_cast<ICmpInst>(&I);
+          C && C->isEquality() && C->getType()->isIntegerTy(1))
+        for (auto &[E, AB] : Aliased)
+          if (A.DT.dominates(E, BB) &&
+              railWindowCompareIsCellEquality(A.SE, C, AB)) {
+            Known.push_back(C);
+            break;
+          }
+  if (Known.empty())
+    return;
+  for (ICmpInst *C : Known) {
+    C->replaceAllUsesWith(ConstantInt::getBool(
+        C->getType(), C->getPredicate() == ICmpInst::ICMP_EQ));
+    C->eraseFromParent();
+  }
+  for (BasicBlock *BB : Alias)
+    ConstantFoldTerminator(BB, /*DeleteDeadConditions=*/true);
+  SmallPtrSet<BasicBlock *, 32> Live;
+  for (BasicBlock *BB : depth_first(&F.getEntryBlock()))
+    Live.insert(BB);
+  for (BasicBlock &BB : F)
+    if (!Live.count(&BB))
+      Alias.erase(&BB);
+  removeUnreachableBlocks(F);
+}
+
 }  // namespace
 
 bool railWindowVersionPromoteCheck(Function &F, AllocaInst *W,
@@ -232,6 +279,7 @@ bool railWindowVersionPromoteCheck(Function &F, AllocaInst *W,
       return true;
     Promoted = promoteRailWindows(F, AccW);
   }
+  foldAliasedUserTests(F, Alias);
   // The aliased copies: one name per merged cell now; fold `v ^ v`,
   // `icmp ne v, v` and their casts to the classical constants they are.
   for (bool Again = true; Again;) {

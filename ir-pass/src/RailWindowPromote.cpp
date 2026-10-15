@@ -32,37 +32,6 @@ using namespace llvm;
 
 namespace cq {
 
-DenseMap<BasicBlock *, BasicBlock *> computeWindowRegions(Function &F,
-                                                           LoopInfo &LI) {
-  DenseMap<BasicBlock *, BasicBlock *> R;
-  ReversePostOrderTraversal<Function *> RPOT(&F);
-  for (BasicBlock *BB : RPOT) {
-    Loop *L = LI.getLoopFor(BB);
-    bool Entry = BB == &F.getEntryBlock() || (L && L->getHeader() == BB);
-    BasicBlock *Reg = nullptr;
-    if (!Entry)
-      for (BasicBlock *P : predecessors(BB)) {
-        auto It = R.find(P);
-        // A predecessor in another loop body (a sub-loop exit, an outer
-        // body), or not yet visited (an irreducible edge), starts a region.
-        // S7: each copy of a versioned window is a window of its own.
-        if (LI.getLoopFor(P) != L || It == R.end() ||
-            P->getTerminator()->getMetadata("cq.railwindow.version")) {
-          Entry = true;
-          break;
-        }
-        if (!Reg)
-          Reg = It->second;
-        else if (Reg != It->second) {
-          Entry = true;  // a join of two regions starts its own.
-          break;
-        }
-      }
-    R[BB] = Entry ? BB : Reg;
-  }
-  return R;
-}
-
 namespace {
 
 struct CellClass {
@@ -105,6 +74,79 @@ bool needsPromotion(const CellClass &C,
 
 }  // namespace
 
+bool railWindowClassPlan(Function &F, DominatorTree &DT,
+                         const DenseMap<BasicBlock *, BasicBlock *> &R,
+                         BasicBlock *Entry, ArrayRef<Instruction *> Uses,
+                         RailWindowClassPlan &P) {
+  P = RailWindowClassPlan();
+  CellClass C;
+  C.Entry = Entry;
+  for (Instruction *I : Uses) {
+    if (auto *L = dyn_cast<LoadInst>(I))
+      C.Loads.push_back(L);
+    else if (auto *S = dyn_cast<StoreInst>(I))
+      C.Stores.push_back(S);
+  }
+  if (!needsPromotion(C, R))
+    return false;
+  // One address that dominates every access of the class.
+  for (Instruction *U : Uses) {
+    Value *A = getLoadStorePointerOperand(U);
+    auto *AI = dyn_cast<Instruction>(A);
+    bool Ok = true;
+    if (AI)
+      for (Instruction *V : Uses)
+        Ok = Ok && DT.dominates(AI, V);
+    if (Ok) {
+      P.Addr = A;
+      break;
+    }
+  }
+  if (!P.Addr)
+    return false;
+  // The class's window is the part of the region its address dominates
+  // (`Sub`): every access lies in it. Its exiting blocks — a successor outside
+  // it, or the back edge to the region entry — get the write-back. Blocks are
+  // walked in FUNCTION order so the emitted IR is deterministic.
+  auto *AddrI = dyn_cast<Instruction>(P.Addr);
+  bool Inside = AddrI && R.lookup(AddrI->getParent()) == Entry;
+  BasicBlock *Sub = Inside ? AddrI->getParent() : Entry;
+  for (BasicBlock &BB : F) {
+    if (R.lookup(&BB) != Entry || !DT.dominates(Sub, &BB))
+      continue;
+    for (BasicBlock *S : successors(&BB))
+      if (S == Entry || R.lookup(S) != Entry || !DT.dominates(Sub, S)) {
+        P.Exiting.push_back(&BB);
+        break;
+      }
+  }
+  P.Entry = Entry;
+  P.Inside = Inside;
+  P.At = railWindowPlanSeedPoint(P);
+  P.HasStores = !C.Stores.empty();
+  return true;
+}
+
+Instruction *railWindowPlanSeedPoint(const RailWindowClassPlan &P) {
+  // Asked again at transform time: an earlier class's seed may now follow
+  // the same address, and the seed goes in front of it (emitted order).
+  auto *AddrI = dyn_cast<Instruction>(P.Addr);
+  if (P.Inside)
+    return isa<PHINode>(AddrI) ? &*AddrI->getParent()->getFirstInsertionPt()
+                               : AddrI->getNextNode();
+  return &*P.Entry->getFirstInsertionPt();
+}
+
+void railWindowPlanPoints(const RailWindowClassPlan &P,
+                          SmallVectorImpl<Instruction *> &Out) {
+  if (!P.At)
+    return;
+  Out.push_back(P.At);  // the seed load
+  if (P.HasStores)
+    for (BasicBlock *X : P.Exiting)
+      Out.push_back(X->getTerminator());  // each write-back
+}
+
 namespace {
 
 // Mirrored CHARACTER-FOR-CHARACTER by the negative fixtures (Rule 12):
@@ -140,31 +182,6 @@ bool selfValue(Value *V, const SCEV *S, ScalarEvolution &SE,
 }
 
 }  // namespace
-
-void railWindowQuantum(Function &F, const RailWindowAccesses &Acc,
-                       const TaintSet &taint, SmallPtrSetImpl<Value *> &QD) {
-  SmallVector<Value *, 64> Work(Acc.Loads.begin(), Acc.Loads.end());
-  for (Instruction &I : instructions(F))
-    if (taint.Tainted.count(&I))
-      Work.push_back(&I);
-  while (!Work.empty()) {
-    Value *V = Work.pop_back_val();
-    if (!QD.insert(V).second)
-      continue;
-    for (User *U : V->users())
-      if (auto *I = dyn_cast<Instruction>(U))
-        if (!I->getType()->isVoidTy()) {
-          // `cq_measure` is the taint SINK (R3): its result is classical.
-          // (S4 found this over-flag: `cq_measure(q[0]) ? 2 : 0` read as a
-          // quantum select condition.)
-          if (auto *CI = dyn_cast<CallInst>(I))
-            if (Function *Fn = CI->getCalledFunction();
-                Fn && Fn->getName().starts_with("cq_measure_"))
-              continue;
-          Work.push_back(I);
-        }
-  }
-}
 
 std::string railWindowNeeds(Function &F, const RailWindowAccesses &Acc,
                             const TaintSet &taint, LoopInfo &LI,
@@ -291,17 +308,29 @@ unsigned promoteRailWindows(Function &F, RailWindowAccesses &Acc) {
   // distinct is NOT promoted (its memory order stays as written). S7's
   // versioning (RailWindowVersion.cpp) runs first and leaves every pair
   // proven, at least at each access of one side (`railWindowPairProven`).
+  // R11 S7 A-F1: the proof must cover the promotion's OWN touches of the cell
+  // (its seed load and every write-back), not only the source accesses: a
+  // class whose accesses all sit under a user's `i != j` edge is still seeded
+  // at the region entry and written back at the latch, on the i == j path too.
   auto AccOf = [&](const CellClass &C) {
     SmallVector<Instruction *, 8> V(C.Loads.begin(), C.Loads.end());
     V.append(C.Stores.begin(), C.Stores.end());
+    return V;
+  };
+  std::map<std::pair<BasicBlock *, const SCEV *>, RailWindowClassPlan> Plans;
+  for (auto &K : Order)
+    railWindowClassPlan(F, DT, R, K.first, AccOf(Classes[K]), Plans[K]);
+  auto Touches = [&](const std::pair<BasicBlock *, const SCEV *> &K) {
+    SmallVector<Instruction *, 8> V = AccOf(Classes[K]);
+    railWindowPlanPoints(Plans[K], V);
     return V;
   };
   for (auto &K1 : Order)
     for (auto &K2 : Order)
       if (K1.first == K2.first && K1.second != K2.second &&
           !Pinned.count(K1.first) &&
-          !railWindowPairProven(SE, DT, K1.second, K2.second,
-                                AccOf(Classes[K1]), AccOf(Classes[K2]))) {
+          !railWindowPairProven(SE, DT, K1.second, K2.second, Touches(K1),
+                                Touches(K2))) {
         Pinned.insert(K1.first);
         if (std::getenv("CQ_RAILWINDOW_DBG")) {
           errs() << "CQ_RAILWINDOW_DBG: region ";
@@ -312,53 +341,14 @@ unsigned promoteRailWindows(Function &F, RailWindowAccesses &Acc) {
   SmallVector<AllocaInst *, 8> Temps;
   for (auto &K : Order) {
     CellClass &C = Classes[K];
-    if (Pinned.count(C.Entry) || !needsPromotion(C, R))
+    RailWindowClassPlan &P = Plans[K];
+    if (Pinned.count(C.Entry) || !P.At)
       continue;
-    // One address that dominates every access of the class.
-    Value *Addr = nullptr;
-    SmallVector<Instruction *, 8> Uses(C.Loads.begin(), C.Loads.end());
-    Uses.append(C.Stores.begin(), C.Stores.end());
-    for (Instruction *U : Uses) {
-      Value *P = getLoadStorePointerOperand(U);
-      auto *PI = dyn_cast<Instruction>(P);
-      bool Ok = true;
-      if (PI)
-        for (Instruction *V : Uses)
-          Ok = Ok && DT.dominates(PI, V);
-      if (Ok) {
-        Addr = P;
-        break;
-      }
-    }
-    if (!Addr)
-      continue;
-    // The class's window is the part of the region its address dominates
-    // (`Sub`): every access lies in it. Its exiting blocks — a successor outside
-    // it, or the back edge to the region entry — get the write-back. Blocks are
-    // walked in FUNCTION order so the emitted IR is deterministic.
-    auto *AddrI = dyn_cast<Instruction>(Addr);
-    BasicBlock *Sub = AddrI && R.lookup(AddrI->getParent()) == C.Entry
-                          ? AddrI->getParent()
-                          : C.Entry;
-    SmallVector<BasicBlock *, 4> Exiting;
-    for (BasicBlock &BB : F) {
-      if (R.lookup(&BB) != C.Entry || !DT.dominates(Sub, &BB))
-        continue;
-      for (BasicBlock *S : successors(&BB))
-        if (S == C.Entry || R.lookup(S) != C.Entry || !DT.dominates(Sub, S)) {
-          Exiting.push_back(&BB);
-          break;
-        }
-    }
+    Value *Addr = P.Addr;
+    SmallVector<BasicBlock *, 4> &Exiting = P.Exiting;
     IRBuilder<> EB(&*F.getEntryBlock().getFirstInsertionPt());
     AllocaInst *T = EB.CreateAlloca(Acc.CellTy, nullptr, "cq.win");
-    Instruction *At = nullptr;
-    if (AddrI && R.lookup(AddrI->getParent()) == C.Entry)
-      At = isa<PHINode>(AddrI) ? &*AddrI->getParent()->getFirstInsertionPt()
-                               : AddrI->getNextNode();
-    else
-      At = &*C.Entry->getFirstInsertionPt();
-    IRBuilder<> B(At);
+    IRBuilder<> B(railWindowPlanSeedPoint(P));
     LoadInst *Seed = B.CreateLoad(Acc.CellTy, Addr, "cq.win.in");
     B.CreateStore(Seed, T);
     for (LoadInst *L : C.Loads)
