@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 859 maintained source files, 6924 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 859 maintained source files, 6926 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -1156,13 +1156,15 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RailWindowAlias.cpp:371` — `railWindowPlanSeedPoint`
 - `ir-pass/src/RailWindowAlias.cpp:381` — `railWindowPlanPoints`
 
-### `ir-pass/src/RailWindowArms.cpp` (328 lines)
+### `ir-pass/src/RailWindowArms.cpp` (365 lines)
 
 - `ir-pass/src/RailWindowArms.cpp:72` — `inW`
 - `ir-pass/src/RailWindowArms.cpp:78` — `hoistable`
 - `ir-pass/src/RailWindowArms.cpp:104` — `promoteArm`
-- `ir-pass/src/RailWindowArms.cpp:199` — `promoteRailWindowArms`
-- `ir-pass/src/RailWindowArms.cpp:251` — `splitRailWindowWritebacks`
+- `ir-pass/src/RailWindowArms.cpp:211` — `taintedTerminator`
+- `ir-pass/src/RailWindowArms.cpp:220` — `reachesAvoiding`
+- `ir-pass/src/RailWindowArms.cpp:236` — `promoteRailWindowArms`
+- `ir-pass/src/RailWindowArms.cpp:288` — `splitRailWindowWritebacks`
 
 ### `ir-pass/src/RailWindowFence.cpp` (286 lines)
 

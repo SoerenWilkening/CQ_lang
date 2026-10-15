@@ -8,21 +8,21 @@
 ; predecessors (unconditional arm jumps and the classical %4) all pass the old
 ; local guard, so `splitRailWindowWritebacks` would split the QUANTUM merge
 ; into stores inside the quantum arms (classical control over quantum state,
-; R1). THE ONE PREDICATE (control dependence: no tainted branch in the region
-; whose immediate post-dominator is the merge block) keeps it. The WIN prefix
+; R1). THE ONE PREDICATE (the φ's incoming selection never depends on a
+; tainted terminator; round 2 widened it, see
+; railwindow_s6_reject_writeback_exit_around_merge_quantum.ll) keeps it. The WIN prefix
 ; pins the splitter's verdict ("kept"); the CHECK pins that the module is
 ; refused loudly (the if/else itself is bd 01po.19.20/.28).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
 ; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
-; RUN:   | %filecheck %s --check-prefix=WIN
-; CHECK: cq controlled lowering: control flow under quantum control
+; RUN:   | %filecheck %s --check-prefix=WIN --implicit-check-not='write-back split'
+; CHECK: cq controlled lowering: control flow under quantum control{{$}}
 ; WIN: CQ_RAILWINDOW_DBG: write-back kept: {{.*}}store i1 %mphi
-; WIN-NOT: write-back split
 
 ; ModuleID = '/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/55dc71b6-862e-46b0-b41f-d1a3c1ba8d1d/scratchpad/s56/c_nest.c'
-source_filename = "/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/55dc71b6-862e-46b0-b41f-d1a3c1ba8d1d/scratchpad/s56/c_nest.c"
+source_filename = "c_nest.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 

@@ -21,10 +21,9 @@
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
 ; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
-; RUN:   | %filecheck %s --check-prefix=WIN
-; CHECK: cq controlled lowering: control flow under quantum control
+; RUN:   | %filecheck %s --check-prefix=WIN --implicit-check-not='write-back split'
+; CHECK: cq controlled lowering: control flow under quantum control{{$}}
 ; WIN: CQ_RAILWINDOW_DBG: write-back kept: {{.*}}store i1 %cq.arm.0
-; WIN-NOT: write-back split
 
 ; ModuleID = 'railwindow_s6_reject_ifelse_two_registers.c'
 source_filename = "railwindow_s6_reject_ifelse_two_registers.c"

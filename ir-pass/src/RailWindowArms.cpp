@@ -151,17 +151,30 @@ bool promoteArm(BranchInst *BI, AllocaInst *W, Type *RT, DominatorTree &DT,
   // Pairwise distinct per S7's context-aware proof (`railWindowPairProven`,
   // every access of each class asked under its dominating guards), so a
   // versioned copy's classes, proven only inside the copy, are promoted.
+  // The rewrite adds two accesses per class OUTSIDE the arm — the hoisted
+  // in-load at the branch and the write-back at the merge — so the pair is
+  // asked at those plan points too (review S6 round 2 F2: an S7 version guard
+  // INSIDE the arm proves the arm's accesses but not the branch or merge,
+  // where i == j is possible). Unproven there: the region is not promoted.
+  Instruction *MergePt = &*M->getFirstInsertionPt();
   auto accesses = [&](const Class &C) {
     SmallVector<Instruction *, 4> V(C.Loads.begin(), C.Loads.end());
     V.append(C.Stores.begin(), C.Stores.end());
+    V.push_back(BI);
+    if (!C.Stores.empty())
+      V.push_back(MergePt);
     return V;
   };
   for (unsigned a = 0; a < Order.size(); ++a)
     for (unsigned b = a + 1; b < Order.size(); ++b)
       if (!railWindowPairProven(SE, DT, Order[a], Order[b],
                                 accesses(Classes[Order[a]]),
-                                accesses(Classes[Order[b]])))
+                                accesses(Classes[Order[b]]))) {
+        if (std::getenv("CQ_RAILWINDOW_DBG"))
+          errs() << "CQ_RAILWINDOW_DBG: arm not promoted: cell pair unproven "
+                    "at the arm, its branch or its merge\n";
         return false;  // an unproven pair: S7's question, not this rewrite's.
+      }
   // Every class address must be computable at the branch.
   SmallVector<Instruction *, 8> Hoist;
   SmallPtrSet<Instruction *, 8> HSeen;
@@ -192,6 +205,30 @@ bool promoteArm(BranchInst *BI, AllocaInst *W, Type *RT, DominatorTree &DT,
   DominatorTree DT2(F);
   PromoteMemToReg(Temps, DT2);
   return true;
+}
+
+// A multi-successor terminator whose condition (or any operand) is tainted.
+bool taintedTerminator(const Instruction *T, const TaintSet &taint) {
+  for (const Value *Op : T->operands())
+    if (taint.Tainted.count(Op))
+      return true;
+  return false;
+}
+
+// Is `To` reachable from `From`'s successors along a path that never enters
+// `Avoid` (null: nothing avoided)?
+bool reachesAvoiding(BasicBlock *From, BasicBlock *To, BasicBlock *Avoid) {
+  SmallVector<BasicBlock *, 16> Work(succ_begin(From), succ_end(From));
+  SmallPtrSet<BasicBlock *, 16> Seen;
+  while (!Work.empty()) {
+    BasicBlock *B = Work.pop_back_val();
+    if (B == Avoid || !Seen.insert(B).second)
+      continue;
+    if (B == To)
+      return true;
+    Work.append(succ_begin(B), succ_end(B));
+  }
+  return false;
 }
 
 }  // namespace
@@ -275,22 +312,22 @@ bool splitRailWindowWritebacks(Module &M, TaintSet &taint) {
       for (unsigned i = 0, e = P->getNumIncomingValues(); i != e; ++i)
         if (Ptr && !DT.dominates(Ptr, P->getIncomingBlock(i)->getTerminator()))
           Avail = false;
-      // Only a CLASSICAL merge (review S6 A-F3): THE ONE PREDICATE is control
-      // dependence — no tainted branch in the region the merge closes (the
-      // blocks its immediate dominator dominates) has the merge block as its
-      // immediate post-dominator; a quantum branch's merge φ is the region's
-      // (the in-place controlled-Ry diamond) and never split, also when it
-      // shares its block with an enclosing classical merge.
-      if (auto *N = DT.getNode(P->getParent()); N && N->getIDom()) {
-        BasicBlock *Dom = N->getIDom()->getBlock();
-        for (BasicBlock &B : F)
-          if (auto *Br = dyn_cast<BranchInst>(B.getTerminator());
-              Br && Br->isConditional() &&
-              taint.Tainted.count(Br->getCondition()) && DT.dominates(Dom, &B))
-            if (auto *PN = PDT.getNode(&B);
-                PN && PN->getIDom() && PN->getIDom()->getBlock() == P->getParent())
-              Avail = false;
-      }
+      // Only a CLASSICAL merge (review S6 A-F3, round 2 F1). THE ONE
+      // PREDICATE, the invariant itself: the φ's incoming selection never
+      // depends on a tainted terminator. A tainted terminator T (a `br` or
+      // `switch` on a tainted condition, or any multi-successor terminator
+      // with a tainted operand) steers it iff M is T's immediate
+      // post-dominator, or M is reachable from T without passing that
+      // post-dominator (M inside T's region, including a region with an exit
+      // around M).
+      for (BasicBlock &B : F)
+        if (Instruction *T = B.getTerminator(); T && T->getNumSuccessors() > 1 &&
+                                                taintedTerminator(T, taint)) {
+          auto *TN = PDT.getNode(&B);
+          BasicBlock *IP = TN && TN->getIDom() ? TN->getIDom()->getBlock() : nullptr;
+          if (IP == P->getParent() || reachesAvoiding(&B, P->getParent(), IP))
+            Avail = false;
+        }
       // DEFENSIVE, kept two-sided (review S6 C-F2): the idom's and the direct
       // predecessors' branches, which the predicate above already covers today;
       // the idom half is what review_s6C/p5.c (if/else rotating two different
