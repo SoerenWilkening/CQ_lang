@@ -7260,7 +7260,10 @@ Instruction *iterationLocalTaintEscape(const Loop *L, const TaintSet &taint) {
 // need to be: `emitInPlaceRotationRegion` mints the flag from it and ERASES it,
 // so by this stage it is not in `L`'s blocks at all (measured on the same dump —
 // `offset.ll`'s `%c = icmp eq i32 %q, 5` is simply gone).
-// ⚠ RETIREMENT TRIGGER: adding a SIXTH kind to this list is adding a claim that
+// bd 01po.19 S6 added the SIXTH and SEVENTH kinds: a quantum-array CELL READ
+// (a borrowed root, never discharged) and a STORE into a cell (a kept-carrier
+// sink); neither mints a rail (S4's `isTerminalHandle` / `railStoredToRailWindow`).
+// ⚠ RETIREMENT TRIGGER: adding an EIGHTH kind to this list is adding a claim that
 // it mints nothing — re-derive it against `lowerOps`, not against this comment.
 //
 // ⚠ WHAT THIS PREDICATE STILL OVER-COUNTS, MEASURED RATHER THAN GUESSED, so the

@@ -303,11 +303,6 @@ bool lowerRailWindowArrays(Module &M, const TaintSet &taint, bool &Changed) {
         return true;  // diagnosed (loud, nothing lowered).
       if (!undoRailWindowHeaderPhis(F, W))  // design Q6 (a), S5
         return true;
-      // S6: quantum-branch arms. MERGE NOTE (S6/S7): this belongs with the
-      // per-region promotion AFTER S7's versioning (a versioned copy's classes
-      // are proven distinct only there); whichever lands second moves it into
-      // the promote step right before promoteRailWindows.
-      promoteRailWindowArms(F, W, taint);
       Changed = true;
       // S7 versioning, S3 on the handle array, then re-derive everything from
       // the new IR (RailWindowVersion.cpp).

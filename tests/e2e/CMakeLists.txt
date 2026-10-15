@@ -6683,6 +6683,8 @@ add_test(NAME e2e-railbank-flat-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_bool_prep_measureloop.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_flat_twin.expected.log")
 
+# ⚠⚠ STALE (2026-10-15, bd 01po.19.27): the program below now LOWERS (rc 0);
+# it stays unregistered until its trace is reviewed and given a golden.
 # ⚠ `slice_railbank_owner_cascade.c` IS DELIBERATELY NOT REGISTERED AND HAS NO
 # GOLDEN.  It is the owner's canonical customer program committed as the RECORD
 # (owner ruling E4, bd `zwtm`), and it still DECLINES — `cq controlled lowering:

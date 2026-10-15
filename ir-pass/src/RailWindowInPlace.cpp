@@ -237,10 +237,11 @@ bool railWindowDerived(const Value *V) {
 }
 
 // InPlaceQQ's predicate, kept here for the file budget (moved from
-// InPlaceQQ.cpp). bd 01po.19 S6: a quantum-array
-// CELL READ is user data too — the array owns its rail and the spine never
-// discharges it, whether or not this spelling carries the Ry (one predicate
-// for E2, G7's arm (c′), the postcondition and `dependsOnTarget`).
+// InPlaceQQ.cpp). bd 01po.19 S6: a quantum-array CELL READ is user DATA (the
+// array owns its rail, the spine never discharges it, whatever this spelling
+// carries) — asked by G7's arm (c′), the postcondition and `dependsOnTarget`.
+// Whether a cell read may be an in-place TARGET is a different question, asked
+// by `qqTargetIsUserData` (E2): it also needs `railWindowWritesBack`.
 bool railIsUserData(const Value *P) {
   if (isRailWindowCellRead(P))
     return true;

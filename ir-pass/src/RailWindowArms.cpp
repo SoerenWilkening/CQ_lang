@@ -38,6 +38,7 @@
 // cell whose handle is selected by a classical index.
 
 #include "RailWindow.h"
+#include "RailWindowAlias.h"  // railWindowPairProven (S7)
 
 #include "TaintPropagation.h"
 
@@ -55,9 +56,11 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/Transforms/Utils/PromoteMemToReg.h"
 
+#include <cstdlib>
 #include <map>
 
 using namespace llvm;
@@ -145,13 +148,19 @@ bool promoteArm(BranchInst *BI, AllocaInst *W, Type *RT, DominatorTree &DT,
     }
   if (Order.empty())
     return false;
+  // Pairwise distinct per S7's context-aware proof (`railWindowPairProven`,
+  // every access of each class asked under its dominating guards), so a
+  // versioned copy's classes, proven only inside the copy, are promoted.
+  auto accesses = [&](const Class &C) {
+    SmallVector<Instruction *, 4> V(C.Loads.begin(), C.Loads.end());
+    V.append(C.Stores.begin(), C.Stores.end());
+    return V;
+  };
   for (unsigned a = 0; a < Order.size(); ++a)
     for (unsigned b = a + 1; b < Order.size(); ++b)
-      // MERGE NOTE (S7): swap to the context-aware `railWindowDistinct(SE, A,
-      // B, ctx)` / `railWindowPairProven` so a versioned copy's classes, proven
-      // only inside the copy, are promoted (this call then runs per region
-      // after versioning, see RailWindow.cpp).
-      if (!railWindowDistinct(SE, Order[a], Order[b]))
+      if (!railWindowPairProven(SE, DT, Order[a], Order[b],
+                                accesses(Classes[Order[a]]),
+                                accesses(Classes[Order[b]])))
         return false;  // an unproven pair: S7's question, not this rewrite's.
   // Every class address must be computable at the branch.
   SmallVector<Instruction *, 8> Hoist;
@@ -262,11 +271,31 @@ bool splitRailWindowWritebacks(Module &M, TaintSet &taint) {
       auto *Ptr = dyn_cast<Instruction>(S->getPointerOperand());
       bool Avail = true;  // the address must be available in every predecessor.
       DominatorTree DT(F);
+      PostDominatorTree PDT(F);
       for (unsigned i = 0, e = P->getNumIncomingValues(); i != e; ++i)
         if (Ptr && !DT.dominates(Ptr, P->getIncomingBlock(i)->getTerminator()))
           Avail = false;
-      // Only a CLASSICAL merge: a quantum branch's merge φ is the region's
-      // (the in-place controlled-Ry diamond), never split.
+      // Only a CLASSICAL merge (review S6 A-F3): THE ONE PREDICATE is control
+      // dependence — no tainted branch in the region the merge closes (the
+      // blocks its immediate dominator dominates) has the merge block as its
+      // immediate post-dominator; a quantum branch's merge φ is the region's
+      // (the in-place controlled-Ry diamond) and never split, also when it
+      // shares its block with an enclosing classical merge.
+      if (auto *N = DT.getNode(P->getParent()); N && N->getIDom()) {
+        BasicBlock *Dom = N->getIDom()->getBlock();
+        for (BasicBlock &B : F)
+          if (auto *Br = dyn_cast<BranchInst>(B.getTerminator());
+              Br && Br->isConditional() &&
+              taint.Tainted.count(Br->getCondition()) && DT.dominates(Dom, &B))
+            if (auto *PN = PDT.getNode(&B);
+                PN && PN->getIDom() && PN->getIDom()->getBlock() == P->getParent())
+              Avail = false;
+      }
+      // DEFENSIVE, kept two-sided (review S6 C-F2): the idom's and the direct
+      // predecessors' branches, which the predicate above already covers today;
+      // the idom half is what review_s6C/p5.c (if/else rotating two different
+      // registers) needs. RETIREMENT: when bd 01po.19.20 lowers that shape, its
+      // fixture must kill the guard-removed mutant before either half goes.
       if (auto *N = DT.getNode(P->getParent()); N && N->getIDom())
         if (auto *Br = dyn_cast<BranchInst>(N->getIDom()->getBlock()->getTerminator());
             Br && Br->isConditional() && taint.Tainted.count(Br->getCondition()))
@@ -275,6 +304,9 @@ bool splitRailWindowWritebacks(Module &M, TaintSet &taint) {
         if (auto *Br = dyn_cast<BranchInst>(Pr->getTerminator());
             Br && Br->isConditional() && taint.Tainted.count(Br->getCondition()))
           Avail = false;
+      if (std::getenv("CQ_RAILWINDOW_DBG"))
+        errs() << "CQ_RAILWINDOW_DBG: write-back " << (Avail ? "split" : "kept")
+               << ": " << *S << "\n";
       if (!Avail)
         continue;
       for (unsigned i = 0, e = P->getNumIncomingValues(); i != e; ++i) {

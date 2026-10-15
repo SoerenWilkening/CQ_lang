@@ -66,7 +66,7 @@
 ; promotion seeds a load before each quantum branch, renaming every promoted
 ; value; the claim and the per-class promotion lines below still pin S1-S3.
 ; The S6 shape is pinned by railwindow_s6_*.ll; this file flips to an accept
-; with the whole stream pinned when bd 01po.19.17/.19 land.)
+; with the whole stream pinned when bd 01po.19.17 lands.)
 ; WIN: CQ_RAILWINDOW_DBG: @main claims %1 cells=i8 loads=11 stores=7 Q=  br label %11
 ; WIN: CQ_RAILWINDOW_DBG: promote cell {(2 + %.rails)<nuw>,+,-1}<nw><%14> in region %14 loads=4 stores=1 exits=1
 ; WIN: CQ_RAILWINDOW_DBG: promote cell {(3 + %.rails)<nuw>,+,-1}<nw><%14> in region %14 loads=4 stores=4 exits=1

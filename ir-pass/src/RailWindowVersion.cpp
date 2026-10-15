@@ -274,6 +274,11 @@ bool railWindowVersionPromoteCheck(Function &F, AllocaInst *W,
     if (!railWindowVersionPair(F, W, P, Alias, Origin, O))
       return false;
   }
+  // S6 (bd 01po.19): the quantum-branch arms' cell classes, promoted per
+  // window AFTER versioning (a copy's classes are proven only inside it) and
+  // after the self-control fence above has asked its question of the shape
+  // the program wrote (`promoteRailWindowArms`, RailWindowArms.cpp).
+  promoteRailWindowArms(F, W, taint);
   {
     Analyses A(F);
     if (!railWindowCollectAccesses(W, taint, A.SE, AccW))
