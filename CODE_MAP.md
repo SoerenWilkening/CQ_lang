@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 820 maintained source files, 6687 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 820 maintained source files, 6685 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -785,14 +785,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/MeasureLowering.cpp:222` — `diagnoseMeasure`
 - `ir-pass/src/MeasureLowering.cpp:230` — `lowerMeasures`
 
-### `ir-pass/src/MergeCarriedFence.cpp` (211 lines)
+### `ir-pass/src/MergeCarriedFence.cpp` (149 lines)
 
 - `ir-pass/src/MergeCarriedFence.cpp:29` — `carriedLoop`
-- `ir-pass/src/MergeCarriedFence.cpp:42` — `leavesOf`
-- `ir-pass/src/MergeCarriedFence.cpp:107` — `isRuntime`
-- `ir-pass/src/MergeCarriedFence.cpp:114` — `isHazard`
-- `ir-pass/src/MergeCarriedFence.cpp:158` — `hazardIn`
-- `ir-pass/src/MergeCarriedFence.cpp:172` — `fenceCarriedMergeLeaks`
+- `ir-pass/src/MergeCarriedFence.cpp:42` — `handlesOf`
+- `ir-pass/src/MergeCarriedFence.cpp:62` — `slotAllowed`
+- `ir-pass/src/MergeCarriedFence.cpp:80` — `fenceCarriedMergeLeaks`
 
 ### `ir-pass/src/MergePhiPeel.cpp` (663 lines)
 

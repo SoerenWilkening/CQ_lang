@@ -34,12 +34,25 @@
 ;                         over it: basis permutations, allowed;
 ;   * rzctl_target_kept   a later `cqrt_rz_i32_controlled` targeting %h:
 ;                         diagonal, allowed;
-;   * readers_kept        the control: after the loop %h is only measured and
-;                         used as the CONTROL of a controlled Ry, and the final
-;                         `a` is rotated — none acts non-diagonally on what a
-;                         leaked rail records (the final rail is the record's
-;                         consumer, not one of its leaves), so no diagnostic and
-;                         the rail stays allocated (the accepted leak).
+;   * readers_overapprox_loud (was readers_kept until R11 round 2) after the
+;                         loop %h controls a controlled Ry onto a fresh %g and
+;                         the final `a` is rotated. Physically harmless, but the
+;                         ENTANGLEMENT CLOSURE protects %g (a controlled gate's
+;                         target joins) and the final rail (an alias of the
+;                         carried rail), so both rotations are loud: the
+;                         accepted over-approximation, pinned so it is seen;
+;   * measures_kept       the quiet control: after the loop the protected
+;                         registers are only measured, phased (`cqrt_rz`) and
+;                         permuted (`cqrt_x`);
+;   * unrelated_pair_kept a CNOT and a Ry after the loop on two fresh registers
+;                         neither of which touches the record: quiet;
+;   * p1/p4/p5            (revU6) a register q CNOT-coupled to a recorded source
+;                         — after the loop (p1, phase kickback onto the
+;                         CONTROL), through a select alias (p4), inside a lifted
+;                         body (p5) — then rotated after the loop: loud;
+;   * two_hop_loud        hx -> q -> r through two CNOTs, the q-r one placed
+;                         BEFORE the loop so a single pass misses it; Ry on r
+;                         after the loop: loud (kills the no-fixpoint mutant)
 
 declare i32 @cqrt_alloc_i32(i32)
 declare i32 @cqrt_alloc_i1(i1)
@@ -50,6 +63,7 @@ declare i32 @cq_template_icmp_sgt_i32_hl(i32, i32)
 declare void @cq_template_icmp_sgt_i32_hl_unc(i32, i32, i32)
 declare void @cqrt_copy_i32_controlled(i32, i32, i32)
 declare void @cqrt_x(i32)
+declare void @cqrt_rz_i32(i32, double)
 declare void @cqrt_cnot(i32, i32)
 declare void @cqrt_h(i32)
 declare void @cqrt_cswap(i32, i32, i32)
@@ -170,7 +184,7 @@ loop:
   br i1 %done, label %exit, label %loop
 exit:
   %g = call i32 @cqrt_alloc_i1(i1 false)
-  call void @cqrt_ry_i32(i32 %g, double 5.000000e-01)
+  call void @cqrt_x(i32 %g)
   %hy = call i32 @cqrt_alloc_i32(i32 %w)
   call void @cqrt_copy_i32_controlled(i32 %g, i32 %hy, i32 %h)
   call void @cqrt_cswap(i32 %g, i32 %h, i32 %hy)
@@ -203,7 +217,7 @@ loop:
   br i1 %done, label %exit, label %loop
 exit:
   %g = call i32 @cqrt_alloc_i1(i1 false)
-  call void @cqrt_ry_i32(i32 %g, double 5.000000e-01)
+  call void @cqrt_x(i32 %g)
   call void @cqrt_rz_i32_controlled(i32 %g, i32 %h, double 3.000000e-01)
   %m = call i32 @cqrt_measure_i32(i32 %h)
   %m1 = call i32 @cqrt_measure_i32(i32 %out)
@@ -311,7 +325,216 @@ exit:
   ret i32 %r
 }
 
-define i32 @readers_kept(i32 %u) #1 {
+; P1: post-loop CNOT q -> hx (hx is a copied SOURCE the rail records), then Ry on q.
+define i32 @p1_postloop_cnot_into_leaf(i32 %u, i32 %w, i32 %v) #0 {
+entry:
+  %h = call i32 @cqrt_alloc_i32(i32 %u)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %hx = call i32 @cqrt_alloc_i32(i32 %w)
+  call void @cqrt_ry_i32(i32 %hx, double 1.570000e+00)
+  %q = call i32 @cqrt_alloc_i32(i32 %v)
+  call void @cqrt_ry_i32(i32 %q, double 3.000000e-01)
+  %seed = call i32 @cqrt_alloc_i32(i32 5)
+  br label %loop
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i1, %loop ]
+  %a = phi i32 [ %seed, %entry ], [ %out, %loop ]
+  %h_cmp = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 %i)
+  %out = call i32 @cqrt_alloc_i32(i32 0), !cq.selftest.merge !0
+  call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %hx, i32 %out)
+  call void @cqrt_x(i32 %h_cmp)
+  call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %a, i32 %out)
+  call void @cqrt_x(i32 %h_cmp)
+  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp, i32 %h, i32 %i)
+  call void @cqrt_free(i32 %h_cmp)
+  %i1 = add nuw nsw i32 %i, 1
+  %done = icmp eq i32 %i1, 3
+  br i1 %done, label %exit, label %loop
+exit:
+  call void @cqrt_cnot(i32 %q, i32 %hx)
+  call void @cqrt_ry_i32(i32 %q, double -3.000000e-01)
+  %m = call i32 @cqrt_measure_i32(i32 %q)
+  %m1 = call i32 @cqrt_measure_i32(i32 %out)
+  %r = add nsw i32 %m1, %m
+  ret i32 %r
+}
+
+; P4 (H2 alias): in-loop BEFORE the merge writes, CNOT q -> (select k, hx, hx2);
+; the merge copies hx. Ry on q after the loop.
+define i32 @p4_select_alias_write(i32 %u, i32 %w, i32 %v, i1 %k) #0 {
+entry:
+  %h = call i32 @cqrt_alloc_i32(i32 %u)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %hx = call i32 @cqrt_alloc_i32(i32 %w)
+  call void @cqrt_ry_i32(i32 %hx, double 1.570000e+00)
+  %hx2 = call i32 @cqrt_alloc_i32(i32 %w)
+  %q = call i32 @cqrt_alloc_i32(i32 %v)
+  call void @cqrt_ry_i32(i32 %q, double 3.000000e-01)
+  %seed = call i32 @cqrt_alloc_i32(i32 5)
+  br label %loop
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i1, %loop ]
+  %a = phi i32 [ %seed, %entry ], [ %out, %loop ]
+  %sel = select i1 %k, i32 %hx, i32 %hx2
+  call void @cqrt_cnot(i32 %q, i32 %sel)
+  %h_cmp = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 %i)
+  %out = call i32 @cqrt_alloc_i32(i32 0), !cq.selftest.merge !0
+  call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %hx, i32 %out)
+  call void @cqrt_x(i32 %h_cmp)
+  call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %a, i32 %out)
+  call void @cqrt_x(i32 %h_cmp)
+  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp, i32 %h, i32 %i)
+  call void @cqrt_free(i32 %h_cmp)
+  %i1 = add nuw nsw i32 %i, 1
+  %done = icmp eq i32 %i1, 3
+  br i1 %done, label %exit, label %loop
+exit:
+  call void @cqrt_ry_i32(i32 %q, double -3.000000e-01)
+  %m = call i32 @cqrt_measure_i32(i32 %q)
+  %m1 = call i32 @cqrt_measure_i32(i32 %out)
+  %r = add nsw i32 %m1, %m
+  ret i32 %r
+}
+
+; P5 (H2 call): in-loop BEFORE the merge writes, a lifted body CNOTs q into hx.
+define internal void @__cq_q_mix_3(i32 %c, i32 %t) {
+  call void @cqrt_cnot(i32 %c, i32 %t)
+  ret void
+}
+define i32 @p5_lifted_write(i32 %u, i32 %w, i32 %v) #0 {
+entry:
+  %h = call i32 @cqrt_alloc_i32(i32 %u)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %hx = call i32 @cqrt_alloc_i32(i32 %w)
+  call void @cqrt_ry_i32(i32 %hx, double 1.570000e+00)
+  %q = call i32 @cqrt_alloc_i32(i32 %v)
+  call void @cqrt_ry_i32(i32 %q, double 3.000000e-01)
+  %seed = call i32 @cqrt_alloc_i32(i32 5)
+  br label %loop
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i1, %loop ]
+  %a = phi i32 [ %seed, %entry ], [ %out, %loop ]
+  call void @__cq_q_mix_3(i32 %q, i32 %hx)
+  %h_cmp = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 %i)
+  %out = call i32 @cqrt_alloc_i32(i32 0), !cq.selftest.merge !0
+  call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %hx, i32 %out)
+  call void @cqrt_x(i32 %h_cmp)
+  call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %a, i32 %out)
+  call void @cqrt_x(i32 %h_cmp)
+  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp, i32 %h, i32 %i)
+  call void @cqrt_free(i32 %h_cmp)
+  %i1 = add nuw nsw i32 %i, 1
+  %done = icmp eq i32 %i1, 3
+  br i1 %done, label %exit, label %loop
+exit:
+  call void @cqrt_ry_i32(i32 %q, double -3.000000e-01)
+  %m = call i32 @cqrt_measure_i32(i32 %q)
+  %m1 = call i32 @cqrt_measure_i32(i32 %out)
+  %r = add nsw i32 %m1, %m
+  ret i32 %r
+}
+
+; two hops, hx -> q (after the loop) and q -> r (BEFORE it): a single pass in
+; program order sees the q-r CNOT before q is protected.
+define i32 @two_hop_loud(i32 %u, i32 %w, i32 %v) #0 {
+entry:
+  %h = call i32 @cqrt_alloc_i32(i32 %u)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %hx = call i32 @cqrt_alloc_i32(i32 %w)
+  call void @cqrt_ry_i32(i32 %hx, double 1.570000e+00)
+  %q = call i32 @cqrt_alloc_i32(i32 %v)
+  %r = call i32 @cqrt_alloc_i32(i32 %v)
+  call void @cqrt_ry_i32(i32 %q, double 3.000000e-01)
+  call void @cqrt_cnot(i32 %q, i32 %r)
+  %seed = call i32 @cqrt_alloc_i32(i32 5)
+  br label %loop
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i1, %loop ]
+  %a = phi i32 [ %seed, %entry ], [ %out, %loop ]
+  %h_cmp = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 %i)
+  %out = call i32 @cqrt_alloc_i32(i32 0), !cq.selftest.merge !0
+  call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %hx, i32 %out)
+  call void @cqrt_x(i32 %h_cmp)
+  call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %a, i32 %out)
+  call void @cqrt_x(i32 %h_cmp)
+  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp, i32 %h, i32 %i)
+  call void @cqrt_free(i32 %h_cmp)
+  %i1 = add nuw nsw i32 %i, 1
+  %done = icmp eq i32 %i1, 3
+  br i1 %done, label %exit, label %loop
+exit:
+  call void @cqrt_cnot(i32 %q, i32 %hx)
+  call void @cqrt_ry_i32(i32 %r, double -3.000000e-01)
+  %m1 = call i32 @cqrt_measure_i32(i32 %out)
+  ret i32 %m1
+}
+
+; quiet control: protected registers only measured, phased and permuted.
+define i32 @measures_kept(i32 %u, i32 %w) #1 {
+entry:
+  %h = call i32 @cqrt_alloc_i32(i32 %u)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %hx = call i32 @cqrt_alloc_i32(i32 %w)
+  call void @cqrt_ry_i32(i32 %hx, double 1.570000e+00)
+  %seed = call i32 @cqrt_alloc_i32(i32 5)
+  br label %loop
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i1, %loop ]
+  %a = phi i32 [ %seed, %entry ], [ %out, %loop ]
+  %h_cmp = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 %i)
+  %out = call i32 @cqrt_alloc_i32(i32 0), !cq.selftest.merge !0
+  call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %hx, i32 %out)
+  call void @cqrt_x(i32 %h_cmp)
+  call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %a, i32 %out)
+  call void @cqrt_x(i32 %h_cmp)
+  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp, i32 %h, i32 %i)
+  call void @cqrt_free(i32 %h_cmp)
+  %i1 = add nuw nsw i32 %i, 1
+  %done = icmp eq i32 %i1, 3
+  br i1 %done, label %exit, label %loop
+exit:
+  call void @cqrt_rz_i32(i32 %h, double 3.000000e-01)
+  call void @cqrt_x(i32 %hx)
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  %m1 = call i32 @cqrt_measure_i32(i32 %out)
+  ret i32 %m1
+}
+
+; an UNRELATED pair entangled and rotated after the loop: quiet.
+define i32 @unrelated_pair_kept(i32 %u, i32 %w, i32 %v) #1 {
+entry:
+  %h = call i32 @cqrt_alloc_i32(i32 %u)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %hx = call i32 @cqrt_alloc_i32(i32 %w)
+  call void @cqrt_ry_i32(i32 %hx, double 1.570000e+00)
+  %seed = call i32 @cqrt_alloc_i32(i32 5)
+  br label %loop
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i1, %loop ]
+  %a = phi i32 [ %seed, %entry ], [ %out, %loop ]
+  %h_cmp = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 %i)
+  %out = call i32 @cqrt_alloc_i32(i32 0), !cq.selftest.merge !0
+  call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %hx, i32 %out)
+  call void @cqrt_x(i32 %h_cmp)
+  call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %a, i32 %out)
+  call void @cqrt_x(i32 %h_cmp)
+  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp, i32 %h, i32 %i)
+  call void @cqrt_free(i32 %h_cmp)
+  %i1 = add nuw nsw i32 %i, 1
+  %done = icmp eq i32 %i1, 3
+  br i1 %done, label %exit, label %loop
+exit:
+  %p1 = call i32 @cqrt_alloc_i32(i32 %v)
+  %p2 = call i32 @cqrt_alloc_i32(i32 %v)
+  call void @cqrt_ry_i32(i32 %p1, double 3.000000e-01)
+  call void @cqrt_cnot(i32 %p1, i32 %p2)
+  call void @cqrt_ry_i32(i32 %p2, double 2.000000e-01)
+  %mp = call i32 @cqrt_measure_i32(i32 %p2)
+  %m1 = call i32 @cqrt_measure_i32(i32 %out)
+  ret i32 %m1
+}
+
+define i32 @readers_overapprox_loud(i32 %u) #0 {
 entry:
   %h = call i32 @cqrt_alloc_i32(i32 %u)
   call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)

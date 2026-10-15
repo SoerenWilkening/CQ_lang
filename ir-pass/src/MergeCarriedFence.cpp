@@ -1,10 +1,10 @@
 // MergeCarriedFence.cpp — see header (bd test_C_libtooling-r2j3.32).
 
 #include "MergeCarriedFence.h"
-#include "MergeStreamGates.h"  // calleeName / isControlledCopy / isMergeWrite /
-                               // streamGateWrites / readsState / isRegister /
+#include "MergeStreamGates.h"  // calleeName / readsState / isRegister /
                                // handleAliases
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/CFG.h"
@@ -35,136 +35,44 @@ Loop *carriedLoop(CallInst *Out, LoopInfo &LI) {
   return Hit;
 }
 
-// The registers `Out`'s value was computed from: its writers' operands, closed
-// backward over producers' state-reading operands, φ / select / cast / freeze
-// operands, and the writers of each visited value (a CNOT-copied flag names
-// its control). Carried records (`Skip`) are not leaves and are not walked.
-void leavesOf(CallInst *Out, const SmallPtrSetImpl<Value *> &Skip,
-              const TaintSet &taint, const DominatorTree &DT,
-              const LoopInfo &LI, SmallPtrSetImpl<Value *> &Leaves) {
-  SmallVector<Value *, 16> Work;
-  auto pushOperands = [&](CallInst *C, const Value *Except) {
-    for (unsigned S = 0, E = C->arg_size(); S != E; ++S) {
-      Value *Op = C->getArgOperand(S);
-      if (Op != Except && readsState(C, S) && isRegister(Op, taint))
-        Work.push_back(Op);
-    }
-  };
-  SmallVector<CallInst *, 4> MergeWrites;
-  for (User *U : Out->users())
-    if (auto *C = dyn_cast<CallInst>(U); C && isMergeWrite(C, Out)) {
-      MergeWrites.push_back(C);
-      pushOperands(C, Out);
-    }
-  // Can gate `C` run before some merge write of `Out` (on this trip, or on a
-  // later one across a back edge)? Then what it writes can be what the merge
-  // copies. LLVM's instruction form orders a shared block and follows cycles.
-  auto feedsAMergeWrite = [&](CallInst *C) {
-    for (CallInst *W : MergeWrites)
-      if (isPotentiallyReachable(C, W, nullptr, &DT, &LI))
-        return true;
-    return false;
-  };
-  while (!Work.empty()) {
-    Value *V = Work.pop_back_val();
-    if (Skip.count(V) || !isRegister(V, taint) || !Leaves.insert(V).second)
-      continue;
-    if (auto *C = dyn_cast<CallInst>(V))
-      pushOperands(C, V);
-    else if (auto *P = dyn_cast<PHINode>(V))
-      Work.append(P->value_op_begin(), P->value_op_end());
-    else if (auto *S = dyn_cast<SelectInst>(V)) {
-      Work.push_back(S->getTrueValue());
-      Work.push_back(S->getFalseValue());
-    } else if (isa<CastInst>(V) || isa<FreezeInst>(V))
-      Work.push_back(cast<Instruction>(V)->getOperand(0));
-    // The stream gates that WROTE V and can run before a merge write of `Out`
-    // (R11 round 2: reachability, not dominance of the ALLOCATION — a CNOT
-    // between the alloc and the copies, a write on the back edge that the next
-    // trip's rail records, and a path-conditional write all feed the record):
-    // their other register operands (the CNOT control a flag copies, a compare
-    // a Toffoli conjoins). A gate outside the stream vocabulary (a rotation, a
-    // controlled Ry) computes nothing V is a copy of, and a write no merge
-    // write can follow (after the loop) is not part of the record; if either
-    // acts on V after the loop, the hazard scan judges it there.
-    for (User *U : V->users()) {
-      auto *C = dyn_cast<CallInst>(U);
-      if (!C || C == V || !feedsAMergeWrite(C))
-        continue;
-      SmallVector<unsigned, 2> Wr;
-      if (!streamGateWrites(C, Wr))
-        continue;
-      bool WritesV = false;
-      for (unsigned S : Wr)
-        if (S < C->arg_size() && C->getArgOperand(S) == V)
-          WritesV = true;
-      if (WritesV)
-        pushOperands(C, V);
-    }
+// The HANDLES a call touches: every i32 register operand in a state slot
+// (`readsState`: not an alloc seed, not a template's literal), plus its i32
+// result when that result is a fresh handle (a runtime or lifted producer,
+// never a measurement's classical value).
+void handlesOf(CallInst *C, const TaintSet &taint,
+               SmallVectorImpl<Value *> &H) {
+  for (unsigned S = 0, E = C->arg_size(); S != E; ++S) {
+    Value *Op = C->getArgOperand(S);
+    if (Op->getType()->isIntegerTy(32) && readsState(C, S) &&
+        isRegister(Op, taint))
+      H.push_back(Op);
   }
-}
-
-bool isRuntime(StringRef N) {
-  return N.starts_with("cqrt_") || N.starts_with("cq_template_");
-}
-
-bool hazardIn(Function &F, Value *Leaf, const TaintSet &taint, unsigned Depth);
-
-// Does `C` act non-diagonally on the register `A` (header list)?
-bool isHazard(CallInst *C, const Value *A, const TaintSet &taint,
-              unsigned Depth) {
   StringRef N = calleeName(C);
-  SmallVector<unsigned, 3> Slots;
-  for (unsigned S = 0, E = C->arg_size(); S != E; ++S)
-    if (C->getArgOperand(S) == A)
-      Slots.push_back(S);
-  if (Slots.empty())
-    return false;
-  if (N.empty())
-    return true;  // an indirect call consuming the leaf: fails closed.
-  if (!isRuntime(N)) {
-    Function *Callee = C->getCalledFunction();
-    if (N.starts_with("cq_measure"))
-      return false;
-    if (!Callee || Callee->isDeclaration() || !N.starts_with("__cq_q_") ||
-        Depth > 4)
-      return true;
-    for (unsigned S : Slots)
-      if (S < Callee->arg_size() &&
-          hazardIn(*Callee, Callee->getArg(S), taint, Depth + 1))
-        return true;
-    return false;
-  }
-  // An ALLOWLIST (R11 round 2): a leaf is safe only in a gate known to be
-  // diagonal or a computational-basis permutation on it, or as the control of
-  // a controlled gate. Everything else — `cqrt_ry*`, `cqrt_h`, a runtime gate
-  // added later, a controlled template's data slot — fails closed.
-  bool Ctl = N.contains("_controlled");
-  bool Allowed =
-      N.starts_with("cqrt_rz") || N == "cqrt_x" || N == "cqrt_cnot" ||
-      N == "cqrt_toffoli" || N == "cqrt_cswap" ||
-      N.starts_with("cqrt_addc_") || N.starts_with("cqrt_xorc_") ||
-      N.starts_with("cqrt_copy_") || N == "cqrt_free" ||
-      N.starts_with("cqrt_measure_") ||
-      (N.starts_with("cq_template_") && !Ctl);
-  for (unsigned S : Slots)
-    if (!Allowed && !(Ctl && S == 0))
-      return true;
-  return false;
+  if (C->getType()->isIntegerTy(32) && !N.starts_with("cqrt_measure") &&
+      (N.starts_with("cqrt_") || N.starts_with("cq_template_") ||
+       N.starts_with("__cq_q_")))
+    H.push_back(C);
 }
 
-// Is there a non-diagonal gate anywhere in `F` on the alias class of `Leaf`?
-// (A lifted body: its parameter is the leaf for the whole body.)
-bool hazardIn(Function &F, Value *Leaf, const TaintSet &taint, unsigned Depth) {
-  DominatorTree DT(F);
-  SmallPtrSet<Value *, 8> Alias;
-  if (!handleAliases(Leaf, taint, DT, Alias))
+// Is a use of a PROTECTED register in slot `S` of `C` safe? Only in a gate
+// known to be diagonal or a computational-basis permutation, or as a control
+// (R11 round 2: an allowlist; everything else — `cqrt_ry*`, `cqrt_h`, a
+// controlled gate's target, a runtime gate added later, any call that is not
+// the runtime, a lifted body included — fails closed).
+bool slotAllowed(CallInst *C, unsigned S) {
+  StringRef N = calleeName(C);
+  if (N.starts_with("cq_measure"))
     return true;
-  for (Value *A : Alias)
-    for (User *U : A->users())
-      if (auto *C = dyn_cast<CallInst>(U); C && isHazard(C, A, taint, Depth))
-        return true;
-  return false;
+  bool Ctl = N.contains("_controlled");
+  if (Ctl && S == 0 &&
+      (N.starts_with("cqrt_") || N.starts_with("cq_template_")))
+    return true;
+  return N.starts_with("cqrt_rz") || N == "cqrt_x" || N == "cqrt_cnot" ||
+         N == "cqrt_toffoli" || N == "cqrt_cswap" ||
+         N.starts_with("cqrt_addc_") || N.starts_with("cqrt_xorc_") ||
+         N.starts_with("cqrt_copy_") || N == "cqrt_free" ||
+         N.starts_with("cqrt_measure_") ||
+         (N.starts_with("cq_template_") && !Ctl);
 }
 
 }  // namespace
@@ -172,37 +80,67 @@ bool hazardIn(Function &F, Value *Leaf, const TaintSet &taint, unsigned Depth) {
 bool fenceCarriedMergeLeaks(Function &F, const TaintSet &taint,
                             ArrayRef<CallInst *> Left, DominatorTree &DT,
                             LoopInfo &LI) {
-  SmallVector<std::pair<CallInst *, Loop *>, 4> Carried;
-  SmallPtrSet<Value *, 8> Records;
-  for (CallInst *Out : Left)
-    if (Loop *L = carriedLoop(Out, LI)) {
-      Carried.push_back({Out, L});
-      Records.insert(Out);
-    }
-  for (auto &OL : Carried) {
-    CallInst *Out = OL.first;
-    Loop *L = OL.second;
-    SmallPtrSet<Value *, 16> Leaves;
-    leavesOf(Out, Records, taint, DT, LI, Leaves);
-    BasicBlock *H = L->getHeader();
-    auto after = [&](const Instruction *I) {
-      return !L->contains(I->getParent()) &&
-             isPotentiallyReachable(H, I->getParent(), nullptr, &DT, &LI);
-    };
-    auto loud = [&](const Instruction *At) {
-      F.getContext().diagnose(DiagnosticInfoUnsupported(
-          F, kMsgCarriedMergeLeak, At->getDebugLoc()));
+  auto loud = [&](const Instruction *At) {
+    F.getContext().diagnose(DiagnosticInfoUnsupported(
+        F, kMsgCarriedMergeLeak, At->getDebugLoc()));
+    return true;
+  };
+  SmallVector<CallInst *, 64> Calls;
+  for (BasicBlock &BB : F)
+    for (Instruction &I : BB)
+      if (auto *C = dyn_cast<CallInst>(&I))
+        Calls.push_back(C);
+  for (CallInst *Out : Left) {
+    Loop *L = carriedLoop(Out, LI);
+    if (!L)
+      continue;
+    // THE ENTANGLEMENT CLOSURE (R11 round 2, replacing three rounds of
+    // per-path closures): start from the leaked rail; any call, ANYWHERE in
+    // the function, touching two or more handles one of whose alias classes is
+    // protected protects all of them (a CNOT kicks phase back onto its control
+    // as surely as it copies into its target; a lifted call is not descended —
+    // every handle it touches joins). To a fixpoint. A protected handle whose
+    // alias class leaves through unproven memory fails loudly.
+    SmallPtrSet<Value *, 32> P;
+    auto protect = [&](Value *V) {
+      SmallPtrSet<Value *, 8> Alias;
+      if (!handleAliases(V, taint, DT, Alias))
+        return false;
+      P.insert(V);
+      P.insert(Alias.begin(), Alias.end());
       return true;
     };
-    for (Value *Leaf : Leaves) {
-      SmallPtrSet<Value *, 8> Alias;
-      if (!handleAliases(Leaf, taint, DT, Alias))  // unproven memory: closed.
-        return loud(isa<Instruction>(Leaf) ? cast<Instruction>(Leaf) : Out);
-      for (Value *A : Alias)
-        for (User *U : A->users())
-          if (auto *C = dyn_cast<CallInst>(U);
-              C && after(C) && isHazard(C, A, taint, 0))
-            return loud(C);
+    if (!protect(Out))
+      return loud(Out);
+    for (bool Grew = true; Grew;) {
+      Grew = false;
+      for (CallInst *C : Calls) {
+        SmallVector<Value *, 4> H;
+        handlesOf(C, taint, H);
+        if (H.size() < 2 ||
+            llvm::none_of(H, [&](Value *V) { return P.count(V) != 0; }))
+          continue;
+        for (Value *V : H)
+          if (!P.count(V)) {
+            if (!protect(V))
+              return loud(C);
+            Grew = true;
+          }
+      }
+    }
+    // THE HAZARD: after the loop exit (outside the carried loop, reachable
+    // from it), a use of a protected register in a slot `slotAllowed` does
+    // not clear. Inside the loop each trip's gates are the per-trip body the
+    // control-lowering fences already adjudicate; after the exit the leaked
+    // records are what is left to protect (header, "WHERE").
+    BasicBlock *Hd = L->getHeader();
+    for (CallInst *C : Calls) {
+      if (L->contains(C->getParent()) ||
+          !isPotentiallyReachable(Hd, C->getParent(), nullptr, &DT, &LI))
+        continue;
+      for (unsigned S = 0, E = C->arg_size(); S != E; ++S)
+        if (P.count(C->getArgOperand(S)) && !slotAllowed(C, S))
+          return loud(C);
     }
   }
   return false;
