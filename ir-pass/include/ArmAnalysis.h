@@ -415,10 +415,13 @@ bool angleSelectLiteralSeedAdmissible(const llvm::CallInst *T);
 // (`LazyValueInfo` over dominating edges and assumes for an integer seed; the
 // dominating equality `fcmp` edges for an fp one) that is TAINTED, or null.
 // Pinned values that are classical now are tagged for the L1 re-ask in
-// `declineRound2QuantumPrepSeeds`. Defined in `ArmClassify.cpp`.
-llvm::Value *angleSelectLiteralSeedPinned(llvm::CallInst *T,
-                                          const TaintSet &Taint,
-                                          const llvm::DominatorTree &DT);
+// `declineRound2QuantumPrepSeeds`. A value F2 would EXCLUDE at its test
+// (`f2ExcludedAtTest`: on `CondWire`, the angle select's condition wire, or a
+// peel clone) is not a pin — round-2 review F2, one spelling with F2. Defined
+// in `ArmClassify.cpp`.
+llvm::Value *angleSelectLiteralSeedPinned(
+    llvm::CallInst *T, const TaintSet &Taint, const llvm::DominatorTree &DT,
+    const llvm::SmallPtrSetImpl<llvm::Value *> &CondWire);
 
 // bd dm7f.54 (item E) — the NESTED ANGLE MUX rooted at the Ry angle select
 // `Root`: `Members` in PRE-ORDER (root first, true operand before false), each

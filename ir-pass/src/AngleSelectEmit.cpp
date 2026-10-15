@@ -13,13 +13,13 @@
 #include "CompareLowering.h"   // lowerCompareToFlag + compareFlagMintable (step 0b)
 #include "CondTreeEmit.h"      // emitCondNetwork / stripCondNetwork (bd dm7f.54)
 #include "SelectClassify.h"    // isCondRailLeaf / kBareRailCondReason (bd 3qlq.4)
-#include "SwapRouteEmit.h"     // eraseDeadCondTreeInterior (bd dm7f.54)
 #include "ControlPlan.h"       // ControlRegion / diagnoseUnderControl
 #include "ControlledSymbols.h"  // xFn (3qlq Inc 1 phase angle select bracket)
 #include "TaintPropagation.h"  // TaintSet
 #include "WidthDispatch.h"     // freeFn
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/STLExtras.h"     // llvm::find
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -527,33 +527,48 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   }
 
   // ---- ERASE every member (pre-order: each one's only user, its parent or
-  // `T`'s angle slot, is gone first), then each member's condition if dead. A
-  // dead tainted compare must not stand: `lowerOps` would lower it into a
-  // second flag rail nothing strips (bd ptue). A `NetCond` tree erases its dead
-  // ROOT (never a rail: the user's register) and then its dead interior through
-  // the ONE cascade (`eraseDeadCondTreeInterior`); a root or node with another
-  // user (item D) is left for that user.
-  SmallVector<std::pair<Value *, MemberFlag *>, 4> Conds;
-  for (MemberFlag &F : MF)
-    Conds.push_back({F.S->getCondition(), &F});
+  // `T`'s angle slot, is gone first), then ONE liveness cascade over the UNION
+  // of every member's condition instructions (root, interior nodes, compare
+  // leaves). A dead tainted compare must not stand: `lowerOps` would lower it
+  // into a second flag rail nothing strips (bd ptue). A rail (the user's
+  // register) is never in the set; a node with another user (item D) survives.
+  //
+  // ⚠ ONE SET, ONE CASCADE, AFTER EVERY MEMBER (round-2 review F1, a
+  // USE-AFTER-FREE from plain C): member trees OVERLAP — an inner member's
+  // condition `n = la && lb` can be an interior node of the outer member's
+  // tree `o = n || lz` — so erasing per member freed `n`, `la`, `lb` while a
+  // later member's snapshot still named them. Membership is decided BEFORE any
+  // erase, by pointer, into a set that is only ever erased FROM; nothing is
+  // dereferenced after it is freed, and an instruction is erased only once,
+  // when it has no users left (a fixpoint, so the order of the trees is moot).
+  SmallPtrSet<Instruction *, 16> CondInsts;
+  for (MemberFlag &F : MF) {
+    if (F.Cmp) {
+      CondInsts.insert(F.Cmp);
+      continue;
+    }
+    if (auto *RootI = dyn_cast<Instruction>(F.S->getCondition());
+        RootI && !isCondRailLeaf(RootI))
+      CondInsts.insert(RootI);
+    for (Instruction *N : F.Tree.Nodes)
+      CondInsts.insert(N);
+    for (CmpInst *L : F.Tree.Leaves)
+      CondInsts.insert(L);
+  }
   for (SelectInst *M : Members) {
     scrubTaint(M, taint);
     M->eraseFromParent();
   }
-  for (auto &[CondV, F] : Conds) {
-    if (F->Cmp) {
-      if (F->Cmp->use_empty()) {
-        scrubTaint(F->Cmp, taint);
-        F->Cmp->eraseFromParent();
+  for (bool Changed = true; Changed;) {
+    Changed = false;
+    for (Instruction *I : SmallVector<Instruction *, 16>(CondInsts.begin(),
+                                                          CondInsts.end()))
+      if (I->use_empty()) {
+        CondInsts.erase(I);
+        scrubTaint(I, taint);
+        I->eraseFromParent();
+        Changed = true;
       }
-      continue;
-    }
-    auto *RootI = dyn_cast<Instruction>(CondV);
-    if (RootI && !isCondRailLeaf(RootI) && RootI->use_empty()) {
-      scrubTaint(RootI, taint);
-      RootI->eraseFromParent();
-    }
-    eraseDeadCondTreeInterior(F->Tree, CondV, taint);
   }
 }
 

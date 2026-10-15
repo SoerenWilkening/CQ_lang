@@ -2191,6 +2191,55 @@ bool siblingConditionCompareOnWire(const Value *V,
   return true;
 }
 
+// THE THREE EXCLUSIONS OF F2's TEST, ONE SPELLING (bd z0re spelled them once
+// inside F2; bd dm7f.54 round-2 review F2 lifted them here so the angle select's
+// literal-seed pin (`angleSelectLiteralSeedPinned`) asks the SAME question
+// instead of a stricter second one — the if/else and ternary forms of one
+// program must answer alike). `CondWire`: the owner-ruled α trade (a value on
+// the condition's own wire may be the pinned register; owner rulings
+// 2026-09-11 / drbq14-tree-leaves-2026-10-14). `isPeelClone`: a value the peel
+// manufactured is in no rival program. `PhiDesc`: the region-merge availability
+// exclusion (empty for a consumer with no merge). The arguments are at F2's
+// TEST below; this is only where they are spelled.
+bool f2ExcludedAtTest(const Value *V, const SmallPtrSetImpl<Value *> &CondWire,
+                      const TaintSet &Taint,
+                      const SmallPtrSetImpl<const Value *> *PhiDesc) {
+  return CondWire.count(const_cast<Value *>(V)) ||
+         Taint.isPeelClone(const_cast<Value *>(V)) ||
+         (PhiDesc && PhiDesc->count(V));
+}
+
+// Every `fcmp` whose truth value is FIXED when `Cond` evaluates to `Holds`,
+// with that value: through an `and` (or `select a, b, false`) when true,
+// through an `or` (or `select a, true, b`) when false, recursively. A bare
+// `fcmp` yields `{(fcmp, Holds)}`. Lifted out of F2 (bd dm7f.52's
+// `forcedFcmpLeaves`) by bd dm7f.54 round-2 review H5 so the angle select's
+// literal-seed fp pin reads compound conditions exactly as F2 does.
+SmallVector<std::pair<FCmpInst *, bool>, 4> forcedFcmpLeavesOf(Value *Cond,
+                                                                bool Holds) {
+  SmallVector<std::pair<FCmpInst *, bool>, 4> Out;
+  SmallVector<std::pair<Value *, bool>, 8> WL;
+  WL.push_back({Cond, Holds});
+  unsigned Budget = 64;  // a tree is bounded by `condTreeTooLarge`; defence.
+  while (!WL.empty() && Budget--) {
+    auto [V, Val] = WL.pop_back_val();
+    if (auto *FCI = dyn_cast<FCmpInst>(V)) {
+      Out.push_back({FCI, Val});
+      continue;
+    }
+    Instruction::BinaryOps Opc;
+    Value *L = nullptr;
+    Value *R = nullptr;
+    if (!decomposeCondNode(V, Opc, L, R, /*AllowLogicalSelect=*/true))
+      continue;
+    if ((Opc == Instruction::And && Val) || (Opc == Instruction::Or && !Val)) {
+      WL.push_back({L, Val});
+      WL.push_back({R, Val});
+    }
+  }
+  return Out;
+}
+
 bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
                                 TaintSet &Taint, const DominatorTree *DT,
                                 const SmallPtrSetImpl<Value *> &CondWire,
@@ -2290,7 +2339,7 @@ bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
   // lambda — its forcedness half is F2's own pin, so it lives at the CONSTANT
   // test only; see `siblingConditionCompareOnWire`.)
   auto excludedAtTest = [&](Value *V) {
-    return CondWire.count(V) || Taint.isPeelClone(V) || PhiDesc.count(V);
+    return f2ExcludedAtTest(V, CondWire, Taint, &PhiDesc);
   };
 
   // ---- THE RUNTIME SEED (bd z0re) — the RELATIONAL half. See the header
@@ -2315,27 +2364,7 @@ bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
   //      which is the honest answer, not an omission. Monotone: it can only add
   //      pins, i.e. only turn an accept into a decline.
   auto forcedFcmpLeaves = [&](unsigned E) {
-    SmallVector<std::pair<FCmpInst *, bool>, 4> Out;
-    SmallVector<std::pair<Value *, bool>, 8> WL;
-    WL.push_back({BI->getCondition(), E == 0});
-    unsigned Budget = 64;  // a tree is bounded by `condTreeTooLarge`; defence.
-    while (!WL.empty() && Budget--) {
-      auto [V, Val] = WL.pop_back_val();
-      if (auto *FCI = dyn_cast<FCmpInst>(V)) {
-        Out.push_back({FCI, Val});
-        continue;
-      }
-      Instruction::BinaryOps Opc;
-      Value *L = nullptr;
-      Value *R = nullptr;
-      if (!decomposeCondNode(V, Opc, L, R, /*AllowLogicalSelect=*/true))
-        continue;
-      if ((Opc == Instruction::And && Val) || (Opc == Instruction::Or && !Val)) {
-        WL.push_back({L, Val});
-        WL.push_back({R, Val});
-      }
-    }
-    return Out;
+    return forcedFcmpLeavesOf(BI->getCondition(), /*Holds=*/E == 0);
   };
   auto *Seed = dyn_cast<Constant>(SeedV);
   if (!Seed) {
@@ -6312,15 +6341,21 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // seed is ADMITTED there and lowered by difference on ONE fresh rail —
         // `alloc(t); ry(h, B); ry_controlled(f, h, A−B)` — the one-rail reading
         // Q4 describes. With `nomerge` on every `cq_theta_*` (CQ.h) the IF/ELSE
-        // spelling no longer folds: it survives to HERE and declines — drbq.13's
-        // own counter-example `if (t == 5) { r = t; cq_theta(&r,.9); } else
-        // { r = 5; cq_theta(&r,.3); }`, fmt3's no-region member `n9.c` (measured,
-        // `fmt3_probes/src/d13a1.c`, `n9.c`; pinned by
-        // `control_inplace_ry_reject_stateprep_nomerge_noregion_pin.ll`) and z0re's
-        // own if/else runtime-seed spelling. The TERNARY spelling
-        // (`r = SEED; cq_theta(&r, c ? A : B)`) still reaches S3, and z0re's C slices
-        // are spelled that way since fmt3. Q4 ("two preps = two rails = decline")
-        // stands for the unfolded shape; the asymmetry is recorded, not resolved.
+        // spelling no longer folds and reaches HERE. ⚠ CORRECTED by bd dm7f.54
+        // round-2 review (L7): it no longer simply "declines here". Since item B
+        // (delegated ruling `ruling-dm7f54-literal-base-and-ifelse-prep-
+        // 2026-10-15`, Q2) two prep arms with the IDENTICAL literal seed lower as
+        // the one-rail stream, and F2 below decides: drbq.13's own counter-example
+        // `if (t == 5) { r = t; cq_theta(&r,.9); } else { r = 5; cq_theta(&r,.3); }`
+        // (GVN makes both seeds 5) ACCEPTS, because the register pinned to 5 is
+        // the CONDITION'S OWN (`CondWire`, the owner-ruled α trade; review probe
+        // revC54r2/p6), while fmt3's no-region member `n9.c`, whose pinned `sdiv
+        // q, 4` is OFF the condition's wire, is refused by F2 on the true arm edge
+        // (`control_inplace_ry_reject_stateprep_nomerge_noregion_pin.ll`, now F2's
+        // string). The TERNARY spelling (`r = SEED; cq_theta(&r, c ? A : B)`)
+        // reaches S3, which asks the same F2 exclusions (`f2ExcludedAtTest`) at the
+        // consumer, so both spellings answer alike. Different seeds per arm, or a
+        // runtime seed, keep Q4's decline (the string below).
         //
         // ⚠ THE STRING IS SPLIT BY WHAT THE OTHER ARM IS, ADDED 2026-09-05
         // (round-1 Rule-13 review, lens L7 finding F-L7-8, owner-approved in the
@@ -9621,14 +9656,21 @@ bool angleSelectLiteralSeedAdmissible(const CallInst *T) {
 // and `declineRound2QuantumPrepSeeds` re-asks its taint after the round-2
 // fixpoint in both entry points. Arguments never change taint across rounds.
 Value *angleSelectLiteralSeedPinned(CallInst *T, const TaintSet &Taint,
-                                    const DominatorTree &DT) {
+                                    const DominatorTree &DT,
+                                    const SmallPtrSetImpl<Value *> &CondWire) {
   auto *Seed = dyn_cast<Constant>(T->getArgOperand(0));
   Function *F = T->getFunction();
   if (!Seed || !F)
     return nullptr;
   SmallVector<Instruction *, 4> ClassicalPins;
   Value *Hit = nullptr;
+  // round-2 review F2: F2's own exclusions, by the ONE spelling
+  // (`f2ExcludedAtTest`, no merge so no `PhiDesc`): a pin of a value on the
+  // angle select's CONDITION wire is the owner-ruled α trade here exactly as at
+  // the if/else's F2, so the two spellings of one program answer alike.
   auto note = [&](Value *V) {
+    if (f2ExcludedAtTest(V, CondWire, Taint, /*PhiDesc=*/nullptr))
+      return;
     if (Taint.Tainted.count(V)) {
       if (!Hit)
         Hit = V;
@@ -9696,18 +9738,23 @@ Value *angleSelectLiteralSeedPinned(CallInst *T, const TaintSet &Taint,
       auto *BI = dyn_cast<BranchInst>(Up->getTerminator());
       if (!BI || !BI->isConditional())
         continue;
-      auto *FC = dyn_cast<FCmpInst>(BI->getCondition());
-      if (!FC)
-        continue;
+      // round-2 review H5: every `fcmp` the edge FORCES (F2's own
+      // `forcedFcmpLeavesOf`), not only a bare-`fcmp` condition, so an fp pin
+      // under an `&&`/`||` tree is seen as the integer path's LVI sees it.
+      // (`llvm.assume` of a tainted condition is a taint escape, declined
+      // before detection, so there is no assume pin to read.)
       for (unsigned E = 0; E < 2; ++E) {
-        if (!DT.dominates(BasicBlockEdge(Up, BI->getSuccessor(E)), Here) ||
-            !fcmpEqualityHoldsOnEdge(FC->getPredicate(), /*TrueEdge=*/E == 0))
+        if (!DT.dominates(BasicBlockEdge(Up, BI->getSuccessor(E)), Here))
           continue;
-        for (unsigned K = 0; K < 2; ++K)
-          if (auto *C = dyn_cast<ConstantFP>(FC->getOperand(K));
-              C && C->getValueAPF().bitwiseIsEqual(SeedF->getValueAPF()) &&
-              !isa<Constant>(FC->getOperand(1 - K)))
-            note(FC->getOperand(1 - K));
+        for (auto [FC, Holds] : forcedFcmpLeavesOf(BI->getCondition(), E == 0)) {
+          if (!fcmpEqualityHoldsOnEdge(FC->getPredicate(), /*TrueEdge=*/Holds))
+            continue;
+          for (unsigned K = 0; K < 2; ++K)
+            if (auto *C = dyn_cast<ConstantFP>(FC->getOperand(K));
+                C && C->getValueAPF().bitwiseIsEqual(SeedF->getValueAPF()) &&
+                !isa<Constant>(FC->getOperand(1 - K)))
+              note(FC->getOperand(1 - K));
+        }
       }
     }
   }
@@ -10211,16 +10258,6 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // (`control_angle_select_reject_backward_rail_cycle.ll`).
   if (!DT || !LI)
     return AngleSelectDisp::NotApplicable;  // no analysis, no proof.
-  // bd dm7f.54 (item A1) — S3's literal half: no value may be PROVEN EQUAL to
-  // the seed at the consumer (`angleSelectLiteralSeedPinned`; the non-merge
-  // substitution route). F2's string, because it is F2's question.
-  if (LiteralSeed)
-    if (Value *Pin = angleSelectLiteralSeedPinned(T, Taint, *DT)) {
-      (void)Pin;
-      diagnoseUnderControl(Sel, "state prep seed is proven equal to the "
-                                "condition register");
-      return AngleSelectDisp::Declined;
-    }
   //
   // MEMOIZED per block. `blockOnCycle` is an O(V+E) successor walk and the rail
   // prong below asks it of every closure member; a closure has a handful of
@@ -10542,6 +10579,21 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   for (Value *W : BaseWireOrder)
     if (CondRails.count(W)) {
       diagnoseUnderControl(Sel, "rotation arm on a condition wire");
+      return AngleSelectDisp::Declined;
+    }
+
+  // bd dm7f.54 (item A1) — S3's literal half: no value may be PROVEN EQUAL to
+  // the seed at the consumer (`angleSelectLiteralSeedPinned`; the non-merge
+  // substitution route). F2's string, because it is F2's question, asked with
+  // F2's exclusions over the SAME condition wire F2 uses (`CondRails` here is
+  // F2's `CondWire`, spelled identically: the conditions' backward rail
+  // closure over their `condProvenance`; round-2 review F2). Asked after S8
+  // for that reason.
+  if (LiteralSeed)
+    if (Value *Pin = angleSelectLiteralSeedPinned(T, Taint, *DT, CondRails)) {
+      (void)Pin;
+      diagnoseUnderControl(Sel, "state prep seed is proven equal to the "
+                                "condition register");
       return AngleSelectDisp::Declined;
     }
 

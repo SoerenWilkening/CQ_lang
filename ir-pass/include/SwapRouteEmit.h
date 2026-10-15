@@ -104,8 +104,10 @@ void emitKickbackGroup(llvm::IRBuilder<> &B, llvm::FunctionCallee Rz,
 // The cascade-erase of a condition tree's now-DEAD interior (nodes in reverse
 // post-order, then compare leaves in reverse), skipping `Root` (compared by
 // pointer only) and anything with a surviving user. Callers: the branch phase
-// and the in-place Ry region in this file, and since bd dm7f.54 the angle
-// select's network path (`AngleSelectEmit`).
+// and the in-place Ry region in this file. (bd dm7f.54 exported it for the
+// angle select; round-2 review F1 replaced that use with one cascade over the
+// UNION of the mux members' trees, because per-tree erasure freed nodes a later
+// member still named. A caller with overlapping trees must do the same.)
 void eraseDeadCondTreeInterior(const CondTree &Tree, const llvm::Value *Root,
                                TaintSet &taint);
 
