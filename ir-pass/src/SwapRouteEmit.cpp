@@ -21,6 +21,7 @@
 #include "ArmAnalysis.h"         // phaseAngleTail (3qlq Inc 1 merge-tail angle phi)
 #include "CondTreeEmit.h"        // emitCondNetwork / stripCondNetwork (3qlq P3)
 #include "SelectClassify.h"      // CondTree / collectCondTree (the shared grammar)
+#include "RailWindow.h"        // isRailWindowCellRead (bd 01po.19 S6)
 #include "RegCondLeaf.h"       // isRegCondLeaf (bd dm7f.77)
 #include "ArithLowering.h"       // rewriteBinary (the value-arm chain body, §4)
 #include "ArmAnalysis.h"         // comparePredLowerable (the value-arm pre-mint fence)
@@ -780,7 +781,8 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   // the ladder (`RailLadderProven`) and the branch still reads it.
   const bool RailCond =
       isCondRailLeaf(Cond) ||
-      ((isCondRailPhiShape(Cond) || isRegCondLeaf(Cond)) &&
+      ((isCondRailPhiShape(Cond) || isRegCondLeaf(Cond) ||
+        isRailWindowCellRead(Cond)) &&  // bd 01po.19 S6: a cell read.
        R.RailLadderProven && BI->isConditional() && BI->getCondition() == Cond);
   // bd test_C_libtooling-dm7f.52 — the third condition kind: a COMPOUND TREE,
   // re-derived through the SAME grammar and flags `classifyArms` accepted with

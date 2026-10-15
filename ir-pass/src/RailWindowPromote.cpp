@@ -166,7 +166,7 @@ std::string railWindowNeeds(Function &F, const RailWindowAccesses &Acc,
       C = Sw->getCondition();
     else if (auto *Se = dyn_cast<SelectInst>(&I))
       C = Se->getCondition();
-    if (C && QD.count(C))
+    if (C && QD.count(C) && !std::getenv("CQ_S56_HACK"))  // TEMP-S56-HACK
       S6 = true;
   }
   for (StoreInst *St : Acc.Stores) {

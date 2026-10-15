@@ -224,6 +224,13 @@ bool railWindowReachesAvoiding(
 // carrier whose cell cannot be named).
 bool undoRailWindowHeaderPhis(llvm::Function &F, llvm::AllocaInst *W);
 
+// S6 (RailWindowArms.cpp): put the cell accesses inside every region of a
+// QUANTUM branch over the handle array `W` into the diamond the control
+// emitters own — each cell class loaded once before the branch, carried as SSA
+// through the arms, written back once at the merge. True if anything changed.
+bool promoteRailWindowArms(llvm::Function &F, llvm::AllocaInst *W,
+                           const TaintSet &taint);
+
 // S5 (RailWindowInPlace.cpp): is `V` an update `x OP y` (`xor`/`add`/`sub`, or
 // the `_Bool` compare spelling of `xor`)? Fills both operands; `Sub` marks the
 // directional `sub` (only the minuend `X` can be the overwritten cell).

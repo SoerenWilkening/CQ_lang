@@ -7273,6 +7273,10 @@ static bool bodyHasSpineDischargeCandidate(const Loop *L,
         continue;
       if (isa<PHINode>(I))
         continue;
+      // bd 01po.19 S6: a quantum-array cell read is a BORROWED ROOT (S4): the
+      // spine never discharges it, so it owes the marking nothing.
+      if (isRailWindowCellRead(&I))
+        continue;
       if (const auto *CI = dyn_cast<CallInst>(&I)) {
         const Function *F = CI->getCalledFunction();
         if (F && (F->getName().starts_with("cq_theta_") ||
