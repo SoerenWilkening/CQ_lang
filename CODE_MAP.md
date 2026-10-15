@@ -18,7 +18,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArmClassify.cpp` — 10934 physical lines
 - `ir-pass/src/LoopLowering.cpp` — 8088 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5553 physical lines
-- `tools/free_pairing_check.py` — 4513 physical lines
+- `tools/free_pairing_check.py` — 4519 physical lines
 - `tools/free_pairing_check_test.py` — 4408 physical lines
 - `tools/loop_twin_matrix.py` — 4115 physical lines
 - `ir-pass/src/QramLowering.cpp` — 4069 physical lines
@@ -8164,7 +8164,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/fixture_guard_liveness.py:91` — `guards_in`
 - `tools/fixture_guard_liveness.py:122` — `main`
 
-### `tools/free_pairing_check.py` (4513 lines)
+### `tools/free_pairing_check.py` (4519 lines)
 
 - `tools/free_pairing_check.py:751` — `Unclassified.__init__`
 - `tools/free_pairing_check.py:776` — `Undecidable.__init__`
@@ -8205,47 +8205,47 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check.py:2013` — `StreamAnalysis.add`
 - `tools/free_pairing_check.py:2017` — `StreamAnalysis.ok`
 - `tools/free_pairing_check.py:2031` — `StreamAnalysis.writes_in`
-- `tools/free_pairing_check.py:2064` — `StreamAnalysis._unmoved_since`
-- `tools/free_pairing_check.py:2070` — `StreamAnalysis.unchanged_over`
-- `tools/free_pairing_check.py:2189` — `StreamAnalysis.adjoint_matches`
-- `tools/free_pairing_check.py:2236` — `StreamAnalysis.commutes`
-- `tools/free_pairing_check.py:2264` — `StreamAnalysis.reduces_to_identity`
-- `tools/free_pairing_check.py:2355` — `StreamAnalysis.pair_operands_unchanged`
-- `tools/free_pairing_check.py:2461` — `StreamAnalysis.co_written_stable`
-- `tools/free_pairing_check.py:2573` — `StreamAnalysis.light_cone_closed`
-- `tools/free_pairing_check.py:2718` — `StreamAnalysis._light_cone`
-- `tools/free_pairing_check.py:2801` — `StreamAnalysis._phase_closed`
-- `tools/free_pairing_check.py:2885` — `StreamAnalysis._minted_closed`
-- `tools/free_pairing_check.py:2926` — `StreamAnalysis._minted_core`
-- `tools/free_pairing_check.py:2944` — `StreamAnalysis.check_free`
-- `tools/free_pairing_check.py:3021` — `StreamAnalysis.loop_exit_discharge`
-- `tools/free_pairing_check.py:3261` — `StreamAnalysis.check_alloc_rail`
-- `tools/free_pairing_check.py:3288` — `StreamAnalysis.check_alloc_rail.classical_update`
-- `tools/free_pairing_check.py:3331` — `StreamAnalysis.check_minted_rail`
-- `tools/free_pairing_check.py:3489` — `ensure_recursion_headroom`
-- `tools/free_pairing_check.py:3591` — `_tape_sink`
-- `tools/free_pairing_check.py:3619` — `recorded_rails`
-- `tools/free_pairing_check.py:3662` — `resolve_object`
-- `tools/free_pairing_check.py:3693` — `bank_address_confined`
-- `tools/free_pairing_check.py:3754` — `adjudicate_memory`
-- `tools/free_pairing_check.py:3915` — `window_families`
-- `tools/free_pairing_check.py:3949` — `apply_window_families`
-- `tools/free_pairing_check.py:3957` — `apply_window_families.rename`
-- `tools/free_pairing_check.py:3983` — `mark_window_stores`
-- `tools/free_pairing_check.py:4036` — `window_cell_pointers`
-- `tools/free_pairing_check.py:4051` — `_affine_index`
-- `tools/free_pairing_check.py:4066` — `_window_cell`
-- `tools/free_pairing_check.py:4079` — `_cell_at`
-- `tools/free_pairing_check.py:4085` — `_cells_differ`
-- `tools/free_pairing_check.py:4092` — `window_cells_distinct`
-- `tools/free_pairing_check.py:4186` — `address_taken`
-- `tools/free_pairing_check.py:4209` — `live_functions`
-- `tools/free_pairing_check.py:4253` — `_clone_returns_data`
-- `tools/free_pairing_check.py:4260` — `_returned_by`
-- `tools/free_pairing_check.py:4269` — `census_of`
-- `tools/free_pairing_check.py:4313` — `check_module`
-- `tools/free_pairing_check.py:4398` — `main`
-- `tools/free_pairing_check.py:4455` — `main.dump`
+- `tools/free_pairing_check.py:2070` — `StreamAnalysis._unmoved_since`
+- `tools/free_pairing_check.py:2076` — `StreamAnalysis.unchanged_over`
+- `tools/free_pairing_check.py:2195` — `StreamAnalysis.adjoint_matches`
+- `tools/free_pairing_check.py:2242` — `StreamAnalysis.commutes`
+- `tools/free_pairing_check.py:2270` — `StreamAnalysis.reduces_to_identity`
+- `tools/free_pairing_check.py:2361` — `StreamAnalysis.pair_operands_unchanged`
+- `tools/free_pairing_check.py:2467` — `StreamAnalysis.co_written_stable`
+- `tools/free_pairing_check.py:2579` — `StreamAnalysis.light_cone_closed`
+- `tools/free_pairing_check.py:2724` — `StreamAnalysis._light_cone`
+- `tools/free_pairing_check.py:2807` — `StreamAnalysis._phase_closed`
+- `tools/free_pairing_check.py:2891` — `StreamAnalysis._minted_closed`
+- `tools/free_pairing_check.py:2932` — `StreamAnalysis._minted_core`
+- `tools/free_pairing_check.py:2950` — `StreamAnalysis.check_free`
+- `tools/free_pairing_check.py:3027` — `StreamAnalysis.loop_exit_discharge`
+- `tools/free_pairing_check.py:3267` — `StreamAnalysis.check_alloc_rail`
+- `tools/free_pairing_check.py:3294` — `StreamAnalysis.check_alloc_rail.classical_update`
+- `tools/free_pairing_check.py:3337` — `StreamAnalysis.check_minted_rail`
+- `tools/free_pairing_check.py:3495` — `ensure_recursion_headroom`
+- `tools/free_pairing_check.py:3597` — `_tape_sink`
+- `tools/free_pairing_check.py:3625` — `recorded_rails`
+- `tools/free_pairing_check.py:3668` — `resolve_object`
+- `tools/free_pairing_check.py:3699` — `bank_address_confined`
+- `tools/free_pairing_check.py:3760` — `adjudicate_memory`
+- `tools/free_pairing_check.py:3921` — `window_families`
+- `tools/free_pairing_check.py:3955` — `apply_window_families`
+- `tools/free_pairing_check.py:3963` — `apply_window_families.rename`
+- `tools/free_pairing_check.py:3989` — `mark_window_stores`
+- `tools/free_pairing_check.py:4042` — `window_cell_pointers`
+- `tools/free_pairing_check.py:4057` — `_affine_index`
+- `tools/free_pairing_check.py:4072` — `_window_cell`
+- `tools/free_pairing_check.py:4085` — `_cell_at`
+- `tools/free_pairing_check.py:4091` — `_cells_differ`
+- `tools/free_pairing_check.py:4098` — `window_cells_distinct`
+- `tools/free_pairing_check.py:4192` — `address_taken`
+- `tools/free_pairing_check.py:4215` — `live_functions`
+- `tools/free_pairing_check.py:4259` — `_clone_returns_data`
+- `tools/free_pairing_check.py:4266` — `_returned_by`
+- `tools/free_pairing_check.py:4275` — `census_of`
+- `tools/free_pairing_check.py:4319` — `check_module`
+- `tools/free_pairing_check.py:4404` — `main`
+- `tools/free_pairing_check.py:4461` — `main.dump`
 
 ### `tools/free_pairing_check_test.py` (4408 lines)
 
