@@ -27,7 +27,8 @@
 ; name, L8). "A materialize-a-constant-rail path that does not exist" now does,
 ; one level up: the NOT condition is tagged a fresh REGISTER CONDITION
 ; (RegCondLeaf.h), lowered out of place by `lowerOps` (`xor_i1_hl(c1, 1)`, a fresh
-; rail holding `!c1`, never an X on a user register), and the 4.4 select reads it
+; rail holding `!c1`, never an X on a user register; R11 round 1: M-C now
+; negates the dead compare flag in place, `xorc_i1(c1, 1)`), and the 4.4 select reads it
 ; as a register ROOT through the copy flag (`AllowRegRoot`, SelectClassify.cpp).
 ; Stream: compare, `!c1`, bf = copy, out = !c1 ? q : x, uncopy, free bf. The
 ; compare and `!c1` are left allocated here because nothing follows (the spine
@@ -38,11 +39,21 @@
 ; RUN: %filecheck %s --check-prefix=NOERR --allow-empty < %t.err
 ; NOERR-NOT: error
 ; CHECK:       %[[C1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q:[a-zA-Z0-9_.]+]], i32 5)
-; CHECK-NEXT:  %[[N:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i1_hl(i32 %[[C1]], i1 true)
+; CHECK-NEXT:  call void @cqrt_xorc_i1(i32 %[[C1]], i1 true)
 ; CHECK-NEXT:  %[[BF:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
-; CHECK-NEXT:  call void @cqrt_cnot(i32 %[[N]], i32 %[[BF]])
-; CHECK:       call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[Q]], i32 %[[OUT:[a-zA-Z0-9_.]+]])
-; CHECK:       call void @cqrt_cnot(i32 %[[N]], i32 %[[BF]])
+; CHECK-NEXT:  call void @cqrt_cnot(i32 %[[C1]], i32 %[[BF]])
+; ARM POLARITY (R11 round 1, C-F1), derived by hand from the source: the copy
+; merge fires its UNBRACKETED copy when the condition holds and its
+; `cqrt_x`-bracketed copy when it does not, so the first copy's source must be
+; the select's TRUE operand and the bracketed copy's source its FALSE operand.
+; `select !c1, q, x`: TRUE = %q, FALSE = %x.
+; CHECK-NEXT:  %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[Q]], i32 %[[OUT]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[BF]])
+; CHECK-NEXT:  %[[X:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %x)
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[X]], i32 %[[OUT]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[BF]])
+; CHECK-NEXT:  call void @cqrt_cnot(i32 %[[C1]], i32 %[[BF]])
 ; CHECK-NEXT:  call void @cqrt_free(i32 %[[BF]])
 ; CHECK-NOT:   cqrt_x(i32 %[[Q]])
 declare i32 @cq_theta_si32(i32, double)

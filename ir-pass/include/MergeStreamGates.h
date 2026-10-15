@@ -39,7 +39,8 @@ bool streamGateWrites(const llvm::CallInst *C,
                       llvm::SmallVectorImpl<unsigned> &W);
 
 // The control slots of the stream's controlled gates (cnot 0, toffoli 0/1,
-// controlled copy 0).
+// controlled copy 0) and, since bd dm7f.77, a controlled rotation's control
+// (`cqrt_r{y,z}_<W>_controlled` slot 0; not stream traffic).
 llvm::SmallVector<unsigned, 2> controlSlots(const llvm::CallInst *C);
 
 // Does `C` only READ register `X` — never write, measure, record or escape it?

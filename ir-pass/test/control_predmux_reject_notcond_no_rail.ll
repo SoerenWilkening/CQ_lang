@@ -36,23 +36,64 @@
 ; (the REGISTER CONDITION, RegCondLeaf.h; fixtures control_regcond_*), NOT as a
 ; widening of the arm-swap fold, which still requires a rail operand. The peel
 ; turns the four merge φ into four selects on `%n = xor %c, true`; the condition
-; is a fresh register (`xor_i1_hl(cmp, 1)`) read through four copy flags, giving
-; four controlled-copy merges `out_k = !c ? 2 : k`, each flag uncopied and freed,
-; then `!c` and the compare discharged after their last control read and freed.
+; is a register — the compare flag NEGATED IN PLACE (`cqrt_xorc_i1(cmp, 1)`, M-C:
+; the compare is dead after the NOT) — read through four copy flags, giving four
+; controlled-copy merges `out_k = !c ? 2 : k`, each flag uncopied and freed, then
+; the rail discharged after its last control read (the in-place NOT undone, the
+; compare stripped) and freed.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
 ; RUN: %filecheck %s < %t.ll
 ; RUN: %filecheck %s --check-prefix=NOERR --allow-empty < %t.err
 ; NOERR-NOT: error
 ; CHECK-LABEL: define i32 @probe(
-; CHECK:       %[[C:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[H:[a-zA-Z0-9_.]+]], i32 1)
-; CHECK-NEXT:  %[[N:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i1_hl(i32 %[[C]], i1 true)
-; CHECK-COUNT-8: call void @cqrt_copy_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK:       call void @cqrt_cnot(i32 %[[N]], i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK-NEXT:  call void @cq_template_xor_i1_hl_unc(i32 %[[N]], i32 %[[C]], i1 true)
+; CHECK:       %[[N:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[H:[a-zA-Z0-9_.]+]], i32 1)
+; CHECK-NEXT:  call void @cqrt_xorc_i1(i32 %[[N]], i1 true)
+; ARM POLARITY (R11 round 1, C-F1), derived by hand from the source: the copy
+; merge fires its UNBRACKETED copy when the condition holds and its
+; `cqrt_x`-bracketed copy when it does not, so the first copy's source must be
+; the select's TRUE operand and the bracketed copy's source its FALSE operand.
+; The peel's four selects `!c ? 2 : k`, k = 5..8 (the arm's 2 is TRUE).
+; CHECK:       %[[BF5:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT:  call void @cqrt_cnot(i32 %[[N]], i32 %[[BF5]])
+; CHECK-NEXT:  %[[OUT5:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT:  %[[T5:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 2)
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[BF5]], i32 %[[T5]], i32 %[[OUT5]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[BF5]])
+; CHECK-NEXT:  %[[F5:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 5)
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[BF5]], i32 %[[F5]], i32 %[[OUT5]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[BF5]])
+; CHECK:       %[[BF6:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT:  call void @cqrt_cnot(i32 %[[N]], i32 %[[BF6]])
+; CHECK-NEXT:  %[[OUT6:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT:  %[[T6:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 2)
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[BF6]], i32 %[[T6]], i32 %[[OUT6]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[BF6]])
+; CHECK-NEXT:  %[[F6:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 6)
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[BF6]], i32 %[[F6]], i32 %[[OUT6]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[BF6]])
+; CHECK:       %[[BF7:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT:  call void @cqrt_cnot(i32 %[[N]], i32 %[[BF7]])
+; CHECK-NEXT:  %[[OUT7:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT:  %[[T7:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 2)
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[BF7]], i32 %[[T7]], i32 %[[OUT7]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[BF7]])
+; CHECK-NEXT:  %[[F7:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 7)
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[BF7]], i32 %[[F7]], i32 %[[OUT7]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[BF7]])
+; CHECK:       %[[BF8:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT:  call void @cqrt_cnot(i32 %[[N]], i32 %[[BF8]])
+; CHECK-NEXT:  %[[OUT8:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT:  %[[T8:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 2)
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[BF8]], i32 %[[T8]], i32 %[[OUT8]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[BF8]])
+; CHECK-NEXT:  %[[F8:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 8)
+; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[BF8]], i32 %[[F8]], i32 %[[OUT8]])
+; CHECK-NEXT:  call void @cqrt_x(i32 %[[BF8]])
+; CHECK:       call void @cqrt_cnot(i32 %[[N]], i32 %[[BF8]])
+; CHECK-NEXT:  call void @cqrt_xorc_i1(i32 %[[N]], i1 true)
+; CHECK-NEXT:  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[N]], i32 %[[H]], i32 1)
 ; CHECK-NEXT:  call void @cqrt_free(i32 %[[N]])
-; CHECK-NEXT:  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[C]], i32 %[[H]], i32 1)
-; CHECK-NEXT:  call void @cqrt_free(i32 %[[C]])
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 

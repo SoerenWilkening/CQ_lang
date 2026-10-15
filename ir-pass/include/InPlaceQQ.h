@@ -165,6 +165,11 @@ void transferDeadOperandMask(const llvm::BinaryOperator *BO, llvm::CallInst *T,
 // The record `transferDeadOperandMask` wrote on a template (0 when none).
 unsigned deadOperandMask(const llvm::CallInst *T);
 
+// R11 round 1 (B-F1): the operands recorded as a φ dead by its own users but NOT
+// provably one wire (bit i = operand i). Never a target; a user register beside a
+// surviving result there fails loudly (Q1), never silently out of place.
+unsigned unprovenPhiOperandMask(const llvm::CallInst *T);
+
 // The round. Returns true if any site was converted. Strips every remaining
 // `!cq.qq.dead` record and `!cq.regcond` tag (bd dm7f.77) before returning.
 bool lowerInPlaceQQ(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);

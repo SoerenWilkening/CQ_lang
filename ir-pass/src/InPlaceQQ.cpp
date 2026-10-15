@@ -295,39 +295,39 @@ Outcome decideNext(Function &F, WidthDispatch &wd, TaintSet &taint,
     // control emitter read this value as a register on the wire the commit named
     // (FRESH: its own rail; else the tagged target). Any other conversion puts
     // the condition on a wire nobody asked about: LOUD when Q1 demands one.
-    if (const int Tag = regCondTagIndex(S.C); Tag >= 0) {
-      const bool Fresh = Tag == static_cast<int>(kRegCondFresh);
-      if (Fresh && DerivedTarget)
-        continue;
-      if (!Eligible.empty() && (Fresh || Eligible.front() != unsigned(Tag) ||
-                                Eligible.size() != 1))
-        if (!(railZeroedAndReleased(S.C, nullptr, nullptr) ||
-              Plan.GateAt.count(S.C) || !survives(S.C, taint, F, PDT))) {
-          F.getContext().diagnose(DiagnosticInfoUnsupported(
-              F, kMsgInPlaceQQRefused, S.C->getDebugLoc()));
-          return Outcome::Loud;
-        }
-    }
-    if (Eligible.empty())
-      continue;  // live old value (or a derived rail): out of place, D5.
-    // A RESULT THAT IS DISCHARGED stays out of place, fence or no fence. An
-    // emitter already returned it to |0⟩ inline (a control region's chain strip),
-    // or the M-B plan discharges it after its last reader (`uncompute` re-runs
-    // the same planner; a moved plan degrades to a leak, never to a misplaced
-    // adjoint). Then the old rail standing beside it records nothing the program
-    // does not: out of place IS in-place followed by its own adjoint at the
-    // result's death, which is what the dead-record ruling asks of a dead value
-    // (uncompute, never leak). Converting would instead leave the dead result on
-    // the user's rail, where nothing undoes it (measured: `_BitInt(40) a + b`
-    // lowered as an i64 add + mask, slice_bitint).
-    if (railZeroedAndReleased(S.C, /*Before=*/nullptr, /*DT=*/nullptr) ||
-        Plan.GateAt.count(S.C) || !survives(S.C, taint, F, PDT))
-      continue;
+    // The RESULT survives (see the comment at the gate below).
+    const bool Kept = !(railZeroedAndReleased(S.C, nullptr, nullptr) ||
+                        Plan.GateAt.count(S.C) || !survives(S.C, taint, F, PDT));
     auto loud = [&](const char *Msg) {
       F.getContext().diagnose(
           DiagnosticInfoUnsupported(F, Msg, S.C->getDebugLoc()));
       return Outcome::Loud;
     };
+    if (const int Tag = regCondTagIndex(S.C); Tag >= 0) {
+      const bool Fresh = Tag == static_cast<int>(kRegCondFresh);
+      if (Fresh && DerivedTarget)
+        continue;
+      if (!Eligible.empty() && Kept &&
+          (Fresh || Eligible.front() != unsigned(Tag) || Eligible.size() != 1))
+        return loud(kMsgInPlaceQQRefused);
+    }
+    // R11 round 1 (B-F1) — Q1's invariant for a φ: a dead user register beside a
+    // KEPT result is in place or LOUD, and a φ not provably one wire is never a
+    // target, so it is loud here rather than silently left out of place.
+    for (unsigned Idx = 0; Idx < 2; ++Idx)
+      if (Kept && (unprovenPhiOperandMask(S.C) >> Idx & 1u) &&
+          railIsUserData(S.C->getArgOperand(Idx)))
+        return loud(kMsgInPlaceQQRefused);
+    if (Eligible.empty())
+      continue;  // live old value (or a derived rail): out of place, D5.
+    // A RESULT THAT IS DISCHARGED (`!Kept`) stays out of place: an emitter's
+    // inline strip or the M-B plan returns it to |0⟩ (a moved plan degrades to a
+    // leak, never a misplaced adjoint), so out of place IS in place followed by
+    // its own adjoint at the result's death — the dead-record ruling. Converting
+    // would leave the dead result on the user's rail with nothing to undo it
+    // (measured: `_BitInt(40) a + b` as an i64 add + mask, slice_bitint).
+    if (!Kept)
+      continue;
     // BOTH operands eligible: which register the user overwrote is not
     // recoverable from -O1 SSA (clang commutes; no `!dbg` without -g) and the
     // choice changes the unitary (the leftover register differs). Loud, with no
@@ -392,8 +392,8 @@ bool lowerInPlaceQQ(Module &M, WidthDispatch &wd, TaintSet &taint) {
   for (Function &F : M)
     for (BasicBlock &BB : F)
       for (Instruction &I : BB)
-        for (const char *Tag : {kDeadOperandTag, kRegCondTag})
-          I.setMetadata(Tag, nullptr);  // records only; never in the output.
+        I.setMetadata(kDeadOperandTag, nullptr);  // `!cq.regcond` stays for
+                                                  // row (c′); stripped later.
   return Changed;
 }
 

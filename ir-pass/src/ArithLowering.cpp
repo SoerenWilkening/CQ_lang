@@ -5,7 +5,7 @@
 // (`OpcodeLowering`) owns collection, program order, and erase.
 
 #include "ArithLowering.h"
-#include "RegCondLeaf.h"  // isRegCondLeaf / kRegCondTag (bd dm7f.77)
+#include "RegCondLeaf.h"  // transferRegCondTag (bd dm7f.77)
 
 #include "ChainWalk.h"      // isInPlaceGateOn (the ONE in-place-gate relation)
 #include "DeadValueLiveness.h"  // isRecordedDeadSlot (bd vsfp r2: the ONE "slot unread")
@@ -165,6 +165,11 @@ bool emitInPlaceReassign(Instruction *Site, Instruction::BinaryOps Op,
   // chained self-update (`q1 = q ^ 9; q2 = q1 ^ 3` — `q1`'s RAUW feeds `q2`). The
   // void in-place gate is not itself a tainted producer; the handle stays
   // tainted.
+  // bd dm7f.77 (R11 round 1): a REGISTER CONDITION lowered in place lives on
+  // `Handle`'s rail from here on, so the rail takes its tag (ChainWalk row
+  // (c′) discharges it after its last control read by that membership).
+  if (auto *HI = dyn_cast<Instruction>(Handle))
+    transferRegCondTag(Site, HI, /*Swapped=*/false);
   Site->replaceAllUsesWith(Handle);
   return true;
 }
@@ -276,9 +281,11 @@ bool rewriteBinary(BinaryOperator *bo, WidthDispatch &wd, TaintSet &taint) {
   if (ShapeSel == Shape::QQ)
     transferDeadOperandMask(bo, T, /*Swapped=*/Lhs != A);
   // bd dm7f.77 — carry the register-condition tag to the template (remapped
-  // through the BirthOrder swap, like the dead mask), so the late rounds, which
-  // see only the template, honour the commit: a FRESH condition stays out of
-  // place (M-C and the QQ round), a TARGET condition converts onto that operand.
+  // through the BirthOrder swap, like the dead mask): the late QQ round honours
+  // the commit, and ChainWalk's row (c′) asks it of the rail. M-C may still put
+  // a fresh one in place (R11 round 1 L9 audit): it does so only when the
+  // operand is DEAD, so the condition's rail is that operand's, which nothing
+  // names after the op — refusing it left a dead register out of place.
   transferRegCondTag(bo, T, /*Swapped=*/ShapeSel == Shape::QQ && Lhs != A);
   bo->replaceAllUsesWith(T);
   // Record the result handle's LOGICAL width (the binary op's own ABI width,
@@ -1048,12 +1055,6 @@ bool classifyInPlaceReassignment(BinaryOperator *bo, WidthDispatch &wd,
   if (Op != Instruction::Add && Op != Instruction::Sub &&
       Op != Instruction::Xor)
     return false;
-  // bd dm7f.77 — a REGISTER CONDITION with no in-place target (RegCondLeaf.h:
-  // the substituted guard `xor %c, true`) was read by a control emitter as a
-  // FRESH rail; it stays out of place, whatever this fence would say.
-  if (isRegCondLeaf(bo) && !regCondTarget(bo))
-    return false;
-
   // G2 — the SHAPE predicate (Rule 14: the dtzb one for add/xor, plus the
   // directional `sub` rule): exactly one tainted operand (the parent rail `P`),
   // one classical immediate, an integer width the in-place ABI can serve, and
@@ -1166,9 +1167,6 @@ bool lowerLateReassignments(Module &M, WidthDispatch &wd, TaintSet &taint) {
         Value *P = nullptr, *Imm = nullptr;
         StringRef W;
         if (!lateReassignShape(C, taint, Op, P, Imm, W))
-          continue;
-        // bd dm7f.77 — a fresh register condition stays out of place (above).
-        if (C->getMetadata(kRegCondTag))
           continue;
         // A rail ANOTHER emitter owns is never re-lowered here. Phase-4 control
         // rails, 7.6 output rails, 7.2 graveyard rails and untainted merge rails

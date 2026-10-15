@@ -5,6 +5,8 @@
 #include "ChainWalk.h"
 #include "CloneProducer.h"    // isCloneProducer (bd p3kd.13)
 #include "InPlaceQQ.h"        // isInPlaceQQGate (bd r2j3.33)
+#include "MergeStreamGates.h" // controlSlots (row (c′), bd dm7f.77)
+#include "RegCondLeaf.h"      // regCondTagIndex (row (c′), bd dm7f.77)
 #include "RailBankPromote.h"  // railStoredToRailBank (bd `xdu2` W1 D1)
 // `cloneCallPreservesArg` (bd rhk5) lives in ClonePreserves.cpp since bd p3kd.13.
 #include "TaintPropagation.h"
@@ -132,7 +134,8 @@ bool isInPlaceGateOn(const CallInst *G, const Value *H) {
   // in-place group is reversed before the target's defining group), and a target
   // that is measured, recorded or rotated is left exactly as a rotated register
   // is. By membership in the tag, never by name: an untagged `cqrt_cnot` is a
-  // condition-network gate and stays unrecognized.
+  // condition-network gate and is not an in-place gate on anything (its reads of
+  // a register condition are `isInteriorConsumer` row (c′)'s business).
   if (isInPlaceQQGate(G))
     return G->getArgOperand(1) == H;
   // iw81.7 / Phase 7.5 Inc 2: a QRAM store is a VOID in-place mutation on its ARRAY
@@ -967,7 +970,9 @@ bool isInteriorConsumer(const CallInst *C, const Value *R,
   //      runs after it, never takes it — the QRAM store's (b″) argument, verbatim.
   //      The DESTINATION slot is a write: row (a) above already answered it.
   //      By membership in the tag, never by name: an untagged `cqrt_cnot` is a
-  //      condition-network gate and falls through to the list below.
+  //      condition-network gate — row (c′) below answers it for a register-
+  //      condition rail it reads as a control, and every other rail falls
+  //      through to the list at the end.
   if (isInPlaceQQGate(C))
     return C->getArgOperand(0) == R;
   // (b′) A PHASE-6 CLONE CALL that reads the rail and provably never writes it
@@ -1036,32 +1041,30 @@ bool isInteriorConsumer(const CallInst *C, const Value *R,
   //     `false` — no fall-through to the list below, exactly as before.
   if (taint.DischargedFlagGates.count(C))
     return isRecordedStripReaderOf(C, R, taint);
-  // (c′) bd dm7f.77 (dm7f.51 step 2) — A CONTROL READ: `cqrt_cnot` /
-  //      `cqrt_toffoli` with the rail ONLY in control slots, or a controlled
-  //      rotation `cqrt_r{y,z}_<W>_controlled` with the rail ONLY as its control
-  //      (slot 0). A control's basis label is unchanged by the gate it controls,
-  //      so the reader is finished with the rail once it has run — row (b)'s
-  //      argument, and the one the compare flag's own strip after a controlled
-  //      Ry rests on. Until bd dm7f.77 every rail read this way was a Phase-4
-  //      FLAG the emitter strips and frees (its `cqrt_free` user still
-  //      disqualifies it, below); a REGISTER CONDITION (RegCondLeaf.h) is a
-  //      program value the emitter reads but does not own, and without this row
-  //      a dead one stood allocated as a record of its parents across their
-  //      next gate: `b ^= a; if (a & b) cq_theta(&t, .5); b ^= a;
-  //      cq_theta(&a, .3)` left `a & !b` beside the later Ry on `a` (M-A
-  //      warned "non-diagonal gate over a live derived record"). The positional
-  //      half — every such read has run, never re-reads — is the driver's.
-  {
-    StringRef CN = C->getCalledFunction()->getName();
-    const bool Rot = (CN.starts_with("cqrt_ry_") || CN.starts_with("cqrt_rz_")) &&
-                     CN.ends_with("_controlled") && C->arg_size() == 3;
-    unsigned Controls = CN == "cqrt_cnot" ? 1 : CN == "cqrt_toffoli" ? 2
-                        : Rot ? 1 : 0;
-    if (Controls && C->getType()->isVoidTy()) {
+  // (c′) bd dm7f.77 (dm7f.51 step 2; R11 round 1 C-F3/C-F4) — A CONTROL READ
+  //      OF A REGISTER CONDITION. By MEMBERSHIP: the rail is a register
+  //      condition (RegCondLeaf.h; the `!cq.regcond` tag its template carries
+  //      until the post-`uncompute` postcondition strips it) — a program value a
+  //      control emitter reads but does not own, so no emitter strips it. Read
+  //      ONLY in CONTROL slots (`controlSlots`, MergeStreamGates.h, the one
+  //      owner: cnot 0, toffoli 0/1, controlled copy 0, controlled rotation 0),
+  //      the reader is finished with it — a control's basis label is unchanged by
+  //      the gate it controls (row (b)'s argument; the one the compare flag's own
+  //      strip after a controlled Ry rests on). Without this row a dead one stood
+  //      allocated as a record of its parents across their next gate: `b ^= a;
+  //      if (a & b) cq_theta(&t,.5); b ^= a; cq_theta(&a,.3)` left `a & !b`
+  //      beside the later Ry on `a` (M-A warned). The positional half — every
+  //      such read has run, never re-reads — is the driver's. Every OTHER rail
+  //      read as a control (a condition network's flag or node ancilla, owned
+  //      and stripped by its emitter) still falls through to the list below.
+  if (const auto *RI = dyn_cast<Instruction>(R);
+      RI && regCondTagIndex(RI) >= 0 && C->getType()->isVoidTy()) {
+    SmallVector<unsigned, 2> Ctl = controlSlots(C);
+    if (!Ctl.empty()) {
       bool Reads = false;
       for (unsigned I = 0, E = C->arg_size(); I != E; ++I)
         if (C->getArgOperand(I) == R) {
-          if (I >= Controls)
+          if (!is_contained(Ctl, I))
             return false;  // a written slot (target / angle): not a read.
           Reads = true;
         }

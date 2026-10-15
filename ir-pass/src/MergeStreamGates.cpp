@@ -104,6 +104,12 @@ SmallVector<unsigned, 2> controlSlots(const CallInst *C) {
     return {0};
   if (N == "cqrt_toffoli")
     return {0, 1};
+  // bd dm7f.77 (R11 round 1 C-F4): a controlled rotation's control, for
+  // ChainWalk's row (c′). Not merge-stream traffic (`streamGateWrites` refuses
+  // it), so the stream planner never reaches this case.
+  if ((N.starts_with("cqrt_ry_") || N.starts_with("cqrt_rz_")) &&
+      N.ends_with("_controlled") && C->arg_size() == 3)
+    return {0};
   return {};
 }
 

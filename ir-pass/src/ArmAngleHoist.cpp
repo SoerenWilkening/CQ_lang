@@ -2,6 +2,7 @@
 
 #include "ArmAngleHoist.h"
 
+#include "ArmAnalysis.h"       // isFrontEndThetaCall (the one named spelling)
 #include "TaintPropagation.h"  // TaintSet
 
 #include "llvm/ADT/SmallPtrSet.h"
@@ -20,9 +21,7 @@ namespace cq {
 namespace {
 
 bool isThetaCall(const Instruction &I) {
-  const auto *CI = dyn_cast<CallInst>(&I);
-  const Function *F = CI ? CI->getCalledFunction() : nullptr;
-  return F && F->getName().starts_with("cq_theta_") && CI->arg_size() >= 2;
+  return isFrontEndThetaCall(&I) && cast<CallInst>(I).arg_size() >= 2;
 }
 
 // The angle cone of the arm's one theta, or false when the arm is not exactly

@@ -45,10 +45,11 @@
 // instructions only (`sinkCommittedCondition`), so independent pure readers
 // (`q3 ^= q1` in dicke.c) run before the in-place gate.
 //
-// THE TAG IS HONOURED DOWNSTREAM: M-C never lowers a fresh-tagged op in place,
-// the late QQ round converts a target-tagged one only onto its target, and
+// THE TAG IS HONOURED DOWNSTREAM: the late QQ round converts a target-tagged
+// op only onto its target (any other conversion Q1 demands is loud), and
 // `RegionFlatten` never erases a tagged condition (a state prep holds it only
-// through a `WeakTrackingVH`). The tags are stripped at the end of the late round.
+// through a `WeakTrackingVH`). ChainWalk's row (c′) reads the tag on the
+// template; the tags are stripped after `uncompute` (`declineStaleInPlaceQQReads`).
 //
 // A TAGGED VALUE is read as a register by the consumers that opt in: the flat
 // in-place rotation / state-prep region (`classifyArms` + `emitInPlaceRotation-

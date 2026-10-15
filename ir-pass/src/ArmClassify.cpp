@@ -114,6 +114,8 @@ bool isThetaCall(const Value *V) { return isCallToPrefix(V, "cq_theta_"); }
 
 }  // namespace
 
+bool isFrontEndThetaCall(const Value *V) { return isThetaCall(V); }
+
 // The per-arm analyses below are de-anonymized into the named `cq` namespace
 // (declared in ArmAnalysis.h, WI-0/MD1) so the 4.3 RegionTreeDetect /
 // ArmHomogeneity TUs can reuse them. PURE REFACTOR — definitions and behavior
@@ -2267,7 +2269,7 @@ SmallVector<std::pair<FCmpInst *, bool>, 4> forcedFcmpLeavesOf(Value *Cond,
 bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
                                 TaintSet &Taint, const DominatorTree *DT,
                                 const SmallPtrSetImpl<Value *> &CondWire,
-                                bool &Truncated) {
+                                bool &Truncated, Value **PinnedBy = nullptr) {
   BasicBlock *Pred = Region.Pred;
   if (!Pred) {
     Truncated = true;
@@ -2638,8 +2640,11 @@ bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
       // collider is TAGGED for the L1 re-ask (`siblingConditionCompareOnWire`).
       if (V->getType() == Seed->getType() && !excludedAtTest(V) &&
           f2Exact(V, S) == Seed) {
-        if (!siblingConditionCompareOnWire(V, &CondWire))
+        if (!siblingConditionCompareOnWire(V, &CondWire)) {
+          if (PinnedBy)
+            *PinnedBy = V;  // R11 round 1 (A-F2): the diagnostic names it.
           return true;
+        }
         cast<Instruction>(V)->setMetadata(
             kF2SiblingMD, MDNode::get(V->getContext(), {}));
       }
@@ -6929,13 +6934,25 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // candidate list, the same three exclusions at the same TEST — whose
         // argument is in `f2SeedPinnedByLiveRegister`'s header ("THE RUNTIME
         // SEED"); a literal takes the constant-fold path byte-for-byte as before.
+        Value *PinnedBy = nullptr;
         if (!PreallocatedBankSeed)
           Pinned = f2SeedPinnedByLiveRegister(Region, RotBase, Taint, DT,
-                                              CondWire, Truncated) ||
+                                              CondWire, Truncated, &PinnedBy) ||
                    Truncated;
+        // R11 round 1 (A-F2): under a REGISTER CONDITION (dm7f.77) the pinning
+        // register is not the condition — `t ^= a; if (t) prep b; c = t & d`
+        // pins b's seed with `t & d` (review_s2A/p3.c) — so the string says
+        // so. Every shipped F2 decline (61 fixtures, whose wording reads "the
+        // condition register" for any register the condition pins) keeps its
+        // string byte for byte. The admission itself is filed (dm7f.51.5).
         if (Pinned) {
           declineArm(declAnchor(Region),
-                     "state prep seed is proven equal to the condition register");
+                     PinnedBy && PinnedBy != Region.Condition &&
+                             isRegCondLeaf(Region.Condition)
+                         ? "state prep seed is proven equal to a live register "
+                           "other than the condition"
+                         : "state prep seed is proven equal to the condition "
+                           "register");
           return ArmDisposition::Declined;
         }
       }

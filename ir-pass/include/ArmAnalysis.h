@@ -75,6 +75,12 @@ bool armBlockIsPureSpine(const llvm::BasicBlock *ArmBB,
 // operand (the f64/angle miscompile family). Only tainted values are recorded.
 // `Stop` (bd dm7f.77, optional): a value it returns true for is collected but
 // not entered (`condProvCoveredPhiGates` stops at a claimed merge φ).
+// bd dm7f.77 R11 round 1 (C-F4) — THE ONE NAMED SPELLING of "is `V` a
+// front-end `@cq_theta_*` call", for the TUs that cannot use ArmClassify's
+// TU-local `isThetaCall` (it collides with same-named anon helpers). Defined in
+// ArmClassify.cpp as exactly that predicate.
+bool isFrontEndThetaCall(const llvm::Value *V);
+
 void condProvenance(llvm::Value *Cond, TaintSet &Taint,
                     llvm::SmallPtrSetImpl<llvm::Value *> &Out,
                     llvm::function_ref<bool(llvm::Value *)> Stop = nullptr);

@@ -24,11 +24,6 @@ namespace cq {
 
 namespace {
 
-bool isCallTo(const Value *V, StringRef Prefix) {
-  const auto *CI = dyn_cast<CallInst>(V);
-  const Function *F = CI ? CI->getCalledFunction() : nullptr;
-  return F && F->getName().starts_with(Prefix);
-}
 
 // Does `X` name a register that carries a rotation — the SSA-level reading of
 // step 1's E2 (`railIsUserData`, asked after lowering)? A `cq_theta` result, or
@@ -37,7 +32,7 @@ bool isCallTo(const Value *V, StringRef Prefix) {
 bool rotatedRegister(Value *X, const TaintSet &Taint, unsigned Depth = 0) {
   if (Depth > 8 || !Taint.Tainted.count(X))
     return false;
-  if (isCallTo(X, "cq_theta_"))
+  if (isFrontEndThetaCall(X))
     return true;
   if (auto *P = dyn_cast<PHINode>(X)) {
     for (Value *In : P->incoming_values())
@@ -149,15 +144,24 @@ void considerCondition(Value *C, const TaintSet &Taint, const DominatorTree &DT,
 }
 
 // A committed in-place condition `V` (a target tag) is SUNK to just before its
-// branch when nothing else in its block reads it. Legal: `V` is pure, reads only
-// values defined before its old position, and its target is dead after it (the
-// commit's own predicate), so nothing between the two positions reads either.
-// Why: the in-place gate then runs at the control read, AFTER every independent
-// pure reader `-O1` (or the 57ch placement, which puts a stale read "just before
-// the gate") scheduled between them — measured on dicke.c, where `q3 ^= q1`
-// placed after `q2 ^= q1` left q3's record of the OLD q2 to be discharged after
-// q2 was overwritten, and the late round's G7 then refused the conversion.
-void sinkCommittedCondition(BranchInst *Br) {
+// branch when nothing else in its block reads it. Why: the in-place gate then
+// runs at the control read, AFTER every independent pure reader `-O1` (or the
+// 57ch placement, which puts a stale read "just before the gate") scheduled
+// between them — measured on dicke.c, where `q3 ^= q1` placed after `q2 ^= q1`
+// left q3's record of the OLD q2 to be discharged after q2 was overwritten, and
+// the late round's G7 then refused the conversion.
+// LEGALITY, both operands (R11 round 1, A-F1): `V`'s TARGET is dead after `V`
+// (the commit's predicate), so nothing between the positions names it; its
+// SOURCE is live, and an instruction between them may relabel it — a gate, a
+// measurement, or a pure op the late round puts IN PLACE on that source (`%w =
+// xor %src, %z` with `%src` dead after it, review_s2A/p1b.ll). So the sink
+// crosses only side-effect-free non-calls, and no add/sub/xor whose operand is
+// one of `V`'s and is DEAD after it (the shape either late round may convert in
+// place on that operand, asked by `qqOperandDeadAfter`, the record's spelling).
+// A plain reader of the source (dicke.c's `q3 ^= q1` reading q1, live after it)
+// relabels nothing and is crossed.
+void sinkCommittedCondition(BranchInst *Br, const DominatorTree &DT,
+                            const LoopInfo &LI) {
   auto *V = dyn_cast<Instruction>(Br->getCondition());
   if (!V || !regCondTarget(V) || V->getParent() != Br->getParent())
     return;
@@ -165,12 +169,18 @@ void sinkCommittedCondition(BranchInst *Br) {
     if (auto *UI = dyn_cast<Instruction>(U);
         UI && UI != Br && UI->getParent() == V->getParent())
       return;
-  // Cross only non-call instructions: a gate (`cq_theta`), a measurement or any
-  // call between the two positions may move or collapse an operand's register,
-  // and `V` would then read it after that event instead of before.
-  for (Instruction *I = V->getNextNode(); I && I != Br; I = I->getNextNode())
+  for (Instruction *I = V->getNextNode(); I && I != Br; I = I->getNextNode()) {
     if (isa<CallBase>(I) || I->mayHaveSideEffects())
       return;
+    auto *B = dyn_cast<BinaryOperator>(I);
+    if (B && (B->getOpcode() == Instruction::Xor ||
+              B->getOpcode() == Instruction::Add ||
+              B->getOpcode() == Instruction::Sub))
+      for (Value *Op : V->operands())
+        for (unsigned Idx = 0; Idx < 2; ++Idx)
+          if (B->getOperand(Idx) == Op && qqOperandDeadAfter(Op, B, DT, LI))
+            return;
+  }
   V->moveBefore(Br);
 }
 
@@ -182,7 +192,7 @@ bool armRotates(BranchInst *Br, Value *C) {
       continue;
     for (Instruction &I : *S)
       if (auto *CI = dyn_cast<CallInst>(&I);
-          CI && isCallTo(CI, "cq_theta_") && CI->arg_size() >= 1 &&
+          CI && isFrontEndThetaCall(CI) && CI->arg_size() >= 1 &&
           CI->getArgOperand(0) == C)
         return true;
   }
@@ -303,7 +313,7 @@ void commitRegisterConditions(Module &M, TaintSet &taint) {
         }
         considerCondition(C, taint, *DT, *LI);
         if (auto *Br = dyn_cast<BranchInst>(&I))
-          sinkCommittedCondition(Br);
+          sinkCommittedCondition(Br, *DT, *LI);
       }
   }
 }
