@@ -307,6 +307,32 @@ bool railWindowWritesBack(const llvm::Instruction *U,
 // trip: it dominates `Site` and every path from `Site` back to `X` reloads the
 // cell first (the next trip's `X` reads the cell's updated value, which is the
 // program's). Asked by the in-place fence's G6 and G7 (c′).
+// bd 01po.19.17 (design §6, Q4): the members of `P`'s array family (`Family`)
+// that are cell READS of a provably different cell than `P` in the same trip:
+// loads in `P`'s innermost loop whose address SCEV differs from `P`'s by a
+// known non-zero amount (`railWindowDistinct`, in S7's context form at `At`).
+// Sound only for a question asked within one activation of that loop (an
+// in-body window: its opener dominates its discharge point, so no back edge
+// lies between them); a read whose value a φ carries into a later trip is
+// never returned. The second form reuses the caller's analyses.
+// ⚠ RETIREMENT TRIGGER (review (a) B-F2): "distinct cells hold distinct
+// rails" holds only while NO RAIL MOVES BETWEEN CELLS, which today only S5's
+// 01po.19.13 decline (cell value copied into another cell) enforces. When
+// cell-to-cell moves land, this must also demand that no store into the array
+// lies between the two reads, in all three callers (Uncomputation,
+// MergeStreamPlan step 7, Q4) and in stage 2b (`mark_window_stores`).
+void railWindowTripDistinctCells(const llvm::Value *P,
+                                 llvm::ArrayRef<llvm::Value *> Family,
+                                 const llvm::Instruction *First,
+                                 const llvm::Instruction *At,
+                                 llvm::SmallPtrSetImpl<const llvm::Value *> &Out);
+void railWindowTripDistinctCells(const llvm::Value *P,
+                                 llvm::ArrayRef<llvm::Value *> Family,
+                                 const llvm::Instruction *First,
+                                 const llvm::Instruction *At,
+                                 llvm::SmallPtrSetImpl<const llvm::Value *> &Out,
+                                 llvm::DominatorTree &DT, llvm::LoopInfo &LI,
+                                 llvm::ScalarEvolution &SE);
 bool railWindowBeforeInTrip(const llvm::Instruction *X,
                             const llvm::Instruction *Site, const llvm::Value *P,
                             const llvm::DominatorTree &DT);

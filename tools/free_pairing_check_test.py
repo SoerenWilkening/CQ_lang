@@ -2124,7 +2124,39 @@ entry:
 !0 = !{i32 1}
 """
 
+# bd 01po.19.17 — PER-CELL WRITE HISTORY inside one stream. A temporary of
+# cell i (`%t = zext(%l0)`) is reversed after a Ry on cell i+1 (`%l1`): the
+# array-granular rename alone reads the Ry as a write on the operand; the
+# checker's own affine proof (one SSA base, offsets 0 and +1, both CELL READS,
+# one stream) drops it. Mutants: the Ry on the SAME cell through another read
+# spelling, on a STORED spelling (no cell proof), on an offset that wraps.
+WINDOW_CELL_TEMP_OTHER = """
+define i32 @slice(i64 %i) local_unnamed_addr {
+entry:
+  %w = alloca i32, i64 4, align 4, !cq.railwindow !0
+  %a0 = getelementptr i32, ptr %w, i64 %i
+  %i1 = add nuw nsw i64 %i, 1
+  %a1 = getelementptr i32, ptr %w, i64 %i1
+  %h0 = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %h0, ptr %a0, align 4
+  %h1 = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %h1, ptr %a1, align 4
+  %l0 = load i32, ptr %a0, align 4
+  call void @cqrt_ry_i1(i32 %l0, double 3.000000e-01)
+  %l1 = load i32, ptr %a1, align 4
+  %t = call i32 @cq_template_zext_i1_to_i8(i32 %l0)
+  %u = call i32 @cq_template_zext_i8_to_i32(i32 %t)
+  call void @cqrt_ry_i1(i32 %l1, double 5.000000e-01)
+  call void @cq_template_zext_i1_to_i8_unc(i32 %t, i32 %l0)
+  call void @cqrt_free(i32 %t)
+  %m = call i32 @cqrt_measure_i32(i32 %u)
+  ret i32 %m
+}
+!0 = !{i32 1}
+"""
+
 MEM_POSITIVE = [
+    ("window-cell-temp-other-cell-written", WINDOW_CELL_TEMP_OTHER),
     ("window-cell-cnot-proven-distinct-cells", WINDOW_CELL_CNOT),
     ("window-cell-temp-reversed-before-gate", WINDOW_CELL_TEMP),
     ("bank-load-measured-only", BANK_MEASURE_ONLY),
@@ -2160,6 +2192,70 @@ MEM_MUTANTS = [
      sub(WINDOW_CELL_CNOT, "%i1 = add", "add nuw nsw i64 %i, 1",
          "add nuw nsw i64 %i, 0"),
      "B1-input-aliases-written-rail"),
+    # bd 01po.19.17: the Ry is on the SAME cell, through a second read.
+    # bd 01po.19.17 review B-F1 (review_aB/p6): the cells are SWAPPED by two
+    # stores after the record's read, so the Ry through the later spelling of
+    # cell i+1 rotates cell i's rail — the record's own source. A per-cell
+    # drop must not survive a rail-moving store between the read and the write.
+    ("window-cell-temp-swap-then-other-cell-written",
+     sub(sub(WINDOW_CELL_TEMP_OTHER,
+             "call void @cqrt_ry_i1(i32 %l1, double 5", "i32 %l1", "i32 %l1b"),
+         "%u = call", "%u = call i32 @cq_template_zext_i8_to_i32(i32 %t)",
+         "%u = call i32 @cq_template_zext_i8_to_i32(i32 %t)\n"
+         "  store i32 %l0, ptr %a1, align 4\n"
+         "  store i32 %l1, ptr %a0, align 4\n"
+         "  %l1b = load i32, ptr %a1, align 4"),
+     "T2-operand-mutated"),
+    ("window-cell-temp-same-cell-written",
+     sub(insert_after(WINDOW_CELL_TEMP_OTHER, "%l1 = load i32",
+                      "  %l0b = load i32, ptr %a0, align 4"),
+         "call void @cqrt_ry_i1(i32 %l1, double 5", "i32 %l1", "i32 %l0b"),
+     "T2-operand-mutated"),
+    # bd 01po.19.17: the Ry is on a STORED spelling — no cell proof.
+    ("window-cell-temp-stored-spelling-written",
+     sub(WINDOW_CELL_TEMP_OTHER, "call void @cqrt_ry_i1(i32 %l1, double 5",
+         "i32 %l1", "i32 %h1"),
+     "T2-operand-mutated"),
+    # bd 01po.19.17: offset 2^62 cells wraps onto cell i itself.
+    # bd 01po.19.17: CROSS-TRIP. The record of q[i+1] made in one trip is
+    # reversed in the NEXT activation after a Ry on q[i] — the same cell. The
+    # per-cell exemption lives inside ONE stream, and a stream never spans the
+    # back edge, so the carried record is extern to the reversing stream.
+    ("window-cell-temp-cross-trip-same-cell",
+     """
+define i32 @slice(i64 %n) local_unnamed_addr {
+entry:
+  %w = alloca i32, i64 4, align 4, !cq.railwindow !0
+  %h0 = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %h0, ptr %w, align 4
+  %t0 = call i32 @cq_template_zext_i1_to_i8(i32 %h0)
+  br label %body
+body:
+  %i = phi i64 [ 0, %entry ], [ %i1, %body ]
+  %tp = phi i32 [ %t0, %entry ], [ %t, %body ]
+  %lp = phi i32 [ %h0, %entry ], [ %l1, %body ]
+  %a0 = getelementptr i32, ptr %w, i64 %i
+  %i1 = add nuw nsw i64 %i, 1
+  %a1 = getelementptr i32, ptr %w, i64 %i1
+  %l0 = load i32, ptr %a0, align 4
+  call void @cqrt_ry_i1(i32 %l0, double 5.000000e-01)
+  call void @cq_template_zext_i1_to_i8_unc(i32 %tp, i32 %lp)
+  call void @cqrt_free(i32 %tp)
+  %l1 = load i32, ptr %a1, align 4
+  %t = call i32 @cq_template_zext_i1_to_i8(i32 %l1)
+  %c = icmp ult i64 %i1, %n
+  br i1 %c, label %body, label %exit
+exit:
+  %m = call i32 @cqrt_measure_i8(i32 %t)
+  ret i32 %m
+}
+!0 = !{i32 1}
+""",
+     "U3-extern-rail"),
+    ("window-cell-temp-offset-wraps",
+     sub(WINDOW_CELL_TEMP_OTHER, "%i1 = add", "add nuw nsw i64 %i, 1",
+         "add nuw nsw i64 %i, 4611686018427387904"),
+     "T2-operand-mutated"),
     # bd 01po.19 S5 review B-F1 (a): one operand is a STORED spelling (its one
     # store can park a different cell each trip): no cell proof, fail closed.
     ("window-cell-cnot-stored-spelling",

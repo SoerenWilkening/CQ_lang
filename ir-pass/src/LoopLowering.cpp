@@ -6917,6 +6917,11 @@ bool declineUndischargedMarkedBodyRails(Module &M) {
     auto *RI = dyn_cast<Instruction>(R);
     if (!RI)
       continue;
+    // bd 01po.19.17: the op was lowered IN PLACE onto a quantum-array cell
+    // (InPlaceQQ RAUWs it to the cell read): it minted no rail; the cell's own
+    // rail is a borrowed root the array keeps (S4), nothing to discharge.
+    if (isRailWindowCellRead(RI))
+      continue;
     Function *F = RI->getFunction();
     if (!F || F->isDeclaration())
       continue;

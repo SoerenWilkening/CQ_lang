@@ -1,0 +1,80 @@
+cqrt_alloc_i1(0) -> h0
+cqrt_alloc_i1(0) -> h1
+cqrt_alloc_i1(1) -> h2
+cqrt_alloc_i1(1) -> h3
+cqrt_cnot(h2, h3)
+cqrt_ry_i1_controlled(h3, h2, 0x1.0c152382d7365p+1)
+cqrt_cnot(h2, h3)
+cqrt_cnot(h1, h3)
+cqrt_alloc_i1(0) -> h4
+cqrt_cnot(h3, h4)
+cqrt_alloc_i32(0) -> h5
+cqrt_alloc_i32(2) -> h6
+cqrt_copy_i32_controlled(h4, h6, h5)
+cqrt_x(h4)
+cqrt_alloc_i32(0) -> h7
+cqrt_copy_i32_controlled(h4, h7, h5)
+cqrt_x(h4)
+cq_template_zext_i1_to_i8(h2) -> h8
+cq_template_zext_i8_to_i32(h8) -> h9
+cq_template_or_i32(h5, h9) -> h10
+cq_template_icmp_eq_i32_hl(h10, 3) -> h11
+cqrt_ry_i1_controlled(h11, h1, 0x1.921fb54442d18p+0)
+cq_template_icmp_eq_i32_hl_unc(h11, h10, 3)
+cq_template_or_i32_unc(h10, h5, h9)
+cqrt_x(h4)
+cqrt_copy_i32_controlled(h4, h7, h5)
+cqrt_x(h4)
+cqrt_copy_i32_controlled(h4, h6, h5)
+cqrt_cnot(h3, h4)
+cqrt_free(h4)
+cqrt_free(h5)
+cqrt_free(h10)
+cq_template_zext_i8_to_i32_unc(h9, h8)
+cqrt_free(h9)
+cq_template_zext_i1_to_i8_unc(h8, h2)
+cqrt_free(h8)
+cqrt_free(h11)
+cqrt_cnot(h1, h3)
+cqrt_cnot(h1, h2)
+cqrt_ry_i1_controlled(h2, h1, 0x1.e91f42805715dp+0)
+cqrt_cnot(h1, h2)
+cqrt_cnot(h0, h2)
+cqrt_alloc_i1(0) -> h12
+cqrt_cnot(h2, h12)
+cqrt_alloc_i32(0) -> h13
+cqrt_alloc_i32(2) -> h14
+cqrt_copy_i32_controlled(h12, h14, h13)
+cqrt_x(h12)
+cqrt_alloc_i32(0) -> h15
+cqrt_copy_i32_controlled(h12, h15, h13)
+cqrt_x(h12)
+cq_template_zext_i1_to_i8(h1) -> h16
+cq_template_zext_i8_to_i32(h16) -> h17
+cq_template_or_i32(h13, h17) -> h18
+cq_template_icmp_eq_i32_hl(h18, 3) -> h19
+cqrt_ry_i1_controlled(h19, h0, 0x1.3b2028082e8d4p+0)
+cq_template_icmp_eq_i32_hl_unc(h19, h18, 3)
+cq_template_or_i32_unc(h18, h13, h17)
+cqrt_x(h12)
+cqrt_copy_i32_controlled(h12, h15, h13)
+cqrt_x(h12)
+cqrt_copy_i32_controlled(h12, h14, h13)
+cqrt_cnot(h2, h12)
+cqrt_free(h12)
+cqrt_free(h13)
+cqrt_free(h18)
+cq_template_zext_i8_to_i32_unc(h17, h16)
+cqrt_free(h17)
+cq_template_zext_i1_to_i8_unc(h16, h1)
+cqrt_free(h16)
+cqrt_free(h19)
+cqrt_cnot(h0, h2)
+cqrt_cnot(h0, h1)
+cqrt_ry_i1_controlled(h1, h0, 0x1.921fb54442d18p+0)
+cqrt_cnot(h0, h1)
+cqrt_measure_i1(h0) -> 0
+0cqrt_measure_i1(h1) -> 0
+0cqrt_measure_i1(h2) -> 0
+0cqrt_measure_i1(h3) -> 0
+0
