@@ -501,7 +501,10 @@ def drop_zero_xorc(evs):
 def compare_bytes_after_rule3(ta, tb):
     """The STRICT relation the dm7f.81 twin gates use (`--zero-xorc-then-bytes`,
     R11 B-F1): RULE 3 only, then the remaining lines must be byte-identical — no
-    reordering, no renaming, no rule-1/2 contraction."""
+    reordering, no renaming, no rule-1/2 contraction. "Byte-identical" is over the
+    PARSED lines: each line is compared after `strip()` (leading/trailing
+    whitespace ignored) and blank lines are dropped (`parse`); every other byte,
+    the line order and the handle names must match exactly."""
     A = [e['line'] for e in drop_zero_xorc(parse(ta.splitlines()))]
     B = [e['line'] for e in drop_zero_xorc(parse(tb.splitlines()))]
     if not A or not B:
@@ -874,6 +877,19 @@ CONTROLS = [
 ] + [(f"r1B-{nm}", a, b, 'DIFF') for nm, a, b in _WRITE_SLOT_ROWS]
 
 
+# STRICT-MODE controls (--zero-xorc-then-bytes, R11 B-F1), counted in main().
+STRICT_CONTROLS = [
+    ("strict-zero-xorc", _Z_S, _Z_T, 'IDENTICAL'),
+    ("strict-zero-bracket", _ZB_S, _Z_T, 'IDENTICAL'),
+    ("strict-nonzero", _Z_S.replace('h1, 0)', 'h1, 4)'), _Z_T, 'DIFF'),
+    ("strict-rename", _Z_T, _Z_T.replace('h1', 'h7'), 'DIFF'),
+    ("strict-reorder", _t('cqrt_alloc_i1(0) -> h0', 'cqrt_alloc_i1(0) -> h1',
+                          'cqrt_x(h0)', 'cqrt_x(h1)'),
+     _t('cqrt_alloc_i1(0) -> h0', 'cqrt_alloc_i1(0) -> h1',
+        'cqrt_x(h1)', 'cqrt_x(h0)'), 'DIFF'),
+]
+
+
 def selftest(verbose=True):
     ok = True
     for name, s, t, want in CONTROLS:
@@ -888,15 +904,7 @@ def selftest(verbose=True):
                   f"(want {want}; contracted {ka}/{kb})")
     # STRICT MODE (--zero-xorc-then-bytes, R11 B-F1): rule 3, then bytes. A zero
     # write vanishes; a REORDER or a RENAME that the full relation accepts does not.
-    for name, s, t2, want in (
-            ("strict-zero-xorc", _Z_S, _Z_T, 'IDENTICAL'),
-            ("strict-zero-bracket", _ZB_S, _Z_T, 'IDENTICAL'),
-            ("strict-nonzero", _Z_S.replace('h1, 0)', 'h1, 4)'), _Z_T, 'DIFF'),
-            ("strict-rename", _Z_T, _Z_T.replace('h1', 'h7'), 'DIFF'),
-            ("strict-reorder", _t('cqrt_alloc_i1(0) -> h0', 'cqrt_alloc_i1(0) -> h1',
-                                  'cqrt_x(h0)', 'cqrt_x(h1)'),
-             _t('cqrt_alloc_i1(0) -> h0', 'cqrt_alloc_i1(0) -> h1',
-                'cqrt_x(h1)', 'cqrt_x(h0)'), 'DIFF')):
+    for name, s, t2, want in STRICT_CONTROLS:
         got = compare_bytes_after_rule3(s, t2)
         good = got == want
         ok &= good
@@ -920,7 +928,8 @@ def main(argv):
     if not selftest(verbose):
         print("!! CONTROLS FAILED -- the instrument is measuring itself, not the traces.")
         return 2
-    print(f"  controls: {len(CONTROLS) + 1}/{len(CONTROLS) + 1} as pinned\n")
+    nctl = len(CONTROLS) + len(STRICT_CONTROLS) + 1   # + the unclassified refusal
+    print(f"  controls: {nctl}/{nctl} as pinned\n")
     if '--selftest' in argv:
         return 0
     if len(args) != 2:
