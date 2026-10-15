@@ -1,16 +1,22 @@
-; railwindow_coincide_alias_pending.ll — DECLINE (bd `test_C_libtooling-01po.19` S1-S3).
+; railwindow_coincide_alias_pending.ll — ACCEPT (bd `test_C_libtooling-01po.19` S5 + S7; the
+; file name is history: it declined pending S5/S7 until both landed).
 ;
-; ADVERSARIAL alias probe: `q[i] ^= q[2-i]` names one cell twice at i == 1; SCEV cannot prove the two addresses distinct, so the array needs S7 (owner Q2 (a): versioning on i != j).
+; ADVERSARIAL alias probe: `q[i] ^= q[2-i]` names one cell twice at i == 1. SCEV
+; cannot prove the two addresses distinct, so S7 (owner Q2 (a)) VERSIONS the
+; window on the classical test of the two cell offsets (`%cq.win.ne`, branch
+; tagged `!cq.railwindow.version`):
+;   * DISTINCT copy (i != 2-i): S5's in-place CNOT, control cell[2-i], target
+;     cell[i] (the target keeps its handle);
+;   * ALIASED copy (i == 1): both classes name one cell, S3 promotes ONE name,
+;     `x ^= x` reads `icmp ne v, v`, InstSimplify folds it to the classical
+;     `false`, and the store is S4's REBIND `cqrt_alloc_i1(0)` (Q3; the old rail
+;     abandoned, never reset or measured).
 ;
-; Before S1-S3 this array declined in the one-store rail bank. Now the rolled
-; window model (RailWindow.h; owner rulings `owner-ruling-01po19-rolled-not-
-; unrolled-2026-10-15`, `owner-ruling-01po19-rolled-design-2026-10-15`) claims it
-; (S1), places its quantization point (S2) and promotes its windows (S3), and then
-; declines with exactly the steps it still needs. The WIN prefix pins the claim,
-; the quantization point and every promoted cell class.
-; (bd 01po.19 S5, 2026-10-15: S5 removed from the list, as its trigger says.)
-; RETIREMENT TRIGGER: each of S4-S7 that lands removes its name from the CHECK
-; line; when none is left this file becomes an ACCEPT with an analytic trace check.
+; ANALYTIC TRACE (h0, h1, h2 = the cells' rails after Ry(.4), Ry(.5), Ry(.6)):
+;   i = 0 (distinct): CNOT(h2 -> h0)        q[0] = x0 ^ x2
+;   i = 1 (aliased) : q[1] := alloc(0)      q[1] = 0, h1 abandoned (C: x ^= x)
+;   i = 2 (distinct): CNOT(h0 -> h2)        q[2] = x2 ^ (x0 ^ x2) = x0
+; which is exactly C's sequential semantics of the three updates.
 ;
 ; SOURCE (clang -O1, verbatim below):
 ;   /* adversarial: two indices that coincide on one trip (i == 2-i at i == 1):
@@ -24,15 +30,26 @@
 ;     return r;
 ;   }
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s --implicit-check-not='cq rail bank' --implicit-check-not='tainted value stored to memory'
-; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.ll
+; RUN: %filecheck %s --input-file=%t.ll
+; RUN: env CQ_RAILWINDOW_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
 ; RUN:   | %filecheck %s --check-prefix=WIN
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S7 index alias versioning
 ; WIN: CQ_RAILWINDOW_DBG: @main claims %1 cells=i8 loads=4 stores=2 Q=  br label %2
-; WIN: CQ_RAILWINDOW_DBG: region %13 not promoted: alias unproven
-; WIN: CQ_RAILWINDOW_DBG: alias unproven: {(2 + %.rails)<nuw>,+,-1}<nw><%13> vs {%.rails,+,1}<nw><%13>
-; WIN: CQ_RAILWINDOW_DBG: promoted 0 cell class(es)
+; WIN: CQ_RAILWINDOW_DBG: version region %13 on {(2 + %.rails)<nuw>,+,-1}<nw><%13> != {%.rails,+,1}<nw><%13>
+; WIN-NOT: CQ_RAILWINDOW_DBG: version region
+;
+; CHECK-LABEL: define i32 @main(
+; CHECK: [[SRC:%[a-z0-9.]+]] = getelementptr i32, ptr %.rails, i64 %14
+; CHECK: br i1 %cq.win.ne, label %[[D:[^,]+]], label %[[AL:[^,]+]], !cq.railwindow.version
+; CHECK: {{^}}[[D]]:
+; CHECK-NEXT: [[C:%[a-z0-9.]+]] = load i32, ptr [[SRC]],
+; CHECK-NEXT: [[T:%[a-z0-9.]+]] = load i32, ptr
+; CHECK-NEXT: call void @cqrt_cnot(i32 [[C]], i32 [[T]])
+; CHECK-NEXT: store i32 [[T]], ptr
+; CHECK: {{^}}[[AL]]:
+; CHECK-NEXT: [[Z:%[a-z0-9.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: store i32 [[Z]], ptr [[SRC]],
+; CHECK-NEXT: br label
 
 ; ModuleID = 'coincide.c'
 source_filename = "coincide.c"

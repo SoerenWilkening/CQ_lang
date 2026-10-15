@@ -47,9 +47,11 @@ constexpr char kMsgWindowStale[] =
     "cq rail window: quantum-array cell rail read past a non-diagonal gate "
     "on that array";
 
+}  // namespace
+
 // S1, structural half: collect the leaf accesses, or refuse the array.
-bool collectAccesses(AllocaInst *AI, const TaintSet &taint,
-                     ScalarEvolution &SE, RailWindowAccesses &Acc) {
+bool railWindowCollectAccesses(AllocaInst *AI, const TaintSet &taint,
+                               ScalarEvolution &SE, RailWindowAccesses &Acc) {
   Acc = RailWindowAccesses();
   Acc.AI = AI;
   if (auto *AT = dyn_cast<ArrayType>(AI->getAllocatedType());
@@ -157,12 +159,14 @@ bool collectAccesses(AllocaInst *AI, const TaintSet &taint,
   return true;
 }
 
+namespace {
+
 // S1: the claim.
 bool claims(AllocaInst *AI, const TaintSet &taint, DominatorTree &DT,
             LoopInfo &LI, ScalarEvolution &SE, RailWindowAccesses &Acc) {
   if (railBankInstReaches(AI->getParent()->getTerminator(), AI))
     return false;  // allocated once per cycle trip: not one object.
-  if (!collectAccesses(AI, taint, SE, Acc))
+  if (!railWindowCollectAccesses(AI, taint, SE, Acc))
     return false;
   // The storage must be live at every access (the rail-bank `kMsgBankLifetime`
   // question, asked here because a refused claim leaves the array to that
@@ -300,33 +304,15 @@ bool lowerRailWindowArrays(Module &M, const TaintSet &taint, bool &Changed) {
       if (!undoRailWindowHeaderPhis(F, W))  // design Q6 (a), S5
         return true;
       Changed = true;
-      // S3 on the handle array, then re-derive everything from the new IR.
-      // `collectAccesses` failing on `W` is unreachable (the redirect emits
-      // only its vocabulary); if it ever fires, claim every pending step.
+      // S7 versioning, S3 on the handle array, then re-derive everything from
+      // the new IR (RailWindowVersion.cpp).
       unsigned N = 0;
-      std::string Msg = railWindowAllNeeds();
+      std::string Msg;
       Instruction *Stale = nullptr, *Copy = nullptr;
       RailWindowAccesses AccW;
-      for (int Round = 0; Round < 2; ++Round) {
-        DominatorTree DT2(F);
-        LoopInfo LI2(DT2);
-        AssumptionCache AC2(F);
-        ScalarEvolution SE2(F, TLI, AC2, DT2, LI2);
-        if (!collectAccesses(W, taint, SE2, AccW))
-          break;
-        if (Round == 0) {
-          N = promoteRailWindows(F, AccW);
-          continue;
-        }
-        Msg = railWindowNeeds(F, AccW, taint, LI2, SE2);
-        SmallPtrSet<Value *, 32> QD;
-        railWindowQuantum(F, AccW, taint, QD);
-        if (Msg.empty()) {
-          Copy = railWindowCellCopy(F, AccW);
-          Stale = railWindowStaleUse(F, AccW, QD, SE2,
-                                     computeWindowRegions(F, LI2));
-        }
-      }
+      if (!railWindowVersionPromoteCheck(F, W, taint, N, Msg, Stale, Copy,
+                                         AccW))
+        return true;  // diagnosed (loud, nothing lowered).
       if (dbg()) {
         errs() << "CQ_RAILWINDOW_DBG: promoted " << N << " cell class(es)\n";
         errs() << "=== CQ_RAILWINDOW_DBG: @" << F.getName()

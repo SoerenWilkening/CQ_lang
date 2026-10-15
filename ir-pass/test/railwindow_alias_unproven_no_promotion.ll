@@ -1,13 +1,19 @@
-; DECLINE + ADVERSARIAL (bd `test_C_libtooling-01po.19`, review round 1 F1).
+; DECLINE pending S5 + ADVERSARIAL (bd `test_C_libtooling-01po.19`, review round 1 F1; S7 built).
 ;
 ; S3 must preserve memory semantics. The region of loop H writes q[i] (theta), then
 ; on one path stores 5 to q[j] for a RUNTIME j and reads q[i] again: if j == i the
 ; reread is 5, not the rotated value. Promoting q[i] there would forward the theta
-; result across that store (review probe h2_alias_exit.ll). The pairwise distinctness
-; question is now asked per region INSIDE the promoter, and a region with an
-; unproven pair is not promoted at all (S7's versioning will split it).
-; Pinned: the region is reported not promoted, no `promote cell` line exists, and
-; the decline names S7.
+; result across that store (review probe h2_alias_exit.ll). Before S7 the region
+; was left unpromoted (the file's name is that history). S7 now VERSIONS it on
+; the two cell offsets (the stretch runs to the region's exits, the latch's S
+; sub-loop entry re-simplified): each copy is a window of its own and is
+; promoted there, where the pair is proven by the guard.
+;   * DISTINCT copy (j != i): q[j] := 5, q[i] := theta ^ 1 (S5 sub-gap bd 01po.19.7, pending).
+;   * ALIASED copy (j == i): q[i] := theta, then `store 5` and the reread name
+;     ONE cell, so the reread is 5 and `5 ^ 1` folds to the CLASSICAL `store 4`
+;     (a rebind): exactly C's memory semantics.
+; Pinned: one versioning, a promotion in each copy, and the folded `store i32 4`
+; on the aliased path. The decline now names S5 only.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s --implicit-check-not='cq rail bank'
@@ -15,13 +21,17 @@
 ; RUN:   | %filecheck %s --check-prefix=WIN
 ; (bd 01po.19 S5 review C-F5: the S5 sub-gap is named — `q[i] = l2 ^ 1` is a
 ; classical-operand update of the cell.)
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S5 classical-operand or subtrahend cell update (bd 01po.19.7), S7 index alias versioning{{$}}
+; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S5 classical-operand or subtrahend cell update (bd 01po.19.7){{$}}
 ; WIN: CQ_RAILWINDOW_DBG: @main claims %q cells=i32 loads=4 stores=3 Q=  br label %H
-; WIN: CQ_RAILWINDOW_DBG: region %H not promoted: alias unproven
-; WIN: CQ_RAILWINDOW_DBG: alias unproven: {%q.rails,+,4}<nw><%H> vs ((4 * %j) + %q.rails)
-; WIN: CQ_RAILWINDOW_DBG: promoted 0 cell class(es)
-; WIN-NOT: promote cell
-; WIN-NOT: promote cell
+; WIN-NEXT: CQ_RAILWINDOW_DBG: version region %H on {%q.rails,+,4}<nw><%H> != ((4 * %j) + %q.rails)
+; WIN-NEXT: CQ_RAILWINDOW_DBG: promote cell {%q.rails,+,4}<nw><%H> in region %H.split loads=2 stores=2 exits=2
+; WIN-NEXT: CQ_RAILWINDOW_DBG: promote cell {%q.rails,+,4}<nw><%H> in region %H.split.cq.alias loads=2 stores=3 exits=2
+; WIN-NEXT: CQ_RAILWINDOW_DBG: promoted 2 cell class(es)
+; WIN: {{^}}B:
+; WIN-NEXT: store i32 5, ptr
+; WIN: {{^}}B.cq.alias:
+; WIN-NEXT: store i32 4, ptr %cq.rail.addr,
+; WIN-NEXT: br label
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
