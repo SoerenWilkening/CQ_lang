@@ -64,20 +64,15 @@ entry:
 ; CHECK-NEXT:  %[[FLAG:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_slt_i32_hl(i32 %b, i32 5)
 ; CHECK-NEXT:  %[[SEL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[FLAG]], i32 %b, i32 %[[SEL]])
-; CHECK-NEXT:  call void @cqrt_x(i32 %[[FLAG]])
-; CHECK-NEXT:  %[[ZERO:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[FLAG]], i32 %[[ZERO]], i32 %[[SEL]])
+; (bd dm7f.81: the FALSE arm is the constant 0: no write and no ¬flag bracket, forward or mirrored; its former %ZERO rail and free are gone.)
 ; Bennett copy-out (the flag strip was elided: no `cqrt_x` closes the bracket here).
 ; CHECK-NEXT:  %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT:  call void @cqrt_copy_i32(i32 %[[SEL]], i32 %[[OUT]])
 ; The exact mirror: copies replayed (self-inverse) inside the bracket, then the
 ; compare `_unc` zeroes the flag.
-; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[FLAG]], i32 %[[ZERO]], i32 %[[SEL]])
-; CHECK-NEXT:  call void @cqrt_x(i32 %[[FLAG]])
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[FLAG]], i32 %b, i32 %[[SEL]])
 ; CHECK-NEXT:  call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[FLAG]], i32 %b, i32 5)
 ; CHECK-NEXT:  call void @cqrt_free(i32 %[[FLAG]])
 ; CHECK-NEXT:  call void @cqrt_free(i32 %[[SEL]])
-; CHECK-NEXT:  call void @cqrt_free(i32 %[[ZERO]])
 ; CHECK-NEXT:  ret i32 %[[OUT]]
 ; CHECK-NEXT:  }

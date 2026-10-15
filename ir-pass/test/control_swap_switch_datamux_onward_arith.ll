@@ -45,7 +45,7 @@ merge:
 ; ancestor copy of it survives the region.
 ;
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 3)
-; CHECK:     call void @cqrt_copy_i32_controlled(
+; CHECK:     call void @cqrt_xorc_i32_controlled(
 ; CHECK:     call void @cqrt_addc_i32(i32 %[[OUT]], i32 100)
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])
 

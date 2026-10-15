@@ -1682,6 +1682,13 @@ void collectAncestorRecords(Value *W, RecordSet &RS,
     // (c) COPY-DESTINATION edge, backward.
     for (User *U : V->users()) {
       auto *CI = dyn_cast<CallInst>(U);
+      // bd dm7f.81: the classical-arm write `cqrt_xorc_<W>_controlled(ctrl, dst,
+      // imm)` — its only quantum ancestor of dst is the CONTROL (imm is a literal).
+      if (CI && isControlledXorc(CI)) {
+        if (CI->getArgOperand(1) == V)
+          enqueue(CI->getArgOperand(0));
+        continue;
+      }
       if (!CI || !isCopyGate(CI))
         continue;
       unsigned N = CI->arg_size();
@@ -1981,6 +1988,14 @@ bool reachesObservingSink(Instruction *U, Value *R, const TaintSet &taint,
       if (CI->getArgOperand(NA - 2) == In ||
           (NA == 3 && CI->getArgOperand(0) == In))
         pushValue(CI->getArgOperand(NA - 1));  // the DESTINATION rail.
+      continue;
+    }
+    // bd dm7f.81: a merge's classical-arm write `cqrt_xorc_<W>_controlled(ctrl,
+    // dst, imm)` records its CONTROL into dst exactly as a controlled copy does
+    // (it is that copy with the source rail replaced by a literal).
+    if (isControlledXorc(CI)) {
+      if (CI->getArgOperand(0) == In)
+        pushValue(CI->getArgOperand(1));  // the DESTINATION rail.
       continue;
     }
     unsigned ArrPos = 0;

@@ -31,8 +31,7 @@ entry:
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[Q]], i32 %[[OUT]])
 ; CHECK:     call void @cqrt_x(i32 %[[G]])
-; CHECK:     %[[XH:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %x)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[XH]], i32 %[[OUT]])
+; CHECK:     call void @cqrt_xorc_i32_controlled(i32 %[[G]], i32 %[[OUT]], i32 %x)
 ; CHECK:     call void @cqrt_x(i32 %[[G]])
 ; strip: the self-inverse toffoli, ancilla free, then leaf strips (f2 first):
 ; CHECK:     call void @cqrt_toffoli(i32 %[[F1]], i32 %[[F2]], i32 %[[G]])

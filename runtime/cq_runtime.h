@@ -452,6 +452,38 @@ void cqrt_xorc_i32(int32_t h, int32_t imm);
 void cqrt_xorc_i64(int32_t h, int64_t imm);
 
 /* -----------------------------------------------------------------
+ * Controlled xor of a classical immediate (bd test_C_libtooling-dm7f.81;
+ * owner ruling ruling-dm7f81-constant-arm-xorc-imm-fp-and-runtime-2026-10-15):
+ *     cqrt_xorc_<W>_controlled(ctrl, h, imm):  h := h ^ imm  iff ctrl
+ * i.e. a CNOT from `ctrl` onto every bit of `h` set in `imm` (Bennett.jl's
+ * constant-operand gates, src/lowering/arith.jl: a constant contributes
+ * NOTs on its set bits, controlled here by the merge flag). The merge
+ * emitters' UNTAINTED arm write `out ^= ctrl ? v : 0`: `v` is a classical
+ * literal (or classical runtime value) passed as the operand, NEVER a
+ * rail — the R13 width-only rule for a classical operand. A zero `imm` is
+ * the identity and the emitters skip it. `ctrl` is arg 0 (the control-
+ * flag-as-arg-0 invariant), `h` arg 1 (the written register), `imm` arg 2
+ * (classical, not a handle). Self-inverse: the adjoint is re-emission
+ * of the same call (the cqrt_x class), so there is NO `_inv` twin. The
+ * fp forms XOR the immediate's IEEE BIT PATTERN (f80: the 80-bit x87
+ * pattern), the same bits-are-bits label story as cqrt_copy_f<W>_controlled
+ * (+0.0 is the all-zero pattern; -0.0 is not). Hand-maintained core, next
+ * to cqrt_copy_<W>_controlled: it is a void in-place gate, not a fresh-rail
+ * data template.
+ * Trace: "cqrt_xorc_<W>_controlled(h<ctrl>, h<h>, <imm>)", the integer imm
+ * as a decimal literal, the fp imm in the cqrt_alloc_f<W> `%a` format.
+ * ----------------------------------------------------------------- */
+void cqrt_xorc_i1_controlled (int32_t ctrl, int32_t h, bool     imm);
+void cqrt_xorc_i8_controlled (int32_t ctrl, int32_t h, int8_t   imm);
+void cqrt_xorc_i16_controlled(int32_t ctrl, int32_t h, int16_t  imm);
+void cqrt_xorc_i32_controlled(int32_t ctrl, int32_t h, int32_t  imm);
+void cqrt_xorc_i64_controlled(int32_t ctrl, int32_t h, int64_t  imm);
+void cqrt_xorc_f16_controlled(int32_t ctrl, int32_t h, _Float16 imm);
+void cqrt_xorc_f32_controlled(int32_t ctrl, int32_t h, float    imm);
+void cqrt_xorc_f64_controlled(int32_t ctrl, int32_t h, double   imm);
+void cqrt_xorc_f80_controlled(int32_t ctrl, int32_t h, long double imm);
+
+/* -----------------------------------------------------------------
  * In-place reversible arithmetic — QUANTUM source operand (bd
  * test_C_libtooling-r2j3.33 / dm7f.51 step 1; owner ruling
  * owner-ruling-dm7f51-inplace-qq-2026-10-14 Q3). The register-semantics

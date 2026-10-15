@@ -4,8 +4,7 @@ cq_template_icmp_sgt_i32_hl(h0, 5) -> h1
 cqrt_alloc_i32(0) -> h2
 cqrt_copy_i32_controlled(h1, h0, h2)
 cqrt_x(h1)
-cqrt_alloc_i32(9) -> h3
-cqrt_copy_i32_controlled(h1, h3, h2)
+cqrt_xorc_i32_controlled(h1, h2, 9)
 cqrt_x(h1)
 cq_template_icmp_sgt_i32_hl_unc(h1, h0, 5)
 cqrt_free(h1)

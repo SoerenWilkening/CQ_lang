@@ -55,7 +55,7 @@
 
 ; The 6.5 classical-call arm lowers first (round 1), minting the `%out` rail.
 ; CHECK: %[[OUT:.*]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK: call void @cqrt_copy_i32_controlled(
+; CHECK: call void @cqrt_xorc_i32_controlled(
 ; CHECK: call void @cq_template_icmp_sgt_i32_hl_unc(
 
 ; THE ROLLED BODY, in full and in order: mint the bit rail, mint the flag, the

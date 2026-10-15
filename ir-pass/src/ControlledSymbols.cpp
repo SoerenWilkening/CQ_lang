@@ -10,6 +10,7 @@
 #include "TemplateName.h"
 
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Type.h"
 
@@ -145,6 +146,42 @@ ControlledSymbols::copyControlledFpFn(StringRef abiWidth) const {
   return M.getOrInsertFunction(
       ("cqrt_copy_" + abiWidth + "_controlled").str(),
       FunctionType::get(Type::getVoidTy(Ctx), {I32, I32, I32}, false));
+}
+
+FunctionCallee ControlledSymbols::xorcControlledFn(StringRef abiWidth) const {
+  // See the header (bd dm7f.81). The fence is copyControlledFn's, verbatim.
+  LLVMContext &Ctx = M.getContext();
+  Type *Ty = Wd.llvmWidthType(abiWidth);
+  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+    return FunctionCallee();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  return M.getOrInsertFunction(
+      ("cqrt_xorc_" + abiWidth + "_controlled").str(),
+      FunctionType::get(Type::getVoidTy(Ctx), {I32, I32, Ty}, false));
+}
+
+FunctionCallee ControlledSymbols::xorcControlledFpFn(StringRef abiWidth) const {
+  // See the header (bd dm7f.81). The fence is copyControlledFpFn's, verbatim;
+  // the immediate carries the fp type (its bit pattern is what is XORed).
+  LLVMContext &Ctx = M.getContext();
+  if (!abiWidthHasControlledFpCopy(abiWidth))
+    return FunctionCallee();
+  Type *Ty = Wd.llvmWidthType(abiWidth);
+  if (!Ty || !Ty->isFloatingPointTy())
+    return FunctionCallee();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  return M.getOrInsertFunction(
+      ("cqrt_xorc_" + abiWidth + "_controlled").str(),
+      FunctionType::get(Type::getVoidTy(Ctx), {I32, I32, Ty}, false));
+}
+
+bool isControlledXorc(const CallInst *C) {
+  const Function *F = C ? C->getCalledFunction() : nullptr;
+  if (!F)
+    return false;
+  StringRef N = F->getName();
+  return N.starts_with("cqrt_xorc_") && N.ends_with("_controlled") &&
+         C->getType()->isVoidTy() && C->arg_size() == 3;
 }
 
 FunctionCallee ControlledSymbols::tapeWriteControlledFn(StringRef abiWidth) const {

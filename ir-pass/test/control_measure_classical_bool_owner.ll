@@ -64,11 +64,9 @@ define i32 @main() {
 ; CHECK-NEXT: %[[BF:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H]], i32 %[[BF]])
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: %[[A:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 2)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[A]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[BF]], i32 %[[OUT]], i32 2)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
-; CHECK-NEXT: %[[B:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 5)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[B]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[BF]], i32 %[[OUT]], i32 5)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H]], i32 %[[BF]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[BF]])
@@ -87,7 +85,8 @@ define i32 @main() {
 ; materialized select operands (2 and 5). A SIXTH would be a rail minted for the
 ; CLASSICAL `i1 false` — the f64/angle miscompile family, and the single worst
 ; outcome this change could have:
-; ACNT-COUNT-5: call i32 @cqrt_alloc_
+; (bd dm7f.81: a constant or classical merge arm is a literal operand of cqrt_xorc_<W>_controlled, no longer an alloc'd rail + cqrt_copy_<W>_controlled; a zero arm emits no gate and no bracket. Counts below re-measured.)
+; ACNT-COUNT-3: call i32 @cqrt_alloc_
 ; ACNT-NOT:     call i32 @cqrt_alloc_
 ;
 ; EXACTLY TWO measurement gates — b0 and a. A THIRD is the classical measure

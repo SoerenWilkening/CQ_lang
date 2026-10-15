@@ -131,10 +131,10 @@ attributes #3 = { nounwind }
 ; is minted from THAT register, the kickback fires on the flag, the flag is
 ; stripped and freed, and only THEN does the S-dagger run.
 ; CHECK:      call void @cqrt_ry_i32(i32 %out, double 2.500000e-01)
-; CHECK-NEXT: %h_cmp2 = call i32 @cq_template_icmp_sgt_i32_hl(i32 %out, i32 1)
-; CHECK-NEXT: call void @cqrt_rz_i1(i32 %h_cmp2, double 3.000000e-01), !cq.branchphase
-; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp2, i32 %out, i32 1)
-; CHECK-NEXT: call void @cqrt_free(i32 %h_cmp2)
+; CHECK-NEXT: %[[HC2:h_cmp[0-9]*]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %out, i32 1)
+; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[HC2]], double 3.000000e-01), !cq.branchphase
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[HC2]], i32 %out, i32 1)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[HC2]])
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %out, double -2.500000e-01)
 ; CHECK-NEXT: %m = call i32 @cqrt_measure_i32(i32 %out)
 

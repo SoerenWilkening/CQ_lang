@@ -99,7 +99,8 @@ attributes #0 = { nounwind willreturn memory(none) }
 ; classical call result. A FOURTH means a rail minted for something classical
 ; (without this an injected `cqrt_alloc_i32` / `cqrt_alloc_f64` was MISSED by 0 of
 ; 5 prefixes — injection matrix, 2026-09-13):
-; ACNT-COUNT-3: call i32 @cqrt_alloc_
+; (bd dm7f.81: a constant or classical merge arm is a literal operand of cqrt_xorc_<W>_controlled, no longer an alloc'd rail + cqrt_copy_<W>_controlled; a zero arm emits no gate and no bracket. Counts below re-measured.)
+; ACNT-COUNT-2: call i32 @cqrt_alloc_
 ; ACNT-NOT:     call i32 @cqrt_alloc_
 
 ; XCNT-COUNT-2: call void @cqrt_x(

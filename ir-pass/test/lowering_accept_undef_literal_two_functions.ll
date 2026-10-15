@@ -35,14 +35,19 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ;
-; One undef-seeded rail per function, and neither is freed:
+; bd dm7f.81 MOVED THE SUBJECT: @cell_a/@cell_b's undef select arm is refined to
+; zero and emits no gate (MergeArmWrite.cpp `armWriteIsNoop`), so the two cells
+; now pin that refinement, and the per-function count is carried by @add_a/@add_b:
+; one M-C `cqrt_addc_i32(h, undef)` slot each, in two different functions.
+; Module-wide counting would see two slots and decline.
 ; CHECK-LABEL: define double @cell_a
-; CHECK: %selop = call i32 @cqrt_alloc_f64(double undef)
+; CHECK-NOT: undef
 ; CHECK-LABEL: define double @cell_b
-; CHECK: %selop = call i32 @cqrt_alloc_f64(double undef)
-;
-; RUN: %filecheck %s --check-prefix=NOSELOPFREE < %t.cqd0.ll
-; NOSELOPFREE-NOT: cqrt_free(i32 %selop)
+; CHECK-NOT: undef
+; CHECK-LABEL: define i32 @add_a
+; CHECK: call void @cqrt_addc_i32(i32 %{{[a-z0-9_.]+}}, i32 undef)
+; CHECK-LABEL: define i32 @add_b
+; CHECK: call void @cqrt_addc_i32(i32 %{{[a-z0-9_.]+}}, i32 undef)
 
 target datalayout = "e-m:o-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx"
@@ -64,4 +69,21 @@ define double @cell_b(double %u1) {
   %a = select i1 %c, double undef, double %q
   %m = call double @cq_measure_f64(double %a)
   ret double %m
+}
+
+declare i32 @cq_theta_si32(i32, double)
+declare i32 @cq_measure_si32(i32)
+
+define i32 @add_a(i32 %x) {
+  %q = call i32 @cq_theta_si32(i32 %x, double 5.000000e-01)
+  %d = add i32 %q, undef
+  %m = call i32 @cq_measure_si32(i32 %d)
+  ret i32 %m
+}
+
+define i32 @add_b(i32 %x) {
+  %q = call i32 @cq_theta_si32(i32 %x, double 2.500000e-01)
+  %d = add i32 %q, undef
+  %m = call i32 @cq_measure_si32(i32 %d)
+  ret i32 %m
 }

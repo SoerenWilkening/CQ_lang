@@ -54,8 +54,7 @@ attributes #0 = { nounwind willreturn memory(none) }
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[Q]], i32 %[[OUT]])
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     %[[RH:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[R]])
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[RH]], i32 %[[OUT]])
+; CHECK:     call void @cqrt_xorc_i32_controlled(i32 %[[F]], i32 %[[OUT]], i32 %[[R]])
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
 ; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
@@ -64,10 +63,10 @@ attributes #0 = { nounwind willreturn memory(none) }
 ; CHECK-NOT: phi i32
 ; CHECK-NOT: @__cq_q_
 
-; the ¬flag bracket scope (the FALSE = call-result copy sits inside it):
+; the ¬flag bracket scope (the FALSE = call-result write, a controlled xor since bd dm7f.81, sits inside it):
 ; ORD: call void @cqrt_copy_i32_controlled(
 ; ORD: call void @cqrt_x(
-; ORD: call void @cqrt_copy_i32_controlled(
+; ORD: call void @cqrt_xorc_i32_controlled(
 ; ORD: call void @cqrt_x(
 
 ; ACCEPTS — no decline:

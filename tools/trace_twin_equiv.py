@@ -172,6 +172,8 @@ def effects(ev):
         W(0)
     elif s.startswith('cqrt_copy_') and s.endswith('_controlled') and len(a) == 3:
         R(0); R(1); W(2)
+    elif re.match(r'^cqrt_xorc_\w+_controlled$', s) and len(a) == 3:
+        R(0); W(1)  # bd dm7f.81: (ctrl, dst, classical imm)
     elif s.startswith('cqrt_copy_') and len(a) == 2:
         R(0); W(1)
     elif s == 'cqrt_cnot' and len(a) == 2:
@@ -638,7 +640,8 @@ for _nm, _g in [('A22-cnot-target', 'cqrt_cnot(h0, h1)'),
                 ('A25-ccopy-dst', 'cqrt_copy_i32_controlled(h0, h2, h1)'),
                 ('A26-cry-target', 'cqrt_ry_i32_controlled(h0, h1, 0x1p-1)'),
                 ('A27-addc', 'cqrt_addc_i32(h1, 4)'),
-                ('A28-xorc', 'cqrt_xorc_i32(h1, 4)')]:
+                ('A28-xorc', 'cqrt_xorc_i32(h1, 4)'),
+                ('A29-cxorc-dst', 'cqrt_xorc_i32_controlled(h0, h1, 4)')]:
     _rd = 'cq_template_add_i32_hl(h1, 1) -> h9'
     _WRITE_SLOT_ROWS.append((_nm, _t(*_WS_PRE, _g, _rd, 'cqrt_measure_i32(h9) -> 0'),
                              _t(*_WS_PRE, _rd, _g, 'cqrt_measure_i32(h9) -> 0')))

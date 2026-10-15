@@ -77,7 +77,14 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
 ; CHECK-NOT: error:
-; CHECK: warning: {{.*}}in function main i32 (i32, ptr): cq rotation lowering: non-diagonal gate over a live derived record
+; bd dm7f.81 RE-DERIVED (the retirement trigger above fired: the warning is gone).
+; The warning counted, as ancestor records of the rotated %out, the classical arm
+; rails S1 = cqrt_alloc_i32(E) and S0 = cqrt_alloc_i32(0) that the copy merge used to
+; load and never free. They held fixed basis values, entangled with nothing: a false
+; positive. Arms are literals now, so at the Ry on OUT the live rails are Q, Q2, OUT;
+; T is uncomputed and freed before it (pinned below) and the flag C is freed: no record
+; of OUT's lineage is standing. Stage-2b and the stream below are otherwise unchanged.
+; CHECK-NOT: live derived record
 ; CHECK-NOT: error:
 ; CHECK-LABEL: define i32 @main(
 ; CHECK:      [[Q:%[a-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 {{%[a-z0-9_.]+}})
@@ -85,12 +92,7 @@
 ; CHECK-NEXT: [[E:%[a-z0-9_.]+]] = tail call i32 @ext_f(i32 noundef 7)
 ; CHECK-NEXT: [[C:%[a-z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 [[Q]], i32 5)
 ; CHECK-NEXT: [[OUT:%[a-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: [[S1:%[a-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 [[E]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 [[C]], i32 [[S1]], i32 [[OUT]])
-; CHECK-NEXT: call void @cqrt_x(i32 [[C]])
-; CHECK-NEXT: [[S0:%[a-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 [[C]], i32 [[S0]], i32 [[OUT]])
-; CHECK-NEXT: call void @cqrt_x(i32 [[C]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 [[C]], i32 [[OUT]], i32 [[E]])
 ; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 [[C]], i32 [[Q]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 [[C]])
 ; CHECK-NEXT: [[T:%[a-z0-9_.]+]] = tail call i32 @__cq_q_h_11(i32 noundef [[Q]], i32 noundef [[OUT]])

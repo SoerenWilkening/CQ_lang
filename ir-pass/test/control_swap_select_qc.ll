@@ -41,8 +41,7 @@ entry:
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[Q]], i32 %[[OUT]])
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     %[[XH:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %x)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[XH]], i32 %[[OUT]])
+; CHECK:     call void @cqrt_xorc_i32_controlled(i32 %[[F]], i32 %[[OUT]], i32 %x)
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
 ; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
@@ -59,7 +58,7 @@ entry:
 ; structural CHECKs above are order-blind. Pin copy -> x -> copy -> x:
 ; ORD: call void @cqrt_copy_i32_controlled(
 ; ORD: call void @cqrt_x(
-; ORD: call void @cqrt_copy_i32_controlled(
+; ORD: call void @cqrt_xorc_i32_controlled(
 ; ORD: call void @cqrt_x(
 
 ; exactly ONE cqrt_free (the flag; uncompute adds none — q/%out/scratch leak):

@@ -81,12 +81,7 @@ attributes #1 = { nounwind willreturn memory(none) }
 ; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call fastcc i32 @f(i32 4) #1
 ; CHECK-NEXT: %[[HCMP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 1)
 ; CHECK-NEXT: %[[OUT1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: %[[SELOP:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[R]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[HCMP]], i32 %[[SELOP]], i32 %[[OUT1]])
-; CHECK-NEXT: call void @cqrt_x(i32 %[[HCMP]])
-; CHECK-NEXT: %[[SELOP2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[HCMP]], i32 %[[SELOP2]], i32 %[[OUT1]])
-; CHECK-NEXT: call void @cqrt_x(i32 %[[HCMP]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[HCMP]], i32 %[[OUT1]], i32 %[[R]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[HCMP]], i32 %[[H]], i32 1)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[HCMP]])
 ; CHECK-NEXT: %[[HCMP3:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[OUT1]], i32 13)
@@ -98,11 +93,9 @@ attributes #1 = { nounwind willreturn memory(none) }
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[HCMP3]])
 ; CHECK-NEXT: %[[HCMP4:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[OUT1]], i32 13)
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: %[[SELOP5:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 2)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[HCMP4]], i32 %[[SELOP5]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[HCMP4]], i32 %[[OUT]], i32 2)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[HCMP4]])
-; CHECK-NEXT: %[[SELOP6:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 5)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[HCMP4]], i32 %[[SELOP6]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[HCMP4]], i32 %[[OUT]], i32 5)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[HCMP4]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[HCMP4]], i32 %[[OUT1]], i32 13)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[HCMP4]])
@@ -128,15 +121,16 @@ attributes #1 = { nounwind willreturn memory(none) }
 ; ---- Whole-file EXACT COUNTS. An injected extra `cqrt_x` / `cqrt_free` /
 ; controlled copy, or a DROPPED `_unc` strip, changes one of these even when
 ; it slots into a position the ordered stream above still matches.
-; XCNT-COUNT-6: call void @cqrt_x(
+; (bd dm7f.81: a constant or classical merge arm is a literal operand of cqrt_xorc_<W>_controlled, no longer an alloc'd rail + cqrt_copy_<W>_controlled; a zero arm emits no gate and no bracket. Counts below re-measured.)
+; XCNT-COUNT-4: call void @cqrt_x(
 ; XCNT-NOT:     call void @cqrt_x(
 ; FCNT-COUNT-3: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
-; ACNT-COUNT-8: call i32 @cqrt_alloc_
+; ACNT-COUNT-4: call i32 @cqrt_alloc_
 ; ACNT-NOT:     call i32 @cqrt_alloc_
 ; UCNT-COUNT-4: _unc(
 ; UCNT-NOT:     _unc(
-; CPCNT-COUNT-5: @cqrt_copy_
+; CPCNT-COUNT-1: @cqrt_copy_
 ; CPCNT-NOT:     @cqrt_copy_
 ; RYCNT-COUNT-2: call void @cqrt_ry_
 ; RYCNT-NOT:     call void @cqrt_ry_

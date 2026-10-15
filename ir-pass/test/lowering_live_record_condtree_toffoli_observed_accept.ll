@@ -94,7 +94,7 @@ entry:
 ; CHECK:      %[[G:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK:      call void @cqrt_toffoli(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[CMP]], i32 %[[G]])
 ; CHECK:      %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:      call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[OUT]])
+; CHECK:      call void @cqrt_xorc_i32_controlled(i32 %[[G]], i32 %[[OUT]], i32 10)
 ; CHECK:      call i32 @cqrt_measure_i32(i32 %[[OUT]])
 ; CHECK-NOT:  cq rotation lowering
 

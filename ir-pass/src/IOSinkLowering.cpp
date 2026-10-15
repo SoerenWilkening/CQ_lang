@@ -23,7 +23,7 @@
 #include "LiteralIntegrity.h"   // slotCarriesUndef (bd c4ow — the co-arg fence)
 #include "OpcodeSupport.h"
 #include "RegionFlatten.h"      // flattenRegion (control-region diamond flattener)
-#include "SelectMergeEmit.h"    // materializeCopySource (4.4 controlled-copy mux)
+#include "MergeArmWrite.h"      // emitArmMux (4.4 controlled-XOR mux, bd dm7f.81)
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
 
@@ -759,9 +759,9 @@ void lowerControlledIOSinks(Module &M, WidthDispatch &wd, TaintSet &taint) {
 
     // 7c'. VALUE data-mux (mixed value+I/O only): the merge's constant `ValuePhi`
     //      is a data-mux gated by the SAME flag — lower it with the 4.4 controlled-
-    //      XOR copy (Rule 14: reuse `materializeCopySource` + `copyControlledFn`,
-    //      the exact `emitSelectRegion` §5a recipe). `out = |0>`; copy the
-    //      flag-set-branch constant on `flag`; copy the ¬flag-branch constant on the
+    //      XOR merge (Rule 14: reuse `emitArmMux`, the exact `emitSelectRegion`
+    //      §5a recipe). `out = |0>`; write the
+    //      flag-set-branch constant on `flag`; write the ¬flag-branch constant on the
     //      `cqrt_x`-bracketed `¬flag`; the φ → out RAUW lands at 7d' (before the
     //      flatten erases the merge). Which constant is the flag-set value depends on
     //      which edge reaches the merge when the flag is SET: for an un-negated arm
@@ -770,8 +770,7 @@ void lowerControlledIOSinks(Module &M, WidthDispatch &wd, TaintSet &taint) {
     //      (no phase) so the copy cannot dephase (Rule 7). `out` is a KEPT control-
     //      owned rail (never freed/reversed — left allocated, Rule 6); its downstream
     //      tainted users (an `add q, out` Q+Q op / the user's measure) see a real
-    //      i32 handle. The materialized constant source rails are left UNTAINTED so
-    //      `uncompute` never selects them (they are classical |c> scratch).
+    //      i32 handle. The constants are never rails (bd dm7f.81, R13).
     CallInst *MuxOut = nullptr;
     if (ValuePhi) {
       StringRef VAbi = abiWidthFromType(ValuePhi->getType());
@@ -797,12 +796,10 @@ void lowerControlledIOSinks(Module &M, WidthDispatch &wd, TaintSet &taint) {
       // `propagateWorklist` (and its call-return closure).
       taint.UntaintedMergeRails.insert(MuxOut);
       taint.BirthOrder[MuxOut] = taint.NextBirth++;
-      Value *SetSrc = materializeCopySource(FlagSetV, Alloc, taint, B, DL);
-      stamp(B.CreateCall(Copy, {Flag, SetSrc, MuxOut}));
-      stamp(B.CreateCall(csyms.xFn(), {Flag}));
-      Value *ClrSrc = materializeCopySource(FlagClrV, Alloc, taint, B, DL);
-      stamp(B.CreateCall(Copy, {Flag, ClrSrc, MuxOut}));
-      stamp(B.CreateCall(csyms.xFn(), {Flag}));
+      // bd dm7f.81: each constant is a literal operand of a controlled xor
+      // (`emitArmMux`, MergeArmWrite.h), never a rail; a zero one emits nothing.
+      emitArmMux(B, csyms, Flag, FlagSetV, FlagClrV, MuxOut, Copy,
+                 csyms.xorcControlledFn(VAbi), taint, DL);
     }
 
     // 7d. STRIP the flag (the `_inv` twin) + free it. Structurally valid: every

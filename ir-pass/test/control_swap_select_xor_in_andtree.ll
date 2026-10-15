@@ -50,7 +50,7 @@ entry:
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[G2]], i32 %[[Q]], i32 %[[OUT]])
 ; CHECK:     call void @cqrt_x(i32 %[[G2]])
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[G2]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[OUT]])
+; CHECK:     call void @cqrt_xorc_i32_controlled(i32 %[[G2]], i32 %[[OUT]], i32 {{.+}})
 ; CHECK:     call void @cqrt_x(i32 %[[G2]])
 ; exact LIFO — the PARENT (and) strips first, while G1 is still allocated:
 ; CHECK:     call void @cqrt_toffoli(i32 %[[G1]], i32 %[[F3]], i32 %[[G2]])

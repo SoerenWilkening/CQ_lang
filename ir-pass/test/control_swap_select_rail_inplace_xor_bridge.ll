@@ -45,16 +45,14 @@ entry:
 ; ORD-NEXT: %bf = call i32 @cqrt_alloc_i1(i1 false)
 ; ORD-NEXT: call void @cqrt_cnot(i32 %h, i32 %bf)
 ; ORD-NEXT: %out = call i32 @cqrt_alloc_i32(i32 0)
-; ORD-NEXT: %selop = call i32 @cqrt_alloc_i32(i32 2)
-; ORD-NEXT: call void @cqrt_copy_i32_controlled(i32 %bf, i32 %selop, i32 %out)
+; ORD-NEXT: call void @cqrt_xorc_i32_controlled(i32 %bf, i32 %{{[0-9a-zA-Z_.]+}}, i32 2)
 ; ORD-NEXT: call void @cqrt_x(i32 %bf)
-; ORD-NEXT: %selop1 = call i32 @cqrt_alloc_i32(i32 5)
-; ORD-NEXT: call void @cqrt_copy_i32_controlled(i32 %bf, i32 %selop1, i32 %out)
+; ORD-NEXT: call void @cqrt_xorc_i32_controlled(i32 %bf, i32 %{{[0-9a-zA-Z_.]+}}, i32 5)
 ; ORD-NEXT: call void @cqrt_x(i32 %bf)
 ; ORD-NEXT: call void @cqrt_cnot(i32 %h, i32 %bf)
 ; ORD-NEXT: call void @cqrt_free(i32 %bf)
-; ORD-NEXT: %m2 = call i32 @cqrt_measure_i32(i32 %out)
-; ORD-NEXT: %m3 = call i1 @cqrt_measure_i1(i32 %h_op)
+; ORD-NEXT: %[[N_m2:m[0-9]*]] = call i32 @cqrt_measure_i32(i32 %out)
+; ORD-NEXT: %[[N_m3:m[0-9]*]] = call i1 @cqrt_measure_i1(i32 %h_op)
 
 ; The xor is OUT of place (a `cq_template_xor_i1_hl` producer, never a
 ; `cqrt_xorc_i1` on %h), no cqrt_x on either user rail, one free, and exactly

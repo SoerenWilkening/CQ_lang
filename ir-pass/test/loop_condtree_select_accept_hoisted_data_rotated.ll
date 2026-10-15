@@ -42,7 +42,10 @@
 ; record` WARNING (the bd `lyyf` warning class — a SIGNAL, not coverage), and so
 ; does the loop-free single-select spelling of the same statements on the ORACLE
 ; (measured, 2 warnings: `slice` and its inlined copy in `main`), so the warning
-; is not new to this increment. Which record it counts was NOT traced here; the
+; is not new to this increment. (bd dm7f.81 TRACED it and it is gone: the record
+; was the never-freed classical source rails `i`/`55` the copy merge used to load,
+; counted as ancestors of the rotated %out; arms are literals now and nothing warns.)
+; Which record it counted was NOT traced at the time; the
 ; physics argument above does not rest on it.
 ;
 ; THE TWIN (xdu2.16 Rule-13 r1B F-B1-1). The C-level twin is not the only flat
@@ -80,11 +83,9 @@
 ; CHECK-NEXT: %[[G:g[0-9]*]] = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[F1]], i32 %[[F2]], i32 %[[G]])
 ; CHECK-NEXT: %[[OUT:out[0-9]*]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: %[[T:selop[0-9]*]] = call i32 @cqrt_alloc_i32(i32 %i)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[T]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[G]], i32 %[[OUT]], i32 %i)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
-; CHECK-NEXT: %[[E:selop[0-9]*]] = call i32 @cqrt_alloc_i32(i32 55)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[E]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[G]], i32 %[[OUT]], i32 55)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
 ; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[F1]], i32 %[[F2]], i32 %[[G]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[G]])

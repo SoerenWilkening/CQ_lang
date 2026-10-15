@@ -57,7 +57,7 @@ attributes #0 = { nounwind willreturn memory(none) }
 ; branch stays, and the measure reads %out (the %pp phi lifted to %out — no
 ; dangling pred):
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_copy_i32_controlled(
+; CHECK:     call void @cqrt_xorc_i32_controlled(
 ; CHECK:     br i1 %cc
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])
 

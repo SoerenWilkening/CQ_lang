@@ -13,8 +13,7 @@
 ; CHECK:       %[[O:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f16(half 0xH0000)
 ; CHECK:       call void @cqrt_copy_f16_controlled(i32 %[[F]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[O]])
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT:  %[[K:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f16(half 0xH4000)
-; CHECK-NEXT:  call void @cqrt_copy_f16_controlled(i32 %[[F]], i32 %[[K]], i32 %[[O]])
+; CHECK-NEXT:  call void @cqrt_xorc_f16_controlled(i32 %[[F]], i32 %[[O]], half 0xH4000)
 ; CHECK:       ret i32
 declare half @cq_theta_f16(half, double)
 declare half @cq_measure_f16(half)

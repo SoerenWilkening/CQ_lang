@@ -75,11 +75,9 @@ merge:
 ; CHECK:     %[[A:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK:     call void @cqrt_cnot(i32 %[[R]], i32 %[[A]])
 ; CHECK:     %[[O:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     %[[S0:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 5)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[A]], i32 %[[S0]], i32 %[[O]])
+; CHECK:     call void @cqrt_xorc_i32_controlled(i32 %[[A]], i32 %[[O]], i32 5)
 ; CHECK:     call void @cqrt_x(i32 %[[A]])
-; CHECK:     %[[S1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 2)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[A]], i32 %[[S1]], i32 %[[O]])
+; CHECK:     call void @cqrt_xorc_i32_controlled(i32 %[[A]], i32 %[[O]], i32 2)
 ; CHECK:     call void @cqrt_x(i32 %[[A]])
 ; CHECK:     call void @cqrt_cnot(i32 %[[R]], i32 %[[A]])
 ; CHECK:     call void @cqrt_free(i32 %[[A]])
@@ -88,7 +86,10 @@ merge:
 ; ⚠ EACH COUNT IS CLOSED BY A WHOLE-FILE NEGATIVE, so it reads "EXACTLY 8" and
 ; not "at least 8" — Rule-13 round 1 (P3-1) measured an injected NINTH controlled
 ; copy being MISSED by an open-ended count.
-; NCOPY-COUNT-8: call void @cqrt_copy_i32_controlled(
+; (bd dm7f.81: a constant or classical merge arm is a literal operand of cqrt_xorc_<W>_controlled, no longer an alloc'd rail + cqrt_copy_<W>_controlled; a zero arm emits no gate and no bracket. Counts below re-measured.)
+; NCOPY-NOT: call void @cqrt_copy_i32_controlled(
+; NCOPY-COUNT-8: call void @cqrt_xorc_i32_controlled(
+; NCOPY-NOT: call void @cqrt_xorc_i32_controlled(
 ; NCOPY-NOT:     call void @cqrt_copy_i32_controlled(
 ; NFREE-COUNT-4: call void @cqrt_free(
 ; NFREE-NOT:     call void @cqrt_free(

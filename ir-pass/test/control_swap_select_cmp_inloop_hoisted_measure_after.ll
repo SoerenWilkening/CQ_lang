@@ -69,5 +69,8 @@ define i32 @main() local_unnamed_addr {
 ; NOROUTE-NOT: call i32 @cq_theta_
 ; FCNT-COUNT-1: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
-; CPCNT-COUNT-2: call void @cqrt_copy_i32_controlled(
+; (bd dm7f.81: a constant or classical merge arm is a literal operand of cqrt_xorc_<W>_controlled, no longer an alloc'd rail + cqrt_copy_<W>_controlled; a zero arm emits no gate and no bracket. Counts below re-measured.)
+; CPCNT-NOT: call void @cqrt_copy_i32_controlled(
+; CPCNT-COUNT-2: call void @cqrt_xorc_i32_controlled(
+; CPCNT-NOT: call void @cqrt_xorc_i32_controlled(
 ; CPCNT-NOT:     call void @cqrt_copy

@@ -27,8 +27,8 @@
 ; h4 is the review-round-1 probe (F2): `hm` returns `h`'s result, so its own prediction
 ; is classical only if the predictor asks the INNER site's prediction
 ; (`predictReturnTaintedImpl`); before that, the clone fence declined it loudly.
-; h3's classical arm is loaded into a fresh rail (`cqrt_alloc_i32(%3)`) that is never
-; freed: it holds an unentangled basis value, an accepted R5 leak (stage 2b clean).
+; h3's classical arm is the literal operand of `cqrt_xorc_i32_controlled(.., %3)` (bd dm7f.81; no
+; rail, so no leak; formerly an alloc'd, never-freed rail).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll
@@ -40,15 +40,14 @@
 ; CHECK:       %[[U:[0-9]+]] = tail call i32 @__cq_q_h_01(
 ; CHECK:       icmp sgt i32 %[[U]], 3
 ; CHECK:       ret i32
-; h3: the classical arm is loaded into a fresh register before its controlled copy.
+; h3: the classical arm is the immediate of a controlled xor (bd dm7f.81).
 ; CHECK-LABEL: define internal i32 @__cq_q_h3_01(
 ; CHECK:       %[[V:[0-9]+]] = tail call i32 @__cq_q_h_01(
-; CHECK:       %[[VR:[A-Za-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[V]])
-; CHECK:       call void @cqrt_copy_i32_controlled(i32 %{{[A-Za-z0-9_.]+}}, i32 %[[VR]],
+; CHECK:       call void @cqrt_xorc_i32_controlled(i32 %{{[A-Za-z0-9_.]+}}, i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[V]])
 ; CHECK:       ret i32
 ;
 ; No runtime call reads an inner clone's classical result as a handle: the result may
-; appear only as an `_hl` literal never, and as a `cqrt_alloc_<W>` seed (h3's arm).
+; appear only as an `_hl` literal never, and as a controlled xor's IMMEDIATE (h3's arm; a classical slot, not a handle).
 ; Nor may it be renamed first: a `freeze` alias (`stabilizeSpeculatedValues`' `.stable`)
 ; would carry a handle read past the literal-name NOT lines (review round 3 F6), so
 ; any freeze of it fails here and must be read.
@@ -60,7 +59,7 @@
 ; NOHANDLE-LABEL: define internal i32 @__cq_q_h3_01(
 ; NOHANDLE:       %[[V:[0-9]+]] = tail call i32 @__cq_q_h_01(
 ; NOHANDLE-NOT:   @cq_template_{{[a-z0-9_]+}}({{.*}}i32 %[[V]]{{[,)]}}
-; NOHANDLE-NOT:   @cqrt_{{(copy|x|free|cswap|toffoli)[a-z0-9_]*}}({{.*}}i32 %[[V]]{{[,)]}}
+; NOHANDLE-NOT:   @cqrt_{{(copy|x|free|cswap|toffoli)(_[a-z0-9_]*)?}}({{.*}}i32 %[[V]]{{[,)]}}
 ; NOHANDLE-NOT:   freeze i32 %[[V]]{{($|,)}}
 ; NOHANDLE:       ret i32
 ; NOHANDLE-LABEL: define internal i32 @__cq_q_h4_01(

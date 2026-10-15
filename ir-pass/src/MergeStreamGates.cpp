@@ -3,6 +3,7 @@
 #include "MergeStreamGates.h"
 
 #include "ChainWalk.h"         // isInPlaceGateOn / isInteriorConsumer / ...
+#include "ControlledSymbols.h" // isControlledXorc (bd dm7f.81)
 #include "InPlaceQQ.h"         // isInPlaceQQGate (bd r2j3.33)
 #include "RailBankPromote.h"   // railBankParkedRails / railBankCellReadsOf
 #include "RailWindow.h"        // railWindowFamily (bd 01po.19 S5)
@@ -49,6 +50,11 @@ bool isMergeWrite(const CallInst *C, const Value *Out) {
            C->getArgOperand(1) != Out;
   if (isPlainCopy(C))
     return C->getArgOperand(1) == Out && C->getArgOperand(0) != Out;
+  // bd dm7f.81: an untainted arm's `cqrt_xorc_<W>_controlled(f, out, imm)`, an
+  // XOR of a classical immediate into out under f (an involution).
+  if (isControlledXorc(C))
+    return C->getArgOperand(1) == Out && C->getArgOperand(0) != Out &&
+           C->getArgOperand(2) != Out;
   return false;
 }
 
@@ -63,6 +69,7 @@ bool isMergeWrite(const CallInst *C, const Value *Out) {
 //   cqrt_x(t)                       writes 0
 //   cqrt_copy_<W>_controlled(f,s,d) writes 2
 //   cqrt_copy_<W>(s,d)              writes 1
+//   cqrt_xorc_<W>_controlled(f,d,k) writes 1 (k a classical immediate)
 //   cqrt_free(r)                    writes 0
 bool streamGateWrites(const CallInst *C, SmallVectorImpl<unsigned> &W) {
   W.clear();
@@ -88,7 +95,7 @@ bool streamGateWrites(const CallInst *C, SmallVectorImpl<unsigned> &W) {
     return W.push_back(0), true;
   if (isControlledCopy(C))
     return W.push_back(2), true;
-  if (isPlainCopy(C))
+  if (isPlainCopy(C) || isControlledXorc(C))
     return W.push_back(1), true;
   if (N.starts_with("cq_template_") && !N.contains("_controlled")) {
     if (N.ends_with("_unc"))
@@ -101,7 +108,7 @@ bool streamGateWrites(const CallInst *C, SmallVectorImpl<unsigned> &W) {
 // The CONTROL slots of the stream's controlled gates.
 SmallVector<unsigned, 2> controlSlots(const CallInst *C) {
   StringRef N = calleeName(C);
-  if (N == "cqrt_cnot" || isControlledCopy(C))
+  if (N == "cqrt_cnot" || isControlledCopy(C) || isControlledXorc(C))
     return {0};
   if (N == "cqrt_toffoli")
     return {0, 1};
@@ -177,6 +184,8 @@ bool readsState(const CallInst *C, unsigned I) {
   StringRef N = calleeName(C);
   if (N.starts_with("cqrt_alloc_"))
     return false;  // the seed is a classical immediate.
+  if (isControlledXorc(C))
+    return I != 2;  // bd dm7f.81: slot 2 is the classical immediate.
   if (N.starts_with("cq_template_") && !N.contains("_controlled")) {
     if (N.ends_with("_unc"))
       return I == 0 || isUncHandleSlot(N, I);

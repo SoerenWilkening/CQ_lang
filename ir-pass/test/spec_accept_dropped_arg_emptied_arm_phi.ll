@@ -40,15 +40,11 @@
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CHECK: call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
-; CHECK: call i32 @cqrt_alloc_i32(i32 5)
-; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
-; CHECK: call void @cqrt_copy_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK: call void @cqrt_xorc_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 5)
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CHECK: call void @cqrt_x(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
-; CHECK: call i32 @cqrt_alloc_i32(i32 7)
-; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
-; CHECK: call void @cqrt_copy_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK: call void @cqrt_xorc_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 7)
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CHECK: call void @cqrt_x(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}

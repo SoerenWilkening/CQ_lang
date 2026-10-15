@@ -11,8 +11,9 @@
 //                the select rail); it already holds the default answer.
 //   2. per content case i (incoming v_i ≠ v_d):
 //        a. f_i = cq_template_icmp_eq_<W>_hl(q, c_i)       (the eq-flag)
-//        b. %d_i = cqrt_alloc_<W>(v_i ^ v_d)               (compile-time XOR-delta)
-//        c. cqrt_copy_<W>_controlled(f_i, %d_i, %out)      (out ^= d_i iff f_i=1)
+//        b. d_i = v_i ^ v_d                                (compile-time XOR-delta)
+//        c. cqrt_xorc_<W>_controlled(f_i, %out, d_i)       (out ^= d_i iff f_i=1;
+//           d_i a literal operand, never a rail — bd dm7f.81)
 //   3. strip + free all N flags: cq_template_icmp_eq_<W>_hl_inv(q, c_i) then
 //      cqrt_free(f_i)  — each strip reads PRISTINE q (the copies write %out, never
 //      q, so q == q0 throughout and the strip is structurally valid).
@@ -25,13 +26,11 @@
 // There is NO double-write on any basis branch, so the §6.9 NO-¬-bracket recipe is
 // exact (a spurious cqrt_x would double-write yet pass a count-only CHECK — pinned
 // by the §7 CHECK-NOT). The default is the PRELOAD, not a synthesized ¬OR flag (the
-// excised `FlagConjunction` is NOT revived). q, %out, and every XOR-delta scratch
-// %d_i are left ALLOCATED (a benign classical leak, Rule 6); %d_i is left UNTAINTED
-// so `uncompute` never selects it, and %out is safe from `uncompute` only because
-// `isTerminalHandle` rejects it (it has ≥1 non-benign controlled-copy consumer,
-// §6.7). Reuses `emitEqFlag` (mint/strip), `allocFn`/`freeFn`, and
-// `copyControlledFn` verbatim (Rule 14); the only original logic is the §4C
-// ordering.
+// excised `FlagConjunction` is NOT revived). q and %out are left ALLOCATED here,
+// and %out is safe from `uncompute` only because `isTerminalHandle` rejects it
+// (it has ≥1 non-benign controlled-write consumer, §6.7). Reuses `emitEqFlag`
+// (mint/strip), `allocFn`/`freeFn`, and `emitArmWrite` verbatim (Rule 14); the
+// only original logic is the §4C ordering.
 
 #include "SwitchRouteEmit.h"  // emitSwitchDataMuxRegion (declared beside phase/value)
 
@@ -40,7 +39,7 @@
 #include "ControlledSymbols.h" // copyControlledFn
 #include "OpcodeSupport.h"     // abiWidthFromType
 #include "RegionFlatten.h"     // flattenSwitchRegion
-#include "SelectMergeEmit.h"   // materializeCopySource (shared, WI-5.1)
+#include "MergeArmWrite.h"     // emitArmWrite (bd dm7f.81)
 #include "TaintPropagation.h"  // TaintSet
 #include "WidthDispatch.h"     // allocFn / freeFn / llvmWidthType
 
@@ -124,7 +123,9 @@ void emitSwitchDataMuxRegion(const ControlRegion &R, WidthDispatch &wd,
   Type *RailTy = Abi.empty() ? nullptr : wd.llvmWidthType(Abi);
   FunctionCallee Alloc = Abi.empty() ? FunctionCallee() : wd.allocFn(Abi);
   FunctionCallee CopyC = Abi.empty() ? FunctionCallee() : csyms.copyControlledFn(Abi);
-  if (!RailTy || !Alloc || !CopyC)
+  FunctionCallee XorcC =
+      Abi.empty() ? FunctionCallee() : csyms.xorcControlledFn(Abi);  // dm7f.81
+  if (!RailTy || !Alloc || !CopyC || !XorcC)
     return bailLoud(R);
 
   const DebugLoc DL = SI->getDebugLoc();
@@ -158,8 +159,8 @@ void emitSwitchDataMuxRegion(const ControlRegion &R, WidthDispatch &wd,
   // otherwise). Persists across `repropagateControlMerges` (a plain side-table).
   taint.HandleWidth[Out] = Abi;
 
-  // 2. Per CONTENT case (incoming v_i ≠ v_d): mint eq-flag → XOR-delta alloc →
-  //    controlled copy. A passthrough case (v_i == v_d) needs no copy — %out
+  // 2. Per CONTENT case (incoming v_i ≠ v_d): mint eq-flag → controlled xor of
+  //    the XOR-delta. A passthrough case (v_i == v_d) needs no copy — %out
   //    already holds v_d on that branch — so skip it (the ConstantInts are uniqued,
   //    so pointer identity is value identity at one width).
   SmallVector<Value *, 4> Flags;
@@ -183,21 +184,15 @@ void emitSwitchDataMuxRegion(const ControlRegion &R, WidthDispatch &wd,
     if (!Flag)
       return bailLoud(R);
 
-    // b. XOR-delta scratch %d_i = cqrt_alloc_<W>(v_i ^ v_d), a COMPILE-TIME
-    //    constant (both APInts share the merge-phi width). Left UNTAINTED so
-    //    `uncompute` never selects it (a benign classical leak; never freed — §4C,
-    //    open-Q-6). Materialized through the SHARED `materializeCopySource`
-    //    (WI-5.1 promotion — retires the §4C inline duplication, Rule 14): a
-    //    `ConstantInt` is never tainted, so it always takes the alloc path; the
-    //    `delta` name preserves the byte-for-byte fixture stream.
+    // b. The XOR-delta v_i ^ v_d, a COMPILE-TIME constant (both APInts share
+    //    the merge-phi width), nonzero (v_i != v_d above).
+    // c. Controlled XOR of it — cqrt_xorc_<W>_controlled(f_i, out, d_i): out ^= d_i
+    //    iff f_i = 1 (flag arg-0, dst arg-1, the literal arg-2). bd dm7f.81: the
+    //    delta is a literal operand (`emitArmWrite`), no longer a never-freed
+    //    `cqrt_alloc_<W>(d_i)` scratch rail per case (R13).
     Constant *Delta =
         ConstantInt::get(RailTy->getContext(), Vi->getValue() ^ Vd->getValue());
-    Value *DeltaRail =
-        materializeCopySource(Delta, Alloc, taint, B, DL, "delta");
-
-    // c. Controlled XOR copy — cqrt_copy_<W>_controlled(f_i, d_i, out): out ^= d_i
-    //    iff f_i = 1 (flag arg-0, src arg-1, dst arg-2 — PRD §1.2).
-    stamp(B.CreateCall(CopyC, {Flag, DeltaRail, Out}));
+    emitArmWrite(B, Flag, Delta, Out, CopyC, XorcC, taint, DL);
 
     Flags.push_back(Flag);
     CaseVals.push_back(Ci);
@@ -225,8 +220,8 @@ void emitSwitchDataMuxRegion(const ControlRegion &R, WidthDispatch &wd,
   // 4. REWIRE + scrub + flatten. The measure on the phi becomes a measure on %out
   //    (the muxed answer; no measurement is added — Rule 5). Erase the phi, scrub
   //    it from every taint work-list (§6.1), then flatten the dead N-way CFG (the
-  //    switch becomes straight-line; the empty arm blocks + merge are erased). q,
-  //    %out, and every %d_i are never freed.
+  //    switch becomes straight-line; the empty arm blocks + merge are erased). q
+  //    and %out are not freed here.
   MergePhi->replaceAllUsesWith(Out);
   scrubTaint(MergePhi, taint);
   MergePhi->eraseFromParent();

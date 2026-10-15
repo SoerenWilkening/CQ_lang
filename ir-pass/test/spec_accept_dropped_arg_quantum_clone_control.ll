@@ -25,8 +25,8 @@
 ; RUN: %filecheck %s --check-prefix=NODROP --allow-empty < %t.err
 ; CHECK-LABEL: define i32 @main(
 ; CHECK:      [[OUT:%[a-z0-9.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:      call void @cqrt_copy_i32_controlled(i32 %{{[a-z0-9.]+}}, i32 %{{[a-z0-9.]+}}, i32 [[OUT]])
-; CHECK:      call void @cqrt_copy_i32_controlled(i32 %{{[a-z0-9.]+}}, i32 %{{[a-z0-9.]+}}, i32 [[OUT]])
+; CHECK:      call void @cqrt_xorc_i32_controlled(i32 %{{[a-z0-9.]+}}, i32 [[OUT]], i32 {{.+}})
+; CHECK:      call void @cqrt_xorc_i32_controlled(i32 %{{[a-z0-9.]+}}, i32 [[OUT]], i32 {{.+}})
 ; CHECK:      tail call i32 @__cq_q_h_01(i32 noundef [[OUT]], i32 noundef %{{[0-9]+}})
 ; NODROP-NOT: CQ_DEADARG_DBG
 

@@ -128,8 +128,7 @@ entry:
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[HQ]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: %[[XS:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %x)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[XS]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[F]], i32 %[[OUT]], i32 %x)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; Step 6 — the strip recomputes the SAME predicate over the SAME still-live rails
 ; in the SAME slot order as the mint, then the flag rail is a proven-|0> free.

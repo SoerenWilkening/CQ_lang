@@ -20,7 +20,12 @@
 ; loads; `declineQuantumCopySources` RE-ASKS at FINAL taint, in the slot after
 ; the round-2 fixpoint where `declineQuantumCondLiterals` re-asks a condition
 ; literal (both entry points), whether the loaded value is now quantum, and
-; declines loudly. Lowering it is a gap (R1): the correct stream reads the arm's
+; declines loudly.
+; bd dm7f.81 MOVED THE SUBJECT, not the message: a classical arm is no longer loaded
+; into a rail; it is the literal slot 2 of `cqrt_xorc_i32_controlled(f, %out, %yp1)`,
+; which `emitArmWrite` records and the same re-ask reads (round 2 would otherwise
+; leave the register's HANDLE ID as the immediate: the same wrong unitary).
+; Lowering it is a gap (R1): the correct stream reads the arm's
 ; register directly, as the emitter does for an arm already quantum at emission.
 ; The 8h7d.17 escape register reaches the same fence
 ; (control_select_reject_round2_copy_source_break_escape.ll).

@@ -31,6 +31,10 @@
 #include "TemplateName.h"   // cq::Shape
 #include "WidthDispatch.h"  // cq::WidthDispatch
 
+namespace llvm {
+class CallInst;
+}  // namespace llvm
+
 namespace cq {
 
 class ControlledSymbols {
@@ -139,6 +143,16 @@ public:
   // tags the symbol name only — Rule 15; no `_controlled_inv` can exist).
   llvm::FunctionCallee copyControlledFpFn(llvm::StringRef abiWidth) const;
 
+  // Controlled xor of a classical immediate (bd test_C_libtooling-dm7f.81):
+  // `void cqrt_xorc_<W>_controlled(i32 ctrl, i32 h, <W> imm)`, h ^= imm iff
+  // ctrl (runtime/cq_runtime.h). The merge emitters' UNTAINTED arm write: the
+  // arm value stays a classical operand, never a rail. The SAME int/fp split
+  // and fences as the copy pair above, so that a merge whose copy minter is
+  // null has a null xorc minter too: integer widths <= 64 here, the fp widths
+  // `abiWidthHasControlledFpCopy` admits in the Fp twin.
+  llvm::FunctionCallee xorcControlledFn(llvm::StringRef abiWidth) const;
+  llvm::FunctionCallee xorcControlledFpFn(llvm::StringRef abiWidth) const;
+
   // Controlled reversible I/O output-tape write (Phase 7.6 Increment 2,
   // PRD-7.6 §2.8 — the Tier-0 `if(q)printf` primitive):
   // `i32 cqrt_tape_write_<W>_controlled(i32 ctrl, i32 tape, i32 src)` appends
@@ -160,6 +174,13 @@ private:
   llvm::Module &M;
   WidthDispatch &Wd;
 };
+
+// Is `C` the controlled xor-immediate `cqrt_xorc_<W>_controlled(ctrl, h, imm)`
+// (void, arity exactly 3)? THE ONE SPELLING (bd dm7f.81). Its arg 0 is the
+// CONTROL and arg 1 the written register, unlike the uncontrolled
+// `cqrt_xorc_<W>(h, imm)` (arg 0 written), so no `cqrt_xorc_` prefix test may
+// stand in for it.
+bool isControlledXorc(const llvm::CallInst *C);
 
 }  // namespace cq
 

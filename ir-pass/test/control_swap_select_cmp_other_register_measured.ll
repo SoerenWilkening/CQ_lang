@@ -52,7 +52,8 @@ entry:
 ; NOROUTE-NOT: cqrt_cswap
 ; NOROUTE-NOT: cqrt_rz
 ; NOROUTE-NOT: call i32 @cq_theta_
-; ACNT-COUNT-5: call i32 @cqrt_alloc_
+; (bd dm7f.81: a constant or classical merge arm is a literal operand of cqrt_xorc_<W>_controlled, no longer an alloc'd rail + cqrt_copy_<W>_controlled; a zero arm emits no gate and no bracket. Counts below re-measured.)
+; ACNT-COUNT-3: call i32 @cqrt_alloc_
 ; ACNT-NOT:     call i32 @cqrt_alloc_
 ; RYCNT-COUNT-2: call void @cqrt_ry_
 ; RYCNT-NOT:     call void @cqrt_ry_

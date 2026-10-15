@@ -63,16 +63,12 @@ entry:
 ; CHECK-NEXT:  %[[G:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i1_hl(i32 %[[T]], i1 zeroext %[[GE]])
 ; CHECK-NEXT:  %[[SEL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[D]], i32 %[[SEL]])
-; CHECK-NEXT:  call void @cqrt_x(i32 %[[G]])
-; CHECK-NEXT:  %[[K0:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[K0]], i32 %[[SEL]])
+; (bd dm7f.81: the constant-0 arm emits no write and no bracket, forward or in the reverse; its former %K0 rail and free are gone.)
 ; CHECK-NEXT:  %[[KNC:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[NC]])
 ; CHECK-NEXT:  %[[FC:[a-zA-Z0-9_.]+]] = freeze i1 %[[CC]]
 ; CHECK-NEXT:  %[[RS:[a-zA-Z0-9_.]+]] = select i1 %[[FC]], i32 %[[KNC]], i32 %[[SEL]]
 ; CHECK-NEXT:  %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT:  call void @cqrt_copy_i32(i32 %[[RS]], i32 %[[OUT]])
-; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[K0]], i32 %[[SEL]])
-; CHECK-NEXT:  call void @cqrt_x(i32 %[[G]])
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[D]], i32 %[[SEL]])
 ; CHECK-NEXT:  call void @cq_template_and_i1_hl_unc(i32 %[[G]], i32 %[[T]], i1 zeroext %[[GE]])
 ; CHECK-NEXT:  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[T]], i32 %b, i32 %[[CS]])
@@ -81,6 +77,5 @@ entry:
 ; CHECK-NEXT:  call void @cqrt_free(i32 %[[T]])
 ; CHECK-NEXT:  call void @cqrt_free(i32 %[[G]])
 ; CHECK-NEXT:  call void @cqrt_free(i32 %[[SEL]])
-; CHECK-NEXT:  call void @cqrt_free(i32 %[[K0]])
 ; CHECK-NEXT:  ret i32 %[[OUT]]
 ; CHECK-NEXT:  }

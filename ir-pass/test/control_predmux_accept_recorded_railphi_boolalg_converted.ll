@@ -53,11 +53,14 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: grep "call i32 @cqrt_alloc_i1(" %t.cqd0.ll | count 3
-; RUN: grep "call i32 @cqrt_alloc_i32(" %t.cqd0.ll | count 10
+; bd dm7f.81: the six constant-arm source rails are gone (each arm is now a
+; `cqrt_xorc_i32_controlled` literal), so 10 -> 4 allocs and 8 copies -> 8 xorcs.
+; RUN: grep "call i32 @cqrt_alloc_i32(" %t.cqd0.ll | count 4
 ; RUN: grep "call void @cqrt_free(" %t.cqd0.ll | count 8
 ; RUN: grep "call void @cqrt_x(" %t.cqd0.ll | count 8
 ; RUN: grep "call void @cqrt_toffoli(" %t.cqd0.ll | count 4
-; RUN: grep "call void @cqrt_copy_i32_controlled(" %t.cqd0.ll | count 8
+; RUN: grep "call void @cqrt_xorc_i32_controlled(" %t.cqd0.ll | count 8
+; RUN: not grep "call void @cqrt_copy_i32_controlled(" %t.cqd0.ll
 ; RUN: grep "@cqrt_measure" %t.cqd0.ll | count 5
 ; RUN: grep "@cqrt_ry" %t.cqd0.ll | count 4
 ; RUN: grep "@cq_template_icmp_sgt_i32_hl(" %t.cqd0.ll | count 4
@@ -73,15 +76,15 @@
 ; bd r2j3.32 (R11 round 1, item 7) — THE REVERSAL, pinned with CAPTURED handles:
 ; the merge rail of the round-2 select (%out10, minted in a block laid out
 ; below its readers) is reversed right after its last reader, the strip that
-; reads it: both copies re-applied in reverse under its still-live flag, the
+; reads it: both writes (controlled xor-immediates since bd dm7f.81) re-applied in reverse under its still-live flag, the
 ; flag's strip deferred behind them, then the same rail freed.
 ; REV-LABEL: define i32 @probe(
-; REV:      call i32 @cqrt_alloc_i32(i32 6)
+; REV:      call void @cqrt_xorc_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 6)
 ; REV:      call void @cq_template_icmp_sgt_i32_unc(i32 %[[P_H_CMP4:[a-zA-Z0-9_.]+]], i32 %[[P_H:[a-zA-Z0-9_.]+]], i32 %[[P_OUT10:[a-zA-Z0-9_.]+]])
 ; REV-NEXT: call void @cqrt_x(i32 %[[P_H_CMP9:[a-zA-Z0-9_.]+]])
-; REV-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[P_H_CMP9]], i32 %[[P_SELOP12:[a-zA-Z0-9_.]+]], i32 %[[P_OUT10]])
+; REV-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[P_H_CMP9]], i32 %[[P_OUT10]], i32 2)
 ; REV-NEXT: call void @cqrt_x(i32 %[[P_H_CMP9]])
-; REV-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[P_H_CMP9]], i32 %[[P_SELOP11:[a-zA-Z0-9_.]+]], i32 %[[P_OUT10]])
+; REV-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[P_H_CMP9]], i32 %[[P_OUT10]], i32 1)
 ; REV-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[P_H_CMP9]], i32 %[[P_H]], i32 9)
 ; REV-NEXT: call void @cqrt_free(i32 %[[P_H_CMP9]])
 ; REV-NEXT: call void @cqrt_free(i32 %[[P_OUT10]])

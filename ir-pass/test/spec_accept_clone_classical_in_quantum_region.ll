@@ -67,8 +67,7 @@ entry:
 ; CHECK-NEXT:  %[[SEL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G0]], i32 %[[M3]], i32 %[[SEL]])
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[G0]])
-; CHECK-NEXT:  %[[K5:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 5)
-; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G0]], i32 %[[K5]], i32 %[[SEL]])
+; CHECK-NEXT:  call void @cqrt_xorc_i32_controlled(i32 %[[G0]], i32 %[[SEL]], i32 5)
 ; CHECK-NEXT:  %[[FU:[a-zA-Z0-9_.]+]] = freeze i1 %[[U]]
 ; CHECK-NEXT:  %[[T1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %b, i32 0)
 ; CHECK-NEXT:  %[[G1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i1_hl(i32 %[[T1]], i1 zeroext %[[FU]])
@@ -84,7 +83,7 @@ entry:
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G1]], i32 %[[A1]], i32 %[[SEL3]])
 ; CHECK-NEXT:  call void @cq_template_and_i1_hl_unc(i32 %[[G1]], i32 %[[T1]], i1 zeroext %[[FU]])
 ; CHECK-NEXT:  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[T1]], i32 %b, i32 0)
-; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G0]], i32 %[[K5]], i32 %[[SEL]])
+; CHECK-NEXT:  call void @cqrt_xorc_i32_controlled(i32 %[[G0]], i32 %[[SEL]], i32 5)
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[G0]])
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[G0]], i32 %[[M3]], i32 %[[SEL]])
 ; CHECK-NEXT:  call void @cq_template_and_i1_hl_unc(i32 %[[G0]], i32 %[[T0]], i1 zeroext %[[FNU]])

@@ -65,8 +65,7 @@ attributes #0 = { nounwind willreturn memory(none) }
 ; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @pure_f(i32 7)
 ; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 5)
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     %[[RH:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[R]])
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[RH]], i32 %[[OUT]])
+; CHECK:     call void @cqrt_xorc_i32_controlled(i32 %[[F]], i32 %[[OUT]], i32 %[[R]])
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[Q]], i32 %[[OUT]])
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
@@ -86,8 +85,8 @@ attributes #0 = { nounwind willreturn memory(none) }
 
 ; the ¬flag bracket scope is order-sensitive (§16.3, verify-clean-invisible): a
 ; mis-bracket (x before BOTH copies) yields the IDENTICAL symbol multiset. Pin
-; copy -> x -> copy -> x:
-; ORD: call void @cqrt_copy_i32_controlled(
+; write -> x -> write -> x (bd dm7f.81: the classical-call arm is an xorc):
+; ORD: call void @cqrt_xorc_i32_controlled(
 ; ORD: call void @cqrt_x(
 ; ORD: call void @cqrt_copy_i32_controlled(
 ; ORD: call void @cqrt_x(

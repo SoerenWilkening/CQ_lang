@@ -49,12 +49,10 @@ define void @example(i32 %u0) {
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %n, i32 0)
 ; CHECK-NEXT: %[[SEL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 0xK00000000000000000000)
 ; TRUE const (+pi/2) materialized to its own |const> rail, copied on the flag.
-; CHECK-NEXT: %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 0xK3FFFC90FDAA22168C235)
-; CHECK-NEXT: call void @cqrt_copy_f80_controlled(i32 %[[F]], i32 %[[T]], i32 %[[SEL]])
+; CHECK-NEXT: call void @cqrt_xorc_f80_controlled(i32 %[[F]], i32 %[[SEL]], x86_fp80 0xK3FFFC90FDAA22168C235)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; FALSE const (-pi/2) materialized to its own |const> rail, copied on the ¬flag.
-; CHECK-NEXT: %[[FA:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 0xKBFFFC90FDAA22168C235)
-; CHECK-NEXT: call void @cqrt_copy_f80_controlled(i32 %[[F]], i32 %[[FA]], i32 %[[SEL]])
+; CHECK-NEXT: call void @cqrt_xorc_f80_controlled(i32 %[[F]], i32 %[[SEL]], x86_fp80 0xKBFFFC90FDAA22168C235)
 ; The fptosi reads the merge rail (p119.6 clone-HandleWidth), then copy-out.
 ; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fptosi_f80_to_i32(i32 %[[SEL]])
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
@@ -63,9 +61,9 @@ define void @example(i32 %u0) {
 ; (reading the STILL-LIVE materialized const rails) around the closing `cqrt_x`,
 ; the flag `_unc`, then the proven-|0> frees.
 ; CHECK-NEXT: call void @cq_template_fptosi_f80_to_i32_unc(i32 %[[R]], i32 %[[SEL]])
-; CHECK-NEXT: call void @cqrt_copy_f80_controlled(i32 %[[F]], i32 %[[FA]], i32 %[[SEL]])
+; CHECK-NEXT: call void @cqrt_xorc_f80_controlled(i32 %[[F]], i32 %[[SEL]], x86_fp80 0xKBFFFC90FDAA22168C235)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_copy_f80_controlled(i32 %[[F]], i32 %[[T]], i32 %[[SEL]])
+; CHECK-NEXT: call void @cqrt_xorc_f80_controlled(i32 %[[F]], i32 %[[SEL]], x86_fp80 0xK3FFFC90FDAA22168C235)
 ; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %n, i32 0)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[SEL]])

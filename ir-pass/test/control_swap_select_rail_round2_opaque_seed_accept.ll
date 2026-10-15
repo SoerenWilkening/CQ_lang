@@ -47,20 +47,18 @@ entry:
 ; FIRST one only.
 ; ORD: %h = call i32 @cqrt_alloc_i1(i1 %x)
 ; ORD-NEXT: call void @cqrt_ry_i1(i32 %h, double 5.000000e-01)
-; ORD-NEXT: %h2 = call i32 @cqrt_alloc_i1(i1 %x)
-; ORD-NEXT: call void @cqrt_ry_i1(i32 %h2, double 9.000000e-01)
+; ORD-NEXT: %[[N_h2:h[0-9]*]] = call i32 @cqrt_alloc_i1(i1 %x)
+; ORD-NEXT: call void @cqrt_ry_i1(i32 %[[N_h2]], double 9.000000e-01)
 ; ORD-NEXT: %bf = call i32 @cqrt_alloc_i1(i1 false)
 ; ORD-NEXT: call void @cqrt_cnot(i32 %h, i32 %bf)
 ; ORD-NEXT: %out = call i32 @cqrt_alloc_i32(i32 0)
-; ORD-NEXT: %selop = call i32 @cqrt_alloc_i32(i32 2)
-; ORD-NEXT: call void @cqrt_copy_i32_controlled(i32 %bf, i32 %selop, i32 %out)
+; ORD-NEXT: call void @cqrt_xorc_i32_controlled(i32 %bf, i32 %{{[0-9a-zA-Z_.]+}}, i32 2)
 ; ORD-NEXT: call void @cqrt_x(i32 %bf)
-; ORD-NEXT: %selop1 = call i32 @cqrt_alloc_i32(i32 5)
-; ORD-NEXT: call void @cqrt_copy_i32_controlled(i32 %bf, i32 %selop1, i32 %out)
+; ORD-NEXT: call void @cqrt_xorc_i32_controlled(i32 %bf, i32 %{{[0-9a-zA-Z_.]+}}, i32 5)
 ; ORD-NEXT: call void @cqrt_x(i32 %bf)
 ; ORD-NEXT: call void @cqrt_cnot(i32 %h, i32 %bf)
 ; ORD-NEXT: call void @cqrt_free(i32 %bf)
-; ORD-NEXT: %m3 = call i1 @cqrt_measure_i1(i32 %h2)
+; ORD-NEXT: %[[N_m3:m[0-9]*]] = call i1 @cqrt_measure_i1(i32 %[[N_h2]])
 
 ; TWO i1 register mints (whole file) — one rail would be one.
 ; ACNT-COUNT-2: call i32 @cqrt_alloc_i1(i1 %x)
@@ -80,7 +78,7 @@ entry:
 
 ; No non-diagonal gate on either user register, no route, no adjoint.
 ; NOX-NOT: call void @cqrt_x(i32 %h)
-; NOX-NOT: call void @cqrt_x(i32 %h2)
+; NOX-NOT: call void @cqrt_x(i32 %h1)
 ; NOX-NOT: @cqrt_cswap
 ; NOX-NOT: _unc(
 ; NOX-NOT: _inv(

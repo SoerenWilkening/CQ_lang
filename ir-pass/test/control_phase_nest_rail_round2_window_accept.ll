@@ -57,11 +57,11 @@ attributes #0 = { nounwind willreturn memory(none) }
 
 ; ORD: %h_cast = call i32 @cq_template_trunc_i32_to_i1(i32 %out)
 ; ORD-NEXT: call void @cqrt_ry_i1(i32 %h_cast, double 5.000000e-01)
-; ORD-NEXT: %h_cmp2 = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 7)
+; ORD-NEXT: %[[HC2:h_cmp[0-9]*]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 7)
 ; ORD-NEXT: %g = call i32 @cqrt_alloc_i1(i1 false)
-; ORD-NEXT: call void @cqrt_toffoli(i32 %h_cast, i32 %h_cmp2, i32 %g)
+; ORD-NEXT: call void @cqrt_toffoli(i32 %h_cast, i32 %[[HC2]], i32 %g)
 ; ORD-NEXT: call void @cqrt_rz_i1(i32 %g, double 0x3FE6666666666666), !cq.branchphase
-; ORD-NEXT: call void @cqrt_toffoli(i32 %h_cast, i32 %h_cmp2, i32 %g)
+; ORD-NEXT: call void @cqrt_toffoli(i32 %h_cast, i32 %[[HC2]], i32 %g)
 ; ORD-NEXT: call void @cqrt_free(i32 %g)
 
 ; EXACTLY ONE rotation on the register and EXACTLY TWO conjunction gates

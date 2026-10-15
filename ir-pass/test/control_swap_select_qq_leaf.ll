@@ -39,7 +39,7 @@ entry:
 ; CHECK: %[[OUT:.*]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[H0]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
-; CHECK: call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %{{.*}}, i32 %[[OUT]])
+; CHECK: call void @cqrt_xorc_i32_controlled(i32 %[[G]], i32 %[[OUT]], i32 %x)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
 ; Exact-LIFO strip: node network self-inverse + free, then the QQ `_inv` twin,
 ; then the HL `_inv` twin — every flag rail freed proven-|0>.

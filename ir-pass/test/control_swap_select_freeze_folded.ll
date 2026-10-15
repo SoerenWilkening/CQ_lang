@@ -36,7 +36,7 @@ entry:
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[Q]], i32 %[[OUT]])
 ; CHECK:     call void @cqrt_x(i32 %[[G]])
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[OUT]])
+; CHECK:     call void @cqrt_xorc_i32_controlled(i32 %[[G]], i32 %[[OUT]], i32 {{.+}})
 ; CHECK:     call void @cqrt_x(i32 %[[G]])
 ; CHECK:     call void @cqrt_free(i32 %[[G]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])

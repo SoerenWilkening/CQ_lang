@@ -75,7 +75,7 @@ merge:                                            ; preds = %arm, %entry
 ; MCNT-NOT:      call i32 @cqrt_measure
 ; FCNT-COUNT-1:  call void @cqrt_free
 ; FCNT-NOT:      call void @cqrt_free
-; XCNT-NOT:      call void @cqrt_x
+; XCNT-NOT:      call void @cqrt_x(
 
 ; The pass must stay silent on stderr — no diagnostic, no M-A warning:
 ; SILENT-NOT: cq controlled lowering

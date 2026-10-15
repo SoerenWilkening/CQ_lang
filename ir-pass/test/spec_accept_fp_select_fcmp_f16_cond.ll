@@ -46,8 +46,7 @@ define void @example(i32 %u0) {
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fcmp_olt_f16_hl(i32 %[[XH]], half 0xH4000)
 ; The copies come from the f64 controlled-copy grid — the result-width axis.
 ; CHECK-NEXT: %[[SEL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double 0.000000e+00)
-; CHECK-NEXT: %[[FC:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double 2.500000e+00)
-; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %[[F]], i32 %[[FC]], i32 %[[SEL]])
+; CHECK-NEXT: call void @cqrt_xorc_f64_controlled(i32 %[[F]], i32 %[[SEL]], double 2.500000e+00)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %[[F]], i32 %[[X]], i32 %[[SEL]])
 ; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fptosi_f64_to_i32(i32 %[[SEL]])
@@ -57,7 +56,7 @@ define void @example(i32 %u0) {
 ; CHECK-NEXT: call void @cq_template_fptosi_f64_to_i32_unc(i32 %[[R]], i32 %[[SEL]])
 ; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %[[F]], i32 %[[X]], i32 %[[SEL]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %[[F]], i32 %[[FC]], i32 %[[SEL]])
+; CHECK-NEXT: call void @cqrt_xorc_f64_controlled(i32 %[[F]], i32 %[[SEL]], double 2.500000e+00)
 ; The f16 flag strip names its own rail, and the |const> rail FC is never freed.
 ; CHECK-NEXT: call void @cq_template_fcmp_olt_f16_hl_unc(i32 %[[F]], i32 %[[XH]], half 0xH4000)
 ; CHECK-NEXT: call void @cq_template_fptrunc_f64_to_f16_unc(i32 %[[XH]], i32 %[[X]])

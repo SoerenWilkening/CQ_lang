@@ -41,8 +41,7 @@
 ; the select's TRUE operand and the bracketed copy's source its FALSE operand.
 ; `%va = select !t3, 100, %q`: TRUE = 100, FALSE = %q (the register `%h`).
 ; CHECK-NEXT:  %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT:  %[[K:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 100)
-; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[K]], i32 %[[OUT]])
+; CHECK-NEXT:  call void @cqrt_xorc_i32_controlled(i32 %[[BF]], i32 %[[OUT]], i32 100)
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[BF]])
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %h, i32 %[[OUT]])
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[BF]])

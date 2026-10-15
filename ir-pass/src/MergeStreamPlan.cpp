@@ -6,6 +6,7 @@
 
 #include "BirthFreeze.h"       // railBornZero — clause (a), "born |0⟩"
 #include "ChainWalk.h"         // isInPlaceGateOn / preservesBasisUnderRecord
+#include "ControlledSymbols.h" // isControlledXorc (bd dm7f.81)
 #include "EmitInverse.h"       // isInverseEmittable
 #include "RailBankPromote.h"   // railStoredToRailBank
 #include "TaintPropagation.h"  // TaintSet
@@ -233,6 +234,15 @@ bool planMerge(CallInst *Out, const PlanContext &Ctx, MergePlan &P) {
       break;
     CEnd = X;
   }
+  // bd dm7f.81: a zero TRUE arm emits no write, so the ¬flag bracket OPENS the
+  // core (`x(f); xorc_c(f, out, k); x(f)`). Take the opening `cqrt_x` too; an
+  // unpaired one makes its flag's count odd below, and the plan refuses.
+  while (C1 != Lo) {
+    auto *X = dyn_cast<CallInst>(C1->getPrevNode());
+    if (!X || calleeName(X) != "cqrt_x" || !Net.count(X->getArgOperand(0)))
+      break;
+    C1 = X;
+  }
   DenseMap<Value *, unsigned> XCount;
   SmallPtrSet<Value *, 8> ReadByS;
   for (Instruction *I = C1;; I = I->getNextNode()) {
@@ -307,9 +317,10 @@ bool planMerge(CallInst *Out, const PlanContext &Ctx, MergePlan &P) {
         return X->getArgOperand(2) == Dst && X->getArgOperand(0) == Flag;
       if (calleeName(X) == "cqrt_x")
         return X->getArgOperand(0) == Flag;
-      auto *U = X->hasOneUse() ? dyn_cast<CallInst>(*X->user_begin()) : nullptr;
-      return calleeName(X).starts_with("cqrt_alloc_") && U &&
-             isControlledCopy(U) && U->getArgOperand(2) == Dst;
+      // bd dm7f.81: the untainted arm is a controlled xor-immediate, no
+      // materialized source rail any more.
+      return isControlledXorc(X) && X->getArgOperand(1) == Dst &&
+             X->getArgOperand(0) == Flag;
     };
     while (auto *X = dyn_cast_or_null<CallInst>(Last->getNextNode())) {
       if (!inCore(X))

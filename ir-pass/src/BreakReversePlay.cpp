@@ -102,6 +102,7 @@
 #include "CompareLowering.h"    // emitEqFlag
 #include "ControlledSymbols.h"  // copyControlledFn
 #include "EmitInverse.h"        // emitInverseCall / emitInverseChain
+#include "MergeArmWrite.h"      // emitArmWrite (bd dm7f.81)
 #include "OpcodeSupport.h"      // abiWidthFromType
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
@@ -568,19 +569,16 @@ struct BreakEmit {
     mintCall(B, copyCtrlR(), {Fire, Rail, R}, DL);
   }
 
-  // `Dst ^= Ctl ? Val : 0` for a CLASSICAL `Val` of ABI width `W`: materialise
-  // `Val` in a fresh register, controlled-copy it, unload it (`-Val`, so it is
-  // |0> on every branch: it never held anything but the classical `Val`, and the
-  // copy reads it only as a source) and free it. Self-inverse in `Dst`. The ONE
-  // spelling, shared by the idx write / un-write (`cq.brk.k`) and the escape
-  // captures (bd 8h7d.17, `cq.brk.ev`).
+  // `Dst ^= Ctl ? Val : 0` for a CLASSICAL `Val` of ABI width `W`. Self-inverse
+  // in `Dst`. The ONE spelling, shared by the idx write / un-write (`cq.brk.k`)
+  // and the escape captures (bd 8h7d.17, `cq.brk.ev`). bd dm7f.81: it is the
+  // merge arm write (`emitArmWrite`, MergeArmWrite.h) — `Val` a literal operand of
+  // `cqrt_xorc_<W>_controlled`, a zero `Val` nothing — no longer a scratch rail
+  // loaded with `Val`, copied, unloaded with `addc(-Val)` and freed.
   void xorClassical(IRBuilder<> &B, Value *Ctl, Value *Val, Value *Dst,
-                    StringRef W, const Twine &Name, const Twine &NegName) {
-    CallInst *T = mintCall(B, wd.allocFn(W), {Val}, DL, Name);
-    mintCall(B, csyms.copyControlledFn(W), {Ctl, T, Dst}, DL);
-    Value *Neg = B.CreateNeg(Val, NegName);
-    mintCall(B, wd.addcFn(W), {T, Neg}, DL);
-    mintCall(B, wd.freeFn(), {T}, DL);
+                    StringRef W) {
+    emitArmWrite(B, Ctl, Val, Dst, csyms.copyControlledFn(W),
+                 csyms.xorcControlledFn(W), taint, DL);
   }
 
   // `Esc[j].V` recomputed from the backward counter: its cone cloned at `B` with
@@ -643,13 +641,13 @@ struct BreakEmit {
   // bd 8h7d.17: each escaping classical value, captured the same way (this
   // iteration's value of V, under the same `fire`).
   for (const BreakEmit::Escape &X : E.Esc)
-    E.xorClassical(B, Fire, X.V, X.Cap, X.W, "cq.brk.ev", "cq.brk.negev");
+    E.xorClassical(B, Fire, X.V, X.Cap, X.W);
 
   // clear e BEFORE the idx-write (idx still old) — then free it.
   bool OK = clearAndFree(B, Efl, E.wd, E.DL, &E.taint.SpineOps);
 
-  // IDX-WRITE: idx ^= fire ? (i+1) : 0  via a materialised `K` register.
-  E.xorClassical(B, Fire, K, E.Idx, E.IW, "cq.brk.k", "cq.brk.negk");
+  // IDX-WRITE: idx ^= fire ? (i+1) : 0, `K` a literal operand (bd dm7f.81).
+  E.xorClassical(B, Fire, K, E.Idx, E.IW);
 
   // clear fire via (idx == i+1) (true iff this iteration first fired), then free.
   // `fire` itself is this emitter's own `cqrt_alloc_i1` |0> ancilla returned to |0>
@@ -680,7 +678,7 @@ struct BreakEmit {
   // bd 8h7d.17: never fired (or zero trip) ⇒ the escape's value is E itself, the
   // classical φ the virtual loop computed (full trip, or the guard incoming).
   for (const BreakEmit::Escape &X : E.Esc)
-    E.xorClassical(B, E0, X.Phi, X.Cap, X.W, "cq.brk.ev", "cq.brk.negev");
+    E.xorClassical(B, E0, X.Phi, X.Cap, X.W);
   bool OK = clearAndFree(B, E0, E.wd, E.DL, &E.taint.SpineOps);
   // copy out:  out ^= R  (and each escape's register from its capture)
   mintCall(B, E.wd.copyFn(E.RW), {E.R, E.Out}, E.DL);
@@ -691,7 +689,7 @@ struct BreakEmit {
   CallInst *E0b = emitEqZero(B, E.wd, E.Idx, E.IW, E.DL);
   mintCall(B, E.copyCtrlR(), {E0b, E.Rail, E.R}, E.DL);
   for (const BreakEmit::Escape &X : E.Esc)
-    E.xorClassical(B, E0b, X.Phi, X.Cap, X.W, "cq.brk.ev", "cq.brk.negev");
+    E.xorClassical(B, E0b, X.Phi, X.Cap, X.W);
   OK = clearAndFree(B, E0b, E.wd, E.DL, &E.taint.SpineOps) && OK;  // both clears run — no short-circuit.
   return OK;
 }
@@ -714,15 +712,14 @@ struct BreakEmit {
   bool OK = xorEqKIntoFire(B, E, Fire, K);
 
   // un-write idx: idx ^= fire ? K : 0  (idx → its pre-fire value)
-  E.xorClassical(B, Fire, K, E.Idx, E.IW, "cq.brk.k", "cq.brk.negk");
+  E.xorClassical(B, Fire, K, E.Idx, E.IW);
 
   // un-capture R: R ^= fire ? rail : 0
   E.captureRailToR(B, Fire);
   // bd 8h7d.17: un-capture each escape with V recomputed from i' (the forward
   // iteration this backward one replays), under the same `fire`.
   for (const BreakEmit::Escape &X : E.Esc)
-    E.xorClassical(B, Fire, E.recomputeEscape(B, X, IPrime), X.Cap, X.W,
-                   "cq.brk.ev", "cq.brk.negev");
+    E.xorClassical(B, Fire, E.recomputeEscape(B, X, IPrime), X.Cap, X.W);
 
   // recompute e = (idx == 0) (idx now pre-fire) and the break-cond, then uncompute
   // fire via the SAME Toffoli `fire ^= brk' ∧ e` (≡ forward) ⇒ fire → 0.
@@ -966,7 +963,7 @@ void emitOneBreak(LoopBreakRegion &Rgn, Module &M, WidthDispatch &wd,
   //   h/idx/fire), is copied out, and is then returned to |0> by the EXACT adjoint
   //   replay this function emits — invariant clauses (a)-(d), with (b) holding
   //   because W contains no rotation. `idx` is the same shape (`cqrt_addc`/
-  //   controlled copies). The 261j defect needed a recorded `cqrt_ry` rail, whose
+  //   controlled xor-immediates, bd dm7f.81). The 261j defect needed a recorded `cqrt_ry` rail, whose
   //   cond(W) is EMPTY and which is not trivial on |0>.
   //
   // THE TRIPWIRE, since this is an analytic argument and not a mechanical one:

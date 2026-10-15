@@ -17,16 +17,13 @@
 ; RUN: %filecheck %s < %t.ll
 ; CHECK-LABEL: define i32 @ex1(
 ; CHECK:       %[[R1:[a-zA-Z0-9_.]+]] = tail call i32 @cls(i32 noundef %0)
-; CHECK:       call i32 @cqrt_alloc_i32(i32 %[[R1]])
-; CHECK:       call void @cqrt_copy_i32_controlled(
+; CHECK:       call void @cqrt_xorc_i32_controlled(i32 %{{[0-9a-zA-Z_.]+}}, i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[R1]])
 ; CHECK-LABEL: define i32 @ex2(
 ; CHECK:       %[[R2:[a-zA-Z0-9_.]+]] = tail call i32 @md(i32 noundef %0)
-; CHECK:       call i32 @cqrt_alloc_i32(i32 %[[R2]])
-; CHECK:       call void @cqrt_copy_i32_controlled(
+; CHECK:       call void @cqrt_xorc_i32_controlled(i32 %{{[0-9a-zA-Z_.]+}}, i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[R2]])
 ; CHECK-LABEL: define i32 @ex4(
 ; CHECK:       %[[R4:[a-zA-Z0-9_.]+]] = tail call i32 @pick(i32 noundef %0, i32 noundef {{%1|0}})
-; CHECK:       call i32 @cqrt_alloc_i32(i32 %[[R4]])
-; CHECK:       call void @cqrt_copy_i32_controlled(
+; CHECK:       call void @cqrt_xorc_i32_controlled(i32 %{{[0-9a-zA-Z_.]+}}, i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[R4]])
 
 define noundef range(i32 1, 3) i32 @cls(i32 noundef %0) local_unnamed_addr #0 {
   %2 = icmp slt i32 %0, 1

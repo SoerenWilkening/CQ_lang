@@ -3,53 +3,51 @@ cqrt_ry_f80(h0, 0x1p-1)
 cq_template_fadd_f80_hl(h0, 0xep-1) -> h1
 cq_template_fcmp_ogt_f80_hl(h0, 0xc.8p+2) -> h2
 cqrt_alloc_f80(0x0p+0) -> h3
-cqrt_alloc_f80(0x8p-3) -> h4
-cqrt_copy_f80_controlled(h2, h4, h3)
+cqrt_xorc_f80_controlled(h2, h3, 0x8p-3)
 cqrt_x(h2)
-cqrt_alloc_f80(0x8p-2) -> h5
-cqrt_copy_f80_controlled(h2, h5, h3)
+cqrt_xorc_f80_controlled(h2, h3, 0x8p-2)
 cqrt_x(h2)
-cq_template_fadd_f80(h3, h0) -> h6
+cq_template_fadd_f80(h3, h0) -> h4
 cqrt_x(h2)
-cqrt_copy_f80_controlled(h2, h5, h3)
+cqrt_xorc_f80_controlled(h2, h3, 0x8p-2)
 cqrt_x(h2)
-cqrt_copy_f80_controlled(h2, h4, h3)
+cqrt_xorc_f80_controlled(h2, h3, 0x8p-3)
 cq_template_fcmp_ogt_f80_hl_unc(h2, h0, 0xc.8p+2)
 cqrt_free(h2)
 cqrt_free(h3)
-cq_template_fcmp_ogt_f80_hl(h0, 0x0p+0) -> h7
-cq_template_fcmp_uge_f80_hl(h0, 0xc.8p+3) -> h8
-cqrt_alloc_i1(0) -> h9
-cqrt_toffoli(h7, h8, h9)
-cqrt_alloc_f80(0x0p+0) -> h10
-cqrt_copy_f80_controlled(h9, h1, h10)
-cqrt_x(h9)
-cqrt_copy_f80_controlled(h9, h0, h10)
-cqrt_x(h9)
-cq_template_fcmp_ogt_f80_hl(h0, 0x0p+0) -> h11
-cq_template_fcmp_olt_f80_hl(h0, 0xc.8p+3) -> h12
-cqrt_alloc_i1(0) -> h13
-cqrt_toffoli(h11, h12, h13)
-cqrt_alloc_f80(0x0p+0) -> h14
-cqrt_copy_f80_controlled(h13, h6, h14)
-cqrt_x(h13)
-cqrt_copy_f80_controlled(h13, h10, h14)
-cqrt_x(h13)
-cqrt_x(h9)
-cqrt_copy_f80_controlled(h9, h0, h10)
-cqrt_x(h9)
-cqrt_copy_f80_controlled(h9, h1, h10)
-cqrt_toffoli(h7, h8, h9)
-cqrt_free(h9)
-cq_template_fcmp_uge_f80_hl_unc(h8, h0, 0xc.8p+3)
-cqrt_free(h8)
-cq_template_fcmp_ogt_f80_hl_unc(h7, h0, 0x0p+0)
+cq_template_fcmp_ogt_f80_hl(h0, 0x0p+0) -> h5
+cq_template_fcmp_uge_f80_hl(h0, 0xc.8p+3) -> h6
+cqrt_alloc_i1(0) -> h7
+cqrt_toffoli(h5, h6, h7)
+cqrt_alloc_f80(0x0p+0) -> h8
+cqrt_copy_f80_controlled(h7, h1, h8)
+cqrt_x(h7)
+cqrt_copy_f80_controlled(h7, h0, h8)
+cqrt_x(h7)
+cq_template_fcmp_ogt_f80_hl(h0, 0x0p+0) -> h9
+cq_template_fcmp_olt_f80_hl(h0, 0xc.8p+3) -> h10
+cqrt_alloc_i1(0) -> h11
+cqrt_toffoli(h9, h10, h11)
+cqrt_alloc_f80(0x0p+0) -> h12
+cqrt_copy_f80_controlled(h11, h4, h12)
+cqrt_x(h11)
+cqrt_copy_f80_controlled(h11, h8, h12)
+cqrt_x(h11)
+cqrt_x(h7)
+cqrt_copy_f80_controlled(h7, h0, h8)
+cqrt_x(h7)
+cqrt_copy_f80_controlled(h7, h1, h8)
+cqrt_toffoli(h5, h6, h7)
 cqrt_free(h7)
-cqrt_free(h10)
-cqrt_toffoli(h11, h12, h13)
-cqrt_free(h13)
-cq_template_fcmp_olt_f80_hl_unc(h12, h0, 0xc.8p+3)
-cqrt_free(h12)
-cq_template_fcmp_ogt_f80_hl_unc(h11, h0, 0x0p+0)
+cq_template_fcmp_uge_f80_hl_unc(h6, h0, 0xc.8p+3)
+cqrt_free(h6)
+cq_template_fcmp_ogt_f80_hl_unc(h5, h0, 0x0p+0)
+cqrt_free(h5)
+cqrt_free(h8)
+cqrt_toffoli(h9, h10, h11)
 cqrt_free(h11)
-cqrt_measure_f80(h14) -> 0x0p+0
+cq_template_fcmp_olt_f80_hl_unc(h10, h0, 0xc.8p+3)
+cqrt_free(h10)
+cq_template_fcmp_ogt_f80_hl_unc(h9, h0, 0x0p+0)
+cqrt_free(h9)
+cqrt_measure_f80(h12) -> 0x0p+0

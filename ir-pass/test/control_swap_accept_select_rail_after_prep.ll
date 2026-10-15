@@ -80,11 +80,9 @@ define i32 @main() {
 ; CHECK-NEXT: %[[BF:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H0]], i32 %[[BF]])
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: %[[T2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 2)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[T2]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[BF]], i32 %[[OUT]], i32 2)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
-; CHECK-NEXT: %[[F5:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 5)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[F5]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[BF]], i32 %[[OUT]], i32 5)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
 ; CHECK-NEXT: %[[H1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK-NEXT: call void @cqrt_ry_i1(i32 %[[H1]], double 5.000000e-01)
@@ -106,9 +104,9 @@ define i32 @main() {
 ; still dephase against it (the chain-final leak, unchanged here; r2j3.7 is
 ; its dead-op twin).
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[F5]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[BF]], i32 %[[OUT]], i32 5)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[T2]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[BF]], i32 %[[OUT]], i32 2)
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H0]], i32 %[[BF]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[BF]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT]])
@@ -123,9 +121,9 @@ define i32 @main() {
 ; (which reads `%out`), after the first core's reverse; the bracket scope of
 ; every core, forward and reversed, is still cnot/x-delimited exactly as below.
 ; ORD: call void @cqrt_cnot(
-; ORD: call void @cqrt_copy_i32_controlled(
+; ORD: call void @cqrt_xorc_i32_controlled(
 ; ORD: call void @cqrt_x(
-; ORD: call void @cqrt_copy_i32_controlled(
+; ORD: call void @cqrt_xorc_i32_controlled(
 ; ORD: call void @cqrt_x(
 ; ORD: call void @cqrt_cnot(
 ; ORD: call void @cqrt_copy_i32_controlled(
@@ -133,9 +131,9 @@ define i32 @main() {
 ; ORD: call void @cqrt_copy_i32_controlled(
 ; ORD: call void @cqrt_x(
 ; ORD: call void @cqrt_x(
-; ORD: call void @cqrt_copy_i32_controlled(
+; ORD: call void @cqrt_xorc_i32_controlled(
 ; ORD: call void @cqrt_x(
-; ORD: call void @cqrt_copy_i32_controlled(
+; ORD: call void @cqrt_xorc_i32_controlled(
 ; ORD: call void @cqrt_cnot(
 ; ORD: call void @cqrt_free(
 ; ORD: call void @cqrt_free(
@@ -154,25 +152,25 @@ define i32 @main() {
 ; pure-negative prefix cannot bind a capture; they are DERIVED from the pass
 ; output (`%h` = the `b0` rail, `%h4` = the prepped `b1` rail).
 ; NOX-NOT: call void @cqrt_x(i32 %h)
-; NOX-NOT: call void @cqrt_x(i32 %h4)
+; NOX-NOT: call void @cqrt_x(i32 %h3)
 ; The MERGE-OUT rail too (round-2 finding F2-3): it is the register the
 ; source's variable ends up in and the one this fixture MEASURES, so an X
 ; landing on it is a basis flip of the user's answer.  An EXTRA x is caught
 ; by the count prefix and a SUBSTITUTED one by the ordered positive stream;
 ; this closes the gap where neither is looking.
-; NOX-NOT: call void @cqrt_x(i32 %out3)
+; NOX-NOT: call void @cqrt_x(i32 %out2)
 ; NEITHER USER REGISTER IS FREED — `Ry(θ)|0⟩ ≠ |0⟩` (Rule 6). Only the two
 ; ancillas are, plus `%out` once reversed (bd r2j3.32); `%out3`/`%h_op` are left
 ; allocated.
 ; NOFREE-NOT: call void @cqrt_free(i32 %h)
-; NOFREE-NOT: call void @cqrt_free(i32 %h4)
+; NOFREE-NOT: call void @cqrt_free(i32 %h3)
 ; `%out` (the first merge rail) IS freed since bd r2j3.32 -- after its core is
 ; reversed, at a proven |0>; the positive stream pins where.
 ; NOFREE-NOT: call void @cqrt_free(i32 %h_op)
 ; The MERGE-OUT rail too (round-2 finding F2-3) — freeing the user's answer
 ; register is a hidden measurement (Rule 6), and it was named by no free
 ; negative here before.
-; NOFREE-NOT: call void @cqrt_free(i32 %out3)
+; NOFREE-NOT: call void @cqrt_free(i32 %out2)
 ; A rail condition mints NO compare, so it strips NOTHING; and the hoisted
 ; `add` chain is left allocated rather than adjointed.
 ; NOUNC-NOT: _unc(
@@ -182,9 +180,10 @@ define i32 @main() {
 ; FCNT-NOT:     call void @cqrt_free(
 ; CNOTCNT-COUNT-4: call void @cqrt_cnot(
 ; CNOTCNT-NOT:     call void @cqrt_cnot(
-; CPCNT-COUNT-6: call void @cqrt_copy_i32_controlled(
+; (bd dm7f.81: a constant or classical merge arm is a literal operand of cqrt_xorc_<W>_controlled, no longer an alloc'd rail + cqrt_copy_<W>_controlled; a zero arm emits no gate and no bracket. Counts below re-measured.)
+; CPCNT-COUNT-2: call void @cqrt_copy_i32_controlled(
 ; CPCNT-NOT:     call void @cqrt_copy
 ; RYCNT-COUNT-2: call void @cqrt_ry_
 ; RYCNT-NOT:     call void @cqrt_ry_
-; ACNT-COUNT-8: call i32 @cqrt_alloc_
+; ACNT-COUNT-6: call i32 @cqrt_alloc_
 ; ACNT-NOT:     call i32 @cqrt_alloc_

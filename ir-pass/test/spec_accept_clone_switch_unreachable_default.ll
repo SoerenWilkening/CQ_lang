@@ -85,8 +85,7 @@ entry:
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F1]], i32 %[[S1]], i32 %[[S2]])
 ; CHECK-NEXT:  %[[F0:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[K]], i32 0)
 ; CHECK-NEXT:  %[[S3:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT:  %[[K3:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 3)
-; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F0]], i32 %[[K3]], i32 %[[S3]])
+; CHECK-NEXT:  call void @cqrt_xorc_i32_controlled(i32 %[[F0]], i32 %[[S3]], i32 3)
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[F0]])
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F0]], i32 %[[S2]], i32 %[[S3]])
 ; CHECK-NEXT:  %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
@@ -95,7 +94,7 @@ entry:
 ; compare `_unc` right after, outermost select first; then the four data `_unc`s.
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F0]], i32 %[[S2]], i32 %[[S3]])
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[F0]])
-; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F0]], i32 %[[K3]], i32 %[[S3]])
+; CHECK-NEXT:  call void @cqrt_xorc_i32_controlled(i32 %[[F0]], i32 %[[S3]], i32 3)
 ; CHECK-NEXT:  call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F0]], i32 %[[K]], i32 0)
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F1]], i32 %[[S1]], i32 %[[S2]])
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[F1]])

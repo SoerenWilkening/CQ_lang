@@ -5474,11 +5474,13 @@ add_test(NAME e2e-slice-control-cascade-three-bools
 # reads it as a copy source) and is then REVERSED, so its flag strip is deferred
 # past that reader, while in the base the rail is measured and its strip stays
 # put. Everything up to the strip is still byte-identical.
+# bd dm7f.81 shortened it to 12: the a-mux's constant arms (2, 5) are literal
+# operands of `cqrt_xorc_i32_controlled`, no longer two `cqrt_alloc_i32` lines.
 add_test(NAME e2e-cascade-two-bools-base-prefix-identical
   COMMAND "${CMAKE_COMMAND}"
     "-DA=${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools.expected.log"
     "-DB=${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools_base.expected.log"
-    -DN=14
+    -DN=12
     -P "${CMAKE_CURRENT_SOURCE_DIR}/compare_prefix.cmake")
 
 # GATE 2 — "an ACCEPT, not a STREAM", the SELECT half, and this is the real twin
@@ -5494,12 +5496,15 @@ add_test(NAME e2e-cascade-two-bools-base-prefix-identical
 # `add` to its flag free (flagship 15-31, uncond 14-30), so it also covers the
 # a-mux reversal, which needs the a-mux flag and its two classical sources
 # renamed too (h2/h4/h5 vs h1/h3/h4).
+# bd dm7f.81 re-measured the window (flagship 13-29, uncond 12-28): the a-mux's
+# classical sources are literals now (no rails to rename), so the renames are the
+# b1 rail, the a-mux flag and out rail, the `add`, the b1 flag and the b1 out rail.
 add_test(NAME e2e-cascade-two-bools-twin-identical
   COMMAND "${CMAKE_COMMAND}"
     "-DA=${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools.expected.log"
     "-DB=${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools_uncond.expected.log"
-    -DAFROM=15 -DATO=31 -DBFROM=14 -DBTO=30
-    "-DAREN=h1=hPREP;h3=hAMUX;h2=hFLAG;h4=hS1;h5=hS2" "-DBREN=h5=hPREP;h2=hAMUX;h1=hFLAG;h3=hS1;h4=hS2"
+    -DAFROM=13 -DATO=29 -DBFROM=12 -DBTO=28
+    "-DAREN=h1=hPREP;h2=hFLAG;h3=hAMUX;h4=hADD;h5=hBF;h6=hOUT" "-DBREN=h3=hPREP;h1=hFLAG;h2=hAMUX;h4=hADD;h5=hBF;h6=hOUT"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/compare_twin_half.cmake")
 
 # bd `boi6` D-B / Track M, round-1 finding F-M6 — a 4.4 DATA SELECT **INSIDE** a

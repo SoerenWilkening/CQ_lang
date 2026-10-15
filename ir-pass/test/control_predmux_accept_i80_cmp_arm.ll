@@ -77,8 +77,7 @@ merge:                                  ; 2 merge phis = the W3 PredMux claim wi
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 0xK00000000000000000000)
 ; CHECK:     call void @cqrt_copy_f80_controlled(i32 %[[F80]], i32 %[[Q]], i32 %[[OUT]])
 ; CHECK:     call void @cqrt_x(i32 %[[F80]])
-; CHECK:     %[[SELOP:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 0xK3FFF8000000000000000)
-; CHECK:     call void @cqrt_copy_f80_controlled(i32 %[[F80]], i32 %[[SELOP]], i32 %[[OUT]])
+; CHECK:     call void @cqrt_xorc_f80_controlled(i32 %[[F80]], i32 %[[OUT]], x86_fp80 0xK3FFF8000000000000000)
 ; CHECK:     call void @cqrt_x(i32 %[[F80]])
 
 ; Rule 6 — the flag rail is stripped by the VOID out-first `_unc`, which must

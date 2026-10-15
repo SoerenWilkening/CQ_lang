@@ -48,7 +48,7 @@
 
 ; The 4.4 select merge lowers first (round 1) and mints `%out`.
 ; CHECK: %[[OUT:.*]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK: call void @cqrt_copy_i32_controlled(
+; CHECK: call void @cqrt_xorc_i32_controlled(
 ; CHECK: call void @cq_template_icmp_sgt_i32_hl_unc(
 
 ; The ROLLED body, in order, with the per-iteration discharge that was missing.

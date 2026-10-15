@@ -98,7 +98,7 @@
 
 ; The negative that makes the CHECK above mean something: no IN-PLACE add anywhere.
 ; NEG-NOT: call void @cqrt_addc_
-; NEG-NOT: call void @cqrt_xorc_
+; NEG-NOT: call void @cqrt_xorc_{{i[0-9]+}}(
 
 declare i32 @cq_theta_si32(i32 noundef, double noundef)
 declare i32 @cq_measure_si32(i32 noundef)

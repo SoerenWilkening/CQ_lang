@@ -734,6 +734,48 @@ void cqrt_xorc_i64(int32_t h, int64_t imm) {
 }
 
 /* ---------------------------------------------------------------------
+ * Controlled xor of a classical immediate (bd dm7f.81; see cq_runtime.h):
+ * h ^= imm iff ctrl. The integer immediate prints as a decimal literal
+ * (like cqrt_xorc_<W>), the fp one in the cqrt_alloc_f<W> format.
+ * --------------------------------------------------------------------- */
+void cqrt_xorc_i1_controlled(int32_t ctrl, int32_t h, bool imm) {
+    printf("cqrt_xorc_i1_controlled(h%d, h%d, %lld)\n", ctrl, h, (long long)imm);
+    fflush(stdout);
+}
+void cqrt_xorc_i8_controlled(int32_t ctrl, int32_t h, int8_t imm) {
+    printf("cqrt_xorc_i8_controlled(h%d, h%d, %lld)\n", ctrl, h, (long long)imm);
+    fflush(stdout);
+}
+void cqrt_xorc_i16_controlled(int32_t ctrl, int32_t h, int16_t imm) {
+    printf("cqrt_xorc_i16_controlled(h%d, h%d, %lld)\n", ctrl, h, (long long)imm);
+    fflush(stdout);
+}
+void cqrt_xorc_i32_controlled(int32_t ctrl, int32_t h, int32_t imm) {
+    printf("cqrt_xorc_i32_controlled(h%d, h%d, %lld)\n", ctrl, h, (long long)imm);
+    fflush(stdout);
+}
+void cqrt_xorc_i64_controlled(int32_t ctrl, int32_t h, int64_t imm) {
+    printf("cqrt_xorc_i64_controlled(h%d, h%d, %lld)\n", ctrl, h, (long long)imm);
+    fflush(stdout);
+}
+void cqrt_xorc_f16_controlled(int32_t ctrl, int32_t h, _Float16 imm) {
+    printf("cqrt_xorc_f16_controlled(h%d, h%d, %a)\n", ctrl, h, (double)imm);
+    fflush(stdout);
+}
+void cqrt_xorc_f32_controlled(int32_t ctrl, int32_t h, float imm) {
+    printf("cqrt_xorc_f32_controlled(h%d, h%d, %a)\n", ctrl, h, (double)imm);
+    fflush(stdout);
+}
+void cqrt_xorc_f64_controlled(int32_t ctrl, int32_t h, double imm) {
+    printf("cqrt_xorc_f64_controlled(h%d, h%d, %a)\n", ctrl, h, imm);
+    fflush(stdout);
+}
+void cqrt_xorc_f80_controlled(int32_t ctrl, int32_t h, long double imm) {
+    printf("cqrt_xorc_f80_controlled(h%d, h%d, %La)\n", ctrl, h, imm);
+    fflush(stdout);
+}
+
+/* ---------------------------------------------------------------------
  * In-place reversible arithmetic, quantum source (bd r2j3.33 / dm7f.51
  * step 1; see cq_runtime.h). `dst` is mutated by `src`'s label; `src`
  * is read only. Trace-only: both handles print as h<N>.

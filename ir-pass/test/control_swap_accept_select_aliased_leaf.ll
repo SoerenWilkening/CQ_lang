@@ -38,8 +38,6 @@
 ; CHECK: call void @cqrt_ry_f64(i32 %h, double 5.000000e-01)
 ; CHECK: %h_cmp = call i32 @cq_template_fcmp_uno_f64(i32 %h, i32 %h)
 ; CHECK: %out = call i32 @cqrt_alloc_f64(double 0.000000e+00)
-; CHECK: %selop = call i32 @cqrt_alloc_f64(double 0.000000e+00)
-; CHECK: call void @cqrt_copy_f64_controlled(i32 %h_cmp, i32 %selop, i32 %out)
 ; CHECK: call void @cqrt_x(i32 %h_cmp)
 ; CHECK: call void @cqrt_copy_f64_controlled(i32 %h_cmp, i32 %h, i32 %out)
 ; CHECK: call void @cqrt_x(i32 %h_cmp)

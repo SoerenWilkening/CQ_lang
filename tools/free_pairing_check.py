@@ -918,6 +918,11 @@ def classify(sym):
     if re.fullmatch(rf"cqrt_xorc_{_W}", sym):
         return Effect("gate", writes=(0,), adjoint_of="self",
                       classical_imm=(1,))
+    # bd dm7f.81: a merge's classical-arm write `(ctrl, dst, imm)`, dst ^= imm iff
+    # ctrl; arg 0 is a CONTROL (unlike the 2-arg xorc), imm a classical literal.
+    if re.fullmatch(rf"cqrt_xorc_{_W}_controlled", sym):
+        return Effect("gate", reads=(0,), writes=(1,), adjoint_of="self",
+                      controls=(0,), classical_imm=(2,))
     # bd r2j3.33 / dm7f.51 step 1 — the in-place QUANTUM-source gates
     # `cqrt_{xor,add,sub}_<W>(src, dst)`: src (slot 0) READ, dst (slot 1)
     # WRITTEN, a basis permutation of the pair. xor is self-adjoint; add and sub

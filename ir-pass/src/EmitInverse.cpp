@@ -13,6 +13,7 @@
 #include "EmitInverse.h"
 #include "QramIndexWidth.h"  // inheritQramIndexTag (libcqops b6a)
 #include "InPlaceQQ.h"       // isInPlaceQQSymbol / kInPlaceQQTag (bd r2j3.33)
+#include "ControlledSymbols.h"  // isControlledXorc (bd dm7f.81)
 
 #include "ChainWalk.h"  // isAbiQramStore — the shared frozen-ABI store shape (Rule 14)
                         // isBranchPhaseGate — the kickback-gate record (bd 3qlq F-L7-1)
@@ -242,6 +243,12 @@ bool isInverseEmittable(const CallInst *Forward) {
   // escaping basis value out; it is never reversed) and is excluded by the suffix.
   if (Name.starts_with("cqrt_copy_") && Name.ends_with("_controlled"))
     return true;
+  // bd dm7f.81: the same select's UNTAINTED arm, `cqrt_xorc_<W>_controlled(ctrl,
+  // dst, imm)`, is the same involution (dst ^= imm under ctrl). Asked by the one
+  // predicate: the 2-arg `cqrt_xorc_` row above is a different family whose
+  // arg 0 is the written register, not a control.
+  if (isControlledXorc(Forward))
+    return true;
 
   return false;
 }
@@ -375,7 +382,8 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
   // the uncompute driver passes null).
   if (Name == "cqrt_x" || Name == "cqrt_cswap" || Name == "cqrt_toffoli" ||
       Name == "cqrt_cnot" ||
-      (Name.starts_with("cqrt_copy_") && Name.ends_with("_controlled"))) {
+      (Name.starts_with("cqrt_copy_") && Name.ends_with("_controlled")) ||
+      isControlledXorc(Forward)) {
     SmallVector<Value *, 3> Args(Forward->args());
     if (CurHandle && !Args.empty())
       Args[0] = CurHandle;

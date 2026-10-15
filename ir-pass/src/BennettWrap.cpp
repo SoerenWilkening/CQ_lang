@@ -4,6 +4,7 @@
 #include "BennettWrap.h"
 #include "SpeculationSafety.h"
 
+#include "ControlledSymbols.h"  // isControlledXorc (bd dm7f.81)
 #include "EmitInverse.h"
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
@@ -116,6 +117,8 @@ std::optional<SmallVector<Value *, 2>> gateTargets(CallInst *CI,
   if (N.starts_with("cqrt_copy_") && N.ends_with("_controlled") &&
       CI->arg_size() == 3)
     return SmallVector<Value *, 2>{arg(2)};
+  if (isControlledXorc(CI))  // bd dm7f.81: (ctrl, dst, imm) writes dst.
+    return SmallVector<Value *, 2>{arg(1)};
   return std::nullopt;
 }
 

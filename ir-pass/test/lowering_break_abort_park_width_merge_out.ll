@@ -72,7 +72,7 @@ attributes #3 = { mustprogress nofree noinline norecurse nosync nounwind willret
 ; CHECK-LABEL: define i64 @run(
 ; --- round 1: the classical-call value arm merges into a fresh 64-bit `out` ---
 ; CHECK:      %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i64(i64 0)
-; CHECK:      call void @cqrt_copy_i64_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[OUT]])
+; CHECK:      call void @cqrt_xorc_i64_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[OUT]], i64 %{{[a-zA-Z0-9_.]+}})
 ; --- round 2: the park routes `out` into a 64-bit graveyard -------------------
 ; CHECK:      %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i64_hl(i32 %[[OUT]], i64 %2)
 ; CHECK-NEXT: %[[G:grave[0-9]*]] = call i32 @cqrt_alloc_i64(i64 0)

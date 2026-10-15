@@ -10,7 +10,8 @@
 ; `emitBreakForward` rewires `%iex`'s users to `cq.brk.esc.out` in `lowerLoops`,
 ; but `%ip1` stays classical until round 2, so the round-1 select loaded it as a
 ; classical copy source and, without the fence, `cqrt_alloc_i32` read the escape
-; register's handle id (measured on 28e85906, exit 0). The re-ask in
+; register's handle id (measured on 28e85906, exit 0; since bd dm7f.81 the operand
+; read is the immediate slot of `cqrt_xorc_i32_controlled`). The re-ask in
 ; `declineQuantumCopySources` declines it loudly; see
 ; control_select_reject_round2_copy_source.ll for the fence.
 ;

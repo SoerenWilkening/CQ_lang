@@ -83,11 +83,9 @@ entry:
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H]], i32 %[[G]])
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %[[C]], i32 %[[G]])
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 2)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[T]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[G]], i32 %[[OUT]], i32 2)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
-; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 5)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[F]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[G]], i32 %[[OUT]], i32 5)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %[[C]], i32 %[[G]])
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H]], i32 %[[G]])
@@ -102,9 +100,9 @@ entry:
 ; `cqrt_cnot` around the whole thing (mint FIRST, strip LAST — the LIFO the
 ; ancilla's |0> free depends on).
 ; ORD: call void @cqrt_cnot(
-; ORD: call void @cqrt_copy_i32_controlled(
+; ORD: call void @cqrt_xorc_i32_controlled(
 ; ORD: call void @cqrt_x(
-; ORD: call void @cqrt_copy_i32_controlled(
+; ORD: call void @cqrt_xorc_i32_controlled(
 ; ORD: call void @cqrt_x(
 ; ORD: call void @cqrt_cnot(
 ; ORD: call void @cqrt_free(
@@ -123,7 +121,7 @@ entry:
 ; ancilla and not the rail itself. The register handle is named below because a
 ; pure-negative prefix cannot bind a capture; it is DERIVED from the pass output.
 ; NOX-NOT: call void @cqrt_x(i32 %h)
-; NOX-NOT: call void @cqrt_x(i32 %h2)
+; NOX-NOT: call void @cqrt_x(i32 %h1)
 ; A rail condition mints NO compare, so it strips NOTHING: there is no `_unc`
 ; anywhere, and a data `_unc` here would mean the spine adjointed a chain the
 ; controlled copy entangled with `%out` (Rules 6/8).
@@ -134,9 +132,12 @@ entry:
 ; FCNT-NOT:     call void @cqrt_free(
 ; CNCNT-COUNT-4: call void @cqrt_cnot(
 ; CNCNT-NOT:     call void @cqrt_cnot(
-; CPCNT-COUNT-2: call void @cqrt_copy_i32_controlled(
+; (bd dm7f.81: a constant or classical merge arm is a literal operand of cqrt_xorc_<W>_controlled, no longer an alloc'd rail + cqrt_copy_<W>_controlled; a zero arm emits no gate and no bracket. Counts below re-measured.)
+; CPCNT-NOT: call void @cqrt_copy_i32_controlled(
+; CPCNT-COUNT-2: call void @cqrt_xorc_i32_controlled(
+; CPCNT-NOT: call void @cqrt_xorc_i32_controlled(
 ; CPCNT-NOT:     call void @cqrt_copy
 ; RYCNT-COUNT-2: call void @cqrt_ry_
 ; RYCNT-NOT:     call void @cqrt_ry_
-; ACNT-COUNT-6: call i32 @cqrt_alloc_
+; ACNT-COUNT-4: call i32 @cqrt_alloc_
 ; ACNT-NOT:     call i32 @cqrt_alloc_

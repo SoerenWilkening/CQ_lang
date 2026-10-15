@@ -55,7 +55,8 @@
 ; The counts are the
 ; shipped 7.4 break lowering's, MEASURED on this module; this file's subject is
 ; the D2 deletion, and these keep it from being blind to everything else.
-; FCNT-COUNT-16: call void @cqrt_free(
+; (bd dm7f.81: a constant or classical merge arm is a literal operand of cqrt_xorc_<W>_controlled, no longer an alloc'd rail + cqrt_copy_<W>_controlled; a zero arm emits no gate and no bracket. Counts below re-measured.)
+; FCNT-COUNT-14: call void @cqrt_free(
 ; FCNT-NOT: call void @cqrt_free(
 
 ; ZERO `cqrt_x` -- the break lowering brackets nothing here, so any is injected.

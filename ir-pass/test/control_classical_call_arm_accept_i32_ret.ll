@@ -43,7 +43,7 @@ merge:
 attributes #0 = { nounwind willreturn memory(none) }
 
 ; the controlled-XOR copy merge fires and the i32 handle escapes via ret:
-; CHECK:     call void @cqrt_copy_i32_controlled(
+; CHECK:     call void @cqrt_xorc_i32_controlled(
 ; CHECK:     ret i32 %[[OUT:[a-zA-Z0-9_.]+]]
 ; no surviving diamond phi (RAUW'd to %out) and NO clone:
 ; CHECK-NOT: phi i32

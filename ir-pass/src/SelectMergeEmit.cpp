@@ -3,18 +3,19 @@
 // §16.3; IMPLEMENTATION-4.4 §4). NO work rail, NO route `cqrt_cswap`, NO
 // `RegionFlatten`, NO reverse-play (the br-diamond value arm reuses it via
 // `emitValueRegion`). Reuses `lowerCompareToFlag` (mint/strip), `allocFn`/
-// `freeFn` (rail + the one free), `copyControlledFn` (the merge primitive), and
-// `xFn` (the ¬flag bracket) verbatim (Rule 14); the only original logic is the
-// six-step ordering, which IS the §5a contract.
+// `freeFn` (rail + the one free) and `emitArmMux` (MergeArmWrite.h: the two arm
+// writes and the ¬flag bracket) verbatim (Rule 14); the only original logic is
+// the six-step ordering, which IS the §5a contract.
 //
 // Correctness rests on analytic state reasoning, NOT on `opt -verify` (Rule 2):
-// with `%out` allocated to |0>, `copy_c(f, a, out)` writes a iff f=1 and the
-// X-bracketed `copy_c(f, b, out)` writes b iff f=0, so `%out = f ? a : b` with no
-// double-write on either basis branch — provided the `cqrt_x` encloses ONLY the
-// second copy (the §16.3 bracket-order hazard, invisible to a count-only CHECK;
-// pinned by the §5a ordered FileCheck). The flag is stripped by `icmp_inv` (q is
-// untouched — the copies write `out`, never q — so q == q0 and the strip is
-// valid) and freed; q, `%out`, and both operands are left allocated (Rule 6/8).
+// with `%out` allocated to |0>, the TRUE write (a controlled copy of a quantum
+// arm, a controlled xor of a classical arm's literal, bd dm7f.81) writes a iff
+// f=1 and the X-bracketed FALSE write writes b iff f=0, so `%out = f ? a : b`
+// with no double-write on either basis branch — provided the `cqrt_x` encloses
+// ONLY the second write (the §16.3 bracket-order hazard, invisible to a
+// count-only CHECK; pinned by the §5a ordered FileCheck). The flag is stripped
+// by `icmp_inv` (q is untouched — the writes target `out`, never q — so q == q0
+// and the strip is valid) and freed; q and `%out` are left allocated (Rule 6/8).
 
 #include "SelectMergeEmit.h"
 
@@ -23,6 +24,7 @@
 #include "ControlledSymbols.h"  // copyControlledFn / xFn / cnotFn / toffoliFn
 #include "OpcodeSupport.h"      // abiWidthFromType
 #include "CondTreeEmit.h"       // emitCondNetwork / stripCondNetwork (3qlq P3)
+#include "MergeArmWrite.h"      // emitArmMux (bd dm7f.81)
 #include "SelectClassify.h"     // CondTree / collectCondTree (the shared walk)
 #include "TaintPropagation.h"   // TaintSet
 #include "WidthDispatch.h"      // allocFn / freeFn / llvmWidthType
@@ -40,7 +42,6 @@
 #include "llvm/IR/Instructions.h"
 
 #include <algorithm>
-#include <vector>  // copySourceLedger (bd r2j3.14)
 
 using namespace llvm;
 
@@ -70,49 +71,6 @@ void scrubTaint(Instruction *I, TaintSet &taint) {
 }
 
 }  // namespace
-
-// Shared copy-source materializer (promoted from the former file-local `static
-// materialize`; see SelectMergeEmit.h for the contract). Now consumed by the
-// select merge below, `SwitchDataMuxEmit`, and `ClassicalCallArmEmit` (Rule 14).
-namespace {
-// bd r2j3.14 — the classical copy sources loaded so far, for the final-taint
-// re-ask. A function-local static, the pattern of `exitDischargeObligations` (no
-// new `TaintSet` field). `WeakVH`: a load erased since is nothing to re-ask, and
-// the handle must NOT follow a RAUW (it names the load, whose operand is read).
-std::vector<WeakVH> &copySourceLedger() {
-  static std::vector<WeakVH> Ledger;
-  return Ledger;
-}
-}  // namespace
-
-Value *materializeCopySource(Value *V, FunctionCallee Alloc,
-                             const TaintSet &taint, IRBuilder<> &B,
-                             const DebugLoc &DL, const Twine &Name) {
-  if (taint.Tainted.count(V))
-    return V;  // already an i32 quantum handle.
-  CallInst *H = B.CreateCall(Alloc, {V}, Name);
-  if (DL)
-    H->setDebugLoc(DL);
-  if (!isa<Constant>(V))
-    copySourceLedger().emplace_back(H);  // re-asked at final taint (r2j3.14).
-  return H;
-}
-
-bool declineQuantumCopySources(Module &M, TaintSet &taint) {
-  (void)M;  // module-wide record; each load names its own function.
-  std::vector<WeakVH> Ledger;
-  Ledger.swap(copySourceLedger());  // read once: the next module starts empty.
-  for (const WeakVH &H : Ledger) {
-    auto *Load = dyn_cast_or_null<CallInst>(static_cast<Value *>(H));
-    if (!Load || !Load->getFunction() || Load->arg_size() != 1)
-      continue;  // erased or detached: no load left to read.
-    if (taint.Tainted.count(Load->getArgOperand(0))) {
-      diagnoseUnderControl(Load, "classical copy source became quantum-derived");
-      return true;
-    }
-  }
-  return false;
-}
 
 void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
                       ControlledSymbols &csyms, TaintSet &taint) {
@@ -271,11 +229,15 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   StringRef Abi = abiWidthFromType(Sel->getType());
   Type *RailTy = Abi.empty() ? nullptr : wd.llvmWidthType(Abi);
   FunctionCallee Alloc = Abi.empty() ? FunctionCallee() : wd.allocFn(Abi);
+  bool Fp = Sel->getType()->isFloatingPointTy();
   FunctionCallee Copy = Abi.empty() ? FunctionCallee()
-                        : Sel->getType()->isFloatingPointTy()
-                            ? csyms.copyControlledFpFn(Abi)
-                            : csyms.copyControlledFn(Abi);
-  if (!RailTy || !Alloc || !Copy) {
+                        : Fp        ? csyms.copyControlledFpFn(Abi)
+                                    : csyms.copyControlledFn(Abi);
+  // bd dm7f.81: the untainted arm's controlled xor-immediate, same int/fp split.
+  FunctionCallee Xorc = Abi.empty() ? FunctionCallee()
+                        : Fp        ? csyms.xorcControlledFpFn(Abi)
+                                    : csyms.xorcControlledFn(Abi);
+  if (!RailTy || !Alloc || !Copy || !Xorc) {
     diagnoseUnderControl(Sel, "control flow");
     return;
   }
@@ -386,18 +348,17 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // guard above returned otherwise) and is exactly `abiWidthFromType(Sel->getType())`.
   taint.HandleWidth[Out] = Abi;
 
-  // 3. COPY the TRUE value on the flag (materialize if classical) — fires on f=1.
-  Value *TrueSrc = materializeCopySource(Tru, Alloc, taint, B, DL);
-  stamp(B.CreateCall(Copy, {Flag, TrueSrc, Out}));
-
-  // 4. COPY the FALSE value on ¬flag, X-bracketed (the 4.1 self-inverse cqrt_x
-  //    convention). The bracket encloses ONLY this second copy: a mis-bracket
-  //    (x before BOTH copies) yields the identical symbol multiset yet writes a
+  // 3. WRITE the TRUE value on the flag — fires on f=1.
+  // 4. WRITE the FALSE value on ¬flag, X-bracketed (the 4.1 self-inverse cqrt_x
+  //    convention). The bracket encloses ONLY this second write: a mis-bracket
+  //    (x before BOTH writes) yields the identical symbol multiset yet writes a
   //    then b on one basis branch = wrong %out (§16.3, the load-bearing hazard).
-  stamp(B.CreateCall(csyms.xFn(), {Flag}));
-  Value *FalseSrc = materializeCopySource(Fls, Alloc, taint, B, DL);
-  stamp(B.CreateCall(Copy, {Flag, FalseSrc, Out}));
-  stamp(B.CreateCall(csyms.xFn(), {Flag}));
+  // bd dm7f.81: each write is `emitArmWrite` (MergeArmWrite.h): a quantum arm is
+  // a controlled copy, a classical arm a controlled xor of its value as a
+  // literal operand (no rail), an all-zero classical arm nothing (and then no
+  // bracket). Analytic: out starts |0>; on f=1 only the TRUE write fires, on
+  // f=0 only the bracketed FALSE write; a skipped write XORs 0. So out = f ? a : b.
+  emitArmMux(B, csyms, Flag, Tru, Fls, Out, Copy, Xorc, taint, DL);
 
   // 5. STRIP — exact LIFO (compound-cond-select-PRD §3). Reverse node order:
   //    the self-inverse network (AND: the same toffoli; OR: the toffoli, then

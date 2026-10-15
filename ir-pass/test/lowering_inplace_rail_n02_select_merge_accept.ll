@@ -35,7 +35,7 @@
 
 ; The 4.4 controlled-copy merge, then the derived `and`, then the Q+Q xor.
 ; CHECK: %[[OUT:.*]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK: call void @cqrt_copy_i32_controlled(i32 %{{.*}}, i32 %{{.*}}, i32 %[[OUT]])
+; CHECK: call void @cqrt_xorc_i32_controlled(i32 %{{.*}}, i32 %[[OUT]], i32 11)
 ; CHECK: %[[W:.*]] = call i32 @cq_template_and_i32_hl(i32 %[[OUT]], i32 7)
 ; bd r2j3.33 (dm7f.51 step 1): `r`'s old value is dead at the folded xor and its
 ; result is measured, so the Q+Q xor now lowers IN PLACE on `r`'s rail with `w`
@@ -61,7 +61,7 @@
 ; head and tail) were caught 20/48 — every free MISSED by all 8, because no
 ; accept fixture carried a free count. The blocks below close that; the counts
 ; are DERIVED from this fixture's own pass output, not guessed.
-; NOROUTE-NOT: call void @cqrt_xorc_i
+; NOROUTE-NOT: call void @cqrt_xorc_i{{[0-9]+}}(
 ; NOROUTE-NOT: call void @cqrt_xorc_i{{[0-9]+}}(i32 %{{.*}}, i32 %{{.*}})
 ; NOROUTE-NOT: call void @cqrt_addc_i
 ; NOROUTE-NOT: call void @cqrt_addc_i{{[0-9]+}}(i32 %{{.*}}, i32 %{{.*}})

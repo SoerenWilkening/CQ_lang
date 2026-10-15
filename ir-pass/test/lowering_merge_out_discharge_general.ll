@@ -21,18 +21,16 @@
 ; CHECK-LABEL: define i32 @datamux(
 ; CHECK:      %[[DOUT:[0-9a-zA-Z_.]+]] = call i32 @cqrt_alloc_i32(i32 2)
 ; CHECK-NEXT: %[[DF0:[0-9a-zA-Z_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[DQ:[0-9a-zA-Z_.]+]], i32 0)
-; CHECK-NEXT: %[[DD0:[0-9a-zA-Z_.]+]] = call i32 @cqrt_alloc_i32(i32 7)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[DF0]], i32 %[[DD0]], i32 %[[DOUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[DF0]], i32 %[[DOUT]], i32 7)
 ; CHECK-NEXT: %[[DF1:[0-9a-zA-Z_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[DQ]], i32 1)
-; CHECK-NEXT: %[[DD1:[0-9a-zA-Z_.]+]] = call i32 @cqrt_alloc_i32(i32 11)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[DF1]], i32 %[[DD1]], i32 %[[DOUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[DF1]], i32 %[[DOUT]], i32 11)
 ; bd r2j3.33 (dm7f.51 step 1): `p`'s old value is dead and `u` is measured, so the
 ; reader is the IN-PLACE `cqrt_add_i32(out, p)` on `p`'s rail. For `out` it is the
 ; same finished reader the template was (`isInteriorConsumer` (b‴) / `onlyReads`),
 ; so the discharge below is unchanged: `out` keeps its label across the add.
 ; CHECK-NEXT: call void @cqrt_add_i32(i32 %[[DOUT]], i32 %{{[0-9a-zA-Z_.]+}}), !cq.inplace.qq
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[DF1]], i32 %[[DD1]], i32 %[[DOUT]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[DF0]], i32 %[[DD0]], i32 %[[DOUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[DF1]], i32 %[[DOUT]], i32 11)
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[DF0]], i32 %[[DOUT]], i32 7)
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[DF0]], i32 %[[DQ]], i32 0)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[DF0]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[DF1]], i32 %[[DQ]], i32 1)
@@ -52,14 +50,14 @@
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[SBF:[0-9a-zA-Z_.]+]], i32 %[[SOUT]], i32 %[[SOUT2]])
 ; CHECK:      call i32 @cq_template_add_i32(i32 %[[SOUT2]],
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[SBF]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[SBF]], i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[SOUT2]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[SBF]], i32 %[[SOUT2]], i32 7)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[SBF]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[SBF]], i32 %[[SOUT]], i32 %[[SOUT2]])
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[SBF]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[SBF]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[SOUT2]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(
 ; CHECK:      call void @cqrt_xorc_i32(i32 %[[SOUT]], i32 2)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[SOUT]])
 
@@ -89,10 +87,7 @@
 ; CHECK:      loop:
 ; CHECK:      %[[LOUT:[0-9a-zA-Z_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:      call void @cq_template_or_i32_unc(i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[LOUT]],
-; CHECK-NEXT: call void @cqrt_x(i32 %[[LBF:[0-9a-zA-Z_.]+]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[LBF]], i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[LOUT]])
-; CHECK-NEXT: call void @cqrt_x(i32 %[[LBF]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[LBF]], i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[LOUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[LBF:[0-9a-zA-Z_.]+]], i32 %[[LOUT]], i32 2)
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[LBF]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[LBF]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[LOUT]])
@@ -108,7 +103,7 @@
 ; CHECK:      br i1 %c, label %l, label %r
 ; CHECK:      j:
 ; CHECK:      call i32 @cq_template_add_i32(i32 %[[XOUT]],
-; CHECK-NEXT: call void @cqrt_x(
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(
 ; CHECK:      call void @cqrt_free(i32 %[[XOUT]])
 ; CHECK:      call void @cqrt_ry_i1(i32 %{{[0-9a-zA-Z_.]+}}, double -5.000000e-01)
 

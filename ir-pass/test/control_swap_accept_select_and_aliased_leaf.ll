@@ -48,11 +48,9 @@
 ; CHECK: call void @cqrt_toffoli(i32 %h_cmp, i32 %h_cmp1, i32 %g)
 ; The merge is gated by the NODE ancilla %g, not by either leaf flag:
 ; CHECK: %out = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK: %selop = call i32 @cqrt_alloc_i32(i32 11)
-; CHECK: call void @cqrt_copy_i32_controlled(i32 %g, i32 %selop, i32 %out)
+; CHECK: call void @cqrt_xorc_i32_controlled(i32 %g, i32 %{{[0-9a-zA-Z_.]+}}, i32 11)
 ; CHECK: call void @cqrt_x(i32 %g)
-; CHECK: %selop2 = call i32 @cqrt_alloc_i32(i32 22)
-; CHECK: call void @cqrt_copy_i32_controlled(i32 %g, i32 %selop2, i32 %out)
+; CHECK: call void @cqrt_xorc_i32_controlled(i32 %g, i32 %{{[0-9a-zA-Z_.]+}}, i32 22)
 ; CHECK: call void @cqrt_x(i32 %g)
 ; Exact LIFO strip: the self-inverse node toffoli, then the ancilla free, then the
 ; leaves in reverse MINT order, each stripped then freed at a proven |0> (Rule 6):

@@ -21,8 +21,7 @@
 ; RUN: %filecheck --check-prefix=NOTWIN %s < %t.ll
 ; CHECK-LABEL: define i32 @ex(
 ; CHECK:       %[[R:[0-9]+]] = tail call i32 @h(i32 noundef %0)
-; CHECK:       %[[RH:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[R]])
-; CHECK:       call void @cqrt_copy_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[RH]],
+; CHECK:       call void @cqrt_xorc_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[R]])
 ; NOTWIN-NOT:  specsafe
 
 define noundef i32 @g(i32 noundef %0) local_unnamed_addr #0 {

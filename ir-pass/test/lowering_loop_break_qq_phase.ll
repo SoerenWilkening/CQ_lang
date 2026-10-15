@@ -121,7 +121,8 @@
 ; --- the free census: 14 sites of the break construct (forward body 5, exit
 ;     consolidation 2, reverse-play body 5, R and idx 2: the count the same
 ;     construct emits beside a phase-free comparand) + 1 for the kickback flag.
-; FCNT-COUNT-15: call void @cqrt_free(
+; (bd dm7f.81: a constant or classical merge arm is a literal operand of cqrt_xorc_<W>_controlled, no longer an alloc'd rail + cqrt_copy_<W>_controlled; a zero arm emits no gate and no bracket. Counts below re-measured.)
+; FCNT-COUNT-13: call void @cqrt_free(
 ; FCNT-NOT: call void @cqrt_free(
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"

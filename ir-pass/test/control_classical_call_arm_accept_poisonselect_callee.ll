@@ -70,8 +70,7 @@ attributes #0 = { nounwind willreturn memory(none) }
 ; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @pf(i32 %k)
 ; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 {{.*}}, i32 3)
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     %[[RH:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[R]])
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[RH]], i32 %[[OUT]])
+; CHECK:     call void @cqrt_xorc_i32_controlled(i32 %[[F]], i32 %[[OUT]], i32 %[[R]])
 ; CHECK-NOT: @__cq_q_
 
 ; the callee body is UNTOUCHED — 6.5 is clone-orthogonal and never lowers it, so

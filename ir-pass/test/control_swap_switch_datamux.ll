@@ -58,12 +58,10 @@ merge:
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 3)
 ; --- case 0 (q==0): eq-flag -> XOR-delta alloc(7^3=4) -> controlled copy ---
 ; CHECK:     %[[F0:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 0)
-; CHECK:     %[[D0:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 4)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F0]], i32 %[[D0]], i32 %[[OUT]])
+; CHECK:     call void @cqrt_xorc_i32_controlled(i32 %[[F0]], i32 %[[OUT]], i32 4)
 ; --- case 1 (q==1): eq-flag -> XOR-delta alloc(9^3=10) -> controlled copy ---
 ; CHECK:     %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 1)
-; CHECK:     %[[D1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 10)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F1]], i32 %[[D1]], i32 %[[OUT]])
+; CHECK:     call void @cqrt_xorc_i32_controlled(i32 %[[F1]], i32 %[[OUT]], i32 10)
 ; --- strip + free both flags (each strip reads pristine q == q0) ---
 ; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F0]], i32 %[[Q]], i32 0)
 ; CHECK:     call void @cqrt_free(i32 %[[F0]])
@@ -76,7 +74,7 @@ merge:
 ; surviving data-mux phi:
 ; CHECK-NOT: call void @cqrt_free
 ; CHECK-NOT: cqrt_cswap
-; CHECK-NOT: cqrt_x
+; CHECK-NOT: cqrt_x(
 ; CHECK-NOT: cqrt_rz{{.*}}_controlled
 ; CHECK-NOT: cqrt_ry{{.*}}_controlled
 ; CHECK-NOT: phi i32
@@ -88,14 +86,13 @@ merge:
 
 ; ORDER is the contract (a mis-ordered N-way emit yields the IDENTICAL symbol
 ; MULTISET — order-blind structural CHECKs miss it). Pin the §4C stream:
-; preload -> (eq -> alloc(delta) -> copy_controlled) x2 -> eq_inv x2.
+; preload -> (eq -> xorc_controlled(delta)) x2 -> eq_inv x2 (bd dm7f.81: the delta
+; is a literal operand, no longer an alloc'd rail).
 ; ORD:     @cqrt_alloc_i32(i32 3)
 ; ORD:     @cq_template_icmp_eq_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 0)
-; ORD:     @cqrt_alloc_i32(i32 4)
-; ORD:     @cqrt_copy_i32_controlled(
+; ORD:     @cqrt_xorc_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 4)
 ; ORD:     @cq_template_icmp_eq_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 1)
-; ORD:     @cqrt_alloc_i32(i32 10)
-; ORD:     @cqrt_copy_i32_controlled(
+; ORD:     @cqrt_xorc_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 10)
 ; ORD:     @cq_template_icmp_eq_i32_hl_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 0)
 ; ORD:     @cq_template_icmp_eq_i32_hl_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 1)
 

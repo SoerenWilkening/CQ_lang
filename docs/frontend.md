@@ -930,8 +930,10 @@ tool for a phase, because a CNOT copies a basis *label*, not a *phase*:
 - **A value arm** — the arm assigns an arithmetic result — is a
   **controlled-copy merge**: the arm's chain runs unconditionally on the
   original register (it is hoisted above the branch), the flag is minted, and
-  the answer is merged into a fresh `|0⟩` rail by two `cqrt_copy_<W>_controlled`,
-  the second under `cqrt_x(f)`, and the flag is stripped and freed. The source
+  the answer is merged into a fresh `|0⟩` rail by two controlled writes, the
+  second under `cqrt_x(f)`: a quantum value by `cqrt_copy_<W>_controlled`, a
+  classical one by `cqrt_xorc_<W>_controlled` with the value as a literal (never
+  a rail; a zero is no gate). The flag is stripped and freed. The source
   register stays live and the chain's final rail is left allocated. Measured on
   `int y = x > 1 ? x + 3 : 7;`:
   ```
@@ -940,8 +942,7 @@ tool for a phase, because a CNOT copies a basis *label*, not a *phase*:
   cqrt_alloc_i32(0) -> h3                        ; fresh |0> result rail
   cqrt_copy_i32_controlled(h2, h1, h3)
   cqrt_x(h2)
-  cqrt_alloc_i32(7) -> h4
-  cqrt_copy_i32_controlled(h2, h4, h3)
+  cqrt_xorc_i32_controlled(h2, h3, 7)            ; the classical arm, a literal
   cqrt_x(h2)
   cq_template_icmp_sgt_i32_hl_unc(h2, h0, 1)     ; strip the flag
   cqrt_free(h2)

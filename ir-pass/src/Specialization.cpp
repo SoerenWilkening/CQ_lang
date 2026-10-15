@@ -1110,10 +1110,14 @@ bool isRuntimeCall(const CallBase &CB) {
 // `cqrt_toffoli` / `cqrt_x` (or a copy whose destination is not last) BEFORE this
 // point, that traffic will read as a REAL read of the rail and a phantom-only rail
 // will be accepted: widen this test to that emitter's write slots IN THE SAME CHANGE.
+// (Widened by bd dm7f.81: those emitters now write a classical arm with
+// `cqrt_xorc_<W>_controlled(ctrl, dst, imm)`, destination in slot 1.)
 bool isCopyDestination(const Use &U) {
   const auto *CB = dyn_cast<CallBase>(U.getUser());
   if (!CB || !CB->isArgOperand(&U))
     return false;
+  if (const auto *CI = dyn_cast<CallInst>(CB); CI && isControlledXorc(CI))
+    return CB->getArgOperandNo(&U) == 1;
   const Function *Callee = CB->getCalledFunction();
   if (!Callee || !Callee->getName().starts_with("cqrt_copy_"))
     return false;
