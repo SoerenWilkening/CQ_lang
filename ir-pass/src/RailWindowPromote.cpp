@@ -246,6 +246,14 @@ std::string railWindowNeeds(Function &F, const RailWindowAccesses &Acc,
   return Out;
 }
 
+// Review C-F1 (ruling Q2): mirrored CHARACTER-FOR-CHARACTER by
+// railwindow_reject_cell_copy_other_array.ll. RETIRES when the copy-on-read
+// lowering (bd 01po.19.2) lands.
+std::string railWindowCopyNeeds() {
+  return std::string(kMsgWindowPending) +
+         " cell copy into another array (bd 01po.19.2 copy-on-read)";
+}
+
 std::string railWindowAllNeeds() {
   return std::string(kMsgWindowPending) + " " + kNeedS5 + ", " + kNeedS6 +
          ", " + kNeedS7;

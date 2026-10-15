@@ -9,6 +9,15 @@
 ; 6) and `declineLiveWindowRecords` refuses the module at the walk's Ry: a
 ; temporary of a cell is live at a non-diagonal gate on the array.
 ;
+; ⚠ L7 RETIREMENT TRIGGER (S4 review round 1, ruling
+; `ruling-01po19-s4-r1-qs-2026-10-15` Q3): this module has NO placement (the
+; consumer runs after the walk), which Q4 (a) makes loud. A temporary OBSERVED
+; after the gate is a different shape and its decline today is an INTERIM
+; over-decline, lowered by bd 01po.19.5 (leak + warn per the 01po.8
+; dead-record-live-across-move ruling, `_unc` dropped). When 01po.19.5 lands,
+; re-derive which side of it this file is on; do not read it as "every live
+; cell temporary is loud forever". Copy-on-read of a stale name: bd 01po.19.2.
+;
 ; SOURCE (clang -O1, verbatim below):
 ;   /* adversarial (Q4): a temporary of two cells whose consumer runs only after a
 ;      walk rotates the array. Its records must be reversed before the walk, which

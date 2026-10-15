@@ -13,11 +13,22 @@
 // in-place gate on the same rail`), so this is that refusal across the memory
 // hop, and it is loud for the same reason: until the copy-on-read lowering
 // exists (a stale name read as a reversible copy taken at the load), the pass
-// must not guess.
+// must not guess (bd 01po.19.2).
+//
+// ⚠ WHAT THE FENCE RELIES ON (S4 review round 1). Its GATE set is the in-place
+// `cq_theta` calls whose wire peels (casts, phis, theta chains) to a family
+// member, and its USE set is the DIRECT users of a member. Both are complete
+// only because (1) `declineClassicalMuxes` refuses a classical-condition
+// select/phi over two different rails (so no mux of handles carries a cell
+// rail to a gate or a use the peel cannot see), and (2) every cast of a
+// tainted value is a template COPY (a new rail, read at its own position), not
+// an alias. If either is relaxed — a handle mux admitted, or a cast lowered as
+// an identity on the handle — this fence must widen with it.
 
 #include "RailWindow.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Analysis/ValueTracking.h"  // getUnderlyingObject
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Function.h"
@@ -189,6 +200,28 @@ Instruction *railWindowStaleUse(Function &F, const RailWindowAccesses &AccW,
         if (railWindowReachesAvoiding(G, L, Repark))
           return G;
     }
+  }
+  return nullptr;
+}
+
+// bd 01po.19 S4 review C-F1 (ruling `ruling-01po19-s4-r1-qs-2026-10-15` Q2):
+// a cell rail stored into memory OTHER than its own handle array (`r[i] =
+// q[i]`, `r[i] = q[(i+1)&3]`) would park the SAME rail in a second object,
+// where C has two independent copies; the second array's own lowering then met
+// a handle it cannot type (the internal `kMsgBankRewrite`, or "array mixes a
+// rail cell access with an unrecognized one"). It is refused here, at the
+// window slot, before any bank stage runs, until the copy-on-read lowering
+// (bd 01po.19.2) exists. Returns the first such store, or null.
+StoreInst *railWindowCellCopy(Function &F, const RailWindowAccesses &AccW) {
+  SmallPtrSet<Value *, 16> Members(AccW.Loads.begin(), AccW.Loads.end());
+  for (Instruction &I : instructions(F)) {
+    auto *S = dyn_cast<StoreInst>(&I);
+    if (!S || getUnderlyingObject(S->getPointerOperand()) == AccW.AI)
+      continue;
+    SmallPtrSet<Value *, 4> Roots;
+    rootsOf(S->getValueOperand(), Members, Roots);
+    if (!Roots.empty())
+      return S;
   }
   return nullptr;
 }

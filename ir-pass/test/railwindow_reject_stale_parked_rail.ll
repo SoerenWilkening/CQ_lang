@@ -7,6 +7,10 @@
 ; holds x's HANDLE), where C leaves the cell holding x's old value; the cells
 ; are read after. Loud (`railWindowStaleUse`, the parked-rail rule).
 ;
+; ⚠ L7 RETIREMENT TRIGGER: loud until the copy-on-read lowering (bd 01po.19.2)
+; exists; a live cell temporary across a window gate is bd 01po.19.5. This
+; decline is an interim one, not a physics refusal.
+;
 ; SOURCE (clang -O1, verbatim below):
 ;   /* adversarial: a fresh rail parked in a cell, then the parked rail's own name
 ;      rotated again. C semantics: q[i] keeps the value x held at the store. */

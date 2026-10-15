@@ -11,6 +11,10 @@
 ; the same rail`); this is that refusal across the memory hop
 ; (`railWindowStaleUse`, array-granular), until a copy-on-read lowering exists.
 ;
+; ⚠ L7 RETIREMENT TRIGGER: loud until the copy-on-read lowering (bd 01po.19.2)
+; exists; a live cell temporary across a window gate is bd 01po.19.5. This
+; decline is an interim one, not a physics refusal.
+;
 ; SOURCE (clang -O1, verbatim below):
 ;   /* adversarial: a cell read kept in a local across a gate on the array.
 ;      C semantics: a is the value q[0] held BEFORE the walk rotated it. */

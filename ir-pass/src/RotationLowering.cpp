@@ -2469,9 +2469,23 @@ bool warnLiveRecordRotations(Module &M, const TaintSet &taint) {
 // that is absent at the gate or exempt there (`recordAbsentAt` /
 // `recordIsExemptAt`: discharged or collapsed before it, or OBSERVED after it —
 // the program's own data) passes; anything else is a temporary of the
-// pre-gate cell still standing at the gate, and the module declines. It is a
-// DS_Error and not M-A's warning because the owner ruled Q4 loud. A record
+// pre-gate cell still standing at the gate, and the module declines. A record
 // whose lineage reaches no cell read is M-A's, unchanged.
+//
+// ⚠ THIS DECLINE IS NOT PERMANENT, AND FOR AN OBSERVED-AFTER TEMPORARY IT IS AN
+// INTERIM OVER-DECLINE (S4 review round 1, ruling
+// `ruling-01po19-s4-r1-qs-2026-10-15` Q3). Q4 (a) makes loud only the shape
+// with NO placement; a temporary the program OBSERVES after the gate is its
+// own data, and the dead-record-live-across-move ruling (bd 01po.8) lowers it
+// as leak + warn with the `_unc` DROPPED and `keptRailAdjointReadsBorrowed`
+// asked. That lowering is bd 01po.19.5; the copy-on-read reading of a stale
+// cell name is bd 01po.19.2. RETIREMENT TRIGGER: when 01po.19.5 lands, narrow
+// this to the shapes that ruling still refuses.
+//
+// ⚠ THE GATE SET IS `cqrt_ry_<W>` / `cqrt_ry_<W>_controlled` ONLY — the only
+// non-diagonal in-place gates S4 can put on a cell. S5 (an in-place
+// `cqrt_cnot` / QQ gate on a cell, dm7f.51) MUST extend it, or a temporary of
+// the target cell live across that gate passes silently.
 namespace {
 // Mirrored CHARACTER-FOR-CHARACTER by railwindow_reject_cell_temp_live.ll.
 constexpr char kMsgWindowCellTempLive[] =

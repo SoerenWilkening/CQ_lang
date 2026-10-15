@@ -1033,8 +1033,17 @@ _QRAM_IDX_CAST_RE = re.compile(r"cq_template_(?:trunc|sext|zext)_i\d+_to_i32")
 _QRAM_IDX_SOURCE = {}
 
 
+# bd 01po.19 S4 review A-F1: the CURRENT function's handle-array spellings ->
+# their canonical cell rail (`window_families`), set per function before its
+# streams are analysed. A pairing compares a forward with its `_unc` on the
+# ORIGINAL spelling (`cargs`), while every question about WRITES to an operand
+# goes through this map to the one rail the array's cells share.
+_WINDOW_ALIAS = {}
+
+
 def pairing_register(v):
-    return _QRAM_IDX_SOURCE.get(v, v)
+    v = _QRAM_IDX_SOURCE.get(v, v)
+    return _WINDOW_ALIAS.get(v, v)
 
 
 def mark_qram_index_brackets(calls):
@@ -3279,6 +3288,33 @@ class StreamAnalysis:
                 rev_pos, rev_kind = min(cands), "_inv"
                 self.inv_claimed.add(rev_pos)
         if rev_pos is None:
+            # bd 01po.19 S4 review A-F1: an `_unc` that matches the forward
+            # ONLY once the handle-array spellings are canonicalized read a
+            # DIFFERENT cell spelling than its forward. The compiler emits an
+            # adjoint on the forward's own operand values, never on another
+            # load of the array, so this is never a legitimate pairing: the
+            # reversal recomputes from another cell and the free is dirty.
+            # Only the WINDOW map is consulted (never the QRAM bracket's,
+            # which has its own T1 discipline), and only a position where the
+            # two spellings differ AND both are cell spellings decides it.
+            fv = [a.split()[-1] for a in fwd_args]
+            for p, w in r.writes:
+                if not (r.pos < p < pos and w.eff.role == "unc" and
+                        w.eff.base == base and len(w.cargs) - 1 == len(fv)):
+                    continue
+                wv = [a.split()[-1] for a in w.cargs[1:]]
+                diff = [(x, y) for x, y in zip(fv, wv) if x != y]
+                if diff and all(x in _WINDOW_ALIAS and y in _WINDOW_ALIAS and
+                                _WINDOW_ALIAS[x] == _WINDOW_ALIAS[y]
+                                for x, y in diff):
+                    self.add(VIOLATION, "W1-unc-reads-another-cell-spelling",
+                             c, r.name,
+                             f"rail minted at line {fwd.line} by `{fwd.text}` "
+                             f"is reversed by `{w.text}` (line {w.line}), "
+                             f"which reads a DIFFERENT spelling of the same "
+                             f"handle array: the adjoint recomputes from "
+                             f"another cell, so the free is not of |0>")
+                    return
             pre = [(p, w) for p, w in r.writes if r.pos < p < pos]
             # If the rail's own writes net to identity ON THEIR LABELS, no write
             # history this file recognises as zeroing exists, so the rail is
@@ -3847,7 +3883,13 @@ def window_families(fn, bank_globals):
 
 
 def apply_window_families(fn, ren):
-    """Rewrite every call OPERAND named in `ren` (see `window_families`)."""
+    """Rewrite every call OPERAND named in `ren` (see `window_families`) in
+    `vals`/`args` — the WRITE history — and keep `cvals`/`cargs` on the
+    ORIGINAL spelling, so a forward on one cell read is never paired with an
+    `_unc` on another (bd 01po.19 S4 review A-F1: canonicalizing the pairing
+    operands too VERIFIED a dirty free whose `_unc`s read the swapped cells).
+    `pairing_register` maps a spelling back to the canonical rail for the
+    (T2) unchanged-operand question."""
     def rename(vals, args):
         for k, v in enumerate(vals):
             c = ren.get(v)
@@ -3856,9 +3898,10 @@ def apply_window_families(fn, ren):
                 args[k] = args[k].split()[0] + " " + c
     for _lbl, calls, _t in fn.blocks:
         for c in calls:
+            if c.cvals is c.vals:
+                c.cvals, c.cargs = list(c.vals), list(c.args)
             rename(c.vals, c.args)
-            if c.cvals is not c.vals:
-                rename(c.cvals, c.cargs)
+    fn.window_alias = dict(ren)
 
 
 # ---------------------------------------------------------------------------
@@ -4130,6 +4173,8 @@ def check_module(text):
         # ONE `build_streams` per function, shared with the (T4) index, so the
         # stream ids the index hands out and the ones the scan runs under are
         # the same numbers by construction rather than by agreement.
+        _WINDOW_ALIAS.clear()
+        _WINDOW_ALIAS.update(getattr(fn, "window_alias", {}))
         streams = build_streams(fn)
         xstream = CrossStreamIndex(fn, streams)
         for sid, (_chain, calls) in enumerate(streams):

@@ -52,7 +52,14 @@
 //       original, classical object. At Q a rolled walk copies each cell's
 //       classical value into `W`; a classical store into `W` is a REBIND
 //       (`cqrt_alloc_<W>(v)`, the old rail abandoned, Q3), so the walk mints
-//       every cell's rail (Q1, array-granular). A per-iteration object (F3 (a))
+//       every cell's rail (Q1, array-granular). An object with NO pre-Q
+//       classical writer at all (no cell store, memset, constant store or
+//       constant memcpy before Q) is never initialized: every cell is seeded
+//       |0> and the original is not read (review B-1, ruling
+//       `ruling-01po19-s4-r1-qs-2026-10-15` Q1 — the undef-seed-is-zero rule
+//       of bd z9t1). A PARTIALLY initialized object keeps the memory value of
+//       every cell, written or not (C's indeterminate value; documented, not
+//       fenced). A per-iteration object (F3 (a))
 //       is re-materialized at its `lifetime.start` each trip (the previous
 //       trip's rails left allocated). A whole-object initializer after Q is
 //       split into per-cell rebinds, or refused loudly (addendum notes 1–2);
@@ -160,6 +167,14 @@ struct RailWindowAccesses {
   llvm::Instruction *ScopeStart = nullptr;
 };
 
+// S2: the quantization point of a claimed array (RailWindowQ.cpp): the one
+// program point after which every access sees handles (see S2 above). Null
+// only for an array with no tainted store.
+llvm::Instruction *railWindowQuantizationPoint(const RailWindowAccesses &Acc,
+                                               const TaintSet &taint,
+                                               llvm::DominatorTree &DT,
+                                               llvm::LoopInfo &LI);
+
 // Are the two cell addresses provably DIFFERENT cells (S3/S7's one question,
 // review round 1 F1: asked before promotion as well as for the needs list)?
 bool railWindowDistinct(llvm::ScalarEvolution &SE, const llvm::SCEV *A,
@@ -226,6 +241,19 @@ llvm::Value *railWindowNarrow(llvm::Value *V, llvm::Type *RailTy,
                               llvm::IRBuilder<> &B,
                               const llvm::DataLayout &DL);
 const char *railWindowStoreWidthMsg();
+// The cell's rail type: `i1` for a `_Bool` array (`i8` storage) witnessed by
+// every post-Q load's `!range [0, 2)`, or by loads read only through a `trunc`
+// to `i1` (zext-i1 stores when there is no load); else the cell type.
+llvm::Type *railWindowRailTypeFor(const RailWindowAccesses &Acc,
+                                  llvm::ArrayRef<llvm::LoadInst *> PostLoads,
+                                  llvm::ArrayRef<llvm::StoreInst *> PostStores);
+
+// Review C-F1 (RailWindowFence.cpp): the first store of a cell rail into
+// memory other than the handle array (a cell copy into another array), or
+// null; and its decline text (kMsgWindowPending + the copy-on-read clause).
+llvm::StoreInst *railWindowCellCopy(llvm::Function &F,
+                                    const RailWindowAccesses &AccW);
+std::string railWindowCopyNeeds();
 
 // S4's value-domain transform (RailWindowMaterialize.cpp): redirect the
 // accesses dominated by `Q` to a fresh handle array, split post-Q whole-object

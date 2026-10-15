@@ -57,48 +57,6 @@ bool isPostQ(const Instruction *Q, const Instruction *A, DominatorTree &DT) {
   return A == Q || DT.dominates(Q, A);
 }
 
-// The C storage of a `_Bool` array is `i8` and its rail `i1` (the rail-bank
-// record's distinction, `railBankRailType`). Only post-Q accesses are asked,
-// and either witness suffices: clang -O1 tags every `_Bool` load `!range [0,
-// 2)`, and a cell that is only ever read through a `trunc` to `i1` and
-// written with a `zext` of an `i1` holds a one-bit value whatever its storage
-// type. A load with neither, or no evidence at all, keeps the cell type.
-bool isBoolRange(const LoadInst *L) {
-  MDNode *R = L->getMetadata(LLVMContext::MD_range);
-  if (!R || R->getNumOperands() != 2)
-    return false;
-  auto *Lo = mdconst::dyn_extract<ConstantInt>(R->getOperand(0));
-  auto *Hi = mdconst::dyn_extract<ConstantInt>(R->getOperand(1));
-  return Lo && Hi && Lo->isZero() && Hi->equalsInt(2);
-}
-
-bool readOnlyAsBit(const LoadInst *L) {
-  for (const User *U : L->users()) {
-    auto *T = dyn_cast<TruncInst>(U);
-    if (!T || !T->getType()->isIntegerTy(1))
-      return false;
-  }
-  return true;
-}
-
-Type *railTypeFor(const RailWindowAccesses &Acc,
-                  ArrayRef<LoadInst *> PostLoads,
-                  ArrayRef<StoreInst *> PostStores) {
-  if (!Acc.CellTy->isIntegerTy(8))
-    return Acc.CellTy;
-  bool Ranged = true, BitView = true, BitStores = false;
-  for (LoadInst *L : PostLoads) {
-    Ranged &= isBoolRange(L);
-    BitView &= readOnlyAsBit(L);
-  }
-  for (StoreInst *S : PostStores)
-    if (auto *Z = dyn_cast<ZExtInst>(S->getValueOperand()))
-      BitStores |= Z->getSrcTy()->isIntegerTy(1);
-  bool Bool = (!PostLoads.empty() && (Ranged || BitView)) ||
-              (PostLoads.empty() && BitStores);
-  return Bool ? Type::getInt1Ty(Acc.CellTy->getContext()) : Acc.CellTy;
-}
-
 // The cell index of every node of the address tree (`AI` itself is cell 0),
 // emitted right after the node so every access below it can use it. A GEP
 // step whose scale is a multiple of the cell size contributes `idx *
@@ -222,10 +180,27 @@ AllocaInst *materializeRailWindow(Function &F, RailWindowAccesses &Acc,
   for (LoadInst *L : Acc.Loads)
     if (isPostQ(Q, L, DT))
       PostLoads.push_back(L);
+  // A pre-Q CLASSICAL WRITER of the object (a cell store, or a whole-object
+  // memset / constant store / constant memcpy — lifetime markers write
+  // nothing). Without one the object is NEVER INITIALIZED before Q and every
+  // cell is seeded |0> (bd 01po.19 S4 review B-1, ruling
+  // ruling-01po19-s4-r1-qs-2026-10-15 Q1: the undef seed is zero,
+  // owner-ruling-undef-seed-is-zero-2026-09-14 / bd z9t1, one rule with
+  // `normalizeUndefRotationSeed`); with one, the walk copies memory.
+  bool PreQWriter = false;
   for (StoreInst *S : Acc.Stores)
     if (isPostQ(Q, S, DT))
       PostStores.push_back(S);
-  Type *RT = railTypeFor(Acc, PostLoads, PostStores);
+    else
+      PreQWriter = true;
+  for (Instruction *O : Acc.Others) {
+    auto *II = dyn_cast<IntrinsicInst>(O);
+    bool Marker = II && (II->getIntrinsicID() == Intrinsic::lifetime_start ||
+                         II->getIntrinsicID() == Intrinsic::lifetime_end);
+    if (!Marker && !isa<LoadInst>(O) && !isPostQ(Q, O, DT))
+      PreQWriter = true;
+  }
+  Type *RT = railWindowRailTypeFor(Acc, PostLoads, PostStores);
 
   // The extent, in cells.
   Value *N = nullptr;
@@ -327,7 +302,7 @@ AllocaInst *materializeRailWindow(Function &F, RailWindowAccesses &Acc,
                   II->getIntrinsicID() == Intrinsic::lifetime_end);
   };
   Instruction *MatAt = Q;
-  bool FromOrig = true;
+  bool FromOrig = PreQWriter;
   Instruction *ScopeInit = nullptr;
   if (Acc.ScopeStart == Q) {
     // A per-iteration object: its contents at the start are indeterminate.
@@ -337,7 +312,8 @@ AllocaInst *materializeRailWindow(Function &F, RailWindowAccesses &Acc,
     FromOrig = false;
     while (isa<DbgInfoIntrinsic>(MatAt))
       MatAt = MatAt->getNextNode();
-    if (is_contained(Acc.Others, MatAt) && !IsLifetime(MatAt)) {
+    if (is_contained(Acc.Others, MatAt) && !IsLifetime(MatAt) &&
+        !isa<LoadInst>(MatAt)) {
       ScopeInit = MatAt;
       MatAt = MatAt->getNextNode();
       FromOrig = true;

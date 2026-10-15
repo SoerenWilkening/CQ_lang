@@ -10,13 +10,15 @@
 ; or reverse-played). Reviewed by trace, not by green:
 ; ADVERSARIAL for the straight-line Q (a tainted store): the walk must run BEFORE that store, or it overwrites the first write with a fresh rail. Measured on the first S4 build: `cqrt_measure_i32(h2)` of a garbage alloc instead of the theta rail h0 (Q pointed at the erased store). Pinned: the cells measured are the two theta rails.
 ; The S4 prefix pins the whole emitted runtime stream and that no rail is freed.
+; Review B-1 (ruling `ruling-01po19-s4-r1-qs-2026-10-15` Q1): this object has no
+; pre-Q classical writer, so the walk seeds every cell with the constant 0.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s --check-prefix=S4 --implicit-check-not=cqrt_free --implicit-check-not='error:'
 ; S4-LABEL: define {{.*}} @main(
 ; S4: %q.rails = alloca i32, i64 2, align 4, !cq.railwindow !7
 ; S4: %h = call i32 @cqrt_alloc_i32(i32 0)
 ; S4: call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
-; S4: %h5 = call i32 @cqrt_alloc_i32(i32 %cq.rail.init)
+; S4: %h5 = call i32 @cqrt_alloc_i32(i32 0)
 ; S4: %cq.win.in3 = load i32, ptr %cq.rail.addr1, align 4
 ; S4: %cq.win.in = load i32, ptr %cq.rail.addr, align 4
 ; S4: %h4 = call i32 @cqrt_alloc_i32(i32 0)

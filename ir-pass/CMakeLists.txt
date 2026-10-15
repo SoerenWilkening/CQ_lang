@@ -140,6 +140,7 @@ add_library(CQPass MODULE
   src/RailWindowInit.cpp
   src/RailWindowMaterialize.cpp
   src/RailWindowPromote.cpp
+  src/RailWindowQ.cpp
   src/RegionFlatten.cpp
   src/RegionTreeDetect.cpp
   # bd dm7f.5: multi-exit `ret` normalization under tainted control.

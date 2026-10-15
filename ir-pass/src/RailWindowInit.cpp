@@ -1,5 +1,6 @@
-// RailWindowInit.cpp — bd `test_C_libtooling-01po.19` S4, addendum notes 1–2:
-// a whole-object initializer of a window array. Before the quantization point
+// RailWindowInit.cpp — bd `test_C_libtooling-01po.19` S4: the cell RAIL TYPE
+// (`railWindowRailTypeFor`) and addendum notes 1–2, a whole-object
+// initializer of a window array. Before the quantization point
 // it is ordinary classical memory (the materialization walk reads its effect).
 // After it, it is a REBIND of every cell it covers (Q3): split into per-cell
 // classical stores into the handle array, each of which the retype turns into
@@ -83,9 +84,57 @@ Constant *cellOfConstant(Constant *C, uint64_t K, Type *CellTy,
   return ConstantInt::get(CellTy, CI->getValue().lshr(Shift).trunc(CellBits));
 }
 
+// The C storage of a `_Bool` array is `i8` and its rail `i1` (the rail-bank
+// record's distinction, `railBankRailType`). Only post-Q accesses are asked,
+// and either witness suffices: clang -O1 tags every `_Bool` load `!range [0,
+// 2)`, and a cell that is only ever read through a `trunc` to `i1` and
+// written with a `zext` of an `i1` holds a one-bit value whatever its storage
+// type. A load with neither, or no evidence at all, keeps the cell type.
+bool isBoolRange(const LoadInst *L) {
+  MDNode *R = L->getMetadata(LLVMContext::MD_range);
+  if (!R || R->getNumOperands() != 2)
+    return false;
+  auto *Lo = mdconst::dyn_extract<ConstantInt>(R->getOperand(0));
+  auto *Hi = mdconst::dyn_extract<ConstantInt>(R->getOperand(1));
+  return Lo && Hi && Lo->isZero() && Hi->equalsInt(2);
+}
+
+bool readOnlyAsBit(const LoadInst *L) {
+  for (const User *U : L->users()) {
+    auto *T = dyn_cast<TruncInst>(U);
+    if (!T || !T->getType()->isIntegerTy(1))
+      return false;
+  }
+  return true;
+}
+
+Type *railTypeForImpl(const RailWindowAccesses &Acc,
+                  ArrayRef<LoadInst *> PostLoads,
+                  ArrayRef<StoreInst *> PostStores) {
+  if (!Acc.CellTy->isIntegerTy(8))
+    return Acc.CellTy;
+  bool Ranged = true, BitView = true, BitStores = false;
+  for (LoadInst *L : PostLoads) {
+    Ranged &= isBoolRange(L);
+    BitView &= readOnlyAsBit(L);
+  }
+  for (StoreInst *S : PostStores)
+    if (auto *Z = dyn_cast<ZExtInst>(S->getValueOperand()))
+      BitStores |= Z->getSrcTy()->isIntegerTy(1);
+  bool Bool = (!PostLoads.empty() && (Ranged || BitView)) ||
+              (PostLoads.empty() && BitStores);
+  return Bool ? Type::getInt1Ty(Acc.CellTy->getContext()) : Acc.CellTy;
+}
+
 }  // namespace
 
 const char *railWindowStoreWidthMsg() { return kMsgWindowStoreWidth; }
+
+Type *railWindowRailTypeFor(const RailWindowAccesses &Acc,
+                            ArrayRef<LoadInst *> PostLoads,
+                            ArrayRef<StoreInst *> PostStores) {
+  return railTypeForImpl(Acc, PostLoads, PostStores);
+}
 
 Value *railWindowNarrow(Value *V, Type *RailTy, IRBuilder<> &B,
                         const DataLayout &DL) {
@@ -106,6 +155,18 @@ bool railWindowSplitInits(RailWindowAccesses &Acc, Instruction *Q,
     if (isLifetime(O) || O == ScopeInit)
       continue;  // markers stay on the original; the scope's own
                  // initializer is copied by the walk.
+    const bool Read = isa<LoadInst>(O);
+    // Review C-F1: a multi-cell READ of the object after Q copies cell rails
+    // out (`r = q` as one wide load + store). Not lowered until copy-on-read
+    // (bd 01po.19.2): the window-scoped decline, never a bank-stage one.
+    if (Read && (O == Q || DT.dominates(Q, O) || railBankInstReaches(Q, O))) {
+      Function &F = *O->getFunction();
+      F.getContext().diagnose(DiagnosticInfoUnsupported(
+          F, railWindowCopyNeeds(), O->getDebugLoc()));
+      return false;
+    }
+    if (Read)
+      continue;  // a classical read of classical memory, before Q.
     if (O == Q || DT.dominates(Q, O)) {
       Post.push_back(O);
       continue;

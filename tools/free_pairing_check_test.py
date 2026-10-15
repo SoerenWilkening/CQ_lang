@@ -2130,6 +2130,16 @@ MEM_MUTANTS = [
     # temporary's forward read of %l1 and its reversal — the memory-hop hazard
     # the SSA-keyed model alone cannot see; the canonical cell rail makes it a
     # write on the operand.
+    # bd 01po.19 S4 review A-F1 (R17): the reversal reads ANOTHER cell's
+    # spelling (%l0 of cell 0) than its forward (%l1 of cell 1). Canonicalizing
+    # the pairing operands too VERIFIED this dirty free (review_s4A p4.mutA.ll:
+    # 2 verified); the pairing is on the original spelling now.
+    ("window-unc-reads-another-cell-spelling",
+     sub(insert_after(WINDOW_CELL_TEMP, "%l1 = load i32",
+                      "  %l0 = load i32, ptr %a0, align 4"),
+         "call void @cq_template_zext_i1_to_i8_unc",
+         "i32 %t, i32 %l1)", "i32 %t, i32 %l0)"),
+     "W1-unc-reads-another-cell-spelling"),
     ("window-cell-rotated-through-another-load-before-reversal",
      insert_after(drop(WINDOW_CELL_TEMP,
                        "call void @cqrt_ry_i1(i32 %l2, double 5.000000e-01)"),

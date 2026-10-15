@@ -29,7 +29,7 @@
 ; RUN:   | %filecheck %s --check-prefix=S4 --implicit-check-not=cqrt_free --implicit-check-not='error:'
 ; S4-LABEL: define {{.*}} @slice(
 ; S4: %b.rails = alloca i32, i16 %n, align 4, !cq.railwindow !0
-; S4: %h = call i32 @cqrt_alloc_i32(i32 %cq.rail.init)
+; S4: %h = call i32 @cqrt_alloc_i32(i32 0)
 ; S4: %s.rail = load i32, ptr %cq.rail.addr, align 4
 ; S4: call void @cqrt_ry_i32(i32 %s.rail, double 5.000000e-01)
 ; S4: store i32 %s.rail, ptr %cq.rail.addr, align 4
