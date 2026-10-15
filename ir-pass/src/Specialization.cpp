@@ -962,6 +962,7 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
   // bd p3kd.7.2: every quantum arm is an i32 handle now; route the recorded
   // classical-condition selects between rail handles (CloneRailSelect.h). A
   // decline is loud; retarget so the site stays consistent, as the backstop does.
+  // (A classical arm there is still a cqrt_alloc'd rail: bd dm7f.82.)
   if (!rewriteRailSelects(RailSels, cloneTaint, wd)) {
     plan.Cache[Key].ReturnTainted = false;
     retargetSite(Site, Clone);

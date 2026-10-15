@@ -70,7 +70,9 @@ bool armWriteIsNoop(Value *Arm, const TaintSet &taint) {
   auto *K = dyn_cast<Constant>(Arm);
   // An `undef`/`poison` arm (clang -O1's dead-edge `select i1 %c, double undef,
   // double %v`) is REFINED to the all-zero pattern, a value LangRef permits: no
-  // gate. Emitting the literal would put it in two slots once the merge
+  // gate (owner ruling ruling-dm7f81-open-qs-2026-10-15 Q1, the same rule as
+  // owner-ruling-undef-seed-is-zero, bd z9t1). A ConstantExpr that merely
+  // CONTAINS undef is not an UndefValue and still gets its literal write. Emitting the literal would put it in two slots once the merge
   // discharge replays the write (LiteralIntegrity.h guard 1: per-use
   // materialization, two different values), and a `freeze` would print a
   // codegen-chosen value into the trace.

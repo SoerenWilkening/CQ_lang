@@ -35,6 +35,10 @@ So this tool decides the precise weaker relation, and nothing weaker:
              forward/adjoint/free traffic the twin must reproduce;
     rule 2 — an inner `_unc` twin's recompute-copy-uncompute `T(args)->c; copy(c,x);
              T_unc(c,args); free(c)` becomes the out-first adjoint `T_unc(x, args)`;
+    rule 3 — (bd dm7f.81, applied once before the two above) a
+             `cqrt_xorc_<W>[_controlled](…, 0)` / `(…, 0x0p+0)` with a LITERAL-zero
+             immediate is the identity and is deleted (never `-0x0p+0`): a rolled
+             trip prints it from a runtime counter, the unrolled twin folds it;
   then decide TRACE EQUIVALENCE (Mazurkiewicz) up to a consistent RENAMING of handles: the two streams must contain the same gates, with
   the same literals and the same operand roles, and every pair of DEPENDENT gates
   must occur in the same order. Two gates are DEPENDENT iff they share a handle that
@@ -450,9 +454,26 @@ def equivalent(A, B, budget=200000):
         return None
 
 
+XORC_ZERO = re.compile(r'^cqrt_xorc_[if]\d+(?:_controlled)?$')
+
+
+def drop_zero_xorc(evs):
+    """RULE 3 (bd dm7f.81; owner ruling ruling-dm7f81-open-qs-2026-10-15 Q2) — a
+    `cqrt_xorc_<W>[_controlled](…, imm)` whose immediate is the LITERAL zero is the
+    identity (h ^= 0, under any control) and is deleted from BOTH traces before the
+    comparison. The zero is the integer `0` or the fp `0x0p+0` (+0.0, the all-zero
+    bit pattern) and NOTHING else: `-0x0p+0` flips the sign bit and stays. Why: a
+    rolled loop's trip prints `xorc(…, 0)` from a RUNTIME counter that is 0 on that
+    trip, while its unrolled twin sees the constant 0 and emits no gate (the
+    constant-zero arm skip, MergeArmWrite.cpp). Same unitary, different bytes."""
+    return [e for e in evs
+            if not (XORC_ZERO.match(e['sym']) and e['args']
+                    and e['args'][-1] in ('0', '0x0p+0'))]
+
+
 def compare_text(ta, tb):
-    A = parse(ta.splitlines())
-    B = parse(tb.splitlines())
+    A = drop_zero_xorc(parse(ta.splitlines()))
+    B = drop_zero_xorc(parse(tb.splitlines()))
     if not A or not B:
         return 'VACUOUS', 0, 0
     A, ka = contract(A)
@@ -624,6 +645,15 @@ _REC_W_S = _t('cqrt_alloc_i32(1) -> h0', 'cq_template_sext_i32_to_i64(h0) -> h1'
               'cq_template_sext_i32_to_i64_unc(h2, h0)', 'cqrt_free(h2)', 'cqrt_free(h1)')
 _REC_W_T = _t('cqrt_alloc_i32(1) -> h0', 'cq_template_sext_i32_to_i64(h0) -> h1',
               'cq_template_sext_i32_to_i64_unc(h1, h0)', 'cqrt_free(h1)')
+# RULE 3 controls (bd dm7f.81): a literal-zero controlled xor-immediate is the
+# identity; a nonzero one, and fp -0.0, are not.
+_Z_PRE = ['cqrt_alloc_i1(0) -> h0', 'cqrt_ry_i1(h0, 0x1p-1)']
+_Z_T = _t(*_Z_PRE, 'cqrt_alloc_i32(0) -> h1', 'cqrt_measure_i32(h1) -> 0')
+_Z_S = _t(*_Z_PRE, 'cqrt_alloc_i32(0) -> h1', 'cqrt_xorc_i32_controlled(h0, h1, 0)',
+          'cqrt_measure_i32(h1) -> 0')
+_ZF_T = _t(*_Z_PRE, 'cqrt_alloc_f64(0x0p+0) -> h1', 'cqrt_measure_f64(h1) -> 0x0p+0')
+_ZF_S = _t(*_Z_PRE, 'cqrt_alloc_f64(0x0p+0) -> h1', 'cqrt_xorc_f64_controlled(h0, h1, 0x0p+0)',
+           'cqrt_measure_f64(h1) -> 0x0p+0')
 _U12_S = _t('cqrt_alloc_i32(5) -> h0', 'cqrt_alloc_i32(0) -> h1',
             'cqrt_copy_i32(h0, h1)', 'cqrt_measure_i32(h0) -> 0', 'cqrt_free(h1)')
 _U12_T = _t('cqrt_alloc_i32(5) -> h0', 'cqrt_alloc_i32(0) -> h1',
@@ -761,6 +791,14 @@ CONTROLS = [
     # recomputed rail is not `T_unc(x, args)`. (Found by this tool's own checker
     # mutant T10, which survived every control after r1B's A9 was adopted.)
     ("recompute-width-cast", _REC_W_S, _REC_W_T, 'DIFF'),
+    # RULE 3 (bd dm7f.81): `xorc(…, 0)` is the identity and is deleted ...
+    ("rule3-zero-xorc", _Z_S, _Z_T, 'EQUIV'),
+    # ... a NONZERO immediate is a real flip and stays ...
+    ("rule3-nonzero-stays", _Z_S.replace('h1, 0)', 'h1, 4)'), _Z_T, 'DIFF'),
+    # ... the fp all-zero pattern +0.0 is deleted ...
+    ("rule3-fp-plus-zero", _ZF_S, _ZF_T, 'EQUIV'),
+    # ... and -0.0 (the sign bit) is NOT zero.
+    ("rule3-fp-minus-zero", _ZF_S.replace('h1, 0x0p+0)', 'h1, -0x0p+0)'), _ZF_T, 'DIFF'),
     # ── bd rhk5 round 3 (Rule-13 r2B F-r2B-1): two conjuncts that were correct but
     # pinned by NO control — r1B's checker mutants U12 and U13 survived every control
     # above. Both pairs are r2B's (review_r2B_rhk5/probes/checker/width_battery.py and
