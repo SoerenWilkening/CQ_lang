@@ -1192,7 +1192,8 @@ def arg_value(a):
 
 class Call:
     __slots__ = ("line", "res", "sym", "args", "vals", "eff", "text",
-                 "ctl_parity", "cargs", "cvals", "window_distinct")
+                 "ctl_parity", "cargs", "cvals", "window_distinct",
+                 "window_cells")
 
     def __init__(self, line, res, sym, args, text):
         self.line = line
@@ -1209,6 +1210,9 @@ class Call:
         # bd 01po.19 S5: operand index pairs proven to be DISTINCT cells of one
         # handle array (`window_cells_distinct`); Case B skips exactly these.
         self.window_distinct = frozenset()
+        # bd 01po.19.17: per operand, the (array, SSA base, offset) of a window
+        # CELL-READ spelling the checker itself resolved, else None.
+        self.window_cells = ()
 
     def key(self):
         return (self.sym, tuple(self.args))
@@ -2008,11 +2012,32 @@ class StreamAnalysis:
                             tuple(sorted(set(witness) | origin))))
 
     # -- reduction to identity --------------------------------------------
-    def writes_in(self, name, lo, hi):
+    def writes_in(self, name, lo, hi, cell=None):
+        """`name`'s writes in (lo, hi). bd 01po.19.17: with `cell` (the window
+        cell a CELL-READ spelling of the canonical `name` names), a write whose
+        every slot on `name` is a cell-read spelling of a PROVABLY DIFFERENT
+        cell (`_cells_differ`) is another rail's and is dropped. Sound inside
+        ONE stream: a stream is a linear block chain with no back edge, so both
+        spellings' SSA base holds one value across (lo, hi). Anything else —
+        a stored-value spelling, an unresolved address — stays (fail closed)."""
         r = self.rails.get(name)
-        return [] if r is None else [(p, c) for p, c in r.writes if lo < p < hi]
+        if r is None:
+            return []
+        out = []
+        for p, c in r.writes:
+            if not lo < p < hi:
+                continue
+            if cell is not None:
+                slots = [i for i in c.eff.writes
+                         if i < len(c.vals) and c.vals[i] == name]
+                if slots and all(i < len(c.window_cells) and
+                                 _cells_differ(cell, c.window_cells[i])
+                                 for i in slots):
+                    continue
+            out.append((p, c))
+        return out
 
-    def unchanged_over(self, name, lo, hi, cone=True):
+    def unchanged_over(self, name, lo, hi, cone=True, cell=None):
         """(ok, witness lines) — `name`'s writes inside (lo, hi) net to identity.
 
         WHY THERE IS NO STEP BUDGET HERE (bd test_C_libtooling-xzdx, 2026-08-08)
@@ -2115,6 +2140,8 @@ class StreamAnalysis:
         # `cone=False` is the LABEL-ONLY reading (see `reduces_to_identity`);
         # it is a different predicate, so it gets its own memo key.
         memo = (name, lo, hi) if cone else (name, lo, hi, LABELS_ONLY)
+        if cell is not None:
+            memo = memo + (("cell",) + tuple(cell),)
         hit = self._stable_memo.get(memo)
         if hit is not None:
             return hit
@@ -2123,7 +2150,7 @@ class StreamAnalysis:
         self._stable_active.add(memo)
         try:
             ok, _why, lines = self.reduces_to_identity(
-                self.writes_in(name, lo, hi), name, cone)
+                self.writes_in(name, lo, hi, cell), name, cone)
         finally:
             self._stable_active.discard(memo)
         self._stable_memo[memo] = (ok, lines)
@@ -2338,7 +2365,7 @@ class StreamAnalysis:
             v = c1.vals[ri]
             if v not in self.rails:
                 continue
-            ok, lines = self.unchanged_over(v, p1, p2, cone)
+            ok, lines = self.unchanged_over(v, p1, p2, cone, _cell_at(c1, ri))
             if not ok:
                 return False, frozenset(), v
             acc |= lines
@@ -2876,8 +2903,9 @@ class StreamAnalysis:
         if not self.unchanged_over(x, q, rev)[0]:
             return (f"it is written between its mint and its reversal at line "
                     f"{rl}")
-        for v in map(pairing_register, fwd.cvals):
-            if v in self.rails and not self.unchanged_over(v, q, rev)[0]:
+        for k, v in enumerate(map(pairing_register, fwd.cvals)):
+            if v in self.rails and not self.unchanged_over(
+                    v, q, rev, True, _cell_at(fwd, k))[0]:
                 return (f"its forward operand {v} is not provably unchanged "
                         f"before its reversal at line {rl}")
         return None
@@ -3390,10 +3418,11 @@ class StreamAnalysis:
         witness |= wit
         # (T2) forward operands must be unchanged across [mint, reversal]. A
         # bracketed QRAM index is checked through to its source register.
-        for v in map(pairing_register, fwd.cvals):
+        for k, v in enumerate(map(pairing_register, fwd.cvals)):
             if v not in self.rails:
                 continue
-            ok, wit = self.unchanged_over(v, r.pos, rev_pos)
+            ok, wit = self.unchanged_over(v, r.pos, rev_pos, True,
+                                          _cell_at(fwd, k))
             if not ok:
                 bad = self.writes_in(v, r.pos, rev_pos)
                 # The reduction's own reason, so a pair refused for an open
@@ -3913,6 +3942,8 @@ def apply_window_families(fn, ren):
                 (i, j) for i, a in enumerate(c.vals)
                 for j, b in enumerate(c.vals)
                 if i != j and window_cells_distinct(fn, ptrs.get(a), ptrs.get(b))}
+            c.window_cells = tuple(
+                _window_cell(fn, ptrs[a]) if a in ptrs else None for a in c.vals)
             rename(c.vals, c.args)
     fn.window_alias = dict(ren)
 
@@ -3960,6 +3991,19 @@ def _window_cell(fn, ptr):
     return (m.group(1),) + _affine_index(fn, m.group(2))
 
 
+def _cell_at(c, k):
+    """The window cell operand `k` of `c` names (a resolved cell-read
+    spelling), or None."""
+    return c.window_cells[k] if k < len(c.window_cells) else None
+
+
+def _cells_differ(a, b):
+    """Two resolved cells of ONE array, one SSA base, offsets that differ
+    modulo the address space in cells (i32 handles: 2^62)."""
+    return a is not None and b is not None and a[0] == b[0] and \
+        a[1] == b[1] and (a[2] - b[2]) % (1 << 62) != 0
+
+
 def window_cells_distinct(fn, pa, pb):
     """bd 01po.19 S5 — are two handle-array cell pointers PROVABLY different
     cells of ONE array? Asked by this instrument INDEPENDENTLY of the compiler
@@ -3971,11 +4015,9 @@ def window_cells_distinct(fn, pa, pb):
     Case-B rule then fires (fail closed)."""
     if pa is None or pb is None:
         return False
-    a, b = _window_cell(fn, pa), _window_cell(fn, pb)
     # Offsets are compared MODULO the address space in cells (review S5 B-F1
     # (b)): `gep i32, %w, i + 2^62` wraps onto `gep i32, %w, i` mod 2^64 bytes.
-    return a is not None and b is not None and a[0] == b[0] and \
-        a[1] == b[1] and (a[2] - b[2]) % (1 << 62) != 0
+    return _cells_differ(_window_cell(fn, pa), _window_cell(fn, pb))
 
 
 # ---------------------------------------------------------------------------

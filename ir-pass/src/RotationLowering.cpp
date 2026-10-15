@@ -15,6 +15,7 @@
 #include "InPlaceQQ.h"       // isInPlaceQQGate (bd 01po.19 S5, Q4)
 #include "OpcodeSupport.h"  // abiWidthFromType
 #include "RailBankPromote.h"  // isRailBankSeedAlloc
+#include "llvm/Analysis/LoopInfo.h"
 #include "RailWindow.h"       // railWindowFamily (bd 01po.19 S4, Q4)
 #include "TaintPropagation.h"
 #include "Uncomputation.h"  // railUnmovedInWindow (bd cmr9: clause 4's window scan)
@@ -2483,6 +2484,12 @@ bool warnLiveRecordRotations(Module &M, const TaintSet &taint) {
 // cell name is bd 01po.19.2. RETIREMENT TRIGGER: when 01po.19.5 lands, narrow
 // this to the shapes that ruling still refuses.
 //
+// PER CELL INSIDE ONE TRIP (bd 01po.19.17, design §6): a cell read the gate's
+// target is provably distinct from, in the gate's own loop body and dominating
+// it (`railWindowTripDistinctCells`), names another rail in this trip; its
+// temporaries are asked `recordTripLocal` (discharged before every latch)
+// instead, since a later trip's gate may target that cell.
+//
 // ⚠ THE GATE SET IS `cqrt_ry_<W>` / `cqrt_ry_<W>_controlled` ONLY — the only
 // non-diagonal in-place gates S4 can put on a cell. S5 (an in-place
 // `cqrt_cnot` / QQ gate on a cell, dm7f.51) MUST extend it, or a temporary of
@@ -2493,6 +2500,35 @@ constexpr char kMsgWindowCellTempLive[] =
     "cq rail window: temporary read from a quantum-array cell is live at a "
     "non-diagonal gate on that array";
 }  // namespace
+
+// bd 01po.19.17: `R` (a temporary of a cell read in `T`'s loop body) is
+// discharged before its trip ends: it sits in `T`'s innermost loop and every
+// path from `R` to a latch runs one of `R`'s own discharges (one discharge
+// per latch covering every path; fail closed otherwise), so no instance of it
+// reaches a later trip's gate.
+static bool recordTripLocal(CallInst *R, CallInst *T, const DominatorTree &DT) {
+  LoopInfo LI(DT);
+  const Loop *L = LI.getLoopFor(T->getParent());
+  if (!L || LI.getLoopFor(R->getParent()) != L)
+    return false;
+  SmallPtrSet<const Instruction *, 4> Barriers;
+  for (User *U : R->users())
+    if (auto *CI = dyn_cast<CallInst>(U); CI && isDischargeOf(CI, R))
+      Barriers.insert(CI);
+  if (Barriers.empty())
+    return false;
+  SmallVector<BasicBlock *, 4> Latches;
+  L->getLoopLatches(Latches);
+  for (BasicBlock *Lt : Latches) {
+    bool Covered = false;
+    for (const Instruction *B : Barriers)
+      if (everyPathReExecutes(R, Lt->getTerminator(), B))
+        Covered = true;
+    if (!Covered)
+      return false;
+  }
+  return true;
+}
 
 bool declineLiveWindowRecords(Module &M, const TaintSet &taint) {
   for (Function &F : M) {
@@ -2524,10 +2560,29 @@ bool declineLiveWindowRecords(Module &M, const TaintSet &taint) {
         SmallVector<CallInst *, 8> Records;
         RecordSet RS(W, Records);
         SmallPtrSet<const Value *, 32> Seen;
+        // bd 01po.19.17: a read of a provably DIFFERENT cell than the gate's
+        // target, in the gate's own trip (`railWindowTripDistinctCells`, the
+        // read dominating the gate in its loop body), names another rail IN
+        // THIS TRIP: a temporary of it is not a record of the rotated cell
+        // here. The next trip's gate may target that very cell (q[i+1] then
+        // q[i]), so the record is exempt only if it is discharged before the
+        // trip ends (`recordTripLocal`); a record only those reads reach is
+        // collected apart and asked that instead.
+        SmallPtrSet<const Value *, 8> OtherCells;
         for (Value *A : Family)
-          if (isa<LoadInst>(A))
+          if (auto *AI = dyn_cast<Instruction>(A); AI && isa<LoadInst>(A))
+            railWindowTripDistinctCells(W, ArrayRef<Value *>(A), AI, T,
+                                        OtherCells);
+        for (Value *A : Family)
+          if (isa<LoadInst>(A) && !OtherCells.count(A))
             collectDescendantRecords(A, RS, Seen);
-        if (Records.empty())
+        SmallVector<CallInst *, 8> TripRecords;
+        RecordSet TRS(W, TripRecords);
+        SmallPtrSet<const Value *, 32> TSeen;
+        for (Value *A : Family)
+          if (OtherCells.count(A))
+            collectDescendantRecords(A, TRS, TSeen);
+        if (Records.empty() && TripRecords.empty())
           continue;
         if (!DT)
           DT.emplace(F);
@@ -2536,10 +2591,25 @@ bool declineLiveWindowRecords(Module &M, const TaintSet &taint) {
             continue;  // the cell's own rail (a rebind or a stored mint).
           if (recordAbsentAt(R, T, *DT) || recordIsExemptAt(R, T, taint, *DT))
             continue;
+          if (std::getenv("CQ_RAILWINDOW_DBG"))
+            errs() << "CQ_RAILWINDOW_DBG: Q4 live record " << *R << " at "
+                   << *T << "\n";
           F.getContext().diagnose(DiagnosticInfoUnsupported(
               F, kMsgWindowCellTempLive, T->getDebugLoc()));
           return true;
         }
+        SmallPtrSet<CallInst *, 8> Shared(Records.begin(), Records.end());
+        for (CallInst *R : TripRecords)
+          if (!Shared.count(R) && !InFamily.count(R) &&
+              !recordAbsentAt(R, T, *DT) && !recordTripLocal(R, T, *DT) &&
+              !recordIsExemptAt(R, T, taint, *DT)) {
+            if (std::getenv("CQ_RAILWINDOW_DBG"))
+              errs() << "CQ_RAILWINDOW_DBG: Q4 record of another cell not "
+                        "trip-local " << *R << " at " << *T << "\n";
+            F.getContext().diagnose(DiagnosticInfoUnsupported(
+                F, kMsgWindowCellTempLive, T->getDebugLoc()));
+            return true;
+          }
       }
   }
   return false;

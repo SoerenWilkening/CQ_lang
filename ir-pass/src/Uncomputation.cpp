@@ -2187,7 +2187,14 @@ bool railUnmovedInWindow(Value *P, CallInst *First, Instruction *At,
   const bool InWindow = railWindowFamily(P, Family);
   if (!is_contained(Family, P))
     Family.push_back(P);
+  // bd 01po.19.17 (Q4 (a), design §6) — PER CELL INSIDE ONE TRIP: a read of a
+  // provably different cell in `P`'s own loop body is another rail when the
+  // window is one activation of that body (`railWindowTripDistinctCells`).
+  SmallPtrSet<const Value *, 8> OtherCells;
+  if (InWindow)
+    railWindowTripDistinctCells(P, Family, First, At, OtherCells);
   for (Value *A : Family)
+  if (!OtherCells.count(A))
   for (User *U : A->users()) {
     if (auto *S = dyn_cast<StoreInst>(U);
         S && InWindow && S->getValueOperand() == A &&

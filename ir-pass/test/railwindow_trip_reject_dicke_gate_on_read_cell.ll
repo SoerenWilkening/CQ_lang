@@ -1,16 +1,15 @@
-; railwindow_dicke_n_pending.ll — DECLINE (bd `test_C_libtooling-01po.19` S1-S3).
+; railwindow_trip_reject_dicke_gate_on_read_cell.ll — DECLINE (bd
+; `test_C_libtooling-01po.19.17`; the same-cell side of the merge-discharge
+; (MergeStreamPlan step 7) exemption).
 ;
-; the reporter's general-N Dicke circuit, N=4 K=2 (`~/Desktop/alg_test/dicke/dicke_n.c`).
-;
-; Before S1-S3 this array declined in the one-store rail bank. Now the rolled
-; window model (RailWindow.h; owner rulings `owner-ruling-01po19-rolled-not-
-; unrolled-2026-10-15`, `owner-ruling-01po19-rolled-design-2026-10-15`) claims it
-; (S1), places its quantization point (S2) and promotes its windows (S3), and then
-; declines with exactly the steps it still needs. The WIN prefix pins the claim,
-; the quantization point and every promoted cell class, and the window IR (one SSA name per cell inside a window, one write-back per window exit; reviewed against the source).
-; (bd 01po.19 S5, 2026-10-15: S5 removed from the list, as its trigger says.)
-; RETIREMENT TRIGGER: each of S4-S7 that lands removes its name from the CHECK
-; line; when none is left this file becomes an ACCEPT with an analytic trace check.
+; railwindow_dicke_n_accept.ll's program with `cq_theta(&q[m-l], 0.2)` between
+; `s = 2*q[m-1] + q[m-l]` and `if (s == 3)`: a non-diagonal gate on a cell the
+; s chain (its select `%out` included) READ, inside the chain's window. Every
+; exemption of 01po.19.17 is for reads of provably DIFFERENT cells, so none
+; applies; the condition-wire fence refuses first (the `s == 3` condition
+; predates a non-diagonal gate on its own lineage). Physics: the controlled Ry
+; must see the pre-gate s, whose record would have to survive a gate on its
+; source cell.
 ;
 ; SOURCE (clang -O1, verbatim below):
 ;   /* Dicke state |D^N_K> for arbitrary N, K — Bärtschi & Eidenbenz (2019).
@@ -18,63 +17,47 @@
 ;    * Qubits are q[0..N-1]; SCS_m acts on q[0..m-1] with q[m-1] as its last qubit. */
 ;   #include <stdio.h>
 ;   #include <math.h>
-;   
+;
 ;   #ifndef N
 ;   #define N 4
 ;   #endif
 ;   #ifndef K
 ;   #define K 2
 ;   #endif
-;   
+;
 ;   int main(void) {
 ;       bool q[N];
 ;       for (int i = 0; i < N; i++) q[i] = (i >= N - K);
-;   
+;
 ;       for (int m = N; m >= 2; m--) {
 ;           int kk = K < m - 1 ? K : m - 1;
-;   
+;
 ;           /* 2-qubit block on (q[m-2], q[m-1]) */
 ;           q[m - 1] ^= q[m - 2];
 ;           if (q[m - 1]) cq_theta(&q[m - 2], 2.0 * acos(sqrt(1.0 / m)));
 ;           q[m - 1] ^= q[m - 2];
-;   
+;
 ;           /* 3-qubit blocks l = 2..kk on (q[m-1-l], q[m-l], q[m-1]) */
 ;           for (int l = 2; l <= kk; l++) {
 ;               q[m - 1] ^= q[m - 1 - l];
 ;               int s = 2 * q[m - 1] + q[m - l];
+;               cq_theta(&q[m - l], 0.2);
 ;               if (s == 3) cq_theta(&q[m - 1 - l], 2.0 * acos(sqrt((double)l / m)));
 ;               q[m - 1] ^= q[m - 1 - l];
 ;           }
 ;       }
-;   
+;
 ;       for (int i = 0; i < N; i++) printf("%d", cq_measure(q[i]));
 ;       printf("\n");
 ;       return 0;
 ;   }
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s --implicit-check-not='cq rail bank' --implicit-check-not='tainted value stored to memory'
-; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
-; RUN:   | %filecheck %s --check-prefix=WIN
-; (bd 01po.19 S6, 2026-10-15: S6 is built and leaves the needs list; this
-; array now reaches the control chain, which refuses it loudly as below —
-; every q[m-1] update lowers in place and the s==3 condition lowers, but the
-; per-trip temporaries of `s` are not uncomputed before the next in-place
-; gate, so Q4 (declineLiveWindowRecords) refuses; bd 01po.19.17.)
-; CHECK: cq rail window: temporary read from a quantum-array cell is live at a non-diagonal gate on that array
-; (bd 01po.19 S6: the post-promotion IR-line WIN pins were dropped — S6's arm
-; promotion seeds a load before each quantum branch, renaming every promoted
-; value; the claim and the per-class promotion lines below still pin S1-S3.
-; The S6 shape is pinned by railwindow_s6_*.ll; this file flips to an accept
-; with the whole stream pinned when bd 01po.19.17 lands.)
-; WIN: CQ_RAILWINDOW_DBG: @main claims %1 cells=i8 loads=11 stores=7 Q=  br label %11
-; WIN: CQ_RAILWINDOW_DBG: promote cell {(2 + %.rails)<nuw>,+,-1}<nw><%14> in region %14 loads=4 stores=1 exits=1
-; WIN: CQ_RAILWINDOW_DBG: promote cell {(3 + %.rails)<nuw>,+,-1}<nw><%14> in region %14 loads=4 stores=4 exits=1
-; WIN: CQ_RAILWINDOW_DBG: promote cell {(1 + %.rails)<nuw>,+,-1}<nw><%14> in region %14 loads=3 stores=1 exits=1
-; WIN: CQ_RAILWINDOW_DBG: promoted 3 cell class(es)
+; RUN:   | %filecheck %s
+; CHECK: cq controlled lowering: condition predates a non-diagonal gate under quantum control{{$}}
 
-; ModuleID = 'dicke_n.c'
-source_filename = "dicke_n.c"
+; ModuleID = 'railwindow_trip_reject_dicke_gate_on_read_cell.c'
+source_filename = "railwindow_trip_reject_dicke_gate_on_read_cell.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 
@@ -96,9 +79,9 @@ define noundef i32 @main() local_unnamed_addr #0 {
   %8 = icmp eq i64 %7, 4
   br i1 %8, label %11, label %2, !llvm.loop !10
 
-9:                                                ; preds = %62, %31
+9:                                                ; preds = %65, %31
   %10 = icmp ugt i64 %12, 2
-  br i1 %10, label %11, label %69, !llvm.loop !13
+  br i1 %10, label %11, label %72, !llvm.loop !13
 
 11:                                               ; preds = %2, %9
   %12 = phi i64 [ %13, %9 ], [ 4, %2 ]
@@ -147,49 +130,53 @@ define noundef i32 @main() local_unnamed_addr #0 {
   %45 = add nsw i64 %12, -2
   %46 = getelementptr inbounds [4 x i8], ptr %1, i64 0, i64 %45
   %47 = load i8, ptr %46, align 1, !tbaa !6, !range !14, !noundef !15
-  %48 = zext nneg i8 %47 to i32
-  %49 = or disjoint i32 %44, %48
-  %50 = icmp eq i32 %49, 3
-  br i1 %50, label %51, label %62
+  %48 = trunc nuw i8 %47 to i1
+  %49 = zext nneg i8 %47 to i32
+  %50 = or disjoint i32 %44, %49
+  %51 = tail call zeroext i1 @cq_theta_i1(i1 noundef zeroext %48, double noundef 2.000000e-01) #7
+  %52 = zext i1 %51 to i8
+  store i8 %52, ptr %46, align 1, !tbaa !6
+  %53 = icmp eq i32 %50, 3
+  br i1 %53, label %54, label %65
 
-51:                                               ; preds = %37
-  %52 = trunc nuw nsw i64 %12 to i32
-  %53 = uitofp nneg i32 %52 to double
-  %54 = load i8, ptr %39, align 1, !tbaa !6, !range !14, !noundef !15
-  %55 = trunc nuw i8 %54 to i1
-  %56 = fdiv double 2.000000e+00, %53
-  %57 = tail call double @llvm.sqrt.f64(double %56)
-  %58 = tail call double @llvm.acos.f64(double %57)
-  %59 = fmul double %58, 2.000000e+00
-  %60 = tail call zeroext i1 @cq_theta_i1(i1 noundef zeroext %55, double noundef %59) #7
-  %61 = zext i1 %60 to i8
-  store i8 %61, ptr %39, align 1, !tbaa !6
-  br label %62
+54:                                               ; preds = %37
+  %55 = trunc nuw nsw i64 %12 to i32
+  %56 = uitofp nneg i32 %55 to double
+  %57 = load i8, ptr %39, align 1, !tbaa !6, !range !14, !noundef !15
+  %58 = trunc nuw i8 %57 to i1
+  %59 = fdiv double 2.000000e+00, %56
+  %60 = tail call double @llvm.sqrt.f64(double %59)
+  %61 = tail call double @llvm.acos.f64(double %60)
+  %62 = fmul double %61, 2.000000e+00
+  %63 = tail call zeroext i1 @cq_theta_i1(i1 noundef zeroext %58, double noundef %62) #7
+  %64 = zext i1 %63 to i8
+  store i8 %64, ptr %39, align 1, !tbaa !6
+  br label %65
 
-62:                                               ; preds = %51, %37
-  %63 = load i8, ptr %39, align 1, !tbaa !6, !range !14, !noundef !15
-  %64 = load i8, ptr %17, align 1, !tbaa !6, !range !14, !noundef !15
-  %65 = icmp ne i8 %64, %63
-  %66 = zext i1 %65 to i8
-  store i8 %66, ptr %17, align 1, !tbaa !6
+65:                                               ; preds = %54, %37
+  %66 = load i8, ptr %39, align 1, !tbaa !6, !range !14, !noundef !15
+  %67 = load i8, ptr %17, align 1, !tbaa !6, !range !14, !noundef !15
+  %68 = icmp ne i8 %67, %66
+  %69 = zext i1 %68 to i8
+  store i8 %69, ptr %17, align 1, !tbaa !6
   br label %9
 
-67:                                               ; preds = %69
-  %68 = tail call i32 @putchar(i32 10)
+70:                                               ; preds = %72
+  %71 = tail call i32 @putchar(i32 10)
   call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %1) #6
   ret i32 0
 
-69:                                               ; preds = %9, %69
-  %70 = phi i64 [ %77, %69 ], [ 0, %9 ]
-  %71 = getelementptr inbounds [4 x i8], ptr %1, i64 0, i64 %70
-  %72 = load i8, ptr %71, align 1, !tbaa !6, !range !14, !noundef !15
-  %73 = trunc nuw i8 %72 to i1
-  %74 = tail call zeroext i1 @cq_measure_i1(i1 noundef zeroext %73) #6
-  %75 = zext i1 %74 to i32
-  %76 = tail call i32 (ptr, ...) @printf(ptr noundef nonnull dereferenceable(1) @.str, i32 noundef %75)
-  %77 = add nuw nsw i64 %70, 1
-  %78 = icmp eq i64 %77, 4
-  br i1 %78, label %67, label %69, !llvm.loop !16
+72:                                               ; preds = %9, %72
+  %73 = phi i64 [ %80, %72 ], [ 0, %9 ]
+  %74 = getelementptr inbounds [4 x i8], ptr %1, i64 0, i64 %73
+  %75 = load i8, ptr %74, align 1, !tbaa !6, !range !14, !noundef !15
+  %76 = trunc nuw i8 %75 to i1
+  %77 = tail call zeroext i1 @cq_measure_i1(i1 noundef zeroext %76) #6
+  %78 = zext i1 %77 to i32
+  %79 = tail call i32 (ptr, ...) @printf(ptr noundef nonnull dereferenceable(1) @.str, i32 noundef %78)
+  %80 = add nuw nsw i64 %73, 1
+  %81 = icmp eq i64 %80, 4
+  br i1 %81, label %70, label %72, !llvm.loop !16
 }
 
 ; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)

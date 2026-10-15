@@ -7262,3 +7262,15 @@ add_test(NAME e2e-slice-rolled-p16-cascade
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_rolled_p16_cascade.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_rolled_p16_cascade.expected.log")
+
+# bd test_C_libtooling-01po.19.17: the reporter's general-N Dicke circuit D^4_2,
+# rolled over one quantum array — in-place cell CNOTs, cell-conditioned
+# controlled Ry, and the s-chain's in-trip eager uncompute (analytic check in
+# the header).
+add_test(NAME e2e-slice-rolled-dicke-n4
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_rolled_dicke_n4.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_rolled_dicke_n4.expected.log")
