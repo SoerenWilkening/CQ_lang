@@ -19,6 +19,7 @@
 #include "TaintPropagation.h"  // TaintSet
 #include "WidthDispatch.h"     // freeFn
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"     // llvm::find
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -29,6 +30,8 @@
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
+
+#include <functional>
 
 using namespace llvm;
 
@@ -211,25 +214,52 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
     emitPhaseAngleSelect(Sel, CondI, T, wd, taint);
     return;
   }
-  // ---- bd test_C_libtooling-dm7f.54 — THE Ry STEM READS ITS CONDITION OFF THE
-  // LIVE SELECT, never off `R.Condition`: for a claimed region-merge φ root
-  // (or φ leaf) the prep region emitted FIRST (the `PrepRegionIdxs` edge) has
-  // RAUW'd the φ to its hoisted `cq_theta_i1` and erased it, so the plan's raw
-  // pointer may be freed memory — exactly `SelectMergeEmit`'s H-1. A bare
-  // single COMPARE takes the shipped path; anything else (`NetCond`: a rail, a
-  // former φ, a compound tree) mints through `CondTreeEmit` below.
-  Value *CondV = Sel->getCondition();
-  auto *Cond = dyn_cast<CmpInst>(CondV);
-  const bool NetCond = !Cond;
+  // ---- bd test_C_libtooling-dm7f.54 — THE Ry STEM, ONE EMITTER FOR EVERY
+  // CONDITION KIND AND FOR THE NESTED MUX.
+  //
+  // CONDITIONS ARE READ OFF THE LIVE SELECTS, never off `R.Condition`: for a
+  // claimed region-merge φ root (or φ leaf) the prep region emitted FIRST (the
+  // `PrepRegionIdxs` edge) has RAUW'd the φ to its hoisted `cq_theta_i1` and
+  // erased it, so the plan's raw pointer may be freed memory — exactly
+  // `SelectMergeEmit`'s H-1. A member whose condition is a bare COMPARE mints
+  // the shipped flag (`lowerCompareToFlag`); any other (`NetCond`: a rail, a
+  // former φ, a compound tree) mints through `CondTreeEmit` with `CopyRailRoot`,
+  // so every flag is an ancilla this region owns and no `cqrt_x` touches a user
+  // register.
+  //
+  // THE MUX (item E, reporter t4 line 3): `collectAngleMux` lists the members
+  // (pre-order) and the leaf angles (emission order). Each leaf angle reaches
+  // EXACTLY ONE controlled gate, the X-bracket form of the owner ruling
+  // (`owner-ruling-angle-select-xbracket-2026-10-13`) applied per level:
+  //
+  //   emit(S, ctl):  f = mint(cond S)
+  //     ctl = none:  emit(T_S, f); x(f); emit(F_S, f); x(f)
+  //     ctl = c:     p = |0>; toffoli(c, f, p); emit(T_S, p); toffoli(c, f, p)
+  //                  x(f); toffoli(c, f, p); emit(F_S, p); toffoli(c, f, p); x(f)
+  //                  free(p)
+  //     strip(f)
+  //   emit(leaf θ, ctl):  ry_controlled(ctl, h, θ)
+  //
+  // `p` is the PATH PREDICATE `c ∧ f` (then `c ∧ ¬f`) on a fresh |0> ancilla —
+  // Bennett.jl's `_and_wire!` / `_not_wire!` path-predicate construction
+  // (src/lowering/phi.jl:4-28), with the negation spelled by the self-inverse
+  // `cqrt_x` bracket on the compiler-owned `f`. Each toffoli pair returns `p` to
+  // |0> on every basis branch (`c`, `f` are unchanged between the pair; the
+  // controlled Ry acts on the target only), so `free(p)` is a proven-|0> free.
+  // For a one-member mux the recursion emits exactly the shipped stream
+  // (`f = mint; ry_c(f,h,A); x(f); ry_c(f,h,B); x(f); strip`).
+  //
+  // THE GATES are `cq_theta` calls recorded in `taint.ControlledRotations`
+  // (`lowerRotations` mints `cqrt_ry_<W>_controlled`): the first leaf's on
+  // `Base`, each next one CHAINED on the previous, and the LAST leaf's is `T`
+  // itself, rewired, so every user of `T` reads the post-mux register. Every
+  // emission up to and including `T` lands BEFORE `T`; everything after the last
+  // leaf (closing brackets, path-predicate undos, strips) lands AFTER `T`.
   const StringRef CalleeName = Callee->getName();
   const bool IsTheta = CalleeName.starts_with("cq_theta_");
   const bool IsPhi = CalleeName.starts_with("cq_phi_");  // retired register form
   if (!IsTheta && !IsPhi) {
     diagnoseUnderControl(Sel, "control flow");
-    return;
-  }
-  if (NetCond && !IsTheta) {
-    diagnoseUnderControl(Sel, kBareRailCondReason);
     return;
   }
   // The select is still the consumer's ANGLE only, the consumer its SOLE user.
@@ -239,262 +269,291 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
     diagnoseUnderControl(Sel, "control flow");
     return;
   }
+  SmallVector<SelectInst *, 4> Members;
+  SmallVector<Value *, 8> Leaves;
+  if (!collectAngleMux(Sel, taint, Members, Leaves) || Leaves.size() < 2 ||
+      (Members.size() > 1 && !IsTheta)) {
+    diagnoseUnderControl(Sel, "control flow");
+    return;
+  }
   Value *Base = T->getArgOperand(0);
   // A live register, or an UNTAINTED runtime base S3 admitted as state prep (bd
   // z0re). ONE QUESTION, THE CLASSIFIER'S (r1B F-r1B-2): `R.RuntimeSeedAdmitted`.
   // The reverse transition (tainted by an earlier 6.5 RAUW) is caught by the
   // record below plus `declineRound2QuantumPrepSeeds`. bd dm7f.54: or a
-  // `nomerge` LITERAL seed, re-asked through the classifier's ONE predicate (a
-  // literal cannot change between detection and here).
+  // `nomerge` LITERAL seed, re-asked through the classifier's ONE predicate.
   if (!taint.Tainted.count(Base) && !R.RuntimeSeedAdmitted &&
       !angleSelectLiteralSeedAdmissible(T)) {
     diagnoseUnderControl(Sel, "control flow");
     return;
   }
-  // One block, (`Cond` <) `Sel` < `T`, and a successor for the strip and the
-  // free. A `NetCond` root may live elsewhere (the classifier's S6 note).
   Instruction *After = T->getNextNode();
-  if (T->getParent() != Sel->getParent() || !Sel->comesBefore(T) || !After ||
-      (Cond && (Cond->getParent() != T->getParent() ||
-                !Cond->comesBefore(Sel)))) {
+  if (!After) {
     diagnoseUnderControl(Sel, "control flow");
     return;
   }
-  // `NetCond`: re-derive the tree with the grammar gate 2 accepted it under
-  // (`AllowLogicalSelect`), but WITHOUT `AllowRailPhi`: by now every φ leaf is
-  // its prep's hoisted `cq_theta_i1`, a rail leaf. A φ still standing means the
-  // precedence edge was not honoured, and the walk then fails LOUDLY here
-  // rather than reading a register through a stale name.
-  CondTree Tree;
-  if (NetCond) {
-    if (!collectCondTree(CondV, Tree, /*AllowLogicalSelect=*/true,
-                         /*AllowRailPhi=*/false) ||
-        !Tree.LiteralLeaves.empty() || !Tree.RailPhiLeaves.empty()) {
+  // Per member, in lockstep with the classifier's S4/S6, before any emission.
+  // A `NetCond` tree is re-derived with gate 2's grammar but WITHOUT
+  // `AllowRailPhi`: by now every φ leaf is its prep's hoisted `cq_theta_i1`, a
+  // rail leaf; a φ still standing means the precedence edge was not honoured,
+  // and the walk then fails LOUDLY rather than reading a stale name.
+  struct MemberFlag {
+    SelectInst *S;
+    CmpInst *Cmp;  // non-null: the bare-compare member
+    CondTree Tree;  // `NetCond` members
+  };
+  SmallVector<MemberFlag, 4> MF;
+  DenseMap<const Value *, unsigned> MemberIdx;
+  for (SelectInst *M : Members) {
+    MemberFlag F{M, dyn_cast<CmpInst>(M->getCondition()), CondTree()};
+    if (M->getParent() != T->getParent() || !M->comesBefore(T)) {
       diagnoseUnderControl(Sel, "control flow");
       return;
     }
-    // The caller-independent backstop `SelectMergeEmit` carries: a rail read as
-    // a control only through a classifier that asked the rail ladder.
-    if (!Tree.RailLeaves.empty() && !R.RailLadderProven) {
-      diagnoseUnderControl(Sel, kBareRailCondReason);
-      return;
-    }
-    // S4's leaf half in lockstep: exactly one tainted operand per compare leaf
-    // (no Q+Q mint on this path) and a mintable flag — before any emission.
-    for (CmpInst *Leaf : Tree.Leaves) {
-      const bool LT = taint.Tainted.count(Leaf->getOperand(0)) != 0;
-      const bool RT = taint.Tainted.count(Leaf->getOperand(1)) != 0;
-      if (LT == RT || !comparePredLowerable(Leaf) ||
-          !compareFlagMintable(Leaf, taint)) {
+    if (F.Cmp) {
+      const bool LT = taint.Tainted.count(F.Cmp->getOperand(0)) != 0;
+      const bool RT = taint.Tainted.count(F.Cmp->getOperand(1)) != 0;
+      // 2b round-1 lens L4-1: a preceding 4.5 SwitchDataMux RAUW can make the
+      // compare Q+Q, which has no mint here.
+      if (F.Cmp->getParent() != T->getParent() || !F.Cmp->comesBefore(M) ||
+          LT == RT || !comparePredLowerable(F.Cmp) ||
+          !compareFlagMintable(F.Cmp, taint)) {
         diagnoseUnderControl(Sel, "control flow");
         return;
       }
-    }
-    for (CallInst *Rail : Tree.RailLeaves)
-      if (!taint.Tainted.count(Rail)) {
+    } else {
+      if (!IsTheta) {
+        diagnoseUnderControl(Sel, kBareRailCondReason);
+        return;
+      }
+      if (!collectCondTree(M->getCondition(), F.Tree,
+                           /*AllowLogicalSelect=*/true,
+                           /*AllowRailPhi=*/false) ||
+          !F.Tree.LiteralLeaves.empty() || !F.Tree.RailPhiLeaves.empty()) {
         diagnoseUnderControl(Sel, "control flow");
         return;
       }
+      // The caller-independent backstop `SelectMergeEmit` carries: a rail read
+      // as a control only through a classifier that asked the rail ladder.
+      // ⚠ (item G) `R.RailLadderProven` is ONE bit computed over the
+      // CLASSIFIER's leaves. A rail leaf HERE that the classifier saw as a
+      // rail too was laddered (gate 2 per member + S11); one it saw as a φ is
+      // that φ's prep's hoisted theta, laddered as the φ. The bit is sound
+      // ONLY while M-β is the sole emission step that turns a non-rail leaf
+      // into a rail leaf between detection and here. RETIREMENT TRIGGER: a
+      // second such rewrite must re-ask the ladder per leaf at this line.
+      if (!F.Tree.RailLeaves.empty() && !R.RailLadderProven) {
+        diagnoseUnderControl(Sel, kBareRailCondReason);
+        return;
+      }
+      for (CmpInst *Leaf : F.Tree.Leaves) {
+        const bool LT = taint.Tainted.count(Leaf->getOperand(0)) != 0;
+        const bool RT = taint.Tainted.count(Leaf->getOperand(1)) != 0;
+        if (LT == RT || !comparePredLowerable(Leaf) ||
+            !compareFlagMintable(Leaf, taint)) {
+          diagnoseUnderControl(Sel, "control flow");
+          return;
+        }
+      }
+      for (CallInst *Rail : F.Tree.RailLeaves)
+        if (!taint.Tainted.count(Rail)) {
+          diagnoseUnderControl(Sel, "control flow");
+          return;
+        }
+    }
+    MemberIdx[M] = MF.size();
+    MF.push_back(std::move(F));
   }
-  // `T` must be in `lowerRotations`' work list; the new rotation goes IMMEDIATELY
-  // BEFORE it, in stream order, so `T` lowers with arg-0 already RAUW'd to the
-  // handle (appending was byte-identical only by a later RAUW repairing a
-  // transiently mistyped call, drbq Inc 2b M15 — recorded, not depended on).
+  // `T` must be in `lowerRotations`' work list; each new rotation goes
+  // IMMEDIATELY BEFORE it, in stream order, so `T` lowers with arg-0 already
+  // RAUW'd to the handle (drbq Inc 2b M15).
   auto &Work = IsTheta ? taint.ThetaCalls : taint.PhiCalls;
-  if (llvm::find(Work, T) == Work.end()) {
+  if (llvm::find(Work, T) == Work.end() || taint.ControlledRotations.count(T)) {
     diagnoseUnderControl(Sel, "control flow");
     return;
   }
-  // A recorded flag on `T` would mean two owners for one gate.
-  if (taint.ControlledRotations.count(T)) {
-    diagnoseUnderControl(Sel, "control flow");
-    return;
-  }
-  Value *A = Sel->getTrueValue();
-  Value *B = Sel->getFalseValue();
-  // Rule 3 (quantum in the angle), then S1's arm question in lockstep — the SAME
-  // `angleSelectArmsDefined`, not a second spelling.
-  if (taint.Tainted.count(A) || taint.Tainted.count(B) ||
-      !angleSelectArmsDefined(A, B)) {
-    diagnoseUnderControl(Sel, "control flow");
-    return;
-  }
-
-  // ---- 0b. RE-ASK S4's SEMANTIC HALF (2b round-1 lens L4-1): a preceding 4.5
-  // SwitchDataMux region's RAUW to a TAINTED `%out` can make the compare Q+Q,
-  // which has no mint here. Fixture `..._reject_datamux_qq_after_rauw.ll`.
-  if (Cond) {
-    const bool LTainted = taint.Tainted.count(Cond->getOperand(0)) != 0;
-    const bool RTainted = taint.Tainted.count(Cond->getOperand(1)) != 0;
-    if (LTainted == RTainted || !comparePredLowerable(Cond) ||
-        !compareFlagMintable(Cond, taint)) {
+  // Rule 3 and S1's arm question in lockstep, per LEAF.
+  for (Value *L : Leaves)
+    if (taint.Tainted.count(L) || !angleSelectArmsDefined(L, L)) {
       diagnoseUnderControl(Sel, "control flow");
       return;
     }
-  }
-
-  // `cqrt_x` through `ControlledSymbols`, the ONE spelling of the bracket.
   ControlledSymbols Csyms(*T->getModule(), wd);
   FunctionCallee X = Csyms.xFn();
-  if (!X) {
+  FunctionCallee Toff = Csyms.toffoliFn();
+  FunctionCallee AllocI1 = wd.allocFn("i1");
+  if (!X || (Members.size() > 1 && (!Toff || !AllocI1))) {
     diagnoseUnderControl(Sel, "control flow");
     return;
   }
 
-  // ---- EMISSION STARTS HERE. Nothing below may decline.
-  //
-  // THE ROUTE (owner ruling 2026-10-13, `owner-ruling-angle-select-xbracket`,
-  // superseding the subtraction-free triple of dm7f.6): the X-BRACKET form on the
-  // minted flag ancilla, the stream the if/else in-place Ry arm emits for the
-  // same program (`SwapRouteEmit::emitInPlaceRotationRegion`'s gate loop: the
-  // un-negated arm's gate, then `x(f); gate; x(f)` for the negated arm):
-  //
-  //     f = icmp_<pred>_hl(q, k); ry_c(f, h, A); x(f); ry_c(f, h, B); x(f);
-  //     icmp_<pred>_hl_unc(f, q, k); free(f)
-  //
-  // f = 1 fires `Ry(A)` only; f = 0 (the bracket inverts the ancilla) `Ry(B)`
-  // only. Each arm's double reaches exactly ONE controlled gate, verbatim: no
-  // arithmetic, no freeze (no arm is read twice), and a non-finite arm never
-  // touches the other branch. The `cqrt_x` pair is on the compiler-owned flag,
-  // never on a user register.
+  // ---- EMISSION STARTS HERE. Nothing below may decline (a mint failure in
+  // `lowerCompareToFlag` / the network is already LOUD and `DS_Error` exits).
   const DebugLoc DL = Sel->getDebugLoc();
   auto stamp = [&](CallInst *C) {
     if (DL)
       C->setDebugLoc(DL);
     return C;
   };
-  IRBuilder<> Bld(T);  // everything lands immediately before the consumer.
+  IRBuilder<> Bld(T);
+  bool PastT = false;  // once the last leaf's gate (`T`) is placed
+  Instruction *Point = T;  // the instruction every emission lands before
+  CallInst *Prev = nullptr;
+  size_t LeafNo = 0;
+  Type *I1Ty = Type::getInt1Ty(T->getContext());
+  SmallVector<CallInst *, 4> AllStrips;
+  bool Failed = false;
 
-  // ---- 1. THE FLAG MINT, at the consumer. `WireRuled`: gate 2c ruled on this
-  // compare's wire before gate 3 dispatched (Track A.1, F-A1R2-1).
-  //
-  // bd dm7f.54 — `NetCond`: THE FLAG IS THE NETWORK ROOT, minted by the ONE
-  // network emitter every tree consumer uses (`CondTreeEmit`), at `T`, with
-  // `CopyRailRoot` so a bare rail root comes back as a `cqrt_cnot` COPY
-  // ancilla (`Σ α_x |x⟩_b |x⟩_f`) and never as the user's register. Each compare
-  // leaf mints its own flag, each node a fresh |0> ancilla, rails are read in
-  // CONTROL slots only. So the root is always an ancilla this region owns and
-  // the X bracket below is the ruling's, on a compiler-owned qubit.
-  // `LeafWireRuled`: gate 2c ruled on these leaves before gate 3 dispatched.
-  // `AllowQQLeaves = false`: the classifier refused every Q+Q leaf (S4).
-  CondNetwork Net;
-  Value *Flag = nullptr;
-  if (NetCond) {
-    switch (emitCondNetwork(CondV, Tree, wd, Csyms, taint, /*Before=*/T, DL,
-                            /*AllowQQLeaves=*/false, Net,
+  // One leaf: its gate, controlled on `Ctl`.
+  auto emitLeaf = [&](Value *Angle, Value *Ctl) {
+    const bool Last = (++LeafNo == Leaves.size());
+    CallInst *G;
+    if (Last) {
+      G = T;  // rewired in place: `T` stays the LAST gate.
+      T->setArgOperand(0, Prev ? static_cast<Value *>(Prev) : Base);
+      T->setArgOperand(1, Angle);
+      PastT = true;
+      Point = After;
+      Bld.SetInsertPoint(After);
+    } else {
+      G = stamp(Bld.CreateCall(Callee,
+                               {Prev ? static_cast<Value *>(Prev) : Base, Angle}));
+      taint.Tainted.insert(G);
+      taint.BirthOrder[G] = taint.NextBirth++;
+      Work.insert(llvm::find(Work, T), G);
+      // bd z0re — the RECORD half of the runtime-seed L1 re-ask: the first gate
+      // is the SOURCE theta (`cqrt_alloc(Base)` then the controlled Ry). Keyed
+      // on the CLASSIFIER'S verdict, never on the taint seen here.
+      if (!Prev && R.RuntimeSeedAdmitted)
+        taint.RuntimeSeedSourceThetas.push_back(G);
+    }
+    taint.ControlledRotations[G] = Ctl;
+    Prev = G;
+  };
+
+  // One member's flag: minted at the current point, returned with its strip.
+  auto mintFlag = [&](MemberFlag &F, CondNetwork &Net) -> Value * {
+    if (F.Cmp)
+      return lowerCompareToFlag(F.Cmp, wd, taint, /*qqWidth=*/{},
+                                /*inverse=*/false, /*before=*/Point,
+                                /*negate=*/false, /*railToStrip=*/nullptr,
+                                /*readKind=*/CondReadKind::WireRuled);
+    // `LeafWireRuled`: gate 2c ruled on these leaves (each member is a
+    // tainted-condition select that passed gate 2 on its own condition).
+    switch (emitCondNetwork(F.S->getCondition(), F.Tree, wd, Csyms, taint,
+                            /*Before=*/Point, DL, /*AllowQQLeaves=*/false, Net,
                             /*CopyRailRoot=*/true, /*LeafWireRuled=*/true)) {
     case CondNetDisp::Ok:
       break;
     case CondNetDisp::MintDiagnosed:
-      return;  // `lowerCompareToFlag` was already LOUD.
+      return nullptr;
     case CondNetDisp::Malformed:
       diagnoseUnderControl(Sel, "control flow");
-      return;
+      return nullptr;
     }
-    // The inverted drift guard `SelectMergeEmit` carries: the root is about to
-    // be `cqrt_x`-bracketed, so it MUST be an ancilla (for a bare rail the copy
-    // is the network's only emission, so nothing has been emitted yet).
+    // The inverted drift guard: the root is `cqrt_x`-bracketed below, so it
+    // MUST be an ancilla this region owns.
     if (Net.RootIsRail || !Net.Root) {
       diagnoseUnderControl(Sel, "control flow");
+      return nullptr;
+    }
+    return Net.Root;
+  };
+  auto stripFlag = [&](MemberFlag &F, CondNetwork &Net, Value *Flag) {
+    // The strip recomputes each predicate on the condition's registers: valid
+    // because S8 proved the rotated rail disjoint from every condition rail of
+    // every member (or the rail is a fresh seed's), and nothing else here moves
+    // a basis label. `DischargedFlagGates` feeds `ChainWalk::isInteriorConsumer`
+    // clause (c) (the `_hl_unc` strip is a PURE READ of its slots >= 1).
+    if (F.Cmp) {
+      auto *Strip = dyn_cast_or_null<CallInst>(lowerCompareToFlag(
+          F.Cmp, wd, taint, /*qqWidth=*/{}, /*inverse=*/true, /*before=*/Point,
+          /*negate=*/false, /*railToStrip=*/Flag));
+      if (Strip)
+        taint.DischargedFlagGates.insert(Strip);
+      stamp(Bld.CreateCall(wd.freeFn(), {Flag}));
       return;
     }
-    Flag = Net.Root;
-  } else {
-    Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
-                              /*inverse=*/false, /*before=*/T,
-                              /*negate=*/false, /*railToStrip=*/nullptr,
-                              /*readKind=*/CondReadKind::WireRuled);
-  }
-  if (!Flag)
-    return;  // UNREACHABLE (step 0b's lockstep re-ask; `DS_Error` exits first).
-
-  // ---- 2. THE TRUE-ARM GATE `R_c(f, A)`: a NEW `@cq_theta_<sfx>` on `Base`,
-  // after the mint (its control must dominate it), spelled as the consumer's own
-  // callee (pre-`lowerRotations` the register is still a `cq_*` value and every
-  // wire walker keys on that name). It goes into `lowerRotations`' work list
-  // IMMEDIATELY BEFORE `T`, so `T` lowers with its arg-0 already RAUW'd to the
-  // handle. Recorded in `BirthOrder` too (an absent key reads 0, sorting FIRST).
-  CallInst *TA = stamp(Bld.CreateCall(Callee, {Base, A}));
-  taint.Tainted.insert(TA);
-  taint.BirthOrder[TA] = taint.NextBirth++;
-  Work.insert(llvm::find(Work, T), TA);
-  // bd z0re — the RECORD half of the runtime-seed L1 re-ask: for an untainted
-  // base `TA` is the SOURCE theta (`cqrt_alloc(Base)` then the controlled Ry).
-  // Keyed on the CLASSIFIER'S verdict, never on the taint seen here (an earlier
-  // 6.5 region may have RAUW'd the base).
-  if (R.RuntimeSeedAdmitted)
-    taint.RuntimeSeedSourceThetas.push_back(TA);
-
-  // ---- 3. THE FALSE-ARM GATE `x(f); R_c(f, B); x(f)`: the consumer `T` itself,
-  // rewired onto `TA` with the FALSE arm, so `T` stays the LAST gate and every
-  // user of its result reads the post-gate register unchanged. Both gates are
-  // recorded so `lowerRotations` mints `cqrt_ry_<W>_controlled` at their
-  // positions; the register then carries a controlled Ry, so it is FROZEN:
-  // never reverse-played, never freed (`ChainWalk::railCarriesControlledRotation`).
-  // The record lives on `TaintSet`, not `ControlPlan` (drbq Inc 1): the yn71
-  // fixpoint discards its local `plan2`, so a plan-hosted map would lower an
-  // onward gate UNCONDITIONALLY. The closing `x(f)` goes right after `T`, ahead
-  // of the strip, so the flag is back to `[pred]` when the strip reads it.
-  stamp(Bld.CreateCall(X, {Flag}));
-  T->setArgOperand(0, TA);
-  T->setArgOperand(1, B);
-  taint.ControlledRotations[TA] = Flag;
-  taint.ControlledRotations[T] = Flag;
-  IRBuilder<> Post(After);
-  stamp(Post.CreateCall(X, {Flag}));
-
-  // ---- 4. FLAG STRIP + FREE after the consumer. The strip recomputes the
-  // predicate on the condition's registers and returns the flag to |0⟩ (Rule 5),
-  // valid because S8 proved the rotated rail disjoint from every condition rail
-  // (an untainted base's rail is `TA`'s fresh mint, disjoint by construction).
-  // `DischargedFlagGates` feeds `ChainWalk::isInteriorConsumer` clause (c): the
-  // `_hl_unc` strip is a PURE READ of its slots >= 1 (re-prove on a change to
-  // what it writes). `Strip` null is unreachable; were it null, the free would
-  // be DIRTY — recorded rather than restructured.
-  //
-  // bd dm7f.54 — `NetCond`: `stripCondNetwork`, the exact LIFO mirror of the
-  // mint (the copy ancilla un-copied and freed first, then every node, then
-  // every compare leaf's `_unc` + free), after the closing `x(f)`. Exact for the
-  // same reason as the single compare: the only basis-moving gates here are the
-  // two Ry on the target, and S8 proved the target off every leaf wire (or the
-  // target is the fresh rail of a seed). The leaf strips are recorded in
-  // `DischargedFlagGates` exactly as the in-place Ry tree records them.
-  if (NetCond) {
     SmallVector<CallInst *, 4> LeafStrips;
-    stripCondNetwork(Net, wd, Csyms, taint, /*Before=*/After, DL,
+    stripCondNetwork(Net, wd, Csyms, taint, /*Before=*/Point, DL,
                      /*AllowQQLeaves=*/false, &LeafStrips);
     for (CallInst *S : LeafStrips)
       taint.DischargedFlagGates.insert(S);
-  } else {
-    auto *Strip = dyn_cast_or_null<CallInst>(
-        lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
-                           /*before=*/After, /*negate=*/false,
-                           /*railToStrip=*/Flag));
-    if (Strip)
-      taint.DischargedFlagGates.insert(Strip);
-    stamp(Post.CreateCall(wd.freeFn(), {Flag}));
+  };
+
+  std::function<void(Value *, Value *)> emitNode = [&](Value *V, Value *Ctl) {
+    if (Failed)
+      return;
+    auto It = MemberIdx.find(V);
+    if (It == MemberIdx.end()) {
+      emitLeaf(V, Ctl);
+      return;
+    }
+    MemberFlag &F = MF[It->second];
+    CondNetwork Net;
+    Value *Flag = mintFlag(F, Net);
+    if (!Flag) {
+      Failed = true;
+      return;
+    }
+    Value *TV = F.S->getTrueValue();
+    Value *FV = F.S->getFalseValue();
+    if (!Ctl) {
+      emitNode(TV, Flag);
+      stamp(Bld.CreateCall(X, {Flag}));
+      emitNode(FV, Flag);
+      stamp(Bld.CreateCall(X, {Flag}));
+    } else {
+      CallInst *P = stamp(
+          Bld.CreateCall(AllocI1, {Constant::getNullValue(I1Ty)}, "p"));
+      stamp(Bld.CreateCall(Toff, {Ctl, Flag, P}));
+      emitNode(TV, P);
+      stamp(Bld.CreateCall(Toff, {Ctl, Flag, P}));
+      stamp(Bld.CreateCall(X, {Flag}));
+      stamp(Bld.CreateCall(Toff, {Ctl, Flag, P}));
+      emitNode(FV, P);
+      stamp(Bld.CreateCall(Toff, {Ctl, Flag, P}));
+      stamp(Bld.CreateCall(X, {Flag}));
+      stamp(Bld.CreateCall(wd.freeFn(), {P}));
+    }
+    stripFlag(F, Net, Flag);
+  };
+  emitNode(Sel, nullptr);
+  if (Failed)
+    return;  // already LOUD; `DS_Error` exits.
+  if (!PastT) {
+    diagnoseUnderControl(Sel, "control flow");  // unreachable: >= 2 leaves.
+    return;
   }
 
-  // ---- 5. ERASE THE SELECT (its only use, `T`'s angle, now names `B`), then the
-  // compare if dead. A dead tainted compare must not stand: `lowerOps` would
-  // lower it into a second flag rail nothing strips (six silent cells measured
-  // under that deletion, bd ptue 2026-10-05). Scrub before erasing. bd dm7f.54:
-  // a `NetCond` tree erases its dead ROOT (never a rail: the user's register)
-  // and then its dead interior through the ONE cascade
-  // (`eraseDeadCondTreeInterior`).
-  scrubTaint(Sel, taint);
-  Sel->eraseFromParent();
-  if (NetCond) {
+  // ---- ERASE every member (pre-order: each one's only user, its parent or
+  // `T`'s angle slot, is gone first), then each member's condition if dead. A
+  // dead tainted compare must not stand: `lowerOps` would lower it into a
+  // second flag rail nothing strips (bd ptue). A `NetCond` tree erases its dead
+  // ROOT (never a rail: the user's register) and then its dead interior through
+  // the ONE cascade (`eraseDeadCondTreeInterior`); a root or node with another
+  // user (item D) is left for that user.
+  SmallVector<std::pair<Value *, MemberFlag *>, 4> Conds;
+  for (MemberFlag &F : MF)
+    Conds.push_back({F.S->getCondition(), &F});
+  for (SelectInst *M : Members) {
+    scrubTaint(M, taint);
+    M->eraseFromParent();
+  }
+  for (auto &[CondV, F] : Conds) {
+    if (F->Cmp) {
+      if (F->Cmp->use_empty()) {
+        scrubTaint(F->Cmp, taint);
+        F->Cmp->eraseFromParent();
+      }
+      continue;
+    }
     auto *RootI = dyn_cast<Instruction>(CondV);
-    const bool RootIsNode = RootI && !isCondRailLeaf(RootI);
-    if (RootIsNode && RootI->use_empty()) {
+    if (RootI && !isCondRailLeaf(RootI) && RootI->use_empty()) {
       scrubTaint(RootI, taint);
       RootI->eraseFromParent();
     }
-    eraseDeadCondTreeInterior(Tree, CondV, taint);
-  } else if (Cond->use_empty()) {
-    scrubTaint(Cond, taint);
-    Cond->eraseFromParent();
+    eraseDeadCondTreeInterior(F->Tree, CondV, taint);
   }
 }
 

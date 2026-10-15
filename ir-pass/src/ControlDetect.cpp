@@ -815,25 +815,73 @@ ControlPlan detectControlRegions(Module &M, WidthDispatch &wd,
     std::optional<LoopInfo> LI;
     ClaimedSelects.clear();
     // bd test_C_libtooling-dm7f.54 — PRE-CLAIM the logical-`select i1` NODES of
-    // every Ry-stem angle select's condition tree (`selIsRyAngleOperand`; the
-    // header there carries the argument). `-O1` spells `(a && b) ? A : B` as
-    // `%n = select i1 %a, i1 %b, i1 false` ahead of the angle select, and the
-    // scan below would otherwise classify `%n` first, as a 4.4 `i1` DATA select,
-    // and replace it with a merge rail the angle tree cannot read. Same grammar
-    // as gate 2 (`AllowLogicalSelect`, `AllowRailPhi`); a node is claimed only
-    // when its tree collects, and only the `SelectInst` nodes are claimed.
-    for (Instruction &I : instructions(F))
-      if (auto *Sel = dyn_cast<SelectInst>(&I))
-        if (taint.Tainted.count(Sel->getCondition()) &&
-            selIsRyAngleOperand(Sel)) {
+    // every Ry-stem angle mux's condition trees (`selIsRyAngleOperand` roots,
+    // `collectAngleMux` members; the header of `angleMuxRoot` carries the
+    // argument). `-O1` spells `(a && b) ? A : B` as `%n = select i1 %a, i1 %b,
+    // i1 false` ahead of the angle select, and the scan below would otherwise
+    // classify `%n` first, as a 4.4 `i1` DATA select, and replace it with a
+    // merge rail the angle tree cannot read. Same grammar as gate 2.
+    //
+    // ⚠ ONLY A NODE EVERY USE OF WHICH IS INSIDE SOME ANGLE TREE (item C, review
+    // F1 — a VERIFIER CRASH from plain C, `_Bool c = a && b; _Bool d = c || e;
+    // cq_theta(&t, d ? .7 : .3); int s = k + c;`): a claimed node is lowered by
+    // nobody but its angle select's network, which reads the LEAVES and erases
+    // the node once dead, so a claimed node with a DATA use was left as a live
+    // tainted `select i1` over two handles. The candidate set is pruned to a
+    // FIXPOINT: a node stays only while each of its users is an angle select
+    // reading it as its condition or another surviving candidate node. A node
+    // with a data use stays an ordinary 4.4 data select, and the angle region is
+    // scheduled BEFORE it (`lowerControlRegions`), so the angle network is minted
+    // from the intact tree and the data select then lowers its own value.
+    {
+      SmallPtrSet<Instruction *, 8> Cand;
+      SmallPtrSet<const Instruction *, 8> AngleRoots;
+      for (Instruction &I : instructions(F)) {
+        auto *Sel = dyn_cast<SelectInst>(&I);
+        if (!Sel || !taint.Tainted.count(Sel->getCondition()) ||
+            !selIsRyAngleOperand(Sel))
+          continue;
+        SmallVector<SelectInst *, 4> Members;
+        SmallVector<Value *, 8> Leaves;
+        if (!collectAngleMux(Sel, taint, Members, Leaves))
+          continue;
+        for (SelectInst *M : Members) {
+          AngleRoots.insert(M);
           CondTree AngleTree;
-          if (collectCondTree(Sel->getCondition(), AngleTree,
+          if (collectCondTree(M->getCondition(), AngleTree,
                               /*AllowLogicalSelect=*/true,
                               /*AllowRailPhi=*/true))
             for (Instruction *N : AngleTree.Nodes)
-              if (isa<SelectInst>(N))
-                ClaimedSelects.insert(N);
+              Cand.insert(N);  // `select i1` AND binary `and`/`or`/`xor` nodes
         }
+      }
+      for (bool Changed = true; Changed;) {
+        Changed = false;
+        for (Instruction *N : SmallVector<Instruction *, 8>(Cand.begin(),
+                                                             Cand.end())) {
+          // Every user must be a SURVIVING tree node (select or binary) or an
+          // angle-mux member reading it as its condition. Binary nodes take
+          // part in the fixpoint (so a select under an `and` whose result has a
+          // data use is pruned too) but only `SelectInst` nodes are claimed.
+          bool AllInTree = true;
+          for (User *U : N->users()) {
+            auto *UI = dyn_cast<Instruction>(U);
+            const bool AsAngleCond =
+                UI && AngleRoots.count(UI) &&
+                cast<SelectInst>(UI)->getCondition() == N;
+            if (!AsAngleCond && !(UI && Cand.count(UI)))
+              AllInTree = false;
+          }
+          if (!AllInTree) {
+            Cand.erase(N);
+            Changed = true;
+          }
+        }
+      }
+      for (Instruction *N : Cand)
+        if (isa<SelectInst>(N))
+          ClaimedSelects.insert(N);
+    }
     for (BasicBlock &BB : F) {
       Instruction *Term = BB.getTerminator();
       if (auto *BI = dyn_cast<BranchInst>(Term)) {

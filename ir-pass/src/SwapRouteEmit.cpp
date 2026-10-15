@@ -3084,6 +3084,43 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
     }
   }
 
+  // bd dm7f.54 (items C/D) — AN ANGLE SELECT BEFORE EVERY 4.4 DATA SELECT THAT
+  // IS A NODE OF ITS CONDITION TREE. A logical-`select i1` node with a data use
+  // is not pre-claimed (`ControlDetect`), so it is ALSO a `SelectRegion`, whose
+  // emitter RAUWs it to a merge rail and erases it. The angle emitter re-derives
+  // its tree off the live IR and mints its network from the LEAVES, so it must
+  // run FIRST, while the node still exists; it leaves a node with a surviving
+  // user in place, and the data select then lowers that node's own value. The
+  // edge points OUT of the angle region and INTO a select region, which gains
+  // only incoming edges elsewhere, so it closes no cycle. Read off the live IR
+  // here, before any emission (one `collectAngleMux` / `collectCondTree`
+  // spelling, gate 2's grammar).
+  for (size_t i = 0; i < N; ++i) {
+    if (Regions[i].Kind != ControlRegion::AngleSelectRegion)
+      continue;
+    auto *Sel = dyn_cast_or_null<SelectInst>(Regions[i].Merge);
+    SmallVector<SelectInst *, 4> Members;
+    SmallVector<Value *, 8> Leaves;
+    if (!Sel || !collectAngleMux(Sel, taint, Members, Leaves))
+      continue;
+    SmallPtrSet<const Value *, 8> TreeNodes;
+    for (SelectInst *M : Members) {
+      CondTree T;
+      if (collectCondTree(M->getCondition(), T, /*AllowLogicalSelect=*/true,
+                          /*AllowRailPhi=*/true)) {
+        TreeNodes.insert(T.Nodes.begin(), T.Nodes.end());
+        TreeNodes.insert(M->getCondition());
+      }
+    }
+    for (size_t j = 0; j < N; ++j)
+      if (j != i && Regions[j].Kind == ControlRegion::SelectRegion &&
+          Regions[j].Merge && TreeNodes.count(Regions[j].Merge) &&
+          !llvm::is_contained(Precedes[i], j)) {
+        Precedes[i].push_back(j);
+        ++Pending[j];
+      }
+  }
+
   // bd `test_C_libtooling-hn29` / `-leyd` / `-52og` (Track P′) — THE SAME FIELD,
   // THE OPPOSITE DIRECTION, FOR A `PhaseKickback`. Read this beside the loop
   // above, never instead of it.

@@ -71,6 +71,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>  // foldCuratedTrigF64 (bd dm7f.18)
+#include <functional>  // collectAngleMux (bd dm7f.54)
 #include <memory>  // unique_ptr (the per-function DominatorTree cache, bd r9e5 1b-B.1)
 #include <utility>
 
@@ -2166,6 +2167,8 @@ bool fcmpEqualityHoldsOnEdge(FCmpInst::Predicate P, bool TrueEdge) {
 // test, and `declineRound2QuantumPrepSeeds` re-asks the structural half after
 // the round-2 fixpoint in BOTH entry points (see there).
 constexpr const char *kF2SiblingMD = "cq.f2.sibling";
+// bd dm7f.54 (A1): the classical-pin record of `angleSelectLiteralSeedPinned`.
+constexpr const char *kAngleSelSeedPinMD = "cq.anglesel.seedpin";
 
 bool siblingConditionCompareOnWire(const Value *V,
                                    const SmallPtrSetImpl<Value *> *CondWire) {
@@ -4292,6 +4295,20 @@ bool declineRound2QuantumPrepSeeds(Module &M, TaintSet &Taint) {
   // Unreachable from C today — no shipped round-2 emitter adds a data use to a
   // live compare — so this decline has no fixture; it is F2's own string,
   // anchored at the user's compare.
+  // bd dm7f.54 (item A1) — THE L1 RE-ASK of `angleSelectLiteralSeedPinned`'s
+  // classical pins: a value proven equal to an admitted angle select's
+  // literal seed that was classical at classification must still be
+  // classical now, or the source rotated a live register the module prepares
+  // fresh (the review's p7 class, one taint round later). Unreachable from C
+  // today (no shipped round-2 emitter taints a value that dominates such a
+  // consumer under an equality pin), so it has no fixture; F2's own string.
+  for (Function &F : M)
+    for (Instruction &I : instructions(F))
+      if (I.getMetadata(kAngleSelSeedPinMD) && Taint.Tainted.count(&I)) {
+        diagnoseUnderControl(&I, "state prep seed is proven equal to the "
+                                 "condition register");
+        return true;
+      }
   for (Function &F : M)
     for (Instruction &I : instructions(F)) {
       if (!I.getMetadata(kF2SiblingMD) || I.use_empty())
@@ -6314,6 +6331,26 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // register or applies a phase), not a double allocation. The other arm is
         // re-classified with the SAME predicate this clause is inside — never a
         // second spelling of "is that a prep?" — so the two cannot drift.
+        //
+        // ⚠ bd dm7f.54 (item B; delegated ruling `ruling-dm7f54-literal-base-
+        // and-ifelse-prep-2026-10-15`, Q2): THE Q4 DECLINE MOVES. Two prep arms
+        // with the IDENTICAL literal seed (`bool t = 0; if (q) cq_theta(&t, A);
+        // else cq_theta(&t, B);`) lower as the ONE-rail stream the paragraph
+        // above describes, byte-identical to the ternary
+        // `cq_theta(&t, q ? A : B)`: M-β chains the second hoisted gate on the
+        // first, so the first is the SOURCE theta (`cqrt_alloc_<W>(SEED)`) and
+        // the stream is `alloc; ry_c(f,h,A); x(f); ry_c(f,h,B); x(f)`. F1 has no
+        // subject (an if/else merge has no straight-through edge: one prep runs
+        // on every path, so the merge is faithful by construction), and F2 is
+        // asked below exactly as for a diamond — `f2SeedPinnedByLiveRegister`
+        // walks BOTH successor edges of the branch, i.e. EACH ARM EDGE, and
+        // refuses on the first collider on either (the L3 set over both arms),
+        // with its sibling-tag L1 re-ask in `declineRound2QuantumPrepSeeds`.
+        // `control_inplace_ry_reject_stateprep_nomerge_noregion_pin.ll` (the
+        // drbq.13 `sdiv q, 4` under `(q & -4) == 20` fold, now unmerged) is
+        // what F2 must still refuse on the TRUE arm edge. DIFFERENT seeds (or a
+        // runtime seed) per arm stay loud with the Q4 string — filed.
+        bool TwinLiteralPrep = false;
         if (Arms.size() > 1) {
           bool OtherIsPrep = false;
           for (BasicBlock *Other : Arms) {
@@ -6323,17 +6360,24 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
             if (OIx < 0)
               continue;
             bool OSP = false;
-            if (inPlaceRotationArmTheta(
+            if (CallInst *OT = inPlaceRotationArmTheta(
                     MergePhi->getIncomingValue(unsigned(OIx)), Other, MergePhi,
-                    Taint, OSP) &&
-                OSP)
+                    Taint, OSP);
+                OT && OSP) {
               OtherIsPrep = true;
+              TwinLiteralPrep = Arms.size() == 2 &&
+                                OT->getArgOperand(0) == RotBase &&
+                                (isa<ConstantInt>(RotBase) ||
+                                 isa<ConstantFP>(RotBase));
+            }
           }
-          declineArm(declAnchor(Region),
-                     OtherIsPrep
-                         ? "if/else state prep allocates two rails"
-                         : "if/else state prep beside a chained or phase arm");
-          return ArmDisposition::Declined;
+          if (!TwinLiteralPrep) {
+            declineArm(declAnchor(Region),
+                       OtherIsPrep
+                           ? "if/else state prep allocates two rails"
+                           : "if/else state prep beside a chained or phase arm");
+            return ArmDisposition::Declined;
+          }
         }
 
         // ---- F1 — SEED IDENTITY: the merge is FAITHFUL, not a data mux.
@@ -6437,8 +6481,8 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // physics on the half where the physics is the defect.
         const int PredIdx =
             Region.Pred ? MergePhi->getBasicBlockIndex(Region.Pred) : -1;
-        if (PredIdx < 0 ||
-            MergePhi->getIncomingValue(unsigned(PredIdx)) != RotBase) {
+        if (!TwinLiteralPrep && (PredIdx < 0 ||
+            MergePhi->getIncomingValue(unsigned(PredIdx)) != RotBase)) {
           Value *In =
               PredIdx < 0 ? nullptr : MergePhi->getIncomingValue(unsigned(PredIdx));
           declineArm(T, In && Taint.Tainted.count(In)
@@ -9513,6 +9557,34 @@ bool angleSelectArmsDefined(const Value *A, const Value *B) {
 // attribute list only (`getAttributes()`, never `hasFnAttr`, which also reads
 // the callee): a devirtualized indirect call names a `nomerge` callee without
 // having been protected by it when SimplifyCFG ran (bd 4e4p).
+bool collectAngleMux(SelectInst *Root, const TaintSet &Taint,
+                     SmallVectorImpl<SelectInst *> &Members,
+                     SmallVectorImpl<Value *> &Leaves) {
+  Members.clear();
+  Leaves.clear();
+  bool Ok = true;
+  std::function<void(SelectInst *)> Walk = [&](SelectInst *S) {
+    if (!Ok)
+      return;
+    if (Members.size() >= kAngleMuxMaxMembers) {
+      Ok = false;
+      return;
+    }
+    Members.push_back(S);
+    for (Value *V : {S->getTrueValue(), S->getFalseValue()}) {
+      auto *C = dyn_cast<SelectInst>(V);
+      if (C && angleMuxParent(C, Taint) == S)
+        Walk(C);
+      else
+        Leaves.push_back(V);
+    }
+  };
+  if (!Root)
+    return false;
+  Walk(Root);
+  return Ok;
+}
+
 bool angleSelectLiteralSeedAdmissible(const CallInst *T) {
   if (!T || T->arg_size() < 2)
     return false;
@@ -9520,6 +9592,129 @@ bool angleSelectLiteralSeedAdmissible(const CallInst *T) {
   if (!isa<ConstantInt>(Seed) && !isa<ConstantFP>(Seed))
     return false;
   return T->getAttributes().hasFnAttr(Attribute::NoMerge);
+}
+
+// bd dm7f.54 (item A1, delegated ruling `ruling-dm7f54-literal-base-and-ifelse-
+// prep-2026-10-15`) — THE NON-MERGE ROUTE TO A LITERAL SEED. `nomerge` rules out
+// the SimplifyCFG sink, NOT a value substitution: GVN / IPSCCP / InstCombine
+// replace a register by the literal it is PINNED to on a dominating equality
+// edge with no merge at all (review probe revC54b/p7: `int t = k; cq_theta(&t,
+// .5); if (t == 5) cq_theta(&t, c ? .9 : .3);` reaches the pass as
+// `cq_theta_si32(i32 5, sel)` on a `nomerge` call, while the source rotated `t`
+// IN PLACE). So the literal is refused when some value `V` is PROVEN EQUAL to
+// it at the consumer: F2's question (`f2SeedPinnedByLiveRegister`), asked with
+// `T` as the context instead of a region edge, by LLVM's own machinery —
+// `LazyValueInfo::getConstantRange(V, T)` folds every dominating edge and
+// `llvm.assume` — for an integer seed; for an fp seed (LVI has no fp lattice)
+// the dominating branches whose taken edge dominates `T` are read for an
+// equality `fcmp` against the seed's bits (`fcmpEqualityHoldsOnEdge`, F2's
+// fp anchor table). ⚠ The LVI precondition F2 records (never ask about a value
+// that does not dominate the context: a Release `cq-opt` SIGSEGVs) is honoured
+// by asking only about arguments and instructions that dominate `T`.
+//
+// A pinned TAINTED `V` is returned (the caller declines with F2's string). A
+// pinned CLASSICAL instruction is harmless today — rotating a classical
+// register prepares a fresh rail from its value, which IS the literal — but it
+// is classical at ROUND-1 taint only (CLAUDE.md L1: a 6.5/4.5 `%out` derivative
+// turns quantum at round 2). Each one is therefore TAGGED `kAngleSelSeedPinMD`
+// (defined beside `kF2SiblingMD`)
+// and `declineRound2QuantumPrepSeeds` re-asks its taint after the round-2
+// fixpoint in both entry points. Arguments never change taint across rounds.
+Value *angleSelectLiteralSeedPinned(CallInst *T, const TaintSet &Taint,
+                                    const DominatorTree &DT) {
+  auto *Seed = dyn_cast<Constant>(T->getArgOperand(0));
+  Function *F = T->getFunction();
+  if (!Seed || !F)
+    return nullptr;
+  SmallVector<Instruction *, 4> ClassicalPins;
+  Value *Hit = nullptr;
+  auto note = [&](Value *V) {
+    if (Taint.Tainted.count(V)) {
+      if (!Hit)
+        Hit = V;
+    } else if (auto *I = dyn_cast<Instruction>(V)) {
+      ClassicalPins.push_back(I);
+    }
+  };
+  if (isa<ConstantInt>(Seed)) {
+    // F2's machinery, at the consumer: every integer value that dominates `T`
+    // gets LVI's range AT `T` (sharpened by `f2Refine`), and `f2Model`
+    // evaluates FORWARD from there — LVI alone does not re-evaluate a value
+    // defined above the pinning edge (measured: under `(q & -4) == 20` it knows
+    // `q` and not `sdiv q, 4`; `opt -passes=correlated-propagation` folds
+    // `q >= 20` there and leaves `t == 5`), which is exactly the reason F2 has
+    // its forward half. A value is a HIT when it dominates `T` and `f2Exact`
+    // gives the seed. A tainted user that cannot be modelled while a pinned
+    // operand feeds it is F2's conservative `Truncated` — the decline
+    // direction, returned as the user itself; a classical one ends the walk on
+    // that path (it is no register).
+    const DataLayout &DL = F->getParent()->getDataLayout();
+    AssumptionCache AC(*F);
+    LazyValueInfo LVI(&AC, &DL);
+    F2State S;
+    SmallVector<Value *, 32> Cand;
+    for (Argument &A : F->args())
+      if (A.getType()->isIntegerTy())
+        Cand.push_back(&A);
+    for (Instruction &In : instructions(*F))
+      if (In.getType()->isIntegerTy() && &In != T && DT.dominates(&In, T))
+        Cand.push_back(&In);
+    for (Value *V : Cand) {
+      const ConstantRange CR =
+          LVI.getConstantRange(V, T, /*UndefAllowed=*/false);
+      if (CR.isFullSet() || CR.isEmptySet())
+        continue;
+      f2Note(V, f2Refine(V, CR, DL, &AC, &DT), S);
+    }
+    unsigned Steps = 0;
+    while (!S.WL.empty()) {
+      if (++Steps > kF2MaxSteps)
+        return T;  // F2's step cap: the decline direction.
+      Value *V = S.WL.pop_back_val();
+      auto *VI = dyn_cast<Instruction>(V);
+      const bool Dominates =
+          isa<Argument>(V) || (VI && VI != T && DT.dominates(VI, T));
+      if (Dominates && V->getType() == Seed->getType() &&
+          f2Exact(V, S) == Seed)
+        note(V);
+      for (User *U : V->users()) {
+        auto *I = dyn_cast<Instruction>(U);
+        if (!I || I->getFunction() != F || I->getType()->isVoidTy() ||
+            !I->getType()->isIntegerTy())
+          continue;
+        if (!f2Model(I, S, DL, &AC, &DT) && Taint.Tainted.count(I))
+          return I;  // F2's `Truncated`: refuse.
+      }
+    }
+  } else if (auto *SeedF = dyn_cast<ConstantFP>(Seed)) {
+    // Walk the dominator tree up from `T`'s block: every conditional branch
+    // whose taken edge dominates `T`'s block contributes its equality fcmp.
+    BasicBlock *Here = T->getParent();
+    for (DomTreeNode *N = DT.getNode(Here); N && N->getIDom();
+         N = N->getIDom()) {
+      BasicBlock *Up = N->getIDom()->getBlock();
+      auto *BI = dyn_cast<BranchInst>(Up->getTerminator());
+      if (!BI || !BI->isConditional())
+        continue;
+      auto *FC = dyn_cast<FCmpInst>(BI->getCondition());
+      if (!FC)
+        continue;
+      for (unsigned E = 0; E < 2; ++E) {
+        if (!DT.dominates(BasicBlockEdge(Up, BI->getSuccessor(E)), Here) ||
+            !fcmpEqualityHoldsOnEdge(FC->getPredicate(), /*TrueEdge=*/E == 0))
+          continue;
+        for (unsigned K = 0; K < 2; ++K)
+          if (auto *C = dyn_cast<ConstantFP>(FC->getOperand(K));
+              C && C->getValueAPF().bitwiseIsEqual(SeedF->getValueAPF()) &&
+              !isa<Constant>(FC->getOperand(1 - K)))
+            note(FC->getOperand(1 - K));
+      }
+    }
+  }
+  if (!Hit)
+    for (Instruction *I : ClassicalPins)
+      I->setMetadata(kAngleSelSeedPinMD, MDNode::get(I->getContext(), {}));
+  return Hit;
 }
 
 
@@ -9534,9 +9729,21 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // miscompile family; it stays with the caller's decline.
   if (!Sel->getType()->isDoubleTy())
     return AngleSelectDisp::NotApplicable;
+  // bd dm7f.54 (item E) — the operands may be INNER MUX MEMBERS
+  // (`collectAngleMux`, `c1 ? A : (c2 ? B : C)`): S1 is then asked of every
+  // LEAF angle, and every member's condition is asked S4 below. A single
+  // select is the one-member mux whose leaves are exactly `A`, `B`.
+  SmallVector<SelectInst *, 4> Members;
+  SmallVector<Value *, 8> MuxLeaves;
+  if (!collectAngleMux(Sel, Taint, Members, MuxLeaves))
+    return AngleSelectDisp::NotApplicable;
+  const bool IsMux = Members.size() > 1;
+  for (Value *L : MuxLeaves)
+    if (Taint.Tainted.count(L) || !angleSelectArmsDefined(L, L))
+      return AngleSelectDisp::NotApplicable;
   Value *A = Sel->getTrueValue();
   Value *B = Sel->getFalseValue();
-  if (Taint.Tainted.count(A) || Taint.Tainted.count(B))
+  if (!IsMux && (Taint.Tainted.count(A) || Taint.Tainted.count(B)))
     return AngleSelectDisp::NotApplicable;
   // ... and both arms DEFINED: `angleSelectArmsDefined`, the one arm-value
   // question left, asked for BOTH stems with ONE spelling (bd dm7f.6). Neither
@@ -9546,7 +9753,7 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // Rule-13 round-1 finding F-L4-1 found missing: an `undef` arm reached
   // `cqrt_rz_i1(f, double undef)` (measured, hand IR), where the pre-3qlq oracle
   // declined.
-  if (!angleSelectArmsDefined(A, B))
+  if (!IsMux && !angleSelectArmsDefined(A, B))
     return AngleSelectDisp::NotApplicable;
   //
   // S2's consumer lookup is split by stem: the ARG INDEX differs (a suffixed
@@ -9565,7 +9772,9 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // angle. `hasOneUse` counts USES, so a select feeding both arg-0 and arg-1 of
   // one call is refused here too. Anything else (an fpext/fptrunc/bitcast/
   // freeze/phi carrier, a nested select, a store, a second rotation) keeps the
-  // caller's `rotation angle` decline.
+  // caller's `rotation angle` decline. (bd dm7f.54 item E: a nested select that
+  // is an INNER MUX MEMBER — `angleMuxParent` — never reaches here: gate 3
+  // defers it to its root, whose `collectAngleMux` covers it.)
   const bool IsTheta = !IsPhase && isThetaCall(T);
   const bool IsPhi = !IsPhase && isPhiCall(T);
   if (!IsPhase) {
@@ -9575,6 +9784,10 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
     if (!IsTheta && !IsPhi)
       return AngleSelectDisp::NotApplicable;
   }
+  // A nested mux is a Ry-stem construct only (the phase stem keeps its
+  // two-arm kickback pair; widening it is a separate follow-on).
+  if (IsMux && !IsTheta)
+    return AngleSelectDisp::NotApplicable;
 
   // S3 — THE ROTATION'S arg-0. A TAINTED base is a CHAINED rotation on a live
   // register (Inc 2b, byte-for-byte unchanged). An UNTAINTED base is controlled
@@ -9682,8 +9895,13 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   //      by exactly `A` or exactly `B`. Without the call-site attribute (hand
   //      IR; a devirtualized function pointer, bd 4e4p) the decline stands with
   //      its string, pinned by `..._reject_literal_base_offwire_fold.ll` and
-  //      `..._reject_state_prep.ll`. A literal owes no L1 record: it can never
-  //      turn quantum.
+  //      `..._reject_state_prep.ll`. ⚠ CORRECTED (round-1 review, L7): `nomerge`
+  //      rules out the MERGE route only. A literal can also be the image of a
+  //      VALUE SUBSTITUTION on a dominating equality edge (review p7), so S3
+  //      also asks `angleSelectLiteralSeedPinned` (F2's question at the
+  //      consumer, below the `DT` guard), and a pinned value that is classical
+  //      at round 1 IS recorded for the L1 re-ask (`kAngleSelSeedPinMD`). The
+  //      literal itself cannot turn quantum; the value it stands for can.
   Value *RotBase = IsPhase ? nullptr : T->getArgOperand(0);
   const bool UntaintedBase = !IsPhase && !Taint.Tainted.count(RotBase);
   const bool LiteralSeed =
@@ -9752,8 +9970,14 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
     // erased once dead, and a second consumer (a `br` region, a second select,
     // a data use) would be a second owner of one predicate — the S4
     // single-user clause, one node up.
-    if (!NetRegRoot && !Cond->hasOneUse())
-      return AngleSelectDisp::NotApplicable;
+    // bd dm7f.54 (item D, review F3): a node ROOT may have OTHER users (`_Bool c
+    // = a && b; cq_theta(&t, c ? A : B); cq_measure(c)`). The network is minted
+    // from the LEAVES, so the root instruction is not consumed: the emitter
+    // erases it only when dead, and its other users lower on their own (a
+    // logical-select root with a data use is not pre-claimed and lowers as its
+    // own 4.4 data select, emitted AFTER this region by the precedence edge in
+    // `lowerControlRegions`). A root shared with another CONTROL region is
+    // refused at S10 with its own string.
     // Every COMPARE leaf mints through `lowerCompareToFlag` with NO Q+Q width
     // (`AllowQQLeaves = false`, the in-place Ry tree's policy), so each must
     // have exactly one tainted operand — asked HERE, before any emission, since
@@ -9791,6 +10015,51 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
       return AngleSelectDisp::NotApplicable;
   }
 
+  // bd dm7f.54 (item E) — S4 FOR EVERY INNER MUX MEMBER, the root's clauses
+  // verbatim per member: a bare compare (single user, one tainted operand,
+  // lowerable, mintable) or a `NetCond` tree (literal-free; every compare leaf
+  // one tainted operand and mintable; every rail tainted). Each member's tree
+  // is collected with gate 2's grammar for a mux member (`AllowLogicalSelect`,
+  // `AllowRailPhi`). `MuxConds` holds every member's (root included) condition
+  // tree for S7, S8, S11 and the precedence record below.
+  struct MuxCond {
+    SelectInst *S;
+    CondTree Tree;
+    Instruction *Cond;
+    bool Net;
+  };
+  SmallVector<MuxCond, 4> MuxConds;
+  MuxConds.push_back({Sel, Tree, Cond, NetCond});
+  for (SelectInst *M : Members) {
+    if (M == Sel)
+      continue;
+    MuxCond MC{M, CondTree(), dyn_cast<Instruction>(M->getCondition()), false};
+    if (!MC.Cond ||
+        !collectCondTree(M->getCondition(), MC.Tree,
+                         /*AllowLogicalSelect=*/true, /*AllowRailPhi=*/true) ||
+        !MC.Tree.LiteralLeaves.empty())
+      return AngleSelectDisp::NotApplicable;
+    const CondTree &Tm = MC.Tree;
+    MC.Net = !(Tm.Nodes.empty() && Tm.Leaves.size() == 1 &&
+               Tm.RailLeaves.empty() && Tm.RailPhiLeaves.empty());
+    if (MC.Net && Tm.Nodes.empty() &&
+        Tm.RailLeaves.size() + Tm.RailPhiLeaves.size() != 1)
+      return AngleSelectDisp::NotApplicable;
+    if (!MC.Net && !MC.Cond->hasOneUse())
+      return AngleSelectDisp::NotApplicable;
+    for (CmpInst *Leaf : Tm.Leaves) {
+      const bool LT = Taint.Tainted.count(Leaf->getOperand(0)) != 0;
+      const bool RT = Taint.Tainted.count(Leaf->getOperand(1)) != 0;
+      if (LT == RT || !comparePredLowerable(Leaf) ||
+          !compareFlagMintable(Leaf, Taint))
+        return AngleSelectDisp::NotApplicable;
+    }
+    for (CallInst *Rail : Tm.RailLeaves)
+      if (!Taint.Tainted.count(Rail))
+        return AngleSelectDisp::NotApplicable;
+    MuxConds.push_back(std::move(MC));
+  }
+
   // S5 — the ABI width must have a `cqrt_ry_<W>_controlled` (Ry stem), asked through
   // the expression `lowerRotations` MINTS from (`RotationLowering.h`'s note on
   // `suffixFromName`). Inc-1's R4 asks `abiWidthFromType(T->getType())`; the two
@@ -9818,8 +10087,18 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
     // nothing is minted or erased for it, so two regions on one register do
     // not contend; the compare clause exists because a compare's flag is.)
     // (bd dm7f.54: a `NetCond` rail or φ ROOT is a register too.)
-    if (R.Merge == Sel || (!RailCond && !NetRegRoot && R.Condition == Cond))
+    if (R.Merge == Sel || (!RailCond && !NetRegRoot && !NetCond &&
+                           R.Condition == Cond))
       return AngleSelectDisp::NotApplicable;
+    // bd dm7f.54 (item D): a shared NODE root names its true reason.
+    if (NetCond && !NetRegRoot && R.Condition == Cond) {
+      diagnoseUnderControl(Sel, "angle select condition shared with another "
+                                "control region");
+      return AngleSelectDisp::Declined;
+    }
+    for (SelectInst *M : Members)
+      if (M != Sel && R.Merge == M)
+        return AngleSelectDisp::NotApplicable;
     for (Instruction *I : R.Shadow)
       if (I == T)
         return AngleSelectDisp::NotApplicable;
@@ -9932,6 +10211,16 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // (`control_angle_select_reject_backward_rail_cycle.ll`).
   if (!DT || !LI)
     return AngleSelectDisp::NotApplicable;  // no analysis, no proof.
+  // bd dm7f.54 (item A1) — S3's literal half: no value may be PROVEN EQUAL to
+  // the seed at the consumer (`angleSelectLiteralSeedPinned`; the non-merge
+  // substitution route). F2's string, because it is F2's question.
+  if (LiteralSeed)
+    if (Value *Pin = angleSelectLiteralSeedPinned(T, Taint, *DT)) {
+      (void)Pin;
+      diagnoseUnderControl(Sel, "state prep seed is proven equal to the "
+                                "condition register");
+      return AngleSelectDisp::Declined;
+    }
   //
   // MEMOIZED per block. `blockOnCycle` is an O(V+E) successor walk and the rail
   // prong below asks it of every closure member; a closure has a handful of
@@ -9965,11 +10254,17 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // bd dm7f.54 — a `NetCond` tree has more than one anchor: every LEAF is a
   // position the network reads (a compare is re-minted from, a rail or φ is
   // read as a control), so each is asked the same cycle question `Cond` is.
-  if (NetCond) {
-    SmallVector<Instruction *, 8> LeafAnchors(Tree.Leaves.begin(),
-                                              Tree.Leaves.end());
-    LeafAnchors.append(Tree.RailLeaves.begin(), Tree.RailLeaves.end());
-    LeafAnchors.append(Tree.RailPhiLeaves.begin(), Tree.RailPhiLeaves.end());
+  // (bd dm7f.54 E: and every inner mux member, its condition and leaves.)
+  for (const MuxCond &MC : MuxConds) {
+    if (!MC.Net && MC.S == Sel)
+      continue;  // the root's single compare: asked just above.
+    SmallVector<Instruction *, 8> LeafAnchors(MC.Tree.Leaves.begin(),
+                                              MC.Tree.Leaves.end());
+    LeafAnchors.append(MC.Tree.RailLeaves.begin(), MC.Tree.RailLeaves.end());
+    LeafAnchors.append(MC.Tree.RailPhiLeaves.begin(),
+                       MC.Tree.RailPhiLeaves.end());
+    LeafAnchors.push_back(MC.S);
+    LeafAnchors.push_back(MC.Cond);
     for (Instruction *L : LeafAnchors)
       if (blockInAnyCycle(L->getParent())) {
         diagnoseUnderControl(Sel, "control flow inside a loop body");
@@ -10162,12 +10457,23 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // leaf's provenance and its per-leaf positional prong up to `Sel`, and for
   // every rail/φ leaf the DT prong, re-asked below at `T` (the mint point).
   // The `(Sel, T)` stretch keeps this wire-blind scan.
+  //
+  // bd dm7f.54 (item E): for a mux every member sits in `T`'s block before `T`
+  // (each bare-compare member's compare too, before its select), and the
+  // window starts at the EARLIEST of them: every flag of the mux is minted at
+  // `T`, so the window that can stale any of them is the longest one.
   BasicBlock *BB = T->getParent();
-  if (Sel->getParent() != BB || (!NetCond && Cond->getParent() != BB))
-    return AngleSelectDisp::NotApplicable;
-  if ((!NetCond && !Cond->comesBefore(Sel)) || !Sel->comesBefore(T))
-    return AngleSelectDisp::NotApplicable;
-  for (const Instruction *I = (NetCond ? Sel : Cond)->getNextNode();
+  const Instruction *WindowStart = nullptr;
+  for (const MuxCond &MC : MuxConds) {
+    if (MC.S->getParent() != BB || (!MC.Net && MC.Cond->getParent() != BB))
+      return AngleSelectDisp::NotApplicable;
+    if ((!MC.Net && !MC.Cond->comesBefore(MC.S)) || !MC.S->comesBefore(T))
+      return AngleSelectDisp::NotApplicable;
+    const Instruction *Start = MC.Net ? MC.S : MC.Cond;
+    if (!WindowStart || Start->comesBefore(WindowStart))
+      WindowStart = Start;
+  }
+  for (const Instruction *I = WindowStart->getNextNode();
        I && I != T; I = I->getNextNode()) {
     const auto *CI = dyn_cast<CallInst>(I);
     if (!CI)
@@ -10223,10 +10529,13 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // which is why the parameter names the CONTRACT rather than one caller's
   // spelling of it.
   SmallPtrSet<Value *, 16> Prov;
-  condProvenance(Cond, Taint, Prov);
   SmallPtrSet<Value *, 16> CondRails;
-  railWireClosure(Cond, Taint, WireDir::BackwardOnly, nullptr, nullptr,
-                  CondRails);
+  // (bd dm7f.54 E: the union over every mux member's condition.)
+  for (const MuxCond &MC : MuxConds) {
+    condProvenance(MC.Cond, Taint, Prov);
+    railWireClosure(MC.Cond, Taint, WireDir::BackwardOnly, nullptr, nullptr,
+                    CondRails);
+  }
   for (Value *P : Prov)
     railWireClosure(P, Taint, WireDir::BackwardOnly, nullptr, nullptr,
                     CondRails);
@@ -10291,7 +10600,12 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // the read point moves. A COMPARE leaf's rung (ii) moves with it
   // (`condCmpMeasuredBeforeReadPoint`); its rung (iii) is gate 2c's
   // position-free prong, which has no read point to move.
-  if (NetCond) {
+  // (bd dm7f.54 E: asked of EVERY `NetCond` mux member, each with its own
+  // tree and covered set; all of them read at `T`.)
+  for (const MuxCond &MC : MuxConds) {
+    if (!MC.Net)
+      continue;
+    const CondTree &Tree = MC.Tree;
     SmallPtrSet<Value *, 16> RailProv;
     for (CallInst *Rail : Tree.RailLeaves)
       condProvenance(Rail, Taint, RailProv);
@@ -10342,14 +10656,18 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // φ into its hoisted `cq_theta_i1` is emitted FIRST (the emitter re-reads its
   // tree off the live select, exactly as `SelectMergeEmit` does). The index is
   // the ONE owner's answer (`preppedRailPhiRegionIdx`), never re-derived.
-  if (NetCond) {
-    R.RailLadderProven =
-        !Tree.RailLeaves.empty() || !Tree.RailPhiLeaves.empty();
-    for (PHINode *P : Tree.RailPhiLeaves) {
+  // (bd dm7f.54 E: over every mux member.)
+  for (const MuxCond &MC : MuxConds) {
+    if (!MC.Net)
+      continue;
+    if (!MC.Tree.RailLeaves.empty() || !MC.Tree.RailPhiLeaves.empty())
+      R.RailLadderProven = true;
+    for (PHINode *P : MC.Tree.RailPhiLeaves) {
       const unsigned Idx = preppedRailPhiRegionIdx(P, plan);
       if (Idx == ControlRegion::kNoParent)
         return AngleSelectDisp::NotApplicable;  // gate 2 refused it already.
-      R.PrepRegionIdxs.push_back(Idx);
+      if (!llvm::is_contained(R.PrepRegionIdxs, Idx))
+        R.PrepRegionIdxs.push_back(Idx);
     }
   }
   plan.Regions.push_back(R);

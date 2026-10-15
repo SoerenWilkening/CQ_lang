@@ -489,6 +489,29 @@ bool selIsRyAngleOperand(const SelectInst *Sel) {
          T->getArgOperand(1) == Sel && T->getArgOperand(0) != Sel;
 }
 
+// bd dm7f.54 (item E) — see `SelectClassify.h`.
+const SelectInst *angleMuxParent(const SelectInst *S, const TaintSet &taint) {
+  if (!S || !S->getType()->isDoubleTy() || !S->hasOneUse() ||
+      !taint.Tainted.count(S->getCondition()))
+    return nullptr;
+  const auto *P = dyn_cast<SelectInst>(S->user_back());
+  if (!P || !P->getType()->isDoubleTy() || P->getCondition() == S ||
+      !taint.Tainted.count(P->getCondition()))
+    return nullptr;
+  return P;
+}
+
+const SelectInst *angleMuxRoot(const SelectInst *S, const TaintSet &taint) {
+  // Bounded: a mux is a tree of single-use selects, so the walk cannot cycle
+  // in valid SSA outside a loop; the bound is defence in depth.
+  for (unsigned Depth = 0; S && Depth < 64; ++Depth) {
+    if (selIsRyAngleOperand(S))
+      return taint.Tainted.count(S->getCondition()) ? S : nullptr;
+    S = angleMuxParent(S, taint);
+  }
+  return nullptr;
+}
+
 // bd `boi6` (D-B) / Track M — RUNG 0 OF THE MERGE-φ LADDER, AND THE WHOLE PROOF.
 // The region that will turn `P` into a single physical register, or null.
 //
@@ -1012,7 +1035,7 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   CondTree Tree;
   if (!collectCondTree(
           Sel->getCondition(), Tree,
-          /*AllowLogicalSelect=*/selIsRyAngleOperand(Sel),
+          /*AllowLogicalSelect=*/angleMuxRoot(Sel, taint) != nullptr,
           /*AllowRailPhi=*/true,
           [&taint](Value *V) { return condLiteralAdmissible(V, taint); }))
     return diagnoseUnderControl(Sel, "control flow");
@@ -1293,7 +1316,7 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
       // widening the 4.4 data select is its own increment) and for a φ-free
       // tree.
       SmallPtrSet<const CallInst *, 4> CoveredPhiGates;
-      if (selIsRyAngleOperand(Sel))
+      if (angleMuxRoot(Sel, taint))
         condTreeCoveredPhiGates(Tree, plan, taint, CoveredPhiGates);
       const SmallPtrSetImpl<const CallInst *> *Cov =
           CoveredPhiGates.empty() ? nullptr : &CoveredPhiGates;
@@ -1357,6 +1380,14 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   // have their own precise strings (`control flow inside a loop body`,
   // `rotation arm on a condition wire`, `stale rail record read past a
   // controlled Ry`) that `rotation angle` would MISLABEL.
+  // bd dm7f.54 (item E) — an INNER member of a nested angle mux has passed
+  // gates 1-2c on its own condition (above); the rest of its classification
+  // belongs to the mux ROOT, which `classifyAngleSelect` runs over every member
+  // (`angleMuxRoot`'s header carries why deferring here never leaves the
+  // select unlowered).
+  if (const SelectInst *MuxRoot = angleMuxRoot(Sel, taint);
+      MuxRoot && MuxRoot != Sel)
+    return;
   if (selReachesRotationArg1(Sel, taint)) {
     switch (classifyAngleSelect(Sel, Tree, taint, wd, DT, LI, plan)) {
     case AngleSelectDisp::Accepted:

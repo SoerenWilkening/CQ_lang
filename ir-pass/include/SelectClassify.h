@@ -329,6 +329,25 @@ void classifySelectRegion(llvm::SelectInst *Sel, TaintSet &taint,
 // is an accept or a loud decline. Pure analysis.
 bool selIsRyAngleOperand(const llvm::SelectInst *Sel);
 
+// bd test_C_libtooling-dm7f.54 (item E) — THE NESTED ANGLE MUX, `c1 ? A : (c2 ?
+// B : C)` (reporter t4.c line 3). `angleMuxParent(S)` is the select `S` is an
+// INNER member of, or null: `S` is a `double` select with a TAINTED condition
+// and exactly one use, which is a VALUE operand (never the condition) of a
+// `double` select with a tainted condition. `angleMuxRoot(S)` walks those
+// parents up and returns the top select when it is a Ry angle operand
+// (`selIsRyAngleOperand`), else null; for the root itself it returns `S`. ONE
+// spelling for the three sites that must agree on mux membership: gate 2's
+// grammar (`AllowLogicalSelect` for every member), gate 3's deferral of an
+// inner member to its root's classification, and `ControlDetect`'s pre-claim
+// of every member's logical-select condition nodes. An inner member deferred
+// at gate 3 is never left unlowered: its root has a tainted condition (every
+// link requires one), so the same scan classifies the root, and every outcome
+// there is an accept that emits the whole mux or a loud decline. Pure.
+const llvm::SelectInst *angleMuxParent(const llvm::SelectInst *S,
+                                       const TaintSet &taint);
+const llvm::SelectInst *angleMuxRoot(const llvm::SelectInst *S,
+                                     const TaintSet &taint);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_SELECT_CLASSIFY_H_

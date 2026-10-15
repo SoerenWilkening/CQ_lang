@@ -30,10 +30,38 @@
 ; except a reading in which SSA names are wires, and they are not. The owner
 ; ruled DECLINE anyway; the observation is on the desk as PRD §14.11 Q4.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}if/else state prep allocates two rails under quantum control
-; CHECK-NOT: cqrt_ry_i32_controlled
-; 3qlq: migrated from register cq_phi (dead declare erased)
+; ⚠ FLIPPED TO AN ACCEPT BY bd test_C_libtooling-dm7f.54 (item B, 2026-10-15), NAME
+; KEPT (gahu precedent, L8), under the delegated ruling
+; `ruling-dm7f54-literal-base-and-ifelse-prep-2026-10-15` (Q2): the archived Q4
+; decline MOVES. Two prep arms with the IDENTICAL literal seed lower as the ONE-rail
+; stream the ternary `int r = 0; cq_theta(&r, q == 5 ? .9 : .4)` emits: M-β chains
+; the else-arm gate on the then-arm gate, so the then-arm theta is the SOURCE
+; (`cqrt_alloc_i32(0)`) and both are controlled Ry on that one rail. F2 is asked on
+; BOTH arm edges (nothing is pinned to 0 here). ANALYTIC: q == 5 -> r = Ry(.9)|0>,
+; else r = Ry(.4)|0>; the flag strip recomputes q == 5 on an untouched q.
+; Different seeds per arm stay loud (`..._ifelse_diff_seeds.ll`); F2's per-edge
+; refusal is `..._stateprep_nomerge_noregion_pin.ll`.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck %s --check-prefix=NEG < %t.ll
+; RUN: %filecheck %s --check-prefix=ACNT < %t.ll
+; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
+; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 5)
+; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 4.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[Q]])
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[R]])
+; NEG-NOT: br i1
+; NEG-NOT: phi
+; ACNT-COUNT-2: call i32 @cqrt_alloc_i32(
+; ACNT-NOT:     call i32 @cqrt_alloc_i32(
 
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

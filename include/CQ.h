@@ -74,13 +74,18 @@ extern "C" {
      `ry_c(f,h,A); x(f); ry_c(f,h,B); x(f)` on a flag ancilla). Since bd
      dm7f.54 that holds for a fresh target (`bool t = 0;`, controlled state
      prep), a bare `_Bool` or merge-phi condition (a CNOT copy flag) and a
-     compound `&&`/`||`/`^` condition. Still declined: a NESTED ternary
-     (`c1 ? A : c2 ? B : C`), the target being the condition's own register
-     (bd dm7f.8), and a literal target reached through a FUNCTION POINTER
-     (no call-site `nomerge`, bd 4e4p);
-   - over-declines: that if/else under a CLASSICAL condition inside a loop, and
-     an if/else preparing the same literal on both arms (bd cx6j); a legitimate
-     common-code merge on ONE register (bd 4l5q);
+     compound `&&`/`||`/`^` condition, and for a NESTED ternary in select form
+     (`c1 ? A : (c2 ? B : C)`, one flag per level, each angle in one gate).
+     Still declined: the target being the condition's own register (bd
+     dm7f.8), a literal target reached through a FUNCTION POINTER (no
+     call-site `nomerge`, bd 4e4p) or proven equal to a live register at the
+     rotation, and a multi-way ternary `-O1` turns into a branch or switch over
+     an angle phi;
+   - over-declines: that if/else under a CLASSICAL condition inside a loop
+     (bd cx6j); a legitimate common-code merge on ONE register (bd 4l5q). (An
+     if/else preparing the SAME literal on both arms under a QUANTUM condition
+     lowers since bd dm7f.54, as the ternary's one-rail stream; different
+     literals per arm still decline.);
    - some programs moved DECLINE → ACCEPT, measured correct against their twins
      (the in-loop Ry if/else, flat programs the in-place Ry arm lowers).
    `cq_phi` and `cq_measure` deliberately do NOT carry `nomerge`

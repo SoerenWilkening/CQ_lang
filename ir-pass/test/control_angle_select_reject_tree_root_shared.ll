@@ -9,8 +9,30 @@
 ; single-user clause the bare compare has). `NotApplicable`, so the caller's
 ; `rotation angle` decline fires.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq controlled lowering: rotation angle under quantum control
+; ⚠ FLIPPED TO AN ACCEPT IN THE SAME BATCH (bd dm7f.54 round-1 review item D),
+; NAME KEPT (L8): the single-user clause one node up was an over-decline with a
+; misleading string. The network reads the LEAVES, not the root, so the root
+; `%ab = and i1` survives for its data use (lowered by `lowerOps` as
+; `cq_template_and_i1`, measured) while the angle network mints its own ancilla.
+; ANALYTIC: t gets Ry(.7) iff a ∧ b, Ry(.3) otherwise (after Ry(.4)); the template
+; `and` and the network both read a and b in control slots only.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; CHECK:      %[[A:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK:      %[[B:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK:      %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK:      %[[AB:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i1(i32 %[[A]], i32 %[[B]])
+; CHECK-NEXT: %[[G:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[A]], i32 %[[B]], i32 %[[G]])
+; CHECK-NEXT: call void @cqrt_ry_i1_controlled(i32 %[[G]], i32 %[[T]], double 0x3FE6666666666666)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
+; CHECK-NEXT: call void @cqrt_ry_i1_controlled(i32 %[[G]], i32 %[[T]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[G]])
+; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[A]], i32 %[[B]], i32 %[[G]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[G]])
+; CHECK-NEXT: call i1 @cqrt_measure_i1(i32 %[[AB]])
+; CHECK-NEXT: call i1 @cqrt_measure_i1(i32 %[[T]])
 
 declare i1 @cq_theta_i1(i1, double)
 declare i1 @cq_measure_i1(i1)

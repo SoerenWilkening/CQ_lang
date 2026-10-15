@@ -61,6 +61,13 @@
 // call site (`angleSelectLiteralSeedAdmissible`): `TA` is then the source
 // theta, `cqrt_alloc_<W>(SEED)` + the controlled Ry, exactly like a runtime seed.
 //
+// bd dm7f.54 (item E) — THE NESTED MUX. When an arm is itself a member select
+// (`collectAngleMux`), the Ry stem recurses: one flag per member, and a leaf
+// under k > 1 levels is controlled by a PATH-PREDICATE ancilla `p = c ∧ f`
+// (`toffoli`, undone by its mirror) with the ¬ side spelled by the `cqrt_x`
+// bracket on the member's own flag. Every leaf angle reaches exactly one
+// controlled gate; the one-member mux is the stream above, byte for byte.
+//
 // THE HISTORY THIS REPLACES: drbq Inc 2b emitted `Ry(B)` then one controlled
 // `Ry(fl(A−B))`, which realized `B + fl(A−B)` on the true edge (0.858 rad wrong on
 // `pi / 1e16`, `inf` from the finite arms `±DBL_MAX`) and so admitted only

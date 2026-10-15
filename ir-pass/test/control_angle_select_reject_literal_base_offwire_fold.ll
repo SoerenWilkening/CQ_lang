@@ -48,18 +48,22 @@
 ; a plain-C decline, not only what S3 owes a hand-IR front end. (⚠ CORRECTED, r2
 ; F-r2-1: an earlier spelling said "hand-IR / non-C front end" only.)
 ;
-; ⚠ bd test_C_libtooling-dm7f.54 (2026-10-15) NARROWED THIS DECLINE TO MODULES
-; WITHOUT A CALL-SITE `nomerge`. The counter-example is a SimplifyCFG SINK of two
-; thetas, which LLVM 19 never performs on a call that `cannotMerge()`, and every
-; direct `cq_theta_*` call clang emits from CQ.h carries `nomerge` on the call
-; site. So `bool t = 0; cq_theta(&t, c ? A : B)` from C (reporter t4, CQ_FINDINGS
-; F4) now ACCEPTS as controlled state prep (`angleSelectLiteralSeedAdmissible`;
-; `control_angle_select_ry_fresh_rail_cond.ll`, `..._ry_fresh_icmp_int.ll`).
-; This module's call site carries NO `nomerge` (hand IR, or a devirtualized
-; function pointer, bd 4e4p), so it may be the fold's image and keeps the
-; string. ⚠ L9: the admitted population inherits bd uw5u (`int m = (t == 5) ?
-; t : 5;` folds to the literal with no merge at all), already open for the plain
-; `cq_theta(&m, θ)` on the same literal.
+; ⚠ WHAT THIS FILE PINS NOW (bd test_C_libtooling-dm7f.54 round-1 review, L7 —
+; read this before the history above). Since the delegated ruling
+; `ruling-dm7f54-literal-base-and-ifelse-prep-2026-10-15` a literal Ry angle-select
+; base IS admitted when the consumer carries `nomerge` AT THE CALL SITE and no
+; value is proven equal to the seed at the consumer
+; (`angleSelectLiteralSeedAdmissible` + `angleSelectLiteralSeedPinned`). This module
+; has NO call-site `nomerge`, so it pins the NO-NOMERGE case: the module may be
+; the SimplifyCFG-sink image the paragraphs above measured, and it keeps the
+; drbq.13 string. (It would NOT be refused by the pin check — `%t = sdiv %q, 4`
+; is not pinned at this consumer, which has no dominating edge; the sink erased
+; it — so the no-nomerge clause is the ONLY fence for it.) The R10 accept/decline
+; pair for the attribute alone is `control_angle_select_ry_fresh_icmp_int.ll` /
+; `..._reject_fresh_icmp_int_no_nomerge.ll`; the function-pointer route is
+; `..._reject_literal_seed_fnptr.ll`. ⚠ L9: the admitted population inherits bd
+; uw5u (`int m = (t == 5) ? t : 5;` folds to the literal with no merge and no
+; edge), already open for the plain `cq_theta(&m, θ)` on the same literal.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}rotation angle under quantum control
 

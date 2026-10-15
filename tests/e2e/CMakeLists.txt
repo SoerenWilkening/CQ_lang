@@ -5373,13 +5373,16 @@ add_test(NAME e2e-slice-control-inplace-ry-tree-mergephi-t6
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_tree_mergephi_t6.expected.log")
 
-# bd `dm7f.54` (CQ_FINDINGS F4) — the Ry ANGLE SELECT on a FRESH target and on a
-# bare `_Bool` condition (a CNOT copy flag, X-bracket form), and the two-arm
-# if/else on a `_Bool` whose golden is byte-identical to the ternary's. Read each
+# bd `dm7f.54` (CQ_FINDINGS F4) — the reporter's whole t4.c (a fresh-target angle
+# select on a `_Bool` and a NESTED angle mux), the Ry ANGLE SELECT on a bare
+# `_Bool` condition (a CNOT copy flag, X-bracket form), and two if/else spellings
+# whose goldens are byte-identical to their ternaries'. Read each
 # slice header for the line-by-line and the analytic check.
 foreach(_d54 slice_control_angle_select_ry_fresh_rail_t4
              slice_control_angle_select_ry_rail_p12
-             slice_control_inplace_ry_rail_ifelse_p12_twin)
+             slice_control_inplace_ry_rail_ifelse_p12_twin
+             slice_control_inplace_ry_stateprep_rail_ifelse_fresh
+             slice_control_angle_select_ry_fresh_rail_ternary)
   string(REPLACE "slice_" "" _d54n "${_d54}")
   string(REPLACE "_" "-" _d54n "${_d54n}")
   add_test(NAME e2e-slice-${_d54n}
@@ -5390,6 +5393,13 @@ foreach(_d54 slice_control_angle_select_ry_fresh_rail_t4
       "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
       "${CMAKE_CURRENT_SOURCE_DIR}/${_d54}.expected.log")
 endforeach()
+
+# bd dm7f.54 item B: the fresh-target if/else (two preps of one literal seed)
+# emits the ternary's one-rail stream byte for byte.
+add_test(NAME e2e-stateprep-ifelse-fresh-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep_rail_ifelse_fresh.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_fresh_rail_ternary.expected.log")
 
 add_test(NAME e2e-angle-select-ry-rail-twin-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
