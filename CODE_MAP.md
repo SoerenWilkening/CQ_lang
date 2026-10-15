@@ -1174,7 +1174,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RailWindowInit.cpp:139` — `railWindowNarrow`
 - `ir-pass/src/RailWindowInit.cpp:144` — `railWindowSplitInits`
 
-### `ir-pass/src/RailWindowMaterialize.cpp` (367 lines)
+### `ir-pass/src/RailWindowMaterialize.cpp` (375 lines)
 
 - `ir-pass/src/RailWindowMaterialize.cpp:45` — `diagnose`
 - `ir-pass/src/RailWindowMaterialize.cpp:51` — `afterDef`

@@ -187,17 +187,25 @@ AllocaInst *materializeRailWindow(Function &F, RailWindowAccesses &Acc,
   // ruling-01po19-s4-r1-qs-2026-10-15 Q1: the undef seed is zero,
   // owner-ruling-undef-seed-is-zero-2026-09-14 / bd z9t1, one rule with
   // `normalizeUndefRotationSeed`); with one, the walk copies memory.
+  // ⚠ "PRE-Q" MEANS "CAN REACH Q", NOT "IS NOT DOMINATED BY Q" (R11 round 2,
+  // R2-F1): a writer on a path that never reaches Q (`if (c) { q[i] = 1;
+  // return; }`) initializes nothing Q sees, and counting it seeded the walk
+  // from never-written memory. A writer on SOME paths to Q is the ruled
+  // "partially initialized: keep memory" class.
+  auto WritesBeforeQ = [&](const Instruction *I) {
+    return !isPostQ(Q, I, DT) && railBankInstReaches(I, Q);
+  };
   bool PreQWriter = false;
   for (StoreInst *S : Acc.Stores)
     if (isPostQ(Q, S, DT))
       PostStores.push_back(S);
-    else
+    else if (WritesBeforeQ(S))
       PreQWriter = true;
   for (Instruction *O : Acc.Others) {
     auto *II = dyn_cast<IntrinsicInst>(O);
     bool Marker = II && (II->getIntrinsicID() == Intrinsic::lifetime_start ||
                          II->getIntrinsicID() == Intrinsic::lifetime_end);
-    if (!Marker && !isa<LoadInst>(O) && !isPostQ(Q, O, DT))
+    if (!Marker && !isa<LoadInst>(O) && WritesBeforeQ(O))
       PreQWriter = true;
   }
   Type *RT = railWindowRailTypeFor(Acc, PostLoads, PostStores);
