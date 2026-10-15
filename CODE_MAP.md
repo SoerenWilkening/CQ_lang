@@ -1849,9 +1849,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/tools/cq_debug_alloc.cpp:178` — `delete`
 - `ir-pass/tools/cq_debug_alloc.cpp:180` — `delete`
 
-### `ir-pass/tools/cq_opt_main.cpp` (126 lines)
+### `ir-pass/tools/cq_opt_main.cpp` (146 lines)
 
-- `ir-pass/tools/cq_opt_main.cpp:43` — `main`
+- `ir-pass/tools/cq_opt_main.cpp:47` — `main`
 
 ### `ir-pass/tools/merge_selftest.cpp` (146 lines)
 
