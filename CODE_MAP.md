@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 859 maintained source files, 6926 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 860 maintained source files, 6932 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -57,7 +57,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/trace_twin_equiv.py` — 843 physical lines
 - `runtime/cq_runtime.h` — 813 physical lines
 - `ir-pass/include/LoopPlan.h` — 805 physical lines
-- `tools/cq_stage_cache_test.py` — 730 physical lines
+- `tools/cq_stage_cache_test.py` — 752 physical lines
 - `tools/library_coverage/full_surface/full_census.py` — 728 physical lines
 - `ir-pass/include/ControlPlan.h` — 726 physical lines
 - `ir-pass/include/ChainWalk.h` — 719 physical lines
@@ -5119,7 +5119,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/railbank_guarded_vla_matrix.c:222` — `slice`
 - `tests/e2e/railbank_guarded_vla_matrix.c:232` — `main`
 
-### `tests/e2e/railbank_readorder_matrix.c` (307 lines)
+### `tests/e2e/railbank_readorder_matrix.c` (310 lines)
 
 - `tests/e2e/railbank_readorder_matrix.c:45` — `slice`
 - `tests/e2e/railbank_readorder_matrix.c:52` — `main`
@@ -5139,28 +5139,28 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/railbank_readorder_matrix.c:143` — `main`
 - `tests/e2e/railbank_readorder_matrix.c:148` — `slice`
 - `tests/e2e/railbank_readorder_matrix.c:156` — `main`
-- `tests/e2e/railbank_readorder_matrix.c:161` — `slice`
-- `tests/e2e/railbank_readorder_matrix.c:168` — `main`
-- `tests/e2e/railbank_readorder_matrix.c:173` — `slice`
-- `tests/e2e/railbank_readorder_matrix.c:181` — `main`
-- `tests/e2e/railbank_readorder_matrix.c:185` — `slice`
-- `tests/e2e/railbank_readorder_matrix.c:193` — `main`
-- `tests/e2e/railbank_readorder_matrix.c:198` — `slice`
-- `tests/e2e/railbank_readorder_matrix.c:208` — `main`
-- `tests/e2e/railbank_readorder_matrix.c:214` — `slice`
-- `tests/e2e/railbank_readorder_matrix.c:221` — `main`
-- `tests/e2e/railbank_readorder_matrix.c:228` — `slice`
-- `tests/e2e/railbank_readorder_matrix.c:237` — `main`
-- `tests/e2e/railbank_readorder_matrix.c:241` — `slice`
-- `tests/e2e/railbank_readorder_matrix.c:251` — `main`
-- `tests/e2e/railbank_readorder_matrix.c:256` — `slice`
-- `tests/e2e/railbank_readorder_matrix.c:265` — `main`
-- `tests/e2e/railbank_readorder_matrix.c:269` — `slice`
-- `tests/e2e/railbank_readorder_matrix.c:278` — `main`
-- `tests/e2e/railbank_readorder_matrix.c:282` — `slice`
-- `tests/e2e/railbank_readorder_matrix.c:291` — `main`
-- `tests/e2e/railbank_readorder_matrix.c:295` — `slice`
-- `tests/e2e/railbank_readorder_matrix.c:306` — `main`
+- `tests/e2e/railbank_readorder_matrix.c:164` — `slice`
+- `tests/e2e/railbank_readorder_matrix.c:171` — `main`
+- `tests/e2e/railbank_readorder_matrix.c:176` — `slice`
+- `tests/e2e/railbank_readorder_matrix.c:184` — `main`
+- `tests/e2e/railbank_readorder_matrix.c:188` — `slice`
+- `tests/e2e/railbank_readorder_matrix.c:196` — `main`
+- `tests/e2e/railbank_readorder_matrix.c:201` — `slice`
+- `tests/e2e/railbank_readorder_matrix.c:211` — `main`
+- `tests/e2e/railbank_readorder_matrix.c:217` — `slice`
+- `tests/e2e/railbank_readorder_matrix.c:224` — `main`
+- `tests/e2e/railbank_readorder_matrix.c:231` — `slice`
+- `tests/e2e/railbank_readorder_matrix.c:240` — `main`
+- `tests/e2e/railbank_readorder_matrix.c:244` — `slice`
+- `tests/e2e/railbank_readorder_matrix.c:254` — `main`
+- `tests/e2e/railbank_readorder_matrix.c:259` — `slice`
+- `tests/e2e/railbank_readorder_matrix.c:268` — `main`
+- `tests/e2e/railbank_readorder_matrix.c:272` — `slice`
+- `tests/e2e/railbank_readorder_matrix.c:281` — `main`
+- `tests/e2e/railbank_readorder_matrix.c:285` — `slice`
+- `tests/e2e/railbank_readorder_matrix.c:294` — `main`
+- `tests/e2e/railbank_readorder_matrix.c:298` — `slice`
+- `tests/e2e/railbank_readorder_matrix.c:309` — `main`
 
 ### `tests/e2e/railbank_stale_matrix.c` (654 lines)
 
@@ -5254,16 +5254,19 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/railbank_stale_matrix.c:646` — `slice`
 - `tests/e2e/railbank_stale_matrix.c:650` — `main`
 
-### `tests/e2e/run_railbank_dynamic_matrix.py` (253 lines)
+### `tests/e2e/run_railbank_dynamic_matrix.py` (357 lines)
 
-- `tests/e2e/run_railbank_dynamic_matrix.py:54` — `run`
-- `tests/e2e/run_railbank_dynamic_matrix.py:58` — `load_expectations`
-- `tests/e2e/run_railbank_dynamic_matrix.py:60` — `load_expectations.no_duplicate_keys`
-- `tests/e2e/run_railbank_dynamic_matrix.py:100` — `_stores`
-- `tests/e2e/run_railbank_dynamic_matrix.py:113` — `literal_bank_stores`
-- `tests/e2e/run_railbank_dynamic_matrix.py:148` — `check_case`
-- `tests/e2e/run_railbank_dynamic_matrix.py:181` — `main`
-- `tests/e2e/run_railbank_dynamic_matrix.py:196` — `main.one_case`
+- `tests/e2e/run_railbank_dynamic_matrix.py:60` — `run`
+- `tests/e2e/run_railbank_dynamic_matrix.py:64` — `load_expectations`
+- `tests/e2e/run_railbank_dynamic_matrix.py:66` — `load_expectations.no_duplicate_keys`
+- `tests/e2e/run_railbank_dynamic_matrix.py:106` — `_stores`
+- `tests/e2e/run_railbank_dynamic_matrix.py:119` — `literal_bank_stores`
+- `tests/e2e/run_railbank_dynamic_matrix.py:154` — `route_errors`
+- `tests/e2e/run_railbank_dynamic_matrix.py:166` — `check_case`
+- `tests/e2e/run_railbank_dynamic_matrix.py:207` — `check_twin`
+- `tests/e2e/run_railbank_dynamic_matrix.py:241` — `selftest`
+- `tests/e2e/run_railbank_dynamic_matrix.py:290` — `main`
+- `tests/e2e/run_railbank_dynamic_matrix.py:307` — `main.one_case`
 
 ### `tests/e2e/slice_4jok_bank_cell_from_hoisted.c` (57 lines)
 
@@ -7365,6 +7368,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/slice_railbank_owner_cascade.c:86` — `main`
 
+### `tests/e2e/slice_railwindow_rewalk_fixed.c` (40 lines)
+
+- `tests/e2e/slice_railwindow_rewalk_fixed.c:23` — `side`
+- `tests/e2e/slice_railwindow_rewalk_fixed.c:25` — `slice`
+- `tests/e2e/slice_railwindow_rewalk_fixed.c:40` — `main`
+
 ### `tests/e2e/slice_rolled_cnot_then_ry.c` (30 lines)
 
 - `tests/e2e/slice_rolled_cnot_then_ry.c:22` — `main`
@@ -8093,42 +8102,42 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/cq_stage_cache.py:451` — `run_base`
 - `tools/cq_stage_cache.py:475` — `main`
 
-### `tools/cq_stage_cache_test.py` (730 lines)
+### `tools/cq_stage_cache_test.py` (752 lines)
 
-- `tools/cq_stage_cache_test.py:74` — `count`
-- `tools/cq_stage_cache_test.py:80` — `main`
-- `tools/cq_stage_cache_test.py:95` — `main.script`
-- `tools/cq_stage_cache_test.py:112` — `main.opt_wrapper`
-- `tools/cq_stage_cache_test.py:132` — `main.e2e`
-- `tools/cq_stage_cache_test.py:145` — `main.harness_copy`
-- `tools/cq_stage_cache_test.py:168` — `main.run`
-- `tools/cq_stage_cache_test.py:198` — `main.pyrun`
-- `tools/cq_stage_cache_test.py:211` — `main.group`
-- `tools/cq_stage_cache_test.py:221` — `main.warm_copy`
-- `tools/cq_stage_cache_test.py:231` — `main.private_src`
-- `tools/cq_stage_cache_test.py:241` — `main.edit`
-- `tools/cq_stage_cache_test.py:250` — `main.gA`
-- `tools/cq_stage_cache_test.py:265` — `main.gBJC`
-- `tools/cq_stage_cache_test.py:281` — `main.gD`
-- `tools/cq_stage_cache_test.py:292` — `main.gE`
-- `tools/cq_stage_cache_test.py:304` — `main.rearchive`
-- `tools/cq_stage_cache_test.py:313` — `main.gRT`
-- `tools/cq_stage_cache_test.py:334` — `main.gTPL`
-- `tools/cq_stage_cache_test.py:340` — `main.gLD`
-- `tools/cq_stage_cache_test.py:353` — `main.gBASE`
-- `tools/cq_stage_cache_test.py:361` — `main.gCL`
-- `tools/cq_stage_cache_test.py:366` — `main.gENV`
-- `tools/cq_stage_cache_test.py:378` — `main.g2B`
-- `tools/cq_stage_cache_test.py:394` — `main.gSRC`
-- `tools/cq_stage_cache_test.py:413` — `main.gLIB`
-- `tools/cq_stage_cache_test.py:426` — `main.gHD`
-- `tools/cq_stage_cache_test.py:442` — `main.gHDR`
-- `tools/cq_stage_cache_test.py:470` — `main.gHDR2`
-- `tools/cq_stage_cache_test.py:486` — `main.gGH`
-- `tools/cq_stage_cache_test.py:503` — `main.gPY`
-- `tools/cq_stage_cache_test.py:553` — `main.gPS1`
-- `tools/cq_stage_cache_test.py:614` — `main.gCR`
-- `tools/cq_stage_cache_test.py:640` — `main.gS3`
+- `tools/cq_stage_cache_test.py:76` — `count`
+- `tools/cq_stage_cache_test.py:82` — `main`
+- `tools/cq_stage_cache_test.py:97` — `main.script`
+- `tools/cq_stage_cache_test.py:114` — `main.opt_wrapper`
+- `tools/cq_stage_cache_test.py:134` — `main.e2e`
+- `tools/cq_stage_cache_test.py:147` — `main.harness_copy`
+- `tools/cq_stage_cache_test.py:170` — `main.run`
+- `tools/cq_stage_cache_test.py:200` — `main.pyrun`
+- `tools/cq_stage_cache_test.py:213` — `main.group`
+- `tools/cq_stage_cache_test.py:223` — `main.warm_copy`
+- `tools/cq_stage_cache_test.py:233` — `main.private_src`
+- `tools/cq_stage_cache_test.py:243` — `main.edit`
+- `tools/cq_stage_cache_test.py:252` — `main.gA`
+- `tools/cq_stage_cache_test.py:267` — `main.gBJC`
+- `tools/cq_stage_cache_test.py:283` — `main.gD`
+- `tools/cq_stage_cache_test.py:294` — `main.gE`
+- `tools/cq_stage_cache_test.py:306` — `main.rearchive`
+- `tools/cq_stage_cache_test.py:315` — `main.gRT`
+- `tools/cq_stage_cache_test.py:336` — `main.gTPL`
+- `tools/cq_stage_cache_test.py:342` — `main.gLD`
+- `tools/cq_stage_cache_test.py:355` — `main.gBASE`
+- `tools/cq_stage_cache_test.py:363` — `main.gCL`
+- `tools/cq_stage_cache_test.py:368` — `main.gENV`
+- `tools/cq_stage_cache_test.py:380` — `main.g2B`
+- `tools/cq_stage_cache_test.py:396` — `main.gSRC`
+- `tools/cq_stage_cache_test.py:415` — `main.gLIB`
+- `tools/cq_stage_cache_test.py:428` — `main.gHD`
+- `tools/cq_stage_cache_test.py:444` — `main.gHDR`
+- `tools/cq_stage_cache_test.py:492` — `main.gHDR2`
+- `tools/cq_stage_cache_test.py:508` — `main.gGH`
+- `tools/cq_stage_cache_test.py:525` — `main.gPY`
+- `tools/cq_stage_cache_test.py:575` — `main.gPS1`
+- `tools/cq_stage_cache_test.py:636` — `main.gCR`
+- `tools/cq_stage_cache_test.py:662` — `main.gS3`
 
 ### `tools/dedup_lit_runs.py` (136 lines)
 
