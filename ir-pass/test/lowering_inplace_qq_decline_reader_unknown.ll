@@ -6,8 +6,11 @@
 ; `cqrt_xor_i32(%a, %t)` reads the relabelled `%t` as its index. A QRAM store is
 ; neither a forward producer minting a fresh rail, a sink, nor a gate with a known
 ; write set in `classifyLaterUse`, so the postcondition cannot place it and fails
-; loudly rather than skip it. (Its own `_unc`s follow; the first unclassifiable
-; reader fires.)
+; loudly rather than skip it. Its own `_unc` follows and IS placed (its forward,
+; the one identical store, is unique and after the gate), so the store is the ONLY
+; unknown reader (R11 round 2d: the reviewer's original probe also had a pre-gate
+; identical store, which made the `_unc`s ambiguous — a second reason for the same
+; message; that shape is lowering_inplace_qq_decline_ambiguous_store_adjoint.ll).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
@@ -29,10 +32,8 @@ entry:
   %a = call i32 @cq_theta_si32(i32 0, double 5.000000e-01)
   %v = call i32 @cq_theta_si32(i32 0, double 6.000000e-01)
   %arr = call i32 @cqrt_qram_alloc_i32(i32 4)
-  call void @cqrt_qram_store_i32(i32 %arr, i32 %t, i32 %v)
   call void @cqrt_xor_i32(i32 %a, i32 %t), !cq.inplace.qq !0
   call void @cqrt_qram_store_i32(i32 %arr, i32 %t, i32 %v)
-  call void @cqrt_qram_store_i32_unc(i32 %arr, i32 %t, i32 %v)
   call void @cqrt_qram_store_i32_unc(i32 %arr, i32 %t, i32 %v)
   %m = call i32 @cq_measure_si32(i32 %t)
   ret i32 %m
