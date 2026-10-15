@@ -17,8 +17,11 @@
 //           address-tree walk) is a `cqrt_alloc_*` mint used only for parks
 //           into this bank (materialization or rebind to a fresh mint: the
 //           cell's register is |0⟩ when parked). Residual: a CONSTANT cell
-//           store is invisible to that walk's wrapper (declined upstream by
-//           `declineNonHandleBankStores`; see `materializedBank`);
+//           store is invisible to that walk's wrapper. It is declined
+//           DOWNSTREAM, after uncompute, in both entry points
+//           (`declineNonHandleBankStores`), so the module still fails
+//           loudly — which holds only while no stage between uncompute and
+//           that check erases the store; see `materializedBank`;
 //       (b) L's address is an affine SCEV AddRec of the CARRIED loop TL with a
 //           nonzero step and a no-wrap flag, and TL is outermost — so distinct
 //           trips of TL's one activation read distinct cells;

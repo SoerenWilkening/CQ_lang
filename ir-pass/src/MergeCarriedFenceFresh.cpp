@@ -81,7 +81,10 @@ bool freshAlloc(CallInst *A, const Instruction *C, const TaintSet &taint,
 // GEPs and lifetime markers pass), since it parks no fresh mint.
 // RESIDUAL, stated: `railBankParkedRails` drops CONSTANT stores (uniqued
 // literals, see its definition), so a constant cell store through a GEP is not
-// seen; the pipeline declines it upstream (`declineNonHandleBankStores`).
+// seen. `declineNonHandleBankStores` declines it DOWNSTREAM, after uncompute
+// (this fence runs inside uncompute), in both entry points (`run` and
+// `runOnFunction`), so the module still fails loudly — which holds only while
+// no stage between uncompute and that check erases the store.
 // RETIREMENT TRIGGER: when the S4 lane exports `forEachBankCellMemop` from
 // RailBankPromote.h, ask "every store parks a fresh mint" over it directly
 // and drop the residual.
