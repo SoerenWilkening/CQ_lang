@@ -2170,7 +2170,7 @@ class StreamAnalysis:
                     return True
         return False
 
-    def reduces_to_identity(self, ws, target, cone=True):
+    def reduces_to_identity(self, ws, target, cone=True, residue_ok=None):
         """Cancel adjoint pairs in `target`'s write history (commutation-aware).
 
         `ws` is the write history of the rail `target` over some interval, and
@@ -2235,6 +2235,16 @@ class StreamAnalysis:
             if not placed:
                 stack.append((p, c))
         if not stack:
+            return True, None, frozenset(witness)
+        if residue_ok is not None and all(residue_ok(c) for _, c in stack):
+            # (A3, bd r2j3.32) every write left standing is a classical
+            # update the caller vouched for: the rail holds its alloc-time
+            # classical value moved by classical offsets — a known basis
+            # state, unentangled. The residue lines are NOT witnesses: the
+            # verdict does not rest on them (blanking one leaves a known
+            # classical state too, as (A2) already rules for a seeded alloc),
+            # so the |0>-exactness of a residue is pinned by the lit fixtures
+            # (`cqrt_xorc_<W>(out, seed)`), not by this checker.
             return True, None, frozenset(witness)
         p, c = stack[0]
         why = (f"write `{c.text}` (line {c.line}) is never cancelled "
@@ -3174,6 +3184,24 @@ class StreamAnalysis:
         ok, why, wit = self.reduces_to_identity(ws, r.name)
         if ok:
             self.ok(c, r, "A2-reduces-to-identity", wit)
+            return
+        # (A3, bd r2j3.32) the history reduces to a RESIDUE of classical-
+        # immediate updates whose immediates are provably classical: the
+        # 4.5 data-mux preload `alloc(v)`, its copies cancelled by their
+        # replay, then `xorc(v)` back to |0>. (A1) alone cannot take a mixed
+        # history and (A2) alone leaves the `xorc` standing; together the
+        # rail is still in a known classical basis state.
+        # An `undef`/`poison` immediate is not a known value (each use may
+        # materialise independently, bd 1739 hole 2), so it never qualifies.
+        def classical_update(w):
+            return bool(w.eff.classical_imm) and all(
+                self.provably_not_a_rail(w.vals[i])
+                and 'undef' not in w.vals[i] and 'poison' not in w.vals[i]
+                for i in w.eff.classical_imm if i < len(w.vals))
+        ok3, _, wit3 = self.reduces_to_identity(ws, r.name,
+                                                residue_ok=classical_update)
+        if ok3 and not dirty:
+            self.ok(c, r, "A3-reduces-to-classical-residue", wit3)
         elif dirty:
             w, i = dirty[0]
             self.add(UNPROVEN, "A1-imm-not-classical", c, r.name,

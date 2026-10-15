@@ -26,8 +26,6 @@ cqrt_x(h10)
 cqrt_alloc_f80(0x0p+0) -> h12
 cqrt_copy_f80_controlled(h10, h12, h11)
 cqrt_x(h10)
-cq_template_fcmp_ogt_f80_hl_unc(h10, h0, 0x8p-4)
-cqrt_free(h10)
 cq_template_icmp_ne_i64_hl(h7, 32767) -> h13
 cq_template_icmp_eq_i64_hl(h7, 32767) -> h14
 cq_template_icmp_eq_i64_hl(h8, 0) -> h15
@@ -45,6 +43,13 @@ cqrt_copy_f80_controlled(h19, h11, h20)
 cqrt_x(h19)
 cqrt_copy_f80_controlled(h19, h0, h20)
 cqrt_x(h19)
+cqrt_x(h10)
+cqrt_copy_f80_controlled(h10, h12, h11)
+cqrt_x(h10)
+cqrt_copy_f80_controlled(h10, h9, h11)
+cq_template_fcmp_ogt_f80_hl_unc(h10, h0, 0x8p-4)
+cqrt_free(h10)
+cqrt_free(h11)
 cqrt_toffoli(h13, h18, h19)
 cqrt_cnot(h18, h19)
 cqrt_cnot(h13, h19)

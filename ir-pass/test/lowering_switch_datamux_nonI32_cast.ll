@@ -12,7 +12,29 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=INPUT < %s
+; RUN: %filecheck %s --check-prefix=REV < %t.cqd0.ll
 ;
+; bd r2j3.32 (R11 round 1): the i64 data-mux rail, born holding the default 3,
+; is reversed after its last reader (the trunc): both XOR-delta copies
+; re-applied in reverse, the eq-flag strips deferred past them, then the
+; WIDTH-MATCHED `cqrt_xorc_i64(out, i64 3)` returns it to |0> before its free.
+; REV:      %[[D_OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i64(i64 3)
+; REV-NEXT: %[[D_H_CMP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[D_H:[a-zA-Z0-9_.]+]], i32 0)
+; REV-NEXT: %[[D_DELTA:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i64(i64 4)
+; REV-NEXT: call void @cqrt_copy_i64_controlled(i32 %[[D_H_CMP]], i32 %[[D_DELTA]], i32 %[[D_OUT]])
+; REV-NEXT: %[[D_H_CMP1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[D_H]], i32 1)
+; REV-NEXT: %[[D_DELTA2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i64(i64 10)
+; REV-NEXT: call void @cqrt_copy_i64_controlled(i32 %[[D_H_CMP1]], i32 %[[D_DELTA2]], i32 %[[D_OUT]])
+; REV-NEXT: %[[D_H_CAST:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[D_OUT]])
+; REV-NEXT: call void @cqrt_copy_i64_controlled(i32 %[[D_H_CMP1]], i32 %[[D_DELTA2]], i32 %[[D_OUT]])
+; REV-NEXT: call void @cqrt_copy_i64_controlled(i32 %[[D_H_CMP]], i32 %[[D_DELTA]], i32 %[[D_OUT]])
+; REV-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[D_H_CMP]], i32 %[[D_H]], i32 0)
+; REV-NEXT: call void @cqrt_free(i32 %[[D_H_CMP]])
+; REV-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[D_H_CMP1]], i32 %[[D_H]], i32 1)
+; REV-NEXT: call void @cqrt_free(i32 %[[D_H_CMP1]])
+; REV-NEXT: call void @cqrt_xorc_i64(i32 %[[D_OUT]], i64 3)
+; REV-NEXT: call void @cqrt_free(i32 %[[D_OUT]])
+
 ; CHECK:     call void @cqrt_copy_i64_controlled(
 ; CHECK:     call i32 @cq_template_trunc_i64_to_i32(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: = trunc

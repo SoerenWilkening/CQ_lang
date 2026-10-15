@@ -26,32 +26,40 @@
             compiler spells an anti-control. `a` is 2 or 5 after the first
             region, so `a >= 3` IS `b0 == 0`. NEVER a `cqrt_x` on a user
             register.
-      6-16  `if (b0 == 1) a -= 3` — the peeled `a`-mux, as the rail-root
-            CNOT-copy merge: copy `b0`'s basis label into a |0> ancilla, two
-            X-bracketed controlled copies into a fresh |0> out rail, un-copy,
-            free at a proven |0>.
-     17-26  `if (b1) a -= 3` — THE LINE THIS SLICE EXISTS FOR. The arm's chain is
+      6-14  `if (b0 == 1) a -= 3` — the peeled `a`-mux, as the rail-root
+            CNOT-copy merge: copy `b0`'s basis label into a |0> ancilla `h2`,
+            two X-bracketed controlled copies into a fresh |0> out rail `h3`.
+            (Its un-copy is DEFERRED — bd r2j3.32, lines 23-29.)
+     15-22  `if (b1) a -= 3` — THE LINE THIS SLICE EXISTS FOR. The arm's chain is
             HOISTED (`cq_template_add_i32_hl(h3, -3)`), then the same merge with
-            the PREPPED REGISTER `h1` as the control.
-     27-29  the three measurements.
+            the PREPPED REGISTER `h1` as the control, reading `h3` as its false
+            copy source.
+     23-29  bd r2j3.32: `h3`'s last reader was that copy, so the `a`-mux is
+            REVERSED — its two copies re-applied in reverse under `h2`, then
+            `h2` un-copied and freed, then `h3` freed at a proven |0>.
+     30-31  the `b1`-select's own un-copy and the free of its ancilla `h7`.
+     32-34  the three measurements.
 
    THE THREE INVARIANTS, readable straight off the golden:
      * `h0` and `h1` are the USER'S REGISTERS and each appears ONLY at arg 0 of a
        `cqrt_cnot` or as the CONTROL of `cqrt_ry_i1_controlled` — read-only.
-     * ALL FOUR `cqrt_x` are on the ancillas `h2`/`h7`; none on a user register.
-     * the two `cqrt_free` are those same ancillas, each returned to `x ^ x = 0`
-       on every branch. Neither user register is freed (`Ry(t)|0> != |0>`,
-       Rule 6), and the hoisted chain rail `h6` is LEFT ALLOCATED — the Rule-6
-       "value arm's chain-final rail" case. STRICT stage 2b agrees:
-       `8 rail mint(s) of which 6 left allocated, 2 cqrt_free site(s):
-        2 verified, 0 violation(s), 0 unproven`.
+     * ALL SIX `cqrt_x` are on the ancillas `h2`/`h7`; none on a user register.
+     * the three `cqrt_free` are those two ancillas, each returned to
+       `x ^ x = 0` on every branch, and the reversed `a`-mux rail `h3` (|0>
+       again). Neither user register is freed (`Ry(t)|0> != |0>`, Rule 6), and
+       the hoisted chain rail `h6` is LEFT ALLOCATED — the Rule-6 "value arm's
+       chain-final rail" case. STRICT stage 2b agrees (measured 2026-10-15):
+       `8 rail mint(s) of which 5 left allocated, 1 template rail mint(s) of
+        which 1 left dirty, 6 cqrt_free site(s): 6 verified, 0 violation(s),
+        0 unproven`.
 
-   ⚠ THE GOLDEN IS ALSO A CROSS-CHECK, not just a record. Lines 1-16 are
+   ⚠ THE GOLDEN IS ALSO A CROSS-CHECK, not just a record. Lines 1-14 are
    `slice_control_cascade_two_bools_base.c`'s golden BYTE FOR BYTE (that slice is
-   this program with line 99 removed), and lines 17-26 are the select half the
-   FROZEN ORACLE already prints for the hand-IR twin
-   `ir-pass/test/control_swap_accept_select_rail_after_prep_negated.ll`. The
-   widening adds an ACCEPT, not a STREAM. */
+   this program with line 99 removed; the base measures its `a`-mux rail, so its
+   strip stays put — the gate compares 14 lines since bd r2j3.32), and lines
+   15-31, with the prep rail, the `a`-mux rail, its flag and its two sources
+   renamed, are the `_uncond` twin's select half. The widening adds an ACCEPT,
+   not a STREAM. */
 int slice(void) {
     int a = 5;
     _Bool b0 = 0;

@@ -130,8 +130,6 @@ attributes #2 = { nounwind }
 ; CHECK-NEXT: %[[SELOP1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 5)
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[SELOP1]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
-; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H]], i32 %[[BF]])
-; CHECK-NEXT: call void @cqrt_free(i32 %[[BF]])
 ; CHECK-NEXT: %[[H_OP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[OUT]], i32 -3)
 ; CHECK-NEXT: %[[BF2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H4]], i32 %[[BF2]])
@@ -140,6 +138,22 @@ attributes #2 = { nounwind }
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[BF2]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF2]], i32 %[[OUT]], i32 %[[OUT3]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[BF2]])
+; bd r2j3.32: the FIRST merge rail `%out` is the second merge's copy source
+; and has no LATER reader, so once that core has read it it is reversed --
+; its own core re-emitted in reverse under the SAME flag, its flag strip
+; DEFERRED to after that, then `%out` freed (it used to leak). The second merge's strip follows.
+; NOT a full disentangle (R11 round 1, R9/L9): `%h_op = add(%out, -3)`, minted
+; from `%out` before this reversal, is never `_unc`'d and stays entangled with
+; the condition, so a later non-diagonal gate on the condition register would
+; still dephase against it (the chain-final leak, unchanged here; r2j3.7 is
+; its dead-op twin).
+; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[SELOP1]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[SELOP]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H]], i32 %[[BF]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[BF]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H4]], i32 %[[BF2]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[BF2]])
 ; CHECK-NEXT: %[[M:[a-zA-Z0-9_.]+]] = call i1 @cqrt_measure_i1(i32 %[[H]])
@@ -172,19 +186,20 @@ attributes #2 = { nounwind }
 ; stripped compare flags are.
 ; NOFREE-NOT: call void @cqrt_free(i32 %h)
 ; NOFREE-NOT: call void @cqrt_free(i32 %h4)
-; NOFREE-NOT: call void @cqrt_free(i32 %out)
+; `%out` (the first merge rail) IS freed since bd r2j3.32 -- after its core is
+; reversed, at a proven |0>; the positive stream pins where.
 ; NOFREE-NOT: call void @cqrt_free(i32 %h_op)
 ; The MERGE-OUT rail too (round-2 finding F2-3) — freeing the user's answer
 ; register is a hidden measurement (Rule 6), and it was named by no free
 ; negative here before.
 ; NOFREE-NOT: call void @cqrt_free(i32 %out3)
-; XCNT-COUNT-4: call void @cqrt_x(
+; XCNT-COUNT-6: call void @cqrt_x(
 ; XCNT-NOT:     call void @cqrt_x(
-; FCNT-COUNT-2: call void @cqrt_free(
+; FCNT-COUNT-3: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
 ; CNOTCNT-COUNT-4: call void @cqrt_cnot(
 ; CNOTCNT-NOT:     call void @cqrt_cnot(
-; CPCNT-COUNT-4: call void @cqrt_copy_
+; CPCNT-COUNT-6: call void @cqrt_copy_
 ; CPCNT-NOT:     call void @cqrt_copy_
 ; RYCNT-COUNT-2: call void @cqrt_ry_
 ; RYCNT-NOT:     call void @cqrt_ry_

@@ -91,17 +91,52 @@ declare zeroext i1 @cq_measure_i1(i1 zeroext)
 ; CHECK-NEXT: %[[BF:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H0]], i32 %[[BF]])
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:      call void @cqrt_free(i32 %[[BF]])
+; CHECK-NEXT: %[[TWO:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 2)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[TWO]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
+; CHECK-NEXT: %[[FIVE:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 5)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[FIVE]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
 ; b1's rail: prepped, rotated unconditionally, cancelled under b0 by additivity.
 ; CHECK-NEXT: %[[H1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK-NEXT: call void @cqrt_ry_i1(i32 %[[H1]], double 5.000000e-01)
 ; CHECK-NEXT: call void @cqrt_ry_i1_controlled(i32 %[[H0]], i32 %[[H1]], double -5.000000e-01)
+; The `b1`-select copies the `a`-mux rail as its false source.
+; CHECK-NEXT: %[[BF2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H1]], i32 %[[BF2]])
+; CHECK-NEXT: %[[OUT3:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: %[[M1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 -1)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF2]], i32 %[[M1]], i32 %[[OUT3]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[BF2]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF2]], i32 %[[OUT]], i32 %[[OUT3]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[BF2]])
 ; THE THIRD REGION — the guard is minted as a real flag off the merged `a` rail,
-; b2 is prepared controlled on it, the flag is stripped by its own `_unc`, freed.
-; CHECK:      %[[HC:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[OUT3:[a-zA-Z0-9_.]+]], i32 2)
+; b2 is prepared controlled on it, the flag is stripped by its own `_unc`.
+; CHECK-NEXT: %[[HC:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[OUT3]], i32 2)
 ; CHECK-NEXT: %[[H2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK-NEXT: call void @cqrt_ry_i1_controlled(i32 %[[HC]], i32 %[[H2]], double 5.000000e-01)
 ; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[HC]], i32 %[[OUT3]], i32 2)
+; bd r2j3.32: the guard's strip is %OUT3's last reader, so the `b1`-select rail
+; is reversed right there (its core re-emitted in reverse under the same copy
+; flag, whose strip is deferred to here) and freed; then the `a`-mux rail
+; %OUT, whose last reader was that reversal (LIFO). Since the R11 round-1 fix
+; the prep's `cqrt_ry_i1_controlled(b0, b1, -.5)` in %OUT's window is admitted
+; as what it is — a CONTROL-slot read of b0, which keeps b0's label — so %OUT
+; is no longer left allocated.
+; CHECK-NEXT: call void @cqrt_x(i32 %[[BF2]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF2]], i32 %[[OUT]], i32 %[[OUT3]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[BF2]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF2]], i32 %[[M1]], i32 %[[OUT3]])
+; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H1]], i32 %[[BF2]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[BF2]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT3]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[FIVE]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[TWO]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H0]], i32 %[[BF]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[BF]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[HC]])
 ; CHECK-NEXT: call i1 @cqrt_measure_i1(i32 %[[H0]])
 ; CHECK-NEXT: call i1 @cqrt_measure_i1(i32 %[[H1]])
@@ -119,9 +154,9 @@ declare zeroext i1 @cq_measure_i1(i1 zeroext)
 ; Counts, each in its OWN whole-file prefix.
 ; ACNT-COUNT-10: call i32 @cqrt_alloc_
 ; ACNT-NOT:      call i32 @cqrt_alloc_
-; FCNT-COUNT-3:  call void @cqrt_free(
+; FCNT-COUNT-5:  call void @cqrt_free(
 ; FCNT-NOT:      call void @cqrt_free(
-; XCNT-COUNT-4:  call void @cqrt_x(
+; XCNT-COUNT-8:  call void @cqrt_x(
 ; XCNT-NOT:      call void @cqrt_x(
 ; RYCNT-COUNT-4: call void @cqrt_ry_
 ; RYCNT-NOT:     call void @cqrt_ry_

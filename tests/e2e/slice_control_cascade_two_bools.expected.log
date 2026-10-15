@@ -12,8 +12,6 @@ cqrt_x(h2)
 cqrt_alloc_i32(5) -> h5
 cqrt_copy_i32_controlled(h2, h5, h3)
 cqrt_x(h2)
-cqrt_cnot(h0, h2)
-cqrt_free(h2)
 cq_template_add_i32_hl(h3, -3) -> h6
 cqrt_alloc_i1(0) -> h7
 cqrt_cnot(h1, h7)
@@ -22,6 +20,13 @@ cqrt_copy_i32_controlled(h7, h6, h8)
 cqrt_x(h7)
 cqrt_copy_i32_controlled(h7, h3, h8)
 cqrt_x(h7)
+cqrt_x(h2)
+cqrt_copy_i32_controlled(h2, h5, h3)
+cqrt_x(h2)
+cqrt_copy_i32_controlled(h2, h4, h3)
+cqrt_cnot(h0, h2)
+cqrt_free(h2)
+cqrt_free(h3)
 cqrt_cnot(h1, h7)
 cqrt_free(h7)
 cqrt_measure_i1(h0) -> 0

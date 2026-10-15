@@ -84,14 +84,6 @@ cqrt_x(h31)
 cqrt_alloc_f32(0x0p+0) -> h33
 cqrt_copy_f32_controlled(h31, h33, h32)
 cqrt_x(h31)
-cqrt_toffoli(h29, h30, h31)
-cqrt_cnot(h30, h31)
-cqrt_cnot(h29, h31)
-cqrt_free(h31)
-cq_template_icmp_ne_i32_hl_unc(h30, h27, 0)
-cqrt_free(h30)
-cq_template_icmp_sgt_i32_hl_unc(h29, h2, -1)
-cqrt_free(h29)
 cq_template_icmp_ugt_i32_hl(h4, 1124073471) -> h34
 cq_template_icmp_ule_i32_hl(h4, 2139095039) -> h35
 cqrt_alloc_i1(0) -> h36
@@ -105,16 +97,6 @@ cqrt_copy_f32_controlled(h38, h40, h39)
 cqrt_x(h38)
 cqrt_copy_f32_controlled(h38, h32, h39)
 cqrt_x(h38)
-cqrt_toffoli(h36, h37, h38)
-cqrt_free(h38)
-cqrt_toffoli(h34, h35, h36)
-cqrt_free(h36)
-cq_template_fcmp_oge_f32_hl_unc(h37, h1, 0x1p+7)
-cqrt_free(h37)
-cq_template_icmp_ule_i32_hl_unc(h35, h4, 2139095039)
-cqrt_free(h35)
-cq_template_icmp_ugt_i32_hl_unc(h34, h4, 1124073471)
-cqrt_free(h34)
 cq_template_icmp_ule_i32_hl(h4, 1124073471) -> h41
 cq_template_icmp_ult_i32_hl(h4, 855638017) -> h42
 cqrt_alloc_i1(0) -> h43
@@ -124,12 +106,6 @@ cqrt_copy_f32_controlled(h43, h5, h44)
 cqrt_x(h43)
 cqrt_copy_f32_controlled(h43, h39, h44)
 cqrt_x(h43)
-cqrt_toffoli(h41, h42, h43)
-cqrt_free(h43)
-cq_template_icmp_ult_i32_hl_unc(h42, h4, 855638017)
-cqrt_free(h42)
-cq_template_icmp_ule_i32_hl_unc(h41, h4, 1124073471)
-cqrt_free(h41)
 cq_template_icmp_ule_i32_hl(h4, 1124073471) -> h45
 cq_template_icmp_uge_i32_hl(h4, 855638017) -> h46
 cqrt_alloc_i1(0) -> h47
@@ -153,6 +129,26 @@ cqrt_copy_f32_controlled(h55, h26, h56)
 cqrt_x(h55)
 cqrt_copy_f32_controlled(h55, h44, h56)
 cqrt_x(h55)
+cq_template_icmp_ugt_i32_hl(h4, 1124073471) -> h57
+cq_template_icmp_ule_i32_hl(h4, 2139095039) -> h58
+cqrt_alloc_i1(0) -> h59
+cqrt_toffoli(h57, h58, h59)
+cq_template_fcmp_ult_f32_hl(h1, 0x1p+7) -> h60
+cqrt_alloc_i1(0) -> h61
+cqrt_toffoli(h59, h60, h61)
+cq_template_fcmp_ole_f32_hl(h1, -0x1.2cp+7) -> h62
+cqrt_alloc_i1(0) -> h63
+cqrt_toffoli(h61, h62, h63)
+cqrt_alloc_f32(0x0p+0) -> h64
+cqrt_alloc_f32(0x0p+0) -> h65
+cqrt_copy_f32_controlled(h63, h65, h64)
+cqrt_x(h63)
+cqrt_copy_f32_controlled(h63, h56, h64)
+cqrt_x(h63)
+cqrt_x(h55)
+cqrt_copy_f32_controlled(h55, h44, h56)
+cqrt_x(h55)
+cqrt_copy_f32_controlled(h55, h26, h56)
 cqrt_toffoli(h47, h54, h55)
 cqrt_cnot(h54, h55)
 cqrt_cnot(h47, h55)
@@ -177,22 +173,46 @@ cq_template_icmp_uge_i32_hl_unc(h46, h4, 855638017)
 cqrt_free(h46)
 cq_template_icmp_ule_i32_hl_unc(h45, h4, 1124073471)
 cqrt_free(h45)
-cq_template_icmp_ugt_i32_hl(h4, 1124073471) -> h57
-cq_template_icmp_ule_i32_hl(h4, 2139095039) -> h58
-cqrt_alloc_i1(0) -> h59
-cqrt_toffoli(h57, h58, h59)
-cq_template_fcmp_ult_f32_hl(h1, 0x1p+7) -> h60
-cqrt_alloc_i1(0) -> h61
-cqrt_toffoli(h59, h60, h61)
-cq_template_fcmp_ole_f32_hl(h1, -0x1.2cp+7) -> h62
-cqrt_alloc_i1(0) -> h63
-cqrt_toffoli(h61, h62, h63)
-cqrt_alloc_f32(0x0p+0) -> h64
-cqrt_alloc_f32(0x0p+0) -> h65
-cqrt_copy_f32_controlled(h63, h65, h64)
-cqrt_x(h63)
-cqrt_copy_f32_controlled(h63, h56, h64)
-cqrt_x(h63)
+cqrt_free(h56)
+cqrt_x(h43)
+cqrt_copy_f32_controlled(h43, h39, h44)
+cqrt_x(h43)
+cqrt_copy_f32_controlled(h43, h5, h44)
+cqrt_toffoli(h41, h42, h43)
+cqrt_free(h43)
+cq_template_icmp_ult_i32_hl_unc(h42, h4, 855638017)
+cqrt_free(h42)
+cq_template_icmp_ule_i32_hl_unc(h41, h4, 1124073471)
+cqrt_free(h41)
+cqrt_free(h44)
+cqrt_x(h38)
+cqrt_copy_f32_controlled(h38, h32, h39)
+cqrt_x(h38)
+cqrt_copy_f32_controlled(h38, h40, h39)
+cqrt_toffoli(h36, h37, h38)
+cqrt_free(h38)
+cqrt_toffoli(h34, h35, h36)
+cqrt_free(h36)
+cq_template_fcmp_oge_f32_hl_unc(h37, h1, 0x1p+7)
+cqrt_free(h37)
+cq_template_icmp_ule_i32_hl_unc(h35, h4, 2139095039)
+cqrt_free(h35)
+cq_template_icmp_ugt_i32_hl_unc(h34, h4, 1124073471)
+cqrt_free(h34)
+cqrt_free(h39)
+cqrt_x(h31)
+cqrt_copy_f32_controlled(h31, h33, h32)
+cqrt_x(h31)
+cqrt_copy_f32_controlled(h31, h28, h32)
+cqrt_toffoli(h29, h30, h31)
+cqrt_cnot(h30, h31)
+cqrt_cnot(h29, h31)
+cqrt_free(h31)
+cq_template_icmp_ne_i32_hl_unc(h30, h27, 0)
+cqrt_free(h30)
+cq_template_icmp_sgt_i32_hl_unc(h29, h2, -1)
+cqrt_free(h29)
+cqrt_free(h32)
 cqrt_toffoli(h61, h62, h63)
 cqrt_free(h63)
 cqrt_toffoli(h59, h60, h61)

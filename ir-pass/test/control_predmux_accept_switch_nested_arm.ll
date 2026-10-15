@@ -43,19 +43,58 @@ merge:
 ;   out10 = (q==0 ∧ q≥9)    ? a0 : out4
 ; CHECK: %u0.stable = freeze i32 %u0
 ; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0.stable)
-; CHECK:     %[[E7:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 7)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[E7]],
-; CHECK:     call void @cqrt_x(i32 %[[E7]])
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[E7]],
-; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[E7]], i32 %[[Q]], i32 7)
-; CHECK:     %[[E0A:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 0)
-; CHECK:     call i32 @cq_template_icmp_slt_i32_hl(i32 %[[Q]], i32 9)
-; CHECK:     call void @cqrt_toffoli(i32 %[[E0A]],
-; CHECK:     call void @cqrt_copy_i32_controlled(
-; CHECK:     call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 0)
-; CHECK:     call i32 @cq_template_icmp_sge_i32_hl(i32 %[[Q]], i32 9)
-; CHECK:     call void @cqrt_toffoli(
-; CHECK:     call void @cqrt_copy_i32_controlled(
+; bd r2j3.32 (R11 round 1, item 7): the whole stream pinned with CAPTURED handles —
+; each merge's reversed copies (sources and destination bound) and every free.
+; The first two merge rails are each the next merge's copy source and are
+; reversed LIFO after it; the E7 flag strip is deferred past them.
+; CHECK:      %[[N_H_CMP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 7)
+; CHECK-NEXT: %[[N_OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[N_H_CMP]], i32 %[[N_H_OP:[a-zA-Z0-9_.]+]], i32 %[[N_OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[N_H_CMP]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[N_H_CMP]], i32 %[[N_H_OP10:[a-zA-Z0-9_.]+]], i32 %[[N_OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[N_H_CMP]])
+; CHECK-NEXT: %[[N_H_CMP1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 0)
+; CHECK-NEXT: %[[N_H_CMP2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_slt_i32_hl(i32 %[[Q]], i32 9)
+; CHECK-NEXT: %[[N_G:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[N_H_CMP1]], i32 %[[N_H_CMP2]], i32 %[[N_G]])
+; CHECK-NEXT: %[[N_OUT3:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[N_G]], i32 %[[N_H_OP9:[a-zA-Z0-9_.]+]], i32 %[[N_OUT3]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[N_G]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[N_G]], i32 %[[N_OUT]], i32 %[[N_OUT3]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[N_G]])
+; CHECK-NEXT: %[[N_H_CMP4:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 0)
+; CHECK-NEXT: %[[N_H_CMP5:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sge_i32_hl(i32 %[[Q]], i32 9)
+; CHECK-NEXT: %[[N_G6:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[N_H_CMP4]], i32 %[[N_H_CMP5]], i32 %[[N_G6]])
+; CHECK-NEXT: %[[N_OUT7:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[N_G6]], i32 %[[N_H_OP8:[a-zA-Z0-9_.]+]], i32 %[[N_OUT7]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[N_G6]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[N_G6]], i32 %[[N_OUT3]], i32 %[[N_OUT7]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[N_G6]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[N_G]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[N_G]], i32 %[[N_OUT]], i32 %[[N_OUT3]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[N_G]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[N_G]], i32 %[[N_H_OP9]], i32 %[[N_OUT3]])
+; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[N_H_CMP1]], i32 %[[N_H_CMP2]], i32 %[[N_G]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[N_G]])
+; CHECK-NEXT: call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[N_H_CMP2]], i32 %[[Q]], i32 9)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[N_H_CMP2]])
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[N_H_CMP1]], i32 %[[Q]], i32 0)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[N_H_CMP1]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[N_OUT3]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[N_H_CMP]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[N_H_CMP]], i32 %[[N_H_OP10]], i32 %[[N_OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[N_H_CMP]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[N_H_CMP]], i32 %[[N_H_OP]], i32 %[[N_OUT]])
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[N_H_CMP]], i32 %[[Q]], i32 7)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[N_H_CMP]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[N_OUT]])
+; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[N_H_CMP4]], i32 %[[N_H_CMP5]], i32 %[[N_G6]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[N_G6]])
+; CHECK-NEXT: call void @cq_template_icmp_sge_i32_hl_unc(i32 %[[N_H_CMP5]], i32 %[[Q]], i32 9)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[N_H_CMP5]])
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[N_H_CMP4]], i32 %[[Q]], i32 0)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[N_H_CMP4]])
 ; CHECK:     call i32 @cqrt_measure_i32(
 ; CHECK-NOT: switch i32
 ; CHECK-NOT: br i1

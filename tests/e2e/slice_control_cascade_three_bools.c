@@ -33,26 +33,31 @@
    witness still counts, which is why the 29 fixtures that decline with F2's
    string all still decline and NONE of them moved.
 
-   READ THE GOLDEN, 35 lines:
+   READ THE GOLDEN, 40 lines (35 before bd r2j3.32):
       1-2    `b0`'s rail + its Ry.                 [`if (a >= 3)` folds: a == 5]
-      3-13   `if (b0) a -= 3` — the peeled `a`-mux as the rail-root CNOT-copy
+      3-11   `if (b0) a -= 3` — the peeled `a`-mux as the rail-root CNOT-copy
              merge: copy `b0`'s basis label into a |0> ancilla `h1`, two
-             X-bracketed controlled copies into a fresh |0> out rail `h2`,
-             un-copy, free at a proven |0>.
-     14-16   `b1`'s rail, prepped to the seed 0, rotated UNCONDITIONALLY by 0.5
+             X-bracketed controlled copies into a fresh |0> out rail `h2`. Its
+             un-copy is DEFERRED to lines 23-29 (bd r2j3.32).
+     12-14   `b1`'s rail, prepped to the seed 0, rotated UNCONDITIONALLY by 0.5
              and CANCELLED under `b0` with -0.5 — Ry ADDITIVITY, the compiler's
              spelling of an anti-control (`a >= 3` IS `b0 == 0` here). NEVER a
-             `cqrt_x` on a user register.
-     17-26   `if (b1) a -= 3` — the arm's chain HOISTED
+             `cqrt_x` on a user register. `h0` is only the CONTROL here, so the
+             `a`-mux's flag `h1` (a copy of `h0`) stays valid across it.
+     15-22   `if (b1) a -= 3` — the arm's chain HOISTED
              (`cq_template_add_i32_hl(h2, -3)`), then the same merge with the
-             PREPPED REGISTER `h5` as the control.
-     27-31   THE THIRD REGION, THE LINE THIS SLICE EXISTS FOR. `a` is now a
+             PREPPED REGISTER `h5` as the control, reading `h2` as a copy source.
+     23-29   bd r2j3.32: that copy was `h2`'s last reader, so the `a`-mux is
+             REVERSED — its two copies re-applied in reverse under `h1`, `h1`
+             un-copied and freed, then `h2` freed at a proven |0>.
+     30-31   the `b1`-select's un-copy and the free of its ancilla `h7`.
+     32-36   THE THIRD REGION, THE LINE THIS SLICE EXISTS FOR. `a` is now a
              quantum rail, so the guard is minted as a real flag
              (`cq_template_icmp_sgt_i32_hl(h8, 2) -> h9`), `b2` is prepared with
              `cqrt_ry_i1_controlled(h9, h10, 0.5)` — a controlled state prep on a
              COMPARE condition — and the flag is stripped by its own `_unc` and
              freed at a proven |0>.
-     32-35   the four measurements.
+     37-40   the four measurements.
 
    ⚠ IT IS NOT A PREFIX OF THE TWO-BOOLS GOLDEN, and the difference is ORDER, not
    content. MEASURED: at N=2 the emitted order is (b1 prep, then the `a`-mux); at
@@ -68,7 +73,8 @@
        `cqrt_cnot`, as the CONTROL of `cqrt_ry_i1_controlled`, or in a measure.
        Never `cqrt_x`-bracketed, never freed.
      * every `cqrt_x` is on an ancilla (`h1`, `h7`), whose `x (+) x = 0` return is
-       what makes its `cqrt_free` a proven-|0> one.
+       what makes its `cqrt_free` a proven-|0> one; the `a`-mux rail `h2` is
+       freed too, after its reversal (bd r2j3.32).
      * `h9` is the third region's flag: minted, used as a control, stripped by the
        matching `_unc`, freed. One mint, one strip, one free.
 

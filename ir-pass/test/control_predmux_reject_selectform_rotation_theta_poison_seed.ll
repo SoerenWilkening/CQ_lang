@@ -65,6 +65,9 @@
 ; RUN: %filecheck %s --check-prefix=STREAM \
 ; RUN:   --implicit-check-not='call {{.*}}@cqrt_' \
 ; RUN:   --implicit-check-not='call {{.*}}@cq_template_' < %t.cqd0.ll
+; bd r2j3.32: both merge rails are reversed after their one reader (the `add`),
+; each core re-emitted in reverse under its own still-live AND rail, then its
+; DEFERRED strip and its free — the network strips moved, nothing removed.
 ; STREAM:      %h = call i32 @cqrt_alloc_i32(i32 0)
 ; STREAM:      call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
 ; STREAM:      %h_op = call i32 @cq_template_add_i32_hl(i32 %h, i32 7)
@@ -78,12 +81,6 @@
 ; STREAM:      call void @cqrt_x(i32 %g)
 ; STREAM:      call void @cqrt_copy_i32_controlled(i32 %g, i32 %h, i32 %out)
 ; STREAM:      call void @cqrt_x(i32 %g)
-; STREAM:      call void @cqrt_toffoli(i32 %h_cmp, i32 %h_cmp1, i32 %g)
-; STREAM:      call void @cqrt_free(i32 %g)
-; STREAM:      call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp1, i32 %h, i32 11)
-; STREAM:      call void @cqrt_free(i32 %h_cmp1)
-; STREAM:      call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp, i32 %h, i32 3)
-; STREAM:      call void @cqrt_free(i32 %h_cmp)
 ; STREAM:      %h_cmp2 = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 3)
 ; STREAM:      %h_cmp3 = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 11)
 ; STREAM:      %g4 = call i32 @cqrt_alloc_i1(i1 false)
@@ -93,13 +90,29 @@
 ; STREAM:      call void @cqrt_x(i32 %g4)
 ; STREAM:      call void @cqrt_copy_i32_controlled(i32 %g4, i32 %h, i32 %out5)
 ; STREAM:      call void @cqrt_x(i32 %g4)
+; STREAM:      %h_op7 = call i32 @cq_template_add_i32(i32 %out, i32 %out5)
+; STREAM:      call void @cqrt_x(i32 %g)
+; STREAM:      call void @cqrt_copy_i32_controlled(i32 %g, i32 %h, i32 %out)
+; STREAM:      call void @cqrt_x(i32 %g)
+; STREAM:      call void @cqrt_copy_i32_controlled(i32 %g, i32 %h_op, i32 %out)
+; STREAM:      call void @cqrt_toffoli(i32 %h_cmp, i32 %h_cmp1, i32 %g)
+; STREAM:      call void @cqrt_free(i32 %g)
+; STREAM:      call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp1, i32 %h, i32 11)
+; STREAM:      call void @cqrt_free(i32 %h_cmp1)
+; STREAM:      call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp, i32 %h, i32 3)
+; STREAM:      call void @cqrt_free(i32 %h_cmp)
+; STREAM:      call void @cqrt_free(i32 %out)
+; STREAM:      call void @cqrt_x(i32 %g4)
+; STREAM:      call void @cqrt_copy_i32_controlled(i32 %g4, i32 %h, i32 %out5)
+; STREAM:      call void @cqrt_x(i32 %g4)
+; STREAM:      call void @cqrt_copy_i32_controlled(i32 %g4, i32 %h_op6, i32 %out5)
 ; STREAM:      call void @cqrt_toffoli(i32 %h_cmp2, i32 %h_cmp3, i32 %g4)
 ; STREAM:      call void @cqrt_free(i32 %g4)
 ; STREAM:      call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp3, i32 %h, i32 11)
 ; STREAM:      call void @cqrt_free(i32 %h_cmp3)
 ; STREAM:      call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp2, i32 %h, i32 3)
 ; STREAM:      call void @cqrt_free(i32 %h_cmp2)
-; STREAM:      %h_op7 = call i32 @cq_template_add_i32(i32 %out, i32 %out5)
+; STREAM:      call void @cqrt_free(i32 %out5)
 ; STREAM:      %m = call i32 @cqrt_measure_i32(i32 %h_op7)
 
 target datalayout = "e-m:o-i64:64-i128:128-f80:128-n8:16:32:64-S128"

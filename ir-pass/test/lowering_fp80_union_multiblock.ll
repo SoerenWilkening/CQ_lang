@@ -34,8 +34,10 @@
 ; all to its LEFT. No component's borrowed parent is another component's owned
 ; rail (a shared operand would have been LINKED into one component), so emitting
 ; them back to back cannot relabel anything a later one reads. The `and_i64`
-; exponent rails (`%h_op17`, the fmul rail `%h_op19`, `%out`, `%out14`) are
-; deliberately NOT discharged here — they are live past every group.
+; exponent rails (`%h_op17`, the fmul rail `%h_op19`) are deliberately NOT
+; discharged here — they are live past every group. The two MERGE rails `%out`
+; and `%out14` were in that list until bd r2j3.32: they are now reversed after
+; their last `ins` reader by MergeRailDischarge (not by this partition) and freed.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2>&1
 ; RUN: %filecheck %s < %t.cqd0.ll
@@ -145,9 +147,10 @@ ins:                                            ; shared field-insert + reload
 ; COMP-NEXT: call void @cqrt_addc_i64(i32 %[[X2]], i64 128)
 
 ; The two flag strips are the PRE-EXISTING pairs (they were the only two on the
-; pre-6a plugin) and both borrowed parents are still live across them:
-; COMP:      call void @cq_template_icmp_eq_i64_hl_unc(i32 %[[CMPA:[a-zA-Z0-9_.]+]], i32 %[[EXP]], i64 0)
-; COMP-NEXT: call void @cqrt_free(i32 %[[CMPA]])
+; pre-6a plugin). Since bd r2j3.32 both are DEFERRED into `ins`: each merge rail
+; (`%out14`, then `%out`) is reversed right after its last reader there — its
+; core re-emitted in reverse under the still-live flag, then the strip, then the
+; free — and both borrowed parents are still live across them.
 
 ; The `ins` component: 11 pairs, LIFO, every one of them BEFORE the measure —
 ; the component's borrowed parents are `%out`/`%out14`, whose controlled-copy
@@ -175,6 +178,13 @@ ins:                                            ; shared field-insert + reload
 ; COMP-NEXT: call void @cq_template_or_i64_unc(i32 %[[I7]], i32 %[[I5]], i32 %[[I6]])
 ; COMP-NEXT: call void @cqrt_free(i32 %[[I7]])
 ; COMP-NEXT: call void @cq_template_and_i64_hl_unc(i32 %[[I6]], i32 %[[OUT14]], i64 32767)
+; COMP-NEXT: call void @cqrt_x(i32 %[[CMPB:[a-zA-Z0-9_.]+]])
+; COMP-NEXT: call void @cqrt_copy_i64_controlled(i32 %[[CMPB]], i32 %[[K1]], i32 %[[OUT14]])
+; COMP-NEXT: call void @cqrt_x(i32 %[[CMPB]])
+; COMP-NEXT: call void @cqrt_copy_i64_controlled(i32 %[[CMPB]], i32 %[[X2]], i32 %[[OUT14]])
+; COMP-NEXT: call void @cq_template_icmp_eq_i64_hl_unc(i32 %[[CMPB]], i32 %[[EXP]], i64 0)
+; COMP-NEXT: call void @cqrt_free(i32 %[[CMPB]])
+; COMP-NEXT: call void @cqrt_free(i32 %[[OUT14]])
 ; COMP-NEXT: call void @cqrt_free(i32 %[[I6]])
 ; COMP-NEXT: call void @cq_template_and_i64_hl_unc(i32 %[[I5]], i32 %[[I4]], i64 -32768)
 ; COMP-NEXT: call void @cqrt_free(i32 %[[I5]])
@@ -185,5 +195,12 @@ ins:                                            ; shared field-insert + reload
 ; COMP-NEXT: call void @cq_template_lshr_i80_hl_unc(i32 %[[I2]], i32 %[[I1]], i80 64)
 ; COMP-NEXT: call void @cqrt_free(i32 %[[I2]])
 ; COMP-NEXT: call void @cq_template_bitcast_f80_to_i80_unc(i32 %[[I1]], i32 %[[OUT]])
+; COMP-NEXT: call void @cqrt_x(i32 %[[CMPA:[a-zA-Z0-9_.]+]])
+; COMP-NEXT: call void @cqrt_copy_f80_controlled(i32 %[[CMPA]], i32 %[[H]], i32 %[[OUT]])
+; COMP-NEXT: call void @cqrt_x(i32 %[[CMPA]])
+; COMP-NEXT: call void @cqrt_copy_f80_controlled(i32 %[[CMPA]], i32 %[[F]], i32 %[[OUT]])
+; COMP-NEXT: call void @cq_template_icmp_eq_i64_hl_unc(i32 %[[CMPA]], i32 %[[EXP]], i64 0)
+; COMP-NEXT: call void @cqrt_free(i32 %[[CMPA]])
+; COMP-NEXT: call void @cqrt_free(i32 %[[OUT]])
 ; COMP-NEXT: call void @cqrt_free(i32 %[[I1]])
 ; COMP-NEXT: call x86_fp80 @cqrt_measure_f80(i32 %[[RES]])

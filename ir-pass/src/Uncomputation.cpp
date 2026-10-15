@@ -14,6 +14,8 @@
 // escaped / not-closed / unplaceable DAG is a Rule-6/8 safe-leak (left allocated,
 // never a dirty free). Phase-4-owned control rails are subtracted up front
 // (DD-4 — `ControlOwnedRails`) so a flag / work / merge out-rail is never walked.
+// A dead controlled-copy MERGE out-rail is reversed afterwards by its own stream
+// replay, not by this spine (`MergeRailDischarge.h`, bd r2j3.32).
 
 #include "Uncomputation.h"
 
@@ -25,6 +27,7 @@
 #include "DagTraversal.h"       // recoverDataDag / DataDag
 #include "EmitInverse.h"        // emitInverseCall
 #include "FreePoint.h"          // computeFreePoint
+#include "MergeRailDischarge.h" // dischargeMergeRails (bd r2j3.32)
 #include "TaintPropagation.h"   // TaintSet
 #include "WireWalk.h"          // provablyBefore (the ONE position-aware proof)
 #include "WidthDispatch.h"      // freeFn
@@ -3290,8 +3293,12 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
     // measured `zext` rail; had that rail been returned instead, `Terminals`
     // would be empty and every interior rail invisible). The replacement gate is
     // strictly weaker and still costs a module with no tainted data nothing.
-    if (!AnyTaintedProducer)
+    if (!AnyTaintedProducer) {
+      // bd r2j3.32 round 1 — a function whose only quantum traffic is a merge
+      // (its rails are not tainted data producers) still owes the discharge.
+      dischargeMergeRails(F, taint, wd);
       continue;
+    }
 
     DominatorTree DT(F);
     PostDominatorTree PDT(F);
@@ -3329,6 +3336,13 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
         diagnose(G, kMsgCutRecord);
         break;
       }
+
+    // bd r2j3.32 — the Phase-4 MERGE rails (DD-4 subtracted them from every
+    // partition above). One whose readers have all run is reversed by replaying
+    // its own controlled-copy stream and freed; anything unproven stays
+    // allocated (MergeRailDischarge.h). LAST, so the replay follows the
+    // partitions' adjoints of its readers.
+    dischargeMergeRails(F, taint, wd);
   }
 
   // ── bd `test_C_libtooling-tu9q` clause (ii-d)'s POSTCONDITION ──────────────

@@ -47,25 +47,44 @@
 ; control run first). A predicate whose corpus population is empty is pinned by
 ; this file or by nothing.
 ;
+; bd r2j3.32: the grep counts of `cqrt_free`/`cqrt_x`/`cqrt_copy_*` grew by
+; exactly the discharged merge rails (each: two reversed copies, two `cqrt_x`,
+; one free); every other count is unchanged.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: grep "call i32 @cqrt_alloc_i1(" %t.cqd0.ll | count 3
 ; RUN: grep "call i32 @cqrt_alloc_i32(" %t.cqd0.ll | count 10
-; RUN: grep "call void @cqrt_free(" %t.cqd0.ll | count 7
-; RUN: grep "call void @cqrt_x(" %t.cqd0.ll | count 6
+; RUN: grep "call void @cqrt_free(" %t.cqd0.ll | count 8
+; RUN: grep "call void @cqrt_x(" %t.cqd0.ll | count 8
 ; RUN: grep "call void @cqrt_toffoli(" %t.cqd0.ll | count 4
-; RUN: grep "call void @cqrt_copy_i32_controlled(" %t.cqd0.ll | count 6
+; RUN: grep "call void @cqrt_copy_i32_controlled(" %t.cqd0.ll | count 8
 ; RUN: grep "@cqrt_measure" %t.cqd0.ll | count 5
 ; RUN: grep "@cqrt_ry" %t.cqd0.ll | count 4
 ; RUN: grep "@cq_template_icmp_sgt_i32_hl(" %t.cqd0.ll | count 4
 ; RUN: grep "@cq_template_icmp_sgt_i32(" %t.cqd0.ll | count 3
 ; RUN: %filecheck %s --check-prefix=NEG < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=REV < %t.cqd0.ll
 ;
 ; ⚠ THE COUNTS ARE EXACT AND ARE THE ASSERTION. A prefixed positive alone means
 ; "at least N" — the increment-2 round-1 lesson, where an injected NINTH controlled
 ; copy was missed by all four prefixes. The negatives below are what pin the
 ; boolean-algebra path specifically: a SELECT CHAIN would leave a `select i1` and
 ; the conversion of `%cphi` would leave nothing at all.
+; bd r2j3.32 (R11 round 1, item 7) — THE REVERSAL, pinned with CAPTURED handles:
+; the merge rail of the round-2 select (%out10, minted in a block laid out
+; below its readers) is reversed right after its last reader, the strip that
+; reads it: both copies re-applied in reverse under its still-live flag, the
+; flag's strip deferred behind them, then the same rail freed.
+; REV-LABEL: define i32 @probe(
+; REV:      call i32 @cqrt_alloc_i32(i32 6)
+; REV:      call void @cq_template_icmp_sgt_i32_unc(i32 %[[P_H_CMP4:[a-zA-Z0-9_.]+]], i32 %[[P_H:[a-zA-Z0-9_.]+]], i32 %[[P_OUT10:[a-zA-Z0-9_.]+]])
+; REV-NEXT: call void @cqrt_x(i32 %[[P_H_CMP9:[a-zA-Z0-9_.]+]])
+; REV-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[P_H_CMP9]], i32 %[[P_SELOP12:[a-zA-Z0-9_.]+]], i32 %[[P_OUT10]])
+; REV-NEXT: call void @cqrt_x(i32 %[[P_H_CMP9]])
+; REV-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[P_H_CMP9]], i32 %[[P_SELOP11:[a-zA-Z0-9_.]+]], i32 %[[P_OUT10]])
+; REV-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[P_H_CMP9]], i32 %[[P_H]], i32 9)
+; REV-NEXT: call void @cqrt_free(i32 %[[P_H_CMP9]])
+; REV-NEXT: call void @cqrt_free(i32 %[[P_OUT10]])
 ; CHECK: cqrt_alloc_i32
 ; NEG-NOT: select i1
 ; NEG-NOT: phi i1

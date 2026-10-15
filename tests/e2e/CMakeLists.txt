@@ -5403,12 +5403,16 @@ add_test(NAME e2e-slice-control-cascade-three-bools
 # base's first 16 lines byte for byte: adding a consumer of `b1` changed nothing
 # about how `b0`, `b1` and the `a`-mux are emitted.  A plain `compare_files` will
 # not do (the base's tail is its own three measurements), so this compares the
-# 16-line prefix.
+# 14-line prefix: through the a-mux's closing `cqrt_x`. bd r2j3.32 shortened it
+# from 16: in the flagship the a-mux rail has a later reader (the `b1` select
+# reads it as a copy source) and is then REVERSED, so its flag strip is deferred
+# past that reader, while in the base the rail is measured and its strip stays
+# put. Everything up to the strip is still byte-identical.
 add_test(NAME e2e-cascade-two-bools-base-prefix-identical
   COMMAND "${CMAKE_COMMAND}"
     "-DA=${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools.expected.log"
     "-DB=${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools_base.expected.log"
-    -DN=16
+    -DN=14
     -P "${CMAKE_CURRENT_SOURCE_DIR}/compare_prefix.cmake")
 
 # GATE 2 — "an ACCEPT, not a STREAM", the SELECT half, and this is the real twin
@@ -5418,12 +5422,18 @@ add_test(NAME e2e-cascade-two-bools-base-prefix-identical
 # (the flagship's extra cancelling prep gate shifts the handle numbering):
 # flagship lines 17-26 vs uncond lines 16-25, with the prep rail h1<->h5 and the
 # a-mux out rail h3<->h2.  MEASURED IDENTICAL 2026-09-13.
+# bd r2j3.32 WIDENED the window: the a-mux rail is now reversed right after the
+# `b1` select's core reads it (core re-emitted in reverse, strip deferred, free),
+# INSIDE the `b1` select's stream. The window is the whole `b1` select from its
+# `add` to its flag free (flagship 15-31, uncond 14-30), so it also covers the
+# a-mux reversal, which needs the a-mux flag and its two classical sources
+# renamed too (h2/h4/h5 vs h1/h3/h4).
 add_test(NAME e2e-cascade-two-bools-twin-identical
   COMMAND "${CMAKE_COMMAND}"
     "-DA=${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools.expected.log"
     "-DB=${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools_uncond.expected.log"
-    -DAFROM=17 -DATO=26 -DBFROM=16 -DBTO=25
-    "-DAREN=h1=hPREP;h3=hAMUX" "-DBREN=h5=hPREP;h2=hAMUX"
+    -DAFROM=15 -DATO=31 -DBFROM=14 -DBTO=30
+    "-DAREN=h1=hPREP;h3=hAMUX;h2=hFLAG;h4=hS1;h5=hS2" "-DBREN=h5=hPREP;h2=hAMUX;h1=hFLAG;h3=hS1;h4=hS2"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/compare_twin_half.cmake")
 
 # bd `boi6` D-B / Track M, round-1 finding F-M6 — a 4.4 DATA SELECT **INSIDE** a
@@ -6210,7 +6220,8 @@ add_test(NAME e2e-slice-undef-seed-uncontrolled
 # --- `slice_control_cascade_two_bools.c` — the owner's cascade, landed
 # --- 2026-09-13 — with ONE TOKEN changed (`_Bool b1 = 0;` -> `_Bool b1;`), and
 # --- `e2e-undef-seed-cascade-twin-identical` byte-diffs its golden against that
-# --- shipped one: 29 = 29. A golden of its own could only record whatever this
+# --- shipped one: 34 = 34 (29 = 29 before bd r2j3.32 reversed the a-mux rail in
+# --- both). A golden of its own could only record whatever this
 # --- compiler emits; the TWIN says the uninitialized spelling gets the circuit
 # --- the INITIALIZED program already had — the reviewed, Rule-13-cleared,
 # --- shipped one — so the rule adds an ACCEPT and not a stream. Same argument as
@@ -6750,8 +6761,9 @@ add_test(NAME e2e-slice-loop-hoisted-chain-exit-discharge-unrolled
 
 # ── bd `test_C_libtooling-zujr` — THE LOOP-CARRIED HANDLE VARIABLE ───────────
 # The owner's `example/grover/grover_oracle_uncompute.c` IN ITS LOOP FORM, and
-# its hand-unrolled twin.  50 lines against 45; the five are accounted for one by
-# one in the twin's own header (the owner ruled byte-identity an INSTRUMENT here,
+# its hand-unrolled twin.  50 lines against 55 (45 before bd r2j3.32 reversed two
+# of the twin's merge rails that the rolled form cannot yet reverse per trip);
+# every line of the difference is accounted for in the twin's own header (the owner ruled byte-identity an INSTRUMENT here,
 # not the target — `-O1` const-folds the flat form's first two trips and cannot
 # fold anything in the rolled one).  Read the rolled slice's header for the
 # invariants the golden is read by.

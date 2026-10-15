@@ -107,8 +107,11 @@
 ;
 ; THE ADJOINT IS IN THE LOOP-EXIT BLOCK, once, paired with its free.  This is P2's
 ; placement and it is the ONLY thing that makes the accept defensible:
-; EXITD: call void @cq_template_mul_i32_hl_unc(
-; EXITD-NEXT: call void @cqrt_free(
+; (bd r2j3.32: the `_unc` is also the merge rail `%out1`'s last reader, so that
+; rail's reversal now sits between the adjoint and its free; the pair is pinned
+; by the rail it names rather than by adjacency.)
+; EXITD: call void @cq_template_mul_i32_hl_unc(i32 %[[PX:[a-zA-Z0-9_.]+]],
+; EXITD: call void @cqrt_free(i32 %[[PX]])
 ;
 ; THE MULTIPLICITY CENSUS, whole-file, its own prefix so nothing windows the
 ; negative (Rule 12 fixture-hygiene (a)).  **A SECOND `mul` ADJOINT IS THE EXACT

@@ -51,9 +51,10 @@
 ;
 ; `out` starts at p and at most ONE delta lands: the eq-flags are MUTUALLY
 ; EXCLUSIVE by `switch` semantics. So there is no conjunction flag and NO
-; ¬-bracket, hence zero `cqrt_x`. %p, %out and the two deltas are left ALLOCATED
-; (every delta is a function of %p, which is kept live and entangled with %out,
-; so they record no which-path information %p does not already record).
+; ¬-bracket, hence zero `cqrt_x`. %p and the two deltas are left ALLOCATED
+; (every delta is a function of %p, which is kept live, so they record no
+; which-path information %p does not already record); `%out` is reversed and
+; freed after its reader since bd r2j3.32 (pinned below).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
@@ -118,15 +119,23 @@ merge:
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[T1]])
 ; CHECK-NEXT: %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 1)
 ; CHECK-NEXT: call void @cqrt_copy_i64_controlled(i32 %[[F1]], i32 %[[D1]], i32 %[[OUT]])
-; --- strips + flag frees, forward order (each reads PRISTINE q); every strip is
-;     adjacent to the free it licenses, so a dropped strip is a red here ---
+; --- bd p119.8, THE PROPERTY THIS FILE EXISTS FOR: the cast off the i64 merge
+;     reads the recorded WIDTH, not the laundered i32 handle type ---
+; CHECK-NEXT: %[[CAST:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[OUT]])
+; --- bd r2j3.32 (R11 round 1): the cast is `%out`'s last reader, so every write
+;     of `%out` is re-applied in reverse — both controlled delta copies and the
+;     UNCONTROLLED preload copy of %p (all XOR involutions; %p, the deltas and the
+;     flags are only read in between) — leaving `%out` at |0>. The eq-flag strips
+;     are DEFERRED to after that, each still adjacent to the free it licenses,
+;     so a dropped strip is a red here ---
+; CHECK-NEXT: call void @cqrt_copy_i64_controlled(i32 %[[F1]], i32 %[[D1]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_copy_i64_controlled(i32 %[[F0]], i32 %[[D0]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_copy_i64(i32 %[[P]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F0]], i32 %[[Q]], i32 0)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F0]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F1]], i32 %[[Q]], i32 1)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F1]])
-; --- bd p119.8, THE PROPERTY THIS FILE EXISTS FOR: the cast off the i64 merge
-;     reads the recorded WIDTH, not the laundered i32 handle type ---
-; CHECK-NEXT: %[[CAST:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT]])
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[CAST]])
 
 ; Whole-file PURE-NEGATIVE scan (a `NOROUTE-COUNT` here would WINDOW every
@@ -150,12 +159,12 @@ merge:
 
 ; EXACTLY FOUR frees: the two chain intermediates + the two flags. %p, %out and
 ; the two deltas are never freed (they are not provably |0>, Rule 6).
-; FCNT-COUNT-4: call void @cqrt_free(
+; FCNT-COUNT-5: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
 ; EXACTLY N=2 controlled copies — one per content case.
-; CCNT-COUNT-2: call void @cqrt_copy_i64_controlled(
+; CCNT-COUNT-4: call void @cqrt_copy_i64_controlled(
 ; CCNT-NOT:     call void @cqrt_copy_i64_controlled(
 ; EXACTLY ONE uncontrolled basis copy — the preload. A second would mean a case
 ; wrote %out unconditionally.
-; PCNT-COUNT-1: call void @cqrt_copy_i64(i32
+; PCNT-COUNT-2: call void @cqrt_copy_i64(i32
 ; PCNT-NOT:     call void @cqrt_copy_i64(i32

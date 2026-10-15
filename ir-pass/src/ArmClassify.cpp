@@ -5425,6 +5425,13 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       //      scope exactly: conjunct 2 covers every **R7-loop** grant, which is
       //      a STRICT SUBSET of the region-independent leak class (F-W2-3; see
       //      `TaintSet::RolledLoopRegionGates`).
+      //      ⚠ AND ITS PREMISE ("rolled leaks no more than its unrolled
+      //      twin") IS MEASURED FALSE for a loop-carried MERGE rail (bd memory
+      //      `r7-loop-grant-twin-parity-falsified-2026-10-15`: 6 vs 4 rails on
+      //      `slice_control_cascade_loop_carried_handle`, since bd r2j3.32
+      //      reverses the twin's). Conjunct 2 cannot see a merge rail; the
+      //      leak is accepted and its dephasing composition is fenced loudly
+      //      by `MergeCarriedFence.h` (see `declineUnmarkedRolledIterLocal`).
       //
       //      WHAT REPLACES IT: nothing here. The region falls through to R7's
       //      loop half below, which now has THREE clauses — (b)/(b′) for the

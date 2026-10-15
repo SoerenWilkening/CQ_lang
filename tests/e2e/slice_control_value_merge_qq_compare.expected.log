@@ -20,10 +20,15 @@ cqrt_copy_i32_controlled(h5, h4, h6)
 cqrt_x(h5)
 cqrt_copy_i32_controlled(h5, h1, h6)
 cqrt_x(h5)
-cq_template_icmp_sgt_i32_hl_unc(h5, h0, 5)
-cqrt_free(h5)
 cq_template_icmp_eq_i32(h6, h2) -> h7
 cq_template_zext_i1_to_i32(h7) -> h8
 cq_template_icmp_eq_i32_unc(h7, h6, h2)
+cqrt_x(h5)
+cqrt_copy_i32_controlled(h5, h1, h6)
+cqrt_x(h5)
+cqrt_copy_i32_controlled(h5, h4, h6)
+cq_template_icmp_sgt_i32_hl_unc(h5, h0, 5)
+cqrt_free(h5)
+cqrt_free(h6)
 cqrt_free(h7)
 cqrt_measure_i32(h8) -> 0

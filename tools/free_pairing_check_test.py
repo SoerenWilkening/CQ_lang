@@ -1017,6 +1017,49 @@ DEEP_POSITIVE = [
     ("xzdx-cswap-braid-d20", COST_BRAID),
 ]
 
+# bd r2j3.32 (A3): the 4.5 SWITCH DATA MUX's discharged rail, verbatim from the
+# lowering of `ir-pass/test/control_swap_reject_switch_datamux_angle.ll`. `%out`
+# is born holding the default `3`; its two XOR-delta copies are re-applied in
+# reverse after its last reader (the kickback strip), the eq-flag strips are
+# deferred past them, and `cqrt_xorc_i32(%out, 3)` returns it to |0>. (A1) cannot
+# take the mixed history and (A2) leaves the `xorc` standing; (A3) accepts the
+# classical residue because its immediate is a literal. Its mutants below plant
+# a rail and a formal parameter in that immediate and drop one replayed copy.
+A3_DATAMUX = """
+define i32 @example(i32 %u0, i32 %u1) {
+entry:
+  %h = call i32 @cqrt_alloc_i32(i32 %u0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %h4 = call i32 @cqrt_alloc_i32(i32 %u1)
+  call void @cqrt_ry_i32(i32 %h4, double 0x3FE6666666666666)
+  %out = call i32 @cqrt_alloc_i32(i32 3)
+  %h_cmp = call i32 @cq_template_icmp_eq_i32_hl(i32 %h, i32 0)
+  %delta = call i32 @cqrt_alloc_i32(i32 4)
+  call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %delta, i32 %out)
+  %h_cmp1 = call i32 @cq_template_icmp_eq_i32_hl(i32 %h, i32 1)
+  %delta2 = call i32 @cqrt_alloc_i32(i32 10)
+  call void @cqrt_copy_i32_controlled(i32 %h_cmp1, i32 %delta2, i32 %out)
+  %h_cmp3 = call i32 @cq_template_icmp_ne_i32_hl(i32 %out, i32 0)
+  call void @cqrt_x(i32 %h_cmp3)
+  call void @cqrt_rz_i1(i32 %h_cmp3, double 3.000000e-01)
+  call void @cqrt_x(i32 %h_cmp3)
+  call void @cqrt_rz_i1(i32 %h_cmp3, double 9.000000e-01)
+  call void @cq_template_icmp_ne_i32_hl_unc(i32 %h_cmp3, i32 %out, i32 0)
+  call void @cqrt_copy_i32_controlled(i32 %h_cmp1, i32 %delta2, i32 %out)
+  call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %delta, i32 %out)
+  call void @cq_template_icmp_eq_i32_hl_unc(i32 %h_cmp, i32 %h, i32 0)
+  call void @cqrt_free(i32 %h_cmp)
+  call void @cq_template_icmp_eq_i32_hl_unc(i32 %h_cmp1, i32 %h, i32 1)
+  call void @cqrt_free(i32 %h_cmp1)
+  call void @cqrt_xorc_i32(i32 %out, i32 3)
+  call void @cqrt_free(i32 %out)
+  call void @cqrt_free(i32 %h_cmp3)
+  %m5 = call i32 @cqrt_measure_i32(i32 %h4)
+  ret i32 %m5
+}
+"""
+
+
 POSITIVE = [
     # Inc 2a addc immediate spellings (bd 6uqc SHOULD-FIX 2) — clean forms VERIFY:
     ("addc-i1-self-inverse", ADDC_I1),
@@ -1050,6 +1093,7 @@ POSITIVE = [
     # The shipped e2e slice's own lowered IR — the control for the two slot
     # mutants below (round-1 Rule-13 review, lens L5).
     ("ctl-ry-slice-emitted-stream", CTL_RY_SLICE),
+    ("a3-datamux-classical-residue", A3_DATAMUX),
     # ⚠ (T4)'s two shipped-lowering fixtures are APPENDED to this list where
     # they are defined (search `POSITIVE.append`), because they sit below the
     # mutation helpers this file's later sections need. They are in POSITIVE so
@@ -1375,6 +1419,17 @@ MUTANTS = [
     ("inv-classical-literal-perturbed",
      sub(PHASE_DIAMOND, "icmp_sgt_i32_hl_inv", "i32 5)", "i32 6)", 0),
      "T1-no-reversal"),
+
+    # ---- bd r2j3.32 (A3): the classical residue must stay CLASSICAL -------
+    ("a3-residue-immediate-is-a-rail",
+     sub(A3_DATAMUX, "@cqrt_xorc_i32", "i32 3)", "i32 %h)", 0),
+     "A1-imm-not-classical"),
+    ("a3-residue-immediate-is-a-formal-parameter",
+     sub(A3_DATAMUX, "@cqrt_xorc_i32", "i32 3)", "i32 %u0)", 0),
+     "A1-imm-not-classical"),
+    ("a3-replayed-copy-dropped",
+     drop(A3_DATAMUX, "@cqrt_copy_i32_controlled(i32 %h_cmp1", 1),
+     "A-not-reducible"),
 
     # ---- the reversal ran, but not on the value it was compiled for -------
     ("forward-operand-mutated-before-inv",

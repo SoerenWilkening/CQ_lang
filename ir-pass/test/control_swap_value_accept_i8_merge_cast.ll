@@ -67,11 +67,20 @@ merge:
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cqrt_copy_i8_controlled(i32 %[[F]], i32 %[[P]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; THE WIDENING: the cast off the merged register resolves at the RECORDED i8
 ; width. The oracle declined exactly here.
 ; CHECK-NEXT: %[[W:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sext_i8_to_i32(i32 %[[OUT]])
+; bd r2j3.32: the merge rail is reversed after its last reader -- the copy
+; core re-emitted in reverse under the SAME flag, the flag strip DEFERRED to
+; after it, then the rail freed (it used to leak; a later gate on the
+; condition register dephased against it).
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_copy_i8_controlled(i32 %[[F]], i32 %[[P]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_copy_i8_controlled(i32 %[[F]], i32 %[[V]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT]])
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[W]])
 
 ; NOROUTE-NOT: cqrt_cswap
@@ -84,9 +93,10 @@ merge:
 ; NOROUTE-NOT: cqrt_alloc_i32(i32 0)
 ; NOROUTE-NOT: cqrt_copy_i32_controlled
 
-; EXACTLY ONE free — the flag. `%out`, `%p` and the chain final are left
+; EXACTLY TWO frees — the flag and, since bd r2j3.32, the merge rail `%out`
+; once its copies are re-applied in reverse. `%p` and the chain final are left
 ; ALLOCATED (keep-source-live / the Inc-2 dirty-final leak; Rule 6).
-; FCNT-COUNT-1: call void @cqrt_free(
+; FCNT-COUNT-2: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
-; CCNT-COUNT-2: call void @cqrt_copy_i8_controlled(
+; CCNT-COUNT-4: call void @cqrt_copy_i8_controlled(
 ; CCNT-NOT:     call void @cqrt_copy_i8_controlled(
