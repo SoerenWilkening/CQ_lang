@@ -8,8 +8,11 @@
 ; b12d4452 `_unc` scan it replaced (L2). Now every `_unc`/`_inv` after the gate is a
 ; reader of all its other handles, an unclassified reader fails closed, and an
 ; unenumerable alias set fails closed.
-; R11 round 2b (finding N2): this message is the ADJOINT branch's alone (an
-; unclassifiable reader and an unenumerable alias set have their own), and the
+; R11 round 2b (finding N2): this message is the ADJOINT branch's alone — a stale
+; record write, an unclassifiable reader and an unenumerable alias set each have
+; their own message (pinned by lowering_inplace_qq_decline_stale_adjoint.ll and
+; lowering_inplace_qq_decline_reader_unknown.ll; the alias message is unreachable,
+; see `kMsgInPlaceQQAliasUnknown`'s comment) — and the
 ; adjoint is stale because its forward `cqrt_qram_load_i32` (located by
 ; EmitInverse's `forwardOfAdjoint`) predates the gate.
 ;

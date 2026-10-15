@@ -77,9 +77,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/AngleSelectEmit.cpp` — 575 physical lines
 - `tests/e2e/slice_libm_real_acoshl.c` — 575 physical lines
 - `ir-pass/src/IntrinsicLowering.cpp` — 565 physical lines
+- `ir-pass/src/EmitInverse.cpp` — 544 physical lines
 - `ir-pass/src/CompareLowering.cpp` — 535 physical lines
 - `ir-pass/include/RailBankPromote.h` — 528 physical lines
-- `ir-pass/src/EmitInverse.cpp` — 525 physical lines
 - `tools/library_coverage/full_surface/wprobe.py` — 515 physical lines
 - `tests/e2e/railbank_dynamic_matrix.c` — 507 physical lines
 - `tests/e2e/slice_libm_real_lgammaf.c` — 506 physical lines
@@ -574,13 +574,13 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/DeadValueLiveness.cpp:262` — `deadParamMask`
 - `ir-pass/src/DeadValueLiveness.cpp:270` — `deleteDeadCones`
 
-### `ir-pass/src/EmitInverse.cpp` (525 lines)
+### `ir-pass/src/EmitInverse.cpp` (544 lines)
 
-- `ir-pass/src/EmitInverse.cpp:43` — `forwardOfAdjoint`
-- `ir-pass/src/EmitInverse.cpp:79` — `inPlaceQQAdjointName`
-- `ir-pass/src/EmitInverse.cpp:87` — `isInverseEmittable`
-- `ir-pass/src/EmitInverse.cpp:232` — `emitInverseCall`
-- `ir-pass/src/EmitInverse.cpp:508` — `emitInverseChain`
+- `ir-pass/src/EmitInverse.cpp:49` — `forwardOfAdjoint`
+- `ir-pass/src/EmitInverse.cpp:96` — `inPlaceQQAdjointName`
+- `ir-pass/src/EmitInverse.cpp:104` — `isInverseEmittable`
+- `ir-pass/src/EmitInverse.cpp:249` — `emitInverseCall`
+- `ir-pass/src/EmitInverse.cpp:527` — `emitInverseChain`
 
 ### `ir-pass/src/EqFoldArm.cpp` (152 lines)
 
@@ -688,7 +688,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/InPlaceQQ.cpp:239` — `decideNext`
 - `ir-pass/src/InPlaceQQ.cpp:327` — `lowerInPlaceQQ`
 
-### `ir-pass/src/InPlaceQQRecord.cpp` (286 lines)
+### `ir-pass/src/InPlaceQQRecord.cpp` (297 lines)
 
 - `ir-pass/src/InPlaceQQRecord.cpp:38` — `isQQStem`
 - `ir-pass/src/InPlaceQQRecord.cpp:43` — `maskOf`
@@ -696,10 +696,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/InPlaceQQRecord.cpp:69` — `deadAfter`
 - `ir-pass/src/InPlaceQQRecord.cpp:93` — `recordDeadQQOperands`
 - `ir-pass/src/InPlaceQQRecord.cpp:122` — `transferDeadOperandMask`
-- `ir-pass/src/InPlaceQQRecord.cpp:149` — `isAdjointOf`
-- `ir-pass/src/InPlaceQQRecord.cpp:167` — `classifyLaterUse`
-- `ir-pass/src/InPlaceQQRecord.cpp:222` — `declineStaleInPlaceQQReads`
-- `ir-pass/src/InPlaceQQRecord.cpp:284` — `deadOperandMask`
+- `ir-pass/src/InPlaceQQRecord.cpp:160` — `isAdjointOf`
+- `ir-pass/src/InPlaceQQRecord.cpp:178` — `classifyLaterUse`
+- `ir-pass/src/InPlaceQQRecord.cpp:233` — `declineStaleInPlaceQQReads`
+- `ir-pass/src/InPlaceQQRecord.cpp:295` — `deadOperandMask`
 
 ### `ir-pass/src/IntrinsicLowering.cpp` (565 lines)
 

@@ -40,6 +40,12 @@ namespace cq {
 // dangling one. Pre-WI-0 these were excluded and declined loudly; that exclusion is
 // gone.
 
+// THE INVERSE OF `emitInverseCall`'s `_unc` RECIPES (R11 round 2b/2c; H3 drift
+// note): each branch below mirrors one recipe there — the out-first layout of the
+// data-template, QRAM-load and clone-call `_unc` (`out`, then the forward
+// operands) and the QRAM store's same-args `_unc`. A recipe added or reshaped in
+// `emitInverseCall` MUST be mirrored here (or the postcondition fails closed on
+// it, the safe direction).
 CallInst *forwardOfAdjoint(const CallInst *Adj) {
   const Function *AF = Adj->getCalledFunction();
   if (!AF || !AF->getName().ends_with("_unc"))
@@ -61,8 +67,14 @@ CallInst *forwardOfAdjoint(const CallInst *Adj) {
         return F;
     }
   // SAME-ARGS recipe (the QRAM store): `<fwd>_unc(args...)`, the forward a call
-  // to `<fwd>` with the identical operands.
-  if (Adj->arg_size() >= 1)
+  // to `<fwd>` with the identical operands. The operands do NOT name the forward,
+  // so the match must be UNIQUE: two identical stores (one before an in-place
+  // gate, one after, on different paths) make the pairing ambiguous, and picking
+  // the first silently cleared a stale `_unc` (R11 round 2c finding F1). More than
+  // one candidate: null, i.e. the caller cannot place it and fails closed.
+  if (Adj->arg_size() >= 1) {
+    CallInst *Only = nullptr;
+    unsigned Count = 0;
     for (User *U : Adj->getArgOperand(0)->users())
       if (auto *F = dyn_cast<CallInst>(U);
           F && F != Adj && sameCallee(F) && isAbiQramStore(F) &&
@@ -70,9 +82,14 @@ CallInst *forwardOfAdjoint(const CallInst *Adj) {
         bool Same = true;
         for (unsigned I = 0; I < F->arg_size(); ++I)
           Same &= F->getArgOperand(I) == Adj->getArgOperand(I);
-        if (Same)
-          return F;
+        if (Same) {
+          Only = F;
+          ++Count;
+        }
       }
+    if (Count == 1)
+      return Only;
+  }
   return nullptr;
 }
 
@@ -372,6 +389,7 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     return minted(Inv);
   }
 
+  // (Mirrored, inverted, by `forwardOfAdjoint` above — keep the two in step.)
   // Uncontrolled data template `cq_template_<op>_<W>[_hl|_lh]` (incl. compares
   // post-WI-0, §6.0) → its VOID `_unc` form. DD-3 slot convention: `out` (the
   // forward call's OWN result handle — the rail to zero) is arg 0, then the
@@ -442,6 +460,7 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     return minted(UncCall);
   }
 
+  // (Mirrored, inverted, by `forwardOfAdjoint` above — keep the two in step.)
   // Phase 7.5 QRAM store `cqrt_qram_store_<W>(arr, idx, val)` → its void `_unc`
   // twin `cqrt_qram_store_<W>_unc(arr, idx, val)`. UNLIKE the data-template / load
   // cases, the store `_unc` takes the SAME args in the SAME order (NOT out-first):

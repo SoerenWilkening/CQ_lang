@@ -135,6 +135,17 @@ const char kMsgInPlaceQQStaleRecord[] =
 const char kMsgInPlaceQQReaderUnknown[] =
     "cq in-place lowering: a reader of an in-place reassigned register cannot "
     "be classified";
+// UNREACHABLE TODAY, KEPT FAIL-CLOSED (R11 round 2c finding F2). `handleAliases`
+// answers false on exactly two paths: a store of the target to memory that is not
+// a proven rail bank, and a load that is not a proven bank cell. Neither reaches
+// this postcondition: `declineTaintEscapes` (TaintPropagation) runs on the
+// pre-lowering module and loud-declines every tainted value stored to, or loaded
+// from, memory that `markRailBankAllocas` has not proven a rail bank ("cq taint
+// escape: tainted value stored to memory" — the reviewer's hand-IR probe
+// review_s1R2c/h4.ll stops there), and for a proven bank `handleAliases` follows
+// the cells and returns true. The pass's own later stores (the rail-bank cell
+// type rewrite) are bank stores by construction. So no fixture can pin this
+// message; it stays a loud failure, never a silent `{P}` fallback.
 const char kMsgInPlaceQQAliasUnknown[] =
     "cq in-place lowering: the aliases of an in-place reassigned register "
     "cannot be enumerated";
