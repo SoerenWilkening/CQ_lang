@@ -11,15 +11,18 @@
     },
     "3": {
       "accept": false,
-      "diagnostic": "cq rail bank: array mixes a rail cell access with an unrecognized one"
+      "diagnostic": "cq rail window: quantum-array cell rail read past a non-diagonal gate on that array",
+      "_note": "Message drift, same verdict: was `cq rail bank: array mixes a rail cell access with an unrecognized one`. bd 01po.19 S4 (merge a3fbac74) stale-cell fence (Q4): the cell read follows the Ry on q whose rail the cells park. Still loud; the CNOT-copy store that would lower it is a gap (bd 01po.19)."
     },
     "4": {
       "accept": false,
-      "diagnostic": "cq rail bank: array mixes a rail cell access with an unrecognized one"
+      "diagnostic": "cq rail window: quantum-array cell rail read past a non-diagonal gate on that array",
+      "_note": "Message drift, same verdict: was `cq rail bank: array mixes a rail cell access with an unrecognized one`. bd 01po.19 S4 (merge a3fbac74) stale-cell fence (Q4): the cell read follows the Ry on q whose rail the cells park. Still loud; the CNOT-copy store that would lower it is a gap (bd 01po.19)."
     },
     "5": {
       "accept": false,
-      "diagnostic": "cq rail bank: array mixes a rail cell access with an unrecognized one"
+      "diagnostic": "cq rail window: quantum-array cell rail read past a non-diagonal gate on that array",
+      "_note": "Message drift, same verdict: was `cq rail bank: array mixes a rail cell access with an unrecognized one`. bd 01po.19 S4 (merge a3fbac74) stale-cell fence (Q4): the cell read follows the Ry on q whose rail the cells park. Still loud; the CNOT-copy store that would lower it is a gap (bd 01po.19)."
     },
     "6": {
       "accept": false,
@@ -67,7 +70,8 @@
     },
     "17": {
       "accept": false,
-      "diagnostic": "cq taint escape: tainted value stored to memory"
+      "diagnostic": "cq rail window: quantum-array cell rail read past a non-diagonal gate on that array",
+      "_note": "Message drift, same verdict: was `cq taint escape: tainted value stored to memory`. bd 01po.19 S4 (merge a3fbac74) stale-cell fence (Q4): the cell read follows the Ry on q whose rail the cells park. Still loud; the CNOT-copy store that would lower it is a gap (bd 01po.19)."
     },
     "20": {
       "accept": true,
@@ -247,7 +251,8 @@
       "argv": [],
       "dropped_twin_lines": [
         "cqrt_ry_i32(h0, 0x0p+0)"
-      ]
+      ],
+      "_note": "KEPT RED ON PURPOSE (bd 01po.19.21, 2026-10-15): diverges since lane U (merge 100b3d9a, bd r2j3.32). The unrolled twin's straight-line Z select-merge rails are now discharged (X-bracketed reverse cqrt_copy_i32_controlled + cqrt_free, 14 extra lines, flag strips moved after them); the rolled form's Z merge rails are LOOP-CARRIED, which MergeCarriedFence leaves allocated by owner-delegated decision (b) (reverse loop: bd 8h7d.20). Only computational-basis measurements follow, so the measured distribution is unchanged, but the rolled side leaves two entangled dirty rails the twin cleans. Not byte-expressible with dropped_twin_lines; retire when 8h7d.20 lands or the owner rules the comparison weaker."
     },
     {
       "rolled": 32,

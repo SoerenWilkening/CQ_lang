@@ -557,6 +557,31 @@
 #    column is NOT covered by that fence and 8 cells DIVERGE on the oracle —
 #    they are in the QUARANTINE, classes D and E, with their root causes and
 #    their isolation measurements. Read that file before reading these rows.
+#
+# 2026-10-15 HAND UPDATE OF 21 ROWS, NOT A --regenerate (bd 01po.19.22). The
+# gate was red on main 0c1ac43c with 33 failures. 21 rows were moved by hand,
+# each against its rolled/unrolled trace read analytically:
+#   * 12 `rbodyread` rows (oeq/oder/rifelse x add/none x none/rypost):
+#     DECLINE-BOTH -> UNROLLED-ONLY. PRE-DATES this batch: red at b568a908;
+#     the flat side flips between 27271489 (decline) and c2880c5f (accept), the
+#     57ch stale-read placement. The flat trace computes `acc = mark*7` from r
+#     after the first arm and before the second (the source order); the rolled
+#     side keeps `operand predates a non-diagonal gate` (an over-decline).
+#   * abry bcar/binv: DECLINE-BOTH -> ACCEPT-IDENTICAL, lane C 435b3bc1
+#     (dm7f.52). Per trip: toffoli(b, [a==3], f) into fresh |0>, Ry_c(f, r),
+#     toffoli again, free f (|0>), strip and free [a==3]. Correct.
+#   * abprep bcar/binv: same verdict, new owner (lane C, dm7f.53 F2).
+#   * kcond/kicond/kread: same verdicts, the 01po.19 S4 rail-window wording.
+#   * karith kloop: DECLINE-BOTH-DIFFERENT -> UNROLLED-ONLY (01po.19 S4); the
+#     flat side measures k[] before the zext/add that reads it as a control,
+#     which commutes with a computational-basis measurement.
+# The six k-axis TRACE-DIVERGENCE cells (k2b kloop, kiprep kflat/kloop, kover
+# kflat/kloop, kprep kloop; 01po.19 S4 a3fbac74) are NOT recorded: they stay red.
+# Each is EQUIV under tools/trace_twin_equiv.py once never-touched |0> mints are
+# dropped (the window pre-mints every cell at its entry; on the flat side -O1
+# store-forwards the zero seed to k[0]'s cq_theta, so cell 0 is rotated as a
+# scalar and the pre-minted cell-0 rail is left allocated, untouched). A
+# representational difference, not a miscompile, but this gate compares bytes.
 # ==== END OF HEADER — everything BELOW this line is generated and is rewritten
 # ==== by --regenerate / --refresh-quarantine. Everything ABOVE it is PRESERVED
 # ==== byte-for-byte, including prose you add by hand (bd test_C_libtooling-gfsk).
@@ -619,10 +644,10 @@ m_addpresel_pbitd_none_none_rypost ACCEPT-IDENTICAL-WARN	cq rotation lowering: n
 m_none_ablphi_none_none_binv UNROLLED-ONLY	cq controlled lowering: control flow under quantum control
 m_none_abphi_none_none_bcar ACCEPT-IDENTICAL
 m_none_abphi_none_none_binv ACCEPT-IDENTICAL
-m_none_abprep_none_none_bcar DECLINE-BOTH	cq controlled lowering: control flow under quantum control
-m_none_abprep_none_none_binv DECLINE-BOTH	cq controlled lowering: control flow under quantum control
-m_none_abry_none_none_bcar DECLINE-BOTH	cq controlled lowering: control flow under quantum control
-m_none_abry_none_none_binv DECLINE-BOTH	cq controlled lowering: control flow under quantum control
+m_none_abprep_none_none_bcar DECLINE-BOTH	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_none_abprep_none_none_binv DECLINE-BOTH	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_none_abry_none_none_bcar ACCEPT-IDENTICAL
+m_none_abry_none_none_binv ACCEPT-IDENTICAL
 m_none_absphi_none_none_binv DECLINE-BOTH	cq controlled lowering: nested control flow under quantum control
 m_none_abval_none_none_bcar DECLINE-BOTH-DIFFERENT	cq loop lowering: loop-carried tainted value crosses iterations	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_abval_none_none_binv UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
@@ -670,11 +695,11 @@ m_none_ifelse_rz         DECLINE-BOTH-DIFFERENT	cq controlled lowering: control 
 m_none_k2b_none_none_kflat ACCEPT-IDENTICAL
 m_none_k2b_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
 m_none_karith_none_none_kflat UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
-m_none_karith_none_none_kloop DECLINE-BOTH-DIFFERENT	cq loop lowering: loop-carried tainted value crosses iterations	cq taint escape: tainted value stored to memory
+m_none_karith_none_none_kloop UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
 m_none_kcond_none_none_kflat ROLLED-ONLY	cq controlled lowering: control flow under quantum control
-m_none_kcond_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
-m_none_kicond_none_none_kflat DECLINE-BOTH-DIFFERENT	cq rail bank: array mixes a rail cell access with an unrecognized one	cq controlled lowering: control flow under quantum control
-m_none_kicond_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
+m_none_kcond_none_none_kloop ROLLED-ONLY	cq rail window: quantum array not lowered yet (bd 01po.19), needs S6 quantum control on cells
+m_none_kicond_none_none_kflat DECLINE-BOTH-DIFFERENT	cq rail window: quantum array not lowered yet (bd 01po.19), needs S6 quantum control on cells	cq controlled lowering: control flow under quantum control
+m_none_kicond_none_none_kloop ROLLED-ONLY	cq rail window: quantum array not lowered yet (bd 01po.19), needs S6 quantum control on cells
 m_none_kidx_none_none_kflat DECLINE-BOTH	cq QRAM access: array address has aliasing fan-out
 m_none_kidx_none_none_kloop DECLINE-BOTH	cq QRAM access: array address has aliasing fan-out
 m_none_kiprep_none_none_kflat UNROLLED-ONLY	cq rail bank: array mixes a rail cell access with an unrecognized one
@@ -685,7 +710,7 @@ m_none_kprep_none_none_kflat ACCEPT-IDENTICAL
 m_none_kprep_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
 m_none_kprep_ry_none_kflat UNROLLED-ONLY	cq taint escape: tainted value muxed by a classical-condition phi
 m_none_kread_none_none_kflat ACCEPT-IDENTICAL
-m_none_kread_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
+m_none_kread_none_none_kloop ROLLED-ONLY	cq rail window: quantum array not lowered yet (bd 01po.19), needs S6 quantum control on cells
 m_none_l2bd_none_none_l2ic UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
 m_none_l2bd_none_none_l2im UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
 m_none_l2bd_none_none_l2iu UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
@@ -711,13 +736,13 @@ m_none_nbry_none_none_bcar ACCEPT-IDENTICAL
 m_none_nbry_none_none_binv ACCEPT-IDENTICAL
 m_none_nbval_none_none_bcar DECLINE-BOTH-DIFFERENT	cq loop lowering: loop-carried tainted value crosses iterations	cq controlled lowering: control flow under quantum control
 m_none_nbval_none_none_binv UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
-m_none_oder_add_rbodyread_none DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
-m_none_oder_add_rbodyread_rypost DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oder_add_rbodyread_none UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oder_add_rbodyread_rypost UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
 m_none_oder_add_rpostmark_rypost DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
 m_none_oder_add_rpremark_none DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
 m_none_oder_add_rpremark_rypost DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
-m_none_oder_none_rbodyread_none DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
-m_none_oder_none_rbodyread_rypost DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oder_none_rbodyread_none UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oder_none_rbodyread_rypost UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
 m_none_oder_none_rpostmark_rypost DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
 m_none_oder_none_rpremark_none DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
 m_none_oder_none_rpremark_rypost DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
@@ -727,8 +752,8 @@ m_none_oeq_add_none_none ACCEPT-IDENTICAL
 m_none_oeq_add_none_rypost ACCEPT-IDENTICAL
 m_none_oeq_add_none_rypre ACCEPT-IDENTICAL
 m_none_oeq_add_none_rzpost ACCEPT-IDENTICAL
-m_none_oeq_add_rbodyread_none DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
-m_none_oeq_add_rbodyread_rypost DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oeq_add_rbodyread_none UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oeq_add_rbodyread_rypost UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
 m_none_oeq_add_rpostmark_none ACCEPT-IDENTICAL
 m_none_oeq_add_rpostmark_rypost DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
 m_none_oeq_add_rpremark_none DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
@@ -741,8 +766,8 @@ m_none_oeq_none_none_rypre ACCEPT-IDENTICAL
 m_none_oeq_none_none_rzpost ACCEPT-IDENTICAL
 m_none_oeq_none_postmark_none ACCEPT-IDENTICAL
 m_none_oeq_none_premark_none ACCEPT-IDENTICAL
-m_none_oeq_none_rbodyread_none DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
-m_none_oeq_none_rbodyread_rypost DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oeq_none_rbodyread_none UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oeq_none_rbodyread_rypost UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
 m_none_oeq_none_rpostmark_none ACCEPT-IDENTICAL
 m_none_oeq_none_rpostmark_rypost DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
 m_none_oeq_none_rpremark_none DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
@@ -777,8 +802,8 @@ m_none_req_none_none_rypre ACCEPT-IDENTICAL
 m_none_req_none_none_rzpost ACCEPT-IDENTICAL
 m_none_req_ry_none_none  ACCEPT-IDENTICAL
 m_none_rifelse_add_none_none ACCEPT-IDENTICAL
-m_none_rifelse_add_rbodyread_none DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
-m_none_rifelse_add_rbodyread_rypost DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_rifelse_add_rbodyread_none UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_none_rifelse_add_rbodyread_rypost UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
 m_none_rifelse_add_rpostmark_none ACCEPT-IDENTICAL
 m_none_rifelse_add_rpostmark_rypost DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
 m_none_rifelse_add_rpremark_none DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
@@ -791,8 +816,8 @@ m_none_rifelse_none_none_rypre ACCEPT-IDENTICAL
 m_none_rifelse_none_none_rzpost ACCEPT-IDENTICAL
 m_none_rifelse_none_postmark_none ACCEPT-IDENTICAL
 m_none_rifelse_none_premark_none ACCEPT-IDENTICAL
-m_none_rifelse_none_rbodyread_none DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
-m_none_rifelse_none_rbodyread_rypost DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_rifelse_none_rbodyread_none UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_none_rifelse_none_rbodyread_rypost UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
 m_none_rifelse_none_rpostmark_none ACCEPT-IDENTICAL
 m_none_rifelse_none_rpostmark_rypost DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
 m_none_rifelse_none_rpremark_none DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control

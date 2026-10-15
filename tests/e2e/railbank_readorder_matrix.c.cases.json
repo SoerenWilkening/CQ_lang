@@ -30,9 +30,12 @@
       "diagnostic": null
     },
     "5": {
-      "accept": false,
-      "diagnostic": "cq rail bank: array has cells no iteration writes",
-      "pins": "NOT read order: the read-loop SCEV trip clause (n-1 != extent); no read-order anchor. Neighbour copy of shared row 3."
+      "accept": true,
+      "diagnostic": null,
+      "require_railbank": false,
+      "require_railwindow": true,
+      "_note": "bd 01po.19 S4 (merge a3fbac74): DECLINE->ACCEPT (row 3 of the dynamic matrix, unguarded). The read-order anchor no longer runs on this route: the window pre-mints every cell at its entry. Reviewed 2026-10-15 (bd 01po.19.21).",
+      "pins": "(pre-S4 decline) NOT read order: the read-loop SCEV trip clause (n-1 != extent); no read-order anchor. Neighbour copy of shared row 3."
     },
     "6": {
       "accept": false,
@@ -40,24 +43,34 @@
       "pins": "NOT read order: the promoter/C7 partial-write wall (the string its explicit-guard twin gives on the oracle)."
     },
     "7": {
-      "accept": false,
-      "diagnostic": "cq rail bank: array has cells no iteration writes",
-      "pins": "NOT read order: the early-exit write loop fails C6's single-exiting-block/exact-BTC conjunct before any read is asked; no anchor."
+      "accept": true,
+      "diagnostic": null,
+      "require_railbank": false,
+      "require_railwindow": true,
+      "_note": "bd 01po.19 S4 (merge a3fbac74): DECLINE->ACCEPT (row 5 of the dynamic matrix, unguarded). Never-written cells are pre-minted |0> window rails, a valid refinement of C's indeterminate value (owner ruling D1: uninit == zero-init bank). Trace argv a b: 3 of 5 cells rotated, 5 measured. Reviewed 2026-10-15 (bd 01po.19.21).",
+      "pins": "(pre-S4 decline) NOT read order: the early-exit write loop fails C6's single-exiting-block/exact-BTC conjunct before any read is asked; no anchor."
     },
     "8": {
-      "accept": false,
-      "diagnostic": "cq rail bank: array has cells no iteration writes",
-      "pins": "READ ORDER (anchor fires): the bypass under unrelated k is unrefuted. With 9 and 14, the rows mutant M1 flips."
+      "accept": true,
+      "diagnostic": null,
+      "require_railbank": false,
+      "require_railwindow": true,
+      "_note": "bd 01po.19 S4 (merge a3fbac74): DECLINE->ACCEPT. The k==0 bypass reads pre-minted |0> rails (IR read: window minted before the `k != 0 && n > 0` guard). Never-written cells are pre-minted |0> window rails, a valid refinement of C's indeterminate value (owner ruling D1: uninit == zero-init bank). Reviewed 2026-10-15 (bd 01po.19.21).",
+      "pins": "(pre-S4 decline) READ ORDER (anchor fires): the bypass under unrelated k is unrefuted. With 9 and 14, the rows mutant M1 flips."
     },
     "9": {
-      "accept": false,
-      "diagnostic": "cq rail bank: array has cells no iteration writes",
-      "pins": "READ ORDER (anchor fires): write guard n>2 does not refute read guard n>0."
+      "accept": true,
+      "diagnostic": null,
+      "require_railbank": false,
+      "require_railwindow": true,
+      "_note": "bd 01po.19 S4 (merge a3fbac74): DECLINE->ACCEPT. For n in 1..2 the guard-false edge reads pre-minted |0> rails. Never-written cells are pre-minted |0> window rails, a valid refinement of C's indeterminate value (owner ruling D1: uninit == zero-init bank). Reviewed 2026-10-15 (bd 01po.19.21).",
+      "pins": "(pre-S4 decline) READ ORDER (anchor fires): write guard n>2 does not refute read guard n>0."
     },
     "10": {
       "accept": false,
       "diagnostic": "cq rail bank: array has cells no iteration writes",
-      "pins": "READ ORDER (anchor fires) AND the read-loop SCEV trip clause (m != n): doubly fenced, so M1 leaves it declining."
+      "pins": "READ ORDER (anchor fires) AND the read-loop SCEV trip clause (m != n): doubly fenced, so M1 leaves it declining.",
+      "_note": "KEPT RED ON PURPOSE (bd 01po.19.21, 2026-10-15): since bd 01po.19 S4 (merge a3fbac74) this row ACCEPTS. main() calls slice(argc, argc+1), so every run reads b[n], one past the n-rail window: the lowered read loads a word past `%.rails` and measures it as a handle (trace argv a b: h0 measured twice). The C program is undefined on every run, so no defined behaviour is miscompiled, but whether the compiler should accept a provably out-of-bounds window read (vs. the pre-S4 SCEV trip-clause decline) needs a reviewer's ruling before this expectation changes."
     },
     "11": {
       "accept": true,
@@ -72,9 +85,12 @@
       "diagnostic": null
     },
     "14": {
-      "accept": false,
-      "diagnostic": "cq rail bank: array has cells no iteration writes",
-      "pins": "READ ORDER (anchor fires): read guard n != 0 is not refuted by n <= 0."
+      "accept": true,
+      "diagnostic": null,
+      "require_railbank": false,
+      "require_railwindow": true,
+      "_note": "bd 01po.19 S4 (merge a3fbac74): DECLINE->ACCEPT. The unrefuted n<0 edge is a negative VLA extent, undefined in C, so the defined executions (n>0) read only written cells. Reviewed 2026-10-15 (bd 01po.19.21).",
+      "pins": "(pre-S4 decline) READ ORDER (anchor fires): read guard n != 0 is not refuted by n <= 0."
     },
     "15": {
       "accept": true,

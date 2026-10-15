@@ -7,6 +7,7 @@ registered as separate ctest entries without editing this runner:
 
   {"cases": {"<id>": {"accept": bool, "diagnostic": str|null,
                       "require_railbank": bool (default true),
+                      "require_railwindow": bool (default false),
                       "stage1_contains_in_order": [str, ...] (optional),
                       "stage1_note": str (optional)}},
    "twins": [{"rolled": id, "twin": id, "argv": [str, ...],
@@ -164,6 +165,10 @@ def check_case(case_id: int, spec: dict, twin_sides: set[int],
         require_bank = spec.get("require_railbank", True) and case_id not in twin_sides
         if require_bank and "!cq.railbank" not in lowered_text:
             errs.append(f"CASE={case_id}: accepted bank lacks !cq.railbank")
+        # bd 01po.19 S4: a row the rail WINDOW (not the rail bank) lowers pins
+        # that route, so an accept through some third path is still a red.
+        if spec.get("require_railwindow", False) and "!cq.railwindow" not in lowered_text:
+            errs.append(f"CASE={case_id}: accepted window lacks !cq.railwindow")
         if "cqrt_qram_" in lowered_text:
             errs.append(f"CASE={case_id}: rail bank emitted cqrt_qram_*")
         for fn, val, ptr in literal_bank_stores(lowered_text):
