@@ -864,17 +864,17 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/MergeCarriedFence.cpp:65` — `slotAllowed`
 - `ir-pass/src/MergeCarriedFence.cpp:85` — `fenceCarriedMergeLeaks`
 
-### `ir-pass/src/MergeCarriedFenceFresh.cpp` (215 lines)
+### `ir-pass/src/MergeCarriedFenceFresh.cpp` (218 lines)
 
 - `ir-pass/src/MergeCarriedFenceFresh.cpp:24` — `isRuntime`
 - `ir-pass/src/MergeCarriedFenceFresh.cpp:28` — `isCarrier`
 - `ir-pass/src/MergeCarriedFenceFresh.cpp:36` — `isCouplingUse`
 - `ir-pass/src/MergeCarriedFenceFresh.cpp:51` — `freshAlloc`
-- `ir-pass/src/MergeCarriedFenceFresh.cpp:88` — `materializedBank`
-- `ir-pass/src/MergeCarriedFenceFresh.cpp:116` — `freshCellLoad`
-- `ir-pass/src/MergeCarriedFenceFresh.cpp:161` — `carriedFenceHandlesOf`
-- `ir-pass/src/MergeCarriedFenceFresh.cpp:179` — `runsWithoutRedef`
-- `ir-pass/src/MergeCarriedFenceFresh.cpp:202` — `carriedFenceFreshAt`
+- `ir-pass/src/MergeCarriedFenceFresh.cpp:91` — `materializedBank`
+- `ir-pass/src/MergeCarriedFenceFresh.cpp:119` — `freshCellLoad`
+- `ir-pass/src/MergeCarriedFenceFresh.cpp:164` — `carriedFenceHandlesOf`
+- `ir-pass/src/MergeCarriedFenceFresh.cpp:182` — `runsWithoutRedef`
+- `ir-pass/src/MergeCarriedFenceFresh.cpp:205` — `carriedFenceFreshAt`
 
 ### `ir-pass/src/MergePhiPeel.cpp` (672 lines)
 
