@@ -38,6 +38,7 @@
 // cell whose handle is selected by a classical index.
 
 #include "RailWindow.h"
+#include "RailWindowAlias.h"  // railWindowPairProven (S7)
 
 #include "TaintPropagation.h"
 
@@ -145,13 +146,19 @@ bool promoteArm(BranchInst *BI, AllocaInst *W, Type *RT, DominatorTree &DT,
     }
   if (Order.empty())
     return false;
+  // Pairwise distinct per S7's context-aware proof (`railWindowPairProven`,
+  // every access of each class asked under its dominating guards), so a
+  // versioned copy's classes, proven only inside the copy, are promoted.
+  auto accesses = [&](const Class &C) {
+    SmallVector<Instruction *, 4> V(C.Loads.begin(), C.Loads.end());
+    V.append(C.Stores.begin(), C.Stores.end());
+    return V;
+  };
   for (unsigned a = 0; a < Order.size(); ++a)
     for (unsigned b = a + 1; b < Order.size(); ++b)
-      // MERGE NOTE (S7): swap to the context-aware `railWindowDistinct(SE, A,
-      // B, ctx)` / `railWindowPairProven` so a versioned copy's classes, proven
-      // only inside the copy, are promoted (this call then runs per region
-      // after versioning, see RailWindow.cpp).
-      if (!railWindowDistinct(SE, Order[a], Order[b]))
+      if (!railWindowPairProven(SE, DT, Order[a], Order[b],
+                                accesses(Classes[Order[a]]),
+                                accesses(Classes[Order[b]])))
         return false;  // an unproven pair: S7's question, not this rewrite's.
   // Every class address must be computable at the branch.
   SmallVector<Instruction *, 8> Hoist;
