@@ -2,8 +2,12 @@
 ; excluded; ctest `ir-pass-merge-discharge-selftest` runs it). bd
 ; test_C_libtooling-r2j3.32, routing decision (b) of 2026-10-15: a LEAKED
 ; loop-carried merge rail (accepted; the reverse loop is bd 8h7d.20) is fenced
-; loudly when a non-diagonal gate after the loop acts on a register it records
-; (MergeCarriedFence.h).
+; loudly when a non-diagonal gate it can precede acts on a register it records
+; (MergeCarriedFence.h). This file pins the AFTER-THE-LOOP gates; the in-loop
+; ones (bd r2j3.36) are in carried_fence_inloop.ll and carried_fence_bank.ll.
+; Each `_loud` case tags the call that must fire (`!cq.selftest.fires` + its
+; `!dbg` line). p5 now fires at the in-loop lifted call itself (a lifted call
+; touching a protected, non-fresh register fails closed), before its Ry.
 ;
 ; The loop is the shipped lowering of
 ;     int a = 5; θ(&c, .5); for (i < 3) if (c > i) a -= 3;
@@ -36,11 +40,12 @@
 ;                         diagonal, allowed;
 ;   * readers_overapprox_loud (was readers_kept until R11 round 2) after the
 ;                         loop %h controls a controlled Ry onto a fresh %g and
-;                         the final `a` is rotated. Physically harmless, but the
-;                         ENTANGLEMENT CLOSURE protects %g (a controlled gate's
-;                         target joins) and the final rail (an alias of the
-;                         carried rail), so both rotations are loud: the
-;                         accepted over-approximation, pinned so it is seen;
+;                         the final `a` is rotated. The ENTANGLEMENT CLOSURE
+;                         protects %g (a controlled gate's target joins) and
+;                         the final rail; since bd r2j3.36 the Ry onto %g is
+;                         cleared (%g is FRESH there: allocated, never coupled
+;                         before it), and the Ry on the final rail — the record
+;                         itself — is the loud one;
 ;   * measures_kept       the quiet control: after the loop the protected
 ;                         registers are only measured, phased (`cqrt_rz`) and
 ;                         permuted (`cqrt_x`);
@@ -71,7 +76,7 @@ declare void @cqrt_rz_i32_controlled(i32, i32, double)
 declare void @cqrt_free(i32)
 declare i32 @cqrt_measure_i32(i32)
 
-define i32 @cond_leaf_loud(i32 %u) #0 {
+define i32 @cond_leaf_loud(i32 %u) #0 !dbg !902 {
 entry:
   %h = call i32 @cqrt_alloc_i32(i32 %u)
   call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
@@ -93,14 +98,14 @@ loop:
   %done = icmp eq i32 %i1, 3
   br i1 %done, label %exit, label %loop
 exit:
-  call void @cqrt_ry_i32(i32 %h, double 3.000000e-01)
+  call void @cqrt_ry_i32(i32 %h, double 3.000000e-01), !cq.selftest.fires !0, !dbg !903
   %m = call i32 @cqrt_measure_i32(i32 %h)
   %m1 = call i32 @cqrt_measure_i32(i32 %out)
   %r = add nsw i32 %m1, %m
   ret i32 %r
 }
 
-define i32 @src_leaf_loud(i32 %u, i32 %w) #0 {
+define i32 @src_leaf_loud(i32 %u, i32 %w) #0 !dbg !904 {
 entry:
   %h = call i32 @cqrt_alloc_i32(i32 %u)
   call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
@@ -124,7 +129,7 @@ loop:
   br i1 %done, label %exit, label %loop
 exit:
   %m = call i32 @cqrt_measure_i32(i32 %h)
-  call void @cqrt_ry_i32(i32 %hx, double 3.000000e-01)
+  call void @cqrt_ry_i32(i32 %hx, double 3.000000e-01), !cq.selftest.fires !0, !dbg !905
   %m1 = call i32 @cqrt_measure_i32(i32 %out)
   %m2 = call i32 @cqrt_measure_i32(i32 %hx)
   %r0 = add nsw i32 %m1, %m
@@ -132,7 +137,7 @@ exit:
   ret i32 %r
 }
 
-define i32 @h_fence_loud(i32 %u, i32 %w) #0 {
+define i32 @h_fence_loud(i32 %u, i32 %w) #0 !dbg !906 {
 entry:
   %h = call i32 @cqrt_alloc_i32(i32 %u)
   call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
@@ -154,7 +159,7 @@ loop:
   %done = icmp eq i32 %i1, 3
   br i1 %done, label %exit, label %loop
 exit:
-  call void @cqrt_h(i32 %h)
+  call void @cqrt_h(i32 %h), !cq.selftest.fires !0, !dbg !907
   %m = call i32 @cqrt_measure_i32(i32 %h)
   %m1 = call i32 @cqrt_measure_i32(i32 %out)
   %r = add nsw i32 %m1, %m
@@ -226,7 +231,7 @@ exit:
 }
 
 ; H2a: same CNOT AFTER the rail alloc, before the copies (dominates the merge write, not Out)
-define i32 @h2a_cnot_after_alloc(i32 %u, i32 %w) #0 {
+define i32 @h2a_cnot_after_alloc(i32 %u, i32 %w) #0 !dbg !908 {
 entry:
   %h = call i32 @cqrt_alloc_i32(i32 %u)
   call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
@@ -249,7 +254,7 @@ loop:
   %done = icmp eq i32 %i1, 3
   br i1 %done, label %exit, label %loop
 exit:
-  call void @cqrt_ry_i32(i32 %hz, double 3.000000e-01)
+  call void @cqrt_ry_i32(i32 %hz, double 3.000000e-01), !cq.selftest.fires !0, !dbg !909
   %m = call i32 @cqrt_measure_i32(i32 %hz)
   %m1 = call i32 @cqrt_measure_i32(i32 %out)
   %r = add nsw i32 %m1, %m
@@ -258,7 +263,7 @@ exit:
 
 ; H2b: in-place write of the condition register %h at the END of the body;
 ; the next trip's compare (hence its rail) records %hz through %h.
-define i32 @h2b_backedge_write(i32 %u, i32 %w) #0 {
+define i32 @h2b_backedge_write(i32 %u, i32 %w) #0 !dbg !910 {
 entry:
   %h = call i32 @cqrt_alloc_i32(i32 %u)
   call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
@@ -281,7 +286,7 @@ loop:
   %done = icmp eq i32 %i1, 3
   br i1 %done, label %exit, label %loop
 exit:
-  call void @cqrt_ry_i32(i32 %hz, double 3.000000e-01)
+  call void @cqrt_ry_i32(i32 %hz, double 3.000000e-01), !cq.selftest.fires !0, !dbg !911
   %m = call i32 @cqrt_measure_i32(i32 %hz)
   %m1 = call i32 @cqrt_measure_i32(i32 %out)
   %r = add nsw i32 %m1, %m
@@ -289,7 +294,7 @@ exit:
 }
 
 ; H2c: path-conditional (classical) write of the flag before Out.
-define i32 @h2c_pathcond(i32 %u, i32 %w, i1 %k) #0 {
+define i32 @h2c_pathcond(i32 %u, i32 %w, i1 %k) #0 !dbg !912 {
 entry:
   %h = call i32 @cqrt_alloc_i32(i32 %u)
   call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
@@ -318,7 +323,7 @@ join:
   %done = icmp eq i32 %i1, 3
   br i1 %done, label %exit, label %loop
 exit:
-  call void @cqrt_ry_i32(i32 %hz, double 3.000000e-01)
+  call void @cqrt_ry_i32(i32 %hz, double 3.000000e-01), !cq.selftest.fires !0, !dbg !913
   %m = call i32 @cqrt_measure_i32(i32 %hz)
   %m1 = call i32 @cqrt_measure_i32(i32 %out)
   %r = add nsw i32 %m1, %m
@@ -326,7 +331,7 @@ exit:
 }
 
 ; P1: post-loop CNOT q -> hx (hx is a copied SOURCE the rail records), then Ry on q.
-define i32 @p1_postloop_cnot_into_leaf(i32 %u, i32 %w, i32 %v) #0 {
+define i32 @p1_postloop_cnot_into_leaf(i32 %u, i32 %w, i32 %v) #0 !dbg !914 {
 entry:
   %h = call i32 @cqrt_alloc_i32(i32 %u)
   call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
@@ -352,7 +357,7 @@ loop:
   br i1 %done, label %exit, label %loop
 exit:
   call void @cqrt_cnot(i32 %q, i32 %hx)
-  call void @cqrt_ry_i32(i32 %q, double -3.000000e-01)
+  call void @cqrt_ry_i32(i32 %q, double -3.000000e-01), !cq.selftest.fires !0, !dbg !915
   %m = call i32 @cqrt_measure_i32(i32 %q)
   %m1 = call i32 @cqrt_measure_i32(i32 %out)
   %r = add nsw i32 %m1, %m
@@ -361,7 +366,7 @@ exit:
 
 ; P4 (H2 alias): in-loop BEFORE the merge writes, CNOT q -> (select k, hx, hx2);
 ; the merge copies hx. Ry on q after the loop.
-define i32 @p4_select_alias_write(i32 %u, i32 %w, i32 %v, i1 %k) #0 {
+define i32 @p4_select_alias_write(i32 %u, i32 %w, i32 %v, i1 %k) #0 !dbg !916 {
 entry:
   %h = call i32 @cqrt_alloc_i32(i32 %u)
   call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
@@ -389,7 +394,7 @@ loop:
   %done = icmp eq i32 %i1, 3
   br i1 %done, label %exit, label %loop
 exit:
-  call void @cqrt_ry_i32(i32 %q, double -3.000000e-01)
+  call void @cqrt_ry_i32(i32 %q, double -3.000000e-01), !cq.selftest.fires !0, !dbg !917
   %m = call i32 @cqrt_measure_i32(i32 %q)
   %m1 = call i32 @cqrt_measure_i32(i32 %out)
   %r = add nsw i32 %m1, %m
@@ -401,7 +406,7 @@ define internal void @__cq_q_mix_3(i32 %c, i32 %t) {
   call void @cqrt_cnot(i32 %c, i32 %t)
   ret void
 }
-define i32 @p5_lifted_write(i32 %u, i32 %w, i32 %v) #0 {
+define i32 @p5_lifted_write(i32 %u, i32 %w, i32 %v) #0 !dbg !918 {
 entry:
   %h = call i32 @cqrt_alloc_i32(i32 %u)
   call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
@@ -414,7 +419,7 @@ entry:
 loop:
   %i = phi i32 [ 0, %entry ], [ %i1, %loop ]
   %a = phi i32 [ %seed, %entry ], [ %out, %loop ]
-  call void @__cq_q_mix_3(i32 %q, i32 %hx)
+  call void @__cq_q_mix_3(i32 %q, i32 %hx), !cq.selftest.fires !0, !dbg !919
   %h_cmp = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 %i)
   %out = call i32 @cqrt_alloc_i32(i32 0), !cq.selftest.merge !0
   call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %hx, i32 %out)
@@ -436,7 +441,7 @@ exit:
 
 ; two hops, hx -> q (after the loop) and q -> r (BEFORE it): a single pass in
 ; program order sees the q-r CNOT before q is protected.
-define i32 @two_hop_loud(i32 %u, i32 %w, i32 %v) #0 {
+define i32 @two_hop_loud(i32 %u, i32 %w, i32 %v) #0 !dbg !920 {
 entry:
   %h = call i32 @cqrt_alloc_i32(i32 %u)
   call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
@@ -464,7 +469,7 @@ loop:
   br i1 %done, label %exit, label %loop
 exit:
   call void @cqrt_cnot(i32 %q, i32 %hx)
-  call void @cqrt_ry_i32(i32 %r, double -3.000000e-01)
+  call void @cqrt_ry_i32(i32 %r, double -3.000000e-01), !cq.selftest.fires !0, !dbg !921
   %m1 = call i32 @cqrt_measure_i32(i32 %out)
   ret i32 %m1
 }
@@ -534,7 +539,7 @@ exit:
   ret i32 %m1
 }
 
-define i32 @readers_overapprox_loud(i32 %u) #0 {
+define i32 @readers_overapprox_loud(i32 %u) #0 !dbg !922 {
 entry:
   %h = call i32 @cqrt_alloc_i32(i32 %u)
   call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
@@ -558,7 +563,7 @@ loop:
 exit:
   %g = call i32 @cqrt_alloc_i1(i1 false)
   call void @cqrt_ry_i1_controlled(i32 %h, i32 %g, double 3.000000e-01)
-  call void @cqrt_ry_i32(i32 %out, double 3.000000e-01)
+  call void @cqrt_ry_i32(i32 %out, double 3.000000e-01), !cq.selftest.fires !0, !dbg !923
   %m = call i32 @cqrt_measure_i32(i32 %h)
   %m1 = call i32 @cqrt_measure_i32(i32 %out)
   %m2 = call i32 @cqrt_measure_i32(i32 %g)
@@ -571,3 +576,34 @@ attributes #0 = { "cq-selftest-expect"="loud" "cq-selftest-message"="cq merge di
 attributes #1 = { "cq-selftest-expect"="kept" }
 
 !0 = !{}
+
+; debug info: only the tagged call carries a !dbg line (cq-merge-selftest
+; checks the diagnostic fired at that line).
+!llvm.dbg.cu = !{!890}
+!llvm.module.flags = !{!891}
+!890 = distinct !DICompileUnit(language: DW_LANG_C11, file: !892, producer: "hand", isOptimized: true, runtimeVersion: 0, emissionKind: LineTablesOnly)
+!891 = !{i32 2, !"Debug Info Version", i32 3}
+!892 = !DIFile(filename: "carried_fence.ll", directory: "ir-pass/test/Inputs/merge_selftest")
+!893 = !DISubroutineType(types: !{})
+!902 = distinct !DISubprogram(name: "cond_leaf_loud", scope: !892, file: !892, line: 101, type: !893, scopeLine: 101, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!903 = !DILocation(line: 101, scope: !902)
+!904 = distinct !DISubprogram(name: "src_leaf_loud", scope: !892, file: !892, line: 102, type: !893, scopeLine: 102, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!905 = !DILocation(line: 102, scope: !904)
+!906 = distinct !DISubprogram(name: "h_fence_loud", scope: !892, file: !892, line: 103, type: !893, scopeLine: 103, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!907 = !DILocation(line: 103, scope: !906)
+!908 = distinct !DISubprogram(name: "h2a_cnot_after_alloc", scope: !892, file: !892, line: 104, type: !893, scopeLine: 104, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!909 = !DILocation(line: 104, scope: !908)
+!910 = distinct !DISubprogram(name: "h2b_backedge_write", scope: !892, file: !892, line: 105, type: !893, scopeLine: 105, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!911 = !DILocation(line: 105, scope: !910)
+!912 = distinct !DISubprogram(name: "h2c_pathcond", scope: !892, file: !892, line: 106, type: !893, scopeLine: 106, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!913 = !DILocation(line: 106, scope: !912)
+!914 = distinct !DISubprogram(name: "p1_postloop_cnot_into_leaf", scope: !892, file: !892, line: 107, type: !893, scopeLine: 107, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!915 = !DILocation(line: 107, scope: !914)
+!916 = distinct !DISubprogram(name: "p4_select_alias_write", scope: !892, file: !892, line: 108, type: !893, scopeLine: 108, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!917 = !DILocation(line: 108, scope: !916)
+!918 = distinct !DISubprogram(name: "p5_lifted_write", scope: !892, file: !892, line: 109, type: !893, scopeLine: 109, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!919 = !DILocation(line: 109, scope: !918)
+!920 = distinct !DISubprogram(name: "two_hop_loud", scope: !892, file: !892, line: 110, type: !893, scopeLine: 110, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!921 = !DILocation(line: 110, scope: !920)
+!922 = distinct !DISubprogram(name: "readers_overapprox_loud", scope: !892, file: !892, line: 111, type: !893, scopeLine: 111, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!923 = !DILocation(line: 111, scope: !922)

@@ -1,19 +1,26 @@
-// MergeCarriedFence.cpp — see header (bd test_C_libtooling-r2j3.32).
+// MergeCarriedFence.cpp — see header (bd test_C_libtooling-r2j3.32, r2j3.36).
 
 #include "MergeCarriedFence.h"
-#include "InPlaceQQ.h"         // isInPlaceQQGate (bd r2j3.33)
-#include "MergeStreamGates.h"  // calleeName / readsState / isRegister /
-                               // handleAliases
+#include "InPlaceQQ.h"               // isInPlaceQQGate (bd r2j3.33)
+#include "MergeCarriedFenceFresh.h"  // clause (iv), handles, path question
+#include "MergeStreamGates.h"        // calleeName / handleAliases
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Module.h"
+#include "llvm/TargetParser/Triple.h"
+
+#include <memory>
 
 using namespace llvm;
 
@@ -26,33 +33,28 @@ const char kMsgCarriedMergeLeak[] =
 namespace {
 
 // The loop across whose back edge `Out` is carried: the outermost loop
-// containing it whose header has a φ that takes `Out`. Null: not carried.
-Loop *carriedLoop(CallInst *Out, LoopInfo &LI) {
+// containing it in which a member of `Out`'s alias class (`handleAliases`) is
+// the loop's header φ, or a rail-bank cell LOAD inside the loop (R11 round 1,
+// F2: a rail parked in a cell a later trip re-reads — S3's Q6(a) header-φ →
+// cell-load rewrite produces exactly that). An unprovable class inside a loop
+// counts as carried (fail closed: `protect` then fails loudly). Null: not
+// carried.
+Loop *carriedLoop(CallInst *Out, const TaintSet &taint, DominatorTree &DT,
+                  LoopInfo &LI) {
+  Loop *Inner = LI.getLoopFor(Out->getParent());
+  if (!Inner)
+    return nullptr;
+  SmallPtrSet<Value *, 16> Cls;
+  if (!handleAliases(Out, taint, DT, Cls))
+    return Inner->getOutermostLoop();
   Loop *Hit = nullptr;
-  for (Loop *L = LI.getLoopFor(Out->getParent()); L; L = L->getParentLoop())
-    for (User *U : Out->users())
-      if (auto *P = dyn_cast<PHINode>(U); P && P->getParent() == L->getHeader())
+  for (Loop *L = Inner; L; L = L->getParentLoop())
+    for (Value *M : Cls)
+      if ((isa<PHINode>(M) &&
+           cast<PHINode>(M)->getParent() == L->getHeader()) ||
+          (isa<LoadInst>(M) && L->contains(cast<LoadInst>(M)->getParent())))
         Hit = L;
   return Hit;
-}
-
-// The HANDLES a call touches: every i32 register operand in a state slot
-// (`readsState`: not an alloc seed, not a template's literal), plus its i32
-// result when that result is a fresh handle (a runtime or lifted producer,
-// never a measurement's classical value).
-void handlesOf(CallInst *C, const TaintSet &taint,
-               SmallVectorImpl<Value *> &H) {
-  for (unsigned S = 0, E = C->arg_size(); S != E; ++S) {
-    Value *Op = C->getArgOperand(S);
-    if (Op->getType()->isIntegerTy(32) && readsState(C, S) &&
-        isRegister(Op, taint))
-      H.push_back(Op);
-  }
-  StringRef N = calleeName(C);
-  if (C->getType()->isIntegerTy(32) && !N.starts_with("cqrt_measure") &&
-      (N.starts_with("cqrt_") || N.starts_with("cq_template_") ||
-       N.starts_with("__cq_q_")))
-    H.push_back(C);
 }
 
 // Is a use of a PROTECTED register in slot `S` of `C` safe? Only in a gate
@@ -93,10 +95,23 @@ bool fenceCarriedMergeLeaks(Function &F, const TaintSet &taint,
     for (Instruction &I : BB)
       if (auto *C = dyn_cast<CallInst>(&I))
         Calls.push_back(C);
+  // SCEV for clause (iv)(b), built once and only when a carried rail exists
+  // (the same standalone construction RailWindow / LoopLowering use).
+  std::unique_ptr<AssumptionCache> AC;
+  std::unique_ptr<TargetLibraryInfoImpl> TLII;
+  std::unique_ptr<TargetLibraryInfo> TLI;
+  std::unique_ptr<ScalarEvolution> SE;
   for (CallInst *Out : Left) {
-    Loop *L = carriedLoop(Out, LI);
-    if (!L)
+    Loop *TL = carriedLoop(Out, taint, DT, LI);
+    if (!TL)
       continue;
+    if (!SE) {
+      AC = std::make_unique<AssumptionCache>(F);
+      TLII = std::make_unique<TargetLibraryInfoImpl>(
+          Triple(F.getParent()->getTargetTriple()));
+      TLI = std::make_unique<TargetLibraryInfo>(*TLII);
+      SE = std::make_unique<ScalarEvolution>(F, *TLI, *AC, DT, LI);
+    }
     // THE ENTANGLEMENT CLOSURE (R11 round 2, replacing three rounds of
     // per-path closures): start from the leaked rail; any call, ANYWHERE in
     // the function, touching two or more handles one of whose alias classes is
@@ -119,7 +134,7 @@ bool fenceCarriedMergeLeaks(Function &F, const TaintSet &taint,
       Grew = false;
       for (CallInst *C : Calls) {
         SmallVector<Value *, 4> H;
-        handlesOf(C, taint, H);
+        carriedFenceHandlesOf(C, taint, H);
         if (H.size() < 2 ||
             llvm::none_of(H, [&](Value *V) { return P.count(V) != 0; }))
           continue;
@@ -131,19 +146,20 @@ bool fenceCarriedMergeLeaks(Function &F, const TaintSet &taint,
           }
       }
     }
-    // THE HAZARD: after the loop exit (outside the carried loop, reachable
-    // from it), a use of a protected register in a slot `slotAllowed` does
-    // not clear. Inside the loop each trip's gates are the per-trip body the
-    // control-lowering fences already adjudicate; after the exit the leaked
-    // records are what is left to protect (header, "WHERE").
-    BasicBlock *Hd = L->getHeader();
+    // THE HAZARD SET (header; bd r2j3.36: everywhere, not only after the loop
+    // exit): a use of a protected register in a slot `slotAllowed` does not
+    // clear, at a call the rail's allocation can reach (a record can exist
+    // there; in the loop that is every call, across the back edge), unless
+    // the register is FRESH there (`carriedFenceFreshAt`).
     for (CallInst *C : Calls) {
-      if (L->contains(C->getParent()) ||
-          !isPotentiallyReachable(Hd, C->getParent(), nullptr, &DT, &LI))
+      if (!isPotentiallyReachable(Out, C, nullptr, &DT, &LI))
         continue;
-      for (unsigned S = 0, E = C->arg_size(); S != E; ++S)
-        if (P.count(C->getArgOperand(S)) && !slotAllowed(C, S))
+      for (unsigned S = 0, E = C->arg_size(); S != E; ++S) {
+        Value *V = C->getArgOperand(S);
+        if (P.count(V) && !slotAllowed(C, S) &&
+            !carriedFenceFreshAt(V, C, TL, taint, DT, *SE))
           return loud(C);
+      }
     }
   }
   return false;

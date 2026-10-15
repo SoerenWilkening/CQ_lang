@@ -118,8 +118,11 @@ unsigned dischargeMergeRails(Function &F, TaintSet &taint, WidthDispatch &wd) {
       GroupEnd[I] = End;
     ++N;
   }
-  // A LEFT loop-carried rail is an accepted leak (decision (b), bd 8h7d.20)
-  // only while nothing after its loop acts non-diagonally on what it records.
+  // A LEFT loop-carried rail (through a header φ or a rail-bank cell) is an
+  // accepted leak (decision (b), bd 8h7d.20) only while no gate its record can
+  // precede — after the loop, or inside it on a later trip or later in the
+  // same trip (bd r2j3.36) — acts non-diagonally on a register entangled with
+  // it (the hazard set: MergeCarriedFence.h).
   fenceCarriedMergeLeaks(F, taint, Left, DT, LI);
   return N;
 }

@@ -93,6 +93,7 @@ add_library(CQPass MODULE
   src/MeasureLowering.cpp
   # bd r2j3.32: reverse a dead controlled-copy merge rail by stream replay.
   src/MergeCarriedFence.cpp
+  src/MergeCarriedFenceFresh.cpp
   src/MergeRailDischarge.cpp
   src/MergeStreamGates.cpp
   src/MergeStreamPlan.cpp
@@ -248,7 +249,9 @@ target_link_libraries(cq-merge-selftest PRIVATE ${_CQ_OPT_LLVM_LIBS})
 add_test(NAME ir-pass-merge-discharge-selftest
   COMMAND cq-merge-selftest
     "${CMAKE_CURRENT_SOURCE_DIR}/test/Inputs/merge_selftest/window_alias.ll"
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/Inputs/merge_selftest/carried_fence.ll")
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/Inputs/merge_selftest/carried_fence.ll"
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/Inputs/merge_selftest/carried_fence_inloop.ll"
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/Inputs/merge_selftest/carried_fence_bank.ll")
 
 # cq-scrub-selftest (bd test_C_libtooling-8e5r / -um24 / -j8sk): the deterministic
 # per-member pin of `include/ScrubOnDelete.h` over every pointer-keyed member of

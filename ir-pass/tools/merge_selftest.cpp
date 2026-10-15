@@ -19,6 +19,12 @@
 // `ControlOwnedRails` with `!cq.selftest.merge`. Verdict: "loud" when a
 // diagnostic was raised; otherwise "discharged" when every seeded rail is
 // freed, else "kept". Exit 1 on any mismatch.
+//
+// WHICH CALL FIRED (bd r2j3.36 R11 round 1, F3): a "loud" function tags
+// exactly ONE instruction with `!cq.selftest.fires` and gives it (and only it)
+// a `!dbg` line; the diagnostic must carry that line. A loud verdict raised at
+// any other gate fails. Every input FILE must hold at least one case (R17: a
+// file the driver silently skips pins nothing).
 
 #include "MergeRailDischarge.h"
 #include "TaintPropagation.h"
@@ -43,15 +49,23 @@ int main(int argc, char **argv) {
   int Fails = 0, Cases = 0;
   for (int A = 1; A < argc; ++A) {
     LLVMContext Ctx;
-    std::vector<std::string> Diags;
+    struct Diag {
+      std::string Text;
+      unsigned Line;
+    };
+    std::vector<Diag> Diags;
     Ctx.setDiagnosticHandlerCallBack(
         [](const DiagnosticInfo *DI, void *P) {
           std::string S;
           raw_string_ostream OS(S);
           DiagnosticPrinterRawOStream DP(OS);
           DI->print(DP);
-          static_cast<std::vector<std::string> *>(P)->push_back(
-              StringRef(OS.str()).rtrim().str());
+          unsigned Line = 0;
+          if (auto *WL = dyn_cast<DiagnosticInfoUnsupported>(DI);
+              WL && WL->isLocationAvailable())
+            Line = WL->getLocation().getLine();
+          static_cast<std::vector<Diag> *>(P)->push_back(
+              {StringRef(OS.str()).rtrim().str(), Line});
         },
         &Diags);
     SMDiagnostic Err;
@@ -61,10 +75,12 @@ int main(int argc, char **argv) {
       return 2;
     }
     cq::WidthDispatch wd(*M);
+    int FileCases = 0;
     for (Function &F : *M) {
       if (F.isDeclaration() || !F.hasFnAttribute("cq-selftest-expect"))
         continue;
       ++Cases;
+      ++FileCases;
       StringRef Want =
           F.getFnAttribute("cq-selftest-expect").getValueAsString();
       cq::TaintSet taint;
@@ -94,16 +110,34 @@ int main(int argc, char **argv) {
         StringRef Msg =
             F.getFnAttribute("cq-selftest-message").getValueAsString();
         Ok = Diags.size() == 1 && !Msg.empty() &&
-             StringRef(Diags[0]).ends_with(Msg);
+             StringRef(Diags[0].Text).ends_with(Msg);
+        unsigned WantLine = 0, Tags = 0;
+        for (BasicBlock &BB : F)
+          for (Instruction &I : BB)
+            if (I.getMetadata("cq.selftest.fires")) {
+              ++Tags;
+              if (const DebugLoc &DL = I.getDebugLoc())
+                WantLine = DL.getLine();
+            }
+        if (Tags != 1 || !WantLine || (Ok && Diags[0].Line != WantLine)) {
+          Ok = false;
+          outs() << "  (fires-tag: " << Tags << " tag(s), want line " << WantLine
+                 << ", got line " << (Diags.empty() ? 0 : Diags[0].Line)
+                 << ")\n";
+        }
       }
       if (Ok && verifyFunction(F, &errs()))
         Ok = false;
       outs() << (Ok ? "ok   " : "FAIL ") << F.getName() << ": want " << Want
              << ", got " << Got;
-      for (const std::string &D : Diags)
-        outs() << " [" << D << "]";
+      for (const Diag &D : Diags)
+        outs() << " [" << D.Text << "]";
       outs() << "\n";
       Fails += !Ok;
+    }
+    if (!FileCases) {
+      outs() << "FAIL " << argv[A] << ": no case in this file\n";
+      ++Fails;
     }
   }
   outs() << "cq-merge-selftest: " << Cases << " case(s), " << Fails
