@@ -40,7 +40,8 @@ Loop *carriedLoop(CallInst *Out, LoopInfo &LI) {
 // operands, and the writers of each visited value (a CNOT-copied flag names
 // its control). Carried records (`Skip`) are not leaves and are not walked.
 void leavesOf(CallInst *Out, const SmallPtrSetImpl<Value *> &Skip,
-              const TaintSet &taint, SmallPtrSetImpl<Value *> &Leaves) {
+              const TaintSet &taint, const DominatorTree &DT,
+              SmallPtrSetImpl<Value *> &Leaves) {
   SmallVector<Value *, 16> Work;
   auto pushOperands = [&](CallInst *C, const Value *Except) {
     for (unsigned S = 0, E = C->arg_size(); S != E; ++S) {
@@ -65,13 +66,15 @@ void leavesOf(CallInst *Out, const SmallPtrSetImpl<Value *> &Skip,
       Work.push_back(S->getFalseValue());
     } else if (isa<CastInst>(V) || isa<FreezeInst>(V))
       Work.push_back(cast<Instruction>(V)->getOperand(0));
-    // The stream gates that WROTE V: their other register operands (the CNOT
-    // control a flag copies, a compare a Toffoli conjoins). A gate outside the
-    // stream vocabulary (a rotation, a controlled Ry) computes nothing V is a
-    // copy of; if it acts on V after the loop the hazard scan sees it there.
+    // The stream gates that WROTE V before `Out` was minted (they dominate
+    // it): their other register operands (the CNOT control a flag copies, a
+    // compare a Toffoli conjoins). A gate outside the stream vocabulary (a
+    // rotation, a controlled Ry) computes nothing V is a copy of, and a write
+    // that does not dominate `Out` is not part of what `Out` records; if either
+    // acts on V after the loop, the hazard scan judges it there.
     for (User *U : V->users()) {
       auto *C = dyn_cast<CallInst>(U);
-      if (!C || C == V)
+      if (!C || C == V || !DT.dominates(C, Out))
         continue;
       SmallVector<unsigned, 2> Wr;
       if (!streamGateWrites(C, Wr))
@@ -117,16 +120,21 @@ bool isHazard(CallInst *C, const Value *A, const TaintSet &taint,
         return true;
     return false;
   }
+  // An ALLOWLIST (R11 round 2): a leaf is safe only in a gate known to be
+  // diagonal or a computational-basis permutation on it, or as the control of
+  // a controlled gate. Everything else — `cqrt_ry*`, `cqrt_h`, a runtime gate
+  // added later, a controlled template's data slot — fails closed.
   bool Ctl = N.contains("_controlled");
-  for (unsigned S : Slots) {
-    if (N.starts_with("cqrt_ry"))
-      return S == (Ctl ? 1u : 0u);
-    if (N == "cqrt_cswap")
-      return S == 1 || S == 2;
-    if (Ctl && N.starts_with("cqrt_") && S != 0 &&
-        !(isControlledCopy(C) && S == 1))
+  bool Allowed =
+      N.starts_with("cqrt_rz") || N == "cqrt_x" || N == "cqrt_cnot" ||
+      N == "cqrt_toffoli" || N == "cqrt_cswap" ||
+      N.starts_with("cqrt_addc_") || N.starts_with("cqrt_xorc_") ||
+      N.starts_with("cqrt_copy_") || N == "cqrt_free" ||
+      N.starts_with("cqrt_measure_") ||
+      (N.starts_with("cq_template_") && !Ctl);
+  for (unsigned S : Slots)
+    if (!Allowed && !(Ctl && S == 0))
       return true;
-  }
   return false;
 }
 
@@ -156,9 +164,11 @@ bool fenceCarriedMergeLeaks(Function &F, const TaintSet &taint,
       Carried.push_back({Out, L});
       Records.insert(Out);
     }
-  for (auto &[Out, L] : Carried) {
+  for (auto &OL : Carried) {
+    CallInst *Out = OL.first;
+    Loop *L = OL.second;
     SmallPtrSet<Value *, 16> Leaves;
-    leavesOf(Out, Records, taint, Leaves);
+    leavesOf(Out, Records, taint, DT, Leaves);
     BasicBlock *H = L->getHeader();
     auto after = [&](const Instruction *I) {
       return !L->contains(I->getParent()) &&

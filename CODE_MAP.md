@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 817 maintained source files, 6680 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 820 maintained source files, 6687 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -784,6 +784,15 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/MeasureLowering.cpp:211` — `suffixFromMeasureName`
 - `ir-pass/src/MeasureLowering.cpp:222` — `diagnoseMeasure`
 - `ir-pass/src/MeasureLowering.cpp:230` — `lowerMeasures`
+
+### `ir-pass/src/MergeCarriedFence.cpp` (196 lines)
+
+- `ir-pass/src/MergeCarriedFence.cpp:29` — `carriedLoop`
+- `ir-pass/src/MergeCarriedFence.cpp:42` — `leavesOf`
+- `ir-pass/src/MergeCarriedFence.cpp:92` — `isRuntime`
+- `ir-pass/src/MergeCarriedFence.cpp:99` — `isHazard`
+- `ir-pass/src/MergeCarriedFence.cpp:143` — `hazardIn`
+- `ir-pass/src/MergeCarriedFence.cpp:157` — `fenceCarriedMergeLeaks`
 
 ### `ir-pass/src/MergePhiPeel.cpp` (663 lines)
 
@@ -1562,6 +1571,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 ### `ir-pass/tools/cq_opt_main.cpp` (126 lines)
 
 - `ir-pass/tools/cq_opt_main.cpp:43` — `main`
+
+### `ir-pass/tools/merge_selftest.cpp` (112 lines)
+
+- `ir-pass/tools/merge_selftest.cpp:42` — `main`
 
 ### `ir-pass/tools/scrub_selftest.cpp` (423 lines)
 

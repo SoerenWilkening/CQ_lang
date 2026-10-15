@@ -20,17 +20,20 @@
 // what they were computed from) — closed over their handle aliases (φ, select,
 // cast, freeze, the rail-bank hop; `handleAliases`). The carried rails
 // themselves are the records, not leaves. Every call outside that loop and
-// reachable from it is scanned; one that acts NON-DIAGONALLY on a leaf fails
-// loudly at that call (`DiagnosticInfoUnsupported`, its `!dbg`):
-//   * `cqrt_ry_*` on the leaf (slot 0; slot 1 of the `_controlled` form);
-//   * `cqrt_cswap` with the leaf in a swapped slot;
-//   * any other `cqrt_*_controlled` with the leaf as its target (a controlled
-//     copy INTO it — the X-bracketed copy; not its control or copy source);
-//   * a call to a non-runtime function consuming it (a lifted `__cq_q_*` body
-//     is asked the same question of its parameter; anything else fails closed).
-// Measurement, frees, diagonal phases (`cqrt_rz_*`) and basis permutations
-// (`cqrt_x`, `cqrt_cnot`, `cqrt_toffoli`, `addc`/`xorc`, templates) are not
-// hazards: none of them interferes the branches a basis record separates.
+// reachable from it is scanned, and the leaf's use is checked against an
+// ALLOWLIST (R11 round 2: a second wall must fail closed). A leaf is safe only
+//   * in a gate diagonal or a computational-basis permutation on it:
+//     `cqrt_rz*` (controlled or not), `cqrt_x`, `cqrt_cnot`, `cqrt_toffoli`,
+//     `cqrt_cswap`, `cqrt_addc_*` / `cqrt_xorc_*`, `cqrt_copy_*` (a controlled
+//     copy INTO it is an XOR), an uncontrolled `cq_template_*` (forward or
+//     `_unc`), `cqrt_free`, `cqrt_measure_*`;
+//   * as the control (slot 0) of any controlled gate;
+//   * as the argument of a lifted `__cq_q_*` body that passes the same test on
+//     its parameter (recursively), or of `cq_measure*`.
+// Every other use — `cqrt_ry*`, `cqrt_h`, a controlled template's data slot,
+// any runtime gate added later, an opaque call — fails loudly at that call
+// (`DiagnosticInfoUnsupported`, its `!dbg`). None of the allowed uses
+// interferes the branches a basis record separates; every other use might.
 // A leaf whose alias class reaches unproven memory fails closed the same way.
 //
 // L1: the question is asked where its answer is final — inside
