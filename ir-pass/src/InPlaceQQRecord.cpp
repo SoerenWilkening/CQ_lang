@@ -6,7 +6,8 @@
 
 #include "InPlaceQQ.h"
 
-#include "ChainWalk.h"         // isInPlaceGateOn
+#include "ChainWalk.h"         // isInPlaceGateOn / isMeasureSink / isOutputSink / isTemplateProducer
+#include "CloneProducer.h"     // isCloneProducer
 #include "EmitInverse.h"       // inPlaceQQAdjointName
 #include "FreePoint.h"         // blockCanRepeat
 #include "MergeStreamGates.h"  // streamGateWrites / handleAliases
@@ -144,32 +145,69 @@ bool isAdjointOf(const CallInst *I, const CallInst *G) {
              inPlaceQQAdjointName(G->getCalledFunction()->getName());
 }
 
-// The rails `X` WRITES, asked of the owners: a converted QQ gate writes its
-// destination; a merge-stream permutation gate / an out-first `_unc` its
-// `streamGateWrites` slots. Anything else (a forward producer minting a FRESH
-// rail, a measurement, a controlled rotation of a user register) writes no
-// compiler record of an older value.
-void writtenRails(const CallInst *X, SmallVectorImpl<const Value *> &Out) {
-  if (isInPlaceQQGate(X)) {
-    Out.push_back(X->getArgOperand(1));
-    return;
+// How a call `X` positioned AFTER the gate uses the relabelled target `V` (or an
+// alias of it). R11 round 2 (finding F3, L2): the classification must be a
+// SUPERSET of b12d4452's `_unc` scan and FAIL CLOSED on anything it cannot place.
+enum class LaterUse {
+  NewValue,  // reads the NEW value and writes no older record: fine.
+  Records,   // writes the rails in `W`; stale iff one predates the gate.
+  Unknown,   // a reader the classification does not know: fail closed.
+};
+
+LaterUse classifyLaterUse(const CallInst *X, const Value *V, const TaintSet &taint,
+                     SmallVectorImpl<const Value *> &W) {
+  const Function *Fn = X->getCalledFunction();
+  if (!Fn)
+    return LaterUse::Unknown;
+  StringRef N = Fn->getName();
+  // An adjoint of ANY family (`cq_template_*_unc`, `cqrt_qram_load_*[_hl]_unc`,
+  // `cqrt_qram_store_*_unc`, a clone's `__cq_q_*_unc`, a `_controlled_inv`): it
+  // re-reads its operands expecting their FORWARD values, so every OTHER handle it
+  // touches is a rail whose forward ran with `V` in it.
+  if (N.ends_with("_unc") || N.ends_with("_inv")) {
+    for (const llvm::Use &A : X->args())
+      if (A.get() != V && A.get()->getType()->isIntegerTy(32))
+        W.push_back(A.get());
+    return LaterUse::Records;
+  }
+  if (isInPlaceQQGate(X)) {  // `V` as its SOURCE: writes its dst.
+    W.push_back(X->getArgOperand(1));
+    return LaterUse::Records;
   }
   SmallVector<unsigned, 2> Slots;
-  if (streamGateWrites(X, Slots))
+  if (streamGateWrites(X, Slots)) {  // cnot / toffoli / x / copy / free
     for (unsigned S : Slots)
-      Out.push_back(X->getArgOperand(S));
+      W.push_back(X->getArgOperand(S));
+    return LaterUse::Records;
+  }
+  // A forward reader that mints a FRESH rail from `V`'s NEW value (a template,
+  // a QRAM load, a clone call proven read-only), a measurement, a tape write, a
+  // branch-phase gate (diagonal): nothing older is written.
+  if (isMeasureSink(X) || isOutputSink(X) || isBranchPhaseGate(X) ||
+      isTemplateProducer(X) || isCloneProducer(X, taint))
+    return LaterUse::NewValue;
+  // A controlled rotation reading `V` only as its CONTROL writes its target.
+  if (N.starts_with("cqrt_r") && N.ends_with("_controlled") &&
+      X->arg_size() == 3 && X->getArgOperand(0) == V &&
+      X->getArgOperand(1) != V) {
+    W.push_back(X->getArgOperand(1));
+    return LaterUse::Records;
+  }
+  return LaterUse::Unknown;
 }
 
 }  // namespace
 
-// THE POSTCONDITION AS A GATE SET (R11 round 1, finding A-F3/B-F1/C-F1, L3).
-// Invariant: no gate after the in-place gate `G` reads `G`'s target `P` (or any
-// alias of it — `handleAliases`, φ/select/cast routes and rail-bank cells) to
-// write a COMPILER RECORD minted BEFORE `G` — the shape of every adjoint, strip
-// and merge replay of a computation that read `P`'s OLD value — unless `G`'s own
-// adjoint ran in between (the spine reversing a dead target's DAG). A record
-// that is user data (a rotated register) is the program's entanglement and is not
-// asked. Every reader kind is asked, not only the `_unc` suffix.
+// THE POSTCONDITION AS A GATE SET (R11 rounds 1-2; L2/L3). Invariant: no gate
+// after the in-place gate `G` reads `G`'s target `P` (or any alias of it) to act
+// on `P`'s OLD value — every adjoint, strip and merge replay of a computation that
+// read `P` before `G` — unless `G`'s own adjoint ran in between (the spine
+// reversing a dead target's DAG). Each later reader is classified by
+// `classifyLaterUse`; a reader that writes a non-user rail minted before `G` is
+// stale, and a reader the classification does not know FAILS CLOSED, as does a
+// target whose aliases cannot be enumerated (`handleAliases` false — parked in
+// memory that is not a proven rail bank). It is a superset of b12d4452's `_unc`
+// scan: every `_unc`/`_inv` is a `Records` reader of all its other handles.
 bool declineStaleInPlaceQQReads(Module &M, const TaintSet &taint) {
   for (Function &F : M) {
     if (F.isDeclaration())
@@ -182,42 +220,45 @@ bool declineStaleInPlaceQQReads(Module &M, const TaintSet &taint) {
     if (Gates.empty())
       continue;
     DominatorTree DT(F);
+    auto loud = [&](const Instruction *At) {
+      F.getContext().diagnose(DiagnosticInfoUnsupported(
+          F, kMsgInPlaceQQStaleAdjoint, At->getDebugLoc()));
+      return true;
+    };
     for (CallInst *G : Gates) {
       Value *P = G->getArgOperand(1);
       SmallPtrSet<Value *, 8> Names;
+      if (!handleAliases(P, taint, DT, Names))
+        return loud(G);  // aliases not enumerable: fail closed.
       Names.insert(P);
-      SmallPtrSet<Value *, 8> Alias;
-      if (handleAliases(P, taint, DT, Alias))
-        Names.insert(Alias.begin(), Alias.end());
       SmallVector<CallInst *, 4> Undo;
       for (User *U : P->users())
         if (auto *I = dyn_cast<CallInst>(U); I && isAdjointOf(I, G))
           Undo.push_back(I);
+      auto undoneBefore = [&](const Instruction *X) {
+        return llvm::any_of(Undo, [&](CallInst *Inv) {
+          return provablyBefore(G, Inv, DT) && provablyBefore(Inv, X, DT);
+        });
+      };
       for (Value *V : Names)
         for (User *U : V->users()) {
           auto *X = dyn_cast<CallInst>(U);
           if (!X || X == G || !provablyBefore(G, X, DT) ||
-              isInPlaceGateOn(X, V))
-            continue;  // not after G, or a gate ON the new value, not a reader.
-          SmallVector<const Value *, 2> W;
-          writtenRails(X, W);
-          bool Stale = false;
+              isInPlaceGateOn(X, V) || isAdjointOf(X, G))
+            continue;  // not after G, a gate ON the new value, or G's undo.
+          SmallVector<const Value *, 4> W;
+          LaterUse K = classifyLaterUse(X, V, taint, W);
+          if (K == LaterUse::NewValue)
+            continue;
+          bool Stale = K == LaterUse::Unknown;
           for (const Value *Rec : W) {
             const auto *RI = dyn_cast<Instruction>(Rec);
-            if (Rec == V || !RI || !provablyBefore(RI, G, DT) ||
-                railIsUserData(Rec))
-              continue;
-            Stale = true;
+            if (Rec != V && RI && provablyBefore(RI, G, DT) &&
+                !railIsUserData(Rec))
+              Stale = true;
           }
-          if (!Stale)
-            continue;
-          if (llvm::any_of(Undo, [&](CallInst *Inv) {
-                return provablyBefore(G, Inv, DT) && provablyBefore(Inv, X, DT);
-              }))
-            continue;
-          F.getContext().diagnose(DiagnosticInfoUnsupported(
-              F, kMsgInPlaceQQStaleAdjoint, X->getDebugLoc()));
-          return true;
+          if (Stale && !undoneBefore(X))
+            return loud(X);
         }
     }
   }

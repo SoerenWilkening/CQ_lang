@@ -639,10 +639,28 @@ llvm::Value *inPlaceReassignRailOperand(BinaryOperator *bo,
 // or a gate whose write set is unknown, is not settled. The classical-immediate
 // M-C path keeps arm (c) as shipped (its analogue is the follow-up filed with
 // this round).
+//
+// THE GATE CLASSES (c′) CAN MEET, each with its write set or a stated refusal
+// (R11 round 2 finding F2, L3 — arm (a) has already taken every in-place gate ON
+// `P`: uncontrolled Ry/Rz, addc/xorc, a converted QQ gate's dst, a controlled Ry
+// on `P`, a QRAM store's array; arm (b) every `_unc`/`_inv`):
+//   * a recorded BRANCH-PHASE gate `cqrt_rz_i1(P, θ)` (a bare-`_Bool` rail
+//     condition kicked back onto `P` itself) — DIAGONAL, writes no basis label
+//     anywhere: EMPTY write set, settled (`isBranchPhaseGate`, by membership);
+//   * a converted QQ gate reading `P` as its SOURCE — writes its dst (slot 1);
+//   * a merge-stream permutation gate (`streamGateWrites`): `cqrt_cnot` /
+//     `cqrt_toffoli` with `P` a control → their target; `cqrt_copy_<W>` and
+//     `cqrt_copy_<W>_controlled` with `P` the source → their destination;
+//     `cqrt_x` / `cqrt_free` on `P` → `P` itself, refused below;
+//   * a controlled rotation reading `P` only as its CONTROL → its target (slot 1);
+//   * anything else (`cqrt_cswap` of the abort park, a gate not yet written) —
+//     write set unknown: NOT settled, i.e. loud for an eligible target, by design.
 bool voidReaderRecordsSettled(const CallInst *CI, const Value *P,
                               const Instruction *bo, const DominatorTree &DT) {
   SmallVector<unsigned, 2> W;
   StringRef N = CI->getCalledFunction()->getName();
+  if (isBranchPhaseGate(CI))
+    return true;
   if (isInPlaceQQGate(CI)) {
     W.push_back(1);  // an earlier converted gate reading `P` writes its dst.
   } else if (!streamGateWrites(CI, W)) {

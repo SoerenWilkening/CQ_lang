@@ -25,9 +25,10 @@
 //        `isNonPermutationMove`). A derived rail with no rotation is a
 //        temporary the spine returns to |0⟩: out of place is already exact.
 //   (E3) the result SURVIVES (measured, rotated, escaped, or continued as the
-//        dead operand of a later QQ op whose result survives — a TAPE WRITE is a
-//        copy-out and does not keep it) and is not discharged inline or by the
-//        M-B plan. A temporary result is better out of place: that is in place
+//        dead operand of a later QQ op whose result survives; after a TAPE WRITE
+//        the spine's own `computeFreePoint` decides — `Escaped` in `main` keeps
+//        it, an `Insert` elsewhere discharges it) and is not discharged inline or
+//        by the M-B plan. A temporary result is better out of place: that is in place
 //        followed by its own adjoint at its death, which the dead-record ruling
 //        asks for and the in-place form cannot deliver.
 // An ELIGIBLE op then (R11 round 1, rulings ruling-dm7f51-step1-departures-
@@ -38,7 +39,8 @@
 //   * with an eligible SUBTRAHEND (`t = a - t`), or a source that depends on the
 //     target's OLD value (`dependsOnTarget`: an alias of `x`, or a compiler
 //     temporary whose lineage reads `x`; a user register stops the walk), fails
-//     loudly (`kMsgInPlaceQQRefused`): no clean in-place form exists;
+//     loudly (`kMsgInPlaceQQRefused` / `kMsgInPlaceQQSelfDependent`): no clean
+//     in-place form exists;
 //   * otherwise converts iff the M-C positional fence holds on `x` for a QUANTUM
 //     source (`inPlacePositionHolds(..., QuantumSource=true)`: G5 not in a loop,
 //     G6 no later use of `x`, G7 every prior use settled — with arm (c′): a
@@ -105,6 +107,9 @@ inline constexpr const char kDeadOperandTag[] = "cq.qq.dead";
 extern const char kMsgInPlaceQQRefused[];
 // Both operands are eligible dead targets (ruling-dm7f51-both-dead-loud-2026-10-15).
 extern const char kMsgInPlaceQQAmbiguousTarget[];
+// The source depends on the dead target's OLD value (ruling Q2; R11 round 2 F4
+// gave it its own message so the fixture pins `dependsOnTarget`, not G7).
+extern const char kMsgInPlaceQQSelfDependent[];
 
 // `cqrt_{xor,add,sub}_{i8,i16,i32,i64}` — the in-place quantum-source symbols.
 bool isInPlaceQQSymbol(llvm::StringRef N);
@@ -143,8 +148,10 @@ bool lowerInPlaceQQ(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // (R11 round 1): any call after the gate that reads its target, or an alias of
 // it, and writes a non-user compiler record minted BEFORE the gate — an adjoint,
 // a strip, a merge replay — with no adjoint of the gate in between, is a read
-// of the relabelled register expecting its old value: a wrong unitary. Fails
-// loudly (`kMsgInPlaceQQStaleAdjoint`) and returns true.
+// of the relabelled register expecting its old value: a wrong unitary. R11 round
+// 2: every `_unc`/`_inv` counts (a superset of the b12d4452 scan), a reader it
+// cannot classify FAILS CLOSED, and so does an alias set `handleAliases` cannot
+// enumerate. Fails loudly (`kMsgInPlaceQQStaleAdjoint`) and returns true.
 extern const char kMsgInPlaceQQStaleAdjoint[];
 bool declineStaleInPlaceQQReads(llvm::Module &M, const TaintSet &taint);
 

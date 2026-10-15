@@ -15,10 +15,12 @@
 ; 435b3bc1; each keeps its own subject by a live use of the operand (see their
 ; headers). RETIREMENT TRIGGER: a self-dependent in-place circuit (bd
 ; test_C_libtooling-dm7f.75; Bennett.jl arith.jl:210-258 copy-in operand choice).
+; R11 round 2 (finding F4): the refusal has its OWN message, so this fixture pins
+; `dependsOnTarget` and not a G7 refusal that could fire on the same module.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
-; CHECK: cq in-place lowering: quantum reassignment of a dead register is not provable in place
+; CHECK: cq in-place lowering: the source of a quantum reassignment depends on the dead register's old value
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

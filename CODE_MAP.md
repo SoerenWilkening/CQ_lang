@@ -41,7 +41,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
 - `runtime/cq_runtime.c` — 1427 physical lines
 - `ir-pass/src/Specialization.cpp` — 1380 physical lines
-- `ir-pass/src/ArithLowering.cpp` — 1274 physical lines
+- `ir-pass/src/ArithLowering.cpp` — 1292 physical lines
 - `tools/library_coverage/probe.py` — 1219 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
 - `ir-pass/src/ChainWalk.cpp` — 1124 physical lines
@@ -227,7 +227,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/AngleSelectEmit.cpp:75` — `emitPhaseAngleSelect`
 - `ir-pass/src/AngleSelectEmit.cpp:190` — `emitAngleSelectRegion`
 
-### `ir-pass/src/ArithLowering.cpp` (1274 lines)
+### `ir-pass/src/ArithLowering.cpp` (1292 lines)
 
 - `ir-pass/src/ArithLowering.cpp:54` — `promote`
 - `ir-pass/src/ArithLowering.cpp:110` — `negateClassicalImmediate`
@@ -236,14 +236,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArithLowering.cpp:285` — `rewriteUnary`
 - `ir-pass/src/ArithLowering.cpp:316` — `rewriteInPlaceValueRail`
 - `ir-pass/src/ArithLowering.cpp:416` — `inPlaceReassignRailOperand`
-- `ir-pass/src/ArithLowering.cpp:642` — `voidReaderRecordsSettled`
-- `ir-pass/src/ArithLowering.cpp:679` — `railZeroedAndReleased`
-- `ir-pass/src/ArithLowering.cpp:703` — `priorUseIsSettled`
-- `ir-pass/src/ArithLowering.cpp:787` — `inPlaceFenceHolds`
-- `ir-pass/src/ArithLowering.cpp:844` — `inPlacePositionHolds`
-- `ir-pass/src/ArithLowering.cpp:995` — `classifyInPlaceReassignment`
-- `ir-pass/src/ArithLowering.cpp:1063` — `lateReassignShape`
-- `ir-pass/src/ArithLowering.cpp:1103` — `lowerLateReassignments`
+- `ir-pass/src/ArithLowering.cpp:658` — `voidReaderRecordsSettled`
+- `ir-pass/src/ArithLowering.cpp:697` — `railZeroedAndReleased`
+- `ir-pass/src/ArithLowering.cpp:721` — `priorUseIsSettled`
+- `ir-pass/src/ArithLowering.cpp:805` — `inPlaceFenceHolds`
+- `ir-pass/src/ArithLowering.cpp:862` — `inPlacePositionHolds`
+- `ir-pass/src/ArithLowering.cpp:1013` — `classifyInPlaceReassignment`
+- `ir-pass/src/ArithLowering.cpp:1081` — `lateReassignShape`
+- `ir-pass/src/ArithLowering.cpp:1121` — `lowerLateReassignments`
 
 ### `ir-pass/src/ArmClassify.cpp` (10736 lines)
 
@@ -674,31 +674,31 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/IOSinkLowering.cpp:463` — `armIOSink`
 - `ir-pass/src/IOSinkLowering.cpp:473` — `lowerControlledIOSinks`
 
-### `ir-pass/src/InPlaceQQ.cpp` (328 lines)
+### `ir-pass/src/InPlaceQQ.cpp` (347 lines)
 
-- `ir-pass/src/InPlaceQQ.cpp:34` — `isInPlaceQQSymbol`
-- `ir-pass/src/InPlaceQQ.cpp:45` — `railIsUserData`
-- `ir-pass/src/InPlaceQQ.cpp:52` — `isInPlaceQQGate`
-- `ir-pass/src/InPlaceQQ.cpp:78` — `qqShape`
-- `ir-pass/src/InPlaceQQ.cpp:107` — `writesRail`
-- `ir-pass/src/InPlaceQQ.cpp:127` — `dependsOnTarget`
-- `ir-pass/src/InPlaceQQ.cpp:173` — `survives`
-- `ir-pass/src/InPlaceQQ.cpp:193` — `convert`
-- `ir-pass/src/InPlaceQQ.cpp:217` — `decideNext`
-- `ir-pass/src/InPlaceQQ.cpp:303` — `lowerInPlaceQQ`
+- `ir-pass/src/InPlaceQQ.cpp:36` — `isInPlaceQQSymbol`
+- `ir-pass/src/InPlaceQQ.cpp:51` — `railIsUserData`
+- `ir-pass/src/InPlaceQQ.cpp:58` — `isInPlaceQQGate`
+- `ir-pass/src/InPlaceQQ.cpp:84` — `qqShape`
+- `ir-pass/src/InPlaceQQ.cpp:113` — `writesRail`
+- `ir-pass/src/InPlaceQQ.cpp:133` — `dependsOnTarget`
+- `ir-pass/src/InPlaceQQ.cpp:181` — `survives`
+- `ir-pass/src/InPlaceQQ.cpp:210` — `convert`
+- `ir-pass/src/InPlaceQQ.cpp:234` — `decideNext`
+- `ir-pass/src/InPlaceQQ.cpp:322` — `lowerInPlaceQQ`
 
-### `ir-pass/src/InPlaceQQRecord.cpp` (229 lines)
+### `ir-pass/src/InPlaceQQRecord.cpp` (270 lines)
 
-- `ir-pass/src/InPlaceQQRecord.cpp:37` — `isQQStem`
-- `ir-pass/src/InPlaceQQRecord.cpp:42` — `maskOf`
-- `ir-pass/src/InPlaceQQRecord.cpp:50` — `setDeadMask`
-- `ir-pass/src/InPlaceQQRecord.cpp:68` — `deadAfter`
-- `ir-pass/src/InPlaceQQRecord.cpp:92` — `recordDeadQQOperands`
-- `ir-pass/src/InPlaceQQRecord.cpp:121` — `transferDeadOperandMask`
-- `ir-pass/src/InPlaceQQRecord.cpp:139` — `isAdjointOf`
-- `ir-pass/src/InPlaceQQRecord.cpp:152` — `writtenRails`
-- `ir-pass/src/InPlaceQQRecord.cpp:173` — `declineStaleInPlaceQQReads`
-- `ir-pass/src/InPlaceQQRecord.cpp:227` — `deadOperandMask`
+- `ir-pass/src/InPlaceQQRecord.cpp:38` — `isQQStem`
+- `ir-pass/src/InPlaceQQRecord.cpp:43` — `maskOf`
+- `ir-pass/src/InPlaceQQRecord.cpp:51` — `setDeadMask`
+- `ir-pass/src/InPlaceQQRecord.cpp:69` — `deadAfter`
+- `ir-pass/src/InPlaceQQRecord.cpp:93` — `recordDeadQQOperands`
+- `ir-pass/src/InPlaceQQRecord.cpp:122` — `transferDeadOperandMask`
+- `ir-pass/src/InPlaceQQRecord.cpp:140` — `isAdjointOf`
+- `ir-pass/src/InPlaceQQRecord.cpp:157` — `classifyLaterUse`
+- `ir-pass/src/InPlaceQQRecord.cpp:211` — `declineStaleInPlaceQQReads`
+- `ir-pass/src/InPlaceQQRecord.cpp:268` — `deadOperandMask`
 
 ### `ir-pass/src/IntrinsicLowering.cpp` (565 lines)
 

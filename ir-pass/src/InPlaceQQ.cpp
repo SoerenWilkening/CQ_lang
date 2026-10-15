@@ -4,6 +4,7 @@
 
 #include "ArithLowering.h"     // inPlacePositionHolds (the ONE positional fence)
 #include "ChainWalk.h"         // isNonPermutationMove
+#include "FreePoint.h"         // computeFreePoint — the spine's own disposition
 #include "MergeStreamGates.h"  // streamGateWrites
 #include "WireWalk.h"          // provablyBefore
 #include "TaintPropagation.h"  // TaintSet
@@ -14,6 +15,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/PostDominators.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Dominators.h"
@@ -37,6 +39,10 @@ bool isInPlaceQQSymbol(StringRef N) {
       return N == "i8" || N == "i16" || N == "i32" || N == "i64";
   return false;
 }
+
+const char kMsgInPlaceQQSelfDependent[] =
+    "cq in-place lowering: the source of a quantum reassignment depends on the "
+    "dead register's old value";
 
 const char kMsgInPlaceQQAmbiguousTarget[] =
     "cq in-place lowering: both operands of a quantum reassignment are dead "
@@ -164,13 +170,16 @@ bool dependsOnTarget(Value *S, const Value *P, const Instruction *Site,
 // what the dead-record ruling asks of a dead value, and converting it would
 // leave the dead value on the user's rail where nothing undoes it (measured:
 // `_BitInt(40) a + b` lowered as an i64 add + mask, slice_bitint).
-// A TAPE WRITE does not keep it (R11 round 1, finding B-F2): `printf` copies the
-// value onto a kept output rail and the result is a temporary after it — measured
-// on 435b3bc1, the spine discharges it there (`_unc` + free right after the
-// write) outside `main`. Counting the tape as survival converted `t ^= a*3;
-// printf(t)` and then broke that discharge (a loud over-decline, and a predicted
-// "taped producer is never reversed" that is false outside `main`).
-bool survives(const CallInst *R, const TaintSet &taint, unsigned Depth = 0) {
+// A TAPE WRITE copies the value onto a kept output rail; whether the result
+// then survives is the SPINE's answer at that site, asked of its own predicate
+// (`computeFreePoint`, R12; R11 rounds 1-2, findings B-F2 / R2-F1): outside
+// `main` it is an `Insert` — the spine discharges the taped temporary right after
+// the write (measured on 435b3bc1), so out of place is exact; inside `main` it is
+// `Escaped` — nothing discharges it, and out of place would leave the old target
+// beside it (`t ^= a; printf(t); cq_theta(&a,.7)` dephased a, P(a=0) 0.836 vs
+// 0.790, rc 0). Neither answer is predicted here; the spine is asked.
+bool survives(const CallInst *R, const TaintSet &taint, Function &F,
+              PostDominatorTree &PDT, unsigned Depth = 0) {
   if (Depth > 16)
     return true;  // a pathological chain: say "kept" (in place or loud).
   for (const User *U : R->users()) {
@@ -179,11 +188,19 @@ bool survives(const CallInst *R, const TaintSet &taint, unsigned Depth = 0) {
       return true;  // ret / store / φ / select: the value escapes or is routed.
     if (isMeasureSink(C) || isNonPermutationMove(C, R))
       return true;
+    if (isOutputSink(C)) {
+      bool Suppressed = false;
+      FreePoint FP = computeFreePoint(const_cast<CallInst *>(R), F, PDT, taint,
+                                      &Suppressed);
+      if (Suppressed || FP.Kind != FreePointKind::Insert)
+        return true;
+      continue;
+    }
     Site T;
     if (qqShape(const_cast<CallInst *>(C), taint, T)) {
       for (unsigned Idx = 0; Idx < 2; ++Idx)
         if (C->getArgOperand(Idx) == R && (T.Mask >> Idx & 1u) &&
-            survives(C, taint, Depth + 1))
+            survives(C, taint, F, PDT, Depth + 1))
           return true;
     }
   }
@@ -236,6 +253,7 @@ Outcome decideNext(Function &F, WidthDispatch &wd, TaintSet &taint,
   DominatorTree DT(F);
   LoopInfo LI(DT);
   InteriorDischargePlan Plan = planInteriorDischarges(F, taint);
+  PostDominatorTree PDT(F);
   for (const Site &S : Sites) {
     Done.insert(S.C);
     // (E) eligibility, per operand: dead after the op in the user's IR (the
@@ -258,7 +276,7 @@ Outcome decideNext(Function &F, WidthDispatch &wd, TaintSet &taint,
     // the user's rail, where nothing undoes it (measured: `_BitInt(40) a + b`
     // lowered as an i64 add + mask, slice_bitint).
     if (railZeroedAndReleased(S.C, /*Before=*/nullptr, /*DT=*/nullptr) ||
-        Plan.GateAt.count(S.C) || !survives(S.C, taint))
+        Plan.GateAt.count(S.C) || !survives(S.C, taint, F, PDT))
       continue;
     auto loud = [&](const char *Msg) {
       F.getContext().diagnose(
@@ -277,9 +295,10 @@ Outcome decideNext(Function &F, WidthDispatch &wd, TaintSet &taint,
     // eligible SUBTRAHEND (`t = a - t`) has no in-place form. A source that
     // depends on `x`'s old value (E3) has no clean in-place form either. Both
     // are refusals of an eligible dead register: loud (owner Q1, ruling Q2).
-    if ((S.Stem == "sub" && Idx == 1) ||
-        dependsOnTarget(S.C->getArgOperand(1 - Idx), P, S.C, DT))
+    if (S.Stem == "sub" && Idx == 1)
       return loud(kMsgInPlaceQQRefused);
+    if (dependsOnTarget(S.C->getArgOperand(1 - Idx), P, S.C, DT))
+      return loud(kMsgInPlaceQQSelfDependent);
     // (F) the fence, asked for a QUANTUM source (G7 arms (c′)/(d4)).
     if (inPlacePositionHolds(S.C, P, taint, DT, LI, &Plan,
                              /*IgnoreSelfMarking=*/false,
