@@ -55,7 +55,6 @@
  */
 #include "cq_runtime.h"
 
-#include <float.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -777,17 +776,18 @@ void cqrt_xorc_f64_controlled(int32_t ctrl, int32_t h, double imm) {
     printf("cqrt_xorc_f64_controlled(h%d, h%d, 0x%016llx)\n", ctrl, h, (unsigned long long)b);
     fflush(stdout);
 }
-/* The f80 print reads bytes 0-9 of a `long double` as the x87 80-bit format;
- * on a target where `long double` is narrower or another format that would
- * read past the object or print the wrong bits, so refuse to build there. */
-_Static_assert(sizeof(long double) >= 10 && LDBL_MANT_DIG == 64,
-               "cqrt_xorc_f80_controlled assumes the x87 80-bit long double");
+/* x86-64 ONLY, like every f80 entry point here (cqrt_alloc_f80,
+ * cqrt_copy_f80_controlled, ... — bd 3c6m.4, all unguarded): the print reads
+ * the x87 80-bit layout. On a target whose `long double` is another format
+ * (e.g. arm64, where it is binary64) it still builds and never reads past the
+ * object (the copy is bounded and zero-padded), but the printed bits are not
+ * an f80 pattern; CQ's f80 lowering targets x86-64. */
 void cqrt_xorc_f80_controlled(int32_t ctrl, int32_t h, long double imm) {
     /* x86 extended: 64-bit significand at bytes 0-7, sign+exponent at 8-9; the
      * 6 padding bytes are not part of the value and are never printed. */
-    unsigned char raw[sizeof imm];
+    unsigned char raw[16] = {0};
     uint64_t lo; uint16_t hi;
-    memcpy(raw, &imm, sizeof imm);
+    memcpy(raw, &imm, sizeof imm < sizeof raw ? sizeof imm : sizeof raw);
     memcpy(&lo, raw, sizeof lo);
     memcpy(&hi, raw + 8, sizeof hi);
     printf("cqrt_xorc_f80_controlled(h%d, h%d, 0x%04x%016llx)\n", ctrl, h,

@@ -483,7 +483,7 @@ void cqrt_xorc_i64_controlled(int32_t ctrl, int32_t h, int64_t  imm);
 void cqrt_xorc_f16_controlled(int32_t ctrl, int32_t h, _Float16 imm);
 void cqrt_xorc_f32_controlled(int32_t ctrl, int32_t h, float    imm);
 void cqrt_xorc_f64_controlled(int32_t ctrl, int32_t h, double   imm);
-void cqrt_xorc_f80_controlled(int32_t ctrl, int32_t h, long double imm);
+void cqrt_xorc_f80_controlled(int32_t ctrl, int32_t h, long double imm);  /* x86-64 (x87 80-bit), like bd 3c6m.4's f80 siblings */
 
 /* -----------------------------------------------------------------
  * In-place reversible arithmetic — QUANTUM source operand (bd
