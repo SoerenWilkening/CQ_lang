@@ -32,10 +32,6 @@ using namespace llvm;
 
 namespace cq {
 
-bool railWindowDistinct(ScalarEvolution &SE, const SCEV *A, const SCEV *B) {
-  return SE.isKnownNonZero(SE.getMinusSCEV(A, B));
-}
-
 DenseMap<BasicBlock *, BasicBlock *> computeWindowRegions(Function &F,
                                                            LoopInfo &LI) {
   DenseMap<BasicBlock *, BasicBlock *> R;
@@ -49,7 +45,9 @@ DenseMap<BasicBlock *, BasicBlock *> computeWindowRegions(Function &F,
         auto It = R.find(P);
         // A predecessor in another loop body (a sub-loop exit, an outer
         // body), or not yet visited (an irreducible edge), starts a region.
-        if (LI.getLoopFor(P) != L || It == R.end()) {
+        // S7: each copy of a versioned window is a window of its own.
+        if (LI.getLoopFor(P) != L || It == R.end() ||
+            P->getTerminator()->getMetadata("cq.railwindow.version")) {
           Entry = true;
           break;
         }
@@ -211,29 +209,14 @@ std::string railWindowNeeds(Function &F, const RailWindowAccesses &Acc,
     if (ReadsCell && !selfValue(St->getValueOperand(), S, SE, Acc, Seen))
       S5 = true;
   }
-  DenseMap<BasicBlock *, BasicBlock *> R = computeWindowRegions(F, LI);
-  DenseMap<BasicBlock *, SmallVector<const SCEV *, 4>> PerRegion;
-  auto Add = [&](Instruction *I) {
-    BasicBlock *E = R.lookup(I->getParent());
-    if (!E)
-      return;
-    const SCEV *S = SE.getSCEV(getLoadStorePointerOperand(I));
-    if (!is_contained(PerRegion[E], S))
-      PerRegion[E].push_back(S);
-  };
-  for (LoadInst *L : Acc.Loads)
-    Add(L);
-  for (StoreInst *St : Acc.Stores)
-    Add(St);
-  for (auto &[E, Ss] : PerRegion)
-    for (unsigned a = 0; a < Ss.size(); ++a)
-      for (unsigned b = a + 1; b < Ss.size(); ++b)
-        if (!railWindowDistinct(SE, Ss[a], Ss[b])) {
-          S7 = true;
-          if (std::getenv("CQ_RAILWINDOW_DBG"))
-            errs() << "CQ_RAILWINDOW_DBG: alias unproven: " << *Ss[a]
-                   << " vs " << *Ss[b] << "\n";
-        }
+  DominatorTree DT(F);
+  RailWindowPair P;
+  if (railWindowUnprovenPair(F, Acc, DT, LI, SE, P)) {
+    S7 = true;
+    if (std::getenv("CQ_RAILWINDOW_DBG"))
+      errs() << "CQ_RAILWINDOW_DBG: alias unproven: " << *P.A << " vs " << *P.B
+             << "\n";
+  }
   // S4 (borrowed-root cells) is built: an array with nothing else pending
   // gets the empty string and is lowered.
   std::string Out;
@@ -305,13 +288,20 @@ unsigned promoteRailWindows(Function &F, RailWindowAccesses &Acc) {
   // F1 (review round 1): promotion forwards a cell across every other access
   // of its region, which is memory-preserving only if no other address in the
   // region can be the same cell. A region holding a pair SCEV cannot prove
-  // distinct is NOT promoted (its memory order stays as written); S7's
-  // versioning is what will split it.
+  // distinct is NOT promoted (its memory order stays as written). S7's
+  // versioning (RailWindowVersion.cpp) runs first and leaves every pair
+  // proven, at least at each access of one side (`railWindowPairProven`).
+  auto AccOf = [&](const CellClass &C) {
+    SmallVector<Instruction *, 8> V(C.Loads.begin(), C.Loads.end());
+    V.append(C.Stores.begin(), C.Stores.end());
+    return V;
+  };
   for (auto &K1 : Order)
     for (auto &K2 : Order)
       if (K1.first == K2.first && K1.second != K2.second &&
           !Pinned.count(K1.first) &&
-          !railWindowDistinct(SE, K1.second, K2.second)) {
+          !railWindowPairProven(SE, DT, K1.second, K2.second,
+                                AccOf(Classes[K1]), AccOf(Classes[K2]))) {
         Pinned.insert(K1.first);
         if (std::getenv("CQ_RAILWINDOW_DBG")) {
           errs() << "CQ_RAILWINDOW_DBG: region ";

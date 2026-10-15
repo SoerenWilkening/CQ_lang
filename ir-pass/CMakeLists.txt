@@ -141,6 +141,9 @@ add_library(CQPass MODULE
   src/RailWindowMaterialize.cpp
   src/RailWindowPromote.cpp
   src/RailWindowQ.cpp
+  src/RailWindowAlias.cpp    # bd 01po.19 S3/S7: the alias question.
+  src/RailWindowVersion.cpp  # bd 01po.19 S7: index alias versioning.
+  src/RailWindowVersionPair.cpp
   src/RegionFlatten.cpp
   src/RegionTreeDetect.cpp
   # bd dm7f.5: multi-exit `ret` normalization under tainted control.

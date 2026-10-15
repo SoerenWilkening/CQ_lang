@@ -1,4 +1,4 @@
-// RailWindow.h — bd `test_C_libtooling-01po.19`, steps S1–S4 of the ROLLED
+// RailWindow.h — bd `test_C_libtooling-01po.19`, steps S1–S4 and S7 of the ROLLED
 // quantum-array design (owner rulings `owner-ruling-01po19-rolled-not-unrolled-
 // 2026-10-15` and `owner-ruling-01po19-rolled-design-2026-10-15`, Q1–Q6 all (a)).
 //
@@ -40,10 +40,10 @@
 //       at its dominating address and written back once at every window exit,
 //       through `PromoteMemToReg` on a per-class scalar: one SSA name per cell,
 //       memory only between windows. Two classes in one window must be
-//       provably distinct cells (`railWindowDistinct`); a region with an
+//       provably distinct cells (`railWindowPairProven`); a region with an
 //       unproven pair is NOT promoted (review round 1 F1: forwarding across a
-//       possibly-aliasing store changes memory semantics) and the array needs
-//       S7's versioning (Q2).
+//       possibly-aliasing store changes memory semantics). S7's versioning
+//       runs first and leaves none.
 //
 //   S4  MATERIALIZATION + BORROWED ROOTS (RailWindowMaterialize.cpp,
 //       RailWindowHandles.cpp). Every access dominated by Q is redirected to
@@ -68,15 +68,25 @@
 //       taint seed and a BORROWED ROOT (never freed, never reverse-played), a
 //       store into it a KEPT-CARRIER sink.
 //
+//   S7  INDEX ALIAS VERSIONING (RailWindowVersion.cpp, RailWindowVersionPair
+//       .cpp; owner Q2 (a)). Between S4 and S3 (addendum note 4): a window
+//       region with a pair of classes SCEV cannot prove distinct is cloned on
+//       the classical `&q[i] != &q[j]`; each copy is a window of its own. The
+//       distinct copy is proven by the dominating guard (`railWindowDistinct`'s
+//       context form), the aliased copy names both classes through one
+//       address, and after S3 its `x ^= x` folds to a classical rebind.
+//       Control == target and more than 8 copies of one window are loud.
+//
 // ── WHAT STILL DECLINES (and loudly) ─────────────────────────────────────────
 //
-// S5–S7 are not built yet (S5 in-place cell updates via dm7f.51 and S6
-// quantum control on cells, lane C; S7 alias versioning). An array that needs
-// one of them is declined with ONE diagnostic naming exactly the steps it
-// still needs (`kMsgWindowPending` + the list), at the window slot, before
-// every stage that adjudicates consumers of tainted values. RETIREMENT
-// TRIGGER: each of S5–S7 removes its own needs-flag from the list and owes an
-// accept fixture with an analytic trace check.
+// S5–S6 are not built yet (S5 in-place cell updates via dm7f.51 and S6
+// quantum control on cells, lane C). An array that needs one of them is
+// declined with ONE diagnostic naming exactly the steps it still needs
+// (`kMsgWindowPending` + the list), at the window slot, before every stage
+// that adjudicates consumers of tainted values. RETIREMENT TRIGGER: each of
+// S5–S6 removes its own needs-flag from the list and owes an accept fixture
+// with an analytic trace check. The S7 flag stays as the postcondition of
+// versioning (unreachable unless a pair survives it).
 //
 // Env lever `CQ_RAILWINDOW_DBG`: the plan of every claimed array and the
 // function after promotion.
@@ -84,11 +94,13 @@
 #ifndef CQ_IRPASS_RAIL_WINDOW_H_
 #define CQ_IRPASS_RAIL_WINDOW_H_
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/IRBuilder.h"
 
+#include <optional>
 #include <string>
 
 namespace llvm {
@@ -99,6 +111,7 @@ class Function;
 class Instruction;
 class LoadInst;
 class LoopInfo;
+class PostDominatorTree;
 class Module;
 class ScalarEvolution;
 class SCEV;
@@ -177,8 +190,78 @@ llvm::Instruction *railWindowQuantizationPoint(const RailWindowAccesses &Acc,
 
 // Are the two cell addresses provably DIFFERENT cells (S3/S7's one question,
 // review round 1 F1: asked before promotion as well as for the needs list)?
+// Without `Ctx`, everywhere (SCEV `isKnownNonZero(A - B)`); with it, at that
+// instruction, also under a dominating `A != B` (S7's versioning guard or the
+// user's own test: `isKnownPredicateAt`, then the dominating-edge walk over
+// `DT`).
 bool railWindowDistinct(llvm::ScalarEvolution &SE, const llvm::SCEV *A,
-                        const llvm::SCEV *B);
+                        const llvm::SCEV *B,
+                        const llvm::Instruction *Ctx = nullptr,
+                        llvm::DominatorTree *DT = nullptr);
+// The dominating-equality fact on two cell addresses at `Ctx`: true when an
+// edge asserting `A != B` dominates it, false when one asserting `A == B`
+// does, none otherwise (the one dominating-edge walk of S7).
+std::optional<bool> railWindowEdgeFact(llvm::ScalarEvolution &SE,
+                                       llvm::DominatorTree &DT,
+                                       const llvm::Instruction *Ctx,
+                                       const llvm::SCEV *A,
+                                       const llvm::SCEV *B);
+// Two cell classes of one window may be promoted side by side iff they are
+// distinct everywhere, or at every access of one of them.
+bool railWindowPairProven(llvm::ScalarEvolution &SE, llvm::DominatorTree &DT,
+                          const llvm::SCEV *A, const llvm::SCEV *B,
+                          llvm::ArrayRef<llvm::Instruction *> AccA,
+                          llvm::ArrayRef<llvm::Instruction *> AccB);
+// One unproven pair: two classes of window region `E` (address SCEVs `A`,
+// `B`; their accesses in instruction order).
+struct RailWindowPair {
+  llvm::BasicBlock *E = nullptr;
+  const llvm::SCEV *A = nullptr, *B = nullptr;
+  llvm::SmallVector<llvm::Instruction *, 8> AccA, AccB;
+};
+// THE alias question of S3/S7 (the one spelling): the first pair of classes
+// in one window region that `railWindowPairProven` cannot prove distinct.
+bool railWindowUnprovenPair(llvm::Function &F, const RailWindowAccesses &Acc,
+                            llvm::DominatorTree &DT, llvm::LoopInfo &LI,
+                            llvm::ScalarEvolution &SE, RailWindowPair &Out);
+// CONTROL == TARGET (S7, RailWindowAlias.cpp): a quantum branch/switch/select
+// condition (`QD`) reading one class of `P` that controls a store to the
+// other. In the aliased copy that gate is controlled by its own target, which
+// is not unitary (owner Q2 ruling: loud). Returns the store, or null.
+llvm::Instruction *
+railWindowSelfControl(llvm::Function &F, const RailWindowAccesses &Acc,
+                      const llvm::SmallPtrSetImpl<llvm::Value *> &QD,
+                      const RailWindowPair &P, llvm::ScalarEvolution &SE,
+                      llvm::DominatorTree &DT, llvm::PostDominatorTree &PDT);
+
+// S1's structural half (RailWindow.cpp): collect the leaf accesses of `AI`,
+// or refuse it.
+bool railWindowCollectAccesses(llvm::AllocaInst *AI, const TaintSet &taint,
+                               llvm::ScalarEvolution &SE,
+                               RailWindowAccesses &Acc);
+
+// ── S7: index alias versioning (RailWindowVersion.cpp) ───────────────────────
+// After S4's materialization of handle array `W`, before S3's promotion
+// (addendum note 4: structural order), then the round-2 checks: version every
+// window region with an unproven pair on the classical `A != B`, promote,
+// fold the aliased copies and assert their postcondition, and compute the
+// pending-step text (`Msg`), the stale-cell offender (`Stale`) and the cell
+// copy offender (`Copy`). Returns false after a loud diagnostic.
+bool railWindowVersionPromoteCheck(llvm::Function &F, llvm::AllocaInst *W,
+                                   const TaintSet &taint, unsigned &Promoted,
+                                   std::string &Msg,
+                                   llvm::Instruction *&Stale,
+                                   llvm::Instruction *&Copy,
+                                   RailWindowAccesses &AccW);
+
+// One S7 versioning of pair `P` (RailWindowVersionPair.cpp): the aliased-copy
+// blocks join `Alias`, every block it creates or copies gets `Origin` = `O`
+// (the copy count is per ORIGINAL window). False after a loud diagnostic.
+bool railWindowVersionPair(
+    llvm::Function &F, llvm::AllocaInst *W, const RailWindowPair &P,
+    llvm::SmallPtrSetImpl<llvm::BasicBlock *> &Alias,
+    llvm::DenseMap<llvm::BasicBlock *, llvm::BasicBlock *> &Origin,
+    llvm::BasicBlock *O);
 
 // Window regions (S3): block -> its region's entry block. A region is the
 // single-entry, back-edge-free part of one loop body (sub-loops excluded) or of

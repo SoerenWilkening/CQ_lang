@@ -48,10 +48,13 @@
 ; decline on protects the one-store model only; the window model replaces it, and
 ; until S4-S7 land the array declines with the list of steps it still needs
 ; (DECLINE -> DECLINE; the message below is mirrored character-for-character).
+; S7 (index alias versioning) LANDED 2026-10-15: the unproven pair is versioned
+; on the classical test of its two cell offsets (RailWindowVersion.cpp), so S7
+; left the list (DECLINE -> DECLINE, one step fewer).
 ; RETIREMENT TRIGGER: each of S4-S7 that lands drops its name from the list; when
 ; the list empties this file becomes an ACCEPT with an analytic trace check.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S6 quantum control on cells, S7 index alias versioning
+; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S6 quantum control on cells{{$}}
 ; CHECK-NOT: tainted value stored to memory
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"

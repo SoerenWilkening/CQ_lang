@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 850 maintained source files, 6872 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 852 maintained source files, 6882 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -1131,21 +1131,30 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RailBankPromote.cpp:1686` — `rewriteOneBank`
 - `ir-pass/src/RailBankPromote.cpp:1953` — `rewriteRailBankCellTypes`
 
-### `ir-pass/src/RailWindow.cpp` (350 lines)
+### `ir-pass/src/RailWindow.cpp` (336 lines)
 
 - `ir-pass/src/RailWindow.cpp:39` — `dbg`
-- `ir-pass/src/RailWindow.cpp:51` — `collectAccesses`
-- `ir-pass/src/RailWindow.cpp:161` — `claims`
-- `ir-pass/src/RailWindow.cpp:235` — `lowerRailWindowArrays`
+- `ir-pass/src/RailWindow.cpp:53` — `railWindowCollectAccesses`
+- `ir-pass/src/RailWindow.cpp:165` — `claims`
+- `ir-pass/src/RailWindow.cpp:239` — `lowerRailWindowArrays`
 
-### `ir-pass/src/RailWindowFence.cpp` (229 lines)
+### `ir-pass/src/RailWindowAlias.cpp` (226 lines)
 
-- `ir-pass/src/RailWindowFence.cpp:42` — `railWindowReachesAvoiding`
-- `ir-pass/src/RailWindowFence.cpp:75` — `isTheta`
-- `ir-pass/src/RailWindowFence.cpp:84` — `rootsOf`
-- `ir-pass/src/RailWindowFence.cpp:107` — `usePoints`
-- `ir-pass/src/RailWindowFence.cpp:119` — `railWindowStaleUse`
-- `ir-pass/src/RailWindowFence.cpp:215` — `railWindowCellCopy`
+- `ir-pass/src/RailWindowAlias.cpp:23` — `railWindowEdgeFact`
+- `ir-pass/src/RailWindowAlias.cpp:58` — `railWindowDistinct`
+- `ir-pass/src/RailWindowAlias.cpp:73` — `railWindowPairProven`
+- `ir-pass/src/RailWindowAlias.cpp:89` — `railWindowUnprovenPair`
+- `ir-pass/src/RailWindowAlias.cpp:136` — `cellReads`
+- `ir-pass/src/RailWindowAlias.cpp:166` — `railWindowSelfControl`
+
+### `ir-pass/src/RailWindowFence.cpp` (232 lines)
+
+- `ir-pass/src/RailWindowFence.cpp:43` — `railWindowReachesAvoiding`
+- `ir-pass/src/RailWindowFence.cpp:76` — `isTheta`
+- `ir-pass/src/RailWindowFence.cpp:85` — `rootsOf`
+- `ir-pass/src/RailWindowFence.cpp:108` — `usePoints`
+- `ir-pass/src/RailWindowFence.cpp:120` — `railWindowStaleUse`
+- `ir-pass/src/RailWindowFence.cpp:218` — `railWindowCellCopy`
 
 ### `ir-pass/src/RailWindowHandles.cpp` (233 lines)
 
@@ -1185,23 +1194,30 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RailWindowMaterialize.cpp:146` — `foldBoolView`
 - `ir-pass/src/RailWindowMaterialize.cpp:168` — `materializeRailWindow`
 
-### `ir-pass/src/RailWindowPromote.cpp` (396 lines)
+### `ir-pass/src/RailWindowPromote.cpp` (386 lines)
 
-- `ir-pass/src/RailWindowPromote.cpp:35` — `railWindowDistinct`
-- `ir-pass/src/RailWindowPromote.cpp:39` — `computeWindowRegions`
-- `ir-pass/src/RailWindowPromote.cpp:77` — `storeReachesLoad`
-- `ir-pass/src/RailWindowPromote.cpp:95` — `needsPromotion`
-- `ir-pass/src/RailWindowPromote.cpp:122` — `selfValue`
-- `ir-pass/src/RailWindowPromote.cpp:146` — `railWindowQuantum`
-- `ir-pass/src/RailWindowPromote.cpp:171` — `railWindowNeeds`
-- `ir-pass/src/RailWindowPromote.cpp:252` — `railWindowCopyNeeds`
-- `ir-pass/src/RailWindowPromote.cpp:257` — `railWindowAllNeeds`
-- `ir-pass/src/RailWindowPromote.cpp:262` — `promoteRailWindows`
+- `ir-pass/src/RailWindowPromote.cpp:35` — `computeWindowRegions`
+- `ir-pass/src/RailWindowPromote.cpp:75` — `storeReachesLoad`
+- `ir-pass/src/RailWindowPromote.cpp:93` — `needsPromotion`
+- `ir-pass/src/RailWindowPromote.cpp:120` — `selfValue`
+- `ir-pass/src/RailWindowPromote.cpp:144` — `railWindowQuantum`
+- `ir-pass/src/RailWindowPromote.cpp:169` — `railWindowNeeds`
+- `ir-pass/src/RailWindowPromote.cpp:235` — `railWindowCopyNeeds`
+- `ir-pass/src/RailWindowPromote.cpp:240` — `railWindowAllNeeds`
+- `ir-pass/src/RailWindowPromote.cpp:245` — `promoteRailWindows`
 
 ### `ir-pass/src/RailWindowQ.cpp` (80 lines)
 
 - `ir-pass/src/RailWindowQ.cpp:20` — `ncd`
 - `ir-pass/src/RailWindowQ.cpp:35` — `railWindowQuantizationPoint`
+
+### `ir-pass/src/RailWindowVersion.cpp` (274 lines)
+
+- `ir-pass/src/RailWindowVersion.cpp:102` — `dbg`
+- `ir-pass/src/RailWindowVersion.cpp:120` — `diagnose`
+- `ir-pass/src/RailWindowVersion.cpp:128` — `inPlaceRoot`
+- `ir-pass/src/RailWindowVersion.cpp:147` — `mergedResidue`
+- `ir-pass/src/RailWindowVersion.cpp:177` — `railWindowVersionPromoteCheck`
 
 ### `ir-pass/src/RecordWindowFreeze.cpp` (99 lines)
 

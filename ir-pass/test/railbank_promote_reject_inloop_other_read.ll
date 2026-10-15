@@ -32,6 +32,12 @@
 ; decline on protects the one-store model only; the window model replaces it, and
 ; until S4-S7 land the array declines with the list of steps it still needs
 ; (DECLINE -> DECLINE; the message below is mirrored character-for-character).
+; S7 (index alias versioning) LANDED 2026-10-15: the unproven pair (q[i] vs the
+; constant cell) is versioned and the window lowers; the module now stops at the
+; NEXT owner, the in-loop tainted accumulator `acc += cell` (F5's X1, loop
+; lowering: `loop-carried tainted value crosses iterations`, the same decline as
+; loop_carried_handle_reject_accumulator.ll). DECLINE -> DECLINE; the clause
+; this file is about (the rail-bank promoter refusing) is still pinned by DBG/NOTS.
 ; RETIREMENT TRIGGER: each of S4-S7 that lands drops its name from the list; when
 ; the list empties this file becomes an ACCEPT with an analytic trace check.
 ; RUN: env CQ_RAILBANK_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering \
@@ -130,4 +136,4 @@ out:
 ;   `if (b[i-1]) ...`).  B4' then becomes the sole defence against the store
 ;   move and this file becomes isolating; re-derive its DECLINE line THEN.
 ;
-; DECLINE: cq rail window: quantum array not lowered yet (bd 01po.19), needs S7 index alias versioning
+; DECLINE: cq loop lowering: loop-carried tainted value crosses iterations

@@ -1,15 +1,19 @@
-; railwindow_coincide_alias_pending.ll — DECLINE (bd `test_C_libtooling-01po.19` S1-S3).
+; railwindow_coincide_alias_pending.ll — DECLINE pending S5 (bd `test_C_libtooling-01po.19` S7 built).
 ;
-; ADVERSARIAL alias probe: `q[i] ^= q[2-i]` names one cell twice at i == 1; SCEV cannot prove the two addresses distinct, so the array needs S7 (owner Q2 (a): versioning on i != j).
-;
-; Before S1-S3 this array declined in the one-store rail bank. Now the rolled
-; window model (RailWindow.h; owner rulings `owner-ruling-01po19-rolled-not-
-; unrolled-2026-10-15`, `owner-ruling-01po19-rolled-design-2026-10-15`) claims it
-; (S1), places its quantization point (S2) and promotes its windows (S3), and then
-; declines with exactly the steps it still needs. The WIN prefix pins the claim,
-; the quantization point and every promoted cell class.
-; RETIREMENT TRIGGER: each of S4-S7 that lands removes its name from the CHECK
-; line; when none is left this file becomes an ACCEPT with an analytic trace check.
+; ADVERSARIAL alias probe: `q[i] ^= q[2-i]` names one cell twice at i == 1. SCEV
+; cannot prove the two addresses distinct, so S7 (owner Q2 (a)) VERSIONS the
+; window on the classical test of the two cell offsets (`%cq.win.ne`, branch
+; tagged `!cq.railwindow.version`):
+;   * DISTINCT copy (i != 2-i): `q[i] ^= q[2-i]` as written — S5's in-place
+;     cell update (dm7f.51 CNOT), still pending;
+;   * ALIASED copy (i == 1): both classes name one cell, S3 promotes ONE name,
+;     `x ^= x` reads `icmp ne v, v`, InstSimplify folds it to the classical
+;     `false`, and the store is `store i1 false` — S4's REBIND to a fresh
+;     `cqrt_alloc_i1(0)` (Q3; the old rail abandoned, never reset or measured).
+; The WIN prefix pins the claim, the one versioning, and the folded aliased
+; copy. RETIREMENT TRIGGER: when S5 lands, the CHECK line empties and this file
+; becomes an ACCEPT with the analytic trace of both copies (distinct: CNOT
+; cell[2-i] -> cell[i]; aliased at i == 1: cqrt_alloc_i1(0) rebinds cell 1).
 ;
 ; SOURCE (clang -O1, verbatim below):
 ;   /* adversarial: two indices that coincide on one trip (i == 2-i at i == 1):
@@ -27,11 +31,18 @@
 ; RUN:   | %filecheck %s --implicit-check-not='cq rail bank' --implicit-check-not='tainted value stored to memory'
 ; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
 ; RUN:   | %filecheck %s --check-prefix=WIN
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S5 in-place cell update, S7 index alias versioning
+; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S5 in-place cell update{{$}}
 ; WIN: CQ_RAILWINDOW_DBG: @main claims %1 cells=i8 loads=4 stores=2 Q=  br label %2
-; WIN: CQ_RAILWINDOW_DBG: region %13 not promoted: alias unproven
-; WIN: CQ_RAILWINDOW_DBG: alias unproven: {(2 + %.rails)<nuw>,+,-1}<nw><%13> vs {%.rails,+,1}<nw><%13>
-; WIN: CQ_RAILWINDOW_DBG: promoted 0 cell class(es)
+; WIN: CQ_RAILWINDOW_DBG: version region %13 on {(2 + %.rails)<nuw>,+,-1}<nw><%13> != {%.rails,+,1}<nw><%13>
+; WIN-NOT: CQ_RAILWINDOW_DBG: version region
+; WIN: CQ_RAILWINDOW_DBG: promoted 1 cell class(es)
+; WIN: %cq.win.ne = icmp ne ptr
+; WIN-NEXT: br i1 %cq.win.ne, label %[[D:[^,]+]], label %[[AL:[^,]+]], !cq.railwindow.version
+; WIN: {{^}}[[D]]:
+; WIN: icmp ne i8
+; WIN: {{^}}[[AL]]:
+; WIN-NEXT: store i1 false, ptr
+; WIN-NEXT: br label
 
 ; ModuleID = 'coincide.c'
 source_filename = "coincide.c"
