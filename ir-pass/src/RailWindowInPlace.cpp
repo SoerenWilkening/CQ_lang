@@ -19,6 +19,7 @@
 // instead (S3's distinct classes; `x ^= x` is never an update here, S7).
 
 #include "RailWindow.h"
+#include "RailWindowAlias.h"
 
 #include "BoolStorageNarrow.h"  // boolCompareXor — the ONE `_Bool` xor spelling
 #include "InPlaceQQ.h"         // railIsUserData
@@ -171,7 +172,7 @@ bool railWindowWritesBack(const Instruction *U, const Value *CellPtr) {
       if (!sameCellAddress(S->getPointerOperand(), CellPtr))
         return railWindowDistinct(SE, CellS,
                                   SE.getSCEV(const_cast<Value *>(
-                                      S->getPointerOperand())))
+                                      S->getPointerOperand())), &I, &DT)
                    ? 0
                    : -1;
       return derivesFrom(S->getValueOperand(), U) ? 1 : -1;
@@ -179,7 +180,7 @@ bool railWindowWritesBack(const Instruction *U, const Value *CellPtr) {
     if (const auto *Ld = dyn_cast<LoadInst>(&I); Ld && inW(Ld->getPointerOperand()))
       return railWindowDistinct(SE, CellS,
                                 SE.getSCEV(const_cast<Value *>(
-                                    Ld->getPointerOperand())))
+                                    Ld->getPointerOperand())), &I, &DT)
                  ? 0
                  : -1;
     return 0;

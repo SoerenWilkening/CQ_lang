@@ -144,6 +144,9 @@ add_library(CQPass MODULE
   # bd 01po.19 S5: in-place cell updates, Q6 header-phi re-materialization.
   src/RailWindowInPlace.cpp
   src/RailWindowPhiUndo.cpp
+  src/RailWindowAlias.cpp    # bd 01po.19 S3/S7: the alias question.
+  src/RailWindowVersion.cpp  # bd 01po.19 S7: index alias versioning.
+  src/RailWindowVersionPair.cpp
   src/RegionFlatten.cpp
   src/RegionTreeDetect.cpp
   # bd dm7f.5: multi-exit `ret` normalization under tainted control.

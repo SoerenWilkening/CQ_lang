@@ -26,11 +26,13 @@
 // an identity on the handle — this fence must widen with it.
 
 #include "RailWindow.h"
+#include "RailWindowAlias.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/ValueTracking.h"  // getUnderlyingObject
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/IR/CFG.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
@@ -161,6 +163,7 @@ Instruction *railWindowStaleUse(Function &F, const RailWindowAccesses &AccW,
                                 const SmallPtrSetImpl<Value *> &Quantum,
                                 ScalarEvolution &SE,
                                 const DenseMap<BasicBlock *, BasicBlock *> &R) {
+  DominatorTree DT(F);
   // The family: every cell read, and every rail stored into a cell. A member's
   // DEFINITION POINT is where it becomes the cell's rail: the load itself, or
   // the store that parks it. Its address is the cell it names.
@@ -212,9 +215,10 @@ Instruction *railWindowStaleUse(Function &F, const RailWindowAccesses &AccW,
         if (Y == X)
           continue;
         // Inside one window the promoted classes are provably distinct cells
-        // (S3's alias proof): a gate there on another class is another rail.
+        // (S3's alias proof, at the gate: S7's versioning guard counts): a
+        // gate there on another class is another rail.
         if (R.lookup(G->getParent()) == R.lookup(D->getParent()) &&
-            railWindowDistinct(SE, Addr[X], Addr[Y]))
+            railWindowDistinct(SE, Addr[X], Addr[Y], G, &DT))
           continue;
         Other = true;
       }

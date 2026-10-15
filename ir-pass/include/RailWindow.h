@@ -1,4 +1,4 @@
-// RailWindow.h — bd `test_C_libtooling-01po.19`, steps S1–S4 of the ROLLED
+// RailWindow.h — bd `test_C_libtooling-01po.19`, steps S1–S4 and S7 of the ROLLED
 // quantum-array design (owner rulings `owner-ruling-01po19-rolled-not-unrolled-
 // 2026-10-15` and `owner-ruling-01po19-rolled-design-2026-10-15`, Q1–Q6 all (a)).
 //
@@ -40,10 +40,10 @@
 //       at its dominating address and written back once at every window exit,
 //       through `PromoteMemToReg` on a per-class scalar: one SSA name per cell,
 //       memory only between windows. Two classes in one window must be
-//       provably distinct cells (`railWindowDistinct`); a region with an
+//       provably distinct cells (`railWindowPairProven`); a region with an
 //       unproven pair is NOT promoted (review round 1 F1: forwarding across a
-//       possibly-aliasing store changes memory semantics) and the array needs
-//       S7's versioning (Q2).
+//       possibly-aliasing store changes memory semantics). S7's versioning
+//       runs first and leaves none.
 //
 //   S4  MATERIALIZATION + BORROWED ROOTS (RailWindowMaterialize.cpp,
 //       RailWindowHandles.cpp). Every access dominated by Q is redirected to
@@ -77,15 +77,25 @@
 //       (design Q6 (a), deferred from S3). A cell updated by a CLASSICAL
 //       operand stays pending (S5 in the list).
 //
+//   S7  INDEX ALIAS VERSIONING (RailWindowVersion.cpp, RailWindowVersionPair
+//       .cpp; owner Q2 (a)). Between S4 and S3 (addendum note 4): a window
+//       region with a pair of classes SCEV cannot prove distinct is cloned on
+//       the classical `&q[i] != &q[j]`; each copy is a window of its own. The
+//       distinct copy is proven by the dominating guard (`railWindowDistinct`'s
+//       context form), the aliased copy names both classes through one
+//       address, and after S3 its `x ^= x` folds to a classical rebind.
+//       Control == target and more than 8 copies of one window are loud.
+//
 // ── WHAT STILL DECLINES (and loudly) ─────────────────────────────────────────
 //
-// S6–S7 are not built yet (S6 quantum control on cells, lane C; S7 alias
-// versioning). An array that needs
-// one of them is declined with ONE diagnostic naming exactly the steps it
-// still needs (`kMsgWindowPending` + the list), at the window slot, before
-// every stage that adjudicates consumers of tainted values. RETIREMENT
-// TRIGGER: each of S5–S7 removes its own needs-flag from the list and owes an
-// accept fixture with an analytic trace check.
+// S6 is not built yet (S6 quantum control on cells, lane C), nor S5's named
+// sub-gaps. An array that needs one of them is declined with ONE diagnostic
+// naming exactly the steps it still needs (`kMsgWindowPending` + the list),
+// at the window slot, before every stage that adjudicates consumers of
+// tainted values. RETIREMENT TRIGGER: each removes its own needs-flag from the
+// list and owes an accept fixture with an analytic trace check. The S7 flag
+// stays as the postcondition of versioning (unreachable unless a pair
+// survives it).
 //
 // Env lever `CQ_RAILWINDOW_DBG`: the plan of every claimed array and the
 // function after promotion.
@@ -93,11 +103,13 @@
 #ifndef CQ_IRPASS_RAIL_WINDOW_H_
 #define CQ_IRPASS_RAIL_WINDOW_H_
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/IRBuilder.h"
 
+#include <optional>
 #include <string>
 
 namespace llvm {
@@ -105,9 +117,11 @@ class AllocaInst;
 class BasicBlock;
 class DominatorTree;
 class Function;
+class ICmpInst;
 class Instruction;
 class LoadInst;
 class LoopInfo;
+class PostDominatorTree;
 class Module;
 class ScalarEvolution;
 class SCEV;
@@ -184,10 +198,25 @@ llvm::Instruction *railWindowQuantizationPoint(const RailWindowAccesses &Acc,
                                                llvm::DominatorTree &DT,
                                                llvm::LoopInfo &LI);
 
-// Are the two cell addresses provably DIFFERENT cells (S3/S7's one question,
-// review round 1 F1: asked before promotion as well as for the needs list)?
-bool railWindowDistinct(llvm::ScalarEvolution &SE, const llvm::SCEV *A,
-                        const llvm::SCEV *B);
+// S1's structural half (RailWindow.cpp): collect the leaf accesses of `AI`,
+// or refuse it.
+bool railWindowCollectAccesses(llvm::AllocaInst *AI, const TaintSet &taint,
+                               llvm::ScalarEvolution &SE,
+                               RailWindowAccesses &Acc);
+
+// ── S7: index alias versioning (RailWindowVersion.cpp) ───────────────────────
+// After S4's materialization of handle array `W`, before S3's promotion
+// (addendum note 4: structural order), then the round-2 checks: version every
+// window region with an unproven pair on the classical `A != B`, promote,
+// fold the aliased copies and assert their postcondition, and compute the
+// pending-step text (`Msg`), the stale-cell offender (`Stale`) and the cell
+// copy offender (`Copy`). Returns false after a loud diagnostic.
+bool railWindowVersionPromoteCheck(llvm::Function &F, llvm::AllocaInst *W,
+                                   const TaintSet &taint, unsigned &Promoted,
+                                   std::string &Msg,
+                                   llvm::Instruction *&Stale,
+                                   llvm::Instruction *&Copy,
+                                   RailWindowAccesses &AccW);
 
 // Window regions (S3): block -> its region's entry block. A region is the
 // single-entry, back-edge-free part of one loop body (sub-loops excluded) or of

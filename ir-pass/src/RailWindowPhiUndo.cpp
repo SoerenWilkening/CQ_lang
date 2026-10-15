@@ -29,6 +29,7 @@
 // some non-cell incoming is not a cell carrier and is left alone.
 
 #include "RailWindow.h"
+#include "RailWindowAlias.h"
 
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/LoopInfo.h"
