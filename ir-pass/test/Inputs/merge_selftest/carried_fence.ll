@@ -36,11 +36,12 @@
 ;                         diagonal, allowed;
 ;   * readers_overapprox_loud (was readers_kept until R11 round 2) after the
 ;                         loop %h controls a controlled Ry onto a fresh %g and
-;                         the final `a` is rotated. Physically harmless, but the
-;                         ENTANGLEMENT CLOSURE protects %g (a controlled gate's
-;                         target joins) and the final rail (an alias of the
-;                         carried rail), so both rotations are loud: the
-;                         accepted over-approximation, pinned so it is seen;
+;                         the final `a` is rotated. The ENTANGLEMENT CLOSURE
+;                         protects %g (a controlled gate's target joins) and
+;                         the final rail; since bd r2j3.36 the Ry onto %g is
+;                         cleared (%g is FRESH there: allocated, never coupled
+;                         before it), and the Ry on the final rail — the record
+;                         itself — is the loud one;
 ;   * measures_kept       the quiet control: after the loop the protected
 ;                         registers are only measured, phased (`cqrt_rz`) and
 ;                         permuted (`cqrt_x`);
