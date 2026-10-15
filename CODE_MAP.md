@@ -785,14 +785,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/MeasureLowering.cpp:222` — `diagnoseMeasure`
 - `ir-pass/src/MeasureLowering.cpp:230` — `lowerMeasures`
 
-### `ir-pass/src/MergeCarriedFence.cpp` (196 lines)
+### `ir-pass/src/MergeCarriedFence.cpp` (211 lines)
 
 - `ir-pass/src/MergeCarriedFence.cpp:29` — `carriedLoop`
 - `ir-pass/src/MergeCarriedFence.cpp:42` — `leavesOf`
-- `ir-pass/src/MergeCarriedFence.cpp:92` — `isRuntime`
-- `ir-pass/src/MergeCarriedFence.cpp:99` — `isHazard`
-- `ir-pass/src/MergeCarriedFence.cpp:143` — `hazardIn`
-- `ir-pass/src/MergeCarriedFence.cpp:157` — `fenceCarriedMergeLeaks`
+- `ir-pass/src/MergeCarriedFence.cpp:107` — `isRuntime`
+- `ir-pass/src/MergeCarriedFence.cpp:114` — `isHazard`
+- `ir-pass/src/MergeCarriedFence.cpp:158` — `hazardIn`
+- `ir-pass/src/MergeCarriedFence.cpp:172` — `fenceCarriedMergeLeaks`
 
 ### `ir-pass/src/MergePhiPeel.cpp` (663 lines)
 

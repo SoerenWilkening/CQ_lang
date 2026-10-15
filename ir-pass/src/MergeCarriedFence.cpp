@@ -41,7 +41,7 @@ Loop *carriedLoop(CallInst *Out, LoopInfo &LI) {
 // its control). Carried records (`Skip`) are not leaves and are not walked.
 void leavesOf(CallInst *Out, const SmallPtrSetImpl<Value *> &Skip,
               const TaintSet &taint, const DominatorTree &DT,
-              SmallPtrSetImpl<Value *> &Leaves) {
+              const LoopInfo &LI, SmallPtrSetImpl<Value *> &Leaves) {
   SmallVector<Value *, 16> Work;
   auto pushOperands = [&](CallInst *C, const Value *Except) {
     for (unsigned S = 0, E = C->arg_size(); S != E; ++S) {
@@ -50,9 +50,21 @@ void leavesOf(CallInst *Out, const SmallPtrSetImpl<Value *> &Skip,
         Work.push_back(Op);
     }
   };
+  SmallVector<CallInst *, 4> MergeWrites;
   for (User *U : Out->users())
-    if (auto *C = dyn_cast<CallInst>(U); C && isMergeWrite(C, Out))
+    if (auto *C = dyn_cast<CallInst>(U); C && isMergeWrite(C, Out)) {
+      MergeWrites.push_back(C);
       pushOperands(C, Out);
+    }
+  // Can gate `C` run before some merge write of `Out` (on this trip, or on a
+  // later one across a back edge)? Then what it writes can be what the merge
+  // copies. LLVM's instruction form orders a shared block and follows cycles.
+  auto feedsAMergeWrite = [&](CallInst *C) {
+    for (CallInst *W : MergeWrites)
+      if (isPotentiallyReachable(C, W, nullptr, &DT, &LI))
+        return true;
+    return false;
+  };
   while (!Work.empty()) {
     Value *V = Work.pop_back_val();
     if (Skip.count(V) || !isRegister(V, taint) || !Leaves.insert(V).second)
@@ -66,15 +78,18 @@ void leavesOf(CallInst *Out, const SmallPtrSetImpl<Value *> &Skip,
       Work.push_back(S->getFalseValue());
     } else if (isa<CastInst>(V) || isa<FreezeInst>(V))
       Work.push_back(cast<Instruction>(V)->getOperand(0));
-    // The stream gates that WROTE V before `Out` was minted (they dominate
-    // it): their other register operands (the CNOT control a flag copies, a
-    // compare a Toffoli conjoins). A gate outside the stream vocabulary (a
-    // rotation, a controlled Ry) computes nothing V is a copy of, and a write
-    // that does not dominate `Out` is not part of what `Out` records; if either
+    // The stream gates that WROTE V and can run before a merge write of `Out`
+    // (R11 round 2: reachability, not dominance of the ALLOCATION — a CNOT
+    // between the alloc and the copies, a write on the back edge that the next
+    // trip's rail records, and a path-conditional write all feed the record):
+    // their other register operands (the CNOT control a flag copies, a compare
+    // a Toffoli conjoins). A gate outside the stream vocabulary (a rotation, a
+    // controlled Ry) computes nothing V is a copy of, and a write no merge
+    // write can follow (after the loop) is not part of the record; if either
     // acts on V after the loop, the hazard scan judges it there.
     for (User *U : V->users()) {
       auto *C = dyn_cast<CallInst>(U);
-      if (!C || C == V || !DT.dominates(C, Out))
+      if (!C || C == V || !feedsAMergeWrite(C))
         continue;
       SmallVector<unsigned, 2> Wr;
       if (!streamGateWrites(C, Wr))
@@ -168,7 +183,7 @@ bool fenceCarriedMergeLeaks(Function &F, const TaintSet &taint,
     CallInst *Out = OL.first;
     Loop *L = OL.second;
     SmallPtrSet<Value *, 16> Leaves;
-    leavesOf(Out, Records, taint, DT, Leaves);
+    leavesOf(Out, Records, taint, DT, LI, Leaves);
     BasicBlock *H = L->getHeader();
     auto after = [&](const Instruction *I) {
       return !L->contains(I->getParent()) &&
