@@ -3,11 +3,14 @@
 ;
 ; `s = q[m] + q[m-1]`, an Ry on q[m-2] (another cell: exempt IN THIS TRIP), then
 ; `cq_measure(s * 3)`. The measured product is kept, and the chain's
-; `zext i8 -> i32` operand of it is not discharged in its trip (a leak). Two
-; trips later the Ry targets q[m] of this trip, still recorded by that rail: a
-; temporary of the pre-gate cell standing at a non-diagonal gate on it. So the
-; exemption also demands the record be discharged before every latch
-; (`recordTripLocal`), and Q4 refuses (the WIN prefix pins the trip-local branch).
+; `zext i8 -> i32` operand of it is not discharged in its trip (a leak). The
+; exemption demands every such record be discharged in its own trip
+; (`recordTripLocal`), so Q4 refuses (the WIN prefix pins the trip-local
+; branch). ⚠ CORRECTED (review (a) C-F2): this loop DESCENDS — later trips
+; rotate q[m-3], q[m-4], ..., never a cell this trip read — so here the leak
+; meets no gate on its source and the refusal is the FAIL-CLOSED policy, an
+; over-decline (bd 01po.19.34), not a hazard. The hazard is the ASCENDING
+; shape, railwindow_trip_reject_ascending_measured_one_path.ll.
 ;
 ; SOURCE (clang -O1, verbatim below):
 ;   #include <stdbool.h>

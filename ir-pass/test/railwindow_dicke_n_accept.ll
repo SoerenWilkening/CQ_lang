@@ -59,7 +59,7 @@
 ;
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s \
-; RUN:   | %filecheck %s
+; RUN:   | %filecheck %s --implicit-check-not='call {{.*}}@cq'
 ; RUN: env CQ_RAILWINDOW_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
 ; RUN:   | %filecheck %s --check-prefix=WIN
 ; WIN: CQ_RAILWINDOW_DBG: @main claims %1 cells=i8 loads=11 stores=7 Q=  br label %11

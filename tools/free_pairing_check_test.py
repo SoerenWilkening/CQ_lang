@@ -2193,6 +2193,19 @@ MEM_MUTANTS = [
          "add nuw nsw i64 %i, 0"),
      "B1-input-aliases-written-rail"),
     # bd 01po.19.17: the Ry is on the SAME cell, through a second read.
+    # bd 01po.19.17 review B-F1 (review_aB/p6): the cells are SWAPPED by two
+    # stores after the record's read, so the Ry through the later spelling of
+    # cell i+1 rotates cell i's rail — the record's own source. A per-cell
+    # drop must not survive a rail-moving store between the read and the write.
+    ("window-cell-temp-swap-then-other-cell-written",
+     sub(sub(WINDOW_CELL_TEMP_OTHER,
+             "call void @cqrt_ry_i1(i32 %l1, double 5", "i32 %l1", "i32 %l1b"),
+         "%u = call", "%u = call i32 @cq_template_zext_i8_to_i32(i32 %t)",
+         "%u = call i32 @cq_template_zext_i8_to_i32(i32 %t)\n"
+         "  store i32 %l0, ptr %a1, align 4\n"
+         "  store i32 %l1, ptr %a0, align 4\n"
+         "  %l1b = load i32, ptr %a1, align 4"),
+     "T2-operand-mutated"),
     ("window-cell-temp-same-cell-written",
      sub(insert_after(WINDOW_CELL_TEMP_OTHER, "%l1 = load i32",
                       "  %l0b = load i32, ptr %a0, align 4"),

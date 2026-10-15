@@ -281,6 +281,26 @@ bool railWindowBeforeInTrip(const Instruction *X, const Instruction *Site,
   return !railWindowReachesAvoiding(Site, X, Reload);
 }
 
+// Does `A`'s value reach a φ through non-call users (a cast, select or φ
+// chain)? Then a later trip reads it under another cell's name (review (a)
+// B-F3), and no per-trip exemption may hold for it.
+static bool carriedAcrossTrip(const Value *A) {
+  SmallVector<const Value *, 8> Work{A};
+  SmallPtrSet<const Value *, 8> Seen{A};
+  while (!Work.empty()) {
+    const Value *V = Work.pop_back_val();
+    for (const User *U : V->users()) {
+      if (isa<PHINode>(U))
+        return true;
+      if (isa<CallBase>(U) || isa<StoreInst>(U) || !isa<Instruction>(U))
+        continue;
+      if (Seen.insert(U).second)
+        Work.push_back(U);
+    }
+  }
+  return false;
+}
+
 void railWindowTripDistinctCells(const Value *P, ArrayRef<Value *> Family,
                                  const Instruction *First,
                                  const Instruction *At,
@@ -295,6 +315,18 @@ void railWindowTripDistinctCells(const Value *P, ArrayRef<Value *> Family,
   TargetLibraryInfoImpl TLII(Triple(F.getParent()->getTargetTriple()));
   TargetLibraryInfo TLI(TLII);
   ScalarEvolution SE(F, TLI, AC, DT, LI);
+  railWindowTripDistinctCells(P, Family, First, At, Out, DT, LI, SE);
+}
+
+void railWindowTripDistinctCells(const Value *P, ArrayRef<Value *> Family,
+                                 const Instruction *First,
+                                 const Instruction *At,
+                                 SmallPtrSetImpl<const Value *> &Out,
+                                 DominatorTree &DT, LoopInfo &LI,
+                                 ScalarEvolution &SE) {
+  const auto *LP = dyn_cast_or_null<LoadInst>(P);
+  if (!LP || !isRailWindowCellRead(LP))
+    return;
   const Loop *L = LI.getLoopFor(LP->getParent());
   // One activation only: the window's opener and discharge sit in `P`'s own
   // loop body, the opener dominating the discharge (no back edge between).
@@ -306,10 +338,13 @@ void railWindowTripDistinctCells(const Value *P, ArrayRef<Value *> Family,
     const auto *LA = dyn_cast<LoadInst>(A);
     if (!LA || LA == LP || LI.getLoopFor(LA->getParent()) != L ||
         getUnderlyingObject(LA->getPointerOperand()) !=
-            getUnderlyingObject(LP->getPointerOperand()))
+            getUnderlyingObject(LP->getPointerOperand()) ||
+        carriedAcrossTrip(LA))
       continue;
     const SCEV *SA = SE.getSCEV(const_cast<Value *>(LA->getPointerOperand()));
-    if (railWindowDistinct(SE, SP, SA))
+    // S7's context form, asked at the window's end (review (a) C-H4): a
+    // versioned copy's guard proves the pair there.
+    if (railWindowDistinct(SE, SP, SA, At, &DT))
       Out.insert(A);
   }
 }

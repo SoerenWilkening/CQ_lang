@@ -2194,8 +2194,11 @@ bool railUnmovedInWindow(Value *P, CallInst *First, Instruction *At,
   if (InWindow)
     railWindowTripDistinctCells(P, Family, First, At, OtherCells);
   for (Value *A : Family)
-  if (!OtherCells.count(A))
   for (User *U : A->users()) {
+    // Only a GATE on another cell's read is skipped (review (a) B-F3): a
+    // φ/select/store user still routes or parks that rail and is asked below.
+    if (OtherCells.count(A) && isa<CallInst>(U))
+      continue;
     if (auto *S = dyn_cast<StoreInst>(U);
         S && InWindow && S->getValueOperand() == A &&
         railWindowOfPointer(S->getPointerOperand()))

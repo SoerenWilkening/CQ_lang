@@ -22,7 +22,8 @@
 ;     }
 ;     int r=0; for(int i=0;i<5;i++) r=2*r+cq_measure(q[i]); return r; }
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s \
+; RUN:   | %filecheck %s --implicit-check-not='call {{.*}}@cq'
 ; CHECK: [[V0:%[-a-zA-Z$._0-9]+]] = call i32 @cqrt_alloc_i1(i1 [[V1:%[-a-zA-Z$._0-9]+]])
 ; CHECK: call void @cqrt_ry_i1(i32 [[V2:%[-a-zA-Z$._0-9]+]], double {{%[-a-zA-Z$._0-9]+}})
 ; CHECK: [[V3:%[-a-zA-Z$._0-9]+]] = call i32 @cq_template_zext_i1_to_i8(i32 [[V4:%[-a-zA-Z$._0-9]+]])

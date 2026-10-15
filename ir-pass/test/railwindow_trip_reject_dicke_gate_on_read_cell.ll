@@ -10,6 +10,15 @@
 ; predates a non-diagonal gate on its own lineage). Physics: the controlled Ry
 ; must see the pre-gate s, whose record would have to survive a gate on its
 ; source cell.
+; ⚠ WHAT THIS PINS, STATED PRECISELY (review (a) C-F3): it never went red for
+; 01po.19.17 — the condition-wire fence refuses it on both binaries, before
+; MergeStreamPlan step 7 runs. Step 7's same-cell refusal is not reachable
+; from C on this branch: a gate on a cell the s chain read, inside the chain's
+; window, always has the chain's condition (or another consumer of it)
+; predating the gate, and that fence is earlier in the pipeline (measured on
+; the C shapes tried: this one and the gate-before-condition variants). A
+; hand-IR isolation of step 7 was not attempted; step 7's same-cell branch has
+; no discriminating fixture (owed). Kept as a REGRESSION PIN of the boundary.
 ;
 ; SOURCE (clang -O1, verbatim below):
 ;   /* Dicke state |D^N_K> for arbitrary N, K — Bärtschi & Eidenbenz (2019).

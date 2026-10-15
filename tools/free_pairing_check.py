@@ -1193,7 +1193,7 @@ def arg_value(a):
 class Call:
     __slots__ = ("line", "res", "sym", "args", "vals", "eff", "text",
                  "ctl_parity", "cargs", "cvals", "window_distinct",
-                 "window_cells")
+                 "window_cells", "window_stored")
 
     def __init__(self, line, res, sym, args, text):
         self.line = line
@@ -1213,6 +1213,9 @@ class Call:
         # bd 01po.19.17: per operand, the (array, SSA base, offset) of a window
         # CELL-READ spelling the checker itself resolved, else None.
         self.window_cells = ()
+        # bd 01po.19.17 review B-F1: per window array, the ordinal (see
+        # `mark_window_stores`) of the last rail-MOVING store before this call.
+        self.window_stored = {}
 
     def key(self):
         return (self.sym, tuple(self.args))
@@ -1251,6 +1254,11 @@ class Function:
         self.loads = []           # [(line_no, %res, ptr_token, text)]
         self.stores = []          # [(line_no, value_token, ptr_token, text)]
         self.insts = []           # [(line_no, text)] every body line (bd xdu2.4)
+        # bd 01po.19.17 review B-F1: the block of every load result and every
+        # store, so a per-cell write-history drop can ask "inside this stream,
+        # and no store into the array before the write".
+        self.load_block = {}      # %res -> block label
+        self.store_blocks = []    # [(line_no, block label, ptr_token, value)]
 
 
 def balanced(s, open_at):
@@ -1354,6 +1362,7 @@ def parse_module(text):
                 if dm.group(2) == "load":
                     fn.loads.append((i + 1, dm.group(1),
                                      first_ptr_operand(ln), ln.strip()))
+                    fn.load_block[dm.group(1)] = cur_label
             sm = STORE_RE.match(ln)
             if sm:
                 # The POINTER operand is after the first comma. Taking the
@@ -1362,6 +1371,9 @@ def parse_module(text):
                 fn.stores.append((i + 1, sm.group(1),
                                   first_ptr_operand(ln.split(",", 1)[1]),
                                   ln.strip()))
+                fn.store_blocks.append((i + 1, cur_label,
+                                        first_ptr_operand(ln.split(",", 1)[1]),
+                                        sm.group(1)))
             cm = CALL_RE.match(ln)
             if cm:
                 open_at = ln.index("(", cm.end() - 1)
@@ -1740,6 +1752,10 @@ class StreamAnalysis:
         # selftest construct a StreamAnalysis directly without one.
         self.xstream = xstream
         self.stream_id = stream_id
+        # bd 01po.19.17 review B-F1: the ordinal of every cell read on this
+        # stream's linear prefix (`mark_window_stores`); the empty default
+        # leaves the per-cell drop OFF (fail closed).
+        self.load_ord = {}
         self.params = params
         self.rail_defs = rail_defs
         # bd 261j(b): names correlated with a kept output carrier. Computed per
@@ -2018,8 +2034,13 @@ class StreamAnalysis:
         every slot on `name` is a cell-read spelling of a PROVABLY DIFFERENT
         cell (`_cells_differ`) is another rail's and is dropped. Sound inside
         ONE stream: a stream is a linear block chain with no back edge, so both
-        spellings' SSA base holds one value across (lo, hi). Anything else —
-        a stored-value spelling, an unresolved address — stays (fail closed)."""
+        spellings' SSA base holds one value across (lo, hi). And only while no
+        rail MOVES between cells (review B-F1: `store %l0, q[i+1]` makes cell
+        i+1's later spelling name the record's rail): both cell reads are
+        loads in this stream's blocks, and no store into the array precedes the
+        write in this stream (`window_stored`), so none lies between the read
+        and the write. Anything else — a stored-value spelling, an unresolved
+        address, a read from another stream — stays (fail closed)."""
         r = self.rails.get(name)
         if r is None:
             return []
@@ -2030,12 +2051,21 @@ class StreamAnalysis:
             if cell is not None:
                 slots = [i for i in c.eff.writes
                          if i < len(c.vals) and c.vals[i] == name]
-                if slots and all(i < len(c.window_cells) and
-                                 _cells_differ(cell, c.window_cells[i])
-                                 for i in slots):
+                if slots and self._unmoved_since(cell, c) and \
+                        all(i < len(c.window_cells) and
+                            c.window_cells[i] is not None and
+                            self._unmoved_since(c.window_cells[i], c) and
+                            _cells_differ(cell, c.window_cells[i])
+                            for i in slots):
                     continue
             out.append((p, c))
         return out
+
+    def _unmoved_since(self, cell, c):
+        """Is the cell read `cell[3]` on this stream's linear prefix, with no
+        rail-moving store into its array between it and the write `c`?"""
+        o = self.load_ord.get(cell[3])
+        return o is not None and o > c.window_stored.get(cell[0], -1)
 
     def unchanged_over(self, name, lo, hi, cone=True, cell=None):
         """(ok, witness lines) — `name`'s writes inside (lo, hi) net to identity.
@@ -3943,9 +3973,64 @@ def apply_window_families(fn, ren):
                 for j, b in enumerate(c.vals)
                 if i != j and window_cells_distinct(fn, ptrs.get(a), ptrs.get(b))}
             c.window_cells = tuple(
-                _window_cell(fn, ptrs[a]) if a in ptrs else None for a in c.vals)
+                (_window_cell(fn, ptrs[a]) + (a,))
+                if a in ptrs and _window_cell(fn, ptrs[a]) is not None else None
+                for a in c.vals)
             rename(c.vals, c.args)
     fn.window_alias = dict(ren)
+
+
+def mark_window_stores(fn, chain, bank_globals):
+    """bd 01po.19.17 review B-F1 — WHEN IS A CELL SPELLING STILL ITS CELL?
+
+    Two loads of provably different cells name different rails only if no
+    rail MOVED between cells in between (`store %l0, q[i+1]` makes the later
+    spelling of cell i+1 name cell i's rail). The stream is extended backwards
+    over its LINEAR PREFIX (each block the single predecessor of the next), so
+    that prefix plus the stream executes in one order. Every event on it gets
+    an ordinal (block order, then line); each stream call's `window_stored`
+    is, per array, the ordinal of the last store into the array before it that
+    MOVES a rail — every store but the write-back of a cell's own read
+    (`store %l, ptr P` with `%l = load ptr P`, same pointer spelling). Returns
+    {cell-read result: ordinal} for the loads on that prefix; a read anywhere
+    else has no ordinal and is never dropped (fail closed)."""
+    if not fn.window_allocas:
+        return {}
+    prefix, seen = [], set(chain)
+    cur = chain[0]
+    while True:
+        ps = fn.preds.get(cur, [])
+        if len(ps) != 1 or ps[0] in seen:
+            break
+        cur = ps[0]
+        seen.add(cur)
+        prefix.insert(0, cur)
+    load_ptr = {res: ptr for _l, res, ptr, _t in fn.loads}
+    by_block = {}
+    for line, lbl, ptr, val in fn.store_blocks:
+        obj = resolve_object(fn, ptr, bank_globals)
+        if obj in fn.window_allocas and load_ptr.get(val) != ptr:
+            by_block.setdefault(lbl, []).append((line, "s", obj))
+    for line, res, _ptr, _t in fn.loads:
+        lbl = fn.load_block.get(res)
+        by_block.setdefault(lbl, []).append((line, "l", res))
+    calls_by_block = {lbl: bcalls for lbl, bcalls, _t in fn.blocks}
+    in_chain = set(chain)
+    ords, last, k = {}, {}, 0
+    for lbl in prefix + list(chain):
+        ev = sorted(by_block.get(lbl, []))
+        if lbl in in_chain:
+            ev = sorted(ev + [(c.line, "c", c) for c in calls_by_block.get(lbl, [])],
+                        key=lambda e: (e[0], e[1]))
+        for _line, kind, x in ev:
+            k += 1
+            if kind == "s":
+                last[x] = k
+            elif kind == "l":
+                ords[x] = k
+            else:
+                x.window_stored = dict(last)
+    return ords
 
 
 def window_cell_pointers(fn, ren):
@@ -4301,6 +4386,8 @@ def check_module(text):
                                 rail_defs.get(fn.name, frozenset()),
                                 recorded.get(fn.name, frozenset()),
                                 xstream, sid)
+            sa.load_ord = mark_window_stores(
+                fn, _chain, getattr(funcs, "bank_globals", set()))
             findings.extend(sa.run())
             verified += sa.verified
             sites += sa.sites
