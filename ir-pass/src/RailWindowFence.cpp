@@ -106,44 +106,40 @@ void rootsOf(Value *V, const SmallPtrSetImpl<Value *> &Members,
 }
 
 // S5 — the in-place cell updates (`railWindowInPlaceUpdate`) and the operand
-// each overwrites: the one whose cell receives the result (a store into the
-// array, through casts and φs, at the address of one of its roots).
+// each overwrites, asked of THE lowering's own predicate (review S5 B-F3: one
+// spelling of "target"): the operand rooted at a cell read `M` for which
+// `railWindowWritesBack(update, M)` holds. Two candidates: neither (the
+// quantum-source round refuses both-dead loudly).
 void collectUpdates(Function &F, const SmallPtrSetImpl<Value *> &Members,
-                    const DenseMap<Value *, const SCEV *> &Addr,
-                    const RailWindowAccesses &AccW, ScalarEvolution &SE,
                     DenseMap<Value *, Value *> &Targets) {
-  // To a fixpoint: an update's result may reach its store only through a
-  // later update of the same cell (`x1 = x0 ^ a; x2 = x1 ^ b; store x2`).
+  // To a fixpoint: a chained update `x2 = x1 ^ b` roots at the cell read only
+  // through `x1`'s own entry.
   for (bool Grew = true; Grew;) {
-  Grew = false;
-  for (Instruction &I : instructions(F)) {
-    Value *X, *Y;
-    bool Sub;
-    if (!railWindowInPlaceUpdate(&I, X, Y, Sub))
-      continue;
-    SmallPtrSet<const SCEV *, 4> Dest;
-    for (StoreInst *S : AccW.Stores) {
-      SmallPtrSet<Value *, 4> R;
-      SmallPtrSet<Value *, 1> One{&I};
-      rootsOf(S->getValueOperand(), One, R, Targets);
-      if (!R.empty())
-        Dest.insert(SE.getSCEV(S->getPointerOperand()));
+    Grew = false;
+    for (Instruction &I : instructions(F)) {
+      Value *X, *Y;
+      bool Sub;
+      if (Targets.count(&I) || !railWindowInPlaceUpdate(&I, X, Y, Sub))
+        continue;
+      Value *Target = nullptr;
+      bool Two = false;
+      for (Value *O : {X, Y}) {
+        if (Sub && O == Y)
+          break;
+        SmallPtrSet<Value *, 4> R;
+        rootsOf(O, Members, R, Targets);
+        for (Value *M : R)
+          if (isa<LoadInst>(M) &&
+              railWindowWritesBack(&I, cast<LoadInst>(M)->getPointerOperand())) {
+            Two |= Target && Target != O;
+            Target = O;
+          }
+      }
+      if (Target && !Two) {
+        Targets[&I] = Target;
+        Grew = true;
+      }
     }
-    Value *Target = nullptr;
-    for (Value *O : {X, Y}) {
-      if (Sub && O == Y)
-        break;
-      SmallPtrSet<Value *, 4> R;
-      rootsOf(O, Members, R, Targets);
-      for (Value *M : R)
-        if (Dest.count(Addr.lookup(M)))
-          Target = Target ? nullptr : O;  // two candidates: neither.
-    }
-    if (Target && !Targets.count(&I)) {
-      Targets[&I] = Target;
-      Grew = true;
-    }
-  }
   }
 }
 
@@ -187,7 +183,7 @@ Instruction *railWindowStaleUse(Function &F, const RailWindowAccesses &AccW,
   // The gates on the array: every in-place `cq_theta` whose wire is a member,
   // and (S5) every in-place cell update, a gate on its target's rail.
   DenseMap<Value *, Value *> Targets;
-  collectUpdates(F, Members, Addr, AccW, SE, Targets);
+  collectUpdates(F, Members, Targets);
   SmallVector<std::pair<Instruction *, SmallPtrSet<Value *, 4>>, 8> Gates;
   for (Instruction &I : instructions(F)) {
     Value *Wire = isTheta(&I) ? cast<CallInst>(&I)->getArgOperand(0)

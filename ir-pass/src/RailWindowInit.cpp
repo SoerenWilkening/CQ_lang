@@ -9,6 +9,7 @@
 
 #include "RailWindow.h"
 
+#include "BoolStorageNarrow.h"  // isBoolZext (the ONE spelling)
 #include "QramLowering.h"  // railBankInstReaches
 
 #include "llvm/Analysis/ValueTracking.h"
@@ -121,10 +122,9 @@ Type *railTypeForImpl(const RailWindowAccesses &Acc,
     BitView &= readOnlyAsBit(L);
   }
   for (StoreInst *S : PostStores) {
-    auto *Z = dyn_cast<ZExtInst>(S->getValueOperand());
     auto *K = dyn_cast<ConstantInt>(S->getValueOperand());
-    const bool Bit = (Z && Z->getSrcTy()->isIntegerTy(1)) ||
-                     (K && K->getValue().ule(1));
+    const bool Bit =
+        isBoolZext(S->getValueOperand()) || (K && K->getValue().ule(1));
     BitStores |= Bit;
     AllBitStores &= Bit;
   }

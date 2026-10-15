@@ -2160,6 +2160,18 @@ MEM_MUTANTS = [
      sub(WINDOW_CELL_CNOT, "%i1 = add", "add nuw nsw i64 %i, 1",
          "add nuw nsw i64 %i, 0"),
      "B1-input-aliases-written-rail"),
+    # bd 01po.19 S5 review B-F1 (a): one operand is a STORED spelling (its one
+    # store can park a different cell each trip): no cell proof, fail closed.
+    ("window-cell-cnot-stored-spelling",
+     sub(WINDOW_CELL_CNOT, "call void @cqrt_cnot", "i32 %l0, i32 %l1",
+         "i32 %h0, i32 %l1"),
+     "B1-input-aliases-written-rail"),
+    # bd 01po.19 S5 review B-F1 (b): offset 2^62 cells wraps to the same byte
+    # address mod 2^64 (i32 cells): the same cell.
+    ("window-cell-cnot-offset-wraps",
+     sub(WINDOW_CELL_CNOT, "%i1 = add", "add nuw nsw i64 %i, 1",
+         "add nuw nsw i64 %i, 4611686018427387904"),
+     "B1-input-aliases-written-rail"),
     # bd 01po.19 S5: two unrelated index bases — not provably distinct.
     ("window-cell-cnot-unprovable-cells",
      sub(sub(WINDOW_CELL_CNOT, "define i32 @slice", "(i64 %i)",

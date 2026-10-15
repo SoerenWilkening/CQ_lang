@@ -98,6 +98,10 @@ bool narrowBoolStorageModule(llvm::Module &M, TaintSet &taint);
 bool boolCompareXor(const llvm::Value *V, llvm::Value *&X, llvm::Value *&Y,
                     bool &Negated);
 
+// THE ONE SPELLING of "`V` is a `zext` of an `i1`" (a `_Bool` widened to its
+// storage type); also asked by the window array's rail-type witness.
+bool isBoolZext(const llvm::Value *V);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_BOOL_STORAGE_NARROW_H_

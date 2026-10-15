@@ -16,7 +16,7 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s --implicit-check-not='error:' --implicit-check-not=cqrt_free \
-; RUN:       --implicit-check-not=cq_template_
+; RUN:       --implicit-check-not=cq_template_ --implicit-check-not='call void @cqrt_cnot'
 ; CHECK-LABEL: define i32 @main(
 ; CHECK: %.rail = load i32, ptr %.rails, align 4
 ; CHECK-NEXT: %cq.rail.addr = getelementptr i32, ptr %.rails, i64 2

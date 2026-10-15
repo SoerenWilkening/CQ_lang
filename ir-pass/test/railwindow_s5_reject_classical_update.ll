@@ -22,7 +22,7 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S5 in-place cell update
+; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S5 classical-operand or subtrahend cell update (bd 01po.19.7){{$}}
 
 ; ModuleID = 'railwindow_s5_reject_classical_update.c'
 source_filename = "railwindow_s5_reject_classical_update.c"

@@ -113,7 +113,13 @@ namespace {
 //   * railwindow_* / railbank_* window declines → kMsgWindowPending + needs
 constexpr char kMsgWindowPending[] =
     "cq rail window: quantum array not lowered yet (bd 01po.19), needs";
-constexpr char kNeedS5[] = "S5 in-place cell update";
+constexpr char kNeedS5[] = "S5 in-place cell update";  // the all-steps text.
+constexpr char kNeedS5Classical[] =  // the S5 sub-gaps, each its own lowering:
+    "S5 classical-operand or subtrahend cell update (bd 01po.19.7)";
+constexpr char kNeedS5Copy[] =
+    "S5 cell value copied into another cell (bd 01po.19.13)";
+constexpr char kNeedS5Partial[] =
+    "S5 cell update not written back once on every path (bd 01po.19.14)";
 constexpr char kNeedS6[] = "S6 quantum control on cells";
 constexpr char kNeedS7[] = "S7 index alias versioning";
 
@@ -157,7 +163,8 @@ std::string railWindowNeeds(Function &F, const RailWindowAccesses &Acc,
   // Values quantum through the array or through taint.
   SmallPtrSet<Value *, 32> QD;
   railWindowQuantum(F, Acc, taint, QD);
-  bool S5 = false, S6 = false, S7 = false;
+  bool S5 = false, S5Classical = false, S5Partial = false, S6 = false,
+       S7 = false;
   for (Instruction &I : instructions(F)) {
     Value *C = nullptr;
     if (auto *B = dyn_cast<BranchInst>(&I); B && B->isConditional())
@@ -186,13 +193,18 @@ std::string railWindowNeeds(Function &F, const RailWindowAccesses &Acc,
         continue;
       if (auto *L = dyn_cast<LoadInst>(V); L && is_contained(Acc.Loads, L))
         ReadsCell = true;
-      // THIS cell updated by a classical operand (`q[i] += 3`) is no S5
-      // update (it would rebind beside its live old rail): still pending.
-      SmallPtrSet<Value *, 8> SS;
-      if (Value *X, *Y; railWindowInPlaceUpdate(V, X, Y, Sub) &&
-                        QD.count(X) != QD.count(Y) &&
-                        selfValue(QD.count(X) ? X : Y, S, SE, Acc, SS))
-        S5 = true;
+      // An update of THIS cell: by a classical operand it is pending; by a
+      // quantum one only under `railWindowWritesBack` (review S5 A-F1, C-F1).
+      SmallPtrSet<Value *, 8> SX, SY;
+      if (Value *X, *Y; railWindowInPlaceUpdate(V, X, Y, Sub)) {
+        bool TX = QD.count(X) && selfValue(X, S, SE, Acc, SX),
+             TY = QD.count(Y) && selfValue(Y, S, SE, Acc, SY);
+        if (QD.count(X) != QD.count(Y) || (Sub && !TX && TY))
+          S5Classical |= TX || TY;  // a classical operand, or the subtrahend.
+        else if ((Sub ? TX && !TY : TX != TY) &&
+                 !railWindowWritesBack(cast<Instruction>(V), St->getPointerOperand()))
+          S5Partial = true;
+      }
       if (auto *I = dyn_cast<Instruction>(V))
         for (Value *Op : I->operands())
           if (QD.count(Op))
@@ -227,8 +239,10 @@ std::string railWindowNeeds(Function &F, const RailWindowAccesses &Acc,
   // S4 (borrowed-root cells) is built: an array with nothing else pending
   // gets the empty string and is lowered.
   std::string Out;
-  for (auto [Need, Text] : {std::pair{S5, kNeedS5}, std::pair{S6, kNeedS6},
-                            std::pair{S7, kNeedS7}})
+  for (auto [Need, Text] :
+       {std::pair{S5Classical, kNeedS5Classical}, std::pair{S5, kNeedS5Copy},
+        std::pair{S5Partial, kNeedS5Partial}, std::pair{S6, kNeedS6},
+        std::pair{S7, kNeedS7}})
     if (Need)
       Out += (Out.empty() ? std::string(kMsgWindowPending) + " "
                           : std::string(", ")) +

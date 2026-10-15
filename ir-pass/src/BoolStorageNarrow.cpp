@@ -24,12 +24,12 @@ using namespace llvm;
 
 namespace cq {
 
-namespace {
-
 bool isBoolZext(const Value *V) {
   const auto *Z = dyn_cast<ZExtInst>(V);
   return Z && Z->getSrcTy()->isIntegerTy(1);
 }
+
+namespace {
 
 // `icmp ne %p, 0` / `icmp eq %p, 1` (either operand order): under (W1) it IS the
 // low bit, so it is replaced by the narrowed φ itself (`if (t)` on a stored
@@ -240,12 +240,17 @@ bool narrowBoolStoragePhis(Function &F, TaintSet &taint,
 }
 
 bool boolCompareXor(const Value *V, Value *&X, Value *&Y, bool &Negated) {
+  // D1's Boolean compare (`boolCompareOther`, review S5 C-F6: one spelling)
+  // with a `zext i1` on BOTH sides, so each side has an `i1` to xor.
   const auto *C = dyn_cast<ICmpInst>(V);
-  if (!C || !C->isEquality() || !isBoolZext(C->getOperand(0)) ||
-      !isBoolZext(C->getOperand(1)))
+  const SetVector<PHINode *> NoWeb;
+  Value *O = C && isBoolZext(C->getOperand(0))
+                 ? boolCompareOther(C, C->getOperand(0), NoWeb)
+                 : nullptr;
+  if (!O || !isBoolZext(O))
     return false;
   X = cast<ZExtInst>(C->getOperand(0))->getOperand(0);
-  Y = cast<ZExtInst>(C->getOperand(1))->getOperand(0);
+  Y = cast<ZExtInst>(O)->getOperand(0);
   Negated = C->getPredicate() == ICmpInst::ICMP_EQ;
   return true;
 }

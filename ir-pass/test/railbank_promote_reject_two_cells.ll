@@ -145,4 +145,4 @@ out:
 ;   widening for B4'). B2 then becomes reachable and this file becomes an
 ;   ISOLATING negative again; re-derive its DECLINE line THEN.
 ;
-; DECLINE: cq rail window: quantum array not lowered yet (bd 01po.19), needs S5 in-place cell update, S7 index alias versioning
+; DECLINE: cq rail window: quantum array not lowered yet (bd 01po.19), needs S5 cell value copied into another cell (bd 01po.19.13), S7 index alias versioning

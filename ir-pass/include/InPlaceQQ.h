@@ -147,7 +147,7 @@ bool railIsUserData(const llvm::Value *P);
 // E2 for operand `Op` of the quantum-source op `Result` (bd 01po.19 S5, design
 // §4 interface (b); RailWindowInPlace.cpp): a quantum-array CELL READ is user
 // data the array owns, and its old value is dead only when `Result` is stored
-// back into ITS cell (`railWindowStoredBack`) — a source cell keeps its rail
+// back into ITS cell (`railWindowWritesBack`) — a source cell keeps its rail
 // whatever its SSA deadness. Any other operand asks `railIsUserData`.
 bool qqTargetIsUserData(const llvm::Value *Result, const llvm::Value *Op);
 

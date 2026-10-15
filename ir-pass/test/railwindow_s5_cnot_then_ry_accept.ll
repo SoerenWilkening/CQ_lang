@@ -23,7 +23,7 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s --implicit-check-not='error:' --implicit-check-not=cqrt_free \
-; RUN:       --implicit-check-not=cq_template_
+; RUN:       --implicit-check-not=cq_template_ --implicit-check-not='call void @cqrt_cnot'
 ; CHECK-LABEL: define i32 @main(
 ; CHECK: %.rails = alloca i32, i64 3, align 4, !cq.railwindow
 ; CHECK: call void @cqrt_ry_i1(i32 %.rail, double %{{[0-9]+}})

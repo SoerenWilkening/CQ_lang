@@ -7,7 +7,7 @@
 ; (RailWindowPhiUndo.cpp), maps it back to a load of cell i by SCEV identity.
 ; The update `icmp ne (zext q[i+1]), (zext q[i])` is the `_Bool` spelling of an
 ; i1 xor (interface (a), `boolCompareXor`); its old operand q[i+1] is a cell
-; read whose cell receives the result (interface (b), `railWindowStoredBack`),
+; read whose cell receives the result (interface (b), `railWindowWritesBack`),
 ; reloaded every trip (`railWindowSameTripTarget`), so dm7f.51's quantum-source
 ; round lowers it IN PLACE: `cqrt_cnot(q[i], q[i+1])`, the store a self-store.
 ; Neither the out-of-place `cq_template_xor` (r2j3.33) nor a dead `zext` copy
@@ -33,7 +33,8 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s --implicit-check-not='error:' --implicit-check-not=cqrt_free \
-; RUN:       --implicit-check-not=cq_template_ --implicit-check-not='phi i8'
+; RUN:       --implicit-check-not=cq_template_ --implicit-check-not='phi i8' \
+; RUN:       --implicit-check-not='call void @cqrt_cnot'
 ; CHECK-LABEL: define i32 @main(
 ; CHECK: %h = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK: call void @cqrt_ry_i1(i32 %h, double 0x3FF921FB54442D18)

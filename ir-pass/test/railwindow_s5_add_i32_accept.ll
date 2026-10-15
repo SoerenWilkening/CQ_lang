@@ -18,7 +18,7 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s --implicit-check-not='error:' --implicit-check-not=cqrt_free \
-; RUN:       --implicit-check-not=cq_template_
+; RUN:       --implicit-check-not=cq_template_ --implicit-check-not='call void @cqrt_add_i32'
 ; CHECK-LABEL: define i32 @main(
 ; CHECK: %h = call i32 @cqrt_alloc_i32(i32 %cq.rail.init)
 ; CHECK: %.cell = load i32, ptr %cq.cell.addr, align 4

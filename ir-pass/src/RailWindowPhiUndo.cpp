@@ -53,7 +53,7 @@ namespace cq {
 
 namespace {
 
-// Mirrored CHARACTER-FOR-CHARACTER by railwindow_reject_phi_undo.ll.
+// Mirrored CHARACTER-FOR-CHARACTER by railwindow_s5_reject_phi_undo.ll.
 constexpr char kMsgWindowPhiUndo[] =
     "cq rail window: a loop-carried cell value cannot be mapped back to its "
     "cell";

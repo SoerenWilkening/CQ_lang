@@ -3918,20 +3918,12 @@ def apply_window_families(fn, ren):
 
 
 def window_cell_pointers(fn, ren):
-    """{spelling: cell pointer} for every renamed window spelling with ONE
-    address (a cell read's pointer, or the single store parking a value)."""
-    ptrs, seen = {}, set()
-    for _line, res, ptr, _text in fn.loads:
-        if res in ren:
-            ptrs[res] = ptr
-    for _line, val, ptr, _text in fn.stores:
-        if val in ren and val not in ptrs:
-            if val in seen:
-                ptrs.pop(val, None)
-                continue
-            seen.add(val)
-            ptrs[val] = ptr
-    return ptrs
+    """{spelling: cell pointer} for every renamed window CELL READ. Only loads
+    (review S5 B-F1 (a)): a stored value's one store can sit in a loop and
+    park the rail in a different cell every trip, so its address names no one
+    cell; a load's result is the rail of the cell it read, at the call that
+    uses it."""
+    return {res: ptr for _line, res, ptr, _text in fn.loads if res in ren}
 
 
 GEP_CELL_RE = re.compile(
@@ -3980,8 +3972,10 @@ def window_cells_distinct(fn, pa, pb):
     if pa is None or pb is None:
         return False
     a, b = _window_cell(fn, pa), _window_cell(fn, pb)
+    # Offsets are compared MODULO the address space in cells (review S5 B-F1
+    # (b)): `gep i32, %w, i + 2^62` wraps onto `gep i32, %w, i` mod 2^64 bytes.
     return a is not None and b is not None and a[0] == b[0] and \
-        a[1] == b[1] and a[2] != b[2]
+        a[1] == b[1] and (a[2] - b[2]) % (1 << 62) != 0
 
 
 # ---------------------------------------------------------------------------

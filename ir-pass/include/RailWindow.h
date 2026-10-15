@@ -238,12 +238,19 @@ bool railWindowInPlaceUpdate(llvm::Value *V, llvm::Value *&X, llvm::Value *&Y,
 bool railWindowSameTripTarget(const llvm::Instruction *Site,
                               const llvm::Value *P,
                               const llvm::DominatorTree &DT);
-// S5 interface (b), WHICH cell an update overwrites: is `Cell` a cell read
-// whose own cell receives `Result` (through casts and φs)? Only that operand's
-// old value is dead; a source cell keeps its rail in the array, so its SSA
-// deadness is not the register's (`q[i+1] ^= q[i]` reads both cells once, and
-// only cell i+1 is overwritten).
-bool railWindowStoredBack(const llvm::Value *Result, const llvm::Value *Cell);
+// S5 interface (b), WHICH cell an update overwrites — THE ONE PREDICATE (R12;
+// asked by InPlaceQQ's E2 via `qqTargetIsUserData`, and by the stale-cell
+// fence's gate set, and by the S5 needs list): may the update `U` (an `xor`/
+// `add`/`sub`, its `_Bool` compare spelling, or its lowered template) be
+// lowered IN PLACE on the rail of the cell at `CellPtr`? Iff (1) every store of
+// `U`'s result (through casts and φs) is into that cell and the result escapes
+// nowhere else — never a
+// second cell (R7, review S5 A-F1), and (2) the write-back is a MUST: every
+// path from `U` stores a value derived from `U` into that cell before any read
+// of a cell that may be it, any other store into it, `U` again, or a return
+// (review S5 C-F1: on a path that skips the write-back C keeps the old value).
+bool railWindowWritesBack(const llvm::Instruction *U,
+                          const llvm::Value *CellPtr);
 // (`qqTargetIsUserData`, declared in InPlaceQQ.h, is defined beside these.)
 
 // The values quantum through the taint set or through the array's own cell

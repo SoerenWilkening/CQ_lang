@@ -13,7 +13,9 @@
 ; RUN:   | %filecheck %s --implicit-check-not='cq rail bank'
 ; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
 ; RUN:   | %filecheck %s --check-prefix=WIN
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S5 in-place cell update, S7 index alias versioning
+; (bd 01po.19 S5 review C-F5: the S5 sub-gap is named — `q[i] = l2 ^ 1` is a
+; classical-operand update of the cell.)
+; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S5 classical-operand or subtrahend cell update (bd 01po.19.7), S7 index alias versioning{{$}}
 ; WIN: CQ_RAILWINDOW_DBG: @main claims %q cells=i32 loads=4 stores=3 Q=  br label %H
 ; WIN: CQ_RAILWINDOW_DBG: region %H not promoted: alias unproven
 ; WIN: CQ_RAILWINDOW_DBG: alias unproven: {%q.rails,+,4}<nw><%H> vs ((4 * %j) + %q.rails)

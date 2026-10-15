@@ -233,7 +233,10 @@ bool handleAliases(Value *X, const TaintSet &taint, const DominatorTree &DT,
       if (auto *SI = dyn_cast<StoreInst>(U)) {
         SmallVector<LoadInst *, 4> Cells;
         SmallVector<Value *, 8> Family;
-        if (SI->getValueOperand() == V && railStoredToRailWindow(V) &&
+        // THIS store's pointer (review S5 B-F2): a second park of V into a
+        // bank or other memory must take its own clause below, never this skip.
+        if (SI->getValueOperand() == V &&
+            railWindowOfPointer(SI->getPointerOperand()) &&
             railWindowFamily(V, Family)) {
           Work.append(Family.begin(), Family.end());
           continue;
