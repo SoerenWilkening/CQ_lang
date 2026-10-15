@@ -6641,7 +6641,9 @@ function(cq_railbank_matrix test_name source)
 endfunction()
 cq_railbank_matrix(e2e-railbank-dynamic-admission-matrix railbank_dynamic_matrix.c)
 # The twin QUARANTINE's NEG mutants (moved digest, moved divergence, stale entry,
-# unquarantined divergence, incomplete record) on synthetic traces; no compile.
+# unquarantined divergence, incomplete record) on synthetic traces, plus the
+# require_railwindow / require_railbank ROUTE rows (an accept reached through a
+# non-window route must fail); no compile.
 add_test(NAME e2e-railbank-twin-quarantine-selftest
   COMMAND "${_E2E_PYTHON}"
     "${CMAKE_CURRENT_SOURCE_DIR}/run_railbank_dynamic_matrix.py" --selftest)
@@ -6653,6 +6655,17 @@ add_test(NAME e2e-slice-railbank-nonmain
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_nonmain.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_nonmain.expected.log")
+
+# bd 01po.19.21 review F3: a re-executed cell walk rotates the SAME window rail
+# twice (Ry.Ry on h0..h3, 4 mints), never a fresh seed (the pre-S4 miscompile).
+add_test(NAME e2e-slice-railwindow-rewalk-fixed
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railwindow_rewalk_fixed.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railwindow_rewalk_fixed.expected.log"
+    "" "--forbid-qram")
 
 add_test(NAME e2e-slice-railbank-flat-twin
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"

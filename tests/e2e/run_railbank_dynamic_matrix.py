@@ -151,6 +151,18 @@ def literal_bank_stores(lowered_text: str) -> list[tuple[str, str, str]]:
     return hits
 
 
+def route_errors(case_id: int, spec: dict, lowered_text: str, is_twin: bool) -> list[str]:
+    """The ROUTE an accepted row must take (pure, so `--selftest` can attack it)."""
+    errs = []
+    if spec.get("require_railbank", True) and not is_twin and "!cq.railbank" not in lowered_text:
+        errs.append(f"CASE={case_id}: accepted bank lacks !cq.railbank")
+    # bd 01po.19 S4: a row the rail WINDOW (not the rail bank) lowers pins
+    # that route, so an accept through some third path is still a red.
+    if spec.get("require_railwindow", False) and "!cq.railwindow" not in lowered_text:
+        errs.append(f"CASE={case_id}: accepted window lacks !cq.railwindow")
+    return errs
+
+
 def check_case(case_id: int, spec: dict, twin_sides: set[int],
                stage1: pathlib.Path, lowered: pathlib.Path,
                lower_result: subprocess.CompletedProcess[str]) -> list[str]:
@@ -167,13 +179,7 @@ def check_case(case_id: int, spec: dict, twin_sides: set[int],
                 errs.append(f"CASE={case_id}: {spec.get('stage1_note', 'stage-1 shape moved')}"
                             f" (missing {needle!r})")
                 break
-        require_bank = spec.get("require_railbank", True) and case_id not in twin_sides
-        if require_bank and "!cq.railbank" not in lowered_text:
-            errs.append(f"CASE={case_id}: accepted bank lacks !cq.railbank")
-        # bd 01po.19 S4: a row the rail WINDOW (not the rail bank) lowers pins
-        # that route, so an accept through some third path is still a red.
-        if spec.get("require_railwindow", False) and "!cq.railwindow" not in lowered_text:
-            errs.append(f"CASE={case_id}: accepted window lacks !cq.railwindow")
+        errs += route_errors(case_id, spec, lowered_text, case_id in twin_sides)
         if "cqrt_qram_" in lowered_text:
             errs.append(f"CASE={case_id}: rail bank emitted cqrt_qram_*")
         for fn, val, ptr in literal_bank_stores(lowered_text):
@@ -258,7 +264,26 @@ def selftest() -> int:
         ok = (not errs) if needle is None else any(needle in e for e in errs)
         bad += not ok
         print(f"  [{'ok ' if ok else 'BAD'}] {tag}: {errs[0].splitlines()[0] if errs else 'pass'}")
-    print(f"railbank twin quarantine selftest: {len(rows)} row(s), {bad} failed")
+    # The ROUTE key: an accept that reached exit 0 through a NON-window route
+    # (here: a rail bank, or no array lowering at all) must fail a
+    # require_railwindow row.
+    win = {"accept": True, "require_railbank": False, "require_railwindow": True}
+    routes = [
+        ("POS window route", win, "%.rails = alloca i32, i64 4, !cq.railwindow !6\n", None),
+        ("NEG accept via the rail bank", win, "%b = alloca [4 x i32], !cq.railbank !6\n",
+         "lacks !cq.railwindow"),
+        ("NEG accept with no array lowering", win, "define i32 @main() {\n  ret i32 0\n}\n",
+         "lacks !cq.railwindow"),
+        ("NEG bank row lowered by the window", {"accept": True},
+         "%.rails = alloca i32, i64 4, !cq.railwindow !6\n", "lacks !cq.railbank"),
+    ]
+    for tag, spec, text, needle in routes:
+        errs = route_errors(99, spec, text, False)
+        ok = (not errs) if needle is None else any(needle in e for e in errs)
+        bad += not ok
+        print(f"  [{'ok ' if ok else 'BAD'}] {tag}: {errs[0] if errs else 'pass'}")
+    n = len(rows) + len(routes)
+    print(f"railbank twin quarantine selftest: {n} row(s), {bad} failed")
     return 1 if bad else 0
 
 

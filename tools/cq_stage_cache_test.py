@@ -472,8 +472,10 @@ def main():
                                         "CQ_S3_CC_FLAGS=(-c)",
                                         "CQ_S3_CC_FLAGS=(-mllvm -cq-nonexistent-flag -c)")])
             rc, out, n1, n3, npy = run(warm_copy("rcS3bad"), src=qram_src, gold=qram_gold, harness=h)
+            # ...and RED for THAT reason (R17): clang names the rejected option.
             expect("HD stage-3 flags + an unknown -mllvm flag: MISS and RED",
-                   rc != 0 and n3 == 1, "rc=%d s3=%d" % (rc, n3))
+                   rc != 0 and n3 == 1 and "cq-nonexistent-flag" in out,
+                   "rc=%d s3=%d named=%s" % (rc, n3, "cq-nonexistent-flag" in out))
             # r1's (d): run_slice.sh's own stage-1 flags at -O0.
             h = harness_copy("o0", [("tests/e2e/run_slice.sh",
                                      'S1_FLAGS=(-I"$INC" -include "$INC/CQ.h" -O1 -emit-llvm -S)',

@@ -578,6 +578,26 @@
 # The six k-axis TRACE-DIVERGENCE cells (k2b kloop, kiprep kflat/kloop, kover
 # kflat/kloop, kprep kloop; 01po.19 S4 a3fbac74) are NOT recorded here: by the
 # 2026-10-15 ruling they moved to the QUARANTINE as class I (bd 01po.19.30).
+# THE COUNT: "FAILED (33)" was 33 failure LINES over 27 CELLS. Each of the six
+# divergent cells failed twice (TRACES DIFFER and verdict changed), so the
+# cells were 21 hand-updated + 6 quarantined = 27.
+# REBASED ONTO 109d3b7e (01po.19 S6, which retired the "needs S6 quantum control
+# on cells" clause), four more rows moved, each read from its trace:
+#   * kcond kloop, kicond kloop: same ROLLED-ONLY verdict, and the flat side's
+#     decline is now `control flow under quantum control` (message only).
+#   * kicond kflat: DECLINE-BOTH-DIFFERENT -> ROLLED-ONLY. A DECLINE->ACCEPT on
+#     the ROLLED side. Trace: the cells h1, h2 are pre-minted |0>. Per trip:
+#     icmp_sgt(a,5) -> f, then Ry_c(f, cell i, 0.5), then the strip (a is
+#     unchanged), then free f (|0>). So k[i] = Ry(0.5)|0> exactly when a > 5,
+#     which is the source. The flat scalar twin still declines.
+#   * kread kloop: ROLLED-ONLY -> both accept. The flat side now lowers
+#     `if (k[i])` as a cell register condition (Ry_c(k[i], a, 0.25)). Both
+#     streams give a: Ry(0.5), Ry_c(k0), Ry_c(k1), with each k[i] = Ry(0.5)|0>,
+#     which is correct. The pair differs only by the flat side's orphan cell-0
+#     mint, so it joined quarantine class I (EQUIV after the orphan drop).
+# READ AN UNROLLED-ONLY / ROLLED-ONLY ROW FOR WHAT IT PINS: the accepting side
+# is pinned by VERDICT ONLY. Its trace is not compared with anything, because
+# the twin declined. The analytic reads above are that side's only witness.
 # Each is EQUIV under tools/trace_twin_equiv.py once never-touched |0> mints are
 # dropped (the window pre-mints every cell at its entry; on the flat side -O1
 # store-forwards the zero seed to k[0]'s cq_theta, so cell 0 is rotated as a
@@ -697,15 +717,14 @@ m_none_k2b_none_none_kflat ACCEPT-IDENTICAL
 m_none_karith_none_none_kflat UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
 m_none_karith_none_none_kloop UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
 m_none_kcond_none_none_kflat ROLLED-ONLY	cq controlled lowering: control flow under quantum control
-m_none_kcond_none_none_kloop ROLLED-ONLY	cq rail window: quantum array not lowered yet (bd 01po.19), needs S6 quantum control on cells
-m_none_kicond_none_none_kflat DECLINE-BOTH-DIFFERENT	cq rail window: quantum array not lowered yet (bd 01po.19), needs S6 quantum control on cells	cq controlled lowering: control flow under quantum control
-m_none_kicond_none_none_kloop ROLLED-ONLY	cq rail window: quantum array not lowered yet (bd 01po.19), needs S6 quantum control on cells
+m_none_kcond_none_none_kloop ROLLED-ONLY	cq controlled lowering: control flow under quantum control
+m_none_kicond_none_none_kflat ROLLED-ONLY	cq controlled lowering: control flow under quantum control
+m_none_kicond_none_none_kloop ROLLED-ONLY	cq controlled lowering: control flow under quantum control
 m_none_kidx_none_none_kflat DECLINE-BOTH	cq QRAM access: array address has aliasing fan-out
 m_none_kidx_none_none_kloop DECLINE-BOTH	cq QRAM access: array address has aliasing fan-out
 m_none_kprep_none_none_kflat ACCEPT-IDENTICAL
 m_none_kprep_ry_none_kflat UNROLLED-ONLY	cq taint escape: tainted value muxed by a classical-condition phi
 m_none_kread_none_none_kflat ACCEPT-IDENTICAL
-m_none_kread_none_none_kloop ROLLED-ONLY	cq rail window: quantum array not lowered yet (bd 01po.19), needs S6 quantum control on cells
 m_none_l2bd_none_none_l2ic UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
 m_none_l2bd_none_none_l2im UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
 m_none_l2bd_none_none_l2iu UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register

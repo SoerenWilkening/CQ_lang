@@ -132,7 +132,7 @@
       "diagnostic": null,
       "require_railbank": false,
       "require_railwindow": true,
-      "_note": "bd 01po.19 S4 (merge a3fbac74): DECLINE->ACCEPT. Fixed form of 24: 4 window rails seeded from the zeroed array, two walks give ry,ry on each of h0..h3 (trace with a stub side()). Reviewed 2026-10-15 (bd 01po.19.21)."
+      "_note": "bd 01po.19 S4 (merge a3fbac74): DECLINE->ACCEPT. Fixed form of 24: 4 window rails seeded from the zeroed array, two walks give ry,ry on each of h0..h3 (trace with a stub side()); pinned end to end by the golden e2e-slice-railwindow-rewalk-fixed (review F3). Reviewed 2026-10-15 (bd 01po.19.21)."
     },
     "26": {
       "accept": false,
