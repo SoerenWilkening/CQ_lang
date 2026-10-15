@@ -2524,8 +2524,17 @@ bool declineLiveWindowRecords(Module &M, const TaintSet &taint) {
         SmallVector<CallInst *, 8> Records;
         RecordSet RS(W, Records);
         SmallPtrSet<const Value *, 32> Seen;
+        // bd 01po.19.17: a read of a provably DIFFERENT cell than the gate's
+        // target, in the gate's own trip (`railWindowTripDistinctCells`, the
+        // read dominating the gate in its loop body), names another rail: its
+        // temporaries are not records of the rotated cell.
+        SmallPtrSet<const Value *, 8> OtherCells;
         for (Value *A : Family)
-          if (isa<LoadInst>(A))
+          if (auto *AI = dyn_cast<Instruction>(A); AI && isa<LoadInst>(A))
+            railWindowTripDistinctCells(W, ArrayRef<Value *>(A), AI, T,
+                                        OtherCells);
+        for (Value *A : Family)
+          if (isa<LoadInst>(A) && !OtherCells.count(A))
             collectDescendantRecords(A, RS, Seen);
         if (Records.empty())
           continue;
