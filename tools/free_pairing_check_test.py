@@ -2191,7 +2191,21 @@ entry:
 !0 = !{i32 1}
 """
 
+# bd 01po.19 final review: the same stream as a `-g` compile prints it —
+# metadata attachments after the index arithmetic and the cell geps. The
+# affine proof must read through them (`_strip_md`).
+WINDOW_CELL_TEMP_OTHER_DBG = (
+    WINDOW_CELL_TEMP_OTHER
+    .replace("%i1 = add nuw nsw i64 %i, 1", "%i1 = add nuw nsw i64 %i, 1, !dbg !1")
+    .replace("%a0 = getelementptr i32, ptr %w, i64 %i",
+             "%a0 = getelementptr i32, ptr %w, i64 %i, !dbg !1")
+    .replace("%a1 = getelementptr i32, ptr %w, i64 %i1",
+             "%a1 = getelementptr i32, ptr %w, i64 %i1, !dbg !1")
+    .replace("!0 = !{i32 1}", "!0 = !{i32 1}\n!1 = !{}"))
+assert WINDOW_CELL_TEMP_OTHER_DBG.count("!dbg !1") == 3
+
 MEM_POSITIVE = [
+    ("window-cell-temp-other-cell-written-dbg", WINDOW_CELL_TEMP_OTHER_DBG),
     ("window-cell-temp-other-cell-written", WINDOW_CELL_TEMP_OTHER),
     ("window-cell-cnot-proven-distinct-cells", WINDOW_CELL_CNOT),
     ("window-cell-temp-reversed-before-gate", WINDOW_CELL_TEMP),
@@ -2241,6 +2255,12 @@ MEM_MUTANTS = [
          "  store i32 %l0, ptr %a1, align 4\n"
          "  store i32 %l1, ptr %a0, align 4\n"
          "  %l1b = load i32, ptr %a1, align 4"),
+     "T2-operand-mutated"),
+    # bd 01po.19 final review: the `-g` twin of the same-cell write.
+    ("window-cell-temp-same-cell-written-dbg",
+     sub(insert_after(WINDOW_CELL_TEMP_OTHER_DBG, "%l1 = load i32",
+                      "  %l0b = load i32, ptr %a0, align 4, !dbg !1"),
+         "call void @cqrt_ry_i1(i32 %l1, double 5", "i32 %l1", "i32 %l0b"),
      "T2-operand-mutated"),
     ("window-cell-temp-same-cell-written",
      sub(insert_after(WINDOW_CELL_TEMP_OTHER, "%l1 = load i32",

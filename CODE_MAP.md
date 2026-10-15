@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 863 maintained source files, 6959 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 863 maintained source files, 6960 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -18,8 +18,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArmClassify.cpp` — 10934 physical lines
 - `ir-pass/src/LoopLowering.cpp` — 8088 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5553 physical lines
-- `tools/free_pairing_check.py` — 4524 physical lines
-- `tools/free_pairing_check_test.py` — 4444 physical lines
+- `tools/free_pairing_check.py` — 4533 physical lines
+- `tools/free_pairing_check_test.py` — 4464 physical lines
 - `tools/loop_twin_matrix.py` — 4115 physical lines
 - `ir-pass/src/QramLowering.cpp` — 4069 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 3498 physical lines
@@ -8182,7 +8182,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/fixture_guard_liveness.py:91` — `guards_in`
 - `tools/fixture_guard_liveness.py:122` — `main`
 
-### `tools/free_pairing_check.py` (4524 lines)
+### `tools/free_pairing_check.py` (4533 lines)
 
 - `tools/free_pairing_check.py:751` — `Unclassified.__init__`
 - `tools/free_pairing_check.py:776` — `Undecidable.__init__`
@@ -8251,38 +8251,39 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check.py:3968` — `apply_window_families.rename`
 - `tools/free_pairing_check.py:3994` — `mark_window_stores`
 - `tools/free_pairing_check.py:4047` — `window_cell_pointers`
-- `tools/free_pairing_check.py:4062` — `_affine_index`
-- `tools/free_pairing_check.py:4077` — `_window_cell`
-- `tools/free_pairing_check.py:4090` — `_cell_at`
-- `tools/free_pairing_check.py:4096` — `_cells_differ`
-- `tools/free_pairing_check.py:4103` — `window_cells_distinct`
-- `tools/free_pairing_check.py:4197` — `address_taken`
-- `tools/free_pairing_check.py:4220` — `live_functions`
-- `tools/free_pairing_check.py:4264` — `_clone_returns_data`
-- `tools/free_pairing_check.py:4271` — `_returned_by`
-- `tools/free_pairing_check.py:4280` — `census_of`
-- `tools/free_pairing_check.py:4324` — `check_module`
-- `tools/free_pairing_check.py:4409` — `main`
-- `tools/free_pairing_check.py:4466` — `main.dump`
+- `tools/free_pairing_check.py:4062` — `_strip_md`
+- `tools/free_pairing_check.py:4071` — `_affine_index`
+- `tools/free_pairing_check.py:4086` — `_window_cell`
+- `tools/free_pairing_check.py:4099` — `_cell_at`
+- `tools/free_pairing_check.py:4105` — `_cells_differ`
+- `tools/free_pairing_check.py:4112` — `window_cells_distinct`
+- `tools/free_pairing_check.py:4206` — `address_taken`
+- `tools/free_pairing_check.py:4229` — `live_functions`
+- `tools/free_pairing_check.py:4273` — `_clone_returns_data`
+- `tools/free_pairing_check.py:4280` — `_returned_by`
+- `tools/free_pairing_check.py:4289` — `census_of`
+- `tools/free_pairing_check.py:4333` — `check_module`
+- `tools/free_pairing_check.py:4418` — `main`
+- `tools/free_pairing_check.py:4475` — `main.dump`
 
-### `tools/free_pairing_check_test.py` (4444 lines)
+### `tools/free_pairing_check_test.py` (4464 lines)
 
 - `tools/free_pairing_check_test.py:711` — `order_ladder`
 - `tools/free_pairing_check_test.py:821` — `cswap_braid`
 - `tools/free_pairing_check_test.py:1137` — `drop`
 - `tools/free_pairing_check_test.py:1146` — `sub`
 - `tools/free_pairing_check_test.py:1156` — `insert_after`
-- `tools/free_pairing_check_test.py:3050` — `_swap_lines`
-- `tools/free_pairing_check_test.py:3062` — `_hoist_line`
-- `tools/free_pairing_check_test.py:3455` — `lc`
-- `tools/free_pairing_check_test.py:3500` — `cone_nest`
-- `tools/free_pairing_check_test.py:4059` — `_Stop.__init__`
-- `tools/free_pairing_check_test.py:4063` — `_Stop.__str__`
-- `tools/free_pairing_check_test.py:4067` — `findings`
-- `tools/free_pairing_check_test.py:4075` — `proofs_of`
-- `tools/free_pairing_check_test.py:4092` — `verdict_map`
-- `tools/free_pairing_check_test.py:4104` — `main`
-- `tools/free_pairing_check_test.py:4142` — `main.counted`
+- `tools/free_pairing_check_test.py:3070` — `_swap_lines`
+- `tools/free_pairing_check_test.py:3082` — `_hoist_line`
+- `tools/free_pairing_check_test.py:3475` — `lc`
+- `tools/free_pairing_check_test.py:3520` — `cone_nest`
+- `tools/free_pairing_check_test.py:4079` — `_Stop.__init__`
+- `tools/free_pairing_check_test.py:4083` — `_Stop.__str__`
+- `tools/free_pairing_check_test.py:4087` — `findings`
+- `tools/free_pairing_check_test.py:4095` — `proofs_of`
+- `tools/free_pairing_check_test.py:4112` — `verdict_map`
+- `tools/free_pairing_check_test.py:4124` — `main`
+- `tools/free_pairing_check_test.py:4162` — `main.counted`
 
 ### `tools/gen_templates.py` (477 lines)
 
