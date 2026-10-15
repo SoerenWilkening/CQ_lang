@@ -88,7 +88,7 @@ cq_template_fcmp_oge_f32_hl(h1, 0x1p+7) -> h36
 cqrt_alloc_i1(0) -> h37
 cqrt_toffoli(h35, h36, h37)
 cqrt_alloc_f32(0x0p+0) -> h38
-cqrt_xorc_f32_controlled(h37, h38, inf)
+cqrt_xorc_f32_controlled(h37, h38, 0x7f800000)
 cqrt_x(h37)
 cqrt_copy_f32_controlled(h37, h32, h38)
 cqrt_x(h37)
@@ -181,7 +181,7 @@ cqrt_free(h42)
 cqrt_x(h37)
 cqrt_copy_f32_controlled(h37, h32, h38)
 cqrt_x(h37)
-cqrt_xorc_f32_controlled(h37, h38, inf)
+cqrt_xorc_f32_controlled(h37, h38, 0x7f800000)
 cqrt_toffoli(h35, h36, h37)
 cqrt_free(h37)
 cqrt_toffoli(h33, h34, h35)

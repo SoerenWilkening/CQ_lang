@@ -10,9 +10,9 @@ cq_template_and_i64_hl(h6, 32767) -> h7
 cq_template_and_i64_hl(h2, 4294967295) -> h8
 cq_template_fcmp_oeq_f80_hl(h0, 0x0p+0) -> h9
 cqrt_alloc_f80(0x0p+0) -> h10
-cqrt_xorc_f80_controlled(h9, h10, -inf)
+cqrt_xorc_f80_controlled(h9, h10, 0xffff8000000000000000)
 cqrt_x(h9)
-cqrt_xorc_f80_controlled(h9, h10, nan)
+cqrt_xorc_f80_controlled(h9, h10, 0x7fffc000000000000000)
 cqrt_x(h9)
 cq_template_lshr_i80_hl(h1, 0x00000000000000000040) -> h11
 cq_template_trunc_i80_to_i16(h11) -> h12
@@ -1562,9 +1562,9 @@ cq_template_fcmp_oeq_f80_hl_unc(h417, h0, inf)
 cqrt_free(h417)
 cqrt_free(h424)
 cqrt_x(h9)
-cqrt_xorc_f80_controlled(h9, h10, nan)
+cqrt_xorc_f80_controlled(h9, h10, 0x7fffc000000000000000)
 cqrt_x(h9)
-cqrt_xorc_f80_controlled(h9, h10, -inf)
+cqrt_xorc_f80_controlled(h9, h10, 0xffff8000000000000000)
 cq_template_fcmp_oeq_f80_hl_unc(h9, h0, 0x0p+0)
 cqrt_free(h9)
 cqrt_free(h10)

@@ -109,7 +109,7 @@ attributes #1 = { nounwind willreturn memory(none) }
 ; ACNT-NOT:     call i32 @cqrt_alloc_
 ; UCNT-COUNT-3: _unc(
 ; UCNT-NOT:     _unc(
-; CPCNT-COUNT-1: @cqrt_copy_
+; (dm7f.81 R11 C-F1: CPCNT counts emitted copy CALLS only; an unused copy declaration is no longer minted. Measured.)
 ; CPCNT-NOT:     @cqrt_copy_
 ; RYCNT-COUNT-1: call void @cqrt_ry_
 ; RYCNT-NOT:     call void @cqrt_ry_

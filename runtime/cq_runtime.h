@@ -471,7 +471,9 @@ void cqrt_xorc_i64(int32_t h, int64_t imm);
  * to cqrt_copy_<W>_controlled: it is a void in-place gate, not a fresh-rail
  * data template.
  * Trace: "cqrt_xorc_<W>_controlled(h<ctrl>, h<h>, <imm>)", the integer imm
- * as a decimal literal, the fp imm in the cqrt_alloc_f<W> `%a` format.
+ * as a decimal literal, the fp imm as its EXACT bit pattern in fixed-width hex
+ * (f16 0x%04x, f32 0x%08x, f64 0x%016llx, f80 0x<4 sign+exp><16 significand>),
+ * so distinct NaN payloads and -0.0 never print alike (R11 round 1 A-F1).
  * ----------------------------------------------------------------- */
 void cqrt_xorc_i1_controlled (int32_t ctrl, int32_t h, bool     imm);
 void cqrt_xorc_i8_controlled (int32_t ctrl, int32_t h, int8_t   imm);

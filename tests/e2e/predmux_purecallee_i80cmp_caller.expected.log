@@ -7,10 +7,10 @@ cq_template_icmp_eq_i80_hl(h3, 0x00008000000000000000) -> h4
 cqrt_alloc_f80(0x0p+0) -> h5
 cqrt_copy_f80_controlled(h4, h0, h5)
 cqrt_x(h4)
-cqrt_xorc_f80_controlled(h4, h5, 0x8p-3)
+cqrt_xorc_f80_controlled(h4, h5, 0x3fff8000000000000000)
 cqrt_alloc_f80(0x0p+0) -> h6
 cqrt_copy_f80(h5, h6)
-cqrt_xorc_f80_controlled(h4, h5, 0x8p-3)
+cqrt_xorc_f80_controlled(h4, h5, 0x3fff8000000000000000)
 cqrt_x(h4)
 cqrt_copy_f80_controlled(h4, h0, h5)
 cq_template_icmp_eq_i80_hl_unc(h4, h3, 0x00008000000000000000)

@@ -186,7 +186,7 @@ cq_template_fcmp_oeq_f32_hl(h0, 0x0p+0) -> h63
 cqrt_alloc_i1(0) -> h64
 cqrt_toffoli(h62, h63, h64)
 cqrt_alloc_f32(0x0p+0) -> h65
-cqrt_xorc_f32_controlled(h64, h65, -inf)
+cqrt_xorc_f32_controlled(h64, h65, 0xff800000)
 cq_template_icmp_slt_i32_hl(h1, 8388608) -> h66
 cq_template_fcmp_une_f32_hl(h0, 0x0p+0) -> h67
 cqrt_alloc_i1(0) -> h68
@@ -311,7 +311,7 @@ cqrt_free(h5)
 cq_template_icmp_slt_i32_hl_unc(h4, h1, 8388608)
 cqrt_free(h4)
 cqrt_free(h9)
-cqrt_xorc_f32_controlled(h64, h65, -inf)
+cqrt_xorc_f32_controlled(h64, h65, 0xff800000)
 cqrt_toffoli(h62, h63, h64)
 cqrt_free(h64)
 cq_template_fcmp_oeq_f32_hl_unc(h63, h0, 0x0p+0)

@@ -99,8 +99,10 @@ attributes #0 = { nounwind willreturn memory(none) }
 
 ; The 6.5 arm really claimed — otherwise the COST line measures a proof that ran
 ; on nothing (an exit code says the module lowered, never WHICH gate lowered it).
-; CHECK: call i32 @g0(
-; CHECK: cqrt_copy_i32_controlled
+; CHECK: %[[R:[a-zA-Z0-9_.]+]] = call i32 @g0(
+; CHECK: call void @cqrt_xorc_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[R]])
+; (bd dm7f.81 R11 C-F1: both arms are classical — the call result and 5 — so both
+; writes are controlled xor-immediates and no controlled copy is emitted.)
 
 ; THE PIN.
 ; COST: CQ_PREDMUX_COUNT: pure-callee mode=strict root=g0 verdict=1 invocations=5 bodies=3 hits=2

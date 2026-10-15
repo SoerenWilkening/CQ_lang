@@ -359,6 +359,7 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // bracket). Analytic: out starts |0>; on f=1 only the TRUE write fires, on
   // f=0 only the bracketed FALSE write; a skipped write XORs 0. So out = f ? a : b.
   emitArmMux(B, csyms, Flag, Tru, Fls, Out, Copy, Xorc, taint, DL);
+  eraseUnusedArmDecls(Copy, Xorc);  // R11 C-F1: no stray unused declaration.
 
   // 5. STRIP — exact LIFO (compound-cond-select-PRD §3). Reverse node order:
   //    the self-inverse network (AND: the same toffoli; OR: the toffoli, then

@@ -5544,9 +5544,10 @@ add_test(NAME e2e-slice-control-cascade-select-in-loop-unrolled-twin
 # lower at all (the frozen ORACLE declines both).
 # RED as compare_files since dm7f.81: rolled trip prints xorc(…, 0) from a runtime
 # counter; the unrolled twin folds it; measured. trace_twin_equiv.py RULE 3 deletes a
-# literal-zero xorc on both sides (owner ruling ruling-dm7f81-open-qs-2026-10-15 Q2).
+# literal-zero xorc on both sides (owner ruling ruling-dm7f81-open-qs-2026-10-15 Q2);
+# STRICT mode: rule 3 only, then byte identity (R11 round 1 B-F1).
 add_test(NAME e2e-cascade-select-in-loop-twin-identical
-  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/trace_twin_equiv.py" --quiet-controls
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/trace_twin_equiv.py" --quiet-controls --zero-xorc-then-bytes
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_select_in_loop_outside_prep.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_select_in_loop_outside_prep_unrolled_twin.expected.log")
 
@@ -7207,15 +7208,18 @@ foreach(_x16 slice_loop_condtree_select_hoisted
 endforeach()
 # RED as compare_files since dm7f.81: rolled trip prints xorc(…, 0) from a runtime
 # counter; the unrolled twin folds it; measured. trace_twin_equiv.py RULE 3 deletes a
-# literal-zero xorc on both sides (owner ruling ruling-dm7f81-open-qs-2026-10-15 Q2).
+# literal-zero xorc on both sides (owner ruling ruling-dm7f81-open-qs-2026-10-15 Q2);
+# STRICT mode: rule 3 only, then byte identity (R11 round 1 B-F1).
 add_test(NAME e2e-loop-condtree-select-hoisted-twin-identical
-  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/trace_twin_equiv.py" --quiet-controls
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/trace_twin_equiv.py" --quiet-controls --zero-xorc-then-bytes
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_condtree_select_hoisted.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_condtree_select_hoisted_unrolled.expected.log")
 # RED as compare_files since dm7f.81: rolled trip prints xorc(…, 0) from a runtime
-# counter; the unrolled twin folds it; measured.
+# counter; the unrolled twin folds it; measured. trace_twin_equiv.py RULE 3 deletes a
+# literal-zero xorc on both sides (owner ruling ruling-dm7f81-open-qs-2026-10-15 Q2);
+# STRICT mode: rule 3 only, then byte identity (R11 round 1 B-F1).
 add_test(NAME e2e-loop-condtree-select-hoisted-literal-twin-identical
-  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/trace_twin_equiv.py" --quiet-controls
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/trace_twin_equiv.py" --quiet-controls --zero-xorc-then-bytes
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_condtree_select_hoisted_literal.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_condtree_select_hoisted_literal_unrolled.expected.log")
 

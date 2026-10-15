@@ -105,5 +105,5 @@ declare i32 @cq_measure_si32(i32 noundef)
 ; ACNT-NOT:     call i32 @cqrt_alloc_
 ; UCNT-COUNT-3: _unc(
 ; UCNT-NOT:     _unc(
-; CPCNT-COUNT-1: @cqrt_copy_
+; (dm7f.81 R11 C-F1: CPCNT counts emitted copy CALLS only; an unused copy declaration is no longer minted. Measured.)
 ; CPCNT-NOT:     @cqrt_copy_

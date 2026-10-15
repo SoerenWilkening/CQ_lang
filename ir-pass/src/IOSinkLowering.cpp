@@ -798,8 +798,9 @@ void lowerControlledIOSinks(Module &M, WidthDispatch &wd, TaintSet &taint) {
       taint.BirthOrder[MuxOut] = taint.NextBirth++;
       // bd dm7f.81: each constant is a literal operand of a controlled xor
       // (`emitArmMux`, MergeArmWrite.h), never a rail; a zero one emits nothing.
-      emitArmMux(B, csyms, Flag, FlagSetV, FlagClrV, MuxOut, Copy,
-                 csyms.xorcControlledFn(VAbi), taint, DL);
+      FunctionCallee Xorc = csyms.xorcControlledFn(VAbi);
+      emitArmMux(B, csyms, Flag, FlagSetV, FlagClrV, MuxOut, Copy, Xorc, taint, DL);
+      eraseUnusedArmDecls(Copy, Xorc);  // R11 C-F1: no stray declaration.
     }
 
     // 7d. STRIP the flag (the `_inv` twin) + free it. Structurally valid: every

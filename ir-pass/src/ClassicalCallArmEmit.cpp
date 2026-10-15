@@ -285,6 +285,7 @@ void emitClassicalCallArmRegion(const ControlRegion &R, WidthDispatch &wd,
   //    a controlled xor of its value (a literal operand, never a rail); the
   //    tainted `q` a controlled copy; an all-zero classical arm nothing.
   emitArmMux(B, csyms, Flag, TrueSrc, FalseSrc, Out, Copy, Xorc, taint, DL);
+  eraseUnusedArmDecls(Copy, Xorc);  // R11 C-F1: no stray unused declaration.
 
   // 5. STRIP the flag + the SINGLE free. Structurally valid outright — and the
   //    real invariant is general (NOT "the straight-through must be q"): the copy

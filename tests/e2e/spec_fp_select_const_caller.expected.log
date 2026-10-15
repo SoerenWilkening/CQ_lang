@@ -2,14 +2,14 @@ cqrt_alloc_i32(3) -> h0
 cqrt_ry_i32(h0, 0x1p-1)
 cq_template_icmp_slt_i32_hl(h0, 0) -> h1
 cqrt_alloc_f80(0x0p+0) -> h2
-cqrt_xorc_f80_controlled(h1, h2, -0xcp-3)
+cqrt_xorc_f80_controlled(h1, h2, 0xbfffc000000000000000)
 cqrt_x(h1)
-cqrt_xorc_f80_controlled(h1, h2, 0xap-2)
+cqrt_xorc_f80_controlled(h1, h2, 0x4000a000000000000000)
 cqrt_alloc_f80(0x0p+0) -> h3
 cqrt_copy_f80(h2, h3)
-cqrt_xorc_f80_controlled(h1, h2, 0xap-2)
+cqrt_xorc_f80_controlled(h1, h2, 0x4000a000000000000000)
 cqrt_x(h1)
-cqrt_xorc_f80_controlled(h1, h2, -0xcp-3)
+cqrt_xorc_f80_controlled(h1, h2, 0xbfffc000000000000000)
 cq_template_icmp_slt_i32_hl_unc(h1, h0, 0)
 cqrt_free(h1)
 cqrt_free(h2)

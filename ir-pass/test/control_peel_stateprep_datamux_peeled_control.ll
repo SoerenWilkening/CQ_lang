@@ -121,7 +121,7 @@ merge:                                            ; preds = %arm, %entry
 ; spell these `call void @…` as this increment's own accepts do (IMPL_R1 §7.4).
 ; UCNT-COUNT-3: _unc(
 ; UCNT-NOT:     _unc(
-; CPCNT-COUNT-1: @cqrt_copy_
+; (dm7f.81 R11 C-F1: CPCNT counts emitted copy CALLS only; an unused copy declaration is no longer minted. Measured.)
 ; CPCNT-NOT:     @cqrt_copy_
 ; RYCNT-COUNT-2: call void @cqrt_ry_
 ; RYCNT-NOT:     call void @cqrt_ry_

@@ -11,6 +11,7 @@
 
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DebugLoc.h"
+#include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/ValueHandle.h"
 
@@ -113,6 +114,13 @@ void emitArmMux(IRBuilder<> &B, ControlledSymbols &csyms, Value *Flag,
   bracket();
   emitArmWrite(B, Flag, False, Out, CopyC, XorcC, taint, DL);
   bracket();
+}
+
+void eraseUnusedArmDecls(FunctionCallee CopyC, FunctionCallee XorcC) {
+  for (FunctionCallee C : {CopyC, XorcC})
+    if (auto *F = dyn_cast_or_null<Function>(C.getCallee()))
+      if (F->isDeclaration() && F->use_empty())
+        F->eraseFromParent();
 }
 
 }  // namespace cq

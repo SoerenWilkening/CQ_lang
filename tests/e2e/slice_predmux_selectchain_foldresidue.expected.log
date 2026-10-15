@@ -3,15 +3,15 @@ cqrt_ry_f80(h0, 0x1p-1)
 cq_template_fadd_f80_hl(h0, 0xep-1) -> h1
 cq_template_fcmp_ogt_f80_hl(h0, 0xc.8p+2) -> h2
 cqrt_alloc_f80(0x0p+0) -> h3
-cqrt_xorc_f80_controlled(h2, h3, 0x8p-3)
+cqrt_xorc_f80_controlled(h2, h3, 0x3fff8000000000000000)
 cqrt_x(h2)
-cqrt_xorc_f80_controlled(h2, h3, 0x8p-2)
+cqrt_xorc_f80_controlled(h2, h3, 0x40008000000000000000)
 cqrt_x(h2)
 cq_template_fadd_f80(h3, h0) -> h4
 cqrt_x(h2)
-cqrt_xorc_f80_controlled(h2, h3, 0x8p-2)
+cqrt_xorc_f80_controlled(h2, h3, 0x40008000000000000000)
 cqrt_x(h2)
-cqrt_xorc_f80_controlled(h2, h3, 0x8p-3)
+cqrt_xorc_f80_controlled(h2, h3, 0x3fff8000000000000000)
 cq_template_fcmp_ogt_f80_hl_unc(h2, h0, 0xc.8p+2)
 cqrt_free(h2)
 cqrt_free(h3)

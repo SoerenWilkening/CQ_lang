@@ -561,7 +561,6 @@ struct BreakEmit {
 
   FunctionCallee copyCtrlR() { return csyms.copyControlledFn(RW); }
   FunctionCallee copyCtrlIdx() { return csyms.copyControlledFn(IW); }
-  FunctionCallee allocIdx() { return wd.allocFn(IW); }
   FunctionCallee addcIdx() { return wd.addcFn(IW); }
 
   // fire-controlled XOR of the rail into R (capture / un-capture; self-inverse).
@@ -577,8 +576,9 @@ struct BreakEmit {
   // loaded with `Val`, copied, unloaded with `addc(-Val)` and freed.
   void xorClassical(IRBuilder<> &B, Value *Ctl, Value *Val, Value *Dst,
                     StringRef W) {
-    emitArmWrite(B, Ctl, Val, Dst, csyms.copyControlledFn(W),
-                 csyms.xorcControlledFn(W), taint, DL);
+    FunctionCallee CopyC = csyms.copyControlledFn(W), XorcC = csyms.xorcControlledFn(W);
+    emitArmWrite(B, Ctl, Val, Dst, CopyC, XorcC, taint, DL);
+    eraseUnusedArmDecls(CopyC, XorcC);  // R11 C-F1: no stray declaration.
   }
 
   // `Esc[j].V` recomputed from the backward counter: its cone cloned at `B` with

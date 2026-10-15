@@ -261,7 +261,8 @@ int main(void) {
      * 9 widths. Void, mints NO handles (the counter stays at h38). Negative
      * narrow immediates pin the bool/int8_t/int16_t sign handling (bd etj3);
      * -0.0 pins that the fp immediate is a bit pattern (it is NOT skipped as
-     * zero by the emitters, and must print as itself). */
+     * zero by the emitters, and prints as its exact bits 0x8000000000000000;
+     * every fp immediate prints as its bit pattern, R11 A-F1). */
     cqrt_xorc_i1_controlled (h_c, h_i1,  true);
     cqrt_xorc_i8_controlled (h_c, h_i8,  -9);
     cqrt_xorc_i16_controlled(h_c, h_i16, -9);

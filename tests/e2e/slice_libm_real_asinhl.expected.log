@@ -435,9 +435,9 @@ cq_template_and_i64_hl(h153, 32767) -> h154
 cq_template_and_i64_hl(h144, 4294967295) -> h155
 cq_template_fcmp_oeq_f80_hl(h142, 0x0p+0) -> h156
 cqrt_alloc_f80(0x0p+0) -> h157
-cqrt_xorc_f80_controlled(h156, h157, -inf)
+cqrt_xorc_f80_controlled(h156, h157, 0xffff8000000000000000)
 cqrt_x(h156)
-cqrt_xorc_f80_controlled(h156, h157, nan)
+cqrt_xorc_f80_controlled(h156, h157, 0x7fffc000000000000000)
 cqrt_x(h156)
 cq_template_lshr_i80_hl(h143, 0x00000000000000000040) -> h158
 cq_template_trunc_i80_to_i16(h158) -> h159
@@ -3072,7 +3072,7 @@ cqrt_toffoli(h920, h927, h928)
 cqrt_alloc_f80(0x0p+0) -> h929
 cqrt_copy_f80_controlled(h928, h529, h929)
 cqrt_x(h928)
-cqrt_xorc_f80_controlled(h928, h929, -inf)
+cqrt_xorc_f80_controlled(h928, h929, 0xffff8000000000000000)
 cqrt_x(h928)
 cq_template_icmp_ne_i32_hl(h8, 32767) -> h930
 cq_template_fcmp_ule_f80_hl(h9, 0x8p-3) -> h931
@@ -3244,7 +3244,7 @@ cq_template_icmp_ne_i32_hl_unc(h930, h8, 32767)
 cqrt_free(h930)
 cqrt_free(h949)
 cqrt_x(h928)
-cqrt_xorc_f80_controlled(h928, h929, -inf)
+cqrt_xorc_f80_controlled(h928, h929, 0xffff8000000000000000)
 cqrt_x(h928)
 cqrt_copy_f80_controlled(h928, h529, h929)
 cqrt_toffoli(h920, h927, h928)
@@ -3323,7 +3323,7 @@ cqrt_toffoli(h979, h988, h989)
 cqrt_alloc_f80(0x0p+0) -> h990
 cqrt_copy_f80_controlled(h989, h16, h990)
 cqrt_x(h989)
-cqrt_xorc_f80_controlled(h989, h990, -inf)
+cqrt_xorc_f80_controlled(h989, h990, 0xffff8000000000000000)
 cqrt_x(h989)
 cq_template_icmp_ne_i32_hl(h8, 32767) -> h991
 cq_template_fcmp_ule_f80_hl(h9, 0x8p-3) -> h992
@@ -3966,9 +3966,9 @@ cq_template_icmp_ne_i32_hl_unc(h1039, h8, 32767)
 cqrt_free(h1039)
 cqrt_free(h1058)
 cqrt_x(h156)
-cqrt_xorc_f80_controlled(h156, h157, nan)
+cqrt_xorc_f80_controlled(h156, h157, 0x7fffc000000000000000)
 cqrt_x(h156)
-cqrt_xorc_f80_controlled(h156, h157, -inf)
+cqrt_xorc_f80_controlled(h156, h157, 0xffff8000000000000000)
 cq_template_fcmp_oeq_f80_hl_unc(h156, h142, 0x0p+0)
 cqrt_free(h156)
 cqrt_free(h157)
@@ -4083,7 +4083,7 @@ cq_template_icmp_ne_i32_hl_unc(h991, h8, 32767)
 cqrt_free(h991)
 cqrt_free(h1014)
 cqrt_x(h989)
-cqrt_xorc_f80_controlled(h989, h990, -inf)
+cqrt_xorc_f80_controlled(h989, h990, 0xffff8000000000000000)
 cqrt_x(h989)
 cqrt_copy_f80_controlled(h989, h16, h990)
 cqrt_toffoli(h979, h988, h989)

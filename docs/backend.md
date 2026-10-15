@@ -1306,6 +1306,8 @@ the merge's write of a **classical** arm: `dst ^= imm` iff the control is set,
 `imm` a literal (or classical SSA) operand — never a rail (R13). An fp `imm`
 XORs its bit pattern, so `-0.0` fires and `+0.0` is skipped. A classical arm
 whose bits are all zero emits no gate. It is an involution, with no `_inv` twin.
+The trace prints an fp `imm` as its exact bit pattern in fixed-width hex
+(`f64` `0x8000000000000000` is -0.0), so distinct NaN payloads stay distinct.
 
 **In-place classical-immediate arithmetic.** `cqrt_addc_<W>(h, imm)` and
 `cqrt_xorc_<W>(h, imm)` (integer widths only) mutate the register `h` in place

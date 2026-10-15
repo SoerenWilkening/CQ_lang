@@ -69,6 +69,13 @@ void emitArmMux(llvm::IRBuilder<> &B, ControlledSymbols &csyms,
                 llvm::FunctionCallee XorcC, const TaintSet &taint,
                 const llvm::DebugLoc &DL);
 
+// Drop whichever of the two write declarations an emitter minted (to ask the
+// fence) but never called — e.g. no copy declaration when every arm is classical
+// (R11 round 1 C-F1: a stray `declare @cqrt_copy_<W>_controlled` let a bare
+// `CHECK: cqrt_copy_…_controlled(` match nothing real). Only an unused
+// DECLARATION is erased; the callees must not be used by the caller afterwards.
+void eraseUnusedArmDecls(llvm::FunctionCallee CopyC, llvm::FunctionCallee XorcC);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_MERGE_ARM_WRITE_H_

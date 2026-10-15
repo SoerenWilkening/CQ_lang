@@ -73,13 +73,16 @@ attributes #0 = { nounwind willreturn memory(none) }
 
 ; The argument is FROZEN and the frozen value is what the hoisted call receives:
 ; CHECK: %[[FR:[a-zA-Z0-9_.]+]] = freeze i32 %p
-; CHECK: call i32 @pf(i32 noundef %[[FR]])
+; CHECK: %[[R:[a-zA-Z0-9_.]+]] = call i32 @pf(i32 noundef %[[FR]])
 
 ; And the region lowers as an ordinary 6.5 classical-call arm — flag mint, out-rail,
-; the controlled-XOR copy pair with its cqrt_x bracket, strip, single free:
-; CHECK: cq_template_icmp_sgt_i32_hl
-; CHECK: cqrt_alloc_i32
-; CHECK: cqrt_copy_i32_controlled
-; CHECK: cqrt_x
-; CHECK: cqrt_copy_i32_controlled
-; CHECK: cqrt_free
+; the two controlled writes (bd dm7f.81: the classical call result is a controlled
+; xor of its value, the quantum %h a controlled copy) with the ¬flag cqrt_x bracket
+; around the second, strip, single free:
+; CHECK: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[H:[a-zA-Z0-9_.]+]], i32 3)
+; CHECK-NEXT: %[[O:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[F]], i32 %[[O]], i32 %[[R]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[H]], i32 %[[O]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK: call void @cqrt_free(i32 %[[F]])

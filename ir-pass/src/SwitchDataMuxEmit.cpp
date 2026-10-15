@@ -197,6 +197,7 @@ void emitSwitchDataMuxRegion(const ControlRegion &R, WidthDispatch &wd,
     Flags.push_back(Flag);
     CaseVals.push_back(Ci);
   }
+  eraseUnusedArmDecls(CopyC, XorcC);  // R11 C-F1: every delta is a literal.
   if (Flags.empty())
     return bailLoud(R);  // SawContent proved ≥1 content case.
 

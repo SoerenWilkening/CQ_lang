@@ -118,7 +118,8 @@ define internal fastcc i32 @helper(i32 noundef %0, i32 noundef %1) unnamed_addr 
 ; ACNT-NOT:     call i32 @cqrt_alloc_
 ; UCNT-COUNT-5: _unc(
 ; UCNT-NOT:     _unc(
-; CPCNT-COUNT-3: @cqrt_copy_
-; CPCNT-NOT:     @cqrt_copy_
+; (dm7f.81 R11 C-F1: CPCNT counts emitted copy CALLS only; an unused copy declaration is no longer minted. Measured.)
+; CPCNT-COUNT-1: call void @cqrt_copy_
+; CPCNT-NOT:     call void @cqrt_copy_
 ; RYCNT-COUNT-3: call void @cqrt_ry_
 ; RYCNT-NOT:     call void @cqrt_ry_
