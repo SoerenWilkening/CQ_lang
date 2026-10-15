@@ -67,10 +67,12 @@
       "pins": "(pre-S4 decline) READ ORDER (anchor fires): write guard n>2 does not refute read guard n>0."
     },
     "10": {
-      "accept": false,
-      "diagnostic": "cq rail bank: array has cells no iteration writes",
-      "pins": "READ ORDER (anchor fires) AND the read-loop SCEV trip clause (m != n): doubly fenced, so M1 leaves it declining.",
-      "_note": "KEPT RED ON PURPOSE (bd 01po.19.21, 2026-10-15): since bd 01po.19 S4 (merge a3fbac74) this row ACCEPTS. main() calls slice(argc, argc+1), so every run reads b[n], one past the n-rail window: the lowered read loads a word past `%.rails` and measures it as a handle (trace argv a b: h0 measured twice). The C program is undefined on every run, so no defined behaviour is miscompiled, but whether the compiler should accept a provably out-of-bounds window read (vs. the pre-S4 SCEV trip-clause decline) needs a reviewer's ruling before this expectation changes."
+      "accept": true,
+      "diagnostic": null,
+      "require_railbank": false,
+      "require_railwindow": true,
+      "_note": "ACCEPT by ruling 2026-10-15 (bd 01po.19.21, bd memory ruling-red-heavy-tests-2026-10-15). The verdict is a compile-time property, independent of argv; the driver is now the DEFINED slice(argc + 1, argc) (m = n - 1, the read bound still another variable). Trace argv a b: 4 window rails, 4 Ry, 3 measured. HISTORY: the driver was slice(argc, argc + 1), undefined on every run; since bd 01po.19 S4 (merge a3fbac74) that also accepted, and its lowered read loaded the word past `%.rails` and measured it as a handle (trace argv a b: h0 measured twice). A provably out-of-bounds window read should fail loudly: bd 01po.24.",
+      "pins": "(pre-S4 decline) READ ORDER (anchor fires) AND the read-loop SCEV trip clause (m != n): doubly fenced, so M1 leaves it declining."
     },
     "11": {
       "accept": true,

@@ -33,7 +33,9 @@ this file to fail each time.
        lib-TU flags (-include CQ.h: the C18 tripwire, MISS+red)
   HARNESS   an unmodified harness COPY hits (the digest is content, not path —
        NULL CONTROL); a comment in EACH of the four harness files misses;
-       stage-3 `-O2` (the bd szpr pin) misses and is RED on the QRAM slice
+       stage-3 `-O2` (the bd szpr pin) misses and still PASSES on the QRAM
+       slice (no slice is -O2-sensitive since 27271489, bd 01po.19.23); a bad
+       stage-3 flag (`-mllvm -cq-nonexistent-flag`) misses and is RED
   G/H  CQ_E2E_NO_CACHE=1 and a by-hand run read and record nothing
   PY   the python API: run-key PARITY with the bash entry (I), a non-zero exit
        replayed with its status (K), argv is key material, stage-1 file/gen
@@ -63,7 +65,7 @@ HARNESS = (("tests/e2e/run_slice.sh", os.path.join(E2E, "run_slice.sh")),
            ("tests/e2e/stage_cache.sh", os.path.join(E2E, "stage_cache.sh")),
            ("tools/cq_stage_cache.py", os.path.join(HERE, "cq_stage_cache.py")),
            ("tools/free_pairing_check.py", os.path.join(HERE, "free_pairing_check.py")))
-EXPECTED_ROWS = 69
+EXPECTED_ROWS = 70
 # The environment of the bash key-function probes: EXPLICIT, like every other
 # row's. Measured: probes that inherited the ambient environment went red under
 # `CQ_E2E_NO_CACHE=1 ctest`, because the off switch they inherited correctly
@@ -448,11 +450,29 @@ def main():
                                        gold=multi_gold, harness=h)
             expect("HD lib-TU flags + -include CQ.h (C18 tripwire): MISS and RED",
                    rc != 0 and n1 >= 1 and "C18 violation" in out, "rc=%d s1=%d" % (rc, n1))
-            # r1's repro (b): the bd szpr pin — stage 3 at -O2.
+            # r1's repro (b): the bd szpr pin — stage 3 at -O2. RE-SIGNED to
+            # MISS + PASS (bd 01po.19.23, ruling 2026-10-15): this row used to be
+            # MISS + RED because the QRAM slice's lowered IR called the fastcc
+            # clone with ccc (UB), which -O2 turned into a trap (SIGILL, 2 trace
+            # lines, measured at 7d0f5de9). 27271489 (r2j3.25) fixed the call,
+            # and at 0c1ac43c all 402 single-TU e2e slices give identical -O0 and
+            # -O2 traces and exit codes (the 25 multi-TU/flagged slices were not
+            # measured). So no slice is -O2-sensitive; the row now pins that a
+            # stage-3 flag change MISSES and the slice still matches its golden.
+            # The RED half lives in the bad-flag control just below.
             h = harness_copy("o2", [("tests/e2e/stage_cache.sh",
                                      "CQ_S3_CC_FLAGS=(-c)", "CQ_S3_CC_FLAGS=(-O2 -c)")])
             rc, out, n1, n3, npy = run(warm_copy("rcO2"), src=qram_src, gold=qram_gold, harness=h)
-            expect("HD stage-3 flags + -O2 (bd szpr pin): MISS and RED on the QRAM slice",
+            expect("HD stage-3 flags + -O2 (bd szpr pin): MISS and PASS on the QRAM slice",
+                   rc == 0 and n3 == 1, "rc=%d s3=%d" % (rc, n3))
+            # The MISS + RED control for a stage-3 flag change: a deterministic
+            # bad flag (clang rejects an unknown -mllvm option), so a cache that
+            # ignored CQ_S3_CC_FLAGS would replay the warm PASS here.
+            h = harness_copy("s3bad", [("tests/e2e/stage_cache.sh",
+                                        "CQ_S3_CC_FLAGS=(-c)",
+                                        "CQ_S3_CC_FLAGS=(-mllvm -cq-nonexistent-flag -c)")])
+            rc, out, n1, n3, npy = run(warm_copy("rcS3bad"), src=qram_src, gold=qram_gold, harness=h)
+            expect("HD stage-3 flags + an unknown -mllvm flag: MISS and RED",
                    rc != 0 and n3 == 1, "rc=%d s3=%d" % (rc, n3))
             # r1's (d): run_slice.sh's own stage-1 flags at -O0.
             h = harness_copy("o0", [("tests/e2e/run_slice.sh",

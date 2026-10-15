@@ -6640,6 +6640,11 @@ function(cq_railbank_matrix test_name source)
       "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>")
 endfunction()
 cq_railbank_matrix(e2e-railbank-dynamic-admission-matrix railbank_dynamic_matrix.c)
+# The twin QUARANTINE's NEG mutants (moved digest, moved divergence, stale entry,
+# unquarantined divergence, incomplete record) on synthetic traces; no compile.
+add_test(NAME e2e-railbank-twin-quarantine-selftest
+  COMMAND "${_E2E_PYTHON}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/run_railbank_dynamic_matrix.py" --selftest)
 
 add_test(NAME e2e-slice-railbank-nonmain
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"

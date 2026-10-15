@@ -576,7 +576,8 @@
 #     flat side measures k[] before the zext/add that reads it as a control,
 #     which commutes with a computational-basis measurement.
 # The six k-axis TRACE-DIVERGENCE cells (k2b kloop, kiprep kflat/kloop, kover
-# kflat/kloop, kprep kloop; 01po.19 S4 a3fbac74) are NOT recorded: they stay red.
+# kflat/kloop, kprep kloop; 01po.19 S4 a3fbac74) are NOT recorded here: by the
+# 2026-10-15 ruling they moved to the QUARANTINE as class I (bd 01po.19.30).
 # Each is EQUIV under tools/trace_twin_equiv.py once never-touched |0> mints are
 # dropped (the window pre-mints every cell at its entry; on the flat side -O1
 # store-forwards the zero seed to k[0]'s cq_theta, so cell 0 is rotated as a
@@ -693,7 +694,6 @@ m_none_ifelse_none       DECLINE-BOTH-DIFFERENT	cq controlled lowering: control 
 m_none_ifelse_ry         DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_ifelse_rz         DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
 m_none_k2b_none_none_kflat ACCEPT-IDENTICAL
-m_none_k2b_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
 m_none_karith_none_none_kflat UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
 m_none_karith_none_none_kloop UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
 m_none_kcond_none_none_kflat ROLLED-ONLY	cq controlled lowering: control flow under quantum control
@@ -702,12 +702,7 @@ m_none_kicond_none_none_kflat DECLINE-BOTH-DIFFERENT	cq rail window: quantum arr
 m_none_kicond_none_none_kloop ROLLED-ONLY	cq rail window: quantum array not lowered yet (bd 01po.19), needs S6 quantum control on cells
 m_none_kidx_none_none_kflat DECLINE-BOTH	cq QRAM access: array address has aliasing fan-out
 m_none_kidx_none_none_kloop DECLINE-BOTH	cq QRAM access: array address has aliasing fan-out
-m_none_kiprep_none_none_kflat UNROLLED-ONLY	cq rail bank: array mixes a rail cell access with an unrecognized one
-m_none_kiprep_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
-m_none_kover_none_none_kflat UNROLLED-ONLY	cq rail bank: array has cells no iteration writes
-m_none_kover_none_none_kloop DECLINE-BOTH-DIFFERENT	cq rail bank: array has cells no iteration writes	cq taint escape: tainted value stored to memory
 m_none_kprep_none_none_kflat ACCEPT-IDENTICAL
-m_none_kprep_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
 m_none_kprep_ry_none_kflat UNROLLED-ONLY	cq taint escape: tainted value muxed by a classical-condition phi
 m_none_kread_none_none_kflat ACCEPT-IDENTICAL
 m_none_kread_none_none_kloop ROLLED-ONLY	cq rail window: quantum array not lowered yet (bd 01po.19), needs S6 quantum control on cells

@@ -252,7 +252,14 @@
       "dropped_twin_lines": [
         "cqrt_ry_i32(h0, 0x0p+0)"
       ],
-      "_note": "KEPT RED ON PURPOSE (bd 01po.19.21, 2026-10-15): diverges since lane U (merge 100b3d9a, bd r2j3.32). The unrolled twin's straight-line Z select-merge rails are now discharged (X-bracketed reverse cqrt_copy_i32_controlled + cqrt_free, 14 extra lines, flag strips moved after them); the rolled form's Z merge rails are LOOP-CARRIED, which MergeCarriedFence leaves allocated by owner-delegated decision (b) (reverse loop: bd 8h7d.20). Only computational-basis measurements follow, so the measured distribution is unchanged, but the rolled side leaves two entangled dirty rails the twin cleans. Not byte-expressible with dropped_twin_lines; retire when 8h7d.20 lands or the owner rules the comparison weaker."
+      "quarantine": {
+        "class": "RB-A (leaked loop-carried merge rail)",
+        "bd": "test_C_libtooling-8h7d.20",
+        "owner": "LoopLowering / MergeCarriedFence — ROLLED deficient: the loop-carried Z select-merge rails are left allocated (owner-delegated r2j3.32 decision (b)) where the flat twin's dischargeMergeRails reverses and frees them; measurements only follow, so the outcome distribution is unchanged. RETIREMENT: 8h7d.20 lands -> byte-identical, remove entry",
+        "digest": "9232e56e0ff63592",
+        "rolled": "cq_template_icmp_eq_i32_hl_unc(h6, h3, 0)",
+        "unrolled": "cqrt_alloc_i32(0) -> h8"
+      }
     },
     {
       "rolled": 32,

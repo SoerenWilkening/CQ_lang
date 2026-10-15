@@ -11,7 +11,9 @@ registered as separate ctest entries without editing this runner:
                       "stage1_contains_in_order": [str, ...] (optional),
                       "stage1_note": str (optional)}},
    "twins": [{"rolled": id, "twin": id, "argv": [str, ...],
-              "dropped_twin_lines": [str, ...]}]}
+              "dropped_twin_lines": [str, ...],
+              "quarantine": {class, bd, owner, digest, rolled, unrolled}
+                            (optional; see check_twin)}]}
 
 An accept row must lower at exit 0, carry ``!cq.railbank`` (unless it is a
 twin's unrolled side or sets ``require_railbank: false``), emit no
@@ -44,6 +46,9 @@ import tempfile
 # with no CQ_* environment caches nothing.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "tools"))
 import cq_stage_cache  # noqa: E402
+# The twin QUARANTINE reuses loop_twin_matrix's signature and record keys: one
+# spelling of "how a pinned divergence is identified" (bd 01po.19.21 ruling Q2).
+from loop_twin_matrix import QUARANTINE_KEYS, divergence_signature  # noqa: E402
 
 # Rows are independent (each compiles and lowers its own -DCASE=N module), so
 # they run on a small THREAD pool — the work is subprocess-bound. The verdicts
@@ -183,7 +188,83 @@ def check_case(case_id: int, spec: dict, twin_sides: set[int],
     return errs
 
 
+# ── THE TWIN QUARANTINE (bd 01po.19.21, ruling 2026-10-15) ───────────────────
+# Same semantics as tools/loop_twin_matrix.quarantine.txt: a QUARANTINE IS NOT A
+# BLESSING. A twin entry may carry `"quarantine": {class, bd, owner, digest,
+# rolled, unrolled}` naming a FILED defect and the EXACT unified-diff digest of
+# its divergence (`divergence_signature`, imported, never re-spelled). It passes
+# ONLY while the pair diverges with exactly that digest, and fails when
+#   * the pair stops diverging           -> "QUARANTINE STALE — remove it";
+#   * the digest moved                   -> "QUARANTINED SIGNATURE CHANGED";
+#   * a pair WITHOUT a quarantine differs -> the ordinary twin red.
+# NEG mutants for all three: `--selftest`.
+def check_twin(tw: dict, rolled_trace: list[str], twin_raw: list[str]) -> list[str]:
+    rolled, twin = tw["rolled"], tw["twin"]
+    dropped = set(tw.get("dropped_twin_lines", []))
+    twin_trace = [ln for ln in twin_raw if ln not in dropped]
+    if len(twin_raw) - len(twin_trace) != len(dropped):
+        return [f"TWIN {rolled}/{twin}: expected to drop exactly "
+                f"{len(dropped)} identity line(s)"]
+    if not rolled_trace:
+        return [f"TWIN {rolled}/{twin}: rolled trace is empty"]
+    q = tw.get("quarantine")
+    if q is not None:
+        missing = [k for k in QUARANTINE_KEYS if k not in q]
+        if missing:
+            return [f"TWIN {rolled}/{twin}: quarantine lacks {', '.join(missing)} — "
+                    "a quarantine without a class, an owner and a signature is a blessing"]
+    if rolled_trace == twin_trace:
+        if q is not None:
+            return [f"TWIN {rolled}/{twin}: QUARANTINE STALE — REMOVE IT. The pair is "
+                    f"byte-identical now (bd {q['bd']}, class {q['class']})."]
+        return []
+    if q is None:
+        return [f"TWIN {rolled}/{twin}: rolled trace is not "
+                "byte-identical to the hand-unrolled twin"]
+    digest, rl, ul = divergence_signature("\n".join(rolled_trace), "\n".join(twin_trace))
+    if digest != q["digest"]:
+        return [f"TWIN {rolled}/{twin}: QUARANTINED SIGNATURE CHANGED — a red, not a "
+                f"refresh.\n    pinned : {q['digest']}\n    got    : {digest}\n"
+                f"    first differing line now:\n      rolled   : {rl}\n      unrolled : {ul}\n"
+                f"    The filed defect (bd {q['bd']}, class {q['class']}) manifests differently."]
+    print(f"TWIN {rolled}/{twin}: quarantined divergence as pinned "
+          f"(bd {q['bd']}, class {q['class']}, digest {digest})")
+    return []
+
+
+def selftest() -> int:
+    """NEG mutants of the quarantine (and the positive controls they need)."""
+    a = ["cqrt_alloc_i32(0) -> h0", "cqrt_ry_i32(h0, 0x1p-1)", "cqrt_measure_i32(h0) -> 0"]
+    b = a[:2] + ["cqrt_x(h0)"] + a[2:]
+    dg, rl, ul = divergence_signature("\n".join(a), "\n".join(b))
+    q = {"class": "T", "bd": "selftest", "owner": "selftest", "digest": dg,
+         "rolled": rl, "unrolled": ul}
+    rows = [
+        ("POS identical, no quarantine", {"rolled": 1, "twin": 2}, a, a, None),
+        ("POS pinned divergence", {"rolled": 1, "twin": 2, "quarantine": q}, a, b, None),
+        ("NEG unquarantined divergence", {"rolled": 1, "twin": 2}, a, b, "not byte-identical"),
+        ("NEG moved digest", {"rolled": 1, "twin": 2,
+                              "quarantine": dict(q, digest="0" * 16)}, a, b, "SIGNATURE CHANGED"),
+        ("NEG moved divergence", {"rolled": 1, "twin": 2, "quarantine": q},
+         a, a[:1] + ["cqrt_x(h0)"] + a[1:], "SIGNATURE CHANGED"),
+        ("NEG stale entry", {"rolled": 1, "twin": 2, "quarantine": q}, a, a, "QUARANTINE STALE"),
+        ("NEG incomplete record", {"rolled": 1, "twin": 2,
+                                   "quarantine": {k: v for k, v in q.items() if k != "bd"}},
+         a, b, "quarantine lacks bd"),
+    ]
+    bad = 0
+    for tag, tw, r, t, needle in rows:
+        errs = check_twin(tw, r, t)
+        ok = (not errs) if needle is None else any(needle in e for e in errs)
+        bad += not ok
+        print(f"  [{'ok ' if ok else 'BAD'}] {tag}: {errs[0].splitlines()[0] if errs else 'pass'}")
+    print(f"railbank twin quarantine selftest: {len(rows)} row(s), {bad} failed")
+    return 1 if bad else 0
+
+
 def main() -> int:
+    if sys.argv[1:] == ["--selftest"]:
+        return selftest()
     if len(sys.argv) != 8:
         print("usage: run_railbank_dynamic_matrix.py CLANG CQ_OPT PASS INCLUDE "
               "SOURCE RUNTIME_LIB TEMPLATES_LIB", file=sys.stderr)
@@ -236,14 +317,7 @@ def main() -> int:
                 traces.append(lr.stdout.splitlines())
             if len(traces) != 2:
                 continue
-            rolled_trace = traces[0]
-            twin_trace = [ln for ln in traces[1] if ln not in dropped]
-            if len(traces[1]) - len(twin_trace) != len(dropped):
-                errors.append(f"TWIN {rolled}/{twin}: expected to drop exactly "
-                              f"{len(dropped)} identity line(s)")
-            elif not rolled_trace or rolled_trace != twin_trace:
-                errors.append(f"TWIN {rolled}/{twin}: rolled trace is not "
-                              "byte-identical to the hand-unrolled twin")
+            errors += check_twin(tw, traces[0], traces[1])
 
     for err in errors:
         print(err, file=sys.stderr)
