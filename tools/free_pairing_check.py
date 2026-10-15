@@ -1143,7 +1143,13 @@ def read_terminator(lines, i):
         parts.append(nxt.strip())
         depth += nxt.count("[") - nxt.count("]")
         j += 1
-    return " ".join(parts), j
+    # Trailing metadata attachments (`, !dbg !1`, `, !llvm.loop !12`) are not
+    # operands: dropped here, at the ONE reader of terminator text, so every
+    # consumer sees the same grammar with and without `-g` (bd 01po.19 final
+    # review: `TERM_BR_UNCOND_RE` is `$`-anchored, and `br label %nx, !dbg !1`
+    # left the chain unmerged — a use after `cqrt_free` in the successor block
+    # then VERIFIED). A `switch`'s case list closes with `]` before any.
+    return _strip_md(" ".join(parts)), j
 
 
 def split_args(s):
@@ -4059,6 +4065,19 @@ ADD_CONST_RE = re.compile(
     r"^(add|sub)\s+(?:nuw\s+)?(?:nsw\s+)?i64\s+(%[-\w.]+),\s*(-?\d+)\s*$")
 
 
+def _strip_md(rhs):
+    """Instruction text without its trailing metadata attachments (`, !dbg
+    !12`, `, !range !3`, `, !llvm.loop !7`, ...). Applied wherever raw text
+    meets an END-ANCHORED pattern or is compared structurally: the two
+    `$`-anchored regexes of the window/affine path (`ADD_CONST_RE`,
+    `GEP_CELL_RE`) and every terminator (`read_terminator`, for
+    `TERM_BR_UNCOND_RE`). The other parse regexes are start-anchored or
+    search, and stop before the attachments. Without it a `-g` compile reads
+    differently from its stripped twin (bd 01po.19 final review: `add nsw i64
+    %15, -1, !dbg !2418` left every distinct-cell gate array-granular)."""
+    return rhs.split(", !")[0].strip()
+
+
 def _affine_index(fn, v, depth=0):
     """`v` as (base, offset): an i64 literal is (None, k); `add/sub X, k`
     chains fold into the offset; anything else is its own base."""
@@ -4067,7 +4086,7 @@ def _affine_index(fn, v, depth=0):
     d = fn.def_op.get(v)
     if d is None or depth > 16:
         return v, 0
-    m = ADD_CONST_RE.match(d[1].split("=", 1)[-1].strip())
+    m = ADD_CONST_RE.match(_strip_md(d[1].split("=", 1)[-1]))
     if not m:
         return v, 0
     base, k = _affine_index(fn, m.group(2), depth + 1)
@@ -4081,7 +4100,7 @@ def _window_cell(fn, ptr):
         return None
     if d[0] == "alloca":
         return ptr, None, 0
-    m = GEP_CELL_RE.search(d[1].split("=", 1)[-1].strip().split(", !")[0])
+    m = GEP_CELL_RE.search(_strip_md(d[1].split("=", 1)[-1]))
     if not m or m.group(1) not in fn.window_allocas:
         return None
     return (m.group(1),) + _affine_index(fn, m.group(2))
