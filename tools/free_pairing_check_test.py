@@ -1424,6 +1424,22 @@ RECORD_POSITIVES = [
 ]
 
 
+USE_AFTER_FREE_BR = """
+declare i32 @cqrt_alloc_i8(i8)
+declare void @cqrt_ry_i8(i32, double)
+declare void @cqrt_free(i32)
+
+define i32 @slice() local_unnamed_addr {
+entry:
+  %t = call i32 @cqrt_alloc_i8(i8 0)
+  call void @cqrt_free(i32 %t)
+  br label %nx
+nx:
+  call void @cqrt_ry_i8(i32 %t, double 5.000000e-01)
+  ret i32 0
+}
+"""
+
 MUTANTS = [
     # ---- the three defects bd 8txa says the golden trace cannot see --------
     ("deleted-uncompute-toffoli",
@@ -1679,6 +1695,16 @@ define i32 @slice() local_unnamed_addr #0 {
     ("use-after-free",
      insert_after(PHASE_DIAMOND, "@cqrt_free(i32 %h_cmp)",
                   "  call void @cqrt_x(i32 %h_cmp)"),
+     "F2-use-after-free"),
+    # bd 01po.19 final review: a use after free in the SUCCESSOR of an
+    # unconditional branch (the chain merges into one stream), as written and
+    # as a `-g` compile prints it (`br label %nx, !dbg !1`): `TERM_BR_UNCOND_RE`
+    # is `$`-anchored, and before `read_terminator` stripped the attachment the
+    # chain did not merge and the free VERIFIED.
+    ("use-after-free-across-uncond-br", USE_AFTER_FREE_BR, "F2-use-after-free"),
+    ("use-after-free-across-uncond-br-dbg",
+     USE_AFTER_FREE_BR.replace("  br label %nx\n", "  br label %nx, !dbg !1\n")
+     .replace("ret i32 0\n}\n", "ret i32 0\n}\n!1 = !{}\n"),
      "F2-use-after-free"),
     ("free-after-measure",
      insert_after(PHASE_DIAMOND, "@cqrt_measure_i32",
