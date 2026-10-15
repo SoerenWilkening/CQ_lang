@@ -62,6 +62,7 @@
 ; S4: call void @cqrt_ry_i1(i32 %seed.rail, double 5.000000e-01)
 ; S4: store i32 %seed.rail, ptr %cq.rail.addr, align 4
 
+target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 
 define i32 @slice(i64 %n) {

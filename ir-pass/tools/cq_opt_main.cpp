@@ -16,6 +16,10 @@
 //   -o <path>                  default: stdout
 //   -disable-output            parse+run+verify, print nothing
 //
+// One deliberate refusal: a module with a `target triple` but no `target
+// datalayout` is a hard error (stock opt would infer the layout from a target
+// backend cq-opt does not link; see main()).
+//
 // Semantics must match `opt` exactly, including that the module is VERIFIED
 // after the pass and before printing (opt's default pipeline is
 // CQLoweringPass -> VerifierPass -> PrintModulePass) and that a failure exits
@@ -88,6 +92,22 @@ int main(int argc, char **argv) {
   std::unique_ptr<Module> M = parseIRFile(InputFile, Err, Ctx);
   if (!M) {
     Err.print("cq-opt", errs());
+    return 1;
+  }
+  // A triple with no datalayout: stock opt (optMain's SetDataLayout callback)
+  // INFERS the layout from the registered target's TargetMachine, runs the
+  // pass under it and prints it. cq-opt links no target backends (linking every
+  // target opt registers would bring back the static-initializer cost this
+  // driver exists to avoid), so it would run under the DEFAULT DataLayout and
+  // print none: a silent divergence the 2026-10-16 batch gate caught on two
+  // fixtures. Refuse loudly instead. An explicit empty `target datalayout = ""`
+  // is the same case (opt infers for it too).
+  // Pinned by ir-pass/test/cq_opt_reject_triple_without_datalayout.ll.
+  if (!M->getTargetTriple().empty() && M->getDataLayoutStr().empty()) {
+    errs() << "cq-opt: module has a target triple ('" << M->getTargetTriple()
+           << "') but no target datalayout; stock opt infers one from the "
+              "target, cq-opt links no targets and cannot. Add an explicit "
+              "'target datalayout' line.\n";
     return 1;
   }
   // opt verifies the INPUT module after parsing; mirror that.
