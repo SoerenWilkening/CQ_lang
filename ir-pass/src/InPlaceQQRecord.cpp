@@ -12,6 +12,7 @@
 #include "EmitInverse.h"       // inPlaceQQAdjointName
 #include "FreePoint.h"         // blockCanRepeat
 #include "MergeStreamGates.h"  // streamGateWrites / handleAliases
+#include "RailWindow.h"        // railWindowDerived (bd 01po.19 S6)
 #include "RegCondLeaf.h"       // kRegCondTag (stripped after uncompute)
 #include "TaintPropagation.h"  // TaintSet
 #include "WireWalk.h"          // provablyBefore
@@ -132,10 +133,21 @@ bool usersBefore(Value *V, BinaryOperator *BO, const DominatorTree &DT,
   } else if (blockCanRepeat(BO->getParent())) {
     return false;
   }
+  // bd 01po.19 S6: a same-trip earlier use is before `BO` iff every path
+  // `BO` -> use re-defines `V` first; only for cell-derived values (dicke).
+  auto *VI = dyn_cast<Instruction>(V);
+  const bool SameTrip =
+      VI && LI.getLoopFor(BO->getParent()) && railWindowDerived(V);
   for (User *U : V->users()) {
     if (U == BO)
       continue;
     auto *UI = dyn_cast<Instruction>(U);
+    if (UI && !provablyBefore(UI, BO, DT) && SameTrip &&
+        DT.dominates(UI, BO)) {
+      SmallPtrSet<const Instruction *, 1> Redef{VI};
+      if (!railWindowReachesAvoiding(BO, UI, Redef))
+        continue;
+    }
     if (!UI || !provablyBefore(UI, BO, DT))
       return false;
   }
@@ -164,9 +176,7 @@ bool deadUnprovenPhi(Value *V, BinaryOperator *BO, const DominatorTree &DT,
 }  // namespace
 
 bool qqOperandDeadAfter(Value *V, BinaryOperator *BO, const DominatorTree &DT,
-                        const LoopInfo &LI) {
-  return deadAfter(V, BO, DT, LI);
-}
+                        const LoopInfo &LI) { return deadAfter(V, BO, DT, LI); }
 
 void recordDeadQQOperands(Module &M, const TaintSet &taint) {
   for (Function &F : M) {

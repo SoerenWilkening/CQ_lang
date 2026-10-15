@@ -3,7 +3,8 @@
 #include "RegCondLeaf.h"
 
 #include "ArmAnalysis.h"       // condProvenance
-#include "InPlaceQQ.h"         // qqOperandDeadAfter
+#include "InPlaceQQ.h"         // qqOperandDeadAfter / qqTargetIsUserData
+#include "RailWindow.h"        // isRailWindowCellRead (bd 01po.19 S6)
 #include "TaintPropagation.h"  // TaintSet
 
 #include "llvm/ADT/SmallVector.h"
@@ -115,6 +116,40 @@ bool treeHasNot(Value *V, const TaintSet &Taint, unsigned Depth = 0) {
          treeHasNot(B->getOperand(1), Taint, Depth + 1);
 }
 
+// bd 01po.19 S6 — the quantum-array cell whose rail `X` IS: a cell read, or
+// an xor/add/sub whose dead operand is such a register and which the late
+// round will lower in place on it (`railWindowWritesBack`, its one predicate).
+// Null otherwise. dicke's `q[m-1] ^= q[m-2]; …; q[m-1] ^= q[m-2]` chain.
+Value *cellChainRoot(Value *X, const TaintSet &Taint, const DominatorTree &DT,
+                     const LoopInfo &LI, SmallVectorImpl<Value *> *Chain = nullptr,
+                     unsigned Depth = 0) {
+  if (Chain)
+    Chain->push_back(X);
+  if (isRailWindowCellRead(X))
+    return X;
+  auto *B = dyn_cast<BinaryOperator>(X);
+  if (!B || Depth > 8)
+    return nullptr;
+  for (unsigned Idx = 0; Idx < 2; ++Idx)
+    if (deadQQOperand(B, Idx, Taint, DT, LI)) {
+      const size_t Mark = Chain ? Chain->size() : 0;
+      if (Value *R = cellChainRoot(B->getOperand(Idx), Taint, DT, LI, Chain,
+                                   Depth + 1);
+          R && railWindowWritesBack(B, cast<LoadInst>(R)->getPointerOperand()))
+        return R;
+      if (Chain)
+        Chain->resize(Mark);
+    }
+  return nullptr;
+}
+
+// Is operand `Idx` of `B` a cell register `B` overwrites in place?
+bool cellRegister(BinaryOperator *B, unsigned Idx, const TaintSet &Taint,
+                  const DominatorTree &DT, const LoopInfo &LI) {
+  Value *R = cellChainRoot(B->getOperand(Idx), Taint, DT, LI);
+  return R && railWindowWritesBack(B, cast<LoadInst>(R)->getPointerOperand());
+}
+
 // The commit predicate for one condition value (see the header).
 void considerCondition(Value *C, const TaintSet &Taint, const DominatorTree &DT,
                        const LoopInfo &LI) {
@@ -124,7 +159,11 @@ void considerCondition(Value *C, const TaintSet &Taint, const DominatorTree &DT,
   SmallVector<unsigned, 2> Targets;
   for (unsigned Idx = 0; Idx < 2; ++Idx)
     if (deadQQOperand(B, Idx, Taint, DT, LI) &&
-        rotatedRegister(B->getOperand(Idx), Taint))
+        (rotatedRegister(B->getOperand(Idx), Taint) ||
+         // bd 01po.19 S6: a quantum-array cell read is a register too, the
+         // in-place target exactly when the late round's E2 says so (one
+         // predicate, `railWindowWritesBack`: one cell, a must write-back).
+         cellRegister(B, Idx, Taint, DT, LI)))
       Targets.push_back(Idx);
   // Both operands dead registers: the late round fails loudly (both-dead ruling);
   // leave the decomposition, which that fence refuses on its own.
@@ -287,8 +326,23 @@ int regCondTagIndex(const Instruction *I) {
 void regCondProvenance(Value *V, TaintSet &Taint, SmallPtrSetImpl<Value *> &Out) {
   if (Taint.Tainted.count(V))
     Out.insert(V);
-  if (Value *T = regCondTarget(V))
-    condProvenance(T, Taint, Out);
+  Value *T = regCondTarget(V);
+  if (!T)
+    return;
+  // bd 01po.19 S6: a target that is an in-place update CHAIN on a quantum-
+  // array cell (`cellChainRoot`) is ONE register — the chain's names and the
+  // cell read; its sources are read, not merged into the rail (the step-1
+  // "not the source" rule, one hop deeper).
+  if (auto *TI = dyn_cast<Instruction>(T); TI && railWindowDerived(T)) {
+    DominatorTree DT(*TI->getFunction());
+    LoopInfo LI(DT);
+    SmallVector<Value *, 8> Chain;
+    if (cellChainRoot(T, Taint, DT, LI, &Chain)) {
+      Out.insert(Chain.begin(), Chain.end());
+      return;
+    }
+  }
+  condProvenance(T, Taint, Out);
 }
 
 void commitRegisterConditions(Module &M, TaintSet &taint) {

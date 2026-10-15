@@ -50,7 +50,10 @@
 ; RETIREMENT TRIGGER: each of S4-S7 that lands drops its name from the list; when
 ; the list empties this file becomes an ACCEPT with an analytic trace check.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S6 quantum control on cells
+; (bd 01po.19 S6, 2026-10-15: S6 is built and leaves the needs list; this
+; array now reaches the control chain, which refuses it loudly as below —
+; the loop-carried `a` value arm under a cell condition; bd 01po.19.20.)
+; CHECK: cq controlled lowering: control flow inside a loop body under quantum control
 ; CHECK-NOT: tainted value stored to memory
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"

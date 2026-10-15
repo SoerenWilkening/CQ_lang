@@ -705,7 +705,7 @@ bool voidReaderRecordsSettled(const CallInst *CI, const Value *P,
           F && F->getCalledFunction() &&
           F->getCalledFunction()->getName() == "cqrt_free" &&
           F->arg_size() == 1 && F->getArgOperand(0) == R &&
-          provablyBefore(F, bo, DT))
+          railWindowBeforeInTrip(F, bo, P, DT))  // provablyBefore (+S6 trip)
         Released = true;
     if (!Released)
       return false;
@@ -743,6 +743,13 @@ bool priorUseIsSettled(const Instruction *UI, const Value *P,
                        const Instruction *bo, const DominatorTree &DT,
                        const InteriorDischargePlan *Plan, const TaintSet &taint,
                        bool QuantumSource) {
+  // bd 01po.19 S6 — (f) a WRITE-BACK of `P` into its own quantum-array cell
+  // (a kept-carrier store, S4): it reads no basis and the site's must
+  // write-back (`railWindowWritesBack`) re-stores before any read of the cell.
+  if (const auto *SI = dyn_cast<StoreInst>(UI);
+      SI && QuantumSource && SI->getValueOperand() == P &&
+      railWindowOfPointer(SI->getPointerOperand()))
+    return true;
   const auto *CI = dyn_cast<CallInst>(UI);
   if (!CI)
     return false;  // (e) plain-IR use / still-unlowered tainted opcode.
@@ -946,9 +953,11 @@ bool inPlacePositionHolds(const Instruction *Site, const Value *P,
   // above is a register mutated once per trip where the source recomputes from
   // a loop-INVARIANT value; a cell is reloaded on every trip, so one mutation
   // per trip IS the source (`q[i] ^= q[j]` in a loop body).
+  const bool SameTripCell =
+      QuantumSource && railWindowSameTripTarget(Site, P, DT);
   if ((LI.getLoopFor(const_cast<BasicBlock *>(Site->getParent())) ||
        blockCanRepeat(const_cast<BasicBlock *>(Site->getParent()))) &&
-      !(QuantumSource && railWindowSameTripTarget(Site, P, DT)))
+      !SameTripCell)
     return false;
 
   // G6/G7 — POSITION-AWARE DEADNESS + PRIOR-OBLIGATION DISCHARGE.
@@ -1040,11 +1049,16 @@ bool inPlacePositionHolds(const Instruction *Site, const Value *P,
     // EITHER of these to admit a site with a later read, re-derive
     // `collectRailGates`' off-chain-BO rule BEFORE relaxing anything here — the
     // test suite will not do it for you.
-    if (!provablyBefore(UI, Site, DT))
+    // bd 01po.19 S6 — the G5 same-trip exemption's G6 half: `Site` reaches a
+    // use earlier in its trip only around the back edge, which RELOADS the
+    // cell `P` first (a fresh `P` next trip), so that use is before `Site`.
+    if (!(SameTripCell ? railWindowBeforeInTrip(UI, Site, P, DT)
+                       : provablyBefore(UI, Site, DT)))
       return false;
     // G7 — the prior use must be settled (see `priorUseIsSettled`).
-    if (!priorUseIsSettled(UI, P, Site, DT, Plan, taint, QuantumSource))
+    if (!priorUseIsSettled(UI, P, Site, DT, Plan, taint, QuantumSource)) {
       return false;
+    }
   }
   return true;
 }

@@ -56,29 +56,22 @@
 ; RUN:   | %filecheck %s --implicit-check-not='cq rail bank' --implicit-check-not='tainted value stored to memory'
 ; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
 ; RUN:   | %filecheck %s --check-prefix=WIN
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S6 quantum control on cells
+; (bd 01po.19 S6, 2026-10-15: S6 is built and leaves the needs list; this
+; array now reaches the control chain, which refuses it loudly as below —
+; every q[m-1] update lowers in place and the s==3 condition lowers, but the
+; per-trip temporaries of `s` are not uncomputed before the next in-place
+; gate, so Q4 (declineLiveWindowRecords) refuses; bd 01po.19.17.)
+; CHECK: cq rail window: temporary read from a quantum-array cell is live at a non-diagonal gate on that array
+; (bd 01po.19 S6: the post-promotion IR-line WIN pins were dropped — S6's arm
+; promotion seeds a load before each quantum branch, renaming every promoted
+; value; the claim and the per-class promotion lines below still pin S1-S3.
+; The S6 shape is pinned by railwindow_s6_*.ll; this file flips to an accept
+; with the whole stream pinned when bd 01po.19.17 lands.)
 ; WIN: CQ_RAILWINDOW_DBG: @main claims %1 cells=i8 loads=11 stores=7 Q=  br label %11
-; WIN: CQ_RAILWINDOW_DBG: promote cell {(2 + %.rails)<nuw>,+,-1}<nw><%14> in region %14 loads=3 stores=1 exits=1
+; WIN: CQ_RAILWINDOW_DBG: promote cell {(2 + %.rails)<nuw>,+,-1}<nw><%14> in region %14 loads=4 stores=1 exits=1
 ; WIN: CQ_RAILWINDOW_DBG: promote cell {(3 + %.rails)<nuw>,+,-1}<nw><%14> in region %14 loads=4 stores=4 exits=1
 ; WIN: CQ_RAILWINDOW_DBG: promote cell {(1 + %.rails)<nuw>,+,-1}<nw><%14> in region %14 loads=3 stores=1 exits=1
 ; WIN: CQ_RAILWINDOW_DBG: promoted 3 cell class(es)
-; WIN: %cq.win15.0 = phi i1 [ %32, %29 ], [ %56, %53 ]
-; WIN: store i1 %cq.win.0, ptr %cq.rail.addr1, align 1
-; WIN: store i1 %cq.win15.0, ptr %cq.rail.addr, align 1
-; WIN: %cq.win.in = load i1, ptr %cq.rail.addr1, align 1
-; WIN: %18 = zext i1 %cq.win.in to i8
-; WIN: %cq.win.in16 = load i1, ptr %cq.rail.addr, align 1
-; WIN: %19 = zext i1 %cq.win.in16 to i8
-; WIN: %28 = tail call zeroext i1 @cq_theta_i1(i1 noundef zeroext %cq.win.in, double noundef %27) #7
-; WIN: %cq.win.0 = phi i1 [ %28, %21 ], [ %cq.win.in, %14 ]
-; WIN: %30 = zext i1 %cq.win.0 to i8
-; WIN: %cq.win.in19 = load i1, ptr %cq.rail.addr2, align 1
-; WIN: %36 = zext i1 %cq.win.in19 to i8
-; WIN: %41 = zext i1 %cq.win.0 to i8
-; WIN: %52 = tail call zeroext i1 @cq_theta_i1(i1 noundef zeroext %cq.win.in19, double noundef %51) #7
-; WIN: %cq.win18.0 = phi i1 [ %52, %45 ], [ %cq.win.in19, %34 ]
-; WIN: %54 = zext i1 %cq.win18.0 to i8
-; WIN: store i1 %cq.win18.0, ptr %cq.rail.addr2, align 1
 
 ; ModuleID = 'dicke_n.c'
 source_filename = "dicke_n.c"

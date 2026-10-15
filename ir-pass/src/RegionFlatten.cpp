@@ -14,6 +14,7 @@
 #include "ControlPlan.h"
 #include "LiteralIntegrity.h"  // declineAddressTakenBlocks (bd 7udx)
 #include "SelectClassify.h"    // isCondRailLeaf / isCondRailPhiShape (never erase a user's rail)
+#include "RailWindow.h"        // isRailWindowCellRead (bd 01po.19 S6)
 #include "RegCondLeaf.h"       // isRegCondLeaf (bd dm7f.77)
 #include "TaintPropagation.h"
 
@@ -111,8 +112,11 @@ void flattenRegion(const ControlRegion &R, TaintSet &taint) {
   // bd dm7f.77 — nor a REGISTER CONDITION (RegCondLeaf.h): a control emitter
   // may hold it only through a `WeakTrackingVH` (the state prep's recorded
   // control), and `lowerOps` turns it into the register that control reads.
+  // bd 01po.19 S6 — nor a quantum-array CELL READ: the same recorded control,
+  // retyped to the cell's handle at the rail-window slot.
   if (Cond && Cond->use_empty() && !isCondRailLeaf(Cond) &&
-      !isCondRailPhiShape(Cond) && !isRegCondLeaf(Cond)) {
+      !isCondRailPhiShape(Cond) && !isRegCondLeaf(Cond) &&
+      !isRailWindowCellRead(Cond)) {
     scrubTaint(Cond, taint);
     Cond->eraseFromParent();
   }
@@ -209,12 +213,14 @@ void flattenRegionTree(const ControlRegion &Outer, const ControlRegion &Inner,
   //    both rungs, for the reason spelled out in `flattenRegion` step 3 — no
   //    subject today, defence in depth against a silent re-opening.)
   if (InnerCond && InnerCond->use_empty() && !isCondRailLeaf(InnerCond) &&
-      !isCondRailPhiShape(InnerCond) && !isRegCondLeaf(InnerCond)) {
+      !isCondRailPhiShape(InnerCond) && !isRegCondLeaf(InnerCond) &&
+      !isRailWindowCellRead(InnerCond)) {
     scrubTaint(InnerCond, taint);
     InnerCond->eraseFromParent();
   }
   if (OuterCond && OuterCond->use_empty() && !isCondRailLeaf(OuterCond) &&
-      !isCondRailPhiShape(OuterCond) && !isRegCondLeaf(OuterCond)) {
+      !isCondRailPhiShape(OuterCond) && !isRegCondLeaf(OuterCond) &&
+      !isRailWindowCellRead(OuterCond)) {
     scrubTaint(OuterCond, taint);
     OuterCond->eraseFromParent();
   }

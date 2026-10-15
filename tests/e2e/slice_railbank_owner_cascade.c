@@ -1,6 +1,14 @@
 /* slice_railbank_owner_cascade.c — THE OWNER'S CANONICAL CUSTOMER PROGRAM,
    COMMITTED AS THE RECORD (owner ruling E4, bd `zwtm`, session 2026-09-15).
 
+   ⚠⚠ STALE AS OF 2026-10-15 (bd 01po.19.27, review of 01po.19 S6): the program
+   NO LONGER DECLINES. Measured: `cq-opt` lowers it with rc 0 on main's binary
+   589c5482 (before S5) and on the S6 branch; stage 2b verifies both frees and
+   reports one template rail left dirty (the carried merge's per-trip `a - 3`
+   rail, r2j3.32 decision (b)'s accepted leak). It stays unregistered until its
+   trace is reviewed analytically and given a golden (bd 01po.19.27); the text
+   below records why it was not registered when it declined.
+
    ⚠ THIS SLICE IS DELIBERATELY **NOT REGISTERED** IN `CMakeLists.txt` AND HAS
    **NO GOLDEN**, because the program still DECLINES and the e2e layer has no
    decline shape: `run_slice*.sh` runs under `set -euo pipefail` and byte-diffs a

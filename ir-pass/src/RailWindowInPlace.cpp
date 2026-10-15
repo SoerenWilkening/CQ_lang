@@ -22,7 +22,9 @@
 #include "RailWindowAlias.h"
 
 #include "BoolStorageNarrow.h"  // boolCompareXor — the ONE `_Bool` xor spelling
+#include "ChainWalk.h"         // isNonPermutationMove
 #include "InPlaceQQ.h"         // railIsUserData
+#include "WireWalk.h"          // provablyBefore
 #include "TaintPropagation.h"
 
 #include "llvm/Analysis/AssumptionCache.h"
@@ -217,6 +219,38 @@ bool railWindowWritesBack(const Instruction *U, const Value *CellPtr) {
   return true;
 }
 
+bool railWindowDerived(const Value *V) {
+  SmallVector<const Value *, 8> Work{V};
+  SmallPtrSet<const Value *, 16> Seen;
+  while (!Work.empty()) {
+    const Value *X = Work.pop_back_val();
+    if (isRailWindowCellRead(X))
+      return true;
+    const auto *I = dyn_cast<Instruction>(X);
+    if (!I || isa<LoadInst>(I) || isa<CallBase>(I) || !Seen.insert(X).second ||
+        Seen.size() > 64)
+      continue;
+    for (const Value *Op : I->operands())
+      Work.push_back(Op);
+  }
+  return false;
+}
+
+// InPlaceQQ's predicate, kept here for the file budget (moved from
+// InPlaceQQ.cpp). bd 01po.19 S6: a quantum-array CELL READ is user DATA (the
+// array owns its rail, the spine never discharges it, whatever this spelling
+// carries) — asked by G7's arm (c′), the postcondition and `dependsOnTarget`.
+// Whether a cell read may be an in-place TARGET is a different question, asked
+// by `qqTargetIsUserData` (E2): it also needs `railWindowWritesBack`.
+bool railIsUserData(const Value *P) {
+  if (isRailWindowCellRead(P))
+    return true;
+  for (const User *U : P->users())
+    if (const auto *G = dyn_cast<CallInst>(U); G && isNonPermutationMove(G, P))
+      return true;
+  return false;
+}
+
 bool qqTargetIsUserData(const Value *Result, const Value *Op) {
   if (!isRailWindowCellRead(Op))
     return railIsUserData(Op);
@@ -234,6 +268,17 @@ bool railWindowSameTripTarget(const Instruction *Site, const Value *P,
   // included).
   SmallPtrSet<const Instruction *, 1> Reload{L};
   return !railWindowReachesAvoiding(Site, Site, Reload);
+}
+
+bool railWindowBeforeInTrip(const Instruction *X, const Instruction *Site,
+                            const Value *P, const DominatorTree &DT) {
+  if (provablyBefore(X, Site, DT))
+    return true;
+  const auto *L = dyn_cast_or_null<LoadInst>(P);
+  if (!L || !railWindowSameTripTarget(Site, P, DT) || !DT.dominates(X, Site))
+    return false;
+  SmallPtrSet<const Instruction *, 1> Reload{L};
+  return !railWindowReachesAvoiding(Site, X, Reload);
 }
 
 }  // namespace cq

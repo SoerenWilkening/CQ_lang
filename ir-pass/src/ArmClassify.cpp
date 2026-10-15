@@ -24,6 +24,7 @@
 //     → `impure value arm`; Q+Q link → `value-arm swap-route`).
 
 #include "ArmClassify.h"
+#include "RailWindow.h"   // isRailWindowCellRead (bd 01po.19 S6)
 #include "RegCondLeaf.h"  // isRegCondLeaf / regCondProvenance (bd dm7f.77)
 
 #include "ArmAnalysis.h"
@@ -3809,7 +3810,11 @@ CondWireDisp railCondWireDisposition(
     const ControlRegion &R, TaintSet &Taint,
     const SmallPtrSetImpl<Value *> &Prov, const DominatorTree *DT,
     const SmallPtrSetImpl<const CallInst *> *Covered = nullptr) {
-  if (!R.Pred || !(isCondRailLeaf(R.Condition) || isRegCondLeaf(R.Condition)))
+  // bd 01po.19 S6: a quantum-array cell read is the third register kind (its
+  // window's one SSA name; the positional ground above holds for it too: the
+  // branch reads it later, so no in-place update can target it before).
+  if (!R.Pred || !(isCondRailLeaf(R.Condition) || isRegCondLeaf(R.Condition) ||
+                   isRailWindowCellRead(R.Condition)))
     return CondWireDisp::DeclineNow;
   const Instruction *BI = R.Pred->getTerminator();
   if (!wireGainsNonDiagonalGate(Prov, /*EmitPoint=*/nullptr, /*DT=*/nullptr,
@@ -5680,6 +5685,17 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   // and for the same recorded reason: the one-directional version of that check
   // was already wrong once ("Luck is not a fence", `SawRotationArm` below).
   const bool RailCond = isCondRailLeaf(Region.Condition);
+  // ---- bd test_C_libtooling-01po.19 S6 (design §5 item 1) — A QUANTUM-ARRAY
+  //      CELL READ as the whole condition (`if (q[m-1]) …`): a BORROWED ROOT,
+  //      the cell's own rail (RailWindow.h), read as a register-as-control
+  //      exactly like the bare `_Bool` rail — never minted, bracketed or freed.
+  //      Its wire within the window is its one SSA name (S3 promotes every cell
+  //      read twice in a window to one name; two cells of a window are provably
+  //      distinct, else the array waits for S7), so the rail ladder's SSA
+  //      questions are the cell's. Admitted only for rotation-clause arms.
+  const bool CellCond = !RailCond && isRailWindowCellRead(Region.Condition) &&
+                        Region.Condition->getType()->isIntegerTy(1) &&
+                        condTreeRotationCandidate(Region, MergePhi, Taint);
   // ---- bd test_C_libtooling-dm7f.52 — A COMPOUND CONDITION TREE on the in-place
   //      controlled Ry arm and the controlled state prep (`if (a & b)`,
   //      `if (a) if (b)` → `select i1 %a, %b, false`, `c = a + b; if (c == 1)` →
@@ -5747,11 +5763,13 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   //      rotation of the xor's SOURCE is off the condition's wire. Admitted only
   //      for a region whose every arm is a rotation-clause theta, like the φ root;
   //      every rail-only clause below reads `RegCond`.
-  const bool CommitCond = !RailCond && isRegCondLeaf(Region.Condition) &&
+  const bool CommitCond = !RailCond && !CellCond &&
+                          isRegCondLeaf(Region.Condition) &&
                           condTreeRotationCandidate(Region, MergePhi, Taint);
   CondTree RotTree;
   const bool CondIsTree =
-      !RailCond && !CommitCond && !isa<CmpInst>(Region.Condition) &&
+      !RailCond && !CommitCond && !CellCond &&
+      !isa<CmpInst>(Region.Condition) &&
       collectCondTree(Region.Condition, RotTree, /*AllowLogicalSelect=*/true,
                       /*AllowRailPhi=*/true) &&
       !RotTree.Nodes.empty() &&
@@ -5771,14 +5789,14 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   //      rotation-clause theta (`condTreeRotationCandidate`).
   CondTree PhiRootTree;
   const bool PhiRootCond =
-      !RailCond && !CommitCond && !CondIsTree &&
+      !RailCond && !CommitCond && !CellCond && !CondIsTree &&
       isCondRailPhiShape(Region.Condition) &&
       collectCondTree(Region.Condition, PhiRootTree,
                       /*AllowLogicalSelect=*/true, /*AllowRailPhi=*/true) &&
       PhiRootTree.Nodes.empty() && PhiRootTree.RailPhiLeaves.size() == 1 &&
       condTreeRotationCandidate(Region, MergePhi, Taint);
   // The register IS the flag: a `cq_theta_i1` rail or a claimed merge φ.
-  const bool RegCond = RailCond || PhiRootCond || CommitCond;
+  const bool RegCond = RailCond || PhiRootCond || CommitCond || CellCond;
   if (!isa<CmpInst>(Region.Condition) && !RegCond && !CondIsTree) {
     diagnoseUnderControl(declAnchor(Region), "control flow");
     return ArmDisposition::Declined;
@@ -5873,7 +5891,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
     if (P->getParent() != Region.Pred)
       Region.PrepRegionIdxs.push_back(PrepIdx);
   }
-  if ((RailCond || CommitCond) && !Region.Pred) {
+  if ((RailCond || CommitCond || CellCond) && !Region.Pred) {
     // No pred, no branch, no read point — the ladder's rungs (ii)/(iii) have
     // nothing to anchor on. Loud, never a silent skip (Rule 1).
     diagnoseUnderControl(declAnchor(Region), "control flow");
@@ -5918,8 +5936,9 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   // names of its wire: the value itself and the in-place target it overwrites
   // (a measured target would make the in-place gate a gate on a measured
   // handle, and the control a post-measure read).
-  if (CommitCond) {
-    Value *Target = regCondTarget(Region.Condition);  // null: a fresh rail.
+  if (CommitCond || CellCond) {  // 01po.19 S6: a cell read has no target.
+    Value *Target =
+        CommitCond ? regCondTarget(Region.Condition) : nullptr;  // null: fresh.
     if (!Taint.Tainted.count(Region.Condition)) {
       diagnoseUnderControl(declAnchor(Region), "control flow");
       return ArmDisposition::Declined;
@@ -6049,7 +6068,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   // A φ ROOT takes `condWireDisposition` with `CondIsClaimedRailPhi` — the
   // kickback φ root's exact call (step 5c ran rung 0 above).
   const CondWireDisp WireDisp =
-      RailCond     ? railCondWireDisposition(Region, Taint, Prov, DT)
+      RailCond || CellCond ? railCondWireDisposition(Region, Taint, Prov, DT)
       : CommitCond ? railCondWireDisposition(Region, Taint, Prov, DT,
                                              CoveredPhiGates.empty()
                                                  ? nullptr
@@ -7358,6 +7377,17 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
           Rollable = true;
           GrantIterLocal = true;
         }
+        // (d) — bd test_C_libtooling-01po.19 S6 (design §5 item 2): a
+        //      BORROWED-ROOT base, a quantum-array cell read. Its rail neither
+        //      crosses the back edge as a φ (b) nor is minted per trip (c): the
+        //      cell is memory, reloaded before every re-execution of the gate
+        //      (`railWindowSameTripTarget`), so one controlled Ry per trip on
+        //      the rail the reload names IS the source. The target is then
+        //      frozen (R6) — a cell is never reverse-played or freed (S4).
+        //      Recorded below like (b′) (no clause-(c) premise to re-ask).
+        if (!Rollable && DT && isRailWindowCellRead(RotBase) &&
+            railWindowSameTripTarget(T, RotBase, *DT))
+          Rollable = true;
         if (!Rollable) {
           // bd `test_C_libtooling-8h7d.12` — THE HONEST STRING FOR THE ONE
           // CLAUSE THAT HAS A SUBJECT. `IterEsc` is non-null only when every

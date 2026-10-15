@@ -42,7 +42,10 @@
 ; RUN:   | %filecheck %s --implicit-check-not='railbank [Bank]' \
 ; RUN:       --implicit-check-not='unsupported reader of a rail-bank cell'
 ; CHECK: CQ_CTRL_DBG: railbank C6 read-order refused:
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S6 quantum control on cells
+; (bd 01po.19 S6, 2026-10-15: S6 is built and leaves the needs list; this
+; array now reaches the control chain, which refuses it loudly as below —
+; a value arm whose chain reads a cell under a quantum condition; bd 01po.19.20.)
+; CHECK: cq controlled lowering: control flow under quantum control
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

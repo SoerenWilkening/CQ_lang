@@ -3549,6 +3549,15 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
 // bool is read by exactly ONE caller (`lowerLoops`) for exactly ONE purpose: to
 // offer the ROOT-MINT escape below **only where this marker refused**, which is
 // what makes that offer provably ADDITIVE (see the call site).
+// bd 01po.19 S6: does `L` load or store a `!cq.railwindow` cell?
+bool loopTouchesRailWindow(const Loop *L) {
+  for (BasicBlock *BB : L->blocks())
+    for (Instruction &I : *BB)
+      if (Value *P = getLoadStorePointerOperand(&I); P && railWindowOfPointer(P))
+        return true;
+  return false;
+}
+
 bool markIfIterationLocal(Loop *L, TaintSet &taint, LoopInfo &LI) {
   if (taintedExit(L, taint))
     return false;  // Q1 quantum-bounded — never Case B.
@@ -5429,6 +5438,15 @@ void collapseFlattenedLoopRails(
         // non-zero, and granting an in-body discharge permission for a module
         // that is never emitted is bookkeeping on a corpse (bd 8h7d.5 round 1).
         markIfRailLocal(L, taint, LI, GateCalls, Roots);
+      } else if (R2 == RailRound2::NotClaimed && loopTouchesRailWindow(L)) {
+        // bd 01po.19 S6 — a WINDOW-ARRAY loop (design §6): its cells are
+        // memory (borrowed roots, kept-carrier stores), so there is no rail φ
+        // to collapse and no invariant register; once its in-loop regions are
+        // flattened it is exactly Case B — every remaining tainted value an
+        // iteration-local temporary — and the S4 marker (`markIfIterationLocal`,
+        // which already admits the cells) is the one that certifies it. Scoped
+        // to window loops: no other loop's disposition moves.
+        markIfIterationLocal(L, taint, LI);
       }
     }
   }
@@ -7242,7 +7260,10 @@ Instruction *iterationLocalTaintEscape(const Loop *L, const TaintSet &taint) {
 // need to be: `emitInPlaceRotationRegion` mints the flag from it and ERASES it,
 // so by this stage it is not in `L`'s blocks at all (measured on the same dump —
 // `offset.ll`'s `%c = icmp eq i32 %q, 5` is simply gone).
-// ⚠ RETIREMENT TRIGGER: adding a SIXTH kind to this list is adding a claim that
+// bd 01po.19 S6 added the SIXTH and SEVENTH kinds: a quantum-array CELL READ
+// (a borrowed root, never discharged) and a STORE into a cell (a kept-carrier
+// sink); neither mints a rail (S4's `isTerminalHandle` / `railStoredToRailWindow`).
+// ⚠ RETIREMENT TRIGGER: adding an EIGHTH kind to this list is adding a claim that
 // it mints nothing — re-derive it against `lowerOps`, not against this comment.
 //
 // ⚠ WHAT THIS PREDICATE STILL OVER-COUNTS, MEASURED RATHER THAN GUESSED, so the
@@ -7272,6 +7293,14 @@ static bool bodyHasSpineDischargeCandidate(const Loop *L,
       if (!taint.Tainted.count(&I))
         continue;
       if (isa<PHINode>(I))
+        continue;
+      // bd 01po.19 S6: a quantum-array cell read is a BORROWED ROOT and a
+      // store into a cell a KEPT-CARRIER sink (S4): the spine discharges
+      // neither, so they owe the marking nothing.
+      if (isRailWindowCellRead(&I))
+        continue;
+      if (const auto *St = dyn_cast<StoreInst>(&I);
+          St && railWindowOfPointer(St->getPointerOperand()))
         continue;
       if (const auto *CI = dyn_cast<CallInst>(&I)) {
         const Function *F = CI->getCalledFunction();

@@ -54,7 +54,18 @@
 ; RETIREMENT TRIGGER: each of S4-S7 that lands drops its name from the list; when
 ; the list empties this file becomes an ACCEPT with an analytic trace check.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S6 quantum control on cells{{$}}
+; (bd 01po.19 S6: S7 versioned the alias away and S6 leaves the needs list;
+; the control chain now refuses the loop-carried `a >= 3` compare whose wire
+; gains the cell-controlled value arm — over-decline bd 01po.19.20.)
+; CHECK: cq controlled lowering: condition predates a non-diagonal gate under quantum control{{$}}
+; The WIN prefix pins where the array now gets to (S7 versions the pair, S3
+; promotes, S6's write-back split keeps the quantum merge) before the loud
+; control-chain refusal above.
+; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
+; RUN:   | %filecheck %s --check-prefix=WIN --implicit-check-not='write-back split'
+; WIN: CQ_RAILWINDOW_DBG: version region
+; WIN: CQ_RAILWINDOW_DBG: promoted {{[0-9]+}} cell class(es)
+; WIN: CQ_RAILWINDOW_DBG: write-back kept: 
 ; CHECK-NOT: tainted value stored to memory
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"

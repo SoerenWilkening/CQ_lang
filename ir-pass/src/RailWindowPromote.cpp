@@ -141,7 +141,6 @@ constexpr char kNeedS5Copy[] =
     "S5 cell value copied into another cell (bd 01po.19.13)";
 constexpr char kNeedS5Partial[] =
     "S5 cell update not written back once on every path (bd 01po.19.14)";
-constexpr char kNeedS6[] = "S6 quantum control on cells";
 constexpr char kNeedS7[] = "S7 index alias versioning";
 
 // Does `V` (a value stored into the cell at `S`) peel, through storage casts,
@@ -184,19 +183,10 @@ std::string railWindowNeeds(Function &F, const RailWindowAccesses &Acc,
   // Values quantum through the array or through taint.
   SmallPtrSet<Value *, 32> QD;
   railWindowQuantum(F, Acc, taint, QD);
-  bool S5 = false, S5Classical = false, S5Partial = false, S6 = false,
-       S7 = false;
-  for (Instruction &I : instructions(F)) {
-    Value *C = nullptr;
-    if (auto *B = dyn_cast<BranchInst>(&I); B && B->isConditional())
-      C = B->getCondition();
-    else if (auto *Sw = dyn_cast<SwitchInst>(&I))
-      C = Sw->getCondition();
-    else if (auto *Se = dyn_cast<SelectInst>(&I))
-      C = Se->getCondition();
-    if (C && QD.count(C))
-      S6 = true;
-  }
+  // S6 (quantum control on cells) is built (RailWindowArms.cpp, the cell
+  // register condition in the control chain): a quantum branch over cells is
+  // the control chain's to lower or to refuse loudly; no S6 needs flag.
+  bool S5 = false, S5Classical = false, S5Partial = false, S7 = false;
   for (StoreInst *St : Acc.Stores) {
     if (!QD.count(St->getValueOperand()))
       continue;
@@ -247,8 +237,7 @@ std::string railWindowNeeds(Function &F, const RailWindowAccesses &Acc,
   std::string Out;
   for (auto [Need, Text] :
        {std::pair{S5Classical, kNeedS5Classical}, std::pair{S5, kNeedS5Copy},
-        std::pair{S5Partial, kNeedS5Partial}, std::pair{S6, kNeedS6},
-        std::pair{S7, kNeedS7}})
+        std::pair{S5Partial, kNeedS5Partial}, std::pair{S7, kNeedS7}})
     if (Need)
       Out += (Out.empty() ? std::string(kMsgWindowPending) + " "
                           : std::string(", ")) +
@@ -265,8 +254,7 @@ std::string railWindowCopyNeeds() {
 }
 
 std::string railWindowAllNeeds() {
-  return std::string(kMsgWindowPending) + " " + kNeedS5 + ", " + kNeedS6 +
-         ", " + kNeedS7;
+  return std::string(kMsgWindowPending) + " " + kNeedS5 + ", " + kNeedS7;
 }
 
 unsigned promoteRailWindows(Function &F, RailWindowAccesses &Acc) {

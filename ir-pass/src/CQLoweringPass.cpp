@@ -589,6 +589,8 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // see the `i1` spelling. See `narrowBoolStorageModule`.
   if (narrowBoolStorageModule(M, taint))
     taint = propagate(M, wd);
+  if (splitRailWindowWritebacks(M, taint))  // bd 01po.19 S6 (RailWindow.h)
+    taint = propagate(M, wd);
   // Debug lever (bd adia; env-gated, no behavior change): dump the module state
   // the Phase-6 spec-scan reads (post fp80/PredMux/unroll fixpoints).
   if (::getenv("CQ_SPEC_DBG")) {
@@ -1387,6 +1389,8 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   if (declineConvertedRailPhiLeaves(railPhiRec))
     return false;
   if (narrowBoolStorageModule(M, taint))  // bd dm7f.77 — see run().
+    Reprop();
+  if (splitRailWindowWritebacks(M, taint))  // bd 01po.19 S6 — see run().
     Reprop();
   // Phase 6 specialization pre-pass + carve-out, mirrored in this entry point
   // too (twin-pipeline parity is MANDATORY — a pre-pass wired in `run()` but not
