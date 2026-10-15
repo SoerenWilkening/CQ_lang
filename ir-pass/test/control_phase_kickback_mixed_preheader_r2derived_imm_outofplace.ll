@@ -76,19 +76,24 @@
 ; CHECK: %[[OUT:.*]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK: %[[MUL:.*]] = call i32 @cq_template_mul_i32_hl(i32 %[[OUT]], i32 3)
 
-; ⭐ THE DISCRIMINATOR. `a + w` is a Q+Q add and must be lowered OUT OF PLACE into
-; a fresh rail — never an in-place gate whose second argument is a rail handle.
+; ⭐ THE DISCRIMINATOR. `a + w` is a Q+Q add and must NEVER become the CLASSICAL-
+; immediate in-place gate `cqrt_addc_i32(h_a, <rail>)` the finding emitted (a rail
+; handle in the immediate slot). Until bd r2j3.33 it lowered out of place into a
+; fresh rail; since dm7f.51 step 1 `a`'s old value is dead and the sum survives
+; (measured, and read by the rolled body), so it lowers through the QUANTUM-source
+; ABI instead — `cqrt_add_i32(src = w, dst = a)`, both slots handles by the ABI —
+; on `a`'s own rail. (The file name's `outofplace` is historical.)
 ; CHECK-NEXT: %[[A:.*]] = call i32 @cqrt_alloc_i32(
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[A]], double 0x3FE6666666666666)
-; CHECK-NEXT: %[[SUM:.*]] = call i32 @cq_template_add_i32(i32 %[[A]], i32 %[[MUL]])
+; CHECK-NEXT: call void @cqrt_add_i32(i32 %[[MUL]], i32 %[[A]]), !cq.inplace.qq
 
 ; ⭐ AND THE `y*3` RAIL IS DISCHARGED AND FREED — on the round-2 binary neither
 ; line existed, because the rail had been consumed as an "immediate".
 ; CHECK-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %[[MUL]], i32 %[[OUT]], i32 3)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[MUL]])
 
-; The rolled body reads the OUT-OF-PLACE sum rail.
-; CHECK: call i32 @cq_template_and_i32_hl(i32 %[[SUM]], i32 %{{.*}})
+; The rolled body reads the sum on `a`'s rail.
+; CHECK: call i32 @cq_template_and_i32_hl(i32 %[[A]], i32 %{{.*}})
 
 ; ⭐ ZERO in-place value gates in the whole module. This is the assertion the
 ; finding is about; `cqrt_addc_i32` appeared exactly once on the round-2 binary.
@@ -97,6 +102,8 @@
 
 ; The Q-R1-1 residual, pinned: the per-trip `and` rail is minted and NOT
 ; discharged (the invariant register is a template rail, clause (ii) refuses it).
+; (Since bd r2j3.33 the invariant register is `a`'s own rail holding the sum, not
+; a template rail; the residual is MEASURED unchanged — same `and`, same count.)
 ; UCNT-COUNT-1: call i32 @cq_template_and_i32_hl(
 ; UCNT-NOT: call i32 @cq_template_and_i32_hl(
 ; UCNT-NOT: call void @cq_template_and_i32_hl_unc(

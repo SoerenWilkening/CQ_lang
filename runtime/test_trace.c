@@ -167,6 +167,23 @@ int main(void) {
     cqrt_copy_i32_controlled(h_c, h_a, h_b);
     cqrt_copy_i64_controlled(h_c, h_i64, h_i64_b);
 
+    /* --- bd r2j3.33 / dm7f.51 step 1: the in-place quantum-source
+     * xor/add/sub (dst ^=/+=/-= src). Void, mints no handle; src/dst reuse
+     * the uncontrolled copy block's handles. Width 1 has no symbol (the
+     * pass emits cqrt_cnot there). */
+    cqrt_xor_i8(h_i8, h_i8_b);
+    cqrt_xor_i16(h_i16, h_i16_b);
+    cqrt_xor_i32(h_a, h_b);
+    cqrt_xor_i64(h_i64, h_i64_b);
+    cqrt_add_i8(h_i8, h_i8_b);
+    cqrt_add_i16(h_i16, h_i16_b);
+    cqrt_add_i32(h_a, h_b);
+    cqrt_add_i64(h_i64, h_i64_b);
+    cqrt_sub_i8(h_i8, h_i8_b);
+    cqrt_sub_i16(h_i16, h_i16_b);
+    cqrt_sub_i32(h_a, h_b);
+    cqrt_sub_i64(h_i64, h_i64_b);
+
     /* --- Phase 7.1 Increment D smoke: half-precision (f16). f16 rides the
      * fp rotation-lowering path — alloc / measure / ry / rz + the fadd Q+Q
      * and Q+C templates. The UNCONTROLLED cqrt_copy_f<W> family exists since

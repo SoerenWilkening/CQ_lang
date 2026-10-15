@@ -32,19 +32,22 @@
 ; RUN: %filecheck %s --check-prefix=UCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=RYCNT < %t.cqd0.ll
 
-; The derived rail is `y + 1` this time, and the Q+Q add still lowers OUT of place
-; onto a FRESH rail whose operands are BOTH handles.
+; The derived rail is `y + 1` this time. The Q+Q add never becomes the classical-
+; immediate `cqrt_addc_i32` of the finding; since bd r2j3.33 (dm7f.51 step 1) it
+; lowers through the QUANTUM-source ABI on `a`'s own rail (`a`'s old value is dead,
+; the sum survives), `cqrt_add_i32(src = w, dst = a)` — the file name's
+; `outofplace` is historical.
 ; CHECK: %[[OUT:.*]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK: %[[W:.*]] = call i32 @cq_template_add_i32_hl(i32 %[[OUT]], i32 1)
 ; CHECK: %[[A:.*]] = call i32 @cqrt_alloc_i32(
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[A]], double 0x3FE6666666666666)
-; CHECK-NEXT: %[[SUM:.*]] = call i32 @cq_template_add_i32(i32 %[[A]], i32 %[[W]])
+; CHECK-NEXT: call void @cqrt_add_i32(i32 %[[W]], i32 %[[A]]), !cq.inplace.qq
 ; CHECK-NEXT: call void @cq_template_add_i32_hl_unc(i32 %[[W]], i32 %[[OUT]], i32 1)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[W]])
 
-; ⭐ AND THE CONDITION IS READ OFF `a`'s SUM RAIL, not off the `y+1` register.
-; That is the "wrong rail" half of the finding, asserted positively.
-; CHECK: call i32 @cq_template_and_i32_hl(i32 %[[SUM]], i32 %{{.*}})
+; ⭐ AND THE CONDITION IS READ OFF `a`'s RAIL (holding the sum), not off the `y+1`
+; register. That is the "wrong rail" half of the finding, asserted positively.
+; CHECK: call i32 @cq_template_and_i32_hl(i32 %[[A]], i32 %{{.*}})
 
 ; PCNT-NOT: call void @cqrt_addc_i32(
 ; PCNT-NOT: call void @cqrt_xorc_i32(
@@ -71,6 +74,8 @@
 ; The Q-R1-1 residual, pinned exactly as in the sibling fixture: the per-trip
 ; `and` rail is minted once and NEVER discharged (the invariant register is a
 ; template rail, so clause (ii) refuses it).
+; (Since bd r2j3.33 the invariant register is `a`'s own rail holding the sum, not
+; a template rail; the residual is MEASURED unchanged — same `and`, same count.)
 ; UCNT-COUNT-1: call i32 @cq_template_and_i32_hl(
 ; UCNT-NOT: call i32 @cq_template_and_i32_hl(
 ; UCNT-NOT: call void @cq_template_and_i32_hl_unc(

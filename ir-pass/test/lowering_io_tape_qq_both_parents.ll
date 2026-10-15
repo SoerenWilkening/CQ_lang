@@ -1,12 +1,15 @@
 ; lowering_io_tape_qq_both_parents.ll — ACCEPT (Phase 7.6). The MULTI-PARENT
 ; backward-closure fixture for bd 261j(a): `printf("%d", x + y)` with TWO thetas.
 ;
-; The recorded rail is a QQ node — `cq_template_add_i32(%A, %B)`, a producer with
-; TWO tainted parents — so the correlation closure must reach BOTH. It does: %A and
+; The recorded rail is a QQ node with TWO tainted parents — so the correlation
+; closure must reach BOTH. (Since bd r2j3.33 the node is the IN-PLACE
+; `cqrt_add_i32(%B, %A)` on %A's rail, whose borrowed source %B is a DAG parent by
+; the same ancestor-edge loop; before it, the template `cq_template_add_i32(%A,
+; %B)`.) It does: %A and
 ; %B each carry a `cqrt_ry` (empty condition set, Rule 3), so both freeze and
-; neither is freed, while the recorded QQ rail itself is a plain producer and
-; therefore reverses AND frees soundly (its `_unc` recomputes %A+%B from two parents
-; that reverse program order keeps at their producer-time values).
+; neither is freed, while the recorded QQ node itself reverses soundly: its adjoint
+; (`cqrt_sub_i32(%B, %A)`; the template's `_unc` + free before r2j3.33) reads a
+; source that reverse program order keeps at its producer-time value.
 ;
 ; WHY THIS FIXTURE EXISTS. The Rule-13 round proposed, as a mutant that would
 ; survive the whole family, "truncate the backward closure to the FIRST tainted
@@ -39,11 +42,14 @@ entry:
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[A]], double 5.000000e-01)
 ; CHECK:     %[[B:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[B]], double 2.500000e-01)
-; CHECK:     %[[OP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32(i32 %[[A]], i32 %[[B]])
-; CHECK:     call i32 @cqrt_tape_write_i32(i32 %[[TAPE]], i32 %[[OP]])
-; The QQ rail reverses against BOTH still-forward parents, and frees:
-; CHECK:     call void @cq_template_add_i32_unc(i32 %[[OP]], i32 %[[A]], i32 %[[B]])
-; CHECK:     call void @cqrt_free(i32 %[[OP]])
+; bd r2j3.33 (dm7f.51 step 1): %a's old value is dead and the sum survives (it is
+; taped), so the QQ add lowers IN PLACE on %a's rail with %b the BORROWED source:
+; CHECK:     call void @cqrt_add_i32(i32 %[[B]], i32 %[[A]]), !cq.inplace.qq
+; CHECK:     call i32 @cqrt_tape_write_i32(i32 %[[TAPE]], i32 %[[A]])
+; The in-place gate reverses against its still-forward source (`cqrt_sub_i32`, the
+; adjoint `EmitInverse` derives), returning %a's rail to %a — the same final
+; state the out-of-place `_unc` + free of the old QQ rail produced:
+; CHECK:     call void @cqrt_sub_i32(i32 %[[B]], i32 %[[A]]), !cq.inplace.qq
 ; Both parents reverse:
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[B]], double -2.500000e-01)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[A]], double -5.000000e-01)

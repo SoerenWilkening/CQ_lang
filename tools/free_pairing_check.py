@@ -330,7 +330,10 @@ WHAT IT DOES **NOT** WITNESS  (read this before quoting the tool)
     route cannot carry an `Ry` at all. Both stems are modelled in `classify()`
     above — the Ry twin as a NON-diagonal write of arg 1, the Rz twin as its
     diagonal counterpart — which is the standing obligation below, discharged
-    for those 18 symbols before the emitter that mints them shipped.
+    for those 18 symbols before the emitter that mints them shipped. (bd
+    r2j3.33 added the 12 in-place quantum-source symbols
+    `cqrt_{xor,add,sub}_{i8,i16,i32,i64}` to the header; they are modelled
+    from their first commit, so the "does not model" set is unchanged.)
     This is NOT a silent gap: any of them being CALLED in lowered IR raises
     `Unclassified` and fails the whole run, so the failure mode is a loud stop,
     never an unchecked call. (A bare `declare` does not — only a call is
@@ -915,6 +918,17 @@ def classify(sym):
     if re.fullmatch(rf"cqrt_xorc_{_W}", sym):
         return Effect("gate", writes=(0,), adjoint_of="self",
                       classical_imm=(1,))
+    # bd r2j3.33 / dm7f.51 step 1 — the in-place QUANTUM-source gates
+    # `cqrt_{xor,add,sub}_<W>(src, dst)`: src (slot 0) READ, dst (slot 1)
+    # WRITTEN, a basis permutation of the pair. xor is self-adjoint; add and sub
+    # are each other's adjoint (same operands). Width 1 is `cqrt_cnot` above.
+    if re.fullmatch(rf"cqrt_xor_{_W}", sym):
+        return Effect("gate", reads=(0,), writes=(1,), adjoint_of="self")
+    m = re.fullmatch(rf"cqrt_(add|sub)_({_W})", sym)
+    if m:
+        other = "sub" if m.group(1) == "add" else "add"
+        return Effect("gate", reads=(0,), writes=(1,),
+                      adjoint_of=f"twin:cqrt_{other}_{m.group(2)}")
 
     # ---- output tape (7.6) ------------------------------------------------
     if re.fullmatch(rf"cqrt_tape_write_{_W}", sym):

@@ -3,6 +3,7 @@
 #include "MergeStreamGates.h"
 
 #include "ChainWalk.h"         // isInPlaceGateOn / isInteriorConsumer / ...
+#include "InPlaceQQ.h"         // isInPlaceQQGate (bd r2j3.33)
 #include "RailBankPromote.h"   // railBankParkedRails / railBankCellReadsOf
 #include "TaintPropagation.h"  // TaintSet
 #include "TemplateName.h"      // isUncHandleSlot
@@ -66,6 +67,11 @@ bool streamGateWrites(const CallInst *C, SmallVectorImpl<unsigned> &W) {
   W.clear();
   StringRef N = calleeName(C);
   if (N.empty())
+    return false;
+  // bd r2j3.33: a TAGGED in-place quantum-source gate (the i1 form is a
+  // `cqrt_cnot`) is the user's own `x ^= y`, never merge-stream traffic: a
+  // replay must not re-emit it. Asked before the `cqrt_cnot` row by membership.
+  if (isInPlaceQQGate(C))
     return false;
   bool Void = C->getType()->isVoidTy();
   unsigned A = C->arg_size();

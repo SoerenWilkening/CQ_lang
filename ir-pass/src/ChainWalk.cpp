@@ -4,6 +4,7 @@
 
 #include "ChainWalk.h"
 #include "CloneProducer.h"    // isCloneProducer (bd p3kd.13)
+#include "InPlaceQQ.h"        // isInPlaceQQGate (bd r2j3.33)
 #include "RailBankPromote.h"  // railStoredToRailBank (bd `xdu2` W1 D1)
 // `cloneCallPreservesArg` (bd rhk5) lives in ClonePreserves.cpp since bd p3kd.13.
 #include "TaintPropagation.h"
@@ -120,6 +121,20 @@ bool isInPlaceGateOn(const CallInst *G, const Value *H) {
   if (isBranchPhaseGate(G))
     return false;
   StringRef N = Callee->getName();
+  // bd r2j3.33 / dm7f.51 step 1 — THE IN-PLACE QUANTUM-SOURCE GATE, on its
+  // DESTINATION (arg 1). `cqrt_{xor,add,sub}_<W>(src, dst)` / the tagged i1
+  // `cqrt_cnot(src, dst)` mutates `dst` and mints nothing, exactly like the M-C
+  // `cqrt_addc_<W>` below, and carries one BORROWED tainted operand (`src`) the
+  // way a QRAM store carries idx/val — `DagTraversal` enqueues it as a parent, so
+  // the source's chain reverses AFTER this gate's adjoint (`EmitInverse`: xor
+  // self, add <-> sub). So a DEAD target is returned to its birth state by the
+  // spine (Bennett.jl's exclusive-reader soundness, operand.jl:182-221: the
+  // in-place group is reversed before the target's defining group), and a target
+  // that is measured, recorded or rotated is left exactly as a rotated register
+  // is. By membership in the tag, never by name: an untagged `cqrt_cnot` is a
+  // condition-network gate and stays unrecognized.
+  if (isInPlaceQQGate(G))
+    return G->getArgOperand(1) == H;
   // iw81.7 / Phase 7.5 Inc 2: a QRAM store is a VOID in-place mutation on its ARRAY
   // handle — arg 1 for the GUARDED form `cqrt_qram_store_<W>_controlled(flag, arr,
   // idx, val)` (arg 0 is the path-predicate flag), arg 0 for the plain
@@ -623,6 +638,15 @@ bool preservesBasisUnderRecord(const CallInst *G) {
   if ((N.starts_with("cqrt_addc_") || N.starts_with("cqrt_xorc_")) &&
       G->getType()->isVoidTy() && G->arg_size() == 2)
     return true;
+  // bd r2j3.33 — the in-place QUANTUM-source gate is the same category on its
+  // destination: `dst ^= src` / `dst ± src` is a basis permutation of the pair,
+  // so a record of `dst` is a record of a definite label that is a function of
+  // `dst`'s and `src`'s labels, and the adjoint (xor self, add <-> sub) returns
+  // `dst` exactly — provided `src` holds its forward value at the adjoint, which
+  // is clause (d) over the borrowed parent, delivered here by reverse program
+  // order (src is a DAG parent) exactly as for a QRAM store's idx/val.
+  if (isInPlaceQQGate(G))
+    return true;
   return false;  // `cqrt_ry_<W>` lands here — and so does anything new.
 }
 
@@ -735,6 +759,15 @@ bool isCopyOutSink(const CallInst *G, const Value *H) {
   // about the same-value-in-two-slots case for in-place gates; this predicate never
   // got that treatment until bd 5pio's Rule-13 round found it. Declining the aliased
   // form is the over-declining direction and no emitter mints it.
+  //
+  // (bd r2j3.33: the TAGGED in-place quantum-source gate is deliberately NOT a
+  // copy-out sink, although it records its source into a kept register. It
+  // replaces an out-of-place QQ template, and for its SOURCE it keeps that
+  // template's role exactly — a forward reader that is finished with the source,
+  // `isInteriorConsumer` row (b‴) — so a derived source rail is still discharged
+  // right after it. As a copy-out sink the source became a dead TERMINAL reversed
+  // at the post-dominating point, behind later rotations of its parents, and
+  // leaked with an M-A warning: measured on `t ^= q*3; cq_theta(&q,·)`.)
   return N.starts_with("cqrt_copy_") && !N.contains("_controlled") &&
          !N.ends_with("_inv") && !N.ends_with("_unc") && G->arg_size() == 2 &&
          G->getArgOperand(0) == H && G->getArgOperand(0) != G->getArgOperand(1);
@@ -921,6 +954,22 @@ bool isInteriorConsumer(const CallInst *C, const Value *R,
         Reads = true;
     return Reads;  // the array slot never reaches here: (a) answered it.
   }
+  // (b‴) THE IN-PLACE QUANTUM-SOURCE GATE IN ITS SOURCE SLOT (bd r2j3.33,
+  //      dm7f.51 step 1). `cqrt_{xor,add,sub}_<W>(src, dst)` / the i1 `cqrt_cnot`,
+  //      tagged `!cq.inplace.qq`, READS `src` (its label is unchanged) and
+  //      XOR/adds it into `dst`, the user's register. For `src` it is exactly the
+  //      out-of-place QQ template it replaced — a forward reader finished with the
+  //      rail — and the positional half (already executed, never re-reads) is the
+  //      driver's `provablyBefore` proof, as for (b). Its adjoint re-reads `src`
+  //      ONLY when the dead-terminal spine reverses `dst`'s DAG, and that spine
+  //      walks `src` as a DAG parent (`isInPlaceGateOn` matched the gate on
+  //      `dst`), so `src` is then in its `ReversedRails` and this partition, which
+  //      runs after it, never takes it — the QRAM store's (b″) argument, verbatim.
+  //      The DESTINATION slot is a write: row (a) above already answered it.
+  //      By membership in the tag, never by name: an untagged `cqrt_cnot` is a
+  //      condition-network gate and falls through to the list below.
+  if (isInPlaceQQGate(C))
+    return C->getArgOperand(0) == R;
   // (b′) A PHASE-6 CLONE CALL that reads the rail and provably never writes it
   //      (bd test_C_libtooling-rhk5). The same role as (b): a consumer that reads
   //      `R`, mints a FRESH result rail, and is finished with `R` once it has run —

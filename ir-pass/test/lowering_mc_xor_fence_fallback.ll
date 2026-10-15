@@ -30,7 +30,10 @@
 ;                   `xor` member of the two-quantum exclusion the shared shape
 ;                   predicate `inPlaceValueRailOperand` has always applied; it is
 ;                   the QQ template's job (a Feynman/CNOT-network lowering), not
-;                   an in-place-by-a-literal one.
+;                   an in-place-by-a-literal one. (bd r2j3.33, dm7f.51 step 1:
+;                   the QUANTUM-source round now lowers this site in place as
+;                   `cqrt_xor_i32` — both old operands are dead — never as the
+;                   classical-immediate `cqrt_xorc_` this file fences.)
 ; @wide_i128      — G3/G2, THE WIDTH GRID — and unlike 2a's `add`, this one is
 ;                   REACHABLE and therefore probed rather than argued. `xor` is a
 ;                   shipped i128 row (int_bitwise, opcode_table.yaml), so a
@@ -110,7 +113,13 @@ entry:
 }
 
 ; CHECK-LABEL: define i32 @qq_xor
-; CHECK:       call i32 @cq_template_xor_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
+; M-C's G2 still refuses two quantum operands (no `cqrt_xorc_i32` here). Since
+; bd r2j3.33 (dm7f.51 step 1) the QUANTUM-source round takes the site instead:
+; both old operands are dead and the result is measured, so it lowers in place
+; on the lower-BirthOrder rail, `cqrt_xor_i32(src, dst)`, tagged.
+; CHECK-NOT:   call void @cqrt_xorc_i32(
+; CHECK:       call void @cqrt_xor_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}), !cq.inplace.qq
+; CHECK-NOT:   call i32 @cq_template_xor_i32(
 define i32 @qq_xor(i32 %u0, i32 %u1) {
 entry:
   %q1 = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)

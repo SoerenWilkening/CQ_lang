@@ -8,7 +8,11 @@
 ; CHECK:     call void @cqrt_ry_i32(
 ; CHECK:     call i32 @cqrt_alloc_i32(i32 5)
 ; CHECK:     call void @cqrt_ry_i32(
-; CHECK:     call i32 @cq_template_add_i32(
+; bd r2j3.33 (dm7f.51 step 1): both operands' old values are dead and the sum
+; is measured, so the Q+Q add now lowers IN PLACE (`cqrt_add_i32(src, dst)`,
+; tagged `!cq.inplace.qq`) instead of minting `cq_template_add_i32` beside a
+; kept old register.
+; CHECK:     call void @cqrt_add_i32({{.*}}), !cq.inplace.qq
 ; CHECK:     call i32 @cqrt_measure_i32(
 ;
 ; CHECK-NOT: cq_theta_si32

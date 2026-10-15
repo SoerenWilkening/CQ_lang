@@ -21,7 +21,8 @@
 ; it with one extra body op.
 ;
 ; MEASURED on frozen `main`@16b15b3 AND here: ZERO in-place gates, one
-; out-of-place `cq_template_add_i32(i32 %h3, i32 %h_op)` against the mul rail,
+; out-of-place `cq_template_add_i32(i32 %h3, i32 %h_op)` against the mul rail
+; (SUPERSEDED by bd r2j3.33: now the in-place `cqrt_add_i32(i32 %h_op, i32 %h3)`),
 ; `railInImm=0`, STRICT stage 2b `0 violation(s)`, 47 trace lines, lowered module
 ; BYTE-IDENTICAL across the two binaries (`cmp`).
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
@@ -30,16 +31,19 @@
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
 
-; The sunk recurrence: one mul rail off the merge, one out-of-place Q+Q add, and
-; the mul rail discharged and freed.
+; The sunk recurrence: one mul rail off the merge, the Q+Q add, and the mul rail
+; discharged and freed right after it. bd r2j3.33 (dm7f.51 step 1): `r`'s old
+; value is dead and its new one is measured, so the add lowers IN PLACE on `r`'s
+; rail, the mul rail in the SOURCE handle slot (a finished reader of it).
 ; CHECK: %[[OUT:.*]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK: %[[M:.*]] = call i32 @cq_template_mul_i32_hl(i32 %[[OUT]], i32 9)
-; CHECK-NEXT: {{.*}} = call i32 @cq_template_add_i32(i32 %{{.*}}, i32 %[[M]])
+; CHECK-NEXT: call void @cqrt_add_i32(i32 %[[M]], i32 %{{.*}}), !cq.inplace.qq
 ; CHECK-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %[[M]], i32 %[[OUT]], i32 9)
 
 ; IMMCNT-NOT: call void @cqrt_addc_i32(
 ; IMMCNT-NOT: call void @cqrt_xorc_i32(
-; IMMCNT-COUNT-1: call i32 @cq_template_add_i32(
+; IMMCNT-COUNT-1: call void @cqrt_add_i32(
+; IMMCNT-NOT: call void @cqrt_add_i32(
 ; IMMCNT-NOT: call i32 @cq_template_add_i32(
 
 ; NOROUTE-NOT: in-place rail op no longer provable at lowering

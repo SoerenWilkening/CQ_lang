@@ -78,6 +78,8 @@ add_library(CQPass MODULE
   src/EqFoldArm.cpp
   src/Fp80Union.cpp
   src/FreePoint.cpp
+  src/InPlaceQQ.cpp
+  src/InPlaceQQRecord.cpp
   src/IntrinsicLowering.cpp
   src/IOSinkLowering.cpp
   src/LibmBinding.cpp

@@ -29,8 +29,8 @@
 ; ITSELF (`FlagOf[V] = V`) and the AND node reads it in a `cqrt_toffoli` CONTROL
 ; slot, diagonal and basis-label-preserving — so the register is exactly the
 ; value it was and the data use lowers through the ordinary opcode net:
-; `cq_template_zext_i1_to_i32(h2)` → `cq_template_add_i32(h1,h_cast)` → the
-; `_unc` → `cqrt_free(h_cast)`.
+; `cq_template_zext_i1_to_i32(h2)` → the add (since bd r2j3.33 the in-place
+; `cqrt_add_i32(h_cast, h1)`, `q` being dead) → the `_unc` → `cqrt_free(h_cast)`.
 ;
 ; UNITARY + Rule 6/7: `g = |0⟩`; `cqrt_toffoli(b1, cmp, g)` sets `g = b1 ∧ (q>3)`;
 ; `cqrt_rz_i1(g, φ)` phases exactly that branch; the SAME self-inverse toffoli
@@ -101,12 +101,15 @@ done:
 ; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[HQ]], i32 3)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; CHECK-NEXT: %[[C:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i1_to_i32(i32 %[[H1]])
-; CHECK-NEXT: %[[S:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32(i32 %[[HQ]], i32 %[[C]])
+; bd r2j3.33 (dm7f.51 step 1): `q`'s old value is dead at the add (its compare was
+; stripped and freed above) and the sum is measured, so the add lowers IN PLACE on
+; `q`'s rail.
+; CHECK-NEXT: call void @cqrt_add_i32(i32 %[[C]], i32 %[[HQ]]), !cq.inplace.qq
 ; CHECK-NEXT: call void @cq_template_zext_i1_to_i32_unc(i32 %[[C]], i32 %[[H1]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[C]])
 ; CHECK-NEXT: %{{[a-zA-Z0-9_.]+}} = call i1 @cqrt_measure_i1(i32 %[[H0]])
 ; CHECK-NEXT: %{{[a-zA-Z0-9_.]+}} = call i1 @cqrt_measure_i1(i32 %[[H1]])
-; CHECK-NEXT: %{{[a-zA-Z0-9_.]+}} = call i32 @cqrt_measure_i32(i32 %[[S]])
+; CHECK-NEXT: %{{[a-zA-Z0-9_.]+}} = call i32 @cqrt_measure_i32(i32 %[[HQ]])
 
 ; NOX-NOT: call void @cqrt_x(
 ; NOX-NOT: cqrt_cswap

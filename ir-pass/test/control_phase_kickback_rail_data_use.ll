@@ -1,6 +1,7 @@
 ; control_phase_kickback_rail_data_use.ll — ACCEPT (bd 3qlq.4): the register is
 ; read as DATA after the phase (`int s = q + b` — a `zext` chain BORROWING the
-; rail as a parent, lowered out of place and discharged by the whole-DAG spine).
+; rail as a parent, lowered out of place and discharged by the whole-DAG spine;
+; since bd r2j3.33 the add itself is the in-place `cqrt_add_i32` on `q`'s rail).
 ; This is the file that pins WHY a `¬rail` gate is `rz(−θ)` and never a `cqrt_x`
 ; bracket: `Uncomputation::preservesBorrowedParent` admits an uncontrolled
 ; `cqrt_rz_` on the borrowed parent BY NAME (diagonal — the basis label the
@@ -58,10 +59,12 @@ merge:
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 3.000000e-01)
 ; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[H]], double 9.000000e-01), !cq.branchphase
 ; CHECK-NEXT: %[[Z:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i1_to_i32(i32 %[[H]])
-; CHECK-NEXT: %[[S:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32(i32 %[[Q]], i32 %[[Z]])
+; bd r2j3.33 (dm7f.51 step 1): `q`'s old value is dead at the add and the sum is
+; measured, so the add lowers IN PLACE on `q`'s rail, the zext as its source.
+; CHECK-NEXT: call void @cqrt_add_i32(i32 %[[Z]], i32 %[[Q]]), !cq.inplace.qq
 ; CHECK-NEXT: call void @cq_template_zext_i1_to_i32_unc(i32 %[[Z]], i32 %[[H]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[Z]])
-; CHECK-NEXT: {{.*}} = call i32 @cqrt_measure_i32(i32 %[[S]])
+; CHECK-NEXT: {{.*}} = call i32 @cqrt_measure_i32(i32 %[[Q]])
 ; CHECK-NOT: call void @cqrt_free(i32 %[[H]])
 
 ; ---- Whole-file negatives (pure-negative prefix: NO positive line may sit
@@ -85,7 +88,7 @@ merge:
 ; ACNT-COUNT-2: call i32 @cqrt_alloc_
 ; ACNT-NOT: call i32 @cqrt_alloc_
 ; MINT-COUNT-1: call i32 @cq_template_zext_i1_to_i32(
-; MINT-COUNT-1: call i32 @cq_template_add_i32(
+; MINT-COUNT-1: call void @cqrt_add_i32(
 ; MINT-COUNT-1: call void @cq_template_zext_i1_to_i32_unc(
 ; MINT-NOT: call void @cq_template_
 ; MINT-NOT: call i32 @cq_template_

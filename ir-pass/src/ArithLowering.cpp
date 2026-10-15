@@ -9,6 +9,7 @@
 #include "ChainWalk.h"      // isInPlaceGateOn (the ONE in-place-gate relation)
 #include "DeadValueLiveness.h"  // isRecordedDeadSlot (bd vsfp r2: the ONE "slot unread")
 #include "FreePoint.h"      // blockCanRepeat (the ONE "can this block run twice")
+#include "InPlaceQQ.h"      // transferDeadOperandMask / lowerInPlaceQQ (bd r2j3.33)
 #include "LoopPlan.h"       // inPlaceValueRailOperand (the dtzb shape predicate)
 #include "OpcodeSupport.h"
 #include "TaintPropagation.h"
@@ -268,6 +269,10 @@ bool rewriteBinary(BinaryOperator *bo, WidthDispatch &wd, TaintSet &taint) {
   CallInst *T = Builder.CreateCall(Callee, {Lhs, Rhs}, "h_op");
   if (DebugLoc DL = bo->getDebugLoc())
     T->setDebugLoc(DL);
+  // bd r2j3.33: carry the pre-emission exclusive-reader record onto the QQ
+  // template, remapped through the BirthOrder swap, for the late in-place round.
+  if (ShapeSel == Shape::QQ)
+    transferDeadOperandMask(bo, T, /*Swapped=*/Lhs != A);
   bo->replaceAllUsesWith(T);
   // Record the result handle's LOGICAL width (the binary op's own ABI width,
   // already validated non-empty at :45) so a downstream Q+Q data compare can
@@ -736,6 +741,47 @@ bool inPlaceFenceHolds(const Instruction *Site, const Value *P, const Value *Imm
   if (isa<Argument>(Imm))
     return false;
 
+  // G5–G7 — the positional half, shared with the quantum-source in-place round
+  // (bd r2j3.33, `InPlaceQQ.cpp`) through `inPlacePositionHolds`, so the two
+  // in-place minters ask ONE fence about the parent rail (R12).
+  if (!inPlacePositionHolds(Site, P, taint, DT, LI, Plan, IgnoreSelfMarking))
+    return false;
+
+  // G3 — the width must be in the FROZEN in-place grid, and THE GRID ASKED MUST
+  // BE THE ONE THE EMITTER WILL USE. `add` and `sub` both emit `cqrt_addc_<W>`
+  // (`sub` is `addc` with the immediate negated, Inc 2b — there is no
+  // `cqrt_subc_`); `xor` emits the SEPARATE `cqrt_xorc_<W>` (Inc 2c). The two
+  // resolvers apply the same <=64-integer fence today, but they are distinct
+  // functions minting distinct symbols, so this mirrors `rewriteInPlaceValue
+  // Rail`'s own `Op == Xor ? xorcFn : addcFn` selection rather than asking one
+  // and emitting the other. ASKING the resolver (rather than repeating
+  // {i1,i8,i16,i32,i64} here) means the fence tracks the ABI instead of a
+  // comment about the ABI, and it must never mint a phantom symbol (the n0ui
+  // lesson). G2's own <=64-integer bound already implies this, so it is defense
+  // in depth — and `lowering_mc_xor_fence_fallback.ll`'s `@wide_i128` is the one
+  // probe in the family that reaches an off-grid width from a POSITIVE (`xor` is
+  // a shipped i128 template row; the `add` analogue dies on an earlier cast
+  // decline).
+  //
+  // IT IS DELIBERATELY LAST, and that is not cosmetic. Both resolvers go through
+  // `Module::getOrInsertFunction`, which CREATES `declare void
+  // @cqrt_{addc,xorc}_<W>(i32, iW)` as a SIDE EFFECT — so asking before the
+  // fence has decided planted a dangling declaration in every module containing
+  // any tainted integer `add`/`xor`, including the ones that then stayed out of
+  // place. (Measured: `lowering_add_qc_i32.ll` grew a `declare void
+  // @cqrt_addc_i32` it never calls.) Harmless at link, but it is a symbol
+  // appearing in a module that emits none — exactly the kind of phantom this
+  // project refuses to ship. Asked HERE, it is only ever asked for a site that
+  // is about to emit.
+  return (Op == Instruction::Xor ? wd.xorcFn(W) : wd.addcFn(W)) ? true : false;
+}
+
+}  // namespace
+
+bool inPlacePositionHolds(const Instruction *Site, const Value *P,
+                          const TaintSet &taint, const DominatorTree &DT,
+                          const LoopInfo &LI, const InteriorDischargePlan *Plan,
+                          bool IgnoreSelfMarking) {
   // G5 — the LOOP-OWNED population is untouched, from both sides.
   //   * `InPlaceRailOps` is `lowerLoops`' own proven set; the driver already
   //     routes it to the same emitter. Claiming one here would be a second
@@ -880,37 +926,8 @@ bool inPlaceFenceHolds(const Instruction *Site, const Value *P, const Value *Imm
     if (!priorUseIsSettled(UI, P, Site, DT, Plan, taint))
       return false;
   }
-
-  // G3 — the width must be in the FROZEN in-place grid, and THE GRID ASKED MUST
-  // BE THE ONE THE EMITTER WILL USE. `add` and `sub` both emit `cqrt_addc_<W>`
-  // (`sub` is `addc` with the immediate negated, Inc 2b — there is no
-  // `cqrt_subc_`); `xor` emits the SEPARATE `cqrt_xorc_<W>` (Inc 2c). The two
-  // resolvers apply the same <=64-integer fence today, but they are distinct
-  // functions minting distinct symbols, so this mirrors `rewriteInPlaceValue
-  // Rail`'s own `Op == Xor ? xorcFn : addcFn` selection rather than asking one
-  // and emitting the other. ASKING the resolver (rather than repeating
-  // {i1,i8,i16,i32,i64} here) means the fence tracks the ABI instead of a
-  // comment about the ABI, and it must never mint a phantom symbol (the n0ui
-  // lesson). G2's own <=64-integer bound already implies this, so it is defense
-  // in depth — and `lowering_mc_xor_fence_fallback.ll`'s `@wide_i128` is the one
-  // probe in the family that reaches an off-grid width from a POSITIVE (`xor` is
-  // a shipped i128 template row; the `add` analogue dies on an earlier cast
-  // decline).
-  //
-  // IT IS DELIBERATELY LAST, and that is not cosmetic. Both resolvers go through
-  // `Module::getOrInsertFunction`, which CREATES `declare void
-  // @cqrt_{addc,xorc}_<W>(i32, iW)` as a SIDE EFFECT — so asking before the
-  // fence has decided planted a dangling declaration in every module containing
-  // any tainted integer `add`/`xor`, including the ones that then stayed out of
-  // place. (Measured: `lowering_add_qc_i32.ll` grew a `declare void
-  // @cqrt_addc_i32` it never calls.) Harmless at link, but it is a symbol
-  // appearing in a module that emits none — exactly the kind of phantom this
-  // project refuses to ship. Asked HERE, it is only ever asked for a site that
-  // is about to emit.
-  return (Op == Instruction::Xor ? wd.xorcFn(W) : wd.addcFn(W)) ? true : false;
+  return true;
 }
-
-}  // namespace
 
 bool classifyInPlaceReassignment(BinaryOperator *bo, WidthDispatch &wd,
                                  const TaintSet &taint, const DominatorTree &DT,
@@ -1183,6 +1200,11 @@ bool lowerLateReassignments(Module &M, WidthDispatch &wd, TaintSet &taint) {
   for (Function *Sym : Orphaned)
     if (Sym->isDeclaration() && Sym->use_empty())
       Sym->eraseFromParent();
+  // bd r2j3.33 / dm7f.51 step 1 — the QUANTUM-SOURCE in-place round, after the
+  // classical-immediate batch above (so a `t += 3; t ^= a` chain sees the addc
+  // already on `t`'s rail) and in this same last-before-`uncompute` slot, which
+  // both entry points reach and which is after the round-2 fixpoint (L1).
+  Changed |= lowerInPlaceQQ(M, wd, taint);
   return Changed;
 }
 

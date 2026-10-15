@@ -26,7 +26,11 @@
 ; CHECK-NEXT: %[[DF1:[0-9a-zA-Z_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[DQ]], i32 1)
 ; CHECK-NEXT: %[[DD1:[0-9a-zA-Z_.]+]] = call i32 @cqrt_alloc_i32(i32 11)
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[DF1]], i32 %[[DD1]], i32 %[[DOUT]])
-; CHECK-NEXT: call i32 @cq_template_add_i32(i32 %[[DOUT]],
+; bd r2j3.33 (dm7f.51 step 1): `p`'s old value is dead and `u` is measured, so the
+; reader is the IN-PLACE `cqrt_add_i32(out, p)` on `p`'s rail. For `out` it is the
+; same finished reader the template was (`isInteriorConsumer` (b‴) / `onlyReads`),
+; so the discharge below is unchanged: `out` keeps its label across the add.
+; CHECK-NEXT: call void @cqrt_add_i32(i32 %[[DOUT]], i32 %{{[0-9a-zA-Z_.]+}}), !cq.inplace.qq
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[DF1]], i32 %[[DD1]], i32 %[[DOUT]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[DF0]], i32 %[[DD0]], i32 %[[DOUT]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[DF0]], i32 %[[DQ]], i32 0)

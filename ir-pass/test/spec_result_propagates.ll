@@ -29,7 +29,10 @@ entry:
 ; The retargeted result `%r` stays tainted → the caller's `add` lowers to a QQ
 ; template reading `%r` and the second handle (proving return-taint re-marked).
 ; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @__cq_q_triple_1(i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK:     call i32 @cq_template_add_i32(i32 %[[R]], i32 %{{[a-zA-Z0-9_.]+}})
+; bd r2j3.33 (dm7f.51 step 1): `%q2` is dead after the add and the sum is
+; measured, so the add lowers IN PLACE on `%q2`'s rail with the clone result as
+; its SOURCE — still reading `%r` as a quantum handle (return-taint re-marked).
+; CHECK:     call void @cqrt_add_i32(i32 %[[R]], i32 %{{[a-zA-Z0-9_.]+}}), !cq.inplace.qq
 ; CHECK:     define internal i32 @__cq_q_triple_1(i32 %a)
 ;
 ; The caller's `add` did NOT stay a raw classical add.

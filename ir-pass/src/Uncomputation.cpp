@@ -27,6 +27,7 @@
 #include "DagTraversal.h"       // recoverDataDag / DataDag
 #include "EmitInverse.h"        // emitInverseCall
 #include "FreePoint.h"          // computeFreePoint
+#include "InPlaceQQ.h"          // isInPlaceQQGate (bd r2j3.33)
 #include "MergeRailDischarge.h" // dischargeMergeRails (bd r2j3.32)
 #include "TaintPropagation.h"   // TaintSet
 #include "WireWalk.h"          // provablyBefore (the ONE position-aware proof)
@@ -1839,6 +1840,14 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P,
   //     slot. This is the shape every recovered gate of the interior DAG has, so
   //     the group's own forward gates are admitted here without a special case.
   if (isTemplateProducer(M))
+    return true;
+  // (2b) THE IN-PLACE QUANTUM-SOURCE GATE READING `P` AS ITS SOURCE (bd r2j3.33).
+  //      `cqrt_{xor,add,sub}_<W>(P, dst)` / the tagged i1 `cqrt_cnot(P, dst)` is
+  //      Σ_p |p><p|_P ⊗ U_dst(p): block-diagonal in P's basis, so P's LABEL after
+  //      it is its label before. It replaced an out-of-place QQ template that (2)
+  //      admitted in this same position. `P` in the DESTINATION slot is a write
+  //      and is refused (falls through), exactly as clause (d) requires.
+  if (isInPlaceQQGate(M) && M->getArgOperand(0) == P)
     return true;
   // (3) A PHASE-6 CLONE CALL whose callee body PROVABLY never writes the formal
   //     it binds `P` to — bd test_C_libtooling-rhk5, and the reason is (2)'s,

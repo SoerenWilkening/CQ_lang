@@ -12,6 +12,7 @@
 
 #include "EmitInverse.h"
 #include "QramIndexWidth.h"  // inheritQramIndexTag (libcqops b6a)
+#include "InPlaceQQ.h"       // isInPlaceQQSymbol / kInPlaceQQTag (bd r2j3.33)
 
 #include "ChainWalk.h"  // isAbiQramStore — the shared frozen-ABI store shape (Rule 14)
                         // isBranchPhaseGate — the kickback-gate record (bd 3qlq F-L7-1)
@@ -120,6 +121,12 @@ bool isInverseEmittable(const CallInst *Forward) {
   // declines because its name fails the prefix test (it never reaches here).
   if ((Name.starts_with("cqrt_xorc_") || Name.starts_with("cqrt_addc_")) &&
       Forward->getType()->isVoidTy() && Forward->arg_size() == 2)
+    return true;
+  // bd r2j3.33 — the in-place QUANTUM-source gates `cqrt_{xor,add,sub}_<W>(src,
+  // dst)`: xor is self-inverse, add and sub are each other's adjoint on the same
+  // operands. VOID + arity 2 is the fence (bd 1fim), via the one symbol test.
+  if (isInPlaceQQSymbol(Name) && Forward->getType()->isVoidTy() &&
+      Forward->arg_size() == 2)
     return true;
   // Uncontrolled data template (incl. compares post-WI-0): its void `_unc` form.
   // The `_inv`/`_unc` twins and the `_controlled` forms are NOT re-invertible
@@ -254,6 +261,27 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     return minted(Inv);
   }
 
+  // bd r2j3.33 — `cqrt_xor_<W>(src, dst)` re-emitted as-is; `cqrt_add_<W>` <->
+  // `cqrt_sub_<W>` on the same (src, dst). The dst is arg 1 (a threaded
+  // `CurHandle` relabels it); the tag rides along so the adjoint is classified
+  // exactly as its forward (`isInPlaceQQGate`).
+  if (isInPlaceQQSymbol(Name) && Forward->arg_size() == 2) {
+    std::string InvName = Name.str();
+    if (Name.starts_with("cqrt_add_"))
+      InvName = ("cqrt_sub_" + Name.drop_front(strlen("cqrt_add_"))).str();
+    else if (Name.starts_with("cqrt_sub_"))
+      InvName = ("cqrt_add_" + Name.drop_front(strlen("cqrt_sub_"))).str();
+    FunctionCallee InvFn = Forward->getModule()->getOrInsertFunction(
+        InvName, Callee->getFunctionType());
+    Value *Dst = CurHandle ? CurHandle : Forward->getArgOperand(1);
+    CallInst *Inv = B.CreateCall(InvFn, {Forward->getArgOperand(0), Dst});
+    if (DebugLoc DL = Forward->getDebugLoc())
+      Inv->setDebugLoc(DL);
+    if (MDNode *Tag = Forward->getMetadata(kInPlaceQQTag))
+      Inv->setMetadata(kInPlaceQQTag, Tag);
+    return minted(Inv);
+  }
+
   // Self-adjoint involutions: `cqrt_x` / `cqrt_cswap` are their own inverse, so
   // emit AS-IS (no `_inv` lookup). Void / in-place.
   //
@@ -297,6 +325,10 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     CallInst *Inv = B.CreateCall(Callee, Args);
     if (DebugLoc DL = Forward->getDebugLoc())
       Inv->setDebugLoc(DL);
+    // bd r2j3.33: an i1 in-place quantum xor is a TAGGED `cqrt_cnot`; its
+    // adjoint keeps the tag so it is classified as its forward.
+    if (MDNode *Tag = Forward->getMetadata(kInPlaceQQTag))
+      Inv->setMetadata(kInPlaceQQTag, Tag);
     return minted(Inv);
   }
 
