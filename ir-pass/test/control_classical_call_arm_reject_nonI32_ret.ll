@@ -17,8 +17,40 @@
 ; non-i32 raw quantum return is the (A1) ABI limit that STAYS declined (feature
 ; jx32); dugh converts only the (A2) onward-quantum subset. NEVER lowered.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}tainted value returned at non-i32 width
+; bd p3kd.21 / bd jx32 (2026-10-14) — NOW AN ACCEPT; the file name and the
+; DECLINE text above are history. The function has no in-module use (an export,
+; `declineQuantumReturnCalls`' Escaped contract; `main` is NOT under it, bd r2j3.35:
+; spec_reject_gate_sub_main_return.ll) and returns an
+; integer WIDER than 32 bits, so its tainted `ret` returns the register's i32
+; runtime handle ZERO-EXTENDED to the declared width (`widenQuantumExportReturns`,
+; SpecializeGateInline.h; owner ruling owner-ruling-p3kd21-gate-subroutines-2026-10-14: approved for
+; integer returns of 32 bits or wider only). The C signature is unchanged, so the
+; verifier-abort hazard above cannot arise. L9: this extends the escaped-handle
+; contract of i32 returns to i64 callers, cross-TU ones included. The gate stream
+; is the one the i32-typed twin of the same body emits (measured on the value
+; diamond: identical, call for call; the twin's arm chain is left allocated
+; exactly as there). The non-i32 decline remains for a narrower integer or an fp
+; return (spec_reject_gate_sub_export_{bool,double}.ll, lowering_reject_f16_return.ll)
+; and for a function WITH an in-module use (spec_reject_gate_sub_indirect_nonI32.ll).
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; CHECK-LABEL: define i64 @example(i32 %u0, i64 %a)
+; CHECK: [[Q:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q]], double 5.000000e-01)
+; CHECK-NEXT: [[R:%[0-9a-z_.]+]] = {{(tail )?}}call i64 @f(i64 %a)
+; CHECK-NEXT: [[C:%[0-9a-z_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 [[Q]], i32 3)
+; CHECK-NEXT: [[OUT:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i64(i64 0)
+; CHECK-NEXT: [[S1:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i64(i64 [[R]])
+; CHECK-NEXT: call void @cqrt_copy_i64_controlled(i32 [[C]], i32 [[S1]], i32 [[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 [[C]])
+; CHECK-NEXT: [[S2:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i64(i64 5)
+; CHECK-NEXT: call void @cqrt_copy_i64_controlled(i32 [[C]], i32 [[S2]], i32 [[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 [[C]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 [[C]], i32 [[Q]], i32 3)
+; CHECK-NEXT: call void @cqrt_free(i32 [[C]])
+; CHECK-NEXT: [[W:%[0-9a-z_.]+]] = zext i32 [[OUT]] to i64
+; CHECK-NEXT: ret i64 [[W]]
 declare i32 @cq_theta_si32(i32, double)
 ; bd wve8 — DEFINED, not declared. The 6.5 arm HOISTS this call out of its
 ; quantum guard, so it now needs a TOTALITY proof as well as a purity one, and a

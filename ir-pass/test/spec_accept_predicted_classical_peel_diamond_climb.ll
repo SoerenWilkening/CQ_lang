@@ -21,6 +21,11 @@
 ; copy-out rail (the compiler-kept copy-out class, bd ffir, owner question), identical on the oracle.
 ; Regenerate: copy docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/cepm_probes/ir/pkdC.s1.ll to the probe dir (r3gen.sh), then mkfix.py.
 ;
+; bd p3kd.21 R11 r2 F1 (bd r2j3.35, 2026-10-15): `main` now MEASURES the value it
+; returns. A register returned from `main` reaches the process exit status without
+; `cq_measure`, which NORTHSTAR goal 1 forbids and the pass now refuses
+; (spec_reject_gate_sub_main_return.ll); the measurement is outside this fixture's
+; subject, which is unchanged.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s \
 ; RUN:   | %filecheck %s
 ; CHECK-LABEL: define i32 @main(
@@ -73,7 +78,8 @@ armA:                                             ; preds = %2
   %24 = tail call i32 @cq_measure_si32(i32 noundef %9) #4
   %25 = add i32 %23, %14
   %26 = add i32 %25, %24
-  ret i32 %26
+  %cq.main.m = call i32 @cq_measure_si32(i32 %26)
+  ret i32 %cq.main.m
 }
 
 ; Function Attrs: mustprogress nofree nounwind willreturn memory(read)

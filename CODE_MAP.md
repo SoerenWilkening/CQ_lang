@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 823 maintained source files, 6701 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 825 maintained source files, 6719 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -22,8 +22,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check.py` — 4189 physical lines
 - `tools/loop_twin_matrix.py` — 4115 physical lines
 - `ir-pass/src/QramLowering.cpp` — 4067 physical lines
+- `ir-pass/src/TaintPropagation.cpp` — 3474 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 3448 physical lines
-- `ir-pass/src/TaintPropagation.cpp` — 3362 physical lines
 - `ir-pass/src/SwapRouteEmit.cpp` — 3161 physical lines
 - `runtime/cq_link_smoke.c` — 2893 physical lines
 - `tools/taintset_scrub_guard.py` — 2758 physical lines
@@ -34,7 +34,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/golden_multiset_audit.py` — 2211 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1973 physical lines
 - `tools/inplace_twin_matrix.py` — 1790 physical lines
-- `ir-pass/src/CQLoweringPass.cpp` — 1517 physical lines
+- `ir-pass/src/CQLoweringPass.cpp` — 1572 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
 - `ir-pass/src/OpcodeLowering.cpp` — 1514 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
@@ -367,12 +367,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ByRefInline.cpp:255` — `cloneExpr`
 - `ir-pass/src/ByRefInline.cpp:277` — `lowerByRefInline`
 
-### `ir-pass/src/CQLoweringPass.cpp` (1517 lines)
+### `ir-pass/src/CQLoweringPass.cpp` (1572 lines)
 
-- `ir-pass/src/CQLoweringPass.cpp:62` — `eraseDeadDecls`
-- `ir-pass/src/CQLoweringPass.cpp:96` — `declineSurvivingIntrinsicCalls`
-- `ir-pass/src/CQLoweringPass.cpp:122` — `CQLoweringPass::run`
-- `ir-pass/src/CQLoweringPass.cpp:1061` — `CQLoweringPass::runOnFunction`
+- `ir-pass/src/CQLoweringPass.cpp:63` — `eraseDeadDecls`
+- `ir-pass/src/CQLoweringPass.cpp:97` — `declineSurvivingIntrinsicCalls`
+- `ir-pass/src/CQLoweringPass.cpp:123` — `CQLoweringPass::run`
+- `ir-pass/src/CQLoweringPass.cpp:1104` — `CQLoweringPass::runOnFunction`
 
 ### `ir-pass/src/CallContract.cpp` (323 lines)
 
@@ -1212,6 +1212,23 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SpecializeDetect.cpp:312` — `isProvenSpecSite`
 - `ir-pass/src/SpecializeDetect.cpp:323` — `detectSpecializations`
 
+### `ir-pass/src/SpecializeGateInline.cpp` (399 lines)
+
+- `ir-pass/src/SpecializeGateInline.cpp:43` — `collectGateSets`
+- `ir-pass/src/SpecializeGateInline.cpp:100` — `quantum`
+- `ir-pass/src/SpecializeGateInline.cpp:108` — `underQuantumControl`
+- `ir-pass/src/SpecializeGateInline.cpp:129` — `receivesQuantumStore`
+- `ir-pass/src/SpecializeGateInline.cpp:148` — `returnsOwnRegister`
+- `ir-pass/src/SpecializeGateInline.cpp:182` — `shouldInline`
+- `ir-pass/src/SpecializeGateInline.cpp:209` — `candidateCallee`
+- `ir-pass/src/SpecializeGateInline.cpp:227` — `simplifyCallers`
+- `ir-pass/src/SpecializeGateInline.cpp:253` — `inlineGateSubroutines`
+- `ir-pass/src/SpecializeGateInline.cpp:314` — `declineMissedGateSubroutines`
+- `ir-pass/src/SpecializeGateInline.cpp:341` — `onlyUsedListUsers`
+- `ir-pass/src/SpecializeGateInline.cpp:356` — `isProgramEntryPoint`
+- `ir-pass/src/SpecializeGateInline.cpp:360` — `isQuantumReturnExport`
+- `ir-pass/src/SpecializeGateInline.cpp:368` — `widenQuantumExportReturns`
+
 ### `ir-pass/src/SpecializePredict.cpp` (208 lines)
 
 - `ir-pass/src/SpecializePredict.cpp:45` — `isPredictableSpecSite`
@@ -1365,63 +1382,67 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SwitchValueEmit.cpp:115` — `bailLoud`
 - `ir-pass/src/SwitchValueEmit.cpp:137` — `emitSwitchValueRegion`
 
-### `ir-pass/src/TaintPropagation.cpp` (3362 lines)
+### `ir-pass/src/TaintPropagation.cpp` (3474 lines)
 
-- `ir-pass/src/TaintPropagation.cpp:84` — `diagnoseIntrinsicInvoke`
-- `ir-pass/src/TaintPropagation.cpp:107` — `seedQuantumMemoryLoad`
-- `ir-pass/src/TaintPropagation.cpp:113` — `collectAndSeed`
-- `ir-pass/src/TaintPropagation.cpp:282` — `isMeasureSink`
-- `ir-pass/src/TaintPropagation.cpp:314` — `declMatchesPrototype`
-- `ir-pass/src/TaintPropagation.cpp:334` — `diagnoseMalformedDecl`
-- `ir-pass/src/TaintPropagation.cpp:375` — `resolveSources`
-- `ir-pass/src/TaintPropagation.cpp:499` — `drainWorklist`
-- `ir-pass/src/TaintPropagation.cpp:674` — `mayGain`
-- `ir-pass/src/TaintPropagation.cpp:683` — `dt`
-- `ir-pass/src/TaintPropagation.cpp:690` — `terminatorCondition`
-- `ir-pass/src/TaintPropagation.cpp:711` — `selectsIncoming`
-- `ir-pass/src/TaintPropagation.cpp:750` — `decides`
-- `ir-pass/src/TaintPropagation.cpp:759` — `walk`
-- `ir-pass/src/TaintPropagation.cpp:825` — `specCallResultMayTurnQuantum`
-- `ir-pass/src/TaintPropagation.cpp:843` — `settleSpecPredictions`
-- `ir-pass/src/TaintPropagation.cpp:876` — `propagateWorklist`
-- `ir-pass/src/TaintPropagation.cpp:887` — `propagate`
-- `ir-pass/src/TaintPropagation.cpp:953` — `declineStaleTaintSet`
-- `ir-pass/src/TaintPropagation.cpp:995` — `foldIdentityBitcasts`
-- `ir-pass/src/TaintPropagation.cpp:1053` — `readsTaintedValue`
-- `ir-pass/src/TaintPropagation.cpp:1086` — `diagnoseEscape`
-- `ir-pass/src/TaintPropagation.cpp:1115` — `freezeOperandIndependentlyEscapes`
-- `ir-pass/src/TaintPropagation.cpp:1138` — `freezeResultWouldEscape`
-- `ir-pass/src/TaintPropagation.cpp:1161` — `isLocalIntegerIdentityFreeze`
-- `ir-pass/src/TaintPropagation.cpp:1176` — `declineTaintEscapes`
-- `ir-pass/src/TaintPropagation.cpp:1853` — `resolveWireBase`
-- `ir-pass/src/TaintPropagation.cpp:1914` — `terminatorIsClassical`
-- `ir-pass/src/TaintPropagation.cpp:1928` — `liftOneRegisterMergePhi`
-- `ir-pass/src/TaintPropagation.cpp:2123` — `collectLiftGateCalls`
-- `ir-pass/src/TaintPropagation.cpp:2131` — `declineClassicalMuxes`
-- `ir-pass/src/TaintPropagation.cpp:2258` — `declineFalsifiedMergePhiLifts`
-- `ir-pass/src/TaintPropagation.cpp:2390` — `detectAndLowerOnwardControl`
-- `ir-pass/src/TaintPropagation.cpp:2492` — `replanReseedSpecialization`
-- `ir-pass/src/TaintPropagation.cpp:2558` — `propagateFromSeeds`
-- `ir-pass/src/TaintPropagation.cpp:2598` — `propagateFromParams`
-- `ir-pass/src/TaintPropagation.cpp:2642` — `adjudicateTaintDelta`
-- `ir-pass/src/TaintPropagation.cpp:2693` — `repropagateControlMerges`
-- `ir-pass/src/TaintPropagation.cpp:2880` — `isRegisterFreePhaseCall`
-- `ir-pass/src/TaintPropagation.cpp:2890` — `branchCondition`
-- `ir-pass/src/TaintPropagation.cpp:2911` — `reachedThroughTaintedBranch`
-- `ir-pass/src/TaintPropagation.cpp:2953` — `canReachReturn`
-- `ir-pass/src/TaintPropagation.cpp:2972` — `everyReturningPathThrough`
-- `ir-pass/src/TaintPropagation.cpp:3005` — `controlDependsOn`
-- `ir-pass/src/TaintPropagation.cpp:3017` — `functionHasReturn`
-- `ir-pass/src/TaintPropagation.cpp:3029` — `controlDependentOnTaintedBranch`
-- `ir-pass/src/TaintPropagation.cpp:3049` — `isTaintControlledBranchPhase`
-- `ir-pass/src/TaintPropagation.cpp:3063` — `transitiveControllers`
-- `ir-pass/src/TaintPropagation.cpp:3085` — `taintedOperandLineage`
-- `ir-pass/src/TaintPropagation.cpp:3103` — `functionCarriesBranchPhase`
-- `ir-pass/src/TaintPropagation.cpp:3114` — `lineageCarriesBranchPhase`
-- `ir-pass/src/TaintPropagation.cpp:3164` — `deleteGlobalPhases`
-- `ir-pass/src/TaintPropagation.cpp:3255` — `functionReturnsTainted`
-- `ir-pass/src/TaintPropagation.cpp:3265` — `declineQuantumReturnCalls`
-- `ir-pass/src/TaintPropagation.cpp:3323` — `declineScrubbedHandleReads`
+- `ir-pass/src/TaintPropagation.cpp:88` — `diagnoseIntrinsicInvoke`
+- `ir-pass/src/TaintPropagation.cpp:111` — `seedQuantumMemoryLoad`
+- `ir-pass/src/TaintPropagation.cpp:117` — `collectAndSeed`
+- `ir-pass/src/TaintPropagation.cpp:286` — `isMeasureSink`
+- `ir-pass/src/TaintPropagation.cpp:318` — `declMatchesPrototype`
+- `ir-pass/src/TaintPropagation.cpp:338` — `diagnoseMalformedDecl`
+- `ir-pass/src/TaintPropagation.cpp:379` — `resolveSources`
+- `ir-pass/src/TaintPropagation.cpp:503` — `drainWorklist`
+- `ir-pass/src/TaintPropagation.cpp:687` — `mayGain`
+- `ir-pass/src/TaintPropagation.cpp:696` — `dt`
+- `ir-pass/src/TaintPropagation.cpp:703` — `terminatorCondition`
+- `ir-pass/src/TaintPropagation.cpp:724` — `selectsIncoming`
+- `ir-pass/src/TaintPropagation.cpp:763` — `decides`
+- `ir-pass/src/TaintPropagation.cpp:772` — `walk`
+- `ir-pass/src/TaintPropagation.cpp:838` — `specCallResultMayTurnQuantum`
+- `ir-pass/src/TaintPropagation.cpp:856` — `settleSpecPredictions`
+- `ir-pass/src/TaintPropagation.cpp:889` — `propagateWorklist`
+- `ir-pass/src/TaintPropagation.cpp:902` — `makeLaterTaintQuery`
+- `ir-pass/src/TaintPropagation.cpp:907` — `propagate`
+- `ir-pass/src/TaintPropagation.cpp:973` — `declineStaleTaintSet`
+- `ir-pass/src/TaintPropagation.cpp:1015` — `foldIdentityBitcasts`
+- `ir-pass/src/TaintPropagation.cpp:1073` — `readsTaintedValue`
+- `ir-pass/src/TaintPropagation.cpp:1118` — `nonI32ReturnMessage`
+- `ir-pass/src/TaintPropagation.cpp:1126` — `diagnoseEscape`
+- `ir-pass/src/TaintPropagation.cpp:1155` — `freezeOperandIndependentlyEscapes`
+- `ir-pass/src/TaintPropagation.cpp:1178` — `freezeResultWouldEscape`
+- `ir-pass/src/TaintPropagation.cpp:1201` — `isLocalIntegerIdentityFreeze`
+- `ir-pass/src/TaintPropagation.cpp:1216` — `declineTaintEscapes`
+- `ir-pass/src/TaintPropagation.cpp:1931` — `resolveWireBase`
+- `ir-pass/src/TaintPropagation.cpp:1992` — `terminatorIsClassical`
+- `ir-pass/src/TaintPropagation.cpp:2006` — `liftOneRegisterMergePhi`
+- `ir-pass/src/TaintPropagation.cpp:2201` — `collectLiftGateCalls`
+- `ir-pass/src/TaintPropagation.cpp:2209` — `declineClassicalMuxes`
+- `ir-pass/src/TaintPropagation.cpp:2336` — `declineFalsifiedMergePhiLifts`
+- `ir-pass/src/TaintPropagation.cpp:2468` — `detectAndLowerOnwardControl`
+- `ir-pass/src/TaintPropagation.cpp:2570` — `replanReseedSpecialization`
+- `ir-pass/src/TaintPropagation.cpp:2636` — `propagateFromSeeds`
+- `ir-pass/src/TaintPropagation.cpp:2676` — `propagateFromParams`
+- `ir-pass/src/TaintPropagation.cpp:2720` — `adjudicateTaintDelta`
+- `ir-pass/src/TaintPropagation.cpp:2771` — `repropagateControlMerges`
+- `ir-pass/src/TaintPropagation.cpp:2958` — `isRegisterFreePhaseCall`
+- `ir-pass/src/TaintPropagation.cpp:2968` — `branchCondition`
+- `ir-pass/src/TaintPropagation.cpp:2989` — `reachedThroughTaintedBranch`
+- `ir-pass/src/TaintPropagation.cpp:3031` — `canReachReturn`
+- `ir-pass/src/TaintPropagation.cpp:3050` — `everyReturningPathThrough`
+- `ir-pass/src/TaintPropagation.cpp:3083` — `controlDependsOn`
+- `ir-pass/src/TaintPropagation.cpp:3095` — `functionHasReturn`
+- `ir-pass/src/TaintPropagation.cpp:3107` — `controlDependentOnTaintedBranch`
+- `ir-pass/src/TaintPropagation.cpp:3127` — `isTaintControlledBranchPhase`
+- `ir-pass/src/TaintPropagation.cpp:3141` — `transitiveControllers`
+- `ir-pass/src/TaintPropagation.cpp:3163` — `taintedOperandLineage`
+- `ir-pass/src/TaintPropagation.cpp:3181` — `functionCarriesBranchPhase`
+- `ir-pass/src/TaintPropagation.cpp:3192` — `lineageCarriesBranchPhase`
+- `ir-pass/src/TaintPropagation.cpp:3242` — `deleteGlobalPhases`
+- `ir-pass/src/TaintPropagation.cpp:3338` — `functionReturnsTainted`
+- `ir-pass/src/TaintPropagation.cpp:3352` — `isTaintedMainRet`
+- `ir-pass/src/TaintPropagation.cpp:3357` — `declineTaintedMainReturns`
+- `ir-pass/src/TaintPropagation.cpp:3375` — `declineQuantumReturnCalls`
+- `ir-pass/src/TaintPropagation.cpp:3435` — `declineScrubbedHandleReads`
 
 ### `ir-pass/src/TaintedControlDependence.cpp` (46 lines)
 

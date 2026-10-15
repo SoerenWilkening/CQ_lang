@@ -8,6 +8,10 @@
 ; decline. i32-width tainted rets stay accepted; a measured (classical) half
 ; return is untouched (lowering_measure_f16.ll covers that ACCEPT).
 ;
+; bd p3kd.21 (R11 r1 item 4; owner ruling owner-ruling-p3kd21-gate-subroutines-2026-10-14):
+; briefly an accept on 11adde57 (the export's return re-declared `i32`), restored to
+; this decline: a C caller of a `half` export reads the FP register, never the
+; integer handle. The handle ABI is approved for integer returns of 32 bits or wider.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq taint escape: tainted value returned at non-i32 width
 ; CHECK-NOT: cqrt_measure_f16

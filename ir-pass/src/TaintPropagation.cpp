@@ -7,6 +7,7 @@
 // only the source predicate moved to the `@cq_theta_<sfx>` rotation family.
 
 #include "TaintPropagation.h"
+#include "SpecializeGateInline.h"  // isQuantumReturnExport (bd p3kd.21)
 
 #include "ControlPlan.h"      // diagnoseUnderControl (dugh re-classified control)
 #include "IntrinsicLowering.h"
@@ -25,6 +26,9 @@
 #include "ReturnMerge.h"      // unifyTaintedReturns (bd dm7f.5, ROUND-2 site)
 #include "SwapRouteEmit.h"     // lowerControlRegions (yn71 onward-control re-emit)
 #include "WidthDispatch.h"
+
+#include <functional>
+#include <memory>
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -662,6 +666,15 @@ void drainWorklist(std::vector<Value *> &Worklist, const FnSet &ThetaFns,
 //     `ret` has no source to grow from. RETIREMENT TRIGGER (L1/L8): the day `scanBody`
 //     admits a callee holding a `cq_*` primitive, OR the 3jru refusal is relaxed,
 //     re-derive this paragraph and give the site-itself crossing its own check.
+//     RE-DERIVED 2026-10-14 (bd p3kd.21), NEITHER TRIGGER FIRED: a gate subroutine
+//     (a callee holding `cq_*`) is now compiled at its call site by
+//     `inlineGateSubroutines` (SpecializeGateInline.h), which runs before every
+//     consumer of this oracle and re-`propagate`s; it does not lift it, and
+//     `scanBody` still refuses every gate callee that reaches a lift site (only a
+//     non-inlinable one can: a call-cycle member, or a site `InlineFunction`
+//     refuses). The 3jru refusal is unchanged; the non-i32 return admission of
+//     the same change (`isQuantumReturnExport`) covers only a function with NO
+//     in-module use, which has no call site to cross onto.
 //   * "a φ's deciders are EVERY conditional terminator between its block's idom and
 //     the block" counted a loop body's own branches as deciding the loop's header φ
 //     (review probe `lpp`: `for (i<3) { t = h(q, i+m); if (q > t) cq_phi(.2); }`,
@@ -884,6 +897,13 @@ void propagateWorklist(std::vector<Value *> &Worklist, const FnSet &ThetaFns,
 
 }  // namespace
 
+// bd p3kd.21 — see SpecializeGateInline.h. The gate-call questions are asked on
+// round-1 taint, so they ask THIS oracle too (L1: a value round 2 can taint).
+std::function<bool(Value *)> makeLaterTaintQuery(const TaintSet &taint) {
+  auto O = std::make_shared<LaterTaintOracle>(taint);
+  return [O](Value *V) { return O->mayGain(V); };
+}
+
 TaintSet propagate(Module &M, WidthDispatch &wd) {
   TaintSet out;
   FnSet ThetaFns;
@@ -1068,9 +1088,12 @@ namespace {
 //   * lowering_reject_taint_escape_indirect_call.ll  → kMsgUnknownCallee
 //   * lowering_reject_taint_escape_store_global.ll   → kMsgStore
 //   * lowering_reject_taint_escape_gep.ll            → kMsgOther
-//   * lowering_reject_taint_escape_return_straightline.ll   → kMsgNonI32Return
-//   * lowering_reject_taint_escape_return_phase_diamond.ll  → kMsgNonI32Return
-//   * lowering_reject_taint_escape_return_value_diamond.ll  → kMsgNonI32Return
+//   * spec_reject_gate_sub_indirect_nonI32.ll             → kMsgNonI32Return
+//   * spec_reject_gate_sub_export_{bool,double}.ll, lowering_reject_f16_return.ll
+//     → kMsgNonI32Return (bd p3kd.21: the three i64
+//     `lowering_reject_taint_escape_return_*.ll` that pinned it returned from a
+//     function with NO in-module use, which now returns its handle zero-extended
+//     — `isQuantumReturnExport` — and they accept.)
 constexpr char kMsgUnknownCallee[] =
     "cq taint escape: tainted value consumed by an unknown callee";
 constexpr char kMsgStore[] = "cq taint escape: tainted value stored to memory";
@@ -1078,6 +1101,23 @@ constexpr char kMsgOther[] =
     "cq taint escape: tainted value reaches an unsupported instruction";
 constexpr char kMsgNonI32Return[] =
     "cq taint escape: tainted value returned at non-i32 width";
+// bd p3kd.21 (R11 r1 item 4): a function returning a register on one path and a
+// classical value on another hands its caller a value it cannot tell from a
+// handle (`ret i32 0` reads as handle 0). Loud until the classical paths are
+// materialized as registers (follow-up filed from bd p3kd.21); asked for an i64+
+// export only (see the ret clause), pinned by spec_reject_gate_sub_mixed_return.ll.
+// bd p3kd.21 R11 r2 F1: pinned by spec_reject_gate_sub_main_return{,_via_call}.ll.
+constexpr char kMsgQuantumMainReturn[] =
+    "cq taint escape: quantum value returned from main without cq_measure";
+constexpr char kMsgMixedReturn[] =
+    "cq taint escape: register returned on one path and a classical value on "
+    "another";
+}  // namespace
+
+// bd p3kd.21 — ONE spelling of the non-i32 return string (SpecializeGateInline.h).
+const char *nonI32ReturnMessage() { return kMsgNonI32Return; }
+
+namespace {
 
 // Loud `DiagnosticInfoUnsupported(DS_Error)` with the offending instruction's
 // `!dbg` — the one diagnostic surface the whole pass speaks (same idiom as
@@ -1409,9 +1449,47 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
           // 8mld broken-module the verifier aborts on. Reading `RV->getType()` here
           // would see i32 and MISS it (verifier SIGABRT on valid input); the function
           // return type is the stable ABI width and catches the post-RAUW mismatch.
+          // bd p3kd.21 / bd jx32: a function with no in-module use OTHER than
+          // `main` (an export — `declineQuantumReturnCalls`' Escaped contract)
+          // returns the register's i32 HANDLE, zero-extended to its i64+ return
+          // after lowering (`widenQuantumExportReturns`, SpecializeGateInline.h;
+          // owner ruling owner-ruling-p3kd21-gate-subroutines-2026-10-14: integer
+          // returns of 32 bits or wider only). A narrower or fp return, and a
+          // function WITH a use, keep this decline: its callers read an `iN`.
+          // bd p3kd.21 R11 r2 F1 — THE PROGRAM ENTRY POINT. `main`'s return is
+          // the process exit status, classical by definition: a register returned
+          // there reaches classical code without `cq_measure`, which NORTHSTAR
+          // goal 1 makes physics-forbidden (coordinator ruling from NORTHSTAR,
+          // 2026-10-15). THE MECHANISM IS THIS `continue` PLUS ONE LATE QUESTION:
+          // here a tainted `ret` of `main` is neither declined nor admitted by any
+          // clause below (not the i32 Escaped contract, not the export widening),
+          // and `declineTaintedMainReturns` asks the same predicate after
+          // `specialize()`, in both entry points, and declines it there if it is
+          // still tainted. Pre-`specialize()` a lift-site result is tainted by
+          // PREDICTION, and declining on that refused programs whose `main`
+          // returns a value the specializer proves classical (R11 r2 F1 decision:
+          // 17 fixtures, an over-decline a green suite had masked).
+          if (isTaintedMainRet(*Ret, taint))
+            continue;
           if (RV && taint.Tainted.count(RV) &&
-              !Ret->getFunction()->getReturnType()->isIntegerTy(32))
+                   !Ret->getFunction()->getReturnType()->isIntegerTy(32) &&
+                   !isQuantumReturnExport(*Ret->getFunction()))
             diagnoseEscape(&I, kMsgNonI32Return);
+          // bd p3kd.21: in an i64+ export (the population the export admission
+          // adds), a reachable untainted `ret` beside a tainted one (separate
+          // exits under classical control; `-O1` merges most into one `ret`).
+          // ⚠ The same ambiguity in an i32 function is PRE-EXISTING and is NOT
+          // declined here: dm7f.5's classical-exit fixtures
+          // (control_multiexit_musttail_classical_exit_alloca.ll,
+          // control_multiexit_untouched_reconverged.ll) accept it, so the
+          // remedy (materialize the classical exit as a register, or decline)
+          // is an owner question filed from bd p3kd.21.
+          else if (RV && !taint.Tainted.count(RV) &&
+                   isQuantumReturnExport(*Ret->getFunction()) &&
+                   (&BB == &Ret->getFunction()->getEntryBlock() ||
+                    !pred_empty(&BB)) &&
+                   functionReturnsTainted(*Ret->getFunction(), taint))
+            diagnoseEscape(&I, kMsgMixedReturn);
           continue;
         }
         if (I.isTerminator())
@@ -3247,8 +3325,13 @@ void deleteGlobalPhases(Module &M, WidthDispatch &wd, TaintSet &taint) {
 }
 
 // bd `test_C_libtooling-3jru` — character-for-character in
-// `condtree_classical_leaf_reject_callee_quantum_return*.ll` and
-// `taint_reject_quantum_return_*.ll`.
+// `taint_reject_quantum_return_fnptr.ll` and
+// `spec_reject_predicted_classical_round2_return_crossing.ll`. bd p3kd.21
+// compiles a gate subroutine at its call site, which turned the
+// `condtree_classical_leaf_reject_callee_quantum_return*.ll` pair and seven
+// `taint_reject_quantum_return_*.ll` members into accepts (`_volatile_flag` and
+// `_9bhg_quantum_twin` decline instead on `main`'s return, R11 r2 F1) (their file names are
+// history; `_boolarg` was renamed `taint_accept_…`).
 static constexpr char kMsgQuantumReturn[] =
     "cq taint escape: quantum value returned across a function boundary";
 
@@ -3262,6 +3345,33 @@ bool functionReturnsTainted(const Function &F, const TaintSet &taint) {
 }
 
 // bd `test_C_libtooling-3jru` — the LOUD refusal. See TaintPropagation.h.
+// bd p3kd.21 R11 r2 F1 — the main-return question, ONE predicate (R12):
+// `declineTaintEscapes` lets a hit through untouched (its `continue`), and
+// `declineTaintedMainReturns` asks it again after `specialize()`, in both entry
+// points, where a lift-site result's taint is the specializer's verdict.
+bool isTaintedMainRet(const ReturnInst &R, const TaintSet &taint) {
+  Value *RV = R.getReturnValue();
+  return RV && taint.Tainted.count(RV) && isProgramEntryPoint(*R.getFunction());
+}
+
+bool declineTaintedMainReturns(Module &M, const TaintSet &taint) {
+  for (Function &F : M) {
+    if (!isProgramEntryPoint(F))
+      continue;
+    for (BasicBlock &BB : F) {
+      auto *R = dyn_cast<ReturnInst>(BB.getTerminator());
+      if (!R)
+        continue;
+      if (isTaintedMainRet(*R, taint)) {
+        F.getContext().diagnose(DiagnosticInfoUnsupported(
+            F, kMsgQuantumMainReturn, R->getDebugLoc()));
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 bool declineQuantumReturnCalls(Module &M, const TaintSet &taint) {
   for (Function &F : M) {
     if (F.isDeclaration() || !functionReturnsTainted(F, taint))
@@ -3280,8 +3390,10 @@ bool declineQuantumReturnCalls(Module &M, const TaintSet &taint) {
     //    every indirect read is a points-to question this stage does not ask, and
     //    an over-decline is the loud side of it (never silent, but a gap to
     //    remove under R1, not a safe margin).
-    // A function with no use in this module (an entry point, or a cross-TU
-    // export) is untouched: its `ret` of a handle is the existing Escaped contract.
+    // A function with no use in this module (a cross-TU export) is untouched:
+    // its `ret` of a handle is the existing Escaped contract. `main` is not under
+    // it: its tainted `ret` is refused by `declineTaintedMainReturns` (bd p3kd.21
+    // R11 r2 F1).
     for (User *U : F.users()) {
       if (auto *CB = dyn_cast<CallBase>(U);
           CB && CB->getCalledOperand() == &F && CB->use_empty())

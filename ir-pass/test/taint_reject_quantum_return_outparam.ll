@@ -18,9 +18,46 @@
 ;   }
 ;   int main(int argc, char **argv) { return slice(atoi(argv[1]), atoi(argv[2])); }
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s
-; CHECK: cq taint escape: tainted value stored to memory
+; bd p3kd.21 R11 r1 fix (2026-10-15) — NOW AN ACCEPT; the file name and the
+; DECLINE text above are history. `g` and `h` are GATE SUBROUTINES (`h` holds `cq_theta`, `g` calls it) and
+; the module defines `main`, so after `g` is compiled at its site in `slice` (a
+; pointer argument the callee stores a register through) and `h` at its site
+; in turn, both are erased (R11 r1 item 5); the standalone `g` body whose store
+; was this fixture's decline no longer exists. The register is the caller's own, and
+; the module compiles exactly as its hand-inlined twin does on the pre-change
+; binary (same gate stream as taint_reject_quantum_return_helper_arg.ll's twin, minus
+; the lifted `tw`). The 3jru refusal itself is unchanged and still pinned by
+; taint_reject_quantum_return_fnptr.ll and
+; spec_reject_predicted_classical_round2_return_crossing.ll.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; CHECK-LABEL: define internal fastcc i32 @slice(
+; CHECK-NEXT: [[Q:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q]], double 5.000000e-01)
+; CHECK-NEXT: [[R:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i32(i32 %0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[R]], double 0x3FE6666666666666)
+; CHECK-NEXT: [[C1:%[0-9a-z_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 [[Q]], i32 1)
+; CHECK-NEXT: [[C2:%[0-9a-z_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 [[R]], i32 %1)
+; CHECK-NEXT: [[G:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_toffoli(i32 [[C1]], i32 [[C2]], i32 [[G]])
+; CHECK-NEXT: [[OUT:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: [[S1:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i32(i32 10)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 [[G]], i32 [[S1]], i32 [[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 [[G]])
+; CHECK-NEXT: [[S2:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i32(i32 7)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 [[G]], i32 [[S2]], i32 [[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 [[G]])
+; CHECK-NEXT: call void @cqrt_toffoli(i32 [[C1]], i32 [[C2]], i32 [[G]])
+; CHECK-NEXT: call void @cqrt_free(i32 [[G]])
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 [[C2]], i32 [[R]], i32 %1)
+; CHECK-NEXT: call void @cqrt_free(i32 [[C2]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 [[C1]], i32 [[Q]], i32 1)
+; CHECK-NEXT: call void @cqrt_free(i32 [[C1]])
+; CHECK-NEXT: [[MQ:%[0-9a-z_.]+]] = call i32 @cqrt_measure_i32(i32 [[Q]])
+; CHECK-NEXT: [[MA:%[0-9a-z_.]+]] = call i32 @cqrt_measure_i32(i32 [[OUT]])
+; CHECK-NOT: @g(
+; CHECK-NOT: @h(
 
 ; ModuleID = '/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a2b9793f123da59f8/te_scratch/r3/r12_outparam_untainted.c'
 source_filename = "/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a2b9793f123da59f8/te_scratch/r3/r12_outparam_untainted.c"

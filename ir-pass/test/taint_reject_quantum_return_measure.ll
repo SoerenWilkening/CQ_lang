@@ -11,9 +11,28 @@
 ;   __attribute__((noinline)) int g(int k) { cq_theta(&k, 0.7); return k; }
 ;   int main(int argc, char **argv) { int r = g(atoi(argv[1])); return cq_measure(r); }
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s
-; CHECK: cq taint escape: quantum value returned across a function boundary
+; bd p3kd.21 (2026-10-14) — NOW AN ACCEPT; the file name and the DECLINE text
+; above are history. The returning callee is a GATE SUBROUTINE (it holds
+; `cq_theta`), so its call is compiled at the call site (SpecializeGateInline.h,
+; trigger (c): a used register return) and the 3jru crossing no longer exists: the
+; register is the caller's own. Measured: the lowered body is identical, call for
+; call, to `clang -O1` of the same source with the helper force-inlined, on the
+; pre-change binary (taint_reject_quantum_return_helper_arg.ll's twin). The CHECKs
+; capture every rail and pin each operand, each `_unc` right before its
+; `cqrt_free`, and the user's measurements (R11 r1 item 8: reviewer mutants M1-M3
+; reading the handle id classically, deleting a `cq_measure`, or dropping an
+; `_unc`, are killed). The 3jru refusal itself is unchanged and still pinned by
+; taint_reject_quantum_return_fnptr.ll and
+; spec_reject_predicted_classical_round2_return_crossing.ll.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; CHECK-LABEL: define i32 @main(
+; CHECK: [[R:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i32(
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[R]], double 0x3FE6666666666666)
+; CHECK-NEXT: [[M:%[0-9a-z_.]+]] = call i32 @cqrt_measure_i32(i32 [[R]])
+; CHECK-NEXT: ret i32 [[M]]
+; CHECK-NOT: call {{.*}}@g(
 
 ; ModuleID = '/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a2b9793f123da59f8/te_scratch/r3/q06_calleeret_meas.c'
 source_filename = "/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a2b9793f123da59f8/te_scratch/r3/q06_calleeret_meas.c"

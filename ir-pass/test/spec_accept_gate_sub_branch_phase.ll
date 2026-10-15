@@ -1,4 +1,5 @@
-; lowering_reject_spec_branch_phase.ll — DECLINE. Rule-13 round-1 finding F-L3-3
+; spec_accept_gate_sub_branch_phase.ll (formerly lowering_reject_spec_branch_phase.ll)
+; — ACCEPT since bd test_C_libtooling-p3kd.21; was a DECLINE. Rule-13 round-1 finding F-L3-3
 ; (bd test_C_libtooling-3qlq Inc 1 part A, lens L3): a register-free branch phase
 ; inside a Phase-6 SPECIALIZATION CANDIDATE must decline as a QUANTUM PRIMITIVE.
 ;
@@ -29,8 +30,32 @@
 ; `readsTainted` — it would be a tainted-arg CANDIDATE rather than a skipped
 ; intrinsic site.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error: {{.*}}cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted
+; bd p3kd.21 (2026-10-14): THE DECLINE IS RETIRED, the reason above is not. `h`
+; is a GATE SUBROUTINE, compiled at its call site (SpecializeGateInline.h), never
+; cloned: a Bennett-wrapped clone holding the phase would still be the hazard
+; this fixture recorded, and `scanBody` still refuses it (pinned by
+; spec_reject_gate_sub_devirt_primitive.ll, the one reachable lift of a gate
+; callee, and backstopping every other non-inlinable
+; site). Inlined, `slice` is `if (q == 5) cq_phi(PI); return measure(q + 1)`:
+; the phase kicks back onto the compare flag, which is uncomputed and freed, and
+; `q + 1` is the in-place `cqrt_addc_i32` on the measured register. The
+; 2026-09-30 decline audit (docs/audits-2026-09-30, row SP-qprim) named exactly
+; this remedy: inline callees containing cq_* primitives instead of Bennett-lifting
+; them.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; CHECK-LABEL: define i32 @slice(
+; CHECK-NEXT: [[Q:%[0-9a-z.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q]], double 3.000000e-01)
+; CHECK-NEXT: [[F:%[0-9a-z_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 [[Q]], i32 5)
+; CHECK-NEXT: call void @cqrt_rz_i1(i32 [[F]], double 0x400921FB54442D18), !cq.branchphase
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 [[F]], i32 [[Q]], i32 5)
+; CHECK-NEXT: call void @cqrt_free(i32 [[F]])
+; CHECK-NEXT: call void @cqrt_addc_i32(i32 [[Q]], i32 1)
+; CHECK-NEXT: [[M:%[0-9a-z.]+]] = call i32 @cqrt_measure_i32(i32 [[Q]])
+; CHECK-NEXT: ret i32 [[M]]
+; CHECK-NOT: @h(
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

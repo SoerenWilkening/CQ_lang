@@ -1,4 +1,9 @@
 ; spec_reject_fp_arg_used_as_angle.ll — bd 3c6m.54 ANGLE-SAFETY (Rule 3, the
+; ⚠ LINES 2-10 BELOW ARE HISTORY since bd p3kd.21 (R11 r1 item 9): `helper` holds a
+; `cq_phi`, so it is a gate subroutine compiled at its call site and never cloned;
+; the fixture now pins the quantum-angle gap instead (see the p3kd.21 note at the
+; CHECK). The clone-side argument still holds for the clones that exist: `scanBody`
+; refuses a body holding a rotation (spec_reject_gate_sub_devirt_primitive.ll).
 ; f64/angle miscompile family). Even though a tainted fp ARG is now admitted, an fp
 ; value can NEVER reach a rotation arg-1 angle INSIDE a clone: `scanBody` rejects
 ; every `cq_theta`/`cq_phi` as `QuantumPrimitive`, so a clone body is provably
@@ -31,5 +36,13 @@ entry:
   ret double %z
 }
 
-; CHECK: error{{.*}}cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted
+; bd p3kd.21 (2026-10-14): `helper` is a GATE SUBROUTINE, compiled at its call
+; site (SpecializeGateInline.h), so the clone-side argument above no longer
+; applies to it: inlined, its `cq_phi` reads the caller's QUANTUM fp value as its
+; angle, and the decline moves to its true ground, the quantum-derived-angle gap
+; (bd 94ad; CLAUDE.md R3: never "fixed" ad hoc). The expectation moved with the
+; capability change (R10); the specializer-side fence is still enforced by
+; `scanBody` for every callee that is not inlined.
+; CHECK: error{{.*}}cq rotation lowering: unsupported quantum-derived rotation angle
+; CHECK-NOT: callee contains a quantum primitive
 ; CHECK-NOT: floating-point quantum argument or return has no reversible copy

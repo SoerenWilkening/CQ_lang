@@ -17,9 +17,33 @@
 ;   }
 ;   int main(int argc, char **argv) { return slice(atoi(argv[1]), atoi(argv[2])); }
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s
-; CHECK: cq taint escape: quantum value returned across a function boundary
+; bd p3kd.21 (2026-10-15) — NOW AN ACCEPT; the file name and the DECLINE text above
+; are history. `slice` holds `cq_theta` and returns a value its own register decides (the
+; volatile flag's quantum-condition mux, pinned nowhere else), so its used result
+; is compiled at the call site (trigger (c)). The register is the caller's own and the
+; module compiles as its hand-inlined twin does on the pre-change binary (`slice` force-inlined: the same gates; -O1 spells the flag test `slt`/`or`
+; there and `sgt`/`and` here).
+; `main` MEASURES what it returns (a register returned from `main` is refused,
+; spec_reject_gate_sub_main_return.ll; bd r2j3.35), so the stream below is the
+; accepted one plus that measurement. The 3jru refusal itself is unchanged and
+; still pinned by taint_reject_quantum_return_fnptr.ll and
+; spec_reject_predicted_classical_round2_return_crossing.ll.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; CHECK-LABEL: define i32 @main(
+; CHECK: [[K:%[0-9]+]] = icmp eq i32 %5, %8
+; CHECK: [[Q:%[0-9a-z_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q]], double 5.000000e-01)
+; CHECK-NEXT: [[C:%[0-9a-z_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 [[Q]], i32 1)
+; CHECK-NEXT: [[F:%[0-9a-z_.]+]] = call i32 @cq_template_and_i1_hl(i32 [[C]], i1 [[K]])
+; CHECK-NEXT: call void @cqrt_xorc_i1(i32 [[F]], i1 [[K]])
+; CHECK: [[M:%[0-9a-z_.]+]] = call i32 @cqrt_measure_i32(
+; CHECK-NEXT: [[W:%[0-9a-z_.]+]] = call i32 @cq_template_zext_i1_to_i32(i32 [[F]])
+; CHECK-NEXT: call void @cqrt_addc_i32(i32 [[W]], i32 [[M]])
+; CHECK-NEXT: [[MW:%[0-9a-z_.]+]] = call i32 @cqrt_measure_i32(i32 [[W]])
+; CHECK-NEXT: ret i32 [[MW]]
+; CHECK-NOT: @slice(
 
 ; ModuleID = '/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a2b9793f123da59f8/te_scratch/r4/q61_volatile_arm.c'
 source_filename = "/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a2b9793f123da59f8/te_scratch/r4/q61_volatile_arm.c"
@@ -35,7 +59,8 @@ define i32 @main(i32 noundef %0, ptr nocapture noundef readonly %1) local_unname
   %7 = load ptr, ptr %6, align 8, !tbaa !6
   %8 = tail call i32 @atoi(ptr nocapture noundef %7)
   %9 = tail call fastcc i32 @slice(i32 noundef %5, i32 noundef %8)
-  ret i32 %9
+  %cq.main.m = call i32 @cq_measure_si32(i32 %9)
+  ret i32 %cq.main.m
 }
 
 ; Function Attrs: noinline nounwind ssp uwtable
