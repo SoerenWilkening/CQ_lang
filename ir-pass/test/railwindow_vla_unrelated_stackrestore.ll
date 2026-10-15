@@ -7,14 +7,29 @@
 ; and before one of its accesses?), so `q` is claimed exactly as in the probe
 ; without the second array (h3_nosr.c).
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s --implicit-check-not='cq rail bank'
-; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
-; RUN:   | %filecheck %s --check-prefix=WIN
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S4 borrowed-root cells
-; WIN: CQ_RAILWINDOW_DBG: @main claims %3 cells=i32 loads=2 stores=1 Q=  br i1 %5, label %6, label %8
 
 ; ModuleID = 'h3_stackrestore_index.c'
+; ⚠ bd `test_C_libtooling-01po.19` S4 (2026-10-15): DECLINE -> ACCEPT. The window
+; model now LOWERS this array (RailWindow.h: handle array materialized at the
+; quantization point, cell reads are borrowed roots, a cell rail is never freed
+; or reverse-played). Reviewed by trace, not by green:
+; an i32 VLA whose cells are addressed by BYTE geps (`shl i, 3`): the cell index is the byte offset >> 2 (`lshr exact`); every touched cell is rotated once and measured.
+; The S4 prefix pins the whole emitted runtime stream and that no rail is freed.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s --check-prefix=S4 --implicit-check-not=cqrt_free --implicit-check-not='error:'
+; S4-LABEL: define {{.*}} @main(
+; S4: %.rails = alloca i32, i64 %2, align 4, !cq.railwindow !6
+; S4: %h = call i32 @cqrt_alloc_i32(i32 %cq.rail.init)
+; S4: %.rail = load i32, ptr %cq.rail.addr, align 4
+; S4: call void @cqrt_ry_i32(i32 %.rail, double 5.000000e-01)
+; S4: store i32 %.rail, ptr %cq.rail.addr, align 4
+; S4: %.rail2 = load i32, ptr %cq.rail.addr1, align 4
+; S4: %m = call i32 @cqrt_measure_i32(i32 %.rail2)
+; RUN: env CQ_RAILWINDOW_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
+; RUN:   | %filecheck %s --check-prefix=WIN
+; WIN: CQ_RAILWINDOW_DBG: @main claims %3 cells=i32 loads=2 stores=1 Q=  br i1 %5, label %6, label %8
+; WIN: CQ_RAILWINDOW_DBG: promoted 0 cell class(es)
+
 source_filename = "h3_stackrestore_index.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

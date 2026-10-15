@@ -134,6 +134,11 @@ add_library(CQPass MODULE
   src/RailBankPromote.cpp
   # bd 01po.19 S1-S3: rolled quantum arrays (claim, quantization point, windows).
   src/RailWindow.cpp
+  # bd 01po.19 S4: materialization, handle cells, borrowed roots, stale fence.
+  src/RailWindowFence.cpp
+  src/RailWindowHandles.cpp
+  src/RailWindowInit.cpp
+  src/RailWindowMaterialize.cpp
   src/RailWindowPromote.cpp
   src/RegionFlatten.cpp
   src/RegionTreeDetect.cpp

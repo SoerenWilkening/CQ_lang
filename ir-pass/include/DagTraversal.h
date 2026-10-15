@@ -138,6 +138,14 @@ struct DataDag {
   // be justified in prose as "a DOWNSTREAM guard, `isInverseEmittable`, removes it",
   // which is FALSE (that predicate accepts `__cq_q_`). Structure, not prose.
   llvm::SmallPtrSet<llvm::Value *, 16> Rails;
+
+  // bd 01po.19 S4 — the HANDLE-ARRAY cell reads the walk reached as a parent
+  // and did NOT enter (`isRailWindowCellRead`: a BORROWED root, owned by the
+  // array — never a `Root`, its gates never collected, never adjointed and
+  // never freed). The terminal planner proves clause (d) over them
+  // (`borrowedParentsUnmoved`), exactly as the M-B partition does over its
+  // own frontier; the interior partition borrows them through its frontier.
+  llvm::SmallPtrSet<llvm::Value *, 4> WindowBorrowed;
 };
 
 // ── M-B INTERIOR PARTITION (bd test_C_libtooling-6uqc Inc 5a) ────────────────

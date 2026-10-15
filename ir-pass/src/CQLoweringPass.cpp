@@ -30,6 +30,7 @@
 #include "QramLowering.h"
 #include "QramIndexWidth.h"     // bracketQramIndexCasts / stripForeignQramIndexTags (libcqops b6a)
 #include "RailBankPromote.h"
+#include "RailWindow.h"  // bd 01po.19 S4
 #include "ReturnMerge.h"        // unifyTaintedReturns (bd dm7f.5)
 #include "RotationLowering.h"
 #include "LibmBinding.h"
@@ -369,6 +370,18 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // alloca that already carries the record, so a second call returns false. It
   // is written as an `if` rather than a `while` for that reason — a `while` here
   // would read as a fixpoint whose termination depends on that skip.
+  //
+  // bd 01po.19 S4 — THE WINDOW ARRAYS, IMMEDIATELY BEFORE THE BANK MINT AND
+  // UNDER THE SAME SLOT ARGUMENT. A quantum array the one-store bank does not
+  // own is materialized into a `!cq.railwindow` handle array (RailWindow.h),
+  // or declined loudly with the steps it still needs. Its loads become taint
+  // SEEDS (`collectAndSeed`), so this GROWS the taint set: sound because it
+  // runs above every consumer-adjudicating stage and the growth is published
+  // by a FULL `propagate`. Same retirement trigger as the mint below.
+  if (bool WinChanged = false; lowerRailWindowArrays(M, taint, WinChanged))
+    return PreservedAnalyses::none();
+  else if (WinChanged)
+    taint = propagate(M, wd);
   if (markRailBankAllocas(M, taint)) {
     taint = propagate(M, wd);
   }
@@ -960,6 +973,10 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // The L1 answer is unchanged by the move and still sufficient: this slot is
   // strictly after `repropagateControlMerges`, so the taint it reads is FINAL.
   rewriteRailBankCellTypes(M, taint);
+  // bd 01po.19 S4: the window handle arrays, same slot, same two bounds (a
+  // chained theta's handle is the cell load itself; a classical store
+  // becomes the rebind mint `cqrt_alloc_<W>`).
+  rewriteRailWindowCellTypes(M, wd, taint);
   lowerOps(M, wd, taint);
   lowerMeasures(M, wd, taint);
   // Phase 7.4 Inc 2 (y05j.2): the value-arm `break` capture + whole-loop
@@ -1036,6 +1053,10 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // adjoint of an older rail reads a register after its in-place relabel
   // (the round trusted the M-B plan and the kept-flag arm; re-asked here).
   if (declineStaleInPlaceQQReads(M, taint))
+    return PreservedAnalyses::none();
+  // bd 01po.19 S4 — Q4's cell-temporary postcondition, with M-A's predicates
+  // and before M-A's warning (RotationLowering.h).
+  if (declineLiveWindowRecords(M, taint))
     return PreservedAnalyses::none();
   // bd test_C_libtooling-6uqc (M-A) — the LIVE-RECORD WARNING, at the
   // SAME late slot and for the SAME reason as the literal-integrity guard above:
@@ -1235,6 +1256,15 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // bd `xdu2` / L-1a W1 — the `!cq.railbank` mint + re-propagate, mirrored in
   // this entry point too (twin-pipeline parity is MANDATORY, WI-1.12). See
   // run() for the slot argument, which must not be separated from the call.
+  // bd 01po.19 S4: the window arrays' handle arrays first (mirrored from run()).
+  if (bool WinChanged = false; lowerRailWindowArrays(M, taint, WinChanged))
+    return false;
+  else if (WinChanged) {
+    taint = propagate(M, wd);
+    onlyInF(taint.ThetaCalls);
+    onlyInF(taint.PhiCalls);
+    onlyInF(taint.MeasureCalls);
+  }
   if (markRailBankAllocas(M, taint)) {
     taint = propagate(M, wd);
     onlyInF(taint.ThetaCalls);
@@ -1527,6 +1557,10 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // The L1 answer is unchanged by the move and still sufficient: this slot is
   // strictly after `repropagateControlMerges`, so the taint it reads is FINAL.
   rewriteRailBankCellTypes(M, taint);
+  // bd 01po.19 S4: the window handle arrays, same slot, same two bounds (a
+  // chained theta's handle is the cell load itself; a classical store
+  // becomes the rebind mint `cqrt_alloc_<W>`).
+  rewriteRailWindowCellTypes(M, wd, taint);
   lowerOps(M, wd, taint);
   lowerMeasures(M, wd, taint);
   // Phase 7.4 Inc 2 (y05j.2) — twin-pipeline parity (WI-1.12): miss this and
@@ -1558,6 +1592,9 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // adjoint of an older rail reads a register after its in-place relabel
   // (the round trusted the M-B plan and the kept-flag arm; re-asked here).
   if (declineStaleInPlaceQQReads(M, taint))
+    return true;
+  // bd 01po.19 S4 — Q4's cell-temporary postcondition (mirrored from run()).
+  if (declineLiveWindowRecords(M, taint))
     return true;
   // bd test_C_libtooling-6uqc (M-A) — mirrored from `run()` (twin-pipeline
   // parity, WI-1.12): miss it and a unit-level caller loses the live-record

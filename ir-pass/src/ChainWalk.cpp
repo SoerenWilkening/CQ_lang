@@ -8,6 +8,7 @@
 #include "MergeStreamGates.h" // controlSlots (row (c′), bd dm7f.77)
 #include "RegCondLeaf.h"      // isRegCondRail (row (c′), bd dm7f.77)
 #include "RailBankPromote.h"  // railStoredToRailBank (bd `xdu2` W1 D1)
+#include "RailWindow.h"       // isRailWindowCellRead / railStoredToRailWindow (01po.19 S4)
 // `cloneCallPreservesArg` (bd rhk5) lives in ClonePreserves.cpp since bd p3kd.13.
 #include "TaintPropagation.h"
 #include "TemplateName.h"   // isHandleSlot / isUncHandleSlot — the ONE slot table
@@ -852,6 +853,14 @@ bool isTerminalHandle(Value *Handle, const TaintSet &taint) {
   // `TaintPropagation.h` as a shipped silent miscompile (a set keyed on a
   // pre-`lowerOps` SSA value the lowering then erases for every derived base).
   if (railStoredToRailBank(Handle))
+    return false;
+  // bd 01po.19 S4 — THE WINDOW ARRAY'S TWO CLASSES, asked the same way. A cell
+  // READ of a `!cq.railwindow` handle array is a BORROWED root: it names a
+  // rail the array owns (the analogue of a clone argument), so it is never a
+  // terminal, never reverse-played and never freed. A rail STORED into a cell
+  // is the cell's (a kept-carrier sink): left allocated exactly like a bank
+  // cell (R5 — a cell holds user data and is not provably |0>).
+  if (isRailWindowCellRead(Handle) || railStoredToRailWindow(Handle))
     return false;
   // Terminal iff EVERY user is benign: an in-place rotation on `Handle` (mints
   // no new value), a measurement sink, or a non-quantum read. ANY other gate

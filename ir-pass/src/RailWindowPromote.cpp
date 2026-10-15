@@ -94,7 +94,9 @@ bool storeReachesLoad(StoreInst *S, LoadInst *L, BasicBlock *E,
 
 bool needsPromotion(const CellClass &C,
                     const DenseMap<BasicBlock *, BasicBlock *> &R) {
-  if (C.Loads.size() >= 2)
+  // Two loads, or (S4) two stores: one SSA name per cell per window, and ONE
+  // write-back per written class at each window exit.
+  if (C.Loads.size() >= 2 || C.Stores.size() >= 2)
     return true;
   for (StoreInst *S : C.Stores)
     for (LoadInst *L : C.Loads)
@@ -111,7 +113,6 @@ namespace {
 //   * railwindow_* / railbank_* window declines → kMsgWindowPending + needs
 constexpr char kMsgWindowPending[] =
     "cq rail window: quantum array not lowered yet (bd 01po.19), needs";
-constexpr char kNeedS4[] = "S4 borrowed-root cells";
 constexpr char kNeedS5[] = "S5 in-place cell update";
 constexpr char kNeedS6[] = "S6 quantum control on cells";
 constexpr char kNeedS7[] = "S7 index alias versioning";
@@ -142,11 +143,8 @@ bool selfValue(Value *V, const SCEV *S, ScalarEvolution &SE,
 
 }  // namespace
 
-std::string railWindowNeeds(Function &F, const RailWindowAccesses &Acc,
-                            const TaintSet &taint, LoopInfo &LI,
-                            ScalarEvolution &SE) {
-  // Values quantum through the array or through taint.
-  SmallPtrSet<Value *, 32> QD;
+void railWindowQuantum(Function &F, const RailWindowAccesses &Acc,
+                       const TaintSet &taint, SmallPtrSetImpl<Value *> &QD) {
   SmallVector<Value *, 64> Work(Acc.Loads.begin(), Acc.Loads.end());
   for (Instruction &I : instructions(F))
     if (taint.Tainted.count(&I))
@@ -157,9 +155,25 @@ std::string railWindowNeeds(Function &F, const RailWindowAccesses &Acc,
       continue;
     for (User *U : V->users())
       if (auto *I = dyn_cast<Instruction>(U))
-        if (!I->getType()->isVoidTy())
+        if (!I->getType()->isVoidTy()) {
+          // `cq_measure` is the taint SINK (R3): its result is classical.
+          // (S4 found this over-flag: `cq_measure(q[0]) ? 2 : 0` read as a
+          // quantum select condition.)
+          if (auto *CI = dyn_cast<CallInst>(I))
+            if (Function *Fn = CI->getCalledFunction();
+                Fn && Fn->getName().starts_with("cq_measure_"))
+              continue;
           Work.push_back(I);
+        }
   }
+}
+
+std::string railWindowNeeds(Function &F, const RailWindowAccesses &Acc,
+                            const TaintSet &taint, LoopInfo &LI,
+                            ScalarEvolution &SE) {
+  // Values quantum through the array or through taint.
+  SmallPtrSet<Value *, 32> QD;
+  railWindowQuantum(F, Acc, taint, QD);
   bool S5 = false, S6 = false, S7 = false;
   for (Instruction &I : instructions(F)) {
     Value *C = nullptr;
@@ -220,20 +234,21 @@ std::string railWindowNeeds(Function &F, const RailWindowAccesses &Acc,
             errs() << "CQ_RAILWINDOW_DBG: alias unproven: " << *Ss[a]
                    << " vs " << *Ss[b] << "\n";
         }
-  std::string Out = std::string(kMsgWindowPending) + " " + kNeedS4;
-  if (S5)
-    Out += std::string(", ") + kNeedS5;
-  if (S6)
-    Out += std::string(", ") + kNeedS6;
-  if (S7)
-    Out += std::string(", ") + kNeedS7;
+  // S4 (borrowed-root cells) is built: an array with nothing else pending
+  // gets the empty string and is lowered.
+  std::string Out;
+  for (auto [Need, Text] : {std::pair{S5, kNeedS5}, std::pair{S6, kNeedS6},
+                            std::pair{S7, kNeedS7}})
+    if (Need)
+      Out += (Out.empty() ? std::string(kMsgWindowPending) + " "
+                          : std::string(", ")) +
+             Text;
   return Out;
 }
 
-
 std::string railWindowAllNeeds() {
-  return std::string(kMsgWindowPending) + " " + kNeedS4 + ", " + kNeedS5 +
-         ", " + kNeedS6 + ", " + kNeedS7;
+  return std::string(kMsgWindowPending) + " " + kNeedS5 + ", " + kNeedS6 +
+         ", " + kNeedS7;
 }
 
 unsigned promoteRailWindows(Function &F, RailWindowAccesses &Acc) {

@@ -354,6 +354,14 @@ void lowerRotations(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
 //     minted on branches where the source made no record.
 bool warnLiveRecordRotations(llvm::Module &M, const TaintSet &taint);
 
+// bd test_C_libtooling-01po.19 S4 — Q4's postcondition (argument at the
+// definition): a temporary descended from a quantum-array cell read must be
+// absent or exempt (M-A's own predicates) at every user chained Ry on any rail
+// of that array (array-granular, `railWindowFamily`), else a `DS_Error`. Runs
+// just BEFORE `warnLiveRecordRotations`, in both entry points. True iff it
+// declined.
+bool declineLiveWindowRecords(llvm::Module &M, const TaintSet &taint);
+
 // bd test_C_libtooling-dm7f.4 — the KEPT-FLAG POSTCONDITION (argument at the
 // definition). `markKeptConditionFlag` is the emitter's record: called by
 // `emitInPlaceRotationRegion` on the flag mint of a `CondFlagKept` region.

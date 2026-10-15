@@ -18,6 +18,7 @@
 // replay, not by this spine (`MergeRailDischarge.h`, bd r2j3.32).
 
 #include "Uncomputation.h"
+#include "RailWindow.h"  // railWindowFamily / railWindowOfPointer (bd 01po.19 S4)
 
 #include "ChainWalk.h"          // isTerminalHandle
 #include "CloneProducer.h"      // bd p3kd.13 — clone results as producers
@@ -857,6 +858,17 @@ TerminalPlan planTerminalReversal(Function &F, const DataDag &D,
                                   CallInst *&Culprit) {
   if (D.Escaped || D.NotClosed || D.Calls.empty())
     return TerminalPlan::Leak;
+  // bd 01po.19 S4 — THE HANDLE-ARRAY FRONTIER. `recoverDataDag` never walks a
+  // cell read (a BORROWED root: never adjointed, never freed), so reverse
+  // program order does not restore it and clause (d) must be PROVEN of it, as
+  // the M-B partition proves it of its own frontier: every cell rail an
+  // adjoint reads holds, at `X`, the label its forward gate read
+  // (`railUnmovedInWindow` asks it array-granularly). Unprovable ⇒ leak.
+  auto windowClean = [&](Instruction *X) {
+    return D.WindowBorrowed.empty() ||
+           borrowedParentsUnmoved(D, D.WindowBorrowed, X, DT, taint,
+                                  /*AdmitCloneCalls=*/false);
+  };
 
   // Invertibility pre-scan (WI-5, PRD §2.12/§2.10).
   CallInst *Uninvertible = nullptr;
@@ -1052,7 +1064,7 @@ TerminalPlan planTerminalReversal(Function &F, const DataDag &D,
         Ext.push_back(G->getNextNode());  // a call is never a terminator
     Instruction *At2 = dagInsertPoint(Ext, PDT);
     if (At2 && !firstNonDominating(At2) && movedPointClean(At2) &&
-        runsOnceAt(At2)) {
+        runsOnceAt(At2) && windowClean(At2)) {
       At = At2;
       return TerminalPlan::Emit;
     }
@@ -1078,6 +1090,8 @@ TerminalPlan planTerminalReversal(Function &F, const DataDag &D,
   for (CallInst *G : D.Calls)
     if (!multiplicityAgrees(G, At, LI, taint))
       return TerminalPlan::Leak;
+  if (!windowClean(At))
+    return TerminalPlan::Leak;
   return TerminalPlan::Emit;
 }
 
@@ -2161,7 +2175,24 @@ bool railUnmovedInWindow(Value *P, CallInst *First, Instruction *At,
   // showed the loop shapes that break it exist. A fixture that goes RED under
   // the constant-`true` mutant is owed.
   const bool Alternates = intervalAlternates(First, At);
-  for (User *U : P->users()) {
+  // bd 01po.19 S4 (Q4) — A HANDLE-ARRAY RAIL IS ASKED ARRAY-GRANULARLY. A cell
+  // rail is spelled by a different SSA load in every window, so the users of
+  // `P` alone are memory-blind: a gate on a later reload of the same cell, or
+  // on the rail stored into it, would move `P` with no user of `P` showing it.
+  // The family (`railWindowFamily`) is every cell read of the array and every
+  // rail stored into it, each asked exactly as `P` is; a store that PARKS a
+  // family rail in a cell moves nothing. For any other `P` the family is `P`
+  // alone and the scan is unchanged.
+  SmallVector<Value *, 16> Family;
+  const bool InWindow = railWindowFamily(P, Family);
+  if (!is_contained(Family, P))
+    Family.push_back(P);
+  for (Value *A : Family)
+  for (User *U : A->users()) {
+    if (auto *S = dyn_cast<StoreInst>(U);
+        S && InWindow && S->getValueOperand() == A &&
+        railWindowOfPointer(S->getPointerOperand()))
+      continue;
     auto *M = dyn_cast<CallInst>(U);
     if (!M)
       return false;  // a φ/select ROUTES the same physical rail (bd tayx), a `store`
@@ -2181,7 +2212,7 @@ bool railUnmovedInWindow(Value *P, CallInst *First, Instruction *At,
                  // scan, where it would have hidden a missing proof — but it is
                  // made explicit so the two uses of reachability are not read
                  // as one rule.
-    if (preservesBorrowedParent(M, P, taint, AdmitCloneCalls, AdmitStoreReads))
+    if (preservesBorrowedParent(M, A, taint, AdmitCloneCalls, AdmitStoreReads))
       continue;
     // ── THE WINDOW LEMMA (bd 8h7d.5, Rule-13 ROUND 4, finding F-4) ────────
     //
@@ -2293,7 +2324,7 @@ bool railUnmovedInWindow(Value *P, CallInst *First, Instruction *At,
       continue;  // (W2) — M runs only after the discharge (Inc 5b). The SOLE
                  // window certificate; the `First != At` conjunct that used to
                  // guard it is proven above, not tested here.
-    if (routeGroupFullyInside(M, P, First, At, DT, taint, Alternates))
+    if (routeGroupFullyInside(M, A, First, At, DT, taint, Alternates))
       continue;  // INSIDE — a COMPLETE emitter-recorded Phase-4 route, the
                  // identity on P's basis LABEL over the interval (Inc 6,
                  // clause (d2)).

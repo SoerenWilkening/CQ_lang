@@ -2065,7 +2065,39 @@ measure:
 !0 = !{!"i1"}
 """
 
+# bd 01po.19 S4 — THE HANDLE-ARRAY (`!cq.railwindow`) SURFACE. A window array
+# keeps one rail per cell and spells it by a DIFFERENT load in every window, so
+# the checker canonicalizes every cell read and every rail stored into the
+# array to ONE rail (`window_families`, array-granular). POSITIVE: a cell
+# temporary reversed against its cell read %l1, then the same cell rotated
+# through ANOTHER spelling %l2 AFTER the reversal — the S4 eager placement.
+WINDOW_CELL_TEMP = """
+define i32 @slice() local_unnamed_addr {
+entry:
+  %w = alloca i32, i64 2, align 4, !cq.railwindow !0
+  %a0 = getelementptr i32, ptr %w, i64 0
+  %a1 = getelementptr i32, ptr %w, i64 1
+  %h0 = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %h0, ptr %a0, align 4
+  %h1 = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %h1, ptr %a1, align 4
+  %l1 = load i32, ptr %a1, align 4
+  call void @cqrt_ry_i1(i32 %l1, double 3.000000e-01)
+  %t = call i32 @cq_template_zext_i1_to_i8(i32 %l1)
+  %u = call i32 @cq_template_zext_i8_to_i32(i32 %t)
+  call void @cq_template_zext_i1_to_i8_unc(i32 %t, i32 %l1)
+  call void @cqrt_free(i32 %t)
+  %m = call i32 @cqrt_measure_i32(i32 %u)
+  %l2 = load i32, ptr %a1, align 4
+  call void @cqrt_ry_i1(i32 %l2, double 5.000000e-01)
+  %m2 = call i1 @cqrt_measure_i1(i32 %l2)
+  ret i32 %m
+}
+!0 = !{i32 1}
+"""
+
 MEM_POSITIVE = [
+    ("window-cell-temp-reversed-before-gate", WINDOW_CELL_TEMP),
     ("bank-load-measured-only", BANK_MEASURE_ONLY),
     ("bank-plus-unmarked-classical-load", BANK_PLUS_CLASSICAL_LOAD),
     ("bank-global-constexpr-gep", BANK_GLOBAL_CONSTEXPR),
@@ -2094,6 +2126,17 @@ POSITIVE.extend(MEM_POSITIVE)
 MEM_MUTANTS = [
     ("bank-load-in-classical-immediate-slot", BANK_IMM_SLOT,
      "A1-imm-not-classical"),
+    # bd 01po.19 S4: the cell rotated through ANOTHER spelling (%l2) BETWEEN the
+    # temporary's forward read of %l1 and its reversal — the memory-hop hazard
+    # the SSA-keyed model alone cannot see; the canonical cell rail makes it a
+    # write on the operand.
+    ("window-cell-rotated-through-another-load-before-reversal",
+     insert_after(drop(WINDOW_CELL_TEMP,
+                       "call void @cqrt_ry_i1(i32 %l2, double 5.000000e-01)"),
+                  "%u = call i32 @cq_template_zext_i8_to_i32",
+                  "  %l3 = load i32, ptr %a1, align 4\n"
+                  "  call void @cqrt_ry_i1(i32 %l3, double 5.000000e-01)"),
+     "T2-operand-mutated"),
 ]
 
 # (name, module, expected Undecidable CODE) — a construct the model cannot
@@ -2111,6 +2154,10 @@ MEM_STOP_MUTANTS = [
                   "  call void @cqrt_ry_i1(i32 %v, double 2.500000e-01)"),
      "L3-bank-rail-in-a-modelled-rail-slot"),
     ("rail-stored-to-unmarked-alloca", UNMARKED_RAIL_STORE,
+     "L1-rail-stored-to-unmarked-memory"),
+    # bd 01po.19 S4: the window marker's own kill test.
+    ("window-marker-removed-from-the-alloca",
+     sub(WINDOW_CELL_TEMP, "%w = alloca", ", !cq.railwindow !0", ""),
      "L1-rail-stored-to-unmarked-memory"),
     # THE MARKER'S OWN KILL TEST: strip `!cq.railbank` from the POSITIVE and it
     # must stop being a bank. Without this row the positive could be green

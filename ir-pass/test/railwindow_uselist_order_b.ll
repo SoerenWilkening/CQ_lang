@@ -2,14 +2,32 @@
 ; twin of `railwindow_uselist_order_a.ll` (`uselistorder ptr %q, { 1, 0 }`); the
 ; CHECKs are identical to that file's.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s --implicit-check-not='cq rail bank'
-; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
+
+; ⚠ bd `test_C_libtooling-01po.19` S4 (2026-10-15): DECLINE -> ACCEPT. The window
+; model now LOWERS this array (RailWindow.h: handle array materialized at the
+; quantization point, cell reads are borrowed roots, a cell rail is never freed
+; or reverse-played). Reviewed by trace, not by green:
+; ADVERSARIAL twin of _a (use-list order differs): the same stream, the same two theta rails measured.
+; The S4 prefix pins the whole emitted runtime stream and that no rail is freed.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s --check-prefix=S4 --implicit-check-not=cqrt_free --implicit-check-not='error:'
+; S4-LABEL: define {{.*}} @main(
+; S4: %q.rails = alloca i32, i64 2, align 4, !cq.railwindow !7
+; S4: %h = call i32 @cqrt_alloc_i32(i32 0)
+; S4: call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+; S4: %h5 = call i32 @cqrt_alloc_i32(i32 %cq.rail.init)
+; S4: %cq.win.in3 = load i32, ptr %cq.rail.addr1, align 4
+; S4: %cq.win.in = load i32, ptr %cq.rail.addr, align 4
+; S4: %h4 = call i32 @cqrt_alloc_i32(i32 0)
+; S4: call void @cqrt_ry_i32(i32 %h4, double 2.500000e-01)
+; S4: %m = call i32 @cqrt_measure_i32(i32 %h)
+; S4: %m6 = call i32 @cqrt_measure_i32(i32 %h4)
+; RUN: env CQ_RAILWINDOW_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
 ; RUN:   | %filecheck %s --check-prefix=WIN
-; CHECK: u.c:10:3: in function {{.*}}: cq rail window: quantum array not lowered yet (bd 01po.19), needs S4 borrowed-root cells
-; WIN: CQ_RAILWINDOW_DBG: @main claims %q cells=i32 loads=2 stores=2 Q=  store i32 %t0, ptr %g0, align 4
-; WIN: CQ_RAILWINDOW_DBG: promote cell %q in region %entry loads=1 stores=1 exits=0
-; WIN: CQ_RAILWINDOW_DBG: promote cell (4 + %q)<nuw> in region %entry loads=1 stores=1 exits=0
+; WIN: CQ_RAILWINDOW_DBG: @main claims %q cells=i32 loads=2 stores=2 Q=  store i32 %t0, ptr %g0, align 4, !dbg !7
+; WIN: CQ_RAILWINDOW_DBG: promote cell %q.rails in region %entry.split.split loads=1 stores=1 exits=0
+; WIN: CQ_RAILWINDOW_DBG: promote cell (4 + %q.rails)<nuw> in region %entry.split.split loads=1 stores=1 exits=0
+; WIN: CQ_RAILWINDOW_DBG: promoted 2 cell class(es)
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

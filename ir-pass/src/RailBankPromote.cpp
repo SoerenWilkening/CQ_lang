@@ -75,7 +75,7 @@
 #include "llvm/Transforms/Utils/SSAUpdater.h"
 
 #include "llvm/ADT/STLExtras.h"  // make_early_inc_range
-#include "llvm/ADT/STLFunctionalExtras.h"  // function_ref (forEachBankCellMemop)
+#include "llvm/ADT/STLFunctionalExtras.h"  // function_ref (railBankForEachCellMemop)
 
 #include <cstdlib>
 #include <optional>
@@ -1309,6 +1309,8 @@ Type *bankCellType(const AllocaInst *Bank) {
   return nullptr;
 }
 
+}  // namespace
+
 // THE OBJECT'S ADDRESS TREE, not a scan of the function — the ONE walk both
 // directions of the memory hop use (Rule 14: `railBankParkedRails` goes LOAD →
 // parked names, `railBankCellReadsOf` goes parked name → LOADs, and a second
@@ -1318,7 +1320,7 @@ Type *bankCellType(const AllocaInst *Bank) {
 // alloca through gep and cast hops alone — and C1 is what makes that
 // enumeration complete rather than merely plausible. `F` is called with each
 // `load`/`store` whose POINTER operand is a node of the tree.
-void forEachBankCellMemop(AllocaInst *Bank,
+void railBankForEachCellMemop(AllocaInst *Bank,
                           function_ref<void(Instruction *)> F) {
   SmallVector<Value *, 8> WL{Bank};
   SmallPtrSet<Value *, 8> Seen;
@@ -1343,7 +1345,6 @@ void forEachBankCellMemop(AllocaInst *Bank,
   }
 }
 
-}  // namespace
 
 bool railBankCellReadsOf(Value *V, SmallVectorImpl<LoadInst *> &Out) {
   // The stores that park `V`: a direct `store V`, or a store of the STORAGE
@@ -1373,7 +1374,7 @@ bool railBankCellReadsOf(Value *V, SmallVectorImpl<LoadInst *> &Out) {
     AllocaInst *Bank = railBankOfPointer(SI->getPointerOperand());
     if (!Banks.insert(Bank).second)
       continue;
-    forEachBankCellMemop(Bank, [&](Instruction *I) {
+    railBankForEachCellMemop(Bank, [&](Instruction *I) {
       if (auto *LD = dyn_cast<LoadInst>(I))
         Out.push_back(LD);
     });
@@ -1397,9 +1398,9 @@ bool railBankParkedRails(Value *V, SmallVectorImpl<Value *> &Out) {
   if (!Bank)
     return false;
   Type *CellT = bankCellType(Bank);
-  // The OBJECT'S ADDRESS TREE (`forEachBankCellMemop`, shared with the reverse
+  // The OBJECT'S ADDRESS TREE (`railBankForEachCellMemop`, shared with the reverse
   // hop `railBankCellReadsOf`).
-  forEachBankCellMemop(Bank, [&](Instruction *I) {
+  railBankForEachCellMemop(Bank, [&](Instruction *I) {
       auto *SI = dyn_cast<StoreInst>(I);
       if (!SI)
         return;
@@ -1430,14 +1431,10 @@ bool railStoredToRailBank(const Value *H) {
 }
 
 bool markRailBankAllocas(Module &M, const TaintSet &taint) {
-  // bd 01po.19 S1–S3: a quantum array the rolled one-store bank does not own is
-  // a WINDOW array (RailWindow.h). Its windows are promoted and, until S4–S7
-  // land, it is declined here with the list of steps it still needs: after the
-  // `CQ_RAILBANK_DBG` dump of the promoter's output (which it leaves
-  // untouched) and before every stage that adjudicates consumers of tainted
-  // values, so no window array reaches a lowering.
-  if (declineRailWindowArrays(M, taint))
-    return false;
+  // bd 01po.19: a quantum array the rolled one-store bank does not own is a
+  // WINDOW array (RailWindow.h), materialized into a `!cq.railwindow` handle
+  // array by `lowerRailWindowArrays`, which the caller runs immediately before
+  // this mint (and re-`propagate`s after). A handle array is never a bank.
   bool Changed = false;
   for (Function &F : M) {
     if (F.isDeclaration())
@@ -1512,7 +1509,8 @@ bool markRailBankAllocas(Module &M, const TaintSet &taint) {
         if (railBankCarveVerdict(SI, taint, DT, LI, SE, Msg, &Shape) !=
             RailBankCarve::Bank)
           continue;
-        if (!Shape.Alloca || isRailBankAlloca(Shape.Alloca))
+        if (!Shape.Alloca || isRailBankAlloca(Shape.Alloca) ||
+            isRailWindowAlloca(Shape.Alloca))
           continue;
         // ⚠ THE RECORD CARRIES THE **RAIL** WIDTH, NOT THE CELL WIDTH, AND
         // THE TWO DIFFER FOR EXACTLY THE OWNER'S SPELLING. A `_Bool` cell's C

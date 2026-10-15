@@ -130,4 +130,4 @@ out:
 ;   `if (b[i-1]) ...`).  B4' then becomes the sole defence against the store
 ;   move and this file becomes isolating; re-derive its DECLINE line THEN.
 ;
-; DECLINE: cq rail window: quantum array not lowered yet (bd 01po.19), needs S4 borrowed-root cells, S7 index alias versioning
+; DECLINE: cq rail window: quantum array not lowered yet (bd 01po.19), needs S7 index alias versioning

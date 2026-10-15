@@ -34,6 +34,7 @@
 #include "FreePoint.h"      // blockCanRepeat (the ONE "can this block run twice")
 #include "LiteralIntegrity.h"  // valueCarriesUndef (bd zujr, clause (Z4))
 #include "RailBankPromote.h"  // isRailBankAlloca/railBankOfPointer (bd zujr, L3)
+#include "RailWindow.h"       // railWindowOfPointer (bd 01po.19 S4, Case B)
 #include "SelectMergeEmit.h"   // materializeCopySource (bd zujr, the promotion)
 #include "QramLowering.h"  // instUnderTaintedControl (bd wt8u, the hand-off)
 #include "TaintedControlDependence.h"  // isTaintedBranchTerminator (bd r2j3.6)
@@ -3576,10 +3577,22 @@ bool markIfIterationLocal(Loop *L, TaintSet &taint, LoopInfo &LI) {
     }
     for (Instruction &I : *BB) {
       // (L3) tainted-index memory in the body ⇒ the existing kMsgQramLoop owner's.
+      // bd 01po.19 S4: a rail stored at a CLASSICAL address into a
+      // `!cq.railwindow` handle cell is not tainted-index memory — it is the
+      // cell's kept carrier (the spine never reverses it, `isTerminalHandle`),
+      // and the cell READ that names it next trip is a BORROWED root, defined
+      // in `L` and owned by the array, never by this trip's reversal.
       if (isa<GetElementPtrInst>(I) || isa<LoadInst>(I) || isa<StoreInst>(I))
         for (Value *Op : I.operands())
-          if (taint.Tainted.count(Op))
+          if (taint.Tainted.count(Op)) {
+            auto *SI = dyn_cast<StoreInst>(&I);
+            if (SI && Op == SI->getValueOperand() &&
+                Op != SI->getPointerOperand() &&
+                railWindowOfPointer(SI->getPointerOperand()) &&
+                !taint.Tainted.count(SI->getPointerOperand()))
+              continue;
             return false;
+          }
       const bool TI = taint.Tainted.count(&I);
       // A tainted HEADER phi is a loop-carried persistent rail (Case A / X1),
       // not an iteration-local temp.

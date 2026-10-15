@@ -8,14 +8,32 @@
 ; it. It used to decline in the one-store bank (`array is written from more than one
 ; store site`).
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s --implicit-check-not='cq rail bank'
-; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
-; RUN:   | %filecheck %s --check-prefix=WIN
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S4 borrowed-root cells
-; WIN: CQ_RAILWINDOW_DBG: @main claims %2 cells=i32 loads=1 stores=2 Q=  call void @llvm.lifetime.start.p0(i64 32, ptr nonnull %2) #4
 
 ; ModuleID = 'h3_lifetime_two_stores.c'
+; ⚠ bd `test_C_libtooling-01po.19` S4 (2026-10-15): DECLINE -> ACCEPT. The window
+; model now LOWERS this array (RailWindow.h: handle array materialized at the
+; quantization point, cell reads are borrowed roots, a cell rail is never freed
+; or reverse-played). Reviewed by trace, not by green:
+; a per-iteration `int q[8]`: every trip re-materializes 8 rails at its lifetime.start (the previous trip's left allocated); `q[i]=k; q[i]=theta(k)^1` keeps only the last store (promotion), the theta mints alloc(k) and the cell holds the xor template rail, which is measured. Traced for argc=1.
+; The S4 prefix pins the whole emitted runtime stream and that no rail is freed.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s --check-prefix=S4 --implicit-check-not=cqrt_free --implicit-check-not='error:'
+; S4-LABEL: define {{.*}} @main(
+; S4: %.rails = alloca i32, i64 8, align 4, !cq.railwindow !6
+; S4: %h2 = call i32 @cqrt_alloc_i32(i32 0)
+; S4: %cq.win.in = load i32, ptr %cq.rail.addr, align 4
+; S4: %h = call i32 @cqrt_alloc_i32(i32 %14)
+; S4: call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+; S4: %h_op = call i32 @cq_template_xor_i32_hl(i32 %h, i32 1)
+; S4: store i32 %h_op, ptr %cq.rail.addr, align 4
+; S4: %.rail = load i32, ptr %cq.rail.addr1, align 4
+; S4: %m = call i32 @cqrt_measure_i32(i32 %.rail)
+; RUN: env CQ_RAILWINDOW_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
+; RUN:   | %filecheck %s --check-prefix=WIN
+; WIN: CQ_RAILWINDOW_DBG: @main claims %2 cells=i32 loads=1 stores=2 Q=  call void @llvm.lifetime.start.p0(i64 32, ptr nonnull %2) #4
+; WIN: CQ_RAILWINDOW_DBG: promote cell {%.rails,+,4}<nw><%18> in region %18 loads=0 stores=2 exits=1
+; WIN: CQ_RAILWINDOW_DBG: promoted 1 cell class(es)
+
 source_filename = "h3_lifetime_two_stores.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

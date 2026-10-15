@@ -9,6 +9,7 @@
 #include "ChainWalk.h"          // isInPlaceGateOn / isAllocMint / isMeasureSink
 #include "CloneProducer.h"      // bd p3kd.13 — a clone result as a producer
 #include "RecordWindowFreeze.h"  // step 3c (bd r2j3.3)
+#include "RailWindow.h"         // isRailWindowCellRead (bd 01po.19 S4)
 #include "TaintPropagation.h"
 
 #include "llvm/ADT/STLExtras.h"
@@ -48,7 +49,17 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
   // a `Root`, its in-place gates are never collected into `Calls`, and nothing
   // downstream can adjoint or free it. `IP == nullptr` ⇒ always false ⇒ the two
   // existing partitions behave exactly as before.
-  auto isFrontier = [&](Value *V) { return IP && IP->Borrowed.count(V); };
+  //
+  // bd 01po.19 S4: a cell read of a `!cq.railwindow` handle array is ALWAYS a
+  // frontier, in every partition — the array owns that rail. It is recorded in
+  // `D.WindowBorrowed` so the planner proves it unmoved (clause (d)).
+  auto isFrontier = [&](Value *V) {
+    if (isRailWindowCellRead(V)) {
+      D.WindowBorrowed.insert(V);
+      return true;
+    }
+    return IP && IP->Borrowed.count(V);
+  };
 
   // 1. Backward worklist DAG recovery. Each handle contributes its in-place
   //    rotations as gates; a template-produced handle is itself a gate and hops
