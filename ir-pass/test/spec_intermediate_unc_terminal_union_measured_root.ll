@@ -30,7 +30,10 @@
 ; CHECK:      %[[K:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(
 ; CHECK:      %[[K2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(
 ; CHECK:      call void @cqrt_ry_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[K2]],
-; CHECK:      %[[R:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32(
+; bd r2j3.33 (dm7f.51 step 1): `p`'s old value is dead at `R = p + k` and R is
+; measured, so R is computed IN PLACE on `p`'s rail (`k` the borrowed source); R
+; is that rail from here on, and every later reader names it.
+; CHECK:      call void @cqrt_add_i32(i32 %[[K2]], i32 %[[R:[a-zA-Z0-9_.]+]]), !cq.inplace.qq
 ; CHECK:      call fastcc void @__cq_q_h_1_unc(
 ; CHECK:      call void @cq_template_add_i32_hl_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[R]], i32 2)
 ; CHECK-NEXT: call void @cqrt_free(

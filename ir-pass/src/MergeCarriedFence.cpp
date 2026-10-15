@@ -1,6 +1,7 @@
 // MergeCarriedFence.cpp — see header (bd test_C_libtooling-r2j3.32).
 
 #include "MergeCarriedFence.h"
+#include "InPlaceQQ.h"         // isInPlaceQQGate (bd r2j3.33)
 #include "MergeStreamGates.h"  // calleeName / readsState / isRegister /
                                // handleAliases
 
@@ -70,6 +71,8 @@ bool slotAllowed(CallInst *C, unsigned S) {
   return N.starts_with("cqrt_rz") || N == "cqrt_x" || N == "cqrt_cnot" ||
          N == "cqrt_toffoli" || N == "cqrt_cswap" ||
          N.starts_with("cqrt_addc_") || N.starts_with("cqrt_xorc_") ||
+         isInPlaceQQGate(C) ||  // bd r2j3.33: a basis permutation, by TAG
+
          N.starts_with("cqrt_copy_") || N == "cqrt_free" ||
          N.starts_with("cqrt_measure_") ||
          (N.starts_with("cq_template_") && !Ctl);

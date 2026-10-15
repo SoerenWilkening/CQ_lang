@@ -20,7 +20,8 @@
 ; MEASURED on frozen `main`@16b15b3 AND here: W4's (1a) `isa<Constant>(Imm)`
 ; refuses this op at the commit (`w` is derived from `%out`, not a `Constant`), so
 ; it is never marked and lowers OUT OF PLACE as the correct Q+Q
-; `cq_template_xor_i32(i32 %h4, i32 %h_op)`. ZERO in-place gates in the whole
+; `cq_template_xor_i32(i32 %h4, i32 %h_op)` (SUPERSEDED by bd r2j3.33: now the
+; in-place `cqrt_xor_i32(i32 %h_op, i32 %h4)`). ZERO in-place gates in the whole
 ; module, `railInImm=0`, STRICT stage 2b `0 violation(s)`, 47 trace lines, lowered
 ; module BYTE-IDENTICAL across the two binaries (`cmp`).
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
@@ -29,17 +30,20 @@
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
 
-; The preheader op, lowered OUT of place onto a fresh handle.
+; The preheader op. W4 never marks it (above); since bd r2j3.33 (dm7f.51 step 1)
+; the QUANTUM-source round lowers it IN PLACE on `a`'s rail — `a`'s old value is
+; dead and its new one is measured — with `w` in the SOURCE handle slot.
 ; CHECK: %[[W:.*]] = call i32 @cq_template_and_i32_hl(i32 %{{.*}}, i32 7)
 ; CHECK: %[[A:.*]] = call i32 @cqrt_alloc_i32(i32 %0)
 ; CHECK: call void @cqrt_ry_i32(i32 %[[A]], double 0x3FE6666666666666)
-; CHECK-NEXT: {{.*}} = call i32 @cq_template_xor_i32(i32 %[[A]], i32 %[[W]])
+; CHECK-NEXT: call void @cqrt_xor_i32(i32 %[[W]], i32 %[[A]]), !cq.inplace.qq
 
-; ZERO in-place gates: neither (1b)'s lane nor eqpx's has anything to adjudicate.
+; ZERO classical-immediate in-place gates: neither (1b)'s lane nor eqpx's has
+; anything to adjudicate (the one `cqrt_xor_i32` is the r2j3.33 round's).
 ; IMMCNT-NOT: call void @cqrt_xorc_i32(
 ; IMMCNT-NOT: call void @cqrt_addc_i32(
-; IMMCNT-COUNT-1: call i32 @cq_template_xor_i32(
-; IMMCNT-NOT: call i32 @cq_template_xor_i32(
+; IMMCNT-COUNT-1: call void @cqrt_xor_i32(
+; IMMCNT-NOT: call void @cqrt_xor_i32(
 
 ; NOROUTE-NOT: in-place rail op no longer provable at lowering
 ; NOROUTE-NOT: pre-loop in-place op no longer provable at lowering

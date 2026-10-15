@@ -235,6 +235,22 @@ FunctionCallee WidthDispatch::xorcFn(StringRef abiWidth) const {
                         false));
 }
 
+FunctionCallee WidthDispatch::qqInPlaceFn(StringRef Stem,
+                                          StringRef abiWidth) const {
+  // See the header (bd r2j3.33). Both operands are i32 handles at every width.
+  if (Stem != "xor" && Stem != "add" && Stem != "sub")
+    return FunctionCallee();
+  LLVMContext &Ctx = M.getContext();
+  Type *Ty = typeForAbiWidth(abiWidth, Ctx);
+  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+    return FunctionCallee();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  FunctionType *FT = FunctionType::get(Type::getVoidTy(Ctx), {I32, I32}, false);
+  if (Ty->getIntegerBitWidth() == 1)
+    return M.getOrInsertFunction("cqrt_cnot", FT);
+  return M.getOrInsertFunction(("cqrt_" + Stem + "_" + abiWidth).str(), FT);
+}
+
 FunctionCallee WidthDispatch::tapeAllocFn() const {
   // Width-agnostic `i32 cqrt_tape_alloc(void)` (Phase 7.6, PRD-7.6 §2.8).
   // Returns a tape handle (a classical resource token); takes no width and

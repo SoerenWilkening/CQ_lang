@@ -193,12 +193,14 @@ define i32 @flag_then_gate(i32 noundef %0, i32 noundef %1, i32 noundef %2) {
 ; CHECK: {{^}}[[FEXIT]]:
 ; CHECK-NEXT: %[[FF:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[FR]], i32 3)
 ; CHECK-NEXT: %[[FZ:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i1_to_i32(i32 %[[FF]])
-; CHECK-NEXT: %[[FD:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32(i32 %[[FQ]], i32 %[[FZ]])
+; bd r2j3.33 (dm7f.51 step 1): `q`'s old value is dead at the add and the sum is
+; measured, so the add lowers IN PLACE on `q`'s rail (the flag's zext as source).
+; CHECK-NEXT: call void @cqrt_add_i32(i32 %[[FZ]], i32 %[[FQ]]), !cq.inplace.qq
 ; CHECK-NEXT: call void @cq_template_zext_i1_to_i32_unc(i32 %[[FZ]], i32 %[[FF]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[FZ]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[FF]], i32 %[[FR]], i32 3)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[FF]])
-; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[FD]])
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[FQ]])
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[FR]])
 ; CHECK: {{^}}[[FLOOP]]:
 ; CHECK-NEXT: phi i32
@@ -219,8 +221,9 @@ define i32 @flag_then_gate(i32 noundef %0, i32 noundef %1, i32 noundef %2) {
 ; CHECK-NEXT: %[[GF:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[GR]], i32 3)
 ; CHECK-NEXT: %[[GZ:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i1_to_i32(i32 %[[GF]])
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[GR]], double 2.000000e-01)
-; CHECK-NEXT: %[[GD:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32(i32 %[[GQ]], i32 %[[GZ]])
-; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[GD]])
+; bd r2j3.33: in place on `q`'s rail, as in @flag.
+; CHECK-NEXT: call void @cqrt_add_i32(i32 %[[GZ]], i32 %[[GQ]]), !cq.inplace.qq
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[GQ]])
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[GR]])
 ; CHECK: {{^}}[[GLOOP]]:
 ; CHECK-NEXT: phi i32

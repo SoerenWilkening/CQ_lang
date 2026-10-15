@@ -9,6 +9,8 @@
 #include "ChainWalk.h"      // isInPlaceGateOn (the ONE in-place-gate relation)
 #include "DeadValueLiveness.h"  // isRecordedDeadSlot (bd vsfp r2: the ONE "slot unread")
 #include "FreePoint.h"      // blockCanRepeat (the ONE "can this block run twice")
+#include "InPlaceQQ.h"      // transferDeadOperandMask / railIsUserData (bd r2j3.33)
+#include "MergeStreamGates.h" // streamGateWrites (bd r2j3.33 arm (c′))
 #include "LoopPlan.h"       // inPlaceValueRailOperand (the dtzb shape predicate)
 #include "OpcodeSupport.h"
 #include "TaintPropagation.h"
@@ -268,6 +270,10 @@ bool rewriteBinary(BinaryOperator *bo, WidthDispatch &wd, TaintSet &taint) {
   CallInst *T = Builder.CreateCall(Callee, {Lhs, Rhs}, "h_op");
   if (DebugLoc DL = bo->getDebugLoc())
     T->setDebugLoc(DL);
+  // bd r2j3.33: carry the pre-emission exclusive-reader record onto the QQ
+  // template, remapped through the BirthOrder swap, for the late in-place round.
+  if (ShapeSel == Shape::QQ)
+    transferDeadOperandMask(bo, T, /*Swapped=*/Lhs != A);
   bo->replaceAllUsesWith(T);
   // Record the result handle's LOGICAL width (the binary op's own ABI width,
   // already validated non-empty at :45) so a downstream Q+Q data compare can
@@ -616,9 +622,106 @@ llvm::Value *inPlaceReassignRailOperand(BinaryOperator *bo,
 //     RAIL PLUS, under a later non-diagonal gate, COHERENCE — a reason to refuse
 //     only what must be refused. (`j02C` itself no longer reaches here: arm (d0)
 //     and bd vsfp's drop, above.)
+// (c′ — bd r2j3.33, R11 round 1 finding A-F3/B-F1/C-F1) Arm (c) for a QUANTUM
+// source. Arm (c) settles a void `cqrt_*` reader of `P` because the SPINE never
+// re-emits it — true, and beside the point once the in-place gate is a QQ one: a
+// void gate that READS `P` into some other rail leaves that rail a RECORD of
+// `P`'s old value, and the record's own discharge (a merge replay, a strip)
+// re-reads `P` after the relabel, or never happens. MEASURED: a 4.4 merge
+// `s = c ? t : b` copies `t` into `%out` by `cqrt_copy_<W>_controlled`; `t ^= a`
+// then converted, the merge replay was refused, and `%out` (= old `t` on c=1)
+// leaked beside `t'`, dephasing the later Ry on `a` with no diagnostic. So for a
+// quantum source a prior void reader is settled only if every rail it WRITES
+// (`streamGateWrites`; a controlled rotation's target; a converted QQ gate's
+// destination) is user data (a register it entangles is the program's) or is
+// RELEASED before `bo` (`cqrt_free` provably before — a compiler temporary the
+// emitter already returned to |0⟩, e.g. a condition-network flag). Anything else,
+// or a gate whose write set is unknown, is not settled. The classical-immediate
+// M-C path keeps arm (c) as shipped (its analogue is the follow-up filed with
+// this round).
+//
+// THE GATE CLASSES (c′) CAN MEET, each with its write set or a stated refusal
+// (R11 round 2 finding F2, L3 — arm (a) has already taken every in-place gate ON
+// `P`: uncontrolled Ry/Rz, addc/xorc, a converted QQ gate's dst, a controlled Ry
+// on `P`, a QRAM store's array; arm (b) every `_unc`/`_inv`):
+//   * a recorded BRANCH-PHASE gate `cqrt_rz_i1(P, θ)` (a bare-`_Bool` rail
+//     condition kicked back onto `P` itself) — DIAGONAL, writes no basis label
+//     anywhere: EMPTY write set, settled (`isBranchPhaseGate`, by membership);
+//   * a converted QQ gate reading `P` as its SOURCE — writes its dst (slot 1);
+//   * a merge-stream permutation gate (`streamGateWrites`): `cqrt_cnot` /
+//     `cqrt_toffoli` with `P` a control → their target; `cqrt_copy_<W>` and
+//     `cqrt_copy_<W>_controlled` with `P` the source → their destination;
+//     `cqrt_x` / `cqrt_free` on `P` → `P` itself, refused below;
+//   * a controlled rotation reading `P` only as its CONTROL → its target (slot 1);
+//   * anything else (`cqrt_cswap` of the abort park, a gate not yet written) —
+//     write set unknown: NOT settled, i.e. loud for an eligible target, by design.
+bool voidReaderRecordsSettled(const CallInst *CI, const Value *P,
+                              const Instruction *bo, const DominatorTree &DT) {
+  SmallVector<unsigned, 2> W;
+  StringRef N = CI->getCalledFunction()->getName();
+  if (isBranchPhaseGate(CI))
+    return true;
+  if (isInPlaceQQGate(CI)) {
+    W.push_back(1);  // an earlier converted gate reading `P` writes its dst.
+  } else if (!streamGateWrites(CI, W)) {
+    // A controlled rotation reading `P` only as its CONTROL writes its target.
+    if (!(N.ends_with("_controlled") &&
+          (N.starts_with("cqrt_ry_") || N.starts_with("cqrt_rz_")) &&
+          CI->arg_size() == 3 && CI->getArgOperand(0) == P &&
+          CI->getArgOperand(1) != P))
+      return false;
+    W.push_back(1);
+  }
+  for (unsigned S : W) {
+    const Value *R = CI->getArgOperand(S);
+    if (R == P)
+      return false;  // writes `P` itself by a gate arm (a) did not own.
+    if (railIsUserData(R))
+      continue;
+    bool Released = false;
+    for (const User *U : R->users())
+      if (const auto *F = dyn_cast<CallInst>(U);
+          F && F->getCalledFunction() &&
+          F->getCalledFunction()->getName() == "cqrt_free" &&
+          F->arg_size() == 1 && F->getArgOperand(0) == R &&
+          provablyBefore(F, bo, DT))
+        Released = true;
+    if (!Released)
+      return false;
+  }
+  return true;
+}
+
+}  // namespace
+
+bool railZeroedAndReleased(const Value *R, const Instruction *Before,
+                           const DominatorTree *DT) {
+  bool Zeroed = false, Released = false;
+  for (const User *DU : R->users()) {
+    const auto *D = dyn_cast<CallInst>(DU);
+    if (!D || !D->getCalledFunction())
+      continue;
+    if (Before && !provablyBefore(D, Before, *DT))
+      continue;
+    StringRef DN = D->getCalledFunction()->getName();
+    if (DN == "cqrt_free" && D->arg_size() == 1 && D->getArgOperand(0) == R)
+      Released = true;
+    // The out-first `_unc` convention (DD-3): the rail being zeroed is arg 0.
+    // A QRAM store `_unc` takes its forward's args and zeroes nothing, so it is
+    // excluded exactly as `RotationLowering::isDischargeOf` excludes it.
+    else if (DN.ends_with("_unc") && !DN.starts_with("cqrt_qram_store_") &&
+             D->arg_size() >= 1 && D->getArgOperand(0) == R)
+      Zeroed = true;
+  }
+  return Zeroed && Released;
+}
+
+namespace {
+
 bool priorUseIsSettled(const Instruction *UI, const Value *P,
                        const Instruction *bo, const DominatorTree &DT,
-                       const InteriorDischargePlan *Plan, const TaintSet &taint) {
+                       const InteriorDischargePlan *Plan, const TaintSet &taint,
+                       bool QuantumSource) {
   const auto *CI = dyn_cast<CallInst>(UI);
   if (!CI)
     return false;  // (e) plain-IR use / still-unlowered tainted opcode.
@@ -635,7 +738,8 @@ bool priorUseIsSettled(const Instruction *UI, const Value *P,
 
   if (CI->getType()->isVoidTy() && N.starts_with("cqrt_") &&
       !N.starts_with("cqrt_qram_store_"))
-    return true;  // (c)
+    return QuantumSource ? voidReaderRecordsSettled(CI, P, bo, DT)  // (c′)
+                         : true;                                    // (c)
 
   // (d0) — a call that passes `P` only in slots the specializer RECORDED as dead
   // in the built clone (bd vsfp / bd hgwx; see above). Asked by CALLING the one
@@ -683,25 +787,7 @@ bool priorUseIsSettled(const Instruction *UI, const Value *P,
       return true;
   }
 
-  bool Zeroed = false, Released = false;
-  for (const User *DU : CI->users()) {
-    const auto *D = dyn_cast<CallInst>(DU);
-    if (!D || !D->getCalledFunction())
-      continue;
-    const Instruction *DI = D;
-    if (!provablyBefore(DI, bo, DT))
-      continue;
-    StringRef DN = D->getCalledFunction()->getName();
-    if (DN == "cqrt_free" && D->arg_size() == 1 && D->getArgOperand(0) == CI)
-      Released = true;
-    // The out-first `_unc` convention (DD-3): the rail being zeroed is arg 0.
-    // A QRAM store `_unc` takes its forward's args and zeroes nothing, so it is
-    // excluded exactly as `RotationLowering::isDischargeOf` excludes it.
-    else if (DN.ends_with("_unc") && !DN.starts_with("cqrt_qram_store_") &&
-             D->arg_size() >= 1 && D->getArgOperand(0) == CI)
-      Zeroed = true;
-  }
-  return Zeroed && Released;
+  return railZeroedAndReleased(CI, bo, &DT);
 }
 
 // G3–G7, THE POSITION-AWARE HALF OF THE M-C FENCE, SPELT ONCE (bd
@@ -736,6 +822,47 @@ bool inPlaceFenceHolds(const Instruction *Site, const Value *P, const Value *Imm
   if (isa<Argument>(Imm))
     return false;
 
+  // G5–G7 — the positional half, shared with the quantum-source in-place round
+  // (bd r2j3.33, `InPlaceQQ.cpp`) through `inPlacePositionHolds`, so the two
+  // in-place minters ask ONE fence about the parent rail (R12).
+  if (!inPlacePositionHolds(Site, P, taint, DT, LI, Plan, IgnoreSelfMarking))
+    return false;
+
+  // G3 — the width must be in the FROZEN in-place grid, and THE GRID ASKED MUST
+  // BE THE ONE THE EMITTER WILL USE. `add` and `sub` both emit `cqrt_addc_<W>`
+  // (`sub` is `addc` with the immediate negated, Inc 2b — there is no
+  // `cqrt_subc_`); `xor` emits the SEPARATE `cqrt_xorc_<W>` (Inc 2c). The two
+  // resolvers apply the same <=64-integer fence today, but they are distinct
+  // functions minting distinct symbols, so this mirrors `rewriteInPlaceValue
+  // Rail`'s own `Op == Xor ? xorcFn : addcFn` selection rather than asking one
+  // and emitting the other. ASKING the resolver (rather than repeating
+  // {i1,i8,i16,i32,i64} here) means the fence tracks the ABI instead of a
+  // comment about the ABI, and it must never mint a phantom symbol (the n0ui
+  // lesson). G2's own <=64-integer bound already implies this, so it is defense
+  // in depth — and `lowering_mc_xor_fence_fallback.ll`'s `@wide_i128` is the one
+  // probe in the family that reaches an off-grid width from a POSITIVE (`xor` is
+  // a shipped i128 template row; the `add` analogue dies on an earlier cast
+  // decline).
+  //
+  // IT IS DELIBERATELY LAST, and that is not cosmetic. Both resolvers go through
+  // `Module::getOrInsertFunction`, which CREATES `declare void
+  // @cqrt_{addc,xorc}_<W>(i32, iW)` as a SIDE EFFECT — so asking before the
+  // fence has decided planted a dangling declaration in every module containing
+  // any tainted integer `add`/`xor`, including the ones that then stayed out of
+  // place. (Measured: `lowering_add_qc_i32.ll` grew a `declare void
+  // @cqrt_addc_i32` it never calls.) Harmless at link, but it is a symbol
+  // appearing in a module that emits none — exactly the kind of phantom this
+  // project refuses to ship. Asked HERE, it is only ever asked for a site that
+  // is about to emit.
+  return (Op == Instruction::Xor ? wd.xorcFn(W) : wd.addcFn(W)) ? true : false;
+}
+
+}  // namespace
+
+bool inPlacePositionHolds(const Instruction *Site, const Value *P,
+                          const TaintSet &taint, const DominatorTree &DT,
+                          const LoopInfo &LI, const InteriorDischargePlan *Plan,
+                          bool IgnoreSelfMarking, bool QuantumSource) {
   // G5 — the LOOP-OWNED population is untouched, from both sides.
   //   * `InPlaceRailOps` is `lowerLoops`' own proven set; the driver already
   //     routes it to the same emitter. Claiming one here would be a second
@@ -877,40 +1004,11 @@ bool inPlaceFenceHolds(const Instruction *Site, const Value *P, const Value *Imm
     if (!provablyBefore(UI, Site, DT))
       return false;
     // G7 — the prior use must be settled (see `priorUseIsSettled`).
-    if (!priorUseIsSettled(UI, P, Site, DT, Plan, taint))
+    if (!priorUseIsSettled(UI, P, Site, DT, Plan, taint, QuantumSource))
       return false;
   }
-
-  // G3 — the width must be in the FROZEN in-place grid, and THE GRID ASKED MUST
-  // BE THE ONE THE EMITTER WILL USE. `add` and `sub` both emit `cqrt_addc_<W>`
-  // (`sub` is `addc` with the immediate negated, Inc 2b — there is no
-  // `cqrt_subc_`); `xor` emits the SEPARATE `cqrt_xorc_<W>` (Inc 2c). The two
-  // resolvers apply the same <=64-integer fence today, but they are distinct
-  // functions minting distinct symbols, so this mirrors `rewriteInPlaceValue
-  // Rail`'s own `Op == Xor ? xorcFn : addcFn` selection rather than asking one
-  // and emitting the other. ASKING the resolver (rather than repeating
-  // {i1,i8,i16,i32,i64} here) means the fence tracks the ABI instead of a
-  // comment about the ABI, and it must never mint a phantom symbol (the n0ui
-  // lesson). G2's own <=64-integer bound already implies this, so it is defense
-  // in depth — and `lowering_mc_xor_fence_fallback.ll`'s `@wide_i128` is the one
-  // probe in the family that reaches an off-grid width from a POSITIVE (`xor` is
-  // a shipped i128 template row; the `add` analogue dies on an earlier cast
-  // decline).
-  //
-  // IT IS DELIBERATELY LAST, and that is not cosmetic. Both resolvers go through
-  // `Module::getOrInsertFunction`, which CREATES `declare void
-  // @cqrt_{addc,xorc}_<W>(i32, iW)` as a SIDE EFFECT — so asking before the
-  // fence has decided planted a dangling declaration in every module containing
-  // any tainted integer `add`/`xor`, including the ones that then stayed out of
-  // place. (Measured: `lowering_add_qc_i32.ll` grew a `declare void
-  // @cqrt_addc_i32` it never calls.) Harmless at link, but it is a symbol
-  // appearing in a module that emits none — exactly the kind of phantom this
-  // project refuses to ship. Asked HERE, it is only ever asked for a site that
-  // is about to emit.
-  return (Op == Instruction::Xor ? wd.xorcFn(W) : wd.addcFn(W)) ? true : false;
+  return true;
 }
-
-}  // namespace
 
 bool classifyInPlaceReassignment(BinaryOperator *bo, WidthDispatch &wd,
                                  const TaintSet &taint, const DominatorTree &DT,
@@ -1183,6 +1281,11 @@ bool lowerLateReassignments(Module &M, WidthDispatch &wd, TaintSet &taint) {
   for (Function *Sym : Orphaned)
     if (Sym->isDeclaration() && Sym->use_empty())
       Sym->eraseFromParent();
+  // bd r2j3.33 / dm7f.51 step 1 — the QUANTUM-SOURCE in-place round, after the
+  // classical-immediate batch above (so a `t += 3; t ^= a` chain sees the addc
+  // already on `t`'s rail) and in this same last-before-`uncompute` slot, which
+  // both entry points reach and which is after the round-2 fixpoint (L1).
+  Changed |= lowerInPlaceQQ(M, wd, taint);
   return Changed;
 }
 

@@ -63,6 +63,18 @@ cqrt_copy_i8_controlled(h2, h4, h12)
 cqrt_copy_i16_controlled(h2, h5, h15)
 cqrt_copy_i32_controlled(h2, h0, h1)
 cqrt_copy_i64_controlled(h2, h6, h19)
+cqrt_xor_i8(h4, h12)
+cqrt_xor_i16(h5, h15)
+cqrt_xor_i32(h0, h1)
+cqrt_xor_i64(h6, h19)
+cqrt_add_i8(h4, h12)
+cqrt_add_i16(h5, h15)
+cqrt_add_i32(h0, h1)
+cqrt_add_i64(h6, h19)
+cqrt_sub_i8(h4, h12)
+cqrt_sub_i16(h5, h15)
+cqrt_sub_i32(h0, h1)
+cqrt_sub_i64(h6, h19)
 cqrt_alloc_f16(0x1.8p+0) -> h33
 cqrt_measure_f16(h33) -> 0x0p+0
 cqrt_alloc_f16(0x1p-1) -> h34

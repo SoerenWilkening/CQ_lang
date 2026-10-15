@@ -126,6 +126,15 @@ public:
   llvm::FunctionCallee addcFn(llvm::StringRef abiWidth) const;        // @cqrt_addc_<W>
   llvm::FunctionCallee xorcFn(llvm::StringRef abiWidth) const;        // @cqrt_xorc_<W>
 
+  // In-place reversible arithmetic — QUANTUM source operand (bd r2j3.33,
+  // dm7f.51 step 1). `Stem` is "xor", "add" or "sub"; the signature is
+  // `void(i32 src, i32 dst)` at every width (both are handles, Rule 15). Width
+  // i1 resolves to `cqrt_cnot` for all three stems (add and sub mod 2 are xor);
+  // i8/i16/i32/i64 resolve to `cqrt_{xor,add,sub}_<W>`. Anything else returns a
+  // null FunctionCallee (the caller keeps the op out of place or fails loudly).
+  llvm::FunctionCallee qqInPlaceFn(llvm::StringRef Stem,
+                                   llvm::StringRef abiWidth) const;
+
   // Reversible I/O output-tape resolvers (Phase 7.6, PRD-7.6 §2.8 — FROZEN
   // core ABI). `tapeAllocFn` is width-agnostic `i32 cqrt_tape_alloc(void)`
   // (the tape handle is a classical resource token). `tapeWriteFn` is

@@ -37,15 +37,18 @@
 namespace llvm {
 class BinaryOperator;
 class DominatorTree;
+class Instruction;
 class LoopInfo;
 class Module;
 class UnaryOperator;
+class Value;
 }  // namespace llvm
 
 namespace cq {
 
 class WidthDispatch;
 struct TaintSet;
+struct InteriorDischargePlan;
 
 // Lower one tainted `BinaryOperator` to its data template. Returns true if
 // the op was rewritten (RAUW'd, bookkept) and is therefore safe for the
@@ -262,6 +265,32 @@ bool classifyInPlaceReassignment(llvm::BinaryOperator *bo, WidthDispatch &wd,
 // Returns true if any site was converted (the caller has no other use for it;
 // it exists so a future stage-ordering question is answerable).
 bool lowerLateReassignments(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
+
+// G5–G7, THE POSITIONAL HALF OF THE M-C FENCE (bd r2j3.33 exported it): may
+// the in-place gate replacing `Site` mutate the parent rail `P`? G5 refuses a
+// site in a loop or a repeating block (and, unless `IgnoreSelfMarking`, one a
+// loop writer owns); G6 refuses any use of `P` not provably before `Site`; G7
+// requires every prior use to be settled (`priorUseIsSettled`, with the M-B
+// discharge `Plan` when one exists). The classical-immediate M-C fence and the
+// quantum-source in-place round (`InPlaceQQ.h`) both ask this ONE body (R12).
+bool inPlacePositionHolds(const llvm::Instruction *Site, const llvm::Value *P,
+                          const TaintSet &taint, const llvm::DominatorTree &DT,
+                          const llvm::LoopInfo &LI,
+                          const InteriorDischargePlan *Plan,
+                          bool IgnoreSelfMarking = false,
+                          bool QuantumSource = false);
+
+// `QuantumSource` (bd r2j3.33, R11 round 1): the in-place gate's operand is a
+// rail, not a classical immediate. G7 then settles a prior VOID `cqrt_*` reader
+// only when every rail it writes is user data or released before `Site` (arm
+// (c′)).
+
+// Is `R` returned to |0⟩ AND released: an out-first `_unc` zeroing it (slot 0)
+// and a `cqrt_free` of it, each provably before `Before` when one is given (G7
+// arm (d)'s witness; the in-place QQ round asks it with no bound). The ONE
+// spelling of "this rail is discharged".
+bool railZeroedAndReleased(const llvm::Value *R, const llvm::Instruction *Before,
+                           const llvm::DominatorTree *DT);
 
 }  // namespace cq
 

@@ -452,6 +452,42 @@ void cqrt_xorc_i32(int32_t h, int32_t imm);
 void cqrt_xorc_i64(int32_t h, int64_t imm);
 
 /* -----------------------------------------------------------------
+ * In-place reversible arithmetic — QUANTUM source operand (bd
+ * test_C_libtooling-r2j3.33 / dm7f.51 step 1; owner ruling
+ * owner-ruling-dm7f51-inplace-qq-2026-10-14 Q3). The register-semantics
+ * lowering of `x ^= y` / `x += y` / `x -= y` when both are quantum and
+ * the OLD x is dead at the op (Bennett.jl's exclusive-reader in-place
+ * target, src/lowering/operand.jl compute_inplace_targets @824458d):
+ *     cqrt_xor_<W>(src, dst):  dst := dst ^ src            (self-inverse)
+ *     cqrt_add_<W>(src, dst):  dst := (dst + src) mod 2^W  (inverse: sub)
+ *     cqrt_sub_<W>(src, dst):  dst := (dst - src) mod 2^W  (inverse: add)
+ * `src` is READ (its label is unchanged), `dst` is MUTATED; the two must
+ * be distinct registers (`x ^= x` is irreversible and never reaches
+ * here). Each is a computational-basis permutation of the pair. Void, no
+ * fresh rail, no `_unc`/`_inv` twin: EmitInverse re-emits xor as-is and
+ * swaps add <-> sub. Width 1 is NOT here: an i1 xor/add/sub is
+ * `cqrt_cnot(src, dst)` (add and sub mod 2 are xor). INTEGER widths
+ * i8/i16/i32/i64 only. The pass tags every emitted gate (and the i1
+ * `cqrt_cnot`) with `!cq.inplace.qq`; the uncompute spine treats it on
+ * `dst` exactly as the in-place `cqrt_addc_<W>` (reversed only when the
+ * target is dead, src a borrowed parent), never freeing a dirty rail.
+ * Same no-arrow void trace convention as cqrt_copy; both handles print
+ * as h<N>:  "cqrt_xor_<W>(h<src>, h<dst>)".
+ * ----------------------------------------------------------------- */
+void cqrt_xor_i8 (int32_t src, int32_t dst);
+void cqrt_xor_i16(int32_t src, int32_t dst);
+void cqrt_xor_i32(int32_t src, int32_t dst);
+void cqrt_xor_i64(int32_t src, int32_t dst);
+void cqrt_add_i8 (int32_t src, int32_t dst);
+void cqrt_add_i16(int32_t src, int32_t dst);
+void cqrt_add_i32(int32_t src, int32_t dst);
+void cqrt_add_i64(int32_t src, int32_t dst);
+void cqrt_sub_i8 (int32_t src, int32_t dst);
+void cqrt_sub_i16(int32_t src, int32_t dst);
+void cqrt_sub_i32(int32_t src, int32_t dst);
+void cqrt_sub_i64(int32_t src, int32_t dst);
+
+/* -----------------------------------------------------------------
  * Reversible I/O output tape (Phase 7.6, PRD-7.6 §2.8 — FROZEN core
  * ABI, hand-written here, NOT a `cq_template_*` generated symbol).
  * The coherent replacement for a print-site measurement (Rule 5): a

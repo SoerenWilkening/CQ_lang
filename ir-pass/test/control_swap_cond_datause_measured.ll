@@ -35,6 +35,11 @@
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.
+; bd r2j3.33 R11 round 1 (ruling-dm7f51-step1-departures-2026-10-15 Q2): a QQ
+; op whose dead operand's old value feeds its own source fails loudly (pinned
+; by lowering_inplace_qq_decline_dependent_source.ll). This fixture's subject is
+; not that question, so the operand is kept LIVE by a trailing measurement and
+; the op stays out of place exactly as before r2j3.33.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
@@ -58,6 +63,7 @@ arm:
 merge:
   %sum = add i32 %q, %d           ; the data flag feeds the measured value
   %m  = call i32 @cq_measure_si32(i32 %sum)
+  %mq = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 
@@ -81,6 +87,7 @@ merge:
 ; CHECK-NEXT: call void @cq_template_zext_i1_to_i32_unc(i32 %[[H_CAST]], i32 %[[H_CMP]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[H_CAST]])
 ; CHECK-NEXT: %[[M1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[H_OP]])
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[H]])
 ; CHECK-NEXT: ret i32 %[[M1]]
 ; CHECK-NEXT: }
 

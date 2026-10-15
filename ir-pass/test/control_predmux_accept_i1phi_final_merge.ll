@@ -6,6 +6,11 @@
 ; leaf-inverted entry literal (¬c1 = sle) with a compare defined ABOVE the
 ; region (the pre-region-value incoming case).
 ;
+; bd r2j3.33 R11 round 1 (ruling-dm7f51-step1-departures-2026-10-15 Q2): a QQ
+; op whose dead operand's old value feeds its own source fails loudly (pinned
+; by lowering_inplace_qq_decline_dependent_source.ll). This fixture's subject is
+; not that question, so the operand is kept LIVE by a trailing measurement and
+; the op stays out of place exactly as before r2j3.33.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
@@ -31,6 +36,7 @@ merge:
   %v = select i1 %flag, i32 3, i32 9
   %w = add i32 %q, %v
   %m = call i32 @cq_measure_si32(i32 %w)
+  %mq = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

@@ -87,10 +87,12 @@ merge:
 ; CHECK-NEXT: %[[H_CMP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[H]], i32 5)
 ; CHECK-NEXT: %[[H_CAST:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i1_to_i32(i32 %[[H_CMP]])
 ; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[H_CMP]], double %a)
-; CHECK-NEXT: %[[H_OP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32(i32 %[[H1]], i32 %[[H_CAST]])
+; bd r2j3.33 (dm7f.51 step 1): `%r`'s old value is dead at the add and the sum is
+; measured, so the add lowers IN PLACE on `%r`'s rail with the data cast as source.
+; CHECK-NEXT: call void @cqrt_add_i32(i32 %[[H_CAST]], i32 %[[H1]]), !cq.inplace.qq
 ; CHECK-NEXT: call void @cq_template_zext_i1_to_i32_unc(i32 %[[H_CAST]], i32 %[[H_CMP]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[H_CAST]])
-; CHECK-NEXT: %[[M2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[H_OP]])
+; CHECK-NEXT: %[[M2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[H1]])
 ; CHECK-NEXT: ret i32 %[[M2]]
 ; CHECK-NEXT: }
 

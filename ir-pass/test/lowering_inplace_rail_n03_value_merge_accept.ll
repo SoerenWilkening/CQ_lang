@@ -19,7 +19,8 @@
 ; question the fix re-asks at the consumer.
 ;
 ; MEASURED on frozen `main`@16b15b3 AND here: ZERO in-place gates, one
-; out-of-place Q+Q `cq_template_xor_i32`, `railInImm=0`, STRICT stage 2b
+; out-of-place Q+Q `cq_template_xor_i32` (SUPERSEDED by bd r2j3.33: now the
+; in-place `cqrt_xor_i32`, `r` being dead), `railInImm=0`, STRICT stage 2b
 ; `0 violation(s)`, 21 trace lines, lowered module BYTE-IDENTICAL across the two
 ; binaries (`cmp`).
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
@@ -33,12 +34,15 @@
 ; CHECK: %[[OUT:.*]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %{{.*}}, i32 %[[M]], i32 %[[OUT]])
 ; CHECK: %[[W:.*]] = call i32 @cq_template_and_i32_hl(i32 %[[OUT]], i32 7)
-; CHECK: {{.*}} = call i32 @cq_template_xor_i32(i32 %{{.*}}, i32 %[[W]])
+; bd r2j3.33 (dm7f.51 step 1): `r`'s old value is dead at the folded xor and its
+; result is measured, so the Q+Q xor lowers IN PLACE on `r`'s rail with `w` in the
+; SOURCE handle slot (never the classical-immediate slot eqpx fences).
+; CHECK: call void @cqrt_xor_i32(i32 %[[W]], i32 %{{.*}}), !cq.inplace.qq
 
 ; IMMCNT-NOT: call void @cqrt_xorc_i32(
 ; IMMCNT-NOT: call void @cqrt_addc_i32(
-; IMMCNT-COUNT-1: call i32 @cq_template_xor_i32(
-; IMMCNT-NOT: call i32 @cq_template_xor_i32(
+; IMMCNT-COUNT-1: call void @cqrt_xor_i32(
+; IMMCNT-NOT: call void @cqrt_xor_i32(
 
 ; NOROUTE-NOT: in-place rail op no longer provable at lowering
 ; NOROUTE-NOT: pre-loop in-place op no longer provable at lowering

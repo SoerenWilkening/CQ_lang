@@ -7195,3 +7195,16 @@ add_test(NAME e2e-slice-spec-intermediate-unc
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_intermediate_unc.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_intermediate_unc.expected.log")
+
+# bd test_C_libtooling-r2j3.33 / dm7f.51 step 1: a quantum-quantum `x ^= y` /
+# `x += y` / `x -= y` whose old `x` is dead lowers IN PLACE (one void
+# `cqrt_{xor,add,sub}_<W>(src, dst)`, `cqrt_cnot` at i1) — the link proof of the
+# new hand-maintained core ABI at i1/i8/i16/i32/i64 (the golden is analysed in the
+# slice header: P(a=0,t=0) = 0.7659 for the i1 block, the textbook value).
+add_test(NAME e2e-slice-inplace-qq
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_inplace_qq.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_inplace_qq.expected.log")

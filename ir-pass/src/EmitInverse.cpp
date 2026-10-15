@@ -12,6 +12,7 @@
 
 #include "EmitInverse.h"
 #include "QramIndexWidth.h"  // inheritQramIndexTag (libcqops b6a)
+#include "InPlaceQQ.h"       // isInPlaceQQSymbol / kInPlaceQQTag (bd r2j3.33)
 
 #include "ChainWalk.h"  // isAbiQramStore — the shared frozen-ABI store shape (Rule 14)
                         // isBranchPhaseGate — the kickback-gate record (bd 3qlq F-L7-1)
@@ -38,6 +39,67 @@ namespace cq {
 // predicate flip), so the generic mint path below resolves a real symbol, NOT a
 // dangling one. Pre-WI-0 these were excluded and declined loudly; that exclusion is
 // gone.
+
+// THE INVERSE OF `emitInverseCall`'s `_unc` RECIPES (R11 round 2b/2c; H3 drift
+// note): each branch below mirrors one recipe there — the out-first layout of the
+// data-template, QRAM-load and clone-call `_unc` (`out`, then the forward
+// operands) and the QRAM store's same-args `_unc`. A recipe added or reshaped in
+// `emitInverseCall` MUST be mirrored here (or the postcondition fails closed on
+// it, the safe direction).
+CallInst *forwardOfAdjoint(const CallInst *Adj) {
+  const Function *AF = Adj->getCalledFunction();
+  if (!AF || !AF->getName().ends_with("_unc"))
+    return nullptr;  // `_inv` reserve and anything else: no recipe emits it.
+  StringRef Base = AF->getName().drop_back(strlen("_unc"));
+  auto sameCallee = [&](const CallInst *F) {
+    const Function *FF = F ? F->getCalledFunction() : nullptr;
+    return FF && FF->getName() == Base;
+  };
+  // OUT-FIRST recipes (data template incl. compares, QRAM load, clone call):
+  // `<fwd>_unc(out, fwd operands...)`, `out` the forward call itself.
+  if (Adj->arg_size() >= 1)
+    if (auto *F = dyn_cast<CallInst>(Adj->getArgOperand(0));
+        F && sameCallee(F) && F->arg_size() + 1 == Adj->arg_size()) {
+      bool Same = true;
+      for (unsigned I = 0; I < F->arg_size(); ++I)
+        Same &= F->getArgOperand(I) == Adj->getArgOperand(I + 1);
+      if (Same)
+        return F;
+    }
+  // SAME-ARGS recipe (the QRAM store): `<fwd>_unc(args...)`, the forward a call
+  // to `<fwd>` with the identical operands. The operands do NOT name the forward,
+  // so the match must be UNIQUE: two identical stores (one before an in-place
+  // gate, one after, on different paths) make the pairing ambiguous, and picking
+  // the first silently cleared a stale `_unc` (R11 round 2c finding F1). More than
+  // one candidate: null, i.e. the caller cannot place it and fails closed.
+  if (Adj->arg_size() >= 1) {
+    CallInst *Only = nullptr;
+    unsigned Count = 0;
+    for (User *U : Adj->getArgOperand(0)->users())
+      if (auto *F = dyn_cast<CallInst>(U);
+          F && F != Adj && sameCallee(F) && isAbiQramStore(F) &&
+          F->arg_size() == Adj->arg_size()) {
+        bool Same = true;
+        for (unsigned I = 0; I < F->arg_size(); ++I)
+          Same &= F->getArgOperand(I) == Adj->getArgOperand(I);
+        if (Same) {
+          Only = F;
+          ++Count;
+        }
+      }
+    if (Count == 1)
+      return Only;
+  }
+  return nullptr;
+}
+
+std::string inPlaceQQAdjointName(StringRef Name) {
+  if (Name.starts_with("cqrt_add_"))
+    return ("cqrt_sub_" + Name.drop_front(strlen("cqrt_add_"))).str();
+  if (Name.starts_with("cqrt_sub_"))
+    return ("cqrt_add_" + Name.drop_front(strlen("cqrt_sub_"))).str();
+  return Name.str();  // xor and the i1 `cqrt_cnot` are their own adjoints.
+}
 
 bool isInverseEmittable(const CallInst *Forward) {
   const Function *Callee = Forward ? Forward->getCalledFunction() : nullptr;
@@ -120,6 +182,12 @@ bool isInverseEmittable(const CallInst *Forward) {
   // declines because its name fails the prefix test (it never reaches here).
   if ((Name.starts_with("cqrt_xorc_") || Name.starts_with("cqrt_addc_")) &&
       Forward->getType()->isVoidTy() && Forward->arg_size() == 2)
+    return true;
+  // bd r2j3.33 — the in-place QUANTUM-source gates `cqrt_{xor,add,sub}_<W>(src,
+  // dst)`: xor is self-inverse, add and sub are each other's adjoint on the same
+  // operands. VOID + arity 2 is the fence (bd 1fim), via the one symbol test.
+  if (isInPlaceQQSymbol(Name) && Forward->getType()->isVoidTy() &&
+      Forward->arg_size() == 2)
     return true;
   // Uncontrolled data template (incl. compares post-WI-0): its void `_unc` form.
   // The `_inv`/`_unc` twins and the `_controlled` forms are NOT re-invertible
@@ -254,6 +322,23 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     return minted(Inv);
   }
 
+  // bd r2j3.33 — `cqrt_xor_<W>(src, dst)` re-emitted as-is; `cqrt_add_<W>` <->
+  // `cqrt_sub_<W>` on the same (src, dst). The dst is arg 1 (a threaded
+  // `CurHandle` relabels it); the tag rides along so the adjoint is classified
+  // exactly as its forward (`isInPlaceQQGate`).
+  if (isInPlaceQQSymbol(Name) && Forward->arg_size() == 2) {
+    std::string InvName = inPlaceQQAdjointName(Name);
+    FunctionCallee InvFn = Forward->getModule()->getOrInsertFunction(
+        InvName, Callee->getFunctionType());
+    Value *Dst = CurHandle ? CurHandle : Forward->getArgOperand(1);
+    CallInst *Inv = B.CreateCall(InvFn, {Forward->getArgOperand(0), Dst});
+    if (DebugLoc DL = Forward->getDebugLoc())
+      Inv->setDebugLoc(DL);
+    if (MDNode *Tag = Forward->getMetadata(kInPlaceQQTag))
+      Inv->setMetadata(kInPlaceQQTag, Tag);
+    return minted(Inv);
+  }
+
   // Self-adjoint involutions: `cqrt_x` / `cqrt_cswap` are their own inverse, so
   // emit AS-IS (no `_inv` lookup). Void / in-place.
   //
@@ -297,9 +382,14 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     CallInst *Inv = B.CreateCall(Callee, Args);
     if (DebugLoc DL = Forward->getDebugLoc())
       Inv->setDebugLoc(DL);
+    // bd r2j3.33: an i1 in-place quantum xor is a TAGGED `cqrt_cnot`; its
+    // adjoint keeps the tag so it is classified as its forward.
+    if (MDNode *Tag = Forward->getMetadata(kInPlaceQQTag))
+      Inv->setMetadata(kInPlaceQQTag, Tag);
     return minted(Inv);
   }
 
+  // (Mirrored, inverted, by `forwardOfAdjoint` above — keep the two in step.)
   // Uncontrolled data template `cq_template_<op>_<W>[_hl|_lh]` (incl. compares
   // post-WI-0, §6.0) → its VOID `_unc` form. DD-3 slot convention: `out` (the
   // forward call's OWN result handle — the rail to zero) is arg 0, then the
@@ -370,6 +460,7 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     return minted(UncCall);
   }
 
+  // (Mirrored, inverted, by `forwardOfAdjoint` above — keep the two in step.)
   // Phase 7.5 QRAM store `cqrt_qram_store_<W>(arr, idx, val)` → its void `_unc`
   // twin `cqrt_qram_store_<W>_unc(arr, idx, val)`. UNLIKE the data-template / load
   // cases, the store `_unc` takes the SAME args in the SAME order (NOT out-first):

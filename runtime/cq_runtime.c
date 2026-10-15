@@ -734,6 +734,30 @@ void cqrt_xorc_i64(int32_t h, int64_t imm) {
 }
 
 /* ---------------------------------------------------------------------
+ * In-place reversible arithmetic, quantum source (bd r2j3.33 / dm7f.51
+ * step 1; see cq_runtime.h). `dst` is mutated by `src`'s label; `src`
+ * is read only. Trace-only: both handles print as h<N>.
+ * ------------------------------------------------------------------- */
+#define CQRT_QQ_INPLACE(NAME)                                   \
+    void NAME(int32_t src, int32_t dst) {                       \
+        printf(#NAME "(h%d, h%d)\n", src, dst);                 \
+        fflush(stdout);                                         \
+    }
+CQRT_QQ_INPLACE(cqrt_xor_i8)
+CQRT_QQ_INPLACE(cqrt_xor_i16)
+CQRT_QQ_INPLACE(cqrt_xor_i32)
+CQRT_QQ_INPLACE(cqrt_xor_i64)
+CQRT_QQ_INPLACE(cqrt_add_i8)
+CQRT_QQ_INPLACE(cqrt_add_i16)
+CQRT_QQ_INPLACE(cqrt_add_i32)
+CQRT_QQ_INPLACE(cqrt_add_i64)
+CQRT_QQ_INPLACE(cqrt_sub_i8)
+CQRT_QQ_INPLACE(cqrt_sub_i16)
+CQRT_QQ_INPLACE(cqrt_sub_i32)
+CQRT_QQ_INPLACE(cqrt_sub_i64)
+#undef CQRT_QQ_INPLACE
+
+/* ---------------------------------------------------------------------
  * Reversible I/O output tape (Phase 7.6, PRD-7.6 §2.8) — FROZEN core
  * ABI. `cqrt_tape_alloc` mints a tape handle (printed `t<N>`); each
  * `cqrt_tape_write_<W>` appends `src` as a fresh kept |0> output rail

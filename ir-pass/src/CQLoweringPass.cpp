@@ -10,6 +10,7 @@
 #include "SpeculationSafety.h"
 
 #include "ArithLowering.h"
+#include "InPlaceQQ.h"  // recordDeadQQOperands (bd r2j3.33)
 #include "ArmAnalysis.h"      // reverifyRailCondReads (bd r9e5 1b-B.1 round 2)
 #include "ByRefInline.h"
 #include "CondLiteral.h"      // declineQuantumCondLiterals (bd xdu2.13 round 2)
@@ -634,6 +635,11 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // shipped in-loop ACCEPT fixtures). The diagnostic half is deferred to the late
   // slot for the opposite reason — see `TaintSet::StaleQuantumReaders`.
   recordStaleQuantumReaders(M, taint);
+  // bd r2j3.33 / dm7f.51 step 1 — the exclusive-reader record the late
+  // in-place quantum-source round (`InPlaceQQ.h`) keys its eligibility on, at
+  // the same pre-`lowerLoops`/peel/detection slot and for the same reason: it
+  // is a fact about the names the USER wrote, before any emitter adds a read.
+  recordDeadQQOperands(M, taint);
 
   // Controlled Tier-0 conditional output (Phase 7.6 Increment 2): a tainted
   // `if (q > k) printf("%d", x)` lowers to ONE `cqrt_tape_write_<W>_controlled`
@@ -1019,6 +1025,11 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // (RotationLowering.h). Before the warning, so a refused module prints none.
   if (declineUndischargedKeptFlagChains(M, taint))
     return PreservedAnalyses::none();
+  // bd r2j3.33 — the in-place quantum-source round's POSTCONDITION: no
+  // adjoint of an older rail reads a register after its in-place relabel
+  // (the round trusted the M-B plan and the kept-flag arm; re-asked here).
+  if (declineStaleInPlaceQQReads(M, taint))
+    return PreservedAnalyses::none();
   // bd test_C_libtooling-6uqc (M-A) — the LIVE-RECORD WARNING, at the
   // SAME late slot and for the SAME reason as the literal-integrity guard above:
   // this is the only position where "is rail R still undischarged when this
@@ -1373,6 +1384,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // shipped in-loop ACCEPT fixtures). The diagnostic half is deferred to the late
   // slot for the opposite reason — see `TaintSet::StaleQuantumReaders`.
   recordStaleQuantumReaders(M, taint);
+  // bd r2j3.33 / dm7f.51 step 1 — the exclusive-reader record the late
+  // in-place quantum-source round (`InPlaceQQ.h`) keys its eligibility on, at
+  // the same pre-`lowerLoops`/peel/detection slot and for the same reason: it
+  // is a fact about the names the USER wrote, before any emitter adds a read.
+  recordDeadQQOperands(M, taint);
 
   // Controlled Tier-0 conditional output (Phase 7.6 Increment 2) mirrored in
   // this entry point too (twin-pipeline parity is MANDATORY, WI-1.12) — see
@@ -1528,6 +1544,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // and this entry point lowers a kept-flag region whose condition chain is
   // still live at the gate.
   if (declineUndischargedKeptFlagChains(M, taint))
+    return true;
+  // bd r2j3.33 — the in-place quantum-source round's POSTCONDITION: no
+  // adjoint of an older rail reads a register after its in-place relabel
+  // (the round trusted the M-B plan and the kept-flag arm; re-asked here).
+  if (declineStaleInPlaceQQReads(M, taint))
     return true;
   // bd test_C_libtooling-6uqc (M-A) — mirrored from `run()` (twin-pipeline
   // parity, WI-1.12): miss it and a unit-level caller loses the live-record
