@@ -19,16 +19,25 @@
       "stage1_note": "clang -O1 no longer produced the non-entry bank"
     },
     "3": {
-      "accept": false,
-      "diagnostic": "cq rail bank: array has cells no iteration writes"
+      "accept": true,
+      "diagnostic": null,
+      "require_railbank": false,
+      "require_railwindow": true,
+      "_note": "bd 01po.19 S4 (merge a3fbac74): DECLINE->ACCEPT. The window pre-mints n |0> rails, rotates all n in place, measures n-1; the unmeasured cell stays allocated (not |0>, never freed). Trace argv a b: 5 alloc, 5 ry, 4 measure. Reviewed 2026-10-15 (bd 01po.19.21)."
     },
     "4": {
-      "accept": false,
-      "diagnostic": "cq rail bank: array has cells no iteration writes"
+      "accept": true,
+      "diagnostic": null,
+      "require_railbank": false,
+      "require_railwindow": true,
+      "_note": "bd 01po.19 S4 (merge a3fbac74): DECLINE->ACCEPT. Cells 0..n-2 rotated, cell n-1 never written and read as its pre-minted |0> rail. Never-written cells are pre-minted |0> window rails, a valid refinement of C's indeterminate value (owner ruling D1: uninit == zero-init bank). Reviewed 2026-10-15 (bd 01po.19.21)."
     },
     "5": {
-      "accept": false,
-      "diagnostic": "cq taint escape: tainted value stored to memory"
+      "accept": true,
+      "diagnostic": null,
+      "require_railbank": false,
+      "require_railwindow": true,
+      "_note": "bd 01po.19 S4 (merge a3fbac74): DECLINE->ACCEPT. The early exit rotates cell 0 only; cells 1..n-1 are read as pre-minted |0> rails. Never-written cells are pre-minted |0> window rails, a valid refinement of C's indeterminate value (owner ruling D1: uninit == zero-init bank). Reviewed 2026-10-15 (bd 01po.19.21)."
     },
     "6": {
       "accept": false,
@@ -36,11 +45,15 @@
     },
     "7": {
       "accept": false,
-      "diagnostic": "cq taint escape: tainted value reaches an unsupported instruction"
+      "diagnostic": "cq rail window: quantum array extent is a quantum value",
+      "_note": "Message drift, same verdict: was `cq taint escape: tainted value reaches an unsupported instruction`. bd 01po.19 S4 (merge a3fbac74) names the cause: the VLA extent n is tainted. Still loud (no lowering for a quantum extent)."
     },
     "8": {
-      "accept": false,
-      "diagnostic": "cq rail bank: array element is not a reversible rail cell"
+      "accept": true,
+      "diagnostic": null,
+      "require_railbank": false,
+      "require_railwindow": true,
+      "_note": "bd 01po.19 S4 (merge a3fbac74): DECLINE->ACCEPT. `bool b[n]` cells become i1 window rails, each Ry(0.5) in place and measured as cqrt_measure_i1. Reviewed 2026-10-15 (bd 01po.19.21)."
     },
     "9": {
       "accept": false,
@@ -55,8 +68,11 @@
       "diagnostic": "cq taint escape: tainted value stored to memory"
     },
     "12": {
-      "accept": false,
-      "diagnostic": "cq rail bank: array has cells no iteration writes"
+      "accept": true,
+      "diagnostic": null,
+      "require_railbank": false,
+      "require_railwindow": true,
+      "_note": "bd 01po.19 S4 (merge a3fbac74): DECLINE->ACCEPT. Window of m rails; the in-loop Ry is guarded by the classical m == n, so a write only happens when i < n == m (in bounds); otherwise the m cells are read as pre-minted |0>. Never-written cells are pre-minted |0> window rails, a valid refinement of C's indeterminate value (owner ruling D1: uninit == zero-init bank). Reviewed 2026-10-15 (bd 01po.19.21)."
     },
     "13": {
       "accept": true,
@@ -105,12 +121,18 @@
       "diagnostic": null
     },
     "24": {
-      "accept": false,
-      "diagnostic": "cq rail bank: the cell walk is re-executed by an enclosing loop"
+      "accept": true,
+      "diagnostic": null,
+      "require_railbank": false,
+      "require_railwindow": true,
+      "_note": "bd 01po.19 S4 (merge a3fbac74): DECLINE->ACCEPT. Each walk loads the cell's rail from the window, rotates it and stores it back, so a re-executed walk rotates the SAME rail again (Ry.Ry), the source meaning. The pre-S4 HEAD-oracle miscompile (fresh |0> seed per walk) is absent: trace argc=1 with a stub side(): alloc h0, ry h0, ry h0, measure h0. Reviewed 2026-10-15 (bd 01po.19.21)."
     },
     "25": {
-      "accept": false,
-      "diagnostic": "cq rail bank: the cell walk is re-executed by an enclosing loop"
+      "accept": true,
+      "diagnostic": null,
+      "require_railbank": false,
+      "require_railwindow": true,
+      "_note": "bd 01po.19 S4 (merge a3fbac74): DECLINE->ACCEPT. Fixed form of 24: 4 window rails seeded from the zeroed array, two walks give ry,ry on each of h0..h3 (trace with a stub side()); pinned end to end by the golden e2e-slice-railwindow-rewalk-fixed (review F3). Reviewed 2026-10-15 (bd 01po.19.21)."
     },
     "26": {
       "accept": false,
@@ -131,7 +153,15 @@
       ],
       "dropped_twin_lines": [
         "cqrt_ry_i32(h0, 0x0p+0)"
-      ]
+      ],
+      "quarantine": {
+        "class": "RB-A (leaked loop-carried merge rail)",
+        "bd": "test_C_libtooling-8h7d.20",
+        "owner": "LoopLowering / MergeCarriedFence — ROLLED deficient: the loop-carried Z select-merge rails are left allocated (owner-delegated r2j3.32 decision (b)) where the flat twin's dischargeMergeRails reverses and frees them; measurements only follow, so the outcome distribution is unchanged. RETIREMENT: 8h7d.20 lands -> byte-identical, remove entry",
+        "digest": "9232e56e0ff63592",
+        "rolled": "cq_template_icmp_eq_i32_hl_unc(h6, h3, 0)",
+        "unrolled": "cqrt_alloc_i32(0) -> h8"
+      }
     }
   ]
 }

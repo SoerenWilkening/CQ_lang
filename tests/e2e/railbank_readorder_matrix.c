@@ -157,7 +157,10 @@ int main(int argc, char **argv) { (void)argv; return slice(argc); }
 
 #elif CASE == CASE_READ_BOUND_OTHER_VAR
 /* Copy of railbank_dynamic_matrix row 12's axis, UNGUARDED: the read walks m cells
- * of an n-cell bank (m = n + 1 at run time). */
+ * of an n-cell bank, the read bound another variable. The driver runs m = n - 1,
+ * a DEFINED execution (bd 01po.19.21 ruling 2026-10-15). It used to call
+ * slice(argc, argc + 1), i.e. m = n + 1, which reads b[n] out of bounds on every
+ * run; that history is in the sidecar's _note. */
 __attribute__((noinline)) static int slice(int n, int m) {
     int b[n];
     for (int i = 0; i < n; ++i) cq_theta(&b[i], 0.5);
@@ -165,7 +168,7 @@ __attribute__((noinline)) static int slice(int n, int m) {
     for (int i = 0; i < m; ++i) s += cq_measure(b[i]);
     return s;
 }
-int main(int argc, char **argv) { (void)argv; return slice(argc, argc + 1); }
+int main(int argc, char **argv) { (void)argv; return slice(argc + 1, argc); }
 
 #elif CASE == CASE_STRONGER_READ_GUARD
 /* The read runs under n > 1, which IMPLIES the write guard n > 0: a read

@@ -353,6 +353,24 @@
 #    chain at the loop exit". The day Group 1's P2 anchor moves, or `cq_phi`
 #    stops being deleted uncontrolled (Rule 3), re-derive these FROM THE STREAMS
 #    — and re-measure on a D-without-G1 binary before shipping D alone, ever.
+#
+# ── CLASS I — 7 cells (kread kloop joined at 109d3b7e, S6), bd test_C_libtooling-01po.19.30. REPRESENTATIONAL:
+#    ORPHAN PRE-MINTED WINDOW RAIL (ruling 2026-10-15, bd memory
+#    ruling-red-heavy-tests-2026-10-15; bd 01po.19.22). The k-axis bank cells
+#    became accepts at 01po.19 S4 (a3fbac74), whose rail window allocates one
+#    |0> rail per cell at window entry. The pairs then differ in two ways, and
+#    neither touches the unitary: (1) mint ORDER (the window pre-mints, the
+#    SROA'd flat twin interleaves alloc/ry); (2) ORPHAN |0> MINTS that no later
+#    line names — an over-sized bank's unused cells, and on the hand-unrolled
+#    side the cell-0 rail that -O1's store-forward of the zero seed into
+#    cq_theta overwrites. Each entry's comment carries its tools/
+#    trace_twin_equiv.py argument: EQUIV once those never-touched |0> mints are
+#    dropped (kiprep kflat: EQUIV as is). Measured 2026-10-15 on cq-opt at
+#    0c1ac43c. Stage 2b sees an orphan only as a "left allocated" rail mint, with
+#    0 violations, so it is invisible there. The comparator was deliberately
+#    NOT changed (ruling). RETIREMENT TRIGGER: bd 01po.19.30 lands (free the
+#    provably-|0> rail or don't mint it) -> re-measure; an entry whose pair is
+#    byte-identical goes STALE and must be removed.
 # ==== END OF HEADER — everything BELOW this line is generated and is rewritten
 # ==== by --regenerate / --refresh-quarantine. Everything ABOVE it is PRESERVED
 # ==== byte-for-byte, including prose you add by hand (bd test_C_libtooling-gfsk).
@@ -916,4 +934,67 @@ owner    the GENERATOR: -O1 folds the FLAT spelling's xor mask 9 -> 8 under the 
 digest   7c31a377ffbfc95f
 rolled   cqrt_xorc_i32(h0, 9)
 unrolled cq_template_xor_i32_hl(h0, 8) -> h1
+
+cell     m_none_k2b_none_none_kloop
+# trace_twin_equiv EQUIV after dropping the unrolled side's 2 never-touched |0> mints (h2, h5); rolled side has none; a representational difference (01po.19 S4 a3fbac74), not a miscompile.
+class    I
+bd       test_C_libtooling-01po.19.30
+owner    RailWindowMaterialize — UNROLLED carries the orphans: -O1 store-forwards k[0]/m[0]'s zero seed into cq_theta, so cell 0 of each bank is a scalar rail stored over its pre-minted window rail (2 orphan |0> mints). RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
+digest   ec7b1b771421b9e8
+rolled   cqrt_ry_i1(h2, 0x1p-2)
+unrolled cqrt_alloc_i1(0) -> h3
+
+cell     m_none_kiprep_none_none_kflat
+# trace_twin_equiv EQUIV as is (no mint dropped): the reordered gates act on disjoint handles; a representational difference (01po.19 S4 a3fbac74), not a miscompile.
+class    I
+bd       test_C_libtooling-01po.19.30
+owner    RailWindowMaterialize — ROLLED pre-mints the window before rotating (alloc,alloc,ry,ry) where the SROA'd flat twin interleaves (alloc,ry,alloc,ry); no orphan, order only. RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
+digest   073c1cd390961b57
+rolled   cqrt_alloc_i32(0) -> h2
+unrolled cqrt_ry_i32(h1, 0x1p-1)
+
+cell     m_none_kiprep_none_none_kloop
+# trace_twin_equiv EQUIV after dropping the unrolled side's 1 never-touched |0> mint (h2); a representational difference (01po.19 S4 a3fbac74), not a miscompile.
+class    I
+bd       test_C_libtooling-01po.19.30
+owner    RailWindowMaterialize — UNROLLED carries the orphan: -O1 store-forwards k[0]'s zero seed into cq_theta; the pre-minted cell-0 rail is overwritten and never touched (1 orphan |0> mint). RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
+digest   649b7c467258056d
+rolled   cqrt_ry_i32(h2, 0x1p-1)
+unrolled cqrt_alloc_i32(0) -> h3
+
+cell     m_none_kover_none_none_kflat
+# trace_twin_equiv EQUIV after dropping the rolled side's 6 never-touched |0> mints (h3..h8); a representational difference (01po.19 S4 a3fbac74), not a miscompile.
+class    I
+bd       test_C_libtooling-01po.19.30
+owner    RailWindowMaterialize — ROLLED pre-mints all 8 cells of the over-sized bank; 6 are never touched (6 orphan |0> mints); the flat twin is SROA'd to 2 scalars. RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
+digest   1d2d4c32e27b27d1
+rolled   cqrt_alloc_i1(0) -> h2
+unrolled cqrt_ry_i1(h1, 0x1p-1)
+
+cell     m_none_kover_none_none_kloop
+# trace_twin_equiv EQUIV after dropping 6 rolled (h3..h8) and 7 unrolled (h2, h4..h9) never-touched |0> mints; a representational difference (01po.19 S4 a3fbac74), not a miscompile.
+class    I
+bd       test_C_libtooling-01po.19.30
+owner    RailWindowMaterialize — BOTH sides pre-mint the 8-cell over-sized bank (6 orphans rolled); the unrolled side also store-forwards k[0] (7 orphans). RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
+digest   e9763c17347b53d8
+rolled   cqrt_alloc_i1(0) -> h2
+unrolled cqrt_ry_i1(h1, 0x1p-1)
+
+cell     m_none_kprep_none_none_kloop
+# trace_twin_equiv EQUIV after dropping the unrolled side's 1 never-touched |0> mint (h2); a representational difference (01po.19 S4 a3fbac74), not a miscompile.
+class    I
+bd       test_C_libtooling-01po.19.30
+owner    RailWindowMaterialize — UNROLLED carries the orphan: -O1 store-forwards k[0]'s zero seed into cq_theta; the pre-minted cell-0 rail is overwritten and never touched (1 orphan |0> mint). RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
+digest   3ae0b6eb16ab5498
+rolled   cqrt_ry_i1(h2, 0x1p-1)
+unrolled cqrt_alloc_i1(0) -> h3
+
+cell     m_none_kread_none_none_kloop
+# trace_twin_equiv EQUIV after dropping the unrolled side's 1 never-touched |0> mint (h2); both sides accept since 01po.19 S6 (109d3b7e), which lowers the flat `if (k[i])` as a cell register condition; a representational difference, not a miscompile.
+class    I
+bd       test_C_libtooling-01po.19.30
+owner    RailWindowMaterialize — UNROLLED carries the orphan: -O1 store-forwards k[0]'s zero seed into cq_theta; the pre-minted cell-0 rail is overwritten and never touched (1 orphan |0> mint). RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
+digest   92040cbb05fa103b
+rolled   cqrt_ry_i32_controlled(h1, h0, 0x1p-2)
+unrolled cqrt_alloc_i1(0) -> h2
 
