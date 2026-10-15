@@ -2036,11 +2036,17 @@ class StreamAnalysis:
         ONE stream: a stream is a linear block chain with no back edge, so both
         spellings' SSA base holds one value across (lo, hi). And only while no
         rail MOVES between cells (review B-F1: `store %l0, q[i+1]` makes cell
-        i+1's later spelling name the record's rail): both cell reads are
-        loads in this stream's blocks, and no store into the array precedes the
-        write in this stream (`window_stored`), so none lies between the read
-        and the write. Anything else — a stored-value spelling, an unresolved
-        address, a read from another stream — stays (fail closed)."""
+        i+1's later spelling name the record's rail): both cell reads lie on
+        this stream's linear prefix (`mark_window_stores`) and BOTH come after
+        the last rail-moving store into the array before the write
+        (`_unmoved_since` against `window_stored`; a write-back of a cell's own
+        read moves nothing), so no move lies between either read and the write.
+        A store BEFORE both reads is safe: it can only leave two cells naming
+        one rail by cloning a handle into a second cell, which S5's 01po.19.13
+        decline (cell value copied into another cell) forbids — retirement
+        trigger in RailWindow.h (`railWindowTripDistinctCells`). Anything else —
+        a stored-value spelling, an unresolved address, a read off the prefix —
+        stays (fail closed)."""
         r = self.rails.get(name)
         if r is None:
             return []
