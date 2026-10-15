@@ -68,10 +68,19 @@
 //       taint seed and a BORROWED ROOT (never freed, never reverse-played), a
 //       store into it a KEPT-CARRIER sink.
 //
+//   S5  IN-PLACE CELL UPDATES (RailWindowInPlace.cpp, RailWindowPhiUndo.cpp).
+//       `q[i] ^= q[j]` (also `+=`, `-=`, and the `_Bool` compare spelling) is
+//       lowered by dm7f.51's quantum-source round as an in-place gate on the
+//       overwritten cell's rail (interfaces (a) and (b) of design §4); a
+//       refusal on a dead cell is loud there (c). -O1's header φ carrying a
+//       cell across a back edge is re-materialized as a cell load first
+//       (design Q6 (a), deferred from S3). A cell updated by a CLASSICAL
+//       operand stays pending (S5 in the list).
+//
 // ── WHAT STILL DECLINES (and loudly) ─────────────────────────────────────────
 //
-// S5–S7 are not built yet (S5 in-place cell updates via dm7f.51 and S6
-// quantum control on cells, lane C; S7 alias versioning). An array that needs
+// S6–S7 are not built yet (S6 quantum control on cells, lane C; S7 alias
+// versioning). An array that needs
 // one of them is declined with ONE diagnostic naming exactly the steps it
 // still needs (`kMsgWindowPending` + the list), at the window slot, before
 // every stage that adjudicates consumers of tainted values. RETIREMENT
@@ -208,6 +217,41 @@ std::string railWindowAllNeeds();
 bool railWindowReachesAvoiding(
     const llvm::Instruction *From, const llvm::Instruction *To,
     const llvm::SmallPtrSetImpl<const llvm::Instruction *> &Barriers);
+
+// Design Q6 (a) (RailWindowPhiUndo.cpp): replace every loop-header φ that
+// carries a cell of the handle array `W` across a back edge by a load of that
+// cell (exact SCEV identity). Returns false after a loud diagnostic (a cell
+// carrier whose cell cannot be named).
+bool undoRailWindowHeaderPhis(llvm::Function &F, llvm::AllocaInst *W);
+
+// S5 (RailWindowInPlace.cpp): is `V` an update `x OP y` (`xor`/`add`/`sub`, or
+// the `_Bool` compare spelling of `xor`)? Fills both operands; `Sub` marks the
+// directional `sub` (only the minuend `X` can be the overwritten cell).
+bool railWindowInPlaceUpdate(llvm::Value *V, llvm::Value *&X, llvm::Value *&Y,
+                             bool &Sub);
+
+// S5 interface (b), the BORROWED-ROOT TARGET: is `P` a cell read (a rail the
+// array owns: user data, never discharged by the spine) that dominates `Site`
+// and is re-executed before every re-execution of `Site`? Then an in-place
+// gate at `Site`, even inside a loop, rewrites exactly the rail the program's
+// own reload names on that trip (InPlaceQQ's E2 and the M-C fence's G5).
+bool railWindowSameTripTarget(const llvm::Instruction *Site,
+                              const llvm::Value *P,
+                              const llvm::DominatorTree &DT);
+// S5 interface (b), WHICH cell an update overwrites — THE ONE PREDICATE (R12;
+// asked by InPlaceQQ's E2 via `qqTargetIsUserData`, and by the stale-cell
+// fence's gate set, and by the S5 needs list): may the update `U` (an `xor`/
+// `add`/`sub`, its `_Bool` compare spelling, or its lowered template) be
+// lowered IN PLACE on the rail of the cell at `CellPtr`? Iff (1) every store of
+// `U`'s result (through casts and φs) is into that cell and the result escapes
+// nowhere else — never a
+// second cell (R7, review S5 A-F1), and (2) the write-back is a MUST: every
+// path from `U` stores a value derived from `U` into that cell before any read
+// of a cell that may be it, any other store into it, `U` again, or a return
+// (review S5 C-F1: on a path that skips the write-back C keeps the old value).
+bool railWindowWritesBack(const llvm::Instruction *U,
+                          const llvm::Value *CellPtr);
+// (`qqTargetIsUserData`, declared in InPlaceQQ.h, is defined beside these.)
 
 // The values quantum through the taint set or through the array's own cell
 // reads (forward closure; a `cq_measure` result is classical).

@@ -297,6 +297,8 @@ bool lowerRailWindowArrays(Module &M, const TaintSet &taint, bool &Changed) {
       AllocaInst *W = materializeRailWindow(F, Acc, Q);
       if (!W)
         return true;  // diagnosed (loud, nothing lowered).
+      if (!undoRailWindowHeaderPhis(F, W))  // design Q6 (a), S5
+        return true;
       Changed = true;
       // S3 on the handle array, then re-derive everything from the new IR.
       // `collectAccesses` failing on `W` is unreachable (the redirect emits

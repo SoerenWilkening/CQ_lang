@@ -12,6 +12,7 @@
 #include "ControlPlan.h"
 #include "ControlledSymbols.h"
 #include "LiteralIntegrity.h"  // valueCarriesUndef (bd z9t1 — the ONE spelling)
+#include "InPlaceQQ.h"       // isInPlaceQQGate (bd 01po.19 S5, Q4)
 #include "OpcodeSupport.h"  // abiWidthFromType
 #include "RailBankPromote.h"  // isRailBankSeedAlloc
 #include "RailWindow.h"       // railWindowFamily (bd 01po.19 S4, Q4)
@@ -2494,8 +2495,6 @@ constexpr char kMsgWindowCellTempLive[] =
 }  // namespace
 
 bool declineLiveWindowRecords(Module &M, const TaintSet &taint) {
-  if (taint.UserChainedRotations.empty())
-    return false;
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
@@ -2503,16 +2502,20 @@ bool declineLiveWindowRecords(Module &M, const TaintSet &taint) {
     for (BasicBlock &BB : F)
       for (Instruction &I : BB) {
         auto *T = dyn_cast<CallInst>(&I);
-        if (!T || !taint.UserChainedRotations.count(T))
+        // bd 01po.19 S5: an in-place quantum-source gate (`cqrt_cnot` /
+        // `cqrt_{xor,add,sub}_<W>`, InPlaceQQ.h) on a cell is a non-diagonal
+        // gate on the array too; its target is slot 1.
+        const bool InPlace = T && isInPlaceQQGate(T);
+        if (!T || (!InPlace && !taint.UserChainedRotations.count(T)))
           continue;
         const StringRef GateName = emittedCalleeName(T);
         const bool ControlledRy = GateName.starts_with("cqrt_ry_") &&
                                   GateName.ends_with("_controlled") &&
                                   T->arg_size() == 3;
-        if (!ControlledRy &&
+        if (!InPlace && !ControlledRy &&
             (T->arg_size() != 2 || !GateName.starts_with("cqrt_ry_")))
           continue;
-        Value *W = T->getArgOperand(ControlledRy ? 1 : 0);
+        Value *W = T->getArgOperand(ControlledRy || InPlace ? 1 : 0);
         SmallVector<Value *, 16> Family;
         if (!railWindowFamily(W, Family))
           continue;

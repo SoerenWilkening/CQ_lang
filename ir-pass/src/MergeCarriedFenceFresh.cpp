@@ -52,8 +52,9 @@ bool freshAlloc(CallInst *A, const Instruction *C, const TaintSet &taint,
                 const DominatorTree &DT) {
   SmallPtrSet<Value *, 8> Cls;
   // The store skip below (`SkipStores`) is sound ONLY because this call has
-  // already refused every store that is not a park into a proven rail bank
-  // and put that bank's cell loads into `Cls` (reviewer A, R11 round 1).
+  // already refused every store that is not a park into a proven rail bank or
+  // a `!cq.railwindow` array (bd 01po.19 S5) and put that bank's cell loads
+  // (the window's whole family) into `Cls` (reviewer A, R11 round 1).
   if (!handleAliases(A, taint, DT, Cls))
     return false;
   for (Value *M : Cls)

@@ -15,18 +15,21 @@
 #include "llvm/IR/Module.h"
 
 #include "ControlShape.h"  // blockOnCycle (W4) — the one spelling
+#include "RailWindow.h"    // isRailWindowCellRead (bd 01po.19 S5)
 #include "TaintPropagation.h"
+
+#include "llvm/IR/InstIterator.h"
 
 using namespace llvm;
 
 namespace cq {
 
-namespace {
-
 bool isBoolZext(const Value *V) {
   const auto *Z = dyn_cast<ZExtInst>(V);
   return Z && Z->getSrcTy()->isIntegerTy(1);
 }
+
+namespace {
 
 // `icmp ne %p, 0` / `icmp eq %p, 1` (either operand order): under (W1) it IS the
 // low bit, so it is replaced by the narrowed φ itself (`if (t)` on a stored
@@ -236,12 +239,95 @@ bool narrowBoolStoragePhis(Function &F, TaintSet &taint,
   return !Webs.empty();
 }
 
+bool boolCompareXor(const Value *V, Value *&X, Value *&Y, bool &Negated) {
+  // D1's Boolean compare (`boolCompareOther`, review S5 C-F6: one spelling)
+  // with a `zext i1` on BOTH sides, so each side has an `i1` to xor.
+  const auto *C = dyn_cast<ICmpInst>(V);
+  const SetVector<PHINode *> NoWeb;
+  Value *O = C && isBoolZext(C->getOperand(0))
+                 ? boolCompareOther(C, C->getOperand(0), NoWeb)
+                 : nullptr;
+  if (!O || !isBoolZext(O))
+    return false;
+  X = cast<ZExtInst>(C->getOperand(0))->getOperand(0);
+  Y = cast<ZExtInst>(O)->getOperand(0);
+  Negated = C->getPredicate() == ICmpInst::ICMP_EQ;
+  return true;
+}
+
+namespace {
+
+// bd 01po.19 S5 — the values quantum THROUGH A HANDLE ARRAY: the forward
+// closure of its cell reads (`isRailWindowCellRead`). The compare rewrite
+// below is scoped to them, so no program without a window array moves.
+void windowClosure(Function &F, SmallPtrSetImpl<Value *> &Out) {
+  SmallVector<Value *, 32> Work;
+  for (Instruction &I : instructions(F))
+    if (isRailWindowCellRead(&I))
+      Work.push_back(&I);
+  while (!Work.empty()) {
+    Value *V = Work.pop_back_val();
+    if (!Out.insert(V).second)
+      continue;
+    for (User *U : V->users())
+      if (auto *I = dyn_cast<Instruction>(U); I && !I->getType()->isVoidTy())
+        Work.push_back(I);
+  }
+}
+
+// bd 01po.19 S5, design §4 interface (a) — THE BOOL SPELLING OF A CELL XOR.
+// `-O1` writes `q[i] ^= q[j]` over `_Bool` storage as `icmp ne i8 (zext a),
+// (zext b)`. Both operands are zexts of `i1`, so `zext a != zext b` is `a ^ b`
+// bit for bit and `==` its negation: the rewrite is the identity on values (the
+// D1 argument above, without a φ). It makes the update an `i1` xor, the shape
+// the in-place quantum-source round (InPlaceQQ.h) lowers as `cqrt_cnot`.
+// Taint: every erased value leaves `Tainted`; the caller re-propagates in full.
+bool narrowWindowBoolCompares(Function &F, TaintSet &taint) {
+  SmallPtrSet<Value *, 32> Q;
+  windowClosure(F, Q);
+  if (Q.empty())
+    return false;
+  SmallVector<ICmpInst *, 8> Sites;
+  for (Instruction &I : instructions(F)) {
+    Value *X, *Y;
+    bool Neg;
+    if (boolCompareXor(&I, X, Y, Neg) && (Q.count(X) || Q.count(Y)))
+      Sites.push_back(cast<ICmpInst>(&I));
+  }
+  for (ICmpInst *C : Sites) {
+    Value *X, *Y;
+    bool Neg;
+    boolCompareXor(C, X, Y, Neg);
+    Instruction *R = BinaryOperator::CreateXor(X, Y, C->getName(), C);
+    R->setDebugLoc(C->getDebugLoc());
+    if (Neg) {
+      R = BinaryOperator::CreateXor(R, ConstantInt::getTrue(C->getContext()),
+                                    C->getName() + ".not", C);
+      R->setDebugLoc(C->getDebugLoc());
+    }
+    C->replaceAllUsesWith(R);
+    Value *Z0 = C->getOperand(0), *Z1 = C->getOperand(1);
+    taint.Tainted.erase(C);
+    C->eraseFromParent();
+    for (Value *Z : {Z0, Z1})
+      if (auto *ZI = dyn_cast<Instruction>(Z); ZI && ZI->use_empty()) {
+        taint.Tainted.erase(ZI);
+        ZI->eraseFromParent();
+      }
+  }
+  return !Sites.empty();
+}
+
+}  // namespace
+
 bool narrowBoolStorageModule(Module &M, TaintSet &taint) {
   bool Changed = false;
   SmallVector<Value *, 8> Seeds;  // the caller re-propagates in full.
   for (Function &F : M)
-    if (!F.isDeclaration())
+    if (!F.isDeclaration()) {
       Changed |= narrowBoolStoragePhis(F, taint, Seeds);
+      Changed |= narrowWindowBoolCompares(F, taint);
+    }
   return Changed;
 }
 

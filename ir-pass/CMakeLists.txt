@@ -141,6 +141,9 @@ add_library(CQPass MODULE
   src/RailWindowMaterialize.cpp
   src/RailWindowPromote.cpp
   src/RailWindowQ.cpp
+  # bd 01po.19 S5: in-place cell updates, Q6 header-phi re-materialization.
+  src/RailWindowInPlace.cpp
+  src/RailWindowPhiUndo.cpp
   src/RegionFlatten.cpp
   src/RegionTreeDetect.cpp
   # bd dm7f.5: multi-exit `ret` normalization under tainted control.
@@ -257,7 +260,8 @@ add_test(NAME ir-pass-merge-discharge-selftest
     "${CMAKE_CURRENT_SOURCE_DIR}/test/Inputs/merge_selftest/window_alias.ll"
     "${CMAKE_CURRENT_SOURCE_DIR}/test/Inputs/merge_selftest/carried_fence.ll"
     "${CMAKE_CURRENT_SOURCE_DIR}/test/Inputs/merge_selftest/carried_fence_inloop.ll"
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/Inputs/merge_selftest/carried_fence_bank.ll")
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/Inputs/merge_selftest/carried_fence_bank.ll"
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/Inputs/merge_selftest/carried_fence_window.ll")
 
 # cq-scrub-selftest (bd test_C_libtooling-8e5r / -um24 / -j8sk): the deterministic
 # per-member pin of `include/ScrubOnDelete.h` over every pointer-keyed member of

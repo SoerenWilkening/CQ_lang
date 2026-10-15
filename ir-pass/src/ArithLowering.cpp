@@ -14,6 +14,7 @@
 #include "MergeStreamGates.h" // streamGateWrites (bd r2j3.33 arm (c′))
 #include "LoopPlan.h"       // inPlaceValueRailOperand (the dtzb shape predicate)
 #include "OpcodeSupport.h"
+#include "RailWindow.h"     // railWindowSameTripTarget (bd 01po.19 S5, G5)
 #include "TaintPropagation.h"
 #include "TemplateName.h"   // dataName — the ONE builder of the template symbol
 #include "Uncomputation.h"  // InteriorDischargePlan (the M-B discharge PLAN)
@@ -939,8 +940,15 @@ bool inPlacePositionHolds(const Instruction *Site, const Value *P,
   if (!IgnoreSelfMarking &&
       taint.InPlaceRailOps.count(const_cast<Instruction *>(Site)))
     return false;
-  if (LI.getLoopFor(const_cast<BasicBlock *>(Site->getParent())) ||
-      blockCanRepeat(const_cast<BasicBlock *>(Site->getParent())))
+  // bd 01po.19 S5 (design §4 interface (b)) — THE ONE EXEMPTION: a quantum-
+  // source gate whose target is a quantum-array CELL READ re-executed before
+  // every re-execution of `Site` (`railWindowSameTripTarget`). The x67f hazard
+  // above is a register mutated once per trip where the source recomputes from
+  // a loop-INVARIANT value; a cell is reloaded on every trip, so one mutation
+  // per trip IS the source (`q[i] ^= q[j]` in a loop body).
+  if ((LI.getLoopFor(const_cast<BasicBlock *>(Site->getParent())) ||
+       blockCanRepeat(const_cast<BasicBlock *>(Site->getParent()))) &&
+      !(QuantumSource && railWindowSameTripTarget(Site, P, DT)))
     return false;
 
   // G6/G7 — POSITION-AWARE DEADNESS + PRIOR-OBLIGATION DISCHARGE.

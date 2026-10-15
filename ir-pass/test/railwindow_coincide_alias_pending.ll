@@ -8,6 +8,7 @@
 ; (S1), places its quantization point (S2) and promotes its windows (S3), and then
 ; declines with exactly the steps it still needs. The WIN prefix pins the claim,
 ; the quantization point and every promoted cell class.
+; (bd 01po.19 S5, 2026-10-15: S5 removed from the list, as its trigger says.)
 ; RETIREMENT TRIGGER: each of S4-S7 that lands removes its name from the CHECK
 ; line; when none is left this file becomes an ACCEPT with an analytic trace check.
 ;
@@ -27,7 +28,7 @@
 ; RUN:   | %filecheck %s --implicit-check-not='cq rail bank' --implicit-check-not='tainted value stored to memory'
 ; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
 ; RUN:   | %filecheck %s --check-prefix=WIN
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S5 in-place cell update, S7 index alias versioning
+; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S7 index alias versioning
 ; WIN: CQ_RAILWINDOW_DBG: @main claims %1 cells=i8 loads=4 stores=2 Q=  br label %2
 ; WIN: CQ_RAILWINDOW_DBG: region %13 not promoted: alias unproven
 ; WIN: CQ_RAILWINDOW_DBG: alias unproven: {(2 + %.rails)<nuw>,+,-1}<nw><%13> vs {%.rails,+,1}<nw><%13>

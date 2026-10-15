@@ -9,6 +9,7 @@
 
 #include "RailWindow.h"
 
+#include "BoolStorageNarrow.h"  // isBoolZext (the ONE spelling)
 #include "QramLowering.h"  // railBankInstReaches
 
 #include "llvm/Analysis/ValueTracking.h"
@@ -113,16 +114,26 @@ Type *railTypeForImpl(const RailWindowAccesses &Acc,
                   ArrayRef<StoreInst *> PostStores) {
   if (!Acc.CellTy->isIntegerTy(8))
     return Acc.CellTy;
-  bool Ranged = true, BitView = true, BitStores = false;
+  bool Ranged = true, BitView = true, BitStores = false, AnyRanged = false,
+       AllBitStores = true;
   for (LoadInst *L : PostLoads) {
     Ranged &= isBoolRange(L);
+    AnyRanged |= isBoolRange(L);
     BitView &= readOnlyAsBit(L);
   }
-  for (StoreInst *S : PostStores)
-    if (auto *Z = dyn_cast<ZExtInst>(S->getValueOperand()))
-      BitStores |= Z->getSrcTy()->isIntegerTy(1);
+  for (StoreInst *S : PostStores) {
+    auto *K = dyn_cast<ConstantInt>(S->getValueOperand());
+    const bool Bit =
+        isBoolZext(S->getValueOperand()) || (K && K->getValue().ule(1));
+    BitStores |= Bit;
+    AllBitStores &= Bit;
+  }
+  // bd 01po.19 S5: GVN/LICM drop `!range` from a load they create (the
+  // preheader load of cnot_then_ry.c's `q[i+1] ^= q[i]` walk). One ranged
+  // access is the C type of the whole object (every cell of a `_Bool` array is
+  // a `_Bool`); with every post-Q store a bit, the unranged load reads a bit.
   bool Bool = (!PostLoads.empty() && (Ranged || BitView)) ||
-              (PostLoads.empty() && BitStores);
+              (PostLoads.empty() && BitStores) || (AnyRanged && AllBitStores);
   return Bool ? Type::getInt1Ty(Acc.CellTy->getContext()) : Acc.CellTy;
 }
 

@@ -1,35 +1,19 @@
-; railwindow_ghz_cnot_walk_pending.ll — DECLINE (bd `test_C_libtooling-01po.19` S1-S3).
+; railwindow_s5_reject_phi_undo.ll — DECLINE (bd `test_C_libtooling-01po.19`,
+; design Q6 (a), owner ruling owner-ruling-01po19-rolled-design-2026-10-15:
+; "-O1 header phis carrying a cell value are mapped back to the cell by SCEV
+; address identity; loud if the address cannot be rebuilt").
 ;
-; GHZ as a CNOT walk `q[i+1] ^= q[i]`; -O1 carries q[i] across the back edge in a header phi (design Q6, re-materialization not built in S3: follow-up).
-;
-; Before S1-S3 this array declined in the one-store rail bank. Now the rolled
-; window model (RailWindow.h; owner rulings `owner-ruling-01po19-rolled-not-
-; unrolled-2026-10-15`, `owner-ruling-01po19-rolled-design-2026-10-15`) claims it
-; (S1), places its quantization point (S2) and promotes its windows (S3), and then
-; declines with exactly the steps it still needs. The WIN prefix pins the claim,
-; the quantization point and every promoted cell class.
-; RETIREMENT TRIGGER: each of S4-S7 that lands removes its name from the CHECK
-; line; when none is left this file becomes an ACCEPT with an analytic trace check.
-;
-; SOURCE (clang -O1, verbatim below):
-;   /* GHZ over a bool array: q[i+1] ^= q[i] is a CNOT chain written as an array walk
-;      with a straight-line store outside it (two store sites). */
-;   int main(void) {
-;     bool q[3] = {0};
-;     cq_theta(&q[0], 1.5707963267948966);
-;     for (int i = 0; i < 2; i++) q[i + 1] ^= q[i];
-;     int r = 0;
-;     for (int i = 0; i < 3; i++) r = 2 * r + cq_measure(q[i]);
-;     return r;
-;   }
+; HAND IR: railwindow_ghz_cnot_walk_accept.ll's clang -O1 module with ONE edit,
+; the straight-line store of the rotated rail moved from cell 0 to cell 1. The
+; header φ `%5` still carries a cell value on both edges (preheader: the value
+; parked in cell 1; latch: the value parked in cell i+1), but the cell it reads
+; in trip k would be A(k) with A(0) = cell 1 and A(k+1) = cell k+1 — no single
+; affine cell (`A_pre != start - step`). RailWindowPhiUndo.cpp must refuse it
+; loudly rather than load the wrong cell or leave a loop-carried rail φ.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s --implicit-check-not='cq rail bank' --implicit-check-not='tainted value stored to memory'
-; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
-; RUN:   | %filecheck %s --check-prefix=WIN
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S5 in-place cell update
-; WIN: CQ_RAILWINDOW_DBG: @main claims %1 cells=i8 loads=2 stores=2 Q=  store i8 %3, ptr %1, align 1
-; WIN: CQ_RAILWINDOW_DBG: promoted 0 cell class(es)
+; RUN:   | %filecheck %s
+; CHECK: cq rail window: a loop-carried cell value cannot be mapped back to its cell
 
 ; ModuleID = 'ghz.c'
 source_filename = "ghz.c"
@@ -43,7 +27,8 @@ define i32 @main() local_unnamed_addr #0 {
   call void @llvm.memset.p0.i64(ptr noundef nonnull align 1 dereferenceable(3) %1, i8 0, i64 3, i1 false)
   %2 = tail call zeroext i1 @cq_theta_i1(i1 noundef zeroext false, double noundef 0x3FF921FB54442D18) #5
   %3 = zext i1 %2 to i8
-  store i8 %3, ptr %1, align 1, !tbaa !6
+  %c1 = getelementptr inbounds [3 x i8], ptr %1, i64 0, i64 1
+  store i8 %3, ptr %c1, align 1, !tbaa !6
   br label %4
 
 4:                                                ; preds = %0, %4

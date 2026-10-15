@@ -82,7 +82,8 @@ bool isTheta(const Value *V) {
 // casts, phis and in-place `cq_theta` gates (the value-domain spelling of "the
 // same rail") to the members it reaches.
 void rootsOf(Value *V, const SmallPtrSetImpl<Value *> &Members,
-             SmallPtrSetImpl<Value *> &Out) {
+             SmallPtrSetImpl<Value *> &Out,
+             const DenseMap<Value *, Value *> &Targets = DenseMap<Value *, Value *>()) {
   SmallVector<Value *, 8> W{V};
   SmallPtrSet<Value *, 16> Seen;
   while (!W.empty()) {
@@ -99,6 +100,46 @@ void rootsOf(Value *V, const SmallPtrSetImpl<Value *> &Members,
       W.append(P->value_op_begin(), P->value_op_end());
     else if (isTheta(X))
       W.push_back(cast<CallInst>(X)->getArgOperand(0));
+    else if (Value *T = Targets.lookup(X))
+      W.push_back(T);  // S5: an in-place update is its target's rail.
+  }
+}
+
+// S5 — the in-place cell updates (`railWindowInPlaceUpdate`) and the operand
+// each overwrites, asked of THE lowering's own predicate (review S5 B-F3: one
+// spelling of "target"): the operand rooted at a cell read `M` for which
+// `railWindowWritesBack(update, M)` holds. Two candidates: neither (the
+// quantum-source round refuses both-dead loudly).
+void collectUpdates(Function &F, const SmallPtrSetImpl<Value *> &Members,
+                    DenseMap<Value *, Value *> &Targets) {
+  // To a fixpoint: a chained update `x2 = x1 ^ b` roots at the cell read only
+  // through `x1`'s own entry.
+  for (bool Grew = true; Grew;) {
+    Grew = false;
+    for (Instruction &I : instructions(F)) {
+      Value *X, *Y;
+      bool Sub;
+      if (Targets.count(&I) || !railWindowInPlaceUpdate(&I, X, Y, Sub))
+        continue;
+      Value *Target = nullptr;
+      bool Two = false;
+      for (Value *O : {X, Y}) {
+        if (Sub && O == Y)
+          break;
+        SmallPtrSet<Value *, 4> R;
+        rootsOf(O, Members, R, Targets);
+        for (Value *M : R)
+          if (isa<LoadInst>(M) &&
+              railWindowWritesBack(&I, cast<LoadInst>(M)->getPointerOperand())) {
+            Two |= Target && Target != O;
+            Target = O;
+          }
+      }
+      if (Target && !Two) {
+        Targets[&I] = Target;
+        Grew = true;
+      }
+    }
   }
 }
 
@@ -139,19 +180,31 @@ Instruction *railWindowStaleUse(Function &F, const RailWindowAccesses &AccW,
     Def[V] = S;
     Addr[V] = SE.getSCEV(S->getPointerOperand());
   }
-  // The gates on the array: every in-place `cq_theta` whose wire is a member.
-  SmallVector<std::pair<CallInst *, SmallPtrSet<Value *, 4>>, 8> Gates;
-  for (Instruction &I : instructions(F))
-    if (isTheta(&I)) {
-      SmallPtrSet<Value *, 4> Roots;
-      rootsOf(cast<CallInst>(&I)->getArgOperand(0), Members, Roots);
-      if (!Roots.empty())
-        Gates.push_back({cast<CallInst>(&I), Roots});
-    }
+  // The gates on the array: every in-place `cq_theta` whose wire is a member,
+  // and (S5) every in-place cell update, a gate on its target's rail.
+  DenseMap<Value *, Value *> Targets;
+  collectUpdates(F, Members, Targets);
+  SmallVector<std::pair<Instruction *, SmallPtrSet<Value *, 4>>, 8> Gates;
+  for (Instruction &I : instructions(F)) {
+    Value *Wire = isTheta(&I) ? cast<CallInst>(&I)->getArgOperand(0)
+                              : Targets.lookup(&I);
+    if (!Wire)
+      continue;
+    SmallPtrSet<Value *, 4> Roots;
+    rootsOf(Wire, Members, Roots, Targets);
+    if (!Roots.empty())
+      Gates.push_back({&I, Roots});
+  }
   for (Value *X : Members) {
     Instruction *D = Def[X];
-    SmallPtrSet<const Instruction *, 1> Again{D};
+    // A path that re-executes X's own SSA definition reads a NEW instance of
+    // X (a stored member's definition precedes its parking store).
+    SmallPtrSet<const Instruction *, 2> Again{D};
+    if (auto *XI = dyn_cast<Instruction>(X))
+      Again.insert(XI);
     for (auto &[G, Roots] : Gates) {
+      if (G == X)
+        continue;  // an update's own result is born by the gate, not moved.
       // A gate through X's OWN spelling is SSA-visible (the scalar fences own
       // it); only a gate through ANOTHER spelling is the memory hop.
       bool Other = false;
@@ -189,7 +242,7 @@ Instruction *railWindowStaleUse(Function &F, const RailWindowAccesses &AccW,
       Repark.insert(XI);
     for (StoreInst *S : AccW.Stores) {
       SmallPtrSet<Value *, 4> Roots;
-      rootsOf(S->getValueOperand(), Members, Roots);
+      rootsOf(S->getValueOperand(), Members, Roots, Targets);
       if (S != D && Roots.count(X))
         Repark.insert(S);
     }

@@ -1192,7 +1192,7 @@ def arg_value(a):
 
 class Call:
     __slots__ = ("line", "res", "sym", "args", "vals", "eff", "text",
-                 "ctl_parity", "cargs", "cvals")
+                 "ctl_parity", "cargs", "cvals", "window_distinct")
 
     def __init__(self, line, res, sym, args, text):
         self.line = line
@@ -1206,6 +1206,9 @@ class Call:
         self.eff = None
         self.text = text
         self.ctl_parity = ()   # per-control `cqrt_x` parity at this position
+        # bd 01po.19 S5: operand index pairs proven to be DISTINCT cells of one
+        # handle array (`window_cells_distinct`); Case B skips exactly these.
+        self.window_distinct = frozenset()
 
     def key(self):
         return (self.sym, tuple(self.args))
@@ -1892,6 +1895,8 @@ class StreamAnalysis:
             for ri in ins:
                 if ri == wi or ri >= len(c.vals) or c.vals[ri] != c.vals[wi]:
                     continue
+                if (ri, wi) in c.window_distinct:
+                    continue  # two proven-distinct cells (bd 01po.19 S5).
                 self.add(VIOLATION, "B1-input-aliases-written-rail", c,
                          c.vals[wi],
                          f"`{c.text}`: operand {ri} aliases operand {wi}, a "
@@ -3896,12 +3901,81 @@ def apply_window_families(fn, ren):
             if c is not None:
                 vals[k] = c
                 args[k] = args[k].split()[0] + " " + c
+    ptrs = window_cell_pointers(fn, ren)
     for _lbl, calls, _t in fn.blocks:
         for c in calls:
             if c.cvals is c.vals:
                 c.cvals, c.cargs = list(c.vals), list(c.args)
+            # bd 01po.19 S5: which operand pairs are two PROVABLY DISTINCT
+            # cells of one array (`window_cells_distinct`), asked on the
+            # original spellings before the array-granular rename below.
+            c.window_distinct = {
+                (i, j) for i, a in enumerate(c.vals)
+                for j, b in enumerate(c.vals)
+                if i != j and window_cells_distinct(fn, ptrs.get(a), ptrs.get(b))}
             rename(c.vals, c.args)
     fn.window_alias = dict(ren)
+
+
+def window_cell_pointers(fn, ren):
+    """{spelling: cell pointer} for every renamed window CELL READ. Only loads
+    (review S5 B-F1 (a)): a stored value's one store can sit in a loop and
+    park the rail in a different cell every trip, so its address names no one
+    cell; a load's result is the rail of the cell it read, at the call that
+    uses it."""
+    return {res: ptr for _line, res, ptr, _text in fn.loads if res in ren}
+
+
+GEP_CELL_RE = re.compile(
+    r"getelementptr\s+(?:inbounds\s+)?i32,\s*ptr\s+(%[-\w.]+),\s*i64\s+(\S+)\s*$")
+ADD_CONST_RE = re.compile(
+    r"^(add|sub)\s+(?:nuw\s+)?(?:nsw\s+)?i64\s+(%[-\w.]+),\s*(-?\d+)\s*$")
+
+
+def _affine_index(fn, v, depth=0):
+    """`v` as (base, offset): an i64 literal is (None, k); `add/sub X, k`
+    chains fold into the offset; anything else is its own base."""
+    if re.fullmatch(r"-?\d+", v):
+        return None, int(v)
+    d = fn.def_op.get(v)
+    if d is None or depth > 16:
+        return v, 0
+    m = ADD_CONST_RE.match(d[1].split("=", 1)[-1].strip())
+    if not m:
+        return v, 0
+    base, k = _affine_index(fn, m.group(2), depth + 1)
+    return base, k + (int(m.group(3)) if m.group(1) == "add" else -int(m.group(3)))
+
+
+def _window_cell(fn, ptr):
+    """(object, base, offset) of a handle-array cell pointer, or None."""
+    d = fn.def_op.get(ptr)
+    if d is None:
+        return None
+    if d[0] == "alloca":
+        return ptr, None, 0
+    m = GEP_CELL_RE.search(d[1].split("=", 1)[-1].strip().split(", !")[0])
+    if not m or m.group(1) not in fn.window_allocas:
+        return None
+    return (m.group(1),) + _affine_index(fn, m.group(2))
+
+
+def window_cells_distinct(fn, pa, pb):
+    """bd 01po.19 S5 — are two handle-array cell pointers PROVABLY different
+    cells of ONE array? Asked by this instrument INDEPENDENTLY of the compiler
+    (whose own answer is SCEV's, `railWindowDistinct`): an instrument must not
+    share the transformation it witnesses, so this is a deliberate second
+    proof, not a second spelling. The proof is narrow on purpose: both cell
+    indices are the SAME SSA base (or both literals) plus different constant
+    offsets through `add`/`sub` chains. Anything else is unproven, and the
+    Case-B rule then fires (fail closed)."""
+    if pa is None or pb is None:
+        return False
+    a, b = _window_cell(fn, pa), _window_cell(fn, pb)
+    # Offsets are compared MODULO the address space in cells (review S5 B-F1
+    # (b)): `gep i32, %w, i + 2^62` wraps onto `gep i32, %w, i` mod 2^64 bytes.
+    return a is not None and b is not None and a[0] == b[0] and \
+        a[1] == b[1] and (a[2] - b[2]) % (1 << 62) != 0
 
 
 # ---------------------------------------------------------------------------

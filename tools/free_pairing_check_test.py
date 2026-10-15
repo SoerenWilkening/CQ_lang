@@ -2096,7 +2096,36 @@ entry:
 !0 = !{i32 1}
 """
 
+# bd 01po.19 S5 — AN IN-PLACE CNOT BETWEEN TWO CELLS of one window array
+# (`q[i+1] ^= q[i]`). The array-granular rename makes both operands the one
+# canonical rail, which reads as Case B; the checker's own affine proof
+# (`window_cells_distinct`: one SSA base, offsets 0 and +1) clears exactly
+# this pair. Mutants: the same index (a real Case B) and two unrelated bases
+# (unprovable: fail closed).
+WINDOW_CELL_CNOT = """
+define i32 @slice(i64 %i) local_unnamed_addr {
+entry:
+  %w = alloca i32, i64 4, align 4, !cq.railwindow !0
+  %a0 = getelementptr i32, ptr %w, i64 %i
+  %i1 = add nuw nsw i64 %i, 1
+  %a1 = getelementptr i32, ptr %w, i64 %i1
+  %h0 = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %h0, ptr %a0, align 4
+  %h1 = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %h1, ptr %a1, align 4
+  %l0 = load i32, ptr %a0, align 4
+  call void @cqrt_ry_i1(i32 %l0, double 3.000000e-01)
+  %l1 = load i32, ptr %a1, align 4
+  call void @cqrt_cnot(i32 %l0, i32 %l1)
+  %m = call i1 @cqrt_measure_i1(i32 %l1)
+  %z = zext i1 %m to i32
+  ret i32 %z
+}
+!0 = !{i32 1}
+"""
+
 MEM_POSITIVE = [
+    ("window-cell-cnot-proven-distinct-cells", WINDOW_CELL_CNOT),
     ("window-cell-temp-reversed-before-gate", WINDOW_CELL_TEMP),
     ("bank-load-measured-only", BANK_MEASURE_ONLY),
     ("bank-plus-unmarked-classical-load", BANK_PLUS_CLASSICAL_LOAD),
@@ -2126,6 +2155,29 @@ POSITIVE.extend(MEM_POSITIVE)
 MEM_MUTANTS = [
     ("bank-load-in-classical-immediate-slot", BANK_IMM_SLOT,
      "A1-imm-not-classical"),
+    # bd 01po.19 S5: the CNOT's two cells are the SAME cell (offset 0 twice).
+    ("window-cell-cnot-same-cell",
+     sub(WINDOW_CELL_CNOT, "%i1 = add", "add nuw nsw i64 %i, 1",
+         "add nuw nsw i64 %i, 0"),
+     "B1-input-aliases-written-rail"),
+    # bd 01po.19 S5 review B-F1 (a): one operand is a STORED spelling (its one
+    # store can park a different cell each trip): no cell proof, fail closed.
+    ("window-cell-cnot-stored-spelling",
+     sub(WINDOW_CELL_CNOT, "call void @cqrt_cnot", "i32 %l0, i32 %l1",
+         "i32 %h0, i32 %l1"),
+     "B1-input-aliases-written-rail"),
+    # bd 01po.19 S5 review B-F1 (b): offset 2^62 cells wraps to the same byte
+    # address mod 2^64 (i32 cells): the same cell.
+    ("window-cell-cnot-offset-wraps",
+     sub(WINDOW_CELL_CNOT, "%i1 = add", "add nuw nsw i64 %i, 1",
+         "add nuw nsw i64 %i, 4611686018427387904"),
+     "B1-input-aliases-written-rail"),
+    # bd 01po.19 S5: two unrelated index bases — not provably distinct.
+    ("window-cell-cnot-unprovable-cells",
+     sub(sub(WINDOW_CELL_CNOT, "define i32 @slice", "(i64 %i)",
+             "(i64 %i, i64 %j)"),
+         "%i1 = add", "add nuw nsw i64 %i, 1", "add nuw nsw i64 %j, 1"),
+     "B1-input-aliases-written-rail"),
     # bd 01po.19 S4: the cell rotated through ANOTHER spelling (%l2) BETWEEN the
     # temporary's forward read of %l1 and its reversal — the memory-hop hazard
     # the SSA-keyed model alone cannot see; the canonical cell rail makes it a
