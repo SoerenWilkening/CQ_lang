@@ -281,4 +281,37 @@ bool railWindowBeforeInTrip(const Instruction *X, const Instruction *Site,
   return !railWindowReachesAvoiding(Site, X, Reload);
 }
 
+void railWindowTripDistinctCells(const Value *P, ArrayRef<Value *> Family,
+                                 const Instruction *First,
+                                 const Instruction *At,
+                                 SmallPtrSetImpl<const Value *> &Out) {
+  const auto *LP = dyn_cast_or_null<LoadInst>(P);
+  if (!LP || !isRailWindowCellRead(LP))
+    return;
+  Function &F = const_cast<Function &>(*LP->getFunction());
+  DominatorTree DT(F);
+  LoopInfo LI(DT);
+  AssumptionCache AC(F);
+  TargetLibraryInfoImpl TLII(Triple(F.getParent()->getTargetTriple()));
+  TargetLibraryInfo TLI(TLII);
+  ScalarEvolution SE(F, TLI, AC, DT, LI);
+  const Loop *L = LI.getLoopFor(LP->getParent());
+  // One activation only: the window's opener and discharge sit in `P`'s own
+  // loop body, the opener dominating the discharge (no back edge between).
+  if (!First || !At || LI.getLoopFor(First->getParent()) != L ||
+      LI.getLoopFor(At->getParent()) != L || !DT.dominates(First, At))
+    return;
+  const SCEV *SP = SE.getSCEV(const_cast<Value *>(LP->getPointerOperand()));
+  for (Value *A : Family) {
+    const auto *LA = dyn_cast<LoadInst>(A);
+    if (!LA || LA == LP || LI.getLoopFor(LA->getParent()) != L ||
+        getUnderlyingObject(LA->getPointerOperand()) !=
+            getUnderlyingObject(LP->getPointerOperand()))
+      continue;
+    const SCEV *SA = SE.getSCEV(const_cast<Value *>(LA->getPointerOperand()));
+    if (railWindowDistinct(SE, SP, SA))
+      Out.insert(A);
+  }
+}
+
 }  // namespace cq

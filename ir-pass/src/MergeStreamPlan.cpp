@@ -1,6 +1,7 @@
 // MergeStreamPlan.cpp — see header (bd test_C_libtooling-r2j3.32).
 
 #include "MergeStreamPlan.h"
+#include "RailWindow.h"  // railWindowTripDistinctCells (bd 01po.19.17)
 #include "MergeStreamGates.h"   // the stream gate vocabulary
 
 #include "BirthFreeze.h"       // railBornZero — clause (a), "born |0⟩"
@@ -346,7 +347,15 @@ bool planMerge(CallInst *Out, const PlanContext &Ctx, MergePlan &P) {
     SmallPtrSet<Value *, 8> Alias;
     if (!handleAliases(X, taint, Ctx.DT, Alias))
       return false;
+    // bd 01po.19.17: a quantum-array class is array-granular; a read of a
+    // provably DIFFERENT cell in X's own trip (the window one activation of
+    // X's loop body) is another rail (`railWindowTripDistinctCells`).
+    SmallVector<Value *, 8> AliasV(Alias.begin(), Alias.end());
+    SmallPtrSet<const Value *, 8> OtherCells;
+    railWindowTripDistinctCells(X, AliasV, Hi, P.At, OtherCells);
     for (Value *A : Alias) {
+      if (OtherCells.count(A))
+        continue;
       for (User *U : A->users()) {
         auto *I = dyn_cast<Instruction>(U);
         if (!I)
