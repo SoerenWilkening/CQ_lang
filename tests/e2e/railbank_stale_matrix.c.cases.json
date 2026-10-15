@@ -256,9 +256,10 @@
         "class": "RB-A (leaked loop-carried merge rail)",
         "bd": "test_C_libtooling-8h7d.20",
         "owner": "LoopLowering / MergeCarriedFence — ROLLED deficient: the loop-carried Z select-merge rails are left allocated (owner-delegated r2j3.32 decision (b)) where the flat twin's dischargeMergeRails reverses and frees them; measurements only follow, so the outcome distribution is unchanged. RETIREMENT: 8h7d.20 lands -> byte-identical, remove entry",
-        "digest": "9232e56e0ff63592",
-        "rolled": "cq_template_icmp_eq_i32_hl_unc(h6, h3, 0)",
-        "unrolled": "cqrt_alloc_i32(0) -> h8"
+        "digest": "2c2fe425e8cb1cef",
+        "rolled": "cq_template_icmp_eq_i32_hl_unc(h5, h3, 0)",
+        "unrolled": "cqrt_alloc_i32(0) -> h7",
+        "resigned": "2026-10-16, 9232e56e0ff63592 -> 2c2fe425e8cb1cef, moved by merge 9219feb0 (dm7f.81; bisected: e3881272 = 01po.19.17 still gives 9232e56e0ff63592). dm7f.81 drops the per-trip literal-0 arm rail of `b_i = select c, t, 0` (alloc + X-bracketed copy_controlled of |0>, an identity, never freed) from BOTH sides equally (3 alloc, 3 copy, 6 x per side), so every later handle renumbers and the hunk headers move; the diff SHAPE is unchanged. Full classification of the new diff (rolled 53 lines, twin 63 after the dropped Ry(0)): rolled-only 4 lines = the in-trip compare-flag strip `icmp_eq_hl_unc(h5,h3,0); free(h5)` and the same for h11 (the twin runs the identical strip later, after using the flag to reverse the merge; nothing touches h5/h3 in between, h3 is only read); twin-only 14 lines = dischargeMergeRails for h12 then h6 (X-bracketed copy_controlled in reverse, the same two strips, free flag, free merge rail). No rotation, measurement or gate on a user/measured rail differs; the last trip (h17/h18) is identical. The rolled leaves merge rails h6,h12 allocated, each a basis function of the measured h3/h9 (and classical h0), and only computational-basis measures of h3,h9,h15,h18 follow: per-trip outcome distribution unchanged. Class RB-A only."
       }
     },
     {
