@@ -121,7 +121,7 @@ merge:
 ; ⚠ AND `cqrt_x` (F-L8-2). A DELETED global phase must leave NOTHING behind —
 ; no gate, no bracket, no rail. Without this line an emitted polarity bracket
 ; would have passed every directive in this file silently.
-; NOROUTE-NOT: cqrt_x
+; NOROUTE-NOT: cqrt_x(
 
 ; ---------------------------------------------------------------------------
 ; GATE COUNTS — one prefix per pattern (see the NOROUTE note above).

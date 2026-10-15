@@ -34,7 +34,7 @@ entry:
 ; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 5)
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[Q]], i32 %[[OUT]])
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[OUT]])
+; CHECK:     call void @cqrt_xorc_i32_controlled(i32 %[[F]], i32 %[[OUT]], i32 {{.+}})
 ; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; the merged result AND the directly-measured operand are both measured:
@@ -42,7 +42,8 @@ entry:
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])
 
 ; exactly TWO controlled copies, ONE flag free (no spurious uncompute of the live rail):
-; CNT-COUNT-2: call void @cqrt_copy_i32_controlled(
+; (bd dm7f.81: a constant or classical merge arm is a literal operand of cqrt_xorc_<W>_controlled, no longer an alloc'd rail + cqrt_copy_<W>_controlled; a zero arm emits no gate and no bracket. Counts below re-measured.)
+; CNT-COUNT-1: call void @cqrt_copy_i32_controlled(
 ; CNT-NOT:     call void @cqrt_copy_i32_controlled(
 ; CNT-COUNT-1: call void @cqrt_free(
 ; CNT-NOT:     call void @cqrt_free(

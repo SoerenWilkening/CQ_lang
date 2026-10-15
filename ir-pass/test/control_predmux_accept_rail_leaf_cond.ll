@@ -84,9 +84,9 @@ merge:
 ; CHECK:     %[[A:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK:     call void @cqrt_cnot(i32 %[[R]], i32 %[[A]])
 ; CHECK:     %[[O:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[A]], i32 %{{.*}}, i32 %[[O]])
+; CHECK:     call void @cqrt_xorc_i32_controlled(i32 %[[A]], i32 %[[O]], i32 2)
 ; CHECK:     call void @cqrt_x(i32 %[[A]])
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[A]], i32 %{{.*}}, i32 %[[O]])
+; CHECK:     call void @cqrt_xorc_i32_controlled(i32 %[[A]], i32 %[[O]], i32 5)
 ; CHECK:     call void @cqrt_x(i32 %[[A]])
 ; CHECK:     call void @cqrt_cnot(i32 %[[R]], i32 %[[A]])
 ; CHECK:     call void @cqrt_free(i32 %[[A]])
@@ -106,7 +106,10 @@ merge:
 ; nothing scans past the last positive match. The same matrix confirms the RAIL
 ; negatives are non-vacuous — an injected `cqrt_x` or `cqrt_free` ON THE USER'S
 ; RAIL is CAUGHT, and a dropped `cqrt_free` is caught by CHECK and NFREE.
-; NCOPY-COUNT-8: call void @cqrt_copy_i32_controlled(
+; (bd dm7f.81: every arm here is a constant, so the eight writes are controlled
+; xor-immediates and no controlled copy remains.)
+; NCOPY-COUNT-8: call void @cqrt_xorc_i32_controlled(
+; NCOPY-NOT:     call void @cqrt_xorc_i32_controlled(
 ; NCOPY-NOT:     call void @cqrt_copy_i32_controlled(
 ; NFREE-COUNT-4: call void @cqrt_free(
 ; NFREE-NOT:     call void @cqrt_free(

@@ -69,7 +69,7 @@ attributes #0 = { nounwind willreturn memory(none) }
 ; ORD: %h_cast = call i32 @cq_template_trunc_i32_to_i1(i32 %out)
 ; ORD-NEXT: call void @cqrt_ry_i1(i32 %h_cast, double 5.000000e-01)
 ; ORD-NEXT: call void @cqrt_rz_i1(i32 %h_cast, double 0x3FE6666666666666), !cq.branchphase
-; ORD-NEXT: %m2 = call i1 @cqrt_measure_i1(i32 %h_cast)
+; ORD-NEXT: %[[M2:m[0-9]*]] = call i1 @cqrt_measure_i1(i32 %h_cast)
 
 ; EXACTLY ONE branch phase and EXACTLY ONE rotation on the i1 rail, whole file.
 ; RZCNT-COUNT-1: call void @cqrt_rz_i1(

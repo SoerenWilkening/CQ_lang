@@ -51,7 +51,7 @@ merge:
 ; CHECK-DAG: call i32 @cq_template_icmp_slt_i32_hl(i32 %[[Q]], i32 3)
 ; CHECK-DAG: call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 8)
 ; CHECK:     call void @cqrt_toffoli(
-; CHECK:     call void @cqrt_copy_i32_controlled(
+; CHECK:     call void @cqrt_xorc_i32_controlled(
 ; CHECK:     call i32 @cqrt_measure_i32(
 ; CHECK-NOT: br i1
 ; CHECK-NOT: phi i1

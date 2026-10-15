@@ -155,8 +155,7 @@ entry:
 ; CHECK-NEXT: call void @cqrt_copy_f32_controlled(i32 %[[F]], i32 %[[H]], i32 %[[OUT]])
 ; ¬flag bracket opens; classical false operand materialized at real f32 width.
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: %[[XH:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f32(float %x)
-; CHECK-NEXT: call void @cqrt_copy_f32_controlled(i32 %[[F]], i32 %[[XH]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_f32_controlled(i32 %[[F]], i32 %[[OUT]], float %x)
 ; Bracket closes — flag back to true polarity BEFORE the strip.
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; THE RESTORED WITNESS: the adjoint twin, same DD-3 slot order as the forward call,

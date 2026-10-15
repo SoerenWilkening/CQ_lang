@@ -13,8 +13,7 @@
 ; CHECK:       %[[A:[a-zA-Z0-9_.]+]] = add nsw i32 %k, 1
 ; CHECK:       %[[FR:[a-zA-Z0-9_.]+]] = freeze i32 %[[A]]
 ; CHECK-NEXT:  %[[R:[a-zA-Z0-9_.]+]] = call i32 @pf(i32 %[[FR]])
-; CHECK:       %[[RH:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[R]])
-; CHECK:       call void @cqrt_copy_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[RH]],
+; CHECK:       call void @cqrt_xorc_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[R]])
 
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

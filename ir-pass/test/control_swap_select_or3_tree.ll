@@ -44,8 +44,7 @@ entry:
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[G2]], i32 %[[Q]], i32 %[[OUT]])
 ; CHECK:     call void @cqrt_x(i32 %[[G2]])
-; CHECK:     %[[XH:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %x)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[G2]], i32 %[[XH]], i32 %[[OUT]])
+; CHECK:     call void @cqrt_xorc_i32_controlled(i32 %[[G2]], i32 %[[OUT]], i32 %x)
 ; CHECK:     call void @cqrt_x(i32 %[[G2]])
 ; LIFO: root inverse (g1 alive), free g2; inner inverse, free g1; leaves reverse:
 ; CHECK:     call void @cqrt_toffoli(i32 %[[F3]], i32 %[[G1]], i32 %[[G2]])

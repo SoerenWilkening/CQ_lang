@@ -13,8 +13,7 @@
 ; RUN: %filecheck %s < %t.ll
 ; CHECK-LABEL: define i32 @main(
 ; CHECK:       %[[R:[0-9]+]] = tail call i32 @f(i32 noundef %0)
-; CHECK:       %[[RH:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[R]])
-; CHECK:       call void @cqrt_copy_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[RH]],
+; CHECK:       call void @cqrt_xorc_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[R]])
 
 declare i32 @cq_theta_si32(i32 noundef, double noundef)
 declare i32 @cq_measure_si32(i32 noundef)

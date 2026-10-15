@@ -12,8 +12,7 @@
 ; RUN: %filecheck %s < %t.ll
 ; CHECK-LABEL: define i32 @ex(
 ; CHECK:       %[[R:[a-zA-Z0-9_.]+]] = tail call i32 @f(i32 noundef %0)
-; CHECK:       call i32 @cqrt_alloc_i32(i32 %[[R]])
-; CHECK:       call void @cqrt_copy_i32_controlled(
+; CHECK:       call void @cqrt_xorc_i32_controlled(i32 %{{[0-9a-zA-Z_.]+}}, i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[R]])
 
 define range(i32 -2147483647, -2147483648) i32 @g(i32 noundef %0) local_unnamed_addr #0 {
   %2 = mul nsw i32 %0, 3

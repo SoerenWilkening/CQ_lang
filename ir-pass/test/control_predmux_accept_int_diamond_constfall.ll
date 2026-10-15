@@ -84,8 +84,6 @@ merge:
 ; CHECK:     %[[Z:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i1_to_i32(
 ; CHECK:     %[[FLAG:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_ne_i32_hl(i32 %[[E:[a-zA-Z0-9_.]+]], i32 32767)
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     %[[K:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[FLAG]], i32 %[[K]], i32 %[[OUT]])
 ; CHECK:     call void @cqrt_x(i32 %[[FLAG]])
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[FLAG]], i32 %[[Z]], i32 %[[OUT]])
 ; CHECK:     call void @cqrt_x(i32 %[[FLAG]])

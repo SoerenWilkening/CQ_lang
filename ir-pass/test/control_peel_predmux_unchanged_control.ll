@@ -51,8 +51,7 @@ declare i32 @cq_measure_si32(i32 noundef)
 ; CHECK-NEXT: %[[HOP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 1)
 ; CHECK-NEXT: %[[HCMP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 1)
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: %[[SELOP:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 7)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[HCMP]], i32 %[[SELOP]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[HCMP]], i32 %[[OUT]], i32 7)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[HCMP]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[HCMP]], i32 %[[HOP]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[HCMP]])
@@ -60,12 +59,7 @@ declare i32 @cq_measure_si32(i32 noundef)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[HCMP]])
 ; CHECK-NEXT: %[[HCMP1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 1)
 ; CHECK-NEXT: %[[OUT2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: %[[SELOP3:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 14)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[HCMP1]], i32 %[[SELOP3]], i32 %[[OUT2]])
-; CHECK-NEXT: call void @cqrt_x(i32 %[[HCMP1]])
-; CHECK-NEXT: %[[SELOP4:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[HCMP1]], i32 %[[SELOP4]], i32 %[[OUT2]])
-; CHECK-NEXT: call void @cqrt_x(i32 %[[HCMP1]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[HCMP1]], i32 %[[OUT2]], i32 14)
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[HCMP1]], i32 %[[H]], i32 1)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[HCMP1]])
 ; CHECK-NEXT: %[[M:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[H]])
@@ -88,15 +82,16 @@ declare i32 @cq_measure_si32(i32 noundef)
 ; ---- Whole-file EXACT COUNTS. An injected extra `cqrt_x` / `cqrt_free` /
 ; controlled copy, or a DROPPED `_unc` strip, changes one of these even when
 ; it slots into a position the ordered stream above still matches.
-; XCNT-COUNT-4: call void @cqrt_x(
+; (bd dm7f.81: a constant or classical merge arm is a literal operand of cqrt_xorc_<W>_controlled, no longer an alloc'd rail + cqrt_copy_<W>_controlled; a zero arm emits no gate and no bracket. Counts below re-measured.)
+; XCNT-COUNT-2: call void @cqrt_x(
 ; XCNT-NOT:     call void @cqrt_x(
 ; FCNT-COUNT-2: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
-; ACNT-COUNT-6: call i32 @cqrt_alloc_
+; ACNT-COUNT-3: call i32 @cqrt_alloc_
 ; ACNT-NOT:     call i32 @cqrt_alloc_
 ; UCNT-COUNT-3: _unc(
 ; UCNT-NOT:     _unc(
-; CPCNT-COUNT-5: @cqrt_copy_
+; CPCNT-COUNT-2: @cqrt_copy_
 ; CPCNT-NOT:     @cqrt_copy_
 ; RYCNT-COUNT-1: call void @cqrt_ry_
 ; RYCNT-NOT:     call void @cqrt_ry_

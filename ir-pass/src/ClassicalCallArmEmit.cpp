@@ -33,7 +33,7 @@
 #include "OpcodeSupport.h"      // abiWidthFromType
 #include "PoisonFlow.h"         // classicalCallHoistRoute (bd dm7f.21; claim+emit share it)
 #include "RegionFlatten.h"      // flattenRegion
-#include "SelectMergeEmit.h"    // materializeCopySource (shared, WI-5.1)
+#include "MergeArmWrite.h"      // emitArmMux (bd dm7f.81)
 #include "SpeculationSafety.h"  // hoistedArgPoisonIsUB (bd bwfp; claim+emit share it)
 #include "SpeculationTwin.h"    // getOrCreateSpeculationTwin (bd dm7f.21)
 #include "TaintPropagation.h"   // TaintSet
@@ -122,7 +122,10 @@ void emitClassicalCallArmRegion(const ControlRegion &R, WidthDispatch &wd,
   FunctionCallee Alloc = Abi.empty() ? FunctionCallee() : wd.allocFn(Abi);
   FunctionCallee Copy =
       Abi.empty() ? FunctionCallee() : csyms.copyControlledFn(Abi);
-  if (!RailTy || !Alloc || !Copy)
+  // bd dm7f.81: the classical arm's controlled xor-immediate (same fence).
+  FunctionCallee Xorc =
+      Abi.empty() ? FunctionCallee() : csyms.xorcControlledFn(Abi);
+  if (!RailTy || !Alloc || !Copy || !Xorc)
     return bailLoud(R);
 
   // True/False = the merge values on the cond-TRUE / cond-FALSE edges (the flag
@@ -273,21 +276,16 @@ void emitClassicalCallArmRegion(const ControlRegion &R, WidthDispatch &wd,
   // non-i32 integer call result. `Abi` is non-empty (the width guard bailed otherwise).
   taint.HandleWidth[Out] = Abi;
 
-  // 3. COPY the TRUE value on the flag (materialize if classical) — fires on f=1.
-  //    The classical call result materializes to a fresh `cqrt_alloc_<Wd>` handle
-  //    (an UNTAINTED basis-valued classical copy-source, not a qubit — Rule 6/8);
-  //    the tainted `q` materializes to itself (the identity).
-  Value *TrueMat = materializeCopySource(TrueSrc, Alloc, taint, B, DL);
-  stamp(B.CreateCall(Copy, {Flag, TrueMat, Out}));
-
-  // 4. COPY the FALSE value on ¬flag, X-bracketed (the 4.1 self-inverse cqrt_x
-  //    convention). The bracket encloses ONLY this second copy: a mis-bracket
-  //    (x before BOTH copies) yields the identical symbol multiset yet writes
+  // 3. WRITE the TRUE value on the flag — fires on f=1.
+  // 4. WRITE the FALSE value on ¬flag, X-bracketed (the 4.1 self-inverse cqrt_x
+  //    convention). The bracket encloses ONLY this second write: a mis-bracket
+  //    (x before BOTH writes) yields the identical symbol multiset yet writes
   //    True then False on one basis branch = wrong %out (§16.3, load-bearing).
-  stamp(B.CreateCall(csyms.xFn(), {Flag}));
-  Value *FalseMat = materializeCopySource(FalseSrc, Alloc, taint, B, DL);
-  stamp(B.CreateCall(Copy, {Flag, FalseMat, Out}));
-  stamp(B.CreateCall(csyms.xFn(), {Flag}));
+  //    bd dm7f.81 (`emitArmMux`, MergeArmWrite.h): the classical call result is
+  //    a controlled xor of its value (a literal operand, never a rail); the
+  //    tainted `q` a controlled copy; an all-zero classical arm nothing.
+  emitArmMux(B, csyms, Flag, TrueSrc, FalseSrc, Out, Copy, Xorc, taint, DL);
+  eraseUnusedArmDecls(Copy, Xorc);  // R11 C-F1: no stray unused declaration.
 
   // 5. STRIP the flag + the SINGLE free. Structurally valid outright — and the
   //    real invariant is general (NOT "the straight-through must be q"): the copy

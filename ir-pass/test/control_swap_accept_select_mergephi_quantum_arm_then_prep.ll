@@ -172,8 +172,7 @@ attributes #2 = { nounwind }
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[H]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
-; CHECK-NEXT: %[[SELOP:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 5)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[SELOP]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[BF]], i32 %[[OUT]], i32 5)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H2]], i32 %[[BF]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[BF]])
@@ -222,9 +221,10 @@ attributes #2 = { nounwind }
 ; FCNT-NOT:     call void @cqrt_free(
 ; CNOTCNT-COUNT-2: call void @cqrt_cnot(
 ; CNOTCNT-NOT:     call void @cqrt_cnot(
-; CPCNT-COUNT-2: call void @cqrt_copy_
+; (bd dm7f.81: a constant or classical merge arm is a literal operand of cqrt_xorc_<W>_controlled, no longer an alloc'd rail + cqrt_copy_<W>_controlled; a zero arm emits no gate and no bracket. Counts below re-measured.)
+; CPCNT-COUNT-1: call void @cqrt_copy_
 ; CPCNT-NOT:     call void @cqrt_copy_
 ; RYCNT-COUNT-3: call void @cqrt_ry_
 ; RYCNT-NOT:     call void @cqrt_ry_
-; ACNT-COUNT-6: call i32 @cqrt_alloc_
+; ACNT-COUNT-5: call i32 @cqrt_alloc_
 ; ACNT-NOT:     call i32 @cqrt_alloc_

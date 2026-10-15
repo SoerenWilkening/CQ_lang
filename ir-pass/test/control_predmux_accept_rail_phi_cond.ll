@@ -38,12 +38,15 @@
 ; RUN: grep "call void @cqrt_ry_i1_controlled(" %t.cqd0.ll | count 1
 ; RUN: grep "@cqrt_ry" %t.cqd0.ll | count 5
 ; RUN: grep "call i32 @cqrt_alloc_i1(" %t.cqd0.ll | count 3
-; RUN: grep "call i32 @cqrt_alloc_i32(" %t.cqd0.ll | count 7
+; bd dm7f.81: the four constant-arm source rails are gone (literal operands of
+; `cqrt_xorc_i32_controlled` now), so 7 -> 3 allocs and 4 copies -> 4 xorcs.
+; RUN: grep "call i32 @cqrt_alloc_i32(" %t.cqd0.ll | count 3
 ; RUN: grep "call void @cqrt_free(" %t.cqd0.ll | count 3
 ; RUN: grep "@cqrt_measure" %t.cqd0.ll | count 6
 ; RUN: grep "call void @cqrt_x(" %t.cqd0.ll | count 4
 ; RUN: grep "call void @cqrt_cnot(" %t.cqd0.ll | count 4
-; RUN: grep "call void @cqrt_copy_i32_controlled(" %t.cqd0.ll | count 4
+; RUN: grep "call void @cqrt_xorc_i32_controlled(" %t.cqd0.ll | count 4
+; RUN: not grep "call void @cqrt_copy_i32_controlled(" %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NEG < %t.cqd0.ll
 ;
 ; ⚠ THE WHOLE-FAMILY `@cqrt_ry` COUNT IS THE RULE-7 PIN, and it is spelled that way

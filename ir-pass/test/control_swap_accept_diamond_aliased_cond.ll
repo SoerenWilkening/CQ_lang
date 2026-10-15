@@ -53,8 +53,8 @@
 ; CHECK-NEXT:  %h_cast = call i32 @cq_template_sitofp_i32_to_f64(i32 %n)
 ; CHECK-NEXT:  %h_cmp = call i32 @cq_template_fcmp_uno_f64(i32 %h_cast, i32 %h_cast)
 ; CHECK-NEXT:  %out = call i32 @cqrt_alloc_f64(double 0.000000e+00)
-; CHECK-NEXT:  %[[K0:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double 0.000000e+00)
-; CHECK-NEXT:  call void @cqrt_copy_f64_controlled(i32 %h_cmp, i32 %[[K0]], i32 %out)
+; (bd dm7f.81: the constant +0.0 arm emits no write; the clone's former %K0
+; source rail and its free are gone.)
 ; CHECK-NEXT:  call void @cqrt_x(i32 %h_cmp)
 ; CHECK-NEXT:  call void @cqrt_copy_f64_controlled(i32 %h_cmp, i32 %h_cast, i32 %out)
 ; CHECK-NEXT:  %[[R:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fptosi_f64_to_i32(i32 %out)
@@ -63,13 +63,11 @@
 ; CHECK-NEXT:  call void @cq_template_fptosi_f64_to_i32_unc(i32 %[[R]], i32 %out)
 ; CHECK-NEXT:  call void @cqrt_copy_f64_controlled(i32 %h_cmp, i32 %h_cast, i32 %out)
 ; CHECK-NEXT:  call void @cqrt_x(i32 %h_cmp)
-; CHECK-NEXT:  call void @cqrt_copy_f64_controlled(i32 %h_cmp, i32 %[[K0]], i32 %out)
 ; CHECK-NEXT:  call void @cq_template_fcmp_uno_f64_unc(i32 %h_cmp, i32 %h_cast, i32 %h_cast)
 ; CHECK-NEXT:  call void @cq_template_sitofp_i32_to_f64_unc(i32 %h_cast, i32 %n)
 ; CHECK-NEXT:  call void @cqrt_free(i32 %h_cast)
 ; CHECK-NEXT:  call void @cqrt_free(i32 %h_cmp)
 ; CHECK-NEXT:  call void @cqrt_free(i32 %out)
-; CHECK-NEXT:  call void @cqrt_free(i32 %[[K0]])
 ; CHECK-NEXT:  call void @cqrt_free(i32 %[[R]])
 ; CHECK-NEXT:  ret i32 %[[CO]]
 ; CHECK-NEXT:  }

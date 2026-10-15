@@ -105,14 +105,14 @@ attributes #2 = { nounwind }
 ; CHECK-NEXT: call void @cqrt_ry_i1(i32 %h, double 5.000000e-01)
 ; CHECK-NEXT: %bf = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %h, i32 %bf)
-; CHECK:      call void @cqrt_copy_i32_controlled(i32 %bf,
+; CHECK:      call void @cqrt_xorc_i32_controlled(i32 %bf, i32 %out, i32 %{{[0-9]+}})
 ; CHECK:      call void @cqrt_cnot(i32 %h, i32 %bf)
 ; CHECK-NEXT: call void @cqrt_free(i32 %bf)
 ; CHECK-NEXT: %m = call i32 @cqrt_measure_i32(i32 %out)
-; CHECK-NEXT: %m2 = call i1 @cqrt_measure_i1(i32 %h)
+; CHECK-NEXT: %{{m[0-9]*}} = call i1 @cqrt_measure_i1(i32 %h)
 
 ; Per-activation counts (the loop is ROLLED): two i1 mints (the rail and the
-; flag ancilla), three i32 mints (the out rail and the two arm operands), two
+; flag ancilla), one i32 mint (the out rail; bd dm7f.81: the arms are literals), two
 ; measurements, ONE free — the ancilla's, proven |0> by the second CNOT.
 ; ACNT-COUNT-2: call i32 @cqrt_alloc_i1(
 ; ACNT-NOT:     call i32 @cqrt_alloc_i1(

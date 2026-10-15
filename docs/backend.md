@@ -826,7 +826,7 @@ lowered yet.
 |---|---|---|
 | **phase arm** — flat diamond, if/else, folded angle select (Rz stem), compound condition tree, depth-2 nest, `switch`, rolled inside a classically bounded loop | **kickback**: mint flag → `cqrt_rz_i1(f, θ)` uncontrolled per `cq_phi` → `_unc` strip → free; a `¬flag` arm on an ancilla is `cqrt_x`-bracketed, on a rail it is `rz(−θ)` | `emitPhaseKickbackRegion`, `emitPhaseKickbackNestRegion`, `emitKickbackGroup` (`SwapRouteEmit.cpp`); `SwitchRouteEmit.cpp`; `AngleSelectEmit.cpp` |
 | **value arm** — diamond, if/else | **controlled-copy merge**: hoist the arm's chain into the predecessor so it runs unconditionally on the original register, build a `select`, hand it to the select merge | `emitValueRegion` → `SelectMergeEmit` verbatim |
-| tainted-condition integer- or scalar-fp-data **`select`** | mint flag; `%out = cqrt_alloc_<W>(0)`; `cqrt_copy_<W>_controlled(f, true_val, %out)`; then `cqrt_x(f)`, `cqrt_copy_<W>_controlled(f, false_val, %out)`, `cqrt_x(f)`; compare `_unc` strip; **one** `cqrt_free(f)` | `SelectClassify` + `SelectMergeEmit.cpp` |
+| tainted-condition integer- or scalar-fp-data **`select`** | mint flag; `%out = cqrt_alloc_<W>(0)`; write `true_val` on `f`; then `cqrt_x(f)`, write `false_val`, `cqrt_x(f)` — a quantum value by `cqrt_copy_<W>_controlled(f, v, %out)`, a classical one by `cqrt_xorc_<W>_controlled(f, %out, v)` (a literal, never a rail), an all-zero classical one not at all (and then no bracket; bd dm7f.81); compare `_unc` strip; **one** `cqrt_free(f)` | `SelectClassify` + `SelectMergeEmit.cpp` |
 | tainted-scrutinee **`switch`** | homogeneous phase: per-case equality flag + kickback. Homogeneous value and all-constant data-mux: **preload + XOR-delta** — `cqrt_copy_<W>(p, out)` once, then per case a hoisted chain, a QQ `xor` delta, an equality flag and one `cqrt_copy_<W>_controlled`. An equality-guarded diamond (`if (q == k) cq_phi(θ)`) is an ordinary phase arm: `EqFoldArm`'s const-fold re-anchor served only the retired register form | `SwitchClassify` + `SwitchArmProve` + `Switch{Route,Value,DataMux}Emit` |
 | **in-place Ry arm** on a register disjoint from every condition wire | the arm's theta is hoisted and lowered as `cqrt_ry_<W>_controlled(f, h, θ)`; the rotated register is then **pinned live** (never reverse-played, never freed — `Ry(θ)\|0⟩ ≠ \|0⟩`). A negated arm is spelled by additivity, `ry(h, θ); ry_controlled(h_b, h, −θ)`, never `cqrt_x` on a user register | `emitInPlaceRotationRegion` |
 | **in-place Ry arm on the condition's own register** (`if (q > 5) cq_theta(&q, θ)`, acyclic, compare condition) | the flag is minted, then `cqrt_ry_<W>_controlled(f, h, θ)` (a `¬flag` arm `cqrt_x`-brackets the flag, an ancilla); **no strip and no free**: after the Ry the predicate is not a function of `q`'s basis, so the flag is left allocated holding the pre-Ry predicate. Exception: when every tainted compare operand is a record the program reads after the region (`int d = q & 6; if (d == 2) …; … d …`), the strip after the gate is exact and the flag is stripped and freed there (`CondFlagKept` false). A template condition chain, and since bd `p3kd.13` a lifted call's `__cq_q_*` result (its Bennett twin as the adjoint), is discharged before the gate; a chain rail the program reads after the gate stays allocated as its own data; a chain rail that is neither (a lifted result whose twin cannot be synthesized, bd `ln16`) is refused loudly by a late postcondition, `declineUndischargedKeptFlagChains`. M-A warns `non-diagonal gate over a live derived record` at the gate (bd `dm7f.4`) | same, `ControlRegion::CondFlagKept` |
@@ -1063,6 +1063,7 @@ order:
 | `cqrt_x(q)`, `cqrt_cswap(f, a, b)` | as-is (self-adjoint) |
 | `cqrt_cnot(c, t)`, `cqrt_toffoli(c1, c2, t)` (exact arity, void) | as-is (self-adjoint; re-emitted under the still-live controls) |
 | `cqrt_copy_<W>_controlled(f, src, dst)` | as-is (a controlled XOR is an involution) |
+| `cqrt_xorc_<W>_controlled(f, dst, imm)` (exact arity 3, void) | as-is (same) |
 | `cqrt_xorc_<W>(h, imm)` | as-is |
 | `cqrt_addc_<W>(h, imm)` | the same symbol with `-imm` |
 | uncontrolled data `cq_template_*` (including the compare grid) | its void `_unc` form (§9.2) |
@@ -1300,6 +1301,13 @@ uncontrolled copy appears in the value-`switch` preload, the break
 reverse-play's copy-out, the QRAM cell copy-out and the Bennett wrap's
 copy-out. Both are declared at the five integer widths plus
 `f16`/`f32`/`f64`/`f80`.
+`cqrt_xorc_<W>_controlled(ctrl, dst, imm)` (same nine widths; bd dm7f.81) is
+the merge's write of a **classical** arm: `dst ^= imm` iff the control is set,
+`imm` a literal (or classical SSA) operand — never a rail (R13). An fp `imm`
+XORs its bit pattern, so `-0.0` fires and `+0.0` is skipped. A classical arm
+whose bits are all zero emits no gate. It is an involution, with no `_inv` twin.
+The trace prints an fp `imm` as its exact bit pattern in fixed-width hex
+(`f64` `0x8000000000000000` is -0.0), so distinct NaN payloads stay distinct.
 
 **In-place classical-immediate arithmetic.** `cqrt_addc_<W>(h, imm)` and
 `cqrt_xorc_<W>(h, imm)` (integer widths only) mutate the register `h` in place

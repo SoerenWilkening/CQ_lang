@@ -18,6 +18,11 @@
 // (`materializeCopySource`). The Bennett wrap frees a constant-ZERO arm after
 // the reverse (a provably |0> rail, R5); any other materialized arm stays
 // allocated as separable classical data.
+// ⚠ bd test_C_libtooling-dm7f.82 (open): that classical-arm rail contradicts the
+// owner's dm7f.81 clarification (a classical arm is never cqrt_alloc'd). Here the
+// arm feeds a select of HANDLES, not a merge write, so dm7f.81's controlled xor
+// does not apply; the cleaner emission (alloc(0) + a classical branch around
+// cqrt_xorc_<W>(h, k)) is that issue.
 //
 // The rewrite runs AFTER `lowerOps`, when every quantum arm is the i32 handle of
 // its lowered producer; building it earlier would mix still-fp quantum operands

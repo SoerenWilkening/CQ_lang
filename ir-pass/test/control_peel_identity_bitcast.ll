@@ -102,21 +102,17 @@ define i32 @main() {
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[HCMP]])
 ; CHECK-NEXT: %[[HC1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 5)
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: %[[S7:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 7)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[HC1]], i32 %[[S7]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[HC1]], i32 %[[OUT]], i32 7)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[HC1]])
-; CHECK-NEXT: %[[S5:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 5)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[HC1]], i32 %[[S5]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[HC1]], i32 %[[OUT]], i32 5)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[HC1]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[HC1]], i32 %[[H]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[HC1]])
 ; CHECK-NEXT: %[[HC2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 5)
 ; CHECK-NEXT: %[[OUT2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: %[[S2A:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 2)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[HC2]], i32 %[[S2A]], i32 %[[OUT2]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[HC2]], i32 %[[OUT2]], i32 2)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[HC2]])
-; CHECK-NEXT: %[[S1A:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 1)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[HC2]], i32 %[[S1A]], i32 %[[OUT2]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[HC2]], i32 %[[OUT2]], i32 1)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[HC2]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[HC2]], i32 %[[H]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[HC2]])
@@ -145,13 +141,14 @@ define i32 @main() {
 ; XCNT-NOT:     call void @cqrt_x(
 ; FCNT-COUNT-3: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
-; ACNT-COUNT-8: call i32 @cqrt_alloc_
+; (bd dm7f.81: a constant or classical merge arm is a literal operand of cqrt_xorc_<W>_controlled, no longer an alloc'd rail + cqrt_copy_<W>_controlled; a zero arm emits no gate and no bracket. Counts below re-measured.)
+; ACNT-COUNT-4: call i32 @cqrt_alloc_
 ; ACNT-NOT:     call i32 @cqrt_alloc_
 ; ---- (`_unc(` and `@cqrt_copy_` also match their own DECLARATION line, so these
 ; ---- two counts are calls + 1; the others are call-shaped and match no declare.)
 ; UCNT-COUNT-4: _unc(
 ; UCNT-NOT:     _unc(
-; CPCNT-COUNT-5: @cqrt_copy_
+; (dm7f.81 R11 C-F1: CPCNT counts emitted copy CALLS only; an unused copy declaration is no longer minted. Measured.)
 ; CPCNT-NOT:     @cqrt_copy_
 ; RYCNT-COUNT-3: call void @cqrt_ry_
 ; RYCNT-NOT:     call void @cqrt_ry_

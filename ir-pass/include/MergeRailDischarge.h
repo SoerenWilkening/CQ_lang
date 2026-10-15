@@ -5,7 +5,8 @@
 // THE HOLE. A Phase-4 merge emitter (the 4.4 `SelectMergeEmit` is the measured
 // customer; the 6.5 classical-call arm and the PredMux value merges emit the
 // same stream) mints `%out = cqrt_alloc_<W>(0)`, writes it ONLY through
-// `cqrt_copy_<W>_controlled(f, src, %out)` under a condition network it mints
+// `cqrt_copy_<W>_controlled(f, src, %out)` — or, for a classical arm since bd
+// dm7f.81, `cqrt_xorc_<W>_controlled(f, %out, imm)` — under a condition network it mints
 // and strips in the same stream, and records `%out` in `ControlOwnedRails`
 // (DD-4). Every uncompute partition subtracts that set, so nobody ever reversed
 // `%out`. After its readers ran (or were themselves reversed) `%out` stayed
@@ -20,11 +21,12 @@
 // adjoint of the mux is the mux reversed). A merge stream (`MergeStreamPlan`)
 // is a CLOSED range [Lo, Hi] around %out's writers in which every value
 // written is minted, every minted value but %out is NET (freed exactly once in
-// range) or KEPT (never freed, only read: classical source loads, the 4.5
-// switch XOR-delta rails), and its CORE (first..last write of %out plus the
-// closing `cqrt_x` brackets) holds a REPLAY subsequence S = every write of %out
-// and every `cqrt_x` on a network flag. S's writes are transversal-CNOT XORs
-// (runtime/cq_runtime.h; the 4.5 switch-value preload `cqrt_copy_<W>` too) and
+// range) or KEPT (never freed, only read; since dm7f.81 a classical arm is a
+// literal, not a kept rail), and its CORE (first..last write of %out plus the
+// `cqrt_x` brackets that open or close it) holds a REPLAY subsequence S = every
+// write of %out and every `cqrt_x` on a network flag. S's writes are XORs
+// (runtime/cq_runtime.h: transversal-CNOT copies, controlled xor-immediates, the
+// 4.5 switch-value preload `cqrt_copy_<W>`) and
 // nothing else in the core writes a value an earlier S gate read, so S
 // reversed, run where S's inputs are unchanged, is S's adjoint. Right after
 // %out's last reader, `emitReplay` emits:

@@ -57,8 +57,7 @@ entry:
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[Q]], i32 %[[OUT]])
 ; CHECK:     call void @cqrt_x(i32 %[[G]])
-; CHECK:     %[[XH:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %x)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[G]], i32 %[[XH]], i32 %[[OUT]])
+; CHECK:     call void @cqrt_xorc_i32_controlled(i32 %[[G]], i32 %[[OUT]], i32 %x)
 ; CHECK:     call void @cqrt_x(i32 %[[G]])
 ; exact-LIFO strip: the inverse network (the two cnots in REVERSE, still no
 ; toffoli), free the ancilla, THEN the leaf strips in reverse mint order:

@@ -43,7 +43,7 @@
 ; CHECK:       %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[M:[a-zA-Z0-9_.]+]])
 ; CHECK:       %[[T:[a-zA-Z0-9_.]+]] = tail call i32 @__cq_q_h_01(i32 noundef %[[H]], i32 noundef %[[M]])
 ; CHECK:       %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[T]], i32 3)
-; CHECK:       call void @cqrt_copy_i32_controlled(i32 %[[F]],
+; CHECK:       call void @cqrt_xorc_i32_controlled(i32 %[[F]],
 ; CHECK:       call i32 @cqrt_measure_i32(i32 %[[H]])
 ; CHECK-LABEL: define internal noundef i32 @__cq_q_h_01(i32 noundef %0, i32 noundef %1)
 ; CHECK-NEXT:  tail call void @__cq_q_g_1(i32 noundef %0)

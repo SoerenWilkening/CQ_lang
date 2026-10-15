@@ -256,5 +256,22 @@ int main(void) {
     cqrt_ry_f80_controlled(h_c, h_f80, 0.785398);
     cqrt_rz_f80_controlled(h_c, h_f80, 0.785398);
 
+    /* --- controlled xor-immediate smoke (bd test_C_libtooling-dm7f.81): the
+     * merge's classical-arm write `cqrt_xorc_<W>_controlled(ctrl, h, imm)`,
+     * 9 widths. Void, mints NO handles (the counter stays at h38). Negative
+     * narrow immediates pin the bool/int8_t/int16_t sign handling (bd etj3);
+     * -0.0 pins that the fp immediate is a bit pattern (it is NOT skipped as
+     * zero by the emitters, and prints as its exact bits 0x8000000000000000;
+     * every fp immediate prints as its bit pattern, R11 A-F1). */
+    cqrt_xorc_i1_controlled (h_c, h_i1,  true);
+    cqrt_xorc_i8_controlled (h_c, h_i8,  -9);
+    cqrt_xorc_i16_controlled(h_c, h_i16, -9);
+    cqrt_xorc_i32_controlled(h_c, h_a,   2);
+    cqrt_xorc_i64_controlled(h_c, h_i64, -9);
+    cqrt_xorc_f16_controlled(h_c, h_f16, (_Float16)1.5);
+    cqrt_xorc_f32_controlled(h_c, h_f32, 1.5f);
+    cqrt_xorc_f64_controlled(h_c, h_f64, -0.0);
+    cqrt_xorc_f80_controlled(h_c, h_f80, 1.5L);
+
     return 0;
 }

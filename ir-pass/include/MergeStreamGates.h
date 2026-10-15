@@ -28,8 +28,9 @@ bool isControlledCopy(const llvm::CallInst *C);
 // The uncontrolled basis copy `cqrt_copy_<W>(src, dst)`: void, arity 2.
 bool isPlainCopy(const llvm::CallInst *C);
 
-// Does `C` WRITE the merge rail `Out` as a transversal-CNOT basis copy (an XOR
-// involution) and touch it in no other slot? These are the only writes of a
+// Does `C` WRITE the merge rail `Out` as a transversal-CNOT basis copy or, for
+// an untainted arm, a controlled XOR of a classical immediate (bd dm7f.81) — an
+// XOR involution either way — and touch it in no other slot? These are the only writes of a
 // merge rail the replay can undo by re-emission.
 bool isMergeWrite(const llvm::CallInst *C, const llvm::Value *Out);
 
@@ -39,7 +40,7 @@ bool streamGateWrites(const llvm::CallInst *C,
                       llvm::SmallVectorImpl<unsigned> &W);
 
 // The control slots of the stream's controlled gates (cnot 0, toffoli 0/1,
-// controlled copy 0) and, since bd dm7f.77, a controlled rotation's control
+// controlled copy 0, controlled xor-immediate 0) and, since bd dm7f.77, a controlled rotation's control
 // (`cqrt_r{y,z}_<W>_controlled` slot 0; not stream traffic).
 llvm::SmallVector<unsigned, 2> controlSlots(const llvm::CallInst *C);
 

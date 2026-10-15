@@ -83,11 +83,9 @@ define internal fastcc i32 @helper(i32 noundef %0) unnamed_addr {
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F0]])
 ; CHECK-NEXT: %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 5)
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: %[[S7:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 7)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F1]], i32 %[[S7]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[F1]], i32 %[[OUT]], i32 7)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F1]])
-; CHECK-NEXT: %[[S5:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 5)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F1]], i32 %[[S5]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[F1]], i32 %[[OUT]], i32 5)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F1]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F1]], i32 %[[H]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F1]])
@@ -120,12 +118,14 @@ define internal fastcc i32 @helper(i32 noundef %0) unnamed_addr {
 ; XCNT-NOT:     call void @cqrt_x(
 ; FCNT-COUNT-3: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
-; ACNT-COUNT-6: call i32 @cqrt_alloc_
+; (bd dm7f.81: a constant or classical merge arm is a literal operand of cqrt_xorc_<W>_controlled, no longer an alloc'd rail + cqrt_copy_<W>_controlled; a zero arm emits no gate and no bracket. Counts below re-measured.)
+; ACNT-COUNT-4: call i32 @cqrt_alloc_
 ; ACNT-NOT:     call i32 @cqrt_alloc_
 ; UCNT-COUNT-5: _unc(
 ; UCNT-NOT:     _unc(
-; CPCNT-COUNT-5: @cqrt_copy_
-; CPCNT-NOT:     @cqrt_copy_
+; (dm7f.81 R11 C-F1: CPCNT counts emitted copy CALLS only; an unused copy declaration is no longer minted. Measured.)
+; CPCNT-COUNT-1: call void @cqrt_copy_
+; CPCNT-NOT:     call void @cqrt_copy_
 ; RYCNT-COUNT-3: call void @cqrt_ry_
 ; RYCNT-NOT:     call void @cqrt_ry_
 ; RZCNT-NOT:     call void @cqrt_rz_

@@ -55,11 +55,10 @@ define void @example(i32 %u0) {
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fcmp_one_f64_hl(i32 %[[X]], double 0x7FF0000000000000)
 ; CHECK-NEXT: %[[SEL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double 0.000000e+00)
 ; The ConstantFP +inf TRUE arm is materialized to its own |const> rail (20xt.3).
-; CHECK-NEXT: %[[FC:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double 0x7FF0000000000000)
 ; The 4.4 two-copy stream, ¬flag `cqrt_x`-bracketed (the bracket closes in the
 ; mirror). Copy SOURCES are named EXPLICITLY, never wildcarded: a wildcard source
 ; lets a mutant that copies the live qubit pass.
-; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %[[F]], i32 %[[FC]], i32 %[[SEL]])
+; CHECK-NEXT: call void @cqrt_xorc_f64_controlled(i32 %[[F]], i32 %[[SEL]], double 0x7FF0000000000000)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %[[F]], i32 %[[X]], i32 %[[SEL]])
 ; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fptosi_f64_to_i32(i32 %[[SEL]])
@@ -71,7 +70,7 @@ define void @example(i32 %u0) {
 ; CHECK-NEXT: call void @cq_template_fptosi_f64_to_i32_unc(i32 %[[R]], i32 %[[SEL]])
 ; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %[[F]], i32 %[[X]], i32 %[[SEL]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %[[F]], i32 %[[FC]], i32 %[[SEL]])
+; CHECK-NEXT: call void @cqrt_xorc_f64_controlled(i32 %[[F]], i32 %[[SEL]], double 0x7FF0000000000000)
 ; The flag strip NAMES the rail the next lines free (the 8txa out-first `_unc`).
 ; CHECK-NEXT: call void @cq_template_fcmp_one_f64_hl_unc(i32 %[[F]], i32 %[[X]], double 0x7FF0000000000000)
 ; CHECK-NEXT: call void @cq_template_sitofp_i32_to_f64_unc(i32 %[[X]], i32 %n)

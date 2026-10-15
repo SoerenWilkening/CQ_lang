@@ -46,7 +46,7 @@ merge:
 ; CHECK-DAG: call i32 @cq_template_fcmp_uge_f64_hl(i32 %[[Q]], double 4.000000e+00)
 ; CHECK-DAG: call i32 @cq_template_fcmp_ogt_f64_hl(i32 %[[Q]], double 8.000000e+00)
 ; CHECK:     call void @cqrt_toffoli(
-; CHECK:     call void @cqrt_copy_f64_controlled(
+; CHECK:     call void @cqrt_xorc_f64_controlled(
 ; CHECK:     call i32 @cq_template_fptosi_f64_to_i64(
 ; CHECK:     call i64 @cqrt_measure_i64(
 ; CHECK-NOT: br i1

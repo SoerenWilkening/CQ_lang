@@ -37,19 +37,17 @@ entry:
 ; ORD-NEXT: call void @cqrt_ry_i32(i32 %h, double 2.000000e-01)
 ; ORD-NEXT: %h_cast = call i32 @cq_template_trunc_i32_to_i1(i32 %h)
 ; ORD-NEXT: call void @cqrt_ry_i1(i32 %h_cast, double 5.000000e-01)
-; ORD-NEXT: %m2 = call i32 @cqrt_measure_i32(i32 %h)
+; ORD-NEXT: %[[N_m2:m[0-9]*]] = call i32 @cqrt_measure_i32(i32 %h)
 ; ORD-NEXT: %bf = call i32 @cqrt_alloc_i1(i1 false)
 ; ORD-NEXT: call void @cqrt_cnot(i32 %h_cast, i32 %bf)
 ; ORD-NEXT: %out = call i32 @cqrt_alloc_i32(i32 0)
-; ORD-NEXT: %selop = call i32 @cqrt_alloc_i32(i32 2)
-; ORD-NEXT: call void @cqrt_copy_i32_controlled(i32 %bf, i32 %selop, i32 %out)
+; ORD-NEXT: call void @cqrt_xorc_i32_controlled(i32 %bf, i32 %{{[0-9a-zA-Z_.]+}}, i32 2)
 ; ORD-NEXT: call void @cqrt_x(i32 %bf)
-; ORD-NEXT: %selop1 = call i32 @cqrt_alloc_i32(i32 5)
-; ORD-NEXT: call void @cqrt_copy_i32_controlled(i32 %bf, i32 %selop1, i32 %out)
+; ORD-NEXT: call void @cqrt_xorc_i32_controlled(i32 %bf, i32 %{{[0-9a-zA-Z_.]+}}, i32 5)
 ; ORD-NEXT: call void @cqrt_x(i32 %bf)
 ; ORD-NEXT: call void @cqrt_cnot(i32 %h_cast, i32 %bf)
 ; ORD-NEXT: call void @cqrt_free(i32 %bf)
-; ORD-NEXT: %m3 = call i32 @cqrt_measure_i32(i32 %out)
+; ORD-NEXT: %[[N_m3:m[0-9]*]] = call i32 @cqrt_measure_i32(i32 %out)
 
 ; No non-diagonal gate on either user register from the merge, and nothing
 ; but the copy flag is ever freed.

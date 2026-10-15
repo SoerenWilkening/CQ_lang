@@ -101,7 +101,7 @@ merge:
 ;   ^ the register form is a RESERVED NAME and declines (round-1 F-L6-1)
 
 ; Original negatives PRESERVED (re-measured on the Inc-1 output):
-; NOROUTE-NOT: call void @cqrt_x
+; NOROUTE-NOT: call void @cqrt_x(
 ; NOROUTE-NOT: phi i32
 ; NOROUTE-NOT: call i32 @cqrt_alloc_i32(i32 0)
 

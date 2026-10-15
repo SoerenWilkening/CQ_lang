@@ -4,30 +4,24 @@ cq_template_fmul_f80(h0, h0) -> h1
 cq_template_fma_f80_qll(h1, 0xf.5c28f5c28f5c28fp-9, 0x8p-3) -> h2
 cq_template_fcmp_ogt_f80_hl(h0, 0xb.17p+10) -> h3
 cqrt_alloc_f80(0x0p+0) -> h4
-cqrt_alloc_f80(0xc.9f2c9cd04674edfp+96) -> h5
-cqrt_copy_f80_controlled(h3, h5, h4)
-cqrt_x(h3)
-cqrt_alloc_f80(0x0p+0) -> h6
-cqrt_copy_f80_controlled(h3, h6, h4)
-cq_template_fcmp_ule_f80_hl(h0, 0xb.17p+10) -> h7
-cq_template_fcmp_uge_f80_hl(h0, -0xb.22p+10) -> h8
-cqrt_alloc_i1(0) -> h9
-cqrt_toffoli(h7, h8, h9)
-cqrt_alloc_f80(0x0p+0) -> h10
-cqrt_copy_f80_controlled(h9, h2, h10)
-cqrt_x(h9)
-cqrt_copy_f80_controlled(h9, h4, h10)
-cqrt_alloc_f80(0x0p+0) -> h11
-cqrt_copy_f80(h10, h11)
-cqrt_copy_f80_controlled(h9, h4, h10)
-cqrt_x(h9)
-cqrt_copy_f80_controlled(h9, h2, h10)
-cqrt_toffoli(h7, h8, h9)
-cq_template_fcmp_uge_f80_hl_unc(h8, h0, -0xb.22p+10)
-cq_template_fcmp_ule_f80_hl_unc(h7, h0, 0xb.17p+10)
-cqrt_copy_f80_controlled(h3, h6, h4)
-cqrt_x(h3)
-cqrt_copy_f80_controlled(h3, h5, h4)
+cqrt_xorc_f80_controlled(h3, h4, 0x4062c9f2c9cd04674edf)
+cq_template_fcmp_ule_f80_hl(h0, 0xb.17p+10) -> h5
+cq_template_fcmp_uge_f80_hl(h0, -0xb.22p+10) -> h6
+cqrt_alloc_i1(0) -> h7
+cqrt_toffoli(h5, h6, h7)
+cqrt_alloc_f80(0x0p+0) -> h8
+cqrt_copy_f80_controlled(h7, h2, h8)
+cqrt_x(h7)
+cqrt_copy_f80_controlled(h7, h4, h8)
+cqrt_alloc_f80(0x0p+0) -> h9
+cqrt_copy_f80(h8, h9)
+cqrt_copy_f80_controlled(h7, h4, h8)
+cqrt_x(h7)
+cqrt_copy_f80_controlled(h7, h2, h8)
+cqrt_toffoli(h5, h6, h7)
+cq_template_fcmp_uge_f80_hl_unc(h6, h0, -0xb.22p+10)
+cq_template_fcmp_ule_f80_hl_unc(h5, h0, 0xb.17p+10)
+cqrt_xorc_f80_controlled(h3, h4, 0x4062c9f2c9cd04674edf)
 cq_template_fcmp_ogt_f80_hl_unc(h3, h0, 0xb.17p+10)
 cq_template_fma_f80_qll_unc(h2, h1, 0xf.5c28f5c28f5c28fp-9, 0x8p-3)
 cq_template_fmul_f80_unc(h1, h0, h0)
@@ -35,9 +29,8 @@ cqrt_free(h1)
 cqrt_free(h2)
 cqrt_free(h3)
 cqrt_free(h4)
+cqrt_free(h5)
 cqrt_free(h6)
 cqrt_free(h7)
 cqrt_free(h8)
-cqrt_free(h9)
-cqrt_free(h10)
-cqrt_measure_f80(h11) -> 0x0p+0
+cqrt_measure_f80(h9) -> 0x0p+0

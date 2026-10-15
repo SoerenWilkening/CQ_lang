@@ -44,8 +44,7 @@ entry:
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[GR]], i32 %[[Q]], i32 %[[OUT]])
 ; CHECK:     call void @cqrt_x(i32 %[[GR]])
-; CHECK:     %[[XH:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %x)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[GR]], i32 %[[XH]], i32 %[[OUT]])
+; CHECK:     call void @cqrt_xorc_i32_controlled(i32 %[[GR]], i32 %[[OUT]], i32 %x)
 ; CHECK:     call void @cqrt_x(i32 %[[GR]])
 ; LIFO strip: root toffoli + free, o2 inverse + free, o1 inverse + free, then
 ; leaves in reverse mint order (c, b, a) — the shared %a strips ONCE, LAST:

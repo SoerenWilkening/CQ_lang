@@ -23,15 +23,14 @@
 ; CHECK:       %[[SQ:[^ ]+]] = call i32 @cq_template_fmul_f80(i32 %x, i32 %x)
 ; CHECK-NEXT:  %[[F:[^ ]+]] = call i32 @cq_template_fcmp_ogt_f80_hl(i32 %x, x86_fp80 0xK40008000000000000000)
 ; CHECK-NEXT:  %[[OUT:[^ ]+]] = call i32 @cqrt_alloc_f80(x86_fp80 0xK00000000000000000000)
-; CHECK-NEXT:  %[[ONE:[^ ]+]] = call i32 @cqrt_alloc_f80(x86_fp80 0xK3FFF8000000000000000)
-; CHECK-NEXT:  call void @cqrt_copy_f80_controlled(i32 %[[F]], i32 %[[ONE]], i32 %[[OUT]])
+; CHECK-NEXT:  call void @cqrt_xorc_f80_controlled(i32 %[[F]], i32 %[[OUT]], x86_fp80 0xK3FFF8000000000000000)
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT:  call void @cqrt_copy_f80_controlled(i32 %[[F]], i32 %[[SQ]], i32 %[[OUT]])
 ; CHECK-NEXT:  %[[CO:[^ ]+]] = call i32 @cqrt_alloc_f80(x86_fp80 0xK00000000000000000000)
 ; CHECK-NEXT:  call void @cqrt_copy_f80(i32 %[[OUT]], i32 %[[CO]])
 ; CHECK-NEXT:  call void @cqrt_copy_f80_controlled(i32 %[[F]], i32 %[[SQ]], i32 %[[OUT]])
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT:  call void @cqrt_copy_f80_controlled(i32 %[[F]], i32 %[[ONE]], i32 %[[OUT]])
+; CHECK-NEXT:  call void @cqrt_xorc_f80_controlled(i32 %[[F]], i32 %[[OUT]], x86_fp80 0xK3FFF8000000000000000)
 ; CHECK-NEXT:  call void @cq_template_fcmp_ogt_f80_hl_unc(i32 %[[F]], i32 %x, x86_fp80 0xK40008000000000000000)
 ; CHECK-NEXT:  call void @cq_template_fmul_f80_unc(i32 %[[SQ]], i32 %x, i32 %x)
 ; CHECK-NEXT:  call void @cqrt_free(i32 %[[SQ]])
@@ -39,10 +38,9 @@
 ; CHECK-NEXT:  call void @cqrt_free(i32 %[[OUT]])
 ; CHECK-NEXT:  ret i32 %[[CO]]
 ;
-; The constant rail is never freed:
+; bd dm7f.81: the 1.0 arm is a literal operand of the controlled xor, never a rail:
 ; RUN: %filecheck --check-prefix=KEEP %s < %t.ll
-; KEEP:     %[[ONE:[^ ]+]] = call i32 @cqrt_alloc_f80(x86_fp80 0xK3FFF8000000000000000)
-; KEEP-NOT: call void @cqrt_free(i32 %[[ONE]])
+; KEEP-NOT: @cqrt_alloc_f80(x86_fp80 0xK3FFF8000000000000000)
 
 declare x86_fp80 @cq_theta_f80(x86_fp80, double)
 declare x86_fp80 @cq_measure_f80(x86_fp80)

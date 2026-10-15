@@ -28,7 +28,7 @@
 ; CHECK-LABEL: define i32 @example(
 ; CHECK:       %r = call noundef i32 @__cq_specsafe_pb(i32 %k)
 ; CHECK-NOT:   call {{.*}}@pb(
-; CHECK:       call i32 @cqrt_alloc_i32(i32 %r)
+; CHECK:       call void @cqrt_xorc_i32_controlled(i32 %{{[0-9a-zA-Z_.]+}}, i32 %{{[0-9a-zA-Z_.]+}}, i32 %r)
 ; CHECK:       define internal i32 @__cq_specsafe_pb(i32 noundef %0) unnamed_addr #{{[0-9]+}} !cq.specsafe.twin ![[TW:[0-9]+]] {
 ; CHECK-NEXT:    %.fr = freeze i32 %0
 ; CHECK-NEXT:    %2 = call i32 @pb(i32 %.fr)

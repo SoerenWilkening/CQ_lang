@@ -9,7 +9,7 @@
 ; lowered module holds 985 emitted calls and this one slot:
 ;
 ;   %selop = call i32 @cqrt_alloc_f64(double undef)
-;   call void @cqrt_copy_f64_controlled(i32 %h_cmp85, i32 %selop, i32 %out86)
+;   call void @cqrt_xorc_f64_controlled(i32 %h_cmp85, i32 %out86, double undef)
 ;
 ; That `undef` is `clang -O1`'s OWN output — it emits
 ; `select i1 %c, double undef, double %v` for the dead early-exit merge edge of
@@ -42,29 +42,33 @@
 ; conclude from its absence in the differential that it pins nothing (bd memory
 ; [[predmux-decline-fixture-discrimination]] trap 1).
 ;
+; bd dm7f.81 MOVED THE SUBJECT. The select arm above is no longer a slot at all:
+; a classical merge arm is a literal operand of `cqrt_xorc_<W>_controlled`, and an
+; `undef`/`poison` arm is REFINED to the all-zero pattern and emits NO gate
+; (MergeArmWrite.cpp `armWriteIsNoop`; as a literal, the merge-discharge replay
+; would clone it into a SECOND slot read as a second value). So @example now pins
+; that refinement, and the guard's ONE-slot threshold is carried by @addc_one: an
+; M-C in-place `cqrt_addc_i32(h, undef)` whose result is measured, never reversed
+; — exactly one literal undef slot in its function.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ;
-; The `undef` survives verbatim into the seed slot — pinned, because a future
-; normalise-to-zero would change the committed golden of the real slice:
+; CHECK-LABEL: define double @example(
 ; CHECK: %h = call i32 @cqrt_alloc_f64(double %u0)
 ; CHECK: %h_cmp = call i32 @cq_template_fcmp_uno_f64(i32 %h, i32 %h)
-; CHECK: %out = call i32 @cqrt_alloc_f64(double 0.000000e+00)
-; CHECK: %selop = call i32 @cqrt_alloc_f64(double undef)
-; CHECK: call void @cqrt_copy_f64_controlled(i32 %h_cmp, i32 %selop, i32 %out)
-;
+; CHECK-NEXT: %out = call i32 @cqrt_alloc_f64(double 0.000000e+00)
+; CHECK-NEXT: call void @cqrt_x(i32 %h_cmp)
+; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %h_cmp, i32 %h, i32 %out)
+; CHECK-NEXT: call void @cqrt_x(i32 %h_cmp)
 ; The flag is stripped and freed:
 ; CHECK: call void @cq_template_fcmp_uno_f64_unc(i32 %h_cmp, i32 %h, i32 %h)
 ; CHECK: call void @cqrt_free(i32 %h_cmp)
+; CHECK-LABEL: define i32 @addc_one(
+; CHECK: call void @cqrt_addc_i32(i32 %{{[a-z0-9_.]+}}, i32 undef)
 ;
-; `%selop` is NOT freed — its basis is not provably |0>, so Rule 6 leaves it
-; allocated rather than measuring it, and that is half of why the single slot is
-; sound. Asserted under a NOT-only prefix so it scans the WHOLE input: a trailing
-; plain CHECK-NOT scans only from the last CHECK match to EOF, so it would have
-; been blind to a `cqrt_free(%selop)` emitted ABOVE the flag free (bd memory
-; [[predmux-decline-fixture-discrimination]] trap 3's sibling).
-; RUN: %filecheck %s --check-prefix=NOSELOPFREE < %t.cqd0.ll
-; NOSELOPFREE-NOT: cqrt_free(i32 %selop)
+; Exactly ONE literal undef slot in the whole module (the threshold's subject):
+; RUN: grep -c "undef)" %t.cqd0.ll | grep -qx 1
 
 target datalayout = "e-m:o-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx"
@@ -78,4 +82,14 @@ define double @example(double %u0) {
   %a = select i1 %c, double undef, double %q  ; clang's own dead-edge spelling
   %m = call double @cq_measure_f64(double %a)
   ret double %m
+}
+
+declare i32 @cq_theta_si32(i32, double)
+declare i32 @cq_measure_si32(i32)
+
+define i32 @addc_one(i32 %x) {
+  %q = call i32 @cq_theta_si32(i32 %x, double 5.000000e-01)
+  %d = add i32 %q, undef
+  %m = call i32 @cq_measure_si32(i32 %d)
+  ret i32 %m
 }

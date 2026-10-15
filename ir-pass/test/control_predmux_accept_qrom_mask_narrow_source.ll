@@ -202,8 +202,7 @@ merge:
 ; CHECK-NEXT: %[[V:[a-zA-Z0-9_.]+]] = load i32, ptr %[[G]], align 4
 ; CHECK-NEXT: %[[VF:[a-zA-Z0-9_.]+]] = freeze i32 %[[V]]
 ; CHECK:      %[[H:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_ult_i32_hl(
-; CHECK:      %[[S:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[VF]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[H]], i32 %[[S]],
+; CHECK:      call void @cqrt_xorc_i32_controlled(i32 %[[H]], i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[VF]])
 ; NARROW-LABEL: define i32 @zext_i1_n1(
 ; NARROW-NOT: qram
 ; NARROW-NOT: icmp_sgt
@@ -309,19 +308,17 @@ merge:
 ; CHECK-NEXT: %[[R_G2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[R_H_CMP]], i32 %[[R_H_CMP1]], i32 %[[R_G2]])
 ; CHECK-NEXT: %[[ID:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: %[[R_SELOP:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 2)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[R_G2]], i32 %[[R_SELOP]], i32 %[[ID]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[R_G2]], i32 %[[ID]], i32 2)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[R_G2]])
-; CHECK-NEXT: %[[R_SELOP3:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 -1)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[R_G2]], i32 %[[R_SELOP3]], i32 %[[ID]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[R_G2]], i32 %[[ID]], i32 -1)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[R_G2]])
 ; CHECK-NEXT: %[[M:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[ID]], i32 3)
 ; CHECK-NEXT: %[[R_0:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_i32(i32 %[[T]], i32 %[[M]])
 ; CHECK-NEXT: call void @cq_template_and_i32_hl_unc(i32 %[[M]], i32 %[[ID]], i32 3)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[R_G2]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[R_G2]], i32 %[[R_SELOP3]], i32 %[[ID]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[R_G2]], i32 %[[ID]], i32 -1)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[R_G2]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[R_G2]], i32 %[[R_SELOP]], i32 %[[ID]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[R_G2]], i32 %[[ID]], i32 2)
 ; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[R_H_CMP]], i32 %[[R_H_CMP1]], i32 %[[R_G2]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[R_G2]])
 ; CHECK-NEXT: call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[R_H_CMP1]], i32 %[[R_H]], i32 9)

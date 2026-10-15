@@ -14,8 +14,8 @@
 ; ANALYTIC CHECK (scratch state-vector replay of the e2e trace, the program's
 ; slice tests/e2e/slice_rolled_dicke_n4.c): the final state is
 ; |D^4_2> = (|0011>+|0101>+|0110>+|1001>+|1010>+|1100>)/sqrt(6), every
-; amplitude +0.408248, every freed rail |0>; the two pairs of `selop` literal
-; rails (|2>, |0>) stay allocated (dm7f.81 removes them).
+; amplitude +0.408248, every freed rail |0>. Since dm7f.81 no literal rail
+; remains: the arm `2` is a controlled xor-immediate and the arm `0` no gate.
 ;
 ; SOURCE (clang -O1, verbatim below):
 ;   /* Dicke state |D^N_K> for arbitrary N, K — Bärtschi & Eidenbenz (2019).
@@ -73,13 +73,10 @@
 ; CHECK: call void @cqrt_cnot(i32 [[V4:%[-a-zA-Z$._0-9]+]], i32 [[V3]])
 ; CHECK: [[V5:%[-a-zA-Z$._0-9]+]] = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK: call void @cqrt_cnot(i32 [[V3]], i32 [[V5]])
+; bd dm7f.81: the select's arms (2, 0) are literals — `2` is one controlled xor
+; into %out, the zero arm emits no write and no ¬flag bracket, no arm rail.
 ; CHECK: [[V6:%[-a-zA-Z$._0-9]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK: [[V7:%[-a-zA-Z$._0-9]+]] = call i32 @cqrt_alloc_i32(i32 2)
-; CHECK: call void @cqrt_copy_i32_controlled(i32 [[V5]], i32 [[V7]], i32 [[V6]])
-; CHECK: call void @cqrt_x(i32 [[V5]])
-; CHECK: [[V8:%[-a-zA-Z$._0-9]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK: call void @cqrt_copy_i32_controlled(i32 [[V5]], i32 [[V8]], i32 [[V6]])
-; CHECK: call void @cqrt_x(i32 [[V5]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 [[V5]], i32 [[V6]], i32 2)
 ; CHECK: [[V9:%[-a-zA-Z$._0-9]+]] = call i32 @cq_template_zext_i1_to_i8(i32 [[V2]])
 ; CHECK: [[V10:%[-a-zA-Z$._0-9]+]] = call i32 @cq_template_zext_i8_to_i32(i32 [[V9]])
 ; CHECK: [[V11:%[-a-zA-Z$._0-9]+]] = call i32 @cq_template_or_i32(i32 [[V6]], i32 [[V10]])
@@ -87,10 +84,7 @@
 ; CHECK: call void @cqrt_ry_i1_controlled(i32 [[V12]], i32 [[V4]], double {{%[-a-zA-Z$._0-9]+}})
 ; CHECK: call void @cq_template_icmp_eq_i32_hl_unc(i32 [[V12]], i32 [[V11]], i32 3)
 ; CHECK: call void @cq_template_or_i32_unc(i32 [[V11]], i32 [[V6]], i32 [[V10]])
-; CHECK: call void @cqrt_x(i32 [[V5]])
-; CHECK: call void @cqrt_copy_i32_controlled(i32 [[V5]], i32 [[V8]], i32 [[V6]])
-; CHECK: call void @cqrt_x(i32 [[V5]])
-; CHECK: call void @cqrt_copy_i32_controlled(i32 [[V5]], i32 [[V7]], i32 [[V6]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 [[V5]], i32 [[V6]], i32 2)
 ; CHECK: call void @cqrt_cnot(i32 [[V3]], i32 [[V5]])
 ; CHECK: call void @cqrt_free(i32 [[V5]])
 ; CHECK: call void @cqrt_free(i32 [[V6]])

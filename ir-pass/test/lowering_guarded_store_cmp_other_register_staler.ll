@@ -80,7 +80,7 @@ merge:                                            ; preds = %arm, %entry
 ; MCNT-NOT:      call i32 @cqrt_measure
 ; FCNT-COUNT-2: call void @cqrt_free
 ; FCNT-NOT:     call void @cqrt_free
-; XCNT-NOT:     call void @cqrt_x
+; XCNT-NOT:     call void @cqrt_x(
 
 ; SILENT-NOT: cq controlled lowering
 ; SILENT-NOT: cq shadow

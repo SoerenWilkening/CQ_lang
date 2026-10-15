@@ -47,7 +47,7 @@ attributes #0 = { nounwind willreturn memory(none) }
 
 ; the controlled-XOR copy merge fires over the i64 rail (handles are i32; only the
 ; measure return is i64), and the merge lowers to `cqrt_measure_i64(i32 %out)`:
-; CHECK:     call void @cqrt_copy_i64_controlled(
+; CHECK:     call void @cqrt_xorc_i64_controlled(
 ; CHECK:     call i64 @cqrt_measure_i64(i32 %[[OUT:[a-zA-Z0-9_.]+]])
 ; CHECK:     ret i64
 ; no surviving diamond phi (RAUW'd to %out) and NO clone:

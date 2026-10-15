@@ -30,8 +30,10 @@ entry:
 }
 
 ; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fcmp_ogt_f64_hl(
+; (bd dm7f.81: the constant 0.25 arm is a literal of the controlled xor; the
+; quantum `%t` arm is still the controlled copy that keeps the DAG NotClosed.)
 ; CHECK:     call void @cqrt_copy_f64_controlled(
-; CHECK:     call void @cqrt_copy_f64_controlled(
+; CHECK:     call void @cqrt_xorc_f64_controlled(i32 %[[F]], i32 %{{[a-zA-Z0-9_.]+}}, double 2.500000e-01)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; CHECK:     call double @cqrt_measure_f64(
 ; the NotClosed leak: nothing after the measure — no _unc, no further free.

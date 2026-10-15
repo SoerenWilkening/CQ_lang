@@ -43,9 +43,9 @@ entry:
 ; THE MINT MUST PRECEDE THE MEASURE. If rung (ii) ever swaps these two the
 ; program is the miscompile this fixture's twin pins, so ORDER is the assertion.
 ; ORD: call i32 @cq_template_icmp_eq_i32_hl(
-; ORD: call void @cqrt_copy_i32_controlled(
+; ORD: call void @cqrt_xorc_i32_controlled(
 ; ORD: call void @cqrt_x(
-; ORD: call void @cqrt_copy_i32_controlled(
+; ORD: call void @cqrt_xorc_i32_controlled(
 ; ORD: call void @cqrt_x(
 ; ORD: call void @cq_template_icmp_eq_i32_hl_unc(
 ; ORD: call void @cqrt_free(

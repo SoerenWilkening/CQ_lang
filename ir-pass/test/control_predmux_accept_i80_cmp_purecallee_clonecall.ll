@@ -94,8 +94,7 @@ entry:
 ; CHECK-NEXT:    %[[SEL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT:    call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[R]], i32 %[[SEL]])
 ; CHECK-NEXT:    call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT:    %[[C33:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 33)
-; CHECK-NEXT:    call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[C33]], i32 %[[SEL]])
+; CHECK-NEXT:    call void @cqrt_xorc_i32_controlled(i32 %[[F]], i32 %[[SEL]], i32 33)
 ; CHECK-NOT:     br i1
 ; CHECK-NOT:     phi
 ; CHECK:         call void @__cq_q_inner_1_unc(i32 %[[R]], i32 %a)

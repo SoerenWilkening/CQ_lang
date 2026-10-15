@@ -77,11 +77,9 @@ declare i32 @cq_measure_si32(i32 noundef)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[HCMP]])
 ; CHECK-NEXT: %[[HCMP4:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 5)
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: %[[SELOP:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 2)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[HCMP4]], i32 %[[SELOP]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[HCMP4]], i32 %[[OUT]], i32 2)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[HCMP4]])
-; CHECK-NEXT: %[[SELOP5:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 5)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[HCMP4]], i32 %[[SELOP5]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[HCMP4]], i32 %[[OUT]], i32 5)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[HCMP4]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[HCMP4]], i32 %[[H]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[HCMP4]])
@@ -114,11 +112,12 @@ declare i32 @cq_measure_si32(i32 noundef)
 ; XCNT-NOT:     call void @cqrt_x(
 ; FCNT-COUNT-3: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
-; ACNT-COUNT-4: call i32 @cqrt_alloc_
+; (bd dm7f.81: a constant or classical merge arm is a literal operand of cqrt_xorc_<W>_controlled, no longer an alloc'd rail + cqrt_copy_<W>_controlled; a zero arm emits no gate and no bracket. Counts below re-measured.)
+; ACNT-COUNT-2: call i32 @cqrt_alloc_
 ; ACNT-NOT:     call i32 @cqrt_alloc_
 ; UCNT-COUNT-4: _unc(
 ; UCNT-NOT:     _unc(
-; CPCNT-COUNT-3: @cqrt_copy_
+; (dm7f.81 R11 C-F1: CPCNT counts emitted copy CALLS only; an unused copy declaration is no longer minted. Measured.)
 ; CPCNT-NOT:     @cqrt_copy_
 ; RYCNT-COUNT-1: call void @cqrt_ry_
 ; RYCNT-NOT:     call void @cqrt_ry_

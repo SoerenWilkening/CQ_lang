@@ -54,10 +54,8 @@ merge:
 ; CHECK:     call void @cqrt_copy_i32_controlled(
 ; v-mux: same predicate, const arms preload literal rails 4 / 9
 ; CHECK:     call void @cqrt_toffoli(
-; CHECK:     %[[K4:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 4)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[K4]],
-; CHECK:     %[[K9:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 9)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[K9]],
+; CHECK:     call void @cqrt_xorc_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[0-9a-zA-Z_.]+}}, i32 4)
+; CHECK:     call void @cqrt_xorc_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[0-9a-zA-Z_.]+}}, i32 9)
 ; the speculated join-body add recombines the two mux out-rails (QQ form):
 ; CHECK:     call i32 @cq_template_add_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
 ; return chain inner select: ¬c1∧¬c3 = (sle 5)∧(sge 2)

@@ -14,7 +14,7 @@
 ; RUN: %filecheck %s < %t.ll
 ; RUN: %filecheck %s --check-prefix=NEG < %t.ll
 ; CHECK: %[[OUT:[a-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK: call void @cqrt_copy_i32_controlled(i32 %{{[a-z0-9_.]+}}, i32 %{{[a-z0-9_.]+}}, i32 %[[OUT]])
+; CHECK: call void @cqrt_xorc_i32_controlled(i32 %{{[a-z0-9_.]+}}, i32 %[[OUT]], i32 7)
 ; CHECK: %[[P:[a-z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[OUT]], i32 %{{[a-z0-9_.]+}})
 ; CHECK: call i32 @cqrt_measure_i32(i32 %[[P]])
 ; NEG-NOT: mul nsw i32 %out

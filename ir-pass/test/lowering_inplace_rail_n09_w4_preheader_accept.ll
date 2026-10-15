@@ -56,7 +56,7 @@
 ; head and tail) were caught 20/48 — every free MISSED by all 8, because no
 ; accept fixture carried a free count. The blocks below close that; the counts
 ; are DERIVED from this fixture's own pass output, not guessed.
-; NOROUTE-NOT: call void @cqrt_xorc_i
+; NOROUTE-NOT: call void @cqrt_xorc_i{{[0-9]+}}(
 ; NOROUTE-NOT: call void @cqrt_xorc_i{{[0-9]+}}(i32 %{{.*}}, i32 %{{.*}})
 ; NOROUTE-NOT: call void @cqrt_addc_i
 ; NOROUTE-NOT: call void @cqrt_addc_i{{[0-9]+}}(i32 %{{.*}}, i32 %{{.*}})

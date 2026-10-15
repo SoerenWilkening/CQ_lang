@@ -117,11 +117,9 @@ merge:
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H4]], double 0x3FE6666666666666)
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 3)
 ; CHECK-NEXT: %[[H_CMP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 0)
-; CHECK-NEXT: %[[DELTA:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 4)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[H_CMP]], i32 %[[DELTA]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[H_CMP]], i32 %[[OUT]], i32 4)
 ; CHECK-NEXT: %[[H_CMP1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 1)
-; CHECK-NEXT: %[[DELTA2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 10)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[H_CMP1]], i32 %[[DELTA2]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[H_CMP1]], i32 %[[OUT]], i32 10)
 ; CHECK-NEXT: %[[H_CMP3:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_ne_i32_hl(i32 %[[OUT]], i32 0)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[H_CMP3]])
 ; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[H_CMP3]], double 3.000000e-01)
@@ -133,8 +131,8 @@ merge:
 ; XOR-delta copies are re-applied in reverse (flags still live), the eq-flag
 ; strip is DEFERRED to after them, and `cqrt_xorc_i32(out, 3)` returns it
 ; from |3> to |0> before the free.
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[H_CMP1]], i32 %[[DELTA2]], i32 %[[OUT]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[H_CMP]], i32 %[[DELTA]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[H_CMP1]], i32 %[[OUT]], i32 10)
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[H_CMP]], i32 %[[OUT]], i32 4)
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[H_CMP]], i32 %[[H]], i32 0)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[H_CMP]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[H_CMP1]], i32 %[[H]], i32 1)

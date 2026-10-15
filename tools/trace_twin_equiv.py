@@ -35,6 +35,12 @@ So this tool decides the precise weaker relation, and nothing weaker:
              forward/adjoint/free traffic the twin must reproduce;
     rule 2 — an inner `_unc` twin's recompute-copy-uncompute `T(args)->c; copy(c,x);
              T_unc(c,args); free(c)` becomes the out-first adjoint `T_unc(x, args)`;
+    rule 3 — (bd dm7f.81, applied once before the two above) a
+             `cqrt_xorc_<W>[_controlled](…, 0)` with a LITERAL-zero immediate (fp:
+             the all-zero bit pattern, never -0.0's `0x8000…`) is the identity and
+             is deleted, with the now-empty x(f); x(f) bracket around it: a rolled
+             trip prints it from a runtime counter, the unrolled twin folds it.
+             `--zero-xorc-then-bytes` applies ONLY rule 3, then byte identity;
   then decide TRACE EQUIVALENCE (Mazurkiewicz) up to a consistent RENAMING of handles: the two streams must contain the same gates, with
   the same literals and the same operand roles, and every pair of DEPENDENT gates
   must occur in the same order. Two gates are DEPENDENT iff they share a handle that
@@ -66,6 +72,8 @@ that is stage 2b's job; stderr warnings). It compares circuits, not verdicts.
 USAGE
   trace_twin_equiv.py SUBJECT.trace TWIN.trace     exit 0 EQUIV, 1 DIFF, 2 refused
   trace_twin_equiv.py --selftest                   the boundary controls only
+  trace_twin_equiv.py --zero-xorc-then-bytes A B   STRICT: rule 3 only, then byte
+                                                   identity (exit 0 IDENTICAL, 1 DIFF)
 Every invocation runs the boundary controls FIRST (a NULL control included) and
 refuses to measure anything if one of them fails (L10: an instrument that has not
 been made to fail is measuring itself).
@@ -172,6 +180,8 @@ def effects(ev):
         W(0)
     elif s.startswith('cqrt_copy_') and s.endswith('_controlled') and len(a) == 3:
         R(0); R(1); W(2)
+    elif re.match(r'^cqrt_xorc_\w+_controlled$', s) and len(a) == 3:
+        R(0); W(1)  # bd dm7f.81: (ctrl, dst, classical imm)
     elif s.startswith('cqrt_copy_') and len(a) == 2:
         R(0); W(1)
     elif s == 'cqrt_cnot' and len(a) == 2:
@@ -448,9 +458,63 @@ def equivalent(A, B, budget=200000):
         return None
 
 
+XORC_ZERO = re.compile(r'^cqrt_xorc_([if])\d+(?:_controlled)?$')
+FP_ZERO_BITS = re.compile(r'^0x0+$')
+
+
+def is_zero_xorc(e):
+    """A controlled or plain xor-immediate whose immediate is the LITERAL zero: the
+    integer `0`, or (fp, printed as its exact bit pattern since dm7f.81 R11 A-F1)
+    an all-zero hex pattern — +0.0 only; -0.0 is `0x8000…` and is not zero."""
+    m = XORC_ZERO.match(e['sym'])
+    if not m or not e['args']:
+        return False
+    imm = e['args'][-1]
+    return imm == '0' if m.group(1) == 'i' else bool(FP_ZERO_BITS.match(imm))
+
+
+def drop_zero_xorc(evs):
+    """RULE 3 (bd dm7f.81; owner ruling ruling-dm7f81-open-qs-2026-10-15 Q2) — a
+    `cqrt_xorc_<W>[_controlled](…, imm)` whose immediate is the LITERAL zero is the
+    identity (h ^= 0, under any control) and is deleted from BOTH traces before the
+    comparison (`is_zero_xorc`). Why: a rolled loop's trip prints `xorc(…, 0)` from a
+    RUNTIME counter that is 0 on that trip, while its unrolled twin sees the
+    constant 0 and emits no gate (the constant-zero arm skip, MergeArmWrite.cpp)
+    — and no ¬flag bracket either: so when the deleted gate is the controlled form
+    and sits EXACTLY between `cqrt_x(f)` and `cqrt_x(f)` on its own control `f`,
+    that now-empty bracket pair goes with it (R11 C-F4; x(f) x(f) is the identity).
+    Same unitary, different bytes."""
+    out, i = [], 0
+    while i < len(evs):
+        e = evs[i]
+        if is_zero_xorc(e):
+            f = e['args'][0] if e['sym'].endswith('_controlled') else None
+            if (f is not None and out and out[-1]['sym'] == 'cqrt_x' and out[-1]['args'] == [f]
+                    and i + 1 < len(evs) and evs[i + 1]['sym'] == 'cqrt_x'
+                    and evs[i + 1]['args'] == [f]):
+                out.pop(); i += 2; continue
+            i += 1; continue
+        out.append(e); i += 1
+    return out
+
+
+def compare_bytes_after_rule3(ta, tb):
+    """The STRICT relation the dm7f.81 twin gates use (`--zero-xorc-then-bytes`,
+    R11 B-F1): RULE 3 only, then the remaining lines must be byte-identical — no
+    reordering, no renaming, no rule-1/2 contraction. "Byte-identical" is over the
+    PARSED lines: each line is compared after `strip()` (leading/trailing
+    whitespace ignored) and blank lines are dropped (`parse`); every other byte,
+    the line order and the handle names must match exactly."""
+    A = [e['line'] for e in drop_zero_xorc(parse(ta.splitlines()))]
+    B = [e['line'] for e in drop_zero_xorc(parse(tb.splitlines()))]
+    if not A or not B:
+        return 'VACUOUS'
+    return 'IDENTICAL' if A == B else 'DIFF'
+
+
 def compare_text(ta, tb):
-    A = parse(ta.splitlines())
-    B = parse(tb.splitlines())
+    A = drop_zero_xorc(parse(ta.splitlines()))
+    B = drop_zero_xorc(parse(tb.splitlines()))
     if not A or not B:
         return 'VACUOUS', 0, 0
     A, ka = contract(A)
@@ -622,6 +686,22 @@ _REC_W_S = _t('cqrt_alloc_i32(1) -> h0', 'cq_template_sext_i32_to_i64(h0) -> h1'
               'cq_template_sext_i32_to_i64_unc(h2, h0)', 'cqrt_free(h2)', 'cqrt_free(h1)')
 _REC_W_T = _t('cqrt_alloc_i32(1) -> h0', 'cq_template_sext_i32_to_i64(h0) -> h1',
               'cq_template_sext_i32_to_i64_unc(h1, h0)', 'cqrt_free(h1)')
+# RULE 3 controls (bd dm7f.81): a literal-zero controlled xor-immediate is the
+# identity; a nonzero one, and fp -0.0, are not.
+_Z_PRE = ['cqrt_alloc_i1(0) -> h0', 'cqrt_ry_i1(h0, 0x1p-1)']
+_Z_T = _t(*_Z_PRE, 'cqrt_alloc_i32(0) -> h1', 'cqrt_measure_i32(h1) -> 0')
+_Z_S = _t(*_Z_PRE, 'cqrt_alloc_i32(0) -> h1', 'cqrt_xorc_i32_controlled(h0, h1, 0)',
+          'cqrt_measure_i32(h1) -> 0')
+_ZF_T = _t(*_Z_PRE, 'cqrt_alloc_f64(0x0p+0) -> h1', 'cqrt_measure_f64(h1) -> 0x0p+0')
+_ZF_S = _t(*_Z_PRE, 'cqrt_alloc_f64(0x0p+0) -> h1',
+           'cqrt_xorc_f64_controlled(h0, h1, 0x0000000000000000)',
+           'cqrt_measure_f64(h1) -> 0x0p+0')
+# C-F4: the zero write's own ¬flag bracket, now empty, goes with it ...
+_ZB_S = _t(*_Z_PRE, 'cqrt_alloc_i32(0) -> h1', 'cqrt_x(h0)',
+           'cqrt_xorc_i32_controlled(h0, h1, 0)', 'cqrt_x(h0)', 'cqrt_measure_i32(h1) -> 0')
+# ... but an x(f); x(f) pair that never bracketed a zero write is NOT rule 3's.
+_ZX_S = _t(*_Z_PRE, 'cqrt_alloc_i32(0) -> h1', 'cqrt_x(h0)', 'cqrt_x(h0)',
+           'cqrt_measure_i32(h1) -> 0')
 _U12_S = _t('cqrt_alloc_i32(5) -> h0', 'cqrt_alloc_i32(0) -> h1',
             'cqrt_copy_i32(h0, h1)', 'cqrt_measure_i32(h0) -> 0', 'cqrt_free(h1)')
 _U12_T = _t('cqrt_alloc_i32(5) -> h0', 'cqrt_alloc_i32(0) -> h1',
@@ -638,7 +718,8 @@ for _nm, _g in [('A22-cnot-target', 'cqrt_cnot(h0, h1)'),
                 ('A25-ccopy-dst', 'cqrt_copy_i32_controlled(h0, h2, h1)'),
                 ('A26-cry-target', 'cqrt_ry_i32_controlled(h0, h1, 0x1p-1)'),
                 ('A27-addc', 'cqrt_addc_i32(h1, 4)'),
-                ('A28-xorc', 'cqrt_xorc_i32(h1, 4)')]:
+                ('A28-xorc', 'cqrt_xorc_i32(h1, 4)'),
+                ('A29-cxorc-dst', 'cqrt_xorc_i32_controlled(h0, h1, 4)')]:
     _rd = 'cq_template_add_i32_hl(h1, 1) -> h9'
     _WRITE_SLOT_ROWS.append((_nm, _t(*_WS_PRE, _g, _rd, 'cqrt_measure_i32(h9) -> 0'),
                              _t(*_WS_PRE, _rd, _g, 'cqrt_measure_i32(h9) -> 0')))
@@ -758,6 +839,19 @@ CONTROLS = [
     # recomputed rail is not `T_unc(x, args)`. (Found by this tool's own checker
     # mutant T10, which survived every control after r1B's A9 was adopted.)
     ("recompute-width-cast", _REC_W_S, _REC_W_T, 'DIFF'),
+    # RULE 3 (bd dm7f.81): `xorc(…, 0)` is the identity and is deleted ...
+    ("rule3-zero-xorc", _Z_S, _Z_T, 'EQUIV'),
+    # ... a NONZERO immediate is a real flip and stays ...
+    ("rule3-nonzero-stays", _Z_S.replace('h1, 0)', 'h1, 4)'), _Z_T, 'DIFF'),
+    # ... the fp all-zero pattern +0.0 is deleted ...
+    ("rule3-fp-plus-zero", _ZF_S, _ZF_T, 'EQUIV'),
+    # ... and -0.0 (the sign bit) is NOT zero.
+    ("rule3-fp-minus-zero", _ZF_S.replace('h1, 0x0000000000000000)', 'h1, 0x8000000000000000)'),
+     _ZF_T, 'DIFF'),
+    # ... the empty ¬flag bracket around a deleted zero write is deleted too ...
+    ("rule3-zero-bracket", _ZB_S, _Z_T, 'EQUIV'),
+    # ... but a bare x(f); x(f) pair is not (rule 3 deletes only what it owns).
+    ("rule3-bare-x-pair-stays", _ZX_S, _Z_T, 'DIFF'),
     # ── bd rhk5 round 3 (Rule-13 r2B F-r2B-1): two conjuncts that were correct but
     # pinned by NO control — r1B's checker mutants U12 and U13 survived every control
     # above. Both pairs are r2B's (review_r2B_rhk5/probes/checker/width_battery.py and
@@ -783,6 +877,19 @@ CONTROLS = [
 ] + [(f"r1B-{nm}", a, b, 'DIFF') for nm, a, b in _WRITE_SLOT_ROWS]
 
 
+# STRICT-MODE controls (--zero-xorc-then-bytes, R11 B-F1), counted in main().
+STRICT_CONTROLS = [
+    ("strict-zero-xorc", _Z_S, _Z_T, 'IDENTICAL'),
+    ("strict-zero-bracket", _ZB_S, _Z_T, 'IDENTICAL'),
+    ("strict-nonzero", _Z_S.replace('h1, 0)', 'h1, 4)'), _Z_T, 'DIFF'),
+    ("strict-rename", _Z_T, _Z_T.replace('h1', 'h7'), 'DIFF'),
+    ("strict-reorder", _t('cqrt_alloc_i1(0) -> h0', 'cqrt_alloc_i1(0) -> h1',
+                          'cqrt_x(h0)', 'cqrt_x(h1)'),
+     _t('cqrt_alloc_i1(0) -> h0', 'cqrt_alloc_i1(0) -> h1',
+        'cqrt_x(h1)', 'cqrt_x(h0)'), 'DIFF'),
+]
+
+
 def selftest(verbose=True):
     ok = True
     for name, s, t, want in CONTROLS:
@@ -795,6 +902,14 @@ def selftest(verbose=True):
         if verbose or not good:
             print(f"  [{'ok ' if good else 'FAIL'}] control {name:24s} {got:9s} "
                   f"(want {want}; contracted {ka}/{kb})")
+    # STRICT MODE (--zero-xorc-then-bytes, R11 B-F1): rule 3, then bytes. A zero
+    # write vanishes; a REORDER or a RENAME that the full relation accepts does not.
+    for name, s, t2, want in STRICT_CONTROLS:
+        got = compare_bytes_after_rule3(s, t2)
+        good = got == want
+        ok &= good
+        if verbose or not good:
+            print(f"  [{'ok ' if good else 'FAIL'}] control {name:24s} {got:9s} (want {want})")
     # UNCLASSIFIED must be refused, never guessed.
     try:
         compare_text("cqrt_bogus(h0)\n", "cqrt_bogus(h0)\n")
@@ -813,7 +928,8 @@ def main(argv):
     if not selftest(verbose):
         print("!! CONTROLS FAILED -- the instrument is measuring itself, not the traces.")
         return 2
-    print(f"  controls: {len(CONTROLS) + 1}/{len(CONTROLS) + 1} as pinned\n")
+    nctl = len(CONTROLS) + len(STRICT_CONTROLS) + 1   # + the unclassified refusal
+    print(f"  controls: {nctl}/{nctl} as pinned\n")
     if '--selftest' in argv:
         return 0
     if len(args) != 2:
@@ -824,6 +940,11 @@ def main(argv):
             ta = f.read()
         with open(args[1]) as f:
             tb = f.read()
+        if '--zero-xorc-then-bytes' in argv:
+            v = compare_bytes_after_rule3(ta, tb)
+            print(f"{os.path.basename(args[0])} vs {os.path.basename(args[1])}: {v} "
+                  f"(strict: rule 3, then byte identity)")
+            return 0 if v == 'IDENTICAL' else 1 if v == 'DIFF' else 2
         verdict, ka, kb = compare_text(ta, tb)
     except Refused as e:
         print(f"REFUSED: {e}")

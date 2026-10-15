@@ -19,7 +19,7 @@
 ; RUN: %filecheck %s < %t.ll
 ; CHECK-LABEL: define i32 @ex(
 ; CHECK:       %[[R:[0-9]+]] = tail call i32 @__cq_specsafe_f(i32 noundef %0)
-; CHECK:       call i32 @cqrt_alloc_i32(i32 %[[R]])
+; CHECK:       call void @cqrt_xorc_i32_controlled(i32 %{{[0-9a-zA-Z_.]+}}, i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[R]])
 ; CHECK:       define internal i32 @__cq_specsafe_f(i32 noundef %0)
 ; CHECK-NEXT:    %2 = tail call i32 @llvm.ctpop.i32(i32 %0)
 ; CHECK-NEXT:    %.fr = freeze i32 %2

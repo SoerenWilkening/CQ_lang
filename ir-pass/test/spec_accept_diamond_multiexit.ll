@@ -53,8 +53,7 @@ entry:
 ; CHECK-NEXT: %[[A:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %b, i32 7)
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %b, i32 100)
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: %[[K:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 999)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[K]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[F]], i32 %[[OUT]], i32 999)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[A]], i32 %[[OUT]])
 ; the Bennett copy-out, then the exact mirror (copies, x, icmp `_unc`, add `_unc`):
@@ -62,7 +61,7 @@ entry:
 ; CHECK-NEXT: call void @cqrt_copy_i32(i32 %[[OUT]], i32 %[[RES]])
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[A]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[K]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[F]], i32 %[[OUT]], i32 999)
 ; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %b, i32 100)
 ; CHECK-NEXT: call void @cq_template_add_i32_hl_unc(i32 %[[A]], i32 %b, i32 7)
 ; every proven-|0> rail freed (the materialized |999> rail K is left allocated):

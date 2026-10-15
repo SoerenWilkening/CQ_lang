@@ -92,6 +92,8 @@ add_library(CQPass MODULE
   src/LoopUnrollPrepass.cpp
   src/MeasureLowering.cpp
   # bd r2j3.32: reverse a dead controlled-copy merge rail by stream replay.
+  # bd dm7f.81: a merge's arm write (controlled copy / xor-immediate / nothing).
+  src/MergeArmWrite.cpp
   src/MergeCarriedFence.cpp
   src/MergeCarriedFenceFresh.cpp
   src/MergeRailDischarge.cpp

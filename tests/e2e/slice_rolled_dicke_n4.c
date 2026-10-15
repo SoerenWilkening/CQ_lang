@@ -12,16 +12,18 @@
    exemption of 01po.19.17: the reads are provably different cells than the
    gates' targets in one activation, and the records are trip-local).
 
-   ANALYTIC CHECK (scratch state-vector replay of THIS golden, 2026-10-15; no
-   simulator in the repo, owner decision 2026-06-10): the final state of
-   q[0..3] is |D^4_2> = (|0011> + |0101> + |0110> + |1001> + |1010> + |1100>)
-   / sqrt(6): exactly these six strings, each amplitude +0.408248 (probability
-   1/6), every other amplitude 0, and every `cqrt_free` frees a |0> rail (stage
-   2b: 6 of 6 frees verified). LEFT ALLOCATED: the cells' rails (the array's)
-   and, per s-trip, the two `selop` literal rails of the select merge (|2> and
-   |0>, owner Q3-style leak of a classical literal); they go away once bd
-   dm7f.81 merges — regenerate this golden then. The trace-only runtime
-   measures 0, so the program prints 0000. */
+   ANALYTIC CHECK (scratch state-vector replay of THIS golden, regenerated
+   2026-10-16 for bd dm7f.81; no simulator in the repo, owner decision
+   2026-06-10): the final state of q[0..3] is
+   |D^4_2> = (|0011> + |0101> + |0110> + |1001> + |1010> + |1100>) / sqrt(6):
+   exactly these six strings, each amplitude +0.408248 (probability 1/6),
+   every other amplitude 0, and every `cqrt_free` frees a |0> rail (stage 2b:
+   6 of 6 frees verified). NO LITERAL RAILS REMAIN: since dm7f.81 the select's
+   arm `2` is one `cqrt_xorc_i32_controlled(f, out, 2)` and its arm `0` emits
+   no gate (and no ¬flag bracket); the two per-trip `selop` rails (|2>, |0>) of
+   the previous golden are gone. Only the cells' four i1 rails stay allocated
+   (the array's): 4 live qubits at the end, was 132; 8 `cqrt_alloc` calls, was
+   12. The trace-only runtime measures 0, so the program prints 0000. */
 /* Dicke state |D^N_K> for arbitrary N, K — Bärtschi & Eidenbenz (2019).
  * Start |0^{N-K} 1^K>, then apply SCS_{m, min(K, m-1)} for m = N down to 2.
  * Qubits are q[0..N-1]; SCS_m acts on q[0..m-1] with q[m-1] as its last qubit. */

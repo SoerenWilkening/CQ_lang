@@ -82,31 +82,26 @@
 ; --- (1) forward: the escape capture right after the rail capture
 ; CHECK: [[INEXT:%[0-9]+]] = add nuw nsw i32 %{{[0-9]+}}, 1
 ; CHECK: call void @cqrt_copy_i32_controlled(i32 %cq.brk.fire, i32 [[RAIL]], i32 %cq.brk.R)
-; CHECK-NEXT: [[T1:%cq.brk.ev[0-9]*]] = call i32 @cqrt_alloc_i32(i32 [[INEXT]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %cq.brk.fire, i32 [[T1]], i32 %cq.brk.esc.R)
-; CHECK-NEXT: [[N1:%cq.brk.negev[0-9]*]] = sub i32 0, [[INEXT]]
-; CHECK-NEXT: call void @cqrt_addc_i32(i32 [[T1]], i32 [[N1]])
-; CHECK-NEXT: call void @cqrt_free(i32 [[T1]])
+; (bd dm7f.81: the classical escape value is the literal operand of a controlled
+; xor, no longer loaded into a scratch rail, copied, unloaded and freed.)
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %cq.brk.fire, i32 %cq.brk.esc.R, i32 [[INEXT]])
 ; CHECK: br i1 %{{[0-9]+}}, label %[[EXIT:[0-9]+]], label %{{[0-9]+}}, !llvm.loop
 ; --- (2) the exit consolidation, the two copy-outs, the consolidation reverse
 ; CHECK: {{^}}[[EXIT]]:
 ; CHECK: %iex = phi i32 [ 0, %{{[0-9]+}} ], [ [[INEXT]], %{{[0-9]+}} ]
 ; CHECK-NEXT: [[E0:%cq.brk.eqz[0-9]*]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %cq.brk.idx, i32 0)
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 [[E0]], i32 [[RAIL]], i32 %cq.brk.R)
-; CHECK-NEXT: [[T2:%cq.brk.ev[0-9]*]] = call i32 @cqrt_alloc_i32(i32 %iex)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 [[E0]], i32 [[T2]], i32 %cq.brk.esc.R)
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 [[E0]], i32 %cq.brk.esc.R, i32 %iex)
 ; CHECK: call void @cqrt_copy_i32(i32 %cq.brk.R, i32 %cq.brk.out)
 ; CHECK-NEXT: call void @cqrt_copy_i32(i32 %cq.brk.esc.R, i32 %cq.brk.esc.out)
 ; CHECK-NEXT: [[E1:%cq.brk.eqz[0-9]*]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %cq.brk.idx, i32 0)
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 [[E1]], i32 [[RAIL]], i32 %cq.brk.R)
-; CHECK-NEXT: [[T3:%cq.brk.ev[0-9]*]] = call i32 @cqrt_alloc_i32(i32 %iex)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 [[E1]], i32 [[T3]], i32 %cq.brk.esc.R)
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 [[E1]], i32 %cq.brk.esc.R, i32 %iex)
 ; --- (3) the reverse-play: V recomputed from i' while fire' is set
 ; CHECK: cq.brk.rev:
 ; CHECK: call void @cqrt_copy_i32_controlled(i32 [[F2:%cq.brk.fire[0-9]+]], i32 [[RAIL]], i32 %cq.brk.R)
 ; CHECK-NEXT: [[VP:%cq.brk.ecl[0-9]*]] = add nuw nsw i32 %cq.brk.ip, 1
-; CHECK-NEXT: [[T4:%cq.brk.ev[0-9]*]] = call i32 @cqrt_alloc_i32(i32 [[VP]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 [[F2]], i32 [[T4]], i32 %cq.brk.esc.R)
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 [[F2]], i32 %cq.brk.esc.R, i32 [[VP]])
 ; --- (4) the tail: the frees, then the kickback on the escape's output register
 ; CHECK: cq.brk.tail:
 ; CHECK-NEXT: call void @cqrt_free(i32 %cq.brk.R)

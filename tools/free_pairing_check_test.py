@@ -931,6 +931,32 @@ define void @slice(i32 %x) {
 }
 """
 
+# bd dm7f.81: the merge's classical-arm write `cqrt_xorc_<W>_controlled(f, out,
+# imm)` and its discharge replay (`control_select_arm_xorc_imm.ll` @true_zero_disch,
+# trimmed): the ¬f bracket opens the core, the replay re-emits it, out is freed.
+CXORC_MERGE = """
+define i32 @slice(i32 %x, i32 %y) {
+  %h = call i32 @cqrt_alloc_i32(i32 %x)
+  call void @cqrt_ry_i32(i32 %h, double 3.000000e-01)
+  %h1 = call i32 @cqrt_alloc_i32(i32 %y)
+  call void @cqrt_ry_i32(i32 %h1, double 4.000000e-01)
+  %h_cmp = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 5)
+  %out = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_x(i32 %h_cmp)
+  call void @cqrt_xorc_i32_controlled(i32 %h_cmp, i32 %out, i32 5)
+  call void @cqrt_x(i32 %h_cmp)
+  %h_op = call i32 @cq_template_or_i32(i32 %out, i32 %h1)
+  call void @cqrt_x(i32 %h_cmp)
+  call void @cqrt_xorc_i32_controlled(i32 %h_cmp, i32 %out, i32 5)
+  call void @cqrt_x(i32 %h_cmp)
+  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp, i32 %h, i32 5)
+  call void @cqrt_free(i32 %h_cmp)
+  call void @cqrt_free(i32 %out)
+  %m = call i32 @cqrt_measure_i32(i32 %h_op)
+  ret i32 %m
+}
+"""
+
 XORC_I1 = """
 define void @slice(i1 %x) {
   %h = call i32 @cqrt_alloc_i1(i1 %x)
@@ -1068,6 +1094,8 @@ POSITIVE = [
     # rail. The SSA-immediate arm is the one `addc` cannot prove (see above).
     ("xorc-ssa-immediate-self-inverse", XORC_SSA),
     ("xorc-i1-self-inverse", XORC_I1),
+    # bd dm7f.81 — the controlled xor-immediate merge write and its replay.
+    ("cxorc-merge-replay", CXORC_MERGE),
     ("phase-diamond", PHASE_DIAMOND),
     ("value-diamond", VALUE_DIAMOND),
     ("ifelse-derived-two-rail", IFELSE_DERIVED),
@@ -1766,6 +1794,14 @@ define i32 @slice() local_unnamed_addr #0 {
     # ---- the (A1) -> (A2) fall-through must not become the hiding place ----
     ("a2-cancels-an-xorc-bracket-whose-rail-immediate-moved",
      A2_MOVED_IMMEDIATE, "A1-imm-not-classical"),
+    # bd dm7f.81: the controlled twin's slot 2 is `classical_imm` too — a RAIL
+    # there (rotated between the write and its replay) must not cancel.
+    ("cxorc-rail-in-the-immediate-slot",
+     CXORC_MERGE.replace("i32 %out, i32 5)", "i32 %out, i32 %h1)")
+                .replace("  %h_op = call",
+                         "  call void @cqrt_ry_i32(i32 %h1, double 7.500000e-01)\n"
+                         "  %h_op = call"),
+     "A1-imm-not-classical"),
 
     # ---- bd 0gwl: the CO-WRITTEN slot of a two-write gate ------------------
     # `pair_operands_unchanged` used to iterate `read_idx()` only, and

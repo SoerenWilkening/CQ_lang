@@ -5474,11 +5474,13 @@ add_test(NAME e2e-slice-control-cascade-three-bools
 # reads it as a copy source) and is then REVERSED, so its flag strip is deferred
 # past that reader, while in the base the rail is measured and its strip stays
 # put. Everything up to the strip is still byte-identical.
+# bd dm7f.81 shortened it to 12: the a-mux's constant arms (2, 5) are literal
+# operands of `cqrt_xorc_i32_controlled`, no longer two `cqrt_alloc_i32` lines.
 add_test(NAME e2e-cascade-two-bools-base-prefix-identical
   COMMAND "${CMAKE_COMMAND}"
     "-DA=${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools.expected.log"
     "-DB=${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools_base.expected.log"
-    -DN=14
+    -DN=12
     -P "${CMAKE_CURRENT_SOURCE_DIR}/compare_prefix.cmake")
 
 # GATE 2 — "an ACCEPT, not a STREAM", the SELECT half, and this is the real twin
@@ -5494,12 +5496,15 @@ add_test(NAME e2e-cascade-two-bools-base-prefix-identical
 # `add` to its flag free (flagship 15-31, uncond 14-30), so it also covers the
 # a-mux reversal, which needs the a-mux flag and its two classical sources
 # renamed too (h2/h4/h5 vs h1/h3/h4).
+# bd dm7f.81 re-measured the window (flagship 13-29, uncond 12-28): the a-mux's
+# classical sources are literals now (no rails to rename), so the renames are the
+# b1 rail, the a-mux flag and out rail, the `add`, the b1 flag and the b1 out rail.
 add_test(NAME e2e-cascade-two-bools-twin-identical
   COMMAND "${CMAKE_COMMAND}"
     "-DA=${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools.expected.log"
     "-DB=${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools_uncond.expected.log"
-    -DAFROM=15 -DATO=31 -DBFROM=14 -DBTO=30
-    "-DAREN=h1=hPREP;h3=hAMUX;h2=hFLAG;h4=hS1;h5=hS2" "-DBREN=h5=hPREP;h2=hAMUX;h1=hFLAG;h3=hS1;h4=hS2"
+    -DAFROM=13 -DATO=29 -DBFROM=12 -DBTO=28
+    "-DAREN=h1=hPREP;h2=hFLAG;h3=hAMUX;h4=hADD;h5=hBF;h6=hOUT" "-DBREN=h3=hPREP;h1=hFLAG;h2=hAMUX;h4=hADD;h5=hBF;h6=hOUT"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/compare_twin_half.cmake")
 
 # bd `boi6` D-B / Track M, round-1 finding F-M6 — a 4.4 DATA SELECT **INSIDE** a
@@ -5537,8 +5542,12 @@ add_test(NAME e2e-slice-control-cascade-select-in-loop-unrolled-twin
 # `_Bool` axis, so this pair is the ONLY instrument for this cell.
 # ⚠ INTERNAL-CONSISTENCY, NOT AN ORACLE GATE: both halves need bd `boi6` D-B to
 # lower at all (the frozen ORACLE declines both).
+# RED as compare_files since dm7f.81: rolled trip prints xorc(…, 0) from a runtime
+# counter; the unrolled twin folds it; measured. trace_twin_equiv.py RULE 3 deletes a
+# literal-zero xorc on both sides (owner ruling ruling-dm7f81-open-qs-2026-10-15 Q2);
+# STRICT mode: rule 3 only, then byte identity (R11 round 1 B-F1).
 add_test(NAME e2e-cascade-select-in-loop-twin-identical
-  COMMAND "${CMAKE_COMMAND}" -E compare_files
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/trace_twin_equiv.py" --quiet-controls --zero-xorc-then-bytes
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_select_in_loop_outside_prep.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_select_in_loop_outside_prep_unrolled_twin.expected.log")
 
@@ -7197,12 +7206,20 @@ foreach(_x16 slice_loop_condtree_select_hoisted
   set_tests_properties(${_x16_name} PROPERTIES ENVIRONMENT
     "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")
 endforeach()
+# RED as compare_files since dm7f.81: rolled trip prints xorc(…, 0) from a runtime
+# counter; the unrolled twin folds it; measured. trace_twin_equiv.py RULE 3 deletes a
+# literal-zero xorc on both sides (owner ruling ruling-dm7f81-open-qs-2026-10-15 Q2);
+# STRICT mode: rule 3 only, then byte identity (R11 round 1 B-F1).
 add_test(NAME e2e-loop-condtree-select-hoisted-twin-identical
-  COMMAND "${CMAKE_COMMAND}" -E compare_files
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/trace_twin_equiv.py" --quiet-controls --zero-xorc-then-bytes
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_condtree_select_hoisted.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_condtree_select_hoisted_unrolled.expected.log")
+# RED as compare_files since dm7f.81: rolled trip prints xorc(…, 0) from a runtime
+# counter; the unrolled twin folds it; measured. trace_twin_equiv.py RULE 3 deletes a
+# literal-zero xorc on both sides (owner ruling ruling-dm7f81-open-qs-2026-10-15 Q2);
+# STRICT mode: rule 3 only, then byte identity (R11 round 1 B-F1).
 add_test(NAME e2e-loop-condtree-select-hoisted-literal-twin-identical
-  COMMAND "${CMAKE_COMMAND}" -E compare_files
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/trace_twin_equiv.py" --quiet-controls --zero-xorc-then-bytes
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_condtree_select_hoisted_literal.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_condtree_select_hoisted_literal_unrolled.expected.log")
 

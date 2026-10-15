@@ -7,8 +7,7 @@ cqrt_cnot(h1, h2)
 cqrt_alloc_i32(0) -> h3
 cqrt_copy_i32_controlled(h2, h0, h3)
 cqrt_x(h2)
-cqrt_alloc_i32(9) -> h4
-cqrt_copy_i32_controlled(h2, h4, h3)
+cqrt_xorc_i32_controlled(h2, h3, 9)
 cqrt_x(h2)
 cqrt_cnot(h1, h2)
 cqrt_free(h2)

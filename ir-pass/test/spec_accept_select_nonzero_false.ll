@@ -48,13 +48,12 @@ entry:
 ; CHECK-NEXT:  %[[SEL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %b, i32 %[[SEL]])
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT:  %[[K7:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 7)
-; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[K7]], i32 %[[SEL]])
+; CHECK-NEXT:  call void @cqrt_xorc_i32_controlled(i32 %[[F]], i32 %[[SEL]], i32 7)
 ; Bennett copy-out; the merge's flag strip was elided, the bracket is still open.
 ; CHECK-NEXT:  %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT:  call void @cqrt_copy_i32(i32 %[[SEL]], i32 %[[OUT]])
 ; The exact mirror: both copies in reverse order, the `cqrt_x` between them.
-; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[K7]], i32 %[[SEL]])
+; CHECK-NEXT:  call void @cqrt_xorc_i32_controlled(i32 %[[F]], i32 %[[SEL]], i32 7)
 ; CHECK-NEXT:  call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT:  call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %b, i32 %[[SEL]])
 ; CHECK-NEXT:  call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[F]], i32 %b, i32 5)

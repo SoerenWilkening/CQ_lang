@@ -5,6 +5,7 @@
 
 #include "ChainWalk.h"
 #include "CalleeBody.h"        // calleeBodyTrusted (bd p3kd.2)
+#include "ControlledSymbols.h" // isControlledXorc (bd dm7f.81)
 #include "RotationLowering.h"  // isCopyGate — the ONE copy-write-slot owner (bd rhk5 r2)
 #include "TaintPropagation.h"
 #include "TemplateName.h"      // isUncHandleSlot — the ONE slot table
@@ -168,6 +169,10 @@ Proof aliasLabelPreserved(const Value *A, const TaintSet &taint, ProofCtx &Ctx) 
         if (Slot != Last && UC->getArgOperand(Last) != A)
           continue;
       }
+      // (B3′) bd dm7f.81 — the classical-arm write `cqrt_xorc_<W>_controlled(
+      //      ctrl, dst, imm)` reads only its CONTROL (slot 0); dst is written.
+      if (isControlledXorc(UC) && Slot == 0 && UC->getArgOperand(1) != A)
+        continue;
       Res = Proof::No;
       break;
     }

@@ -12,11 +12,9 @@ cqrt_free(h2)
 cqrt_alloc_i1(0) -> h3
 cqrt_cnot(h0, h3)
 cqrt_alloc_i32(0) -> h4
-cqrt_alloc_i32(2) -> h5
-cqrt_copy_i32_controlled(h3, h5, h4)
+cqrt_xorc_i32_controlled(h3, h4, 2)
 cqrt_x(h3)
-cqrt_alloc_i32(5) -> h6
-cqrt_copy_i32_controlled(h3, h6, h4)
+cqrt_xorc_i32_controlled(h3, h4, 5)
 cqrt_x(h3)
 cqrt_cnot(h0, h3)
 cqrt_free(h3)

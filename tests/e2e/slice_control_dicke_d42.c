@@ -17,6 +17,11 @@
    0, every cqrt_free on a |0> rail, and every leftover rail (the literal-2
    select operand, |0> scratch) in a fixed basis state — nothing entangled with
    the register file.
+   bd dm7f.81 re-check (same propagator over the regenerated golden): the same
+   six amplitudes, and NO leftover rail: `2*q4` is now one
+   `cqrt_xorc_i32_controlled(flag, out, 2)` (the 0 arm emits nothing), replayed by
+   the merge discharge; the two constant rails (64 qubits) are gone, so 4 qubits
+   (the register file) are live at the end instead of 68.
 
    WHAT LOWERS IT (each a general mechanism with its own lit fixtures):
    SCS_{3,2}'s CRy is a branch on q2 rotating q2 itself; the program's own

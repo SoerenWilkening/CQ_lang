@@ -91,16 +91,16 @@ entry:
 ; into region 2 and still matches — MEASURED as the single MISS of this
 ; increment's injection matrix, and fixed by pinning the full 14-entry stream.
 ; ORD: call void @cqrt_cnot(
-; ORD: call void @cqrt_copy_i32_controlled(
+; ORD: call void @cqrt_xorc_i32_controlled(
 ; ORD: call void @cqrt_x(
-; ORD: call void @cqrt_copy_i32_controlled(
+; ORD: call void @cqrt_xorc_i32_controlled(
 ; ORD: call void @cqrt_x(
 ; ORD: call void @cqrt_cnot(
 ; ORD: call void @cqrt_free(
 ; ORD: call void @cqrt_cnot(
-; ORD: call void @cqrt_copy_i32_controlled(
+; ORD: call void @cqrt_xorc_i32_controlled(
 ; ORD: call void @cqrt_x(
-; ORD: call void @cqrt_copy_i32_controlled(
+; ORD: call void @cqrt_xorc_i32_controlled(
 ; ORD: call void @cqrt_x(
 ; ORD: call void @cqrt_cnot(
 ; ORD: call void @cqrt_free(
@@ -129,9 +129,12 @@ entry:
 ; FCNT-NOT:     call void @cqrt_free(
 ; CNCNT-COUNT-4: call void @cqrt_cnot(
 ; CNCNT-NOT:     call void @cqrt_cnot(
-; CPCNT-COUNT-4: call void @cqrt_copy_i32_controlled(
+; (bd dm7f.81: a constant or classical merge arm is a literal operand of cqrt_xorc_<W>_controlled, no longer an alloc'd rail + cqrt_copy_<W>_controlled; a zero arm emits no gate and no bracket. Counts below re-measured.)
+; CPCNT-NOT: call void @cqrt_copy_i32_controlled(
+; CPCNT-COUNT-4: call void @cqrt_xorc_i32_controlled(
+; CPCNT-NOT: call void @cqrt_xorc_i32_controlled(
 ; CPCNT-NOT:     call void @cqrt_copy
 ; RYCNT-COUNT-1: call void @cqrt_ry_
 ; RYCNT-NOT:     call void @cqrt_ry_
-; ACNT-COUNT-9: call i32 @cqrt_alloc_
+; ACNT-COUNT-5: call i32 @cqrt_alloc_
 ; ACNT-NOT:     call i32 @cqrt_alloc_

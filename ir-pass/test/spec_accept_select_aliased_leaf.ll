@@ -51,8 +51,7 @@
 ; CHECK-NEXT: %[[X:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sitofp_i32_to_f64(i32 %n)
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fcmp_uno_f64(i32 %[[X]], i32 %[[X]])
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double 0.000000e+00)
-; CHECK-NEXT: %[[Z:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double 0.000000e+00)
-; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %[[F]], i32 %[[Z]], i32 %[[OUT]])
+; (bd dm7f.81: the TRUE arm is the constant +0.0: no write; the ¬flag bracket of the quantum FALSE arm stays.)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %[[F]], i32 %[[X]], i32 %[[OUT]])
 ; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fptosi_f64_to_i32(i32 %[[OUT]])
@@ -62,14 +61,12 @@
 ; CHECK-NEXT: call void @cq_template_fptosi_f64_to_i32_unc(i32 %[[R]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %[[F]], i32 %[[X]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %[[F]], i32 %[[Z]], i32 %[[OUT]])
 ; The LIFO strip of the aliased flag, then its free at a proven |0> (Rule 6):
 ; CHECK-NEXT: call void @cq_template_fcmp_uno_f64_unc(i32 %[[F]], i32 %[[X]], i32 %[[X]])
 ; CHECK-NEXT: call void @cq_template_sitofp_i32_to_f64_unc(i32 %[[X]], i32 %n)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[X]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT]])
-; CHECK-NEXT: call void @cqrt_free(i32 %[[Z]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[R]])
 ; CHECK-NEXT: ret i32 %[[RES]]
 ; CHECK-NEXT: }

@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 861 maintained source files, 6941 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 863 maintained source files, 6959 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -18,15 +18,15 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArmClassify.cpp` — 10934 physical lines
 - `ir-pass/src/LoopLowering.cpp` — 8088 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5553 physical lines
-- `tools/free_pairing_check.py` — 4519 physical lines
-- `tools/free_pairing_check_test.py` — 4408 physical lines
+- `tools/free_pairing_check.py` — 4524 physical lines
+- `tools/free_pairing_check_test.py` — 4444 physical lines
 - `tools/loop_twin_matrix.py` — 4115 physical lines
 - `ir-pass/src/QramLowering.cpp` — 4069 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 3498 physical lines
 - `ir-pass/src/TaintPropagation.cpp` — 3492 physical lines
 - `ir-pass/src/SwapRouteEmit.cpp` — 3414 physical lines
 - `runtime/cq_link_smoke.c` — 2893 physical lines
-- `ir-pass/src/RotationLowering.cpp` — 2762 physical lines
+- `ir-pass/src/RotationLowering.cpp` — 2777 physical lines
 - `tools/taintset_scrub_guard.py` — 2758 physical lines
 - `runtime/cq_intrinsic_templates.c` — 2475 physical lines
 - `runtime/cq_templates.h` — 2437 physical lines
@@ -38,24 +38,24 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SelectClassify.cpp` — 1528 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
 - `ir-pass/src/OpcodeLowering.cpp` — 1514 physical lines
+- `runtime/cq_runtime.c` — 1489 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
-- `runtime/cq_runtime.c` — 1427 physical lines
-- `ir-pass/src/Specialization.cpp` — 1380 physical lines
+- `ir-pass/src/Specialization.cpp` — 1385 physical lines
 - `ir-pass/src/ArithLowering.cpp` — 1344 physical lines
 - `tools/library_coverage/probe.py` — 1219 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
 - `ir-pass/src/ChainWalk.cpp` — 1169 physical lines
 - `tools/loop_twin_matrix_quarantine_test.py` — 1110 physical lines
-- `ir-pass/src/BreakReversePlay.cpp` — 1007 physical lines
 - `ir-pass/src/SpecializeReject.cpp` — 1005 physical lines
+- `ir-pass/src/BreakReversePlay.cpp` — 1004 physical lines
 - `ir-pass/src/ControlDetect.cpp` — 986 physical lines
+- `tools/trace_twin_equiv.py` — 964 physical lines
 - `ir-pass/src/WireWalk.cpp` — 948 physical lines
 - `tools/golden_multiset_audit_test.py` — 948 physical lines
 - `tools/record_census/shipped_guard_model.py` — 878 physical lines
-- `ir-pass/src/IOSinkLowering.cpp` — 862 physical lines
+- `ir-pass/src/IOSinkLowering.cpp` — 860 physical lines
 - `tools/angle_select_twin_matrix.py` — 853 physical lines
-- `tools/trace_twin_equiv.py` — 843 physical lines
-- `runtime/cq_runtime.h` — 813 physical lines
+- `runtime/cq_runtime.h` — 847 physical lines
 - `ir-pass/include/LoopPlan.h` — 805 physical lines
 - `tools/cq_stage_cache_test.py` — 752 physical lines
 - `tools/library_coverage/full_surface/full_census.py` — 728 physical lines
@@ -77,7 +77,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/AngleSelectEmit.cpp` — 575 physical lines
 - `tests/e2e/slice_libm_real_acoshl.c` — 575 physical lines
 - `ir-pass/src/IntrinsicLowering.cpp` — 565 physical lines
-- `ir-pass/src/EmitInverse.cpp` — 544 physical lines
+- `ir-pass/src/EmitInverse.cpp` — 552 physical lines
 - `ir-pass/include/RailBankPromote.h` — 536 physical lines
 - `ir-pass/src/CompareLowering.cpp` — 535 physical lines
 - `tools/library_coverage/full_surface/wprobe.py` — 515 physical lines
@@ -93,7 +93,6 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/library_coverage/loop_bounds/LoopBoundProbe.cpp` — 471 physical lines
 - `tools/record_census/census_common.py` — 468 physical lines
 - `ir-pass/src/DagTraversal.cpp` — 461 physical lines
-- `ir-pass/src/SelectMergeEmit.cpp` — 458 physical lines
 - `tests/e2e/slice_libm_real_atanhl.c` — 453 physical lines
 - `tests/e2e/slice_libm_real_erfcl.c` — 451 physical lines
 - `tools/predmux_probe_gen.py` — 450 physical lines
@@ -104,6 +103,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `runtime/cq_intrinsic_templates.h` — 427 physical lines
 - `ir-pass/include/WireWalk.h` — 424 physical lines
 - `ir-pass/tools/scrub_selftest.cpp` — 423 physical lines
+- `ir-pass/src/SelectMergeEmit.cpp` — 420 physical lines
 - `tests/e2e/slice_libm_real_powf.c` — 418 physical lines
 - `tools/install_cq.py` — 402 physical lines
 
@@ -343,14 +343,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArmHomogeneity.cpp:132` — `midIsPurePhase`
 - `ir-pass/src/ArmHomogeneity.cpp:170` — `treeHomogeneous`
 
-### `ir-pass/src/BennettWrap.cpp` (288 lines)
+### `ir-pass/src/BennettWrap.cpp` (291 lines)
 
-- `ir-pass/src/BennettWrap.cpp:50` — `diagnose`
-- `ir-pass/src/BennettWrap.cpp:67` — `classify`
-- `ir-pass/src/BennettWrap.cpp:95` — `isZeroAlloc`
-- `ir-pass/src/BennettWrap.cpp:102` — `gateTargets`
-- `ir-pass/src/BennettWrap.cpp:144` — `elideForwardStrips`
-- `ir-pass/src/BennettWrap.cpp:200` — `emitBennettWrap`
+- `ir-pass/src/BennettWrap.cpp:51` — `diagnose`
+- `ir-pass/src/BennettWrap.cpp:68` — `classify`
+- `ir-pass/src/BennettWrap.cpp:96` — `isZeroAlloc`
+- `ir-pass/src/BennettWrap.cpp:103` — `gateTargets`
+- `ir-pass/src/BennettWrap.cpp:147` — `elideForwardStrips`
+- `ir-pass/src/BennettWrap.cpp:203` — `emitBennettWrap`
 
 ### `ir-pass/src/BirthFreeze.cpp` (41 lines)
 
@@ -371,34 +371,33 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/BoolStorageNarrow.cpp:285` — `narrowWindowBoolCompares`
 - `ir-pass/src/BoolStorageNarrow.cpp:323` — `narrowBoolStorageModule`
 
-### `ir-pass/src/BreakReversePlay.cpp` (1007 lines)
+### `ir-pass/src/BreakReversePlay.cpp` (1004 lines)
 
-- `ir-pass/src/BreakReversePlay.cpp:145` — `diagnoseAt`
-- `ir-pass/src/BreakReversePlay.cpp:165` — `isInPlaceRailGate`
-- `ir-pass/src/BreakReversePlay.cpp:174` — `isBreakCondTemplate`
-- `ir-pass/src/BreakReversePlay.cpp:184` — `isCompareTemplate`
-- `ir-pass/src/BreakReversePlay.cpp:190` — `discoverLoweredBreak`
-- `ir-pass/src/BreakReversePlay.cpp:363` — `coversLoweredBody`
-- `ir-pass/src/BreakReversePlay.cpp:437` — `mintCall`
-- `ir-pass/src/BreakReversePlay.cpp:445` — `toffoliFn`
-- `ir-pass/src/BreakReversePlay.cpp:451` — `cnotFn`
-- `ir-pass/src/BreakReversePlay.cpp:459` — `emitEqZero`
-- `ir-pass/src/BreakReversePlay.cpp:473` — `clearAndFree`
-- `ir-pass/src/BreakReversePlay.cpp:488` — `clearChainAndFree`
-- `ir-pass/src/BreakReversePlay.cpp:512` — `cloneBreakCond`
-- `ir-pass/src/BreakReversePlay.cpp:561` — `copyCtrlR`
-- `ir-pass/src/BreakReversePlay.cpp:562` — `copyCtrlIdx`
-- `ir-pass/src/BreakReversePlay.cpp:563` — `allocIdx`
+- `ir-pass/src/BreakReversePlay.cpp:146` — `diagnoseAt`
+- `ir-pass/src/BreakReversePlay.cpp:166` — `isInPlaceRailGate`
+- `ir-pass/src/BreakReversePlay.cpp:175` — `isBreakCondTemplate`
+- `ir-pass/src/BreakReversePlay.cpp:185` — `isCompareTemplate`
+- `ir-pass/src/BreakReversePlay.cpp:191` — `discoverLoweredBreak`
+- `ir-pass/src/BreakReversePlay.cpp:364` — `coversLoweredBody`
+- `ir-pass/src/BreakReversePlay.cpp:438` — `mintCall`
+- `ir-pass/src/BreakReversePlay.cpp:446` — `toffoliFn`
+- `ir-pass/src/BreakReversePlay.cpp:452` — `cnotFn`
+- `ir-pass/src/BreakReversePlay.cpp:460` — `emitEqZero`
+- `ir-pass/src/BreakReversePlay.cpp:474` — `clearAndFree`
+- `ir-pass/src/BreakReversePlay.cpp:489` — `clearChainAndFree`
+- `ir-pass/src/BreakReversePlay.cpp:513` — `cloneBreakCond`
+- `ir-pass/src/BreakReversePlay.cpp:562` — `copyCtrlR`
+- `ir-pass/src/BreakReversePlay.cpp:563` — `copyCtrlIdx`
 - `ir-pass/src/BreakReversePlay.cpp:564` — `addcIdx`
 - `ir-pass/src/BreakReversePlay.cpp:567` — `captureRailToR`
 - `ir-pass/src/BreakReversePlay.cpp:577` — `xorClassical`
-- `ir-pass/src/BreakReversePlay.cpp:588` — `recomputeEscape`
-- `ir-pass/src/BreakReversePlay.cpp:613` — `xorEqKIntoFire`
-- `ir-pass/src/BreakReversePlay.cpp:630` — `emitForwardCapture`
-- `ir-pass/src/BreakReversePlay.cpp:675` — `emitExitConsolidation`
-- `ir-pass/src/BreakReversePlay.cpp:706` — `emitBackwardBody`
-- `ir-pass/src/BreakReversePlay.cpp:766` — `emitOneBreak`
-- `ir-pass/src/BreakReversePlay.cpp:1001` — `lowerBreakReversePlay`
+- `ir-pass/src/BreakReversePlay.cpp:586` — `recomputeEscape`
+- `ir-pass/src/BreakReversePlay.cpp:611` — `xorEqKIntoFire`
+- `ir-pass/src/BreakReversePlay.cpp:628` — `emitForwardCapture`
+- `ir-pass/src/BreakReversePlay.cpp:673` — `emitExitConsolidation`
+- `ir-pass/src/BreakReversePlay.cpp:704` — `emitBackwardBody`
+- `ir-pass/src/BreakReversePlay.cpp:763` — `emitOneBreak`
+- `ir-pass/src/BreakReversePlay.cpp:998` — `lowerBreakReversePlay`
 
 ### `ir-pass/src/ByRefInline.cpp` (387 lines)
 
@@ -464,18 +463,18 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ChainWalk.cpp:1100` — `isRecordedStripReaderOf`
 - `ir-pass/src/ChainWalk.cpp:1117` — `isInteriorTerminalHandle`
 
-### `ir-pass/src/ClassicalCallArmEmit.cpp` (322 lines)
+### `ir-pass/src/ClassicalCallArmEmit.cpp` (320 lines)
 
 - `ir-pass/src/ClassicalCallArmEmit.cpp:66` — `scrubTaint`
 - `ir-pass/src/ClassicalCallArmEmit.cpp:79` — `bailLoud`
 - `ir-pass/src/ClassicalCallArmEmit.cpp:88` — `emitClassicalCallArmRegion`
 
-### `ir-pass/src/ClonePreserves.cpp` (197 lines)
+### `ir-pass/src/ClonePreserves.cpp` (202 lines)
 
-- `ir-pass/src/ClonePreserves.cpp:54` — `clonePassPreserves`
-- `ir-pass/src/ClonePreserves.cpp:95` — `formalLabelPreserved`
-- `ir-pass/src/ClonePreserves.cpp:113` — `aliasLabelPreserved`
-- `ir-pass/src/ClonePreserves.cpp:186` — `cloneCallPreservesArg`
+- `ir-pass/src/ClonePreserves.cpp:55` — `clonePassPreserves`
+- `ir-pass/src/ClonePreserves.cpp:96` — `formalLabelPreserved`
+- `ir-pass/src/ClonePreserves.cpp:114` — `aliasLabelPreserved`
+- `ir-pass/src/ClonePreserves.cpp:191` — `cloneCallPreservesArg`
 
 ### `ir-pass/src/CloneProducer.cpp` (146 lines)
 
@@ -545,16 +544,19 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ControlDetect.cpp:530` — `handleBranchRegion`
 - `ir-pass/src/ControlDetect.cpp:760` — `detectControlRegions`
 
-### `ir-pass/src/ControlledSymbols.cpp` (172 lines)
+### `ir-pass/src/ControlledSymbols.cpp` (209 lines)
 
-- `ir-pass/src/ControlledSymbols.cpp:20` — `ControlledSymbols::controlledRotationFn`
-- `ir-pass/src/ControlledSymbols.cpp:56` — `ControlledSymbols::xFn`
-- `ir-pass/src/ControlledSymbols.cpp:66` — `ControlledSymbols::cswapFn`
-- `ir-pass/src/ControlledSymbols.cpp:76` — `ControlledSymbols::cnotFn`
-- `ir-pass/src/ControlledSymbols.cpp:88` — `ControlledSymbols::toffoliFn`
-- `ir-pass/src/ControlledSymbols.cpp:99` — `ControlledSymbols::copyControlledFn`
-- `ir-pass/src/ControlledSymbols.cpp:130` — `ControlledSymbols::copyControlledFpFn`
-- `ir-pass/src/ControlledSymbols.cpp:150` — `ControlledSymbols::tapeWriteControlledFn`
+- `ir-pass/src/ControlledSymbols.cpp:21` — `ControlledSymbols::controlledRotationFn`
+- `ir-pass/src/ControlledSymbols.cpp:57` — `ControlledSymbols::xFn`
+- `ir-pass/src/ControlledSymbols.cpp:67` — `ControlledSymbols::cswapFn`
+- `ir-pass/src/ControlledSymbols.cpp:77` — `ControlledSymbols::cnotFn`
+- `ir-pass/src/ControlledSymbols.cpp:89` — `ControlledSymbols::toffoliFn`
+- `ir-pass/src/ControlledSymbols.cpp:100` — `ControlledSymbols::copyControlledFn`
+- `ir-pass/src/ControlledSymbols.cpp:131` — `ControlledSymbols::copyControlledFpFn`
+- `ir-pass/src/ControlledSymbols.cpp:151` — `ControlledSymbols::xorcControlledFn`
+- `ir-pass/src/ControlledSymbols.cpp:163` — `ControlledSymbols::xorcControlledFpFn`
+- `ir-pass/src/ControlledSymbols.cpp:178` — `isControlledXorc`
+- `ir-pass/src/ControlledSymbols.cpp:187` — `ControlledSymbols::tapeWriteControlledFn`
 
 ### `ir-pass/src/CtlzIdiomPrepass.cpp` (497 lines)
 
@@ -587,13 +589,13 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/DeadValueLiveness.cpp:262` — `deadParamMask`
 - `ir-pass/src/DeadValueLiveness.cpp:270` — `deleteDeadCones`
 
-### `ir-pass/src/EmitInverse.cpp` (544 lines)
+### `ir-pass/src/EmitInverse.cpp` (552 lines)
 
-- `ir-pass/src/EmitInverse.cpp:49` — `forwardOfAdjoint`
-- `ir-pass/src/EmitInverse.cpp:96` — `inPlaceQQAdjointName`
-- `ir-pass/src/EmitInverse.cpp:104` — `isInverseEmittable`
-- `ir-pass/src/EmitInverse.cpp:249` — `emitInverseCall`
-- `ir-pass/src/EmitInverse.cpp:527` — `emitInverseChain`
+- `ir-pass/src/EmitInverse.cpp:50` — `forwardOfAdjoint`
+- `ir-pass/src/EmitInverse.cpp:97` — `inPlaceQQAdjointName`
+- `ir-pass/src/EmitInverse.cpp:105` — `isInverseEmittable`
+- `ir-pass/src/EmitInverse.cpp:256` — `emitInverseCall`
+- `ir-pass/src/EmitInverse.cpp:535` — `emitInverseChain`
 
 ### `ir-pass/src/EqFoldArm.cpp` (152 lines)
 
@@ -676,7 +678,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/HoistRoute.cpp:35` — `hoistedCallTreeIsUBFree`
 - `ir-pass/src/HoistRoute.cpp:58` — `classicalCallHoistRoute`
 
-### `ir-pass/src/IOSinkLowering.cpp` (862 lines)
+### `ir-pass/src/IOSinkLowering.cpp` (860 lines)
 
 - `ir-pass/src/IOSinkLowering.cpp:81` — `diagnose`
 - `ir-pass/src/IOSinkLowering.cpp:89` — `isRecognizedIOSink`
@@ -861,6 +863,16 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/MeasureLowering.cpp:222` — `diagnoseMeasure`
 - `ir-pass/src/MeasureLowering.cpp:230` — `lowerMeasures`
 
+### `ir-pass/src/MergeArmWrite.cpp` (126 lines)
+
+- `ir-pass/src/MergeArmWrite.cpp:30` — `copySourceLedger`
+- `ir-pass/src/MergeArmWrite.cpp:36` — `materializeCopySource`
+- `ir-pass/src/MergeArmWrite.cpp:49` — `declineQuantumCopySources`
+- `ir-pass/src/MergeArmWrite.cpp:70` — `armWriteIsNoop`
+- `ir-pass/src/MergeArmWrite.cpp:84` — `emitArmWrite`
+- `ir-pass/src/MergeArmWrite.cpp:102` — `emitArmMux`
+- `ir-pass/src/MergeArmWrite.cpp:119` — `eraseUnusedArmDecls`
+
 ### `ir-pass/src/MergeCarriedFence.cpp` (168 lines)
 
 - `ir-pass/src/MergeCarriedFence.cpp:42` — `carriedLoop`
@@ -892,25 +904,25 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/MergeRailDischarge.cpp:36` — `emitReplay`
 - `ir-pass/src/MergeRailDischarge.cpp:78` — `dischargeMergeRails`
 
-### `ir-pass/src/MergeStreamGates.cpp` (267 lines)
+### `ir-pass/src/MergeStreamGates.cpp` (276 lines)
 
-- `ir-pass/src/MergeStreamGates.cpp:22` — `calleeName`
-- `ir-pass/src/MergeStreamGates.cpp:30` — `isControlledCopy`
-- `ir-pass/src/MergeStreamGates.cpp:39` — `isPlainCopy`
-- `ir-pass/src/MergeStreamGates.cpp:46` — `isMergeWrite`
-- `ir-pass/src/MergeStreamGates.cpp:67` — `streamGateWrites`
-- `ir-pass/src/MergeStreamGates.cpp:102` — `controlSlots`
-- `ir-pass/src/MergeStreamGates.cpp:120` — `onlyReads`
-- `ir-pass/src/MergeStreamGates.cpp:176` — `readsState`
-- `ir-pass/src/MergeStreamGates.cpp:189` — `isRegister`
-- `ir-pass/src/MergeStreamGates.cpp:198` — `handleAliases`
+- `ir-pass/src/MergeStreamGates.cpp:23` — `calleeName`
+- `ir-pass/src/MergeStreamGates.cpp:31` — `isControlledCopy`
+- `ir-pass/src/MergeStreamGates.cpp:40` — `isPlainCopy`
+- `ir-pass/src/MergeStreamGates.cpp:47` — `isMergeWrite`
+- `ir-pass/src/MergeStreamGates.cpp:74` — `streamGateWrites`
+- `ir-pass/src/MergeStreamGates.cpp:109` — `controlSlots`
+- `ir-pass/src/MergeStreamGates.cpp:127` — `onlyReads`
+- `ir-pass/src/MergeStreamGates.cpp:183` — `readsState`
+- `ir-pass/src/MergeStreamGates.cpp:198` — `isRegister`
+- `ir-pass/src/MergeStreamGates.cpp:207` — `handleAliases`
 
-### `ir-pass/src/MergeStreamPlan.cpp` (380 lines)
+### `ir-pass/src/MergeStreamPlan.cpp` (391 lines)
 
-- `ir-pass/src/MergeStreamPlan.cpp:32` — `between`
-- `ir-pass/src/MergeStreamPlan.cpp:42` — `bornState`
-- `ir-pass/src/MergeStreamPlan.cpp:63` — `sese`
-- `ir-pass/src/MergeStreamPlan.cpp:96` — `planMerge`
+- `ir-pass/src/MergeStreamPlan.cpp:33` — `between`
+- `ir-pass/src/MergeStreamPlan.cpp:43` — `bornState`
+- `ir-pass/src/MergeStreamPlan.cpp:64` — `sese`
+- `ir-pass/src/MergeStreamPlan.cpp:97` — `planMerge`
 
 ### `ir-pass/src/OpcodeLowering.cpp` (1514 lines)
 
@@ -1325,7 +1337,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ReturnMerge.cpp:279` — `foldEmptyForwarder`
 - `ir-pass/src/ReturnMerge.cpp:293` — `unifyTaintedReturns`
 
-### `ir-pass/src/RotationLowering.cpp` (2762 lines)
+### `ir-pass/src/RotationLowering.cpp` (2777 lines)
 
 - `ir-pass/src/RotationLowering.cpp:59` — `suffixFromName`
 - `ir-pass/src/RotationLowering.cpp:438` — `normalizeUndefRotationSeed`
@@ -1348,16 +1360,16 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RotationLowering.cpp:1576` — `push`
 - `ir-pass/src/RotationLowering.cpp:1598` — `collectDescendantRecords`
 - `ir-pass/src/RotationLowering.cpp:1663` — `collectAncestorRecords`
-- `ir-pass/src/RotationLowering.cpp:1725` — `isQramStoreGate`
-- `ir-pass/src/RotationLowering.cpp:1824` — `reachesObservingSink`
-- `ir-pass/src/RotationLowering.cpp:2044` — `recordAbsentAt`
-- `ir-pass/src/RotationLowering.cpp:2058` — `recordDischargedBefore`
-- `ir-pass/src/RotationLowering.cpp:2067` — `recordIsExemptAt`
-- `ir-pass/src/RotationLowering.cpp:2300` — `warnLiveRecordRotations`
-- `ir-pass/src/RotationLowering.cpp:2515` — `recordTripLocal`
-- `ir-pass/src/RotationLowering.cpp:2563` — `declineLiveWindowRecords`
-- `ir-pass/src/RotationLowering.cpp:2705` — `markKeptConditionFlag`
-- `ir-pass/src/RotationLowering.cpp:2709` — `declineUndischargedKeptFlagChains`
+- `ir-pass/src/RotationLowering.cpp:1732` — `isQramStoreGate`
+- `ir-pass/src/RotationLowering.cpp:1831` — `reachesObservingSink`
+- `ir-pass/src/RotationLowering.cpp:2059` — `recordAbsentAt`
+- `ir-pass/src/RotationLowering.cpp:2073` — `recordDischargedBefore`
+- `ir-pass/src/RotationLowering.cpp:2082` — `recordIsExemptAt`
+- `ir-pass/src/RotationLowering.cpp:2315` — `warnLiveRecordRotations`
+- `ir-pass/src/RotationLowering.cpp:2530` — `recordTripLocal`
+- `ir-pass/src/RotationLowering.cpp:2578` — `declineLiveWindowRecords`
+- `ir-pass/src/RotationLowering.cpp:2720` — `markKeptConditionFlag`
+- `ir-pass/src/RotationLowering.cpp:2724` — `declineUndischargedKeptFlagChains`
 
 ### `ir-pass/src/RuntimeNarrowABI.cpp` (49 lines)
 
@@ -1388,15 +1400,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SelectClassify.cpp:740` — `collectCondTree`
 - `ir-pass/src/SelectClassify.cpp:976` — `classifySelectRegion`
 
-### `ir-pass/src/SelectMergeEmit.cpp` (458 lines)
+### `ir-pass/src/SelectMergeEmit.cpp` (420 lines)
 
-- `ir-pass/src/SelectMergeEmit.cpp:56` — `scrubTaint`
-- `ir-pass/src/SelectMergeEmit.cpp:82` — `copySourceLedger`
-- `ir-pass/src/SelectMergeEmit.cpp:88` — `materializeCopySource`
-- `ir-pass/src/SelectMergeEmit.cpp:101` — `declineQuantumCopySources`
-- `ir-pass/src/SelectMergeEmit.cpp:117` — `emitSelectRegion`
+- `ir-pass/src/SelectMergeEmit.cpp:57` — `scrubTaint`
+- `ir-pass/src/SelectMergeEmit.cpp:75` — `emitSelectRegion`
 
-### `ir-pass/src/Specialization.cpp` (1380 lines)
+### `ir-pass/src/Specialization.cpp` (1385 lines)
 
 - `ir-pass/src/Specialization.cpp:95` — `recordCloneRailSelects`
 - `ir-pass/src/Specialization.cpp:117` — `reseedCloneTaintFromParams`
@@ -1408,14 +1417,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Specialization.cpp:518` — `retargetSite`
 - `ir-pass/src/Specialization.cpp:547` — `resolveSite`
 - `ir-pass/src/Specialization.cpp:558` — `buildClone`
-- `ir-pass/src/Specialization.cpp:1062` — `shouldSpecialize`
-- `ir-pass/src/Specialization.cpp:1078` — `isQuantumCallerValue`
-- `ir-pass/src/Specialization.cpp:1084` — `isRuntimeCall`
-- `ir-pass/src/Specialization.cpp:1113` — `isCopyDestination`
-- `ir-pass/src/Specialization.cpp:1144` — `userProgramReads`
-- `ir-pass/src/Specialization.cpp:1177` — `resolvePhantomCloneArgReads`
-- `ir-pass/src/Specialization.cpp:1271` — `specialize`
-- `ir-pass/src/Specialization.cpp:1378` — `synthesizeCloneUncTwin`
+- `ir-pass/src/Specialization.cpp:1063` — `shouldSpecialize`
+- `ir-pass/src/Specialization.cpp:1079` — `isQuantumCallerValue`
+- `ir-pass/src/Specialization.cpp:1085` — `isRuntimeCall`
+- `ir-pass/src/Specialization.cpp:1116` — `isCopyDestination`
+- `ir-pass/src/Specialization.cpp:1149` — `userProgramReads`
+- `ir-pass/src/Specialization.cpp:1182` — `resolvePhantomCloneArgReads`
+- `ir-pass/src/Specialization.cpp:1276` — `specialize`
+- `ir-pass/src/Specialization.cpp:1383` — `synthesizeCloneUncTwin`
 
 ### `ir-pass/src/SpecializeClone.cpp` (241 lines)
 
@@ -1594,11 +1603,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SwitchClassify.cpp:204` — `classifyPhaseKickbackSwitch`
 - `ir-pass/src/SwitchClassify.cpp:362` — `classifySwitchRegion`
 
-### `ir-pass/src/SwitchDataMuxEmit.cpp` (236 lines)
+### `ir-pass/src/SwitchDataMuxEmit.cpp` (232 lines)
 
-- `ir-pass/src/SwitchDataMuxEmit.cpp:69` — `scrubTaint`
-- `ir-pass/src/SwitchDataMuxEmit.cpp:83` — `bailLoud`
-- `ir-pass/src/SwitchDataMuxEmit.cpp:92` — `emitSwitchDataMuxRegion`
+- `ir-pass/src/SwitchDataMuxEmit.cpp:68` — `scrubTaint`
+- `ir-pass/src/SwitchDataMuxEmit.cpp:82` — `bailLoud`
+- `ir-pass/src/SwitchDataMuxEmit.cpp:91` — `emitSwitchDataMuxRegion`
 
 ### `ir-pass/src/SwitchRouteEmit.cpp` (213 lines)
 
@@ -2298,227 +2307,236 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `runtime/cq_link_smoke.c:2886` — `main`
 
-### `runtime/cq_runtime.c` (1427 lines)
+### `runtime/cq_runtime.c` (1489 lines)
 
-- `runtime/cq_runtime.c:66` — `cqrt_alloc_handle`
-- `runtime/cq_runtime.c:74` — `cqrt_alloc_i1`
-- `runtime/cq_runtime.c:81` — `cqrt_alloc_i8`
-- `runtime/cq_runtime.c:88` — `cqrt_alloc_i16`
-- `runtime/cq_runtime.c:95` — `cqrt_alloc_i32`
-- `runtime/cq_runtime.c:102` — `cqrt_alloc_i64`
-- `runtime/cq_runtime.c:109` — `cqrt_alloc_f32`
-- `runtime/cq_runtime.c:116` — `cqrt_alloc_f64`
-- `runtime/cq_runtime.c:123` — `cqrt_alloc_f16`
-- `runtime/cq_runtime.c:130` — `cqrt_alloc_f80`
-- `runtime/cq_runtime.c:146` — `cqrt_measure_i1`
-- `runtime/cq_runtime.c:152` — `cqrt_measure_i8`
-- `runtime/cq_runtime.c:158` — `cqrt_measure_i16`
-- `runtime/cq_runtime.c:164` — `cqrt_measure_i32`
-- `runtime/cq_runtime.c:170` — `cqrt_measure_i64`
-- `runtime/cq_runtime.c:176` — `cqrt_measure_f32`
-- `runtime/cq_runtime.c:182` — `cqrt_measure_f64`
-- `runtime/cq_runtime.c:188` — `cqrt_measure_f16`
-- `runtime/cq_runtime.c:194` — `cqrt_measure_f80`
-- `runtime/cq_runtime.c:209` — `cqrt_ry_i1`
-- `runtime/cq_runtime.c:214` — `cqrt_ry_i8`
-- `runtime/cq_runtime.c:219` — `cqrt_ry_i16`
-- `runtime/cq_runtime.c:224` — `cqrt_ry_i32`
-- `runtime/cq_runtime.c:229` — `cqrt_ry_i64`
-- `runtime/cq_runtime.c:234` — `cqrt_ry_f32`
-- `runtime/cq_runtime.c:239` — `cqrt_ry_f64`
-- `runtime/cq_runtime.c:244` — `cqrt_ry_f16`
-- `runtime/cq_runtime.c:249` — `cqrt_ry_f80`
-- `runtime/cq_runtime.c:258` — `cqrt_rz_i1`
-- `runtime/cq_runtime.c:263` — `cqrt_rz_i8`
-- `runtime/cq_runtime.c:268` — `cqrt_rz_i16`
-- `runtime/cq_runtime.c:273` — `cqrt_rz_i32`
-- `runtime/cq_runtime.c:278` — `cqrt_rz_i64`
-- `runtime/cq_runtime.c:283` — `cqrt_rz_f32`
-- `runtime/cq_runtime.c:288` — `cqrt_rz_f64`
-- `runtime/cq_runtime.c:293` — `cqrt_rz_f16`
-- `runtime/cq_runtime.c:298` — `cqrt_rz_f80`
-- `runtime/cq_runtime.c:311` — `cqrt_rz_i1_controlled`
-- `runtime/cq_runtime.c:316` — `cqrt_rz_i8_controlled`
-- `runtime/cq_runtime.c:321` — `cqrt_rz_i16_controlled`
-- `runtime/cq_runtime.c:326` — `cqrt_rz_i32_controlled`
-- `runtime/cq_runtime.c:331` — `cqrt_rz_i64_controlled`
-- `runtime/cq_runtime.c:336` — `cqrt_rz_f32_controlled`
-- `runtime/cq_runtime.c:341` — `cqrt_rz_f64_controlled`
-- `runtime/cq_runtime.c:346` — `cqrt_rz_f16_controlled`
-- `runtime/cq_runtime.c:351` — `cqrt_rz_f80_controlled`
-- `runtime/cq_runtime.c:356` — `cqrt_rz_i1_controlled_inv`
-- `runtime/cq_runtime.c:361` — `cqrt_rz_i8_controlled_inv`
-- `runtime/cq_runtime.c:366` — `cqrt_rz_i16_controlled_inv`
-- `runtime/cq_runtime.c:371` — `cqrt_rz_i32_controlled_inv`
-- `runtime/cq_runtime.c:376` — `cqrt_rz_i64_controlled_inv`
-- `runtime/cq_runtime.c:381` — `cqrt_rz_f32_controlled_inv`
-- `runtime/cq_runtime.c:386` — `cqrt_rz_f64_controlled_inv`
-- `runtime/cq_runtime.c:391` — `cqrt_rz_f16_controlled_inv`
-- `runtime/cq_runtime.c:396` — `cqrt_rz_f80_controlled_inv`
-- `runtime/cq_runtime.c:411` — `cqrt_ry_i1_controlled`
-- `runtime/cq_runtime.c:416` — `cqrt_ry_i8_controlled`
-- `runtime/cq_runtime.c:421` — `cqrt_ry_i16_controlled`
-- `runtime/cq_runtime.c:426` — `cqrt_ry_i32_controlled`
-- `runtime/cq_runtime.c:431` — `cqrt_ry_i64_controlled`
-- `runtime/cq_runtime.c:436` — `cqrt_ry_f32_controlled`
-- `runtime/cq_runtime.c:441` — `cqrt_ry_f64_controlled`
-- `runtime/cq_runtime.c:446` — `cqrt_ry_f16_controlled`
-- `runtime/cq_runtime.c:451` — `cqrt_ry_f80_controlled`
-- `runtime/cq_runtime.c:462` — `cqrt_ry_i1_controlled_inv`
-- `runtime/cq_runtime.c:467` — `cqrt_ry_i8_controlled_inv`
-- `runtime/cq_runtime.c:472` — `cqrt_ry_i16_controlled_inv`
-- `runtime/cq_runtime.c:477` — `cqrt_ry_i32_controlled_inv`
-- `runtime/cq_runtime.c:482` — `cqrt_ry_i64_controlled_inv`
-- `runtime/cq_runtime.c:487` — `cqrt_ry_f32_controlled_inv`
-- `runtime/cq_runtime.c:492` — `cqrt_ry_f64_controlled_inv`
-- `runtime/cq_runtime.c:505` — `cqrt_x`
-- `runtime/cq_runtime.c:510` — `cqrt_h`
-- `runtime/cq_runtime.c:515` — `cqrt_cnot`
-- `runtime/cq_runtime.c:520` — `cqrt_toffoli`
-- `runtime/cq_runtime.c:533` — `cqrt_x_controlled`
-- `runtime/cq_runtime.c:538` — `cqrt_h_controlled`
-- `runtime/cq_runtime.c:543` — `cqrt_cnot_controlled`
-- `runtime/cq_runtime.c:562` — `cqrt_cswap`
-- `runtime/cq_runtime.c:578` — `cqrt_copy_i1`
-- `runtime/cq_runtime.c:583` — `cqrt_copy_i8`
-- `runtime/cq_runtime.c:588` — `cqrt_copy_i16`
-- `runtime/cq_runtime.c:593` — `cqrt_copy_i32`
-- `runtime/cq_runtime.c:598` — `cqrt_copy_i64`
-- `runtime/cq_runtime.c:608` — `cqrt_copy_f16`
-- `runtime/cq_runtime.c:613` — `cqrt_copy_f32`
-- `runtime/cq_runtime.c:618` — `cqrt_copy_f64`
-- `runtime/cq_runtime.c:623` — `cqrt_copy_f80`
-- `runtime/cq_runtime.c:643` — `cqrt_copy_i1_controlled`
-- `runtime/cq_runtime.c:648` — `cqrt_copy_i8_controlled`
-- `runtime/cq_runtime.c:653` — `cqrt_copy_i16_controlled`
-- `runtime/cq_runtime.c:658` — `cqrt_copy_i32_controlled`
-- `runtime/cq_runtime.c:663` — `cqrt_copy_i64_controlled`
-- `runtime/cq_runtime.c:668` — `cqrt_copy_f16_controlled`
-- `runtime/cq_runtime.c:673` — `cqrt_copy_f32_controlled`
-- `runtime/cq_runtime.c:678` — `cqrt_copy_f64_controlled`
-- `runtime/cq_runtime.c:683` — `cqrt_copy_f80_controlled`
-- `runtime/cq_runtime.c:695` — `cqrt_addc_i1`
-- `runtime/cq_runtime.c:699` — `cqrt_addc_i8`
-- `runtime/cq_runtime.c:703` — `cqrt_addc_i16`
-- `runtime/cq_runtime.c:707` — `cqrt_addc_i32`
-- `runtime/cq_runtime.c:711` — `cqrt_addc_i64`
-- `runtime/cq_runtime.c:715` — `cqrt_xorc_i1`
-- `runtime/cq_runtime.c:719` — `cqrt_xorc_i8`
-- `runtime/cq_runtime.c:723` — `cqrt_xorc_i16`
-- `runtime/cq_runtime.c:727` — `cqrt_xorc_i32`
-- `runtime/cq_runtime.c:731` — `cqrt_xorc_i64`
-- `runtime/cq_runtime.c:742` — `NAME`
-- `runtime/cq_runtime.c:771` — `cqrt_tape_alloc`
-- `runtime/cq_runtime.c:778` — `cqrt_tape_write_i1`
-- `runtime/cq_runtime.c:785` — `cqrt_tape_write_i8`
-- `runtime/cq_runtime.c:792` — `cqrt_tape_write_i16`
-- `runtime/cq_runtime.c:799` — `cqrt_tape_write_i32`
-- `runtime/cq_runtime.c:806` — `cqrt_tape_write_i64`
-- `runtime/cq_runtime.c:823` — `cqrt_tape_write_i1_controlled`
-- `runtime/cq_runtime.c:830` — `cqrt_tape_write_i8_controlled`
-- `runtime/cq_runtime.c:837` — `cqrt_tape_write_i16_controlled`
-- `runtime/cq_runtime.c:844` — `cqrt_tape_write_i32_controlled`
-- `runtime/cq_runtime.c:851` — `cqrt_tape_write_i64_controlled`
-- `runtime/cq_runtime.c:869` — `cqrt_qram_alloc_i1`
-- `runtime/cq_runtime.c:876` — `cqrt_qram_alloc_i8`
-- `runtime/cq_runtime.c:883` — `cqrt_qram_alloc_i16`
-- `runtime/cq_runtime.c:890` — `cqrt_qram_alloc_i32`
-- `runtime/cq_runtime.c:897` — `cqrt_qram_alloc_i64`
-- `runtime/cq_runtime.c:906` — `cqrt_qram_alloc_f16`
-- `runtime/cq_runtime.c:913` — `cqrt_qram_alloc_f32`
-- `runtime/cq_runtime.c:920` — `cqrt_qram_alloc_f64`
-- `runtime/cq_runtime.c:927` — `cqrt_qram_alloc_f80`
-- `runtime/cq_runtime.c:934` — `cqrt_qram_load_i1`
-- `runtime/cq_runtime.c:941` — `cqrt_qram_load_i8`
-- `runtime/cq_runtime.c:948` — `cqrt_qram_load_i16`
-- `runtime/cq_runtime.c:955` — `cqrt_qram_load_i32`
-- `runtime/cq_runtime.c:962` — `cqrt_qram_load_i64`
-- `runtime/cq_runtime.c:971` — `cqrt_qram_load_f16`
-- `runtime/cq_runtime.c:978` — `cqrt_qram_load_f32`
-- `runtime/cq_runtime.c:985` — `cqrt_qram_load_f64`
-- `runtime/cq_runtime.c:992` — `cqrt_qram_load_f80`
-- `runtime/cq_runtime.c:999` — `cqrt_qram_load_i1_unc`
-- `runtime/cq_runtime.c:1004` — `cqrt_qram_load_i8_unc`
-- `runtime/cq_runtime.c:1009` — `cqrt_qram_load_i16_unc`
-- `runtime/cq_runtime.c:1014` — `cqrt_qram_load_i32_unc`
-- `runtime/cq_runtime.c:1019` — `cqrt_qram_load_i64_unc`
-- `runtime/cq_runtime.c:1025` — `cqrt_qram_load_f16_unc`
-- `runtime/cq_runtime.c:1030` — `cqrt_qram_load_f32_unc`
-- `runtime/cq_runtime.c:1035` — `cqrt_qram_load_f64_unc`
-- `runtime/cq_runtime.c:1040` — `cqrt_qram_load_f80_unc`
-- `runtime/cq_runtime.c:1052` — `cqrt_qram_store_i1`
-- `runtime/cq_runtime.c:1057` — `cqrt_qram_store_i8`
-- `runtime/cq_runtime.c:1062` — `cqrt_qram_store_i16`
-- `runtime/cq_runtime.c:1067` — `cqrt_qram_store_i32`
-- `runtime/cq_runtime.c:1072` — `cqrt_qram_store_i64`
-- `runtime/cq_runtime.c:1081` — `cqrt_qram_store_f16`
-- `runtime/cq_runtime.c:1086` — `cqrt_qram_store_f32`
-- `runtime/cq_runtime.c:1091` — `cqrt_qram_store_f64`
-- `runtime/cq_runtime.c:1096` — `cqrt_qram_store_f80`
-- `runtime/cq_runtime.c:1101` — `cqrt_qram_store_i1_unc`
-- `runtime/cq_runtime.c:1106` — `cqrt_qram_store_i8_unc`
-- `runtime/cq_runtime.c:1111` — `cqrt_qram_store_i16_unc`
-- `runtime/cq_runtime.c:1116` — `cqrt_qram_store_i32_unc`
-- `runtime/cq_runtime.c:1121` — `cqrt_qram_store_i64_unc`
-- `runtime/cq_runtime.c:1127` — `cqrt_qram_store_f16_unc`
-- `runtime/cq_runtime.c:1132` — `cqrt_qram_store_f32_unc`
-- `runtime/cq_runtime.c:1137` — `cqrt_qram_store_f64_unc`
-- `runtime/cq_runtime.c:1142` — `cqrt_qram_store_f80_unc`
-- `runtime/cq_runtime.c:1160` — `cqrt_qram_store_i1_controlled`
-- `runtime/cq_runtime.c:1165` — `cqrt_qram_store_i8_controlled`
-- `runtime/cq_runtime.c:1170` — `cqrt_qram_store_i16_controlled`
-- `runtime/cq_runtime.c:1175` — `cqrt_qram_store_i32_controlled`
-- `runtime/cq_runtime.c:1180` — `cqrt_qram_store_i64_controlled`
-- `runtime/cq_runtime.c:1187` — `cqrt_qram_store_f16_controlled`
-- `runtime/cq_runtime.c:1192` — `cqrt_qram_store_f32_controlled`
-- `runtime/cq_runtime.c:1197` — `cqrt_qram_store_f64_controlled`
-- `runtime/cq_runtime.c:1202` — `cqrt_qram_store_f80_controlled`
-- `runtime/cq_runtime.c:1207` — `cqrt_qram_store_i1_controlled_unc`
-- `runtime/cq_runtime.c:1212` — `cqrt_qram_store_i8_controlled_unc`
-- `runtime/cq_runtime.c:1217` — `cqrt_qram_store_i16_controlled_unc`
-- `runtime/cq_runtime.c:1222` — `cqrt_qram_store_i32_controlled_unc`
-- `runtime/cq_runtime.c:1227` — `cqrt_qram_store_i64_controlled_unc`
-- `runtime/cq_runtime.c:1234` — `cqrt_qram_store_f16_controlled_unc`
-- `runtime/cq_runtime.c:1239` — `cqrt_qram_store_f32_controlled_unc`
-- `runtime/cq_runtime.c:1244` — `cqrt_qram_store_f64_controlled_unc`
-- `runtime/cq_runtime.c:1249` — `cqrt_qram_store_f80_controlled_unc`
-- `runtime/cq_runtime.c:1257` — `cqrt_qram_load_i1_hl`
-- `runtime/cq_runtime.c:1263` — `cqrt_qram_load_i8_hl`
-- `runtime/cq_runtime.c:1269` — `cqrt_qram_load_i16_hl`
-- `runtime/cq_runtime.c:1275` — `cqrt_qram_load_i32_hl`
-- `runtime/cq_runtime.c:1281` — `cqrt_qram_load_i64_hl`
-- `runtime/cq_runtime.c:1287` — `cqrt_qram_load_f16_hl`
-- `runtime/cq_runtime.c:1293` — `cqrt_qram_load_f32_hl`
-- `runtime/cq_runtime.c:1299` — `cqrt_qram_load_f64_hl`
-- `runtime/cq_runtime.c:1305` — `cqrt_qram_load_f80_hl`
-- `runtime/cq_runtime.c:1311` — `cqrt_qram_load_i1_hl_unc`
-- `runtime/cq_runtime.c:1315` — `cqrt_qram_load_i8_hl_unc`
-- `runtime/cq_runtime.c:1319` — `cqrt_qram_load_i16_hl_unc`
-- `runtime/cq_runtime.c:1323` — `cqrt_qram_load_i32_hl_unc`
-- `runtime/cq_runtime.c:1327` — `cqrt_qram_load_i64_hl_unc`
-- `runtime/cq_runtime.c:1331` — `cqrt_qram_load_f16_hl_unc`
-- `runtime/cq_runtime.c:1335` — `cqrt_qram_load_f32_hl_unc`
-- `runtime/cq_runtime.c:1339` — `cqrt_qram_load_f64_hl_unc`
-- `runtime/cq_runtime.c:1343` — `cqrt_qram_load_f80_hl_unc`
-- `runtime/cq_runtime.c:1347` — `cqrt_qram_store_i1_hl`
-- `runtime/cq_runtime.c:1351` — `cqrt_qram_store_i8_hl`
-- `runtime/cq_runtime.c:1355` — `cqrt_qram_store_i16_hl`
-- `runtime/cq_runtime.c:1359` — `cqrt_qram_store_i32_hl`
-- `runtime/cq_runtime.c:1363` — `cqrt_qram_store_i64_hl`
-- `runtime/cq_runtime.c:1367` — `cqrt_qram_store_f16_hl`
-- `runtime/cq_runtime.c:1371` — `cqrt_qram_store_f32_hl`
-- `runtime/cq_runtime.c:1375` — `cqrt_qram_store_f64_hl`
-- `runtime/cq_runtime.c:1379` — `cqrt_qram_store_f80_hl`
-- `runtime/cq_runtime.c:1383` — `cqrt_qram_store_i1_hl_unc`
-- `runtime/cq_runtime.c:1387` — `cqrt_qram_store_i8_hl_unc`
-- `runtime/cq_runtime.c:1391` — `cqrt_qram_store_i16_hl_unc`
-- `runtime/cq_runtime.c:1395` — `cqrt_qram_store_i32_hl_unc`
-- `runtime/cq_runtime.c:1399` — `cqrt_qram_store_i64_hl_unc`
-- `runtime/cq_runtime.c:1403` — `cqrt_qram_store_f16_hl_unc`
-- `runtime/cq_runtime.c:1407` — `cqrt_qram_store_f32_hl_unc`
-- `runtime/cq_runtime.c:1411` — `cqrt_qram_store_f64_hl_unc`
-- `runtime/cq_runtime.c:1415` — `cqrt_qram_store_f80_hl_unc`
-- `runtime/cq_runtime.c:1424` — `cqrt_free`
+- `runtime/cq_runtime.c:68` — `cqrt_alloc_handle`
+- `runtime/cq_runtime.c:76` — `cqrt_alloc_i1`
+- `runtime/cq_runtime.c:83` — `cqrt_alloc_i8`
+- `runtime/cq_runtime.c:90` — `cqrt_alloc_i16`
+- `runtime/cq_runtime.c:97` — `cqrt_alloc_i32`
+- `runtime/cq_runtime.c:104` — `cqrt_alloc_i64`
+- `runtime/cq_runtime.c:111` — `cqrt_alloc_f32`
+- `runtime/cq_runtime.c:118` — `cqrt_alloc_f64`
+- `runtime/cq_runtime.c:125` — `cqrt_alloc_f16`
+- `runtime/cq_runtime.c:132` — `cqrt_alloc_f80`
+- `runtime/cq_runtime.c:148` — `cqrt_measure_i1`
+- `runtime/cq_runtime.c:154` — `cqrt_measure_i8`
+- `runtime/cq_runtime.c:160` — `cqrt_measure_i16`
+- `runtime/cq_runtime.c:166` — `cqrt_measure_i32`
+- `runtime/cq_runtime.c:172` — `cqrt_measure_i64`
+- `runtime/cq_runtime.c:178` — `cqrt_measure_f32`
+- `runtime/cq_runtime.c:184` — `cqrt_measure_f64`
+- `runtime/cq_runtime.c:190` — `cqrt_measure_f16`
+- `runtime/cq_runtime.c:196` — `cqrt_measure_f80`
+- `runtime/cq_runtime.c:211` — `cqrt_ry_i1`
+- `runtime/cq_runtime.c:216` — `cqrt_ry_i8`
+- `runtime/cq_runtime.c:221` — `cqrt_ry_i16`
+- `runtime/cq_runtime.c:226` — `cqrt_ry_i32`
+- `runtime/cq_runtime.c:231` — `cqrt_ry_i64`
+- `runtime/cq_runtime.c:236` — `cqrt_ry_f32`
+- `runtime/cq_runtime.c:241` — `cqrt_ry_f64`
+- `runtime/cq_runtime.c:246` — `cqrt_ry_f16`
+- `runtime/cq_runtime.c:251` — `cqrt_ry_f80`
+- `runtime/cq_runtime.c:260` — `cqrt_rz_i1`
+- `runtime/cq_runtime.c:265` — `cqrt_rz_i8`
+- `runtime/cq_runtime.c:270` — `cqrt_rz_i16`
+- `runtime/cq_runtime.c:275` — `cqrt_rz_i32`
+- `runtime/cq_runtime.c:280` — `cqrt_rz_i64`
+- `runtime/cq_runtime.c:285` — `cqrt_rz_f32`
+- `runtime/cq_runtime.c:290` — `cqrt_rz_f64`
+- `runtime/cq_runtime.c:295` — `cqrt_rz_f16`
+- `runtime/cq_runtime.c:300` — `cqrt_rz_f80`
+- `runtime/cq_runtime.c:313` — `cqrt_rz_i1_controlled`
+- `runtime/cq_runtime.c:318` — `cqrt_rz_i8_controlled`
+- `runtime/cq_runtime.c:323` — `cqrt_rz_i16_controlled`
+- `runtime/cq_runtime.c:328` — `cqrt_rz_i32_controlled`
+- `runtime/cq_runtime.c:333` — `cqrt_rz_i64_controlled`
+- `runtime/cq_runtime.c:338` — `cqrt_rz_f32_controlled`
+- `runtime/cq_runtime.c:343` — `cqrt_rz_f64_controlled`
+- `runtime/cq_runtime.c:348` — `cqrt_rz_f16_controlled`
+- `runtime/cq_runtime.c:353` — `cqrt_rz_f80_controlled`
+- `runtime/cq_runtime.c:358` — `cqrt_rz_i1_controlled_inv`
+- `runtime/cq_runtime.c:363` — `cqrt_rz_i8_controlled_inv`
+- `runtime/cq_runtime.c:368` — `cqrt_rz_i16_controlled_inv`
+- `runtime/cq_runtime.c:373` — `cqrt_rz_i32_controlled_inv`
+- `runtime/cq_runtime.c:378` — `cqrt_rz_i64_controlled_inv`
+- `runtime/cq_runtime.c:383` — `cqrt_rz_f32_controlled_inv`
+- `runtime/cq_runtime.c:388` — `cqrt_rz_f64_controlled_inv`
+- `runtime/cq_runtime.c:393` — `cqrt_rz_f16_controlled_inv`
+- `runtime/cq_runtime.c:398` — `cqrt_rz_f80_controlled_inv`
+- `runtime/cq_runtime.c:413` — `cqrt_ry_i1_controlled`
+- `runtime/cq_runtime.c:418` — `cqrt_ry_i8_controlled`
+- `runtime/cq_runtime.c:423` — `cqrt_ry_i16_controlled`
+- `runtime/cq_runtime.c:428` — `cqrt_ry_i32_controlled`
+- `runtime/cq_runtime.c:433` — `cqrt_ry_i64_controlled`
+- `runtime/cq_runtime.c:438` — `cqrt_ry_f32_controlled`
+- `runtime/cq_runtime.c:443` — `cqrt_ry_f64_controlled`
+- `runtime/cq_runtime.c:448` — `cqrt_ry_f16_controlled`
+- `runtime/cq_runtime.c:453` — `cqrt_ry_f80_controlled`
+- `runtime/cq_runtime.c:464` — `cqrt_ry_i1_controlled_inv`
+- `runtime/cq_runtime.c:469` — `cqrt_ry_i8_controlled_inv`
+- `runtime/cq_runtime.c:474` — `cqrt_ry_i16_controlled_inv`
+- `runtime/cq_runtime.c:479` — `cqrt_ry_i32_controlled_inv`
+- `runtime/cq_runtime.c:484` — `cqrt_ry_i64_controlled_inv`
+- `runtime/cq_runtime.c:489` — `cqrt_ry_f32_controlled_inv`
+- `runtime/cq_runtime.c:494` — `cqrt_ry_f64_controlled_inv`
+- `runtime/cq_runtime.c:507` — `cqrt_x`
+- `runtime/cq_runtime.c:512` — `cqrt_h`
+- `runtime/cq_runtime.c:517` — `cqrt_cnot`
+- `runtime/cq_runtime.c:522` — `cqrt_toffoli`
+- `runtime/cq_runtime.c:535` — `cqrt_x_controlled`
+- `runtime/cq_runtime.c:540` — `cqrt_h_controlled`
+- `runtime/cq_runtime.c:545` — `cqrt_cnot_controlled`
+- `runtime/cq_runtime.c:564` — `cqrt_cswap`
+- `runtime/cq_runtime.c:580` — `cqrt_copy_i1`
+- `runtime/cq_runtime.c:585` — `cqrt_copy_i8`
+- `runtime/cq_runtime.c:590` — `cqrt_copy_i16`
+- `runtime/cq_runtime.c:595` — `cqrt_copy_i32`
+- `runtime/cq_runtime.c:600` — `cqrt_copy_i64`
+- `runtime/cq_runtime.c:610` — `cqrt_copy_f16`
+- `runtime/cq_runtime.c:615` — `cqrt_copy_f32`
+- `runtime/cq_runtime.c:620` — `cqrt_copy_f64`
+- `runtime/cq_runtime.c:625` — `cqrt_copy_f80`
+- `runtime/cq_runtime.c:645` — `cqrt_copy_i1_controlled`
+- `runtime/cq_runtime.c:650` — `cqrt_copy_i8_controlled`
+- `runtime/cq_runtime.c:655` — `cqrt_copy_i16_controlled`
+- `runtime/cq_runtime.c:660` — `cqrt_copy_i32_controlled`
+- `runtime/cq_runtime.c:665` — `cqrt_copy_i64_controlled`
+- `runtime/cq_runtime.c:670` — `cqrt_copy_f16_controlled`
+- `runtime/cq_runtime.c:675` — `cqrt_copy_f32_controlled`
+- `runtime/cq_runtime.c:680` — `cqrt_copy_f64_controlled`
+- `runtime/cq_runtime.c:685` — `cqrt_copy_f80_controlled`
+- `runtime/cq_runtime.c:697` — `cqrt_addc_i1`
+- `runtime/cq_runtime.c:701` — `cqrt_addc_i8`
+- `runtime/cq_runtime.c:705` — `cqrt_addc_i16`
+- `runtime/cq_runtime.c:709` — `cqrt_addc_i32`
+- `runtime/cq_runtime.c:713` — `cqrt_addc_i64`
+- `runtime/cq_runtime.c:717` — `cqrt_xorc_i1`
+- `runtime/cq_runtime.c:721` — `cqrt_xorc_i8`
+- `runtime/cq_runtime.c:725` — `cqrt_xorc_i16`
+- `runtime/cq_runtime.c:729` — `cqrt_xorc_i32`
+- `runtime/cq_runtime.c:733` — `cqrt_xorc_i64`
+- `runtime/cq_runtime.c:745` — `cqrt_xorc_i1_controlled`
+- `runtime/cq_runtime.c:749` — `cqrt_xorc_i8_controlled`
+- `runtime/cq_runtime.c:753` — `cqrt_xorc_i16_controlled`
+- `runtime/cq_runtime.c:757` — `cqrt_xorc_i32_controlled`
+- `runtime/cq_runtime.c:761` — `cqrt_xorc_i64_controlled`
+- `runtime/cq_runtime.c:765` — `cqrt_xorc_f16_controlled`
+- `runtime/cq_runtime.c:770` — `cqrt_xorc_f32_controlled`
+- `runtime/cq_runtime.c:775` — `cqrt_xorc_f64_controlled`
+- `runtime/cq_runtime.c:785` — `cqrt_xorc_f80_controlled`
+- `runtime/cq_runtime.c:804` — `NAME`
+- `runtime/cq_runtime.c:833` — `cqrt_tape_alloc`
+- `runtime/cq_runtime.c:840` — `cqrt_tape_write_i1`
+- `runtime/cq_runtime.c:847` — `cqrt_tape_write_i8`
+- `runtime/cq_runtime.c:854` — `cqrt_tape_write_i16`
+- `runtime/cq_runtime.c:861` — `cqrt_tape_write_i32`
+- `runtime/cq_runtime.c:868` — `cqrt_tape_write_i64`
+- `runtime/cq_runtime.c:885` — `cqrt_tape_write_i1_controlled`
+- `runtime/cq_runtime.c:892` — `cqrt_tape_write_i8_controlled`
+- `runtime/cq_runtime.c:899` — `cqrt_tape_write_i16_controlled`
+- `runtime/cq_runtime.c:906` — `cqrt_tape_write_i32_controlled`
+- `runtime/cq_runtime.c:913` — `cqrt_tape_write_i64_controlled`
+- `runtime/cq_runtime.c:931` — `cqrt_qram_alloc_i1`
+- `runtime/cq_runtime.c:938` — `cqrt_qram_alloc_i8`
+- `runtime/cq_runtime.c:945` — `cqrt_qram_alloc_i16`
+- `runtime/cq_runtime.c:952` — `cqrt_qram_alloc_i32`
+- `runtime/cq_runtime.c:959` — `cqrt_qram_alloc_i64`
+- `runtime/cq_runtime.c:968` — `cqrt_qram_alloc_f16`
+- `runtime/cq_runtime.c:975` — `cqrt_qram_alloc_f32`
+- `runtime/cq_runtime.c:982` — `cqrt_qram_alloc_f64`
+- `runtime/cq_runtime.c:989` — `cqrt_qram_alloc_f80`
+- `runtime/cq_runtime.c:996` — `cqrt_qram_load_i1`
+- `runtime/cq_runtime.c:1003` — `cqrt_qram_load_i8`
+- `runtime/cq_runtime.c:1010` — `cqrt_qram_load_i16`
+- `runtime/cq_runtime.c:1017` — `cqrt_qram_load_i32`
+- `runtime/cq_runtime.c:1024` — `cqrt_qram_load_i64`
+- `runtime/cq_runtime.c:1033` — `cqrt_qram_load_f16`
+- `runtime/cq_runtime.c:1040` — `cqrt_qram_load_f32`
+- `runtime/cq_runtime.c:1047` — `cqrt_qram_load_f64`
+- `runtime/cq_runtime.c:1054` — `cqrt_qram_load_f80`
+- `runtime/cq_runtime.c:1061` — `cqrt_qram_load_i1_unc`
+- `runtime/cq_runtime.c:1066` — `cqrt_qram_load_i8_unc`
+- `runtime/cq_runtime.c:1071` — `cqrt_qram_load_i16_unc`
+- `runtime/cq_runtime.c:1076` — `cqrt_qram_load_i32_unc`
+- `runtime/cq_runtime.c:1081` — `cqrt_qram_load_i64_unc`
+- `runtime/cq_runtime.c:1087` — `cqrt_qram_load_f16_unc`
+- `runtime/cq_runtime.c:1092` — `cqrt_qram_load_f32_unc`
+- `runtime/cq_runtime.c:1097` — `cqrt_qram_load_f64_unc`
+- `runtime/cq_runtime.c:1102` — `cqrt_qram_load_f80_unc`
+- `runtime/cq_runtime.c:1114` — `cqrt_qram_store_i1`
+- `runtime/cq_runtime.c:1119` — `cqrt_qram_store_i8`
+- `runtime/cq_runtime.c:1124` — `cqrt_qram_store_i16`
+- `runtime/cq_runtime.c:1129` — `cqrt_qram_store_i32`
+- `runtime/cq_runtime.c:1134` — `cqrt_qram_store_i64`
+- `runtime/cq_runtime.c:1143` — `cqrt_qram_store_f16`
+- `runtime/cq_runtime.c:1148` — `cqrt_qram_store_f32`
+- `runtime/cq_runtime.c:1153` — `cqrt_qram_store_f64`
+- `runtime/cq_runtime.c:1158` — `cqrt_qram_store_f80`
+- `runtime/cq_runtime.c:1163` — `cqrt_qram_store_i1_unc`
+- `runtime/cq_runtime.c:1168` — `cqrt_qram_store_i8_unc`
+- `runtime/cq_runtime.c:1173` — `cqrt_qram_store_i16_unc`
+- `runtime/cq_runtime.c:1178` — `cqrt_qram_store_i32_unc`
+- `runtime/cq_runtime.c:1183` — `cqrt_qram_store_i64_unc`
+- `runtime/cq_runtime.c:1189` — `cqrt_qram_store_f16_unc`
+- `runtime/cq_runtime.c:1194` — `cqrt_qram_store_f32_unc`
+- `runtime/cq_runtime.c:1199` — `cqrt_qram_store_f64_unc`
+- `runtime/cq_runtime.c:1204` — `cqrt_qram_store_f80_unc`
+- `runtime/cq_runtime.c:1222` — `cqrt_qram_store_i1_controlled`
+- `runtime/cq_runtime.c:1227` — `cqrt_qram_store_i8_controlled`
+- `runtime/cq_runtime.c:1232` — `cqrt_qram_store_i16_controlled`
+- `runtime/cq_runtime.c:1237` — `cqrt_qram_store_i32_controlled`
+- `runtime/cq_runtime.c:1242` — `cqrt_qram_store_i64_controlled`
+- `runtime/cq_runtime.c:1249` — `cqrt_qram_store_f16_controlled`
+- `runtime/cq_runtime.c:1254` — `cqrt_qram_store_f32_controlled`
+- `runtime/cq_runtime.c:1259` — `cqrt_qram_store_f64_controlled`
+- `runtime/cq_runtime.c:1264` — `cqrt_qram_store_f80_controlled`
+- `runtime/cq_runtime.c:1269` — `cqrt_qram_store_i1_controlled_unc`
+- `runtime/cq_runtime.c:1274` — `cqrt_qram_store_i8_controlled_unc`
+- `runtime/cq_runtime.c:1279` — `cqrt_qram_store_i16_controlled_unc`
+- `runtime/cq_runtime.c:1284` — `cqrt_qram_store_i32_controlled_unc`
+- `runtime/cq_runtime.c:1289` — `cqrt_qram_store_i64_controlled_unc`
+- `runtime/cq_runtime.c:1296` — `cqrt_qram_store_f16_controlled_unc`
+- `runtime/cq_runtime.c:1301` — `cqrt_qram_store_f32_controlled_unc`
+- `runtime/cq_runtime.c:1306` — `cqrt_qram_store_f64_controlled_unc`
+- `runtime/cq_runtime.c:1311` — `cqrt_qram_store_f80_controlled_unc`
+- `runtime/cq_runtime.c:1319` — `cqrt_qram_load_i1_hl`
+- `runtime/cq_runtime.c:1325` — `cqrt_qram_load_i8_hl`
+- `runtime/cq_runtime.c:1331` — `cqrt_qram_load_i16_hl`
+- `runtime/cq_runtime.c:1337` — `cqrt_qram_load_i32_hl`
+- `runtime/cq_runtime.c:1343` — `cqrt_qram_load_i64_hl`
+- `runtime/cq_runtime.c:1349` — `cqrt_qram_load_f16_hl`
+- `runtime/cq_runtime.c:1355` — `cqrt_qram_load_f32_hl`
+- `runtime/cq_runtime.c:1361` — `cqrt_qram_load_f64_hl`
+- `runtime/cq_runtime.c:1367` — `cqrt_qram_load_f80_hl`
+- `runtime/cq_runtime.c:1373` — `cqrt_qram_load_i1_hl_unc`
+- `runtime/cq_runtime.c:1377` — `cqrt_qram_load_i8_hl_unc`
+- `runtime/cq_runtime.c:1381` — `cqrt_qram_load_i16_hl_unc`
+- `runtime/cq_runtime.c:1385` — `cqrt_qram_load_i32_hl_unc`
+- `runtime/cq_runtime.c:1389` — `cqrt_qram_load_i64_hl_unc`
+- `runtime/cq_runtime.c:1393` — `cqrt_qram_load_f16_hl_unc`
+- `runtime/cq_runtime.c:1397` — `cqrt_qram_load_f32_hl_unc`
+- `runtime/cq_runtime.c:1401` — `cqrt_qram_load_f64_hl_unc`
+- `runtime/cq_runtime.c:1405` — `cqrt_qram_load_f80_hl_unc`
+- `runtime/cq_runtime.c:1409` — `cqrt_qram_store_i1_hl`
+- `runtime/cq_runtime.c:1413` — `cqrt_qram_store_i8_hl`
+- `runtime/cq_runtime.c:1417` — `cqrt_qram_store_i16_hl`
+- `runtime/cq_runtime.c:1421` — `cqrt_qram_store_i32_hl`
+- `runtime/cq_runtime.c:1425` — `cqrt_qram_store_i64_hl`
+- `runtime/cq_runtime.c:1429` — `cqrt_qram_store_f16_hl`
+- `runtime/cq_runtime.c:1433` — `cqrt_qram_store_f32_hl`
+- `runtime/cq_runtime.c:1437` — `cqrt_qram_store_f64_hl`
+- `runtime/cq_runtime.c:1441` — `cqrt_qram_store_f80_hl`
+- `runtime/cq_runtime.c:1445` — `cqrt_qram_store_i1_hl_unc`
+- `runtime/cq_runtime.c:1449` — `cqrt_qram_store_i8_hl_unc`
+- `runtime/cq_runtime.c:1453` — `cqrt_qram_store_i16_hl_unc`
+- `runtime/cq_runtime.c:1457` — `cqrt_qram_store_i32_hl_unc`
+- `runtime/cq_runtime.c:1461` — `cqrt_qram_store_i64_hl_unc`
+- `runtime/cq_runtime.c:1465` — `cqrt_qram_store_f16_hl_unc`
+- `runtime/cq_runtime.c:1469` — `cqrt_qram_store_f32_hl_unc`
+- `runtime/cq_runtime.c:1473` — `cqrt_qram_store_f64_hl_unc`
+- `runtime/cq_runtime.c:1477` — `cqrt_qram_store_f80_hl_unc`
+- `runtime/cq_runtime.c:1486` — `cqrt_free`
 
 ### `runtime/cq_templates.c` (15665 lines)
 
@@ -4946,7 +4964,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `runtime/test_header_compile.c:19` — `main`
 
-### `runtime/test_trace.c` (260 lines)
+### `runtime/test_trace.c` (277 lines)
 
 - `runtime/test_trace.c:49` — `main`
 
@@ -5484,9 +5502,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_control_cond_onward_phase.c:70` — `slice`
 - `tests/e2e/slice_control_cond_onward_phase.c:82` — `main`
 
-### `tests/e2e/slice_control_dicke_d42.c` (66 lines)
+### `tests/e2e/slice_control_dicke_d42.c` (71 lines)
 
-- `tests/e2e/slice_control_dicke_d42.c:37` — `main`
+- `tests/e2e/slice_control_dicke_d42.c:42` — `main`
 
 ### `tests/e2e/slice_control_fused_regions_int.c` (84 lines)
 
@@ -7382,9 +7400,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/slice_rolled_cnot_then_ry.c:22` — `main`
 
-### `tests/e2e/slice_rolled_dicke_n4.c` (62 lines)
+### `tests/e2e/slice_rolled_dicke_n4.c` (64 lines)
 
-- `tests/e2e/slice_rolled_dicke_n4.c:38` — `main`
+- `tests/e2e/slice_rolled_dicke_n4.c:40` — `main`
 
 ### `tests/e2e/slice_rolled_p16_cascade.c` (29 lines)
 
@@ -8164,107 +8182,107 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/fixture_guard_liveness.py:91` — `guards_in`
 - `tools/fixture_guard_liveness.py:122` — `main`
 
-### `tools/free_pairing_check.py` (4519 lines)
+### `tools/free_pairing_check.py` (4524 lines)
 
 - `tools/free_pairing_check.py:751` — `Unclassified.__init__`
 - `tools/free_pairing_check.py:776` — `Undecidable.__init__`
 - `tools/free_pairing_check.py:794` — `NarrowingViolation.__init__`
 - `tools/free_pairing_check.py:829` — `Effect.__init__`
 - `tools/free_pairing_check.py:847` — `classify`
-- `tools/free_pairing_check.py:1044` — `pairing_register`
-- `tools/free_pairing_check.py:1049` — `mark_qram_index_brackets`
-- `tools/free_pairing_check.py:1095` — `read_terminator`
-- `tools/free_pairing_check.py:1144` — `split_args`
-- `tools/free_pairing_check.py:1162` — `norm_arg`
-- `tools/free_pairing_check.py:1188` — `arg_value`
-- `tools/free_pairing_check.py:1198` — `Call.__init__`
-- `tools/free_pairing_check.py:1220` — `Call.key`
-- `tools/free_pairing_check.py:1223` — `Call.read_idx`
-- `tools/free_pairing_check.py:1233` — `Function.__init__`
-- `tools/free_pairing_check.py:1264` — `balanced`
-- `tools/free_pairing_check.py:1307` — `first_ptr_operand`
-- `tools/free_pairing_check.py:1320` — `ModuleFns.__init__`
-- `tools/free_pairing_check.py:1325` — `parse_module`
-- `tools/free_pairing_check.py:1446` — `build_streams`
-- `tools/free_pairing_check.py:1520` — `CrossStreamIndex.__init__`
-- `tools/free_pairing_check.py:1546` — `CrossStreamIndex.cyclic_blocks`
-- `tools/free_pairing_check.py:1571` — `CrossStreamIndex.stream_runs_at_most_once`
-- `tools/free_pairing_check.py:1588` — `_hex_neg`
-- `tools/free_pairing_check.py:1649` — `carries_undef`
-- `tools/free_pairing_check.py:1654` — `is_negation`
-- `tools/free_pairing_check.py:1697` — `_outward`
-- `tools/free_pairing_check.py:1723` — `Finding.__init__`
-- `tools/free_pairing_check.py:1728` — `Finding.__str__`
-- `tools/free_pairing_check.py:1736` — `Rail.__init__`
-- `tools/free_pairing_check.py:1744` — `StreamAnalysis.__init__`
-- `tools/free_pairing_check.py:1786` — `StreamAnalysis.run`
-- `tools/free_pairing_check.py:1827` — `StreamAnalysis.check_orphan_reversals`
-- `tools/free_pairing_check.py:1853` — `StreamAnalysis.rail_for_write`
-- `tools/free_pairing_check.py:1874` — `StreamAnalysis.check_case_b`
-- `tools/free_pairing_check.py:1944` — `StreamAnalysis.provably_not_a_rail`
-- `tools/free_pairing_check.py:2013` — `StreamAnalysis.add`
-- `tools/free_pairing_check.py:2017` — `StreamAnalysis.ok`
-- `tools/free_pairing_check.py:2031` — `StreamAnalysis.writes_in`
-- `tools/free_pairing_check.py:2070` — `StreamAnalysis._unmoved_since`
-- `tools/free_pairing_check.py:2076` — `StreamAnalysis.unchanged_over`
-- `tools/free_pairing_check.py:2195` — `StreamAnalysis.adjoint_matches`
-- `tools/free_pairing_check.py:2242` — `StreamAnalysis.commutes`
-- `tools/free_pairing_check.py:2270` — `StreamAnalysis.reduces_to_identity`
-- `tools/free_pairing_check.py:2361` — `StreamAnalysis.pair_operands_unchanged`
-- `tools/free_pairing_check.py:2467` — `StreamAnalysis.co_written_stable`
-- `tools/free_pairing_check.py:2579` — `StreamAnalysis.light_cone_closed`
-- `tools/free_pairing_check.py:2724` — `StreamAnalysis._light_cone`
-- `tools/free_pairing_check.py:2807` — `StreamAnalysis._phase_closed`
-- `tools/free_pairing_check.py:2891` — `StreamAnalysis._minted_closed`
-- `tools/free_pairing_check.py:2932` — `StreamAnalysis._minted_core`
-- `tools/free_pairing_check.py:2950` — `StreamAnalysis.check_free`
-- `tools/free_pairing_check.py:3027` — `StreamAnalysis.loop_exit_discharge`
-- `tools/free_pairing_check.py:3267` — `StreamAnalysis.check_alloc_rail`
-- `tools/free_pairing_check.py:3294` — `StreamAnalysis.check_alloc_rail.classical_update`
-- `tools/free_pairing_check.py:3337` — `StreamAnalysis.check_minted_rail`
-- `tools/free_pairing_check.py:3495` — `ensure_recursion_headroom`
-- `tools/free_pairing_check.py:3597` — `_tape_sink`
-- `tools/free_pairing_check.py:3625` — `recorded_rails`
-- `tools/free_pairing_check.py:3668` — `resolve_object`
-- `tools/free_pairing_check.py:3699` — `bank_address_confined`
-- `tools/free_pairing_check.py:3760` — `adjudicate_memory`
-- `tools/free_pairing_check.py:3921` — `window_families`
-- `tools/free_pairing_check.py:3955` — `apply_window_families`
-- `tools/free_pairing_check.py:3963` — `apply_window_families.rename`
-- `tools/free_pairing_check.py:3989` — `mark_window_stores`
-- `tools/free_pairing_check.py:4042` — `window_cell_pointers`
-- `tools/free_pairing_check.py:4057` — `_affine_index`
-- `tools/free_pairing_check.py:4072` — `_window_cell`
-- `tools/free_pairing_check.py:4085` — `_cell_at`
-- `tools/free_pairing_check.py:4091` — `_cells_differ`
-- `tools/free_pairing_check.py:4098` — `window_cells_distinct`
-- `tools/free_pairing_check.py:4192` — `address_taken`
-- `tools/free_pairing_check.py:4215` — `live_functions`
-- `tools/free_pairing_check.py:4259` — `_clone_returns_data`
-- `tools/free_pairing_check.py:4266` — `_returned_by`
-- `tools/free_pairing_check.py:4275` — `census_of`
-- `tools/free_pairing_check.py:4319` — `check_module`
-- `tools/free_pairing_check.py:4404` — `main`
-- `tools/free_pairing_check.py:4461` — `main.dump`
+- `tools/free_pairing_check.py:1049` — `pairing_register`
+- `tools/free_pairing_check.py:1054` — `mark_qram_index_brackets`
+- `tools/free_pairing_check.py:1100` — `read_terminator`
+- `tools/free_pairing_check.py:1149` — `split_args`
+- `tools/free_pairing_check.py:1167` — `norm_arg`
+- `tools/free_pairing_check.py:1193` — `arg_value`
+- `tools/free_pairing_check.py:1203` — `Call.__init__`
+- `tools/free_pairing_check.py:1225` — `Call.key`
+- `tools/free_pairing_check.py:1228` — `Call.read_idx`
+- `tools/free_pairing_check.py:1238` — `Function.__init__`
+- `tools/free_pairing_check.py:1269` — `balanced`
+- `tools/free_pairing_check.py:1312` — `first_ptr_operand`
+- `tools/free_pairing_check.py:1325` — `ModuleFns.__init__`
+- `tools/free_pairing_check.py:1330` — `parse_module`
+- `tools/free_pairing_check.py:1451` — `build_streams`
+- `tools/free_pairing_check.py:1525` — `CrossStreamIndex.__init__`
+- `tools/free_pairing_check.py:1551` — `CrossStreamIndex.cyclic_blocks`
+- `tools/free_pairing_check.py:1576` — `CrossStreamIndex.stream_runs_at_most_once`
+- `tools/free_pairing_check.py:1593` — `_hex_neg`
+- `tools/free_pairing_check.py:1654` — `carries_undef`
+- `tools/free_pairing_check.py:1659` — `is_negation`
+- `tools/free_pairing_check.py:1702` — `_outward`
+- `tools/free_pairing_check.py:1728` — `Finding.__init__`
+- `tools/free_pairing_check.py:1733` — `Finding.__str__`
+- `tools/free_pairing_check.py:1741` — `Rail.__init__`
+- `tools/free_pairing_check.py:1749` — `StreamAnalysis.__init__`
+- `tools/free_pairing_check.py:1791` — `StreamAnalysis.run`
+- `tools/free_pairing_check.py:1832` — `StreamAnalysis.check_orphan_reversals`
+- `tools/free_pairing_check.py:1858` — `StreamAnalysis.rail_for_write`
+- `tools/free_pairing_check.py:1879` — `StreamAnalysis.check_case_b`
+- `tools/free_pairing_check.py:1949` — `StreamAnalysis.provably_not_a_rail`
+- `tools/free_pairing_check.py:2018` — `StreamAnalysis.add`
+- `tools/free_pairing_check.py:2022` — `StreamAnalysis.ok`
+- `tools/free_pairing_check.py:2036` — `StreamAnalysis.writes_in`
+- `tools/free_pairing_check.py:2075` — `StreamAnalysis._unmoved_since`
+- `tools/free_pairing_check.py:2081` — `StreamAnalysis.unchanged_over`
+- `tools/free_pairing_check.py:2200` — `StreamAnalysis.adjoint_matches`
+- `tools/free_pairing_check.py:2247` — `StreamAnalysis.commutes`
+- `tools/free_pairing_check.py:2275` — `StreamAnalysis.reduces_to_identity`
+- `tools/free_pairing_check.py:2366` — `StreamAnalysis.pair_operands_unchanged`
+- `tools/free_pairing_check.py:2472` — `StreamAnalysis.co_written_stable`
+- `tools/free_pairing_check.py:2584` — `StreamAnalysis.light_cone_closed`
+- `tools/free_pairing_check.py:2729` — `StreamAnalysis._light_cone`
+- `tools/free_pairing_check.py:2812` — `StreamAnalysis._phase_closed`
+- `tools/free_pairing_check.py:2896` — `StreamAnalysis._minted_closed`
+- `tools/free_pairing_check.py:2937` — `StreamAnalysis._minted_core`
+- `tools/free_pairing_check.py:2955` — `StreamAnalysis.check_free`
+- `tools/free_pairing_check.py:3032` — `StreamAnalysis.loop_exit_discharge`
+- `tools/free_pairing_check.py:3272` — `StreamAnalysis.check_alloc_rail`
+- `tools/free_pairing_check.py:3299` — `StreamAnalysis.check_alloc_rail.classical_update`
+- `tools/free_pairing_check.py:3342` — `StreamAnalysis.check_minted_rail`
+- `tools/free_pairing_check.py:3500` — `ensure_recursion_headroom`
+- `tools/free_pairing_check.py:3602` — `_tape_sink`
+- `tools/free_pairing_check.py:3630` — `recorded_rails`
+- `tools/free_pairing_check.py:3673` — `resolve_object`
+- `tools/free_pairing_check.py:3704` — `bank_address_confined`
+- `tools/free_pairing_check.py:3765` — `adjudicate_memory`
+- `tools/free_pairing_check.py:3926` — `window_families`
+- `tools/free_pairing_check.py:3960` — `apply_window_families`
+- `tools/free_pairing_check.py:3968` — `apply_window_families.rename`
+- `tools/free_pairing_check.py:3994` — `mark_window_stores`
+- `tools/free_pairing_check.py:4047` — `window_cell_pointers`
+- `tools/free_pairing_check.py:4062` — `_affine_index`
+- `tools/free_pairing_check.py:4077` — `_window_cell`
+- `tools/free_pairing_check.py:4090` — `_cell_at`
+- `tools/free_pairing_check.py:4096` — `_cells_differ`
+- `tools/free_pairing_check.py:4103` — `window_cells_distinct`
+- `tools/free_pairing_check.py:4197` — `address_taken`
+- `tools/free_pairing_check.py:4220` — `live_functions`
+- `tools/free_pairing_check.py:4264` — `_clone_returns_data`
+- `tools/free_pairing_check.py:4271` — `_returned_by`
+- `tools/free_pairing_check.py:4280` — `census_of`
+- `tools/free_pairing_check.py:4324` — `check_module`
+- `tools/free_pairing_check.py:4409` — `main`
+- `tools/free_pairing_check.py:4466` — `main.dump`
 
-### `tools/free_pairing_check_test.py` (4408 lines)
+### `tools/free_pairing_check_test.py` (4444 lines)
 
 - `tools/free_pairing_check_test.py:711` — `order_ladder`
 - `tools/free_pairing_check_test.py:821` — `cswap_braid`
-- `tools/free_pairing_check_test.py:1109` — `drop`
-- `tools/free_pairing_check_test.py:1118` — `sub`
-- `tools/free_pairing_check_test.py:1128` — `insert_after`
-- `tools/free_pairing_check_test.py:3014` — `_swap_lines`
-- `tools/free_pairing_check_test.py:3026` — `_hoist_line`
-- `tools/free_pairing_check_test.py:3419` — `lc`
-- `tools/free_pairing_check_test.py:3464` — `cone_nest`
-- `tools/free_pairing_check_test.py:4023` — `_Stop.__init__`
-- `tools/free_pairing_check_test.py:4027` — `_Stop.__str__`
-- `tools/free_pairing_check_test.py:4031` — `findings`
-- `tools/free_pairing_check_test.py:4039` — `proofs_of`
-- `tools/free_pairing_check_test.py:4056` — `verdict_map`
-- `tools/free_pairing_check_test.py:4068` — `main`
-- `tools/free_pairing_check_test.py:4106` — `main.counted`
+- `tools/free_pairing_check_test.py:1137` — `drop`
+- `tools/free_pairing_check_test.py:1146` — `sub`
+- `tools/free_pairing_check_test.py:1156` — `insert_after`
+- `tools/free_pairing_check_test.py:3050` — `_swap_lines`
+- `tools/free_pairing_check_test.py:3062` — `_hoist_line`
+- `tools/free_pairing_check_test.py:3455` — `lc`
+- `tools/free_pairing_check_test.py:3500` — `cone_nest`
+- `tools/free_pairing_check_test.py:4059` — `_Stop.__init__`
+- `tools/free_pairing_check_test.py:4063` — `_Stop.__str__`
+- `tools/free_pairing_check_test.py:4067` — `findings`
+- `tools/free_pairing_check_test.py:4075` — `proofs_of`
+- `tools/free_pairing_check_test.py:4092` — `verdict_map`
+- `tools/free_pairing_check_test.py:4104` — `main`
+- `tools/free_pairing_check_test.py:4142` — `main.counted`
 
 ### `tools/gen_templates.py` (477 lines)
 
@@ -9300,30 +9318,33 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/taintset_scrub_guard.py:2673` — `selftest.run`
 - `tools/taintset_scrub_guard.py:2708` — `main`
 
-### `tools/trace_twin_equiv.py` (843 lines)
+### `tools/trace_twin_equiv.py` (964 lines)
 
-- `tools/trace_twin_equiv.py:85` — `parse`
-- `tools/trace_twin_equiv.py:100` — `is_h`
-- `tools/trace_twin_equiv.py:104` — `result_width`
-- `tools/trace_twin_equiv.py:124` — `is_fwd_producer`
-- `tools/trace_twin_equiv.py:133` — `effects`
-- `tools/trace_twin_equiv.py:140` — `effects.W`
-- `tools/trace_twin_equiv.py:143` — `effects.R`
-- `tools/trace_twin_equiv.py:202` — `contract`
-- `tools/trace_twin_equiv.py:338` — `label`
-- `tools/trace_twin_equiv.py:357` — `arg_orders`
-- `tools/trace_twin_equiv.py:371` — `dependent`
-- `tools/trace_twin_equiv.py:375` — `equivalent`
-- `tools/trace_twin_equiv.py:390` — `equivalent.bind`
-- `tools/trace_twin_equiv.py:418` — `equivalent.rec`
-- `tools/trace_twin_equiv.py:451` — `compare_text`
-- `tools/trace_twin_equiv.py:604` — `_t`
-- `tools/trace_twin_equiv.py:647` — `_swap`
-- `tools/trace_twin_equiv.py:653` — `_move`
-- `tools/trace_twin_equiv.py:660` — `_drop`
-- `tools/trace_twin_equiv.py:666` — `_sub`
-- `tools/trace_twin_equiv.py:786` — `selftest`
-- `tools/trace_twin_equiv.py:809` — `main`
+- `tools/trace_twin_equiv.py:93` — `parse`
+- `tools/trace_twin_equiv.py:108` — `is_h`
+- `tools/trace_twin_equiv.py:112` — `result_width`
+- `tools/trace_twin_equiv.py:132` — `is_fwd_producer`
+- `tools/trace_twin_equiv.py:141` — `effects`
+- `tools/trace_twin_equiv.py:148` — `effects.W`
+- `tools/trace_twin_equiv.py:151` — `effects.R`
+- `tools/trace_twin_equiv.py:212` — `contract`
+- `tools/trace_twin_equiv.py:348` — `label`
+- `tools/trace_twin_equiv.py:367` — `arg_orders`
+- `tools/trace_twin_equiv.py:381` — `dependent`
+- `tools/trace_twin_equiv.py:385` — `equivalent`
+- `tools/trace_twin_equiv.py:400` — `equivalent.bind`
+- `tools/trace_twin_equiv.py:428` — `equivalent.rec`
+- `tools/trace_twin_equiv.py:465` — `is_zero_xorc`
+- `tools/trace_twin_equiv.py:476` — `drop_zero_xorc`
+- `tools/trace_twin_equiv.py:501` — `compare_bytes_after_rule3`
+- `tools/trace_twin_equiv.py:515` — `compare_text`
+- `tools/trace_twin_equiv.py:668` — `_t`
+- `tools/trace_twin_equiv.py:728` — `_swap`
+- `tools/trace_twin_equiv.py:734` — `_move`
+- `tools/trace_twin_equiv.py:741` — `_drop`
+- `tools/trace_twin_equiv.py:747` — `_sub`
+- `tools/trace_twin_equiv.py:893` — `selftest`
+- `tools/trace_twin_equiv.py:924` — `main`
 
 ### `tools/update_code_map.py` (221 lines)
 

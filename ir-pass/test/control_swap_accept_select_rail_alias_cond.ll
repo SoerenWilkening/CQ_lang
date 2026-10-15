@@ -102,11 +102,9 @@
 ; bracket. An arm-swap is a silent miscompile and a `%{{.*}}` source operand would
 ; not catch it (§16.3).
 ; CHECK: %out = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK: %selop = call i32 @cqrt_alloc_i32(i32 11)
-; CHECK: call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %selop, i32 %out)
+; CHECK: call void @cqrt_xorc_i32_controlled(i32 %h_cmp, i32 %{{[0-9a-zA-Z_.]+}}, i32 11)
 ; CHECK: call void @cqrt_x(i32 %h_cmp)
-; CHECK: %selop1 = call i32 @cqrt_alloc_i32(i32 22)
-; CHECK: call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %selop1, i32 %out)
+; CHECK: call void @cqrt_xorc_i32_controlled(i32 %h_cmp, i32 %{{[0-9a-zA-Z_.]+}}, i32 22)
 ; CHECK: call void @cqrt_x(i32 %h_cmp)
 ; Flag strip then free — the strip WRITES %h_cmp and READS %h twice, so the
 ; aliasing is confined to the READ slots (Case A). %h_cmp is not among them:

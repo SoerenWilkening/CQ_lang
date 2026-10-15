@@ -15,7 +15,7 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=INPUT < %s
 ;
-; CHECK:     call void @cqrt_copy_i64_controlled(
+; CHECK:     call void @cqrt_xorc_i64_controlled(
 ; CHECK:     call i32 @cq_template_trunc_i64_to_i32(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: = trunc
 ; CHECK-NOT: cq_template_trunc_i32

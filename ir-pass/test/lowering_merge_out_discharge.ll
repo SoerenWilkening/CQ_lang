@@ -29,6 +29,9 @@
 ; lowering_inplace_qq_decline_dependent_source.ll). This fixture's subject is the
 ; merge discharge, so `y` is kept LIVE by a trailing measurement and the add stays
 ; out of place exactly as before r2j3.33.
+; bd dm7f.81: every merge here writes its CONSTANT arms as `cqrt_xorc_<W>_controlled`
+; literals (no `cqrt_alloc_<W>(c)` source rail) and a 0 arm emits nothing, so the
+; replayed core is the xorc writes (and any bracket) reversed; the discharge is the same.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
 ; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s < %t.ll
@@ -44,18 +47,10 @@
 ; CHECK-NEXT: %[[F:[0-9a-zA-Z_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %[[A]], i32 %[[F]])
 ; CHECK-NEXT: %[[OUT:[0-9a-zA-Z_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: %[[T:[0-9a-zA-Z_.]+]] = call i32 @cqrt_alloc_i32(i32 2)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[T]], i32 %[[OUT]])
-; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: %[[E:[0-9a-zA-Z_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[E]], i32 %[[OUT]])
-; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[F]], i32 %[[OUT]], i32 2)
 ; CHECK-NOT:  call void @cqrt_free(i32 %[[F]])
 ; CHECK:      call void @cq_template_or_i32_unc(i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[OUT]], i32 %{{[0-9a-zA-Z_.]+}})
-; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[E]], i32 %[[OUT]])
-; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[T]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[F]], i32 %[[OUT]], i32 2)
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %[[A]], i32 %[[F]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT]])
@@ -69,10 +64,7 @@
 ; CHECK:      %[[A2:[0-9a-zA-Z_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK:      %[[OUT2:[0-9a-zA-Z_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:      call i32 @cq_template_or_i32(i32 %[[OUT2]],
-; CHECK-NEXT: call void @cqrt_x(i32 %[[G2:[0-9a-zA-Z_.]+]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G2]], i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[OUT2]])
-; CHECK-NEXT: call void @cqrt_x(i32 %[[G2]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[G2]], i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[OUT2]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[G2:[0-9a-zA-Z_.]+]], i32 %[[OUT2]], i32 2)
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %[[A2]], i32 %[[G2]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[G2]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT2]])
@@ -89,9 +81,9 @@
 ; CHECK-NEXT: %[[OUT3:[0-9a-zA-Z_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:      call i32 @cq_template_add_i32(i32 %[[OUT3]], i32 %{{[0-9a-zA-Z_.]+}})
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[N3]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[N3]], i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[OUT3]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[N3]], i32 %[[OUT3]], i32 1)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[N3]])
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[N3]], i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[OUT3]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[N3]], i32 %[[OUT3]], i32 7)
 ; CHECK-NEXT: call void @cqrt_toffoli(i32 %[[L1]], i32 %[[L2]], i32 %[[N3]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[N3]])
 ; CHECK-NEXT: call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[L2]],
@@ -106,9 +98,9 @@
 ; CHECK:      %[[OUT4:[0-9a-zA-Z_.]+]] = call i32 @cqrt_alloc_f64(double 0.000000e+00)
 ; CHECK:      call i32 @cq_template_fmul_f64_hl(i32 %[[OUT4]],
 ; CHECK-NEXT: call void @cqrt_x(
-; CHECK-NEXT: call void @cqrt_copy_f64_controlled(
+; CHECK-NEXT: call void @cqrt_xorc_f64_controlled(
 ; CHECK-NEXT: call void @cqrt_x(
-; CHECK-NEXT: call void @cqrt_copy_f64_controlled(
+; CHECK-NEXT: call void @cqrt_xorc_f64_controlled(
 ; CHECK-NEXT: call void @cqrt_cnot(
 ; CHECK-NEXT: call void @cqrt_free(
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[OUT4]])
@@ -119,7 +111,7 @@
 ; CHECK:      %[[OUT5:[0-9a-zA-Z_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:      call i32 @cq_template_add_i32_hl(i32 %[[OUT5]], i32 1)
 ; CHECK-NEXT: call i32 @cq_template_mul_i32_hl(i32 %[[OUT5]], i32 3)
-; CHECK-NEXT: call void @cqrt_x(
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(
 ; CHECK:      call void @cqrt_free(i32 %[[OUT5]])
 ; CHECK:      ret i32
 
@@ -127,12 +119,12 @@
 ;       source) is reversed FIRST, and the inner one only after that whole
 ;       group (LIFO).
 ; CHECK-LABEL: define i32 @nested(
-; CHECK:      call void @cqrt_copy_i32_controlled(i32 %{{[0-9a-zA-Z_.]+}}, i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[IN6:[0-9a-zA-Z_.]+]])
+; CHECK:      call void @cqrt_xorc_i32_controlled(i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[IN6:[0-9a-zA-Z_.]+]], i32 2)
 ; CHECK:      call void @cqrt_copy_i32_controlled(i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[IN6]], i32 %[[OUT6:[0-9a-zA-Z_.]+]])
 ; CHECK:      call i32 @cq_template_add_i32(i32 %[[OUT6]], i32 %{{[0-9a-zA-Z_.]+}})
 ; CHECK:      call void @cqrt_copy_i32_controlled(i32 %{{[0-9a-zA-Z_.]+}}, i32 %[[IN6]], i32 %[[OUT6]])
 ; CHECK:      call void @cqrt_free(i32 %[[OUT6]])
-; CHECK-NEXT: call void @cqrt_x(
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(
 ; CHECK:      call void @cqrt_free(i32 %[[IN6]])
 ; CHECK:      ret i32
 
@@ -143,7 +135,7 @@
 ; CHECK:      call void @cqrt_addc_i32(i32 %[[OUT10]], i32 1)
 ; CHECK:      call i32 @cq_template_or_i32(i32 %[[OUT10]],
 ; CHECK-NEXT: call void @cqrt_addc_i32(i32 %[[OUT10]], i32 -1)
-; CHECK-NEXT: call void @cqrt_x(
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(
 ; CHECK:      call void @cqrt_free(i32 %[[OUT10]])
 ; CHECK:      ret i32
 
@@ -153,7 +145,7 @@
 ; CHECK:      %[[OUT11:[0-9a-zA-Z_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:      br label %next
 ; CHECK:      call i32 @cq_template_add_i32(i32 %[[OUT11]],
-; CHECK-NEXT: call void @cqrt_x(
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(
 ; CHECK:      call void @cqrt_free(i32 %[[OUT11]])
 ; CHECK:      ret i32
 
@@ -167,7 +159,7 @@
 ; CHECK:      br i1 %c, label %l, label %r
 ; CHECK:      j:
 ; CHECK:      call i32 @cq_template_add_i32(i32 %[[OUT12]],
-; CHECK-NEXT: call void @cqrt_x(
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(
 ; CHECK:      call void @cqrt_free(i32 %[[OUT12]])
 ; CHECK:      ret i32
 

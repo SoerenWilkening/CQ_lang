@@ -55,7 +55,7 @@ merge:                                  ; 2 merge phis = the W3 PredMux claim wi
 ; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_ugt_i80_hl(i32 %{{[a-zA-Z0-9_.]+}}, i80 9223372036854775808)
 ; CHECK:     call void @cqrt_copy_f80_controlled(i32 %[[F]],
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_copy_f80_controlled(i32 %[[F]],
+; CHECK:     call void @cqrt_xorc_f80_controlled(i32 %[[F]],
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
 ; The strip must carry the SAME flipped predicate as the forward mint, or it
 ; would recompute a different function and leave the rail dirty at the free.

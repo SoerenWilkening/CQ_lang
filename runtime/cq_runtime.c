@@ -56,6 +56,7 @@
 #include "cq_runtime.h"
 
 #include <stdio.h>
+#include <string.h>
 
 /* Process-global handle counter. Shared between every cqrt_alloc_<W>
  * here and every cq_template_add_<W>* in the templates module via the
@@ -730,6 +731,67 @@ void cqrt_xorc_i32(int32_t h, int32_t imm) {
 }
 void cqrt_xorc_i64(int32_t h, int64_t imm) {
     printf("cqrt_xorc_i64(h%d, %lld)\n", h, (long long)imm);
+    fflush(stdout);
+}
+
+/* ---------------------------------------------------------------------
+ * Controlled xor of a classical immediate (bd dm7f.81; see cq_runtime.h):
+ * h ^= imm iff ctrl. The integer immediate prints as a decimal literal
+ * (like cqrt_xorc_<W>); the fp one prints its EXACT bit pattern as fixed-width
+ * hex (f16 4, f32 8, f64 16, f80 20 digits: sign+exponent then significand),
+ * so every NaN payload and -0.0 stay distinguishable (dm7f.81 R11 A-F1).
+ * --------------------------------------------------------------------- */
+void cqrt_xorc_i1_controlled(int32_t ctrl, int32_t h, bool imm) {
+    printf("cqrt_xorc_i1_controlled(h%d, h%d, %lld)\n", ctrl, h, (long long)imm);
+    fflush(stdout);
+}
+void cqrt_xorc_i8_controlled(int32_t ctrl, int32_t h, int8_t imm) {
+    printf("cqrt_xorc_i8_controlled(h%d, h%d, %lld)\n", ctrl, h, (long long)imm);
+    fflush(stdout);
+}
+void cqrt_xorc_i16_controlled(int32_t ctrl, int32_t h, int16_t imm) {
+    printf("cqrt_xorc_i16_controlled(h%d, h%d, %lld)\n", ctrl, h, (long long)imm);
+    fflush(stdout);
+}
+void cqrt_xorc_i32_controlled(int32_t ctrl, int32_t h, int32_t imm) {
+    printf("cqrt_xorc_i32_controlled(h%d, h%d, %lld)\n", ctrl, h, (long long)imm);
+    fflush(stdout);
+}
+void cqrt_xorc_i64_controlled(int32_t ctrl, int32_t h, int64_t imm) {
+    printf("cqrt_xorc_i64_controlled(h%d, h%d, %lld)\n", ctrl, h, (long long)imm);
+    fflush(stdout);
+}
+void cqrt_xorc_f16_controlled(int32_t ctrl, int32_t h, _Float16 imm) {
+    uint16_t b; memcpy(&b, &imm, sizeof b);
+    printf("cqrt_xorc_f16_controlled(h%d, h%d, 0x%04x)\n", ctrl, h, (unsigned)b);
+    fflush(stdout);
+}
+void cqrt_xorc_f32_controlled(int32_t ctrl, int32_t h, float imm) {
+    uint32_t b; memcpy(&b, &imm, sizeof b);
+    printf("cqrt_xorc_f32_controlled(h%d, h%d, 0x%08x)\n", ctrl, h, (unsigned)b);
+    fflush(stdout);
+}
+void cqrt_xorc_f64_controlled(int32_t ctrl, int32_t h, double imm) {
+    uint64_t b; memcpy(&b, &imm, sizeof b);
+    printf("cqrt_xorc_f64_controlled(h%d, h%d, 0x%016llx)\n", ctrl, h, (unsigned long long)b);
+    fflush(stdout);
+}
+/* x86-64 ONLY, like every f80 entry point here (cqrt_alloc_f80,
+ * cqrt_copy_f80_controlled, ... — bd 3c6m.4, all unguarded): the print reads
+ * the x87 80-bit layout. On a target whose `long double` is another format
+ * (e.g. arm64, where it is binary64) it still builds and never reads past the
+ * object (the copy is bounded and zero-padded), but the printed bits are not
+ * an f80 pattern; CQ's f80 lowering targets x86-64. */
+void cqrt_xorc_f80_controlled(int32_t ctrl, int32_t h, long double imm) {
+    /* x86 extended: 64-bit significand at bytes 0-7, sign+exponent at 8-9; the
+     * 6 padding bytes are not part of the value and are never printed. */
+    unsigned char raw[16] = {0};
+    uint64_t lo; uint16_t hi;
+    memcpy(raw, &imm, sizeof imm < sizeof raw ? sizeof imm : sizeof raw);
+    memcpy(&lo, raw, sizeof lo);
+    memcpy(&hi, raw + 8, sizeof hi);
+    printf("cqrt_xorc_f80_controlled(h%d, h%d, 0x%04x%016llx)\n", ctrl, h,
+           (unsigned)hi, (unsigned long long)lo);
     fflush(stdout);
 }
 

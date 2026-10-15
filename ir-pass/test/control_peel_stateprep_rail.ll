@@ -87,11 +87,9 @@ declare i32 @cq_measure_si32(i32 noundef)
 ; CHECK-NEXT: %[[BF:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H]], i32 %[[BF]])
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: %[[SELOP:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 2)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[SELOP]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[BF]], i32 %[[OUT]], i32 2)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
-; CHECK-NEXT: %[[SELOP2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 5)
-; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[BF]], i32 %[[SELOP2]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %[[BF]], i32 %[[OUT]], i32 5)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[BF]])
 ; CHECK-NEXT: call void @cqrt_cnot(i32 %[[H]], i32 %[[BF]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[BF]])
@@ -123,11 +121,14 @@ declare i32 @cq_measure_si32(i32 noundef)
 ; XCNT-NOT:     call void @cqrt_x(
 ; FCNT-COUNT-1: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
-; ACNT-COUNT-6: call i32 @cqrt_alloc_
+; (bd dm7f.81: a constant or classical merge arm is a literal operand of cqrt_xorc_<W>_controlled, no longer an alloc'd rail + cqrt_copy_<W>_controlled; a zero arm emits no gate and no bracket. Counts below re-measured.)
+; ACNT-COUNT-4: call i32 @cqrt_alloc_
 ; ACNT-NOT:     call i32 @cqrt_alloc_
 ; CNCNT-COUNT-2: call void @cqrt_cnot(
 ; CNCNT-NOT:     call void @cqrt_cnot(
-; CPCNT-COUNT-2: call void @cqrt_copy_
+; CPCNT-NOT: call void @cqrt_copy_
+; CPCNT-COUNT-2: call void @cqrt_xorc_
+; CPCNT-NOT: call void @cqrt_xorc_
 ; CPCNT-NOT:     call void @cqrt_copy_
 ; RYCNT-COUNT-3: call void @cqrt_ry_
 ; RYCNT-NOT:     call void @cqrt_ry_

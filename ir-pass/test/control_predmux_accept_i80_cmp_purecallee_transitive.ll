@@ -105,8 +105,7 @@ merge:                                  ; 2 merge phis = the W3 claim witness
 ; CHECK:         %[[SEL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 0xK00000000000000000000)
 ; CHECK:         call void @cqrt_copy_f80_controlled(i32 %[[EQ]], i32 %v, i32 %[[SEL]])
 ; CHECK:         call void @cqrt_x(i32 %[[EQ]])
-; CHECK:         %[[ONE:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(x86_fp80 0xK3FFF8000000000000000)
-; CHECK:         call void @cqrt_copy_f80_controlled(i32 %[[EQ]], i32 %[[ONE]], i32 %[[SEL]])
+; CHECK:         call void @cqrt_xorc_f80_controlled(i32 %[[EQ]], i32 %[[SEL]], x86_fp80 0xK3FFF8000000000000000)
 ; CHECK:         call void @cq_template_icmp_eq_i80_hl_unc(i32 %[[EQ]], i32 %[[MAN]], i80 9223372036854775808)
 
 ; CHECK-LABEL: define internal void @__cq_q_deep_1_unc(i32 %out, i32 %v)
