@@ -1,5 +1,7 @@
-; spec_reject_gate_sub_xor_condition.ll — DECLINE, a fence owned by the control
-; chain (bd test_C_libtooling-p3kd.21). CQ_FINDINGS F6's full
+; spec_reject_gate_sub_xor_condition.ll — ACCEPT (file name is history).
+; Flipped to accept by the dm7f.52 merge (2026-10-15); was a decline pinning the
+; then-missing compound-condition lowering ("control flow under quantum
+; control", bd test_C_libtooling-p3kd.21). CQ_FINDINGS F6's full
 ; ~/Desktop/alg_test/dicke/t10.c:
 ;
 ;   __attribute__((noinline)) static bool cry_eq(int c, int v, bool t, double th) {
@@ -9,22 +11,71 @@
 ;   c += q0; q1 = cry_eq(c, 1, q1, 0.4); c += q1;
 ;   q2 = cry_eq(c, 1, q2, 0.1); q2 = cry_eq(c, 2, q2, 0.3);
 ;
-; Before bd p3kd.21: `callee contains a quantum primitive (cq_*)`. Now every call
-; is compiled at its site (SpecializeGateInline.h), and `-O1` simplification
-; rewrites `c == 1` / `c == 2` for `c = q0 + q1` into `xor i1` / `and i1` of two
-; rails. That condition is refused by the control chain, exactly as for the
-; hand-inlined twin (t10.c without `noinline`) and for the call-free plain C
-; `int c = q0 + q1; if (c == 1) cq_theta(&q2, 0.1);` (measured identical
-; diagnostic). It is a goal-1 gap of the condition grammar (CQ_FINDINGS F2),
-; not of call-site compilation, filed from bd p3kd.21.
-; RETIREMENT TRIGGER: the day an `xor`/`and` of rails is a lowered condition,
-; this flips to an accept (three `cqrt_ry_i1_controlled`; review the semantic
-; evidence before flipping, R10).
+; Every call is compiled at its site (SpecializeGateInline.h, p3kd.21) and
+; `-O1` rewrites `c == 1` / `c == 2` for `c = q0 + q1` into `xor i1` / `and i1`
+; of the two rails. dm7f.52 lowers those conditions: the condition network is
+; minted into a fresh |0> ancilla (two CNOTs for xor, one Toffoli for and), the
+; in-place Ry fires as cqrt_ry_i1_controlled on that flag, the network is
+; stripped in reverse order, and the ancilla (provably |0> again) is freed.
+; The rotated target q2 is frozen (never reverse-played, never freed).
+; Semantic evidence reviewed 2026-10-15 (R10): with a=q0, b=q1 after its
+; controlled Ry(0.4), q2 receives Ry(0.1 + 0.1[a^b] + 0.3[a&b]), i.e. 0.1/0.2/
+; 0.2/0.4 on ab=00/01/10/11, which is the source's unitary; stage 2b 6/6 frees
+; verified. No cqrt_x call may appear (nothing is negated; no X on a user
+; register).
 ; `clang -O1 -include CQ.h` output verbatim.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error: {{.*}}cq controlled lowering: control flow under quantum control
-; CHECK-NOT: callee contains a quantum primitive
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck %s --check-prefix=NOX < %t.ll
+;
+; CHECK-LABEL: define {{.*}}@main(
+; CHECK:      [[Q0:%h[0-9]*]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_ry_i1(i32 [[Q0]], double 1.000000e+00)
+; CHECK-NEXT: [[Q1:%h[0-9]*]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_ry_i1(i32 [[Q1]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_ry_i1_controlled(i32 [[Q0]], i32 [[Q1]], double 4.000000e-01)
+; CHECK-NEXT: [[Q2:%h[0-9]*]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_ry_i1(i32 [[Q2]], double 1.000000e-01)
+;   c == 1  ->  q0 ^ q1, minted, fired, stripped LIFO, freed
+; CHECK-NEXT: [[X:%[a-z0-9_]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_cnot(i32 [[Q0]], i32 [[X]])
+; CHECK-NEXT: call void @cqrt_cnot(i32 [[Q1]], i32 [[X]])
+; CHECK-NEXT: call void @cqrt_ry_i1_controlled(i32 [[X]], i32 [[Q2]], double 1.000000e-01)
+; CHECK-NEXT: call void @cqrt_cnot(i32 [[Q1]], i32 [[X]])
+; CHECK-NEXT: call void @cqrt_cnot(i32 [[Q0]], i32 [[X]])
+; CHECK-NEXT: call void @cqrt_free(i32 [[X]])
+;   c == 2  ->  q0 & q1
+; CHECK-NEXT: [[A:%[a-z0-9_]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_toffoli(i32 [[Q0]], i32 [[Q1]], i32 [[A]])
+; CHECK-NEXT: call void @cqrt_ry_i1_controlled(i32 [[A]], i32 [[Q2]], double 3.000000e-01)
+; CHECK-NEXT: call void @cqrt_toffoli(i32 [[Q0]], i32 [[Q1]], i32 [[A]])
+; CHECK-NEXT: call void @cqrt_free(i32 [[A]])
+;   c = q0 + q1 + q2 (the measured sum); its intermediates are uncomputed
+; CHECK-NEXT: [[Z1:%[a-z0-9_]+]] = call i32 @cq_template_zext_i1_to_i32(i32 [[Q1]])
+; CHECK-NEXT: [[Z0:%[a-z0-9_]+]] = call i32 @cq_template_zext_i1_to_i32(i32 [[Q0]])
+; CHECK-NEXT: [[S:%[a-z0-9_]+]] = call i32 @cq_template_add_i32(i32 [[Z1]], i32 [[Z0]])
+; CHECK-NEXT: [[Z2:%[a-z0-9_]+]] = call i32 @cq_template_zext_i1_to_i32(i32 [[Q2]])
+; CHECK-NEXT: [[C:%[a-z0-9_]+]] = call i32 @cq_template_add_i32(i32 [[S]], i32 [[Z2]])
+; CHECK-NEXT: call void @cq_template_add_i32_unc(i32 [[S]], i32 [[Z1]], i32 [[Z0]])
+; CHECK-NEXT: call void @cqrt_free(i32 [[S]])
+; CHECK-NEXT: call void @cq_template_zext_i1_to_i32_unc(i32 [[Z0]], i32 [[Q0]])
+; CHECK-NEXT: call void @cqrt_free(i32 [[Z0]])
+; CHECK-NEXT: call void @cq_template_zext_i1_to_i32_unc(i32 [[Z1]], i32 [[Q1]])
+; CHECK-NEXT: call void @cqrt_free(i32 [[Z1]])
+; CHECK-NEXT: call void @cq_template_zext_i1_to_i32_unc(i32 [[Z2]], i32 [[Q2]])
+; CHECK-NEXT: call void @cqrt_free(i32 [[Z2]])
+;   the rotated registers are frozen: measured, never freed or reverse-played
+; CHECK-NEXT: call i1 @cqrt_measure_i1(i32 [[Q0]])
+; CHECK:      call i1 @cqrt_measure_i1(i32 [[Q1]])
+; CHECK:      call i1 @cqrt_measure_i1(i32 [[Q2]])
+; CHECK:      call i32 @cqrt_measure_i32(i32 [[C]])
+; CHECK-NOT:  @cqrt_free(
+; CHECK-NOT:  _controlled_inv(
+; CHECK:      ret i32 0
+;
+; (the pass leaves a dead `declare void @cqrt_x(i32)`; only a call counts)
+; NOX-NOT: call void @cqrt_x(
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
