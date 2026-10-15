@@ -61,9 +61,9 @@ int main(int argc, char **argv) {
           DiagnosticPrinterRawOStream DP(OS);
           DI->print(DP);
           unsigned Line = 0;
-          if (auto *WL = dyn_cast<DiagnosticInfoWithLocationBase>(DI);
+          if (auto *WL = dyn_cast<DiagnosticInfoUnsupported>(DI);
               WL && WL->isLocationAvailable())
-            Line = WL->getLine();
+            Line = WL->getLocation().getLine();
           static_cast<std::vector<Diag> *>(P)->push_back(
               {StringRef(OS.str()).rtrim().str(), Line});
         },

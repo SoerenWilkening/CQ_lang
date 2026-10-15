@@ -51,6 +51,9 @@ bool isCouplingUse(Instruction *I, const SmallPtrSetImpl<Value *> &Cls,
 bool freshAlloc(CallInst *A, const Instruction *C, const TaintSet &taint,
                 const DominatorTree &DT) {
   SmallPtrSet<Value *, 8> Cls;
+  // The store skip below (`SkipStores`) is sound ONLY because this call has
+  // already refused every store that is not a park into a proven rail bank
+  // and put that bank's cell loads into `Cls` (reviewer A, R11 round 1).
   if (!handleAliases(A, taint, DT, Cls))
     return false;
   for (Value *M : Cls)
@@ -65,64 +68,48 @@ bool freshAlloc(CallInst *A, const Instruction *C, const TaintSet &taint,
   return true;
 }
 
-// Clause (a): `B`'s address tree holds only cell loads (into `Loads`),
-// lifetime markers and stores that park a fresh `cqrt_alloc_*` mint used for
-// nothing but such parks. This is a stricter walk than RailBankPromote's
-// `forEachBankCellMemop` (file-local there): any other user refuses.
-bool materializedBank(AllocaInst *B, SmallVectorImpl<LoadInst *> &Loads) {
-  Type *CellT = nullptr;
-  if (auto *AT = dyn_cast<ArrayType>(B->getAllocatedType()))
-    CellT = AT->getElementType();
-  else if (B->isArrayAllocation())
-    CellT = B->getAllocatedType();
-  if (!CellT)
-    return false;
-  auto parksOnly = [&](Value *R) {
-    auto isPark = [&](User *U) {
-      auto *SI = dyn_cast<StoreInst>(U);
-      return SI && railBankOfPointer(SI->getPointerOperand()) == B &&
-             bankStoreRailValue(SI, CellT) == R;
-    };
-    for (User *U : R->users()) {
-      if (isPark(U))
-        continue;
-      if (!isa<CastInst>(U) || !llvm::all_of(U->users(), isPark))
-        return false;
-    }
-    return true;
-  };
-  SmallVector<Value *, 8> WL{B};
-  SmallPtrSet<Value *, 8> Seen;
-  while (!WL.empty()) {
-    Value *P = WL.pop_back_val();
-    if (!Seen.insert(P).second)
+// Clause (a), asked OVER RailBankPromote's one address-tree walk (Rule 14, no
+// second spelling; owner ruling ruling-r2j336-round1-qs-2026-10-15 Q2): the
+// walk itself, `forEachBankCellMemop`, is file-local (an anonymous namespace
+// in RailBankPromote.cpp, so not linkable from here); its two exported
+// wrappers are the hop into it — `railBankParkedRails(L)` yields every rail
+// any store into L's bank parks, `railBankCellReadsOf(R)` every cell load of
+// that bank. Each parked rail must be a `cqrt_alloc_*` mint whose every use is
+// a park into this bank (directly or through one storage cast). Carve clause
+// C1 makes every DIRECT user of the bank alloca a canonical cell address, a
+// lifetime marker or the initializer; the initializer is refused here (only
+// GEPs and lifetime markers pass), since it parks no fresh mint.
+// RESIDUAL, stated: `railBankParkedRails` drops CONSTANT stores (uniqued
+// literals, see its definition), so a constant cell store through a GEP is not
+// seen; the pipeline declines it upstream (`declineNonHandleBankStores`).
+// RETIREMENT TRIGGER: when the S4 lane exports `forEachBankCellMemop` from
+// RailBankPromote.h, ask "every store parks a fresh mint" over it directly
+// and drop the residual.
+bool materializedBank(LoadInst *L, AllocaInst *B,
+                      SmallVectorImpl<LoadInst *> &Loads) {
+  for (User *U : B->users()) {
+    if (isa<GetElementPtrInst>(U))
       continue;
-    for (User *U : P->users()) {
-      if (auto *G = dyn_cast<GetElementPtrInst>(U)) {
-        if (G->getPointerOperand() != P)
-          return false;
-        WL.push_back(G);
-      } else if (isa<BitCastInst>(U) || isa<AddrSpaceCastInst>(U)) {
-        WL.push_back(U);
-      } else if (auto *LD = dyn_cast<LoadInst>(U)) {
-        if (LD->getPointerOperand() != P)
-          return false;
-        Loads.push_back(LD);
-      } else if (auto *SI = dyn_cast<StoreInst>(U)) {
-        if (SI->getPointerOperand() != P)
-          return false;  // the address itself escapes.
-        auto *R = dyn_cast<CallInst>(bankStoreRailValue(SI, CellT));
-        if (!R || !calleeName(R).starts_with("cqrt_alloc_") || !parksOnly(R))
-          return false;
-      } else if (auto *II = dyn_cast<IntrinsicInst>(U);
-                 II && II->isLifetimeStartOrEnd()) {
-        continue;
-      } else {
-        return false;
-      }
-    }
+    if (auto *II = dyn_cast<IntrinsicInst>(U); II && II->isLifetimeStartOrEnd())
+      continue;
+    return false;  // the initializer, or anything C1 did not admit.
   }
-  return true;
+  SmallVector<Value *, 8> Parked;
+  if (!railBankParkedRails(L, Parked) || Parked.empty())
+    return false;
+  auto isPark = [&](User *U) {
+    auto *SI = dyn_cast<StoreInst>(U);
+    return SI && railBankOfPointer(SI->getPointerOperand()) == B;
+  };
+  for (Value *R : Parked) {
+    auto *A = dyn_cast<CallInst>(R);
+    if (!A || !calleeName(A).starts_with("cqrt_alloc_"))
+      return false;
+    for (User *U : A->users())
+      if (!isPark(U) && (!isa<CastInst>(U) || !llvm::all_of(U->users(), isPark)))
+        return false;
+  }
+  return railBankCellReadsOf(Parked.front(), Loads);
 }
 
 // CELL-LOAD freshness (header, second producer; clauses (a)–(c)).
@@ -131,7 +118,7 @@ bool freshCellLoad(LoadInst *L, const Instruction *C, const Loop *TL,
                    ScalarEvolution &SE) {
   AllocaInst *B = railBankOfPointer(L->getPointerOperand());
   SmallVector<LoadInst *, 8> Loads;
-  if (!B || !TL || TL->getParentLoop() || !materializedBank(B, Loads))
+  if (!B || !TL || TL->getParentLoop() || !materializedBank(L, B, Loads))
     return false;
   const auto *AR = dyn_cast<SCEVAddRecExpr>(SE.getSCEV(L->getPointerOperand()));
   if (!AR || AR->getLoop() != TL || !AR->isAffine() ||

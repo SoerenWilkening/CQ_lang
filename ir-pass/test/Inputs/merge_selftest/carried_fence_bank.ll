@@ -162,7 +162,7 @@ exit:
 }
 
 ; index `i & 1`: cells 0, 1, 0 — trip 2 rotates the cell trip 0 coupled.
-define i32 @s4_nonaddrec_reuse_loud() #0 {
+define i32 @s4_nonaddrec_reuse_loud() #0 !dbg !902 {
 entry:
   %bank = alloca [3 x i32], align 4, !cq.railbank !1
   br label %mat
@@ -183,7 +183,7 @@ loop:
   %ix = and i64 %i, 1
   %ci = getelementptr inbounds [3 x i32], ptr %bank, i64 0, i64 %ix
   %q = load i32, ptr %ci, align 4
-  call void @cqrt_ry_i1(i32 %q, double 5.000000e-01), !cq.selftest.fires !0
+  call void @cqrt_ry_i1(i32 %q, double 5.000000e-01), !cq.selftest.fires !0, !dbg !903
   %h_op = call i32 @cq_template_add_i32_hl(i32 %a, i32 -3)
   %out = call i32 @cqrt_alloc_i32(i32 0), !cq.selftest.merge !0
   call void @cqrt_copy_i32_controlled(i32 %q, i32 %h_op, i32 %out)
@@ -199,7 +199,7 @@ exit:
 }
 
 ; a loop-invariant index: one cell, rotated every trip after trip 0 coupled it.
-define i32 @s4_invariant_index_loud(i64 %k) #0 {
+define i32 @s4_invariant_index_loud(i64 %k) #0 !dbg !904 {
 entry:
   %bank = alloca [3 x i32], align 4, !cq.railbank !1
   br label %mat
@@ -219,7 +219,7 @@ loop:
   %a = phi i32 [ %seed, %pre ], [ %out, %loop ]
   %ck = getelementptr inbounds [3 x i32], ptr %bank, i64 0, i64 %k
   %q = load i32, ptr %ck, align 4
-  call void @cqrt_ry_i1(i32 %q, double 5.000000e-01), !cq.selftest.fires !0
+  call void @cqrt_ry_i1(i32 %q, double 5.000000e-01), !cq.selftest.fires !0, !dbg !905
   %h_op = call i32 @cq_template_add_i32_hl(i32 %a, i32 -3)
   %out = call i32 @cqrt_alloc_i32(i32 0), !cq.selftest.merge !0
   call void @cqrt_copy_i32_controlled(i32 %q, i32 %h_op, i32 %out)
@@ -235,7 +235,16 @@ exit:
 }
 
 ; trip i couples cell i+1 to the carried φ; trip i+1 rotates that cell.
-define i32 @s4_neighbor_coupling_loud() #0 {
+; RETIREMENT CONDITION (L7; owner ruling ruling-r2j336-round1-qs-2026-10-15
+; Q1, bd r2j3.36.1): a coupling at a DIFFERENT address SCEV always counts
+; today. The sound narrower exemption, if built: same trip loop, same step s,
+; both no-wrap AddRecs, gate L = {b,+,s}, coupling X = {a,+,s}; the coupled
+; cell is re-read by L iff (a−b) is divisible by s and (a−b)/s ≥ 0. Here
+; a−b = +4 = s, so this case STAYS loud under that exemption; a case with
+; (a−b)/s < 0 (coupling q[i−1]) or a non-multiple offset is what it would
+; newly accept (memory scev-vacuous-trip-bounds: trip-bound reasoning over
+; SCEV can be vacuous).
+define i32 @s4_neighbor_coupling_loud() #0 !dbg !906 {
 entry:
   %bank = alloca [4 x i32], align 4, !cq.railbank !1
   br label %mat
@@ -255,7 +264,7 @@ loop:
   %a = phi i32 [ %seed, %pre ], [ %out, %loop ]
   %ci = getelementptr inbounds [4 x i32], ptr %bank, i64 0, i64 %i
   %q = load i32, ptr %ci, align 4
-  call void @cqrt_ry_i1(i32 %q, double 5.000000e-01), !cq.selftest.fires !0
+  call void @cqrt_ry_i1(i32 %q, double 5.000000e-01), !cq.selftest.fires !0, !dbg !907
   %h_op = call i32 @cq_template_add_i32_hl(i32 %a, i32 -3)
   %out = call i32 @cqrt_alloc_i32(i32 0), !cq.selftest.merge !0
   call void @cqrt_copy_i32_controlled(i32 %q, i32 %h_op, i32 %out)
@@ -274,7 +283,7 @@ exit:
 }
 
 ; pB with the carried rail parked in a cell (S3 Q6(a) re-materialization).
-define i32 @memcarried_cond_ry_loud(i32 %u) #0 {
+define i32 @memcarried_cond_ry_loud(i32 %u) #0 !dbg !908 {
 entry:
   %bank = alloca [4 x i32], align 4, !cq.railbank !1
   %h = call i32 @cqrt_alloc_i32(i32 %u)
@@ -300,7 +309,7 @@ loop:
   %i1 = add nuw nsw i64 %i, 1
   %cn = getelementptr inbounds [4 x i32], ptr %bank, i64 0, i64 %i1
   store i32 %out, ptr %cn, align 4
-  call void @cqrt_ry_i32(i32 %h, double 2.000000e-01), !cq.selftest.fires !0
+  call void @cqrt_ry_i32(i32 %h, double 2.000000e-01), !cq.selftest.fires !0, !dbg !909
   %done = icmp eq i64 %i1, 3
   br i1 %done, label %exit, label %loop
 exit:
@@ -347,3 +356,20 @@ attributes #1 = { "cq-selftest-expect"="kept" }
 
 !0 = !{}
 !1 = !{i32 1}
+
+; debug info: only the tagged call carries a !dbg line (cq-merge-selftest
+; checks the diagnostic fired at that line).
+!llvm.dbg.cu = !{!890}
+!llvm.module.flags = !{!891}
+!890 = distinct !DICompileUnit(language: DW_LANG_C11, file: !892, producer: "hand", isOptimized: true, runtimeVersion: 0, emissionKind: LineTablesOnly)
+!891 = !{i32 2, !"Debug Info Version", i32 3}
+!892 = !DIFile(filename: "carried_fence_bank.ll", directory: "ir-pass/test/Inputs/merge_selftest")
+!893 = !DISubroutineType(types: !{})
+!902 = distinct !DISubprogram(name: "s4_nonaddrec_reuse_loud", scope: !892, file: !892, line: 101, type: !893, scopeLine: 101, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!903 = !DILocation(line: 101, scope: !902)
+!904 = distinct !DISubprogram(name: "s4_invariant_index_loud", scope: !892, file: !892, line: 102, type: !893, scopeLine: 102, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!905 = !DILocation(line: 102, scope: !904)
+!906 = distinct !DISubprogram(name: "s4_neighbor_coupling_loud", scope: !892, file: !892, line: 103, type: !893, scopeLine: 103, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!907 = !DILocation(line: 103, scope: !906)
+!908 = distinct !DISubprogram(name: "memcarried_cond_ry_loud", scope: !892, file: !892, line: 104, type: !893, scopeLine: 104, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!909 = !DILocation(line: 104, scope: !908)

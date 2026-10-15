@@ -64,7 +64,7 @@ declare i32 @cqrt_measure_i32(i32)
 declare zeroext i1 @cqrt_measure_i1(i32)
 
 ; [pA] the shipped slice + `cq_theta(&b0[0], .3)` after the merge, per trip.
-define i32 @pa_bank_cell_ry_loud() #0 {
+define i32 @pa_bank_cell_ry_loud() #0 !dbg !902 {
 entry:
   %bank = alloca [3 x i32], align 4, !cq.railbank !1
   %seed = call i32 @cqrt_alloc_i32(i32 5)
@@ -91,7 +91,7 @@ loop:
   store i32 %h, ptr %cell, align 4
   %c0 = getelementptr inbounds [3 x i32], ptr %bank, i64 0, i64 0
   %ld = load i32, ptr %c0, align 4
-  call void @cqrt_ry_i1(i32 %ld, double 3.000000e-01)
+  call void @cqrt_ry_i1(i32 %ld, double 3.000000e-01), !cq.selftest.fires !0, !dbg !903
   %i1 = add nuw nsw i64 %i, 1
   %done = icmp eq i64 %i1, 3
   br i1 %done, label %exit, label %loop
@@ -101,7 +101,7 @@ exit:
 }
 
 ; [pB] θ(&c,.5); for (i<3) { if (c > i) a -= 3; θ(&c,.2); }
-define i32 @pb_cond_inloop_ry_loud(i32 %u) #0 {
+define i32 @pb_cond_inloop_ry_loud(i32 %u) #0 !dbg !904 {
 entry:
   %h = call i32 @cqrt_alloc_i32(i32 %u)
   call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
@@ -119,7 +119,7 @@ loop:
   call void @cqrt_x(i32 %h_cmp)
   call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp, i32 %h, i32 %i)
   call void @cqrt_free(i32 %h_cmp)
-  call void @cqrt_ry_i32(i32 %h, double 2.000000e-01)
+  call void @cqrt_ry_i32(i32 %h, double 2.000000e-01), !cq.selftest.fires !0, !dbg !905
   %i1 = add nuw nsw i32 %i, 1
   %done = icmp eq i32 %i1, 3
   br i1 %done, label %exit, label %loop
@@ -131,7 +131,7 @@ exit:
 }
 
 ; [pC] for (i<3) { bool b = 0; θ(&b,.5); if (b) a -= 3; r += M(b); θ(&a,.1); }
-define i32 @pc_rail_inloop_ry_loud() #0 {
+define i32 @pc_rail_inloop_ry_loud() #0 !dbg !906 {
 entry:
   %seed = call i32 @cqrt_alloc_i32(i32 5)
   br label %loop
@@ -147,7 +147,7 @@ loop:
   call void @cqrt_copy_i32_controlled(i32 %b, i32 %a, i32 %out)
   call void @cqrt_x(i32 %b)
   %mb = call i1 @cqrt_measure_i1(i32 %b)
-  call void @cqrt_ry_i32(i32 %out, double 1.000000e-01)
+  call void @cqrt_ry_i32(i32 %out, double 1.000000e-01), !cq.selftest.fires !0, !dbg !907
   %i1 = add nuw nsw i32 %i, 1
   %done = icmp eq i32 %i1, 3
   br i1 %done, label %exit, label %loop
@@ -157,14 +157,14 @@ exit:
 }
 
 ; [pD] for (i<3) { θ(&a,.1); bool b = 0; θ(&b,.5); if (b) a -= 3; r += M(b); }
-define i32 @pd_phi_top_ry_loud() #0 {
+define i32 @pd_phi_top_ry_loud() #0 !dbg !908 {
 entry:
   %seed = call i32 @cqrt_alloc_i32(i32 5)
   br label %loop
 loop:
   %i = phi i32 [ 0, %entry ], [ %i1, %loop ]
   %a = phi i32 [ %seed, %entry ], [ %out, %loop ]
-  call void @cqrt_ry_i32(i32 %a, double 1.000000e-01)
+  call void @cqrt_ry_i32(i32 %a, double 1.000000e-01), !cq.selftest.fires !0, !dbg !909
   %b = call i32 @cqrt_alloc_i1(i1 false)
   call void @cqrt_ry_i1(i32 %b, double 5.000000e-01)
   %h_op = call i32 @cq_template_add_i32_hl(i32 %a, i32 -3)
@@ -185,7 +185,7 @@ exit:
 ; [pE] for (j<2) for (i<3) { if (a >= 3) θ(&b0[i],.5); if (b0[i]) a -= 3; }
 ; with the bank cells allocated before the nest: the second outer trip's
 ; controlled Ry targets a cell register the first outer trip's merges record.
-define i32 @pe_nested_cell_loud() #0 {
+define i32 @pe_nested_cell_loud() #0 !dbg !910 {
 entry:
   %bank = alloca [3 x i32], align 4, !cq.railbank !1
   %z0 = call i32 @cqrt_alloc_i1(i1 false)
@@ -209,7 +209,7 @@ loop:
   %cell = getelementptr inbounds [3 x i32], ptr %bank, i64 0, i64 %i
   %ld = load i32, ptr %cell, align 4
   %h_cmp = call i32 @cq_template_icmp_sgt_i32_hl(i32 %a, i32 2)
-  call void @cqrt_ry_i1_controlled(i32 %h_cmp, i32 %ld, double 5.000000e-01)
+  call void @cqrt_ry_i1_controlled(i32 %h_cmp, i32 %ld, double 5.000000e-01), !cq.selftest.fires !0, !dbg !911
   call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp, i32 %a, i32 2)
   call void @cqrt_free(i32 %h_cmp)
   %h_op = call i32 @cq_template_add_i32_hl(i32 %a, i32 -3)
@@ -235,7 +235,7 @@ exit:
 }
 
 ; a fresh per-trip register coupled to the carried φ, THEN rotated.
-define i32 @fresh_coupled_ry_loud() #0 {
+define i32 @fresh_coupled_ry_loud() #0 !dbg !912 {
 entry:
   %seed = call i32 @cqrt_alloc_i32(i32 5)
   br label %loop
@@ -253,7 +253,7 @@ loop:
   %mb = call i1 @cqrt_measure_i1(i32 %b)
   %g = call i32 @cqrt_alloc_i1(i1 false)
   call void @cqrt_cnot(i32 %a, i32 %g)
-  call void @cqrt_ry_i1(i32 %g, double 3.000000e-01)
+  call void @cqrt_ry_i1(i32 %g, double 3.000000e-01), !cq.selftest.fires !0, !dbg !913
   %mg = call i1 @cqrt_measure_i1(i32 %g)
   %i1 = add nuw nsw i32 %i, 1
   %done = icmp eq i32 %i1, 3
@@ -265,7 +265,7 @@ exit:
 
 ; %g allocated BEFORE the loop: rotated at the top of each trip, coupled to the
 ; carried φ later in the trip. Trip 2's Ry acts on an entangled %g.
-define i32 @backedge_fresh_ry_loud() #0 {
+define i32 @backedge_fresh_ry_loud() #0 !dbg !914 {
 entry:
   %seed = call i32 @cqrt_alloc_i32(i32 5)
   %g = call i32 @cqrt_alloc_i1(i1 false)
@@ -273,7 +273,7 @@ entry:
 loop:
   %i = phi i32 [ 0, %entry ], [ %i1, %loop ]
   %a = phi i32 [ %seed, %entry ], [ %out, %loop ]
-  call void @cqrt_ry_i1(i32 %g, double 3.000000e-01)
+  call void @cqrt_ry_i1(i32 %g, double 3.000000e-01), !cq.selftest.fires !0, !dbg !915
   %b = call i32 @cqrt_alloc_i1(i1 false)
   call void @cqrt_ry_i1(i32 %b, double 5.000000e-01)
   %h_op = call i32 @cq_template_add_i32_hl(i32 %a, i32 -3)
@@ -290,6 +290,40 @@ loop:
 exit:
   %m = call i32 @cqrt_measure_i32(i32 %out)
   %mg = call i1 @cqrt_measure_i1(i32 %g)
+  ret i32 %m
+}
+
+; (R11 round 1, F3 ii) the coupling reaches a per-trip fresh %g only through an
+; ALIAS (a φ in the latch block), then %g is rotated: loud. A freshness scan
+; over the alloc's own users alone would call %g fresh.
+define i32 @alias_coupled_ry_loud() #0 !dbg !916 {
+entry:
+  %seed = call i32 @cqrt_alloc_i32(i32 5)
+  br label %loop
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i1, %mid ]
+  %a = phi i32 [ %seed, %entry ], [ %out, %mid ]
+  %g = call i32 @cqrt_alloc_i1(i1 false)
+  br label %mid
+mid:
+  %gp = phi i32 [ %g, %loop ]
+  call void @cqrt_cnot(i32 %a, i32 %gp)
+  call void @cqrt_ry_i1(i32 %g, double 3.000000e-01), !cq.selftest.fires !0, !dbg !917
+  %mg = call i1 @cqrt_measure_i1(i32 %g)
+  %b = call i32 @cqrt_alloc_i1(i1 false)
+  call void @cqrt_ry_i1(i32 %b, double 5.000000e-01)
+  %h_op = call i32 @cq_template_add_i32_hl(i32 %a, i32 -3)
+  %out = call i32 @cqrt_alloc_i32(i32 0), !cq.selftest.merge !0
+  call void @cqrt_copy_i32_controlled(i32 %b, i32 %h_op, i32 %out)
+  call void @cqrt_x(i32 %b)
+  call void @cqrt_copy_i32_controlled(i32 %b, i32 %a, i32 %out)
+  call void @cqrt_x(i32 %b)
+  %mb = call i1 @cqrt_measure_i1(i32 %b)
+  %i1 = add nuw nsw i32 %i, 1
+  %done = icmp eq i32 %i1, 3
+  br i1 %done, label %exit, label %loop
+exit:
+  %m = call i32 @cqrt_measure_i32(i32 %out)
   ret i32 %m
 }
 
@@ -429,3 +463,28 @@ attributes #1 = { "cq-selftest-expect"="kept" }
 
 !0 = !{}
 !1 = !{i32 1}
+
+; debug info: only the tagged call carries a !dbg line (cq-merge-selftest
+; checks the diagnostic fired at that line).
+!llvm.dbg.cu = !{!890}
+!llvm.module.flags = !{!891}
+!890 = distinct !DICompileUnit(language: DW_LANG_C11, file: !892, producer: "hand", isOptimized: true, runtimeVersion: 0, emissionKind: LineTablesOnly)
+!891 = !{i32 2, !"Debug Info Version", i32 3}
+!892 = !DIFile(filename: "carried_fence_inloop.ll", directory: "ir-pass/test/Inputs/merge_selftest")
+!893 = !DISubroutineType(types: !{})
+!902 = distinct !DISubprogram(name: "pa_bank_cell_ry_loud", scope: !892, file: !892, line: 101, type: !893, scopeLine: 101, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!903 = !DILocation(line: 101, scope: !902)
+!904 = distinct !DISubprogram(name: "pb_cond_inloop_ry_loud", scope: !892, file: !892, line: 102, type: !893, scopeLine: 102, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!905 = !DILocation(line: 102, scope: !904)
+!906 = distinct !DISubprogram(name: "pc_rail_inloop_ry_loud", scope: !892, file: !892, line: 103, type: !893, scopeLine: 103, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!907 = !DILocation(line: 103, scope: !906)
+!908 = distinct !DISubprogram(name: "pd_phi_top_ry_loud", scope: !892, file: !892, line: 104, type: !893, scopeLine: 104, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!909 = !DILocation(line: 104, scope: !908)
+!910 = distinct !DISubprogram(name: "pe_nested_cell_loud", scope: !892, file: !892, line: 105, type: !893, scopeLine: 105, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!911 = !DILocation(line: 105, scope: !910)
+!912 = distinct !DISubprogram(name: "fresh_coupled_ry_loud", scope: !892, file: !892, line: 106, type: !893, scopeLine: 106, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!913 = !DILocation(line: 106, scope: !912)
+!914 = distinct !DISubprogram(name: "backedge_fresh_ry_loud", scope: !892, file: !892, line: 107, type: !893, scopeLine: 107, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!915 = !DILocation(line: 107, scope: !914)
+!916 = distinct !DISubprogram(name: "alias_coupled_ry_loud", scope: !892, file: !892, line: 108, type: !893, scopeLine: 108, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !890)
+!917 = !DILocation(line: 108, scope: !916)

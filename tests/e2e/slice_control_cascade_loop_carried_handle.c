@@ -42,9 +42,12 @@
  *     allocated: each is the next trip's copy source, so its reversal is LIFO
  *     ACROSS trips (a post-loop reverse loop, not yet emitted). See the twin's
  *     header. Before r2j3.32 both forms left 6. The leak is ACCEPTED (routing
- *     decision (b), 2026-10-15; reverse loop bd 8h7d.20) while nothing after the
- *     loop acts non-diagonally on what `h5`/`h10` record; such a gate fails
- *     loudly (`MergeCarriedFence.h`). Here only measurements follow.
+ *     decision (b), 2026-10-15; reverse loop bd 8h7d.20) while no gate the
+ *     records can precede (after the loop, or inside it: bd r2j3.36) acts
+ *     non-diagonally on a register entangled with `h5`/`h10`; such a gate
+ *     fails loudly (`MergeCarriedFence.h`). Here the per-trip controlled Ry
+ *     targets a rail minted fresh that trip (clause (iv)), and only
+ *     measurements follow the loop.
  *
  * ⚠ THIS GOLDEN IS 50 LINES AND ITS HAND-UNROLLED TWIN IS 55 (45 before bd
  * r2j3.32, whose ten extra lines are the reversal above). The fold half IS THE

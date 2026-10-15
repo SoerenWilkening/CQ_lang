@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 843 maintained source files, 6827 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 845 maintained source files, 6832 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -858,15 +858,23 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/MeasureLowering.cpp:222` — `diagnoseMeasure`
 - `ir-pass/src/MeasureLowering.cpp:230` — `lowerMeasures`
 
-### `ir-pass/src/MergeCarriedFence.cpp` (219 lines)
+### `ir-pass/src/MergeCarriedFence.cpp` (168 lines)
 
-- `ir-pass/src/MergeCarriedFence.cpp:31` — `carriedLoop`
-- `ir-pass/src/MergeCarriedFence.cpp:40` — `isRuntime`
-- `ir-pass/src/MergeCarriedFence.cpp:48` — `handlesOf`
-- `ir-pass/src/MergeCarriedFence.cpp:67` — `slotAllowed`
-- `ir-pass/src/MergeCarriedFence.cpp:90` — `runsWithoutRedef`
-- `ir-pass/src/MergeCarriedFence.cpp:122` — `freshAt`
-- `ir-pass/src/MergeCarriedFence.cpp:151` — `fenceCarriedMergeLeaks`
+- `ir-pass/src/MergeCarriedFence.cpp:42` — `carriedLoop`
+- `ir-pass/src/MergeCarriedFence.cpp:65` — `slotAllowed`
+- `ir-pass/src/MergeCarriedFence.cpp:85` — `fenceCarriedMergeLeaks`
+
+### `ir-pass/src/MergeCarriedFenceFresh.cpp` (215 lines)
+
+- `ir-pass/src/MergeCarriedFenceFresh.cpp:24` — `isRuntime`
+- `ir-pass/src/MergeCarriedFenceFresh.cpp:28` — `isCarrier`
+- `ir-pass/src/MergeCarriedFenceFresh.cpp:36` — `isCouplingUse`
+- `ir-pass/src/MergeCarriedFenceFresh.cpp:51` — `freshAlloc`
+- `ir-pass/src/MergeCarriedFenceFresh.cpp:88` — `materializedBank`
+- `ir-pass/src/MergeCarriedFenceFresh.cpp:116` — `freshCellLoad`
+- `ir-pass/src/MergeCarriedFenceFresh.cpp:161` — `carriedFenceHandlesOf`
+- `ir-pass/src/MergeCarriedFenceFresh.cpp:179` — `runsWithoutRedef`
+- `ir-pass/src/MergeCarriedFenceFresh.cpp:202` — `carriedFenceFreshAt`
 
 ### `ir-pass/src/MergePhiPeel.cpp` (672 lines)
 
@@ -876,7 +884,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/MergePhiPeel.cpp:262` — `phiPeelable`
 - `ir-pass/src/MergePhiPeel.cpp:313` — `peelIndependentMergePhis`
 
-### `ir-pass/src/MergeRailDischarge.cpp` (127 lines)
+### `ir-pass/src/MergeRailDischarge.cpp` (130 lines)
 
 - `ir-pass/src/MergeRailDischarge.cpp:36` — `emitReplay`
 - `ir-pass/src/MergeRailDischarge.cpp:78` — `dischargeMergeRails`
@@ -1714,9 +1722,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `ir-pass/tools/cq_opt_main.cpp:43` — `main`
 
-### `ir-pass/tools/merge_selftest.cpp` (112 lines)
+### `ir-pass/tools/merge_selftest.cpp` (146 lines)
 
-- `ir-pass/tools/merge_selftest.cpp:42` — `main`
+- `ir-pass/tools/merge_selftest.cpp:48` — `main`
 
 ### `ir-pass/tools/scrub_selftest.cpp` (423 lines)
 
@@ -5298,9 +5306,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_control_angle_select_rz_twin.c:26` — `slice`
 - `tests/e2e/slice_control_angle_select_rz_twin.c:35` — `main`
 
-### `tests/e2e/slice_control_cascade_loop_carried_handle.c` (78 lines)
+### `tests/e2e/slice_control_cascade_loop_carried_handle.c` (81 lines)
 
-- `tests/e2e/slice_control_cascade_loop_carried_handle.c:66` — `main`
+- `tests/e2e/slice_control_cascade_loop_carried_handle.c:69` — `main`
 
 ### `tests/e2e/slice_control_cascade_loop_carried_handle_unrolled.c` (64 lines)
 

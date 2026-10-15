@@ -6,9 +6,10 @@
 ; trip's copy source, so no trip's rail can be reversed before the next trip's
 ; is (LIFO across trips: a post-loop reverse loop, bd 8h7d.20, not emitted
 ; yet). Two trips' rails therefore stay allocated holding CNOT records of the
-; trip's condition and copied sources — an ACCEPTED leak, as long as nothing
-; after the loop acts non-diagonally on a register they record. Here something
-; does: a later `cq_theta(&x, .3)` on the copied SOURCE register `x` (the original
+; trip's condition and copied sources — an ACCEPTED leak, as long as no gate
+; the records can precede (after the loop, or inside it: bd r2j3.36, whose
+; in-loop shapes are pinned by cq-merge-selftest) acts non-diagonally on a
+; register entangled with them. Here one after the loop does: a later `cq_theta(&x, .3)` on the copied SOURCE register `x` (the original
 ; r2j3.32 shape rotated the source). Lowered silently, that rotation would interfere branches the
 ; leaked records still tell apart — a dephased, wrong unitary (the r2j3.32
 ; miscompile, one loop out). Without the rotation the program is an ACCEPT

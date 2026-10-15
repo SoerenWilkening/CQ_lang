@@ -15,7 +15,10 @@
 //
 // THE FENCE (R11 round 2: the invariant itself, not a per-path closure; three
 // rounds of path closures each left a hole). For every merge rail the
-// discharge LEFT and that is loop-carried:
+// discharge LEFT and that is loop-carried — a member of its alias class is a
+// containing loop's header φ, or a rail-bank cell load inside it (R11 round 1,
+// F2: carried through MEMORY, S3's Q6(a) shape); an unprovable class inside a
+// loop counts as carried and then fails loudly:
 //   * THE PROTECTED SET is its ENTANGLEMENT CLOSURE. Start from the rail; any
 //     call ANYWHERE in the function (before, inside or after the loop) that
 //     touches two or more handles — operands in state slots plus a fresh
@@ -43,15 +46,16 @@
 //             allocation (`isPotentiallyReachable` with DT and LoopInfo, so
 //             every call in the loop counts, across the back edge — trip k+1
 //             sees trip k's leaked rail);
-//       (iv)  the register is not FRESH at C: it is not a `cqrt_alloc_*`
-//             result on which no coupling use (a member of its alias class
-//             in any call that is not a one-handle runtime call, or in any
-//             other non-carrier user) runs between that allocation and C on
-//             some CFG path (`isPotentiallyReachableFromMany`, the alloc's
-//             block excluded, no DT/LI shortcut). A fresh register is in a
-//             product state, so no gate on it interferes branches a record
-//             tells apart. A template result, a φ, a bank load are never
-//             fresh.
+//       (iv)  the register is not FRESH at C (MergeCarriedFenceFresh.h): a
+//             `cqrt_alloc_*` result on which no coupling use of its alias
+//             class runs between that allocation and C on some CFG path, or
+//             (R11 round 1, F1) a per-trip CELL LOAD of a bank whose cells
+//             are parked fresh mints, at a no-wrap AddRec address of the
+//             carried loop, that no same-cell coupling can precede in the
+//             trip and no other-cell coupling can precede at all. A fresh
+//             register is in a product state, so no gate on it interferes
+//             branches a record tells apart. A template result, a φ, a
+//             select are never fresh.
 //     The first element fails loudly at C (`DiagnosticInfoUnsupported`, its
 //     `!dbg`).
 // WHY THIS SHAPE (R11 round 2, revU7, then r2j3.36): before r2j3.36 the check

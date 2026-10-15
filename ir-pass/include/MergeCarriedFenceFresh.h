@@ -11,10 +11,14 @@
 //     does not run again;
 //   * a CELL LOAD L of a `!cq.railbank` bank (R11 round 1, F1: the 01po.19 S4
 //     materialized arrays load each cell per trip), fresh at C when
-//       (a) the bank's address tree has only cell loads, lifetime markers and
-//           cell stores, and every store parks a `cqrt_alloc_*` result whose
-//           every other use is such a store (materialization or rebind to a
-//           fresh mint: the cell's register is |0⟩ when parked);
+//       (a) the bank alloca's direct users are cell addresses and lifetime
+//           markers only (no initializer, carve clause C1), and every rail
+//           its stores park (`railBankParkedRails`, RailBankPromote's one
+//           address-tree walk) is a `cqrt_alloc_*` mint used only for parks
+//           into this bank (materialization or rebind to a fresh mint: the
+//           cell's register is |0⟩ when parked). Residual: a CONSTANT cell
+//           store is invisible to that walk's wrapper (declined upstream by
+//           `declineNonHandleBankStores`; see `materializedBank`);
 //       (b) L's address is an affine SCEV AddRec of the CARRIED loop TL with a
 //           nonzero step and a no-wrap flag, and TL is outermost — so distinct
 //           trips of TL's one activation read distinct cells;
