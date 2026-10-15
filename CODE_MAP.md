@@ -41,7 +41,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
 - `runtime/cq_runtime.c` — 1427 physical lines
 - `ir-pass/src/Specialization.cpp` — 1380 physical lines
-- `ir-pass/src/ArithLowering.cpp` — 1321 physical lines
+- `ir-pass/src/ArithLowering.cpp` — 1322 physical lines
 - `tools/library_coverage/probe.py` — 1219 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
 - `ir-pass/src/ChainWalk.cpp` — 1160 physical lines
@@ -227,23 +227,23 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/AngleSelectEmit.cpp:75` — `emitPhaseAngleSelect`
 - `ir-pass/src/AngleSelectEmit.cpp:190` — `emitAngleSelectRegion`
 
-### `ir-pass/src/ArithLowering.cpp` (1321 lines)
+### `ir-pass/src/ArithLowering.cpp` (1322 lines)
 
 - `ir-pass/src/ArithLowering.cpp:55` — `promote`
 - `ir-pass/src/ArithLowering.cpp:111` — `negateClassicalImmediate`
 - `ir-pass/src/ArithLowering.cpp:131` — `emitInPlaceReassign`
 - `ir-pass/src/ArithLowering.cpp:183` — `rewriteBinary`
-- `ir-pass/src/ArithLowering.cpp:304` — `rewriteUnary`
-- `ir-pass/src/ArithLowering.cpp:335` — `rewriteInPlaceValueRail`
-- `ir-pass/src/ArithLowering.cpp:435` — `inPlaceReassignRailOperand`
-- `ir-pass/src/ArithLowering.cpp:677` — `voidReaderRecordsSettled`
-- `ir-pass/src/ArithLowering.cpp:716` — `railZeroedAndReleased`
-- `ir-pass/src/ArithLowering.cpp:740` — `priorUseIsSettled`
-- `ir-pass/src/ArithLowering.cpp:835` — `inPlaceFenceHolds`
-- `ir-pass/src/ArithLowering.cpp:892` — `inPlacePositionHolds`
-- `ir-pass/src/ArithLowering.cpp:1043` — `classifyInPlaceReassignment`
-- `ir-pass/src/ArithLowering.cpp:1110` — `lateReassignShape`
-- `ir-pass/src/ArithLowering.cpp:1150` — `lowerLateReassignments`
+- `ir-pass/src/ArithLowering.cpp:305` — `rewriteUnary`
+- `ir-pass/src/ArithLowering.cpp:336` — `rewriteInPlaceValueRail`
+- `ir-pass/src/ArithLowering.cpp:436` — `inPlaceReassignRailOperand`
+- `ir-pass/src/ArithLowering.cpp:678` — `voidReaderRecordsSettled`
+- `ir-pass/src/ArithLowering.cpp:717` — `railZeroedAndReleased`
+- `ir-pass/src/ArithLowering.cpp:741` — `priorUseIsSettled`
+- `ir-pass/src/ArithLowering.cpp:836` — `inPlaceFenceHolds`
+- `ir-pass/src/ArithLowering.cpp:893` — `inPlacePositionHolds`
+- `ir-pass/src/ArithLowering.cpp:1044` — `classifyInPlaceReassignment`
+- `ir-pass/src/ArithLowering.cpp:1111` — `lateReassignShape`
+- `ir-pass/src/ArithLowering.cpp:1151` — `lowerLateReassignments`
 
 ### `ir-pass/src/ArmAngleHoist.cpp` (103 lines)
 

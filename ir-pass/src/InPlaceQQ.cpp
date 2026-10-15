@@ -270,15 +270,15 @@ Outcome decideNext(Function &F, WidthDispatch &wd, TaintSet &taint,
       if ((S.Mask >> Idx & 1u) && railIsUserData(S.C->getArgOperand(Idx)))
         Eligible.push_back(Idx);
     // (E2′) bd dm7f.77 — design D5 ("%8 then in place on f's rail"): a dead
-    // FRESH REGISTER CONDITION rail (RegCondLeaf.h: the out-of-place xor a
-    // control stream read as the user's register) that the M-B interior plan has
-    // no adjoint for and no emitter zeroed. In place onto it is EXACTLY "out of
-    // place, then discharge it", and here nothing else discharges it: dicke.c's
-    // q3 rail (a select's register root) sits in a MEASURED terminal's DAG, which
-    // the plan withholds and the terminal spine does not reverse, so out of place
-    // left it beside the kept result, together recording q1 before its
-    // controlled Ry (dead-record ruling). Bennett.jl exclusive-reader target
-    // (operand.jl:182-221). OPTIONAL: the ONE dead operand, never loud.
+    // FRESH register-condition TEMPLATE (the commit tag: the out-of-place xor the
+    // commit made the register) with no M-B adjoint and no emitter zeroing. In
+    // place onto it equals "out of place, then discharge it"; dicke.c's q3 rail
+    // sits in a MEASURED terminal's DAG, which the plan withholds, so out of place
+    // leaked it beside the kept result (dead-record ruling; Bennett operand.jl:
+    // 182-221). The COMMIT tag, not the rail marker, on purpose (R11 round 2b): a
+    // marker-only rail already holds the condition IN PLACE on an operand M-C
+    // overwrote, and the M-B plan discharges it (measured); no shape needs more.
+    // OPTIONAL: the ONE dead operand, never loud.
     bool DerivedTarget = false;
     if (Eligible.empty() && (S.Mask == 1u || S.Mask == 2u)) {
       const unsigned Idx = S.Mask == 1u ? 0 : 1;
@@ -392,8 +392,8 @@ bool lowerInPlaceQQ(Module &M, WidthDispatch &wd, TaintSet &taint) {
   for (Function &F : M)
     for (BasicBlock &BB : F)
       for (Instruction &I : BB)
-        I.setMetadata(kDeadOperandTag, nullptr);  // `!cq.regcond` stays for
-                                                  // row (c′); stripped later.
+        I.setMetadata(kDeadOperandTag, nullptr);  // the regcond tags go after
+                                                  // `uncompute` (InPlaceQQRecord).
   return Changed;
 }
 

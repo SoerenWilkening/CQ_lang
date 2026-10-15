@@ -285,8 +285,9 @@ bool rewriteBinary(BinaryOperator *bo, WidthDispatch &wd, TaintSet &taint) {
   if (ShapeSel == Shape::QQ)
     transferDeadOperandMask(bo, T, /*Swapped=*/Lhs != A);
   // bd dm7f.77 — carry the register-condition tag to the template (remapped
-  // through the BirthOrder swap, like the dead mask): the late QQ round honours
-  // the commit, and ChainWalk's row (c′) asks it of the rail. M-C may still put
+  // through the BirthOrder swap, like the dead mask) for the late QQ round to
+  // honour, and mark the template as the condition's RAIL (`markRegCondRail`
+  // below; the only thing ChainWalk's row (c′) reads). M-C may still put
   // a fresh one in place (R11 round 1 L9 audit): it does so only when the
   // operand is DEAD, so the condition's rail is that operand's, which nothing
   // names after the op — refusing it left a dead register out of place.
