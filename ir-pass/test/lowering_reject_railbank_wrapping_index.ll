@@ -46,10 +46,21 @@
 ; (DECLINE -> DECLINE; the message below is mirrored character-for-character).
 ; RETIREMENT TRIGGER: each of S4-S7 that lands drops its name from the list; when
 ; the list empties this file becomes an ACCEPT with an analytic trace check.
-; RUN: env CQ_CTRL_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s --implicit-check-not='railbank [Bank]'
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S4 borrowed-root cells
-; CHECK-NOT: tainted value stored to memory
+
+; ⚠ bd `test_C_libtooling-01po.19` S4 (2026-10-15): DECLINE -> ACCEPT. The window
+; model now LOWERS this array (RailWindow.h: handle array materialized at the
+; quantization point, cell reads are borrowed roots, a cell rail is never freed
+; or reverse-played). Reviewed by trace, not by green:
+; the i8 GEP index is SIGN-extended by GEP semantics, so trips 128..299 address before the object (poison in this hand IR, UB); the window redirect reproduces that address computation exactly (sext) and adds no fact of its own. Each in-bounds visit is an in-place Ry on the cell rail.
+; The S4 prefix pins the whole emitted runtime stream and that no rail is freed.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s --check-prefix=S4 --implicit-check-not=cqrt_free --implicit-check-not='error:'
+; S4-LABEL: define {{.*}} @slice(
+; S4: %b.rails = alloca i32, i64 300, align 4, !cq.railwindow !0
+; S4: %h = call i32 @cqrt_alloc_i1(i1 %1)
+; S4: %seed.rail = load i32, ptr %cq.rail.addr, align 4
+; S4: call void @cqrt_ry_i1(i32 %seed.rail, double 5.000000e-01)
+; S4: store i32 %seed.rail, ptr %cq.rail.addr, align 4
 
 target triple = "x86_64-apple-macosx16.0.0"
 

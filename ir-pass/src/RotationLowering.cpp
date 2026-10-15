@@ -14,6 +14,7 @@
 #include "LiteralIntegrity.h"  // valueCarriesUndef (bd z9t1 — the ONE spelling)
 #include "OpcodeSupport.h"  // abiWidthFromType
 #include "RailBankPromote.h"  // isRailBankSeedAlloc
+#include "RailWindow.h"       // railWindowFamily (bd 01po.19 S4, Q4)
 #include "TaintPropagation.h"
 #include "Uncomputation.h"  // railUnmovedInWindow (bd cmr9: clause 4's window scan)
 #include "WidthDispatch.h"
@@ -2444,6 +2445,101 @@ bool warnLiveRecordRotations(Module &M, const TaintSet &taint) {
     }
   }
   return Warned;
+}
+
+// ── bd test_C_libtooling-01po.19 S4 — Q4, THE CELL-TEMPORARY POSTCONDITION ───
+//
+// Owner ruling Q4 (a) (owner-ruling-01po19-rolled-design-2026-10-15): a
+// temporary computed from a quantum-array cell must be reversed after its last
+// reader and BEFORE the first in-place gate on any rail of its lineage, and the
+// pass fails loudly if no such placement exists. The PLACEMENT is the spine's
+// (M-B places a cell temporary's discharge right after its consumer, and its
+// clause (d) asks `railUnmovedInWindow` array-granularly); this is the CHECK, on
+// the emitted stream, at the one slot where "was it discharged before the gate"
+// is a fact — the M-A slot, asked with M-A's own predicates (R12).
+//
+// THE MEMORY HOP IS THE WHOLE DIFFERENCE FROM M-A. A cell's rail is spelled by
+// a different SSA load in every window, so the gate `cqrt_ry(%L', θ)` and the
+// temporary `t = f(%L)` share no SSA edge even when `%L` and `%L'` are the same
+// cell. The gate's family (`railWindowFamily`: every cell read of the array and
+// every rail stored into it) is therefore asked as one wire, array-granularly
+// (a runtime index cannot be told apart), and every record DESCENDED FROM A
+// CELL READ of the family is a candidate. A family member itself is the cell's
+// own rail, never a record of it (clause 5's generalization). A candidate
+// that is absent at the gate or exempt there (`recordAbsentAt` /
+// `recordIsExemptAt`: discharged or collapsed before it, or OBSERVED after it —
+// the program's own data) passes; anything else is a temporary of the
+// pre-gate cell still standing at the gate, and the module declines. A record
+// whose lineage reaches no cell read is M-A's, unchanged.
+//
+// ⚠ THIS DECLINE IS NOT PERMANENT, AND FOR AN OBSERVED-AFTER TEMPORARY IT IS AN
+// INTERIM OVER-DECLINE (S4 review round 1, ruling
+// `ruling-01po19-s4-r1-qs-2026-10-15` Q3). Q4 (a) makes loud only the shape
+// with NO placement; a temporary the program OBSERVES after the gate is its
+// own data, and the dead-record-live-across-move ruling (bd 01po.8) lowers it
+// as leak + warn with the `_unc` DROPPED and `keptRailAdjointReadsBorrowed`
+// asked. That lowering is bd 01po.19.5; the copy-on-read reading of a stale
+// cell name is bd 01po.19.2. RETIREMENT TRIGGER: when 01po.19.5 lands, narrow
+// this to the shapes that ruling still refuses.
+//
+// ⚠ THE GATE SET IS `cqrt_ry_<W>` / `cqrt_ry_<W>_controlled` ONLY — the only
+// non-diagonal in-place gates S4 can put on a cell. S5 (an in-place
+// `cqrt_cnot` / QQ gate on a cell, dm7f.51) MUST extend it, or a temporary of
+// the target cell live across that gate passes silently.
+namespace {
+// Mirrored CHARACTER-FOR-CHARACTER by railwindow_reject_cell_temp_live.ll.
+constexpr char kMsgWindowCellTempLive[] =
+    "cq rail window: temporary read from a quantum-array cell is live at a "
+    "non-diagonal gate on that array";
+}  // namespace
+
+bool declineLiveWindowRecords(Module &M, const TaintSet &taint) {
+  if (taint.UserChainedRotations.empty())
+    return false;
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    std::optional<DominatorTree> DT;
+    for (BasicBlock &BB : F)
+      for (Instruction &I : BB) {
+        auto *T = dyn_cast<CallInst>(&I);
+        if (!T || !taint.UserChainedRotations.count(T))
+          continue;
+        const StringRef GateName = emittedCalleeName(T);
+        const bool ControlledRy = GateName.starts_with("cqrt_ry_") &&
+                                  GateName.ends_with("_controlled") &&
+                                  T->arg_size() == 3;
+        if (!ControlledRy &&
+            (T->arg_size() != 2 || !GateName.starts_with("cqrt_ry_")))
+          continue;
+        Value *W = T->getArgOperand(ControlledRy ? 1 : 0);
+        SmallVector<Value *, 16> Family;
+        if (!railWindowFamily(W, Family))
+          continue;
+        SmallPtrSet<const Value *, 16> InFamily(Family.begin(), Family.end());
+        InFamily.insert(W);
+        SmallVector<CallInst *, 8> Records;
+        RecordSet RS(W, Records);
+        SmallPtrSet<const Value *, 32> Seen;
+        for (Value *A : Family)
+          if (isa<LoadInst>(A))
+            collectDescendantRecords(A, RS, Seen);
+        if (Records.empty())
+          continue;
+        if (!DT)
+          DT.emplace(F);
+        for (CallInst *R : Records) {
+          if (InFamily.count(R))
+            continue;  // the cell's own rail (a rebind or a stored mint).
+          if (recordAbsentAt(R, T, *DT) || recordIsExemptAt(R, T, taint, *DT))
+            continue;
+          F.getContext().diagnose(DiagnosticInfoUnsupported(
+              F, kMsgWindowCellTempLive, T->getDebugLoc()));
+          return true;
+        }
+      }
+  }
+  return false;
 }
 
 // ── bd test_C_libtooling-dm7f.4 — THE KEPT-FLAG POSTCONDITION ────────────────

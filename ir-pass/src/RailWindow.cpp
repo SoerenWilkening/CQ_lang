@@ -38,38 +38,14 @@ namespace {
 
 bool dbg() { return std::getenv("CQ_RAILWINDOW_DBG") != nullptr; }
 
-// Can `From` execute and then `To`, on a path that executes none of
-// `Barriers` in between? An exact block walk (the `instReaches` discipline:
-// no budget), cut at a barrier inside a block.
-bool reachesAvoiding(const Instruction *From, const Instruction *To,
-                     const SmallPtrSetImpl<const Instruction *> &Barriers) {
-  const BasicBlock *FB = From->getParent();
-  for (auto I = std::next(From->getIterator()); I != FB->end(); ++I) {
-    if (&*I == To)
-      return true;
-    if (Barriers.count(&*I))
-      return false;
-  }
-  SmallVector<const BasicBlock *, 16> Work(succ_begin(FB), succ_end(FB));
-  SmallPtrSet<const BasicBlock *, 32> Seen;
-  while (!Work.empty()) {
-    const BasicBlock *B = Work.pop_back_val();
-    if (!Seen.insert(B).second)
-      continue;
-    bool Cut = false;
-    for (const Instruction &I : *B) {
-      if (&I == To)
-        return true;
-      if (Barriers.count(&I)) {
-        Cut = true;
-        break;
-      }
-    }
-    if (!Cut)
-      Work.append(succ_begin(B), succ_end(B));
-  }
-  return false;
-}
+// Mirrored CHARACTER-FOR-CHARACTER by railwindow_reject_quantum_extent.ll.
+constexpr char kMsgWindowQuantumExtent[] =
+    "cq rail window: quantum array extent is a quantum value";
+// Mirrored CHARACTER-FOR-CHARACTER by railwindow_reject_stale_cell_read.ll and
+// railwindow_reject_stale_parked_rail.ll (RailWindowFence.cpp).
+constexpr char kMsgWindowStale[] =
+    "cq rail window: quantum-array cell rail read past a non-diagonal gate "
+    "on that array";
 
 // S1, structural half: collect the leaf accesses, or refuse the array.
 bool collectAccesses(AllocaInst *AI, const TaintSet &taint,
@@ -107,9 +83,17 @@ bool collectAccesses(AllocaInst *AI, const TaintSet &taint,
       if (!I)
         return false;
       if (auto *L = dyn_cast<LoadInst>(I)) {
-        if (!L->isSimple() || L->getType() != Acc.CellTy)
+        if (!L->isSimple())
           return false;
-        Acc.Loads.push_back(L);
+        if (L->getType() == Acc.CellTy) {
+          Acc.Loads.push_back(L);
+          continue;
+        }
+        // A wider integer read of the object's start (-O1's `r = q` copy
+        // loop): classical before Q, a cell COPY after it (review C-F1).
+        if (P != AI || !L->getType()->isIntegerTy())
+          return false;
+        Acc.Others.push_back(L);
         continue;
       }
       if (auto *S = dyn_cast<StoreInst>(I)) {
@@ -133,6 +117,15 @@ bool collectAccesses(AllocaInst *AI, const TaintSet &taint,
           Acc.Others.push_back(II);
           continue;
         }
+        // S4: clang's `T q[N] = {5, 6, 7}` — a copy FROM a constant global
+        // INTO the whole object (classical before Q; refused after it).
+        if (auto *MC = dyn_cast<MemCpyInst>(II);
+            MC && P == AI && MC->getDest() == AI && !MC->isVolatile())
+          if (auto *GV = dyn_cast<GlobalVariable>(MC->getSource());
+              GV && GV->isConstant() && GV->hasDefinitiveInitializer()) {
+            Acc.Others.push_back(II);
+            continue;
+          }
       }
       return false;
     }
@@ -191,10 +184,10 @@ bool claims(AllocaInst *AI, const TaintSet &taint, DominatorTree &DT,
   // contents; an end that some access follows without a new start ends them.
   for (Instruction *A : All) {
     for (const Instruction *S : Starts)
-      if (reachesAvoiding(A, S, Ends))
+      if (railWindowReachesAvoiding(A, S, Ends))
         return false;
     for (const Instruction *E : Ends)
-      if (reachesAvoiding(E, A, Starts))
+      if (railWindowReachesAvoiding(E, A, Starts))
         return false;
   }
   // F3 (a): an object declared inside a loop body. Its one start is
@@ -237,66 +230,13 @@ bool claims(AllocaInst *AI, const TaintSet &taint, DominatorTree &DT,
   return AnyTainted;
 }
 
-Instruction *ncd(DominatorTree &DT, Instruction *A, Instruction *B) {
-  if (A->getParent() == B->getParent())
-    return A->comesBefore(B) ? A : B;
-  BasicBlock *N = DT.findNearestCommonDominator(A->getParent(), B->getParent());
-  if (N == A->getParent())
-    return A;
-  if (N == B->getParent())
-    return B;
-  return N->getTerminator();
-}
-
-// S2: the quantization point (null only for an array with no tainted store,
-// which the claim already refused).
-Instruction *quantizationPoint(const RailWindowAccesses &Acc,
-                               const TaintSet &taint, DominatorTree &DT,
-                               LoopInfo &LI) {
-  if (Acc.ScopeStart)
-    return Acc.ScopeStart;  // F3 (a): re-quantized per iteration.
-  Instruction *Q = nullptr;
-  for (StoreInst *S : Acc.Stores) {
-    if (!taint.Tainted.count(S->getValueOperand()))
-      continue;
-    Instruction *P = S;
-    if (Loop *L = LI.getLoopFor(S->getParent())) {
-      L = L->getOutermostLoop();
-      if (BasicBlock *PH = L->getLoopPreheader())
-        P = PH->getTerminator();
-      else if (auto *N = DT.getNode(L->getHeader())->getIDom())
-        P = N->getBlock()->getTerminator();
-    }
-    Q = Q ? ncd(DT, Q, P) : P;
-  }
-  if (!Q)
-    return nullptr;
-  SmallVector<Instruction *, 32> All(Acc.Loads.begin(), Acc.Loads.end());
-  All.append(Acc.Stores.begin(), Acc.Stores.end());
-  // Hoist until Q dominates every access reachable from it AND runs once: a
-  // point inside a cycle (LoopInfo's or an irreducible one) moves to its
-  // immediate dominator's terminator. The entry block is in no cycle and
-  // dominates everything, so this always terminates with a point.
-  for (bool Changed = true; Changed;) {
-    Changed = false;
-    for (Instruction *A : All)
-      if (A != Q && !DT.dominates(Q, A) && railBankInstReaches(Q, A)) {
-        Q = ncd(DT, Q, A);
-        Changed = true;
-      }
-    if (railBankInstReaches(Q, Q)) {
-      auto *N = DT.getNode(Q->getParent())->getIDom();
-      Q = N ? N->getBlock()->getTerminator()
-            : &*Q->getParent()->getFirstInsertionPt();
-      Changed = true;
-    }
-  }
-  return Q;
-}
-
 }  // namespace
 
-bool declineRailWindowArrays(Module &M, const TaintSet &taint) {
+bool lowerRailWindowArrays(Module &M, const TaintSet &taint, bool &Changed) {
+  if (declineForeignRailWindowRecords(M))
+    return true;
+  TargetLibraryInfoImpl TLII(Triple(M.getTargetTriple()));
+  TargetLibraryInfo TLI(TLII);
   for (Function &F : M) {
     if (F.isDeclaration() || F.callsFunctionThatReturnsTwice())
       continue;
@@ -305,15 +245,13 @@ bool declineRailWindowArrays(Module &M, const TaintSet &taint) {
       if (auto *A = dyn_cast<AllocaInst>(&I))
         if (isa<ArrayType>(A->getAllocatedType()) || A->isArrayAllocation())
           Allocas.push_back(A);
-    if (Allocas.empty())
-      continue;
-    DominatorTree DT(F);
-    LoopInfo LI(DT);
-    AssumptionCache AC(F);
-    TargetLibraryInfoImpl TLII(Triple(M.getTargetTriple()));
-    TargetLibraryInfo TLI(TLII);
-    ScalarEvolution SE(F, TLI, AC, DT, LI);
+    // One array at a time, every analysis rebuilt from the IR the previous
+    // array's transform left (R9: nothing cached across a mutation).
     for (AllocaInst *AI : Allocas) {
+      DominatorTree DT(F);
+      LoopInfo LI(DT);
+      AssumptionCache AC(F);
+      ScalarEvolution SE(F, TLI, AC, DT, LI);
       RailWindowAccesses Acc;
       if (!claims(AI, taint, DT, LI, SE, Acc))
         continue;
@@ -323,6 +261,14 @@ bool declineRailWindowArrays(Module &M, const TaintSet &taint) {
           DL = S->getDebugLoc();
           break;
         }
+      // Addendum note 3: a QUANTUM extent is a quantum-sized allocation; the
+      // handle walk needs a classical cell count.
+      if (AI->isArrayAllocation() &&
+          taint.Tainted.count(AI->getArraySize())) {
+        F.getContext().diagnose(
+            DiagnosticInfoUnsupported(F, kMsgWindowQuantumExtent, DL));
+        return true;
+      }
       // S2 needs a preheader on every outermost loop around a tainted write
       // (-O1 routinely enters a loop straight from the previous loop's latch,
       // as dicke_n.c's init walk does): split that edge first, so Q is a point
@@ -335,7 +281,7 @@ bool declineRailWindowArrays(Module &M, const TaintSet &taint) {
               InsertPreheaderForLoop(L->getOutermostLoop(), &DT, &LI,
                                      /*MSSAU=*/nullptr,
                                      /*PreserveLCSSA=*/false);
-      Instruction *Q = quantizationPoint(Acc, taint, DT, LI);
+      Instruction *Q = railWindowQuantizationPoint(Acc, taint, DT, LI);
       if (dbg()) {
         errs() << "CQ_RAILWINDOW_DBG: @" << F.getName() << " claims ";
         AI->printAsOperand(errs(), false);
@@ -347,27 +293,55 @@ bool declineRailWindowArrays(Module &M, const TaintSet &taint) {
           errs() << "<none>";
         errs() << "\n";
       }
-      // S3: promote the windows, then re-derive everything from the new IR.
-      unsigned N = promoteRailWindows(F, Acc);
-      DominatorTree DT2(F);
-      LoopInfo LI2(DT2);
-      AssumptionCache AC2(F);
-      ScalarEvolution SE2(F, TLI, AC2, DT2, LI2);
-      RailWindowAccesses Acc2;
-      std::string Msg =
-          collectAccesses(AI, taint, SE2, Acc2)
-              ? railWindowNeeds(F, Acc2, taint, LI2, SE2)
-              // Unreachable (promotion keeps the access vocabulary); if it
-              // ever fires, claim every pending step rather than guess.
-              : railWindowAllNeeds();
+      // S4: every post-Q access now names the handle array `W`.
+      AllocaInst *W = materializeRailWindow(F, Acc, Q);
+      if (!W)
+        return true;  // diagnosed (loud, nothing lowered).
+      Changed = true;
+      // S3 on the handle array, then re-derive everything from the new IR.
+      // `collectAccesses` failing on `W` is unreachable (the redirect emits
+      // only its vocabulary); if it ever fires, claim every pending step.
+      unsigned N = 0;
+      std::string Msg = railWindowAllNeeds();
+      Instruction *Stale = nullptr, *Copy = nullptr;
+      RailWindowAccesses AccW;
+      for (int Round = 0; Round < 2; ++Round) {
+        DominatorTree DT2(F);
+        LoopInfo LI2(DT2);
+        AssumptionCache AC2(F);
+        ScalarEvolution SE2(F, TLI, AC2, DT2, LI2);
+        if (!collectAccesses(W, taint, SE2, AccW))
+          break;
+        if (Round == 0) {
+          N = promoteRailWindows(F, AccW);
+          continue;
+        }
+        Msg = railWindowNeeds(F, AccW, taint, LI2, SE2);
+        SmallPtrSet<Value *, 32> QD;
+        railWindowQuantum(F, AccW, taint, QD);
+        if (Msg.empty()) {
+          Copy = railWindowCellCopy(F, AccW);
+          Stale = railWindowStaleUse(F, AccW, QD, SE2,
+                                     computeWindowRegions(F, LI2));
+        }
+      }
       if (dbg()) {
         errs() << "CQ_RAILWINDOW_DBG: promoted " << N << " cell class(es)\n";
         errs() << "=== CQ_RAILWINDOW_DBG: @" << F.getName()
                << " after window promotion ===\n";
         F.print(errs());
       }
-      F.getContext().diagnose(DiagnosticInfoUnsupported(F, Msg, DL));
-      return true;
+      if (!Msg.empty()) {
+        F.getContext().diagnose(DiagnosticInfoUnsupported(F, Msg, DL));
+        return true;
+      }
+      if (Instruction *Bad = Copy ? Copy : Stale) {
+        F.getContext().diagnose(DiagnosticInfoUnsupported(
+            F, Copy ? railWindowCopyNeeds() : std::string(kMsgWindowStale),
+            Bad->getDebugLoc()));
+        return true;
+      }
+      markRailWindowAlloca(W, AccW.CellTy);
     }
   }
   return false;

@@ -14,6 +14,7 @@
 #include "OpcodeLowering.h"   // declineStaleRecordOps (dugh second-round re-sweep)
 #include "QramLowering.h"
 #include "RailBankPromote.h"  // railBankOfPointer / isRailBankAlloca / the W1 second half
+#include "RailWindow.h"       // railWindowOfPointer (bd 01po.19 S4)
 #include "RotationLowering.h"  // normalizeUndefRotationSeed (bd z9t1)
 #include "SpecializeClone.h"    // specCallResultPredictedClassical (bd cepm / 3zr4)
 #include "LiftDiagnostics.h"    // LiftSite (bd 3c6m.82)
@@ -152,8 +153,13 @@ void collectAndSeed(Function &F, const FnSet &ThetaFns, const FnSet &PhiFns,
       // whose POINTER is classical, so a tainted load is not an escape; its
       // CONSUMERS are, and they are adjudicated by the D5 allow-list
       // (`declineUnallowedRailBankReaders`).
+      // bd 01po.19 S4: a cell read of a `!cq.railwindow` HANDLE array is a
+      // seed too — a BORROWED root naming the cell's current rail. The record
+      // is minted only on the materialized object, every access of which lies
+      // after its quantization point, so no classical read is tainted.
       if (auto *LD = dyn_cast<LoadInst>(&I)) {
-        if (railBankOfPointer(LD->getPointerOperand()))
+        if (railBankOfPointer(LD->getPointerOperand()) ||
+            railWindowOfPointer(LD->getPointerOperand()))
           seedQuantumMemoryLoad(LD, out, Worklist);
         continue;
       }
@@ -1497,6 +1503,14 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
         if (I.isTerminator())
           continue;
         if (!readsTaintedValue(I, taint))
+          continue;
+        // 4a-01po.19 (S4). A rail stored into a `!cq.railwindow` handle cell
+        // at a CLASSICAL address is the cell's owner taking it (a kept-carrier
+        // sink, `railStoredToRailWindow`); the retype at the piece-2 slot
+        // stores its handle.
+        if (auto *WS = dyn_cast<StoreInst>(&I);
+            WS && railWindowOfPointer(WS->getPointerOperand()) &&
+            !taint.Tainted.count(WS->getPointerOperand()))
           continue;
         // 4a-Phase7.5. QRAM tainted-index memory. A tainted-pointer
         //    `getelementptr`/`load`/`store` is QRAM's domain, adjudicated by the

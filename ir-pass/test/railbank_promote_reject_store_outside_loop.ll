@@ -35,11 +35,30 @@
 ; (DECLINE -> DECLINE; the message below is mirrored character-for-character).
 ; RETIREMENT TRIGGER: each of S4-S7 that lands drops its name from the list; when
 ; the list empties this file becomes an ACCEPT with an analytic trace check.
-; RUN: env CQ_RAILBANK_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering \
+; RUN: env CQ_RAILBANK_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering \
 ; RUN:     -S %s > /dev/null 2> %t.dbg
 ; RUN: %filecheck --check-prefix=DBG       --input-file=%t.dbg %s
 ; RUN: %filecheck --check-prefix=NOTS      --input-file=%t.dbg %s
-; RUN: %filecheck --check-prefix=DECLINE   --input-file=%t.dbg %s
+
+; ⚠ bd `test_C_libtooling-01po.19` S4 (2026-10-15): DECLINE -> ACCEPT. The window
+; model now LOWERS this array (RailWindow.h: handle array materialized at the
+; quantization point, cell reads are borrowed roots, a cell rail is never freed
+; or reverse-played). Reviewed by trace, not by green:
+; trace: two walks — Ry(0.25) then Ry(0.5) on each of h0..h2 — measure h0.
+; The S4 prefix pins the whole emitted runtime stream and that no rail is freed.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s --check-prefix=S4 --implicit-check-not=cqrt_free --implicit-check-not='error:'
+; S4-LABEL: define {{.*}} @main(
+; S4: %b.rails = alloca i32, i64 3, align 4, !cq.railwindow !0
+; S4: %h = call i32 @cqrt_alloc_i1(i1 %1)
+; S4: %ps.rail = load i32, ptr %cq.rail.addr, align 4
+; S4: call void @cqrt_ry_i1(i32 %ps.rail, double 2.500000e-01)
+; S4: store i32 %ps.rail, ptr %cq.rail.addr, align 4
+; S4: %s0.rail = load i32, ptr %cq.rail.addr1, align 4
+; S4: call void @cqrt_ry_i1(i32 %s0.rail, double 5.000000e-01)
+; S4: store i32 %s0.rail, ptr %cq.rail.addr1, align 4
+; S4: %r.rail = load i32, ptr %b.rails, align 4
+; S4: %m2 = call i1 @cqrt_measure_i1(i32 %r.rail)
 
 declare zeroext i1 @cq_theta_i1(i1 zeroext, double)
 declare i32 @cq_theta_si32(i32, double)
@@ -152,4 +171,3 @@ out:
 ;   is that the promoter's soundness must not rest on a conjunct that lives in
 ;   ANOTHER FILE and was cleared for another purpose.
 ;
-; DECLINE: cq rail window: quantum array not lowered yet (bd 01po.19), needs S4 borrowed-root cells

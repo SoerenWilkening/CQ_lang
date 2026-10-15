@@ -1033,8 +1033,17 @@ _QRAM_IDX_CAST_RE = re.compile(r"cq_template_(?:trunc|sext|zext)_i\d+_to_i32")
 _QRAM_IDX_SOURCE = {}
 
 
+# bd 01po.19 S4 review A-F1: the CURRENT function's handle-array spellings ->
+# their canonical cell rail (`window_families`), set per function before its
+# streams are analysed. A pairing compares a forward with its `_unc` on the
+# ORIGINAL spelling (`cargs`), while every question about WRITES to an operand
+# goes through this map to the one rail the array's cells share.
+_WINDOW_ALIAS = {}
+
+
 def pairing_register(v):
-    return _QRAM_IDX_SOURCE.get(v, v)
+    v = _QRAM_IDX_SOURCE.get(v, v)
+    return _WINDOW_ALIAS.get(v, v)
 
 
 def mark_qram_index_brackets(calls):
@@ -1231,6 +1240,7 @@ class Function:
         # resolve this pointer" a decidable question instead of a silence.
         self.def_op = {}          # %name -> (opcode, line_text, line_no)
         self.bank_allocas = set()  # allocas carrying !cq.railbank
+        self.window_allocas = set()  # allocas carrying !cq.railwindow (01po.19)
         self.loads = []           # [(line_no, %res, ptr_token, text)]
         self.stores = []          # [(line_no, value_token, ptr_token, text)]
         self.insts = []           # [(line_no, text)] every body line (bd xdu2.4)
@@ -1258,6 +1268,9 @@ SSA_NAME_RE = re.compile(r"%(?:\"[^\"]+\"|[-\w.$]+)")
 # safe direction: `adjudicate_memory` refuses on unresolvable, it does not
 # assume classical.
 RAILBANK_MD = "!cq.railbank"
+# bd 01po.19 S4: a HANDLE array of a rolled quantum array. Its cells are rails
+# that live in memory between windows; see `window_families`.
+RAILWINDOW_MD = "!cq.railwindow"
 DEF_OP_RE = re.compile(r"^\s*(%(?:\"[^\"]+\"|[-\w.$]+))\s*=\s*"
                        r"(?:tail\s+|musttail\s+|notail\s+)?(\w+)\b")
 GLOBAL_DEF_RE = re.compile(r"^\s*(@[-\w.$]+)\s*=\s*[^=]*?\b(?:global|constant)\b")
@@ -1329,6 +1342,8 @@ def parse_module(text):
                 fn.def_op[dm.group(1)] = (dm.group(2), ln, i + 1)
                 if dm.group(2) == "alloca" and RAILBANK_MD in ln:
                     fn.bank_allocas.add(dm.group(1))
+                if dm.group(2) == "alloca" and RAILWINDOW_MD in ln:
+                    fn.window_allocas.add(dm.group(1))
                 if dm.group(2) == "load":
                     fn.loads.append((i + 1, dm.group(1),
                                      first_ptr_operand(ln), ln.strip()))
@@ -3273,6 +3288,33 @@ class StreamAnalysis:
                 rev_pos, rev_kind = min(cands), "_inv"
                 self.inv_claimed.add(rev_pos)
         if rev_pos is None:
+            # bd 01po.19 S4 review A-F1: an `_unc` that matches the forward
+            # ONLY once the handle-array spellings are canonicalized read a
+            # DIFFERENT cell spelling than its forward. The compiler emits an
+            # adjoint on the forward's own operand values, never on another
+            # load of the array, so this is never a legitimate pairing: the
+            # reversal recomputes from another cell and the free is dirty.
+            # Only the WINDOW map is consulted (never the QRAM bracket's,
+            # which has its own T1 discipline), and only a position where the
+            # two spellings differ AND both are cell spellings decides it.
+            fv = [a.split()[-1] for a in fwd_args]
+            for p, w in r.writes:
+                if not (r.pos < p < pos and w.eff.role == "unc" and
+                        w.eff.base == base and len(w.cargs) - 1 == len(fv)):
+                    continue
+                wv = [a.split()[-1] for a in w.cargs[1:]]
+                diff = [(x, y) for x, y in zip(fv, wv) if x != y]
+                if diff and all(x in _WINDOW_ALIAS and y in _WINDOW_ALIAS and
+                                _WINDOW_ALIAS[x] == _WINDOW_ALIAS[y]
+                                for x, y in diff):
+                    self.add(VIOLATION, "W1-unc-reads-another-cell-spelling",
+                             c, r.name,
+                             f"rail minted at line {fwd.line} by `{fwd.text}` "
+                             f"is reversed by `{w.text}` (line {w.line}), "
+                             f"which reads a DIFFERENT spelling of the same "
+                             f"handle array: the adjoint recomputes from "
+                             f"another cell, so the free is not of |0>")
+                    return
             pre = [(p, w) for p, w in r.writes if r.pos < p < pos]
             # If the rail's own writes net to identity ON THEIR LABELS, no write
             # history this file recognises as zeroing exists, so the rail is
@@ -3730,7 +3772,7 @@ def adjudicate_memory(fn, mints, bank_globals):
     against the allow-list the pass actually ships. Re-derive it then; do NOT
     delete the subjects.
     """
-    banks = set(fn.bank_allocas) | set(bank_globals)
+    banks = set(fn.bank_allocas) | set(fn.window_allocas) | set(bank_globals)
 
     # (L1) - unconditional: it is what makes the premise CHECKED, not assumed.
     for line, val, ptr, text in fn.stores:
@@ -3760,7 +3802,8 @@ def adjudicate_memory(fn, mints, bank_globals):
     # address is reachable from every function, which this per-function file
     # cannot survey.
     confined = not bank_globals.intersection(banks) and all(
-        bank_address_confined(fn, b) for b in fn.bank_allocas)
+        bank_address_confined(fn, b)
+        for b in fn.bank_allocas | fn.window_allocas)
 
     bank_loads = set()
     for line, res, ptr, text in fn.loads:
@@ -3775,7 +3818,7 @@ def adjudicate_memory(fn, mints, bank_globals):
                 f"scope in @{fn.name}. With a bank present the answer decides "
                 f"whether {res} is a classical immediate or a rail handle "
                 f"(bd 21re), so it is refused rather than assumed")
-        if obj in banks:
+        if obj in banks and obj not in fn.window_allocas:
             bank_loads.add(res)
 
     # (L3) - every use of a bank load outside the sanctioned measure slot.
@@ -3803,6 +3846,62 @@ def adjudicate_memory(fn, mints, bank_globals):
                         f"`cqrt_measure_<W>` (SCOPE_L1a D5); anything else is "
                         f"refused rather than guessed at")
     return frozenset(bank_loads)
+
+
+def window_families(fn, bank_globals):
+    """bd 01po.19 S4 — a `!cq.railwindow` HANDLE ARRAY, ARRAY-GRANULAR.
+
+    A rolled quantum array keeps its cells' rail HANDLES in memory between
+    windows, so one physical rail is spelled by a different SSA load in every
+    window, and by the value a rebind stored into the cell. The stream model
+    keys a rail's write history on the literal SSA name, so left alone a gate
+    on one spelling is invisible to a reversal reading another — the bd 21re
+    hazard (L3) in its window form. The array cannot be told apart cell by
+    cell (the index is a runtime value), so EVERY cell read of the array and
+    every rail stored into it is renamed to ONE canonical rail per array
+    (`<alloca>.cells`), in every call operand but never in a call RESULT (a
+    mint keeps its own name and its own census line). A gate on any cell is
+    then a write on the canonical rail, and a reversal of a temporary that read
+    any cell must find that rail unwritten since its forward gate: strictly
+    more writes than the program performs, so the model can only refuse more,
+    never vouch for a reversal the program does not support. A free of a
+    cell rail is a free of a rail this function never minted and is never
+    discharged. Returns {spelling: canonical}.
+    """
+    ren = {}
+    if not fn.window_allocas:
+        return ren
+    for _line, res, ptr, _text in fn.loads:
+        obj = resolve_object(fn, ptr, bank_globals)
+        if obj in fn.window_allocas:
+            ren[res] = obj + ".cells"
+    for _line, val, ptr, _text in fn.stores:
+        obj = resolve_object(fn, ptr, bank_globals)
+        if obj in fn.window_allocas and val.startswith("%"):
+            ren[val] = obj + ".cells"
+    return ren
+
+
+def apply_window_families(fn, ren):
+    """Rewrite every call OPERAND named in `ren` (see `window_families`) in
+    `vals`/`args` — the WRITE history — and keep `cvals`/`cargs` on the
+    ORIGINAL spelling, so a forward on one cell read is never paired with an
+    `_unc` on another (bd 01po.19 S4 review A-F1: canonicalizing the pairing
+    operands too VERIFIED a dirty free whose `_unc`s read the swapped cells).
+    `pairing_register` maps a spelling back to the canonical rail for the
+    (T2) unchanged-operand question."""
+    def rename(vals, args):
+        for k, v in enumerate(vals):
+            c = ren.get(v)
+            if c is not None:
+                vals[k] = c
+                args[k] = args[k].split()[0] + " " + c
+    for _lbl, calls, _t in fn.blocks:
+        for c in calls:
+            if c.cvals is c.vals:
+                c.cvals, c.cargs = list(c.vals), list(c.args)
+            rename(c.vals, c.args)
+    fn.window_alias = dict(ren)
 
 
 # ---------------------------------------------------------------------------
@@ -4050,6 +4149,12 @@ def check_module(text):
     for fn in funcs:
         rail_defs[fn.name] |= adjudicate_memory(
             fn, rail_defs[fn.name], getattr(funcs, "bank_globals", ()))
+        # bd 01po.19 S4: one canonical rail per handle array (see
+        # `window_families`), applied before any stream is built.
+        ren = window_families(fn, getattr(funcs, "bank_globals", ()))
+        if ren:
+            apply_window_families(fn, ren)
+            rail_defs[fn.name] |= frozenset(ren.values())
     recorded = {fn.name: recorded_rails(fn, rail_defs.get(fn.name, frozenset()))
                 for fn in funcs}
     # bd 261j(b) — THE LEAK CENSUS. This file counts free SITES, so a compiler that
@@ -4068,6 +4173,8 @@ def check_module(text):
         # ONE `build_streams` per function, shared with the (T4) index, so the
         # stream ids the index hands out and the ones the scan runs under are
         # the same numbers by construction rather than by agreement.
+        _WINDOW_ALIAS.clear()
+        _WINDOW_ALIAS.update(getattr(fn, "window_alias", {}))
         streams = build_streams(fn)
         xstream = CrossStreamIndex(fn, streams)
         for sid, (_chain, calls) in enumerate(streams):

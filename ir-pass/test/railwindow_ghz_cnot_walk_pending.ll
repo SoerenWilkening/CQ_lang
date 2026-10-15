@@ -27,7 +27,7 @@
 ; RUN:   | %filecheck %s --implicit-check-not='cq rail bank' --implicit-check-not='tainted value stored to memory'
 ; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
 ; RUN:   | %filecheck %s --check-prefix=WIN
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S4 borrowed-root cells, S5 in-place cell update
+; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S5 in-place cell update
 ; WIN: CQ_RAILWINDOW_DBG: @main claims %1 cells=i8 loads=2 stores=2 Q=  store i8 %3, ptr %1, align 1
 ; WIN: CQ_RAILWINDOW_DBG: promoted 0 cell class(es)
 

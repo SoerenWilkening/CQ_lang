@@ -7,12 +7,26 @@
 ; so the claim's `Q=` names that branch. Hand IR: `-O1` C does not produce an
 ; irreducible cycle around a cell walk on demand.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s --implicit-check-not='cq rail bank'
-; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
+
+; ⚠ bd `test_C_libtooling-01po.19` S4 (2026-10-15): DECLINE -> ACCEPT. The window
+; model now LOWERS this array (RailWindow.h: handle array materialized at the
+; quantization point, cell reads are borrowed roots, a cell rail is never freed
+; or reverse-played). Reviewed by trace, not by green:
+; Q lies outside the irreducible cycle; trace (n=1): cells 1 and 2 rotated and measured in cycle order.
+; The S4 prefix pins the whole emitted runtime stream and that no rail is freed.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s --check-prefix=S4 --implicit-check-not=cqrt_free --implicit-check-not='error:'
+; S4-LABEL: define {{.*}} @main(
+; S4: %q.rails = alloca i32, i64 4, align 4, !cq.railwindow !0
+; S4: %h = call i32 @cqrt_alloc_i1(i1 %1)
+; S4: %l.rail = load i32, ptr %cq.rail.addr, align 4
+; S4: call void @cqrt_ry_i1(i32 %l.rail, double 5.000000e-01)
+; S4: store i32 %l.rail, ptr %cq.rail.addr, align 4
+; S4: %m1 = call i1 @cqrt_measure_i1(i32 %l.rail)
+; RUN: env CQ_RAILWINDOW_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
 ; RUN:   | %filecheck %s --check-prefix=WIN
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S4 borrowed-root cells
 ; WIN: CQ_RAILWINDOW_DBG: @main claims %q cells=i8 loads=1 stores=1 Q=  br i1 %c, label %A, label %B
+; WIN: CQ_RAILWINDOW_DBG: promoted 0 cell class(es)
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

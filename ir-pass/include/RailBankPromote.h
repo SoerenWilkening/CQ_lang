@@ -247,11 +247,13 @@
 #ifndef CQ_IRPASS_RAILBANKPROMOTE_H
 #define CQ_IRPASS_RAILBANKPROMOTE_H
 
+#include "llvm/ADT/STLFunctionalExtras.h"  // function_ref
 #include "llvm/ADT/SmallVector.h"  // railBankParkedRails' out-parameter
 
 namespace llvm {
 class AllocaInst;
 class CallInst;
+class Instruction;
 class LoadInst;
 class Module;
 class StoreInst;
@@ -471,6 +473,12 @@ bool railBankParkedRails(llvm::Value *V,
 // past an in-place gate on the same rail`). The forward hop could not see it
 // either: its walker's vocabulary is `cq_theta_` gates, and an in-place
 // `add`/`xor` is committed only by the collapse, after the reader fence ran.
+// THE BANK'S ADDRESS TREE (exported for bd 01po.19 / r2j3.36, R12: the one
+// walk of "which memops touch this bank"): `F` is called with each `load` /
+// `store` whose POINTER is a gep/bitcast/addrspacecast node of `Bank`'s tree.
+void railBankForEachCellMemop(llvm::AllocaInst *Bank,
+                              llvm::function_ref<void(llvm::Instruction *)> F);
+
 bool railBankCellReadsOf(llvm::Value *V,
                          llvm::SmallVectorImpl<llvm::LoadInst *> &Out);
 

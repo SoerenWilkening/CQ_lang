@@ -220,14 +220,16 @@ constexpr char kMsgQramCloneUnbounded[] =
 //   * lowering_reject_railbank_alias.ll         → kMsgBankAlias
 // ⚠ bd `test_C_libtooling-01po.19` S1-S3 (2026-10-15): a well-formed quantum
 // array the one-store bank does not own is CLAIMED by the rolled window model
-// (RailWindow.h) at the head of `markRailBankAllocas`, before
-// `declineTaintEscapes` ever asks this verdict to decline it, and it declines
-// there with the list of window steps it still needs. The fixtures that used
+// (RailWindow.h) by `lowerRailWindowArrays`, run just before
+// `markRailBankAllocas`, before `declineTaintEscapes` ever asks this verdict
+// to decline it; since S4 it is LOWERED there when nothing else is pending,
+// and otherwise declines with the list of window steps it still needs (S5–S7).
+// The fixtures that used
 // to pin `kMsgBankInit` / `kMsgBankIndex` / `kMsgBankMultiStore` /
 // `kMsgBankNested` / `kMsgBankTotality` and the i8-VLA `kMsgBankWidth`
 // (`_vla`, `_nonzero_init`, `_noninjective`, `_two_stores`, `_nested_walk`,
 // `_oversized`, `_inloop_read`, `_wrapping_index`, `_dynamic_narrow_index`)
-// now pin that window decline. Those clauses remain the promoter's
+// now pin that window decline or, since S4, a window ACCEPT. Those clauses remain the promoter's
 // `BankRaw`/`Reject*` separation, and they are STILL REACHABLE DECLINES for an
 // array the window model refuses and that passes C1/C3: an object whose
 // storage is not live at every access (a `lifetime.start` re-executed while

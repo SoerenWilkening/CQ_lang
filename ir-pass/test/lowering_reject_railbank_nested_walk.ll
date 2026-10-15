@@ -57,10 +57,23 @@
 ; (DECLINE -> DECLINE; the message below is mirrored character-for-character).
 ; RETIREMENT TRIGGER: each of S4-S7 that lands drops its name from the list; when
 ; the list empties this file becomes an ACCEPT with an analytic trace check.
-; RUN: env CQ_CTRL_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s --implicit-check-not='railbank [Bank]'
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S4 borrowed-root cells
-; CHECK-NOT: tainted value stored to memory
+
+; ⚠ bd `test_C_libtooling-01po.19` S4 (2026-10-15): DECLINE -> ACCEPT. The window
+; model now LOWERS this array (RailWindow.h: handle array materialized at the
+; quantization point, cell reads are borrowed roots, a cell rail is never freed
+; or reverse-played). Reviewed by trace, not by green:
+; the walk re-executed by an outer loop rotates each of the 3 cells TWICE (h0..h2 each get two Ry(0.5)) before the measure walk; traced.
+; The S4 prefix pins the whole emitted runtime stream and that no rail is freed.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s --check-prefix=S4 --implicit-check-not=cqrt_free --implicit-check-not='error:'
+; S4-LABEL: define {{.*}} @main(
+; S4: %.rails = alloca i32, i64 3, align 4, !cq.railwindow !6
+; S4: %h = call i32 @cqrt_alloc_i1(i1 %3)
+; S4: %.rail = load i32, ptr %cq.rail.addr, align 4
+; S4: call void @cqrt_ry_i1(i32 %.rail, double 5.000000e-01)
+; S4: store i32 %.rail, ptr %cq.rail.addr, align 4
+; S4: %.rail2 = load i32, ptr %cq.rail.addr1, align 4
+; S4: %m = call i1 @cqrt_measure_i1(i32 %.rail2)
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

@@ -191,4 +191,4 @@ attributes #4 = { nounwind }
 ; (Rule 12 hygiene defect (b)). It is checked on the ACCEPT fixtures instead.
 
 ; ⚠ THIS STRING IS THE CARVE'S, NOT THE PROMOTER'S — see the warning above.
-; DECLINE: cq rail window: quantum array not lowered yet (bd 01po.19), needs S4 borrowed-root cells, S7 index alias versioning
+; DECLINE: cq rail window: quantum array not lowered yet (bd 01po.19), needs S7 index alias versioning
