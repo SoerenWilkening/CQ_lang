@@ -37,7 +37,11 @@
 ; RUN:   | %filecheck %s --implicit-check-not='cq rail bank' --implicit-check-not='tainted value stored to memory'
 ; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
 ; RUN:   | %filecheck %s --check-prefix=WIN
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S6 quantum control on cells
+; (bd 01po.19 S6, 2026-10-15: S6 is built and leaves the needs list; this
+; array now reaches the control chain, which refuses it loudly as below —
+; the cell-controlled Ry lowers; the loop-carried counter `c += q[i]` is
+; bd 01po.19.18 (Case A in-place add).)
+; CHECK: cq loop lowering: loop-carried tainted value crosses iterations
 ; WIN: CQ_RAILWINDOW_DBG: @main claims %1 cells=i8 loads=3 stores=1 Q=  br label %2
 ; WIN: CQ_RAILWINDOW_DBG: promoted 0 cell class(es)
 

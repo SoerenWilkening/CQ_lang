@@ -1,15 +1,17 @@
-; railwindow_p16_pending.ll — DECLINE (bd `test_C_libtooling-01po.19` S1-S3).
+; railwindow_s6_p16_cascade_accept.ll — ACCEPT (bd `test_C_libtooling-01po.19`
+; S6; was railwindow_p16_pending.ll, which declined "needs S6 quantum control
+; on cells"). docs/CQ_FINDINGS.md F5's p16: the controlled-Ry CASCADE over a
+; `_Bool` array, rolled.
 ;
-; p16: a straight-line store beside a walk that reads cell i-1 and writes cell i.
+; Each trip i reads q[i-1] as the CONDITION REGISTER (a cell read, `CellCond`)
+; and rotates q[i] in place under it (clause (d): q[i] is reloaded every trip);
+; `promoteRailWindowArms` gave the arm its diamond, the target is frozen (R6),
+; and nothing is minted, stripped or freed.
 ;
-; Before S1-S3 this array declined in the one-store rail bank. Now the rolled
-; window model (RailWindow.h; owner rulings `owner-ruling-01po19-rolled-not-
-; unrolled-2026-10-15`, `owner-ruling-01po19-rolled-design-2026-10-15`) claims it
-; (S1), places its quantization point (S2) and promotes its windows (S3), and then
-; declines with exactly the steps it still needs. The WIN prefix pins the claim,
-; the quantization point and every promoted cell class.
-; RETIREMENT TRIGGER: each of S4-S7 that lands removes its name from the CHECK
-; line; when none is left this file becomes an ACCEPT with an analytic trace check.
+; ANALYTIC READING of the stream (e2e slice_rolled_p16_cascade, scratch
+; state-vector propagation): Ry(.5) on q0, then CRy(q0 -> q1, .6),
+; CRy(q1 -> q2, .9), CRy(q2 -> q3, 1.2) — the textbook cascade the source
+; spells, angle .3*(i+1) per trip.
 ;
 ; SOURCE (clang -O1, verbatim below):
 ;   #include <stdbool.h>
@@ -23,13 +25,18 @@
 ;     return r;
 ;   }
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s --implicit-check-not='cq rail bank' --implicit-check-not='tainted value stored to memory'
-; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
-; RUN:   | %filecheck %s --check-prefix=WIN
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S6 quantum control on cells
-; WIN: CQ_RAILWINDOW_DBG: @main claims %1 cells=i8 loads=3 stores=2 Q=  store i8 %3, ptr %1, align 4
-; WIN: CQ_RAILWINDOW_DBG: promoted 0 cell class(es)
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s --implicit-check-not='error:' --implicit-check-not=cqrt_free \
+; RUN:       --implicit-check-not=cq_template_ --implicit-check-not='call void @cqrt_ry_i1_controlled'
+; CHECK-LABEL: define i32 @main(
+; CHECK: %h = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_ry_i1(i32 %h, double 5.000000e-01)
+; CHECK: store i32 %h, ptr %.rails, align 4
+; CHECK: %.rail = load i32, ptr %cq.rail.addr1, align 4
+; CHECK: %cq.arm.in = load i32, ptr %cq.rail.addr, align 4
+; CHECK: call void @cqrt_ry_i1_controlled(i32 %.rail, i32 %cq.arm.in, double %{{[0-9]+}})
+; CHECK-NEXT: store i32 %cq.arm.in, ptr %cq.rail.addr, align 4
+; CHECK: %m = call i1 @cqrt_measure_i1(i32 %.rail4)
 
 ; ModuleID = 'p16.c'
 source_filename = "p16.c"

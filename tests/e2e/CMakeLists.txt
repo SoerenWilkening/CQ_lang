@@ -7231,3 +7231,14 @@ add_test(NAME e2e-slice-rolled-cnot-then-ry
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_rolled_cnot_then_ry.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_rolled_cnot_then_ry.expected.log")
+
+# bd test_C_libtooling-01po.19 S6: quantum control on cells of a rolled array —
+# the p16 controlled-Ry cascade, a cell read as the condition register and an
+# in-place controlled Ry on the next cell per trip (analytic check in the header).
+add_test(NAME e2e-slice-rolled-p16-cascade
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_rolled_p16_cascade.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_rolled_p16_cascade.expected.log")

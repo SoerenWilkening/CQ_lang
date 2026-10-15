@@ -49,13 +49,6 @@ const char kMsgInPlaceQQAmbiguousTarget[] =
     "cq in-place lowering: both operands of a quantum reassignment are dead "
     "registers; the overwritten one is not recoverable";
 
-bool railIsUserData(const Value *P) {
-  for (const User *U : P->users())
-    if (const auto *G = dyn_cast<CallInst>(U); G && isNonPermutationMove(G, P))
-      return true;
-  return false;
-}
-
 bool isInPlaceQQGate(const CallInst *G) {
   if (!G || !G->getMetadata(kInPlaceQQTag))
     return false;

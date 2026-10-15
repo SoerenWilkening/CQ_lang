@@ -86,16 +86,25 @@
 //       address, and after S3 its `x ^= x` folds to a classical rebind.
 //       Control == target and more than 8 copies of one window are loud.
 //
+//   S6  QUANTUM CONTROL ON CELLS (RailWindowArms.cpp; ArmClassify `CellCond`
+//       and clause (d)). A cell read is a register condition (never minted,
+//       stripped or freed); an arm's cell accesses are carried as SSA through a
+//       diamond (`promoteRailWindowArms`) so the target cell is rotated in place
+//       under control (`cqrt_ry_<W>_controlled`, then frozen), also in a loop
+//       (the target is reloaded every trip); a window loop is Case B after its
+//       regions flatten; a write-back φ of a classical merge is split per
+//       predecessor (`splitRailWindowWritebacks`). Shapes the control chain does
+//       not lower stay loud there (bd 01po.19.17–.20).
+//
 // ── WHAT STILL DECLINES (and loudly) ─────────────────────────────────────────
 //
-// S6 is not built yet (S6 quantum control on cells, lane C), nor S5's named
-// sub-gaps. An array that needs one of them is declined with ONE diagnostic
-// naming exactly the steps it still needs (`kMsgWindowPending` + the list),
-// at the window slot, before every stage that adjudicates consumers of
-// tainted values. RETIREMENT TRIGGER: each removes its own needs-flag from the
-// list and owes an accept fixture with an analytic trace check. The S7 flag
-// stays as the postcondition of versioning (unreachable unless a pair
-// survives it).
+// S5's named sub-gaps (bd 01po.19.7/.13/.14). An array that needs one of them
+// is declined with ONE diagnostic naming exactly the steps it still needs
+// (`kMsgWindowPending` + the list), at the window slot, before every stage
+// that adjudicates consumers of tainted values. RETIREMENT TRIGGER: each
+// removes its own needs-flag from the list and owes an accept fixture with an
+// analytic trace check. The S7 flag stays as the postcondition of versioning
+// (unreachable unless a pair survives it).
 //
 // Env lever `CQ_RAILWINDOW_DBG`: the plan of every claimed array and the
 // function after promotion.
@@ -253,6 +262,18 @@ bool railWindowReachesAvoiding(
 // carrier whose cell cannot be named).
 bool undoRailWindowHeaderPhis(llvm::Function &F, llvm::AllocaInst *W);
 
+// S6 (RailWindowArms.cpp): put the cell accesses inside every region of a
+// QUANTUM branch over the handle array `W` into the diamond the control
+// emitters own — each cell class loaded once before the branch, carried as SSA
+// through the arms, written back once at the merge. True if anything changed.
+bool promoteRailWindowArms(llvm::Function &F, llvm::AllocaInst *W,
+                           const TaintSet &taint);
+
+// S6 (RailWindowArms.cpp): split every window write-back `store (phi …)` into
+// one store per incoming at the end of its predecessor (the classical mux the
+// taint guard refuses; contract at the definition). The caller re-propagates.
+bool splitRailWindowWritebacks(llvm::Module &M, TaintSet &taint);
+
 // S5 (RailWindowInPlace.cpp): is `V` an update `x OP y` (`xor`/`add`/`sub`, or
 // the `_Bool` compare spelling of `xor`)? Fills both operands; `Sub` marks the
 // directional `sub` (only the minuend `X` can be the overwritten cell).
@@ -281,6 +302,17 @@ bool railWindowSameTripTarget(const llvm::Instruction *Site,
 bool railWindowWritesBack(const llvm::Instruction *U,
                           const llvm::Value *CellPtr);
 // (`qqTargetIsUserData`, declared in InPlaceQQ.h, is defined beside these.)
+// S6: `provablyBefore(X, Site)`, or — for an in-place gate whose target `P` is
+// a same-trip cell read (`railWindowSameTripTarget`) — `X` earlier in the SAME
+// trip: it dominates `Site` and every path from `Site` back to `X` reloads the
+// cell first (the next trip's `X` reads the cell's updated value, which is the
+// program's). Asked by the in-place fence's G6 and G7 (c′).
+bool railWindowBeforeInTrip(const llvm::Instruction *X,
+                            const llvm::Instruction *Site, const llvm::Value *P,
+                            const llvm::DominatorTree &DT);
+// S6: is `V` computed (through non-call, non-load operands) from a cell read?
+// Scopes the same-trip deadness of InPlaceQQRecord's `usersBefore`.
+bool railWindowDerived(const llvm::Value *V);
 
 // The values quantum through the taint set or through the array's own cell
 // reads (forward closure; a `cq_measure` result is classical).

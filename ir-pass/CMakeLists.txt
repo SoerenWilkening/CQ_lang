@@ -141,7 +141,8 @@ add_library(CQPass MODULE
   src/RailWindowMaterialize.cpp
   src/RailWindowPromote.cpp
   src/RailWindowQ.cpp
-  # bd 01po.19 S5: in-place cell updates, Q6 header-phi re-materialization.
+  # bd 01po.19 S5/S6: in-place cell updates, Q6 header-phi undo, arm promotion.
+  src/RailWindowArms.cpp
   src/RailWindowInPlace.cpp
   src/RailWindowPhiUndo.cpp
   src/RailWindowAlias.cpp    # bd 01po.19 S3/S7: the alias question.
