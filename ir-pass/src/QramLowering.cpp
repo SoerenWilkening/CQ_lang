@@ -213,17 +213,31 @@ constexpr char kMsgQramCloneUnbounded[] =
 // Sharing a string would merge two decline populations whose fixtures pin opposite
 // accept shapes, and would make the injection census point at the wrong wall.
 //   * lowering_reject_railbank_global.ll        → kMsgBankShape
-//   * lowering_reject_railbank_vla.ll           -> kMsgBankWidth
 //   * lowering_reject_railbank_escape.ll        → kMsgBankEscape
 //   * lowering_reject_railbank_mixed_access.ll  → kMsgBankMixed
-//   * lowering_reject_railbank_nonzero_init.ll  → kMsgBankInit
-//   * lowering_reject_railbank_noninjective.ll  → kMsgBankIndex
 //   * lowering_reject_railbank_fp_cell.ll       → kMsgBankWidth
 //   * lowering_reject_railbank_nowidth_cell.ll  → kMsgBankWidth
 //   * lowering_reject_railbank_alias.ll         → kMsgBankAlias
-//   * lowering_reject_railbank_two_stores.ll    → kMsgBankMultiStore
-//   * lowering_reject_railbank_oversized.ll     → kMsgBankTotality
-//   * lowering_reject_railbank_inloop_read.ll   → kMsgBankTotality
+// ⚠ bd `test_C_libtooling-01po.19` S1-S3 (2026-10-15): a well-formed quantum
+// array the one-store bank does not own is CLAIMED by the rolled window model
+// (RailWindow.h) at the head of `markRailBankAllocas`, before
+// `declineTaintEscapes` ever asks this verdict to decline it, and it declines
+// there with the list of window steps it still needs. The fixtures that used
+// to pin `kMsgBankInit` / `kMsgBankIndex` / `kMsgBankMultiStore` /
+// `kMsgBankNested` / `kMsgBankTotality` and the i8-VLA `kMsgBankWidth`
+// (`_vla`, `_nonzero_init`, `_noninjective`, `_two_stores`, `_nested_walk`,
+// `_oversized`, `_inloop_read`, `_wrapping_index`, `_dynamic_narrow_index`)
+// now pin that window decline. Those clauses remain the promoter's
+// `BankRaw`/`Reject*` separation, and they are STILL REACHABLE DECLINES for an
+// array the window model refuses and that passes C1/C3: an object whose
+// storage is not live at every access (a `lifetime.start` re-executed while
+// its contents are live) reaches `kMsgBankMultiStore` / `kMsgBankNested` /
+// `kMsgBankIndex`, pinned by `lowering_reject_railbank_{two_stores,
+// nested_walk,noninjective}_lifetime_restart.ll`. (⚠ CORRECTED, review round 1
+// F2: the first S1-S3 version of this comment called them unreachable, and an
+// array declared inside an outer loop reached `kMsgBankMultiStore` from plain
+// C; since F3 (a) that per-iteration shape is CLAIMED, and the remaining route
+// is the hand-IR restart above.)
 constexpr char kMsgBankShape[] =
     "cq rail bank: cell address has no bounded local-array provenance";
 constexpr char kMsgBankEscape[] =
@@ -246,7 +260,8 @@ constexpr char kMsgBankTotality[] =
 // §10 H-1 / H-13). Both were MEASURED as `Bank` over-accepts on the first subject
 // binary (53d1a4b6…) and both are the SAME hazard C2′/C1 name, one activation level
 // up — which is why they get their own strings rather than riding an existing one.
-//   * lowering_reject_railbank_nested_walk.ll   → kMsgBankNested
+//   * lowering_reject_railbank_nested_walk.ll   → kMsgBankNested (until bd
+//     01po.19 S1-S3; it now pins the window decline, see above)
 //   * lowering_reject_railbank_dynamic_object.ll → kMsgBankDynamic
 //   * lowering_reject_railbank_dynamic_{lifetime_end,stackrestore}.ll
 //                                                 → kMsgBankLifetime
@@ -4040,6 +4055,13 @@ void lowerShadowMemory(Module &M, WidthDispatch &wd, TaintSet &taint) {
     for (AllocaInst *AI : Order)
       processShadowAlloca(AI, ByAlloca[AI], wd, taint, *DT, *LInfo);
   }
+}
+
+// bd 01po.19 (RailWindow.cpp): the EXACT reachability walk above, exported so
+// the window stage asks the same question with the same answer (Rule 14).
+bool railBankInstReaches(const llvm::Instruction *From,
+                         const llvm::Instruction *To) {
+  return instReaches(From, To);
 }
 
 }  // namespace cq

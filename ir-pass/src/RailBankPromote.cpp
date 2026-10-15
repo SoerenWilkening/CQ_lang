@@ -11,6 +11,7 @@
 // loud owner unchanged.
 
 #include "RailBankPromote.h"
+#include "RailWindow.h"  // bd 01po.19 S1-S3
 
 #include "QramLowering.h"   // railBankCarveVerdict / RailBankCarve / RailBankShape
                             // — TRACK A'S REAL CLASSIFIER. ⚠ Until the merge of
@@ -1429,6 +1430,14 @@ bool railStoredToRailBank(const Value *H) {
 }
 
 bool markRailBankAllocas(Module &M, const TaintSet &taint) {
+  // bd 01po.19 S1–S3: a quantum array the rolled one-store bank does not own is
+  // a WINDOW array (RailWindow.h). Its windows are promoted and, until S4–S7
+  // land, it is declined here with the list of steps it still needs: after the
+  // `CQ_RAILBANK_DBG` dump of the promoter's output (which it leaves
+  // untouched) and before every stage that adjudicates consumers of tainted
+  // values, so no window array reaches a lowering.
+  if (declineRailWindowArrays(M, taint))
+    return false;
   bool Changed = false;
   for (Function &F : M) {
     if (F.isDeclaration())

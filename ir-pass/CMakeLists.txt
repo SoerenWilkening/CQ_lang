@@ -123,6 +123,9 @@ add_library(CQPass MODULE
   src/RecordWindowFreeze.cpp
   # bd xdu2 / L-1a: the rail-bank per-activation promoter (clause C5).
   src/RailBankPromote.cpp
+  # bd 01po.19 S1-S3: rolled quantum arrays (claim, quantization point, windows).
+  src/RailWindow.cpp
+  src/RailWindowPromote.cpp
   src/RegionFlatten.cpp
   src/RegionTreeDetect.cpp
   # bd dm7f.5: multi-exit `ret` normalization under tainted control.

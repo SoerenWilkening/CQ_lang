@@ -40,8 +40,19 @@
 ;   #include "CQ.h"
 ;   int main(void){ int a=5; bool b[2]={0}; for(int i=0;i<4;++i){ if(a>=3) cq_theta(&b[i>>1],0.5); if(b[i>>1]) a-=3; } return cq_measure(a)+cq_measure(b[0])+cq_measure(b[1]); }
 ;
+;
+; ⚠ bd `test_C_libtooling-01po.19` S1-S3 (2026-10-15, owner rulings
+; `owner-ruling-01po19-rolled-not-unrolled-2026-10-15` and
+; `owner-ruling-01po19-rolled-design-2026-10-15`): the rolled WINDOW model
+; (RailWindow.h) now claims this array, because it is a well-formed quantum array
+; the one-store rail bank does not own. The rail-bank clause this file used to
+; decline on protects the one-store model only; the window model replaces it, and
+; until S4-S7 land the array declines with the list of steps it still needs
+; (DECLINE -> DECLINE; the message below is mirrored character-for-character).
+; RETIREMENT TRIGGER: each of S4-S7 that lands drops its name from the list; when
+; the list empties this file becomes an ACCEPT with an analytic trace check.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: cq rail bank: cell index is not an injective per-iteration index
+; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S4 borrowed-root cells, S6 quantum control on cells
 ; CHECK-NOT: tainted value stored to memory
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"

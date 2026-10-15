@@ -30,6 +30,17 @@
 ; stage RAN and saw this module, the `NOTS` prefix proves it did not promote and
 ; that none of the promoted shape's landmarks (`%cq.bank`, `%cq.bank.addr`,
 ; `!cq.railbank`) exists, and the decline is pinned by the `not` on the RUN line.
+;
+; ⚠ bd `test_C_libtooling-01po.19` S1-S3 (2026-10-15, owner rulings
+; `owner-ruling-01po19-rolled-not-unrolled-2026-10-15` and
+; `owner-ruling-01po19-rolled-design-2026-10-15`): the rolled WINDOW model
+; (RailWindow.h) now claims this array, because it is a well-formed quantum array
+; the one-store rail bank does not own. The rail-bank clause this file used to
+; decline on protects the one-store model only; the window model replaces it, and
+; until S4-S7 land the array declines with the list of steps it still needs
+; (DECLINE -> DECLINE; the message below is mirrored character-for-character).
+; RETIREMENT TRIGGER: each of S4-S7 that lands drops its name from the list; when
+; the list empties this file becomes an ACCEPT with an analytic trace check.
 ; RUN: env CQ_RAILBANK_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering \
 ; RUN:     -S %s > /dev/null 2> %t.dbg
 ; RUN: %filecheck --check-prefix=DBG       --input-file=%t.dbg %s
@@ -134,4 +145,4 @@ out:
 ;   widening for B4'). B2 then becomes reachable and this file becomes an
 ;   ISOLATING negative again; re-derive its DECLINE line THEN.
 ;
-; DECLINE: cq rail bank: array has cells no iteration writes
+; DECLINE: cq rail window: quantum array not lowered yet (bd 01po.19), needs S4 borrowed-root cells, S5 in-place cell update, S7 index alias versioning
