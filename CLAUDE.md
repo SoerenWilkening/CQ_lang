@@ -322,8 +322,15 @@ which-path rails), `a3z7` (a dtzb-mutated `cq_theta` result carried through a ra
 `nomerge`), `uw5u` (`int m=(t==s)?t:s; cq_theta(&m, θ)` folds), `9oob` (a user `__cq_q_*_unc` twin
 with a wrong body is trusted), the twin half of `kyy1`, `jlf8`, `yldg`,
 `r2j3.7` (a dead tainted pure op is never uncomputed, a live copy of its source; filed
-2026-10-01), `r2j3.32` (a straight-line 4.4 select merge `%out`, e.g. `2*a` → `select a,2,0`, is
-never uncomputed after its consumer's `_unc`; a later Ry on `a` dephases; plain C, filed 2026-10-14). The three uncompute-frontier holes `r2j3.21`, `r2j3.23`, `r2j3.24` were closed
+2026-10-01), `r2j3.37` (a lifted call `x = f(x, y)` keeps the old `x` rail beside the result: the
+clone path never lowers a quantum-quantum op in place; filed 2026-10-15). `r2j3.32` (a straight-line
+4.4 select merge `%out` never uncomputed) and `r2j3.33` (an out-of-place `t ^= a` keeping the old `t`
+rail) were fixed 2026-10-16 (batch 054); `r2j3.36` (the carried-merge fence ignored in-loop gates)
+was fixed the same batch. Latent, masked by a loud decline (batch 054): `r2j3.38` (an M-C
+classical-immediate in-place gate converting while a 4.4 merge copy of the parent stands),
+`r2j3.39` (`bracketQramIndexCasts` hides a stale QRAM `_unc` from the in-place QQ postcondition).
+Not silent but noted: the post-loop reverse loop `8h7d.20` (rolled loops leave loop-carried merge
+rails allocated; quarantined twin cells RB-A). The three uncompute-frontier holes `r2j3.21`, `r2j3.23`, `r2j3.24` were closed
 2026-10-14 (batch 053, 04e4f09f): a cut record is reversed or the pass fails loudly, asked per
 (record, move) by `isHazardousCutRecord`; `r2j3.23`'s QROM-load shapes are loud, not yet lowered
 (`r2j3.27`). Warned rather than silent (owner ruling `lyyf`): `r2j3.8` (a reversed QRAM
@@ -332,7 +339,8 @@ a loud decline today: `r2j3.9` (`GuardedStoreArmEmit` never discharges a hoisted
 value chain). Dirty-rail leak (r2j3 section B): `iwr7` (a dead `cq_template_zext` beside a
 QRAM load of the same index is never uncomputed; 10 libm goldens) and `r2j3.16` (an in-arm
 tainted select's `%out` rail and its operand chain stay dirty after a guarded store, reachable
-from C; filed 2026-10-05). Suspected, unprobed: `r2j3.17` (planTerminalReversal's silent
+from C; filed 2026-10-05) and `r2j3.40` (a dm7f.54 angle-select condition chain, e.g. reporter's
+`t4.c`, is never uncomputed when its counter is measured later; filed 2026-10-15). Suspected, unprobed: `r2j3.17` (planTerminalReversal's silent
 leak returns may dephase a parent rotated later). Latent, not yet built
 from C (section D): `hp0x` (the 6.5 classical-call argument clause keys on `noundef` alone,
 so a `dereferenceable` parameter without `noundef` is hoisted with poison). `r2j3.22` (a forged
@@ -404,7 +412,7 @@ cmake -S . -B build -DLLVM_DIR=$(brew --prefix llvm@19)/lib/cmake/llvm -DCMAKE_B
 cmake --build build -j8
 # NEVER `--target CQPass` alone: `%cq-opt` (build/ir-pass/cq-opt) is a separate target from the same sources and
 # every lit RUN line uses it, so a CQPass-only rebuild leaves lit on a STALE binary and reports FALSE GREEN.
-cmake --build build --target CQPass cq-opt cq-opt-debugalloc cq-scrub-selftest   # if you name targets, name all four
+cmake --build build --target CQPass cq-opt cq-opt-debugalloc cq-scrub-selftest cq-merge-selftest   # if you name targets, name all five
 ctest --test-dir build -R ir-pass-lit  --output-on-failure    # one entry wrapping every ir-pass/test/*.ll
 ctest --test-dir build -R frontend-lit --output-on-failure    # CQ.h survives clang -O1 (no plugin)
 ctest --test-dir build -j6 -R '^e2e-' --output-on-failure     # the only layer that LINKS
