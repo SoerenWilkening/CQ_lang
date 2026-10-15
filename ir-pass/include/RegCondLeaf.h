@@ -48,8 +48,9 @@
 // THE TAG IS HONOURED DOWNSTREAM: the late QQ round converts a target-tagged
 // op only onto its target (any other conversion Q1 demands is loud), and
 // `RegionFlatten` never erases a tagged condition (a state prep holds it only
-// through a `WeakTrackingVH`). ChainWalk's row (c′) reads the tag on the
-// template; the tags are stripped after `uncompute` (`declineStaleInPlaceQQReads`).
+// through a `WeakTrackingVH`). ChainWalk's row (c′) reads the separate RAIL
+// marker (`kRegCondRailTag`, below), never the commit; both are stripped after
+// `uncompute` (`declineStaleInPlaceQQReads`).
 //
 // A TAGGED VALUE is read as a register by the consumers that opt in: the flat
 // in-place rotation / state-prep region (`classifyArms` + `emitInPlaceRotation-
@@ -114,6 +115,16 @@ void transferRegCondTag(const llvm::Instruction *From, llvm::Instruction *To,
 // The tag's raw operand on any instruction (a template too): -1 without a tag,
 // `kRegCondFresh` for no target, else the target operand's index.
 int regCondTagIndex(const llvm::Instruction *I);
+
+// R11 round 2 (one meaning per metadata kind): `!cq.regcond.rail` says only
+// "this lowered rail HOLDS a register condition" — the template `lowerOps` built
+// for the condition, or the rail an in-place lowering (M-C) put it on. ChainWalk
+// row (c′) reads THIS marker. `!cq.regcond` stays the COMMIT (on the IR op, and
+// copied onto its own template for the late QQ round to honour); the marker is
+// never read as a commit. Both are stripped after `uncompute`.
+inline constexpr const char kRegCondRailTag[] = "cq.regcond.rail";
+void markRegCondRail(llvm::Instruction *Rail);
+bool isRegCondRail(const llvm::Instruction *Rail);
 
 // The commit stage (see the header). Idempotent; only ever adds tags.
 void commitRegisterConditions(llvm::Module &M, TaintSet &taint);

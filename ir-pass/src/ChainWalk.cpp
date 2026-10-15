@@ -6,7 +6,7 @@
 #include "CloneProducer.h"    // isCloneProducer (bd p3kd.13)
 #include "InPlaceQQ.h"        // isInPlaceQQGate (bd r2j3.33)
 #include "MergeStreamGates.h" // controlSlots (row (c′), bd dm7f.77)
-#include "RegCondLeaf.h"      // regCondTagIndex (row (c′), bd dm7f.77)
+#include "RegCondLeaf.h"      // isRegCondRail (row (c′), bd dm7f.77)
 #include "RailBankPromote.h"  // railStoredToRailBank (bd `xdu2` W1 D1)
 // `cloneCallPreservesArg` (bd rhk5) lives in ClonePreserves.cpp since bd p3kd.13.
 #include "TaintPropagation.h"
@@ -1042,9 +1042,10 @@ bool isInteriorConsumer(const CallInst *C, const Value *R,
   if (taint.DischargedFlagGates.count(C))
     return isRecordedStripReaderOf(C, R, taint);
   // (c′) bd dm7f.77 (dm7f.51 step 2; R11 round 1 C-F3/C-F4) — A CONTROL READ
-  //      OF A REGISTER CONDITION. By MEMBERSHIP: the rail is a register
-  //      condition (RegCondLeaf.h; the `!cq.regcond` tag its template carries
-  //      until the post-`uncompute` postcondition strips it) — a program value a
+  //      OF A REGISTER CONDITION. By MEMBERSHIP: the rail holds a register
+  //      condition (RegCondLeaf.h's `!cq.regcond.rail` marker, on its template or
+  //      on the rail M-C put it on, until the post-`uncompute` postcondition
+  //      strips it; never the commit tag, R11 round 2) — a program value a
   //      control emitter reads but does not own, so no emitter strips it. Read
   //      ONLY in CONTROL slots (`controlSlots`, MergeStreamGates.h, the one
   //      owner: cnot 0, toffoli 0/1, controlled copy 0, controlled rotation 0),
@@ -1058,7 +1059,7 @@ bool isInteriorConsumer(const CallInst *C, const Value *R,
   //      read as a control (a condition network's flag or node ancilla, owned
   //      and stripped by its emitter) still falls through to the list below.
   if (const auto *RI = dyn_cast<Instruction>(R);
-      RI && regCondTagIndex(RI) >= 0 && C->getType()->isVoidTy()) {
+      isRegCondRail(RI) && C->getType()->isVoidTy()) {
     SmallVector<unsigned, 2> Ctl = controlSlots(C);
     if (!Ctl.empty()) {
       bool Reads = false;

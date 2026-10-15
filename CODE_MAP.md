@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 843 maintained source files, 6822 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 843 maintained source files, 6824 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -41,10 +41,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
 - `runtime/cq_runtime.c` — 1427 physical lines
 - `ir-pass/src/Specialization.cpp` — 1380 physical lines
-- `ir-pass/src/ArithLowering.cpp` — 1315 physical lines
+- `ir-pass/src/ArithLowering.cpp` — 1321 physical lines
 - `tools/library_coverage/probe.py` — 1219 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
-- `ir-pass/src/ChainWalk.cpp` — 1159 physical lines
+- `ir-pass/src/ChainWalk.cpp` — 1160 physical lines
 - `tools/loop_twin_matrix_quarantine_test.py` — 1110 physical lines
 - `ir-pass/src/BreakReversePlay.cpp` — 1007 physical lines
 - `ir-pass/src/SpecializeReject.cpp` — 1005 physical lines
@@ -227,23 +227,23 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/AngleSelectEmit.cpp:75` — `emitPhaseAngleSelect`
 - `ir-pass/src/AngleSelectEmit.cpp:190` — `emitAngleSelectRegion`
 
-### `ir-pass/src/ArithLowering.cpp` (1315 lines)
+### `ir-pass/src/ArithLowering.cpp` (1321 lines)
 
 - `ir-pass/src/ArithLowering.cpp:55` — `promote`
 - `ir-pass/src/ArithLowering.cpp:111` — `negateClassicalImmediate`
 - `ir-pass/src/ArithLowering.cpp:131` — `emitInPlaceReassign`
-- `ir-pass/src/ArithLowering.cpp:179` — `rewriteBinary`
-- `ir-pass/src/ArithLowering.cpp:298` — `rewriteUnary`
-- `ir-pass/src/ArithLowering.cpp:329` — `rewriteInPlaceValueRail`
-- `ir-pass/src/ArithLowering.cpp:429` — `inPlaceReassignRailOperand`
-- `ir-pass/src/ArithLowering.cpp:671` — `voidReaderRecordsSettled`
-- `ir-pass/src/ArithLowering.cpp:710` — `railZeroedAndReleased`
-- `ir-pass/src/ArithLowering.cpp:734` — `priorUseIsSettled`
-- `ir-pass/src/ArithLowering.cpp:829` — `inPlaceFenceHolds`
-- `ir-pass/src/ArithLowering.cpp:886` — `inPlacePositionHolds`
-- `ir-pass/src/ArithLowering.cpp:1037` — `classifyInPlaceReassignment`
-- `ir-pass/src/ArithLowering.cpp:1104` — `lateReassignShape`
-- `ir-pass/src/ArithLowering.cpp:1144` — `lowerLateReassignments`
+- `ir-pass/src/ArithLowering.cpp:183` — `rewriteBinary`
+- `ir-pass/src/ArithLowering.cpp:304` — `rewriteUnary`
+- `ir-pass/src/ArithLowering.cpp:335` — `rewriteInPlaceValueRail`
+- `ir-pass/src/ArithLowering.cpp:435` — `inPlaceReassignRailOperand`
+- `ir-pass/src/ArithLowering.cpp:677` — `voidReaderRecordsSettled`
+- `ir-pass/src/ArithLowering.cpp:716` — `railZeroedAndReleased`
+- `ir-pass/src/ArithLowering.cpp:740` — `priorUseIsSettled`
+- `ir-pass/src/ArithLowering.cpp:835` — `inPlaceFenceHolds`
+- `ir-pass/src/ArithLowering.cpp:892` — `inPlacePositionHolds`
+- `ir-pass/src/ArithLowering.cpp:1043` — `classifyInPlaceReassignment`
+- `ir-pass/src/ArithLowering.cpp:1110` — `lateReassignShape`
+- `ir-pass/src/ArithLowering.cpp:1150` — `lowerLateReassignments`
 
 ### `ir-pass/src/ArmAngleHoist.cpp` (103 lines)
 
@@ -439,7 +439,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/CastLowering.cpp:38` — `promote`
 - `ir-pass/src/CastLowering.cpp:50` — `rewriteCast`
 
-### `ir-pass/src/ChainWalk.cpp` (1159 lines)
+### `ir-pass/src/ChainWalk.cpp` (1160 lines)
 
 - `ir-pass/src/ChainWalk.cpp:34` — `markBranchPhaseGate`
 - `ir-pass/src/ChainWalk.cpp:40` — `isBranchPhaseGate`
@@ -458,8 +458,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ChainWalk.cpp:779` — `railOf`
 - `ir-pass/src/ChainWalk.cpp:821` — `isTerminalHandle`
 - `ir-pass/src/ChainWalk.cpp:876` — `isInteriorConsumer`
-- `ir-pass/src/ChainWalk.cpp:1090` — `isRecordedStripReaderOf`
-- `ir-pass/src/ChainWalk.cpp:1107` — `isInteriorTerminalHandle`
+- `ir-pass/src/ChainWalk.cpp:1091` — `isRecordedStripReaderOf`
+- `ir-pass/src/ChainWalk.cpp:1108` — `isInteriorTerminalHandle`
 
 ### `ir-pass/src/ClassicalCallArmEmit.cpp` (322 lines)
 
@@ -698,7 +698,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/InPlaceQQ.cpp:240` — `decideNext`
 - `ir-pass/src/InPlaceQQ.cpp:375` — `lowerInPlaceQQ`
 
-### `ir-pass/src/InPlaceQQRecord.cpp` (388 lines)
+### `ir-pass/src/InPlaceQQRecord.cpp` (389 lines)
 
 - `ir-pass/src/InPlaceQQRecord.cpp:40` — `isQQStem`
 - `ir-pass/src/InPlaceQQRecord.cpp:45` — `maskOf`
@@ -714,8 +714,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/InPlaceQQRecord.cpp:241` — `isAdjointOf`
 - `ir-pass/src/InPlaceQQRecord.cpp:259` — `classifyLaterUse`
 - `ir-pass/src/InPlaceQQRecord.cpp:314` — `declineStaleInPlaceQQReads`
-- `ir-pass/src/InPlaceQQRecord.cpp:382` — `deadOperandMask`
-- `ir-pass/src/InPlaceQQRecord.cpp:384` — `unprovenPhiOperandMask`
+- `ir-pass/src/InPlaceQQRecord.cpp:383` — `deadOperandMask`
+- `ir-pass/src/InPlaceQQRecord.cpp:385` — `unprovenPhiOperandMask`
 
 ### `ir-pass/src/IntrinsicLowering.cpp` (565 lines)
 
@@ -1145,7 +1145,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `ir-pass/src/RecordWindowFreeze.cpp:23` — `freezeRecordWindowReaders`
 
-### `ir-pass/src/RegCondLeaf.cpp` (321 lines)
+### `ir-pass/src/RegCondLeaf.cpp` (329 lines)
 
 - `ir-pass/src/RegCondLeaf.cpp:32` — `rotatedRegister`
 - `ir-pass/src/RegCondLeaf.cpp:52` — `deadQQOperand`
@@ -1159,9 +1159,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RegCondLeaf.cpp:237` — `isRegCondLeaf`
 - `ir-pass/src/RegCondLeaf.cpp:242` — `regCondTarget`
 - `ir-pass/src/RegCondLeaf.cpp:256` — `transferRegCondTag`
-- `ir-pass/src/RegCondLeaf.cpp:271` — `regCondTagIndex`
-- `ir-pass/src/RegCondLeaf.cpp:279` — `regCondProvenance`
-- `ir-pass/src/RegCondLeaf.cpp:286` — `commitRegisterConditions`
+- `ir-pass/src/RegCondLeaf.cpp:271` — `markRegCondRail`
+- `ir-pass/src/RegCondLeaf.cpp:275` — `isRegCondRail`
+- `ir-pass/src/RegCondLeaf.cpp:279` — `regCondTagIndex`
+- `ir-pass/src/RegCondLeaf.cpp:287` — `regCondProvenance`
+- `ir-pass/src/RegCondLeaf.cpp:294` — `commitRegisterConditions`
 
 ### `ir-pass/src/RegionFlatten.cpp` (311 lines)
 

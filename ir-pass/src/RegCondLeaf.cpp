@@ -268,6 +268,14 @@ void transferRegCondTag(const Instruction *From, Instruction *To, bool Swapped) 
   setTag(To, Idx);
 }
 
+void markRegCondRail(Instruction *Rail) {
+  Rail->setMetadata(kRegCondRailTag, MDNode::get(Rail->getContext(), {}));
+}
+
+bool isRegCondRail(const Instruction *Rail) {
+  return Rail && Rail->getMetadata(kRegCondRailTag);
+}
+
 int regCondTagIndex(const Instruction *I) {
   MDNode *MD = I ? I->getMetadata(kRegCondTag) : nullptr;
   auto *K = MD && MD->getNumOperands() == 1

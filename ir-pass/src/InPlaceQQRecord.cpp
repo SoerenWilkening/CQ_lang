@@ -317,7 +317,8 @@ bool declineStaleInPlaceQQReads(Module &M, const TaintSet &taint) {
   for (Function &F : M)
     for (BasicBlock &BB : F)
       for (Instruction &I : BB)
-        I.setMetadata(kRegCondTag, nullptr);
+        for (const char *Tag : {kRegCondTag, kRegCondRailTag})
+          I.setMetadata(Tag, nullptr);
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;

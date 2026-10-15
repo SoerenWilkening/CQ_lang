@@ -5,7 +5,7 @@
 // (`OpcodeLowering`) owns collection, program order, and erase.
 
 #include "ArithLowering.h"
-#include "RegCondLeaf.h"  // transferRegCondTag (bd dm7f.77)
+#include "RegCondLeaf.h"  // transferRegCondTag / markRegCondRail (bd dm7f.77)
 
 #include "ChainWalk.h"      // isInPlaceGateOn (the ONE in-place-gate relation)
 #include "DeadValueLiveness.h"  // isRecordedDeadSlot (bd vsfp r2: the ONE "slot unread")
@@ -165,11 +165,15 @@ bool emitInPlaceReassign(Instruction *Site, Instruction::BinaryOps Op,
   // chained self-update (`q1 = q ^ 9; q2 = q1 ^ 3` — `q1`'s RAUW feeds `q2`). The
   // void in-place gate is not itself a tainted producer; the handle stays
   // tainted.
-  // bd dm7f.77 (R11 round 1): a REGISTER CONDITION lowered in place lives on
-  // `Handle`'s rail from here on, so the rail takes its tag (ChainWalk row
-  // (c′) discharges it after its last control read by that membership).
-  if (auto *HI = dyn_cast<Instruction>(Handle))
-    transferRegCondTag(Site, HI, /*Swapped=*/false);
+  // bd dm7f.77 (R11 rounds 1-2): a REGISTER CONDITION lowered in place lives on
+  // `Handle`'s rail from here on, so the rail takes the RAIL marker (ChainWalk
+  // row (c′) discharges it after its last control read by that membership) —
+  // never the commit tag: when `Handle` is itself a QQ template, the late QQ
+  // round would read a copied commit as the template's own and refuse it
+  // (review_s2R2/h2.ll).
+  if (auto *HI = dyn_cast<Instruction>(Handle);
+      HI && (Site->getMetadata(kRegCondTag) || isRegCondRail(Site)))
+    markRegCondRail(HI);
   Site->replaceAllUsesWith(Handle);
   return true;
 }
@@ -287,6 +291,8 @@ bool rewriteBinary(BinaryOperator *bo, WidthDispatch &wd, TaintSet &taint) {
   // operand is DEAD, so the condition's rail is that operand's, which nothing
   // names after the op — refusing it left a dead register out of place.
   transferRegCondTag(bo, T, /*Swapped=*/ShapeSel == Shape::QQ && Lhs != A);
+  if (isRegCondLeaf(bo))
+    markRegCondRail(T);  // the rail holding the condition (row (c′)).
   bo->replaceAllUsesWith(T);
   // Record the result handle's LOGICAL width (the binary op's own ABI width,
   // already validated non-empty at :45) so a downstream Q+Q data compare can
