@@ -5,6 +5,7 @@
 #include "ChainWalk.h"         // isInPlaceGateOn / isInteriorConsumer / ...
 #include "InPlaceQQ.h"         // isInPlaceQQGate (bd r2j3.33)
 #include "RailBankPromote.h"   // railBankParkedRails / railBankCellReadsOf
+#include "RailWindow.h"        // railWindowFamily (bd 01po.19 S5)
 #include "TaintPropagation.h"  // TaintSet
 #include "TemplateName.h"      // isUncHandleSlot
 
@@ -218,15 +219,25 @@ bool handleAliases(Value *X, const TaintSet &taint, const DominatorTree &DT,
     // loads and its stored rails are an exact alias set — the cell index may be
     // dynamic, so EVERY cell of the bank is in the class). Any other memory
     // round trip has unknown writers: refuse.
+    // bd 01po.19 S5: or through a `!cq.railwindow` handle array, whose every
+    // user is the materialization's own cell access — the class is the whole
+    // array family (`railWindowFamily`: every cell read and every stored rail;
+    // array-granular, a superset of any one cell).
     if (auto *Ld = dyn_cast<LoadInst>(V)) {
       SmallVector<Value *, 4> Parked;
-      if (!railBankParkedRails(Ld, Parked))
+      if (!railBankParkedRails(Ld, Parked) && !railWindowFamily(Ld, Parked))
         return false;
       Work.append(Parked.begin(), Parked.end());
     }
     for (User *U : V->users()) {
       if (auto *SI = dyn_cast<StoreInst>(U)) {
         SmallVector<LoadInst *, 4> Cells;
+        SmallVector<Value *, 8> Family;
+        if (SI->getValueOperand() == V && railStoredToRailWindow(V) &&
+            railWindowFamily(V, Family)) {
+          Work.append(Family.begin(), Family.end());
+          continue;
+        }
         if (SI->getValueOperand() != V || !railBankCellReadsOf(V, Cells))
           return false;  // parked in memory: a call can move it unnamed.
         Work.append(Cells.begin(), Cells.end());

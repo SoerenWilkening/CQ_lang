@@ -138,35 +138,18 @@ bool selfValue(Value *V, const SCEV *S, ScalarEvolution &SE,
     if (Function *Fn = CI->getCalledFunction())
       if (Fn->getName().starts_with("cq_theta_"))
         return selfValue(CI->getArgOperand(0), S, SE, Acc, Seen);
+  // S5: an update with exactly one operand this cell's chain (`sub`: the
+  // minuend only; `x ^= x` is none), `railWindowInPlaceUpdate`.
+  Value *X, *Y;
+  if (bool Sub; railWindowInPlaceUpdate(V, X, Y, Sub)) {
+    SmallPtrSet<Value *, 8> SX(Seen.begin(), Seen.end()), SY(SX);
+    bool TX = selfValue(X, S, SE, Acc, SX), TY = selfValue(Y, S, SE, Acc, SY);
+    return Sub ? TX && !TY : TX != TY;
+  }
   return false;
 }
 
 }  // namespace
-
-void railWindowQuantum(Function &F, const RailWindowAccesses &Acc,
-                       const TaintSet &taint, SmallPtrSetImpl<Value *> &QD) {
-  SmallVector<Value *, 64> Work(Acc.Loads.begin(), Acc.Loads.end());
-  for (Instruction &I : instructions(F))
-    if (taint.Tainted.count(&I))
-      Work.push_back(&I);
-  while (!Work.empty()) {
-    Value *V = Work.pop_back_val();
-    if (!QD.insert(V).second)
-      continue;
-    for (User *U : V->users())
-      if (auto *I = dyn_cast<Instruction>(U))
-        if (!I->getType()->isVoidTy()) {
-          // `cq_measure` is the taint SINK (R3): its result is classical.
-          // (S4 found this over-flag: `cq_measure(q[0]) ? 2 : 0` read as a
-          // quantum select condition.)
-          if (auto *CI = dyn_cast<CallInst>(I))
-            if (Function *Fn = CI->getCalledFunction();
-                Fn && Fn->getName().starts_with("cq_measure_"))
-              continue;
-          Work.push_back(I);
-        }
-  }
-}
 
 std::string railWindowNeeds(Function &F, const RailWindowAccesses &Acc,
                             const TaintSet &taint, LoopInfo &LI,
@@ -194,7 +177,7 @@ std::string railWindowNeeds(Function &F, const RailWindowAccesses &Acc,
     // A fresh mint (a `cq_theta` of a classical seed) is a REBIND, not an
     // update: S2/S4 own it. Anything reading a cell that is not this cell's
     // own in-place chain is an update or a copy: S5.
-    bool ReadsCell = false;
+    bool ReadsCell = false, Sub = false;
     SmallVector<Value *, 8> W{St->getValueOperand()};
     SmallPtrSet<Value *, 16> Vis;
     while (!W.empty()) {
@@ -203,6 +186,13 @@ std::string railWindowNeeds(Function &F, const RailWindowAccesses &Acc,
         continue;
       if (auto *L = dyn_cast<LoadInst>(V); L && is_contained(Acc.Loads, L))
         ReadsCell = true;
+      // THIS cell updated by a classical operand (`q[i] += 3`) is no S5
+      // update (it would rebind beside its live old rail): still pending.
+      SmallPtrSet<Value *, 8> SS;
+      if (Value *X, *Y; railWindowInPlaceUpdate(V, X, Y, Sub) &&
+                        QD.count(X) != QD.count(Y) &&
+                        selfValue(QD.count(X) ? X : Y, S, SE, Acc, SS))
+        S5 = true;
       if (auto *I = dyn_cast<Instruction>(V))
         for (Value *Op : I->operands())
           if (QD.count(Op))

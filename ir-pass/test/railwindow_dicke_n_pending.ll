@@ -8,6 +8,7 @@
 ; (S1), places its quantization point (S2) and promotes its windows (S3), and then
 ; declines with exactly the steps it still needs. The WIN prefix pins the claim,
 ; the quantization point and every promoted cell class, and the window IR (one SSA name per cell inside a window, one write-back per window exit; reviewed against the source).
+; (bd 01po.19 S5, 2026-10-15: S5 removed from the list, as its trigger says.)
 ; RETIREMENT TRIGGER: each of S4-S7 that lands removes its name from the CHECK
 ; line; when none is left this file becomes an ACCEPT with an analytic trace check.
 ;
@@ -55,7 +56,7 @@
 ; RUN:   | %filecheck %s --implicit-check-not='cq rail bank' --implicit-check-not='tainted value stored to memory'
 ; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
 ; RUN:   | %filecheck %s --check-prefix=WIN
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S5 in-place cell update, S6 quantum control on cells
+; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S6 quantum control on cells
 ; WIN: CQ_RAILWINDOW_DBG: @main claims %1 cells=i8 loads=11 stores=7 Q=  br label %11
 ; WIN: CQ_RAILWINDOW_DBG: promote cell {(2 + %.rails)<nuw>,+,-1}<nw><%14> in region %14 loads=3 stores=1 exits=1
 ; WIN: CQ_RAILWINDOW_DBG: promote cell {(3 + %.rails)<nuw>,+,-1}<nw><%14> in region %14 loads=4 stores=4 exits=1

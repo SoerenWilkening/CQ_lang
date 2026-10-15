@@ -7220,3 +7220,14 @@ add_test(NAME e2e-slice-inplace-qq
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_inplace_qq.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_inplace_qq.expected.log")
+
+# bd test_C_libtooling-01po.19 S5: in-place cell updates over a rolled quantum
+# array. `q[i+1] ^= q[i]` lowers as one `cqrt_cnot` per trip on the cells' own
+# rails (the r2j3.33 analytic pin, rolled: P(q0=0) = 0.736, slice header).
+add_test(NAME e2e-slice-rolled-cnot-then-ry
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_rolled_cnot_then_ry.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_rolled_cnot_then_ry.expected.log")

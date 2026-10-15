@@ -1,15 +1,23 @@
-; railwindow_ghz_cnot_walk_pending.ll — DECLINE (bd `test_C_libtooling-01po.19` S1-S3).
+; railwindow_ghz_cnot_walk_accept.ll — ACCEPT (bd `test_C_libtooling-01po.19`
+; S5; was railwindow_ghz_cnot_walk_pending.ll, which declined "needs S5").
 ;
-; GHZ as a CNOT walk `q[i+1] ^= q[i]`; -O1 carries q[i] across the back edge in a header phi (design Q6, re-materialization not built in S3: follow-up).
+; GHZ as a CNOT walk `q[i+1] ^= q[i]` over a `_Bool` array. -O1 carries q[i]
+; across the back edge in a header φ (`phi i8 [zext θ, pre], [zext (icmp ne),
+; latch]`); design Q6 (a), deferred by S3 and built in S5
+; (RailWindowPhiUndo.cpp), maps it back to a load of cell i by SCEV identity.
+; The update `icmp ne (zext q[i+1]), (zext q[i])` is the `_Bool` spelling of an
+; i1 xor (interface (a), `boolCompareXor`); its old operand q[i+1] is a cell
+; read whose cell receives the result (interface (b), `railWindowStoredBack`),
+; reloaded every trip (`railWindowSameTripTarget`), so dm7f.51's quantum-source
+; round lowers it IN PLACE: `cqrt_cnot(q[i], q[i+1])`, the store a self-store.
+; Neither the out-of-place `cq_template_xor` (r2j3.33) nor a dead `zext` copy
+; template of the undone φ's incomings (a dirty entangled rail) may appear.
 ;
-; Before S1-S3 this array declined in the one-store rail bank. Now the rolled
-; window model (RailWindow.h; owner rulings `owner-ruling-01po19-rolled-not-
-; unrolled-2026-10-15`, `owner-ruling-01po19-rolled-design-2026-10-15`) claims it
-; (S1), places its quantization point (S2) and promotes its windows (S3), and then
-; declines with exactly the steps it still needs. The WIN prefix pins the claim,
-; the quantization point and every promoted cell class.
-; RETIREMENT TRIGGER: each of S4-S7 that lands removes its name from the CHECK
-; line; when none is left this file becomes an ACCEPT with an analytic trace check.
+; ANALYTIC READING of the pinned stream: Ry(π/2) on h (cell 0's rail, the
+; rebind of the |0> rail the walk at Q minted) gives (|0>+|1>)/√2; trip 0 is
+; CNOT(cell0 -> cell1), trip 1 CNOT(cell1 -> cell2); the measure walk reads the
+; three cell rails: (|000> + |111>)/√2, P = 1/2 each (scratch state-vector
+; propagation of the e2e trace, 2026-10-15). No cqrt_free (R5).
 ;
 ; SOURCE (clang -O1, verbatim below):
 ;   /* GHZ over a bool array: q[i+1] ^= q[i] is a CNOT chain written as an array walk
@@ -23,13 +31,21 @@
 ;     return r;
 ;   }
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s --implicit-check-not='cq rail bank' --implicit-check-not='tainted value stored to memory'
-; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
-; RUN:   | %filecheck %s --check-prefix=WIN
-; CHECK: cq rail window: quantum array not lowered yet (bd 01po.19), needs S5 in-place cell update
-; WIN: CQ_RAILWINDOW_DBG: @main claims %1 cells=i8 loads=2 stores=2 Q=  store i8 %3, ptr %1, align 1
-; WIN: CQ_RAILWINDOW_DBG: promoted 0 cell class(es)
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s --implicit-check-not='error:' --implicit-check-not=cqrt_free \
+; RUN:       --implicit-check-not=cq_template_ --implicit-check-not='phi i8'
+; CHECK-LABEL: define i32 @main(
+; CHECK: %h = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK: call void @cqrt_ry_i1(i32 %h, double 0x3FF921FB54442D18)
+; CHECK: store i32 %h, ptr %.rails, align 4
+; CHECK: %cq.cell.addr = getelementptr i32, ptr %.rails, i64 [[I:%[0-9]+]]
+; CHECK-NEXT: %.cell = load i32, ptr %cq.cell.addr, align 4
+; CHECK-NEXT: [[I1:%[0-9]+]] = add nuw nsw i64 [[I]], 1
+; CHECK-NEXT: %cq.rail.addr = getelementptr i32, ptr %.rails, i64 [[I1]]
+; CHECK-NEXT: %.rail = load i32, ptr %cq.rail.addr, align 4
+; CHECK-NEXT: call void @cqrt_cnot(i32 %.cell, i32 %.rail), !cq.inplace.qq
+; CHECK-NEXT: store i32 %.rail, ptr %cq.rail.addr, align 4
+; CHECK: %m = call i1 @cqrt_measure_i1(i32 %.rail2)
 
 ; ModuleID = 'ghz.c'
 source_filename = "ghz.c"

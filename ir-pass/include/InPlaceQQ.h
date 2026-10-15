@@ -144,6 +144,13 @@ bool isInPlaceQQGate(const llvm::CallInst *G);
 // non-permutation move (an Ry or a controlled Ry — `isNonPermutationMove`)?
 bool railIsUserData(const llvm::Value *P);
 
+// E2 for operand `Op` of the quantum-source op `Result` (bd 01po.19 S5, design
+// §4 interface (b); RailWindowInPlace.cpp): a quantum-array CELL READ is user
+// data the array owns, and its old value is dead only when `Result` is stored
+// back into ITS cell (`railWindowStoredBack`) — a source cell keeps its rail
+// whatever its SSA deadness. Any other operand asks `railIsUserData`.
+bool qqTargetIsUserData(const llvm::Value *Result, const llvm::Value *Op);
+
 // THE ONE SPELLING of "operand `V` is dead after `BO` on the current IR" that
 // `recordDeadQQOperands` records (every other user provably before `BO`, not a
 // φ, not re-read by a later trip). Exposed for the pre-detection register

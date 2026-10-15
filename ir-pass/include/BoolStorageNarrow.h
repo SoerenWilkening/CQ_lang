@@ -86,7 +86,17 @@ bool narrowBoolStoragePhis(llvm::Function &F, TaintSet &taint,
 // peel left that read to `adjudicateTaintDelta`, which declines without placing.
 // Idempotent: the peel's later call finds nothing left. The caller re-propagates
 // in full (`taint = propagate(M, wd)`), the pre-pass house rule.
+// bd 01po.19 S5: it also rewrites, in a function with a `!cq.railwindow` handle
+// array, every `icmp eq/ne (zext i1 X), (zext i1 Y)` reached from a cell read
+// into `xor i1 X, Y` (`eq`: its negation) — the `_Bool` spelling of `q[i] ^=
+// q[j]` (design §4 interface (a)); see `boolCompareXor`.
 bool narrowBoolStorageModule(llvm::Module &M, TaintSet &taint);
+
+// THE ONE SPELLING of "`V` is the `_Bool` compare form of an `i1` xor":
+// `icmp eq/ne (zext i1 X), (zext i1 Y)`. Fills `X`, `Y` and `Negated` (`eq`).
+// Asked by the S5 rewrite above and by the window's needs list (RailWindow.h).
+bool boolCompareXor(const llvm::Value *V, llvm::Value *&X, llvm::Value *&Y,
+                    bool &Negated);
 
 }  // namespace cq
 

@@ -266,8 +266,8 @@ Outcome decideNext(Function &F, WidthDispatch &wd, TaintSet &taint,
     // `!cq.qq.dead` record) and a user-data rail. (`x ^= x` reads `x` twice, so
     // it is never dead: the `0` is a fresh rail.)
     SmallVector<unsigned, 2> Eligible;
-    for (unsigned Idx = 0; Idx < 2; ++Idx)
-      if ((S.Mask >> Idx & 1u) && railIsUserData(S.C->getArgOperand(Idx)))
+    for (unsigned Idx = 0; Idx < 2; ++Idx)  // a cell: bd 01po.19 S5
+      if ((S.Mask >> Idx & 1u) && qqTargetIsUserData(S.C, S.C->getArgOperand(Idx)))
         Eligible.push_back(Idx);
     // (E2′) bd dm7f.77 — design D5 ("%8 then in place on f's rail"): a dead
     // FRESH register-condition TEMPLATE (the commit tag: the out-of-place xor the

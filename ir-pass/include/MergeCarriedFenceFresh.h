@@ -39,8 +39,12 @@
 // ⚠ THE STORE SKIP RELIES ON `handleAliases` (R11 round-1 note, reviewer A):
 // `freshAt` skips a store user unconditionally because `handleAliases` has
 // already REFUSED (returned false, so not fresh) any store that is not a park
-// into a proven rail bank, and has put that bank's cell loads into the class.
-// Loosen `handleAliases`' memory clause and this skip becomes unsound.
+// into a proven rail bank OR a `!cq.railwindow` window array (bd 01po.19 S5),
+// and has put that bank's cell loads — for a window array, its whole family:
+// every cell read and every stored rail — into the class. A park moves no
+// state, and every later coupling of the parked rail is a use of one of those
+// cell reads, so it is still seen. Loosen `handleAliases`' memory clause any
+// further and this skip becomes unsound.
 
 #ifndef CQ_IRPASS_MERGE_CARRIED_FENCE_FRESH_H_
 #define CQ_IRPASS_MERGE_CARRIED_FENCE_FRESH_H_
