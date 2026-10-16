@@ -921,6 +921,9 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // nothing else did; a no-op when `taint.Round1RailGrants` is empty, which is
   // every module with no bounded quantum loop reading a loop-invariant register.
   declineRound2FalsifiedRailGrants(M, taint, wd);
+  // bd 01po.19.34.2 — the L1 re-ask of nested iteration-local grants; same slot
+  // contract, both entry points.
+  declineFalsifiedNestedIterLocalGrants(M, taint);
   // bd `test_C_libtooling-vsfp` (P1) / bd `tzfa` (P1) — THE PHANTOM READ,
   // RESOLVED: the observing half of `dropDeadCallArguments` (its slots A and B
   // above), with the specializer's record of the SAME liveness predicate
@@ -1539,6 +1542,9 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // nothing else did; a no-op when `taint.Round1RailGrants` is empty, which is
   // every module with no bounded quantum loop reading a loop-invariant register.
   declineRound2FalsifiedRailGrants(M, taint, wd);
+  // bd 01po.19.34.2 — the L1 re-ask of nested iteration-local grants; same slot
+  // contract, both entry points.
+  declineFalsifiedNestedIterLocalGrants(M, taint);
   // bd `test_C_libtooling-vsfp` / bd `tzfa` — the phantom-read resolution
   // (neutralise, then decline what the twin does not compute), mirrored in this
   // entry point too (twin-pipeline parity is MANDATORY, WI-1.12). Same slot, last

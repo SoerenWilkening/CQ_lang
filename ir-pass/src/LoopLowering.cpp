@@ -1838,6 +1838,12 @@ std::vector<BreakEscape> &breakEscapeLedger() {
   return Ledger;
 }
 
+// bd 01po.19.34.2 — see LoopPlan.h. Same pattern (no new `TaintSet` field).
+std::vector<NestedIterLocalGrant> &nestedIterLocalGrants() {
+  static std::vector<NestedIterLocalGrant> Ledger;
+  return Ledger;
+}
+
 // bd 8h7d.17 — see LoopPlan.h. Post-order DFS, so a link follows its operands.
 bool breakEscapeCone(Value *V, const PHINode *CounterPhi, const BasicBlock *Body,
                      const TaintSet &taint, SmallVectorImpl<Instruction *> &Cone) {
@@ -3583,8 +3589,11 @@ static bool namesQubit(const Value *V, const TaintSet &taint, bool Nested) {
 
 static bool iterationLocalQualifies(Loop *L, const TaintSet &taint,
                                     LoopInfo &LI, bool &AnyTainted,
-                                    bool Nested = false) {
+                                    bool Nested = false,
+                                    bool *AdmittedSubloop = nullptr) {
   AnyTainted = false;
+  if (AdmittedSubloop)
+    *AdmittedSubloop = false;
   if (taintedExit(L, taint))
     return false;  // Q1 quantum-bounded — never Case B.
   // A strictly-deeper SUBLOOP with quantum content is a NESTED quantum loop.
@@ -3635,6 +3644,8 @@ static bool iterationLocalQualifies(Loop *L, const TaintSet &taint,
     if (!iterationLocalQualifies(SL, taint, LI, Dummy, /*Nested=*/true))
       return false;
     AnyTainted = true;
+    if (AdmittedSubloop)
+      *AdmittedSubloop = true;
   }
   BasicBlock *Header = L->getHeader();
   for (BasicBlock *BB : L->blocks()) {
@@ -3692,13 +3703,27 @@ static bool iterationLocalQualifies(Loop *L, const TaintSet &taint,
 
 bool markIfIterationLocal(Loop *L, TaintSet &taint, LoopInfo &LI) {
   bool AnyTainted = false;
-  if (!iterationLocalQualifies(L, taint, LI, AnyTainted))
+  bool Nested = false;
+  if (!iterationLocalQualifies(L, taint, LI, AnyTainted, /*Nested=*/false,
+                               &Nested))
     return false;
   if (!AnyTainted)
     return false;  // a purely-classical loop — leave it byte-identical.
   // Every block, subloops included: a quantum subloop qualified on its own.
   for (BasicBlock *BB : L->blocks())
     taint.IterationLocalBlocks.insert(BB);
+  // bd 01po.19.34.2 (R11 round 1 A-F2, CLAUDE.md L1) — THE RECORD. This grant
+  // may be answered at ROUND-1 taint (inside `lowerLoops`, or the round-1
+  // `collapseFlattenedLoopRails`), and the marking is additive and never
+  // withdrawn; a value only `repropagateControlMerges` taints can later cross
+  // the subloop boundary. Every grant that ADMITTED a quantum subloop is
+  // recorded and re-asked at final taint by
+  // `declineFalsifiedNestedIterLocalGrants`. Single-level grants keep their
+  // pre-existing (un-re-asked) status — not widened, not closed here.
+  if (Nested)
+    nestedIterLocalGrants().push_back(
+        {WeakTrackingVH(L->getHeader()),
+         WeakTrackingVH(L->getHeader()->getParent())});
   return true;
 }
 
@@ -5809,6 +5834,10 @@ constexpr char kMsgLoopLeakDephases[] =
 // and `peelInPlaceBase`'s pre-lowering vocabulary would no longer match) and
 // BELOW the round-2 fixpoint (the whole point). Moving it either way makes it a
 // silent no-op.
+// bd 01po.19.34.2 — a nested iteration-local grant refused at final taint.
+constexpr char kMsgNestedGrantFalsified[] =
+    "cq loop lowering: a nested quantum loop's iteration-local marking does "
+    "not hold at final taint";
 constexpr char kMsgRound1GrantFalsified[] =
     "cq loop lowering: round-1 iteration-local marking falsified by round-2 "
     "taint";
@@ -8010,6 +8039,50 @@ void declineUnmarkedRolledIterLocal(Module &M, TaintSet &taint) {
   }
 }
 
+// bd 01po.19.34.2 (R11 round 1 A-F2) — THE RE-ASK of every recorded nested
+// iteration-local grant, at FINAL taint, by CALLING the predicate that granted
+// it (Rule 14). The loop must still exist with the recorded header, and must
+// still qualify with every quantum subloop qualifying on its own; anything else
+// is a loud decline, never a withdrawal (the marking has already been read).
+void declineFalsifiedNestedIterLocalGrants(Module &M, TaintSet &taint) {
+  auto &Ledger = nestedIterLocalGrants();
+  if (Ledger.empty())
+    return;
+  for (const NestedIterLocalGrant &G : Ledger) {
+    if (isa_and_nonnull<BasicBlock>(G.Header))
+      continue;
+    auto *F = dyn_cast_or_null<Function>(G.Fn);
+    if (!F || F->isDeclaration() || F->empty())
+      continue;  // the whole function is gone — nothing is emitted from it.
+    diagnose(F->getEntryBlock().getTerminator(), kMsgNestedGrantFalsified);
+    return;
+  }
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    bool Any = false;
+    for (const NestedIterLocalGrant &G : Ledger)
+      if (auto *H = dyn_cast_or_null<BasicBlock>(G.Header))
+        Any = Any || H->getParent() == &F;
+    if (!Any)
+      continue;
+    DominatorTree DT(F);
+    LoopInfo LI(DT);
+    for (const NestedIterLocalGrant &G : Ledger) {
+      auto *Hdr = dyn_cast_or_null<BasicBlock>(G.Header);
+      if (!Hdr || Hdr->getParent() != &F)
+        continue;
+      Loop *L = LI.getLoopFor(Hdr);
+      bool AnyTainted = false;
+      if (!L || L->getHeader() != Hdr ||
+          !iterationLocalQualifies(L, taint, LI, AnyTainted)) {
+        diagnose(Hdr->getTerminator(), kMsgNestedGrantFalsified);
+        return;  // `diagnose` EXITS on the first DS_Error (bd `br4a`).
+      }
+    }
+  }
+}
+
 void lowerLoops(Module &M, WidthDispatch &wd, TaintSet &taint) {
   // bd `test_C_libtooling-tu9q` — clause (ii-d)'s obligation ledger is cleared
   // HERE, unconditionally and before anything can write it, so a second module in
@@ -8020,6 +8093,7 @@ void lowerLoops(Module &M, WidthDispatch &wd, TaintSet &taint) {
   // Same discipline, and the same reason, as bd `bbu0`'s deferred slot.
   exitDischargeObligations().clear();
   breakEscapeLedger().clear();  // bd 8h7d.17: same discipline, same reason.
+  nestedIterLocalGrants().clear();  // bd 01po.19.34.2: same discipline.
   // The collected rotation call sites — the in-place-gate wire vocabulary the
   // peel + closure consult (same seed as `declineClassicalMuxes`).
   SmallPtrSet<CallInst *, 32> GateCalls;
