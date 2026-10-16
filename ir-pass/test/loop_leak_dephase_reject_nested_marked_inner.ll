@@ -64,13 +64,16 @@
 ; now CALLS the subloop clause of `iterationLocalQualifies` (one spelling) with the
 ; rail roots admitted, so the OUTER body is certified rail-local and its per-trip
 ; `lshr` copies of `y` are reversed and freed IN THE TRIP — the rails whose leak this
-; file existed to refuse. THE PROPERTY IS PINNED BY THE CHECKS BELOW (every `lshr`
-; copy in `@slice` is followed by its own `_unc` and `cqrt_free`), NOT by an output
-; statistic (R11 round 1 rA1B-F1/F2, R17): under the trace runtime `cqrt_ry_i32`
-; rotates the low bit, and the copies `y >> i` (i >= 1) carry no bit-0
-; information, so the scratch replay gives the SAME distribution with the
-; discharges deleted from the trace as with them (measured; the first edit of this
-; header quoted P(bit 0 of y = 1) as "P(y=5)", a number the leak cannot move).
+; file existed to refuse. THE WITNESSING STATISTIC (R11 round 2 rA2-F2; corrected
+; text — the first two edits of this header used a replay that rotated only the
+; low bit, but `cqrt_ry_i32` applies Ry to EVERY qubit of the register, backend.md
+; §11.3): a bit k of `y` that no measured copy reads (k = 3 for instance) is, in
+; the final `cq_measure(y)`, 1 with probability sin^2((.5+.9)/2) = 0.415016 when
+; the `lshr` copies are discharged (bit k stays coherent through both Ry), and
+; cos^2(.25) sin^2(.45) + sin^2(.25) cos^2(.45) = 0.227243 when they leak (a copy
+; `y >> i` records bit k and dephases it) — the round-1 reviewer's numbers,
+; derived per qubit (each qubit is a product factor; the 2^32-branch register is
+; beyond the scratch replay). The CHECKs below pin the per-copy `_unc` + free.
 ; Replay of this lowering: every freed rail |0>, stage 2b 2 sites verified / 0
 ; violations / 0 unproven. The leak fence (`declineDephasingUnmarkedLoopRails`) is
 ; unchanged and still pinned by the single-level loop_leak_dephase_reject_* files.

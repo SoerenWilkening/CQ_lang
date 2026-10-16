@@ -8,15 +8,12 @@
    `cqrt_free`). The inner v-loop's phase regions read the register through the
    compare flag (minted, `cqrt_rz_i1`, stripped, freed).
 
-   ANALYTIC CHECK (scratch state-vector replay of THIS golden; no simulator in
-   the repo, owner decision 2026-06-10). `a` = cos(.5)|0> + sin(.5)|1> on its low
-   bit. Branch a=0: c = 0, 0, 1 at the three trips' compares, then 0^0, 0^1, 0^2
-   added -> c = 3. Branch a=1: c = 0, 1, 1, adding 1^0, 1^1, 1^2 -> c = 4. On
-   every trip, on each branch, exactly one of the two compares is true, so the
-   trip's two kicks (e^{+i.15} on a true flag, e^{-i.15} on a false one) multiply
-   to 1 on both branches: no relative phase. Final state
-   0.877583|a=0,c=3> + 0.479426|a=1,c=4> (= cos .5, sin .5; replayed amplitudes
-   real and positive), P = 0.770151 / 0.229849. Every `cqrt_free` frees a |0> rail (the 6 compare
+   ANALYTIC CHECK (corrected R11 round 2 rA2-F2: `cqrt_ry_i32` rotates EVERY qubit
+   of `a`, backend.md §11.3; the first text used a low-bit-only replay). Each bit of
+   `a` is 1 independently with probability sin^2(.5) = 0.229849. On each basis
+   branch c = (a^0) + (a^1) + (a^2) (mod 2^32): a = 0 -> 3, a = 1 -> 4, in general
+   determined by a; the compare kicks are diagonal, so the measured pair (c, a)
+   has exactly a's product distribution. Every `cqrt_free` frees a |0> rail (the 6 compare
    flags and the 3 xor rails, 9 of 9). The register h1 is MEASURED, never freed
    (R5); h0 (the user's `a`) stays allocated. The trace-only runtime measures 0,
    so the program prints `0 0`. */

@@ -41,15 +41,19 @@
 ; anchor, outside the subloop); the subloop only reads it, and the flag it mints
 ; there is stripped and freed per inner trip. (The comment that claimed "a root is
 ; never reversed" was corrected with this file.)
-; ANALYTIC CHECK (scratch state-vector replay of this lowering, linked and run):
-; y = Ry(.8) on its low bit, so P(y=1) = sin^2(.4) = 0.151647, and then p = 3 equals
-; no v: every cell stays 0 ("10000"). For y = 0, p = 0 matches v = 0 only: cell i
-; gets 2 asin(sqrt(min(2/(4-i), 1))), i.e. P(q0=1) = 1/2, P(q1=1) = 2/3, q2 = q3 = 1:
-; "00011" 0.141392, "00111" 0.282784, "01011" 0.141392, "01111" 0.282784 — exactly
-; the replay (the `c == 2` kickback is diagonal and moves none of them). Every freed
-; rail |0>; stage 2b 5 sites verified / 0 violations / 0 unproven; CENSUS 3
-; rail-mint sites left allocated (y, the cells, the dead counter — WARN), 0
-; template rails dirty.
+; ANALYTIC CHECK (rewritten for R11 round 2 rA2-F2: `cqrt_ry_i32` rotates EVERY
+; qubit of `y`, backend.md §11.3; the first version replayed a low-bit-only model).
+; `y` = Ry(.8) on each of its 32 qubits from |0>: every bit is 1 independently with
+; probability sin^2(.4) = 0.151647. `p = 3y mod 2^32` equals some v in {0,1,2} only
+; for y = 0 (p = 0), y = 0xAAAAAAAB (p = 1) and y = 0x55555556 (p = 2, angle 0: no
+; rotation), with probabilities 0.00518152, 1.0e-15 and 5.6e-15. So the cells stay
+; 0000 with probability 1 - P(y=0) - P(y=0xAAAAAAAB) = 0.994818; on y = 0 they are
+; rotated as F5's v = 0 row (P(q0=1) = 1/2, P(q1=1) = 2/3, q2 = q3 = 1); the `c == 2`
+; kickback is diagonal and changes no measured probability. The point of the file
+; is the multiplicity, pinned by the CHECKs: `p`'s forward and `_unc` exactly once,
+; outside the subloop. Stage 2b on this lowering: 5 sites verified / 0 violations /
+; 0 unproven; CENSUS 3 rail-mint sites left allocated (y, the cells, the dead
+; counter — WARN), 0 template rails dirty.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.ll 2> %t.err
 ; RUN: %filecheck %s --check-prefix=WARN < %t.err

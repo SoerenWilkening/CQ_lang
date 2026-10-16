@@ -12,8 +12,8 @@
 ; `!cq.inplace.qq` (Mogensen `x += y`, BennettVM.jl 23d28e6
 ; src/ir/arithmetic_assignment.jl; Bennett.jl 824458d1 src/adder.jl:96).
 ;
-; ANALYTIC CHECK. `q` is |s⟩ rotated by Ry(0.25) on its low bit, a superposition
-; of two integers q₀, q₁. After n trips the register holds n·q (mod 2^32) on each
+; ANALYTIC CHECK. `q` is |s⟩ with Ry(0.25) on every qubit (backend.md §11.3), a
+; superposition of 32-bit integers. After n trips the register holds n·q (mod 2^32) on each
 ; branch, which is `acc`; on the zero-trip edge it holds 0 = the seed, and the
 ; exit φ's guard incoming (the seed `0`) is renamed to the register, so the one
 ; measure reads `%cq.acc` on both paths. The register is measured, never freed

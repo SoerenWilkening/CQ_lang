@@ -37,7 +37,8 @@ namespace cq {
 // `owner-ruling-r2j3-7-main-dead-record-2026-10-16`) allows no such record to
 // stand at a later non-diagonal gate on one of those rails: it dephases them
 // (measured on `int c=0; for(..) { if (c==1) cq_phi(.5); c += a; }
-// cq_theta(&a,.7)`: P(a=1) 0.293 against the program's 0.531). A record still
+// cq_theta(&a,.7)`: P(bit 0 of a = 1) 0.293 against the program's 0.318, per
+// qubit with Ry on every qubit, backend.md §11.3). A record still
 // READ on every path after the gate is the program's own entanglement (lyyf).
 // Left allocated with no such gate it changes no measured statistic (R5).
 //
@@ -63,7 +64,11 @@ namespace cq {
 //     a LATER trip, before that trip's step ([rA1B-F3]): for a root always, for
 //     a cell only if an EARLIER trip's step may have recorded that very cell
 //     (`cellMayBeRecorded`, SCEV over `L`; a cell of the gate's own trip that
-//     the step reads after it is not yet recorded — F5's shape).
+//     the step reads after it is not yet recorded — F5's shape). ⚠ WITHIN ONE
+//     ENTRY OF `L` ONLY (R11 round 2 rA2-F4): a loop re-entered by a parent
+//     leaves the previous entry's register dead at re-entry, and a move in the
+//     next entry is not asked — the silent bd r2j3.44 (not fixed, owner
+//     directive owner-directive-overdeclines-only-2026-10-16).
 // No hazard and `H` dead after its loop: left allocated (R5) and REPORTED, a
 // lyyf-class DS_Warning `kMsgDeadAccumulatorLeft`; `opt` exits 0.
 // RETIREMENT TRIGGER: bd 8h7d.20's post-loop reverse loop uncomputes the

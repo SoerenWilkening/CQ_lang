@@ -21,8 +21,10 @@
 ; ruling), so no measured statistic changes. The register cannot be reversed in
 ; the rolled form yet, so it is LEFT ALLOCATED (R5: never freed, not provably
 ; |0>) and the pass says so on stderr (lyyf class, DS_Warning; `opt` exits 0).
-; ANALYTIC: a = cos(.5)|0> + sin(.5)|1> on its low bit; the measured pair is
-; (a, 3a): P(0,0) = 0.770151, P(1,3) = 0.229849; `%cq.acc` ends holding 3a.
+; ANALYTIC: `cqrt_ry_i32` rotates every qubit of `a` (backend.md §11.3), so each
+; bit of `a` is 1 independently with probability sin^2(.5) = 0.229849; the measured
+; pair is (a, 3a mod 2^32), and `%cq.acc` ends holding 3a. (Corrected R11 round 2
+; rA2-F2: an earlier text used a low-bit-only model.)
 ; RETIREMENT TRIGGER: bd 8h7d.20's post-loop reverse loop uncomputes `%cq.acc`
 ; after the loop; the warning then disappears and a `cqrt_free(%cq.acc)` appears.
 ;

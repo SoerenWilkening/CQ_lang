@@ -13,8 +13,11 @@
 ; argc = 3; the stage-2b rail pairing: 2 free sites verified, 0 violations, 0 unproven).
 ; Per trip i: flag = (q > i); `%out` = flag ? 2 : 1 (fresh |0> rail, two controlled
 ; xor-immediates); `cqrt_add_i32(%out, acc)`; `%out` and the flag reversed and freed in the
-; trip. q = Ry(0.7)|0> on its low bit: q = 0 adds 1,1,1 -> acc 3; q = 1 adds 2,1,1 ->
-; acc 4. Replayed: 0.939373|q=0,acc=3> + 0.342898|q=1,acc=4> (= cos .35, sin .35), every
+; trip. `cqrt_ry_i32` rotates every qubit of q (backend.md §11.3), so q is a
+; superposition of all 32-bit values; on each branch acc = 3 + #{i < argc : q > i}
+; (signed), e.g. q = 0 -> 3, q = 1 -> 4, q < 0 -> 3. The argc = 3 trace was first
+; replayed under a low-bit-only model (two branches, corrected R11 round 2 rA2-F2);
+; the per-branch value and the clean frees below do not depend on that model, every
 ; freed rail |0>. The register is measured, never freed.
 ;
 ; Caller TU (clang -O1 -include CQ.h):

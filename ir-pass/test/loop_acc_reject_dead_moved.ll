@@ -21,8 +21,11 @@
 ; `a`; `cq_theta(&a, .7)` then moves `a` non-diagonally. A dead record standing at
 ; that gate dephases `a` (dead-record-live-across-move-ruling; owner ruling
 ; r2j3.7): MEASURED with the postcondition removed, the module lowered
-; verify-clean and the trace replays to P(a=1) = 0.293377 where the program's
-; circuit gives 0.531 (|cos .5 sin .35 + e^{i·.5} sin .5 cos .35|²). The
+; verify-clean, and with Ry on every qubit of `a` (backend.md §11.3) the leaked
+; record makes P(bit 0 of the final a = 1) = cos^2 .5 sin^2 .35 + sin^2 .5 cos^2 .35
+; = 0.293377 where the program's circuit gives 0.318428 (bit 0 coherent through
+; both Ry, plus the `c == 1` phase on the one branch a = 1; derived per qubit — the
+; text first quoted 0.531 from a low-bit-only replay, corrected R11 round 2). The
 ; register cannot be reversed in the rolled form yet (the post-loop reverse loop,
 ; bd 8h7d.20), so the module fails loudly at the gate.
 ; RETIREMENT TRIGGER: 8h7d.20's reverse loop uncomputes `c` after the loop and
