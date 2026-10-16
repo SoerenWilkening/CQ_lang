@@ -37,7 +37,7 @@
 #include "SpecializeDetect.h"
 #include "SpecializeGateInline.h"  // inlineGateSubroutines (bd p3kd.21)
 #include "SpecializePlan.h"
-#include "SpecializeTailHoist.h"  // hoistLiftedTailChains (bd r2j3.37)
+#include "SpecializeLiftTag.h"    // stripForgedConsumeMarks (bd r2j3.37.1)
 #include "StageList.h"           // runLoopPrepasses / runControlChain (bd p3kd.7.8)
 #include "Specialization.h"
 #include "SwapRouteEmit.h"
@@ -173,13 +173,9 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   if (unifyTaintedReturns(M, taint, /*Delta=*/nullptr))
     taint = propagate(M, wd);
 
-  // bd `test_C_libtooling-r2j3.37` — a lifted call's RETURN CHAIN moves to the
-  // caller when it would overwrite a dead quantum argument
-  // (SpecializeTailHoist.h), so main's in-place round decides it. BEFORE slot A
-  // of the dead-argument drop, which then nulls the sources' unread slots, and
-  // before every stage that reads the call. No guard has run: re-`propagate`.
-  if (hoistLiftedTailChains(M, taint, wd))
-    taint = propagate(M, wd);
+  // bd r2j3.37.1 — the lift-site tag and the consuming clone's marks are written
+  // only by this pass (SpecializeLiftTag.h): strip any the input carries.
+  stripForgedConsumeMarks(M);
 
   // bd `test_C_libtooling-vsfp` (P1) / bd `hgwx` — THE DEAD CALL-ARGUMENT DROP
   // (`SpecializeDetect.h`), SLOT A of two. An integer/fp argument whose callee
@@ -493,15 +489,6 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // record is metadata on an ALLOCA, never on a load), and each is an
   // accept-only normaliser. Idempotent with slot A: every argument slot A
   // dropped is a constant, and constants are never revisited.
-  //
-  // bd r2j3.37 — the return-chain hoist's SECOND slot, right before slot B (so
-  // the drop nulls its sources' unread slots too): a lift site the gate-
-  // subroutine inliner's first phase exposed (`g(t,a){ cq_phi(.3); return
-  // f(t,a); }` inlined into `main`) did not exist at the first slot.
-  // Idempotent: a hoisted site is gone, and a source's chain is a leaf. What it
-  // still cannot see fails loudly at the late backstop (SpecializeTailHoist.h).
-  if (hoistLiftedTailChains(M, taint, wd))
-    taint = propagate(M, wd);
   if (dropDeadCallArguments(M, taint))
     taint = propagate(M, wd);
 
@@ -513,11 +500,6 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // volatile folds) do not see code this phase inlines; such code reaches their
   // loud downstream owners instead (a gap, disclosed in bd p3kd.21).
   while (inlineGateSubroutines(M, taint, GateSt, /*CrossCallResults=*/true))
-    taint = propagate(M, wd);
-  // bd r2j3.37 — the hoist's THIRD slot: a lift site this phase inlined. After
-  // slot B, so a source's unread slot is neutralised later, by
-  // `resolvePhantomCloneArgReads` (the record of the built clone).
-  if (hoistLiftedTailChains(M, taint, wd))
     taint = propagate(M, wd);
 
   // bd 3c6m.51 — x86_fp80 union-promotion peephole (Fp80Union.cpp): the ld80 libm
@@ -1235,13 +1217,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
     onlyInF(taint.PhaseCalls);
     onlyInF(taint.MeasureCalls);
   }
-  if (hoistLiftedTailChains(M, taint, wd)) {  // bd r2j3.37 — see run().
-    taint = propagate(M, wd);
-    onlyInF(taint.ThetaCalls);
-    onlyInF(taint.PhiCalls);
-    onlyInF(taint.PhaseCalls);
-    onlyInF(taint.MeasureCalls);
-  }
+  stripForgedConsumeMarks(M);  // bd r2j3.37.1 — see run().
 
   // bd `test_C_libtooling-vsfp` — the dead call-argument drop's SLOT A, mirrored
   // in this entry point too (twin-pipeline parity is MANDATORY, WI-1.12). FIRST,
@@ -1363,14 +1339,6 @@ bool CQLoweringPass::runOnFunction(Function &F) {
     onlyInF(taint.MeasureCalls);
   }
 
-  // bd r2j3.37 — the hoist's second slot, mirrored (see run()).
-  if (hoistLiftedTailChains(M, taint, wd)) {
-    taint = propagate(M, wd);
-    onlyInF(taint.ThetaCalls);
-    onlyInF(taint.PhiCalls);
-    onlyInF(taint.PhaseCalls);
-    onlyInF(taint.MeasureCalls);
-  }
   // bd `test_C_libtooling-vsfp` round 2 — the drop's SLOT B, mirrored in this
   // entry point (twin-pipeline parity, WI-1.12). See run() for why two slots.
   if (dropDeadCallArguments(M, taint)) {

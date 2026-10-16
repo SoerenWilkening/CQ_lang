@@ -30,7 +30,7 @@
 // reverse order. Both carry `cq-consume-dst`=k (`isConsumingCloneCall`).
 //
 // WHEN. `buildConsumingCandidates` runs in `specialize()` on each top-level lift
-// site the gate tags (SpecializeTailHoist.h), after the site is retargeted, and
+// site `specialize()` tags (SpecializeLiftTag.h), after the site is retargeted, and
 // builds one candidate per handle slot of the chain (the slot that is consumed
 // is decided late), appending each to the site's `!cq.lift.tail.owed` tag as
 // `!{i32 k, i32 reason, ptr consumer-or-null}`. The DECISION is the in-place
@@ -59,7 +59,8 @@ enum class ConsumeReason : unsigned {
   Ok = 0,
   SelfDependent = 1,  // kMsgInPlaceQQSelfDependent
   NotInPlace = 2,     // kMsgInPlaceQQRefused (subtrahend; no in-place symbol)
-  Unsupported = 3,    // kMsgLiftTailUnhoisted (a chain shape not built)
+  Unsupported = 3,    // kMsgLiftTailUnhoisted (owed, not built: no plan,
+                      // an effectful body, ...)
 };
 
 // Every function this builds (consumers, twins, sources, source clones) carries

@@ -106,6 +106,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringRef.h"
 
+#include <cstdint>
 #include <string>
 
 namespace llvm {
@@ -169,6 +170,11 @@ bool inPlaceQQReadsSource(const llvm::CallInst *G, const llvm::Value *V);
 // The adjoint callee of a consuming clone (`f_c0` <-> `f_c0_unc`): the one
 // spelling, asked by EmitInverse and the postcondition.
 std::string consumingCloneAdjointName(llvm::StringRef Name);
+// bd r2j3.37.1 R11 r1 (rL1C-F3): THE ONE RULE for "a value filling more than one
+// handle slot of the call is read twice there" — never a consume target (the
+// inlined `t + t` keeps `t` live: `readsTwice`). Asked at candidate build and at
+// the late eligibility, so the decisions cannot disagree.
+bool consumeSlotReadsTwice(const llvm::CallInst &CI, unsigned K, uint64_t Handles);
 // Is `I` the adjoint of the in-place gate `G` on the same operands?
 bool isInPlaceQQAdjointOf(const llvm::CallInst *I, const llvm::CallInst *G);
 
@@ -194,9 +200,9 @@ bool qqOperandDeadAfter(llvm::Value *V, llvm::BinaryOperator *BO,
 // The record's two bits for operand `V` read at `At`: 1 = dead after `At`
 // (`qqOperandDeadAfter`), 4 = dead by its own users but a φ not provably one
 // wire, 0 = live. `recordDeadQQOperands` shifts them per operand slot. bd
-// r2j3.37: the lifted-call tail hoist (SpecializeTailHoist.h) asks it of a CALL
-// `At`, the position its hoisted op will take; only a BinaryOperator `At` that
-// reads `V` twice (`x ^ x`) is refused for that reason alone.
+// r2j3.37.1: the consuming-clone decision asks it of a CALL `At` (the lifted
+// call's position); only a BinaryOperator `At` that reads `V` twice (`x ^ x`)
+// is refused for that reason alone (a call's two slots: `consumeSlotReadsTwice`).
 unsigned qqDeadRecordBits(llvm::Value *V, llvm::Instruction *At,
                           const llvm::DominatorTree &DT,
                           const llvm::LoopInfo &LI);
@@ -226,7 +232,7 @@ bool qqSourceDependsOnTarget(llvm::Value *S, const llvm::Value *P,
                              const llvm::DominatorTree &DT);
 
 // E3 of the round, exported for the lifted-call backstop (bd r2j3.37,
-// SpecializeTailHoist.h): does the result `R` survive (InPlaceQQ.cpp `survives`)?
+// SpecializeConsume.h): does the result `R` survive (InPlaceQQ.cpp `survives`)?
 bool qqResultSurvives(const llvm::CallInst *R, const TaintSet &taint,
                       llvm::Function &F, llvm::PostDominatorTree &PDT);
 

@@ -1,6 +1,7 @@
 // SpecializeTailPlan.h — the RETURN-CHAIN PLAN of a lifted callee and its
-// SOURCE functions (bd test_C_libtooling-r2j3.37; SpecializeTailHoist.h holds the
-// mechanism and its argument). Header-only: one client, the hoist.
+// SOURCE functions (bd test_C_libtooling-r2j3.37.1; SpecializeConsume.h holds
+// the mechanism and its argument). Header-only: the consuming-clone builder and
+// the lift-site tag are its clients.
 //
 // A plan is the callee's returned value read as an expression tree: `Op` nodes
 // are xor/add/sub (`isQQStemOpcode`) at an integer width <= 64 with at least one
@@ -109,13 +110,6 @@ public:
     return cloneReturning(*P.F, [&](ValueToValueMapTy &VMap, ReturnInst *Ret) {
       IRBuilder<> B(Ret);
       return emitInto(P, I, VMap, B, *Ret->getFunction());
-    });
-  }
-
-  // A copy of `F` returning zero: keeps a non-trivially-dead call's effects.
-  Function *zeroSrc(Function &F) {
-    return cloneReturning(F, [&](ValueToValueMapTy &, ReturnInst *) -> Value * {
-      return Constant::getNullValue(F.getReturnType());
     });
   }
 
@@ -288,17 +282,86 @@ inline void argNos(const Plan &P, int I, SmallVectorImpl<unsigned> &Out) {
   }
 }
 
-// A body with no side-effecting instruction and no cycle has no effect but its
-// return (the attributes `-O1` would infer, asked of hand IR that lacks them).
-inline bool effectFree(Function &F) {
+// bd r2j3.37.1 R11 r1 (rL1C-F2 / rL1A-F2): may a consuming clone stand for `F`?
+// Its body applies ONLY the return chain, and each source clone re-runs `F`; so
+// `F` must have no effect but its return value: no cycle (termination), no
+// instruction that may have a side effect, and every call either side-effect
+// free itself or to a defined callee that satisfies this too (the hand IR
+// `-O1`'s attribute inference never saw). Asked at candidate build; a body that
+// fails is not consumed (loud when owed).
+inline bool consumableBody(const Function &F,
+                           SmallPtrSetImpl<const Function *> &Stack) {
+  if (F.isDeclaration() || !Stack.insert(&F).second)
+    return false;
   SmallVector<std::pair<const BasicBlock *, const BasicBlock *>, 2> Back;
   FindFunctionBackedges(F, Back);
-  if (!Back.empty())
-    return false;
-  for (Instruction &I : instructions(F))
-    if (I.mayHaveSideEffects())
-      return false;
-  return true;
+  bool OK = Back.empty();
+  for (const Instruction &I : instructions(F)) {
+    if (!OK || !I.mayHaveSideEffects())
+      continue;
+    const auto *CI = dyn_cast<CallInst>(&I);
+    const Function *G = CI ? CI->getCalledFunction() : nullptr;
+    OK = G && !G->isIntrinsic() && consumableBody(*G, Stack);
+  }
+  Stack.erase(&F);
+  return OK;
+}
+
+// bd r2j3.37.1 R11 r1 (rL1B-F1): the parameters `F`'s returned value reaches
+// through xor/add/sub (the opcodes the in-place rounds convert), across nested
+// calls whose own return reaches the parameter they bind (bit i = parameter i).
+// A PROPERTY OF THE SITE, independent of whether a plan exists: such a slot,
+// filled by a dead user register beside a kept result, is OWED in place — built
+// when the plan covers it, LOUD otherwise. Not through a cast: `(int)t ^ a`
+// reads `t` through a widening, which no in-place gate overwrites (as for the
+// inlined op, whose QQ round never sees `t` as an operand).
+inline uint64_t chainReachSlots(const Function &F,
+                                SmallPtrSetImpl<const Function *> &Stack);
+inline uint64_t chainReachValue(const Value *V, SmallPtrSetImpl<const Value *> &Seen,
+                                SmallPtrSetImpl<const Function *> &Stack) {
+  if (!Seen.insert(V).second)
+    return 0;
+  if (const auto *A = dyn_cast<Argument>(V))
+    return A->getArgNo() < 64 ? uint64_t(1) << A->getArgNo() : 0;
+  if (const auto *BO = dyn_cast<BinaryOperator>(V);
+      BO && isQQStemOpcode(BO->getOpcode()) && BO->getType()->isIntegerTy() &&
+      BO->getType()->getIntegerBitWidth() <= 64)
+    return chainReachValue(BO->getOperand(0), Seen, Stack) |
+           chainReachValue(BO->getOperand(1), Seen, Stack);
+  // (bd r2j3.37.3 widens this through select arms and φ incomings, the muxes a
+  // classical branch makes of chains, with the per-arm plan that lowers them.)
+  if (const auto *CI = dyn_cast<CallInst>(V)) {
+    const Function *H = CI->getCalledFunction();
+    if (!H || H->isIntrinsic() || H->isDeclaration() ||
+        CI->getFunctionType() != H->getFunctionType())
+      return 0;
+    const uint64_t Inner = chainReachSlots(*H, Stack);
+    uint64_t M = 0;
+    for (unsigned J = 0; J < CI->arg_size() && J < 64; ++J)
+      if (Inner >> J & 1)
+        M |= chainReachValue(CI->getArgOperand(J), Seen, Stack);
+    return M;
+  }
+  return 0;
+}
+inline uint64_t chainReachSlots(const Function &F,
+                                SmallPtrSetImpl<const Function *> &Stack) {
+  if (F.isDeclaration() || !Stack.insert(&F).second)
+    return 0;
+  // EVERY return must pass the parameter through: a path returning something
+  // else (`return 10;`) makes the result no permutation of it, so no in-place
+  // form exists and keeping the old register is the program (as inlined).
+  uint64_t M = ~uint64_t(0);
+  bool Any = false;
+  for (const BasicBlock &BB : F)
+    if (const auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
+      if (const Value *V = R->getReturnValue()) {
+        SmallPtrSet<const Value *, 32> Seen;
+        M &= chainReachValue(V, Seen, Stack);
+        Any = true;
+      }
+  Stack.erase(&F);
+  return Any ? M : 0;
 }
 
 

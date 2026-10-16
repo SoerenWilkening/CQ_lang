@@ -6,6 +6,7 @@
 
 #include "ControlledSymbols.h"  // isControlledXorc (bd dm7f.81)
 #include "EmitInverse.h"
+#include "InPlaceQQ.h"           // isConsumingCloneCall (bd r2j3.37.1)
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
 
@@ -70,6 +71,11 @@ GateKind classify(CallInst *CI, const SmallPtrSetImpl<CallInst *> &LiftedCalls) 
   if (!F)
     return GateKind::Skip;  // an indirect call in a lifted body is classical.
   StringRef N = F->getName();
+  // bd r2j3.37.1: a CONSUMING CLONE call is an in-place gate the wrap has no
+  // recipe for (no twin is ever built: a clone body never consumes, only
+  // top-level sites are tagged). Should one ever appear here, fail closed.
+  if (isConsumingCloneCall(CI))
+    return GateKind::Unknown;
   if (N.starts_with("__cq_q_"))
     return N.ends_with("_unc") ? GateKind::Unknown
            : LiftedCalls.count(CI) ? GateKind::Mint

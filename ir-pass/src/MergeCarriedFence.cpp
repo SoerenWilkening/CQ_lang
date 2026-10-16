@@ -73,7 +73,10 @@ bool slotAllowed(CallInst *C, unsigned S) {
   return N.starts_with("cqrt_rz") || N == "cqrt_x" || N == "cqrt_cnot" ||
          N == "cqrt_toffoli" || N == "cqrt_cswap" ||
          N.starts_with("cqrt_addc_") || N.starts_with("cqrt_xorc_") ||
-         isInPlaceQQGate(C) ||  // bd r2j3.33: a basis permutation, by TAG
+         // bd r2j3.33: a basis permutation, by TAG. A CONSUMING CLONE call (bd
+         // r2j3.37.1) cannot reach this row: it is minted in the late in-place
+         // round, after every merge emitter has run; the row is vacuous for it.
+         isInPlaceQQGate(C) ||
 
          N.starts_with("cqrt_copy_") || N == "cqrt_free" ||
          N.starts_with("cqrt_measure_") ||

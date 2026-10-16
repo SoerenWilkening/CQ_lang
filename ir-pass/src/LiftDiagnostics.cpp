@@ -37,7 +37,7 @@ SmallVector<SiteRecord, 4> &siteStack() {
 unsigned ScopeDepth = 0;
 
 // The math.h spelling of a bound bundle body or a clone of one, else the name.
-// A return-chain source `<f>__cqsrc<N>` (bd r2j3.37, SpecializeTailHoist.h) is
+// A return-chain source `<f>__cqsrc<N>` (bd r2j3.37.1, SpecializeConsume.h) is
 // the user's `f`: the user wrote that call.
 std::string userCalleeName(StringRef N) {
   N.consume_front("__cq_q_");

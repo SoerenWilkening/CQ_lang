@@ -7,7 +7,7 @@
 #include "EmitInverse.h"         // emitInverseCall
 #include "InPlaceQQ.h"           // kInPlaceQQTag / kConsumeDstAttr
 #include "OpcodeSupport.h"       // abiWidthFromType
-#include "SpecializeTailHoist.h" // kLiftTailOwedTag
+#include "SpecializeLiftTag.h"   // kLiftTailOwedTag
 #include "SpecializeTailPlan.h"
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
@@ -71,9 +71,9 @@ StringRef stemOf(Instruction::BinaryOps Opc) {
   return Opc == Instruction::Xor ? "xor" : Opc == Instruction::Add ? "add" : "sub";
 }
 
-// The consumer's (or, `Inverse`, its twin's) body. False: a gate has no symbol.
+// The consumer's body. False: a gate has no symbol.
 bool emitBody(Function &C, unsigned K, ArrayRef<Step> Steps, StringRef W,
-              const TaintSet &taint, WidthDispatch &wd, bool Inverse) {
+              const TaintSet &taint, WidthDispatch &wd) {
   LLVMContext &Ctx = C.getContext();
   BasicBlock *BB = BasicBlock::Create(Ctx, "", &C);
   ReturnInst *Ret = ReturnInst::Create(Ctx, BB);
@@ -82,7 +82,7 @@ bool emitBody(Function &C, unsigned K, ArrayRef<Step> Steps, StringRef W,
   SmallVector<Value *, 8> Args;
   for (Argument &A : C.args())
     Args.push_back(&A);
-  SmallVector<CallInst *, 4> Minted, Gates;
+  SmallVector<CallInst *, 4> Minted;
   for (const Step &S : Steps) {
     Value *Src = nullptr;
     if (S.K == Step::Param) {
@@ -99,26 +99,15 @@ bool emitBody(Function &C, unsigned K, ArrayRef<Step> Steps, StringRef W,
         Minted.push_back(SC);
       Src = SC;
     }
-    CallInst *G = nullptr;
     if (S.Quantum) {
       FunctionCallee Fn = wd.qqInPlaceFn(stemOf(S.Opc), W);
       if (!Fn)
         return false;
-      G = B.CreateCall(Fn, {Src, Dst});
-      G->setMetadata(kInPlaceQQTag, MDNode::get(Ctx, {}));
-    } else {
-      G = emitInPlaceImmediateGate(Ret, S.Opc, Dst, Src, W, wd);
-      if (!G)
-        return false;
+      B.CreateCall(Fn, {Src, Dst})
+          ->setMetadata(kInPlaceQQTag, MDNode::get(Ctx, {}));
+    } else if (!emitInPlaceImmediateGate(Ret, S.Opc, Dst, Src, W, wd)) {
+      return false;
     }
-    Gates.push_back(G);
-  }
-  if (Inverse) {  // the gates' adjoints in reverse, the owning recipes (R12).
-    for (auto It = Gates.rbegin(); It != Gates.rend(); ++It)
-      if (!emitInverseCall(B, *It, wd, /*CurHandle=*/nullptr, /*Rec=*/nullptr))
-        return false;
-    for (CallInst *G : Gates)
-      G->eraseFromParent();
   }
   for (auto It = Minted.rbegin(); It != Minted.rend(); ++It) {
     if (!emitInverseCall(B, *It, wd, nullptr, nullptr))
@@ -199,36 +188,35 @@ void buildConsumingCandidates(CallInst &Site, Function *OrigCallee,
                               ConsumeResolveFn Resolve, ConsumeTwinFn EnsureTwin) {
   MDNode *Tag = Site.getMetadata(kLiftTailOwedTag);
   Function *SiteClone = Site.getCalledFunction();
-  if (!Tag || Tag->getNumOperands() != 3 || !SiteClone || !OrigCallee)
+  if (!Tag || Tag->getNumOperands() != 1 || !SiteClone || !OrigCallee)
     return;
-  auto *KC = mdconst::dyn_extract<ConstantInt>(Tag->getOperand(2));
+  auto *KC = mdconst::dyn_extract<ConstantInt>(Tag->getOperand(0));
   const uint64_t Chain = KC ? KC->getZExtValue() : 0;
   const uint64_t Handles = taint.SpecHandleArgMask.lookup(SiteClone);
   Planner PL;
   Plan *P = PL.planFor(OrigCallee);
-  if (!P || !P->hoistable())
-    return;
+  SmallPtrSet<const Function *, 8> Stack;
+  // R11 r1 (rL1C-F2 / rL1A-F2): the body must have no effect but its return.
+  const bool Pure = consumableBody(*OrigCallee, Stack);
   LLVMContext &Ctx = Site.getContext();
   auto I32 = [&](uint64_t X) {
     return ConstantAsMetadata::get(ConstantInt::get(Type::getInt32Ty(Ctx), X));
   };
   SmallVector<Metadata *, 8> Ops(Tag->op_begin(), Tag->op_end());
   SmallVector<Value *, 8> SiteArgs(Site.args());
-  DominatorTree DT(*Site.getFunction());
-  LoopInfo LI(DT);
   for (unsigned K = 0; K < 64 && K < Site.arg_size(); ++K) {
-    // Only a slot whose operand can be consumed: a chain handle slot, its
-    // operand dead at the call (either record bit; E2 is the late round's).
     if (!(Chain >> K & 1) || !(Handles >> K & 1) ||
-        !qqDeadRecordBits(SiteArgs[K], &Site, DT, LI))
-      continue;
+        consumeSlotReadsTwice(Site, K, Handles))
+      continue;  // a value in two handle slots is read twice: never a target.
     ConsumeReason Why = ConsumeReason::Ok;
     SmallVector<std::pair<int, bool>, 4> Path;
     const StringRef W = abiWidthFromType(OrigCallee->getArg(K)->getType());
-    if (countArg(*P, P->Root, K) != 1)
-      Why = ConsumeReason::SelfDependent;
-    else if (!pathTo(*P, P->Root, K, Path) || W.empty())
+    if (!Pure || !P || !P->hoistable() || W.empty())
       Why = ConsumeReason::Unsupported;
+    else if (const unsigned N = countArg(*P, P->Root, K); N >= 2)
+      Why = ConsumeReason::SelfDependent;  // `t` read twice by the chain.
+    else if (N == 0 || !pathTo(*P, P->Root, K, Path))
+      Why = ConsumeReason::Unsupported;    // reached, but not through a plan.
     SmallVector<Step, 4> Steps;
     for (auto It = Path.rbegin(); Why == ConsumeReason::Ok && It != Path.rend();
          ++It) {
@@ -274,21 +262,21 @@ void buildConsumingCandidates(CallInst &Site, Function *OrigCallee,
       }
       Steps.push_back(S);
     }
-    // The consumer and its twin are SHELLS here (a `ret void` body carrying the
-    // steps as `!cq.consume.steps`): their gates are minted only if the late
-    // round consumes the site (`materializeConsumer`), so an unused candidate
-    // leaves no declaration behind.
+    // The consumer is a SHELL here (a `ret void` body carrying the steps as
+    // `!cq.consume.steps`): its gates are minted only if the late round
+    // consumes the site (`materializeConsumer`), so an unused candidate leaves
+    // no declaration behind. It has NO adjoint twin, deliberately: a consumed
+    // target is user data (it carries an Ry), which the spine never reverses,
+    // and a lifted clone body never consumes (only top-level sites are tagged),
+    // so no adjoint is ever asked for — and `isInverseEmittable` answers false
+    // for a consumer without a defined twin, i.e. fails CLOSED (R11 r1 rL1B-F2).
     Function *C = nullptr;
     if (Why == ConsumeReason::Ok) {
-      Module &M = *Site.getModule();
       const std::string Name = (SiteClone->getName() + "_c" + Twine(K)).str();
-      C = M.getFunction(Name);
+      C = Site.getModule()->getFunction(Name);
       if (!C) {
-        MDNode *Enc = encodeSteps(Ctx, Steps, W);
-        C = makeShell(*SiteClone, Name, K, Enc);
-        Function *T = makeShell(*SiteClone, Name + "_unc", K, Enc);
+        C = makeShell(*SiteClone, Name, K, encodeSteps(Ctx, Steps, W));
         taint.SpecHandleArgMask[C] = Handles;
-        taint.SpecHandleArgMask[T] = Handles;
       }
     }
     Ops.push_back(MDNode::get(
@@ -299,21 +287,17 @@ void buildConsumingCandidates(CallInst &Site, Function *OrigCallee,
 }
 
 bool materializeConsumer(Function &C, const TaintSet &taint, WidthDispatch &wd) {
-  Function *T = C.getParent()->getFunction(consumingCloneAdjointName(C.getName()));
   const int K = consumingCloneDestSlot(&C);
   MDNode *Enc = C.getMetadata(kStepsTag);
   if (!Enc)
-    return T && K >= 0;  // already materialized (another site shares it).
+    return K >= 0;  // already materialized (another site shares it).
   SmallVector<Step, 4> Steps;
   StringRef W;
-  if (!T || K < 0 || !decodeSteps(Enc, Steps, W))
+  if (K < 0 || !decodeSteps(Enc, Steps, W))
     return false;
-  for (Function *F : {&C, T}) {
-    F->getEntryBlock().eraseFromParent();
-    F->setMetadata(kStepsTag, nullptr);
-  }
-  return emitBody(C, K, Steps, W, taint, wd, /*Inverse=*/false) &&
-         emitBody(*T, K, Steps, W, taint, wd, /*Inverse=*/true);
+  C.getEntryBlock().eraseFromParent();
+  C.setMetadata(kStepsTag, nullptr);
+  return emitBody(C, K, Steps, W, taint, wd);
 }
 
 }  // namespace cq

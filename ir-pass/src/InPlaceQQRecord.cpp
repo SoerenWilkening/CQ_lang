@@ -122,7 +122,7 @@ bool singleWirePhiDeadAfter(PHINode *P, Instruction *BO,
 }
 
 // The positional question every deadness answer shares (`BO`: the QQ op, or a
-// lifted call the tail hoist replaces by one at its position, bd r2j3.37).
+// lifted call the consuming clone replaces, at its position, bd r2j3.37.1).
 bool usersBefore(Value *V, Instruction *BO, const DominatorTree &DT,
                  const LoopInfo &LI) {
   if (Loop *L = LI.getLoopFor(BO->getParent())) {

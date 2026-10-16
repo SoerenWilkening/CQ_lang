@@ -168,8 +168,8 @@ add_library(CQPass MODULE
   src/SpecializeGateInline.cpp
   src/SpecializeReject.cpp
   src/SpecializeSeed.cpp
-  # bd r2j3.37: a lifted call's return chain hoisted to the caller.
-  src/SpecializeTailHoist.cpp
+  # bd r2j3.37.1: the lift-site record (consuming clone).
+  src/SpecializeLiftTag.cpp
   # bd r2j3.37.1: the consuming clone (in place across a lifted call).
   src/SpecializeConsume.cpp
   src/SwapRouteEmit.cpp

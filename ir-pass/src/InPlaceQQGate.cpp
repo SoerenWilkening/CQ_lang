@@ -103,4 +103,12 @@ bool isInPlaceQQAdjointOf(const CallInst *I, const CallInst *G) {
                                   : inPlaceQQAdjointName(GN));
 }
 
+bool consumeSlotReadsTwice(const CallInst &CI, unsigned K, uint64_t Handles) {
+  const Value *V = CI.getArgOperand(K);
+  for (unsigned J = 0; J < CI.arg_size() && J < 64; ++J)
+    if (J != K && (Handles >> J & 1) && CI.getArgOperand(J) == V)
+      return true;
+  return false;
+}
+
 }  // namespace cq

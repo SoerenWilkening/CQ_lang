@@ -1,7 +1,7 @@
 // InPlaceQQConsume.cpp — the in-place round's decision ACROSS A LIFTED CALL
 // (bd test_C_libtooling-r2j3.37.1; SpecializeConsume.h builds the candidates).
 //
-// A tagged lift site `r = f(args)` (`!cq.lift.tail.owed`, SpecializeTailHoist.h)
+// A tagged lift site `r = f(args)` (`!cq.lift.tail.owed`, SpecializeLiftTag.h)
 // is decided exactly as the in-place round decides the inlined body's chain op
 // (InPlaceQQ.h), with its predicates asked, never re-spelt:
 //   * KEPT: the result survives (`qqResultSurvives`, E3) and no emitter or M-B
@@ -29,7 +29,7 @@
 
 #include "ArithLowering.h"        // inPlacePositionHolds / railZeroedAndReleased
 #include "SpecializeConsume.h"    // ConsumeReason / kConsumeAuxAttr
-#include "SpecializeTailHoist.h"  // kLiftTailOwedTag / kMsgLiftTailUnhoisted
+#include "SpecializeLiftTag.h"    // kLiftTailOwedTag / kMsgLiftTailUnhoisted
 #include "TaintPropagation.h"
 #include "Uncomputation.h"        // planInteriorDischarges
 
@@ -63,7 +63,7 @@ struct Entry {
 };
 
 Entry entryFor(const MDNode *MD, unsigned K) {
-  for (unsigned I = 3; MD && I < MD->getNumOperands(); ++I) {
+  for (unsigned I = 1; MD && I < MD->getNumOperands(); ++I) {
     auto *E = dyn_cast<MDNode>(MD->getOperand(I));
     if (!E || E->getNumOperands() != 3 || tagWord(E, 0) != K)
       continue;
@@ -94,7 +94,7 @@ bool continuesThroughLiftedChain(const CallInst *C, const Value *R,
   const MDNode *MD = C->getMetadata(kLiftTailOwedTag);
   if (!MD)
     return false;
-  const uint64_t Chain = tagWord(MD, 2);
+  const uint64_t Chain = tagWord(MD, 0);
   for (unsigned A = 0; A < C->arg_size() && A < 64; ++A)
     if ((Chain >> A & 1) && C->getArgOperand(A) == R) {
       DominatorTree DT(F);
@@ -126,29 +126,30 @@ int consumeNextLiftedCall(Function &F, WidthDispatch &wd, TaintSet &taint,
   LoopInfo LI(DT);
   PostDominatorTree PDT(F);
   InteriorDischargePlan Plan = planInteriorDischarges(F, taint);
-  if (railZeroedAndReleased(CI, nullptr, nullptr) || Plan.GateAt.count(CI) ||
-      !qqResultSurvives(CI, taint, F, PDT))
+  if (!qqResultKept(CI, taint, F, PDT, Plan))
     return 1;  // a temporary: the out-of-place clone is its own discharge.
-  const uint64_t Chain = tagWord(MD, 2), Phi = tagWord(MD, 1);
+  // E1+E2, asked ONCE, here, on the lowered IR (R11 r1 rL1C-F3: the build no
+  // longer pre-judges them): a chain slot whose operand is a dead user register,
+  // never one filling two handle slots (`consumeSlotReadsTwice`).
+  const uint64_t Chain = tagWord(MD, 0);
   const uint64_t Handles = taint.SpecHandleArgMask.lookup(CI->getCalledFunction());
   SmallVector<unsigned, 2> Eligible;
   bool PhiOwed = false;
   for (unsigned K = 0; K < CI->arg_size() && K < 64; ++K) {
     Value *V = CI->getArgOperand(K);
-    if (!(Chain >> K & 1) || !(Handles >> K & 1) || !qqTargetIsUserData(CI, V))
+    if (!(Chain >> K & 1) || !(Handles >> K & 1) ||
+        consumeSlotReadsTwice(*CI, K, Handles) || !qqTargetIsUserData(CI, V))
       continue;
-    if (qqDeadRecordBits(V, CI, DT, LI) & 1u)
+    const unsigned Bits = qqDeadRecordBits(V, CI, DT, LI);
+    if (Bits & 1u)
       Eligible.push_back(K);
-    else if (Phi >> K & 1)
-      PhiOwed = true;
+    else if (Bits & 4u)
+      PhiOwed = true;  // a dead φ not provably one wire: the B-F1 row.
   }
   if (Eligible.size() >= 2)
     return loud(kMsgInPlaceQQAmbiguousTarget);
-  if (Eligible.empty()) {
-    if (PhiOwed)
-      return loud(kMsgInPlaceQQRefused);
-    return tagWord(MD, 0) ? loud(kMsgLiftTailUnhoisted) : 1;
-  }
+  if (Eligible.empty())
+    return PhiOwed ? loud(kMsgInPlaceQQRefused) : 1;
   const unsigned K = Eligible.front();
   const Entry E = entryFor(MD, K);
   if (E.Why != ConsumeReason::Ok || !E.Consumer)
@@ -216,6 +217,10 @@ void eraseUnusedConsumeAux(Module &M) {
   for (Function *G : Callees)
     if (G->use_empty())
       G->eraseFromParent();
+  // The mark is bookkeeping, never output: a survivor (a clone the drain's
+  // cache shared with a real site, a consumer that was called) drops it.
+  for (Function &F : M)
+    F.removeFnAttr(kConsumeAuxAttr);
 }
 
 }  // namespace cq

@@ -79,6 +79,8 @@ bool streamGateWrites(const CallInst *C, SmallVectorImpl<unsigned> &W) {
   // bd r2j3.33: a TAGGED in-place quantum-source gate (the i1 form is a
   // `cqrt_cnot`) is the user's own `x ^= y`, never merge-stream traffic: a
   // replay must not re-emit it. Asked before the `cqrt_cnot` row by membership.
+  // A CONSUMING CLONE call (bd r2j3.37.1) is minted only in the late in-place
+  // round, after every merge stream is planned and replayed: vacuous for it.
   if (isInPlaceQQGate(C))
     return false;
   bool Void = C->getType()->isVoidTy();

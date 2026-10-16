@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 870 maintained source files, 7010 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 871 maintained source files, 7012 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -34,13 +34,13 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/golden_multiset_audit.py` — 2211 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1971 physical lines
 - `tools/inplace_twin_matrix.py` — 1790 physical lines
-- `ir-pass/src/CQLoweringPass.cpp` — 1681 physical lines
+- `ir-pass/src/CQLoweringPass.cpp` — 1649 physical lines
 - `ir-pass/src/SelectClassify.cpp` — 1528 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
 - `ir-pass/src/OpcodeLowering.cpp` — 1514 physical lines
 - `runtime/cq_runtime.c` — 1489 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
-- `ir-pass/src/Specialization.cpp` — 1411 physical lines
+- `ir-pass/src/Specialization.cpp` — 1409 physical lines
 - `ir-pass/src/ArithLowering.cpp` — 1377 physical lines
 - `tools/library_coverage/probe.py` — 1219 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
@@ -197,24 +197,25 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/SpecializePlan.h:133` — `getHashValue`
 - `ir-pass/include/SpecializePlan.h:137` — `isEqual`
 
-### `ir-pass/include/SpecializeTailPlan.h` (308 lines)
+### `ir-pass/include/SpecializeTailPlan.h` (371 lines)
 
-- `ir-pass/include/SpecializeTailPlan.h:64` — `hoistable`
-- `ir-pass/include/SpecializeTailPlan.h:69` — `planFor`
-- `ir-pass/include/SpecializeTailPlan.h:83` — `srcFor`
-- `ir-pass/include/SpecializeTailPlan.h:106` — `subtreeSrc`
-- `ir-pass/include/SpecializeTailPlan.h:116` — `zeroSrc`
-- `ir-pass/include/SpecializeTailPlan.h:128` — `emitInto`
-- `ir-pass/include/SpecializeTailPlan.h:154` — `singleRet`
-- `ir-pass/include/SpecializeTailPlan.h:165` — `cloneReturning`
-- `ir-pass/include/SpecializeTailPlan.h:184` — `build`
-- `ir-pass/include/SpecializeTailPlan.h:194` — `add`
-- `ir-pass/include/SpecializeTailPlan.h:199` — `leaf`
-- `ir-pass/include/SpecializeTailPlan.h:206` — `chainType`
-- `ir-pass/include/SpecializeTailPlan.h:210` — `expr`
-- `ir-pass/include/SpecializeTailPlan.h:249` — `substitute`
-- `ir-pass/include/SpecializeTailPlan.h:281` — `argNos`
-- `ir-pass/include/SpecializeTailPlan.h:293` — `effectFree`
+- `ir-pass/include/SpecializeTailPlan.h:65` — `hoistable`
+- `ir-pass/include/SpecializeTailPlan.h:70` — `planFor`
+- `ir-pass/include/SpecializeTailPlan.h:84` — `srcFor`
+- `ir-pass/include/SpecializeTailPlan.h:107` — `subtreeSrc`
+- `ir-pass/include/SpecializeTailPlan.h:122` — `emitInto`
+- `ir-pass/include/SpecializeTailPlan.h:148` — `singleRet`
+- `ir-pass/include/SpecializeTailPlan.h:159` — `cloneReturning`
+- `ir-pass/include/SpecializeTailPlan.h:178` — `build`
+- `ir-pass/include/SpecializeTailPlan.h:188` — `add`
+- `ir-pass/include/SpecializeTailPlan.h:193` — `leaf`
+- `ir-pass/include/SpecializeTailPlan.h:200` — `chainType`
+- `ir-pass/include/SpecializeTailPlan.h:204` — `expr`
+- `ir-pass/include/SpecializeTailPlan.h:243` — `substitute`
+- `ir-pass/include/SpecializeTailPlan.h:275` — `argNos`
+- `ir-pass/include/SpecializeTailPlan.h:292` — `consumableBody`
+- `ir-pass/include/SpecializeTailPlan.h:320` — `chainReachValue`
+- `ir-pass/include/SpecializeTailPlan.h:347` — `chainReachSlots`
 
 ### `ir-pass/include/TaintPropagation.h` (2286 lines)
 
@@ -365,14 +366,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArmHomogeneity.cpp:132` — `midIsPurePhase`
 - `ir-pass/src/ArmHomogeneity.cpp:170` — `treeHomogeneous`
 
-### `ir-pass/src/BennettWrap.cpp` (291 lines)
+### `ir-pass/src/BennettWrap.cpp` (297 lines)
 
-- `ir-pass/src/BennettWrap.cpp:51` — `diagnose`
-- `ir-pass/src/BennettWrap.cpp:68` — `classify`
-- `ir-pass/src/BennettWrap.cpp:96` — `isZeroAlloc`
-- `ir-pass/src/BennettWrap.cpp:103` — `gateTargets`
-- `ir-pass/src/BennettWrap.cpp:147` — `elideForwardStrips`
-- `ir-pass/src/BennettWrap.cpp:203` — `emitBennettWrap`
+- `ir-pass/src/BennettWrap.cpp:52` — `diagnose`
+- `ir-pass/src/BennettWrap.cpp:69` — `classify`
+- `ir-pass/src/BennettWrap.cpp:102` — `isZeroAlloc`
+- `ir-pass/src/BennettWrap.cpp:109` — `gateTargets`
+- `ir-pass/src/BennettWrap.cpp:153` — `elideForwardStrips`
+- `ir-pass/src/BennettWrap.cpp:209` — `emitBennettWrap`
 
 ### `ir-pass/src/BirthFreeze.cpp` (41 lines)
 
@@ -430,12 +431,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ByRefInline.cpp:255` — `cloneExpr`
 - `ir-pass/src/ByRefInline.cpp:277` — `lowerByRefInline`
 
-### `ir-pass/src/CQLoweringPass.cpp` (1681 lines)
+### `ir-pass/src/CQLoweringPass.cpp` (1649 lines)
 
 - `ir-pass/src/CQLoweringPass.cpp:67` — `eraseDeadDecls`
 - `ir-pass/src/CQLoweringPass.cpp:101` — `declineSurvivingIntrinsicCalls`
 - `ir-pass/src/CQLoweringPass.cpp:127` — `CQLoweringPass::run`
-- `ir-pass/src/CQLoweringPass.cpp:1168` — `CQLoweringPass::runOnFunction`
+- `ir-pass/src/CQLoweringPass.cpp:1150` — `CQLoweringPass::runOnFunction`
 
 ### `ir-pass/src/CallContract.cpp` (323 lines)
 
@@ -724,17 +725,17 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/InPlaceQQ.cpp:356` — `qqResultSurvives`
 - `ir-pass/src/InPlaceQQ.cpp:359` — `lowerInPlaceQQ`
 
-### `ir-pass/src/InPlaceQQConsume.cpp` (221 lines)
+### `ir-pass/src/InPlaceQQConsume.cpp` (226 lines)
 
 - `ir-pass/src/InPlaceQQConsume.cpp:53` — `tagWord`
 - `ir-pass/src/InPlaceQQConsume.cpp:65` — `entryFor`
 - `ir-pass/src/InPlaceQQConsume.cpp:79` — `messageFor`
 - `ir-pass/src/InPlaceQQConsume.cpp:92` — `continuesThroughLiftedChain`
 - `ir-pass/src/InPlaceQQConsume.cpp:108` — `consumeNextLiftedCall`
-- `ir-pass/src/InPlaceQQConsume.cpp:185` — `stripConsumeTags`
-- `ir-pass/src/InPlaceQQConsume.cpp:192` — `eraseUnusedConsumeAux`
+- `ir-pass/src/InPlaceQQConsume.cpp:186` — `stripConsumeTags`
+- `ir-pass/src/InPlaceQQConsume.cpp:193` — `eraseUnusedConsumeAux`
 
-### `ir-pass/src/InPlaceQQGate.cpp` (106 lines)
+### `ir-pass/src/InPlaceQQGate.cpp` (114 lines)
 
 - `ir-pass/src/InPlaceQQGate.cpp:16` — `isInPlaceQQSymbol`
 - `ir-pass/src/InPlaceQQGate.cpp:23` — `consumingCloneDestSlot`
@@ -745,6 +746,13 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/InPlaceQQGate.cpp:76` — `inPlaceQQReadsSource`
 - `ir-pass/src/InPlaceQQGate.cpp:84` — `consumingCloneAdjointName`
 - `ir-pass/src/InPlaceQQGate.cpp:93` — `isInPlaceQQAdjointOf`
+- `ir-pass/src/InPlaceQQGate.cpp:106` — `consumeSlotReadsTwice`
+
+### `ir-pass/src/InPlaceQQImm.cpp` (74 lines)
+
+- `ir-pass/src/InPlaceQQImm.cpp:35` — `qqDeadUserRegisterOperand`
+- `ir-pass/src/InPlaceQQImm.cpp:40` — `qqResultKept`
+- `ir-pass/src/InPlaceQQImm.cpp:46` — `declineRefusedImmediateReassignments`
 
 ### `ir-pass/src/InPlaceQQRecord.cpp` (391 lines)
 
@@ -918,11 +926,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/MergeArmWrite.cpp:102` — `emitArmMux`
 - `ir-pass/src/MergeArmWrite.cpp:119` — `eraseUnusedArmDecls`
 
-### `ir-pass/src/MergeCarriedFence.cpp` (168 lines)
+### `ir-pass/src/MergeCarriedFence.cpp` (171 lines)
 
 - `ir-pass/src/MergeCarriedFence.cpp:42` — `carriedLoop`
 - `ir-pass/src/MergeCarriedFence.cpp:65` — `slotAllowed`
-- `ir-pass/src/MergeCarriedFence.cpp:85` — `fenceCarriedMergeLeaks`
+- `ir-pass/src/MergeCarriedFence.cpp:88` — `fenceCarriedMergeLeaks`
 
 ### `ir-pass/src/MergeCarriedFenceFresh.cpp` (219 lines)
 
@@ -949,18 +957,18 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/MergeRailDischarge.cpp:36` — `emitReplay`
 - `ir-pass/src/MergeRailDischarge.cpp:78` — `dischargeMergeRails`
 
-### `ir-pass/src/MergeStreamGates.cpp` (276 lines)
+### `ir-pass/src/MergeStreamGates.cpp` (278 lines)
 
 - `ir-pass/src/MergeStreamGates.cpp:23` — `calleeName`
 - `ir-pass/src/MergeStreamGates.cpp:31` — `isControlledCopy`
 - `ir-pass/src/MergeStreamGates.cpp:40` — `isPlainCopy`
 - `ir-pass/src/MergeStreamGates.cpp:47` — `isMergeWrite`
 - `ir-pass/src/MergeStreamGates.cpp:74` — `streamGateWrites`
-- `ir-pass/src/MergeStreamGates.cpp:109` — `controlSlots`
-- `ir-pass/src/MergeStreamGates.cpp:127` — `onlyReads`
-- `ir-pass/src/MergeStreamGates.cpp:183` — `readsState`
-- `ir-pass/src/MergeStreamGates.cpp:198` — `isRegister`
-- `ir-pass/src/MergeStreamGates.cpp:207` — `handleAliases`
+- `ir-pass/src/MergeStreamGates.cpp:111` — `controlSlots`
+- `ir-pass/src/MergeStreamGates.cpp:129` — `onlyReads`
+- `ir-pass/src/MergeStreamGates.cpp:185` — `readsState`
+- `ir-pass/src/MergeStreamGates.cpp:200` — `isRegister`
+- `ir-pass/src/MergeStreamGates.cpp:209` — `handleAliases`
 
 ### `ir-pass/src/MergeStreamPlan.cpp` (391 lines)
 
@@ -1450,7 +1458,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SelectMergeEmit.cpp:57` — `scrubTaint`
 - `ir-pass/src/SelectMergeEmit.cpp:75` — `emitSelectRegion`
 
-### `ir-pass/src/Specialization.cpp` (1411 lines)
+### `ir-pass/src/Specialization.cpp` (1409 lines)
 
 - `ir-pass/src/Specialization.cpp:97` — `recordCloneRailSelects`
 - `ir-pass/src/Specialization.cpp:119` — `reseedCloneTaintFromParams`
@@ -1469,7 +1477,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Specialization.cpp:1153` — `userProgramReads`
 - `ir-pass/src/Specialization.cpp:1186` — `resolvePhantomCloneArgReads`
 - `ir-pass/src/Specialization.cpp:1280` — `specialize`
-- `ir-pass/src/Specialization.cpp:1409` — `synthesizeCloneUncTwin`
+- `ir-pass/src/Specialization.cpp:1407` — `synthesizeCloneUncTwin`
 
 ### `ir-pass/src/SpecializeClone.cpp` (241 lines)
 
@@ -1481,17 +1489,17 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SpecializeClone.cpp:148` — `cloneFor`
 - `ir-pass/src/SpecializeClone.cpp:175` — `retypeCloneSignature`
 
-### `ir-pass/src/SpecializeConsume.cpp` (319 lines)
+### `ir-pass/src/SpecializeConsume.cpp` (303 lines)
 
 - `ir-pass/src/SpecializeConsume.cpp:44` — `countArg`
 - `ir-pass/src/SpecializeConsume.cpp:54` — `pathTo`
 - `ir-pass/src/SpecializeConsume.cpp:70` — `stemOf`
 - `ir-pass/src/SpecializeConsume.cpp:75` — `emitBody`
-- `ir-pass/src/SpecializeConsume.cpp:134` — `encodeSteps`
-- `ir-pass/src/SpecializeConsume.cpp:149` — `decodeSteps`
-- `ir-pass/src/SpecializeConsume.cpp:180` — `makeShell`
-- `ir-pass/src/SpecializeConsume.cpp:197` — `buildConsumingCandidates`
-- `ir-pass/src/SpecializeConsume.cpp:301` — `materializeConsumer`
+- `ir-pass/src/SpecializeConsume.cpp:123` — `encodeSteps`
+- `ir-pass/src/SpecializeConsume.cpp:138` — `decodeSteps`
+- `ir-pass/src/SpecializeConsume.cpp:169` — `makeShell`
+- `ir-pass/src/SpecializeConsume.cpp:186` — `buildConsumingCandidates`
+- `ir-pass/src/SpecializeConsume.cpp:289` — `materializeConsumer`
 
 ### `ir-pass/src/SpecializeDetect.cpp` (393 lines)
 
@@ -1524,6 +1532,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SpecializeGateInline.cpp:360` — `isQuantumReturnExport`
 - `ir-pass/src/SpecializeGateInline.cpp:368` — `widenQuantumExportReturns`
 
+### `ir-pass/src/SpecializeLiftTag.cpp` (48 lines)
+
+- `ir-pass/src/SpecializeLiftTag.cpp:23` — `tagLiftSite`
+- `ir-pass/src/SpecializeLiftTag.cpp:38` — `stripForgedConsumeMarks`
+
 ### `ir-pass/src/SpecializePredict.cpp` (208 lines)
 
 - `ir-pass/src/SpecializePredict.cpp:45` — `isPredictableSpecSite`
@@ -1546,14 +1559,6 @@ The entries below are an inventory for decomposition work. Generated files and t
 ### `ir-pass/src/SpecializeSeed.cpp` (33 lines)
 
 - `ir-pass/src/SpecializeSeed.cpp:16` — `seedClone`
-
-### `ir-pass/src/SpecializeTailHoist.cpp` (208 lines)
-
-- `ir-pass/src/SpecializeTailHoist.cpp:57` — `userRegisterValue`
-- `ir-pass/src/SpecializeTailHoist.cpp:76` — `owes`
-- `ir-pass/src/SpecializeTailHoist.cpp:97` — `emit`
-- `ir-pass/src/SpecializeTailHoist.cpp:123` — `hoistLiftedTailChains`
-- `ir-pass/src/SpecializeTailHoist.cpp:182` — `tagUnhoistedLiftTail`
 
 ### `ir-pass/src/SpeculationSafety.cpp` (238 lines)
 
