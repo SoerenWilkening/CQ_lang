@@ -202,14 +202,19 @@ Value *commitSeededAccumulator(const SeededAccumulator &A, WidthDispatch &wd,
   // `-O1` gives no preheader), the seed incoming IS the register's value on that
   // path and is renamed to it. The exit φ then is a pure renaming of the rail,
   // which the caller's renaming fixpoint collapses and its record fence asks.
-  // A bypass the mint does not dominate stays classical and the φ declines at
-  // `declineClassicalMuxes`, loudly.
+  // A bypass the mint does not dominate, or any in-loop exit edge, stays
+  // classical and the φ declines at `declineClassicalMuxes`, loudly.
   const Loop *Lp = A.L;
   for (Value *Name : {static_cast<Value *>(&P), A.Latch})
     for (User *U : Name->users())
       if (auto *X = dyn_cast<PHINode>(U); X && !Lp->contains(X->getParent()))
         for (unsigned i = 0, e = X->getNumIncomingValues(); i != e; ++i)
+          // Invariant (4): ONLY a BYPASS edge (from outside the loop) carries
+          // the register's value; an in-loop exit edge carrying a constant equal
+          // to the seed (`c = 0; break;`, LLVM uniques the `0`) is the
+          // program's own value, not the register (R11 r1 rA1A-F1).
           if (X->getIncomingValue(i) == A.Seed &&
+              !Lp->contains(X->getIncomingBlock(i)) &&
               DT.dominates(A.Entry, X->getIncomingBlock(i)))
             X->setIncomingValue(i, H);
   return H;

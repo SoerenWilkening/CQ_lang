@@ -21,7 +21,8 @@
 //   * the register is minted ONCE, `%h = cqrt_alloc_<W>(seed)` at the end of the
 //     loop's single external entry block (a basis state: the seed is classical);
 //   * each trip's QQ step becomes the void in-place gate
-//     `cqrt_{add,sub,xor}_<W>(src, %h)` (`cqrt_cnot` at i1), tagged
+//     `cqrt_{add,sub,xor}_<W>(src, %h)` (`cqrt_cnot` would serve i1, which
+//     (A5) does not admit yet), tagged
 //     `!cq.inplace.qq` exactly as dm7f.51's straight-line conversion tags it, so
 //     the spine's existing relation (`isInPlaceQQGate`: slot 1 written, slot 0 a
 //     borrowed reader) applies unchanged;
@@ -37,8 +38,8 @@
 // provably-|0⟩ rail. Reversing it needs the post-loop reverse loop (bd 8h7d.20).
 //
 // RECOGNITION (pure analysis; `seededAccumulatorPhi`):
-//   (A1) `P` is a tainted integer header phi of width ≤ 64 with an in-place QQ
-//        symbol, exactly two incomings: the latch and ONE external edge.
+//   (A1) `P` is a tainted integer header phi (of the width (A5) admits) with
+//        exactly two incomings: the latch and ONE external edge.
 //   (A2) the external incoming (the SEED) is classical, not undef/poison, and
 //        available at the entry block's terminator (the mint point).
 //   (A3) the latch incoming walks back to `P` through in-place steps only: the
@@ -108,7 +109,7 @@ llvm::Value *commitSeededAccumulator(const SeededAccumulator &A,
                                      const llvm::DominatorTree &DT);
 
 // `lowerOps`' emission of one recorded QQ step: `cqrt_{add,sub,xor}_<W>(src,
-// rail)` (`cqrt_cnot` at i1) tagged `!cq.inplace.qq`, then `BO` is RAUW'd to the
+// rail)` (i32 only today, (A5)) tagged `!cq.inplace.qq`, then `BO` is RAUW'd to the
 // rail handle (the caller erases it). False (loud) when no symbol exists.
 bool emitAccumulatorQQStep(llvm::BinaryOperator *BO, WidthDispatch &wd,
                            TaintSet &taint);
