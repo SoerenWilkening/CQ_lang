@@ -2568,7 +2568,60 @@ TRIANGLE_TOP_MUTANTS = [
      "B1-input-aliases-written-rail"),
 ]
 
+# bd 01po.19.34.5 — the 3-level nest's spellings, by interval arithmetic:
+# a DOWN-counted outer %m (from 5, `add nsw -1`, staying while `%m ugt 2`:
+# [2, 5], `_iv_range_down`), an inner %l bounded by a SIGNED compare against
+# the outer-derived `%b = %m - 2` (`slt`, interval [0, 3]: %l in [0, 3]), and
+# the two cells q[%m + 2] and q[%l] whose difference spans two counters:
+# [4, 7] - [0, 3] = [1, 7], never 0. Mutants: the outer latch `ugt 0`
+# (%m from 0: the difference reaches 0), and the inner bound `%m` itself
+# (%l up to 5) — each B1.
+WINDOW_CELL_INTERVAL = """
+define i32 @slice() local_unnamed_addr {
+entry:
+  %w = alloca i32, i64 8, align 4, !cq.railwindow !0
+  %h0 = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %h0, ptr %w, align 4
+  br label %outer
+outer:
+  %m = phi i64 [ 5, %entry ], [ %m1, %olatch ]
+  %m1 = add nsw i64 %m, -1
+  %a = add nsw i64 %m, 2
+  %am = getelementptr i32, ptr %w, i64 %a
+  %b = add nsw i64 %m, -2
+  br label %inner
+inner:
+  %l = phi i64 [ 0, %outer ], [ %l1, %inner ]
+  %al = getelementptr i32, ptr %w, i64 %l
+  %xl = load i32, ptr %al, align 4
+  %xm = load i32, ptr %am, align 4
+  call void @cqrt_ry_i1_controlled(i32 %xl, i32 %xm, double 3.000000e-01)
+  store i32 %xm, ptr %am, align 4
+  %l1 = add nuw nsw i64 %l, 1
+  %lc = icmp slt i64 %l, %b
+  br i1 %lc, label %inner, label %olatch
+olatch:
+  %oc = icmp ugt i64 %m, 2
+  br i1 %oc, label %outer, label %exit
+exit:
+  %x2 = load i32, ptr %w, align 4
+  %r = call i1 @cqrt_measure_i1(i32 %x2)
+  %z = zext i1 %r to i32
+  ret i32 %z
+}
+!0 = !{i32 1}
+"""
+INTERVAL_MUTANTS = [
+    ("window-cell-interval-outer-down-from-zero",
+     sub(WINDOW_CELL_INTERVAL, "%oc = icmp", "icmp ugt i64 %m, 2", "icmp ugt i64 %m, 0"),
+     "B1-input-aliases-written-rail"),
+    ("window-cell-interval-inner-bound-is-outer",
+     sub(WINDOW_CELL_INTERVAL, "%lc = icmp", "icmp slt i64 %l, %b", "icmp slt i64 %l, %m"),
+     "B1-input-aliases-written-rail"),
+]
+
 MEM_POSITIVE = [
+    ("window-cell-interval-two-counters", WINDOW_CELL_INTERVAL),
     ("window-cell-triangle-top-tested-down", WINDOW_CELL_TRIANGLE_TOP),
     ("window-cell-triangle0-entry-guard", WINDOW_CELL_TRIANGLE0),
     ("window-cell-triangle-down-masked", WINDOW_CELL_TRIANGLE_DOWN),
@@ -2699,6 +2752,7 @@ exit:
     *TRIANGLE_MUTANTS,
     *TRIANGLE0_MUTANTS,
     *TRIANGLE_TOP_MUTANTS,
+    *INTERVAL_MUTANTS,
     # bd 01po.19.34: the counted-phi range proof's own kill tests.
     ("window-cell-cnot-iv-starts-at-zero",
      sub(WINDOW_CELL_CNOT_IV, "%l = phi", "[ 2, %entry ]", "[ 0, %entry ]"),

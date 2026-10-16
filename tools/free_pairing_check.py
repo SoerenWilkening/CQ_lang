@@ -4194,15 +4194,74 @@ def _linear(fn, v, depth=0, at=None):
     return {x: c for x, c in t.items() if c}, ka + sg * kb
 
 
-def _upper(fn, v):
+def _upper(fn, v, depth=0):
     """A proven unsigned upper bound of the i64 value `v`, or None."""
     if re.fullmatch(r"\d+", v):
         return int(v)
     m = ZEXT_RE.match(_rhs(fn, v) or "")
-    return (1 << int(m.group(1))) - 1 if m and int(m.group(1)) < 64 else None
+    if m and int(m.group(1)) < 64:
+        return (1 << int(m.group(1))) - 1
+    # bd 01po.19.34.5: an outer counted phi bounds an inner loop (`for l <= m-1`
+    # stays while `%l1 != %m`): its own proven range's top. Depth is bounded by
+    # the loop nest (each step asks a strictly outer counter).
+    if depth > 4:
+        return None
+    r = _iv_range(fn, v, depth + 1)
+    return r[1] if r is not None and r[0] >= 0 else None
 
 
-def _iv_range(fn, x):
+def _lin_interval(fn, t, k, depth=0):
+    """[lo, hi] of the linear form (t, k) by interval arithmetic over each
+    counter's proven `_iv_range` (each holds wherever its counter is defined),
+    or None. A sound over-approximation of the joint range."""
+    if depth > 4:
+        return None
+    lo = hi = k
+    for x, c in t.items():
+        r = _iv_range(fn, x, depth + 1)
+        if r is None:
+            return None
+        a, b = c * r[0], c * r[1]
+        lo += min(a, b)
+        hi += max(a, b)
+    return lo, hi
+
+
+def _iv_range_down(fn, x, hdr, s, n, lt):
+    """bd 01po.19.34.5 — [lo, s] of a DOWN-counted phi `phi [ s, %P ], [ %n,
+    %Lt ]`, `%n = add nsw x, -1`, whose latch stays only while x (or %n) is
+    `ugt`/`uge`/`sgt`/`sge` a literal c >= 0: x starts at s, steps -1 without
+    signed wrap, and continues only while the compare holds, so it never goes
+    below the smallest value the compare lets through (needs lo <= s)."""
+    term = next((t for lbl, _c, t in fn.blocks if lbl == lt), None)
+    bm = BR_COND_RE.match(_strip_md(term or ""))
+    if not bm or (bm.group(2) == hdr) == (bm.group(3) == hdr):
+        return None
+    stay_true = bm.group(2) == hdr
+    rhs = _rhs(fn, bm.group(1)) or ""
+    cm = ICMP_RE.match(rhs) or SICMP_RE.match(rhs)
+    if not cm:
+        return None
+    pred, a, c = cm.groups()
+    pred = {"sgt": "ugt", "sge": "uge", "slt": "ult", "sle": "ule"}.get(pred, pred)
+    if a not in (x, n):
+        a, c = c, a
+        pred = {"ult": "ugt", "ule": "uge", "ugt": "ult", "uge": "ule"}.get(pred, pred)
+    if a not in (x, n) or not re.fullmatch(r"\d+", c):
+        return None
+    if not stay_true:
+        pred = {"ult": "uge", "ule": "ugt", "ugt": "ule", "uge": "ult",
+                "eq": "ne", "ne": "eq"}.get(pred)
+    low = {"ugt": int(c) + 1, "uge": int(c)}.get(pred)
+    if low is None:
+        return None
+    low = low - 1 if a == x else low  # the next x is the compared one minus 1
+    # (signed and unsigned agree here: every value is in [0, s] with s a
+    # non-negative literal, and the walk stops at low >= 0 before any wrap)
+    return (low, s) if 0 <= low <= s else None
+
+
+def _iv_range(fn, x, depth=0):
     """bd 01po.19.34 — [lo, hi] of a counted induction phi, or None. `x` must
     be `phi i64 [ s, %P ], [ %n, %Lt ]` with literal s >= 0 and `%n = add nuw
     i64 x, c` (literal c >= 1: monotone, never wraps, so x >= s), and `%Lt`'s
@@ -4222,6 +4281,9 @@ def _iv_range(fn, x):
     s = int(lits[0][0])
     n, lt = vals[0]
     sm = STEP_RE.match(_rhs(fn, n) or "")
+    if not sm and STEPDOWN_RE.match(_rhs(fn, n) or "") and \
+            STEPDOWN_RE.match(_rhs(fn, n)).group(1) == x:
+        return _iv_range_down(fn, x, hdr, s, n, lt)
     if not sm or sm.group(1) != x or int(sm.group(2)) < 1:
         return None
     c = int(sm.group(2))
@@ -4230,10 +4292,17 @@ def _iv_range(fn, x):
     if not bm or (bm.group(2) == hdr) == (bm.group(3) == hdr):
         return None
     stay_true = bm.group(2) == hdr
-    cm = ICMP_RE.match(_rhs(fn, bm.group(1)) or "")
+    rhs_c = _rhs(fn, bm.group(1)) or ""
+    cm = ICMP_RE.match(rhs_c)
+    signed = False
     if not cm:
-        return None
+        cm = SICMP_RE.match(rhs_c)
+        signed = True
+        if not cm:
+            return None
     pred, a, b = cm.groups()
+    if signed:
+        pred = {"sgt": "ugt", "sge": "uge", "slt": "ult", "sle": "ule"}[pred]
     if a not in (x, n):  # canonical order: the counter on the left
         a, b = b, a
         pred = {"ult": "ugt", "ule": "uge", "ugt": "ult", "uge": "ule"}.get(pred, pred)
@@ -4242,7 +4311,21 @@ def _iv_range(fn, x):
     if not stay_true:
         pred = {"ult": "uge", "ule": "ugt", "ugt": "ule", "uge": "ult",
                 "eq": "ne", "ne": "eq"}[pred]
-    ub = _upper(fn, b)
+    if signed:
+        # bd 01po.19.34.5: `slt`/`sle` against a bound whose SIGNED upper end
+        # is proven (an interval over outer counters, `m - 1 - l`). x starts at
+        # s >= 0 and rises by c without unsigned wrap; it continues only while
+        # it is below that bound, so it never leaves [s, max(s, hi + c)] — a
+        # small non-negative range on which signed and unsigned agree. A bound
+        # below s just ends the walk after its first trip.
+        if pred not in ("ult", "ule"):
+            return None
+        bi = _lin_interval(fn, *_linear(fn, b), depth + 1)
+        if bi is None:
+            return None
+        ub = max(bi[1], s)
+    else:
+        ub = _upper(fn, b, depth)
     if ub is None:
         return None
     # ONE invariant for every form (R11 round 1, B-F1): `vmax` is the LARGEST
@@ -4554,10 +4637,22 @@ def _cells_differ(a, b):
             lo, hi = lo + k, hi + k
             if max(abs(lo), abs(hi)) >= (1 << 62):
                 return False
-            return lo > 0 or hi < 0
-        return False
-    if len(d) != 1:
-        return False
+            if lo > 0 or hi < 0:
+                return True
+        # no relational bound decided it: fall through to the interval rule
+    if len(d) > 1:
+        # bd 01po.19.34.5: `q[m-1]` vs `q[m-1-l-j]` differs by l + j over two
+        # counters with proven ranges (l, j >= 1): the interval of the
+        # difference must exclude 0 and stay below 2^62 in magnitude.
+        lo = hi = k
+        for x, c in d.items():
+            r = rng.get(x)
+            if r is None:
+                return False
+            a2, b2 = c * r[0], c * r[1]
+            lo += min(a2, b2)
+            hi += max(a2, b2)
+        return max(abs(lo), abs(hi)) < (1 << 62) and (lo > 0 or hi < 0)
     (x, c), = d.items()
     r = rng[x]
     if r is None:

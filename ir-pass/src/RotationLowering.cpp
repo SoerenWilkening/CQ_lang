@@ -2063,6 +2063,24 @@ bool recordAbsentAt(CallInst *R, CallInst *T, const DominatorTree &DT) {
     if (auto *CI = dyn_cast<CallInst>(U))
       if (isDischargeOf(CI, R) && provablyBeforePerActivation(T, R, CI, DT))
         return true;
+  // bd 01po.19.34.5 (R11 A-F3) — THE SAME ARGUMENT WITHOUT THE DOMINANCE
+  // PREMISE. `provablyBeforePerActivation` first asks `DT.dominates(T, R)`, and
+  // a gate in a zero-trip-guarded subloop does not dominate a record minted in
+  // a SIBLING subloop after it (3-level nest, rN1A/p3_nest3.c), although every
+  // path from that record back to the gate runs the record's own discharge.
+  // The invariant asked instead, for ONE discharge CI of R:
+  //   (a) every path R ⇝ T executes CI, and
+  //   (b) every path R ⇝ R (the next mint) executes CI.
+  // An instance minted at t_R and standing at t_T > t_R would need a trace
+  // segment t_R … t_T without a discharge OF THAT INSTANCE: if R does not run
+  // again inside it, (a) puts CI there; if R runs again at t_R' < t_T, (b) puts
+  // CI in t_R … t_R', before the SSA value is re-minted, so it discharges the
+  // first instance. Either way none survives to T.
+  for (User *U : R->users())
+    if (auto *CI = dyn_cast<CallInst>(U))
+      if (isDischargeOf(CI, R) && everyPathReExecutes(R, T, CI) &&
+          everyPathReExecutes(R, R, CI))
+        return true;
   return false;
 }
 
