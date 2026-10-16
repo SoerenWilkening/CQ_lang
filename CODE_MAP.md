@@ -16,7 +16,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `runtime/cq_templates.c` — 15665 physical lines
 - `ir-pass/src/ArmClassify.cpp` — 10934 physical lines
-- `ir-pass/src/LoopLowering.cpp` — 8519 physical lines
+- `ir-pass/src/LoopLowering.cpp` — 8524 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5553 physical lines
 - `tools/free_pairing_check.py` — 5087 physical lines
 - `tools/free_pairing_check_test.py` — 4981 physical lines
@@ -801,7 +801,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LoopAccumulatorFacts.cpp:100` — `cellsDisjointAcrossEntries`
 - `ir-pass/src/LoopAccumulatorFacts.cpp:155` — `deadAfter`
 
-### `ir-pass/src/LoopLowering.cpp` (8519 lines)
+### `ir-pass/src/LoopLowering.cpp` (8524 lines)
 
 - `ir-pass/src/LoopLowering.cpp:138` — `diagnose`
 - `ir-pass/src/LoopLowering.cpp:163` — `inPlaceValueRailOperand`
@@ -880,7 +880,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LoopLowering.cpp:7836` — `promoteLoopCarriedHandleSeeds`
 - `ir-pass/src/LoopLowering.cpp:8115` — `declineUnmarkedRolledIterLocal`
 - `ir-pass/src/LoopLowering.cpp:8316` — `declineFalsifiedNestedIterLocalGrants`
-- `ir-pass/src/LoopLowering.cpp:8355` — `lowerLoops`
+- `ir-pass/src/LoopLowering.cpp:8360` — `lowerLoops`
 
 ### `ir-pass/src/LoopUnrollPrepass.cpp` (303 lines)
 

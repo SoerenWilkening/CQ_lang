@@ -8343,8 +8343,13 @@ void declineFalsifiedNestedIterLocalGrants(Module &M, TaintSet &taint) {
         continue;
       Loop *L = LI.getLoopFor(Hdr);
       bool AnyTainted = false;
+      // The same question the marker asked, hoisted-root admission included
+      // (its obligations were recorded at the marking; the ledger here is only
+      // the predicate's out-parameter).
+      SmallVector<Value *, 2> Hoisted;
       if (!L || L->getHeader() != Hdr ||
-          !iterationLocalQualifies(L, taint, LI, AnyTainted)) {
+          !iterationLocalQualifies(L, taint, LI, AnyTainted, /*Nested=*/false,
+                                   nullptr, /*OuterRoot=*/nullptr, &Hoisted)) {
         diagnose(Hdr->getTerminator(), kMsgNestedGrantFalsified);
         return;  // `diagnose` EXITS on the first DS_Error (bd `br4a`).
       }
