@@ -4168,12 +4168,18 @@ def _iv_range(fn, x):
     ub = _upper(fn, b)
     if ub is None:
         return None
+    # ONE invariant for every form (R11 round 1, B-F1): `vmax` is the LARGEST
+    # value the compared operand can hold while the edge STAYS, and the step is
+    # added exactly once, only when that operand is x itself (the next x is
+    # vmax + c); when it is %n the next x IS the compared value. The `ne` form
+    # used to subtract the step a second time for x (b-2), so the trip that
+    # runs WITH x == b was outside the range and a cell at b read as distinct.
     if pred == "ult":
-        vmax = ub - 1        # the compared value while staying
+        vmax = ub - 1
     elif pred == "ule":
         vmax = ub
     elif pred == "ne" and c == 1 and re.fullmatch(r"\d+", b) and s < int(b):
-        vmax = int(b) - 1 if a == n else int(b) - 2  # stops AT b, step 1
+        vmax = int(b) - 1    # step 1 from below b: stays only while != b
     else:
         return None
     hi = max(s, vmax + c if a == x else vmax)

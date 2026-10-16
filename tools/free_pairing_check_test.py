@@ -2275,7 +2275,69 @@ exit:
 WINDOW_CELL_CNOT_LITFIRST = sub(WINDOW_CELL_CNOT, "%i1 = add",
                                 "add nuw nsw i64 %i, 1", "add i64 1, %i")
 
+# bd 01po.19.34.3 (R11 round 1, B-F1/B-F2) — THE UPPER END OF THE RANGE.
+# `%l` from 2, step 1, against a constant cell; one row per compare form, the
+# cell at EXACTLY the last value the body runs with (must alias: B1) and one
+# beyond it (must clear). The `ne`-on-x form shipped one too low (it cleared
+# cell 5 although the body runs with %l == 5). `{CMP}` is the compare, `{BR}`
+# the two targets in order.
+def _iv_bound(cell, cmp, br="label %body, label %exit"):
+    return f"""
+define i32 @slice(i64 %m, i32 %n) local_unnamed_addr {{
+entry:
+  %w = alloca i32, i64 8, align 4, !cq.railwindow !0
+  %h0 = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %h0, ptr %w, align 4
+  br label %body
+body:
+  %l = phi i64 [ 2, %entry ], [ %l1, %body ]
+  %a0 = getelementptr i32, ptr %w, i64 {cell}
+  %a1 = getelementptr i32, ptr %w, i64 %l
+  %x1 = load i32, ptr %a1, align 4
+  %x0 = load i32, ptr %a0, align 4
+  call void @cqrt_ry_i1(i32 %x1, double 3.000000e-01)
+  call void @cqrt_cnot(i32 %x1, i32 %x0)
+  store i32 %x1, ptr %a1, align 4
+  store i32 %x0, ptr %a0, align 4
+  %l1 = add nuw nsw i64 %l, 1
+  %c = {cmp}
+  br i1 %c, {br}
+exit:
+  %x2 = load i32, ptr %w, align 4
+  %r = call i1 @cqrt_measure_i1(i32 %x2)
+  %z = zext i1 %r to i32
+  ret i32 %z
+}}
+!0 = !{{i32 1}}
+"""
+
+
+# (form, compare, branch targets, last value the body runs with)
+_IV_FORMS = [
+    ("ne-x", "icmp ne i64 %l, 5", "label %body, label %exit", 5),
+    ("ne-n", "icmp ne i64 %l1, 5", "label %body, label %exit", 4),
+    ("ult-x", "icmp ult i64 %l, 5", "label %body, label %exit", 5),
+    ("ult-n", "icmp ult i64 %l1, 5", "label %body, label %exit", 4),
+    ("ule-x", "icmp ule i64 %l, 5", "label %body, label %exit", 6),
+    ("ule-n", "icmp ule i64 %l1, 5", "label %body, label %exit", 5),
+    ("swapped-ugt-x", "icmp ugt i64 5, %l", "label %body, label %exit", 5),
+    ("exit-edge-uge-x", "icmp uge i64 %l, 5", "label %exit, label %body", 5),
+    ("exit-edge-eq-n", "icmp eq i64 %l1, 5", "label %exit, label %body", 4),
+]
+IV_BOUND_POSITIVE = [
+    (f"window-cell-iv-{f}-one-beyond", _iv_bound(last + 1, cmp, br))
+    for f, cmp, br, last in _IV_FORMS]
+IV_BOUND_MUTANTS = [
+    (f"window-cell-iv-{f}-last-value", _iv_bound(last, cmp, br),
+     "B1-input-aliases-written-rail")
+    for f, cmp, br, last in _IV_FORMS] + [
+    # a constant offset of 2^62 + 5 cells wraps onto cell 5 = the last value.
+    ("window-cell-iv-offset-near-2^62",
+     _iv_bound(4611686018427387909, "icmp ne i64 %l1, 6"),
+     "B1-input-aliases-written-rail")]
+
 MEM_POSITIVE = [
+    *IV_BOUND_POSITIVE,
     ("window-cell-cnot-nested-iv-distinct", WINDOW_CELL_CNOT_IV),
     ("window-cell-cnot-literal-first-offset", WINDOW_CELL_CNOT_LITFIRST),
     ("window-cell-temp-other-cell-written-dbg", WINDOW_CELL_TEMP_OTHER_DBG),
@@ -2397,6 +2459,7 @@ exit:
      sub(WINDOW_CELL_CNOT, "%i1 = add", "add nuw nsw i64 %i, 1",
          "add nuw nsw i64 %i, 4611686018427387904"),
      "B1-input-aliases-written-rail"),
+    *IV_BOUND_MUTANTS,
     # bd 01po.19.34: the counted-phi range proof's own kill tests.
     ("window-cell-cnot-iv-starts-at-zero",
      sub(WINDOW_CELL_CNOT_IV, "%l = phi", "[ 2, %entry ]", "[ 0, %entry ]"),
