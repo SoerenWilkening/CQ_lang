@@ -3563,8 +3563,27 @@ bool loopTouchesRailWindow(const Loop *L) {
 // The PURE half of `markIfIterationLocal` (bd 01po.19.34 / 01po.19.19): does
 // `L` qualify, with every quantum SUBLOOP qualifying on its own? `AnyTainted`
 // receives whether `L` (subloops included) holds a tainted value.
+// A value that NAMES a qubit at this point of the pipeline: tainted, or — for
+// the SUBLOOP question only — the result of a runtime/template call (`cqrt_*`,
+// `cq_template_*`), i.e. a handle an emitter minted after propagation. The
+// second half does not rely on every emitter inserting its out-rail into
+// `Tainted` (true of `SelectMergeEmit`'s `%out`, unverified for the rest): a
+// handle defined outside a subloop and read inside it is refused either way.
+// Refusing direction only (it can only make a subloop NOT qualify).
+static bool namesQubit(const Value *V, const TaintSet &taint, bool Nested) {
+  if (taint.Tainted.count(V))
+    return true;
+  if (!Nested)
+    return false;
+  const auto *CI = dyn_cast<CallInst>(V);
+  const Function *CF = CI ? CI->getCalledFunction() : nullptr;
+  return CF && (CF->getName().starts_with("cqrt_") ||
+                CF->getName().starts_with("cq_template_"));
+}
+
 static bool iterationLocalQualifies(Loop *L, const TaintSet &taint,
-                                    LoopInfo &LI, bool &AnyTainted) {
+                                    LoopInfo &LI, bool &AnyTainted,
+                                    bool Nested = false) {
   AnyTainted = false;
   if (taintedExit(L, taint))
     return false;  // Q1 quantum-bounded — never Case B.
@@ -3585,20 +3604,35 @@ static bool iterationLocalQualifies(Loop *L, const TaintSet &taint,
   // (`reverseTerminalGroups`), and no outer temp has a use inside the subloop.
   // The remaining hazard — an OUTER temp whose discharge point (the nearest
   // common post-dominator of its uses) falls INSIDE the subloop, e.g. its
-  // header — is closed at the placement owner (`FreePoint`'s same-loop check),
-  // never assumed here.
+  // header — is NOT closed here: `Uncomputation`'s `multiplicityAgrees` (the
+  // innermost marked header of each gate vs the point) refuses that pairing,
+  // and the refusal is a LEAK (stage 2b's census sees a dirty template rail),
+  // never a K-fold reversal. Unprobed from C; R11 round 1 found no route.
+  //
+  // WHICH SUBLOOPS ARE ASKED (bd 01po.19.34.1, R11 round 1 A-F1): every subloop
+  // that TOUCHES taint — one that DEFINES a tainted value OR whose any
+  // instruction READS one. The first spelling asked only the definers, and the
+  // own-block scan below skips subloop blocks, so a subloop whose only quantum
+  // content is a tainted OPERAND (a `cq_measure`, a cell store, an emitter's
+  // void gate such as a kickback `cqrt_rz_i1(flag, θ)` on an outer flag) was
+  // never asked the operand clause at all, and the outer loop was marked.
   for (Loop *SL : L->getSubLoops()) {
-    bool SubTainted = false;
-    for (BasicBlock *BB : SL->blocks())
-      for (Instruction &I : *BB)
-        if (taint.Tainted.count(&I)) {
-          SubTainted = true;
+    bool SubTouches = false;
+    for (BasicBlock *BB : SL->blocks()) {
+      for (Instruction &I : *BB) {
+        SubTouches = taint.Tainted.count(&I) != 0;
+        for (Value *Op : I.operands())
+          SubTouches = SubTouches || namesQubit(Op, taint, /*Nested=*/true);
+        if (SubTouches)
           break;
-        }
-    if (!SubTainted)
+      }
+      if (SubTouches)
+        break;
+    }
+    if (!SubTouches)
       continue;
     bool Dummy = false;
-    if (!iterationLocalQualifies(SL, taint, LI, Dummy))
+    if (!iterationLocalQualifies(SL, taint, LI, Dummy, /*Nested=*/true))
       return false;
     AnyTainted = true;
   }
@@ -3646,7 +3680,7 @@ static bool iterationLocalQualifies(Loop *L, const TaintSet &taint,
       // OUTSIDE L and read inside (loop-invariant) is a persistent register that
       // accumulates across iterations, NOT iteration-local.
       for (Value *Op : I.operands())
-        if (taint.Tainted.count(Op)) {
+        if (namesQubit(Op, taint, Nested)) {
           auto *OpI = dyn_cast<Instruction>(Op);
           if (!OpI || !L->contains(OpI->getParent()))
             return false;
@@ -5323,12 +5357,15 @@ bool markIfRailLocal(Loop *L, TaintSet &taint, LoopInfo &LI,
   // ⚠ ITS OLD REASON ("it has no post-flatten emitted stream to miss") IS FALSE
   // SINCE bd 01po.19 S6, which calls it after the flatten for window loops, and
   // since bd 01po.19.34 it marks a quantum SUBLOOP's blocks. What makes that
-  // sound is different and is stated there: the subloop must qualify ON ITS OWN
-  // (`iterationLocalQualifies`, recursion), whose operand clause asks EVERY
-  // instruction — the emitted void calls included — for a tainted operand
-  // defined outside the subloop, and an emitter's out-rail is tainted on mint
-  // (`SelectMergeEmit` inserts `%out`). So nothing outside the subloop is
-  // gated inside it, and its own stream is grouped and reversed per inner trip
+  // sound is different and is stated there: EVERY subloop that touches a
+  // qubit (defines a tainted value, or any instruction of it reads a tainted
+  // value or an emitter-minted `cqrt_*`/`cq_template_*` handle — `namesQubit`)
+  // must qualify ON ITS OWN (`iterationLocalQualifies`, recursion), whose
+  // operand clause then asks every one of its instructions, the emitted void
+  // calls included. (Until bd 01po.19.34.1 only subloops that DEFINED a tainted
+  // value were asked, so this sentence was false for a subloop whose only
+  // quantum content was an operand.) So nothing outside the subloop is gated
+  // inside it, and its own stream is grouped and reversed per inner trip
   // (`reverseTerminalGroups` keys on the innermost loop; `multiplicityAgrees`).
   for (BasicBlock *BB : L->blocks())
     if (LI.getLoopFor(BB) == L)
