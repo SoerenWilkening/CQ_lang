@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 866 maintained source files, 6979 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 867 maintained source files, 6986 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -1245,6 +1245,16 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RailWindowMaterialize.cpp:108` — `offsetOf`
 - `ir-pass/src/RailWindowMaterialize.cpp:146` — `foldBoolView`
 - `ir-pass/src/RailWindowMaterialize.cpp:168` — `materializeRailWindow`
+
+### `ir-pass/src/RailWindowNonZero.cpp` (180 lines)
+
+- `ir-pass/src/RailWindowNonZero.cpp:41` — `nonZeroAtEntry`
+- `ir-pass/src/RailWindowNonZero.cpp:47` — `signAtEntry`
+- `ir-pass/src/RailWindowNonZero.cpp:60` — `monotoneEnds`
+- `ir-pass/src/RailWindowNonZero.cpp:97` — `walkWithin`
+- `ir-pass/src/RailWindowNonZero.cpp:115` — `wideCounterpart`
+- `ir-pass/src/RailWindowNonZero.cpp:138` — `visitZeroExtendExpr`
+- `ir-pass/src/RailWindowNonZero.cpp:157` — `railWindowNonZeroOverLoop`
 
 ### `ir-pass/src/RailWindowPhiUndo.cpp` (230 lines)
 
