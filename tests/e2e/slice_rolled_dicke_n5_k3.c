@@ -11,7 +11,14 @@
    l = 2..min(3, m-1) runs (TWO trips at m = 5 and m = 4, one at m = 3): per
    inner trip `s = 2*q[m-1] + q[m-l]` is built (select `%out` on a copy `%bf`
    of q[m-1], zext/or, `icmp eq 3`), drives the controlled Ry on q[m-1-l], and
-   is reversed and freed INSIDE that inner trip. Until 01po.19.34 the outer
+   is reversed and freed INSIDE that inner trip.
+   WHICH ROTATIONS FIRE (replay, R11 round 1 C-F2): of the nine controlled
+   Rys, two have a control that is 0 on EVERY branch — at m = 5 the 2-qubit
+   block's Ry on q[3] and the first inner trip's on q[2] (from |00111> both
+   controls are still 0) — and so do nothing; m = 5's second inner trip (q[1])
+   does fire. The one outer trip whose TWO inner trips both fire is m = 4
+   (q[1], q[0]). slice_rolled_dicke_n6_k3 has two such outer trips (9 of its
+   12 Rys fire), so this slice is not the only witness. Until 01po.19.34 the outer
    loop's quantum subloop kept the outer body unmarked and the module declined
    `control flow inside a loop body` (fixture
    railwindow_dicke_n5k3_nested_accept.ll).

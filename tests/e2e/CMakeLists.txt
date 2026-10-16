@@ -7303,6 +7303,16 @@ add_test(NAME e2e-slice-rolled-dicke-n5-k3
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_rolled_dicke_n5_k3.expected.log")
 
+# bd test_C_libtooling-01po.19.34 (R11 round 1 C-F2): N=6 K=3, two outer trips
+# whose two inner trips both rotate (9 of 12 Rys fire; analytic D^6_3).
+add_test(NAME e2e-slice-rolled-dicke-n6-k3
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_rolled_dicke_n6_k3.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_rolled_dicke_n6_k3.expected.log")
+
 # bd test_C_libtooling-01po.19.19: the runtime-N twin — VLA `bool q[n]`,
 # runtime trip counts, a nested runtime `l` loop; run with no arguments, so
 # n = 4, k = 2 (analytic D^4_2 in the header).
