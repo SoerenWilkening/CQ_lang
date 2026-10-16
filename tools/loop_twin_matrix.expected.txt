@@ -725,13 +725,14 @@ m_none_kidx_none_none_kloop DECLINE-BOTH	cq QRAM access: array address has alias
 m_none_kprep_none_none_kflat ACCEPT-IDENTICAL
 m_none_kprep_ry_none_kflat UNROLLED-ONLY	cq taint escape: tainted value muxed by a classical-condition phi
 m_none_kread_none_none_kflat ACCEPT-IDENTICAL
-m_none_l2bd_none_none_l2ic UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
-m_none_l2bd_none_none_l2im UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
-m_none_l2bd_none_none_l2iu UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
-m_none_l2cd_none_none_l2ic UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
-m_none_l2cd_none_none_l2im UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
-m_none_l2cd_none_none_l2iu UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
-m_none_l2d3d_none_none_l2im UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2b_none_none_l2im ACCEPT-IDENTICAL
+m_none_l2b_none_none_l2iu ACCEPT-IDENTICAL
+m_none_l2bd_none_none_l2im ACCEPT-IDENTICAL
+m_none_l2bd_none_none_l2iu ACCEPT-IDENTICAL
+m_none_l2c_none_none_l2im ACCEPT-IDENTICAL
+m_none_l2c_none_none_l2iu ACCEPT-IDENTICAL
+m_none_l2cd_none_none_l2im ACCEPT-IDENTICAL
+m_none_l2cd_none_none_l2iu ACCEPT-IDENTICAL
 m_none_l2inv_none_none_none ACCEPT-IDENTICAL
 m_none_l2invd_none_none_none ACCEPT-IDENTICAL
 m_none_l2n_none_none_l2im ACCEPT-IDENTICAL

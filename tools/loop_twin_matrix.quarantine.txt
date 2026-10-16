@@ -173,7 +173,15 @@
 #    ROLLED-ONLY cells.
 #    OWNER: the GENERATOR (`REGION["range"]` x `PREFIX["xor"]`), not the compiler.
 #
-# ── CLASS D — 6 cells, bd test_C_libtooling-s82e. THE NESTED-LOOP AXIS'S OWN
+# ── CLASS D — RETIRED 2026-10-16 (0 cells), bd test_C_libtooling-8h7d.25 /
+#    01po.19.18.1: `railLocalQualifies` now CALLS the nested subloop clause, so
+#    the OUTER body is certified rail-local and its per-trip rail is discharged
+#    on every trip, rolled as flat. The four plain cells went STALE (byte-identical,
+#    now ACCEPT-IDENTICAL in the expected table), the four `l2bd`/`l2cd` l2im/l2iu
+#    cells went UNROLLED-ONLY -> ACCEPT-IDENTICAL, and the `l2ic` cells keep only
+#    their class E half (re-pinned below). Evidence per cell:
+#    SCRATCH/laneA/twin_cells.md. The original text, kept as history:
+# ── CLASS D (history) — 6 cells, bd test_C_libtooling-s82e. THE NESTED-LOOP AXIS'S OWN
 #    FINDING, and it is the reason bd test_C_libtooling-vsr6 was filed: these
 #    six diverge on the ORACLE `9bd01598…`, i.e. on `main`'s own compiler with
 #    the pass source untouched, and until this axis existed NO instrument in the
@@ -217,7 +225,13 @@
 #    field says `D+E`); their digests cover both and must not be read as class D
 #    alone.
 #
-# ── CLASS E — 2 cells, bd test_C_libtooling-s82e. THE HOISTED LOOP-INVARIANT
+# ── CLASS E — 4 cells since 2026-10-16 (the two `l2ic` cells, now class E
+#    ALONE, plus `l2bd_l2ic` / `l2cd_l2ic`, which declined UNROLLED-ONLY until bd
+#    8h7d.25 and now accept rolled with exactly this divergence: counts
+#    (6, 6, 18) rolled against (6, 6, 19) flat — same discharge, ONE extra rail
+#    flat). Capped tensored replay (SCRATCH/laneA/twincmp.py): same measured
+#    distribution, leak-sensitive control differs. Original text:
+# ── CLASS E (history) — 2 cells, bd test_C_libtooling-s82e. THE HOISTED LOOP-INVARIANT
 #    (ii-c) READ, and unlike class D it is NOT about the nesting — it is the
 #    `x1`/`x8`/`x9` family (`$PREV/loopfix/probes/`) and `CLAUDE.md`'s Q-R1-1
 #    item arriving through a nest. NEITHER SIDE DISCHARGES IT; they differ in
@@ -371,6 +385,18 @@
 #    NOT changed (ruling). RETIREMENT TRIGGER: bd 01po.19.30 lands (free the
 #    provably-|0> rail or don't mint it) -> re-measure; an entry whose pair is
 #    byte-identical goes STALE and must be removed.
+# ── CLASS J — 1 cell, bd test_C_libtooling-8h7d.25.3. REPRESENTATIONAL: AN
+#    ENCLOSING-LOOP-INVARIANT COPY HOISTED ON THE FLAT SIDE ONLY. The depth-3
+#    nest `m_none_l2d3d_none_none_l2im` accepts rolled since bd 8h7d.25. Its flat
+#    twin unrolls the middle loop, which makes `(a >> (i+1)) & 1` invariant in the
+#    ENCLOSING `io` loop, and `-O1` hoists both copies out of it (minted twice,
+#    measured four times); the rolled spelling recomputes them per trip (minted
+#    four times). Counts (12, 12, 33)/80 lines rolled against (10, 10, 29)/72 flat:
+#    EVERY copy is discharged on both sides, and the measured values are the same
+#    on every branch. Capped tensored replay (u frozen, cap 4): same distribution;
+#    the same comparison with the rolled discharges deleted DIFFERS. DIRECTION:
+#    neither side is deficient (rolled does redundant, fully discharged work).
+#    RETIREMENT TRIGGER: the pair becomes byte-identical -> STALE, remove it.
 # ==== END OF HEADER — everything BELOW this line is generated and is rewritten
 # ==== by --regenerate / --refresh-quarantine. Everything ABOVE it is PRESERVED
 # ==== byte-for-byte, including prose you add by hand (bd test_C_libtooling-gfsk).
@@ -519,53 +545,101 @@ digest   b7b508091ebe80a9
 rolled   cq_template_icmp_sgt_i32_hl_unc(h1, h0, 5)
 unrolled cqrt_rz_i1(h1, -0x1p-3)
 
+cell     m_none_k2b_none_none_kloop
+class    I
+bd       test_C_libtooling-01po.19.30
+owner    RailWindowMaterialize — UNROLLED carries the orphans: -O1 store-forwards k[0]/m[0]'s zero seed into cq_theta, so cell 0 of each bank is a scalar rail stored over its pre-minted window rail (2 orphan |0> mints). RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
+digest   ec7b1b771421b9e8
+rolled   cqrt_ry_i1(h2, 0x1p-2)
+unrolled cqrt_alloc_i1(0) -> h3
+
+cell     m_none_kiprep_none_none_kflat
+class    I
+bd       test_C_libtooling-01po.19.30
+owner    RailWindowMaterialize — ROLLED pre-mints the window before rotating (alloc,alloc,ry,ry) where the SROA'd flat twin interleaves (alloc,ry,alloc,ry); no orphan, order only. RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
+digest   073c1cd390961b57
+rolled   cqrt_alloc_i32(0) -> h2
+unrolled cqrt_ry_i32(h1, 0x1p-1)
+
+cell     m_none_kiprep_none_none_kloop
+class    I
+bd       test_C_libtooling-01po.19.30
+owner    RailWindowMaterialize — UNROLLED carries the orphan: -O1 store-forwards k[0]'s zero seed into cq_theta; the pre-minted cell-0 rail is overwritten and never touched (1 orphan |0> mint). RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
+digest   649b7c467258056d
+rolled   cqrt_ry_i32(h2, 0x1p-1)
+unrolled cqrt_alloc_i32(0) -> h3
+
+cell     m_none_kover_none_none_kflat
+class    I
+bd       test_C_libtooling-01po.19.30
+owner    RailWindowMaterialize — ROLLED pre-mints all 8 cells of the over-sized bank; 6 are never touched (6 orphan |0> mints); the flat twin is SROA'd to 2 scalars. RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
+digest   1d2d4c32e27b27d1
+rolled   cqrt_alloc_i1(0) -> h2
+unrolled cqrt_ry_i1(h1, 0x1p-1)
+
+cell     m_none_kover_none_none_kloop
+class    I
+bd       test_C_libtooling-01po.19.30
+owner    RailWindowMaterialize — BOTH sides pre-mint the 8-cell over-sized bank (6 orphans rolled); the unrolled side also store-forwards k[0] (7 orphans). RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
+digest   e9763c17347b53d8
+rolled   cqrt_alloc_i1(0) -> h2
+unrolled cqrt_ry_i1(h1, 0x1p-1)
+
+cell     m_none_kprep_none_none_kloop
+class    I
+bd       test_C_libtooling-01po.19.30
+owner    RailWindowMaterialize — UNROLLED carries the orphan: -O1 store-forwards k[0]'s zero seed into cq_theta; the pre-minted cell-0 rail is overwritten and never touched (1 orphan |0> mint). RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
+digest   3ae0b6eb16ab5498
+rolled   cqrt_ry_i1(h2, 0x1p-1)
+unrolled cqrt_alloc_i1(0) -> h3
+
+cell     m_none_kread_none_none_kloop
+class    I
+bd       test_C_libtooling-01po.19.30
+owner    RailWindowMaterialize — UNROLLED carries the orphan: -O1 store-forwards k[0]'s zero seed into cq_theta; the pre-minted cell-0 rail is overwritten and never touched (1 orphan |0> mint). RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
+digest   92040cbb05fa103b
+rolled   cqrt_ry_i32_controlled(h1, h0, 0x1p-2)
+unrolled cqrt_alloc_i1(0) -> h2
+
 cell     m_none_l2b_none_none_l2ic
-class    D+E
+class    E
 bd       test_C_libtooling-s82e
-owner    class D (rolled drops the outer rail's _unc/free) AND class E (the hoisted invariant `a & 1` is minted once rolled, twice flat)
-digest   601697b915f73b57
+owner    class E alone since bd 8h7d.25 retired class D: the hoisted invariant `a & 1` is minted once rolled, twice flat; same discharge
+digest   db8a2d6ef01d545e
 rolled   cq_template_and_i32_hl(h0, 1) -> h1
 unrolled cq_template_lshr_i32_hl(h0, 1) -> h1
 
-cell     m_none_l2b_none_none_l2im
-class    D
+cell     m_none_l2bd_none_none_l2ic
+class    E
 bd       test_C_libtooling-s82e
-owner    the outer loop's own per-trip template rail is discharged FLAT and never ROLLED; needs the sub-loop (3 controls identical) — ROLLED deficient
-digest   7229a10446735aa2
-rolled   cqrt_measure_i32(h2) -> 0
-unrolled cq_template_lshr_i32_hl_unc(h1, h0, 1)
-
-cell     m_none_l2b_none_none_l2iu
-class    D
-bd       test_C_libtooling-s82e
-owner    the outer loop's own per-trip template rail is discharged FLAT and never ROLLED; needs the sub-loop (3 controls identical) — ROLLED deficient
-digest   f3d53ec1d933729a
-rolled   cqrt_measure_i32(h2) -> 0
-unrolled cq_template_lshr_i32_hl_unc(h1, h0, 1)
+owner    the hoisted invariant `a & 1` minted once rolled, twice flat (declined UNROLLED-ONLY until bd 8h7d.25); same discharge — NEITHER side deficient in discharge
+digest   cdf8336a62b9ff37
+rolled   cq_template_and_i32_hl(h0, 1) -> h1
+unrolled cq_template_lshr_i32_hl(h0, 1) -> h1
 
 cell     m_none_l2c_none_none_l2ic
-class    D+E
+class    E
 bd       test_C_libtooling-s82e
-owner    class D on the `icmp`-as-data outer rail AND class E (the hoisted invariant `a & 1` is minted once rolled, twice flat)
-digest   5fc7f27dad90b03d
+owner    class E alone since bd 8h7d.25 retired class D: the hoisted invariant `a & 1` is minted once rolled, twice flat; same discharge
+digest   3cda2a8d6d308f59
 rolled   cq_template_and_i32_hl(h0, 1) -> h1
 unrolled cq_template_icmp_sgt_i32_hl(h0, 1) -> h1
 
-cell     m_none_l2c_none_none_l2im
-class    D
+cell     m_none_l2cd_none_none_l2ic
+class    E
 bd       test_C_libtooling-s82e
-owner    same as the l2b cells with the outer rail spelled as an `icmp` USED AS DATA (bd 7845's membership question) — ROLLED deficient
-digest   1fa777e95e6195c4
-rolled   cqrt_measure_i32(h2) -> 0
-unrolled cq_template_icmp_sgt_i32_hl_unc(h1, h0, 1)
+owner    the hoisted invariant `a & 1` minted once rolled, twice flat (declined UNROLLED-ONLY until bd 8h7d.25); same discharge — NEITHER side deficient in discharge
+digest   5c04e02bd177f3a1
+rolled   cq_template_and_i32_hl(h0, 1) -> h1
+unrolled cq_template_icmp_sgt_i32_hl(h0, 1) -> h1
 
-cell     m_none_l2c_none_none_l2iu
-class    D
-bd       test_C_libtooling-s82e
-owner    same as the l2b cells with the outer rail spelled as an `icmp` USED AS DATA (bd 7845's membership question) — ROLLED deficient
-digest   b88ffe183e9bfc16
+cell     m_none_l2d3d_none_none_l2im
+class    J
+bd       test_C_libtooling-8h7d.25.3
+owner    -O1 hoists the enclosing-loop-invariant `(a >> (i+1)) & 1` copies on the FLAT side only; every copy discharged on both — NEITHER side deficient
+digest   f431f3872bc0b92b
 rolled   cqrt_measure_i32(h2) -> 0
-unrolled cq_template_icmp_sgt_i32_hl_unc(h1, h0, 1)
+unrolled cq_template_lshr_i32_hl(h0, 2) -> h3
 
 cell     m_none_l2n_none_none_l2ic
 class    E
@@ -934,67 +1008,4 @@ owner    the GENERATOR: -O1 folds the FLAT spelling's xor mask 9 -> 8 under the 
 digest   7c31a377ffbfc95f
 rolled   cqrt_xorc_i32(h0, 9)
 unrolled cq_template_xor_i32_hl(h0, 8) -> h1
-
-cell     m_none_k2b_none_none_kloop
-# trace_twin_equiv EQUIV after dropping the unrolled side's 2 never-touched |0> mints (h2, h5); rolled side has none; a representational difference (01po.19 S4 a3fbac74), not a miscompile.
-class    I
-bd       test_C_libtooling-01po.19.30
-owner    RailWindowMaterialize — UNROLLED carries the orphans: -O1 store-forwards k[0]/m[0]'s zero seed into cq_theta, so cell 0 of each bank is a scalar rail stored over its pre-minted window rail (2 orphan |0> mints). RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
-digest   ec7b1b771421b9e8
-rolled   cqrt_ry_i1(h2, 0x1p-2)
-unrolled cqrt_alloc_i1(0) -> h3
-
-cell     m_none_kiprep_none_none_kflat
-# trace_twin_equiv EQUIV as is (no mint dropped): the reordered gates act on disjoint handles; a representational difference (01po.19 S4 a3fbac74), not a miscompile.
-class    I
-bd       test_C_libtooling-01po.19.30
-owner    RailWindowMaterialize — ROLLED pre-mints the window before rotating (alloc,alloc,ry,ry) where the SROA'd flat twin interleaves (alloc,ry,alloc,ry); no orphan, order only. RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
-digest   073c1cd390961b57
-rolled   cqrt_alloc_i32(0) -> h2
-unrolled cqrt_ry_i32(h1, 0x1p-1)
-
-cell     m_none_kiprep_none_none_kloop
-# trace_twin_equiv EQUIV after dropping the unrolled side's 1 never-touched |0> mint (h2); a representational difference (01po.19 S4 a3fbac74), not a miscompile.
-class    I
-bd       test_C_libtooling-01po.19.30
-owner    RailWindowMaterialize — UNROLLED carries the orphan: -O1 store-forwards k[0]'s zero seed into cq_theta; the pre-minted cell-0 rail is overwritten and never touched (1 orphan |0> mint). RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
-digest   649b7c467258056d
-rolled   cqrt_ry_i32(h2, 0x1p-1)
-unrolled cqrt_alloc_i32(0) -> h3
-
-cell     m_none_kover_none_none_kflat
-# trace_twin_equiv EQUIV after dropping the rolled side's 6 never-touched |0> mints (h3..h8); a representational difference (01po.19 S4 a3fbac74), not a miscompile.
-class    I
-bd       test_C_libtooling-01po.19.30
-owner    RailWindowMaterialize — ROLLED pre-mints all 8 cells of the over-sized bank; 6 are never touched (6 orphan |0> mints); the flat twin is SROA'd to 2 scalars. RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
-digest   1d2d4c32e27b27d1
-rolled   cqrt_alloc_i1(0) -> h2
-unrolled cqrt_ry_i1(h1, 0x1p-1)
-
-cell     m_none_kover_none_none_kloop
-# trace_twin_equiv EQUIV after dropping 6 rolled (h3..h8) and 7 unrolled (h2, h4..h9) never-touched |0> mints; a representational difference (01po.19 S4 a3fbac74), not a miscompile.
-class    I
-bd       test_C_libtooling-01po.19.30
-owner    RailWindowMaterialize — BOTH sides pre-mint the 8-cell over-sized bank (6 orphans rolled); the unrolled side also store-forwards k[0] (7 orphans). RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
-digest   e9763c17347b53d8
-rolled   cqrt_alloc_i1(0) -> h2
-unrolled cqrt_ry_i1(h1, 0x1p-1)
-
-cell     m_none_kprep_none_none_kloop
-# trace_twin_equiv EQUIV after dropping the unrolled side's 1 never-touched |0> mint (h2); a representational difference (01po.19 S4 a3fbac74), not a miscompile.
-class    I
-bd       test_C_libtooling-01po.19.30
-owner    RailWindowMaterialize — UNROLLED carries the orphan: -O1 store-forwards k[0]'s zero seed into cq_theta; the pre-minted cell-0 rail is overwritten and never touched (1 orphan |0> mint). RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
-digest   3ae0b6eb16ab5498
-rolled   cqrt_ry_i1(h2, 0x1p-1)
-unrolled cqrt_alloc_i1(0) -> h3
-
-cell     m_none_kread_none_none_kloop
-# trace_twin_equiv EQUIV after dropping the unrolled side's 1 never-touched |0> mint (h2); both sides accept since 01po.19 S6 (109d3b7e), which lowers the flat `if (k[i])` as a cell register condition; a representational difference, not a miscompile.
-class    I
-bd       test_C_libtooling-01po.19.30
-owner    RailWindowMaterialize — UNROLLED carries the orphan: -O1 store-forwards k[0]'s zero seed into cq_theta; the pre-minted cell-0 rail is overwritten and never touched (1 orphan |0> mint). RETIREMENT: test_C_libtooling-01po.19.30 lands -> re-measure; remove the entry when the pair is byte-identical
-digest   92040cbb05fa103b
-rolled   cqrt_ry_i32_controlled(h1, h0, 0x1p-2)
-unrolled cqrt_alloc_i1(0) -> h2
 
