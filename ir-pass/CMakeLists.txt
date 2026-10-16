@@ -92,6 +92,7 @@ add_library(CQPass MODULE
   # bd 01po.19.18: the seeded quantum accumulator (Case A, QQ in-place step).
   src/LoopAccumulator.cpp
   src/LoopAccumulatorDead.cpp
+  src/LoopAccumulatorFacts.cpp
   src/LoopUnrollPrepass.cpp
   src/MeasureLowering.cpp
   # bd r2j3.32: reverse a dead controlled-copy merge rail by stream replay.

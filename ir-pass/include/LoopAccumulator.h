@@ -138,6 +138,21 @@ bool cellMayBeRecorded(const llvm::Value *Target,
 // load/store addressing (a call, a stored pointer, an integer cast)? Does a path
 // from one of `L`'s exits reach block `Mint` without passing one of `Reads`?
 bool arrayEscapes(const llvm::Value *A);
+// Some path from `G` to a function exit reads `H` (one of `Reads`) nowhere,
+// never entering `Excl`; reaching `Cut` (the register's mint block, a re-mint of
+// the name) counts as dead (rA2b-F1).
+bool deadAfter(llvm::Instruction *G,
+               const llvm::SmallPtrSetImpl<const llvm::Instruction *> &Reads,
+               const llvm::BasicBlock *Excl, const llvm::BasicBlock *Cut);
+// R11 round 2b rA2b-F2: for a loop `L` re-entered by its parent `P`, can a gate
+// on cell `Target` in a LATER entry never touch a cell an earlier entry's step
+// read (`SrcCells`)? True only when SCEV proves the per-entry address ranges
+// disjoint (affine over `L` with one stride, the entry start affine over `P`
+// with a positive step larger than one entry's span); false (fail closed)
+// otherwise.
+bool cellsDisjointAcrossEntries(const llvm::Value *Target,
+                                llvm::ArrayRef<const llvm::Value *> SrcCells,
+                                const llvm::Loop *L, llvm::ScalarEvolution &SE);
 bool reachesAvoiding(const llvm::Loop *L, const llvm::BasicBlock *Mint,
                      const llvm::SmallPtrSetImpl<const llvm::Instruction *> &Reads);
 

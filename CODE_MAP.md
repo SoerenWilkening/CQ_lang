@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 872 maintained source files, 7005 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 872 maintained source files, 7001 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -777,7 +777,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LiteralIntegrity.cpp:274` — `declineAddressTakenBlocks`
 - `ir-pass/src/LiteralIntegrity.cpp:327` — `removeUnreachableBlocksChecked`
 
-### `ir-pass/src/LoopAccumulator.cpp` (326 lines)
+### `ir-pass/src/LoopAccumulator.cpp` (248 lines)
 
 - `ir-pass/src/LoopAccumulator.cpp:31` — `qqStem`
 - `ir-pass/src/LoopAccumulator.cpp:51` — `accSourceReadsRail`
@@ -785,17 +785,13 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LoopAccumulator.cpp:82` — `seededAccumulatorPhi`
 - `ir-pass/src/LoopAccumulator.cpp:174` — `commitSeededAccumulator`
 - `ir-pass/src/LoopAccumulator.cpp:227` — `emitAccumulatorQQStep`
-- `ir-pass/src/LoopAccumulator.cpp:251` — `cellMayBeRecorded`
-- `ir-pass/src/LoopAccumulator.cpp:279` — `arrayEscapes`
-- `ir-pass/src/LoopAccumulator.cpp:307` — `reachesAvoiding`
 
-### `ir-pass/src/LoopAccumulatorDead.cpp` (394 lines)
+### `ir-pass/src/LoopAccumulatorDead.cpp` (390 lines)
 
-- `ir-pass/src/LoopAccumulatorDead.cpp:94` — `movedRails`
-- `ir-pass/src/LoopAccumulatorDead.cpp:122` — `runsAfterInTrip`
-- `ir-pass/src/LoopAccumulatorDead.cpp:143` — `cellArrays`
-- `ir-pass/src/LoopAccumulatorDead.cpp:159` — `deadAfter`
-- `ir-pass/src/LoopAccumulatorDead.cpp:184` — `declineDeadAccumulatorMoves`
+- `ir-pass/src/LoopAccumulatorDead.cpp:98` — `movedRails`
+- `ir-pass/src/LoopAccumulatorDead.cpp:126` — `runsAfterInTrip`
+- `ir-pass/src/LoopAccumulatorDead.cpp:147` — `cellArrays`
+- `ir-pass/src/LoopAccumulatorDead.cpp:163` — `declineDeadAccumulatorMoves`
 
 ### `ir-pass/src/LoopLowering.cpp` (8474 lines)
 

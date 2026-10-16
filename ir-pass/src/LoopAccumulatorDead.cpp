@@ -67,11 +67,15 @@ namespace cq {
 //     (`cellMayBeRecorded`, SCEV over `L`; a cell of the gate's own trip that
 //     the step reads after it is not yet recorded — F5's shape). That per-cell
 //     exemption reasons WITHIN ONE ENTRY of `L` (R11 round 2 rA2-F4);
-//   * PER ENTRY ([rA2-F1], the silent bd r2j3.44): when a path leads from the
-//     loop's exit back to the mint without a read of `H`, each entry mints a new
+//   * PER ENTRY ([rA2-F1] r2j3.44, [rA2b-F1/F2]): when the loop's exit reaches
+//     the mint again without a MEASUREMENT of `H` on the way (a mere read does
+//     not keep the old register alive past a re-mint), each entry mints a new
 //     register under the same SSA name and the previous one is dead at
-//     re-entry, so every move of a lineage rail reachable from the mint is a
-//     hazard, with no per-cell exemption (`reachesAvoiding`).
+//     re-entry: every move reachable from the mint of a lineage root is a
+//     hazard, and of a lineage cell unless `cellsDisjointAcrossEntries` proves
+//     later entries never touch an earlier entry's cells. Liveness (`deadAfter`)
+//     treats the mint block as a cut: reads past a re-mint are the new
+//     register's.
 // No hazard and `H` dead after its loop: left allocated (R5) and REPORTED, a
 // lyyf-class DS_Warning `kMsgDeadAccumulatorLeft`; `opt` exits 0.
 // RETIREMENT TRIGGER: bd 8h7d.20's post-loop reverse loop uncomputes the
@@ -152,31 +156,6 @@ void cellArrays(const Value *V, SmallPtrSetImpl<const Value *> &Out,
       Unknown = true;
     Out.insert(O);
   }
-}
-
-// Some path from `G` to a function exit reads `H` nowhere (never entering
-// `Excl`).
-bool deadAfter(Instruction *G, const SmallPtrSetImpl<const Instruction *> &Reads,
-               const BasicBlock *Excl = nullptr) {
-  for (Instruction *I = G->getNextNode(); I; I = I->getNextNode())
-    if (Reads.count(I))
-      return false;
-  SmallVector<BasicBlock *, 16> BW(succ_begin(G->getParent()),
-                                   succ_end(G->getParent()));
-  if (BW.empty())
-    return true;
-  SmallPtrSet<BasicBlock *, 16> BSeen;
-  while (!BW.empty()) {
-    BasicBlock *B = BW.pop_back_val();
-    if (B == Excl || !BSeen.insert(B).second)
-      continue;
-    if (any_of(*B, [&](Instruction &I) { return Reads.count(&I) != 0; }))
-      continue;
-    if (succ_empty(B))
-      return true;
-    BW.append(succ_begin(B), succ_end(B));
-  }
-  return false;
 }
 
 }  // namespace
@@ -323,21 +302,33 @@ bool declineDeadAccumulatorMoves(Module &M, const TaintSet &taint) {
       bool DeadAfterLoop = false;
       for (CallInst *S : Steps) {
         const Loop *L = LI.getLoopFor(S->getParent());
-        DeadAfterLoop |= deadAfter(S, Reads, L ? L->getHeader() : nullptr);
+        DeadAfterLoop |=
+            deadAfter(S, Reads, L ? L->getHeader() : nullptr, H->getParent());
       }
       if (DeadAfterLoop)
         for (const Value *A : Arrays)
           if (arrayEscapes(A))
             return diag(kMsgDeadAccumulatorEscaped, H->getDebugLoc());
-      // [rA2-F1] PER ENTRY: when a path leads from the loop's exit back to the
-      // register's mint without reading it, the loop is RE-ENTERED with a new
-      // register under the same name and the previous one is a dead record
-      // from then on; every move of a lineage rail (root or cell — no per-cell
-      // exemption, which reasons within one entry) reachable from the mint is
-      // a hazard. Loud until bd 8h7d.20 can reverse each entry's register.
+      // [rA2-F1, rA2b-F1/F2] PER ENTRY: when the loop's exit reaches the
+      // register's mint again — whatever it READS on the way; only a
+      // measurement (or escape) observes the register first — the loop is
+      // RE-ENTERED with a new register under the same name and the previous one
+      // is a dead record from then on. Every move reachable from the mint of a
+      // lineage ROOT is a hazard; of a lineage CELL, unless SCEV over the
+      // enclosing loop proves no later entry touches a cell an earlier entry
+      // recorded (`cellsDisjointAcrossEntries`). Loud until bd 8h7d.20 can
+      // reverse each entry's register.
+      SmallPtrSet<const Instruction *, 8> Observes;
+      for (const Instruction *R : Reads) {
+        auto *RC = dyn_cast<CallInst>(R);
+        const Function *RF = RC ? RC->getCalledFunction() : nullptr;
+        if (isa<ReturnInst>(R) || isa<StoreInst>(R) ||
+            (RF && RF->getName().starts_with("cqrt_measure_")))
+          Observes.insert(R);
+      }
       for (CallInst *S : Steps) {
         const Loop *L = LI.getLoopFor(S->getParent());
-        if (!L || !reachesAvoiding(L, H->getParent(), Reads))
+        if (!L || !reachesAvoiding(L, H->getParent(), Observes))
           continue;
         for (BasicBlock &BB : F)
           for (Instruction &I : BB) {
@@ -346,7 +337,12 @@ bool declineDeadAccumulatorMoves(Module &M, const TaintSet &taint) {
               continue;
             SmallVector<Value *, 2> Moved;
             movedRails(G, Moved);
-            if (any_of(Moved, inLineage) && isPotentiallyReachable(H, G))
+            bool Hit = false;
+            for (Value *T : Moved)
+              if (Roots.count(T) ||
+                  (isCell(T) && !cellsDisjointAcrossEntries(T, SrcCells, L, SE)))
+                Hit = true;
+            if (Hit && isPotentiallyReachable(H, G))
               return diag(kMsgDeadAccumulatorMoved, G->getDebugLoc());
           }
       }
@@ -379,7 +375,7 @@ bool declineDeadAccumulatorMoves(Module &M, const TaintSet &taint) {
               if (!Hit)
                 continue;
             }
-            if (deadAfter(&I, Reads))
+            if (deadAfter(&I, Reads, nullptr, H->getParent()))
               return diag(Msg, I.getDebugLoc());
           }
       }
