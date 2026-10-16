@@ -14,6 +14,12 @@
 ; Trace check, |b> and classical k: out = (k>5) ? b+1 : b+2; reverse: add_unc on
 ; each arm's own rail, so both scratch rails return to |0>.
 ;
+; bd r2j3.37.3: `%q` is measured after the call so it stays LIVE across it.
+; Dead, it is a user register the callee's return passes through every arm of
+; its classical-condition select, which the consuming clone lowers in place per
+; arm; the out-of-place clone this fixture pins would then be gone. Keep the
+; keep-alive while that clone is the subject.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll
 declare i32 @cq_theta_si32(i32, double)
@@ -33,6 +39,7 @@ entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   %r = call i32 @helper(i32 %q, i32 %kk)
   %m = call i32 @cq_measure_si32(i32 %r)
+  %keep = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

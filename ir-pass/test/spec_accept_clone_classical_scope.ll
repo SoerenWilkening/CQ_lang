@@ -8,6 +8,12 @@
 ; if-converts; both must keep their branches. Only `__cq_q_helper_01` is flattened,
 ; into a classical choice of rail between the two quantum arms.
 ;
+; bd r2j3.37.3: `%q` is measured after the call so it stays LIVE across it.
+; Dead, it is a user register the callee's return passes through every arm of
+; its φ root, which the consuming clone fails loudly on (an unplanned root);
+; the out-of-place clone this fixture pins would then be gone. Keep the
+; keep-alive while that clone is the subject.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll
 declare i32 @cq_theta_si32(i32, double)
@@ -43,6 +49,7 @@ go:
   %kv = phi i32 [ %k2, %small ], [ %k3, %big ]
   %r = call i32 @helper(i32 %q, i32 %kv)
   %m = call i32 @cq_measure_si32(i32 %r)
+  %keep = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

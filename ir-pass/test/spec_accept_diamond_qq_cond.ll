@@ -9,6 +9,12 @@
 ;
 ; Formerly spec_reject_diamond_qq_cond.ll (the pre-adia HL-only fence).
 ;
+; bd r2j3.37.3: `%q` is measured after the call so it stays LIVE across it.
+; Dead, it is a user register the callee's return passes through every arm of
+; its quantum-condition diamond, which the consuming clone fails loudly on (an
+; unplanned root); the out-of-place clone this fixture pins would then be gone.
+; Keep the keep-alive while that clone is the subject.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -38,6 +44,7 @@ entry:
   %q2 = call i32 @cq_theta_si32(i32 %u1, double 7.000000e-01)
   %r  = call i32 @helper(i32 %q, i32 %q2)
   %m  = call i32 @cq_measure_si32(i32 %r)
+  %keep = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

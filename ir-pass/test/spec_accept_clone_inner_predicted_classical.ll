@@ -30,6 +30,12 @@
 ; h3's classical arm is the literal operand of `cqrt_xorc_i32_controlled(.., %3)` (bd dm7f.81; no
 ; rail, so no leak; formerly an alloc'd, never-freed rail).
 ;
+; bd r2j3.37.3: `%6` is measured after the call so it stays LIVE across it.
+; Dead, it is a user register the callee's return passes through every arm of
+; its control flow, which the consuming clone fails loudly on (an unplanned
+; root); the out-of-place clone this fixture pins would then be gone. Keep the
+; keep-alive while that clone is the subject.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll
 ; RUN: %filecheck %s --check-prefix=NOHANDLE < %t.ll
@@ -88,6 +94,7 @@ define i32 @main(i32 noundef %0, ptr nocapture noundef readonly %1) local_unname
   %11 = add nsw i32 %10, %8
   %12 = tail call i32 @h4(i32 noundef %6, i32 noundef %5) #4
   %13 = tail call i32 @cq_measure_si32(i32 noundef %12) #4
+  %keep = tail call i32 @cq_measure_si32(i32 noundef %6) #4
   %14 = add nsw i32 %11, %13
   ret i32 %14
 }

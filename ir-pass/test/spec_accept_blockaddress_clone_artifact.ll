@@ -27,6 +27,12 @@
 ; GREEN ON BOTH plugins by design, so absent from the differential; its power is
 ; arm-kill — drop the `use_empty()` test and it goes red.
 ;
+; bd r2j3.37.3: `%q` is measured after the call so it stays LIVE across it.
+; Dead, it is a user register the callee's return passes through every arm of
+; its control flow, which the consuming clone fails loudly on (an unplanned
+; root); the out-of-place clone this fixture pins would then be gone. Keep the
+; keep-alive while that clone is the subject.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ;
@@ -71,6 +77,7 @@ entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   %r = call i32 @helper(i32 %q)
   %m = call i32 @cq_measure_si32(i32 %r)
+  %keep = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

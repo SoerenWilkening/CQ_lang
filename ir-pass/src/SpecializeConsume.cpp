@@ -1,4 +1,5 @@
-// SpecializeConsume.cpp — see the header (bd test_C_libtooling-r2j3.37.1).
+// SpecializeConsume.cpp — see the header (bd test_C_libtooling-r2j3.37.1;
+// classical-condition select roots: bd r2j3.37.3).
 
 #include "SpecializeConsume.h"
 
@@ -12,9 +13,7 @@
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
 
-#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/Constants.h"
-#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
@@ -22,6 +21,7 @@
 #include "llvm/IR/Module.h"
 
 #include <string>
+#include <vector>
 
 using namespace llvm;
 
@@ -31,84 +31,187 @@ using namespace tailhoist;
 
 namespace {
 
-// One in-place op of the chain, inner to outer: the op and its SOURCE operand.
+// The consumer's program, inner to outer: an in-place op and its SOURCE operand
+// (a parameter, a constant, a lifted source clone), or (r2j3.37.3) a BRANCH on a
+// classical condition — computed by a lifted source clone, zero-extended to the
+// chain width — between the two arms' programs.
 struct Step {
   Instruction::BinaryOps Opc = Instruction::Xor;
-  enum Kind { Param, Const, Source } K = Const;
+  enum Kind { Param, Const, Source, Branch } K = Const;
   unsigned ArgNo = 0;
   Constant *C = nullptr;
-  Function *Clone = nullptr;  // the lifted source (Kind == Source)
+  Function *Clone = nullptr;  // the lifted source / condition
   bool Quantum = false;       // a handle (QQ gate) or a classical value (M-C)
+  std::vector<Step> Then, Else;
 };
 
-unsigned countArg(const Plan &P, int I, unsigned K) {
+// How often the target occurs on every path through node `I` (a select's arms
+// must agree; -1 when they do not).
+int countArg(const Plan &P, int I, unsigned K) {
   const Node &Nd = P.N[I];
   if (Nd.K == Node::Arg)
     return Nd.ArgNo == K;
-  if (Nd.K == Node::Op)
-    return countArg(P, Nd.L, K) + countArg(P, Nd.R, K);
-  return 0;
-}
-
-// The path root -> Arg(K) as (op node, the target's side is R?), root first.
-bool pathTo(const Plan &P, int I, unsigned K,
-            SmallVectorImpl<std::pair<int, bool>> &Path) {
-  const Node &Nd = P.N[I];
-  if (Nd.K == Node::Arg)
-    return Nd.ArgNo == K;
-  if (Nd.K != Node::Op)
-    return false;
-  for (bool Right : {false, true}) {
-    Path.push_back({I, Right});
-    if (pathTo(P, Right ? Nd.R : Nd.L, K, Path))
-      return true;
-    Path.pop_back();
+  if (Nd.K == Node::Op) {
+    const int L = countArg(P, Nd.L, K), R = countArg(P, Nd.R, K);
+    return L < 0 || R < 0 ? -1 : L + R;
   }
-  return false;
+  if (Nd.K == Node::Sel) {
+    const int L = countArg(P, Nd.L, K), R = countArg(P, Nd.R, K);
+    return L == R ? L : -1;
+  }
+  return 0;
 }
 
 StringRef stemOf(Instruction::BinaryOps Opc) {
   return Opc == Instruction::Xor ? "xor" : Opc == Instruction::Add ? "add" : "sub";
 }
 
-// The consumer's body. False: a gate has no symbol.
-bool emitBody(Function &C, unsigned K, ArrayRef<Step> Steps, StringRef W,
-              const TaintSet &taint, WidthDispatch &wd) {
+struct Builder {
+  CallInst &Site;
+  Function *SiteClone;
+  uint64_t Handles;
+  unsigned K;
+  TaintSet &taint;
+  ConsumeResolveFn Resolve;
+  ConsumeTwinFn EnsureTwin;
+  Planner &PL;
+  Plan &P;
+
+  // Lift a source (a copy of f returning one value) at the site's arguments.
+  ConsumeReason lift(Function *SrcF, Step &S) {
+    SrcF->addFnAttr(kConsumeAuxAttr);
+    SmallVector<Value *, 8> Args(Site.args());
+    CallInst *Tmp = CallInst::Create(SrcF, Args, "", Site.getIterator());
+    Tmp->setCallingConv(SrcF->getCallingConv());
+    const SpecMask Mask = taintArgMask(Tmp, taint);
+    SpecRecord Rec = Resolve(Tmp, SrcF, Mask);
+    Tmp->eraseFromParent();
+    S.Clone = Rec.Clone;
+    S.Quantum = Rec.ReturnTainted;
+    if (!S.Clone)
+      return ConsumeReason::Unsupported;
+    S.Clone->addFnAttr(kConsumeAuxAttr);
+    if (S.Quantum)
+      EnsureTwin(S.Clone, Mask);
+    if (S.Clone->getFunctionType()->params() !=
+        SiteClone->getFunctionType()->params())
+      return ConsumeReason::Unsupported;
+    if (!(taint.SpecDeadArgMask.lookup(S.Clone) >> K & 1))
+      return ConsumeReason::SelfDependent;  // the source reads `t`.
+    return ConsumeReason::Ok;
+  }
+
+  ConsumeReason source(int I, Step &S) {
+    const Node &Src = P.N[I];
+    if (Src.K == Node::Arg) {
+      S.K = Step::Param;
+      S.ArgNo = Src.ArgNo;
+      S.Quantum = Handles >> Src.ArgNo & 1;
+      return ConsumeReason::Ok;
+    }
+    if (Src.K == Node::Const) {
+      S.K = Step::Const;
+      S.C = Src.C;
+      return ConsumeReason::Ok;
+    }
+    S.K = Step::Source;
+    return lift(PL.subtreeSrc(P, I), S);
+  }
+
+  ConsumeReason build(int I, std::vector<Step> &Out) {
+    const Node &Nd = P.N[I];
+    if (Nd.K == Node::Arg)
+      return Nd.ArgNo == K ? ConsumeReason::Ok : ConsumeReason::Unsupported;
+    if (Nd.K == Node::Op) {
+      const int L = countArg(P, Nd.L, K), R = countArg(P, Nd.R, K);
+      if (L < 0 || R < 0 || L + R == 0)
+        return ConsumeReason::Unsupported;
+      if (L + R >= 2)
+        return ConsumeReason::SelfDependent;  // `t` read twice by the chain.
+      const bool Right = R == 1;
+      if (Nd.Opc == Instruction::Sub && Right)
+        return ConsumeReason::NotInPlace;  // `a - t`: no in-place form.
+      if (ConsumeReason Why = build(Right ? Nd.R : Nd.L, Out);
+          Why != ConsumeReason::Ok)
+        return Why;
+      Step S;
+      S.Opc = Nd.Opc;
+      ConsumeReason Why = source(Right ? Nd.L : Nd.R, S);
+      Out.push_back(std::move(S));
+      return Why;
+    }
+    if (Nd.K == Node::Sel) {
+      // r2j3.37.3: each arm in place under the CLASSICAL condition; a quantum
+      // condition is a control region, not built here (loud when owed).
+      Step S;
+      S.K = Step::Branch;
+      ConsumeReason Why = lift(PL.condSrc(P, I), S);
+      if (Why != ConsumeReason::Ok)
+        return Why;
+      if (S.Quantum)
+        return ConsumeReason::Unsupported;
+      if ((Why = build(Nd.L, S.Then)) != ConsumeReason::Ok ||
+          (Why = build(Nd.R, S.Else)) != ConsumeReason::Ok)
+        return Why;
+      Out.push_back(std::move(S));
+      return ConsumeReason::Ok;
+    }
+    return ConsumeReason::Unsupported;
+  }
+};
+
+// The consumer's program before `At` (which it leaves in the block that holds
+// the rest of the body). False: a gate has no symbol at the width.
+bool emitSteps(ArrayRef<Step> Steps, Instruction *At, Function &C, unsigned K,
+               StringRef W, const TaintSet &taint, WidthDispatch &wd) {
   LLVMContext &Ctx = C.getContext();
-  BasicBlock *BB = BasicBlock::Create(Ctx, "", &C);
-  ReturnInst *Ret = ReturnInst::Create(Ctx, BB);
-  IRBuilder<> B(Ret);
   Value *Dst = C.getArg(K);
   SmallVector<Value *, 8> Args;
   for (Argument &A : C.args())
     Args.push_back(&A);
+  auto call = [&](IRBuilder<> &B, Function *F) {
+    CallInst *SC = B.CreateCall(F, Args);
+    SC->setCallingConv(F->getCallingConv());
+    for (unsigned A = 0; A < SC->arg_size(); ++A)
+      if (isRecordedDeadSlot(*SC, A, taint))
+        rewriteRecordedDeadSlotUse(SC->getArgOperandUse(A), taint);
+    return SC;
+  };
   SmallVector<CallInst *, 4> Minted;
   for (const Step &S : Steps) {
-    Value *Src = nullptr;
-    if (S.K == Step::Param) {
-      Src = C.getArg(S.ArgNo);
-    } else if (S.K == Step::Const) {
-      Src = S.C;
-    } else {
-      CallInst *SC = B.CreateCall(S.Clone, Args);
-      SC->setCallingConv(S.Clone->getCallingConv());
-      for (unsigned A = 0; A < SC->arg_size(); ++A)
-        if (isRecordedDeadSlot(*SC, A, taint))
-          rewriteRecordedDeadSlotUse(SC->getArgOperandUse(A), taint);
-      if (S.Quantum)
-        Minted.push_back(SC);
-      Src = SC;
+    IRBuilder<> B(At);
+    if (S.K == Step::Branch) {
+      Value *Cond = B.CreateICmpNE(call(B, S.Clone), Constant::getNullValue(
+                                                         S.Clone->getReturnType()));
+      BasicBlock *Cur = At->getParent();
+      Cur->splitBasicBlock(At->getIterator());  // `At` now heads the merge
+      BasicBlock *Merge = At->getParent();
+      auto *Then = BasicBlock::Create(Ctx, "", &C, Merge);
+      auto *Else = BasicBlock::Create(Ctx, "", &C, Merge);
+      Instruction *TT = BranchInst::Create(Merge, Then);
+      Instruction *ET = BranchInst::Create(Merge, Else);
+      Cur->getTerminator()->eraseFromParent();
+      BranchInst::Create(Then, Else, Cond, Cur);
+      if (!emitSteps(S.Then, TT, C, K, W, taint, wd) ||
+          !emitSteps(S.Else, ET, C, K, W, taint, wd))
+        return false;
+      continue;
     }
+    Value *Src = S.K == Step::Param ? static_cast<Value *>(C.getArg(S.ArgNo))
+                 : S.K == Step::Const ? static_cast<Value *>(S.C)
+                                      : call(B, S.Clone);
+    if (S.K == Step::Source && S.Quantum)
+      Minted.push_back(cast<CallInst>(Src));
     if (S.Quantum) {
       FunctionCallee Fn = wd.qqInPlaceFn(stemOf(S.Opc), W);
       if (!Fn)
         return false;
-      B.CreateCall(Fn, {Src, Dst})
-          ->setMetadata(kInPlaceQQTag, MDNode::get(Ctx, {}));
-    } else if (!emitInPlaceImmediateGate(Ret, S.Opc, Dst, Src, W, wd)) {
+      B.CreateCall(Fn, {Src, Dst})->setMetadata(kInPlaceQQTag, MDNode::get(Ctx, {}));
+    } else if (!emitInPlaceImmediateGate(At, S.Opc, Dst, Src, W, wd)) {
       return false;
     }
   }
+  IRBuilder<> B(At);
   for (auto It = Minted.rbegin(); It != Minted.rend(); ++It) {
     if (!emitInverseCall(B, *It, wd, nullptr, nullptr))
       return false;
@@ -119,31 +222,29 @@ bool emitBody(Function &C, unsigned K, ArrayRef<Step> Steps, StringRef W,
 
 constexpr const char kStepsTag[] = "cq.consume.steps";
 
-// `!{!"W", !{opc, kind, argno, const-or-clone-or-0, quantum}...}`.
-MDNode *encodeSteps(LLVMContext &Ctx, ArrayRef<Step> Steps, StringRef W) {
-  auto I32 = [&](uint64_t X) -> Metadata * {
-    return ConstantAsMetadata::get(ConstantInt::get(Type::getInt32Ty(Ctx), X));
-  };
-  SmallVector<Metadata *, 8> Ops{MDString::get(Ctx, W)};
+Metadata *I32MD(LLVMContext &Ctx, uint64_t X) {
+  return ConstantAsMetadata::get(ConstantInt::get(Type::getInt32Ty(Ctx), X));
+}
+
+// `!{opc, kind, argno, const-or-clone-or-0, quantum, !{then...}, !{else...}}`.
+MDNode *encodeList(LLVMContext &Ctx, ArrayRef<Step> Steps) {
+  SmallVector<Metadata *, 8> Ops;
   for (const Step &S : Steps) {
-    Metadata *V = S.K == Step::Const    ? ConstantAsMetadata::get(S.C)
-                  : S.K == Step::Source ? ValueAsMetadata::get(S.Clone)
-                                        : I32(0);
-    Ops.push_back(MDNode::get(Ctx, {I32(S.Opc), I32(S.K), I32(S.ArgNo), V,
-                                    I32(S.Quantum)}));
+    Metadata *V = S.K == Step::Const ? ConstantAsMetadata::get(S.C)
+                  : S.Clone          ? ValueAsMetadata::get(S.Clone)
+                                     : I32MD(Ctx, 0);
+    Ops.push_back(MDNode::get(Ctx, {I32MD(Ctx, S.Opc), I32MD(Ctx, S.K),
+                                    I32MD(Ctx, S.ArgNo), V, I32MD(Ctx, S.Quantum),
+                                    encodeList(Ctx, S.Then),
+                                    encodeList(Ctx, S.Else)}));
   }
   return MDNode::get(Ctx, Ops);
 }
 
-bool decodeSteps(const MDNode *MD, SmallVectorImpl<Step> &Steps, StringRef &W) {
-  auto *WS = MD && MD->getNumOperands() ? dyn_cast<MDString>(MD->getOperand(0))
-                                        : nullptr;
-  if (!WS)
-    return false;
-  W = WS->getString();
-  for (unsigned I = 1; I < MD->getNumOperands(); ++I) {
+bool decodeList(const MDNode *MD, std::vector<Step> &Steps) {
+  for (unsigned I = 0; MD && I < MD->getNumOperands(); ++I) {
     auto *E = dyn_cast<MDNode>(MD->getOperand(I));
-    if (!E || E->getNumOperands() != 5)
+    if (!E || E->getNumOperands() != 7)
       return false;
     auto word = [&](unsigned J) {
       auto *C = mdconst::dyn_extract<ConstantInt>(E->getOperand(J));
@@ -157,13 +258,15 @@ bool decodeSteps(const MDNode *MD, SmallVectorImpl<Step> &Steps, StringRef &W) {
     auto *VM = dyn_cast<ValueAsMetadata>(E->getOperand(3));
     if (S.K == Step::Const)
       S.C = VM ? dyn_cast<Constant>(VM->getValue()) : nullptr;
-    if (S.K == Step::Source)
+    if (S.K == Step::Source || S.K == Step::Branch)
       S.Clone = VM ? dyn_cast<Function>(VM->getValue()) : nullptr;
-    if ((S.K == Step::Const && !S.C) || (S.K == Step::Source && !S.Clone))
+    if ((S.K == Step::Const && !S.C) || (S.K >= Step::Source && !S.Clone) ||
+        !decodeList(dyn_cast<MDNode>(E->getOperand(5)), S.Then) ||
+        !decodeList(dyn_cast<MDNode>(E->getOperand(6)), S.Else))
       return false;
-    Steps.push_back(S);
+    Steps.push_back(std::move(S));
   }
-  return true;
+  return MD != nullptr;
 }
 
 Function *makeShell(Function &Like, const Twine &Name, unsigned K, MDNode *Enc) {
@@ -199,70 +302,21 @@ void buildConsumingCandidates(CallInst &Site, Function *OrigCallee,
   // R11 r1 (rL1C-F2 / rL1A-F2): the body must have no effect but its return.
   const bool Pure = consumableBody(*OrigCallee, Stack);
   LLVMContext &Ctx = Site.getContext();
-  auto I32 = [&](uint64_t X) {
-    return ConstantAsMetadata::get(ConstantInt::get(Type::getInt32Ty(Ctx), X));
-  };
   SmallVector<Metadata *, 8> Ops(Tag->op_begin(), Tag->op_end());
-  SmallVector<Value *, 8> SiteArgs(Site.args());
   for (unsigned K = 0; K < 64 && K < Site.arg_size(); ++K) {
     if (!(Chain >> K & 1) || !(Handles >> K & 1) ||
         consumeSlotReadsTwice(Site, K, Handles))
       continue;  // a value in two handle slots is read twice: never a target.
     ConsumeReason Why = ConsumeReason::Ok;
-    SmallVector<std::pair<int, bool>, 4> Path;
     const StringRef W = abiWidthFromType(OrigCallee->getArg(K)->getType());
-    if (!Pure || !P || !P->hoistable() || W.empty())
+    std::vector<Step> Steps;
+    if (!Pure || !P || !P->hoistable() || W.empty()) {
       Why = ConsumeReason::Unsupported;
-    else if (const unsigned N = countArg(*P, P->Root, K); N >= 2)
-      Why = ConsumeReason::SelfDependent;  // `t` read twice by the chain.
-    else if (N == 0 || !pathTo(*P, P->Root, K, Path))
-      Why = ConsumeReason::Unsupported;    // reached, but not through a plan.
-    SmallVector<Step, 4> Steps;
-    for (auto It = Path.rbegin(); Why == ConsumeReason::Ok && It != Path.rend();
-         ++It) {
-      const Node &Op = P->N[It->first];
-      Step S;
-      S.Opc = Op.Opc;
-      if (Op.Opc == Instruction::Sub && It->second) {
-        Why = ConsumeReason::NotInPlace;  // `a - t`: no in-place form.
-        break;
-      }
-      const int SrcIdx = It->second ? Op.L : Op.R;
-      const Node &Src = P->N[SrcIdx];
-      if (Src.K == Node::Arg) {
-        S.K = Step::Param;
-        S.ArgNo = Src.ArgNo;
-        S.Quantum = Handles >> Src.ArgNo & 1;
-      } else if (Src.K == Node::Const) {
-        S.K = Step::Const;
-        S.C = Src.C;
-      } else {
-        Function *SrcF = PL.subtreeSrc(*P, SrcIdx);
-        SrcF->addFnAttr(kConsumeAuxAttr);
-        CallInst *Tmp = CallInst::Create(SrcF, SiteArgs, "", Site.getIterator());
-        Tmp->setCallingConv(SrcF->getCallingConv());
-        const SpecMask Mask = taintArgMask(Tmp, taint);
-        SpecRecord Rec = Resolve(Tmp, SrcF, Mask);
-        Tmp->eraseFromParent();
-        S.K = Step::Source;
-        S.Clone = Rec.Clone;
-        S.Quantum = Rec.ReturnTainted;
-        if (!S.Clone) {
-          Why = ConsumeReason::Unsupported;
-          break;
-        }
-        S.Clone->addFnAttr(kConsumeAuxAttr);
-        if (S.Quantum)
-          EnsureTwin(S.Clone, Mask);
-        if (S.Clone->getFunctionType()->params() !=
-            SiteClone->getFunctionType()->params())
-          Why = ConsumeReason::Unsupported;
-        else if (!(taint.SpecDeadArgMask.lookup(S.Clone) >> K & 1))
-          Why = ConsumeReason::SelfDependent;  // the source reads `t`.
-      }
-      Steps.push_back(S);
+    } else {
+      Builder Bld{Site, SiteClone, Handles, K, taint, Resolve, EnsureTwin, PL, *P};
+      Why = Bld.build(P->Root, Steps);
     }
-    // The consumer is a SHELL here (a `ret void` body carrying the steps as
+    // The consumer is a SHELL here (a `ret void` body carrying the program as
     // `!cq.consume.steps`): its gates are minted only if the late round
     // consumes the site (`materializeConsumer`), so an unused candidate leaves
     // no declaration behind. It has NO adjoint twin, deliberately: a consumed
@@ -275,13 +329,14 @@ void buildConsumingCandidates(CallInst &Site, Function *OrigCallee,
       const std::string Name = (SiteClone->getName() + "_c" + Twine(K)).str();
       C = Site.getModule()->getFunction(Name);
       if (!C) {
-        C = makeShell(*SiteClone, Name, K, encodeSteps(Ctx, Steps, W));
+        MDNode *Enc = MDNode::get(Ctx, {MDString::get(Ctx, W), encodeList(Ctx, Steps)});
+        C = makeShell(*SiteClone, Name, K, Enc);
         taint.SpecHandleArgMask[C] = Handles;
       }
     }
     Ops.push_back(MDNode::get(
-        Ctx, {I32(K), I32(static_cast<unsigned>(Why)),
-              C ? static_cast<Metadata *>(ValueAsMetadata::get(C)) : I32(0)}));
+        Ctx, {I32MD(Ctx, K), I32MD(Ctx, static_cast<unsigned>(Why)),
+              C ? static_cast<Metadata *>(ValueAsMetadata::get(C)) : I32MD(Ctx, 0)}));
   }
   Site.setMetadata(kLiftTailOwedTag, MDNode::get(Ctx, Ops));
 }
@@ -291,13 +346,17 @@ bool materializeConsumer(Function &C, const TaintSet &taint, WidthDispatch &wd) 
   MDNode *Enc = C.getMetadata(kStepsTag);
   if (!Enc)
     return K >= 0;  // already materialized (another site shares it).
-  SmallVector<Step, 4> Steps;
-  StringRef W;
-  if (K < 0 || !decodeSteps(Enc, Steps, W))
+  std::vector<Step> Steps;
+  auto *WS = Enc->getNumOperands() == 2 ? dyn_cast<MDString>(Enc->getOperand(0))
+                                        : nullptr;
+  if (K < 0 || !WS || !decodeList(dyn_cast<MDNode>(Enc->getOperand(1)), Steps))
     return false;
+  const StringRef W = WS->getString();
   C.getEntryBlock().eraseFromParent();
   C.setMetadata(kStepsTag, nullptr);
-  return emitBody(C, K, Steps, W, taint, wd);
+  ReturnInst *Ret =
+      ReturnInst::Create(C.getContext(), BasicBlock::Create(C.getContext(), "", &C));
+  return emitSteps(Steps, Ret, C, K, W, taint, wd);
 }
 
 }  // namespace cq
