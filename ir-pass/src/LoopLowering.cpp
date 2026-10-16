@@ -3611,18 +3611,48 @@ static bool namesQubit(const Value *V, const TaintSet &taint, bool Nested) {
 // every `markIfIterationLocal` question (byte-identical there).
 using OuterRootFn = function_ref<bool(Value *)>;
 
+// Defined further down in this TU (clause (ii-d) of `invariantRegisterRoots`);
+// declared here for the nested subloop admission (bd 8h7d.24).
+bool mintsOutOfPlaceTemplateRail(Instruction *I, TaintSet &taint);
+bool allUsersInside(const Value *V, const Loop *L);
+void recordExitDischargeObligation(Value *Root);
+
+// bd 8h7d.24 — the ONE nested exception to the operand clause: a tainted value
+// HOISTED into the parent loop's body (LICM moves a quantum condition such as
+// `c[m] + c[m+1] == 1` out of the inner `for l` loop), read by the subloop and
+// by nothing else. It is clause (ii-d)'s shape one level down, asked by the
+// same predicates (Rule 14): an OUT-OF-PLACE template rail
+// (`mintsOutOfPlaceTemplateRail`) defined in the parent body but not in the
+// subloop, every user inside the subloop (`allUsersInside`), and a subloop with
+// ONE exit (`loopExitDischargePoint`). `Uncomputation::anchorForConsumer` then
+// anchors its discharge at that exit — in the parent body, once per parent trip,
+// the multiplicity of its forward gate — and the marker records the same
+// exit-discharge obligation (ii-d) records, so a rail that is not discharged
+// there is a LOUD decline (`declineUndischargedExitObligations`), never a leak.
+static bool hoistedParentRoot(const Value *Op, const Loop *SL,
+                              const TaintSet &taint) {
+  auto *OpI = dyn_cast<Instruction>(const_cast<Value *>(Op));
+  const Loop *P = SL->getParentLoop();
+  return OpI && P && P->contains(OpI->getParent()) &&
+         !SL->contains(OpI->getParent()) &&
+         mintsOutOfPlaceTemplateRail(OpI, const_cast<TaintSet &>(taint)) &&
+         allUsersInside(Op, SL) && loopExitDischargePoint(SL);
+}
+
 static bool iterationLocalQualifies(Loop *L, const TaintSet &taint,
                                     LoopInfo &LI, bool &AnyTainted,
                                     bool Nested = false,
                                     bool *AdmittedSubloop = nullptr,
-                                    OuterRootFn OuterRoot = nullptr);
+                                    OuterRootFn OuterRoot = nullptr,
+                                    SmallVectorImpl<Value *> *Hoisted = nullptr);
 
 // THE SUBLOOP CLAUSE, ONE SPELLING (bd 01po.19.34 for `markIfIterationLocal`;
 // bd 8h7d.25 / 01po.19.18.1 called from `railLocalQualifies` too): every subloop
 // of `L` that TOUCHES a qubit must qualify ON ITS OWN (recursion). False on the
 // first that does not; `Admitted` reports whether any touching subloop exists.
 static bool quantumSubloopsQualify(Loop *L, const TaintSet &taint, LoopInfo &LI,
-                                   bool &Admitted, OuterRootFn OuterRoot) {
+                                   bool &Admitted, OuterRootFn OuterRoot,
+                                   SmallVectorImpl<Value *> *Hoisted = nullptr) {
   Admitted = false;
   for (Loop *SL : L->getSubLoops()) {
     bool SubTouches = false;
@@ -3641,7 +3671,7 @@ static bool quantumSubloopsQualify(Loop *L, const TaintSet &taint, LoopInfo &LI,
       continue;
     bool Dummy = false;
     if (!iterationLocalQualifies(SL, taint, LI, Dummy, /*Nested=*/true,
-                                 nullptr, OuterRoot))
+                                 nullptr, OuterRoot, Hoisted))
       return false;
     Admitted = true;
   }
@@ -3651,7 +3681,8 @@ static bool quantumSubloopsQualify(Loop *L, const TaintSet &taint, LoopInfo &LI,
 static bool iterationLocalQualifies(Loop *L, const TaintSet &taint,
                                     LoopInfo &LI, bool &AnyTainted,
                                     bool Nested, bool *AdmittedSubloop,
-                                    OuterRootFn OuterRoot) {
+                                    OuterRootFn OuterRoot,
+                                    SmallVectorImpl<Value *> *Hoisted) {
   AnyTainted = false;
   if (AdmittedSubloop)
     *AdmittedSubloop = false;
@@ -3688,7 +3719,7 @@ static bool iterationLocalQualifies(Loop *L, const TaintSet &taint,
   // never asked the operand clause at all, and the outer loop was marked.
   {
     bool Admitted = false;
-    if (!quantumSubloopsQualify(L, taint, LI, Admitted, OuterRoot))
+    if (!quantumSubloopsQualify(L, taint, LI, Admitted, OuterRoot, Hoisted))
       return false;
     if (Admitted) {
       AnyTainted = true;
@@ -3747,8 +3778,17 @@ static bool iterationLocalQualifies(Loop *L, const TaintSet &taint,
           if (OuterRoot && OuterRoot(Op))
             continue;
           auto *OpI = dyn_cast<Instruction>(Op);
-          if (!OpI || !L->contains(OpI->getParent()))
-            return false;
+          if (OpI && L->contains(OpI->getParent()))
+            continue;
+          // Admitted only where the caller RECORDS the exit obligation
+          // (`markIfIterationLocal`); the `railLocalQualifies` path passes no
+          // ledger and keeps the refusal.
+          if (Nested && Hoisted && hoistedParentRoot(Op, L, taint)) {
+            if (!llvm::is_contained(*Hoisted, Op))
+              Hoisted->push_back(Op);
+            continue;  // bd 8h7d.24: discharged at this subloop's exit.
+          }
+          return false;
         }
     }
   }
@@ -3758,14 +3798,19 @@ static bool iterationLocalQualifies(Loop *L, const TaintSet &taint,
 bool markIfIterationLocal(Loop *L, TaintSet &taint, LoopInfo &LI) {
   bool AnyTainted = false;
   bool Nested = false;
+  SmallVector<Value *, 2> Hoisted;
   if (!iterationLocalQualifies(L, taint, LI, AnyTainted, /*Nested=*/false,
-                               &Nested))
+                               &Nested, /*OuterRoot=*/nullptr, &Hoisted))
     return false;
   if (!AnyTainted)
     return false;  // a purely-classical loop — leave it byte-identical.
   // Every block, subloops included: a quantum subloop qualified on its own.
   for (BasicBlock *BB : L->blocks())
     taint.IterationLocalBlocks.insert(BB);
+  // bd 8h7d.24: each admitted hoisted parent rail owes its discharge at its
+  // subloop's exit — the (ii-d) ledger, checked loudly after `uncompute`.
+  for (Value *R : Hoisted)
+    recordExitDischargeObligation(R);
   // bd 01po.19.34.2 (R11 round 1 A-F2, CLAUDE.md L1) — THE RECORD. This grant
   // may be answered at ROUND-1 taint (inside `lowerLoops`, or the round-1
   // `collapseFlattenedLoopRails`), and the marking is additive and never

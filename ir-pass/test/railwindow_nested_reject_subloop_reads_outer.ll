@@ -13,9 +13,12 @@
 ; is the other pin): the outer body stays unmarked and the outer region's R7
 ; grant is refused at the final-taint re-ask, loud, nothing lowered.
 ; ⚠ NOT A PERMANENT DECLINE (R1): a quantum subloop reading an outer-body
-; temporary is a valid program; lowering it needs the outer temporary's
-; discharge placed after the subloop (filed as a 01po.19 follow-up). When it
-; lands this file becomes an accept with an analytic check.
+; temporary is a valid program. bd 8h7d.24 lowers the shape -O1 actually
+; produces from C — an out-of-place template rail HOISTED into the outer body
+; (railwindow_nested_hoisted_condition_accept.ll). This hand edit reads a
+; different value: the outer trip's IN-PLACE cell update `%37`, a register the
+; inner loop then also updates through the cell, which is not that clause's
+; shape and stays loud. C reloads the cell instead, so no C spelling is known.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow inside a loop body under quantum control

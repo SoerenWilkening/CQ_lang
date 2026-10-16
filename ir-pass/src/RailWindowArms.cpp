@@ -53,6 +53,7 @@
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/ADT/STLExtras.h"
@@ -231,6 +232,24 @@ bool reachesAvoiding(BasicBlock *From, BasicBlock *To, BasicBlock *Avoid) {
   return false;
 }
 
+// Does any store into `O` (through any GEP chain) write a tainted value?
+bool holdsTaintedValue(const AllocaInst *O, const TaintSet &taint) {
+  SmallVector<const Value *, 8> Work{O};
+  SmallPtrSet<const Value *, 8> Seen{O};
+  while (!Work.empty()) {
+    const Value *P = Work.pop_back_val();
+    for (const User *U : P->users()) {
+      if (const auto *S = dyn_cast<StoreInst>(U)) {
+        if (S->getPointerOperand() == P && taint.Tainted.count(S->getValueOperand()))
+          return true;
+      } else if (isa<GetElementPtrInst>(U) && Seen.insert(U).second) {
+        Work.push_back(U);
+      }
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 bool promoteRailWindowArms(Function &F, AllocaInst *W, const TaintSet &taint) {
@@ -249,8 +268,20 @@ bool promoteRailWindowArms(Function &F, AllocaInst *W, const TaintSet &taint) {
       for (User *U : Ptr->users())
         if (auto *L = dyn_cast<LoadInst>(U); L && L->getPointerOperand() == Ptr)
           Acc.Loads.push_back(L);
+    // The condition of a quantum branch over THIS array's cells may be quantum
+    // data of ANOTHER array (`if (c[m] + c[m+1] == 1) Ry(q[m])`, bd 8h7d.24:
+    // measured loud `control flow` even in a single loop). So the closure is
+    // seeded with the loads of every array holding a tainted value, not only
+    // this window's: whatever a quantum cell flows into is quantum here too.
+    RailWindowAccesses AccQ = Acc;
+    for (Instruction &I : instructions(F))
+      if (auto *L = dyn_cast<LoadInst>(&I))
+        if (const auto *O =
+                dyn_cast<AllocaInst>(getUnderlyingObject(L->getPointerOperand()));
+            O && O != W && holdsTaintedValue(O, taint))
+          AccQ.Loads.push_back(L);
     SmallPtrSet<Value *, 32> QD;
-    railWindowQuantum(F, Acc, taint, QD);
+    railWindowQuantum(F, AccQ, taint, QD);
     DominatorTree DT(F);
     PostDominatorTree PDT(F);
     LoopInfo LI(DT);

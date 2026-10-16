@@ -1593,6 +1593,52 @@ class CrossStreamIndex:
         cyc = self.cyclic_blocks()
         return not any(b in cyc for b in self.streams[sid][0])
 
+    def _reenters_avoiding(self, sid, avoid_sid):
+        """Can control leave stream `sid` and come back to its head without
+        executing any block of stream `avoid_sid`? A stream is a linear chain
+        entered only at its head, so leaving means following the LAST block's
+        successors."""
+        chain = self.streams[sid][0]
+        avoid = set(self.streams[avoid_sid][0])
+        head = chain[0]
+        succ = self.fn.succ
+        work = [s for s in succ.get(chain[-1], [])]
+        seen = set()
+        while work:
+            b = work.pop()
+            if b in avoid or b in seen:
+                continue
+            if b == head:
+                return True
+            seen.add(b)
+            work.extend(succ.get(b, []))
+        return False
+
+    def reaches_between(self, m, w, f):
+        """Can a block of stream `w` execute after stream `m` and before the
+        next execution of stream `f`? (A path from `m`'s last block to any
+        block of `w` that avoids `f`.)"""
+        target = set(self.streams[w][0])
+        avoid = set(self.streams[f][0])
+        succ = self.fn.succ
+        work = list(succ.get(self.streams[m][0][-1], []))
+        seen = set()
+        while work:
+            b = work.pop()
+            if b in avoid or b in seen:
+                continue
+            if b in target:
+                return True
+            seen.add(b)
+            work.extend(succ.get(b, []))
+        return False
+
+    def streams_alternate(self, a, b):
+        """bd 8h7d.24: streams `a` and `b` (distinct) execute strictly
+        alternately: neither can be re-entered without passing the other."""
+        return a != b and not self._reenters_avoiding(a, b) and \
+            not self._reenters_avoiding(b, a)
+
 
 # ---------------------------------------------------------------------------
 # Numeric helpers for adjoint matching (negated angle / negated immediate).
@@ -3249,12 +3295,23 @@ class StreamAnalysis:
                 f"exits is a double free that the per-stream `F1-double-free` "
                 f"cannot see")
 
-        # (T4f) neither the mint's nor the free's stream can repeat.
-        if not x.stream_runs_at_most_once(msid):
-            return False, None, None, (
-                f"the block minting {name} (`{fwd.text}`, line {fwd.line}) can "
-                f"execute more than once, so the mint is not a single event")
-        if not x.stream_runs_at_most_once(self.stream_id):
+        # (T4f) neither the mint's nor the free's stream can repeat — OR (bd
+        # 8h7d.24) both repeat IN LOCKSTEP: no path leaves the mint's stream and
+        # re-enters it without passing the free's stream (no re-mint over a
+        # live instance), and no path leaves the free's stream and re-enters it
+        # without passing the mint's (no second reversal-and-free of one
+        # instance). Then M and F alternate M F M F ..., every instance is
+        # reversed and freed exactly once before the next is minted, and each
+        # pair is the once-only case above (a rail hoisted into an OUTER loop's
+        # body and discharged at the inner loop's exit, once per outer trip).
+        once = (x.stream_runs_at_most_once(msid) and
+                x.stream_runs_at_most_once(self.stream_id))
+        if not once and not x.streams_alternate(msid, self.stream_id):
+            if not x.stream_runs_at_most_once(msid):
+                return False, None, None, (
+                    f"the block minting {name} (`{fwd.text}`, line {fwd.line}) "
+                    f"can execute more than once, so the mint is not a single "
+                    f"event, and it does not alternate with the free")
             return False, None, None, (
                 f"the block carrying the reversal (line {rev.line}) and the "
                 f"free can execute more than once — a rail minted ONCE and "
@@ -3268,6 +3325,11 @@ class StreamAnalysis:
                     continue           # strictly before the mint reads it
                 if wsid == self.stream_id and wpos > rev_pos:
                     continue           # strictly after the reversal reads it
+                if wsid not in (msid, self.stream_id) and \
+                        not x.reaches_between(msid, wsid, self.stream_id):
+                    continue           # bd 8h7d.24: a third stream that can
+                                       # never run between M and R (it is not
+                                       # reachable from M without passing R)
                 return False, None, None, (
                     f"forward operand {v} of `{fwd.text}` (line {fwd.line}) is "
                     f"written by `{w.text}` (line {w.line}), which is neither "

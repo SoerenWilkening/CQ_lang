@@ -3623,7 +3623,78 @@ lpad:
 # (name, module, expected finding code, a fragment of the refusal text that
 #  identifies WHICH arm refused it — or None when the shape is refused BEFORE
 #  (T4) is ever consulted, which is itself a fact worth pinning.)
+# bd 8h7d.24 — the hoisted chain ONE LEVEL DOWN: minted in an OUTER loop's
+# body, read by the inner loop, reversed and freed at the inner loop's exit —
+# once per outer trip. Mint stream and free stream both repeat, IN LOCKSTEP
+# (`streams_alternate`), and the operand %h is written only before the outer
+# loop, in a stream that cannot run between mint and reversal
+# (`reaches_between`). Mutants: the chain minted ONCE before the outer loop
+# but still discharged per outer trip (K:1), and %h rotated inside the inner
+# loop (between mint and reversal).
+T4_NESTED = """
+define i32 @slice() local_unnamed_addr #0 {
+entry:
+  %h = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %h1 = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_ry_i32(i32 %h1, double 3.000000e-01)
+  br label %outer
+
+outer:                                            ; preds = %entry, %olatch
+  %i = phi i32 [ 0, %entry ], [ %i1, %olatch ]
+  %h_cast = call i32 @cq_template_sitofp_i32_to_f64(i32 %h)
+  %h_op = call i32 @cq_template_fadd_f64_hl(i32 %h_cast, double 3.000000e+00)
+  %h_intr = call i32 @cq_template_sqrt_f64(i32 %h_op)
+  br label %body
+
+body:                                             ; preds = %outer, %body
+  %j = phi i32 [ 0, %outer ], [ %j1, %body ]
+  %h_cmp = call i32 @cq_template_fcmp_ugt_f64_hl(i32 %h_intr, double 1.000000e+00)
+  call void @cqrt_ry_i32_controlled(i32 %h_cmp, i32 %h1, double 9.000000e-01)
+  call void @cq_template_fcmp_ugt_f64_hl_unc(i32 %h_cmp, i32 %h_intr, double 1.000000e+00)
+  call void @cqrt_free(i32 %h_cmp)
+  %j1 = add nuw nsw i32 %j, 1
+  %jc = icmp eq i32 %j, 0
+  br i1 %jc, label %body, label %olatch
+
+olatch:                                           ; preds = %body
+  call void @cq_template_sqrt_f64_unc(i32 %h_intr, i32 %h_op)
+  call void @cqrt_free(i32 %h_intr)
+  call void @cq_template_fadd_f64_hl_unc(i32 %h_op, i32 %h_cast, double 3.000000e+00)
+  call void @cqrt_free(i32 %h_op)
+  call void @cq_template_sitofp_i32_to_f64_unc(i32 %h_cast, i32 %h)
+  call void @cqrt_free(i32 %h_cast)
+  %i1 = add nuw nsw i32 %i, 1
+  %ic = icmp eq i32 %i, 2
+  br i1 %ic, label %exit, label %outer
+
+exit:                                             ; preds = %olatch
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  %m2 = call i32 @cqrt_measure_i32(i32 %h1)
+  %r = add nsw i32 %m2, %m
+  ret i32 %r
+}
+"""
+_T4_NESTED_K1 = T4_NESTED.replace(
+    "  br label %outer\n\nouter:", "  %h_cast = call i32 @cq_template_sitofp_i32_to_f64(i32 %h)\n"
+    "  %h_op = call i32 @cq_template_fadd_f64_hl(i32 %h_cast, double 3.000000e+00)\n"
+    "  %h_intr = call i32 @cq_template_sqrt_f64(i32 %h_op)\n  br label %outer\n\nouter:", 1)
+_T4_NESTED_K1 = _T4_NESTED_K1.replace(
+    "  %h_cast = call i32 @cq_template_sitofp_i32_to_f64(i32 %h)\n"
+    "  %h_op = call i32 @cq_template_fadd_f64_hl(i32 %h_cast, double 3.000000e+00)\n"
+    "  %h_intr = call i32 @cq_template_sqrt_f64(i32 %h_op)\n  br label %body", "  br label %body", 1)
+assert _T4_NESTED_K1.count("cq_template_sqrt_f64(") == 1 and \
+    _T4_NESTED_K1.index("cq_template_sqrt_f64(") < _T4_NESTED_K1.index("outer:")
+T4_NESTED_MUTANTS = [
+    ("t4-nested-minted-once-discharged-per-outer-trip", _T4_NESTED_K1,
+     "U3-extern-rail", "K:1 shape"),
+    ("t4-nested-operand-rotated-in-inner-loop",
+     insert_after(T4_NESTED, "%jc = icmp", "  call void @cqrt_ry_i32(i32 %h, double 1.000000e-01)"),
+     "U3-extern-rail", "is written by"),
+]
+
 T4_MUTANTS = [
+    *T4_NESTED_MUTANTS,
     # (T4c) — a write to the rail inside the loop body.
     ("t4-write-to-rail-inside-the-loop",
      insert_after(T4_RANGE_SLICE, "cqrt_rz_i1",
@@ -3713,6 +3784,7 @@ T4_POSITIVES = [
     # ordinary (T1) in-stream rule, which is not this rule's business.
     ("t4-range-cell-rolled", T4_RANGE_SLICE, 1),
     ("t4-hoisted-chain-rolled", T4_HOISTED_CHAIN, 3),
+    ("t4-hoisted-chain-nested-lockstep", T4_NESTED, 3),
     # (T4d)'s control: the same multi-successor exit, one free.
     ("t4-one-reversal-one-free", T4_ONE_UNC_ONE_FREE, 1),
     # The DIAGONAL exclusion, which is (T4)'s write model agreeing with
