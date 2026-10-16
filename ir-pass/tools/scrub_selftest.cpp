@@ -263,6 +263,8 @@ int main(int argc, char **argv) {
   checkSet("IterationLocalBlocks", T.IterationLocalBlocks, Block);
   checkSet("InPlaceRailOps", T.InPlaceRailOps, Add);
   checkSet("PreLoopCommittedInPlaceOps", T.PreLoopCommittedInPlaceOps, Add);
+  checkSet("InPlaceQQRailOps", T.InPlaceQQRailOps, Add);    // bd 01po.19.18
+  checkSet("AccumulatorRails", T.AccumulatorRails, Add);    // bd 01po.19.18
   checkSet("UntaintedMergeRails", T.UntaintedMergeRails, Add);
   checkSet("UserSourceRotations", T.UserSourceRotations, Call);
   checkSet("UserChainedRotations", T.UserChainedRotations, Call);
