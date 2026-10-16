@@ -115,6 +115,8 @@ struct Builder {
       return ConsumeReason::Ok;
     }
     S.K = Step::Source;
+    if (!PL.placeableAtRet(P, I))
+      return ConsumeReason::Unsupported;  // a φ arm's own value (r2j3.37.4)
     return lift(PL.subtreeSrc(P, I), S);
   }
 
@@ -145,6 +147,9 @@ struct Builder {
       // condition is a control region, not built here (loud when owed).
       Step S;
       S.K = Step::Branch;
+      if (auto *CondI = dyn_cast<Instruction>(Nd.V);
+          CondI && !P.DT->dominates(CondI, P.Ret))
+        return ConsumeReason::Unsupported;
       ConsumeReason Why = lift(PL.condSrc(P, I), S);
       if (Why != ConsumeReason::Ok)
         return Why;

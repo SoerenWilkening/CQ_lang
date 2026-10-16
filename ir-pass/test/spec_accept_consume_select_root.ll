@@ -8,8 +8,8 @@
 ; source returns it): then-arm `xor(a, t); addc(t, 5)`, else-arm
 ; `sub(a, t)` — each arm in place, under classical control. Traces (lane L):
 ; argc=1 -> `cqrt_sub_i8(a, t)`; argc=4 -> `cqrt_xor_i8(a, t); cqrt_addc_i8(t, 5)`.
-; A φ root (spec_reject_consume_phi_root.ll) and a QUANTUM condition
-; (spec_reject_consume_quantum_select.ll) stay loud.
+; The φ spelling lowers the same way (spec_accept_consume_phi_root.ll); a
+; QUANTUM condition (spec_reject_consume_quantum_select.ll) stays loud.
 ;
 ; Source: p5.c (rL1B), clang-19 -O1 -include CQ.h.
 ;

@@ -23,7 +23,9 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/IR/AttributeMask.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstIterator.h"
@@ -65,6 +67,8 @@ struct Plan {
   Function *F = nullptr;
   std::vector<Node> N;
   int Root = -1;
+  std::unique_ptr<DominatorTree> DT;  // of `F` (φ roots, source placement)
+  ReturnInst *Ret = nullptr;
   bool hoistable() const { return Root >= 0 && N[Root].HasArg; }
 };
 
@@ -114,6 +118,29 @@ public:
       IRBuilder<> B(Ret);
       return emitInto(P, I, VMap, B, *Ret->getFunction());
     });
+  }
+
+  // bd r2j3.37.4: may node `I` be computed by a SOURCE (a copy of `F` that
+  // returns it at `F`'s `ret`): every `F` value it reads dominates the `ret`
+  // (a φ arm's own value does not; the consumer then is not built).
+  bool placeableAtRet(Plan &P, int I) {
+    const Node &Nd = P.N[I];
+    auto dom = [&](Value *V) {
+      auto *In = dyn_cast<Instruction>(V);
+      return !In || P.DT->dominates(In, P.Ret);
+    };
+    switch (Nd.K) {
+    case Node::Arg:
+    case Node::Const:
+      return true;
+    case Node::Leaf:
+      return Nd.V ? dom(Nd.V) : dom(Nd.InnerCall);
+    case Node::Op:
+      return placeableAtRet(P, Nd.L) && placeableAtRet(P, Nd.R);
+    case Node::Sel:
+      return dom(Nd.V) && placeableAtRet(P, Nd.L) && placeableAtRet(P, Nd.R);
+    }
+    return false;
   }
 
   // bd r2j3.37.3: a copy of `P.F` returning select node `I`'s CONDITION,
@@ -198,6 +225,8 @@ private:
     ReturnInst *Ret = singleRet(*F);
     if (!Ret || F->isVarArg() || !calleeBodyTrusted(F, CalleeBodyUse::Execute))
       return P;
+    P->DT = std::make_unique<DominatorTree>(*F);
+    P->Ret = Ret;
     P->Root = expr(*P, Ret->getReturnValue());
     return P;
   }
@@ -261,6 +290,13 @@ private:
       Nd.HasArg = true;
       return add(P, Nd);
     }
+    // bd r2j3.37.4: a two-incoming φ whose arms hang under the two edges of one
+    // conditional branch is the same select (`if (c) return x; return y;` kept
+    // as control flow): planned as one, its condition the branch's.
+    if (auto *PN = dyn_cast<PHINode>(V);
+        PN && PN->getNumIncomingValues() == 2 && chainType(PN->getType()))
+      if (int S = phiSel(P, PN); S >= 0)
+        return S;
     if (auto *CI = dyn_cast<CallInst>(V)) {
       Function *H = CI->getCalledFunction();
       if (H && !H->isIntrinsic() && !H->isDeclaration() && !CI->isMustTailCall() &&
@@ -269,6 +305,39 @@ private:
           return substitute(P, *HP, HP->Root, CI);  // (a nested select: a leaf)
     }
     return leaf(P, V);
+  }
+
+  int phiSel(Plan &P, PHINode *PN) {
+    DominatorTree &DT = *P.DT;
+    DomTreeNode *N = DT.getNode(PN->getParent());
+    BasicBlock *D = N && N->getIDom() ? N->getIDom()->getBlock() : nullptr;
+    auto *Br = D ? dyn_cast<BranchInst>(D->getTerminator()) : nullptr;
+    if (!Br || !Br->isConditional() || Br->getSuccessor(0) == Br->getSuccessor(1))
+      return -1;
+    auto under = [&](unsigned S, BasicBlock *In) {
+      BasicBlockEdge E(D, Br->getSuccessor(S));
+      return In == D ? Br->getSuccessor(S) == PN->getParent()
+                     : DT.dominates(E, In);
+    };
+    BasicBlock *B0 = PN->getIncomingBlock(0), *B1 = PN->getIncomingBlock(1);
+    int TIdx;
+    if (under(0, B0) && under(1, B1))
+      TIdx = 0;
+    else if (under(0, B1) && under(1, B0))
+      TIdx = 1;
+    else
+      return -1;
+    const int L = expr(P, PN->getIncomingValue(TIdx));
+    const int R = expr(P, PN->getIncomingValue(1 - TIdx));
+    if (!P.N[L].HasArg && !P.N[R].HasArg)
+      return leaf(P, PN);
+    Node Nd;
+    Nd.K = Node::Sel;
+    Nd.V = Br->getCondition();
+    Nd.L = L;
+    Nd.R = R;
+    Nd.HasArg = true;
+    return add(P, Nd);
   }
 
   static bool hasSel(const Plan &P) {

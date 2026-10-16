@@ -1,13 +1,32 @@
-; spec_reject_consume_phi_root.ll — DECLINE, loud (bd
-; test_C_libtooling-r2j3.37.3): the select-root shape of
-; spec_accept_consume_select_root.ll spelt as a φ over two arms (hand IR; `-O1`
-; makes the select). `t` passes through EVERY return arm, so the dead `t` beside
-; the kept `r` is OWED in place (`chainReachSlots`, a property of the site), but
-; no plan covers a φ root: loud, never the old rail left standing (R1). WAS
-; (through d019f260): silently out of place. Retire when φ roots are planned.
+; spec_accept_consume_phi_root.ll — ACCEPT, in place per arm (bd
+; test_C_libtooling-r2j3.37.4; R11 r1 rL1B-F1, the φ half). The select-root shape
+; of spec_accept_consume_select_root.ll kept as control flow (hand IR):
+; `br (n > 2) hi, lo; hi: x = (a ^ t) + 5; lo: x = t - a; m: φ(hi x, lo x)`, `n`
+; classical, `t` dead. The φ's two incomings hang under the two edges of ONE
+; conditional branch, so it is planned as the select on that branch's condition
+; (`phiSel`); the consumer branches on it (a lifted source returns the
+; condition) and runs each arm in place. WAS (d019f260): silently out of place,
+; old `t` rail kept; (681333ae): loud. A φ whose arm reads a value that does
+; not dominate the callee's `ret` stays loud (spec_reject_consume_phi_arm_local.ll).
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error: {{.*}}cq specialization: a lifted call overwrites a dead quantum argument, which is not lowered in place across the call
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+;
+; CHECK-LABEL: define {{.*}}i32 @main(
+; CHECK:      call void @__cq_q_f_011_c0(i32 [[T:%[a-z0-9]+]], i32 [[A:%[a-z0-9]+]], i32 %0), !cq.inplace.qq
+; CHECK-LABEL: define internal i8 @__cq_q_f__cqsrc0_011(
+; CHECK:      [[GT:%[0-9]+]] = icmp sgt i32 %2, 2
+; CHECK-NEXT: [[Z:%[0-9]+]] = zext i1 [[GT]] to i8
+; CHECK-NEXT: ret i8 [[Z]]
+; CHECK-LABEL: define internal void @__cq_q_f_011_c0(i32 %0, i32 %1, i32 %2)
+; CHECK-NEXT: [[C:%[0-9]+]] = call i8 @__cq_q_f__cqsrc0_011(i32 0, i32 0, i32 %2)
+; CHECK-NEXT: [[B:%[0-9]+]] = icmp ne i8 [[C]], 0
+; CHECK-NEXT: br i1 [[B]], label %[[HI:[0-9]+]], label %[[LO:[0-9]+]]
+; CHECK:      [[HI]]:
+; CHECK-NEXT: call void @cqrt_xor_i8(i32 %1, i32 %0), !cq.inplace.qq
+; CHECK-NEXT: call void @cqrt_addc_i8(i32 %0, i8 5)
+; CHECK:      [[LO]]:
+; CHECK-NEXT: call void @cqrt_sub_i8(i32 %1, i32 %0), !cq.inplace.qq
 source_filename = "p5.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
