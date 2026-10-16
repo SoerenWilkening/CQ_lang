@@ -1,15 +1,27 @@
-; railwindow_f5_pending.ll — DECLINE (bd `test_C_libtooling-01po.19` S1-S3).
+; railwindow_f5_accept.ll — ACCEPT (CQ_FINDINGS F5; bd 01po.19 S1-S7, 01po.19.18
+; seeded accumulator, 01po.19.18.1 / 8h7d.25 rail-local nest). Was
+; railwindow_f5_pending.ll, the DECLINE that listed the steps still owed.
 ;
-; CQ_FINDINGS F5: the walk re-executed by an enclosing loop.
+; Dicke preparation by counting: cell q[i] is rotated under `c == v` for each v,
+; then `c += q[i]`. The array is the rolled rail window; `c` is the SEEDED
+; ACCUMULATOR (LoopAccumulator.h): `%cq.acc = cqrt_alloc_i32(0)` once, then per
+; outer trip `cqrt_add_i32(zext(q[i]), %cq.acc)` with the two cast rails reversed
+; and freed IN THE TRIP. The v-subloop qualifies on its own
+; (`iterationLocalQualifies`, by the subloop clause `railLocalQualifies` now
+; calls), its only outside qubit being the collapsed accumulator root, a register
+; the spine never reverses; its flag is minted, used as the control of
+; `cqrt_ry_i1_controlled` on the cell, stripped and freed per inner trip.
 ;
-; Before S1-S3 this array declined in the one-store rail bank. Now the rolled
-; window model (RailWindow.h; owner rulings `owner-ruling-01po19-rolled-not-
-; unrolled-2026-10-15`, `owner-ruling-01po19-rolled-design-2026-10-15`) claims it
-; (S1), places its quantization point (S2) and promotes its windows (S3), and then
-; declines with exactly the steps it still needs. The WIN prefix pins the claim,
-; the quantization point and every promoted cell class.
-; RETIREMENT TRIGGER: each of S4-S7 that lands removes its name from the CHECK
-; line; when none is left this file becomes an ACCEPT with an analytic trace check.
+; ANALYTIC CHECK (scratch state-vector replay of this lowering, linked and run;
+; no simulator in the repo, owner decision 2026-06-10): the final state of
+; q[0..3] is |D^4_2> = (|0011>+|0101>+|0110>+|1001>+|1010>+|1100>)/sqrt(6),
+; each amplitude +0.408248, every other amplitude 0; `%cq.acc` holds 2 on every
+; branch (popcount, a product factor). Every freed rail is |0>.
+; `c` is DEAD after the loop and its sources are only measured, so the register
+; is left allocated and reported (delegated ruling
+; ruling-01po19-18-dead-accumulator-leak-warn-2026-10-16, option (a); WARN).
+; RETIREMENT TRIGGER: bd 8h7d.20's post-loop reverse loop uncomputes `%cq.acc`
+; (from |2> to |0>) after the loop; the warning goes and a free appears.
 ;
 ; SOURCE (clang -O1, verbatim below):
 ;   #include <stdio.h>
@@ -33,15 +45,25 @@
 ;       return 0;
 ;   }
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s --implicit-check-not='cq rail bank' --implicit-check-not='tainted value stored to memory'
-; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.ll 2> %t.err
+; RUN: %filecheck %s < %t.ll --implicit-check-not='cqrt_free(i32 %cq.acc)'
+; RUN: %filecheck %s --check-prefix=WARN < %t.err
+; RUN: env CQ_RAILWINDOW_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
 ; RUN:   | %filecheck %s --check-prefix=WIN
-; (bd 01po.19 S6, 2026-10-15: S6 is built and leaves the needs list; this
-; array now reaches the control chain, which refuses it loudly as below —
-; the cell-controlled Ry lowers; the loop-carried counter `c += q[i]` is
-; bd 01po.19.18 (Case A in-place add).)
-; CHECK: cq loop lowering: loop-carried tainted value crosses iterations
+; WARN: warning: {{.*}}cq loop lowering: dead loop accumulator left allocated; its sources are only measured afterwards
+; CHECK: %cq.acc = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK: %h_cast = call i32 @cq_template_zext_i1_to_i8(i32 %.rail)
+; CHECK-NEXT: %[[W:h_cast[0-9]+]] = call i32 @cq_template_zext_i8_to_i32(i32 %h_cast)
+; CHECK-NEXT: call void @cqrt_add_i32(i32 %[[W]], i32 %cq.acc), !cq.inplace.qq
+; CHECK-NEXT: call void @cq_template_zext_i8_to_i32_unc(i32 %[[W]], i32 %h_cast)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[W]])
+; CHECK-NEXT: call void @cq_template_zext_i1_to_i8_unc(i32 %h_cast, i32 %.rail)
+; CHECK-NEXT: call void @cqrt_free(i32 %h_cast)
+; CHECK: %h_cmp = call i32 @cq_template_icmp_eq_i32_hl(i32 %cq.acc, i32 %{{[0-9]+}})
+; CHECK-NEXT: call void @cqrt_ry_i1_controlled(i32 %h_cmp, i32 %cq.arm.in, double %{{[0-9]+}})
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %h_cmp, i32 %cq.acc, i32 %{{[0-9]+}})
+; CHECK-NEXT: call void @cqrt_free(i32 %h_cmp)
+; CHECK: call i1 @cqrt_measure_i1(
 ; WIN: CQ_RAILWINDOW_DBG: @main claims %1 cells=i8 loads=3 stores=1 Q=  br label %2
 ; WIN: CQ_RAILWINDOW_DBG: promoted 0 cell class(es)
 

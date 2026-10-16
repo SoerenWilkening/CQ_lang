@@ -46,6 +46,17 @@
 ;       about the wrong instruction (CLAUDE.md L6).
 ;
 ; A 1:1 matrix, MISSED 0.  THIS FILE IS THE ONE `MUTANT Z6` KILLS.
+;
+; ⚠ EDITED FOR bd `test_C_libtooling-01po.19.18` (2026-10-16). The plain
+; `acc = acc + q` this file was written with is now an ACCEPT: the SEEDED
+; ACCUMULATOR (LoopAccumulator.h) mints the register from the classical seed and
+; lowers each trip as the in-place `cqrt_add_i32(q, acc)` (that program moved to
+; `loop_acc_seeded_accept.ll`, `@per_trip_register`). To keep pinning (Z6) the
+; latch is now `acc + (acc & q)`: still a fresh tainted rail, still not a
+; control-merge `%out`, and its source READS THE RAIL (`x += f(x)`, the aliased
+; pair the accumulator refuses — BennettVM arithmetic_assignment.jl:79), so the
+; accumulator leaves it to X1 exactly as before. RETIREMENT TRIGGER: if the
+; accumulator ever lowers a self-dependent source, re-pick a latch it refuses.
 ; (The Z3 mutant does not merely change a string: it emits
 ; `PHI node operands are not the same type as the result!` and `opt` aborts with
 ; exit 134 — a verifier-invalid module, which is what the conjunct exists to stop.)
@@ -63,7 +74,8 @@ head:
   %i = phi i32 [ 0, %entry ], [ %inext, %head ]
   %a = phi i32 [ 5, %entry ], [ %anext, %head ]
   %q = call i32 @cq_theta_si32(i32 0, double 5.000000e-01)
-  %anext = add nsw i32 %a, %q
+  %t = and i32 %a, %q
+  %anext = add nsw i32 %a, %t
   %inext = add nuw nsw i32 %i, 1
   %done = icmp eq i32 %inext, 3
   br i1 %done, label %exit, label %head, !llvm.loop !0

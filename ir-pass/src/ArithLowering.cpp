@@ -13,6 +13,7 @@
 #include "InPlaceQQ.h"      // transferDeadOperandMask / railIsUserData (bd r2j3.33)
 #include "MergeStreamGates.h" // streamGateWrites (bd r2j3.33 arm (c′))
 #include "LoopPlan.h"       // inPlaceValueRailOperand (the dtzb shape predicate)
+#include "LoopAccumulator.h"  // emitAccumulatorQQStep (bd 01po.19.18)
 #include "OpcodeSupport.h"
 #include "RailWindow.h"     // railWindowSameTripTarget (bd 01po.19 S5, G5)
 #include "TaintPropagation.h"
@@ -348,6 +349,10 @@ bool rewriteInPlaceValueRail(BinaryOperator *bo, WidthDispatch &wd,
   // through the M-C route — `inPlaceValueRailOperand`, which is what
   // `lowerLoops` proves its `InPlaceRailOps` with, admits add/xor ONLY, so the
   // dtzb loop path cannot mint a `sub` and this batch does not widen it.
+  // bd 01po.19.18 — a seeded accumulator's QUANTUM-source step: the in-place QQ
+  // gate, never the classical-immediate form below (LoopAccumulator.h).
+  if (taint.InPlaceQQRailOps.count(bo))
+    return emitAccumulatorQQStep(bo, wd, taint);
   const Instruction::BinaryOps Op = bo->getOpcode();
   StringRef AbiWidth = abiWidthFromType(bo->getType());
   // Exactly one operand is tainted (the rail handle, i32 by now — handles join

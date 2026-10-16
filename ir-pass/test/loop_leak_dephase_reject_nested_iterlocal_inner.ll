@@ -1,4 +1,5 @@
-; loop_leak_dephase_reject_nested_iterlocal_inner.ll — DECLINE. bd
+; loop_leak_dephase_reject_nested_iterlocal_inner.ll — ACCEPT since bd 8h7d.25 (2026-10-16; was a DECLINE; the
+; file name keeps "reject" on purpose, L7 — the history below is the decline's). bd
 ; `test_C_libtooling-emkg`, THE PRE-EXISTING FACE (F-1a). Same defect as its
 ; sibling `…_nested_marked_inner.ll` — conjunct (1) of
 ; `declineDephasingUnmarkedLoopRails` read `L->blocks()`, which includes every
@@ -51,10 +52,36 @@
 ;
 ; ⚠ L8 RETIREMENT TRIGGER: see the sibling's. Do not `git mv` this file.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-;
-; CHECK: n1_nested_marked_inner.c:11:14: in function slice
-; CHECK-SAME: cq loop lowering: rolled body leaks a rail entangled with a rotated register
+; ⚠ DECLINE -> ACCEPT, bd 8h7d.25 / 01po.19.18.1 (2026-10-16): `railLocalQualifies`
+; now CALLS the subloop clause of `iterationLocalQualifies` (one spelling) with the
+; rail roots admitted, so the OUTER body is certified rail-local and its per-trip
+; `lshr` copies of `y` are reversed and freed IN THE TRIP — the rails whose leak this
+; file existed to refuse. THE WITNESSING STATISTIC (R11 round 2 rA2-F2; corrected
+; text — the first two edits of this header used a replay that rotated only the
+; low bit, but `cqrt_ry_i32` applies Ry to EVERY qubit of the register, backend.md
+; §11.3): a bit k of `y` that no measured copy reads (k = 3 for instance) is, in
+; the final `cq_measure(y)`, 1 with probability sin^2((.5+.9)/2) = 0.415016 when
+; the `lshr` copies are discharged (bit k stays coherent through both Ry), and
+; cos^2(.25) sin^2(.45) + sin^2(.25) cos^2(.45) = 0.227243 when they leak (a copy
+; `y >> i` records bit k and dephases it) — the round-1 reviewer's numbers,
+; derived per qubit (each qubit is a product factor; the 2^32-branch register is
+; beyond the scratch replay). The CHECKs below pin the per-copy `_unc` + free.
+; Replay of this lowering: every freed rail |0>, stage 2b 2 sites verified / 0
+; violations / 0 unproven. The leak fence (`declineDephasingUnmarkedLoopRails`) is
+; unchanged and still pinned by the single-level loop_leak_dephase_reject_* files.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.ll
+; RUN: %filecheck %s < %t.ll
+; CHECK-LABEL: define i32 @slice(
+; CHECK: %[[A:h_op[0-9]*]] = call i32 @cq_template_lshr_i32_hl(
+; CHECK: call void @cq_template_lshr_i32_hl_unc(i32 %[[A]],
+; CHECK-NEXT: call void @cqrt_free(i32 %[[A]])
+; CHECK: %[[B:h_op[0-9]*]] = call i32 @cq_template_lshr_i32_hl(
+; CHECK: call void @cq_template_lshr_i32_hl_unc(i32 %[[B]],
+; CHECK-NEXT: call void @cqrt_free(i32 %[[B]])
+; CHECK-LABEL: define i32 @main(
+; RUN: %filecheck %s --check-prefix=MINT < %t.ll
+; MINT-COUNT-2: call i32 @cq_template_lshr_i32_hl(
+; MINT-NOT: call i32 @cq_template_lshr_i32_hl(
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
