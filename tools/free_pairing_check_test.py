@@ -2336,7 +2336,65 @@ IV_BOUND_MUTANTS = [
      _iv_bound(4611686018427387909, "icmp ne i64 %l1, 6"),
      "B1-input-aliases-written-rail")]
 
+# bd 01po.19.34.4 (R11 round 1 C-F1) — THE TRIANGULAR NEST `for i in 1..3
+# { for j < i { if (q[j]) Ry(q[i]) } }`: the control cell %j and the target
+# cell %i differ by %j - %i, two counters. `_iv_sym` bounds %j by %i - 1 (the
+# inner stay edge `%j1 != %i`, %j from 0 < lo(%i) = 1), so %j - %i lies in
+# [0 - 3, -1]. Mutants: the inner bound `ule` (%j reaches %i: the same cell),
+# %j starting at 1 (= lo(%i): the first trip runs with %j == %i == 1), and
+# the bound counter redefined INSIDE the inner loop (no single bound) — B1.
+WINDOW_CELL_TRIANGLE = """
+define i32 @slice() local_unnamed_addr {
+entry:
+  %w = alloca i32, i64 4, align 4, !cq.railwindow !0
+  %h0 = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %h0, ptr %w, align 4
+  br label %outer
+outer:
+  %i = phi i64 [ 1, %entry ], [ %i1, %olatch ]
+  %ai = getelementptr i32, ptr %w, i64 %i
+  br label %inner
+inner:
+  %j = phi i64 [ 0, %outer ], [ %j1, %inner ]
+  %aj = getelementptr i32, ptr %w, i64 %j
+  %xj = load i32, ptr %aj, align 4
+  %xi = load i32, ptr %ai, align 4
+  call void @cqrt_ry_i1_controlled(i32 %xj, i32 %xi, double 3.000000e-01)
+  store i32 %xi, ptr %ai, align 4
+  %j1 = add nuw nsw i64 %j, 1
+  %jc = icmp eq i64 %j1, %i
+  br i1 %jc, label %olatch, label %inner
+olatch:
+  %i1 = add nuw nsw i64 %i, 1
+  %ic = icmp eq i64 %i1, 4
+  br i1 %ic, label %exit, label %outer
+exit:
+  %x2 = load i32, ptr %w, align 4
+  %r = call i1 @cqrt_measure_i1(i32 %x2)
+  %z = zext i1 %r to i32
+  ret i32 %z
+}
+!0 = !{i32 1}
+"""
+TRIANGLE_MUTANTS = [
+    ("window-cell-triangle-inner-reaches-outer",
+     sub(sub(WINDOW_CELL_TRIANGLE, "%jc = icmp", "icmp eq i64 %j1, %i",
+             "icmp ugt i64 %j1, %i"), "br i1 %jc", "label %olatch, label %inner",
+         "label %olatch, label %inner"),
+     "B1-input-aliases-written-rail"),
+    ("window-cell-triangle-inner-starts-at-outer-lo",
+     sub(WINDOW_CELL_TRIANGLE, "%j = phi", "[ 0, %outer ]", "[ 1, %outer ]"),
+     "B1-input-aliases-written-rail"),
+    ("window-cell-triangle-bound-varies-in-inner",
+     sub(sub(insert_after(WINDOW_CELL_TRIANGLE, "%j1 = add",
+                          "  %ib = add nuw nsw i64 %j, 1"),
+             "%jc = icmp", "icmp eq i64 %j1, %i", "icmp eq i64 %j1, %ib"),
+         "%ai = getelementptr", "i64 %i", "i64 %i"),
+     "B1-input-aliases-written-rail"),
+]
+
 MEM_POSITIVE = [
+    ("window-cell-triangle-inner-below-outer", WINDOW_CELL_TRIANGLE),
     *IV_BOUND_POSITIVE,
     ("window-cell-cnot-nested-iv-distinct", WINDOW_CELL_CNOT_IV),
     ("window-cell-cnot-literal-first-offset", WINDOW_CELL_CNOT_LITFIRST),
@@ -2460,6 +2518,7 @@ exit:
          "add nuw nsw i64 %i, 4611686018427387904"),
      "B1-input-aliases-written-rail"),
     *IV_BOUND_MUTANTS,
+    *TRIANGLE_MUTANTS,
     # bd 01po.19.34: the counted-phi range proof's own kill tests.
     ("window-cell-cnot-iv-starts-at-zero",
      sub(WINDOW_CELL_CNOT_IV, "%l = phi", "[ 2, %entry ]", "[ 0, %entry ]"),

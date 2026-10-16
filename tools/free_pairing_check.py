@@ -4186,11 +4186,90 @@ def _iv_range(fn, x):
     return (s, hi) if s <= hi else None
 
 
+def _loop_body(fn, hdr, latch):
+    """The natural loop of the back edge latch -> hdr: hdr plus every block
+    that reaches the latch without passing hdr."""
+    body, work = {hdr}, [latch]
+    while work:
+        b = work.pop()
+        if b in body:
+            continue
+        body.add(b)
+        work.extend(fn.preds.get(b, []))
+    return body
+
+
+def _iv_sym(fn, x):
+    """bd 01po.19.34.4 (R11 round 1 C-F1) — a SYMBOLIC upper bound of a
+    counted phi x against ANOTHER counter Y: (s, Y, d, loY, hiY) meaning
+    s <= x <= Y + d on every trip, or None. x is `phi i64 [ s, %P ], [ %n,
+    %Lt ]` with `%n = add nuw i64 x, 1`; `%Lt` stays only while x or %n is
+    `ult`/`ule`/`ne` Y (either operand order or the exit-edge negation, as in
+    `_iv_range`), where Y is a counted phi with its own `_iv_range` [loY, hiY]
+    and is DEFINED OUTSIDE x's loop (so it is one value for the whole run of
+    x's loop). The bound is the same invariant as `_iv_range`'s: the largest
+    compared value while staying, plus the step once when it is x itself. It
+    needs s <= loY + d, so the first trip (x == s, which runs before any
+    compare) is under it too, and for `ne` s < loY, so the walk reaches Y."""
+    m = PHI2_RE.match(_rhs(fn, x) or "")
+    hdr = fn.def_block.get(x)
+    if not m or hdr is None:
+        return None
+    inc = [(m.group(1), m.group(2)), (m.group(3), m.group(4))]
+    lits = [(v, b) for v, b in inc if re.fullmatch(r"\d+", v)]
+    vals = [(v, b) for v, b in inc if v.startswith("%")]
+    if len(lits) != 1 or len(vals) != 1:
+        return None
+    s0 = int(lits[0][0])
+    n, lt = vals[0]
+    sm = STEP_RE.match(_rhs(fn, n) or "")
+    if not sm or sm.group(1) != x or int(sm.group(2)) != 1:
+        return None
+    term = next((t for lbl, _c, t in fn.blocks if lbl == lt), None)
+    bm = BR_COND_RE.match(_strip_md(term or ""))
+    if not bm or (bm.group(2) == hdr) == (bm.group(3) == hdr):
+        return None
+    stay_true = bm.group(2) == hdr
+    cm = ICMP_RE.match(_rhs(fn, bm.group(1)) or "")
+    if not cm:
+        return None
+    pred, a, y = cm.groups()
+    if a not in (x, n):
+        a, y = y, a
+        pred = {"ult": "ugt", "ule": "uge", "ugt": "ult", "uge": "ule"}.get(pred, pred)
+    if a not in (x, n) or not y.startswith("%") or y in (x, n):
+        return None
+    if not stay_true:
+        pred = {"ult": "uge", "ule": "ugt", "ugt": "ule", "uge": "ult",
+                "eq": "ne", "ne": "eq"}[pred]
+    if fn.def_block.get(y) in _loop_body(fn, hdr, lt):
+        return None  # Y varies inside x's loop: no single bound.
+    ry = _iv_range(fn, y)
+    if ry is None:
+        return None
+    lo_y, hi_y = ry
+    # largest compared value while staying, as an offset from Y
+    if pred == "ult":
+        vmax = -1
+    elif pred == "ule":
+        vmax = 0
+    elif pred == "ne" and s0 < lo_y:
+        vmax = -1
+    else:
+        return None
+    d = vmax + 1 if a == x else vmax
+    if s0 > lo_y + d:
+        return None
+    return (s0, y, d, lo_y, hi_y)
+
+
 def _affine_index(fn, v, depth=0):
-    """`v` as (terms, offset): terms a frozenset of (ssa, coeff, range) with
-    `range` the `_iv_range` of the ssa (None when unproven)."""
+    """`v` as (terms, offset): terms a frozenset of (ssa, coeff, range, sym)
+    with `range` the `_iv_range` and `sym` the `_iv_sym` of the ssa (None when
+    unproven)."""
     t, k = _linear(fn, v)
-    return frozenset((x, c, _iv_range(fn, x)) for x, c in t.items()), k
+    return frozenset((x, c, _iv_range(fn, x), _iv_sym(fn, x))
+                     for x, c in t.items()), k
 
 
 def _window_cell(fn, ptr):
@@ -4222,14 +4301,33 @@ def _cells_differ(a, b):
         return False
     d = {}
     rng = {}
+    sym = {}
     for sg, cell in ((1, a), (-1, b)):
-        for x, c, r in cell[1]:
+        for x, c, r, sy in cell[1]:
             d[x] = d.get(x, 0) + sg * c
             rng[x] = r
+            sym[x] = sy
     d = {x: c for x, c in d.items() if c}
     k = a[2] - b[2]
     if not d:
         return k % (1 << 62) != 0
+    if len(d) == 2:
+        # bd 01po.19.34.4: c*(x - Y) + k with x's symbolic bound against Y
+        # (`_iv_sym`): x - Y lies in [s - hiY, d], so the value lies in an
+        # interval that must exclude 0 and stay below 2^62 in magnitude.
+        for x, c in d.items():
+            sy = sym.get(x)
+            if sy is None or abs(c) != 1:
+                continue
+            s0, y, dd, _lo_y, hi_y = sy
+            if d.get(y) != -c:
+                continue
+            lo, hi = (s0 - hi_y, dd) if c == 1 else (-dd, hi_y - s0)
+            lo, hi = lo + k, hi + k
+            if max(abs(lo), abs(hi)) >= (1 << 62):
+                return False
+            return lo > 0 or hi < 0
+        return False
     if len(d) != 1:
         return False
     (x, c), = d.items()

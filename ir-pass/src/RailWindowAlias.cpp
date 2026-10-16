@@ -14,6 +14,7 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/ConstantRange.h"
 #include "llvm/IR/Dominators.h"
@@ -110,9 +111,51 @@ std::optional<bool> railWindowEdgeFact(ScalarEvolution &SE, DominatorTree &DT,
   return Equal ? std::optional<bool>(false) : std::nullopt;
 }
 
+// bd 01po.19.34.4 (R11 round 1 C-F1) — is the cell difference D nonzero on
+// EVERY iteration of the loop it recurs in? `isKnownNonZero` asks about all
+// values of the recurrence's type and so cannot see a TRIANGULAR nest
+// (`for i { for j < i { if (q[j]) Ry(q[i]) } }`: D = {-i,+,1}<j-loop> runs
+// -i .. -1, never 0). Answered with SCEV's own machinery, not a shape: D is an
+// affine recurrence {S,+,c}<L> with a constant step, L's SYMBOLIC-MAX
+// backedge-taken count is bounded so that the whole walk |c| * max < 2^(W-1)
+// (no signed wrap is POSSIBLE, flags or not: the walk is monotone and shorter
+// than half the ring), and S and the walk's value at that max lie strictly on
+// the SAME side of 0 (SCEV's `isKnownNegative`/`isKnownPositive`, which read an
+// outer recurrence through its own trip count). A monotone walk that starts and
+// ends strictly on one side of 0 without wrapping never touches 0; the real
+// last iteration ends no further than the max one.
+static bool nonZeroOverLoop(ScalarEvolution &SE, const SCEV *D) {
+  const auto *AR = dyn_cast<SCEVAddRecExpr>(D);
+  if (!AR || !AR->isAffine() || !D->getType()->isIntegerTy())
+    return false;
+  const auto *C = dyn_cast<SCEVConstant>(AR->getStepRecurrence(SE));
+  if (!C || C->getAPInt().isZero())
+    return false;
+  const SCEV *Max = SE.getSymbolicMaxBackedgeTakenCount(AR->getLoop());
+  if (isa<SCEVCouldNotCompute>(Max))
+    return false;
+  unsigned W = D->getType()->getIntegerBitWidth();
+  APInt MaxU = SE.getUnsignedRangeMax(Max);
+  if (MaxU.getActiveBits() > W)
+    return false;
+  bool Ov = false;
+  APInt Walk = MaxU.zextOrTrunc(W).umul_ov(C->getAPInt().abs(), Ov);
+  if (Ov || Walk.isNegative())  // |c| * max >= 2^(W-1)
+    return false;
+  const SCEV *End = AR->evaluateAtIteration(
+      SE.getTruncateOrZeroExtend(Max, D->getType()), SE);
+  if (isa<SCEVCouldNotCompute>(End))
+    return false;
+  const SCEV *S = AR->getStart();
+  return (SE.isKnownNegative(S) && SE.isKnownNegative(End)) ||
+         (SE.isKnownPositive(S) && SE.isKnownPositive(End));
+}
+
 bool railWindowDistinct(ScalarEvolution &SE, const SCEV *A, const SCEV *B,
                         const Instruction *Ctx, DominatorTree *DT) {
-  if (SE.isKnownNonZero(SE.getMinusSCEV(A, B)))
+  const SCEV *D = SE.getMinusSCEV(A, B);
+  if (SE.isKnownNonZero(D) ||
+      (!isa<SCEVCouldNotCompute>(D) && nonZeroOverLoop(SE, D)))
     return true;
   if (!Ctx)
     return false;
