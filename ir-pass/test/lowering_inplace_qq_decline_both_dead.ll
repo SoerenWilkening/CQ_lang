@@ -11,14 +11,16 @@
 ; without -g), and the choice changes the unitary: the LEFTOVER register differs
 ; (the reviewer's analytic P(t=0) 0.6837 vs 0.6547). b12d4452 broke the tie by
 ; BirthOrder and so could pick the wrong one silently. Now: loud, at the
-; eligibility level, before any fence is asked. RETIREMENT TRIGGER: the owner
-; question bd test_C_libtooling-dm7f.74 — (i) recover the lvalue from `cqc -g` debug
-; metadata, loud if absent, or (ii) keep it permanently loud (workaround: keep one
-; operand live).
+; eligibility level, before any fence is asked. PERMANENT (owner ruling
+; owner-ruling-dm7f74-both-dead-loud-permanent-2026-10-16, bd dm7f.74 closed): the
+; `-g` debug-metadata route was rejected, and the diagnostic names the
+; workaround — use one source again afterwards (e.g. `cq_measure(a)`), so only one
+; operand is a dead target and the xor lowers in place on the other
+; (docs/frontend.md §3.2, "Overwriting one of two dead registers").
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
-; CHECK: cq in-place lowering: both operands of a quantum reassignment are dead registers; the overwritten one is not recoverable
+; CHECK: cq in-place lowering: both operands of a quantum reassignment are dead registers; the overwritten one is not recoverable (use one of them again afterwards, e.g. measure it, so only one operand is a dead target)
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

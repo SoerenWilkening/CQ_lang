@@ -46,9 +46,10 @@ const char kMsgInPlaceQQSelfDependent[] =
     "cq in-place lowering: the source of a quantum reassignment depends on the "
     "dead register's old value";
 
-const char kMsgInPlaceQQAmbiguousTarget[] =
+const char kMsgInPlaceQQAmbiguousTarget[] =  // permanent: bd dm7f.74 ruling
     "cq in-place lowering: both operands of a quantum reassignment are dead "
-    "registers; the overwritten one is not recoverable";
+    "registers; the overwritten one is not recoverable (use one of them again "
+    "afterwards, e.g. measure it, so only one operand is a dead target)";
 
 bool isInPlaceQQGate(const CallInst *G) {
   if (!G || !G->getMetadata(kInPlaceQQTag))

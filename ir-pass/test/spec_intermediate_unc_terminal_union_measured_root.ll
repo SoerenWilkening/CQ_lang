@@ -46,7 +46,7 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
-; CHECK: cq in-place lowering: both operands of a quantum reassignment are dead registers; the overwritten one is not recoverable
+; CHECK: cq in-place lowering: both operands of a quantum reassignment are dead registers; the overwritten one is not recoverable (use one of them again afterwards, e.g. measure it, so only one operand is a dead target)
 
 
 define i32 @main(i32 noundef %0, ptr nocapture noundef readnone %1) local_unnamed_addr #0 {

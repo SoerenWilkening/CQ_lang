@@ -461,6 +461,41 @@ object (no generic association), a non-lvalue (`&5`), and `cq_ry` (undeclared).
 A register-free `a = cq_theta(θ)` is not available and is not a deferred feature:
 after `mem2reg` there is no variable `a` for it to name.
 
+#### Overwriting one of two dead registers
+
+`t ^= a`, `t += a` and `t -= a` on two quantum registers lower **in place** when
+the old `t` is dead afterwards: the gate writes `t`'s own register, and no copy
+of the old value stays behind to record `a` (an out-of-place copy would make a
+later rotation of `a` interfere with a register the program no longer has). The
+same holds through a call: `r = f(t, a)` with `f` returning `t ^ a` (or a
+chain of xor/add/sub over its parameters) overwrites a dead `t` as the inlined
+body would.
+
+When **both** operands are dead after the operation, the pass cannot tell
+which register the program overwrote: after `-O1` the operation is just
+`xor %t, %a`, which clang may commute, and the choice changes the circuit (the
+register left over differs). This fails loudly, permanently (owner ruling,
+bd `dm7f.74`):
+
+```
+cq in-place lowering: both operands of a quantum reassignment are dead registers;
+the overwritten one is not recoverable (use one of them again afterwards, e.g.
+measure it, so only one operand is a dead target)
+```
+
+The workaround is to use the source register again after the operation, so
+only the overwritten one is dead:
+
+```c
+bool a = 0, t = 0; cq_theta(&a, .5); cq_theta(&t, .4);
+t ^= a;
+cq_theta(&t, .7);
+int r = cq_measure(t) + 2 * cq_measure(a);   /* `a` is read again: t ^= a is in place on t */
+```
+
+A typical case is discarding an ancilla after `t ^= a`; measure (or otherwise
+read) the ancilla instead of dropping it.
+
 ### 3.3 `cq_phi` — the branch phase (register-free)
 
 ```c

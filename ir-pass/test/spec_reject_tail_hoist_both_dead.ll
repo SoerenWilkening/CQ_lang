@@ -9,7 +9,7 @@
 ; Source: f4.c (lane L scratch), clang-19 -O1 -include CQ.h.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error: {{.*}}cq in-place lowering: both operands of a quantum reassignment are dead registers; the overwritten one is not recoverable
+; CHECK: error: {{.*}}cq in-place lowering: both operands of a quantum reassignment are dead registers; the overwritten one is not recoverable (use one of them again afterwards, e.g. measure it, so only one operand is a dead target)
 source_filename = "f4.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

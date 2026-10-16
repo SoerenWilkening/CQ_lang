@@ -128,7 +128,9 @@ inline constexpr const char kInPlaceQQTag[] = "cq.inplace.qq";
 inline constexpr const char kDeadOperandTag[] = "cq.qq.dead";
 
 extern const char kMsgInPlaceQQRefused[];
-// Both operands are eligible dead targets (ruling-dm7f51-both-dead-loud-2026-10-15).
+// Both operands are eligible dead targets (ruling-dm7f51-both-dead-loud-2026-10-15);
+// PERMANENTLY loud, the text names the workaround (owner ruling
+// owner-ruling-dm7f74-both-dead-loud-permanent-2026-10-16; docs/frontend.md §3.2).
 extern const char kMsgInPlaceQQAmbiguousTarget[];
 // The source depends on the dead target's OLD value (ruling Q2; R11 round 2 F4
 // gave it its own message so the fixture pins `dependsOnTarget`, not G7).

@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 865 maintained source files, 6969 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 866 maintained source files, 6983 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -196,6 +196,23 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/SpecializePlan.h:130` — `getTombstoneKey`
 - `ir-pass/include/SpecializePlan.h:133` — `getHashValue`
 - `ir-pass/include/SpecializePlan.h:137` — `isEqual`
+
+### `ir-pass/include/SpecializeTailPlan.h` (268 lines)
+
+- `ir-pass/include/SpecializeTailPlan.h:64` — `hoistable`
+- `ir-pass/include/SpecializeTailPlan.h:69` — `planFor`
+- `ir-pass/include/SpecializeTailPlan.h:83` — `srcFor`
+- `ir-pass/include/SpecializeTailPlan.h:103` — `zeroSrc`
+- `ir-pass/include/SpecializeTailPlan.h:114` — `singleRet`
+- `ir-pass/include/SpecializeTailPlan.h:125` — `cloneReturning`
+- `ir-pass/include/SpecializeTailPlan.h:144` — `build`
+- `ir-pass/include/SpecializeTailPlan.h:154` — `add`
+- `ir-pass/include/SpecializeTailPlan.h:159` — `leaf`
+- `ir-pass/include/SpecializeTailPlan.h:166` — `chainType`
+- `ir-pass/include/SpecializeTailPlan.h:170` — `expr`
+- `ir-pass/include/SpecializeTailPlan.h:209` — `substitute`
+- `ir-pass/include/SpecializeTailPlan.h:241` — `argNos`
+- `ir-pass/include/SpecializeTailPlan.h:253` — `effectFree`
 
 ### `ir-pass/include/TaintPropagation.h` (2286 lines)
 
@@ -690,18 +707,18 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/IOSinkLowering.cpp:463` — `armIOSink`
 - `ir-pass/src/IOSinkLowering.cpp:473` — `lowerControlledIOSinks`
 
-### `ir-pass/src/InPlaceQQ.cpp` (399 lines)
+### `ir-pass/src/InPlaceQQ.cpp` (400 lines)
 
 - `ir-pass/src/InPlaceQQ.cpp:38` — `isInPlaceQQSymbol`
-- `ir-pass/src/InPlaceQQ.cpp:53` — `isInPlaceQQGate`
-- `ir-pass/src/InPlaceQQ.cpp:79` — `qqShape`
-- `ir-pass/src/InPlaceQQ.cpp:108` — `writesRail`
-- `ir-pass/src/InPlaceQQ.cpp:128` — `dependsOnTarget`
-- `ir-pass/src/InPlaceQQ.cpp:181` — `survives`
-- `ir-pass/src/InPlaceQQ.cpp:210` — `convert`
-- `ir-pass/src/InPlaceQQ.cpp:234` — `decideNext`
-- `ir-pass/src/InPlaceQQ.cpp:369` — `qqResultSurvives`
-- `ir-pass/src/InPlaceQQ.cpp:372` — `lowerInPlaceQQ`
+- `ir-pass/src/InPlaceQQ.cpp:54` — `isInPlaceQQGate`
+- `ir-pass/src/InPlaceQQ.cpp:80` — `qqShape`
+- `ir-pass/src/InPlaceQQ.cpp:109` — `writesRail`
+- `ir-pass/src/InPlaceQQ.cpp:129` — `dependsOnTarget`
+- `ir-pass/src/InPlaceQQ.cpp:182` — `survives`
+- `ir-pass/src/InPlaceQQ.cpp:211` — `convert`
+- `ir-pass/src/InPlaceQQ.cpp:235` — `decideNext`
+- `ir-pass/src/InPlaceQQ.cpp:370` — `qqResultSurvives`
+- `ir-pass/src/InPlaceQQ.cpp:373` — `lowerInPlaceQQ`
 
 ### `ir-pass/src/InPlaceQQRecord.cpp` (400 lines)
 
