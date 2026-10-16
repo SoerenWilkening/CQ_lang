@@ -2393,7 +2393,106 @@ TRIANGLE_MUTANTS = [
      "B1-input-aliases-written-rail"),
 ]
 
+# bd 01po.19.34.7 (R11 round 2 rN2-F1/F2) — the triangle with the outer
+# counter from 0: the i == 0 trip skips the inner loop through `icmp eq %i, 0`
+# (`_entry_lo` reads the guard: %i >= 1 on entry), and the DOWN-counting inner
+# loop `for (j = i - 1; j >= 0; j--)` that -O1 spells `%k` from %i, `add nsw
+# %k, -1`, staying while `%k sgt 1`, indexed by `and i64 (%k - 1), 2^32-1`
+# (`_iv_sym_down`: 1 <= %k <= %i, so the mask is the identity). Mutants: the
+# guard dropped (i == 0 enters: j == i == 0 would alias under the up-form),
+# the down loop staying while `%k sge 1` (it reaches %k == 0: the mask is no
+# longer provably the identity), the index the counter itself (`and %k`,
+# reaching %i: the same cell) — each B1.
+WINDOW_CELL_TRIANGLE0 = """
+define i32 @slice() local_unnamed_addr {
+entry:
+  %w = alloca i32, i64 4, align 4, !cq.railwindow !0
+  %h0 = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %h0, ptr %w, align 4
+  br label %outer
+outer:
+  %i = phi i64 [ 0, %entry ], [ %i1, %olatch ]
+  %g = icmp eq i64 %i, 0
+  br i1 %g, label %olatch, label %pre
+pre:
+  %ai = getelementptr i32, ptr %w, i64 %i
+  br label %inner
+inner:
+  %j = phi i64 [ 0, %pre ], [ %j1, %inner ]
+  %aj = getelementptr i32, ptr %w, i64 %j
+  %xj = load i32, ptr %aj, align 4
+  %xi = load i32, ptr %ai, align 4
+  call void @cqrt_ry_i1_controlled(i32 %xj, i32 %xi, double 3.000000e-01)
+  store i32 %xi, ptr %ai, align 4
+  %j1 = add nuw nsw i64 %j, 1
+  %jc = icmp eq i64 %j1, %i
+  br i1 %jc, label %olatch, label %inner
+olatch:
+  %i1 = add nuw nsw i64 %i, 1
+  %ic = icmp eq i64 %i1, 4
+  br i1 %ic, label %exit, label %outer
+exit:
+  %x2 = load i32, ptr %w, align 4
+  %r = call i1 @cqrt_measure_i1(i32 %x2)
+  %z = zext i1 %r to i32
+  ret i32 %z
+}
+!0 = !{i32 1}
+"""
+WINDOW_CELL_TRIANGLE_DOWN = """
+define i32 @slice() local_unnamed_addr {
+entry:
+  %w = alloca i32, i64 4, align 4, !cq.railwindow !0
+  %h0 = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %h0, ptr %w, align 4
+  br label %outer
+outer:
+  %i = phi i64 [ 0, %entry ], [ %i1, %olatch ]
+  %g = icmp eq i64 %i, 0
+  br i1 %g, label %olatch, label %pre
+pre:
+  %ai = getelementptr i32, ptr %w, i64 %i
+  br label %inner
+inner:
+  %k = phi i64 [ %i, %pre ], [ %k1, %inner ]
+  %k1 = add nsw i64 %k, -1
+  %jm = and i64 %k1, 4294967295
+  %aj = getelementptr i32, ptr %w, i64 %jm
+  %xj = load i32, ptr %aj, align 4
+  %xi = load i32, ptr %ai, align 4
+  call void @cqrt_ry_i1_controlled(i32 %xj, i32 %xi, double 3.000000e-01)
+  store i32 %xi, ptr %ai, align 4
+  %kc = icmp sgt i64 %k, 1
+  br i1 %kc, label %inner, label %olatch
+olatch:
+  %i1 = add nuw nsw i64 %i, 1
+  %ic = icmp eq i64 %i1, 4
+  br i1 %ic, label %exit, label %outer
+exit:
+  %x2 = load i32, ptr %w, align 4
+  %r = call i1 @cqrt_measure_i1(i32 %x2)
+  %z = zext i1 %r to i32
+  ret i32 %z
+}
+!0 = !{i32 1}
+"""
+TRIANGLE0_MUTANTS = [
+    ("window-cell-triangle0-guard-dropped",
+     sub(WINDOW_CELL_TRIANGLE0, "br i1 %g", "label %olatch, label %pre",
+         "label %pre, label %pre"),
+     "B1-input-aliases-written-rail"),
+    ("window-cell-triangle-down-reaches-zero",
+     sub(WINDOW_CELL_TRIANGLE_DOWN, "%kc = icmp", "icmp sgt i64 %k, 1",
+         "icmp sge i64 %k, 1"),
+     "B1-input-aliases-written-rail"),
+    ("window-cell-triangle-down-index-is-counter",
+     sub(WINDOW_CELL_TRIANGLE_DOWN, "%jm = and", "and i64 %k1,", "and i64 %k,"),
+     "B1-input-aliases-written-rail"),
+]
+
 MEM_POSITIVE = [
+    ("window-cell-triangle0-entry-guard", WINDOW_CELL_TRIANGLE0),
+    ("window-cell-triangle-down-masked", WINDOW_CELL_TRIANGLE_DOWN),
     ("window-cell-triangle-inner-below-outer", WINDOW_CELL_TRIANGLE),
     *IV_BOUND_POSITIVE,
     ("window-cell-cnot-nested-iv-distinct", WINDOW_CELL_CNOT_IV),
@@ -2519,6 +2618,7 @@ exit:
      "B1-input-aliases-written-rail"),
     *IV_BOUND_MUTANTS,
     *TRIANGLE_MUTANTS,
+    *TRIANGLE0_MUTANTS,
     # bd 01po.19.34: the counted-phi range proof's own kill tests.
     ("window-cell-cnot-iv-starts-at-zero",
      sub(WINDOW_CELL_CNOT_IV, "%l = phi", "[ 2, %entry ]", "[ 0, %entry ]"),

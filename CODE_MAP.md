@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 865 maintained source files, 6975 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 866 maintained source files, 6986 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -18,8 +18,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArmClassify.cpp` — 10934 physical lines
 - `ir-pass/src/LoopLowering.cpp` — 8248 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5553 physical lines
-- `tools/free_pairing_check.py` — 4764 physical lines
-- `tools/free_pairing_check_test.py` — 4675 physical lines
+- `tools/free_pairing_check.py` — 4880 physical lines
+- `tools/free_pairing_check_test.py` — 4775 physical lines
 - `tools/loop_twin_matrix.py` — 4115 physical lines
 - `ir-pass/src/QramLowering.cpp` — 4069 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 3498 physical lines
@@ -77,6 +77,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/AngleSelectEmit.cpp` — 575 physical lines
 - `tests/e2e/slice_libm_real_acoshl.c` — 575 physical lines
 - `ir-pass/src/IntrinsicLowering.cpp` — 565 physical lines
+- `ir-pass/src/RailWindowAlias.cpp` — 557 physical lines
 - `ir-pass/src/EmitInverse.cpp` — 552 physical lines
 - `ir-pass/include/RailBankPromote.h` — 536 physical lines
 - `ir-pass/src/CompareLowering.cpp` — 535 physical lines
@@ -97,7 +98,6 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_libm_real_erfcl.c` — 451 physical lines
 - `tools/predmux_probe_gen.py` — 450 physical lines
 - `tests/e2e/slice_libm_real_pow.c` — 439 physical lines
-- `ir-pass/src/RailWindowAlias.cpp` — 434 physical lines
 - `tools/record_census/source_ir.py` — 434 physical lines
 - `tests/e2e/slice_libm_real_erfl.c` — 432 physical lines
 - `tools/record_census/census_02_mc_population.py` — 430 physical lines
@@ -1158,21 +1158,27 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RailWindow.cpp:165` — `claims`
 - `ir-pass/src/RailWindow.cpp:239` — `lowerRailWindowArrays`
 
-### `ir-pass/src/RailWindowAlias.cpp` (434 lines)
+### `ir-pass/src/RailWindowAlias.cpp` (557 lines)
 
 - `ir-pass/src/RailWindowAlias.cpp:32` — `railWindowCompareIsCellEquality`
 - `ir-pass/src/RailWindowAlias.cpp:81` — `railWindowEdgeFact`
-- `ir-pass/src/RailWindowAlias.cpp:127` — `nonZeroOverLoop`
-- `ir-pass/src/RailWindowAlias.cpp:154` — `railWindowDistinct`
-- `ir-pass/src/RailWindowAlias.cpp:172` — `railWindowPairProven`
-- `ir-pass/src/RailWindowAlias.cpp:188` — `railWindowUnprovenPair`
-- `ir-pass/src/RailWindowAlias.cpp:243` — `isThetaCall`
-- `ir-pass/src/RailWindowAlias.cpp:255` — `markFamily`
-- `ir-pass/src/RailWindowAlias.cpp:294` — `classReads`
-- `ir-pass/src/RailWindowAlias.cpp:323` — `railWindowSelfControl`
-- `ir-pass/src/RailWindowAlias.cpp:382` — `computeWindowRegions`
-- `ir-pass/src/RailWindowAlias.cpp:414` — `railWindowPlanSeedPoint`
-- `ir-pass/src/RailWindowAlias.cpp:424` — `railWindowPlanPoints`
+- `ir-pass/src/RailWindowAlias.cpp:138` — `nonZeroAtEntry`
+- `ir-pass/src/RailWindowAlias.cpp:144` — `signAtEntry`
+- `ir-pass/src/RailWindowAlias.cpp:157` — `monotoneEnds`
+- `ir-pass/src/RailWindowAlias.cpp:194` — `walkWithin`
+- `ir-pass/src/RailWindowAlias.cpp:212` — `wideCounterpart`
+- `ir-pass/src/RailWindowAlias.cpp:235` — `visitZeroExtendExpr`
+- `ir-pass/src/RailWindowAlias.cpp:252` — `nonZeroOverLoop`
+- `ir-pass/src/RailWindowAlias.cpp:277` — `railWindowDistinct`
+- `ir-pass/src/RailWindowAlias.cpp:295` — `railWindowPairProven`
+- `ir-pass/src/RailWindowAlias.cpp:311` — `railWindowUnprovenPair`
+- `ir-pass/src/RailWindowAlias.cpp:366` — `isThetaCall`
+- `ir-pass/src/RailWindowAlias.cpp:378` — `markFamily`
+- `ir-pass/src/RailWindowAlias.cpp:417` — `classReads`
+- `ir-pass/src/RailWindowAlias.cpp:446` — `railWindowSelfControl`
+- `ir-pass/src/RailWindowAlias.cpp:505` — `computeWindowRegions`
+- `ir-pass/src/RailWindowAlias.cpp:537` — `railWindowPlanSeedPoint`
+- `ir-pass/src/RailWindowAlias.cpp:547` — `railWindowPlanPoints`
 
 ### `ir-pass/src/RailWindowArms.cpp` (365 lines)
 
@@ -7414,6 +7420,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/slice_rolled_dicke_n5_k3.c:51` — `main`
 
+### `tests/e2e/slice_rolled_dicke_n6_k3.c` (62 lines)
+
+- `tests/e2e/slice_rolled_dicke_n6_k3.c:38` — `main`
+
 ### `tests/e2e/slice_rolled_dicke_runtime_n.c` (51 lines)
 
 - `tests/e2e/slice_rolled_dicke_runtime_n.c:30` — `dicke`
@@ -8197,7 +8207,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/fixture_guard_liveness.py:91` — `guards_in`
 - `tools/fixture_guard_liveness.py:122` — `main`
 
-### `tools/free_pairing_check.py` (4764 lines)
+### `tools/free_pairing_check.py` (4880 lines)
 
 - `tools/free_pairing_check.py:751` — `Unclassified.__init__`
 - `tools/free_pairing_check.py:776` — `Undecidable.__init__`
@@ -8267,27 +8277,31 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check.py:4002` — `mark_window_stores`
 - `tools/free_pairing_check.py:4055` — `window_cell_pointers`
 - `tools/free_pairing_check.py:4068` — `_strip_md`
-- `tools/free_pairing_check.py:4097` — `_rhs`
-- `tools/free_pairing_check.py:4102` — `_linear`
-- `tools/free_pairing_check.py:4120` — `_upper`
-- `tools/free_pairing_check.py:4128` — `_iv_range`
-- `tools/free_pairing_check.py:4189` — `_loop_body`
-- `tools/free_pairing_check.py:4202` — `_iv_sym`
-- `tools/free_pairing_check.py:4266` — `_affine_index`
-- `tools/free_pairing_check.py:4275` — `_window_cell`
-- `tools/free_pairing_check.py:4288` — `_cell_at`
-- `tools/free_pairing_check.py:4294` — `_cells_differ`
-- `tools/free_pairing_check.py:4343` — `window_cells_distinct`
-- `tools/free_pairing_check.py:4437` — `address_taken`
-- `tools/free_pairing_check.py:4460` — `live_functions`
-- `tools/free_pairing_check.py:4504` — `_clone_returns_data`
-- `tools/free_pairing_check.py:4511` — `_returned_by`
-- `tools/free_pairing_check.py:4520` — `census_of`
-- `tools/free_pairing_check.py:4564` — `check_module`
-- `tools/free_pairing_check.py:4649` — `main`
-- `tools/free_pairing_check.py:4706` — `main.dump`
+- `tools/free_pairing_check.py:4103` — `_rhs`
+- `tools/free_pairing_check.py:4108` — `_linear`
+- `tools/free_pairing_check.py:4135` — `_upper`
+- `tools/free_pairing_check.py:4143` — `_iv_range`
+- `tools/free_pairing_check.py:4204` — `_loop_body`
+- `tools/free_pairing_check.py:4217` — `_iv_sym`
+- `tools/free_pairing_check.py:4285` — `_num_range`
+- `tools/free_pairing_check.py:4298` — `_lin_range`
+- `tools/free_pairing_check.py:4312` — `_entry_lo`
+- `tools/free_pairing_check.py:4330` — `_iv_sym_down`
+- `tools/free_pairing_check.py:4382` — `_affine_index`
+- `tools/free_pairing_check.py:4391` — `_window_cell`
+- `tools/free_pairing_check.py:4404` — `_cell_at`
+- `tools/free_pairing_check.py:4410` — `_cells_differ`
+- `tools/free_pairing_check.py:4459` — `window_cells_distinct`
+- `tools/free_pairing_check.py:4553` — `address_taken`
+- `tools/free_pairing_check.py:4576` — `live_functions`
+- `tools/free_pairing_check.py:4620` — `_clone_returns_data`
+- `tools/free_pairing_check.py:4627` — `_returned_by`
+- `tools/free_pairing_check.py:4636` — `census_of`
+- `tools/free_pairing_check.py:4680` — `check_module`
+- `tools/free_pairing_check.py:4765` — `main`
+- `tools/free_pairing_check.py:4822` — `main.dump`
 
-### `tools/free_pairing_check_test.py` (4675 lines)
+### `tools/free_pairing_check_test.py` (4775 lines)
 
 - `tools/free_pairing_check_test.py:711` — `order_ladder`
 - `tools/free_pairing_check_test.py:821` — `cswap_braid`
@@ -8295,17 +8309,17 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check_test.py:1146` — `sub`
 - `tools/free_pairing_check_test.py:1156` — `insert_after`
 - `tools/free_pairing_check_test.py:2284` — `_iv_bound`
-- `tools/free_pairing_check_test.py:3281` — `_swap_lines`
-- `tools/free_pairing_check_test.py:3293` — `_hoist_line`
-- `tools/free_pairing_check_test.py:3686` — `lc`
-- `tools/free_pairing_check_test.py:3731` — `cone_nest`
-- `tools/free_pairing_check_test.py:4290` — `_Stop.__init__`
-- `tools/free_pairing_check_test.py:4294` — `_Stop.__str__`
-- `tools/free_pairing_check_test.py:4298` — `findings`
-- `tools/free_pairing_check_test.py:4306` — `proofs_of`
-- `tools/free_pairing_check_test.py:4323` — `verdict_map`
-- `tools/free_pairing_check_test.py:4335` — `main`
-- `tools/free_pairing_check_test.py:4373` — `main.counted`
+- `tools/free_pairing_check_test.py:3381` — `_swap_lines`
+- `tools/free_pairing_check_test.py:3393` — `_hoist_line`
+- `tools/free_pairing_check_test.py:3786` — `lc`
+- `tools/free_pairing_check_test.py:3831` — `cone_nest`
+- `tools/free_pairing_check_test.py:4390` — `_Stop.__init__`
+- `tools/free_pairing_check_test.py:4394` — `_Stop.__str__`
+- `tools/free_pairing_check_test.py:4398` — `findings`
+- `tools/free_pairing_check_test.py:4406` — `proofs_of`
+- `tools/free_pairing_check_test.py:4423` — `verdict_map`
+- `tools/free_pairing_check_test.py:4435` — `main`
+- `tools/free_pairing_check_test.py:4473` — `main.counted`
 
 ### `tools/gen_templates.py` (477 lines)
 

@@ -4089,6 +4089,12 @@ STEP_RE = re.compile(r"^add\s+nuw\s+(?:nsw\s+)?i64\s+(%[-\w.]+),\s*(\d+)\s*$")
 ICMP_RE = re.compile(
     r"^icmp\s+(eq|ne|ult|ule|ugt|uge)\s+i64\s+(%[-\w.]+|-?\d+),\s*"
     r"(%[-\w.]+|-?\d+)\s*$")
+SICMP_RE = re.compile(
+    r"^icmp\s+(sgt|sge|slt|sle)\s+i64\s+(%[-\w.]+|-?\d+),\s*(%[-\w.]+|-?\d+)\s*$")
+STEPDOWN_RE = re.compile(r"^add\s+nsw\s+i64\s+(%[-\w.]+),\s*-1\s*$")
+AND_MASK_RE = re.compile(r"^and\s+i64\s+(%[-\w.]+),\s*(\d+)\s*$")
+EQ_GUARD_RE = re.compile(
+    r"^icmp\s+(eq|ne)\s+i64\s+(%[-\w.]+|-?\d+),\s*(%[-\w.]+|-?\d+)\s*$")
 BR_COND_RE = re.compile(
     r"^br\s+i1\s+(%[-\w.]+),\s*label\s+(%[-\w.$]+),\s*label\s+(%[-\w.$]+)\s*$")
 ZEXT_RE = re.compile(r"^zext\s+(?:nneg\s+)?i(\d+)\s+\S+\s+to\s+i64\s*$")
@@ -4105,6 +4111,15 @@ def _linear(fn, v, depth=0):
     2^64, which is all the cell comparison needs (it is taken mod 2^62)."""
     if re.fullmatch(r"-?\d+", v):
         return {}, int(v)
+    am = AND_MASK_RE.match(_rhs(fn, v) or "") if depth <= 16 else None
+    if am and int(am.group(2)) + 1 == 1 << (int(am.group(2)) + 1).bit_length() - 1:
+        # bd 01po.19.34.7 (R11 round 2 rN2-F2): -O1's `and i64 %j, 4294967295`
+        # (a zext of trunc) is the identity on a value proven in [0, mask].
+        t, k = _linear(fn, am.group(1), depth + 1)
+        r = _lin_range(fn, t, k)
+        if r is not None and 0 <= r[0] and r[1] <= int(am.group(2)):
+            return t, k
+        return {v: 1}, 0
     m = LIN_RE.match(_rhs(fn, v) or "") if depth <= 16 else None
     if not m:
         return {v: 1}, 0
@@ -4218,9 +4233,12 @@ def _iv_sym(fn, x):
     inc = [(m.group(1), m.group(2)), (m.group(3), m.group(4))]
     lits = [(v, b) for v, b in inc if re.fullmatch(r"\d+", v)]
     vals = [(v, b) for v, b in inc if v.startswith("%")]
+    if not lits and len(vals) == 2:
+        return _iv_sym_down(fn, x, hdr, m)
     if len(lits) != 1 or len(vals) != 1:
         return None
     s0 = int(lits[0][0])
+    pre = lits[0][1]
     n, lt = vals[0]
     sm = STEP_RE.match(_rhs(fn, n) or "")
     if not sm or sm.group(1) != x or int(sm.group(2)) != 1:
@@ -4248,6 +4266,7 @@ def _iv_sym(fn, x):
     if ry is None:
         return None
     lo_y, hi_y = ry
+    lo_y = _entry_lo(fn, pre, y, lo_y)  # bd 01po.19.34.7: the entry guard
     # largest compared value while staying, as an offset from Y
     if pred == "ult":
         vmax = -1
@@ -4261,6 +4280,103 @@ def _iv_sym(fn, x):
     if s0 > lo_y + d:
         return None
     return (s0, y, d, lo_y, hi_y)
+
+
+def _num_range(fn, x):
+    """A proven numeric [lo, hi] of a counter x (literal-bounded `_iv_range`, or
+    the symbolic `_iv_sym` bound read with its partner's range), or None."""
+    r = _iv_range(fn, x)
+    if r is not None:
+        return r
+    sy = _iv_sym(fn, x)
+    if sy is None:
+        return None
+    s0, _y, d, _lo, hi_y = sy
+    return (s0, hi_y + d) if s0 <= hi_y + d else None
+
+
+def _lin_range(fn, t, k):
+    """[lo, hi] of the linear form (t, k) when it has at most one counter."""
+    if not t:
+        return (k, k)
+    if len(t) != 1:
+        return None
+    (x, c), = t.items()
+    r = _num_range(fn, x)
+    if r is None:
+        return None
+    a, b = c * r[0] + k, c * r[1] + k
+    return (min(a, b), max(a, b))
+
+
+def _entry_lo(fn, pre, y, lo_y):
+    """bd 01po.19.34.7 (rN2-F1): the loop entered only through `pre`, whose one
+    predecessor branches to it only when Y != lo_y (`icmp eq Y, lo` false edge,
+    or `icmp ne` true edge): Y >= lo_y + 1 on entry. Otherwise lo_y."""
+    ps = fn.preds.get(pre, [])
+    if len(ps) != 1:
+        return lo_y
+    term = next((t for lbl, _c, t in fn.blocks if lbl == ps[0]), None)
+    bm = BR_COND_RE.match(_strip_md(term or ""))
+    if not bm or bm.group(2) == bm.group(3):
+        return lo_y
+    gm = EQ_GUARD_RE.match(_rhs(fn, bm.group(1)) or "")
+    if not gm or {gm.group(2), gm.group(3)} != {y, str(lo_y)}:
+        return lo_y
+    taken = bm.group(3) if gm.group(1) == "eq" else bm.group(2)
+    return lo_y + 1 if taken == pre else lo_y
+
+
+def _iv_sym_down(fn, x, hdr, m):
+    """bd 01po.19.34.7 (rN2-F2) — a DOWN-counting x: `phi i64 [ Y, %P ], [ %n,
+    %Lt ]` with `%n = add nsw i64 x, -1`, staying only while x (or %n) is
+    `sgt`/`sge` a literal c >= 0. The first trip runs with x == Y, each next x
+    is the previous one minus 1 and only while the compare holds, so c' <= x <=
+    Y with c' the smallest admitted value (needs Y >= c' at entry, from Y's
+    range read through the entry guard). Y is a counted phi defined outside
+    x's loop. Returns (c', Y, 0, loY, hiY) in `_iv_sym`'s form, or None."""
+    inc = [(m.group(1), m.group(2)), (m.group(3), m.group(4))]
+    if not all(v.startswith("%") for v, _b in inc):
+        return None
+    for (y, pre), (n, lt) in (inc, inc[::-1]):
+        sm = STEPDOWN_RE.match(_rhs(fn, n) or "")
+        if sm and sm.group(1) == x:
+            break
+    else:
+        return None
+    term = next((t for lbl, _c, t in fn.blocks if lbl == lt), None)
+    bm = BR_COND_RE.match(_strip_md(term or ""))
+    if not bm or (bm.group(2) == hdr) == (bm.group(3) == hdr):
+        return None
+    stay_true = bm.group(2) == hdr
+    cm = SICMP_RE.match(_rhs(fn, bm.group(1)) or "")
+    if not cm:
+        return None
+    pred, a, c = cm.groups()
+    if a not in (x, n):
+        a, c = c, a
+        pred = {"sgt": "slt", "sge": "sle", "slt": "sgt", "sle": "sge"}[pred]
+    if a not in (x, n) or not re.fullmatch(r"\d+", c):
+        return None
+    if not stay_true:
+        pred = {"sgt": "sle", "sge": "slt", "slt": "sge", "sle": "sgt"}[pred]
+    c = int(c)
+    if pred == "sgt":
+        low = c + 1          # smallest compared value while staying
+    elif pred == "sge":
+        low = c
+    else:
+        return None
+    low = low - 1 if a == x else low  # the next x is the compared one minus 1
+    if y in (x, n) or fn.def_block.get(y) in _loop_body(fn, hdr, lt):
+        return None
+    ry = _iv_range(fn, y)
+    if ry is None:
+        return None
+    lo_y = _entry_lo(fn, pre, y, ry[0])
+    if lo_y < low or low < 0:
+        return None
+    return (low, y, 0, lo_y, ry[1])
 
 
 def _affine_index(fn, v, depth=0):
