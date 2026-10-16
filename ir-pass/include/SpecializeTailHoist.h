@@ -12,30 +12,42 @@
 // gate inside a Bennett-wrapped body survives the wrap's own reverse anyway.
 //
 // THE MECHANISM. Before any stage reads the call, the lifted call's RETURN CHAIN
-// is moved to the caller, where main's in-place machinery decides it exactly as
-// for the inlined body. The chain of `f` is its returned value read through
-// xor/add/sub (`isQQStemOpcode`, the opcodes BOTH in-place families convert) down
-// to its parameters, through nested calls whose own chain reaches their
-// parameters (each substituted at its call). Every other value the chain reads is
-// a LEAF, computed by a SOURCE function: a copy of `f` returning that leaf
-// (`<f>__cqsrc<N>`), lifted like any callee. The call becomes
+// (SpecializeTailPlan.h) is moved to the caller, where main's in-place machinery
+// decides it exactly as for the inlined body. The chain of `f` is its returned
+// value read through xor/add/sub (`isQQStemOpcode`, the opcodes BOTH in-place
+// families convert) down to its parameters, through nested calls whose own chain
+// reaches their parameters (each substituted at its call). Every other value the
+// chain reads is a LEAF, computed by a SOURCE function: a copy of `f` returning
+// that leaf (`<f>__cqsrc<N>`), lifted like any callee. The call becomes
 //     s = f__cqsrc0(t, a, ...)     (one per leaf; none for a parameter/constant)
 //     r = t OP s ...               (the chain, stock opcodes, at the call)
 // and `r` replaces the call's result. Lifted bodies are pure (`scanBody`), so each
-// source re-runs `f` without observable effect; a chain with no leaf whose call is
-// not trivially dead keeps one source returning zero, so termination is kept.
-// The source's unread parameters are then dropped by the dead-argument drop that
-// runs right after (slot A), and the caller's chain op gets its `!cq.qq.dead`
-// record from `recordDeadQQOperands` on this IR, i.e. the record the inlined op
-// would get. So every downstream answer — eligible, kept, both-dead (loud),
-// self-dependent source (loud), the fence, a LIVE argument staying out of place
-// — is main's answer, asked once (R12), not a second spelling of it.
+// source re-runs `f` without observable effect; a chain with no leaf whose call
+// may have an effect (`wouldInstructionBeTriviallyDead`, else a cycle or a
+// side-effecting instruction) keeps one source returning zero. The source's
+// unread parameters are dropped by the dead-argument drop that follows, and the
+// caller's chain op gets its `!cq.qq.dead` record from `recordDeadQQOperands` on
+// this IR, i.e. the record the inlined op would get. So every downstream answer —
+// eligible, kept, both-dead (loud), self-dependent source (loud), the subtrahend
+// (loud), the fence, a stale read — is main's answer, asked once (R12), not a
+// second spelling of it. Where main's answer is loud, the hoisted call is loud.
 //
 // THE GATE. A call is rewritten only when it is a proven-Accept lift site
-// (`isProvenSpecSite`) whose chain reaches a parameter that receives a TAINTED
-// operand the in-place record would call dead (or a dead φ not provably one wire)
-// at the call (`qqDeadRecordBits`). A live argument would stay out of place in
-// the caller too, where the clone's out-of-place result is the same unitary.
+// (`isProvenSpecSite`) whose chain reaches a parameter receiving a TAINTED
+// operand that is DEAD at the call (`qqDeadRecordBits` bit 1, the record's own
+// question asked at the call's position) and a USER REGISTER's value: a
+// `cq_theta` result, a φ the record proved one wire, or an xor/add/sub whose dead
+// operand is one (`t ^= a; r = f(t, b)`). A live argument stays lifted: the
+// clone's out-of-place result is the unitary main gives the inlined op. A derived
+// dead argument (`t * 3`) stays lifted too: the spine returns it to |0> as it
+// would the inlined op's operand, and hoisting would only trade the clone
+// consumer the M-B plan reasons about for a template reader (a measured leak).
+//
+// THE SLOTS. Three, each followed by a re-`propagate` (no guard has run): before
+// the dead-argument drop's slot A (both entry points); before slot B (both), for
+// a site the gate-subroutine inliner's first phase exposed; after its
+// CrossCallResults phase (`run` only; `runOnFunction` inlines nothing), whose
+// sources' unread slots `resolvePhantomCloneArgReads` neutralises later.
 //
 // REFERENCES (R12). Bennett.jl 824458d1 src/lowering/call.jl `lower_call!` CNOT-
 // copies the caller's argument wires into the callee (compact=true: a Bennett-
@@ -48,8 +60,8 @@
 // classical bits, where a standing old value is invisible. The hazard is the
 // superposition CQ adds; the hoist puts the overwrite where CQ decides it.
 //
-// THE BACKSTOP. A site the hoist owed but never saw (a call whose argument taint
-// arrives only in round 2) fails loudly, never silently out of place (below).
+// THE BACKSTOP. A site the hoist owed but never saw fails loudly, never silently
+// out of place (below).
 #ifndef CQ_IRPASS_SPECIALIZE_TAIL_HOIST_H_
 #define CQ_IRPASS_SPECIALIZE_TAIL_HOIST_H_
 
@@ -69,14 +81,17 @@ bool hoistLiftedTailChains(llvm::Module &M, const TaintSet &taint,
                            WidthDispatch &wd);
 
 // THE BACKSTOP, in two halves. `specialize()` tags each top-level lift site
-// whose chain reaches a tainted argument the record calls dead at the call
-// (`!cq.lift.tail.owed`, the argument mask): the hoist owed it and never saw it.
-// The late in-place round (`lowerInPlaceQQ`, after `lowerOps`) then asks main's
-// own E2/E3 of each tagged argument — a USER-DATA rail (`qqTargetIsUserData`)
-// beside a SURVIVING result (`qqResultSurvives`) — and fails loudly
-// (`kMsgLiftTailUnhoisted`): the in-place round would not leave it out of place.
-// A derived rail (a merge `%out`, a template) is a temporary the spine returns to
-// |0>, as for the inlined op. Strips every tag.
+// the gate would have hoisted (`!cq.lift.tail.owed`: the argument mask of the
+// gate, plus the mask of tainted arguments the record calls a dead φ NOT
+// provably one wire, which the gate never hoists). The late in-place round
+// (`lowerInPlaceQQ`, after `lowerOps`, both entry points) fails loudly
+// (`kMsgLiftTailUnhoisted`) when the result SURVIVES (`qqResultSurvives`, the
+// round's E3) and either mask is owed — the second only for a USER-DATA rail
+// (`qqTargetIsUserData`, the round's own B-F1 rule). Every tag is stripped there;
+// an input tag is stripped at each hoist slot (only `specialize()` writes it).
+// UNREACHED BY KNOWN C since the third slot exists: the gate-subroutine phases
+// were the only measured way to expose a site after the first slot (p21/p22,
+// spec_accept_tail_hoist_gate_inline.ll); kept fail-closed, no fixture pins it.
 inline constexpr const char kLiftTailOwedTag[] = "cq.lift.tail.owed";
 void tagUnhoistedLiftTail(llvm::CallInst &CI, const TaintSet &taint);
 bool declineUnhoistedLiftTails(llvm::Module &M, const TaintSet &taint);

@@ -24,6 +24,12 @@
 ;   clang -O1 -emit-llvm -S lib.c -o lib.ll      (plain C, no CQ.h)
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>
 ;
+; bd r2j3.37: `%10` is measured at the end so it stays LIVE across the call. A
+; DEAD user-register argument of an add/sub/xor return chain is no longer lifted:
+; the chain is hoisted to the caller (SpecializeTailHoist.h) and lowered in place,
+; and the clone this fixture pins would vanish. Retire the keep-alive with that
+; hoist.
+;
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NORAIL < %t.cqd0.ll
@@ -61,6 +67,7 @@ define i32 @main(i32 noundef %0, ptr nocapture noundef readonly %1) local_unname
   %12 = tail call zeroext i1 @cq_theta_i1(i1 noundef zeroext %8, double noundef 0x3FE6666666666666) #4
   %13 = tail call i32 @cq_measure_si32(i32 noundef %11) #4
   %14 = tail call zeroext i1 @cq_measure_i1(i1 noundef zeroext %12) #4
+  %keep = tail call i32 @cq_measure_si32(i32 noundef %10) #4
   %15 = zext i1 %14 to i32
   %16 = add nsw i32 %13, %15
   ret i32 %16

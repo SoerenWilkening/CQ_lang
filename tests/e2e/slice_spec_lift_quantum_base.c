@@ -25,7 +25,15 @@
    `m` is `slice`'s parameter, passed `argc + 4` (argc = 1 under the harness, so
    m = 5 and the arm runs); `noinline` keeps `clang -O1` from folding the
    classical condition away (bd 46oo). `main` discards the result so the slice
-   exits 0 under the harness's `pipefail`. */
+   exits 0 under the harness's `pipefail`.
+
+   bd r2j3.37: `q` is measured after `r`, so it stays LIVE across `h(q, m)`. A
+   DEAD user-register argument of an add/sub/xor return chain is no longer
+   lifted: the chain is hoisted to the caller (SpecializeTailHoist.h), where it is
+   exactly the hand-inlined twin above (measured: that twin, too, still lowers
+   out of place here today, with the same warning), and the lifted base this
+   slice pins would vanish. The keep-alive adds the golden's last line, a
+   measurement of h0. Retire it with that hoist. */
 int h(int a, int k);
 
 __attribute__((noinline)) int slice(int m) {
@@ -33,7 +41,9 @@ __attribute__((noinline)) int slice(int m) {
     int t = h(q, m);
     int r = t;
     if (m > 3) { r = t; cq_theta(&r, 0.2); }
-    return cq_measure(r);
+    int res = cq_measure(r);
+    (void) cq_measure(q);  /* bd r2j3.37 keep-alive: see the header */
+    return res;
 }
 
 int main(int argc, char **argv) {

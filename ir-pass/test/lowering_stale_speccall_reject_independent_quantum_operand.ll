@@ -6,6 +6,14 @@
 ; other gate, so its gate commutes with the staling gate. Two-gate spelling:
 ; lowering_stale_speccall_independent_gates_placed_accept.ll.
 ;
+; bd r2j3.37: `%3` is measured at the end so it stays LIVE across the call.
+; Dead, it is a user register the call's add chain overwrites: the chain is
+; hoisted to the caller (SpecializeTailHoist.h), whose source temporary records
+; the stale `%1` and must be uncomputed after its Ry, which the stale-reader
+; fence refuses loudly as it does for the inlined twin
+; (lowering_stale_speccall_tail_hoist_reject.ll). Retire the keep-alive when
+; that lowering exists.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
 ; RUN: %filecheck %s < %t.ll
 ; RUN: %filecheck --check-prefix=WARN --allow-empty %s < %t.err
@@ -59,6 +67,7 @@ define i32 @main() local_unnamed_addr #1 {
   %4 = tail call i32 @f(i32 noundef %1, i32 noundef %3)
   %5 = tail call i32 @cq_measure_si32(i32 noundef %4) #3
   %6 = tail call i32 @cq_measure_si32(i32 noundef %2) #3
+  %keep = tail call i32 @cq_measure_si32(i32 noundef %3) #3
   %7 = add nsw i32 %6, %5
   ret i32 %7
 }

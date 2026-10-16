@@ -8,6 +8,11 @@
 ; `_10` makes arg1 the handle (`add_hl(%y, %x)`), the classical side passing
 ; through each time — so the distinction is semantic, not cosmetic.
 ;
+; bd r2j3.37: `%q` is measured at the end so it stays LIVE across the call. A
+; DEAD theta argument of an add/sub/xor return chain is no longer lifted: the
+; chain is hoisted to the caller (SpecializeTailHoist.h) and lowered in place, and
+; the clone this fixture pins would vanish. Retire the keep-alive with that hoist.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
@@ -26,6 +31,7 @@ entry:
   %r2 = call i32 @f(i32 %c, i32 %q)
   %m1 = call i32 @cq_measure_si32(i32 %r1)
   %m2 = call i32 @cq_measure_si32(i32 %r2)
+  %mq = call i32 @cq_measure_si32(i32 %q)
   ret void
 }
 

@@ -12,6 +12,12 @@
 ; `_indirect_call`) STAY DECLINES — a no-IR / indirect callee is never a
 ; candidate (DD-2), so the carve-out still fires `kMsgUnknownCallee` for them.
 ;
+; bd r2j3.37: `%q` is measured at the end so it stays LIVE across the call. A
+; DEAD user-register argument of an add/sub/xor return chain is no longer lifted:
+; the chain is hoisted to the caller (SpecializeTailHoist.h) and lowered in place,
+; and the clone this fixture pins would vanish. Retire the keep-alive with that
+; hoist.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
@@ -28,6 +34,7 @@ entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   %r = call i32 @helper(i32 %q)                   ; visible body → specialized
   %m = call i32 @cq_measure_si32(i32 %r)
+  %keep = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

@@ -17,6 +17,11 @@
 ;
 ; Twin (trace-compared, tools/pairs.py): the null-safe spelling r1A `p1_twin_range_ns` on `main` 9a230646 (byte-identical trace, r1A); vs the hand-inlined r1A `p1T` the only difference is the out-of-place `add_hl` + copy-out where the twin adds in place (`cqrt_addc_i32`), which tools/trace_twin_equiv.py does not contract.
 ;
+; bd r2j3.37: `%kq` is measured at the end so it stays LIVE across the call. A
+; DEAD theta argument of an add/sub/xor return chain is no longer lifted: the
+; chain is hoisted to the caller (SpecializeTailHoist.h) and lowered in place, and
+; the clone this fixture pins would vanish. Retire the keep-alive with that hoist.
+;
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=TWIN < %t.cqd0.ll
@@ -66,6 +71,8 @@
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CHECK: call i32 @cqrt_measure_i32(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @cqrt_measure_i32(i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CHECK: ret 
 ; TWIN-LABEL: define internal i32 @__cq_q_h_11(
 ; TWIN: call void @__cq_q_h2_11_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %a, i32 %k)
@@ -100,6 +107,7 @@ j:
   %q2 = call i32 @cq_theta_si32(i32 noundef %q, double noundef 0x3FE6666666666666)
   %z = call i32 @cq_measure_si32(i32 noundef %q2)
   %zr = call i32 @cq_measure_si32(i32 noundef %r)
+  %zk = call i32 @cq_measure_si32(i32 noundef %kq)
   %s = add nsw i32 %z, %zr
   ret i32 %s
 }

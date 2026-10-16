@@ -10,6 +10,14 @@
 ; `@__cq_q_inner_1_unc`, reversed inside the outer Bennett wrap. This proves the re-plan
 ; needs NO new transitive code — updating the top mask is consumed by the 6.3 recursion.
 ;
+; bd r2j3.37: `%q` is measured at the end so it stays LIVE across the call.
+; Dead, it is a user register `outer`'s add chain overwrites with a source
+; (`inner(%y)`) that depends on `%q` through the merge condition: the chain is
+; hoisted to the caller (SpecializeTailHoist.h) and fails loudly as
+; self-dependent, as the inlined twin does
+; (ruling-dm7f51-step1-departures-2026-10-15 Q2;
+; spec_reject_tail_hoist_self_dependent.ll).
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=ACC
@@ -51,6 +59,7 @@ merge:
   %y = phi i32 [ %r, %arm ], [ 5, %entry ]
   %z = call i32 @outer(i32 %q, i32 %y)   ; re-planned 0b01 -> 0b11
   %m = call i32 @cq_measure_si32(i32 %z)
+  %keep = call i32 @cq_measure_si32(i32 %q)
   ret void
 }
 attributes #0 = { nounwind willreturn memory(none) }

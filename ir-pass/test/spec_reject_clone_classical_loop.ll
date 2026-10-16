@@ -13,6 +13,11 @@
 ; same decline before p3kd.7.8 (measured on 4c323c3c). Main compiles the same body
 ; in the caller.
 ;
+; bd r2j3.37: `%q` is measured after the call so it stays LIVE across it. A
+; DEAD user-register argument of an add/sub/xor return chain is no longer
+; lifted: the chain is hoisted to the caller (SpecializeTailHoist.h), and the
+; lifted clone this fixture pins would vanish. Retire that edit with the hoist.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}in function __cq_q_addsum_01 {{.*}}cq specialization: callee contains tainted control flow under quantum lift
 ; CHECK-NOT: define
@@ -45,5 +50,6 @@ entry:
   %q = call i32 @cq_theta_si32(i32 %x, double 5.000000e-01)
   %r = call i32 @addsum(i32 %q, i32 %n)
   %m = call i32 @cq_measure_si32(i32 %r)
+  %keep = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }

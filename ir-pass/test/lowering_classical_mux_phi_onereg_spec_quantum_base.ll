@@ -22,13 +22,19 @@
 ; Regenerate: clang -O1 -emit-llvm -S the two TUs as above, then
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>.
 ;
+; bd r2j3.37: the theta register is measured right after the call so it stays
+; LIVE across it. A DEAD user-register argument of an add/sub/xor return chain is
+; no longer lifted: the chain is hoisted to the caller (SpecializeTailHoist.h) and
+; lowered in place, and the lifted base this fixture pins would vanish (no live
+; record, no warning). Retire the keep-alive with that hoist.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s \
 ; RUN:   | %filecheck %s
 ; CHECK-LABEL: define i32 @main(
 ; CHECK:      [[Q:%[a-z0-9.]+]] = call i32 @cqrt_alloc_i32(i32 %5)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q]], double 5.000000e-01)
 ; CHECK-NEXT: [[T:%[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef [[Q]], i32 noundef %5)
-; CHECK-NEXT: [[C:%[0-9]+]] = icmp sgt i32 %5, 3
+; CHECK:      [[C:%[0-9]+]] = icmp sgt i32 %5, 3
 ; CHECK-NEXT: br i1 [[C]], label %[[ARM:[0-9]+]], label %[[JOIN:[0-9]+]]
 ; CHECK:      [[ARM]]:
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[T]], double 2.000000e-01)
@@ -51,6 +57,7 @@ define i32 @main(i32 noundef %0, ptr nocapture noundef readonly %1) local_unname
   %5 = tail call i32 @atoi(ptr nocapture noundef %4)
   %6 = tail call i32 @cq_theta_si32(i32 noundef %5, double noundef 5.000000e-01) #4
   %7 = tail call i32 @h(i32 noundef %6, i32 noundef %5) #4
+  %keep = tail call i32 @cq_measure_si32(i32 noundef %6) #4
   %8 = icmp sgt i32 %5, 3
   br i1 %8, label %9, label %11
 

@@ -3,9 +3,9 @@
 #include "SpecializeTailHoist.h"
 
 #include "ArmAnalysis.h"        // isFrontEndThetaCall
-#include "CalleeBody.h"         // calleeBodyTrusted
 #include "InPlaceQQ.h"          // isQQStemOpcode / qqDeadRecordBits
 #include "SpecializeDetect.h"   // isProvenSpecSite
+#include "SpecializeTailPlan.h"  // the return-chain plan
 #include "TaintPropagation.h"   // TaintSet
 
 #include "llvm/ADT/SmallPtrSet.h"
@@ -40,229 +40,41 @@ const char kMsgLiftTailUnhoisted[] =
     "cq specialization: a lifted call overwrites a dead quantum argument the "
     "return-chain hoist did not see";
 
+using namespace tailhoist;
+
 namespace {
 
-struct Plan;
-
-// One node of a return chain. `Leaf` is a value the chain READS but does not
-// pass through: `V` of the planned function's own body, or (`HP`,`HIdx`) a leaf
-// of a nested callee's plan, evaluated at `InnerCall`.
-struct Node {
-  enum Kind { Arg, Const, Leaf, Op } K = Leaf;
-  unsigned ArgNo = 0;
-  Constant *C = nullptr;
-  Value *V = nullptr;
-  Plan *HP = nullptr;
-  int HIdx = -1;
-  CallInst *InnerCall = nullptr;
-  Function *Src = nullptr;  // built lazily: the leaf's source function.
-  Instruction::BinaryOps Opc = Instruction::Xor;
-  int L = -1, R = -1;
-  bool HasArg = false;
-};
-
-struct Plan {
-  Function *F = nullptr;
-  std::vector<Node> N;
-  int Root = -1;
-  bool hoistable() const { return Root >= 0 && N[Root].HasArg; }
-};
-
-class Planner {
-public:
-  Plan *planFor(Function *F) {
-    auto It = Plans.find(F);
-    if (It != Plans.end())
-      return It->second.get();
-    if (!OnStack.insert(F).second)
-      return nullptr;  // recursion: no chain through it.
-    std::unique_ptr<Plan> P = build(F);
-    OnStack.erase(F);
-    Plan *Raw = P.get();
-    Plans[F] = std::move(P);
-    return Raw;
-  }
-
-  // The leaf's source: a copy of `P.F` returning the leaf's value.
-  Function *srcFor(Plan &P, int I) {
-    Node &Nd = P.N[I];
-    if (Nd.Src)
-      return Nd.Src;
-    Value *X = nullptr;
-    Nd.Src = cloneReturning(*P.F, [&](ValueToValueMapTy &VMap, ReturnInst *Ret) {
-      if (Nd.V)
-        return X = VMap[Nd.V];
-      Function *Inner = srcFor(*Nd.HP, Nd.HIdx);
-      auto *IC = cast<CallInst>(VMap[Nd.InnerCall]);
-      IRBuilder<> B(Ret);
-      CallInst *NC = B.CreateCall(Inner, SmallVector<Value *, 8>(IC->args()));
-      NC->setCallingConv(Inner->getCallingConv());
-      NC->setDebugLoc(IC->getDebugLoc());
-      return X = NC;
-    });
-    return Nd.Src;
-  }
-
-  // A copy of `F` returning zero: keeps a non-trivially-dead call's effects.
-  Function *zeroSrc(Function &F) {
-    return cloneReturning(F, [&](ValueToValueMapTy &, ReturnInst *) -> Value * {
-      return Constant::getNullValue(F.getReturnType());
-    });
-  }
-
-private:
-  std::map<Function *, std::unique_ptr<Plan>> Plans;
-  SmallPtrSet<Function *, 8> OnStack;
-  unsigned Counter = 0;
-
-  static ReturnInst *singleRet(Function &F) {
-    ReturnInst *R = nullptr;
-    for (BasicBlock &BB : F)
-      if (auto *RI = dyn_cast<ReturnInst>(BB.getTerminator())) {
-        if (R)
-          return nullptr;
-        R = RI;
-      }
-    return R && R->getReturnValue() ? R : nullptr;
-  }
-
-  template <typename Fn> Function *cloneReturning(Function &F, Fn &&MakeRet) {
-    ValueToValueMapTy VMap;
-    Function *G = CloneFunction(&F, VMap);
-    G->setName(F.getName() + "__cqsrc" + Twine(Counter++));
-    G->setLinkage(GlobalValue::InternalLinkage);
-    ReturnInst *Ret = singleRet(*G);
-    Value *Old = Ret->getReturnValue();
-    Ret->setOperand(0, MakeRet(VMap, Ret));
-    RecursivelyDeleteTriviallyDeadInstructions(Old);
-    // The source returns a different value: no return-value constraint and no
-    // `returned` parameter of `F` holds of it.
-    LLVMContext &Ctx = G->getContext();
-    G->setAttributes(G->getAttributes().removeRetAttributes(
-        Ctx, AttributeMask(G->getAttributes().getRetAttrs())));
-    for (Argument &A : G->args())
-      G->removeParamAttr(A.getArgNo(), Attribute::Returned);
-    return G;
-  }
-
-  std::unique_ptr<Plan> build(Function *F) {
-    auto P = std::make_unique<Plan>();
-    P->F = F;
-    ReturnInst *Ret = singleRet(*F);
-    if (!Ret || F->isVarArg() || !calleeBodyTrusted(F, CalleeBodyUse::Execute))
-      return P;
-    P->Root = expr(*P, Ret->getReturnValue());
-    return P;
-  }
-
-  int add(Plan &P, Node Nd) {
-    P.N.push_back(Nd);
-    return static_cast<int>(P.N.size()) - 1;
-  }
-
-  int leaf(Plan &P, Value *V) {
-    Node Nd;
-    Nd.K = Node::Leaf;
-    Nd.V = V;
-    return add(P, Nd);
-  }
-
-  static bool chainType(const Type *Ty) {
-    return Ty->isIntegerTy() && Ty->getIntegerBitWidth() <= 64;
-  }
-
-  int expr(Plan &P, Value *V) {
-    if (auto *A = dyn_cast<Argument>(V)) {
-      Node Nd;
-      Nd.K = Node::Arg;
-      Nd.ArgNo = A->getArgNo();
-      Nd.HasArg = true;
-      return add(P, Nd);
-    }
-    if (auto *K = dyn_cast<Constant>(V)) {
-      Node Nd;
-      Nd.K = Node::Const;
-      Nd.C = K;
-      return add(P, Nd);
-    }
-    if (auto *BO = dyn_cast<BinaryOperator>(V);
-        BO && isQQStemOpcode(BO->getOpcode()) && chainType(BO->getType())) {
-      const int L = expr(P, BO->getOperand(0));
-      const int R = expr(P, BO->getOperand(1));
-      if (!P.N[L].HasArg && !P.N[R].HasArg)
-        return leaf(P, V);  // a value the chain reads, not passes through.
-      Node Nd;
-      Nd.K = Node::Op;
-      Nd.Opc = BO->getOpcode();
-      Nd.L = L;
-      Nd.R = R;
-      Nd.HasArg = true;
-      return add(P, Nd);
-    }
-    if (auto *CI = dyn_cast<CallInst>(V)) {
-      Function *H = CI->getCalledFunction();
-      if (H && !H->isIntrinsic() && !H->isDeclaration() && !CI->isMustTailCall() &&
-          CI->getFunctionType() == H->getFunctionType())
-        if (Plan *HP = planFor(H); HP && HP->hoistable())
-          return substitute(P, *HP, HP->Root, CI);
-    }
-    return leaf(P, V);
-  }
-
-  // `HP`'s node `I`, read at the call `CI` in `P.F`.
-  int substitute(Plan &P, Plan &HP, int I, CallInst *CI) {
-    const Node HN = HP.N[I];  // copy: `P` may be `HP` only under recursion,
-                              // which `planFor` refuses.
-    switch (HN.K) {
-    case Node::Arg:
-      return expr(P, CI->getArgOperand(HN.ArgNo));
-    case Node::Const:
-      return add(P, HN);
-    case Node::Leaf: {
-      Node Nd;
-      Nd.K = Node::Leaf;
-      Nd.HP = &HP;
-      Nd.HIdx = I;
-      Nd.InnerCall = CI;
-      return add(P, Nd);
-    }
-    case Node::Op: {
-      const int L = substitute(P, HP, HN.L, CI);
-      const int R = substitute(P, HP, HN.R, CI);
-      Node Nd;
-      Nd.K = Node::Op;
-      Nd.Opc = HN.Opc;
-      Nd.L = L;
-      Nd.R = R;
-      Nd.HasArg = P.N[L].HasArg || P.N[R].HasArg;
-      return add(P, Nd);
-    }
-    }
-    return -1;
-  }
-};
-
-void argNos(const Plan &P, int I, SmallVectorImpl<unsigned> &Out) {
-  const Node &Nd = P.N[I];
-  if (Nd.K == Node::Arg)
-    Out.push_back(Nd.ArgNo);
-  else if (Nd.K == Node::Op) {
-    argNos(P, Nd.L, Out);
-    argNos(P, Nd.R, Out);
-  }
+// E2 AS STOCK IR CAN ANSWER IT: is the DEAD tainted `V` a user register's value
+// that main's in-place rounds keep on that register's rail? A front-end
+// `cq_theta` result; a φ the record proved one wire of such a chain (bit 1 on a
+// φ is `singleWirePhiDeadAfter`); or an xor/add/sub whose own dead operand is
+// one (`t ^= a; r = f(t, b)`: the first op converts onto `t`'s rail because its
+// result lives on). A derived value (`t * 3`) is a temporary the spine returns to
+// |0>, as the inlined op's operand would be: hoisting it would only trade the
+// clone consumer the M-B plan reasons about for a template reader (measured:
+// spec_accept_clone_two_components_both_discharged.ll leaked).
+bool userRegisterValue(Value *V, const DominatorTree &DT, const LoopInfo &LI,
+                       const TaintSet &taint, unsigned Depth = 0) {
+  if (isFrontEndThetaCall(V) || isa<PHINode>(V))
+    return true;  // a φ is asked only when the record called it dead (bit 1).
+  auto *BO = dyn_cast<BinaryOperator>(V);
+  if (!BO || Depth > 16 || !isQQStemOpcode(BO->getOpcode()))
+    return false;
+  for (Value *X : BO->operands())
+    if (taint.Tainted.count(X) && (qqDeadRecordBits(X, BO, DT, LI) & 1u) &&
+        userRegisterValue(X, DT, LI, taint, Depth + 1))
+      return true;
+  return false;
 }
 
-// THE GATE (header): the chain parameters receiving a tainted operand the
-// in-place record would call dead at the call (bit i = argument i; 0 = none).
-// `Hoist`: the pre-lowering slot also asks E2 the only way stock IR can answer
-// it — a USER register is a front-end `cq_theta` result, or a φ the record
-// proved one wire of such a chain (bit 1 on a φ: `singleWirePhiDeadAfter`). A
-// derived operand stays a lifted read: hoisting it would trade the clone
-// consumer the spine plans around (M-B) for a template reader with no in-place
-// gain (measured: spec_accept_clone_two_components_both_discharged.ll leaked).
-// Anything else the late tag adjudicates with the exact E2.
+// THE GATE (header): the chain parameters receiving a tainted operand that is
+// DEAD at the call (`qqDeadRecordBits` bit 1) and a user register's value
+// (`userRegisterValue`), bit i = argument i. `UnprovenPhi` collects the
+// arguments the record calls a dead φ NOT provably one wire (bit 4): never
+// hoisted; the backstop asks the exact E2 of them late.
 uint64_t owes(CallInst &CI, const Plan &P, const TaintSet &taint,
-              const DominatorTree &DT, const LoopInfo &LI, bool Hoist) {
+              const DominatorTree &DT, const LoopInfo &LI,
+              uint64_t *UnprovenPhi = nullptr) {
   if (!P.hoistable() || CI.isMustTailCall())
     return 0;
   SmallVector<unsigned, 4> Args;
@@ -273,9 +85,10 @@ uint64_t owes(CallInst &CI, const Plan &P, const TaintSet &taint,
     if (A >= 64 || !taint.Tainted.count(V))
       continue;
     const unsigned Bits = qqDeadRecordBits(V, &CI, DT, LI);
-    if (Hoist ? (Bits & 1u) && (isFrontEndThetaCall(V) || isa<PHINode>(V))
-              : Bits != 0)
+    if ((Bits & 1u) && userRegisterValue(V, DT, LI, taint))
       Mask |= uint64_t(1) << A;
+    else if ((Bits & 4u) && UnprovenPhi)
+      *UnprovenPhi |= uint64_t(1) << A;
   }
   return Mask;
 }
@@ -304,19 +117,6 @@ Value *emit(Planner &PL, Plan &P, int I, CallInst &Site, IRBuilder<> &B,
   return nullptr;
 }
 
-// A body with no side-effecting instruction and no cycle has no effect but its
-// return (the attributes `-O1` would infer, asked of hand IR that lacks them).
-bool effectFree(Function &F) {
-  SmallVector<std::pair<const BasicBlock *, const BasicBlock *>, 2> Back;
-  FindFunctionBackedges(F, Back);
-  if (!Back.empty())
-    return false;
-  for (Instruction &I : instructions(F))
-    if (I.mayHaveSideEffects())
-      return false;
-  return true;
-}
-
 }  // namespace
 
 bool hoistLiftedTailChains(Module &M, const TaintSet &taint, WidthDispatch &wd) {
@@ -326,6 +126,8 @@ bool hoistLiftedTailChains(Module &M, const TaintSet &taint, WidthDispatch &wd) 
   for (Function &F : M)
     Before.insert(&F);
   for (Function &F : M) {
+    for (Instruction &I : instructions(F))  // only `specialize()` writes it (r2j3.22)
+      I.setMetadata(kLiftTailOwedTag, nullptr);
     if (F.isDeclaration())
       continue;
     std::optional<DominatorTree> DT;
@@ -344,7 +146,7 @@ bool hoistLiftedTailChains(Module &M, const TaintSet &taint, WidthDispatch &wd) 
           DT.emplace(F);
           LI.emplace(*DT);
         }
-        if (owes(*CI, *P, taint, *DT, *LI, /*Hoist=*/true) &&
+        if (owes(*CI, *P, taint, *DT, *LI) &&
             isProvenSpecSite(*CI, taint, wd))
           Sites.push_back({CI, P});
       }
@@ -381,12 +183,15 @@ void tagUnhoistedLiftTail(CallInst &CI, const TaintSet &taint) {
     return;
   DominatorTree DT(*CI.getFunction());
   LoopInfo LI(DT);
-  if (const uint64_t Mask = owes(CI, *P, taint, DT, LI, /*Hoist=*/false)) {
-    LLVMContext &Ctx = CI.getContext();
-    CI.setMetadata(kLiftTailOwedTag,
-                   MDNode::get(Ctx, ConstantAsMetadata::get(ConstantInt::get(
-                                        Type::getInt64Ty(Ctx), Mask))));
-  }
+  uint64_t Phi = 0;
+  const uint64_t Mask = owes(CI, *P, taint, DT, LI, &Phi);
+  if (!Mask && !Phi)
+    return;
+  LLVMContext &Ctx = CI.getContext();
+  auto K = [&](uint64_t X) {
+    return ConstantAsMetadata::get(ConstantInt::get(Type::getInt64Ty(Ctx), X));
+  };
+  CI.setMetadata(kLiftTailOwedTag, MDNode::get(Ctx, {K(Mask), K(Phi)}));
 }
 
 bool declineUnhoistedLiftTails(Module &M, const TaintSet &taint) {
@@ -400,15 +205,19 @@ bool declineUnhoistedLiftTails(Module &M, const TaintSet &taint) {
           continue;
         I.setMetadata(kLiftTailOwedTag, nullptr);
         auto *CI = dyn_cast<CallInst>(&I);
-        auto *K = MD->getNumOperands() == 1
-                      ? mdconst::dyn_extract<ConstantInt>(MD->getOperand(0))
+        auto *KM = MD->getNumOperands() == 2
+                       ? mdconst::dyn_extract<ConstantInt>(MD->getOperand(0))
+                       : nullptr;
+        auto *KP = KM ? mdconst::dyn_extract<ConstantInt>(MD->getOperand(1))
                       : nullptr;
-        if (Loud || !CI || !K)
+        if (Loud || !CI || !KP)
           continue;
-        const uint64_t Mask = K->getZExtValue();
-        bool UserData = false;
+        // A user register's value: owed outright. A dead φ not provably one
+        // wire: owed when its rail is user data (the round's own B-F1 rule).
+        bool UserData = KM->getZExtValue() != 0;
         for (unsigned A = 0; A < CI->arg_size() && A < 64; ++A)
-          if ((Mask >> A & 1) && qqTargetIsUserData(CI, CI->getArgOperand(A)))
+          if ((KP->getZExtValue() >> A & 1) &&
+              qqTargetIsUserData(CI, CI->getArgOperand(A)))
             UserData = true;
         if (!UserData)
           continue;

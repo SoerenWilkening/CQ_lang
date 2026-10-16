@@ -41,6 +41,12 @@
 ; `opt -passes=instnamer`, then move blocks `bb14`, `bb12`, `bb9`, `bb7` (in that
 ; order) directly after the entry block by hand.
 ;
+; bd r2j3.37: the theta register is measured right after the call so it stays
+; LIVE across it. A DEAD user-register argument of an add/sub/xor return chain is
+; no longer lifted: the chain is hoisted to the caller (SpecializeTailHoist.h) and
+; lowered in place, and the lifted base this fixture pins would vanish (no live
+; record, no warning). Retire the keep-alive with that hoist.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s \
 ; RUN:   | %filecheck %s
 ; CHECK-LABEL: define i32 @main(
@@ -73,6 +79,7 @@ bb:
   %i3 = tail call i32 @atoi(ptr nocapture noundef %i2)
   %i4 = tail call i32 @cq_theta_si32(i32 noundef %i3, double noundef 5.000000e-01) #4
   %i5 = tail call i32 @h(i32 noundef %i4, i32 noundef %i3) #4
+  %keep = tail call i32 @cq_measure_si32(i32 noundef %i4) #4
   %i6 = icmp sgt i32 %i3, 3
   br i1 %i6, label %bb7, label %bb9
 

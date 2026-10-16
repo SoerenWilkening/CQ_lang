@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 863 maintained source files, 6960 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 865 maintained source files, 6969 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -34,13 +34,13 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/golden_multiset_audit.py` — 2211 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1971 physical lines
 - `tools/inplace_twin_matrix.py` — 1790 physical lines
-- `ir-pass/src/CQLoweringPass.cpp` — 1643 physical lines
+- `ir-pass/src/CQLoweringPass.cpp` — 1681 physical lines
 - `ir-pass/src/SelectClassify.cpp` — 1528 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
 - `ir-pass/src/OpcodeLowering.cpp` — 1514 physical lines
 - `runtime/cq_runtime.c` — 1489 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
-- `ir-pass/src/Specialization.cpp` — 1385 physical lines
+- `ir-pass/src/Specialization.cpp` — 1393 physical lines
 - `ir-pass/src/ArithLowering.cpp` — 1344 physical lines
 - `tools/library_coverage/probe.py` — 1219 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
@@ -408,12 +408,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ByRefInline.cpp:255` — `cloneExpr`
 - `ir-pass/src/ByRefInline.cpp:277` — `lowerByRefInline`
 
-### `ir-pass/src/CQLoweringPass.cpp` (1643 lines)
+### `ir-pass/src/CQLoweringPass.cpp` (1681 lines)
 
-- `ir-pass/src/CQLoweringPass.cpp:66` — `eraseDeadDecls`
-- `ir-pass/src/CQLoweringPass.cpp:100` — `declineSurvivingIntrinsicCalls`
-- `ir-pass/src/CQLoweringPass.cpp:126` — `CQLoweringPass::run`
-- `ir-pass/src/CQLoweringPass.cpp:1145` — `CQLoweringPass::runOnFunction`
+- `ir-pass/src/CQLoweringPass.cpp:67` — `eraseDeadDecls`
+- `ir-pass/src/CQLoweringPass.cpp:101` — `declineSurvivingIntrinsicCalls`
+- `ir-pass/src/CQLoweringPass.cpp:127` — `CQLoweringPass::run`
+- `ir-pass/src/CQLoweringPass.cpp:1168` — `CQLoweringPass::runOnFunction`
 
 ### `ir-pass/src/CallContract.cpp` (323 lines)
 
@@ -690,36 +690,39 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/IOSinkLowering.cpp:463` — `armIOSink`
 - `ir-pass/src/IOSinkLowering.cpp:473` — `lowerControlledIOSinks`
 
-### `ir-pass/src/InPlaceQQ.cpp` (393 lines)
+### `ir-pass/src/InPlaceQQ.cpp` (399 lines)
 
-- `ir-pass/src/InPlaceQQ.cpp:37` — `isInPlaceQQSymbol`
-- `ir-pass/src/InPlaceQQ.cpp:52` — `isInPlaceQQGate`
-- `ir-pass/src/InPlaceQQ.cpp:78` — `qqShape`
-- `ir-pass/src/InPlaceQQ.cpp:107` — `writesRail`
-- `ir-pass/src/InPlaceQQ.cpp:127` — `dependsOnTarget`
-- `ir-pass/src/InPlaceQQ.cpp:180` — `survives`
-- `ir-pass/src/InPlaceQQ.cpp:209` — `convert`
-- `ir-pass/src/InPlaceQQ.cpp:233` — `decideNext`
-- `ir-pass/src/InPlaceQQ.cpp:368` — `lowerInPlaceQQ`
+- `ir-pass/src/InPlaceQQ.cpp:38` — `isInPlaceQQSymbol`
+- `ir-pass/src/InPlaceQQ.cpp:53` — `isInPlaceQQGate`
+- `ir-pass/src/InPlaceQQ.cpp:79` — `qqShape`
+- `ir-pass/src/InPlaceQQ.cpp:108` — `writesRail`
+- `ir-pass/src/InPlaceQQ.cpp:128` — `dependsOnTarget`
+- `ir-pass/src/InPlaceQQ.cpp:181` — `survives`
+- `ir-pass/src/InPlaceQQ.cpp:210` — `convert`
+- `ir-pass/src/InPlaceQQ.cpp:234` — `decideNext`
+- `ir-pass/src/InPlaceQQ.cpp:369` — `qqResultSurvives`
+- `ir-pass/src/InPlaceQQ.cpp:372` — `lowerInPlaceQQ`
 
-### `ir-pass/src/InPlaceQQRecord.cpp` (399 lines)
+### `ir-pass/src/InPlaceQQRecord.cpp` (400 lines)
 
-- `ir-pass/src/InPlaceQQRecord.cpp:41` — `isQQStem`
-- `ir-pass/src/InPlaceQQRecord.cpp:46` — `maskOf`
-- `ir-pass/src/InPlaceQQRecord.cpp:54` — `setDeadMask`
-- `ir-pass/src/InPlaceQQRecord.cpp:73` — `isThetaChainLink`
-- `ir-pass/src/InPlaceQQRecord.cpp:89` — `singleWirePhiDeadAfter`
-- `ir-pass/src/InPlaceQQRecord.cpp:127` — `usersBefore`
-- `ir-pass/src/InPlaceQQRecord.cpp:157` — `deadAfter`
-- `ir-pass/src/InPlaceQQRecord.cpp:169` — `deadUnprovenPhi`
-- `ir-pass/src/InPlaceQQRecord.cpp:178` — `qqOperandDeadAfter`
-- `ir-pass/src/InPlaceQQRecord.cpp:181` — `recordDeadQQOperands`
-- `ir-pass/src/InPlaceQQRecord.cpp:213` — `transferDeadOperandMask`
-- `ir-pass/src/InPlaceQQRecord.cpp:251` — `isAdjointOf`
-- `ir-pass/src/InPlaceQQRecord.cpp:269` — `classifyLaterUse`
-- `ir-pass/src/InPlaceQQRecord.cpp:324` — `declineStaleInPlaceQQReads`
-- `ir-pass/src/InPlaceQQRecord.cpp:393` — `deadOperandMask`
-- `ir-pass/src/InPlaceQQRecord.cpp:395` — `unprovenPhiOperandMask`
+- `ir-pass/src/InPlaceQQRecord.cpp:39` — `isQQStemOpcode`
+- `ir-pass/src/InPlaceQQRecord.cpp:45` — `maskOf`
+- `ir-pass/src/InPlaceQQRecord.cpp:53` — `setDeadMask`
+- `ir-pass/src/InPlaceQQRecord.cpp:71` — `isThetaChainLink`
+- `ir-pass/src/InPlaceQQRecord.cpp:87` — `singleWirePhiDeadAfter`
+- `ir-pass/src/InPlaceQQRecord.cpp:126` — `usersBefore`
+- `ir-pass/src/InPlaceQQRecord.cpp:157` — `readsTwice`
+- `ir-pass/src/InPlaceQQRecord.cpp:162` — `deadAfter`
+- `ir-pass/src/InPlaceQQRecord.cpp:174` — `deadUnprovenPhi`
+- `ir-pass/src/InPlaceQQRecord.cpp:183` — `qqOperandDeadAfter`
+- `ir-pass/src/InPlaceQQRecord.cpp:186` — `qqDeadRecordBits`
+- `ir-pass/src/InPlaceQQRecord.cpp:193` — `recordDeadQQOperands`
+- `ir-pass/src/InPlaceQQRecord.cpp:221` — `transferDeadOperandMask`
+- `ir-pass/src/InPlaceQQRecord.cpp:252` — `isAdjointOf`
+- `ir-pass/src/InPlaceQQRecord.cpp:270` — `classifyLaterUse`
+- `ir-pass/src/InPlaceQQRecord.cpp:325` — `declineStaleInPlaceQQReads`
+- `ir-pass/src/InPlaceQQRecord.cpp:394` — `deadOperandMask`
+- `ir-pass/src/InPlaceQQRecord.cpp:396` — `unprovenPhiOperandMask`
 
 ### `ir-pass/src/IntrinsicLowering.cpp` (565 lines)
 
@@ -751,14 +754,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LibmBinding.cpp:262` — `bindLibmCalls`
 - `ir-pass/src/LibmBinding.cpp:269` — `eraseUnusedLibmBodies`
 
-### `ir-pass/src/LiftDiagnostics.cpp` (136 lines)
+### `ir-pass/src/LiftDiagnostics.cpp` (140 lines)
 
 - `ir-pass/src/LiftDiagnostics.cpp:33` — `siteStack`
-- `ir-pass/src/LiftDiagnostics.cpp:40` — `userCalleeName`
-- `ir-pass/src/LiftDiagnostics.cpp:53` — `release`
-- `ir-pass/src/LiftDiagnostics.cpp:109` — `LiftDiagnosticScope::~LiftDiagnosticScope`
-- `ir-pass/src/LiftDiagnostics.cpp:123` — `LiftSite::LiftSite`
-- `ir-pass/src/LiftDiagnostics.cpp:131` — `LiftSite::~LiftSite`
+- `ir-pass/src/LiftDiagnostics.cpp:42` — `userCalleeName`
+- `ir-pass/src/LiftDiagnostics.cpp:57` — `release`
+- `ir-pass/src/LiftDiagnostics.cpp:113` — `LiftDiagnosticScope::~LiftDiagnosticScope`
+- `ir-pass/src/LiftDiagnostics.cpp:127` — `LiftSite::LiftSite`
+- `ir-pass/src/LiftDiagnostics.cpp:135` — `LiftSite::~LiftSite`
 
 ### `ir-pass/src/LiftedCallReads.cpp` (40 lines)
 
@@ -1405,26 +1408,26 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SelectMergeEmit.cpp:57` — `scrubTaint`
 - `ir-pass/src/SelectMergeEmit.cpp:75` — `emitSelectRegion`
 
-### `ir-pass/src/Specialization.cpp` (1385 lines)
+### `ir-pass/src/Specialization.cpp` (1393 lines)
 
-- `ir-pass/src/Specialization.cpp:95` — `recordCloneRailSelects`
-- `ir-pass/src/Specialization.cpp:117` — `reseedCloneTaintFromParams`
-- `ir-pass/src/Specialization.cpp:135` — `normalizeReturnMerge`
-- `ir-pass/src/Specialization.cpp:186` — `lowerCloneControl`
-- `ir-pass/src/Specialization.cpp:346` — `scrubForwardCone`
-- `ir-pass/src/Specialization.cpp:405` — `synthUncomputeTwin`
-- `ir-pass/src/Specialization.cpp:452` — `ensureTwin`
-- `ir-pass/src/Specialization.cpp:518` — `retargetSite`
-- `ir-pass/src/Specialization.cpp:547` — `resolveSite`
-- `ir-pass/src/Specialization.cpp:558` — `buildClone`
-- `ir-pass/src/Specialization.cpp:1063` — `shouldSpecialize`
-- `ir-pass/src/Specialization.cpp:1079` — `isQuantumCallerValue`
-- `ir-pass/src/Specialization.cpp:1085` — `isRuntimeCall`
-- `ir-pass/src/Specialization.cpp:1116` — `isCopyDestination`
-- `ir-pass/src/Specialization.cpp:1149` — `userProgramReads`
-- `ir-pass/src/Specialization.cpp:1182` — `resolvePhantomCloneArgReads`
-- `ir-pass/src/Specialization.cpp:1276` — `specialize`
-- `ir-pass/src/Specialization.cpp:1383` — `synthesizeCloneUncTwin`
+- `ir-pass/src/Specialization.cpp:96` — `recordCloneRailSelects`
+- `ir-pass/src/Specialization.cpp:118` — `reseedCloneTaintFromParams`
+- `ir-pass/src/Specialization.cpp:136` — `normalizeReturnMerge`
+- `ir-pass/src/Specialization.cpp:187` — `lowerCloneControl`
+- `ir-pass/src/Specialization.cpp:347` — `scrubForwardCone`
+- `ir-pass/src/Specialization.cpp:406` — `synthUncomputeTwin`
+- `ir-pass/src/Specialization.cpp:453` — `ensureTwin`
+- `ir-pass/src/Specialization.cpp:519` — `retargetSite`
+- `ir-pass/src/Specialization.cpp:550` — `resolveSite`
+- `ir-pass/src/Specialization.cpp:561` — `buildClone`
+- `ir-pass/src/Specialization.cpp:1066` — `shouldSpecialize`
+- `ir-pass/src/Specialization.cpp:1082` — `isQuantumCallerValue`
+- `ir-pass/src/Specialization.cpp:1088` — `isRuntimeCall`
+- `ir-pass/src/Specialization.cpp:1119` — `isCopyDestination`
+- `ir-pass/src/Specialization.cpp:1152` — `userProgramReads`
+- `ir-pass/src/Specialization.cpp:1185` — `resolvePhantomCloneArgReads`
+- `ir-pass/src/Specialization.cpp:1279` — `specialize`
+- `ir-pass/src/Specialization.cpp:1391` — `synthesizeCloneUncTwin`
 
 ### `ir-pass/src/SpecializeClone.cpp` (241 lines)
 
@@ -1489,6 +1492,15 @@ The entries below are an inventory for decomposition work. Generated files and t
 ### `ir-pass/src/SpecializeSeed.cpp` (33 lines)
 
 - `ir-pass/src/SpecializeSeed.cpp:16` — `seedClone`
+
+### `ir-pass/src/SpecializeTailHoist.cpp` (236 lines)
+
+- `ir-pass/src/SpecializeTailHoist.cpp:56` — `userRegisterValue`
+- `ir-pass/src/SpecializeTailHoist.cpp:75` — `owes`
+- `ir-pass/src/SpecializeTailHoist.cpp:96` — `emit`
+- `ir-pass/src/SpecializeTailHoist.cpp:122` — `hoistLiftedTailChains`
+- `ir-pass/src/SpecializeTailHoist.cpp:175` — `tagUnhoistedLiftTail`
+- `ir-pass/src/SpecializeTailHoist.cpp:197` — `declineUnhoistedLiftTails`
 
 ### `ir-pass/src/SpeculationSafety.cpp` (238 lines)
 
@@ -7525,10 +7537,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_spec_intermediate_unc.c:64` — `qram_index`
 - `tests/e2e/slice_spec_intermediate_unc.c:70` — `main`
 
-### `tests/e2e/slice_spec_lift_quantum_base.c` (43 lines)
+### `tests/e2e/slice_spec_lift_quantum_base.c` (53 lines)
 
-- `tests/e2e/slice_spec_lift_quantum_base.c:31` — `slice`
-- `tests/e2e/slice_spec_lift_quantum_base.c:39` — `main`
+- `tests/e2e/slice_spec_lift_quantum_base.c:39` — `slice`
+- `tests/e2e/slice_spec_lift_quantum_base.c:49` — `main`
 
 ### `tests/e2e/slice_spec_lift_scrubbed_elsewhere.c` (54 lines)
 

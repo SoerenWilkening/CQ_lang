@@ -37,6 +37,13 @@
 ; loader may interpose), spec_reject_nested_odr_callee.ll (an ODR callee reached
 ; as a NESTED classical call, whose linked body would run in a duplicated twin).
 ;
+; bd r2j3.37: `%q1`/`%q2` are measured AFTER their calls, so they stay live. A
+; DEAD theta argument of an add/sub/xor return chain is no longer lifted: the
+; chain is hoisted to the caller (SpecializeTailHoist.h) and lowered in place, so
+; the `shift`/`mask` clones this fixture pins would vanish. Retire the two
+; keep-alive measures with that hoist. The dead-argument shape:
+; spec_accept_tail_hoist_inplace.ll.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=ERR --allow-empty < %t.err
@@ -69,9 +76,11 @@ entry:
   %q1 = call i32 @cq_theta_si32(i32 %u1, double 5.000000e-01)
   %r1 = call i32 @shift_lodr(i32 %q1)
   %m1 = call i32 @cq_measure_si32(i32 %r1)
+  %k1 = call i32 @cq_measure_si32(i32 %q1)
   %q2 = call i32 @cq_theta_si32(i32 %u2, double 7.500000e-01)
   %r2 = call i32 @mask_ae(i32 %q2)
   %m2 = call i32 @cq_measure_si32(i32 %r2)
+  %k2 = call i32 @cq_measure_si32(i32 %q2)
   ret void
 }
 

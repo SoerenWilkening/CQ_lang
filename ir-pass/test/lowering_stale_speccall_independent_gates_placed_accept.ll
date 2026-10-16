@@ -20,6 +20,14 @@
 ; this change). The CHECK-NEXT chain is the load-bearing order: `p`'s mint, both its
 ; Ry, then the clone call, all before `ry(q, .3)`.
 ;
+; bd r2j3.37: `%4` is measured at the end so it stays LIVE across the call.
+; Dead, it is a user register the call's add chain overwrites: the chain is
+; hoisted to the caller (SpecializeTailHoist.h), whose source temporary records
+; the stale `%1` and must be uncomputed after its Ry, which the stale-reader
+; fence refuses loudly as it does for the inlined twin
+; (lowering_stale_speccall_tail_hoist_reject.ll). Retire the keep-alive when
+; that lowering exists.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
 ; RUN: %filecheck %s < %t.ll
 ; RUN: %filecheck --check-prefix=WARN --allow-empty %s < %t.err
@@ -52,6 +60,7 @@ define i32 @main() local_unnamed_addr #1 {
   %5 = tail call i32 @f(i32 noundef %1, i32 noundef %4)
   %6 = tail call i32 @cq_measure_si32(i32 noundef %5) #4
   %7 = tail call i32 @cq_measure_si32(i32 noundef %2) #4
+  %keep = tail call i32 @cq_measure_si32(i32 noundef %4) #4
   %8 = add nsw i32 %7, %6
   ret i32 %8
 }

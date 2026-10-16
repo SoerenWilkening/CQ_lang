@@ -29,6 +29,12 @@
 ;   int h(int a, int k);
 ;   int main(int c, char **v) { int m = atoi(v[1]); int q = m; cq_theta(&q, .5); int t = h(q, m); int r = t; if (m > 3) { r = t; cq_theta(&r, .2); } int u = r + 1; return cq_measure(u); }
 ;
+; bd r2j3.37: the theta register is measured right after the call so it stays
+; LIVE across it. A DEAD user-register argument of an add/sub/xor return chain is
+; no longer lifted: the chain is hoisted to the caller (SpecializeTailHoist.h) and
+; lowered in place, and the lifted base this fixture pins would vanish (no live
+; record, no warning). Retire the keep-alive with that hoist.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.ll 2>&1 | %filecheck %s --check-prefix=DIAG --allow-empty
 ; RUN: %filecheck %s < %t.ll
 ; DIAG-NOT: error
@@ -52,6 +58,7 @@ define i32 @main(i32 noundef %0, ptr nocapture noundef readonly %1) local_unname
   %5 = tail call i32 @atoi(ptr nocapture noundef %4)
   %6 = tail call i32 @cq_theta_si32(i32 noundef %5, double noundef 5.000000e-01) #4
   %7 = tail call i32 @h(i32 noundef %6, i32 noundef %5) #4
+  %keep = tail call i32 @cq_measure_si32(i32 noundef %6) #4
   %8 = icmp sgt i32 %5, 3
   br i1 %8, label %9, label %11
 

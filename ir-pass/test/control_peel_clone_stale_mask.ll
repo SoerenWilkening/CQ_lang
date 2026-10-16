@@ -29,6 +29,12 @@
 ; It emits no gate and no runtime symbol; every gate checked here is the
 ; pre-existing substrate's.
 
+; bd r2j3.37: `%7` is measured at the end so it stays LIVE across the call. A
+; DEAD user-register argument of an add/sub/xor return chain is no longer lifted:
+; the chain is hoisted to the caller (SpecializeTailHoist.h) and lowered in place,
+; and the clone this fixture pins would vanish. Retire the keep-alive with that
+; hoist.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=SPEC < %t.cqd0.ll
@@ -60,6 +66,7 @@ define noundef i32 @main() local_unnamed_addr {
   %9 = tail call fastcc i32 @helper(i32 noundef %7, i32 noundef %8)
   %10 = tail call i32 @cq_measure_si32(i32 noundef %9)
   %11 = tail call i32 @cq_measure_si32(i32 noundef %1)
+  %keep = tail call i32 @cq_measure_si32(i32 noundef %7)
   %12 = add nsw i32 %10, %11
   ret i32 %12
 }
