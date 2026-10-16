@@ -1269,6 +1269,7 @@ class Function:
         # store, so a per-cell write-history drop can ask "inside this stream,
         # and no store into the array before the write".
         self.load_block = {}      # %res -> block label
+        self.def_block = {}       # %name -> block label (bd 01po.19.34 IV ranges)
         self.store_blocks = []    # [(line_no, block label, ptr_token, value)]
 
 
@@ -1366,6 +1367,7 @@ def parse_module(text):
             dm = DEF_OP_RE.match(ln)
             if dm:
                 fn.def_op[dm.group(1)] = (dm.group(2), ln, i + 1)
+                fn.def_block[dm.group(1)] = cur_label
                 if dm.group(2) == "alloca" and RAILBANK_MD in ln:
                     fn.bank_allocas.add(dm.group(1))
                 if dm.group(2) == "alloca" and RAILWINDOW_MD in ln:
@@ -4061,16 +4063,15 @@ def window_cell_pointers(fn, ren):
 
 GEP_CELL_RE = re.compile(
     r"getelementptr\s+(?:inbounds\s+)?i32,\s*ptr\s+(%[-\w.]+),\s*i64\s+(\S+)\s*$")
-ADD_CONST_RE = re.compile(
-    r"^(add|sub)\s+(?:nuw\s+)?(?:nsw\s+)?i64\s+(%[-\w.]+),\s*(-?\d+)\s*$")
 
 
 def _strip_md(rhs):
     """Instruction text without its trailing metadata attachments (`, !dbg
     !12`, `, !range !3`, `, !llvm.loop !7`, ...). Applied wherever raw text
-    meets an END-ANCHORED pattern or is compared structurally: the two
-    `$`-anchored regexes of the window/affine path (`ADD_CONST_RE`,
-    `GEP_CELL_RE`) and every terminator (`read_terminator`, for
+    meets an END-ANCHORED pattern or is compared structurally: the
+    `$`-anchored regexes of the window/linear path (`LIN_RE`, `GEP_CELL_RE`,
+    and bd 01po.19.34's range-proof `PHI2_RE`/`STEP_RE`/`ICMP_RE`/
+    `BR_COND_RE`/`ZEXT_RE`) and every terminator (`read_terminator`, for
     `TERM_BR_UNCOND_RE`). The other parse regexes are start-anchored or
     search, and stop before the attachments. Without it a `-g` compile reads
     differently from its stripped twin (bd 01po.19 final review: `add nsw i64
@@ -4078,28 +4079,121 @@ def _strip_md(rhs):
     return rhs.split(", !")[0].strip()
 
 
-def _affine_index(fn, v, depth=0):
-    """`v` as (base, offset): an i64 literal is (None, k); `add/sub X, k`
-    chains fold into the offset; anything else is its own base."""
-    if re.fullmatch(r"-?\d+", v):
-        return None, int(v)
+LIN_RE = re.compile(
+    r"^(add|sub)\s+(?:nuw\s+)?(?:nsw\s+)?i64\s+(%[-\w.]+|-?\d+),\s*"
+    r"(%[-\w.]+|-?\d+)\s*$")
+PHI2_RE = re.compile(
+    r"^phi\s+i64\s+\[\s*(\S+),\s*(%[-\w.$]+)\s*\],\s*"
+    r"\[\s*(\S+),\s*(%[-\w.$]+)\s*\]\s*$")
+STEP_RE = re.compile(r"^add\s+nuw\s+(?:nsw\s+)?i64\s+(%[-\w.]+),\s*(\d+)\s*$")
+ICMP_RE = re.compile(
+    r"^icmp\s+(eq|ne|ult|ule|ugt|uge)\s+i64\s+(%[-\w.]+|-?\d+),\s*"
+    r"(%[-\w.]+|-?\d+)\s*$")
+BR_COND_RE = re.compile(
+    r"^br\s+i1\s+(%[-\w.]+),\s*label\s+(%[-\w.$]+),\s*label\s+(%[-\w.$]+)\s*$")
+ZEXT_RE = re.compile(r"^zext\s+(?:nneg\s+)?i(\d+)\s+\S+\s+to\s+i64\s*$")
+
+
+def _rhs(fn, v):
     d = fn.def_op.get(v)
-    if d is None or depth > 16:
-        return v, 0
-    m = ADD_CONST_RE.match(_strip_md(d[1].split("=", 1)[-1]))
+    return None if d is None else _strip_md(d[1].split("=", 1)[-1])
+
+
+def _linear(fn, v, depth=0):
+    """`v` as a LINEAR FORM ({ssa: coeff}, const) over i64 add/sub chains
+    (bd 01po.19.34: `m-1-l` vs `m-1` vs `m-l` in a nested loop). Exact modulo
+    2^64, which is all the cell comparison needs (it is taken mod 2^62)."""
+    if re.fullmatch(r"-?\d+", v):
+        return {}, int(v)
+    m = LIN_RE.match(_rhs(fn, v) or "") if depth <= 16 else None
     if not m:
-        return v, 0
-    base, k = _affine_index(fn, m.group(2), depth + 1)
-    return base, k + (int(m.group(3)) if m.group(1) == "add" else -int(m.group(3)))
+        return {v: 1}, 0
+    ta, ka = _linear(fn, m.group(2), depth + 1)
+    tb, kb = _linear(fn, m.group(3), depth + 1)
+    sg = 1 if m.group(1) == "add" else -1
+    t = dict(ta)
+    for x, c in tb.items():
+        t[x] = t.get(x, 0) + sg * c
+    return {x: c for x, c in t.items() if c}, ka + sg * kb
+
+
+def _upper(fn, v):
+    """A proven unsigned upper bound of the i64 value `v`, or None."""
+    if re.fullmatch(r"\d+", v):
+        return int(v)
+    m = ZEXT_RE.match(_rhs(fn, v) or "")
+    return (1 << int(m.group(1))) - 1 if m and int(m.group(1)) < 64 else None
+
+
+def _iv_range(fn, x):
+    """bd 01po.19.34 — [lo, hi] of a counted induction phi, or None. `x` must
+    be `phi i64 [ s, %P ], [ %n, %Lt ]` with literal s >= 0 and `%n = add nuw
+    i64 x, c` (literal c >= 1: monotone, never wraps, so x >= s), and `%Lt`'s
+    terminator must return to x's block ONLY while an unsigned compare of x or
+    %n against a bounded value holds (`ult`/`ule`, or `uge`/`ugt` on the exit
+    edge, either operand order; `ne`/`eq` against a literal for c == 1). Every
+    entry to the header is then s or the latch value the compare admitted."""
+    m = PHI2_RE.match(_rhs(fn, x) or "")
+    hdr = fn.def_block.get(x)
+    if not m or hdr is None:
+        return None
+    inc = [(m.group(1), m.group(2)), (m.group(3), m.group(4))]
+    lits = [(v, b) for v, b in inc if re.fullmatch(r"\d+", v)]
+    vals = [(v, b) for v, b in inc if v.startswith("%")]
+    if len(lits) != 1 or len(vals) != 1:
+        return None
+    s = int(lits[0][0])
+    n, lt = vals[0]
+    sm = STEP_RE.match(_rhs(fn, n) or "")
+    if not sm or sm.group(1) != x or int(sm.group(2)) < 1:
+        return None
+    c = int(sm.group(2))
+    term = next((t for lbl, _c, t in fn.blocks if lbl == lt), None)
+    bm = BR_COND_RE.match(_strip_md(term or ""))
+    if not bm or (bm.group(2) == hdr) == (bm.group(3) == hdr):
+        return None
+    stay_true = bm.group(2) == hdr
+    cm = ICMP_RE.match(_rhs(fn, bm.group(1)) or "")
+    if not cm:
+        return None
+    pred, a, b = cm.groups()
+    if a not in (x, n):  # canonical order: the counter on the left
+        a, b = b, a
+        pred = {"ult": "ugt", "ule": "uge", "ugt": "ult", "uge": "ule"}.get(pred, pred)
+    if a not in (x, n):
+        return None
+    if not stay_true:
+        pred = {"ult": "uge", "ule": "ugt", "ugt": "ule", "uge": "ult",
+                "eq": "ne", "ne": "eq"}[pred]
+    ub = _upper(fn, b)
+    if ub is None:
+        return None
+    if pred == "ult":
+        vmax = ub - 1        # the compared value while staying
+    elif pred == "ule":
+        vmax = ub
+    elif pred == "ne" and c == 1 and re.fullmatch(r"\d+", b) and s < int(b):
+        vmax = int(b) - 1 if a == n else int(b) - 2  # stops AT b, step 1
+    else:
+        return None
+    hi = max(s, vmax + c if a == x else vmax)
+    return (s, hi) if s <= hi else None
+
+
+def _affine_index(fn, v, depth=0):
+    """`v` as (terms, offset): terms a frozenset of (ssa, coeff, range) with
+    `range` the `_iv_range` of the ssa (None when unproven)."""
+    t, k = _linear(fn, v)
+    return frozenset((x, c, _iv_range(fn, x)) for x, c in t.items()), k
 
 
 def _window_cell(fn, ptr):
-    """(object, base, offset) of a handle-array cell pointer, or None."""
+    """(object, terms, offset) of a handle-array cell pointer, or None."""
     d = fn.def_op.get(ptr)
     if d is None:
         return None
     if d[0] == "alloca":
-        return ptr, None, 0
+        return ptr, frozenset(), 0
     m = GEP_CELL_RE.search(_strip_md(d[1].split("=", 1)[-1]))
     if not m or m.group(1) not in fn.window_allocas:
         return None
@@ -4113,10 +4207,33 @@ def _cell_at(c, k):
 
 
 def _cells_differ(a, b):
-    """Two resolved cells of ONE array, one SSA base, offsets that differ
-    modulo the address space in cells (i32 handles: 2^62)."""
-    return a is not None and b is not None and a[0] == b[0] and \
-        a[1] == b[1] and (a[2] - b[2]) % (1 << 62) != 0
+    """Two resolved cells of ONE array whose index difference is provably
+    nonzero modulo the address space in cells (i32 handles: 2^62). The
+    difference of the two linear forms must be a constant, or (bd 01po.19.34)
+    `c*X + k` for ONE counted induction phi X with a proven range [lo, hi] on
+    which `c*X + k` never reaches 0 and stays below 2^62 in magnitude."""
+    if a is None or b is None or a[0] != b[0]:
+        return False
+    d = {}
+    rng = {}
+    for sg, cell in ((1, a), (-1, b)):
+        for x, c, r in cell[1]:
+            d[x] = d.get(x, 0) + sg * c
+            rng[x] = r
+    d = {x: c for x, c in d.items() if c}
+    k = a[2] - b[2]
+    if not d:
+        return k % (1 << 62) != 0
+    if len(d) != 1:
+        return False
+    (x, c), = d.items()
+    r = rng[x]
+    if r is None:
+        return False
+    lo, hi = r
+    if abs(c) * max(abs(lo), abs(hi)) + abs(k) >= (1 << 62):
+        return False
+    return not (k % c == 0 and lo <= -k // c <= hi)
 
 
 def window_cells_distinct(fn, pa, pb):

@@ -3538,7 +3538,9 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
 // DEFINED in L is USED only in L (nothing escapes the loop), and every tainted
 // OPERAND of an in-L instruction is DEFINED in L (no loop-invariant tainted input
 // minted outside, whose register would accumulate across iterations — the
-// `lowering_uncompute_loop_backedge` residual). The spine then PROVES per-DAG
+// `lowering_uncompute_loop_backedge` residual); and every quantum SUBLOOP
+// qualifies on its own by the same clauses (bd 01po.19.34, see
+// `iterationLocalQualifies`). The spine then PROVES per-DAG
 // closure/measure/escape; this predicate only certifies the loop is a sound place
 // to lift the backedge guard (Prime Directive: not-marking is always safe).
 //
@@ -3558,32 +3560,56 @@ bool loopTouchesRailWindow(const Loop *L) {
   return false;
 }
 
-bool markIfIterationLocal(Loop *L, TaintSet &taint, LoopInfo &LI) {
+// The PURE half of `markIfIterationLocal` (bd 01po.19.34 / 01po.19.19): does
+// `L` qualify, with every quantum SUBLOOP qualifying on its own? `AnyTainted`
+// receives whether `L` (subloops included) holds a tainted value.
+static bool iterationLocalQualifies(Loop *L, const TaintSet &taint,
+                                    LoopInfo &LI, bool &AnyTainted) {
+  AnyTainted = false;
   if (taintedExit(L, taint))
     return false;  // Q1 quantum-bounded — never Case B.
+  // A strictly-deeper SUBLOOP with quantum content is a NESTED quantum loop.
+  // The hazard this used to refuse outright: a value rotated (or minted) by the
+  // subloop runs the subloop-trip-count times PER outer iteration while a spine
+  // anchored at OUTER level would reverse it ONCE — an under-reversed dirty free,
+  // a SILENT miscompile (measured on a do-while inner loop whose body dominates
+  // the outer recovery point). bd 01po.19.34 / 01po.19.19 (nested Dicke
+  // `for m { … for l { if (s==3) Ry(q[m-1-l]) } }`) admit the subloop ONLY when
+  // it is iteration-local ON ITS OWN — asked by RECURSION into this very
+  // predicate (one spelling): no tainted exit, no tainted header phi, every
+  // tainted value it defines is used only INSIDE it, and every tainted operand
+  // it reads is defined INSIDE it (the window-cell store exemption included).
+  // Then nothing crosses the subloop boundary in either direction except array
+  // memory: each subloop temp is born, consumed and (being in a marked block)
+  // discharged within ONE subloop trip, grouped by its INNERMOST loop
+  // (`reverseTerminalGroups`), and no outer temp has a use inside the subloop.
+  // The remaining hazard — an OUTER temp whose discharge point (the nearest
+  // common post-dominator of its uses) falls INSIDE the subloop, e.g. its
+  // header — is closed at the placement owner (`FreePoint`'s same-loop check),
+  // never assumed here.
+  for (Loop *SL : L->getSubLoops()) {
+    bool SubTainted = false;
+    for (BasicBlock *BB : SL->blocks())
+      for (Instruction &I : *BB)
+        if (taint.Tainted.count(&I)) {
+          SubTainted = true;
+          break;
+        }
+    if (!SubTainted)
+      continue;
+    bool Dummy = false;
+    if (!iterationLocalQualifies(SL, taint, LI, Dummy))
+      return false;
+    AnyTainted = true;
+  }
   BasicBlock *Header = L->getHeader();
-  bool AnyTainted = false;
   for (BasicBlock *BB : L->blocks()) {
     // (L2) tainted control in the body ⇒ the existing ControlDetect owner's.
     Instruction *T = BB->getTerminator();
     if (isTaintedBranchTerminator(T, taint))  // bd dm7f.24: the one spelling.
       return false;
-    if (LI.getLoopFor(BB) != L) {
-      // A strictly-deeper SUBLOOP with quantum content is a NESTED quantum loop,
-      // not a single-level iteration-local loop: a value rotated by the subloop
-      // runs the subloop-trip-count times PER outer iteration, but the spine
-      // would reverse it ONCE (a dirty free of an under-reversed rail — a SILENT
-      // miscompile, confirmed on a do-while inner loop whose body dominates the
-      // outer recovery point, so the divergent-arm backstop does not catch it).
-      // Decline to mark (Prime Directive: over-declining is safe — the value's
-      // terminal then keeps FreePoint's `kMsgLoopBackedge` reject). 7.3 does not
-      // lower nested quantum loops; the subloop is handled (or declined) on its
-      // own, never folded into the outer iteration-local set.
-      for (Instruction &I : *BB)
-        if (taint.Tainted.count(&I))
-          return false;
-      continue;
-    }
+    if (LI.getLoopFor(BB) != L)
+      continue;  // a subloop block — adjudicated by the recursion above.
     for (Instruction &I : *BB) {
       // (L3) tainted-index memory in the body ⇒ the existing kMsgQramLoop owner's.
       // bd 01po.19 S4: a rail stored at a CLASSICAL address into a
@@ -3627,8 +3653,16 @@ bool markIfIterationLocal(Loop *L, TaintSet &taint, LoopInfo &LI) {
         }
     }
   }
+  return true;
+}
+
+bool markIfIterationLocal(Loop *L, TaintSet &taint, LoopInfo &LI) {
+  bool AnyTainted = false;
+  if (!iterationLocalQualifies(L, taint, LI, AnyTainted))
+    return false;
   if (!AnyTainted)
     return false;  // a purely-classical loop — leave it byte-identical.
+  // Every block, subloops included: a quantum subloop qualified on its own.
   for (BasicBlock *BB : L->blocks())
     taint.IterationLocalBlocks.insert(BB);
   return true;
@@ -5160,7 +5194,14 @@ bool railLocalQualifies(Loop *L, TaintSet &taint, LoopInfo &LI,
     if (LI.getLoopFor(BB) != L) {
       // A strictly-deeper SUBLOOP with quantum content runs its gates N times
       // per outer iteration while the spine would reverse them ONCE — the
-      // under-reversed dirty free. Verbatim from `markIfIterationLocal`.
+      // under-reversed dirty free. This was verbatim from `markIfIterationLocal`
+      // until bd 01po.19.34, which admits there a subloop that is iteration-
+      // local ON ITS OWN (`iterationLocalQualifies`, by recursion). It is NOT
+      // widened here on purpose (CLAUDE.md L2): this clause's `Roots` escape
+      // admits outside-`L` rail reads, and whether a subloop reading a root
+      // repeats its reversal consistently is the multiplicity question
+      // (`multiplicityAgrees`) nobody has re-derived for a nest. Widen only
+      // with that argument.
       for (Instruction &I : *BB)
         if (taint.Tainted.count(&I))
           return refuse(&I);
@@ -5278,9 +5319,17 @@ bool markIfRailLocal(Loop *L, TaintSet &taint, LoopInfo &LI,
   // earlier, at `ControlDetect::flatRegionRollableInLoop` gate (B) (one depth) or
   // at the subloop refusal above — which is exactly why it is closed structurally
   // rather than left to the guard that cannot see it. `markIfIterationLocal`
-  // (Increment 2) has the identical `L->blocks()` shape but is NOT changed here:
-  // its own refusal covers every tainted value, and it has no post-flatten
-  // emitted stream to miss.
+  // (Increment 2) has the identical `L->blocks()` shape but is NOT changed here.
+  // ⚠ ITS OLD REASON ("it has no post-flatten emitted stream to miss") IS FALSE
+  // SINCE bd 01po.19 S6, which calls it after the flatten for window loops, and
+  // since bd 01po.19.34 it marks a quantum SUBLOOP's blocks. What makes that
+  // sound is different and is stated there: the subloop must qualify ON ITS OWN
+  // (`iterationLocalQualifies`, recursion), whose operand clause asks EVERY
+  // instruction — the emitted void calls included — for a tainted operand
+  // defined outside the subloop, and an emitter's out-rail is tainted on mint
+  // (`SelectMergeEmit` inserts `%out`). So nothing outside the subloop is
+  // gated inside it, and its own stream is grouped and reversed per inner trip
+  // (`reverseTerminalGroups` keys on the innermost loop; `multiplicityAgrees`).
   for (BasicBlock *BB : L->blocks())
     if (LI.getLoopFor(BB) == L)
       taint.IterationLocalBlocks.insert(BB);

@@ -2230,7 +2230,54 @@ WINDOW_CELL_TEMP_OTHER_DBG = (
     .replace("!0 = !{i32 1}", "!0 = !{i32 1}\n!1 = !{}"))
 assert WINDOW_CELL_TEMP_OTHER_DBG.count("!dbg !1") == 3
 
+# bd 01po.19.34 — A CNOT BETWEEN q[m-l] AND q[m] INSIDE A COUNTED LOOP (the
+# nested Dicke's `q[m-1] ^= q[m-1-l]`, l = 2..kk). The index difference is the
+# induction phi `%l` itself, not a constant, so the one-base/constant-offset
+# proof cannot clear it. The checker's own range proof (`_iv_range`: literal
+# start 2, `add nuw` step 1, staying only while `%l ult zext i32`) bounds %l to
+# [2, 2^32] and the difference never reaches 0 mod 2^62. Mutants: start 0 (the
+# same cell at l = 0), a step without `nuw` (may wrap to 0), an unbounded
+# compare, and the stay edge on the wrong polarity (unbounded) — each B1.
+WINDOW_CELL_CNOT_IV = """
+define i32 @slice(i64 %m, i32 %n) local_unnamed_addr {
+entry:
+  %w = alloca i32, i64 8, align 4, !cq.railwindow !0
+  %h0 = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %h0, ptr %w, align 4
+  %nb = zext i32 %n to i64
+  br label %body
+body:
+  %l = phi i64 [ 2, %entry ], [ %l1, %body ]
+  %a0 = getelementptr i32, ptr %w, i64 %m
+  %d = sub nsw i64 %m, %l
+  %a1 = getelementptr i32, ptr %w, i64 %d
+  %x1 = load i32, ptr %a1, align 4
+  %x0 = load i32, ptr %a0, align 4
+  call void @cqrt_ry_i1(i32 %x1, double 3.000000e-01)
+  call void @cqrt_cnot(i32 %x1, i32 %x0)
+  store i32 %x1, ptr %a1, align 4
+  store i32 %x0, ptr %a0, align 4
+  %l1 = add nuw nsw i64 %l, 1
+  %c = icmp ult i64 %l, %nb
+  br i1 %c, label %body, label %exit
+exit:
+  %a2 = getelementptr i32, ptr %w, i64 %m
+  %x2 = load i32, ptr %a2, align 4
+  %r = call i1 @cqrt_measure_i1(i32 %x2)
+  %z = zext i1 %r to i32
+  ret i32 %z
+}
+!0 = !{i32 1}
+"""
+
+# bd 01po.19.34: -O1 spells `m - 2` as `add i64 -2, %m` (literal FIRST) in the
+# runtime-N Dicke; the linear form reads either operand order.
+WINDOW_CELL_CNOT_LITFIRST = sub(WINDOW_CELL_CNOT, "%i1 = add",
+                                "add nuw nsw i64 %i, 1", "add i64 1, %i")
+
 MEM_POSITIVE = [
+    ("window-cell-cnot-nested-iv-distinct", WINDOW_CELL_CNOT_IV),
+    ("window-cell-cnot-literal-first-offset", WINDOW_CELL_CNOT_LITFIRST),
     ("window-cell-temp-other-cell-written-dbg", WINDOW_CELL_TEMP_OTHER_DBG),
     ("window-cell-temp-other-cell-written", WINDOW_CELL_TEMP_OTHER),
     ("window-cell-cnot-proven-distinct-cells", WINDOW_CELL_CNOT),
@@ -2349,6 +2396,22 @@ exit:
     ("window-cell-cnot-offset-wraps",
      sub(WINDOW_CELL_CNOT, "%i1 = add", "add nuw nsw i64 %i, 1",
          "add nuw nsw i64 %i, 4611686018427387904"),
+     "B1-input-aliases-written-rail"),
+    # bd 01po.19.34: the counted-phi range proof's own kill tests.
+    ("window-cell-cnot-iv-starts-at-zero",
+     sub(WINDOW_CELL_CNOT_IV, "%l = phi", "[ 2, %entry ]", "[ 0, %entry ]"),
+     "B1-input-aliases-written-rail"),
+    ("window-cell-cnot-iv-step-may-wrap",
+     sub(WINDOW_CELL_CNOT_IV, "%l1 = add", "add nuw nsw i64 %l, 1",
+         "add nsw i64 %l, 1"),
+     "B1-input-aliases-written-rail"),
+    ("window-cell-cnot-iv-unbounded-compare",
+     sub(WINDOW_CELL_CNOT_IV, "%c = icmp", "icmp ult i64 %l, %nb",
+         "icmp ult i64 %l, %m"),
+     "B1-input-aliases-written-rail"),
+    ("window-cell-cnot-iv-stay-edge-unbounded",
+     sub(WINDOW_CELL_CNOT_IV, "br i1 %c", "label %body, label %exit",
+         "label %exit, label %body"),
      "B1-input-aliases-written-rail"),
     # bd 01po.19 S5: two unrelated index bases — not provably distinct.
     ("window-cell-cnot-unprovable-cells",
