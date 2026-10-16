@@ -41,24 +41,9 @@
 ; DOES convert in place when nothing of the region follows it — so the discriminator
 ; really is position relative to the emitted stream, not the opcode.
 ;
-; bd dm7f.83 (ruling-dm7f83-inplace-fence-refusal-loud-2026-10-16): FLIPPED TO
-; LOUD. A classical-immediate in-place site here is refused by the M-C fence
-; (`inPlaceFenceHolds`: G4's parameter immediate, G5 in a loop, or G6/G7 position)
-; while its handle is a DEAD USER REGISTER beside a KEPT result, so the old rail
-; would stand beside the result — the r2j3.33 wrong unitary the out-of-place
-; fallback used to ship with at most a warning. The in-place round now fails
-; loudly (InPlaceQQImm.cpp), as owner Q1 requires. The fixture's original
-; expectation is kept dormant: its RUN lines are spelled MC-CMD and no RUN line
-; reads its CHECK prefixes. RETIREMENT: restore them when the refused shape
-; converts (the dm7f.83 follow-up drops G4; G5-G7 refusals need their own
-; lowering).
-;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=DM7F83
-; DM7F83: error: {{.*}}cq in-place lowering: quantum reassignment of a dead register is not provable in place
-;
-; MC-CMD: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.cqd0.ll
-; MC-CMD: %filecheck %s < %t.cqd0.ll
-; MC-CMD: %filecheck --check-prefix=NEG %s < %t.cqd0.ll
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck --check-prefix=NEG %s < %t.cqd0.ll
 ; ---- MUTATION-MATRIX HARDENING (bd `test_C_libtooling-drbq.12`, 2026-09-17) ----
 ; Rule 12(c): a fixture is validated by MUTATION, not by re-reading its prefixes.
 ; The first injection-matrix run over this batch reported 21 MISSED over 9 accept
@@ -70,14 +55,14 @@
 ; `COUNT`s under a shared prefix scan FORWARD and fall through to the trailing
 ; `declare` lines, and a pure-negative prefix for the two gates that must never
 ; appear. Counts are MEASURED off this fixture's own lowered output, never guessed.
-; MC-CMD: %filecheck --check-prefix=MXALLOC %s < %t.cqd0.ll
-; MC-CMD: %filecheck --check-prefix=MXRY %s < %t.cqd0.ll
-; MC-CMD: %filecheck --check-prefix=MXRYC %s < %t.cqd0.ll
-; MC-CMD: %filecheck --check-prefix=MXMINT %s < %t.cqd0.ll
-; MC-CMD: %filecheck --check-prefix=MXSTRIP %s < %t.cqd0.ll
-; MC-CMD: %filecheck --check-prefix=MXFREE %s < %t.cqd0.ll
-; MC-CMD: %filecheck --check-prefix=MXMEAS %s < %t.cqd0.ll
-; MC-CMD: %filecheck --check-prefix=MXNONE --implicit-check-not="call void @cqrt_x(" --implicit-check-not="call void @cqrt_cswap(" --implicit-check-not="call void @cqrt_cnot(" %s < %t.cqd0.ll
+; RUN: %filecheck --check-prefix=MXALLOC %s < %t.cqd0.ll
+; RUN: %filecheck --check-prefix=MXRY %s < %t.cqd0.ll
+; RUN: %filecheck --check-prefix=MXRYC %s < %t.cqd0.ll
+; RUN: %filecheck --check-prefix=MXMINT %s < %t.cqd0.ll
+; RUN: %filecheck --check-prefix=MXSTRIP %s < %t.cqd0.ll
+; RUN: %filecheck --check-prefix=MXFREE %s < %t.cqd0.ll
+; RUN: %filecheck --check-prefix=MXMEAS %s < %t.cqd0.ll
+; RUN: %filecheck --check-prefix=MXNONE --implicit-check-not="call void @cqrt_x(" --implicit-check-not="call void @cqrt_cswap(" --implicit-check-not="call void @cqrt_cnot(" %s < %t.cqd0.ll
 
 ; MXALLOC-COUNT-2: = call i32 @cqrt_alloc_
 ; MXALLOC-NOT: = call i32 @cqrt_alloc_

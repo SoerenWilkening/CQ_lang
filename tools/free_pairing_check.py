@@ -1024,6 +1024,10 @@ def classify(sym):
 # ---------------------------------------------------------------------------
 
 DEFINE_RE = re.compile(r"^define\s.*?@([\w.$\"]+)\s*\(")
+# bd dm7f.83.1 — the pass's per-parameter CLAIM (`tagClassicalParams`), and the
+# module metadata node it names. Checked by `vouched_params`, never trusted.
+CLASSICAL_PARAMS_RE = re.compile(r"!cq\.classical\.params\s+(![0-9]+)")
+MD_NODE_RE = re.compile(r"^(![0-9]+)\s*=\s*(?:distinct\s+)?!\{(.*)\}\s*$")
 
 # libcqops b6a — a QRAM INDEX BRACKET. The pass hands every QRAM call whose
 # index rail is not 32 bits wide its OWN cast, emitted as four consecutive calls
@@ -1260,6 +1264,8 @@ class Function:
         # refuses to vouch for one, the same way `U3-extern-rail` refuses to
         # vouch for a handle minted outside the stream.
         self.params = frozenset(params)
+        self.param_list = list(params)   # positional (bd dm7f.83.1)
+        self.claimed_md = None    # `!cq.classical.params !N` on the define
         self.blocks = []          # [(label, [Call], terminator_text)]
         self.succ = {}
         self.preds = {}
@@ -1341,6 +1347,7 @@ class ModuleFns(list):
     def __init__(self, *a):
         super().__init__(*a)
         self.bank_globals = set()   # @globals carrying !cq.railbank
+        self.md_nodes = {}          # `!N` -> its `!{...}` body text (dm7f.83.1)
 
 
 def parse_module(text):
@@ -1352,6 +1359,9 @@ def parse_module(text):
         gm = GLOBAL_DEF_RE.match(lines[i])
         if gm and RAILBANK_MD in lines[i]:
             funcs.bank_globals.add(gm.group(1))
+        mdm = MD_NODE_RE.match(lines[i])
+        if mdm:
+            funcs.md_nodes[mdm.group(1)] = mdm.group(2)
         m = DEFINE_RE.match(lines[i])
         if not m:
             i += 1
@@ -1361,6 +1371,8 @@ def parse_module(text):
         params = SSA_NAME_RE.findall(lines[i][popen + 1:balanced(lines[i],
                                                                  popen)])
         fn = Function(m.group(1), params)
+        cpm = CLASSICAL_PARAMS_RE.search(lines[i])
+        fn.claimed_md = cpm.group(1) if cpm else None
         i += 1
         cur_label, cur_calls, term = "%__entry", [], ""
         while i < len(lines) and lines[i] != "}":
@@ -2026,7 +2038,8 @@ class StreamAnalysis:
         if v in self.rails:
             return False       # minted in, or written in, this stream
         if v in self.params:
-            return False       # arrives from outside; nothing here can vouch
+            return False       # arrives from outside, and no CHECKED claim
+                               # vouches for it (`vouched_params`, dm7f.83.1)
         if v in self.rail_defs:
             return False       # rail minted elsewhere in this function
         return True
@@ -4350,6 +4363,93 @@ def census_of(funcs, text):
     return Census(minted, leaked, tmpl_minted, tmpl_dirty, unresolved)
 
 
+def _classical_slot(c, k):
+    """Is slot `k` of call `c` one a CLASSICAL value may fill, by the ABI the
+    rest of this file models? Only the declared-immediate slots qualify:
+    `cqrt_*` `classical_imm`, and the literal operand of a `_hl`/`_lh`
+    template (slot after the handle / before it; `_unc` prepends `out`, a
+    `_controlled` form prepends its control). Any other slot of OUR surface is
+    a rail slot. A call outside our surface (`@printf`, `icmp`-free user code)
+    is classical."""
+    eff = c.eff if c.eff is not None else classify(c.sym)
+    if eff is None:
+        return True
+    if c.sym.startswith("cq_template_"):
+        base = c.sym[: -len("_unc")] if c.sym.endswith("_unc") else c.sym
+        off = (1 if c.sym.endswith("_unc") else 0) + \
+              (1 if "_controlled" in base else 0)
+        if re.search(r"_hl(_|$)", base):
+            return k == off + 1
+        if re.search(r"_lh(_|$)", base):
+            return k == off
+        return False
+    return k in eff.classical_imm
+
+
+def vouched_params(funcs, rail_defs):
+    """bd dm7f.83.1 — which formal parameters stage 2b may treat as NOT a rail.
+
+    The pass CLAIMS them (`!cq.classical.params`). A claim is vouched only when
+    both checks hold, as a greatest fixpoint over the module:
+      (i)  inside its function, every call operand that is the parameter sits
+           in a classical slot (`_classical_slot`), or is passed to a module
+           function whose own parameter at that position is vouched;
+      (ii) every in-module call site passes, at that position, a literal, or a
+           non-parameter SSA value that is no rail of the caller, or a vouched
+           parameter of the caller.
+    A function no module code calls is entered from outside, where no rail
+    handle exists (every function that holds one is in this module)."""
+    by_name = {fn.name: fn for fn in funcs}
+    claim = {}
+    for fn in funcs:
+        body = funcs.md_nodes.get(fn.claimed_md) if fn.claimed_md else None
+        idx = [int(x) for x in re.findall(r"i32\s+(-?[0-9]+)", body or "")]
+        claim[fn.name] = {fn.param_list[k] for k in idx
+                          if 0 <= k < len(fn.param_list)}
+    vouched = {n: set(s) for n, s in claim.items()}
+    sites = []   # (caller fn, Call, callee fn)
+    for fn in funcs:
+        for _, calls, _ in fn.blocks:
+            for c in calls:
+                if c.sym in by_name:
+                    sites.append((fn, c, by_name[c.sym]))
+    changed = True
+    while changed:
+        changed = False
+        for fn in funcs:
+            for p in list(vouched[fn.name]):
+                ok = True
+                for _, calls, _ in fn.blocks:
+                    for c in calls:
+                        for k, v in enumerate(c.vals):
+                            if v != p:
+                                continue
+                            if c.sym in by_name:
+                                callee = by_name[c.sym]
+                                ok &= (k < len(callee.param_list) and
+                                       callee.param_list[k] in
+                                       vouched[callee.name])
+                            else:
+                                ok &= _classical_slot(c, k)
+                for caller, c, callee in sites:
+                    if callee is not fn or p not in fn.param_list:
+                        continue
+                    k = fn.param_list.index(p)
+                    v = c.vals[k] if k < len(c.vals) else None
+                    if v is None:
+                        ok = False
+                    elif not v.startswith("%"):
+                        continue                      # a literal
+                    elif v in caller.params:
+                        ok &= v in vouched[caller.name]
+                    else:
+                        ok &= v not in rail_defs.get(caller.name, ())
+                if not ok:
+                    vouched[fn.name].discard(p)
+                    changed = True
+    return vouched
+
+
 def check_module(text):
     """Returns (findings, verified_count, free_site_count, proofs).
 
@@ -4398,6 +4498,9 @@ def check_module(text):
             rail_defs[fn.name] |= frozenset(ren.values())
     recorded = {fn.name: recorded_rails(fn, rail_defs.get(fn.name, frozenset()))
                 for fn in funcs}
+    # bd dm7f.83.1 — a CHECKED claim narrows the parameters
+    # `provably_not_a_rail` refuses (see `vouched_params`).
+    vouched = vouched_params(funcs, rail_defs)
     # bd 261j(b) — THE LEAK CENSUS. This file counts free SITES, so a compiler that
     # stops freeing everything reports "0 cqrt_free site(s): 0 verified" and passes
     # STRICT. That is not a hypothetical failure mode: bd 261j(a) is a change whose
@@ -4422,7 +4525,8 @@ def check_module(text):
             if not calls:
                 continue
             ensure_recursion_headroom(len(calls))
-            sa = StreamAnalysis(fn.name, calls, module_defs, fn.params,
+            sa = StreamAnalysis(fn.name, calls, module_defs,
+                                fn.params - vouched.get(fn.name, set()),
                                 rail_defs.get(fn.name, frozenset()),
                                 recorded.get(fn.name, frozenset()),
                                 xstream, sid)

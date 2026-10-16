@@ -203,6 +203,8 @@ bool qqOperandDeadAfter(llvm::Value *V, llvm::BinaryOperator *BO,
 // r2j3.37.1: the consuming-clone decision asks it of a CALL `At` (the lifted
 // call's position); only a BinaryOperator `At` that reads `V` twice (`x ^ x`)
 // is refused for that reason alone (a call's two slots: `consumeSlotReadsTwice`).
+// The converse question, PROVEN live (InPlaceQQImm.cpp, bd dm7f.83.3).
+bool registerLiveAfter(const llvm::Value *V, const llvm::Instruction *At);
 unsigned qqDeadRecordBits(llvm::Value *V, llvm::Instruction *At,
                           const llvm::DominatorTree &DT,
                           const llvm::LoopInfo &LI);
@@ -251,9 +253,13 @@ void eraseUnusedConsumeAux(llvm::Module &M);
 
 // THE ONE SPELLING of the in-place rounds' two questions (InPlaceQQImm.cpp):
 // is operand `Idx` of the out-of-place template `T` a DEAD USER REGISTER (the
-// `!cq.qq.dead` record's bit and `qqTargetIsUserData`, E1+E2), and is `T`'s
-// result KEPT (no emitter or M-B plan discharges it and it survives, E3)?
-bool qqDeadUserRegisterOperand(const llvm::CallInst *T, unsigned Idx);
+// `!cq.qq.dead` record's bit, `qqTargetIsUserData`, E1+E2, AND the REGISTER is
+// dead at `T`: no later read, rotation or measure of its rail under ANY SSA
+// name — `qqDeadRecordBits` on the lowered handle, bd dm7f.83 R11 r1 rD1-F2),
+// and is `T`'s result KEPT (no emitter or M-B plan discharges it, E3)?
+bool qqDeadUserRegisterOperand(const llvm::CallInst *T, unsigned Idx,
+                               const llvm::DominatorTree &DT,
+                               const llvm::LoopInfo &LI);
 struct InteriorDischargePlan;
 bool qqResultKept(llvm::CallInst *T, const TaintSet &taint, llvm::Function &F,
                   llvm::PostDominatorTree &PDT, const InteriorDischargePlan &Plan);
@@ -263,6 +269,8 @@ bool qqResultKept(llvm::CallInst *T, const TaintSet &taint, llvm::Function &F,
 // parameter immediate included) whose handle is a dead user register beside a
 // kept result fails LOUDLY (`kMsgInPlaceQQRefused`, owner Q1). True if loud.
 bool declineRefusedImmediateReassignments(llvm::Function &F, TaintSet &taint);
+// bd dm7f.83.1: the per-parameter classical evidence stage 2b checks.
+void tagClassicalParams(llvm::Module &M, const TaintSet &taint);
 
 // The round. Returns true if any site was converted. Strips every remaining
 // `!cq.qq.dead` record and `!cq.regcond` tag (bd dm7f.77) before returning.

@@ -244,7 +244,7 @@ Outcome decideNext(Function &F, WidthDispatch &wd, TaintSet &taint,
     // it is never dead: the `0` is a fresh rail.)
     SmallVector<unsigned, 2> Eligible;
     for (unsigned Idx = 0; Idx < 2; ++Idx)  // a cell: bd 01po.19 S5
-      if (qqDeadUserRegisterOperand(S.C, Idx))
+      if (qqDeadUserRegisterOperand(S.C, Idx, DT, LI))
         Eligible.push_back(Idx);
     // (E2′) bd dm7f.77 — design D5 ("%8 then in place on f's rail"): a dead
     // FRESH register-condition TEMPLATE (the commit tag: the out-of-place xor the
@@ -292,7 +292,8 @@ Outcome decideNext(Function &F, WidthDispatch &wd, TaintSet &taint,
     // target, so it is loud here rather than silently left out of place.
     for (unsigned Idx = 0; Idx < 2; ++Idx)
       if (Kept && (unprovenPhiOperandMask(S.C) >> Idx & 1u) &&
-          railIsUserData(S.C->getArgOperand(Idx)))
+          railIsUserData(S.C->getArgOperand(Idx)) &&
+          !registerLiveAfter(S.C->getArgOperand(Idx), S.C))
         return loud(kMsgInPlaceQQRefused);
     if (Eligible.empty())
       continue;  // live old value (or a derived rail): out of place, D5.

@@ -1141,6 +1141,7 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // zero-extended (SpecializeGateInline.h).
   if (widenQuantumExportReturns(M))
     return PreservedAnalyses::none();
+  tagClassicalParams(M, taint);  // bd dm7f.83.1 — stage 2b's evidence
   eraseDeadDecls(M, wd);
   eraseUnusedLibmBodies(M, /*KeepBindable=*/false);  // bd 3c6m.72, LibmBinding.h
 
@@ -1641,6 +1642,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
     return true;
   if (widenQuantumExportReturns(M))  // bd p3kd.21 — see run().
     return true;
+  tagClassicalParams(M, taint);  // bd dm7f.83.1 — mirrored from run()
   eraseDeadDecls(M, wd);
   eraseUnusedLibmBodies(M, /*KeepBindable=*/false);  // bd 3c6m.72 — see run().
   return true;

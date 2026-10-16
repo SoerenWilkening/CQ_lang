@@ -1,27 +1,25 @@
-; lowering_mc_dead_register_param_imm_reject.ll — DECLINE, loud (bd
-; test_C_libtooling-dm7f.83; ruling-dm7f83-inplace-fence-refusal-loud-2026-10-16).
-; `int t = q + m; cq_theta(&t, .2)` with `q` a dead rotated register and `m` a
-; function PARAMETER. The classical-immediate M-C round refuses the in-place
-; `cqrt_addc` at G4 (`inPlaceFenceHolds`: stage 2b cannot vouch for a formal-
-; parameter immediate), so `q`'s old rail would stand beside the kept `t` — the
-; r2j3.33 wrong unitary. WAS (main ef72239c): accepted with only the warning
-; `non-diagonal gate over a live derived record`. NOW: any in-place-fence refusal
-; on a DEAD USER REGISTER beside a kept result is LOUD
-; (owner-ruling-dm7f51-inplace-qq-2026-10-14 Q1), asked by the in-place round
-; (InPlaceQQImm.cpp), no "only if later rotated" carve-out.
-; THE TWIN CELL (recorded per the ruling): INLINED `t = q + m` -> LOUD (here);
-; LIFTED `t = h(q, m)`, `h(a,k) = a + k` -> ACCEPT in place
-; (spec_accept_consume_param_imm.ll: the consuming clone's body applies
-; `cqrt_addc_i32(t, k)` with `k` a parameter the clone's handle mask proves
-; classical). RETIREMENT TRIGGER (bd dm7f.83 follow-up): when stage 2b vouches for
-; a classical parameter immediate on positive pass-emitted evidence and G4 is
-; dropped, this fixture becomes the in-place accept and the cell closes.
+; lowering_mc_dead_register_param_imm_phi_accept.ll — ACCEPT, in place (bd
+; test_C_libtooling-dm7f.83.1): the reporter's shape, the inlined twin of
+; slice_spec_lift_quantum_base.c — `t = q + m` (q dead, m a parameter) feeding a
+; one-register merge phi whose arm rotates it. WAS (5df5cd77): loud at G4, the
+; phi not the cause. NOW the parameter immediate converts in place on q's rail
+; (`cqrt_addc_i32(q, m)`) and the arm's Ry rotates that same rail; `main`'s
+; caller `slice(argc + 4)` passes a classical value, so stage 2b vouches for
+; `slice`'s claimed parameter (`vouched_params` rule ii).
 ;
-; Source: n1.c (lane L scratch), clang-19 -O1 -include CQ.h.
+; Source: n2.c (lane L scratch), clang-19 -O1 -include CQ.h.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error: {{.*}}cq in-place lowering: quantum reassignment of a dead register is not provable in place
-source_filename = "n1.c"
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+;
+; CHECK-LABEL: define i32 @slice(
+; CHECK:      [[H:%[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 %0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[H]], double 5.000000e-01)
+; CHECK-NEXT: call void @cqrt_addc_i32(i32 [[H]], i32 %0)
+; CHECK:      call void @cqrt_ry_i32(i32 [[H]], double 2.000000e-01)
+; CHECK:      call i32 @cqrt_measure_i32(i32 [[H]])
+; CHECK-NOT:  cq_template_add_i32_hl
+source_filename = "n2.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 
@@ -29,9 +27,17 @@ target triple = "x86_64-apple-macosx16.0.0"
 define i32 @slice(i32 noundef %0) local_unnamed_addr #0 {
   %2 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef 5.000000e-01) #3
   %3 = add nsw i32 %2, %0
-  %4 = tail call i32 @cq_theta_si32(i32 noundef %3, double noundef 2.000000e-01) #3
-  %5 = tail call i32 @cq_measure_si32(i32 noundef %4) #4
-  ret i32 %5
+  %4 = icmp sgt i32 %0, 3
+  br i1 %4, label %5, label %7
+
+5:                                                ; preds = %1
+  %6 = tail call i32 @cq_theta_si32(i32 noundef %3, double noundef 2.000000e-01) #3
+  br label %7
+
+7:                                                ; preds = %5, %1
+  %8 = phi i32 [ %6, %5 ], [ %3, %1 ]
+  %9 = tail call i32 @cq_measure_si32(i32 noundef %8) #4
+  ret i32 %9
 }
 
 declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr #1

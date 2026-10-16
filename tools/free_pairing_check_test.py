@@ -4110,6 +4110,45 @@ class _Stop:
         return f"REFUSED {self.code} @{self.fn} line {self.line}"
 
 
+# bd dm7f.83.1 — the CHECKED per-parameter claim (`vouched_params`). One positive
+# (an entry function's claimed parameter as an addc immediate), one positive
+# through a classical caller, and three nulls the claim must NOT rescue: no
+# claim, a caller passing a RAIL, and a claimed parameter the body uses as a rail.
+_VOUCH_HDR = """declare i32 @cqrt_alloc_i32(i32)
+declare void @cqrt_addc_i32(i32, i32)
+declare void @cqrt_free(i32)
+declare void @cqrt_ry_i32(i32, double)
+declare i32 @cqrt_measure_i32(i32)
+"""
+_VOUCH_F = """define void @f(i32 %k){md} {{
+  %h = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_addc_i32(i32 %h, i32 %k){ry}
+  %n = sub i32 0, %k
+  call void @cqrt_addc_i32(i32 %h, i32 %n)
+  call void @cqrt_free(i32 %h)
+  ret void
+}}
+"""
+_CL = " !cq.classical.params !0"
+_MD0 = "!0 = !{i32 0}\n"
+VOUCH_CASES = [  # (name, text, expect_clean)
+    ("vouch-entry", _VOUCH_HDR + _VOUCH_F.format(md=_CL, ry="") + _MD0, True),
+    ("vouch-classical-caller", _VOUCH_HDR + _VOUCH_F.format(md=_CL, ry="")
+     + "define i32 @main(i32 %a) !cq.classical.params !0 {\n"
+       "  %b = add i32 %a, 1\n  call void @f(i32 %b)\n"
+       "  call void @f(i32 %a)\n  ret i32 0\n}\n" + _MD0, True),
+    ("vouch-null-no-claim", _VOUCH_HDR + _VOUCH_F.format(md="", ry=""), False),
+    ("vouch-null-rail-caller", _VOUCH_HDR + _VOUCH_F.format(md=_CL, ry="")
+     + "define i32 @main() {\n  %r = call i32 @cqrt_alloc_i32(i32 0)\n"
+       "  call void @cqrt_ry_i32(i32 %r, double 5.000000e-01)\n"
+       "  call void @f(i32 %r)\n  %m = call i32 @cqrt_measure_i32(i32 %r)\n"
+       "  ret i32 %m\n}\n" + _MD0, False),
+    ("vouch-null-used-as-rail", _VOUCH_HDR + _VOUCH_F.format(
+        md=_CL, ry="\n  call void @cqrt_ry_i32(i32 %k, double 5.000000e-01)")
+     + _MD0, False),
+]
+
+
 def findings(text):
     try:
         f, _v, _s, _p, _c = fpc.check_module(text)
@@ -4451,6 +4490,17 @@ def main():
                          + f" — got {line!r}")
         elif verbose:
             print(f"  ok  censline  {name:32s} -> ok")
+
+    # ---- layer 2v: the per-parameter claim is CHECKED (bd dm7f.83.1) -------
+    for name, text, clean in VOUCH_CASES:
+        n_neg += 1
+        got = not findings(text)
+        if got != clean:
+            fails.append(f"VOUCH {name}: expected "
+                         f"{'clean' if clean else 'a finding'}, got "
+                         f"{'clean' if got else 'a finding'}")
+        elif verbose:
+            print(f"  ok  vouch     {name:32s} -> {'clean' if got else 'refused'}")
 
     # ---- layer 3: blank every line a verified proof rests on --------------
     exempt = 0

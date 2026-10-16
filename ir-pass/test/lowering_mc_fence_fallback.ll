@@ -23,7 +23,11 @@
 ; @cross_block    — G6, the modality half. The parent's use sits in a block that
 ;                   does NOT dominate the op's, so `provablyBefore` cannot show
 ;                   the use already ran. Unproven ⇒ out of place.
-; @arg_immediate  — G4. The immediate is a FORMAL PARAMETER. `cqrt_addc_<W>`
+; @arg_immediate  — WAS G4 (out of place). bd dm7f.83.1: G4 is RETIRED for a classical formal parameter. Stage 2b vouches
+; for it on the pass's `!cq.classical.params` claim, which it CHECKS (every
+; in-function use in a classical slot, every in-module caller classical;
+; free_pairing_check.py `vouched_params`), so the site converts IN PLACE.
+;                  (the historical G4 note follows) G4. The immediate is a FORMAL PARAMETER. `cqrt_addc_<W>`
 ;                   declares that slot classical, but at i32 both parameters are
 ;                   `int32_t` and the runtime prints the slot as a bare decimal —
 ;                   so a rail handle there is invisible to BOTH shipped gates.
@@ -47,23 +51,8 @@
 ; classified. The five positive widths are pinned by lowering_mc_addc_i{1,8,16,
 ; 32,64}.ll.
 ;
-; bd dm7f.83 (ruling-dm7f83-inplace-fence-refusal-loud-2026-10-16): FLIPPED TO
-; LOUD. A classical-immediate in-place site here is refused by the M-C fence
-; (`inPlaceFenceHolds`: G4's parameter immediate, G5 in a loop, or G6/G7 position)
-; while its handle is a DEAD USER REGISTER beside a KEPT result, so the old rail
-; would stand beside the result — the r2j3.33 wrong unitary the out-of-place
-; fallback used to ship with at most a warning. The in-place round now fails
-; loudly (InPlaceQQImm.cpp), as owner Q1 requires. The fixture's original
-; expectation is kept dormant: its RUN lines are spelled MC-CMD and no RUN line
-; reads its CHECK prefixes. RETIREMENT: restore them when the refused shape
-; converts (the dm7f.83 follow-up drops G4; G5-G7 refusals need their own
-; lowering).
-;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=DM7F83
-; DM7F83: error: {{.*}}cq in-place lowering: quantum reassignment of a dead register is not provable in place
-;
-; MC-CMD: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
-; MC-CMD: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
 ;
 ; NOT ONE in-place gate anywhere in this module — the single strongest assertion
 ; this file makes, and the one that goes red if the fence is widened:
@@ -118,7 +107,8 @@ merge:
 }
 
 ; CHECK-LABEL: define i32 @arg_immediate
-; CHECK:       call i32 @cq_template_add_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 %k)
+; CHECK:       call void @cqrt_addc_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %k)
+; CHECK-NOT:   cq_template_add_i32_hl
 define i32 @arg_immediate(i32 %u0, i32 %k) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)

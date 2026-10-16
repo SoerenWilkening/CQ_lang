@@ -878,7 +878,18 @@ bool inPlaceFenceHolds(const Instruction *Site, const Value *P, const Value *Imm
   // (`slice_control_seq_grover`'s own `off`) and ordinary classical arithmetic
   // both pass. So the ONE shape we must keep out-of-place is a formal-argument
   // immediate: converting it would turn a green slice into a stage-2b UNPROVEN.
-  if (isa<Argument>(Imm))
+  //
+  // bd dm7f.83.1 (the follow-up): stage 2b now vouches for a CLASSICAL formal
+  // parameter on pass-emitted per-parameter evidence it CHECKS
+  // (`!cq.classical.params`, `tagClassicalParams`; free_pairing_check.py
+  // `vouched_params`: every in-function use sits in a classical slot and every
+  // in-module call site passes a provably-classical value). So G4 refuses only a
+  // parameter the pass itself knows is a HANDLE slot (a lifted clone's quantum
+  // argument) — which cannot be an untainted immediate anyway; asked of the
+  // owning record, `SpecHandleArgMask`.
+  if (const auto *A = dyn_cast<Argument>(Imm);
+      A && (A->getArgNo() >= 64 ||
+            (taint.SpecHandleArgMask.lookup(A->getParent()) >> A->getArgNo() & 1)))
     return false;
 
   // G5–G7 — the positional half, shared with the quantum-source in-place round

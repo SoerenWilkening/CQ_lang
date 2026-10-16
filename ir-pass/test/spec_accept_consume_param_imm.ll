@@ -3,9 +3,10 @@
 ; `h(a,k) = a + k`, `q` dead and rotated, `m` a classical parameter: the call is
 ; consumed, and the consumer's body applies `cqrt_addc_i32(t, k)` — `k` is a
 ; non-handle slot of the clone, classical by the specializer's handle mask, so the
-; G4 worry (a rail in the immediate slot) cannot arise. The INLINED half is LOUD:
-; lowering_mc_dead_register_param_imm_phi_reject.ll. RETIREMENT TRIGGER (dm7f.83
-; follow-up): the cell closes when the inlined half accepts in place.
+; G4 worry (a rail in the immediate slot) cannot arise; stage 2b vouches for `k`
+; on the checked `!cq.classical.params` claim (bd dm7f.83.1). The INLINED half is
+; in place too (lowering_mc_dead_register_param_imm_phi_accept.ll): the twin cell
+; is closed.
 ;
 ; Source: n3.c (lane L scratch), clang-19 -O1 -include CQ.h.
 ;

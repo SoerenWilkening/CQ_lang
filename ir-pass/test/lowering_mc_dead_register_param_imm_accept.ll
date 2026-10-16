@@ -1,21 +1,30 @@
-; lowering_mc_dead_register_param_imm_phi_reject.ll — DECLINE, loud (bd
-; test_C_libtooling-dm7f.83): the reporter's shape, the inlined twin of
-; slice_spec_lift_quantum_base.c — `t = q + m` (q dead, m a parameter) feeding a
-; one-register merge phi whose arm rotates it. The same G4 refusal as
-; lowering_mc_dead_register_param_imm_reject.ll; the phi is not the cause.
-; THE TWIN CELL (recorded per the ruling): INLINED `t = q + m` -> LOUD (here);
-; LIFTED `t = h(q, m)`, `h(a,k) = a + k` -> ACCEPT in place
-; (spec_accept_consume_param_imm.ll: the consuming clone's body applies
-; `cqrt_addc_i32(t, k)` with `k` a parameter the clone's handle mask proves
-; classical). RETIREMENT TRIGGER (bd dm7f.83 follow-up): when stage 2b vouches for
-; a classical parameter immediate on positive pass-emitted evidence and G4 is
-; dropped, this fixture becomes the in-place accept and the cell closes.
+; lowering_mc_dead_register_param_imm_accept.ll — ACCEPT, in place (bd
+; test_C_libtooling-dm7f.83.1). `int t = q + m; cq_theta(&t, .2)` with `q` a
+; dead rotated register and `m` a function PARAMETER. WAS (main ef72239c):
+; out of place, `q`'s old rail beside the kept `t`, then Ry on `t` (the r2j3.33
+; wrong unitary, warning only); (5df5cd77, dm7f.83): loud, G4 refused the
+; parameter immediate. NOW G4 is retired for a classical parameter: the pass
+; claims `!cq.classical.params` and stage 2b vouches after CHECKING it
+; (free_pairing_check.py `vouched_params`), so `t = q + m` is `cqrt_addc_i32(q, m)`
+; on q's own rail and the Ry follows on it — the textbook circuit
+; alloc; Ry(.5); addc(m); Ry(.2); measure. The twin cell closes: the lifted
+; `t = h(q, m)` (spec_accept_consume_param_imm.ll) is in place too.
 ;
-; Source: n2.c (lane L scratch), clang-19 -O1 -include CQ.h.
+; Source: n1.c (lane L scratch), clang-19 -O1 -include CQ.h.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error: {{.*}}cq in-place lowering: quantum reassignment of a dead register is not provable in place
-source_filename = "n2.c"
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+;
+; CHECK-LABEL: define i32 @slice(
+; CHECK-SAME:  !cq.classical.params [[MD:![0-9]+]]
+; CHECK:      [[H:%[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 %0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[H]], double 5.000000e-01)
+; CHECK-NEXT: call void @cqrt_addc_i32(i32 [[H]], i32 %0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[H]], double 2.000000e-01)
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 [[H]])
+; CHECK-NOT:  cq_template_add_i32_hl
+; CHECK:      [[MD]] = !{i32 0}
+source_filename = "n1.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 
@@ -23,17 +32,9 @@ target triple = "x86_64-apple-macosx16.0.0"
 define i32 @slice(i32 noundef %0) local_unnamed_addr #0 {
   %2 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef 5.000000e-01) #3
   %3 = add nsw i32 %2, %0
-  %4 = icmp sgt i32 %0, 3
-  br i1 %4, label %5, label %7
-
-5:                                                ; preds = %1
-  %6 = tail call i32 @cq_theta_si32(i32 noundef %3, double noundef 2.000000e-01) #3
-  br label %7
-
-7:                                                ; preds = %5, %1
-  %8 = phi i32 [ %6, %5 ], [ %3, %1 ]
-  %9 = tail call i32 @cq_measure_si32(i32 noundef %8) #4
-  ret i32 %9
+  %4 = tail call i32 @cq_theta_si32(i32 noundef %3, double noundef 2.000000e-01) #3
+  %5 = tail call i32 @cq_measure_si32(i32 noundef %4) #4
+  ret i32 %5
 }
 
 declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr #1

@@ -17,13 +17,22 @@
 
 #include "InPlaceQQ.h"
 
-#include "ArithLowering.h"  // isLateImmediateReassignSite / railZeroedAndReleased
+#include "ArithLowering.h"
+#include "RailWindow.h"       // railWindowReachesAvoiding  // isLateImmediateReassignSite / railZeroedAndReleased
 #include "TaintPropagation.h"
 #include "Uncomputation.h"  // planInteriorDischarges
 
+#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/PostDominators.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/DiagnosticInfo.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/IR/Metadata.h"
+#include "llvm/IR/Module.h"
 #include "llvm/IR/Instructions.h"
 
 #include <optional>
@@ -32,9 +41,44 @@ using namespace llvm;
 
 namespace cq {
 
-bool qqDeadUserRegisterOperand(const CallInst *T, unsigned Idx) {
-  return (deadOperandMask(T) >> Idx & 1u) &&
-         qqTargetIsUserData(T, T->getArgOperand(Idx));
+// bd dm7f.83 R11 r1 (rD1-F2) — the CONVERSE of `usersBefore`, and the one
+// spelling of "the REGISTER is provably live after `At`": some other user of
+// the rail `V` (a later Ry, template read, measure — the lowered IR names the
+// rail by ONE handle across `cq_theta`'s new SSA names) runs after `At` on a
+// path that does not first re-execute `V`'s own definition (a next trip's
+// fresh rail is a different register). `usersBefore` answers "PROVEN dead" and
+// is conservative in loops; this answers "PROVEN live" and is conservative the
+// other way, so a loud rule keyed on deadness keys on `!registerLiveAfter`.
+bool registerLiveAfter(const Value *V, const Instruction *At) {
+  SmallPtrSet<const Instruction *, 1> Barriers;
+  if (const auto *VI = dyn_cast<Instruction>(V))
+    Barriers.insert(VI);
+  for (const User *U : V->users()) {
+    const auto *UI = dyn_cast<Instruction>(U);
+    if (!UI || UI == At)
+      continue;
+    if (railWindowReachesAvoiding(At, UI, Barriers))
+      return true;
+  }
+  return false;
+}
+
+// The SSA bit alone is not register deadness: `v = q + 3; cq_theta(&q, .)`
+// marks `%q` dead while the theta rotates the SAME rail under a new name (and
+// an `icmp` on the new name reads it). Such a register is LIVE: out of place is
+// the program. Asked of the lowered handle by `registerLiveAfter` (PROVEN
+// live, so a loop's per-trip fresh rail stays dead: it never re-reads the old
+// register), here so every caller of this spelling gets it (R12). Measured:
+// 19 of the 23 dm7f.83 flips were refusals on such live registers
+// (laneL/dm7f83_flips.md); the rest are G4 (dm7f.83.1) and G7 (dead, a prior
+// reader unsettled: still loud, the real r2j3.33 population).
+bool qqDeadUserRegisterOperand(const CallInst *T, unsigned Idx,
+                               const DominatorTree &DT, const LoopInfo &LI) {
+  (void)DT;
+  (void)LI;
+  Value *V = T->getArgOperand(Idx);
+  return (deadOperandMask(T) >> Idx & 1u) && qqTargetIsUserData(T, V) &&
+         !registerLiveAfter(V, T);
 }
 
 bool qqResultKept(CallInst *T, const TaintSet &taint, Function &F,
@@ -46,6 +90,8 @@ bool qqResultKept(CallInst *T, const TaintSet &taint, Function &F,
 bool declineRefusedImmediateReassignments(Function &F, TaintSet &taint) {
   std::optional<PostDominatorTree> PDT;
   std::optional<InteriorDischargePlan> Plan;
+  DominatorTree DT(F);
+  LoopInfo LI(DT);
   for (BasicBlock &BB : F)
     for (Instruction &I : BB) {
       auto *C = dyn_cast<CallInst>(&I);
@@ -54,8 +100,10 @@ bool declineRefusedImmediateReassignments(Function &F, TaintSet &taint) {
         continue;
       // The handle is slot 0 of `_hl`. A dead φ not provably one wire that is
       // user data is refused like the QQ round's B-F1 row.
-      const bool Dead = qqDeadUserRegisterOperand(C, 0) ||
-                        ((unprovenPhiOperandMask(C) & 1u) && railIsUserData(P));
+      const bool Dead =
+          qqDeadUserRegisterOperand(C, 0, DT, LI) ||
+          ((unprovenPhiOperandMask(C) & 1u) && railIsUserData(P) &&
+           !registerLiveAfter(P, C));
       if (!Dead)
         continue;
       if (!PDT) {
@@ -69,6 +117,57 @@ bool declineRefusedImmediateReassignments(Function &F, TaintSet &taint) {
       return true;
     }
   return false;
+}
+
+// bd dm7f.83.1: `!cq.classical.params !{i32 k...}` — the integer formal
+// parameters stage 2b needs vouched, and only those (emitting it everywhere
+// renumbered every module's metadata): a parameter a lowered gate reads RAW in
+// a classical-immediate slot (`cqrt_addc`/`cqrt_xorc` slot 1), closed over
+// callers that pass their own parameter RAW into such a parameter. Never a
+// handle slot (`SpecHandleArgMask`: a lifted clone's quantum arguments; any
+// other function receives no handle, since a tainted argument retargets the
+// call to a clone). A CLAIM stage 2b checks before it vouches, never trusts.
+void tagClassicalParams(Module &M, const TaintSet &taint) {
+  DenseMap<Function *, uint64_t> Need;
+  auto classical = [&](const Argument *A) {
+    return A->getArgNo() < 64 && A->getType()->isIntegerTy() &&
+           !(taint.SpecHandleArgMask.lookup(A->getParent()) >> A->getArgNo() & 1);
+  };
+  for (Function &F : M)
+    for (Instruction &I : instructions(F))
+      if (auto *C = dyn_cast<CallInst>(&I))
+        if (Function *G = C->getCalledFunction();
+            G && C->arg_size() == 2 &&
+            (G->getName().starts_with("cqrt_addc_") ||
+             G->getName().starts_with("cqrt_xorc_")))
+          if (auto *A = dyn_cast<Argument>(C->getArgOperand(1));
+              A && classical(A))
+            Need[&F] |= uint64_t(1) << A->getArgNo();
+  for (bool Changed = true; Changed;) {
+    Changed = false;
+    for (Function &F : M)
+      for (Instruction &I : instructions(F))
+        if (auto *C = dyn_cast<CallInst>(&I)) {
+          Function *G = C->getCalledFunction();
+          const uint64_t GN = G ? Need.lookup(G) : 0;
+          for (unsigned K = 0; GN && K < C->arg_size() && K < 64; ++K)
+            if (auto *A = dyn_cast<Argument>(C->getArgOperand(K));
+                A && (GN >> K & 1) && classical(A) &&
+                !(Need.lookup(&F) >> A->getArgNo() & 1)) {
+              Need[&F] |= uint64_t(1) << A->getArgNo();
+              Changed = true;
+            }
+        }
+  }
+  LLVMContext &Ctx = M.getContext();
+  for (auto &[F, Mask] : Need) {
+    SmallVector<Metadata *, 4> Ops;
+    for (unsigned K = 0; K < 64; ++K)
+      if (Mask >> K & 1)
+        Ops.push_back(ConstantAsMetadata::get(
+            ConstantInt::get(Type::getInt32Ty(Ctx), K)));
+    F->setMetadata("cq.classical.params", MDNode::get(Ctx, Ops));
+  }
 }
 
 }  // namespace cq
