@@ -10,11 +10,15 @@
 ; (owner ruling owner-ruling-r2j3-7-main-dead-record-2026-10-16) BOTH sites follow
 ; ONE reference, the dead-record discipline: `Insert`, the taped temporary is
 ; reversed/discharged right after the print (`_unc` + free), BEFORE the later Ry on
-; `a`, which equals in place followed by that discharge. Analytic (independent of
-; `t`'s angle): P(a=0) = cos^2(.25)cos^2(.35) + sin^2(.25)sin^2(.35) = 0.835606.
+; `a`, which equals in place followed by that discharge. `cqrt_ry_i32` rotates
+; EVERY qubit (backend.md §11.3) and `^`, the print and the `_unc` act bitwise, so
+; the circuit is 32 independent copies of the 1-qubit one: per qubit of `a`,
+; P(bit=0) = cos^2(.25)cos^2(.35) + sin^2(.25)sin^2(.35) = 0.835606 (independent of
+; `t`'s angle), and P(a==0) = 0.835606^32 = 0.00319. Replayed exactly on the
+; `_Bool` and `signed char` twins (P(a==0) = p^8 = 0.237691 for i8).
 ; HISTORY: until r2j3.7, `main` followed FreePoint §2.6's live-to-exit register
-; file (`Escaped`: converted in place, never undone; P(a=0) = 0.789941 at these
-; angles —
+; file (`Escaped`: converted in place, never undone; per qubit P(bit=0) = 0.789941
+; at these angles, P(a==0) = 0.789941^32 —
 ; the delegated ruling ruling-dm7f51-main-vs-helper-2026-10-15 kept both; the owner
 ; replaced it). `main` now also reverse-plays the dead `t` root (`Ry(-.3)`, left
 ; allocated: a dead register's local unitary, R5).

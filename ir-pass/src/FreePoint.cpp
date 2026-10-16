@@ -94,7 +94,8 @@ void diagnose(Instruction *Where, StringRef Msg) {
 // caller, process exit reclaims the registers", PRD §2.6), which left every dead
 // record of `main` standing to exit: a later non-diagonal gate or measurement of
 // its sources then acted on a register entangled with it (`t ^= a; printf(t);
-// Ry(&a)`: P(a=0) 0.790 in `main` vs 0.836 in a helper). Process exit is not an
+// Ry(&a)`: per qubit of `a` (Ry is tensored, backend.md §11.3) P(bit=0) 0.790
+// in `main` vs 0.836 in a helper). Process exit is not an
 // observation the program makes; the reversal point is the last use, as in a
 // helper. A tainted `ret` of `main` is declined upstream (bd r2j3.35).
 bool isRecognizedEscapeUser(const User *U) {

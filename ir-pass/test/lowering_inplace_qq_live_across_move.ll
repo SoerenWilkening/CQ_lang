@@ -18,9 +18,12 @@
 ; taped result, gets `Insert` (a free point after the print exists) and keeps it
 ; OUT OF PLACE, assuming the spine discharges it — but the spine's frontier planner
 ; then keeps it as a forced record. Result: old `t` rail AND `t ^ a` rail both live,
-; `a` fully recorded. Scratch replay: P(a=0) = 0.835606 lowered, 0.775469 in place
-; (= sum_u |sum_a alpha_a beta_{u^a} <0|Ry(.7)|a>|^2, alpha = Ry(.5)|0>,
-; beta = Ry(.4)|0>). `opt` rc 0, stage 2b clean: a verify-clean silent miscompile.
+; `a` fully recorded. `cqrt_ry_i32` rotates EVERY qubit (backend.md §11.3) and the
+; rest acts bitwise, so the numbers are per qubit of `a` (P(a==0) is their 32nd
+; power): P(bit=0) = 0.835606 lowered vs 0.775469 in place (= sum_u |sum_a
+; alpha_a beta_{u^a} <0|Ry(.7)|a>|^2, alpha = Ry(.5)|0>, beta = Ry(.4)|0>);
+; P(a==0) = 0.00319 vs 0.000292. Replayed exactly on the `_Bool` twin. `opt` rc 0,
+; stage 2b clean: a verify-clean silent miscompile.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll
