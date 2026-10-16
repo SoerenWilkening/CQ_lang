@@ -2324,7 +2324,27 @@ _IV_FORMS = [
     ("exit-edge-uge-x", "icmp uge i64 %l, 5", "label %exit, label %body", 5),
     ("exit-edge-eq-n", "icmp eq i64 %l1, 5", "label %exit, label %body", 4),
 ]
-IV_BOUND_POSITIVE = [
+# bd 01po.19.34.9: a RUNTIME `ne` bound, `%l1 != zext i32 %n`: %l ends at
+# 2^32 - 2 at most (the nuw walk stops at the bound from below), so cell
+# 2^32 - 1 is one beyond and 2^32 - 2 is the last value; an unbounded i64
+# bound (%m) proves nothing.
+_RT_NE = "icmp ne i64 %l1, %nb"
+
+
+def _iv_bound_rt(cell, bound="zext i32 %n to i64"):
+    return _iv_bound(cell, _RT_NE).replace(
+        "  br label %body\nbody:", f"  %nb = {bound}\n  br label %body\nbody:", 1)
+
+
+IV_BOUND_POSITIVE_RT = [
+    ("window-cell-iv-ne-runtime-bound-one-beyond", _iv_bound_rt(4294967295))]
+IV_BOUND_MUTANTS_RT = [
+    ("window-cell-iv-ne-runtime-bound-last-value", _iv_bound_rt(4294967294),
+     "B1-input-aliases-written-rail"),
+    ("window-cell-iv-ne-runtime-bound-unbounded",
+     _iv_bound_rt(4294967295, "add i64 %m, 0"), "B1-input-aliases-written-rail")]
+
+IV_BOUND_POSITIVE = IV_BOUND_POSITIVE_RT + [
     (f"window-cell-iv-{f}-one-beyond", _iv_bound(last + 1, cmp, br))
     for f, cmp, br, last in _IV_FORMS]
 IV_BOUND_MUTANTS = [
@@ -2334,7 +2354,7 @@ IV_BOUND_MUTANTS = [
     # a constant offset of 2^62 + 5 cells wraps onto cell 5 = the last value.
     ("window-cell-iv-offset-near-2^62",
      _iv_bound(4611686018427387909, "icmp ne i64 %l1, 6"),
-     "B1-input-aliases-written-rail")]
+     "B1-input-aliases-written-rail")] + IV_BOUND_MUTANTS_RT
 
 # bd 01po.19.34.4 (R11 round 1 C-F1) — THE TRIANGULAR NEST `for i in 1..3
 # { for j < i { if (q[j]) Ry(q[i]) } }`: the control cell %j and the target

@@ -4195,6 +4195,14 @@ def _iv_range(fn, x):
         vmax = ub
     elif pred == "ne" and c == 1 and re.fullmatch(r"\d+", b) and s < int(b):
         vmax = int(b) - 1    # step 1 from below b: stays only while != b
+    elif pred == "ne" and c == 1 and not re.fullmatch(r"-?\d+", b):
+        # bd 01po.19.34.9: a RUNTIME bound b with a proven upper bound ub. The
+        # step is `add nuw`, so the counter can never wrap: a walk that misses
+        # b would reach the wrap, whose poison feeds this very branch (UB).
+        # Every defined execution therefore stops AT b from below, and the
+        # compared value while staying is at most ub - 1 — the same reading of
+        # `nuw` the lower bound s already rests on.
+        vmax = ub - 1
     else:
         return None
     hi = max(s, vmax + c if a == x else vmax)
