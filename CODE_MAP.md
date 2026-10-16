@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 872 maintained source files, 7001 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 873 maintained source files, 7006 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -792,6 +792,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LoopAccumulatorDead.cpp:126` — `runsAfterInTrip`
 - `ir-pass/src/LoopAccumulatorDead.cpp:147` — `cellArrays`
 - `ir-pass/src/LoopAccumulatorDead.cpp:163` — `declineDeadAccumulatorMoves`
+
+### `ir-pass/src/LoopAccumulatorFacts.cpp` (180 lines)
+
+- `ir-pass/src/LoopAccumulatorFacts.cpp:24` — `cellMayBeRecorded`
+- `ir-pass/src/LoopAccumulatorFacts.cpp:52` — `arrayEscapes`
+- `ir-pass/src/LoopAccumulatorFacts.cpp:80` — `reachesAvoiding`
+- `ir-pass/src/LoopAccumulatorFacts.cpp:100` — `cellsDisjointAcrossEntries`
+- `ir-pass/src/LoopAccumulatorFacts.cpp:155` — `deadAfter`
 
 ### `ir-pass/src/LoopLowering.cpp` (8474 lines)
 
