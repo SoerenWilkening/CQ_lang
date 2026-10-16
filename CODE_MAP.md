@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 866 maintained source files, 6986 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 866 maintained source files, 6979 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -77,7 +77,6 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/AngleSelectEmit.cpp` — 575 physical lines
 - `tests/e2e/slice_libm_real_acoshl.c` — 575 physical lines
 - `ir-pass/src/IntrinsicLowering.cpp` — 565 physical lines
-- `ir-pass/src/RailWindowAlias.cpp` — 557 physical lines
 - `ir-pass/src/EmitInverse.cpp` — 552 physical lines
 - `ir-pass/include/RailBankPromote.h` — 536 physical lines
 - `ir-pass/src/CompareLowering.cpp` — 535 physical lines
@@ -1158,27 +1157,20 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RailWindow.cpp:165` — `claims`
 - `ir-pass/src/RailWindow.cpp:239` — `lowerRailWindowArrays`
 
-### `ir-pass/src/RailWindowAlias.cpp` (557 lines)
+### `ir-pass/src/RailWindowAlias.cpp` (394 lines)
 
 - `ir-pass/src/RailWindowAlias.cpp:32` — `railWindowCompareIsCellEquality`
 - `ir-pass/src/RailWindowAlias.cpp:81` — `railWindowEdgeFact`
-- `ir-pass/src/RailWindowAlias.cpp:138` — `nonZeroAtEntry`
-- `ir-pass/src/RailWindowAlias.cpp:144` — `signAtEntry`
-- `ir-pass/src/RailWindowAlias.cpp:157` — `monotoneEnds`
-- `ir-pass/src/RailWindowAlias.cpp:194` — `walkWithin`
-- `ir-pass/src/RailWindowAlias.cpp:212` — `wideCounterpart`
-- `ir-pass/src/RailWindowAlias.cpp:235` — `visitZeroExtendExpr`
-- `ir-pass/src/RailWindowAlias.cpp:252` — `nonZeroOverLoop`
-- `ir-pass/src/RailWindowAlias.cpp:277` — `railWindowDistinct`
-- `ir-pass/src/RailWindowAlias.cpp:295` — `railWindowPairProven`
-- `ir-pass/src/RailWindowAlias.cpp:311` — `railWindowUnprovenPair`
-- `ir-pass/src/RailWindowAlias.cpp:366` — `isThetaCall`
-- `ir-pass/src/RailWindowAlias.cpp:378` — `markFamily`
-- `ir-pass/src/RailWindowAlias.cpp:417` — `classReads`
-- `ir-pass/src/RailWindowAlias.cpp:446` — `railWindowSelfControl`
-- `ir-pass/src/RailWindowAlias.cpp:505` — `computeWindowRegions`
-- `ir-pass/src/RailWindowAlias.cpp:537` — `railWindowPlanSeedPoint`
-- `ir-pass/src/RailWindowAlias.cpp:547` — `railWindowPlanPoints`
+- `ir-pass/src/RailWindowAlias.cpp:114` — `railWindowDistinct`
+- `ir-pass/src/RailWindowAlias.cpp:132` — `railWindowPairProven`
+- `ir-pass/src/RailWindowAlias.cpp:148` — `railWindowUnprovenPair`
+- `ir-pass/src/RailWindowAlias.cpp:203` — `isThetaCall`
+- `ir-pass/src/RailWindowAlias.cpp:215` — `markFamily`
+- `ir-pass/src/RailWindowAlias.cpp:254` — `classReads`
+- `ir-pass/src/RailWindowAlias.cpp:283` — `railWindowSelfControl`
+- `ir-pass/src/RailWindowAlias.cpp:342` — `computeWindowRegions`
+- `ir-pass/src/RailWindowAlias.cpp:374` — `railWindowPlanSeedPoint`
+- `ir-pass/src/RailWindowAlias.cpp:384` — `railWindowPlanPoints`
 
 ### `ir-pass/src/RailWindowArms.cpp` (365 lines)
 
