@@ -301,7 +301,9 @@ bool rewriteBinary(BinaryOperator *bo, WidthDispatch &wd, TaintSet &taint) {
     T->setDebugLoc(DL);
   // bd r2j3.33: carry the pre-emission exclusive-reader record onto the QQ
   // template, remapped through the BirthOrder swap, for the late in-place round.
-  if (ShapeSel == Shape::QQ)
+  // bd dm7f.83: and onto the M-C `_hl` template, so the in-place round can ask
+  // whether a refused classical-immediate site leaves a DEAD register standing.
+  if (ShapeSel == Shape::QQ || ShapeSel == Shape::HL)
     transferDeadOperandMask(bo, T, /*Swapped=*/Lhs != A);
   // bd dm7f.77 — carry the register-condition tag to the template (remapped
   // through the BirthOrder swap, like the dead mask) for the late QQ round to
@@ -1187,6 +1189,19 @@ bool lateReassignShape(const CallInst *C, const TaintSet &taint,
 }
 
 }  // namespace
+
+bool isLateImmediateReassignSite(const CallInst *C, const TaintSet &taint,
+                                 Value *&P) {
+  Instruction::BinaryOps Op;
+  Value *Imm = nullptr;
+  StringRef W;
+  if (!lateReassignShape(C, taint, Op, P, Imm, W))
+    return false;
+  return !(taint.ControlOwnedRails.count(const_cast<CallInst *>(C)) ||
+           taint.OutputRails.count(const_cast<CallInst *>(C)) ||
+           taint.GraveyardRails.count(const_cast<CallInst *>(C)) ||
+           taint.UntaintedMergeRails.count(const_cast<CallInst *>(C)));
+}
 
 bool lowerLateReassignments(Module &M, WidthDispatch &wd, TaintSet &taint) {
   bool Changed = false;

@@ -81,6 +81,7 @@ add_library(CQPass MODULE
   src/InPlaceQQ.cpp
   src/InPlaceQQConsume.cpp   # bd r2j3.37.1: the consume decision.
   src/InPlaceQQGate.cpp      # bd r2j3.37.1: gate membership + slots.
+  src/InPlaceQQImm.cpp       # bd dm7f.83: the M-C refusal on a dead register.
   src/InPlaceQQRecord.cpp
   # bd dm7f.77: the register condition (dm7f.51 step 2, design D3).
   src/RegCondLeaf.cpp

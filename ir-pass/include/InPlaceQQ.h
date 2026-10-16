@@ -243,6 +243,21 @@ int consumeNextLiftedCall(llvm::Function &F, WidthDispatch &wd, TaintSet &taint,
 void stripConsumeTags(llvm::Module &M);
 void eraseUnusedConsumeAux(llvm::Module &M);
 
+// THE ONE SPELLING of the in-place rounds' two questions (InPlaceQQImm.cpp):
+// is operand `Idx` of the out-of-place template `T` a DEAD USER REGISTER (the
+// `!cq.qq.dead` record's bit and `qqTargetIsUserData`, E1+E2), and is `T`'s
+// result KEPT (no emitter or M-B plan discharges it and it survives, E3)?
+bool qqDeadUserRegisterOperand(const llvm::CallInst *T, unsigned Idx);
+struct InteriorDischargePlan;
+bool qqResultKept(llvm::CallInst *T, const TaintSet &taint, llvm::Function &F,
+                  llvm::PostDominatorTree &PDT, const InteriorDischargePlan &Plan);
+// bd dm7f.83 (ruling-dm7f83-inplace-fence-refusal-loud-2026-10-16): a
+// classical-immediate in-place site the M-C round left out of place
+// (`isLateImmediateReassignSite`: any `inPlaceFenceHolds` guard refused it, G4's
+// parameter immediate included) whose handle is a dead user register beside a
+// kept result fails LOUDLY (`kMsgInPlaceQQRefused`, owner Q1). True if loud.
+bool declineRefusedImmediateReassignments(llvm::Function &F, TaintSet &taint);
+
 // The round. Returns true if any site was converted. Strips every remaining
 // `!cq.qq.dead` record and `!cq.regcond` tag (bd dm7f.77) before returning.
 bool lowerInPlaceQQ(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);

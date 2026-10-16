@@ -285,6 +285,13 @@ llvm::CallInst *emitInPlaceImmediateGate(llvm::Instruction *Before,
                                          llvm::Value *Imm, llvm::StringRef W,
                                          WidthDispatch &wd);
 
+// bd dm7f.83: is `C` an out-of-place `cq_template_{add,sub,xor}_<W>_hl(P, imm)`
+// this pass minted (`lateReassignShape`, the late M-C round's own shape test,
+// with its emitter-owned-rail exclusions), `P` its handle? Asked by the in-place
+// round of the sites the M-C round left standing.
+bool isLateImmediateReassignSite(const llvm::CallInst *C, const TaintSet &taint,
+                                 llvm::Value *&P);
+
 bool inPlacePositionHolds(const llvm::Instruction *Site, const llvm::Value *P,
                           const TaintSet &taint, const llvm::DominatorTree &DT,
                           const llvm::LoopInfo &LI,

@@ -244,7 +244,7 @@ Outcome decideNext(Function &F, WidthDispatch &wd, TaintSet &taint,
     // it is never dead: the `0` is a fresh rail.)
     SmallVector<unsigned, 2> Eligible;
     for (unsigned Idx = 0; Idx < 2; ++Idx)  // a cell: bd 01po.19 S5
-      if ((S.Mask >> Idx & 1u) && qqTargetIsUserData(S.C, S.C->getArgOperand(Idx)))
+      if (qqDeadUserRegisterOperand(S.C, Idx))
         Eligible.push_back(Idx);
     // (E2′) bd dm7f.77 — design D5 ("%8 then in place on f's rail"): a dead
     // FRESH register-condition TEMPLATE (the commit tag: the out-of-place xor the
@@ -273,8 +273,7 @@ Outcome decideNext(Function &F, WidthDispatch &wd, TaintSet &taint,
     // (FRESH: its own rail; else the tagged target). Any other conversion puts
     // the condition on a wire nobody asked about: LOUD when Q1 demands one.
     // The RESULT survives (see the comment at the gate below).
-    const bool Kept = !(railZeroedAndReleased(S.C, nullptr, nullptr) ||
-                        Plan.GateAt.count(S.C) || !survives(S.C, taint, F, PDT));
+    const bool Kept = qqResultKept(S.C, taint, F, PDT, Plan);
     auto loud = [&](const char *Msg) {
       F.getContext().diagnose(
           DiagnosticInfoUnsupported(F, Msg, S.C->getDebugLoc()));
@@ -382,6 +381,9 @@ bool lowerInPlaceQQ(Module &M, WidthDispatch &wd, TaintSet &taint) {
       if (C == 0)
         break;
     }
+    // bd dm7f.83: an M-C refusal on a dead user register beside a kept result.
+    if (declineRefusedImmediateReassignments(F, taint))
+      return Changed;
   }
   stripConsumeTags(M);
   for (Function &F : M)

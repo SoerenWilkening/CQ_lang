@@ -32,9 +32,24 @@
 ;   clang -O1 -emit-llvm -S lib.c -o lib.ll      (plain C, no CQ.h)
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>
 ;
-; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
-; RUN: %filecheck %s < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=NODROP --allow-empty < %t.err
+; bd dm7f.83 (ruling-dm7f83-inplace-fence-refusal-loud-2026-10-16): FLIPPED TO
+; LOUD. A classical-immediate in-place site here is refused by the M-C fence
+; (`inPlaceFenceHolds`: G4's parameter immediate, G5 in a loop, or G6/G7 position)
+; while its handle is a DEAD USER REGISTER beside a KEPT result, so the old rail
+; would stand beside the result — the r2j3.33 wrong unitary the out-of-place
+; fallback used to ship with at most a warning. The in-place round now fails
+; loudly (InPlaceQQImm.cpp), as owner Q1 requires. The fixture's original
+; expectation is kept dormant: its RUN lines are spelled MC-CMD and no RUN line
+; reads its CHECK prefixes. RETIREMENT: restore them when the refused shape
+; converts (the dm7f.83 follow-up drops G4; G5-G7 refusals need their own
+; lowering).
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=DM7F83
+; DM7F83: error: {{.*}}cq in-place lowering: quantum reassignment of a dead register is not provable in place
+;
+; MC-CMD: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
+; MC-CMD: %filecheck %s < %t.cqd0.ll
+; MC-CMD: %filecheck %s --check-prefix=NODROP --allow-empty < %t.err
 ; CHECK-LABEL: define i32 @main(
 ; CHECK:      [[Q:%[a-z0-9.]+]] = call i32 @cqrt_alloc_i32(i32 %{{[0-9]+}})
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q]], double 5.000000e-01)

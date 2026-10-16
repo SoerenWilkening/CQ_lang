@@ -16,8 +16,23 @@
 ; or reverse-played). Reviewed by trace, not by green:
 ; a per-iteration `int q[8]`: every trip re-materializes 8 rails at its lifetime.start (the previous trip's left allocated); `q[i]=k; q[i]=theta(k)^1` keeps only the last store (promotion), the theta mints alloc(k) and the cell holds the xor template rail, which is measured. Traced for argc=1.
 ; The S4 prefix pins the whole emitted runtime stream and that no rail is freed.
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s --check-prefix=S4 --implicit-check-not=cqrt_free --implicit-check-not='error:'
+; bd dm7f.83 (ruling-dm7f83-inplace-fence-refusal-loud-2026-10-16): FLIPPED TO
+; LOUD. A classical-immediate in-place site here is refused by the M-C fence
+; (`inPlaceFenceHolds`: G4's parameter immediate, G5 in a loop, or G6/G7 position)
+; while its handle is a DEAD USER REGISTER beside a KEPT result, so the old rail
+; would stand beside the result — the r2j3.33 wrong unitary the out-of-place
+; fallback used to ship with at most a warning. The in-place round now fails
+; loudly (InPlaceQQImm.cpp), as owner Q1 requires. The fixture's original
+; expectation is kept dormant: its RUN lines are spelled MC-CMD and no RUN line
+; reads its CHECK prefixes. RETIREMENT: restore them when the refused shape
+; converts (the dm7f.83 follow-up drops G4; G5-G7 refusals need their own
+; lowering).
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=DM7F83
+; DM7F83: error: {{.*}}cq in-place lowering: quantum reassignment of a dead register is not provable in place
+;
+; MC-CMD: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; MC-CMD:   | %filecheck %s --check-prefix=S4 --implicit-check-not=cqrt_free --implicit-check-not='error:'
 ; S4-LABEL: define {{.*}} @main(
 ; S4: %.rails = alloca i32, i64 8, align 4, !cq.railwindow !6
 ; S4: %h2 = call i32 @cqrt_alloc_i32(i32 0)
@@ -28,8 +43,8 @@
 ; S4: store i32 %h_op, ptr %cq.rail.addr, align 4
 ; S4: %.rail = load i32, ptr %cq.rail.addr1, align 4
 ; S4: %m = call i32 @cqrt_measure_i32(i32 %.rail)
-; RUN: env CQ_RAILWINDOW_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
-; RUN:   | %filecheck %s --check-prefix=WIN
+; MC-CMD: env CQ_RAILWINDOW_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
+; MC-CMD:   | %filecheck %s --check-prefix=WIN
 ; WIN: CQ_RAILWINDOW_DBG: @main claims %2 cells=i32 loads=1 stores=2 Q=  call void @llvm.lifetime.start.p0(i64 32, ptr nonnull %2) #4
 ; WIN: CQ_RAILWINDOW_DBG: promote cell {%.rails,+,4}<nw><%18> in region %18 loads=0 stores=2 exits=1
 ; WIN: CQ_RAILWINDOW_DBG: promoted 1 cell class(es)
