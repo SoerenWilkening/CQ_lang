@@ -153,11 +153,27 @@ CallInst *emitInPlaceImmGate(Instruction *Site, Instruction::BinaryOps Op,
   // Directive). Unreachable through the shipped surface —
   // `lowering_mc_sub_fence_fallback.ll`'s `@classical_lhs` pins that `c - q`
   // never even reaches the fence's accept.
-  if (Op == Instruction::Sub && !HandleIsLhs) {
-    diagnoseNoTemplate(Site);
-    return nullptr;
-  }
   IRBuilder<> Builder(Site);
+  // bd r2j3.44 (R11 rD1-F1): `c - q` IN PLACE is `~q + (c + 1)` (two's
+  // complement: -q = ~q + 1): `cqrt_xorc_<W>(q, -1)` then `cqrt_addc_<W>(q, c+1)`,
+  // two classical-immediate permutations, so the adjoint spine reverses each.
+  if (Op == Instruction::Sub && !HandleIsLhs) {
+    FunctionCallee Not = wd.xorcFn(W);
+    if (!Not) {
+      diagnoseNoTemplate(Site);
+      return nullptr;
+    }
+    CallInst *N = Builder.CreateCall(
+        Not, {Handle, Constant::getAllOnesValue(Imm->getType())});
+    Value *K1 = Builder.CreateAdd(Imm, ConstantInt::get(Imm->getType(), 1),
+                                  "cq_subimm");
+    CallInst *C = Builder.CreateCall(Callee, {Handle, K1});
+    if (DebugLoc DL = Site->getDebugLoc()) {
+      N->setDebugLoc(DL);
+      C->setDebugLoc(DL);
+    }
+    return C;
+  }
   if (Op == Instruction::Sub)
     Imm = negateClassicalImmediate(Imm, Builder, Site);
   CallInst *C = Builder.CreateCall(Callee, {Handle, Imm});
@@ -303,8 +319,9 @@ bool rewriteBinary(BinaryOperator *bo, WidthDispatch &wd, TaintSet &taint) {
   // template, remapped through the BirthOrder swap, for the late in-place round.
   // bd dm7f.83: and onto the M-C `_hl` template, so the in-place round can ask
   // whether a refused classical-immediate site leaves a DEAD register standing.
-  if (ShapeSel == Shape::QQ || ShapeSel == Shape::HL)
-    transferDeadOperandMask(bo, T, /*Swapped=*/Lhs != A);
+  // bd r2j3.44: and onto `_lh` and `mul` templates, the injective-dead-target
+  // rule's other shapes (`m - q`, `q * odd`).
+  transferDeadOperandMask(bo, T, /*Swapped=*/Lhs != A);
   // bd dm7f.77 — carry the register-condition tag to the template (remapped
   // through the BirthOrder swap, like the dead mask) for the late QQ round to
   // honour, and mark the template as the condition's RAIL (`markRegCondRail`
@@ -1175,7 +1192,8 @@ bool lateReassignShape(const CallInst *C, const TaintSet &taint,
   StringRef N = Callee->getName();
   // Cheap pre-filter so the exact rebuild below is asked only of plausible
   // symbols; the rebuild, not this, is the authoritative test.
-  if (!N.starts_with("cq_template_") || !N.ends_with("_hl"))
+  if (!N.starts_with("cq_template_") ||
+      !(N.ends_with("_hl") || N.ends_with("_lh")))
     return false;
   StringRef Wl = taint.HandleWidth.lookup(const_cast<CallInst *>(C));
   if (Wl.empty())
@@ -1187,17 +1205,22 @@ bool lateReassignShape(const CallInst *C, const TaintSet &taint,
               {"sub", Instruction::Sub},
               {"xor", Instruction::Xor}};
   for (const auto &Row : Rows) {
-    if (N != StringRef(dataName(Row.Stem, Wl, Shape::HL)))
+    // bd r2j3.44 (R11 rD1-F1): `_lh` (classical LEFT, `m - q`) too — `add`/`xor`
+    // commute, and `m - q` has the in-place form `~q + (m+1)`
+    // (`emitInPlaceImmGate`). The handle slot is the TAINTED one.
+    const bool HL = N == StringRef(dataName(Row.Stem, Wl, Shape::HL));
+    if (!HL && N != StringRef(dataName(Row.Stem, Wl, Shape::LH)))
       continue;
     Value *A0 = C->getArgOperand(0), *A1 = C->getArgOperand(1);
-    // `_hl` means handle-left by construction, so this re-asserts rather than
-    // decides — but a mislabelled symbol must fall back to out-of-place, never
-    // put a rail in the classical immediate slot (G4's whole subject).
-    if (!taint.Tainted.count(A0) || taint.Tainted.count(A1))
+    Value *H = HL ? A0 : A1, *K = HL ? A1 : A0;
+    // The shape re-asserts which slot holds the handle — a mislabelled symbol
+    // must fall back to out-of-place, never put a rail in the classical
+    // immediate slot (G4's whole subject).
+    if (!taint.Tainted.count(H) || taint.Tainted.count(K))
       return false;
     Op = Row.Op;
-    P = A0;
-    Imm = A1;
+    P = H;
+    Imm = K;
     W = Wl;
     return true;
   }
@@ -1350,6 +1373,12 @@ bool lowerLateReassignments(Module &M, WidthDispatch &wd, TaintSet &taint) {
       StringRef W;
       if (!lateReassignShape(C, taint, Op, P, Imm, W))
         continue;  // unreachable — the pre-scan proved it; re-asked for `Op`/…
+      // bd r2j3.44: a `_lh` site (`m - q`) converts only on a USER register,
+      // the injective-dead-target hazard; on a compiler temporary out of place
+      // then its adjoint already IS in place (the dead-record ruling), and the
+      // shipped `_lh` goldens (ctlz idiom, libm) stay byte-identical.
+      if (C->getArgOperand(0) != P && !railIsUserData(P))
+        continue;
       if (inPlaceFenceHolds(C, P, Imm, Op, W, wd, taint, DT, LI, &Plan))
         Accepted.push_back(C);
     }
@@ -1363,7 +1392,8 @@ bool lowerLateReassignments(Module &M, WidthDispatch &wd, TaintSet &taint) {
       // `_hl` is handle-LEFT, so the `sub` direction test is satisfied by
       // construction; it is passed explicitly rather than hard-coded `true` so
       // the emitter keeps its own loud fallback (see `emitInPlaceReassign`).
-      if (!emitInPlaceReassign(C, Op, P, Imm, /*HandleIsLhs=*/true, W, wd))
+      if (!emitInPlaceReassign(C, Op, P, Imm,
+                               /*HandleIsLhs=*/C->getArgOperand(0) == P, W, wd))
         continue;  // diagnosed + left standing; never erase an un-lowered site.
       // The out-of-place rail is GONE: scrub every side table keyed on it before
       // the erase, or a `Value *`-keyed lookup at the reused address answers for

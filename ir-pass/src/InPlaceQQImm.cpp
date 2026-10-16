@@ -87,6 +87,21 @@ bool qqResultKept(CallInst *T, const TaintSet &taint, Function &F,
            !qqResultSurvives(T, taint, F, PDT));
 }
 
+// bd r2j3.44 (R11 rD1-F1) — the injective-dead-target rule's site set as built
+// so far: `add`/`sub`/`xor` with a classical immediate on EITHER side
+// (`isLateImmediateReassignSite`; `_lh` `m - q` converts in place as
+// `~q + (m+1)`), and that site's handle slot. An injective map of a dead user
+// register is lowered in place or the pass fails loudly. NOT YET HERE (bd
+// r2j3.44 follow-ups, measured population in the bd record): `mul` by an odd
+// constant and a widening `sext`/`zext`, which have no in-place lowering yet.
+// -1: not such a site.
+int injectiveDeadTargetSlot(const CallInst *C, const TaintSet &taint) {
+  Value *P = nullptr;
+  if (isLateImmediateReassignSite(C, taint, P))
+    return C->getArgOperand(0) == P ? 0 : 1;
+  return -1;
+}
+
 bool declineRefusedImmediateReassignments(Function &F, TaintSet &taint) {
   std::optional<PostDominatorTree> PDT;
   std::optional<InteriorDischargePlan> Plan;
@@ -95,14 +110,15 @@ bool declineRefusedImmediateReassignments(Function &F, TaintSet &taint) {
   for (BasicBlock &BB : F)
     for (Instruction &I : BB) {
       auto *C = dyn_cast<CallInst>(&I);
-      Value *P = nullptr;
-      if (!C || !isLateImmediateReassignSite(C, taint, P))
+      const int S = C ? injectiveDeadTargetSlot(C, taint) : -1;
+      if (S < 0)
         continue;
-      // The handle is slot 0 of `_hl`. A dead φ not provably one wire that is
-      // user data is refused like the QQ round's B-F1 row.
+      Value *P = C->getArgOperand(S);
+      // A dead φ not provably one wire that is user data is refused like the
+      // QQ round's B-F1 row.
       const bool Dead =
-          qqDeadUserRegisterOperand(C, 0, DT, LI) ||
-          ((unprovenPhiOperandMask(C) & 1u) && railIsUserData(P) &&
+          qqDeadUserRegisterOperand(C, S, DT, LI) ||
+          ((unprovenPhiOperandMask(C) >> S & 1u) && railIsUserData(P) &&
            !registerLiveAfter(P, C));
       if (!Dead)
         continue;
