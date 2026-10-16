@@ -23,6 +23,12 @@
 ; the arm's `ry`), because the arm gate does not dominate the add; a lifted read
 ; that cannot reach the gate is now absent at it, so DIAG pins its silence.
 ;
+; bd dm7f.83.4: NOW IN PLACE. The register is dead after the add, and its
+; earlier Ry sits in a classical arm that does not dominate the add; G6 used to
+; ask dominance (`provablyBefore`) and kept the add out of place, leaving the old
+; rail beside the result. G6 now asks "never after the add" (reachability,
+; `provablyNeverAfter`), so `cqrt_addc_i32` runs on the register's own rail.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.ll 2>&1 | %filecheck %s --check-prefix=DIAG --allow-empty
 ; RUN: %filecheck %s < %t.ll
 ; DIAG-NOT: error
@@ -31,8 +37,8 @@
 ; CHECK:      %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 7)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
 ; CHECK:      call void @cqrt_ry_i32(i32 %[[H]], double 1.250000e-01)
-; CHECK:      %[[V:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 3)
-; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[V]])
+; CHECK:      call void @cqrt_addc_i32(i32 %[[H]], i32 3)
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[H]])
 ; CHECK-NOT:  cqrt_free
 ; CHECK:      ret i32
 

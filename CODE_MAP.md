@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 872 maintained source files, 7022 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 872 maintained source files, 7023 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -18,8 +18,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArmClassify.cpp` — 10934 physical lines
 - `ir-pass/src/LoopLowering.cpp` — 8088 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5553 physical lines
-- `tools/free_pairing_check.py` — 4657 physical lines
-- `tools/free_pairing_check_test.py` — 4540 physical lines
+- `tools/free_pairing_check.py` — 4663 physical lines
+- `tools/free_pairing_check_test.py` — 4549 physical lines
 - `tools/loop_twin_matrix.py` — 4115 physical lines
 - `ir-pass/src/QramLowering.cpp` — 4069 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 3498 physical lines
@@ -41,7 +41,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `runtime/cq_runtime.c` — 1489 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
 - `ir-pass/src/Specialization.cpp` — 1409 physical lines
-- `ir-pass/src/ArithLowering.cpp` — 1388 physical lines
+- `ir-pass/src/ArithLowering.cpp` — 1393 physical lines
 - `tools/library_coverage/probe.py` — 1219 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
 - `ir-pass/src/ChainWalk.cpp` — 1169 physical lines
@@ -50,7 +50,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/BreakReversePlay.cpp` — 1004 physical lines
 - `ir-pass/src/ControlDetect.cpp` — 986 physical lines
 - `tools/trace_twin_equiv.py` — 964 physical lines
-- `ir-pass/src/WireWalk.cpp` — 948 physical lines
+- `ir-pass/src/WireWalk.cpp` — 953 physical lines
 - `tools/golden_multiset_audit_test.py` — 948 physical lines
 - `tools/record_census/shipped_guard_model.py` — 878 physical lines
 - `ir-pass/src/IOSinkLowering.cpp` — 860 physical lines
@@ -98,10 +98,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/predmux_probe_gen.py` — 450 physical lines
 - `tests/e2e/slice_libm_real_pow.c` — 439 physical lines
 - `tools/record_census/source_ir.py` — 434 physical lines
+- `ir-pass/include/WireWalk.h` — 433 physical lines
 - `tests/e2e/slice_libm_real_erfl.c` — 432 physical lines
 - `tools/record_census/census_02_mc_population.py` — 430 physical lines
 - `runtime/cq_intrinsic_templates.h` — 427 physical lines
-- `ir-pass/include/WireWalk.h` — 424 physical lines
 - `ir-pass/tools/scrub_selftest.cpp` — 423 physical lines
 - `ir-pass/src/SelectMergeEmit.cpp` — 420 physical lines
 - `tests/e2e/slice_libm_real_powf.c` — 418 physical lines
@@ -253,7 +253,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/AngleSelectEmit.cpp:75` — `emitPhaseAngleSelect`
 - `ir-pass/src/AngleSelectEmit.cpp:190` — `emitAngleSelectRegion`
 
-### `ir-pass/src/ArithLowering.cpp` (1388 lines)
+### `ir-pass/src/ArithLowering.cpp` (1393 lines)
 
 - `ir-pass/src/ArithLowering.cpp:56` — `promote`
 - `ir-pass/src/ArithLowering.cpp:112` — `negateClassicalImmediate`
@@ -269,10 +269,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArithLowering.cpp:762` — `priorUseIsSettled`
 - `ir-pass/src/ArithLowering.cpp:864` — `inPlaceFenceHolds`
 - `ir-pass/src/ArithLowering.cpp:932` — `inPlacePositionHolds`
-- `ir-pass/src/ArithLowering.cpp:1097` — `classifyInPlaceReassignment`
-- `ir-pass/src/ArithLowering.cpp:1164` — `lateReassignShape`
-- `ir-pass/src/ArithLowering.cpp:1204` — `isLateImmediateReassignSite`
-- `ir-pass/src/ArithLowering.cpp:1217` — `lowerLateReassignments`
+- `ir-pass/src/ArithLowering.cpp:1102` — `classifyInPlaceReassignment`
+- `ir-pass/src/ArithLowering.cpp:1169` — `lateReassignShape`
+- `ir-pass/src/ArithLowering.cpp:1209` — `isLateImmediateReassignSite`
+- `ir-pass/src/ArithLowering.cpp:1222` — `lowerLateReassignments`
 
 ### `ir-pass/src/ArmAngleHoist.cpp` (103 lines)
 
@@ -1897,7 +1897,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/WidthDispatch.cpp:559` — `WidthDispatch::addTemplate`
 - `ir-pass/src/WidthDispatch.cpp:570` — `WidthDispatch::frontEndIntrinsicNames`
 
-### `ir-pass/src/WireWalk.cpp` (948 lines)
+### `ir-pass/src/WireWalk.cpp` (953 lines)
 
 - `ir-pass/src/WireWalk.cpp:34` — `isCallToPrefix`
 - `ir-pass/src/WireWalk.cpp:68` — `collectWireValues`
@@ -1914,9 +1914,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/WireWalk.cpp:870` — `findNonDiagonalWireGate`
 - `ir-pass/src/WireWalk.cpp:881` — `collectNonDiagonalWireGates`
 - `ir-pass/src/WireWalk.cpp:891` — `provablyBefore`
-- `ir-pass/src/WireWalk.cpp:897` — `provablyBeforePerActivation`
-- `ir-pass/src/WireWalk.cpp:933` — `everyPathReExecutes`
-- `ir-pass/src/WireWalk.cpp:940` — `intervalAlternates`
+- `ir-pass/src/WireWalk.cpp:897` — `provablyNeverAfter`
+- `ir-pass/src/WireWalk.cpp:902` — `provablyBeforePerActivation`
+- `ir-pass/src/WireWalk.cpp:938` — `everyPathReExecutes`
+- `ir-pass/src/WireWalk.cpp:945` — `intervalAlternates`
 
 ### `ir-pass/tools/cq_debug_alloc.cpp` (181 lines)
 
@@ -8263,7 +8264,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/fixture_guard_liveness.py:91` — `guards_in`
 - `tools/fixture_guard_liveness.py:122` — `main`
 
-### `tools/free_pairing_check.py` (4657 lines)
+### `tools/free_pairing_check.py` (4663 lines)
 
 - `tools/free_pairing_check.py:751` — `Unclassified.__init__`
 - `tools/free_pairing_check.py:776` — `Undecidable.__init__`
@@ -8345,11 +8346,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check.py:4322` — `census_of`
 - `tools/free_pairing_check.py:4366` — `_classical_slot`
 - `tools/free_pairing_check.py:4389` — `vouched_params`
-- `tools/free_pairing_check.py:4453` — `check_module`
-- `tools/free_pairing_check.py:4542` — `main`
-- `tools/free_pairing_check.py:4599` — `main.dump`
+- `tools/free_pairing_check.py:4459` — `check_module`
+- `tools/free_pairing_check.py:4548` — `main`
+- `tools/free_pairing_check.py:4605` — `main.dump`
 
-### `tools/free_pairing_check_test.py` (4540 lines)
+### `tools/free_pairing_check_test.py` (4549 lines)
 
 - `tools/free_pairing_check_test.py:711` — `order_ladder`
 - `tools/free_pairing_check_test.py:821` — `cswap_braid`
@@ -8362,11 +8363,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check_test.py:3546` — `cone_nest`
 - `tools/free_pairing_check_test.py:4105` — `_Stop.__init__`
 - `tools/free_pairing_check_test.py:4109` — `_Stop.__str__`
-- `tools/free_pairing_check_test.py:4152` — `findings`
-- `tools/free_pairing_check_test.py:4160` — `proofs_of`
-- `tools/free_pairing_check_test.py:4177` — `verdict_map`
-- `tools/free_pairing_check_test.py:4189` — `main`
-- `tools/free_pairing_check_test.py:4227` — `main.counted`
+- `tools/free_pairing_check_test.py:4161` — `findings`
+- `tools/free_pairing_check_test.py:4169` — `proofs_of`
+- `tools/free_pairing_check_test.py:4186` — `verdict_map`
+- `tools/free_pairing_check_test.py:4198` — `main`
+- `tools/free_pairing_check_test.py:4236` — `main.counted`
 
 ### `tools/gen_templates.py` (477 lines)
 

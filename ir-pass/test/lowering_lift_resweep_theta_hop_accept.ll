@@ -17,6 +17,12 @@
 ; add_hl(h, 3) measured. On each path the add reads exactly the gates `q` has
 ; received, which is the source's `q` after the `.2` rotation.
 ;
+; bd dm7f.83.4: NOW IN PLACE. The register is dead after the add, and its
+; earlier Ry sits in a classical arm that does not dominate the add; G6 used to
+; ask dominance (`provablyBefore`) and kept the add out of place, leaving the old
+; rail beside the result. G6 now asks "never after the add" (reachability,
+; `provablyNeverAfter`), so `cqrt_addc_i32` runs on the register's own rail.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.ll 2>&1 | %filecheck %s --check-prefix=DIAG --allow-empty
 ; RUN: %filecheck %s < %t.ll
 ; DIAG-NOT: error
@@ -26,8 +32,8 @@
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
 ; CHECK:      call void @cqrt_ry_i32(i32 %[[H]], double 1.250000e-01)
 ; CHECK:      call void @cqrt_ry_i32(i32 %[[H]], double 2.000000e-01)
-; CHECK-NEXT: %[[V:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 3)
-; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[V]])
+; CHECK-NEXT: call void @cqrt_addc_i32(i32 %[[H]], i32 3)
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[H]])
 
 define i32 @f(i32 noundef %0) {
   %2 = tail call i32 @cq_theta_si32(i32 noundef 7, double noundef 5.000000e-01)

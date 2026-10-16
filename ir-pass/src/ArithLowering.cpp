@@ -1083,8 +1083,13 @@ bool inPlacePositionHolds(const Instruction *Site, const Value *P,
     // bd 01po.19 S6 — the G5 same-trip exemption's G6 half: `Site` reaches a
     // use earlier in its trip only around the back edge, which RELOADS the
     // cell `P` first (a fresh `P` next trip), so that use is before `Site`.
+    // bd dm7f.83.4: off the same-trip path G6 asks "never AFTER the site"
+    // (`provablyNeverAfter`), not "dominates it": an earlier use in a classical
+    // arm that does not dominate the op is no data use after it (G5 has already
+    // refused every repeating block, so this is an acyclic question here). G7
+    // still asks below whether that earlier use's obligation is settled.
     if (!(SameTripCell ? railWindowBeforeInTrip(UI, Site, P, DT)
-                       : provablyBefore(UI, Site, DT)))
+                       : provablyNeverAfter(UI, Site, DT)))
       return false;
     // G7 — the prior use must be settled (see `priorUseIsSettled`).
     if (!priorUseIsSettled(UI, P, Site, DT, Plan, taint, QuantumSource)) {

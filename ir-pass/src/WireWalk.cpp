@@ -894,6 +894,11 @@ bool provablyBefore(const Instruction *A, const Instruction *B,
          !isPotentiallyReachable(B, A, /*ExclusionSet=*/nullptr, &DT);
 }
 
+bool provablyNeverAfter(const Instruction *A, const Instruction *B,
+                        const DominatorTree &DT) {
+  return A != B && !isPotentiallyReachable(B, A, /*ExclusionSet=*/nullptr, &DT);
+}
+
 bool provablyBeforePerActivation(const Instruction *A, const Instruction *B,
                                  const Instruction *Barrier,
                                  const DominatorTree &DT) {

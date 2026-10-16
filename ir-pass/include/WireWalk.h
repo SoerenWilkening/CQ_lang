@@ -221,6 +221,15 @@ void collectNonDiagonalWireGates(
 bool provablyBefore(const llvm::Instruction *A, const llvm::Instruction *B,
                     const llvm::DominatorTree &DT);
 
+// bd dm7f.83.4 — "`A` NEVER executes after `B`": no path from `B` reaches `A`.
+// The question a DEADNESS fence asks of an earlier use (G6: "no data use after
+// the op"), and weaker than `provablyBefore` by exactly the dominance half: a
+// use in a classical arm that does not dominate `B` (`if (c) cq_theta(&q, .);
+// t = q + 3`) is never after `B`, though it need not have run. Asked with
+// LLVM's own reachability (L4); unproven (reachable) => false.
+bool provablyNeverAfter(const llvm::Instruction *A, const llvm::Instruction *B,
+                        const llvm::DominatorTree &DT);
+
 // "Does PHINode `P` faithfully DENOTE the wire at the moment it executes?" —
 // i.e. does RE-EXECUTING it RE-READ the register, so that its value is a live
 // record rather than a frozen one? The full argument (and the two shapes that
