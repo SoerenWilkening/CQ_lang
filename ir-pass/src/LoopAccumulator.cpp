@@ -16,6 +16,8 @@
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/Metadata.h"
 
 #include <functional>
@@ -268,6 +270,55 @@ bool cellMayBeRecorded(const Value *Target, ArrayRef<const Value *> SrcCells,
     int64_t St = Step->getAPInt().getSExtValue(), Dv = D->getAPInt().getSExtValue();
     if (Dv % St == 0 && Dv / St >= 1)
       return true;
+  }
+  return false;
+}
+
+// Does any use of array `A`'s address leave the load/store addressing the
+// lineage can see (a call, a stored pointer, an integer cast)?
+bool arrayEscapes(const Value *A) {
+  SmallVector<const Value *, 8> W{A};
+  SmallPtrSet<const Value *, 16> Seen;
+  while (!W.empty()) {
+    const Value *P = W.pop_back_val();
+    if (!Seen.insert(P).second)
+      continue;
+    for (const User *U : P->users()) {
+      if (isa<GetElementPtrInst>(U) || isa<BitCastInst>(U) ||
+          isa<SelectInst>(U) || isa<PHINode>(U)) {
+        W.push_back(U);
+        continue;
+      }
+      if (auto *LD = dyn_cast<LoadInst>(U); LD && LD->getPointerOperand() == P)
+        continue;
+      if (auto *St = dyn_cast<StoreInst>(U); St && St->getPointerOperand() == P &&
+                                             St->getValueOperand() != P)
+        continue;
+      if (auto *II = dyn_cast<IntrinsicInst>(U); II && II->isLifetimeStartOrEnd())
+        continue;
+      return true;
+    }
+  }
+  return false;
+}
+
+// Does a path from one of `L`'s exits reach block `Mint` without passing an
+// instruction in `Reads` (a read of the register)?
+bool reachesAvoiding(const Loop *L, const BasicBlock *Mint,
+                     const SmallPtrSetImpl<const Instruction *> &Reads) {
+  SmallVector<BasicBlock *, 4> Exits;
+  L->getExitBlocks(Exits);
+  SmallVector<const BasicBlock *, 16> W(Exits.begin(), Exits.end());
+  SmallPtrSet<const BasicBlock *, 16> Seen;
+  while (!W.empty()) {
+    const BasicBlock *B = W.pop_back_val();
+    if (!Seen.insert(B).second)
+      continue;
+    if (B == Mint)
+      return true;
+    if (any_of(*B, [&](const Instruction &I) { return Reads.count(&I) != 0; }))
+      continue;
+    W.append(succ_begin(B), succ_end(B));
   }
   return false;
 }

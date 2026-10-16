@@ -58,6 +58,7 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <optional>
@@ -66,6 +67,7 @@ namespace llvm {
 class BasicBlock;
 class Module;
 class BinaryOperator;
+class Instruction;
 class DominatorTree;
 class Loop;
 class PHINode;
@@ -130,6 +132,14 @@ bool declineDeadAccumulatorMoves(llvm::Module &M, const TaintSet &taint);
 bool cellMayBeRecorded(const llvm::Value *Target,
                        llvm::ArrayRef<const llvm::Value *> SrcCells,
                        const llvm::Loop *L, llvm::ScalarEvolution &SE);
+
+// The postcondition's escape and re-entry questions (helpers of
+// LoopAccumulatorDead.cpp): does any use of array `A`'s address leave the
+// load/store addressing (a call, a stored pointer, an integer cast)? Does a path
+// from one of `L`'s exits reach block `Mint` without passing one of `Reads`?
+bool arrayEscapes(const llvm::Value *A);
+bool reachesAvoiding(const llvm::Loop *L, const llvm::BasicBlock *Mint,
+                     const llvm::SmallPtrSetImpl<const llvm::Instruction *> &Reads);
 
 }  // namespace cq
 

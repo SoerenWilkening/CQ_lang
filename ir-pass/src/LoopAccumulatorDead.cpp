@@ -11,6 +11,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/AssumptionCache.h"
+#include "llvm/Analysis/CFG.h"  // isPotentiallyReachable
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
@@ -64,11 +65,13 @@ namespace cq {
 //     a LATER trip, before that trip's step ([rA1B-F3]): for a root always, for
 //     a cell only if an EARLIER trip's step may have recorded that very cell
 //     (`cellMayBeRecorded`, SCEV over `L`; a cell of the gate's own trip that
-//     the step reads after it is not yet recorded — F5's shape). ⚠ WITHIN ONE
-//     ENTRY OF `L` ONLY (R11 round 2 rA2-F4): a loop re-entered by a parent
-//     leaves the previous entry's register dead at re-entry, and a move in the
-//     next entry is not asked — the silent bd r2j3.44 (not fixed, owner
-//     directive owner-directive-overdeclines-only-2026-10-16).
+//     the step reads after it is not yet recorded — F5's shape). That per-cell
+//     exemption reasons WITHIN ONE ENTRY of `L` (R11 round 2 rA2-F4);
+//   * PER ENTRY ([rA2-F1], the silent bd r2j3.44): when a path leads from the
+//     loop's exit back to the mint without a read of `H`, each entry mints a new
+//     register under the same SSA name and the previous one is dead at
+//     re-entry, so every move of a lineage rail reachable from the mint is a
+//     hazard, with no per-cell exemption (`reachesAvoiding`).
 // No hazard and `H` dead after its loop: left allocated (R5) and REPORTED, a
 // lyyf-class DS_Warning `kMsgDeadAccumulatorLeft`; `opt` exits 0.
 // RETIREMENT TRIGGER: bd 8h7d.20's post-loop reverse loop uncomputes the
@@ -149,34 +152,6 @@ void cellArrays(const Value *V, SmallPtrSetImpl<const Value *> &Out,
       Unknown = true;
     Out.insert(O);
   }
-}
-
-// Does any use of array `A`'s address leave the load/store addressing the
-// lineage can see (a call, a stored pointer, an integer cast)?
-bool arrayEscapes(const Value *A) {
-  SmallVector<const Value *, 8> W{A};
-  SmallPtrSet<const Value *, 16> Seen;
-  while (!W.empty()) {
-    const Value *P = W.pop_back_val();
-    if (!Seen.insert(P).second)
-      continue;
-    for (const User *U : P->users()) {
-      if (isa<GetElementPtrInst>(U) || isa<BitCastInst>(U) ||
-          isa<SelectInst>(U) || isa<PHINode>(U)) {
-        W.push_back(U);
-        continue;
-      }
-      if (auto *LD = dyn_cast<LoadInst>(U); LD && LD->getPointerOperand() == P)
-        continue;
-      if (auto *St = dyn_cast<StoreInst>(U); St && St->getPointerOperand() == P &&
-                                             St->getValueOperand() != P)
-        continue;
-      if (auto *II = dyn_cast<IntrinsicInst>(U); II && II->isLifetimeStartOrEnd())
-        continue;
-      return true;
-    }
-  }
-  return false;
 }
 
 // Some path from `G` to a function exit reads `H` nowhere (never entering
@@ -300,10 +275,20 @@ bool declineDeadAccumulatorMoves(Module &M, const TaintSet &taint) {
                 Writes |= inLineage(C->getArgOperand(Sl));
             if (!Writes)
               continue;
-            for (Value *A : C->args())
-              if (A->getType()->isIntegerTy(32) && !isa<Constant>(A) &&
-                  A != H && !inLineage(A) && Roots.insert(A).second)
+            for (Value *A : C->args()) {
+              if (!A->getType()->isIntegerTy(32) || isa<Constant>(A) || A == H ||
+                  inLineage(A))
+                continue;
+              // [rA2-F3] a cell read joins as its ARRAYS (any read of the cell
+              // is the same rail), a register as itself.
+              if (isa<LoadInst>(A)) {
+                cellArrays(A, Arrays, UnknownArray);
+                SrcCells.push_back(A);
                 Grew = true;
+              } else if (Roots.insert(A).second) {
+                Grew = true;
+              }
+            }
           }
       }
       auto hazardOf = [&](Instruction &I) -> const char * {
@@ -344,6 +329,27 @@ bool declineDeadAccumulatorMoves(Module &M, const TaintSet &taint) {
         for (const Value *A : Arrays)
           if (arrayEscapes(A))
             return diag(kMsgDeadAccumulatorEscaped, H->getDebugLoc());
+      // [rA2-F1] PER ENTRY: when a path leads from the loop's exit back to the
+      // register's mint without reading it, the loop is RE-ENTERED with a new
+      // register under the same name and the previous one is a dead record
+      // from then on; every move of a lineage rail (root or cell — no per-cell
+      // exemption, which reasons within one entry) reachable from the mint is
+      // a hazard. Loud until bd 8h7d.20 can reverse each entry's register.
+      for (CallInst *S : Steps) {
+        const Loop *L = LI.getLoopFor(S->getParent());
+        if (!L || !reachesAvoiding(L, H->getParent(), Reads))
+          continue;
+        for (BasicBlock &BB : F)
+          for (Instruction &I : BB) {
+            auto *G = dyn_cast<CallInst>(&I);
+            if (!G)
+              continue;
+            SmallVector<Value *, 2> Moved;
+            movedRails(G, Moved);
+            if (any_of(Moved, inLineage) && isPotentiallyReachable(H, G))
+              return diag(kMsgDeadAccumulatorMoved, G->getDebugLoc());
+          }
+      }
       for (CallInst *S : Steps) {
         const Loop *L = LI.getLoopFor(S->getParent());
         const BasicBlock *Hdr = L ? L->getHeader() : nullptr;

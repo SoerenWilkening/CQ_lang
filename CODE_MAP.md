@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 872 maintained source files, 7004 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 872 maintained source files, 7005 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -777,24 +777,25 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LiteralIntegrity.cpp:274` — `declineAddressTakenBlocks`
 - `ir-pass/src/LiteralIntegrity.cpp:327` — `removeUnreachableBlocksChecked`
 
-### `ir-pass/src/LoopAccumulator.cpp` (275 lines)
+### `ir-pass/src/LoopAccumulator.cpp` (326 lines)
 
-- `ir-pass/src/LoopAccumulator.cpp:29` — `qqStem`
-- `ir-pass/src/LoopAccumulator.cpp:49` — `accSourceReadsRail`
-- `ir-pass/src/LoopAccumulator.cpp:70` — `inSubloop`
-- `ir-pass/src/LoopAccumulator.cpp:80` — `seededAccumulatorPhi`
-- `ir-pass/src/LoopAccumulator.cpp:172` — `commitSeededAccumulator`
-- `ir-pass/src/LoopAccumulator.cpp:225` — `emitAccumulatorQQStep`
-- `ir-pass/src/LoopAccumulator.cpp:249` — `cellMayBeRecorded`
+- `ir-pass/src/LoopAccumulator.cpp:31` — `qqStem`
+- `ir-pass/src/LoopAccumulator.cpp:51` — `accSourceReadsRail`
+- `ir-pass/src/LoopAccumulator.cpp:72` — `inSubloop`
+- `ir-pass/src/LoopAccumulator.cpp:82` — `seededAccumulatorPhi`
+- `ir-pass/src/LoopAccumulator.cpp:174` — `commitSeededAccumulator`
+- `ir-pass/src/LoopAccumulator.cpp:227` — `emitAccumulatorQQStep`
+- `ir-pass/src/LoopAccumulator.cpp:251` — `cellMayBeRecorded`
+- `ir-pass/src/LoopAccumulator.cpp:279` — `arrayEscapes`
+- `ir-pass/src/LoopAccumulator.cpp:307` — `reachesAvoiding`
 
-### `ir-pass/src/LoopAccumulatorDead.cpp` (383 lines)
+### `ir-pass/src/LoopAccumulatorDead.cpp` (394 lines)
 
-- `ir-pass/src/LoopAccumulatorDead.cpp:86` — `movedRails`
-- `ir-pass/src/LoopAccumulatorDead.cpp:114` — `runsAfterInTrip`
-- `ir-pass/src/LoopAccumulatorDead.cpp:135` — `cellArrays`
-- `ir-pass/src/LoopAccumulatorDead.cpp:151` — `arrayEscapes`
-- `ir-pass/src/LoopAccumulatorDead.cpp:179` — `deadAfter`
-- `ir-pass/src/LoopAccumulatorDead.cpp:204` — `declineDeadAccumulatorMoves`
+- `ir-pass/src/LoopAccumulatorDead.cpp:94` — `movedRails`
+- `ir-pass/src/LoopAccumulatorDead.cpp:122` — `runsAfterInTrip`
+- `ir-pass/src/LoopAccumulatorDead.cpp:143` — `cellArrays`
+- `ir-pass/src/LoopAccumulatorDead.cpp:159` — `deadAfter`
+- `ir-pass/src/LoopAccumulatorDead.cpp:184` — `declineDeadAccumulatorMoves`
 
 ### `ir-pass/src/LoopLowering.cpp` (8474 lines)
 
@@ -7134,9 +7135,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_live_record_source_rail_warn.c:62` — `slice`
 - `tests/e2e/slice_live_record_source_rail_warn.c:69` — `main`
 
-### `tests/e2e/slice_loop_acc_nested_counter.c` (35 lines)
+### `tests/e2e/slice_loop_acc_nested_counter.c` (32 lines)
 
-- `tests/e2e/slice_loop_acc_nested_counter.c:24` — `main`
+- `tests/e2e/slice_loop_acc_nested_counter.c:21` — `main`
 
 ### `tests/e2e/slice_loop_bank_derived_cond.c` (43 lines)
 
