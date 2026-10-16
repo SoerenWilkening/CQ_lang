@@ -1,4 +1,5 @@
-; loop_leak_dephase_reject_nested_iterlocal_inner.ll — DECLINE. bd
+; loop_leak_dephase_reject_nested_iterlocal_inner.ll — ACCEPT since bd 8h7d.25 (2026-10-16; was a DECLINE; the
+; file name keeps "reject" on purpose, L7 — the history below is the decline's). bd
 ; `test_C_libtooling-emkg`, THE PRE-EXISTING FACE (F-1a). Same defect as its
 ; sibling `…_nested_marked_inner.ll` — conjunct (1) of
 ; `declineDephasingUnmarkedLoopRails` read `L->blocks()`, which includes every
@@ -54,16 +55,26 @@
 ; ⚠ DECLINE -> ACCEPT, bd 8h7d.25 / 01po.19.18.1 (2026-10-16): `railLocalQualifies`
 ; now CALLS the subloop clause of `iterationLocalQualifies` (one spelling) with the
 ; rail roots admitted, so the OUTER body is certified rail-local and its per-trip
-; `lshr` copies of `y` are reversed and freed IN THE TRIP (the rails whose leak this
-; file existed to refuse). EVIDENCE (scratch state-vector replay of this lowering,
-; linked and run): every rail freed |0>, stage 2b 2 sites verified / 0 violations
-; / 0 unproven, and P(y=5) = 0.584984 = cos^2(.7) — the program's
-; circuit. The leak fence itself (`declineDephasingUnmarkedLoopRails`) is unchanged
-; and still pinned by the single-level loop_leak_dephase_reject_* fixtures.
+; `lshr` copies of `y` are reversed and freed IN THE TRIP — the rails whose leak this
+; file existed to refuse. THE PROPERTY IS PINNED BY THE CHECKS BELOW (every `lshr`
+; copy in `@slice` is followed by its own `_unc` and `cqrt_free`), NOT by an output
+; statistic (R11 round 1 rA1B-F1/F2, R17): under the trace runtime `cqrt_ry_i32`
+; rotates the low bit, and the copies `y >> i` (i >= 1) carry no bit-0
+; information, so the scratch replay gives the SAME distribution with the
+; discharges deleted from the trace as with them (measured; the first edit of this
+; header quoted P(bit 0 of y = 1) as "P(y=5)", a number the leak cannot move).
+; Replay of this lowering: every freed rail |0>, stage 2b 2 sites verified / 0
+; violations / 0 unproven. The leak fence (`declineDephasingUnmarkedLoopRails`) is
+; unchanged and still pinned by the single-level loop_leak_dephase_reject_* files.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.ll
 ; RUN: %filecheck %s < %t.ll
 ; CHECK-LABEL: define i32 @slice(
-; CHECK-COUNT-2: call void @cq_template_lshr_i32_hl_unc(
+; CHECK: %[[A:h_op[0-9]*]] = call i32 @cq_template_lshr_i32_hl(
+; CHECK: call void @cq_template_lshr_i32_hl_unc(i32 %[[A]],
+; CHECK-NEXT: call void @cqrt_free(i32 %[[A]])
+; CHECK: %[[B:h_op[0-9]*]] = call i32 @cq_template_lshr_i32_hl(
+; CHECK: call void @cq_template_lshr_i32_hl_unc(i32 %[[B]],
+; CHECK-NEXT: call void @cqrt_free(i32 %[[B]])
 ; CHECK-LABEL: define i32 @main(
 ; RUN: %filecheck %s --check-prefix=MINT < %t.ll
 ; MINT-COUNT-2: call i32 @cq_template_lshr_i32_hl(

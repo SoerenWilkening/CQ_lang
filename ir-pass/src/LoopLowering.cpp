@@ -5354,14 +5354,23 @@ bool railLocalQualifies(Loop *L, TaintSet &taint, LoopInfo &LI,
   // it qualifies ON ITS OWN (`iterationLocalQualifies`, recursion): no tainted
   // exit or header phi, every qubit it defines used only inside it, every qubit
   // it reads defined inside it — or one of THIS loop's collapsed ROOTS
-  // (`onRail`). THE MULTIPLICITY ARGUMENT for that one widening: a root is a
-  // register the spine never reverses (a `cq_theta` user mint, or a seeded
-  // accumulator's `cqrt_alloc`, both excluded from the interior partition by
-  // ChainWalk (I1)); a subloop temp reading it is a DAG whose only outside
-  // parent is that unreversed leaf, so its forward and its discharge both sit in
-  // the subloop's own marked blocks (grouped per inner trip,
-  // `reverseTerminalGroups`), K and K; and nothing the subloop defines reaches
-  // an outer DAG. The root's own moves stay asked positionally by
+  // (`onRail`). THE MULTIPLICITY ARGUMENT for that one widening, per root kind
+  // (corrected by R11 round 1 rA1C-F1: "a root is never reversed" was false):
+  //   * a `cq_theta` user mint or a seeded accumulator's `cqrt_alloc`: never
+  //     reversed (both excluded from the interior partition by ChainWalk (I1));
+  //   * a clause-(ii-d) root (`invariantRegisterRootsImpl`: a hoisted
+  //     out-of-place template rail read only inside `L`): forwarded ONCE before
+  //     `L` and reversed ONCE at `L`'s exit — the exit-discharge ledger
+  //     (`recordExitDischargeObligation`) anchors it there and
+  //     `declineUndischargedExitObligations` refuses a module where it is not;
+  //     the anchor is outside `L`, so never inside a subloop.
+  // Either way the root's own forward and discharge are outside the subloop and
+  // run once per entry of `L`; the subloop only READS it. A subloop temp reading
+  // it is a DAG whose only outside parent is that leaf, so its forward and its
+  // discharge both sit in the subloop's own marked blocks (grouped per inner
+  // trip, `reverseTerminalGroups`), K and K; and nothing the subloop defines
+  // reaches an outer DAG. Pinned with a (ii-d) root read only in the subloop:
+  // railwindow_nest_iid_root_accept.ll. The root's own moves stay asked positionally by
   // `staleRailRecordRead` (a read in the subloop after an in-place step on the
   // root in the same trip is stale and loud). An outer TEMP read inside the
   // subloop is still refused (railwindow_f5_reject_subloop_outer_temp.ll).
