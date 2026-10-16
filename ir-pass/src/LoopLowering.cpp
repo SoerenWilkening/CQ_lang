@@ -3605,10 +3605,53 @@ static bool namesQubit(const Value *V, const TaintSet &taint, bool Nested) {
                 CF->getName().starts_with("cq_template_"));
 }
 
+// bd 8h7d.25 / 01po.19.18.1 — `OuterRoot`, when given, names the qubits defined
+// OUTSIDE the loop being asked that its instructions may nevertheless read: the
+// collapsed rail roots of an enclosing `railLocalQualifies` (`onRail`). Null for
+// every `markIfIterationLocal` question (byte-identical there).
+using OuterRootFn = function_ref<bool(Value *)>;
+
 static bool iterationLocalQualifies(Loop *L, const TaintSet &taint,
                                     LoopInfo &LI, bool &AnyTainted,
                                     bool Nested = false,
-                                    bool *AdmittedSubloop = nullptr) {
+                                    bool *AdmittedSubloop = nullptr,
+                                    OuterRootFn OuterRoot = nullptr);
+
+// THE SUBLOOP CLAUSE, ONE SPELLING (bd 01po.19.34 for `markIfIterationLocal`;
+// bd 8h7d.25 / 01po.19.18.1 called from `railLocalQualifies` too): every subloop
+// of `L` that TOUCHES a qubit must qualify ON ITS OWN (recursion). False on the
+// first that does not; `Admitted` reports whether any touching subloop exists.
+static bool quantumSubloopsQualify(Loop *L, const TaintSet &taint, LoopInfo &LI,
+                                   bool &Admitted, OuterRootFn OuterRoot) {
+  Admitted = false;
+  for (Loop *SL : L->getSubLoops()) {
+    bool SubTouches = false;
+    for (BasicBlock *BB : SL->blocks()) {
+      for (Instruction &I : *BB) {
+        SubTouches = taint.Tainted.count(&I) != 0;
+        for (Value *Op : I.operands())
+          SubTouches = SubTouches || namesQubit(Op, taint, /*Nested=*/true);
+        if (SubTouches)
+          break;
+      }
+      if (SubTouches)
+        break;
+    }
+    if (!SubTouches)
+      continue;
+    bool Dummy = false;
+    if (!iterationLocalQualifies(SL, taint, LI, Dummy, /*Nested=*/true,
+                                 nullptr, OuterRoot))
+      return false;
+    Admitted = true;
+  }
+  return true;
+}
+
+static bool iterationLocalQualifies(Loop *L, const TaintSet &taint,
+                                    LoopInfo &LI, bool &AnyTainted,
+                                    bool Nested, bool *AdmittedSubloop,
+                                    OuterRootFn OuterRoot) {
   AnyTainted = false;
   if (AdmittedSubloop)
     *AdmittedSubloop = false;
@@ -3643,27 +3686,15 @@ static bool iterationLocalQualifies(Loop *L, const TaintSet &taint,
   // content is a tainted OPERAND (a `cq_measure`, a cell store, an emitter's
   // void gate such as a kickback `cqrt_rz_i1(flag, θ)` on an outer flag) was
   // never asked the operand clause at all, and the outer loop was marked.
-  for (Loop *SL : L->getSubLoops()) {
-    bool SubTouches = false;
-    for (BasicBlock *BB : SL->blocks()) {
-      for (Instruction &I : *BB) {
-        SubTouches = taint.Tainted.count(&I) != 0;
-        for (Value *Op : I.operands())
-          SubTouches = SubTouches || namesQubit(Op, taint, /*Nested=*/true);
-        if (SubTouches)
-          break;
-      }
-      if (SubTouches)
-        break;
-    }
-    if (!SubTouches)
-      continue;
-    bool Dummy = false;
-    if (!iterationLocalQualifies(SL, taint, LI, Dummy, /*Nested=*/true))
+  {
+    bool Admitted = false;
+    if (!quantumSubloopsQualify(L, taint, LI, Admitted, OuterRoot))
       return false;
-    AnyTainted = true;
-    if (AdmittedSubloop)
-      *AdmittedSubloop = true;
+    if (Admitted) {
+      AnyTainted = true;
+      if (AdmittedSubloop)
+        *AdmittedSubloop = true;
+    }
   }
   BasicBlock *Header = L->getHeader();
   for (BasicBlock *BB : L->blocks()) {
@@ -3710,6 +3741,11 @@ static bool iterationLocalQualifies(Loop *L, const TaintSet &taint,
       // accumulates across iterations, NOT iteration-local.
       for (Value *Op : I.operands())
         if (namesQubit(Op, taint, Nested)) {
+          // bd 8h7d.25: an enclosing rail-local loop's collapsed ROOT (a
+          // register the spine never reverses) may be read here; see
+          // `railLocalQualifies`' subloop clause for the argument.
+          if (OuterRoot && OuterRoot(Op))
+            continue;
           auto *OpI = dyn_cast<Instruction>(Op);
           if (!OpI || !L->contains(OpI->getParent()))
             return false;
@@ -5286,7 +5322,8 @@ bool invariantRegisterRoots(Loop *L, TaintSet &taint, WidthDispatch &wd,
 bool railLocalQualifies(Loop *L, TaintSet &taint, LoopInfo &LI,
                         const SmallPtrSetImpl<CallInst *> &GateCalls,
                         const SmallPtrSetImpl<Value *> &Roots,
-                        bool &AnyLocalOut, Instruction **WhyNot = nullptr) {
+                        bool &AnyLocalOut, Instruction **WhyNot = nullptr,
+                        bool *AdmittedSubloopOut = nullptr) {
   AnyLocalOut = false;
   BasicBlock *Header = L->getHeader();
   auto refuse = [&](Instruction *I) {
@@ -5310,27 +5347,36 @@ bool railLocalQualifies(Loop *L, TaintSet &taint, LoopInfo &LI,
     return Roots.count(peelInPlaceBase(V, GateCalls, taint,
                                        /*AsLowered=*/true)) != 0;
   };
+  // THE SUBLOOP CLAUSE (bd 8h7d.25 / 01po.19.18.1; Lane N's 01po.19.34 clause,
+  // CALLED, never re-spelt): a strictly-deeper subloop that touches a qubit runs
+  // its gates K times per outer trip while a spine anchored at outer level would
+  // reverse them ONCE — the under-reversed dirty free. It is admitted only when
+  // it qualifies ON ITS OWN (`iterationLocalQualifies`, recursion): no tainted
+  // exit or header phi, every qubit it defines used only inside it, every qubit
+  // it reads defined inside it — or one of THIS loop's collapsed ROOTS
+  // (`onRail`). THE MULTIPLICITY ARGUMENT for that one widening: a root is a
+  // register the spine never reverses (a `cq_theta` user mint, or a seeded
+  // accumulator's `cqrt_alloc`, both excluded from the interior partition by
+  // ChainWalk (I1)); a subloop temp reading it is a DAG whose only outside
+  // parent is that unreversed leaf, so its forward and its discharge both sit in
+  // the subloop's own marked blocks (grouped per inner trip,
+  // `reverseTerminalGroups`), K and K; and nothing the subloop defines reaches
+  // an outer DAG. The root's own moves stay asked positionally by
+  // `staleRailRecordRead` (a read in the subloop after an in-place step on the
+  // root in the same trip is stale and loud). An outer TEMP read inside the
+  // subloop is still refused (railwindow_f5_reject_subloop_outer_temp.ll).
+  bool SubloopAdmitted = false;
+  if (!quantumSubloopsQualify(L, taint, LI, SubloopAdmitted, onRail))
+    return refuse(nullptr);
+  if (AdmittedSubloopOut)
+    *AdmittedSubloopOut = SubloopAdmitted;
   for (BasicBlock *BB : L->blocks()) {
     Instruction *T = BB->getTerminator();
     // (L2) tainted control still standing — not ours (bd dm7f.24: one spelling).
     if (isTaintedBranchTerminator(T, taint))
       return refuse(T);
-    if (LI.getLoopFor(BB) != L) {
-      // A strictly-deeper SUBLOOP with quantum content runs its gates N times
-      // per outer iteration while the spine would reverse them ONCE — the
-      // under-reversed dirty free. This was verbatim from `markIfIterationLocal`
-      // until bd 01po.19.34, which admits there a subloop that is iteration-
-      // local ON ITS OWN (`iterationLocalQualifies`, by recursion). It is NOT
-      // widened here on purpose (CLAUDE.md L2): this clause's `Roots` escape
-      // admits outside-`L` rail reads, and whether a subloop reading a root
-      // repeats its reversal consistently is the multiplicity question
-      // (`multiplicityAgrees`) nobody has re-derived for a nest. Widen only
-      // with that argument.
-      for (Instruction &I : *BB)
-        if (taint.Tainted.count(&I))
-          return refuse(&I);
-      continue;
-    }
+    if (LI.getLoopFor(BB) != L)
+      continue;  // a subloop block — adjudicated by the subloop clause below.
     for (Instruction &I : *BB) {
       // (L3) tainted-index memory — kMsgQramLoop's.
       //
@@ -5426,12 +5472,23 @@ bool railLocalQualifies(Loop *L, TaintSet &taint, LoopInfo &LI,
 // otherwise there cost four correct programs).
 bool markIfRailLocal(Loop *L, TaintSet &taint, LoopInfo &LI,
                      const SmallPtrSetImpl<CallInst *> &GateCalls,
-                     const SmallPtrSetImpl<Value *> &Roots) {
-  bool AnyLocal = false;
-  if (!railLocalQualifies(L, taint, LI, GateCalls, Roots, AnyLocal))
+                     const SmallPtrSetImpl<Value *> &Roots,
+                     bool *NestedOut = nullptr) {
+  bool AnyLocal = false, Nested = false;
+  if (!railLocalQualifies(L, taint, LI, GateCalls, Roots, AnyLocal, nullptr,
+                          &Nested))
     return false;
   if (!AnyLocal)
     return false;  // a pure-rail loop (no temps) — nothing for the spine to place.
+  // bd 8h7d.25 — an ADMITTED quantum subloop qualified ON ITS OWN, so its blocks
+  // are marked too, as `markIfIterationLocal` marks them (its temps are reversed
+  // per inner trip); the P2 note below is about the subloop refusal this clause
+  // replaced.
+  if (Nested)
+    for (BasicBlock *BB : L->blocks())
+      taint.IterationLocalBlocks.insert(BB);
+  if (NestedOut)
+    *NestedOut = Nested;
   // ONLY `L`'s OWN blocks (bd 8h7d.5 Rule-13 round 1, finding P2). `L->blocks()`
   // includes every strictly-deeper SUBLOOP block, and the subloop refusal above
   // only inspects `taint.Tainted` membership — which the region emitters' own
@@ -5682,9 +5739,18 @@ void collapseFlattenedLoopRails(
         if (invariantRegisterRoots(L, taint, wd, DT, LI, GateCalls, Invariant,
                                    &Roots))
           Roots.insert(Invariant.begin(), Invariant.end());
-        if (!markIfRailLocal(L, taint, LI, GateCalls, Roots) &&
-            declineStrandedAccumulatorTemps(L, taint, LI, GateCalls, Roots))
-          return;  // bd 01po.19.18; `diagnose` exits on the first DS_Error.
+        bool Nested = false;
+        if (!markIfRailLocal(L, taint, LI, GateCalls, Roots, &Nested)) {
+          if (declineStrandedAccumulatorTemps(L, taint, LI, GateCalls, Roots))
+            return;  // bd 01po.19.18; `diagnose` exits on the first DS_Error.
+        } else if (Nested) {
+          // bd 8h7d.25 (L1) — a grant that ADMITTED a quantum subloop is asked
+          // here BEFORE `repropagateControlMerges`; record it for the final-taint
+          // re-ask (`declineRound2FalsifiedRailGrants`, which calls
+          // `railLocalQualifies` and so the same subloop clause), as
+          // `markIfIterationLocal` records its nested grants.
+          recordRound1RailGrant(L, taint, Roots);
+        }
       } else if (R2 == RailRound2::NotClaimed &&
                  invariantRegisterRoots(L, taint, wd, DT, LI, GateCalls, Roots,
                                         /*CarriedRoots=*/nullptr)) {

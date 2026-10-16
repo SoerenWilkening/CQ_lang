@@ -7334,3 +7334,14 @@ add_test(NAME e2e-slice-loop-acc-nested-counter
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_acc_nested_counter.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_acc_nested_counter.expected.log")
+
+# CQ_FINDINGS F5 (bd 01po.19.18 / 01po.19.18.1 / 8h7d.25): Dicke preparation by
+# counting — a rolled quantum array, a seeded quantum accumulator read by the
+# cell-controlled Ry of a nested loop (analytic check in the header).
+add_test(NAME e2e-slice-rolled-f5-counter
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_rolled_f5_counter.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_rolled_f5_counter.expected.log")

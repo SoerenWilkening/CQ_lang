@@ -51,10 +51,23 @@
 ;
 ; ⚠ L8 RETIREMENT TRIGGER: see the sibling's. Do not `git mv` this file.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-;
-; CHECK: n1_nested_marked_inner.c:11:14: in function slice
-; CHECK-SAME: cq loop lowering: rolled body leaks a rail entangled with a rotated register
+; ⚠ DECLINE -> ACCEPT, bd 8h7d.25 / 01po.19.18.1 (2026-10-16): `railLocalQualifies`
+; now CALLS the subloop clause of `iterationLocalQualifies` (one spelling) with the
+; rail roots admitted, so the OUTER body is certified rail-local and its per-trip
+; `lshr` copies of `y` are reversed and freed IN THE TRIP (the rails whose leak this
+; file existed to refuse). EVIDENCE (scratch state-vector replay of this lowering,
+; linked and run): every rail freed |0>, stage 2b 2 sites verified / 0 violations
+; / 0 unproven, and P(y=5) = 0.584984 = cos^2(.7) — the program's
+; circuit. The leak fence itself (`declineDephasingUnmarkedLoopRails`) is unchanged
+; and still pinned by the single-level loop_leak_dephase_reject_* fixtures.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.ll
+; RUN: %filecheck %s < %t.ll
+; CHECK-LABEL: define i32 @slice(
+; CHECK-COUNT-2: call void @cq_template_lshr_i32_hl_unc(
+; CHECK-LABEL: define i32 @main(
+; RUN: %filecheck %s --check-prefix=MINT < %t.ll
+; MINT-COUNT-2: call i32 @cq_template_lshr_i32_hl(
+; MINT-NOT: call i32 @cq_template_lshr_i32_hl(
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
