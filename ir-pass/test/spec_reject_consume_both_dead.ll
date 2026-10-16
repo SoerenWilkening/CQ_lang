@@ -1,17 +1,14 @@
-; spec_reject_lift_tail_unhoisted_continuation.ll — DECLINE, loud (bd
-; test_C_libtooling-r2j3.37, the batch-055 INTERIM): `for (i < 2) t = f(t, a);`
-; with `f(t,a) = t ^ a`. After the loop pre-passes unroll it, the FIRST call's
-; result is read only by the SECOND call (a lifted reader, which the in-place
-; round's `survives` counts as a temporary), so the backstop asks E3 ACROSS calls
-; (`kept`: a tagged call reading the result in a chain slot whose own result is
-; kept). Without that clause this compiled silently, the original `t` rail left
-; beside the final value (measured before the clause existed, interim build).
+; spec_reject_consume_both_dead.ll — DECLINE, loud (bd
+; test_C_libtooling-r2j3.37.1): `r = f(t, a)` with `f = t ^ a` and BOTH arguments
+; dead user registers: two eligible consumable slots, so which register the user
+; overwrote is not recoverable; loud with the inlined `r = t ^ a`'s message,
+; permanently (owner-ruling-dm7f74-both-dead-loud-permanent-2026-10-16).
 ;
-; Source: g2.c (lane L scratch), clang-19 -O1 -include CQ.h.
+; Source: f4.c (lane L scratch), clang-19 -O1 -include CQ.h.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error: {{.*}}cq specialization: a lifted call overwrites a dead quantum argument, which is not lowered in place across the call
-source_filename = "g2.c"
+; CHECK: error: {{.*}}cq in-place lowering: both operands of a quantum reassignment are dead registers; the overwritten one is not recoverable (use one of them again afterwards, e.g. measure it, so only one operand is a dead target)
+source_filename = "f4.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 
@@ -22,27 +19,13 @@ define noundef zeroext i1 @f(i1 noundef zeroext %0, i1 noundef zeroext %1) local
 }
 
 ; Function Attrs: nounwind ssp uwtable
-define range(i32 0, 4) i32 @main() local_unnamed_addr #1 {
+define range(i32 0, 2) i32 @main() local_unnamed_addr #1 {
   %1 = tail call zeroext i1 @cq_theta_i1(i1 noundef zeroext false, double noundef 5.000000e-01) #3
   %2 = tail call zeroext i1 @cq_theta_i1(i1 noundef zeroext false, double noundef 4.000000e-01) #3
-  br label %10
-
-3:                                                ; preds = %10
-  %4 = tail call zeroext i1 @cq_theta_i1(i1 noundef zeroext %1, double noundef 0x3FE6666666666666) #3
-  %5 = tail call zeroext i1 @cq_measure_i1(i1 noundef zeroext %4) #4
-  %6 = zext i1 %5 to i32
-  %7 = tail call zeroext i1 @cq_measure_i1(i1 noundef zeroext %13) #4
-  %8 = select i1 %7, i32 2, i32 0
-  %9 = or disjoint i32 %8, %6
-  ret i32 %9
-
-10:                                               ; preds = %0, %10
-  %11 = phi i32 [ 0, %0 ], [ %14, %10 ]
-  %12 = phi i1 [ %2, %0 ], [ %13, %10 ]
-  %13 = tail call zeroext i1 @f(i1 noundef zeroext %12, i1 noundef zeroext %1)
-  %14 = add nuw nsw i32 %11, 1
-  %15 = icmp eq i32 %11, 0
-  br i1 %15, label %10, label %3, !llvm.loop !6
+  %3 = tail call zeroext i1 @f(i1 noundef zeroext %2, i1 noundef zeroext %1)
+  %4 = tail call zeroext i1 @cq_measure_i1(i1 noundef zeroext %3) #4
+  %5 = zext i1 %4 to i32
+  ret i32 %5
 }
 
 declare zeroext i1 @cq_theta_i1(i1 noundef zeroext, double noundef) local_unnamed_addr #2
@@ -64,6 +47,3 @@ attributes #4 = { nounwind }
 !3 = !{i32 7, !"uwtable", i32 2}
 !4 = !{i32 7, !"frame-pointer", i32 2}
 !5 = !{!"Homebrew clang version 19.1.7"}
-!6 = distinct !{!6, !7, !8}
-!7 = !{!"llvm.loop.mustprogress"}
-!8 = !{!"llvm.loop.unroll.disable"}

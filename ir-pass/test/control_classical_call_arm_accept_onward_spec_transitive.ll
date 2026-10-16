@@ -10,17 +10,14 @@
 ; `@__cq_q_inner_1_unc`, reversed inside the outer Bennett wrap. This proves the re-plan
 ; needs NO new transitive code — updating the top mask is consumed by the 6.3 recursion.
 ;
-; bd r2j3.37: `%q` is measured at the end so it stays LIVE across the call.
-; Dead, it is a user register `outer`'s add chain overwrites with a source
-; (`inner(%y)`) that depends on `%q` through the merge condition: the chain is
-; hoisted to the caller (SpecializeTailHoist.h) and fails loudly as
-; self-dependent, as the inlined twin does
-; (ruling-dm7f51-step1-departures-2026-10-15 Q2;
-; spec_reject_tail_hoist_self_dependent.ll).
-; INTERIM (batch 055, owner question open, SpecializeTailHoist.h
-; `kLiftTailHoistEnabled`): with the hoist disabled the dead shape fails loudly
-; instead (`kMsgLiftTailUnhoisted`); the keep-alive keeps this fixture's
-; subject either way.
+; bd r2j3.37 / r2j3.37.1: `%q` is measured after the call so it stays LIVE
+; across it. Dead, it is a user register the call's add/sub/xor return chain
+; overwrites, and the call is consumed IN PLACE (one call to the consuming
+; clone `..._c<k>`, SpecializeConsume.h), so the out-of-place clone this
+; fixture pins would be gone. Keep the keep-alive while that clone is the
+; subject. Dead, the call fails loudly as self-dependent (its source reads the
+; merge rail a condition on the old `%q` built), as the inlined twin does:
+; spec_reject_consume_merge_source.ll.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

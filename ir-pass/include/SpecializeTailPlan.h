@@ -99,6 +99,19 @@ public:
     return Nd.Src;
   }
 
+  // bd r2j3.37.1: a copy of `P.F` returning the value of node `I` (any node with
+  // no parameter the caller consumes: a leaf, or an Op over leaves, constants
+  // and other parameters), the SOURCE the consuming clone lifts for one
+  // in-place op of the chain.
+  Function *subtreeSrc(Plan &P, int I) {
+    if (P.N[I].K == Node::Leaf)
+      return srcFor(P, I);
+    return cloneReturning(*P.F, [&](ValueToValueMapTy &VMap, ReturnInst *Ret) {
+      IRBuilder<> B(Ret);
+      return emitInto(P, I, VMap, B, *Ret->getFunction());
+    });
+  }
+
   // A copy of `F` returning zero: keeps a non-trivially-dead call's effects.
   Function *zeroSrc(Function &F) {
     return cloneReturning(F, [&](ValueToValueMapTy &, ReturnInst *) -> Value * {
@@ -110,6 +123,33 @@ private:
   std::map<Function *, std::unique_ptr<Plan>> Plans;
   SmallPtrSet<Function *, 8> OnStack;
   unsigned Counter = 0;
+
+  // Node `I` of `P`, materialised in `G`, a copy of `P.F` (`VMap` its map).
+  Value *emitInto(Plan &P, int I, ValueToValueMapTy &VMap, IRBuilder<> &B,
+                  Function &G) {
+    Node &Nd = P.N[I];
+    switch (Nd.K) {
+    case Node::Arg:
+      return G.getArg(Nd.ArgNo);
+    case Node::Const:
+      return Nd.C;
+    case Node::Leaf: {
+      if (Nd.V)
+        return VMap[Nd.V];
+      Function *Inner = srcFor(*Nd.HP, Nd.HIdx);
+      auto *IC = cast<CallInst>(VMap[Nd.InnerCall]);
+      CallInst *NC = B.CreateCall(Inner, SmallVector<Value *, 8>(IC->args()));
+      NC->setCallingConv(Inner->getCallingConv());
+      return NC;
+    }
+    case Node::Op: {
+      Value *L = emitInto(P, Nd.L, VMap, B, G);
+      Value *R = emitInto(P, Nd.R, VMap, B, G);
+      return B.CreateBinOp(Nd.Opc, L, R);
+    }
+    }
+    return nullptr;
+  }
 
   static ReturnInst *singleRet(Function &F) {
     ReturnInst *R = nullptr;

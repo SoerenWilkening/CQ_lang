@@ -22,6 +22,7 @@
 #include "SpecializePlan.h"
 #include "SpecializeReject.h"
 #include "SpecializeSeed.h"
+#include "SpecializeConsume.h"   // buildConsumingCandidates (bd r2j3.37.1)
 #include "SpecializeTailHoist.h"  // tagUnhoistedLiftTail (bd r2j3.37)
 #include "SpecializeDetect.h"   // detectSpecializations (the clone's own plan)
 #include "StageList.h"          // runLoopPrepasses / runControlChain (bd p3kd.7.8)
@@ -1335,6 +1336,23 @@ void specialize(Module &M, WidthDispatch &wd, TaintSet &taint, SpecPlan &plan) {
           *Cand.Site->getFunction(), kMsgPredictedClassicalQuantum,
           Cand.Site->getDebugLoc()));
     Retargeted.push_back({Cand.Site, Rec.ReturnTainted});
+    // bd r2j3.37.1 — the CONSUMING CLONE candidates of a tagged site, built now
+    // that the site's own clone (and so the consumer's signature) exists; the
+    // late in-place round decides which, if any, replaces the call
+    // (SpecializeConsume.h). Sources are lifted through the drain's own resolver.
+    if (Rec.ReturnTainted)
+      buildConsumingCandidates(
+          *Cand.Site, Cand.Callee, taint, wd,
+          [&](CallInst *&S, Function *F, SpecMask Mk) {
+            return resolveSite(S, F, Mk, M, wd, taint, plan);
+          },
+          [&](Function *C, SpecMask Mk) {
+            ensureTwin(C);
+            if (Function *T = M.getFunction((C->getName() + "_unc").str())) {
+              taint.SpecHandleArgMask[T] = (Mk << 1) | 1;
+              T->addFnAttr(kConsumeAuxAttr);
+            }
+          });
     // fp-ABI result HandleWidth (bd 3c6m.54): a tainted fp return is an i32 handle
     // at the call site (`retargetSite` rebuilt the call to i32), but its logical
     // width is the ORIGINAL fp width captured above. Record it so a caller CAST off

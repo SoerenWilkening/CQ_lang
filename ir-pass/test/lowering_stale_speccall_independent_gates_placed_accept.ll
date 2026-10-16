@@ -20,17 +20,12 @@
 ; this change). The CHECK-NEXT chain is the load-bearing order: `p`'s mint, both its
 ; Ry, then the clone call, all before `ry(q, .3)`.
 ;
-; bd r2j3.37: `%4` is measured at the end so it stays LIVE across the call.
-; Dead, it is a user register the call's add chain overwrites: the chain is
-; hoisted to the caller (SpecializeTailHoist.h), whose source temporary records
-; the stale `%1` and must be uncomputed after its Ry, which the stale-reader
-; fence refuses loudly as it does for the inlined twin
-; (lowering_stale_speccall_tail_hoist_reject.ll). Retire the keep-alive when
-; that lowering exists.
-; INTERIM (batch 055, owner question open, SpecializeTailHoist.h
-; `kLiftTailHoistEnabled`): with the hoist disabled the dead shape fails loudly
-; instead (`kMsgLiftTailUnhoisted`); the keep-alive keeps this fixture's
-; subject either way.
+; bd r2j3.37 / r2j3.37.1: `%4` is measured after the call so it stays LIVE
+; across it. Dead, it is a user register the call's add/sub/xor return chain
+; overwrites, and the call is consumed IN PLACE (one call to the consuming
+; clone `..._c<k>`, SpecializeConsume.h), so the out-of-place clone this
+; fixture pins would be gone. Keep the keep-alive while that clone is the
+; subject. The dead twin: lowering_stale_speccall_consume_accept.ll.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
 ; RUN: %filecheck %s < %t.ll

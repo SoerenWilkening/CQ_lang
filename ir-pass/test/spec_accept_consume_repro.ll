@@ -1,23 +1,35 @@
-; spec_reject_lift_tail_unhoisted.ll — DECLINE, loud (bd test_C_libtooling-r2j3.37,
-; the reporter's repro; the batch-055 INTERIM). `r = f(t, a)` with
-; `f(t,a){ t ^= a; return t; }` and `t` DEAD after the call: a lifted call is a
-; Bennett embedding |t>|a>|0> -> |t>|a>|t^a>, so the old `t` rail would stand
-; beside `r` and record `a`, and the later Ry on `a` dephases (main ef72239c, rc 0:
-; P(a=0, r=0) 0.7960 emitted vs 0.7659 for the program's circuit, independent
-; state-vector replay of the `_Bool` twin). Lowering it in place across the call
-; is not built (owner question open: the return-chain hoist, a consuming clone, or
-; loud; SpecializeTailHoist.h `kLiftTailHoistEnabled`), so the late backstop
-; (`declineUnhoistedLiftTails`: the call's chain reaches a tainted argument that is
-; dead at the call and a user register's value, and the result survives) fails
-; LOUDLY. RETIREMENT: when in place across a call is built, this becomes the
-; accept of spec_accept_tail_hoist_inplace.ll's `c_xor`. Twins that must stay
-; accepted: spec_accept_tail_hoist_live_arg.ll (live `t`) and
-; spec_accept_lift_tail_derived_arg.ll (a derived dead argument).
+; spec_accept_consume_repro.ll — ACCEPT, in place (bd test_C_libtooling-r2j3.37,
+; the reporter's repro; .37.1). `r = f(t, a)` with `f(t,a){ t ^= a; return t; }`,
+; `t` dead, then `cq_theta(&a, .7)`. WAS (main ef72239c, silent): the Bennett
+; clone's copy-out left the old `t` beside `r`, recording `a`, so the Ry on `a`
+; was dephased (`_Bool` twin P(a=0, r=0) 0.7960 vs 0.7659). NOW one consuming call
+; `cqrt_xor_i32(a, t)` in place; the `_Bool` twin's trace replays to 0.7659.
+;
+; THE MECHANISM (SpecializeConsume.h; design of record bd r2j3.37.1): the lifted
+; call becomes ONE call to a CONSUMING CLONE `__cq_q_<f>_<mask>_c<k>` that maps
+; |t>|a> -> |f(t,a)>|a> on the dead argument t's own rail (slot k), tagged
+; `!cq.inplace.qq`; its body is the in-place gates the in-place rounds mint, one per
+; op of f's return chain, each fed by a parameter, a constant or a lifted SOURCE
+; clone (computed, used, uncomputed and freed inside the body). The decision is
+; the inlined twin's (InPlaceQQConsume.cpp).
 ;
 ; Source: g1.c (lane L scratch), clang-19 -O1 -include CQ.h.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error: {{.*}}cq specialization: a lifted call overwrites a dead quantum argument, which is not lowered in place across the call
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck %s < %t.ll
+;
+; CHECK-LABEL: define {{.*}}i32 @main(
+; CHECK:      [[A:%[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[A]], double 5.000000e-01)
+; CHECK-NEXT: [[T:%[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[T]], double 4.000000e-01)
+; CHECK-NEXT: call void @__cq_q_f_11_c0(i32 [[T]], i32 [[A]]), !cq.inplace.qq
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[A]], double 0x3FE6666666666666)
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 [[A]])
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 [[T]])
+; CHECK-LABEL: define internal void @__cq_q_f_11_c0(i32 %0, i32 %1)
+; CHECK-NEXT: call void @cqrt_xor_i32(i32 %1, i32 %0), !cq.inplace.qq
+; CHECK-NEXT: ret void
 source_filename = "g1.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

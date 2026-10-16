@@ -27,15 +27,11 @@
    classical condition away (bd 46oo). `main` discards the result so the slice
    exits 0 under the harness's `pipefail`.
 
-   bd r2j3.37: `q` is measured after `r`, so it stays LIVE across `h(q, m)`. A
-   DEAD user-register argument of an add/sub/xor return chain is no longer
-   lifted: the chain is hoisted to the caller (SpecializeTailHoist.h), where it is
-   exactly the hand-inlined twin above (measured: that twin, too, still lowers
-   out of place here today, with the same warning), and the lifted base this
-   slice pins would vanish. The keep-alive adds the golden's last line, a
-   measurement of h0. Retire it with that hoist. INTERIM (batch 055, owner
-   question open): with the hoist disabled (kLiftTailHoistEnabled) the dead
-   shape fails loudly instead; the keep-alive keeps the subject either way. */
+   bd r2j3.37 / r2j3.37.1: `q` is measured after `r`, so it stays LIVE across
+   `h(q, m)`. Dead, it is a user register `h`'s add chain overwrites, and the
+   call is consumed IN PLACE (one call to the consuming clone `..._c0`,
+   SpecializeConsume.h): the lifted base this slice pins would be gone. The
+   keep-alive adds the golden's last line, a measurement of h0. */
 int h(int a, int k);
 
 __attribute__((noinline)) int slice(int m) {

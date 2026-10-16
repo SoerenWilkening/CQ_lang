@@ -1,28 +1,13 @@
-; spec_reject_tail_hoist_subtrahend.ll — DECLINE, loud (bd
-; test_C_libtooling-r2j3.37): a lifted `f(t,a) = a - t` with `t` DEAD after the
-; call and `a` live. The hoisted `a - t` has its only eligible dead target in the
-; SUBTRAHEND slot, which has no in-place form (`cqrt_sub_<W>` overwrites the
-; minuend); the in-place round refuses it loudly as for the inlined `r = a - t`
-; (owner ruling owner-ruling-dm7f51-inplace-qq-2026-10-14 Q1). WAS (main
-; ef72239c): accepted out of place inside the clone, the old `t` beside `r`.
+; spec_reject_consume_subtrahend.ll — DECLINE, loud (bd
+; test_C_libtooling-r2j3.37.1): `r = f(t, a)` with `f = a - t`, `t` dead, `a`
+; live. The only consumable slot is the SUBTRAHEND, which has no in-place form
+; (`cqrt_sub_<W>` overwrites the minuend): loud, the inlined `r = a - t`'s
+; message (owner-ruling-dm7f51-inplace-qq-2026-10-14 Q1).
 ;
 ; Source: f5.c (lane L scratch), clang-19 -O1 -include CQ.h.
 ;
-; INTERIM (batch 055): the return-chain hoist this fixture was written for
-; crosses owner-ruling-lift-classical-only-2026-10-06 / R14 and is DISABLED
-; pending the owner's choice ((a) the hoist as a ruled exception, (b) a
-; consuming clone, (c) loud until (b); SpecializeTailHoist.h
-; `kLiftTailHoistEnabled`). Until then every owed site fails LOUDLY with the
-; backstop's diagnostic, pinned below. The hoist expectation is kept verbatim
-; under the dormant prefix HOIST (no RUN line reads it). RETIREMENT: under (a)
-; restore the HOIST lines as CHECK and the original RUN; under (b) rewrite them
-; for the consuming clone; under (c) keep this.
-;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error: {{.*}}cq specialization: a lifted call overwrites a dead quantum argument, which is not lowered in place across the call
-;
-; HOIST-CMD: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; HOIST: error: {{.*}}cq in-place lowering: quantum reassignment of a dead register is not provable in place
+; CHECK: error: {{.*}}cq in-place lowering: quantum reassignment of a dead register is not provable in place
 source_filename = "f5.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

@@ -1,122 +1,93 @@
-; spec_accept_tail_hoist_inplace.ll — ACCEPT (bd test_C_libtooling-r2j3.37, a
-; SILENT MISCOMPILE fixed): a lifted call whose return chain overwrites a DEAD user
-; register lowers IN PLACE on that register, exactly as the inlined body does.
+; spec_accept_consume_inplace.ll — ACCEPT, in place across a lifted call (bd
+; test_C_libtooling-r2j3.37 / .37.1; owner-ruling-r2j3-37-lower-it-2026-10-16).
 ;
-; WAS (main ef72239c): `r = fx(t, a)` with `fx(t,a){ t ^= a; return t; }` lifted
-; to the Bennett clone `__cq_q_fx_11`: its xor ran out of place inside the clone,
-; the result was copied out, and the caller's `t` rail stood beside `r`, so the
-; pair recorded `a` and the later Ry on `a` was dephased. Measured on the `_Bool`
-; twin by an independent state-vector replay of the trace: P(a=0, r=0) = 0.7960
-; emitted vs 0.7659 for the program's circuit (t ^= a in place, then Ry(.7) on a);
-; rc 0, stage 2b clean, no diagnostic.
+; WAS (main ef72239c, a SILENT MISCOMPILE): `r = fx(t, a)` with
+; `fx(t,a){ t ^= a; return t; }` lifted to the Bennett clone `__cq_q_fx_11`, the
+; old `t` rail standing beside `r` and recording `a`; the later Ry on `a` was
+; dephased (the `_Bool` twin: P(a=0, r=0) 0.7960 emitted vs 0.7659 for the
+; program's circuit, independent state-vector replay of the trace; rc 0).
 ;
-; NOW: the call's return chain (its value read through xor/add/sub down to its
-; parameters, SpecializeTailHoist.h) is hoisted to the caller before any stage
-; reads the call, and the in-place rounds decide it with the record the inlined
-; op gets. Pinned per function, each the C program in the comment above it:
-;   c_xor     `fx(t,a) = t ^ a`  (i32)            -> cqrt_xor_i32(a, t), no clone
-;   c_add     `fadd(t,a) = t + a` (u8)            -> cqrt_add_i8(a, t)
-;   c_sub     `fsub(t,a) = t - a` (u8)            -> cqrt_sub_i8(a, t) (t minuend)
-;   c_nested  `g(t,a,b) = f3(t,a,0) ^ b`, `f3 = t^a^b'`: the nested chain is
-;             substituted at the inner call -> cnot(a,t); xorc(t,0); cnot(b,t)
-;   c_leaf    `fl(t,a,b) = t ^ (a & b)`: the leaf `a & b` is computed by the
-;             SOURCE `fl__cqsrc0` (a copy of `fl` returning it), lifted like any
-;             callee with its unread `t` slot dropped; cnot(src, t) in place, then
-;             the source's twin uncomputes it and its rail is freed (2b-verified)
-;             BEFORE the later Ry on `a`/`b`
-;   c_inc     `inc(t) = t + 3`: the classical-immediate in-place round -> addc
-;   c_id      `id(t) = t`: the call is the register itself (no copy)
-; Analytic replay (scratch state-vector, lane L): c_leaf equals the textbook
-; Toffoli(a,b->t) circuit to 1e-6 on all 8 outcomes; c_nested / c_xor equal the
-; textbook CNOT circuits. A LIVE argument stays lifted:
-; spec_accept_tail_hoist_live_arg.ll. Main's own refusals reach a hoisted chain
-; unchanged: spec_reject_tail_hoist_{self_dependent,both_dead,subtrahend}.ll.
+; THE MECHANISM (SpecializeConsume.h; design of record bd r2j3.37.1): the lifted
+; call becomes ONE call to a CONSUMING CLONE `__cq_q_<f>_<mask>_c<k>` that maps
+; |t>|a> -> |f(t,a)>|a> on the dead argument t's own rail (slot k), tagged
+; `!cq.inplace.qq`; its body is the in-place gates the in-place rounds mint, one per
+; op of f's return chain, each fed by a parameter, a constant or a lifted SOURCE
+; clone (computed, used, uncomputed and freed inside the body). The decision is
+; the inlined twin's (InPlaceQQConsume.cpp).
 ;
-; Source: f1.c (lane L scratch), clang-19 -O1 -include CQ.h.
+; Pinned per function (each the C in f1.c, lane L scratch, clang-19 -O1):
+;   c_xor     fx = t ^ a (i32)           -> __cq_q_fx_11_c0 = cqrt_xor_i32(a, t)
+;   c_add     fadd = t + a (u8)          -> cqrt_add_i8(a, t)
+;   c_sub     fsub = t - a (u8)          -> cqrt_sub_i8(a, t) (t the minuend)
+;   c_nested  g = f3(t,a,0) ^ b: f3's chain substituted at g's inner call
+;             -> cnot(a,t); xorc(t,0); cnot(b,t); f3's clone is not called
+;   c_leaf    fl = t ^ (a & b): a SOURCE clone `fl__cqsrc0` computes a&b, with
+;             t's slot recorded dead and passed 0; cnot(s, t); its twin
+;             uncomputes s; s freed (2b-verified) — all inside the one call
+;   c_inc     inc = t + 3: the classical immediate -> cqrt_addc_i8(t, 3)
+;   c_id      id = t: `returned` already makes the call the register itself
+; Analytic replay (scratch state-vector, lane L): every `_Bool` function equals
+; its textbook circuit (CNOT / Toffoli) on all outcomes; stage 2b 3 verified, 0/0.
 ;
-; INTERIM (batch 055): the return-chain hoist this fixture was written for
-; crosses owner-ruling-lift-classical-only-2026-10-06 / R14 and is DISABLED
-; pending the owner's choice ((a) the hoist as a ruled exception, (b) a
-; consuming clone, (c) loud until (b); SpecializeTailHoist.h
-; `kLiftTailHoistEnabled`). Until then every owed site fails LOUDLY with the
-; backstop's diagnostic, pinned below. The hoist expectation is kept verbatim
-; under the dormant prefix HOIST (no RUN line reads it; its RUN lines are spelled HOIST-CMD). RETIREMENT: under (a)
-; restore the HOIST lines as CHECK and the original RUN; under (b) rewrite them
-; for the consuming clone; under (c) keep this.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck %s --check-prefix=ERR --allow-empty < %t.err
+; ERR-NOT: error
+; ERR-NOT: warning
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error: {{.*}}cq specialization: a lifted call overwrites a dead quantum argument, which is not lowered in place across the call
+; CHECK-LABEL: define i32 @c_xor(
+; CHECK:      [[A:%[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[A]], double 5.000000e-01)
+; CHECK-NEXT: [[T:%[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[T]], double 4.000000e-01)
+; CHECK-NEXT: call void @__cq_q_fx_11_c0(i32 [[T]], i32 [[A]]), !cq.inplace.qq
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[A]], double 0x3FE6666666666666)
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 [[A]])
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 [[T]])
+; CHECK-LABEL: define {{.*}}i32 @c_add(
+; CHECK:      call void @__cq_q_fadd_11_c0(i32 [[T:%[a-z0-9]+]], i32 [[A:%[a-z0-9]+]]), !cq.inplace.qq
+; CHECK-NEXT: call void @cqrt_ry_i8(i32 [[A]], double 0x3FE6666666666666)
+; CHECK-LABEL: define {{.*}}i32 @c_sub(
+; CHECK:      call void @__cq_q_fsub_11_c0(i32 [[T:%[a-z0-9]+]], i32 [[A:%[a-z0-9]+]]), !cq.inplace.qq
+; CHECK-LABEL: define {{.*}}i32 @c_nested(
+; CHECK:      call void @__cq_q_g_111_c0(i32 [[T:%[a-z0-9]+]], i32 [[A:%[a-z0-9]+]], i32 [[B:%[a-z0-9]+]]), !cq.inplace.qq
+; CHECK-NEXT: call void @cqrt_ry_i1(i32 [[A]], double 0x3FE6666666666666)
+; CHECK-LABEL: define {{.*}}i32 @c_leaf(
+; CHECK:      call void @__cq_q_fl_111_c0(i32 [[T:%[a-z0-9]+]], i32 [[A:%[a-z0-9]+]], i32 [[B:%[a-z0-9]+]]), !cq.inplace.qq
+; CHECK-NEXT: call void @cqrt_ry_i1(i32 [[A]], double 0x3FE6666666666666)
+; CHECK-LABEL: define {{.*}}i32 @c_inc(
+; CHECK:      call void @__cq_q_inc_1_c0(i32 [[T:%[a-z0-9]+]]), !cq.inplace.qq
+; CHECK-NEXT: call void @cqrt_ry_i8(i32 [[T]], double 0x3FE6666666666666)
+; CHECK-LABEL: define {{.*}}i32 @c_id(
+; CHECK:      [[T:%[a-z0-9]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK-NEXT: call void @cqrt_ry_i1(i32 [[T]], double 4.000000e-01)
+; CHECK-NEXT: call void @cqrt_ry_i1(i32 [[T]], double 0x3FE6666666666666)
 ;
-; HOIST-CMD: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
-; HOIST-CMD: %filecheck %s < %t.ll
-; HOIST-CMD: %filecheck %s --check-prefix=ERR --allow-empty < %t.err
-; HOIST-ERR-NOT: error
-; HOIST-ERR-NOT: warning
-;
-; HOIST-LABEL: define i32 @c_xor(
-; HOIST:      [[A:%[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; HOIST-NEXT: call void @cqrt_ry_i32(i32 [[A]], double 5.000000e-01)
-; HOIST-NEXT: [[T:%[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; HOIST-NEXT: call void @cqrt_ry_i32(i32 [[T]], double 4.000000e-01)
-; HOIST-NEXT: call void @cqrt_xor_i32(i32 [[A]], i32 [[T]]), !cq.inplace.qq
-; HOIST-NEXT: call void @cqrt_ry_i32(i32 [[A]], double 0x3FE6666666666666)
-; HOIST-NEXT: call i32 @cqrt_measure_i32(i32 [[A]])
-; HOIST-NEXT: call i32 @cqrt_measure_i32(i32 [[T]])
-;
-; HOIST-LABEL: define {{.*}}i32 @c_add(
-; HOIST:      [[A:%[a-z0-9]+]] = call i32 @cqrt_alloc_i8(i8 0)
-; HOIST:      [[T:%[a-z0-9]+]] = call i32 @cqrt_alloc_i8(i8 0)
-; HOIST-NEXT: call void @cqrt_ry_i8(i32 [[T]], double 4.000000e-01)
-; HOIST-NEXT: call void @cqrt_add_i8(i32 [[A]], i32 [[T]]), !cq.inplace.qq
-; HOIST-NEXT: call void @cqrt_ry_i8(i32 [[A]], double 0x3FE6666666666666)
-;
-; HOIST-LABEL: define {{.*}}i32 @c_sub(
-; HOIST:      [[A:%[a-z0-9]+]] = call i32 @cqrt_alloc_i8(i8 0)
-; HOIST:      [[T:%[a-z0-9]+]] = call i32 @cqrt_alloc_i8(i8 0)
-; HOIST-NEXT: call void @cqrt_ry_i8(i32 [[T]], double 4.000000e-01)
-; HOIST-NEXT: call void @cqrt_sub_i8(i32 [[A]], i32 [[T]]), !cq.inplace.qq
-; HOIST-NEXT: call void @cqrt_ry_i8(i32 [[A]], double 0x3FE6666666666666)
-;
-; HOIST-LABEL: define {{.*}}i32 @c_nested(
-; HOIST:      [[A:%[a-z0-9]+]] = call i32 @cqrt_alloc_i1(i1 false)
-; HOIST:      [[B:%[a-z0-9]+]] = call i32 @cqrt_alloc_i1(i1 false)
-; HOIST:      [[T:%[a-z0-9]+]] = call i32 @cqrt_alloc_i1(i1 false)
-; HOIST-NEXT: call void @cqrt_ry_i1(i32 [[T]], double 4.000000e-01)
-; HOIST-NEXT: call void @cqrt_cnot(i32 [[A]], i32 [[T]]), !cq.inplace.qq
-; HOIST-NEXT: call void @cqrt_xorc_i1(i32 [[T]], i1 false)
-; HOIST-NEXT: call void @cqrt_cnot(i32 [[B]], i32 [[T]]), !cq.inplace.qq
-; HOIST-NEXT: call void @cqrt_ry_i1(i32 [[A]], double 0x3FE6666666666666)
-; HOIST-NEXT: call void @cqrt_ry_i1(i32 [[B]], double 3.000000e-01)
-;
-; HOIST-LABEL: define {{.*}}i32 @c_leaf(
-; HOIST:      [[A:%[a-z0-9]+]] = call i32 @cqrt_alloc_i1(i1 false)
-; HOIST:      [[B:%[a-z0-9]+]] = call i32 @cqrt_alloc_i1(i1 false)
-; HOIST:      [[T:%[a-z0-9]+]] = call i32 @cqrt_alloc_i1(i1 false)
-; HOIST-NEXT: call void @cqrt_ry_i1(i32 [[T]], double 4.000000e-01)
-; HOIST-NEXT: [[S:%[0-9]+]] = call i32 @__cq_q_fl__cqsrc0_110(i1 false, i32 [[A]], i32 [[B]])
-; HOIST-NEXT: call void @cqrt_cnot(i32 [[S]], i32 [[T]]), !cq.inplace.qq
-; HOIST-NEXT: call void @__cq_q_fl__cqsrc0_110_unc(i32 [[S]], i1 false, i32 [[A]], i32 [[B]])
-; HOIST-NEXT: call void @cqrt_free(i32 [[S]])
-; HOIST-NEXT: call void @cqrt_ry_i1(i32 [[A]], double 0x3FE6666666666666)
-; HOIST-NEXT: call void @cqrt_ry_i1(i32 [[B]], double 3.000000e-01)
-;
-; HOIST-LABEL: define {{.*}}i32 @c_inc(
-; HOIST:      [[T:%[a-z0-9]+]] = call i32 @cqrt_alloc_i8(i8 0)
-; HOIST-NEXT: call void @cqrt_ry_i8(i32 [[T]], double 4.000000e-01)
-; HOIST-NEXT: call void @cqrt_addc_i8(i32 [[T]], i8 3)
-; HOIST-NEXT: call void @cqrt_ry_i8(i32 [[T]], double 0x3FE6666666666666)
-; HOIST-NEXT: call i8 @cqrt_measure_i8(i32 [[T]])
-;
-; HOIST-LABEL: define {{.*}}i32 @c_id(
-; HOIST:      [[T:%[a-z0-9]+]] = call i32 @cqrt_alloc_i1(i1 false)
-; HOIST-NEXT: call void @cqrt_ry_i1(i32 [[T]], double 4.000000e-01)
-; HOIST-NEXT: call void @cqrt_ry_i1(i32 [[T]], double 0x3FE6666666666666)
-; HOIST-NEXT: call i1 @cqrt_measure_i1(i32 [[T]])
-;
-; The only clones are the leaf source's (forward + twin): no chain was lifted.
-; HOIST-NOT:  define {{.*}}@__cq_q_{{(fx|fadd|fsub|g|f3|inc|id|fl)_[01]+\(}}
-; HOIST:      define internal i32 @__cq_q_fl__cqsrc0_110(
-; HOIST-NOT:  define {{.*}}@__cq_q_{{(fx|fadd|fsub|g|f3|inc|id|fl)_[01]+\(}}
+; The bodies: one in-place gate per chain op; the leaf's source inside the call.
+; CHECK-LABEL: define internal void @__cq_q_fx_11_c0(i32 %0, i32 %1)
+; CHECK-NEXT: call void @cqrt_xor_i32(i32 %1, i32 %0), !cq.inplace.qq
+; CHECK-NEXT: ret void
+; CHECK-LABEL: define internal void @__cq_q_fadd_11_c0(i32 %0, i32 %1)
+; CHECK-NEXT: call void @cqrt_add_i8(i32 %1, i32 %0), !cq.inplace.qq
+; CHECK-LABEL: define internal void @__cq_q_fsub_11_c0(i32 %0, i32 %1)
+; CHECK-NEXT: call void @cqrt_sub_i8(i32 %1, i32 %0), !cq.inplace.qq
+; CHECK-LABEL: define internal void @__cq_q_g_111_c0(i32 %0, i32 %1, i32 %2)
+; CHECK-NEXT: call void @cqrt_cnot(i32 %1, i32 %0), !cq.inplace.qq
+; CHECK-NEXT: call void @cqrt_xorc_i1(i32 %0, i1 false)
+; CHECK-NEXT: call void @cqrt_cnot(i32 %2, i32 %0), !cq.inplace.qq
+; CHECK-NEXT: ret void
+; CHECK-LABEL: define internal void @__cq_q_fl_111_c0(i32 %0, i32 %1, i32 %2)
+; CHECK-NEXT: [[S:%[0-9]+]] = call i32 @__cq_q_fl__cqsrc0_111(i32 0, i32 %1, i32 %2)
+; CHECK-NEXT: call void @cqrt_cnot(i32 [[S]], i32 %0), !cq.inplace.qq
+; CHECK-NEXT: call void @__cq_q_fl__cqsrc0_111_unc(i32 [[S]], i32 0, i32 %1, i32 %2)
+; CHECK-NEXT: call void @cqrt_free(i32 [[S]])
+; CHECK-NEXT: ret void
+; CHECK-LABEL: define internal void @__cq_q_inc_1_c0(i32 %0)
+; CHECK-NEXT: call void @cqrt_addc_i8(i32 %0, i8 3)
+; CHECK-NEXT: ret void
+; No out-of-place clone of any chain function survives (only the leaf's source).
+; NOCLONE-NOT: define {{.*}}@__cq_q_{{(fx|fadd|fsub|g|f3|inc|id|fl)_[01]+\(}}
+; RUN: %filecheck %s --check-prefix=NOCLONE < %t.ll
 source_filename = "f1.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

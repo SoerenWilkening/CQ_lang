@@ -1,31 +1,16 @@
-; spec_reject_tail_hoist_self_dependent.ll — DECLINE, loud (bd
-; test_C_libtooling-r2j3.37): a lifted `f(t,a) = t ^ (t + a)` with `t` DEAD after
-; the call. The hoisted chain is `t ^ s`, `s = f__cqsrc0(t, a)` = t + a: the
-; source of the in-place xor depends on the dead register's old value, which has
-; no clean in-place form. The in-place round refuses it LOUDLY exactly as for the
-; inlined `r = t ^ (t + a)` (ruling-dm7f51-step1-departures-2026-10-15 Q2,
-; `dependsOnTarget` walking through the source call's operands). WAS (main
-; ef72239c): accepted out of place inside the clone, the old `t` rail left beside
-; `r` (rc 0). Retire when the self-dependent permutation circuit exists (the dm7f
-; gap issue the ruling filed).
+; spec_reject_consume_self_dependent.ll — DECLINE, loud (bd
+; test_C_libtooling-r2j3.37.1): a lifted `f(t,a) = t ^ (t + a)` with `t` DEAD
+; after the call. `t` appears twice in the return chain, so the in-place xor's
+; source depends on the dead register's old value: no clean in-place form, and
+; the decision fails loudly with the message the inlined `r = t ^ (t + a)` gets
+; (ruling-dm7f51-step1-departures-2026-10-15 Q2). WAS (main ef72239c): accepted
+; out of place, the old `t` beside `r`. Retire with the self-dependent
+; permutation circuit (the dm7f gap issue that ruling filed).
 ;
 ; Source: f3.c (lane L scratch), clang-19 -O1 -include CQ.h.
 ;
-; INTERIM (batch 055): the return-chain hoist this fixture was written for
-; crosses owner-ruling-lift-classical-only-2026-10-06 / R14 and is DISABLED
-; pending the owner's choice ((a) the hoist as a ruled exception, (b) a
-; consuming clone, (c) loud until (b); SpecializeTailHoist.h
-; `kLiftTailHoistEnabled`). Until then every owed site fails LOUDLY with the
-; backstop's diagnostic, pinned below. The hoist expectation is kept verbatim
-; under the dormant prefix HOIST (no RUN line reads it). RETIREMENT: under (a)
-; restore the HOIST lines as CHECK and the original RUN; under (b) rewrite them
-; for the consuming clone; under (c) keep this.
-;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error: {{.*}}cq specialization: a lifted call overwrites a dead quantum argument, which is not lowered in place across the call
-;
-; HOIST-CMD: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; HOIST: error: {{.*}}cq in-place lowering: the source of a quantum reassignment depends on the dead register's old value
+; CHECK: error: {{.*}}cq in-place lowering: the source of a quantum reassignment depends on the dead register's old value
 source_filename = "f3.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

@@ -24,15 +24,12 @@
 ;   clang -O1 -emit-llvm -S lib.c -o lib.ll      (plain C, no CQ.h)
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>
 ;
-; bd r2j3.37: `%10` is measured at the end so it stays LIVE across the call. A
-; DEAD user-register argument of an add/sub/xor return chain is no longer lifted:
-; the chain is hoisted to the caller (SpecializeTailHoist.h) and lowered in place,
-; and the clone this fixture pins would vanish. Retire the keep-alive with that
-; hoist.
-; INTERIM (batch 055, owner question open, SpecializeTailHoist.h
-; `kLiftTailHoistEnabled`): with the hoist disabled the dead shape fails loudly
-; instead (`kMsgLiftTailUnhoisted`); the keep-alive keeps this fixture's
-; subject either way.
+; bd r2j3.37 / r2j3.37.1: `%10` is measured after the call so it stays LIVE
+; across it. Dead, it is a user register the call's add/sub/xor return chain
+; overwrites, and the call is consumed IN PLACE (one call to the consuming
+; clone `..._c<k>`, SpecializeConsume.h), so the out-of-place clone this
+; fixture pins would be gone. Keep the keep-alive while that clone is the
+; subject.
 ;
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll

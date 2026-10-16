@@ -1,10 +1,9 @@
-; spec_accept_lift_tail_derived_arg.ll — ACCEPT (bd test_C_libtooling-r2j3.37,
-; the interim backstop's over-decline guard): `x = t * 3; r = f(x, a)` with
-; `f = t ^ a` and `t` dead. The dead argument `x` is a DERIVED temporary, not a
-; user register's value (`userRegisterValue`): the spine returns it to |0> after
-; the call (mul_hl_unc + free below), exactly as for the inlined `r = (t*3) ^ a`,
-; so the call stays lifted and nothing is loud. A mutant that drops the
-; user-register clause from the gate declines here.
+; spec_accept_consume_derived_arg.ll — ACCEPT, NOT consumed (bd
+; test_C_libtooling-r2j3.37.1, the over-decline guard): `x = t * 3; r = f(x, a)`
+; with `f = t ^ a` and `t` dead. The dead argument `x` is a DERIVED temporary,
+; not user data (`qqTargetIsUserData`, E2): the spine returns it to |0> after the
+; call (mul_hl_unc + free below), as for the inlined `r = (t*3) ^ a`, so the call
+; stays lifted and nothing is loud. A mutant that drops E2 consumes `x` here.
 ;
 ; Source: g3.c (lane L scratch), clang-19 -O1 -include CQ.h.
 ;

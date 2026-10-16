@@ -75,15 +75,14 @@ namespace cq {
 struct TaintSet;
 class WidthDispatch;
 
-// THE INTERIM (batch 055, OWNER QUESTION OPEN): the hoist crosses
+// NOT IN THE PIPELINE (batch 055). The hoist crossed
 // owner-ruling-lift-classical-only-2026-10-06 / R14 ("lifted, not inlined"; it
-// would also move a `cqc`-lifted libm body's return chain into the caller), so it
-// is DISABLED in every slot pending the owner's choice among (a) the hoist as a
-// ruled exception (+ a libm carve-out), (b) a consuming clone, (c) loud until
-// (b). Every site the gate would hoist then reaches the backstop below and fails
-// LOUDLY (`kMsgLiftTailUnhoisted`) when its result survives: r2j3.37 is "loud,
-// not yet lowered". RETIREMENT: flip this to true for (a), or delete the hoist
-// for (b); the spec_*tail_hoist* fixtures name the switch in their headers.
+// would also move a `cqc`-lifted libm body's return chain into the caller); the
+// owner ruled the shape must be LOWERED (owner-ruling-r2j3-37-lower-it-2026-10-16)
+// and option (b), the CONSUMING CLONE (SpecializeConsume.h), was built instead:
+// the site stays one call. The hoist is disabled in every slot (it only strips
+// input tags) and kept in tree pending R11 on (b); RETIREMENT: delete it and its
+// three slots once (b) clears review.
 inline constexpr bool kLiftTailHoistEnabled = false;
 
 // Rewrite every gated lifted call (see above). True if the module changed; the
@@ -91,21 +90,16 @@ inline constexpr bool kLiftTailHoistEnabled = false;
 bool hoistLiftedTailChains(llvm::Module &M, const TaintSet &taint,
                            WidthDispatch &wd);
 
-// THE BACKSTOP, in two halves. `specialize()` tags each top-level lift site
-// the gate would have hoisted (`!cq.lift.tail.owed`: the argument mask of the
-// gate, plus the mask of tainted arguments the record calls a dead φ NOT
-// provably one wire, which the gate never hoists). The late in-place round
-// (`lowerInPlaceQQ`, after `lowerOps`, both entry points) fails loudly
-// (`kMsgLiftTailUnhoisted`) when the result SURVIVES (`qqResultSurvives`, the
-// round's E3) and either mask is owed — the second only for a USER-DATA rail
-// (`qqTargetIsUserData`, the round's own B-F1 rule). Every tag is stripped there;
-// an input tag is stripped at each hoist slot (only `specialize()` writes it).
-// UNREACHED BY KNOWN C since the third slot exists: the gate-subroutine phases
-// were the only measured way to expose a site after the first slot (p21/p22,
-// spec_accept_tail_hoist_gate_inline.ll); kept fail-closed, no fixture pins it.
+// THE TAG. `specialize()` tags each top-level lift site with a hoistable plan:
+// `!cq.lift.tail.owed !{i64 Mask, i64 Phi, i64 Chain, consume entries...}` —
+// the gate's argument mask (a tainted operand dead at the call and a user
+// register's value), the dead-but-unproven-φ mask, every chain parameter, then
+// one `!{k, reason, consumer}` per candidate (SpecializeConsume.h). The late
+// in-place round decides each site with it (InPlaceQQConsume.cpp) and fails
+// loudly with `kMsgLiftTailUnhoisted` for a site it owes and cannot lower.
+// Input tags are stripped at every hoist slot (only `specialize()` writes one).
 inline constexpr const char kLiftTailOwedTag[] = "cq.lift.tail.owed";
 void tagUnhoistedLiftTail(llvm::CallInst &CI, const TaintSet &taint);
-bool declineUnhoistedLiftTails(llvm::Module &M, const TaintSet &taint);
 
 extern const char kMsgLiftTailUnhoisted[];
 

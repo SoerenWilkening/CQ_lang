@@ -1861,7 +1861,7 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P,
   //      it is its label before. It replaced an out-of-place QQ template that (2)
   //      admitted in this same position. `P` in the DESTINATION slot is a write
   //      and is refused (falls through), exactly as clause (d) requires.
-  if (isInPlaceQQGate(M) && M->getArgOperand(0) == P)
+  if (isInPlaceQQGate(M) && inPlaceQQReadsSource(M, P))  // bd r2j3.37.1
     return true;
   // (3) A PHASE-6 CLONE CALL whose callee body PROVABLY never writes the formal
   //     it binds `P` to — bd test_C_libtooling-rhk5, and the reason is (2)'s,

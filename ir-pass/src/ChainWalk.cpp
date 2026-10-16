@@ -137,8 +137,8 @@ bool isInPlaceGateOn(const CallInst *G, const Value *H) {
   // is. By membership in the tag, never by name: an untagged `cqrt_cnot` is a
   // condition-network gate and is not an in-place gate on anything (its reads of
   // a register condition are `isInteriorConsumer` row (c′)'s business).
-  if (isInPlaceQQGate(G))
-    return G->getArgOperand(1) == H;
+  if (isInPlaceQQGate(G))  // bd r2j3.37.1: a consuming clone writes slot k.
+    return inPlaceQQDest(G) == H;
   // iw81.7 / Phase 7.5 Inc 2: a QRAM store is a VOID in-place mutation on its ARRAY
   // handle — arg 1 for the GUARDED form `cqrt_qram_store_<W>_controlled(flag, arr,
   // idx, val)` (arg 0 is the path-predicate flag), arg 0 for the plain
@@ -982,8 +982,8 @@ bool isInteriorConsumer(const CallInst *C, const Value *R,
   //      condition-network gate — row (c′) below answers it for a register-
   //      condition rail it reads as a control, and every other rail falls
   //      through to the list at the end.
-  if (isInPlaceQQGate(C))
-    return C->getArgOperand(0) == R;
+  if (isInPlaceQQGate(C))  // bd r2j3.37.1: every non-destination slot is read.
+    return inPlaceQQReadsSource(C, R);
   // (b′) A PHASE-6 CLONE CALL that reads the rail and provably never writes it
   //      (bd test_C_libtooling-rhk5). The same role as (b): a consumer that reads
   //      `R`, mints a FRESH result rail, and is finished with `R` once it has run —

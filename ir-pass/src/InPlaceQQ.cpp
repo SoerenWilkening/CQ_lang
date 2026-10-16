@@ -7,7 +7,6 @@
 #include "FreePoint.h"         // computeFreePoint — the spine's own disposition
 #include "MergeStreamGates.h"  // streamGateWrites
 #include "RegCondLeaf.h"       // regCondTagIndex (bd dm7f.77)
-#include "SpecializeTailHoist.h"  // declineUnhoistedLiftTails (bd r2j3.37)
 #include "WireWalk.h"          // provablyBefore
 #include "TaintPropagation.h"  // TaintSet
 #include "TemplateName.h"      // dataName — the ONE builder of the QQ symbol
@@ -35,13 +34,6 @@ const char kMsgInPlaceQQRefused[] =
     "cq in-place lowering: quantum reassignment of a dead register is not "
     "provable in place";
 
-bool isInPlaceQQSymbol(StringRef N) {
-  for (StringRef Stem : {"cqrt_xor_", "cqrt_add_", "cqrt_sub_"})
-    if (N.consume_front(Stem))
-      return N == "i8" || N == "i16" || N == "i32" || N == "i64";
-  return false;
-}
-
 const char kMsgInPlaceQQSelfDependent[] =
     "cq in-place lowering: the source of a quantum reassignment depends on the "
     "dead register's old value";
@@ -51,20 +43,7 @@ const char kMsgInPlaceQQAmbiguousTarget[] =  // permanent: bd dm7f.74 ruling
     "registers; the overwritten one is not recoverable (use one of them again "
     "afterwards, e.g. measure it, so only one operand is a dead target)";
 
-bool isInPlaceQQGate(const CallInst *G) {
-  if (!G || !G->getMetadata(kInPlaceQQTag))
-    return false;
-  const Function *Callee = G->getCalledFunction();
-  if (!Callee || !G->getType()->isVoidTy() || G->arg_size() != 2)
-    return false;
-  StringRef N = Callee->getName();
-  if (N != "cqrt_cnot" && !isInPlaceQQSymbol(N))
-    return false;
-  for (const Use &A : G->args())
-    if (!A.get()->getType()->isIntegerTy(32))
-      return false;
-  return G->getArgOperand(0) != G->getArgOperand(1);
-}
+// `isInPlaceQQSymbol` / `isInPlaceQQGate` / the slot accessors: InPlaceQQGate.cpp.
 
 namespace {
 
@@ -197,6 +176,9 @@ bool survives(const CallInst *R, const TaintSet &taint, Function &F,
         return true;
       continue;
     }
+    if (continuesThroughLiftedChain(C, R, F) &&  // bd r2j3.37.1
+        survives(C, taint, F, PDT, Depth + 1))
+      return true;
     Site T;
     if (qqShape(const_cast<CallInst *>(C), taint, T)) {
       for (unsigned Idx = 0; Idx < 2; ++Idx)
@@ -367,17 +349,20 @@ Outcome decideNext(Function &F, WidthDispatch &wd, TaintSet &taint,
 
 }  // namespace
 
+bool qqSourceDependsOnTarget(Value *S, const Value *P, const Instruction *Site,
+                             const DominatorTree &DT) {
+  return dependsOnTarget(S, P, Site, DT);
+}
+
 bool qqResultSurvives(const CallInst *R, const TaintSet &taint, Function &F,
                       PostDominatorTree &PDT) { return survives(R, taint, F, PDT); }
 
 bool lowerInPlaceQQ(Module &M, WidthDispatch &wd, TaintSet &taint) {
   bool Changed = false;
-  if (declineUnhoistedLiftTails(M, taint))  // bd r2j3.37 (SpecializeTailHoist.h)
-    return Changed;
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
-    SmallPtrSet<CallInst *, 8> Done;
+    SmallPtrSet<CallInst *, 8> Done, ConsumeDone;
     for (;;) {
       Outcome O = decideNext(F, wd, taint, Done);
       if (O == Outcome::Converted) {
@@ -386,9 +371,19 @@ bool lowerInPlaceQQ(Module &M, WidthDispatch &wd, TaintSet &taint) {
       }
       if (O == Outcome::Loud)
         return Changed;
-      break;
+      // bd r2j3.37.1: a lifted call next; a consume re-opens the QQ sites.
+      const int C = consumeNextLiftedCall(F, wd, taint, ConsumeDone);
+      if (C == 2)
+        return Changed;
+      if (C == 3) {
+        Changed = true;
+        Done.clear();
+      }
+      if (C == 0)
+        break;
     }
   }
+  stripConsumeTags(M);
   for (Function &F : M)
     for (BasicBlock &BB : F)
       for (Instruction &I : BB)

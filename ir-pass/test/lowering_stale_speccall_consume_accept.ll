@@ -1,32 +1,43 @@
-; lowering_stale_speccall_tail_hoist_reject.ll — DECLINE, loud (bd
-; test_C_libtooling-r2j3.37; the dead twin of
+; lowering_stale_speccall_consume_accept.ll — ACCEPT, in place (bd
+; test_C_libtooling-r2j3.37.1; the dead twin of
 ; lowering_stale_speccall_independent_gates_placed_accept.ll). `r = f(q, p)` with
-; `f(x,y) = x*3 + y` reads `q` after `cq_theta(&q2, .3)` rotated its wire (a stale
-; read, bd r2j3.6) and leaves `p` DEAD. The call's add chain is hoisted to the
-; caller (`r = s + p`, `s = f__cqsrc0(q, p)` = 3q): in place on `p`, the source
-; temporary `s` records the OLD `q` and must be uncomputed after the gate that
-; rotated `q`, which the stale-reader fence refuses loudly, as it does for the
-; inlined `r = q*3 + p`. WAS (main ef72239c): accepted, the lifted call placed
-; before the gate and `p`'s old rail left beside `r`. Retire when the hoisted
-; group (source, chain, discharge) is placed before the gate as one unit.
+; `f(x,y) = x*3 + y` reads `q` after `cq_theta(&q2, .3)` rotated its wire (bd
+; r2j3.6) and leaves `p` DEAD. The stale read is PLACED before the gate (57ch (A))
+; and the call is then consumed in place on `p`: inside the one call, the source
+; clone `f__cqsrc0` computes 3q from the OLD q, `cqrt_add_i32` adds it into `p`'s
+; rail, the source is uncomputed and freed — all before the Ry on q2. The trace
+; (lane L) is p += 3·q_old then Ry(.3) on q. (Under the batch-055 return-chain
+; hoist this shape was LOUD: the hoisted source temporary had to be discharged
+; after the gate; the consuming clone keeps it inside the call.)
+;
+; THE MECHANISM (SpecializeConsume.h; design of record bd r2j3.37.1): the lifted
+; call becomes ONE call to a CONSUMING CLONE `__cq_q_<f>_<mask>_c<k>` that maps
+; |t>|a> -> |f(t,a)>|a> on the dead argument t's own rail (slot k), tagged
+; `!cq.inplace.qq`; its body is the in-place gates the in-place rounds mint, one per
+; op of f's return chain, each fed by a parameter, a constant or a lifted SOURCE
+; clone (computed, used, uncomputed and freed inside the body). The decision is
+; the inlined twin's (InPlaceQQConsume.cpp).
 ;
 ; Source: f6.c (lane L scratch), clang-19 -O1 -include CQ.h.
 ;
-; INTERIM (batch 055): the return-chain hoist this fixture was written for
-; crosses owner-ruling-lift-classical-only-2026-10-06 / R14 and is DISABLED
-; pending the owner's choice ((a) the hoist as a ruled exception, (b) a
-; consuming clone, (c) loud until (b); SpecializeTailHoist.h
-; `kLiftTailHoistEnabled`). Until then every owed site fails LOUDLY with the
-; backstop's diagnostic, pinned below. The hoist expectation is kept verbatim
-; under the dormant prefix HOIST (no RUN line reads it). RETIREMENT: under (a)
-; restore the HOIST lines as CHECK and the original RUN; under (b) rewrite them
-; for the consuming clone; under (c) keep this.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck %s --check-prefix=ERR --allow-empty < %t.err
+; ERR-NOT: error
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error: {{.*}}cq specialization: a lifted call overwrites a dead quantum argument, which is not lowered in place across the call
-;
-; HOIST-CMD: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; HOIST: error: {{.*}}cq opcode lowering: operand predates a non-diagonal gate
+; CHECK-LABEL: define {{.*}}i32 @main(
+; CHECK:      [[Q:%[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q]], double 5.000000e-01)
+; CHECK-NEXT: [[P:%[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[P]], double 0x3FE6666666666666)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[P]], double 2.000000e-01)
+; CHECK-NEXT: call void @__cq_q_f_11_c1(i32 [[Q]], i32 [[P]]), !cq.inplace.qq
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q]], double 3.000000e-01)
+; CHECK-LABEL: define internal void @__cq_q_f_11_c1(i32 %0, i32 %1)
+; CHECK-NEXT: [[S:%[0-9]+]] = call i32 @__cq_q_f__cqsrc0_11(i32 %0, i32 0)
+; CHECK-NEXT: call void @cqrt_add_i32(i32 [[S]], i32 %1), !cq.inplace.qq
+; CHECK-NEXT: call void @__cq_q_f__cqsrc0_11_unc(i32 [[S]], i32 %0, i32 0)
+; CHECK-NEXT: call void @cqrt_free(i32 [[S]])
 source_filename = "f6.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

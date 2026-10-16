@@ -79,6 +79,8 @@ add_library(CQPass MODULE
   src/Fp80Union.cpp
   src/FreePoint.cpp
   src/InPlaceQQ.cpp
+  src/InPlaceQQConsume.cpp   # bd r2j3.37.1: the consume decision.
+  src/InPlaceQQGate.cpp      # bd r2j3.37.1: gate membership + slots.
   src/InPlaceQQRecord.cpp
   # bd dm7f.77: the register condition (dm7f.51 step 2, design D3).
   src/RegCondLeaf.cpp
@@ -167,6 +169,8 @@ add_library(CQPass MODULE
   src/SpecializeSeed.cpp
   # bd r2j3.37: a lifted call's return chain hoisted to the caller.
   src/SpecializeTailHoist.cpp
+  # bd r2j3.37.1: the consuming clone (in place across a lifted call).
+  src/SpecializeConsume.cpp
   src/SwapRouteEmit.cpp
   src/SwitchArmProve.cpp
   src/SwitchClassify.cpp

@@ -247,16 +247,6 @@ const char kMsgInPlaceQQStaleAdjoint[] =
 
 namespace {
 
-// Is `I` an adjoint of `G` on the same operands? The symbol is EmitInverse's
-// (`inPlaceQQAdjointName`, the one spelling), never re-derived here.
-bool isAdjointOf(const CallInst *I, const CallInst *G) {
-  return I != G && isInPlaceQQGate(I) &&
-         I->getArgOperand(0) == G->getArgOperand(0) &&
-         I->getArgOperand(1) == G->getArgOperand(1) &&
-         I->getCalledFunction()->getName() ==
-             inPlaceQQAdjointName(G->getCalledFunction()->getName());
-}
-
 // How a call `X` positioned AFTER the gate uses the relabelled target `V` (or an
 // alias of it). R11 round 2 (finding F3, L2): the classification must be a
 // SUPERSET of b12d4452's `_unc` scan and FAIL CLOSED on anything it cannot place.
@@ -285,7 +275,7 @@ LaterUse classifyLaterUse(const CallInst *X, const Value *V, const TaintSet &tai
     return Fwd ? LaterUse::Adjoint : LaterUse::Unknown;
   }
   if (isInPlaceQQGate(X)) {  // `V` as its SOURCE: writes its dst.
-    W.push_back(X->getArgOperand(1));
+    W.push_back(inPlaceQQDest(X));
     return LaterUse::Records;
   }
   SmallVector<unsigned, 2> Slots;
@@ -323,6 +313,7 @@ LaterUse classifyLaterUse(const CallInst *X, const Value *V, const TaintSet &tai
 // memory that is not a proven rail bank). It is a superset of b12d4452's `_unc`
 // scan: every `_unc`/`_inv` is a `Records` reader of all its other handles.
 bool declineStaleInPlaceQQReads(Module &M, const TaintSet &taint) {
+  eraseUnusedConsumeAux(M);  // bd r2j3.37.1: `uncompute` has run.
   // bd dm7f.77: the register-condition tags are records the spine read (row
   // (c′)); `uncompute` has run, so they leave the module here.
   for (Function &F : M)
@@ -347,14 +338,14 @@ bool declineStaleInPlaceQQReads(Module &M, const TaintSet &taint) {
       return true;
     };
     for (CallInst *G : Gates) {
-      Value *P = G->getArgOperand(1);
+      Value *P = const_cast<Value *>(inPlaceQQDest(G));
       SmallPtrSet<Value *, 8> Names;
       if (!handleAliases(P, taint, DT, Names))
         return loud(G, kMsgInPlaceQQAliasUnknown);  // fail closed.
       Names.insert(P);
       SmallVector<CallInst *, 4> Undo;
       for (User *U : P->users())
-        if (auto *I = dyn_cast<CallInst>(U); I && isAdjointOf(I, G))
+        if (auto *I = dyn_cast<CallInst>(U); I && isInPlaceQQAdjointOf(I, G))
           Undo.push_back(I);
       auto undoneBefore = [&](const Instruction *X) {
         return llvm::any_of(Undo, [&](CallInst *Inv) {
@@ -365,7 +356,7 @@ bool declineStaleInPlaceQQReads(Module &M, const TaintSet &taint) {
         for (User *U : V->users()) {
           auto *X = dyn_cast<CallInst>(U);
           if (!X || X == G || !provablyBefore(G, X, DT) ||
-              isInPlaceGateOn(X, V) || isAdjointOf(X, G))
+              isInPlaceGateOn(X, V) || isInPlaceQQAdjointOf(X, G))
             continue;  // not after G, a gate ON the new value, or G's undo.
           SmallVector<const Value *, 4> W;
           const CallInst *Fwd = nullptr;

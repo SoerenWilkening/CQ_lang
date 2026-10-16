@@ -78,7 +78,8 @@ CallInst *forwardOfAdjoint(const CallInst *Adj) {
     unsigned Count = 0;
     for (User *U : Adj->getArgOperand(0)->users())
       if (auto *F = dyn_cast<CallInst>(U);
-          F && F != Adj && sameCallee(F) && isAbiQramStore(F) &&
+          F && F != Adj && sameCallee(F) &&
+          (isAbiQramStore(F) || isConsumingCloneCall(F)) &&  // r2j3.37.1
           F->arg_size() == Adj->arg_size()) {
         bool Same = true;
         for (unsigned I = 0; I < F->arg_size(); ++I)
@@ -190,6 +191,14 @@ bool isInverseEmittable(const CallInst *Forward) {
   if (isInPlaceQQSymbol(Name) && Forward->getType()->isVoidTy() &&
       Forward->arg_size() == 2)
     return true;
+  // bd r2j3.37.1 — a CONSUMING CLONE call (or its twin): its adjoint is the
+  // same-args twin, which must be DEFINED (the builder emits both together).
+  if (isConsumingCloneCall(Forward)) {
+    const Function *Twin = Forward->getModule()->getFunction(
+        consumingCloneAdjointName(Name));
+    return Twin && !Twin->isDeclaration() &&
+           Twin->getFunctionType() == Callee->getFunctionType();
+  }
   // Uncontrolled data template (incl. compares post-WI-0): its void `_unc` form.
   // The `_inv`/`_unc` twins and the `_controlled` forms are NOT re-invertible
   // here. A compare-as-data flag (`cq_template_icmp_*`/`fcmp_*`) IS now
@@ -326,6 +335,25 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     CallInst *Inv = B.CreateCall(Callee, {Handle, Imm});
     if (DebugLoc DL = Forward->getDebugLoc())
       Inv->setDebugLoc(DL);
+    return minted(Inv);
+  }
+
+  // bd r2j3.37.1 — a CONSUMING CLONE call: its adjoint is the twin on the SAME
+  // operands (same-args recipe, mirrored by `forwardOfAdjoint`); a threaded
+  // `CurHandle` relabels the destination slot; the tag rides along.
+  if (isConsumingCloneCall(Forward)) {
+    Function *Twin =
+        Forward->getModule()->getFunction(consumingCloneAdjointName(Name));
+    if (!Twin)
+      return false;
+    SmallVector<Value *, 8> Args(Forward->args());
+    if (CurHandle)
+      Args[inPlaceQQDestSlot(Forward)] = CurHandle;
+    CallInst *Inv = B.CreateCall(Twin, Args);
+    Inv->setCallingConv(Twin->getCallingConv());
+    if (DebugLoc DL = Forward->getDebugLoc())
+      Inv->setDebugLoc(DL);
+    Inv->setMetadata(kInPlaceQQTag, Forward->getMetadata(kInPlaceQQTag));
     return minted(Inv);
   }
 

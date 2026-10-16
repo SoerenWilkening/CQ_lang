@@ -2603,7 +2603,8 @@ bool declineLiveWindowRecords(Module &M, const TaintSet &taint) {
         if (!InPlace && !ControlledRy &&
             (T->arg_size() != 2 || !GateName.starts_with("cqrt_ry_")))
           continue;
-        Value *W = T->getArgOperand(ControlledRy || InPlace ? 1 : 0);
+        Value *W = InPlace ? const_cast<Value *>(inPlaceQQDest(T))  // r2j3.37.1
+                           : T->getArgOperand(ControlledRy ? 1 : 0);
         SmallVector<Value *, 16> Family;
         if (!railWindowFamily(W, Family))
           continue;

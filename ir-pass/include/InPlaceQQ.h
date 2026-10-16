@@ -103,7 +103,10 @@
 #ifndef CQ_IRPASS_IN_PLACE_QQ_H_
 #define CQ_IRPASS_IN_PLACE_QQ_H_
 
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringRef.h"
+
+#include <string>
 
 namespace llvm {
 class BinaryOperator;
@@ -143,11 +146,31 @@ bool isQQStemOpcode(unsigned Opcode);
 // `cqrt_{xor,add,sub}_{i8,i16,i32,i64}` — the in-place quantum-source symbols.
 bool isInPlaceQQSymbol(llvm::StringRef N);
 
-// A TAGGED in-place quantum-source gate: `!cq.inplace.qq`, void, two distinct
-// i32 operands, callee `cqrt_cnot` or an `isInPlaceQQSymbol`. Slot 0 is the
-// source (read), slot 1 the destination (written). Membership, never the name
-// alone: an untagged `cqrt_cnot` is a condition-network gate.
+// A TAGGED in-place quantum-source gate: `!cq.inplace.qq`, void, and either
+//   * two distinct i32 operands, callee `cqrt_cnot` or an `isInPlaceQQSymbol`:
+//     slot 0 the source (read), slot 1 the destination (written); or
+//   * a CONSUMING CLONE call (bd r2j3.37.1, SpecializeConsume.h): the callee
+//     carries `cq-consume-dst`=k, slot k is the destination (the dead argument's
+//     rail, rewritten in place to f(args)), every other slot a source the call
+//     reads and restores. Its adjoint is the same-args twin `<callee>_unc`,
+//     which carries the attribute too and is itself such a gate.
+// Membership, never the name alone: an untagged `cqrt_cnot` is a condition-
+// network gate. WHICH SLOT IS WRITTEN is asked of `inPlaceQQDestSlot` /
+// `inPlaceQQDest`, and "does it read V as a source" of `inPlaceQQReadsSource`:
+// never `getArgOperand(0)` / `(1)` (the one spelling, InPlaceQQGate.cpp).
 bool isInPlaceQQGate(const llvm::CallInst *G);
+inline constexpr const char kConsumeDstAttr[] = "cq-consume-dst";
+// The callee's consumed slot, or -1 if `F` is not a consuming clone (or twin).
+int consumingCloneDestSlot(const llvm::Function *F);
+bool isConsumingCloneCall(const llvm::CallInst *G);
+unsigned inPlaceQQDestSlot(const llvm::CallInst *G);
+const llvm::Value *inPlaceQQDest(const llvm::CallInst *G);
+bool inPlaceQQReadsSource(const llvm::CallInst *G, const llvm::Value *V);
+// The adjoint callee of a consuming clone (`f_c0` <-> `f_c0_unc`): the one
+// spelling, asked by EmitInverse and the postcondition.
+std::string consumingCloneAdjointName(llvm::StringRef Name);
+// Is `I` the adjoint of the in-place gate `G` on the same operands?
+bool isInPlaceQQAdjointOf(const llvm::CallInst *I, const llvm::CallInst *G);
 
 // Is `P`'s rail USER DATA the spine never discharges: does it carry a
 // non-permutation move (an Ry or a controlled Ry — `isNonPermutationMove`)?
@@ -196,10 +219,29 @@ unsigned deadOperandMask(const llvm::CallInst *T);
 // surviving result there fails loudly (Q1), never silently out of place.
 unsigned unprovenPhiOperandMask(const llvm::CallInst *T);
 
+// E3's partner (InPlaceQQ.cpp `dependsOnTarget`), exported for the consuming
+// clone (bd r2j3.37.1): does the source `S` depend on `P`'s OLD value at `Site`?
+bool qqSourceDependsOnTarget(llvm::Value *S, const llvm::Value *P,
+                             const llvm::Instruction *Site,
+                             const llvm::DominatorTree &DT);
+
 // E3 of the round, exported for the lifted-call backstop (bd r2j3.37,
 // SpecializeTailHoist.h): does the result `R` survive (InPlaceQQ.cpp `survives`)?
 bool qqResultSurvives(const llvm::CallInst *R, const TaintSet &taint,
                       llvm::Function &F, llvm::PostDominatorTree &PDT);
+
+// bd r2j3.37.1 — THE CONSUMING-CLONE DECISION (InPlaceQQConsume.cpp): does the
+// lifted call `C` read `R` in a chain slot with `R` dead there (so `R`'s value
+// lives on in C's result: E3 across the call); decide the first undecided
+// tagged lift site of `F` (0 none, 1 decided/left, 2 loud, 3 converted); strip
+// the tags (end of the round); erase the candidates nobody calls (after
+// `uncompute`, which may still mint a consumer's twin).
+bool continuesThroughLiftedChain(const llvm::CallInst *C, const llvm::Value *R,
+                                 llvm::Function &F);
+int consumeNextLiftedCall(llvm::Function &F, WidthDispatch &wd, TaintSet &taint,
+                          llvm::SmallPtrSetImpl<llvm::CallInst *> &Done);
+void stripConsumeTags(llvm::Module &M);
+void eraseUnusedConsumeAux(llvm::Module &M);
 
 // The round. Returns true if any site was converted. Strips every remaining
 // `!cq.qq.dead` record and `!cq.regcond` tag (bd dm7f.77) before returning.

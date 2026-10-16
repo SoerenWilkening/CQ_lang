@@ -981,6 +981,16 @@ def classify(sym):
         return Effect("gate", reads=(2,), writes=(0,), classical_imm=(1,),
                       adjoint_of="twin:cqrt_qram_store_" + m.group(1) + "_hl")
 
+    # bd r2j3.37.1 — a CONSUMING CLONE `__cq_q_<f>_<mask>_c<k>` and its twin
+    # `..._c<k>_unc` (SpecializeConsume.h): a void basis permutation of slot k
+    # (the dead argument's own rail, rewritten in place to f(args)); every other
+    # slot is read and restored. Each is the other's adjoint on the same args.
+    m = re.fullmatch(r"__cq_q_.+_[01]+_c(\d+)(_unc)?", sym)
+    if m:
+        other = sym[: -len("_unc")] if m.group(2) else sym + "_unc"
+        return Effect("gate", reads=ALL, writes=(int(m.group(1)),),
+                      adjoint_of="twin:" + other)
+
     # ---- generated templates + specialization clones ----------------------
     # Grammar (TemplateName.h):
     #   cq_template_<op>[_<pred>]_<W>[_<from>_to_<to>][_hl|_lh][_controlled][_inv]

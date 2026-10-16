@@ -34,8 +34,11 @@
 #ifndef CQ_IRPASS_ARITH_LOWERING_H_
 #define CQ_IRPASS_ARITH_LOWERING_H_
 
+#include "llvm/ADT/StringRef.h"
+
 namespace llvm {
 class BinaryOperator;
+class CallInst;
 class DominatorTree;
 class Instruction;
 class LoopInfo;
@@ -273,6 +276,15 @@ bool lowerLateReassignments(llvm::Module &M, WidthDispatch &wd, TaintSet &taint)
 // requires every prior use to be settled (`priorUseIsSettled`, with the M-B
 // discharge `Plan` when one exists). The classical-immediate M-C fence and the
 // quantum-source in-place round (`InPlaceQQ.h`) both ask this ONE body (R12).
+// bd r2j3.37.1: the M-C in-place gate itself (`cqrt_{addc,xorc}_<W>(Handle, Imm)`,
+// `sub` as add of the negated immediate), emitted before `Before` with no RAUW —
+// the ONE emission `emitInPlaceReassign` uses, for the consuming clone's body.
+// Null (and loud) for a width with no in-place symbol.
+llvm::CallInst *emitInPlaceImmediateGate(llvm::Instruction *Before,
+                                         unsigned Opcode, llvm::Value *Handle,
+                                         llvm::Value *Imm, llvm::StringRef W,
+                                         WidthDispatch &wd);
+
 bool inPlacePositionHolds(const llvm::Instruction *Site, const llvm::Value *P,
                           const TaintSet &taint, const llvm::DominatorTree &DT,
                           const llvm::LoopInfo &LI,

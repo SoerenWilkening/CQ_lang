@@ -129,9 +129,12 @@ Value *negateClassicalImmediate(Value *Imm, IRBuilder<> &B,
 // pin it: resolve the width callee FIRST (a `nullptr` there is the loud
 // `diagnoseNoTemplate` of `lowering_mc_{sub,xor}_fence_fallback.ll`), THEN the
 // `c - q` direction refusal, THEN negate, THEN emit.
-bool emitInPlaceReassign(Instruction *Site, Instruction::BinaryOps Op,
-                         Value *Handle, Value *Imm, bool HandleIsLhs,
-                         StringRef W, WidthDispatch &wd) {
+// bd r2j3.37.1: the GATE half is `emitInPlaceImmGate` (exported below as
+// `emitInPlaceImmediateGate` for the consuming clone's body); the RAUW half stays
+// here.
+CallInst *emitInPlaceImmGate(Instruction *Site, Instruction::BinaryOps Op,
+                             Value *Handle, Value *Imm, bool HandleIsLhs,
+                             StringRef W, WidthDispatch &wd) {
   FunctionCallee Callee =
       Op == Instruction::Xor ? wd.xorcFn(W) : wd.addcFn(W);
   if (!Callee) {
@@ -139,7 +142,7 @@ bool emitInPlaceReassign(Instruction *Site, Instruction::BinaryOps Op,
     // fence, so this is unreachable; never mint a phantom symbol or leave an
     // ill-typed op (Rule 1). Loud decline.
     diagnoseNoTemplate(Site);
-    return false;
+    return nullptr;
   }
   // `sub` IS NOT COMMUTATIVE, and getting this backwards is the one way this
   // emission could be a silent miscompile: `c - q` is negate-the-RAIL then add
@@ -152,7 +155,7 @@ bool emitInPlaceReassign(Instruction *Site, Instruction::BinaryOps Op,
   // never even reaches the fence's accept.
   if (Op == Instruction::Sub && !HandleIsLhs) {
     diagnoseNoTemplate(Site);
-    return false;
+    return nullptr;
   }
   IRBuilder<> Builder(Site);
   if (Op == Instruction::Sub)
@@ -160,6 +163,14 @@ bool emitInPlaceReassign(Instruction *Site, Instruction::BinaryOps Op,
   CallInst *C = Builder.CreateCall(Callee, {Handle, Imm});
   if (DebugLoc DL = Site->getDebugLoc())
     C->setDebugLoc(DL);
+  return C;
+}
+
+bool emitInPlaceReassign(Instruction *Site, Instruction::BinaryOps Op,
+                         Value *Handle, Value *Imm, bool HandleIsLhs,
+                         StringRef W, WidthDispatch &wd) {
+  if (!emitInPlaceImmGate(Site, Op, Handle, Imm, HandleIsLhs, W, wd))
+    return false;
   // In-place: the result IS the rail handle (same register, mutated state). RAUW
   // to the handle — a no-op when the Case-A phi collapse already left `Site`
   // use-empty (the single-op value accumulator), and the correct rewire for a
@@ -180,6 +191,13 @@ bool emitInPlaceReassign(Instruction *Site, Instruction::BinaryOps Op,
 }
 
 }  // namespace
+
+CallInst *emitInPlaceImmediateGate(Instruction *Before, unsigned Opcode,
+                                   Value *Handle, Value *Imm, StringRef W,
+                                   WidthDispatch &wd) {
+  return emitInPlaceImmGate(Before, static_cast<Instruction::BinaryOps>(Opcode),
+                            Handle, Imm, /*HandleIsLhs=*/true, W, wd);
+}
 
 bool rewriteBinary(BinaryOperator *bo, WidthDispatch &wd, TaintSet &taint) {
   // Stem + width gating. An out-of-scope opcode (`binaryStem` empty) or an
@@ -683,7 +701,7 @@ bool voidReaderRecordsSettled(const CallInst *CI, const Value *P,
   if (isBranchPhaseGate(CI))
     return true;
   if (isInPlaceQQGate(CI)) {
-    W.push_back(1);  // an earlier converted gate reading `P` writes its dst.
+    W.push_back(inPlaceQQDestSlot(CI));  // it writes its dst (r2j3.37.1: slot k).
   } else if (!streamGateWrites(CI, W)) {
     // A controlled rotation reading `P` only as its CONTROL writes its target.
     if (!(N.ends_with("_controlled") &&

@@ -37,16 +37,12 @@
 ; loader may interpose), spec_reject_nested_odr_callee.ll (an ODR callee reached
 ; as a NESTED classical call, whose linked body would run in a duplicated twin).
 ;
-; bd r2j3.37: `%q1`/`%q2` are measured AFTER their calls, so they stay live. A
-; DEAD theta argument of an add/sub/xor return chain is no longer lifted: the
-; chain is hoisted to the caller (SpecializeTailHoist.h) and lowered in place, so
-; the `shift`/`mask` clones this fixture pins would vanish. Retire the two
-; keep-alive measures with that hoist. The dead-argument shape:
-; spec_accept_tail_hoist_inplace.ll.
-; INTERIM (batch 055, owner question open, SpecializeTailHoist.h
-; `kLiftTailHoistEnabled`): with the hoist disabled the dead shape fails loudly
-; instead (`kMsgLiftTailUnhoisted`); the keep-alive keeps this fixture's
-; subject either way.
+; bd r2j3.37 / r2j3.37.1: `%q1`, `%q2` are measured after their calls (LIVE)
+; across it. Dead, it is a user register the call's add/sub/xor return chain
+; overwrites, and the call is consumed IN PLACE (one call to the consuming
+; clone `..._c<k>`, SpecializeConsume.h), so the out-of-place clone this
+; fixture pins would be gone. Keep the keep-alive while that clone is the
+; subject.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll

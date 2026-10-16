@@ -11,14 +11,12 @@
 ;
 ; Twin (trace-compared, tools/pairs.py): none needed: the stream is the `main` 9a230646 oracle's byte-for-byte (r1A); this file pins the signature.
 ;
-; bd r2j3.37: `%kq` is measured at the end so it stays LIVE across the call. A
-; DEAD theta argument of an add/sub/xor return chain is no longer lifted: the
-; chain is hoisted to the caller (SpecializeTailHoist.h) and lowered in place, and
-; the clone this fixture pins would vanish. Retire the keep-alive with that hoist.
-; INTERIM (batch 055, owner question open, SpecializeTailHoist.h
-; `kLiftTailHoistEnabled`): with the hoist disabled the dead shape fails loudly
-; instead (`kMsgLiftTailUnhoisted`); the keep-alive keeps this fixture's
-; subject either way.
+; bd r2j3.37 / r2j3.37.1: `%kq` is measured after the call so it stays LIVE
+; across it. Dead, it is a user register the call's add/sub/xor return chain
+; overwrites, and the call is consumed IN PLACE (one call to the consuming
+; clone `..._c<k>`, SpecializeConsume.h), so the out-of-place clone this
+; fixture pins would be gone. Keep the keep-alive while that clone is the
+; subject.
 ;
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
