@@ -41,7 +41,9 @@ namespace cq {
 // nonzero on every entered iteration of the loop it recurs in (the end-point
 // argument, asked at the loop's entry under its guards; identity zero-
 // extensions peeled). Fail closed.
-bool railWindowNonZeroOverLoop(llvm::ScalarEvolution &SE, const llvm::SCEV *D);
+// With `Ctx`, the question is asked AT that use as well (bd 01po.19.34.8).
+bool railWindowNonZeroOverLoop(llvm::ScalarEvolution &SE, const llvm::SCEV *D,
+                               const llvm::Instruction *Ctx = nullptr);
 
 bool railWindowDistinct(llvm::ScalarEvolution &SE, const llvm::SCEV *A,
                         const llvm::SCEV *B,

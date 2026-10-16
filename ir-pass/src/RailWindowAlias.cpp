@@ -115,7 +115,7 @@ bool railWindowDistinct(ScalarEvolution &SE, const SCEV *A, const SCEV *B,
                         const Instruction *Ctx, DominatorTree *DT) {
   const SCEV *D = SE.getMinusSCEV(A, B);
   if (SE.isKnownNonZero(D) ||
-      (!isa<SCEVCouldNotCompute>(D) && railWindowNonZeroOverLoop(SE, D)))
+      (!isa<SCEVCouldNotCompute>(D) && railWindowNonZeroOverLoop(SE, D, Ctx)))
     return true;
   if (!Ctx)
     return false;

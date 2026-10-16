@@ -4105,7 +4105,7 @@ def _rhs(fn, v):
     return None if d is None else _strip_md(d[1].split("=", 1)[-1])
 
 
-def _linear(fn, v, depth=0):
+def _linear(fn, v, depth=0, at=None):
     """`v` as a LINEAR FORM ({ssa: coeff}, const) over i64 add/sub chains
     (bd 01po.19.34: `m-1-l` vs `m-1` vs `m-l` in a nested loop). Exact modulo
     2^64, which is all the cell comparison needs (it is taken mod 2^62)."""
@@ -4115,16 +4115,16 @@ def _linear(fn, v, depth=0):
     if am and int(am.group(2)) + 1 == 1 << (int(am.group(2)) + 1).bit_length() - 1:
         # bd 01po.19.34.7 (R11 round 2 rN2-F2): -O1's `and i64 %j, 4294967295`
         # (a zext of trunc) is the identity on a value proven in [0, mask].
-        t, k = _linear(fn, am.group(1), depth + 1)
-        r = _lin_range(fn, t, k)
+        t, k = _linear(fn, am.group(1), depth + 1, at)
+        r = _lin_range(fn, t, k, at)
         if r is not None and 0 <= r[0] and r[1] <= int(am.group(2)):
             return t, k
         return {v: 1}, 0
     m = LIN_RE.match(_rhs(fn, v) or "") if depth <= 16 else None
     if not m:
         return {v: 1}, 0
-    ta, ka = _linear(fn, m.group(2), depth + 1)
-    tb, kb = _linear(fn, m.group(3), depth + 1)
+    ta, ka = _linear(fn, m.group(2), depth + 1, at)
+    tb, kb = _linear(fn, m.group(3), depth + 1, at)
     sg = 1 if m.group(1) == "add" else -1
     t = dict(ta)
     for x, c in tb.items():
@@ -4222,7 +4222,7 @@ def _loop_body(fn, hdr, latch):
     return body
 
 
-def _iv_sym(fn, x):
+def _iv_sym(fn, x, at=None):
     """bd 01po.19.34.4 (R11 round 1 C-F1) — a SYMBOLIC upper bound of a
     counted phi x against ANOTHER counter Y: (s, Y, d, loY, hiY) meaning
     s <= x <= Y + d on every trip, or None. x is `phi i64 [ s, %P ], [ %n,
@@ -4242,7 +4242,7 @@ def _iv_sym(fn, x):
     lits = [(v, b) for v, b in inc if re.fullmatch(r"\d+", v)]
     vals = [(v, b) for v, b in inc if v.startswith("%")]
     if not lits and len(vals) == 2:
-        return _iv_sym_down(fn, x, hdr, m)
+        return _iv_sym_down(fn, x, hdr, m, at)
     if len(lits) != 1 or len(vals) != 1:
         return None
     s0 = int(lits[0][0])
@@ -4290,27 +4290,27 @@ def _iv_sym(fn, x):
     return (s0, y, d, lo_y, hi_y)
 
 
-def _num_range(fn, x):
+def _num_range(fn, x, at=None):
     """A proven numeric [lo, hi] of a counter x (literal-bounded `_iv_range`, or
     the symbolic `_iv_sym` bound read with its partner's range), or None."""
     r = _iv_range(fn, x)
     if r is not None:
         return r
-    sy = _iv_sym(fn, x)
+    sy = _iv_sym(fn, x, at)
     if sy is None:
         return None
     s0, _y, d, _lo, hi_y = sy
     return (s0, hi_y + d) if s0 <= hi_y + d else None
 
 
-def _lin_range(fn, t, k):
+def _lin_range(fn, t, k, at=None):
     """[lo, hi] of the linear form (t, k) when it has at most one counter."""
     if not t:
         return (k, k)
     if len(t) != 1:
         return None
     (x, c), = t.items()
-    r = _num_range(fn, x)
+    r = _num_range(fn, x, at)
     if r is None:
         return None
     a, b = c * r[0] + k, c * r[1] + k
@@ -4335,7 +4335,7 @@ def _entry_lo(fn, pre, y, lo_y):
     return lo_y + 1 if taken == pre else lo_y
 
 
-def _iv_sym_down(fn, x, hdr, m):
+def _iv_sym_down(fn, x, hdr, m, at=None):
     """bd 01po.19.34.7 (rN2-F2) — a DOWN-counting x: `phi i64 [ Y, %P ], [ %n,
     %Lt ]` with `%n = add nsw i64 x, -1`, staying only while x (or %n) is
     `sgt`/`sge` a literal c >= 0. The first trip runs with x == Y, each next x
@@ -4354,12 +4354,10 @@ def _iv_sym_down(fn, x, hdr, m):
         return None
     term = next((t for lbl, _c, t in fn.blocks if lbl == lt), None)
     bm = BR_COND_RE.match(_strip_md(term or ""))
-    if not bm or (bm.group(2) == hdr) == (bm.group(3) == hdr):
-        return None
+    cm = SICMP_RE.match(_rhs(fn, bm.group(1)) or "") if bm else None
+    if not bm or (bm.group(2) == hdr) == (bm.group(3) == hdr) or not cm:
+        return _iv_sym_down_top(fn, x, hdr, y, n, lt, at)
     stay_true = bm.group(2) == hdr
-    cm = SICMP_RE.match(_rhs(fn, bm.group(1)) or "")
-    if not cm:
-        return None
     pred, a, c = cm.groups()
     if a not in (x, n):
         a, c = c, a
@@ -4387,12 +4385,55 @@ def _iv_sym_down(fn, x, hdr, m):
     return (low, y, 0, lo_y, ry[1])
 
 
-def _affine_index(fn, v, depth=0):
+def _iv_sym_down_top(fn, x, hdr, y, n, lt, at):
+    """bd 01po.19.34.8 (N1) — a TOP-TESTED down-counter (the exit test in the
+    header, e.g. a loop with a `break`, which -O1 leaves unrotated): the header
+    `br i1 (icmp sgt|sge x, c), %Body, %Exit` lets control into the rest of the
+    loop only while the test holds, so in every loop block OTHER THAN THE
+    HEADER, c' <= x <= Y (x starts at Y and only ever steps -1, nsw). The
+    claim holds ONLY there, so it is made only for `at` (the block of the cell
+    address being asked about) inside the loop and not the header. The latch
+    test (`lt`, here the `break`) can only end the walk earlier."""
+    if at is None or at == hdr:
+        return None
+    body = _loop_body(fn, hdr, lt)
+    if at not in body:
+        return None
+    term = next((t for lbl, _c, t in fn.blocks if lbl == hdr), None)
+    bm = BR_COND_RE.match(_strip_md(term or ""))
+    if not bm:
+        return None
+    inside = [b for b in (bm.group(2), bm.group(3)) if b in body]
+    if len(inside) != 1 or inside[0] == hdr:
+        return None  # the header must leave the loop on one edge exactly
+    stay_true = inside[0] == bm.group(2)
+    cm = SICMP_RE.match(_rhs(fn, bm.group(1)) or "")
+    if not cm:
+        return None
+    pred, a, c = cm.groups()
+    if a != x:
+        a, c = c, a
+        pred = {"sgt": "slt", "sge": "sle", "slt": "sgt", "sle": "sge"}[pred]
+    if a != x or not re.fullmatch(r"\d+", c):
+        return None
+    if not stay_true:
+        pred = {"sgt": "sle", "sge": "slt", "slt": "sge", "sle": "sgt"}[pred]
+    low = {"sgt": int(c) + 1, "sge": int(c)}.get(pred)
+    if low is None or y in (x, n) or fn.def_block.get(y) in body:
+        return None
+    ry = _iv_range(fn, y)
+    if ry is None:
+        return None
+    return (low, y, 0, ry[0], ry[1])
+
+
+def _affine_index(fn, v, depth=0, at=None):
     """`v` as (terms, offset): terms a frozenset of (ssa, coeff, range, sym)
     with `range` the `_iv_range` and `sym` the `_iv_sym` of the ssa (None when
-    unproven)."""
-    t, k = _linear(fn, v)
-    return frozenset((x, c, _iv_range(fn, x), _iv_sym(fn, x))
+    unproven). `at` is the block where the index is used (a header-tested
+    counter's bound holds only inside its loop body)."""
+    t, k = _linear(fn, v, at=at)
+    return frozenset((x, c, _iv_range(fn, x), _iv_sym(fn, x, at))
                      for x, c in t.items()), k
 
 
@@ -4406,7 +4447,8 @@ def _window_cell(fn, ptr):
     m = GEP_CELL_RE.search(_strip_md(d[1].split("=", 1)[-1]))
     if not m or m.group(1) not in fn.window_allocas:
         return None
-    return (m.group(1),) + _affine_index(fn, m.group(2))
+    return (m.group(1),) + _affine_index(fn, m.group(2),
+                                          at=fn.def_block.get(ptr))
 
 
 def _cell_at(c, k):

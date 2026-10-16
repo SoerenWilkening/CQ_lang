@@ -2510,7 +2510,66 @@ TRIANGLE0_MUTANTS = [
      "B1-input-aliases-written-rail"),
 ]
 
+# bd 01po.19.34.8 (N1) — the TOP-TESTED down triangle (a `break` keeps the
+# exit test in the header): the header computes %k1 = %k - 1 and tests `%k
+# sgt 0`; the body (where the cell address is used) runs only under it, so
+# there 1 <= %k <= %i (`_iv_sym_down_top`). Mutants: the cell address formed
+# IN THE HEADER (the bound does not hold there: B1), and the header test
+# `sge` (body runs with %k == 0, %k1 == -1: the mask is no identity: B1).
+WINDOW_CELL_TRIANGLE_TOP = """
+define i32 @slice() local_unnamed_addr {
+entry:
+  %w = alloca i32, i64 4, align 4, !cq.railwindow !0
+  %h0 = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %h0, ptr %w, align 4
+  br label %outer
+outer:
+  %i = phi i64 [ 0, %entry ], [ %i1, %olatch ]
+  %ai = getelementptr i32, ptr %w, i64 %i
+  br label %hdr
+hdr:
+  %k = phi i64 [ %i, %outer ], [ %k1, %latch ]
+  %k1 = add nsw i64 %k, -1
+  %t = icmp sgt i64 %k, 0
+  br i1 %t, label %body, label %olatch
+body:
+  %jm = and i64 %k1, 4294967295
+  %aj = getelementptr i32, ptr %w, i64 %jm
+  %xj = load i32, ptr %aj, align 4
+  %xi = load i32, ptr %ai, align 4
+  call void @cqrt_ry_i1_controlled(i32 %xj, i32 %xi, double 3.000000e-01)
+  store i32 %xi, ptr %ai, align 4
+  br label %latch
+latch:
+  %b = icmp eq i64 %k1, 2
+  br i1 %b, label %olatch, label %hdr
+olatch:
+  %i1 = add nuw nsw i64 %i, 1
+  %ic = icmp eq i64 %i1, 4
+  br i1 %ic, label %exit, label %outer
+exit:
+  %x2 = load i32, ptr %w, align 4
+  %r = call i1 @cqrt_measure_i1(i32 %x2)
+  %z = zext i1 %r to i32
+  ret i32 %z
+}
+!0 = !{i32 1}
+"""
+TRIANGLE_TOP_MUTANTS = [
+    ("window-cell-triangle-top-address-in-header",
+     insert_after(drop(sub(WINDOW_CELL_TRIANGLE_TOP, "%xj = load", "ptr %aj", "ptr %ajh"),
+                       "%aj = getelementptr"),
+                  "%k1 = add nsw", "  %jmh = and i64 %k1, 4294967295\n"
+                  "  %ajh = getelementptr i32, ptr %w, i64 %jmh"),
+     "B1-input-aliases-written-rail"),
+    ("window-cell-triangle-top-header-sge",
+     sub(WINDOW_CELL_TRIANGLE_TOP, "%t = icmp", "icmp sgt i64 %k, 0",
+         "icmp sge i64 %k, 0"),
+     "B1-input-aliases-written-rail"),
+]
+
 MEM_POSITIVE = [
+    ("window-cell-triangle-top-tested-down", WINDOW_CELL_TRIANGLE_TOP),
     ("window-cell-triangle0-entry-guard", WINDOW_CELL_TRIANGLE0),
     ("window-cell-triangle-down-masked", WINDOW_CELL_TRIANGLE_DOWN),
     ("window-cell-triangle-inner-below-outer", WINDOW_CELL_TRIANGLE),
@@ -2639,6 +2698,7 @@ exit:
     *IV_BOUND_MUTANTS,
     *TRIANGLE_MUTANTS,
     *TRIANGLE0_MUTANTS,
+    *TRIANGLE_TOP_MUTANTS,
     # bd 01po.19.34: the counted-phi range proof's own kill tests.
     ("window-cell-cnot-iv-starts-at-zero",
      sub(WINDOW_CELL_CNOT_IV, "%l = phi", "[ 2, %entry ]", "[ 0, %entry ]"),

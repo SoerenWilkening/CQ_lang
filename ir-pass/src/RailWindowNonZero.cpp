@@ -55,19 +55,29 @@ bool signAtEntry(ScalarEvolution &SE, const Loop *L, const SCEV *X,
          SE.isKnownPredicate(P, SE.applyLoopGuards(X, L), K);
 }
 
-// (S, End) of an affine, constant-step recurrence whose walk cannot wrap, or
-// {nullptr, nullptr}.
+// The UPPER BOUND on L's backedge-taken count the end-point argument walks to:
+// SCEV's symbolic max (a list, so a further bound can be added without
+// touching the callers; per-exit counts were tried for bd 01po.19.34.8 and
+// were not needed — the at-use peel below covers the top-tested `break` loop).
+SmallVector<const SCEV *, 4> tripBounds(ScalarEvolution &SE, const Loop *L) {
+  SmallVector<const SCEV *, 4> Out;
+  const SCEV *Max = SE.getSymbolicMaxBackedgeTakenCount(L);
+  if (!isa<SCEVCouldNotCompute>(Max))
+    Out.push_back(Max);
+  return Out;
+}
+
+// (S, End) of an affine, constant-step recurrence whose walk to the trip bound
+// `Max` cannot wrap, or {nullptr, nullptr}.
 std::pair<const SCEV *, const SCEV *> monotoneEnds(ScalarEvolution &SE,
-                                                   const SCEVAddRecExpr *AR) {
+                                                   const SCEVAddRecExpr *AR,
+                                                   const SCEV *Max) {
   if (!AR->isAffine() || !AR->getType()->isIntegerTy())
     return {nullptr, nullptr};
   const auto *C = dyn_cast<SCEVConstant>(AR->getStepRecurrence(SE));
   if (!C || C->getAPInt().isZero())
     return {nullptr, nullptr};
   const Loop *L = AR->getLoop();
-  const SCEV *Max = SE.getSymbolicMaxBackedgeTakenCount(L);
-  if (isa<SCEVCouldNotCompute>(Max))
-    return {nullptr, nullptr};
   unsigned W = AR->getType()->getIntegerBitWidth();
   APInt MaxU = SE.getUnsignedRangeMax(SE.applyLoopGuards(Max, L));
   // The symbolic max is only ever USED on trips that enter L; on the others
@@ -76,7 +86,9 @@ std::pair<const SCEV *, const SCEV *> monotoneEnds(ScalarEvolution &SE,
   // under L's entry guards (bd 01po.19.34.7, rN2-F1).
   if (const auto *CM =
           dyn_cast<SCEVConstant>(SE.getConstantMaxBackedgeTakenCount(L)))
-    if (CM->getType() == Max->getType() && CM->getAPInt().ult(MaxU) &&
+    if (CM->getType() == Max->getType() &&
+        CM->getAPInt().getBitWidth() == MaxU.getBitWidth() &&
+        CM->getAPInt().ult(MaxU) &&
         signAtEntry(SE, L, Max, ICmpInst::ICMP_SGE, SE.getZero(Max->getType())) &&
         signAtEntry(SE, L, Max, ICmpInst::ICMP_SLE, CM))
       MaxU = CM->getAPInt();
@@ -96,12 +108,16 @@ std::pair<const SCEV *, const SCEV *> monotoneEnds(ScalarEvolution &SE,
 // Both ends of the walk inside [Lo, Hi] (signed) at L's entry: every value is.
 bool walkWithin(ScalarEvolution &SE, const SCEVAddRecExpr *AR, const SCEV *Lo,
                 const SCEV *Hi) {
-  auto [S, End] = monotoneEnds(SE, AR);
   const Loop *L = AR->getLoop();
-  return S && signAtEntry(SE, L, S, ICmpInst::ICMP_SGE, Lo) &&
-         signAtEntry(SE, L, End, ICmpInst::ICMP_SGE, Lo) &&
-         signAtEntry(SE, L, S, ICmpInst::ICMP_SLE, Hi) &&
-         signAtEntry(SE, L, End, ICmpInst::ICMP_SLE, Hi);
+  for (const SCEV *Max : tripBounds(SE, L)) {
+    auto [S, End] = monotoneEnds(SE, AR, Max);
+    if (S && signAtEntry(SE, L, S, ICmpInst::ICMP_SGE, Lo) &&
+        signAtEntry(SE, L, End, ICmpInst::ICMP_SGE, Lo) &&
+        signAtEntry(SE, L, S, ICmpInst::ICMP_SLE, Hi) &&
+        signAtEntry(SE, L, End, ICmpInst::ICMP_SLE, Hi))
+      return true;
+  }
+  return false;
 }
 
 // bd 01po.19.34.7 (R11 round 2 rN2-F2) — the down-counting inner loop: -O1
@@ -133,8 +149,11 @@ const SCEV *wideCounterpart(ScalarEvolution &SE, const SCEV *N, Type *WideT,
 }
 
 class PeelIdentityZext : public SCEVRewriteVisitor<PeelIdentityZext> {
+  const Instruction *Ctx;
+
 public:
-  using SCEVRewriteVisitor::SCEVRewriteVisitor;
+  PeelIdentityZext(ScalarEvolution &SE, const Instruction *Ctx)
+      : SCEVRewriteVisitor(SE), Ctx(Ctx) {}
   const SCEV *visitZeroExtendExpr(const SCEVZeroExtendExpr *Z) {
     const SCEV *Op = Z->getOperand();
     unsigned w = Op->getType()->getIntegerBitWidth();
@@ -142,26 +161,44 @@ public:
     if (w >= 63)
       return Z;
     const SCEV *W = wideCounterpart(SE, Op, WideT);
-    const auto *AR = dyn_cast_or_null<SCEVAddRecExpr>(W);
-    if (!AR || SE.getTruncateExpr(AR, Op->getType()) != Op)
+    if (!W || SE.getTruncateExpr(W, Op->getType()) != Op)
       return Z;  // not provably the same bits
-    if (!walkWithin(SE, AR, SE.getZero(WideT),
-                    SE.getConstant(WideT, (1ull << w) - 1)))
-      return Z;
-    return AR;
+    const SCEV *Zero = SE.getZero(WideT);
+    const SCEV *Top = SE.getConstant(WideT, (1ull << w) - 1);
+    if (const auto *AR = dyn_cast<SCEVAddRecExpr>(W))
+      if (walkWithin(SE, AR, Zero, Top))
+        return AR;
+    // bd 01po.19.34.8 (N1): AT the use. A top-tested loop (`for (j = i - 1;
+    // j >= 0; j--) { …; if (j == 2) break; }` keeps its exit test in the
+    // header) computes the index once more than the body uses it, so the walk
+    // over the whole trip count reaches -1; the body block, though, runs only
+    // under the header's `j > 0`. SCEV's dominating-condition query at the use
+    // proves W in [0, 2^w - 1] there.
+    // `W >= 0` is also asked as `W + 1 > 0` (the header's `j > 0` speaks of
+    // W + 1; no overflow, W <= Top is asked too).
+    if (Ctx && SE.isKnownPredicateAt(ICmpInst::ICMP_SLE, W, Top, Ctx) &&
+        (SE.isKnownPredicateAt(ICmpInst::ICMP_SGE, W, Zero, Ctx) ||
+         SE.isKnownPredicateAt(ICmpInst::ICMP_SGT,
+                               SE.getAddExpr(W, SE.getOne(WideT)), Zero, Ctx)))
+      return W;
+    return Z;
   }
 };
 
 }  // namespace
 
-bool railWindowNonZeroOverLoop(ScalarEvolution &SE, const SCEV *D) {
+bool railWindowNonZeroOverLoop(ScalarEvolution &SE, const SCEV *D,
+                               const Instruction *Ctx) {
   if (const auto *AR0 = dyn_cast<SCEVAddRecExpr>(D); !AR0)
-    D = PeelIdentityZext(SE).visit(D);
+    D = PeelIdentityZext(SE, Ctx).visit(D);
+  // At the use: the peeled difference is strictly on one side there (SCEV's
+  // dominating conditions plus its induction reasoning on the recurrence).
+  const SCEV *Zero0 = SE.getZero(D->getType());
+  if (Ctx && (SE.isKnownPredicateAt(ICmpInst::ICMP_SLT, D, Zero0, Ctx) ||
+              SE.isKnownPredicateAt(ICmpInst::ICMP_SGT, D, Zero0, Ctx)))
+    return true;
   const auto *AR = dyn_cast<SCEVAddRecExpr>(D);
   if (!AR)
-    return false;
-  auto [S, End] = monotoneEnds(SE, AR);
-  if (!S)
     return false;
   const Loop *L = AR->getLoop();
   const SCEV *Zero = SE.getZero(D->getType());
@@ -171,10 +208,15 @@ bool railWindowNonZeroOverLoop(ScalarEvolution &SE, const SCEV *D) {
     return signAtEntry(SE, L, X, Strict, Zero) ||
            (signAtEntry(SE, L, X, Weak, Zero) && nonZeroAtEntry(SE, L, X));
   };
-  return (strict(S, ICmpInst::ICMP_SLT, ICmpInst::ICMP_SLE) &&
-          strict(End, ICmpInst::ICMP_SLT, ICmpInst::ICMP_SLE)) ||
-         (strict(S, ICmpInst::ICMP_SGT, ICmpInst::ICMP_SGE) &&
-          strict(End, ICmpInst::ICMP_SGT, ICmpInst::ICMP_SGE));
+  for (const SCEV *Max : tripBounds(SE, L)) {
+    auto [S, End] = monotoneEnds(SE, AR, Max);
+    if (S && ((strict(S, ICmpInst::ICMP_SLT, ICmpInst::ICMP_SLE) &&
+               strict(End, ICmpInst::ICMP_SLT, ICmpInst::ICMP_SLE)) ||
+              (strict(S, ICmpInst::ICMP_SGT, ICmpInst::ICMP_SGE) &&
+               strict(End, ICmpInst::ICMP_SGT, ICmpInst::ICMP_SGE))))
+      return true;
+  }
+  return false;
 }
 
 }  // namespace cq
