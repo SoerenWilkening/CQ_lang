@@ -39,6 +39,7 @@
 #include "QramLowering.h"  // instUnderTaintedControl (bd wt8u, the hand-off)
 #include "TaintedControlDependence.h"  // isTaintedBranchTerminator (bd r2j3.6)
 #include "AbortParkEmit.h"  // isAbortParkCondition (bd dm7f.7)
+#include "LoopAccumulator.h"  // seededAccumulatorPhi (bd 01po.19.18)
 
 #include "llvm/IR/IRBuilder.h"
 
@@ -160,6 +161,13 @@ void diagnose(Instruction *Where, StringRef Msg) {
 // predicate already answers, and Rule 14 says ask it rather than re-spell it.
 // (Declared in LoopPlan.h.)
 Value *inPlaceValueRailOperand(BinaryOperator *BO, const TaintSet &taint) {
+  // bd 01po.19.18 — a PROVEN quantum-source accumulator step (both operands
+  // quantum, LoopAccumulator.h): its rail is the operand its commit recorded.
+  if (taint.InPlaceQQRailOps.count(BO)) {
+    auto It = taint.InPlaceRailIdx.find(BO);
+    return It == taint.InPlaceRailIdx.end() ? nullptr
+                                            : BO->getOperand(It->second);
+  }
   Instruction::BinaryOps Op = BO->getOpcode();
   if (Op != Instruction::Add && Op != Instruction::Xor)
     return nullptr;  // owner scope (dtzb): the add/xor bijection family only.
@@ -3182,6 +3190,16 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
       // any merge emitter has run, where `taint.ControlOwnedRails` is still empty.
       if (loopCarriedHandlePhi(P, L, taint, GateCalls))
         return false;
+      // bd 01po.19.18 — a SEEDED ACCUMULATOR (LoopAccumulator.h) is not X1: it
+      // is left unclaimed HERE, before anything is mutated, for
+      // `collapseRoundOneAccumulators` (the `lowerLoops` slot after this one),
+      // which collapses it through `collapseRailPhisIn` — the round-2 twin of
+      // this site (SCOPE_L1a), whose fences tolerate the iteration-local source
+      // temps this function's COVERAGE refuses.
+      if (seededAccumulatorPhi(P, L, taint, DT, [&](Value *V) {
+            return peelInPlaceStep(V, GateCalls, taint);
+          }))
+        return false;
       Value *LatBase = peelInPlaceBase(LatV, GateCalls, taint);
       if (taint.Tainted.count(LatBase)) {
         diagnose(&P, kMsgCrossIter);
@@ -3759,6 +3777,17 @@ bool loopHasInPlaceRailStructure(
           peelInPlaceBase(P.getIncomingValue(i), GateCalls, taint) == &P)
         return true;
   }
+  // (c) bd 01po.19.18 — a SEEDED ACCUMULATOR header phi (LoopAccumulator.h):
+  // the rolled owner lowers it in place (one register), while the unrolled
+  // copies would chain the QQ op on itself (`q + q`, InPlaceQQ's self-dependent
+  // refusal) or leave each copy's old register standing. Asked by CALLING the
+  // recognizer the collapse claims with (Rule 14).
+  DominatorTree DT(*L->getHeader()->getParent());
+  for (PHINode &P : L->getHeader()->phis())
+    if (seededAccumulatorPhi(P, L, taint, DT, [&](Value *V) {
+          return peelInPlaceStep(V, GateCalls, taint);
+        }))
+      return true;
   return false;
 }
 
@@ -3868,6 +3897,7 @@ unsigned reopenClosedRailExits(Loop *L, PHINode &P,
 }
 
 RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
+                              WidthDispatch &wd,
                               const SmallPtrSetImpl<CallInst *> &GateCalls,
                               DominatorTree &DT, LoopInfo &LI,
                               SmallPtrSetImpl<Value *> &RootsOut) {
@@ -3895,6 +3925,7 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
   // grouping round 1 uses (`ByRoot` over `railRoot`) — Rule 14, ONE predicate
   // asked twice, not two that agree today.
   MapVector<Value *, SmallVector<Value *, 8>> ChainsByRoot;
+  SmallVector<SeededAccumulator, 1> Accs;  // bd 01po.19.18, committed below
   for (PHINode &P : Header->phis()) {
     if (!taint.Tainted.count(&P))
       continue;  // classical induction phi — not a rail.
@@ -3925,6 +3956,17 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
       // an unpromotable φ still declines, loudly, one stage later.
       if (loopCarriedHandlePhi(P, L, taint, GateCalls))
         continue;
+      // bd 01po.19.18 — the SEEDED ACCUMULATOR (`c = c + src`, a classical seed
+      // and a quantum-source in-place step; LoopAccumulator.h). Recognized here,
+      // in the analysis pass, and COMMITTED below once the header is classified;
+      // its chain then joins `Collapse` like any other rail. Round-1 twin:
+      // `tryCaseA`'s X1 (SCOPE_L1a).
+      if (auto Acc = seededAccumulatorPhi(
+              P, L, taint, DT,
+              [&](Value *V) { return peelInPlaceStep(V, GateCalls, taint); })) {
+        Accs.push_back(*Acc);
+        continue;
+      }
       Value *LatBase = peelInPlaceBase(LatV, GateCalls, taint);
       if (taint.Tainted.count(LatBase)) {
         diagnose(&P, kMsgCrossIter);
@@ -3971,6 +4013,29 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
     RailMembers.append(Chain.begin(), Chain.end());
     auto &Merged = ChainsByRoot[Root];
     Merged.append(Chain.begin(), Chain.end());
+    Collapse[&P] = Root;
+    RootsOut.insert(Root);
+  }
+  // bd 01po.19.18 — commit each seeded accumulator: the register is minted
+  // (`cqrt_alloc_<W>(seed)`, the rail's ROOT) and its QQ steps recorded, after
+  // which its latch value peels to the phi through `peelInPlaceStep` and the
+  // chain is enumerated exactly as above. Every fence below then asks it like
+  // any other rail. A width with no allocator is left for the X1 decline.
+  for (const SeededAccumulator &A : Accs) {
+    Value *Root = commitSeededAccumulator(A, wd, taint, DT);
+    if (!Root) {
+      diagnose(A.Phi, kMsgCrossIter);
+      return RailRound2::Declined;
+    }
+    PHINode &P = *A.Phi;
+    SmallVector<Value *, 8> Chain;
+    Chain.push_back(&P);
+    for (Value *V = P.getIncomingValueForBlock(Latch); V && V != &P;
+         V = peelInPlaceStep(V, GateCalls, taint))
+      Chain.push_back(V);
+    Chain.push_back(Root);
+    RailMembers.append(Chain.begin(), Chain.end());
+    ChainsByRoot[Root].append(Chain.begin(), Chain.end());
     Collapse[&P] = Root;
     RootsOut.insert(Root);
   }
@@ -5428,6 +5493,87 @@ void recordRound1RailGrant(Loop *L, TaintSet &taint,
 
 }  // namespace
 
+// bd 01po.19.18 — A SEEDED ACCUMULATOR WHOSE SOURCE TEMPORARIES CANNOT BE
+// DISCHARGED IN ITS TRIP FAILS LOUDLY. Each trip's QQ step reads a source that
+// is often a fresh template rail (`zext(q[i])`, `a ^ i`); the spine reverses it
+// in the body only where `markIfRailLocal` certified the body. Where it did not
+// (e.g. a subloop with surviving quantum content, `railLocalQualifies`' subloop
+// clause), every trip's source rail would be left standing as a dead record of
+// the rails it read — the leak class of bd s82e, with new customers (L9). Asked
+// of the owning predicate (`railLocalQualifies`, R12) for its refusal site, and
+// only when a step's source really is such a temporary (a register or a cell
+// read is a root, never reversed, and leaves nothing behind).
+static bool
+declineStrandedAccumulatorTemps(Loop *L, TaintSet &taint, LoopInfo &LI,
+                                const SmallPtrSetImpl<CallInst *> &GateCalls,
+                                const SmallPtrSetImpl<Value *> &Roots) {
+  static constexpr char kMsgAccTempsStranded[] =
+      "cq loop lowering: loop accumulator source temporaries cannot be "
+      "discharged in the loop body";
+  bool AnyTemp = false;
+  for (BasicBlock *BB : L->blocks())
+    for (Instruction &I : *BB)
+      if (taint.InPlaceQQRailOps.count(&I))
+        if (auto It = taint.InPlaceRailIdx.find(&I);
+            It != taint.InPlaceRailIdx.end()) {
+          auto *Src = dyn_cast<Instruction>(I.getOperand(1 - It->second));
+          if (Src && L->contains(Src->getParent()) && !isa<LoadInst>(Src) &&
+              !isa<PHINode>(Src))
+            AnyTemp = true;
+        }
+  if (!AnyTemp)
+    return false;
+  bool AnyLocal = false;
+  Instruction *WhyNot = nullptr;
+  if (railLocalQualifies(L, taint, LI, GateCalls, Roots, AnyLocal, &WhyNot))
+    return false;
+  diagnose(WhyNot ? WhyNot : L->getHeader()->getTerminator(),
+           kMsgAccTempsStranded);
+  return true;
+}
+
+// bd 01po.19.18 — the ROUND-1 slot of the seeded accumulator (LoopAccumulator.h),
+// for a loop with NO tainted control in its body (one with control is left to
+// round 2, `collapseFlattenedLoopRails`, after its regions are flattened).
+// `tryCaseA` left the loop unclaimed at its X1 site; this claims it through
+// `collapseRailPhisIn`, the SAME analysis and fences the round-2 path runs, and
+// then grants the spine its in-body discharge permission exactly as that path
+// does (the invariant-register extension, then `markIfRailLocal`). The grant is
+// a ROUND-1 grant, so it is RECORDED for `declineRound2FalsifiedRailGrants`'
+// final-taint re-ask (L1), as the root-mint escape in `lowerLoops` records its
+// own. True iff the loop was claimed (collapsed or loudly declined).
+static bool
+collapseRoundOneAccumulators(Loop *L, Function &F, TaintSet &taint,
+                             WidthDispatch &wd,
+                             const SmallPtrSetImpl<CallInst *> &GateCalls,
+                             DominatorTree &DT, LoopInfo &LI) {
+  for (BasicBlock *BB : L->blocks())
+    if (isTaintedBranchTerminator(BB->getTerminator(), taint))
+      return false;
+  bool Any = false;
+  for (PHINode &P : L->getHeader()->phis())
+    if (seededAccumulatorPhi(P, L, taint, DT, [&](Value *V) {
+          return peelInPlaceStep(V, GateCalls, taint);
+        }))
+      Any = true;
+  if (!Any)
+    return false;
+  SmallPtrSet<Value *, 4> Roots;
+  RailRound2 R = collapseRailPhisIn(L, F, taint, wd, GateCalls, DT, LI, Roots);
+  if (R == RailRound2::NotClaimed)
+    return false;
+  if (R == RailRound2::Declined)
+    return true;
+  SmallPtrSet<Value *, 4> Invariant;
+  if (invariantRegisterRoots(L, taint, wd, DT, LI, GateCalls, Invariant, &Roots))
+    Roots.insert(Invariant.begin(), Invariant.end());
+  if (markIfRailLocal(L, taint, LI, GateCalls, Roots))
+    recordRound1RailGrant(L, taint, Roots);
+  else
+    declineStrandedAccumulatorTemps(L, taint, LI, GateCalls, Roots);
+  return true;
+}
+
 void collapseFlattenedLoopRails(
     Module &M, WidthDispatch &wd, TaintSet &taint,
     const ScrubMap<const BasicBlock *, unsigned> *AlreadyProcessed) {
@@ -5511,7 +5657,8 @@ void collapseFlattenedLoopRails(
       // non-zero, and handing the spine an in-body discharge permission for a
       // module that is never emitted is bookkeeping on a corpse (bd 8h7d.5
       // Rule-13 round 1); a NotClaimed loop keeps its pre-existing owner.
-      RailRound2 R2 = collapseRailPhisIn(L, F, taint, GateCalls, DT, LI, Roots);
+      RailRound2 R2 =
+          collapseRailPhisIn(L, F, taint, wd, GateCalls, DT, LI, Roots);
       if (R2 == RailRound2::Collapsed) {
         // THE MIXED LOOP (bd 3qlq Inc 1, the Rule-13 CLEARANCE finding C-1 — the
         // BLOCK). A collapse means SOME register crosses the back edge; it says
@@ -5535,7 +5682,9 @@ void collapseFlattenedLoopRails(
         if (invariantRegisterRoots(L, taint, wd, DT, LI, GateCalls, Invariant,
                                    &Roots))
           Roots.insert(Invariant.begin(), Invariant.end());
-        markIfRailLocal(L, taint, LI, GateCalls, Roots);
+        if (!markIfRailLocal(L, taint, LI, GateCalls, Roots) &&
+            declineStrandedAccumulatorTemps(L, taint, LI, GateCalls, Roots))
+          return;  // bd 01po.19.18; `diagnose` exits on the first DS_Error.
       } else if (R2 == RailRound2::NotClaimed &&
                  invariantRegisterRoots(L, taint, wd, DT, LI, GateCalls, Roots,
                                         /*CarriedRoots=*/nullptr)) {
@@ -8158,6 +8307,8 @@ void lowerLoops(Module &M, WidthDispatch &wd, TaintSet &taint) {
       if (tryBreak(L, F, taint, wd, GateCalls, DT, LI, SE))
         continue;
       if (tryCaseA(L, F, taint, GateCalls, DT, LI))
+        continue;
+      if (collapseRoundOneAccumulators(L, F, taint, wd, GateCalls, DT, LI))
         continue;
       if (markIfIterationLocal(L, taint, LI))
         continue;

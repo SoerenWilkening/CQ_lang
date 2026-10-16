@@ -136,4 +136,12 @@ out:
 ;   `if (b[i-1]) ...`).  B4' then becomes the sole defence against the store
 ;   move and this file becomes isolating; re-derive its DECLINE line THEN.
 ;
-; DECLINE: cq loop lowering: loop-carried tainted value crosses iterations
+; ⚠ bd 01po.19.18 (2026-10-16): DECLINE -> DECLINE string move. The in-loop
+; `acc += cell` is now the SEEDED ACCUMULATOR (LoopAccumulator.h) and X1 is gone;
+; its per-trip source `zext(cell)` cannot be discharged in the body because
+; `railLocalQualifies`' (L3) refuses the window-cell STORE in the body (the
+; exemption `markIfIterationLocal` grants a window store is not granted there),
+; so `declineStrandedAccumulatorTemps` speaks. RETIREMENT TRIGGER: the window
+; store exemption in `railLocalQualifies` (filed with 01po.19.18) — re-derive
+; this line then.
+; DECLINE: cq loop lowering: loop accumulator source temporaries cannot be discharged in the loop body

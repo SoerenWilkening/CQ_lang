@@ -1339,6 +1339,18 @@ struct TaintSet {
   // `TL` pick for that route and M-C's stream is byte-for-byte untouched.
   ScrubMap<llvm::Instruction *, unsigned> InPlaceRailIdx;
 
+  // bd test_C_libtooling-01po.19.18 — the QUANTUM-SOURCE steps of a seeded
+  // accumulator (`c = c + src`, both operands quantum; LoopAccumulator.h). Each
+  // member is also an `InPlaceRailOps` member with its rail operand in
+  // `InPlaceRailIdx`; this set is what makes `inPlaceValueRailOperand` name that
+  // operand (the dtzb shape test alone admits one tainted operand only) and what
+  // routes `rewriteInPlaceValueRail` to the QQ gate. Written only by
+  // `commitSeededAccumulator`, after its proof (source independent of the rail).
+  ScrubPtrSet<llvm::Instruction *, 4> InPlaceQQRailOps;
+  // The registers those accumulators were minted as (`cqrt_alloc_<W>(seed)`),
+  // for the dead-accumulator postcondition `declineDeadAccumulatorMoves`.
+  ScrubPtrSet<llvm::Instruction *, 2> AccumulatorRails;
+
   // bd 3qlq Inc 1, the THIRD C-1 review round's finding F-C1B-1 — THE SUBSET OF
   // `InPlaceRailOps` THAT `commitOutOfLoopInPlaceOps` PREDICTED, and therefore the
   // exact set `lowerOps` must RE-ASK.

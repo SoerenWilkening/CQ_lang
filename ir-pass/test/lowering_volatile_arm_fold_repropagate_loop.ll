@@ -1,10 +1,21 @@
-; lowering_volatile_arm_fold_repropagate_loop.ll — DECLINE with the twin's string (bd
+; lowering_volatile_arm_fold_repropagate_loop.ll — ACCEPT since bd
+; test_C_libtooling-01po.19.18 (was a DECLINE with the twin's string: bd
 ; test_C_libtooling-otam; bd vsfp Rule-13 r2A F-WA-1, probe `loop2`).
 ;
 ; The arm fold inside a runtime-trip loop, the select accumulated across iterations. Round 2
-; emitted classical arithmetic on `%out` rail handles across the back edge and dropped the
-; measurement; the fenv-intended twin declines `cq loop lowering: loop-carried tainted value
-; crosses iterations`, and with the re-propagate so does this.
+; once emitted classical arithmetic on `%out` rail handles across the back edge and dropped
+; the measurement; the re-propagate made it the X1 decline (`loop-carried tainted value
+; crosses iterations`), the twin's string. That hazard (a classical `add` on handle ids) is
+; still what this file pins (NOCLASSIC below): the add is now the SEEDED ACCUMULATOR's
+; in-place quantum-source gate (LoopAccumulator.h), never classical arithmetic.
+;
+; ANALYTIC CHECK (scratch state-vector replay of this file's lowering, linked and run with
+; argc = 3; the stage-2b rail pairing: 2 free sites verified, 0 violations, 0 unproven).
+; Per trip i: flag = (q > i); `%out` = flag ? 2 : 1 (fresh |0> rail, two controlled
+; xor-immediates); `cqrt_add_i32(%out, acc)`; `%out` and the flag reversed and freed in the
+; trip. q = Ry(0.7)|0> on its low bit: q = 0 adds 1,1,1 -> acc 3; q = 1 adds 2,1,1 ->
+; acc 4. Replayed: 0.939373|q=0,acc=3> + 0.342898|q=1,acc=4> (= cos .35, sin .35), every
+; freed rail |0>. The register is measured, never freed.
 ;
 ; Caller TU (clang -O1 -include CQ.h):
 ;   int main(int argc, char **argv) {
@@ -21,10 +32,22 @@
 ; Regenerate: clang -O1 -emit-llvm -S -I<repo>/include -include CQ.h caller.c -o <body>
 ;
 ;
-; RUN: env CQ_DEADARG_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
-; RUN:   | %filecheck %s
-; CHECK-NOT: CQ_DEADARG_DBG
-; CHECK: error: {{.*}}cq loop lowering: loop-carried tainted value crosses iterations
+; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.ll 2> %t.err
+; RUN: %filecheck %s --check-prefix=NODBG --allow-empty < %t.err
+; RUN: %filecheck %s < %t.ll
+; RUN: %filecheck %s --check-prefix=NOCLASSIC < %t.ll
+; NODBG-NOT: CQ_DEADARG_DBG
+; CHECK: %cq.acc = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK: call i32 @cqrt_measure_i32(i32 %cq.acc)
+; CHECK: %h_cmp = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 %{{[0-9]+}})
+; CHECK-NEXT: %out = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 %h_cmp, i32 %out, i32 2)
+; CHECK: call void @cqrt_add_i32(i32 %out, i32 %cq.acc), !cq.inplace.qq
+; CHECK: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp, i32 %h, i32 %{{[0-9]+}})
+; CHECK-NEXT: call void @cqrt_free(i32 %h_cmp)
+; CHECK-NEXT: call void @cqrt_free(i32 %out)
+; NOCLASSIC-NOT: add {{.*}}i32 %out
+; NOCLASSIC-NOT: cq_template_add_i32(
 
 ; ModuleID = '/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/d2ac97c1-732d-4a6e-83a0-786b16babcc6/scratchpad/vsfp/r3p/loop2.c'
 source_filename = "/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/d2ac97c1-732d-4a6e-83a0-786b16babcc6/scratchpad/vsfp/r3p/loop2.c"

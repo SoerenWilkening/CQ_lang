@@ -41,7 +41,17 @@
 ; array now reaches the control chain, which refuses it loudly as below —
 ; the cell-controlled Ry lowers; the loop-carried counter `c += q[i]` is
 ; bd 01po.19.18 (Case A in-place add).)
-; CHECK: cq loop lowering: loop-carried tainted value crosses iterations
+; (bd 01po.19.18, 2026-10-16: the counter is now the SEEDED ACCUMULATOR
+; (LoopAccumulator.h) — `cqrt_alloc_i32(0)` + `cqrt_add_i32(zext(q[i]), c)` per
+; trip — and the X1 message is gone. What still refuses is the trip's SOURCE
+; TEMPORARY `zext(q[i])` (two cast rails): the outer body is not certified
+; rail-local because its v-subloop keeps quantum content (the cell load, the
+; cell's controlled Ry, the cell store), `railLocalQualifies`' subloop clause,
+; so the rails would be left standing each trip; `declineStrandedAccumulator
+; Temps` makes that loud. RETIREMENT TRIGGER: a self-contained-subloop
+; exemption in that clause (nested loops) makes this file an ACCEPT whose trace
+; replays to |D^4_2⟩ with `c` = 2 on every branch — measured on a scratch build.)
+; CHECK: cq loop lowering: loop accumulator source temporaries cannot be discharged in the loop body
 ; WIN: CQ_RAILWINDOW_DBG: @main claims %1 cells=i8 loads=3 stores=1 Q=  br label %2
 ; WIN: CQ_RAILWINDOW_DBG: promoted 0 cell class(es)
 

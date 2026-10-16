@@ -21,6 +21,7 @@
 #include "Fp80Union.h"
 #include "IOSinkLowering.h"
 #include "LiteralIntegrity.h"
+#include "LoopAccumulator.h"  // declineDeadAccumulatorMoves (bd 01po.19.18)
 #include "LoopPlan.h"
 #include "LoopUnrollPrepass.h"
 #include "MeasureLowering.h"
@@ -1063,6 +1064,9 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // and before M-A's warning (RotationLowering.h).
   if (declineLiveWindowRecords(M, taint))
     return PreservedAnalyses::none();
+  // bd 01po.19.18 — the dead loop accumulator postcondition (LoopAccumulator.h).
+  if (declineDeadAccumulatorMoves(M, taint))
+    return PreservedAnalyses::none();
   // bd test_C_libtooling-6uqc (M-A) — the LIVE-RECORD WARNING, at the
   // SAME late slot and for the SAME reason as the literal-integrity guard above:
   // this is the only position where "is rail R still undischarged when this
@@ -1605,6 +1609,9 @@ bool CQLoweringPass::runOnFunction(Function &F) {
     return true;
   // bd 01po.19 S4 — Q4's cell-temporary postcondition (mirrored from run()).
   if (declineLiveWindowRecords(M, taint))
+    return true;
+  // bd 01po.19.18 — mirrored from run().
+  if (declineDeadAccumulatorMoves(M, taint))
     return true;
   // bd test_C_libtooling-6uqc (M-A) — mirrored from `run()` (twin-pipeline
   // parity, WI-1.12): miss it and a unit-level caller loses the live-record
