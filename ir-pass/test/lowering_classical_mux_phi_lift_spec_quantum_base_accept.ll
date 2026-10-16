@@ -36,29 +36,8 @@
 ; this fixture pins would be gone. Keep the keep-alive while that clone is the
 ; subject.
 ;
-; bd dm7f.83 (ruling-dm7f83-inplace-fence-refusal-loud-2026-10-16): FLIPPED TO
-; LOUD. A classical-immediate in-place site here is refused by the M-C fence
-; (`inPlaceFenceHolds`, G6: an earlier use of the register sits in a block that
-; does not dominate the op, so `provablyBefore` cannot place it before the op
-; although the op cannot reach it (asking reachability instead is the build))
-; while its handle is a DEAD USER REGISTER (register-level: no later read,
-; rotation or measure of its rail under any SSA name, `registerLiveAfter`, bd
-; dm7f.83.3) beside a KEPT result, so out of place would leave the old rail
-; beside the result, the r2j3.33 hazard class. MEASURED
-; (laneL/dm7f83_flips.md): in THIS fixture that fallback was observably correct
-; (the record is only measured, or every later Ry on it cancels, or its
-; which-path information already sits in another kept rail), so this decline is
-; the ruling's, an over-decline until the refusal is lowered. The in-place round now fails
-; loudly (InPlaceQQImm.cpp), as owner Q1 requires. The fixture's original
-; expectation is kept dormant: its RUN lines are spelled MC-CMD and no RUN line
-; reads its CHECK prefixes. RETIREMENT: restore them when the refused shape
-; converts (G6's lowering, named above).
-;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=DM7F83
-; DM7F83: error: {{.*}}cq in-place lowering: quantum reassignment of a dead register is not provable in place
-;
-; MC-CMD: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.ll 2>&1 | %filecheck %s --check-prefix=DIAG --allow-empty
-; MC-CMD: %filecheck %s < %t.ll
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.ll 2>&1 | %filecheck %s --check-prefix=DIAG --allow-empty
+; RUN: %filecheck %s < %t.ll
 ; DIAG-NOT: error
 ; CHECK-LABEL: define i32 @main(
 ; CHECK:      %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %{{[0-9]+}})

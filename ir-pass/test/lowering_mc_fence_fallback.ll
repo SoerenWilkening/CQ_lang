@@ -4,13 +4,14 @@
 ; refused by it, each for a different clause.
 ;
 ; THE FALLBACK IS NOT A DIAGNOSTIC, AND THAT IS THE POINT. Failing this fence
-; means the op keeps the EXISTING out-of-place lowering — today's behavior, byte
-; for byte — so every function below still lowers, `opt` exits 0, and the CHECKs
-; assert the out-of-place form. Rule 17's decline belongs to inputs outside the
-; target shape; `q + c` out of place is a shape this compiler lowers correctly.
-; A probe here that started emitting `cqrt_addc_` is an ACCEPT WIDENING, which
-; for an in-place rewrite is the silent-miscompile direction (the parent register
-; is mutated under a reader that still needs its old value).
+; means the op keeps the EXISTING out-of-place lowering, so every function below
+; still lowers, `opt` exits 0, and the CHECKs assert the out-of-place form —
+; EXCEPT @arg_immediate, which bd dm7f.83.1 converts in place (G4 retired for a
+; classical parameter). Rule 17's decline belongs to inputs outside the target
+; shape; `q + c` out of place is a shape this compiler lowers correctly. A probe
+; in any OTHER function here that started emitting `cqrt_addc_` is an ACCEPT
+; WIDENING, which for an in-place rewrite is the silent-miscompile direction (the
+; parent register is mutated under a reader that still needs its old value).
 ;
 ; @later_measure  — G6. The parent is MEASURED after the op. A measurement is a
 ;                   data use; mutating the register first changes what is
@@ -54,10 +55,9 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ;
-; NOT ONE in-place gate anywhere in this module — the single strongest assertion
-; this file makes, and the one that goes red if the fence is widened:
-; CHECK-NOT: cqrt_addc_
-; CHECK-NOT: cqrt_xorc_
+; No in-place gate in any function but @arg_immediate — asserted INSIDE each
+; function's CHECK-LABEL block (R11 rL2b-F2: a CHECK-NOT before the first label
+; covers only the text before it, so the old module-wide pair was vacuous).
 ; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
@@ -67,8 +67,12 @@ declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 ; CHECK-LABEL: define i32 @later_measure
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 ; CHECK:       call i32 @cq_template_add_i32_hl(i32 %[[H:[a-zA-Z0-9_.]+]], i32 3)
 ; CHECK:       call i32 @cqrt_measure_i32(i32 %[[H]])
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 define i32 @later_measure(i32 %u0) {
 entry:
   %q  = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
@@ -80,7 +84,11 @@ entry:
 }
 
 ; CHECK-LABEL: define i32 @later_rotation
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 ; CHECK:       call i32 @cq_template_add_i32_hl(i32 %[[H2:[a-zA-Z0-9_.]+]], i32 3)
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 define i32 @later_rotation(i32 %u0) {
 entry:
   %q  = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
@@ -92,7 +100,11 @@ entry:
 }
 
 ; CHECK-LABEL: define i32 @cross_block
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 ; CHECK:       call i32 @cq_template_add_i32_hl(
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 define i32 @cross_block(i32 %u0, i1 %c) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
@@ -118,7 +130,11 @@ entry:
 }
 
 ; CHECK-LABEL: define i32 @mul_op
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 ; CHECK:       call i32 @cq_template_mul_i32_hl(
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 define i32 @mul_op(i32 %u0) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)

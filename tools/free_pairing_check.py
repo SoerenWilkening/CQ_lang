@@ -4386,7 +4386,7 @@ def _classical_slot(c, k):
     return k in eff.classical_imm
 
 
-def vouched_params(funcs, rail_defs):
+def vouched_params(funcs, rail_defs, text=""):
     """bd dm7f.83.1 — which formal parameters stage 2b may treat as NOT a rail.
 
     The pass CLAIMS them (`!cq.classical.params`). A claim is vouched only when
@@ -4397,8 +4397,11 @@ def vouched_params(funcs, rail_defs):
       (ii) every in-module call site passes, at that position, a literal, or a
            non-parameter SSA value that is no rail of the caller, or a vouched
            parameter of the caller.
-    A function no module code calls is entered from outside, where no rail
-    handle exists (every function that holds one is in this module)."""
+    A function no module code calls DIRECTLY is entered from outside, where no
+    rail handle exists (every function that holds one is in this module) —
+    unless its address is taken (`address_taken`): an in-module indirect call
+    can then pass a rail this file cannot see, so such a function's claims are
+    never vouched (R11 rL2b-F1)."""
     by_name = {fn.name: fn for fn in funcs}
     claim = {}
     for fn in funcs:
@@ -4406,6 +4409,9 @@ def vouched_params(funcs, rail_defs):
         idx = [int(x) for x in re.findall(r"i32\s+(-?[0-9]+)", body or "")]
         claim[fn.name] = {fn.param_list[k] for k in idx
                           if 0 <= k < len(fn.param_list)}
+    # R11 rL2b-F1: an address-taken function's callers are not all visible.
+    for name in address_taken(text, {n for n, c in claim.items() if c}):
+        claim[name] = set()
     vouched = {n: set(s) for n, s in claim.items()}
     sites = []   # (caller fn, Call, callee fn)
     for fn in funcs:
@@ -4500,7 +4506,7 @@ def check_module(text):
                 for fn in funcs}
     # bd dm7f.83.1 — a CHECKED claim narrows the parameters
     # `provably_not_a_rail` refuses (see `vouched_params`).
-    vouched = vouched_params(funcs, rail_defs)
+    vouched = vouched_params(funcs, rail_defs, text)
     # bd 261j(b) — THE LEAK CENSUS. This file counts free SITES, so a compiler that
     # stops freeing everything reports "0 cqrt_free site(s): 0 verified" and passes
     # STRICT. That is not a hypothetical failure mode: bd 261j(a) is a change whose

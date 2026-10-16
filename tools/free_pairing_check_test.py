@@ -4143,6 +4143,15 @@ VOUCH_CASES = [  # (name, text, expect_clean)
        "  call void @cqrt_ry_i32(i32 %r, double 5.000000e-01)\n"
        "  call void @f(i32 %r)\n  %m = call i32 @cqrt_measure_i32(i32 %r)\n"
        "  ret i32 %m\n}\n" + _MD0, False),
+    # R11 rL2b-F1: an ADDRESS-TAKEN function reached through a pointer with a
+    # rail in its claimed parameter (the direct-call walk cannot see the site).
+    ("vouch-null-indirect-caller", _VOUCH_HDR + _VOUCH_F.format(md=_CL, ry="")
+     + "@fpf = internal global ptr @f\n"
+       "define i32 @main() {\n  %r = call i32 @cqrt_alloc_i32(i32 0)\n"
+       "  call void @cqrt_ry_i32(i32 %r, double 3.000000e-01)\n"
+       "  %fp = load ptr, ptr @fpf\n  call void %fp(i32 %r)\n"
+       "  %m = call i32 @cqrt_measure_i32(i32 %r)\n  ret i32 %m\n}\n" + _MD0,
+     False),
     ("vouch-null-used-as-rail", _VOUCH_HDR + _VOUCH_F.format(
         md=_CL, ry="\n  call void @cqrt_ry_i32(i32 %k, double 5.000000e-01)")
      + _MD0, False),

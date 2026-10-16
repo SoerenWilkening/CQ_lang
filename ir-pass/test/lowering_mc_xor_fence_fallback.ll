@@ -4,8 +4,9 @@
 ; and are refused by it, each for a different clause.
 ;
 ; THE FALLBACK IS NOT A DIAGNOSTIC (as in 2a/2b): failing this fence means the op
-; keeps the EXISTING out-of-place lowering — today's behavior, byte for byte — so
-; every function below still lowers and `opt` exits 0. A probe here that started
+; keeps the EXISTING out-of-place lowering — today's behavior — so
+; every function below but @arg_immediate (in place since bd dm7f.83.1) still
+; lowers and `opt` exits 0. A probe in any OTHER function here that started
 ; emitting `cqrt_xorc_` is an ACCEPT WIDENING, which for an in-place rewrite is
 ; the silent-miscompile direction (the parent register is mutated under a reader
 ; that still needs its old value).
@@ -52,10 +53,10 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ;
-; NOT ONE in-place gate anywhere in this module — the single strongest assertion
-; this file makes, and the one that goes red if the fence is widened:
-; CHECK-NOT: cqrt_xorc_
-; CHECK-NOT: cqrt_addc_
+; No in-place gate in any function but @arg_immediate (bd dm7f.83.1 converts it)
+; — asserted INSIDE each function's CHECK-LABEL block (R11 rL2b-F2: a CHECK-NOT
+; before the first label covers only the text before it, so the old
+; module-wide pair was vacuous).
 ; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
@@ -67,8 +68,12 @@ declare i64 @cq_theta_sll(i64, double)
 declare i64 @cq_measure_sll(i64)
 
 ; CHECK-LABEL: define i32 @later_measure
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 ; CHECK:       call i32 @cq_template_xor_i32_hl(i32 %[[H:[a-zA-Z0-9_.]+]], i32 3)
 ; CHECK:       call i32 @cqrt_measure_i32(i32 %[[H]])
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 define i32 @later_measure(i32 %u0) {
 entry:
   %q  = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
@@ -80,7 +85,11 @@ entry:
 }
 
 ; CHECK-LABEL: define i32 @later_rotation
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 ; CHECK:       call i32 @cq_template_xor_i32_hl(i32 %[[H2:[a-zA-Z0-9_.]+]], i32 3)
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 define i32 @later_rotation(i32 %u0) {
 entry:
   %q  = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
@@ -92,7 +101,11 @@ entry:
 }
 
 ; CHECK-LABEL: define i32 @cross_block
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 ; CHECK:       call i32 @cq_template_xor_i32_hl(
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 define i32 @cross_block(i32 %u0, i1 %c) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
@@ -117,6 +130,8 @@ entry:
 }
 
 ; CHECK-LABEL: define i32 @qq_xor
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 ; M-C's G2 still refuses two quantum operands (no `cqrt_xorc_i32` here). Since
 ; bd r2j3.33 (dm7f.51 step 1) the QUANTUM-source round takes the site instead:
 ; `%q2`'s old value is dead and the result is measured, so it lowers in place on
@@ -126,6 +141,8 @@ entry:
 ; CHECK-NOT:   call void @cqrt_xorc_i32(
 ; CHECK:       call void @cqrt_xor_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}), !cq.inplace.qq
 ; CHECK-NOT:   call i32 @cq_template_xor_i32(
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 define i32 @qq_xor(i32 %u0, i32 %u1) {
 entry:
   %q1 = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
@@ -137,7 +154,11 @@ entry:
 }
 
 ; CHECK-LABEL: define i64 @wide_i128
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 ; CHECK:       call i32 @cq_template_xor_i128_hl(i32 %{{[a-zA-Z0-9_.]+}}, i128 7)
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 define i64 @wide_i128(i64 %u0) {
 entry:
   %q = call i64 @cq_theta_sll(i64 %u0, double 5.000000e-01)

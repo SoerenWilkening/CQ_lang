@@ -5,10 +5,10 @@
 ;
 ; THE FALLBACK IS NOT A DIAGNOSTIC (2a's ruling, restated because it is the
 ; thing most easily got wrong here). Failing this fence means the op keeps the
-; EXISTING out-of-place lowering — today's behavior, byte for byte — so every
-; function below still lowers, `opt` exits 0, and the CHECKs assert the
-; out-of-place form. A probe here that started emitting `cqrt_addc_` is an ACCEPT
-; WIDENING, which for an in-place rewrite is the silent-miscompile direction.
+; EXISTING out-of-place lowering, so every function below but @arg_immediate
+; (in place since bd dm7f.83.1) still lowers, `opt` exits 0, and the CHECKs
+; assert the out-of-place form. A probe in any OTHER function here that started
+; emitting `cqrt_addc_` is an ACCEPT WIDENING, the silent-miscompile direction.
 ;
 ; @classical_lhs  — THE `sub`-SPECIFIC CLAUSE, and the only structural one this
 ;                   increment adds. `c - q` is NOT `q + (-c)`: it is
@@ -46,10 +46,10 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ;
-; NOT ONE in-place gate anywhere in this module — the single strongest assertion
-; this file makes, and the one that goes red if the fence is widened:
-; CHECK-NOT: cqrt_addc_
-; CHECK-NOT: cqrt_xorc_
+; No in-place gate in any function but @arg_immediate (bd dm7f.83.1 converts it)
+; — asserted INSIDE each function's CHECK-LABEL block (R11 rL2b-F2: a CHECK-NOT
+; before the first label covers only the text before it, so the old
+; module-wide pair was vacuous).
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
@@ -58,7 +58,11 @@ declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 ; CHECK-LABEL: define i32 @classical_lhs
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 ; CHECK:       call i32 @cq_template_sub_i32_lh(i32 100, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 define i32 @classical_lhs(i32 %u0) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
@@ -68,8 +72,12 @@ entry:
 }
 
 ; CHECK-LABEL: define i32 @later_use
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 ; CHECK:       call i32 @cq_template_sub_i32_hl(i32 %[[H:[a-zA-Z0-9_.]+]], i32 3)
 ; CHECK:       call i32 @cqrt_measure_i32(i32 %[[H]])
+; CHECK-NOT:   call void @cqrt_addc_
+; CHECK-NOT:   call void @cqrt_xorc_
 define i32 @later_use(i32 %u0) {
 entry:
   %q  = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
