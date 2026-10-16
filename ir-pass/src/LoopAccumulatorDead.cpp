@@ -45,7 +45,35 @@ namespace cq {
 //     trip intervening (the same trip, or after the loop: the last trip's step
 //     is the register's final write) and some path from the gate reaches the
 //     function's end without reading `H` again.
+//
+// bd 01po.19.18.1 — THE GATE SET (delegated ruling
+// `ruling-01po19-18-dead-accumulator-leak-warn-2026-10-16`, option (a)). Every
+// consumer of a lineage rail (a root, or any read of a lineage cell array) that
+// runs after a step with no trip in between is classified, wherever it is (a
+// later loop included, L3):
+//   * MEASURE (`cqrt_measure_*`), a runtime/template call that reads, phases or
+//     permutes it (no superposition is changed against the record), a store
+//     back into a lineage array (its loads are lineage too): harmless;
+//   * a non-diagonal MOVE (above): loud, `kMsgDeadAccumulatorMoved`;
+//   * an ESCAPE — `ret`, a store elsewhere, a `cq_invert_*`, an unknown callee,
+//     any other instruction carrying the handle on: the rail leaves what this
+//     set can see, so "only measured afterwards" is unproved: loud,
+//     `kMsgDeadAccumulatorEscaped`.
+// A hazard counts only where `H` is dead after it on some path (a record read
+// later on every path is the program's own entanglement, lyyf). With no hazard,
+// a register DEAD after its loop is left allocated (R5) and REPORTED: a
+// lyyf-class DS_Warning, `kMsgDeadAccumulatorLeft`; `opt` exits 0.
+// RETIREMENT TRIGGER: bd 8h7d.20's post-loop reverse loop uncomputes the
+// register; then the warning and both refusals give way to the discharge.
 namespace {
+
+const char kMsgDeadAccumulatorEscaped[] =
+    "cq loop lowering: dead loop accumulator records a register that escapes "
+    "after its last read";
+
+const char kMsgDeadAccumulatorLeft[] =
+    "cq loop lowering: dead loop accumulator left allocated; its sources are "
+    "only measured afterwards";
 
 const char kMsgDeadAccumulatorMoved[] =
     "cq loop lowering: dead loop accumulator records a register moved after "
@@ -98,6 +126,35 @@ bool runsAfterInTrip(const Instruction *S, const Instruction *G,
 const Value *cellArray(const Value *V) {
   auto *LD = dyn_cast<LoadInst>(V);
   return LD ? getUnderlyingObject(LD->getPointerOperand()) : nullptr;
+}
+
+// The gate-set class of `I`, a consumer of a lineage rail: null when harmless
+// (measured, read, phased, permuted, or parked back in a lineage array), else
+// the refusal it earns (a non-diagonal move, or an escape from the set).
+template <typename InLineage>
+const char *consumerHazard(Instruction &I, InLineage inLineage,
+                           const SmallPtrSetImpl<const Value *> &Arrays) {
+  if (auto *C = dyn_cast<CallInst>(&I)) {
+    SmallVector<Value *, 2> Moved;
+    movedRails(C, Moved);
+    if (any_of(Moved, inLineage))
+      return kMsgDeadAccumulatorMoved;
+    Function *Fn = C->getCalledFunction();
+    if (!Fn || Fn->getName().starts_with("cq_invert_"))
+      return kMsgDeadAccumulatorEscaped;
+    StringRef N = Fn->getName();
+    if (N.starts_with("cqrt_") || N.starts_with("cq_template_") ||
+        Fn->isIntrinsic())
+      return nullptr;
+    return kMsgDeadAccumulatorEscaped;  // an unknown callee is handed the rail
+  }
+  if (auto *St = dyn_cast<StoreInst>(&I))
+    if (inLineage(St->getValueOperand()) &&
+        Arrays.count(getUnderlyingObject(St->getPointerOperand())))
+      return nullptr;  // parked in a lineage array: its loads are lineage
+  if (auto *LD = dyn_cast<LoadInst>(&I); LD && !inLineage(LD->getPointerOperand()))
+    return nullptr;
+  return kMsgDeadAccumulatorEscaped;  // ret, a foreign store, a φ/select/cast...
 }
 
 }  // namespace
@@ -156,8 +213,9 @@ bool declineDeadAccumulatorMoves(Module &M, const TaintSet &taint) {
         const Value *A = cellArray(T);
         return A && Arrays.count(A);
       };
-      // Some path from `G` to a function exit reads `H` nowhere.
-      auto deadAfter = [&](Instruction *G) {
+      // Some path from `G` to a function exit reads `H` nowhere (never
+      // entering `Excl`: the loop header, for "dead after the loop").
+      auto deadAfter = [&](Instruction *G, const BasicBlock *Excl = nullptr) {
         for (Instruction *I = G->getNextNode(); I; I = I->getNextNode())
           if (Reads.count(I))
             return false;
@@ -168,7 +226,7 @@ bool declineDeadAccumulatorMoves(Module &M, const TaintSet &taint) {
         SmallPtrSet<BasicBlock *, 16> BSeen;
         while (!BW.empty()) {
           BasicBlock *B = BW.pop_back_val();
-          if (!BSeen.insert(B).second)
+          if (B == Excl || !BSeen.insert(B).second)
             continue;
           bool Reads_ = false;
           for (Instruction &I : *B)
@@ -184,27 +242,28 @@ bool declineDeadAccumulatorMoves(Module &M, const TaintSet &taint) {
         }
         return false;
       };
+      bool DeadAfterLoop = false;
       for (CallInst *S : Steps) {
         const Loop *L = LI.getLoopFor(S->getParent());
         const BasicBlock *Hdr = L ? L->getHeader() : nullptr;
+        DeadAfterLoop |= deadAfter(S, Hdr);
         for (BasicBlock &BB : F)
           for (Instruction &I : BB) {
-            auto *G = dyn_cast<CallInst>(&I);
-            if (!G || G == S)
+            if (&I == S || none_of(I.operands(), [&](const Use &U) {
+                  return inLineage(U.get());
+                }))
               continue;
-            SmallVector<Value *, 2> Moved;
-            movedRails(G, Moved);
-            if (none_of(Moved, inLineage))
+            const char *Msg = consumerHazard(I, inLineage, Arrays);
+            if (!Msg || !runsAfterInTrip(S, &I, Hdr) || !deadAfter(&I))
               continue;
-            if (!runsAfterInTrip(S, G, Hdr))
-              continue;
-            if (!deadAfter(G))
-              continue;
-            F.getContext().diagnose(DiagnosticInfoUnsupported(
-                F, kMsgDeadAccumulatorMoved, G->getDebugLoc()));
+            F.getContext().diagnose(
+                DiagnosticInfoUnsupported(F, Msg, I.getDebugLoc()));
             return true;
           }
       }
+      if (DeadAfterLoop)
+        F.getContext().diagnose(DiagnosticInfoUnsupported(
+            F, kMsgDeadAccumulatorLeft, H->getDebugLoc(), DS_Warning));
     }
   }
   return false;

@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 871 maintained source files, 6999 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 871 maintained source files, 7000 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -786,12 +786,13 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LoopAccumulator.cpp:170` — `commitSeededAccumulator`
 - `ir-pass/src/LoopAccumulator.cpp:218` — `emitAccumulatorQQStep`
 
-### `ir-pass/src/LoopAccumulatorDead.cpp` (213 lines)
+### `ir-pass/src/LoopAccumulatorDead.cpp` (272 lines)
 
-- `ir-pass/src/LoopAccumulatorDead.cpp:55` — `movedRails`
-- `ir-pass/src/LoopAccumulatorDead.cpp:79` — `runsAfterInTrip`
-- `ir-pass/src/LoopAccumulatorDead.cpp:98` — `cellArray`
-- `ir-pass/src/LoopAccumulatorDead.cpp:105` — `declineDeadAccumulatorMoves`
+- `ir-pass/src/LoopAccumulatorDead.cpp:83` — `movedRails`
+- `ir-pass/src/LoopAccumulatorDead.cpp:107` — `runsAfterInTrip`
+- `ir-pass/src/LoopAccumulatorDead.cpp:126` — `cellArray`
+- `ir-pass/src/LoopAccumulatorDead.cpp:135` — `consumerHazard`
+- `ir-pass/src/LoopAccumulatorDead.cpp:162` — `declineDeadAccumulatorMoves`
 
 ### `ir-pass/src/LoopLowering.cpp` (8399 lines)
 
