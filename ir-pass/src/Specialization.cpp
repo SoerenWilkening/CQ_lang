@@ -22,6 +22,7 @@
 #include "SpecializePlan.h"
 #include "SpecializeReject.h"
 #include "SpecializeSeed.h"
+#include "SpecializeTailHoist.h"  // tagUnhoistedLiftTail (bd r2j3.37)
 #include "SpecializeDetect.h"   // detectSpecializations (the clone's own plan)
 #include "StageList.h"          // runLoopPrepasses / runControlChain (bd p3kd.7.8)
 #include "ControlPlan.h"        // the plan runControlChain returns
@@ -529,6 +530,8 @@ void retargetSite(CallInst *&Site, Function *Clone) {
     NewCall->setDebugLoc(DL);
   Site->replaceAllUsesWith(NewCall);  // cross-type: old fp result → new i32 handle.
   NewCall->takeName(Site);
+  if (MDNode *Owed = Site->getMetadata(kLiftTailOwedTag))  // bd r2j3.37
+    NewCall->setMetadata(kLiftTailOwedTag, Owed);
   Site->eraseFromParent();
   Site = NewCall;
 }
@@ -1294,6 +1297,11 @@ void specialize(Module &M, WidthDispatch &wd, TaintSet &taint, SpecPlan &plan) {
     // the new one is not in `Tainted`).
     const bool ResultWasTainted =
         Cand.Site->getType()->isVoidTy() || taint.Tainted.count(Cand.Site);
+    // bd r2j3.37 — THE BACKSTOP's record: a site whose return chain reaches a
+    // tainted argument dead at the call was owed the hoist (SpecializeTailHoist.h)
+    // and never got it (its taint arrived later). Tagged here, on the IR the
+    // record question is about; adjudicated by the late in-place round.
+    tagUnhoistedLiftTail(*Cand.Site, taint);
     SpecRecord Rec = [&] {
       // bd 3c6m.82: an error anywhere in this lift notes the user's call.
       LiftSite Lifting(Cand.Site);

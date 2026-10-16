@@ -37,6 +37,7 @@
 #include "SpecializeDetect.h"
 #include "SpecializeGateInline.h"  // inlineGateSubroutines (bd p3kd.21)
 #include "SpecializePlan.h"
+#include "SpecializeTailHoist.h"  // hoistLiftedTailChains (bd r2j3.37)
 #include "StageList.h"           // runLoopPrepasses / runControlChain (bd p3kd.7.8)
 #include "Specialization.h"
 #include "SwapRouteEmit.h"
@@ -170,6 +171,14 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // (b) is beside every `peelIndependentMergePhis` call, for branches tainted
   // only later.
   if (unifyTaintedReturns(M, taint, /*Delta=*/nullptr))
+    taint = propagate(M, wd);
+
+  // bd `test_C_libtooling-r2j3.37` — a lifted call's RETURN CHAIN moves to the
+  // caller when it would overwrite a dead quantum argument
+  // (SpecializeTailHoist.h), so main's in-place round decides it. BEFORE slot A
+  // of the dead-argument drop, which then nulls the sources' unread slots, and
+  // before every stage that reads the call. No guard has run: re-`propagate`.
+  if (hoistLiftedTailChains(M, taint, wd))
     taint = propagate(M, wd);
 
   // bd `test_C_libtooling-vsfp` (P1) / bd `hgwx` — THE DEAD CALL-ARGUMENT DROP
@@ -1206,6 +1215,13 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // mirrored (twin-pipeline parity is MANDATORY, WI-1.12); see run(). Module-wide,
   // like the dead-argument drop below (AXIS-F).
   if (unifyTaintedReturns(M, taint, /*Delta=*/nullptr)) {
+    taint = propagate(M, wd);
+    onlyInF(taint.ThetaCalls);
+    onlyInF(taint.PhiCalls);
+    onlyInF(taint.PhaseCalls);
+    onlyInF(taint.MeasureCalls);
+  }
+  if (hoistLiftedTailChains(M, taint, wd)) {  // bd r2j3.37 — see run().
     taint = propagate(M, wd);
     onlyInF(taint.ThetaCalls);
     onlyInF(taint.PhiCalls);

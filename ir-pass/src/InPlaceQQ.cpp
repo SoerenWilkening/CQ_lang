@@ -7,6 +7,7 @@
 #include "FreePoint.h"         // computeFreePoint — the spine's own disposition
 #include "MergeStreamGates.h"  // streamGateWrites
 #include "RegCondLeaf.h"       // regCondTagIndex (bd dm7f.77)
+#include "SpecializeTailHoist.h"  // declineUnhoistedLiftTails (bd r2j3.37)
 #include "WireWalk.h"          // provablyBefore
 #include "TaintPropagation.h"  // TaintSet
 #include "TemplateName.h"      // dataName — the ONE builder of the QQ symbol
@@ -365,8 +366,13 @@ Outcome decideNext(Function &F, WidthDispatch &wd, TaintSet &taint,
 
 }  // namespace
 
+bool qqResultSurvives(const CallInst *R, const TaintSet &taint, Function &F,
+                      PostDominatorTree &PDT) { return survives(R, taint, F, PDT); }
+
 bool lowerInPlaceQQ(Module &M, WidthDispatch &wd, TaintSet &taint) {
   bool Changed = false;
+  if (declineUnhoistedLiftTails(M, taint))  // bd r2j3.37 (SpecializeTailHoist.h)
+    return Changed;
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;

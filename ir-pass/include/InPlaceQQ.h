@@ -107,6 +107,9 @@
 
 namespace llvm {
 class BinaryOperator;
+class Function;
+class Instruction;
+class PostDominatorTree;
 class Value;
 class CallInst;
 class DominatorTree;
@@ -130,6 +133,10 @@ extern const char kMsgInPlaceQQAmbiguousTarget[];
 // The source depends on the dead target's OLD value (ruling Q2; R11 round 2 F4
 // gave it its own message so the fixture pins `dependsOnTarget`, not G7).
 extern const char kMsgInPlaceQQSelfDependent[];
+
+// xor / add / sub — the opcodes BOTH in-place families convert (QQ here, the
+// classical-immediate M-C round in ArithLowering). The one spelling.
+bool isQQStemOpcode(unsigned Opcode);
 
 // `cqrt_{xor,add,sub}_{i8,i16,i32,i64}` — the in-place quantum-source symbols.
 bool isInPlaceQQSymbol(llvm::StringRef N);
@@ -159,6 +166,16 @@ bool qqTargetIsUserData(const llvm::Value *Result, const llvm::Value *Op);
 bool qqOperandDeadAfter(llvm::Value *V, llvm::BinaryOperator *BO,
                         const llvm::DominatorTree &DT, const llvm::LoopInfo &LI);
 
+// The record's two bits for operand `V` read at `At`: 1 = dead after `At`
+// (`qqOperandDeadAfter`), 4 = dead by its own users but a φ not provably one
+// wire, 0 = live. `recordDeadQQOperands` shifts them per operand slot. bd
+// r2j3.37: the lifted-call tail hoist (SpecializeTailHoist.h) asks it of a CALL
+// `At`, the position its hoisted op will take; only a BinaryOperator `At` that
+// reads `V` twice (`x ^ x`) is refused for that reason alone.
+unsigned qqDeadRecordBits(llvm::Value *V, llvm::Instruction *At,
+                          const llvm::DominatorTree &DT,
+                          const llvm::LoopInfo &LI);
+
 // Record `!cq.qq.dead` on every integer add/sub/xor with a tainted operand.
 // Called once per entry point, before `lowerLoops`, the peel and control
 // detection (the IR the user wrote, after the pre-passes that only fold).
@@ -176,6 +193,11 @@ unsigned deadOperandMask(const llvm::CallInst *T);
 // provably one wire (bit i = operand i). Never a target; a user register beside a
 // surviving result there fails loudly (Q1), never silently out of place.
 unsigned unprovenPhiOperandMask(const llvm::CallInst *T);
+
+// E3 of the round, exported for the lifted-call backstop (bd r2j3.37,
+// SpecializeTailHoist.h): does the result `R` survive (InPlaceQQ.cpp `survives`)?
+bool qqResultSurvives(const llvm::CallInst *R, const TaintSet &taint,
+                      llvm::Function &F, llvm::PostDominatorTree &PDT);
 
 // The round. Returns true if any site was converted. Strips every remaining
 // `!cq.qq.dead` record and `!cq.regcond` tag (bd dm7f.77) before returning.

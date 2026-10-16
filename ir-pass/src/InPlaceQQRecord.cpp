@@ -36,12 +36,11 @@ using namespace llvm;
 
 namespace cq {
 
-namespace {
-
-bool isQQStem(Instruction::BinaryOps Op) {
-  return Op == Instruction::Xor || Op == Instruction::Add ||
-         Op == Instruction::Sub;
+bool isQQStemOpcode(unsigned Op) {
+  return Op == Instruction::Xor || Op == Instruction::Add || Op == Instruction::Sub;
 }
+
+namespace {
 
 unsigned maskOf(const Instruction *I) {
   MDNode *MD = I->getMetadata(kDeadOperandTag);
@@ -53,9 +52,8 @@ unsigned maskOf(const Instruction *I) {
 
 void setDeadMask(Instruction *I, unsigned Mask) {
   LLVMContext &Ctx = I->getContext();
-  I->setMetadata(kDeadOperandTag,
-                 MDNode::get(Ctx, ConstantAsMetadata::get(ConstantInt::get(
-                                      Type::getInt32Ty(Ctx), Mask))));
+  I->setMetadata(kDeadOperandTag, MDNode::get(Ctx, ConstantAsMetadata::get(
+                      ConstantInt::get(Type::getInt32Ty(Ctx), Mask))));
 }
 
 // Is `V` DEAD after `BO` in the IR the user wrote: is `BO` its last reader?
@@ -86,7 +84,7 @@ bool isThetaChainLink(const Value *V) {
 // state prep's merge: the prep rail is minted at that seed and left there on the
 // other edge) — proved by identity with the root theta's arg 0 (`ConstantInt`
 // is uniqued per context). Any other constant is a different value: not one wire.
-bool singleWirePhiDeadAfter(PHINode *P, BinaryOperator *BO,
+bool singleWirePhiDeadAfter(PHINode *P, Instruction *BO,
                             const DominatorTree &DT) {
   SmallPtrSet<Value *, 8> Wire;
   SmallVector<Constant *, 2> Seeds;
@@ -123,8 +121,9 @@ bool singleWirePhiDeadAfter(PHINode *P, BinaryOperator *BO,
   return true;
 }
 
-// The positional question every deadness answer shares.
-bool usersBefore(Value *V, BinaryOperator *BO, const DominatorTree &DT,
+// The positional question every deadness answer shares (`BO`: the QQ op, or a
+// lifted call the tail hoist replaces by one at its position, bd r2j3.37).
+bool usersBefore(Value *V, Instruction *BO, const DominatorTree &DT,
                  const LoopInfo &LI) {
   if (Loop *L = LI.getLoopFor(BO->getParent())) {
     auto *VI = dyn_cast<Instruction>(V);
@@ -154,9 +153,15 @@ bool usersBefore(Value *V, BinaryOperator *BO, const DominatorTree &DT,
   return true;
 }
 
-bool deadAfter(Value *V, BinaryOperator *BO, const DominatorTree &DT,
+// `x ^ x` never kills `x`; a call reading `x` twice is only a position (r2j3.37).
+bool readsTwice(const Instruction *At) {
+  const auto *BO = dyn_cast<BinaryOperator>(At);
+  return BO && BO->getOperand(0) == BO->getOperand(1);
+}
+
+bool deadAfter(Value *V, Instruction *BO, const DominatorTree &DT,
                const LoopInfo &LI) {
-  if (isa<Constant>(V) || BO->getOperand(0) == BO->getOperand(1))
+  if (isa<Constant>(V) || readsTwice(BO))
     return false;
   if (auto *P = dyn_cast<PHINode>(V); P && !singleWirePhiDeadAfter(P, BO, DT))
     return false;
@@ -166,10 +171,10 @@ bool deadAfter(Value *V, BinaryOperator *BO, const DominatorTree &DT,
 // R11 round 1 (B-F1): a φ that is dead by its OWN users but is not provably one
 // wire. The late round must not silently leave it out of place when it is a user
 // register beside a surviving result (step 1's Q1: in place or LOUD).
-bool deadUnprovenPhi(Value *V, BinaryOperator *BO, const DominatorTree &DT,
+bool deadUnprovenPhi(Value *V, Instruction *BO, const DominatorTree &DT,
                      const LoopInfo &LI) {
   auto *P = dyn_cast<PHINode>(V);
-  return P && BO->getOperand(0) != BO->getOperand(1) &&
+  return P && !readsTwice(BO) &&
          !singleWirePhiDeadAfter(P, BO, DT) && usersBefore(V, BO, DT, LI);
 }
 
@@ -177,6 +182,13 @@ bool deadUnprovenPhi(Value *V, BinaryOperator *BO, const DominatorTree &DT,
 
 bool qqOperandDeadAfter(Value *V, BinaryOperator *BO, const DominatorTree &DT,
                         const LoopInfo &LI) { return deadAfter(V, BO, DT, LI); }
+
+unsigned qqDeadRecordBits(Value *V, Instruction *At, const DominatorTree &DT,
+                          const LoopInfo &LI) {
+  if (deadAfter(V, At, DT, LI))
+    return 1u;
+  return deadUnprovenPhi(V, At, DT, LI) ? 4u : 0u;
+}
 
 void recordDeadQQOperands(Module &M, const TaintSet &taint) {
   for (Function &F : M) {
@@ -187,7 +199,7 @@ void recordDeadQQOperands(Module &M, const TaintSet &taint) {
     for (BasicBlock &BB : F)
       for (Instruction &I : BB) {
         auto *BO = dyn_cast<BinaryOperator>(&I);
-        if (!BO || !isQQStem(BO->getOpcode()) || !BO->getType()->isIntegerTy() ||
+        if (!BO || !isQQStemOpcode(BO->getOpcode()) || !BO->getType()->isIntegerTy() ||
             BO->getType()->getIntegerBitWidth() > 64)
           continue;
         if (!taint.Tainted.count(BO->getOperand(0)) &&
@@ -197,13 +209,9 @@ void recordDeadQQOperands(Module &M, const TaintSet &taint) {
           DT.emplace(F);
           LI.emplace(*DT);
         }
-        unsigned Mask = 0;
-        for (unsigned Idx = 0; Idx < 2; ++Idx) {
-          if (deadAfter(BO->getOperand(Idx), BO, *DT, *LI))
-            Mask |= 1u << Idx;
-          else if (deadUnprovenPhi(BO->getOperand(Idx), BO, *DT, *LI))
-            Mask |= 4u << Idx;  // bits 2-3: a dead φ not provably one wire.
-        }
+        unsigned Mask = 0;  // bits 2-3: a dead φ not provably one wire.
+        for (unsigned Idx = 0; Idx < 2; ++Idx)
+          Mask |= qqDeadRecordBits(BO->getOperand(Idx), BO, *DT, *LI) << Idx;
         if (Mask)
           setDeadMask(BO, Mask);
       }
@@ -226,17 +234,10 @@ const char kMsgInPlaceQQStaleRecord[] =
 const char kMsgInPlaceQQReaderUnknown[] =
     "cq in-place lowering: a reader of an in-place reassigned register cannot "
     "be classified";
-// UNREACHABLE TODAY, KEPT FAIL-CLOSED (R11 round 2c finding F2). `handleAliases`
-// answers false on exactly two paths: a store of the target to memory that is not
-// a proven rail bank, and a load that is not a proven bank cell. Neither reaches
-// this postcondition: `declineTaintEscapes` (TaintPropagation) runs on the
-// pre-lowering module and loud-declines every tainted value stored to, or loaded
-// from, memory that `markRailBankAllocas` has not proven a rail bank ("cq taint
-// escape: tainted value stored to memory" — the reviewer's hand-IR probe
-// review_s1R2c/h4.ll stops there), and for a proven bank `handleAliases` follows
-// the cells and returns true. The pass's own later stores (the rail-bank cell
-// type rewrite) are bank stores by construction. So no fixture can pin this
-// message; it stays a loud failure, never a silent `{P}` fallback.
+// UNREACHABLE TODAY, KEPT FAIL-CLOSED (R11 round 2c F2): `handleAliases` fails
+// only on a non-bank store/load of the target, which `declineTaintEscapes`
+// refuses on the pre-lowering module (probe review_s1R2c/h4.ll stops there), and
+// the pass's own later stores are bank stores. No fixture can pin it; loud.
 const char kMsgInPlaceQQAliasUnknown[] =
     "cq in-place lowering: the aliases of an in-place reassigned register "
     "cannot be enumerated";

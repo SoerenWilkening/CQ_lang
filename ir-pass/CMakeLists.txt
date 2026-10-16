@@ -165,6 +165,8 @@ add_library(CQPass MODULE
   src/SpecializeGateInline.cpp
   src/SpecializeReject.cpp
   src/SpecializeSeed.cpp
+  # bd r2j3.37: a lifted call's return chain hoisted to the caller.
+  src/SpecializeTailHoist.cpp
   src/SwapRouteEmit.cpp
   src/SwitchArmProve.cpp
   src/SwitchClassify.cpp
