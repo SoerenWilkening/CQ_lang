@@ -16,6 +16,7 @@
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/Metadata.h"
 
 #include <functional>
@@ -72,6 +73,82 @@ bool inSubloop(const Loop *L, const BasicBlock *BB) {
     if (S->contains(BB))
       return true;
   return false;
+}
+
+// bd 01po.19.18.8 (R11 r1 rA1A-F2, an over-decline) — `-O1` may place the
+// step BEFORE a read of the trip's OLD counter (`old = c; c += a; if (old ==
+// 1) ...`: `%n = add %c, %a` then `icmp eq %c, 1`). In place the step moves the
+// register, so that read would see the NEW value and the record fence refuses.
+// The step is a pure op, so it is SUNK to the latest point that still precedes
+// every use of its result: right before its first in-loop user (all of them in
+// one block the step dominates), or the latch's end when its only in-loop user
+// is the header phi. Moving a pure op later changes no operand value anywhere;
+// it is done only when an in-loop read of the old value runs after the step in
+// the trip AND none runs after the new point (else the fence still refuses,
+// loudly), so every shape that lowered before is emitted byte-identically.
+void sinkStepPastOldReads(const SeededAccumulator &A, const DominatorTree &DT) {
+  if (A.Steps.size() != 1 || A.Steps.front().first != A.Latch)
+    return;
+  BinaryOperator *BO = A.Steps.front().first;
+  const Loop *L = A.L;
+  BasicBlock *Latch = L->getLoopLatch();
+  if (!Latch)
+    return;
+  // The new point: the first in-loop user of the step, else the latch's end.
+  Instruction *IP = Latch->getTerminator();
+  BasicBlock *UB = nullptr;
+  for (User *U : BO->users()) {
+    auto *UI = dyn_cast<Instruction>(U);
+    if (!UI)
+      return;
+    if (UI == A.Phi || !L->contains(UI->getParent()))
+      continue;
+    if (isa<PHINode>(UI) || (UB && UB != UI->getParent()))
+      return;
+    UB = UI->getParent();
+  }
+  if (UB) {
+    if (!DT.dominates(BO->getParent(), UB))
+      return;
+    IP = nullptr;
+    for (Instruction &I : *UB)
+      if (is_contained(I.operands(), BO)) {
+        IP = &I;
+        break;
+      }
+    if (!IP)
+      return;
+  }
+  // Runs `R` after `From` within the trip (never re-entering the header)?
+  auto afterInTrip = [&](const Instruction *From, const Instruction *R) {
+    for (const Instruction *I = From->getNextNode(); I; I = I->getNextNode())
+      if (I == R)
+        return true;
+    SmallVector<const BasicBlock *, 8> W(succ_begin(From->getParent()),
+                                         succ_end(From->getParent()));
+    SmallPtrSet<const BasicBlock *, 8> Seen;
+    while (!W.empty()) {
+      const BasicBlock *B = W.pop_back_val();
+      if (B == L->getHeader() || !L->contains(B) || !Seen.insert(B).second)
+        continue;
+      if (B == R->getParent())
+        return true;
+      W.append(succ_begin(B), succ_end(B));
+    }
+    return false;
+  };
+  bool Needed = false;
+  for (User *U : A.Phi->users()) {
+    auto *R = dyn_cast<Instruction>(U);
+    if (!R || R == BO || !L->contains(R->getParent()) || isa<PHINode>(R))
+      continue;
+    if (afterInTrip(IP, R) || R == IP)
+      return;  // a read of the old value after the new point: no sink helps.
+    if (afterInTrip(BO, R))
+      Needed = true;
+  }
+  if (Needed && BO->getNextNode() != IP)
+    BO->moveBefore(IP);
 }
 
 }  // namespace
@@ -180,6 +257,7 @@ Value *commitSeededAccumulator(const SeededAccumulator &A, WidthDispatch &wd,
     if (!wd.qqInPlaceFn(qqStem(BO->getOpcode()), W))
       return nullptr;
   // ---- MUTATION STARTS HERE.
+  sinkStepPastOldReads(A, DT);
   for (auto &[BO, Idx] : A.Steps) {
     taint.InPlaceQQRailOps.insert(BO);
     taint.InPlaceRailIdx[BO] = Idx;
