@@ -2230,7 +2230,273 @@ WINDOW_CELL_TEMP_OTHER_DBG = (
     .replace("!0 = !{i32 1}", "!0 = !{i32 1}\n!1 = !{}"))
 assert WINDOW_CELL_TEMP_OTHER_DBG.count("!dbg !1") == 3
 
+# bd 01po.19.34 — A CNOT BETWEEN q[m-l] AND q[m] INSIDE A COUNTED LOOP (the
+# nested Dicke's `q[m-1] ^= q[m-1-l]`, l = 2..kk). The index difference is the
+# induction phi `%l` itself, not a constant, so the one-base/constant-offset
+# proof cannot clear it. The checker's own range proof (`_iv_range`: literal
+# start 2, `add nuw` step 1, staying only while `%l ult zext i32`) bounds %l to
+# [2, 2^32] and the difference never reaches 0 mod 2^62. Mutants: start 0 (the
+# same cell at l = 0), a step without `nuw` (may wrap to 0), an unbounded
+# compare, and the stay edge on the wrong polarity (unbounded) — each B1.
+WINDOW_CELL_CNOT_IV = """
+define i32 @slice(i64 %m, i32 %n) local_unnamed_addr {
+entry:
+  %w = alloca i32, i64 8, align 4, !cq.railwindow !0
+  %h0 = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %h0, ptr %w, align 4
+  %nb = zext i32 %n to i64
+  br label %body
+body:
+  %l = phi i64 [ 2, %entry ], [ %l1, %body ]
+  %a0 = getelementptr i32, ptr %w, i64 %m
+  %d = sub nsw i64 %m, %l
+  %a1 = getelementptr i32, ptr %w, i64 %d
+  %x1 = load i32, ptr %a1, align 4
+  %x0 = load i32, ptr %a0, align 4
+  call void @cqrt_ry_i1(i32 %x1, double 3.000000e-01)
+  call void @cqrt_cnot(i32 %x1, i32 %x0)
+  store i32 %x1, ptr %a1, align 4
+  store i32 %x0, ptr %a0, align 4
+  %l1 = add nuw nsw i64 %l, 1
+  %c = icmp ult i64 %l, %nb
+  br i1 %c, label %body, label %exit
+exit:
+  %a2 = getelementptr i32, ptr %w, i64 %m
+  %x2 = load i32, ptr %a2, align 4
+  %r = call i1 @cqrt_measure_i1(i32 %x2)
+  %z = zext i1 %r to i32
+  ret i32 %z
+}
+!0 = !{i32 1}
+"""
+
+# bd 01po.19.34: -O1 spells `m - 2` as `add i64 -2, %m` (literal FIRST) in the
+# runtime-N Dicke; the linear form reads either operand order.
+WINDOW_CELL_CNOT_LITFIRST = sub(WINDOW_CELL_CNOT, "%i1 = add",
+                                "add nuw nsw i64 %i, 1", "add i64 1, %i")
+
+# bd 01po.19.34.3 (R11 round 1, B-F1/B-F2) — THE UPPER END OF THE RANGE.
+# `%l` from 2, step 1, against a constant cell; one row per compare form, the
+# cell at EXACTLY the last value the body runs with (must alias: B1) and one
+# beyond it (must clear). The `ne`-on-x form shipped one too low (it cleared
+# cell 5 although the body runs with %l == 5). `{CMP}` is the compare, `{BR}`
+# the two targets in order.
+def _iv_bound(cell, cmp, br="label %body, label %exit"):
+    return f"""
+define i32 @slice(i64 %m, i32 %n) local_unnamed_addr {{
+entry:
+  %w = alloca i32, i64 8, align 4, !cq.railwindow !0
+  %h0 = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %h0, ptr %w, align 4
+  br label %body
+body:
+  %l = phi i64 [ 2, %entry ], [ %l1, %body ]
+  %a0 = getelementptr i32, ptr %w, i64 {cell}
+  %a1 = getelementptr i32, ptr %w, i64 %l
+  %x1 = load i32, ptr %a1, align 4
+  %x0 = load i32, ptr %a0, align 4
+  call void @cqrt_ry_i1(i32 %x1, double 3.000000e-01)
+  call void @cqrt_cnot(i32 %x1, i32 %x0)
+  store i32 %x1, ptr %a1, align 4
+  store i32 %x0, ptr %a0, align 4
+  %l1 = add nuw nsw i64 %l, 1
+  %c = {cmp}
+  br i1 %c, {br}
+exit:
+  %x2 = load i32, ptr %w, align 4
+  %r = call i1 @cqrt_measure_i1(i32 %x2)
+  %z = zext i1 %r to i32
+  ret i32 %z
+}}
+!0 = !{{i32 1}}
+"""
+
+
+# (form, compare, branch targets, last value the body runs with)
+_IV_FORMS = [
+    ("ne-x", "icmp ne i64 %l, 5", "label %body, label %exit", 5),
+    ("ne-n", "icmp ne i64 %l1, 5", "label %body, label %exit", 4),
+    ("ult-x", "icmp ult i64 %l, 5", "label %body, label %exit", 5),
+    ("ult-n", "icmp ult i64 %l1, 5", "label %body, label %exit", 4),
+    ("ule-x", "icmp ule i64 %l, 5", "label %body, label %exit", 6),
+    ("ule-n", "icmp ule i64 %l1, 5", "label %body, label %exit", 5),
+    ("swapped-ugt-x", "icmp ugt i64 5, %l", "label %body, label %exit", 5),
+    ("exit-edge-uge-x", "icmp uge i64 %l, 5", "label %exit, label %body", 5),
+    ("exit-edge-eq-n", "icmp eq i64 %l1, 5", "label %exit, label %body", 4),
+]
+IV_BOUND_POSITIVE = [
+    (f"window-cell-iv-{f}-one-beyond", _iv_bound(last + 1, cmp, br))
+    for f, cmp, br, last in _IV_FORMS]
+IV_BOUND_MUTANTS = [
+    (f"window-cell-iv-{f}-last-value", _iv_bound(last, cmp, br),
+     "B1-input-aliases-written-rail")
+    for f, cmp, br, last in _IV_FORMS] + [
+    # a constant offset of 2^62 + 5 cells wraps onto cell 5 = the last value.
+    ("window-cell-iv-offset-near-2^62",
+     _iv_bound(4611686018427387909, "icmp ne i64 %l1, 6"),
+     "B1-input-aliases-written-rail")]
+
+# bd 01po.19.34.4 (R11 round 1 C-F1) — THE TRIANGULAR NEST `for i in 1..3
+# { for j < i { if (q[j]) Ry(q[i]) } }`: the control cell %j and the target
+# cell %i differ by %j - %i, two counters. `_iv_sym` bounds %j by %i - 1 (the
+# inner stay edge `%j1 != %i`, %j from 0 < lo(%i) = 1), so %j - %i lies in
+# [0 - 3, -1]. Mutants: the inner bound `ule` (%j reaches %i: the same cell),
+# %j starting at 1 (= lo(%i): the first trip runs with %j == %i == 1), and
+# the bound counter redefined INSIDE the inner loop (no single bound) — B1.
+WINDOW_CELL_TRIANGLE = """
+define i32 @slice() local_unnamed_addr {
+entry:
+  %w = alloca i32, i64 4, align 4, !cq.railwindow !0
+  %h0 = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %h0, ptr %w, align 4
+  br label %outer
+outer:
+  %i = phi i64 [ 1, %entry ], [ %i1, %olatch ]
+  %ai = getelementptr i32, ptr %w, i64 %i
+  br label %inner
+inner:
+  %j = phi i64 [ 0, %outer ], [ %j1, %inner ]
+  %aj = getelementptr i32, ptr %w, i64 %j
+  %xj = load i32, ptr %aj, align 4
+  %xi = load i32, ptr %ai, align 4
+  call void @cqrt_ry_i1_controlled(i32 %xj, i32 %xi, double 3.000000e-01)
+  store i32 %xi, ptr %ai, align 4
+  %j1 = add nuw nsw i64 %j, 1
+  %jc = icmp eq i64 %j1, %i
+  br i1 %jc, label %olatch, label %inner
+olatch:
+  %i1 = add nuw nsw i64 %i, 1
+  %ic = icmp eq i64 %i1, 4
+  br i1 %ic, label %exit, label %outer
+exit:
+  %x2 = load i32, ptr %w, align 4
+  %r = call i1 @cqrt_measure_i1(i32 %x2)
+  %z = zext i1 %r to i32
+  ret i32 %z
+}
+!0 = !{i32 1}
+"""
+TRIANGLE_MUTANTS = [
+    ("window-cell-triangle-inner-reaches-outer",
+     sub(sub(WINDOW_CELL_TRIANGLE, "%jc = icmp", "icmp eq i64 %j1, %i",
+             "icmp ugt i64 %j1, %i"), "br i1 %jc", "label %olatch, label %inner",
+         "label %olatch, label %inner"),
+     "B1-input-aliases-written-rail"),
+    ("window-cell-triangle-inner-starts-at-outer-lo",
+     sub(WINDOW_CELL_TRIANGLE, "%j = phi", "[ 0, %outer ]", "[ 1, %outer ]"),
+     "B1-input-aliases-written-rail"),
+    ("window-cell-triangle-bound-varies-in-inner",
+     sub(sub(insert_after(WINDOW_CELL_TRIANGLE, "%j1 = add",
+                          "  %ib = add nuw nsw i64 %j, 1"),
+             "%jc = icmp", "icmp eq i64 %j1, %i", "icmp eq i64 %j1, %ib"),
+         "%ai = getelementptr", "i64 %i", "i64 %i"),
+     "B1-input-aliases-written-rail"),
+]
+
+# bd 01po.19.34.7 (R11 round 2 rN2-F1/F2) — the triangle with the outer
+# counter from 0: the i == 0 trip skips the inner loop through `icmp eq %i, 0`
+# (`_entry_lo` reads the guard: %i >= 1 on entry), and the DOWN-counting inner
+# loop `for (j = i - 1; j >= 0; j--)` that -O1 spells `%k` from %i, `add nsw
+# %k, -1`, staying while `%k sgt 1`, indexed by `and i64 (%k - 1), 2^32-1`
+# (`_iv_sym_down`: 1 <= %k <= %i, so the mask is the identity). Mutants: the
+# guard dropped (i == 0 enters: j == i == 0 would alias under the up-form),
+# the down loop staying while `%k sge 1` (it reaches %k == 0: the mask is no
+# longer provably the identity), the index the counter itself (`and %k`,
+# reaching %i: the same cell) — each B1.
+WINDOW_CELL_TRIANGLE0 = """
+define i32 @slice() local_unnamed_addr {
+entry:
+  %w = alloca i32, i64 4, align 4, !cq.railwindow !0
+  %h0 = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %h0, ptr %w, align 4
+  br label %outer
+outer:
+  %i = phi i64 [ 0, %entry ], [ %i1, %olatch ]
+  %g = icmp eq i64 %i, 0
+  br i1 %g, label %olatch, label %pre
+pre:
+  %ai = getelementptr i32, ptr %w, i64 %i
+  br label %inner
+inner:
+  %j = phi i64 [ 0, %pre ], [ %j1, %inner ]
+  %aj = getelementptr i32, ptr %w, i64 %j
+  %xj = load i32, ptr %aj, align 4
+  %xi = load i32, ptr %ai, align 4
+  call void @cqrt_ry_i1_controlled(i32 %xj, i32 %xi, double 3.000000e-01)
+  store i32 %xi, ptr %ai, align 4
+  %j1 = add nuw nsw i64 %j, 1
+  %jc = icmp eq i64 %j1, %i
+  br i1 %jc, label %olatch, label %inner
+olatch:
+  %i1 = add nuw nsw i64 %i, 1
+  %ic = icmp eq i64 %i1, 4
+  br i1 %ic, label %exit, label %outer
+exit:
+  %x2 = load i32, ptr %w, align 4
+  %r = call i1 @cqrt_measure_i1(i32 %x2)
+  %z = zext i1 %r to i32
+  ret i32 %z
+}
+!0 = !{i32 1}
+"""
+WINDOW_CELL_TRIANGLE_DOWN = """
+define i32 @slice() local_unnamed_addr {
+entry:
+  %w = alloca i32, i64 4, align 4, !cq.railwindow !0
+  %h0 = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %h0, ptr %w, align 4
+  br label %outer
+outer:
+  %i = phi i64 [ 0, %entry ], [ %i1, %olatch ]
+  %g = icmp eq i64 %i, 0
+  br i1 %g, label %olatch, label %pre
+pre:
+  %ai = getelementptr i32, ptr %w, i64 %i
+  br label %inner
+inner:
+  %k = phi i64 [ %i, %pre ], [ %k1, %inner ]
+  %k1 = add nsw i64 %k, -1
+  %jm = and i64 %k1, 4294967295
+  %aj = getelementptr i32, ptr %w, i64 %jm
+  %xj = load i32, ptr %aj, align 4
+  %xi = load i32, ptr %ai, align 4
+  call void @cqrt_ry_i1_controlled(i32 %xj, i32 %xi, double 3.000000e-01)
+  store i32 %xi, ptr %ai, align 4
+  %kc = icmp sgt i64 %k, 1
+  br i1 %kc, label %inner, label %olatch
+olatch:
+  %i1 = add nuw nsw i64 %i, 1
+  %ic = icmp eq i64 %i1, 4
+  br i1 %ic, label %exit, label %outer
+exit:
+  %x2 = load i32, ptr %w, align 4
+  %r = call i1 @cqrt_measure_i1(i32 %x2)
+  %z = zext i1 %r to i32
+  ret i32 %z
+}
+!0 = !{i32 1}
+"""
+TRIANGLE0_MUTANTS = [
+    ("window-cell-triangle0-guard-dropped",
+     sub(WINDOW_CELL_TRIANGLE0, "br i1 %g", "label %olatch, label %pre",
+         "label %pre, label %pre"),
+     "B1-input-aliases-written-rail"),
+    ("window-cell-triangle-down-reaches-zero",
+     sub(WINDOW_CELL_TRIANGLE_DOWN, "%kc = icmp", "icmp sgt i64 %k, 1",
+         "icmp sge i64 %k, 1"),
+     "B1-input-aliases-written-rail"),
+    ("window-cell-triangle-down-index-is-counter",
+     sub(WINDOW_CELL_TRIANGLE_DOWN, "%jm = and", "and i64 %k1,", "and i64 %k,"),
+     "B1-input-aliases-written-rail"),
+]
+
 MEM_POSITIVE = [
+    ("window-cell-triangle0-entry-guard", WINDOW_CELL_TRIANGLE0),
+    ("window-cell-triangle-down-masked", WINDOW_CELL_TRIANGLE_DOWN),
+    ("window-cell-triangle-inner-below-outer", WINDOW_CELL_TRIANGLE),
+    *IV_BOUND_POSITIVE,
+    ("window-cell-cnot-nested-iv-distinct", WINDOW_CELL_CNOT_IV),
+    ("window-cell-cnot-literal-first-offset", WINDOW_CELL_CNOT_LITFIRST),
     ("window-cell-temp-other-cell-written-dbg", WINDOW_CELL_TEMP_OTHER_DBG),
     ("window-cell-temp-other-cell-written", WINDOW_CELL_TEMP_OTHER),
     ("window-cell-cnot-proven-distinct-cells", WINDOW_CELL_CNOT),
@@ -2349,6 +2615,25 @@ exit:
     ("window-cell-cnot-offset-wraps",
      sub(WINDOW_CELL_CNOT, "%i1 = add", "add nuw nsw i64 %i, 1",
          "add nuw nsw i64 %i, 4611686018427387904"),
+     "B1-input-aliases-written-rail"),
+    *IV_BOUND_MUTANTS,
+    *TRIANGLE_MUTANTS,
+    *TRIANGLE0_MUTANTS,
+    # bd 01po.19.34: the counted-phi range proof's own kill tests.
+    ("window-cell-cnot-iv-starts-at-zero",
+     sub(WINDOW_CELL_CNOT_IV, "%l = phi", "[ 2, %entry ]", "[ 0, %entry ]"),
+     "B1-input-aliases-written-rail"),
+    ("window-cell-cnot-iv-step-may-wrap",
+     sub(WINDOW_CELL_CNOT_IV, "%l1 = add", "add nuw nsw i64 %l, 1",
+         "add nsw i64 %l, 1"),
+     "B1-input-aliases-written-rail"),
+    ("window-cell-cnot-iv-unbounded-compare",
+     sub(WINDOW_CELL_CNOT_IV, "%c = icmp", "icmp ult i64 %l, %nb",
+         "icmp ult i64 %l, %m"),
+     "B1-input-aliases-written-rail"),
+    ("window-cell-cnot-iv-stay-edge-unbounded",
+     sub(WINDOW_CELL_CNOT_IV, "br i1 %c", "label %body, label %exit",
+         "label %exit, label %body"),
      "B1-input-aliases-written-rail"),
     # bd 01po.19 S5: two unrelated index bases — not provably distinct.
     ("window-cell-cnot-unprovable-cells",

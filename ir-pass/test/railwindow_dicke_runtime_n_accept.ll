@@ -1,16 +1,30 @@
-; railwindow_dicke_runtime_n_pending.ll — DECLINE (bd `test_C_libtooling-01po.19` S1-S3).
+; railwindow_dicke_runtime_n_accept.ll — ACCEPT (bd `test_C_libtooling-01po.19.19`;
+; renamed from railwindow_dicke_runtime_n_pending.ll, whose retirement trigger
+; this is: S1-S7 landed with bd 01po.19, and the last refusal — the nested
+; runtime `l` loop, `control flow inside a loop body` — is removed by
+; 01po.19.34/.19).
 ;
-; the same circuit with RUNTIME n, k over an i8 VLA `bool q[n]` (the owner's runtime-N scope).
+; The same circuit with RUNTIME n, k over an i8 VLA `bool q[n]` (the owner's
+; runtime-N scope). The rolled window model (RailWindow.h; owner rulings
+; `owner-ruling-01po19-rolled-not-unrolled-2026-10-15`,
+; `owner-ruling-01po19-rolled-design-2026-10-15`) claims the array (S1), places
+; its quantization point (S2) and promotes its windows (S3). The `m` loop runs
+; n-1 trips and the inner `l` loop min(k, m-1)-1 trips, both RUNTIME counts.
+; The inner loop is a quantum subloop that is iteration-local on its own, so
+; `markIfIterationLocal` (by recursion, 01po.19.34) marks the outer body too
+; and the outer region's R7 grant survives the final-taint re-ask.
 ;
-; Before S1-S3 this array declined in the one-store rail bank. Now the rolled
-; window model (RailWindow.h; owner rulings `owner-ruling-01po19-rolled-not-
-; unrolled-2026-10-15`, `owner-ruling-01po19-rolled-design-2026-10-15`) claims it
-; (S1), places its quantization point (S2) and promotes its windows (S3), and then
-; declines with exactly the steps it still needs. The WIN prefix pins the claim,
-; the quantization point and every promoted cell class, and the window IR (one SSA name per cell inside a window, one write-back per window exit; reviewed against the source).
-; (bd 01po.19 S5, 2026-10-15: S5 removed from the list, as its trigger says.)
-; RETIREMENT TRIGGER: each of S4-S7 that lands removes its name from the CHECK
-; line; when none is left this file becomes an ACCEPT with an analytic trace check.
+; Pinned below: the cell allocation walk at Q, the outer trip's in-place CNOT /
+; controlled Ry / CNOT, then the INNER loop block (its own back edge) holding
+; the s-chain and its reversal and frees, and the measurement walk.
+;
+; ANALYTIC CHECK (independent scratch state-vector replay of the e2e trace,
+; tests/e2e/slice_rolled_dicke_runtime_n.c, which runs this source with no
+; arguments, so n = 4, k = 2): the final state is |D^4_2>, the six weight-2
+; strings each at +0.408248, nothing else; every free frees a |0> rail.
+; Replayed beyond the golden (scratch, k = 2 and 3, n = 4..7 by argument
+; count, cqc with and without -g): |D^n_k> exactly in all sixteen runs, stage
+; 2b 6 of 6 free sites verified, 0 unproven.
 ;
 ; SOURCE (clang -O1 -fno-inline, verbatim below):
 ;   /* dicke_n.c with RUNTIME n, k (VLA bool q[n]): the owner's runtime-N scope. */
@@ -40,25 +54,48 @@
 ;   
 ;   int main(int argc, char **argv) { return dicke(argc + 3, 2); }
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s --implicit-check-not='cq rail bank' --implicit-check-not='tainted value stored to memory'
-; RUN: env CQ_RAILWINDOW_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s \
+; RUN:   | %filecheck %s --implicit-check-not='call {{.*}}@cq'
+; RUN: env CQ_RAILWINDOW_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
 ; RUN:   | %filecheck %s --check-prefix=WIN
-; (bd 01po.19 S6, 2026-10-15: S6 is built and leaves the needs list; this
-; array now reaches the control chain, which refuses it loudly as below —
-; the nested runtime l-loop; bd 01po.19.19.)
-; CHECK: cq controlled lowering: control flow inside a loop body under quantum control
-; (bd 01po.19 S6: the post-promotion IR-line WIN pins were dropped — S6's arm
-; promotion seeds a load before each quantum branch, renaming every promoted
-; value; the claim and the per-class promotion lines below still pin S1-S3.
-; The S6 shape is pinned by railwindow_s6_*.ll; this file flips to an accept
-; with the whole stream pinned when bd 01po.19.17/.19 land.)
 ; WIN: CQ_RAILWINDOW_DBG: @dicke claims %4 cells=i8 loads=12 stores=7 Q=  br i1 %12, label %13, label %24
 ; WIN: CQ_RAILWINDOW_DBG: promote cell {(-2 + (zext i32 %0 to i64) + %.rails),+,-1}<nw><%33> in region %33 loads=3 stores=1 exits=2
 ; WIN: CQ_RAILWINDOW_DBG: promote cell {(-1 + (zext i32 %0 to i64) + %.rails),+,-1}<nw><%33> in region %33 loads=2 stores=2 exits=2
 ; WIN: CQ_RAILWINDOW_DBG: promote cell {{[{][{]}}(-3 + (zext i32 %0 to i64) + %.rails),+,-1}<nw><%33>,+,-1}<nw><%59> in region %59 loads=3 stores=1 exits=1
 ; WIN: CQ_RAILWINDOW_DBG: promote cell {(-1 + (zext i32 %0 to i64) + %.rails),+,-1}<nw><%33> in region %59 loads=2 stores=2 exits=1
 ; WIN: CQ_RAILWINDOW_DBG: promoted 4 cell class(es)
+; CHECK: [[V0:%[-a-zA-Z$._0-9]+]] = call i32 @cqrt_alloc_i1(i1 [[V1:%[-a-zA-Z$._0-9]+]])
+; CHECK: call void @cqrt_cnot(i32 [[V2:%[-a-zA-Z$._0-9]+]], i32 [[V3:%[-a-zA-Z$._0-9]+]])
+; CHECK: call void @cqrt_ry_i1_controlled(i32 [[V3]], i32 [[V2]], double {{%[-a-zA-Z$._0-9]+}})
+; CHECK: call void @cqrt_cnot(i32 [[V2]], i32 [[V3]])
+; CHECK: {{^}}[[INNER:[0-9]+]]:{{.*}}; preds = {{.*}}%[[INNER]]{{(,|$)}}
+; CHECK-NEXT: phi i64 [ 2,
+; CHECK: call void @cqrt_cnot(i32 [[V4:%[-a-zA-Z$._0-9]+]], i32 [[V5:%[-a-zA-Z$._0-9]+]])
+; CHECK: [[V6:%[-a-zA-Z$._0-9]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK: call void @cqrt_cnot(i32 [[V5]], i32 [[V6]])
+; CHECK: [[V7:%[-a-zA-Z$._0-9]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 [[V6]], i32 [[V7]], i32 2)
+; CHECK: [[V8:%[-a-zA-Z$._0-9]+]] = call i32 @cq_template_zext_i1_to_i8(i32 [[V9:%[-a-zA-Z$._0-9]+]])
+; CHECK: [[V10:%[-a-zA-Z$._0-9]+]] = call i32 @cq_template_zext_i8_to_i32(i32 [[V8]])
+; CHECK: [[V11:%[-a-zA-Z$._0-9]+]] = call i32 @cq_template_or_i32(i32 [[V7]], i32 [[V10]])
+; CHECK: [[V12:%[-a-zA-Z$._0-9]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 [[V11]], i32 3)
+; CHECK: call void @cqrt_ry_i1_controlled(i32 [[V12]], i32 [[V4]], double {{%[-a-zA-Z$._0-9]+}})
+; CHECK: call void @cq_template_icmp_eq_i32_hl_unc(i32 [[V12]], i32 [[V11]], i32 3)
+; CHECK: call void @cq_template_or_i32_unc(i32 [[V11]], i32 [[V7]], i32 [[V10]])
+; CHECK-NEXT: call void @cqrt_xorc_i32_controlled(i32 [[V6]], i32 [[V7]], i32 2)
+; CHECK: call void @cqrt_cnot(i32 [[V5]], i32 [[V6]])
+; CHECK: call void @cqrt_free(i32 [[V6]])
+; CHECK: call void @cqrt_free(i32 [[V7]])
+; CHECK: call void @cqrt_free(i32 [[V11]])
+; CHECK: call void @cq_template_zext_i8_to_i32_unc(i32 [[V10]], i32 [[V8]])
+; CHECK: call void @cqrt_free(i32 [[V10]])
+; CHECK: call void @cq_template_zext_i1_to_i8_unc(i32 [[V8]], i32 [[V9]])
+; CHECK: call void @cqrt_free(i32 [[V8]])
+; CHECK: call void @cqrt_free(i32 [[V12]])
+; CHECK: call void @cqrt_cnot(i32 [[V4]], i32 [[V5]])
+; CHECK: br i1 {{%[-a-zA-Z$._0-9]+}}, label %[[INNER]], label
+; CHECK: [[V13:%[-a-zA-Z$._0-9]+]] = call i1 @cqrt_measure_i1(i32 [[V14:%[-a-zA-Z$._0-9]+]])
+; CHECK-NOT: call {{.*}}@cq
 
 ; ModuleID = 'dicke_rt.c'
 source_filename = "dicke_rt.c"

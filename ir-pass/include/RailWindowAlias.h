@@ -37,6 +37,12 @@ namespace cq {
 // two that cannot wrap to 0 — an unmasked i64 `i != j` over 4-byte cells is
 // NOT one). `isKnownPredicateAt` first, then the dominating-edge walk over
 // `DT` (a dominating `!=` edge wins over an `==` one: such a context is dead).
+// bd 01po.19.34.4/.7 (RailWindowNonZero.cpp): the cell difference D is
+// nonzero on every entered iteration of the loop it recurs in (the end-point
+// argument, asked at the loop's entry under its guards; identity zero-
+// extensions peeled). Fail closed.
+bool railWindowNonZeroOverLoop(llvm::ScalarEvolution &SE, const llvm::SCEV *D);
+
 bool railWindowDistinct(llvm::ScalarEvolution &SE, const llvm::SCEV *A,
                         const llvm::SCEV *B,
                         const llvm::Instruction *Ctx = nullptr,

@@ -14,6 +14,7 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/ConstantRange.h"
 #include "llvm/IR/Dominators.h"
@@ -112,7 +113,9 @@ std::optional<bool> railWindowEdgeFact(ScalarEvolution &SE, DominatorTree &DT,
 
 bool railWindowDistinct(ScalarEvolution &SE, const SCEV *A, const SCEV *B,
                         const Instruction *Ctx, DominatorTree *DT) {
-  if (SE.isKnownNonZero(SE.getMinusSCEV(A, B)))
+  const SCEV *D = SE.getMinusSCEV(A, B);
+  if (SE.isKnownNonZero(D) ||
+      (!isa<SCEVCouldNotCompute>(D) && railWindowNonZeroOverLoop(SE, D)))
     return true;
   if (!Ctx)
     return false;

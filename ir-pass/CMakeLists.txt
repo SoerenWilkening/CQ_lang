@@ -148,6 +148,7 @@ add_library(CQPass MODULE
   src/RailWindowInPlace.cpp
   src/RailWindowPhiUndo.cpp
   src/RailWindowAlias.cpp    # bd 01po.19 S3/S7: the alias question.
+  src/RailWindowNonZero.cpp  # bd 01po.19.34.4/.7: nonzero over a loop.
   src/RailWindowVersion.cpp  # bd 01po.19 S7: index alias versioning.
   src/RailWindowVersionPair.cpp
   src/RegionFlatten.cpp

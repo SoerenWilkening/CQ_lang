@@ -401,6 +401,19 @@ void declineDephasingUnmarkedLoopRails(llvm::Module &M, TaintSet &taint);
 void declineRound2FalsifiedRailGrants(llvm::Module &M, TaintSet &taint,
                                       WidthDispatch &wd);
 
+// bd 01po.19.34.2 (R11 round 1 A-F2, CLAUDE.md L1) — the RECORD and RE-ASK of a
+// `markIfIterationLocal` grant that ADMITTED a quantum subloop. Recorded at the
+// marking (header + function, both `WeakTrackingVH`), cleared at `lowerLoops`
+// entry; re-asked by calling `iterationLocalQualifies` at FINAL taint. Same
+// SLOT CONTRACT as `declineRound2FalsifiedRailGrants` (below the round-2
+// fixpoint, above `lowerRotations`), in BOTH entry points.
+struct NestedIterLocalGrant {
+  llvm::WeakTrackingVH Header;
+  llvm::WeakTrackingVH Fn;
+};
+std::vector<NestedIterLocalGrant> &nestedIterLocalGrants();
+void declineFalsifiedNestedIterLocalGrants(llvm::Module &M, TaintSet &taint);
+
 // bd `test_C_libtooling-bbu0`, owner ruling **E6 (2026-09-15) = option (D)** —
 // drain the verdict `declineDephasingUnmarkedLoopRails` DEFERRED under
 // `CQ_BBU0_DEFER_DEPHASE_FENCE`. **A NO-OP unless that variable is set**, which

@@ -14,12 +14,15 @@
 ; (n-1)-rotations-un-reversed rail (a hidden collapse, verify-clean, Rule 6/8).
 ;
 ; THE GUARD (LoopLowering::markIfIterationLocal): a loop with a strictly-deeper
-; SUBLOOP carrying tainted content is a nested quantum loop — NOT a single-level
-; iteration-local loop — so it is left UNMARKED. `q`'s terminal then keeps
-; FreePoint's `kMsgLoopBackedge` reject (its use is the in-loop inner rotation).
-; 7.3 does not lower nested quantum loops; over-declining is always safe (Prime
-; Directive). The inner loop, taken alone, has a loop-carried tainted header phi,
-; so it is never iteration-local either.
+; SUBLOOP carrying tainted content is left UNMARKED unless that subloop is
+; iteration-local ON ITS OWN (bd 01po.19.34 narrowed the old blanket refusal to
+; that, by recursion into the same predicate). Here it is not: the inner loop
+; reads `%q`, minted in the OUTER body (a tainted operand defined outside it),
+; and carries a tainted header phi. So the outer loop stays unmarked and `q`'s
+; terminal keeps FreePoint's `kMsgLoopBackedge` reject (its use is the in-loop
+; inner rotation). Lowering it (reverse the inner rotations per outer trip) is a
+; capability gap, not a physics decline (R1). The accept side of the narrowing
+; is railwindow_dicke_n5k3_nested_accept.ll.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq uncompute: tainted handle live range crosses a loop backedge
