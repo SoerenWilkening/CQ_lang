@@ -17,9 +17,12 @@
    rail h2 (= q + 5) when the arm's Ry(.2) fires on h2, and `opt` warns
    `cq rotation lowering: non-diagonal gate over a live derived record` — the
    owner's lyyf-(B) class (a live record left entangled is accepted as the user's
-   circuit). The hand-inlined twin (`int t = q + m;`) lowers the add IN PLACE and
-   stays coherent (r1B probe `sqi1U`), so for this shape the twin is a divergence
-   detector, not a correctness oracle. bd hgwx tracks the same dephasing face for
+   circuit). The hand-inlined twin (`int t = q + m;`) was recorded (r1B probe
+   `sqi1U`) as lowering the add IN PLACE; RE-MEASURED 2026-10-16 (bd dm7f.83) it
+   lowers OUT of place with the same warning, because the M-C fence's G4 holds out
+   a formal-PARAMETER immediate (`m`, ArithLowering.cpp `inPlaceFenceHolds`), with
+   or without the merge phi. So the twin is a divergence detector, not a
+   correctness oracle. bd hgwx tracks the same dephasing face for
    a CLASSICAL-verdict clone, where the kept ancestor is the compiler's doing.
 
    `m` is `slice`'s parameter, passed `argc + 4` (argc = 1 under the harness, so
