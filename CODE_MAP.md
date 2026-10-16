@@ -17,12 +17,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `runtime/cq_templates.c` — 15665 physical lines
 - `ir-pass/src/ArmClassify.cpp` — 10934 physical lines
 - `ir-pass/src/LoopLowering.cpp` — 8088 physical lines
-- `ir-pass/src/PredMuxFlatten.cpp` — 5553 physical lines
+- `ir-pass/src/PredMuxFlatten.cpp` — 5556 physical lines
 - `tools/free_pairing_check.py` — 4543 physical lines
 - `tools/free_pairing_check_test.py` — 4490 physical lines
 - `tools/loop_twin_matrix.py` — 4115 physical lines
 - `ir-pass/src/QramLowering.cpp` — 4069 physical lines
-- `ir-pass/src/Uncomputation.cpp` — 3498 physical lines
+- `ir-pass/src/Uncomputation.cpp` — 3502 physical lines
 - `ir-pass/src/TaintPropagation.cpp` — 3492 physical lines
 - `ir-pass/src/SwapRouteEmit.cpp` — 3414 physical lines
 - `runtime/cq_link_smoke.c` — 2893 physical lines
@@ -34,17 +34,17 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/golden_multiset_audit.py` — 2211 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1971 physical lines
 - `tools/inplace_twin_matrix.py` — 1790 physical lines
-- `ir-pass/src/CQLoweringPass.cpp` — 1643 physical lines
+- `ir-pass/src/CQLoweringPass.cpp` — 1644 physical lines
 - `ir-pass/src/SelectClassify.cpp` — 1528 physical lines
+- `ir-pass/src/OpcodeLowering.cpp` — 1515 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
-- `ir-pass/src/OpcodeLowering.cpp` — 1514 physical lines
 - `runtime/cq_runtime.c` — 1489 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
 - `ir-pass/src/Specialization.cpp` — 1385 physical lines
 - `ir-pass/src/ArithLowering.cpp` — 1344 physical lines
 - `tools/library_coverage/probe.py` — 1219 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
-- `ir-pass/src/ChainWalk.cpp` — 1169 physical lines
+- `ir-pass/src/ChainWalk.cpp` — 1179 physical lines
 - `tools/loop_twin_matrix_quarantine_test.py` — 1110 physical lines
 - `ir-pass/src/SpecializeReject.cpp` — 1005 physical lines
 - `ir-pass/src/BreakReversePlay.cpp` — 1004 physical lines
@@ -60,7 +60,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/cq_stage_cache_test.py` — 752 physical lines
 - `tools/library_coverage/full_surface/full_census.py` — 728 physical lines
 - `ir-pass/include/ControlPlan.h` — 726 physical lines
-- `ir-pass/include/ChainWalk.h` — 719 physical lines
+- `ir-pass/include/ChainWalk.h` — 725 physical lines
 - `ir-pass/src/MergePhiPeel.cpp` — 672 physical lines
 - `ir-pass/include/QramLowering.h` — 665 physical lines
 - `ir-pass/include/ScrubOnDelete.h` — 661 physical lines
@@ -408,12 +408,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ByRefInline.cpp:255` — `cloneExpr`
 - `ir-pass/src/ByRefInline.cpp:277` — `lowerByRefInline`
 
-### `ir-pass/src/CQLoweringPass.cpp` (1643 lines)
+### `ir-pass/src/CQLoweringPass.cpp` (1644 lines)
 
 - `ir-pass/src/CQLoweringPass.cpp:66` — `eraseDeadDecls`
 - `ir-pass/src/CQLoweringPass.cpp:100` — `declineSurvivingIntrinsicCalls`
 - `ir-pass/src/CQLoweringPass.cpp:126` — `CQLoweringPass::run`
-- `ir-pass/src/CQLoweringPass.cpp:1145` — `CQLoweringPass::runOnFunction`
+- `ir-pass/src/CQLoweringPass.cpp:1146` — `CQLoweringPass::runOnFunction`
 
 ### `ir-pass/src/CallContract.cpp` (323 lines)
 
@@ -441,7 +441,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/CastLowering.cpp:38` — `promote`
 - `ir-pass/src/CastLowering.cpp:50` — `rewriteCast`
 
-### `ir-pass/src/ChainWalk.cpp` (1169 lines)
+### `ir-pass/src/ChainWalk.cpp` (1179 lines)
 
 - `ir-pass/src/ChainWalk.cpp:35` — `markBranchPhaseGate`
 - `ir-pass/src/ChainWalk.cpp:41` — `isBranchPhaseGate`
@@ -639,14 +639,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Fp80Union.cpp:1231` — `foldConstantConesInFunction`
 - `ir-pass/src/Fp80Union.cpp:1235` — `promoteFp80Union`
 
-### `ir-pass/src/FreePoint.cpp` (358 lines)
+### `ir-pass/src/FreePoint.cpp` (360 lines)
 
 - `ir-pass/src/FreePoint.cpp:50` — `diagnose`
-- `ir-pass/src/FreePoint.cpp:93` — `isRecognizedEscapeUser`
-- `ir-pass/src/FreePoint.cpp:114` — `isBenignLiveRangePhi`
-- `ir-pass/src/FreePoint.cpp:142` — `blockInLoop`
-- `ir-pass/src/FreePoint.cpp:151` — `blockCanRepeat`
-- `ir-pass/src/FreePoint.cpp:165` — `computeFreePoint`
+- `ir-pass/src/FreePoint.cpp:100` — `isRecognizedEscapeUser`
+- `ir-pass/src/FreePoint.cpp:121` — `isBenignLiveRangePhi`
+- `ir-pass/src/FreePoint.cpp:149` — `blockInLoop`
+- `ir-pass/src/FreePoint.cpp:158` — `blockCanRepeat`
+- `ir-pass/src/FreePoint.cpp:172` — `computeFreePoint`
 
 ### `ir-pass/src/GuardedClassicalRead.cpp` (272 lines)
 
@@ -924,7 +924,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/MergeStreamPlan.cpp:64` — `sese`
 - `ir-pass/src/MergeStreamPlan.cpp:97` — `planMerge`
 
-### `ir-pass/src/OpcodeLowering.cpp` (1514 lines)
+### `ir-pass/src/OpcodeLowering.cpp` (1515 lines)
 
 - `ir-pass/src/OpcodeLowering.cpp:86` — `diagnoseStaleRecord`
 - `ir-pass/src/OpcodeLowering.cpp:100` — `diagnosePreLoopCommitStale`
@@ -941,14 +941,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/OpcodeLowering.cpp:452` — `gateFollowsRead`
 - `ir-pass/src/OpcodeLowering.cpp:458` — `checkStaleOp`
 - `ir-pass/src/OpcodeLowering.cpp:465` — `reaskCarried`
-- `ir-pass/src/OpcodeLowering.cpp:498` — `declineStaleRecordOps`
-- `ir-pass/src/OpcodeLowering.cpp:503` — `declineTaintedArmLiftedReads`
-- `ir-pass/src/OpcodeLowering.cpp:533` — `declineStaleRecordOpsImpl`
-- `ir-pass/src/OpcodeLowering.cpp:655` — `declineLiftedStaleRecordOps`
-- `ir-pass/src/OpcodeLowering.cpp:736` — `recordStaleQuantumReaders`
-- `ir-pass/src/OpcodeLowering.cpp:743` — `recordStaleQuantumReadersImpl`
-- `ir-pass/src/OpcodeLowering.cpp:1114` — `declineRecordedStaleQuantumReaders`
-- `ir-pass/src/OpcodeLowering.cpp:1176` — `lowerOps`
+- `ir-pass/src/OpcodeLowering.cpp:499` — `declineStaleRecordOps`
+- `ir-pass/src/OpcodeLowering.cpp:504` — `declineTaintedArmLiftedReads`
+- `ir-pass/src/OpcodeLowering.cpp:534` — `declineStaleRecordOpsImpl`
+- `ir-pass/src/OpcodeLowering.cpp:656` — `declineLiftedStaleRecordOps`
+- `ir-pass/src/OpcodeLowering.cpp:737` — `recordStaleQuantumReaders`
+- `ir-pass/src/OpcodeLowering.cpp:744` — `recordStaleQuantumReadersImpl`
+- `ir-pass/src/OpcodeLowering.cpp:1115` — `declineRecordedStaleQuantumReaders`
+- `ir-pass/src/OpcodeLowering.cpp:1177` — `lowerOps`
 
 ### `ir-pass/src/OpcodeSupport.cpp` (342 lines)
 
@@ -996,7 +996,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/PoisonFlow.cpp:361` — `TwinPlanner::edits`
 - `ir-pass/src/PoisonFlow.cpp:374` — `TwinPlanner::forget`
 
-### `ir-pass/src/PredMuxFlatten.cpp` (5553 lines)
+### `ir-pass/src/PredMuxFlatten.cpp` (5556 lines)
 
 - `ir-pass/src/PredMuxFlatten.cpp:151` — `isConditionalCtrlTerm`
 - `ir-pass/src/PredMuxFlatten.cpp:157` — `hasTaintedArgument`
@@ -1025,21 +1025,21 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/PredMuxFlatten.cpp:4182` — `stripPoisonCone`
 - `ir-pass/src/PredMuxFlatten.cpp:4217` — `canonicalizePred`
 - `ir-pass/src/PredMuxFlatten.cpp:4393` — `buildNegation`
-- `ir-pass/src/PredMuxFlatten.cpp:4661` — `blockPred`
-- `ir-pass/src/PredMuxFlatten.cpp:4678` — `edgePred`
-- `ir-pass/src/PredMuxFlatten.cpp:4711` — `convertPhis`
-- `ir-pass/src/PredMuxFlatten.cpp:4929` — `moveBody`
-- `ir-pass/src/PredMuxFlatten.cpp:4979` — `maskQromIndex`
-- `ir-pass/src/PredMuxFlatten.cpp:4998` — `track`
-- `ir-pass/src/PredMuxFlatten.cpp:5064` — `trackCondCone`
-- `ir-pass/src/PredMuxFlatten.cpp:5164` — `sweepDead`
-- `ir-pass/src/PredMuxFlatten.cpp:5188` — `isSpeculatablePureCallee`
-- `ir-pass/src/PredMuxFlatten.cpp:5238` — `isSpeculatableTotalCallee`
-- `ir-pass/src/PredMuxFlatten.cpp:5297` — `isFlattenResidue`
-- `ir-pass/src/PredMuxFlatten.cpp:5342` — `deleteDeadPreservingCqOwned`
-- `ir-pass/src/PredMuxFlatten.cpp:5366` — `simplifyFlattenResiduesInFunction`
-- `ir-pass/src/PredMuxFlatten.cpp:5417` — `flattenPredMuxRegions`
-- `ir-pass/src/PredMuxFlatten.cpp:5541` — `declineConvertedRailPhiLeaves`
+- `ir-pass/src/PredMuxFlatten.cpp:4664` — `blockPred`
+- `ir-pass/src/PredMuxFlatten.cpp:4681` — `edgePred`
+- `ir-pass/src/PredMuxFlatten.cpp:4714` — `convertPhis`
+- `ir-pass/src/PredMuxFlatten.cpp:4932` — `moveBody`
+- `ir-pass/src/PredMuxFlatten.cpp:4982` — `maskQromIndex`
+- `ir-pass/src/PredMuxFlatten.cpp:5001` — `track`
+- `ir-pass/src/PredMuxFlatten.cpp:5067` — `trackCondCone`
+- `ir-pass/src/PredMuxFlatten.cpp:5167` — `sweepDead`
+- `ir-pass/src/PredMuxFlatten.cpp:5191` — `isSpeculatablePureCallee`
+- `ir-pass/src/PredMuxFlatten.cpp:5241` — `isSpeculatableTotalCallee`
+- `ir-pass/src/PredMuxFlatten.cpp:5300` — `isFlattenResidue`
+- `ir-pass/src/PredMuxFlatten.cpp:5345` — `deleteDeadPreservingCqOwned`
+- `ir-pass/src/PredMuxFlatten.cpp:5369` — `simplifyFlattenResiduesInFunction`
+- `ir-pass/src/PredMuxFlatten.cpp:5420` — `flattenPredMuxRegions`
+- `ir-pass/src/PredMuxFlatten.cpp:5544` — `declineConvertedRailPhiLeaves`
 
 ### `ir-pass/src/QramIndexWidth.cpp` (207 lines)
 
@@ -1731,7 +1731,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/TwinTotality.cpp:363` — `boundLoop`
 - `ir-pass/src/TwinTotality.cpp:387` — `applyTwinShape`
 
-### `ir-pass/src/Uncomputation.cpp` (3498 lines)
+### `ir-pass/src/Uncomputation.cpp` (3502 lines)
 
 - `ir-pass/src/Uncomputation.cpp:131` — `diagnose`
 - `ir-pass/src/Uncomputation.cpp:139` — `isDataProducer`
@@ -1758,13 +1758,13 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Uncomputation.cpp:2157` — `railUnmovedInWindow`
 - `ir-pass/src/Uncomputation.cpp:2362` — `borrowedParentsUnmoved`
 - `ir-pass/src/Uncomputation.cpp:2418` — `planInteriorComponent`
-- `ir-pass/src/Uncomputation.cpp:2745` — `addDischargedRails`
-- `ir-pass/src/Uncomputation.cpp:2755` — `collectInteriorPlansMode`
-- `ir-pass/src/Uncomputation.cpp:3237` — `collectInteriorPlans`
-- `ir-pass/src/Uncomputation.cpp:3264` — `reverseInteriorGroup`
-- `ir-pass/src/Uncomputation.cpp:3282` — `collectTerminalCandidates`
-- `ir-pass/src/Uncomputation.cpp:3323` — `uncompute`
-- `ir-pass/src/Uncomputation.cpp:3422` — `planInteriorDischarges`
+- `ir-pass/src/Uncomputation.cpp:2749` — `addDischargedRails`
+- `ir-pass/src/Uncomputation.cpp:2759` — `collectInteriorPlansMode`
+- `ir-pass/src/Uncomputation.cpp:3241` — `collectInteriorPlans`
+- `ir-pass/src/Uncomputation.cpp:3268` — `reverseInteriorGroup`
+- `ir-pass/src/Uncomputation.cpp:3286` — `collectTerminalCandidates`
+- `ir-pass/src/Uncomputation.cpp:3327` — `uncompute`
+- `ir-pass/src/Uncomputation.cpp:3426` — `planInteriorDischarges`
 
 ### `ir-pass/src/UndefReach.cpp` (267 lines)
 

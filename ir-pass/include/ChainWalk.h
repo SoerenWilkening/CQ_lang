@@ -520,7 +520,12 @@ bool isTerminalHandle(llvm::Value *Handle, const TaintSet &taint);
 //        pinned by lowering_uncompute_interior_leak_qram_load.ll).
 //   (I2) it is NOT already a dead terminal (`isTerminalHandle`) — the existing
 //        whole-DAG partition owns those, and one rail must have exactly ONE
-//        owner or its shared prefix is adjointed twice (Rule 8).
+//        owner or its shared prefix is adjointed twice (Rule 8). EXCEPT an
+//        ORPHAN (bd r2j3.7): a terminal with NO user at all. The whole-DAG
+//        groups claim it first; one they leave (e.g. `NotClosed` on a shared
+//        root) used to stand forward-only. The interior driver admits it,
+//        anchored on its own definition, and single ownership is then the
+//        driver's `ReversedGates`/`ReversedRails` exclusion.
 //   (I3) EVERY user is a `CallInst` and `isInteriorConsumer`: an in-place
 //        gate on the rail that `preservesBasisUnderRecord` (Rz / addc / xorc —
 //        NOT `cqrt_ry`), a forward reassigning template producer that READS it,
@@ -537,7 +542,8 @@ bool isTerminalHandle(llvm::Value *Handle, const TaintSet &taint);
 //        adjoint twin all DISQUALIFY the rail (it is observed, escaped, recorded
 //        into a kept carrier, or owned by another emitter) — safe-leak, never a
 //        decline (M-A owns loudness; the driver is LEAK-FIRST).
-//   (I4) it has at least one FORWARD consumer, else (I2) would have caught it.
+//   (I4) it has at least one FORWARD consumer, else (I2) would have caught it —
+//        or it is an (I2) orphan.
 //
 // The predicate is deliberately blind to position so that the two halves cannot
 // be confused: everything here is true of the SSA graph and survives any

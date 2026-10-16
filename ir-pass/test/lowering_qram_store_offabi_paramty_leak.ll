@@ -53,5 +53,16 @@ entry:
 ; No adjoint is synthesized for the off-ABI store, and NOTHING is freed on the strength
 ; of one. Both are the discrimination controls against HEAD, which emitted both.
 ; CHECK-NOT: cqrt_qram_store_i32_unc
-; CHECK-NOT: cqrt_free
+; bd r2j3.7: an ORPHAN dead template rail (no user) that the whole-DAG spine
+; leaves is now an M-B interior candidate, discharged right after its mint
+; while its parents are provably unmoved (`isInteriorTerminalHandle` (I2)/(I4)).
+; That reads the shared parent's CURRENT label and never reverses the shared
+; prefix, so it is not the double-uncompute this file guards against.
+; Here that is the dead `h + 1`; the user register and the store are untouched.
+; CHECK:     %[[OP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 1)
+; CHECK-NEXT: call void @cq_template_add_i32_hl_unc(i32 %[[OP]], i32 %[[H]], i32 1)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OP]])
+; (Named as CALLS: since r2j3.7 the module also DECLARES `cqrt_free`.)
+; CHECK-NOT: call void @cqrt_qram_store_i32_unc
+; CHECK-NOT: call void @cqrt_free
 ; CHECK-NOT: cqrt_measure

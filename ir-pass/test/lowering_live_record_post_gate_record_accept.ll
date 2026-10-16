@@ -37,8 +37,13 @@
 ; plus a dead post-gate sibling). The two fixes are orthogonal and this module
 ; needs both.
 ;
-; RULE-6 NOTE, so the trace is not misread: `%h_op1` is left ALLOCATED and never
-; freed. The whole-DAG spine declines to reverse it because its parent `%h` sits
+; RULE-6 NOTE, so the trace is not misread: since bd r2j3.7 `%h_op1` (an orphan:
+; no user) is discharged right after its mint (M-B, `_unc` + free). Before that
+; it was left ALLOCATED and never freed. ⚠ CONSEQUENCE (bd r2j3.7, L7): the dead
+; `z` is discharged before the M-A guard runs, so this file no longer exercises
+; the F2 existence skip (nothing post-gate stands at the guard); it still pins the
+; accept. Follow-up bd r2j3.42 (a new F2 witness (a post-gate record the spine
+; cannot discharge)). The whole-DAG spine declines to reverse it because its parent `%h` sits
 ; in a measured lineage; leaving a rail allocated is the accepted safe leak, and
 ; it is orthogonal to what this fixture pins (the guard is pure analysis and emits
 ; nothing).

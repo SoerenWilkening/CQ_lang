@@ -8,8 +8,10 @@
 // after φ-nodes). A handle used by a `ret` escapes → no free point.
 //
 // Step 3 extends this in place with the full classification (PRD §2.5/§2.6/
-// §2.9): `cqrt_measure_` sink exclusion → `Measured`; return / `main` /
-// `cq_invert_*` escapes → `Escaped`; and loud `DiagnosticInfoUnsupported` for
+// §2.9): `cqrt_measure_` sink exclusion → `Measured`; return /
+// `cq_invert_*` escapes → `Escaped` (`main` is NOT an escape since bd r2j3.7,
+// owner ruling owner-ruling-r2j3-7-main-dead-record-2026-10-16: it runs the
+// helper's dead-record discipline); and loud `DiagnosticInfoUnsupported` for
 // unrecognized escapes, post-measure uses, and loop-backedge-crossing ranges.
 // The `Kind` enum and `(F, taint)` parameters are present from Step 1 so that
 // extension needs no signature churn.
@@ -55,7 +57,7 @@ bool blockCanRepeat(llvm::BasicBlock *BB);
 // Classification of a terminal handle's disposition.
 //   * Insert   — free here (`At` is the insertion point, never null).
 //   * Measured — a measurement consumes the handle; no free (Step 3).
-//   * Escaped  — the handle leaves the function (return / main / cq_invert) or
+//   * Escaped  — the handle leaves the function (return / cq_invert) or
 //                has no in-function users; no free, no diagnostic.
 enum class FreePointKind { Insert, Measured, Escaped };
 

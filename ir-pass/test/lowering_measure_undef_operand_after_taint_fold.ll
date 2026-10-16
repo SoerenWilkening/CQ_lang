@@ -89,7 +89,12 @@ define i32 @main() {
 ; symbol: the lowered module also carries a `declare` for each.
 ; COUNT-COUNT-1: call i32 @cqrt_alloc_i32(i32 0)
 ; COUNT-NOT: call i32 @cqrt_alloc_i32(i32 0)
-; COUNT-COUNT-1: cqrt_ry_i32(i32 %h
+; bd r2j3.7: `main` runs the helper's dead-record discipline (owner ruling
+; owner-ruling-r2j3-7-main-dead-record-2026-10-16), so the dead theta rail is
+; reverse-played and, back at its seed 0, freed (stage 2b verifies the free):
+; COUNT-COUNT-1: cqrt_ry_i32(i32 %h, double 3.000000e-01)
+; COUNT-NEXT: cqrt_ry_i32(i32 %h, double -3.000000e-01)
+; COUNT-NEXT: cqrt_free(i32 %h)
 ; COUNT-NOT: cqrt_ry_i32(i32 %h
 ;
 ; ⚠ THE POINT OF THE FILE. There is no measurement gate ANYWHERE in the emitted

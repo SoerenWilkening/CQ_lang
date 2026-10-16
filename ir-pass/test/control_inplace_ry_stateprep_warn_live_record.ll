@@ -26,6 +26,13 @@
 ; sink deletes the post-merge op into the arm. It is HAND IR for that reason,
 ; like `..._stateprep_consumer_add.ll` and `..._consumer_none.ll`.
 ;
+; RE-POINTED for bd r2j3.7 (L7): the record used to be an ORPHAN (no user), and an
+; orphan is a DEAD record — since r2j3.7 the M-B partition discharges it right
+; after its mint, before the gate, exactly as the 2026-10-05 dead-record ruling
+; asks, and the warning (correctly) vanished with it. The post-gate `+ 1` keeps
+; the record genuinely LIVE ACROSS the gate (the program's own entanglement,
+; lyyf), which is the guard's subject.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=WARN    < %t.err
@@ -49,6 +56,7 @@ merge:
   %r  = phi i32 [ %t, %arm ], [ 0, %entry ]
   %c  = add nsw i32 %r, 3
   %r2 = call i32 @cq_theta_si32(i32 %r, double 7.000000e-01)
+  %c2 = add nsw i32 %c, 1             ; the record, read AFTER the gate
   %m  = call i32 @cq_measure_si32(i32 %r2)
   ret i32 %m
 }

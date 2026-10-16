@@ -6,16 +6,18 @@
 ;   t ^= a; printf("%d\n", t); cq_theta(&a,.7); return cq_measure(a);
 ;
 ; The result is only TAPED. Whether it then survives is the SPINE's answer at that
-; site, asked of its own `computeFreePoint` (R12), never predicted. The two sites
-; follow two different references, both kept by the delegated ruling
-; ruling-dm7f51-main-vs-helper-2026-10-15:
-;   * HELPER — the dead-record discipline: `Insert`, the taped temporary is
-;     reversed/discharged right after the print (`_unc` + free), which equals in
-;     place followed by that discharge; P(a=0) ≈ 0.836, the same as 435b3bc1;
-;   * MAIN — FreePoint §2.6's live-to-exit register file: `Escaped`, nothing is ever
-;     reversed, so the result lives on the user's rail; it converts in place and is
-;     never undone; P(a=0) ≈ 0.790 (634f64b4 lowered it out of place here, keeping
-;     the old `t` beside `t ^ a`, P(a=0) ≈ 0.836 — not this site's reference).
+; site, asked of its own `computeFreePoint` (R12), never predicted. Since bd r2j3.7
+; (owner ruling owner-ruling-r2j3-7-main-dead-record-2026-10-16) BOTH sites follow
+; ONE reference, the dead-record discipline: `Insert`, the taped temporary is
+; reversed/discharged right after the print (`_unc` + free), BEFORE the later Ry on
+; `a`, which equals in place followed by that discharge. Analytic (independent of
+; `t`'s angle): P(a=0) = cos^2(.25)cos^2(.35) + sin^2(.25)sin^2(.35) = 0.835606.
+; HISTORY: until r2j3.7, `main` followed FreePoint §2.6's live-to-exit register
+; file (`Escaped`: converted in place, never undone; P(a=0) = 0.789941 at these
+; angles —
+; the delegated ruling ruling-dm7f51-main-vs-helper-2026-10-15 kept both; the owner
+; replaced it). `main` now also reverse-plays the dead `t` root (`Ry(-.3)`, left
+; allocated: a dead register's local unitary, R5).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll
@@ -32,10 +34,13 @@
 ; CHECK-NEXT:  call void @cqrt_ry_i32(i32 %[[T]], double 3.000000e-01)
 ; CHECK-NEXT:  %[[A:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT:  call void @cqrt_ry_i32(i32 %[[A]], double 5.000000e-01)
-; CHECK-NEXT:  call void @cqrt_xor_i32(i32 %[[A]], i32 %[[T]]), !cq.inplace.qq
-; CHECK-NEXT:  call i32 @cqrt_tape_write_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[T]])
+; CHECK-NEXT:  %[[MX:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i32(i32 %[[T]], i32 %[[A]])
+; CHECK-NEXT:  call i32 @cqrt_tape_write_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[MX]])
+; CHECK-NEXT:  call void @cq_template_xor_i32_unc(i32 %[[MX]], i32 %[[T]], i32 %[[A]])
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[MX]])
+; CHECK-NEXT:  call void @cqrt_ry_i32(i32 %[[T]], double -3.000000e-01)
 ; CHECK-NEXT:  call void @cqrt_ry_i32(i32 %[[A]], double 0x3FE6666666666666)
-; CHECK-NOT:   call i32 @cq_template_xor_
+; CHECK-NOT:   !cq.inplace.qq
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

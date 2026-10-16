@@ -74,12 +74,16 @@ exit:
 ; CHECK:     call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 2)
 ; CHECK:     call i32 @cqrt_tape_write_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[H]])
 
-; NOTHING is reversed and NOTHING is freed, anywhere in the module. Its OWN prefix
+; NOTHING is reversed and NOTHING is freed from the loop on (bd r2j3.7: only the
+; orphan `h + 2`'s entry-block discharge precedes it). Its OWN prefix
 ; with a SINGLE positive anchor, so both negatives run anchor -> EOF: a `CHECK-NOT`
 ; is bounded by the next positive directive OF ITS OWN PREFIX, and a second anchor
 ; here would silently kill the first guard (bd memory
 ; filecheck-check-not-window-trap; `tools/fixture_guard_liveness.py` proves the free
 ; guard executes by injecting one).
-; NOFREELOOP:     %[[H2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; bd r2j3.7: the orphan `h + 2` is discharged in ENTRY right after its mint (an
+; M-B interior discharge, once, outside the loop); the anchor is the LOOP header,
+; and from there to EOF nothing is reversed or freed.
+; NOFREELOOP:     {{^}}loop:
 ; NOFREELOOP-NOT: call void @cqrt_free(
-; NOFREELOOP-NOT: _unc(
+; NOFREELOOP-NOT: call {{.*}}_unc(

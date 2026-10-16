@@ -828,11 +828,11 @@ bool isTerminalHandle(Value *Handle, const TaintSet &taint) {
   // SILENTLY SKIPPED and a rail whose value was written into a rail-bank cell
   // is nominated as a DEAD terminal. What happens next is decided in
   // `computeFreePoint` and both outcomes are wrong for a bank:
-  //   * inside `main` it short-circuits to `Escaped` — right answer, by
-  //     accident, and an accident that covers almost nothing: measured over an
+  //   * inside `main` it USED TO short-circuit to `Escaped` — right answer, by
+  //     accident, and an accident that covered almost nothing (measured over an
   //     80-slice sample of `tests/e2e/slice_*.c`, **76 of 80** carry quantum
-  //     work OUTSIDE `main`;
-  //   * outside `main` the store falls to `FirstUnrecognized` and the module
+  //     work OUTSIDE `main`); since bd r2j3.7 `main` is classified like a helper;
+  //   * so the store falls to `FirstUnrecognized` and the module
   //     LOUD-DECLINES `cq uncompute: tainted handle reaches an unrecognized
   //     user` — an over-decline of the canonical W1 slice, written in the
   //     ordinary house style (`slice()` called from `main`);
@@ -1143,7 +1143,17 @@ bool isInteriorTerminalHandle(Value *Handle, const TaintSet &taint,
   //      partition; adjointing it from both would double-uncompute the shared
   //      prefix (use-after-free + double free — Rule 8, and the exact hazard
   //      WI-4 was built to avoid).
-  if (isTerminalHandle(Handle, taint))
+  //      bd r2j3.7 — EXCEPT AN ORPHAN: a rail with NO USER AT ALL (a dead pure
+  //      op, or one a compiler stage orphaned). The whole-DAG groups claim it
+  //      first; when they leave it (`NotClosed` on a shared root, a frontier
+  //      plan, …) it used to stand forward-only, a live derived copy of its
+  //      parents. Its last use is its own definition, so the interior
+  //      discharge right after it reads parents no gate can have moved yet.
+  //      Single ownership is then the CALLER's `ReversedGates`/`ReversedRails`
+  //      exclusion (what the groups actually reversed), and the published
+  //      plan (`planInteriorDischarges`) withholds every terminal gate.
+  const bool Orphan = Handle->use_empty();
+  if (!Orphan && isTerminalHandle(Handle, taint))
     return false;
   // (I3)/(I4) every user vetted, at least one forward consumer.
   bool HasForwardConsumer = false;
@@ -1163,7 +1173,7 @@ bool isInteriorTerminalHandle(Value *Handle, const TaintSet &taint,
     if (!isInPlaceGateOn(CI, Handle) && !taint.DischargedFlagGates.count(CI))
       HasForwardConsumer = true;
   }
-  return HasForwardConsumer;
+  return HasForwardConsumer || Orphan;
 }
 
 }  // namespace cq

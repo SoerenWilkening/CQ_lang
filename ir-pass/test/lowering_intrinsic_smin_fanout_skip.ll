@@ -8,17 +8,29 @@
 ; NEVER dirty-freed and NEVER `_unc`'d against a non-recoverable source. This is
 ; the conservative, safe handling — not a decline (over-declining would also be
 ; safe, but the existing spine simply skips the non-linear chain).
+; SINCE bd r2j3.7 the whole-DAG half above still holds, but the dead smin is an
+; ORPHAN and the M-B interior partition discharges it right after its mint, reading
+; the live sources' current labels (no shared prefix is reversed).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ;
 ; The forward smin still lowers; the live add consumes the fan-out source.
-; CHECK:     call i32 @cq_template_smin_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK:     %[[MIN:[a-zA-Z0-9_.]+]] = call i32 @cq_template_smin_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
+; bd r2j3.7: an ORPHAN dead template rail (no user) that the whole-DAG spine
+; leaves is now an M-B interior candidate, discharged right after its mint
+; while its parents are provably unmoved (`isInteriorTerminalHandle` (I2)/(I4)).
+; That reads the shared parent's CURRENT label and never reverses the shared
+; prefix, so it is not the double-uncompute this file guards against.
+; CHECK-NEXT: call void @cq_template_smin_i32_unc(i32 %[[MIN]],
+; CHECK-NEXT: call void @cqrt_free(i32 %[[MIN]])
 ; CHECK:     call i32 @cq_template_add_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 1)
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %{{[a-zA-Z0-9_.]+}})
 ;
-; The dead smin chain is NOT reversed and NO rail is freed (no dirty/double free).
-; CHECK-NOT: cq_template_smin_i32_unc
+; The shared source chain is NOT reversed and no OTHER rail is freed (no
+; dirty/double free): nothing after the measure.
+; (Named as CALLS: since r2j3.7 the module also DECLARES both symbols.)
+; CHECK-NOT: call void @cq_template_smin_i32_unc
 ; CHECK-NOT: call void @cqrt_free
 ; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 

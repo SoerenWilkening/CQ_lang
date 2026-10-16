@@ -43,6 +43,17 @@ entry:
 ; strip. Strictly stronger than the blanket form for the double-strip case
 ; (a second strip on an already-freed rail is a UAF + wrong unitary), and
 ; it still forbids any DATA uncompute (that would be a second `_unc` call).
-; UNC-COUNT-1: call void @cq_template_{{[if]}}cmp_{{[a-zA-Z0-9_]+}}_unc(
+; bd r2j3.7: an ORPHAN dead template rail (no user) that the whole-DAG spine
+; leaves is now an M-B interior candidate, discharged right after its mint
+; while its parents are provably unmoved (`isInteriorTerminalHandle` (I2)/(I4)).
+; That reads the shared parent's CURRENT label and never reverses the shared
+; prefix, so it is not the double-uncompute this file guards against.
+; Here that is the dead sibling `%w`: EXACTLY two `_unc` calls, the orphan's
+; (fmul) and the compare strip; the copied source chain `%t` (fadd) is never
+; uncomputed under its live entangled copy, which is the tripwire.
+; UNC-NOT:     call {{.*}}_unc(
+; UNC:         call void @cq_template_fmul_f64_hl_unc(
+; UNC-NOT:     call {{.*}}_unc(
+; UNC:         call void @cq_template_{{[if]}}cmp_{{[a-zA-Z0-9_]+}}_unc(
 ; UNC-NOT:     call {{.*}}_unc(
 ; CHECK-NOT: call void @cqrt_free

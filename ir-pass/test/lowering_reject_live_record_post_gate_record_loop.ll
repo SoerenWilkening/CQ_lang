@@ -77,13 +77,13 @@
 ; severity moved, so everything this header says about WHY the record counts
 ; still holds verbatim. The record is LEFT ALLOCATED and never freed (Rule 6 is
 ; untouched: nothing frees a rail that is not provably |0>), which the
-; `NOFREEREC` prefix below pins alongside the gate that IS now emitted. The file KEEPS its
+; `NOFREEREC` (now `RECDIS`) prefix below pins alongside the gate that IS now emitted. The file KEEPS its
 ; `reject_` name deliberately — see RotationLowering.h, which also states what
 ; the ruling does NOT cover (every wrong-value and dirty-free guard stays loud).
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s --check-prefix=WARN < %t.err
 ; RUN: %filecheck %s --check-prefix=LOWER < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=NOFREEREC < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=RECDIS < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
@@ -117,11 +117,17 @@ exit:                                             ; preds = %entry, %loop
 ; THE PROGRAM LOWERS. `opt` exits zero and the gate is in the stream:
 ; LOWER-LABEL: define{{.*}}@slice(
 ; LOWER: call void @cqrt_ry_i32(i32 %h_op, double 5.000000e-01)
-; and the record is LEFT ALLOCATED — never freed dirty (Rule 6), which is the
-; whole of what the ruling changes about the emitted circuit.
-; NOFREEREC-NOT: call void @cqrt_free(i32 %h_op1)
-; It is its OWN prefix, with no positive directive, so its window is the
-; WHOLE lowered module rather than the span after the gate — a free emitted
-; BEFORE the rotation would be caught too. That is also the spelling
-; tools/fixture_guard_liveness.py recognizes (`NOFREE*`), which counts it as
-; unanchored-and-therefore-not-dead rather than passing over it in silence.
+; and the record is never freed DIRTY (Rule 6). Since bd r2j3.7 the dead `z` is an
+; ORPHAN, so the M-B partition discharges it IN-BODY right after its mint (the
+; body is iteration-local: once per trip, against `q`'s unmoved label) — its free
+; is the clean one, immediately preceded by its own `_unc`. (Before r2j3.7 it was
+; left allocated and this prefix was `NOFREEREC-NOT: cqrt_free(%h_op1)`.) The F2
+; skip this twin pair was built around therefore no longer sees `z` at all: it
+; is discharged before the guard runs; follow-up bd r2j3.42 (a new F2 witness).
+; RECDIS:      %h_op1 = call i32 @cq_template_mul_i32_hl(i32 %h, i32 3)
+; RECDIS-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %h_op1, i32 %h, i32 3)
+; RECDIS-NEXT: call void @cqrt_free(i32 %h_op1)
+; RECDIS-NOT:  call void @cqrt_free(i32 %h_op1)
+; Its OWN prefix (renamed from `NOFREEREC` when it gained a positive anchor, so
+; tools/fixture_guard_liveness.py's unanchored `NOFREE*` family does not claim it):
+; the trailing NOT runs from the discharge to EOF, so a second free is caught.

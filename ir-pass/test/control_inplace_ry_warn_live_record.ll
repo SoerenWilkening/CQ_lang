@@ -21,6 +21,13 @@
 ;
 ; MEASURED: with the pre-audit structural test this module lowered SILENTLY.
 ;
+; RE-POINTED for bd r2j3.7 (L7): the record used to be an ORPHAN (no user), and an
+; orphan is a DEAD record — since r2j3.7 the M-B partition discharges it right
+; after its mint, before the gate, exactly as the 2026-10-05 dead-record ruling
+; asks, and the warning (correctly) vanished with it. The post-gate `+ 1` keeps
+; the record genuinely LIVE ACROSS the gate (the program's own entanglement,
+; lyyf), which is the guard's subject.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s --check-prefix=WARN < %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
@@ -40,6 +47,7 @@ arm:
   br label %merge
 merge:
   %rm = phi i32 [ %rt, %arm ], [ %r, %entry ]
+  %rec2 = add i32 %rec, 1                    ; the record, read AFTER the gate
   %m  = call i32 @cq_measure_si32(i32 %rm)
   ret i32 %m
 }

@@ -89,7 +89,14 @@ void diagnose(Instruction *Where, StringRef Msg) {
 // (no adjoint, no free, no diagnostic — PRD §2.6)?
 //   * a `ReturnInst` — the caller owns the handle;
 //   * a `@cq_invert_*` call — Phase 7 manual inversion supersedes here.
-// (`main` is handled at the function level by the caller, below.)
+// `main` is NOT special (bd r2j3.7, owner ruling owner-ruling-r2j3-7-main-dead-
+// record-2026-10-16). It used to short-circuit EVERY handle to `Escaped` ("no
+// caller, process exit reclaims the registers", PRD §2.6), which left every dead
+// record of `main` standing to exit: a later non-diagonal gate or measurement of
+// its sources then acted on a register entangled with it (`t ^= a; printf(t);
+// Ry(&a)`: P(a=0) 0.790 in `main` vs 0.836 in a helper). Process exit is not an
+// observation the program makes; the reversal point is the last use, as in a
+// helper. A tainted `ret` of `main` is declined upstream (bd r2j3.35).
 bool isRecognizedEscapeUser(const User *U) {
   if (isa<ReturnInst>(U))
     return true;
@@ -179,11 +186,6 @@ FreePoint computeFreePoint(Value *Terminal, Function &F, PostDominatorTree &PDT,
       !taint.IterationLocalBlocks.empty() &&
       isa<Instruction>(Terminal) &&
       taint.IterationLocalBlocks.count(cast<Instruction>(Terminal)->getParent());
-
-  // `main` resident → no caller, process exit reclaims the registers: a
-  // RECOGNIZED escape for EVERY handle in the function, silently skipped (§2.6).
-  if (F.getName() == "main")
-    return {FreePointKind::Escaped, nullptr};
 
   // Classify the handle's users in one pass. The measure sink is EXCLUDED from
   // the post-dominator user set (it is a sink, not an ordinary use, §2.5); a

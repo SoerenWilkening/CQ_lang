@@ -1005,7 +1005,7 @@ the generated runtime ABI.
 | Shape | Outcome |
 |---|---|
 | Dead, closed, acyclic, all gates dominate the merge | **reverse**; free each rail born \|0⟩ (template and QRAM-load rails, null-seeded roots); keep the rest |
-| `ret` / `main` / `cq_invert_*` escape | **skip** — no emit; the caller owns it |
+| `ret` / `cq_invert_*` escape | **skip** — no emit; the caller owns it (`main` is not an escape since bd r2j3.7: it runs the same discipline) |
 | `Measured` terminal | **skip** — the measurement consumed it; no adjoint, no free |
 | `NotClosed` / `Escaped` rail in the recovered DAG | **safe leak** — left allocated, never a dirty free |
 | Gate applied to a handle **after** its measurement | **loud** — `gate applied to handle after measurement` |

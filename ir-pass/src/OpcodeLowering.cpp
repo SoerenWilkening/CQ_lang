@@ -484,7 +484,8 @@ void reaskCarried(ArrayRef<Instruction *> Carried, TaintSet &taint,
 // stream it would get instead is bd yiid, an OPEN silent miscompile (r2j3 A).
 // MEASURED (batch 053 L3, a draft that placed them): 13 fixtures declined by the
 // R6 / loop rail-record fences and 4 by this fence's reader string lowered at exit
-// 0 to `measure(h); ry(h, ·); …`, and `main` escapes FreePoint's check entirely.
+// 0 to `measure(h); ry(h, ·); …`, and `main` escaped FreePoint's check entirely
+// (until bd r2j3.7; `main` is now classified like a helper).
 // RETIREMENT TRIGGER (L7): the yiid re-prep lowering; then place the measure
 // reader here with the reader policy's staler set (`RequireEmitDominance=false`).
 // The `cq_theta` reader never places: its staler consumes the very record it reads

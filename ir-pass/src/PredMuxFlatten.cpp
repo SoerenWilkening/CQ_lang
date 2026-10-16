@@ -4477,7 +4477,10 @@ private:
     // this family has found, two are now fixed here in the flatten — this line and
     // bd kqqv's `trackCondCone` in `canonicalizePred` — and TWO ARE STILL OPEN:
     //
-    //   * bd iwr7, STILL SHIPPING: 14 use-free `cq_template_zext_i32_to_i64` in TEN
+    //   * bd iwr7 (DISCHARGED since bd r2j3.7, not here: the uncompute spine's M-B
+    //     partition now reverses every use-free template rail right after its
+    //     mint, so the 14 below are `_unc`'d and freed; the producer stands):
+    //     14 use-free `cq_template_zext_i32_to_i64` in TEN
     //     committed real-openlibm goldens, beside a `cqrt_qram_load` of the
     //     un-widened index; root-caused to `if (CI->hasOneUse()) DeadCast = CI;` in
     //     `lowerQramReads`, a multi-use clang `zext nneg` whose geps are all erased.

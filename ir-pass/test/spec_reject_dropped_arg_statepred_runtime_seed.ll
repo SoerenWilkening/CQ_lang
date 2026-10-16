@@ -43,6 +43,10 @@
 ; CHECK-LABEL: define i32 @main(
 ; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %5)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
+; (bd r2j3.7: `main` runs the helper's dead-record discipline, owner ruling
+; owner-ruling-r2j3-7-main-dead-record-2026-10-16 — the dead `q` is reverse-played
+; right after its last use; still not freed, its seed is not provably |0>, R5.)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double -5.000000e-01)
 ; CHECK-NEXT: %[[T:[0-9]+]] = tail call i32 @h(i32 noundef 0, i32 noundef %5)
 ; CHECK-NEXT: %[[Q2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %8)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q2]], double 3.000000e-01)

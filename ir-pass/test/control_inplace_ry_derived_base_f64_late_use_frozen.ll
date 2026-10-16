@@ -52,17 +52,25 @@ merge:
 ; CHECK-NEXT: call void @cq_template_fcmp_ogt_f64_hl_unc(i32 %[[F]], i32 %h, double 5.000000e+00)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; the post-region `r + 1.0` still lowers forward (a fresh fadd rail)
-; CHECK-NEXT: call i32 @cq_template_fadd_f64_hl(i32 %[[OP]], double 1.000000e+00)
+; CHECK-NEXT: %[[ADD:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fadd_f64_hl(i32 %[[OP]], double 1.000000e+00)
+; bd r2j3.7: an ORPHAN dead template rail (no user) that the whole-DAG spine
+; leaves is now an M-B interior candidate, discharged right after its mint
+; while its parents are provably unmoved (`isInteriorTerminalHandle` (I2)/(I4)).
+; That reads the shared parent's CURRENT label and never reverses the shared
+; prefix, so it is not the double-uncompute this file guards against.
+; It reads the frozen rail's CURRENT (post-Ry) label, which its forward gate read
+; too; nothing un-rotates or frees the frozen rail.
+; CHECK-NEXT: call void @cq_template_fadd_f64_hl_unc(i32 %[[ADD]], i32 %[[OP]], double 1.000000e+00)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[ADD]])
 ; CHECK-NEXT: call double @cqrt_measure_f64(i32 %h)
 
 ; Nothing reverses the frozen rail or anything hanging off it.
 ; NOREV-NOT: double -9.000000e-01
 ; NOREV-NOT: double -3.000000e-01
 ; NOREV-NOT: cq_template_sqrt_f64_unc
-; NOREV-NOT: cq_template_fadd_f64_hl_unc
 ; NOREV-NOT: cqrt_free(i32 %h_intr)
 ; NOREV-NOT: cqrt_free(i32 %h1)
 
-; EXACTLY one free in the whole module: the flag's.
-; CNT-COUNT-1: call void @cqrt_free(
+; EXACTLY two frees in the whole module: the flag's and the orphan's (bd r2j3.7).
+; CNT-COUNT-2: call void @cqrt_free(
 ; CNT-NOT:     call void @cqrt_free(

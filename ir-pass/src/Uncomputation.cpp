@@ -2430,6 +2430,10 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
     for (CallInst *R : Comp) {
       if (!Owned.count(R))
         continue;
+      // bd r2j3.7 — an ORPHAN rail (no user; `isInteriorTerminalHandle` (I2))
+      // anchors on its own definition: it is dead the moment it is minted.
+      if (R->use_empty())
+        Anchors.push_back(R->getNextNode());  // a call is never a terminator
       for (User *U : R->users()) {
         // bd `test_C_libtooling-tu9q` P2 — see `anchorForConsumer`. For a
         // consumer that shares a cycle with the mint (and for every acyclic

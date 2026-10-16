@@ -38,8 +38,15 @@ define i32 @slice(i32 %x, double %g) {
 ; CHECK:      %[[H:.*]] = call i32 @cqrt_alloc_i32(i32 %x)
 ; CHECK:      call void @cqrt_ry_i32(i32 %[[H]], double %g)
 ; CHECK:      %[[BAD:.*]] = call i32 @cqrt_addc_i32(i32 %[[H]], i32 5)
-; CHECK:      call i32 @cq_template_mul_i32_hl(i32 %[[H]], i32 7)
-; CHECK-NOT:  call void @cq_template_mul_i32_hl_unc
+; CHECK:      %[[T:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[H]], i32 7)
+; bd r2j3.7: an ORPHAN dead template rail (no user) that the whole-DAG spine
+; leaves is now an M-B interior candidate, discharged right after its mint
+; while its parents are provably unmoved (`isInteriorTerminalHandle` (I2)/(I4)).
+; That reads the shared parent's CURRENT label and never reverses the shared
+; prefix, so it is not the double-uncompute this file guards against.
+; Only the orphan `t` is discharged; `h`'s chain (the fake addc) stays as is.
+; CHECK-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %[[T]], i32 %[[H]], i32 7)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[T]])
 ; CHECK-NOT:  call i32 @cqrt_addc_i32(i32 %[[H]], i32 -5)
 ; CHECK-NOT:  call void @cqrt_ry_i32(i32 %[[H]], double
-; CHECK-NOT:  call void @cqrt_free
+; CHECK-NOT:  call void @cqrt_free(i32 %[[H]])

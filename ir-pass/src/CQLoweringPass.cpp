@@ -781,7 +781,8 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // conditioned (ControlDetect adjudicated every tainted condition above —
   // declined regions already exited opt; accepted regions' merge phis are
   // erased) and no later stage owns it — the Phase-5 FreePoint net is bypassed
-  // whenever the base handle is measured/escaped/`main`-resident or
+  // whenever the base handle is measured/escaped (or, until bd r2j3.7,
+  // `main`-resident) or
   // non-terminal. Must run BEFORE `lowerRotations` (pre-RAUW SSA identity).
   // One deliberate accept (test_C_libtooling-5j5): the proven ONE-REGISTER
   // merge phi (`if (classical_c) cq_theta(&q, θ); use(q)`) is RAUW'd to its

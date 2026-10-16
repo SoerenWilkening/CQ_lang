@@ -91,6 +91,8 @@ cq_template_xor_i32_hl(h48, 1) -> h64
 cq_template_sub_i32(h64, h48) -> h65
 cq_template_xor_i32_hl_unc(h64, h48, 1)
 cqrt_free(h64)
+cq_template_zext_i32_to_i64_unc(h53, h48)
+cqrt_free(h53)
 cq_template_lshr_i32_hl_unc(h48, h47, 31)
 cqrt_free(h48)
 cq_template_icmp_ule_i32_hl(h6, 2139095039) -> h66
@@ -1468,6 +1470,8 @@ cq_template_xor_i32_hl(h590, 1) -> h606
 cq_template_sub_i32(h606, h590) -> h607
 cq_template_xor_i32_hl_unc(h606, h590, 1)
 cqrt_free(h606)
+cq_template_zext_i32_to_i64_unc(h595, h590)
+cqrt_free(h595)
 cq_template_lshr_i32_hl_unc(h590, h589, 31)
 cqrt_free(h590)
 cq_template_icmp_ule_i32_hl(h6, 2139095039) -> h608

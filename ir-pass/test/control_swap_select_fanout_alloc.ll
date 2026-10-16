@@ -18,7 +18,9 @@
 ; leak, Rule 6 — never a dirty free). See [[select-merge-no-chainwalk-exemption]].
 ;
 ; Shape: condition on a DISTINCT theta %y; the true operand %q also feeds a dead-end
-; `mul` scratch. The ONLY free is the flag; the q*3 scratch and q's rail leak.
+; `mul` scratch. q's rail leaks; since bd r2j3.7 the dead q*3 scratch (an orphan)
+; is discharged right after its mint, before the copy, so the frees are the
+; scratch's and the flag's.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
@@ -39,16 +41,26 @@ entry:
 ; q is copied into %out (entangled) AND fed to the mul scratch; the merge fires:
 ; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
 ; CHECK:     %[[SCRATCH:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[Q]], i32 3)
+; bd r2j3.7: an ORPHAN dead template rail (no user) that the whole-DAG spine
+; leaves is now an M-B interior candidate, discharged right after its mint
+; while its parents are provably unmoved (`isInteriorTerminalHandle` (I2)/(I4)).
+; That reads the shared parent's CURRENT label and never reverses the shared
+; prefix, so it is not the double-uncompute this file guards against.
+; The scratch `q*3` is discharged BEFORE q is copied into %out; q is never freed.
+; CHECK-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %[[SCRATCH]], i32 %[[Q]], i32 3)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[SCRATCH]])
 ; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[Q]], i32 %[[OUT]])
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])
+; CHECK-NOT: call void @cqrt_free(i32 %[[Q]])
 ; the entangled q rail and the q*3 scratch are LEFT ALLOCATED — no reverse-play,
 ; no second free (the exemption that WOULD reverse-play+free them was rejected):
 ; CHECK-NOT: cq_template_mul_i32_hl_inv
 ; CHECK-NOT: cqrt_cswap
 
-; exactly ONE cqrt_free (the flag only) — the entangled operand rail is never freed:
-; CNT-COUNT-1: call void @cqrt_free(
+; exactly TWO cqrt_frees (the scratch and the flag) — the entangled operand rail is
+; never freed:
+; CNT-COUNT-2: call void @cqrt_free(
 ; CNT-NOT:     call void @cqrt_free(

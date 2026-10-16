@@ -80,7 +80,8 @@
 // its dead-op twin). Measured 2026-10-15 over the e2e goldens: 2421 such rails
 // in 88 slices, 2417 feeding a measured result, 4 dead (the iwr7 QRAM-index
 // `zext`, four libm erf goldens), none followed by a non-diagonal gate on a
-// condition leaf.
+// condition leaf. Since bd r2j3.7 a DEAD one (no user) is an M-B orphan and is
+// discharged by the uncompute spine (iwr7's 14 zexts included).
 
 #ifndef CQ_IRPASS_MERGE_RAIL_DISCHARGE_H_
 #define CQ_IRPASS_MERGE_RAIL_DISCHARGE_H_
