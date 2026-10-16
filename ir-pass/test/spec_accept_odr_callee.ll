@@ -43,6 +43,10 @@
 ; the `shift`/`mask` clones this fixture pins would vanish. Retire the two
 ; keep-alive measures with that hoist. The dead-argument shape:
 ; spec_accept_tail_hoist_inplace.ll.
+; INTERIM (batch 055, owner question open, SpecializeTailHoist.h
+; `kLiftTailHoistEnabled`): with the hoist disabled the dead shape fails loudly
+; instead (`kMsgLiftTailUnhoisted`); the keep-alive keeps this fixture's
+; subject either way.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll

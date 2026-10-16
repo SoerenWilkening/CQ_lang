@@ -8,6 +8,7 @@
 #include "SpecializeTailPlan.h"  // the return-chain plan
 #include "TaintPropagation.h"   // TaintSet
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/LoopInfo.h"
@@ -37,8 +38,8 @@ using namespace llvm;
 namespace cq {
 
 const char kMsgLiftTailUnhoisted[] =
-    "cq specialization: a lifted call overwrites a dead quantum argument the "
-    "return-chain hoist did not see";
+    "cq specialization: a lifted call overwrites a dead quantum argument, which "
+    "is not lowered in place across the call";
 
 using namespace tailhoist;
 
@@ -120,6 +121,12 @@ Value *emit(Planner &PL, Plan &P, int I, CallInst &Site, IRBuilder<> &B,
 }  // namespace
 
 bool hoistLiftedTailChains(Module &M, const TaintSet &taint, WidthDispatch &wd) {
+  if (!kLiftTailHoistEnabled) {  // THE INTERIM (header): strip the tags only.
+    for (Function &F : M)
+      for (Instruction &I : instructions(F))
+        I.setMetadata(kLiftTailOwedTag, nullptr);
+    return false;
+  }
   Planner PL;
   SmallVector<std::pair<CallInst *, Plan *>, 4> Sites;
   SmallPtrSet<Function *, 32> Before;  // `isProvenSpecSite` may declare.
@@ -183,54 +190,92 @@ void tagUnhoistedLiftTail(CallInst &CI, const TaintSet &taint) {
     return;
   DominatorTree DT(*CI.getFunction());
   LoopInfo LI(DT);
-  uint64_t Phi = 0;
+  uint64_t Phi = 0, Chain = 0;
   const uint64_t Mask = owes(CI, *P, taint, DT, LI, &Phi);
-  if (!Mask && !Phi)
-    return;
+  SmallVector<unsigned, 4> Args;
+  argNos(*P, P->Root, Args);
+  for (unsigned A : Args)
+    if (A < 64)
+      Chain |= uint64_t(1) << A;
   LLVMContext &Ctx = CI.getContext();
   auto K = [&](uint64_t X) {
     return ConstantAsMetadata::get(ConstantInt::get(Type::getInt64Ty(Ctx), X));
   };
-  CI.setMetadata(kLiftTailOwedTag, MDNode::get(Ctx, {K(Mask), K(Phi)}));
+  CI.setMetadata(kLiftTailOwedTag,
+                 MDNode::get(Ctx, {K(Mask), K(Phi), K(Chain)}));
 }
 
+namespace {
+
+struct OwedTag {
+  uint64_t Mask = 0, Phi = 0, Chain = 0;
+};
+
+// E3 across calls: the result `R` is KEPT when it survives (the round's own
+// `qqResultSurvives`), or when a tagged lifted call reads it in a CHAIN slot and
+// that call's result is kept — the lifted twin of `survives`' "continued as the
+// dead operand of a later QQ op" (`t = f(t,a); t = f(t,a)` unrolled: the first
+// result's only reader is the second call).
+bool kept(CallInst *R, const DenseMap<CallInst *, OwedTag> &Tags,
+          const TaintSet &taint, Function &F, PostDominatorTree &PDT,
+          unsigned Depth = 0) {
+  if (Depth > 16 || qqResultSurvives(R, taint, F, PDT))
+    return true;
+  for (Use &U : R->uses()) {
+    auto *C = dyn_cast<CallInst>(U.getUser());
+    auto It = C ? Tags.find(C) : Tags.end();
+    if (It == Tags.end() || !C->isArgOperand(&U))
+      continue;
+    const unsigned A = C->getArgOperandNo(&U);
+    if (A < 64 && (It->second.Chain >> A & 1) &&
+        kept(C, Tags, taint, F, PDT, Depth + 1))
+      return true;
+  }
+  return false;
+}
+
+}  // namespace
+
 bool declineUnhoistedLiftTails(Module &M, const TaintSet &taint) {
-  bool Loud = false;
   for (Function &F : M) {
-    std::optional<PostDominatorTree> PDT;
+    DenseMap<CallInst *, OwedTag> Tags;
+    for (BasicBlock &BB : F)
+      for (Instruction &I : BB)
+        if (MDNode *MD = I.getMetadata(kLiftTailOwedTag)) {
+          I.setMetadata(kLiftTailOwedTag, nullptr);
+          auto *CI = dyn_cast<CallInst>(&I);
+          if (!CI || MD->getNumOperands() != 3)
+            continue;
+          uint64_t V[3] = {0, 0, 0};
+          for (unsigned K = 0; K < 3; ++K)
+            if (auto *C = mdconst::dyn_extract<ConstantInt>(MD->getOperand(K)))
+              V[K] = C->getZExtValue();
+          Tags[CI] = OwedTag{V[0], V[1], V[2]};
+        }
+    if (Tags.empty())
+      continue;
+    PostDominatorTree PDT(F);
     for (BasicBlock &BB : F)
       for (Instruction &I : BB) {
-        MDNode *MD = I.getMetadata(kLiftTailOwedTag);
-        if (!MD)
-          continue;
-        I.setMetadata(kLiftTailOwedTag, nullptr);
         auto *CI = dyn_cast<CallInst>(&I);
-        auto *KM = MD->getNumOperands() == 2
-                       ? mdconst::dyn_extract<ConstantInt>(MD->getOperand(0))
-                       : nullptr;
-        auto *KP = KM ? mdconst::dyn_extract<ConstantInt>(MD->getOperand(1))
-                      : nullptr;
-        if (Loud || !CI || !KP)
+        auto It = CI ? Tags.find(CI) : Tags.end();
+        if (It == Tags.end())
           continue;
         // A user register's value: owed outright. A dead φ not provably one
         // wire: owed when its rail is user data (the round's own B-F1 rule).
-        bool UserData = KM->getZExtValue() != 0;
+        bool UserData = It->second.Mask != 0;
         for (unsigned A = 0; A < CI->arg_size() && A < 64; ++A)
-          if ((KP->getZExtValue() >> A & 1) &&
+          if ((It->second.Phi >> A & 1) &&
               qqTargetIsUserData(CI, CI->getArgOperand(A)))
             UserData = true;
-        if (!UserData)
+        if (!UserData || !kept(CI, Tags, taint, F, PDT))
           continue;
-        if (!PDT)
-          PDT.emplace(F);
-        if (!qqResultSurvives(CI, taint, F, *PDT))
-          continue;
-        F.getContext().diagnose(
-            DiagnosticInfoUnsupported(F, kMsgLiftTailUnhoisted, CI->getDebugLoc()));
-        Loud = true;
+        F.getContext().diagnose(DiagnosticInfoUnsupported(
+            F, kMsgLiftTailUnhoisted, CI->getDebugLoc()));
+        return true;
       }
   }
-  return Loud;
+  return false;
 }
 
 }  // namespace cq

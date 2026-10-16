@@ -12,19 +12,32 @@
 ;
 ; Source: f8.c (lane L scratch), clang-19 -O1 -include CQ.h.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
-; RUN: %filecheck %s < %t.ll
+; INTERIM (batch 055): the return-chain hoist this fixture was written for
+; crosses owner-ruling-lift-classical-only-2026-10-06 / R14 and is DISABLED
+; pending the owner's choice ((a) the hoist as a ruled exception, (b) a
+; consuming clone, (c) loud until (b); SpecializeTailHoist.h
+; `kLiftTailHoistEnabled`). Until then every owed site fails LOUDLY with the
+; backstop's diagnostic, pinned below. The hoist expectation is kept verbatim
+; under the dormant prefix HOIST (no RUN line reads it). RETIREMENT: under (a)
+; restore the HOIST lines as CHECK and the original RUN; under (b) rewrite them
+; for the consuming clone; under (c) keep this.
 ;
-; CHECK-LABEL: define {{.*}}i32 @main(
-; CHECK:      [[A:%[a-z0-9]+]] = call i32 @cqrt_alloc_i1(i1 false)
-; CHECK:      [[B:%[a-z0-9]+]] = call i32 @cqrt_alloc_i1(i1 false)
-; CHECK:      [[T:%[a-z0-9]+]] = call i32 @cqrt_alloc_i1(i1 false)
-; CHECK-NEXT: call void @cqrt_ry_i1(i32 [[T]], double 4.000000e-01)
-; CHECK-NEXT: call void @cqrt_cnot(i32 [[A]], i32 [[T]]), !cq.inplace.qq
-; CHECK-NEXT: call void @cqrt_cnot(i32 [[B]], i32 [[T]]), !cq.inplace.qq
-; CHECK-NEXT: call void @cqrt_ry_i1(i32 [[A]], double 0x3FE6666666666666)
-; CHECK-NEXT: call void @cqrt_ry_i1(i32 [[B]], double 3.000000e-01)
-; CHECK-NOT:  define {{.*}}@__cq_q_
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; CHECK: error: {{.*}}cq specialization: a lifted call overwrites a dead quantum argument, which is not lowered in place across the call
+;
+; HOIST-CMD: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; HOIST-CMD: %filecheck %s < %t.ll
+;
+; HOIST-LABEL: define {{.*}}i32 @main(
+; HOIST:      [[A:%[a-z0-9]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; HOIST:      [[B:%[a-z0-9]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; HOIST:      [[T:%[a-z0-9]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; HOIST-NEXT: call void @cqrt_ry_i1(i32 [[T]], double 4.000000e-01)
+; HOIST-NEXT: call void @cqrt_cnot(i32 [[A]], i32 [[T]]), !cq.inplace.qq
+; HOIST-NEXT: call void @cqrt_cnot(i32 [[B]], i32 [[T]]), !cq.inplace.qq
+; HOIST-NEXT: call void @cqrt_ry_i1(i32 [[A]], double 0x3FE6666666666666)
+; HOIST-NEXT: call void @cqrt_ry_i1(i32 [[B]], double 3.000000e-01)
+; HOIST-NOT:  define {{.*}}@__cq_q_
 source_filename = "f8.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

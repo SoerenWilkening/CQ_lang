@@ -18,12 +18,6 @@
 ; the BASE, which must keep lowering). Five consumer kinds, five fixtures — read
 ; them as one family.
 ;
-; bd r2j3.37: `@sink` multiplies (it used to add 1), so its return is no
-; add/sub/xor chain. A DEAD user-register argument of an add/sub/xor return
-; chain is no longer lifted: the chain is hoisted to the caller
-; (SpecializeTailHoist.h), and the lifted read this fixture pins would vanish.
-; Retire that edit with the hoist.
-;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}stale rail record read past a controlled Ry under quantum control
 ; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
@@ -32,7 +26,7 @@ declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define internal fastcc i32 @sink(i32 %x) noinline {
-  %y = mul i32 %x, 3
+  %y = add i32 %x, 1
   ret i32 %y
 }
 

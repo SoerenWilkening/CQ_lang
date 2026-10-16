@@ -21,6 +21,10 @@
 ; DEAD theta argument of an add/sub/xor return chain is no longer lifted: the
 ; chain is hoisted to the caller (SpecializeTailHoist.h) and lowered in place, and
 ; the clone this fixture pins would vanish. Retire the keep-alive with that hoist.
+; INTERIM (batch 055, owner question open, SpecializeTailHoist.h
+; `kLiftTailHoistEnabled`): with the hoist disabled the dead shape fails loudly
+; instead (`kMsgLiftTailUnhoisted`); the keep-alive keeps this fixture's
+; subject either way.
 ;
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll

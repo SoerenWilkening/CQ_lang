@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 866 maintained source files, 6983 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 866 maintained source files, 6984 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -1510,14 +1510,15 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `ir-pass/src/SpecializeSeed.cpp:16` — `seedClone`
 
-### `ir-pass/src/SpecializeTailHoist.cpp` (236 lines)
+### `ir-pass/src/SpecializeTailHoist.cpp` (281 lines)
 
-- `ir-pass/src/SpecializeTailHoist.cpp:56` — `userRegisterValue`
-- `ir-pass/src/SpecializeTailHoist.cpp:75` — `owes`
-- `ir-pass/src/SpecializeTailHoist.cpp:96` — `emit`
-- `ir-pass/src/SpecializeTailHoist.cpp:122` — `hoistLiftedTailChains`
-- `ir-pass/src/SpecializeTailHoist.cpp:175` — `tagUnhoistedLiftTail`
-- `ir-pass/src/SpecializeTailHoist.cpp:197` — `declineUnhoistedLiftTails`
+- `ir-pass/src/SpecializeTailHoist.cpp:57` — `userRegisterValue`
+- `ir-pass/src/SpecializeTailHoist.cpp:76` — `owes`
+- `ir-pass/src/SpecializeTailHoist.cpp:97` — `emit`
+- `ir-pass/src/SpecializeTailHoist.cpp:123` — `hoistLiftedTailChains`
+- `ir-pass/src/SpecializeTailHoist.cpp:182` — `tagUnhoistedLiftTail`
+- `ir-pass/src/SpecializeTailHoist.cpp:219` — `kept`
+- `ir-pass/src/SpecializeTailHoist.cpp:239` — `declineUnhoistedLiftTails`
 
 ### `ir-pass/src/SpeculationSafety.cpp` (238 lines)
 
@@ -7554,10 +7555,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_spec_intermediate_unc.c:64` — `qram_index`
 - `tests/e2e/slice_spec_intermediate_unc.c:70` — `main`
 
-### `tests/e2e/slice_spec_lift_quantum_base.c` (53 lines)
+### `tests/e2e/slice_spec_lift_quantum_base.c` (55 lines)
 
-- `tests/e2e/slice_spec_lift_quantum_base.c:39` — `slice`
-- `tests/e2e/slice_spec_lift_quantum_base.c:49` — `main`
+- `tests/e2e/slice_spec_lift_quantum_base.c:41` — `slice`
+- `tests/e2e/slice_spec_lift_quantum_base.c:51` — `main`
 
 ### `tests/e2e/slice_spec_lift_scrubbed_elsewhere.c` (54 lines)
 

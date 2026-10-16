@@ -60,12 +60,6 @@
 ; Regenerate: clang -O1 -emit-llvm -S each TU as above, then
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>.
 ;
-; bd r2j3.37: `%6` is measured after the call so it stays LIVE across it. A
-; DEAD user-register argument of an add/sub/xor return chain is no longer
-; lifted: the chain is hoisted to the caller (SpecializeTailHoist.h), and the
-; `g2` clone reading the classical result this fixture pins would vanish.
-; Retire that edit with the hoist.
-;
 ; RUN: env CQ_DEADARG_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
 ; CHECK-NOT: CQ_DEADARG_DBG
@@ -85,7 +79,6 @@ define i32 @main(i32 noundef %0, ptr nocapture noundef readonly %1) local_unname
   %7 = tail call i32 @h(i32 noundef %6, i32 noundef %5) #4
   %8 = tail call i32 @g2(i32 noundef %7, i32 noundef %6) #4
   %9 = tail call i32 @cq_measure_si32(i32 noundef %8) #4
-  %keep = tail call i32 @cq_measure_si32(i32 noundef %6) #4
   ret i32 %9
 }
 

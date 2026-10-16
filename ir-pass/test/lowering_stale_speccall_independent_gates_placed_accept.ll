@@ -27,6 +27,10 @@
 ; fence refuses loudly as it does for the inlined twin
 ; (lowering_stale_speccall_tail_hoist_reject.ll). Retire the keep-alive when
 ; that lowering exists.
+; INTERIM (batch 055, owner question open, SpecializeTailHoist.h
+; `kLiftTailHoistEnabled`): with the hoist disabled the dead shape fails loudly
+; instead (`kMsgLiftTailUnhoisted`); the keep-alive keeps this fixture's
+; subject either way.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
 ; RUN: %filecheck %s < %t.ll

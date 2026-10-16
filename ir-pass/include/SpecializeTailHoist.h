@@ -75,6 +75,17 @@ namespace cq {
 struct TaintSet;
 class WidthDispatch;
 
+// THE INTERIM (batch 055, OWNER QUESTION OPEN): the hoist crosses
+// owner-ruling-lift-classical-only-2026-10-06 / R14 ("lifted, not inlined"; it
+// would also move a `cqc`-lifted libm body's return chain into the caller), so it
+// is DISABLED in every slot pending the owner's choice among (a) the hoist as a
+// ruled exception (+ a libm carve-out), (b) a consuming clone, (c) loud until
+// (b). Every site the gate would hoist then reaches the backstop below and fails
+// LOUDLY (`kMsgLiftTailUnhoisted`) when its result survives: r2j3.37 is "loud,
+// not yet lowered". RETIREMENT: flip this to true for (a), or delete the hoist
+// for (b); the spec_*tail_hoist* fixtures name the switch in their headers.
+inline constexpr bool kLiftTailHoistEnabled = false;
+
 // Rewrite every gated lifted call (see above). True if the module changed; the
 // caller re-`propagate`s (no guard has run yet at its slot).
 bool hoistLiftedTailChains(llvm::Module &M, const TaintSet &taint,

@@ -33,7 +33,9 @@
    exactly the hand-inlined twin above (measured: that twin, too, still lowers
    out of place here today, with the same warning), and the lifted base this
    slice pins would vanish. The keep-alive adds the golden's last line, a
-   measurement of h0. Retire it with that hoist. */
+   measurement of h0. Retire it with that hoist. INTERIM (batch 055, owner
+   question open): with the hoist disabled (kLiftTailHoistEnabled) the dead
+   shape fails loudly instead; the keep-alive keeps the subject either way. */
 int h(int a, int k);
 
 __attribute__((noinline)) int slice(int m) {

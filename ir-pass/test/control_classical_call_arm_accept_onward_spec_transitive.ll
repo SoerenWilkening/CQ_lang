@@ -17,6 +17,10 @@
 ; self-dependent, as the inlined twin does
 ; (ruling-dm7f51-step1-departures-2026-10-15 Q2;
 ; spec_reject_tail_hoist_self_dependent.ll).
+; INTERIM (batch 055, owner question open, SpecializeTailHoist.h
+; `kLiftTailHoistEnabled`): with the hoist disabled the dead shape fails loudly
+; instead (`kMsgLiftTailUnhoisted`); the keep-alive keeps this fixture's
+; subject either way.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

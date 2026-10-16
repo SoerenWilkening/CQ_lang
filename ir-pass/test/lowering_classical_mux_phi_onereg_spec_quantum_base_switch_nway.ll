@@ -24,6 +24,10 @@
 ; no longer lifted: the chain is hoisted to the caller (SpecializeTailHoist.h) and
 ; lowered in place, and the lifted base this fixture pins would vanish (no live
 ; record, no warning). Retire the keep-alive with that hoist.
+; INTERIM (batch 055, owner question open, SpecializeTailHoist.h
+; `kLiftTailHoistEnabled`): with the hoist disabled the dead shape fails loudly
+; instead (`kMsgLiftTailUnhoisted`); the keep-alive keeps this fixture's
+; subject either way.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s \
 ; RUN:   | %filecheck %s

@@ -8,8 +8,21 @@
 ;
 ; Source: f4.c (lane L scratch), clang-19 -O1 -include CQ.h.
 ;
+; INTERIM (batch 055): the return-chain hoist this fixture was written for
+; crosses owner-ruling-lift-classical-only-2026-10-06 / R14 and is DISABLED
+; pending the owner's choice ((a) the hoist as a ruled exception, (b) a
+; consuming clone, (c) loud until (b); SpecializeTailHoist.h
+; `kLiftTailHoistEnabled`). Until then every owed site fails LOUDLY with the
+; backstop's diagnostic, pinned below. The hoist expectation is kept verbatim
+; under the dormant prefix HOIST (no RUN line reads it). RETIREMENT: under (a)
+; restore the HOIST lines as CHECK and the original RUN; under (b) rewrite them
+; for the consuming clone; under (c) keep this.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error: {{.*}}cq in-place lowering: both operands of a quantum reassignment are dead registers; the overwritten one is not recoverable (use one of them again afterwards, e.g. measure it, so only one operand is a dead target)
+; CHECK: error: {{.*}}cq specialization: a lifted call overwrites a dead quantum argument, which is not lowered in place across the call
+;
+; HOIST-CMD: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; HOIST: error: {{.*}}cq in-place lowering: both operands of a quantum reassignment are dead registers; the overwritten one is not recoverable (use one of them again afterwards, e.g. measure it, so only one operand is a dead target)
 source_filename = "f4.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
