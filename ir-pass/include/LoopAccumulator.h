@@ -56,6 +56,7 @@
 #ifndef CQ_IRPASS_LOOP_ACCUMULATOR_H_
 #define CQ_IRPASS_LOOP_ACCUMULATOR_H_
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 
@@ -68,6 +69,7 @@ class BinaryOperator;
 class DominatorTree;
 class Loop;
 class PHINode;
+class ScalarEvolution;
 class Value;
 }  // namespace llvm
 
@@ -120,6 +122,14 @@ bool emitAccumulatorQQStep(llvm::BinaryOperator *BO, WidthDispatch &wd,
 // record the spine cannot reverse yet (bd 8h7d.20). Returns true after
 // diagnosing.
 bool declineDeadAccumulatorMoves(llvm::Module &M, const TaintSet &taint);
+
+// The postcondition's per-cell question (R11 r1 rA1B-F3): may an EARLIER trip's
+// step of `L` have recorded the cell `Target` (a cell load) reads, given the
+// steps' source cell reads `SrcCells`? Fails closed (true) unless SCEV proves
+// ptr_Target(k) == ptr_S(j) has no solution with j < k for every `S`.
+bool cellMayBeRecorded(const llvm::Value *Target,
+                       llvm::ArrayRef<const llvm::Value *> SrcCells,
+                       const llvm::Loop *L, llvm::ScalarEvolution &SE);
 
 }  // namespace cq
 

@@ -11,6 +11,8 @@
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
@@ -239,6 +241,35 @@ bool emitAccumulatorQQStep(BinaryOperator *BO, WidthDispatch &wd,
   G->setMetadata(kInPlaceQQTag, MDNode::get(BO->getContext(), {}));
   BO->replaceAllUsesWith(Rail);
   return true;
+}
+
+// May an EARLIER trip's step have recorded the cell `G`'s target load reads?
+// Fails closed (true) unless SCEV proves, for every step source cell read `S`,
+// that ptr_G(k) == ptr_S(j) has no solution with j < k.
+bool cellMayBeRecorded(const Value *Target, ArrayRef<const Value *> SrcCells,
+                       const Loop *L, ScalarEvolution &SE) {
+  auto *GL = dyn_cast<LoadInst>(Target);
+  if (!GL || !L)
+    return true;
+  const SCEV *PG = SE.getSCEV(const_cast<Value *>(GL->getPointerOperand()));
+  for (const Value *S : SrcCells) {
+    auto *SL = dyn_cast<LoadInst>(S);
+    if (!SL)
+      return true;
+    const SCEV *PS = SE.getSCEV(const_cast<Value *>(SL->getPointerOperand()));
+    auto *AR = dyn_cast<SCEVAddRecExpr>(PS);
+    if (!AR || AR->getLoop() != L || !AR->isAffine())
+      return true;
+    auto *Step = dyn_cast<SCEVConstant>(AR->getStepRecurrence(SE));
+    auto *D = dyn_cast<SCEVConstant>(SE.getMinusSCEV(PS, PG));  // same trip
+    if (!Step || !D || Step->getAPInt().isZero())
+      return true;
+    // ptr_S(j) == ptr_G(k)  <=>  (k - j) * step == D(k)  (D constant).
+    int64_t St = Step->getAPInt().getSExtValue(), Dv = D->getAPInt().getSExtValue();
+    if (Dv % St == 0 && Dv / St >= 1)
+      return true;
+  }
+  return false;
 }
 
 }  // namespace cq
