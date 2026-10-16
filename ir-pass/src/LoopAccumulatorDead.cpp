@@ -38,7 +38,7 @@ namespace cq {
 // `owner-ruling-r2j3-7-main-dead-record-2026-10-16`) allows no such record to
 // stand at a later non-diagonal gate on one of those rails: it dephases them
 // (measured on `int c=0; for(..) { if (c==1) cq_phi(.5); c += a; }
-// cq_theta(&a,.7)`: P(bit 0 of a = 1) 0.293 against the program's 0.318, per
+// cq_theta(&a,.7)`: P(bit 0 of a = 1) 0.293 against the program's 0.564, per
 // qubit with Ry on every qubit, backend.md §11.3). A record still
 // READ on every path after the gate is the program's own entanglement (lyyf).
 // Left allocated with no such gate it changes no measured statistic (R5).

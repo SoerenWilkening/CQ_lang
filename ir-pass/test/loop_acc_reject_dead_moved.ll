@@ -23,9 +23,11 @@
 ; r2j3.7): MEASURED with the postcondition removed, the module lowered
 ; verify-clean, and with Ry on every qubit of `a` (backend.md §11.3) the leaked
 ; record makes P(bit 0 of the final a = 1) = cos^2 .5 sin^2 .35 + sin^2 .5 cos^2 .35
-; = 0.293377 where the program's circuit gives 0.318428 (bit 0 coherent through
-; both Ry, plus the `c == 1` phase on the one branch a = 1; derived per qubit — the
-; text first quoted 0.531 from a low-bit-only replay, corrected R11 round 2). The
+; = 0.293377 where the program's circuit gives 0.564412 (bit 0 coherent through
+; Ry(1.0) then Ry(.7): sin^2(.85), plus the `c == 1` phase on the one branch a = 1;
+; derived per qubit. The text first quoted 0.531 from a low-bit-only replay, then
+; 0.318428 from a slip that used Ry(.5) for `cq_theta(&a, 1.0)`; corrected R11
+; rounds 2 and 2b). The
 ; register cannot be reversed in the rolled form yet (the post-loop reverse loop,
 ; bd 8h7d.20), so the module fails loudly at the gate.
 ; RETIREMENT TRIGGER: 8h7d.20's reverse loop uncomputes `c` after the loop and
