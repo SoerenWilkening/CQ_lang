@@ -4,7 +4,7 @@
 
 #include "InPlaceQQ.h"          // kConsumeDstAttr
 #include "SpecializeConsume.h"  // kConsumeAuxAttr
-#include "SpecializeTailPlan.h" // chainReachSlots
+#include "SpecializeChainReach.h"  // chainReachSlots
 
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"

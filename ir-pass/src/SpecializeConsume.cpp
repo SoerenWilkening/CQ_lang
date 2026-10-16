@@ -9,6 +9,7 @@
 #include "InPlaceQQ.h"           // kInPlaceQQTag / kConsumeDstAttr
 #include "OpcodeSupport.h"       // abiWidthFromType
 #include "SpecializeLiftTag.h"   // kLiftTailOwedTag
+#include "SpecializeChainReach.h"
 #include "SpecializeTailPlan.h"
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"

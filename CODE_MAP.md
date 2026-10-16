@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 871 maintained source files, 7018 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 871 maintained source files, 7015 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -88,7 +88,6 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/cq_stage_cache.py` — 495 physical lines
 - `ir-pass/src/DeadValueLiveness.cpp` — 494 physical lines
 - `ir-pass/include/LiteralIntegrity.h` — 489 physical lines
-- `ir-pass/include/SpecializeTailPlan.h` — 484 physical lines
 - `tests/e2e/railbank_deadcell_matrix.c` — 482 physical lines
 - `tools/gen_templates.py` — 477 physical lines
 - `tools/library_coverage/loop_bounds/LoopBoundProbe.cpp` — 471 physical lines
@@ -198,7 +197,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/SpecializePlan.h:133` — `getHashValue`
 - `ir-pass/include/SpecializePlan.h:137` — `isEqual`
 
-### `ir-pass/include/SpecializeTailPlan.h` (484 lines)
+### `ir-pass/include/SpecializeTailPlan.h` (388 lines)
 
 - `ir-pass/include/SpecializeTailPlan.h:72` — `hoistable`
 - `ir-pass/include/SpecializeTailPlan.h:77` — `planFor`
@@ -217,9 +216,6 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/SpecializeTailPlan.h:310` — `phiSel`
 - `ir-pass/include/SpecializeTailPlan.h:343` — `hasSel`
 - `ir-pass/include/SpecializeTailPlan.h:351` — `substitute`
-- `ir-pass/include/SpecializeTailPlan.h:392` — `consumableBody`
-- `ir-pass/include/SpecializeTailPlan.h:423` — `chainReachValue`
-- `ir-pass/include/SpecializeTailPlan.h:460` — `chainReachSlots`
 
 ### `ir-pass/include/TaintPropagation.h` (2286 lines)
 
@@ -1493,20 +1489,20 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SpecializeClone.cpp:148` — `cloneFor`
 - `ir-pass/src/SpecializeClone.cpp:175` — `retypeCloneSignature`
 
-### `ir-pass/src/SpecializeConsume.cpp` (367 lines)
+### `ir-pass/src/SpecializeConsume.cpp` (368 lines)
 
-- `ir-pass/src/SpecializeConsume.cpp:50` — `countArg`
-- `ir-pass/src/SpecializeConsume.cpp:65` — `stemOf`
-- `ir-pass/src/SpecializeConsume.cpp:81` — `lift`
-- `ir-pass/src/SpecializeConsume.cpp:104` — `source`
-- `ir-pass/src/SpecializeConsume.cpp:123` — `build`
-- `ir-pass/src/SpecializeConsume.cpp:170` — `emitSteps`
-- `ir-pass/src/SpecializeConsume.cpp:230` — `I32MD`
-- `ir-pass/src/SpecializeConsume.cpp:235` — `encodeList`
-- `ir-pass/src/SpecializeConsume.cpp:249` — `decodeList`
-- `ir-pass/src/SpecializeConsume.cpp:277` — `makeShell`
-- `ir-pass/src/SpecializeConsume.cpp:294` — `buildConsumingCandidates`
-- `ir-pass/src/SpecializeConsume.cpp:349` — `materializeConsumer`
+- `ir-pass/src/SpecializeConsume.cpp:51` — `countArg`
+- `ir-pass/src/SpecializeConsume.cpp:66` — `stemOf`
+- `ir-pass/src/SpecializeConsume.cpp:82` — `lift`
+- `ir-pass/src/SpecializeConsume.cpp:105` — `source`
+- `ir-pass/src/SpecializeConsume.cpp:124` — `build`
+- `ir-pass/src/SpecializeConsume.cpp:171` — `emitSteps`
+- `ir-pass/src/SpecializeConsume.cpp:231` — `I32MD`
+- `ir-pass/src/SpecializeConsume.cpp:236` — `encodeList`
+- `ir-pass/src/SpecializeConsume.cpp:250` — `decodeList`
+- `ir-pass/src/SpecializeConsume.cpp:278` — `makeShell`
+- `ir-pass/src/SpecializeConsume.cpp:295` — `buildConsumingCandidates`
+- `ir-pass/src/SpecializeConsume.cpp:350` — `materializeConsumer`
 
 ### `ir-pass/src/SpecializeDetect.cpp` (393 lines)
 
