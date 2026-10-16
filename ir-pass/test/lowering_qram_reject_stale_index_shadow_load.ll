@@ -19,7 +19,12 @@
 ; CHECK-NEXT: %[[V:[0-9]+]] = call i32 @cqrt_qram_load_i32(i32 %{{[a-z0-9]+}}, i32 %[[X]])
 ; CHECK-NOT:  @cqrt_ry_i64
 ; CHECK:      call void @cqrt_ry_i64(i32 %[[Q]], double 3.000000e-01)
-; CHECK:      call i32 @cqrt_measure_i32(i32 %[[V]])
+; bd 01po.25 (batch 055): `main` now gets the helper's direct-measure copy-out
+; (bd r2j3.7 helper parity), so a measured load is copied into a fresh carrier
+; and the load rail itself is uncomputed against the array and freed.
+; CHECK:      %[[QV:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32(i32 %[[V]], i32 %[[QV]])
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[QV]])
 ;
 ; ── HISTORY: the pre-batch-053 header, kept verbatim (its verdict text is
 ; superseded by the block above) ──

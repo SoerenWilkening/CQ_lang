@@ -30,25 +30,14 @@
 ;
 ; DECLINE TWINS: as for control_guarded_store_ifelse_phase.ll.
 ;
+; ⚠ THE `@main` HALF MOVED (bd test_C_libtooling-01po.25, batch 055) to
+; control_guarded_store_onearm_phase_main.ll: since bd r2j3.7 `main` runs the helper's
+; dead-record discipline and helper-parity copy-out, and that body now DECLINES.
+; This file keeps the `@negated` subject, which still lowers.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=STRIP < %t.cqd0.ll
 
-; CHECK-LABEL: define i32 @main(
-; CHECK:      %[[A:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 8)
-; CHECK:      %[[C:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[C]], double 5.000000e-01)
-; CHECK:      %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_slt_i32_hl(i32 %[[C]], i32 3)
-; CHECK-NEXT: %[[I:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 7)
-; CHECK:      call void @cqrt_qram_store_i32_controlled(i32 %[[F1]], i32 %[[A]], i32 %[[I]], i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK:      %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_slt_i32_hl(i32 %[[C]], i32 3)
-; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[F2]], double 2.500000e-01), !cq.branchphase
-; CHECK-NEXT: call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[F2]], i32 %[[C]], i32 3)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[F2]])
-; CHECK-NEXT: br label
-; CHECK:      call void @cqrt_ry_i32(i32 %[[C]], double -5.000000e-01)
-; CHECK-NOT:  call void @cqrt_rz_i1(
-; CHECK-NOT:  call void @cq_phi(
 
 ; CHECK-LABEL: define i32 @negated(
 ; CHECK:      %[[NF1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sge_i32_hl(i32 %[[NC:[a-zA-Z0-9_.]+]], i32 3)
@@ -63,51 +52,12 @@
 ; CHECK-NOT:  call void @cqrt_rz_i1(
 ; CHECK-NOT:  br i1
 
-; @main: the store flag is stripped and freed before the later Ry on c.
-; STRIP-LABEL: define i32 @main(
-; STRIP:       %[[S1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_slt_i32_hl(
-; STRIP:       call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[S1]],
-; STRIP:       call void @cqrt_free(i32 %[[S1]])
-; STRIP:       call void @cqrt_ry_i32(i32 %{{[a-zA-Z0-9_.]+}}, double -5.000000e-01)
 
 declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg)
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 declare void @cq_phi(double)
 
-define i32 @main(i32 noundef %0, ptr nocapture noundef readnone %1) {
-  %3 = alloca [8 x i32], align 16
-  call void @llvm.memset.p0.i64(ptr noundef nonnull align 16 dereferenceable(32) %3, i8 0, i64 32, i1 false)
-  %4 = add nsw i32 %0, 1
-  %5 = tail call i32 @cq_theta_si32(i32 noundef %4, double noundef 5.000000e-01)
-  %6 = add nsw i32 %0, 2
-  %7 = tail call i32 @cq_theta_si32(i32 noundef %6, double noundef 5.000000e-01)
-  %8 = icmp slt i32 %5, 3
-  br i1 %8, label %9, label %13
-
-9:
-  %10 = and i32 %7, 7
-  %11 = zext nneg i32 %10 to i64
-  %12 = getelementptr inbounds [8 x i32], ptr %3, i64 0, i64 %11
-  store i32 7, ptr %12, align 4
-  tail call void @cq_phi(double noundef 2.500000e-01)
-  br label %13
-
-13:
-  %14 = add nsw i32 %0, 3
-  %15 = tail call i32 @cq_theta_si32(i32 noundef %14, double noundef 5.000000e-01)
-  %16 = and i32 %15, 7
-  %17 = zext nneg i32 %16 to i64
-  %18 = getelementptr inbounds [8 x i32], ptr %3, i64 0, i64 %17
-  %19 = load i32, ptr %18, align 4
-  %20 = tail call i32 @cq_theta_si32(i32 noundef %5, double noundef -5.000000e-01)
-  %21 = tail call i32 @cq_measure_si32(i32 noundef %20)
-  %22 = tail call i32 @cq_measure_si32(i32 noundef %7)
-  %23 = add nsw i32 %22, %21
-  %24 = tail call i32 @cq_measure_si32(i32 noundef %19)
-  %25 = add nsw i32 %23, %24
-  ret i32 %25
-}
 
 define i32 @negated(i32 %u0, i32 %u1) {
 entry:

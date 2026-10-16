@@ -23,9 +23,22 @@
 ;
 ; The decline-direction twins live in lowering_qram_store_computed_index_leak.ll.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.cqd0.ll 2>&1 | %filecheck %s --check-prefix=DIAG --allow-empty
-; RUN: %filecheck %s < %t.cqd0.ll
-; DIAG-NOT: live derived record
+; ⚠ NOW A DECLINE (bd test_C_libtooling-01po.25, batch 055; delegated ruling
+; ruling-r2j3-7-qram-copyout-and-backedge-2026-10-16). Since bd r2j3.7 `main` runs
+; the helper's dead-record discipline, and `emitCopyOutIfDirectMeasure` no longer
+; skips `main`: the measured load is copied out and its local array's history is
+; planned for reversal exactly as in a helper body — which declines here, on base
+; and now, with the message below. Base `main` left the dead array record standing
+; across a later non-diagonal gate on an index/value source: a wrong unitary by
+; the 2026-10-05 dead-record ruling (silent -> loud).
+; RETIREMENT TRIGGER: bd test_C_libtooling-01po.26 (build the lowering); then
+; restore the accept: rename every `ACC01PO25<prefix>` directive below back to
+; `<prefix>`, restore its RUN lines from git (pre-01po.25), drop the DECL RUN.
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=DECL
+; DECL: error{{.*}}in function main{{.*}}cq uncompute: dead record cut from the uncompute frontier is not reversed before its parent's next non-diagonal gate
+;
+; ACC01PO25DIAG-NOT: live derived record
 declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg)
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -58,23 +71,23 @@ entry:
   ret i32 %s2
 }
 
-; CHECK-LABEL: define i32 @main(
-; CHECK:      %[[ARR:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 8)
-; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u)
-; CHECK:      %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
-; CHECK:      %[[VAL:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[R]], i32 1)
-; CHECK-NEXT: %[[IDX:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[Q]], i32 7)
-; CHECK-NEXT: call void @cqrt_qram_store_i32(i32 %[[ARR]], i32 %[[IDX]], i32 %[[VAL]])
+; ACC01PO25CHECK-LABEL: define i32 @main(
+; ACC01PO25CHECK:      %[[ARR:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 8)
+; ACC01PO25CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u)
+; ACC01PO25CHECK:      %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
+; ACC01PO25CHECK:      %[[VAL:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[R]], i32 1)
+; ACC01PO25CHECK-NEXT: %[[IDX:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[Q]], i32 7)
+; ACC01PO25CHECK-NEXT: call void @cqrt_qram_store_i32(i32 %[[ARR]], i32 %[[IDX]], i32 %[[VAL]])
 ; Both computed rails are discharged IMMEDIATELY after the store, against their
 ; un-rotated sources, and freed:
-; CHECK-NEXT: call void @cq_template_add_i32_hl_unc(i32 %[[VAL]], i32 %[[R]], i32 1)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[VAL]])
-; CHECK-NEXT: call void @cq_template_and_i32_hl_unc(i32 %[[IDX]], i32 %[[Q]], i32 7)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[IDX]])
+; ACC01PO25CHECK-NEXT: call void @cq_template_add_i32_hl_unc(i32 %[[VAL]], i32 %[[R]], i32 1)
+; ACC01PO25CHECK-NEXT: call void @cqrt_free(i32 %[[VAL]])
+; ACC01PO25CHECK-NEXT: call void @cq_template_and_i32_hl_unc(i32 %[[IDX]], i32 %[[Q]], i32 7)
+; ACC01PO25CHECK-NEXT: call void @cqrt_free(i32 %[[IDX]])
 ; ...and only THEN do the chained rotations fire on the sources:
-; CHECK:      call void @cqrt_ry_i32(i32 %[[Q]], double -5.000000e-01)
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double -5.000000e-01)
+; ACC01PO25CHECK:      call void @cqrt_ry_i32(i32 %[[Q]], double -5.000000e-01)
+; ACC01PO25CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double -5.000000e-01)
 ; The array handle is never freed and the store is never reversed:
-; CHECK-NOT:  call void @cqrt_free(i32 %[[ARR]])
-; CHECK-NOT:  cqrt_qram_store_i32_unc
-; CHECK:      ret i32
+; ACC01PO25CHECK-NOT:  call void @cqrt_free(i32 %[[ARR]])
+; ACC01PO25CHECK-NOT:  cqrt_qram_store_i32_unc
+; ACC01PO25CHECK:      ret i32

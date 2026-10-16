@@ -29,18 +29,31 @@
 ; in the source. On f = 1 the cell holds the write the source made. The later
 ; `Ry(-0.5)` on q therefore acts on the same joint state as the source's.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.ll 2>&1 | %filecheck %s --check-prefix=DIAG --allow-empty
-; RUN: %filecheck %s < %t.ll
-; DIAG-NOT: error
-; DIAG-NOT: live derived record
-; CHECK-LABEL: define i32 @main(
-; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %0)
-; CHECK:      %[[I:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[Q]], i32 7)
-; CHECK:      call void @cqrt_qram_store_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[I]], i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK:      call void @cq_template_and_i32_hl_unc(i32 %[[I]], i32 %[[Q]], i32 7)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[I]])
-; CHECK:      call void @cqrt_ry_i32(i32 %[[Q]], double -5.000000e-01)
-; CHECK:      call i32 @cqrt_measure_i32(i32 %[[Q]])
+; ⚠ NOW A DECLINE (bd test_C_libtooling-01po.25, batch 055; delegated ruling
+; ruling-r2j3-7-qram-copyout-and-backedge-2026-10-16). Since bd r2j3.7 `main` runs
+; the helper's dead-record discipline, and `emitCopyOutIfDirectMeasure` no longer
+; skips `main`: the measured load is copied out and its local array's history is
+; planned for reversal exactly as in a helper body — which declines here, on base
+; and now, with the message below. Base `main` left the dead array record standing
+; across a later non-diagonal gate on an index/value source: a wrong unitary by
+; the 2026-10-05 dead-record ruling (silent -> loud).
+; RETIREMENT TRIGGER: bd test_C_libtooling-01po.26 (build the lowering); then
+; restore the accept: rename every `ACC01PO25<prefix>` directive below back to
+; `<prefix>`, restore its RUN lines from git (pre-01po.25), drop the DECL RUN.
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=DECL
+; DECL: error{{.*}}in function main{{.*}}cq uncompute: dead record cut from the uncompute frontier is not reversed before its parent's next non-diagonal gate
+;
+; ACC01PO25DIAG-NOT: error
+; ACC01PO25DIAG-NOT: live derived record
+; ACC01PO25CHECK-LABEL: define i32 @main(
+; ACC01PO25CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %0)
+; ACC01PO25CHECK:      %[[I:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[Q]], i32 7)
+; ACC01PO25CHECK:      call void @cqrt_qram_store_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[I]], i32 %{{[a-zA-Z0-9_.]+}})
+; ACC01PO25CHECK:      call void @cq_template_and_i32_hl_unc(i32 %[[I]], i32 %[[Q]], i32 7)
+; ACC01PO25CHECK-NEXT: call void @cqrt_free(i32 %[[I]])
+; ACC01PO25CHECK:      call void @cqrt_ry_i32(i32 %[[Q]], double -5.000000e-01)
+; ACC01PO25CHECK:      call i32 @cqrt_measure_i32(i32 %[[Q]])
 
 define i32 @main(i32 noundef %0, ptr nocapture noundef readnone %1) {
   %3 = alloca [8 x i32], align 16

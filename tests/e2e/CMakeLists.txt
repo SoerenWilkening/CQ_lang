@@ -3354,6 +3354,19 @@ add_test(NAME e2e-slice-qram-store-computed-index
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_store_computed_index.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_store_computed_index.expected.log")
+# bd test_C_libtooling-01po.25 (batch 055; delegated ruling
+# ruling-r2j3-7-qram-copyout-and-backedge-2026-10-16): since bd r2j3.7 `main` runs the
+# helper's dead-record discipline and `emitCopyOutIfDirectMeasure` no longer skips
+# `main`, so this body's measured load is copied out and the local array's history is
+# planned for reversal as in a helper, which DECLINES (the helper spelling declines
+# identically on base ef72239c). The golden above recorded base `main` leaving the
+# dead array record standing across the later Ry on q/r/c: a wrong unitary by the
+# 2026-10-05 dead-record ruling. LOUD EXPECTATION: the test passes iff the pipeline
+# prints the diagnostic (stage 2 fails, nothing is linked). RETIREMENT TRIGGER: bd
+# test_C_libtooling-01po.26 (build the store reversal) -> drop this property and
+# regenerate the golden from the reviewed new trace.
+set_tests_properties(e2e-slice-qram-store-computed-index PROPERTIES
+  PASS_REGULAR_EXPRESSION "in function main.*cq uncompute: dead record cut from the uncompute frontier is not reversed before its parent's next non-diagonal gate")
 
 # bd test_C_libtooling-r2j3.3 (compiler half): a QROM read `v = tbl[b]`, then a
 # chained Ry on the index `b`, then a tape write of b's POST-Ry label before the

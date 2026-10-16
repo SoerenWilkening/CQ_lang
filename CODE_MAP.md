@@ -21,7 +21,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check.py` — 4543 physical lines
 - `tools/free_pairing_check_test.py` — 4490 physical lines
 - `tools/loop_twin_matrix.py` — 4115 physical lines
-- `ir-pass/src/QramLowering.cpp` — 4069 physical lines
+- `ir-pass/src/QramLowering.cpp` — 4071 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 3502 physical lines
 - `ir-pass/src/TaintPropagation.cpp` — 3492 physical lines
 - `ir-pass/src/SwapRouteEmit.cpp` — 3414 physical lines
@@ -1055,7 +1055,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/QramIndexWidth.cpp:177` — `stripForeignQramIndexTags`
 - `ir-pass/src/QramIndexWidth.cpp:184` — `bracketQramIndexCasts`
 
-### `ir-pass/src/QramLowering.cpp` (4069 lines)
+### `ir-pass/src/QramLowering.cpp` (4071 lines)
 
 - `ir-pass/src/QramLowering.cpp:283` — `instReaches`
 - `ir-pass/src/QramLowering.cpp:362` — `singleValuedClosure`
@@ -1111,11 +1111,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/QramLowering.cpp:3205` — `everyLoadIsStoreDefined`
 - `ir-pass/src/QramLowering.cpp:3254` — `promoteVolatileScalarLocals`
 - `ir-pass/src/QramLowering.cpp:3378` — `lowerQramReads`
-- `ir-pass/src/QramLowering.cpp:3571` — `emitCopyOutIfDirectMeasure`
-- `ir-pass/src/QramLowering.cpp:3618` — `qramHlFn`
-- `ir-pass/src/QramLowering.cpp:3631` — `processShadowAlloca`
-- `ir-pass/src/QramLowering.cpp:4031` — `lowerShadowMemory`
-- `ir-pass/src/QramLowering.cpp:4064` — `railBankInstReaches`
+- `ir-pass/src/QramLowering.cpp:3573` — `emitCopyOutIfDirectMeasure`
+- `ir-pass/src/QramLowering.cpp:3620` — `qramHlFn`
+- `ir-pass/src/QramLowering.cpp:3633` — `processShadowAlloca`
+- `ir-pass/src/QramLowering.cpp:4033` — `lowerShadowMemory`
+- `ir-pass/src/QramLowering.cpp:4066` — `railBankInstReaches`
 
 ### `ir-pass/src/RailBankPromote.cpp` (1971 lines)
 
@@ -7343,9 +7343,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/slice_qram_store.c:16` — `main`
 
-### `tests/e2e/slice_qram_store_computed_index.c` (33 lines)
+### `tests/e2e/slice_qram_store_computed_index.c` (39 lines)
 
-- `tests/e2e/slice_qram_store_computed_index.c:18` — `main`
+- `tests/e2e/slice_qram_store_computed_index.c:24` — `main`
 
 ### `tests/e2e/slice_qram_store_fp.c` (22 lines)
 

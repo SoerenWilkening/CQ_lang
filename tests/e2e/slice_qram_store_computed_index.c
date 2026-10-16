@@ -12,7 +12,13 @@
  * contract now: every computed rail a store reads is `_unc`'d and freed right
  * after that store, against its un-rotated source, BEFORE the chained Ry on it
  * (`ChainWalk::isInteriorConsumer` clause (b″); the M-B interior partition). The
- * stores themselves are never reversed and the array handle is never freed. */
+ * stores themselves are never reversed and the array handle is never freed.
+ *
+ * NOW A LOUD EXPECTATION (bd test_C_libtooling-01po.25, batch 055): since bd r2j3.7
+ * `main` runs the helper's dead-record discipline and helper-parity copy-out, and
+ * this body declines (`dead record cut from the uncompute frontier ...`) exactly as
+ * its helper twin does; see tests/e2e/CMakeLists.txt. The golden is the base-`main`
+ * trace, kept for the retirement trigger (bd 01po.26). */
 #include "CQ.h"
 
 int main(void) {

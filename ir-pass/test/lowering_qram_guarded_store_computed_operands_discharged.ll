@@ -18,9 +18,22 @@
 ; reversed (non-main) twin is slice_qram_guarded_store, where the spine owns the
 ; flag and the strip still follows `store_controlled_unc` — unchanged.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.cqd0.ll 2>&1 | %filecheck %s --check-prefix=DIAG --allow-empty
-; RUN: %filecheck %s < %t.cqd0.ll
-; DIAG-NOT: live derived record
+; ⚠ NOW A DECLINE (bd test_C_libtooling-01po.25, batch 055; delegated ruling
+; ruling-r2j3-7-qram-copyout-and-backedge-2026-10-16). Since bd r2j3.7 `main` runs
+; the helper's dead-record discipline, and `emitCopyOutIfDirectMeasure` no longer
+; skips `main`: the measured load is copied out and its local array's history is
+; planned for reversal exactly as in a helper body — which declines here, on base
+; and now, with the message below. Base `main` left the dead array record standing
+; across a later non-diagonal gate on an index/value source: a wrong unitary by
+; the 2026-10-05 dead-record ruling (silent -> loud).
+; RETIREMENT TRIGGER: bd test_C_libtooling-01po.26 (build the lowering); then
+; restore the accept: rename every `ACC01PO25<prefix>` directive below back to
+; `<prefix>`, restore its RUN lines from git (pre-01po.25), drop the DECL RUN.
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=DECL
+; DECL: error{{.*}}in function main{{.*}}cq uncompute: dead record cut from the uncompute frontier is not reversed before its parent's next non-diagonal gate
+;
+; ACC01PO25DIAG-NOT: live derived record
 declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg)
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -54,19 +67,19 @@ merge:
   ret i32 %s2
 }
 
-; CHECK-LABEL: define i32 @main(
-; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
-; CHECK:      %[[I:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
-; CHECK:      %[[FLAG:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_slt_i32_hl(i32 %[[Q]], i32 3)
-; CHECK:      %[[IDX:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[I]], i32 7)
-; CHECK:      call void @cqrt_qram_store_i32_controlled(i32 %[[FLAG]], i32 %[[ARR:[a-zA-Z0-9_.]+]], i32 %[[IDX]], i32 %[[VAL:[a-zA-Z0-9_.]+]])
+; ACC01PO25CHECK-LABEL: define i32 @main(
+; ACC01PO25CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; ACC01PO25CHECK:      %[[I:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
+; ACC01PO25CHECK:      %[[FLAG:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_slt_i32_hl(i32 %[[Q]], i32 3)
+; ACC01PO25CHECK:      %[[IDX:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[I]], i32 7)
+; ACC01PO25CHECK:      call void @cqrt_qram_store_i32_controlled(i32 %[[FLAG]], i32 %[[ARR:[a-zA-Z0-9_.]+]], i32 %[[IDX]], i32 %[[VAL:[a-zA-Z0-9_.]+]])
 ; Both read rails are discharged against unmoved sources, before the chained Ry:
-; CHECK-DAG:  call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[FLAG]], i32 %[[Q]], i32 3)
-; CHECK-DAG:  call void @cqrt_free(i32 %[[FLAG]])
-; CHECK-DAG:  call void @cq_template_and_i32_hl_unc(i32 %[[IDX]], i32 %[[I]], i32 7)
-; CHECK-DAG:  call void @cqrt_free(i32 %[[IDX]])
-; CHECK:      call void @cqrt_ry_i32(i32 %[[Q]], double -5.000000e-01)
+; ACC01PO25CHECK-DAG:  call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[FLAG]], i32 %[[Q]], i32 3)
+; ACC01PO25CHECK-DAG:  call void @cqrt_free(i32 %[[FLAG]])
+; ACC01PO25CHECK-DAG:  call void @cq_template_and_i32_hl_unc(i32 %[[IDX]], i32 %[[I]], i32 7)
+; ACC01PO25CHECK-DAG:  call void @cqrt_free(i32 %[[IDX]])
+; ACC01PO25CHECK:      call void @cqrt_ry_i32(i32 %[[Q]], double -5.000000e-01)
 ; Nothing reverses the store (main), and the array is never freed:
-; CHECK-NOT:  cqrt_qram_store_i32_controlled_unc
-; CHECK-NOT:  call void @cqrt_free(i32 %[[ARR]])
-; CHECK:      ret i32
+; ACC01PO25CHECK-NOT:  cqrt_qram_store_i32_controlled_unc
+; ACC01PO25CHECK-NOT:  call void @cqrt_free(i32 %[[ARR]])
+; ACC01PO25CHECK:      ret i32

@@ -3533,7 +3533,7 @@ void lowerQramReads(Module &M, WidthDispatch &wd, TaintSet &taint,
 namespace {
 
 // Phase 7.5 (bug sxuk): method-B copy-out for a load result whose SOLE, DIRECT user
-// is a `cq_measure_*` sink in a non-`main` function. WITHOUT it the load result is
+// is a `cq_measure_*` sink (in any function, `main` included since bd r2j3.7). WITHOUT it the load result is
 // the SOLE tainted data terminal, FreePoint classifies it Measured, and the
 // whole-DAG reversal — INCLUDING the LOCAL array's stores — is skipped (the
 // `InsertTerms.empty()` bail): the measured value stays entangled with the leaked
@@ -3564,13 +3564,15 @@ namespace {
 //
 // Scope: `Out`'s SOLE, DIRECT user is a `cq_measure_*`. A taped load
 // (cqrt_tape_write) already uncomputes (isOutputSink), so its sole user is not a
-// measure here; `main` escapes anyway (process exit reclaims); an indirect
+// measure here; `main` is no exception since bd r2j3.7 (owner ruling
+// owner-ruling-r2j3-7-main-dead-record-2026-10-16: `main` runs the helper's
+// dead-record discipline, so its scratch array's stores reverse too); an indirect
 // (cast/arith-then-measure) or fan-out measure is left as-is (a Rule-6 safe leak —
 // correct under measurement immunity, just not resource-cleaned). Runs AFTER the
 // load's RAUW so `Out` carries the original users.
 void emitCopyOutIfDirectMeasure(CallInst *Out, StringRef ElemAbi, WidthDispatch &wd,
                                 TaintSet &taint) {
-  if (Out->getFunction()->getName() == "main" || !Out->hasOneUse())
+  if (!Out->hasOneUse())
     return;
   auto *CI = dyn_cast<CallInst>(*Out->user_begin());
   if (!CI)

@@ -39,21 +39,14 @@
 ; deciding-branch check for a φ, is killed by
 ; control_guarded_store_reject_round2_angle.ll (measured).
 ;
+; ⚠ THE `@main` HALF MOVED (bd test_C_libtooling-01po.25, batch 055) to
+; control_guarded_store_ifelse_phase_classical_angle_main.ll: since bd r2j3.7 `main` runs the helper's
+; dead-record discipline and helper-parity copy-out, and that body now DECLINES.
+; This file keeps the `@phi_value` subject, which still lowers.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 
-; CHECK-LABEL: define i32 @main(
-; CHECK:      %[[C:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[C]], double 5.000000e-01)
-; CHECK:      call void @cqrt_qram_store_i32_controlled(
-; CHECK:      %[[SEL:[a-zA-Z0-9_.]+]] = select i1 %{{[a-zA-Z0-9_.]+}}, double 2.500000e-01, double 5.000000e-01
-; CHECK:      call void @cqrt_qram_store_i32_controlled(
-; CHECK:      %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_slt_i32_hl(i32 %[[C]], i32 3)
-; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[F2]], double %[[SEL]]), !cq.branchphase
-; CHECK-NEXT: call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[F2]], i32 %[[C]], i32 3)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[F2]])
-; CHECK-NEXT: br label
-; CHECK-NOT:  call void @cq_phi(
 
 ; CHECK-LABEL: define i32 @phi_value(
 ; CHECK:      %[[ANG:[0-9]+]] = phi double [ 2.500000e-01, %{{[0-9]+}} ], [ 5.000000e-01, %{{[0-9]+}} ]
@@ -76,48 +69,6 @@ declare i32 @cq_measure_si32(i32 noundef)
 declare void @cq_phi(double noundef)
 declare noundef i32 @puts(ptr nocapture noundef readonly)
 
-define i32 @main(i32 noundef %0, ptr nocapture noundef readnone %1) {
-  %3 = alloca [8 x i32], align 16
-  call void @llvm.memset.p0.i64(ptr noundef nonnull align 16 dereferenceable(32) %3, i8 0, i64 32, i1 false)
-  %4 = add nsw i32 %0, 1
-  %5 = tail call i32 @cq_theta_si32(i32 noundef %4, double noundef 5.000000e-01)
-  %6 = add nsw i32 %0, 2
-  %7 = tail call i32 @cq_theta_si32(i32 noundef %6, double noundef 5.000000e-01)
-  %8 = icmp slt i32 %5, 3
-  %9 = and i32 %7, 7
-  br i1 %8, label %10, label %15
-
-10:
-  %11 = zext nneg i32 %9 to i64
-  %12 = getelementptr inbounds [8 x i32], ptr %3, i64 0, i64 %11
-  store i32 7, ptr %12, align 4
-  %13 = icmp sgt i32 %0, 2
-  %14 = select i1 %13, double 2.500000e-01, double 5.000000e-01
-  tail call void @cq_phi(double noundef %14)
-  br label %19
-
-15:
-  %16 = xor i32 %9, 5
-  %17 = zext nneg i32 %16 to i64
-  %18 = getelementptr inbounds [8 x i32], ptr %3, i64 0, i64 %17
-  store i32 9, ptr %18, align 4
-  br label %19
-
-19:
-  %20 = add nsw i32 %0, 3
-  %21 = tail call i32 @cq_theta_si32(i32 noundef %20, double noundef 5.000000e-01)
-  %22 = and i32 %21, 7
-  %23 = zext nneg i32 %22 to i64
-  %24 = getelementptr inbounds [8 x i32], ptr %3, i64 0, i64 %23
-  %25 = load i32, ptr %24, align 4
-  %26 = tail call i32 @cq_theta_si32(i32 noundef %5, double noundef -5.000000e-01)
-  %27 = tail call i32 @cq_measure_si32(i32 noundef %26)
-  %28 = tail call i32 @cq_measure_si32(i32 noundef %7)
-  %29 = add nsw i32 %28, %27
-  %30 = tail call i32 @cq_measure_si32(i32 noundef %25)
-  %31 = add nsw i32 %29, %30
-  ret i32 %31
-}
 
 define i32 @phi_value(i32 noundef %0) {
   %2 = alloca [8 x i32], align 16

@@ -18,20 +18,32 @@
 ; `argc > 2`, cells 0..7 := 0; cell (q&7) := 5; v = copy of cell 0, i.e. 5 on the
 ; basis states with q&7 == 0 and else 7 (no reset) or 0 (reset), exactly the source.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.ll 2>&1 | %filecheck %s --check-prefix=DIAG --allow-empty
-; RUN: %filecheck %s < %t.ll
-; DIAG-NOT: error
-; CHECK-LABEL: define i32 @main(
-; CHECK:      %[[ARR:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 8)
-; CHECK:      %[[S7:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 7)
-; CHECK-NEXT: call void @cqrt_qram_store_i32_hl(i32 %[[ARR]], i32 0, i32 %[[S7]])
-; CHECK:      br i1 %{{[0-9]+}}, label %[[RESET:[0-9]+]], label %[[JOIN:[0-9]+]]
-; CHECK:      {{^}}[[RESET]]:
-; CHECK-COUNT-8: call void @cqrt_qram_store_i32_hl(i32 %[[ARR]], i32 {{[0-7]}}, i32
-; CHECK-NEXT: br label %[[JOIN]]
-; CHECK:      {{^}}[[JOIN]]:
-; CHECK:      call void @cqrt_qram_store_i32(i32 %[[ARR]],
-; CHECK:      call i32 @cqrt_qram_load_i32_hl(i32 %[[ARR]], i32 0)
+; ⚠ NOW A DECLINE (bd test_C_libtooling-01po.25, batch 055; delegated ruling
+; ruling-r2j3-7-qram-copyout-and-backedge-2026-10-16). Since bd r2j3.7 `main` runs
+; the helper's dead-record discipline, and `emitCopyOutIfDirectMeasure` no longer
+; skips `main`: the measured load is copied out and its local array's history is
+; planned for reversal exactly as in a helper body — which declines here, on base
+; and now, with the message below. No later move exists here, so base `main`'s leak was
+; benign: this is a pure OVER-DECLINE inherited from the helper path (R1).
+; RETIREMENT TRIGGER: bd test_C_libtooling-01po.27 (build the lowering); then
+; restore the accept: rename every `ACC01PO25<prefix>` directive below back to
+; `<prefix>`, restore its RUN lines from git (pre-01po.25), drop the DECL RUN.
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=DECL
+; DECL: error{{.*}}in function main{{.*}}cq uncompute: dead chain spans divergent control-flow arms
+;
+; ACC01PO25DIAG-NOT: error
+; ACC01PO25CHECK-LABEL: define i32 @main(
+; ACC01PO25CHECK:      %[[ARR:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 8)
+; ACC01PO25CHECK:      %[[S7:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 7)
+; ACC01PO25CHECK-NEXT: call void @cqrt_qram_store_i32_hl(i32 %[[ARR]], i32 0, i32 %[[S7]])
+; ACC01PO25CHECK:      br i1 %{{[0-9]+}}, label %[[RESET:[0-9]+]], label %[[JOIN:[0-9]+]]
+; ACC01PO25CHECK:      {{^}}[[RESET]]:
+; ACC01PO25CHECK-COUNT-8: call void @cqrt_qram_store_i32_hl(i32 %[[ARR]], i32 {{[0-7]}}, i32
+; ACC01PO25CHECK-NEXT: br label %[[JOIN]]
+; ACC01PO25CHECK:      {{^}}[[JOIN]]:
+; ACC01PO25CHECK:      call void @cqrt_qram_store_i32(i32 %[[ARR]],
+; ACC01PO25CHECK:      call i32 @cqrt_qram_load_i32_hl(i32 %[[ARR]], i32 0)
 
 define i32 @main(i32 noundef %0, ptr nocapture noundef readnone %1) {
   %3 = alloca [8 x i32], align 16

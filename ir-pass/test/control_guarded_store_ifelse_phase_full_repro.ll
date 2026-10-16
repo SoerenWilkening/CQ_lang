@@ -29,31 +29,44 @@
 ; module lowers with each arm's index chain discharged after its store:
 ; control_guarded_store_ifelse_inarm_index_later_ry.ll.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
-; RUN: %filecheck %s < %t.cqd0.ll
+; ⚠ NOW A DECLINE (bd test_C_libtooling-01po.25, batch 055; delegated ruling
+; ruling-r2j3-7-qram-copyout-and-backedge-2026-10-16). Since bd r2j3.7 `main` runs
+; the helper's dead-record discipline, and `emitCopyOutIfDirectMeasure` no longer
+; skips `main`: the measured load is copied out and its local array's history is
+; planned for reversal exactly as in a helper body — which declines here, on base
+; and now, with the message below. Base `main` left the dead array record standing
+; across a later non-diagonal gate on an index/value source: a wrong unitary by
+; the 2026-10-05 dead-record ruling (silent -> loud).
+; RETIREMENT TRIGGER: bd test_C_libtooling-01po.26 (build the lowering); then
+; restore the accept: rename every `ACC01PO25<prefix>` directive below back to
+; `<prefix>`, restore its RUN lines from git (pre-01po.25), drop the DECL RUN.
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=DECL
+; DECL: error{{.*}}in function main{{.*}}cq uncompute: dead record cut from the uncompute frontier is not reversed before its parent's next non-diagonal gate
+;
 
-; CHECK-LABEL: define i32 @main(
-; CHECK:      %[[C:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[C]], double 5.000000e-01)
-; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
-; CHECK-NEXT: %[[I:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[Q]], i32 7)
-; CHECK:      %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_slt_i32_hl(i32 %[[C]], i32 3)
-; CHECK:      call void @cqrt_qram_store_i32_controlled(i32 %[[F1]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[I]], i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK:      %[[F3:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sge_i32_hl(i32 %[[C]], i32 3)
-; CHECK:      %[[J:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i32_hl(i32 %[[I]], i32 5)
-; CHECK:      call void @cqrt_qram_store_i32_controlled(i32 %[[F3]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[J]], i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK:      call void @cq_template_xor_i32_hl_unc(i32 %[[J]], i32 %[[I]], i32 5)
-; CHECK:      call void @cq_template_and_i32_hl_unc(i32 %[[I]], i32 %[[Q]], i32 7)
-; CHECK:      %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_slt_i32_hl(i32 %[[C]], i32 3)
-; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[F2]], double 2.500000e-01), !cq.branchphase
-; CHECK-NEXT: call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[F2]], i32 %[[C]], i32 3)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[F2]])
-; CHECK-NEXT: br label
-; CHECK:      call void @cqrt_ry_i32(i32 %[[C]], double -5.000000e-01)
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double -5.000000e-01)
-; CHECK-NOT:  call void @cq_template_and_i32_hl_unc(i32 %[[I]]
-; CHECK-NOT:  call void @cq_template_xor_i32_hl_unc(i32 %[[J]]
+; ACC01PO25CHECK-LABEL: define i32 @main(
+; ACC01PO25CHECK:      %[[C:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %{{[a-zA-Z0-9_.]+}})
+; ACC01PO25CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[C]], double 5.000000e-01)
+; ACC01PO25CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %{{[a-zA-Z0-9_.]+}})
+; ACC01PO25CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
+; ACC01PO25CHECK-NEXT: %[[I:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[Q]], i32 7)
+; ACC01PO25CHECK:      %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_slt_i32_hl(i32 %[[C]], i32 3)
+; ACC01PO25CHECK:      call void @cqrt_qram_store_i32_controlled(i32 %[[F1]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[I]], i32 %{{[a-zA-Z0-9_.]+}})
+; ACC01PO25CHECK:      %[[F3:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sge_i32_hl(i32 %[[C]], i32 3)
+; ACC01PO25CHECK:      %[[J:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i32_hl(i32 %[[I]], i32 5)
+; ACC01PO25CHECK:      call void @cqrt_qram_store_i32_controlled(i32 %[[F3]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[J]], i32 %{{[a-zA-Z0-9_.]+}})
+; ACC01PO25CHECK:      call void @cq_template_xor_i32_hl_unc(i32 %[[J]], i32 %[[I]], i32 5)
+; ACC01PO25CHECK:      call void @cq_template_and_i32_hl_unc(i32 %[[I]], i32 %[[Q]], i32 7)
+; ACC01PO25CHECK:      %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_slt_i32_hl(i32 %[[C]], i32 3)
+; ACC01PO25CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[F2]], double 2.500000e-01), !cq.branchphase
+; ACC01PO25CHECK-NEXT: call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[F2]], i32 %[[C]], i32 3)
+; ACC01PO25CHECK-NEXT: call void @cqrt_free(i32 %[[F2]])
+; ACC01PO25CHECK-NEXT: br label
+; ACC01PO25CHECK:      call void @cqrt_ry_i32(i32 %[[C]], double -5.000000e-01)
+; ACC01PO25CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double -5.000000e-01)
+; ACC01PO25CHECK-NOT:  call void @cq_template_and_i32_hl_unc(i32 %[[I]]
+; ACC01PO25CHECK-NOT:  call void @cq_template_xor_i32_hl_unc(i32 %[[J]]
 
 declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg)
 declare i32 @cq_theta_si32(i32, double)

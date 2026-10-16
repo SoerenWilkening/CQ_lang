@@ -23,8 +23,20 @@
 ; CHECK:      call void @cqrt_qram_store_i32(i32 %[[ARR]],
 ; CHECK:      %[[V:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_i32_hl(i32 %[[ARR]], i32 1)
 ; CHECK-NEXT: %[[W:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_i32_hl(i32 %[[ARR]], i32 0)
-; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[V]])
-; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[W]])
+; bd 01po.25 (batch 055): `main` now gets the helper's direct-measure copy-out
+; (bd r2j3.7 helper parity), so a measured load is copied into a fresh carrier
+; and the load rail itself is uncomputed against the array and freed.
+; CHECK-NEXT: %[[QV:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32(i32 %[[V]], i32 %[[QV]])
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[QV]])
+; CHECK-NEXT: %[[QW:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32(i32 %[[W]], i32 %[[QW]])
+; CHECK-NEXT: call void @cqrt_qram_load_i32_hl_unc(i32 %[[W]], i32 %[[ARR]], i32 0)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[W]])
+; CHECK-NEXT: call void @cqrt_qram_load_i32_hl_unc(i32 %[[V]], i32 %[[ARR]], i32 1)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[V]])
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[QW]])
+; CHECK-NOT:  call void @cqrt_qram_store_i32_unc
 
 define i32 @main(i32 noundef %0, ptr nocapture noundef readnone %1) {
   %3 = alloca [8 x i32], align 16
