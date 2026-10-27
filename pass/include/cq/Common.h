@@ -1,0 +1,24 @@
+// Frozen interface (cq-arch). Changes only under cq-arch's freeze rule.
+#pragma once
+
+#include <cstdint>
+#include <string>
+
+#include "llvm/ADT/StringRef.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Type.h"
+#include "llvm/IR/Value.h"
+
+// Common.h
+namespace cq {
+[[noreturn]] void unimplemented(llvm::StringRef what, const llvm::Value *at = nullptr); // "cq: unimplemented: ..."
+[[noreturn]] void internalError(llvm::StringRef what, const llvm::Value *at = nullptr);
+enum class Kind : uint8_t { Int, Fp };
+struct RailType { Kind kind; unsigned bits; };      // i<N> (N >= 1), f16, f32, f64, f80
+RailType railTypeOf(llvm::Type *);                  // iN/half/float/double/x86_fp80
+llvm::Type *irTypeOf(llvm::LLVMContext &, RailType);
+llvm::IntegerType *handleTy(llvm::LLVMContext &);   // i32
+using Mask = std::string;                           // CR §1.4 digits, '1' = quantum, left to right
+struct Operand { llvm::Value *v; bool handle; };    // a rail handle, or a classical value of the new IR
+}

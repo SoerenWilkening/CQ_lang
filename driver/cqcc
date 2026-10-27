@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+"""Stub (cq-w0-scaffold): the cqcc driver. Ownership passes to cq-w1-driver."""
+import sys
+
+print("cq: unimplemented: driver: cqcc", file=sys.stderr)
+sys.exit(1)
