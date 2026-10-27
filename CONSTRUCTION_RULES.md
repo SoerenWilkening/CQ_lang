@@ -335,8 +335,11 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
    (`phi` or `select`) is one `cq_template_select_<W>[_shape]` per distinct incoming, chained with
    the complement arm innermost, into a fresh rail; arm rails are then uncomputed. No other merge
    spelling. Nested value arms nest their selects; a conjunction flag is needed only where a
-   phase or in-place gate sits in the inner arm, never for a pure select. — 04, 20, 21, 22, 24,
-   49, 123, 135, 143, 148, 158.
+   phase or in-place gate sits in the inner arm, never for a pure select. A `select` or `phi` whose
+   condition (or choice of incoming edge) is purely classical is a classical `select`/`phi` over the
+   handles, no gate, like a classical branch (rule 8); each arm's rails are still computed and
+   uncomputed as usual, and the chosen handle is the merged value (ruling 2026-10-27). — 04, 20,
+   21, 22, 24, 49, 123, 135, 143, 148, 158.
 
 10. **Controlled Ry and state prep.** A `phi` of `cq_theta(v, θ)` against `v` (or two thetas of one
     seed) is `ry_<W>_controlled(flag, rail)` on a rail seeded with `v`; `r = c;` before the prep
