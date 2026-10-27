@@ -29,6 +29,11 @@ class SampleSet:
 
 @dataclass(frozen=True)
 class RunResult:
+    # side 'ours'/'ref': run.py's docstring. side 'c' (the C oracle, cq-arch T1): outputs
+    # {"ret": [{"call", "fn", "v"}] in run.py's encoding, "end": outcome}; measured
+    # [{"h": None, "w", "v"}] per reached cq_measure site; rotations the trace's site events of kind
+    # theta, phi, invert_begin, invert_end verbatim; kept and clean None; violations
+    # [{"what", "h", "msg"}].
     side: str
     sample: Any
     outputs: Any
