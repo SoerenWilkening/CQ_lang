@@ -200,3 +200,71 @@ define i64 @native_fma_f64(i64 %a, i64 %b, i64 %c) {
 
 declare double @llvm.sqrt.f64(double)
 declare double @llvm.fma.f64(double, double, double)
+
+; bf16 (cq-jtx): bfloat IR; clang-19 promotes to float and truncates through __truncsfbf2.
+
+define i16 @native_fadd_bf16(i16 %a, i16 %b) {
+  %x = bitcast i16 %a to bfloat
+  %y = bitcast i16 %b to bfloat
+  %r = fadd bfloat %x, %y
+  %o = bitcast bfloat %r to i16
+  ret i16 %o
+}
+
+define i16 @native_fsub_bf16(i16 %a, i16 %b) {
+  %x = bitcast i16 %a to bfloat
+  %y = bitcast i16 %b to bfloat
+  %r = fsub bfloat %x, %y
+  %o = bitcast bfloat %r to i16
+  ret i16 %o
+}
+
+define i16 @native_fmul_bf16(i16 %a, i16 %b) {
+  %x = bitcast i16 %a to bfloat
+  %y = bitcast i16 %b to bfloat
+  %r = fmul bfloat %x, %y
+  %o = bitcast bfloat %r to i16
+  ret i16 %o
+}
+
+define i16 @native_fdiv_bf16(i16 %a, i16 %b) {
+  %x = bitcast i16 %a to bfloat
+  %y = bitcast i16 %b to bfloat
+  %r = fdiv bfloat %x, %y
+  %o = bitcast bfloat %r to i16
+  ret i16 %o
+}
+
+define i16 @native_frem_bf16(i16 %a, i16 %b) {
+  %x = bitcast i16 %a to bfloat
+  %y = bitcast i16 %b to bfloat
+  %r = frem bfloat %x, %y
+  %o = bitcast bfloat %r to i16
+  ret i16 %o
+}
+
+define i16 @native_fneg_bf16(i16 %a) {
+  %x = bitcast i16 %a to bfloat
+  %r = fneg bfloat %x
+  %o = bitcast bfloat %r to i16
+  ret i16 %o
+}
+
+define i16 @native_sqrt_bf16(i16 %a) {
+  %x = bitcast i16 %a to bfloat
+  %r = call bfloat @llvm.sqrt.bf16(bfloat %x)
+  %o = bitcast bfloat %r to i16
+  ret i16 %o
+}
+
+define i16 @native_fma_bf16(i16 %a, i16 %b, i16 %c) {
+  %x = bitcast i16 %a to bfloat
+  %y = bitcast i16 %b to bfloat
+  %z = bitcast i16 %c to bfloat
+  %r = call bfloat @llvm.fma.bf16(bfloat %x, bfloat %y, bfloat %z)
+  %o = bitcast bfloat %r to i16
+  ret i16 %o
+}
+
+declare bfloat @llvm.sqrt.bf16(bfloat)
+declare bfloat @llvm.fma.bf16(bfloat, bfloat, bfloat)

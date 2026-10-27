@@ -1,13 +1,19 @@
-/* Differential test of checker/rt/tmpl_fp.c (cq-w0-tmpl-fp).
+/* Differential test of checker/rt/tmpl_fp.c (cq-w0-tmpl-fp; bf16 cq-jtx).
  *
  * Every template op of the family (fadd fsub fmul fdiv fneg sqrt fma frem) at every width it
- * covers (f16 f32 f64) is evaluated through the cqe_op_fn the family registers and compared bit
+ * covers (f16 bf16 f32 f64) is evaluated through the cqe_op_fn the family registers and compared bit
  * for bit with native.ll, the same LLVM IR operation compiled by clang-19 -O1 and run on this host.
  *
  * Inputs per width: an edge set built from the format (±0, ±min/max subnormal, ±min normal, ±1 and
  * neighbours, ±max finite, ±Inf, quiet and signalling NaNs of both signs with payloads), every
  * tuple of edges, a seeded random set (uniform bit patterns, operands of nearby magnitude for
- * cancellation, fma with z near -x*y), and every f16 value for the unary ops.
+ * cancellation, fma with z near -x*y), and every f16 and every bf16 value for the unary ops.
+ *
+ * bf16 native code: clang-19 -O1 on x86_64-apple-macosx compiles bfloat IR by promoting to float,
+ * doing the float operation (fmodf/fmaf for frem/fma) and truncating with __truncsfbf2 (RNE, NaN
+ * payload kept and quieted). For fadd fsub fmul fdiv sqrt that double rounding is innocuous
+ * (float precision 24 >= 2*8+2), frem is exact, so native is the reference there; fma is not
+ * (fmaf rounds to float first), so non-NaN fma bf16 goes to the table oracle below.
  *
  * Where CR §2 fixes a result that native code does not produce, the case is checked against the
  * table instead, by an oracle written here independently of tmpl_fp.c:
@@ -16,6 +22,10 @@
  *   - fma f16 is one rounding of the exact x*y+z (CR §2 "only llvm.fma is fused", BACKEND_ABI
  *     §2.9 "one rounding"); native code computes fmaf then rounds again to half. The oracle is an
  *     exact 128-bit fixed-point sum rounded by nearest search over all f16 values.
+ *   - fma bf16, the same rule; native computes fmaf then truncates. The bf16 range does not fit a
+ *     128-bit fixed point, so this oracle is different: the exact product in x87 long double, the
+ *     sum by TwoSum, rounded to odd at 64 bits (sound for a final rounding to 8 bits), then
+ *     rounded to nearest even by search over all bf16 values.
  * Each such case is counted and the counts are printed; where native disagrees with the table one
  * example is printed per (op, width).
  *
@@ -28,6 +38,7 @@
  * not depend on the evaluator core.
  */
 #include <inttypes.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -74,13 +85,15 @@ static cqe_op_fn lookup(const char *op) {
 NATW(f16, uint16_t)
 NATW(f32, uint32_t)
 NATW(f64, uint64_t)
+NATW(bf16, uint16_t)
 
 enum { FADD, FSUB, FMUL, FDIV, FREM, FNEG, SQRT, FMA, NOPS };
 static const char *opname[NOPS] = {"fadd", "fsub", "fmul", "fdiv", "frem", "fneg", "sqrt", "fma"};
 static const int arity[NOPS] = {2, 2, 2, 2, 2, 1, 1, 3};
 
 typedef struct { const char *name; unsigned bits, eb, mb; } fmt;
-static const fmt fmts[3] = {{"f16", 16, 5, 10}, {"f32", 32, 8, 23}, {"f64", 64, 11, 52}};
+enum { F16, F32, F64, BF16, NFMT };
+static const fmt fmts[NFMT] = {{"f16", 16, 5, 10}, {"f32", 32, 8, 23}, {"f64", 64, 11, 52}, {"bf16", 16, 8, 7}};
 
 static uint64_t native(int op, int fi, const uint64_t *x) {
 #define CASES(f, T)                                                                                  \
@@ -97,6 +110,7 @@ static uint64_t native(int op, int fi, const uint64_t *x) {
   if (fi == 0) CASES(f16, uint16_t)
   if (fi == 1) CASES(f32, uint32_t)
   if (fi == 2) CASES(f64, uint64_t)
+  if (fi == 3) CASES(bf16, uint16_t)
 #undef CASES
   abort();
 }
@@ -240,6 +254,69 @@ static uint16_t h_fma_exact(uint16_t x, uint16_t y, uint16_t z) {
   return h_round48(s);
 }
 
+/* bf16 bit pattern to its exact value, decoded from the fields (no host bfloat). Finite x only. */
+static long double b_value(uint16_t x) {
+  int e = (x >> 7) & 0xFF;
+  long double m = (long double)(x & 0x7F);
+  long double v = e ? ldexpl(m + 128.0L, e - 127 - 7) : ldexpl(m, -126 - 7);
+  return (x & 0x8000) ? -v : v;
+}
+
+/* Correctly rounded (RNE) bf16 nearest to s, s != 0 finite, by search over all bf16 values.
+ * s must not lie exactly on a bf16 midpoint unless it is the exact value (round to odd ensures
+ * that for an inexact s). */
+static uint16_t b_round(long double s) {
+  int neg = s < 0;
+  long double a = neg ? -s : s;
+  /* patterns 0..0x7F80 ascending in value; 0x7F80 (Inf) stands for 2^128, the next binade */
+  #define BVAL(b) ((b) == 0x7F80 ? ldexpl(1.0L, 128) : b_value((uint16_t)(b)))
+  int lo = 0, hi = 0x7F80, pick;
+  if (a >= BVAL(0x7F80)) {
+    pick = 0x7F80;
+  } else {
+    while (hi - lo > 1) { /* BVAL(lo) <= a < BVAL(hi) */
+      int mid = (lo + hi) / 2;
+      if (BVAL(mid) <= a)
+        lo = mid;
+      else
+        hi = mid;
+    }
+    if (a == BVAL(lo))
+      pick = lo;
+    else {
+      long double dl = a - BVAL(lo), dh = BVAL(hi) - a; /* exact: 64-bit significands, close values */
+      pick = dl < dh ? lo : dh < dl ? hi : ((lo & 1) ? hi : lo);
+    }
+  }
+  #undef BVAL
+  return (uint16_t)(pick | (neg ? 0x8000 : 0));
+}
+
+/* CR §2 fma bf16: one rounding of the exact x*y+z. Non-NaN results only (cr_nan first). */
+static uint16_t b_fma_exact(uint16_t x, uint16_t y, uint16_t z) {
+  const fmt *f = &fmts[BF16];
+  int sp = sgn(f, x) ^ sgn(f, y);
+  if (is_inf(f, x) || is_inf(f, y))
+    return (uint16_t)(0x7F80 | (sp ? 0x8000 : 0));
+  if (is_inf(f, z))
+    return z;
+  volatile long double p = b_value(x) * b_value(y); /* exact: 16-bit product, in range */
+  volatile long double c = b_value(z);
+  volatile long double s = p + c; /* TwoSum (Knuth): s + err == p + c exactly */
+  volatile long double bv = s - p;
+  volatile long double err = (p - (s - bv)) + (c - bv);
+  long double sv = s, ev = err;
+  if (sv == 0 && ev == 0) /* exact zero sum: the common sign of the terms, else +0 (RNE) */
+    return (uint16_t)((sp == sgn(f, z) && sp) ? 0x8000 : 0);
+  if (ev != 0) { /* round to odd: of the two 64-bit neighbours around p + c, the odd one */
+    uint64_t sig;
+    memcpy(&sig, &sv, sizeof sig);
+    if (!(sig & 1))
+      sv = nextafterl(sv, ev > 0 ? INFINITY : -INFINITY);
+  }
+  return b_round(sv);
+}
+
 /* ---- inputs -------------------------------------------------------------------------------- */
 
 static uint64_t rng_state = 0x9E3779B97F4A7C15ull;
@@ -297,12 +374,13 @@ static int bexp(const fmt *f, uint64_t x) { return (int)((x & f_expm(f)) >> f->m
 /* ---- the comparison ------------------------------------------------------------------------ */
 
 static long n_cmp, n_native_agree, n_table, n_table_native_differs, n_bad;
-static long tbl_cnt[NOPS][3], tbl_diff[NOPS][3];
+static long w_cmp[NFMT], w_native[NFMT], w_table[NFMT], w_bad[NFMT];
+static long tbl_cnt[NOPS][NFMT], tbl_diff[NOPS][NFMT];
 /* why native differs from the table: 0 two or more NaN operands, 1 exactly one NaN operand,
  * 2 invalid operation (no NaN operand), 3 a finite or infinite result (fma f16 rounding) */
-static long diff_why[NOPS][3][4];
+static long diff_why[NOPS][NFMT][4];
 static const char *why_name[4] = {"several NaN operands", "one NaN operand", "invalid operation", "non-NaN result"};
-static int tbl_shown[NOPS][3];
+static int tbl_shown[NOPS][NFMT];
 
 static void check(int op, int fi, const uint64_t *x) {
   const fmt *f = &fmts[fi];
@@ -315,7 +393,9 @@ static void check(int op, int fi, const uint64_t *x) {
   const char *shape = arity[op] == 3 ? sh3[n_cmp % 5] : arity[op] == 2 ? sh2[n_cmp % 3] : "";
   int rc = call_tmpl(opname[op], f->name, shape, 0, 0, xs, arity[op], f->bits, &mine, 0);
   n_cmp++;
+  w_cmp[fi]++;
   if (rc != 0) {
+    w_bad[fi]++;
     printf("FAIL: %s_%s rc=%d (%s)\n", opname[op], f->name, rc, last_fail);
     n_bad++;
     return;
@@ -323,13 +403,18 @@ static void check(int op, int fi, const uint64_t *x) {
   uint64_t nat = native(op, fi, xs) & m;
   uint64_t tbl = 0;
   int have_tbl = cr_nan(op, f, xs, &tbl);
-  if (!have_tbl && op == FMA && fi == 0) {
+  if (!have_tbl && op == FMA && fi == F16) {
     tbl = h_fma_exact((uint16_t)xs[0], (uint16_t)xs[1], (uint16_t)xs[2]);
+    have_tbl = 1;
+  }
+  if (!have_tbl && op == FMA && fi == BF16) {
+    tbl = b_fma_exact((uint16_t)xs[0], (uint16_t)xs[1], (uint16_t)xs[2]);
     have_tbl = 1;
   }
   int ok;
   if (have_tbl) {
     n_table++;
+    w_table[fi]++;
     tbl_cnt[op][fi]++;
     ok = mine == tbl;
     if (nat != tbl) {
@@ -347,8 +432,10 @@ static void check(int op, int fi, const uint64_t *x) {
   } else {
     ok = mine == nat;
     n_native_agree += ok;
+    w_native[fi]++;
   }
   if (!ok) {
+    w_bad[fi]++;
     if (n_bad < 40)
       printf("FAIL: %s_%s(%" PRIx64 ", %" PRIx64 ", %" PRIx64 ") = %" PRIx64 ", expected %" PRIx64 " (%s)\n",
              opname[op], f->name, xs[0], xs[1], xs[2], mine, have_tbl ? tbl : nat, have_tbl ? "table" : "native");
@@ -373,8 +460,8 @@ static void run_width(int fi, long nrand) {
         for (int j = 0; j < ne; ++j)
           for (int k = 0; k < ne; ++k) { x[0] = e[i]; x[1] = e[j]; x[2] = e[k]; check(op, fi, x); }
     }
-    /* f16 unary: every value */
-    if (fi == 0 && arity[op] == 1)
+    /* f16 and bf16 unary: every value */
+    if ((fi == F16 || fi == BF16) && arity[op] == 1)
       for (uint64_t v = 0; v < 65536; ++v) { x[0] = v; check(op, fi, x); }
     /* seeded random */
     int emax = (1 << f->eb) - 2;
@@ -434,7 +521,7 @@ static void run_negative(void) {
     for (int i = 0; i < 7; ++i)
       expect(-1, 1, opname[op], intw[i], "", 0, 0, arity[op], ib[i], "fp op at an integer width");
     expect(-1, 1, opname[op], "f17", "", 0, 0, arity[op], 17, "unknown fp width");
-    for (int fi = 0; fi < 3; ++fi) {
+    for (int fi = 0; fi < NFMT; ++fi) {
       const fmt *f = &fmts[fi];
       expect(-1, 1, opname[op], f->name, "", 0, 0, arity[op] + 1, f->bits, "one operand too many");
       expect(-1, 1, opname[op], f->name, "", 0, 0, arity[op] - 1, f->bits, "one operand too few");
@@ -462,7 +549,7 @@ int main(int argc, char **argv) {
       printf("FAIL: %s not registered\n", opname[op]);
       return 1;
     }
-  for (int fi = 0; fi < 3; ++fi)
+  for (int fi = 0; fi < NFMT; ++fi)
     run_width(fi, nrand);
   int wf_fail = nfail_calls;
   if (wf_fail)
@@ -471,8 +558,11 @@ int main(int argc, char **argv) {
   printf("tmpl-fp: %ld comparisons, %ld against native (agree), %ld against CR §2 table "
          "(native differs from the table in %ld), %ld mismatches\n",
          n_cmp, n_native_agree, n_table, n_table_native_differs, n_bad);
+  for (int fi = 0; fi < NFMT; ++fi)
+    printf("  %s: %ld comparisons, %ld against native, %ld against the table, %ld mismatches\n", fmts[fi].name,
+           w_cmp[fi], w_native[fi], w_table[fi], w_bad[fi]);
   for (int op = 0; op < NOPS; ++op)
-    for (int fi = 0; fi < 3; ++fi)
+    for (int fi = 0; fi < NFMT; ++fi)
       if (tbl_diff[op][fi])
       {
         printf("  table rows where native differs: %s_%s %ld of %ld table cases:", opname[op], fmts[fi].name,

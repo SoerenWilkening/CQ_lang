@@ -1,12 +1,14 @@
-/* Checker template family: fp arithmetic at f16/f32/f64 (cq-w0-tmpl-fp).
+/* Checker template family: fp arithmetic at f16/bf16/f32/f64 (cq-w0-tmpl-fp; bf16 cq-jtx).
  *
  * Evaluator semantics of the templates fadd fsub fmul fdiv fneg sqrt fma frem on basis values, per
  * CONSTRUCTION_RULES §2 (wins) and BACKEND_ABI §2.9:
- *   - IEEE 754 binary16/32/64 with subnormals, round to nearest even, one rounding per operation
+ *   - IEEE 754 binary16/32/64 and bfloat16 (8 exponent bits, 7 fraction bits; CR §1.1 at CQ_spec
+ *     3aaafe1: same rounding and NaN rules as the IEEE widths) with subnormals, round to nearest
+ *     even, one rounding per operation
  *     (fma fused: one rounding of the exact x*y+z);
  *   - a NaN result follows the x86 SSE rule in IR operand order: the first NaN operand, quieted;
  *     an invalid operation gives the default NaN (sign 1, exponent all ones, top fraction bit:
- *     f64 0xFFF8000000000000, f32 0xFFC00000, f16 0xFE00);
+ *     f64 0xFFF8000000000000, f32 0xFFC00000, f16 0xFE00, bf16 0xFFC0);
  *   - fneg flips bit W-1 and nothing else (no quieting);
  *   - frem is IEEE fmod (exact): sign of x; fmod(x, 0) = fmod(±Inf, y) = default NaN;
  *     fmod(x, ±Inf) = x; NaN propagates by the rule above.
@@ -16,7 +18,7 @@
  * sticky bit) and rounds once in tf_round_pack. It never touches the host FPU, so the host
  * rounding mode and exception flags (driven by the fenv family) cannot affect it.
  *
- * Scope: the plain forms at f16/f32/f64. The _rm/_rmq/_exc forms belong to tmpl-fenv and every
+ * Scope: the plain forms at f16/bf16/f32/f64. The _rm/_rmq/_exc forms belong to tmpl-fenv and every
  * f80 form to tmpl-f80; for those the op returns CQE_OP_NOT_MINE, decided from the name alone,
  * without touching out or calling cqe_fail.
  *
@@ -43,9 +45,10 @@ typedef struct {
   unsigned mb;    /* stored fraction bits; precision p = mb + 1 */
 } tf_fmt;
 
-/* The IEEE interchange formats the template grammar names below f80. */
+/* The formats the template grammar names below f80: the IEEE interchange widths and bf16. */
 static int tf_format(const char *w, tf_fmt *f) {
   if (!strcmp(w, "f16")) { *f = (tf_fmt){16, 5, 10}; return 1; }
+  if (!strcmp(w, "bf16")) { *f = (tf_fmt){16, 8, 7}; return 1; }
   if (!strcmp(w, "f32")) { *f = (tf_fmt){32, 8, 23}; return 1; }
   if (!strcmp(w, "f64")) { *f = (tf_fmt){64, 11, 52}; return 1; }
   return 0;
@@ -487,8 +490,8 @@ static int tf_op_index(const char *op) {
  * out->kind as preset. A preset that does not match the template's result type is reported. */
 static int tf_store_result(const cqe_tname *t, const tf_fmt *f, cqe_val *out, uint64_t r) {
   if (!out->w || out->nw < 1 || out->bits != f->bits || out->kind != 'f') {
-    cqe_fail("tmpl-fp: %s_%s: result buffer preset to bits %u kind '%c' nw %u, expected an f%u",
-             t->op, t->w, out->bits, out->kind ? out->kind : '?', out->nw, f->bits);
+    cqe_fail("tmpl-fp: %s_%s: result buffer preset to bits %u kind '%c' nw %u, expected %s (%u bits, kind 'f')",
+             t->op, t->w, out->bits, out->kind ? out->kind : '?', out->nw, t->w, f->bits);
     return -1;
   }
   out->w[0] = r & tf_mask(f);
