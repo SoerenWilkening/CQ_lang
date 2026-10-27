@@ -27,9 +27,11 @@ once; args has one entry per argument of that call):
 RunResult fields (JSON-serializable):
   side        the side argument ('ours' or 'ref')
   sample      the sample dict as given
-  outputs     {"ret": [{"call", "fn", "v"}], "stdout": str, "exit": int}; "v" is the hex bit
-              pattern of the return value (integers at their C width, two's complement; float,
-              double; long double as 80 bits); void and pointer returns log nothing
+  outputs     {"ret": [{"call", "fn", "v"}], "stdout": str, "exit": int}; "v" is the typed
+              scalar {"w": rail type, "v": hex bit pattern} of an arithmetic return (cq-pq3:
+              integers "i<N>" at their C width, two's complement; float "f32", double "f64",
+              long double "f80" as the x87 80-bit pattern), the bare hex of an aggregate return;
+              void and pointer returns log nothing
   measured    [{"h", "w", "v"}] per cqrt_measure call, in order
   rotations   the rotation and phase trace events in order, as written (the shape compare.py
               reads): ry {ev, h, theta, ctl, ctlv, w, v}, ry_qangle {ev, h, a, aval, ctl, ctlv, w, v},
@@ -200,7 +202,7 @@ static int cqd_arg(void *dst, size_t n, const char *a) {
   memcpy(dst, w, n < sizeof w ? n : sizeof w);
   return -1;
 }
-static void cqd_ret(int call, const char *fn, const void *p, size_t n, unsigned bits) {
+static void cqd_ret(int call, const char *fn, const char *w, const void *p, size_t n, unsigned bits) {
   unsigned char b[64] = {0};
   memcpy(b, p, n < sizeof b ? n : sizeof b);
   if (bits % 8) b[bits / 8] &= (unsigned char)((1u << (bits % 8)) - 1);
@@ -212,7 +214,7 @@ static void cqd_ret(int call, const char *fn, const void *p, size_t n, unsigned 
   }
   *q = 0;
   char line[256];
-  snprintf(line, sizeof line, "{\"ev\":\"ret\",\"v\":\"%s\",\"call\":%d,\"fn\":\"%s\"}", hex, call, fn);
+  snprintf(line, sizeof line, "{\"ev\":\"ret\",\"v\":\"%s\",\"w\":\"%s\",\"call\":%d,\"fn\":\"%s\"}", hex, w, call, fn);
   cqe_log(line);
 }
 """
@@ -263,9 +265,14 @@ def driver_c(spec: DriverSpec, exprs: Dict[Tuple[int, int], List[str]]) -> str:
         if nrt == "void" or kind == "ptr":
             out.append(f"    (void){callexpr};")
         else:
-            rbits = {"long double": 80}.get(nrt, _INTS.get(nrt, (0,))[0] if nrt in _INTS else 0)
+            if kind == "fp":
+                rbits, w = bits, f"f{bits}"
+            elif kind == "int":
+                rbits, w = bits, f"i{bits}"
+            else:
+                rbits, w = 0, ""   # an aggregate return: raw bytes, untyped
             out.append(f"    {nrt} r = {callexpr};")
-            out.append(f"    cqd_ret({ci}, \"{fn}\", &r, sizeof r, {rbits} ? {rbits} : (unsigned)(8 * sizeof r));")
+            out.append(f"    cqd_ret({ci}, \"{fn}\", \"{w}\", &r, sizeof r, {rbits} ? {rbits} : (unsigned)(8 * sizeof r));")
         out.append("    break; }")
     out.append("  default: return 4;")
     out.append("  }")
@@ -372,7 +379,9 @@ def _resolve_call(spec: DriverSpec, call: Any) -> int:
 
 def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optional[int],
             extra: List[dict]) -> RunResult:
-    rets = [{"call": e.get("call"), "fn": e.get("fn"), "v": e.get("v")} for e in events if e.get("ev") == "ret"]
+    rets = [{"call": e.get("call"), "fn": e.get("fn"),
+             "v": {"w": e["w"], "v": e.get("v")} if e.get("w") else e.get("v")}
+            for e in events if e.get("ev") == "ret"]
     measured = [{"h": e["h"], "w": e.get("w"), "v": e["v"]} for e in events if e.get("ev") == "measure"]
     rots = []
     for e in events:

@@ -99,13 +99,13 @@ class CoreGates(unittest.TestCase):
         live = {e["h"]: e["role"] for e in ev[-1]["live"]}
         self.assertEqual(ev[-1]["ev"], "exit")
         roles = sorted(live.values())
-        self.assertEqual(roles, ["frozen", "frozen", "garbage", "measured", "measured", "measured"])
+        self.assertEqual(roles, ["frozen", "frozen", "measured", "measured", "measured", "measured"])
 
     def test_run_result_shape(self):
         r = go("core_gates.ll", *self.ARGS, [6, 0.25])
         self.assertIsInstance(r, RunResult)
         self.assertEqual(r.violations, [])
-        self.assertEqual(r.outputs["ret"][0]["v"], "0x8")
+        self.assertEqual(r.outputs["ret"][0]["v"], {"w": "i32", "v": "0x8"})
         self.assertEqual([m["v"] for m in r.measured], ["0x1", "0x3fe0000000000000", "0x6", "0x1"])
         self.assertEqual([x["ev"] for x in r.rotations],
                          ["ry", "phase", "ry", "ry_qangle", "ry_qangle", "phase_qangle", "phase_qangle"])
@@ -147,6 +147,14 @@ class Violations(unittest.TestCase):
     def test_no_family(self):
         self.assertEqual(self.what("v_no_family.ll"), ["no_family"])
 
+    def test_default_runtime_links_family_constructors(self):
+        """Without rt_sources, run.py links every checker/rt/*.c as objects, so a merged family's
+        registering constructor is present (tmpl-int's add here)."""
+        if not (REPO / "checker" / "rt" / "tmpl_int.c").exists():
+            self.fail("tmpl_int.c is not merged; this test needs a family registering add")
+        r = run.run_sample(HERE / "ok_clean.ll", spec1(*self.ARGS), {"call": 0, "args": [5, 0.5]}, "ours")
+        self.assertEqual(r.violations, [])
+
     def test_sample_and_build_failures_are_results(self):
         r = run.run_sample(HERE / "ok_clean.ll", spec1(*self.ARGS), {"call": 0, "args": [1]}, "ours",
                            rt_sources=RT, extra_sources=FAM)
@@ -167,7 +175,8 @@ class MultiWord(unittest.TestCase):
         self.assertEqual(r.violations, [])
         f80 = run._f80_bits(1.5)
         self.assertEqual([m["v"] for m in r.measured], [hex(v), hex((1 << 100) - 1), hex(f80)])
-        self.assertEqual(int(r.outputs["ret"][0]["v"], 16), v ^ ((1 << 100) - 1) ^ f80)
+        self.assertEqual(r.outputs["ret"][0]["v"]["w"], "i128")
+        self.assertEqual(int(r.outputs["ret"][0]["v"]["v"], 16), v ^ ((1 << 100) - 1) ^ f80)
         self.assertEqual({k["w"] for k in r.kept}, {"i128", "i100", "f80"})
 
 

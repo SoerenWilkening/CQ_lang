@@ -145,6 +145,7 @@ static reg_t *regs;
 static size_t nregs, capregs;
 
 void cqe_register_op(const char *op, cqe_op_fn fn) {
+  cqe__init(); /* C1: every cqe_* entry initializes the core first (its atexit handler runs last) */
   if (!op || !fn)
     return;
   for (size_t i = 0; i < nregs; ++i)
@@ -221,6 +222,7 @@ static int put(char *dst, size_t cap, const char *src, size_t n) {
 }
 
 int cqe_parse_template(const char *sym, cqe_tname *out) {
+  cqe__init();
   if (!sym || !out)
     return -1;
   memset(out, 0, sizeof *out);

@@ -337,8 +337,7 @@ void cqe__free(int32_t h) { rails[h].live = 0; }
 int32_t cqe_new_rail(const char *w, const cqe_val *init, int known) { return cqe__new(w, init, known, 0); }
 
 const cqe_val *cqe_rail(int32_t h) {
-  int c = cqe__check(h, "cqe_rail");
-  if (c < 0)
+  if (cqe__check(h, "cqe_rail") != 0) /* C1: a freed or unknown handle is a violation and NULL */
     return NULL;
   return &rails[h].v;
 }
