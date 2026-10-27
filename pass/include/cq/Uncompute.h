@@ -1,4 +1,4 @@
-// Frozen interface (cq-arch, with owner amendments A2 and A4 of 2026-10-27 and freeze bead cq-k1w).
+// Frozen interface (cq-arch, with owner amendments A2 and A4 of 2026-10-27 and freeze beads cq-k1w, cq-bq0 (U1)).
 // Changes only under cq-arch's freeze rule.
 #pragma once
 
@@ -28,6 +28,9 @@ public:
   RailId recordCore(llvm::CallInst *fwd, const abi::CoreSpec &, llvm::ArrayRef<Operand>, RailId out);
   RailId recordSeed(llvm::CallInst *alloc);
   RailId recordExternal(llvm::Value *handle, Role);
+  // U1 (freeze bead cq-bq0, CR rule 9 at a58c3a4): a classical select or a complete phi whose every
+  // value operand is a recorded rail; its handle is an alias (idOf works), never freed itself.
+  RailId recordMerge(llvm::Instruction *merged);
   RailId idOf(llvm::Value *handle) const;
   void setRole(RailId, Role);
   void noteUse(RailId, llvm::Instruction *consumer);

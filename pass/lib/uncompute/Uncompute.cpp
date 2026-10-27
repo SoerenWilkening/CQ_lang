@@ -41,6 +41,29 @@
 //  - cleanupBijective(old, inverse, ops): rule 6. Instead of its producer's _unc, `old` is cleaned by
 //    t = inverse(ops); copy_<W>(t, old); inverse_unc(t, ops); free t; free old. It overrides old's
 //    role. ops are the inverse template's forward operands.
+//  - recordMerge(m) (U1, CR rule 9 at a58c3a4): m is a classical select (condition not a rail) or a
+//    complete phi (one incoming per predecessor) whose every value operand is a recorded rail or
+//    merge, none freed. m's handle becomes a MERGE: idOf(m) answers, and it may be an operand of any
+//    record, noteUse and setRole. A merge names one of its arms at run time, so:
+//      * it is never resolved itself: no _unc, no cqrt_free, never live at exit as a rail of its own;
+//      * a use of m (an IR user of m's handle, a noted use, a record reading m, a rule 6 clean-up
+//        reading m) is a use of every arm it may name, transitively through nested merges: every
+//        arm's item comes after it, and after the item of every rail whose record reads m;
+//      * a barrier on an arm (an in-place write, a noted non-diagonal gate) binds every item that
+//        reads m;
+//      * its role stays Garbage, or a kept role that changes nothing: setRole(m, kept) is accepted
+//        only when every arm it may name is already kept (135's spelling: each arm copied out into a
+//        Result rail inside its own arm). Otherwise it is an internal error. Keeping every arm
+//        would keep the unchosen arm as garbage (an extra kept rail: §6-different, and CR §0's
+//        garbage policy), and keeping only the chosen one is path-dependent, which no static role
+//        says. A consumer that needs the merged value kept (measure, escape, result, a rotation,
+//        any in-place write) copies it out first: f = cqrt_alloc_<W>(0) (recordSeed),
+//        cqrt_copy_<W>(m, f) (recordCore Copy, out f), then uses and keeps f. The copy reads m,
+//        so every arm is uncomputed after it (compute-copy-uncompute).
+//      * noteNonDiagonal(m) and recordCore with m as the written rail are unimplemented (copy out
+//        first); cleanupBijective(m) is an internal error; Role::Seed on m is an internal error.
+//      * an arm whose definition does not dominate the return where it would be resolved (a phi
+//        over arm-local garbage handles) is unimplemented (cq-ut4k).
 //
 // Emission. Each resolvable rail g is resolved once, as one ITEM: its records undone in reverse
 // (or its rule 6 clean-up, or nothing for a direct seed free), then cqrt_free / cqrt_qram_free.
@@ -165,6 +188,8 @@ struct Uncompute::Impl {
     SmallVector<RailId, 2> cleanupReaders; // rails whose rule 6 clean-up reads this rail
     std::optional<Cleanup> cleanup;
     SmallPtrSet<const BasicBlock *, 2> exitsDone; // returns this rail was placed for
+    SmallVector<RailId, 2> arms;       // U1: non-empty iff this rail is a merge (its handle aliases one arm)
+    SmallVector<RailId, 2> mergedInto; // U1: the merges that name this rail as an arm
   };
   struct Scope {
     unsigned begin, end;
@@ -195,6 +220,50 @@ struct Uncompute::Impl {
     return it->second;
   }
 
+  // ---- merges (U1) ------------------------------------------------------------------------------
+
+  bool isMerge(RailId g) const { return !rails[g].arms.empty(); }
+
+  bool isMergeHandle(const Value *v) const {
+    auto it = byHandle.find(v);
+    return it != byHandle.end() && isMerge(it->second);
+  }
+
+  static bool keptRole(Role r) { return r != Role::Garbage && r != Role::Seed; }
+
+  // g and every merge that may name it (transitively), g first.
+  SmallVector<RailId, 4> names(RailId g) const {
+    SmallVector<RailId, 4> out{g};
+    for (unsigned i = 0; i < out.size(); ++i)
+      for (RailId m : rails[out[i]].mergedInto)
+        if (!is_contained(out, m))
+          out.push_back(m);
+    return out;
+  }
+
+  // The rails a handle may name at run time: g itself, or a merge's arms down to non-merge rails.
+  SmallVector<RailId, 4> leaves(RailId g) const {
+    SmallVector<RailId, 4> out, work{g}, seen;
+    while (!work.empty()) {
+      RailId x = work.pop_back_val();
+      if (is_contained(seen, x))
+        continue;
+      seen.push_back(x);
+      if (isMerge(x))
+        work.append(rails[x].arms.begin(), rails[x].arms.end());
+      else
+        out.push_back(x);
+    }
+    return out;
+  }
+
+  bool anyReleased(RailId g) const {
+    for (RailId x : leaves(g))
+      if (rails[x].released)
+        return true;
+    return false;
+  }
+
   RailId newRail(Value *h, Role role, const char *who) {
     if (!h->getType()->isIntegerTy(32))
       internalError(std::string("uncompute: ") + who + ": a rail handle is an i32", h);
@@ -220,7 +289,7 @@ struct Uncompute::Impl {
                       fwd);
       if (ops[i].handle) {
         RailId r = lookup(ops[i].v, who, fwd);
-        if (rails[r].released)
+        if (anyReleased(r))
           internalError(std::string("uncompute: ") + who + ": operand " + describe(ops[i].v) +
                             " was already uncomputed and freed",
                         fwd);
@@ -310,7 +379,7 @@ struct Uncompute::Impl {
 
   bool resolvable(RailId g) const {
     const Rail &r = rails[g];
-    return !r.released && (r.cleanup || r.role == Role::Garbage || r.role == Role::Seed);
+    return !r.released && r.arms.empty() && (r.cleanup || r.role == Role::Garbage || r.role == Role::Seed);
   }
 
   bool directRelease(RailId g) const {
@@ -347,19 +416,26 @@ struct Uncompute::Impl {
     return out;
   }
 
-  // Rails whose item reads g.
+  // Rails whose item reads g, directly or through a merge that may name g (U1).
   SmallVector<RailId, 4> readersOf(RailId g) const {
+    SmallVector<RailId, 4> ns = names(g);
     SmallVector<RailId, 4> cand;
-    for (unsigned rec : rails[g].readerRecs)
-      if (!is_contained(cand, records[rec].out))
-        cand.push_back(records[rec].out);
-    for (RailId o : rails[g].cleanupReaders)
-      if (!is_contained(cand, o))
-        cand.push_back(o);
+    for (RailId n : ns) {
+      for (unsigned rec : rails[n].readerRecs)
+        if (!is_contained(cand, records[rec].out))
+          cand.push_back(records[rec].out);
+      for (RailId o : rails[n].cleanupReaders)
+        if (!is_contained(cand, o))
+          cand.push_back(o);
+    }
     SmallVector<RailId, 4> out;
-    for (RailId o : cand)
-      if (o != g && is_contained(itemReads(o), g))
+    for (RailId o : cand) {
+      if (o == g)
+        continue;
+      SmallVector<RailId, 4> rd = itemReads(o);
+      if (any_of(ns, [&](RailId n) { return is_contained(rd, n); }))
         out.push_back(o);
+    }
     return out;
   }
 
@@ -382,10 +458,14 @@ struct Uncompute::Impl {
       out.push_back(records[r.creator].forward);
     for (unsigned w : r.writes)
       out.push_back(records[w].forward);
-    for (User *u : r.handle->users())
-      if (auto *i = dyn_cast<Instruction>(u))
-        out.push_back(i);
-    out.append(r.uses.begin(), r.uses.end());
+    // U1: a use of a merge that may name g is a use of g.
+    for (RailId n : names(g)) {
+      const Rail &rn = rails[n];
+      for (User *u : rn.handle->users())
+        if (auto *i = dyn_cast<Instruction>(u))
+          out.push_back(i);
+      out.append(rn.uses.begin(), rn.uses.end());
+    }
     return out;
   }
 
@@ -446,16 +526,18 @@ struct Uncompute::Impl {
             return false;
         return true;
       };
-      for (RailId x : r.cleanup->reads)
-        eventsOf(x, afterAll);
+      for (RailId x0 : r.cleanup->reads)
+        for (RailId x : leaves(x0))
+          eventsOf(x, afterAll);
       eventsOf(g, afterAll);
       return out;
     }
     for (unsigned rec : undone(g)) {
       const Instruction *f = records[rec].forward;
       auto afterRec = [&](const Instruction *e) { return e != f && after(e, f); };
-      for (RailId x : info[rec].reads)
-        eventsOf(x, afterRec);
+      for (RailId x0 : info[rec].reads)
+        for (RailId x : leaves(x0)) // U1: a read of a merge reads one of its arms
+          eventsOf(x, afterRec);
     }
     // Hits on g itself after it was minted (a rotated seed or result is never freed).
     if (r.creator != kNone) {
@@ -724,6 +806,8 @@ RailId Uncompute::recordCore(CallInst *fwd, const abi::CoreSpec &spec, ArrayRef<
     if (i >= ops.size() || !ops[i].handle)
       internalError("uncompute: recordCore: the target operand is not a rail", fwd);
     RailId t = impl->lookup(ops[i].v, "recordCore", fwd);
+    if (impl->isMerge(t))
+      unimplemented("uncompute: recordCore: an in-place write through a merged handle (U1: copy it out first)", fwd);
     if (t != out)
       internalError("uncompute: recordCore: `out` is not the gate's target rail", fwd);
     return t;
@@ -785,12 +869,64 @@ RailId Uncompute::recordExternal(Value *handle, Role role) {
   return impl->newRail(handle, role, "recordExternal");
 }
 
+RailId Uncompute::recordMerge(Instruction *merged) {
+  Impl &I = *impl;
+  if (!merged || !merged->getParent())
+    internalError("uncompute: recordMerge needs an instruction in a block");
+  SmallVector<Value *, 4> vals;
+  if (auto *sel = dyn_cast<SelectInst>(merged)) {
+    if (I.byHandle.count(sel->getCondition()))
+      internalError("uncompute: recordMerge: the select condition is a rail (a quantum select is a template)", merged);
+    vals = {sel->getTrueValue(), sel->getFalseValue()};
+  } else if (auto *phi = dyn_cast<PHINode>(merged)) {
+    if (phi->getNumIncomingValues() != pred_size(phi->getParent()))
+      internalError("uncompute: recordMerge: the phi is not complete (an incoming per predecessor)", merged);
+    for (Value *v : phi->incoming_values())
+      vals.push_back(v);
+  } else {
+    internalError("uncompute: recordMerge: a merge is a select or a phi", merged);
+  }
+  SmallVector<RailId, 2> arms;
+  for (Value *v : vals) {
+    RailId a = I.lookup(v, "recordMerge", merged);
+    if (I.anyReleased(a))
+      internalError("uncompute: recordMerge: arm " + describe(v) + " was already uncomputed and freed", merged);
+    if (!is_contained(arms, a))
+      arms.push_back(a);
+  }
+  RailId m = I.newRail(merged, Role::Garbage, "recordMerge");
+  I.rails[m].arms = arms;
+  for (RailId a : arms)
+    I.rails[a].mergedInto.push_back(m);
+  return m;
+}
+
 RailId Uncompute::idOf(Value *handle) const { return impl->lookup(handle, "idOf", handle); }
 
 void Uncompute::setRole(RailId r, Role role) {
-  Impl::Rail &x = impl->rail(r, "setRole");
+  Impl &I = *impl;
+  Impl::Rail &x = I.rail(r, "setRole");
   if (x.released || !x.exitsDone.empty())
     internalError("uncompute: setRole on a rail that was already uncomputed", x.handle);
+  if (I.isMerge(r)) {
+    // U1: a merge is never resolved itself; a kept role on it would have to keep whichever arm the
+    // classical condition chose and clean the others, which no static role can say. It is accepted
+    // only where it changes nothing: every arm it may name is already kept.
+    if (role == Role::Seed)
+      internalError("uncompute: setRole: Role::Seed on a merged handle", x.handle);
+    if (Impl::keptRole(role))
+      for (RailId a : I.leaves(r))
+        if (I.resolvable(a))
+          internalError("uncompute: setRole: a kept role on a merged handle whose arm " + describe(I.rails[a].handle) +
+                            " is still resolvable (U1: copy the merged handle out into a fresh rail and keep that)",
+                        x.handle);
+    x.role = role;
+    return;
+  }
+  if (!Impl::keptRole(role) && !x.cleanup)
+    for (RailId m : I.names(r))
+      if (m != r && Impl::keptRole(I.rails[m].role))
+        internalError("uncompute: setRole: a resolvable role on an arm of a kept merged handle", x.handle);
   x.role = role;
 }
 
@@ -798,7 +934,7 @@ void Uncompute::noteUse(RailId r, Instruction *consumer) {
   Impl::Rail &x = impl->rail(r, "noteUse");
   if (!consumer)
     internalError("uncompute: noteUse without a consumer", x.handle);
-  if (x.released)
+  if (impl->anyReleased(r))
     internalError("uncompute: use of " + describe(x.handle) + " after it was uncomputed and freed", consumer);
   x.uses.push_back(consumer);
 }
@@ -807,6 +943,8 @@ void Uncompute::noteNonDiagonal(RailId target, Instruction *gate) {
   Impl::Rail &x = impl->rail(target, "noteNonDiagonal");
   if (!gate)
     internalError("uncompute: noteNonDiagonal without a gate", x.handle);
+  if (impl->isMerge(target))
+    unimplemented("uncompute: a non-diagonal gate on a merged handle (U1: copy it out first)", gate);
   if (x.released)
     internalError("uncompute: gate on " + describe(x.handle) + " after it was uncomputed and freed", gate);
   x.hits.push_back(gate);
@@ -818,6 +956,8 @@ void Uncompute::cleanupBijective(RailId oldRail, const abi::TemplateSpec &invers
     internalError("uncompute: cleanupBijective of a rail already uncomputed", x.handle);
   if (x.cleanup)
     internalError("uncompute: cleanupBijective requested twice", x.handle);
+  if (impl->isMerge(oldRail))
+    internalError("uncompute: cleanupBijective of a merged handle", x.handle);
   Impl::Cleanup cl{inverse, SmallVector<Operand, 3>(ops.begin(), ops.end()), {}};
   for (const Operand &o : ops) {
     if (!o.handle)
@@ -847,7 +987,8 @@ void Uncompute::flushBefore(Instruction *point) {
       continue;
     bool ok = true;
     for (Instruction *a : I.anchors(g))
-      if (a->getParent() != P || !a->comesBefore(point) || (!isa<CallBase>(a) && !I.emitted.count(a))) {
+      if (a->getParent() != P || !a->comesBefore(point) ||
+          (!isa<CallBase>(a) && !I.emitted.count(a) && !I.isMergeHandle(a))) {
         ok = false;
         break;
       }
@@ -870,6 +1011,11 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
     const BasicBlock *D = I.defBlock(g);
     if (!Impl::reaches(D, Rb))
       continue;
+    if (!Impl::dominates(D, Rb) && !I.rails[g].mergedInto.empty())
+      unimplemented("uncompute: an arm of a merged handle, " + describe(I.rails[g].handle) +
+                        ", is pending at a return its definition does not dominate (a phi over arm-local "
+                        "handles: cq-ut4k)",
+                    ret);
     if (!Impl::dominates(D, Rb))
       internalError("uncompute: " + describe(I.rails[g].handle) +
                         " is still pending at a return its definition does not dominate (an arm was not flushed)",

@@ -3,7 +3,7 @@
 
 1. spec.lock holds (tools/spec_lock.py).
 2. The frozen headers equal cq-arch's text with the owner's amendments A1-A4 and freeze beads K1
-   (cq-k1w), S1 (cq-sml), P1 (cq-6yb), B1 (cq-dvj), M1 (cq-mgi), C1 (cq-4cy) and M2 (cq-9ge): pass/include/cq/*.h, checker/rt/cqe.h, and
+   (cq-k1w), S1 (cq-sml), P1 (cq-6yb), B1 (cq-dvj), M1 (cq-mgi), C1 (cq-4cy), M2 (cq-9ge) and U1 (cq-bq0): pass/include/cq/*.h, checker/rt/cqe.h, and
    the dataclass fields of checker/cqcheck/contracts.py. cq-arch is read live from beads (`bd show cq-arch --json`) unless
    --arch-json names a saved copy.
 3. `opt -passes=cq-lower` on every example `.O1.ll` (counted from the directory) either exits 0 with an
@@ -142,6 +142,10 @@ AMENDMENTS = [
     ('std::string asmCloneFn(const llvm::InlineAsm &);    // "asm_" + first 16 hex of sha256(asm string + constraints)',
      ['std::string asmCloneFn(const llvm::InlineAsm &);    // "asm_" + first 16 lowercase hex of sha256(asm string as '
       'LLVM spells it, one NUL byte, constraint string)'], "replace"),
+    # U1 (freeze bead cq-bq0, final text in a cq-arch comment): a classical select/phi over handles
+    # (CR rule 9 at a58c3a4) is a merge alias in Uncompute.
+    ("  RailId recordExternal(llvm::Value *handle, Role);",
+     ["  RailId recordMerge(llvm::Instruction *merged);"], "after"),
 ]
 
 # M1 (freeze bead cq-mgi, final text in a cq-arch comment): the op registry and the handler
@@ -321,7 +325,7 @@ def check_headers(desc):
             fail(f"contracts.py {cls}: fields {got} != cq-arch {names}")
         else:
             n += 1
-    print(f"headers: {n} interfaces compared against cq-arch (+A1-A4, K1, S1, P1, B1, M1, C1, M2)")
+    print(f"headers: {n} interfaces compared against cq-arch (+A1-A4, K1, S1, P1, B1, M1, C1, M2, U1)")
 
 
 # ---------------------------------------------------------------------------------------------

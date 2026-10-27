@@ -8,6 +8,7 @@
 //   uncompute_tests            run every positive case
 //   uncompute_tests <case>     run one case (positive or fatal)
 #include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <map>
 #include <memory>
@@ -134,6 +135,12 @@ struct Fx {
   }
 
   void check(const char *tc, const std::vector<std::string> &want) {
+    // CQ_UNC_DUMP=<dir>: write the module, for an independent run of -passes=cq-verify over it.
+    if (const char *dir = std::getenv("CQ_UNC_DUMP")) {
+      std::error_code ec;
+      raw_fd_ostream os(std::string(dir) + "/" + tc + ".ll", ec);
+      M->print(os, nullptr);
+    }
     std::vector<std::string> got;
     for (Instruction &i : instructions(F)) {
       std::string s;
@@ -1109,6 +1116,328 @@ void fatal_unknown_handle() {
   f.T("p", "hl"); // %x was never recorded
 }
 
+// ---- U1: merged handles (CR rule 9, a classical select/phi over handles) -------------------------
+
+// r = c ? x + 1 : x * 2 with c classical: both arms hoisted, a classical select over their handles.
+const char *kSel = R"(
+define i32 @f(i32 %a0, double %th, i1 %c) {
+entry:
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  %hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)
+  %m = select i1 %c, i32 %ha, i32 %hb
+  %fr = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %m, i32 %fr)
+  %r = call i32 @cqrt_measure_i32(i32 %fr)
+  ret i32 %r
+})";
+
+// The merged handle measured: the consumer copies it out into a fresh rail and keeps that rail
+// (compute-copy-uncompute, CR §0); the merge stays garbage and both arms are uncomputed after the copy.
+// Kept: x and the copy (one rail with the chosen arm's value), as in 135's classical-control spelling.
+void merge_measured() {
+  Fx f(kSel);
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  f.T("ha", "hl");
+  f.T("hb", "hl");
+  RailId m = f.U.recordMerge(f.I("m"));
+  if (f.id("m") != m) {
+    ++failures;
+    errs() << "FAIL merge_measured: idOf(merged) is not recordMerge's rail\n";
+  }
+  RailId fr = f.S("fr");
+  f.core(f.call("cqrt_copy_i32"), abi::Core::Copy, "hh", fr);
+  f.U.setRole(fr, Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "%hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)",
+                        "%m = select i1 %c, i32 %ha, i32 %hb",
+                        "%fr = call i32 @cqrt_alloc_i32(i32 0)",
+                        "call void @cqrt_copy_i32(i32 %m, i32 %fr)",
+                        "call void @cq_template_shl_i32_hl_unc(i32 %hb, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %hb)",
+                        "call void @cq_template_add_i32_hl_unc(i32 %ha, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %ha)",
+                        "%r = call i32 @cqrt_measure_i32(i32 %fr)",
+                        "ret i32 %r",
+                    });
+}
+
+// 135's spelling: every arm is already kept (copied out into a Result rail inside its arm), so a kept
+// role on the merged handle changes nothing and nothing is emitted for the arms or the merge.
+void merge_all_arms_kept() {
+  Fx f(R"(
+define i32 @f(i32 %a0, double %th, i1 %c) {
+entry:
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  br i1 %c, label %A, label %B
+A:
+  %ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  br label %J
+B:
+  %hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)
+  br label %J
+J:
+  %m = phi i32 [ %ha, %A ], [ %hb, %B ]
+  %r = call i32 @cqrt_measure_i32(i32 %m)
+  ret i32 %r
+})");
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  f.U.setRole(f.T("ha", "hl"), Role::Result);
+  f.U.setRole(f.T("hb", "hl"), Role::Result);
+  f.U.setRole(f.U.recordMerge(f.I("m")), Role::Measured);
+  f.U.flushBefore(f.I("ha")->getParent()->getTerminator());
+  f.U.flushBefore(f.I("hb")->getParent()->getTerminator());
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "br i1 %c, label %A, label %B",
+                        "%ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "br label %J",
+                        "%hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)",
+                        "br label %J",
+                        "%m = phi i32 [ %ha, %A ], [ %hb, %B ]",
+                        "%r = call i32 @cqrt_measure_i32(i32 %m)",
+                        "ret i32 %r",
+                    });
+}
+
+// The merged handle read by a template, then garbage: the template's rail is uncomputed first (it
+// reads the merge, so it reads whichever arm was chosen), then both arms, all after the last use and
+// before the block's terminator (a local flush: the select is not a call, but it is a recorded merge).
+void merge_template_then_garbage() {
+  Fx f(R"(
+define i32 @f(i32 %a0, double %th, i1 %c) {
+entry:
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  %hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)
+  %m = select i1 %c, i32 %ha, i32 %hb
+  %t = call i32 @cq_template_mul_i32_hl(i32 %m, i32 3)
+  %u = call i32 @cq_template_add_i32_hl(i32 %t, i32 5)
+  %r = call i32 @cqrt_measure_i32(i32 %u)
+  br label %exit
+exit:
+  ret i32 %r
+})");
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  f.T("ha", "hl");
+  f.T("hb", "hl");
+  f.U.recordMerge(f.I("m"));
+  f.T("t", "hl");
+  f.U.setRole(f.T("u", "hl"), Role::Measured);
+  f.U.flushBefore(f.I("r")->getParent()->getTerminator());
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "%hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)",
+                        "%m = select i1 %c, i32 %ha, i32 %hb",
+                        "%t = call i32 @cq_template_mul_i32_hl(i32 %m, i32 3)",
+                        "%u = call i32 @cq_template_add_i32_hl(i32 %t, i32 5)",
+                        "call void @cq_template_mul_i32_hl_unc(i32 %t, i32 %m, i32 3)",
+                        "call void @cqrt_free(i32 %t)",
+                        "call void @cq_template_shl_i32_hl_unc(i32 %hb, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %hb)",
+                        "call void @cq_template_add_i32_hl_unc(i32 %ha, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %ha)",
+                        "%r = call i32 @cqrt_measure_i32(i32 %u)",
+                        "br label %exit",
+                        "ret i32 %r",
+                    });
+}
+
+// A noted use of the merged handle (e.g. a slot load of it) extends every arm past that use.
+void merge_noted_use() {
+  Fx f(R"(
+define i32 @f(i32 %a0, double %th, i1 %c) {
+entry:
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  %hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)
+  %m = select i1 %c, i32 %ha, i32 %hb
+  %ld = call i32 @cq_template_icmp_eq_i32_hl(i32 %x, i32 7)
+  %r = call i32 @cqrt_measure_i32(i32 %ld)
+  ret i32 %r
+})");
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  f.T("ha", "hl");
+  f.T("hb", "hl");
+  RailId m = f.U.recordMerge(f.I("m"));
+  f.U.setRole(f.T("ld", "hl"), Role::Measured);
+  f.U.noteUse(m, f.I("ld"));
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "%hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)",
+                        "%m = select i1 %c, i32 %ha, i32 %hb",
+                        "%ld = call i32 @cq_template_icmp_eq_i32_hl(i32 %x, i32 7)",
+                        "call void @cq_template_shl_i32_hl_unc(i32 %hb, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %hb)",
+                        "call void @cq_template_add_i32_hl_unc(i32 %ha, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %ha)",
+                        "%r = call i32 @cqrt_measure_i32(i32 %ld)",
+                        "ret i32 %r",
+                    });
+}
+
+// A phi-shaped merge at a classical join, arms defined in a block that dominates the join: the arms
+// are uncomputed in the join after the merged handle's last reader is uncomputed.
+const char *kPhi = R"(
+define i32 @f(i32 %a0, double %th, i1 %c) {
+entry:
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  %hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)
+  br i1 %c, label %A, label %B
+A:
+  br label %J
+B:
+  br label %J
+J:
+  %m = phi i32 [ %ha, %A ], [ %hb, %B ]
+  %t = call i32 @cq_template_mul_i32_hl(i32 %m, i32 3)
+  %r = call i32 @cqrt_measure_i32(i32 %t)
+  ret i32 %r
+})";
+
+void merge_phi() {
+  Fx f(kPhi);
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  f.T("ha", "hl");
+  f.T("hb", "hl");
+  f.U.flushBefore(f.I("hb")->getParent()->getTerminator()); // nothing: the arms are read in J
+  f.U.recordMerge(f.I("m"));
+  f.U.setRole(f.T("t", "hl"), Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "%hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)",
+                        "br i1 %c, label %A, label %B",
+                        "br label %J",
+                        "br label %J",
+                        "%m = phi i32 [ %ha, %A ], [ %hb, %B ]",
+                        "%t = call i32 @cq_template_mul_i32_hl(i32 %m, i32 3)",
+                        "call void @cq_template_shl_i32_hl_unc(i32 %hb, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %hb)",
+                        "call void @cq_template_add_i32_hl_unc(i32 %ha, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %ha)",
+                        "%r = call i32 @cqrt_measure_i32(i32 %t)",
+                        "ret i32 %r",
+                    });
+}
+
+// Nested classical selects (a classical switch over handles): a reader of the outer merge outlives
+// into every leaf arm; the inner merge has no item either.
+void merge_nested() {
+  Fx f(R"(
+define i32 @f(i32 %a0, double %th, i1 %c1, i1 %c2) {
+entry:
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  %hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)
+  %hc = call i32 @cq_template_mul_i32_hl(i32 %x, i32 5)
+  %m1 = select i1 %c1, i32 %ha, i32 %hb
+  %m2 = select i1 %c2, i32 %m1, i32 %hc
+  %t = call i32 @cq_template_add_i32_hl(i32 %m2, i32 9)
+  %r = call i32 @cqrt_measure_i32(i32 %t)
+  ret i32 %r
+})");
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  f.T("ha", "hl");
+  f.T("hb", "hl");
+  f.T("hc", "hl");
+  f.U.recordMerge(f.I("m1"));
+  f.U.recordMerge(f.I("m2"));
+  f.U.setRole(f.T("t", "hl"), Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "%hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)",
+                        "%hc = call i32 @cq_template_mul_i32_hl(i32 %x, i32 5)",
+                        "%m1 = select i1 %c1, i32 %ha, i32 %hb",
+                        "%m2 = select i1 %c2, i32 %m1, i32 %hc",
+                        "%t = call i32 @cq_template_add_i32_hl(i32 %m2, i32 9)",
+                        "call void @cq_template_mul_i32_hl_unc(i32 %hc, i32 %x, i32 5)",
+                        "call void @cqrt_free(i32 %hc)",
+                        "call void @cq_template_shl_i32_hl_unc(i32 %hb, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %hb)",
+                        "call void @cq_template_add_i32_hl_unc(i32 %ha, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %ha)",
+                        "%r = call i32 @cqrt_measure_i32(i32 %t)",
+                        "ret i32 %r",
+                    });
+}
+
+// U1 fatal: a kept role on a merged handle whose arms are resolvable. Keeping every arm would keep
+// the unchosen arm's garbage (an extra kept rail, §6-different from rule 9's "arm rails uncomputed").
+void fatal_merge_kept_role() {
+  Fx f(kSel);
+  f.reg("x", 0);
+  f.T("ha", "hl");
+  f.T("hb", "hl");
+  f.U.setRole(f.U.recordMerge(f.I("m")), Role::Measured);
+}
+
+void fatal_merge_nondiagonal() {
+  Fx f(kSel);
+  f.reg("x", 0);
+  f.T("ha", "hl");
+  f.T("hb", "hl");
+  f.U.noteNonDiagonal(f.U.recordMerge(f.I("m")), f.call("cqrt_ry_i32"));
+}
+
+// A phi over arm-local garbage handles: no point after the merged handle's uses can name the arm (cq-ut4k).
+void fatal_merge_arm_local() {
+  Fx f(R"(
+define i32 @f(i32 %a0, double %th, i1 %c) {
+entry:
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  br i1 %c, label %A, label %B
+A:
+  %ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  br label %J
+B:
+  %hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)
+  br label %J
+J:
+  %m = phi i32 [ %ha, %A ], [ %hb, %B ]
+  %t = call i32 @cq_template_mul_i32_hl(i32 %m, i32 3)
+  %r = call i32 @cqrt_measure_i32(i32 %t)
+  ret i32 %r
+})");
+  f.reg("x", 0);
+  f.T("ha", "hl");
+  f.T("hb", "hl");
+  f.U.recordMerge(f.I("m"));
+  f.U.setRole(f.T("t", "hl"), Role::Measured);
+  f.U.flushAtExit(f.ret());
+}
+
 const std::map<std::string, std::function<void()>> kPositive = {
     {"reverse_dependency_order", reverse_dependency_order},
     {"independent_most_recent_first", independent_most_recent_first},
@@ -1132,6 +1461,12 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"ex42_measure_one_of_two", ex42_measure_one_of_two},
     {"ex162_consumer", ex162_consumer},
     {"ex144_rule6", ex144_rule6},
+    {"merge_measured", merge_measured},
+    {"merge_all_arms_kept", merge_all_arms_kept},
+    {"merge_template_then_garbage", merge_template_then_garbage},
+    {"merge_noted_use", merge_noted_use},
+    {"merge_phi", merge_phi},
+    {"merge_nested", merge_nested},
 };
 
 const std::map<std::string, std::function<void()>> kFatal = {
@@ -1142,6 +1477,9 @@ const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_mirror_outside_reader", fatal_mirror_outside_reader},
     {"fatal_write_barrier", fatal_write_barrier},
     {"fatal_unknown_handle", fatal_unknown_handle},
+    {"fatal_merge_kept_role", fatal_merge_kept_role},
+    {"fatal_merge_nondiagonal", fatal_merge_nondiagonal},
+    {"fatal_merge_arm_local", fatal_merge_arm_local},
 };
 
 } // namespace
