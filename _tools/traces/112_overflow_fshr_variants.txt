@@ -1,0 +1,36 @@
+# driver: uadd_overflow_qc(0,.5,3);usub_overflow_qq(0,1,.5,.25);rotr_qc(0,.5,3);rotr_qq(0,1,.5,.25)
+# call: uadd_overflow_qc(0,.5,3)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_add_i32_hl(h0, 3) -> h1
+cq_template_uadd_overflow_i32_hl(h0, 3) -> h100000
+cq_template_select_i32_lh(h100000, 3, h1) -> h100001
+cq_template_uadd_overflow_i32_hl_unc(h100000, h0, 3)
+cqrt_free(h100000)
+cq_template_add_i32_hl_unc(h1, h0, 3)
+cqrt_free(h1)
+cqrt_measure_i32(h100001) -> 0
+# call: usub_overflow_qq(0,1,.5,.25)
+cqrt_alloc_i64(0) -> h2
+cqrt_ry_i64(h2, 0x1p-1)
+cqrt_alloc_i64(1) -> h3
+cqrt_ry_i64(h3, 0x1p-2)
+cq_template_sub_i64(h2, h3) -> h4
+cq_template_usub_overflow_i64(h2, h3) -> h100002
+cq_template_zext_i1_to_i32(h100002) -> h5
+cq_template_usub_overflow_i64_unc(h100002, h2, h3)
+cqrt_free(h100002)
+cqrt_measure_i64(h4) -> 0
+cqrt_measure_i32(h5) -> 0
+# call: rotr_qc(0,.5,3)
+cqrt_alloc_i32(0) -> h6
+cqrt_ry_i32(h6, 0x1p-1)
+cq_template_fshr_i32_qql(h6, h6, 3) -> h7
+cqrt_measure_i32(h7) -> 0
+# call: rotr_qq(0,1,.5,.25)
+cqrt_alloc_i32(0) -> h8
+cqrt_ry_i32(h8, 0x1p-1)
+cqrt_alloc_i32(1) -> h9
+cqrt_ry_i32(h9, 0x1p-2)
+cq_template_fshr_i32(h8, h8, h9) -> h100003
+cqrt_measure_i32(h100003) -> 0

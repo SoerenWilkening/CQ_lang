@@ -1,0 +1,397 @@
+# driver: nested_kloops_in_arm(0,0.5,1,0.25,1,0)
+# call: nested_kloops_in_arm(0,0.5,1,0.25,1,0)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cqrt_alloc_i32(1) -> h1
+cqrt_ry_i32(h1, 0x1p-2)
+cq_template_icmp_ugt_i32_hl(h0, 0) -> h2
+cqrt_alloc_i32(0) -> h3
+cq_template_icmp_ugt_i32_hl(h0, 1) -> h4
+cqrt_alloc_i1(0) -> h5
+cqrt_and_i1(h2, h4, h5)
+cq_template_icmp_ugt_i32_hl(h1, 1) -> h6
+cqrt_alloc_i1(0) -> h7
+cqrt_and_i1(h5, h6, h7)
+cq_template_add_i32(h1, h3) -> h8
+cq_template_lshr_i32_hl(h1, 1) -> h9
+cq_template_select_i32(h7, h8, h3) -> h100000
+cq_template_select_i32(h7, h9, h1) -> h100001
+cq_template_icmp_ugt_i32_hl(h100001, 1) -> h10
+cqrt_alloc_i1(0) -> h11
+cqrt_and_i1(h7, h10, h11)
+cq_template_add_i32(h100001, h100000) -> h12
+cq_template_lshr_i32_hl(h100001, 1) -> h13
+cq_template_select_i32(h11, h12, h100000) -> h100002
+cq_template_select_i32(h11, h13, h100001) -> h100003
+cq_template_icmp_ugt_i32_hl(h100003, 1) -> h14
+cqrt_alloc_i1(0) -> h15
+cqrt_and_i1(h11, h14, h15)
+cq_template_add_i32(h100003, h100002) -> h16
+cq_template_lshr_i32_hl(h100003, 1) -> h17
+cq_template_select_i32(h15, h16, h100002) -> h100004
+cq_template_select_i32(h15, h17, h100003) -> h100005
+cq_template_icmp_ugt_i32_hl(h100005, 1) -> h18
+cqrt_alloc_i1(0) -> h19
+cqrt_and_i1(h15, h18, h19)
+cq_template_add_i32(h100005, h100004) -> h20
+cq_template_lshr_i32_hl(h100005, 1) -> h21
+cq_template_select_i32(h19, h20, h100004) -> h100006
+cq_template_select_i32(h19, h21, h100005) -> h100007
+cq_template_icmp_ugt_i32_hl(h100007, 1) -> h22
+cqrt_alloc_i1(0) -> h23
+cqrt_and_i1(h19, h22, h23)
+cq_template_icmp_ugt_i32_hl_unc(h22, h100007, 1)
+cqrt_free(h22)
+cq_template_add_i32_hl(h0, -1) -> h24
+cq_template_select_i32(h5, h24, h0) -> h100008
+cq_template_icmp_ugt_i32_hl(h100008, 1) -> h25
+cqrt_alloc_i1(0) -> h26
+cqrt_and_i1(h5, h25, h26)
+cq_template_icmp_ugt_i32_hl(h1, 1) -> h27
+cqrt_alloc_i1(0) -> h28
+cqrt_and_i1(h26, h27, h28)
+cq_template_add_i32(h1, h100006) -> h29
+cq_template_lshr_i32_hl(h1, 1) -> h30
+cq_template_select_i32(h28, h29, h100006) -> h100009
+cq_template_select_i32(h28, h30, h1) -> h100010
+cq_template_icmp_ugt_i32_hl(h100010, 1) -> h31
+cqrt_alloc_i1(0) -> h32
+cqrt_and_i1(h28, h31, h32)
+cq_template_add_i32(h100010, h100009) -> h33
+cq_template_lshr_i32_hl(h100010, 1) -> h34
+cq_template_select_i32(h32, h33, h100009) -> h100011
+cq_template_select_i32(h32, h34, h100010) -> h100012
+cq_template_icmp_ugt_i32_hl(h100012, 1) -> h35
+cqrt_alloc_i1(0) -> h36
+cqrt_and_i1(h32, h35, h36)
+cq_template_add_i32(h100012, h100011) -> h37
+cq_template_lshr_i32_hl(h100012, 1) -> h38
+cq_template_select_i32(h36, h37, h100011) -> h100013
+cq_template_select_i32(h36, h38, h100012) -> h100014
+cq_template_icmp_ugt_i32_hl(h100014, 1) -> h39
+cqrt_alloc_i1(0) -> h40
+cqrt_and_i1(h36, h39, h40)
+cq_template_add_i32(h100014, h100013) -> h41
+cq_template_lshr_i32_hl(h100014, 1) -> h42
+cq_template_select_i32(h40, h41, h100013) -> h100015
+cq_template_select_i32(h40, h42, h100014) -> h100016
+cq_template_icmp_ugt_i32_hl(h100016, 1) -> h43
+cqrt_alloc_i1(0) -> h44
+cqrt_and_i1(h40, h43, h44)
+cq_template_icmp_ugt_i32_hl_unc(h43, h100016, 1)
+cqrt_free(h43)
+cq_template_add_i32_hl(h100008, -1) -> h45
+cq_template_select_i32(h26, h45, h100008) -> h100017
+cq_template_icmp_ugt_i32_hl(h100017, 1) -> h46
+cqrt_alloc_i1(0) -> h47
+cqrt_and_i1(h26, h46, h47)
+cq_template_icmp_ugt_i32_hl(h1, 1) -> h48
+cqrt_alloc_i1(0) -> h49
+cqrt_and_i1(h47, h48, h49)
+cq_template_add_i32(h1, h100015) -> h50
+cq_template_lshr_i32_hl(h1, 1) -> h51
+cq_template_select_i32(h49, h50, h100015) -> h100018
+cq_template_select_i32(h49, h51, h1) -> h100019
+cq_template_icmp_ugt_i32_hl(h100019, 1) -> h52
+cqrt_alloc_i1(0) -> h53
+cqrt_and_i1(h49, h52, h53)
+cq_template_add_i32(h100019, h100018) -> h54
+cq_template_lshr_i32_hl(h100019, 1) -> h55
+cq_template_select_i32(h53, h54, h100018) -> h100020
+cq_template_select_i32(h53, h55, h100019) -> h100021
+cq_template_icmp_ugt_i32_hl(h100021, 1) -> h56
+cqrt_alloc_i1(0) -> h57
+cqrt_and_i1(h53, h56, h57)
+cq_template_add_i32(h100021, h100020) -> h58
+cq_template_lshr_i32_hl(h100021, 1) -> h59
+cq_template_select_i32(h57, h58, h100020) -> h100022
+cq_template_select_i32(h57, h59, h100021) -> h100023
+cq_template_icmp_ugt_i32_hl(h100023, 1) -> h60
+cqrt_alloc_i1(0) -> h61
+cqrt_and_i1(h57, h60, h61)
+cq_template_add_i32(h100023, h100022) -> h62
+cq_template_lshr_i32_hl(h100023, 1) -> h63
+cq_template_select_i32(h61, h62, h100022) -> h100024
+cq_template_select_i32(h61, h63, h100023) -> h100025
+cq_template_icmp_ugt_i32_hl(h100025, 1) -> h64
+cqrt_alloc_i1(0) -> h65
+cqrt_and_i1(h61, h64, h65)
+cq_template_icmp_ugt_i32_hl_unc(h64, h100025, 1)
+cqrt_free(h64)
+cq_template_add_i32_hl(h100017, -1) -> h66
+cq_template_select_i32(h47, h66, h100017) -> h100026
+cq_template_icmp_ugt_i32_hl(h100026, 1) -> h67
+cqrt_alloc_i1(0) -> h68
+cqrt_and_i1(h47, h67, h68)
+cq_template_icmp_ugt_i32_hl(h1, 1) -> h69
+cqrt_alloc_i1(0) -> h70
+cqrt_and_i1(h68, h69, h70)
+cq_template_add_i32(h1, h100024) -> h71
+cq_template_lshr_i32_hl(h1, 1) -> h72
+cq_template_select_i32(h70, h71, h100024) -> h100027
+cq_template_select_i32(h70, h72, h1) -> h100028
+cq_template_icmp_ugt_i32_hl(h100028, 1) -> h73
+cqrt_alloc_i1(0) -> h74
+cqrt_and_i1(h70, h73, h74)
+cq_template_add_i32(h100028, h100027) -> h75
+cq_template_lshr_i32_hl(h100028, 1) -> h76
+cq_template_select_i32(h74, h75, h100027) -> h100029
+cq_template_select_i32(h74, h76, h100028) -> h100030
+cq_template_icmp_ugt_i32_hl(h100030, 1) -> h77
+cqrt_alloc_i1(0) -> h78
+cqrt_and_i1(h74, h77, h78)
+cq_template_add_i32(h100030, h100029) -> h79
+cq_template_lshr_i32_hl(h100030, 1) -> h80
+cq_template_select_i32(h78, h79, h100029) -> h100031
+cq_template_select_i32(h78, h80, h100030) -> h100032
+cq_template_icmp_ugt_i32_hl(h100032, 1) -> h81
+cqrt_alloc_i1(0) -> h82
+cqrt_and_i1(h78, h81, h82)
+cq_template_add_i32(h100032, h100031) -> h83
+cq_template_lshr_i32_hl(h100032, 1) -> h84
+cq_template_select_i32(h82, h83, h100031) -> h100033
+cq_template_select_i32(h82, h84, h100032) -> h100034
+cq_template_icmp_ugt_i32_hl(h100034, 1) -> h85
+cqrt_alloc_i1(0) -> h86
+cqrt_and_i1(h82, h85, h86)
+cq_template_icmp_ugt_i32_hl_unc(h85, h100034, 1)
+cqrt_free(h85)
+cq_template_add_i32_hl(h100026, -1) -> h87
+cq_template_select_i32(h68, h87, h100026) -> h100035
+cq_template_icmp_ugt_i32_hl(h100035, 1) -> h88
+cqrt_alloc_i1(0) -> h89
+cqrt_and_i1(h68, h88, h89)
+cq_template_icmp_ugt_i32_hl_unc(h88, h100035, 1)
+cqrt_free(h88)
+cq_template_add_i32(h1, h0) -> h90
+cq_template_select_i32(h2, h100033, h90) -> h100036
+cq_template_add_i32_unc(h90, h1, h0)
+cqrt_free(h90)
+cq_template_select_i32_unc(h100035, h68, h87, h100026)
+cqrt_free(h100035)
+cq_template_add_i32_hl_unc(h87, h100026, -1)
+cqrt_free(h87)
+cq_template_select_i32_unc(h100034, h82, h84, h100032)
+cqrt_free(h100034)
+cq_template_select_i32_unc(h100033, h82, h83, h100031)
+cqrt_free(h100033)
+cq_template_lshr_i32_hl_unc(h84, h100032, 1)
+cqrt_free(h84)
+cq_template_add_i32_unc(h83, h100032, h100031)
+cqrt_free(h83)
+cqrt_and_i1(h78, h81, h82)
+cqrt_free(h82)
+cq_template_icmp_ugt_i32_hl_unc(h81, h100032, 1)
+cqrt_free(h81)
+cq_template_select_i32_unc(h100032, h78, h80, h100030)
+cqrt_free(h100032)
+cq_template_select_i32_unc(h100031, h78, h79, h100029)
+cqrt_free(h100031)
+cq_template_lshr_i32_hl_unc(h80, h100030, 1)
+cqrt_free(h80)
+cq_template_add_i32_unc(h79, h100030, h100029)
+cqrt_free(h79)
+cqrt_and_i1(h74, h77, h78)
+cqrt_free(h78)
+cq_template_icmp_ugt_i32_hl_unc(h77, h100030, 1)
+cqrt_free(h77)
+cq_template_select_i32_unc(h100030, h74, h76, h100028)
+cqrt_free(h100030)
+cq_template_select_i32_unc(h100029, h74, h75, h100027)
+cqrt_free(h100029)
+cq_template_lshr_i32_hl_unc(h76, h100028, 1)
+cqrt_free(h76)
+cq_template_add_i32_unc(h75, h100028, h100027)
+cqrt_free(h75)
+cqrt_and_i1(h70, h73, h74)
+cqrt_free(h74)
+cq_template_icmp_ugt_i32_hl_unc(h73, h100028, 1)
+cqrt_free(h73)
+cq_template_select_i32_unc(h100028, h70, h72, h1)
+cqrt_free(h100028)
+cq_template_select_i32_unc(h100027, h70, h71, h100024)
+cqrt_free(h100027)
+cq_template_lshr_i32_hl_unc(h72, h1, 1)
+cqrt_free(h72)
+cq_template_add_i32_unc(h71, h1, h100024)
+cqrt_free(h71)
+cqrt_and_i1(h68, h69, h70)
+cqrt_free(h70)
+cq_template_icmp_ugt_i32_hl_unc(h69, h1, 1)
+cqrt_free(h69)
+cqrt_and_i1(h47, h67, h68)
+cqrt_free(h68)
+cq_template_icmp_ugt_i32_hl_unc(h67, h100026, 1)
+cqrt_free(h67)
+cq_template_select_i32_unc(h100026, h47, h66, h100017)
+cqrt_free(h100026)
+cq_template_add_i32_hl_unc(h66, h100017, -1)
+cqrt_free(h66)
+cq_template_select_i32_unc(h100025, h61, h63, h100023)
+cqrt_free(h100025)
+cq_template_select_i32_unc(h100024, h61, h62, h100022)
+cqrt_free(h100024)
+cq_template_lshr_i32_hl_unc(h63, h100023, 1)
+cqrt_free(h63)
+cq_template_add_i32_unc(h62, h100023, h100022)
+cqrt_free(h62)
+cqrt_and_i1(h57, h60, h61)
+cqrt_free(h61)
+cq_template_icmp_ugt_i32_hl_unc(h60, h100023, 1)
+cqrt_free(h60)
+cq_template_select_i32_unc(h100023, h57, h59, h100021)
+cqrt_free(h100023)
+cq_template_select_i32_unc(h100022, h57, h58, h100020)
+cqrt_free(h100022)
+cq_template_lshr_i32_hl_unc(h59, h100021, 1)
+cqrt_free(h59)
+cq_template_add_i32_unc(h58, h100021, h100020)
+cqrt_free(h58)
+cqrt_and_i1(h53, h56, h57)
+cqrt_free(h57)
+cq_template_icmp_ugt_i32_hl_unc(h56, h100021, 1)
+cqrt_free(h56)
+cq_template_select_i32_unc(h100021, h53, h55, h100019)
+cqrt_free(h100021)
+cq_template_select_i32_unc(h100020, h53, h54, h100018)
+cqrt_free(h100020)
+cq_template_lshr_i32_hl_unc(h55, h100019, 1)
+cqrt_free(h55)
+cq_template_add_i32_unc(h54, h100019, h100018)
+cqrt_free(h54)
+cqrt_and_i1(h49, h52, h53)
+cqrt_free(h53)
+cq_template_icmp_ugt_i32_hl_unc(h52, h100019, 1)
+cqrt_free(h52)
+cq_template_select_i32_unc(h100019, h49, h51, h1)
+cqrt_free(h100019)
+cq_template_select_i32_unc(h100018, h49, h50, h100015)
+cqrt_free(h100018)
+cq_template_lshr_i32_hl_unc(h51, h1, 1)
+cqrt_free(h51)
+cq_template_add_i32_unc(h50, h1, h100015)
+cqrt_free(h50)
+cqrt_and_i1(h47, h48, h49)
+cqrt_free(h49)
+cq_template_icmp_ugt_i32_hl_unc(h48, h1, 1)
+cqrt_free(h48)
+cqrt_and_i1(h26, h46, h47)
+cqrt_free(h47)
+cq_template_icmp_ugt_i32_hl_unc(h46, h100017, 1)
+cqrt_free(h46)
+cq_template_select_i32_unc(h100017, h26, h45, h100008)
+cqrt_free(h100017)
+cq_template_add_i32_hl_unc(h45, h100008, -1)
+cqrt_free(h45)
+cq_template_select_i32_unc(h100016, h40, h42, h100014)
+cqrt_free(h100016)
+cq_template_select_i32_unc(h100015, h40, h41, h100013)
+cqrt_free(h100015)
+cq_template_lshr_i32_hl_unc(h42, h100014, 1)
+cqrt_free(h42)
+cq_template_add_i32_unc(h41, h100014, h100013)
+cqrt_free(h41)
+cqrt_and_i1(h36, h39, h40)
+cqrt_free(h40)
+cq_template_icmp_ugt_i32_hl_unc(h39, h100014, 1)
+cqrt_free(h39)
+cq_template_select_i32_unc(h100014, h36, h38, h100012)
+cqrt_free(h100014)
+cq_template_select_i32_unc(h100013, h36, h37, h100011)
+cqrt_free(h100013)
+cq_template_lshr_i32_hl_unc(h38, h100012, 1)
+cqrt_free(h38)
+cq_template_add_i32_unc(h37, h100012, h100011)
+cqrt_free(h37)
+cqrt_and_i1(h32, h35, h36)
+cqrt_free(h36)
+cq_template_icmp_ugt_i32_hl_unc(h35, h100012, 1)
+cqrt_free(h35)
+cq_template_select_i32_unc(h100012, h32, h34, h100010)
+cqrt_free(h100012)
+cq_template_select_i32_unc(h100011, h32, h33, h100009)
+cqrt_free(h100011)
+cq_template_lshr_i32_hl_unc(h34, h100010, 1)
+cqrt_free(h34)
+cq_template_add_i32_unc(h33, h100010, h100009)
+cqrt_free(h33)
+cqrt_and_i1(h28, h31, h32)
+cqrt_free(h32)
+cq_template_icmp_ugt_i32_hl_unc(h31, h100010, 1)
+cqrt_free(h31)
+cq_template_select_i32_unc(h100010, h28, h30, h1)
+cqrt_free(h100010)
+cq_template_select_i32_unc(h100009, h28, h29, h100006)
+cqrt_free(h100009)
+cq_template_lshr_i32_hl_unc(h30, h1, 1)
+cqrt_free(h30)
+cq_template_add_i32_unc(h29, h1, h100006)
+cqrt_free(h29)
+cqrt_and_i1(h26, h27, h28)
+cqrt_free(h28)
+cq_template_icmp_ugt_i32_hl_unc(h27, h1, 1)
+cqrt_free(h27)
+cqrt_and_i1(h5, h25, h26)
+cqrt_free(h26)
+cq_template_icmp_ugt_i32_hl_unc(h25, h100008, 1)
+cqrt_free(h25)
+cq_template_select_i32_unc(h100008, h5, h24, h0)
+cqrt_free(h100008)
+cq_template_add_i32_hl_unc(h24, h0, -1)
+cqrt_free(h24)
+cq_template_select_i32_unc(h100007, h19, h21, h100005)
+cqrt_free(h100007)
+cq_template_select_i32_unc(h100006, h19, h20, h100004)
+cqrt_free(h100006)
+cq_template_lshr_i32_hl_unc(h21, h100005, 1)
+cqrt_free(h21)
+cq_template_add_i32_unc(h20, h100005, h100004)
+cqrt_free(h20)
+cqrt_and_i1(h15, h18, h19)
+cqrt_free(h19)
+cq_template_icmp_ugt_i32_hl_unc(h18, h100005, 1)
+cqrt_free(h18)
+cq_template_select_i32_unc(h100005, h15, h17, h100003)
+cqrt_free(h100005)
+cq_template_select_i32_unc(h100004, h15, h16, h100002)
+cqrt_free(h100004)
+cq_template_lshr_i32_hl_unc(h17, h100003, 1)
+cqrt_free(h17)
+cq_template_add_i32_unc(h16, h100003, h100002)
+cqrt_free(h16)
+cqrt_and_i1(h11, h14, h15)
+cqrt_free(h15)
+cq_template_icmp_ugt_i32_hl_unc(h14, h100003, 1)
+cqrt_free(h14)
+cq_template_select_i32_unc(h100003, h11, h13, h100001)
+cqrt_free(h100003)
+cq_template_select_i32_unc(h100002, h11, h12, h100000)
+cqrt_free(h100002)
+cq_template_lshr_i32_hl_unc(h13, h100001, 1)
+cqrt_free(h13)
+cq_template_add_i32_unc(h12, h100001, h100000)
+cqrt_free(h12)
+cqrt_and_i1(h7, h10, h11)
+cqrt_free(h11)
+cq_template_icmp_ugt_i32_hl_unc(h10, h100001, 1)
+cqrt_free(h10)
+cq_template_select_i32_unc(h100001, h7, h9, h1)
+cqrt_free(h100001)
+cq_template_select_i32_unc(h100000, h7, h8, h3)
+cqrt_free(h100000)
+cq_template_lshr_i32_hl_unc(h9, h1, 1)
+cqrt_free(h9)
+cq_template_add_i32_unc(h8, h1, h3)
+cqrt_free(h8)
+cqrt_and_i1(h5, h6, h7)
+cqrt_free(h7)
+cq_template_icmp_ugt_i32_hl_unc(h6, h1, 1)
+cqrt_free(h6)
+cqrt_and_i1(h2, h4, h5)
+cqrt_free(h5)
+cq_template_icmp_ugt_i32_hl_unc(h4, h0, 1)
+cqrt_free(h4)
+cqrt_free(h3)
+cq_template_icmp_ugt_i32_hl_unc(h2, h0, 0)
+cqrt_free(h2)
+cqrt_measure_i32(h100036) -> 0

@@ -1,0 +1,7 @@
+# driver: self_conditioned_rotation(0,.5,1,.25)
+# call: self_conditioned_rotation(0,.5,1,.25)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h0, 1) -> h1
+cqrt_ry_i32_controlled(h1, h0, 0x1p-2)
+cqrt_measure_i32(h0) -> 0

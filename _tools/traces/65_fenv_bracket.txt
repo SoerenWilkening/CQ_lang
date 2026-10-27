@@ -1,0 +1,24 @@
+# driver: fenv_bracket(0,.5,2,1);fenv_tested(0,.5,2,1)
+# call: fenv_bracket(0,.5,2,1)
+cqrt_alloc_f64(0x0p+0) -> h0
+cqrt_ry_f64(h0, 0x1p-1)
+cq_template_fmul_f64_hl(h0, 0x1p+1) -> h1
+cq_template_fcmp_ogt_f64_hl(h1, 0x1p+0) -> h2
+cq_template_select_i32_ll(h2, 32, 0) -> h100000
+cq_template_fcmp_ogt_f64_hl_unc(h2, h1, 0x1p+0)
+cqrt_free(h2)
+cqrt_measure_f64(h1) -> 0x0p+0
+# call: fenv_tested(0,.5,2,1)
+cqrt_alloc_f64(0x0p+0) -> h3
+cqrt_ry_f64(h3, 0x1p-1)
+cq_template_fmul_f64_hl(h3, 0x1p+1) -> h4
+cq_template_fcmp_ogt_f64_hl(h4, 0x1p+0) -> h5
+cq_template_select_i32_ll(h5, 32, 0) -> h100001
+cq_template_and_i32_hl(h100001, 32) -> h6
+cq_template_or_i32_hl(h6, 0) -> h7
+cq_template_and_i32_hl_unc(h6, h100001, 32)
+cqrt_free(h6)
+cq_template_fcmp_ogt_f64_hl_unc(h5, h4, 0x1p+0)
+cqrt_free(h5)
+cqrt_measure_f64(h4) -> 0x0p+0
+cqrt_measure_i32(h7) -> 0

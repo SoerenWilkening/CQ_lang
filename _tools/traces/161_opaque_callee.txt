@@ -1,0 +1,9 @@
+# driver: opaque_callee(0,.5,3)
+# call: opaque_callee(0,.5,3)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+__cq_q_ext_fn_10(h0, 3, 4) -> h100000
+cqrt_measure_i32(h0) -> 0
+cq_template_add_i32_hl(h100000, 0) -> h1
+__cq_q_ext_fn_10_unc(h100000, h0, 3, 4)
+cqrt_free(h100000)

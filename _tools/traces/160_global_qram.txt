@@ -1,0 +1,22 @@
+# driver: global_qram(0,.5,9,4)
+cqrt_qram_alloc_i32(8) -> a0
+# call: global_qram(0,.5,9,4)
+cqrt_alloc_i32(0) -> h1
+cqrt_ry_i32(h1, 0x1p-1)
+cq_template_and_i32_hl(h1, 7) -> h2
+cqrt_alloc_i32(9) -> h3
+cqrt_qram_store_i32(a0, h2, h3)
+cq_template_add_i32_hl(h1, 1) -> h4
+cq_template_and_i32_hl(h4, 7) -> h5
+cqrt_qram_load_i32(a0, h5) -> h6
+cq_template_add_i32_hl(h6, 4) -> h7
+cqrt_qram_load_i32_unc(h6, a0, h5)
+cqrt_free(h6)
+cq_template_and_i32_hl_unc(h5, h4, 7)
+cqrt_free(h5)
+cq_template_add_i32_hl_unc(h4, h1, 1)
+cqrt_free(h4)
+cqrt_free(h3)
+cq_template_and_i32_hl_unc(h2, h1, 7)
+cqrt_free(h2)
+cqrt_measure_i32(h7) -> 0

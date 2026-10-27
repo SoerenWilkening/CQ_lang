@@ -1,0 +1,36 @@
+# driver: trunc_i32_i16(0,.5);zext_u16_i32(0,.5);sext_i8_i32(0,.5);sitofp_q(0,.5);fptosi_q(0,.5);fpext_q(0,.5);fptrunc_q(0,.5)
+# call: trunc_i32_i16(0,.5)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_trunc_i32_to_i16(h0) -> h1
+cqrt_measure_i16(h1) -> 0
+# call: zext_u16_i32(0,.5)
+cqrt_alloc_i16(0) -> h2
+cqrt_ry_i16(h2, 0x1p-1)
+cq_template_zext_i16_to_i32(h2) -> h3
+cqrt_measure_i32(h3) -> 0
+# call: sext_i8_i32(0,.5)
+cqrt_alloc_i8(0) -> h4
+cqrt_ry_i8(h4, 0x1p-1)
+cq_template_sext_i8_to_i32(h4) -> h5
+cqrt_measure_i32(h5) -> 0
+# call: sitofp_q(0,.5)
+cqrt_alloc_i32(0) -> h6
+cqrt_ry_i32(h6, 0x1p-1)
+cq_template_sitofp_i32_to_f64(h6) -> h7
+cqrt_measure_f64(h7) -> 0x0p+0
+# call: fptosi_q(0,.5)
+cqrt_alloc_f64(0x0p+0) -> h8
+cqrt_ry_f64(h8, 0x1p-1)
+cq_template_fptosi_f64_to_i32(h8) -> h9
+cqrt_measure_i32(h9) -> 0
+# call: fpext_q(0,.5)
+cqrt_alloc_f32(0x0p+0) -> h10
+cqrt_ry_f32(h10, 0x1p-1)
+cq_template_fpext_f32_to_f64(h10) -> h11
+cqrt_measure_f64(h11) -> 0x0p+0
+# call: fptrunc_q(0,.5)
+cqrt_alloc_f64(0x0p+0) -> h12
+cqrt_ry_f64(h12, 0x1p-1)
+cq_template_fptrunc_f64_to_f32(h12) -> h13
+cqrt_measure_f32(h13) -> 0x0p+0

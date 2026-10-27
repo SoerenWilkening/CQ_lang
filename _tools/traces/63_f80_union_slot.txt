@@ -1,0 +1,42 @@
+# driver: f80_union_slot(0,.5,1)
+# call: f80_union_slot(0,.5,1)
+cqrt_alloc_f80(0x0p+0) -> h0
+cqrt_ry_f80(h0, 0x1p-1)
+cq_template_bitcast_f80_to_i80(h0) -> h1
+cq_template_lshr_i80_hl(h1, 0x00000000000000000040) -> h2
+cq_template_trunc_i80_to_i16(h2) -> h3
+cq_template_zext_i16_to_i32(h3) -> h4
+cq_template_sub_i32_hl(h4, 1) -> h5
+cq_template_and_i32_hl(h5, 32767) -> h6
+cq_template_and_i32_hl(h4, -32768) -> h7
+cq_template_or_i32(h6, h7) -> h8
+cq_template_and_i80_hl(h1, 0x0000ffffffffffffffff) -> h9
+cq_template_zext_i32_to_i80(h8) -> h10
+cq_template_shl_i80_hl(h10, 0x00000000000000000040) -> h11
+cq_template_or_i80(h9, h11) -> h12
+cq_template_bitcast_i80_to_f80(h12) -> h13
+cq_template_or_i80_unc(h12, h9, h11)
+cqrt_free(h12)
+cq_template_shl_i80_hl_unc(h11, h10, 0x00000000000000000040)
+cqrt_free(h11)
+cq_template_zext_i32_to_i80_unc(h10, h8)
+cqrt_free(h10)
+cq_template_and_i80_hl_unc(h9, h1, 0x0000ffffffffffffffff)
+cqrt_free(h9)
+cq_template_or_i32_unc(h8, h6, h7)
+cqrt_free(h8)
+cq_template_and_i32_hl_unc(h7, h4, -32768)
+cqrt_free(h7)
+cq_template_and_i32_hl_unc(h6, h5, 32767)
+cqrt_free(h6)
+cq_template_sub_i32_hl_unc(h5, h4, 1)
+cqrt_free(h5)
+cq_template_zext_i16_to_i32_unc(h4, h3)
+cqrt_free(h4)
+cq_template_trunc_i80_to_i16_unc(h3, h2)
+cqrt_free(h3)
+cq_template_lshr_i80_hl_unc(h2, h1, 0x00000000000000000040)
+cqrt_free(h2)
+cq_template_bitcast_f80_to_i80_unc(h1, h0)
+cqrt_free(h1)
+cqrt_measure_f80(h13) -> 0x0p+0

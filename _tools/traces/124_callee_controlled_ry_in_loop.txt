@@ -1,0 +1,34 @@
+# driver: callee_controlled_ry_in_loop(0,.5,.25,2,1,.3,3)
+# call: callee_controlled_ry_in_loop(0,.5,.25,2,1,.3,3)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cqrt_alloc_i1(0) -> h1
+cqrt_ry_i1(h1, 0x1p-2)
+cqrt_alloc_i32(2) -> h2
+cq_template_icmp_sgt_i32_hl(h0, 1) -> h3
+cqrt_alloc_i1(0) -> h4
+cqrt_and_i1(h1, h3, h4)
+cqrt_ry_i32_controlled(h4, h2, 0x1.3333333333333p-2)
+cqrt_and_i1(h1, h3, h4)
+cqrt_free(h4)
+cq_template_icmp_sgt_i32_hl_unc(h3, h0, 1)
+cqrt_free(h3)
+cq_template_icmp_sgt_i32_hl(h0, 2) -> h5
+cqrt_alloc_i1(0) -> h6
+cqrt_and_i1(h1, h5, h6)
+cqrt_ry_i32_controlled(h6, h2, 0x1.3333333333333p-2)
+cqrt_and_i1(h1, h5, h6)
+cqrt_free(h6)
+cq_template_icmp_sgt_i32_hl_unc(h5, h0, 2)
+cqrt_free(h5)
+cq_template_icmp_sgt_i32_hl(h0, 3) -> h7
+cqrt_alloc_i1(0) -> h8
+cqrt_and_i1(h1, h7, h8)
+cqrt_ry_i32_controlled(h8, h2, 0x1.3333333333333p-2)
+cqrt_and_i1(h1, h7, h8)
+cqrt_free(h8)
+cq_template_icmp_sgt_i32_hl_unc(h7, h0, 3)
+cqrt_free(h7)
+cqrt_measure_i32(h2) -> 0
+cqrt_measure_i32(h0) -> 0
+cqrt_measure_i1(h1) -> 0

@@ -1,0 +1,56 @@
+# driver: phi_angle_select(0,.5,1,.1,.2);theta_angle_select(0,.5,1,2,.1,.2);nested_angle_select(0,.5,1,3,.1,.2,.3);shared_angle_select(0,.5,1,2,.1,.2)
+# call: phi_angle_select(0,.5,1,.1,.2)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h0, 1) -> h1
+cq_template_select_f64_ll(h1, 0.1, 0.2) -> h100000
+cqrt_rz_qangle(h100000)
+cq_template_select_f64_ll_unc(h100000, h1, 0.1, 0.2)
+cqrt_free(h100000)
+cq_template_icmp_sgt_i32_hl_unc(h1, h0, 1)
+cqrt_free(h1)
+cqrt_measure_i32(h0) -> 0
+# call: theta_angle_select(0,.5,1,2,.1,.2)
+cqrt_alloc_i32(0) -> h2
+cqrt_ry_i32(h2, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h2, 1) -> h3
+cq_template_select_f64_ll(h3, 0.1, 0.2) -> h100001
+cqrt_alloc_i32(2) -> h4
+cqrt_ry_i32_qangle(h4, h100001)
+cq_template_select_f64_ll_unc(h100001, h3, 0.1, 0.2)
+cqrt_free(h100001)
+cq_template_icmp_sgt_i32_hl_unc(h3, h2, 1)
+cqrt_free(h3)
+cqrt_measure_i32(h4) -> 0
+cqrt_measure_i32(h2) -> 0
+# call: nested_angle_select(0,.5,1,3,.1,.2,.3)
+cqrt_alloc_i32(0) -> h5
+cqrt_ry_i32(h5, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h5, 1) -> h6
+cq_template_icmp_sgt_i32_hl(h5, 3) -> h7
+cq_template_select_f64_ll(h7, 0.2, 0.3) -> h100002
+cq_template_select_f64_lh(h6, 0.1, h100002) -> h100003
+cqrt_rz_qangle(h100003)
+cq_template_select_f64_lh_unc(h100003, h6, 0.1, h100002)
+cqrt_free(h100003)
+cq_template_select_f64_ll_unc(h100002, h7, 0.2, 0.3)
+cqrt_free(h100002)
+cq_template_icmp_sgt_i32_hl_unc(h7, h5, 3)
+cqrt_free(h7)
+cq_template_icmp_sgt_i32_hl_unc(h6, h5, 1)
+cqrt_free(h6)
+cqrt_measure_i32(h5) -> 0
+# call: shared_angle_select(0,.5,1,2,.1,.2)
+cqrt_alloc_i32(0) -> h8
+cqrt_ry_i32(h8, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h8, 1) -> h9
+cq_template_select_f64_ll(h9, 0.1, 0.2) -> h100004
+cqrt_rz_qangle(h100004)
+cqrt_alloc_i32(2) -> h10
+cqrt_ry_i32_qangle(h10, h100004)
+cq_template_select_f64_ll_unc(h100004, h9, 0.1, 0.2)
+cqrt_free(h100004)
+cq_template_icmp_sgt_i32_hl_unc(h9, h8, 1)
+cqrt_free(h9)
+cqrt_measure_i32(h10) -> 0
+cqrt_measure_i32(h8) -> 0

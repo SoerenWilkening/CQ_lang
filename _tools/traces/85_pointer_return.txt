@@ -1,0 +1,68 @@
+# driver: ptr_return(0,.5,7)
+# call: ptr_return(0,.5,7)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_and_i32_hl(h0, 1) -> h1
+cq_template_icmp_eq_i32_hl(h1, 0) -> h2
+cq_template_lshr_i32_hl(h0, 1) -> h3
+cq_template_and_i32_hl(h3, 3) -> h4
+cq_template_add_i32_hl(h4, 0) -> h5
+cq_template_select_i32_ll(h2, 0, 1) -> h100000
+cq_template_select_i32_lh(h2, 0, h5) -> h100001
+cqrt_alloc_i32(0) -> h6
+cqrt_copy_i32(h100000, h6)
+cqrt_alloc_i32(0) -> h7
+cqrt_copy_i32(h100001, h7)
+cq_template_select_i32_lh_unc(h100001, h2, 0, h5)
+cqrt_free(h100001)
+cq_template_select_i32_ll_unc(h100000, h2, 0, 1)
+cqrt_free(h100000)
+cq_template_add_i32_hl_unc(h5, h4, 0)
+cqrt_free(h5)
+cq_template_and_i32_hl_unc(h4, h3, 3)
+cqrt_free(h4)
+cq_template_lshr_i32_hl_unc(h3, h0, 1)
+cqrt_free(h3)
+cq_template_icmp_eq_i32_hl_unc(h2, h1, 0)
+cqrt_free(h2)
+cq_template_and_i32_hl_unc(h1, h0, 1)
+cqrt_free(h1)
+cq_template_icmp_eq_i32_hl(h6, 0) -> h8
+cq_template_icmp_eq_i32_hl(h6, 1) -> h9
+cq_template_qrom_load_i32(table, 4, h7) -> h100002
+cq_template_select_i32_hl(h9, h100002, 0) -> h100003
+cq_template_select_i32_lh(h8, -1, h100003) -> h100004
+cq_template_select_i32_hl_unc(h100003, h9, h100002, 0)
+cqrt_free(h100003)
+cq_template_qrom_load_i32_unc(h100002, table, 4, h7)
+cqrt_free(h100002)
+cq_template_icmp_eq_i32_hl_unc(h9, h6, 1)
+cqrt_free(h9)
+cq_template_icmp_eq_i32_hl_unc(h8, h6, 0)
+cqrt_free(h8)
+cq_template_and_i32_hl(h0, 1) -> h10
+cq_template_icmp_eq_i32_hl(h10, 0) -> h11
+cq_template_lshr_i32_hl(h0, 1) -> h12
+cq_template_and_i32_hl(h12, 3) -> h13
+cq_template_add_i32_hl(h13, 0) -> h14
+cq_template_select_i32_ll(h11, 0, 1) -> h100005
+cq_template_select_i32_lh(h11, 0, h14) -> h100006
+cqrt_copy_i32(h100005, h6)
+cqrt_copy_i32(h100006, h7)
+cq_template_select_i32_lh_unc(h100006, h11, 0, h14)
+cqrt_free(h100006)
+cq_template_select_i32_ll_unc(h100005, h11, 0, 1)
+cqrt_free(h100005)
+cq_template_add_i32_hl_unc(h14, h13, 0)
+cqrt_free(h14)
+cq_template_and_i32_hl_unc(h13, h12, 3)
+cqrt_free(h13)
+cq_template_lshr_i32_hl_unc(h12, h0, 1)
+cqrt_free(h12)
+cq_template_icmp_eq_i32_hl_unc(h11, h10, 0)
+cqrt_free(h11)
+cq_template_and_i32_hl_unc(h10, h0, 1)
+cqrt_free(h10)
+cqrt_free(h6)
+cqrt_free(h7)
+cqrt_measure_i32(h100004) -> 0

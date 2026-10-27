@@ -1,0 +1,49 @@
+# driver: sub_qc(0,.5,3);mul_qq(0,1,.5,.25);shl_qc(0,.5,2);lshr_qq(0,1,.5,.25);ashr_qc(0,.5,2);and_qc(0,.5,7);or_qq(0,1,.5,.25);xor_qq(0,1,.5,.25)
+# call: sub_qc(0,.5,3)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_sub_i32_hl(h0, 3) -> h1
+cqrt_measure_i32(h1) -> 0
+# call: mul_qq(0,1,.5,.25)
+cqrt_alloc_i32(0) -> h2
+cqrt_ry_i32(h2, 0x1p-1)
+cqrt_alloc_i32(1) -> h3
+cqrt_ry_i32(h3, 0x1p-2)
+cq_template_mul_i32(h2, h3) -> h4
+cqrt_measure_i32(h4) -> 0
+# call: shl_qc(0,.5,2)
+cqrt_alloc_i32(0) -> h5
+cqrt_ry_i32(h5, 0x1p-1)
+cq_template_shl_i32_hl(h5, 2) -> h6
+cqrt_measure_i32(h6) -> 0
+# call: lshr_qq(0,1,.5,.25)
+cqrt_alloc_i32(0) -> h7
+cqrt_ry_i32(h7, 0x1p-1)
+cqrt_alloc_i32(1) -> h8
+cqrt_ry_i32(h8, 0x1p-2)
+cq_template_lshr_i32(h7, h8) -> h9
+cqrt_measure_i32(h9) -> 0
+# call: ashr_qc(0,.5,2)
+cqrt_alloc_i32(0) -> h10
+cqrt_ry_i32(h10, 0x1p-1)
+cq_template_ashr_i32_hl(h10, 2) -> h11
+cqrt_measure_i32(h11) -> 0
+# call: and_qc(0,.5,7)
+cqrt_alloc_i32(0) -> h12
+cqrt_ry_i32(h12, 0x1p-1)
+cq_template_and_i32_hl(h12, 7) -> h13
+cqrt_measure_i32(h13) -> 0
+# call: or_qq(0,1,.5,.25)
+cqrt_alloc_i32(0) -> h14
+cqrt_ry_i32(h14, 0x1p-1)
+cqrt_alloc_i32(1) -> h15
+cqrt_ry_i32(h15, 0x1p-2)
+cq_template_or_i32(h14, h15) -> h16
+cqrt_measure_i32(h16) -> 0
+# call: xor_qq(0,1,.5,.25)
+cqrt_alloc_i32(0) -> h17
+cqrt_ry_i32(h17, 0x1p-1)
+cqrt_alloc_i32(1) -> h18
+cqrt_ry_i32(h18, 0x1p-2)
+cq_template_xor_i32(h18, h17) -> h19
+cqrt_measure_i32(h19) -> 0

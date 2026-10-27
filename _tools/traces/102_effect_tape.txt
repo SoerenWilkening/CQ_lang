@@ -1,0 +1,33 @@
+# driver: raise_handled(0,.5,1);raise_default(0,.5,1);remove_cond(0,.5,1)
+cqrt_alloc_i32(0) -> h0
+# call: raise_handled(0,.5,1)
+cqrt_tape_alloc() -> t1
+cqrt_alloc_i32(0) -> h2
+cqrt_ry_i32(h2, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h2, 1) -> h3
+cqrt_tape_effect_controlled(h3, t1, "raise")
+cqrt_tape_write_i32_lit(t1, 30)
+cq_template_select_i32_lh(h3, 30, h0) -> h100000
+cq_template_icmp_sgt_i32_hl_unc(h3, h2, 1)
+cqrt_free(h3)
+cqrt_measure_i32(h2) -> 0
+cqrt_measure_i32(h100000) -> 0
+# call: raise_default(0,.5,1)
+cqrt_tape_alloc() -> t4
+cqrt_alloc_i32(0) -> h5
+cqrt_ry_i32(h5, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h5, 1) -> h6
+cqrt_tape_effect_controlled(h6, t4, "raise")
+cqrt_tape_write_i32_lit(t4, 6)
+cqrt_abort_i1(h6)
+cqrt_measure_i32(h5) -> 0
+# call: remove_cond(0,.5,1)
+cqrt_tape_alloc() -> t7
+cqrt_alloc_i32(0) -> h8
+cqrt_ry_i32(h8, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h8, 1) -> h9
+cqrt_tape_effect_controlled(h9, t7, "remove")
+cqrt_tape_write_str_lit(t7, "/tmp/cq_x")
+cq_template_icmp_sgt_i32_hl_unc(h9, h8, 1)
+cqrt_free(h9)
+cqrt_measure_i32(h8) -> 0

@@ -1,0 +1,8 @@
+# driver: add_quantum_quantum(0,1,0.5,0.25)
+# call: add_quantum_quantum(0,1,0.5,0.25)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cqrt_alloc_i32(1) -> h1
+cqrt_ry_i32(h1, 0x1p-2)
+cq_template_add_i32(h1, h0) -> h2
+cqrt_measure_i32(h2) -> 0

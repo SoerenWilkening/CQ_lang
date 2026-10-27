@@ -1,0 +1,48 @@
+# driver: prep_const_incoming(0,.5,1,.3);prep_beside_phase(0,.5,1,2,.3,.1);prep_twice(0,.5,1,3,2,.3,.4)
+# call: prep_const_incoming(0,.5,1,.3)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_icmp_eq_i32_hl(h0, 1) -> h1
+cqrt_alloc_i32(7) -> h2
+cqrt_xorc_i32_controlled(h1, h2, 7)
+cqrt_ry_i32_controlled(h1, h2, 0x1.3333333333333p-2)
+cq_template_icmp_eq_i32_hl_unc(h1, h0, 1)
+cqrt_free(h1)
+cqrt_measure_i32(h2) -> 0
+cqrt_measure_i32(h0) -> 0
+# call: prep_beside_phase(0,.5,1,2,.3,.1)
+cqrt_alloc_i32(0) -> h3
+cqrt_ry_i32(h3, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h3, 1) -> h4
+cqrt_alloc_i32(2) -> h5
+cqrt_xorc_i32_controlled(h4, h5, 2)
+cqrt_ry_i32_controlled(h4, h5, 0x1.3333333333333p-2)
+cqrt_not_i1(h4)
+cqrt_rz_i1(h4, 0x1.999999999999ap-4)
+cqrt_not_i1(h4)
+cq_template_icmp_sgt_i32_hl_unc(h4, h3, 1)
+cqrt_free(h4)
+cqrt_measure_i32(h5) -> 0
+cqrt_measure_i32(h3) -> 0
+# call: prep_twice(0,.5,1,3,2,.3,.4)
+cqrt_alloc_i32(0) -> h6
+cqrt_ry_i32(h6, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h6, 1) -> h7
+cqrt_alloc_i32(2) -> h8
+cqrt_xorc_i32_controlled(h7, h8, 2)
+cqrt_ry_i32_controlled(h7, h8, 0x1.3333333333333p-2)
+cq_template_icmp_slt_i32_hl(h6, 3) -> h9
+cqrt_alloc_i1(0) -> h10
+cqrt_and_i1(h9, h7, h10)
+cqrt_ry_i32_controlled(h10, h8, -0x1.3333333333333p-2)
+cqrt_xorc_i32_controlled(h10, h8, 2)
+cqrt_and_i1(h9, h7, h10)
+cqrt_free(h10)
+cqrt_xorc_i32_controlled(h9, h8, 2)
+cqrt_ry_i32_controlled(h9, h8, 0x1.999999999999ap-2)
+cq_template_icmp_slt_i32_hl_unc(h9, h6, 3)
+cqrt_free(h9)
+cq_template_icmp_sgt_i32_hl_unc(h7, h6, 1)
+cqrt_free(h7)
+cqrt_measure_i32(h8) -> 0
+cqrt_measure_i32(h6) -> 0

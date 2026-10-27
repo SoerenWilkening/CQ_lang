@@ -1,0 +1,67 @@
+# driver: struct_array_quantum_index_rmw(0,.5,10)
+# call: struct_array_quantum_index_rmw(0,.5,10)
+cqrt_qram_alloc_i32(4) -> a0
+cqrt_qram_alloc_i32(4) -> a1
+cqrt_alloc_i32(1) -> h2
+cqrt_qram_store_i32_hl(a0, 0, h2)
+cqrt_alloc_i32(2) -> h3
+cqrt_qram_store_i32_hl(a1, 0, h3)
+cqrt_alloc_i32(3) -> h4
+cqrt_qram_store_i32_hl(a0, 1, h4)
+cqrt_alloc_i32(4) -> h5
+cqrt_qram_store_i32_hl(a1, 1, h5)
+cqrt_alloc_i32(5) -> h6
+cqrt_qram_store_i32_hl(a0, 2, h6)
+cqrt_alloc_i32(6) -> h7
+cqrt_qram_store_i32_hl(a1, 2, h7)
+cqrt_alloc_i32(7) -> h8
+cqrt_qram_store_i32_hl(a0, 3, h8)
+cqrt_alloc_i32(8) -> h9
+cqrt_qram_store_i32_hl(a1, 3, h9)
+cqrt_alloc_i32(0) -> h10
+cqrt_ry_i32(h10, 0x1p-1)
+cq_template_and_i32_hl(h10, 3) -> h11
+cqrt_qram_load_i32(a0, h11) -> h12
+cq_template_add_i32_hl(h12, 10) -> h13
+cqrt_qram_store_i32(a0, h11, h13)
+cq_template_add_i32_hl(h10, 1) -> h14
+cq_template_and_i32_hl(h14, 3) -> h15
+cqrt_qram_store_i32(a1, h15, h13)
+cq_template_xor_i32_hl(h11, 2) -> h16
+cqrt_qram_load_i32(a0, h16) -> h17
+cq_template_add_i32(h17, h13) -> h18
+cqrt_qram_load_i32_unc(h17, a0, h16)
+cqrt_free(h17)
+cq_template_xor_i32_hl_unc(h16, h11, 2)
+cqrt_free(h16)
+cqrt_qram_store_i32_unc(a1, h15, h13)
+cq_template_and_i32_hl_unc(h15, h14, 3)
+cqrt_free(h15)
+cq_template_add_i32_hl_unc(h14, h10, 1)
+cqrt_free(h14)
+cqrt_qram_store_i32_unc(a0, h11, h13)
+cq_template_add_i32_hl_unc(h13, h12, 10)
+cqrt_free(h13)
+cqrt_qram_load_i32_unc(h12, a0, h11)
+cqrt_free(h12)
+cq_template_and_i32_hl_unc(h11, h10, 3)
+cqrt_free(h11)
+cqrt_qram_store_i32_hl_unc(a1, 3, h9)
+cqrt_free(h9)
+cqrt_qram_store_i32_hl_unc(a0, 3, h8)
+cqrt_free(h8)
+cqrt_qram_store_i32_hl_unc(a1, 2, h7)
+cqrt_free(h7)
+cqrt_qram_store_i32_hl_unc(a0, 2, h6)
+cqrt_free(h6)
+cqrt_qram_store_i32_hl_unc(a1, 1, h5)
+cqrt_free(h5)
+cqrt_qram_store_i32_hl_unc(a0, 1, h4)
+cqrt_free(h4)
+cqrt_qram_store_i32_hl_unc(a1, 0, h3)
+cqrt_free(h3)
+cqrt_qram_store_i32_hl_unc(a0, 0, h2)
+cqrt_free(h2)
+cqrt_qram_free(a1)
+cqrt_qram_free(a0)
+cqrt_measure_i32(h18) -> 0

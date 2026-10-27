@@ -1,0 +1,47 @@
+# driver: table_2d(0,1,.5,.25);register_grid(coef,2,.25);register_grid(coef,1,.25)
+# call: table_2d(0,1,.5,.25)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cqrt_alloc_i32(1) -> h1
+cqrt_ry_i32(h1, 0x1p-2)
+cq_template_and_i32_hl(h0, 3) -> h2
+cq_template_and_i32_hl(h1, 3) -> h3
+cq_template_shl_i32_hl(h2, 2) -> h4
+cq_template_add_i32(h4, h3) -> h5
+cq_template_qrom_load_i32(table, 16, h5) -> h100000
+cq_template_add_i32_unc(h5, h4, h3)
+cqrt_free(h5)
+cq_template_shl_i32_hl_unc(h4, h2, 2)
+cqrt_free(h4)
+cq_template_and_i32_hl_unc(h3, h1, 3)
+cqrt_free(h3)
+cq_template_and_i32_hl_unc(h2, h0, 3)
+cqrt_free(h2)
+cqrt_measure_i32(h100000) -> 0
+# call: register_grid(coef,2,.25)
+cqrt_alloc_i1(0) -> h6
+cqrt_alloc_i1(0) -> h7
+cqrt_alloc_i1(0) -> h8
+cqrt_alloc_i1(0) -> h9
+cqrt_ry_i1(h6, 0x1p+0)
+cqrt_ry_i1(h7, 0x1p+1)
+cqrt_ry_i1(h8, 0x1.8p+1)
+cqrt_ry_i1(h9, 0x1p+2)
+cqrt_ry_i1_controlled(h6, h7, 0x1p-2)
+cqrt_ry_i1_controlled(h8, h9, 0x1p-2)
+cqrt_ry_i1_controlled(h7, h9, 0x1p-2)
+cqrt_measure_i1(h7) -> 0
+cqrt_measure_i1(h9) -> 0
+# call: register_grid(coef,1,.25)
+cqrt_alloc_i1(0) -> h10
+cqrt_alloc_i1(0) -> h11
+cqrt_alloc_i1(0) -> h12
+cqrt_alloc_i1(0) -> h13
+cqrt_ry_i1(h10, 0x1p+0)
+cqrt_ry_i1(h11, 0x1p+1)
+cqrt_ry_i1_controlled(h10, h11, 0x1p-2)
+cqrt_alloc_i1(0) -> h14
+cqrt_copy_i1(h11, h14)
+cqrt_ry_i1_controlled(h14, h11, 0x1p-2)
+cqrt_measure_i1(h11) -> 0
+cqrt_measure_i1(h11) -> 0

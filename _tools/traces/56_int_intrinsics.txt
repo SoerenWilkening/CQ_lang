@@ -1,0 +1,65 @@
+# driver: fshl_qq(0,1,.5,.25);rotl_qc(0,.5,3);clz_q(0,.5);popcount_q(0,.5,7);smax_qc(0,.5,3);umax_qq(0,1,.5,.25);abs_q(0,.5);fptoui_q(0,.5);same_operand_twice(0,.5,2)
+# call: fshl_qq(0,1,.5,.25)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cqrt_alloc_i32(1) -> h1
+cqrt_ry_i32(h1, 0x1p-2)
+cq_template_fshl_i32_qql(h0, h1, 1) -> h2
+cqrt_measure_i32(h2) -> 0
+# call: rotl_qc(0,.5,3)
+cqrt_alloc_i32(0) -> h3
+cqrt_ry_i32(h3, 0x1p-1)
+cq_template_shl_i32_hl(h3, 3) -> h4
+cq_template_lshr_i32_hl(h3, 29) -> h5
+cq_template_or_i32(h4, h5) -> h6
+cq_template_shl_i32_hl_unc(h4, h3, 3)
+cqrt_free(h4)
+cq_template_lshr_i32_hl_unc(h5, h3, 29)
+cqrt_free(h5)
+cqrt_measure_i32(h6) -> 0
+# call: clz_q(0,.5)
+cqrt_alloc_i32(0) -> h7
+cqrt_ry_i32(h7, 0x1p-1)
+cq_template_ctlz_i32(h7) -> h8
+cqrt_measure_i32(h8) -> 0
+# call: popcount_q(0,.5,7)
+cqrt_alloc_i32(0) -> h9
+cqrt_ry_i32(h9, 0x1p-1)
+cq_template_and_i32_hl(h9, 7) -> h10
+cq_template_ctpop_i32(h10) -> h11
+cq_template_and_i32_hl_unc(h10, h9, 7)
+cqrt_free(h10)
+cqrt_measure_i32(h11) -> 0
+# call: smax_qc(0,.5,3)
+cqrt_alloc_i32(0) -> h12
+cqrt_ry_i32(h12, 0x1p-1)
+cq_template_smax_i32_hl(h12, 3) -> h13
+cqrt_measure_i32(h13) -> 0
+# call: umax_qq(0,1,.5,.25)
+cqrt_alloc_i32(0) -> h14
+cqrt_ry_i32(h14, 0x1p-1)
+cqrt_alloc_i32(1) -> h15
+cqrt_ry_i32(h15, 0x1p-2)
+cq_template_umax_i32(h14, h15) -> h16
+cqrt_measure_i32(h16) -> 0
+# call: abs_q(0,.5)
+cqrt_alloc_i32(0) -> h17
+cqrt_ry_i32(h17, 0x1p-1)
+cq_template_abs_i32(h17) -> h18
+cqrt_measure_i32(h18) -> 0
+# call: fptoui_q(0,.5)
+cqrt_alloc_f64(0x0p+0) -> h19
+cqrt_ry_f64(h19, 0x1p-1)
+cq_template_fptoui_f64_to_i32(h19) -> h20
+cqrt_measure_i32(h20) -> 0
+# call: same_operand_twice(0,.5,2)
+cqrt_alloc_f64(0x0p+0) -> h21
+cqrt_ry_f64(h21, 0x1p-1)
+cq_template_fpext_f64_to_f80(h21) -> h22
+cq_template_fmul_f80_hl(h22, 0x8p-2) -> h23
+cq_template_fdiv_f80(h23, h23) -> h24
+cq_template_fmul_f80_hl_unc(h23, h22, 0x8p-2)
+cqrt_free(h23)
+cq_template_fpext_f64_to_f80_unc(h22, h21)
+cqrt_free(h22)
+cqrt_measure_f80(h24) -> 0x0p+0

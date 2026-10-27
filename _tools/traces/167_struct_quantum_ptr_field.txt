@@ -1,0 +1,24 @@
+# driver: struct_quantum_ptr_field(0,.5,1,10,20)
+# call: struct_quantum_ptr_field(0,.5,1,10,20)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h0, 1) -> h1
+cq_template_select_i32_ll(h1, 1, 2) -> h100000
+cq_template_and_i32_hl(h0, 3) -> h2
+cq_template_icmp_eq_i32_hl(h100000, 1) -> h3
+cq_template_qrom_load_i32(table, 4, h2) -> h100001
+cq_template_qrom_load_i32(table, 4, h2) -> h100002
+cq_template_select_i32(h3, h100001, h100002) -> h100003
+cq_template_qrom_load_i32_unc(h100002, table, 4, h2)
+cqrt_free(h100002)
+cq_template_qrom_load_i32_unc(h100001, table, 4, h2)
+cqrt_free(h100001)
+cq_template_icmp_eq_i32_hl_unc(h3, h100000, 1)
+cqrt_free(h3)
+cq_template_and_i32_hl_unc(h2, h0, 3)
+cqrt_free(h2)
+cq_template_select_i32_ll_unc(h100000, h1, 1, 2)
+cqrt_free(h100000)
+cq_template_icmp_sgt_i32_hl_unc(h1, h0, 1)
+cqrt_free(h1)
+cqrt_measure_i32(h100003) -> 0

@@ -1,0 +1,21 @@
+# driver: fmuladd_qcc(0,.5,2,3);fmuladd_qqq(0,1,2,.5,.25,.125)
+# call: fmuladd_qcc(0,.5,2,3)
+cqrt_alloc_f64(0x0p+0) -> h0
+cqrt_ry_f64(h0, 0x1p-1)
+cq_template_fmul_f64_hl(h0, 0x1p+1) -> h1
+cq_template_fadd_f64_hl(h1, 0x1.8p+1) -> h2
+cq_template_fmul_f64_hl_unc(h1, h0, 0x1p+1)
+cqrt_free(h1)
+cqrt_measure_f64(h2) -> 0x0p+0
+# call: fmuladd_qqq(0,1,2,.5,.25,.125)
+cqrt_alloc_f64(0x0p+0) -> h3
+cqrt_ry_f64(h3, 0x1p-1)
+cqrt_alloc_f64(0x1p+0) -> h4
+cqrt_ry_f64(h4, 0x1p-2)
+cqrt_alloc_f64(0x1p+1) -> h5
+cqrt_ry_f64(h5, 0x1p-3)
+cq_template_fmul_f64(h3, h4) -> h6
+cq_template_fadd_f64(h6, h5) -> h7
+cq_template_fmul_f64_unc(h6, h3, h4)
+cqrt_free(h6)
+cqrt_measure_f64(h7) -> 0x0p+0

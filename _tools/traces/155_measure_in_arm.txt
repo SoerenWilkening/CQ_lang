@@ -1,0 +1,14 @@
+# driver: measure_in_arm(0,0.5,0,0.25,2,9)
+# call: measure_in_arm(0,0.5,0,0.25,2,9)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cqrt_alloc_i32(0) -> h1
+cqrt_ry_i32(h1, 0x1p-2)
+cq_template_icmp_sgt_i32_hl(h0, 2) -> h2
+cqrt_measure_i32(h1) -> 0
+cq_template_select_i32_ll(h2, 0, 9) -> h100000
+cqrt_measure_i32(h0) -> 0
+cq_template_select_i32_ll_unc(h100000, h2, 0, 9)
+cqrt_free(h100000)
+cq_template_icmp_sgt_i32_hl_unc(h2, h0, 2)
+cqrt_free(h2)

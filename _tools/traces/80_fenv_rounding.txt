@@ -1,0 +1,28 @@
+# driver: fenv_rounding(0,.5,2,1);quantum_mode_classical_op(0,.5,1,.1,.2)
+# call: fenv_rounding(0,.5,2,1)
+cqrt_alloc_f64(0x0p+0) -> h0
+cqrt_ry_f64(h0, 0x1p-1)
+cq_template_fmul_f64_hl_rm(h0, 0x1p+1, 2048) -> h100000
+cq_template_fcmp_ogt_f64_hl(h0, 0x1p+0) -> h1
+cq_template_select_i32_ll(h1, 2048, 1024) -> h100001
+cq_template_fadd_f64_hl_rmq(h100000, 0x1p+1, h100001) -> h100002
+cq_template_fmul_f64_hl_rm(h100002, 0x1p+1, 0) -> h100003
+cq_template_fadd_f64_hl_rmq_unc(h100002, h100000, 0x1p+1, h100001)
+cqrt_free(h100002)
+cq_template_fcmp_ogt_f64_hl_unc(h1, h0, 0x1p+0)
+cqrt_free(h1)
+cq_template_fmul_f64_hl_rm_unc(h100000, h0, 0x1p+1, 2048)
+cqrt_free(h100000)
+cqrt_measure_f64(h100003) -> 0x0p+0
+cqrt_measure_i32(h100001) -> 0
+# call: quantum_mode_classical_op(0,.5,1,.1,.2)
+cqrt_alloc_f64(0x0p+0) -> h2
+cqrt_ry_f64(h2, 0x1p-1)
+cq_template_fcmp_ogt_f64_hl(h2, 0x1p+0) -> h3
+cq_template_select_i32_ll(h3, 2048, 1024) -> h100004
+cq_template_fadd_f64_ll_rmq(0x1.999999999999ap-4, 0x1.999999999999ap-3, h100004) -> h100005
+cq_template_select_i32_ll_unc(h100004, h3, 2048, 1024)
+cqrt_free(h100004)
+cq_template_fcmp_ogt_f64_hl_unc(h3, h2, 0x1p+0)
+cqrt_free(h3)
+cqrt_measure_f64(h100005) -> 0x0p+0

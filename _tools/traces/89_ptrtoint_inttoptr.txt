@@ -1,0 +1,48 @@
+# driver: ptr_roundtrip(0,.5,3)
+# call: ptr_roundtrip(0,.5,3)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_and_i32_hl(h0, 1) -> h1
+cq_template_icmp_eq_i32_hl(h1, 0) -> h2
+cq_template_select_i32_ll(h2, 2, 1) -> h100000
+cq_template_icmp_eq_i32_hl(h100000, 1) -> h3
+cq_template_select_i64_ll(h3, P0, P1) -> h100001
+cq_template_and_i32_hl(h0, 4) -> h4
+cq_template_zext_i32_to_i64(h4) -> h5
+cq_template_or_i64(h100001, h5) -> h6
+cq_template_sub_i64(h6, h100001) -> h7
+cq_template_lshr_i64_hl(h7, 2) -> h8
+cq_template_trunc_i64_to_i32(h8) -> h9
+cq_template_qrom_load_i32(table, 2, h9) -> h100002
+cq_template_qrom_load_i32(table, 2, h9) -> h100003
+cq_template_select_i32(h3, h100002, h100003) -> h100004
+cq_template_add_i32_hl(h100004, 3) -> h10
+cq_template_select_i32_unc(h100004, h3, h100002, h100003)
+cqrt_free(h100004)
+cq_template_qrom_load_i32_unc(h100003, table, 2, h9)
+cqrt_free(h100003)
+cq_template_qrom_load_i32_unc(h100002, table, 2, h9)
+cqrt_free(h100002)
+cq_template_trunc_i64_to_i32_unc(h9, h8)
+cqrt_free(h9)
+cq_template_lshr_i64_hl_unc(h8, h7, 2)
+cqrt_free(h8)
+cq_template_sub_i64_unc(h7, h6, h100001)
+cqrt_free(h7)
+cq_template_or_i64_unc(h6, h100001, h5)
+cqrt_free(h6)
+cq_template_zext_i32_to_i64_unc(h5, h4)
+cqrt_free(h5)
+cq_template_and_i32_hl_unc(h4, h0, 4)
+cqrt_free(h4)
+cq_template_select_i64_ll_unc(h100001, h3, P0, P1)
+cqrt_free(h100001)
+cq_template_icmp_eq_i32_hl_unc(h3, h100000, 1)
+cqrt_free(h3)
+cq_template_select_i32_ll_unc(h100000, h2, 2, 1)
+cqrt_free(h100000)
+cq_template_icmp_eq_i32_hl_unc(h2, h1, 0)
+cqrt_free(h2)
+cq_template_and_i32_hl_unc(h1, h0, 1)
+cqrt_free(h1)
+cqrt_measure_i32(h10) -> 0

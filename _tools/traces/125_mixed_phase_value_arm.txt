@@ -1,0 +1,30 @@
+# driver: mixed_phase_value_arm(0,.5,1,.25,2,3,.1,.2,.3)
+# call: mixed_phase_value_arm(0,.5,1,.25,2,3,.1,.2,.3)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cqrt_alloc_i32(1) -> h1
+cqrt_ry_i32(h1, 0x1p-2)
+cq_template_icmp_sgt_i32_hl(h0, 2) -> h2
+cqrt_rz_i1(h2, 0x1.999999999999ap-4)
+cqrt_not_i1(h2)
+cqrt_rz_i1(h2, 0x1.999999999999ap-3)
+cqrt_not_i1(h2)
+cq_template_add_i32_hl(h1, 1) -> h3
+cq_template_select_i32(h2, h3, h1) -> h100000
+cqrt_alloc_i32(3) -> h4
+cqrt_ry_i32_controlled(h2, h4, 0x1.3333333333333p-2)
+cq_template_add_i32_hl_unc(h3, h1, 1)
+cqrt_free(h3)
+cq_template_sub_i32_hl(h100000, 1) -> h5
+cq_template_select_i32(h2, h5, h100000) -> h100001
+cqrt_copy_i32(h100001, h1)
+cq_template_select_i32_unc(h100001, h2, h5, h100000)
+cqrt_free(h100001)
+cq_template_sub_i32_hl_unc(h5, h100000, 1)
+cqrt_free(h5)
+cqrt_free(h1)
+cq_template_icmp_sgt_i32_hl_unc(h2, h0, 2)
+cqrt_free(h2)
+cqrt_measure_i32(h100000) -> 0
+cqrt_measure_i32(h4) -> 0
+cqrt_measure_i32(h0) -> 0

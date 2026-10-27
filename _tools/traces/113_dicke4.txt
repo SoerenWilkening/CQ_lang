@@ -1,0 +1,41 @@
+# driver: dicke4()
+# call: dicke4()
+cqrt_alloc_i1(0) -> h0
+cqrt_ry_i1(h0, 0x1.921fb54442d18p+0)
+cq_template_xor_i1_hl(h0, 1) -> h1
+cqrt_ry_i1_controlled(h1, h0, 0x1.e91f42805715dp+0)
+cq_template_zext_i1_to_i32(h0) -> h2
+cq_template_xor_i1(h0, h1) -> h3
+cq_template_select_i32_ll(h3, 2, 0) -> h100000
+cq_template_or_i32(h100000, h2) -> h4
+cq_template_icmp_eq_i32_hl(h4, 3) -> h5
+cqrt_alloc_i1(0) -> h6
+cqrt_ry_i1_controlled(h5, h6, 0x1.3b2028082e8d4p+0)
+cq_template_icmp_eq_i32_hl_unc(h5, h4, 3)
+cqrt_free(h5)
+cq_template_or_i32_unc(h4, h100000, h2)
+cqrt_free(h4)
+cq_template_select_i32_ll_unc(h100000, h3, 2, 0)
+cqrt_free(h100000)
+cq_template_zext_i1_to_i32_unc(h2, h0)
+cqrt_free(h2)
+cq_template_xor_i1(h6, h0) -> h7
+cq_template_xor_i1(h6, h3) -> h8
+cq_template_xor_i1_unc(h3, h0, h1)
+cqrt_free(h3)
+cq_template_xor_i1(h7, h6) -> h9
+cqrt_copy_i1(h9, h0)
+cq_template_xor_i1_unc(h9, h7, h6)
+cqrt_free(h9)
+cqrt_free(h0)
+cqrt_ry_i1_controlled(h7, h6, 0x1.921fb54442d18p+0)
+cq_template_xor_i1(h7, h6) -> h10
+cq_template_xor_i1(h10, h6) -> h11
+cqrt_copy_i1(h11, h7)
+cq_template_xor_i1_unc(h11, h10, h6)
+cqrt_free(h11)
+cqrt_free(h7)
+cqrt_measure_i1(h6) -> 0
+cqrt_measure_i1(h10) -> 0
+cqrt_measure_i1(h8) -> 0
+cqrt_measure_i1(h1) -> 0

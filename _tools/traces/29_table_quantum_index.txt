@@ -1,0 +1,9 @@
+# driver: table_quantum_index(0,.5)
+# call: table_quantum_index(0,.5)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_and_i32_hl(h0, 7) -> h1
+cq_template_qrom_load_i32(table, 8, h1) -> h100000
+cq_template_and_i32_hl_unc(h1, h0, 7)
+cqrt_free(h1)
+cqrt_measure_i32(h100000) -> 0

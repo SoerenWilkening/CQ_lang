@@ -1,0 +1,23 @@
+# driver: add_i8(0,.5,3);add_i16(0,.5,3);add_i64(0,.5,3);and_i1(0,1,.5,.25)
+# call: add_i8(0,.5,3)
+cqrt_alloc_i8(0) -> h0
+cqrt_ry_i8(h0, 0x1p-1)
+cq_template_add_i8_hl(h0, 3) -> h1
+cqrt_measure_i8(h1) -> 0
+# call: add_i16(0,.5,3)
+cqrt_alloc_i16(0) -> h2
+cqrt_ry_i16(h2, 0x1p-1)
+cq_template_add_i16_hl(h2, 3) -> h3
+cqrt_measure_i16(h3) -> 0
+# call: add_i64(0,.5,3)
+cqrt_alloc_i64(0) -> h4
+cqrt_ry_i64(h4, 0x1p-1)
+cq_template_add_i64_hl(h4, 3) -> h5
+cqrt_measure_i64(h5) -> 0
+# call: and_i1(0,1,.5,.25)
+cqrt_alloc_i1(0) -> h6
+cqrt_ry_i1(h6, 0x1p-1)
+cqrt_alloc_i1(1) -> h7
+cqrt_ry_i1(h7, 0x1p-2)
+cq_template_and_i1(h6, h7) -> h8
+cqrt_measure_i1(h8) -> 0
