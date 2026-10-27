@@ -6,7 +6,8 @@
    (cq-k1w), S1 (cq-sml), P1 (cq-6yb), B1 (cq-dvj), M1 (cq-mgi), C1 (cq-4cy) and M2 (cq-9ge): pass/include/cq/*.h, checker/rt/cqe.h, and
    the dataclass fields of checker/cqcheck/contracts.py. cq-arch is read live from beads (`bd show cq-arch --json`) unless
    --arch-json names a saved copy.
-3. `opt -passes=cq-lower` on every example `.O1.ll` (counted from the directory) exits non-zero with
+3. `opt -passes=cq-lower` on every example `.O1.ll` (counted from the directory) either exits 0 with an
+   output that passes `opt -passes=verify` and `opt -passes=cq-verify`, or exits non-zero with
    `cq: unimplemented: <module>: <function>` and writes no output file and nothing to stdout.
 4. A module with no CQ.h call comes out byte-identical (.ll and .bc, with and without the K flags) to
    the same opt run with no pass: the identity is the pass's, opt's reader and writer are not measured.
@@ -324,14 +325,22 @@ def check_headers(desc):
 
 
 # ---------------------------------------------------------------------------------------------
-# 3. Every example is an internal error with no output
+# 3. Every example lowers to a verified module, or stops at cq: unimplemented with no output
+#    (orchestrator decision on cq-ta8u)
 
 
 def run_example(opt, plugin, ll, tmp):
     out = Path(tmp) / (ll.parent.name + ".out.ll")
     p = subprocess.run([opt, f"-load-pass-plugin={plugin}", "-passes=cq-lower", str(ll), "-S", "-o", str(out)],
                        capture_output=True, text=True)
-    return ll, p.returncode, p.stdout, p.stderr, out.exists()
+    res = {"ll": ll, "rc": p.returncode, "stdout": p.stdout, "stderr": p.stderr, "wrote": out.exists()}
+    if p.returncode == 0 and res["wrote"]:
+        v = subprocess.run([opt, "-disable-output", "-passes=verify", str(out)], capture_output=True, text=True)
+        res["verify"] = (v.returncode, v.stderr)
+        c = subprocess.run([opt, f"-load-pass-plugin={plugin}", "-disable-output", "-passes=cq-verify", str(out)],
+                           capture_output=True, text=True)
+        res["cqverify"] = (c.returncode, c.stderr)
+    return res
 
 
 def check_examples(opt, plugin, spec):
@@ -340,25 +349,42 @@ def check_examples(opt, plugin, spec):
     if len(examples) != len(dirs):
         fail(f"{len(dirs)} example directories but {len(examples)} .O1.ll files")
     msgs = collections.Counter()
-    ok = 0
+    lowered, unimpl, bad_names = 0, 0, []
     with tempfile.TemporaryDirectory() as tmp, concurrent.futures.ThreadPoolExecutor(os.cpu_count()) as ex:
-        for ll, rc, out, err, wrote in ex.map(lambda e: run_example(opt, plugin, e, tmp), examples):
+        for r in ex.map(lambda e: run_example(opt, plugin, e, tmp), examples):
+            name, err, bad = r["ll"].parent.name, r["stderr"], []
+            if r["rc"] == 0:
+                if not r["wrote"]:
+                    bad.append("exit 0 but no output file")
+                else:
+                    vrc, verr = r["verify"]
+                    if vrc != 0:
+                        bad.append(f"LLVM verifier failed: {verr.strip()[:200]!r}")
+                    crc, cerr = r["cqverify"]
+                    if crc != 0:
+                        bad.append(f"cq-verify failed: {cerr.strip()[:200]!r}")
+                if bad:
+                    fail(f"{name}: " + "; ".join(bad))
+                    bad_names.append(name)
+                else:
+                    lowered += 1
+                continue
             m = UNIMPL.search(err)
-            bad = []
-            if rc == 0:
-                bad.append("exit 0")
             if not m:
-                bad.append(f"no 'cq: unimplemented: <module>: <function>' in stderr: {err.strip()[:200]!r}")
-            if wrote:
+                bad.append(f"exit {r['rc']} without 'cq: unimplemented: <module>: <function>': {err.strip()[:200]!r}")
+            if r["wrote"]:
                 bad.append("output file written")
-            if out:
+            if r["stdout"]:
                 bad.append("stdout not empty")
             if bad:
-                fail(f"{ll.parent.name}: " + "; ".join(bad))
+                fail(f"{name}: " + "; ".join(bad))
+                bad_names.append(name)
             else:
-                ok += 1
+                unimpl += 1
                 msgs[f"{m.group(1)}: {m.group(2)}"] += 1
-    print(f"examples: {ok}/{len(examples)} exit non-zero with cq: unimplemented and no output")
+    print(f"examples: {len(examples)} total: {lowered} lowered (verify + cq-verify clean), "
+          f"{unimpl} cq: unimplemented with no output, {len(bad_names)} failure(s)"
+          + (f": {' '.join(sorted(bad_names))}" if bad_names else ""))
     for k, v in sorted(msgs.items()):
         print(f"    {v:4d}  cq: unimplemented: {k}")
 
