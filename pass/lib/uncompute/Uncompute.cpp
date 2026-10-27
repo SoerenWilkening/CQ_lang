@@ -1,6 +1,21 @@
 // Module uncompute (cq-w0-uncompute): the uncompute spine, CR rules 5, 6 and 7.
 //
-// Reference for compute-copy-uncompute: Bennett.jl src/bennett_transform.jl:bennett_direct.
+// References (Bennett.jl 824458d, read at these lines):
+//  - src/bennett_transform.jl:_bennett_default (lines 337-381): forward, copy-out, then every forward
+//    gate replayed in reverse order. Whole-program reverse order is one valid reverse dependency order.
+//  - src/pebble/value_eager.jl:_value_eager_bennett_impl (lines 1-174): a value's gates are reversed
+//    as a unit only once every consumer's reversal is done (Kahn over consumer counts, lines 141-171).
+//    This is rule 5's "an operand rail outlives every _unc that reads it", our readers-first order.
+//    Its dead-end cleanup during the forward pass (lines 111-126) is the as-early-as-allowed
+//    convention. Lines 31-39 make an in-place overwrite unsafe when an earlier reader replays after
+//    it. Here that is the write barrier: the reader's _unc goes before the write, or it is unimplemented.
+//    It differs where CR's roles do: Bennett.jl uncomputes every value after copy-out, but a CQ rail
+//    with a kept role (user register, measured, result) is never uncomputed, so its sources may go
+//    right after their last use (14, 42).
+//  - src/bennett_transform.jl:bennett_direct (lines 383-425) is the forward-only path for
+//    self-reversing primitives. It does no uncompute and is not a reference for this module.
+//  - Kept-entangled (A4) has no counterpart: Bennett.jl and BennettVM.jl are classical reversible,
+//    with no non-diagonal gate. It rests on CR §0, rule 5's scheduling invariant and rule 10 alone.
 //
 // CONTRACT (what the callers of Uncompute.h may rely on; the header is frozen, so it is stated here)
 //
