@@ -15,8 +15,10 @@ This file is how to work.
   `llvm-link`, `llvm-as`, `llvm-config`). Never Apple clang. Triple `x86_64-apple-macosx`, `-O1`.
   C++17 for the pass.
 - **Ground truth beyond the spec.** Bennett.jl `824458d10e879c3fef673c231a02e5461dac667f` and
-  BennettVM.jl `23d28e6471f9cf5d8a22177d08260ca86adfe841`, the revisions CQ_spec names. Consult
-  them at those revisions only, cite `path:function`, never vendor or link them.
+  BennettVM.jl `23d28e6471f9cf5d8a22177d08260ca86adfe841`, the revisions CQ_spec names, checked out
+  read-only at `../refs/Bennett.jl` and `../refs/BennettVM.jl`. Consult them at those revisions only,
+  cite `path:function`, never vendor or link them. A mechanism cited without reading it is an
+  unverified claim.
 
 ## Reading the spec
 
