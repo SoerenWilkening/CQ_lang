@@ -358,6 +358,13 @@ def build(lowered: Path, spec: DriverSpec, exprs: Dict[Tuple[int, int], List[str
         extra_objs.append(str(o))
     _sh([CLANG, "-O0", "-w", "-target", triple, *[str(o) for o in objs], *extra_objs, "linked.ll", "stubs.ll",
          "-lm", "-o", "prog"], cwd=tmp)
+    # First launch of a fresh binary can be slow (the host scans it); pay that here, not inside a
+    # sample's timeout. With no arguments the driver returns 2 at once.
+    try:
+        subprocess.run([str(tmp / "prog")], cwd=tmp, capture_output=True, timeout=300,
+                       env=dict(os.environ, CQE_TRACE=os.devnull))
+    except subprocess.TimeoutExpired as e:
+        raise BuildError(f"the built program did not start within 300s: {e}")
     _publish(tmp, final)
     return final / "prog"
 
