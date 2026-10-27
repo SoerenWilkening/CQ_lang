@@ -36,7 +36,8 @@ void    cqe_register_op(const char *op, cqe_op_fn);   /* a family registers from
  *   included, the _unc form's leading out handle omitted: the select condition, the data operands,
  *   the _rm/_rmq mode, qrom_load's table, n, stride and index. Each is resolved to a value: a
  *   handle to a copy of its rail's value (bits and kind the rail's), a literal to its value (bits
- *   its LLVM type's width; kind 'f' for half, float, double, x86_fp80, else 'i'; ptr a 64-bit 'i').
+ *   its LLVM type's width; kind 'f' for half, bfloat (M2), float, double, x86_fp80, else 'i'; ptr a
+ *   64-bit 'i').
  *   The handler computes the forward value f(args) whatever tname->unc says; the dispatcher
  *   allocates the result rail (forward) or XORs the value into the out rail and checks the
  *   residue (_unc).
@@ -58,9 +59,9 @@ void    cqe_register_op(const char *op, cqe_op_fn);   /* a family registers from
  *   cqrt_qram_store_i32_hl_controlled_unc is {op "qram_store", w "i32", shape "hl", pred "ctl", unc 1}.
  * Arguments (family path). args[i] is the i-th argument of the declared ABI signature, an _unc's
  *   leading out handle included: an i32 handle is a 32-bit 'i' holding its number; a literal has
- *   bits its LLVM type's width and kind 'f' for half, float, double, x86_fp80, else 'i'; a ptr is a
- *   64-bit 'i' holding the host address it points to in the running program, dereferenceable for
- *   the call only (a family that keeps a string or a table copies it).
+ *   bits its LLVM type's width and kind 'f' for half, bfloat (M2), float, double, x86_fp80, else 'i';
+ *   a ptr is a 64-bit 'i' holding the host address it points to in the running program,
+ *   dereferenceable for the call only (a family that keeps a string or a table copies it).
  * Roles. The dispatcher, not the family, sets the exit role of tape and abort rails: before the
  *   handler runs, argument 0 of abort becomes role "abort"; every rail cqe_new_rail creates during
  *   a tape_write call becomes role "tape". The exit event reports such a live rail with that role,

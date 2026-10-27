@@ -11,14 +11,14 @@ type spellings. Return and parameter extension attributes (signext/zeroext) are 
 result is extended the way the declaration promises (BACKEND_ABI §0, CR §1.2).
 
 A declaration this generator cannot express (varargs, a type outside void/iN/half/float/double/
-x86_fp80/ptr, two different signatures for one symbol) is an error: exit 1, nothing written.
+x86_fp80/bfloat/ptr, two different signatures for one symbol) is an error: exit 1, nothing written.
 """
 import argparse
 import re
 import sys
 
 RUNTIME_PREFIXES = ("cqrt_", "cq_template_")
-SCALAR = re.compile(r"^(void|i[1-9][0-9]*|half|float|double|x86_fp80|ptr)$")
+SCALAR = re.compile(r"^(void|i[1-9][0-9]*|half|bfloat|float|double|x86_fp80|ptr)$")
 KEEP_ATTRS = ("signext", "zeroext")
 DECL = re.compile(r"^declare\s+(?P<pre>.*?)@(?P<q>\"?)(?P<name>[A-Za-z0-9_.$]+)(?P=q)\s*\((?P<params>[^)]*)\)")
 DEFINE = re.compile(r"^define\s+[^@]*@\"?([A-Za-z0-9_.$]+)\"?\s*\(")

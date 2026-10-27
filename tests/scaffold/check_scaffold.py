@@ -3,7 +3,7 @@
 
 1. spec.lock holds (tools/spec_lock.py).
 2. The frozen headers equal cq-arch's text with the owner's amendments A1-A4 and freeze beads K1
-   (cq-k1w), S1 (cq-sml), P1 (cq-6yb), B1 (cq-dvj), M1 (cq-mgi) and C1 (cq-4cy): pass/include/cq/*.h, checker/rt/cqe.h, and
+   (cq-k1w), S1 (cq-sml), P1 (cq-6yb), B1 (cq-dvj), M1 (cq-mgi), C1 (cq-4cy) and M2 (cq-9ge): pass/include/cq/*.h, checker/rt/cqe.h, and
    the dataclass fields of checker/cqcheck/contracts.py. cq-arch is read live from beads (`bd show cq-arch --json`) unless
    --arch-json names a saved copy.
 3. `opt -passes=cq-lower` on every example `.O1.ll` (counted from the directory) exits non-zero with
@@ -211,6 +211,17 @@ C_AMENDMENTS = [
       ' *   after its first cqe_* call therefore runs before the exit event, with cqe_rail, cqe_log and',
       ' *   cqe_fail valid. */',
      ], "after"),
+    # M2 (freeze bead cq-9ge, final text in a cq-arch comment): a bfloat literal resolves to kind 'f'
+    # (CQ_spec 3aaafe1 adds bf16 to CR §1.1), in M1's template-path and C1's family-path sentences.
+    (" *   its LLVM type's width; kind 'f' for half, float, double, x86_fp80, else 'i'; ptr a 64-bit 'i').",
+     [" *   its LLVM type's width; kind 'f' for half, bfloat (M2), float, double, x86_fp80, else 'i'; ptr a",
+      " *   64-bit 'i')."], "replace"),
+    (" *   bits its LLVM type's width and kind 'f' for half, float, double, x86_fp80, else 'i'; a ptr is a",
+     [" *   bits its LLVM type's width and kind 'f' for half, bfloat (M2), float, double, x86_fp80, else 'i';",
+      " *   a ptr is a 64-bit 'i' holding the host address it points to in the running program,",
+      " *   dereferenceable for the call only (a family that keeps a string or a table copies it)."], "replace"),
+    (" *   64-bit 'i' holding the host address it points to in the running program, dereferenceable for", [], "replace"),
+    (" *   the call only (a family that keeps a string or a table copies it).", [], "replace"),
 ]
 C_DEFINES = ["#define CQE_OP_NOT_MINE 1"]
 
@@ -274,7 +285,7 @@ def check_headers(desc):
     cqe_text = (ROOT / "checker/rt/cqe.h").read_text()
     missing = [d for d in C_DEFINES if not re.search(r"^" + re.escape(d) + r"(\s|$)", cqe_text, re.M)]
     if got_c != want_c or missing:
-        fail(f"checker/rt/cqe.h differs from cq-arch (+M1, C1){'; missing ' + str(missing) if missing else ''}")
+        fail(f"checker/rt/cqe.h differs from cq-arch (+M1, C1, M2){'; missing ' + str(missing) if missing else ''}")
         for a, b in zip(got_c + [""] * len(want_c), want_c + [""] * len(got_c)):
             if a != b:
                 print(f"    have: {a!r}\n    want: {b!r}")
@@ -309,7 +320,7 @@ def check_headers(desc):
             fail(f"contracts.py {cls}: fields {got} != cq-arch {names}")
         else:
             n += 1
-    print(f"headers: {n} interfaces compared against cq-arch (+A1-A4, K1, S1, P1, B1, M1, C1)")
+    print(f"headers: {n} interfaces compared against cq-arch (+A1-A4, K1, S1, P1, B1, M1, C1, M2)")
 
 
 # ---------------------------------------------------------------------------------------------

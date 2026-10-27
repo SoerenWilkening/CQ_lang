@@ -4,8 +4,8 @@
  *
  * Stub entry (stubgen.py generates the callers; not part of cqe.h, private to chk-core):
  *   void cqe_dispatch(const char *sym, const char *sig, int32_t nargs, void **args, void *ret);
- *   sig  = "<ret>|<t0>,<t1>,..." with LLVM type spellings (void, i<N>, half, float, double,
- *          x86_fp80, ptr); args[i] points at the i-th argument in memory (little-endian, store
+ *   sig  = "<ret>|<t0>,<t1>,..." with LLVM type spellings (void, i<N>, half, bfloat, float,
+ *          double, x86_fp80, ptr); args[i] points at the i-th argument in memory (little-endian, store
  *          size); ret points at storage of the return type.
  *
  * Routing.
@@ -33,7 +33,8 @@
  *   template args        every forward argument in signature order (select condition, data operands,
  *                        the _rm/_rmq mode, qrom's table/n/stride/idx), each resolved: a handle to a
  *                        copy of its rail's value (bits = the rail's width), a literal to its value
- *                        with bits = its LLVM type's width (ptr: 64-bit 'i'). The _unc's leading out
+ *                        with bits = its LLVM type's width, kind 'f' for half, bfloat (M2), float,
+ *                        double and x86_fp80 (ptr: 64-bit 'i'). The _unc's leading out
  *                        handle is not passed. The handler computes f(args) whatever tname->unc says.
  *   family args          every ABI argument raw, in signature order: a handle as its i32 number, a
  *                        literal as its value, a ptr as a 64-bit 'i'. The family manages rails through
@@ -365,7 +366,7 @@ static int parse_lty(const char *s, size_t n, lty *t) {
   if (!strcmp(t->ty, "ptr")) {
     t->kind = 'p';
     t->bits = 64;
-  } else if (!strcmp(t->ty, "half")) {
+  } else if (!strcmp(t->ty, "half") || !strcmp(t->ty, "bfloat")) { /* M2: bfloat is kind 'f' */
     t->kind = 'f';
     t->bits = 16;
   } else if (!strcmp(t->ty, "float")) {

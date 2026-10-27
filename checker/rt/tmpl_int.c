@@ -2,7 +2,7 @@
  *
  *   add sub mul udiv sdiv urem srem    at any width i<N>
  *   zext sext trunc (with _to_)        any i<N> -> i<M>
- *   bitcast                            any W -> W2 of equal bit count (f64<->i64, f80<->i80, ...)
+ *   bitcast                            any W -> W2 of equal bit count (f64<->i64, f80<->i80, bf16<->i16, ...)
  *
  * Semantics: CONSTRUCTION_RULES §2 (wins) and BACKEND_ABI §2.2, §2.3, §2.6. Integers are unsigned
  * mod 2^N unless the op is signed. §2 totalization rows implemented here:
@@ -33,7 +33,9 @@ typedef struct { char kind; uint32_t bits; } tw_;
 
 static uint32_t nwords_(uint32_t bits) { return (bits + 63u) / 64u; }
 
-/* "i<N>" | "f16" | "f32" | "f64" | "f80". Returns 0 on a malformed width. */
+/* "i<N>" | "f16" | "f32" | "f64" | "f80" | "bf16". Returns 0 on a malformed width. bf16 is kind 'f'
+ * bits 16 like f16 (cqe.h M2); only bitcast reaches it here (bf16<->i16, bf16<->f16: abi's Dom::Bitcast
+ * takes equal bits of different kinds, and BFloat is its own kind), and a bitcast copies the bits. */
 static int parse_width_(const char *s, tw_ *out) {
   if (s[0] == 'i') {
     if (s[1] < '1' || s[1] > '9') return 0;
@@ -52,6 +54,7 @@ static int parse_width_(const char *s, tw_ *out) {
     if (!strcmp(s, "f64")) { out->kind = 'f'; out->bits = 64; return 1; }
     if (!strcmp(s, "f80")) { out->kind = 'f'; out->bits = 80; return 1; }
   }
+  if (!strcmp(s, "bf16")) { out->kind = 'f'; out->bits = 16; return 1; }
   return 0;
 }
 

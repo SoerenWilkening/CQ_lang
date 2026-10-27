@@ -42,14 +42,15 @@ static void *xcalloc(size_t n, size_t sz) {
   return p;
 }
 
-/* Bits and kind of a width token: i<N> (N >= 1, no leading zero), f16, f32, f64, f80. 0 if malformed. */
+/* Bits and kind of a width token: i<N> (N >= 1, no leading zero), f16, f32, f64, f80, bf16 (CR §1.1;
+ * bits 16 and kind 'f' like f16, so a consumer that needs the format reads the token). 0 if malformed. */
 uint32_t cqe__wtok_bits(const char *w, char *kind) {
   if (!w)
     return 0;
-  if (w[0] == 'f') {
-    static const char *f[] = {"f16", "f32", "f64", "f80"};
-    static const uint32_t b[] = {16, 32, 64, 80};
-    for (int i = 0; i < 4; ++i)
+  if (w[0] == 'f' || w[0] == 'b') {
+    static const char *f[] = {"f16", "f32", "f64", "f80", "bf16"};
+    static const uint32_t b[] = {16, 32, 64, 80, 16};
+    for (int i = 0; i < 5; ++i)
       if (strcmp(w, f[i]) == 0) {
         if (kind)
           *kind = 'f';
@@ -251,7 +252,7 @@ int32_t cqe__new(const char *w, const cqe_val *init, int known, int seed) {
   char kind = 0;
   uint32_t bits = cqe__wtok_bits(w, &kind);
   if (!bits) {
-    cqe__violation("bad_width", -1, "rail width token '%s' is not i<N>, f16, f32, f64 or f80", w ? w : "(null)");
+    cqe__violation("bad_width", -1, "rail width token '%s' is not i<N>, f16, f32, f64, f80 or bf16", w ? w : "(null)");
     bits = 1;
     kind = 'i';
     w = "i1";

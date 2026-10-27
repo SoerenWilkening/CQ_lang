@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """tests/chk-core (cq-w0-chk-core): the evaluator core, the trace contract, the violations, stubgen
 over the pinned corpus. Run: python3 tests/chk-core/test_chk_core.py [-v]"""
+import bisect
 import json
+import math
 import os
+import random
 import re
+import struct
 import subprocess
 import sys
 import tempfile
 import unittest
+from fractions import Fraction
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -235,13 +240,86 @@ class Parser(unittest.TestCase):
                 "cq_template_qrom_load_f64_s|i32|ptr,i64,i64,i32", "cq_template_uadd_sat_i32|i32|i32,i32",
                 "cq_template_fshl_i32_qll|i32|i32,i32,i32", "cq_template_is_fpclass_f64_hl|i32|i32,i32",
                 "cqrt_qram_store_i32_hl_controlled_unc|void|i32,i32,i32,i32", "cqrt_tape_write_str_lit|void|i32,ptr",
-                "cqrt_ry_i32_qangle_controlled|void|i32,i32,i32", "cqrt_copy_i7_unc|void|i32,i32", "cqrt_abort_i1|void|i32"]
+                "cqrt_ry_i32_qangle_controlled|void|i32,i32,i32", "cqrt_copy_i7_unc|void|i32,i32", "cqrt_abort_i1|void|i32",
+                # cq-9ge: W = bf16, LLVM type bfloat
+                "cq_template_fadd_bf16_hl|i32|i32,bfloat", "cq_template_bitcast_bf16_to_i16_l|i32|bfloat",
+                "cq_template_bitcast_i16_to_bf16_unc|void|i32,i32", "cqrt_alloc_bf16|i32|bfloat",
+                "cqrt_measure_bf16|bfloat|i32"]
         rc, out = self.classify(good)
         self.assertEqual(rc, 0, out)
         bad = ["cq_template_icmp_foo_i32|i32|i32,i32", "cq_template_add_i0|i32|i32,i32", "cq_template_add_f128|i32|i32,i32",
-               "cq_template_add_i32_hl_unc_rm|void|i32,i32,i32", "cqrt_cnot|void|i32,i32", "cq_template_select_i8_lh|i32|i8,i32"]
+               "cq_template_add_i32_hl_unc_rm|void|i32,i32,i32", "cqrt_cnot|void|i32,i32", "cq_template_select_i8_lh|i32|i8,i32",
+               "cq_template_fadd_bf32|i32|i32,i32", "cq_template_fadd_b16|i32|i32,i32"]
         rc, out = self.classify(bad)
         self.assertIn(f"failed {len(bad)}", out)
+
+
+def _bf16_value(b):
+    return struct.unpack("<f", struct.pack("<I", b << 16))[0]
+
+
+_BF16_FINITE = [_bf16_value(b) for b in range(0x7F80)]  # +0 .. max, increasing
+
+
+def _bf16_round(x):
+    """Fraction -> nearest bf16 bit pattern, ties to even, overflow to Inf (IEEE)."""
+    sign = 0x8000 if x < 0 else 0
+    m = abs(x)
+    lo = bisect.bisect_right(_BF16_FINITE, m) - 1  # largest finite <= m (Fractions compare exactly)
+    vlo = Fraction(_BF16_FINITE[lo])
+    if vlo == m:
+        return sign | lo
+    vhi = Fraction(2) ** 128 if lo == 0x7F7F else Fraction(_BF16_FINITE[lo + 1])
+    dlo, dhi = m - vlo, vhi - m
+    return sign | (lo if dlo < dhi or (dlo == dhi and lo % 2 == 0) else lo + 1)
+
+
+def _bf16_add(a, b):
+    """CR §2 fadd at bf16: the first NaN operand quieted; Inf - Inf the default NaN 0xFFC0."""
+    for x in (a, b):
+        if (x & 0x7FFF) > 0x7F80:
+            return x | 0x0040
+    fa, fb = _bf16_value(a), _bf16_value(b)
+    if math.isinf(fa) or math.isinf(fb):
+        if math.isinf(fa) and math.isinf(fb) and fa != fb:
+            return 0xFFC0
+        return a if math.isinf(fa) else b
+    s = Fraction(fa) + Fraction(fb)
+    if s == 0:
+        return 0x8000 if (a == 0x8000 and b == 0x8000) else 0
+    return _bf16_round(s)
+
+
+class Bf16(unittest.TestCase):
+    """cq-9ge: bf16 rails (width token bf16, bits 16, kind 'f'), fadd_bf16 with handle and bfloat
+    literal operands, and bitcasts bf16<->i16 and bf16->f16 with handle and literal operands, through
+    the real core, dispatcher, tmpl_fp.c and tmpl_int.c."""
+
+    SAMPLES = [0x0000, 0x8000, 0x3F80, 0xBF80, 0x7F7F, 0xFF7F, 0x7F80, 0xFF80, 0x7FC1, 0x7F81, 0xFF81, 0x0001,
+               0x8001, 0x007F, 0x4049, 0xC2F6, 0x3B80, 0x3B81, 0xBB80, 0x4B80, 0x4B81, 0x1234, 0xABCD]
+
+    def run_bf16(self, rt_sources):
+        spec = spec1("int v(int)", "v", ["int"])
+        rng = random.Random(9)
+        for x in self.SAMPLES + [rng.randrange(0x10000) for _ in range(12)]:
+            with self.subTest(x=hex(x)):
+                r = run.run_sample(HERE / "bf16.ll", spec, {"call": 0, "args": [x]}, "ours",
+                                   rt_sources=rt_sources)
+                self.assertEqual(r.violations, [])
+                want = [_bf16_add(x, x), _bf16_add(x, 0x3F80), x, 0x4049, x, 0x1234, x]
+                self.assertEqual([int(m["v"], 16) for m in r.measured], want)
+                self.assertEqual(len(r.clean), 1)  # the bitcast forward/_unc pair's rail
+
+    def test_core_dispatch_fp_int(self):
+        self.run_bf16(RT + [REPO / "checker" / "rt" / "tmpl_fp.c", REPO / "checker" / "rt" / "tmpl_int.c"])
+
+    def test_default_runtime(self):
+        self.run_bf16(None)
+
+    def test_rail_width_token(self):
+        t = trace_of("bf16.ll", "int v(int)", "v", ["int"], [0x3F80])
+        self.assertEqual([e["w"] for e in t if e["ev"] == "alloc"], ["bf16", "i16"])
+        self.assertEqual([e["w"] for e in t if e["ev"] == "measure"], ["bf16", "bf16", "i16", "i16", "bf16", "bf16", "f16"])
 
 
 class StubgenCorpus(unittest.TestCase):
