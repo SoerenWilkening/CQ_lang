@@ -3,8 +3,8 @@
 
 1. spec.lock holds (tools/spec_lock.py).
 2. The frozen headers equal cq-arch's text with the owner's amendments A1-A4 and freeze beads K1
-   (cq-k1w), S1 (cq-sml) and M1 (cq-mgi): pass/include/cq/*.h, checker/rt/cqe.h, and the dataclass fields of
-   checker/cqcheck/contracts.py. cq-arch is read live from beads (`bd show cq-arch --json`) unless
+   (cq-k1w), S1 (cq-sml), M1 (cq-mgi) and C1 (cq-4cy): pass/include/cq/*.h, checker/rt/cqe.h, and
+   the dataclass fields of checker/cqcheck/contracts.py. cq-arch is read live from beads (`bd show cq-arch --json`) unless
    --arch-json names a saved copy.
 3. `opt -passes=cq-lower` on every example `.O1.ll` (counted from the directory) exits non-zero with
    `cq: unimplemented: <module>: <function>` and writes no output file and nothing to stdout.
@@ -164,6 +164,38 @@ C_AMENDMENTS = [
       ' *   through cqe_new_rail, cqe_rail, cqe_xor_into and cqe_set_known and returns a handle as an i32',
       ' *   in out. */',
      ], "after"),
+    # C1 (freeze bead cq-4cy, final text in a cq-arch comment): the family path's names, arguments,
+    # roles and end of shot, inserted after M1's last line.
+    (" *   in out. */",
+     [
+      "/* C1 (freeze bead cq-4cy): the family path's names, arguments, roles and end of shot.",
+      ' * Names. A cqrt_ symbol that is not a core gate (alloc, free, measure, ry*, rz_*, not/and/or/xor_i1,',
+      ' *   copy*, xorc*, push, pop) is cqrt_<op>[_<W>][_hl|_lit][_controlled][_unc], op the longest of',
+      ' *   qram_alloc, qram_realloc, qram_store, qram_load, qram_free, tape_alloc, tape_fmt, tape_effect,',
+      ' *   tape_write, tape_write_str, abort that matches, W a width token i<N> or f<N>. Any other cqrt_',
+      ' *   name is a violation (unknown_symbol). The dispatcher passes a zeroed cqe_tname with op = <op>,',
+      ' *   w = W ("" if absent), shape = "hl" for _hl and "l" for _lit, pred = "ctl" for _controlled,',
+      ' *   unc = 1 for _unc; to, rm, exc and strided stay 0. A family registers the bare op only; telling',
+      ' *   _controlled by arity agrees with pred. Examples: cqrt_tape_write_i8_lit is {op "tape_write",',
+      ' *   w "i8", shape "l"}; cqrt_tape_write_str_lit is {op "tape_write_str", shape "l"}; cqrt_abort_i1 is',
+      ' *   {op "abort", w "i1"}; cqrt_tape_effect_controlled is {op "tape_effect", pred "ctl"};',
+      ' *   cqrt_qram_store_i32_hl_controlled_unc is {op "qram_store", w "i32", shape "hl", pred "ctl", unc 1}.',
+      " * Arguments (family path). args[i] is the i-th argument of the declared ABI signature, an _unc's",
+      " *   leading out handle included: an i32 handle is a 32-bit 'i' holding its number; a literal has",
+      " *   bits its LLVM type's width and kind 'f' for half, float, double, x86_fp80, else 'i'; a ptr is a",
+      " *   64-bit 'i' holding the host address it points to in the running program, dereferenceable for",
+      ' *   the call only (a family that keeps a string or a table copies it).',
+      ' * Roles. The dispatcher, not the family, sets the exit role of tape and abort rails: before the',
+      ' *   handler runs, argument 0 of abort becomes role "abort"; every rail cqe_new_rail creates during',
+      ' *   a tape_write call becomes role "tape". The exit event reports such a live rail with that role,',
+      ' *   as kept. A cqrt_free of a tape or abort rail is a violation (free_forbidden) whatever its value',
+      ' *   and known flag, also after an _unc returned it to 0. Handles are never reused; cqe_rail of a',
+      ' *   freed or unknown handle records a violation and returns NULL.',
+      ' * End of shot. Every cqe_* entry, cqe_register_op included, initializes the core first, and the core',
+      " *   registers its exit handler with atexit when it initializes. A family's atexit handler registered",
+      ' *   after its first cqe_* call therefore runs before the exit event, with cqe_rail, cqe_log and',
+      ' *   cqe_fail valid. */',
+     ], "after"),
 ]
 C_DEFINES = ["#define CQE_OP_NOT_MINE 1"]
 
@@ -227,7 +259,7 @@ def check_headers(desc):
     cqe_text = (ROOT / "checker/rt/cqe.h").read_text()
     missing = [d for d in C_DEFINES if not re.search(r"^" + re.escape(d) + r"(\s|$)", cqe_text, re.M)]
     if got_c != want_c or missing:
-        fail(f"checker/rt/cqe.h differs from cq-arch (+M1){'; missing ' + str(missing) if missing else ''}")
+        fail(f"checker/rt/cqe.h differs from cq-arch (+M1, C1){'; missing ' + str(missing) if missing else ''}")
         for a, b in zip(got_c + [""] * len(want_c), want_c + [""] * len(got_c)):
             if a != b:
                 print(f"    have: {a!r}\n    want: {b!r}")
@@ -262,7 +294,7 @@ def check_headers(desc):
             fail(f"contracts.py {cls}: fields {got} != cq-arch {names}")
         else:
             n += 1
-    print(f"headers: {n} interfaces compared against cq-arch (+A1-A4, K1, S1, M1)")
+    print(f"headers: {n} interfaces compared against cq-arch (+A1-A4, K1, S1, M1, C1)")
 
 
 # ---------------------------------------------------------------------------------------------

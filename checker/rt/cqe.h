@@ -44,6 +44,33 @@ void    cqe_register_op(const char *op, cqe_op_fn);   /* a family registers from
  *   as its i32 number, a literal as its value, a ptr as a 64-bit 'i'. The family manages rails
  *   through cqe_new_rail, cqe_rail, cqe_xor_into and cqe_set_known and returns a handle as an i32
  *   in out. */
+/* C1 (freeze bead cq-4cy): the family path's names, arguments, roles and end of shot.
+ * Names. A cqrt_ symbol that is not a core gate (alloc, free, measure, ry*, rz_*, not/and/or/xor_i1,
+ *   copy*, xorc*, push, pop) is cqrt_<op>[_<W>][_hl|_lit][_controlled][_unc], op the longest of
+ *   qram_alloc, qram_realloc, qram_store, qram_load, qram_free, tape_alloc, tape_fmt, tape_effect,
+ *   tape_write, tape_write_str, abort that matches, W a width token i<N> or f<N>. Any other cqrt_
+ *   name is a violation (unknown_symbol). The dispatcher passes a zeroed cqe_tname with op = <op>,
+ *   w = W ("" if absent), shape = "hl" for _hl and "l" for _lit, pred = "ctl" for _controlled,
+ *   unc = 1 for _unc; to, rm, exc and strided stay 0. A family registers the bare op only; telling
+ *   _controlled by arity agrees with pred. Examples: cqrt_tape_write_i8_lit is {op "tape_write",
+ *   w "i8", shape "l"}; cqrt_tape_write_str_lit is {op "tape_write_str", shape "l"}; cqrt_abort_i1 is
+ *   {op "abort", w "i1"}; cqrt_tape_effect_controlled is {op "tape_effect", pred "ctl"};
+ *   cqrt_qram_store_i32_hl_controlled_unc is {op "qram_store", w "i32", shape "hl", pred "ctl", unc 1}.
+ * Arguments (family path). args[i] is the i-th argument of the declared ABI signature, an _unc's
+ *   leading out handle included: an i32 handle is a 32-bit 'i' holding its number; a literal has
+ *   bits its LLVM type's width and kind 'f' for half, float, double, x86_fp80, else 'i'; a ptr is a
+ *   64-bit 'i' holding the host address it points to in the running program, dereferenceable for
+ *   the call only (a family that keeps a string or a table copies it).
+ * Roles. The dispatcher, not the family, sets the exit role of tape and abort rails: before the
+ *   handler runs, argument 0 of abort becomes role "abort"; every rail cqe_new_rail creates during
+ *   a tape_write call becomes role "tape". The exit event reports such a live rail with that role,
+ *   as kept. A cqrt_free of a tape or abort rail is a violation (free_forbidden) whatever its value
+ *   and known flag, also after an _unc returned it to 0. Handles are never reused; cqe_rail of a
+ *   freed or unknown handle records a violation and returns NULL.
+ * End of shot. Every cqe_* entry, cqe_register_op included, initializes the core first, and the core
+ *   registers its exit handler with atexit when it initializes. A family's atexit handler registered
+ *   after its first cqe_* call therefore runs before the exit event, with cqe_rail, cqe_log and
+ *   cqe_fail valid. */
 int32_t cqe_new_rail(const char *w, const cqe_val *init, int known);
 const cqe_val *cqe_rail(int32_t h);
 void    cqe_xor_into(int32_t h, const cqe_val *v);
