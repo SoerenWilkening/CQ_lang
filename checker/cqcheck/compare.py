@@ -68,7 +68,7 @@ record self-contained; values are hex bit patterns or ints):
   list, missing = []. One record per activation of a quantum-exit loop or quantum-depth recursion
   that the C program begins:
     {"loop": id, "act": int, "n": int, "capped": bool, "cut": int, "mcut": int}
-  loop is the T1 loop id "<fn>:<header>" (a recursion's id is the oracle's spelling; compare reads
+  loop is the T1 loop id "<fn>:<header>" (a recursion is "<fn>:recursion", cq-arch T2; compare reads
   it as an opaque string). act is the 0-based ordinal of this activation among the activations of
   the same loop in the sample, in execution order (a loop nested in a K-loop is entered once per
   outer trip, so act is the outer trip index when the inner loop is entered on every trip). n is
