@@ -1,0 +1,853 @@
+// cq-oracle: the C-oracle instrumentation (cq-w0-chk-oracle; CLAUDE.md "The §6 checker", oracle b).
+//
+//   opt -load-pass-plugin=libCQOracle.so -passes=cq-oracle [-cq-oracle-stubs=FILE] in.bc -o out.bc
+//
+// Input: a whole program (the example's .O1.ll linked with the generated driver and, when present,
+// the injection bundle). Output: the same program with
+//   * cq_theta_* / cq_measure_* replaced by the identity, each call site logging a `site` event
+//     (fn, site ordinal, kind, angle, register value); cq_phi and __cq_invert_begin/end log and vanish;
+//   * every loop counting its trips (`trip` event per activation, a guard skip reports 0);
+//   * the operations whose native behaviour differs from CR §2, or is undefined in LLVM, rewritten to
+//     their §2 totalization: div/rem by 0 and INT_MIN / -1, shift amounts >= W (mod W), fptosi/fptoui
+//     (CR §2 row by row, in the runtime), maxnum/minnum (the measured x86 formula), fmuladd unfused,
+//     abs/ctlz/cttz with their poison flag cleared, every poison-generating flag dropped;
+//   * memory per CR §6: allocas and lifetime starts zeroed, heap blocks zeroed (realloc growth too),
+//     every load/store/memory intrinsic bounds-checked over an object table (globals, allocas, heap):
+//     a byte outside every object reads 0, a store to it is dropped;
+//   * threads collapsed (pthread_create runs the start routine to completion, rule 24), noreturn
+//     callees, raise and `unreachable` noted in the sample status;
+//   * undefined external functions named in -cq-oracle-stubs given the checker's deterministic model.
+// The instrumented module is compiled at -O0, so nothing re-optimizes the C program after this pass.
+// An IR shape this pass cannot handle is a fatal "cq-oracle: unimplemented: ..." error, never a skip.
+
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/StringSet.h"
+#include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ValueTracking.h"
+#include "llvm/IR/AttributeMask.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Dominators.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/PassManager.h"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/Passes/PassPlugin.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Transforms/Utils/ModuleUtils.h"
+
+#include <cstdlib>
+#include <map>
+#include <string>
+#include <vector>
+
+using namespace llvm;
+
+static cl::opt<std::string> StubsFile("cq-oracle-stubs",
+                                      cl::desc("file of undefined external function names to model"),
+                                      cl::init(""));
+static cl::list<std::string> Entries("cq-oracle-entries", cl::CommaSeparated,
+                                     cl::desc("functions whose results calls in __cqo_* driver functions log"));
+
+namespace {
+
+[[noreturn]] void unimplemented(const Twine &what, const Value *at = nullptr) {
+  std::string s;
+  raw_string_ostream os(s);
+  os << "cq-oracle: unimplemented: " << what;
+  if (at) {
+    os << ": ";
+    at->print(os);
+  }
+  report_fatal_error(Twine(os.str()), false);
+}
+
+enum SiteKind { KTheta = 0, KPhi = 1, KMeasure = 2, KInvBegin = 3, KInvEnd = 4 };
+
+bool isDriverFn(const Function &F) { return F.getName().starts_with("__cqo_"); }
+
+class Instrumenter {
+  Module &M;
+  LLVMContext &C;
+  const DataLayout &DL;
+  Type *I1, *I8, *I32, *I64, *Ptr, *Dbl, *F80, *Void;
+  StringMap<Constant *> Strings;
+
+public:
+  explicit Instrumenter(Module &M)
+      : M(M), C(M.getContext()), DL(M.getDataLayout()) {
+    I1 = Type::getInt1Ty(C);
+    I8 = Type::getInt8Ty(C);
+    I32 = Type::getInt32Ty(C);
+    I64 = Type::getInt64Ty(C);
+    Ptr = PointerType::get(C, 0);
+    Dbl = Type::getDoubleTy(C);
+    F80 = Type::getX86_FP80Ty(C);
+    Void = Type::getVoidTy(C);
+  }
+
+  FunctionCallee hook(StringRef name, Type *ret, ArrayRef<Type *> params) {
+    return M.getOrInsertFunction(name, FunctionType::get(ret, params, false));
+  }
+
+  Constant *str(StringRef s) {
+    auto it = Strings.find(s);
+    if (it != Strings.end())
+      return it->second;
+    Constant *init = ConstantDataArray::getString(C, s, true);
+    auto *gv = new GlobalVariable(M, init->getType(), true, GlobalValue::PrivateLinkage, init,
+                                  "__cqo_str");
+    gv->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
+    Strings[s] = gv;
+    return gv;
+  }
+
+  AllocaInst *entryAlloca(Function &F, Type *T) {
+    IRBuilder<> B(&*F.getEntryBlock().getFirstInsertionPt());
+    return B.CreateAlloca(T);
+  }
+
+  // ---------------------------------------------------------------- poison and §2 arithmetic
+  void dropPoison(Function &F) {
+    for (Instruction &I : instructions(F)) {
+      I.dropPoisonGeneratingAnnotations();
+      if (auto *CB = dyn_cast<CallBase>(&I)) {
+        // noundef/nonnull/range/align on call sites and their results promise nothing here.
+        CB->removeRetAttrs(AttributeFuncs::getUBImplyingAttributes());
+        for (unsigned i = 0; i < CB->arg_size(); ++i)
+          CB->removeParamAttrs(i, AttributeFuncs::getUBImplyingAttributes());
+      }
+      if (isa<LoadInst>(I)) {
+        I.setMetadata(LLVMContext::MD_nonnull, nullptr);
+        I.setMetadata(LLVMContext::MD_range, nullptr);
+        I.setMetadata(LLVMContext::MD_noundef, nullptr);
+        I.setMetadata(LLVMContext::MD_align, nullptr);
+        I.setMetadata(LLVMContext::MD_dereferenceable, nullptr);
+        I.setMetadata(LLVMContext::MD_dereferenceable_or_null, nullptr);
+      }
+    }
+  }
+
+  static bool safeDivisor(Value *d, bool isSigned) {
+    auto *ci = dyn_cast<ConstantInt>(d);
+    if (!ci || ci->isZero())
+      return false;
+    return !(isSigned && ci->isMinusOne());
+  }
+
+  void rewriteDiv(BinaryOperator *BO) {
+    IRBuilder<> B(BO);
+    Value *a = BO->getOperand(0), *b = BO->getOperand(1);
+    Type *T = BO->getType();
+    Value *zero = Constant::getNullValue(T), *one = ConstantInt::get(T, 1);
+    Value *bz = B.CreateICmpEQ(b, zero);
+    Value *res;
+    switch (BO->getOpcode()) {
+    case Instruction::UDiv: {
+      Value *q = B.CreateUDiv(a, B.CreateSelect(bz, one, b));
+      res = B.CreateSelect(bz, Constant::getAllOnesValue(T), q);  // udiv(a,0) = 2^W - 1
+      break;
+    }
+    case Instruction::URem: {
+      Value *r = B.CreateURem(a, B.CreateSelect(bz, one, b));
+      res = B.CreateSelect(bz, a, r);  // urem(a,0) = a
+      break;
+    }
+    case Instruction::SDiv:
+    case Instruction::SRem: {
+      Value *ovf = B.CreateAnd(B.CreateICmpEQ(a, ConstantInt::get(T, APInt::getSignedMinValue(
+                                                                         T->getScalarSizeInBits()))),
+                               B.CreateICmpEQ(b, Constant::getAllOnesValue(T)));
+      // INT_MIN / -1 divides by 1 instead: sdiv gives INT_MIN, srem gives 0 (CR §2).
+      Value *safe = B.CreateSelect(B.CreateOr(bz, ovf), one, b);
+      if (BO->getOpcode() == Instruction::SDiv) {
+        Value *q = B.CreateSDiv(a, safe);
+        Value *byZero = B.CreateSelect(B.CreateICmpSGE(a, zero), Constant::getAllOnesValue(T), one);
+        res = B.CreateSelect(bz, byZero, q);  // sdiv(a,0) = -1 if a >= 0 else +1
+      } else {
+        Value *r = B.CreateSRem(a, safe);
+        res = B.CreateSelect(bz, a, r);  // srem(a,0) = a
+      }
+      break;
+    }
+    default:
+      llvm_unreachable("not a division");
+    }
+    BO->replaceAllUsesWith(res);
+    res->takeName(BO);
+    BO->eraseFromParent();
+  }
+
+  void rewriteShift(BinaryOperator *BO) {
+    Value *amt = BO->getOperand(1);
+    Type *T = BO->getType();
+    unsigned W = T->getScalarSizeInBits();
+    if (auto *ci = dyn_cast<ConstantInt>(amt))
+      if (ci->getValue().ult(W))
+        return;
+    IRBuilder<> B(BO);
+    Value *m = B.CreateURem(amt, ConstantInt::get(T, W));  // amount mod W (CR §2)
+    BO->setOperand(1, m);
+  }
+
+  void rewriteFpToInt(CastInst *CI) {
+    Type *dst = CI->getType(), *src = CI->getOperand(0)->getType();
+    if (dst->isVectorTy())
+      unimplemented("vector fptosi/fptoui", CI);
+    unsigned W = dst->getIntegerBitWidth();
+    if (W != 8 && W != 16 && W != 32 && W != 64)
+      unimplemented("fptosi/fptoui to a width CR §2 does not tabulate", CI);
+    bool sgn = CI->getOpcode() == Instruction::FPToSI;
+    IRBuilder<> B(CI);
+    Value *r;
+    if (src->isX86_FP80Ty()) {
+      r = B.CreateCall(hook("__cqo_fpto80", I64, {F80, I32, I32}),
+                       {CI->getOperand(0), B.getInt32(W), B.getInt32(sgn)});
+    } else if (src->isHalfTy() || src->isBFloatTy() || src->isFloatTy() || src->isDoubleTy()) {
+      // f16, bf16 and f32 widen exactly; the table's c32/c64 on the widened value is the same (see runtime).
+      Value *x = src->isDoubleTy() ? CI->getOperand(0) : B.CreateFPExt(CI->getOperand(0), Dbl);
+      r = B.CreateCall(hook("__cqo_fpto64", I64, {Dbl, I32, I32}), {x, B.getInt32(W), B.getInt32(sgn)});
+    } else {
+      unimplemented("fptosi/fptoui from this fp type", CI);
+    }
+    Value *res = W == 64 ? r : B.CreateTrunc(r, dst);
+    CI->replaceAllUsesWith(res);
+    res->takeName(CI);
+    CI->eraseFromParent();
+  }
+
+  void rewriteIntrinsic(IntrinsicInst *II) {
+    switch (II->getIntrinsicID()) {
+    case Intrinsic::abs:
+    case Intrinsic::ctlz:
+    case Intrinsic::cttz:
+      // abs(INT_MIN) = INT_MIN, ctlz/cttz(0) = W (CR §2): the poison flag off.
+      II->setArgOperand(1, ConstantInt::getFalse(C));
+      return;
+    case Intrinsic::maxnum:
+    case Intrinsic::minnum: {
+      // isnan(a) ? b : isnan(b) ? a : (b > a ? b : a), min with < (CR §2, measured x86 -O1).
+      IRBuilder<> B(II);
+      Value *a = II->getArgOperand(0), *b = II->getArgOperand(1);
+      Value *pick = II->getIntrinsicID() == Intrinsic::maxnum ? B.CreateFCmpOGT(b, a)
+                                                               : B.CreateFCmpOLT(b, a);
+      Value *inner = B.CreateSelect(pick, b, a);
+      Value *v = B.CreateSelect(B.CreateFCmpUNO(b, b), a, inner);
+      v = B.CreateSelect(B.CreateFCmpUNO(a, a), b, v);
+      II->replaceAllUsesWith(v);
+      II->eraseFromParent();
+      return;
+    }
+    case Intrinsic::fmuladd: {
+      // Unfused: fmul then fadd, each rounded (CR §2; the x86-64 baseline has no FMA).
+      IRBuilder<> B(II);
+      Value *v = B.CreateFAdd(B.CreateFMul(II->getArgOperand(0), II->getArgOperand(1)),
+                              II->getArgOperand(2));
+      II->replaceAllUsesWith(v);
+      II->eraseFromParent();
+      return;
+    }
+    default:
+      return;
+    }
+  }
+
+  void totalize(Function &F) {
+    std::vector<Instruction *> work;
+    for (Instruction &I : instructions(F))
+      work.push_back(&I);
+    for (Instruction *I : work) {
+      if (auto *BO = dyn_cast<BinaryOperator>(I)) {
+        switch (BO->getOpcode()) {
+        case Instruction::UDiv:
+        case Instruction::URem:
+          if (!safeDivisor(BO->getOperand(1), false))
+            rewriteDiv(BO);
+          break;
+        case Instruction::SDiv:
+        case Instruction::SRem:
+          if (!safeDivisor(BO->getOperand(1), true))
+            rewriteDiv(BO);
+          break;
+        case Instruction::Shl:
+        case Instruction::LShr:
+        case Instruction::AShr:
+          rewriteShift(BO);
+          break;
+        default:
+          break;
+        }
+      } else if (auto *CI = dyn_cast<CastInst>(I)) {
+        if (CI->getOpcode() == Instruction::FPToSI || CI->getOpcode() == Instruction::FPToUI)
+          rewriteFpToInt(CI);
+      } else if (auto *II = dyn_cast<IntrinsicInst>(I)) {
+        rewriteIntrinsic(II);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- memory (CR §6)
+  Value *allocaBytes(IRBuilder<> &B, AllocaInst *AI) {
+    Value *n = B.getInt64(DL.getTypeAllocSize(AI->getAllocatedType()).getFixedValue());
+    if (AI->isArrayAllocation())
+      n = B.CreateMul(n, B.CreateZExtOrTrunc(AI->getArraySize(), I64));
+    return n;
+  }
+
+  // The access's object (CR §6: a read outside *its* object reads 0, even where another object lies):
+  // the pointer's underlying value through GEPs and casts. The runtime takes the object containing it,
+  // or, when it lies in no object (a one-past-the-end pointer carried through a phi), the object
+  // containing the accessed address.
+  Value *base(Value *ptr) {
+    return getUnderlyingObject(ptr, 0);
+  }
+
+  void memory(Function &F) {
+    std::vector<AllocaInst *> allocas;
+    std::vector<Instruction *> accesses, rets;
+    for (Instruction &I : instructions(F)) {
+      if (auto *AI = dyn_cast<AllocaInst>(&I))
+        allocas.push_back(AI);
+      else if (isa<LoadInst>(I) || isa<StoreInst>(I) || isa<AtomicRMWInst>(I) ||
+               isa<AtomicCmpXchgInst>(I) || isa<CallBase>(I))
+        accesses.push_back(&I);
+      else if (isa<ReturnInst>(I))
+        rets.push_back(&I);
+      else if (isa<ResumeInst>(I))
+        unimplemented("resume", &I);
+    }
+
+    // Frame mark after the leading allocas; every alloca registered (and zeroed) after the mark.
+    BasicBlock &E = F.getEntryBlock();
+    BasicBlock::iterator ip = E.getFirstInsertionPt();
+    while (isa<AllocaInst>(*ip))
+      ++ip;
+    IRBuilder<> B(&*ip);
+    Value *mark = B.CreateCall(hook("__cqo_mark", I64, {}), {});
+    Instruction *cursor = cast<Instruction>(mark);
+    for (AllocaInst *AI : allocas) {
+      if (AI->getParent() == &E && AI->comesBefore(cast<Instruction>(mark))) {
+        B.SetInsertPoint(cursor->getNextNode());
+        cursor = B.CreateCall(hook("__cqo_alloca", Void, {Ptr, I64}), {AI, allocaBytes(B, AI)});
+      } else {
+        B.SetInsertPoint(AI->getNextNode());
+        B.CreateCall(hook("__cqo_alloca", Void, {Ptr, I64}), {AI, allocaBytes(B, AI)});
+      }
+    }
+    for (Instruction *R : rets) {
+      if (auto *CI = dyn_cast_or_null<CallInst>(R->getPrevNode()))
+        if (CI->isMustTailCall())
+          unimplemented("musttail call", CI);
+      IRBuilder<> RB(R);
+      RB.CreateCall(hook("__cqo_release", Void, {I64}), {mark});
+    }
+
+    DenseMap<Type *, AllocaInst *> tmps;
+    auto tmpFor = [&](Type *T) {
+      AllocaInst *&a = tmps[T];
+      if (!a)
+        a = entryAlloca(F, T);
+      return a;
+    };
+    auto bytes = [&](Type *T) { return DL.getTypeStoreSize(T).getFixedValue(); };
+
+    for (Instruction *I : accesses) {
+      if (auto *LI = dyn_cast<LoadInst>(I)) {
+        Type *T = LI->getType();
+        if (T->isScalableTy())
+          unimplemented("scalable load", LI);
+        IRBuilder<> LB(LI);
+        AllocaInst *t = tmpFor(T);
+        LB.CreateCall(hook("__cqo_load", Void, {Ptr, I64, Ptr, Ptr}),
+                      {LI->getPointerOperand(), LB.getInt64(bytes(T)), t, base(LI->getPointerOperand())});
+        LoadInst *nl = LB.CreateLoad(T, t);
+        LI->replaceAllUsesWith(nl);
+        nl->takeName(LI);
+        LI->eraseFromParent();
+      } else if (auto *SI = dyn_cast<StoreInst>(I)) {
+        Type *T = SI->getValueOperand()->getType();
+        if (T->isScalableTy())
+          unimplemented("scalable store", SI);
+        IRBuilder<> SB(SI);
+        AllocaInst *t = tmpFor(T);
+        SB.CreateStore(SI->getValueOperand(), t);
+        SB.CreateCall(hook("__cqo_store", Void, {Ptr, I64, Ptr, Ptr}),
+                      {SI->getPointerOperand(), SB.getInt64(bytes(T)), t, base(SI->getPointerOperand())});
+        SI->eraseFromParent();
+      } else if (auto *RMW = dyn_cast<AtomicRMWInst>(I)) {
+        IRBuilder<> AB(RMW);
+        AB.CreateCall(hook("__cqo_require", Void, {Ptr, I64}),
+                      {RMW->getPointerOperand(), AB.getInt64(bytes(RMW->getValOperand()->getType()))});
+      } else if (auto *CX = dyn_cast<AtomicCmpXchgInst>(I)) {
+        IRBuilder<> AB(CX);
+        AB.CreateCall(hook("__cqo_require", Void, {Ptr, I64}),
+                      {CX->getPointerOperand(), AB.getInt64(bytes(CX->getNewValOperand()->getType()))});
+      } else if (auto *CB = dyn_cast<CallBase>(I)) {
+        memoryCall(CB);
+      }
+    }
+  }
+
+  void memoryCall(CallBase *CB) {
+    if (auto *MI = dyn_cast<MemIntrinsic>(CB)) {
+      IRBuilder<> B(CB);
+      Value *n = B.CreateZExtOrTrunc(MI->getLength(), I64);
+      if (auto *MS = dyn_cast<MemSetInst>(MI))
+        B.CreateCall(hook("__cqo_imemset", Void, {Ptr, I8, I64, Ptr}),
+                     {MS->getDest(), MS->getValue(), n, base(MS->getDest())});
+      else if (isa<MemMoveInst>(MI))
+        B.CreateCall(hook("__cqo_imemmove", Void, {Ptr, Ptr, I64, Ptr, Ptr}),
+                     {MI->getDest(), cast<MemTransferInst>(MI)->getSource(), n, base(MI->getDest()),
+                      base(cast<MemTransferInst>(MI)->getSource())});
+      else if (isa<MemCpyInst>(MI))
+        B.CreateCall(hook("__cqo_imemmove", Void, {Ptr, Ptr, I64, Ptr, Ptr}),
+                     {MI->getDest(), cast<MemTransferInst>(MI)->getSource(), n, base(MI->getDest()),
+                      base(cast<MemTransferInst>(MI)->getSource())});
+      else
+        unimplemented("memory intrinsic", CB);
+      CB->eraseFromParent();
+      return;
+    }
+    if (auto *II = dyn_cast<IntrinsicInst>(CB)) {
+      switch (II->getIntrinsicID()) {
+      case Intrinsic::lifetime_start: {
+        // An object entering its lifetime is indeterminate again: 0 (CR §6).
+        IRBuilder<> B(II);
+        B.CreateCall(hook("__cqo_zero", Void, {Ptr, I64}), {II->getArgOperand(1), II->getArgOperand(0)});
+        return;
+      }
+      case Intrinsic::memset_element_unordered_atomic:
+      case Intrinsic::memcpy_element_unordered_atomic:
+      case Intrinsic::memmove_element_unordered_atomic:
+        unimplemented("element-atomic memory intrinsic", CB);
+      case Intrinsic::masked_load:
+      case Intrinsic::masked_store:
+      case Intrinsic::masked_gather:
+      case Intrinsic::masked_scatter:
+      case Intrinsic::masked_expandload:
+      case Intrinsic::masked_compressstore:
+        unimplemented("masked memory intrinsic", CB);
+      default:
+        return;
+      }
+    }
+  }
+
+  // Library allocation, string-memory and thread entry points the runtime replaces wholesale.
+  void replaceLibrary() {
+    static const char *names[] = {"malloc", "calloc", "realloc", "reallocf", "free", "aligned_alloc",
+                                  "posix_memalign", "valloc", "memcpy", "memmove", "memset", "memcmp",
+                                  "bcmp", "bzero", "__memcpy_chk", "__memmove_chk", "__memset_chk", "pthread_create", "pthread_join", "pthread_detach"};
+    for (const char *n : names) {
+      Function *F = M.getFunction(n);
+      if (!F)
+        continue;
+      if (!F->isDeclaration())
+        continue;  // a body in the module (injected source) is instrumented like any code
+      std::string repl = std::string("__cqo_") + n;
+      FunctionCallee R = M.getOrInsertFunction(repl, F->getFunctionType());
+      F->replaceAllUsesWith(R.getCallee());
+    }
+  }
+
+  void registerGlobals() {
+    std::vector<GlobalVariable *> gvs;
+    for (GlobalVariable &G : M.globals()) {
+      if (G.getName().starts_with("llvm.") || G.getName().starts_with("__cqo_str"))
+        continue;
+      if (!G.getValueType()->isSized())
+        continue;
+      if (DL.getTypeAllocSize(G.getValueType()).getFixedValue() == 0)
+        continue;
+      gvs.push_back(&G);
+    }
+    Function *ctor = Function::Create(FunctionType::get(Void, false), GlobalValue::InternalLinkage,
+                                      "__cqo_register_globals", M);
+    IRBuilder<> B(BasicBlock::Create(C, "", ctor));
+    FunctionCallee reg = hook("__cqo_global", Void, {Ptr, I64});
+    for (GlobalVariable *G : gvs) {
+      Value *addr = G;
+      if (G->isThreadLocal())
+        addr = B.CreateThreadLocalAddress(G);
+      B.CreateCall(reg, {addr, B.getInt64(DL.getTypeAllocSize(G->getValueType()).getFixedValue())});
+    }
+    B.CreateRetVoid();
+    appendToGlobalCtors(M, ctor, 0);
+  }
+
+  // ---------------------------------------------------------------- sites (cq_theta, cq_phi, ...)
+  static int siteKind(StringRef n) {
+    if (n.starts_with("cq_theta_"))
+      return KTheta;
+    if (n.starts_with("cq_measure_"))
+      return KMeasure;
+    if (n == "cq_phi")
+      return KPhi;
+    if (n == "__cq_invert_begin")
+      return KInvBegin;
+    if (n == "__cq_invert_end")
+      return KInvEnd;
+    return -1;
+  }
+
+  unsigned regBits(Type *T, Instruction *at) {
+    if (T->isIntegerTy())
+      return T->getIntegerBitWidth();
+    if (T->isX86_FP80Ty())
+      return 80;
+    if (T->isHalfTy() || T->isBFloatTy() || T->isFloatTy() || T->isDoubleTy())
+      return T->getPrimitiveSizeInBits();
+    unimplemented("register type of a cq_theta/cq_measure site", at);
+  }
+
+  void sites(Function &F) {
+    std::vector<CallInst *> calls;
+    for (Instruction &I : instructions(F))
+      if (auto *CI = dyn_cast<CallInst>(&I))
+        if (Function *callee = CI->getCalledFunction())
+          if (siteKind(callee->getName()) >= 0)
+            calls.push_back(CI);
+    FunctionCallee site = hook("__cqo_site", Void, {Ptr, I32, I32, I64, Ptr, I32});
+    Constant *fn = str(F.getName());
+    unsigned k = 0;
+    for (CallInst *CI : calls) {
+      int kind = siteKind(CI->getCalledFunction()->getName());
+      IRBuilder<> B(CI);
+      Value *angle = B.getInt64(0);
+      Value *reg = ConstantPointerNull::get(cast<PointerType>(Ptr));
+      unsigned bits = 0;
+      AllocaInst *t = nullptr;
+      if (kind == KTheta || kind == KMeasure) {
+        Value *x = CI->getArgOperand(0);
+        bits = regBits(x->getType(), CI);
+        t = entryAlloca(F, x->getType());
+        B.CreateStore(x, t);
+        reg = t;
+      }
+      if (kind == KTheta || kind == KPhi) {
+        Value *a = CI->getArgOperand(kind == KTheta ? 1 : 0);
+        if (!a->getType()->isDoubleTy())
+          unimplemented("site angle not a double", CI);
+        angle = B.CreateBitCast(a, I64);
+      }
+      B.CreateCall(site, {fn, B.getInt32(k++), B.getInt32(kind), angle, reg, B.getInt32(bits)});
+      if (t) {
+        Value *v = B.CreateLoad(CI->getType(), t);
+        CI->replaceAllUsesWith(v);
+      }
+      CI->eraseFromParent();
+    }
+  }
+
+  // ---------------------------------------------------------------- trips
+  // Every edge From -> To (a switch may have several) through one new block.
+  BasicBlock *splitEdges(BasicBlock *From, BasicBlock *To) {
+    BasicBlock *NB = BasicBlock::Create(C, "", From->getParent(), To);
+    BranchInst::Create(To, NB);
+    Instruction *T = From->getTerminator();
+    for (unsigned i = 0; i < T->getNumSuccessors(); ++i)
+      if (T->getSuccessor(i) == To)
+        T->setSuccessor(i, NB);
+    for (PHINode &P : To->phis()) {
+      Value *v = P.getIncomingValueForBlock(From);
+      while (P.getBasicBlockIndex(From) >= 0)
+        P.removeIncomingValue(From, false);
+      P.addIncoming(v, NB);
+    }
+    return NB;
+  }
+
+  void trips(Function &F) {
+    DominatorTree DT(F);
+    LoopInfo LI(DT);
+    SmallVector<Loop *, 4> loops = LI.getLoopsInPreorder();
+    if (loops.empty())
+      return;
+    FunctionCallee tick = hook("__cqo_tick", Void, {});
+    FunctionCallee trip = hook("__cqo_trip", Void, {Ptr, I64});
+    // edge -> [(loop id, counter, minus one)]; a nullptr counter is a guard skip (n = 0).
+    struct Rep { Constant *id; AllocaInst *cnt; bool minusOne; };
+    std::map<std::pair<BasicBlock *, BasicBlock *>, std::vector<Rep>> edges;
+    std::vector<std::pair<std::pair<BasicBlock *, BasicBlock *>, unsigned>> order;
+    auto add = [&](BasicBlock *a, BasicBlock *b, Rep r) {
+      auto key = std::make_pair(a, b);
+      if (!edges.count(key))
+        order.push_back({key, (unsigned)order.size()});
+      edges[key].push_back(r);
+    };
+    std::vector<std::pair<BasicBlock *, AllocaInst *>> headers;
+    // Counters live in the entry block, zeroed once at function entry, reset on every exit.
+    unsigned idx = 0;
+    for (Loop *L : loops) {
+      std::string id = (F.getName() + "/" + Twine(idx++)).str();
+      Constant *cid = str(id);
+      AllocaInst *cnt = entryAlloca(F, I64);
+      {
+        IRBuilder<> B(cnt->getNextNode());
+        B.CreateStore(B.getInt64(0), cnt);
+      }
+      BasicBlock *H = L->getHeader();
+      headers.push_back({H, cnt});
+      SmallVector<Loop::Edge, 4> exits;
+      L->getExitEdges(exits);
+      for (auto &e : exits) {
+        BasicBlock *from = const_cast<BasicBlock *>(e.first), *to = const_cast<BasicBlock *>(e.second);
+        if (isa<IndirectBrInst>(from->getTerminator()) || isa<CallBrInst>(from->getTerminator()))
+          unimplemented("loop exit from indirectbr/callbr", from->getTerminator());
+        // A trip is begun at each header execution, except a final header run that only exits:
+        // an exit from a header that is not a latch.
+        add(from, to, Rep{cid, cnt, from == H && !L->isLoopLatch(H)});
+      }
+      // Guard skip: an entering edge whose branch's other successor is an exit block reports 0.
+      SmallVector<BasicBlock *, 4> exitBlocks;
+      L->getExitBlocks(exitBlocks);
+      for (BasicBlock *P : predecessors(H)) {
+        if (L->contains(P))
+          continue;
+        auto *br = dyn_cast<BranchInst>(P->getTerminator());
+        if (!br || !br->isConditional())
+          continue;
+        BasicBlock *other = br->getSuccessor(0) == H ? br->getSuccessor(1) : br->getSuccessor(0);
+        if (other == H)
+          continue;
+        if (is_contained(exitBlocks, other))
+          add(P, other, Rep{cid, nullptr, false});
+      }
+    }
+    for (auto &h : headers) {
+      IRBuilder<> B(&*h.first->getFirstInsertionPt());
+      Value *v = B.CreateLoad(I64, h.second);
+      B.CreateStore(B.CreateAdd(v, B.getInt64(1)), h.second);
+      B.CreateCall(tick, {});
+    }
+    for (auto &o : order) {
+      auto key = o.first;
+      BasicBlock *mid = splitEdges(key.first, key.second);
+      IRBuilder<> B(mid->getTerminator());
+      for (Rep &r : edges[key]) {
+        if (!r.cnt) {
+          B.CreateCall(trip, {r.id, B.getInt64(0)});
+          continue;
+        }
+        Value *n = B.CreateLoad(I64, r.cnt);
+        if (r.minusOne)
+          n = B.CreateSub(n, B.getInt64(1));
+        B.CreateCall(trip, {r.id, n});
+        B.CreateStore(B.getInt64(0), r.cnt);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- termination notes
+  void notes(Function &F) {
+    static const StringSet<> jumps = {"longjmp", "_longjmp", "siglongjmp", "__longjmp_chk"};
+    std::vector<Instruction *> work;
+    for (Instruction &I : instructions(F))
+      work.push_back(&I);
+    Constant *fn = str(F.getName());
+    for (Instruction *I : work) {
+      if (isa<UnreachableInst>(I)) {
+        IRBuilder<> B(I);
+        B.CreateCall(hook("__cqo_unreachable", Void, {Ptr}), {fn});
+        continue;
+      }
+      auto *CB = dyn_cast<CallBase>(I);
+      if (!CB)
+        continue;
+      if (isa<InvokeInst>(CB) || isa<CallBrInst>(CB))
+        unimplemented("invoke/callbr", CB);
+      Function *callee = CB->getCalledFunction();
+      if (auto *II = dyn_cast<IntrinsicInst>(CB)) {
+        Intrinsic::ID id = II->getIntrinsicID();
+        if (id == Intrinsic::trap || id == Intrinsic::debugtrap || id == Intrinsic::ubsantrap) {
+          IRBuilder<> B(CB);
+          B.CreateCall(hook("__cqo_noreturn", Void, {Ptr}), {str("llvm.trap")});
+        }
+        continue;
+      }
+      if (callee && callee->getName() == "raise" && CB->arg_size() == 1) {
+        IRBuilder<> B(CB);
+        B.CreateCall(hook("__cqo_raise_note", Void, {I32}),
+                     {B.CreateZExtOrTrunc(CB->getArgOperand(0), I32)});
+        continue;
+      }
+      bool noret = CB->doesNotReturn() || (callee && callee->doesNotReturn());
+      if (!noret)
+        continue;
+      if (callee && (jumps.contains(callee->getName()) || !callee->isDeclaration() ||
+                     callee->getName().starts_with("__cqo_")))
+        continue;  // longjmp runs natively (rule 24); a defined callee reaches its own noreturn call
+      IRBuilder<> B(CB);
+      B.CreateCall(hook("__cqo_noreturn", Void, {Ptr}),
+                   {str(callee ? callee->getName() : StringRef("<indirect>"))});
+    }
+  }
+
+  // ---------------------------------------------------------------- undefined externals
+  // The checker's model of a function nothing defines (rule 27 declared clones on the lowered side):
+  // h = FNV-1a-64 offset; h = (h ^ b) * P for each byte of the name; then for each non-pointer scalar
+  // argument, for each 64-bit word of its bit pattern (low word first, zero-extended):
+  // h = (h ^ w) * P. The result is the low W bits of h (fp: as a bit pattern); void: nothing;
+  // pointer result: null. No memory effect.
+  void stubs() {
+    if (StubsFile.empty())
+      return;
+    auto buf = MemoryBuffer::getFile(StubsFile);
+    if (!buf)
+      report_fatal_error(Twine("cq-oracle: cannot read ") + StubsFile, false);
+    SmallVector<StringRef, 16> lines;
+    (*buf)->getBuffer().split(lines, '\n', -1, false);
+    FunctionCallee mix = hook("__cqo_mix", I64, {I64, I64});
+    for (StringRef line : lines) {
+      StringRef name = line.trim();
+      if (name.empty())
+        continue;
+      Function *F = M.getFunction(name);
+      if (!F || !F->isDeclaration())
+        continue;
+      F->setLinkage(GlobalValue::InternalLinkage);
+      IRBuilder<> B(BasicBlock::Create(C, "", F));
+      uint64_t h0 = 0xcbf29ce484222325ULL;
+      for (unsigned char ch : name.bytes())
+        h0 = (h0 ^ ch) * 0x100000001b3ULL;
+      Value *h = B.getInt64(h0);
+      for (Argument &A : F->args()) {
+        Type *T = A.getType();
+        if (T->isPointerTy())
+          continue;
+        if (!T->isIntegerTy() && !T->isFloatingPointTy())
+          unimplemented("modelled external with a non-scalar argument", F);
+        unsigned bits = T->getPrimitiveSizeInBits();
+        Value *v = T->isIntegerTy() ? (Value *)&A : B.CreateBitCast(&A, IntegerType::get(C, bits));
+        unsigned words = (bits + 63) / 64;
+        Type *wide = IntegerType::get(C, words * 64);
+        Value *z = B.CreateZExt(v, wide);
+        for (unsigned w = 0; w < words; ++w)
+          h = B.CreateCall(mix, {h, B.CreateTrunc(B.CreateLShr(z, w * 64), I64)});
+      }
+      Type *R = F->getReturnType();
+      if (R->isVoidTy())
+        B.CreateRetVoid();
+      else if (R->isPointerTy())
+        B.CreateRet(ConstantPointerNull::get(cast<PointerType>(R)));
+      else if (R->isIntegerTy() || R->isFloatingPointTy()) {
+        unsigned bits = R->getPrimitiveSizeInBits();
+        Value *iv = B.CreateZExtOrTrunc(h, IntegerType::get(C, bits));
+        B.CreateRet(R->isIntegerTy() ? iv : B.CreateBitCast(iv, R));
+      } else
+        unimplemented("modelled external with a non-scalar result", F);
+    }
+  }
+
+  // ---------------------------------------------------------------- the driver's call results
+  // drivers.driver_source discards the result (`(void)fn(args)`): log it at the IR call instead.
+  void entryResults(Function &F) {
+    StringSet<> names;
+    for (auto &e : Entries)
+      names.insert(e);
+    // In-clang use (CQO_AT_END, see llvmGetPassPluginInfo) passes the list as CQO_ENTRIES.
+    if (const char *env = getenv("CQO_ENTRIES")) {
+      SmallVector<StringRef, 8> parts;
+      StringRef(env).split(parts, ',', -1, false);
+      for (StringRef p : parts)
+        names.insert(p);
+    }
+    if (names.empty())
+      return;
+    std::vector<CallInst *> calls;
+    for (Instruction &I : instructions(F))
+      if (auto *CI = dyn_cast<CallInst>(&I))
+        if (Function *callee = CI->getCalledFunction())
+          if (names.contains(callee->getName()))
+            calls.push_back(CI);
+    FunctionCallee ret = hook("__cqo_ret", Void, {Ptr, I32});
+    for (CallInst *CI : calls) {
+      IRBuilder<> B(CI->getNextNode());
+      Type *T = CI->getType();
+      if (T->isVoidTy()) {
+        B.CreateCall(ret, {ConstantPointerNull::get(cast<PointerType>(Ptr)), B.getInt32(0)});
+        continue;
+      }
+      unsigned bits = T->isIntegerTy() ? T->getIntegerBitWidth()
+                      : T->isX86_FP80Ty() ? 80
+                                          : (unsigned)DL.getTypeStoreSizeInBits(T).getFixedValue();
+      AllocaInst *t = entryAlloca(F, T);
+      B.CreateStore(CI, t);
+      B.CreateCall(ret, {t, B.getInt32(bits)});
+    }
+  }
+
+  void run() {
+    stubs();
+    std::vector<Function *> defined;
+    for (Function &F : M)
+      if (!F.isDeclaration())
+        defined.push_back(&F);
+    for (Function *F : defined) {
+      dropPoison(*F);
+      totalize(*F);
+    }
+    // cq_* names used other than as a direct callee cannot be replaced by the identity.
+    for (Function &F : M)
+      if (siteKind(F.getName()) >= 0)
+        for (User *U : F.users()) {
+          auto *CB = dyn_cast<CallInst>(U);
+          if (!CB || CB->getCalledOperand() != &F)
+            unimplemented("cq_* function used other than as a direct callee", U);
+        }
+    for (Function *F : defined)
+      if (!isDriverFn(*F))
+        sites(*F);
+      else
+        entryResults(*F);
+    for (Function *F : defined)
+      memory(*F);
+    replaceLibrary();
+    for (Function *F : defined)
+      notes(*F);
+    for (Function *F : defined)
+      if (!isDriverFn(*F))
+        trips(*F);
+    registerGlobals();
+    // The runtime owns `main`; a program's own main stays callable under another name.
+    if (Function *Mn = M.getFunction("main"))
+      if (!Mn->isDeclaration())
+        Mn->setName("__cqo_user_main");
+  }
+};
+
+struct OraclePass : PassInfoMixin<OraclePass> {
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
+    Instrumenter(M).run();
+    return PreservedAnalyses::none();
+  }
+};
+
+}  // namespace
+
+extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
+  return {LLVM_PLUGIN_API_VERSION, "CQOracle", "0.1", [](PassBuilder &PB) {
+            PB.registerPipelineParsingCallback(
+                [](StringRef name, ModulePassManager &MPM, ArrayRef<PassBuilder::PipelineElement>) {
+                  if (name != "cq-oracle")
+                    return false;
+                  MPM.addPass(OraclePass());
+                  return true;
+                });
+            // clang -fpass-plugin with CQO_AT_END=1: the instrumentation after clang's own pipeline,
+            // so the driver compiles, instruments and links in one clang invocation.
+            PB.registerOptimizerLastEPCallback([](ModulePassManager &MPM, OptimizationLevel) {
+              if (getenv("CQO_AT_END"))
+                MPM.addPass(OraclePass());
+            });
+          }};
+}
