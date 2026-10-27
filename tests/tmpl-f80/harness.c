@@ -13,10 +13,11 @@
  * samples where native also differs is shown, so every deviation from native is visible:
  *   T-noncanon   pseudo-NaN/pseudo-Inf/unnormal operand: real indefinite + INVALID (fp result);
  *                compares and conversions read the real indefinite with INVALID
- *   T-u8         fptoui f80 -> i8 = trunc(fist32)
- *   T-fmax       fmax/fmin value: isnan(a) ? b : isnan(b) ? a : (b > a ? b : a), equal gives a
+ *   T-u8         fptoui f80 -> i8 = trunc(fist16) (CQ_spec 2f894fd), flags of fist16
+ *   T-fmax       fmax/fmin value: isnan(a) ? b : isnan(b) ? a : (b > a ? b : a), equal gives a;
+ *                exception bits INVALID iff an operand is a signaling NaN (or non-canonical,
+ *                T-noncanon), else none (cq-qx1 ruling, IEEE maxNum, over libm's choice)
  *   T-fpclass    is_fpclass: pseudo-denormal is subnormal; non-canonical is the real indefinite
- *   T-rint       rint ties to even whatever the mode
  *   T-itofp      sitofp/uitofp above 64 bits: correctly rounded in the template's mode, INEXACT
  *   T-narrow     fptrunc f80 -> f16 in a directed mode and its exception bits; f80 -> bf16 in
  *                every form (LLVM 19 cannot lower fptrunc x86_fp80 to bfloat: no native code)
@@ -231,11 +232,11 @@ static int ref_conv_flags(val v, unsigned C, int sgn) {
   return t == x ? 0 : 32;
 }
 
-/* trunc(fist32) */
-static uint32_t ref_fist32(val v, int *fl) {
-  *fl = ref_conv_flags(v, 32, 1);
-  if (*fl & 1) return 0x80000000u;
-  return (uint32_t)(int32_t)truncl(ldv(v));
+/* trunc(fist16) */
+static uint16_t ref_fist16(val v, int *fl) {
+  *fl = ref_conv_flags(v, 16, 1);
+  if (*fl & 1) return 0x8000u;
+  return (uint16_t)(int16_t)truncl(ldv(v));
 }
 
 /* Round a nonnegative integer magnitude (words, up to 256 bits) to f80 per rc and sign. */
@@ -498,7 +499,7 @@ static void expected(const struct tcase *c, form_t f, const val *a, res_t *e, wh
   } else if (c->k == K_FPTOI && !strcmp(c->op, "fptoui") && W2 == 8) {
     val va = any_nc ? f80v(0xFFFF, INDEF_M) : a[0];
     int fl;
-    uint32_t r = ref_fist32(va, &fl);
+    uint16_t r = ref_fist16(va, &fl);
     e->v = f80v(0, 0);
     e->v.w[0] = r & 0xFF;
     e->exc = fl | (any_nc ? 1 : 0);
@@ -508,14 +509,15 @@ static void expected(const struct tcase *c, form_t f, const val *a, res_t *e, wh
     long double x = ldv(a[0]), y = ldv(a[1]);
     val r = is_nan80(a[0]) ? a[1] : is_nan80(a[1]) ? a[0] : ((ismax ? y > x : y < x) ? a[1] : a[0]);
     e->v = r;
-    why->row = "T-fmax"; /* exception bits: native */
+    int snan = 0;
+    for (int i = 0; i < 2; ++i)
+      if (is_nan80(a[i]) && !((a[i].w[0] >> 62) & 1)) snan = 1;
+    e->exc = snan ? 1 : 0;
+    why->row = "T-fmax";
   } else if (c->k == K_CLASS && (a[0].w[1] & 0x7FFF) == 0 && (a[0].w[0] >> 63)) {
     e->v = f80v(0, 0);
     e->v.w[0] = (uint64_t)ref_class(a[0], c->extra);
     why->row = "T-fpclass";
-  } else if (c->k == K_UN && !strcmp(c->op, "rint") && rc != FE_TONEAREST) {
-    run_native(c, 1, FE_TONEAREST, a, e);
-    why->row = "T-rint";
   } else if (c->k == K_ITOFP && width_bits(c->w) > 64 && (strict || width_bits(c->w) > 128)) {
     unsigned N = width_bits(c->w);
     uint64_t M[4];

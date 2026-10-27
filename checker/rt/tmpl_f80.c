@@ -18,14 +18,16 @@
  *     is_fpclass is a pure bit test: they read no value;
  *   - fptosi/fptoui are x87 fist (truncating) with the indefinite INT_MIN of the fist width, at the
  *     widths of the CR §2 f80 row: s8 = trunc(fist16), s16 = fist16, s32 = fist32, s64 = fist64,
- *     u8/u16 = trunc(fist32), u32 = trunc(fist64), u64 = x < 2^63 ? fist64(x) : fist64(x - 2^63)
- *     ^ 2^63. Every other width N follows x86-64 LLVM 19 -O1 code (see fix_int below);
+ *     u8 = trunc(fist16), u16 = trunc(fist32), u32 = trunc(fist64), u64 = x < 2^63 ? fist64(x) :
+ *     fist64(x - 2^63) ^ 2^63. Every other width N follows x86-64 LLVM 19 -O1 code (fix_int);
  *   - the NaN row: an fp arithmetic result that is a NaN is the first NaN operand in IR order,
  *     quieted, or, for an invalid operation, the real indefinite (the f80 default NaN; CR §2 names
  *     the f16/f32/f64 ones). This replaces the x87 larger-significand rule and libm's choice;
  *   - fmax/fmin: isnan(a) ? b : isnan(b) ? a : (b > a ? b : a) (min with <), equal values give a,
- *     two NaNs give b unchanged;
- *   - rint ties to even whatever the mode; sitofp/uitofp and fptrunc to f16/bf16 are correctly
+ *     two NaNs give b unchanged; _exc raises INVALID iff an operand is a signaling NaN or
+ *     non-canonical, else nothing (CR §2 / cq-qx1: IEEE maxNum over the libm call);
+ *   - rint rounds in the current mode: round to nearest even, or the template's mode for _rm/_rmq
+ *     (CR §2 at CQ_spec 2f894fd); sitofp/uitofp and fptrunc to f16/bf16 are correctly
  *     rounded in the template's mode at every width (software rounding, never double rounding).
  *
  * Calling convention of the registered cqe_op_fn (what the core dispatcher hands a family):
@@ -398,8 +400,8 @@ static uint32_t f16_to_f32_bits(uint16_t h) {
  * fix_int writes the N-bit result of fptosi (sgn = 1) or fptoui (sgn = 0) of x into r[nwords(N)]
  * and returns the exception bits. x is canonical or pseudo-denormal (callers substitute the real
  * indefinite for a non-canonical operand). Widths:
- *   - CR §2 f80 row: s8/s16 fist16, s32 fist32, s64 fist64, u8/u16 trunc(fist32), u32 trunc(fist64),
- *     u64 x < 2^63 ? fist64(x) : fist64(x - 2^63) ^ 2^63;
+ *   - CR §2 f80 row: s8/s16 fist16, s32 fist32, s64 fist64, u8 trunc(fist16), u16 trunc(fist32),
+ *     u32 trunc(fist64), u64 x < 2^63 ? fist64(x) : fist64(x - 2^63) ^ 2^63;
  *   - other N <= 64, as LLVM 19 -O1 promotes them: signed through the narrowest fist of 16/32/64
  *     bits >= N, unsigned through the narrowest one > N, then truncated;
  *   - 64 < N <= 128: compiler-rt __fixxfti / __fixunsxfti (the libcalls LLVM emits), truncated;
@@ -484,10 +486,10 @@ static int fix_int(f80b b, uint32_t N, int sgn, uint64_t *r) {
       else
         v = (uint64_t)fist64(x);
       sext = 1;
-    } else if (N == 8 || N == 16) {
-      v = (uint64_t)(int64_t)fist32(x); /* CR §2: u8/u16 = trunc(fist32) */
+    } else if (N == 16) {
+      v = (uint64_t)(int64_t)fist32(x); /* CR §2: u16 = trunc(fist32) */
     } else if (N < 16) {
-      v = (uint64_t)(int64_t)fist16(x);
+      v = (uint64_t)(int64_t)fist16(x); /* CR §2: u8 = trunc(fist16), as every N < 16 */
     } else if (N < 32) {
       v = (uint64_t)(int64_t)fist32(x);
     } else if (N < 64) {
@@ -641,7 +643,7 @@ static long double un_op(const char *op, long double x) {
   if (!strcmp(op, "ceil")) return ceill(x);
   if (!strcmp(op, "trunc")) return truncl(x);
   if (!strcmp(op, "round")) return roundl(x);
-  return rintl(x); /* rint: called under FE_TONEAREST (ties to even whatever the mode, CR §2) */
+  return rintl(x); /* rint: called in the template's mode (CR §2: the current mode, _rm/_rmq's) */
 }
 
 static long double bin_op(const char *op, long double a, long double b) {
@@ -734,7 +736,7 @@ static int f80_eval(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val 
       r = F80_INDEF;
       exc = X_INVALID;
     } else {
-      fpu_enter(&f, k == K_UN && !strcmp(t->op, "rint") ? FE_TONEAREST : rc);
+      fpu_enter(&f, rc);
       long double v;
       if (k == K_BIN)
         v = bin_op(t->op, ld_of(in[0]), ld_of(in[1]));
@@ -786,12 +788,9 @@ static int f80_eval(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val 
     } else {
       int ismax = t->op[2] == 'a';
       long double x = ld_of(a), y = ld_of(b);
-      /* The value is CR §2's formula; the exception bits are those of the libm call LLVM emits
-       * (CR §2 fixes none). */
-      fpu_enter(&f, rc);
-      volatile long double sink = ismax ? fmaxl(x, y) : fminl(x, y);
-      (void)sink;
-      exc = fpu_leave(&f);
+      /* The value is CR §2's formula; the exception bits are IEEE maxNum/minNum, normative over
+       * the libm call LLVM emits (CR §2, cq-qx1): INVALID iff a signaling NaN operand. */
+      exc = (f80_isnan(a) && !((a.m >> 62) & 1)) || (f80_isnan(b) && !((b.m >> 62) & 1)) ? X_INVALID : 0;
       if (f80_isnan(a))
         r = b;
       else if (f80_isnan(b))
