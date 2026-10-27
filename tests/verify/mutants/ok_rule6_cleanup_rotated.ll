@@ -1,0 +1,28 @@
+; EXPECT: accept
+target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-apple-macosx16.0.0"
+
+; Rule 6 on a rotated register y: y' = y + 1 into a fresh rail, the old rail cleaned by
+; t = y' - 1, copy(t, y), t's _unc, then y freed; y' rotated again.
+define i32 @f(i32 %0, double %1) {
+  %3 = call i32 @cqrt_alloc_i32(i32 %0)
+  call void @cqrt_ry_i32(i32 %3, double %1)
+  %4 = call i32 @cq_template_add_i32_hl(i32 %3, i32 1)
+  %5 = call i32 @cq_template_sub_i32_hl(i32 %4, i32 1)
+  call void @cqrt_copy_i32(i32 %5, i32 %3)
+  call void @cq_template_sub_i32_hl_unc(i32 %5, i32 %4, i32 1)
+  call void @cqrt_free(i32 %5)
+  call void @cqrt_free(i32 %3)
+  call void @cqrt_ry_i32(i32 %4, double %1)
+  %6 = call i32 @cqrt_measure_i32(i32 %4)
+  ret i32 %6
+}
+
+declare i32 @cqrt_alloc_i32(i32)
+declare void @cqrt_ry_i32(i32, double)
+declare void @cqrt_free(i32)
+declare i32 @cqrt_measure_i32(i32)
+declare void @cqrt_copy_i32(i32, i32)
+declare i32 @cq_template_add_i32_hl(i32, i32)
+declare i32 @cq_template_sub_i32_hl(i32, i32)
+declare void @cq_template_sub_i32_hl_unc(i32, i32, i32)
