@@ -361,8 +361,24 @@ def run_samples(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]],
     return out  # type: ignore[return-value]
 
 
+# Samples per driver: driver_source puts every sample in one function, and clang -O1 time grows
+# faster than linearly in its size (thousands of samples took minutes per driver).
+CHUNK = 64
+
+
 def _run_uncached(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int,
                   tripcap: int) -> List[SampleRun]:
+    runs: List[SampleRun] = []
+    for k in range(0, len(samples), CHUNK):
+        part = _run_chunk(o1, spec, samples[k:k + CHUNK], timeout_ms, tripcap)
+        for r in part:
+            r.index += k
+        runs += part
+    return runs
+
+
+def _run_chunk(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int,
+               tripcap: int) -> List[SampleRun]:
     exe = executable(Path(o1), spec, [{"call": s["call"], "args": s["args"]} for s in samples])
     with tempfile.TemporaryDirectory(prefix="cqo-run.") as td:
         t = Path(td)
