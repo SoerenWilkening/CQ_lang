@@ -6,3 +6,5 @@ add_test(NAME taint
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/check_taint.py
           --dump $<TARGET_FILE:cq_taint_dump> --spec ${CQ_SPEC_DIR}
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-0ia: lookups of unmarked classical values answer 'classical'; a value created after taint errors.
+cq_add_unit_test(taint_lookup taint_lookup.cpp)

@@ -2552,6 +2552,18 @@ std::string Analyzer::buildMask(SpecState &S) {
 }
 
 void Analyzer::finish() {
+  // cq-0ia: after the fixed point, every non-void instruction of an analysed body has an answer.
+  // One setL never touched is classical (all lanes 0), so a missing key means only "created after
+  // computeTaint", which stays an internal error (cq-5k5). Unreachable blocks are covered too: they
+  // are not in fi.rpo, and nothing in them depends on a cq_theta result.
+  for (auto &S : st.specs) {
+    if (S->declared)
+      continue;
+    for (const BasicBlock &BB : *S->F)
+      for (const Instruction &I : BB)
+        if (!I.getType()->isVoidTy())
+          S->lanes.try_emplace(&I, Lanes(lanesOf(I.getType())));
+  }
   // Reachability from the roots over the final callee maps.
   SmallVector<SpecState *, 32> work;
   for (auto &S : st.specs) {
