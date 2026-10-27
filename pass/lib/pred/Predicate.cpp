@@ -14,6 +14,7 @@ bool Pred::isTop() const { unimplemented("pred: Pred::isTop"); }
 bool Pred::isBottom() const { unimplemented("pred: Pred::isBottom"); }
 Pred Pred::quantumPart(const TaintInfo &, const Specialization &) const { unimplemented("pred: Pred::quantumPart"); }
 bool Pred::isClassical(const TaintInfo &, const Specialization &) const { unimplemented("pred: Pred::isClassical"); }
+PathPredicates::PathPredicates() { unimplemented("pred: PathPredicates::PathPredicates"); }
 void PathPredicates::compute(llvm::Function &, const llvm::LoopInfo &, const TaintInfo &, const Specialization &, llvm::Value *) { unimplemented("pred: PathPredicates::compute"); }
 const Pred &PathPredicates::block(const llvm::BasicBlock *) const { unimplemented("pred: PathPredicates::block"); }
 const Pred &PathPredicates::edge(const llvm::BasicBlock *, const llvm::BasicBlock *) const { unimplemented("pred: PathPredicates::edge"); }

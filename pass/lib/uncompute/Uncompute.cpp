@@ -3,6 +3,7 @@
 #include "cq/Uncompute.h"
 
 namespace cq {
+Uncompute::Uncompute() { unimplemented("uncompute: Uncompute::Uncompute"); }
 RailId Uncompute::recordTemplate(llvm::CallInst *, const abi::TemplateSpec &, llvm::ArrayRef<Operand>) { unimplemented("uncompute: Uncompute::recordTemplate"); }
 RailId Uncompute::recordCore(llvm::CallInst *, const abi::CoreSpec &, llvm::ArrayRef<Operand>, RailId) { unimplemented("uncompute: Uncompute::recordCore"); }
 RailId Uncompute::recordSeed(llvm::CallInst *) { unimplemented("uncompute: Uncompute::recordSeed"); }

@@ -1,7 +1,8 @@
-// Frozen interface (cq-arch, with owner amendments A2 and A4 of 2026-10-27). Changes only under
-// cq-arch's freeze rule.
+// Frozen interface (cq-arch, with owner amendments A2 and A4 of 2026-10-27 and freeze bead cq-k1w).
+// Changes only under cq-arch's freeze rule.
 #pragma once
 
+#include <memory>
 #include <variant>
 
 #include "cq/Abi.h"
@@ -21,6 +22,7 @@ enum class Role : uint8_t { Garbage, Seed, UserRegister, Result, Output, Measure
 struct Record { llvm::CallInst *forward; std::variant<abi::TemplateSpec, abi::CoreSpec> spec; llvm::SmallVector<Operand, 3> ops; RailId out; };
 class Uncompute {
 public:
+  Uncompute();
   RailId recordTemplate(llvm::CallInst *fwd, const abi::TemplateSpec &, llvm::ArrayRef<Operand>);
   // A2
   RailId recordCore(llvm::CallInst *fwd, const abi::CoreSpec &, llvm::ArrayRef<Operand>, RailId out);
@@ -36,5 +38,8 @@ public:
   unsigned openScope(); void closeScope(unsigned);
   llvm::ArrayRef<Record> scopeRecords(unsigned) const;
   void emitMirror(unsigned scope, llvm::IRBuilder<> &);
+  // K1: storage owned by module uncompute.
+private:
+  struct Impl; std::shared_ptr<Impl> impl;
 };
 }

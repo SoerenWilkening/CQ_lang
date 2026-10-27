@@ -1,6 +1,7 @@
-// Frozen interface (cq-arch). Changes only under cq-arch's freeze rule.
+// Frozen interface (cq-arch, with freeze bead cq-k1w). Changes only under cq-arch's freeze rule.
 #pragma once
 
+#include <memory>
 #include <vector>
 
 #include "cq/Abi.h"
@@ -23,6 +24,7 @@ class PathPredicates; struct Pred;
 class LoweringContext {
 public:
   llvm::Module &M; const TaintInfo &T; const Specialization &S;
+  LoweringContext(llvm::Module &, const TaintInfo &, const Specialization &);
   llvm::Function &out(); llvm::IRBuilder<> &B();
   Operand operand(const llvm::Value *orig);
   llvm::Value *rail(const llvm::Value *orig);                     // internalError if classical
@@ -37,6 +39,9 @@ public:
   llvm::Value *currentFlag();             // its flag rail, nullptr when classical-true
   unsigned beginGateLog(); std::vector<llvm::CallInst *> endGateLog(unsigned);
   unsigned K(const llvm::Loop *) const;
+  // K1: storage owned by module spine.
+private:
+  struct Impl; std::shared_ptr<Impl> impl;
 };
 void construct(llvm::Module &, const TaintInfo &, const Specialization &);
 void lowerOpcode(LoweringContext &, llvm::Instruction &);

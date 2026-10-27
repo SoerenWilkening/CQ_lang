@@ -6,6 +6,7 @@
 #include "cq/Predicate.h"
 
 namespace cq {
+LoweringContext::LoweringContext(llvm::Module &M, const TaintInfo &T, const Specialization &S) : M(M), T(T), S(S) { unimplemented("spine: LoweringContext::LoweringContext"); }
 llvm::Function &LoweringContext::out() { unimplemented("spine: LoweringContext::out"); }
 llvm::IRBuilder<> &LoweringContext::B() { unimplemented("spine: LoweringContext::B"); }
 Operand LoweringContext::operand(const llvm::Value *) { unimplemented("spine: LoweringContext::operand"); }

@@ -1,7 +1,8 @@
-// Frozen interface (cq-arch, with owner amendment A1 of 2026-10-27). Changes only under cq-arch's
-// freeze rule.
+// Frozen interface (cq-arch, with owner amendment A1 of 2026-10-27 and freeze bead cq-k1w).
+// Changes only under cq-arch's freeze rule.
 #pragma once
 
+#include <memory>
 #include <vector>
 
 #include "cq/Abi.h"
@@ -40,6 +41,10 @@ public:
   llvm::ArrayRef<ObjectId> provenance(const llvm::Value *ptr, const Specialization &) const;
   bool isFatPointer(const llvm::Value *ptr, const Specialization &) const;
   void print(llvm::raw_ostream &) const;                               // -cq-dump-taint
+  // K1: storage owned by module taint; computeTaint builds it.
+private:
+  struct Impl; std::shared_ptr<Impl> impl;
+  friend TaintInfo computeTaint(llvm::Module &, const TaintOptions &);
 };
 TaintInfo computeTaint(llvm::Module &, const TaintOptions &);
 }

@@ -2,9 +2,10 @@
 """Acceptance test of cq-w0-scaffold.
 
 1. spec.lock holds (tools/spec_lock.py).
-2. The frozen headers equal cq-arch's text with the owner's amendments A1-A4: pass/include/cq/*.h,
-   checker/rt/cqe.h, and the dataclass fields of checker/cqcheck/contracts.py. cq-arch is read live
-   from beads (`bd show cq-arch --json`) unless --arch-json names a saved copy.
+2. The frozen headers equal cq-arch's text with the owner's amendments A1-A4 and freeze bead K1
+   (cq-k1w): pass/include/cq/*.h, checker/rt/cqe.h, and the dataclass fields of
+   checker/cqcheck/contracts.py. cq-arch is read live from beads (`bd show cq-arch --json`) unless
+   --arch-json names a saved copy.
 3. `opt -passes=cq-lower` on every example `.O1.ll` (counted from the directory) exits non-zero with
    `cq: unimplemented: <module>: <function>` and writes no output file and nothing to stdout.
 4. A module with no CQ.h call comes out byte-identical (.ll and .bc, with and without the K flags) to
@@ -91,6 +92,27 @@ AMENDMENTS = [
     # A4
     ("                            KeptOverflow, Escaped };",
      ["                            KeptOverflow, Escaped, KeptEntangled };"], "replace"),
+    # K1 (freeze bead cq-k1w, final text in a cq-arch comment): storage for the stateful classes.
+    ("  void print(llvm::raw_ostream &) const;                               // -cq-dump-taint",
+     ["private:", "  struct Impl; std::shared_ptr<Impl> impl;",
+      "  friend TaintInfo computeTaint(llvm::Module &, const TaintOptions &);"], "after"),
+    ("  RailId recordTemplate(llvm::CallInst *fwd, const abi::TemplateSpec &, llvm::ArrayRef<Operand>);",
+     ["  Uncompute();",
+      "  RailId recordTemplate(llvm::CallInst *fwd, const abi::TemplateSpec &, llvm::ArrayRef<Operand>);"], "replace"),
+    ("  void emitMirror(unsigned scope, llvm::IRBuilder<> &);",
+     ["private:", "  struct Impl; std::shared_ptr<Impl> impl;"], "after"),
+    ("  bool isClassical(const TaintInfo &, const Specialization &) const;",
+     ["private:", "  struct Impl; std::shared_ptr<const Impl> impl;"], "after"),
+    ("  void compute(llvm::Function &, const llvm::LoopInfo &, const TaintInfo &, const Specialization &,",
+     ["  PathPredicates();",
+      "  void compute(llvm::Function &, const llvm::LoopInfo &, const TaintInfo &, const Specialization &,"],
+     "replace"),
+    ("  llvm::Value *flag(LoweringContext &, const Pred &);",
+     ["private:", "  struct Impl; std::shared_ptr<Impl> impl;"], "after"),
+    ("  llvm::Module &M; const TaintInfo &T; const Specialization &S;",
+     ["  LoweringContext(llvm::Module &, const TaintInfo &, const Specialization &);"], "after"),
+    ("  unsigned K(const llvm::Loop *) const;",
+     ["private:", "  struct Impl; std::shared_ptr<Impl> impl;"], "after"),
 ]
 
 SECTION = re.compile(r"^// (\w+)\.h\b")
@@ -180,7 +202,7 @@ def check_headers(desc):
             fail(f"contracts.py {cls}: fields {got} != cq-arch {names}")
         else:
             n += 1
-    print(f"headers: {n} interfaces compared against cq-arch (+A1-A4)")
+    print(f"headers: {n} interfaces compared against cq-arch (+A1-A4, K1)")
 
 
 # ---------------------------------------------------------------------------------------------

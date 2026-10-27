@@ -1,7 +1,8 @@
-// Frozen interface (cq-arch, with owner amendment A3 of 2026-10-27). Changes only under cq-arch's
-// freeze rule.
+// Frozen interface (cq-arch, with owner amendment A3 of 2026-10-27 and freeze bead cq-k1w).
+// Changes only under cq-arch's freeze rule.
 #pragma once
 
+#include <memory>
 #include <utility>
 
 #include "cq/Common.h"
@@ -25,15 +26,22 @@ struct Pred {   // canonical Boolean function over condition atoms
   bool isTop() const; bool isBottom() const;
   Pred quantumPart(const TaintInfo &, const Specialization &) const;
   bool isClassical(const TaintInfo &, const Specialization &) const;
+  // K1: storage owned by module pred; immutable and shared, so Pred copies as a value.
+private:
+  struct Impl; std::shared_ptr<const Impl> impl;
 };
 struct EdgePreds { llvm::SmallVector<std::pair<const llvm::BasicBlock *, Pred>, 4> succ; };
 class PathPredicates {
 public:
+  PathPredicates();
   void compute(llvm::Function &, const llvm::LoopInfo &, const TaintInfo &, const Specialization &,
                llvm::Value *entryFlag /* _ctl clones */);
   const Pred &block(const llvm::BasicBlock *) const;
   const Pred &edge(const llvm::BasicBlock *from, const llvm::BasicBlock *to) const;
   llvm::Value *flag(LoweringContext &, const Pred &);
+  // K1: storage owned by module pred.
+private:
+  struct Impl; std::shared_ptr<Impl> impl;
 };
 void lowerBranch(LoweringContext &, llvm::BranchInst &);
 llvm::Value *lowerMerge(LoweringContext &, llvm::PHINode &);
