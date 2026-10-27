@@ -22,4 +22,5 @@ add_executable(tmpl_f80_diff
 target_include_directories(tmpl_f80_diff PRIVATE "${F80_GEN}" "${CMAKE_SOURCE_DIR}/checker/rt")
 set_target_properties(tmpl_f80_diff PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED ON)
 target_compile_options(tmpl_f80_diff PRIVATE -march=penryn)
-add_test(NAME tmpl-f80-diff COMMAND tmpl_f80_diff 3000)
+# Sample count from CQ_FULL (cq-m4s9): quick 200 by default, CQ_FULL=1 3000.
+add_test(NAME tmpl-f80-diff COMMAND tmpl_f80_diff)

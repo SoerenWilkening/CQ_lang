@@ -5,7 +5,11 @@
  * gen_native.py) on edge values, fp specials, a seeded random set, and every input when the inputs
  * total at most 16 bits. The CR §2 rows where native LLVM is undefined are checked against literal
  * table values (table_rows) as well as against the guarded native functions. Malformed operand
- * lists must be rejected through cqe_fail (negative_tests). */
+ * lists must be rejected through cqe_fail (negative_tests).
+ *
+ * Size: quick by default (cq-m4s9): every class and check above, random samples capped near 200
+ * per (op, width), exhaustive only when the inputs total at most 8 bits. CQ_FULL=1 (any value but
+ * empty or "0") restores the full sizes: exhaustive up to 16 bits, 64 + 2000 / 400 randoms. */
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -212,11 +216,14 @@ static void diff_one(const case_t *c, const val_t *a, const val_t *b, long k) {
 
 static val_t VS[MAXV];
 
+static int full_mode; /* CQ_FULL=1: full sizes; otherwise the quick set (cq-m4s9) */
+#define SZ(full, quick) (full_mode ? (full) : (quick))
+
 static void run_case(const case_t *c, int idx) {
   rng_state = UINT64_C(0xC0DE5EED) ^ ((uint64_t)idx << 20);
   long k = 0;
   if (c->arity == 2) {
-    if (c->fb <= 8) { /* exhaustive: inputs total at most 16 bits */
+    if (c->fb <= SZ(8u, 4u)) { /* exhaustive: inputs total at most 16 (quick: 8) bits */
       for (uint64_t x = 0; x < (UINT64_C(1) << c->fb); ++x)
         for (uint64_t y = 0; y < (UINT64_C(1) << c->fb); ++y) {
           val_t a = small(x, c->fb), b = small(y, c->fb);
@@ -225,20 +232,20 @@ static void run_case(const case_t *c, int idx) {
       return;
     }
     int ne = edges(VS, 0, c->fb);
-    int nv = randoms(VS, ne, c->fb, 64);
+    int nv = randoms(VS, ne, c->fb, SZ(64, 2));
     for (int i = 0; i < nv; ++i)
       for (int j = 0; j < nv; ++j)
         if (i < ne || j < ne || ((i * 131 + j) % 7) == 0) diff_one(c, &VS[i], &VS[j], k++);
-    for (int r = 0; r < 2000; ++r) {
+    for (int r = 0; r < SZ(2000, 150); ++r) {
       val_t a = random_val(c->fb), b = random_val(c->fb);
       diff_one(c, &a, &b, k++);
     }
   } else {
-    if (c->fb <= 16) {
+    if (c->fb <= SZ(16u, 8u)) {
       for (uint64_t x = 0; x < (UINT64_C(1) << c->fb); ++x) { val_t a = small(x, c->fb); diff_one(c, &a, NULL, k++); }
       return;
     }
-    int nv = randoms(VS, edges(VS, 0, c->fb), c->fb, 400);
+    int nv = randoms(VS, edges(VS, 0, c->fb), c->fb, SZ(400, 200));
     for (int i = 0; i < nv; ++i) diff_one(c, &VS[i], NULL, k++);
   }
 }
@@ -386,6 +393,10 @@ static void negative_tests(void) {
 }
 
 int main(void) {
+  {
+    const char *e = getenv("CQ_FULL");
+    full_mode = e && *e && strcmp(e, "0");
+  }
   static const char *const ops[] = {"add",  "sub",  "mul",  "udiv",  "sdiv",   "urem",
                                     "srem", "zext", "sext", "trunc", "bitcast"};
   for (size_t i = 0; i < sizeof ops / sizeof ops[0]; ++i)
@@ -396,7 +407,7 @@ int main(void) {
   long diff = n_cmp;
   table_rows();
   negative_tests();
-  printf("tmpl-int: %d native cases, %ld differential comparisons, %ld CR §2 table checks, "
-         "%ld negative checks, %ld mismatches\n", ncases, diff, n_table, n_neg, n_mismatch);
+  printf("tmpl-int (%s): %d native cases, %ld differential comparisons, %ld CR §2 table checks, "
+         "%ld negative checks, %ld mismatches\n", full_mode ? "CQ_FULL" : "quick", ncases, diff, n_table, n_neg, n_mismatch);
   return n_mismatch ? 1 : 0;
 }

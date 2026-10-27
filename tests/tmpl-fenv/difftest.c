@@ -23,7 +23,11 @@
  *     bits: f32 in the mode (native cvtsi2ss up to 64 bits), then that IEEE fptrunc. The _exc bits
  *     stay IEEE in the mode (reference).
  * Also: every claimed op declines (CQE_OP_NOT_MINE) its plain form and every f80 form; fcmps is
- * claimed in every form. Exit status 0 iff no mismatch; counts are printed per op and width. */
+ * claimed in every form. Exit status 0 iff no mismatch; counts are printed per op and width.
+ *
+ * Size: quick by default (cq-m4s9): every edge tuple, form, mode and check above, 200 random
+ * samples per op and width (50 for the wide sitofp/uitofp sources). CQ_FULL=1 (any value but
+ * empty or "0") restores the full 4000 (1000). An explicit count on the command line wins. */
 #include <fenv.h>
 #include <math.h>
 #include <stdint.h>
@@ -1192,9 +1196,11 @@ static void test_corpus_spellings(void) {
 }
 
 int main(int argc, char **argv) {
-  int nrand = argc > 1 ? atoi(argv[1]) : 4000;
-  printf("tmpl-fenv difftest: seed %016llx, %d random per op and width\n",
-         (unsigned long long)rs, nrand);
+  const char *full_env = getenv("CQ_FULL");
+  int full_mode = full_env && *full_env && strcmp(full_env, "0"); /* cq-m4s9 */
+  int nrand = argc > 1 ? atoi(argv[1]) : full_mode ? 4000 : 200;
+  printf("tmpl-fenv difftest (%s): seed %016llx, %d random per op and width\n",
+         full_mode ? "CQ_FULL" : "quick", (unsigned long long)rs, nrand);
   test_claims();
   test_corpus_spellings();
   const fmt_t *fs[4] = {&F16, &BF16, &F32, &F64};

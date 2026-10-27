@@ -10,5 +10,6 @@ set_target_properties(tmpl_fenv_difftest PROPERTIES C_STANDARD 17)
 # native.c is the operation under comparison: exactly -O1, as the corpus compiles C.
 set_source_files_properties(native.c native_ns.c PROPERTIES COMPILE_OPTIONS "-O1")
 target_link_libraries(tmpl_fenv_difftest PRIVATE m)
-add_test(NAME tmpl-fenv-difftest COMMAND tmpl_fenv_difftest 4000)
+# Sample count from CQ_FULL (cq-m4s9): quick 200 by default, CQ_FULL=1 4000.
+add_test(NAME tmpl-fenv-difftest COMMAND tmpl_fenv_difftest)
 set_tests_properties(tmpl-fenv-difftest PROPERTIES TIMEOUT 1800)

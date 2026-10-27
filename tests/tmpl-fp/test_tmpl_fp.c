@@ -36,6 +36,11 @@
  *
  * The test links tmpl_fp.c directly with the two cqe.h functions it calls defined here, so it does
  * not depend on the evaluator core.
+ *
+ * Size: quick by default (cq-m4s9): every edge tuple and every check above, 200 random samples per
+ * (op, width), and no exhaustive f16/bf16 sweep (16 bits of operands, over the 8-bit quick limit).
+ * CQ_FULL=1 (any value but empty or "0") restores the full sizes: 200000 random samples and the
+ * f16/bf16 unary sweeps. An explicit sample count on the command line wins over both.
  */
 #include <inttypes.h>
 #include <math.h>
@@ -443,6 +448,8 @@ static void check(int op, int fi, const uint64_t *x) {
   }
 }
 
+static int full_mode; /* CQ_FULL=1: full sizes; otherwise the quick set (cq-m4s9) */
+
 static void run_width(int fi, long nrand) {
   const fmt *f = &fmts[fi];
   uint64_t e[64];
@@ -460,8 +467,8 @@ static void run_width(int fi, long nrand) {
         for (int j = 0; j < ne; ++j)
           for (int k = 0; k < ne; ++k) { x[0] = e[i]; x[1] = e[j]; x[2] = e[k]; check(op, fi, x); }
     }
-    /* f16 and bf16 unary: every value */
-    if ((fi == F16 || fi == BF16) && arity[op] == 1)
+    /* f16 and bf16 unary: every value (CQ_FULL only: 16 bits of operands) */
+    if (full_mode && (fi == F16 || fi == BF16) && arity[op] == 1)
       for (uint64_t v = 0; v < 65536; ++v) { x[0] = v; check(op, fi, x); }
     /* seeded random */
     int emax = (1 << f->eb) - 2;
@@ -540,8 +547,12 @@ static void run_negative(void) {
 }
 
 int main(int argc, char **argv) {
-  /* usage: test_tmpl_fp [random samples per op and width, default 200000] [seed] */
-  long nrand = argc > 1 ? atol(argv[1]) : 200000;
+  /* usage: test_tmpl_fp [random samples per op and width, default 200 (CQ_FULL=1: 200000)] [seed] */
+  {
+    const char *e = getenv("CQ_FULL");
+    full_mode = e && *e && strcmp(e, "0");
+  }
+  long nrand = argc > 1 ? atol(argv[1]) : full_mode ? 200000 : 200;
   if (argc > 2)
     rng_state = strtoull(argv[2], NULL, 0) | 1;
   for (int op = 0; op < NOPS; ++op)
@@ -555,9 +566,9 @@ int main(int argc, char **argv) {
   if (wf_fail)
     printf("FAIL: cqe_fail was called %d times on well-formed calls (last: %s)\n", wf_fail, last_fail);
   run_negative();
-  printf("tmpl-fp: %ld comparisons, %ld against native (agree), %ld against CR §2 table "
+  printf("tmpl-fp (%s): %ld comparisons, %ld against native (agree), %ld against CR §2 table "
          "(native differs from the table in %ld), %ld mismatches\n",
-         n_cmp, n_native_agree, n_table, n_table_native_differs, n_bad);
+         full_mode ? "CQ_FULL" : "quick", n_cmp, n_native_agree, n_table, n_table_native_differs, n_bad);
   for (int fi = 0; fi < NFMT; ++fi)
     printf("  %s: %ld comparisons, %ld against native, %ld against the table, %ld mismatches\n", fmts[fi].name,
            w_cmp[fi], w_native[fi], w_table[fi], w_bad[fi]);

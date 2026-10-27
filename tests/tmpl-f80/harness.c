@@ -27,6 +27,11 @@
  * Also checked: a template with no f80 operand returns CQE_OP_NOT_MINE and leaves out untouched;
  * a malformed call returns -1 and reports cqe_fail; the corpus symbols listed in CORPUS parse
  * into the forms tested here.
+ *
+ * Size: quick by default (cq-m4s9): every sample class, form and check above, 200 random samples
+ * per (op, width, form) and about 200 random integer sources past the integer edges. CQ_FULL=1
+ * (any value but empty or "0") restores the full sizes: 3000 random samples, 400 + 3000/10 integer
+ * sources. An explicit sample count on the command line wins over both.
  */
 #pragma STDC FENV_ACCESS ON
 
@@ -676,7 +681,9 @@ static const char *CORPUS[] = {
 };
 
 int main(int argc, char **argv) {
-  long nrand = argc > 1 ? atol(argv[1]) : 3000;
+  const char *full_env = getenv("CQ_FULL");
+  int full_mode = full_env && *full_env && strcmp(full_env, "0"); /* cq-m4s9 */
+  long nrand = argc > 1 ? atol(argv[1]) : full_mode ? 3000 : 200;
   g_only = argc > 2 ? argv[2] : NULL;
   build_f80_samples();
   if (!g_fn) {
@@ -699,7 +706,9 @@ int main(int argc, char **argv) {
       long reps = 0;
       if (c->k == K_ITOFP) {
         static val src[1200];
-        int n = nsrc_samples(width_bits(c->w), src, 400 + (int)(nrand / 10));
+        /* quick: room for every integer edge (at most ~240, at i256) plus about nrand randoms */
+        long nsrc = full_mode ? 400 + nrand / 10 : 240 + nrand;
+        int n = nsrc_samples(width_bits(c->w), src, (int)(nsrc < 1200 ? nsrc : 1200));
         for (int i = 0; i < n; ++i) { a[0] = src[i]; check(c, f, a, &st, rows, rowname, &nrows); }
       } else if (c->k == K_FPEXT) {
         for (long i = 0; i < 16 + nrand; ++i) { a[0] = fsrc(c->w, (int)i); check(c, f, a, &st, rows, rowname, &nrows); }
@@ -814,7 +823,7 @@ int main(int argc, char **argv) {
   for (int k = 0; k < nrows; ++k)
     printf("  %-11s %8ld samples (native differs on %ld; %ld in cases with no native code)\n", rowname[k],
            rows[k].table, rows[k].table_native_differs, rows[k].fails);
-  printf("\ncases %zu, forms %zu, checked %ld, against table %ld, FAIL %ld, contract FAIL %ld\n", NCASES, NFORMS,
+  printf("\nmode %s, nrand %ld: cases %zu, forms %zu, checked %ld, against table %ld, FAIL %ld, contract FAIL %ld\n", full_mode ? "CQ_FULL" : "quick", nrand, NCASES, NFORMS,
          total.checked, total.table, total.fails, contract_fail);
   return total.fails || contract_fail ? 1 : 0;
 }

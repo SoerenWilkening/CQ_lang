@@ -9,6 +9,10 @@
  * every operand, which must not change the result (CR §1.2: only the low W bits are read).
  * CR §2's abs(INT_MIN) = INT_MIN is checked against the table as well as native.
  *
+ * Size: quick by default (cq-m4s9): every class and check above, random samples capped near 200
+ * per (op, width), exhaustive only when the data operands total at most 8 bits. CQ_FULL=1 (any
+ * value but empty or "0") restores the full sizes: exhaustive up to 16 bits, 3000 + 200 randoms.
+ *
  * The family is linked directly; cqe_register_op and cqe_fail are mocked here, so the test does
  * not depend on the core. */
 #include <stdarg.h>
@@ -172,6 +176,7 @@ static void fp_specials(vset_t *s, unsigned bits, const char *w) {
 /* ---- running one case ---- */
 
 static long ncases, nmismatch;
+static int full_mode; /* CQ_FULL=1: full sizes; otherwise the quick set (cq-m4s9) */
 
 static void to_cqe(cqe_val *cv, val_t *v, unsigned bits, char kind, unsigned nw) {
   cv->bits = bits; cv->kind = kind; cv->nw = nw; cv->w = v->w;
@@ -270,8 +275,8 @@ static void run_entry(const entry_t *e) {
     }                                                         \
   } while (0)
 
-  /* exhaustive when the data operands total at most 16 bits (select's cond is one more bit) */
-  if (e->kind == 'i' && W * (unsigned)ndata <= 16) {
+  /* exhaustive when the data operands total at most 16 (quick: 8) bits (select's cond is one more bit) */
+  if (e->kind == 'i' && W * (unsigned)ndata <= (full_mode ? 16u : 8u)) {
     uint64_t lim = 1ull << W;
     if (ndata == 1) for (uint64_t x = 0; x < lim; ++x) RUN(vsmall(x, W), vzero());
     else for (uint64_t x = 0; x < lim; ++x) for (uint64_t y = 0; y < lim; ++y) RUN(vsmall(x, W), vsmall(y, W));
@@ -280,14 +285,14 @@ static void run_entry(const entry_t *e) {
   if (ndata == 1) for (int i = 0; i < E.n; ++i) RUN(E.v[i], vzero());
   else for (int i = 0; i < E.n; ++i) for (int j = 0; j < E.n; ++j) RUN(E.v[i], E.v[j]);
   /* seeded random: uniform, random bit length, and mixed with edges */
-  for (int r = 0; r < 3000; ++r) {
+  for (int r = 0; r < (full_mode ? 3000 : ndata == 2 ? 70 : 200); ++r) { /* quick: ~200 samples */
     val_t x = (r & 1) ? vrand_len(W) : vrand(W), y = (r & 2) ? vrand_len(W) : vrand(W);
     if (e->kind == 'f' && (r % 3) == 0) { x = E.v[rnd() % E.n]; }
     RUN(x, y);
     if (ndata == 2) { RUN(E.v[r % E.n], y); RUN(x, E.v[r % E.n]); }
   }
   /* x == y */
-  for (int r = 0; r < 200; ++r) { val_t x = vrand_len(W); RUN(x, x); }
+  for (int r = 0; r < (full_mode ? 200 : 20); ++r) { val_t x = vrand_len(W); RUN(x, x); }
   printf("  %-14s %-3s %-5s %8ld cases\n", e->op, e->pred, e->w, ncases - before);
 }
 
@@ -382,6 +387,10 @@ static void convention(void) {
 }
 
 int main(void) {
+  {
+    const char *e = getenv("CQ_FULL");
+    full_mode = e && *e && strcmp(e, "0");
+  }
   static const char *ops[] = {"icmp", "select", "smax", "smin", "umax", "umin", "abs",
                               "uadd_overflow", "sadd_overflow", "usub_overflow", "ssub_overflow",
                               "umul_overflow", "smul_overflow", "uadd_sat", "usub_sat"};
@@ -393,6 +402,6 @@ int main(void) {
   for (size_t i = 0; i < ne; ++i) run_entry(&TABLE[i]);
   table_rows();
   convention();
-  printf("entries: %zu  cases: %ld  mismatches: %ld\n", ne, ncases, nmismatch);
+  printf("mode: %s  entries: %zu  cases: %ld  mismatches: %ld\n", full_mode ? "CQ_FULL" : "quick", ne, ncases, nmismatch);
   return nmismatch ? 1 : 0;
 }

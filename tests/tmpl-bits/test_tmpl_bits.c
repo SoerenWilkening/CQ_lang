@@ -8,6 +8,11 @@
  * operands total at most 21 bits. Shift amounts: 0 .. 2W+2, multiples of W, the edge values and
  * random ones.
  *
+ * Size: quick by default (cq-m4s9): every class above, random sets capped near 200 per (op, width),
+ * exhaustive sweeps only when the operands total at most 8 bits, and fshl/fshr cover the
+ * operand-pair x amount product instead of running all of it (see the ternary loop). CQ_FULL=1 restores the full sizes
+ * (random sets of 512 / 48 / 8 and 4096 random tuples, exhaustive up to 21 bits).
+ *
  * CR §2 rows where native LLVM is poison (shl/lshr/ashr with an amount >= W) are checked against
  * the table instead: the tab_ wrapper, which takes `urem k, W` natively before the shift. fshl/fshr
  * and ctlz/cttz(0) are defined by LLVM itself (amount mod W, is_zero_poison = false gives W), so
@@ -206,6 +211,11 @@ static vset values(uint32_t W, int exhaustive, int single_bits, int nrand) {
   return s;
 }
 
+/* CQ_FULL=1 (any value but empty or "0"): full sizes; otherwise the quick set (cq-m4s9). */
+static int full_mode;
+#define SZ(full, quick) (full_mode ? (full) : (quick))
+#define EXH_BITS SZ(21, 8)
+
 static vset amounts(uint32_t W) {
   vset s = {0};
   for (uint32_t k = 0; k <= 2 * W + 2; ++k)
@@ -216,9 +226,9 @@ static vset amounts(uint32_t W) {
   push(&s, from_u64(65, W), W);
   push(&s, from_u64(256 + 3, W), W);
   edges(&s, W, 0);
-  for (int i = 0; i < 48; ++i)
+  for (int i = 0; i < SZ(48, 8); ++i)
     push(&s, rnd(W), W);
-  for (int i = 0; i < 16; ++i) { /* a large amount whose residue mod W is random */
+  for (int i = 0; i < SZ(16, 4); ++i) { /* a large amount whose residue mod W is random */
     val v = rnd(W);
     push(&s, v, W);
   }
@@ -328,6 +338,10 @@ static int expect_reject(cqe_op_fn fn, const char *what, const char *op, const c
 int main(int argc, char **argv) {
   int bad = 0;
   first_only = argc > 1 && !strcmp(argv[1], "--first");
+  {
+    const char *e = getenv("CQ_FULL");
+    full_mode = e && *e && strcmp(e, "0");
+  }
   /* every op registered exactly once */
   for (size_t i = 0; i < sizeof OPS / sizeof *OPS; ++i)
     if (!lookup(OPS[i])) {
@@ -379,7 +393,7 @@ int main(int argc, char **argv) {
     }
     val ops[3];
     if (r->arity == 1) {
-      vset v = values(W, W <= 21, 1, 512);
+      vset v = values(W, (int)W <= EXH_BITS, 1, SZ(512, 200));
       for (int i = 0; i < v.n; ++i) {
         ops[0] = v.v[i];
         check_case(r, fn, ops, 0);
@@ -396,16 +410,16 @@ int main(int argc, char **argv) {
         ++n_table;
       }
     } else if (r->arity == 2) {
-      int ex = 2 * W <= 21;
-      vset a = values(W, ex, 1, 48);
-      vset b = r->amount >= 0 ? (ex ? values(W, 1, 0, 0) : amounts(W)) : values(W, ex, 1, 48);
+      int ex = 2 * (int)W <= EXH_BITS;
+      vset a = values(W, ex, 1, SZ(48, 4));
+      vset b = r->amount >= 0 ? (ex ? values(W, 1, 0, 0) : amounts(W)) : values(W, ex, 1, SZ(48, 4));
       for (int i = 0; i < a.n; ++i)
         for (int j = 0; j < b.n; ++j) {
           ops[0] = a.v[i];
           ops[1] = b.v[j];
           check_case(r, fn, ops, 0);
         }
-      for (int i = 0; i < 4096; ++i) { /* random pairs */
+      for (int i = 0; i < SZ(4096, 200); ++i) { /* random pairs */
         ops[0] = rnd(W);
         ops[1] = rnd(W);
         check_case(r, fn, ops, 0);
@@ -413,18 +427,25 @@ int main(int argc, char **argv) {
       free(a.v);
       free(b.v);
     } else {
-      int ex = 3 * W <= 21;
-      vset a = values(W, ex, 0, 8);
+      int ex = 3 * (int)W <= EXH_BITS;
+      vset a = values(W, ex, 0, SZ(8, 2));
       vset k = ex ? values(W, 1, 0, 0) : amounts(W);
       for (int i = 0; i < a.n; ++i)
         for (int j = 0; j < a.n; ++j)
           for (int l = 0; l < k.n; ++l) {
+            /* quick, not exhaustive: every operand pair at the key amounts (0, 1, W-1, W, W+1,
+             * 2W-1, 2W, 2W+1; amounts 0 .. 2W+2 sit at index = amount), every amount with a
+             * rotating pair and with every aliased pair, instead of the full cube */
+            uint32_t L = (uint32_t)l;
+            if (!full_mode && !ex && i != j && j != (i + l) % a.n && L != 0 && L != 1 && L != W - 1 &&
+                L != W && L != W + 1 && L != 2 * W - 1 && L != 2 * W && L != 2 * W + 1)
+              continue;
             ops[0] = a.v[i];
             ops[1] = a.v[j];
             ops[2] = k.v[l];
             check_case(r, fn, ops, i == j);
           }
-      for (int i = 0; i < 4096; ++i) {
+      for (int i = 0; i < SZ(4096, 200); ++i) {
         ops[0] = rnd(W);
         ops[1] = (i & 3) ? rnd(W) : ops[0];
         ops[2] = rnd(W);
@@ -436,7 +457,7 @@ int main(int argc, char **argv) {
     printf("%-6s i%-4u native %8ld  table %7ld\n", r->op, W, n_native - nat0, n_table - tab0);
   }
 
-  printf("tmpl-bits: rows %zu, native comparisons %ld, table comparisons %ld, rejections %ld, mismatches %ld\n",
-         sizeof ROWS / sizeof *ROWS, n_native, n_table, n_reject, n_mismatch);
+  printf("tmpl-bits (%s): rows %zu, native comparisons %ld, table comparisons %ld, rejections %ld, mismatches %ld\n",
+         full_mode ? "CQ_FULL" : "quick", sizeof ROWS / sizeof *ROWS, n_native, n_table, n_reject, n_mismatch);
   return (bad || n_mismatch) ? 1 : 0;
 }

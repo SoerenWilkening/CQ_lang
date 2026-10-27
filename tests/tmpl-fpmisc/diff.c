@@ -20,6 +20,11 @@
  *
  * The harness provides its own cqe_register_op/cqe_fail and links tmpl_fpmisc.c directly, so it
  * depends on no other part of the checker runtime.
+ *
+ * Size: quick by default (cq-m4s9): every class and check above, random sets capped near 200 per
+ * (op, width), and every-value sweeps only when the operand has at most 8 bits (so f16/bf16 unary
+ * ops take the specials, the per-exponent sweep and the random set instead). CQ_FULL=1 (any value
+ * but empty or "0") restores the full sizes: 20000-sample random sets, sweeps up to 16 bits.
  */
 #include <fenv.h>
 #include <inttypes.h>
@@ -152,20 +157,23 @@ static void fp_specials(const fmt *f, vlist *l) {
   }
 }
 
+static int full_mode; /* CQ_FULL=1: full sizes; otherwise the quick set (cq-m4s9) */
+#define SZ(full, quick) (full_mode ? (full) : (quick))
+
 /* Inputs of the given operand type; binary fp ops pair them up separately. */
 static void inputs_for(const char *ty, int unary, vlist *l) {
   fmt f;
   if (fmt_of(ty, &f)) {
-    if (f.bits == 16 && unary) {
+    if (full_mode && f.bits == 16 && unary) {
       for (uint64_t x = 0; x < 65536; ++x)
         push64(l, x);
       return;
     }
     fp_specials(&f, l);
-    for (int i = 0; i < 20000; ++i)
+    for (int i = 0; i < SZ(20000, 100); ++i)
       push64(l, rnd() & fmask(&f));
     /* values spread over the integer range: x = ±m * 2^k, k up to beyond 2^256 */
-    for (int i = 0; i < 20000; ++i) {
+    for (int i = 0; i < SZ(20000, 100); ++i) {
       int k = (int)(rnd() % 270) - 4;
       double d = ldexp((double)(rnd() >> 11) / 9007199254740992.0 + (rnd() & 1), k);
       if (rnd() & 1)
@@ -195,7 +203,7 @@ static void inputs_for(const char *ty, int unary, vlist *l) {
   }
   unsigned N = (unsigned)atoi(ty + 1), nw = (N + 63) / 64;
   val v;
-  if (N <= 16) {
+  if (N <= SZ(16u, 8u)) {
     for (uint64_t x = 0; x < (1ull << N); ++x)
       push64(l, x);
     return;
@@ -232,7 +240,7 @@ static void inputs_for(const char *ty, int unary, vlist *l) {
         for (unsigned i = 0; i < nw; ++i) v.w[i] = ~v.w[i];
         push(l, &v);
       }
-  for (int i = 0; i < 20000; ++i) {
+  for (int i = 0; i < SZ(20000, 100); ++i) {
     CLR();
     unsigned len = (unsigned)(rnd() % (N + 1));
     for (unsigned b = 0; b < len; ++b)
@@ -563,6 +571,10 @@ static void ownership(void) {
 int main(int argc, char **argv) {
   int ncases = (int)(sizeof cases / sizeof cases[0]), badcases = 0;
   const char *only = argc > 1 ? argv[1] : NULL; /* optional op filter, for debugging */
+  {
+    const char *e = getenv("CQ_FULL");
+    full_mode = e && *e && strcmp(e, "0");
+  }
   for (int i = 0; i < ncases; ++i) {
     if (only && strcmp(only, cases[i].op))
       continue;
@@ -570,7 +582,7 @@ int main(int argc, char **argv) {
   }
   table_rows();
   ownership();
-  printf("tmpl-fpmisc diff: %d cases, %ld checks, %ld mismatches in %d cases, %d table/ownership failures\n",
-         ncases, nchecks, nmismatch, badcases, ntable_bad);
+  printf("tmpl-fpmisc diff (%s): %d cases, %ld checks, %ld mismatches in %d cases, %d table/ownership failures\n",
+         full_mode ? "CQ_FULL" : "quick", ncases, nchecks, nmismatch, badcases, ntable_bad);
   return (nmismatch || ntable_bad) ? 1 : 0;
 }
