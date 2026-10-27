@@ -17,7 +17,10 @@
 //   classical-control-on-taint  a br / switch / select condition computed from a handle
 //   unwritten-measurement       a cqrt_measure the source did not write: a second measurement of a rail
 //                               already measured on every path (rule 2: a re-measurement is a classical
-//                               re-read, never a second call)
+//                               re-read, never a second call); and, outside reference mode, the
+//                               provenance marker (cq-arch V1): a cqrt_measure_<W> without !cq.measure, a
+//                               !cq.measure that is not the uniqued empty tuple, or one on any other
+//                               instruction. Reference mode (cq-verify<reference>) ignores the marker.
 //
 // Handles are recognised from ABI call results and operand slots (abi::parse*), closed over
 // phi/select/freeze. The rail checks are a forward must-analysis: a rail's state is the set of states
@@ -78,10 +81,12 @@ std::string where(const Instruction &I) {
 
 class FunctionVerifier {
 public:
-  FunctionVerifier(const Function &F, verify::SigCache &Sigs, std::vector<Violation> &Out)
-      : F(F), Sigs(Sigs), Out(Out) {}
+  FunctionVerifier(const Function &F, verify::SigCache &Sigs, std::vector<Violation> &Out, bool Reference)
+      : F(F), Sigs(Sigs), Out(Out), Reference(Reference) {}
 
   void run() {
+    if (!Reference)
+      measureProvenance();
     collectHandles();
     controlOnTaint();
     handleInClassicalOp();
@@ -93,6 +98,25 @@ private:
   const Function &F;
   verify::SigCache &Sigs;
   std::vector<Violation> &Out;
+  const bool Reference;
+
+  // ---- unwritten-measurement, provenance (cq-arch V1): every cqrt_measure_<W> carries !cq.measure, the
+  // uniqued empty tuple, and nothing else carries it. Our output only; references have no marker. ----
+  void measureProvenance() {
+    const unsigned MDKind = F.getContext().getMDKindID("cq.measure");
+    for (const Instruction &I : instructions(F)) {
+      const MDNode *MD = I.getMetadata(MDKind);
+      const Sig *S = sigOf(I);
+      const bool isMeasure = S && S->kind == Kind::Core && S->core && S->core->op == abi::Core::Measure;
+      if (isMeasure && !MD)
+        report("unwritten-measurement",
+               "cqrt_measure without !cq.measure: not the lowering of a user cq_measure", I);
+      else if (MD && !isMeasure)
+        report("unwritten-measurement", "!cq.measure on an instruction that is not a cqrt_measure_<W> call", I);
+      else if (MD && (!isa<MDTuple>(MD) || MD->getNumOperands() != 0 || MD->isDistinct()))
+        report("unwritten-measurement", "!cq.measure is not the uniqued empty tuple !{}", I);
+    }
+  }
 
   // ---- handles ----
   SmallPtrSet<const Value *, 32> H;
@@ -746,13 +770,12 @@ private:
 } // namespace
 
 void verifyLowered(const Module &M, const VerifyOptions &Opts) {
-  (void)Opts;  // reference mode: no check differs yet (see the measure-provenance freeze bead)
   std::vector<Violation> Out;
   verify::SigCache Sigs;
   for (const Function &F : M) {
     if (F.isDeclaration())
       continue;
-    FunctionVerifier(F, Sigs, Out).run();
+    FunctionVerifier(F, Sigs, Out, Opts.reference).run();
   }
   if (Out.empty())
     return;

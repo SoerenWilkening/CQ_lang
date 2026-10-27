@@ -5,7 +5,7 @@ target triple = "x86_64-apple-macosx16.0.0"
 define i32 @f(i32 %0, double %1) {
   %3 = call i32 @cqrt_alloc_i32(i32 %0)
   call void @cqrt_ry_i32(i32 %3, double %1)
-  %4 = call i32 @cqrt_measure_i32(i32 %3)
+  %4 = call i32 @cqrt_measure_i32(i32 %3), !cq.measure !0
   call void @cqrt_ry_i32(i32 %3, double %1)
   ret i32 %4
 }
@@ -21,3 +21,4 @@ declare void @cq_template_icmp_sgt_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_select_i32(i32, i32, i32)
 declare void @cqrt_copy_i32(i32, i32)
 declare void @cqrt_rz_i1(i32, double)
+!0 = !{}

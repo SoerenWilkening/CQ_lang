@@ -8,7 +8,7 @@ define i32 @f(i32 %0, double %1, i32 %2) {
   %5 = call i32 @cqrt_alloc_i32(i32 %2)
   call void @cqrt_ry_i32(i32 %5, double %1)
   %6 = call i32 @cq_template_add_i32_hl(i32 %4, i32 %5)
-  %7 = call i32 @cqrt_measure_i32(i32 %6)
+  %7 = call i32 @cqrt_measure_i32(i32 %6), !cq.measure !0
   ret i32 %7
 }
 
@@ -23,3 +23,4 @@ declare void @cq_template_icmp_sgt_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_select_i32(i32, i32, i32)
 declare void @cqrt_copy_i32(i32, i32)
 declare void @cqrt_rz_i1(i32, double)
+!0 = !{}
