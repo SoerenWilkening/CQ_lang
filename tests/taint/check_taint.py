@@ -13,6 +13,10 @@ the same answer) is compared with name.lowered.ll:
   qrom     the QROM load count equals the reference's cq_template_qrom_load_* call sites.
 
 A computeTaint that stops (cq: unimplemented / internal error) is a failure of that example.
+
+Owner ruling 2026-10-27 (amended acceptance): examples whose reference lifts an injected library
+body (169, 190) depend on the v1 injection bundle; they still run and their differences are printed
+as EXCLUDED, but they do not fail this test until cq-dav re-checks them with the bundle linked.
 Usage: check_taint.py --dump build/tests/taint/cq_taint_dump [--spec DIR] [NN ...] [-v]
 Exit 0 only when every selected example matches on all four counts.
 """
@@ -24,6 +28,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+BUNDLE_DEPENDENT = {'169': 'cq-dav', '190': 'cq-dav'}
 
 
 def strip_comment(line):
@@ -129,8 +134,14 @@ def main():
         exs = [e for e in exs if e.name.split('_')[0] in a.examples or e.name in a.examples]
     with ThreadPoolExecutor(8) as pool:
         results = list(pool.map(lambda e: run(a.dump, e), exs))
-    bad = 0
+    bad = excluded = 0
     for name, reasons, out in sorted(results, key=lambda r: int(r[0].split('_')[0])):
+        num = name.split('_')[0]
+        if num in BUNDLE_DEPENDENT:
+            excluded += 1
+            print('EXCLUDED %s (%s, needs the v1 injection bundle): %s' % (
+                name, BUNDLE_DEPENDENT[num], '; '.join(reasons) if reasons else 'matches'))
+            continue
         if reasons:
             bad += 1
             print('FAIL %s: %s' % (name, '; '.join(reasons)))
@@ -138,7 +149,9 @@ def main():
                 print(out)
         elif a.v:
             print('ok   %s' % name)
-    print('taint: %d of %d examples match' % (len(results) - bad, len(results)))
+    checked = len(results) - excluded
+    print('taint: %d of %d examples match (%d excluded pending the bundle)' % (
+        checked - bad, checked, excluded))
     return 1 if bad else 0
 
 

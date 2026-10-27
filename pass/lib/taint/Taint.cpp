@@ -1712,7 +1712,7 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
           bounds.push_back(*b);
       }
   if (depth > 0)
-    bounds.clear();
+    bounds = cur->bounds; // a level clone carries the bounds of its level-0 clone (98: _b3_d1)
   if (viaIntrinsic)
     bounds.clear();
   SpecState *C = getSpec(G, formal, tys, cells, ctl, false, adj, depth, bounds);
