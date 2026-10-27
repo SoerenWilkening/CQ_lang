@@ -56,8 +56,9 @@ Owner rulings of 2026-10-26 are folded in. Nothing here refers to any earlier im
 ### 1.1 Handles and namespaces
 
 Every quantum value is an `i32` **handle** to a rail whose logical width is the IR type's width
-(`i1`, `i7`, `i8`, …, `i128`, `f16`, `f32`, `f64`, `f80`; any `N ≥ 1` is legal, `_BitInt` and
-the x87 bit pattern included). An aggregate, vector or fat pointer is a literal struct of handles
+(`i1`, `i7`, `i8`, …, `i128`, `f16`, `bf16`, `f32`, `f64`, `f80`; any `N ≥ 1` is legal, `_BitInt`,
+`__bf16` (bfloat16: 8 exponent bits, 7 fraction bits, same rounding and NaN rules as the IEEE
+widths) and the x87 bit pattern included; `fp128` is unreachable from C on this target, rule 25). An aggregate, vector or fat pointer is a literal struct of handles
 and classical values in field order. Narrow handle arguments carry the C ABI's `signext`/`zeroext`
 only at externally visible signatures.
 
@@ -81,14 +82,16 @@ op       := add sub mul udiv sdiv urem srem and or xor shl lshr ashr
             is_fpclass qrom_load qrom_load_s
 pred     := an icmp/fcmp predicate. A compare with the literal on the left is spelled by flipping
             the predicate; compares never take _lh.
-W        := i<N> | f16 | f32 | f64 | f80 ; casts spell <from>_to_<to>
+W        := i<N> | f16 | bf16 | f32 | f64 | f80 ; casts spell <from>_to_<to>
 shape    := one letter per DATA operand in signature order, h or q = handle, l = literal;
             omitted = all handles. Binary ops: _hl, or _lh for a non-commutative op only
             (a commutative op swaps its operands to _hl; for an fp op only when the literal is not
             a NaN, else it is spelled _lh). _ll: a binary op whose only quantum operand is the
             _rmq mode. select: the two ARMS (hl, lh, ll);
-            the condition is always a handle. Ternary (fma, fshl, fshr): qqq (bare), qql, qlq, qll, llq
-            (the product operands of fma are commutative: lqq, lql are spelled qlq, qll).
+            the condition is always a handle. Ternary: every mix of q and l over the three operands,
+            bare for qqq; for fma the product operands are commutative and lqq, lql are spelled qlq, qll
+            unless the literal is a NaN, which keeps its position (as for binary ops); fshl and fshr are
+            not commutative and keep every mixed shape (lqq, lql, llq included).
 _rm/_rmq := rounding mode appended as the LAST argument (i32 literal / handle), the x86-64 FE_*
             value: bits 10-11 select 0 nearest-even, 1 down, 2 up, 3 toward zero; other bits ignored.
 _exc     := the same operands; the fresh i32 result rail holds the x86 exception bits the operation
@@ -204,6 +207,12 @@ _bN..  := one upper bound per quantum integer argument whose range facts at the 
           (`memcmp(.., x & 3)` -> `_b3`); a clone's loop cutoffs use only these bounds and its own range
           facts (rule 14), never a bound of one particular call site that is not in its name.
 ```
+Reading a clone name is right to left: the suffix words, then the `_b` bounds, then the mask (the
+rightmost token of binary digits), and `fn` is whatever remains; that reading is normative. A name
+with bounds is internal to its module (rule 27 clones carry none), so the compiler never binds a
+clone by re-reading its name: the clone table is keyed by the clone's fields, and a function is
+created with a uniquifying constructor so that two distinct clones whose names would coincide (a
+`fn` that itself ends in `_<binary>_b<N>`) get distinct symbols (ruling 2026-10-27).
 
 Result: one `i32` handle per quantum scalar result regardless of width, the C type for a classical
 result, a literal struct of scalar fields in field order for several results (a nested aggregate is
@@ -228,7 +237,7 @@ The classical reference evaluator (§6) and every backend use the same table.
 | `fshl/fshr` | | amount mod W |
 | `fptosi/fptoui` from f16/f32/f64 | NaN, ±Inf, out of range | as x86-64 LLVM 19 `-O1` code (measured 2026-10-27; f16 via f32): let `c32(x)`/`c64(x)` be cvtt to i32/i64 with indefinite `INT_MIN` of that width. `fptosi` i8/i16 = trunc(c32), i32 = c32, i64 = c64; `fptoui` i8/i16 = trunc(c32), i32 = trunc(c64), i64 = `r1 \| (r2 & (r1 >>s 63))` with `r1 = c64(x)`, `r2 = c64(x − 2^63)`. E.g. NaN → s8 0, s32 `INT_MIN`, u32 0, u64 2^63; 300.0 → s8 44 |
 | `fptosi/fptoui` from f80 | NaN, ±Inf, out of range | x87 `fistp` with indefinite `INT_MIN` of its width: s8 = trunc(fist16), s16 = fist16, s32 = fist32, s64 = fist64; u8/u16 = trunc(fist32), u32 = trunc(fist64), u64 = `x < 2^63 ? fist64(x) : fist64(x − 2^63) ^ 2^63` (NaN → 0) |
-| `fadd fsub fmul fdiv fma sqrt …` NaN result | | x86 SSE rule in IR operand order: the first NaN operand, quieted; an invalid operation gives the default NaN `0xFFF8000000000000` (f32 `0xFFC00000`) |
+| `fadd fsub fmul fdiv frem fma sqrt …` NaN result | | x86 SSE rule in IR operand order: the first NaN operand, quieted; an invalid operation (`frem` by 0 or of ±Inf included) gives the default NaN `0xFFF8000000000000` (f32 `0xFFC00000`, f16 `0xFE00`). Where native x86-64 `-O1` code leaves the choice to register allocation or to the libm vendor (two-NaN commutative `fadd`/`fmul`, `frem` and `fma` through libm), this row is normative, and the C oracle of §6 compares floating-point values NaN-insensitively (any NaN equals any NaN); the reference oracle compares bit patterns (ruling 2026-10-27) |
 | `fmax(a, b)` / `fmin(a, b)` (`llvm.maxnum/minnum`) | | `isnan(a) ? b : isnan(b) ? a : (b > a ? b : a)`, min with `<`; equal values (±0) give `a`; two NaNs give `b` unchanged (x86-64 `-O1`, measured) |
 | f80 non-canonical encodings | pseudo-NaN, pseudo-Inf, unnormal | invalid operand: result real indefinite `0xFFFF_C000000000000000`, INVALID; pseudo-denormals read as denormals (x87) |
 | `fadd fsub fmul fdiv sqrt fma` | | IEEE, round to nearest even unless `_rm/_rmq` says otherwise |
@@ -424,7 +433,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     A library may instead be lowered once and linked (rule 27).
     Result taint is recorded per clone (an `i32` return is a handle or a classical int by that
     record, not by its type). Recursion with classical depth is ordinary calls. — 06, 07, 33, 34,
-    64, 119, 136 (36, 51, 82, 95, 109 to be rewritten to copy-out).
+    36, 51, 64, 82, 95, 109, 119, 136.
 
 19. **Indirect and opaque callees.** An external function that returns an unmeasured quantum
     value keeps its C signature and returns the handle (escaped, never freed); an in-module caller
@@ -585,8 +594,9 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     - *Linkage.* Declared clones and their twins use the default C calling convention (not
       `fastcc`), since they cross translation units.
     - *Inline asm.* An `asm` statement with a quantum operand is a callee without a body: its
-      clone is named `__cq_q_asm_<h>_<mask>` where `<h>` is the first 16 hex digits of the SHA-256
-      of the asm string and its constraint string, with the mask over its operands in order; the
+      clone is named `__cq_q_asm_<h>_<mask>` where `<h>` is the first 16 lowercase hex digits of
+      the SHA-256 of the asm string as LLVM spells it (`$N` operands), a single NUL byte, and the
+      constraint string, with the mask over its operands in order; the
       call, results, `_ctl` form, twin and K follow this rule. An asm with only classical operands
       stays the asm (the host boundary). An asm with a quantum operand and no outputs under a
       quantum predicate is a rule-16 tape effect with the asm string as its name (2026-10-27).
@@ -597,6 +607,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       and serve classical callers. The root list, and any per-function K the library build
       recommends (e.g. measured by running the classical functions), are build inputs and outputs,
       not part of this spec.
+    — 161, 190.
 
 ## 4. Metadata and non-normative artefacts
 
