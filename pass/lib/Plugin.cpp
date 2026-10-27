@@ -5,10 +5,13 @@
 //   opt -load-pass-plugin=build/pass/libCQLower.so -passes=cq-verify            (our output)
 //   opt -load-pass-plugin=build/pass/libCQLower.so -passes='cq-verify<reference>' (a reference)
 //
-// cq-lower: taint; FixIrreduciblePass on tainted functions only; construct per specialization;
-// calls::finalize; verifyLowered. A module that uses no CQ.h function and has no -cq-roots has no
-// taint source (rule 3: taint starts at cq_theta results), so it is returned untouched before
-// anything runs: the pass's identity (NORTHSTAR principle 1, kernel tier 1).
+// cq-lower: a preliminary taint, used only for isTainted(F); FixIrreduciblePass on those
+// functions; if any function changed, a fresh taint over the module with the preliminary result
+// discarded; construct per specialization; calls::finalize; verifyLowered. Taint is computed once
+// over the final CFG and nothing mutates the CFG after it (owner ruling on cq-5k5, option (a)).
+// A module that uses no CQ.h function and has no -cq-roots has no taint source (rule 3: taint
+// starts at cq_theta results), so it is returned untouched before anything runs: the pass's
+// identity (NORTHSTAR principle 1, kernel tier 1).
 #include <string>
 
 #include "cq/Abi.h"
@@ -19,7 +22,9 @@
 #include "cq/Taint.h"
 #include "cq/Verify.h"
 
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Passes/PassBuilder.h"
@@ -41,6 +46,15 @@ cl::opt<unsigned> KDefault("cq-k-default", cl::value_desc("k"),
 cl::opt<std::string> RootsFile("cq-roots", cl::value_desc("file"),
                                cl::desc("cq: library-build roots, one clone name (CR §1.4) per line"));
 cl::opt<bool> DumpTaint("cq-dump-taint", cl::desc("cq: print the taint result to stderr"));
+// Private to scaffold (Plugin.cpp and tests/scaffold): one stderr line per pipeline step, so a test
+// can see that the taint the constructions read is the one computed over the final CFG.
+cl::opt<bool> TracePipeline("cq-trace-pipeline", cl::Hidden,
+                            cl::desc("cq: print each cq-lower pipeline step to stderr"));
+
+void trace(const Twine &step) {
+  if (TracePipeline)
+    errs() << "cq-lower: " << step << "\n";
+}
 
 [[noreturn]] void usageError(const Twine &msg) {
   report_fatal_error("cq: " + msg, /*gen_crash_diag=*/false);
@@ -106,28 +120,51 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
     if (TO.roots.empty() && !usesCqSurface(M))
       return PreservedAnalyses::all();
 
-    // 1. Taint.
-    cq::TaintInfo T = cq::computeTaint(M, TO);
-    if (DumpTaint)
-      T.print(errs());
-
-    // 2. Reducible control flow, on tainted functions only.
     FunctionAnalysisManager &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
-    for (Function &F : M) {
-      if (F.isDeclaration() || !T.isTainted(F))
+
+    // 1. Preliminary taint. Read only for isTainted(F): which functions step 2 may touch.
+    trace("taint: preliminary");
+    cq::TaintInfo T = cq::computeTaint(M, TO);
+    SmallVector<Function *, 16> Tainted;
+    for (Function &F : M)
+      if (!F.isDeclaration() && T.isTainted(F))
+        Tainted.push_back(&F);
+
+    // 2. Reducible control flow, on tainted functions only (NORTHSTAR principle 1). The pass
+    // returns PreservedAnalyses::all() exactly when it left the function unchanged.
+    bool CFGChanged = false;
+    for (Function *F : Tainted) {
+      PreservedAnalyses PA = FixIrreduciblePass().run(*F, FAM);
+      if (PA.areAllPreserved())
         continue;
-      PreservedAnalyses PA = FixIrreduciblePass().run(F, FAM);
-      FAM.invalidate(F, PA);
+      trace("fix-irreducible: changed @" + F->getName());
+      CFGChanged = true;
+      FAM.invalidate(*F, PA);
     }
 
-    // 3. The general construction, once per specialization.
-    for (const cq::Specialization &S : T.specializations())
-      cq::construct(M, T, S, KO);
+    // 3. Taint over the final CFG. Step 2 added blocks, phis and branches the preliminary result
+    // has no answer for, so it is released first and replaced by a fresh analysis; no handle to
+    // it survives. Unchanged CFG: the preliminary result already is the taint of the final CFG.
+    if (CFGChanged) {
+      T = cq::TaintInfo();
+      trace("taint: final (fresh, CFG changed)");
+      T = cq::computeTaint(M, TO);
+    } else {
+      trace("taint: final (preliminary, CFG unchanged)");
+    }
+    const cq::TaintInfo &Final = T;
+    if (DumpTaint)
+      Final.print(errs());
 
-    // 4. Drop originals with no classical caller (rule 18).
+    // 4. The general construction, once per specialization. The CFG is final from here on.
+    trace("construct");
+    for (const cq::Specialization &S : Final.specializations())
+      cq::construct(M, Final, S, KO);
+
+    // 5. Drop originals with no classical caller (rule 18).
     cq::calls::finalize(M);
 
-    // 5. The structural verifier, on every run.
+    // 6. The structural verifier, on every run.
     cq::verifyLowered(M);
     return PreservedAnalyses::none();
   }
