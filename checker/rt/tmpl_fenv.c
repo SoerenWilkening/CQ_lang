@@ -45,6 +45,18 @@
  *   truncated value outside the signed range of their width, else INEXACT iff x is not integral.
  *   Wider than 64 bits: IEEE at the destination width; likewise sitofp/uitofp from wider than 64
  *   bits round per the mode (native compiler-rt ignores the mode and raises nothing: bead cq-qx1).
+ *
+ * CR §2 at CQ_spec 2f894fd: what LLVM 19 code generation fixes inline is adopted for the VALUE, a
+ * vendor library's result is IEEE in the template's mode, and the exception bits are IEEE at the
+ * operation's width (in the template's mode) wherever native raises none. So the _exc bits of
+ * every conversion stay the IEEE ones above, and only these values differ from one IEEE rounding:
+ *   - sitofp/uitofp from more than 128 bits: ExpandLargeFpConvert (nearest-even whatever the mode,
+ *     exponent wraps past the range); to f16 through its f32 and the library fptrunc (in the mode);
+ *   - to bf16 through f32 (two roundings), the second step being fptrunc f32 -> bf16.
+ * CQ_spec e46f5e3 bf16 row: fptrunc f32/f64 -> bf16 are compiler-rt calls (__truncsfbf2,
+ * __truncdfbf2), so IEEE in the template's mode, one rounding from the source width, a NaN quiet
+ * with the high payload bits. rint rounds in the template's mode (rint row). fpext has no rounding
+ * operand and so no value form here (its bare-shift value is the plain family's).
  */
 #include <math.h>
 #include <stdarg.h>
@@ -929,6 +941,79 @@ static void op_itofp(const fmt_t *to, const bn_t *raw_int, int N, int is_signed,
   fe_round(to, raw, sign, &M, 0, 0, mode, fl);
 }
 
+/* The VALUE of sitofp/uitofp i<N> -> to for N > 128: LLVM 19 ExpandLargeFpConvert (expandIToFP),
+ * integer code that ignores the rounding mode and raises nothing (CR §2 line: inline codegen is
+ * adopted for the value). |v| is rounded to p bits, nearest-even, with an unbounded exponent e;
+ * the bits are ((e + bias) << fbits) + fraction, kept to W bits, OR the sign: an exponent past the
+ * format's range wraps (2^150 -> f32 0x8a800000, measured). Formats without an explicit integer
+ * bit only; f16 and bf16 go through f32 (the caller). */
+static void itofp_expand(const fmt_t *to, const bn_t *raw_int, int N, int is_signed, bn_t *raw) {
+  bn_t M = *raw_int;
+  int sign = 0;
+  if (is_signed && bn_bit(&M, N - 1)) {
+    bn_t full;
+    bn_zero(&full);
+    bn_setbit(&full, N);
+    bn_sub(&M, &full, &M);
+    sign = 1;
+  }
+  if (bn_is0(&M)) {
+    pack_zero(to, raw, 0);
+    return;
+  }
+  int L = bn_len(&M);
+  int64_t e = L - 1;
+  bn_t kept;
+  if (L > to->p) {
+    int inex;
+    round_shift(&kept, &M, L - to->p, 0, RM_NE, sign, &inex);
+    if (bn_len(&kept) > to->p) {
+      bn_shr(&kept, &kept, 1);
+      e++;
+    }
+  } else {
+    bn_shl(&kept, &M, to->p - L);
+  }
+  bn_t frac, ex;
+  bn_low(&frac, &kept, to->fbits);
+  bn_u64(&ex, (uint64_t)(e + to->bias));
+  bn_shl(&ex, &ex, to->fbits);
+  bn_or(raw, &ex, &frac);
+  bn_low(raw, raw, to->W);
+  if (sign)
+    bn_setbit(raw, to->W - 1);
+}
+
+static int is_bf16(const fmt_t *f) { return f->W == 16 && f->ebits == 8; }
+
+/* The VALUE of sitofp/uitofp i<N> -> to when it is not one IEEE rounding in the template's mode
+ * (CR §2): bf16 goes through f32 (cvtsi2ss or the compiler-rt call in the mode for N <= 128,
+ * ExpandLargeFpConvert above), then the compiler-rt fptrunc f32 -> bf16, IEEE in the mode (two
+ * roundings; a wrapped NaN comes back quiet); for N > 128, f16 is ExpandLargeFpConvert's f32 then
+ * the library fptrunc f32 -> f16 (IEEE, in the mode) and every other format is
+ * ExpandLargeFpConvert's own value. Returns 0 when the IEEE value stands. */
+static int itofp_value(const fmt_t *to, const bn_t *raw_int, int N, int is_signed, int mode,
+                       bn_t *raw) {
+  if (N <= 128 && !is_bf16(to))
+    return 0;
+  if (to->W != 16) {
+    itofp_expand(to, raw_int, N, is_signed, raw);
+    return 1;
+  }
+  fmt_t f32;
+  fmt_of("f32", &f32);
+  bn_t r32;
+  int dummy = 0;
+  if (N > 128)
+    itofp_expand(&f32, raw_int, N, is_signed, &r32);
+  else
+    op_itofp(&f32, raw_int, N, is_signed, mode, &r32, &dummy);
+  num_t y;
+  unpack(&f32, &r32, &y);
+  op_fpconv(to, &f32, y, mode, raw, &dummy);
+  return 1;
+}
+
 /* cvtt / fist at width n (signed range): INVALID on NaN, Inf or trunc(x) out of range; else
  * INEXACT iff x is fractional. */
 static void cvtt_flags(num_t x, int n, int *fl) {
@@ -1260,9 +1345,17 @@ static int fe_eval(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *
     break;
   }
   case K_FPTRUNC:
-  case K_FPEXT: op_fpconv(&fd, &fs, x[0], mode, &raw, &fl); break;
+  case K_FPEXT:
+    op_fpconv(&fd, &fs, x[0], mode, &raw, &fl); /* to bf16: compiler-rt, IEEE (CR §2 bf16 row) */
+    break;
   case K_SITOFP:
-  case K_UITOFP: op_itofp(&fd, &ibits, Ns, k == K_SITOFP, mode, &raw, &fl); break;
+  case K_UITOFP: {
+    op_itofp(&fd, &ibits, Ns, k == K_SITOFP, mode, &raw, &fl); /* flags: IEEE in the mode */
+    bn_t v;
+    if (itofp_value(&fd, &ibits, Ns, k == K_SITOFP, mode, &v))
+      raw = v;
+    break;
+  }
   case K_FPTOSI:
   case K_FPTOUI:
     if (!t->exc)

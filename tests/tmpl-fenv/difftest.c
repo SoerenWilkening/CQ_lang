@@ -16,6 +16,12 @@
  *   - table, where CR §2 / §1.2 differ from the native libm (frem invalid cases: libm fmod(x, 0)
  *     raises nothing and returns +NaN; CR: invalid arithmetic raises INVALID and gives the
  *     default NaN), stated per case below.
+ *   - native-nonstrict (CR §2 at CQ_spec e46f5e3, cq-e3t): the VALUE CR adopts from LLVM 19's
+ *     inline ExpandLargeFpConvert for sitofp/uitofp from i129, i200, i1100 (native_ns.c, no
+ *     FENV_ACCESS: LLVM 19 cannot compile the strict form), run under the mode; f16 and bf16 as
+ *     its f32 then the reference (IEEE, in the mode) fptrunc. sitofp/uitofp to bf16 from <= 128
+ *     bits: f32 in the mode (native cvtsi2ss up to 64 bits), then that IEEE fptrunc. The _exc bits
+ *     stay IEEE in the mode (reference).
  * Also: every claimed op declines (CQE_OP_NOT_MINE) its plain form and every f80 form; fcmps is
  * claimed in every form. Exit status 0 iff no mismatch; counts are printed per op and width. */
 #include <fenv.h>
@@ -47,6 +53,14 @@ int nat_fpconv(int from, int to, const void *a, int mode, void *r);
 int nat_f64_op(int op, double a, double b, double c, int mode, double *r);
 double nat_rint_mode(double x, int mode);
 int nat_cmp2_f64(int signaling, double a, double b, int *res);
+/* native_ns.c: non-strict code, the value CR §2 adopts (the caller sets the mode) */
+uint64_t ns_wide(int N, int sgn, int to, const uint64_t *w);
+static uint64_t ns_wide_m(int N, int sgn, int to, const uint64_t *w, int mode) {
+  fesetround(mode);
+  uint64_t r = ns_wide(N, sgn, to, w);
+  fesetround(FE_TONEAREST);
+  return r;
+}
 
 enum { N_ADD, N_SUB, N_MUL, N_DIV, N_REM, N_MAX, N_MIN };
 enum { U_SQRT, U_FLOOR, U_CEIL, U_TRUNC, U_ROUND, U_RINT };
@@ -211,6 +225,12 @@ static int edges(const fmt_t *f, uint64_t *o) {
     o[n++] = mk(f, s, emax, q | 5);         /* qNaN, payload */
     o[n++] = mk(f, s, emax, 1);             /* sNaN */
     o[n++] = mk(f, s, emax, q - 1);         /* sNaN, full payload */
+  }
+  if (f->W == 32) { /* NaNs at the bf16 truncation boundary: low 16 fraction bits zero or not */
+    o[n++] = 0x7fa00000;
+    o[n++] = 0x7fa00001;
+    o[n++] = 0xff810000;
+    o[n++] = 0x7f800001;
   }
   /* integral boundaries for conversions */
   int64_t ints[] = {127, 128, -128, -129, 255, 256, 32767, 32768, -32769, 65535, 65536};
@@ -774,6 +794,11 @@ static void test_itofp(const fmt_t *to, int nrand) {
       t.w[0] = (1ull << 11) + 1; edge[ne++] = imask(t, N);
       t.w[0] = 65520; edge[ne++] = imask(t, N);
       t.w[0] = 65519; edge[ne++] = imask(t, N);
+      /* bf16 double rounding through f32 (CR §2 bf16 row, cq-ee9): 2^24 + 2^16 + 1 rounds to
+       * 0x4b81 once, 0x4b80 through f32; likewise shifted into the i64 and i128 range */
+      t.w[0] = 0x01010001; edge[ne++] = imask(t, N);
+      t.w[0] = 0x01010001ull << 30; edge[ne++] = imask(t, N);
+      t.w[0] = 0; t.w[1] = 0x01010001ull << 20; edge[ne++] = imask(t, N); t.w[1] = 0;
       for (int it = 0; it < ne + nrand; ++it) {
         v128 v = it < ne ? edge[it] : rand_int(N);
         v128 av[1] = {v};
@@ -789,6 +814,8 @@ static void test_itofp(const fmt_t *to, int nrand) {
         expect_t ex[4];
         int native = !small(to) && N <= 64 && !(sgn && N == 1);
         const char *src = native ? "native" : (sgn && N == 1 && !small(to) ? "table" : "reference");
+        if (to == &BF16)
+          src = "reference flags, value via f32";
         for (int mi = 0; mi < 4; ++mi) {
           ex[mi].val.w[1] = 0;
           if (native) {
@@ -800,7 +827,20 @@ static void test_itofp(const fmt_t *to, int nrand) {
           ex[mi].fl = 0;
           int p = to->fb + 1, emax = (1 << (to->eb - 1)) - 1;
           long double r = ref_int_round(u, neg, p, emax, MODES[mi], &ex[mi].fl);
-          if (small(to))
+          if (to == &BF16) { /* flags above (IEEE, one rounding); value: CR §2 bf16 row, via f32 */
+            int dummy = 0;
+            float f;
+            if (N <= 64 && !(sgn && N == 1)) { /* the inline iN -> f32, native under the mode */
+              uint64_t r32 = 0;
+              nat_itofp_f32(N, sgn, v.w[0], MODES[mi], &r32);
+              uint32_t b32 = (uint32_t)r32;
+              memcpy(&f, &b32, 4);
+            } else { /* compiler-rt (IEEE in the mode) */
+              f = (float)ref_int_round(u, neg, 24, 127, MODES[mi], &dummy);
+            }
+            /* then compiler-rt f32 -> bf16: IEEE in the mode */
+            ex[mi].val.w[0] = f == 0 ? 0 : encs(to, isinf(f) ? (double)f : ref_round(f, 8, -126, 127, MODES[mi], &dummy));
+          } else if (small(to))
             ex[mi].val.w[0] = encs(to, (double)r);
           else if (to->W == 32) {
             float fv = (float)r;
@@ -823,6 +863,178 @@ static void test_itofp(const fmt_t *to, int nrand) {
              to->name, n_cases - c0, n_bad - b0);
     }
   }
+}
+
+/* integer -> fp from more than 128 bits (CR §2 at CQ_spec 2f894fd): the VALUE is LLVM 19's
+ * inline ExpandLargeFpConvert (nearest-even whatever the mode; the exponent wraps past the f32
+ * range), measured by running native_ns.c; f16 is its f32 then the library fptrunc, IEEE in the
+ * template's mode (reference). The _exc bits are IEEE at the operation's width in the mode
+ * (native raises none): INEXACT iff not representable, OVERFLOW iff the rounded magnitude
+ * exceeds the largest finite value. */
+#define WW 18 /* words for i1100 */
+static int wbit(const uint64_t *w, int i) { return (int)((w[i / 64] >> (i % 64)) & 1); }
+static int wide_flags(const uint64_t *mag, int N, int neg, int p, int emax, int mode) {
+  int L = 0, tz = -1;
+  for (int i = N - 1; i >= 0; --i)
+    if (wbit(mag, i)) {
+      if (!L)
+        L = i + 1;
+      tz = i;
+    }
+  if (!L)
+    return 0;
+  int exact = L - tz <= p;
+  int ovf = L - 1 > emax;
+  if (!ovf && L - 1 == emax && !exact) { /* top p bits all ones and rounding up carries */
+    int ones = 1;
+    for (int i = L - 1; i >= L - p; --i)
+      ones &= wbit(mag, i);
+    int rb = wbit(mag, L - p - 1), st = 0;
+    for (int i = L - p - 2; i >= 0; --i)
+      st |= wbit(mag, i);
+    int up = mode == 0 ? rb : mode == 0x800 ? !neg : mode == 0x400 ? neg : 0;
+    ovf = ones && up;
+    (void)st; /* any discarded bit: !exact */
+  }
+  if (ovf)
+    return X_OVERFLOW | X_INEXACT;
+  return exact ? 0 : X_INEXACT;
+}
+/* f32 bits -> f16/bf16 per IEEE in mode (a NaN quieted, high payload bits), the library fptrunc */
+static uint64_t ref_f32_to_small(const fmt_t *to, uint32_t u, int mode) {
+  float fv;
+  memcpy(&fv, &u, 4);
+  if (isnan(fv))
+    return ((uint64_t)(u >> 31) << 15) | ((uint64_t)((1 << to->eb) - 1) << to->fb) |
+           (1ull << (to->fb - 1)) | ((u & 0x7FFFFF) >> (23 - to->fb));
+  if (isinf(fv) || fv == 0)
+    return encs(to, (double)fv);
+  int dummy = 0;
+  return encs(to, ref_round((double)fv, to->fb + 1, 1 - sbias(to), sbias(to), mode, &dummy));
+}
+static void test_itofp_wide(int nrand) {
+  static const int NW[] = {129, 200, 1100};
+  const fmt_t *tos[4] = {&F16, &BF16, &F32, &F64};
+  for (int ni = 0; ni < 3; ++ni)
+    for (int ti = 0; ti < 4; ++ti)
+      for (int sgn = 0; sgn <= 1; ++sgn) {
+        int N = NW[ni], nw = (N + 63) / 64;
+        const fmt_t *to = tos[ti];
+        long c0 = n_cases, b0 = n_bad;
+        char wname[8];
+        snprintf(wname, sizeof wname, "i%d", N);
+        int nedge = 14;
+        for (int it = 0; it < nedge + nrand; ++it) {
+          uint64_t w[WW];
+          memset(w, 0, sizeof w);
+          int k = it < nedge ? it : -1;
+          switch (k) {
+          case 0: break;                                       /* 0 */
+          case 1: w[0] = 1; break;                             /* 1 */
+          case 2: memset(w, 0xFF, sizeof w); break;            /* -1 / UMAX */
+          case 3: w[(N - 1) / 64] = 1ull << ((N - 1) % 64); break; /* MIN / 2^(N-1) */
+          case 4: memset(w, 0xFF, sizeof w); w[(N - 1) / 64] &= ~(1ull << ((N - 1) % 64)); break;
+          case 5: w[2] = 1; break;                             /* 2^128 */
+          case 6: w[0] = w[1] = ~0ull; break;                  /* 2^128 - 1 */
+          case 7: w[1] = ~0ull << 40; break;                   /* 2^128 - 2^104 */
+          case 8: w[1] = ~0ull << 39; break;                   /* 2^128 - 2^103: ties up */
+          case 9: w[2] = 1ull << 22; break;                    /* 2^150 */
+          case 10: w[1] = 1ull << 60 | 1ull << 52; w[0] = 1; break; /* bf16 double rounding */
+          case 11: w[0] = (1ull << 24) + 1; break;
+          case 12: w[16] = 1ull << 26; break;                  /* 2^1050 */
+          case 13: w[15] = 1ull << 63; w[15] |= 1ull << 11; w[0] = 1; break; /* 2^1023 + ... */
+          default: {
+            for (int i = 0; i < nw; ++i)
+              w[i] = rnd();
+            int L = (int)(rnd() % N); /* leading bit at a random position, or all ones above */
+            if (rnd() % 3) {
+              for (int i = L + 1; i < nw * 64; ++i)
+                w[i / 64] &= ~(1ull << (i % 64));
+              w[L / 64] |= 1ull << (L % 64);
+              if (rnd() % 2) /* few low bits: ties and exact values */
+                for (int i = 0; i < L - 30 && i < nw * 64; ++i)
+                  if (rnd() % 8)
+                    w[i / 64] &= ~(1ull << (i % 64));
+            } else {
+              for (int i = L; i < nw * 64; ++i)
+                w[i / 64] |= 1ull << (i % 64);
+            }
+          }
+          }
+          if (N % 64) /* bits above N zero */
+            w[nw - 1] &= (1ull << (N % 64)) - 1;
+          for (int i = nw; i < WW; ++i)
+            w[i] = 0;
+          /* magnitude for the flags */
+          uint64_t mag[WW];
+          memcpy(mag, w, sizeof mag);
+          int neg = sgn && wbit(w, N - 1);
+          if (neg) { /* 2^N - v */
+            unsigned __int128 c = 1;
+            for (int i = 0; i < nw; ++i) {
+              unsigned __int128 t = (unsigned __int128)(~w[i]) + c;
+              mag[i] = (uint64_t)t;
+              c = t >> 64;
+            }
+            if (N % 64)
+              mag[nw - 1] &= (1ull << (N % 64)) - 1;
+          }
+          expect_t ex[4];
+          int p = to->fb + 1, emax = (1 << (to->eb - 1)) - 1;
+          for (int mi = 0; mi < 4; ++mi) {
+            ex[mi].fl = wide_flags(mag, N, neg, p, emax, MODES[mi]);
+            ex[mi].val.w[1] = 0;
+            if (small(to)) /* ExpandLargeFpConvert's f32, then IEEE fptrunc in the mode */
+              ex[mi].val.w[0] = ref_f32_to_small(
+                  to, (uint32_t)ns_wide_m(N, sgn, 32, w, FE_TONEAREST), MODES[mi]);
+            else
+              ex[mi].val.w[0] = ns_wide_m(N, sgn, to->W, w, MODES[mi]);
+          }
+          /* the value and _exc forms; the integer operand is N bits wide */
+          for (int rm = 0; rm <= 2; ++rm)
+            for (int exc = 0; exc <= 1; ++exc) {
+              if (!exc && rm == 0)
+                continue;
+              for (int mi = 0; mi < 4; ++mi) {
+                if (rm == 0 && mi != 0)
+                  continue;
+                cqe_tname t;
+                memset(&t, 0, sizeof t);
+                snprintf(t.op, sizeof t.op, "%s", sgn ? "sitofp" : "uitofp");
+                snprintf(t.w, sizeof t.w, "%s", wname);
+                snprintf(t.to, sizeof t.to, "%s", to->name);
+                t.rm = (uint8_t)rm;
+                t.exc = (uint8_t)exc;
+                uint64_t store[WW], mstore[1];
+                memcpy(store, w, sizeof store);
+                cqe_val a[2] = {{(uint32_t)N, 'i', (uint32_t)nw, store}, {32, 'i', 1, mstore}};
+                uint64_t m = (uint64_t)(uint32_t)MODES[mi];
+                if (rm == 2)
+                  m |= rnd() & 0xFFFFF3FFull;
+                mstore[0] = m & 0xFFFFFFFFull;
+                int rb = exc ? 32 : to->W;
+                uint64_t ow[2] = {0, 0};
+                cqe_val out = {(uint32_t)rb, 'i', 1, ow};
+                int rc = mock_dispatch(&t, a, rm ? 2 : 1, &out);
+                n_cases++;
+                form_t f = {t.op, NULL, wname, to->name, rm, exc};
+                v128 av[1] = {{{w[0], w[1]}}};
+                v128 want = {{exc ? (uint64_t)ex[mi].fl : ex[mi].val.w[0], 0}};
+                v128 got = {{ow[0], 0}};
+                if (rc != 0) {
+                  v128 z = {{(uint64_t)rc, 0}};
+                  report(&f, mi, av, 1, "rc", &z, &want, "wide");
+                } else if (got.w[0] != want.w[0]) {
+                  report(&f, mi, av, 1, exc ? "exc" : "value", &got, &want,
+                         exc ? "IEEE flags" : (small(to) ? "native f32 + IEEE fptrunc"
+                                                         : "native-nonstrict"));
+                }
+              }
+            }
+        }
+        printf("  %-8s %s->%s cases %8ld mismatches %ld\n", sgn ? "sitofp" : "uitofp", wname,
+               to->name, n_cases - c0, n_bad - b0);
+      }
 }
 
 /* fp -> integer, _exc only */
@@ -998,6 +1210,7 @@ int main(int argc, char **argv) {
     test_itofp(fs[i], nrand);
     test_toint(fs[i], xs[i], nx[i], nrand);
   }
+  test_itofp_wide(nrand / 4);
   for (int i = 0; i < 4; ++i)
     for (int j = 0; j < 4; ++j)
       if (i != j && fs[i]->W != fs[j]->W)
