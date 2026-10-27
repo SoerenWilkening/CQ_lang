@@ -17,21 +17,21 @@
  * rounding mode and exception flags (driven by the fenv family) cannot affect it.
  *
  * Scope: the plain forms at f16/f32/f64. The _rm/_rmq/_exc forms belong to tmpl-fenv and every
- * f80 form to tmpl-f80; for those the op returns TF_NOT_MINE without touching out or failing.
+ * f80 form to tmpl-f80; for those the op returns CQE_OP_NOT_MINE, decided from the name alone,
+ * without touching out or calling cqe_fail.
  *
- * Calling convention (cqe_op_fn, cqe.h; the same as tmpl_bits.c): args are the DATA operands in
- * signature order (IR operand order), already resolved to values (handle or literal, whatever the
- * shape says); out is supplied by the caller with out->nw words of storage at out->w for the
- * W-bit result. The op writes every word of out (bits above W are zero) and returns 0; on a
- * malformed call it reports cqe_fail and returns -1. Forward and _unc are the same XOR map
- * (BACKEND_ABI §2.1); the caller applies it.
+ * Calling convention: the M1 handler contract in cqe.h. args are every argument of the forward
+ * form in signature order (for these plain forms, the data operands in IR operand order), each
+ * resolved to a value. out is the dispatcher's: out->w non-NULL and zeroed, out->nw =
+ * ceil(out->bits / 64), out->bits and out->kind preset to the result type. The op writes the
+ * value into out->w (tf_store_result, the only place it is touched) and returns 0; on a
+ * malformed call it reports cqe_fail and returns -1. It computes the forward value whatever
+ * tname->unc says; the dispatcher applies the XOR (BACKEND_ABI §2.1).
  */
 #include <stdint.h>
 #include <string.h>
 
 #include "cqe.h"
-
-#define TF_NOT_MINE 1
 
 typedef unsigned __int128 tf_u128;
 
@@ -482,14 +482,15 @@ static int tf_op_index(const char *op) {
   return -1;
 }
 
-/* The one place the result buffer is touched. Ownership of out->w is being frozen by cq-mgi
- * (handler calloc versus core prealloc); this assumes core preallocated out->nw >= 1 words. */
+/* The one place the result buffer is touched (M1: the dispatcher owns out). Writes word 0 of the
+ * zeroed buffer and nothing else: never allocates, and leaves out->w, out->nw, out->bits and
+ * out->kind as preset. A preset that does not match the template's result type is reported. */
 static int tf_store_result(const cqe_tname *t, const tf_fmt *f, cqe_val *out, uint64_t r) {
-  if (out->nw < 1 || !out->w) {
-    cqe_fail("tmpl-fp: %s_%s: no result storage", t->op, t->w);
+  if (!out->w || out->nw < 1 || out->bits != f->bits || out->kind != 'f') {
+    cqe_fail("tmpl-fp: %s_%s: result buffer preset to bits %u kind '%c' nw %u, expected an f%u",
+             t->op, t->w, out->bits, out->kind ? out->kind : '?', out->nw, f->bits);
     return -1;
   }
-  memset(out->w, 0, out->nw * sizeof *out->w);
   out->w[0] = r & tf_mask(f);
   return 0;
 }
@@ -501,7 +502,7 @@ static int tf_eval(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *
     return -1;
   }
   if (t->rm || t->exc || !strcmp(t->w, "f80"))
-    return TF_NOT_MINE; /* tmpl-fenv, tmpl-f80 */
+    return CQE_OP_NOT_MINE; /* tmpl-fenv, tmpl-f80 */
   tf_fmt f;
   if (!tf_format(t->w, &f)) {
     cqe_fail("tmpl-fp: %s at width '%s': not an fp format", t->op, t->w);

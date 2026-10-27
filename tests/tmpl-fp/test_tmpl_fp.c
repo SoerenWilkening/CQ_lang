@@ -21,7 +21,8 @@
  *
  * Malformed calls (wrong arity, an integer width such as i1/i7/i100, a bad shape, an operand of the
  * wrong width) must fail through cqe_fail and return -1; the _rm/_rmq/_exc forms and f80 must
- * return the not-mine code (1) without failing.
+ * return CQE_OP_NOT_MINE without failing. Every call hands out over as the M1 dispatcher does
+ * (cqe.h) and checks that the family left out's preset fields alone.
  *
  * The test links tmpl_fp.c directly with the two cqe.h functions it calls defined here, so it does
  * not depend on the evaluator core.
@@ -102,8 +103,12 @@ static uint64_t native(int op, int fi, const uint64_t *x) {
 
 /* ---- calling the family -------------------------------------------------------------------- */
 
+/* out is handed over as the M1 dispatcher does: out->w non-NULL and zeroed, nw = ceil(bits/64),
+ * bits and kind preset to the result type (an fp result of the operand width). bad_preset != 0
+ * presets a wrong result width instead, which the family must report. After a call returning 0
+ * the handler must have left w, nw, bits and kind unchanged and every bit above bits zero. */
 static int call_tmpl(const char *op, const char *w, const char *shape, uint8_t rm, uint8_t exc, const uint64_t *x,
-                     int nargs, unsigned argbits, uint64_t *res, uint32_t outnw) {
+                     int nargs, unsigned argbits, uint64_t *res, int bad_preset) {
   cqe_op_fn fn = lookup(op);
   if (!fn) {
     printf("FAIL: op %s not registered\n", op);
@@ -122,14 +127,24 @@ static int call_tmpl(const char *op, const char *w, const char *shape, uint8_t r
     aw[i] = x[i];
     a[i] = (cqe_val){argbits, 'f', 1, &aw[i]};
   }
-  uint64_t ow[4] = {0xdeadbeefdeadbeefull, 0xdeadbeefdeadbeefull, 0xdeadbeefdeadbeefull, 0xdeadbeefdeadbeefull};
-  cqe_val out = {argbits, 'f', outnw, ow};
+  uint64_t ow[4] = {0, 0, 0, 0};
+  uint32_t obits = bad_preset ? argbits * 2 : argbits;
+  uint32_t onw = (obits + 63) / 64;
+  cqe_val out = {obits, 'f', onw, ow};
   int rc = fn(&t, a, nargs, &out);
-  for (uint32_t i = 1; i < outnw; ++i)
-    if (rc == 0 && ow[i] != 0) {
-      printf("FAIL: %s_%s left word %u of the result nonzero\n", op, w, i);
-      exit(1);
+  if (out.w != ow || out.nw != onw || out.bits != obits || out.kind != 'f') {
+    printf("FAIL: %s_%s changed the dispatcher's out fields (rc=%d)\n", op, w, rc);
+    exit(1);
+  }
+  if (rc == 0) {
+    for (uint32_t i = 0; i < 4; ++i) {
+      uint64_t above = i * 64 >= obits ? ~0ull : (obits - i * 64 >= 64 ? 0 : ~0ull << (obits - i * 64));
+      if (ow[i] & above) {
+        printf("FAIL: %s_%s set bits above %u in word %u\n", op, w, obits, i);
+        exit(1);
+      }
     }
+  }
   *res = ow[0];
   return rc;
 }
@@ -298,7 +313,7 @@ static void check(int op, int fi, const uint64_t *x) {
   /* Alternate the shape spelling: the value semantics never depend on it. */
   static const char *sh2[] = {"", "hl", "lh"}, *sh3[] = {"", "qql", "qlq", "qll", "llq"};
   const char *shape = arity[op] == 3 ? sh3[n_cmp % 5] : arity[op] == 2 ? sh2[n_cmp % 3] : "";
-  int rc = call_tmpl(opname[op], f->name, shape, 0, 0, xs, arity[op], f->bits, &mine, (n_cmp & 1) ? 2 : 1);
+  int rc = call_tmpl(opname[op], f->name, shape, 0, 0, xs, arity[op], f->bits, &mine, 0);
   n_cmp++;
   if (rc != 0) {
     printf("FAIL: %s_%s rc=%d (%s)\n", opname[op], f->name, rc, last_fail);
@@ -394,17 +409,22 @@ static void run_width(int fi, long nrand) {
 
 static long n_neg, n_neg_bad;
 
-static void expect(int want_rc, int want_fail, const char *op, const char *w, const char *shape, uint8_t rm,
-                   uint8_t exc, int nargs, unsigned argbits, const char *what) {
+static void expect_p(int want_rc, int want_fail, const char *op, const char *w, const char *shape, uint8_t rm,
+                     uint8_t exc, int nargs, unsigned argbits, int bad_preset, const char *what) {
   uint64_t x[3] = {0, 0, 0}, r;
   int before = nfail_calls;
-  int rc = call_tmpl(op, w, shape, rm, exc, x, nargs, argbits, &r, 1);
+  int rc = call_tmpl(op, w, shape, rm, exc, x, nargs, argbits, &r, bad_preset);
   int failed = nfail_calls > before;
   n_neg++;
   if (rc != want_rc || failed != want_fail) {
     printf("FAIL: %s: rc=%d cqe_fail=%d, expected rc=%d cqe_fail=%d\n", what, rc, failed, want_rc, want_fail);
     n_neg_bad++;
   }
+}
+
+static void expect(int want_rc, int want_fail, const char *op, const char *w, const char *shape, uint8_t rm,
+                   uint8_t exc, int nargs, unsigned argbits, const char *what) {
+  expect_p(want_rc, want_fail, op, w, shape, rm, exc, nargs, argbits, 0, what);
 }
 
 static void run_negative(void) {
@@ -423,11 +443,12 @@ static void run_negative(void) {
              "shape of the wrong length");
       expect(-1, 1, opname[op], f->name, arity[op] == 1 ? "x" : arity[op] == 2 ? "hx" : "qqx", 0, 0, arity[op],
              f->bits, "bad shape letter");
+      expect_p(-1, 1, opname[op], f->name, "", 0, 0, arity[op], f->bits, 1, "result buffer preset to the wrong width");
       /* the forms other families own */
-      expect(1, 0, opname[op], f->name, "", 1, 0, arity[op] + 1, f->bits, "_rm form (tmpl-fenv)");
-      expect(1, 0, opname[op], f->name, "", 0, 1, arity[op], f->bits, "_exc form (tmpl-fenv)");
+      expect(CQE_OP_NOT_MINE, 0, opname[op], f->name, "", 1, 0, arity[op] + 1, f->bits, "_rm form (tmpl-fenv)");
+      expect(CQE_OP_NOT_MINE, 0, opname[op], f->name, "", 0, 1, arity[op], f->bits, "_exc form (tmpl-fenv)");
     }
-    expect(1, 0, opname[op], "f80", "", 0, 0, arity[op], 80, "f80 form (tmpl-f80)");
+    expect(CQE_OP_NOT_MINE, 0, opname[op], "f80", "", 0, 0, arity[op], 80, "f80 form (tmpl-f80)");
   }
 }
 
