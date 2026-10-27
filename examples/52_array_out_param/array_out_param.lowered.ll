@@ -34,7 +34,7 @@ define double @array_out_param(double noundef %0, double noundef %1, double noun
   %11 = call i32 @cq_template_fadd_f64_hl(i32 %8, double %2)    ; IR: %11 = fadd double %8, %2
   %12 = getelementptr inbounds i8, ptr %6, i64 8    ; IR: %12 = getelementptr %6, 16  (slot 2)
   store i32 %11, ptr %12, align 8    ; IR: store double %11, ptr %12
-  %13 = call fastcc i32 @__cq_q_reduce_1000(ptr %6, i32 %4, double %3, ptr %7)    ; IR: %13 = call @reduce(%6, %4, %3, %7), clone for mask (quantum array, classical, classical, out array); classical result
+  %13 = call fastcc i32 @__cq_q_reduce_10000(ptr %6, i32 %4, double %3, ptr %7)    ; IR: %13 = call @reduce(%6, %4, %3, %7), clone for mask (quantum array, classical, classical, out array); classical result
   %14 = and i32 %13, 3    ; IR: %14 = and i32 %13, 3  (classical)
   switch i32 %14, label %22 [    ; IR: switch i32 %14  (classical)
     i32 0, label %15
@@ -66,7 +66,7 @@ define double @array_out_param(double noundef %0, double noundef %1, double noun
   %29 = load i32, ptr %7, align 16    ; IR: handle of y[0] (the clone's out rail), kept before the twin restores the slot
   %30 = getelementptr inbounds i8, ptr %7, i64 4
   %31 = load i32, ptr %30, align 4    ; IR: handle of y[1], kept likewise
-  call fastcc void @__cq_q_reduce_1000_unc(ptr %6, i32 %4, double %3, ptr %7, i32 poison, i32 poison)    ; IR: uncompute the clone's two out rails (y[0], y[1] back to |0>); the last two arguments are the slots' content before the call (y was never written: poison), restored by the twin
+  call fastcc void @__cq_q_reduce_10000_unc(ptr %6, i32 %4, double %3, ptr %7, i32 poison, i32 poison)    ; IR: uncompute the clone's two out rails (y[0], y[1] back to |0>); the last two arguments are the slots' content before the call (y was never written: poison), restored by the twin
   call void @cqrt_free(i32 %29)    ; IR: release y[0] (|0>)
   call void @cqrt_free(i32 %31)    ; IR: release y[1] (|0>)
   call void @cq_template_fadd_f64_hl_unc(i32 %11, i32 %8, double %2)    ; IR: uncompute %11
@@ -77,7 +77,7 @@ define double @array_out_param(double noundef %0, double noundef %1, double noun
   ret double %32    ; IR: ret double %27
 }
 
-define internal fastcc i32 @__cq_q_reduce_1000(ptr %0, i32 %1, double %2, ptr %3) {
+define internal fastcc i32 @__cq_q_reduce_10000(ptr %0, i32 %1, double %2, ptr %3) {
   %5 = call i32 @cqrt_alloc_f64(double 0.000000e+00)    ; IR: incoming 0.0 of phi %9 / %16  [s before trip 0, a classical-valued rail]
   %6 = icmp sgt i32 %1, 0    ; IR: %5 = icmp sgt i32 %1, 0  (classical)
   br i1 %6, label %12, label %7    ; IR: br i1 %5, label %6, label %8
@@ -139,7 +139,7 @@ define internal fastcc i32 @__cq_q_reduce_1000(ptr %0, i32 %1, double %2, ptr %3
   ret i32 %38    ; IR: ret i32 %13
 }
 
-define internal fastcc void @__cq_q_reduce_1000_unc(ptr %0, i32 %1, double %2, ptr %3, i32 %4, i32 %5) {
+define internal fastcc void @__cq_q_reduce_10000_unc(ptr %0, i32 %1, double %2, ptr %3, i32 %4, i32 %5) {
   %7 = load i32, ptr %3, align 4    ; IR: handle of out[0] (the clone's rail)
   %8 = getelementptr inbounds i8, ptr %3, i64 4
   %9 = load i32, ptr %8, align 4    ; IR: handle of out[1]

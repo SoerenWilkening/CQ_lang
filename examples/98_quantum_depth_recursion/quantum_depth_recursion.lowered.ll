@@ -9,7 +9,7 @@
 ; non-associatively), so the clone recurses. The recursion is bounded exactly as a loop is (09/37: a level is a trip
 ; of a header-test loop, its recursive call the back edge). Cutoff C = min(K, B) with K = 4 and B = 3 (n & 3 <= 3, so
 ; at most three recursive calls; the call site is tagged [K]): one clone per recursion LEVEL d = 0..C,
-; __cq_q_chain_10 then __cq_q_chain_10_d1.._d3, each the clone of the same body whose recursive call site calls the
+; __cq_q_chain_10_b3 then __cq_q_chain_10_b3_d1.._d3, each the clone of the same body whose recursive call site calls the
 ; next level; at level C = 3 the call is CUT and its value is a |0> rail (rule 14: the call at level K, here C, is
 ; replaced). The after-K notion is the loop's: the overflow predicate is "level C would recurse once more" =
 ; NOT c at level 3 under the chain, the analogue of a header-test loop's a_K (09). Here n_3 = (n & 3) - 3 <= 0, so
@@ -20,7 +20,7 @@
 ; needed. The recursive call runs unguarded (its value is read by nothing when the base case holds); the phi over base
 ; case / recursive arm is a select on the base-case flag (rule 9). Every level uncomputes its callee through the next
 ; level's _unc twin (07, rule 18); the twins recurse the same way. Cost is 2^K calls of the deepest level. Level 0 is
-; called only by the entry, which measures its result, so __cq_q_chain_10 has no twin (§1.4: a twin nobody calls is not
+; called only by the entry, which measures its result, so __cq_q_chain_10_b3 has no twin (§1.4: a twin nobody calls is not
 ; defined); the twins are _d1_unc.._d3_unc.
 source_filename = "quantum_depth_recursion.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
@@ -30,18 +30,18 @@ define i32 @quantum_depth_recursion(i32 noundef %0, double noundef %1, i32 nound
   %4 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %4 = cq_theta_si32(%0, %1)  [register n]
   call void @cqrt_ry_i32(i32 %4, double %1)    ; IR: %4 = cq_theta_si32(%0, %1)  [Ry]
   %5 = call i32 @cq_template_and_i32_hl(i32 %4, i32 3)    ; IR: %5 = and i32 %4, 3
-  %6 = call fastcc i32 @__cq_q_chain_10(i32 %5, i32 %2)    ; IR: %6 = call @chain(%5, %2), quantum clone (arg 0 quantum), recursion level 0  [K]
+  %6 = call fastcc i32 @__cq_q_chain_10_b3(i32 %5, i32 %2)    ; IR: %6 = call @chain(%5, %2), quantum clone (arg 0 quantum), recursion level 0  [K]
   call void @cq_template_and_i32_hl_unc(i32 %5, i32 %4, i32 3)    ; IR: uncompute %5
   call void @cqrt_free(i32 %5)    ; IR: release the %5 rail (|0>)
   %7 = call i32 @cqrt_measure_i32(i32 %6)    ; IR: %7 = cq_measure_si32(%6)
   ret i32 %7    ; IR: ret i32 %7
 }
 
-define internal fastcc i32 @__cq_q_chain_10(i32 %0, i32 %1) {    ; IR: chain at recursion level 0
+define internal fastcc i32 @__cq_q_chain_10_b3(i32 %0, i32 %1) {    ; IR: chain at recursion level 0
   %3 = call i32 @cq_template_icmp_slt_i32_hl(i32 %0, i32 1)    ; IR: %3 = icmp slt i32 %0, 1  [base-case flag; the recursive arm runs under NOT c]
   %4 = call i32 @cq_template_add_i32_hl(i32 %0, i32 -1)    ; IR: %7 = add nsw i32 %0, -1
   %5 = add nsw i32 %1, 1    ; IR: %8 = add nsw i32 %1, 1  (classical)
-  %6 = call fastcc i32 @__cq_q_chain_10_d1(i32 %4, i32 %5)    ; IR: %9 = call @chain(%7, %8), the next level's clone (unguarded: read by nothing when c holds)
+  %6 = call fastcc i32 @__cq_q_chain_10_b3_d1(i32 %4, i32 %5)    ; IR: %9 = call @chain(%7, %8), the next level's clone (unguarded: read by nothing when c holds)
   %7 = call i32 @cq_template_sub_i32_lh(i32 %1, i32 %6)    ; IR: %10 = sub nsw i32 %1, %9
   %8 = call i32 @cq_template_select_i32_lh(i32 %3, i32 %1, i32 %7)    ; IR: %5 = phi [ %10, %6 ], [ %1, %2 ]: c ? a : %10
   %9 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: ret i32 %5  [result rail of the call]
@@ -50,7 +50,7 @@ define internal fastcc i32 @__cq_q_chain_10(i32 %0, i32 %1) {    ; IR: chain at 
   call void @cqrt_free(i32 %8)    ; IR: release the %5 rail (|0>)
   call void @cq_template_sub_i32_lh_unc(i32 %7, i32 %1, i32 %6)    ; IR: uncompute %10
   call void @cqrt_free(i32 %7)    ; IR: release the %10 rail (|0>)
-  call fastcc void @__cq_q_chain_10_d1_unc(i32 %6, i32 %4, i32 %5)    ; IR: uncompute %9 (adjoint of the call)
+  call fastcc void @__cq_q_chain_10_b3_d1_unc(i32 %6, i32 %4, i32 %5)    ; IR: uncompute %9 (adjoint of the call)
   call void @cqrt_free(i32 %6)    ; IR: release the %9 rail (|0>)
   call void @cq_template_add_i32_hl_unc(i32 %4, i32 %0, i32 -1)    ; IR: uncompute %7
   call void @cqrt_free(i32 %4)    ; IR: release the %7 rail (|0>)
@@ -59,11 +59,11 @@ define internal fastcc i32 @__cq_q_chain_10(i32 %0, i32 %1) {    ; IR: chain at 
   ret i32 %9    ; IR: ret i32 %5
 }
 
-define internal fastcc i32 @__cq_q_chain_10_d1(i32 %0, i32 %1) {    ; IR: chain at recursion level 1
+define internal fastcc i32 @__cq_q_chain_10_b3_d1(i32 %0, i32 %1) {    ; IR: chain at recursion level 1
   %3 = call i32 @cq_template_icmp_slt_i32_hl(i32 %0, i32 1)    ; IR: %3 = icmp slt i32 %0, 1  [base-case flag; the recursive arm runs under NOT c]
   %4 = call i32 @cq_template_add_i32_hl(i32 %0, i32 -1)    ; IR: %7 = add nsw i32 %0, -1
   %5 = add nsw i32 %1, 1    ; IR: %8 = add nsw i32 %1, 1  (classical)
-  %6 = call fastcc i32 @__cq_q_chain_10_d2(i32 %4, i32 %5)    ; IR: %9 = call @chain(%7, %8), the next level's clone (unguarded: read by nothing when c holds)
+  %6 = call fastcc i32 @__cq_q_chain_10_b3_d2(i32 %4, i32 %5)    ; IR: %9 = call @chain(%7, %8), the next level's clone (unguarded: read by nothing when c holds)
   %7 = call i32 @cq_template_sub_i32_lh(i32 %1, i32 %6)    ; IR: %10 = sub nsw i32 %1, %9
   %8 = call i32 @cq_template_select_i32_lh(i32 %3, i32 %1, i32 %7)    ; IR: %5 = phi [ %10, %6 ], [ %1, %2 ]: c ? a : %10
   %9 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: ret i32 %5  [result rail of the call]
@@ -72,7 +72,7 @@ define internal fastcc i32 @__cq_q_chain_10_d1(i32 %0, i32 %1) {    ; IR: chain 
   call void @cqrt_free(i32 %8)    ; IR: release the %5 rail (|0>)
   call void @cq_template_sub_i32_lh_unc(i32 %7, i32 %1, i32 %6)    ; IR: uncompute %10
   call void @cqrt_free(i32 %7)    ; IR: release the %10 rail (|0>)
-  call fastcc void @__cq_q_chain_10_d2_unc(i32 %6, i32 %4, i32 %5)    ; IR: uncompute %9 (adjoint of the call)
+  call fastcc void @__cq_q_chain_10_b3_d2_unc(i32 %6, i32 %4, i32 %5)    ; IR: uncompute %9 (adjoint of the call)
   call void @cqrt_free(i32 %6)    ; IR: release the %9 rail (|0>)
   call void @cq_template_add_i32_hl_unc(i32 %4, i32 %0, i32 -1)    ; IR: uncompute %7
   call void @cqrt_free(i32 %4)    ; IR: release the %7 rail (|0>)
@@ -81,11 +81,11 @@ define internal fastcc i32 @__cq_q_chain_10_d1(i32 %0, i32 %1) {    ; IR: chain 
   ret i32 %9    ; IR: ret i32 %5
 }
 
-define internal fastcc void @__cq_q_chain_10_d1_unc(i32 %0, i32 %1, i32 %2) {    ; IR: adjoint of chain at level 1
+define internal fastcc void @__cq_q_chain_10_b3_d1_unc(i32 %0, i32 %1, i32 %2) {    ; IR: adjoint of chain at level 1
   %4 = call i32 @cq_template_icmp_slt_i32_hl(i32 %1, i32 1)    ; IR: recompute %3
   %5 = call i32 @cq_template_add_i32_hl(i32 %1, i32 -1)    ; IR: recompute %7
   %6 = add nsw i32 %2, 1    ; IR: %8  (classical)
-  %7 = call fastcc i32 @__cq_q_chain_10_d2(i32 %5, i32 %6)    ; IR: %9 = call @chain(%7, %8), the next level's clone (unguarded: read by nothing when c holds)
+  %7 = call fastcc i32 @__cq_q_chain_10_b3_d2(i32 %5, i32 %6)    ; IR: %9 = call @chain(%7, %8), the next level's clone (unguarded: read by nothing when c holds)
   %8 = call i32 @cq_template_sub_i32_lh(i32 %2, i32 %7)    ; IR: recompute %10
   %9 = call i32 @cq_template_select_i32_lh(i32 %4, i32 %2, i32 %8)    ; IR: recompute %5
   call void @cqrt_copy_i32(i32 %9, i32 %0)    ; IR: ret i32 %5  [xor the result out of %out]
@@ -93,7 +93,7 @@ define internal fastcc void @__cq_q_chain_10_d1_unc(i32 %0, i32 %1, i32 %2) {   
   call void @cqrt_free(i32 %9)    ; IR: release the %5 rail (|0>)
   call void @cq_template_sub_i32_lh_unc(i32 %8, i32 %2, i32 %7)    ; IR: uncompute %10
   call void @cqrt_free(i32 %8)    ; IR: release the %10 rail (|0>)
-  call fastcc void @__cq_q_chain_10_d2_unc(i32 %7, i32 %5, i32 %6)    ; IR: uncompute %9 (adjoint of the call)
+  call fastcc void @__cq_q_chain_10_b3_d2_unc(i32 %7, i32 %5, i32 %6)    ; IR: uncompute %9 (adjoint of the call)
   call void @cqrt_free(i32 %7)    ; IR: release the %9 rail (|0>)
   call void @cq_template_add_i32_hl_unc(i32 %5, i32 %1, i32 -1)    ; IR: uncompute %7
   call void @cqrt_free(i32 %5)    ; IR: release the %7 rail (|0>)
@@ -102,11 +102,11 @@ define internal fastcc void @__cq_q_chain_10_d1_unc(i32 %0, i32 %1, i32 %2) {   
   ret void
 }
 
-define internal fastcc i32 @__cq_q_chain_10_d2(i32 %0, i32 %1) {    ; IR: chain at recursion level 2
+define internal fastcc i32 @__cq_q_chain_10_b3_d2(i32 %0, i32 %1) {    ; IR: chain at recursion level 2
   %3 = call i32 @cq_template_icmp_slt_i32_hl(i32 %0, i32 1)    ; IR: %3 = icmp slt i32 %0, 1  [base-case flag; the recursive arm runs under NOT c]
   %4 = call i32 @cq_template_add_i32_hl(i32 %0, i32 -1)    ; IR: %7 = add nsw i32 %0, -1
   %5 = add nsw i32 %1, 1    ; IR: %8 = add nsw i32 %1, 1  (classical)
-  %6 = call fastcc i32 @__cq_q_chain_10_d3(i32 %4, i32 %5)    ; IR: %9 = call @chain(%7, %8), the next level's clone (unguarded: read by nothing when c holds)
+  %6 = call fastcc i32 @__cq_q_chain_10_b3_d3(i32 %4, i32 %5)    ; IR: %9 = call @chain(%7, %8), the next level's clone (unguarded: read by nothing when c holds)
   %7 = call i32 @cq_template_sub_i32_lh(i32 %1, i32 %6)    ; IR: %10 = sub nsw i32 %1, %9
   %8 = call i32 @cq_template_select_i32_lh(i32 %3, i32 %1, i32 %7)    ; IR: %5 = phi [ %10, %6 ], [ %1, %2 ]: c ? a : %10
   %9 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: ret i32 %5  [result rail of the call]
@@ -115,7 +115,7 @@ define internal fastcc i32 @__cq_q_chain_10_d2(i32 %0, i32 %1) {    ; IR: chain 
   call void @cqrt_free(i32 %8)    ; IR: release the %5 rail (|0>)
   call void @cq_template_sub_i32_lh_unc(i32 %7, i32 %1, i32 %6)    ; IR: uncompute %10
   call void @cqrt_free(i32 %7)    ; IR: release the %10 rail (|0>)
-  call fastcc void @__cq_q_chain_10_d3_unc(i32 %6, i32 %4, i32 %5)    ; IR: uncompute %9 (adjoint of the call)
+  call fastcc void @__cq_q_chain_10_b3_d3_unc(i32 %6, i32 %4, i32 %5)    ; IR: uncompute %9 (adjoint of the call)
   call void @cqrt_free(i32 %6)    ; IR: release the %9 rail (|0>)
   call void @cq_template_add_i32_hl_unc(i32 %4, i32 %0, i32 -1)    ; IR: uncompute %7
   call void @cqrt_free(i32 %4)    ; IR: release the %7 rail (|0>)
@@ -124,11 +124,11 @@ define internal fastcc i32 @__cq_q_chain_10_d2(i32 %0, i32 %1) {    ; IR: chain 
   ret i32 %9    ; IR: ret i32 %5
 }
 
-define internal fastcc void @__cq_q_chain_10_d2_unc(i32 %0, i32 %1, i32 %2) {    ; IR: adjoint of chain at level 2
+define internal fastcc void @__cq_q_chain_10_b3_d2_unc(i32 %0, i32 %1, i32 %2) {    ; IR: adjoint of chain at level 2
   %4 = call i32 @cq_template_icmp_slt_i32_hl(i32 %1, i32 1)    ; IR: recompute %3
   %5 = call i32 @cq_template_add_i32_hl(i32 %1, i32 -1)    ; IR: recompute %7
   %6 = add nsw i32 %2, 1    ; IR: %8  (classical)
-  %7 = call fastcc i32 @__cq_q_chain_10_d3(i32 %5, i32 %6)    ; IR: %9 = call @chain(%7, %8), the next level's clone (unguarded: read by nothing when c holds)
+  %7 = call fastcc i32 @__cq_q_chain_10_b3_d3(i32 %5, i32 %6)    ; IR: %9 = call @chain(%7, %8), the next level's clone (unguarded: read by nothing when c holds)
   %8 = call i32 @cq_template_sub_i32_lh(i32 %2, i32 %7)    ; IR: recompute %10
   %9 = call i32 @cq_template_select_i32_lh(i32 %4, i32 %2, i32 %8)    ; IR: recompute %5
   call void @cqrt_copy_i32(i32 %9, i32 %0)    ; IR: ret i32 %5  [xor the result out of %out]
@@ -136,7 +136,7 @@ define internal fastcc void @__cq_q_chain_10_d2_unc(i32 %0, i32 %1, i32 %2) {   
   call void @cqrt_free(i32 %9)    ; IR: release the %5 rail (|0>)
   call void @cq_template_sub_i32_lh_unc(i32 %8, i32 %2, i32 %7)    ; IR: uncompute %10
   call void @cqrt_free(i32 %8)    ; IR: release the %10 rail (|0>)
-  call fastcc void @__cq_q_chain_10_d3_unc(i32 %7, i32 %5, i32 %6)    ; IR: uncompute %9 (adjoint of the call)
+  call fastcc void @__cq_q_chain_10_b3_d3_unc(i32 %7, i32 %5, i32 %6)    ; IR: uncompute %9 (adjoint of the call)
   call void @cqrt_free(i32 %7)    ; IR: release the %9 rail (|0>)
   call void @cq_template_add_i32_hl_unc(i32 %5, i32 %1, i32 -1)    ; IR: uncompute %7
   call void @cqrt_free(i32 %5)    ; IR: release the %7 rail (|0>)
@@ -145,7 +145,7 @@ define internal fastcc void @__cq_q_chain_10_d2_unc(i32 %0, i32 %1, i32 %2) {   
   ret void
 }
 
-define internal fastcc i32 @__cq_q_chain_10_d3(i32 %0, i32 %1) {    ; IR: chain at recursion level 3
+define internal fastcc i32 @__cq_q_chain_10_b3_d3(i32 %0, i32 %1) {    ; IR: chain at recursion level 3
   %3 = call i32 @cq_template_icmp_slt_i32_hl(i32 %0, i32 1)    ; IR: %3 = icmp slt i32 %0, 1  [base-case flag; the recursive arm runs under NOT c]
   %4 = call i32 @cq_template_add_i32_hl(i32 %0, i32 -1)    ; IR: %7 = add nsw i32 %0, -1
   %5 = add nsw i32 %1, 1    ; IR: %8 = add nsw i32 %1, 1  (classical)
@@ -166,7 +166,7 @@ define internal fastcc i32 @__cq_q_chain_10_d3(i32 %0, i32 %1) {    ; IR: chain 
   ret i32 %9    ; IR: ret i32 %5
 }
 
-define internal fastcc void @__cq_q_chain_10_d3_unc(i32 %0, i32 %1, i32 %2) {    ; IR: adjoint of chain at level 3
+define internal fastcc void @__cq_q_chain_10_b3_d3_unc(i32 %0, i32 %1, i32 %2) {    ; IR: adjoint of chain at level 3
   %4 = call i32 @cq_template_icmp_slt_i32_hl(i32 %1, i32 1)    ; IR: recompute %3
   %5 = call i32 @cq_template_add_i32_hl(i32 %1, i32 -1)    ; IR: recompute %7
   %6 = add nsw i32 %2, 1    ; IR: %8  (classical)

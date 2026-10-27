@@ -665,6 +665,14 @@ A phase whose control predicate is constant over the quantum inputs once the cla
 fixed, and whose angle is classical, is a global phase: whether either side emits it is not compared
 (this is what rule 12's deletion relies on; it never applies to an Ry, nor to a phase with an angle rail).
 
+The classical reference of item 1 runs every quantum-exit loop and quantum-depth recursion with the
+same cutoff as the circuit: a loop is stopped after K trips (the exit test after the K-th body gives
+`a_K`). On an input where the C program would run more than K trips the compared outputs are the
+circuit's, `a_K` must read 1, and the rotation list is compared through trip K; on an input with at
+most K trips `a_K` must read 0 and everything is compared (ruling 2026-10-27). A function with no body
+(rule 27) is modelled on both sides by one deterministic stand-in of the name and argument bits; the
+model is the checker's, not the spec's.
+
 An indeterminate value the C program reads (a cell never written: `malloc`, `realloc` growth,
 an uninitialized local) is taken as 0 by the classical reference, the value the circuit's fresh
 `|0⟩` cell holds; no code is emitted for it.
@@ -693,6 +701,7 @@ Byte identity of traces is never required.
 | 6 bijective cleanup | 125, 127 (also applied in 113, 114 to the superseded CNOT targets) | rewrite as the two witnesses |
 | 12 | 41 | header: deletion is scope-dependent |
 | 3 lane gate | 103 (dead `fadd_f32` on an unread lane) | remove |
+| §1.4 mask and bounds (2026-10-27) | 52 (`reduce_1000`: the `out` pointer carries two cells, so two digits), 98 (`chain_10`: the call-site bound `n & 3` must appear as `_b3`) | renamed `__cq_q_reduce_10000`, `__cq_q_chain_10_b3[_dN]` |
 | 27 declared clones (2026-10-27) | 161 (`ext_fn` called with the raw handle), 190 `escape` (`ext_sink` gets slot memory of handles) | done 2026-10-27: `__cq_q_ext_fn_10`, `__cq_q_ext_sink_0010` (snapshot twin), trailing K argument |
 
 ## 8. Examples written 2026-10-26 (144–180)
