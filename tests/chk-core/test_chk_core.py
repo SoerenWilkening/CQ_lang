@@ -167,6 +167,15 @@ class Violations(unittest.TestCase):
             self.assertEqual([v["what"] for v in r.violations], ["build"])
 
 
+class KeptMerge(unittest.TestCase):
+    def test_qram_exit_entries_join_kept(self):
+        ev = [{"ev": "qram", "op": "exit", "live": [{"h": 0x5A000000, "w": "i32", "v": "0x3", "role": "qram_cell"}]},
+              {"ev": "exit", "live": [{"h": 1, "w": "i32", "v": "0x7", "role": "frozen"}]}]
+        r = run._result("ours", {}, ev, "", 0, [])
+        self.assertEqual([k["role"] for k in r.kept], ["frozen", "qram_cell"])
+        self.assertEqual(r.violations, [])
+
+
 class MultiWord(unittest.TestCase):
     def test_wide_rails(self):
         v = (1 << 127) | 0x1234
