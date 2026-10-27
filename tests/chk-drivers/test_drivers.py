@@ -63,6 +63,28 @@ class DriverSpecs(unittest.TestCase):
         self.assertEqual(q(s["60_qft"]), [True, False, False])
 
 
+class Loops(unittest.TestCase):
+    def test_loops_equal_llvm_loopinfo(self):
+        """The probe's natural loops are LLVM's LoopInfo loops, spelled per T1 (<fn>:<header>)."""
+        import re
+        for n in D.all_examples():
+            o1 = D.o1_path(n)
+            m = D.read_module(o1)
+            ins = S.Instrumenter(m)
+            mine = sorted(lp.key() for f in m.functions.values() for lp in ins.find_loops(f))
+            out = subprocess.run([str(S.LLVM_BIN / "opt"), "-passes=print<loops>", "-disable-output", str(o1)],
+                                 capture_output=True, text=True).stderr
+            ref, fn = [], None
+            for line in out.splitlines():
+                mm = re.match(r"Loop info for function '(.*)'", line)
+                if mm:
+                    fn = mm.group(1)
+                mm = re.search(r"(%[^<, ]+)<header>", line)
+                if mm:
+                    ref.append(f"{fn}:{mm.group(1)}")
+            self.assertEqual(mine, sorted(ref), n)
+
+
 class Encoding(unittest.TestCase):
     def test_literals(self):
         ct = D.parse_ctype
@@ -152,6 +174,7 @@ class Sampling(unittest.TestCase):
     def test_trips(self):
         spec, ss = self.sample("05_while_quantum_cond")
         (lp,) = ss.classes["trips"]["loops"]
+        self.assertEqual(lp["loop"], "while_quantum_cond:%8")
         for t in ("0", "3", "4", "5"):
             self.assertIn("sample", lp["trips"][t], t)
 

@@ -347,7 +347,8 @@ class Loop:
     blocks: Set[str]
 
     def key(self) -> str:
-        return f"{self.fn}:{self.header}"
+        """T1 (cq-mia): "<fn>:<header>", fn without "@", the header label as an operand."""
+        return f"{self.fn[1:]}:{self.header}"
 
 
 _FLAGS = {"nuw", "nsw", "exact", "disjoint", "fast", "nnan", "ninf", "nsz", "arcp", "contract", "afn",
@@ -1651,31 +1652,7 @@ def build_sample_set(spec: DriverSpec, example_dir: Path) -> SampleSet:
         bounded = [str(ci) for ci in range(len(spec.calls)) if g.has_driver_object(ci) and g.classical_slots(ci)]
         bound_note = (f"; in calls {', '.join(bounded)} (which pass a driver object) an integer classical "
                       f"argument ranges over [0, its drivers.txt value]") if bounded else ""
-        loops_out = []
-        for lp in pb.ins.loops:
-            trips = {}
-            for target in (0, K - 1, K, K + 1):
-                hit = [i for i, o in zip(pool_idx, pool_obs) if target in o.t.get(lp.id, []) and _valid(o, rows_by_site)]
-                if hit:
-                    trips[str(target)] = {"sample": hit[0]}
-                    continue
-
-                def dist(o, lp=lp, target=target):
-                    ns = o.t.get(lp.id, [])
-                    return min((abs(n - target) for n in ns), default=1e308)
-                found = searcher.search(pool, dist)
-                if found:
-                    trips[str(target)] = {"sample": g.add(*found)}
-                else:
-                    seen = sorted({n for o in pool_obs if _valid(o, rows_by_site) for n in o.t.get(lp.id, [])})
-                    if not seen:
-                        why = "the loop is never reached from the drivers.txt calls"
-                    else:
-                        why = (f"no input found: trip counts observed {seen[:12]}"
-                               f"{' ...' if len(seen) > 12 else ''} over {searcher.runs} probe runs")
-                    trips[str(target)] = {"empty": why + bound_note}
-            loops_out.append({"loop": lp.key(), "parent": (pb.ins.loops[lp.parent].key() if lp.parent is not None else None),
-                              "trips": trips})
+        loops_out = trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_site, bound_note)
         trips_cls = {"K": K, "loops": loops_out}
         if not loops_out:
             trips_cls["empty"] = "the example has no loop"
@@ -1691,18 +1668,123 @@ def build_sample_set(spec: DriverSpec, example_dir: Path) -> SampleSet:
     return SampleSet(example=spec.example, samples=g.samples, classes=classes)
 
 
-def confirm_trips(ss: SampleSet, trip_events: Callable[[dict], List[dict]]) -> List[str]:
+def legacy_oracle_loop_ids(loops: List[Loop], fn_order: Sequence[str]) -> Dict[int, str]:
+    """TEMPORARY: the spelling the C oracle on main still emits, `<fn>/<k>` with k the loop's index in
+    LLVM's LoopInfo::getLoopsInPreorder, until it conforms to T1 (`<fn>:<header>`, cq-mia). Siblings
+    are taken in the reverse postorder of their headers over the CFG in successor order (the order
+    find_loops numbers them in); the preorder is a depth-first walk of the loop tree in that order.
+    Used only to read oracle events; the SampleSet spells loops per T1."""
+    out: Dict[int, str] = {}
+    for fn in fn_order:
+        mine = [lp for lp in loops if lp.fn == fn]          # in find_loops order (header RPO)
+        k = 0
+
+        def walk(parent):
+            nonlocal k
+            for lp in mine:
+                if lp.parent == parent:
+                    out[lp.id] = f"{fn[1:]}/{k}"
+                    k += 1
+                    walk(lp.id)
+        walk(None)
+    return out
+
+
+def trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_site, bound_note) -> List[dict]:
+    """Per loop and per target trip count, a sample on which the C oracle's trip counter reports that
+    count. The probe build's header counters drive the search; candidates within one trip of a target
+    (the probe counts header executions, the oracle trips begun, and a skipped guard as 0) go to the
+    C oracle, which decides."""
+    from cqcheck import oracle
+    loops = pb.ins.loops
+    if not loops:
+        return []
+    legacy = legacy_oracle_loop_ids(loops, list(pb.mod.functions))
+    to_t1 = {v: loops[k].key() for k, v in legacy.items()}
+    oid = {lp.id: lp.key() for lp in loops}
+    targets = (0, K - 1, K, K + 1)
+    cands: List[Tuple[int, Tuple[str, ...]]] = []
+
+    def near(o: Obs, lp: Loop, t: int) -> bool:
+        ns = o.t.get(lp.id, [])
+        return any(abs(n - t) <= 1 for n in ns) or (t == 0 and not ns)
+
+    for lp in loops:
+        for t in targets:
+            found = None
+            if not any(near(o, lp, t) for o in pool_obs):
+                def dist(o, lp=lp, t=t):
+                    return min((abs(n - t) for n in o.t.get(lp.id, [])), default=1e308)
+                found = searcher.search(pool, dist)
+                if found:
+                    cands.append((found[0], tuple(found[1])))
+            picked = [k for k, o in searcher.cache.items() if _valid(o, rows_by_site) and near(o, lp, t)]
+            picked.sort(key=lambda k: (k not in g.index, g.index.get(k, 0)))
+            cands += picked[:24]
+    cands = list(dict.fromkeys([(c, tuple(a)) for c, a in
+                                [(g.samples[i]["call"], g.samples[i]["args"]) for i in range(len(spec.calls))]] + cands))
+    o1 = sorted(Path(example_dir).glob("*.O1.ll"))[0]
+    runs = oracle.run_samples(o1, spec, [{"call": c, "args": list(a)} for c, a in cands])
+    seen: Dict[str, Set[int]] = {}
+    for (c, a), r in zip(cands, runs):
+        if r.failed:
+            continue
+        for e in r.events:
+            if e.get("ev") == "trip":
+                e["loop"] = to_t1.get(e["loop"], e["loop"])
+                seen.setdefault(e["loop"], set()).add(int(e["n"]))
+    known = set(oid.values())
+    stray = sorted(set(seen) - known)
+    if stray:
+        D.unimplemented(f"{spec.example}: the C oracle reports loops {stray} the probe build does not know "
+                        f"(probe loops {sorted(known)})")
+    out = []
+    for lp in loops:
+        trips = {}
+        for t in targets:
+            hit = None
+            for (c, a), r in zip(cands, runs):
+                if not r.failed and any(e.get("ev") == "trip" and e["loop"] == oid[lp.id] and int(e["n"]) == t
+                                        for e in r.events):
+                    hit = g.add(c, list(a))
+                    break
+            if hit is not None:
+                trips[str(t)] = {"sample": hit}
+                continue
+            obs_c = sorted(seen.get(oid[lp.id], set()))
+            if not obs_c and not any(lp.id in o.t for o in searcher.cache.values()):
+                why = "the loop is never reached from the drivers.txt calls"
+            else:
+                why = (f"no input found: the C oracle's trip counts on {len(cands)} candidates are "
+                       f"{obs_c[:12]}{' ...' if len(obs_c) > 12 else ''}"
+                       + (" (it reports 0 only when a guard branch skips the loop)" if t == 0 else "")
+                       + f"; {searcher.runs} probe runs searched")
+            trips[str(t)] = {"empty": why + bound_note}
+        out.append({"loop": lp.key(),
+                    "parent": (loops[lp.parent].key() if lp.parent is not None else None), "trips": trips})
+    return out
+
+
+def confirm_trips(ss: SampleSet, trip_events: Callable[[dict], List[dict]],
+                  to_t1: Optional[Dict[str, str]] = None) -> List[str]:
     """Check the trip samples against the C oracle's trip counters. `trip_events(sample)` returns the
-    oracle's {"ev": "trip", "loop", "n"} events for one sample. Returns the disagreements."""
+    oracle's events for one sample (oracle.trace_sample); `to_t1` maps a legacy oracle loop id to the
+    T1 spelling (empty once the oracle conforms). Returns the disagreements."""
+    to_t1 = to_t1 or {}
     bad = []
     for lp in ss.classes["trips"]["loops"]:
         for target, e in lp["trips"].items():
             if "sample" not in e:
                 continue
-            evs = [x for x in trip_events(ss.samples[e["sample"]]) if x.get("ev") == "trip" and x.get("loop") == lp["loop"]]
-            if int(target) not in [int(x["n"]) for x in evs] and not (int(target) == 0 and not evs):
-                bad.append(f"{ss.example}: loop {lp['loop']}: sample {e['sample']} gives trips "
-                           f"{[x['n'] for x in evs]} in the C oracle, the probe found {target}")
+            try:
+                evs = trip_events(ss.samples[e["sample"]])
+            except Exception as x:  # noqa: BLE001 - a sample the oracle cannot run is a disagreement
+                bad.append(f"{ss.example}: loop {lp['loop']}: sample {e['sample']}: {x}")
+                continue
+            ns = [int(x["n"]) for x in evs if x.get("ev") == "trip" and to_t1.get(x.get("loop"), x.get("loop")) == lp["loop"]]
+            if int(target) not in ns:
+                bad.append(f"{ss.example}: loop {lp['loop']}: sample {e['sample']} "
+                           f"gives trips {ns} in the C oracle, the class says {target}")
     return bad
 
 
@@ -1763,10 +1845,28 @@ def _summary(ss: SampleSet) -> str:
             f"trip targets {tr_hit}/{4 * len(lps)} found")
 
 
-def _one(n: str):
+def _one(n: str, confirm: bool = False):
     d = D.example_dir(n)
     spec = D.driver_spec(n, d)
-    return n, spec, sample_set(spec, d)
+    ss = sample_set(spec, d)
+    bad: List[str] = []
+    if confirm:
+        from cqcheck import oracle
+        o1 = sorted(d.glob("*.O1.ll"))[0]
+        ins = Instrumenter(D.read_module(o1))
+        # renumber as rewrite_function does: ids are positions, parents offset per function
+        loops, base = [], 0
+        for f in ins.mod.functions.values():
+            fl = ins.find_loops(f)
+            for k, lp in enumerate(fl):
+                lp.id = base + k
+                lp.parent = None if lp.parent is None else lp.parent + base
+            loops += fl
+            base += len(fl)
+        legacy = legacy_oracle_loop_ids(loops, list(ins.mod.functions))
+        to_t1 = {v: loops[k].key() for k, v in legacy.items()}
+        bad = confirm_trips(ss, lambda smp: oracle.trace_sample(o1, spec, smp), to_t1)
+    return n, spec, ss, bad
 
 
 def main(argv=None) -> int:
@@ -1776,22 +1876,24 @@ def main(argv=None) -> int:
     ap.add_argument("examples", nargs="*")
     ap.add_argument("-j", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--confirm", action="store_true",
+                    help="check every trip sample against the C oracle (oracle.trace_sample)")
     a = ap.parse_args(argv)
     names = a.examples or D.all_examples()
     names = [n for n in names]
     status = 0
 
     with cf.ProcessPoolExecutor(max_workers=a.j) as ex:
-        futs = {ex.submit(_one, n): n for n in names}
+        futs = {ex.submit(_one, n, a.confirm): n for n in names}
         for fu in cf.as_completed(futs):
             n = futs[fu]
             try:
-                n, spec, ss = fu.result()
+                n, spec, ss, unconfirmed = fu.result()
             except Exception as e:  # noqa: BLE001
                 print(f"{n}: ERROR {e}")
                 status = 1
                 continue
-            bad = check_sample_set(spec, ss)
+            bad = check_sample_set(spec, ss) + unconfirmed
             print(_summary(ss) + ("" if not bad else f"  PROBLEMS: {bad}"))
             if bad:
                 status = 1

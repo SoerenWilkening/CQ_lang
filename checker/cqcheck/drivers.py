@@ -372,6 +372,10 @@ def read_module(path: Path) -> Module:
                 raw = lines[i]
                 s = strip_comment(raw)
                 i += 1
+                # a switch spans lines: join until its case list closes
+                while s.count("[") > s.count("]") and i < len(lines) and not lines[i].startswith("}"):
+                    s = s + " " + strip_comment(lines[i]).strip()
+                    i += 1
                 if not s.strip():
                     continue
                 lm = _RE_LABEL.match(s)
