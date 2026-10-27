@@ -4,11 +4,10 @@
 //   - LoweringContext::emitTemplate emits the forward template AND records it (recordTemplate);
 //     emitCore only emits. pred records its own core gates: recordSeed for every alloc it emits,
 //     recordCore(gate, spec, controls, idOf(target)) for every XOR-into-target gate of a flag.
-//   - Uncompute::noteUse(rail, consumer) takes a consumer instruction of the ORIGINAL function (the
-//     same point space as flushBefore). lowerBranch notes, for every quantum atom of the condition,
-//     each original instruction that reads it through a predicate.
-//   - A flag minted here has no original value; it is due at the first flush after the instruction
-//     whose lowering minted it (it is minted at its use and torn down after it, CR §5).
+//   - Uncompute (pass/lib/uncompute/Uncompute.cpp CONTRACT): recordCore's ops are the gate's whole
+//     argument list, out its target; IR users of a handle are its uses; a rail is resolved only at a
+//     flushBefore/flushAtExit the spine places. A flag minted here is used right where it is minted
+//     (a gate or a select), so the first flush after that lowering tears it down (CR §5).
 #include "PredInternal.h"
 
 #include "cq/Common.h"
@@ -209,9 +208,9 @@ public:
     args.push_back(target);
     abi::CoreSpec spec{op, i1Rail()};
     CallInst *call = ctx.emitCore(spec, args);
-    SmallVector<Operand, 3> ops;
-    for (Value *c : controls)
-      ops.push_back(Operand{c, true});
+    SmallVector<Operand, 3> ops;   // uncompute's contract: the gate's whole argument list
+    for (Value *a : args)
+      ops.push_back(Operand{a, true});
     ctx.unc().recordCore(call, spec, ops, ctx.unc().idOf(target));
   }
 };
@@ -332,10 +331,11 @@ Value *lowerSelect(LoweringContext &ctx, SelectInst &sel) {
 }
 
 // A br on a quantum condition is absorbed: the arms are linearized by the spine's walk and run under
-// their block predicates, so nothing is emitted for it. What remains is lifetime: the rails of the
-// condition's quantum atoms must outlive every original instruction that reads them through a
-// predicate (every instruction lowered under a block predicate that mentions the atom, and every
-// merge whose edge predicates mention it).
+// their block predicates (the classical factor of a block predicate as a classical branch, its
+// quantum part as a flag, rule 8 / P1), so nothing is emitted for it. The rails of the condition's
+// atoms are read again by the arms' flags and by the merges: uncompute counts IR users of a handle as
+// uses and resolves a rail only at a flushBefore the spine places, so the spine keeps a condition rail
+// pending (no flush that could resolve it) until the last block and merge under it are lowered.
 void lowerBranch(LoweringContext &ctx, BranchInst &br) {
   if (!br.isConditional())
     internalError("pred: lowerBranch on an unconditional br", &br);
@@ -344,43 +344,6 @@ void lowerBranch(LoweringContext &ctx, BranchInst &br) {
   const PathStorage &I = storage(ctx.preds());
   if (I.F != br.getFunction())
     internalError("pred: lowerBranch before PathPredicates::compute of its function", &br);
-  std::shared_ptr<Oracle> O = taintOracle(ctx.T, ctx.S);
-  Bdd &m = Bdd::get();
-
-  std::set<unsigned> sup, atoms;
-  m.support(condNode(br.getCondition(), *O), sup);
-  for (unsigned v : sup) {
-    const Atom &a = atomOf(v);
-    if (a.kind == AtomKind::Cond && O->isQuantum(a.v))
-      atoms.insert(v);   // classical atoms are re-seeded from their values at each use
-  }
-  if (atoms.empty())
-    return;
-  std::map<unsigned, RailId> ids;
-  for (unsigned v : atoms)
-    ids[v] = ctx.unc().idOf(ctx.rail(atomOf(v).v));
-
-  auto mentions = [&](const Pred &p, auto &&fn) {
-    std::set<unsigned> s;
-    m.support(nodeOf(p), s);
-    for (unsigned v : atoms)
-      if (s.count(v))
-        fn(v);
-  };
-  for (auto &entry : I.rpo) {
-    const BasicBlock *b = entry.first;
-
-    mentions(I.blocks.find(b)->second, [&](unsigned v) {
-      for (const Instruction &inst : *b)
-        ctx.unc().noteUse(ids[v], const_cast<Instruction *>(&inst));
-    });
-    for (const PHINode &phi : b->phis())
-      for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i) {
-        auto e = I.edges.find({phi.getIncomingBlock(i), b});
-        if (e != I.edges.end())
-          mentions(e->second, [&](unsigned v) { ctx.unc().noteUse(ids[v], const_cast<PHINode *>(&phi)); });
-      }
-  }
 }
 
 // Rule 12: a phase is rz_i1 on the flag of the quantum predicate in scope (a _ctl clone's predicate
