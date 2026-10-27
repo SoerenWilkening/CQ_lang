@@ -191,6 +191,8 @@ static std::pair<unsigned, unsigned> factor(unsigned f, Oracle &O) {
   Bdd &m = Bdd::get();
   if (m.terminal(f))
     return {Bdd::T, f};
+  if (isClassicalNode(f, O))
+    return {f, Bdd::T};   // a classical predicate is its own classical factor: no flag
   std::set<unsigned> sup;
   m.support(f, sup);
   unsigned C = Bdd::T;
@@ -283,31 +285,120 @@ void computePaths(PathStorage &I, Function &F, const LoopInfo &LI, Oracle &O, Va
 
   auto predOf = [&](const BasicBlock *b) { return nodeOf(I.blocks[b]); };
   unsigned idx = 0;
-  for (BasicBlock *bb : rpot) {
+  for (BasicBlock *bb : rpot)
     I.rpo[bb] = idx++;
+
+  // The outermost loop an edge p -> bb leaves (null when it leaves none).
+  auto leftLoop = [&](const BasicBlock *p, const BasicBlock *bb) {
+    const Loop *out = nullptr;
+    for (const Loop *L = LI.getLoopFor(p); L && !L->contains(bb); L = L->getParentLoop())
+      out = L;
+    return out;
+  };
+  auto isBackEdge = [&](const BasicBlock *p, const BasicBlock *bb) {
+    const Loop *own = LI.getLoopFor(bb);
+    return own && own->getHeader() == bb && own->contains(p);
+  };
+
+  // Evaluation order: a topological order of the forward edges, in which an exit block of a loop with
+  // several exit blocks also waits for every block of that loop (its exit edges are evaluated
+  // together, below). RPO is not enough: a reducible CFG's RPO may place an exit block before a loop
+  // body block.
+  DenseMap<const BasicBlock *, SmallVector<const BasicBlock *, 8>> deps;
+  for (BasicBlock *bb : rpot) {
+    SmallPtrSet<const BasicBlock *, 8> seen;
+    for (const BasicBlock *p : predecessors(bb)) {
+      if (!reachable.count(p) || isBackEdge(p, bb) || !seen.insert(p).second)
+        continue;
+      deps[bb].push_back(p);
+      if (const Loop *out = leftLoop(p, bb); out && !out->getUniqueExitBlock())
+        for (const BasicBlock *lb : out->blocks())
+          if (seen.insert(lb).second)
+            deps[bb].push_back(lb);
+    }
+  }
+  std::vector<BasicBlock *> order;
+  {
+    SmallPtrSet<const BasicBlock *, 32> done;
+    std::vector<BasicBlock *> todo(rpot.begin(), rpot.end());
+    while (!todo.empty()) {
+      bool progress = false;
+      for (auto it = todo.begin(); it != todo.end();) {
+        bool ready = true;
+        for (const BasicBlock *d : deps[*it])
+          ready &= done.count(d) > 0;
+        if (ready) {
+          done.insert(*it);
+          order.push_back(*it);
+          it = todo.erase(it);
+          progress = true;
+        } else {
+          ++it;
+        }
+      }
+      if (!progress)
+        internalError("pred: no topological order of the forward edges (irreducible control flow reached pred)",
+                      todo.front());
+    }
+  }
+
+  // A loop with several exit blocks ends through exactly one exit edge, and it does end (a quantum
+  // exit runs its K trips, rule 14), so its exit edges partition the loop's predicate: exit edge e
+  // contributes pred(header) & X_e, where X_e is e's condition within the exiting trip, relative to
+  // the header, minus the earlier exit edges', and the last exit edge takes the rest. A join every
+  // exit reaches then gets the loop's predicate back (121's block %29; control dependence is
+  // post-dominance, A1).
+  std::map<const Loop *, std::map<std::pair<const BasicBlock *, const BasicBlock *>, unsigned>> exitShare;
+  auto exitContribution = [&](const Loop *L, const BasicBlock *p, const BasicBlock *bb) {
+    auto &shares = exitShare[L];
+    if (shares.empty()) {
+      SmallVector<std::pair<BasicBlock *, BasicBlock *>, 8> exits;
+      L->getExitEdges(exits);
+      std::vector<std::pair<const BasicBlock *, const BasicBlock *>> edgesInOrder;
+      for (auto &e : exits)
+        if (reachable.count(e.first) &&
+            std::find(edgesInOrder.begin(), edgesInOrder.end(), std::make_pair((const BasicBlock *)e.first, (const BasicBlock *)e.second)) == edgesInOrder.end())
+          edgesInOrder.push_back({e.first, e.second});
+      std::stable_sort(edgesInOrder.begin(), edgesInOrder.end(), [&](auto &x, auto &y) {
+        return std::make_pair(I.rpo[x.first], I.rpo[x.second]) < std::make_pair(I.rpo[y.first], I.rpo[y.second]);
+      });
+      unsigned h = predOf(L->getHeader()), covered = Bdd::F;
+      for (size_t i = 0; i < edgesInOrder.size(); ++i) {
+        auto [ep, eb] = edgesInOrder[i];
+        unsigned x;
+        if (i + 1 == edgesInOrder.size()) {
+          x = m.notOp(covered);
+        } else {
+          unsigned d = m.restrict(m.andOp(predOf(ep), edgeCond(ep, eb, O)), h);
+          x = m.andOp(d, m.notOp(covered));
+        }
+        covered = m.orOp(covered, x);
+        shares[{ep, eb}] = m.andOp(h, x);
+      }
+    }
+    auto it = shares.find({p, bb});
+    if (it == shares.end())
+      internalError("pred: an exit edge missing from its loop's exit edges", p->getTerminator());
+    return it->second;
+  };
+
+  for (BasicBlock *bb : order) {
     if (bb == &F.getEntryBlock()) {
       unsigned e = entryFlag ? m.ithVar(atomVar(AtomKind::Entry, entryFlag)) : Bdd::T;
       I.blocks[bb] = makePred(e);
       continue;
     }
-    const Loop *own = LI.getLoopFor(bb);
-    bool isHeader = own && own->getHeader() == bb;
     unsigned acc = Bdd::F;
     SmallPtrSet<const BasicBlock *, 8> seen;
     for (const BasicBlock *p : predecessors(bb)) {
-      if (!seen.insert(p).second || !reachable.count(p))
-        continue;
-      if (isHeader && own->contains(p))
-        continue;   // back edge: the loop module chains trips
-      if (!I.rpo.count(p))
-        internalError("pred: a forward predecessor not yet visited (irreducible control flow reached pred)",
-                      p->getTerminator());
-      const Loop *out = nullptr;
-      for (const Loop *L = LI.getLoopFor(p); L && !L->contains(bb); L = L->getParentLoop())
-        out = L;
+      if (!seen.insert(p).second || !reachable.count(p) || isBackEdge(p, bb))
+        continue;   // a back edge: the loop module chains trips
       unsigned contrib;
+      const Loop *out = leftLoop(p, bb);
       if (out && out->getUniqueExitBlock() == bb)
         contrib = predOf(out->getHeader());
+      else if (out)
+        contrib = exitContribution(out, p, bb);
       else
         contrib = m.andOp(predOf(p), edgeCond(p, bb, O));
       I.edges[{p, bb}] = makePred(contrib);
@@ -326,10 +417,14 @@ void computePaths(PathStorage &I, Function &F, const LoopInfo &LI, Oracle &O, Va
   }
   // A1: control dependence is taint's. A block taint calls free of tainted control must not carry a
   // quantum predicate of its own (only the _ctl entry flag, which every block of a _ctl clone has).
-  unsigned allowed = entryFlag ? m.ithVar(atomVar(AtomKind::Entry, entryFlag)) : Bdd::T;
   for (BasicBlock *bb : rpot) {
     unsigned q = quantumPartNode(predOf(bb), O);
-    if (q != Bdd::T && q != allowed && !O.controlTainted(bb))
+    std::set<unsigned> sup;
+    m.support(q, sup);
+    bool quantumOwn = false;   // a quantum atom other than the _ctl entry flag
+    for (unsigned v : sup)
+      quantumOwn |= atomOf(v).kind != AtomKind::Entry && quantumLike(v, O);
+    if (quantumOwn && !O.controlTainted(bb))
       internalError("pred: block has the quantum predicate " + describe(q) +
                         " but taint reports no tainted control dependence (A1)",
                     bb);

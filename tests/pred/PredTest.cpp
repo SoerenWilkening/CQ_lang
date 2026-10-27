@@ -342,6 +342,36 @@ static void testExamples() {
         }
     }
   }
+  // cq-qj49: a join that post-dominates the quantum branch gets the predicate from before it.
+  if (Module *mod = load("121_quantum_strlen/quantum_strlen.O1.ll")) {
+    Function &F = *mod->getFunction("quantum_strlen");
+    Computed c = compute(F);
+    expectBlock(c, F, "%29", Bdd::T);   // both exits of the quantum-exit loop reach it
+    Function &G = *mod->getFunction("quantum_strcmp");
+    Computed cg = compute(G);
+    expectBlock(cg, G, "%43", Bdd::T);
+    // The exit edges of the two-exit loop partition its predicate.
+    DominatorTree DT(F);
+    LoopInfo LI(DT);
+    for (Loop *L : LI) {
+      SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> ex;
+      L->getExitEdges(ex);
+      unsigned sum = Bdd::F;
+      for (auto &e : ex) {
+        unsigned x = c.edge(e.first, e.second);
+        CHECK(A(sum, x) == Bdd::F, "121: exit edge predicates are disjoint");
+        sum = Or(sum, x);
+      }
+      CHECK(sum == c.block(L->getHeader()), "121: exit edge predicates cover the loop's predicate");
+    }
+  }
+  if (Module *mod = load("177_deutsch_jozsa/deutsch_jozsa.O1.ll")) {
+    Function &F = *mod->getFunction("deutsch_jozsa");
+    Computed c = compute(F);
+    unsigned p = c.block(blk(F, "%23"));
+    CHECK(quantumPartNode(p, *c.O) == Bdd::T && classicalFactorNode(p, *c.O) == p,
+          "177: block %23's predicate is classical: its own classical factor, no flag; got " << describe(p));
+  }
   if (Module *mod = load("41_phase_in_loop_and_classical/phase_in_loop_and_classical.O1.ll")) {
     for (Function &F : *mod) {
       if (F.isDeclaration())
