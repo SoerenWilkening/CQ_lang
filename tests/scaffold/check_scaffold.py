@@ -2,8 +2,8 @@
 """Acceptance test of cq-w0-scaffold.
 
 1. spec.lock holds (tools/spec_lock.py).
-2. The frozen headers equal cq-arch's text with the owner's amendments A1-A4 and freeze bead K1
-   (cq-k1w): pass/include/cq/*.h, checker/rt/cqe.h, and the dataclass fields of
+2. The frozen headers equal cq-arch's text with the owner's amendments A1-A4 and freeze beads K1
+   (cq-k1w) and S1 (cq-sml): pass/include/cq/*.h, checker/rt/cqe.h, and the dataclass fields of
    checker/cqcheck/contracts.py. cq-arch is read live from beads (`bd show cq-arch --json`) unless
    --arch-json names a saved copy.
 3. `opt -passes=cq-lower` on every example `.O1.ll` (counted from the directory) exits non-zero with
@@ -113,6 +113,15 @@ AMENDMENTS = [
      ["  LoweringContext(llvm::Module &, const TaintInfo &, const Specialization &);"], "after"),
     ("  unsigned K(const llvm::Loop *) const;",
      ["private:", "  struct Impl; std::shared_ptr<Impl> impl;"], "after"),
+    # S1 (freeze bead cq-sml, final text in a cq-arch comment): the K channel into construct().
+    ("class PathPredicates; struct Pred;",
+     ["namespace loops { struct KOptions; }"], "after"),
+    ("  LoweringContext(llvm::Module &, const TaintInfo &, const Specialization &);",
+     ["  LoweringContext(llvm::Module &, const TaintInfo &, const Specialization &, const loops::KOptions &);"],
+     "replace"),
+    ("void construct(llvm::Module &, const TaintInfo &, const Specialization &);",
+     ["void construct(llvm::Module &, const TaintInfo &, const Specialization &, const loops::KOptions &);"],
+     "replace"),
 ]
 
 SECTION = re.compile(r"^// (\w+)\.h\b")
@@ -202,7 +211,7 @@ def check_headers(desc):
             fail(f"contracts.py {cls}: fields {got} != cq-arch {names}")
         else:
             n += 1
-    print(f"headers: {n} interfaces compared against cq-arch (+A1-A4, K1)")
+    print(f"headers: {n} interfaces compared against cq-arch (+A1-A4, K1, S1)")
 
 
 # ---------------------------------------------------------------------------------------------

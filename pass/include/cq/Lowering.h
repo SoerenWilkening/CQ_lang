@@ -1,4 +1,4 @@
-// Frozen interface (cq-arch, with freeze bead cq-k1w). Changes only under cq-arch's freeze rule.
+// Frozen interface (cq-arch, with freeze beads cq-k1w and cq-sml). Changes only under cq-arch's freeze rule.
 #pragma once
 
 #include <memory>
@@ -21,10 +21,11 @@ namespace llvm { class Loop; }
 // Lowering.h  (spine)
 namespace cq {
 class PathPredicates; struct Pred;
+namespace loops { struct KOptions; }
 class LoweringContext {
 public:
   llvm::Module &M; const TaintInfo &T; const Specialization &S;
-  LoweringContext(llvm::Module &, const TaintInfo &, const Specialization &);
+  LoweringContext(llvm::Module &, const TaintInfo &, const Specialization &, const loops::KOptions &);
   llvm::Function &out(); llvm::IRBuilder<> &B();
   Operand operand(const llvm::Value *orig);
   llvm::Value *rail(const llvm::Value *orig);                     // internalError if classical
@@ -43,7 +44,7 @@ public:
 private:
   struct Impl; std::shared_ptr<Impl> impl;
 };
-void construct(llvm::Module &, const TaintInfo &, const Specialization &);
+void construct(llvm::Module &, const TaintInfo &, const Specialization &, const loops::KOptions &);
 void lowerOpcode(LoweringContext &, llvm::Instruction &);
 void lowerTheta(LoweringContext &, llvm::CallInst &);
 void lowerMeasure(LoweringContext &, llvm::CallInst &);

@@ -101,9 +101,8 @@ bool usesCqSurface(const Module &M) {
 struct CQLowerPass : PassInfoMixin<CQLowerPass> {
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM) {
     cq::TaintOptions TO = readTaintOptions();
-    // Read now so a malformed flag fails on every module. It reaches no module yet: construct() and
-    // LoweringContext have no K channel in cq-arch (see the scaffold report).
-    (void)readKOptions();
+    // Read before the identity exit so a malformed flag fails on every module.
+    cq::loops::KOptions KO = readKOptions();
     if (TO.roots.empty() && !usesCqSurface(M))
       return PreservedAnalyses::all();
 
@@ -123,7 +122,7 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
 
     // 3. The general construction, once per specialization.
     for (const cq::Specialization &S : T.specializations())
-      cq::construct(M, T, S);
+      cq::construct(M, T, S, KO);
 
     // 4. Drop originals with no classical caller (rule 18).
     cq::calls::finalize(M);

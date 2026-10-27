@@ -6,7 +6,7 @@
 #include "cq/Predicate.h"
 
 namespace cq {
-LoweringContext::LoweringContext(llvm::Module &M, const TaintInfo &T, const Specialization &S) : M(M), T(T), S(S) { unimplemented("spine: LoweringContext::LoweringContext"); }
+LoweringContext::LoweringContext(llvm::Module &M, const TaintInfo &T, const Specialization &S, const loops::KOptions &) : M(M), T(T), S(S) { unimplemented("spine: LoweringContext::LoweringContext"); }
 llvm::Function &LoweringContext::out() { unimplemented("spine: LoweringContext::out"); }
 llvm::IRBuilder<> &LoweringContext::B() { unimplemented("spine: LoweringContext::B"); }
 Operand LoweringContext::operand(const llvm::Value *) { unimplemented("spine: LoweringContext::operand"); }
@@ -24,7 +24,7 @@ llvm::Value *LoweringContext::currentFlag() { unimplemented("spine: LoweringCont
 unsigned LoweringContext::beginGateLog() { unimplemented("spine: LoweringContext::beginGateLog"); }
 std::vector<llvm::CallInst *> LoweringContext::endGateLog(unsigned) { unimplemented("spine: LoweringContext::endGateLog"); }
 unsigned LoweringContext::K(const llvm::Loop *) const { unimplemented("spine: LoweringContext::K"); }
-void construct(llvm::Module &, const TaintInfo &, const Specialization &) { unimplemented("spine: construct"); }
+void construct(llvm::Module &, const TaintInfo &, const Specialization &, const loops::KOptions &) { unimplemented("spine: construct"); }
 void lowerOpcode(LoweringContext &, llvm::Instruction &) { unimplemented("spine: lowerOpcode"); }
 void lowerTheta(LoweringContext &, llvm::CallInst &) { unimplemented("spine: lowerTheta"); }
 void lowerMeasure(LoweringContext &, llvm::CallInst &) { unimplemented("spine: lowerMeasure"); }
