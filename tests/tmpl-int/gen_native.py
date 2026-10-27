@@ -20,7 +20,8 @@ import argparse
 # Every corpus integer width (BACKEND_ABI §0: i1 i7 i8 i16 i32 i64 i80 i100 i128) plus odd widths
 # around word boundaries and two wider than the corpus, to exercise the generic code.
 WIDTHS = [1, 2, 3, 7, 8, 16, 31, 32, 33, 63, 64, 65, 80, 100, 127, 128, 129, 192, 256]
-BINOPS = ["add", "sub", "mul", "udiv", "sdiv", "urem", "srem", "and", "or", "xor"]
+# and/or/xor belong to tmpl-bits (owner ruling, bead cq-f69); tests/tmpl-bits covers them.
+BINOPS = ["add", "sub", "mul", "udiv", "sdiv", "urem", "srem"]
 FPTY = {16: "half", 32: "float", 64: "double", 80: "x86_fp80"}
 
 
@@ -51,7 +52,7 @@ def binop_fn(op, n):
     body = []
     a = load_int("a", "pa", n, body)
     b = load_int("b", "pb", n, body)
-    if op in ("add", "sub", "mul", "and", "or", "xor"):
+    if op in ("add", "sub", "mul"):
         body.append(f"  %r = {op} {t} {a}, {b}")
     elif op in ("udiv", "urem"):
         body += [

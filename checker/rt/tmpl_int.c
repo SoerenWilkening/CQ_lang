@@ -1,7 +1,6 @@
 /* Template family: integer arithmetic and casts (cq-w0-tmpl-int).
  *
  *   add sub mul udiv sdiv urem srem    at any width i<N>
- *   and or xor                         at any width (the i1 data templates of flags, CR rule 8)
  *   zext sext trunc (with _to_)        any i<N> -> i<M>
  *   bitcast                            any W -> W2 of equal bit count (f64<->i64, f80<->i80, ...)
  *
@@ -11,13 +10,16 @@
  *   sdiv(a, 0) = a >= 0 ? -1 : +1 srem(a, 0) = a
  *   sdiv(INT_MIN, -1) = INT_MIN   srem(INT_MIN, -1) = 0
  *
+ * and, or and xor (every width, the i1 data templates of flags included) belong to tmpl-bits
+ * (checker/rt/tmpl_bits.c), by owner ruling on bead cq-f69; this family does not register them.
+ *
  * Generic multi-word code over little-endian 64-bit words; no per-width tables.
  *
- * Handler convention (bead cq-f69, pending confirmation by chk-core):
+ * Handler convention: M1 in cqe.h (freeze bead cq-mgi) governs; in its terms:
  *   return 0: out computed; CQE_OP_NOT_MINE: not this family's template (trunc without _to_ is the
  *   fp rounding op of tmpl-fpmisc/tmpl-f80); -1: cqe_fail was called (malformed operands).
- *   out: bits, kind, nw set here; out->w calloc'ed when NULL on entry, else out->nw on entry is its
- *   capacity in words. Bits above `bits` are zero. The forward value is computed regardless of
+ *   out: the dispatcher presets out->w, bits, kind and nw; bits, kind and nw are rewritten here to
+ *   the same values. (out->w NULL on entry, which the real dispatcher never passes, is calloc'ed.) Bits above `bits` are zero. The forward value is computed regardless of
  *   tname->unc (forward and _unc are the same XOR map, BACKEND_ABI §2.1). */
 #include <stdint.h>
 #include <stdlib.h>
@@ -175,12 +177,11 @@ static int write_out_(const char *sym_op, cqe_val *out, tw_ t, const uint64_t *s
   return 1;
 }
 
-enum { OP_ADD, OP_SUB, OP_MUL, OP_UDIV, OP_SDIV, OP_UREM, OP_SREM, OP_AND, OP_OR, OP_XOR,
-       OP_ZEXT, OP_SEXT, OP_TRUNC, OP_BITCAST, OP_NONE };
+enum { OP_ADD, OP_SUB, OP_MUL, OP_UDIV, OP_SDIV, OP_UREM, OP_SREM, OP_ZEXT, OP_SEXT, OP_TRUNC, OP_BITCAST, OP_NONE };
 
 static int op_code_(const char *op) {
-  static const char *const names[] = {"add", "sub", "mul", "udiv", "sdiv", "urem", "srem", "and",
-                                      "or", "xor", "zext", "sext", "trunc", "bitcast"};
+  static const char *const names[] = {"add", "sub", "mul",  "udiv",  "sdiv", "urem",
+                                      "srem", "zext", "sext", "trunc", "bitcast"};
   for (int i = 0; i < OP_NONE; ++i)
     if (!strcmp(op, names[i])) return i;
   return OP_NONE;
@@ -198,9 +199,6 @@ static int binary_(int op, const char *name, tw_ t, const cqe_val *args, cqe_val
     case OP_ADD: add_(o, a, b, n); break;
     case OP_SUB: sub_(o, a, b, n); break;
     case OP_MUL: mul_(o, a, b, n); break;
-    case OP_AND: for (uint32_t i = 0; i < n; ++i) o[i] = a[i] & b[i]; break;
-    case OP_OR:  for (uint32_t i = 0; i < n; ++i) o[i] = a[i] | b[i]; break;
-    case OP_XOR: for (uint32_t i = 0; i < n; ++i) o[i] = a[i] ^ b[i]; break;
     case OP_UDIV:
     case OP_UREM:
       if (is_zero_(b, n)) {
@@ -338,7 +336,7 @@ static int tmpl_int_op_(const cqe_tname *tn, const cqe_val *args, int nargs, cqe
 }
 
 __attribute__((constructor)) static void tmpl_int_register_(void) {
-  static const char *const ops[] = {"add", "sub", "mul", "udiv", "sdiv", "urem", "srem", "and",
-                                    "or", "xor", "zext", "sext", "trunc", "bitcast"};
+  static const char *const ops[] = {"add",  "sub",  "mul",  "udiv",  "sdiv",   "urem",
+                                    "srem", "zext", "sext", "trunc", "bitcast"};
   for (size_t i = 0; i < sizeof ops / sizeof ops[0]; ++i) cqe_register_op(ops[i], tmpl_int_op_);
 }

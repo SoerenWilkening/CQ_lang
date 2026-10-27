@@ -167,6 +167,35 @@ class Violations(unittest.TestCase):
             self.assertEqual([v["what"] for v in r.violations], ["build"])
 
 
+class HandlerOrder(unittest.TestCase):
+    """M1 (cq-mgi) multi-handler dispatch through the real core (cq-f69), with multifam.c's three
+    handlers for mul: first acceptor wins, a decline's writes are discarded, -1 ends the search,
+    all declining is no_family, a duplicate registration is a no-op."""
+    ARGS = ("int v(int,double)", "v", ["int", "double"])
+
+    def run_m1(self, ll, x0):
+        return run.run_sample(HERE / ll, spec1(*self.ARGS), {"call": 0, "args": [x0, 0.5]}, "ours",
+                              rt_sources=RT, extra_sources=[HERE / "multifam.c"])
+
+    def test_first_acceptor_and_discarded_writes(self):
+        for x0 in (0, 7, -3, 0x12345678):
+            with self.subTest(x0=x0):
+                r = self.run_m1("m1_order.ll", x0)
+                self.assertEqual(r.violations, [])
+                self.assertEqual([int(m["v"], 16) for m in r.measured],
+                                 [(x0 * 3) & 0xFF, (x0 * 5) & 0xFFFFFFFF])
+
+    def test_fail_ends_the_search(self):
+        r = self.run_m1("m1_fail_stops.ll", 7)
+        self.assertEqual([v["what"] for v in r.violations], ["fail"])
+        self.assertEqual([m["v"] for m in r.measured], ["0x0"])  # mf_c (7*3+1) never ran
+
+    def test_all_decline_is_no_family(self):
+        r = self.run_m1("m1_all_decline.ll", 7)
+        self.assertEqual([v["what"] for v in r.violations], ["no_family"])
+        self.assertIn("every registered handler declined", r.violations[0]["msg"])
+
+
 class KeptMerge(unittest.TestCase):
     def test_qram_exit_entries_join_kept(self):
         ev = [{"ev": "qram", "op": "exit", "live": [{"h": 0x5A000000, "w": "i32", "v": "0x3", "role": "qram_cell"}]},

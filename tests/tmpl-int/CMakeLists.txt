@@ -23,3 +23,7 @@ target_include_directories(tmpl_int_diff PRIVATE "${CMAKE_SOURCE_DIR}/checker/rt
 set_target_properties(tmpl_int_diff PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED ON)
 target_compile_options(tmpl_int_diff PRIVATE -Wall -Wextra -O1)
 add_test(NAME tmpl-int COMMAND tmpl_int_diff)
+# cq-f69: and/or/xor (i1 included) are tmpl-bits', served through the real core and dispatcher.
+add_test(NAME tmpl-int-bitops-dispatch
+  COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_bitops_dispatch.py"
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

@@ -338,6 +338,34 @@ static void negative_tests(void) {
   neg_case("result buffer too small", "add", "i128", "", "", 0, 2, 128, 'i', -1, 1);
   neg_case("well-formed control", "add", "i128", "", "hl", 0, 2, 128, 'i', 0, 0);
 
+  /* and, or and xor (the i1 data templates included) are tmpl-bits' (owner ruling, bead cq-f69):
+   * tmpl-int registers none of them, and its handler declines them without cqe_fail if reached. */
+  {
+    static const char *const bitops[] = {"and", "or", "xor"};
+    static const char *const bw[] = {"i1", "i8", "i32", "i64", "i128"};
+    for (size_t i = 0; i < 3; ++i) {
+      ++n_neg;
+      if (fake_lookup(bitops[i])) { ++n_mismatch; fprintf(stderr, "NEGATIVE %s is registered by tmpl-int\n", bitops[i]); }
+      for (size_t j = 0; j < sizeof bw / sizeof bw[0]; ++j) {
+        cqe_tname tn; memset(&tn, 0, sizeof tn);
+        snprintf(tn.op, sizeof tn.op, "%s", bitops[i]); snprintf(tn.w, sizeof tn.w, "%s", bw[j]);
+        uint32_t b = (uint32_t)atoi(bw[j] + 1);
+        uint64_t buf[2][MAXN], ob[MAXN]; memset(buf, 0, sizeof buf); memset(ob, 0, sizeof ob);
+        cqe_val av[2], out;
+        for (int k = 0; k < 2; ++k) { av[k].bits = b; av[k].kind = 'i'; av[k].nw = nw(b); av[k].w = buf[k]; }
+        out.bits = b; out.kind = 'i'; out.nw = nw(b); out.w = ob;
+        int before = fake_fail_count;
+        int rc = fake_lookup("add")(&tn, av, 2, &out); /* tmpl-int's one handler */
+        ++n_neg;
+        if (rc != CQE_OP_NOT_MINE || fake_fail_count != before) {
+          ++n_mismatch;
+          fprintf(stderr, "NEGATIVE %s_%s: rc=%d (want CQE_OP_NOT_MINE), cqe_fail %s\n", bitops[i], bw[j], rc,
+                  fake_fail_count != before ? "called" : "not called");
+        }
+      }
+    }
+  }
+
   /* Bits above W in an operand word are not read (CR §1.2: the low W bits only). */
   {
     val_t a = small(6, 64), b = small(3, 64); a.w[0] |= 0xFF80; b.w[0] |= UINT64_C(0xFFFFFFFFFFFFFF80);
@@ -358,8 +386,8 @@ static void negative_tests(void) {
 }
 
 int main(void) {
-  static const char *const ops[] = {"add", "sub", "mul", "udiv", "sdiv", "urem", "srem", "and",
-                                    "or", "xor", "zext", "sext", "trunc", "bitcast"};
+  static const char *const ops[] = {"add",  "sub",  "mul",  "udiv",  "sdiv",   "urem",
+                                    "srem", "zext", "sext", "trunc", "bitcast"};
   for (size_t i = 0; i < sizeof ops / sizeof ops[0]; ++i)
     if (!fake_lookup(ops[i])) { fprintf(stderr, "op %s not registered\n", ops[i]); return 1; }
 
