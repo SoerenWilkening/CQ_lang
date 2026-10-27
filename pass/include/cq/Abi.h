@@ -34,5 +34,5 @@ struct CloneSpec { std::string fn; Mask mask; std::vector<uint64_t> bounds;
                    bool ctl = false, pure = false, adj = false; unsigned depth = 0; bool unc = false; };
 std::string name(const CloneSpec &);
 std::optional<CloneSpec> parseClone(llvm::StringRef symbol);
-std::string asmCloneFn(const llvm::InlineAsm &);    // "asm_" + first 16 hex of sha256(asm string + constraints)
+std::string asmCloneFn(const llvm::InlineAsm &);    // "asm_" + first 16 lowercase hex of sha256(asm string as LLVM spells it, one NUL byte, constraint string)
 }

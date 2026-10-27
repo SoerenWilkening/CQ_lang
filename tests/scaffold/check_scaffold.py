@@ -3,7 +3,7 @@
 
 1. spec.lock holds (tools/spec_lock.py).
 2. The frozen headers equal cq-arch's text with the owner's amendments A1-A4 and freeze beads K1
-   (cq-k1w), S1 (cq-sml), P1 (cq-6yb), M1 (cq-mgi) and C1 (cq-4cy): pass/include/cq/*.h, checker/rt/cqe.h, and
+   (cq-k1w), S1 (cq-sml), P1 (cq-6yb), B1 (cq-dvj), M1 (cq-mgi) and C1 (cq-4cy): pass/include/cq/*.h, checker/rt/cqe.h, and
    the dataclass fields of checker/cqcheck/contracts.py. cq-arch is read live from beads (`bd show cq-arch --json`) unless
    --arch-json names a saved copy.
 3. `opt -passes=cq-lower` on every example `.O1.ll` (counted from the directory) exits non-zero with
@@ -129,6 +129,18 @@ AMENDMENTS = [
     # P1 (freeze bead cq-6yb, final text in a cq-arch comment): rule 8's C && Q factoring.
     ("  bool isClassical(const TaintInfo &, const Specialization &) const;",
      ["  Pred classicalFactor(const TaintInfo &, const Specialization &) const;"], "after"),
+    # B1 (freeze bead cq-dvj, owner ruling on option (a), final text in a cq-arch comment): a bf16
+    # rail kind, and the asm clone hash spelled out (rule 27).
+    ("enum class Kind : uint8_t { Int, Fp };",
+     ["enum class Kind : uint8_t { Int, Fp, BFloat };"], "replace"),
+    ("struct RailType { Kind kind; unsigned bits; };      // i<N> (N >= 1), f16, f32, f64, f80",
+     ["struct RailType { Kind kind; unsigned bits; };      // i<N> (N >= 1), f16, f32, f64, f80, bf16 (BFloat: bits == 16)"],
+     "replace"),
+    ("RailType railTypeOf(llvm::Type *);                  // iN/half/float/double/x86_fp80",
+     ["RailType railTypeOf(llvm::Type *);                  // iN/half/float/double/x86_fp80/bfloat"], "replace"),
+    ('std::string asmCloneFn(const llvm::InlineAsm &);    // "asm_" + first 16 hex of sha256(asm string + constraints)',
+     ['std::string asmCloneFn(const llvm::InlineAsm &);    // "asm_" + first 16 lowercase hex of sha256(asm string as '
+      'LLVM spells it, one NUL byte, constraint string)'], "replace"),
 ]
 
 # M1 (freeze bead cq-mgi, final text in a cq-arch comment): the op registry and the handler
@@ -297,7 +309,7 @@ def check_headers(desc):
             fail(f"contracts.py {cls}: fields {got} != cq-arch {names}")
         else:
             n += 1
-    print(f"headers: {n} interfaces compared against cq-arch (+A1-A4, K1, S1, P1, M1, C1)")
+    print(f"headers: {n} interfaces compared against cq-arch (+A1-A4, K1, S1, P1, B1, M1, C1)")
 
 
 # ---------------------------------------------------------------------------------------------

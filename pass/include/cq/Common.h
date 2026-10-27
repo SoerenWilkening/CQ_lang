@@ -14,9 +14,9 @@
 namespace cq {
 [[noreturn]] void unimplemented(llvm::StringRef what, const llvm::Value *at = nullptr); // "cq: unimplemented: ..."
 [[noreturn]] void internalError(llvm::StringRef what, const llvm::Value *at = nullptr);
-enum class Kind : uint8_t { Int, Fp };
-struct RailType { Kind kind; unsigned bits; };      // i<N> (N >= 1), f16, f32, f64, f80
-RailType railTypeOf(llvm::Type *);                  // iN/half/float/double/x86_fp80
+enum class Kind : uint8_t { Int, Fp, BFloat };
+struct RailType { Kind kind; unsigned bits; };      // i<N> (N >= 1), f16, f32, f64, f80, bf16 (BFloat: bits == 16)
+RailType railTypeOf(llvm::Type *);                  // iN/half/float/double/x86_fp80/bfloat
 llvm::Type *irTypeOf(llvm::LLVMContext &, RailType);
 llvm::IntegerType *handleTy(llvm::LLVMContext &);   // i32
 using Mask = std::string;                           // CR §1.4 digits, '1' = quantum, left to right
