@@ -737,6 +737,37 @@ int main(int argc, char **argv) {
     total.fails += st.fails;
   }
 
+  /* plain rint under each host mode (CR §2: rint rounds in the current mode). The expected value is
+     native rint run in that mode, the same as the _rm form of that mode. */
+  long hm_checked = 0, hm_fails = 0;
+  for (size_t ci = 0; ci < NCASES; ++ci) {
+    const struct tcase *c = &CASES[ci];
+    if (strcmp(c->op, "rint") || (g_only && strcmp(g_only, c->op))) continue;
+    for (int m = 0; m < 4; ++m) {
+      for (long i = 0; i < nf80 + nrand; ++i) {
+        val a[3] = {i < nf80 ? F80S[i] : rand_f80(), f80v(0, 0), f80v(0, 0)};
+        res_t got, exp;
+        why_t why;
+        form_t plain = {0, 0, 0}, inmode = {1, m, 0};
+        fesetround(RC[m]);
+        int rv = ours(c, plain, a, &got);
+        fesetround(FE_TONEAREST);
+        expected(c, inmode, a, &exp, &why);
+        ++hm_checked;
+        if (rv != 0 || memcmp(got.v.w, exp.v.w, sizeof got.v.w)) {
+          ++hm_fails;
+          if (g_print_budget-- > 0)
+            fprintf(stderr, "FAIL plain rint host mode=%d arg %04llx:%016llx got %016llx:%016llx want %016llx:%016llx\n", m,
+                    (unsigned long long)a[0].w[1], (unsigned long long)a[0].w[0], (unsigned long long)got.v.w[1],
+                    (unsigned long long)got.v.w[0], (unsigned long long)exp.v.w[1], (unsigned long long)exp.v.w[0]);
+        }
+      }
+    }
+  }
+  printf("plain rint under host modes: checked %ld FAIL %ld\n", hm_checked, hm_fails);
+  total.checked += hm_checked;
+  total.fails += hm_fails;
+
   /* the dispatch contract */
   long contract_fail = 0;
   {

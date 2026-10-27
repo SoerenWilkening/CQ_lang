@@ -26,7 +26,7 @@
  *   - fmax/fmin: isnan(a) ? b : isnan(b) ? a : (b > a ? b : a) (min with <), equal values give a,
  *     two NaNs give b unchanged; _exc raises INVALID iff an operand is a signaling NaN or
  *     non-canonical, else nothing (CR §2 / cq-qx1: IEEE maxNum over the libm call);
- *   - rint rounds in the current mode: round to nearest even, or the template's mode for _rm/_rmq
+ *   - rint rounds in the current mode: the host's (fegetround) for plain rint, the template's mode for _rm/_rmq
  *     (CR §2 at CQ_spec 2f894fd); sitofp/uitofp and fptrunc to f16/bf16 are correctly
  *     rounded in the template's mode at every width (software rounding, never double rounding).
  *
@@ -703,7 +703,8 @@ static int f80_eval(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val 
     cqe_fail("tmpl-f80: %s takes no predicate", t->op);
     return -1;
   }
-  int rc = t->rm ? rc_of((uint32_t)word(&args[nargs - 1], 0)) : FE_TONEAREST;
+  /* the template's mode for _rm/_rmq; plain rint reads the host's current mode (CR §2 rint row) */
+  int rc = t->rm ? rc_of((uint32_t)word(&args[nargs - 1], 0)) : !strcmp(t->op, "rint") ? fegetround() : FE_TONEAREST;
 
   uint32_t rbits = 80;
   char rkind = 'f';
