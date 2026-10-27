@@ -9,16 +9,18 @@
 #define H fake_h
 #define P fake_p
 
-static int32_t alloc(void) { return fake_call("tape_alloc", "", 0, 0); }
-static void fmt(int32_t t, const char *f) { fake_call("tape_fmt", "", 0, 2, H(t), P(f)); }
-static void fmtc(int32_t c, int32_t t, const char *f) { fake_call("tape_fmt", "", 0, 3, H(c), H(t), P(f)); }
-static int32_t wr(const char *w, int32_t t, int32_t h) { return fake_call("tape_write", w, 0, 2, H(t), H(h)); }
+static int32_t alloc(void) { return fake_call("cqrt_tape_alloc", 0); }
+static void fmt(int32_t t, const char *f) { fake_call("cqrt_tape_fmt", 2, H(t), P(f)); }
+static void fmtc(int32_t c, int32_t t, const char *f) { fake_call("cqrt_tape_fmt_controlled", 3, H(c), H(t), P(f)); }
+static char nm[64];
+static const char *sy(const char *a, const char *w, const char *b) { snprintf(nm, sizeof nm, "%s%s%s", a, w, b); return nm; }
+static int32_t wr(const char *w, int32_t t, int32_t h) { return fake_call(sy("cqrt_tape_write_", w, ""), 2, H(t), H(h)); }
 static int32_t wrc(const char *w, int32_t c, int32_t t, int32_t h) {
-  return fake_call("tape_write", w, 0, 3, H(c), H(t), H(h));
+  return fake_call(sy("cqrt_tape_write_", w, "_controlled"), 3, H(c), H(t), H(h));
 }
-static void lit(const char *w, int32_t t, cqe_val v) { fake_call("tape_write_lit", w, 0, 2, H(t), v); }
-static void str(int32_t t, const char *s) { fake_call("tape_write_str_lit", "", 0, 2, H(t), P(s)); }
-static void ab(int32_t f) { fake_call("abort", "i1", 0, 1, H(f)); }
+static void lit(const char *w, int32_t t, cqe_val v) { fake_call(sy("cqrt_tape_write_", w, "_lit"), 2, H(t), v); }
+static void str(int32_t t, const char *s) { fake_call("cqrt_tape_write_str_lit", 2, H(t), P(s)); }
+static void ab(int32_t f) { fake_call("cqrt_abort_i1", 1, H(f)); }
 static int32_t i1(int b) { return fake_rail("i1", fake_i(1, (uint64_t)b, 0)); }
 static int32_t i32(uint32_t x) { return fake_rail("i32", fake_i(32, x, 0)); }
 
@@ -71,17 +73,20 @@ int main(int argc, char **argv) {
     strcpy(f, "BAD%s\n"); strcpy(x, "bad");
   } else if (!strcmp(s, "effect")) {        /* an effect entry is recorded, never executed */
     int32_t t = alloc();
-    fake_call("tape_effect", "", 0, 3, H(i1(1)), H(t), P("remove"));
+    fake_call("cqrt_tape_effect_controlled", 3, H(i1(1)), H(t), P("remove"));
     str(t, "/tmp/cq_rt_tape_must_not_exist");
-    fake_call("tape_effect", "", 0, 3, H(i1(0)), H(t), P("raise"));
+    fake_call("cqrt_tape_effect_controlled", 3, H(i1(0)), H(t), P("raise"));
     lit("i32", t, fake_i(32, 30, 0));
   } else if (!strcmp(s, "spellings")) {     /* op keys that keep cqrt_, the width or _controlled */
-    int32_t t = fake_call("cqrt_tape_alloc", "", 0, 0);
-    fake_call("tape_fmt_controlled", "", 0, 3, H(i1(1)), H(t), P("%d %d %d\n"));
-    fake_call("cqrt_tape_write", "", 0, 3, H(i1(1)), H(t), H(i32(7)));
-    fake_call("tape_write_controlled", "i32", 0, 3, H(i1(1)), H(t), H(i32(8)));
-    fake_call("cqrt_tape_write_lit", "i32", 0, 2, H(t), fake_i(32, 9, 0));
-    fake_call("abort_i1", "", 0, 1, H(i1(0)));
+    /* C1 names: an i32 literal equal to a live handle's number must be read as the literal */
+    int32_t t = fake_call("cqrt_tape_alloc", 0);
+    int32_t h7 = i32(7);
+    fake_call("cqrt_tape_fmt_controlled", 3, H(i1(1)), H(t), P("%d %d %d %s\n"));
+    fake_call("cqrt_tape_write_i32_controlled", 3, H(i1(1)), H(t), H(h7));
+    fake_call("cqrt_tape_write_i32", 2, H(t), H(i32(8)));
+    fake_call("cqrt_tape_write_i32_lit", 2, H(t), fake_i(32, (uint32_t)h7, 0));
+    fake_call("cqrt_tape_write_str_lit", 2, H(t), P("s"));
+    fake_call("cqrt_abort_i1", 1, H(i1(0)));
   } else if (!strcmp(s, "not_mine")) {     /* cq-f69: a stem outside the family is CQE_OP_NOT_MINE, silently */
     if (fake_rc("tape_write", "tape_bogus") != 1 || fake_rc("abort", "trunc") != 1) cqe_fail("TEST: not_mine rc");
     if (fake_rc("tape_alloc", "tape_alloc") != 0) cqe_fail("TEST: tape_alloc rc");
@@ -136,7 +141,7 @@ int main(int argc, char **argv) {
   } else if (!strcmp(s, "v_unc")) {
     int32_t t = alloc();
     fmt(t, "%d");
-    fake_call("tape_write", "i32", 1, 2, H(t), H(i32(1)));
+    fake_call("cqrt_tape_write_i32_unc", 2, H(t), H(i32(1)));
   } else if (!strcmp(s, "v_missing_field")) {
     int32_t t = alloc();
     fmt(t, "%d %d\n");
@@ -151,7 +156,18 @@ int main(int argc, char **argv) {
     wr("i32", t, fake_rail("i8", fake_i(8, 1, 0)));
   } else if (!strcmp(s, "v_effect_uncontrolled")) {
     int32_t t = alloc();
-    fake_call("tape_effect", "", 0, 2, H(t), P("raise"));
+    fake_call("cqrt_tape_effect", 2, H(t), P("raise"));
+  } else if (!strcmp(s, "v_hl")) {
+    int32_t t = alloc();
+    fmt(t, "%d");
+    fake_call("cqrt_tape_write_i32_hl", 2, H(t), H(i32(1)));
+  } else if (!strcmp(s, "v_ctl_arity")) {
+    int32_t t = alloc();
+    fake_call("cqrt_tape_fmt_controlled", 2, H(t), P("x"));
+  } else if (!strcmp(s, "v_lit_ctl")) {
+    int32_t t = alloc();
+    fmt(t, "%d");
+    fake_call("cqrt_tape_write_i32_lit_controlled", 3, H(i1(1)), H(t), fake_i(32, 1, 0));
   } else if (!strcmp(s, "v_quantum_string")) {
     int32_t t = alloc();
     fmt(t, "%s");

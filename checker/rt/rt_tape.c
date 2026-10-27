@@ -22,9 +22,9 @@
  * cqrt_tape_alloc, a predicate or abort flag that is not a live i1 rail, a width token that disagrees
  * with the rail, an _unc of a tape/abort symbol, a tape rail or abort flag that is gone or changed at
  * the end of the shot, a format that needs a field the entry lacks, a conversion with no defined
- * meaning on a tape field (%n, an unknown conversion). Tape rails are created with known = 0 (they stay
- * entangled with their source, BACKEND_ABI §1.11), and abort flags are set to known = 0, so that the
- * core's known-basis free rule rejects a cqrt_free of either.
+ * meaning on a tape field (%n, an unknown conversion), a form the family does not define. Tape rails are
+ * created with known = 0 (they stay entangled with their source, BACKEND_ABI §1.11). The dispatcher gives
+ * them role "tape" and abort flags role "abort" and rejects a cqrt_free of either (C1, free_forbidden).
  *
  * Trace events (cq-arch: "tape" free-form, "abort" frozen as {"ev","f","fv"}):
  *   {"ev":"tape","op":"alloc","t"}
@@ -41,14 +41,11 @@
  * Values are hex bit patterns ("0x…"). Strings are bytes, each written as the code point U+0000–U+00FF
  * of the same number.
  *
- * Dispatch (cqe_register_op): a cqrt_ symbol reaches this family with cqe_tname.op = the symbol with
- * "cqrt_", the width token and "_controlled" removed ("tape_alloc", "tape_fmt", "tape_effect",
- * "tape_write", "tape_write_lit", "tape_write_str_lit", "abort"), cqe_tname.w = the width token, and the
- * IR arguments in order as cqe_vals (an i32 handle as a 32-bit 'i' value, a ptr as a 64-bit 'i' value
- * holding the address, a literal in its own type). The controlled forms are told apart by arity. Return
- * values follow M1 (cqe.h): 0 computed, CQE_OP_NOT_MINE for a stem outside the family, -1 after cqe_fail. The
- * family also accepts op spellings that keep "cqrt_", the width or "_controlled", and registers those
- * keys too, so it does not depend on which of them the dispatcher strips.
+ * Dispatch (cqe.h M1 and C1): the family registers the bare ops tape_alloc, tape_fmt, tape_effect,
+ * tape_write, tape_write_str and abort. cqe_tname.w is the width token, shape "l" marks _lit, pred "ctl"
+ * marks _controlled (the arity must agree), and args are the raw ABI arguments (a handle as its i32
+ * number, a ptr as a 64-bit 'i' holding the address, a literal in its own type). Return: 0 computed,
+ * CQE_OP_NOT_MINE for an op outside the family, -1 after cqe_fail.
  */
 #include <stdarg.h>
 #include <stdint.h>
@@ -181,6 +178,8 @@ static int g_registered_exit;
 #define TAPE_BASE 0x7a000000      /* tape handles live in their own range, away from rail handles */
 
 static void shot(void);
+/* C1: registered on the family's first operation, which is after its first cqe_* call (cqe_register_op
+ * in the constructor), so it runs before the core's exit event with cqe_rail/cqe_log/cqe_fail valid. */
 static void ensure_exit(void) {
   if (!g_registered_exit) { g_registered_exit = 1; atexit(shot); }
 }
@@ -355,7 +354,6 @@ static void op_tape_write_str(int32_t t, const char *s, const char *sym) {
 static void op_abort(int32_t fh, const char *sym) {
   ensure_exit();
   int fv = read_i1(fh, sym, "abort flag");
-  if (fv >= 0) cqe_set_known(fh, 0);   /* kept: a cqrt_free of it is a dirty free */
   event *e = new_event(E_ABORT);
   e->f = fh;
   e->pred = fv < 0 ? 0 : fv;
@@ -610,37 +608,6 @@ static void shot(void) {
 
 /* ---------- dispatch ---------- */
 
-static int is_width_token(const char *s, size_t n) {
-  if (n < 2 || (s[0] != 'i' && s[0] != 'f')) return 0;
-  for (size_t i = 1; i < n; i++) if (s[i] < '0' || s[i] > '9') return 0;
-  return 1;
-}
-
-/* Normalizes an op spelling: drops "cqrt_", a width token and "_controlled". */
-static void normalize(const char *op, char *stem, size_t cap, char *wtok, int *ctl) {
-  char buf[64];
-  snprintf(buf, sizeof buf, "%s", op);
-  const char *s = buf;
-  if (!strncmp(s, "cqrt_", 5)) s += 5;
-  stem[0] = 0;
-  *ctl = 0;
-  size_t sl = 0;
-  while (*s) {
-    const char *e = strchr(s, '_');
-    size_t n = e ? (size_t)(e - s) : strlen(s);
-    if (n == 10 && !strncmp(s, "controlled", 10)) *ctl = 1;
-    else if (is_width_token(s, n)) { if (n < 8) { memcpy(wtok, s, n); wtok[n] = 0; } }
-    else if (sl + n + 2 < cap) {
-      if (sl) stem[sl++] = '_';
-      memcpy(stem + sl, s, n);
-      sl += n;
-      stem[sl] = 0;
-    }
-    s += n;
-    if (*s == '_') s++;
-  }
-}
-
 /* An i32 handle result. M1 (cq-mgi): the dispatcher owns out; out->w arrives non-NULL and zeroed with
  * bits, kind and nw preset to the declared return type, and the handler only writes the words. */
 static int set_handle(cqe_val *out, int32_t h, const char *sym) {
@@ -653,60 +620,68 @@ static int set_handle(cqe_val *out, int32_t h, const char *sym) {
 }
 
 static int tape_dispatch_(const cqe_tname *tn, const cqe_val *a, int n, cqe_val *out) {
-  char stem[64], wtok[8] = {0}, sym[96];
-  int ctl;
-  normalize(tn->op, stem, sizeof stem, wtok, &ctl);
-  if (tn->w[0]) snprintf(wtok, sizeof wtok, "%s", tn->w);
-  snprintf(sym, sizeof sym, "cqrt_%s%s%s", stem, wtok[0] ? "/" : "", wtok);
-  static const char *const mine[] = {"tape_alloc", "tape_fmt", "tape_effect", "tape_write", "tape_write_lit",
-                                     "tape_write_str_lit", "abort"};
+  static const char *const mine[] = {"tape_alloc", "tape_fmt", "tape_effect", "tape_write", "tape_write_str",
+                                     "abort"};
   int found = 0;
-  for (size_t i = 0; i < sizeof mine / sizeof mine[0]; i++) found |= !strcmp(stem, mine[i]);
+  for (size_t i = 0; i < sizeof mine / sizeof mine[0]; i++) found |= !strcmp(tn->op, mine[i]);
   if (!found) return CQE_OP_NOT_MINE;
-  /* BACKEND_ABI §1.11 defines no _unc for this family: an _unc spelling is malformed. */
-  if (tn->unc) { cqe_fail("tape: %s: tape and abort symbols have no _unc", sym); return -1; }
+  /* C1 (cq-4cy): op is the bare op; w the width token; shape "l" for _lit ("hl" for _hl); pred "ctl" for
+   * _controlled; unc for _unc. */
+  const char *op = tn->op, *wtok = tn->w;
+  int ctl = !strcmp(tn->pred, "ctl"), lit = !strcmp(tn->shape, "l");
+  char sym[96];
+  snprintf(sym, sizeof sym, "cqrt_%s%s%s%s%s%s", op, wtok[0] ? "_" : "", wtok, lit ? "_lit" : tn->shape[0] ? "_" : "",
+           lit ? "" : tn->shape, ctl ? "_controlled" : tn->pred[0] ? "_?" : "");
+  /* BACKEND_ABI §1.11 defines no _unc, no _hl and only the forms below for this family. */
+  if (tn->unc) { cqe_fail("tape: %s_unc: tape and abort symbols have no _unc", sym); return -1; }
+  if (tn->shape[0] && !lit) { cqe_fail("tape: %s: no _%s form in the tape family", sym, tn->shape); return -1; }
+  if (tn->pred[0] && !ctl) { cqe_fail("tape: %s: unknown pred \"%s\"", sym, tn->pred); return -1; }
+#define FORM(cond) do { if (!(cond)) { cqe_fail("tape: %s: no such form", sym); return -1; } } while (0)
 #define ARITY(k) do { if (n != (k)) { cqe_fail("tape: %s: %d arguments, expected %d", sym, n, (k)); return -1; } } while (0)
-  if (!strcmp(stem, "tape_alloc")) {
+  if (!strcmp(op, "tape_alloc")) {
+    FORM(!ctl && !lit && !wtok[0]);
     ARITY(0);
     return set_handle(out, op_tape_alloc(), sym);
   }
-  if (!strcmp(stem, "tape_fmt")) {
-    if (n == 3) op_entry(E_FMT, 1, arg_i32(&a[0]), arg_i32(&a[1]), arg_ptr(&a[2]), sym);
-    else if (n == 2 && !ctl) op_entry(E_FMT, 0, -1, arg_i32(&a[0]), arg_ptr(&a[1]), sym);
-    else ARITY(ctl ? 3 : 2);
+  if (!strcmp(op, "tape_fmt")) {
+    FORM(!lit && !wtok[0]);
+    ARITY(ctl ? 3 : 2);
+    if (ctl) op_entry(E_FMT, 1, arg_i32(&a[0]), arg_i32(&a[1]), arg_ptr(&a[2]), sym);
+    else op_entry(E_FMT, 0, -1, arg_i32(&a[0]), arg_ptr(&a[1]), sym);
     return 0;
   }
-  if (!strcmp(stem, "tape_effect")) {
-    ARITY(3);   /* no uncontrolled form exists (BACKEND_ABI §1.11) */
+  if (!strcmp(op, "tape_effect")) {
+    FORM(ctl && !lit && !wtok[0]);   /* no uncontrolled form exists */
+    ARITY(3);
     op_entry(E_EFFECT, 1, arg_i32(&a[0]), arg_i32(&a[1]), arg_ptr(&a[2]), sym);
     return 0;
   }
-  if (!strcmp(stem, "tape_write")) {
-    int32_t hp;
-    if (n == 3) hp = op_tape_write(1, arg_i32(&a[0]), arg_i32(&a[1]), arg_i32(&a[2]), wtok, sym);
-    else if (n == 2 && !ctl) hp = op_tape_write(0, -1, arg_i32(&a[0]), arg_i32(&a[1]), wtok, sym);
-    else { ARITY(ctl ? 3 : 2); return -1; }
+  if (!strcmp(op, "tape_write")) {
+    FORM(wtok[0] && !(lit && ctl));
+    if (lit) {
+      ARITY(2);
+      op_tape_write_lit(arg_i32(&a[0]), &a[1], wtok, sym);
+      return 0;
+    }
+    ARITY(ctl ? 3 : 2);
+    int32_t hp = ctl ? op_tape_write(1, arg_i32(&a[0]), arg_i32(&a[1]), arg_i32(&a[2]), wtok, sym)
+                     : op_tape_write(0, -1, arg_i32(&a[0]), arg_i32(&a[1]), wtok, sym);
     if (hp < 0) return -1;
     return set_handle(out, hp, sym);
   }
-  if (!strcmp(stem, "tape_write_lit")) {
-    ARITY(2);
-    op_tape_write_lit(arg_i32(&a[0]), &a[1], wtok, sym);
-    return 0;
-  }
-  if (!strcmp(stem, "tape_write_str_lit")) {
+  if (!strcmp(op, "tape_write_str")) {
+    FORM(lit && !ctl && !wtok[0]);
     ARITY(2);
     op_tape_write_str(arg_i32(&a[0]), arg_ptr(&a[1]), sym);
     return 0;
   }
-  if (!strcmp(stem, "abort")) {
-    ARITY(1);
-    if (wtok[0] && strcmp(wtok, "i1")) cqe_fail("tape: %s: abort flags are i1", sym);
-    op_abort(arg_i32(&a[0]), sym);
-    return 0;
-  }
+  /* abort */
+  FORM(!ctl && !lit && !strcmp(wtok, "i1"));
+  ARITY(1);
+  op_abort(arg_i32(&a[0]), sym);
+  return 0;
 #undef ARITY
-  return CQE_OP_NOT_MINE;
+#undef FORM
 }
 
 static int tape_dispatch(const cqe_tname *tn, const cqe_val *a, int n, cqe_val *out) {
@@ -716,13 +691,7 @@ static int tape_dispatch(const cqe_tname *tn, const cqe_val *a, int n, cqe_val *
 }
 
 __attribute__((constructor)) static void rt_tape_register(void) {
-  static const char *const keys[] = {
-      "tape_alloc", "tape_fmt", "tape_fmt_controlled", "tape_effect", "tape_effect_controlled",
-      "tape_write", "tape_write_controlled", "tape_write_lit", "tape_write_str_lit", "abort", "abort_i1",
-      /* cqe_tname.op holds 23 characters, so the longer cqrt_..._controlled spellings cannot occur */
-      "cqrt_tape_alloc", "cqrt_tape_fmt", "cqrt_tape_effect", "cqrt_tape_write", "cqrt_tape_write_lit",
-      "cqrt_tape_write_str_lit",
-      "cqrt_abort", "cqrt_abort_i1",
-  };
+  /* C1: a family registers the bare op only. */
+  static const char *const keys[] = {"tape_alloc", "tape_fmt", "tape_effect", "tape_write", "tape_write_str", "abort"};
   for (size_t i = 0; i < sizeof keys / sizeof keys[0]; i++) cqe_register_op(keys[i], tape_dispatch);
 }

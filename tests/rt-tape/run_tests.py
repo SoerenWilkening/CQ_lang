@@ -225,18 +225,19 @@ static const C cases[] = {
 %s
 };
 int main(void) {
-  int32_t t = fake_call("tape_alloc", "", 0, 0);
+  int32_t t = fake_call("cqrt_tape_alloc", 0);
   for (int variant = 0; variant < 2; variant++)
     for (unsigned c = 0; c < sizeof cases / sizeof cases[0]; c++) {
-      fake_call("tape_fmt", "", 0, 2, fake_h(t), fake_p(cases[c].fmt));
+      fake_call("cqrt_tape_fmt", 2, fake_h(t), fake_p(cases[c].fmt));
       for (int i = 0; i < cases[c].n; i++) {
         const F *f = &fields[cases[c].first + i];
-        if (f->k == 's') { fake_call("tape_write_str_lit", "", 0, 2, fake_h(t), fake_p(f->s)); continue; }
-        char wt[8];
+        if (f->k == 's') { fake_call("cqrt_tape_write_str_lit", 2, fake_h(t), fake_p(f->s)); continue; }
+        char wt[8], sym[48];
         snprintf(wt, sizeof wt, "%%c%%u", f->k, f->w);
+        snprintf(sym, sizeof sym, "cqrt_tape_write_%%s%%s", wt, variant ? "_lit" : "");
         cqe_val v = f->k == 'f' ? fake_f(f->w, f->lo, f->hi) : fake_i(f->w, f->lo, f->hi);
-        if (variant == 0) fake_call("tape_write", wt, 0, 2, fake_h(t), fake_h(fake_rail(wt, v)));
-        else fake_call("tape_write_lit", wt, 0, 2, fake_h(t), v);
+        if (variant == 0) fake_call(sym, 2, fake_h(t), fake_h(fake_rail(wt, v)));
+        else fake_call(sym, 2, fake_h(t), v);
       }
     }
   return 0;
@@ -392,7 +393,8 @@ def scenarios(clang, work):
             return "fields %s" % f
         return None
     check("effect", effect)
-    check("spellings", ok_shot([("%d %d %d\n", True)], b"7 8 9\n", False))
+    # the literal is the number of h7, the first rail fake_core hands out (100): read as a literal, not a rail
+    check("spellings", ok_shot([("%d %d %d %s\n", True)], b"7 8 100 s\n", False))
     check("not_mine", ok_shot([], b""))
     check("exit_call", ok_shot([("bye\n", True)], b"bye\n"))
     check("underscore_exit", lambda tr, shot, v: None if shot is None and not v else "tape survived _Exit")
@@ -403,11 +405,11 @@ def scenarios(clang, work):
         return fn
     check("v_field_no_entry", violation("no open entry"))
     check("v_bad_tape", violation("not returned by cqrt_tape_alloc"))
-    check("v_free_tape_rail", violation("not in a known basis state"))
+    check("v_free_tape_rail", violation("free_forbidden: rail .* has role tape"))
     check("v_tape_rail_gone", violation("tape rail .* is gone"))
     check("v_tape_rail_changed", violation("tape rail .* changed after its write"))
     check("v_abort_changed", violation("abort flag .* changed after cqrt_abort_i1"))
-    check("v_free_abort", violation("not in a known basis state"))
+    check("v_free_abort", violation("free_forbidden: rail .* has role abort"))
     check("v_abort_not_i1", violation("abort flag .* is not an i1 rail"))
     check("v_pred_not_i1", violation("predicate .* is not an i1 rail"))
     check("v_pred_dead", violation("predicate .* is not a live rail"))
@@ -415,7 +417,10 @@ def scenarios(clang, work):
     check("v_missing_field", violation("needs more fields"))
     check("v_percent_n", violation("%n on a tape entry"))
     check("v_width_mismatch", violation("width i32 but rail .* is i8"))
-    check("v_effect_uncontrolled", violation("2 arguments, expected 3"))
+    check("v_effect_uncontrolled", violation("cqrt_tape_effect: no such form"))
+    check("v_hl", violation("no _hl form"))
+    check("v_ctl_arity", violation("2 arguments, expected 3"))
+    check("v_lit_ctl", violation("no such form"))
     check("v_quantum_string", violation("%s on a quantum field"))
     return checks
 
