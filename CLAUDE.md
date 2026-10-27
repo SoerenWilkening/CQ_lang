@@ -33,9 +33,11 @@ This file is how to work.
 
 `clang -O1` per translation unit with `CQ.h` → `llvm-link` with the injection bundle → the pass
 (`opt -load-pass-plugin=… -passes=cq-lower`: taint, then `fix-irreducible` on the tainted functions
-only, then the constructions) → the structural verifier (inside the pass) → the lowered module. A
-function with no taint is never rewritten; a module with no taint is the pass's identity (principle
-1, kernel tier 1). The `cqcc` driver runs this chain. The corpus feeds each
+only, then taint afresh if any function changed, then the constructions; taint is computed once over
+the final CFG and nothing mutates the CFG after it) → the structural verifier (inside the pass) → the
+lowered module. A function with no taint is never rewritten; a module with no taint is the pass's
+identity (principle 1, kernel tier 1). The pass is the identity when `opt -passes=cq-lower` and `opt`
+with no passes produce byte-identical output on the same input. The `cqcc` driver runs this chain. The corpus feeds each
 `name.O1.ll` straight in; `clang-19 -O1` reproduces those files apart from comments and
 `source_filename`.
 
