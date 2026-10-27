@@ -307,10 +307,13 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
 8. **Branch flags.** A tainted `br` condition becomes a flag rail: the compare template's result,
    or the bare `i1` rail. A conjunction of flags is `and_i1` into a fresh `|0⟩`; a disjunction
    `or_i1`; a flag used as data is the `cq_template_and_i1`/`or_i1` form. The false edge is an
-   X bracket (`not_i1`) on the flag. A phase arm is `rz_i1(flag, θ)`. Classical conjuncts stay
-   classical branches around the quantum part. A condition that is a Boolean combination of
-   classical and quantum terms (`c || q`, `c && q` as one `i1`, e.g. Annex G's `isnan` tests) is
-   one flag: each classical `i1` term becomes a seed rail (rule 7) and joins by `and_i1`/`or_i1`.
+   X bracket (`not_i1`) on the flag. A phase arm is `rz_i1(flag, θ)`. A mixed condition is first
+   factored as `C && Q` on its Boolean function (not its syntax: -O1 may spell `c && q` as two
+   branches or as one `and i1`), where `C` is the conjunction of every classical term that is a
+   conjunct of the whole condition and `Q` is the rest. `C` stays a classical branch around the
+   quantum part (23 `cond_mixed`, 180). `Q` is one flag: a classical `i1` term inside it that cannot
+   be factored out (`c || q`, Annex G's `isnan` tests) becomes a seed rail (rule 7) and joins by
+   `and_i1`/`or_i1` (ruling 2026-10-27).
    A purely classical condition is always a classical branch, also inside a clone; a clone body is
    never flattened as a whole. The flag is uncomputed after its last controlled gate. — 03, 08,
    21, 23, 59, 69, 137, 138, 146, 154.
