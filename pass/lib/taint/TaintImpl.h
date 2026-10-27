@@ -1,0 +1,165 @@
+// Private to module taint (cq-w0-taint). The storage behind TaintInfo (K1) and the analysis state.
+//
+// Lattice. Every SSA value carries a lane vector (Lanes): an integer leaf of width W has
+// max(1, ceil(W/8)) byte lanes, a floating-point leaf one lane, a pointer leaf two lanes (tag, idx:
+// rule 21), aggregates and vectors the concatenation of their leaves. A lane is 1 iff that part of the
+// value depends on a cq_theta result (rule 3). Byte lanes are what lets an ABI-coerced struct
+// (159: { int, int } as i64) keep one taint bit per field through zext/shl/or/lshr/trunc packing.
+//
+// Pointers carry, besides their two lanes, a PtrInfo: the memory sites they may point into and their
+// byte offset from the site's base as the lattice (c, g): offset = c + k*g for unknown k (g = 0: exact).
+//
+// The whole module is iterated to one fixed point (specializations, memory, provenance); computeTaint
+// is a pure function of the module: every piece of state lives in one Impl it builds from scratch.
+#pragma once
+
+#include <deque>
+#include <map>
+#include <memory>
+#include <optional>
+#include <set>
+#include <string>
+#include <vector>
+
+#include "cq/Taint.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallBitVector.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/PostDominators.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Dominators.h"
+#include "llvm/IR/Instructions.h"
+
+namespace cq::taintimpl {
+
+using Lanes = llvm::SmallBitVector;
+
+// Offset lattice of a pointer relative to its site's base (bytes).
+struct PtrInfo {
+  llvm::SmallVector<unsigned, 2> sites; // sorted, unique
+  bool init = false;                     // false: no information yet (bottom)
+  bool top = false;                      // offset entirely unknown
+  int64_t c = 0;
+  uint64_t g = 0;
+  std::optional<int64_t> exact() const {
+    if (!init || top || g != 0)
+      return std::nullopt;
+    return c;
+  }
+  std::optional<int64_t> mod(uint64_t stride) const;
+  bool join(const PtrInfo &o); // returns true if changed
+  bool sameOffset(const PtrInfo &o) const;
+};
+
+enum class SiteKind : uint8_t { Alloca, Global, Heap, External, Function };
+
+// A memory site: an alloca, a global, a heap allocation call, an external (unknown) object, or a
+// function (function pointers are pointers to function sites).
+struct Site {
+  SiteKind kind;
+  const llvm::Value *v;            // the alloca/global/call/argument/load that names it
+  const llvm::Function *owner;     // function of an alloca/heap call/external, else null
+  uint64_t stride = 0;             // array-of-struct element size: one object per field column
+  llvm::SmallVector<int64_t, 4> columns; // field byte offsets within the stride (when stride != 0)
+  llvm::SmallVector<ObjectId, 4> objects; // one object, or one per column
+};
+
+struct Range {
+  int64_t off;
+  uint64_t size;
+};
+
+struct Object {
+  unsigned site;
+  int column = -1;                // index into Site::columns, -1 when the site is not split
+  bool anyHandle = false;          // a handle written at an unknown cell
+  std::vector<Range> handleCells;  // cells (byte ranges from the site base) written with a handle
+  std::vector<Range> ptrCells;     // cells written with a pointer (pointer-kind cells)
+  bool anyPtr = false;
+  bool qram = false;
+  bool storedTagQ = false, storedIdxQ = false;
+  PtrInfo stored;                  // the pointers stored into it
+  bool cellHandle(std::optional<int64_t> off, uint64_t size) const;
+  bool mayHoldHandle() const { return qram || anyHandle || !handleCells.empty(); }
+};
+
+struct FnInfo {
+  std::unique_ptr<llvm::DominatorTree> DT;
+  std::unique_ptr<llvm::PostDominatorTree> PDT;
+  std::unique_ptr<llvm::LoopInfo> LI;
+  // Direct control dependence: block -> the branching blocks it is control dependent on.
+  llvm::DenseMap<const llvm::BasicBlock *, llvm::SmallVector<const llvm::BasicBlock *, 2>> cdParents;
+  std::vector<const llvm::BasicBlock *> rpo;
+  unsigned scc = 0; // call-graph SCC id
+  bool recursive = false;
+};
+
+struct SpecState {
+  llvm::Function *F = nullptr;
+  bool ctl = false, pure = false, adj = false;
+  unsigned depth = 0;
+  std::vector<uint64_t> bounds;
+  bool declared = false; // rule 27: F has no body
+  bool inPlace = false;  // all-classical, no flags: the function rewritten in place
+  std::vector<Lanes> formal;     // fixed formals, then the variadic actuals of this arity
+  std::vector<llvm::Type *> formalTy;
+  std::vector<std::string> cells; // per formal: the pointee-cell digits at the call (pointer formals)
+  std::vector<PtrInfo> formalPtr; // pointer formals: union of the callers' actuals
+  std::string key;
+  unsigned depthCut = 0;          // cutoff min(K, B) of a quantum-depth recursion, 0 = none
+  std::optional<uint64_t> depthB; // B of the outermost call (rule 14)
+  bool depthBUnknown = false;
+
+  llvm::DenseMap<const llvm::Value *, Lanes> lanes;
+  llvm::DenseMap<const llvm::Value *, PtrInfo> ptr;
+  llvm::DenseMap<const llvm::BasicBlock *, llvm::SmallVector<const llvm::BasicBlock *, 2>> cdt;
+  llvm::DenseSet<const llvm::BasicBlock *> taintedTerm;
+  Lanes ret;
+  PtrInfo retPtr;
+  bool analyzedOnce = false;
+
+  bool hasTheta = false, hasPhi = false, hasEffect = false, writesOuter = false, hasMeasure = false;
+  bool anyQuantum = false;
+  llvm::DenseMap<const llvm::CallBase *, llvm::SmallVector<SpecState *, 2>> callees;
+  llvm::DenseSet<const llvm::CallBase *> cutCalls; // depth-recursion calls replaced by |0>
+
+  // Post-fixpoint.
+  bool reachable = false;
+  bool needsTwin = false;
+  bool effectful = false; // transitively: phase, tape, abort (what a twin must not replay)
+  bool nonPure = false;   // transitively: rotation, phase, outer store, tape (rule 19 _ctl test)
+  std::string mask;
+  std::string name;
+};
+
+struct LookupKey; // fwd
+
+struct ImplState {
+  llvm::Module *M = nullptr;
+  const llvm::DataLayout *DL = nullptr;
+  TaintOptions opts;
+  std::unique_ptr<llvm::TargetLibraryInfoImpl> TLII;
+  std::unique_ptr<llvm::TargetLibraryInfo> TLI;
+
+  std::vector<Site> sites;
+  llvm::DenseMap<const llvm::Value *, unsigned> siteOf;
+  std::vector<Object> objects;
+
+  std::vector<std::unique_ptr<SpecState>> specs;
+  std::map<std::string, SpecState *> byKey;
+  std::map<const llvm::Function *, std::unique_ptr<FnInfo>> fns;
+  llvm::DenseMap<llvm::Type *, unsigned> laneCount;
+  bool changed = false;
+  bool longjmpUnderQuantum = false;
+
+  // Published result.
+  std::vector<Specialization> published;
+  std::vector<SpecState *> publishedState;
+  llvm::DenseSet<const llvm::Function *> tainted;
+  std::deque<std::vector<ObjectId>> provCache; // stable storage behind provenance()
+};
+
+} // namespace cq::taintimpl
