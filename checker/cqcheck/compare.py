@@ -64,6 +64,44 @@ record self-contained; values are hex bit patterns or ints):
   outputs["ret"] is compared (T1: the C side's "end" and our "stdout"/"exit" are diagnostics); a
   missing "ret" reads as [].
 - violations: a list; any entry fails the comparison.
+- outputs["loops"] (C oracle side only; the cutoff records of the a_K rule below, bead cq-9rt): a
+  list, missing = []. One record per activation of a quantum-exit loop or quantum-depth recursion
+  that the C program begins:
+    {"loop": id, "act": int, "n": int, "capped": bool, "cut": int, "mcut": int}
+  loop is the T1 loop id "<fn>:<header>" (a recursion's id is the oracle's spelling; compare reads
+  it as an opaque string). act is the 0-based ordinal of this activation among the activations of
+  the same loop in the sample, in execution order (a loop nested in a K-loop is entered once per
+  outer trip, so act is the outer trip index when the inner loop is entered on every trip). n is
+  the trips begun, as T1's trip event counts them. capped is true when the C program would run more
+  than K trips (K as the circuit resolves it) and the oracle stopped it after trip K, i.e. the exit
+  test after the K-th body (a_K) read 1. cut and mcut are required when capped and ignored
+  otherwise: the length of `rotations` and of `measured` at the point of that test, i.e. the
+  number of entries recorded through trip K. A loop the C program never enters gets no record. A
+  capped run is not a violation: "violations" stays [], and "end" is the oracle's diagnostic (e.g.
+  "cap:<loop>"). Whether the oracle stops the whole program at the cap or goes on is its choice;
+  compare reads nothing past the earliest cut either way.
+
+The a_K rule (CR §6, ruling 2026-10-27, cq-1di; against="c" only). A sample is capped when one of
+its loop records has capped true; its cut is that of the capped record with the smallest cut. On a
+capped sample:
+- outputs["ret"] is not compared (the compared outputs are the circuit's; the C program did not
+  complete the trips);
+- the C side's measured and rotations are truncated at the cut (the rotation list is compared
+  through trip K); our first len(C measured) measurements are compared with them, ours may have
+  more;
+- a C site the truncated sample does not reach is unknown there, not "not reached": a lowered gate
+  may fire there with any angle, except that a lowered gate that matches no C site and fires on a
+  capped sample is still a difference when it precedes, in our order with overlapping support, a
+  gate whose C site that sample reached (it would lie before the cut);
+- a_K must read 1.
+On a sample with no capped record everything is compared, and every a_K must read 0.
+a_K is located on our side by value function, like every rail (CLAUDE.md): within each comparison
+group, each (loop, act) capped on at least one sample of the group must be matched to its own kept
+i1 rail of ours (role not measured, abort, tape, qram, qram_cell, qram_slot) that reads 1 on every
+sample where it is capped, 0 on every uncapped sample and on every sample whose record of it says
+capped false, and anything on a sample capped by another activation that has no record of it (it
+lay past the cut). An activation never capped in a group cannot be told from other 0 rails there,
+so its "a_K reads 0" is checked only in groups where it is capped somewhere.
 
 Floating-point equality (CR §2 NaN row, ruling 2026-10-27, bead cq-8dy). Against the reference
 every value is compared bit for bit. Against the C oracle a floating-point value is compared
@@ -78,6 +116,7 @@ ignored, so a pseudo-NaN is a NaN and a pseudo-infinity is not.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import sys
 from dataclasses import dataclass
@@ -489,11 +528,19 @@ def _c_sites(runs: List[RunResult], nan_eq: bool) -> Tuple[List[_Site], List[str
     return list(sites.values()), reasons
 
 
-def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool) -> List[str]:
+def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
+             capped: Sequence[bool] = ()) -> List[str]:
+    """Match the C sites to our gates. capped[s] marks a sample truncated at its cut (the a_K rule):
+    signatures are compared on the other samples, and on a capped sample only where its C site was
+    reached (see the module docstring)."""
     reasons: List[str] = []
+    capped = list(capped)
+    nS = len(capped) if capped else len(ours[0].pred) if ours else len(sites[0].pred) if sites else 0
+    capped = capped or [False] * nS
+    P = [s for s in range(nS) if not capped[s]]
+    C = [s for s in range(nS) if capped[s]]
 
-    def lsig(e: _Ev) -> Tuple:
-        kind = "theta" if e.kind in ("ry", "ryq") else "phi"
+    def lfull(e: _Ev) -> Tuple:
         if e.afn is not None:
             afn = tuple(_fpv(a, "f64", nan_eq) for a in e.afn)
         else:
@@ -503,7 +550,28 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool)
             rfn = tuple(_fpv(v, w, nan_eq) if p else None for v, p in zip(e.tclass[1], e.pred))
         else:
             rfn = tuple(None for _ in e.pred)
-        return (kind, e.pred, afn, rfn, w)
+        return afn, rfn, w
+
+    full = {id(e): lfull(e) for e in ours}
+
+    def lsig(e: _Ev) -> Tuple:
+        kind = "theta" if e.kind in ("ry", "ryq") else "phi"
+        afn, rfn, w = full[id(e)]
+        return (kind, tuple(e.pred[s] for s in P), tuple(afn[s] for s in P), tuple(rfn[s] for s in P), w)
+
+    def srfn(st: _Site, w: Optional[str]) -> Tuple:
+        return tuple(_fpv(v, w, nan_eq) if p and v is not None else None for v, p in zip(st.rfn, st.pred))
+
+    def optional(st: _Site) -> bool:
+        # a global phase: reached wherever known, one angle
+        return (st.kind == "phi" and all(st.pred[s] for s in P)
+                and len({a for a, p in zip(st.afn, st.pred) if p}) == 1)
+
+    def compat(st: _Site, e: _Ev, w: Optional[str]) -> bool:
+        afn, rfn, _ = full[id(e)]
+        sr = srfn(st, w)
+        return all(e.pred[s] and afn[s] == st.afn[s] and (st.kind != "theta" or rfn[s] == sr[s])
+                   for s in C if st.pred[s])
 
     # a C register value is compared at the lowered target's width
     by_sig: Dict[Tuple, List[_Ev]] = {}
@@ -513,38 +581,64 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool)
     pairs: Dict[Tuple, _Ev] = {}
     groups: Dict[Tuple, List[_Site]] = {}
     for st in sites:
-        optional = (st.kind == "phi" and all(st.pred) and len(set(st.afn)) == 1)
         matched = False
         for w in sorted(widths, key=lambda x: (x is None, str(x))):
-            rfn = tuple(_fpv(v, w, nan_eq) if p and v is not None else None for v, p in zip(st.rfn, st.pred))
-            sig = (st.kind, st.pred, st.afn, rfn, w if st.kind == "theta" else None)
+            rfn = srfn(st, w)
+            ww = w if st.kind == "theta" else None
+            sig = (st.kind, tuple(st.pred[s] for s in P), tuple(st.afn[s] for s in P),
+                   tuple(rfn[s] for s in P), ww)
             if sig in by_sig:
                 groups.setdefault(sig, []).append(st)
                 matched = True
                 break
-        if not matched and not optional:
+        if not matched and not optional(st):
             reasons.append(f"C site {st.key[0]}:{st.key[1]} ({st.kind}, occurrence {st.key[3]}, reached "
                            f"{_fn(st.pred)}) has no lowered gate with that predicate, angle and register")
+    unmatched: List[_Ev] = []
     for sig, evs in by_sig.items():
         sts = groups.get(sig, [])
         sts.sort(key=lambda st: st.order[next(s for s, p in enumerate(st.pred) if p)])
-        mandatory = [st for st in sts if not (st.kind == "phi" and all(st.pred) and len(set(st.afn)) == 1)]
-        if len(mandatory) > len(evs):
-            for st in mandatory[len(evs):]:
-                reasons.append(f"C site {st.key[0]}:{st.key[1]} occurrence {st.key[3]} has no lowered gate left")
-            sts = mandatory[:len(evs)]
-        elif len(sts) > len(evs):
-            sts = mandatory + [st for st in sts if st not in mandatory][:len(evs) - len(mandatory)]
-            sts.sort(key=lambda st: st.order[next(s for s, p in enumerate(st.pred) if p)])
-        for e in evs[len(sts):]:
-            reasons.append(f"lowered gate #{e.idx} {e.label} (predicate {_fn(e.pred)}) corresponds to no C site")
-        for st, e in zip(sts, evs):
+        # pair in order, each site with the first remaining gate that agrees on the capped samples
+        left = list(evs)
+        got: List[Tuple[_Site, _Ev]] = []
+        missing: List[_Site] = []
+        for st in sts:
+            e = next((e for e in left if compat(st, e, sig[4])), None)
+            if e is None:
+                missing.append(st)
+            else:
+                left.remove(e)
+                got.append((st, e))
+        # an optional (global-phase) site may yield its gate to a mandatory one
+        for st in [st for st in missing if not optional(st)]:
+            for i, (st2, e) in enumerate(got):
+                if optional(st2) and compat(st, e, sig[4]):
+                    got[i] = (st, e)
+                    break
+            else:
+                reasons.append(f"C site {st.key[0]}:{st.key[1]} occurrence {st.key[3]} has no lowered gate left"
+                               + (" agreeing on the capped samples" if C else ""))
+        for st, e in got:
             pairs[st.key] = e
+        for e in left:
+            if any(sig[1]) or not C:
+                reasons.append(f"lowered gate #{e.idx} {e.label} (predicate {_fn(e.pred)}) corresponds to no C site")
+            else:
+                unmatched.append(e)    # fires only on capped samples: unknown past the cut
     if reasons:
         return reasons
-    # order: every sample's hit order agrees with the lowered order on dependent gates
     by_key = {st.key: st for st in sites}
-    nS = len(ours[0].pred) if ours else 0
+    # an unmatched gate on a capped sample must not precede a dependent gate that sample reached
+    for x in unmatched:
+        for s in C:
+            if not x.pred[s]:
+                continue
+            for k, e in pairs.items():
+                if s in by_key[k].order and e.idx > x.idx and (x.support & e.support):
+                    reasons.append(f"sample {s}: lowered gate #{x.idx} {x.label} corresponds to no C site and "
+                                   f"precedes {e.label}, which the C program reached before the cut")
+                    return reasons
+    # order: every sample's hit order agrees with the lowered order on dependent gates
     for s in range(nS):
         seq = sorted((by_key[k].order[s], e) for k, e in pairs.items() if s in by_key[k].order)
         evs_s = [e for _, e in seq]
@@ -555,6 +649,96 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool)
                     reasons.append(f"sample {s}: C order puts {x.label} before {y.label}, the lowered order "
                                    f"reverses them and their supports overlap")
                     return reasons
+    return reasons
+
+
+# ---------------------------------------------------------------- the a_K rule (against "c")
+
+_NOT_AK_ROLES = ("measured", "abort", "tape", "qram", "qram_cell", "qram_slot")
+
+
+def _loops(rr: RunResult) -> List[Dict[str, Any]]:
+    """outputs["loops"] of a side 'c' RunResult, validated (module docstring)."""
+    out = rr.outputs.get("loops", []) if isinstance(rr.outputs, dict) else []
+    if not isinstance(out, list):
+        raise CompareError(f"cq: unimplemented: chk-compare: C-oracle loops {out!r}")
+    for rec in out:
+        ok = (isinstance(rec, dict) and isinstance(rec.get("loop"), str) and isinstance(rec.get("act"), int)
+              and isinstance(rec.get("n"), int) and isinstance(rec.get("capped"), bool))
+        if ok and rec["capped"]:
+            ok = all(isinstance(rec.get(f), int) and not isinstance(rec.get(f), bool) and rec[f] >= 0
+                     for f in ("cut", "mcut"))
+        if not ok:
+            raise CompareError(f"cq: unimplemented: chk-compare: C-oracle loop record {rec!r}")
+    return out
+
+
+def _cap(rr: RunResult) -> Optional[Dict[str, Any]]:
+    """The capped record with the smallest cut, or None for a sample with at most K trips."""
+    caps = [r for r in _loops(rr) if r["capped"]]
+    return min(caps, key=lambda r: (r["cut"], r["mcut"])) if caps else None
+
+
+def _truncate(rr: RunResult, cap: Dict[str, Any]) -> RunResult:
+    rots, meas = list(rr.rotations or []), list(rr.measured or [])
+    if cap["cut"] > len(rots) or cap["mcut"] > len(meas):
+        raise CompareError(f"cq: unimplemented: chk-compare: C-oracle cut {cap!r} past the recorded "
+                           f"{len(rots)} rotations / {len(meas)} measurements")
+    return dataclasses.replace(rr, rotations=rots[:cap["cut"]], measured=meas[:cap["mcut"]])
+
+
+def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult]) -> List[str]:
+    """Each (loop, act) capped somewhere in the group has its own kept i1 rail of ours reading
+    1 where capped, 0 where it is known to have at most K trips (module docstring)."""
+    caps = [_cap(rr) for rr in c_runs]
+    recs = [{(r["loop"], r["act"]): r["capped"] for r in _loops(rr)} for rr in c_runs]
+    keys = sorted({k for rec in recs for k, c in rec.items() if c})
+    if not keys:
+        return []
+    want: Dict[Tuple, List[Optional[int]]] = {}
+    for k in keys:
+        f: List[Optional[int]] = []
+        for s, rec in enumerate(recs):
+            if k in rec:
+                f.append(int(rec[k]))
+            elif caps[s] is None:
+                f.append(0)
+            else:
+                f.append(None)       # past another activation's cut: unknown
+        want[k] = f
+    cands: Dict[Any, Tuple] = {}
+    for ent in o_runs[0].kept or []:
+        if ent.get("w") != "i1" or ent.get("role") in _NOT_AK_ROLES:
+            continue
+        h = ent["h"]
+        vals = []
+        for rr in o_runs:
+            e2 = next((e for e in rr.kept or [] if e["h"] == h), None)
+            if e2 is None:
+                break
+            vals.append(_masked(_int(e2.get("v")), "i1"))
+        else:
+            cands[h] = tuple(vals)
+    fits = {k: [h for h, v in cands.items() if all(x is None or x == y for x, y in zip(want[k], v))]
+            for k in keys}
+    owner: Dict[Any, Tuple] = {}
+
+    def augment(k: Tuple, seen: set) -> bool:
+        for h in fits[k]:
+            if h in seen:
+                continue
+            seen.add(h)
+            if h not in owner or augment(owner[h], seen):
+                owner[h] = k
+                return True
+        return False
+
+    reasons = []
+    for k in keys:
+        if not augment(k, set()):
+            f = "".join("-" if x is None else str(x) for x in want[k])
+            reasons.append(f"a_K of loop {k[0]} activation {k[1]}: no kept i1 rail of ours (of its own) reads "
+                           f"{f} (1 where the C oracle capped it after K trips, 0 where it ran at most K trips)")
     return reasons
 
 
@@ -593,6 +777,18 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
     keys = [k for k in (_skey(r.sample) for r in ref) if k in o_by]
     if not keys and not reasons:
         reasons.append("no samples")
+    # the a_K rule: a capped C sample is read through its cut (module docstring)
+    capped: Dict[str, bool] = {}
+    if oracle == "c":
+        for k in keys:
+            cap = _cap(r_by[k])
+            capped[k] = cap is not None
+            if cap is not None:
+                r_by[k] = _truncate(r_by[k], cap)
+                _, why = _c_order(r_by[k], 0)
+                if why:
+                    raise CompareError(f"cq: unimplemented: chk-compare: sample {k}: the cut {cap!r} lies inside "
+                                       f"a cq_invert region")
 
     # per sample: violations, outputs, measured values, frees
     for k in keys:
@@ -604,11 +800,13 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                            f"{r.violations}")
         if oracle == "c":
             oo, ro = _ret(o.outputs, "our"), _ret(r.outputs, "C-oracle")
-            if _norm(oo, nan_eq) != _norm(ro, nan_eq):
+            if not capped[k] and _norm(oo, nan_eq) != _norm(ro, nan_eq):
                 reasons.append(f"sample {k}: returns {oo} != {ro} (ours {o.outputs}, C {r.outputs})")
         elif _norm(o.outputs, nan_eq) != _norm(r.outputs, nan_eq):
             reasons.append(f"sample {k}: outputs {o.outputs} != {r.outputs}")
         mo, mr = list(o.measured or []), list(r.measured or [])
+        if capped.get(k) and len(mo) >= len(mr):
+            mo = mo[:len(mr)]          # ours may measure past the cut
         if len(mo) != len(mr):
             reasons.append(f"sample {k}: {len(mo)} measurements != {len(mr)}")
         else:
@@ -670,7 +868,9 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             if why_c:
                 reasons += [f"{tag}: {why}" for why in why_c]
                 continue
-            for why in _match_c(o_evs, o_glob, sites, nan_eq):
+            for why in _match_c(o_evs, o_glob, sites, nan_eq, [capped[k] for k in ks]):
+                reasons.append(f"{tag}: {why}")
+            for why in _check_ak(o_runs, r_runs):
                 reasons.append(f"{tag}: {why}")
     return reasons
 

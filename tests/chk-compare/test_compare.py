@@ -3,6 +3,7 @@
 Two i1 registers a, b (handles of the side's choosing) seeded exhaustively: samples s = 0..3 with
 a = s & 1, b = s >> 1. Every case states which §6 clause decides it.
 """
+import dataclasses
 import os
 import struct
 import sys
@@ -564,6 +565,135 @@ class COracleT1(unittest.TestCase):
         ours_w = side("o", lambda a, b, s: dict(rots=[ry(1, 1.0)], kept=[keep(1, a, "i1", "measured")],
                                                 measured=[{"h": 1, "w": "i1", "v": hex(a)}]))
         self.check(ours_w, c_w, False, "of i1 != i8")
+
+
+class AKRule(unittest.TestCase):
+    """CR §6 a_K rule (ruling 2026-10-27, cq-1di; bead cq-9rt), against "c". A K-loop f:%7 with
+    K = 4: before it Ry(1.0) on register x (h=1, x = s); each trip j a phase P(0.5) on trip j's
+    predicate (C site f:1); after it Ry(2.0) on x (C site f:2). C trip counts T[s]; a sample with
+    T[s] > 4 is capped, its C program stopped after trip 4 (cut = 1 + 4 rotations). Ours runs 4
+    trips and keeps a_K on h=9."""
+
+    K = 4
+    LOOP = "f:%7"
+
+    @staticmethod
+    def site(fn, site, kind, angle, reg=None):
+        return {"ev": "site", "fn": fn, "site": site, "kind": kind, "angle": ang(angle),
+                "reg": None if reg is None else hex(reg)}
+
+    @staticmethod
+    def ret(v):
+        return [{"call": 0, "fn": "f", "v": {"w": "i32", "v": hex(v)}}]
+
+    def c_side(self, T, past_cut=False, measure=False):
+        out = []
+        for s in range(4):
+            capped = T[s] > self.K
+            trips = min(T[s], self.K) if capped and not past_cut else T[s]
+            rots = [self.site("f", 0, "theta", 1.0, s)] + [self.site("f", 1, "phi", 0.5)] * trips
+            meas = []
+            if not capped or past_cut:
+                rots.append(self.site("f", 2, "theta", 2.0, s))
+                if measure:
+                    meas = [{"h": None, "w": "i8", "v": hex(s)}]
+            rec = {"loop": self.LOOP, "act": 0, "n": min(T[s], self.K), "capped": capped}
+            if capped:
+                rec.update(cut=1 + self.K, mcut=0)
+            outputs = {"loops": [rec], "end": "cap:" + self.LOOP if capped else "ret"}
+            outputs["ret"] = self.ret(min(T[s], self.K)) if not capped or past_cut else []
+            out.append(RunResult(side="c", sample={"call": 0, "args": [s & 1, s >> 1]}, outputs=outputs,
+                                 measured=meas, rotations=rots, kept=None, clean=None, violations=[]))
+        return out
+
+    def ours(self, T, ak=None, fire=None, extra=None, ret=None, measure=False):
+        """ak[s]: a_K's value (default T[s] > K); fire(j, s): trip j's phase fires (default j <= T[s])."""
+        out = []
+        for s in range(4):
+            a_k = (T[s] > self.K) if ak is None else ak[s]
+            rots = [ry(1, 1.0)] + (extra(s) if extra else [])
+            for j in range(1, self.K + 1):
+                on = (j <= T[s]) if fire is None else fire(j, s)
+                rots.append(ph(20 + j, on, 0.5))
+            rots.append(ry(1, 2.0))
+            kept = [keep(1, s, "i8"), keep(9, int(a_k), "i1", "garbage")]
+            meas = []
+            if measure:
+                kept[0] = keep(1, s, "i8", "measured")
+                meas = [{"h": 1, "w": "i8", "v": hex(s)}]
+            r = min(T[s], self.K) if ret is None else ret(s)
+            out.append(run("o", s, rots, kept, outputs={"ret": self.ret(r), "stdout": "", "exit": 0},
+                           measured=meas))
+        return out
+
+    def check(self, ours, c, equal, needle=None):
+        r = compare(ours, c, QKEY, "c")
+        self.assertEqual(r.equal, equal, r.reasons)
+        if needle:
+            self.assertTrue(any(needle in x for x in r.reasons), r.reasons)
+
+    CAP = (0, 2, 9, 7)        # samples 2 and 3 capped
+    LEQ = (0, 2, 3, 4)        # none capped; sample 3 exits after exactly K trips
+
+    def test_capped_ak_one_passes(self):
+        self.check(self.ours(self.CAP), self.c_side(self.CAP), True)
+
+    def test_capped_ak_zero_fails(self):
+        self.check(self.ours(self.CAP, ak=(0, 0, 0, 0)), self.c_side(self.CAP), False, "a_K of loop f:%7")
+        self.check(self.ours(self.CAP, ak=(0, 0, 1, 0)), self.c_side(self.CAP), False, "a_K of loop f:%7")
+
+    def test_ak_one_on_sample_with_at_most_K_trips_fails(self):
+        self.check(self.ours(self.CAP, ak=(0, 1, 1, 1)), self.c_side(self.CAP), False, "a_K of loop f:%7")
+
+    def test_ak_not_a_measured_rail(self):
+        ours = self.ours(self.CAP)
+        for rr in ours:
+            rr.kept[1]["role"] = "measured"
+        self.check(ours, self.c_side(self.CAP), False, "a_K of loop f:%7")
+
+    def test_uncapped_compared_fully(self):
+        self.check(self.ours(self.LEQ), self.c_side(self.LEQ), True)
+        # every clause still decides: the return, a trip's rotation, the post-loop rotation
+        self.check(self.ours(self.LEQ, ret=lambda s: 7), self.c_side(self.LEQ), False, "returns")
+        self.check(self.ours(self.LEQ, fire=lambda j, s: j <= min(self.LEQ[s], 2)), self.c_side(self.LEQ),
+                   False, "f:1")
+        c = self.c_side(self.LEQ)
+        c[1] = dataclasses.replace(c[1], rotations=c[1].rotations[:-1])
+        self.check(self.ours(self.LEQ), c, False)
+
+    def test_capped_ret_not_compared(self):
+        # the C program stopped at the cap: its "ret" is absent (or anything); ours stands
+        self.check(self.ours(self.CAP, ret=lambda s: 99 if s >= 2 else min(self.CAP[s], 4)),
+                   self.c_side(self.CAP), True)
+        self.check(self.ours(self.CAP, ret=lambda s: 99), self.c_side(self.CAP), False, "returns")
+
+    def test_rotation_list_truncated_at_trip_K(self):
+        # the C side recorded trips 5.. and the code after the loop past the cut: compared through trip K
+        self.check(self.ours(self.CAP), self.c_side(self.CAP, past_cut=True), True)
+
+    def test_trips_through_K_still_compared_on_capped_sample(self):
+        # sample 2 is capped, yet its trip 3 is before the cut: ours must fire it
+        fire = lambda j, s: (j <= self.CAP[s]) and not (s == 2 and j == 3)  # noqa: E731
+        self.check(self.ours(self.CAP, fire=fire), self.c_side(self.CAP), False, "f:1")
+
+    def test_extra_gate_before_the_cut_on_capped_sample(self):
+        # a gate firing only on capped sample 2, before a gate of trip 1 on the same register
+        extra = lambda s: [ry(1, 3.0, ctl=[30], ctlv=[int(s == 2)])]  # noqa: E731
+        self.check(self.ours(self.CAP, extra=extra), self.c_side(self.CAP), False, "before the cut")
+
+    def test_measured_prefix_on_capped_sample(self):
+        self.check(self.ours(self.CAP, measure=True), self.c_side(self.CAP, measure=True), True)
+        c = self.c_side(self.CAP, measure=True)
+        c[0] = dataclasses.replace(c[0], measured=[{"h": None, "w": "i8", "v": "0x5"}])
+        self.check(self.ours(self.CAP, measure=True), c, False, "measurement 0")
+
+    def test_malformed_loop_record_is_an_internal_error(self):
+        from cqcheck.compare import CompareError
+        c = self.c_side(self.CAP)
+        bad = dict(c[2].outputs, loops=[{"loop": self.LOOP, "act": 0, "n": 4, "capped": True}])
+        c[2] = dataclasses.replace(c[2], outputs=bad)
+        with self.assertRaises(CompareError):
+            compare(self.ours(self.CAP), c, QKEY, "c")
 
 
 if __name__ == "__main__":
