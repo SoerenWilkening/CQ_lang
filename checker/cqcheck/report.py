@@ -168,9 +168,11 @@ def lower(ex: Example, dest: Path) -> Tuple[Optional[Path], str]:
     return dest, ""
 
 
-def verify(lowered: Path) -> Tuple[str, str]:
-    """The structural verifier (NORTHSTAR principle 4) over our output."""
-    r = _run([str(LLVM_BIN / "opt"), f"-load-pass-plugin={plugin_path()}", "-passes=cq-verify",
+def verify(lowered: Path, reference: bool = False) -> Tuple[str, str]:
+    """The structural verifier (NORTHSTAR principle 4) over our output. `reference=True` runs it in
+    reference mode, `cq-verify<reference>` (S1), for a CQ_spec reference lowered.ll."""
+    passes = "cq-verify<reference>" if reference else "cq-verify"
+    r = _run([str(LLVM_BIN / "opt"), f"-load-pass-plugin={plugin_path()}", f"-passes={passes}",
               "-disable-output", str(lowered)])
     if r.returncode == 0:
         return PASS, ""
@@ -236,6 +238,8 @@ def textual_diff(ours: Path, ref: Path) -> Tuple[int, str]:
 
 # The functions the §6 run calls in the sibling checker modules: (module file, owning module, name,
 # signature). Proposed in bead cq-w0-chk-report's freeze-rule bead; the owning bead implements it.
+# The sibling functions evaluate() calls: a subset of the cross-module API frozen by cq-zew (Z1 in
+# cq-arch; tests/checker-api/check_api.py holds the whole frozen list and checks this one against it).
 SIBLING_API: List[Tuple[str, str, str, str]] = [
     ("drivers", "chk-drivers", "driver_spec", "(example: str, example_dir: Path) -> DriverSpec"),
     ("sampling", "chk-drivers", "sample_set", "(spec: DriverSpec, example_dir: Path) -> SampleSet"),
@@ -243,7 +247,10 @@ SIBLING_API: List[Tuple[str, str, str, str]] = [
      "(lowered: Path, spec: DriverSpec, sample: dict, side: str) -> RunResult"),
     ("oracle", "chk-oracle", "run_sample", "(o1: Path, spec: DriverSpec, sample: dict) -> RunResult"),
     ("compare", "chk-compare", "compare",
-     "(ours: Sequence[RunResult], other: Sequence[RunResult], against: str) -> List[str]"),
+     "(ours: Sequence[RunResult], other: Sequence[RunResult], against: str, "
+     "classical_key: Optional[Callable[[dict], Hashable]] = None) -> List[str]"),
+    ("compare", "chk-compare", "classical_key_from_driver",
+     "(driver: DriverSpec) -> Callable[[dict], Hashable]"),
 ]
 
 
@@ -275,23 +282,29 @@ def _side_results(runner: Callable, path: Path, spec, samples, *extra) -> list:
     return results
 
 
-def _compare(ours_results, other_results, against: str) -> Tuple[str, List[str]]:
-    reasons = list(sibling("compare", "compare")(ours_results, other_results, against))
+def _compare(ours_results, other_results, against: str, spec) -> Tuple[str, List[str]]:
+    # Z1: a consumer that holds the DriverSpec passes its classical key (CR §6 global phases are
+    # judged with the classical arguments fixed).
+    key = sibling("compare", "classical_key_from_driver")(spec)
+    reasons = list(sibling("compare", "compare")(ours_results, other_results, against,
+                                                 classical_key=key))
     return (PASS, []) if not reasons else (FAIL, [f"{against}: {r}" for r in reasons])
 
 
 def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_error: str = "",
-             short_circuit: bool = True, diff_out: Optional[Path] = None) -> Verdict:
+             short_circuit: bool = True, diff_out: Optional[Path] = None,
+             reference_mode: bool = False) -> Verdict:
     """The Verdict for one example. `ours` is our lowered module, or None with `lower_error` when
     the pass produced nothing. `oracle` is ref, c or both. `short_circuit=False` forces the §6 run
-    on a textual match (the baseline runs a reference against itself)."""
+    on a textual match (the baseline runs a reference against itself). `reference_mode=True` runs
+    the verifier as `cq-verify<reference>` (S1): `ours` is a CQ_spec reference (the baseline)."""
     reasons: List[str] = []
     if ours is None:
         why = lower_error or "no lowered module"
         return Verdict(ex.name, ERROR if oracle in ("ref", "both") else NOT_RUN,
                        ERROR if oracle in ("c", "both") else NOT_RUN, ERROR, None, [why])
 
-    verifier, why = verify(ours)
+    verifier, why = verify(ours, reference=reference_mode)
     if why:
         reasons.append(why)
 
@@ -329,7 +342,7 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
                 try:
                     ref_results = _side_results(sibling("run", "run_sample"), ex.reference, spec,
                                                 samples, "ref")
-                    s6, rs = _compare(ours_results, ref_results, "ref")
+                    s6, rs = _compare(ours_results, ref_results, "ref", spec)
                     reasons += rs
                 except Exception as e:  # noqa: BLE001
                     s6 = ERROR
@@ -337,7 +350,7 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
             if want_c:
                 try:
                     c_results = _side_results(sibling("oracle", "run_sample"), ex.o1, spec, samples)
-                    c_oracle, rs = _compare(ours_results, c_results, "c")
+                    c_oracle, rs = _compare(ours_results, c_results, "c", spec)
                     reasons += rs
                 except Exception as e:  # noqa: BLE001
                     c_oracle = ERROR

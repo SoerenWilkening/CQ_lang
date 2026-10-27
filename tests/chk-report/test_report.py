@@ -143,9 +143,12 @@ class FakeSiblings:
             ("sampling", "sample_set"): lambda s, d: SampleSet("x", self.samples, {}),
             ("run", "run_sample"): lambda p, s, smp, side: (self.calls.append(("run", side)), rr(side))[1],
             ("oracle", "run_sample"): lambda p, s, smp: (self.calls.append(("oracle",)), rr("c"))[1],
-            ("compare", "compare"): lambda a, b, against: (self.calls.append(("compare", against)),
-                                                           self.compare_reasons)[1],
+            ("compare", "compare"): lambda a, b, against, classical_key=None: (
+                self.calls.append(("compare", against, classical_key)), self.compare_reasons)[1],
+            ("compare", "classical_key_from_driver"): lambda d: (self.calls.append(("key", d)),
+                                                                 self.key)[1],
         }
+        self.key = lambda sample: ("classical", repr(sample))
         for (mod, name), fn in fns.items():
             m = importlib.import_module(f"cqcheck.{mod}")
             self.saved[(mod, name)] = getattr(m, name, None)
@@ -155,7 +158,8 @@ class FakeSiblings:
             else:
                 setattr(m, name, fn)
         self.verify = report.verify
-        report.verify = lambda p: (report.PASS, "")
+        report.verify = lambda p, reference=False: (self.calls.append(("verify", reference)),
+                                                    (report.PASS, ""))[1]
         return self
 
     def __exit__(self, *exc):
@@ -180,19 +184,42 @@ class Evaluate(unittest.TestCase):
             v = report.evaluate(EX04, EX04.reference, "both")
         self.assertEqual((v.s6, v.c_oracle, v.verifier, v.diff_lines), ("pass", "pass", "pass", 0))
         self.assertNotIn(("run", "ref"), f.calls)          # §6 vs reference short-circuited
-        self.assertIn(("compare", "c"), f.calls)            # the C oracle still runs
+        self.assertIn(("compare", "c", f.key), f.calls)     # the C oracle still runs
         self.assertTrue(report.green(v))
 
     def test_no_short_circuit(self):
         with FakeSiblings() as f:
             report.evaluate(EX04, EX04.reference, "ref", short_circuit=False)
-        self.assertIn(("compare", "ref"), f.calls)
+        self.assertIn(("compare", "ref", f.key), f.calls)
+        self.assertIn(("verify", False), f.calls)
+
+    def test_reference_mode_verifier(self):
+        # Z1 (cq-zew): the baseline verifies a reference with cq-verify<reference> (S1).
+        with FakeSiblings() as f:
+            report.evaluate(EX04, EX04.reference, "ref", short_circuit=False, reference_mode=True)
+        self.assertIn(("verify", True), f.calls)
+
+    def test_classical_key_from_the_driver_spec(self):
+        # Z1 (cq-zew): compare gets classical_key_from_driver(spec) of the example's DriverSpec.
+        with FakeSiblings() as f:
+            report.evaluate(EX04, self.mutant(), "both")
+        keys = [c[1] for c in f.calls if c[0] == "key"]
+        self.assertEqual([k.example for k in keys], ["x", "x"])
+        self.assertIn(("compare", "ref", f.key), f.calls)
+        self.assertIn(("compare", "c", f.key), f.calls)
+
+    def test_missing_classical_key_is_error_never_pass(self):
+        with FakeSiblings(drop={("compare", "classical_key_from_driver")}):
+            v = report.evaluate(EX04, self.mutant(), "both")
+        self.assertEqual((v.s6, v.c_oracle), ("error", "error"))
+        self.assertTrue(any("cq: unimplemented: chk-compare: compare.classical_key_from_driver" in r
+                            for r in v.reasons))
 
     def test_mismatch_runs_s6_and_fails_on_reasons(self):
         with FakeSiblings(compare_reasons=["rotation list differs"]) as f:
             v = report.evaluate(EX04, self.mutant(), "both")
         self.assertEqual((v.s6, v.c_oracle), ("fail", "fail"))
-        self.assertIn(("compare", "ref"), f.calls)
+        self.assertIn(("compare", "ref", f.key), f.calls)
         self.assertEqual(v.diff_lines, 2)
         self.assertIn("ref: rotation list differs", v.reasons)
         self.assertFalse(report.green(v))
