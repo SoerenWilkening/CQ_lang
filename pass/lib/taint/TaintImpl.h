@@ -81,7 +81,8 @@ struct Object {
   bool anyPtr = false;
   bool qram = false;
   bool storedTagQ = false, storedIdxQ = false;
-  PtrInfo stored;                  // the pointers stored into it
+  PtrInfo stored;                  // pointers copied in (initializer, memcpy)
+  std::map<const llvm::Instruction *, PtrInfo> storedBy; // pointers stored by each store
   bool cellHandle(std::optional<int64_t> off, uint64_t size) const;
   bool mayHoldHandle() const { return qram || anyHandle || !handleCells.empty(); }
 };
@@ -93,8 +94,6 @@ struct FnInfo {
   // Direct control dependence: block -> the branching blocks it is control dependent on.
   llvm::DenseMap<const llvm::BasicBlock *, llvm::SmallVector<const llvm::BasicBlock *, 2>> cdParents;
   std::vector<const llvm::BasicBlock *> rpo;
-  unsigned scc = 0; // call-graph SCC id
-  bool recursive = false;
 };
 
 struct SpecState {
@@ -123,6 +122,7 @@ struct SpecState {
 
   bool hasTheta = false, hasPhi = false, hasEffect = false, writesOuter = false, hasMeasure = false;
   bool anyQuantum = false;
+  bool fenvQuantum = false; // the flags/mode rail of rule 23 holds quantum data
   llvm::DenseMap<const llvm::CallBase *, llvm::SmallVector<SpecState *, 2>> callees;
   llvm::DenseSet<const llvm::CallBase *> cutCalls; // depth-recursion calls replaced by |0>
 
