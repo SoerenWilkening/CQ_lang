@@ -238,6 +238,7 @@ typedef struct {
   uint32_t ndeps, capdeps;
 } rail_t;
 
+#define CQE_RAIL_LIMIT 0x51000000u /* rail handles stay below rt-mem's QRAM bus handles (cq-lxv) */
 static rail_t *rails; /* rails[h], h >= 1 */
 static uint32_t nrails, caprails;
 static uint64_t clock_;
@@ -260,6 +261,12 @@ int32_t cqe__new(const char *w, const cqe_val *init, int known, int seed) {
     rails = realloc(rails, caprails * sizeof *rails);
     if (!rails)
       abort();
+  }
+  if (nrails + 1 >= CQE_RAIL_LIMIT) {
+    /* rt-mem numbers QRAM buses from 0x51000000 and its synthetic exit ids from 0x5A000000 */
+    fprintf(stderr, "cq: chk-core: rail handles exhausted (limit 0x%x, below rt-mem's bus range)\n",
+            (unsigned)CQE_RAIL_LIMIT);
+    abort();
   }
   int32_t h = (int32_t)++nrails;
   rail_t *r = &rails[h];

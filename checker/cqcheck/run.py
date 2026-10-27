@@ -37,7 +37,8 @@ RunResult fields (JSON-serializable):
               reads): ry {ev, h, theta, ctl, ctlv, w, v}, ry_qangle {ev, h, a, aval, ctl, ctlv, w, v},
               phase {ev, f, fv, theta}, phase_qangle {ev, a, aval, ctl, ctlv}; theta is the hex bit
               pattern of the double; w and v are the Ry target's type and value at the gate
-  kept        the exit event's live rails [{"h", "w", "v", "role"}]
+  kept        the exit event's live rails [{"h", "w", "v", "role"}], followed by the live QRAM cells
+              and slots of rt-mem's {"ev":"qram","op":"exit"} event (roles qram_cell, qram_slot)
   clean       the free events [{"h", "v", "known", "w"}]
   violations  the trace's violation events [{"what", "h", "msg"}] plus run failures:
               build, sample, timeout, no_exit (the process ended without the exit event)
@@ -395,7 +396,12 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
         if e.get("ev") in ("ry", "ry_qangle", "phase", "phase_qangle"):
             rots.append(dict(e))
     exits = [e for e in events if e.get("ev") == "exit"]
-    kept = exits[-1]["live"] if exits else []
+    kept = list(exits[-1]["live"]) if exits else []
+    # rt-mem's QRAM cells and unpopped slots live outside core's rail table; its exit event lists
+    # them (roles qram_cell, qram_slot) and they are Kept items too (cq-lxv)
+    for e in events:
+        if e.get("ev") == "qram" and e.get("op") == "exit":
+            kept.extend(e.get("live", []))
     clean = [{k: e.get(k) for k in ("h", "v", "known", "w")} for e in events if e.get("ev") == "free"]
     viol = [{k: e.get(k) for k in ("what", "h", "msg")} for e in events if e.get("ev") == "violation"]
     viol += extra
