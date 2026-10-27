@@ -134,8 +134,7 @@ class CtxSink final : public GateSink {
   Value *atomValue(unsigned var) {
     const Atom &a = atomOf(var);
     switch (a.kind) {
-    case AtomKind::Cond:
-    case AtomKind::Seed: {
+    case AtomKind::Cond: {
       Operand op = ctx.operand(a.v);
       if (op.handle)
         internalError("pred: a classical atom whose operand is a rail", a.v);
@@ -182,9 +181,9 @@ public:
     const Atom &a = atomOf(var);
     switch (a.kind) {
     case AtomKind::Cond:
+      if (!ctx.T.isQuantum(a.v, ctx.S))
+        return seed(atomValue(var));   // a classical term of a mixed flag (rule 8, c || q)
       return ctx.rail(a.v);
-    case AtomKind::Seed:
-      return seed(atomValue(var));
     case AtomKind::Eq: {
       // A3: a case flag is the equality template on the scrutinee with the case value as literal.
       abi::TemplateSpec spec;
@@ -296,7 +295,7 @@ Value *lowerMerge(LoweringContext &ctx, PHINode &phi) {
   if (!scalarRailType(phi.getType()))
     unimplemented("pred: lowerMerge of a non-scalar phi (aggregates: aggr, pointers: fatptr)", &phi);
 
-  // One arm per distinct incoming value, ordered by the first incoming block in RPO.
+  // One arm per distinct incoming value, in the phi's incoming order (its first occurrence).
   struct Arm { const Value *v; unsigned node; unsigned order; };
   std::vector<Arm> arms;
   Bdd &m = Bdd::get();
@@ -309,11 +308,9 @@ Value *lowerMerge(LoweringContext &ctx, PHINode &phi) {
     const Value *v = phi.getIncomingValue(i);
     auto it = std::find_if(arms.begin(), arms.end(), [&](const Arm &a) { return a.v == v; });
     if (it == arms.end())
-      arms.push_back({v, e, r->second});
-    else {
+      arms.push_back({v, e, i});
+    else
       it->node = m.orOp(it->node, e);
-      it->order = std::min(it->order, r->second);
-    }
   }
   std::stable_sort(arms.begin(), arms.end(), [](const Arm &a, const Arm &b) { return a.order < b.order; });
   std::vector<std::pair<Pred, Operand>> chain;
@@ -355,7 +352,7 @@ void lowerBranch(LoweringContext &ctx, BranchInst &br) {
   for (unsigned v : sup) {
     const Atom &a = atomOf(v);
     if (a.kind == AtomKind::Cond && O->isQuantum(a.v))
-      atoms.insert(v);   // Seed atoms are re-minted from classical values at each use
+      atoms.insert(v);   // classical atoms are re-seeded from their values at each use
   }
   if (atoms.empty())
     return;

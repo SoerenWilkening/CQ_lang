@@ -1,4 +1,4 @@
-// Frozen interface (cq-arch, with owner amendment A3 of 2026-10-27 and freeze bead cq-k1w).
+// Frozen interface (cq-arch, with owner amendment A3 of 2026-10-27 and freeze beads cq-k1w and cq-6yb).
 // Changes only under cq-arch's freeze rule.
 #pragma once
 
@@ -26,6 +26,11 @@ struct Pred {   // canonical Boolean function over condition atoms
   bool isTop() const; bool isBottom() const;
   Pred quantumPart(const TaintInfo &, const Specialization &) const;
   bool isClassical(const TaintInfo &, const Specialization &) const;
+  // P1 (freeze bead cq-6yb, rule 8 at CQ_spec a46894a): p == p.classicalFactor(T,S) & p.quantumPart(T,S)
+  // for every p. classicalFactor is the conjunction of every classical term that is a conjunct of p,
+  // taken on the Boolean function, never on the syntax; it stays a classical branch. quantumPart is
+  // exactly the unfactorable rest: one flag, a classical term left inside it a seed rail (c || q).
+  Pred classicalFactor(const TaintInfo &, const Specialization &) const;
   // K1: storage owned by module pred; immutable and shared, so Pred copies as a value.
 private:
   struct Impl; std::shared_ptr<const Impl> impl;

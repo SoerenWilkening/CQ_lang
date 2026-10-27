@@ -70,7 +70,6 @@ static std::string atomName(unsigned var) {
   raw_string_ostream os(s);
   switch (a.kind) {
   case AtomKind::Cond: break;
-  case AtomKind::Seed: os << "seed:"; break;
   case AtomKind::Eq: os << "eq:"; break;
   case AtomKind::Entry: os << "entry:"; break;
   }
@@ -126,7 +125,6 @@ bool quantumLike(unsigned var, Oracle &O) {
   case AtomKind::Cond:
   case AtomKind::Eq:
     return O.isQuantum(a.v);
-  case AtomKind::Seed:
   case AtomKind::Entry:
     return true;
   }
@@ -140,7 +138,7 @@ static unsigned expandCond(const Value *x, Oracle &O) {
   if (const auto *ci = dyn_cast<ConstantInt>(x))
     return ci->isOne() ? Bdd::T : Bdd::F;
   if (!O.isQuantum(x))
-    return m.ithVar(atomVar(AtomKind::Seed, x));
+    return m.ithVar(atomVar(AtomKind::Cond, x));   // a classical leaf: factored out or seeded (rule 8)
   if (const auto *bo = dyn_cast<BinaryOperator>(x); bo && isI1(bo)) {
     switch (bo->getOpcode()) {
     case Instruction::And:
@@ -148,7 +146,13 @@ static unsigned expandCond(const Value *x, Oracle &O) {
     case Instruction::Or:
       return m.orOp(expandCond(bo->getOperand(0), O), expandCond(bo->getOperand(1), O));
     case Instruction::Xor:
-      return m.xorOp(expandCond(bo->getOperand(0), O), expandCond(bo->getOperand(1), O));
+      // Only a negation (xor with true) is a connective; a data xor is an atom: it never has a
+      // classical conjunct, and its own rail is the flag (180's c ^ m1).
+      if (const auto *k = dyn_cast<ConstantInt>(bo->getOperand(1)); k && k->isOne())
+        return m.notOp(expandCond(bo->getOperand(0), O));
+      if (const auto *k = dyn_cast<ConstantInt>(bo->getOperand(0)); k && k->isOne())
+        return m.notOp(expandCond(bo->getOperand(1), O));
+      break;
     default:
       break;
     }
@@ -167,18 +171,46 @@ unsigned condNode(const Value *cond, Oracle &O) {
     internalError("pred: a branch condition that is not i1", cond);
   if (const auto *ci = dyn_cast<ConstantInt>(cond))
     return ci->isOne() ? Bdd::T : Bdd::F;
+  Bdd &m = Bdd::get();
+  unsigned whole = m.ithVar(atomVar(AtomKind::Cond, cond));
   if (!O.isQuantum(cond))
-    return Bdd::get().ithVar(atomVar(AtomKind::Cond, cond));
-  return expandCond(cond, O);
+    return whole;
+  // The expansion is needed only to factor (rule 8): when neither edge's function has a classical
+  // conjunct, the condition is one atom and its own rail (the spine's data template) is the flag.
+  unsigned f = expandCond(cond, O);
+  if (classicalFactorNode(f, O) == Bdd::T && classicalFactorNode(m.notOp(f), O) == Bdd::T)
+    return whole;
+  return f;
 }
 
-unsigned quantumPartNode(unsigned f, Oracle &O) {
+// Rule 8 (CQ_spec a46894a, freeze cq-6yb): P == C & Q on the Boolean function. C is the conjunction of
+// every classical literal P implies (a classical conjunct of the whole condition, however -O1 spelled
+// it); Q is P cofactored on each of them, the unfactorable rest. A classical atom left in Q (c || q)
+// is a seed rail of the one flag.
+static std::pair<unsigned, unsigned> factor(unsigned f, Oracle &O) {
   Bdd &m = Bdd::get();
-  unsigned C = m.exists(f, [&](unsigned v) { return quantumLike(v, O); });
-  if (C == Bdd::T || C == Bdd::F)
-    return f;
-  return m.restrict(f, C);
+  if (m.terminal(f))
+    return {Bdd::T, f};
+  std::set<unsigned> sup;
+  m.support(f, sup);
+  unsigned C = Bdd::T;
+  for (unsigned v : sup) {
+    if (quantumLike(v, O))
+      continue;
+    unsigned x = m.ithVar(v);
+    if (m.andOp(f, m.notOp(x)) == Bdd::F) {
+      C = m.andOp(C, x);
+      f = m.cofactor(f, v, true);
+    } else if (m.andOp(f, x) == Bdd::F) {
+      C = m.andOp(C, m.notOp(x));
+      f = m.cofactor(f, v, false);
+    }
+  }
+  return {C, f};
 }
+
+unsigned classicalFactorNode(unsigned f, Oracle &O) { return factor(f, O).first; }
+unsigned quantumPartNode(unsigned f, Oracle &O) { return factor(f, O).second; }
 
 bool isClassicalNode(unsigned f, Oracle &O) {
   std::set<unsigned> sup;
@@ -312,16 +344,37 @@ std::vector<std::pair<unsigned, unsigned>> chainConditions(ArrayRef<unsigned> ar
     ctxt = m.orOp(ctxt, a);
   if (ctxt == Bdd::F)
     internalError("pred: a merge none of whose arms can be taken");
-  for (unsigned i = 0; i < arms.size() && ctxt != Bdd::F; ++i) {
-    unsigned c = m.restrict(arms[i], ctxt);
-    unsigned rest = m.andOp(ctxt, m.notOp(arms[i]));
-    if (m.andOp(ctxt, arms[i]) == Bdd::F)
-      continue;   // unreachable in its context
-    out.push_back({rest == Bdd::F ? unsigned(Bdd::T) : c, i});
-    ctxt = rest;
+  auto literal = [&](unsigned n) { return !m.terminal(n) && m.terminal(m.lo(n)) && m.terminal(m.hi(n)); };
+  std::vector<bool> used(arms.size(), false);
+  while (ctxt != Bdd::F) {
+    // Rule 9: nested arms nest, never a conjunction flag for a pure select. Take next the first arm
+    // (in the caller's order) that one condition separates from the rest in the current context.
+    int pick = -1;
+    unsigned pickCond = Bdd::F;
+    for (unsigned i = 0; i < arms.size(); ++i) {
+      if (used[i] || m.andOp(ctxt, arms[i]) == Bdd::F)
+        continue;
+      unsigned c = m.restrict(arms[i], ctxt);
+      bool last = m.andOp(ctxt, m.notOp(arms[i])) == Bdd::F;
+      if (last || literal(c)) {
+        pick = int(i);
+        pickCond = last ? unsigned(Bdd::T) : c;
+        break;
+      }
+      if (pick < 0) {
+        pick = int(i);
+        pickCond = c;
+      }
+    }
+    if (pick < 0)
+      internalError("pred: merge arms do not cover the merge's predicate");
+    // Re-check the fallback pick for the "last arm" case.
+    if (m.andOp(ctxt, m.notOp(arms[pick])) == Bdd::F)
+      pickCond = Bdd::T;
+    used[pick] = true;
+    out.push_back({pickCond, unsigned(pick)});
+    ctxt = m.andOp(ctxt, m.notOp(arms[pick]));
   }
-  if (ctxt != Bdd::F)
-    internalError("pred: merge arms do not cover the merge's predicate");
   return out;
 }
 
@@ -385,6 +438,11 @@ Pred Pred::operator|(const Pred &o) const { return makePred(Bdd::get().orOp(node
 Pred Pred::operator!() const { return makePred(Bdd::get().notOp(nodeOf(*this))); }
 bool Pred::isTop() const { return nodeOf(*this) == Bdd::T; }
 bool Pred::isBottom() const { return nodeOf(*this) == Bdd::F; }
+
+Pred Pred::classicalFactor(const TaintInfo &T, const Specialization &S) const {
+  auto O = taintOracle(T, S);
+  return makePred(classicalFactorNode(nodeOf(*this), *O));
+}
 
 Pred Pred::quantumPart(const TaintInfo &T, const Specialization &S) const {
   auto O = taintOracle(T, S);

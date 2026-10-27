@@ -1,14 +1,13 @@
 // Module pred (cq-w0-pred), private: the storage behind Pred and PathPredicates (K1) and the pieces of
 // the construction that do not need a LoweringContext, so tests/pred/ can drive them directly.
 //
-// Atoms. A Pred is a BDD over atoms. Four kinds:
-//   Cond   Pred::atom(v): an i1 value of the input IR. Quantum iff taint says v is quantum; a classical
-//          Cond atom is the condition of a branch that stays a real classical branch (a guard).
-//   Seed   a classical i1 leaf inside a quantum condition tree (`c || q`, `c && q` as one i1): rule 8
-//          makes it a seed rail (rule 7) of the one flag. Always needs a rail.
+// Atoms. A Pred is a BDD over atoms. Three kinds:
+//   Cond   Pred::atom(v): an i1 value of the input IR, quantum iff taint says v is quantum.
 //   Eq     Pred::eqAtom(s, v) (A3): s == v, a switch case. Quantum iff s is.
 //   Entry  the block predicate a _ctl clone receives as its first parameter (a value of the new IR).
-// "Quantum-like" = needs a rail: quantum Cond and Eq atoms, every Seed and Entry atom.
+// "Quantum-like" = needs a rail: quantum Cond and Eq atoms, every Entry atom. Rule 8 (a46894a, freeze
+// cq-6yb): a predicate factors on its Boolean function as C & Q; C (classicalFactor) is a classical
+// branch, a classical atom left in Q is a seed rail of the one flag.
 #pragma once
 
 #include <functional>
@@ -66,7 +65,7 @@ PathStorage &storage(PathPredicates &pp);
 
 namespace pred_detail {
 
-enum class AtomKind : uint8_t { Cond, Seed, Eq, Entry };
+enum class AtomKind : uint8_t { Cond, Eq, Entry };
 struct Atom { AtomKind kind; const llvm::Value *v; llvm::APInt c; };
 
 unsigned atomVar(AtomKind, const llvm::Value *, const llvm::APInt &c = llvm::APInt());
@@ -86,21 +85,24 @@ std::unique_ptr<Oracle> taintOracle(const TaintInfo &, const Specialization &);
 
 // Does the variable need a rail?
 bool quantumLike(unsigned var, Oracle &);
-// Rule 8: the Pred of a branch condition. A classical condition is one Cond atom (a guard). A quantum
-// one is expanded through and/or/xor/select on i1 into its leaves: quantum leaves are Cond atoms,
-// classical leaves Seed atoms.
+// The Pred of a branch condition. A classical condition is one atom. A quantum one is expanded
+// through and/or/xor/select on i1 into its leaves (each an atom, classical or quantum), so rule 8's
+// factoring sees the Boolean function, not -O1's spelling.
 unsigned condNode(const llvm::Value *cond, Oracle &);
-// P = C & Q with C = (exists quantum-like atoms. P), the classical guard the output CFG already
-// enforces; returns Q = restrict(P, C). Q equals P wherever C holds.
+// Rule 8's factoring: f == classicalFactorNode(f) & quantumPartNode(f). The classical factor is the
+// conjunction of every classical literal f implies; the quantum part is f cofactored on them.
+unsigned classicalFactorNode(unsigned f, Oracle &);
 unsigned quantumPartNode(unsigned f, Oracle &);
 bool isClassicalNode(unsigned f, Oracle &);
 
 void computePaths(PathStorage &, llvm::Function &, const llvm::LoopInfo &, Oracle &,
                   llvm::Value *entryFlag);
 
-// Rule 9's chain. Given each arm's predicate (in arm order), the condition each select tests, relative
-// to the arms not yet taken: result[i] = (condition, arm index); an arm unreachable in its context is
-// dropped; the last entry's condition is true (the complement arm, innermost).
+// Rule 9's chain. Given each arm's predicate (in preference order), the conditions the selects test,
+// outermost first: result[i] = (condition relative to the arms not yet taken, arm index). Arms are
+// taken greedily: next is the first remaining arm one literal separates in the current context, so
+// nested arms nest (158) and an if/else chain is single compares (104). An arm unreachable in its
+// context is dropped; the last entry's condition is true (the complement arm, innermost).
 std::vector<std::pair<unsigned, unsigned>> chainConditions(llvm::ArrayRef<unsigned> armNodes);
 
 // Flag synthesis (rule 8). The flag for f is a positive rail holding f: an existing rail when f is one
