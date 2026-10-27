@@ -584,6 +584,12 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       Since K is not baked in, no K variant of a library exists and none can mismatch.
     - *Linkage.* Declared clones and their twins use the default C calling convention (not
       `fastcc`), since they cross translation units.
+    - *Inline asm.* An `asm` statement with a quantum operand is a callee without a body: its
+      clone is named `__cq_q_asm_<h>_<mask>` where `<h>` is the first 16 hex digits of the SHA-256
+      of the asm string and its constraint string, with the mask over its operands in order; the
+      call, results, `_ctl` form, twin and K follow this rule. An asm with only classical operands
+      stays the asm (the host boundary). An asm with a quantum operand and no outputs under a
+      quantum predicate is a rule-16 tape effect with the asm string as its name (2026-10-27).
     - *Library build.* A lowered library is the same compiler run over the library source, given a
       list of root clone names. Each root is lowered as if a call site with that name existed and is
       exported under this ABI, together with its `_ctl` form and its twins. Calls inside the library
