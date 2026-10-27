@@ -326,5 +326,122 @@ class COracle(unittest.TestCase):
         self.assertTrue(any("supports overlap" in r for r in c.reasons), c.reasons)
 
 
+class FpModes(unittest.TestCase):
+    """CR §2 NaN row (ruling 2026-10-27, bead cq-8dy): against "c" any NaN equals any NaN; against
+    "ref" fp values are compared bit for bit. A NaN never equals a non-NaN in either mode."""
+
+    def eq(self, ours, other, oracle):
+        return compare(ours, other, QKEY, oracle)
+
+    def modes(self, ours, other, c_equal, ref_equal):
+        for oracle, want in (("c", c_equal), ("ref", ref_equal)):
+            c = self.eq(ours, other, oracle)
+            self.assertEqual(c.equal, want, (oracle, c.reasons))
+
+    def out_sides(self, w, v_ours, v_other):
+        o = side("o", lambda a, b, s: dict(rots=[], kept=[], outputs={"ret": {"w": w, "v": hex(v_ours)}}))
+        r = side("x", lambda a, b, s: dict(rots=[], kept=[], outputs={"ret": {"w": w, "v": hex(v_other)}}))
+        return o, r
+
+    # -- named outputs
+    def test_output_nan_payload_and_sign(self):
+        for w, x, y in (("f64", 0x7FF8000000000000, 0xFFF8000000000000),
+                        ("f64", 0x7FF8000000000000, 0x7FF0000000000001),   # quiet vs signalling payload
+                        ("f32", 0x7FC00000, 0xFFC00000),
+                        ("f32", 0x7FC00000, 0x7F800123),
+                        ("f16", 0x7E00, 0xFE00),
+                        ("bf16", 0x7FC0, 0xFFC1),
+                        ("f80", 0x7FFFC000000000000000, 0xFFFFC000000000000001),
+                        ("f80", 0x7FFFC000000000000000, 0x7FFF4000000000000000)):  # pseudo-NaN is a NaN
+            with self.subTest(w=w, x=hex(x), y=hex(y)):
+                self.modes(*self.out_sides(w, x, y), c_equal=True, ref_equal=False)
+
+    def test_output_nan_vs_non_nan(self):
+        for w, x, y in (("f64", 0x7FF8000000000000, 0x7FF0000000000000),   # NaN vs +Inf
+                        ("f64", 0xFFF8000000000000, 0x0000000000000000),
+                        ("f32", 0x7FC00000, 0x3F800000),
+                        ("f16", 0x7E00, 0x7C00),
+                        ("bf16", 0x7FC0, 0x7F80),
+                        ("f80", 0x7FFFC000000000000000, 0x7FFF0000000000000000)):  # pseudo-Inf is no NaN
+            with self.subTest(w=w, x=hex(x), y=hex(y)):
+                self.modes(*self.out_sides(w, x, y), c_equal=False, ref_equal=False)
+                self.modes(*self.out_sides(w, y, x), c_equal=False, ref_equal=False)
+
+    def test_output_same_nan_bits_equal_in_both(self):
+        self.modes(*self.out_sides("f32", 0xFFC00000, 0xFFC00000), c_equal=True, ref_equal=True)
+
+    def test_output_signed_zero_is_not_nan_insensitive(self):
+        self.modes(*self.out_sides("f64", 0, 1 << 63), c_equal=False, ref_equal=False)
+
+    def test_untyped_output_is_bit_exact(self):
+        # a bare hex value carries no fp-ness
+        o = side("o", lambda a, b, s: dict(rots=[], kept=[], outputs={"ret": "0x7fc00000"}))
+        r = side("x", lambda a, b, s: dict(rots=[], kept=[], outputs={"ret": "0xffc00000"}))
+        self.modes(o, r, c_equal=False, ref_equal=False)
+
+    def test_integer_typed_output_is_bit_exact(self):
+        self.modes(*self.out_sides("i32", 0x7FC00000, 0xFFC00000), c_equal=False, ref_equal=False)
+
+    # -- measured values (type from the record or from the rail's kept entry)
+    def test_measured_nan(self):
+        def mk(name, v, w_on_record):
+            m = {"h": 3, "v": hex(v)}
+            if w_on_record:
+                m["w"] = "f32"
+            return side(name, lambda a, b, s: dict(rots=[], kept=[keep(3, v, "f32", "measured")],
+                                                   measured=[m]))
+        for rec in (True, False):
+            with self.subTest(w_on_record=rec):
+                self.modes(mk("o", 0x7FC00000, rec), mk("x", 0xFFC00001, rec), c_equal=True, ref_equal=False)
+                self.modes(mk("o", 0x7FC00000, rec), mk("x", 0x7F800000, rec), c_equal=False, ref_equal=False)
+
+    # -- rotation list: register values and angles
+    def csite(self, fn, site, kind, angle, reg=None):
+        rec = {"ev": "site", "fn": fn, "site": site, "kind": kind,
+               "angle": hex(angle) if isinstance(angle, int) else ang(angle)}
+        if reg is not None:
+            rec["reg"] = hex(reg)
+        return rec
+
+    def test_ry_on_fp_register_nan(self):
+        # Ry(1.0) on an f32 rail holding NaN (a = 1) or 1.0f (a = 0)
+        def val(a, nan):
+            return nan if a else 0x3F800000
+        ours = side("o", lambda a, b, s: dict(rots=[ry(1, 1.0)], kept=[keep(1, val(a, 0x7FC00000), "f32")]))
+        c = side("c", lambda a, b, s: dict(rots=[self.csite("f", 1, "theta", 1.0, val(a, 0xFFC00001))], kept=[]))
+        self.assertTrue(self.eq(ours, c, "c").equal, self.eq(ours, c, "c").reasons)
+        c_inf = side("c", lambda a, b, s: dict(rots=[self.csite("f", 1, "theta", 1.0, val(a, 0x7F800000))],
+                                               kept=[]))
+        self.assertFalse(self.eq(ours, c_inf, "c").equal)
+        ref = side("r", lambda a, b, s: dict(rots=[ry(1, 1.0)], kept=[keep(1, val(a, 0xFFC00001), "f32")]))
+        self.assertFalse(self.eq(ours, ref, "ref").equal)
+        same = side("r", lambda a, b, s: dict(rots=[ry(9, 1.0)], kept=[keep(9, val(a, 0x7FC00000), "f32")]))
+        self.assertTrue(self.eq(ours, same, "ref").equal, self.eq(ours, same, "ref").reasons)
+
+    def test_phase_nan_angle(self):
+        # a classical-angle phase is not made identity by a NaN angle (CR §1.3 says so only for Ry
+        # and angle rails), so the mode applies to its angle
+        nan_a, nan_b = 0x7FF8000000000000, 0xFFF8000000000123
+        ours = side("o", lambda a, b, s: dict(rots=[{"ev": "phase", "f": 7, "fv": a & b, "theta": hex(nan_a)}],
+                                              kept=[]))
+        c = side("c", lambda a, b, s: dict(rots=[self.csite("f", 3, "phi", nan_b)] if a & b else [], kept=[]))
+        self.assertTrue(self.eq(ours, c, "c").equal, self.eq(ours, c, "c").reasons)
+        c_num = side("c", lambda a, b, s: dict(rots=[self.csite("f", 3, "phi", 0.5)] if a & b else [], kept=[]))
+        self.assertFalse(self.eq(ours, c_num, "c").equal)
+        ref = side("r", lambda a, b, s: dict(rots=[{"ev": "phase", "f": 7, "fv": a & b, "theta": hex(nan_b)}],
+                                             kept=[]))
+        self.assertFalse(self.eq(ours, ref, "ref").equal)
+
+    def test_ry_nan_angle_is_no_gate_in_both_modes(self):
+        # CR §1.3: non-finite θ = identity, before any fp equality applies
+        nan = 0xFFF8000000000000
+        ours = side("o", lambda a, b, s: dict(rots=[{"ev": "ry", "h": 1, "theta": hex(nan), "ctl": [], "ctlv": []}],
+                                              kept=[keep(1, a)]))
+        ref = side("r", lambda a, b, s: dict(rots=[], kept=[keep(1, a)]))
+        self.assertTrue(self.eq(ours, ref, "ref").equal, self.eq(ours, ref, "ref").reasons)
+        c = side("c", lambda a, b, s: dict(rots=[self.csite("f", 1, "theta", 0x7FF8000000000001, a)], kept=[]))
+        self.assertTrue(self.eq(ours, c, "c").equal, self.eq(ours, c, "c").reasons)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -50,8 +50,22 @@ record self-contained; values are hex bit patterns or ints):
 - kept: the exit event's live list, [{"h","w","v","role"}].
 - clean: the free events, [{"h","v","known"}].
 - measured: the measure events, [{"h","v"}] (a "w" is compared when both sides give one).
-- outputs: any JSON (a dict of named outputs); hex strings compare as integers.
+- outputs: any JSON (a dict of named outputs); hex strings compare as integers. A leaf that is a
+  dict with a rail type "w" and a value "v" ({"w":"f32","v":"0x7fc00000"}) is a typed scalar: its
+  value is compared at that width, and an fp one under the fp equality mode below. An untyped
+  value carries no fp-ness and is compared bit for bit in both modes.
 - violations: a list; any entry fails the comparison.
+
+Floating-point equality (CR §2 NaN row, ruling 2026-10-27, bead cq-8dy). Against the reference
+every value is compared bit for bit. Against the C oracle a floating-point value is compared
+NaN-insensitively: any NaN equals any NaN (sign and payload ignored), a NaN never equals a
+non-NaN. A value is floating point when its type is known: a typed output, a measured rail (its
+"w", or the type of the same handle in `kept`), an Ry target's register (the target's type, at
+which the C register value is read) and every classical angle (f64). An Ry with a non-finite
+angle and an angle-rail gate with a non-finite angle are no gate in either mode (CR §1.3), so a
+NaN angle survives only on a classical-angle phase (P(θ), C `cq_phi`), where the mode applies.
+x87 f80: a NaN is exponent 0x7FFF with a nonzero fraction (bits 0..62), the explicit integer bit
+ignored, so a pseudo-NaN is a NaN and a pseudo-infinity is not.
 """
 from __future__ import annotations
 
@@ -84,9 +98,38 @@ def _int(x: Any) -> Optional[int]:
 def _bits(w: Optional[str]) -> Optional[int]:
     if not w:
         return None
+    if w == "bf16":
+        return 16
     if w[0] in "if" and w[1:].isdigit():
         return int(w[1:])
     raise CompareError(f"cq: unimplemented: chk-compare: rail type {w!r}")
+
+
+def _is_type(w: Any) -> bool:
+    if not isinstance(w, str) or not w:
+        return False
+    return w == "bf16" or (w[0] in "if" and w[1:].isdigit())
+
+
+# fp layouts: (exponent bits, fraction bits); f80's fraction is bits 0..62 below the integer bit 63
+_FP = {"f16": (5, 10), "bf16": (8, 7), "f32": (8, 23), "f64": (11, 52), "f80": (15, 63)}
+_NAN = "NaN"                         # the class of every NaN under the NaN-insensitive mode
+
+
+def _is_nan(v: int, w: str) -> bool:
+    if w not in _FP:
+        raise CompareError(f"cq: unimplemented: chk-compare: fp type {w!r}")
+    e, f = _FP[w]
+    shift = 64 if w == "f80" else f
+    return ((v >> shift) & ((1 << e) - 1)) == (1 << e) - 1 and (v & ((1 << f) - 1)) != 0
+
+
+def _fpv(v: Optional[int], w: Optional[str], nan_eq: bool) -> Any:
+    """A value masked to its type; under nan_eq an fp NaN becomes the single class _NAN."""
+    v = _masked(v, w)
+    if nan_eq and v is not None and w and w[0] in "fb" and _is_nan(v, w):
+        return _NAN
+    return v
 
 
 def _masked(v: Optional[int], w: Optional[str]) -> Optional[int]:
@@ -96,12 +139,15 @@ def _masked(v: Optional[int], w: Optional[str]) -> Optional[int]:
     return v & ((1 << b) - 1)
 
 
-def _norm(x: Any) -> Any:
-    """Outputs normalized for equality: hex strings as integers, recursively."""
+def _norm(x: Any, nan_eq: bool = False) -> Any:
+    """Outputs normalized for equality: hex strings as integers, typed scalars at their width and
+    under the fp mode, recursively."""
     if isinstance(x, dict):
-        return {k: _norm(v) for k, v in x.items()}
+        if "w" in x and "v" in x and _is_type(x["w"]) and not isinstance(x["v"], (dict, list)):
+            return _fpv(_int(x["v"]), x["w"], nan_eq)
+        return {k: _norm(v, nan_eq) for k, v in x.items()}
     if isinstance(x, (list, tuple)):
-        return [_norm(v) for v in x]
+        return [_norm(v, nan_eq) for v in x]
     if isinstance(x, str) and x[:2].lower() in ("0x", "-0"):
         try:
             return int(x, 0)
@@ -371,7 +417,7 @@ class _Site:
     order: Dict[int, int]            # sample -> position in that sample's hits
 
 
-def _c_sites(runs: List[RunResult]) -> List[_Site]:
+def _c_sites(runs: List[RunResult], nan_eq: bool) -> List[_Site]:
     sites: Dict[Tuple, _Site] = {}
     nS = len(runs)
     for s, rr in enumerate(runs):
@@ -390,7 +436,7 @@ def _c_sites(runs: List[RunResult]) -> List[_Site]:
             if st is None:
                 st = sites[key] = _Site(key, rec["kind"], [0] * nS, [None] * nS, [None] * nS, {})
             st.pred[s] = 1
-            st.afn[s] = ang
+            st.afn[s] = _fpv(ang, "f64", nan_eq)
             st.rfn[s] = _int(rec.get("reg")) if rec["kind"] == "theta" else None
             st.order[s] = pos
     for st in sites.values():
@@ -398,15 +444,18 @@ def _c_sites(runs: List[RunResult]) -> List[_Site]:
     return list(sites.values())
 
 
-def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site]) -> List[str]:
+def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool) -> List[str]:
     reasons: List[str] = []
 
     def lsig(e: _Ev) -> Tuple:
         kind = "theta" if e.kind in ("ry", "ryq") else "phi"
-        afn = e.afn if e.afn is not None else tuple(e.theta if p else None for p in e.pred)
+        if e.afn is not None:
+            afn = tuple(_fpv(a, "f64", nan_eq) for a in e.afn)
+        else:
+            afn = tuple(_fpv(e.theta, "f64", nan_eq) if p else None for p in e.pred)
         w = e.tclass[0] if e.target is not None else None
         if e.target is not None:
-            rfn = tuple(_masked(v, w) if p else None for v, p in zip(e.tclass[1], e.pred))
+            rfn = tuple(_fpv(v, w, nan_eq) if p else None for v, p in zip(e.tclass[1], e.pred))
         else:
             rfn = tuple(None for _ in e.pred)
         return (kind, e.pred, afn, rfn, w)
@@ -422,7 +471,7 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site]) -> List[str]:
         optional = (st.kind == "phi" and all(st.pred) and len(set(st.afn)) == 1)
         matched = False
         for w in sorted(widths, key=lambda x: (x is None, str(x))):
-            rfn = tuple(_masked(v, w) if p and v is not None else None for v, p in zip(st.rfn, st.pred))
+            rfn = tuple(_fpv(v, w, nan_eq) if p and v is not None else None for v, p in zip(st.rfn, st.pred))
             sig = (st.kind, st.pred, st.afn, rfn, w if st.kind == "theta" else None)
             if sig in by_sig:
                 groups.setdefault(sig, []).append(st)
@@ -481,6 +530,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
     if against not in ("ref", "c"):
         raise CompareError(f"cq: unimplemented: chk-compare: against {against!r}")
     oracle = against
+    nan_eq = against == "c"          # CR §2 NaN row: the C oracle is NaN-insensitive, the reference bit-exact
     ref = list(other)
     ours = list(ours)
     exact_classical = classical_key is not None
@@ -507,7 +557,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         if r.violations:
             reasons.append(f"sample {k}: violations on the oracle side (a spec issue if it is the reference): "
                            f"{r.violations}")
-        if _norm(o.outputs) != _norm(r.outputs):
+        if _norm(o.outputs, nan_eq) != _norm(r.outputs, nan_eq):
             reasons.append(f"sample {k}: outputs {o.outputs} != {r.outputs}")
         mo, mr = list(o.measured or []), list(r.measured or [])
         if len(mo) != len(mr):
@@ -517,8 +567,8 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                 wa, wb = a.get("w"), b.get("w")
                 if wa and wb and wa != wb:
                     reasons.append(f"sample {k}: measurement {i} of {wa} != {wb}")
-                w = wa or wb
-                if _masked(_int(a.get("v")), w) != _masked(_int(b.get("v")), w):
+                w = wa or wb or _kept_type(o, a.get("h")) or _kept_type(r, b.get("h"))
+                if _fpv(_int(a.get("v")), w, nan_eq) != _fpv(_int(b.get("v")), w, nan_eq):
                     reasons.append(f"sample {k}: measurement {i} reads {a.get('v')} != {b.get('v')}")
         for side, rr in (("our", o), ("oracle", r)) if oracle == "ref" else (("our", o),):
             for c in rr.clean or []:
@@ -567,10 +617,20 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             if why:
                 reasons.append(f"{tag}: rotation list differs: {why}")
         else:
-            sites = _c_sites(r_runs)
-            for why in _match_c(o_evs, o_glob, sites):
+            sites = _c_sites(r_runs, nan_eq)
+            for why in _match_c(o_evs, o_glob, sites, nan_eq):
                 reasons.append(f"{tag}: {why}")
     return reasons
+
+
+def _kept_type(rr: RunResult, h: Any) -> Optional[str]:
+    """The type of handle h in rr's kept list (a measured rail stays live), or None."""
+    if h is None:
+        return None
+    for k in rr.kept or []:
+        if k.get("h") == h and k.get("w"):
+            return k["w"]
+    return None
 
 
 def _kept_multiset(runs: List[RunResult]) -> Dict[Tuple, int]:
