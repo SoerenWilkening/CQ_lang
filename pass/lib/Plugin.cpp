@@ -9,9 +9,9 @@
 // functions; if any function changed, a fresh taint over the module with the preliminary result
 // discarded; construct per specialization; calls::finalize; verifyLowered. Taint is computed once
 // over the final CFG and nothing mutates the CFG after it (owner ruling on cq-5k5, option (a)).
-// A module that uses no CQ.h function and has no -cq-roots has no taint source (rule 3: taint
-// starts at cq_theta results), so it is returned untouched before anything runs: the pass's
-// identity (NORTHSTAR principle 1, kernel tier 1).
+// A module with no call to a CQ.h function and no -cq-roots is returned untouched before anything
+// runs (owner ruling 2 on cq-arch: the condition is on calls, not declarations or other uses): the
+// pass's identity (NORTHSTAR principle 1, kernel tier 1).
 #include <string>
 
 #include "cq/Abi.h"
@@ -25,6 +25,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Passes/PassBuilder.h"
@@ -105,10 +106,18 @@ bool isCqSurface(StringRef name) {
          name == "__cq_invert_begin" || name == "__cq_invert_end";
 }
 
-bool usesCqSurface(const Module &M) {
-  for (const Function &F : M)
-    if (isCqSurface(F.getName()) && !F.use_empty())
-      return true;
+// True iff some call site calls a CQ.h surface function directly (owner ruling 2 on cq-arch). Only
+// a CallBase whose callee operand is the function counts: a declaration, a store of the address, an
+// @llvm.used entry, a constant expression or the function passed as a call argument does not.
+// cq_phi alone counts (rule 12 deletes it; the deletion is the pass's to make).
+bool callsCqSurface(const Module &M) {
+  for (const Function &F : M) {
+    if (!isCqSurface(F.getName()))
+      continue;
+    for (const Use &U : F.uses())
+      if (const auto *CB = dyn_cast<CallBase>(U.getUser()); CB && CB->isCallee(&U))
+        return true;
+  }
   return false;
 }
 
@@ -117,7 +126,7 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
     cq::TaintOptions TO = readTaintOptions();
     // Read before the identity exit so a malformed flag fails on every module.
     cq::loops::KOptions KO = readKOptions();
-    if (TO.roots.empty() && !usesCqSurface(M))
+    if (TO.roots.empty() && !callsCqSurface(M))
       return PreservedAnalyses::all();
 
     FunctionAnalysisManager &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();

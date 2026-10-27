@@ -10,6 +10,10 @@
    `cq: unimplemented: <module>: <function>` and writes no output file and nothing to stdout.
 4. A module with no CQ.h call comes out byte-identical (.ll and .bc, with and without the K flags) to
    the same opt run with no pass: the identity is the pass's, opt's reader and writer are not measured.
+5. The early exit tests calls, not uses (owner ruling 2 on cq-arch, bead cq-bym):
+   surface/references_only.ll references every CQ.h function without calling one and passes through
+   byte-identical as in 4; surface/phi_only.ll, whose only CQ.h call is cq_phi, does not take the
+   early exit: with -cq-trace-pipeline its first stderr line is `cq-lower: taint: preliminary`.
 
 Usage: check_scaffold.py --plugin build/pass/libCQLower.so [--opt OPT] [--clang CLANG] [--spec DIR]
 Exit 0 only when every check holds; every failure is printed.
@@ -305,8 +309,49 @@ def check_examples(opt, plugin, spec):
 # 4. Passthrough
 
 
+FLAGSETS = [[], ["-cq-k=f=3,horner=9", "-cq-k-default=5", "-cq-dump-taint"]]
+
+
+def assemble(ll, tmp):
+    """The .bc of a hand-written .ll, or None (failure recorded)."""
+    bc = Path(tmp) / (ll.stem + ".bc")
+    r = subprocess.run([str(LLVM / "llvm-as"), str(ll), "-o", str(bc)], capture_output=True, text=True)
+    if r.returncode != 0:
+        fail(f"llvm-as {ll.name}: {r.stderr.strip()}")
+        return None
+    return bc
+
+
+def identity_runs(opt, plugin, src, tmp, label):
+    """cq-lower under every flag set against opt with no pass; returns the byte-identical count."""
+    # Baseline: the same opt reading and writing the same file with no pass. opt's reader and
+    # writer are not the pass (ModuleID, use-list order, intrinsic attribute upgrades, the
+    # bitcode header), so the identity is measured against them (NORTHSTAR goal 4, tier 1).
+    base = Path(tmp) / f"base{src.suffix}"
+    cmd = [opt, str(src), "-o", str(base)] + (["-S"] if src.suffix == ".ll" else [])
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        fail(f"baseline {src.name}: {r.stderr.strip()}")
+        return 0
+    n = 0
+    for i, flags in enumerate(FLAGSETS):
+        out = Path(tmp) / f"out{i}{src.suffix}"
+        cmd = [opt, f"-load-pass-plugin={plugin}", "-passes=cq-lower", *flags, str(src), "-o", str(out)]
+        if src.suffix == ".ll":
+            cmd.append("-S")
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            fail(f"{label} {src.name} {flags}: exit {r.returncode}: {r.stderr.strip()}")
+        elif r.stdout or r.stderr:
+            fail(f"{label} {src.name} {flags}: unexpected output {r.stdout + r.stderr!r}")
+        elif out.read_bytes() != base.read_bytes():
+            fail(f"{label} {src.name} {flags}: output differs from opt with no pass")
+        else:
+            n += 1
+    return n
+
+
 def check_passthrough(opt, clang, plugin, spec):
-    flagsets = [[], ["-cq-k=f=3,horner=9", "-cq-k-default=5", "-cq-dump-taint"]]
     n = 0
     with tempfile.TemporaryDirectory() as tmp:
         inputs = []
@@ -322,37 +367,48 @@ def check_passthrough(opt, clang, plugin, spec):
                 inputs.append(Path(str(base) + ext))
         for ll in sorted((HERE / "passthrough").glob("*.ll")):
             inputs.append(ll)
-            bc = Path(tmp) / (ll.stem + ".bc")
-            r = subprocess.run([str(LLVM / "llvm-as"), str(ll), "-o", str(bc)], capture_output=True, text=True)
-            if r.returncode != 0:
-                fail(f"llvm-as {ll.name}: {r.stderr.strip()}")
-            else:
+            bc = assemble(ll, tmp)
+            if bc:
                 inputs.append(bc)
         for src in inputs:
-            # Baseline: the same opt reading and writing the same file with no pass. opt's reader and
-            # writer are not the pass (ModuleID, use-list order, intrinsic attribute upgrades, the
-            # bitcode header), so the identity is measured against them (NORTHSTAR goal 4, tier 1).
-            base = Path(tmp) / f"base{src.suffix}"
-            cmd = [opt, str(src), "-o", str(base)] + (["-S"] if src.suffix == ".ll" else [])
-            r = subprocess.run(cmd, capture_output=True, text=True)
-            if r.returncode != 0:
-                fail(f"baseline {src.name}: {r.stderr.strip()}")
-                continue
-            for i, flags in enumerate(flagsets):
-                out = Path(tmp) / f"out{i}{src.suffix}"
-                cmd = [opt, f"-load-pass-plugin={plugin}", "-passes=cq-lower", *flags, str(src), "-o", str(out)]
-                if src.suffix == ".ll":
-                    cmd.append("-S")
-                r = subprocess.run(cmd, capture_output=True, text=True)
-                if r.returncode != 0:
-                    fail(f"passthrough {src.name} {flags}: exit {r.returncode}: {r.stderr.strip()}")
-                elif r.stdout or r.stderr:
-                    fail(f"passthrough {src.name} {flags}: unexpected output {r.stdout + r.stderr!r}")
-                elif out.read_bytes() != base.read_bytes():
-                    fail(f"passthrough {src.name} {flags}: output differs from opt with no pass")
-                else:
-                    n += 1
-    print(f"passthrough: {n}/{len(inputs) * len(flagsets)} runs byte-identical")
+            n += identity_runs(opt, plugin, src, tmp, "passthrough")
+    print(f"passthrough: {n}/{len(inputs) * len(FLAGSETS)} runs byte-identical")
+
+
+# ---------------------------------------------------------------------------------------------
+# 5. The early exit tests calls to the CQ.h surface, not uses (owner ruling 2, cq-bym)
+
+
+def check_surface_calls(opt, plugin):
+    refs = HERE / "surface" / "references_only.ll"
+    phi = HERE / "surface" / "phi_only.ll"
+    for f in (refs, phi):
+        if not f.is_file():
+            fail(f"missing input {f}")
+            return
+    n, total = 0, 0
+    with tempfile.TemporaryDirectory() as tmp:
+        inputs = [refs]
+        bc = assemble(refs, tmp)
+        if bc:
+            inputs.append(bc)
+        for src in inputs:
+            total += len(FLAGSETS)
+            n += identity_runs(opt, plugin, src, tmp, "references-only")
+        print(f"surface: references_only: {n}/{total} runs byte-identical")
+
+        # cq_phi is the only call: the pipeline must start. Whatever happens after the first step
+        # is a later bead's subject; the early exit (exit 0, no trace line) is the failure here.
+        out = Path(tmp) / "phi.out.ll"
+        r = subprocess.run([opt, f"-load-pass-plugin={plugin}", "-passes=cq-lower", "-cq-trace-pipeline",
+                            str(phi), "-S", "-o", str(out)], capture_output=True, text=True)
+        steps = [l for l in r.stderr.splitlines() if l.startswith("cq-lower: ")]
+        if not steps or steps[0] != "cq-lower: taint: preliminary":
+            fail(f"phi-only: early exit taken (exit {r.returncode}, trace {steps}, stderr {r.stderr.strip()[:200]!r})")
+        else:
+            status = "completed" if r.returncode == 0 else "stopped: " + \
+                next((l for l in r.stderr.splitlines() if l.startswith("LLVM ERROR")), f"exit {r.returncode}")
+            print(f"surface: phi_only: no early exit, first step 'taint: preliminary' ({status})")
 
 
 def main():
@@ -374,6 +430,7 @@ def main():
         check_headers(desc)
     check_examples(a.opt, a.plugin, a.spec)
     check_passthrough(a.opt, a.clang, a.plugin, a.spec)
+    check_surface_calls(a.opt, a.plugin)
     print(f"{len(failures)} failure(s)")
     return 1 if failures else 0
 
