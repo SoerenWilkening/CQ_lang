@@ -176,6 +176,7 @@ static void q_free(int32_t bus) {
 /* c < 0: uncontrolled. hl: idx is the literal j. */
 static void q_store(const char *w, int unc, int32_t c, int32_t bus, int hl, uint32_t idx, int32_t v) {
   cqe_tname t = tn("qram_store", w, hl ? "hl" : "", 0, unc);
+  if (c >= 0) snprintf(t.pred, sizeof t.pred, "ctl"); /* C1 */
   uint64_t a[4];
   uint32_t b[4] = {H32, H32, H32, H32};
   int n = 0;
@@ -187,6 +188,7 @@ static void q_store(const char *w, int unc, int32_t c, int32_t bus, int hl, uint
 }
 static int32_t q_load(const char *w, int32_t unc_h, int32_t c, int32_t bus, int hl, uint32_t idx) {
   cqe_tname t = tn("qram_load", w, hl ? "hl" : "", 0, unc_h >= 0);
+  if (c >= 0) snprintf(t.pred, sizeof t.pred, "ctl"); /* C1 */
   uint64_t a[4];
   uint32_t b[4] = {H32, H32, H32, H32};
   int n = 0;
@@ -490,6 +492,16 @@ static void test_violations(const char *w) {
   EXPECT_OK(q_load(w, l, -1, a, 1, 3), "un-copy");
   EXPECT_OK(q_store(w, 1, -1, a, 1, 3, v5), "pop");
   EXPECT_OK(q_free(a), "free");
+
+  /* C1: pred "ctl" without the control argument is malformed */
+  a = q_alloc(w, 2);
+  {
+    cqe_tname t = tn("qram_load", w, "hl", 0, 0);
+    snprintf(t.pred, sizeof t.pred, "ctl");
+    uint64_t args2[] = {(uint32_t)a, 0};
+    uint32_t b2[] = {32, 32};
+    EXPECT_FAIL(call("qram_load", &t, 2, args2, b2), "pred ctl with 2 arguments");
+  }
 
   /* a width mismatch between the call and the object */
   a = q_alloc(w, 4);

@@ -18,15 +18,15 @@
  * them, uncomputed out of order, would swap snapshots (noted on cq-mgi). Index >= n (unsigned at the
  * index rail's width): 0 and no host read (CR §2).
  *
- * QRAM (cqrt_qram_*, ops qram_alloc, qram_realloc, qram_store, qram_load, qram_free, plus
- * qram_store_controlled / qram_load_controlled in case the dispatcher keeps the suffix): stateful
- * ops, which a pure f(args) cannot express: the M1 family path (op spelling: cq-4cy):
- *   - args[] are the call's ABI arguments in ABI order, unresolved: a handle is its i32 number, a
- *     literal its value; for a _unc the out handle comes first, as in the ABI signature;
- *   - the op does all rail work itself (cqe_new_rail, cqe_rail, cqe_xor_into, cqe_set_known), logs
- *     {"ev":"qram",...} events and calls cqe_fail on a violation;
- *   - out receives the returned handle (bits 32) of a non-void call and is untouched for a void call;
- *   - _controlled is told by nargs (it adds argument 0), _hl by tname->shape == "hl".
+ * QRAM (cqrt_qram_*): the family path, named and passed per C1 in cqe.h (freeze bead cq-4cy).
+ * Bare ops only: qram_alloc, qram_realloc, qram_store, qram_load, qram_free. tname.w is the width
+ * token, shape "hl" marks the _hl forms (literal j instead of an index rail: same arity), pred
+ * "ctl" and one extra argument 0 mark _controlled (the two must agree), unc marks _unc. args[] are
+ * the declared ABI arguments raw, an _unc's leading out handle included. The op does all rail work
+ * itself (cqe_new_rail, cqe_rail, cqe_xor_into, cqe_set_known), logs {"ev":"qram",...} events and
+ * calls cqe_fail on a violation; out receives the returned handle of a non-void call. The atexit
+ * handler is registered in the constructor after cqe_register_op, i.e. after the first cqe_* call
+ * (C1 end of shot).
  *
  * QRAM: an object is a list of physical cells plus a stack of views (bus handle, logical size n,
  * logical->physical map). realloc pushes a view (shrinking hides, growing maps to fresh cells),
@@ -594,6 +594,10 @@ static int op_qram_store(const cqe_tname *t, const cqe_val *args, int nargs, cqe
     return -1;
   }
   int has_c = nargs == 4;
+  if (has_c != (strcmp(t->pred, "ctl") == 0)) {
+    cqe_fail("qram: %s: %d arguments disagree with pred '%s'", what, nargs, t->pred);
+    return -1;
+  }
   const cqe_val *x = args + has_c;
   int32_t c_h = has_c ? raw_handle(&args[0]) : 0;
   int32_t a = raw_handle(&x[0]);
@@ -745,6 +749,10 @@ static int op_qram_load(const cqe_tname *t, const cqe_val *args, int nargs, cqe_
     return -1;
   }
   int has_c = nargs == base + 1;
+  if (has_c != (strcmp(t->pred, "ctl") == 0)) {
+    cqe_fail("qram: %s: %d arguments disagree with pred '%s'", what, nargs, t->pred);
+    return -1;
+  }
   int32_t h = t->unc ? raw_handle(&args[0]) : 0;
   const cqe_val *x = args + (t->unc ? 1 : 0);
   int32_t c_h = has_c ? raw_handle(&x[0]) : 0;
@@ -873,9 +881,7 @@ __attribute__((constructor(101))) static void rt_mem_register(void) {
   cqe_register_op("qram_alloc", op_qram_alloc);
   cqe_register_op("qram_realloc", op_qram_realloc);
   cqe_register_op("qram_store", op_qram_store);
-  cqe_register_op("qram_store_controlled", op_qram_store);
   cqe_register_op("qram_load", op_qram_load);
-  cqe_register_op("qram_load_controlled", op_qram_load);
   cqe_register_op("qram_free", op_qram_free);
   atexit(rt_mem_exit);
 }
