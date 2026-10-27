@@ -8,3 +8,5 @@
 .idea/
 build/
 __pycache__/
+.cache/
+build-*/
