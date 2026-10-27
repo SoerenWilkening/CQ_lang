@@ -3,6 +3,7 @@
 // spellings (parse -> nullopt, name -> internal error).
 #include "cq/Abi.h"
 #include "cq/Common.h"
+#include "../../pass/lib/abi/AbiLiteral.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -11,6 +12,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -74,7 +77,9 @@ static void testTypes() {
   }
   CHECK(handleTy(C) == llvm::Type::getInt32Ty(C), "handleTy is i32");
   CHECK(dies([] { railTypeOf(llvm::Type::getFP128Ty(C)); }), "fp128 has no rail type");
-  CHECK(dies([] { railTypeOf(llvm::Type::getBFloatTy(C)); }), "bfloat has no rail type");
+  // bf16 is a CR §1.1 rail at 3aaafe1, but RailType cannot tell it from f16 until the freeze-rule
+  // bead cq-dvj lands; until then railTypeOf(bfloat) is cq::unimplemented.
+  CHECK(dies([] { railTypeOf(llvm::Type::getBFloatTy(C)); }), "bfloat waits on cq-dvj");
   CHECK(dies([] { railTypeOf(llvm::PointerType::getUnqual(C)); }), "ptr is not a rail");
   CHECK(dies([] { railTypeOf(llvm::FixedVectorType::get(llvm::Type::getInt32Ty(C), 4)); }), "vector");
   CHECK(dies([] { irTypeOf(C, {Kind::Fp, 128}); }), "f128");
@@ -135,7 +140,11 @@ static const TRow kTemplates[] = {
     {"cq_template_select_i128_ll", "i32 (i32, i128, i128)"},
     {"cq_template_select_f16_hl", "i32 (i32, i32, half)"},
     {"cq_template_select_f80_ll", "i32 (i32, x86_fp80, x86_fp80)"},
-    // ternary: qqq (bare), qql, qlq, qll, llq; fshl/fshr take lqq/lql/lql as well
+    // ternary: qqq (bare), qql, qlq, qll, llq; fshl/fshr take lqq/lql as well; fma takes lqq/lql
+    // as the NaN-literal spellings (CR §1.2, 3aaafe1; the literal is checked on the call)
+    {"cq_template_fma_f64_lqq", "i32 (double, i32, i32)"},
+    {"cq_template_fma_f32_lql", "i32 (float, i32, float)"},
+    {"cq_template_fma_f80_lql_rm", "i32 (x86_fp80, i32, x86_fp80, i32)"},
     {"cq_template_fma_f80", "i32 (i32, i32, i32)"},
     {"cq_template_fma_f16_qql", "i32 (i32, i32, half)"},
     {"cq_template_fma_f80_qlq", "i32 (i32, x86_fp80, i32)"},
@@ -278,8 +287,6 @@ static void testTemplates() {
       "cq_template_fcmp_olt_f64_lh",      // compares never take _lh
       "cq_template_add_i32_hh",           // all-handle shape is bare
       "cq_template_fma_f64_qqq",          // all-handle shape is bare
-      "cq_template_fma_f64_lqq",          // fma product operands swap to qlq
-      "cq_template_fma_f64_lql",          // ... and to qll
       "cq_template_fma_f64_hhl",          // ternary letters are q/l
       "cq_template_add_i32_ql",           // binary letters are h/l
       "cq_template_add_i32_ll",           // no quantum operand without _rmq
@@ -334,8 +341,12 @@ static void testTemplates() {
   // name() and declare() of a non-canonical spec are internal errors, never a spelling.
   CHECK(dies([] { TemplateSpec s; s.op = "add"; s.w = {Kind::Int, 32}; s.shape = "lh"; name(s, false); }),
         "name(add lh)");
-  CHECK(dies([] { TemplateSpec s; s.op = "fma"; s.w = {Kind::Fp, 64}; s.shape = "lqq"; name(s, false); }),
-        "name(fma lqq)");
+  {
+    TemplateSpec s; s.op = "fma"; s.w = {Kind::Fp, 64}; s.shape = "lqq";
+    CHECK(!dies([s] { name(s, false); }) && name(s, false) == "cq_template_fma_f64_lqq", "name(fma lqq)");
+    s.shape = "lql";
+    CHECK(!dies([s] { name(s, true); }) && name(s, true) == "cq_template_fma_f64_lql_unc", "name(fma lql)");
+  }
   CHECK(dies([] { TemplateSpec s; s.op = "icmp"; s.w = {Kind::Int, 32}; name(s, false); }), "icmp no pred");
   CHECK(dies([] { TemplateSpec s; s.op = "qrom_load_s"; s.w = {Kind::Int, 32}; name(s, false); }),
         "qrom_load_s op");
@@ -538,27 +549,97 @@ static void testClones() {
   };
   for (const char *b : bad)
     CHECK(!parseClone(b).has_value(), "parseClone accepted %s", b);
-  CHECK(dies([] { name(CloneSpec{"a_1_b2", "1", {}}); }), "ambiguous clone name");
+  // CR §1.4 (ruling 2026-10-27): two distinct clones may spell the same name; name() spells both
+  // without error (the calls module uniquifies the symbol), and the normative right-to-left reading
+  // returns the bounded one.
+  {
+    CloneSpec a{"a_1_b2", "1", {}}, b{"a", "1", {2, 1}};
+    CHECK(!dies([a] { name(a); }) && !dies([b] { name(b); }), "ambiguous pair names without error");
+    CHECK(name(a) == "__cq_q_a_1_b2_1" && name(b) == "__cq_q_a_1_b2_1", "pair: %s / %s", name(a).c_str(),
+          name(b).c_str());
+    auto p = parseClone("__cq_q_a_1_b2_1");
+    CHECK(p && p->fn == "a" && p->mask == "1" && p->bounds == std::vector<uint64_t>({2, 1}),
+          "right-to-left reading of the ambiguous name");
+    CloneSpec c{"q_0_b5_6", "1", {}, true};
+    CHECK(!dies([c] { name(c); }) && name(c) == "__cq_q_q_0_b5_6_1_ctl", "fn ending in _<mask>_b<N>_<N>");
+  }
+  // Rule 27 symbols (no bounds) read right to left: suffix words, then the mask, fn the rest.
+  {
+    auto p = parseClone("__cq_q_my_lib_10_fn_0110_ctl_adj_unc");
+    CHECK(p && p->fn == "my_lib_10_fn" && p->mask == "0110" && p->bounds.empty() && p->ctl && !p->pure &&
+              p->adj && p->depth == 0 && p->unc,
+          "rule-27 symbol fields (fn=%s mask=%s)", p ? p->fn.c_str() : "-", p ? p->mask.c_str() : "-");
+    auto q = parseClone("__cq_q_strtod_r_10_ctl");
+    CHECK(q && q->fn == "strtod_r" && q->mask == "10" && q->ctl && !q->unc, "rule-27 strtod_r_10_ctl");
+    auto r = parseClone("__cq_q_f_10_01");
+    CHECK(r && r->fn == "f_10" && r->mask == "01" && r->bounds.empty(), "rightmost binary token is the mask");
+  }
   CHECK(dies([] { name(CloneSpec{"f", "1_ctl", {}}); }), "mask with junk");
   CHECK(dies([] { name(CloneSpec{"", "1", {}}); }), "empty fn");
   CHECK(dies([] { name(CloneSpec{"f", "12", {}}); }), "non-binary mask");
-  CHECK(dies([] { name(CloneSpec{"q_0_b5_6", "1", {}, true}); }), "fn ending in _<mask>_b<N>_<N>");
   // Names that only look like suffixes are not ambiguous: the mask is the last token before them.
   CHECK(name(CloneSpec{"set_ctl", "1", {}}) == "__cq_q_set_ctl_1", "fn ending in a suffix word");
   CHECK(name(CloneSpec{"x_1", "", {}, true}) == "__cq_q_x_1__ctl", "empty mask after a digit token");
   CHECK(name(CloneSpec{"a_1_d2", "1", {}}) == "__cq_q_a_1_d2_1", "fn ending in a depth-like token");
 
-  // Rule 27: "asm_" + the first 16 hex digits of sha256(asm string ++ constraint string).
+  // Rule 27 (3aaafe1): "asm_" + the first 16 lowercase hex digits of sha256(asm string, one NUL byte,
+  // constraint string). Expected values from python3 hashlib:
+  //   hashlib.sha256(b"nop" + b"\0" + b"").hexdigest()[:16]               == "9314237daa0a6eec"
+  //   hashlib.sha256(b"movl $1, $0" + b"\0" + b"=r,r").hexdigest()[:16]  == "74108121eae7511a"
+  // (without the NUL they would be 2b8fbda969a8aaa9 and 84487680bd4378e8).
   llvm::InlineAsm *nop = llvm::InlineAsm::get(llvm::FunctionType::get(llvm::Type::getVoidTy(C), false), "nop", "",
                                               true);
-  CHECK(asmCloneFn(*nop) == "asm_2b8fbda969a8aaa9", "asm nop -> %s", asmCloneFn(*nop).c_str());
+  CHECK(asmCloneFn(*nop) == "asm_9314237daa0a6eec", "asm nop -> %s", asmCloneFn(*nop).c_str());
   llvm::Type *i32 = llvm::Type::getInt32Ty(C);
   llvm::InlineAsm *mov = llvm::InlineAsm::get(llvm::FunctionType::get(i32, {i32}, false), "movl $1, $0", "=r,r",
                                               false);
-  CHECK(asmCloneFn(*mov) == "asm_84487680bd4378e8", "asm mov -> %s", asmCloneFn(*mov).c_str());
+  CHECK(asmCloneFn(*mov) == "asm_74108121eae7511a", "asm mov -> %s", asmCloneFn(*mov).c_str());
   CHECK(name(CloneSpec{asmCloneFn(*mov), "1", {}, false, false, false, 0, true}) ==
-            "__cq_q_asm_84487680bd4378e8_1_unc",
+            "__cq_q_asm_74108121eae7511a_1_unc",
         "asm clone twin name");
+}
+
+// CR §1.2 (3aaafe1): fma lqq/lql and fadd/fmul _lh keep a NaN literal in front; a non-NaN constant
+// there should have commuted, so the call is rejected.
+static void testFpLiteralPosition() {
+  using detail::checkFpLiteralPosition;
+  llvm::Module M("lit", C);
+  llvm::Type *i32 = llvm::Type::getInt32Ty(C), *d = llvm::Type::getDoubleTy(C), *f = llvm::Type::getFloatTy(C);
+  llvm::Function *host = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(C), {i32, d}, false),
+                                                llvm::Function::ExternalLinkage, "host", M);
+  llvm::IRBuilder<> B(llvm::BasicBlock::Create(C, "e", host));
+  llvm::Value *q = host->getArg(0), *x = host->getArg(1);
+  llvm::Value *nan = llvm::ConstantFP::getNaN(d), *one = llvm::ConstantFP::get(d, 1.0);
+  llvm::Value *nanF = llvm::ConstantFP::getNaN(f), *twoF = llvm::ConstantFP::get(f, 2.0);
+  auto call = [&](const char *sym, bool unc, llvm::ArrayRef<llvm::Value *> args) {
+    bool u = false;
+    auto s = parseTemplate(sym, &u);
+    CHECK(s && u == unc, "parseTemplate(%s)", sym);
+    return B.CreateCall(declare(M, *s, unc), args);
+  };
+  struct { llvm::CallInst *ci; bool ok; const char *what; } rows[] = {
+      {call("cq_template_fma_f64_lqq", false, {nan, q, q}), true, "fma lqq NaN"},
+      {call("cq_template_fma_f64_lqq", false, {one, q, q}), false, "fma lqq 1.0"},
+      {call("cq_template_fma_f32_lql", false, {nanF, q, twoF}), true, "fma lql NaN"},
+      {call("cq_template_fma_f32_lql", false, {twoF, q, nanF}), false, "fma lql 2.0 (NaN addend)"},
+      {call("cq_template_fma_f64_lql_unc", true, {q, nan, q, one}), true, "fma lql_unc NaN"},
+      {call("cq_template_fma_f64_lql_unc", true, {q, one, q, nan}), false, "fma lql_unc 1.0"},
+      {call("cq_template_fma_f64_lqq", false, {x, q, q}), true, "fma lqq runtime literal (cq-5iy)"},
+      {call("cq_template_fma_f64_qlq", false, {q, one, q}), true, "fma qlq 1.0"},
+      {call("cq_template_fma_f64_llq", false, {one, one, q}), true, "fma llq: no product handle to swap"},
+      {call("cq_template_fadd_f64_lh", false, {nan, q}), true, "fadd lh NaN"},
+      {call("cq_template_fadd_f64_lh", false, {one, q}), false, "fadd lh 1.0"},
+      {call("cq_template_fmul_f64_lh_unc", true, {q, one, q}), false, "fmul lh_unc 1.0"},
+      {call("cq_template_fsub_f64_lh", false, {one, q}), true, "fsub lh 1.0: not commutative"},
+  };
+  for (auto &r : rows) {
+    std::string why = checkFpLiteralPosition(*r.ci);
+    CHECK(why.empty() == r.ok, "%s: %s", r.what, why.empty() ? "accepted" : why.c_str());
+  }
+  // A call of something that is not a canonical template is not silently accepted.
+  llvm::Function *other = llvm::Function::Create(llvm::FunctionType::get(i32, {i32}, false),
+                                                 llvm::Function::ExternalLinkage, "cq_template_fma_f64_qqq", M);
+  CHECK(!checkFpLiteralPosition(*B.CreateCall(other, {q})).empty(), "non-canonical template call");
 }
 
 int main() {
@@ -566,6 +647,7 @@ int main() {
   testTemplates();
   testCores();
   testClones();
+  testFpLiteralPosition();
   std::printf("abi_unit: %u checks, %u failures\n", gChecks, gFails);
   return gFails ? 1 : 0;
 }

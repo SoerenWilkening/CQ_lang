@@ -10,6 +10,7 @@
 // both; the backend reads only the low W bits of a narrow operand).
 #include "cq/Abi.h"
 #include "cq/Common.h"
+#include "AbiLiteral.h"
 
 #include <cctype>
 #include <cstring>
@@ -18,6 +19,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Type.h"
 #include "llvm/Support/SHA256.h"
@@ -44,8 +46,12 @@ RailType railTypeOf(llvm::Type *t) {
   std::string s;
   llvm::raw_string_ostream os(s);
   t->print(os);
-  // A scalar fp type outside CR §1.1 (bfloat, fp128, ppc_fp128) is a rail type CQ_spec does not
-  // define yet; anything else (pointer, vector, aggregate, void) is never a rail.
+  // bfloat is a CR §1.1 rail (3aaafe1) but RailType{Kind, bits} cannot tell it from f16: it waits on
+  // the freeze-rule bead cq-dvj (Common.h). fp128 is unreachable from C on this target (CR §1.1,
+  // rule 25); ppc_fp128 is not x86-64. Anything else (pointer, vector, aggregate, void) is no rail.
+  if (t->isBFloatTy())
+    unimplemented("abi: railTypeOf: bfloat rail needs a RailType that tells bf16 from f16 (cq-dvj): " +
+                  os.str());
   if (t->isFloatingPointTy())
     unimplemented("abi: railTypeOf: fp type with no CR §1.1 rail width: " + os.str());
   internalError("abi: railTypeOf: not a scalar rail type: " + os.str());
@@ -371,8 +377,9 @@ std::string checkTemplate(const TemplateSpec &s) {
     default: break; // Comm::Fp: _lh is the NaN-literal spelling
     }
   }
-  if (o->comm == Comm::FmaProduct && (sh == "lqq" || sh == "lql"))
-    return "fma product operands are commutative: lqq/lql are spelled qlq/qll";
+  // fma lqq/lql are the NaN-literal spellings (CR §1.2, 3aaafe1), as _lh is for a commutative fp
+  // binary op: the name does not carry the literal, so the literal's NaN-ness is checked on the call
+  // (checkFpLiteralPosition). fshl/fshr keep every mixed shape.
   return "";
 }
 
@@ -528,11 +535,6 @@ std::string cloneName(const CloneSpec &s) {
   if (s.unc)
     n += "_unc";
   return n;
-}
-
-bool sameClone(const CloneSpec &a, const CloneSpec &b) {
-  return a.fn == b.fn && a.mask == b.mask && a.bounds == b.bounds && a.ctl == b.ctl && a.pure == b.pure &&
-         a.adj == b.adj && a.depth == b.depth && a.unc == b.unc;
 }
 
 std::optional<CloneSpec> parseCloneImpl(StringRef sym) {
@@ -801,20 +803,20 @@ std::optional<CoreSpec> parseCore(llvm::StringRef sym) {
   return std::nullopt;
 }
 
+// The §1.4 grammar is not injective for every fn (one ending in "_<mask>_b<N>"), and that is the
+// spec (ruling 2026-10-27, cq-lmf): a name with bounds is internal to its module, the compiler binds
+// clones by CloneSpec fields, never by re-reading a name, and the module that creates the function
+// uniquifies a colliding symbol. So name() spells any well-formed spec without an ambiguity check.
 std::string name(const CloneSpec &s) {
   if (s.fn.empty())
     internalError("abi: clone spec: empty function name");
   if (!isMask(s.mask))
     internalError("abi: clone spec: mask '" + s.mask + "' is not binary digits");
-  std::string n = cloneName(s);
-  // The §1.4 grammar is not injective for every function name (a name ending in "_<mask>_b<N>" or
-  // in a suffix word). Refuse to emit a name that would read back as a different clone.
-  auto back = parseCloneImpl(n);
-  if (!back || !sameClone(*back, s))
-    internalError("abi: clone name '" + n + "' is ambiguous under CR §1.4 (reads back as a different clone)");
-  return n;
+  return cloneName(s);
 }
 
+// The normative right-to-left reading (CR §1.4): suffix words, then the _b bounds, then the mask as
+// the rightmost binary token; fn is the rest. Its consumers are rule-27 symbols, which carry no bounds.
 std::optional<CloneSpec> parseClone(llvm::StringRef symbol) {
   auto s = parseCloneImpl(symbol);
   if (!s || cloneName(*s) != symbol)
@@ -822,11 +824,46 @@ std::optional<CloneSpec> parseClone(llvm::StringRef symbol) {
   return s;
 }
 
+// Rule 27 (3aaafe1): SHA-256 over the asm string as LLVM spells it ($N operands), one NUL byte, then
+// the constraint string; the first 16 lowercase hex digits.
 std::string asmCloneFn(const llvm::InlineAsm &ia) {
-  std::string data = ia.getAsmString() + ia.getConstraintString();
+  std::string data = ia.getAsmString();
+  data.push_back('\0');
+  data += ia.getConstraintString();
   std::array<uint8_t, 32> h = llvm::SHA256::hash(
       llvm::ArrayRef<uint8_t>(reinterpret_cast<const uint8_t *>(data.data()), data.size()));
   return "asm_" + llvm::toHex(h, /*LowerCase=*/true).substr(0, 16);
 }
 
 } // namespace cq::abi
+
+namespace cq::abi::detail {
+
+std::string checkFpLiteralPosition(const llvm::CallBase &call) {
+  const llvm::Function *f = call.getCalledFunction();
+  if (!f)
+    return "not a direct call";
+  bool unc = false;
+  std::optional<TemplateSpec> s = parseTemplate(f->getName(), &unc);
+  if (!s)
+    return "@" + f->getName().str() + " is not a canonical cq_template_*";
+  const OpInfo *o = findOp(s->op);
+  bool kept = (o->comm == Comm::Fp && s->shape == "lh") ||
+              (o->comm == Comm::FmaProduct && (s->shape == "lqq" || s->shape == "lql"));
+  if (!kept)
+    return "";
+  unsigned at = unc ? 1 : 0; // the _unc forms take `out` first
+  if (call.arg_size() <= at)
+    return "@" + f->getName().str() + " called with too few arguments";
+  if (auto *c = llvm::dyn_cast<llvm::ConstantFP>(call.getArgOperand(at)))
+    if (!c->isNaN()) {
+      std::string v;
+      llvm::raw_string_ostream os(v);
+      c->printAsOperand(os, false);
+      return "@" + f->getName().str() + ": literal " + os.str() + " is not a NaN, so it commutes behind the handle (CR §1.2: _" +
+             (s->shape == "lh" ? std::string("hl") : std::string(s->shape == "lqq" ? "qlq" : "qll")) + ")";
+    }
+  return "";
+}
+
+} // namespace cq::abi::detail
