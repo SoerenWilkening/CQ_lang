@@ -10,10 +10,10 @@
  *   - binary fp ops: every pair of specials, x against itself and -x, seeded random pairs;
  *   - integer operands: 0, ±1, MIN, MAX and neighbours, 2^k and 2^k ± 1, rounding ties of every fp
  *     format (8-, 11-, 24- and 53-bit significands), seeded random patterns and random bit lengths; every value when N <= 16.
- * The op runs twice per input: in the default rounding mode and in a rotating directed mode. CR §2
- * fixes the result independent of the dynamic mode (rint ties to even, casts RNE), where native
- * code would follow the mode; that row is tested against the table, the native result taken at
- * nearest-even. Explicit CR §2 table rows (fptosi/fptoui of NaN and 300.0, fmax on ±0 and two
+ * The op runs twice per input: in the default rounding mode and in a rotating directed mode. rint
+ * follows the current mode (CR §2 at 2f894fd) and native runs in the same mode; for the other ops
+ * CR §2 fixes the result independent of the dynamic mode (casts RNE), where native code would
+ * follow the mode; there the native result is taken at nearest-even. Explicit CR §2 table rows (fptosi/fptoui of NaN and 300.0, fmax on ±0 and two
  * NaNs) are checked against the table's stated values as well. Names another family owns
  * (f80, _rm/_rmq/_exc, trunc with _to_) must come back CQE_OP_NOT_MINE without a violation,
  * and malformed calls must call cqe_fail.
@@ -90,7 +90,7 @@ static const native_fn natives[] = {
 
 /* ------------------------------------------------------------ inputs */
 
-#define MAXW 8 /* words per operand (i256 and below; 64 bytes per operand slot) */
+#define MAXW 32 /* words per operand (i2048 and below; 256 bytes per operand slot) */
 typedef struct { uint64_t w[MAXW]; } val;
 
 static uint64_t rng = 0x9e3779b97f4a7c15ull;
@@ -284,20 +284,22 @@ static const int modes[] = {FE_UPWARD, FE_DOWNWARD, FE_TOWARDZERO};
 
 /* Run case c on operands (a, b): native vs ours (twice). */
 static void run1(const tcase *c, native_fn nat, cqe_op_fn fn, const cqe_tname *t, val *a, val *b) {
-  unsigned char in[128], out[64];
+  unsigned char in[2 * sizeof(val)], out[sizeof(val)];
   memset(in, 0, sizeof in);
   memset(out, 0, sizeof out);
   maskv(a, bitsof(c->in0));
-  memcpy(in, a->w, 64);
+  memcpy(in, a->w, sizeof a->w);
   int binary = c->in1[0] != 0;
   if (binary) {
     maskv(b, bitsof(c->in1));
-    memcpy(in + 64, b->w, 64);
+    memcpy(in + sizeof(val), b->w, sizeof b->w);
   }
   nat(in, out);
-  val nv = {{0}};
-  memcpy(nv.w, out, 64);
-  maskv(&nv, c->outbits);
+  val nv0 = {{0}};
+  memcpy(nv0.w, out, sizeof out);
+  maskv(&nv0, c->outbits);
+  /* CR §2 (2f894fd): plain rint rounds in the current mode, so native runs in the same mode. */
+  int follows_mode = !strcmp(c->op, "rint");
 
   cqe_val args[2];
   val lit = {{0}};
@@ -316,8 +318,15 @@ static void run1(const tcase *c, native_fn nat, cqe_op_fn fn, const cqe_tname *t
     memset(&ov, 0xA5, sizeof ov);
     cqe_val o = {c->outbits, 'i', (c->outbits + 63) / 64, ov.w};
     int mode = modes[(nchecks / 2) % 3];
+    val nv = nv0;
     if (pass)
       fesetround(mode);
+    if (pass && follows_mode) {
+      memset(out, 0, sizeof out);
+      nat(in, out);
+      memcpy(nv.w, out, sizeof out);
+      maskv(&nv, c->outbits);
+    }
     int fails = nfail_calls;
     int rc = fn(t, args, nargs, &o);
     if (pass)
@@ -452,21 +461,36 @@ static void table_rows(void) {
   EXPECT("bf16 fmin(-0,+0)", call2("fmin", "bf16", 0x8000, 0), 0x8000);
   EXPECT("bf16 fmax(sNaN,qNaN')", call2("fmax", "bf16", 0x7F81, 0xFFC5), 0xFFC5);
   EXPECT("bf16 fmin(1,sNaN)", call2("fmin", "bf16", 0x3F80, 0x7F81), 0x3F80);
-  /* bf16 casts: one correct rounding (native int -> bfloat double-rounds through f32: 0x4b80) */
-  EXPECT("sitofp i32 2^24+2^16+1 -> bf16", call1("sitofp", "i32", "bf16", 0x01010001, 16), 0x4B81);
-  EXPECT("uitofp i64 2^63+2^55+1 -> bf16", call1("uitofp", "i64", "bf16", 0x8080000000000001ull, 16), 0x5F01);
-  EXPECT("fptrunc bf16 1.0 -> f16", call1("fptrunc", "bf16", "f16", 0x3F80, 16), 0x3C00);
-  EXPECT("fptrunc bf16 65536 -> f16 Inf", call1("fptrunc", "bf16", "f16", 0x4780, 16), 0x7C00);
-  EXPECT("fptrunc bf16 2^-24 -> f16 min subnormal", call1("fptrunc", "bf16", "f16", 0x3380, 16), 0x0001);
-  EXPECT("fpext f16 1+2^-10 -> bf16 (tie to even)", call1("fpext", "f16", "bf16", 0x3C01, 16), 0x3F80);
-  EXPECT("fpext f16 sNaN -> bf16 quiet", call1("fpext", "f16", "bf16", 0x7D00, 16), 0x7FE0);
-  EXPECT("fpext bf16 sNaN -> f32 quiet", call1("fpext", "bf16", "f32", 0x7F81, 32), 0x7FC10000);
-  EXPECT("fptrunc f32 sNaN -> bf16 quiet", call1("fptrunc", "f32", "bf16", 0x7FA00000, 16), 0x7FE0);
-  /* rint ties to even regardless of the dynamic mode (2.5 -> 2, -0.5 -> -0) */
+  /* bf16 casts (CR §2 at 2f894fd, cq-v0j): as LLVM 19 -O1 code computes them. int -> bf16 rounds
+   * twice through f32 (2^24 + 2^16 + 1 -> f32 2^24 + 2^16 -> bf16 tie to even 0x4b80); bf16 -> f32
+   * is a bare shift (an sNaN stays signalling); f32 -> bf16 rounds to nearest even and leaves an
+   * sNaN whose low 16 bits are 0 as it is (compiler-rt __truncsfbf2). */
+  EXPECT("sitofp i32 2^24+2^16+1 -> bf16 (through f32)", call1("sitofp", "i32", "bf16", 0x01010001, 16), 0x4B80);
+  EXPECT("uitofp i64 2^63+2^55+1 -> bf16 (through f32)", call1("uitofp", "i64", "bf16", 0x8080000000000001ull, 16), 0x5F00);
+  EXPECT("fpext bf16 sNaN -> f32 (bare shift)", call1("fpext", "bf16", "f32", 0x7F81, 32), 0x7F810000);
+  EXPECT("fptrunc f32 sNaN -> bf16 (not quieted)", call1("fptrunc", "f32", "bf16", 0x7FA00000, 16), 0x7FA0);
+  EXPECT("fptrunc f32 1+2^-8 -> bf16 (tie to even)", call1("fptrunc", "f32", "bf16", 0x3F808000, 16), 0x3F80);
+  /* ExpandLargeFpConvert (int -> fp above 128 bits): uitofp i129 2^129 - 1 -> f32 -0.0 (its
+   * exponent field wraps into the sign) */
+  {
+    cqe_tname t;
+    mkname(&t, "uitofp", "", "i129", "f32");
+    val a = {{0}}, o = {{0}};
+    a.w[0] = a.w[1] = ~0ull;
+    a.w[2] = 1;
+    cqe_val arg = mkval(&a, "i129"), out = {32, 'i', 1, o.w};
+    if (lookup("uitofp")(&t, &arg, 1, &out) != 0)
+      ++ntable_bad;
+    EXPECT("uitofp i129 2^129-1 -> f32 (ExpandLargeFpConvert)", o.w[0], 0x80000000u);
+  }
+  /* rint rounds in the current mode (2.5 -> 3 and -0.5 -> -0 upward, 2.5 -> 2 to nearest) */
+  EXPECT("rint 2.5 to nearest", call1("rint", "f64", "", 0x4004000000000000ull, 64), 0x4000000000000000ull);
   fesetround(FE_UPWARD);
-  EXPECT("rint 2.5 under FE_UPWARD", call1("rint", "f64", "", 0x4004000000000000ull, 64), 0x4000000000000000ull);
+  EXPECT("rint 2.5 under FE_UPWARD", call1("rint", "f64", "", 0x4004000000000000ull, 64), 0x4008000000000000ull);
   EXPECT("rint -0.5 under FE_UPWARD", call1("rint", "f64", "", 0xBFE0000000000000ull, 64), 0x8000000000000000ull);
   EXPECT("sitofp 2^53+1 under FE_UPWARD", call1("sitofp", "i64", "f64", (1ull << 53) + 1, 64), 0x4340000000000000ull);
+  fesetround(FE_DOWNWARD);
+  EXPECT("rint bf16 1.5 under FE_DOWNWARD", call1("rint", "bf16", "", 0x3FC0, 16), 0x3F80);
   fesetround(FE_TONEAREST);
   /* is_fpclass 264 (isnormal) on 1.0 and on a subnormal (104) */
   {
@@ -513,7 +537,9 @@ static void ownership(void) {
       {"fcmp", "xyz", "f64", "", 2, 1},  {"fcmp", "oeq", "f64", "", 1, 1}, {"fabs", "", "f64", "", 1, 32},
       {"fpext", "", "f64", "f32", 1, 32}, {"fptrunc", "", "f32", "f64", 1, 64}, {"sitofp", "", "f64", "f64", 1, 64},
       {"fptoui", "", "f64", "x7", 1, 7}, {"floor", "", "i64", "", 1, 64},
-      /* bf16 (cq-b7e): clang 19 spells only fpext f16 -> bf16 and fptrunc bf16 -> f16 */
+      /* bf16: half <-> bfloat casts are out of scope in both spellings (LLVM 19's parser rejects
+       * them, CR §2 at 2f894fd) */
+      {"fpext", "", "f16", "bf16", 1, 16}, {"fptrunc", "", "bf16", "f16", 1, 16},
       {"fpext", "", "bf16", "f16", 1, 16}, {"fptrunc", "", "f16", "bf16", 1, 16}, {"fpext", "", "f32", "bf16", 1, 16},
       {"fptrunc", "", "bf16", "f32", 1, 32}, {"fpext", "", "bf16", "bf16", 1, 16}, {"fabs", "", "bf16", "", 1, 32},
       {"fcmp", "oeq", "bf16", "", 1, 1}, {"sitofp", "", "bf16", "bf16", 1, 16}, {"fptosi", "", "bf16", "bf16", 1, 16},

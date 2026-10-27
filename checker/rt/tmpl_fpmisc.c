@@ -1,5 +1,5 @@
 /* Checker template family: fp compare, fp misc and fp casts at f16/bf16/f32/f64 (cq-w0-tmpl-fpmisc,
- * bf16: cq-b7e).
+ * bf16: cq-b7e; CR §2 at CQ_spec 2f894fd: cq-v0j).
  *
  * Evaluator semantics, on basis values, of the templates
  *   fcmp fabs copysign fmax fmin floor ceil trunc rint round is_fpclass
@@ -7,28 +7,41 @@
  * per CONSTRUCTION_RULES §2 (wins) and BACKEND_ABI §2.4, §2.6, §2.10.
  *
  * Everything is soft: fp values are bit patterns, integers are two's complement on N bits in
- * little-endian 64-bit words, any N >= 1. Nothing here touches the host FPU, so the host rounding
- * mode and exception flags (used by the fenv family) neither affect nor see these ops. The fp
- * formats are described by their exponent and fraction widths (f16 5/10, bf16 8/7, f32 8/23,
- * f64 11/52); the code is generic over them. bf16 follows the same rounding and NaN rules as the
- * IEEE widths (CR §1.1).
+ * little-endian 64-bit words, any N >= 1. The only contact with the host FPU is rint reading the
+ * current rounding mode (fegetround); no op raises or reads a host exception flag. The fp formats
+ * are described by their exponent and fraction widths (f16 5/10, bf16 8/7, f32 8/23, f64 11/52);
+ * the code is generic over them.
+ *
+ * CR §2's line (2f894fd): what LLVM 19's own code generation fixes (a cvtt, a shift, a double
+ * rounding through float, ExpandLargeFpConvert, compiler-rt) is adopted for the value; a vendor
+ * library result (libSystem's __extendhfsf2/__truncsfhf2, a missing __floattihf) is not, and IEEE
+ * 754 governs it.
  *
  * Semantics, where §2 or x86-64 LLVM 19 -O1 code fixes a choice:
  *   - fcmp: LLVM predicates, o = ordered and, u = unordered or; ±0 equal; i1 result.
  *   - fmax/fmin (llvm.maxnum/minnum): isnan(a) ? b : isnan(b) ? a : (b > a ? b : a), min with <;
  *     operands returned bit for bit (no quieting), equal values give a (CR §2).
- *   - floor ceil trunc rint round: IEEE roundToIntegral, rint ties to even whatever the dynamic
- *     mode, round ties away; a NaN comes back quieted with its payload; -0 and signs preserved.
+ *   - floor ceil trunc rint round: IEEE roundToIntegral; rint in the current rounding mode (the
+ *     host's, fegetround: ties to even in the default mode; the _rm/_rmq forms are tmpl-fenv's),
+ *     round ties away; a NaN comes back quieted with its payload; -0 and signs preserved.
  *   - is_fpclass(h, mask): LLVM class bits 0 sNaN .. 9 +Inf; a pure bit test.
  *   - fpext exact; fptrunc RNE with subnormals and overflow to Inf; a NaN is quieted, its payload
- *     left-aligned (fpext) or truncated on the right (fptrunc), as x86 and compiler-rt.
- *     Direction follows clang 19's spelling over the order f16 < bf16 < f32 < f64: (__bf16) of a
- *     _Float16 is fpext_f16_to_bf16 (rounds to 8 bits), (_Float16) of a __bf16 is
- *     fptrunc_bf16_to_f16 (overflows to Inf, rounds subnormals); both are the same correctly rounded
- *     conversion. The reverse spellings are malformed.
- *   - sitofp/uitofp: correctly rounded, RNE, from any width.
+ *     left-aligned (fpext) or truncated on the right (fptrunc), as x86 and compiler-rt. bf16 (CR §2
+ *     bf16 row): fpext bf16 -> f32 is a bare 16-bit shift (an sNaN stays signalling); fptrunc
+ *     f32 -> bf16 is compiler-rt's __truncsfbf2: RNE, and a NaN whose low 16 bits are 0 is
+ *     truncated as it stands (an sNaN stays signalling), any other NaN quieted with its payload
+ *     truncated (fm_f32_to_bf16); f64 -> bf16 is __truncdfbf2, one RNE rounding, NaN quieted, as
+ *     above (codegen does not go through f32 there). Direction: f16 < bf16 < f32 < f64; half <->
+ *     bfloat casts are out of scope (LLVM 19's parser rejects them) and their names malformed.
+ *   - sitofp/uitofp: N <= 128: correctly rounded, RNE (cvtsi2s*, compiler-rt __floatti*f, and the
+ *     IEEE value where the f16 library routine is missing). N > 128: LLVM 19's
+ *     ExpandLargeFpConvert bit for bit (fm_elfc_itofp: one RNE rounding to float or double, an
+ *     exponent field that wraps once it exceeds the format, f16 then rounded from that float as
+ *     IEEE). To bf16 from any width: the f32 value, then fm_f32_to_bf16 (two roundings, visible
+ *     for N > 24).
  *   - fptosi/fptoui: in range, truncation toward 0. Out of range, NaN, ±Inf: the x86-64 LLVM 19
- *     -O1 result (CR §2 row, f16 and bf16 via f32), extended to every width the way LLVM legalizes it:
+ *     -O1 result (CR §2 row, f16 and bf16 via f32: f16 quieted, IEEE, bf16 by the bare shift),
+ *     extended to every width the way LLVM legalizes it:
  *       with c32/c64 = cvtt to i32/i64 (indefinite INT_MIN of that width) and fixN = the
  *       compiler-rt __fixXfti rule at width F (|x| < 1 -> 0; unbiased exponent >= F, NaN, Inf ->
  *       sign ? INT_MIN_F : INT_MAX_F; otherwise sign * trunc(|x|) mod 2^F), fixuN its unsigned
@@ -52,6 +65,7 @@
  * returns 0. On a malformed call it calls cqe_fail and returns -1. Forward and _unc are the same
  * XOR map (BACKEND_ABI §2.1); the op computes f(args) whatever t->unc says and the core XORs it in.
  */
+#include <fenv.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -390,6 +404,14 @@ static int fm_rounding_op(const cqe_tname *t, const cqe_val *args, int nargs, cq
   int k = fm_unary_fmt(t, &f);
   if (k)
     return k;
+  if (mode == RT_RINT) { /* CR §2: the current mode, ties to even in the default mode */
+    switch (fegetround()) {
+    case FE_DOWNWARD: mode = RT_FLOOR; break;
+    case FE_UPWARD: mode = RT_CEIL; break;
+    case FE_TOWARDZERO: mode = RT_TRUNC; break;
+    default: break;
+    }
+  }
   if (fm_check_args(t, args, nargs, 1, out, f.bits))
     return -1;
   fm_put64(out, fm_round_int(fm_fbits(&args[0], &f), &f, mode), f.bits);
@@ -506,16 +528,47 @@ static uint64_t fm_convert(uint64_t x, const fm_fmt *s, const fm_fmt *d) {
   return fm_round_pack(sbit != 0, sig, E, 0, d);
 }
 
+static const fm_fmt FM_F32 = {32, 8, 23};
+
+static int fm_is_bf16(const fm_fmt *f) { return f->bits == 16 && f->eb == 8; }
+static int fm_is_f32(const fm_fmt *f) { return f->bits == 32; }
+
+/* fpext bfloat -> float as LLVM 19 lowers it inline: a bare 16-bit shift, NaNs untouched. */
+static uint64_t fm_bf16_to_f32(uint64_t x) { return (x & 0xFFFFu) << 16; }
+
+/* fptrunc float -> bfloat: compiler-rt 19 __truncsfbf2 (fp_trunc_impl.inc), which LLVM 19 calls.
+ * Low 16 bits 0: the top half as it stands (Inf, an sNaN stays signalling). Other NaNs: quieted,
+ * payload truncated. Everything else: RNE (the exponent ranges agree, subnormals included). */
+static uint64_t fm_f32_to_bf16(uint64_t x) {
+  x &= 0xFFFFFFFFu;
+  if ((x & 0xFFFFu) == 0)
+    return x >> 16;
+  if (fm_isnan(x, &FM_F32))
+    return (x >> 16) | 0x0040u;
+  uint64_t hi = x >> 16, lo = x & 0xFFFFu;
+  if (lo > 0x8000u || (lo == 0x8000u && (hi & 1u)))
+    ++hi; /* a carry into the exponent is right, up to Inf */
+  return hi;
+}
+
+/* half <-> bfloat casts: clang 19 emits them, LLVM 19's IR parser rejects them (CR §2). */
+static int fm_half_bfloat(const fm_fmt *s, const fm_fmt *d) {
+  return s->bits == 16 && d->bits == 16 && s->eb != d->eb;
+}
+
 static int op_fpext(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *out) {
   fm_fmt s, d;
   int k = fm_two_fmts(t, &s, &d);
   if (k)
     return k;
+  if (fm_half_bfloat(&s, &d))
+    return fm_bad(t, "half <-> bfloat casts are out of scope (CR §2)");
   if (fm_rank(&d) <= fm_rank(&s))
     return fm_bad(t, "fpext must widen");
   if (fm_check_args(t, args, nargs, 1, out, d.bits))
     return -1;
-  fm_put64(out, fm_convert(fm_fbits(&args[0], &s), &s, &d), d.bits);
+  uint64_t x = fm_fbits(&args[0], &s);
+  fm_put64(out, fm_is_bf16(&s) && fm_is_f32(&d) ? fm_bf16_to_f32(x) : fm_convert(x, &s, &d), d.bits);
   return 0;
 }
 
@@ -524,15 +577,89 @@ static int op_fptrunc(const cqe_tname *t, const cqe_val *args, int nargs, cqe_va
   int k = fm_two_fmts(t, &s, &d);
   if (k)
     return k;
+  if (fm_half_bfloat(&s, &d))
+    return fm_bad(t, "half <-> bfloat casts are out of scope (CR §2)");
   if (fm_rank(&d) >= fm_rank(&s))
     return fm_bad(t, "fptrunc must narrow");
   if (fm_check_args(t, args, nargs, 1, out, d.bits))
     return -1;
-  fm_put64(out, fm_convert(fm_fbits(&args[0], &s), &s, &d), d.bits);
+  uint64_t x = fm_fbits(&args[0], &s);
+  fm_put64(out, fm_is_f32(&s) && fm_is_bf16(&d) ? fm_f32_to_bf16(x) : fm_convert(x, &s, &d), d.bits);
   return 0;
 }
 
 /* ---------------------------------------------------------------- int -> fp */
+
+/* m (N bits, nonzero magnitude) rounded once to d, RNE. */
+static uint64_t fm_itofp_rne(const uint64_t *m, uint32_t N, int neg, const fm_fmt *d) {
+  uint32_t n = fm_bitlen(m, fm_nwords(N));
+  uint64_t sig = 0;
+  int E = 0, sticky = 0;
+  if (n <= 64) {
+    sig = m[0];
+  } else {
+    uint32_t lo = n - 64; /* bits [lo, n) */
+    for (uint32_t i = 0; i < 64; ++i)
+      sig |= (uint64_t)fm_bit(m, lo + i) << i;
+    for (uint32_t i = 0; i < lo && !sticky; ++i)
+      sticky = fm_bit(m, i);
+    E = (int)lo;
+  }
+  return fm_round_pack(neg, sig, E, sticky, d);
+}
+
+/* LLVM 19 ExpandLargeFpConvert expandIToFP (sitofp/uitofp from more than 128 bits), transcribed:
+ * a (N bits, nonzero) to float (M = 23, FW = 32; also the route of half and bfloat) or double
+ * (M = 52, FW = 64). The significand is rounded RNE to M + 1 bits; the high word is
+ * sign | mantissa bits | (E0 << M%32) + (bias << M%32) in 32-bit arithmetic, so an exponent beyond
+ * the format wraps into the sign and beyond (uitofp i129 2^129 - 1 -> float -0.0). */
+static uint64_t fm_elfc_itofp(const uint64_t *a, uint32_t N, int isSigned, uint32_t M) {
+  uint32_t nw = fm_nwords(N), FW = M == 23 ? 32u : 64u, tm = M % 32u;
+  int neg = fm_bit(a, N - 1); /* Shr = a >>s (N-1) */
+  uint64_t *v = fm_alloc(nw);
+  memcpy(v, a, nw * sizeof *v);
+  if (isSigned && neg) {
+    fm_neg(v, nw);
+    fm_mask(v, N); /* Sub = |a| mod 2^N */
+  }
+  uint32_t n = fm_bitlen(v, nw); /* Sub1 = N - ctlz; Sub2 = Sub1 - 1 */
+  uint64_t S;
+  uint32_t E0;
+  if (n > M + 1) {
+    uint64_t A; /* M + 3 bits: significand, round bit, sticky */
+    if (n == M + 2) {
+      A = v[0] << 1;
+    } else if (n == M + 3) {
+      A = v[0];
+    } else {
+      uint32_t sh = n - M - 3;
+      A = 0;
+      for (uint32_t i = 0; i < M + 3; ++i)
+        A |= (uint64_t)fm_bit(v, sh + i) << i;
+      for (uint32_t i = 0; i < sh; ++i)
+        if (fm_bit(v, i)) {
+          A |= 1;
+          break;
+        }
+    }
+    uint64_t inc = (A | ((A >> 2) & 1u)) + 1;
+    if (inc & ((uint64_t)1 << (M + 3))) {
+      S = inc >> 3;
+      E0 = n;
+    } else {
+      S = inc >> 2;
+      E0 = n - 1;
+    }
+  } else {
+    S = v[0] << (M + 1 - n);
+    E0 = n - 1;
+  }
+  free(v);
+  uint32_t hi = (uint32_t)(E0 << tm) + (uint32_t)((((uint32_t)1 << (30u - tm)) - 1u) << tm);
+  uint32_t mant = (uint32_t)(S >> (FW - 32u)) & (((uint32_t)1 << tm) - 1u);
+  uint32_t or35 = ((isSigned && neg) ? 0x80000000u : 0u) | mant | hi;
+  return FW == 32 ? (uint64_t)or35 : ((uint64_t)or35 << 32) | (S & 0xFFFFFFFFu);
+}
 
 static int fm_itofp(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *out, int isSigned) {
   fm_fmt d;
@@ -546,29 +673,30 @@ static int fm_itofp(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val 
     return -1;
   uint32_t nw = fm_nwords(N);
   uint64_t *m = fm_read(&args[0], N);
-  int neg = isSigned && fm_bit(m, N - 1);
-  if (neg) {
-    fm_neg(m, nw);
-    fm_mask(m, N); /* INT_MIN: magnitude 2^(N-1), still N bits */
-  }
-  uint32_t n = fm_bitlen(m, nw);
   uint64_t r;
-  if (n == 0) {
+  if (fm_bitlen(m, nw) == 0) {
     r = 0; /* +0 */
-  } else {
-    uint64_t sig = 0;
-    int E = 0, sticky = 0;
-    if (n <= 64) {
-      sig = m[0];
+  } else if (N > 128) {
+    /* ExpandLargeFpConvert: double directly; float, half and bfloat through its float */
+    if (d.bits == 64) {
+      r = fm_elfc_itofp(m, N, isSigned, 52);
     } else {
-      uint32_t lo = n - 64; /* bits [lo, n) */
-      for (uint32_t i = 0; i < 64; ++i)
-        sig |= (uint64_t)fm_bit(m, lo + i) << i;
-      for (uint32_t i = 0; i < lo && !sticky; ++i)
-        sticky = fm_bit(m, i);
-      E = (int)lo;
+      r = fm_elfc_itofp(m, N, isSigned, 23);
+      if (fm_is_bf16(&d))
+        r = fm_f32_to_bf16(r);
+      else if (d.bits == 16)
+        r = fm_convert(r, &FM_F32, &d); /* libSystem __truncsfhf2: IEEE */
     }
-    r = fm_round_pack(neg, sig, E, sticky, &d);
+  } else {
+    int neg = isSigned && fm_bit(m, N - 1);
+    if (neg) {
+      fm_neg(m, nw);
+      fm_mask(m, N); /* INT_MIN: magnitude 2^(N-1), still N bits */
+    }
+    if (fm_is_bf16(&d))
+      r = fm_f32_to_bf16(fm_itofp_rne(m, N, neg, &FM_F32)); /* through float, as codegen */
+    else
+      r = fm_itofp_rne(m, N, neg, &d);
   }
   free(m);
   fm_put64(out, r, d.bits);
@@ -695,12 +823,13 @@ static int fm_fptoi(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val 
   if (fm_check_args(t, args, nargs, 1, out, N))
     return -1;
   uint64_t x = fm_fbits(&args[0], &s);
-  /* f16 and bf16 go through f32 (LLVM promotes half and bfloat); exact. */
-  fm_fmt f32 = {32, 8, 23};
+  /* f16 and bf16 go through f32 (LLVM promotes half and bfloat); exact. bfloat -> float is the
+   * bare shift (an sNaN payload reaches ExpandLargeFpConvert above 128 bits as it stands); half ->
+   * float is libSystem's __extendhfsf2, so IEEE's quiet NaN. */
   const fm_fmt *f = &s;
   if (s.bits == 16) {
-    x = fm_convert(x, &s, &f32);
-    f = &f32;
+    x = fm_is_bf16(&s) ? fm_bf16_to_f32(x) : fm_convert(x, &s, &FM_F32);
+    f = &FM_F32;
   }
   uint32_t nw = fm_nwords(N > 128 ? N : 128);
   uint64_t *r = fm_alloc(nw);
