@@ -34,28 +34,53 @@ def rows_by_rule():
     return {r.rule: r.witnesses for r in progress.parse_rules(CR)}
 
 
+def cr_witness_oracle(cr):
+    """{rule number: witnesses} straight from CR §3's text (see test_rule_text_lists)."""
+    sec = re.search(r"^## 3\..*?(?=^## \d)", cr, re.M | re.S).group(0)
+    heads = list(re.finditer(r"^(\d+)\.\s+\*\*", sec, re.M))
+    out = {}
+    for i, h in enumerate(heads):
+        block = sec[h.start():heads[i + 1].start() if i + 1 < len(heads) else len(sec)]
+        block = " ".join(block.split())
+        cuts = [m.end() for m in re.finditer(r"— (?=\d)", block)]
+        clause = block[cuts[-1]:] if cuts else ""
+        while True:
+            c2 = re.sub(r"\([^()]*\)", "", clause)
+            if c2 == clause:
+                break
+            clause = c2
+        out[int(h.group(1))] = tuple(re.findall(r"(?<![\d.§])\b\d{2,3}\b(?!\d|\.\d)", clause))
+    return out
+
+
 class Witnesses(unittest.TestCase):
     def test_every_rule_listed(self):
         nums = sorted({int(r.split()[0]) for r in rows_by_rule()})
         self.assertEqual(nums, list(range(1, 28)))
 
     def test_rule_text_lists(self):
+        # Expected witnesses are derived from the pinned CR text at test time, by a mechanism
+        # independent of progress.py: slice §3 at the numbered rule heads, take the text after the
+        # rule's last "— <digit>", delete parenthesized remarks innermost-first, and collect the
+        # bare 2-3 digit numbers. Rule 14 (split into sub-cases) is test_rule14_cases.
         rows = rows_by_rule()
-        self.assertEqual(rows["1 Handle ABI"], ("01", "46", "64", "93", "103", "110", "111"))
-        self.assertEqual(rows["6 Bijective update of a dead value"], ("125", "127"))
-        self.assertEqual(rows["12 Phase deletion"], ("41",))
-        self.assertEqual(rows["13 switch"], ("22", "49", "123", "131", "142"))
-        # rule 16: the "; 91 (…); 186 (…)" items count, their remarks do not
-        self.assertEqual(rows["16 Noreturn arms and host effects"],
-                         ("45", "47", "99", "102", "108", "138", "91", "186"))
-        # rule 18: the parenthesized "(36, 51, … to be rewritten)" remark is stripped
-        self.assertEqual(rows["18 Function lifting"], ("06", "07", "33", "34", "64", "119", "136"))
-        # rule 20: the clause after the bullets is the whole rule's; "(102, 106, 129)" inside is not
-        r20 = rows["20 Memory classification"]
-        self.assertEqual(r20[0], "29")
-        self.assertEqual(r20[-1], "168")
-        self.assertNotIn("102", r20)
-        self.assertEqual(rows["27 Callees without a body: declared clones"], ())
+        oracle = cr_witness_oracle(CR)
+        self.assertEqual(sorted(oracle), list(range(1, 28)))
+        checked = 0
+        for rule, ws in rows.items():
+            n = int(rule.split()[0])
+            if n == 14:
+                continue
+            with self.subTest(rule=rule):
+                self.assertEqual(ws, oracle[n])
+            checked += 1
+        self.assertEqual(checked, 26)
+        # not vacuous: most rules carry witnesses, and each is an example directory
+        self.assertGreater(sum(1 for n, w in oracle.items() if w), 20)
+        ex = progress.example_numbers()
+        for n, w in oracle.items():
+            for e in w:
+                self.assertIn(str(int(e)), ex, f"rule {n}: {e}")
 
     def test_rule14_cases(self):
         rows = {k: v for k, v in rows_by_rule().items() if k.startswith("14 ")}
