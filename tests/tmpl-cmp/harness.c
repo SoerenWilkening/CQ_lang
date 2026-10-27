@@ -145,7 +145,7 @@ static void edge_values(vset_t *s, unsigned bits) {
 }
 
 /* fp bit patterns: +-0, +-Inf, qNaN, sNaN, NaN with payload, -NaN, subnormals, normals. */
-static void fp_specials(vset_t *s, unsigned bits) {
+static void fp_specials(vset_t *s, unsigned bits, const char *w) {
   s->n = 0;
   if (bits == 80) { /* x87: 64-bit significand with explicit integer bit, 15-bit exponent */
     const uint64_t I = 1ull << 63, Q = 1ull << 62;
@@ -161,7 +161,7 @@ static void fp_specials(vset_t *s, unsigned bits) {
     }
     return;
   }
-  unsigned mb = bits == 16 ? 10 : bits == 32 ? 23 : 52, eb = bits - 1 - mb;
+  unsigned mb = !strcmp(w, "bf16") ? 7 : bits == 16 ? 10 : bits == 32 ? 23 : 52, eb = bits - 1 - mb;
   uint64_t sign = 1ull << (bits - 1), expall = ((1ull << eb) - 1) << mb, qbit = 1ull << (mb - 1);
   uint64_t one = ((1ull << (eb - 1)) - 1) << mb;
   uint64_t p[] = {0, sign, expall, sign | expall, expall | qbit, sign | expall | qbit, expall | 1,
@@ -226,17 +226,18 @@ static void run_case(const entry_t *e, cqe_op_fn fn, val_t *ops) {
       }
       to_cqe(&cv[i], &a[i], bi, is_cond ? 'i' : e->kind, nw);
     }
+    /* out as the dispatcher hands it over (cqe.h M1): zeroed, bits/kind/nw preset */
     uint64_t ow[MAXW + 1];
-    for (unsigned k = 0; k <= MAXW; ++k) ow[k] = 0xA5A5A5A5A5A5A5A5ull; /* stale content must be overwritten */
-    cqe_val o = {0, 0, rw + garbage, ow};
+    memset(ow, 0, sizeof ow);
+    char rkind = (e->rbits == W && strcmp(e->op, "icmp")) ? e->kind : 'i';
+    cqe_val o = {e->rbits, rkind, rw, ow};
     int f0 = nfail_calls;
     int rc = fn(&t, cv, n, &o);
     ++ncases;
-    int bad = rc != 0 || nfail_calls != f0 || o.bits != e->rbits ||
-              o.kind != (e->rbits == W && strcmp(e->op, "icmp") ? e->kind : 'i');
-    for (unsigned k = 0; k < rw + garbage; ++k)
+    int bad = rc != 0 || nfail_calls != f0 || o.bits != e->rbits || o.kind != rkind || o.nw != rw || o.w != ow;
+    for (unsigned k = 0; k <= MAXW; ++k)
       if (ow[k] != (k < rw ? out.w[k] : 0)) bad = 1;
-    if (bad) report(e, garbage ? "(garbage above W)" : "", in, n, out.w, ow, rw + garbage);
+    if (bad) report(e, garbage ? "(garbage above W)" : "", in, n, out.w, ow, rw);
   }
 }
 
@@ -252,7 +253,7 @@ static void run_entry(const entry_t *e) {
   int ndata = sel ? 2 : e->nargs; /* operands drawn from the value sets (select: the arms) */
   long before = ncases;
   vset_t E;
-  if (e->kind == 'f') fp_specials(&E, W);
+  if (e->kind == 'f') fp_specials(&E, W, e->w);
   else edge_values(&E, W);
   val_t ops[3];
 
@@ -302,7 +303,7 @@ static void table_rows(void) {
     val_t m = vmin(W);
     cqe_val a = {W, 'i', nwords(W), m.w};
     uint64_t ow[MAXW] = {0};
-    cqe_val o = {0, 0, nwords(W), ow};
+    cqe_val o = {W, 'i', nwords(W), ow};
     int rc = lookup("abs")(&t, &a, 1, &o);
     ++ncases;
     if (rc || memcmp(ow, m.w, nwords(W) * 8)) { fprintf(stderr, "FAIL: CR §2 abs(INT_MIN) at %s\n", ws); ++nmismatch; }
@@ -310,7 +311,7 @@ static void table_rows(void) {
   printf("  CR §2 abs(INT_MIN) = INT_MIN at 9 widths\n");
 }
 
-/* The calling convention's error and allocation paths. */
+/* The calling convention (cqe.h M1): malformed calls, a foreign op, the out preset. */
 static void convention(void) {
   cqe_tname t; memset(&t, 0, sizeof t);
   val_t x = vsmall(5, 32), y = vsmall(7, 32);
@@ -319,7 +320,7 @@ static void convention(void) {
 #define EXPECT_FAIL(setup)                                                 \
   do {                                                                     \
     memset(&t, 0, sizeof t); setup;                                        \
-    uint64_t ow[2] = {0}; cqe_val o = {0, 0, 2, ow};                       \
+    uint64_t ow[2] = {0}; cqe_val o = {32, 'i', 1, ow};                    \
     int f0 = nfail_calls; quiet_fail = 1;                                  \
     int rc = lookup("icmp")(&t, a, nargs, &o);                             \
     quiet_fail = 0; ++checks;                                              \
@@ -339,32 +340,32 @@ static void convention(void) {
   EXPECT_FAIL((strcpy(t.op, "smax"), strcpy(t.w, "i32"), strcpy(t.to, "i64")));
   nargs = 3;
   EXPECT_FAIL((strcpy(t.op, "abs"), strcpy(t.w, "i32")));                  /* arity 3 != 1 */
-  /* an op outside the family: CQE_OP_NOT_MINE (1), no violation */
+  /* an op outside the family: CQE_OP_NOT_MINE, no violation, out untouched */
   {
     memset(&t, 0, sizeof t); strcpy(t.op, "fcmp"); strcpy(t.pred, "oeq"); strcpy(t.w, "f64");
-    uint64_t ow[1]; cqe_val o = {0, 0, 1, ow};
+    uint64_t ow[1] = {0}; cqe_val o = {1, 'i', 1, ow};
     int f0 = nfail_calls;
     int rc = lookup("icmp")(&t, a, 2, &o);
     ++checks;
-    if (rc != 1 || nfail_calls != f0) { fprintf(stderr, "FAIL: convention: foreign op not answered 1\n"); ++nmismatch; }
+    if (rc != CQE_OP_NOT_MINE || nfail_calls != f0 || ow[0]) { fprintf(stderr, "FAIL: convention: foreign op not answered CQE_OP_NOT_MINE\n"); ++nmismatch; }
   }
-  /* out too short: a 128-bit result into one word */
+  /* an out preset that does not match the template's result type is malformed */
   {
-    memset(&t, 0, sizeof t); strcpy(t.op, "umax"); strcpy(t.w, "i128");
-    uint64_t ow[1]; cqe_val o = {0, 0, 1, ow};
-    int f0 = nfail_calls; quiet_fail = 1;
-    int rc = lookup("umax")(&t, a, 2, &o);
-    quiet_fail = 0; ++checks;
-    if (rc != -1 || nfail_calls != f0 + 1) { fprintf(stderr, "FAIL: convention: short out not rejected\n"); ++nmismatch; }
-  }
-  /* out->w == NULL: allocated, owned by the caller */
-  {
-    memset(&t, 0, sizeof t); strcpy(t.op, "umax"); strcpy(t.w, "i32");
-    cqe_val o = {0, 0, 0, NULL};
-    int rc = lookup("umax")(&t, a, 2, &o);
-    ++checks;
-    if (rc || !o.w || o.nw != 1 || o.w[0] != 7 || o.bits != 32 || o.kind != 'i') { fprintf(stderr, "FAIL: convention: NULL out\n"); ++nmismatch; }
-    free(o.w);
+    uint64_t ow[2] = {0};
+    struct { const char *w; cqe_val o; const char *what; } bad[] = {
+        {"i128", {128, 'i', 1, ow}, "nw short of bits"},
+        {"i32", {32, 'i', 2, ow}, "nw beyond bits"},
+        {"i32", {64, 'i', 1, ow}, "bits"},
+        {"i32", {32, 'f', 1, ow}, "kind"},
+        {"i32", {32, 'i', 1, NULL}, "NULL w"},
+    };
+    for (size_t i = 0; i < sizeof bad / sizeof bad[0]; ++i) {
+      memset(&t, 0, sizeof t); strcpy(t.op, "umax"); strcpy(t.w, bad[i].w);
+      int f0 = nfail_calls; quiet_fail = 1;
+      int rc = lookup("umax")(&t, a, 2, &bad[i].o);
+      quiet_fail = 0; ++checks;
+      if (rc != -1 || nfail_calls != f0 + 1) { fprintf(stderr, "FAIL: convention: out preset (%s) not rejected\n", bad[i].what); ++nmismatch; }
+    }
   }
   /* an operand with fewer words than W needs reads 0 above them */
   {
@@ -372,7 +373,7 @@ static void convention(void) {
     val_t z = vzero(); z.w[1] = 0;
     cqe_val b2[2] = {{128, 'i', 1, x.w}, {128, 'i', 2, z.w}};
     z.w[0] = 5;
-    uint64_t ow[1] = {9}; cqe_val o = {0, 0, 1, ow};
+    uint64_t ow[1] = {0}; cqe_val o = {1, 'i', 1, ow};
     int rc = lookup("icmp")(&t, b2, 2, &o);
     ++checks;
     if (rc || ow[0] != 1) { fprintf(stderr, "FAIL: convention: short operand\n"); ++nmismatch; }

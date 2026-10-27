@@ -5,8 +5,8 @@
  * operation is generic over the width: values are little-endian 64-bit words, any N >= 1.
  *
  * Calling convention of each cqe_op_fn here (what the core dispatcher hands a family):
- *   - tname: the parsed template name. tname->w gives the operand width W (i<N>, f16, f32, f64,
- *     f80; select is the only op here that accepts an fp W, and copies its bit pattern).
+ *   - tname: the parsed template name. tname->w gives the operand width W (i<N>, f16, bf16, f32,
+ *     f64, f80; select is the only op here that accepts an fp W, and copies its bit pattern).
  *     tname->pred is the icmp predicate. Shape, unc and the other fields do not change the value:
  *     the forward and the _unc twin are the same XOR map (BACKEND_ABI §2.1), and the dispatcher
  *     XORs the value into the out rail.
@@ -14,14 +14,14 @@
  *     and literals as values: icmp, min/max, overflow, sat: (a, b); abs: (a); select: (c, arm1,
  *     arm2), c the i1 condition. Only the low W bits of an operand are read (a narrow literal or a
  *     signext/zeroext handle is read as its low W bits, CR §1.2); words beyond args[i].nw read 0.
- *   - out: receives f(args). out->bits and out->kind are set here (i1 'i' for icmp and
- *     *_overflow; W and W's kind otherwise). If out->w is non-NULL it must hold out->nw >=
- *     ceil(bits/64) words; every one of its nw words is written (high bits zero). If out->w is
- *     NULL, ceil(bits/64) words are allocated with calloc and the caller owns them.
- *   - return 0 on success; CQE_OP_NOT_MINE (1), with no cqe_fail, for an op outside this family
- *     (the dispatcher may try another handler registered for the op); on a malformed call (bad
- *     width, arity or predicate, short out) the violation goes to cqe_fail and the return is -1.
- *   This is the convention cq-f69 records (proposed by cq-w0-tmpl-int); cqe.h does not fix it yet.
+ *   - out (cqe.h M1): owned by the dispatcher, non-NULL, zeroed, with bits, kind and nw =
+ *     ceil(bits/64) preset to the result type (i1 'i' for icmp and *_overflow; W and W's kind
+ *     otherwise). The handler checks the preset against the template (out_words(), the one place
+ *     the buffer is touched for size) and writes the value with bits above out->bits zero; it
+ *     never changes out->bits, out->kind, out->nw or out->w.
+ *   - return (cqe.h M1): 0 when out holds the value; CQE_OP_NOT_MINE, decided from tname alone,
+ *     with no cqe_fail, for an op outside this family; -1 after cqe_fail on a malformed call (bad
+ *     width, arity or predicate, an out preset that does not match the template).
  */
 #include <stdint.h>
 #include <stdlib.h>
@@ -29,9 +29,6 @@
 
 #include "cqe.h"
 
-#ifndef CQE_OP_NOT_MINE
-#define CQE_OP_NOT_MINE 1
-#endif
 
 typedef struct {
   uint32_t bits; /* W */
@@ -40,6 +37,12 @@ typedef struct {
 } width_t;
 
 static int parse_width(const char *s, width_t *out) {
+  if (!strcmp(s, "bf16")) { /* CR §1.1: bfloat16, a 16-bit fp bit pattern */
+    out->bits = 16;
+    out->kind = 'f';
+    out->nw = 1;
+    return 0;
+  }
   char k = s[0];
   if (k != 'i' && k != 'f') return -1;
   if (s[1] < '1' || s[1] > '9') return -1;
@@ -168,23 +171,22 @@ static int eq_pow2(const uint64_t *p, uint32_t pw, uint32_t k) {
 
 /* ---- out ---- */
 
-static int put(cqe_val *out, const uint64_t *x, uint32_t bits, char kind) {
-  uint32_t need = (bits + 63) / 64;
-  if (!out->w) {
-    out->w = calloc(need, sizeof(uint64_t));
-    if (!out->w) {
-      cqe_fail("tmpl_cmp: out of memory for a %u-bit result", bits);
-      return -1;
-    }
-    out->nw = need;
-  } else if (out->nw < need) {
-    cqe_fail("tmpl_cmp: out rail has %u words, a %u-bit result needs %u", out->nw, bits, need);
+/* The out buffer belongs to the dispatcher (cqe.h M1). Returns 0 when its preset matches the
+ * result type this template implies. */
+static int out_words(const cqe_val *out, uint32_t need, uint32_t bits, char kind) {
+  if (!out->w || out->bits != bits || out->kind != kind || out->nw != need) {
+    cqe_fail("tmpl_cmp: out preset %u-bit '%c' in %u words, the template's result is %u-bit '%c'",
+             out->bits, out->kind ? out->kind : '?', out->nw, bits, kind);
     return -1;
   }
-  for (uint32_t i = 0; i < out->nw; ++i) out->w[i] = i < need ? x[i] : 0;
+  return 0;
+}
+
+static int put(cqe_val *out, const uint64_t *x, uint32_t bits, char kind) {
+  uint32_t need = (bits + 63) / 64;
+  if (out_words(out, need, bits, kind)) return -1;
+  memcpy(out->w, x, need * sizeof(uint64_t));
   mask_top(out->w, need, bits);
-  out->bits = bits;
-  out->kind = kind;
   return 0;
 }
 
