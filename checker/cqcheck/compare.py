@@ -20,7 +20,11 @@ What is compared (CR §6, CLAUDE.md "The §6 checker"):
   phase whose predicate is constant over the group (never an Ry, never an angle-rail phase). Against
   the C oracle rotations are matched by site: each (function, site, occurrence) of a reached
   `cq_theta`/`cq_phi` must be one lowered gate with the same predicate, angle and register value at
-  every sample, in an order consistent with every sample's hit order.
+  every sample, in an order consistent with every sample's hit order. A `cq_invert` region (the
+  sites between an invert_begin and its matching invert_end, nesting by depth) is read under CR rule
+  17: its sites are taken in reverse order with their angles negated (a region inside a region is so
+  inverted twice), both for matching and for the per-sample order. A marker without its partner in
+  a sample is a difference, never skipped.
 
 Groups. The samples are partitioned by `classical_key(sample)` (the classical arguments; see
 `classical_key_from_driver`; without it, by the sample's call). Each group is further split by the
@@ -45,15 +49,20 @@ record self-contained; values are hex bit patterns or ints):
     {"ev":"phase","f","fv","theta"}, {"ev":"phase_qangle","a","aval","ctl","ctlv"};
   an Ry record may carry "w" and "v" (the target's type and its value at the gate); missing, they
   are read from the target's entry in `kept` (a rotated rail is never written in place again).
-- rotations (C oracle side): {"ev":"site","fn","site","kind":"theta|phi","angle","reg"} per reached
-  site, in execution order.
+- rotations (C oracle side, cq-arch T1): {"ev":"site","fn","site","kind","angle","reg"} per reached
+  site of kind theta, phi, invert_begin or invert_end (the markers' angle and reg null), in
+  execution order.
 - kept: the exit event's live list, [{"h","w","v","role"}].
 - clean: the free events, [{"h","v","known"}].
-- measured: the measure events, [{"h","v"}] (a "w" is compared when both sides give one).
+- measured: the measure events, [{"h","v"}] (a "w" is compared when both sides give one); the C
+  side's records have "h" null.
+- kept, clean: None on the C side (T1); read only on the lowered sides.
 - outputs: any JSON (a dict of named outputs); hex strings compare as integers. A leaf that is a
   dict with a rail type "w" and a value "v" ({"w":"f32","v":"0x7fc00000"}) is a typed scalar: its
   value is compared at that width, and an fp one under the fp equality mode below. An untyped
-  value carries no fp-ness and is compared bit for bit in both modes.
+  value carries no fp-ness and is compared bit for bit in both modes. Against the C oracle only
+  outputs["ret"] is compared (T1: the C side's "end" and our "stdout"/"exit" are diagnostics); a
+  missing "ret" reads as [].
 - violations: a list; any entry fails the comparison.
 
 Floating-point equality (CR §2 NaN row, ruling 2026-10-27, bead cq-8dy). Against the reference
@@ -417,31 +426,67 @@ class _Site:
     order: Dict[int, int]            # sample -> position in that sample's hits
 
 
-def _c_sites(runs: List[RunResult], nan_eq: bool) -> List[_Site]:
+_MARKERS = ("invert_begin", "invert_end")
+
+
+def _c_order(rr: RunResult, s: int) -> Tuple[List[Tuple[int, Dict[str, Any], bool]], List[str]]:
+    """One C sample's theta/phi sites in emission order under CR rule 17: [(original position,
+    record, negated)], and the reasons its markers do not pair up."""
+    reasons: List[str] = []
+    stack: List[List[Tuple[int, Dict[str, Any], bool]]] = [[]]
+    for pos, rec in enumerate(rr.rotations or []):
+        kind = rec.get("kind")
+        if rec.get("ev") != "site" or kind not in ("theta", "phi") + _MARKERS:
+            raise CompareError(f"cq: unimplemented: chk-compare: C-oracle rotation {rec!r}")
+        if kind == "invert_begin":
+            stack.append([])
+        elif kind == "invert_end":
+            if len(stack) == 1:
+                reasons.append(f"sample {s}: C invert_end {rec.get('fn')}:{rec.get('site')} has no matching "
+                               f"invert_begin")
+                continue
+            region = stack.pop()
+            stack[-1].extend((p, r, not neg) for p, r, neg in reversed(region))
+        else:
+            stack[-1].append((pos, rec, False))
+    if len(stack) > 1:
+        reasons.append(f"sample {s}: {len(stack) - 1} C invert_begin(s) without a matching invert_end")
+        return [], reasons
+    return stack[0], reasons
+
+
+def _c_sites(runs: List[RunResult], nan_eq: bool) -> Tuple[List[_Site], List[str]]:
     sites: Dict[Tuple, _Site] = {}
+    reasons: List[str] = []
     nS = len(runs)
     for s, rr in enumerate(runs):
+        seq, why = _c_order(rr, s)
+        reasons += why
+        # occurrences counted in execution order, so a site's k-th reach is one gate in every sample
         occ: Dict[Tuple, int] = {}
-        for pos, rec in enumerate(rr.rotations or []):
-            if rec.get("ev") != "site" or rec.get("kind") not in ("theta", "phi"):
-                raise CompareError(f"cq: unimplemented: chk-compare: C-oracle rotation {rec!r}")
+        nth: Dict[int, int] = {}
+        for pos, rec, _ in sorted(seq, key=lambda t: t[0]):
             base = (rec["fn"], rec["site"], rec["kind"])
-            k = occ.get(base, 0)
-            occ[base] = k + 1
+            nth[pos] = occ.get(base, 0)
+            occ[base] = nth[pos] + 1
+        for epos, (pos, rec, neg) in enumerate(seq):
+            base = (rec["fn"], rec["site"], rec["kind"])
             ang = _int(rec["angle"]) & ((1 << 64) - 1)
+            if neg:
+                ang ^= 1 << 63
             if _angle_identity(ang, nonfinite_is_identity=(rec["kind"] == "theta")):
                 continue
-            key = base + (k,)
+            key = base + (nth[pos],)
             st = sites.get(key)
             if st is None:
                 st = sites[key] = _Site(key, rec["kind"], [0] * nS, [None] * nS, [None] * nS, {})
             st.pred[s] = 1
             st.afn[s] = _fpv(ang, "f64", nan_eq)
             st.rfn[s] = _int(rec.get("reg")) if rec["kind"] == "theta" else None
-            st.order[s] = pos
+            st.order[s] = epos
     for st in sites.values():
         st.pred, st.afn, st.rfn = tuple(st.pred), tuple(st.afn), tuple(st.rfn)
-    return list(sites.values())
+    return list(sites.values()), reasons
 
 
 def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool) -> List[str]:
@@ -557,7 +602,11 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         if r.violations:
             reasons.append(f"sample {k}: violations on the oracle side (a spec issue if it is the reference): "
                            f"{r.violations}")
-        if _norm(o.outputs, nan_eq) != _norm(r.outputs, nan_eq):
+        if oracle == "c":
+            oo, ro = _ret(o.outputs, "our"), _ret(r.outputs, "C-oracle")
+            if _norm(oo, nan_eq) != _norm(ro, nan_eq):
+                reasons.append(f"sample {k}: returns {oo} != {ro} (ours {o.outputs}, C {r.outputs})")
+        elif _norm(o.outputs, nan_eq) != _norm(r.outputs, nan_eq):
             reasons.append(f"sample {k}: outputs {o.outputs} != {r.outputs}")
         mo, mr = list(o.measured or []), list(r.measured or [])
         if len(mo) != len(mr):
@@ -617,10 +666,22 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             if why:
                 reasons.append(f"{tag}: rotation list differs: {why}")
         else:
-            sites = _c_sites(r_runs, nan_eq)
+            sites, why_c = _c_sites(r_runs, nan_eq)
+            if why_c:
+                reasons += [f"{tag}: {why}" for why in why_c]
+                continue
             for why in _match_c(o_evs, o_glob, sites, nan_eq):
                 reasons.append(f"{tag}: {why}")
     return reasons
+
+
+def _ret(outputs: Any, side: str) -> Any:
+    """outputs["ret"] of one side (against the C oracle, T1); a missing "ret" is []."""
+    if outputs is None:
+        return []
+    if not isinstance(outputs, dict):
+        raise CompareError(f"cq: unimplemented: chk-compare: {side} outputs {outputs!r} are not a dict")
+    return outputs.get("ret", [])
 
 
 def _kept_type(rr: RunResult, h: Any) -> Optional[str]:

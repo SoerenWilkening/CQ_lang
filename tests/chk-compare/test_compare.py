@@ -443,5 +443,128 @@ class FpModes(unittest.TestCase):
         self.assertTrue(self.eq(ours, c, "c").equal, self.eq(ours, c, "c").reasons)
 
 
+class COracleT1(unittest.TestCase):
+    """oracle "c" reads cq-arch T1's side 'c' RunResult (bead cq-b0c): invert markers under CR rule
+    17, outputs["ret"] only, measured records with h null, kept and clean None."""
+
+    @staticmethod
+    def site(fn, site, kind, angle=None, reg=None):
+        return {"ev": "site", "fn": fn, "site": site, "kind": kind,
+                "angle": None if angle is None else ang(angle), "reg": None if reg is None else hex(reg)}
+
+    def beg(self, site=10):
+        return self.site("f", site, "invert_begin")
+
+    def end(self, site=11):
+        return self.site("f", site, "invert_end")
+
+    @staticmethod
+    def c_run(s, rots, outputs=None, measured=(), violations=()):
+        """A side 'c' RunResult exactly as T1 shapes it."""
+        return RunResult(side="c", sample={"call": 0, "args": [s & 1, s >> 1]},
+                         outputs=outputs if outputs is not None else {"ret": [], "end": "ret"},
+                         measured=list(measured), rotations=list(rots), kept=None, clean=None,
+                         violations=list(violations))
+
+    def c_side(self, build):
+        return [self.c_run(s, **build(s & 1, s >> 1, s)) for s in range(4)]
+
+    def check(self, ours, c, equal, needle=None):
+        r = compare(ours, c, QKEY, "c")
+        self.assertEqual(r.equal, equal, r.reasons)
+        if needle:
+            self.assertTrue(any(needle in x for x in r.reasons), r.reasons)
+
+    # -- (i) invert markers, CR rule 17
+    def region_c(self):
+        """Ry(1.0) on a, then inverted: Ry(2.0) on a, Ry(3.0) on a, P(0.5) on a&b."""
+        return self.c_side(lambda a, b, s: dict(rots=[
+            self.site("f", 0, "theta", 1.0, a), self.beg(),
+            self.site("f", 1, "theta", 2.0, a), self.site("f", 2, "theta", 3.0, a)]
+            + ([self.site("f", 3, "phi", 0.5)] if a & b else []) + [self.end()]))
+
+    def lowered(self, rots):
+        return side("o", lambda a, b, s: dict(rots=rots(a, b), kept=[keep(1, a)]))
+
+    def test_invert_region_adjoint_equal(self):
+        ours = self.lowered(lambda a, b: [ry(1, 1.0), ph(7, a & b, -0.5), ry(1, -3.0), ry(1, -2.0)])
+        self.check(ours, self.region_c(), True)
+
+    def test_invert_region_forward_angles_rejected(self):
+        # what ignoring the markers would accept: the region emitted forward
+        ours = self.lowered(lambda a, b: [ry(1, 1.0), ry(1, 2.0), ry(1, 3.0), ph(7, a & b, 0.5)])
+        self.check(ours, self.region_c(), False, "no lowered gate")
+
+    def test_invert_region_negated_not_reversed_rejected(self):
+        ours = self.lowered(lambda a, b: [ry(1, 1.0), ry(1, -2.0), ry(1, -3.0), ph(7, a & b, -0.5)])
+        self.check(ours, self.region_c(), False, "supports overlap")
+
+    def test_invert_region_reversed_not_negated_rejected(self):
+        ours = self.lowered(lambda a, b: [ry(1, 1.0), ph(7, a & b, 0.5), ry(1, 3.0), ry(1, 2.0)])
+        self.check(ours, self.region_c(), False)
+
+    def test_gate_outside_region_not_negated(self):
+        ours = self.lowered(lambda a, b: [ry(1, -1.0), ph(7, a & b, -0.5), ry(1, -3.0), ry(1, -2.0)])
+        self.check(ours, self.region_c(), False, "C site f:0")
+
+    def test_nested_regions_invert_twice(self):
+        # begin [ Ry 2 ; begin [ Ry 3 ; Ry 4 ] end ] end -> emitted: Ry 3, Ry 4 (forward), then Ry -2
+        c = self.c_side(lambda a, b, s: dict(rots=[
+            self.beg(), self.site("f", 1, "theta", 2.0, a), self.beg(12),
+            self.site("f", 2, "theta", 3.0, a), self.site("f", 3, "theta", 4.0, a), self.end(13), self.end()]))
+        self.check(self.lowered(lambda a, b: [ry(1, 3.0), ry(1, 4.0), ry(1, -2.0)]), c, True)
+        self.check(self.lowered(lambda a, b: [ry(1, -4.0), ry(1, -3.0), ry(1, -2.0)]), c, False)
+        self.check(self.lowered(lambda a, b: [ry(1, -2.0), ry(1, 3.0), ry(1, 4.0)]), c, False)
+
+    def test_repeated_site_inside_and_outside_region(self):
+        # 61: the same call site reached forward, then inside the region (occurrence 1, negated)
+        c = self.c_side(lambda a, b, s: dict(rots=[
+            self.site("p", 0, "theta", 1.0, a), self.beg(), self.site("p", 0, "theta", 1.0, a), self.end()]))
+        self.check(self.lowered(lambda a, b: [ry(1, 1.0), ry(1, -1.0)]), c, True)
+        self.check(self.lowered(lambda a, b: [ry(1, 1.0), ry(1, 1.0)]), c, False)
+
+    def test_unbalanced_markers_are_a_difference(self):
+        ours = self.lowered(lambda a, b: [ry(1, -2.0)])
+        for rots in ([self.beg(), self.site("f", 1, "theta", 2.0, 0)],
+                     [self.site("f", 1, "theta", 2.0, 0), self.end()]):
+            c = self.c_side(lambda a, b, s, rots=rots: dict(
+                rots=[dict(r, reg=hex(a)) if r["kind"] == "theta" else r for r in rots]))
+            self.check(ours, c, False, "matching")
+
+    # -- (ii) outputs["ret"] only
+    @staticmethod
+    def ret(v):
+        return [{"call": 0, "fn": "f", "v": {"w": "i32", "v": hex(v)}}]
+
+    def test_ret_only_compared(self):
+        ours = side("o", lambda a, b, s: dict(rots=[], kept=[],
+                                              outputs={"ret": self.ret(a + b), "stdout": "hi\n", "exit": 0}))
+        c = self.c_side(lambda a, b, s: dict(rots=[], outputs={"ret": self.ret(a + b), "end": "ret"}))
+        self.check(ours, c, True)
+        c_bad = self.c_side(lambda a, b, s: dict(rots=[], outputs={"ret": self.ret(a | b), "end": "ret"}))
+        self.check(ours, c_bad, False, "returns")
+
+    def test_ret_still_compared_against_ref(self):
+        o = side("o", lambda a, b, s: dict(rots=[], kept=[], outputs={"ret": self.ret(a), "stdout": "", "exit": 0}))
+        r = side("r", lambda a, b, s: dict(rots=[], kept=[], outputs={"ret": self.ret(a), "stdout": "", "exit": 1}))
+        self.assertFalse(compare(o, r, QKEY, "ref").equal)
+
+    # -- (iii) measured records with h null, kept/clean None
+    def test_measured_h_null_and_kept_clean_none(self):
+        ours = side("o", lambda a, b, s: dict(rots=[ry(1, 1.0)], kept=[keep(1, a, "i1", "measured")],
+                                              measured=[{"h": 1, "v": hex(a)}]))
+        c = self.c_side(lambda a, b, s: dict(rots=[self.site("f", 0, "theta", 1.0, a)],
+                                             measured=[{"h": None, "w": "i1", "v": hex(a)}]))
+        self.check(ours, c, True)
+        c_bad = self.c_side(lambda a, b, s: dict(rots=[self.site("f", 0, "theta", 1.0, a)],
+                                                 measured=[{"h": None, "w": "i1", "v": hex(b)}]))
+        self.check(ours, c_bad, False, "measurement 0")
+        c_w = self.c_side(lambda a, b, s: dict(rots=[self.site("f", 0, "theta", 1.0, a)],
+                                               measured=[{"h": None, "w": "i8", "v": hex(a)}]))
+        ours_w = side("o", lambda a, b, s: dict(rots=[ry(1, 1.0)], kept=[keep(1, a, "i1", "measured")],
+                                                measured=[{"h": 1, "w": "i1", "v": hex(a)}]))
+        self.check(ours_w, c_w, False, "of i1 != i8")
+
+
 if __name__ == "__main__":
     unittest.main()
