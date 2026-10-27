@@ -259,7 +259,7 @@ case where native raises none. IR that clang 19 emits and LLVM 19's own parser r
 | `ctlz(0)`, `cttz(0)` | | `W` |
 | `abs(INT_MIN)` | | `INT_MIN` |
 | `rint`, `round`, `floor`, `ceil`, `trunc` | | IEEE; `rint` rounds in the current mode, ties to even in the default mode, and a `_rm`/`_rmq` template in the template's mode |
-| bf16 conversions | | as LLVM 19 `-O1` lowers them inline: `fpext` bf16 → f32 is a bare shift (an sNaN stays signalling), `fptrunc` f32 → bf16 rounds to nearest even without quieting, `sitofp`/`uitofp` iN → bf16 goes through f32 (two roundings, visible for N > 24), f64 → bf16 likewise through f32 where codegen does so |
+| bf16 conversions | | `fpext` bf16 → f32 is inline, a bare shift (an sNaN stays signalling). `fptrunc` f32 → bf16 and f64 → bf16 are compiler-rt calls (`__truncsfbf2`, `__truncdfbf2`), so IEEE is normative: one rounding to nearest even from the source width, a NaN becomes a quiet NaN carrying the high payload bits and never an Inf. `sitofp`/`uitofp` iN → bf16 is codegen's inline route iN → f32 (rounded) followed by that f32 → bf16 conversion (two roundings, visible for N > 24) (ruling 2026-10-27) |
 | `is_fpclass` | | pure bit test; on f80 a pseudo-denormal is subnormal and a non-canonical encoding is a quiet NaN (native is inconsistent here; the table decides) |
 | `ry`/`rz`/`phase` with a non-finite angle (literal or angle rail) | | identity |
 | `qrom_load`, `qram_load` | index `≥ n` (UNSIGNED reading of the index rail at its width; a `_hl` literal likewise) | `0`; no cell is read |
