@@ -230,7 +230,12 @@ The classical reference evaluator (§6) and every backend use the same table. Wh
 rounding mode and INEXACT for `sitofp`/`uitofp` from more than 64 bits, `_exc` of `fptosi`/`fptoui`
 to more than 64 bits, INVALID for `frem` of 0 or ±Inf and for `fmax`/`fmin` with a signalling NaN),
 IEEE 754 at the operation's width and the `_rm`/`_exc` contract of §1.2 are normative, as for the NaN
-row (ruling 2026-10-27).
+row (ruling 2026-10-27). The line is: what LLVM 19's own code generation fixes inline (a `cvtt`,
+`fist`, a shift, a double rounding through `float`, `ExpandLargeFpConvert`) is the C program's
+semantics and is adopted for the VALUE; what a vendor library computes is not fixed by the program,
+and IEEE 754 is normative for it; exception FLAGS follow IEEE/x87 at the operation's width in every
+case where native raises none. IR that clang 19 emits and LLVM 19's own parser rejects (`fpext`/
+`fptrunc` between `half` and `bfloat`) never reaches the compiler and is out of scope.
 
 | operation | out-of-domain input | result |
 |---|---|---|
@@ -243,8 +248,8 @@ row (ruling 2026-10-27).
 | `shl/lshr/ashr(a, k)` | `k ≥ W` (literal or quantum amount) | amount taken mod W (a totalization of LLVM's poison; x86 masks 8- and 16-bit counts to 5 bits and is NOT the reference here) |
 | `fshl/fshr` | | amount mod W |
 | `fptosi/fptoui` from f16/f32/f64 | NaN, ±Inf, out of range | as x86-64 LLVM 19 `-O1` code (measured 2026-10-27; f16 via f32): let `c32(x)`/`c64(x)` be cvtt to i32/i64 with indefinite `INT_MIN` of that width. `fptosi` i8/i16 = trunc(c32), i32 = c32, i64 = c64; `fptoui` i8/i16 = trunc(c32), i32 = trunc(c64), i64 = `r1 \| (r2 & (r1 >>s 63))` with `r1 = c64(x)`, `r2 = c64(x − 2^63)`. E.g. NaN → s8 0, s32 `INT_MIN`, u32 0, u64 2^63; 300.0 → s8 44 |
-| `fptosi/fptoui` from f80 | NaN, ±Inf, out of range | x87 `fistp` with indefinite `INT_MIN` of its width: s8 = trunc(fist16), s16 = fist16, s32 = fist32, s64 = fist64; u8/u16 = trunc(fist32), u32 = trunc(fist64), u64 = `x < 2^63 ? fist64(x) : fist64(x − 2^63) ^ 2^63` (NaN → 0) |
-| `fadd fsub fmul fdiv frem fma sqrt …` NaN result | | x86 SSE rule in IR operand order: the first NaN operand, quieted; an invalid operation (`frem` by 0 or of ±Inf included) gives the default NaN `0xFFF8000000000000` (f32 `0xFFC00000`, f16 `0xFE00`). Where native x86-64 `-O1` code leaves the choice to register allocation or to the libm vendor (two-NaN commutative `fadd`/`fmul`, `frem` and `fma` through libm), this row is normative, and the C oracle of §6 compares floating-point values NaN-insensitively (any NaN equals any NaN); the reference oracle compares bit patterns (ruling 2026-10-27) |
+| `fptosi/fptoui` from f80 | NaN, ±Inf, out of range | x87 `fistp` with indefinite `INT_MIN` of its width: s8 = trunc(fist16), s16 = fist16, s32 = fist32, s64 = fist64; u8 = trunc(fist16), u16 = trunc(fist32), u32 = trunc(fist64), u64 = `x < 2^63 ? fist64(x) : fist64(x − 2^63) ^ 2^63` (NaN → 0); other widths as LLVM 19 `-O1`: signed N ≤ 64 via the narrowest `fist` ≥ N, unsigned via the narrowest > N, 64 < N ≤ 128 the compiler-rt `__fixxfti`/`__fixunsxfti` value then trunc, N > 128 `ExpandLargeFpConvert` (|x| < 1 → 0; exponent ≥ N saturates to the signed N-bit extreme by sign, NaN included; else ±floor mod 2^N). Flags for N > 64: INVALID for NaN/Inf/out of range at the conversion width, else INEXACT (ruling 2026-10-27) |
+| `fadd fsub fmul fdiv frem fma sqrt …` NaN result | | x86 SSE rule in IR operand order: the first NaN operand, quieted; an invalid operation (`frem` by 0 or of ±Inf included) gives the default NaN `0xFFF8000000000000` (f32 `0xFFC00000`, f16 `0xFE00`, bf16 `0xFFC0`, f80 the real indefinite `0xFFFF_C000000000000000`; the first-NaN rule holds for f80 too, although x87 natively returns the larger significand). Where native x86-64 `-O1` code leaves the choice to register allocation or to the libm vendor (two-NaN commutative `fadd`/`fmul`, `frem` and `fma` through libm), this row is normative, and the C oracle of §6 compares floating-point values NaN-insensitively (any NaN equals any NaN); the reference oracle compares bit patterns (ruling 2026-10-27) |
 | `fmax(a, b)` / `fmin(a, b)` (`llvm.maxnum/minnum`) | | `isnan(a) ? b : isnan(b) ? a : (b > a ? b : a)`, min with `<`; equal values (±0) give `a`; two NaNs give `b` unchanged (x86-64 `-O1`, measured) |
 | f80 non-canonical encodings | pseudo-NaN, pseudo-Inf, unnormal | invalid operand: result real indefinite `0xFFFF_C000000000000000`, INVALID; pseudo-denormals read as denormals (x87) |
 | `fadd fsub fmul fdiv sqrt fma` | | IEEE, round to nearest even unless `_rm/_rmq` says otherwise |
@@ -253,8 +258,9 @@ row (ruling 2026-10-27).
 | `f16/f32/f80` arithmetic | | IEEE binary16 / binary32 / x87 extended, same rounding rule |
 | `ctlz(0)`, `cttz(0)` | | `W` |
 | `abs(INT_MIN)` | | `INT_MIN` |
-| `rint`, `round`, `floor`, `ceil`, `trunc` | | IEEE; `rint` ties to even |
-| `is_fpclass` | | pure bit test |
+| `rint`, `round`, `floor`, `ceil`, `trunc` | | IEEE; `rint` rounds in the current mode, ties to even in the default mode, and a `_rm`/`_rmq` template in the template's mode |
+| bf16 conversions | | as LLVM 19 `-O1` lowers them inline: `fpext` bf16 → f32 is a bare shift (an sNaN stays signalling), `fptrunc` f32 → bf16 rounds to nearest even without quieting, `sitofp`/`uitofp` iN → bf16 goes through f32 (two roundings, visible for N > 24), f64 → bf16 likewise through f32 where codegen does so |
+| `is_fpclass` | | pure bit test; on f80 a pseudo-denormal is subnormal and a non-canonical encoding is a quiet NaN (native is inconsistent here; the table decides) |
 | `ry`/`rz`/`phase` with a non-finite angle (literal or angle rail) | | identity |
 | `qrom_load`, `qram_load` | index `≥ n` (UNSIGNED reading of the index rail at its width; a `_hl` literal likewise) | `0`; no cell is read |
 | `qram_store` | index `≥ n` (unsigned reading, as above) | no-op (its tape slot stays `|0⟩`) |
