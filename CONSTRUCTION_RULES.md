@@ -631,6 +631,10 @@ that class are equal iff:
    carries it is irrelevant. So `and_i1(a, b, t) · rz_i1(t, θ) · and_i1(a, b, t)` with t |0⟩ equals the
    doubly-controlled phase CCP(θ) on a, b (never a controlled Rz, which differs by a relative phase).
 
+A phase whose control predicate is constant over the quantum inputs once the classical arguments are
+fixed, and whose angle is classical, is a global phase: whether either side emits it is not compared
+(this is what rule 12's deletion relies on; it never applies to an Ry, nor to a phase with an angle rail).
+
 An indeterminate value the C program reads (a cell never written: `malloc`, `realloc` growth,
 an uninitialized local) is taken as 0 by the classical reference, the value the circuit's fresh
 `|0⟩` cell holds; no code is emitted for it.
@@ -692,6 +696,7 @@ lower straight-line in the entries), 184 musl `atan` on a quantum double with th
 Added 2026-10-27: 186 `free_qram` (QRAM lifetime end at `free`, `qram_realloc`, entangled block kept).
 
 To write (2026-10-27): an irreducible loop (`goto` into a loop body with a quantum exit) under rule 14's
-`fix-irreducible` bullet; a `switch` with a reachable default (rule 13).
+`fix-irreducible` bullet; a `switch` with a reachable default (rule 13); an inline `asm` with a quantum
+operand, as a declared clone (rule 27).
 
 Out of scope by §0: an `-O0`+mem2reg or `-O2` variant of any example.
