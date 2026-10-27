@@ -46,7 +46,7 @@
  * "tape_write", "tape_write_lit", "tape_write_str_lit", "abort"), cqe_tname.w = the width token, and the
  * IR arguments in order as cqe_vals (an i32 handle as a 32-bit 'i' value, a ptr as a 64-bit 'i' value
  * holding the address, a literal in its own type). The controlled forms are told apart by arity. Return
- * values follow cq-f69: 0 computed, NOT_MINE (1) for a stem outside the family, -1 after cqe_fail. The
+ * values follow M1 (cqe.h): 0 computed, CQE_OP_NOT_MINE for a stem outside the family, -1 after cqe_fail. The
  * family also accepts op spellings that keep "cqrt_", the width or "_controlled", and registers those
  * keys too, so it does not depend on which of them the dispatcher strips.
  */
@@ -63,14 +63,6 @@
 static int g_failed;
 #define cqe_fail(...) (g_failed = 1, cqe_fail(__VA_ARGS__))
 
-/* "Not this family" (cq-f69 / cq-mgi: 1; cqe.h will carry the name). */
-#if defined(CQE_NOT_MINE)
-#define TAPE_NOT_MINE CQE_NOT_MINE
-#elif defined(CQE_OP_NOT_MINE)
-#define TAPE_NOT_MINE CQE_OP_NOT_MINE
-#else
-#define TAPE_NOT_MINE 1
-#endif
 
 /* ---------- small utilities ---------- */
 
@@ -649,20 +641,13 @@ static void normalize(const char *op, char *stem, size_t cap, char *wtok, int *c
   }
 }
 
-/* The one place that owns the result buffer. Ownership is undecided (cq-mgi): either core preallocates
- * out->nw words, or the handler callocs out->w when it is NULL. Both are accepted here. */
+/* An i32 handle result. M1 (cq-mgi): the dispatcher owns out; out->w arrives non-NULL and zeroed with
+ * bits, kind and nw preset to the declared return type, and the handler only writes the words. */
 static int set_handle(cqe_val *out, int32_t h, const char *sym) {
-  if (!out) return 0;
-  if (!out->w) {
-    out->w = calloc(1, sizeof(uint64_t));
-    out->nw = 1;
-  } else if (out->nw < 1) {
-    cqe_fail("tape: %s: result buffer of %u words", sym, out->nw);
+  if (!out || !out->w || out->nw < 1 || out->bits != 32 || out->kind != 'i') {
+    cqe_fail("tape: %s: result buffer is not a preset i32 (M1)", sym);
     return -1;
   }
-  out->bits = 32;
-  out->kind = 'i';
-  out->nw = 1;
   out->w[0] = (uint32_t)h;
   return 0;
 }
@@ -677,7 +662,7 @@ static int tape_dispatch_(const cqe_tname *tn, const cqe_val *a, int n, cqe_val 
                                      "tape_write_str_lit", "abort"};
   int found = 0;
   for (size_t i = 0; i < sizeof mine / sizeof mine[0]; i++) found |= !strcmp(stem, mine[i]);
-  if (!found) return TAPE_NOT_MINE;
+  if (!found) return CQE_OP_NOT_MINE;
   /* BACKEND_ABI §1.11 defines no _unc for this family: an _unc spelling is malformed. */
   if (tn->unc) { cqe_fail("tape: %s: tape and abort symbols have no _unc", sym); return -1; }
 #define ARITY(k) do { if (n != (k)) { cqe_fail("tape: %s: %d arguments, expected %d", sym, n, (k)); return -1; } } while (0)
@@ -721,7 +706,7 @@ static int tape_dispatch_(const cqe_tname *tn, const cqe_val *a, int n, cqe_val 
     return 0;
   }
 #undef ARITY
-  return TAPE_NOT_MINE;
+  return CQE_OP_NOT_MINE;
 }
 
 static int tape_dispatch(const cqe_tname *tn, const cqe_val *a, int n, cqe_val *out) {

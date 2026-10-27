@@ -31,7 +31,7 @@ int cqe_parse_template(const char *sym, cqe_tname *out) { (void)sym; (void)out; 
 
 void cqe_register_op(const char *op, cqe_op_fn fn) {
   for (int i = 0; i < nops; i++)
-    if (!strcmp(ops[i].op, op)) { fprintf(stderr, "fake_core: op %s registered twice\n", op); exit(2); }
+    if (!strcmp(ops[i].op, op) && ops[i].fn == fn) return;   /* M1: a repeated pair is a no-op */
   snprintf(ops[nops].op, sizeof ops[nops].op, "%s", op);
   ops[nops++].fn = fn;
 }
@@ -128,14 +128,19 @@ int32_t fake_call(const char *op, const char *w, int unc, int nargs, ...) {
   snprintf(tn.op, sizeof tn.op, "%s", op);
   snprintf(tn.w, sizeof tn.w, "%s", w ? w : "");
   tn.unc = (uint8_t)unc;
+  /* M1: out is the dispatcher's, preset to the declared return type (i32 handle or void), zeroed */
+  int ret = strstr(op, "alloc") || (strstr(op, "write") && !strstr(op, "lit"));
   uint64_t word = 0;
-  cqe_val out = {0, 0, 1, &word};
+  cqe_val out = {ret ? 32u : 0u, ret ? 'i' : 0, 1, &word};
   for (int i = 0; i < nops; i++)
     if (!strcmp(ops[i].op, op)) {
       int before = fake_violations;
       int rc = ops[i].fn(&tn, args, nargs, &out);
       if (!(rc == 0 && fake_violations == before) && !(rc == -1 && fake_violations > before))
         cqe_fail("TEST: %s returned %d with %d new violations", op, rc, fake_violations - before);
+      if (out.w != &word || out.nw != 1 || out.bits != (ret ? 32u : 0u) || out.kind != (ret ? 'i' : 0) ||
+          (!ret && word) || (ret && (word >> 32)))
+        cqe_fail("TEST: %s broke the M1 out contract", op);
       return (int32_t)(uint32_t)word;
     }
   fprintf(stderr, "fake_core: no op registered under %s\n", op);
@@ -158,7 +163,8 @@ int fake_rc(const char *key, const char *op) {
   cqe_tname tn;
   memset(&tn, 0, sizeof tn);
   snprintf(tn.op, sizeof tn.op, "%s", op);
-  cqe_val out = {0, 0, 0, NULL};
+  uint64_t word = 0;
+  cqe_val out = {32, 'i', 1, &word};
   for (int i = 0; i < nops; i++)
     if (!strcmp(ops[i].op, key)) return ops[i].fn(&tn, NULL, 0, &out);
   return -99;
