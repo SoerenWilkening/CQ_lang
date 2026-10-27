@@ -43,15 +43,13 @@ RailType railTypeOf(llvm::Type *t) {
     return {Kind::Fp, 64};
   if (t->isX86_FP80Ty())
     return {Kind::Fp, 80};
+  if (t->isBFloatTy())
+    return {Kind::BFloat, 16}; // B1 (cq-dvj): bf16 is its own kind, bits always 16
   std::string s;
   llvm::raw_string_ostream os(s);
   t->print(os);
-  // bfloat is a CR §1.1 rail (3aaafe1) but RailType{Kind, bits} cannot tell it from f16: it waits on
-  // the freeze-rule bead cq-dvj (Common.h). fp128 is unreachable from C on this target (CR §1.1,
-  // rule 25); ppc_fp128 is not x86-64. Anything else (pointer, vector, aggregate, void) is no rail.
-  if (t->isBFloatTy())
-    unimplemented("abi: railTypeOf: bfloat rail needs a RailType that tells bf16 from f16 (cq-dvj): " +
-                  os.str());
+  // fp128 is unreachable from C on this target (CR §1.1, rule 25); ppc_fp128 is not x86-64.
+  // Anything else (pointer, vector, aggregate, void) is no rail.
   if (t->isFloatingPointTy())
     unimplemented("abi: railTypeOf: fp type with no CR §1.1 rail width: " + os.str());
   internalError("abi: railTypeOf: not a scalar rail type: " + os.str());
@@ -62,6 +60,11 @@ llvm::Type *irTypeOf(llvm::LLVMContext &C, RailType r) {
     if (r.bits < 1 || r.bits > llvm::IntegerType::MAX_INT_BITS)
       internalError("abi: irTypeOf: integer width out of range: i" + std::to_string(r.bits));
     return llvm::IntegerType::get(C, r.bits);
+  }
+  if (r.kind == Kind::BFloat) {
+    if (r.bits != 16)
+      internalError("abi: irTypeOf: a BFloat rail is 16 bits, not " + std::to_string(r.bits));
+    return llvm::Type::getBFloatTy(C);
   }
   switch (r.bits) {
   case 16: return llvm::Type::getHalfTy(C);
@@ -99,19 +102,37 @@ bool canonicalDecimal(StringRef s, bool allowZero) {
 }
 
 bool validRail(RailType r) {
-  if (r.kind == Kind::Int)
-    return r.bits >= 1 && r.bits <= llvm::IntegerType::MAX_INT_BITS;
-  return r.bits == 16 || r.bits == 32 || r.bits == 64 || r.bits == 80;
+  switch (r.kind) {
+  case Kind::Int: return r.bits >= 1 && r.bits <= llvm::IntegerType::MAX_INT_BITS;
+  case Kind::Fp: return r.bits == 16 || r.bits == 32 || r.bits == 64 || r.bits == 80;
+  case Kind::BFloat: return r.bits == 16;
+  }
+  return false;
+}
+
+// The CR §1.1 width prefix: i, f, or bf (bf16 is the only BFloat width).
+const char *widthPrefix(Kind k) {
+  switch (k) {
+  case Kind::Int: return "i";
+  case Kind::Fp: return "f";
+  case Kind::BFloat: return "bf";
+  }
+  return "?";
 }
 
 std::string widthToken(RailType r) {
   if (!validRail(r))
-    internalError("abi: invalid rail width " + std::string(r.kind == Kind::Int ? "i" : "f") +
-                  std::to_string(r.bits));
-  return (r.kind == Kind::Int ? "i" : "f") + std::to_string(r.bits);
+    internalError("abi: invalid rail width " + std::string(widthPrefix(r.kind)) + std::to_string(r.bits));
+  return widthPrefix(r.kind) + std::to_string(r.bits);
 }
 
+// True for the fp kinds (IEEE half/float/double/x86_fp80 and bf16): CR §1.1 gives bf16 the same
+// rounding and NaN rules, so every fp template, cast and _rm/_exc accepts it.
+bool isFpKind(Kind k) { return k == Kind::Fp || k == Kind::BFloat; }
+
 std::optional<RailType> parseWidth(StringRef s) {
+  if (s == "bf16")
+    return RailType{Kind::BFloat, 16};
   if (s.size() < 2 || (s[0] != 'i' && s[0] != 'f'))
     return std::nullopt;
   StringRef d = s.drop_front();
@@ -294,7 +315,7 @@ std::string checkTemplate(const TemplateSpec &s) {
     break;
   case Dom::Fp:
     if (!(e = needTo(false)).empty()) return e;
-    if (wk != Kind::Fp) return s.op + " needs an fp width";
+    if (!isFpKind(wk)) return s.op + " needs an fp width";
     break;
   case Dom::Any:
     if (!(e = needTo(false)).empty()) return e;
@@ -303,7 +324,7 @@ std::string checkTemplate(const TemplateSpec &s) {
     if (s.to) {
       if (wk != Kind::Int || s.to->kind != Kind::Int || s.to->bits >= s.w.bits)
         return "trunc_<W>_to_<W2> needs integers with W2 < W";
-    } else if (wk != Kind::Fp) {
+    } else if (!isFpKind(wk)) {
       return "trunc without _to_ is the fp rounding op and needs an fp width";
     }
     break;
@@ -314,18 +335,20 @@ std::string checkTemplate(const TemplateSpec &s) {
     break;
   case Dom::CastFF:
     if (!(e = needTo(true)).empty()) return e;
-    if (wk != Kind::Fp || s.to->kind != Kind::Fp)
+    if (!isFpKind(wk) || !isFpKind(s.to->kind))
       return s.op + " needs fp widths";
+    // fpext/fptrunc between half and bfloat (equal widths) is rejected by LLVM 19's parser and out
+    // of scope (CR §2); the strict direction test below rejects it.
     if (s.op == "fpext" ? s.to->bits <= s.w.bits : s.to->bits >= s.w.bits)
       return s.op + ": wrong direction";
     break;
   case Dom::CastIF:
     if (!(e = needTo(true)).empty()) return e;
-    if (wk != Kind::Int || s.to->kind != Kind::Fp) return s.op + " needs int to fp";
+    if (wk != Kind::Int || !isFpKind(s.to->kind)) return s.op + " needs int to fp";
     break;
   case Dom::CastFI:
     if (!(e = needTo(true)).empty()) return e;
-    if (wk != Kind::Fp || s.to->kind != Kind::Int) return s.op + " needs fp to int";
+    if (!isFpKind(wk) || s.to->kind != Kind::Int) return s.op + " needs fp to int";
     break;
   case Dom::Bitcast:
     if (!(e = needTo(true)).empty()) return e;
@@ -341,7 +364,7 @@ std::string checkTemplate(const TemplateSpec &s) {
     return "_s is qrom_load only";
 
   // Rounding mode and exception bits: only where an fp value is involved.
-  bool fp = wk == Kind::Fp || (s.to && s.to->kind == Kind::Fp);
+  bool fp = isFpKind(wk) || (s.to && isFpKind(s.to->kind));
   if ((s.rm != TemplateSpec::NoRm || s.exc) && !fp)
     return "_rm/_rmq/_exc need an fp operand or result";
   if (o->arity == Arity::Qrom && (s.rm != TemplateSpec::NoRm || s.exc))
@@ -855,15 +878,18 @@ std::string checkFpLiteralPosition(const llvm::CallBase &call) {
   unsigned at = unc ? 1 : 0; // the _unc forms take `out` first
   if (call.arg_size() <= at)
     return "@" + f->getName().str() + " called with too few arguments";
-  if (auto *c = llvm::dyn_cast<llvm::ConstantFP>(call.getArgOperand(at)))
-    if (!c->isNaN()) {
-      std::string v;
-      llvm::raw_string_ostream os(v);
-      c->printAsOperand(os, false);
-      return "@" + f->getName().str() + ": literal " + os.str() + " is not a NaN, so it commutes behind the handle (CR §1.2: _" +
-             (s->shape == "lh" ? std::string("hl") : std::string(s->shape == "lqq" ? "qlq" : "qll")) + ")";
-    }
-  return "";
+  // CR §1.2 (ruling cq-5iy, CQ_spec 8b52487): only a compile-time NaN constant keeps its position.
+  // A non-NaN constant and a run-time classical operand both commute behind the handle.
+  const llvm::Value *lit = call.getArgOperand(at);
+  if (auto *c = llvm::dyn_cast<llvm::ConstantFP>(lit))
+    if (c->isNaN())
+      return "";
+  std::string v;
+  llvm::raw_string_ostream os(v);
+  lit->printAsOperand(os, false);
+  std::string swapped = s->shape == "lh" ? "hl" : s->shape == "lqq" ? "qlq" : "qll";
+  return "@" + f->getName().str() + ": classical operand " + os.str() +
+         " is not a compile-time NaN constant, so it commutes behind the handle (CR §1.2: _" + swapped + ")";
 }
 
 } // namespace cq::abi::detail

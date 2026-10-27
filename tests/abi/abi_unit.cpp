@@ -1,4 +1,4 @@
-// cq-w0-abi unit tests: widths i1 i7 i100 i128 f16 f80, every template shape, _rm/_rmq/_exc, _s,
+// cq-w0-abi unit tests: widths i1 i7 i100 i128 f16 bf16 f80, every template shape, _rm/_rmq/_exc, _s,
 // every core form, every clone suffix, rule 27's asm clone name, and the rejection of non-canonical
 // spellings (parse -> nullopt, name -> internal error).
 #include "cq/Abi.h"
@@ -69,6 +69,7 @@ static void testTypes() {
       {llvm::IntegerType::get(C, 100), Kind::Int, 100}, {llvm::Type::getInt128Ty(C), Kind::Int, 128},
       {llvm::Type::getHalfTy(C), Kind::Fp, 16},       {llvm::Type::getFloatTy(C), Kind::Fp, 32},
       {llvm::Type::getDoubleTy(C), Kind::Fp, 64},     {llvm::Type::getX86_FP80Ty(C), Kind::Fp, 80},
+      {llvm::Type::getBFloatTy(C), Kind::BFloat, 16}, // B1: bf16 is not {Fp, 16}
   };
   for (auto &r : rows) {
     RailType rt = railTypeOf(r.t);
@@ -77,9 +78,10 @@ static void testTypes() {
   }
   CHECK(handleTy(C) == llvm::Type::getInt32Ty(C), "handleTy is i32");
   CHECK(dies([] { railTypeOf(llvm::Type::getFP128Ty(C)); }), "fp128 has no rail type");
-  // bf16 is a CR §1.1 rail at 3aaafe1, but RailType cannot tell it from f16 until the freeze-rule
-  // bead cq-dvj lands; until then railTypeOf(bfloat) is cq::unimplemented.
-  CHECK(dies([] { railTypeOf(llvm::Type::getBFloatTy(C)); }), "bfloat waits on cq-dvj");
+  CHECK(irTypeOf(C, {Kind::Fp, 16}) == llvm::Type::getHalfTy(C), "{Fp,16} stays half");
+  CHECK(irTypeOf(C, {Kind::BFloat, 16}) == llvm::Type::getBFloatTy(C), "{BFloat,16} is bfloat");
+  CHECK(dies([] { irTypeOf(C, {Kind::BFloat, 32}); }), "a BFloat rail is 16 bits");
+  CHECK(dies([] { irTypeOf(C, {Kind::BFloat, 8}); }), "a BFloat rail is 16 bits (8)");
   CHECK(dies([] { railTypeOf(llvm::PointerType::getUnqual(C)); }), "ptr is not a rail");
   CHECK(dies([] { railTypeOf(llvm::FixedVectorType::get(llvm::Type::getInt32Ty(C), 4)); }), "vector");
   CHECK(dies([] { irTypeOf(C, {Kind::Fp, 128}); }), "f128");
@@ -208,6 +210,32 @@ static const TRow kTemplates[] = {
     {"cq_template_qrom_load_f80", "i32 (ptr, i64, i32)"},
     {"cq_template_qrom_load_i128_s", "i32 (ptr, i64, i64, i32)"},
     {"cq_template_qrom_load_f16_s", "i32 (ptr, i64, i64, i32)"},
+    // bf16 (CR §1.1/§1.2 at 3aaafe1, B1): every fp template, cast and suffix at bf16
+    {"cq_template_fadd_bf16", "i32 (i32, i32)"},
+    {"cq_template_fadd_bf16_hl", "i32 (i32, bfloat)"},
+    {"cq_template_fmul_bf16_lh", "i32 (bfloat, i32)"},
+    {"cq_template_fdiv_bf16_lh", "i32 (bfloat, i32)"},
+    {"cq_template_frem_bf16_hl_rm_exc", "i32 (i32, bfloat, i32)"},
+    {"cq_template_fneg_bf16", "i32 (i32)"},
+    {"cq_template_sqrt_bf16_rmq", "i32 (i32, i32)"},
+    {"cq_template_trunc_bf16", "i32 (i32)"},
+    {"cq_template_fcmp_olt_bf16_hl", "i32 (i32, bfloat)"},
+    {"cq_template_select_bf16_lh", "i32 (i32, bfloat, i32)"},
+    {"cq_template_fma_bf16_qll", "i32 (i32, bfloat, bfloat)"},
+    {"cq_template_is_fpclass_bf16_hl", "i32 (i32, i32)"},
+    {"cq_template_fpext_bf16_to_f32", "i32 (i32)"},
+    {"cq_template_fpext_bf16_to_f80", "i32 (i32)"},
+    {"cq_template_fptrunc_f32_to_bf16", "i32 (i32)"},
+    {"cq_template_fptrunc_f64_to_bf16_rmq_exc", "i32 (i32, i32)"},
+    {"cq_template_sitofp_i100_to_bf16", "i32 (i32)"},
+    {"cq_template_uitofp_i32_to_bf16_rm", "i32 (i32, i32)"},
+    {"cq_template_fptosi_bf16_to_i7", "i32 (i32)"},
+    {"cq_template_fptoui_bf16_to_i128_exc", "i32 (i32)"},
+    {"cq_template_bitcast_bf16_to_i16", "i32 (i32)"},
+    {"cq_template_bitcast_i16_to_bf16", "i32 (i32)"},
+    {"cq_template_bitcast_bf16_to_f16", "i32 (i32)"}, // LLVM bitcasts half <-> bfloat (equal size)
+    {"cq_template_qrom_load_bf16", "i32 (ptr, i64, i32)"},
+    {"cq_template_qrom_load_bf16_s", "i32 (ptr, i64, i64, i32)"},
 };
 
 // The forward signature "i32 (args)" -> the _unc signature "void (i32, args)".
@@ -248,6 +276,25 @@ static void testTemplates() {
     TemplateSpec s;
     s.op = "fadd"; s.w = {Kind::Fp, 64}; s.shape = "hl"; s.rm = TemplateSpec::RmLit; s.exc = true;
     CHECK(name(s, true) == "cq_template_fadd_f64_hl_rm_exc_unc", "%s", name(s, true).c_str());
+  }
+  {
+    // bf16 by hand: the BFloat kind spells bf16, {Fp,16} still spells f16, and parse reads them back.
+    TemplateSpec s;
+    s.op = "fpext"; s.w = {Kind::BFloat, 16}; s.to = RailType{Kind::Fp, 32};
+    CHECK(name(s, false) == "cq_template_fpext_bf16_to_f32", "%s", name(s, false).c_str());
+    s.op = "fadd"; s.to.reset(); s.shape = "hl";
+    CHECK(name(s, true) == "cq_template_fadd_bf16_hl_unc", "%s", name(s, true).c_str());
+    s.w = {Kind::Fp, 16};
+    CHECK(name(s, false) == "cq_template_fadd_f16_hl", "%s", name(s, false).c_str());
+    auto p = parseTemplate("cq_template_fptrunc_f64_to_bf16", nullptr);
+    CHECK(p && p->w.kind == Kind::Fp && p->w.bits == 64 && p->to && p->to->kind == Kind::BFloat &&
+              p->to->bits == 16, "fptrunc to bf16 fields");
+    auto h = parseTemplate("cq_template_fneg_f16", nullptr);
+    CHECK(h && h->w.kind == Kind::Fp && h->w.bits == 16, "f16 parses as {Fp,16}");
+    CHECK(dies([] { TemplateSpec t; t.op = "fadd"; t.w = {Kind::BFloat, 32}; name(t, false); }),
+          "BFloat with bits != 16 has no name");
+    CHECK(dies([] { TemplateSpec t; t.op = "add"; t.w = {Kind::BFloat, 16}; name(t, false); }),
+          "integer op at bf16 has no name");
   }
   {
     TemplateSpec s;
@@ -328,6 +375,20 @@ static void testTemplates() {
       "cq_template_add_i32_unc_unc",      // one _unc
       "cq_template_add_i32_exc_rm",       // suffix order
       "cq_template_fadd_f64_rm_rmq",      // one rounding suffix
+      "cq_template_add_bf16",             // integer op on bf16
+      "cq_template_bswap_bf16",           // integer op on bf16
+      "cq_template_fadd_bf32",            // bf16 is the only bf width
+      "cq_template_fadd_bf8",             // ditto
+      "cq_template_fadd_bf016",           // canonical spelling
+      "cq_template_fadd_b16",             // no b prefix
+      "cq_template_fadd_BF16",            // lowercase
+      "cq_template_fpext_f16_to_bf16",    // half <-> bfloat fpext: out of scope (CR §2)
+      "cq_template_fptrunc_bf16_to_f16",  // ditto
+      "cq_template_fpext_bf16_to_bf16",   // fpext widens
+      "cq_template_fptrunc_f32_to_bf16_lh", // casts take no binary shape
+      "cq_template_bitcast_bf16_to_bf16", // bitcast changes kind
+      "cq_template_bitcast_bf16_to_i32",  // bitcast keeps the width
+      "cq_template_trunc_bf16_to_i8",     // trunc cast is int to int
       "cq_template_add_i32_hl_",          // trailing underscore
       "cq_template_frobnicate_i32",       // unknown op
       "cq_template_fadd_f64_hl_inv",      // retired _inv
@@ -375,6 +436,7 @@ static const TRow kCores[] = {
     {"cqrt_alloc_i128", "i32 (i128)"},
     {"cqrt_alloc_f16", "i32 (half)"},
     {"cqrt_alloc_f80", "i32 (x86_fp80)"},
+    {"cqrt_alloc_bf16", "i32 (bfloat)"},
     {"cqrt_free", "void (i32)"},
     {"cqrt_measure_i1", "i1 (i32)"},
     {"cqrt_measure_i7", "i7 (i32)"},
@@ -599,8 +661,9 @@ static void testClones() {
         "asm clone twin name");
 }
 
-// CR §1.2 (3aaafe1): fma lqq/lql and fadd/fmul _lh keep a NaN literal in front; a non-NaN constant
-// there should have commuted, so the call is rejected.
+// CR §1.2 (3aaafe1, cq-5iy at 8b52487): fma lqq/lql and fadd/fmul _lh keep a compile-time NaN
+// constant in front; a non-NaN constant or a run-time operand there should have commuted, so the call
+// is rejected.
 static void testFpLiteralPosition() {
   using detail::checkFpLiteralPosition;
   llvm::Module M("lit", C);
@@ -611,6 +674,8 @@ static void testFpLiteralPosition() {
   llvm::Value *q = host->getArg(0), *x = host->getArg(1);
   llvm::Value *nan = llvm::ConstantFP::getNaN(d), *one = llvm::ConstantFP::get(d, 1.0);
   llvm::Value *nanF = llvm::ConstantFP::getNaN(f), *twoF = llvm::ConstantFP::get(f, 2.0);
+  llvm::Type *bf = llvm::Type::getBFloatTy(C);
+  llvm::Value *nanBF = llvm::ConstantFP::getNaN(bf), *oneBF = llvm::ConstantFP::get(bf, 1.0);
   auto call = [&](const char *sym, bool unc, llvm::ArrayRef<llvm::Value *> args) {
     bool u = false;
     auto s = parseTemplate(sym, &u);
@@ -624,7 +689,18 @@ static void testFpLiteralPosition() {
       {call("cq_template_fma_f32_lql", false, {twoF, q, nanF}), false, "fma lql 2.0 (NaN addend)"},
       {call("cq_template_fma_f64_lql_unc", true, {q, nan, q, one}), true, "fma lql_unc NaN"},
       {call("cq_template_fma_f64_lql_unc", true, {q, one, q, nan}), false, "fma lql_unc 1.0"},
-      {call("cq_template_fma_f64_lqq", false, {x, q, q}), true, "fma lqq runtime literal (cq-5iy)"},
+      {call("cq_template_fma_f64_lqq", false, {x, q, q}), false, "fma lqq run-time operand kept (cq-5iy)"},
+      {call("cq_template_fma_f64_lql", false, {x, q, one}), false, "fma lql run-time operand kept (cq-5iy)"},
+      {call("cq_template_fma_f64_qlq", false, {q, x, q}), true, "fma qlq run-time operand swapped (cq-5iy)"},
+      {call("cq_template_fadd_f64_lh", false, {x, q}), false, "fadd lh run-time operand kept (cq-5iy)"},
+      {call("cq_template_fmul_f64_lh_unc", true, {q, x, q}), false, "fmul lh_unc run-time operand kept (cq-5iy)"},
+      {call("cq_template_fadd_f64_hl", false, {q, x}), true, "fadd hl run-time operand swapped (cq-5iy)"},
+      {call("cq_template_fmul_f64_hl_unc", true, {q, q, x}), true, "fmul hl_unc run-time operand swapped (cq-5iy)"},
+      {call("cq_template_fadd_f64_lh", false, {llvm::UndefValue::get(d), q}), false, "fadd lh undef: not a NaN constant"},
+      {call("cq_template_fsub_f64_lh", false, {x, q}), true, "fsub lh run-time: not commutative"},
+      {call("cq_template_fadd_bf16_lh", false, {nanBF, q}), true, "fadd bf16 lh NaN"},
+      {call("cq_template_fadd_bf16_lh", false, {oneBF, q}), false, "fadd bf16 lh 1.0"},
+      {call("cq_template_fma_bf16_lqq", false, {nanBF, q, q}), true, "fma bf16 lqq NaN"},
       {call("cq_template_fma_f64_qlq", false, {q, one, q}), true, "fma qlq 1.0"},
       {call("cq_template_fma_f64_llq", false, {one, one, q}), true, "fma llq: no product handle to swap"},
       {call("cq_template_fadd_f64_lh", false, {nan, q}), true, "fadd lh NaN"},
