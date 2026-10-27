@@ -1,4 +1,5 @@
-/* Checker template family: fp compare, fp misc and fp casts at f16/f32/f64 (cq-w0-tmpl-fpmisc).
+/* Checker template family: fp compare, fp misc and fp casts at f16/bf16/f32/f64 (cq-w0-tmpl-fpmisc,
+ * bf16: cq-b7e).
  *
  * Evaluator semantics, on basis values, of the templates
  *   fcmp fabs copysign fmax fmin floor ceil trunc rint round is_fpclass
@@ -8,8 +9,9 @@
  * Everything is soft: fp values are bit patterns, integers are two's complement on N bits in
  * little-endian 64-bit words, any N >= 1. Nothing here touches the host FPU, so the host rounding
  * mode and exception flags (used by the fenv family) neither affect nor see these ops. The fp
- * formats are described by their exponent and fraction widths (f16 5/10, f32 8/23, f64 11/52); the
- * code is generic over them.
+ * formats are described by their exponent and fraction widths (f16 5/10, bf16 8/7, f32 8/23,
+ * f64 11/52); the code is generic over them. bf16 follows the same rounding and NaN rules as the
+ * IEEE widths (CR §1.1).
  *
  * Semantics, where §2 or x86-64 LLVM 19 -O1 code fixes a choice:
  *   - fcmp: LLVM predicates, o = ordered and, u = unordered or; ±0 equal; i1 result.
@@ -20,9 +22,13 @@
  *   - is_fpclass(h, mask): LLVM class bits 0 sNaN .. 9 +Inf; a pure bit test.
  *   - fpext exact; fptrunc RNE with subnormals and overflow to Inf; a NaN is quieted, its payload
  *     left-aligned (fpext) or truncated on the right (fptrunc), as x86 and compiler-rt.
+ *     Direction follows clang 19's spelling over the order f16 < bf16 < f32 < f64: (__bf16) of a
+ *     _Float16 is fpext_f16_to_bf16 (rounds to 8 bits), (_Float16) of a __bf16 is
+ *     fptrunc_bf16_to_f16 (overflows to Inf, rounds subnormals); both are the same correctly rounded
+ *     conversion. The reverse spellings are malformed.
  *   - sitofp/uitofp: correctly rounded, RNE, from any width.
  *   - fptosi/fptoui: in range, truncation toward 0. Out of range, NaN, ±Inf: the x86-64 LLVM 19
- *     -O1 result (CR §2 row, f16 via f32), extended to every width the way LLVM legalizes it:
+ *     -O1 result (CR §2 row, f16 and bf16 via f32), extended to every width the way LLVM legalizes it:
  *       with c32/c64 = cvtt to i32/i64 (indefinite INT_MIN of that width) and fixN = the
  *       compiler-rt __fixXfti rule at width F (|x| < 1 -> 0; unbiased exponent >= F, NaN, Inf ->
  *       sign ? INT_MIN_F : INT_MAX_F; otherwise sign * trunc(|x|) mod 2^F), fixuN its unsigned
@@ -124,14 +130,18 @@ typedef struct {
 
 enum { FM_BAD = -1, FM_OK = 0, FM_F80 = 1 };
 
-/* "f16" / "f32" / "f64" -> format; "f80" -> FM_F80 (another family); anything else FM_BAD. */
+/* "f16" / "bf16" / "f32" / "f64" -> format; "f80" -> FM_F80 (another family); else FM_BAD. */
 static int fm_fmt_of(const char *w, fm_fmt *f) {
   if (!strcmp(w, "f16")) { *f = (fm_fmt){16, 5, 10}; return FM_OK; }
+  if (!strcmp(w, "bf16")) { *f = (fm_fmt){16, 8, 7}; return FM_OK; }
   if (!strcmp(w, "f32")) { *f = (fm_fmt){32, 8, 23}; return FM_OK; }
   if (!strcmp(w, "f64")) { *f = (fm_fmt){64, 11, 52}; return FM_OK; }
   if (!strcmp(w, "f80")) return FM_F80;
   return FM_BAD;
 }
+
+/* fpext/fptrunc direction: f16 < bf16 < f32 < f64 (clang 19's spelling of the 16-bit pair). */
+static uint32_t fm_rank(const fm_fmt *f) { return 2u * f->bits + (f->eb > 5u ? 1u : 0u); }
 
 /* "i<N>" -> N >= 1, else 0. */
 static uint32_t fm_int_of(const char *w) {
@@ -182,7 +192,7 @@ static void fm_putw(cqe_val *out, const uint64_t *w, uint32_t bits) {
   fm_mask(out->w, bits);
 }
 
-/* The family claims a name only for plain (no _rm/_rmq/_exc) f16/f32/f64 forms. */
+/* The family claims a name only for plain (no _rm/_rmq/_exc) f16/bf16/f32/f64 forms. */
 static int fm_plain(const cqe_tname *t) { return !t->rm && !t->exc && !t->strided; }
 
 /* ---------------------------------------------------------------- fp bit helpers */
@@ -314,7 +324,7 @@ static int op_fcmp(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *
   if (k == FM_F80 || !fm_plain(t))
     return CQE_OP_NOT_MINE;
   if (k != FM_OK || t->to[0])
-    return fm_bad(t, "fcmp needs f16, f32 or f64");
+    return fm_bad(t, "fcmp needs f16, bf16, f32 or f64");
   if (fm_check_args(t, args, nargs, 2, out, 1))
     return -1;
   int r;
@@ -371,7 +381,7 @@ static int fm_unary_fmt(const cqe_tname *t, fm_fmt *f) {
   if (k == FM_F80 || !fm_plain(t))
     return CQE_OP_NOT_MINE;
   if (k != FM_OK || t->to[0] || t->pred[0])
-    return fm_bad(t, "needs a plain f16, f32 or f64 name");
+    return fm_bad(t, "needs a plain f16, bf16, f32 or f64 name");
   return 0;
 }
 
@@ -475,7 +485,7 @@ static int fm_two_fmts(const cqe_tname *t, fm_fmt *src, fm_fmt *dst) {
   if (a == FM_F80 || b == FM_F80 || !fm_plain(t))
     return CQE_OP_NOT_MINE;
   if (a != FM_OK || b != FM_OK || t->pred[0])
-    return fm_bad(t, "needs f16, f32 or f64 on both sides");
+    return fm_bad(t, "needs f16, bf16, f32 or f64 on both sides");
   return 0;
 }
 
@@ -501,7 +511,7 @@ static int op_fpext(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val 
   int k = fm_two_fmts(t, &s, &d);
   if (k)
     return k;
-  if (d.bits <= s.bits)
+  if (fm_rank(&d) <= fm_rank(&s))
     return fm_bad(t, "fpext must widen");
   if (fm_check_args(t, args, nargs, 1, out, d.bits))
     return -1;
@@ -514,7 +524,7 @@ static int op_fptrunc(const cqe_tname *t, const cqe_val *args, int nargs, cqe_va
   int k = fm_two_fmts(t, &s, &d);
   if (k)
     return k;
-  if (d.bits >= s.bits)
+  if (fm_rank(&d) >= fm_rank(&s))
     return fm_bad(t, "fptrunc must narrow");
   if (fm_check_args(t, args, nargs, 1, out, d.bits))
     return -1;
@@ -531,7 +541,7 @@ static int fm_itofp(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val 
   if (k == FM_F80 || !fm_plain(t))
     return CQE_OP_NOT_MINE;
   if (!N || k != FM_OK || t->pred[0])
-    return fm_bad(t, "needs i<N> to f16, f32 or f64");
+    return fm_bad(t, "needs i<N> to f16, bf16, f32 or f64");
   if (fm_check_args(t, args, nargs, 1, out, d.bits))
     return -1;
   uint32_t nw = fm_nwords(N);
@@ -681,11 +691,11 @@ static int fm_fptoi(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val 
   if (k == FM_F80 || !fm_plain(t))
     return CQE_OP_NOT_MINE;
   if (!N || k != FM_OK || t->pred[0])
-    return fm_bad(t, "needs f16, f32 or f64 to i<N>");
+    return fm_bad(t, "needs f16, bf16, f32 or f64 to i<N>");
   if (fm_check_args(t, args, nargs, 1, out, N))
     return -1;
   uint64_t x = fm_fbits(&args[0], &s);
-  /* f16 goes through f32 (LLVM promotes half); exact. */
+  /* f16 and bf16 go through f32 (LLVM promotes half and bfloat); exact. */
   fm_fmt f32 = {32, 8, 23};
   const fm_fmt *f = &s;
   if (s.bits == 16) {

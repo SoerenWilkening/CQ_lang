@@ -6,10 +6,10 @@
  *   - fp operands: format edge values and specials (±0, subnormal bounds, ±1, halves, max, ±Inf,
  *     quiet and signalling NaNs with payloads), ±2^k and their neighbours for every k the format
  *     reaches, a seeded random set of bit patterns and of values spread over the integer range;
- *     every f16 pattern for a unary op;
+ *     every f16 and bf16 pattern for a unary op;
  *   - binary fp ops: every pair of specials, x against itself and -x, seeded random pairs;
  *   - integer operands: 0, ±1, MIN, MAX and neighbours, 2^k and 2^k ± 1, rounding ties of every fp
- *     format, seeded random patterns and random bit lengths; every value when N <= 16.
+ *     format (8-, 11-, 24- and 53-bit significands), seeded random patterns and random bit lengths; every value when N <= 16.
  * The op runs twice per input: in the default rounding mode and in a rotating directed mode. CR §2
  * fixes the result independent of the dynamic mode (rint ties to even, casts RNE), where native
  * code would follow the mode; that row is tested against the table, the native result taken at
@@ -104,6 +104,7 @@ static uint64_t rnd(void) {
 typedef struct { unsigned bits, eb, mb; } fmt;
 static int fmt_of(const char *t, fmt *f) {
   if (!strcmp(t, "f16")) { *f = (fmt){16, 5, 10}; return 1; }
+  if (!strcmp(t, "bf16")) { *f = (fmt){16, 8, 7}; return 1; }
   if (!strcmp(t, "f32")) { *f = (fmt){32, 8, 23}; return 1; }
   if (!strcmp(t, "f64")) { *f = (fmt){64, 11, 52}; return 1; }
   return 0;
@@ -177,6 +178,11 @@ static void inputs_for(const char *ty, int unary, vlist *l) {
         uint32_t u;
         memcpy(&u, &x, 4);
         b = u;
+      } else if (f.eb == 8) { /* bf16: the top half of the f32 pattern (any value will do) */
+        float x = (float)d;
+        uint32_t u;
+        memcpy(&u, &x, 4);
+        b = u >> 16;
       } else {
         _Float16 x = (_Float16)d;
         uint16_t u;
@@ -212,9 +218,9 @@ static void inputs_for(const char *ty, int unary, vlist *l) {
     if (k) { CLR(); SETBIT(k); v.w[0] |= 1; push(l, &v); }                       /* 2^k + 1 */
     CLR(); for (unsigned b = k; b < N; ++b) SETBIT(b); push(l, &v);              /* -2^k */
   }
-  /* rounding ties and near-ties for 11-, 24- and 53-bit significands, at every shift */
-  static const unsigned prec[] = {11, 24, 53};
-  for (unsigned pi = 0; pi < 3; ++pi)
+  /* rounding ties and near-ties for 8-, 11-, 24- and 53-bit significands, at every shift */
+  static const unsigned prec[] = {8, 11, 24, 53};
+  for (unsigned pi = 0; pi < 4; ++pi)
     for (unsigned j = 0; j + prec[pi] + 1 < N; ++j)
       for (unsigned t = 0; t < 4; ++t) {
         CLR();
@@ -244,7 +250,7 @@ static void inputs_for(const char *ty, int unary, vlist *l) {
 
 /* ------------------------------------------------------------ running */
 
-static unsigned bitsof(const char *ty) { return (unsigned)atoi(ty + 1); }
+static unsigned bitsof(const char *ty) { return ty[0] == 'b' ? 16u : (unsigned)atoi(ty + 1); }
 
 static void maskv(val *v, unsigned bits) {
   for (unsigned i = 0; i < MAXW; ++i) {
@@ -258,7 +264,7 @@ static void maskv(val *v, unsigned bits) {
 static cqe_val mkval(val *v, const char *ty) {
   cqe_val c;
   c.bits = bitsof(ty);
-  c.kind = ty[0] == 'f' ? 'f' : 'i';
+  c.kind = ty[0] == 'i' ? 'i' : 'f';
   c.nw = (c.bits + 63) / 64;
   c.w = v->w;
   return c;
@@ -436,6 +442,26 @@ static void table_rows(void) {
   EXPECT("fmax(sNaN,qNaN')", call2("fmax", "f64", 0x7FF0000000000001ull, 0xFFF8000000000123ull), 0xFFF8000000000123ull);
   EXPECT("fmax(qNaN,1)", call2("fmax", "f64", NaN64, 0x3FF0000000000000ull), 0x3FF0000000000000ull);
   EXPECT("fmin(1,sNaN)", call2("fmin", "f64", 0x3FF0000000000000ull, 0x7FF0000000000001ull), 0x3FF0000000000000ull);
+  /* bf16 (cq-b7e): the same rows, at bf16 (NaN 0x7fc0, 300.0 = 0x4396) */
+  EXPECT("bf16 fptosi NaN s8", call1("fptosi", "bf16", "i8", 0x7FC0, 8), 0);
+  EXPECT("bf16 fptosi NaN s32", call1("fptosi", "bf16", "i32", 0x7FC0, 32), 0x80000000u);
+  EXPECT("bf16 fptoui NaN u32", call1("fptoui", "bf16", "i32", 0x7FC0, 32), 0);
+  EXPECT("bf16 fptoui NaN u64", call1("fptoui", "bf16", "i64", 0x7FC0, 64), 0x8000000000000000ull);
+  EXPECT("bf16 fptosi 300 s8", call1("fptosi", "bf16", "i8", 0x4396, 8), 44);
+  EXPECT("bf16 fmax(+0,-0)", call2("fmax", "bf16", 0, 0x8000), 0);
+  EXPECT("bf16 fmin(-0,+0)", call2("fmin", "bf16", 0x8000, 0), 0x8000);
+  EXPECT("bf16 fmax(sNaN,qNaN')", call2("fmax", "bf16", 0x7F81, 0xFFC5), 0xFFC5);
+  EXPECT("bf16 fmin(1,sNaN)", call2("fmin", "bf16", 0x3F80, 0x7F81), 0x3F80);
+  /* bf16 casts: one correct rounding (native int -> bfloat double-rounds through f32: 0x4b80) */
+  EXPECT("sitofp i32 2^24+2^16+1 -> bf16", call1("sitofp", "i32", "bf16", 0x01010001, 16), 0x4B81);
+  EXPECT("uitofp i64 2^63+2^55+1 -> bf16", call1("uitofp", "i64", "bf16", 0x8080000000000001ull, 16), 0x5F01);
+  EXPECT("fptrunc bf16 1.0 -> f16", call1("fptrunc", "bf16", "f16", 0x3F80, 16), 0x3C00);
+  EXPECT("fptrunc bf16 65536 -> f16 Inf", call1("fptrunc", "bf16", "f16", 0x4780, 16), 0x7C00);
+  EXPECT("fptrunc bf16 2^-24 -> f16 min subnormal", call1("fptrunc", "bf16", "f16", 0x3380, 16), 0x0001);
+  EXPECT("fpext f16 1+2^-10 -> bf16 (tie to even)", call1("fpext", "f16", "bf16", 0x3C01, 16), 0x3F80);
+  EXPECT("fpext f16 sNaN -> bf16 quiet", call1("fpext", "f16", "bf16", 0x7D00, 16), 0x7FE0);
+  EXPECT("fpext bf16 sNaN -> f32 quiet", call1("fpext", "bf16", "f32", 0x7F81, 32), 0x7FC10000);
+  EXPECT("fptrunc f32 sNaN -> bf16 quiet", call1("fptrunc", "f32", "bf16", 0x7FA00000, 16), 0x7FE0);
   /* rint ties to even regardless of the dynamic mode (2.5 -> 2, -0.5 -> -0) */
   fesetround(FE_UPWARD);
   EXPECT("rint 2.5 under FE_UPWARD", call1("rint", "f64", "", 0x4004000000000000ull, 64), 0x4000000000000000ull);
@@ -463,6 +489,8 @@ static void ownership(void) {
       {"fpext", "", "f64", "f80", 0, 0},     {"uitofp", "", "i1", "f80", 0, 0}, {"fptosi", "", "f80", "i32", 0, 0},
       {"fptrunc", "", "f80", "f64", 0, 0},   {"trunc", "", "i64", "i32", 0, 0}, {"trunc", "", "i128", "i64", 0, 0},
       {"fcmp", "ogt", "f64", "", 0, 1},      {"sitofp", "", "i32", "f64", 1, 0}, {"rint", "", "f64", "", 2, 0},
+      {"fcmp", "olt", "bf16", "", 0, 1},     {"sitofp", "", "i64", "bf16", 1, 0}, {"floor", "", "bf16", "", 2, 0},
+      {"fpext", "", "bf16", "f80", 0, 0},    {"fptrunc", "", "f80", "bf16", 0, 0}, {"fptoui", "", "bf16", "i32", 0, 1},
   };
   for (size_t i = 0; i < sizeof other / sizeof other[0]; ++i) {
     cqe_tname t;
@@ -485,6 +513,11 @@ static void ownership(void) {
       {"fcmp", "xyz", "f64", "", 2, 1},  {"fcmp", "oeq", "f64", "", 1, 1}, {"fabs", "", "f64", "", 1, 32},
       {"fpext", "", "f64", "f32", 1, 32}, {"fptrunc", "", "f32", "f64", 1, 64}, {"sitofp", "", "f64", "f64", 1, 64},
       {"fptoui", "", "f64", "x7", 1, 7}, {"floor", "", "i64", "", 1, 64},
+      /* bf16 (cq-b7e): clang 19 spells only fpext f16 -> bf16 and fptrunc bf16 -> f16 */
+      {"fpext", "", "bf16", "f16", 1, 16}, {"fptrunc", "", "f16", "bf16", 1, 16}, {"fpext", "", "f32", "bf16", 1, 16},
+      {"fptrunc", "", "bf16", "f32", 1, 32}, {"fpext", "", "bf16", "bf16", 1, 16}, {"fabs", "", "bf16", "", 1, 32},
+      {"fcmp", "oeq", "bf16", "", 1, 1}, {"sitofp", "", "bf16", "bf16", 1, 16}, {"fptosi", "", "bf16", "bf16", 1, 16},
+      {"fabs", "", "bf32", "", 1, 32},
   };
   for (size_t i = 0; i < sizeof badc / sizeof badc[0]; ++i) {
     cqe_tname t;

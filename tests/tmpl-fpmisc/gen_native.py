@@ -13,8 +13,15 @@ results are stored at their own type and masked by the harness.
 import sys
 from pathlib import Path
 
-FP = {"f16": "half", "f32": "float", "f64": "double"}
-FPS = ["f16", "f32", "f64"]
+FP = {"f16": "half", "bf16": "bfloat", "f32": "float", "f64": "double"}
+FPS = ["f16", "bf16", "f32", "f64"]
+# fpext/fptrunc direction, clang 19's spelling: f16 < bf16 < f32 < f64.
+RANK = {"f16": 0, "bf16": 1, "f32": 2, "f64": 3}
+
+
+def bits(ty):
+    """Width of a template type: 'bf16' -> 16, 'f64' -> 64, 'i7' -> 7."""
+    return int(ty[-2:]) if ty == "bf16" else int(ty[1:])
 # Corpus widths (BACKEND_ABI §2) plus i1, i7, i100 (bead), plus the legalization boundaries of
 # fptosi/fptoui (17..31, 32, 33..63, 64, 65..128, > 128).
 INTS = [1, 7, 8, 16, 24, 31, 32, 33, 48, 63, 64, 65, 80, 100, 127, 128, 129, 200, 256]
@@ -33,8 +40,18 @@ def QUIET(src, dst):
     return [f"%one.{dst[1:]} = load volatile float, ptr @fpmisc.one", f"{dst} = fmul float {src}, %one.{dst[1:]}"]
 
 
-def JAM(n, ty, sfx, signed):
-    """IR computing iN %a0 -> ty correctly rounded via a 64-bit jammed magnitude and ldexp."""
+def resize(n, m):
+    """The integer cast opcode from iN to iM (zero-extending; %hi and %sh are nonnegative)."""
+    return "trunc" if n > m else "zext" if n < m else "bitcast"
+
+
+def JAM(n, ty, sfx, signed, jb=64, final=None):
+    """IR computing iN %a0 -> ty correctly rounded via a jb-bit jammed magnitude and ldexp.
+
+    With final (bf16), ty is the exact intermediate f32: the jammed magnitude has at most jb = 24
+    bits, so u64 -> f32 and ldexp are exact (or overflow to Inf, beyond the range of bf16 as well;
+    the two share their exponent range), and the one rounding is the native f32 -> final fptrunc.
+    The sign is applied in f32, before that rounding (RNE is symmetric)."""
     i = f"i{n}"
     b = []
     if signed:
@@ -42,14 +59,19 @@ def JAM(n, ty, sfx, signed):
     else:
         b += [f"%abs = add {i} %a0, 0"]
     b += [f"%lz = call {i} @llvm.ctlz.{i}({i} %abs, i1 false)", f"%n = sub {i} {n}, %lz",
-          f"%big = icmp ugt {i} %n, 64", f"%sm = sub {i} %n, 64", f"%sh = select i1 %big, {i} %sm, {i} 0",
+          f"%big = icmp ugt {i} %n, {jb}", f"%sm = sub {i} %n, {jb}", f"%sh = select i1 %big, {i} %sm, {i} 0",
           f"%hi = lshr {i} %abs, %sh", f"%bit = shl {i} 1, %sh", f"%mask = sub {i} %bit, 1",
-          f"%lo = and {i} %abs, %mask", f"%st = icmp ne {i} %lo, 0", f"%h64 = trunc {i} %hi to i64",
+          f"%lo = and {i} %abs, %mask", f"%st = icmp ne {i} %lo, 0", f"%h64 = {resize(n, 64)} {i} %hi to i64",
           "%s64 = zext i1 %st to i64", "%j = or i64 %h64, %s64", f"%f = uitofp i64 %j to {ty}",
-          f"%e = trunc {i} %sh to i32",
+          f"%e = {resize(n, 32)} {i} %sh to i32",
           f"%{'g' if signed else 'r'} = call {ty} @llvm.ldexp.{sfx}.i32({ty} %f, i32 %e)"]
+    res = "%s" if final else "%r"
     if signed:
-        b += [f"%gn = fneg {ty} %g", f"%r = select i1 %neg, {ty} %gn, {ty} %g"]
+        b += [f"%gn = fneg {ty} %g", f"{res} = select i1 %neg, {ty} %gn, {ty} %g"]
+    elif final:
+        b[-1] = b[-1].replace("%r = call", "%s = call")
+    if final:
+        b += [f"%r = fptrunc {ty} %s to {final}"]
     return b
 
 
@@ -70,7 +92,7 @@ class Gen:
         if ty in FP:
             lines.append(f"  %a{i} = load {FP[ty]}, ptr {p}")
         else:
-            n = int(ty[1:])
+            n = bits(ty)
             m = 64 * words(n)
             if m == n:
                 lines.append(f"  %a{i} = load i{n}, ptr {p}")
@@ -90,7 +112,7 @@ class Gen:
         lines += [f"  {l}" for l in body]
         lines += [f"  store {self.irty(outty)} %r, ptr %out", "  ret void", "}"]
         self.fns.append("\n".join(lines))
-        outbits = int(outty[1:])  # i1 -> 1, f64 -> 64, i7 -> 7
+        outbits = bits(outty)  # i1 -> 1, f64 -> 64, bf16 -> 16, i7 -> 7
         in1 = ins[1] if len(ins) > 1 else ""
         self.cases.append(f'CASE({k}, "{op}", "{pred}", "{w}", "{to}", "{ins[0]}", "{in1}", {outbits}, {aux})')
 
@@ -140,9 +162,28 @@ class Gen:
                     # which keeps an sNaN signalling; BACKEND_ABI §2.6 says the NaN comes out quiet,
                     # as x86. Reference = fpext then a multiply by 1.0 (quiets, keeps the payload).
                     self.add("fpext", "", s, d, [s], d, ["%e = fpext half %a0 to float"] + QUIET("%e", "%r"))
-                elif int(d[1:]) > int(s[1:]):
+                elif {s, d} == {"f16", "bf16"}:
+                    # TABLE: clang 19 spells (__bf16)h as fpext half to bfloat and (_Float16)b as
+                    # fptrunc bfloat to half, but LLVM 19's IR parser rejects both casts (equal
+                    # widths), so no native code exists. Reference: the exact widening to f32
+                    # (fpext + quieting, see f16 -> f32 above; bfloat -> float is a bare shift that
+                    # would keep an sNaN), then the native single rounding f32 -> d.
+                    self.add("fpext" if RANK[d] > RANK[s] else "fptrunc", "", s, d, [s], d,
+                             [f"%e = fpext {FP[s]} %a0 to float"] + QUIET("%e", "%q") +
+                             [f"%r = fptrunc float %q to {FP[d]}"])
+                elif s == "bf16" and d == "f32":
+                    # TABLE: native bfloat -> float is a bare 16-bit shift and keeps an sNaN
+                    # signalling; BACKEND_ABI §2.6 (and CR §1.1: bf16 has the NaN rules of the IEEE
+                    # widths) say the NaN comes out quiet. Reference = fpext then quieting.
+                    self.add("fpext", "", s, d, [s], d, ["%e = fpext bfloat %a0 to float"] + QUIET("%e", "%r"))
+                elif s == "f32" and d == "bf16":
+                    # TABLE: native float -> bfloat leaves an sNaN whose payload survives the
+                    # truncation signalling (0x7fa00000 -> 0x7fa0); the fptrunc NaN rule quiets it
+                    # (0x7fe0). Reference = quieting in f32 (payload kept), then the native fptrunc.
+                    self.add("fptrunc", "", s, d, [s], d, QUIET("%a0", "%q") + ["%r = fptrunc float %q to bfloat"])
+                elif RANK[d] > RANK[s]:
                     self.add("fpext", "", s, d, [s], d, [f"%r = fpext {FP[s]} %a0 to {FP[d]}"])
-                elif int(d[1:]) < int(s[1:]):
+                elif RANK[d] < RANK[s]:
                     self.add("fptrunc", "", s, d, [s], d, [f"%r = fptrunc {FP[s]} %a0 to {FP[d]}"])
         for n in INTS:
             it = f"i{n}"
@@ -161,7 +202,21 @@ class Gen:
                     for op in ("sitofp", "uitofp"):
                         body = JAM(n, FP[t], ty_suffix(t), op == "sitofp")
                         self.add(op, "", it, t, [it], t, body)
-                if t == "f16" and n > 64:
+                if t == "bf16" and n > 24:
+                    # TABLE. Native int -> bfloat is int -> float, then fptrunc float -> bfloat: two
+                    # roundings, wrong once N > 24 (2^24 + 2^16 + 1 -> 0x4b80, correctly rounded
+                    # 0x4b81), and at N > 128 the ExpandLargeFpConvert overflow bug as above.
+                    # BACKEND_ABI §2.6 / CR §1.1: correctly rounded, RNE. Reference: the magnitude
+                    # jammed to 24 bits, exact in f32, scaled by ldexp in f32 (exact), signed, then
+                    # the native f32 -> bf16 fptrunc as the single rounding (cq-b7e).
+                    self.intrinsic(f"llvm.ctlz.i{n}", f"i{n}", [f"i{n}", "i1"])
+                    self.intrinsic("llvm.ldexp.f32.i32", "float", ["float", "i32"])
+                    for op in ("sitofp", "uitofp"):
+                        self.add(op, "", it, t, [it], t, JAM(n, "float", "f32", op == "sitofp", 24, "bfloat"))
+                if t in ("f16", "bf16") and (n > 64 if t == "f16" else n > 128):
+                    # bf16 -> N > 128 is ExpandLargeFpConvert on the bfloat itself, which reads an
+                    # sNaN's payload unquieted (0x7f81 -> 0x81 << 121); the f32 route quiets it
+                    # (0xc1 << 121), as for f16 below.
                     # fptosi/fptoui f16 -> N > 64: LLVM 19 lowers 65..128 to __fixhfti/__fixunshfti
                     # (missing as above) and N > 128 to code that is not the f32 route (f16 Inf ->
                     # i129 gives -2^31). CR §2 says f16 goes via f32, so the reference is the f32
@@ -170,7 +225,7 @@ class Gen:
                     # (an arithmetic fence keeps InstCombine from folding the fpext back in)
                     self.intrinsic("llvm.arithmetic.fence.f32", "float", ["float"])
                     for op in ("fptosi", "fptoui"):
-                        self.add(op, "", t, it, [t], it, ["%e = fpext half %a0 to float"] + QUIET("%e", "%q") + [
+                        self.add(op, "", t, it, [t], it, [f"%e = fpext {FP[t]} %a0 to float"] + QUIET("%e", "%q") + [
                                                           "%f = call float @llvm.arithmetic.fence.f32(float %q)",
                                                           f"%r = {op} float %f to i{n}"])
                     continue
@@ -178,8 +233,9 @@ class Gen:
                     for op in ("fptosi", "fptoui"):
                         self.add(op, "", t, it, [t], it, [f"%r = {op} {FP[t]} %a0 to i{n}"])
                     continue
-                for op in ("sitofp", "uitofp"):
-                    self.add(op, "", it, t, [it], t, [f"%r = {op} i{n} %a0 to {FP[t]}"])
+                if not (t == "bf16" and n > 24):
+                    for op in ("sitofp", "uitofp"):
+                        self.add(op, "", it, t, [it], t, [f"%r = {op} i{n} %a0 to {FP[t]}"])
                 for op in ("fptosi", "fptoui"):
                     self.add(op, "", t, it, [t], it, [f"%r = {op} {FP[t]} %a0 to i{n}"])
 
@@ -196,7 +252,7 @@ class Gen:
 
 
 def ty_suffix(t):
-    return {"f16": "f16", "f32": "f32", "f64": "f64"}[t]
+    return {"f16": "f16", "bf16": "bf16", "f32": "f32", "f64": "f64"}[t]
 
 
 if __name__ == "__main__":
