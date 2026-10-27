@@ -3,7 +3,7 @@
 
 1. spec.lock holds (tools/spec_lock.py).
 2. The frozen headers equal cq-arch's text with the owner's amendments A1-A4 and freeze beads K1
-   (cq-k1w) and S1 (cq-sml): pass/include/cq/*.h, checker/rt/cqe.h, and the dataclass fields of
+   (cq-k1w), S1 (cq-sml) and M1 (cq-mgi): pass/include/cq/*.h, checker/rt/cqe.h, and the dataclass fields of
    checker/cqcheck/contracts.py. cq-arch is read live from beads (`bd show cq-arch --json`) unless
    --arch-json names a saved copy.
 3. `opt -passes=cq-lower` on every example `.O1.ll` (counted from the directory) exits non-zero with
@@ -124,6 +124,45 @@ AMENDMENTS = [
      "replace"),
 ]
 
+# M1 (freeze bead cq-mgi, final text in a cq-arch comment): the op registry and the handler
+# contract, as edits to cq-arch's checker/rt/cqe.h block. The '#define CQE_OP_NOT_MINE 1' line is
+# checked separately (header_decls drops preprocessor lines).
+C_AMENDMENTS = [
+    ("void    cqe_register_op(const char *op, cqe_op_fn);   /* a family registers from a constructor */",
+     [
+      '/* M1 (freeze bead cq-mgi): the op registry and the handler contract.',
+      ' * Registry. cqe_register_op keeps every (op, fn) pair, per op name in registration order; a second',
+      ' *   registration of the same pair is a no-op. op is the exact cqe_tname.op the dispatcher looks up:',
+      " *   the template's op for cq_template_*, the stem for a non-core cqrt_* call. The dispatcher calls",
+      ' *   the handlers of tname.op in registration order until one returns other than CQE_OP_NOT_MINE.',
+      ' *   Every handler returning CQE_OP_NOT_MINE, or none registered, is a violation (no_family).',
+      " * Return. 0: out holds the value. CQE_OP_NOT_MINE: the call is outside this handler's family,",
+      ' *   decided from tname and nargs alone; the handler has not called cqe_fail or cqe_log nor touched',
+      ' *   a rail, and whatever it wrote to out->w is discarded (out->w is zeroed again before the next',
+      ' *   handler). -1: the call is malformed and the handler has called cqe_fail; no handler follows.',
+      ' * out, owned by the dispatcher. On entry out->w is non-NULL with out->nw = ceil(out->bits / 64)',
+      ' *   words (at least 1), all zero, and out->bits and out->kind are preset to the result type: what',
+      ' *   the template name implies, or the declared return type on the family path (bits 0 for void).',
+      ' *   The handler writes the value into out->w with bits above out->bits zero. It never frees,',
+      ' *   reallocates or replaces out->w, and leaves out->bits, out->kind and out->nw at their preset',
+      ' *   values; anything else is a violation (result_width).',
+      ' * args, owned by the dispatcher and valid for the call only.',
+      ' *   Template path (cq_template_*): every argument of the forward form in signature order, literals',
+      " *   included, the _unc form's leading out handle omitted: the select condition, the data operands,",
+      " *   the _rm/_rmq mode, qrom_load's table, n, stride and index. Each is resolved to a value: a",
+      " *   handle to a copy of its rail's value (bits and kind the rail's), a literal to its value (bits",
+      " *   its LLVM type's width; kind 'f' for half, float, double, x86_fp80, else 'i'; ptr a 64-bit 'i').",
+      ' *   The handler computes the forward value f(args) whatever tname->unc says; the dispatcher',
+      ' *   allocates the result rail (forward) or XORs the value into the out rail and checks the',
+      ' *   residue (_unc).',
+      ' *   Family path (any other non-core cqrt_*): every ABI argument raw, in signature order: a handle',
+      " *   as its i32 number, a literal as its value, a ptr as a 64-bit 'i'. The family manages rails",
+      ' *   through cqe_new_rail, cqe_rail, cqe_xor_into and cqe_set_known and returns a handle as an i32',
+      ' *   in out. */',
+     ], "after"),
+]
+C_DEFINES = ["#define CQE_OP_NOT_MINE 1"]
+
 SECTION = re.compile(r"^// (\w+)\.h\b")
 
 
@@ -178,9 +217,17 @@ def check_headers(desc):
 
     # cqe.h
     want_c = [l.rstrip() for l in code_block(desc, "## Checker contracts", "c").splitlines() if l.strip()]
+    for anchor, new, mode in C_AMENDMENTS:
+        want_c = patch(want_c, anchor, new, mode)
     got_c = header_decls(ROOT / "checker/rt/cqe.h", c_header=True)
-    if got_c != want_c:
-        fail("checker/rt/cqe.h differs from cq-arch")
+    cqe_text = (ROOT / "checker/rt/cqe.h").read_text()
+    missing = [d for d in C_DEFINES if not re.search(r"^" + re.escape(d) + r"(\s|$)", cqe_text, re.M)]
+    if got_c != want_c or missing:
+        fail(f"checker/rt/cqe.h differs from cq-arch (+M1){'; missing ' + str(missing) if missing else ''}")
+        for a, b in zip(got_c + [""] * len(want_c), want_c + [""] * len(got_c)):
+            if a != b:
+                print(f"    have: {a!r}\n    want: {b!r}")
+                break
     else:
         n += 1
 
@@ -211,7 +258,7 @@ def check_headers(desc):
             fail(f"contracts.py {cls}: fields {got} != cq-arch {names}")
         else:
             n += 1
-    print(f"headers: {n} interfaces compared against cq-arch (+A1-A4, K1, S1)")
+    print(f"headers: {n} interfaces compared against cq-arch (+A1-A4, K1, S1, M1)")
 
 
 # ---------------------------------------------------------------------------------------------
