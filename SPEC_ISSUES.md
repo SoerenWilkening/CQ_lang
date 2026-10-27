@@ -18,3 +18,9 @@ Entry format:
 ## Open
 
 None.
+
+## CR §3 rule 27: no witness examples named
+- Rule: CR §3 preamble, "Each rule names its witness examples."
+- Disagreement: rule 27 has no witness clause ("— NN, …"); examples 161 and 190 list rule 27 in their Rules: headers and CR §7's last row names them for rule 27.
+- Evidence: `python3 -m cqcheck progress` (from checker/) lists "27 Callees without a body: declared clones" with no witnesses; CONSTRUCTION_RULES.md lines 554-599.
+- Bead: cq-48r

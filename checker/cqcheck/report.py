@@ -1,1 +1,401 @@
-"""Stub (cq-w0-scaffold). Module chk-report, owned by cq-w0-chk-report."""
+"""Per-example verdicts and reports (module chk-report, bead cq-w0-chk-report).
+
+One Verdict per example (contracts.Verdict):
+
+- ``verifier``: ``opt -passes=cq-verify`` over our lowered module.
+- ``s6``: §6 against the reference ``lowered.ll`` run in the same evaluator. A textual match after
+  normalization short-circuits it (CLAUDE.md "Reports").
+- ``c_oracle``: §6 against the C program (the ``.O1.ll`` under the C oracle).
+- ``diff_lines``: the size of the normalized textual diff against the reference: a quality signal
+  that never fails a verdict. Normalization is our own: the module goes through ``llvm-as`` and
+  ``opt -S -discard-value-names`` (LLVM's own local numbering: arguments, then unnamed blocks and
+  non-void instructions in textual order, the scheme CQ_spec ``_tools/README.txt`` describes), then
+  comments, blank lines, ``; ModuleID`` and ``source_filename`` are dropped and the ``declare`` lines
+  are sorted (their order carries no meaning).
+
+Each of ``s6``, ``c_oracle`` and ``verifier`` is one of PASS, FAIL, ERROR or NOT_RUN. Only PASS is
+green. ERROR means the check could not be decided (no lowered module, a checker module that is not
+built yet, an exception): it is never green. NOT_RUN appears only when the caller asked for one
+oracle (``--oracle ref|c``); it is not green either.
+
+The §6 run composes the sibling checker modules through the functions named in ``SIBLING_API``. A
+function that a sibling does not provide yet makes the check ERROR with
+``cq: unimplemented: <module>: <function>``; nothing is ever assumed equal.
+"""
+from __future__ import annotations
+
+import dataclasses
+import difflib
+import importlib
+import json
+import os
+import re
+import subprocess
+import traceback
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
+
+from cqcheck.contracts import Verdict, to_json
+
+PASS, FAIL, ERROR, NOT_RUN = "pass", "fail", "error", "not-run"
+
+ROOT = Path(__file__).resolve().parents[2]
+LLVM_BIN = Path(os.environ.get("CQ_LLVM_BIN", "/usr/local/opt/llvm@19/bin"))
+K_CHECK = 4  # CLAUDE.md: both sides run at K = 4.
+
+
+def spec_dir() -> Path:
+    return Path(os.environ.get("CQ_SPEC_DIR", str(ROOT.parent / "CQ_spec"))).resolve()
+
+
+def build_dir() -> Path:
+    return Path(os.environ.get("CQ_BUILD_DIR", str(ROOT / "build"))).resolve()
+
+
+def plugin_path() -> Path:
+    return Path(os.environ.get("CQ_PLUGIN", str(build_dir() / "pass" / "libCQLower.so")))
+
+
+def out_dir() -> Path:
+    """Where `run` keeps its per-example verdicts, lowered modules and diffs (read by `progress`)."""
+    return build_dir() / "cqcheck"
+
+
+# --------------------------------------------------------------------------------------------
+# Examples
+
+
+@dataclass(frozen=True)
+class Example:
+    name: str        # NN_name, the directory name
+    dir: Path
+
+    @property
+    def number(self) -> str:
+        return self.name.split("_", 1)[0]
+
+    @property
+    def base(self) -> str:
+        return self.name.split("_", 1)[1]
+
+    @property
+    def c(self) -> Path:
+        return self.dir / f"{self.base}.c"
+
+    @property
+    def o1(self) -> Path:
+        return self.dir / f"{self.base}.O1.ll"
+
+    @property
+    def reference(self) -> Path:
+        return self.dir / f"{self.base}.lowered.ll"
+
+
+_EXAMPLE_DIR = re.compile(r"^[0-9]{2,}_[A-Za-z0-9_]+$")
+
+
+def all_examples(spec: Optional[Path] = None) -> List[Example]:
+    """Every example of the pinned corpus, counted from the directory."""
+    root = (spec or spec_dir()) / "examples"
+    out = sorted((Example(d.name, d) for d in root.iterdir() if d.is_dir() and _EXAMPLE_DIR.match(d.name)),
+                 key=lambda e: (int(e.number), e.name))
+    if not out:
+        raise RuntimeError(f"cq: no examples under {root}")
+    return out
+
+
+def resolve_examples(names: Sequence[str], spec: Optional[Path] = None) -> List[Example]:
+    """`NN`, `NN_name` or a unique prefix. An unknown or ambiguous name is an error, never skipped."""
+    every = all_examples(spec)
+    by_name = {e.name: e for e in every}
+    out = []
+    for n in names:
+        n = n.rstrip("/").split("/")[-1]
+        if n in by_name:
+            out.append(by_name[n])
+            continue
+        if n.isdigit():
+            hits = [e for e in every if int(e.number) == int(n)]
+        else:
+            hits = [e for e in every if e.name.startswith(n)]
+        if len(hits) != 1:
+            raise ValueError(f"cq: example {n!r} matches {[e.name for e in hits] or 'nothing'}")
+        out.append(hits[0])
+    return out
+
+
+def ours_path(ex: Example, ours: Path) -> Path:
+    """Our lowered module for `ex` inside a directory given by --ours. Accepted layouts:
+    DIR/NN_name/name.lowered.ll (the corpus layout), DIR/name.lowered.ll, DIR/NN_name.lowered.ll."""
+    cands = [ours / ex.name / f"{ex.base}.lowered.ll", ours / f"{ex.base}.lowered.ll",
+             ours / f"{ex.name}.lowered.ll"]
+    for c in cands:
+        if c.is_file():
+            return c
+    raise FileNotFoundError(f"no lowered module for {ex.name} in {ours} (looked for "
+                            + ", ".join(str(c.relative_to(ours)) for c in cands) + ")")
+
+
+# --------------------------------------------------------------------------------------------
+# Tools
+
+
+def _run(cmd: List[str], **kw) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, capture_output=True, **kw)
+
+
+def _first_error_line(stderr: bytes) -> str:
+    text = stderr.decode(errors="replace").strip()
+    for line in text.splitlines():
+        if "cq: " in line:
+            return line.strip()
+    return text.splitlines()[0].strip() if text else "(no message)"
+
+
+def lower(ex: Example, dest: Path) -> Tuple[Optional[Path], str]:
+    """Our lowering of `ex`: its .O1.ll through `opt -passes=cq-lower` at K = 4. Returns (path, "")
+    or (None, the internal error). Nothing is kept from a failed run."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists():
+        dest.unlink()
+    r = _run([str(LLVM_BIN / "opt"), f"-load-pass-plugin={plugin_path()}", "-passes=cq-lower",
+              f"-cq-k-default={K_CHECK}", "-S", str(ex.o1), "-o", str(dest)])
+    if r.returncode != 0:
+        if dest.exists():
+            dest.unlink()
+        return None, f"cq-lower exited {r.returncode}: {_first_error_line(r.stderr)}"
+    return dest, ""
+
+
+def verify(lowered: Path) -> Tuple[str, str]:
+    """The structural verifier (NORTHSTAR principle 4) over our output."""
+    r = _run([str(LLVM_BIN / "opt"), f"-load-pass-plugin={plugin_path()}", "-passes=cq-verify",
+              "-disable-output", str(lowered)])
+    if r.returncode == 0:
+        return PASS, ""
+    msg = _first_error_line(r.stderr)
+    # The verifier names its check in a report_fatal_error; an unbuilt verifier is not a verdict.
+    if "cq: unimplemented:" in msg:
+        return ERROR, f"verifier: {msg}"
+    return FAIL, f"verifier: {msg}"
+
+
+# --------------------------------------------------------------------------------------------
+# Normalized textual diff
+
+
+class NormalizeError(Exception):
+    pass
+
+
+def _strip_comment(line: str) -> str:
+    in_str = False
+    i = 0
+    while i < len(line):
+        c = line[i]
+        if c == '"':
+            in_str = not in_str
+        elif c == "\\" and in_str:
+            i += 1
+        elif c == ";" and not in_str:
+            return line[:i]
+        i += 1
+    return line
+
+
+def normalize(path: Path) -> List[str]:
+    """The module as LLVM prints it with value names discarded, minus comments, blank lines,
+    `; ModuleID` and `source_filename`, with the `declare` lines sorted after everything else."""
+    asm = _run([str(LLVM_BIN / "llvm-as"), "-o", "-", str(path)])
+    if asm.returncode != 0:
+        raise NormalizeError(f"llvm-as: {_first_error_line(asm.stderr)}")
+    r = _run([str(LLVM_BIN / "opt"), "-S", "-discard-value-names", "-passes=verify", "-o", "-"],
+             input=asm.stdout)
+    if r.returncode != 0:
+        raise NormalizeError(f"opt: {_first_error_line(r.stderr)}")
+    body, decls = [], []
+    for line in r.stdout.decode().splitlines():
+        code = _strip_comment(line).rstrip()
+        if not code.strip() or code.startswith("source_filename"):
+            continue
+        (decls if code.startswith("declare ") else body).append(code)
+    return body + sorted(decls)
+
+
+def textual_diff(ours: Path, ref: Path) -> Tuple[int, str]:
+    """(number of differing lines, unified diff) between the normalized modules."""
+    a, b = normalize(ref), normalize(ours)
+    diff = list(difflib.unified_diff(a, b, "reference", "ours", lineterm="", n=2))
+    changed = sum(1 for d in diff if d[:1] in "+-" and not d.startswith(("+++", "---")))
+    return changed, "\n".join(diff)
+
+
+# --------------------------------------------------------------------------------------------
+# The §6 run, composed from the sibling modules
+
+# The functions the §6 run calls in the sibling checker modules: (module file, owning module, name,
+# signature). Proposed in bead cq-w0-chk-report's freeze-rule bead; the owning bead implements it.
+SIBLING_API: List[Tuple[str, str, str, str]] = [
+    ("drivers", "chk-drivers", "driver_spec", "(example: str, example_dir: Path) -> DriverSpec"),
+    ("sampling", "chk-drivers", "sample_set", "(spec: DriverSpec, example_dir: Path) -> SampleSet"),
+    ("run", "chk-core", "run_sample",
+     "(lowered: Path, spec: DriverSpec, sample: dict, side: str) -> RunResult"),
+    ("oracle", "chk-oracle", "run_sample", "(o1: Path, spec: DriverSpec, sample: dict) -> RunResult"),
+    ("compare", "chk-compare", "compare",
+     "(ours: Sequence[RunResult], other: Sequence[RunResult], against: str) -> List[str]"),
+]
+
+
+class Unimplemented(Exception):
+    """A sibling function that is not provided yet: the check is ERROR, never assumed green."""
+
+
+def sibling(module: str, name: str) -> Callable:
+    owner = next((o for m, o, n, _ in SIBLING_API if m == module and n == name), module)
+    mod = importlib.import_module(f"cqcheck.{module}")
+    fn = getattr(mod, name, None)
+    if not callable(fn):
+        raise Unimplemented(f"cq: unimplemented: {owner}: {module}.{name}")
+    return fn
+
+
+def _exc_reason(where: str, e: BaseException) -> str:
+    if isinstance(e, Unimplemented):
+        return f"{where}: {e}"
+    tb = traceback.extract_tb(e.__traceback__)
+    at = f" at {Path(tb[-1].filename).name}:{tb[-1].lineno}" if tb else ""
+    return f"{where}: {type(e).__name__}: {e}{at}"
+
+
+def _side_results(runner: Callable, path: Path, spec, samples, *extra) -> list:
+    results = [runner(path, spec, s, *extra) for s in samples]
+    if not results:
+        raise RuntimeError("the sample set is empty")
+    return results
+
+
+def _compare(ours_results, other_results, against: str) -> Tuple[str, List[str]]:
+    reasons = list(sibling("compare", "compare")(ours_results, other_results, against))
+    return (PASS, []) if not reasons else (FAIL, [f"{against}: {r}" for r in reasons])
+
+
+def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_error: str = "",
+             short_circuit: bool = True, diff_out: Optional[Path] = None) -> Verdict:
+    """The Verdict for one example. `ours` is our lowered module, or None with `lower_error` when
+    the pass produced nothing. `oracle` is ref, c or both. `short_circuit=False` forces the §6 run
+    on a textual match (the baseline runs a reference against itself)."""
+    reasons: List[str] = []
+    if ours is None:
+        why = lower_error or "no lowered module"
+        return Verdict(ex.name, ERROR if oracle in ("ref", "both") else NOT_RUN,
+                       ERROR if oracle in ("c", "both") else NOT_RUN, ERROR, None, [why])
+
+    verifier, why = verify(ours)
+    if why:
+        reasons.append(why)
+
+    diff_lines = None
+    try:
+        diff_lines, diff = textual_diff(ours, ex.reference)
+        if diff_out is not None:
+            diff_out.parent.mkdir(parents=True, exist_ok=True)
+            diff_out.write_text(diff + ("\n" if diff else ""))
+    except NormalizeError as e:
+        reasons.append(f"diff: {e}")
+
+    want_ref, want_c = oracle in ("ref", "both"), oracle in ("c", "both")
+    s6 = c_oracle = NOT_RUN
+    matched = diff_lines == 0 and short_circuit
+    if want_ref and matched:
+        s6 = PASS
+        reasons.append("s6: textual match with the reference (§6 run short-circuited)")
+    need_ref_run = want_ref and not matched
+
+    if need_ref_run or want_c:
+        try:
+            spec = sibling("drivers", "driver_spec")(ex.name, ex.dir)
+            samples = sibling("sampling", "sample_set")(spec, ex.dir).samples
+            ours_results = _side_results(sibling("run", "run_sample"), ours, spec, samples, "ours")
+        except Exception as e:  # noqa: BLE001 - every failure is an ERROR verdict with its reason
+            r = _exc_reason("setup (drivers, sampling, our run)", e)
+            reasons.append(r)
+            if need_ref_run:
+                s6 = ERROR
+            if want_c:
+                c_oracle = ERROR
+        else:
+            if need_ref_run:
+                try:
+                    ref_results = _side_results(sibling("run", "run_sample"), ex.reference, spec,
+                                                samples, "ref")
+                    s6, rs = _compare(ours_results, ref_results, "ref")
+                    reasons += rs
+                except Exception as e:  # noqa: BLE001
+                    s6 = ERROR
+                    reasons.append(_exc_reason("s6", e))
+            if want_c:
+                try:
+                    c_results = _side_results(sibling("oracle", "run_sample"), ex.o1, spec, samples)
+                    c_oracle, rs = _compare(ours_results, c_results, "c")
+                    reasons += rs
+                except Exception as e:  # noqa: BLE001
+                    c_oracle = ERROR
+                    reasons.append(_exc_reason("c_oracle", e))
+
+    return Verdict(ex.name, s6, c_oracle, verifier, diff_lines, reasons)
+
+
+def green(v: Verdict) -> bool:
+    """Version 1's per-example condition: §6, C oracle and verifier all PASS."""
+    return v.s6 == PASS and v.c_oracle == PASS and v.verifier == PASS
+
+
+def requested_green(v: Verdict) -> bool:
+    """Every check the run asked for passed (NOT_RUN is the caller's choice of oracle)."""
+    return all(x in (PASS, NOT_RUN) for x in (v.s6, v.c_oracle)) and v.verifier == PASS \
+        and (v.s6, v.c_oracle) != (NOT_RUN, NOT_RUN)
+
+
+# --------------------------------------------------------------------------------------------
+# Storage and the printed report
+
+
+def verdict_store() -> Path:
+    return out_dir() / "verdicts"
+
+
+def save_verdict(v: Verdict) -> None:
+    d = verdict_store()
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{v.example}.json").write_text(to_json(v) + "\n")
+
+
+def load_verdicts() -> Dict[str, Verdict]:
+    out = {}
+    d = verdict_store()
+    if d.is_dir():
+        for f in sorted(d.glob("*.json")):
+            data = json.loads(f.read_text())
+            out[data["example"]] = Verdict(**data)
+    return out
+
+
+def format_table(verdicts: Sequence[Verdict]) -> str:
+    rows = [("example", "s6", "c_oracle", "verifier", "diff", "first reason")]
+    for v in verdicts:
+        rows.append((v.example, v.s6, v.c_oracle, v.verifier,
+                     "-" if v.diff_lines is None else str(v.diff_lines),
+                     v.reasons[0] if v.reasons else ""))
+    widths = [max(len(r[i]) for r in rows) for i in range(5)]
+    lines = ["  ".join(c.ljust(w) for c, w in zip(r[:5], widths)) + "  " + r[5] for r in rows]
+    n = len(verdicts)
+    counts = {k: sum(1 for v in verdicts if getattr(v, k) == PASS) for k in ("s6", "c_oracle", "verifier")}
+    lines.append(f"{n} examples: s6 pass {counts['s6']}, c_oracle pass {counts['c_oracle']}, "
+                 f"verifier pass {counts['verifier']}, all three {sum(1 for v in verdicts if green(v))}, "
+                 f"textual match {sum(1 for v in verdicts if v.diff_lines == 0)}")
+    return "\n".join(lines)
+
+
+def verdict_dict(v: Verdict) -> dict:
+    return dataclasses.asdict(v)
