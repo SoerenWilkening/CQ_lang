@@ -1,0 +1,643 @@
+// Unit tests of calls::finalize (cq-by8; CR §1.4 "dead originals", rule 18).
+//
+// Each case parses a module shaped like what construct() leaves behind (clones already made, call
+// sites already retargeted), runs calls::finalize and checks which functions and globals survive.
+// The no-clone cases compare the printed module byte for byte before and after.
+//
+//   calls_finalize_tests            run every positive case
+//   calls_finalize_tests <case>     run one case (positive or fatal)
+#include <cstdio>
+#include <functional>
+#include <map>
+#include <memory>
+#include <set>
+#include <string>
+#include <vector>
+
+#include "cq/Calls.h"
+#include "cq/Common.h"
+#include "cq/Loops.h"
+#include "cq/Lowering.h"
+#include "cq/Taint.h"
+
+#include "llvm/AsmParser/Parser.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Verifier.h"
+#include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/raw_ostream.h"
+
+using namespace llvm;
+using namespace cq;
+
+namespace {
+
+int failures = 0;
+
+void fail(const std::string &c, const std::string &msg) {
+  ++failures;
+  std::fprintf(stderr, "FAIL %s: %s\n", c.c_str(), msg.c_str());
+}
+
+std::unique_ptr<Module> parse(LLVMContext &ctx, const char *ir) {
+  SMDiagnostic err;
+  std::unique_ptr<Module> M = parseAssemblyString(ir, err, ctx);
+  if (!M) {
+    std::string s;
+    raw_string_ostream os(s);
+    err.print("finalize_tests", os);
+    std::fprintf(stderr, "%s\n", os.str().c_str());
+    std::exit(2);
+  }
+  return M;
+}
+
+std::string print(const Module &M) {
+  std::string s;
+  raw_string_ostream os(s);
+  M.print(os, nullptr);
+  return os.str();
+}
+
+std::set<std::string> globals(const Module &M) {
+  std::set<std::string> out;
+  for (const GlobalValue &G : M.global_values())
+    out.insert(G.getName().str());
+  return out;
+}
+
+std::string join(const std::set<std::string> &s) {
+  std::string r;
+  for (const std::string &x : s)
+    r += (r.empty() ? "" : " ") + x;
+  return r;
+}
+
+// Runs finalize and checks that exactly `gone` disappeared and the module still verifies.
+void expectDropped(const std::string &c, const char *ir, const std::set<std::string> &gone) {
+  LLVMContext ctx;
+  auto M = parse(ctx, ir);
+  std::set<std::string> before = globals(*M);
+  for (const std::string &g : gone)
+    if (!before.count(g))
+      fail(c, "test bug: @" + g + " is not in the input");
+  calls::finalize(*M);
+  std::set<std::string> after = globals(*M), lost;
+  for (const std::string &g : before)
+    if (!after.count(g))
+      lost.insert(g);
+  if (lost != gone)
+    fail(c, "dropped {" + join(lost) + "}, expected {" + join(gone) + "}");
+  std::string v;
+  raw_string_ostream os(v);
+  if (verifyModule(*M, &os))
+    fail(c, "module does not verify after finalize: " + os.str());
+}
+
+void expectIdentical(const std::string &c, const char *ir) {
+  LLVMContext ctx;
+  auto M = parse(ctx, ir);
+  std::string before = print(*M);
+  calls::finalize(*M);
+  if (print(*M) != before)
+    fail(c, "a module with no clone changed");
+}
+
+// A module with no clone: tainted-looking code, unused internal and external functions, ABI calls,
+// a function whose name only resembles a clone. finalize must not touch any of it.
+const char *kNoClone = R"(
+@tbl = internal constant [2 x i32] [i32 1, i32 2]
+@fp = global ptr @unused_internal
+
+define i32 @entry(i32 %a, double %t) {
+  %q = call i32 @cqrt_alloc_i32(i32 %a)
+  call void @cqrt_ry_i32(i32 %q, double %t)
+  %r = call i32 @cq_template_add_i32_hl(i32 %q, i32 1)
+  %m = call i32 @cqrt_measure_i32(i32 %r)
+  ret i32 %m
+}
+
+define internal i32 @unused_internal(i32 %x) {
+  ret i32 %x
+}
+
+define internal i32 @dead_internal(i32 %x) {
+  %y = call i32 @cq_theta_si32(i32 %x, double 1.0)
+  ret i32 %y
+}
+
+define i32 @api(i32 %x) {
+  ret i32 %x
+}
+
+define i32 @__cq_qx_f_10(i32 %x) {
+  ret i32 %x
+}
+
+define i32 @cq_q_f_10(i32 %x) {
+  ret i32 %x
+}
+
+declare i32 @cqrt_alloc_i32(i32)
+declare void @cqrt_ry_i32(i32, double)
+declare i32 @cq_template_add_i32_hl(i32, i32)
+declare i32 @cqrt_measure_i32(i32)
+declare i32 @cq_theta_si32(i32, double)
+declare i32 @unused_decl(i32)
+)";
+
+// A module with no function at all in the clone namespace and nothing else.
+const char *kEmpty = R"(
+@g = global i32 0
+declare void @ext()
+)";
+
+// 06-shaped: the entry calls the clone, the original has no caller left.
+const char *kRetargeted = R"(
+define i32 @entry(i32 %a, double %t, i32 %b) {
+  %q = call i32 @cqrt_alloc_i32(i32 %a)
+  call void @cqrt_ry_i32(i32 %q, double %t)
+  %r = call fastcc i32 @__cq_q_f_10(i32 %q, i32 %b)
+  %m = call i32 @cqrt_measure_i32(i32 %r)
+  ret i32 %m
+}
+
+define i32 @api(i32 %x) {
+  ret i32 %x
+}
+
+define internal fastcc i32 @f(i32 %x, i32 %y) {
+  %s = mul i32 %x, %y
+  ret i32 %s
+}
+
+define internal fastcc i32 @__cq_q_f_10(i32 %x, i32 %y) {
+  %r = call i32 @cq_template_mul_i32_hl(i32 %x, i32 %y)
+  ret i32 %r
+}
+
+declare i32 @cqrt_alloc_i32(i32)
+declare void @cqrt_ry_i32(i32, double)
+declare i32 @cqrt_measure_i32(i32)
+declare i32 @cq_template_mul_i32_hl(i32, i32)
+)";
+
+// A classical call site (106-shaped: the original runs for a classical job) keeps the original.
+const char *kClassicalCaller = R"(
+define i32 @entry(i32 %h, i32 %c) {
+  %r = call fastcc i32 @__cq_q_f_1(i32 %h)
+  %s = call fastcc i32 @f(i32 %c)
+  %t = add i32 %r, %s
+  ret i32 %t
+}
+
+define internal fastcc i32 @f(i32 %x) {
+  %s = add i32 %x, 1
+  ret i32 %s
+}
+
+define internal fastcc i32 @__cq_q_f_1(i32 %x) {
+  %r = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  ret i32 %r
+}
+
+define internal fastcc void @__cq_q_f_1_unc(i32 %o, i32 %x) {
+  call void @cq_template_add_i32_hl_unc(i32 %o, i32 %x, i32 1)
+  ret void
+}
+
+declare i32 @cq_template_add_i32_hl(i32, i32)
+declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
+)";
+
+// Address-taken originals (96: select of function pointers; 102: signal handler) are kept.
+const char *kAddressTaken = R"(
+define i32 @entry(i32 %h, i1 %c) {
+  %p = select i1 %c, ptr @sq, ptr @dbl
+  %r = call fastcc i32 @__cq_q_sq_1(i32 %h)
+  %s = call fastcc i32 @__cq_q_dbl_1(i32 %h)
+  %u = call ptr @signal(i32 30, ptr @hnd)
+  %t = select i1 %c, i32 %r, i32 %s
+  ret i32 %t
+}
+
+define internal i32 @sq(i32 %x) {
+  %y = mul i32 %x, %x
+  ret i32 %y
+}
+
+define internal i32 @dbl(i32 %x) {
+  %y = shl i32 %x, 1
+  ret i32 %y
+}
+
+define internal void @hnd(i32 %x) {
+  ret void
+}
+
+define internal fastcc i32 @__cq_q_sq_1(i32 %x) {
+  ret i32 %x
+}
+
+define internal fastcc i32 @__cq_q_dbl_1(i32 %x) {
+  ret i32 %x
+}
+
+define internal fastcc void @__cq_q_hnd_0_ctl(i32 %f, i32 %x) {
+  ret void
+}
+
+declare ptr @signal(i32, ptr)
+)";
+
+// An original in a global initializer (97: @fps) or in @llvm.used is kept.
+const char *kUsedGlobal = R"(
+@fps = internal unnamed_addr constant [1 x ptr] [ptr @dbl]
+@llvm.used = appending global [1 x ptr] [ptr @kept_used], section "llvm.metadata"
+
+define ptr @entry(i32 %h) {
+  %r = call fastcc i32 @__cq_q_dbl_1(i32 %h)
+  %s = call fastcc i32 @__cq_q_kept_used_1(i32 %h)
+  ret ptr @fps
+}
+
+define internal i32 @dbl(i32 %x) {
+  ret i32 %x
+}
+
+define internal i32 @kept_used(i32 %x) {
+  ret i32 %x
+}
+
+define internal fastcc i32 @__cq_q_dbl_1(i32 %x) {
+  ret i32 %x
+}
+
+define internal fastcc i32 @__cq_q_kept_used_1(i32 %x) {
+  ret i32 %x
+}
+)";
+
+// 119-shaped: two originals that only call each other are both dropped.
+const char *kMutual = R"(
+define i32 @entry(i32 %h, i32 %n) {
+  %r = call fastcc i32 @__cq_q_even_step_10(i32 %h, i32 %n)
+  ret i32 %r
+}
+
+define internal fastcc i32 @even_step(i32 %x, i32 %n) {
+  %c = icmp eq i32 %n, 0
+  br i1 %c, label %done, label %rec
+rec:
+  %m = sub i32 %n, 1
+  %r = call fastcc i32 @odd_step(i32 %x, i32 %m)
+  ret i32 %r
+done:
+  ret i32 %x
+}
+
+define internal fastcc i32 @odd_step(i32 %x, i32 %n) {
+  %m = sub i32 %n, 1
+  %y = add i32 %x, 1
+  %r = call fastcc i32 @even_step(i32 %y, i32 %m)
+  ret i32 %r
+}
+
+define internal fastcc i32 @__cq_q_even_step_10(i32 %x, i32 %n) {
+  %r = call fastcc i32 @__cq_q_odd_step_10(i32 %x, i32 %n)
+  ret i32 %r
+}
+
+define internal fastcc i32 @__cq_q_odd_step_10(i32 %x, i32 %n) {
+  %r = call fastcc i32 @__cq_q_even_step_10(i32 %x, i32 %n)
+  ret i32 %r
+}
+)";
+
+// 33-shaped: a chain f -> g -> h of originals, all retargeted.
+const char *kChain = R"(
+define i32 @entry(i32 %x) {
+  %r = call fastcc i32 @__cq_q_f_1(i32 %x)
+  ret i32 %r
+}
+
+define internal fastcc i32 @f(i32 %x) {
+  %r = call fastcc i32 @g(i32 %x)
+  ret i32 %r
+}
+
+define internal fastcc i32 @g(i32 %x) {
+  %r = call fastcc i32 @h(i32 %x)
+  ret i32 %r
+}
+
+define internal fastcc i32 @h(i32 %x) {
+  ret i32 %x
+}
+
+define internal fastcc i32 @__cq_q_f_1(i32 %x) {
+  %r = call fastcc i32 @__cq_q_g_1(i32 %x)
+  ret i32 %r
+}
+
+define internal fastcc i32 @__cq_q_g_1(i32 %x) {
+  %r = call fastcc i32 @__cq_q_h_1(i32 %x)
+  ret i32 %r
+}
+
+define internal fastcc i32 @__cq_q_h_1(i32 %x) {
+  ret i32 %x
+}
+)";
+
+// The chain again, but the entry also calls f classically: f is live, so are g and h through it.
+const char *kLiveChain = R"(
+define i32 @entry(i32 %x, i32 %c) {
+  %r = call fastcc i32 @__cq_q_f_1(i32 %x)
+  %s = call fastcc i32 @f(i32 %c)
+  %t = add i32 %r, %s
+  ret i32 %t
+}
+
+define internal fastcc i32 @f(i32 %x) {
+  %r = call fastcc i32 @g(i32 %x)
+  ret i32 %r
+}
+
+define internal fastcc i32 @g(i32 %x) {
+  %r = call fastcc i32 @h(i32 %x)
+  ret i32 %r
+}
+
+define internal fastcc i32 @h(i32 %x) {
+  ret i32 %x
+}
+
+define internal fastcc i32 @__cq_q_f_1(i32 %x) {
+  %r = call fastcc i32 @__cq_q_g_1(i32 %x)
+  ret i32 %r
+}
+
+define internal fastcc i32 @__cq_q_g_1(i32 %x) {
+  %r = call fastcc i32 @__cq_q_h_1(i32 %x)
+  ret i32 %r
+}
+
+define internal fastcc i32 @__cq_q_h_1(i32 %x) {
+  ret i32 %x
+}
+)";
+
+// 170-shaped: an externally visible injected-library original whose every call was retargeted is
+// dropped (CR §1.4 drops __muldc3); a bounds clone (§1.4 _b) and a libm-named clone are read too.
+const char *kExternal = R"(
+define { double, double } @entry(double %a, double %b, i32 %h, i32 %n) {
+  %r = call fastcc { i32, i32 } @__cq_q___muldc3_1100(i32 %h, i32 %h, double %a, double %b)
+  %s = call fastcc i32 @__cq_q_memcmp_001_b3(ptr null, ptr null, i32 %n)
+  %t = call fastcc i32 @__cq_q_sin_1(i32 %h)
+  ret { double, double } zeroinitializer
+}
+
+define { double, double } @__muldc3(double %a, double %b, double %c, double %d) {
+  %x = fmul double %a, %c
+  %r = insertvalue { double, double } zeroinitializer, double %x, 0
+  ret { double, double } %r
+}
+
+define i32 @memcmp(ptr %a, ptr %b, i64 %n) {
+  ret i32 0
+}
+
+define internal fastcc { i32, i32 } @__cq_q___muldc3_1100(i32 %a, i32 %b, double %c, double %d) {
+  ret { i32, i32 } zeroinitializer
+}
+
+define internal fastcc i32 @__cq_q_memcmp_001_b3(ptr %a, ptr %b, i32 %n) {
+  ret i32 %n
+}
+
+declare i32 @__cq_q_sin_1(i32)
+)";
+
+// What only a dropped body referenced goes with it when it has no symbol of its own (a local
+// helper, a local table, CQ.h declarations); an external declaration nothing else uses goes too,
+// an externally visible helper and global stay.
+const char *kDeadRefs = R"(
+@tbl = internal constant [2 x i32] [i32 1, i32 2]
+@tblp = internal constant ptr @tbl
+@ext_g = global i32 0
+
+define i32 @entry(i32 %h) {
+  %r = call fastcc i32 @__cq_q_f_1(i32 %h)
+  ret i32 %r
+}
+
+define internal fastcc i32 @f(i32 %x) {
+  %p = load ptr, ptr @tblp
+  %a = getelementptr i32, ptr %p, i32 %x
+  %v = load i32, ptr %a
+  %w = call i32 @helper(i32 %v)
+  %e = call i32 @ext_helper(i32 %w)
+  %g = load i32, ptr @ext_g
+  %t = call i32 @cq_theta_si32(i32 %e, double 1.0)
+  %u = add i32 %t, %g
+  ret i32 %u
+}
+
+define internal i32 @helper(i32 %x) {
+  call void @only_helper_decl()
+  ret i32 %x
+}
+
+define i32 @ext_helper(i32 %x) {
+  ret i32 %x
+}
+
+define internal fastcc i32 @__cq_q_f_1(i32 %x) {
+  ret i32 %x
+}
+
+declare i32 @cq_theta_si32(i32, double)
+declare void @only_helper_decl()
+)";
+
+// A helper and a table a dropped original shares with live code stay.
+const char *kSharedRefs = R"(
+@tbl = internal constant [2 x i32] [i32 1, i32 2]
+
+define i32 @entry(i32 %h, i32 %c) {
+  %r = call fastcc i32 @__cq_q_f_1(i32 %h)
+  %s = call i32 @helper(i32 %c)
+  %a = getelementptr i32, ptr @tbl, i32 %c
+  %v = load i32, ptr %a
+  %t = add i32 %s, %v
+  ret i32 %t
+}
+
+define internal fastcc i32 @f(i32 %x) {
+  %a = getelementptr i32, ptr @tbl, i32 %x
+  %v = load i32, ptr %a
+  %w = call i32 @helper(i32 %v)
+  ret i32 %w
+}
+
+define internal i32 @helper(i32 %x) {
+  ret i32 %x
+}
+
+define internal fastcc i32 @__cq_q_f_1(i32 %x) {
+  ret i32 %x
+}
+)";
+
+// Only a rule 27 declared clone, of a function with no body here: nothing to drop, unused
+// declarations included (only what a dropped body referenced is ever considered).
+const char *kDeclaredOnly = R"(
+define i32 @entry(i32 %h) {
+  %r = call i32 @__cq_q_ext_1(i32 %h)
+  ret i32 %r
+}
+
+define internal i32 @unused_internal(i32 %x) {
+  ret i32 %x
+}
+
+declare i32 @ext(i32)
+declare i32 @__cq_q_ext_1(i32)
+declare void @unused_decl()
+)";
+
+// A twin alone still names its original.
+const char *kTwinOnly = R"(
+define void @entry(i32 %o, i32 %h) {
+  call fastcc void @__cq_q_f_1_unc(i32 %o, i32 %h)
+  ret void
+}
+
+define internal fastcc i32 @f(i32 %x) {
+  ret i32 %x
+}
+
+define internal fastcc void @__cq_q_f_1_unc(i32 %o, i32 %x) {
+  ret void
+}
+)";
+
+// --- fatal inputs ---
+
+const char *kUniquified = R"(
+define i32 @entry(i32 %h) {
+  %r = call fastcc i32 @__cq_q_f_1(i32 %h)
+  %s = call fastcc i32 @__cq_q_f_1.1(i32 %h)
+  ret i32 %r
+}
+define internal fastcc i32 @f(i32 %x) {
+  ret i32 %x
+}
+define internal fastcc i32 @__cq_q_f_1(i32 %x) {
+  ret i32 %x
+}
+define internal fastcc i32 @__cq_q_f_1.1(i32 %x) {
+  ret i32 %x
+}
+)";
+
+// "__cq_q_a_10_b3_1" reads as a clone of @a (mask 10, bounds 3, 1) and of @a_10_b3 (mask 1).
+const char *kAmbiguous = R"(
+define i32 @entry(i32 %h) {
+  %r = call fastcc i32 @__cq_q_a_10_b3_1(i32 %h, i32 0)
+  ret i32 %r
+}
+define internal fastcc i32 @a(i32 %x, i32 %y) {
+  ret i32 %x
+}
+define internal fastcc i32 @a_10_b3(i32 %x) {
+  ret i32 %x
+}
+define internal fastcc i32 @__cq_q_a_10_b3_1(i32 %x, i32 %y) {
+  ret i32 %x
+}
+)";
+
+// An externally visible function rewritten in place (it calls ABI symbols) that also has a clone
+// and no in-module caller.
+const char *kInPlace = R"(
+define i32 @g(i32 %a, double %t) {
+  %q = call i32 @cqrt_alloc_i32(i32 %a)
+  call void @cqrt_ry_i32(i32 %q, double %t)
+  %m = call i32 @cqrt_measure_i32(i32 %q)
+  ret i32 %m
+}
+define i32 @entry(i32 %h, double %t) {
+  %r = call fastcc i32 @__cq_q_g_10(i32 %h, double %t)
+  ret i32 %r
+}
+define internal fastcc i32 @__cq_q_g_10(i32 %h, double %t) {
+  ret i32 %h
+}
+declare i32 @cqrt_alloc_i32(i32)
+declare void @cqrt_ry_i32(i32, double)
+declare i32 @cqrt_measure_i32(i32)
+)";
+
+void otherStubs() {
+  LLVMContext ctx;
+  auto M = parse(ctx, "define internal i32 @f(i32 %x) {\n  ret i32 %x\n}\n");
+  Specialization S;
+  S.F = M->getFunction("f");
+  S.mask = "1";
+  calls::materialize(*M, S);
+}
+
+const std::map<std::string, std::function<void()>> kPositive = {
+    {"noop_no_clone", [] { expectIdentical("noop_no_clone", kNoClone); }},
+    {"noop_clone_namespace_absent", [] { expectIdentical("noop_clone_namespace_absent", kEmpty); }},
+    {"drop_retargeted", [] { expectDropped("drop_retargeted", kRetargeted, {"f"}); }},
+    {"keep_classical_caller", [] { expectDropped("keep_classical_caller", kClassicalCaller, {}); }},
+    {"keep_address_taken", [] { expectDropped("keep_address_taken", kAddressTaken, {}); }},
+    {"keep_used_global", [] { expectDropped("keep_used_global", kUsedGlobal, {}); }},
+    {"drop_mutual_recursion", [] { expectDropped("drop_mutual_recursion", kMutual, {"even_step", "odd_step"}); }},
+    {"drop_chain", [] { expectDropped("drop_chain", kChain, {"f", "g", "h"}); }},
+    {"keep_live_chain", [] { expectDropped("keep_live_chain", kLiveChain, {}); }},
+    {"drop_external_original", [] { expectDropped("drop_external_original", kExternal, {"__muldc3", "memcmp"}); }},
+    {"drop_dead_references",
+     [] {
+       expectDropped("drop_dead_references", kDeadRefs,
+                     {"f", "helper", "tbl", "tblp", "cq_theta_si32", "only_helper_decl"});
+     }},
+    {"keep_shared_references", [] { expectDropped("keep_shared_references", kSharedRefs, {"f"}); }},
+    {"declared_clone_only", [] { expectDropped("declared_clone_only", kDeclaredOnly, {}); }},
+    {"twin_only", [] { expectDropped("twin_only", kTwinOnly, {"f"}); }},
+};
+
+const std::map<std::string, std::function<void()>> kFatal = {
+    {"fatal_uniquified", [] { expectDropped("fatal_uniquified", kUniquified, {}); }},
+    {"fatal_ambiguous", [] { expectDropped("fatal_ambiguous", kAmbiguous, {}); }},
+    {"fatal_inplace_entry", [] { expectDropped("fatal_inplace_entry", kInPlace, {}); }},
+    {"fatal_other_stubs", otherStubs},
+};
+
+} // namespace
+
+int main(int argc, char **argv) {
+  if (argc > 1) {
+    std::string c = argv[1];
+    if (auto it = kPositive.find(c); it != kPositive.end())
+      it->second();
+    else if (auto jt = kFatal.find(c); jt != kFatal.end()) {
+      jt->second();
+      std::fprintf(stderr, "FAIL %s: expected a fatal error\n", c.c_str());
+      return 1;
+    } else {
+      std::fprintf(stderr, "unknown case %s\n", c.c_str());
+      return 2;
+    }
+  } else {
+    for (auto &[name, fn] : kPositive)
+      fn();
+  }
+  if (failures)
+    return 1;
+  std::printf("ok\n");
+  return 0;
+}
