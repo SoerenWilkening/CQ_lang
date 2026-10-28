@@ -86,10 +86,13 @@ Built first (step 0 below). Requirements:
 - **Inputs.** Drivers are generated from `drivers.txt`. For every quantum input: edge values
   (0, ±1, MIN, MAX), fp specials (±0, ±Inf, NaN, a subnormal), a seeded random set, and every input
   when the quantum inputs total at most 8 bits (16 bits only in the on-demand full sampling mode,
-  which the owner turns on explicitly; no test or default path runs it). Also: values that hit every §2 totalization row
-  (divisor 0, INT_MIN / −1, shift amount at and above W, index at and above n, NaN and out-of-range
-  into `fptosi`); for every loop, inputs giving trip counts 0, K−1, K and K+1 (found by running
-  the C oracle with trip counters); a seeded set over the classical arguments as well.
+  which the owner turns on explicitly; no test or default path runs it). Also: for every loop,
+  inputs giving trip counts 0, K−1, K and K+1 (found by running the C oracle with trip counters);
+  a seeded set over the classical arguments as well.
+- **Domain.** Whatever LLVM does, we do. An input on which the C program has undefined behaviour
+  as LLVM defines it (division by 0, INT_MIN / −1, shift amount at or above W, out-of-range
+  `fptosi`, an access past an object) is outside the domain: the sampler never keeps it, the
+  checker never compares it, and the pass does not protect against it.
 - **Self-test.** A mutated reference and an empty output must both be rejected before any green
   counts. Keep the mutants as permanent tests.
 - **Reports.** Per example: §6 verdict, structural-verifier verdict, C-oracle verdict, and the
