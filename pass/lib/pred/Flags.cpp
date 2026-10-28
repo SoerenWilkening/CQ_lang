@@ -344,16 +344,6 @@ void lowerBranch(LoweringContext &ctx, BranchInst &br) {
   const PathStorage &I = storage(ctx.preds());
   if (I.F != br.getFunction())
     internalError("pred: lowerBranch before PathPredicates::compute of its function", &br);
-  // Rule 8 (P1): a classical factor of either edge's condition is a classical branch the spine must
-  // emit around the quantum part. The spine does not yet (cq-h6o7); flagging only the quantum part
-  // without that branch would fire gates where the C program does not go, so stop here instead.
-  std::shared_ptr<Oracle> O = taintOracle(ctx.T, ctx.S);
-  unsigned c = condNode(br.getCondition(), *O);
-  Bdd &m = Bdd::get();
-  if (classicalFactorNode(c, *O) != Bdd::T || classicalFactorNode(m.notOp(c), *O) != Bdd::T)
-    unimplemented("pred: a quantum branch condition with a classical factor (rule 8 C && Q) needs the "
-                  "spine's classical branch on C (cq-h6o7)",
-                  &br);
 }
 
 // Rule 12: a phase is rz_i1 on the flag of the quantum predicate in scope (a _ctl clone's predicate
