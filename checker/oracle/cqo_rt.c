@@ -1,12 +1,13 @@
 /* cqo_rt.c: runtime of the C oracle (cq-w0-chk-oracle). Linked with the program instrumented by
  * OracleInstr.cpp and a driver from drivers.driver_source(spec, samples, main_name="__cqo_drv_main",
- * before_call="if (__cqo_sample_begin(CQD_SAMPLE)) {", after_call="__cqo_sample_end(); }").
+ * before_call/after_call as oracle.py BEFORE_CALL/AFTER_CALL, see "samples" below).
  * C17, compiled separately, never instrumented.
  *
- *   prog <trace> <status> <timeout_ms> <tripcap> [<subst>]
+ *   prog <trace> <status> <timeout_ms> <tripcap> [<subst> [<isolate>]]   or   prog --serve
  *
- * The driver's setup runs once; each sample's call runs in its own forked child from that state, so a
- * trap, an abort or a hang ends that sample only. The child appends `<index>\t<event JSON>` lines to
+ * The driver's setup runs once; each sample's call runs from that state as a child forked for it
+ * alone would (in-process, see "samples" below), so a trap, an abort or a hang ends that sample only.
+ * The sample appends `<index>\t<event JSON>` lines to
  * <trace> and `<index>\t<note>` lines to <status>; the parent adds `<index>\twait exited N|signaled
  * S|timeout`. Notes: `noreturn <callee>`, `raise <sig>`, `ub unreachable <fn>`, `ub oob-atomic`,
  * `tripcap`, `crash <signal> addr=<a>`, `oob-load`, `oob-store`, `cap <loop>` (a quantum-exit loop or

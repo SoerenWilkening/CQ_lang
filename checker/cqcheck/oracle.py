@@ -4,8 +4,9 @@ CLAUDE.md "The §6 checker", oracle (b): ``name.O1.ll`` with ``cq_theta``/``cq_m
 identity, logging each ``cq_theta``/``cq_phi`` call site reached and its angle. The program is linked
 with a generated driver (and the injection bundle when ``bundle/manifest.json`` lists one), instrumented
 by ``checker/oracle/OracleInstr.cpp`` (the ``cq-oracle`` opt pass) and linked with
-``checker/oracle/cqo_rt.c``. Every sample runs in its own forked child from the pristine program
-state, so a trap, an abort or a hang ends that sample only.
+``checker/oracle/cqo_rt.c``. Every sample runs from the program's post-setup state, as a child forked
+for it alone would: one worker process runs the batch in-process and puts that state back after each
+sample, and a trap, an abort, a crash or a hang ends that sample only (cqo_rt.c, samples; cq-pz9h).
 
 Trace events (cq-arch; values are hex bit patterns ``0x`` + lowercase digits, no leading zeros):
 
@@ -51,9 +52,10 @@ argument; the result is the low W bits; no memory effect.
 
 Samples are Z1's ``{"call", "args"}`` (SampleSet.samples entries); the driver is rendered only by
 ``drivers.driver_source(spec, samples, before_call=..., after_call=..., main_name="__cqo_drv_main")``,
-whose ``before_call``/``after_call`` fork one child per sample (cqo_rt.c). The driver reads the
+whose ``before_call``/``after_call`` hand each record to cqo_rt.c's in-process worker. The driver reads the
 samples at run time from ``drivers.sample_file`` in ``$CQD_SAMPLES`` (cq-arch Z2): one build per
-example, and the samples run in up to ``PARTS`` runner processes in parallel. The driver discards the
+example; one persistent runner process per executable serves every batch (``PARTS``, default 1).
+The driver discards the
 call's result, so the instrumentation logs it at the IR call (``-cq-oracle-entries``). An optional
 ``"subst": {"<fn>:<site>": hex}`` replaces the register value at a ``cq_theta`` site each time it is
 reached, or with a list ``[hex, ...]`` the r-th reach takes entry r mod len (cq-arch Z4, cq-6m2: CR §6

@@ -2601,8 +2601,14 @@ def _one(n: str, confirm: bool = False):
         from cqcheck import oracle
         o1 = sorted(d.glob("*.O1.ll"))[0]
 
+        # every trip sample in one oracle batch (cq-pz9h); trip_run looks its run up
+        idx = sorted({e["sample"] for lp in ss.classes["trips"]["loops"] for e in lp["trips"].values()
+                      if "sample" in e})
+        by_key = {json.dumps(ss.samples[i], sort_keys=True): r
+                  for i, r in zip(idx, oracle.run_samples(o1, spec, [ss.samples[i] for i in idx]))}
+
         def trip_run(smp):
-            r = oracle.run_samples(o1, spec, [smp])[0]
+            r = by_key.get(json.dumps(smp, sort_keys=True)) or oracle.run_samples(o1, spec, [smp])[0]
             if r.failed:
                 raise oracle.OracleError(f"oracle: sample {smp} cannot run: {r.reason}")
             return r.events, r.loops
