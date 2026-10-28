@@ -26,6 +26,7 @@
  */
 #include <errno.h>
 #include <fcntl.h>
+#include <fenv.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -38,6 +39,52 @@
 #include <unistd.h>
 
 #include "cqe.h"
+
+/* ---- CR §2 fp -> int for the lowered module's classical fptosi/fptoui (cq-ltoq) --------------
+ * run.py (totalize_module) rewrites each classical fptosi/fptoui of the lowered module to a call of
+ * one of these, the same rows the C oracle's runtime computes for the C program (CR §2: c32/c64 are
+ * cvtt with the indefinite INT_MIN of their width; f80 is x87 fistp). w is 8, 16, 32 or 64; sgn is
+ * 1 for fptosi. f16/bf16/f32 arrive widened to f64 exactly. */
+static int64_t tot_c32(double x) {
+  if (x > -2147483649.0 && x < 2147483648.0)
+    return (int32_t)x;
+  feraiseexcept(FE_INVALID);
+  return INT32_MIN;
+}
+static int64_t tot_c64(double x) {
+  if (x >= -9223372036854775808.0 && x < 9223372036854775808.0)
+    return (int64_t)x;
+  feraiseexcept(FE_INVALID);
+  return INT64_MIN;
+}
+int64_t __cqe_fpto64(double x, int32_t w, int32_t sgn) {
+  if (sgn)
+    return w == 64 ? tot_c64(x) : tot_c32(x);
+  if (w <= 16)
+    return tot_c32(x);
+  if (w == 32)
+    return tot_c64(x);
+  int64_t r1 = tot_c64(x), r2 = tot_c64(x - 9223372036854775808.0);
+  return r1 | (r2 & (r1 >> 63));
+}
+static int64_t tot_fist(long double x, int b) {
+  long double lim = b == 16 ? 32768.0L : b == 32 ? 2147483648.0L : 9223372036854775808.0L;
+  if (x > -lim - 1.0L && x < lim)
+    return (int64_t)x;
+  feraiseexcept(FE_INVALID);
+  return b == 16 ? INT16_MIN : b == 32 ? INT32_MIN : INT64_MIN;
+}
+int64_t __cqe_fpto80(long double x, int32_t w, int32_t sgn) {
+  if (sgn)
+    return w <= 16 ? tot_fist(x, 16) : tot_fist(x, w);
+  if (w <= 16)
+    return tot_fist(x, 32);
+  if (w == 32)
+    return tot_fist(x, 64);
+  if (x < 9223372036854775808.0L)
+    return tot_fist(x, 64);
+  return (int64_t)((uint64_t)tot_fist(x - 9223372036854775808.0L, 64) ^ 0x8000000000000000ULL);
+}
 
 /* ---- values ------------------------------------------------------------------------------ */
 

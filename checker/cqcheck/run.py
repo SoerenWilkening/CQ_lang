@@ -4,7 +4,8 @@ driver, run one sample, return a RunResult.
     run_sample(lowered: Path, spec: DriverSpec, sample: dict, side: str) -> RunResult   (cq-zew)
 
 Build. driver.c (drivers.driver_source, the one renderer of samples, cq-arch Z1/Z2) is compiled to IR with clang-19 for the lowered
-module's triple, llvm-link joins it to the lowered module, checker/rt/stubgen.py defines every
+module's triple, the lowered module's classical CR §2 rows are rewritten to the table (totalize_module,
+cq-ltoq), llvm-link joins it to the lowered module, checker/rt/stubgen.py defines every
 cqrt_*/cq_template_* the linked module declares and every rule 27 declared clone nothing links (the
 checker's stand-in, typed by the example's .O1.ll: c_module_of, cq-rft), and clang links that with every checker/rt/*.c
 compiled as objects (never an archive, so each family's registering constructor is linked, cf.
@@ -92,7 +93,7 @@ LLVM_BIN = Path(os.environ.get("CQ_LLVM_BIN", "/usr/local/opt/llvm@19/bin"))
 CLANG = str(LLVM_BIN / "clang")
 LLVM_LINK = str(LLVM_BIN / "llvm-link")
 DEFAULT_TIMEOUT = 30.0
-_VERSION = "chk-core-2"
+_VERSION = "chk-core-3"
 
 
 class BuildError(Exception):
@@ -406,7 +407,13 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
     (tmp / "driver.c").write_text(drv)
     shutil.copy(lowered, tmp / "lowered.ll")
     _sh([CLANG, "-O1", "-w", "-target", triple, "-S", "-emit-llvm", "driver.c", "-o", "driver.ll"], cwd=tmp)
-    _sh([LLVM_LINK, "-S", "lowered.ll", "driver.ll", "-o", "linked.ll"], cwd=tmp)
+    # the lowered module in canonical text, then its classical CR §2 rows rewritten (cq-ltoq)
+    _sh([LLVM_LINK, "-S", "lowered.ll", "-o", "lowered.canon.ll"], cwd=tmp)
+    try:
+        (tmp / "lowered.tot.ll").write_text(totalize_module((tmp / "lowered.canon.ll").read_text()))
+    except _Unimpl as e:
+        raise BuildError(f"cq: unimplemented: {e}")
+    _sh([LLVM_LINK, "-S", "lowered.tot.ll", "driver.ll", "-o", "linked.ll"], cwd=tmp)
     cargs = []
     if ctext is not None:
         (tmp / "c_module.ll").write_text(ctext)
@@ -419,6 +426,194 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
         extra_objs.append(str(o))
     _sh([CLANG, "-O0", "-w", "-target", triple, *[str(o) for o in objs], *extra_objs, "linked.ll", "stubs.ll",
          "-lm", "-o", "prog"], cwd=tmp)
+
+
+# ---- CR §2 on the lowered module's classical instructions (cq-ltoq) ----------------------------
+#
+# CR §2: "The classical reference evaluator (§6) and every backend use the same table." The template
+# families compute the table for quantum operations; a classical instruction of the lowered module is
+# compiled as it stands, so x86 would trap on urem by 0 (SIGFPE) or give its own answer for a shift by
+# W or more, while the C oracle (checker/oracle/OracleInstr.cpp, totalize) rewrites the same rows of
+# the C program. totalize_module applies the same rewrite, row for row, to the lowered module's text
+# (canonical llvm-link -S output) before it is linked with the driver:
+#   udiv/urem/sdiv/srem with a divisor not a safe constant  -> @__cqe_tot.<op>.<T>: by 0 udiv 2^W-1,
+#       urem a, sdiv a >= 0 ? -1 : 1, srem a; INT_MIN / -1 divides by 1 (sdiv INT_MIN, srem 0);
+#   shl/lshr/ashr with an amount not a constant below W   -> @__cqe_tot.<op>.<T>: amount mod W;
+#   fptosi/fptoui to i8/i16/i32/i64                         -> core.c __cqe_fpto64 / __cqe_fpto80
+#       (the CR §2 rows; f16/bf16/f32 widen to f64 exactly, as the oracle does);
+#   llvm.abs/ctlz/cttz                                      -> the poison flag false (abs(INT_MIN) =
+#       INT_MIN, ctlz/cttz(0) = W);
+#   llvm.maxnum/minnum                                      -> isnan(a) ? b : isnan(b) ? a :
+#       (b > a ? b : a) (min with <), the measured x86 formula;
+#   llvm.fmuladd                                            -> fmul then fadd, unfused.
+# A vector form of any of these, or an fp -> int width the table does not tabulate, is a BuildError
+# "unimplemented" (the oracle stops there too), never left native.
+
+_FPT = {"half": "f16", "bfloat": "bf16", "float": "f32", "double": "f64", "x86_fp80": "f80", "fp128": "f128"}
+_FPT_OF = {v: k for k, v in _FPT.items()}
+_FN_START = re.compile(r"^define\b")
+_INT_OP = re.compile(r"^(?P<ind>\s+)(?P<lhs>%\S+) = (?P<op>udiv|urem|sdiv|srem|shl|lshr|ashr)"
+                     r"(?P<fl>(?: (?:nuw|nsw|exact))*) (?P<rest>.*)$")
+_FPTOI = re.compile(r"^(?P<ind>\s+)(?P<lhs>%\S+) = (?P<op>fptosi|fptoui) (?P<rest>.*)$")
+_ZPOISON = re.compile(r"(@llvm\.(?:abs|ctlz|cttz)\.[\w.]+\((?:[^()]|\([^()]*\))*), i1 true\)")
+_FPINTR = re.compile(r"@llvm\.(maxnum|minnum|fmuladd)\.([\w.]+)\(")
+
+
+class _Unimpl(Exception):
+    pass
+
+
+def _split_top(s: str) -> List[str]:
+    """s split at the commas outside (), [], {} and <>."""
+    out, depth, cur = [], 0, []
+    for ch in s:
+        if ch in "([{<":
+            depth += 1
+        elif ch in ")]}>":
+            depth -= 1
+        if ch == "," and depth == 0:
+            out.append("".join(cur).strip())
+            cur = []
+        else:
+            cur.append(ch)
+    out.append("".join(cur).strip())
+    return out
+
+
+def _int_lit(s: str, w: int) -> Optional[int]:
+    """The unsigned value of an integer literal operand of width w, or None if it is not one."""
+    if s in ("true", "false"):
+        return 1 if s == "true" else 0
+    if re.fullmatch(r"-?[0-9]+", s):
+        return int(s) % (1 << w)
+    return None
+
+
+def _tot_helper(op: str, t: str) -> str:
+    w = int(t[1:])
+    name = f"@__cqe_tot.{op}.{t}"
+    b = [f"define internal {t} {name}({t} %a, {t} %b) {{"]
+    if op in ("shl", "lshr", "ashr"):
+        b += [f"  %m = urem {t} %b, {w}", f"  %r = {op} {t} %a, %m"]
+    elif op in ("udiv", "urem"):
+        b += [f"  %z = icmp eq {t} %b, 0", f"  %s = select i1 %z, {t} 1, {t} %b", f"  %q = {op} {t} %a, %s",
+              f"  %r = select i1 %z, {t} {'-1' if op == 'udiv' else '%a'}, {t} %q"]
+    else:  # sdiv, srem
+        b += [f"  %z = icmp eq {t} %b, 0", f"  %mn = shl {t} 1, {w - 1}", f"  %am = icmp eq {t} %a, %mn",
+              f"  %bm = icmp eq {t} %b, -1", f"  %o = and i1 %am, %bm", f"  %zo = or i1 %z, %o",
+              f"  %s = select i1 %zo, {t} 1, {t} %b", f"  %q = {op} {t} %a, %s"]
+        if op == "sdiv":
+            b += [f"  %ge = icmp sge {t} %a, 0", f"  %bz = select i1 %ge, {t} -1, {t} 1",
+                  f"  %r = select i1 %z, {t} %bz, {t} %q"]
+        else:
+            b += [f"  %r = select i1 %z, {t} %a, {t} %q"]
+    b += [f"  ret {t} %r", "}"]
+    return "\n".join(b)
+
+
+def _fpto_helper(op: str, src: str, dst: str) -> str:
+    w, sgn = int(dst[1:]), int(op == "fptosi")
+    name = f"@__cqe_tot.{op}.{_FPT[src]}.{dst}"
+    b = [f"define internal {dst} {name}({src} %x) {{"]
+    if src == "x86_fp80":
+        b.append(f"  %r = call i64 @__cqe_fpto80(x86_fp80 %x, i32 {w}, i32 {sgn})")
+    else:
+        x = "%x"
+        if src != "double":
+            b.append(f"  %d = fpext {src} %x to double")
+            x = "%d"
+        b.append(f"  %r = call i64 @__cqe_fpto64(double {x}, i32 {w}, i32 {sgn})")
+    if w == 64:
+        b.append("  ret i64 %r")
+    else:
+        b += [f"  %t = trunc i64 %r to {dst}", f"  ret {dst} %t"]
+    b.append("}")
+    return "\n".join(b)
+
+
+def _fpintr_helper(op: str, sfx: str) -> str:
+    t = _FPT_OF[sfx]
+    name = f"@__cqe_tot.{op}.{sfx}"
+    if op == "fmuladd":
+        return "\n".join([f"define internal {t} {name}({t} %a, {t} %b, {t} %c) {{", f"  %p = fmul {t} %a, %b",
+                          f"  %r = fadd {t} %p, %c", f"  ret {t} %r", "}"])
+    cmp = "ogt" if op == "maxnum" else "olt"
+    return "\n".join([f"define internal {t} {name}({t} %a, {t} %b) {{", f"  %pk = fcmp {cmp} {t} %b, %a",
+                      f"  %in = select i1 %pk, {t} %b, {t} %a", f"  %nb = fcmp uno {t} %b, %b",
+                      f"  %v = select i1 %nb, {t} %a, {t} %in", f"  %na = fcmp uno {t} %a, %a",
+                      f"  %r = select i1 %na, {t} %b, {t} %v", f"  ret {t} %r", "}"])
+
+
+def totalize_module(text: str) -> str:
+    """text (canonical llvm-link -S output) with the CR §2 rows above rewritten; see the comment."""
+    helpers: Dict[str, str] = {}
+    out: List[str] = []
+    in_fn = False
+    for line in text.splitlines():
+        if not in_fn:
+            in_fn = bool(_FN_START.match(line)) and line.rstrip().endswith("{")
+            out.append(line)
+            continue
+        if line.startswith("}"):
+            in_fn = False
+            out.append(line)
+            continue
+        m = _INT_OP.match(line)
+        if m:
+            parts = m.group("rest").split(" ", 1)
+            t = parts[0]
+            if not re.fullmatch(r"i[0-9]+", t) or len(parts) < 2:
+                raise _Unimpl(f"CR §2 rewrite of '{line.strip()}' (vector or unparsed operand type)")
+            ops = _split_top(parts[1])
+            if len(ops) < 2 or any(not o.startswith("!") for o in ops[2:]):
+                raise _Unimpl(f"CR §2 rewrite of '{line.strip()}' (operands)")
+            a, bb, w, op = ops[0], ops[1], int(t[1:]), m.group("op")
+            lit = _int_lit(bb, w)
+            if op in ("shl", "lshr", "ashr"):
+                safe = lit is not None and lit < w
+            elif op in ("udiv", "urem"):
+                safe = lit is not None and lit != 0
+            else:
+                safe = lit is not None and lit != 0 and lit != (1 << w) - 1
+            if safe:
+                out.append(line)
+                continue
+            key = f"{op}.{t}"
+            helpers.setdefault(key, _tot_helper(op, t))
+            out.append(f"{m.group('ind')}{m.group('lhs')} = call {t} @__cqe_tot.{key}({t} {a}, {t} {bb})")
+            continue
+        m = _FPTOI.match(line)
+        if m:
+            mm = re.fullmatch(r"(\S+) (.+?) to (\S+)((?:, !.*)?)", m.group("rest"))
+            if not mm or mm.group(1) not in _FPT:
+                raise _Unimpl(f"CR §2 rewrite of '{line.strip()}' (vector or unparsed fp type)")
+            src, v, dst = mm.group(1), mm.group(2), mm.group(3)
+            if dst not in ("i8", "i16", "i32", "i64") or src == "fp128":
+                raise _Unimpl(f"CR §2 rewrite of '{line.strip()}' (fptosi/fptoui width the table does not "
+                              f"tabulate)")
+            key = f"{m.group('op')}.{_FPT[src]}.{dst}"
+            helpers.setdefault(key, _fpto_helper(m.group("op"), src, dst))
+            out.append(f"{m.group('ind')}{m.group('lhs')} = call {dst} @__cqe_tot.{key}({src} {v})")
+            continue
+        if "@llvm." in line:
+            line = _ZPOISON.sub(r"\1, i1 false)", line)
+
+            def fpintr(mm: "re.Match[str]") -> str:
+                op, sfx = mm.group(1), mm.group(2)
+                if sfx not in _FPT_OF or sfx == "f128":
+                    raise _Unimpl(f"CR §2 rewrite of '{line.strip()}' (vector or untabulated type)")
+                helpers.setdefault(f"{op}.{sfx}", _fpintr_helper(op, sfx))
+                return f"@__cqe_tot.{op}.{sfx}("
+            line = _FPINTR.sub(fpintr, line)
+        out.append(line)
+    if helpers:
+        out.append("")
+        out.extend(helpers[k] + "\n" for k in sorted(helpers))
+        if any(".f80." in k and k.startswith("fpto") for k in helpers):
+            out.append("declare i64 @__cqe_fpto80(x86_fp80, i32, i32)")
+        if any(k.startswith("fpto") and ".f80." not in k for k in helpers):
+            out.append("declare i64 @__cqe_fpto64(double, i32, i32)")
+    return "\n".join(out) + "\n"
 
 
 # ---- run -------------------------------------------------------------------------------------

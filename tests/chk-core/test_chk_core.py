@@ -778,5 +778,55 @@ class StandIn(unittest.TestCase):
         self.assertIn("malformed_call", [v["what"] for v in r.violations])
 
 
+class Totalize(unittest.TestCase):
+    """cq-ltoq: the lowered module's classical div/rem, shifts, fp -> int, cttz and maxnum compute the
+    CR §2 table (the C oracle's rows), not x86's trap or its own answer."""
+    CALLS = [  # fn, C prototype, ctypes, args, expected ret (hex, at the return's C width)
+        ("t_udiv", "unsigned t_udiv(unsigned,unsigned)", ["unsigned", "unsigned"], [7, 0], 0xffffffff),
+        ("t_urem", "unsigned t_urem(unsigned,unsigned)", ["unsigned", "unsigned"], [7, 0], 7),
+        ("t_urem", "unsigned t_urem(unsigned,unsigned)", ["unsigned", "unsigned"], [7, 3], 1),
+        ("t_sdiv", "int t_sdiv(int,int)", ["int", "int"], [5, 0], 0xffffffff),
+        ("t_sdiv", "int t_sdiv(int,int)", ["int", "int"], [-5, 0], 1),
+        ("t_sdiv", "int t_sdiv(int,int)", ["int", "int"], [-2 ** 31, -1], 0x80000000),
+        ("t_srem", "int t_srem(int,int)", ["int", "int"], [-2 ** 31, -1], 0),
+        ("t_srem", "int t_srem(int,int)", ["int", "int"], [-9, 0], 0xfffffff7),
+        ("t_shl", "int t_shl(int,int)", ["int", "int"], [3, 33], 6),
+        ("t_ashr", "long t_ashr(long,long)", ["long", "long"], [-256, 68], 0xfffffffffffffff0),
+        ("t_fptosi", "int t_fptosi(double)", ["double"], ["nan"], 0x80000000),
+        ("t_fptoui", "unsigned long t_fptoui(double)", ["double"], ["nan"], 0x8000000000000000),
+        ("t_fptoui", "unsigned long t_fptoui(double)", ["double"], [1.5e19], 15000000000000000000),
+        ("t_fptoui80", "unsigned t_fptoui80(long double)", ["long double"], [-1.0], 0xffffffff),
+        ("t_cttz", "int t_cttz(int)", ["int"], [0], 32),
+        ("t_maxnum", "double t_maxnum(double,double)", ["double", "double"], ["nan", 2.0], 0x4000000000000000),
+    ]
+
+    def test_rows(self):
+        protos, calls, idx = [], [], {}
+        for fn, proto, ctypes, _, _ in self.CALLS:
+            if fn not in idx:
+                idx[fn] = len(calls)
+                protos.append(proto)
+                calls.append({"fn": fn, "args": [{"ctype": c, "quantum": False} for c in ctypes]})
+        spec = DriverSpec(example="chk-core", protos=protos, setup="", calls=calls)
+        samples = [{"call": idx[fn], "args": args} for fn, _, _, args, _ in self.CALLS]
+        rs = run.run_samples(HERE / "totalize.ll", spec, samples, "ours", rt_sources=RT, extra_sources=FAM)
+        for (fn, _, _, args, want), r in zip(self.CALLS, rs):
+            self.assertEqual(r.violations, [], (fn, args))
+            self.assertEqual(int(r.outputs["ret"][0]["v"]["v"], 16), want, (fn, args))
+
+    def test_safe_constants_stay(self):
+        text = "define i32 @f(i32 %a) {\n  %r = udiv i32 %a, 3\n  %s = shl nuw i32 %r, 31\n  %t = sdiv i32 %s, -1\n" \
+               "  ret i32 %t\n}\n"
+        out = run.totalize_module(text)
+        self.assertIn("%r = udiv i32 %a, 3", out)
+        self.assertIn("%s = shl nuw i32 %r, 31", out)
+        self.assertIn("%t = call i32 @__cqe_tot.sdiv.i32(i32 %s, i32 -1)", out)
+
+    def test_vector_is_unimplemented(self):
+        text = "define <2 x i32> @f(<2 x i32> %a, <2 x i32> %b) {\n  %r = udiv <2 x i32> %a, %b\n  ret <2 x i32> %r\n}\n"
+        with self.assertRaises(Exception):
+            run.totalize_module(text)
+
+
 if __name__ == "__main__":
     unittest.main()
