@@ -49,9 +49,18 @@ finds candidate inputs; it decides nothing about correctness. The trip samples a
 the C oracle's trip counters (`confirm_trips`).
 
 The probe build runs as one server process per example (cq-wx6s): every sample runs in-process from
-the restored post-setup state (RUNTIME_C), not in a child forked per sample. A sample ends as a
-timeout after HDR_CAP loop-header executions (a deterministic budget in place of the 250 ms wall
-clock, which ended samples at a load-dependent 50 million or so); the wall clock stays as a backstop.
+the restored post-setup state (RUNTIME_C), not in a child forked per sample.
+
+Every observation is a function of the input only (cq-ir5z; orchestrator decision under
+determinism, owner may override). An access outside its object (a mem site, or a memory
+intrinsic's destination range) is caught by its probe before it happens and ends the sample right
+there as `oob`, with the loop-header count at that point: the store never lands, so nothing after it
+depends on what memory lies past the object (55 used to write a[i] up its stack until an unmapped
+page, and some stores overwrote the probe's own state). Nontermination is only the step budget: a
+sample ends as `timeout` after HDR_CAP loop-header executions. No wall-clock limit decides a sample:
+HANG_CPU_S of CPU time in one sample (a loop the budget does not count, inside an uninstrumented
+library function) and HANG_WALL_S of wall time with no output from the server are hang guards that
+raise ProbeError, an internal error of the checker, never a sample outcome.
 
 Which candidates are kept: no sample of any class is one on which a memory access of the C program
 reaches outside its object, faulting or not, unless the C oracle (cut at K) stops before that
@@ -79,6 +88,7 @@ import os
 import random
 import re
 import shlex
+import select
 import signal
 import struct
 import subprocess
@@ -120,7 +130,13 @@ def n_random_quantum() -> int:
 CROSS_LIMIT = 1024
 SEARCH_BUDGET = 384          # probe runs per unmet target
 SEARCH_BATCH = 48
-PER_SAMPLE_MS = 250
+# hang guards (cq-ir5z): internal errors, never a sample outcome
+HANG_CPU_S = 20               # CPU seconds of one sample (ITIMER_PROF in the worker)
+HANG_WALL_S = 120             # wall seconds with no byte from the probe server
+
+
+class ProbeError(RuntimeError):
+    """The probe server hung or died: an internal error of the checker, never a sample outcome."""
 
 
 # ------------------------------------------------------------------------------------------------
@@ -316,7 +332,9 @@ RUNTIME_C = r"""
  * its object or into no known object, a memory intrinsic past its object, a large heap) ends its
  * worker after its output is written, and the master forks the next worker for the following sample;
  * a sample that kills its worker (a stack overflow) reports nothing, as a forked child would not.
- * Each sample's output goes to stdout in one write; "D" ends a batch. */
+ * An access outside its object is stopped before it happens (__cqd_m, __cqd_mi): the sample ends as
+ * "oob" and the access never lands (cq-ir5z). Each sample's output goes to stdout in one write, its
+ * last line "E <how> <code> <header executions>"; "D" ends a batch. */
 #define _DARWIN_C_SOURCE
 #include <stdarg.h>
 #include <stdint.h>
@@ -405,29 +423,43 @@ static int cqd_find(uintptr_t r) {
         if (S->ob[i] <= r && (best < 0 || S->ob[i] > S->ob[best])) best = i;
     return best;
 }
-void __cqd_m(int site, void *root, void *addr, uint64_t nbytes) {
-    /* an access outside its object is reported past the per-site cap (validity, cq-q9hd) */
-    int best = cqd_find((uintptr_t)root);
-    long long off = best < 0 ? 0 : (long long)((intptr_t)addr - (intptr_t)S->ob[best]);
-    int out = best >= 0 && (off < 0 || (unsigned long long)off + nbytes > S->os[best]);
-    if (out || best < 0) C->dirty = 1;
-    if (S->mcount[site & 0xffff] >= CAP && !(out && S->ocount[site & 0xffff] < CAP)) return;
-    if (S->mcount[site & 0xffff] < CAP) S->mcount[site & 0xffff]++; else S->ocount[site & 0xffff]++;
-    if (best < 0) { cqd_out("m %d ? ? ?\n", site); return; }
-    cqd_out("m %d %lld %llu %llu\n", site, off, (unsigned long long)S->os[best], (unsigned long long)nbytes);
-}
-/* a memory intrinsic's destination range: outside every object only makes the worker dirty */
-void __cqd_mi(void *root, void *dst, uint64_t n) {
-    if (!n) return;
-    int best = cqd_find((uintptr_t)root);
-    long long off = best < 0 ? 0 : (long long)((intptr_t)dst - (intptr_t)S->ob[best]);
-    if (best < 0 || off < 0 || (unsigned long long)off + n > S->os[best]) C->dirty = 1;
-}
 static void cqd_trip(int l, long long n) { if (S->tc[l] < CAP) { S->tc[l]++; cqd_out("t %d %lld\n", l, n); } }
 static void cqd_finish(const char *how, int code);
 static void cqd_stop(const char *how, int code) {
     cqd_finish(how, code);
     siglongjmp(C->jb, 1);
+}
+/* A mem site, before its access. One outside its object ends the sample here, before the access
+ * (cq-ir5z): what a store past the object would overwrite, and what a load past it would read, depend
+ * on the memory layout, not on the input. Its record is written past the per-site cap. An address
+ * under no known object only makes the worker dirty. */
+void __cqd_m(int site, void *root, void *addr, uint64_t nbytes) {
+    int best = cqd_find((uintptr_t)root);
+    long long off = best < 0 ? 0 : (long long)((intptr_t)addr - (intptr_t)S->ob[best]);
+    int out = best >= 0 && (off < 0 || (unsigned long long)off + nbytes > S->os[best]);
+    if (out) {
+        cqd_out("m %d %lld %llu %llu\n", site, off, (unsigned long long)S->os[best], (unsigned long long)nbytes);
+        C->in = 0;
+        cqd_stop("oob", site);
+    }
+    if (best < 0) C->dirty = 1;
+    if (S->mcount[site & 0xffff] >= CAP) return;
+    S->mcount[site & 0xffff]++;
+    if (best < 0) { cqd_out("m %d ? ? ?\n", site); return; }
+    cqd_out("m %d %lld %llu %llu\n", site, off, (unsigned long long)S->os[best], (unsigned long long)nbytes);
+}
+/* A memory intrinsic's destination or source range, before it is accessed: past its object, the sample ends
+ * here as "oob" with code -1 (no mem site); under no known object, the worker is dirty. */
+void __cqd_mi(void *root, void *dst, uint64_t n) {
+    if (!n) return;
+    int best = cqd_find((uintptr_t)root);
+    if (best < 0) { C->dirty = 1; return; }
+    long long off = (long long)((intptr_t)dst - (intptr_t)S->ob[best]);
+    if (off < 0 || (unsigned long long)off + n > S->os[best]) {
+        cqd_out("mi %lld %llu %llu\n", off, (unsigned long long)S->os[best], (unsigned long long)n);
+        C->in = 0;
+        cqd_stop("oob", -1);
+    }
 }
 void __cqd_hdr(int l, bool be) {
     if (++S->hdrs > CQD_HDR_CAP) cqd_stop("timeout", SIGALRM);
@@ -445,18 +477,19 @@ static void cqd_finish(const char *how, int code) {
         if (S->has[l]) cqd_trip(l, S->cnt[l]);
         if (S->ctx[l] && !S->ent[l]) cqd_trip(l, 0);
     }
-    cqd_out("E %s %d\n", how, code);
+    cqd_out("E %s %d %lld\n", how, code, S->hdrs);
     size_t o = 0; while (o < S->len) { ssize_t w = write(C->out_fd, S->buf + o, S->len - o); if (w <= 0) break; o += (size_t)w; }
 }
 static void cqd_sig(int s) {
     if (!C->in) {
-        if (s == SIGALRM) return;     /* a timer that fired after its sample ended */
+        if (s == SIGPROF) return;     /* the hang guard's timer, fired after its sample ended */
         _exit(0);                     /* a fault outside a sample (its state was overwritten): returning
                                        * would re-run the faulting instruction forever */
     }
     C->in = 0;
     if (s != SIGFPE) C->dirty = 1;
-    cqd_stop(s == SIGALRM ? "timeout" : "signal", s);
+    /* the hang guard (HANG_CPU_S of CPU time): the checker raises ProbeError, never an outcome */
+    cqd_stop(s == SIGPROF ? "hang" : "signal", s);
 }
 static void cqd_atexit(void) { if (C->in) { C->in = 0; cqd_finish("exit", 0); } }
 
@@ -532,7 +565,7 @@ __attribute__((noinline)) static void cqd_on_stack(char *top, void (*fn)(void)) 
 }
 
 static void cqd_worker(cqd_call_fn call, long from) {
-    int sigs[] = {SIGSEGV, SIGFPE, SIGBUS, SIGILL, SIGALRM, SIGABRT, SIGTRAP};
+    int sigs[] = {SIGSEGV, SIGFPE, SIGBUS, SIGILL, SIGALRM, SIGABRT, SIGTRAP, SIGPROF};
     for (unsigned i = 0; i < sizeof sigs / sizeof *sigs; i++) signal(sigs[i], cqd_sig);
     atexit(cqd_atexit);
     for (long k = from; k < C->nlines; k++) {
@@ -546,17 +579,17 @@ static void cqd_worker(cqd_call_fn call, long from) {
         if (nt < 1) continue;
         cqd_out("S %ld\n", k);
         fesetenv(&C->fenv0);
-        struct itimerval it = {{0, 0}, {PER_SAMPLE_MS / 1000, (PER_SAMPLE_MS % 1000) * 1000}};
+        struct itimerval it = {{0, 0}, {HANG_CPU_S, 0}};
         if (sigsetjmp(C->jb, 1) == 0) {
             C->in = 1;
-            setitimer(ITIMER_REAL, &it, 0);
+            setitimer(ITIMER_PROF, &it, 0);
             cqd_on_stack(cqd_stack_top, cqd_call_sample);
             C->in = 0;
             cqd_finish("exit", 0);
         }
         C->in = 0;
         struct itimerval z = {{0, 0}, {0, 0}};
-        setitimer(ITIMER_REAL, &z, 0);
+        setitimer(ITIMER_PROF, &z, 0);
         if (!C->dirty) {
             struct rusage ru; getrusage(RUSAGE_SELF, &ru);
             if (ru.ru_maxrss > (long)CQD_RSS_CAP) C->dirty = 1;     /* bytes on Darwin */
@@ -1137,10 +1170,12 @@ class Instrumenter:
                 rt = [w for w in rt if w not in _FLAGS and w not in ("noundef", "zeroext", "signext", "fastcc",
                                                                        "nnan", "ninf", "nsz", "arcp")]
                 ret_ty = " ".join(rt) if rt else None
-            base = re.sub(r"\.(?:[a-z]\d+|v\d+[a-z]\d+|p0)+$", "", c)
+            # the overload suffixes, each after its own dot (@llvm.memset.p0.i64, @llvm.fshl.v4i32;
+            # before cq-ir5z one dot only, so no memory intrinsic was range-checked)
+            base = re.sub(r"(?:\.(?:[a-z]\d+|v\d+[a-z]\d+|p0))+$", "", c)
             if base in ("@llvm.memcpy", "@llvm.memmove", "@llvm.memset", "@llvm.memcpy.inline",
                         "@llvm.memset.inline"):
-                return self.intrinsic_range(f, pairs), []
+                return self.intrinsic_range(f, pairs, src=not base.startswith("@llvm.memset")), []
             if base in ("@llvm.fshl", "@llvm.fshr"):
                 s = self.add_site(f, ins, "fsh", c, pairs, width=int_width(vec_of(pairs[0][0])[1]))
                 return self.probe(s.id, pairs, None), []
@@ -1224,20 +1259,24 @@ class Instrumenter:
             return [f"call void @__cqd_m(i32 {s.id}, ptr {root}, ptr {pv}, i64 {nb})"], []
         return [], []
 
-    def intrinsic_range(self, f: D.Function, pairs: List[Tuple[str, str]]) -> List[str]:
-        """A memory intrinsic's destination range for the runner (`__cqd_mi`): one outside its object
-        ends the in-process worker after the sample (RUNTIME_C). No observation changes."""
-        (dty, dst), (lty, ln) = pairs[0], pairs[2]
-        if dty != "ptr" or not int_width(lty) or not (dst.startswith("%") or dst.startswith("@")) \
-                or not (ln.startswith("%") or const_bits(lty, ln) is not None):
+    def intrinsic_range(self, f: D.Function, pairs: List[Tuple[str, str]], src: bool) -> List[str]:
+        """A memory intrinsic's destination range, and with `src` its source range, for the runner
+        (`__cqd_mi`), before the intrinsic runs: one outside its object ends the sample there as
+        "oob" (cq-ir5z); one the runner cannot place ends the in-process worker after the sample."""
+        (lty, ln) = pairs[2]
+        if not int_width(lty) or not (ln.startswith("%") or const_bits(lty, ln) is not None):
             return ["call void @__cqd_mi(ptr null, ptr null, i64 1)"]
-        root = self.addr_root(f, dst)[0] if dst.startswith("%") else dst
         out = []
         if int_width(lty) != 64:
             t = self.tmp()
             out.append(f"{t} = zext {lty} {ln} to i64")
             ln = t
-        out.append(f"call void @__cqd_mi(ptr {root}, ptr {dst}, i64 {ln})")
+        for pty, pv in pairs[:2] if src else pairs[:1]:
+            if pty != "ptr" or not (pv.startswith("%") or pv.startswith("@")):
+                out.append("call void @__cqd_mi(ptr null, ptr null, i64 1)")
+                continue
+            root = self.addr_root(f, pv)[0] if pv.startswith("%") else pv
+            out.append(f"call void @__cqd_mi(ptr {root}, ptr {pv}, i64 {ln})")
         return out
 
     @staticmethod
@@ -1358,7 +1397,7 @@ def _rt_object() -> Path:
     """The object of the probe runtime (RUNTIME_C with its process-wide #defines), compiled once per
     content and kept in the sample cache: the same object serves every example (cq-wx6s), whose own
     counts come from its driver."""
-    defs = {"PER_SAMPLE_MS": PER_SAMPLE_MS, "CQD_HDR_CAP": f"{HDR_CAP}LL", "CQD_RSS_CAP": f"{RSS_CAP}LL"}
+    defs = {"HANG_CPU_S": HANG_CPU_S, "CQD_HDR_CAP": f"{HDR_CAP}LL", "CQD_RSS_CAP": f"{RSS_CAP}LL"}
     text = ("".join(f"#define {k} {v}\n" for k, v in defs.items()) + RUNTIME_C).encode()
     h = hashlib.sha256(text + str(LLVM_BIN).encode()).hexdigest()[:20]
     obj = _cache_dir() / "rt" / f"{h}.o"
@@ -1548,32 +1587,49 @@ class ProbeBuild:
                     for a, v in zip(self.spec.calls[s["call"]]["args"], s["args"])]
             lines.append(" ".join([str(s["call"])] + args))
         pr = self._start()
-        deadline = 60 + len(samples) * (PER_SAMPLE_MS / 1000 + 0.2)
-        timer = threading.Timer(deadline, self._kill, (pr,))
-        timer.start()
+        # The server reads the whole batch before it writes anything; the output comes back in large
+        # reads up to its closing "D" line (the server writes nothing past it until the next batch,
+        # so the raw reads never take a later batch's bytes). The only wall-clock limit is the hang
+        # guard: HANG_WALL_S with no byte from the server raises ProbeError; it never decides a
+        # sample (cq-ir5z).
+        fd = pr.stdout.fileno()
+        buf = bytearray()
+        done = False
+        werr = ""
         try:
-            pr.stdin.write(("\n".join(lines) + "\n").encode())
-            pr.stdin.flush()
-            # the batch's output in large reads up to its closing "D" line (the server writes
-            # nothing past it until the next batch, so the raw reads never take a later batch's bytes)
-            fd = pr.stdout.fileno()
-            buf = bytearray()
+            try:
+                pr.stdin.write(("\n".join(lines) + "\n").encode())
+                pr.stdin.flush()
+            except (BrokenPipeError, OSError) as e:
+                werr = f"; writing the batch: {e}"
             while True:
+                ready, _, _ = select.select([fd], [], [], HANG_WALL_S)
+                if not ready:
+                    raise ProbeError(f"{self.spec.example}: probe server: no output for {HANG_WALL_S} s "
+                                     f"(hang guard, cq-ir5z) in a batch of {len(samples)}")
                 chunk = os.read(fd, 1 << 20)
                 if not chunk:
                     break
                 buf += chunk
                 if buf.endswith(b"\nD\n") or buf == b"D\n":
                     del buf[-2:]
+                    done = True
                     break
-        except (BrokenPipeError, OSError):
-            buf = bytearray()
-        finally:
-            timer.cancel()
-        if pr.poll() is not None:
+        except BaseException:
+            self._kill(pr)
             self.proc = None
+            raise
+        if not done:
+            self._kill(pr)
+            self.proc = None
+            raise ProbeError(f"{self.spec.example}: probe server ended inside a batch of {len(samples)} "
+                             f"(exit {pr.wait()}{werr})")
         obs = [Obs() for _ in samples]
         self._parse(buf.decode(errors="replace"), obs)
+        for k, o in enumerate(obs):
+            if o.end == "hang":
+                raise ProbeError(f"{self.spec.example}: sample {samples[k]} ran {HANG_CPU_S} s of CPU time "
+                                 f"in the probe build (hang guard, cq-ir5z)")
         return obs
 
     @staticmethod
@@ -1602,11 +1658,14 @@ class ProbeBuild:
                     if off < 0 or off + nb > size:
                         cur.oob.add(int(w[1]))
                     cur.m.setdefault(int(w[1]), []).append((off, size))
+            elif w[0] == "mi":
+                cur.oob.add(-1)
             elif w[0] == "t":
                 cur.t.setdefault(int(w[1]), []).append(int(w[2]))
             elif w[0] == "E":
                 cur.end = w[1]
                 cur.code = int(w[2])
+                cur.hdrs = int(w[3])
 
 
 def _stub_module_header(mod: D.Module) -> str:
@@ -1674,7 +1733,10 @@ class Obs:
     p: Dict[int, List[Tuple[int, int, int, int]]] = field(default_factory=dict)
     m: Dict[int, List[Tuple[int, int]]] = field(default_factory=dict)
     t: Dict[int, List[int]] = field(default_factory=dict)
-    oob: Set[int] = field(default_factory=set)       # mem sites that accessed outside their object
+    # the mem site whose access would have left its object (-1: a memory intrinsic's destination);
+    # the sample ended there, before the access (end "oob", cq-ir5z)
+    oob: Set[int] = field(default_factory=set)
+    hdrs: int = 0           # loop-header executions when the sample ended
     # cq-b19i: the probe runs the C program without the K cutoff. A sample whose probe run left an
     # object at a classical site is run in the C oracle, which cuts quantum-exit loops and
     # quantum-depth recursions at K as the circuit does (CR §6); cap_ok is True when that run
@@ -2262,13 +2324,24 @@ def confirm_cap(pb: "ProbeBuild", keys: Sequence[Tuple[int, Tuple[str, ...]]], o
     """Set Obs.cap_ok from the C oracle's runs of these samples (cq-b19i)."""
     from cqcheck import oracle
     o1 = sorted(pb.example_dir.glob("*.O1.ll"))[0]
-    # The oracle's step budget is the probe's (cq-u9al): the candidate was flagged by an access the
-    # probe reached within HDR_CAP header executions, and the oracle runs the same path up to its cut,
-    # so a cut before that access comes within the same budget. A run past it is not cap-clean either
-    # way, and stops after HDR_CAP headers instead of the default 10 million (52: 0.2 s per sample).
-    runs = oracle.run_samples(o1, pb.spec, [{"call": c, "args": list(a)} for c, a in keys], tripcap=HDR_CAP)
-    for o, r in zip(obs, runs):
-        o.cap_ok = _cap_clean(r)
+    # The oracle's step budget comes from the probe (cq-u9al, cq-ir5z): the probe stopped the sample
+    # at its first access outside an object after o.hdrs header executions, and the oracle runs the
+    # same path up to its cut (both count every natural-loop header execution of the sample, the
+    # setup's excluded), so a cut before that access comes within o.hdrs. The budget is twice that,
+    # rounded up to a power of two (at least 1024, at most HDR_CAP), and the samples run in one oracle
+    # batch per budget. A run past its budget is not cap-clean: a smaller budget can only drop a
+    # sample, never admit one, and a failing sample costs about its own probe run.
+    groups: Dict[int, List[int]] = {}
+    for k, o in enumerate(obs):
+        cap = 1024
+        while cap < 2 * (o.hdrs + 1) and cap < HDR_CAP:
+            cap *= 2
+        groups.setdefault(min(cap, HDR_CAP), []).append(k)
+    for cap, ks in sorted(groups.items()):
+        runs = oracle.run_samples(o1, pb.spec, [{"call": keys[k][0], "args": list(keys[k][1])} for k in ks],
+                                  tripcap=cap)
+        for k, r in zip(ks, runs):
+            obs[k].cap_ok = _cap_clean(r)
 
 
 def _shuffle(rng: random.Random, x: list) -> None:

@@ -605,5 +605,114 @@ class ThetaSites(unittest.TestCase):
         self.assertTrue(all(s == [] for s in subs("12_int_widths")))   # every register is an argument
 
 
+# cq-ir5z: a synthetic example (its own examples/ and _tools/drivers.txt) for the probe's own stops
+SYNTH_C = r"""
+#define _FORTIFY_SOURCE 0
+#include <string.h>
+volatile int cqd_sink;
+int fill(int n0, double th) {
+    int n = n0;
+    cq_theta(&n, th);
+    unsigned char d[4] = {1, 2, 3, 4};
+    memset(d, 7, (unsigned)n & 0xff);
+    return cq_measure(d[0] + d[3]);
+}
+int spin(int n0, double th) {
+    int n = n0;
+    cq_theta(&n, th);
+    while (n != 0) { n -= 2; cqd_sink = n; }
+    return cq_measure(n);
+}
+"""
+SYNTH_LINE = "900_probe_synth|int fill(int,double);int spin(int,double);|fill(1,.5);spin(2,.5)"
+HALF = "0x3fe0000000000000"
+
+
+def probe_obs(spec, example_dir, samples, env_pad):
+    """The probe build's observations of `samples`, its server started with an environment of
+    `env_pad` extra bytes (a different initial stack layout)."""
+    saved = os.environ.get("CQD_PAD")
+    os.environ["CQD_PAD"] = "x" * env_pad
+    try:
+        with tempfile.TemporaryDirectory() as t, S.ProbeBuild(spec, example_dir, Path(t)) as pb:
+            return pb.run(samples)
+    finally:
+        if saved is None:
+            os.environ.pop("CQD_PAD", None)
+        else:
+            os.environ["CQD_PAD"] = saved
+
+
+def obs_key(o):
+    return (o.ran, o.end, o.code, o.hdrs, sorted(o.oob), sorted(o.t.items()), sorted(o.m.items()),
+            sorted(o.p.items()))
+
+
+class ProbeDeterminism(unittest.TestCase):
+    """cq-ir5z: every probe observation is a function of the input only. An access outside its
+    object ends the sample at the access (end "oob", the header count there), before it lands;
+    nontermination is the header budget; no wall-clock limit decides a sample."""
+
+    def test_store_past_object_stops_at_the_access(self):
+        """55 stores a[i] for i <= m into int a[4]. Before cq-ir5z the probe performed the stores up
+        its sample stack: the run ended at whatever page lay above it (signal 11 after 3109 trips) or
+        overwrote the probe's own state (a lost sample), depending on the memory layout. Now every
+        m >= 4 ends at the a[4] store after 5 header executions, whatever the environment size."""
+        n = "55_array_in_quantum_loop"
+        spec = D.driver_spec(n, D.example_dir(n))
+        ms = [3, 4, 5, 6, 0xc, 0xf, 100, 3109, 0x7fffffff]
+        smp = [{"call": 0, "args": [f"0x{m:08x}", HALF, f"0x{c:08x}"]} for m in ms for c in (0, 1, 3, 0x7fffffff)]
+        runs = [[obs_key(o) for o in probe_obs(spec, D.example_dir(n), smp, pad)] for pad in (1, 4093, 250000)]
+        self.assertEqual(runs[0], runs[1])
+        self.assertEqual(runs[0], runs[2])
+        obs = probe_obs(spec, D.example_dir(n), smp, 1)
+        store = set()
+        for s, o in zip(smp, obs):
+            m = int(s["args"][0], 16)
+            self.assertTrue(o.ran, s)
+            if m == 3:
+                self.assertEqual((o.end, o.oob), ("exit", set()), s)
+                continue
+            self.assertEqual(o.end, "oob", s)
+            self.assertEqual(o.hdrs, 5, s)
+            self.assertEqual(len(o.oob), 1, s)
+            store |= o.oob
+        self.assertEqual(len(store), 1)
+        self.assertEqual(obs[-1].code, next(iter(store)))
+
+    def test_intrinsic_past_object_and_budget(self):
+        """A memset past its destination ends the sample before it writes (end "oob", site -1); a
+        loop that does not end runs HDR_CAP header executions and ends as "timeout"."""
+        with tempfile.TemporaryDirectory() as t:
+            t = Path(t)
+            ex = t / "examples" / "900_probe_synth"
+            ex.mkdir(parents=True)
+            (t / "_tools").mkdir()
+            (t / "_tools" / "drivers.txt").write_text(SYNTH_LINE + "\n")
+            (t / "s.c").write_text(SYNTH_C)
+            subprocess.run([CLANG, "-w", "-O1", "-S", "-emit-llvm", "-target", "x86_64-apple-macosx",
+                            "-include", str(D.spec_dir() / "CQ.h"), str(t / "s.c"),
+                            "-o", str(ex / "probe_synth.O1.ll")], check=True)
+            spec = D.driver_spec("900_probe_synth", ex)
+            smp = [{"call": 0, "args": ["0x00000004", HALF]}, {"call": 0, "args": ["0x00000005", HALF]},
+                   {"call": 0, "args": ["0x000000c8", HALF]}, {"call": 1, "args": ["0x00000006", HALF]},
+                   {"call": 1, "args": ["0x00000007", HALF]}]
+            a = probe_obs(spec, ex, smp, 1)
+            b = probe_obs(spec, ex, smp, 250000)
+        self.assertEqual([obs_key(o) for o in a], [obs_key(o) for o in b])
+        self.assertEqual([o.end for o in a], ["exit", "oob", "oob", "exit", "timeout"])
+        self.assertEqual(a[1].oob, {-1})
+        self.assertEqual(a[1].hdrs, 0)
+        self.assertEqual(a[4].hdrs, S.HDR_CAP + 1)
+
+    def test_no_wall_clock_outcome(self):
+        """The runtime has no per-sample wall-clock timer; the CPU-time hang guard and the server's
+        no-output guard raise ProbeError, never a sample outcome."""
+        self.assertNotIn("ITIMER_REAL", S.RUNTIME_C)
+        self.assertIn("ITIMER_PROF", S.RUNTIME_C)
+        self.assertFalse(hasattr(S, "PER_SAMPLE_MS"))
+        self.assertTrue(issubclass(S.ProbeError, RuntimeError))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
