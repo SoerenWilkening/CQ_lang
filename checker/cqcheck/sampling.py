@@ -2576,8 +2576,13 @@ def _cache_key(spec: DriverSpec, example_dir: Path) -> str:
     h.update(json.dumps([spec.example, spec.protos, spec.setup, spec.calls], sort_keys=True).encode())
     for p in sorted(Path(example_dir).glob("*.O1.ll")):
         h.update(p.read_bytes())
-    h.update(Path(__file__).read_bytes())
-    h.update(Path(D.__file__).read_bytes())
+    # the drivers.txt line (its argument values are the baselines, samples 0 .. ncalls-1) and the C
+    # oracle, which the trip, cap and reach searches run (cq-f3mz)
+    line = D.read_drivers_txt(Path(example_dir).resolve().parent.parent / "_tools" / "drivers.txt").get(spec.example)
+    h.update(repr(line).encode())
+    from cqcheck import oracle as _oracle
+    for f in (Path(__file__), Path(D.__file__), Path(_oracle.__file__)):
+        h.update(f.read_bytes())
     return h.hexdigest()[:20]
 
 

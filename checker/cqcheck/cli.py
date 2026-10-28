@@ -77,7 +77,8 @@ def _run_examples(a, examples, ours_dir) -> List[Verdict]:
         futs = {pool.submit(_one, e, ours_dir, a.oracle): e for e in examples}
         for f in concurrent.futures.as_completed(futs):
             v = f.result()
-            report.save_verdict(v)
+            if ours_dir is None and a.oracle == "both":
+                report.save_verdict(v)        # only our pass, both oracles, feeds progress (cq-8dr6)
             by_name[v.example] = v
             ok = report.requested_green(v)
             print(f"{'ok  ' if ok else 'FAIL'} {v.example}  s6={v.s6} c={v.c_oracle} verifier={v.verifier}"

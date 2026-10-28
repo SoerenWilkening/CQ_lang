@@ -855,8 +855,7 @@ static void gate_logic(call_t *c, const char *op) {
   cqe__mark_written(t);
   for (int i = 0; i < n - 1; ++i)
     cqe__add_dep(t, hs[i]);
-  if (n > 1)
-    zero_rule(t, hs, n - 1);
+  zero_rule(t, hs, n - 1);   /* not_i1 too: a flag an X returns to 0 is known again (cq-aypc) */
   log_gate(c, t, hs, n - 1);
 }
 
