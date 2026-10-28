@@ -393,6 +393,87 @@ void lowerOpcode(LoweringContext &ctx, Instruction &I) {
   unimplemented("spine: lowerOpcode: no rule 4 template for this instruction", &I);
 }
 
+// Rule 6 (cq-fufh): a rotation in place on y' = f(y, z), with f a bijection in y (add, sub, xor) and
+// the old y dead (y' is its only use), cleans the old y rail first: t = f^-1(y', z), copy t into y,
+// uncompute t, free y. The non-diagonal gate noted on y' orders the clean-up before it (144).
+static void ruleSixBeforeRotation(LoweringContext &ctx, Value *v, Value *yPrime) {
+  auto *bo = dyn_cast<BinaryOperator>(v);
+  if (!bo || !bo->getType()->isIntegerTy())
+    return;
+  auto opc = bo->getOpcode();
+  if (opc != Instruction::Add && opc != Instruction::Sub && opc != Instruction::Xor)
+    return;
+  for (unsigned i = 0; i < 2; ++i) {
+    Value *Y = bo->getOperand(i), *Z = bo->getOperand(1 - i);
+    Operand y = ctx.operand(Y);
+    if (!y.handle || !Y->hasOneUse())
+      continue;
+    Operand z = ctx.operand(Z), yp{yPrime, true};
+    // Only a quantum update (z a rail, 144): y' = y + c with c classical is a derived register and
+    // the old one stays (38 rotate_derived keeps x). Orchestrator decision from the references,
+    // CR rule 6's wording does not separate the two (owner asked, cq-fufh).
+    if (!z.handle)
+      continue;
+    abi::TemplateSpec spec;
+    spec.w = rt(bo->getType(), bo);
+    Operand a = yp, b = z;
+    if (opc == Instruction::Add) {
+      spec.op = "sub";                    // y = y' - z
+    } else if (opc == Instruction::Xor) {
+      spec.op = "xor";                    // y = y' ^ z
+    } else if (i == 0) {
+      spec.op = "add";                    // y' = y - z: y = y' + z
+    } else {
+      spec.op = "sub";                    // y' = z - y: y = z - y'
+      a = z;
+      b = yp;
+    }
+    if (a.handle && b.handle) {
+      spec.shape = "";
+    } else if (a.handle) {
+      spec.shape = "hl";
+    } else if (spec.op != "sub") {
+      std::swap(a, b);
+      spec.shape = "hl";
+    } else {
+      spec.shape = "lh";
+    }
+    ctx.unc().cleanupBijective(ctx.unc().idOf(y.v), spec, {a, b});
+    return;
+  }
+}
+
+// Rule 6, a controlled swap (145): p = select(c, A, B) and q = select(c, B, A) with A, B rails whose
+// only uses are these two selects. A rotation in place on c cleans the old A and B first, through
+// the swap's inverse: A = select(c, p, q), B = select(c, q, p).
+static void ruleSixSwapBeforeRotation(LoweringContext &ctx, Value *c) {
+  SmallVector<SelectInst *, 4> sels;
+  for (User *u : c->users())
+    if (auto *s = dyn_cast<SelectInst>(u); s && s->getCondition() == c && s->getType()->isIntegerTy())
+      sels.push_back(s);
+  for (SelectInst *p : sels)
+    for (SelectInst *q : sels) {
+      if (p == q || p->getTrueValue() != q->getFalseValue() || p->getFalseValue() != q->getTrueValue())
+        continue;
+      Value *A = p->getTrueValue(), *B = p->getFalseValue();
+      if (A == B || A->getNumUses() != 2 || B->getNumUses() != 2)
+        continue;
+      Operand a = ctx.operand(A), b = ctx.operand(B), cp = ctx.operand(c), pp = ctx.operand(p), qq = ctx.operand(q);
+      if (!a.handle || !b.handle || !cp.handle || !pp.handle || !qq.handle)
+        continue;
+      abi::TemplateSpec spec;
+      spec.op = "select";
+      spec.w = rt(p->getType(), p);
+      spec.shape = "";
+      // p (A when c) appears first among the swap's two selects: clean A and B once, from that pair
+      if (p->comesBefore(q) || p->getParent() != q->getParent()) {
+        ctx.unc().cleanupBijective(ctx.unc().idOf(a.v), spec, {cp, pp, qq});
+        ctx.unc().cleanupBijective(ctx.unc().idOf(b.v), spec, {cp, qq, pp});
+        return;
+      }
+    }
+}
+
 void lowerTheta(LoweringContext &ctx, CallInst &call) {
   if (call.arg_size() != 2)
     internalError("spine: cq_theta with other than two arguments", &call);
@@ -405,6 +486,8 @@ void lowerTheta(LoweringContext &ctx, CallInst &call) {
   Value *h;
   if (x.handle) {
     h = x.v;   // rule 2: a rotation of an existing rail is in place
+    ruleSixBeforeRotation(ctx, v, h);
+    ruleSixSwapBeforeRotation(ctx, v);
   } else {
     if (x.v->getType() != irTypeOf(ctx.M.getContext(), w))
       internalError("spine: cq_theta operand type differs from its rail type", &call);
