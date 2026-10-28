@@ -15,6 +15,15 @@
 // first block y after x in L with y == s, or y not reachable from x whose nearest common dominator
 // with x ends in a quantum terminator (y heads a quantum arm still to run). A quantum terminator
 // falls through to the first such y that is a successor or an arm head.
+//
+// Classical guards (rule 8 at CQ_spec a46894a, P1). A block's predicate is classicalFactor &
+// quantumPart. The factor stays a classical branch: the walker tracks, per block, the classical facts
+// every output path into it establishes (the classical factors of the real classical edges taken),
+// and where the factor is not yet established it emits `br <missing literals>, block, skip` at the
+// block's start, skip being the first later block that may run when the guard is false. The literals
+// are branch-condition terms of the function (a classical condition, a classical term of a quantum
+// condition, a classical switch case), chosen by implication on pred's predicates; the factoring
+// itself is pred's.
 #include "SpineInternal.h"
 
 #include "cq/Effects.h"
@@ -123,6 +132,18 @@ private:
   bool pureClassical(const Loop &lp);
   BasicBlock *next(const BasicBlock *x, const BasicBlock *s);
   void plan();
+  void planGuards();
+
+  struct Lit {
+    const Value *v;
+    bool neg;
+    bool eq;
+    APInt val;
+    Pred p;
+  };
+  std::vector<Lit> cands;
+  DenseMap<const BasicBlock *, std::pair<std::vector<unsigned>, BasicBlock *>> guards;
+  bool eligible(const BasicBlock *y, const BasicBlock *from) const;
   BasicBlock *out(const BasicBlock *b);
   void emitBlock(BasicBlock *b);
   void emitTerminator(BasicBlock *b);
@@ -228,9 +249,12 @@ void Walker::plan() {
       outEdges[b].push_back(back ? s : next(b, s));
     }
   }
+  planGuards();
   for (auto &e : outEdges)
     for (BasicBlock *t : e.second)
       ++outPreds[t];
+  for (auto &g : guards)
+    ++outPreds[g.second.second];
 
   // A block reached only by an unconditional jump from the block emitted just before it continues
   // in that output block (no classical phi, not a loop header).
@@ -259,6 +283,138 @@ void Walker::plan() {
     if (lp->getHeader() == b && !merged.count(outEdges.lookup(b).front()))
       unimplemented("spine: the exit block of a dispatched loop does not follow it in the walk order",
                     b->getTerminator());
+}
+
+// Can the walk continue at y after leaving `from`? Blocks inside a loop are entered by its header.
+bool Walker::eligible(const BasicBlock *y, const BasicBlock *from) const {
+  const Loop *yl = LI.getLoopFor(y);
+  const Loop *fl = LI.getLoopFor(from);
+  if (yl && yl->getHeader() != y && !(fl && yl->contains(fl)))
+    return false;
+  if (unitOf.count(y) && unitOf.lookup(y)->getHeader() != y)
+    return false;
+  return true;
+}
+
+void Walker::planGuards() {
+  // Candidate literals: classical branch conditions, classical terms of quantum conditions, cases of
+  // classical switches.
+  DenseSet<const Value *> seen;
+  std::function<void(const Value *)> terms = [&](const Value *c) {
+    if (!c->getType()->isIntegerTy(1) || isa<Constant>(c) || !seen.insert(c).second)
+      return;
+    if (!spine::isQ(ctx, c))
+      cands.push_back(Lit{c, false, false, APInt(), Pred::atom(c)});
+    if (auto *bo = dyn_cast<BinaryOperator>(c)) {
+      if (bo->getOpcode() == Instruction::And || bo->getOpcode() == Instruction::Or ||
+          bo->getOpcode() == Instruction::Xor) {
+        terms(bo->getOperand(0));
+        terms(bo->getOperand(1));
+      }
+    } else if (auto *sel = dyn_cast<SelectInst>(c)) {
+      terms(sel->getCondition());
+      terms(sel->getTrueValue());
+      terms(sel->getFalseValue());
+    }
+  };
+  for (BasicBlock *b : L) {
+    Instruction *t = b->getTerminator();
+    if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional())
+      terms(br->getCondition());
+    if (auto *sw = dyn_cast<SwitchInst>(t); sw && !spine::isQ(ctx, sw->getCondition()))
+      for (auto &cs : sw->cases())
+        cands.push_back(Lit{sw->getCondition(), false, true, cs.getCaseValue()->getValue(),
+                            Pred::eqAtom(sw->getCondition(), cs.getCaseValue()->getValue())});
+  }
+  {
+    size_t n = cands.size();
+    for (size_t i = 0; i < n; ++i) {
+      Lit l = cands[i];
+      l.neg = true;
+      l.p = !l.p;
+      cands.push_back(l);
+    }
+  }
+
+  DenseMap<const BasicBlock *, Pred> in;
+  auto add = [&](const BasicBlock *to, const Pred &f) {
+    auto it = in.find(to);
+    if (it == in.end())
+      in.insert({to, f});
+    else
+      it->second = it->second | f;
+  };
+  in.insert({L.front(), Pred::top()});
+  for (BasicBlock *b : L) {
+    if (unitOf.count(b) && unitOf.lookup(b)->getHeader() != b)
+      continue;
+    const Loop *bl = LI.getLoopFor(b);
+    bool inPure = bl && !unitOf.count(b);
+    auto ii = in.find(b);
+    Pred inB = ii == in.end() ? Pred::top() : ii->second;
+    const Pred &p = ctx.preds().block(b);
+    Pred cf = p.isBottom() ? Pred::top() : p.classicalFactor(ctx.T, ctx.S);
+
+    // A purely classical loop keeps its CFG exactly: its classical facts are the CFG's.
+    if (!inPure && !(inB & !cf).isBottom()) {
+      std::vector<unsigned> sel;
+      Pred conj = Pred::top();
+      for (unsigned k = 0; k < cands.size(); ++k) {
+        const Lit &l = cands[k];
+        if (!(cf & !l.p).isBottom() || (inB & conj & !l.p).isBottom())
+          continue;
+        if (auto *def = dyn_cast<Instruction>(l.v); def && !DT.dominates(def, b))
+          continue;
+        sel.push_back(k);
+        conj = conj & l.p;
+      }
+      if (!(inB & conj & !cf).isBottom())
+        unimplemented("spine: the classical factor of a block predicate is not a conjunction of branch-condition "
+                      "literals that dominate the block (rule 8)",
+                      b->getTerminator());
+      BasicBlock *skip = nullptr;
+      for (unsigned j = idx.lookup(b) + 1; j < L.size() && !skip; ++j) {
+        BasicBlock *y = L[j];
+        if (!eligible(y, b))
+          continue;
+        const Pred &py = ctx.preds().block(y);
+        Pred cfy = py.isBottom() ? Pred::bottom() : py.classicalFactor(ctx.T, ctx.S);
+        if (!(cfy & !conj).isBottom())
+          skip = y;
+      }
+      if (!skip)
+        internalError("spine: a classical guard with nothing to skip to", b->getTerminator());
+      for (PHINode &phi : skip->phis())
+        if (!spine::isQ(ctx, &phi))
+          unimplemented("spine: a classical guard skipping to a block with a classical phi", &phi);
+      guards[b] = {sel, skip};
+      add(skip, inB & !conj);
+    }
+    Pred outB = inB & cf;
+
+    if (unitOf.count(b)) {
+      add(outEdges[b].front(), outB);
+      continue;
+    }
+    Instruction *t = b->getTerminator();
+    auto oe = outEdges.find(b);
+    if (oe == outEdges.end())
+      continue;
+    if (isQuantumTerm(ctx, t) || isa<UnreachableInst>(t)) {
+      for (BasicBlock *n : oe->second)
+        add(n, outB);
+      continue;
+    }
+    for (unsigned k = 0; k < t->getNumSuccessors(); ++k) {
+      BasicBlock *s = t->getSuccessor(k), *tg = oe->second[k];
+      if (idx.lookup(s) <= idx.lookup(b))
+        continue;   // a back edge of a purely classical loop
+      if (tg == s)
+        add(s, outB & ctx.preds().edge(b, s).classicalFactor(ctx.T, ctx.S));
+      else
+        add(tg, outB);
+    }
+  }
 }
 
 BasicBlock *Walker::out(const BasicBlock *b) {
@@ -422,6 +578,27 @@ void Walker::emitBlock(BasicBlock *b) {
     spine::bindOperand(ctx, &phi, Operand{np, false});
   }
 
+  if (auto g = guards.find(b); g != guards.end()) {
+    // Rule 8 / P1: the classical factor not yet established on every path here is a classical branch.
+    IRBuilder<> &B = ctx.B();
+    sh.cur = &*b->getFirstNonPHIIt();
+    Value *cond = nullptr;
+    for (unsigned k : g->second.first) {
+      const Lit &l = cands[k];
+      Operand op = ctx.operand(l.v);
+      if (op.handle)
+        internalError("spine: a classical guard literal that is a rail", l.v);
+      Value *v = l.eq ? B.CreateICmpEQ(op.v, ConstantInt::get(op.v->getType(), l.val)) : op.v;
+      if (l.neg)
+        v = B.CreateNot(v);
+      cond = cond ? B.CreateAnd(cond, v) : v;
+    }
+    BasicBlock *cont = BasicBlock::Create(ctx.M.getContext(), "", &ctx.out());
+    B.CreateCondBr(cond, cont, out(g->second.second));
+    B.SetInsertPoint(cont);
+    blockDefs.clear();
+  }
+
   for (auto it = b->getFirstNonPHIIt(), end = b->getTerminator()->getIterator(); it != end; ++it) {
     Instruction &I = *it;
     sh.cur = &I;
@@ -469,8 +646,8 @@ void Walker::run() {
       BasicBlock *u = op->getIncomingBlock(i);
       auto e = edgeOut.find({u, op->getParent()});
       if (e == edgeOut.end())
-        internalError("spine: a classical phi whose incoming edge the linearization redirected "
-                      "(taint must call it quantum, A1)",
+        unimplemented("spine: a classical phi over an edge the linearization redirected: a classical branch "
+                      "joining with a quantum arm (cq-mtt, cq-bq0)",
                       op);
       sh.cur = u->getTerminator();
       Operand v = ctx.operand(op->getIncomingValue(i));

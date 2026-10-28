@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""tests/spine (cq-w0-construct): the spine's owned examples through the TEST plugin.
+"""tests/spine (cq-w0-construct): the spine's owned examples and probes through the real plugin.
 
-The test plugin (libCQLowerSpineTest.so) is cq-lower with taint, pred and calls replaced by the
-straight-line doubles in tests/spine/doubles. This is NOT the bead's acceptance (that is §6 through
-`python3 -m cqcheck run ... --oracle both` with the real modules); it is the spine's own iteration
-signal while those modules are stubs. Per example it checks, and fails on:
+Structural checks only; the bead's acceptance is §6 (`python3 -m cqcheck run ... --oracle both`).
+Per example it checks, and fails on:
 
   - cq-lower (with its built-in structural verifier) exits 0 and writes a module;
   - plain cq-verify of the REAL plugin accepts that module;
@@ -53,7 +51,7 @@ def probes(a) -> int:
     out = ROOT / "build" / "tests" / "spine" / "out"
     for p in sorted((Path(__file__).parent / "probes").glob("*.ll")):
         dest = out / ("probe_" + p.name)
-        r = subprocess.run([a.opt, f"-load-pass-plugin={a.test_plugin}", "-passes=cq-lower", "-S", str(p),
+        r = subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-lower", "-S", str(p),
                             "-o", str(dest)], capture_output=True, text=True)
         reasons = []
         if r.returncode != 0:
@@ -79,8 +77,7 @@ def probes(a) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--test-plugin", required=True)
-    ap.add_argument("--plugin", required=True)
+        ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--spec", required=True)
     ap.add_argument("--show-diff", action="store_true")
@@ -95,7 +92,7 @@ def main() -> int:
         stem = name.split("_", 1)[1]
         o1, ref = d / f"{stem}.O1.ll", d / f"{stem}.lowered.ll"
         dest = out / f"{stem}.lowered.ll"
-        r = subprocess.run([a.opt, f"-load-pass-plugin={a.test_plugin}", "-passes=cq-lower", "-S", str(o1),
+        r = subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-lower", "-S", str(o1),
                             "-o", str(dest)], capture_output=True, text=True)
         reasons = []
         if r.returncode != 0:

@@ -201,7 +201,7 @@ Class classify(const CallBase &CB, const TaintInfo &T, const Specialization &S) 
       const Value *p = CB.arg_size() ? CB.getArgOperand(0) : nullptr;
       return p && (nonClassicalObject(T, S, p) || qArg) ? Class::Dealloc : Class::Classical;
     }
-    bool block = T.classOf(T.objectOf(&CB)) != ObjClass::Classical;
+    bool block = nonClassicalObject(T, S, &CB);   // provenance: array-of-structs sites (cq-qj49)
     if ((ak & AllocFnKind::Realloc) != AllocFnKind::Unknown)
       return block || qArg ? Class::Realloc : Class::Classical;
     if ((ak & AllocFnKind::Alloc) != AllocFnKind::Unknown)

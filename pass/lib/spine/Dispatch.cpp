@@ -32,6 +32,21 @@ bool involvesNonClassicalMemory(LoweringContext &ctx, const Value *ptr) {
   return false;
 }
 
+// The class of an allocation site: QRAM if any of its objects is, else Slot if any is. An
+// array-of-structs site is one object per field column (rule 20), so it is read through provenance,
+// never objectOf (cq-qj49).
+ObjClass objectsClass(LoweringContext &ctx, const Value *site) {
+  ObjClass c = ObjClass::Classical;
+  for (ObjectId o : ctx.T.provenance(site, ctx.S)) {
+    ObjClass k = ctx.T.classOf(o);
+    if (k == ObjClass::Qram)
+      return k;
+    if (k == ObjClass::Slot)
+      c = k;
+  }
+  return c;
+}
+
 // One object of a non-classical class reached by a pointer, for a lifetime end.
 ObjectId soleObject(LoweringContext &ctx, const Value *ptr, const Instruction &at) {
   ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
@@ -167,7 +182,7 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
       // The start of a slot/QRAM object's scope: the object is allocated at its alloca.
       return;
     }
-    if (ctx.T.classOf(ctx.T.objectOf(&CB)) == ObjClass::Qram)
+    if (objectsClass(ctx, &CB) == ObjClass::Qram)
       return mem::allocateQram(ctx, CB);
     return mem::allocateSlots(ctx, CB);
   case Class::Dealloc: {
@@ -242,7 +257,7 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
 
   switch (I.getOpcode()) {
   case Instruction::Alloca: {
-    ObjClass c = ctx.T.classOf(ctx.T.objectOf(&I));
+    ObjClass c = objectsClass(ctx, &I);
     if (c == ObjClass::Slot)
       return mem::allocateSlots(ctx, I);
     if (c == ObjClass::Qram)
