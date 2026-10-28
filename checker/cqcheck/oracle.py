@@ -497,11 +497,12 @@ class Runner:
         self.exe = exe
         self.dir = Path(tempfile.mkdtemp(prefix="cqo-run."))
         self.lock = threading.Lock()
+        self.pid = os.getpid()   # a runner belongs to the Python process that started it
         self.p = subprocess.Popen([str(exe), "--serve"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                   stderr=subprocess.DEVNULL, text=True, bufsize=1)
 
     def alive(self) -> bool:
-        return self.p.poll() is None
+        return self.pid == os.getpid() and self.p.poll() is None
 
     def run(self, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int, tripcap: int,
             isolate: bool) -> List[SampleRun]:
@@ -539,19 +540,27 @@ class Runner:
         shutil.rmtree(self.dir, ignore_errors=True)
 
 
-_RUNNERS: Dict[Tuple[str, int], Runner] = {}
+_RUNNERS: Dict[Tuple[str, int], Runner] = {}   # in least-recently-used order
+MAX_RUNNERS = 8   # idle runner processes kept per Python process
 _RUNNERS_LOCK = threading.Lock()
 
 
 def _runner(exe: Path, part: int) -> Runner:
     key = (str(exe), part)
     with _RUNNERS_LOCK:
-        r = _RUNNERS.get(key)
-        if r is None or not r.alive():
-            if r is not None:
+        r = _RUNNERS.pop(key, None)
+        if r is not None and not r.alive():
+            if r.pid == os.getpid():
                 r.close()
-            r = _RUNNERS[key] = Runner(exe)
-        return r
+            r = None
+        old = []
+        while len(_RUNNERS) >= MAX_RUNNERS:
+            old.append(_RUNNERS.pop(next(iter(_RUNNERS))))
+        r = _RUNNERS[key] = r or Runner(exe)
+    for o in old:
+        with o.lock:   # never while a batch runs on it
+            o.close()
+    return r
 
 
 def close_runners() -> None:
@@ -560,7 +569,8 @@ def close_runners() -> None:
         rs = list(_RUNNERS.values())
         _RUNNERS.clear()
     for r in rs:
-        r.close()
+        if r.pid == os.getpid():
+            r.close()
 
 
 atexit.register(close_runners)
