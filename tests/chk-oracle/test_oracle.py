@@ -165,6 +165,17 @@ int store_q(unsigned x0, double t) { unsigned x = x0; cq_theta(&x, t); int a[2] 
         self.assertEqual(got, ["0x0", "0x0", "0x3", "0x0", "0x0", "0xf", "0xa", "0xa"])
 
 
+    def test_driver_object(self):
+        # a driver object is a function-local static ("__cqo_drv_main.tab"): an object like any
+        # other, readable from the program (regression of cq-8ay)
+        o1 = compile_c("drvobj", "double pick_q(const double *c, double x0, double t) "
+                                 "{ double x = x0; cq_theta(&x, t); return x + c[2]; }")
+        sp = spec("drvobj", "double pick_q(const double*,double,double)",
+                  [("pick_q", ["const double*", "double", "double"])],
+                  setup="static const double tab[4] = {1, 2, 3, 4};")
+        self.assertEqual(rets(o1, sp, [{"call": 0, "args": ["tab", f64(0.5), HALF]}]), [f64(3.5)])
+
+
 class Events(unittest.TestCase):
     def test_sites_trips_ret(self):
         o1 = compile_c("ev", """
@@ -189,7 +200,7 @@ void inv_q(int x0, double t) { int x = x0; cq_invert_begin(); cq_theta(&x, t); c
         pa = f64(0.25)
         tr = lambda s: oracle.trace_sample(o1, sp, s)
         trips = lambda ev: [e["n"] for e in ev if e["ev"] == "trip"]
-        for x, n in [(0, 0), (1, 0), (3, 1), (4, 2), (31, 4), (32, 5)]:
+        for x, n in [(0, 0), (1, 0), (3, 1), (4, 2), (31, 4)]:   # at most K = 4 trips: run to the end
             ev = tr({"call": 0, "args": [i32(x), HALF, pa]})
             self.assertEqual(trips(ev), [n], (x, ev))
             self.assertEqual(ev[0], {"ev": "site", "fn": "loop_q", "site": 0, "kind": "theta",
@@ -200,7 +211,7 @@ void inv_q(int x0, double t) { int x = x0; cq_invert_begin(); cq_theta(&x, t); c
                 self.assertEqual(phis[0]["angle"], pa)
                 self.assertIsNone(phis[0]["reg"])
             self.assertEqual(ev[-1], {"ev": "ret", "v": hex(n)})
-        for x, n in [(0, 0), (1, 1), (7, 3), (0xFF, 8)]:
+        for x, n in [(0, 0), (1, 1), (7, 3), (0xF, 4)]:
             self.assertEqual(trips(tr({"call": 1, "args": [i32(x), HALF]})), [n], x)
         ev = tr({"call": 2, "args": [i32(3), HALF]})
         self.assertEqual([e.get("kind", e["ev"]) for e in ev], ["invert_begin", "theta", "invert_end", "ret"])
@@ -213,7 +224,8 @@ void inv_q(int x0, double t) { int x = x0; cq_invert_begin(); cq_theta(&x, t); c
                                            "angle": HALF, "reg": hex(4)})
         self.assertEqual(rr.measured, [{"h": None, "w": "i32", "v": "0x2"}])
         self.assertEqual(rr.outputs, {"ret": [{"call": 0, "fn": "loop_q", "v": {"w": "i32", "v": "0x2"}}],
-                                      "end": "ret"})
+                                      "end": "ret",
+                                      "loops": [{"loop": "loop_q:%6", "act": 0, "n": 2, "capped": False}]})
         self.assertEqual(rr.violations, [])
         self.assertIsNone(rr.kept)
         self.assertIsNone(rr.clean)
@@ -250,32 +262,229 @@ int abort_q(int x0, double t, int k) { int x = x0; cq_theta(&x, t); if (x == k) 
 int trap_q(int x0, double t, int k) { int x = x0; cq_theta(&x, t); if (x == k) __builtin_trap(); return x; }
 int raise_q(int x0, double t, int k) { int x = x0; cq_theta(&x, t); if (x == k) raise(SIGABRT); return x; }
 volatile int sink;
-int spin_q(unsigned x0, double t) { unsigned x = x0; cq_theta(&x, t); while (x != 0) { x += 2; sink++; } return x; }
+int spin_q(unsigned x0, double t, unsigned c) { unsigned x = x0; cq_theta(&x, t); while (c != 0) { c += 2; sink++; }
+    return x + c; }
 """)
         sp = spec("term", "int abort_q(int,double,int);int trap_q(int,double,int);int raise_q(int,double,int);"
-                  "int spin_q(unsigned,double)",
+                  "int spin_q(unsigned,double,unsigned)",
                   [("abort_q", ["int", "double", "int"]), ("trap_q", ["int", "double", "int"]),
-                   ("raise_q", ["int", "double", "int"]), ("spin_q", ["unsigned", "double"])])
+                   ("raise_q", ["int", "double", "int"]), ("spin_q", ["unsigned", "double", "unsigned"])])
         rs = oracle.run_samples(o1, sp, [
             {"call": 0, "args": [i32(2), HALF, i32(2)]}, {"call": 0, "args": [i32(1), HALF, i32(2)]},
             {"call": 1, "args": [i32(2), HALF, i32(2)]}, {"call": 2, "args": [i32(2), HALF, i32(2)]},
-            {"call": 3, "args": [i32(1), HALF]}, {"call": 3, "args": [i32(2**32 - 4), HALF]}],
+            {"call": 3, "args": [i32(0), HALF, i32(1)]}, {"call": 3, "args": [i32(0), HALF, i32(2**32 - 4)]}],
             timeout_ms=5000, tripcap=100000)
         self.assertEqual([(r.outcome, r.failed) for r in rs],
                          [("noreturn:abort", False), ("ret", False), ("noreturn:llvm.trap", False),
                           ("raise:6", False), ("", True), ("ret", False)])
+        # a classical loop is never cut at K: it runs to the end (here, to the trip cap)
         self.assertIn("nonterminating", rs[4].reason)
+        self.assertEqual(rs[5].loops, [])
         with self.assertRaises(oracle.OracleError):
-            oracle.trace_sample(o1, sp, {"call": 3, "args": [i32(1), HALF]})
-        rr = oracle.run_sample(o1, sp, {"call": 3, "args": [i32(1), HALF]})
+            oracle.trace_sample(o1, sp, {"call": 3, "args": [i32(0), HALF, i32(1)]})
+        rr = oracle.run_sample(o1, sp, {"call": 3, "args": [i32(0), HALF, i32(1)]})
         self.assertEqual(len(rr.violations), 1)
         self.assertEqual(rr.violations[0]["what"], "c_oracle")
         self.assertIsNone(rr.violations[0]["h"])
         self.assertIn("nonterminating", rr.violations[0]["msg"])
         self.assertEqual(rr.outputs["ret"], [])
         rr = oracle.run_sample(o1, sp, {"call": 0, "args": [i32(2), HALF, i32(2)]})
-        self.assertEqual(rr.outputs, {"ret": [], "end": "noreturn:abort"})
+        self.assertEqual(rr.outputs, {"ret": [], "end": "noreturn:abort", "loops": []})
         self.assertEqual(rr.violations, [])
+
+
+KSRC = r"""
+volatile int sink;
+/* a quantum-exit loop (guarded, tested at the latch) with a phase in its body */
+int halve_q(unsigned x0, double t, double p) {
+    unsigned x = x0; int n = 0;
+    cq_theta(&x, t);
+    while (x > 1) { cq_phi(p); x >>= 1; n++; sink++; }
+    return cq_measure(n);
+}
+/* never exits for an even x0 */
+int stuck_q(unsigned x0, double t) { unsigned x = x0; cq_theta(&x, t); while (x != 1) { x = x * 3 + 2; sink++; } return x; }
+/* tested at its header (no guard): a trip is test then body */
+int header_q(unsigned x0, double t) {
+    unsigned x = x0; int n = 0;
+    cq_theta(&x, t);
+    for (;;) { if (x == 0) break; x &= x - 1; n++; sink++; }
+    return cq_measure(n);
+}
+/* classical bound with a quantum exit (rule 14: no cutoff; the shape of example 26) */
+int scan_q(unsigned x0, double t, int c) {
+    int x = x0; int i; cq_theta(&x, t);
+    for (i = 0; i < c; i++) { if (x == i + 7) break; }
+    return cq_measure(i);
+}
+/* a classical loop in a quantum function */
+int count_q(unsigned x0, double t, int c) {
+    unsigned x = x0; int s = 0; cq_theta(&x, t);
+    for (int i = 0; i < c; i++) { s += i; sink++; }
+    return cq_measure(x + s);
+}
+/* a quantum-exit loop entered once per trip of a classical loop */
+int nest_q(unsigned x0, double t, int c) {
+    unsigned x = x0; int s = 0; cq_theta(&x, t);
+    for (int i = 0; i < c; i++) { unsigned y = x << i; while (y > 1) { y >>= 1; s++; sink++; } sink++; }
+    return cq_measure(s);
+}
+/* one function called classically and quantumly */
+__attribute__((noinline)) static int steps(unsigned x) {
+    int n = 0; while (x > 1) { x = (x & 1) ? 3 * x + 1 : x / 2; n++; sink++; } return n;
+}
+int both_q(unsigned x0, double t, unsigned c) { unsigned x = x0; int a = steps(c); cq_theta(&x, t); return a + cq_measure(steps(x)); }
+/* quantum-depth recursion, entered from outside its cycle */
+__attribute__((noinline)) static int chain(int n, int a) { if (n <= 0) return a; return a - chain(n - 1, a + 1); }
+int rec_q(int n0, double t, int a) { int n = n0; cq_theta(&n, t); return cq_measure(chain(n, a)); }
+/* quantum-depth recursion entered by the driver's own call */
+int selfrec_q(int n, double t, int d) { if (d) cq_theta(&n, t); if (n <= 0) return 0; return n - selfrec_q(n - 1, t, 0); }
+/* CQ_K(f, k) */
+CQ_K(kq2, 2)
+int kq2(unsigned x0, double t) { unsigned x = x0; int n = 0; cq_theta(&x, t); while (x > 1) { x >>= 1; n++; sink++; } return cq_measure(n); }
+"""
+
+
+class Cutoff(unittest.TestCase):
+    """CR §6 at eb8a11a (ruling cq-1di, bead cq-8ay): every quantum-exit loop and quantum-depth
+    recursion stops after K trips; the cq-arch T2 records in outputs["loops"]."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.o1 = compile_c("kcut", KSRC)
+        fns = [("halve_q", ["unsigned", "double", "double"]), ("stuck_q", ["unsigned", "double"]),
+               ("header_q", ["unsigned", "double"]), ("scan_q", ["unsigned", "double", "int"]),
+               ("count_q", ["unsigned", "double", "int"]), ("nest_q", ["unsigned", "double", "int"]),
+               ("both_q", ["unsigned", "double", "unsigned"]), ("rec_q", ["int", "double", "int"]),
+               ("selfrec_q", ["int", "double", "int"]), ("kq2", ["unsigned", "double"])]
+        cls.sp = spec("kcut", ";".join(f"int {f}({','.join(ts)})" for f, ts in fns), fns)
+        cls.call = {f: i for i, (f, _) in enumerate(fns)}
+        text = cls.o1.read_text()
+        cls.text = text
+
+    def run1(self, fn, *args, **kw):
+        return oracle.run_samples(self.o1, self.sp, [{"call": self.call[fn], "args": list(args)}], **kw)[0]
+
+    def rr(self, fn, *args):
+        return oracle.run_sample(self.o1, self.sp, {"call": self.call[fn], "args": list(args)})
+
+    def loop_id(self, fn):
+        ids = {e["loop"] for x in range(2, 9) for e in self.run1(fn, i32(x), HALF, *([HALF] if fn == "halve_q" else [])).events
+               if e["ev"] == "trip"}
+        self.assertEqual(len(ids), 1, ids)
+        return ids.pop()
+
+    def test_at_most_k_trips_unchanged(self):
+        lid = self.loop_id("halve_q")
+        for x, n in [(0, 0), (1, 0), (2, 1), (4, 2), (8, 3), (31, 4)]:
+            r = self.run1("halve_q", i32(x), HALF, HALF)
+            self.assertFalse(r.failed, r.reason)
+            self.assertEqual(r.outcome, "ret")
+            self.assertEqual([e["n"] for e in r.events if e["ev"] == "trip"], [n])
+            self.assertEqual(sum(1 for e in r.events if e.get("kind") == "phi"), n)
+            self.assertEqual(r.events[-1], {"ev": "ret", "v": hex(n)})
+            self.assertEqual(r.loops, [{"loop": lid, "act": 0, "n": n, "capped": False}])
+        rr = self.rr("halve_q", i32(31), HALF, HALF)
+        self.assertEqual(rr.outputs["ret"], [{"call": 0, "fn": "halve_q", "v": {"w": "i32", "v": "0x4"}}])
+        self.assertEqual(rr.violations, [])
+
+    def test_more_than_k_trips_capped(self):
+        lid = self.loop_id("halve_q")
+        for x in (32, 1000, 2**32 - 1):
+            r = self.run1("halve_q", i32(x), HALF, HALF)
+            self.assertFalse(r.failed, r.reason)
+            self.assertEqual(r.outcome, f"cap:{lid}")
+            self.assertEqual([e for e in r.events if e["ev"] in ("trip", "ret")], [])   # no exit, no return
+            # cut: the theta and the K phases of trips 1..K; nothing measured yet
+            self.assertEqual(r.loops, [{"loop": lid, "act": 0, "n": 4, "capped": True, "cut": 5, "mcut": 0}])
+            self.assertEqual(sum(1 for e in r.events if e.get("kind") == "phi"), 4)
+        rr = self.rr("halve_q", i32(32), HALF, HALF)
+        self.assertEqual(rr.violations, [])                 # a capped run is not a violation (T2.7)
+        self.assertEqual(rr.outputs["ret"], [])
+        self.assertEqual(rr.outputs["end"], f"cap:{lid}")
+        self.assertEqual(len(rr.rotations), rr.outputs["loops"][0]["cut"])
+        ev = oracle.trace_sample(self.o1, self.sp, {"call": 0, "args": [i32(32), HALF, HALF]})
+        self.assertEqual([e["kind"] for e in ev], ["theta"] + ["phi"] * 4)
+
+    def test_nonterminating_capped(self):
+        for x in (0, 2, 6):
+            r = self.run1("stuck_q", i32(x), HALF, timeout_ms=3000, tripcap=1000)
+            self.assertFalse(r.failed, r.reason)
+            self.assertTrue(r.outcome.startswith("cap:stuck_q:%"), r.outcome)
+            self.assertEqual([(l["n"], l["capped"]) for l in r.loops], [(4, True)])
+        r = self.run1("stuck_q", i32(1), HALF)
+        self.assertEqual((r.outcome, [(l["n"], l["capped"]) for l in r.loops]), ("ret", [(0, False)]))
+
+    def test_header_tested(self):
+        # T1.2: n counts the bodies; the header run that exits begins no trip. Cut after the K-th body
+        # only when the next header test admits a (K+1)-th.
+        for x, n in [(0, 0), (1, 1), (7, 3), (0xF, 4)]:
+            r = self.run1("header_q", i32(x), HALF)
+            self.assertEqual((r.outcome, [(l["n"], l["capped"]) for l in r.loops]), ("ret", [(n, False)]), x)
+        for x in (0x1F, 0xFF):
+            r = self.run1("header_q", i32(x), HALF)
+            self.assertTrue(r.outcome.startswith("cap:"), (x, r.outcome))
+            self.assertEqual([(l["n"], l["capped"], l["cut"], l["mcut"]) for l in r.loops], [(4, True, 1, 0)])
+
+    def test_classical_loops_run_to_completion(self):
+        for fn, x, c, want in [("scan_q", 0, 20, 20), ("scan_q", 16, 50, 9), ("count_q", 3, 100, 3 + 4950)]:
+            r = self.run1(fn, i32(x), HALF, i32(c))
+            self.assertEqual(r.outcome, "ret", (fn, r.reason))
+            self.assertEqual(r.events[-1]["v"], hex(want))
+            self.assertEqual(r.loops, [], fn)
+
+    def test_nested_activations(self):
+        # inner loop: x << i halved to 1; x = 1 gives i trips on outer trip i
+        r = self.run1("nest_q", i32(1), HALF, i32(4))
+        self.assertEqual(r.outcome, "ret")
+        lid = r.loops[0]["loop"]
+        self.assertEqual(r.loops, [{"loop": lid, "act": i, "n": i, "capped": False} for i in range(4)])
+        self.assertEqual(r.events[-1]["v"], hex(0 + 1 + 2 + 3))
+        r = self.run1("nest_q", i32(1), HALF, i32(9))
+        self.assertEqual(r.outcome, f"cap:{lid}")
+        self.assertEqual([(l["act"], l["n"], l["capped"]) for l in r.loops],
+                         [(0, 0, False), (1, 1, False), (2, 2, False), (3, 3, False), (4, 4, False), (5, 4, True)])
+
+    def test_classical_and_quantum_call_of_one_function(self):
+        # steps(27) = 111 trips on the classical call: never cut; steps(x) on the quantum call is.
+        r = self.run1("both_q", i32(16), HALF, i32(27))
+        self.assertEqual(r.outcome, "ret", r.reason)
+        self.assertEqual(r.events[-1]["v"], hex(111 + 4))
+        self.assertEqual([(l["n"], l["capped"]) for l in r.loops], [(4, False)])
+        r = self.run1("both_q", i32(3), HALF, i32(27))
+        self.assertTrue(r.outcome.startswith("cap:steps:%"), r.outcome)
+        self.assertEqual([(l["n"], l["capped"]) for l in r.loops], [(4, True)])
+        self.assertIn("steps", next(e["loop"] for e in r.events if e["ev"] == "trip"))  # the classical one ran
+
+    def test_quantum_depth_recursion(self):
+        for n in (-3, 0, 1, 4):
+            r = self.run1("rec_q", i32(n), HALF, i32(10))
+            self.assertEqual(r.outcome, "ret", r.reason)
+            self.assertEqual(r.loops, [{"loop": "chain:recursion", "act": 0, "n": max(n, 0), "capped": False}])
+        self.assertEqual(self.run1("rec_q", i32(4), HALF, i32(10)).events[-1]["v"],
+                         hex(10 - (11 - (12 - (13 - 14)))))
+        for n in (5, 1000):
+            r = self.run1("rec_q", i32(n), HALF, i32(10))
+            self.assertEqual(r.outcome, "cap:chain:recursion", r.reason)
+            self.assertEqual(r.loops, [{"loop": "chain:recursion", "act": 0, "n": 4, "capped": True,
+                                        "cut": 1, "mcut": 0}])
+        for n, capped in [(0, False), (3, False), (4, False), (6, True)]:
+            r = self.run1("selfrec_q", i32(n), HALF, i32(1))
+            self.assertEqual([(l["loop"], l["n"], l["capped"]) for l in r.loops],
+                             [("selfrec_q:recursion", 4 if capped else n, capped)], (n, r.outcome, r.reason))
+            self.assertEqual(r.outcome, "cap:selfrec_q:recursion" if capped else "ret")
+
+    def test_k_resolution(self):
+        # CQ_K(kq2, 2) beats the global flag and the default; a per-function flag beats CQ_K.
+        caps = lambda r: [(l["n"], l["capped"]) for l in r.loops]
+        self.assertEqual(caps(self.run1("kq2", i32(4), HALF)), [(2, False)])
+        self.assertEqual(caps(self.run1("kq2", i32(8), HALF)), [(2, True)])
+        self.assertEqual(caps(self.run1("kq2", i32(8), HALF, k_default=6)), [(2, True)])
+        self.assertEqual(caps(self.run1("kq2", i32(8), HALF, k={"kq2": 3})), [(3, False)])
+        self.assertEqual(caps(self.run1("kq2", i32(16), HALF, k={"kq2": 3})), [(3, True)])
+        self.assertEqual(caps(self.run1("halve_q", i32(64), HALF, HALF, k_default=6)), [(6, False)])
+        self.assertEqual(caps(self.run1("halve_q", i32(128), HALF, HALF, k_default=6)), [(6, True)])
+        self.assertEqual(caps(self.run1("halve_q", i32(128), HALF, HALF, k={"kq2": 9}, k_default=6)), [(6, True)])
 
 
 if __name__ == "__main__":

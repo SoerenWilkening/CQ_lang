@@ -9,7 +9,11 @@
  * trap, an abort or a hang ends that sample only. The child appends `<index>\t<event JSON>` lines to
  * <trace> and `<index>\t<note>` lines to <status>; the parent adds `<index>\twait exited N|signaled
  * S|timeout`. Notes: `noreturn <callee>`, `raise <sig>`, `ub unreachable <fn>`, `ub oob-atomic`,
- * `tripcap`, `crash <signal> addr=<a>`, `oob-load`, `oob-store`.
+ * `tripcap`, `crash <signal> addr=<a>`, `oob-load`, `oob-store`, `cap <loop>` (a quantum-exit loop or
+ * quantum-depth recursion stopped after K trips: the sample ends there, not a failure; cq-8ay),
+ * `internal <why>`.
+ * The cutoff records of cq-arch T2 go to <trace> as `{"ev":"kloop","loop","act","n","capped"[,"cut",
+ * "mcut"]}` lines (oracle.py moves them to outputs["loops"]; they are not trace events).
  * <subst> lines `<index> <fn> <site> <nwords> <hex w>...` replace the register value at a cq_theta site.
  * Values in events are hex bit patterns, "0x" plus lowercase digits without leading zeros. */
 #define _DARWIN_C_SOURCE
@@ -319,6 +323,9 @@ int64_t __cqo_fpto80(long double x, int32_t w, int32_t sgn) {
 static struct { char fn[256]; int site; uint64_t w[2]; } subst[MAXSUBST];
 static int nsubst;
 
+/* entries of RunResult side 'c' rotations / measured so far (T2 cut, mcut) */
+static long n_rotations, n_measured;
+
 static const char *kinds[] = {"theta", "phi", "measure", "invert_begin", "invert_end"};
 
 void __cqo_site(const char *fn, int32_t site, int32_t kind, uint64_t angle, void *reg, int32_t bits) {
@@ -344,13 +351,92 @@ void __cqo_site(const char *fn, int32_t site, int32_t kind, uint64_t angle, void
     snprintf(line, sizeof line, "{\"ev\":\"site\",\"fn\":%s,\"site\":%d,\"kind\":\"%s\",\"angle\":%s,\"reg\":%s}",
              f, site, kinds[kind], a, r);
     out_line(trace_fd, line);
+    if (kind == 2) n_measured++;
+    else n_rotations++;
 }
 
-void __cqo_trip(const char *loop, int64_t n) {
+/* ------------------------------------------------------------------ the cutoff K (CR §6, cq-8ay)
+ * OracleInstr.cpp passes kq = 1 where the loop is a quantum-exit loop in the running specialization.
+ * Each activation of one gets a T2 record when it ends: by an exit edge (capped false), or when the
+ * trip counter reaches K+1 trips begun (capped true, n = K, cut/mcut = entries so far); the capped
+ * one ends the sample. A quantum-depth recursion is counted by the level calls along the chain. */
+int32_t __cqo_spec_next; /* the callee's specialization id; -1: the driver's call (its entry spec) */
+
+#define MAXACT 256
+static struct { const char *id; long n; } acts[MAXACT];
+static int nacts;
+
+static long next_act(const char *id) {
+    for (int i = 0; i < nacts; ++i)
+        if (!strcmp(acts[i].id, id)) return acts[i].n++;
+    if (nacts == MAXACT) { note("internal more than %d cutoff loops", MAXACT); _exit(95); }
+    acts[nacts].id = id, acts[nacts].n = 1;
+    nacts++;
+    return 0;
+}
+
+static void kloop_record(const char *id, long long n, int capped) {
+    char l[300], line[600];
+    jsonstr(l, sizeof l, id);
+    long act = next_act(id);
+    if (capped)
+        snprintf(line, sizeof line,
+                 "{\"ev\":\"kloop\",\"loop\":%s,\"act\":%ld,\"n\":%lld,\"capped\":true,\"cut\":%ld,\"mcut\":%ld}",
+                 l, act, n, n_rotations, n_measured);
+    else
+        snprintf(line, sizeof line, "{\"ev\":\"kloop\",\"loop\":%s,\"act\":%ld,\"n\":%lld,\"capped\":false}",
+                 l, act, n);
+    out_line(trace_fd, line);
+}
+
+static void kcap(const char *id, long long K) {
+    kloop_record(id, K, 1);
+    note("cap %s", id);
+    _exit(0);
+}
+
+void __cqo_trip(const char *loop, int64_t n, int32_t kq) {
     char l[300], line[400];
     jsonstr(l, sizeof l, loop);
     snprintf(line, sizeof line, "{\"ev\":\"trip\",\"loop\":%s,\"n\":%lld}", l, (long long)n);
     out_line(trace_fd, line);
+    if (kq) kloop_record(loop, n, 0);
+}
+
+/* cnt trips begun (the counter after this header run, or before entering the body of a loop that
+ * tests at its header): one more than K means the exit test after the K-th body admitted trip K+1. */
+void __cqo_kcheck(const char *loop, int64_t cnt, int64_t K, int32_t kq) {
+    if (kq && cnt > K) kcap(loop, K);
+}
+
+#define MAXREC 64
+static struct { const char *id; long long K, depth, max; } recs[MAXREC];
+static int nrecs;
+
+void __cqo_rec_enter(const char *id, int64_t K, int32_t on) {
+    if (!on) return;
+    if (nrecs == MAXREC) { note("internal recursion activations nested deeper than %d", MAXREC); _exit(95); }
+    recs[nrecs].id = id, recs[nrecs].K = K, recs[nrecs].depth = 0, recs[nrecs].max = 0;
+    nrecs++;
+}
+
+void __cqo_rec_exit(int32_t on) {
+    if (!on) return;
+    if (nrecs == 0) { note("internal recursion exit outside an activation"); _exit(95); }
+    nrecs--;
+    kloop_record(recs[nrecs].id, recs[nrecs].max, 0);
+}
+
+void __cqo_rec_down(int32_t on) {
+    if (!on) return;
+    if (nrecs == 0) { note("internal recursion level outside an activation"); _exit(95); }
+    long long d = ++recs[nrecs - 1].depth;
+    if (d > recs[nrecs - 1].K) kcap(recs[nrecs - 1].id, recs[nrecs - 1].K);
+    if (d > recs[nrecs - 1].max) recs[nrecs - 1].max = d;
+}
+
+void __cqo_rec_up(int32_t on) {
+    if (on && nrecs) recs[nrecs - 1].depth--;
 }
 
 static uint64_t ticks, tripcap = 10000000;
@@ -438,6 +524,7 @@ int __cqo_sample_begin(int idx) {
         sigaction(SIGBUS, &sa, 0);
         sigaction(SIGFPE, &sa, 0);
         load_subst(idx);
+        __cqo_spec_next = -1; /* the driver's call enters its callee's entry specialization */
         struct itimerval it = {{0, 0}, {timeout_ms / 1000, (timeout_ms % 1000) * 1000}};
         setitimer(ITIMER_REAL, &it, 0);
         return 1;
@@ -469,8 +556,12 @@ int __cqo_sample_begin(int idx) {
     return 0;
 }
 
-/* after_call: the child is done */
-void __cqo_sample_end(void) { _exit(0); }
+/* after_call: the child is done. An activation the driver's call entered (a recursive entry
+ * function) ended with the call. */
+void __cqo_sample_end(void) {
+    while (nrecs) __cqo_rec_exit(1);
+    _exit(0);
+}
 
 int __cqo_drv_main(void); /* drivers.driver_source(..., main_name="__cqo_drv_main") */
 

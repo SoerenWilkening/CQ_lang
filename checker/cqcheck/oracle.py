@@ -21,6 +21,22 @@ Trace events (cq-arch; values are hex bit patterns ``0x`` + lowercase digits, no
   latch). A guard branch whose other successor is an exit block reports ``n = 0`` when it skips the loop.
 - ``{"ev":"ret","v"}``: the driver call's return value (``null`` for void).
 
+The cutoff K (CR §6 at eb8a11a, ruling cq-1di; bead cq-8ay). Every quantum-exit loop and
+quantum-depth recursion stops after K trips, as in the circuit: when the trips begun would exceed K
+(the exit test after the K-th body admits trip K+1) the sample ends there with outcome
+``cap:<loop>``, which is not a failure. Each activation gets a cq-arch T2 record in
+``SampleRun.loops`` and side 'c' ``outputs["loops"]``: ``{"loop", "act", "n", "capped"}`` when it
+ends by itself (n as T1.2 counts trips), ``{..., "n": K, "capped": true, "cut", "mcut"}`` at the cap
+(cut/mcut: the rotations and measurements recorded so far). A recursion is ``<fn>:recursion`` (T2.2),
+its n the levels along the deepest chain. Classical loops and classical-bound loops with a quantum
+exit run to completion (the trip cap below still ends a runaway one). K resolves as the circuit
+resolves it: ``k`` (per-function, cq-lower's ``-cq-k``), ``CQ_K(f, k)``, ``k_default`` (cq-lower's
+``-cq-k-default``), 4. Which loops and recursions are quantum is the circuit's own answer: the
+instrumentation links the pass's taint and rule-14 classification (``cq::computeTaint``,
+``cq::loops::classify``; ``PASS_SOURCES``), runs them on the pristine program, and tracks each
+frame's specialization at run time (OracleInstr.cpp ``KInfo``). A capped trip count reports no T1
+trip event (the loop never took an exit edge).
+
 §2 and §6 in the C program: div/rem by 0 and INT_MIN/-1, shifts >= W (amount mod W), fptosi/fptoui
 (row by row), maxnum/minnum, fmuladd unfused, abs(INT_MIN), ctlz/cttz(0) are rewritten to the table;
 allocas, lifetime starts and heap blocks read 0 until written; a load outside every object (globals,
@@ -40,14 +56,15 @@ call's result, so the instrumentation logs it at the IR call (``-cq-oracle-entri
 reached (for usercheck); it never reaches the driver.
 
 Sample outcome: ``ret`` (returned), ``noreturn:<callee>`` (abort, exit, __builtin_trap, ...),
-``raise:<sig>`` (the program raised a fatal signal). Anything else is a failure with a reason, never
-dropped: ``unreachable`` reached, an out-of-bounds atomic, a timeout or trip cap, a signal no hook
+``raise:<sig>`` (the program raised a fatal signal), ``cap:<loop>`` (stopped after K trips). Anything else is a failure with a reason, never
+dropped: ``unreachable`` reached, an out-of-bounds atomic, a timeout or the runaway trip cap, a signal no hook
 explains (a trap the totalization should have prevented), a bad sample.
 
 API: ``run_sample(o1, spec, sample) -> RunResult`` and ``trace_sample(o1, spec, sample) -> [event]``
-(both frozen by Z1, cq-zew); ``run_samples(o1, spec, samples) -> [SampleRun]`` runs a whole batch
-and keeps failed samples' partial events.
-CLI: ``python3 -m cqcheck.oracle <NN_name|O1.ll> [--samples JSON] [--driver JSON] [--json OUT]``.
+(both frozen by Z1, cq-zew); ``run_samples(o1, spec, samples, ..., k=None, k_default=None) ->
+[SampleRun]`` runs a whole batch and keeps failed samples' partial events.
+CLI: ``python3 -m cqcheck.oracle <NN_name|O1.ll> [--samples JSON] [--driver JSON] [--json OUT]
+[--k fn=k,...] [--k-default K]``.
 """
 from __future__ import annotations
 
@@ -118,22 +135,49 @@ def _atomic_dir(final: Path, fill) -> Path:
 # toolchain: the instrumentation plugin and the runtime, rebuilt when their sources change
 
 STANDIN = ROOT / "checker" / "rt" / "cq_standin.h"   # included by both sources (cq-25vx)
-SRC_KEY = hashlib.sha256((SRC / "OracleInstr.cpp").read_bytes() + (SRC / "cqo_rt.c").read_bytes()
-                         + STANDIN.read_bytes() + Path(__file__).read_bytes()).hexdigest()[:16]
+# The pass's taint and rule-14 classification, linked into the instrumentation (cq-8ay): the oracle
+# caps exactly the loops and recursions the circuit cuts at K. These four translation units depend on
+# nothing else of the pass.
+PASS = ROOT / "pass"
+PASS_SOURCES = [PASS / "lib" / "taint" / "Taint.cpp", PASS / "lib" / "spine" / "Classify.cpp",
+                PASS / "lib" / "Common.cpp", PASS / "lib" / "abi" / "Abi.cpp"]
+
+
+def _pass_inputs() -> List[Path]:
+    hdrs = sorted((PASS / "include").rglob("*.h")) + sorted(
+        p for d in ("taint", "spine", "abi") for p in (PASS / "lib" / d).glob("*.h"))
+    return PASS_SOURCES + hdrs
+
+
+def _src_hash() -> str:
+    h = hashlib.sha256()
+    for p in [SRC / "OracleInstr.cpp", SRC / "cqo_rt.c", STANDIN] + _pass_inputs():
+        h.update(str(p.relative_to(ROOT)).encode() + b"\0" + p.read_bytes() + b"\0")
+    return h.hexdigest()[:16]
+
+
+TOOL_KEY = _src_hash()
+SRC_KEY = hashlib.sha256((TOOL_KEY + "\0").encode() + Path(__file__).read_bytes()).hexdigest()[:16]
 
 
 def toolchain() -> Tuple[Path, Path]:
     cpp, rt = SRC / "OracleInstr.cpp", SRC / "cqo_rt.c"
-    h = hashlib.sha256(cpp.read_bytes() + b"\0" + rt.read_bytes() + b"\0" + STANDIN.read_bytes()).hexdigest()[:16]
 
     def fill(d: Path) -> None:
+        from concurrent.futures import ThreadPoolExecutor
         flags = _run([_tool("llvm-config"), "--cxxflags"], "llvm-config").stdout.split()
-        _run([_tool("clang++"), *flags, "-fno-rtti", "-fPIC", "-shared", "-undefined", "dynamic_lookup",
-              "-O1", str(cpp), "-o", str(d / "libCQOracle.so")], "building the oracle plugin")
+        cxx = [_tool("clang++"), *flags, "-fno-rtti", "-fPIC", "-O1", "-I", str(PASS / "include")]
+        units = [cpp] + PASS_SOURCES
+        objs = [d / f"{k}-{u.stem}.o" for k, u in enumerate(units)]
+        with ThreadPoolExecutor(max_workers=len(units)) as ex:
+            list(ex.map(lambda uo: _run([*cxx, "-c", str(uo[0]), "-o", str(uo[1])],
+                                        f"compiling {uo[0].name} for the oracle plugin"), zip(units, objs)))
+        _run([_tool("clang++"), "-shared", "-undefined", "dynamic_lookup", *map(str, objs),
+              "-o", str(d / "libCQOracle.so")], "linking the oracle plugin")
         _run([_tool("clang"), "-std=c17", "-O1", "-c", str(rt), "-o", str(d / "cqo_rt.o")],
              "building the oracle runtime")
 
-    d = _atomic_dir(_build_root() / f"tool-{h}", fill)
+    d = _atomic_dir(_build_root() / f"tool-{TOOL_KEY}", fill)
     return d / "libCQOracle.so", d / "cqo_rt.o"
 
 
@@ -210,13 +254,26 @@ def _host_defines(name: str) -> bool:
 _PROVIDED = re.compile(r"^(llvm\.|__cqo_|cq_theta_|cq_measure_|cq_phi$|__cq_invert_|cqrt_alloc_i(1|8|16|32)$)")
 
 
-def program(o1: Path) -> Tuple[Path, str]:
-    """The instrumented program object of one .O1.ll (cached), and its target triple."""
+def _k_flags(k: Optional[Dict[str, int]], k_default: Optional[int]) -> List[str]:
+    """cq-oracle's K flags, the same chain as cq-lower's -cq-k / -cq-k-default (CR §0: per-function
+    flag, CQ_K, global flag, 4)."""
+    out = []
+    if k:
+        out.append("-cq-oracle-k=" + ",".join(f"{f}={int(v)}" for f, v in sorted(k.items())))
+    if k_default is not None:
+        out.append(f"-cq-oracle-k-default={int(k_default)}")
+    return out
+
+
+def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[int] = None) -> Tuple[Path, str]:
+    """The instrumented program object of one .O1.ll (cached), and its target triple. k / k_default:
+    the cutoff flags (default none: CQ_K, then 4)."""
     o1 = Path(o1)
     plugin, rt = toolchain()
     text = o1.read_text()
     bundle = _bundle_files()
-    key = hashlib.sha256("\0".join([text, SRC_KEY] + [f"{b}:{b.stat().st_mtime_ns}" for b in bundle])
+    kf = _k_flags(k, k_default)
+    key = hashlib.sha256("\0".join([text, SRC_KEY, *kf] + [f"{b}:{b.stat().st_mtime_ns}" for b in bundle])
                          .encode()).hexdigest()[:20]
     triple = _triple(text)
 
@@ -233,7 +290,7 @@ def program(o1: Path) -> Tuple[Path, str]:
         stubs = sorted(n for n in und if not _PROVIDED.match(n) and not _host_defines(n))
         (d / "stubs.txt").write_text("".join(n + "\n" for n in stubs))
         _run([_tool("opt"), f"-load-pass-plugin={plugin}", "-passes=cq-oracle",
-              f"-cq-oracle-stubs={d / 'stubs.txt'}", str(linked), "-o", str(d / "prog.bc")],
+              f"-cq-oracle-stubs={d / 'stubs.txt'}", *kf, str(linked), "-o", str(d / "prog.bc")],
              "the cq-oracle instrumentation of the program")
         _run([_tool("clang"), "-target", triple, "-O0", "-Wno-override-module", "-c", str(d / "prog.bc"),
               "-o", str(d / "prog.o")], "compiling the instrumented program")
@@ -260,11 +317,12 @@ def _driver_source(spec: DriverSpec, samples: Sequence[dict]) -> str:
                                     main_name=DRIVER_MAIN)
 
 
-def executable(o1: Path, spec: DriverSpec, samples: Sequence[dict] = ()) -> Path:
+def executable(o1: Path, spec: DriverSpec, samples: Sequence[dict] = (),
+               k: Optional[Dict[str, int]] = None, k_default: Optional[int] = None) -> Path:
     """The oracle program of one example: instrumented program + instrumented driver + runtime. The
     driver reads its samples at run time (cq-arch Z2), so one build serves every sample; `samples`
     only supply the pointer expressions the driver accepts."""
-    prog_o, triple = program(o1)
+    prog_o, triple = program(o1, k, k_default)
     plugin, rt = toolchain()
     src = _driver_source(spec, samples)
     entries = sorted({c["fn"] for c in spec.calls})   # every call the driver can make
@@ -289,17 +347,19 @@ class SampleRun:
     index: int
     sample: Dict[str, Any]
     events: List[Dict[str, Any]] = field(default_factory=list)
-    outcome: str = ""            # ret | noreturn:<callee> | raise:<sig> | "" when failed
+    outcome: str = ""            # ret | noreturn:<callee> | raise:<sig> | cap:<loop> | "" when failed
     failed: bool = False
     reason: str = ""
     notes: List[str] = field(default_factory=list)
+    loops: List[Dict[str, Any]] = field(default_factory=list)   # T2 cutoff records (outputs["loops"])
 
 
 def _classify(sr: SampleRun) -> None:
     notes = sr.notes
     wait = next((n for n in reversed(notes) if n.startswith("wait ")), "wait missing")
-    bad = [n for n in notes if n.startswith(("ub ", "crash ", "tripcap"))]
+    bad = [n for n in notes if n.startswith(("ub ", "crash ", "tripcap", "internal "))]
     noret = [n for n in notes if n.startswith("noreturn ")]
+    cap = [n for n in notes if n.startswith("cap ")]
     raised = [n for n in notes if n.startswith("raise ")]
     has_ret = any(e.get("ev") == "ret" for e in sr.events)
     if bad:
@@ -311,6 +371,8 @@ def _classify(sr: SampleRun) -> None:
         sr.failed, sr.reason = True, "timeout"
     elif wait == "wait exited 0" and has_ret:
         sr.outcome = "ret"
+    elif wait == "wait exited 0" and cap:
+        sr.outcome = "cap:" + cap[-1].split(" ", 1)[1]   # stopped after K trips (T2.7): no violation
     elif noret:
         sr.outcome = "noreturn:" + noret[-1].split(" ", 1)[1]
     elif raised and wait.startswith("wait signaled ") and raised[-1].split()[1] == wait.split()[2]:
@@ -331,7 +393,8 @@ def _subst_lines(samples: Sequence[dict]) -> List[str]:
 
 
 def run_samples(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]],
-                timeout_ms: int = DEFAULT_TIMEOUT_MS, tripcap: int = DEFAULT_TRIPCAP) -> List[SampleRun]:
+                timeout_ms: int = DEFAULT_TIMEOUT_MS, tripcap: int = DEFAULT_TRIPCAP,
+                k: Optional[Dict[str, int]] = None, k_default: Optional[int] = None) -> List[SampleRun]:
     """Every sample in one oracle program; each sample's call runs in its own forked child.
 
     A sample may carry an optional "subst": {"<fn>:<site>": hex} (usercheck: the value a cq_theta
@@ -340,7 +403,7 @@ def run_samples(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]],
         return []
     # Results are cached per (instrumented program, driver spec, sample, limits): a repeated run, or
     # run_sample over a SampleSet already run as a batch, costs no build.
-    prog_o, _ = program(Path(o1))
+    prog_o, _ = program(Path(o1), k, k_default)
     from .contracts import to_json
     base = "\0".join([str(prog_o), to_json(spec), str(timeout_ms), str(tripcap)])
     drivers = _drivers()
@@ -351,15 +414,16 @@ def run_samples(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]],
     cache = _build_root() / "results"
     out: List[Optional[SampleRun]] = [None] * len(samples)
     todo = []
-    for i, (s, k) in enumerate(zip(samples, keys)):
-        f = cache / k[:2] / f"{k}.json"
+    for i, (s, key) in enumerate(zip(samples, keys)):
+        f = cache / key[:2] / f"{key}.json"
         if f.exists():
             d = json.loads(f.read_text())
-            out[i] = SampleRun(i, s, d["events"], d["outcome"], d["failed"], d["reason"], d["notes"])
+            out[i] = SampleRun(i, s, d["events"], d["outcome"], d["failed"], d["reason"], d["notes"],
+                               d["loops"])
         else:
             todo.append(i)
     if todo:
-        fresh = _run_uncached(Path(o1), spec, [samples[i] for i in todo], timeout_ms, tripcap)
+        fresh = _run_uncached(Path(o1), spec, [samples[i] for i in todo], timeout_ms, tripcap, k, k_default)
         for i, r in zip(todo, fresh):
             r.index = i
             out[i] = r
@@ -367,7 +431,7 @@ def run_samples(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]],
             f.parent.mkdir(parents=True, exist_ok=True)
             tmp = f.with_suffix(f".{os.getpid()}.tmp")
             tmp.write_text(json.dumps({"events": r.events, "outcome": r.outcome, "failed": r.failed,
-                                       "reason": r.reason, "notes": r.notes}))
+                                       "reason": r.reason, "notes": r.notes, "loops": r.loops}))
             os.replace(tmp, f)
     return out  # type: ignore[return-value]
 
@@ -379,9 +443,10 @@ MIN_PART = 16
 
 
 def _run_uncached(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int,
-                  tripcap: int) -> List[SampleRun]:
+                  tripcap: int, k: Optional[Dict[str, int]] = None,
+                  k_default: Optional[int] = None) -> List[SampleRun]:
     from concurrent.futures import ThreadPoolExecutor
-    exe = executable(Path(o1), spec, [{"call": s["call"], "args": s["args"]} for s in samples])
+    exe = executable(Path(o1), spec, [{"call": s["call"], "args": s["args"]} for s in samples], k, k_default)
     n = max(1, min(PARTS, len(samples) // MIN_PART))
     parts = [list(range(k, len(samples), n)) for k in range(n)]
     with ThreadPoolExecutor(max_workers=n) as ex:
@@ -415,7 +480,12 @@ def _run_part(exe: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], ti
             i, ev = line.split("\t", 1)
             if int(i) < 0:
                 continue   # the driver's own setup, before any sample: no sample's event
-            runs[int(i)].events.append(json.loads(ev))
+            e = json.loads(ev)
+            if e.get("ev") == "kloop":   # a T2 cutoff record, not a trace event
+                del e["ev"]
+                runs[int(i)].loops.append(e)
+            else:
+                runs[int(i)].events.append(e)
         for line in (t / "status").read_text().splitlines():
             i, n = line.split("\t", 1)
             if int(i) < 0:
@@ -501,7 +571,7 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
 
     outputs: {"ret": [{"call", "fn", "v"}] in run.py's encoding (integer returns {"w": "i<N>"} at the
     C width, fp {"w": "f32"|"f64"|"f80"|...}, an aggregate bare hex; void, pointer and samples that
-    did not return give no record), "end": outcome}; measured: [{"h": None, "w": the register's rail
+    did not return give no record), "end": outcome, "loops": the T2 cutoff records}; measured: [{"h": None, "w": the register's rail
     type, "v": hex}] per reached measure site, in order; rotations: the site events of kind theta,
     phi, invert_begin and invert_end verbatim, in order; kept/clean: None (the C program has no
     rails); violations: [] or [{"what": "c_oracle", "h": None, "msg": reason}]."""
@@ -513,7 +583,8 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
             measured.append({"h": None, "w": _measure_rail(o1, e["fn"], e["site"]), "v": e["reg"]})
         else:
             rotations.append(dict(e))
-    return RunResult(side="c", sample=sr.sample, outputs={"ret": _typed_ret(spec, sr), "end": sr.outcome},
+    return RunResult(side="c", sample=sr.sample,
+                     outputs={"ret": _typed_ret(spec, sr), "end": sr.outcome, "loops": list(sr.loops)},
                      measured=measured, rotations=rotations, kept=None, clean=None,
                      violations=[{"what": "c_oracle", "h": None, "msg": sr.reason}] if sr.failed else [])
 
@@ -553,12 +624,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--samples", required=True, help="SampleSet JSON file, or a JSON list of samples")
     ap.add_argument("--timeout-ms", type=int, default=DEFAULT_TIMEOUT_MS)
     ap.add_argument("--tripcap", type=int, default=DEFAULT_TRIPCAP)
-    ap.add_argument("--json", help="write [{sample, outcome, failed, reason, notes, events}] here")
+    ap.add_argument("--k", default="", help="per-function cutoffs fn=k,... (cq-lower's -cq-k)")
+    ap.add_argument("--k-default", type=int, help="global cutoff (cq-lower's -cq-k-default)")
+    ap.add_argument("--json", help="write [{sample, outcome, failed, reason, notes, events, loops}] here")
     a = ap.parse_args(argv)
+    kmap = {f: int(v) for f, v in (x.split("=", 1) for x in a.k.split(",") if x)}
     spec = from_json(DriverSpec, Path(a.driver).read_text())
     data = json.loads(Path(a.samples).read_text())
     samples = data["samples"] if isinstance(data, dict) else data
-    runs = run_samples(_example_o1(a.program), spec, samples, a.timeout_ms, a.tripcap)
+    runs = run_samples(_example_o1(a.program), spec, samples, a.timeout_ms, a.tripcap, kmap or None, a.k_default)
     out = [dataclasses.asdict(r) for r in runs]
     if a.json:
         Path(a.json).write_text(json.dumps(out, indent=1))

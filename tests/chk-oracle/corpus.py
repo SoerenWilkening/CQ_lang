@@ -80,8 +80,8 @@ def main() -> int:
                 problems.append("no site event")
             if not evs["ret"] and outc.get("ret"):
                 problems.append("no ret event")
-            if has_loop and not evs["trip"]:
-                problems.append("loop but no trip event")
+            if has_loop and not evs["trip"] and not any(r.loops for r in runs):
+                problems.append("loop but no trip event")   # a sample cut at K has no exit (cq-8ay)
             if problems:
                 bad += 1
             print(f"{name}: {n} samples, outcomes {dict(outc)}, events {dict(evs)}"

@@ -7,6 +7,12 @@
 //   * cq_theta_* / cq_measure_* replaced by the identity, each call site logging a `site` event
 //     (fn, site ordinal, kind, angle, register value); cq_phi and __cq_invert_begin/end log and vanish;
 //   * every loop counting its trips (`trip` event per activation, a guard skip reports 0);
+//   * every quantum-exit loop and quantum-depth recursion stopped after K trips (CR §6 at eb8a11a,
+//     ruling cq-1di; bead cq-8ay): the trip counter that reaches K+1 trips begun ends the sample with
+//     a capped `kloop` record (cq-arch T2), and every activation that ends by itself first gets an
+//     uncapped one. Which loops and recursions are quantum is the circuit's own answer: the pass's
+//     taint (cq::computeTaint) and rule-14 classification (cq::loops::classify), linked in, run on
+//     the pristine module and tracked per specialization at run time (see KInfo);
 //   * the operations whose native behaviour differs from CR §2, or is undefined in LLVM, rewritten to
 //     their §2 totalization: div/rem by 0 and INT_MIN / -1, shift amounts >= W (mod W), fptosi/fptoui
 //     (CR §2 row by row, in the runtime), maxnum/minnum (the measured x86 formula), fmuladd unfused,
@@ -20,7 +26,12 @@
 // The instrumented module is compiled at -O0, so nothing re-optimizes the C program after this pass.
 // An IR shape this pass cannot handle is a fatal "cq-oracle: unimplemented: ..." error, never a skip.
 
+#include "cq/Loops.h"
+#include "cq/Taint.h"
+
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SCCIterator.h"
+#include "llvm/Analysis/CallGraph.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Analysis/LoopInfo.h"
@@ -49,7 +60,9 @@
 #include <cstdlib>
 
 #include "../rt/cq_standin.h"
+#include <functional>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -60,6 +73,11 @@ static cl::opt<std::string> StubsFile("cq-oracle-stubs",
                                       cl::init(""));
 static cl::list<std::string> Entries("cq-oracle-entries", cl::CommaSeparated,
                                      cl::desc("functions whose results calls in __cqo_* driver functions log"));
+
+static cl::list<std::string> KPerFunction("cq-oracle-k", cl::CommaSeparated, cl::value_desc("fn=k"),
+                                          cl::desc("per-function loop cutoff K, as cq-lower's -cq-k"));
+static cl::opt<unsigned> KGlobal("cq-oracle-k-default", cl::value_desc("k"),
+                                 cl::desc("global loop cutoff K, as cq-lower's -cq-k-default"));
 
 namespace {
 
@@ -117,6 +135,281 @@ public:
   AllocaInst *entryAlloca(Function &F, Type *T) {
     IRBuilder<> B(&*F.getEntryBlock().getFirstInsertionPt());
     return B.CreateAlloca(T);
+  }
+
+  // ---------------------------------------------------------------- the cutoff K (CR §6, rule 14)
+  // Which loops and recursions run for a cutoff is the circuit's answer, so the oracle asks the same
+  // analysis the pass asks: cq::computeTaint over the pristine module (before any edit here, before
+  // the stubs give bodies to declarations), then cq::loops::classify per loop and specialization.
+  // A function's body is shared by its specializations, so the C program carries the current one at
+  // run time: spec ids 1..N (0: classical, no taint), a frame slot read at entry from the global
+  // __cqo_spec_next, which every call stores first (the callee's specialization for this caller's,
+  // calleeSpecialization; -1 from the driver means the callee's entry specialization).
+  //  - A loop is capped where classify says QuantumExit (ClassicalBound and
+  //    ClassicalBoundQuantumExit run to completion; rule 14 gives them no cutoff).
+  //  - A recursive call (callee in the caller's call-graph cycle) is a level of a quantum-depth
+  //    recursion when taint makes it one: under a quantum predicate, or in a level clone already
+  //    (depth > 0). An activation is entered by a call from outside the cycle whose callee
+  //    specialization reaches such a level call through the cycle (or by the driver's call of a
+  //    cycle member whose entry specialization does).
+  // Indirect calls carry 0 (calleeSpecialization is asked for direct calls only).
+  struct KInfo {
+    bool on = false;
+    unsigned N = 0;
+    DenseMap<const Function *, unsigned> entry;                 // entry specialization id
+    DenseMap<const Function *, bool> entryRec;                  // it is a quantum-depth recursion
+    DenseMap<const Function *, bool> hasSpec;
+    DenseMap<const BasicBlock *, std::vector<int32_t>> qexit;   // header -> QuantumExit per spec id
+    DenseMap<const CallBase *, std::vector<int32_t>> callee;    // call -> callee spec id per spec id
+    DenseMap<const CallBase *, std::vector<int32_t>> level;     // call -> recursion level per spec id
+    DenseMap<const CallBase *, std::vector<int32_t>> recEntry;  // call -> enters an activation
+  } KI;
+  GlobalVariable *SpecNext = nullptr;
+  DenseMap<Function *, AllocaInst *> specSlots;
+
+  static bool callsCqSurface(const Module &M) {
+    for (const Function &F : M) {
+      if (siteKind(F.getName()) < 0)
+        continue;
+      for (const Use &U : F.uses())
+        if (const auto *CB = dyn_cast<CallBase>(U.getUser()); CB && CB->isCallee(&U))
+          return true;
+    }
+    return false;
+  }
+
+  unsigned resolveK(const Function &F) {
+    // CR §0: per-function flag, CQ_K(f, k) (the `used` constant __cq_k_<f>), global flag, 4.
+    for (const std::string &item : KPerFunction) {
+      auto [fn, k] = StringRef(item).split('=');
+      unsigned v = 0;
+      if (fn.empty() || k.getAsInteger(10, v) || v == 0)
+        report_fatal_error(Twine("cq-oracle: -cq-oracle-k: expected <fn>=<k>, got '") + item + "'", false);
+      if (fn == F.getName())
+        return v;
+    }
+    if (const GlobalVariable *GV = M.getGlobalVariable(("__cq_k_" + F.getName()).str(), true))
+      if (GV->hasInitializer())
+        if (auto *CI = dyn_cast<ConstantInt>(GV->getInitializer()))
+          if (CI->getZExtValue() > 0)
+            return unsigned(CI->getZExtValue());
+    if (KGlobal.getNumOccurrences() && KGlobal > 0)
+      return KGlobal;
+    return 4;
+  }
+
+  static bool directBody(const CallBase &CB) {
+    const Function *G = CB.getCalledFunction();
+    return G && !G->isDeclaration() && !G->isIntrinsic();
+  }
+
+  void analyseCutoffs() {
+    if (!callsCqSurface(M))
+      return;
+    cq::TaintInfo T = cq::computeTaint(M, cq::TaintOptions{});
+    std::vector<const cq::Specialization *> byId(1, nullptr);
+    DenseMap<const cq::Specialization *, unsigned> idOf;
+    for (const cq::Specialization &S : T.specializations())
+      if (S.F && !S.F->isDeclaration() && !isDriverFn(*S.F)) {
+        idOf[&S] = byId.size();
+        byId.push_back(&S);
+      }
+    KI.N = byId.size() - 1;
+    if (KI.N == 0)
+      return;
+    KI.on = true;
+    const unsigned W = KI.N + 1;
+
+    DenseMap<const Function *, unsigned> scc;
+    {
+      CallGraph CG(M);
+      unsigned k = 0;
+      for (auto I = scc_begin(&CG); !I.isAtEnd(); ++I) {
+        if (I->size() < 2 && !I.hasCycle())
+          continue;
+        ++k;
+        for (CallGraphNode *n : *I)
+          if (Function *F = n->getFunction())
+            scc[F] = k;
+      }
+    }
+    auto recursive = [&](const Function *F, const Function *G) {
+      auto a = scc.find(F), b = scc.find(G);
+      return a != scc.end() && b != scc.end() && a->second == b->second;
+    };
+
+    std::map<const Function *, std::vector<unsigned>> byFn;
+    for (unsigned i = 1; i <= KI.N; ++i)
+      byFn[byId[i]->F].push_back(i);
+    for (auto &[Fc, ids] : byFn) {
+      Function &F = *const_cast<Function *>(Fc);
+      KI.hasSpec[&F] = true;
+      DominatorTree DT(F);
+      LoopInfo LI(DT);
+      for (unsigned i : ids) {
+        const cq::Specialization &S = *byId[i];
+        if (S.isEntry())
+          KI.entry[&F] = i;
+        for (Loop *L : LI.getLoopsInPreorder())
+          if (cq::loops::classify(*L, T, S) == cq::loops::Case::QuantumExit) {
+            auto &v = KI.qexit[L->getHeader()];
+            v.resize(W, 0);
+            v[i] = 1;
+          }
+        for (Instruction &I : instructions(F)) {
+          auto *CB = dyn_cast<CallBase>(&I);
+          if (!CB || !directBody(*CB))
+            continue;
+          const Function *G = CB->getCalledFunction();
+          const cq::Specialization *cs = T.calleeSpecialization(*CB, S);
+          int32_t c = 0;
+          if (cs && idOf.count(cs))
+            c = idOf[cs];
+          bool lvl = recursive(&F, G) && (T.controlTainted(CB->getParent(), S) || S.depth > 0);
+          if (lvl && c == 0 && G == &F)
+            c = i;  // a level past the clones taint built: the frame keeps its specialization
+          if (c) {
+            auto &v = KI.callee[CB];
+            v.resize(W, 0);
+            v[i] = c;
+          }
+          if (lvl) {
+            auto &v = KI.level[CB];
+            v.resize(W, 0);
+            v[i] = 1;
+          }
+        }
+      }
+    }
+    // A specialization of a cycle member is a quantum-depth recursion when a level call is reachable
+    // from it through calls inside its cycle.
+    std::map<unsigned, bool> memo;
+    std::function<bool(unsigned, std::set<unsigned> &)> qdepth = [&](unsigned i, std::set<unsigned> &seen) {
+      if (memo.count(i))
+        return memo[i];
+      if (!seen.insert(i).second)
+        return false;
+      Function *F = byId[i]->F;
+      bool r = false;
+      for (Instruction &I : instructions(*F)) {
+        auto *CB = dyn_cast<CallBase>(&I);
+        if (!CB || !directBody(*CB) || !recursive(F, CB->getCalledFunction()))
+          continue;
+        auto l = KI.level.find(CB);
+        if (l != KI.level.end() && l->second[i]) {
+          r = true;
+          break;
+        }
+        auto c = KI.callee.find(CB);
+        if (c != KI.callee.end() && c->second[i] && qdepth(c->second[i], seen)) {
+          r = true;
+          break;
+        }
+      }
+      return r;
+    };
+    auto isQDepth = [&](unsigned i) {
+      if (!memo.count(i)) {
+        std::set<unsigned> seen;
+        memo[i] = qdepth(i, seen);
+      }
+      return memo[i];
+    };
+    for (auto &[CB, v] : KI.callee) {
+      const Function *F = CB->getFunction(), *G = CB->getCalledFunction();
+      if (!scc.count(G) || recursive(F, G))
+        continue;
+      for (unsigned i = 1; i <= KI.N; ++i)
+        if (v[i] && isQDepth(v[i])) {
+          auto &e = KI.recEntry[CB];
+          e.resize(W, 0);
+          e[i] = 1;
+        }
+    }
+    for (auto &[F, i] : KI.entry)
+      if (scc.count(F) && isQDepth(i))
+        KI.entryRec[F] = true;
+  }
+
+  // vals[spec id] at run time: a constant when they agree, else a load from a constant table.
+  Value *perSpec(IRBuilder<> &B, Function &F, const std::vector<int32_t> &vals) {
+    bool same = true;
+    for (int32_t v : vals)
+      same = same && v == vals[0];
+    if (same)
+      return B.getInt32(vals.empty() ? 0 : vals[0]);
+    auto *AT = ArrayType::get(I32, vals.size());
+    std::vector<Constant *> cs;
+    for (int32_t v : vals)
+      cs.push_back(ConstantInt::get(I32, v));
+    auto *gv = new GlobalVariable(M, AT, true, GlobalValue::PrivateLinkage, ConstantArray::get(AT, cs),
+                                  "__cqo_spec_tab");
+    Value *s = B.CreateLoad(I32, specSlot(F));
+    return B.CreateLoad(I32, B.CreateInBoundsGEP(AT, gv, {B.getInt32(0), s}));
+  }
+
+  // The frame's specialization id, read once at entry.
+  AllocaInst *specSlot(Function &F) {
+    auto it = specSlots.find(&F);
+    if (it != specSlots.end())
+      return it->second;
+    AllocaInst *slot = entryAlloca(F, I32);
+    IRBuilder<> B(slot->getNextNode());
+    Value *s0 = B.CreateLoad(I32, SpecNext);
+    Value *fromDriver = B.CreateICmpEQ(s0, B.getInt32(-1));
+    Value *s = B.CreateSelect(fromDriver, B.getInt32(KI.entry.lookup(&F)), s0);
+    B.CreateStore(s, slot);
+    if (KI.entryRec.lookup(&F))
+      B.CreateCall(hook("__cqo_rec_enter", Void, {Ptr, I64, I32}),
+                   {str((F.getName() + ":recursion").str()), B.getInt64(resolveK(F)),
+                    B.CreateZExt(fromDriver, I32)});
+    specSlots[&F] = slot;
+    return slot;
+  }
+
+  // Every call stores the callee's specialization first; recursion levels and activations get their
+  // hooks around the call.
+  void specFlow(Function &F) {
+    if (!KI.on)
+      return;
+    if (KI.hasSpec.lookup(&F))
+      specSlot(F);
+    std::vector<CallBase *> calls;
+    for (Instruction &I : instructions(F))
+      if (auto *CB = dyn_cast<CallBase>(&I)) {
+        if (CB->isInlineAsm() || isa<IntrinsicInst>(CB))
+          continue;
+        if (Function *G = CB->getCalledFunction())
+          if (G->getName().starts_with("__cqo_"))
+            continue;
+        calls.push_back(CB);
+      }
+    FunctionCallee enter = hook("__cqo_rec_enter", Void, {Ptr, I64, I32});
+    FunctionCallee exitH = hook("__cqo_rec_exit", Void, {I32});
+    FunctionCallee down = hook("__cqo_rec_down", Void, {I32});
+    FunctionCallee up = hook("__cqo_rec_up", Void, {I32});
+    for (CallBase *CB : calls) {
+      IRBuilder<> B(CB);
+      auto c = KI.callee.find(CB);
+      B.CreateStore(c == KI.callee.end() ? (Value *)B.getInt32(0) : perSpec(B, F, c->second), SpecNext);
+      if (isa<InvokeInst>(CB) || isa<CallBrInst>(CB))
+        continue;  // notes() already refused them
+      auto e = KI.recEntry.find(CB);
+      if (e != KI.recEntry.end()) {
+        Function *G = CB->getCalledFunction();
+        Value *on = perSpec(B, F, e->second);
+        B.CreateCall(enter, {str((G->getName() + ":recursion").str()), B.getInt64(resolveK(*G)), on});
+        IRBuilder<> A(CB->getNextNode());
+        A.CreateCall(exitH, {on});
+      }
+      auto l = KI.level.find(CB);
+      if (l != KI.level.end()) {
+        Value *on = perSpec(B, F, l->second);
+        B.CreateCall(down, {on});
+        IRBuilder<> A(CB->getNextNode());
+        A.CreateCall(up, {on});
+      }
+    }
   }
 
   // ---------------------------------------------------------------- poison and §2 arithmetic
@@ -465,7 +758,10 @@ public:
   void registerGlobals() {
     std::vector<GlobalVariable *> gvs;
     for (GlobalVariable &G : M.globals()) {
-      if (G.getName().starts_with("llvm.") || G.getName().starts_with("__cqo_str"))
+      // The instrumentation's own globals (a driver's function-local static is "__cqo_drv_main.<v>",
+      // a program object like any other, so the test is by exact prefix).
+      if (G.getName().starts_with("llvm.") || G.getName().starts_with("__cqo_str") ||
+          G.getName().starts_with("__cqo_spec_tab") || G.getName() == "__cqo_spec_next")
         continue;
       if (!G.getValueType()->isSized())
         continue;
@@ -594,9 +890,10 @@ public:
     if (loops.empty())
       return;
     FunctionCallee tick = hook("__cqo_tick", Void, {});
-    FunctionCallee trip = hook("__cqo_trip", Void, {Ptr, I64});
-    // edge -> [(loop id, counter, minus one)]; a nullptr counter is a guard skip (n = 0).
-    struct Rep { Constant *id; AllocaInst *cnt; bool minusOne; };
+    FunctionCallee trip = hook("__cqo_trip", Void, {Ptr, I64, I32});
+    FunctionCallee kcheck = hook("__cqo_kcheck", Void, {Ptr, I64, I64, I32});
+    // edge -> [(loop id, counter, minus one, quantum-exit table)]; a nullptr counter is a guard skip.
+    struct Rep { Constant *id; AllocaInst *cnt; bool minusOne; const std::vector<int32_t> *kq; };
     std::map<std::pair<BasicBlock *, BasicBlock *>, std::vector<Rep>> edges;
     std::vector<std::pair<std::pair<BasicBlock *, BasicBlock *>, unsigned>> order;
     auto add = [&](BasicBlock *a, BasicBlock *b, Rep r) {
@@ -605,6 +902,12 @@ public:
         order.push_back({key, (unsigned)order.size()});
       edges[key].push_back(r);
     };
+    // The cutoff check (rule 14: the exit test after the K-th body): at the header, or, for a loop
+    // that tests at a header that is not a latch, on the header's edges into the loop (a header run
+    // that exits begins no trip, T1.2).
+    struct Check { Constant *id; AllocaInst *cnt; const std::vector<int32_t> *kq; };
+    std::vector<std::pair<BasicBlock *, Check>> headerChecks;
+    std::vector<std::pair<std::pair<BasicBlock *, BasicBlock *>, Check>> edgeChecks;
     std::vector<std::pair<BasicBlock *, AllocaInst *>> headers;
     // Counters live in the entry block, zeroed once at function entry, reset on every exit.
     for (Loop *L : loops) {
@@ -620,6 +923,23 @@ public:
       }
       BasicBlock *H = L->getHeader();
       headers.push_back({H, cnt});
+      const std::vector<int32_t> *kq = nullptr;
+      if (KI.on) {
+        auto q = KI.qexit.find(H);
+        if (q != KI.qexit.end())
+          kq = &q->second;
+      }
+      if (kq) {
+        if (L->isLoopExiting(H) && !L->isLoopLatch(H)) {
+          for (BasicBlock *S : successors(H))
+            if (L->contains(S) && !std::count_if(edgeChecks.begin(), edgeChecks.end(), [&](auto &e) {
+                  return e.first == std::make_pair(H, S);
+                }))
+              edgeChecks.push_back({{H, S}, Check{cid, cnt, kq}});
+        } else {
+          headerChecks.push_back({H, Check{cid, cnt, kq}});
+        }
+      }
       SmallVector<Loop::Edge, 4> exits;
       L->getExitEdges(exits);
       for (auto &e : exits) {
@@ -628,7 +948,7 @@ public:
           unimplemented("loop exit from indirectbr/callbr", from->getTerminator());
         // A trip is begun at each header execution, except a final header run that only exits:
         // an exit from a header that is not a latch.
-        add(from, to, Rep{cid, cnt, from == H && !L->isLoopLatch(H)});
+        add(from, to, Rep{cid, cnt, from == H && !L->isLoopLatch(H), kq});
       }
       // Guard skip: an entering edge whose branch's other successor is an exit block reports 0.
       SmallVector<BasicBlock *, 4> exitBlocks;
@@ -643,14 +963,21 @@ public:
         if (other == H)
           continue;
         if (is_contained(exitBlocks, other))
-          add(P, other, Rep{cid, nullptr, false});
+          add(P, other, Rep{cid, nullptr, false, kq});
       }
     }
+    auto kqValue = [&](IRBuilder<> &B, const std::vector<int32_t> *kq) -> Value * {
+      return kq ? perSpec(B, F, *kq) : (Value *)B.getInt32(0);
+    };
     for (auto &h : headers) {
       IRBuilder<> B(&*h.first->getFirstInsertionPt());
       Value *v = B.CreateLoad(I64, h.second);
-      B.CreateStore(B.CreateAdd(v, B.getInt64(1)), h.second);
+      Value *n = B.CreateAdd(v, B.getInt64(1));
+      B.CreateStore(n, h.second);
       B.CreateCall(tick, {});
+      for (auto &c : headerChecks)
+        if (c.first == h.first)
+          B.CreateCall(kcheck, {c.second.id, n, B.getInt64(resolveK(F)), kqValue(B, c.second.kq)});
     }
     for (auto &o : order) {
       auto key = o.first;
@@ -658,15 +985,21 @@ public:
       IRBuilder<> B(mid->getTerminator());
       for (Rep &r : edges[key]) {
         if (!r.cnt) {
-          B.CreateCall(trip, {r.id, B.getInt64(0)});
+          B.CreateCall(trip, {r.id, B.getInt64(0), kqValue(B, r.kq)});
           continue;
         }
         Value *n = B.CreateLoad(I64, r.cnt);
         if (r.minusOne)
           n = B.CreateSub(n, B.getInt64(1));
-        B.CreateCall(trip, {r.id, n});
+        B.CreateCall(trip, {r.id, n, kqValue(B, r.kq)});
         B.CreateStore(B.getInt64(0), r.cnt);
       }
+    }
+    for (auto &c : edgeChecks) {
+      BasicBlock *mid = splitEdges(c.first.first, c.first.second);
+      IRBuilder<> B(mid->getTerminator());
+      B.CreateCall(kcheck, {c.second.id, B.CreateLoad(I64, c.second.cnt), B.getInt64(resolveK(F)),
+                            kqValue(B, c.second.kq)});
     }
   }
 
@@ -808,6 +1141,12 @@ public:
   }
 
   void run() {
+    analyseCutoffs();  // on the pristine module: taint answers for the program as clang wrote it
+    if (KI.on) {
+      SpecNext = M.getGlobalVariable("__cqo_spec_next");
+      if (!SpecNext)
+        SpecNext = new GlobalVariable(M, I32, false, GlobalValue::ExternalLinkage, nullptr, "__cqo_spec_next");
+    }
     stubs();
     std::vector<Function *> defined;
     for (Function &F : M)
@@ -839,6 +1178,9 @@ public:
     for (Function *F : defined)
       if (!isDriverFn(*F))
         trips(*F);
+    for (Function *F : defined)
+      if (!isDriverFn(*F))
+        specFlow(*F);
     registerGlobals();
     // The runtime owns `main`; a program's own main stays callable under another name.
     if (Function *Mn = M.getFunction("main"))
