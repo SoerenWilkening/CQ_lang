@@ -273,9 +273,12 @@ Case classify(const Loop &L, const TaintInfo &T, const Specialization &S) {
         return false;
     return true;
   };
+  // Control dependence of X on Y inside the loop: an edge of Y that leaves the loop is Y's own exit,
+  // classified on its own, and does not make X's exit quantum (cq-hggf, 121: the classical exit
+  // n + 1 == cap is reached only when the quantum exit s[n] == 0 is not taken).
   auto postDomLive = [&](const BasicBlock *X, const BasicBlock *Y) {
     for (const BasicBlock *s : successors(Y))
-      if (!deadEnd(s) && !(s == X || PDT.dominates(X, s)))
+      if (!deadEnd(s) && L.contains(s) && !(s == X || PDT.dominates(X, s)))
         return false;
     return true;
   };
