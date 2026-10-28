@@ -52,14 +52,14 @@ def main() -> int:
     global SAMPLESET
     ap = argparse.ArgumentParser()
     ap.add_argument("names", nargs="*")
-    ap.add_argument("-j", type=int, default=8)
+    ap.add_argument("-j", type=int, default=oracle._jobs_cap())   # $CQCHECK_JOBS when set
     ap.add_argument("--sampleset", action="store_true", help="run chk-drivers' SampleSet instead of the stress set")
     a = ap.parse_args()
     SAMPLESET = a.sampleset
     names = a.names or fx.names()
     bad = 0
     totals = collections.Counter()
-    with cf.ProcessPoolExecutor(a.j, initializer=_init, initargs=(SAMPLESET,)) as ex:
+    with cf.ProcessPoolExecutor(max(1, min(a.j, oracle._jobs_cap())), initializer=_init, initargs=(SAMPLESET,)) as ex:
         for name, n, runs, err in ex.map(one, names):
             if err:
                 bad += 1

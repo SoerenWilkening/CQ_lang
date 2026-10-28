@@ -134,6 +134,21 @@ void __cqo_alloca(void *p, uint64_t n) {
     memset(p, 0, n); /* an uninitialized local reads 0 */
 }
 
+/* An object of the current frame that already holds its value: a byval parameter copy. */
+void __cqo_object(void *p, uint64_t n) { ov_push(&stack_objs, (uintptr_t)p, (uintptr_t)p + n); }
+
+/* va_start(ap) on x86-64 SysV: ap = {i32 gp_offset, i32 fp_offset, ptr overflow_arg_area,
+ * ptr reg_save_area}. The register save area (6 GP + 8 SSE registers) and the caller's stack-passed
+ * variadic arguments (`ovf` bytes, OracleInstr.cpp variadicStackBytes) are objects of this frame. */
+int64_t __cqo_va_bytes;
+void __cqo_va_start(void *ap, int64_t ovf) {
+    void *overflow, *regs;
+    memcpy(&overflow, (char *)ap + 8, sizeof overflow);
+    memcpy(&regs, (char *)ap + 16, sizeof regs);
+    ov_push(&stack_objs, (uintptr_t)regs, (uintptr_t)regs + 176);
+    if (ovf > 0) ov_push(&stack_objs, (uintptr_t)overflow, (uintptr_t)overflow + (uint64_t)ovf);
+}
+
 void __cqo_zero(void *p, int64_t n) {
     const obj *o = find_obj((uintptr_t)p);
     if (!o) return;

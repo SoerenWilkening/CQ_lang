@@ -42,7 +42,8 @@ trip event (the loop never took an exit edge).
 §2 and §6 in the C program: div/rem by 0 and INT_MIN/-1, shifts >= W (amount mod W), fptosi/fptoui
 (row by row), maxnum/minnum, fmuladd unfused, abs(INT_MIN), ctlz/cttz(0) are rewritten to the table;
 allocas, lifetime starts and heap blocks read 0 until written; a load outside every object (globals,
-allocas, heap blocks) reads 0 and a store there is dropped. Threads collapse (rule 24).
+allocas, heap blocks, byval parameter copies, the register save and overflow areas va_start points
+at) reads 0 and a store there is dropped. Threads collapse (rule 24).
 
 A function nothing defines (after libc/libm) gets the checker's model (OracleInstr.cpp ``stubs``):
 FNV-1a-64 over the name bytes, then ``h = (h ^ w) * 0x100000001b3`` per 64-bit word of each non-pointer
@@ -174,7 +175,7 @@ def toolchain() -> Tuple[Path, Path]:
         cxx = [_tool("clang++"), *flags, "-fno-rtti", "-fPIC", "-O1", "-I", str(PASS / "include")]
         units = [cpp] + PASS_SOURCES
         objs = [d / f"{k}-{u.stem}.o" for k, u in enumerate(units)]
-        with ThreadPoolExecutor(max_workers=len(units)) as ex:
+        with ThreadPoolExecutor(max_workers=min(len(units), _jobs_cap())) as ex:
             list(ex.map(lambda uo: _run([*cxx, "-c", str(uo[0]), "-o", str(uo[1])],
                                         f"compiling {uo[0].name} for the oracle plugin"), zip(units, objs)))
         _run([_tool("clang++"), "-shared", "-undefined", "dynamic_lookup", *map(str, objs),
@@ -466,9 +467,18 @@ def run_samples(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]],
     return out  # type: ignore[return-value]
 
 
-# The samples run in up to PARTS runner processes at once (each forks one child per sample in turn);
-# a part has at least MIN_PART samples.
-PARTS = max(1, min(8, os.cpu_count() or 1))
+def _jobs_cap() -> int:
+    """$CQCHECK_JOBS when set (the machine-wide cap on parallel processes), else the CPU count."""
+    try:
+        j = int(os.environ.get("CQCHECK_JOBS", ""))
+    except ValueError:
+        j = 0
+    return max(1, j) if j else (os.cpu_count() or 1)
+
+
+# The samples run in up to PARTS runner processes at once (each forks one child per sample in turn):
+# min(8, CPU count), and never more than $CQCHECK_JOBS; a part has at least MIN_PART samples.
+PARTS = max(1, min(8, os.cpu_count() or 1, _jobs_cap()))
 MIN_PART = 16
 
 

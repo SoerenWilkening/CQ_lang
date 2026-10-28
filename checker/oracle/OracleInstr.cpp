@@ -18,7 +18,8 @@
 //     (CR §2 row by row, in the runtime), maxnum/minnum (the measured x86 formula), fmuladd unfused,
 //     abs/ctlz/cttz with their poison flag cleared, every poison-generating flag dropped;
 //   * memory per CR §6: allocas and lifetime starts zeroed, heap blocks zeroed (realloc growth too),
-//     every load/store/memory intrinsic bounds-checked over an object table (globals, allocas, heap):
+//     every load/store/memory intrinsic bounds-checked over an object table (globals, allocas, heap,
+//     byval parameter copies, the va_start register save and overflow areas):
 //     a byte outside every object reads 0, a store to it is dropped;
 //   * threads collapsed (pthread_create runs the start routine to completion, rule 24), noreturn
 //     callees, raise and `unreachable` noted in the sample status;
@@ -639,6 +640,22 @@ public:
         B.CreateCall(hook("__cqo_alloca", Void, {Ptr, I64}), {AI, allocaBytes(B, AI)});
       }
     }
+    // A byval parameter is the callee's own copy of the argument (CR §6: an object of this frame,
+    // holding the caller's value, so registered without zeroing), released with the frame.
+    for (Argument &A : F.args())
+      if (A.hasByValAttr()) {
+        B.SetInsertPoint(cursor->getNextNode());
+        cursor = B.CreateCall(hook("__cqo_object", Void, {Ptr, I64}),
+                              {&A, B.getInt64(DL.getTypeAllocSize(A.getParamByValType()).getFixedValue())});
+      }
+    // A variadic function's frame learns its caller's stack-passed variadic bytes at entry (the
+    // overflow area va_start points into); va_start registers that area and the register save area.
+    VaBytes = nullptr;
+    if (F.isVarArg()) {
+      B.SetInsertPoint(cursor->getNextNode());
+      VaBytes = B.CreateLoad(I64, vaBytesGlobal());
+      cursor = cast<Instruction>(VaBytes);
+    }
     for (Instruction *R : rets) {
       if (auto *CI = dyn_cast_or_null<CallInst>(R->getPrevNode()))
         if (CI->isMustTailCall())
@@ -693,7 +710,80 @@ public:
     }
   }
 
+  // ---------------------------------------------------------------- varargs (CR §6 objects)
+  // x86-64 SysV: va_start points a va_list at the register save area (6 GP + 8 SSE registers, 176
+  // bytes, in the callee's frame) and at the overflow area (the caller's stack-passed arguments past
+  // the named ones). Neither is an alloca, global or heap block, so the oracle registers both as
+  // objects of the variadic frame. The overflow area's size is known only at the call: every call
+  // through a variadic function type stores the bytes its variadic arguments take on the stack into
+  // __cqo_va_bytes, and the callee reads it at entry.
+  Value *VaBytes = nullptr;
+  GlobalVariable *VaBytesGV = nullptr;
+
+  GlobalVariable *vaBytesGlobal() {
+    if (!VaBytesGV) {
+      VaBytesGV = M.getGlobalVariable("__cqo_va_bytes");
+      if (!VaBytesGV)
+        VaBytesGV = new GlobalVariable(M, I64, false, GlobalValue::ExternalLinkage, nullptr, "__cqo_va_bytes");
+    }
+    return VaBytesGV;
+  }
+
+  // The bytes the variadic arguments of CB occupy in the caller's outgoing stack area: the SysV
+  // classification over the IR argument types (clang has already lowered the C types). Named
+  // arguments use registers first; a variadic argument that finds no register goes to the stack,
+  // 8-byte slots, 16-aligned for a 16-aligned type. A type outside the table is counted as stack.
+  uint64_t variadicStackBytes(CallBase *CB) {
+    FunctionType *FT = CB->getFunctionType();
+    unsigned gp = 0, sse = 0;
+    uint64_t off = 0;
+    for (unsigned i = 0; i < CB->arg_size(); ++i) {
+      Value *a = CB->getArgOperand(i);
+      Type *T = a->getType();
+      bool variadic = i >= FT->getNumParams();
+      bool stack = false;
+      uint64_t sz = 0, al = 8;
+      if (CB->isByValArgument(i)) {
+        Type *BT = CB->getParamByValType(i);
+        stack = true;
+        sz = DL.getTypeAllocSize(BT).getFixedValue();
+        al = std::max<uint64_t>(8, CB->getParamAlign(i).valueOrOne().value());
+      } else if (T->isPointerTy() || (T->isIntegerTy() && T->getIntegerBitWidth() <= 64)) {
+        if (gp < 6)
+          ++gp;
+        else
+          stack = true, sz = 8;
+      } else if (T->isIntegerTy(128)) {
+        if (gp < 5)
+          gp += 2;
+        else
+          stack = true, sz = 16, al = 16;
+      } else if (T->isFloatTy() || T->isDoubleTy() || T->isHalfTy() || T->isBFloatTy() || T->isFP128Ty() ||
+                 (T->isVectorTy() && DL.getTypeAllocSize(T).getFixedValue() <= 16)) {
+        if (sse < 8)
+          ++sse;
+        else
+          stack = true, sz = DL.getTypeAllocSize(T).getFixedValue(),
+          al = std::max<uint64_t>(8, DL.getABITypeAlign(T).value());
+      } else {
+        // x86_fp80 and anything else: memory class.
+        stack = true;
+        sz = DL.getTypeAllocSize(T).getFixedValue();
+        al = std::max<uint64_t>(8, DL.getABITypeAlign(T).value());
+      }
+      if (!stack || !variadic)
+        continue;  // a named stack argument lies before the overflow area va_start sees
+      off = alignTo(off, al) + alignTo(sz, 8);
+    }
+    // va_arg may align the area's pointer up by 8 for a 16-aligned type.
+    return off ? off + 8 : 0;
+  }
+
   void memoryCall(CallBase *CB) {
+    if (CB->getFunctionType()->isVarArg() && !isa<IntrinsicInst>(CB)) {
+      IRBuilder<> B(CB);
+      B.CreateStore(B.getInt64(variadicStackBytes(CB)), vaBytesGlobal());
+    }
     if (auto *MI = dyn_cast<MemIntrinsic>(CB)) {
       IRBuilder<> B(CB);
       Value *n = B.CreateZExtOrTrunc(MI->getLength(), I64);
@@ -719,6 +809,13 @@ public:
         // An object entering its lifetime is indeterminate again: 0 (CR §6).
         IRBuilder<> B(II);
         B.CreateCall(hook("__cqo_zero", Void, {Ptr, I64}), {II->getArgOperand(1), II->getArgOperand(0)});
+        return;
+      }
+      case Intrinsic::vastart: {
+        if (!VaBytes)
+          unimplemented("va_start outside a variadic function", II);
+        IRBuilder<> B(II->getNextNode());
+        B.CreateCall(hook("__cqo_va_start", Void, {Ptr, I64}), {II->getArgOperand(0), VaBytes});
         return;
       }
       case Intrinsic::memset_element_unordered_atomic:
@@ -761,7 +858,8 @@ public:
       // The instrumentation's own globals (a driver's function-local static is "__cqo_drv_main.<v>",
       // a program object like any other, so the test is by exact prefix).
       if (G.getName().starts_with("llvm.") || G.getName().starts_with("__cqo_str") ||
-          G.getName().starts_with("__cqo_spec_tab") || G.getName() == "__cqo_spec_next")
+          G.getName().starts_with("__cqo_spec_tab") || G.getName() == "__cqo_spec_next" ||
+          G.getName() == "__cqo_va_bytes")
         continue;
       if (!G.getValueType()->isSized())
         continue;

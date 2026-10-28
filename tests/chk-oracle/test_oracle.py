@@ -165,6 +165,45 @@ int store_q(unsigned x0, double t) { unsigned x = x0; cq_theta(&x, t); int a[2] 
         self.assertEqual(got, ["0x0", "0x0", "0x3", "0x0", "0x0", "0xf", "0xa", "0xa"])
 
 
+    def test_byval_and_varargs_objects(self):
+        # A byval parameter copy and the areas va_start points at (register save area, overflow
+        # area) are objects of the callee's frame: reads there are the passed values (cq-be73).
+        o1 = compile_c("byvalva", """
+#include <stdarg.h>
+struct big { long a[5]; };
+__attribute__((noinline)) static long sumb(struct big b) { return b.a[0] + b.a[2] + b.a[4]; }
+long byval_q(long x0, double t, long c) { long x = x0; cq_theta(&x, t); struct big b = {{x, 1, c, 3, 4}};
+    return sumb(b); }
+__attribute__((noinline)) static int vhelp(int n, va_list ap) { int s = 0; for (int i = 0; i < n; i++)
+    s = s * 3 + va_arg(ap, int); return s; }
+__attribute__((noinline)) static int vsum(int n, ...) { va_list ap, bp; va_start(ap, n); va_copy(bp, ap);
+    int s = vhelp(n, ap); s += vhelp(n, bp); va_end(bp); va_end(ap); return s; }
+int va_q(int x0, double t, int c) { int x = x0; cq_theta(&x, t); return vsum(9, x, c, 1, 2, 3, 4, 5, 6, 7); }
+__attribute__((noinline)) static long double vld(int n, ...) { va_list ap; va_start(ap, n); long double s = 0;
+    for (int i = 0; i < n; i++) s = s * 2 + va_arg(ap, long double); va_end(ap); return s; }
+long double vld_q(long double x0, double t) { long double x = x0; cq_theta(&x, t); return vld(3, x, 1.0L, x); }
+__attribute__((noinline)) static double vdbl(int n, ...) { va_list ap; va_start(ap, n); double s = 0;
+    for (int i = 0; i < n; i++) s = s * 2 + va_arg(ap, double); va_end(ap); return s; }
+double vdbl_q(double x0, double t) { double x = x0; cq_theta(&x, t);
+    return vdbl(10, x, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, x); }
+""")
+        sp = spec("byvalva", "long byval_q(long,double,long);int va_q(int,double,int);"
+                  "long double vld_q(long double,double);double vdbl_q(double,double)",
+                  [("byval_q", ["long", "double", "long"]), ("va_q", ["int", "double", "int"]),
+                   ("vld_q", ["long double", "double"]), ("vdbl_q", ["double", "double"])])
+        runs = oracle.run_samples(o1, sp, [{"call": 0, "args": [i64(10), HALF, i64(20)]},
+                                           {"call": 1, "args": [i32(2), HALF, i32(1)]},
+                                           {"call": 2, "args": [f80(3.0), HALF]},
+                                           {"call": 3, "args": [f64(1.0), HALF]}])
+        for r in runs:
+            self.assertFalse(r.failed, (r.sample, r.reason))
+            self.assertNotIn("oob-load", r.notes)
+        got = [next(e["v"] for e in r.events if e["ev"] == "ret") for r in runs]
+        h = 0
+        for v in [2, 1, 1, 2, 3, 4, 5, 6, 7]:
+            h = h * 3 + v
+        self.assertEqual(got, ["0x22", hex(2 * h), f80(3.0 * 4 + 2 + 3.0), f64(2.0**9 + 2.0**8 + 2 + 1.0)])
+
     def test_driver_object(self):
         # a driver object is a function-local static ("__cqo_drv_main.tab"): an object like any
         # other, readable from the program (regression of cq-8ay)
