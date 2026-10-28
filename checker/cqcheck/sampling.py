@@ -2304,6 +2304,79 @@ def subst_classes(g: Gen, rng: random.Random, sites: Dict[int, List["D.ThetaSite
     return out
 
 
+def drop_subst_out_of_domain(g: "Gen", pc: Dict[str, dict], spec: DriverSpec, example_dir: Path,
+                             sites: Optional[Dict[int, List["D.ThetaSite"]]] = None, seed: int = 0) -> None:
+    """Substitution samples are not probed (the probe build has no substitution): run them in the C
+    oracle and drop those that access outside an object (CLAUDE.md Domain; 76's substituted index
+    0xff into icoef[4], 91, 107). The drivers.txt calls and plain samples are untouched."""
+    from cqcheck import oracle
+    o1 = sorted(example_dir.glob("*.O1.ll"))[0]
+    sub_idx = [i for i, sm in enumerate(g.samples) if "subst" in sm]
+    if not sub_idx:
+        return
+    runs = oracle.run_samples(o1, spec, [g.samples[i] for i in sub_idx])
+    bad = {i for i, r in zip(sub_idx, runs) if any(n in ("oob-load", "oob-store") for n in r.notes)}
+    # A substituted site fed by one argument and reached once (cq-lvkq) is the plain sample with that
+    # argument at the substituted value: the probe judges its domain (107: x even makes b + 2, one
+    # past b, an access the C oracle cannot see when it lands in a neighbour).
+    plain: Dict[int, Tuple[int, List[str]]] = {}
+    for i in sub_idx:
+        if i in bad:
+            continue
+        sm = g.samples[i]
+        ci = sm["call"]
+        fn = "@" + spec.calls[ci]["fn"]
+        args = list(sm["args"])
+        ok = True
+        for key, v in sm["subst"].items():
+            st = next((t for t in (sites or {}).get(ci, []) if t.key() == key), None)
+            js = [j for (f, j) in (st.params if st else ()) if f == fn]
+            if isinstance(v, list) and v:
+                v = v[0]                 # reached once: reach 0 takes entry 0
+            if st is None or len(js) != 1 or not isinstance(v, str):
+                ok = False
+                break
+            args[js[0]] = hexw(g.cts[ci][js[0]], int(v, 16))
+        if ok:
+            plain[i] = (ci, args)
+    if plain:
+        with tempfile.TemporaryDirectory(prefix=f"cqd-{spec.example}-s-") as tmp, \
+                ProbeBuild(spec, example_dir, Path(tmp)) as pb:
+            rows = {st.id: rows_for(st) for st in pb.ins.sites}
+            se = Searcher(g, pb, rows, random.Random(seed + 5))
+            keys = list(plain)
+            for i, o in zip(keys, se.observe([plain[i] for i in keys])):
+                if not se.valid(o):
+                    bad.add(i)
+    if not bad:
+        return
+    remap, kept = {}, []
+    for i, sm in enumerate(g.samples):
+        if i not in bad:
+            remap[i] = len(kept)
+            kept.append(sm)
+    g.samples = kept
+    g.index = {(sm["call"], tuple(sm["args"])): j for j, sm in enumerate(kept) if "subst" not in sm}
+    if hasattr(g, "sindex"):
+        g.sindex = {k: remap[v] for k, v in g.sindex.items() if v in remap}
+
+    def fix(obj):
+        if isinstance(obj, dict):
+            if "samples" in obj and isinstance(obj["samples"], list):
+                before = len(obj["samples"])
+                obj["samples"] = [remap[i] for i in obj["samples"] if i in remap]
+                if len(obj["samples"]) != before:
+                    obj["out_of_domain"] = obj.get("out_of_domain", 0) + before - len(obj["samples"])
+            for v in obj.values():
+                if isinstance(v, (dict, list)):
+                    fix(v)
+        elif isinstance(obj, list):
+            for v in obj:
+                if isinstance(v, (dict, list)):
+                    fix(v)
+    fix(pc)
+
+
 REACH_CANDIDATES = 4096     # guided candidates per call for unreached rotation sites (cq-rzey)
 
 
@@ -2824,8 +2897,22 @@ def build_sample_set(spec: DriverSpec, example_dir: Path) -> SampleSet:
     # cq_theta substitution (cq-6m2): appended after every search, which reads samples by (call, args)
     mod = D.read_module(sorted(example_dir.glob("*.O1.ll"))[0])
     sites = {ci: D.substituted_sites(mod, spec, ci) for ci in range(len(spec.calls))}
+    reaches = theta_reaches(spec, example_dir, sites) if any(sites.values()) else {}
+    # A site fed by a varied argument (cq-lvkq) is substituted only where its reach index means the
+    # same on both sides: reached once, in a module with no cq_invert region. In a loop the lowered
+    # side reaches it on every unrolled trip and the C program only on taken ones; an inverted
+    # region runs its reaches in reverse (61, 126, 130). Orchestrator decision, owner may override.
+    inverted = any(n.startswith("@__cq_invert") or n.startswith("@cq_invert")
+                   for n in list(mod.declares) + list(mod.functions))
+    for ci in list(sites):
+        c = spec.calls[ci]
+        fn = "@" + c["fn"]
+        varied = {(fn, i) for i, a in enumerate(c["args"])
+                  if a["quantum"] and D.parse_ctype(a["ctype"]).kind != "p"}
+        sites[ci] = [st for st in sites[ci]
+                     if not (st.params & varied) or (not inverted and reaches.get(ci, {}).get(st.key(), 0) == 1)]
     if any(sites.values()):
-        sc = subst_classes(g, random.Random(seed + 3), sites, theta_reaches(spec, example_dir, sites))
+        sc = subst_classes(g, random.Random(seed + 3), sites, reaches)
         _merge_class(pc["edge"], sc["edge"])
         _merge_class(pc["specials"], sc["specials"])
         _merge_class(pc["rq"], sc["rq"])
@@ -2840,6 +2927,9 @@ def build_sample_set(spec: DriverSpec, example_dir: Path) -> SampleSet:
                 cur["subst"] = e["empty"]
             else:
                 pc["exhaustive"][key] = {"empty": cur.get("empty", "") + "; " + e["empty"]}
+
+    if getattr(g, "sindex", None):
+        drop_subst_out_of_domain(g, pc, spec, example_dir, sites, seed)
 
     classes = {
         "edge": pc["edge"],

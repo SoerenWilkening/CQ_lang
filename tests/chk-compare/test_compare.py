@@ -448,8 +448,8 @@ class FpModes(unittest.TestCase):
         self.assertTrue(self.eq(ours, same, "ref").equal, self.eq(ours, same, "ref").reasons)
 
     def test_phase_nan_angle(self):
-        # a classical-angle phase is not made identity by a NaN angle (CR §1.3 says so only for Ry
-        # and angle rails), so the mode applies to its angle
+        # CR §2 (at 744da1b): ry/rz/phase with a non-finite angle is the identity, so a NaN-angle
+        # phase is no gate in both modes, whatever the payload; a finite C phase is still a difference
         nan_a, nan_b = 0x7FF8000000000000, 0xFFF8000000000123
         ours = side("o", lambda a, b, s: dict(rots=[{"ev": "phase", "f": 7, "fv": a & b, "theta": hex(nan_a)}],
                                               kept=[]))
@@ -459,7 +459,7 @@ class FpModes(unittest.TestCase):
         self.assertFalse(self.eq(ours, c_num, "c").equal)
         ref = side("r", lambda a, b, s: dict(rots=[{"ev": "phase", "f": 7, "fv": a & b, "theta": hex(nan_b)}],
                                              kept=[]))
-        self.assertFalse(self.eq(ours, ref, "ref").equal)
+        self.assertTrue(self.eq(ours, ref, "ref").equal)
 
     def test_ry_nan_angle_is_no_gate_in_both_modes(self):
         # CR §1.3: non-finite θ = identity, before any fp equality applies

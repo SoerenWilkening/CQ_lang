@@ -383,7 +383,11 @@ def _lowered_events(runs: List[RunResult]) -> Tuple[List[_Ev], List[_Ev]]:
     recs = [rr.rotations for rr in runs]
     S = range(len(runs))
     evs: List[_Ev] = []
-    regs: Dict[int, Tuple] = {}
+    # One register version per Ry (owner note on cq-lvkq): with every cq_theta substituted, a rail
+    # rotated again is a new value; each version's value function is that Ry's record. Versions are
+    # named (rail, n); a support names the rail.
+    regs: Dict[Tuple[int, int], Tuple] = {}
+    nver: Dict[int, int] = {}
     for i in range(n):
         r0 = recs[0][i]
         kind = _KIND[r0["ev"]]
@@ -398,7 +402,8 @@ def _lowered_events(runs: List[RunResult]) -> Tuple[List[_Ev], List[_Ev]]:
                 on = int(bool(_int(rec["fv"])))
             else:
                 on = _ctl_on(rec)
-            if theta is not None and _angle_identity(theta, nonfinite_is_identity=(kind == "ry")):
+            # CR §2: ry/rz/phase with a non-finite angle (literal or angle rail) is the identity
+            if theta is not None and _angle_identity(theta, nonfinite_is_identity=True):
                 on = 0
             aval = None
             if kind in ("ryq", "phq"):
@@ -411,8 +416,9 @@ def _lowered_events(runs: List[RunResult]) -> Tuple[List[_Ev], List[_Ev]]:
                 w, v = _target_value(runs[s], rec)
                 tvals.append(v)
         target = r0.get("h") if kind in ("ry", "ryq") else None
-        if target is not None and target not in regs:
-            regs[target] = tuple(tvals)
+        if target is not None:
+            regs[(target, nver.get(target, 0))] = tuple(tvals)
+            nver[target] = nver.get(target, 0) + 1
         evs.append(_Ev(idx=i, kind=kind, target=target,
                        tclass=(w, tuple(tvals)) if target is not None else None,
                        theta=theta, afn=tuple(afn) if kind in ("ryq", "phq") else None,
@@ -424,11 +430,11 @@ def _lowered_events(runs: List[RunResult]) -> Tuple[List[_Ev], List[_Ev]]:
         if e.kind == "ph" and all(e.pred):
             glob.append(e)
             continue
-        sup = set(_dep(e.pred, regs))
+        sup = {r for r, _ in _dep(e.pred, regs)}
         if e.target is not None:
             sup.add(e.target)
         if e.afn is not None:
-            sup |= _dep(e.afn, regs)
+            sup |= {r for r, _ in _dep(e.afn, regs)}
         e.support = frozenset(sup)
         live.append(e)
     return live, glob
@@ -461,6 +467,11 @@ def _same(a: _Ev, b: _Ev, m: Dict[int, int], minv: Dict[int, int]) -> Optional[T
     return (a.target, b.target)
 
 
+def _phase(e: _Ev) -> bool:
+    """A diagonal gate: two phases commute whatever their supports (CR §6 at CQ_spec 744da1b)."""
+    return e.kind in ("ph", "phq")
+
+
 def _match_lists(ours: List[_Ev], ref: List[_Ev]) -> Optional[str]:
     """Trace equivalence under partial commutation with a rail bijection; None when equal."""
     best = [-1, ""]
@@ -483,7 +494,7 @@ def _match_lists(ours: List[_Ev], ref: List[_Ev]) -> Optional[str]:
             if pair is None or pair in tried:
                 continue
             tried.add(pair)
-            if any(ref[k].support & r.support for k in rem[:pos]):
+            if any(ref[k].support & r.support and not (_phase(ref[k]) and _phase(r)) for k in rem[:pos]):
                 continue
             m2, minv2 = m, minv
             if pair != (-1, -1) and pair[0] not in m:
@@ -557,7 +568,7 @@ def _c_sites(runs: List[RunResult], nan_eq: bool) -> Tuple[List[_Site], List[str
             ang = _int(rec["angle"]) & ((1 << 64) - 1)
             if neg:
                 ang ^= 1 << 63
-            if _angle_identity(ang, nonfinite_is_identity=(rec["kind"] == "theta")):
+            if _angle_identity(ang, nonfinite_is_identity=True):     # CR §2: phase too
                 continue
             st = sites.get(key)
             if st is None:
@@ -730,30 +741,74 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
     # unp: the gates read as rule-10 un-preps (no C reach of their own); free: the gates left
     # unmatched on capped samples. An un-prep's j and every k must take C reaches: j is checked
     # when i is chosen, the ks at the leaf. Both sets are part of the memo key.
-    def dfs(i: int, used: Used, unp: FrozenSet[int], free: FrozenSet[int]) -> bool:
+    # Order (owner note): gates are taken in lowered order, so a gate's C reach must come after the
+    # C reach of every earlier-taken gate it does not commute with at that sample (overlapping
+    # support, not both phases). ordst: per (rail, sample) the latest C position of a taken gate
+    # touching the rail, for any gate and for non-phase gates. It is part of the memo key.
+    def order_ok(i: int, picks: List[Tuple[int, int]], ordst: Tuple) -> Optional[Tuple]:
+        e = ours[i]
+        any_, nonph = dict(ordst[0]), dict(ordst[1])
+        for s, p in picks:
+            for r in e.support:
+                lim = nonph.get((r, s), -1) if _phase(e) else any_.get((r, s), -1)
+                if p < lim:
+                    return None
+            for r in e.support:
+                if p > any_.get((r, s), -1):
+                    any_[(r, s)] = p
+                if not _phase(e) and p > nonph.get((r, s), -1):
+                    nonph[(r, s)] = p
+        return (tuple(sorted(any_.items())), tuple(sorted(nonph.items())))
+
+    check_order = [True]
+
+    def dfs(i: int, used: Used, unp: FrozenSet[int], free: FrozenSet[int], ordst: Tuple = ((), ())) -> bool:
         if i == len(ours):
             return not leftover(used) and not any(partner[u][1] & (unp | free) for u in unp)
-        if (i, used, unp, free) in failed:
+        if (i, used, unp, free, ordst) in failed:
             return False
         for j in cands[i]:
-            nxt = take(i, j, used)
+            hl: List[List[Tuple[int, _Ev]]] = [[] for _ in range(nS)]
+            nxt = take(i, j, used, hl)
             if nxt is not None:
+                o2 = order_ok(i, [(s, p) for s in range(nS) for p, _ in hl[s]], ordst) if check_order[0] else ordst
+                if o2 is None:
+                    continue
                 assign[i] = j
-                if dfs(i + 1, nxt, unp, free):
+                if dfs(i + 1, nxt, unp, free, o2):
                     return True
         assign[i] = None
         if partner[i] is not None and partner[i][0] not in unp | free:
-            if dfs(i + 1, used, unp | {i}, free):
+            if dfs(i + 1, used, unp | {i}, free, ordst):
                 unprep.add(i)
                 return True
         if free_ok[i]:
-            if dfs(i + 1, used, unp, free | {i}):
+            if dfs(i + 1, used, unp, free | {i}, ordst):
                 return True
-        failed.add((i, used, unp, free))
+        failed.add((i, used, unp, free, ordst))
         return False
 
     unprep: set = set()
     if not dfs(0, start, frozenset(), frozenset()):
+        # a matching that only the order rules out: name the reversal it contains
+        check_order[0] = False
+        failed.clear()
+        unprep.clear()
+        if dfs(0, start, frozenset(), frozenset()):
+            hits0: List[List[Tuple[int, _Ev]]] = [[] for _ in range(nS)]
+            used0 = start
+            for i in range(len(ours)):
+                if assign[i] is not None:
+                    used0 = take(i, assign[i], used0, hits0)
+            for s in range(nS):
+                evs_s = [e for _, e in sorted(hits0[s], key=lambda t: t[0])]
+                for a in range(len(evs_s)):
+                    for b in range(a + 1, len(evs_s)):
+                        x, y = evs_s[a], evs_s[b]
+                        if x.idx > y.idx and (x.support & y.support) and not (_phase(x) and _phase(y)):
+                            return [f"sample {s}: C order puts {x.label} before {y.label}, the lowered order "
+                                    f"reverses them and their supports overlap (no matching keeps the C order)"]
+        check_order[0] = True
         # diagnose with the greedy assignment
         used = start
         for i, e in enumerate(ours):
@@ -792,7 +847,7 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
         for a in range(len(evs_s)):
             for b in range(a + 1, len(evs_s)):
                 x, y = evs_s[a], evs_s[b]
-                if x.idx > y.idx and (x.support & y.support):
+                if x.idx > y.idx and (x.support & y.support) and not (_phase(x) and _phase(y)):
                     reasons.append(f"sample {s}: C order puts {x.label} before {y.label}, the lowered order "
                                    f"reverses them and their supports overlap")
                     return reasons

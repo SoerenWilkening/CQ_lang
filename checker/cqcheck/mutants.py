@@ -62,8 +62,10 @@ _RET_C = r"returns .* != "
 CLASSES: Dict[str, Tuple[str, str, Optional[str]]] = {
     "swapped_select_arms": ("a select takes the other arm: the value it feeds is measured or returned",
                             f"{_MEAS}|{_OUT_REF}", f"{_MEAS}|{_RET_C}"),
+    # a deleted Ry, or one on the complement, also skips or moves its cq_theta substitution (CR §6
+    # item 1, every site substituted since cq-lvkq): the outputs differ before the rotation list does
     "flipped_predicate": ("a comparison is negated (forward and uncompute alike): the gate it controls "
-                          "fires on the complement", _ROT_REF, _ROT_C),
+                          "fires on the complement", f"{_ROT_REF}|{_MEAS}|{_OUT_REF}", f"{_ROT_C}|{_MEAS}|{_RET_C}"),
     "dropped_unc": ("a rail is freed without its uncompute: the free sees a dirty rail",
                     r"violations on our side: .*'what': 'dirty_free'", r"violations on our side: .*'what': 'dirty_free'"),
     "extra_free": ("a rail is freed twice or while live",
@@ -73,7 +75,8 @@ CLASSES: Dict[str, Tuple[str, str, Optional[str]]] = {
                      r"rail\(s\) .* kept on our side that the reference does not keep", None),
     "changed_angle": ("a rotation or phase takes another angle", _ROT_REF, _ROT_C),
     "changed_control": ("a controlled rotation is controlled by another rail", _ROT_REF, _ROT_C),
-    "dropped_rotation": ("a rotation or phase is deleted", _ROT_REF, _ROT_C),
+    "dropped_rotation": ("a rotation or phase is deleted", f"{_ROT_REF}|{_MEAS}|{_OUT_REF}",
+                         f"{_ROT_C}|{_MEAS}|{_RET_C}"),
     "added_rotation": ("a rotation is added", _ROT_REF, _ROT_C),
     "changed_measured_rail": ("a measurement reads another rail", _MEAS, _MEAS),
     "kloop_one_trip_short": ("a K-bounded loop runs K-1 trips: inputs with K trips get another result "
