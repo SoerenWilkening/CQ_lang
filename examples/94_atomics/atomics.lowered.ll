@@ -1,7 +1,8 @@
-; HAND-WRITTEN. Rules: 24, 20, 4, 9, 5, 7, 2.
+; HAND-WRITTEN. Rules: 24, 20, 4, 9, 5, 6, 7, 2.
 ; Checked: now + ok + expected: the final cell, the cmpxchg success flag and the loaded value (measured).
-; Clean: the cmpxchg equality flag; the classical initial-value rail c (never entangled, freed directly, rule 7).
-; Kept: the user register x (the cell after the atomic store); the fetch-add result x + c and the cmpxchg select
+; Clean: the cmpxchg equality flag; the classical initial-value rail c (never entangled, freed directly, rule 7); the old
+; x rail (rule 6: dead after the cmpxchg select, its last reader; x + c is kept and a bijection in x) and t = (x + c) - c.
+; Kept: the fetch-add result x + c and the cmpxchg select
 ; (the cell's later values: one of them is the measured `now`, the loaded value is the measured `expected`); the zext'd
 ; flag (measured).
 ; Rotations: Ry(th) on x.
@@ -31,18 +32,29 @@ define i32 @atomics(i32 noundef %0, double noundef %1, i32 noundef %2, i32 nound
   %11 = call i32 @cq_template_icmp_eq_i32_hl(i32 %10, i32 %3)    ; IR: %8: element 1 (%9), loaded == expected
   %12 = call i32 @cq_template_select_i32(i32 %11, i32 %8, i32 %10)    ; IR: %8: cell = equal ? %7 (the old value) : loaded  [the new cell]
   store i32 %12, ptr %5, align 4    ; IR: %8: store the new cell's handle
-  %13 = call i32 @cq_template_zext_i1_to_i32(i32 %11)    ; IR: %11 = zext i1 %9 to i32  [measured]
-  %14 = load i32, ptr %5, align 4    ; IR: %12 = load atomic i32, ptr %5 seq_cst: a plain load of the handle  [measured]
+  %13 = call i32 @cq_template_sub_i32_hl(i32 %9, i32 %2)    ; IR: rule 6: t = (x + c) - c recomputes the old x (its last reader, the select, is done; x + c is kept)
+  call void @cqrt_copy_i32(i32 %13, i32 %6)    ; IR: rule 6: x ^= t: the dead x rail is now |0>
+  call void @cq_template_sub_i32_hl_unc(i32 %13, i32 %9, i32 %2)    ; IR: rule 6: uncompute t
+  call void @cqrt_free(i32 %13)    ; IR: release t (|0>)
+  call void @cqrt_free(i32 %6)    ; IR: release the old x rail (|0> after the copy)
+  %14 = call i32 @cq_template_zext_i1_to_i32(i32 %11)    ; IR: %11 = zext i1 %9 to i32  [measured]
+  %15 = load i32, ptr %5, align 4    ; IR: %12 = load atomic i32, ptr %5 seq_cst: a plain load of the handle  [measured]
   call void @cq_template_icmp_eq_i32_hl_unc(i32 %11, i32 %10, i32 %3)    ; IR: uncompute %9
   call void @cqrt_free(i32 %11)    ; IR: release the %9 rail (|0>)
-  %15 = call i32 @cqrt_measure_i32(i32 %14)    ; IR: %13 = cq_measure_si32(%12)
-  %16 = call i32 @cqrt_measure_i32(i32 %13)    ; IR: %14 = cq_measure_si32(%11)
-  %17 = add nsw i32 %16, %15    ; IR: %15 = add nsw i32 %14, %13  (classical)
-  %18 = call i32 @cqrt_measure_i32(i32 %10)    ; IR: %16 = cq_measure_si32(%10)
-  %19 = add nsw i32 %17, %18    ; IR: %17 = add nsw i32 %15, %16  (classical)
+  %16 = call i32 @cqrt_measure_i32(i32 %15)    ; IR: %13 = cq_measure_si32(%12)
+  %17 = call i32 @cqrt_measure_i32(i32 %14)    ; IR: %14 = cq_measure_si32(%11)
+  %18 = add nsw i32 %17, %16    ; IR: %15 = add nsw i32 %14, %13  (classical)
+  %19 = call i32 @cqrt_measure_i32(i32 %10)    ; IR: %16 = cq_measure_si32(%10)
+  %20 = add nsw i32 %18, %19    ; IR: %17 = add nsw i32 %15, %16  (classical)
   call void @cqrt_free(i32 %7)    ; IR: release the initial-value rail (never entangled, holds the classical c: 28's first s rail)
-  ret i32 %19    ; IR: ret i32 %17
+  ret i32 %20    ; IR: ret i32 %17
 }
+
+declare void @cqrt_copy_i32(i32, i32)
+
+declare void @cq_template_sub_i32_hl_unc(i32, i32, i32)
+
+declare i32 @cq_template_sub_i32_hl(i32, i32)
 
 declare i32 @cqrt_alloc_i32(i32)
 declare void @cqrt_ry_i32(i32, double)

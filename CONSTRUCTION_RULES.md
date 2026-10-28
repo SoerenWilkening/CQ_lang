@@ -727,6 +727,7 @@ Byte identity of traces is never required.
 | 3 lane gate | 103 (dead `fadd_f32` on an unread lane) | remove |
 | §1.4 mask and bounds (2026-10-27) | 52 (`reduce_1000`: the `out` pointer carries two cells, so two digits), 98 (`chain_10`: the call-site bound `n & 3` must appear as `_b3`) | renamed `__cq_q_reduce_10000`, `__cq_q_chain_10_b3[_dN]` |
 | 27 declared clones (2026-10-27) | 161 (`ext_fn` called with the raw handle), 190 `escape` (`ext_sink` gets slot memory of handles) | done 2026-10-27: `__cq_q_ext_fn_10`, `__cq_q_ext_sink_0010` (snapshot twin), trailing K argument |
+| 6 unconditional (2026-10-28, cq-qpsb) | references that kept a dead old value under a bijective update | done: 01, 02, 10 (sub_qc, xor_qq), 12 (add_i8/16/64), 13 (fneg_q), 38, 43, 45 (unreachable_arm), 94, 108 (trap_q), 109 (bswap_q), 112 (usub_overflow_qq, rotr_qc, rotr_qq), 156 (sub_qq_i8), 162 (entry), 186 (free_uncond, free_classical_cond). Triaged, no change (no inverse, or the value is read later): 20, 25, 67, 109 (others), 122, 162 (consumer), 177, 189 (calloc_aligned). Open, not yet triaged: the K-loop and classical-loop chains 05, 09, 26, 27, 54, 68, 73, 75, 91, 139, 149, 150; the selects of 100, 116, 123, 129; 190 memmove_overlap (the dead cell is chosen by a classical index and may be a seed) |
 
 ## 8. Examples written 2026-10-26 (144–180)
 

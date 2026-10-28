@@ -1,9 +1,11 @@
-; HAND-WRITTEN. Rules: 2, 4, 5, 16, 18, 20, 24, §1.4.
-; Checked: ctz_q: (unsigned)ctzll(x | 1 << 32) (measured, the trunc rail %6 -> %7); trap_q: x + 1 (measured, %6 -> %7);
+; HAND-WRITTEN. Rules: 2, 4, 5, 6, 16, 18, 20, 24, §1.4.
+; Checked: ctz_q: (unsigned)ctzll(x | 1 << 32) (measured, the trunc rail %6 -> %7); trap_q: x + 1 (measured, %6 -> %8);
 ; tls_q: tl * 2 (measured, the shl rail %8 -> %9).
 ; Clean: ctz_q: the or rail (%4) and the cttz rail (%5), uncomputed and freed; tls_q: the slot's rail x + 1 (%5) and
-; the clone's rail x + 1 + c (%7, zeroed by the __cq_q_touch_10_unc twin), both freed.
-; Kept: x in each function (%3 of ctz_q, 64 bits; %4 of trap_q; %4 of tls_q: the rotated user registers); trap_q's
+; the clone's rail x + 1 + c (%7, zeroed by the __cq_q_touch_10_unc twin), both freed; trap_q: the old x rail (%4, rule 6:
+; dead after x + 1) and t = r - 1 (%7), both freed.
+; Kept: x in ctz_q and tls_q (%3 of ctz_q, 64 bits; %4 of tls_q: rotated user registers whose results have no inverse);
+; trap_q's result x + 1 (%6, measured) and its
 ; abort flag x > k (%5): a noreturn-arm predicate passed to cqrt_abort_i1 stays allocated and the backend measures it
 ; after the program's last own measurement.
 ; Rotations: (Ry, x, th, 1) in each of the three functions (an i64 Ry in ctz_q).
@@ -48,8 +50,13 @@ define i32 @trap_q(i32 noundef %0, double noundef %1, i32 noundef %2) {
   %5 = call i32 @cq_template_icmp_sgt_i32_hl(i32 %4, i32 %2)    ; IR: %5 = icmp sgt i32 %4, %2  [predicate of the noreturn block %6]
   call void @cqrt_abort_i1(i32 %5)    ; IR: block %6: llvm.trap(); unreachable  (noreturn arm flag, kept allocated; measured by the backend at end of shot)
   %6 = call i32 @cq_template_add_i32_hl(i32 %4, i32 1)    ; IR: %8 = add nsw i32 %4, 1  (block %7, runs uncontrolled)
-  %7 = call i32 @cqrt_measure_i32(i32 %6)    ; IR: %9 = cq_measure_si32(%8)
-  ret i32 %7    ; IR: ret i32 %9
+  %7 = call i32 @cq_template_sub_i32_hl(i32 %6, i32 1)    ; IR: rule 6: t = r - 1 recomputes the old x (the update is a bijection in it)
+  call void @cqrt_copy_i32(i32 %7, i32 %4)    ; IR: rule 6: x ^= t: the dead x rail is now |0>
+  call void @cq_template_sub_i32_hl_unc(i32 %7, i32 %6, i32 1)    ; IR: rule 6: uncompute t
+  call void @cqrt_free(i32 %7)    ; IR: release t (|0>)
+  call void @cqrt_free(i32 %4)    ; IR: release the old x rail (|0> after the copy)
+  %8 = call i32 @cqrt_measure_i32(i32 %6)    ; IR: %9 = cq_measure_si32(%8)
+  ret i32 %8    ; IR: ret i32 %9
 }
 
 define i32 @tls_q(i32 noundef %0, double noundef %1, i32 noundef %2) {
@@ -82,6 +89,12 @@ define internal fastcc void @__cq_q_touch_10_unc(ptr noundef %0, i32 noundef %1,
   store i32 %2, ptr %0, align 4    ; IR: the cell holds the previous handle again
   ret void    ; IR: ret void
 }
+
+declare void @cqrt_copy_i32(i32, i32)
+
+declare void @cq_template_sub_i32_hl_unc(i32, i32, i32)
+
+declare i32 @cq_template_sub_i32_hl(i32, i32)
 
 declare i32 @cqrt_alloc_i64(i64)
 declare void @cqrt_ry_i64(i32, double)

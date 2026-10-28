@@ -1,13 +1,14 @@
-; HAND-WRITTEN. Rules: 1, 2, 4.
+; HAND-WRITTEN. Rules: 1, 2, 4, 6.
 ; Checked: fadd_qc's x + c (%5 -> %6), fsub_qq's x - y (%7 -> %8), fmul_qq's x * y (%7 -> %8), fdiv_cq's c / x
-; (%5 -> %6), fneg_q's -x (%4 -> %5), each the function's measured return.
-; Clean: nothing to clean: each function holds only its rotated register(s) and the measured result.
-; Kept: each function's rotated f64 register(s) and its measured result rail.
+; (%5 -> %6), fneg_q's -x (%4 -> %6), each the function's measured return.
+; Clean: fneg_q: the old x rail (%3, rule 6: |0> after the copy) and t = -(-x) (%5), both freed.
+; Kept: the rotated f64 register(s) of the other functions (FP arithmetic has no inverse) and every measured result rail.
 ; Rotations: (Ry, x, th, 1) in fadd_qc, fdiv_cq and fneg_q; (Ry, x, tx, 1); (Ry, y, ty, 1) in fsub_qq and fmul_qq.
 ; Floating-point arithmetic on a quantum double is the f64 width variant of rule 4: each tainted fadd/fsub/fmul/fdiv/fneg
 ; is one cq_template_<op>_f64 into a fresh rail. A classical operand is a literal: the handle-first form is _hl (x + c)
 ; and the classical-first form is _lh (c / x, where the order is not commutative); a quantum-quantum op takes two handles.
-; The measurement is the sink; nothing is left to uncompute.
+; The measurement is the sink. fneg is a bijection (a sign-bit flip, NaN included), so in fneg_q the dead x is cleaned by
+; rule 6; the rounding ops keep their registers.
 source_filename = "fp_arith.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
@@ -57,9 +58,20 @@ define double @fneg_q(double noundef %0, double noundef %1) local_unnamed_addr #
   %3 = call i32 @cqrt_alloc_f64(double %0)    ; IR: %3 = cq_theta_f64(%0, %1)  [register]
   call void @cqrt_ry_f64(i32 %3, double %1)    ; IR: %3 = cq_theta_f64(%0, %1)  [Ry]
   %4 = call i32 @cq_template_fneg_f64(i32 %3)    ; IR: %4 = fneg double %3
-  %5 = call double @cqrt_measure_f64(i32 %4)    ; IR: %5 = cq_measure_f64(%4)
-  ret double %5    ; IR: ret double %5
+  %5 = call i32 @cq_template_fneg_f64(i32 %4)    ; IR: rule 6: t = -(-x) recomputes the old x (the update is a bijection in it)
+  call void @cqrt_copy_f64(i32 %5, i32 %3)    ; IR: rule 6: x ^= t: the dead x rail is now |0>
+  call void @cq_template_fneg_f64_unc(i32 %5, i32 %4)    ; IR: rule 6: uncompute t
+  call void @cqrt_free(i32 %5)    ; IR: release t (|0>)
+  call void @cqrt_free(i32 %3)    ; IR: release the old x rail (|0> after the copy)
+  %6 = call double @cqrt_measure_f64(i32 %4)    ; IR: %5 = cq_measure_f64(%4)
+  ret double %6    ; IR: ret double %5
 }
+
+declare void @cqrt_free(i32)
+
+declare void @cqrt_copy_f64(i32, i32)
+
+declare void @cq_template_fneg_f64_unc(i32, i32)
 
 declare void @cqrt_ry_f64(i32, double)
 

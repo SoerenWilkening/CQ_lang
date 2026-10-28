@@ -1,8 +1,9 @@
-; HAND-WRITTEN. Rules: 16, 8, 4, 2.
+; HAND-WRITTEN. Rules: 16, 8, 4, 2, 6.
 ; Checked: unreachable_arm: x + c; abort_then_rotate: x after the second rotation (measured); the abort flag (x == k)
 ; is measured by the backend at the end of the shot.
-; Clean: none.
-; Kept: the user register x; the abort flag of each function (never freed); abort_then_rotate's snapshot rail of x
+; Clean: unreachable_arm: the old x rail (%5, rule 6: x is dead after x + c, a bijection in x) and t = r - c (%8), both
+; freed (the abort flag x == k stays entangled with x + c, which still holds x's information).
+; Kept: abort_then_rotate's x; the result rail x + c; the abort flag of each function (never freed); abort_then_rotate's snapshot rail of x
 ; (taken under the flag, never freed).
 ; Rotations: unreachable_arm: Ry(th) on x. abort_then_rotate: Ry(th) on x; Ry(t2) on x (uncontrolled, after the
 ; snapshot).
@@ -22,8 +23,13 @@ define i32 @unreachable_arm(i32 noundef %0, double noundef %1, i32 noundef %2, i
   %6 = call i32 @cq_template_icmp_eq_i32_hl(i32 %5, i32 %2)    ; IR: %6 = icmp eq i32 %5, %2  [predicate of the noreturn block %7]
   call void @cqrt_abort_i1(i32 %6)    ; IR: block %7: abort(); unreachable  (noreturn arm flag, kept allocated)
   %7 = call i32 @cq_template_add_i32_hl(i32 %5, i32 %3)    ; IR: %9 = add nsw i32 %5, %3  (block %8)
-  %8 = call i32 @cqrt_measure_i32(i32 %7)    ; IR: %10 = cq_measure_si32(%9)
-  ret i32 %8    ; IR: ret i32 %10
+  %8 = call i32 @cq_template_sub_i32_hl(i32 %7, i32 %3)    ; IR: rule 6: t = r - c recomputes the old x (the update is a bijection in it)
+  call void @cqrt_copy_i32(i32 %8, i32 %5)    ; IR: rule 6: x ^= t: the dead x rail is now |0>
+  call void @cq_template_sub_i32_hl_unc(i32 %8, i32 %7, i32 %3)    ; IR: rule 6: uncompute t
+  call void @cqrt_free(i32 %8)    ; IR: release t (|0>)
+  call void @cqrt_free(i32 %5)    ; IR: release the old x rail (|0> after the copy)
+  %9 = call i32 @cqrt_measure_i32(i32 %7)    ; IR: %10 = cq_measure_si32(%9)
+  ret i32 %9    ; IR: ret i32 %10
 }
 
 
@@ -38,6 +44,14 @@ define i32 @abort_then_rotate(i32 noundef %0, double noundef %1, i32 noundef %2,
   %8 = call i32 @cqrt_measure_i32(i32 %5)    ; IR: %10 = cq_measure_si32(%9)
   ret i32 %8    ; IR: ret i32 %10
 }
+
+declare void @cqrt_free(i32)
+
+declare void @cqrt_copy_i32(i32, i32)
+
+declare void @cq_template_sub_i32_hl_unc(i32, i32, i32)
+
+declare i32 @cq_template_sub_i32_hl(i32, i32)
 
 declare i32 @cqrt_alloc_i32(i32)
 declare void @cqrt_ry_i32(i32, double)

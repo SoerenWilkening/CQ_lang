@@ -139,6 +139,8 @@ int cq_template_usub_overflow_i64(int a, int b) { int h = nh++; printf("cq_templ
 void cq_template_usub_overflow_i64_unc(int o, int a, int b) { printf("cq_template_usub_overflow_i64_unc(h%d, h%d, h%d)\n", o, a, b); }
 int cq_template_fshr_i32(int a, int b, int c) { int h = nh++; printf("cq_template_fshr_i32(h%d, h%d, h%d) -> h%d\n", a, b, c, h); return h; }
 void cq_template_fshr_i32_unc(int o, int a, int b, int c) { printf("cq_template_fshr_i32_unc(h%d, h%d, h%d, h%d)\n", o, a, b, c); }
+int cq_template_fshl_i32(int a, int b, int c) { int h = nh++; printf("cq_template_fshl_i32(h%d, h%d, h%d) -> h%d\n", a, b, c, h); return h; }
+void cq_template_fshl_i32_unc(int o, int a, int b, int c) { printf("cq_template_fshl_i32_unc(h%d, h%d, h%d, h%d)\n", o, a, b, c); }
 
 /* --- 132-141 (2026-10-25): i128 compare/select width variants (134), the mixed-operand funnel shift (134), the f64 tape field (138) --- */
 int cq_template_icmp_ugt_i128_hl(int a, cq_u128 b) { int h = nh++; printf("cq_template_icmp_ugt_i128_hl(h%d, ", a); p100(b); printf(") -> h%d\n", h); return h; }

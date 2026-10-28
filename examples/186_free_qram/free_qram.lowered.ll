@@ -1,4 +1,4 @@
-; HAND-WRITTEN. Rules: 2, 4, 5, 7, 16, 20, 21.
+; HAND-WRITTEN. Rules: 2, 4, 5, 6, 7, 16, 20, 21.
 ; Checked: free_uncond and free_classical_cond: a[1] + a[k % 6] and k * 3 (both measured). free_entangled: a[1] + 1
 ; (measured). qram_ptr_addr: p == other (0), p < a + 2, (uintptr_t)p - (uintptr_t)a = 4 * idx and a[1] (all measured).
 ; Clean: free_uncond: the index rails k & 3 and k % 6, the value handles v and 2, both copy-outs; both stores popped LIFO,
@@ -6,7 +6,10 @@
 ; released at the free call when c != 0 and at the end of the scope when c == 0. free_entangled: the copy-out a[1], the
 ; value handle 1, the index rail k & 3; the store a[0] = 1 is popped. qram_ptr_addr: k << 1, the byte offset, p's address
 ; rail, both compare flags, the index rail k & 3 and the value handle 5; the store popped and the QRAM a released.
-; Kept: free_uncond and free_classical_cond: k (the rotated register) and both results (measured). free_entangled: k and
+; free_uncond and free_classical_cond also: the old k rail (rule 6: s = k * 3 is a bijection in k, 3 being odd; t = s *
+; 0xAAAAAAAB, the inverse of 3 mod 2^32) and t, both freed: right after the mul in free_uncond, after the scope-end
+; clean-up that still reads k in free_classical_cond.
+; Kept: free_uncond and free_classical_cond: both results (measured). free_entangled: k and
 ; x (the rotated registers), the result (measured) and the QRAM a (4 cells): it is NEVER released (no qram_free).
 ; qram_ptr_addr: k, and the four results eq, lt, d, a[1] (measured).
 ; Rotations: free_uncond, free_classical_cond: (Ry, k, tk, 1). free_entangled: (Ry, k, tk, 1); (Ry, x, tx, 1);
@@ -74,11 +77,16 @@ define i32 @free_uncond(i32 noundef %0, double noundef %1, i8 noundef zeroext %2
   call void @cqrt_free(i32 %6)    ; IR: release the %6 rail (|0>)
   call void @cqrt_qram_free(i32 %5)    ; IR: call @free(%11): release the QRAM a (every store popped, all cells |0>)
   %14 = call i32 @cq_template_mul_i32_hl(i32 %4, i32 3)    ; IR: %18 = mul i32 %4, 3  [result rail s; after the free]
-  %15 = call i8 @cqrt_measure_i8(i32 %13)    ; IR: %19 = cq_measure_ui8(%17)
-  %16 = zext i8 %15 to i32    ; IR: %20 = zext i8 %19 to i32  (classical)
-  %17 = call i32 @cqrt_measure_i32(i32 %14)    ; IR: %21 = cq_measure_ui32(%18)
-  %18 = add i32 %17, %16    ; IR: %22 = add i32 %21, %20  (classical)
-  ret i32 %18    ; IR: ret i32 %22
+  %15 = call i32 @cq_template_mul_i32_hl(i32 %14, i32 -1431655765)    ; IR: rule 6: t = s * 3^-1 (0xAAAAAAAB, the inverse of 3 mod 2^32) recomputes the old k (the update is a bijection in it)
+  call void @cqrt_copy_i32(i32 %15, i32 %4)    ; IR: rule 6: k ^= t: the dead k rail is now |0>
+  call void @cq_template_mul_i32_hl_unc(i32 %15, i32 %14, i32 -1431655765)    ; IR: rule 6: uncompute t
+  call void @cqrt_free(i32 %15)    ; IR: release t (|0>)
+  call void @cqrt_free(i32 %4)    ; IR: release the old k rail (|0> after the copy)
+  %16 = call i8 @cqrt_measure_i8(i32 %13)    ; IR: %19 = cq_measure_ui8(%17)
+  %17 = zext i8 %16 to i32    ; IR: %20 = zext i8 %19 to i32  (classical)
+  %18 = call i32 @cqrt_measure_i32(i32 %14)    ; IR: %21 = cq_measure_ui32(%18)
+  %19 = add i32 %18, %17    ; IR: %22 = add i32 %21, %20  (classical)
+  ret i32 %19    ; IR: ret i32 %22
 }
 
 define i32 @free_classical_cond(i32 noundef %0, double noundef %1, i8 noundef zeroext %2, i32 noundef %3) {
@@ -139,6 +147,11 @@ define i32 @free_classical_cond(i32 noundef %0, double noundef %1, i8 noundef ze
   call void @cqrt_qram_free(i32 %6)    ; IR: scope end: release the QRAM a
   br label %24
 24:
+  %25 = call i32 @cq_template_mul_i32_hl(i32 %18, i32 -1431655765)    ; IR: rule 6: t = s * 3^-1 (0xAAAAAAAB) after the scope-end uncomputes that read k (both paths) recomputes the old k (the update is a bijection in it)
+  call void @cqrt_copy_i32(i32 %25, i32 %5)    ; IR: rule 6: k ^= t: the dead k rail is now |0>
+  call void @cq_template_mul_i32_hl_unc(i32 %25, i32 %18, i32 -1431655765)    ; IR: rule 6: uncompute t
+  call void @cqrt_free(i32 %25)    ; IR: release t (|0>)
+  call void @cqrt_free(i32 %5)    ; IR: release the old k rail (|0> after the copy)
   ret i32 %22    ; IR: ret i32 %26
 }
 
@@ -212,6 +225,10 @@ define i32 @qram_ptr_addr(i32 noundef %0, double noundef %1, ptr noundef readnon
   %25 = add i32 %24, %22    ; IR: %26 = add i32 %25, %23  (classical)
   ret i32 %25    ; IR: ret i32 %26
 }
+
+declare void @cqrt_copy_i32(i32, i32)
+
+declare void @cq_template_mul_i32_hl_unc(i32, i32, i32)
 
 declare i32 @cqrt_alloc_i8(i8)
 declare void @cqrt_ry_i8(i32, double)

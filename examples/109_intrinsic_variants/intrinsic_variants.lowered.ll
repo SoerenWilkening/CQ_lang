@@ -1,13 +1,14 @@
-; HAND-WRITTEN. Rules: 4, 18, 20, 14, 7, 5, 2, §1.4.
-; Checked: smin_q: min(x, c) (measured, %5 -> %6); bswap_q: bswap(x) (measured, %4 -> %5); usub_sat_q: x > c ? x - c : 0
+; HAND-WRITTEN. Rules: 4, 18, 20, 14, 7, 5, 6, 2, §1.4.
+; Checked: smin_q: min(x, c) (measured, %5 -> %6); bswap_q: bswap(x) (measured, %4 -> %6); usub_sat_q: x > c ? x - c : 0
 ; (measured, %5 -> %6); va_copy_q: sum_twice(2, x, a) = 2 * (x + a) (measured: the clone's copied-out result rail %69,
 ; %5 -> %6 in the caller); vla_loop_q: acc (measured, the copied-out rail %23 -> %34, or the never-written |0> rail %6
 ; when m <= 0).
 ; Clean: in __cq_q_sum_twice_010 every trip rail of both walks (popped and uncomputed by the two reverse loops), the
 ; final sums s and t, the |0> incomings of the two accumulator phis and the promoted rail of the classical argument a
-; (freed directly); in vla_loop_q every trip's x + i and acc rails (popped and uncomputed) and the |0> incoming of acc.
-; Kept: x in each function (%4 of smin_q, %3 of bswap_q, %4 of usub_sat_q, %4 of va_copy_q, %5 of vla_loop_q: the
-; rotated user registers).
+; (freed directly); in bswap_q the old x rail (%3, rule 6: bswap is a bijection, its own inverse) and t = bswap(r)
+; (%5), both freed; in vla_loop_q every trip's x + i and acc rails (popped and uncomputed) and the |0> incoming of acc.
+; Kept: x in the other four functions (%4 of smin_q, %4 of usub_sat_q, %4 of va_copy_q, %5 of vla_loop_q: rotated user
+; registers whose results have no inverse in them); bswap_q's measured result %4.
 ; Rotations: (Ry, x, th, 1) in each of the five functions.
 ; The last intrinsics of the musl census
 ; (LIBC_COVERAGE.md), each the width/op variant of an existing family: llvm.smin is 56's smax/umin family
@@ -39,8 +40,13 @@ define i32 @bswap_q(i32 noundef %0, double noundef %1) {
   %3 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %3 = cq_theta_ui32(%0, %1)  [register x]
   call void @cqrt_ry_i32(i32 %3, double %1)    ; IR: %3 = cq_theta_ui32(%0, %1)  [Ry]
   %4 = call i32 @cq_template_bswap_i32(i32 %3)    ; IR: %4 = llvm.bswap.i32(%3)  [result rail]
-  %5 = call i32 @cqrt_measure_i32(i32 %4)    ; IR: %5 = cq_measure_ui32(%4)
-  ret i32 %5    ; IR: ret i32 %5
+  %5 = call i32 @cq_template_bswap_i32(i32 %4)    ; IR: rule 6: t = bswap(r) recomputes the old x (the update is a bijection in it)
+  call void @cqrt_copy_i32(i32 %5, i32 %3)    ; IR: rule 6: x ^= t: the dead x rail is now |0>
+  call void @cq_template_bswap_i32_unc(i32 %5, i32 %4)    ; IR: rule 6: uncompute t
+  call void @cqrt_free(i32 %5)    ; IR: release t (|0>)
+  call void @cqrt_free(i32 %3)    ; IR: release the old x rail (|0> after the copy)
+  %6 = call i32 @cqrt_measure_i32(i32 %4)    ; IR: %5 = cq_measure_ui32(%4)
+  ret i32 %6    ; IR: ret i32 %5
 }
 
 define i32 @usub_sat_q(i32 noundef %0, double noundef %1, i32 noundef %2) {
@@ -239,6 +245,8 @@ define internal fastcc void @__cq_q_put_01(ptr noundef %0, i32 %1) {
   store i32 %1, ptr %0, align 4    ; IR: store i32 %1, ptr %0  (the cell takes the handle; no gate, so no _unc twin)
   ret void    ; IR: ret void
 }
+
+declare void @cq_template_bswap_i32_unc(i32, i32)
 
 declare i32 @cqrt_alloc_i32(i32)
 declare void @cqrt_ry_i32(i32, double)

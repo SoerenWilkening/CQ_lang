@@ -1,8 +1,11 @@
-; HAND-WRITTEN. Rules: 4, 9, 5, 2.
+; HAND-WRITTEN. Rules: 4, 9, 5, 6, 2.
 ; Checked: uadd_overflow_qc: overflow ? c : x + c; usub_overflow_qq: (x - y) + (unsigned long)overflow; rotr_qc:
 ; rotr(x, k); rotr_qq: rotr(x, k) with a quantum k (each measured).
-; Clean: uadd_overflow_qc's wrapped sum and overflow flag; usub_overflow_qq's overflow flag.
-; Kept: the user registers (x; x and y; x; x and k); the measured result rails (the select, the wrapped difference and
+; Clean: uadd_overflow_qc's wrapped sum and overflow flag; usub_overflow_qq's overflow flag, then by rule 6 its old x
+; (operand 0 of the sub; t = d + y); rotr_qc's and rotr_qq's old x (rule 6: a rotate is a bijection in x for any amount;
+; t = fshl(r, r, k)); each t uncomputed, all freed.
+; Kept: uadd_overflow_qc's x (its select result has no inverse), usub_overflow_qq's y, rotr_qq's k (a rotate is no
+; bijection in its amount); the measured result rails (the select, the wrapped difference and
 ; its zext'd flag, the two funnel shifts).
 ; Rotations: Ry(th) on x (uadd_overflow_qc, rotr_qc); Ry(tx) on x and Ry(ty) on y (usub_overflow_qq); Ry(tx) on x and
 ; Ry(tk) on k (rotr_qq).
@@ -13,7 +16,7 @@
 ; the cast template. llvm.fshr is the three-operand funnel shift of 56 (fshl): a rotate is fshr(x, x, k), the same rail
 ; read in both value slots (56's same-operand rule), with the _qql form for a classical amount and the all-quantum form
 ; cq_template_fshr_i32 (three handles, as fma's unsuffixed form) when the amount is a register. Everything not measured
-; is uncomputed in reverse order.
+; is uncomputed in reverse order; a dead register whose kept result is a bijection in it is then cleaned by rule 6.
 source_filename = "overflow_fshr_variants.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
@@ -42,19 +45,29 @@ define i64 @usub_overflow_qq(i64 noundef %0, i64 noundef %1, double noundef %2, 
   %9 = call i32 @cq_template_zext_i1_to_i32(i32 %8)    ; IR: %10 = zext i1 %8 to i32  [measured]
   call void @cq_template_usub_overflow_i64_unc(i32 %8, i32 %5, i32 %6)    ; IR: uncompute %8
   call void @cqrt_free(i32 %8)    ; IR: release the %8 rail (|0>)
-  %10 = call i64 @cqrt_measure_i64(i32 %7)    ; IR: %11 = cq_measure_ul(%9)
-  %11 = call i32 @cqrt_measure_i32(i32 %9)    ; IR: %12 = cq_measure_si32(%10)
-  %12 = sext i32 %11 to i64    ; IR: %13 = sext i32 %12 to i64  (classical)
-  %13 = add i64 %10, %12    ; IR: %14 = add i64 %11, %13  (classical)
-  ret i64 %13    ; IR: ret i64 %14
+  %10 = call i32 @cq_template_add_i64(i32 %7, i32 %6)    ; IR: rule 6: t = d + y recomputes the old x (the update is a bijection in it)
+  call void @cqrt_copy_i64(i32 %10, i32 %5)    ; IR: rule 6: x ^= t: the dead x rail is now |0>
+  call void @cq_template_add_i64_unc(i32 %10, i32 %7, i32 %6)    ; IR: rule 6: uncompute t
+  call void @cqrt_free(i32 %10)    ; IR: release t (|0>)
+  call void @cqrt_free(i32 %5)    ; IR: release the old x rail (|0> after the copy)
+  %11 = call i64 @cqrt_measure_i64(i32 %7)    ; IR: %11 = cq_measure_ul(%9)
+  %12 = call i32 @cqrt_measure_i32(i32 %9)    ; IR: %12 = cq_measure_si32(%10)
+  %13 = sext i32 %12 to i64    ; IR: %13 = sext i32 %12 to i64  (classical)
+  %14 = add i64 %11, %13    ; IR: %14 = add i64 %11, %13  (classical)
+  ret i64 %14    ; IR: ret i64 %14
 }
 
 define i32 @rotr_qc(i32 noundef %0, double noundef %1, i32 noundef %2) {
   %4 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %4 = cq_theta_ui32(%0, %1)  [register x]
   call void @cqrt_ry_i32(i32 %4, double %1)    ; IR: %4 = cq_theta_ui32(%0, %1)  [Ry]
   %5 = call i32 @cq_template_fshr_i32_qql(i32 %4, i32 %4, i32 %2)    ; IR: %5 = llvm.fshr.i32(%4, %4, %2)  (x in both value slots, classical amount)  [result rail]
-  %6 = call i32 @cqrt_measure_i32(i32 %5)    ; IR: %6 = cq_measure_ui32(%5)
-  ret i32 %6    ; IR: ret i32 %6
+  %6 = call i32 @cq_template_fshl_i32_qql(i32 %5, i32 %5, i32 %2)    ; IR: rule 6: t = rotl(r, c) recomputes the old x (the update is a bijection in it)
+  call void @cqrt_copy_i32(i32 %6, i32 %4)    ; IR: rule 6: x ^= t: the dead x rail is now |0>
+  call void @cq_template_fshl_i32_qql_unc(i32 %6, i32 %5, i32 %5, i32 %2)    ; IR: rule 6: uncompute t
+  call void @cqrt_free(i32 %6)    ; IR: release t (|0>)
+  call void @cqrt_free(i32 %4)    ; IR: release the old x rail (|0> after the copy)
+  %7 = call i32 @cqrt_measure_i32(i32 %5)    ; IR: %6 = cq_measure_ui32(%5)
+  ret i32 %7    ; IR: ret i32 %6
 }
 
 define i32 @rotr_qq(i32 noundef %0, i32 noundef %1, double noundef %2, double noundef %3) {
@@ -63,9 +76,30 @@ define i32 @rotr_qq(i32 noundef %0, i32 noundef %1, double noundef %2, double no
   %6 = call i32 @cqrt_alloc_i32(i32 %1)    ; IR: %6 = cq_theta_ui32(%1, %3)  [register k]
   call void @cqrt_ry_i32(i32 %6, double %3)    ; IR: %6 = cq_theta_ui32(%1, %3)  [Ry]
   %7 = call i32 @cq_template_fshr_i32(i32 %5, i32 %5, i32 %6)    ; IR: %7 = llvm.fshr.i32(%5, %5, %6)  (x in both value slots, quantum amount)  [result rail]
-  %8 = call i32 @cqrt_measure_i32(i32 %7)    ; IR: %8 = cq_measure_ui32(%7)
-  ret i32 %8    ; IR: ret i32 %8
+  %8 = call i32 @cq_template_fshl_i32(i32 %7, i32 %7, i32 %6)    ; IR: rule 6: t = rotl(r, k) recomputes the old x (the update is a bijection in it)
+  call void @cqrt_copy_i32(i32 %8, i32 %5)    ; IR: rule 6: x ^= t: the dead x rail is now |0>
+  call void @cq_template_fshl_i32_unc(i32 %8, i32 %7, i32 %7, i32 %6)    ; IR: rule 6: uncompute t
+  call void @cqrt_free(i32 %8)    ; IR: release t (|0>)
+  call void @cqrt_free(i32 %5)    ; IR: release the old x rail (|0> after the copy)
+  %9 = call i32 @cqrt_measure_i32(i32 %7)    ; IR: %8 = cq_measure_ui32(%7)
+  ret i32 %9    ; IR: ret i32 %8
 }
+
+declare void @cqrt_copy_i64(i32, i32)
+
+declare void @cq_template_add_i64_unc(i32, i32, i32)
+
+declare i32 @cq_template_add_i64(i32, i32)
+
+declare void @cq_template_fshl_i32_unc(i32, i32, i32, i32)
+
+declare i32 @cq_template_fshl_i32(i32, i32, i32)
+
+declare void @cqrt_copy_i32(i32, i32)
+
+declare void @cq_template_fshl_i32_qql_unc(i32, i32, i32, i32)
+
+declare i32 @cq_template_fshl_i32_qql(i32, i32, i32)
 
 declare i32 @cqrt_alloc_i32(i32)
 declare void @cqrt_ry_i32(i32, double)
