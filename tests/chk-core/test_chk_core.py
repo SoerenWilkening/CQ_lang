@@ -59,13 +59,15 @@ def trace_of(ll, proto, fn, ctypes, args):
 
 def run_prog(prog, spec, sample):
     """The trace of one sample run by hand: the driver reads drivers' sample file from $CQD_SAMPLES
-    (cq-arch Z2)."""
+    (cq-arch Z2) and runs the sample in a forked child (core.c, shots)."""
     with tempfile.TemporaryDirectory() as d:
         t, f = Path(d) / "t.jsonl", Path(d) / "s"
         f.write_text(drivers.sample_file(spec, [run.canonical_sample(spec, sample)]))
         subprocess.run([str(prog)], env=dict(os.environ, CQE_TRACE=str(t), CQD_SAMPLES=str(f)), check=True,
                        capture_output=True)
-        return [json.loads(l) for l in t.read_text().splitlines() if l.strip()]
+        # the runner's shot frames (core.c, cq-e2i9) are not events of the sample
+        return [e for e in (json.loads(l) for l in t.read_text().splitlines() if l.strip())
+                if e["ev"] not in ("shot", "shot_end")]
 
 
 class CoreGates(unittest.TestCase):
@@ -215,13 +217,13 @@ class Violations(unittest.TestCase):
         one = [run.run_sample(HERE / "ok_clean.ll", spec, s, "ours", rt_sources=RT, extra_sources=FAM)
                for s in samples]
         self.assertEqual([to_json(r) for r in batch], [to_json(r) for r in one])
-        saved = run._PROCESS_BATCH, run._CHUNK
-        run._PROCESS_BATCH, run._CHUNK = 1, 2    # the worker-interpreter path of large batches
+        saved = run.MIN_PART
+        run.MIN_PART = 1    # several runner processes, each over a strided part of the batch
         try:
-            workers = run.run_samples(HERE / "ok_clean.ll", spec, samples, "ours", rt_sources=RT,
+            workers = run.run_samples(HERE / "ok_clean.ll", spec, samples, "ours", 3, rt_sources=RT,
                                       extra_sources=FAM)
         finally:
-            run._PROCESS_BATCH, run._CHUNK = saved
+            run.MIN_PART = saved
         self.assertEqual([to_json(r) for r in workers], [to_json(r) for r in one])
         self.assertTrue(all(w.sample is s for w, s in zip(workers, samples)))
 
@@ -243,7 +245,9 @@ class ThetaSubstitution(unittest.TestCase):
                 th.write_text(theta)
                 env["CQE_THETA"] = str(th)
             subprocess.run([str(prog)], env=env, check=True, capture_output=True)
-            return [json.loads(l) for l in t.read_text().splitlines() if l.strip()]
+            # the runner's shot frames (core.c, cq-e2i9) are not events of the sample
+        return [e for e in (json.loads(l) for l in t.read_text().splitlines() if l.strip())
+                if e["ev"] not in ("shot", "shot_end")]
 
     @staticmethod
     def ry(ev):

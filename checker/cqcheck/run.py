@@ -12,16 +12,24 @@ cq-f69). A build is cached under $CQE_CACHE (default <repo>/build/cqcheck-cache)
 everything that goes into it, and so is a failed one (its BuildError text, cq-3ebz). The driver reads its sample at run time (cq-arch Z2), so the samples of
 one example share one build.
 
-Run. One process per sample: `prog` with $CQD_SAMPLES naming a one-record drivers.sample_file and
-the trace (JSONL, cq-arch) written to $CQE_TRACE. run_samples builds once for a batch and runs its
-samples in parallel. A sample that cannot be built or run is a RunResult whose violations say why; it is
-never dropped.
+Run (cq-e2i9). One runner process per part of a batch (run_samples: $CQCHECK_JOBS parts, default the
+CPU count): `prog` with $CQD_SAMPLES naming the part's drivers.sample_file and the trace (JSONL, cq-arch)
+written to $CQE_TRACE. The runner runs the setup once and forks one child per record (core.c, shots), as
+the C oracle does (cqo_rt.c): each sample runs in a process of its own from the setup's state, so
+nothing of one sample (rails, handles, known flags, logs, violations, fenv, the theta schedule, the
+families' tables, the program's globals and heap) reaches the next. The trace frames each sample between
+shot markers that run.py strips; the trace is parsed with one json.loads per runner, and each sample's
+events become its RunResult in one pass. A sample that cannot be built or run is a RunResult whose
+violations say why; it is never dropped: a sample that kills its child is a 'signal', 'timeout' or
+'no_exit' result, and one that ends the runner itself (a malformed record) a 'sample' or 'runner'
+result, after which a fresh runner takes the rest.
 
 cq_theta substitution (cq-arch Z4, cq-6m2; CR §6 item 1). A sample may carry "subst":
 {"<fn>:<site>": hex | [hex, ...]}, the chosen value of each reach of a cq_theta site of the C program
 (T1 ordinals; oracle.py). The evaluator does not know which lowered Ry is which C site, so run.py runs
 the sample under the C oracle (oracle.run_samples on the example's .O1.ll, c_module_of; cached) and
-hands the evaluator the C program's theta reaches in execution order through $CQE_THETA (theta_schedule):
+hands the evaluator the C program's theta reaches in execution order (theta_schedule; one $CQE_THETA_ALL
+file per runner holds every sample's, core.c):
 each firing Ry takes the earliest reach not yet taken with its width and angle and its target takes that
 reach's value (dispatch.c). A sample without "subst" substitutes nothing.
 
@@ -56,11 +64,11 @@ RunResult fields (JSON-serializable):
               and slots of rt-mem's {"ev":"qram","op":"exit"} event (roles qram_cell, qram_slot)
   clean       the free events [{"h", "v", "known", "w"}]
   violations  the trace's violation events [{"what", "h", "msg"}] plus run failures:
-              build, sample, timeout, no_exit (the process ended without the exit event)
+              build, sample, timeout, signal, no_exit (the process ended without the exit event),
+              runner (the runner process ended inside this sample), trace (an unparsable line)
 """
 from __future__ import annotations
 
-import dataclasses
 import hashlib
 import json
 import os
@@ -81,7 +89,7 @@ LLVM_BIN = Path(os.environ.get("CQ_LLVM_BIN", "/usr/local/opt/llvm@19/bin"))
 CLANG = str(LLVM_BIN / "clang")
 LLVM_LINK = str(LLVM_BIN / "llvm-link")
 DEFAULT_TIMEOUT = 30.0
-_VERSION = "chk-core-1"
+_VERSION = "chk-core-2"
 
 
 class BuildError(Exception):
@@ -212,6 +220,8 @@ _RESULT_PRELUDE = r"""
 #include <stdio.h>
 #include <string.h>
 void cqe_log(const char *json_object);
+int cqe__shot_begin(int idx);   /* core.c: fork; 0 in the child that runs the sample (cq-e2i9) */
+void cqe__shot_end(void);       /* core.c: the child's end of shot */
 static void cqd_ret(int call, const char *fn, const char *w, const void *p, size_t n, unsigned bits) {
   unsigned char b[64] = {0};
   memcpy(b, p, n < sizeof b ? n : sizeof b);
@@ -234,9 +244,12 @@ static void cqd_ret(int call, const char *fn, const char *w, const void *p, size
 
 def driver_c(spec: DriverSpec, samples: Sequence[dict]) -> str:
     """The driver C source: drivers.driver_source (cq-arch Z1/Z2: the one renderer of samples) with
-    the result hook. It reads its samples from $CQD_SAMPLES at run time."""
+    the result hook. It reads its samples from $CQD_SAMPLES at run time and runs each in a forked
+    child of its own (core.c, shots; cq-e2i9)."""
     from cqcheck import drivers
-    return _RESULT_PRELUDE + drivers.driver_source(spec, list(samples))
+    return _RESULT_PRELUDE + drivers.driver_source(spec, list(samples),
+                                                   before_call="if (!cqe__shot_begin(CQD_SAMPLE)) {",
+                                                   after_call="cqe__shot_end(); }")
 
 
 def canonical_sample(spec: DriverSpec, sample: dict) -> dict:
@@ -410,27 +423,42 @@ def _resolve_call(spec: DriverSpec, call: Any) -> int:
     raise SampleError(f"call {call!r}: an index or a function name")
 
 
+_ROT_EVENTS = frozenset(("ry", "ry_qangle", "phase", "phase_qangle"))
+_STOP_WHATS = frozenset(("build", "sample", "timeout"))
+
+
 def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optional[int],
             extra: List[dict]) -> RunResult:
-    rets = [{"call": e.get("call"), "fn": e.get("fn"),
-             "v": {"w": e["w"], "v": e.get("v")} if e.get("w") else e.get("v")}
-            for e in events if e.get("ev") == "ret"]
-    measured = [{"h": e["h"], "w": e.get("w"), "v": e["v"]} for e in events if e.get("ev") == "measure"]
-    rots = []
+    """One pass over a sample's trace events into its RunResult."""
+    rets: List[dict] = []
+    measured: List[dict] = []
+    rots: List[dict] = []
+    clean: List[dict] = []
+    viol: List[dict] = []
+    qram_live: List[dict] = []
+    last_exit: Optional[dict] = None
     for e in events:
-        if e.get("ev") in ("ry", "ry_qangle", "phase", "phase_qangle"):
+        ev = e.get("ev")
+        if ev in _ROT_EVENTS:
             rots.append(dict(e))
-    exits = [e for e in events if e.get("ev") == "exit"]
-    kept = list(exits[-1]["live"]) if exits else []
-    # rt-mem's QRAM cells and unpopped slots live outside core's rail table; its exit event lists
-    # them (roles qram_cell, qram_slot) and they are Kept items too (cq-lxv)
-    for e in events:
-        if e.get("ev") == "qram" and e.get("op") == "exit":
-            kept.extend(e.get("live", []))
-    clean = [{k: e.get(k) for k in ("h", "v", "known", "w")} for e in events if e.get("ev") == "free"]
-    viol = [{k: e.get(k) for k in ("what", "h", "msg")} for e in events if e.get("ev") == "violation"]
+        elif ev == "free":
+            clean.append({"h": e.get("h"), "v": e.get("v"), "known": e.get("known"), "w": e.get("w")})
+        elif ev == "measure":
+            measured.append({"h": e["h"], "w": e.get("w"), "v": e["v"]})
+        elif ev == "ret":
+            rets.append({"call": e.get("call"), "fn": e.get("fn"),
+                         "v": {"w": e["w"], "v": e.get("v")} if e.get("w") else e.get("v")})
+        elif ev == "violation":
+            viol.append({"what": e.get("what"), "h": e.get("h"), "msg": e.get("msg")})
+        elif ev == "exit":
+            last_exit = e
+        elif ev == "qram" and e.get("op") == "exit":
+            # rt-mem's QRAM cells and unpopped slots live outside core's rail table; its exit event
+            # lists them (roles qram_cell, qram_slot) and they are Kept items too (cq-lxv)
+            qram_live.extend(e.get("live", []))
+    kept = (list(last_exit["live"]) if last_exit is not None else []) + qram_live
     viol += extra
-    if not exits and code is not None and not any(v["what"] in ("build", "sample", "timeout") for v in extra):
+    if last_exit is None and code is not None and not any(v["what"] in _STOP_WHATS for v in extra):
         viol.append({"what": "no_exit", "h": None, "msg": f"process ended (status {code}) without the exit event"})
     return RunResult(side=side, sample=sample, outputs={"ret": rets, "stdout": stdout, "exit": code},
                      measured=measured, rotations=rots, kept=kept, clean=clean, violations=viol)
@@ -532,39 +560,157 @@ def _build_failure(side: str, sample: dict, e: BaseException) -> RunResult:
     return _result(side, sample, [], "", None, [{"what": "build", "h": None, "msg": str(e)}])
 
 
-def _execute(prog: Path, sample: dict, record: str, side: str, timeout: float,
-             theta: Optional[str] = None) -> RunResult:
-    """One process of the built program over one sample record (theta: its $CQE_THETA schedule, or
-    None for a sample without substitution)."""
-    with tempfile.TemporaryDirectory(prefix="cqe-run.") as wd:
-        trace = Path(wd) / "trace.jsonl"
-        (Path(wd) / "sample").write_text(record)
-        env = dict(os.environ, CQE_TRACE=str(trace), CQD_SAMPLES=str(Path(wd) / "sample"))
-        env.pop("CQE_THETA", None)
-        if theta is not None:
-            (Path(wd) / "theta").write_text(theta)
-            env["CQE_THETA"] = str(Path(wd) / "theta")
-        try:
-            p = subprocess.run([str(prog)], cwd=wd, env=env, capture_output=True, timeout=timeout)
-            code, stdout, extra = p.returncode, p.stdout.decode(errors="replace"), []
-            err = p.stderr.decode(errors="replace")
-            if code < 0:
-                extra.append({"what": "signal", "h": None, "msg": f"killed by signal {-code}: {err[-500:]}"})
-            elif code == 3 and "cqd: sample" in err:
-                extra.append({"what": "sample", "h": None, "msg": err.strip()[-500:]})
-        except subprocess.TimeoutExpired as e:
-            code, stdout = None, (e.stdout or b"").decode(errors="replace")
-            extra = [{"what": "timeout", "h": None, "msg": f"no exit within {timeout}s"}]
-        events, bad = _parse_trace(trace.read_text(errors="replace") if trace.exists() else "")
+# ---- runner (cq-e2i9) --------------------------------------------------------------------------
+#
+# One runner process per part of a batch: `prog` reads the part's sample file once and forks one
+# child per record (core.c, shots), so each sample runs from the setup's state in a process of its
+# own, as a process per sample did, at the cost of a fork. The runner frames every shot in the trace
+# ({"ev":"shot","k"} ... {"ev":"shot_end","k","code","timeout","stdout","stderr"}); the frames are
+# private to chk-core and never reach a RunResult. A runner that ends inside a sample (the driver's
+# _exit(3) on a malformed record, a kill) loses no sample: that sample gets a RunResult saying so and
+# a fresh runner takes the rest.
+
+_BAD = "__bad_line"
+
+
+def _parse_lines(text: str) -> List[dict]:
+    """Every trace line of a runner as an event: one json.loads over the whole trace, line by line only
+    when that fails (a line torn by a killed process becomes {"ev": _BAD, "line"})."""
+    lines = [l for l in text.split("\n") if l.strip()]
+    if not lines:
+        return []
+    try:
+        return json.loads("[" + ",".join(lines) + "]")
+    except json.JSONDecodeError:
+        out = []
+        for l in lines:
+            try:
+                out.append(json.loads(l))
+            except json.JSONDecodeError:
+                out.append({"ev": _BAD, "line": l.strip()})
+        return out
+
+
+def _split_shots(events: List[dict]) -> Tuple[List[dict], Dict[int, Tuple[List[dict], Optional[dict]]]]:
+    """(the runner's events before its first shot, k -> (the shot's events, its shot_end frame or None))."""
+    pre: List[dict] = []
+    shots: Dict[int, Tuple[List[dict], Optional[dict]]] = {}
+    cur: Optional[List[dict]] = pre
+    for e in events:
+        ev = e.get("ev") if isinstance(e, dict) else None
+        if ev == "shot":
+            cur = []
+            shots[e["k"]] = (cur, None)
+        elif ev == "shot_end":
+            shots[e["k"]] = (shots.get(e["k"], ([], None))[0], e)
+            cur = None                     # nothing of a shot follows its end
+        elif cur is not None:
+            cur.append(e)
+    return pre, shots
+
+
+def _with_bad(events: List[dict]) -> Tuple[List[dict], List[dict]]:
+    """(events, the 'trace' violations of torn lines), as _parse_trace gives them."""
+    if not any(e.get("ev") == _BAD for e in events):
+        return events, []
+    good = [e for e in events if e.get("ev") != _BAD]
+    bad = [{"what": "trace", "h": None, "msg": f"unparsable trace line: {e['line'][:200]}"}
+           for e in events if e.get("ev") == _BAD]
+    return good, bad
+
+
+def _bytes_text(s: str) -> str:
+    """A shot's captured stream: core.c writes each byte as one character; decoded as a pipe was."""
+    try:
+        return s.encode("latin-1").decode("utf-8", errors="replace")
+    except UnicodeEncodeError:
+        return s
+
+
+def _shot_result(side: str, sample: dict, pre: List[dict], evs: List[dict], end: dict, setup_out: str,
+                 timeout: float) -> RunResult:
+    """The RunResult of one finished shot: what a process of its own gave."""
+    events, bad = _with_bad(pre + evs)
+    code = end.get("code")
+    stdout = setup_out + _bytes_text(end.get("stdout", ""))
+    err = _bytes_text(end.get("stderr", ""))
+    extra: List[dict] = []
+    if end.get("timeout"):
+        code, extra = None, [{"what": "timeout", "h": None, "msg": f"no exit within {timeout}s"}]
+    elif code < 0:
+        extra.append({"what": "signal", "h": None, "msg": f"killed by signal {-code}: {err[-500:]}"})
+    elif code == 3 and "cqd: sample" in err:
+        extra.append({"what": "sample", "h": None, "msg": err.strip()[-500:]})
     return _result(side, sample, events, stdout, code, extra + bad)
+
+
+def _run_part(prog: Path, items: Sequence[Tuple[dict, str, Optional[str]]], side: str,
+              timeout: float) -> List[RunResult]:
+    """(sample, record, theta) items in runner processes, in order: one runner over all of them, and a
+    fresh one after a sample a runner did not finish."""
+    out: List[RunResult] = []
+    with tempfile.TemporaryDirectory(prefix="cqe-run.") as wd:
+        w = Path(wd)
+        theta_all = None
+        if any(th is not None for _, _, th in items):
+            theta_all = w / "theta"
+            theta_all.write_text("".join(f"@{k}\n{th}" for k, (_, _, th) in enumerate(items) if th is not None))
+        (w / "shot").mkdir()
+        pos = 0
+        while pos < len(items):
+            (w / "samples").write_text("".join(rec for _, rec, _ in items[pos:]))
+            trace = w / "trace.jsonl"
+            env = dict(os.environ, CQE_TRACE=str(trace), CQD_SAMPLES=str(w / "samples"),
+                       CQE_SHOT_DIR=str(w / "shot"), CQE_SHOT_BASE=str(pos),
+                       CQE_SHOT_TIMEOUT=repr(float(timeout)))
+            env.pop("CQE_THETA", None)
+            env.pop("CQE_THETA_ALL", None)
+            if theta_all is not None:
+                env["CQE_THETA_ALL"] = str(theta_all)
+            budget = (2 * timeout + 2) * (len(items) - pos) + 60
+            try:
+                p = subprocess.run([str(prog)], cwd=wd, env=env, capture_output=True, timeout=budget)
+                code, killed = p.returncode, False
+                setup_out, err = p.stdout.decode(errors="replace"), p.stderr.decode(errors="replace")
+            except subprocess.TimeoutExpired as e:
+                code, killed = None, True
+                setup_out, err = (e.stdout or b"").decode(errors="replace"), (e.stderr or b"").decode(errors="replace")
+            pre, shots = _split_shots(_parse_lines(trace.read_text(errors="replace") if trace.exists() else ""))
+            while pos < len(items) and pos in shots and shots[pos][1] is not None:
+                evs, end = shots[pos]
+                out.append(_shot_result(side, items[pos][0], pre, evs, end, setup_out, timeout))
+                pos += 1
+            if pos == len(items):
+                break
+            # the runner ended inside sample pos: that sample fails, the rest run in a new runner
+            events, bad = _with_bad(pre + (shots[pos][0] if pos in shots else []))
+            if killed:
+                extra = [{"what": "timeout", "h": None, "msg": f"no exit within {timeout}s"}]
+            elif code == 3 and "cqd: sample" in err:
+                extra = [{"what": "sample", "h": None, "msg": err.strip()[-500:]}]
+            else:
+                extra = [{"what": "runner", "h": None,
+                          "msg": f"the runner ended (status {code}) inside this sample: {err.strip()[-500:]}"}]
+            out.append(_result(side, items[pos][0], events, setup_out, None if killed else code, extra + bad))
+            pos += 1
+    return out
+
+
+def default_jobs() -> int:
+    """Runner processes per batch: $CQCHECK_JOBS, else the CPU count."""
+    try:
+        return max(1, int(os.environ.get("CQCHECK_JOBS", "")))
+    except ValueError:
+        return os.cpu_count() or 4
 
 
 def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: str, jobs: int = 0, *,
                 timeout: float = DEFAULT_TIMEOUT, rt_sources: Optional[Sequence[Path]] = None,
                 extra_sources: Sequence[Path] = (), c_module: Optional[Path] = None) -> List[RunResult]:
-    """run_sample over many samples, in order, jobs at a time (0: the CPU count). Each
-    result equals run_sample's for that sample; the program is built once for the batch, and a
-    build that fails gives every well-formed sample the same 'build' violation without running."""
+    """run_sample over many samples, in order. Each result equals run_sample's for that sample; the
+    program is built once for the batch and its samples run in up to `jobs` runner processes (0:
+    default_jobs), each forking one child per sample; a build that fails gives every well-formed
+    sample the same 'build' violation without running."""
     from concurrent.futures import ThreadPoolExecutor
     samples = list(samples)
     preps = [_prepare(spec, s, side) for s in samples]
@@ -583,63 +729,33 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
                 theta = _theta_schedules(Path(lowered), spec, samples, preps, c_module)
             except (BuildError, SampleError, OSError, RuntimeError) as e:
                 theta_failure = e
-    for i, p in enumerate(preps):     # a sample whose theta schedule cannot be had cannot run
-        if theta_failure is not None and not isinstance(p, RunResult) and "subst" in samples[i]:
-            preps[i] = _build_failure(side, samples[i], theta_failure)
-
-    def one(i: int) -> RunResult:
-        p = preps[i]
+    out: List[Optional[RunResult]] = []
+    for i, p in enumerate(preps):
         if isinstance(p, RunResult):
-            return p
-        if failure is not None:
-            return _build_failure(side, samples[i], failure)
-        return _execute(prog, samples[i], p[1], side, timeout, theta.get(i))
+            out.append(p)
+        elif failure is not None:
+            out.append(_build_failure(side, samples[i], failure))
+        elif theta_failure is not None and "subst" in samples[i]:   # no theta schedule: cannot run
+            out.append(_build_failure(side, samples[i], theta_failure))
+        else:
+            out.append(None)
+    todo = [i for i, r in enumerate(out) if r is None]
+    if not todo:
+        return out  # type: ignore[return-value]
+    n = max(1, min(jobs or default_jobs(), len(todo) // MIN_PART))
+    parts = [todo[k::n] for k in range(n)]     # strided: neighbouring samples are often alike in cost
 
-    if failure is not None or not good:
-        return [one(i) for i in range(len(samples))]
-    workers = jobs or os.cpu_count() or 4
-    todo = [i for i, p in enumerate(preps) if not isinstance(p, RunResult)]
-    if len(todo) < _PROCESS_BATCH:
-        with ThreadPoolExecutor(max_workers=workers) as ex:
-            return list(ex.map(one, range(len(samples))))
-    # Large batches (tens of thousands of samples): starting one process per sample from threads is
-    # bound by this interpreter's lock, so worker interpreters (_chunk_main) take chunks of samples.
-    out: List[Optional[RunResult]] = [p if isinstance(p, RunResult) else None for p in preps]
-    size = max(16, min(_CHUNK, len(todo) // (4 * workers) or 1))
-    chunks = [todo[k:k + size] for k in range(0, len(todo), size)]
+    def part(ix: List[int]) -> None:
+        for i, r in zip(ix, _run_part(prog, [(samples[i], preps[i][1], theta.get(i)) for i in ix], side,
+                                      timeout)):
+            out[i] = r
 
-    def chunk(ix: List[int]) -> None:
-        for i, r in zip(ix, _execute_chunk(prog, [(samples[i], preps[i][1], theta.get(i)) for i in ix], side,
-                                           timeout)):
-            out[i] = dataclasses.replace(r, sample=samples[i])   # the sample as given, not its JSON copy
-
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        list(ex.map(chunk, chunks))
+    if n == 1:
+        part(parts[0])
+    else:
+        with ThreadPoolExecutor(max_workers=n) as ex:
+            list(ex.map(part, parts))
     return out  # type: ignore[return-value]
 
 
-_PROCESS_BATCH = 512   # from this many samples on, run_samples uses worker interpreters
-_CHUNK = 256
-
-
-def _execute_chunk(prog: Path, items: Sequence[Tuple[dict, str, Optional[str]]], side: str,
-                   timeout: float) -> List[RunResult]:
-    """_execute over (sample, record, theta) triples, in order, in one worker interpreter (_chunk_main)."""
-    job = json.dumps({"prog": str(prog), "side": side, "timeout": timeout,
-                      "items": [[s, rec, th] for s, rec, th in items]})
-    env = dict(os.environ, PYTHONPATH=os.pathsep.join(
-        [str(REPO / "checker")] + ([os.environ["PYTHONPATH"]] if os.environ.get("PYTHONPATH") else [])))
-    budget = (timeout + 10) * len(items) + 60
-    p = subprocess.run([sys.executable, "-c", "from cqcheck import run; run._chunk_main()"], input=job,
-                       capture_output=True, text=True, env=env, timeout=budget)
-    if p.returncode:
-        raise RuntimeError(f"cq: run.py worker failed ({p.returncode}): {p.stderr.strip()[-2000:]}")
-    return [RunResult(**d) for d in json.loads(p.stdout)]
-
-
-def _chunk_main() -> None:
-    """Worker interpreter of _execute_chunk: a job on stdin, the RunResults as a JSON list on stdout."""
-    job = json.loads(sys.stdin.read())
-    res = [dataclasses.asdict(_execute(Path(job["prog"]), s, rec, job["side"], job["timeout"], th))
-           for s, rec, th in job["items"]]
-    sys.stdout.write(json.dumps(res))
+MIN_PART = 32   # a runner gets at least this many samples (fewer runners for a small batch)

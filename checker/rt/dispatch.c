@@ -626,13 +626,36 @@ static void gate_measure(call_t *c, const char *w) {
 typedef struct { uint64_t angle, v[2]; char w[8]; int taken; } theta_reach;
 static theta_reach *theta_sched;
 static int theta_n, theta_loaded;
+static const char *theta_text; /* cqe__theta_use: the schedule's text in memory, in place of $CQE_THETA */
+static size_t theta_textn;
+static int theta_text_set;
+
+/* A batch runner's shot (core.c, cq-e2i9): forget any schedule and take this sample's from memory
+ * (text NULL: no schedule, the sample substitutes nothing). Called in the forked child before the
+ * sample's call. */
+void cqe__theta_use(const char *text, size_t n) {
+  free(theta_sched);
+  theta_sched = NULL;
+  theta_n = theta_loaded = 0;
+  theta_text = text;
+  theta_textn = n;
+  theta_text_set = 1;
+}
 
 static void theta_load(void) {
   theta_loaded = 1;
-  const char *path = getenv("CQE_THETA");
-  if (!path || !*path)
-    return;
-  FILE *f = fopen(path, "r");
+  FILE *f;
+  const char *path = "(memory)";
+  if (theta_text_set) {
+    if (!theta_text || !theta_textn)
+      return;
+    f = fmemopen((void *)theta_text, theta_textn, "r");
+  } else {
+    path = getenv("CQE_THETA");
+    if (!path || !*path)
+      return;
+    f = fopen(path, "r");
+  }
   if (!f) {
     cqe__violation("fail", -1, "CQE_THETA: cannot open %s", path);
     return;
