@@ -226,6 +226,64 @@ class Violations(unittest.TestCase):
         self.assertTrue(all(w.sample is s for w, s in zip(workers, samples)))
 
 
+class ThetaSubstitution(unittest.TestCase):
+    """cq-6m2 (cq-arch Z4): with $CQE_THETA, a firing Ry takes the earliest schedule reach of its width
+    and angle, and its ry event logs the chosen value; a control reading 0 takes nothing."""
+    ARGS = ("int ts(int,double)", "ts", ["int", "double"])
+
+    def trace(self, theta):
+        spec = spec1(*self.ARGS)
+        prog = run.build(HERE / "theta_subst.ll", spec, (), RT, FAM)
+        with tempfile.TemporaryDirectory() as d:
+            t, f, th = Path(d) / "t.jsonl", Path(d) / "s", Path(d) / "theta"
+            f.write_text(drivers.sample_file(spec, [run.canonical_sample(spec, {"call": 0, "args": [0, 0.5]})]))
+            env = dict(os.environ, CQE_TRACE=str(t), CQD_SAMPLES=str(f))
+            env.pop("CQE_THETA", None)
+            if theta is not None:
+                th.write_text(theta)
+                env["CQE_THETA"] = str(th)
+            subprocess.run([str(prog)], env=env, check=True, capture_output=True)
+            return [json.loads(l) for l in t.read_text().splitlines() if l.strip()]
+
+    @staticmethod
+    def ry(ev):
+        return [(e["ev"], e["h"], e["v"]) for e in ev if e["ev"] in ("ry", "ry_qangle")]
+
+    def test_no_schedule_is_the_identity(self):
+        ev = self.trace(None)
+        self.assertEqual(self.ry(ev), [("ry", 1, "0x5"), ("ry", 2, "0x0"), ("ry", 3, "0x0"), ("ry_qangle", 5, "0x9")])
+        self.assertFalse([e for e in ev if e["ev"] in ("violation", "theta_unmatched")])
+
+    def test_reaches_by_width_and_angle(self):
+        # schedule order differs from the gate order: the match is by width and angle, earliest first
+        ev = self.trace("0x4008000000000000 i32 0x2a\n0x4000000000000000 i8 0x7\n0x3ff0000000000000 i1 0x1\n"
+                        "0x3fe0000000000000 i8 0xff\n0x3fe0000000000000 i8 0x11\n")
+        self.assertEqual(self.ry(ev), [("ry", 1, "0xff"), ("ry", 2, "0x1"), ("ry", 3, "0x7"), ("ry_qangle", 5, "0x2a")])
+        self.assertEqual([e["v"] for e in ev if e["ev"] == "measure"], ["0xff", "0x7", "0x2a"])
+        self.assertEqual([e["v"] for e in ev if e["ev"] == "ret"], [hex(0xff + 7 + 0x2a)])
+        self.assertFalse([e for e in ev if e["ev"] in ("violation", "theta_unmatched")])
+
+    def test_control_zero_takes_nothing_and_misses_are_logged(self):
+        ev = self.trace("0x3fe0000000000000 i8 0x3\n0x3ff0000000000000 i1 0x0\n0x4000000000000000 i8 0x7\n")
+        self.assertEqual(self.ry(ev), [("ry", 1, "0x3"), ("ry", 2, "0x0"), ("ry", 3, "0x0"), ("ry_qangle", 5, "0x9")])
+        miss = [e for e in ev if e["ev"] == "theta_unmatched"]
+        self.assertEqual([(e["h"], e["w"], e["angle"]) for e in miss], [(5, "i32", "0x4008000000000000")])
+
+    def test_angle_a_few_ulps_off_takes_its_reach(self):
+        # no exact angle: the nearest untaken reach of the width within THETA_NEAR_ULPS (logged)
+        ev = self.trace("0x3fe0000000000003 i8 0x2a\n0x3ff0000000000000 i1 0x0\n0x4000000000000000 i8 0x7\n"
+                        "0x4108000000000000 i32 0x1\n")
+        self.assertEqual(self.ry(ev), [("ry", 1, "0x2a"), ("ry", 2, "0x0"), ("ry", 3, "0x0"), ("ry_qangle", 5, "0x9")])
+        self.assertEqual([(e["h"], e["reach"]) for e in ev if e["ev"] == "theta_near"], [(1, "0x3fe0000000000003")])
+        self.assertEqual([e["h"] for e in ev if e["ev"] == "theta_unmatched"], [5])   # far off: kept
+
+    def test_wide_and_fp_values(self):
+        ev = self.trace("0x3fe0000000000000 i8 0x1ff\n0x3ff0000000000000 i1 0x3\n0x4000000000000000 i8 0x80\n"
+                        "0x4008000000000000 i32 0x123456789\n")
+        self.assertEqual(self.ry(ev), [("ry", 1, "0xff"), ("ry", 2, "0x1"), ("ry", 3, "0x80"),
+                                       ("ry_qangle", 5, "0x23456789")])
+
+
 class HandlerOrder(unittest.TestCase):
     """M1 (cq-mgi) multi-handler dispatch through the real core (cq-f69), with multifam.c's three
     handlers for mul: first acceptor wins, a decline's writes are discarded, -1 ends the search,

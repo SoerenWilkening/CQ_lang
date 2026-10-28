@@ -23,7 +23,7 @@ class DriverSpec:
 @dataclass(frozen=True)
 class SampleSet:
     example: str
-    samples: List[Dict[str, Any]]    # [{call, args}]
+    samples: List[Dict[str, Any]]    # [{call, args[, subst]}]; subst: cq-arch Z4 (cq-6m2)
     classes: Dict[str, Any]          # {edge, specials, totalization, trips, random_seed, exhaustive}
 
 

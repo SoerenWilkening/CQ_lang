@@ -14,7 +14,9 @@
  * `internal <why>`.
  * The cutoff records of cq-arch T2 go to <trace> as `{"ev":"kloop","loop","act","n","capped"[,"cut",
  * "mcut"]}` lines (oracle.py moves them to outputs["loops"]; they are not trace events).
- * <subst> lines `<index> <fn> <site> <nwords> <hex w>...` replace the register value at a cq_theta site.
+ * <subst> lines `<index> <fn> <site> <period> <occ> <nwords> <hex w>...` replace the register value at a
+ * cq_theta site (cq-6m2, cq-arch Z4): the r-th reach (0-based) of site <fn>:<site> in sample <index>
+ * takes the line whose <occ> is r mod <period>; a site with no line keeps its value (the identity).
  * Values in events are hex bit patterns, "0x" plus lowercase digits without leading zeros. */
 #define _DARWIN_C_SOURCE
 #include <errno.h>
@@ -319,9 +321,19 @@ int64_t __cqo_fpto80(long double x, int32_t w, int32_t sgn) {
 }
 
 /* ------------------------------------------------------------------ events */
-#define MAXSUBST 64
-static struct { char fn[256]; int site; uint64_t w[2]; } subst[MAXSUBST];
+/* cq_theta substitution (cq-6m2, cq-arch Z4): this sample's chosen values, per site and reach */
+#define MAXSUBST 8192
+#define MAXSKEY 512
+static struct { int key, occ; uint64_t w[2]; } subst[MAXSUBST];
 static int nsubst;
+static struct { char fn[256]; int site, period; long reach; } skeys[MAXSKEY];
+static int nskeys;
+
+static int skey_of(const char *fn, int site) {
+    for (int i = 0; i < nskeys; ++i)
+        if (skeys[i].site == site && !strcmp(skeys[i].fn, fn)) return i;
+    return -1;
+}
 
 /* entries of RunResult side 'c' rotations / measured so far (T2 cut, mcut) */
 static long n_rotations, n_measured;
@@ -329,13 +341,18 @@ static long n_rotations, n_measured;
 static const char *kinds[] = {"theta", "phi", "measure", "invert_begin", "invert_end"};
 
 void __cqo_site(const char *fn, int32_t site, int32_t kind, uint64_t angle, void *reg, int32_t bits) {
-    if (kind == 0)
+    int sk = kind == 0 ? skey_of(fn, site) : -1;
+    if (sk >= 0) {
+        int occ = (int)(skeys[sk].reach++ % skeys[sk].period);
         for (int i = 0; i < nsubst; ++i)
-            if (subst[i].site == site && !strcmp(subst[i].fn, fn)) {
+            if (subst[i].key == sk && subst[i].occ == occ) {
                 unsigned nb = ((unsigned)bits + 7) / 8;
+                memset(reg, 0, nb);
                 memcpy(reg, subst[i].w, nb > 16 ? 16 : nb);
                 if (bits % 8) ((unsigned char *)reg)[nb - 1] &= (unsigned char)((1u << (bits % 8)) - 1);
+                break;
             }
+    }
     char f[300], a[40] = "null", r[64] = "null", line[600];
     jsonstr(f, sizeof f, fn);
     if (kind == 0 || kind == 1) {
@@ -473,21 +490,32 @@ int32_t cqrt_alloc_i32(int32_t v) { return v; }
 static long timeout_ms = 2000;
 static const char *subst_path;
 
-/* `<index> <fn> <site> <nwords> <w>...` lines: this sample's cq_theta substitutions */
+/* `<index> <fn> <site> <period> <occ> <nwords> <w>...` lines: this sample's cq_theta substitutions */
 static void load_subst(long idx) {
-    nsubst = 0;
+    nsubst = nskeys = 0;
     if (!subst_path) return;
     FILE *f = fopen(subst_path, "r");
     if (!f) return;
     char line[1024];
-    while (fgets(line, sizeof line, f) && nsubst < MAXSUBST) {
+    while (fgets(line, sizeof line, f)) {
         char *save = 0, *tok = strtok_r(line, " \t\r\n", &save);
         if (!tok || strtol(tok, 0, 10) != idx) continue;
         char *fn = strtok_r(0, " \t\r\n", &save), *st = strtok_r(0, " \t\r\n", &save),
+             *pe = strtok_r(0, " \t\r\n", &save), *oc = strtok_r(0, " \t\r\n", &save),
              *n = strtok_r(0, " \t\r\n", &save);
-        if (!fn || !st || !n) continue;
-        snprintf(subst[nsubst].fn, sizeof subst[nsubst].fn, "%s", fn);
-        subst[nsubst].site = (int)strtol(st, 0, 10);
+        if (!fn || !st || !pe || !oc || !n) { note("internal malformed subst line"); _exit(95); }
+        int site = (int)strtol(st, 0, 10), period = (int)strtol(pe, 0, 10);
+        if (period < 1 || strlen(fn) >= sizeof skeys[0].fn) { note("internal malformed subst line"); _exit(95); }
+        int sk = skey_of(fn, site);
+        if (sk < 0) {
+            if (nskeys == MAXSKEY) { note("internal more than %d substituted sites", MAXSKEY); _exit(95); }
+            sk = nskeys++;
+            snprintf(skeys[sk].fn, sizeof skeys[sk].fn, "%s", fn);
+            skeys[sk].site = site, skeys[sk].period = period, skeys[sk].reach = 0;
+        }
+        if (nsubst == MAXSUBST) { note("internal more than %d substituted reaches", MAXSUBST); _exit(95); }
+        subst[nsubst].key = sk;
+        subst[nsubst].occ = (int)strtol(oc, 0, 10);
         int k = (int)strtol(n, 0, 10);
         subst[nsubst].w[0] = subst[nsubst].w[1] = 0;
         for (int i = 0; i < k && i < 2; ++i) {

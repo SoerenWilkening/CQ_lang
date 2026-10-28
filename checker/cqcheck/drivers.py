@@ -493,8 +493,9 @@ class QuantumParams:
     nonarg_sources: List[str] = field(default_factory=list)       # theta inputs not from a param
 
 
-def quantum_params(mod: Module) -> QuantumParams:
-    """Backward closure from every cq_theta_* first operand."""
+def quantum_params(mod: Module, only: Optional[Tuple[str, int]] = None) -> QuantumParams:
+    """Backward closure from every cq_theta_* first operand (only: from the one theta site
+    (function, T1 site ordinal), cq-6m2)."""
     qp = QuantumParams()
     vneed: List[Tuple[str, str]] = []
     mneed: List[Tuple[str, str]] = []
@@ -506,8 +507,13 @@ def quantum_params(mod: Module) -> QuantumParams:
             if ins.op == "call" and ins.callee:
                 callers.setdefault(ins.callee, []).append((f, ins))
     for f in mod.functions.values():
+        ordinal = 0
         for ins in f.insts():
+            if ins.op == "call" and ins.callee and site_kind(ins.callee):
+                ordinal += 1
             if ins.op == "call" and ins.callee and ins.callee.startswith("@cq_theta_"):
+                if only is not None and (f.name, ordinal - 1) != only:
+                    continue
                 qp.theta_sites += 1
                 for r in locals_in(ins.call_args[0]):
                     vneed.append((f.name, r))
@@ -578,6 +584,113 @@ def quantum_params(mod: Module) -> QuantumParams:
                 for r2 in _operand_roots(f, d.operands[1], set()):
                     want_mem(fn, r2)
     return qp
+
+
+# ------------------------------------------------------------------------------------------------
+# cq_theta sites (cq-6m2, cq-arch Z4): what a sample's "subst" substitutes
+# ------------------------------------------------------------------------------------------------
+
+def site_kind(callee: str) -> Optional[str]:
+    """The T1.1 site kind of a callee ("@name"), or None: the calls T1 numbers."""
+    n = callee[1:] if callee.startswith("@") else callee
+    if n.startswith("cq_theta_"):
+        return "theta"
+    if n.startswith("cq_measure_"):
+        return "measure"
+    if n == "cq_phi":
+        return "phi"
+    if n in ("__cq_invert_begin", "__cq_invert_end"):
+        return n[len("__cq_"):]
+    return None
+
+
+# cq_theta_<suffix> (CQ.h) -> the register's width token
+THETA_RAIL = {"i1": "i1", "c": "i8", "si8": "i8", "ui8": "i8", "si16": "i16", "ui16": "i16",
+              "si32": "i32", "ui32": "i32", "sl": "i64", "ul": "i64", "sll": "i64", "ull": "i64",
+              "f16": "f16", "bf16": "bf16", "f32": "f32", "f64": "f64", "f80": "f80"}
+
+
+@dataclass
+class ThetaSite:
+    fn: str                    # IR name without "@" (T1.1 "fn")
+    site: int                  # T1.1 ordinal among fn's site calls
+    w: str                     # register width token (i1, i8, ..., f80)
+    params: Set[Tuple[str, int]]    # (function "@f", index): scalar parameters its register derives from
+
+    def key(self) -> str:
+        return f"{self.fn}:{self.site}"
+
+    @property
+    def ctype(self) -> CType:
+        """The C type sampling draws its value in (storage width = the register width)."""
+        return parse_ctype({"i1": "_Bool", "i8": "signed char", "i16": "short",
+                            "i32": "int", "i64": "long long", "f16": "_Float16",
+                            "bf16": "unsigned short", "f32": "float", "f64": "double",
+                            "f80": "long double"}[self.w])
+
+
+def theta_site_widths(o1: Path) -> Dict[str, str]:
+    """cq-arch Z4: "<fn>:<site>" (T1.1) -> the register width token of every cq_theta_* site of the
+    .O1.ll at o1 (the evaluator's theta schedule names the width of each reach, run.py)."""
+    return {st.key(): st.w for st in theta_sites(read_module(Path(o1)), closure=False)}
+
+
+def theta_sites(mod: Module, closure: bool = True) -> List[ThetaSite]:
+    """Every cq_theta_* call of the module, in function and textual order, with its T1.1 site key
+    and the scalar parameters its register operand derives from (quantum_params' closure; empty
+    when closure is False)."""
+    out = []
+    for f in mod.functions.values():
+        ordinal = 0
+        for ins in f.insts():
+            if not (ins.op == "call" and ins.callee and site_kind(ins.callee)):
+                continue
+            ordinal += 1
+            if not ins.callee.startswith("@cq_theta_"):
+                continue
+            suffix = ins.callee[len("@cq_theta_"):]
+            if suffix not in THETA_RAIL:
+                unimplemented(f"{f.name}: theta call {ins.text!r}: register type of {ins.callee}")
+            name = f.name[1:]
+            if name.startswith('"'):
+                name = name[1:-1]
+            params = set(quantum_params(mod, (f.name, ordinal - 1)).value) if closure else set()
+            out.append(ThetaSite(name, ordinal - 1, THETA_RAIL[suffix], params))
+    return out
+
+
+def reachable_functions(mod: Module, entry: str) -> Set[str]:
+    """Functions ("@f") reachable from entry by direct calls (entry included)."""
+    seen, work = set(), [entry]
+    while work:
+        fn = work.pop()
+        if fn in seen or fn not in mod.functions:
+            continue
+        seen.add(fn)
+        for ins in mod.functions[fn].insts():
+            if ins.op == "call" and ins.callee in mod.functions:
+                work.append(ins.callee)
+            for g in _RE_GLOBAL.findall(ins.text):    # a function whose address is taken
+                if g in mod.functions and g != ins.callee:
+                    work.append(g)
+    return seen
+
+
+def substituted_sites(mod: Module, spec: DriverSpec, call: int) -> List[ThetaSite]:
+    """The theta sites a sample of driver call `call` substitutes (cq-6m2): every site reachable from
+    the call's function whose register does not derive from a scalar argument the samples already
+    vary (an argument DriverSpec marks quantum). Such a register is computed inside the program or
+    read from a driver object (60's register array), so only "subst" varies it (CR §6 item 1)."""
+    c = spec.calls[call]
+    fn = "@" + c["fn"]
+    varied = {(fn, i) for i, a in enumerate(c["args"]) if a["quantum"] and parse_ctype(a["ctype"]).kind != "p"}
+    reach = reachable_functions(mod, fn)
+    out = []
+    for st in theta_sites(mod):
+        f = "@" + (st.fn if re.fullmatch(r"[-A-Za-z$._0-9]+", st.fn) else '"' + st.fn + '"')
+        if f in reach and not (st.params & varied):
+            out.append(st)
+    return out
 
 
 def _mem_writes(mod: Module, f: Function, root: str, vneed, want_mem, callers) -> None:

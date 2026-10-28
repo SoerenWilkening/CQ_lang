@@ -9,9 +9,11 @@ FROZEN below is the whole frozen list. For each entry:
    A name that is not defined yet is PENDING: reported, and a failure only under --require-all
    (the wave-0 coordinator's gate, once every owner has landed).
 2. report.SIBLING_API (what report.evaluate calls) is a subset of FROZEN with the same text.
-3. Unless --no-bd: the Z1, Z2 or Z3 comment on cq-arch contains every line `--print` emits (Z1, as
-   extended by Z2 and Z3, is the frozen text; this table is its checkable copy, so the two cannot drift
-   apart).
+3. Unless --no-bd: the Z1, Z2, Z3 or Z4 comment on cq-arch contains every line `--print` emits (Z1,
+   as extended by Z2, Z3 and Z4, is the frozen text; this table is its checkable copy, so the two cannot
+   drift apart).
+4. The sample shape (Z1.1 as extended by Z4): SAMPLE_KEYS, checked against the samples sampling.py
+   writes for the examples in SAMPLE_PROBES and against the subst values oracle.subst_values reads.
 
 Usage: check_api.py [--require-all] [--no-bd] [--print]
 Exit 0 only when every check holds; every failure is printed.
@@ -77,6 +79,13 @@ FROZEN = [
      [("sr", "SampleRun", "p", REQ), ("spec", "DriverSpec", "p", REQ), ("o1", "Path", "p", REQ)], "RunResult",
      "chk-report (cq-w0-chk-report, report.evaluate), chk-selftest (cq-w0-chk-selftest, mutants via report.evaluate), "
      "usercheck (cq-w1-usercheck)"),
+    # Z4 (cq-6m2): cq_theta substitution, a sample's optional "subst"
+    ("oracle", "chk-oracle", "cq-6m2", "subst_values",
+     [("val", "Any", "p", REQ)], "List[int]",
+     "chk-core (cq-w0-chk-core, run.py)"),
+    ("drivers", "chk-drivers", "cq-6m2", "theta_site_widths",
+     [("o1", "Path", "p", REQ)], "Dict[str, str]",
+     "chk-core (cq-w0-chk-core, run.py)"),
     ("compare", "chk-compare", "cq-w0-chk-compare", "compare",
      [("ours", "Sequence[RunResult]", "p", REQ), ("other", "Sequence[RunResult]", "p", REQ), ("against", "str", "p", REQ), ("classical_key", "Optional[Callable[[dict], Hashable]]", "p", None)],
      "List[str]",
@@ -257,7 +266,7 @@ def check_z1():
     data = json.loads(out.stdout)
     texts = [c.get("text") or c.get("body") or "" for c in (data if isinstance(data, list) else [])]
     bodies = []
-    for tag in ("Z1", "Z2", "Z3"):   # Z2 (cq-7lrz) and Z3 (cq-l2po) extend Z1's list
+    for tag in ("Z1", "Z2", "Z3", "Z4"):   # Z2 (cq-7lrz), Z3 (cq-l2po) and Z4 (cq-6m2) extend Z1's list
         z = [t for t in texts if t.lstrip().startswith(tag + " ")]
         if len(z) != 1:
             fail(f"cq-arch: expected exactly one comment starting with {tag}, found {len(z)}")
@@ -265,7 +274,48 @@ def check_z1():
         bodies.append(" ".join(z[0].split()))
     for line in z1_lines():
         if not any(" ".join(line.split()) in b for b in bodies):
-            fail(f"cq-arch Z1/Z2/Z3 lack the frozen line: {line}")
+            fail(f"cq-arch Z1/Z2/Z3/Z4 lack the frozen line: {line}")
+
+
+# Z4 (cq-6m2): a sample is {"call", "args"} plus an optional "subst" {"<fn>:<site>": hex | [hex, ...]}.
+SAMPLE_KEYS = {"call", "args"}
+SAMPLE_OPTIONAL = {"subst"}
+SAMPLE_PROBES = ["59_controlled_ry_bits"]      # cached sample sets; one with substituted sites
+
+
+def check_samples():
+    from cqcheck import drivers, oracle, sampling
+    for good in ("0x1", ["0x0", "0x1"], "0x" + "f" * 32):
+        try:
+            oracle.subst_values(good)
+        except Exception as e:  # noqa: BLE001
+            fail(f"oracle.subst_values({good!r}) rejects a Z4 value: {e}")
+    for bad in ([], "1", ["0x1", 2.5], "0x1" + "0" * 32):
+        try:
+            oracle.subst_values(bad)
+        except RuntimeError:
+            continue
+        fail(f"oracle.subst_values({bad!r}) accepts a value Z4 does not allow")
+    for ex in SAMPLE_PROBES:
+        d = drivers.example_dir(ex)
+        if not d.is_dir():
+            fail(f"{ex}: no example directory {d}")
+            continue
+        spec = drivers.driver_spec(ex, d)
+        widths = drivers.theta_site_widths(sorted(d.glob("*.O1.ll"))[0])
+        ss = sampling.sample_set(spec, d)
+        nsub = 0
+        for i, smp in enumerate(ss.samples):
+            keys = set(smp)
+            if not SAMPLE_KEYS <= keys or keys - SAMPLE_KEYS - SAMPLE_OPTIONAL:
+                fail(f"{ex}: sample {i} has keys {sorted(keys)}, Z4: {sorted(SAMPLE_KEYS)} + {sorted(SAMPLE_OPTIONAL)}")
+            for k, v in (smp.get("subst") or {}).items():
+                nsub += 1
+                if k not in widths:
+                    fail(f"{ex}: sample {i} substitutes {k!r}, no cq_theta site of the .O1.ll")
+                oracle.subst_values(v)
+        if not nsub:
+            fail(f"{ex}: no sample substitutes a cq_theta site")
 
 
 def main():
@@ -278,6 +328,7 @@ def main():
         print("\n".join(f"- {l}" for l in z1_lines()))
         return 0
     check_modules()
+    check_samples()
     if not a.no_bd:
         check_z1()
     for p in pending:

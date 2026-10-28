@@ -278,6 +278,39 @@ int gp_q(int m0, double t, int c, int early) {
         self.assertEqual(r.events[-1]["v"], f64(6.0))
 
 
+    def test_subst_per_reach(self):
+        """cq-6m2 (cq-arch Z4): a list gives reach r its entry r mod len; a site with no entry keeps its
+        value; reg is the chosen value; the values steer the C program (q[i] controls the next theta)."""
+        o1 = compile_c("subst", """
+int chain(int n, double t, double c) {
+    _Bool q[8]; int s = 0;
+    for (int i = 0; i < n; i++) { q[i] = 0; cq_theta(&q[i], t); }
+    for (int i = 0; i + 1 < n; i++) if (q[i]) cq_theta(&q[i + 1], c);
+    for (int i = 0; i < n; i++) s = 2 * s + cq_measure(q[i]);
+    return s;
+}""")
+        sp = spec("subst", "int chain(int,double,double)", [("chain", ["int", "double", "double"])])
+        sites = {k: v for k, v in oracle.site_callees(o1).items() if v.startswith("cq_theta_")}
+        (first, second) = sorted(sites)
+        args = [i32(4), HALF, f64(0.25)]
+        k0, k1 = f"{first[0]}:{first[1]}", f"{second[0]}:{second[1]}"
+        cases = [
+            ({}, "0x0", []),
+            ({k0: "0x1"}, "0xf", ["0x1"] * 4 + ["0x1"] * 3),
+            ({k0: ["0x1", "0x0"]}, "0xa", ["0x1", "0x0", "0x1", "0x0", "0x0", "0x0"]),   # second: identity
+            ({k0: ["0x1", "0x0", "0x0", "0x0"], k1: ["0x0"]}, "0x8", ["0x1", "0x0", "0x0", "0x0", "0x0"]),
+            ({k0: "0x1", k1: ["0x1", "0x0"]}, "0xd", ["0x1"] * 4 + ["0x1", "0x0"]),   # q = 1 1 0 1
+        ]
+        runs = oracle.run_samples(o1, sp, [{"call": 0, "args": args, **({"subst": sub} if sub else {})}
+                                           for sub, _, _ in cases])
+        for (sub, ret, regs), r in zip(cases, runs):
+            self.assertFalse(r.failed, (sub, r.reason))
+            th = [e["reg"] for e in r.events if e["ev"] == "site" and e["kind"] == "theta"]
+            if sub:
+                self.assertEqual(th, regs, sub)
+            self.assertEqual(next(e["v"] for e in r.events if e["ev"] == "ret"), ret, sub)
+
+
 class Outcomes(unittest.TestCase):
     def test_terminations(self):
         o1 = compile_c("term", """

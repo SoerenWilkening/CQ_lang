@@ -332,9 +332,36 @@ class Sampling(unittest.TestCase):
         self.assertIn("sample", lp["trips"]["5"])
 
     def test_nonarg_registers(self):
+        """cq-6m2 (cq-arch Z4): 113's registers are computed inside the program, so its quantum
+        classes are cq_theta substitutions at the drivers.txt arguments."""
         spec, ss = self.sample("113_dicke4")
-        self.assertIn("computed inside the program", ss.classes["edge"]["0"]["empty"])
-        self.assertEqual(ss.classes["exhaustive"]["0"]["samples"], [0])
+        for cls in ("edge",):
+            e = ss.classes[cls]["0"]
+            self.assertTrue(e["subst_sites"], e)
+            self.assertTrue(all("subst" in ss.samples[i] for i in e["samples"]))
+            self.assertTrue(all(ss.samples[i]["args"] == ss.samples[0]["args"] for i in e["samples"]))
+        rq = ss.classes["random_seed"]["quantum"]["0"]
+        self.assertGreater(len(rq["samples"]), 1)
+        self.assertNotIn("subst", ss.samples[0])
+        # every substituted value is a bit pattern of its site's width
+        widths = D.theta_site_widths(D.o1_path("113_dicke4"))
+        for smp in ss.samples:
+            for k, v in (smp.get("subst") or {}).items():
+                for x in (v if isinstance(v, list) else [v]):
+                    self.assertLess(int(x, 16), 1 << {"i1": 1}.get(widths[k], 128), (k, x))
+
+    def test_substitution_exhaustive_per_reach(self):
+        """59: controlled_ry_two's three registers (one reach each) are exhaustive (8 samples);
+        the chain's registers are listed per reach."""
+        spec, ss = self.sample("59_controlled_ry_bits")
+        ex = ss.classes["exhaustive"]["2"]
+        self.assertEqual(ex["bits"], 3)
+        subs = [ss.samples[i]["subst"] for i in ex["samples"]]
+        self.assertEqual(len({json.dumps(x, sort_keys=True) for x in subs}), 8)
+        self.assertEqual(sorted(subs[0]), ["controlled_ry_two:0", "controlled_ry_two:1", "controlled_ry_two:2"])
+        ex1 = ss.classes["exhaustive"]["1"]
+        self.assertEqual(ex1["reaches"]["controlled_ry_chain:0"], 4)      # n = 4
+        self.assertEqual(len(ex1["samples"]), 1 << ex1["bits"])
 
     def test_constant_offset_into_vla_is_checked(self):
         """cq-faa5: 59_controlled_ry_bits reads q[0] (a constant offset, no GEP) and q[n-1] of a
@@ -387,6 +414,28 @@ class Sampling(unittest.TestCase):
                 continue
             top = max(edges[a[2]][:ne] + edges[a[3]][:ne])
             self.assertLess(top, nv, smp)
+
+
+class ThetaSites(unittest.TestCase):
+    """cq-6m2 (cq-arch Z4): the cq_theta site table that "subst" keys name."""
+
+    def test_keys_and_widths_agree_with_the_oracle(self):
+        from cqcheck import oracle
+        for n in ("59_controlled_ry_bits", "60_qft", "12_int_widths", "185_qpe_quantum_angle", "116_shor15"):
+            o1 = D.o1_path(n)
+            want = {f"{fn}:{k}": oracle._SITE_RAIL[c[len("cq_theta_"):]]
+                    for (fn, k), c in oracle.site_callees(o1).items() if c.startswith("cq_theta_")}
+            self.assertEqual(D.theta_site_widths(o1), want, n)
+
+    def test_substituted_sites(self):
+        def subs(n):
+            spec = D.driver_spec(n, D.example_dir(n))
+            mod = D.read_module(D.o1_path(n))
+            return [[st.key() for st in D.substituted_sites(mod, spec, ci)] for ci in range(len(spec.calls))]
+        self.assertEqual(subs("59_controlled_ry_bits")[2],
+                         ["controlled_ry_two:0", "controlled_ry_two:1", "controlled_ry_two:2"])
+        self.assertEqual(subs("60_qft"), [["qft:0"]])        # the register array behind the q argument
+        self.assertTrue(all(s == [] for s in subs("12_int_widths")))   # every register is an argument
 
 
 if __name__ == "__main__":

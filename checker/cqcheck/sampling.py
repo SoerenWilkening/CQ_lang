@@ -26,6 +26,19 @@ Classes (SampleSet.classes; every class is present, and a class with nothing in 
 
 Per-call classes are `{"<call>": {"samples": [...]}}` or `{"<call>": {"empty": "<reason>"}}`.
 
+cq_theta substitution (cq-arch Z4, cq-6m2; CR §6 item 1, "each cq_theta input replaced by a chosen
+bit pattern"). A sample may also carry `"subst": {"<fn>:<site>": hex | [hex, ...]}`: the value each
+reach of that cq_theta site takes (T1.1 site key; a list gives reach r its entry r mod len), on both
+sides (oracle.py, run.py). A call's substituted sites are `drivers.substituted_sites`: those whose
+register no varied scalar argument feeds (a register computed in the program, or read from a driver
+object). For them the edge, specials, exhaustive and random classes hold, besides the argument
+samples, samples at the drivers.txt arguments with substituted values: edge and specials one value per
+site for every reach (crossed over the sites when the product is small, one site at a time otherwise);
+exhaustive every value of every reach when the call's quantum argument bits plus its sites' bits,
+each site counted once per reach of its drivers.txt run in the C oracle (at least once), total <= 16;
+random a seeded list of per-reach values per site. Such a class entry names the sites in "subst_sites".
+Every other class keeps samples without "subst" (the sites keep the program's own values there).
+
 The totalization rows and the trip counts are found by searching with a probe build of the
 example's .O1.ll (`ProbeBuild`): the module with `cq_theta_*`/`cq_measure_*` as the identity,
 `cq_phi` as a no-op, a probe before (or after) every instruction a §2 row names that logs its
@@ -1381,6 +1394,19 @@ class Gen:
             self.samples.append({"call": call, "args": list(args)})
         return self.index[key]
 
+    def add_subst(self, call: int, args: Sequence[str], subst: Dict[str, object]) -> int:
+        """A sample with cq_theta substitutions (cq-6m2); kept out of `index`, which the searches
+        read by (call, args)."""
+        if not subst:
+            return self.add(call, args)
+        if not hasattr(self, "sindex"):
+            self.sindex: Dict[Tuple[int, Tuple[str, ...], str], int] = {}
+        key = (call, tuple(args), json.dumps(subst, sort_keys=True))
+        if key not in self.sindex:
+            self.sindex[key] = len(self.samples)
+            self.samples.append({"call": call, "args": list(args), "subst": dict(subst)})
+        return self.sindex[key]
+
     def quantum_slots(self, call: int) -> List[int]:
         return [j for j, a in enumerate(self.spec.calls[call]["args"])
                 if a["quantum"] and self.cts[call][j].kind != "p"]
@@ -1520,6 +1546,158 @@ def per_call_classes(g: Gen, rng: random.Random) -> Dict[str, dict]:
                 idx.append(g.add(ci, g.with_values(ci, {j: g.random_quantum(rng, cts[j]) for j in qs})))
             rq[key] = {"samples": sorted(set(idx))}
     return {"edge": edge, "specials": specials, "exhaustive": exhaustive, "rq": rq}
+
+
+# ------------------------------------------------------------------------------------------------
+# cq_theta substitution classes (cq-6m2, cq-arch Z4)
+# ------------------------------------------------------------------------------------------------
+
+MAX_REACH_SLOTS = 64        # per-reach values listed per site (later reaches cycle through them)
+_F16_EDGES = [0x0000, 0x3c00, 0xbc00, 0x7bff, 0xfbff, 0x0400, 0x8400]
+_F16_SPECIALS = [0x0000, 0x8000, 0x7c00, 0xfc00, 0x7e00, 0xfe45, 0x7d00, 0x0001]
+
+
+def site_edges(ct: D.CType) -> List[int]:
+    if ct.kind == "i":
+        return int_edges(ct)
+    return _F16_EDGES if ct.bits == 16 else fp_edges(ct)
+
+
+def site_specials(ct: D.CType) -> List[int]:
+    return _F16_SPECIALS if ct.bits == 16 else fp_specials(ct)
+
+
+def site_random(rng: random.Random, ct: D.CType) -> int:
+    if ct.kind == "f" and ct.bits == 16:
+        return rng.getrandbits(16) if rng.random() < 0.5 else \
+            struct.unpack("<H", struct.pack("<e", rng.uniform(-16, 16)))[0]
+    return Gen.random_quantum(None, rng, ct)    # type: ignore[arg-type]
+
+
+def _site_hex(st: "D.ThetaSite", v: int) -> str:
+    return "0x%x" % (v & ((1 << {"f16": 16, "bf16": 16, "f32": 32, "f64": 64, "f80": 80}.get(
+        st.w, int(st.w[1:]) if st.w.startswith("i") else 128)) - 1))
+
+
+def theta_reaches(spec: DriverSpec, example_dir: Path,
+                  sites: Dict[int, List["D.ThetaSite"]]) -> Dict[int, Dict[str, int]]:
+    """call -> {site key: reaches}: the most reaches of each cq_theta site in the C oracle over the
+    drivers.txt sample of that call with cq_theta the identity, and with every substituted site at 1
+    and at all ones (a site under a control on rotated registers is reached only when they read 1)."""
+    from cqcheck import oracle
+    o1 = sorted(Path(example_dir).glob("*.O1.ll"))[0]
+    line = D.read_drivers_txt(Path(example_dir).resolve().parent.parent / "_tools" / "drivers.txt")[spec.example]
+    base = D.baseline_values(line, spec)
+    probes = []
+    for ci in range(len(spec.calls)):
+        probes.append({"call": ci, "args": base[ci]})
+        for v in (1, -1):
+            if sites.get(ci):
+                probes.append({"call": ci, "args": base[ci],
+                               "subst": {st.key(): _site_hex(st, v) for st in sites[ci]}})
+    runs = oracle.run_samples(o1, spec, probes)
+    out: Dict[int, Dict[str, int]] = {ci: {} for ci in range(len(spec.calls))}
+    for smp, r in zip(probes, runs):
+        cnt: Dict[str, int] = {}
+        for e in r.events:
+            if e.get("ev") == "site" and e.get("kind") == "theta":
+                k = f"{e['fn']}:{e['site']}"
+                cnt[k] = cnt.get(k, 0) + 1
+        for k, n in cnt.items():
+            out[smp["call"]][k] = max(out[smp["call"]].get(k, 0), n)
+    return out
+
+
+def subst_classes(g: Gen, rng: random.Random, sites: Dict[int, List["D.ThetaSite"]],
+                  reaches: Dict[int, Dict[str, int]]) -> Dict[str, Dict[str, dict]]:
+    """Per call, the substitution samples of the edge, specials, exhaustive and random classes:
+    {"edge"|"specials"|"exhaustive"|"rq": {"<call>": {"samples": [...], ...} | {"empty": why}}}.
+    Calls with no substituted site get no entry."""
+    out: Dict[str, Dict[str, dict]] = {"edge": {}, "specials": {}, "exhaustive": {}, "rq": {}}
+    for ci, sts in sites.items():
+        if not sts:
+            continue
+        key = str(ci)
+        names = [st.key() for st in sts]
+        base = g.base[ci]
+        cts = [st.ctype for st in sts]
+        # edge / specials: one value per site for every reach
+        for cls, values, which in (("edge", site_edges, sts), ("specials", site_specials,
+                                                                  [st for st in sts if st.ctype.kind == "f"])):
+            if not which:
+                out[cls][key] = {"empty": "no floating-point register among the substituted cq_theta sites"}
+                continue
+            sets = [values(st.ctype) for st in which]
+            combos = _cross(sets, CROSS_LIMIT)
+            idx = []
+            if combos:
+                for c in combos:
+                    idx.append(g.add_subst(ci, base, {st.key(): _site_hex(st, v) for st, v in zip(which, c)}))
+            else:
+                for st, vs in zip(which, sets):
+                    for v in vs:
+                        idx.append(g.add_subst(ci, base, {st.key(): _site_hex(st, v)}))
+                for t in range(max(len(vs) for vs in sets)):
+                    idx.append(g.add_subst(ci, base, {st.key(): _site_hex(st, vs[t % len(vs)])
+                                                      for st, vs in zip(which, sets)}))
+            out[cls][key] = {"samples": sorted(set(idx)), "subst_sites": [st.key() for st in which]}
+        # exhaustive: every value of every reach (with the quantum scalar arguments) when small
+        nreach = [min(MAX_REACH_SLOTS, max(1, reaches.get(ci, {}).get(st.key(), 0))) for st in sts]
+        qs = g.quantum_slots(ci)
+        sbits = sum(ct.bits * n for ct, n in zip(cts, nreach))
+        abits = sum(g.cts[ci][j].bits for j in qs)
+        if sbits + abits <= EXHAUSTIVE_BITS:
+            idx = []
+            for n in range(1 << (sbits + abits)):
+                sh, vals = 0, {}
+                for j in qs:
+                    vals[j] = (n >> sh) & ((1 << g.cts[ci][j].bits) - 1)
+                    sh += g.cts[ci][j].bits
+                sub: Dict[str, object] = {}
+                for st, ct, r in zip(sts, cts, nreach):
+                    vs = []
+                    for _ in range(r):
+                        vs.append(_site_hex(st, (n >> sh) & ((1 << ct.bits) - 1)))
+                        sh += ct.bits
+                    sub[st.key()] = vs[0] if r == 1 else vs
+                idx.append(g.add_subst(ci, g.with_values(ci, vals), sub))
+            out["exhaustive"][key] = {"samples": idx, "bits": sbits + abits, "subst_sites": names,
+                                      "reaches": dict(zip(names, nreach))}
+        else:
+            out["exhaustive"][key] = {"empty": f"the quantum arguments ({abits} bits) and the substituted "
+                                               f"cq_theta reaches ({sbits} bits: "
+                                               f"{dict(zip(names, nreach))} reaches) total "
+                                               f"{sbits + abits} bits > {EXHAUSTIVE_BITS}"}
+        # random: per-reach lists
+        idx = []
+        for _ in range(N_RANDOM_QUANTUM):
+            sub = {}
+            for st, ct, r in zip(sts, cts, nreach):
+                vs = [_site_hex(st, site_random(rng, ct)) for _ in range(max(r, 2))]
+                sub[st.key()] = vs
+            idx.append(g.add_subst(ci, base, sub))
+        out["rq"][key] = {"samples": sorted(set(idx)), "subst_sites": names}
+    return out
+
+
+def _merge_class(cls: Dict[str, dict], extra: Dict[str, dict]) -> None:
+    """Fold a call's substitution samples into its per-call class entry (edge, specials, random)."""
+    for key, e in extra.items():
+        cur = cls.get(key)
+        if "samples" not in e:
+            if cur is not None and "samples" in cur:
+                cur["subst"] = e["empty"]
+            else:
+                cls[key] = {"empty": (cur or {}).get("empty", "") + ("; " if cur else "") +
+                                     f"substituted cq_theta sites: {e['empty']}"}
+            continue
+        if cur is None or "samples" not in cur:
+            cls[key] = dict(e)
+        else:
+            merged = dict(cur)
+            merged["samples"] = sorted(set(cur["samples"]) | set(e["samples"]))
+            merged["subst_sites"] = e["subst_sites"]
+            cls[key] = merged
 
 
 def classical_candidates(g: Gen, rng: random.Random) -> Dict[int, List[List[str]]]:
@@ -1818,6 +1996,26 @@ def build_sample_set(spec: DriverSpec, example_dir: Path) -> SampleSet:
         trips_cls = {"K": K, "loops": loops_out}
         if not loops_out:
             trips_cls["empty"] = "the example has no loop"
+
+    # cq_theta substitution (cq-6m2): appended after every search, which reads samples by (call, args)
+    mod = D.read_module(sorted(example_dir.glob("*.O1.ll"))[0])
+    sites = {ci: D.substituted_sites(mod, spec, ci) for ci in range(len(spec.calls))}
+    if any(sites.values()):
+        sc = subst_classes(g, random.Random(seed + 3), sites, theta_reaches(spec, example_dir, sites))
+        _merge_class(pc["edge"], sc["edge"])
+        _merge_class(pc["specials"], sc["specials"])
+        _merge_class(pc["rq"], sc["rq"])
+        for key, e in sc["exhaustive"].items():
+            cur = pc["exhaustive"].get(key, {})
+            if "samples" in e:
+                # it crosses the argument values with the reaches: it supersedes the argument-only set
+                pc["exhaustive"][key] = e
+            elif "samples" in cur and cur.get("bits", 0) == 0:
+                pc["exhaustive"][key] = {"empty": e["empty"]}    # the drivers.txt call alone is not exhaustive
+            elif "samples" in cur:
+                cur["subst"] = e["empty"]
+            else:
+                pc["exhaustive"][key] = {"empty": cur.get("empty", "") + "; " + e["empty"]}
 
     classes = {
         "edge": pc["edge"],

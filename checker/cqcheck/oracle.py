@@ -55,7 +55,10 @@ samples at run time from ``drivers.sample_file`` in ``$CQD_SAMPLES`` (cq-arch Z2
 example, and the samples run in up to ``PARTS`` runner processes in parallel. The driver discards the
 call's result, so the instrumentation logs it at the IR call (``-cq-oracle-entries``). An optional
 ``"subst": {"<fn>:<site>": hex}`` replaces the register value at a ``cq_theta`` site each time it is
-reached (for usercheck); it never reaches the driver.
+reached, or with a list ``[hex, ...]`` the r-th reach takes entry r mod len (cq-arch Z4, cq-6m2: CR §6
+item 1, "each cq_theta input replaced by a chosen bit pattern"); it never reaches the driver. The
+trace's ``reg`` of a substituted theta site is the chosen value. A site with no entry is the
+identity.
 
 Sample outcome: ``ret`` (returned), ``noreturn:<callee>`` (abort, exit, __builtin_trap, ...),
 ``raise:<sig>`` (the program raised a fatal signal), ``cap:<loop>`` (stopped after K trips). Anything else is a failure with a reason, never
@@ -383,14 +386,38 @@ def _classify(sr: SampleRun) -> None:
         sr.failed, sr.reason = True, f"{wait} with no explaining note (a trap the oracle did not totalize)"
 
 
+def subst_values(val: Any) -> List[int]:
+    """The per-reach values of one "subst" entry (cq-arch Z4): a hex string (every reach) or a
+    non-empty list of them (reach r takes entry r mod len)."""
+    vals = val if isinstance(val, list) else [val]
+    if not vals:
+        raise OracleError(f"oracle: an empty subst list {val!r}")
+    out = []
+    for v in vals:
+        if isinstance(v, str) and re.fullmatch(r"0x[0-9a-fA-F]+", v):
+            out.append(int(v, 16))
+        elif isinstance(v, int) and not isinstance(v, bool) and v >= 0:
+            out.append(v)
+        else:
+            raise OracleError(f"oracle: subst value {v!r} is not a 0x<hex> bit pattern")
+        if out[-1] >> 128:
+            raise OracleError(f"oracle: subst value {v!r} is wider than 128 bits")
+    return out
+
+
 def _subst_lines(samples: Sequence[dict]) -> List[str]:
+    """cqo_rt.c's <subst> file: `<index> <fn> <site> <period> <occ> <nwords> <w>...` per reach value."""
     out = []
     for i, s in enumerate(samples):
-        for k, val in (s.get("subst") or {}).items():
+        for k, val in sorted((s.get("subst") or {}).items()):
             fn, site = k.rsplit(":", 1)
-            v = int(val, 16) if isinstance(val, str) else int(val)
-            words = [v & ((1 << 64) - 1)] + ([v >> 64] if v >> 64 else [])
-            out.append(f"{i} {fn} {int(site)} {len(words)} " + " ".join(f"{w:x}" for w in words))
+            if not fn or re.search(r"\s", fn):
+                raise OracleError(f"oracle: subst key {k!r} is not <fn>:<site>")
+            vals = subst_values(val)
+            for occ, v in enumerate(vals):
+                words = [v & ((1 << 64) - 1)] + ([v >> 64] if v >> 64 else [])
+                out.append(f"{i} {fn} {int(site)} {len(vals)} {occ} {len(words)} "
+                           + " ".join(f"{w:x}" for w in words))
     return out
 
 
@@ -399,8 +426,9 @@ def run_samples(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]],
                 k: Optional[Dict[str, int]] = None, k_default: Optional[int] = None) -> List[SampleRun]:
     """Every sample in one oracle program; each sample's call runs in its own forked child.
 
-    A sample may carry an optional "subst": {"<fn>:<site>": hex} (usercheck: the value a cq_theta
-    site takes); the driver ignores keys other than call and args."""
+    A sample may carry an optional "subst": {"<fn>:<site>": hex | [hex, ...]} (cq-arch Z4: the value
+    each reach of a cq_theta site takes; a list gives reach r its entry r mod len); the driver ignores
+    keys other than call and args."""
     if not samples:
         return []
     # Results are cached per (instrumented program, driver spec, sample, limits): a repeated run, or

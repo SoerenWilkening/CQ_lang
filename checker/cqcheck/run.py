@@ -17,6 +17,14 @@ the trace (JSONL, cq-arch) written to $CQE_TRACE. run_samples builds once for a 
 samples in parallel. A sample that cannot be built or run is a RunResult whose violations say why; it is
 never dropped.
 
+cq_theta substitution (cq-arch Z4, cq-6m2; CR §6 item 1). A sample may carry "subst":
+{"<fn>:<site>": hex | [hex, ...]}, the chosen value of each reach of a cq_theta site of the C program
+(T1 ordinals; oracle.py). The evaluator does not know which lowered Ry is which C site, so run.py runs
+the sample under the C oracle (oracle.run_samples on the example's .O1.ll, c_module_of; cached) and
+hands the evaluator the C program's theta reaches in execution order through $CQE_THETA (theta_schedule):
+each firing Ry takes the earliest reach not yet taken with its width and angle and its target takes that
+reach's value (dispatch.c). A sample without "subst" substitutes nothing.
+
 Sample values ({call, args}; call is an index into spec.calls, or a function name occurring there
 once; args has one entry per argument of that call). canonical_sample turns each into the sampling
 encoding (scalars "0x" + bit pattern, pointers a C expression) that drivers renders:
@@ -445,15 +453,8 @@ def run_sample(lowered: Path, spec: DriverSpec, sample: dict, side: str, *, time
                rt_sources: Optional[Sequence[Path]] = None, extra_sources: Sequence[Path] = (),
                c_module: Optional[Path] = None) -> RunResult:
     """Run one sample of spec against the lowered module in the evaluator (cq-zew)."""
-    prep = _prepare(spec, sample, side)
-    if isinstance(prep, RunResult):
-        return prep
-    canon, record = prep
-    try:
-        prog = build(Path(lowered), spec, [canon], rt_sources, extra_sources, c_module)
-    except (BuildError, OSError, RuntimeError) as e:
-        return _build_failure(side, sample, e)
-    return _execute(prog, sample, record, side, timeout)
+    return run_samples(lowered, spec, [sample], side, 1, timeout=timeout, rt_sources=rt_sources,
+                       extra_sources=extra_sources, c_module=c_module)[0]
 
 
 def _prepare(spec: DriverSpec, sample: dict, side: str):
@@ -461,21 +462,88 @@ def _prepare(spec: DriverSpec, sample: dict, side: str):
     from cqcheck import drivers
     try:
         canon = canonical_sample(spec, sample)
+        if "subst" in sample:
+            _check_subst(sample["subst"])
         return canon, drivers.sample_file(spec, [canon])
     except (SampleError, KeyError, TypeError, ValueError, RuntimeError) as e:
         return _result(side, sample, [], "", None, [{"what": "sample", "h": None, "msg": str(e)}])
+
+
+def _check_subst(subst: Any) -> None:
+    from cqcheck import oracle
+    if not isinstance(subst, dict):
+        raise SampleError(f"subst {subst!r}: a {{\"<fn>:<site>\": hex | [hex, ...]}} object")
+    for k, v in subst.items():
+        if not isinstance(k, str) or not re.fullmatch(r"[^\s:]+(?::[^\s:]+)*:\d+", k):
+            raise SampleError(f"subst key {k!r}: <fn>:<site>")
+        try:
+            oracle.subst_values(v)
+        except RuntimeError as e:      # oracle.OracleError
+            raise SampleError(str(e))
+
+
+def theta_schedule(events: Sequence[dict], o1: Path) -> str:
+    """The $CQE_THETA file of one sample (dispatch.c): its C program's cq_theta reaches in execution
+    order, `<angle> <W> <value>` per line; the angle negated inside an odd number of cq_invert regions
+    (CR rule 17: the circuit runs that region's adjoint)."""
+    from cqcheck import drivers
+    widths = drivers.theta_site_widths(o1)
+    depth, lines = 0, []
+    for e in events:
+        if e.get("ev") != "site":
+            continue
+        kind = e.get("kind")
+        if kind == "invert_begin":
+            depth += 1
+        elif kind == "invert_end":
+            depth = max(0, depth - 1)
+        elif kind == "theta":
+            w = widths.get(f"{e['fn']}:{e['site']}")
+            if w is None:
+                raise SampleError(f"cq: unimplemented: chk-core: the C oracle's theta site {e['fn']}:{e['site']} "
+                                  f"is no cq_theta_* call of {o1}")
+            a = int(e["angle"], 16) ^ ((1 << 63) if depth % 2 else 0)
+            lines.append(f"0x{a:x} {w} {e['reg']}\n")
+    return "".join(lines)
+
+
+def _theta_schedules(lowered: Path, spec: DriverSpec, samples: Sequence[dict], preps: Sequence[Any],
+                     c_module: Optional[Path]) -> Dict[int, str]:
+    """index -> theta_schedule of every well-formed sample that carries "subst", from one batch of the
+    C oracle over the .O1.ll (c_module, else c_module_of)."""
+    want = [i for i, (s, p) in enumerate(zip(samples, preps)) if not isinstance(p, RunResult) and "subst" in s]
+    if not want:
+        return {}
+    o1 = Path(c_module) if c_module else c_module_of(Path(lowered), spec)
+    if o1 is None:
+        raise BuildError(f"samples carry cq_theta substitutions but no .O1.ll gives the C program's theta "
+                         f"reaches for {lowered}")
+    from cqcheck import oracle
+    batch = [{"call": preps[i][0]["call"], "args": preps[i][0]["args"], "subst": samples[i]["subst"]}
+             for i in want]
+    try:
+        runs = oracle.run_samples(o1, spec, batch)
+    except RuntimeError as e:          # oracle.OracleError: the C program cannot be built or run
+        raise BuildError(f"the C oracle's theta schedule: {e}")
+    return {i: theta_schedule(r.events, o1) for i, r in zip(want, runs)}
 
 
 def _build_failure(side: str, sample: dict, e: BaseException) -> RunResult:
     return _result(side, sample, [], "", None, [{"what": "build", "h": None, "msg": str(e)}])
 
 
-def _execute(prog: Path, sample: dict, record: str, side: str, timeout: float) -> RunResult:
-    """One process of the built program over one sample record."""
+def _execute(prog: Path, sample: dict, record: str, side: str, timeout: float,
+             theta: Optional[str] = None) -> RunResult:
+    """One process of the built program over one sample record (theta: its $CQE_THETA schedule, or
+    None for a sample without substitution)."""
     with tempfile.TemporaryDirectory(prefix="cqe-run.") as wd:
         trace = Path(wd) / "trace.jsonl"
         (Path(wd) / "sample").write_text(record)
         env = dict(os.environ, CQE_TRACE=str(trace), CQD_SAMPLES=str(Path(wd) / "sample"))
+        env.pop("CQE_THETA", None)
+        if theta is not None:
+            (Path(wd) / "theta").write_text(theta)
+            env["CQE_THETA"] = str(Path(wd) / "theta")
         try:
             p = subprocess.run([str(prog)], cwd=wd, env=env, capture_output=True, timeout=timeout)
             code, stdout, extra = p.returncode, p.stdout.decode(errors="replace"), []
@@ -503,11 +571,21 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
     good = [p for p in preps if not isinstance(p, RunResult)]
     prog: Optional[Path] = None
     failure: Optional[BaseException] = None
+    theta: Dict[int, str] = {}
+    theta_failure: Optional[BaseException] = None
     if good:
         try:
             prog = build(Path(lowered), spec, [c for c, _ in good], rt_sources, extra_sources, c_module)
         except (BuildError, OSError, RuntimeError) as e:
             failure = e
+        if failure is None:
+            try:
+                theta = _theta_schedules(Path(lowered), spec, samples, preps, c_module)
+            except (BuildError, SampleError, OSError, RuntimeError) as e:
+                theta_failure = e
+    for i, p in enumerate(preps):     # a sample whose theta schedule cannot be had cannot run
+        if theta_failure is not None and not isinstance(p, RunResult) and "subst" in samples[i]:
+            preps[i] = _build_failure(side, samples[i], theta_failure)
 
     def one(i: int) -> RunResult:
         p = preps[i]
@@ -515,7 +593,7 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
             return p
         if failure is not None:
             return _build_failure(side, samples[i], failure)
-        return _execute(prog, samples[i], p[1], side, timeout)
+        return _execute(prog, samples[i], p[1], side, timeout, theta.get(i))
 
     if failure is not None or not good:
         return [one(i) for i in range(len(samples))]
@@ -531,7 +609,8 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
     chunks = [todo[k:k + size] for k in range(0, len(todo), size)]
 
     def chunk(ix: List[int]) -> None:
-        for i, r in zip(ix, _execute_chunk(prog, [(samples[i], preps[i][1]) for i in ix], side, timeout)):
+        for i, r in zip(ix, _execute_chunk(prog, [(samples[i], preps[i][1], theta.get(i)) for i in ix], side,
+                                           timeout)):
             out[i] = dataclasses.replace(r, sample=samples[i])   # the sample as given, not its JSON copy
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
@@ -543,10 +622,11 @@ _PROCESS_BATCH = 512   # from this many samples on, run_samples uses worker inte
 _CHUNK = 256
 
 
-def _execute_chunk(prog: Path, items: Sequence[Tuple[dict, str]], side: str, timeout: float) -> List[RunResult]:
-    """_execute over (sample, record) pairs, in order, in one worker interpreter (_chunk_main)."""
+def _execute_chunk(prog: Path, items: Sequence[Tuple[dict, str, Optional[str]]], side: str,
+                   timeout: float) -> List[RunResult]:
+    """_execute over (sample, record, theta) triples, in order, in one worker interpreter (_chunk_main)."""
     job = json.dumps({"prog": str(prog), "side": side, "timeout": timeout,
-                      "items": [[s, rec] for s, rec in items]})
+                      "items": [[s, rec, th] for s, rec, th in items]})
     env = dict(os.environ, PYTHONPATH=os.pathsep.join(
         [str(REPO / "checker")] + ([os.environ["PYTHONPATH"]] if os.environ.get("PYTHONPATH") else [])))
     budget = (timeout + 10) * len(items) + 60
@@ -560,6 +640,6 @@ def _execute_chunk(prog: Path, items: Sequence[Tuple[dict, str]], side: str, tim
 def _chunk_main() -> None:
     """Worker interpreter of _execute_chunk: a job on stdin, the RunResults as a JSON list on stdout."""
     job = json.loads(sys.stdin.read())
-    res = [dataclasses.asdict(_execute(Path(job["prog"]), s, rec, job["side"], job["timeout"]))
-           for s, rec in job["items"]]
+    res = [dataclasses.asdict(_execute(Path(job["prog"]), s, rec, job["side"], job["timeout"], th))
+           for s, rec, th in job["items"]]
     sys.stdout.write(json.dumps(res))

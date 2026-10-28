@@ -47,6 +47,21 @@
  * gate on its out rail or an operand since the out rail was computed, CR rule 5), width_mismatch,
  * target_aliases_operand, rotate_after_measure, pop_empty, malformed_call, bad_template,
  * unknown_symbol, no_family, result_width, fail (cqe_fail).
+ *
+ * cq_theta substitution (cq-6m2, cq-arch Z4; CR §6 item 1, "each cq_theta input replaced by a chosen
+ * bit pattern"). When $CQE_THETA names a file, it is the C oracle's theta schedule for this sample
+ * (run.py writes it): one line per cq_theta reach of the C program, in execution order,
+ * `<angle> <W> <value>`: the reach's f64 angle bits (negated inside an odd number of cq_invert
+ * regions), its register's width token and the chosen value it took, all hex. A Ry that fires (no
+ * control, or a control whose basis value is 1) takes the earliest reach not yet taken with its width
+ * and its angle (the literal, or the angle rail's value; any NaN equals any NaN): its target's basis
+ * value becomes that reach's value before the gate is logged, so the ry event's "v" is the chosen
+ * value, as the C side's "reg" is. With no reach of that exact angle, the untaken reach of that width
+ * nearest in angle within THETA_NEAR_ULPS ulps is taken and {"ev":"theta_near",...} logged: the
+ * circuit is wrong already (compare demands the exact angle), and the value keeps compare's verdict on
+ * the angle rather than on a value. A firing Ry that matches no reach keeps its value and logs
+ * {"ev":"theta_unmatched","h","w","angle"} (a diagnostic: the C program has no such cq_theta reach,
+ * which compare reports on its own). Without $CQE_THETA nothing is substituted.
  */
 #include <math.h>
 #include <stdarg.h>
@@ -606,6 +621,108 @@ static void gate_measure(call_t *c, const char *w) {
   store_val(c->ret, c->rty, cqe__val(h));
 }
 
+/* ---- cq_theta substitution (cq-6m2, Z4; see the header) -------------------------------------- */
+
+typedef struct { uint64_t angle, v[2]; char w[8]; int taken; } theta_reach;
+static theta_reach *theta_sched;
+static int theta_n, theta_loaded;
+
+static void theta_load(void) {
+  theta_loaded = 1;
+  const char *path = getenv("CQE_THETA");
+  if (!path || !*path)
+    return;
+  FILE *f = fopen(path, "r");
+  if (!f) {
+    cqe__violation("fail", -1, "CQE_THETA: cannot open %s", path);
+    return;
+  }
+  char line[256];
+  int cap = 0;
+  while (fgets(line, sizeof line, f)) {
+    char a[40], w[16], v[48];
+    if (sscanf(line, "%39s %15s %47s", a, w, v) != 3) {
+      if (strspn(line, " \t\r\n") == strlen(line))
+        continue;
+      cqe__violation("fail", -1, "CQE_THETA: malformed line '%s'", line);
+      break;
+    }
+    if (theta_n == cap) {
+      cap = cap ? 2 * cap : 64;
+      theta_sched = realloc(theta_sched, (size_t)cap * sizeof *theta_sched);
+      if (!theta_sched)
+        abort();
+    }
+    theta_reach *r = &theta_sched[theta_n++];
+    memset(r, 0, sizeof *r);
+    r->angle = strtoull(a, 0, 16);
+    snprintf(r->w, sizeof r->w, "%s", w);
+    /* up to 128 bits: the low 64 from the last 16 digits */
+    const char *d = v + ((v[0] == '0' && (v[1] == 'x' || v[1] == 'X')) ? 2 : 0);
+    size_t n = strlen(d);
+    if (n > 16) {
+      char hi[24];
+      snprintf(hi, sizeof hi, "%.*s", (int)(n - 16), d);
+      r->v[1] = strtoull(hi, 0, 16);
+      r->v[0] = strtoull(d + n - 16, 0, 16);
+    } else {
+      r->v[0] = strtoull(d, 0, 16);
+    }
+  }
+  fclose(f);
+}
+
+static int f64_nan(uint64_t b) { return ((b >> 52) & 0x7FF) == 0x7FF && (b & ((1ULL << 52) - 1)); }
+
+/* f64 bits as an integer ordered like the doubles (ulp distance = difference) */
+static int64_t f64_ordered(uint64_t b) { return (b >> 63) ? -(int64_t)(b & ~(1ULL << 63)) : (int64_t)b; }
+
+#define THETA_NEAR_ULPS (1ULL << 32) /* an angle within this many ulps of a reach's still takes it */
+
+/* A firing Ry on rail h with angle bits `angle`: take the schedule's reach (header). */
+static void theta_substitute(int32_t h, uint64_t angle) {
+  if (!theta_loaded)
+    theta_load();
+  if (!theta_sched)
+    return;
+  const char *w = cqe__w(h);
+  theta_reach *r = NULL, *near = NULL;
+  uint64_t best = THETA_NEAR_ULPS + 1;
+  for (int i = 0; i < theta_n && !r; ++i) {
+    theta_reach *c = &theta_sched[i];
+    if (c->taken || strcmp(c->w, w) != 0)
+      continue;
+    if (c->angle == angle || (f64_nan(c->angle) && f64_nan(angle))) {
+      r = c;
+      break;
+    }
+    if (!f64_nan(c->angle) && !f64_nan(angle)) {
+      int64_t a = f64_ordered(c->angle), b = f64_ordered(angle);
+      uint64_t d = a > b ? (uint64_t)a - (uint64_t)b : (uint64_t)b - (uint64_t)a;
+      if (d < best)
+        best = d, near = c;
+    }
+  }
+  if (!r && near) {
+    /* no reach has this exact angle: the circuit is already wrong (compare demands the exact angle);
+     * an angle a few ulps off still takes its reach, so compare reports the angle, not a value */
+    r = near;
+    cqe__logf("{\"ev\":\"theta_near\",\"h\":%d,\"w\":\"%s\",\"angle\":\"0x%llx\",\"reach\":\"0x%llx\"}", (int)h, w,
+              (unsigned long long)angle, (unsigned long long)r->angle);
+  }
+  if (r) {
+    r->taken = 1;
+    cqe_val *x = cqe__val(h);
+    for (uint32_t k = 0; k < x->nw; ++k)
+      x->w[k] = k < 2 ? r->v[k] : 0;
+    if (x->bits % 64)
+      x->w[x->nw - 1] &= (1ULL << (x->bits % 64)) - 1;
+    return;
+  }
+  cqe__logf("{\"ev\":\"theta_unmatched\",\"h\":%d,\"w\":\"%s\",\"angle\":\"0x%llx\"}", (int)h, w,
+            (unsigned long long)angle);
+}
+
 static void gate_ry(call_t *c, const char *w, int q, int ctl) {
   int n = (ctl ? 1 : 0) + 2;
   if (!want_args(c, n, ctl ? (q ? "hhh" : "hhd") : (q ? "hh" : "hd")))
@@ -629,6 +746,11 @@ static void gate_ry(call_t *c, const char *w, int q, int ctl) {
       return;
     double av = as_f64(cqe__val(a));
     finite = isfinite(av);
+    if (!ctl || (cqe__val(cf)->w[0] & 1)) {
+      uint64_t ab;
+      memcpy(&ab, &av, 8);
+      theta_substitute(h, ab);
+    }
     char *hx = cqe__hexa(cqe__val(a));
     snprintf(fields, sizeof fields, "\"a\":%d,\"aval\":\"%s\"", (int)a, hx);
     free(hx);
@@ -637,6 +759,8 @@ static void gate_ry(call_t *c, const char *w, int q, int ctl) {
   } else {
     double th = as_f64(&c->raw[n - 1]);
     finite = isfinite(th);
+    if (!ctl || (cqe__val(cf)->w[0] & 1))
+      theta_substitute(h, c->raw[n - 1].w[0]);
     snprintf(fields, sizeof fields, "\"theta\":\"0x%llx\"", (unsigned long long)c->raw[n - 1].w[0]);
     log_rot("ry", c, h, cf, fields);
   }
