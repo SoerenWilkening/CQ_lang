@@ -396,94 +396,6 @@ void lowerOpcode(LoweringContext &ctx, Instruction &I) {
 // Rule 6 (cq-fufh): a rotation in place on y' = f(y, z), with f a bijection in y (add, sub, xor) and
 // the old y dead (y' is its only use), cleans the old y rail first: t = f^-1(y', z), copy t into y,
 // uncompute t, free y. The non-diagonal gate noted on y' orders the clean-up before it (144).
-// y is dead after `at`: every other use of y is an instruction in at's block that comes before it
-// (180: c's first CNOT reads it before c ^ m1).
-static bool deadAfter(Value *y, Instruction *at) {
-  for (User *u : y->users()) {
-    if (u == at)
-      continue;
-    auto *ui = dyn_cast<Instruction>(u);
-    if (!ui || ui->getParent() != at->getParent() || !ui->comesBefore(at))
-      return false;
-  }
-  return true;
-}
-
-static void ruleSixBeforeRotation(LoweringContext &ctx, Value *v, Value *yPrime) {
-  auto *bo = dyn_cast<BinaryOperator>(v);
-  if (!bo || !bo->getType()->isIntegerTy())
-    return;
-  auto opc = bo->getOpcode();
-  if (opc != Instruction::Add && opc != Instruction::Sub && opc != Instruction::Xor)
-    return;
-  for (unsigned i = 0; i < 2; ++i) {
-    Value *Y = bo->getOperand(i), *Z = bo->getOperand(1 - i);
-    Operand y = ctx.operand(Y);
-    if (!y.handle || !deadAfter(Y, bo))
-      continue;
-    Operand z = ctx.operand(Z), yp{yPrime, true};
-    // CR rule 6 applies whether z is a rail (144) or classical (180: c ^ m1 with m1 measured). The
-    // 38 rotate_derived reference keeps the dead x of y = x + c; CR wins (SPEC_ISSUES.md, cq-tvfm).
-    abi::TemplateSpec spec;
-    spec.w = rt(bo->getType(), bo);
-    Operand a = yp, b = z;
-    if (opc == Instruction::Add) {
-      spec.op = "sub";                    // y = y' - z
-    } else if (opc == Instruction::Xor) {
-      spec.op = "xor";                    // y = y' ^ z
-    } else if (i == 0) {
-      spec.op = "add";                    // y' = y - z: y = y' + z
-    } else {
-      spec.op = "sub";                    // y' = z - y: y = z - y'
-      a = z;
-      b = yp;
-    }
-    if (a.handle && b.handle) {
-      spec.shape = "";
-    } else if (a.handle) {
-      spec.shape = "hl";
-    } else if (spec.op != "sub") {
-      std::swap(a, b);
-      spec.shape = "hl";
-    } else {
-      spec.shape = "lh";
-    }
-    ctx.unc().cleanupBijective(ctx.unc().idOf(y.v), spec, {a, b});
-    return;
-  }
-}
-
-// Rule 6, a controlled swap (145): p = select(c, A, B) and q = select(c, B, A) with A, B rails whose
-// only uses are these two selects. A rotation in place on c cleans the old A and B first, through
-// the swap's inverse: A = select(c, p, q), B = select(c, q, p).
-static void ruleSixSwapBeforeRotation(LoweringContext &ctx, Value *c) {
-  SmallVector<SelectInst *, 4> sels;
-  for (User *u : c->users())
-    if (auto *s = dyn_cast<SelectInst>(u); s && s->getCondition() == c && s->getType()->isIntegerTy())
-      sels.push_back(s);
-  for (SelectInst *p : sels)
-    for (SelectInst *q : sels) {
-      if (p == q || p->getTrueValue() != q->getFalseValue() || p->getFalseValue() != q->getTrueValue())
-        continue;
-      Value *A = p->getTrueValue(), *B = p->getFalseValue();
-      if (A == B || A->getNumUses() != 2 || B->getNumUses() != 2)
-        continue;
-      Operand a = ctx.operand(A), b = ctx.operand(B), cp = ctx.operand(c), pp = ctx.operand(p), qq = ctx.operand(q);
-      if (!a.handle || !b.handle || !cp.handle || !pp.handle || !qq.handle)
-        continue;
-      abi::TemplateSpec spec;
-      spec.op = "select";
-      spec.w = rt(p->getType(), p);
-      spec.shape = "";
-      // p (A when c) appears first among the swap's two selects: clean A and B once, from that pair
-      if (p->comesBefore(q) || p->getParent() != q->getParent()) {
-        ctx.unc().cleanupBijective(ctx.unc().idOf(a.v), spec, {cp, pp, qq});
-        ctx.unc().cleanupBijective(ctx.unc().idOf(b.v), spec, {cp, qq, pp});
-        return;
-      }
-    }
-}
-
 void lowerTheta(LoweringContext &ctx, CallInst &call) {
   if (call.arg_size() != 2)
     internalError("spine: cq_theta with other than two arguments", &call);
@@ -496,8 +408,6 @@ void lowerTheta(LoweringContext &ctx, CallInst &call) {
   Value *h;
   if (x.handle) {
     h = x.v;   // rule 2: a rotation of an existing rail is in place
-    ruleSixBeforeRotation(ctx, v, h);
-    ruleSixSwapBeforeRotation(ctx, v);
   } else {
     if (x.v->getType() != irTypeOf(ctx.M.getContext(), w))
       internalError("spine: cq_theta operand type differs from its rail type", &call);
@@ -533,4 +443,222 @@ void lowerMeasure(LoweringContext &ctx, CallInst &call) {
   spine::bindOperand(ctx, &call, Operand{m, false});
 }
 
+// ---------------------------------------------------------------------------------------------
+// CR rule 6 (owner ruling cq-qpsb): every bijective update y' = f(y, ...) of a dead old y cleans
+// the old rail: t = f^-1(y', ...), copy t into y, uncompute t, free y (Uncompute::cleanupBijective,
+// which orders it before the next non-diagonal gate on y' or f's operands). Called after each
+// original instruction is lowered (Construct.cpp).
+
+namespace {
+
+// The old value is a rail the rule may clean: a value this function computed into a rail of its
+// own (not an argument, a load, a phi or a classical select over handles, which alias other rails).
+bool cleanable(LoweringContext &ctx, Value *y) {
+  auto &binds = spine::shared(ctx).binds;
+  auto bi = binds.find(y);
+  if (bi == binds.end() || bi->second.size() != 1)
+    return false;
+  auto *I = dyn_cast<Instruction>(y);
+  if (!I || isa<LoadInst>(I) || isa<PHINode>(I))
+    return false;
+  if (auto *sel = dyn_cast<SelectInst>(I); sel && !spine::isQ(ctx, sel->getCondition()))
+    return false;
+  return ctx.operand(y).handle;
+}
+
+// Dead after `at` (CR rule 6): every other use of y is an earlier instruction that neither stores,
+// returns, passes (escape), rotates nor measures it. `also` is a second update that may read y
+// (the other select of a swap).
+bool deadAfter(LoweringContext &ctx, Value *y, Instruction *at, Instruction *also = nullptr) {
+  DominatorTree &DT = spine::shared(ctx).dt(*at->getFunction());
+  for (User *u : y->users()) {
+    if (u == at || u == also)
+      continue;
+    auto *ui = dyn_cast<Instruction>(u);
+    if (!ui || isa<StoreInst>(ui) || isa<ReturnInst>(ui) || isa<CallBase>(ui) || isa<PHINode>(ui))
+      return false;
+    if (!DT.dominates(ui, at))
+      return false;
+  }
+  return true;
+}
+
+// Does `z` read `y`, through the original instructions computing it? Then y' = y + z(y) is a
+// composite update (127), not a bijection in y for fixed z: no rule 6 through z.
+bool reads(Value *z, Value *y, unsigned depth = 0) {
+  if (z == y)
+    return true;
+  auto *I = dyn_cast<Instruction>(z);
+  if (!I || depth > 64)
+    return false;
+  for (Value *op : I->operands())
+    if (reads(op, y, depth + 1))
+      return true;
+  return false;
+}
+
+std::string shapeOf(ArrayRef<Operand> ops) {
+  std::string sh;
+  bool all = true;
+  for (const Operand &o : ops) {
+    sh += o.handle ? 'q' : 'l';
+    all &= o.handle;
+  }
+  return all ? "" : sh;
+}
+
+void clean(LoweringContext &ctx, Value *y, abi::TemplateSpec spec, SmallVector<Operand, 3> ops) {
+  if (ops.size() == 2) {
+    // binary templates: "" (both rails), "hl", or "lh" (literal first, a non-commutative op)
+    if (ops[0].handle && ops[1].handle) {
+      spec.shape = "";
+    } else if (ops[0].handle) {
+      spec.shape = "hl";
+    } else if (spec.op == "add" || spec.op == "xor" || spec.op == "mul") {
+      std::swap(ops[0], ops[1]);
+      spec.shape = "hl";
+    } else {
+      spec.shape = "lh";
+    }
+  } else if (ops.size() == 3 && spec.op != "select") {
+    spec.shape = shapeOf(ops);
+  }
+  ctx.unc().cleanupBijective(ctx.unc().idOf(ctx.operand(y).v), spec, ops);
+}
+
+APInt oddInverse(const APInt &k) {
+  APInt x(k.getBitWidth(), 1);
+  for (int i = 0; i < 7; ++i)            // Newton: x <- x (2 - k x), doubling the correct bits
+    x = x * (APInt(k.getBitWidth(), 2) - k * x);
+  return x;
+}
+
+} // namespace
+
+namespace spine {
+
+void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
+  if (!(isa<BinaryOperator>(I) || isa<UnaryOperator>(I) || isa<IntrinsicInst>(I) || isa<SelectInst>(I)))
+    return;
+  if (I.getType()->isVoidTy() || I.getType()->isVectorTy() || I.getType()->isStructTy())
+    return;
+  auto &binds = spine::shared(ctx).binds;
+  auto bi = binds.find(&I);
+  if (bi == binds.end() || bi->second.size() != 1 || !bi->second[0].handle)
+    return;
+  Operand yp = ctx.operand(&I);
+  abi::TemplateSpec spec;
+
+  if (auto *bo = dyn_cast<BinaryOperator>(&I); bo && bo->getType()->isIntegerTy()) {
+    auto opc = bo->getOpcode();
+    Value *a0 = bo->getOperand(0), *a1 = bo->getOperand(1);
+    if (a0 == a1)
+      return;
+    spec.w = rt(bo->getType(), bo);
+    if (opc == Instruction::Add || opc == Instruction::Sub || opc == Instruction::Xor) {
+      // both operands dead: operand 0 is cleaned, the other kept (CR rule 6)
+      for (unsigned i = 0; i < 2; ++i) {
+        Value *Y = bo->getOperand(i), *Z = bo->getOperand(1 - i);
+        if (!cleanable(ctx, Y) || !deadAfter(ctx, Y, &I) || reads(Z, Y))
+          continue;
+        Operand z = ctx.operand(Z);
+        if (opc == Instruction::Add) {
+          spec.op = "sub";
+          clean(ctx, Y, spec, {yp, z});              // y = y' - z
+        } else if (opc == Instruction::Xor) {
+          spec.op = "xor";
+          clean(ctx, Y, spec, {yp, z});              // y = y' ^ z
+        } else if (i == 0) {
+          spec.op = "add";
+          clean(ctx, Y, spec, {yp, z});              // y' = y - z: y = y' + z
+        } else {
+          spec.op = "sub";
+          clean(ctx, Y, spec, {z, yp});              // y' = z - y: y = z - y'
+        }
+        return;
+      }
+      return;
+    }
+    if (opc == Instruction::Mul) {
+      for (unsigned i = 0; i < 2; ++i) {
+        auto *k = dyn_cast<ConstantInt>(bo->getOperand(1 - i));
+        Value *Y = bo->getOperand(i);
+        if (!k || !k->getValue()[0] || !cleanable(ctx, Y) || !deadAfter(ctx, Y, &I))
+          continue;
+        spec.op = "mul";                               // y = y' * k^-1 (mod 2^W), k odd
+        clean(ctx, Y, spec, {yp, Operand{ConstantInt::get(k->getType(), oddInverse(k->getValue())), false}});
+        return;
+      }
+    }
+    return;
+  }
+
+  if (auto *un = dyn_cast<UnaryOperator>(&I); un && un->getOpcode() == Instruction::FNeg) {
+    Value *Y = un->getOperand(0);
+    if (cleanable(ctx, Y) && deadAfter(ctx, Y, &I)) {
+      spec.op = "fneg";
+      spec.w = rt(I.getType(), &I);
+      clean(ctx, Y, spec, {yp});                       // y = -y'
+    }
+    return;
+  }
+
+  if (auto *II = dyn_cast<IntrinsicInst>(&I)) {
+    Intrinsic::ID id = II->getIntrinsicID();
+    if (id == Intrinsic::bswap || id == Intrinsic::bitreverse) {
+      Value *Y = II->getArgOperand(0);
+      if (cleanable(ctx, Y) && deadAfter(ctx, Y, &I)) {
+        if (id == Intrinsic::bitreverse)
+          unimplemented("spine: rule 6 clean-up through bitreverse (no template)", &I);
+        spec.op = "bswap";
+        spec.w = rt(I.getType(), &I);
+        clean(ctx, Y, spec, {yp});                     // an involution
+      }
+      return;
+    }
+    if ((id == Intrinsic::fshl || id == Intrinsic::fshr) && II->getArgOperand(0) == II->getArgOperand(1)) {
+      Value *Y = II->getArgOperand(0);
+      if (cleanable(ctx, Y) && deadAfter(ctx, Y, &I) && !reads(II->getArgOperand(2), Y)) {
+        spec.op = id == Intrinsic::fshl ? "fshr" : "fshl";   // a rotation's inverse
+        spec.w = rt(I.getType(), &I);
+        clean(ctx, Y, spec, {yp, yp, ctx.operand(II->getArgOperand(2))});
+      }
+      return;
+    }
+    return;
+  }
+
+  if (auto *sel = dyn_cast<SelectInst>(&I); sel && sel->getType()->isIntegerTy() &&
+                                            spine::isQ(ctx, sel->getCondition())) {
+    Value *c = sel->getCondition(), *A = sel->getTrueValue(), *B = sel->getFalseValue();
+    // A controlled swap (145): this select and an earlier q = select(c, B, A).
+    for (User *u : c->users()) {
+      auto *q = dyn_cast<SelectInst>(u);
+      if (!q || q == sel || q->getCondition() != c || q->getTrueValue() != B || q->getFalseValue() != A ||
+          !q->comesBefore(sel) || A == B)
+        continue;
+      if (!cleanable(ctx, A) || !cleanable(ctx, B) || !deadAfter(ctx, A, &I, q) || !deadAfter(ctx, B, &I, q))
+        return;
+      spec.op = "select";
+      spec.w = rt(I.getType(), &I);
+      spec.shape = "";
+      Operand cp = ctx.operand(c), qq = ctx.operand(q);
+      // q = select(c, B, A), sel = select(c, A, B): B = select(c, q, sel), A = select(c, sel, q)
+      clean(ctx, B, spec, {cp, qq, yp});
+      clean(ctx, A, spec, {cp, yp, qq});
+      return;
+    }
+    // A select whose arms are updates of y or y itself (125): not built yet.
+    for (Value *arm : {A, B}) {
+      auto *bo = dyn_cast<BinaryOperator>(arm);
+      if (!bo)
+        continue;
+      for (Value *Y : {bo->getOperand(0), bo->getOperand(1)})
+        if ((Y == A || Y == B) && cleanable(ctx, Y) && deadAfter(ctx, Y, &I, bo))
+          unimplemented("spine: rule 6 through a select of updates (125)", &I);
+    }
+  }
+}
+
+} // namespace spine
 } // namespace cq

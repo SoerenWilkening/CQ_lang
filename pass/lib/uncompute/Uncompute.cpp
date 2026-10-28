@@ -416,6 +416,37 @@ struct Uncompute::Impl {
     return out;
   }
 
+  // CR rule 6 ("when the old value is still needed to uncompute other rails, those are uncomputed
+  // first"): a clean-up whose inverse reads a garbage rail whose own uncompute reads the cleaned
+  // rail cannot run. That garbage is uncomputed first, which leaves no y' to recompute the old
+  // value from, so the old rail keeps its role (42: s = y + x is garbage, y stays a register).
+  bool garbageReads(RailId x, RailId g, unsigned depth = 0) const {
+    if (depth > 64 || rails[x].cleanup || rails[x].role != Role::Garbage || rails[x].released)
+      return false;
+    for (RailId y : itemReads(x))
+      if (y == g || garbageReads(y, g, depth + 1))
+        return true;
+    return false;
+  }
+  void pruneCleanups() {
+    for (RailId g = 0; g < rails.size(); ++g) {
+      Rail &r = rails[g];
+      if (!r.cleanup || r.released)
+        continue;
+      bool drop = false;
+      for (RailId x : r.cleanup->reads)
+        if (garbageReads(x, g)) {
+          drop = true;
+          break;
+        }
+      if (!drop)
+        continue;
+      for (RailId x : r.cleanup->reads)
+        llvm::erase(rails[x].cleanupReaders, g);
+      r.cleanup.reset();
+    }
+  }
+
   // Rails whose item reads g, directly or through a merge that may name g (U1).
   SmallVector<RailId, 4> readersOf(RailId g) const {
     SmallVector<RailId, 4> ns = names(g);
@@ -976,6 +1007,7 @@ void Uncompute::cleanupBijective(RailId oldRail, const abi::TemplateSpec &invers
 }
 
 void Uncompute::flushBefore(Instruction *point) {
+  impl->pruneCleanups();
   if (!point || !point->getParent())
     internalError("uncompute: flushBefore needs an instruction in a block");
   Impl &I = *impl;
@@ -999,6 +1031,7 @@ void Uncompute::flushBefore(Instruction *point) {
 }
 
 void Uncompute::flushAtExit(ReturnInst *ret) {
+  impl->pruneCleanups();
   if (!ret || !ret->getParent())
     internalError("uncompute: flushAtExit needs a return in a block");
   Impl &I = *impl;
@@ -1049,6 +1082,7 @@ ArrayRef<Record> Uncompute::scopeRecords(unsigned s) const {
 }
 
 void Uncompute::emitMirror(unsigned s, IRBuilder<> &B) {
+  impl->pruneCleanups();
   if (s >= impl->scopes.size())
     internalError("uncompute: no scope " + std::to_string(s));
   Impl &I = *impl;

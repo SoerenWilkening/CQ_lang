@@ -648,6 +648,7 @@ void Walker::emitBlock(BasicBlock *b) {
       continue;
     }
     spine::dispatch(ctx, I);
+    spine::ruleSixAfter(ctx, I);
     if (!I.getType()->isVoidTy()) {
       auto bi = sh.binds.find(&I);
       if (bi != sh.binds.end())
