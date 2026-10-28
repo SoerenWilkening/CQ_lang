@@ -315,6 +315,25 @@ class Sampling(unittest.TestCase):
         self.assertIn("computed inside the program", ss.classes["edge"]["0"]["empty"])
         self.assertEqual(ss.classes["exhaustive"]["0"]["samples"], [0])
 
+    def test_constant_offset_into_vla_is_checked(self):
+        """cq-faa5: 59_controlled_ry_bits reads q[0] (a constant offset, no GEP) and q[n-1] of a
+        VLA of n cells. Both are mem sites, classical, with no §2 rows, and n = 0 leaves the object
+        at both, so no sample of the chain calls has n <= 0."""
+        n = "59_controlled_ry_bits"
+        spec = D.driver_spec(n, D.example_dir(n))
+        ins = S.Instrumenter(D.read_module(D.o1_path(n)), spec)
+        ins.rewrite()
+        mem = {s.inst.split(" =")[0]: s for s in ins.sites if s.kind == "mem"}
+        for v in ("%30", "%37"):
+            self.assertIn(v, mem)
+            self.assertTrue(mem[v].classical)
+            self.assertFalse(S.rows_for(mem[v]))
+        spec, ss = self.sample(n)
+        for smp in ss.samples:
+            if smp["call"] in (0, 1):
+                v = int(smp["args"][1], 16)
+                self.assertTrue(0 < v < 1 << 31, smp)
+
     def test_classical_access_past_object_is_out_of_domain(self):
         """cq-q9hd: 115_qaoa_ring reads x[eu[e]] at a classical index from a VLA of n cells. A
         sample with n below a vertex an edge names reads past the VLA: undefined in C, no CR §2

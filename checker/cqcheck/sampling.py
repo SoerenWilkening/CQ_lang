@@ -41,7 +41,9 @@ program itself does not terminate or faults (a negative VLA size, a read past a 
 outside the program's input domain. So is one on which a memory access whose address depends on no
 quantum value (ClassicalValues) reaches outside its object, faulting or not (cq-q9hd): C leaves it
 undefined and CR §2's index >= n rows are the QROM/QRAM and fat-pointer rows only, so such a site
-has no §2 row either.
+has no §2 row either. Such a site is any classical access at a variable offset, and also one at
+a constant offset into an object whose size is fixed at run time (q[0] of a zero-length VLA,
+cq-faa5).
 """
 from __future__ import annotations
 
@@ -885,13 +887,30 @@ class Instrumenter:
             if not pv.startswith("%"):
                 return [], []
             root, variable = self.addr_root(f, pv)
-            if not variable:
+            classical = self.taint.classical(f, pv)
+            if not variable and not (classical and self.sized_at_run_time(f, root)):
                 return [], []
             ty = split_type(ins.operands[0])[0]
-            s = self.add_site(f, ins, "mem", op, [], classical=self.taint.classical(f, pv))
+            s = self.add_site(f, ins, "mem", op, [], classical=classical)
             nb = f"ptrtoint (ptr getelementptr ({ty}, ptr null, i32 1) to i64)"
             return [f"call void @__cqd_m(i32 {s.id}, ptr {root}, ptr {pv}, i64 {nb})"], []
         return [], []
+
+    @staticmethod
+    def sized_at_run_time(f: D.Function, root: str) -> bool:
+        """The object under `root` may have a size fixed only at run time (cq-faa5): a VLA alloca, or
+        any root that is not a constant-count alloca or a global (a parameter, a heap block, a loaded
+        pointer). A constant offset into it can still leave it (q[0] of a zero-length VLA)."""
+        if not root.startswith("%"):
+            return False
+        d = f.defs.get(root)
+        if d is None or d.op != "alloca":
+            return True
+        m = re.match(r".*?=\s*alloca\s+(?:inalloca\s+)?(.*)$", D.strip_comment(d.text))
+        if not m:
+            return True
+        parts = D.split_operands(split_type(m.group(1))[1].lstrip(","))
+        return bool(parts) and not parts[0].startswith(("align", "addrspace")) and "%" in parts[0]
 
     def addr_root(self, f: D.Function, v: str) -> Tuple[str, bool]:
         """Walk GEPs back to the base value; variable = some GEP index is not a constant, or the
