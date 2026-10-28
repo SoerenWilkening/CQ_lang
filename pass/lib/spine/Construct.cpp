@@ -620,14 +620,21 @@ void Walker::emitBlock(BasicBlock *b) {
     Loop &lp = *unitOf.lookup(b);
     lowerUnit(lp);
     BasicBlock *n = outEdges.lookup(b).front();
+    SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> exits;
+    lp.getExitEdges(exits);
+    // All of the unit's exit edges leave from one output block, so a phi of the exit block cannot
+    // tell them apart: it would get one incoming per exit edge from the same block (cq-qjm9). It
+    // stays unimplemented until the loop contract says which exit edge was taken.
+    if (count_if(exits, [&](const auto &e) { return e.second == n; }) > 1 && !n->phis().empty())
+      unimplemented("spine: a loop unit with more than one exit edge into an exit block with a phi (the "
+                    "loop contract does not say which exit edge was taken; cq-qjm9)",
+                    &*n->phis().begin());
     if (merged.count(n))
       return;
     // The unit's exit edges all leave from where the loop module left the builder (a classical phi
     // of the exit block takes its incoming values there). The jump flushes only once no rail the loop
     // bound to an original value is still read after it.
     BasicBlock *at = ctx.B().GetInsertBlock();
-    SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> exits;
-    lp.getExitEdges(exits);
     for (auto &[from, to] : exits)
       if (to == n)
         edgeOut[{from, to}] = at;
