@@ -40,3 +40,9 @@ Entry format:
 - Disagreement: without `FENV_ACCESS` the `fmul` is a plain op. The reference header takes LLVM's default environment (round to nearest, no flags), so `y` rounds to nearest and `fetestexcept(FE_INEXACT)` sees only the quantum raise. The C program on the target rounds that `fmul` upward and raises INEXACT natively. CR does not say which of the two is "the C program" for §6.
 - Evidence: `fenv_tested(0xffefffffffffffff, .5, 2, 1)`: the reference measures y = 0xfff0000000000000 and f = 0, C 0xffefffffffffffff and 0x20; 9 random samples differ by 1 ulp in y and/or f 0 vs 0x20 (27 reasons, call 1 only). If the ruling is the default environment, the fix is in the C oracle (checker), not the reference.
 - Bead: cq-0r1i
+
+## 55, 91, 107: drivers.txt calls outside the C program's domain
+- Rule: CR §6 item 1 (the C program evaluated classically under §2); cq-nqna decision (an input on which the C program accesses past an object is outside its domain).
+- Disagreement: three drivers.txt calls access past an object, so the C program is undefined on them, yet the checker must run every drivers.txt call. 55 `array_in_quantum_loop(0, .5, 3)` reads `a[m - 1] = a[-1]`; 91 `heap_quantum_size(0, .5, 0, .25, 9)` stores `a[0]` into `malloc(0)`; 107 `union_ptr_to_int(0, .5, 7)` reads `b + 2`, one past `b` (the reference reads 0 by rule 21, the C oracle reads the adjacent `a[0]`).
+- Evidence: the cq-y10d probe build reports the out-of-object access on each; `cqcheck baseline` 107 c fails on exactly that sample (returns 0x7 vs 0x8). Other examples not surveyed.
+- Bead: cq-b4re
