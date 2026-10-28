@@ -14,15 +14,17 @@ one example share one build.
 
 Run (cq-e2i9). One runner process per part of a batch (run_samples: $CQCHECK_JOBS parts, default the
 CPU count): `prog` with $CQD_SAMPLES naming the part's drivers.sample_file and the trace (JSONL, cq-arch)
-written to $CQE_TRACE. The runner runs the setup once and forks one child per record (core.c, shots), as
-the C oracle does (cqo_rt.c): each sample runs in a process of its own from the setup's state, so
-nothing of one sample (rails, handles, known flags, logs, violations, fenv, the theta schedule, the
-families' tables, the program's globals and heap) reaches the next. The trace frames each sample between
-shot markers that run.py strips; the trace is parsed with one json.loads per runner, and each sample's
-events become its RunResult in one pass. A sample that cannot be built or run is a RunResult whose
-violations say why; it is never dropped: a sample that kills its child is a 'signal', 'timeout' or
-'no_exit' result, and one that ends the runner itself (a malformed record) a 'sample' or 'runner'
-result, after which a fresh runner takes the rest.
+written to $CQE_TRACE. The runner runs the setup once and forks one worker, which runs the records
+in-process and between two samples puts back everything a sample can change (core.c, shots: the
+executable's writable data, the heap, the setup's stack, fenv, signal handlers), so nothing of one
+sample (rails, handles, known flags, logs, violations, the theta schedule, the families' tables, the
+program's globals and heap) reaches the next; a sample that raises a signal or times out ends its
+worker and the runner forks a fresh one. The trace frames each sample between shot markers that run.py
+strips; the trace is parsed with one json.loads per runner, and each sample's events become its
+RunResult in one pass. A sample that cannot be built or run is a RunResult whose violations say why;
+it is never dropped: a sample that raises a signal is a 'signal' result (and 'no_exit'), one that runs
+too long a 'timeout' result, and one that ends the runner itself (a malformed record) a 'sample' or
+'runner' result, after which a fresh runner takes the rest.
 
 cq_theta substitution (cq-arch Z4, cq-6m2; CR §6 item 1). A sample may carry "subst":
 {"<fn>:<site>": hex | [hex, ...]}, the chosen value of each reach of a cq_theta site of the C program
@@ -220,8 +222,11 @@ _RESULT_PRELUDE = r"""
 #include <stdio.h>
 #include <string.h>
 void cqe_log(const char *json_object);
-int cqe__shot_begin(int idx);   /* core.c: fork; 0 in the child that runs the sample (cq-e2i9) */
-void cqe__shot_end(void);       /* core.c: the child's end of shot */
+#include <setjmp.h>
+sigjmp_buf *cqe__shot_jb(void);   /* core.c, shots (cq-e2i9) */
+int cqe__shot_enter(int idx);
+void cqe__shot_end(void);
+void cqe__shot_resume(void);
 static void cqd_ret(int call, const char *fn, const char *w, const void *p, size_t n, unsigned bits) {
   unsigned char b[64] = {0};
   memcpy(b, p, n < sizeof b ? n : sizeof b);
@@ -244,12 +249,17 @@ static void cqd_ret(int call, const char *fn, const char *w, const void *p, size
 
 def driver_c(spec: DriverSpec, samples: Sequence[dict]) -> str:
     """The driver C source: drivers.driver_source (cq-arch Z1/Z2: the one renderer of samples) with
-    the result hook. It reads its samples from $CQD_SAMPLES at run time and runs each in a forked
-    child of its own (core.c, shots; cq-e2i9)."""
+    the result hook. It reads its samples from $CQD_SAMPLES at run time and runs them in one worker
+    process, each from the same post-setup state (core.c, shots; cq-e2i9)."""
     from cqcheck import drivers
     return _RESULT_PRELUDE + drivers.driver_source(spec, list(samples),
-                                                   before_call="if (!cqe__shot_begin(CQD_SAMPLE)) {",
-                                                   after_call="cqe__shot_end(); }")
+                                                   before_call=SHOT_BEFORE, after_call=SHOT_AFTER)
+
+
+# core.c, shots: the worker runs each record's call in-process from the post-setup state.
+SHOT_BEFORE = ("if (sigsetjmp(*cqe__shot_jb(), 1) != 0) cqe__shot_resume(); "
+               "else if (cqe__shot_enter(CQD_SAMPLE)) {")
+SHOT_AFTER = "cqe__shot_end(); }"
 
 
 def canonical_sample(spec: DriverSpec, sample: dict) -> dict:
@@ -562,9 +572,8 @@ def _build_failure(side: str, sample: dict, e: BaseException) -> RunResult:
 
 # ---- runner (cq-e2i9) --------------------------------------------------------------------------
 #
-# One runner process per part of a batch: `prog` reads the part's sample file once and forks one
-# child per record (core.c, shots), so each sample runs from the setup's state in a process of its
-# own, as a process per sample did, at the cost of a fork. The runner frames every shot in the trace
+# One runner process per part of a batch: `prog` reads the part's sample file once and runs every
+# record in its worker, each from the post-setup state (core.c, shots). The trace frames every shot
 # ({"ev":"shot","k"} ... {"ev":"shot_end","k","code","timeout","stdout","stderr"}); the frames are
 # private to chk-core and never reach a RunResult. A runner that ends inside a sample (the driver's
 # _exit(3) on a malformed record, a kill) loses no sample: that sample gets a RunResult saying so and
@@ -709,7 +718,7 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
                 extra_sources: Sequence[Path] = (), c_module: Optional[Path] = None) -> List[RunResult]:
     """run_sample over many samples, in order. Each result equals run_sample's for that sample; the
     program is built once for the batch and its samples run in up to `jobs` runner processes (0:
-    default_jobs), each forking one child per sample; a build that fails gives every well-formed
+    default_jobs), each running its samples in one worker process (core.c, shots); a build that fails gives every well-formed
     sample the same 'build' violation without running."""
     from concurrent.futures import ThreadPoolExecutor
     samples = list(samples)

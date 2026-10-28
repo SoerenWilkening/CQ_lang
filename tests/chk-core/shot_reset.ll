@@ -5,6 +5,7 @@
 ; mode 3: a bad handle
 ; mode 4: _exit(7) mid-sample: no exit event
 ; mode 5: the rounding mode left upward, a rail left live, the counter bumped again
+; mode 6: never returns (a timeout), after an alloc
 target triple = "x86_64-apple-macosx16.0.0"
 @g = global i32 0
 define i32 @sr(i32 %mode, double %th) {
@@ -17,7 +18,8 @@ entry:
                                   i32 2, label %crash
                                   i32 3, label %bad
                                   i32 4, label %quit
-                                  i32 5, label %fenv]
+                                  i32 5, label %fenv
+                                  i32 6, label %spin]
 clean:
   call void @cqrt_ry_i32(i32 %x, double %th)
   %m = call i32 @cqrt_measure_i32(i32 %x)
@@ -47,6 +49,9 @@ fenv:
   %c2 = add i32 %c1, 1
   store i32 %c2, ptr @g
   ret i32 %f
+spin:
+  %v = load volatile i32, ptr @g
+  br label %spin
 }
 declare i32 @cqrt_alloc_i32(i32)
 declare void @cqrt_ry_i32(i32, double)

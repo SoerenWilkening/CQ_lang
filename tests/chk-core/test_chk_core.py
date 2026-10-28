@@ -268,13 +268,14 @@ class ShotReset(unittest.TestCase):
         self.assertEqual([to_json(r) for r in par], [to_json(r) for r in batch])
 
     def test_timeout_ends_one_sample_only(self):
+        """A sample that never returns (mode 6) is a timeout; the samples around it are clean."""
         spec = spec1(*self.ARGS)
-        samples = [{"call": 0, "args": [0, 0.5]}, {"call": 0, "args": [0, 0.5]}]
+        samples = [{"call": 0, "args": [m, 0.5]} for m in (0, 6, 0, 6, 0)]
         prog = run.build(HERE / "shot_reset.ll", spec, (), RT, FAM)
         items = [(s, drivers.sample_file(spec, [run.canonical_sample(spec, s)]), None) for s in samples]
-        res = run._run_part(prog, items, "ours", 1e-6)   # a timer that fires at once
-        for r in res:
-            self.assertEqual([v["what"] for v in r.violations if v["what"] == "timeout"], ["timeout"])
+        res = run._run_part(prog, items, "ours", 1.0)
+        self.assertEqual([[v["what"] for v in r.violations] for r in res], [[], ["timeout"], [], ["timeout"], []])
+        self.assertEqual(len({to_json(r) for r in (res[0], res[2], res[4])}), 1)
 
 
 class ThetaSubstitution(unittest.TestCase):

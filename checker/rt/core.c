@@ -15,9 +15,9 @@
  * per line so a crash keeps every event before it. The frozen events of cq-arch are written with
  * their frozen fields; some carry additive fields (documented at each writer). The exit event is
  * written by an atexit handler registered before any other runtime handler, so it comes last.
- * Under the batch driver (run.py) every sample is a forked child of one runner process (shots, at the
- * end of this file); the exit event and every family's end-of-shot handler then run once per sample,
- * in its child, and the runner itself logs only the shot frames.
+ * Under the batch driver (run.py) one worker process runs every sample in turn (shots, at the end of
+ * this file); the end-of-shot handlers and the exit event run once per sample, and the trace is
+ * flushed at the end of each sample instead of per line.
  *
  * Exit roles (event "exit", field "role" of each live rail): measured, abort, tape, qram, frozen
  * (rotated, not measured), kept_entangled (cq-arch A4: a rail one of whose direct sources received
@@ -153,7 +153,8 @@ char *cqe__hexa(const cqe_val *v) { return cqe__hex(v, xcalloc(3 + 16 * (size_t)
 static FILE *trace_f;
 static int inited;
 static unsigned long nviolations;
-static int shot_muted; /* a batch runner's own end (shots, end of file): nothing more is logged */
+static int shot_muted;    /* a batch runner's own end (shots, end of file): nothing more is logged */
+static int shot_buffered; /* a shot worker: the trace is flushed at the end of each sample, not per line */
 
 static void at_exit_handler(void);
 
@@ -182,7 +183,8 @@ void cqe_log(const char *json_object) {
     return;
   fputs(json_object, trace_f);
   fputc('\n', trace_f);
-  fflush(trace_f);
+  if (!shot_buffered)
+    fflush(trace_f);
 }
 
 /* printf-style log of one line. */
@@ -195,7 +197,8 @@ void cqe__logf(const char *fmt, ...) {
   vfprintf(trace_f, fmt, ap);
   va_end(ap);
   fputc('\n', trace_f);
-  fflush(trace_f);
+  if (!shot_buffered)
+    fflush(trace_f);
 }
 
 /* JSON string body escaping into a heap buffer. */
@@ -433,113 +436,297 @@ static void at_exit_handler(void) {
 #undef APPEND
   cqe_log(buf);
   free(buf);
+  if (shot_buffered) /* a shot worker's sample ends here; the trace stays open for the next */
+    return;
   if (trace_f && trace_f != stderr)
     fclose(trace_f);
   trace_f = stderr;
 }
 
-/* ---- shots (cq-e2i9): one runner process per batch, one forked child per sample ---------------
+/* ---- shots (cq-e2i9): one process runs a batch, every sample from the same post-setup state ------
  *
- * run.py renders the driver (drivers.driver_source) with before_call "if (!cqe__shot_begin(CQD_SAMPLE)) {"
- * and after_call "cqe__shot_end(); }". The process (the runner) runs the setup once and then, for every
- * record of the sample file, forks: the child is the shot. It runs the record's call from the runner's
- * post-setup state and ends through cqe__shot_end (exit(0): every atexit handler runs and the core's
- * exit event closes the shot, as a process of its own did before). All per-sample state (rails, the
- * handle counter, known flags, the violation count, logs, fenv, the theta schedule, the families'
- * tables and end-of-shot handlers, the program's own globals and heap, the setup's locals) belongs to
- * the child and goes with it, so nothing of sample i is visible in sample i+1, whatever sample i did
- * (a violation, a dirty free, a signal, a timeout). This is the C oracle's scheme (cqo_rt.c).
+ * run.py renders the driver (drivers.driver_source) with
+ *   before_call  if (sigsetjmp(*cqe__shot_jb(), 1) != 0) cqe__shot_resume(); else if (cqe__shot_enter(CQD_SAMPLE)) {
+ *   after_call   cqe__shot_end(); }
+ * The process runs the setup once. At its first record it becomes the server: it forks one worker and
+ * from then on only waits and skips records. The worker runs the records in-process, one shot each,
+ * and between two shots puts back everything a sample can change, so that sample i+1 starts from
+ * exactly the state sample i started from (the server's post-setup state, as a process of its own
+ * per sample had it):
+ *   - the executable's writable data (__DATA: __data, __bss, __common): every static of the core, the
+ *     dispatcher and the families (rails, handle counter, known flags, violation count, the theta
+ *     schedule, rt-mem's and rt-tape's tables, the registered end-of-shot handlers) and the program's
+ *     own globals;
+ *   - the heap: malloc, calloc, realloc and free of the executable are this file's (below). What the
+ *     setup allocates (blocks under SETUP_BIG bytes) lies in the setup arena, whose contents are put
+ *     back; what a sample allocates lies in the sample arena, emptied after every sample;
+ *   - the stack above the driver's call (the setup's locals);
+ *   - the floating-point environment (fesetenv), and the worker's signal handlers.
+ * The end of a shot is the end of a process: the handlers registered with atexit (atexit of the
+ * executable is this file's: the core's exit-event handler first, so it runs last, C1) run in reverse
+ * order and the core writes the exit event. exit(n) in a sample does the same and ends the sample
+ * with status n; _exit(n) and _Exit(n) end it with status n without the handlers (no exit event).
+ * A sample that raises a signal (SIGFPE, SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGTRAP, SIGSYS) or runs
+ * past $CQE_SHOT_TIMEOUT seconds (default 30, SIGALRM) ends with status minus the signal, no exit
+ * event, and the worker ends with it: the server forks a fresh worker for the next record. The server
+ * also SIGKILLs a worker that makes no progress for twice the timeout plus a second (a timeout).
+ * Allocation past the sample arena falls back to the system heap; that sample's worker then ends
+ * after it. Not put back: state inside the C library (stdio buffers, strtok, rand, locale, errno),
+ * blocks the C library allocated, and blocks of SETUP_BIG bytes or more the setup allocated (the
+ * driver's sample buffer).
  *
- * Frames, written by the runner around each shot (private to chk-core; run.py removes them):
- *   {"ev":"shot","k":<k>}
- *   {"ev":"shot_end","k":<k>,"code":<c>,"timeout":<0|1>,"stdout":"..","stderr":".."}
- * k = $CQE_SHOT_BASE + the record index. code is the child's exit status, or minus the signal that
- * ended it. stdout is everything the child wrote to its stdout; stderr is the last 4000 bytes of
- * its stderr, only for a child that did not exit 0 (and only when the trace is not stderr).
- * Environment: $CQE_SHOT_DIR (a directory for the capture files; a fresh one under $TMPDIR when unset),
- * $CQE_SHOT_TIMEOUT (seconds, default 30: the child's ITIMER_REAL; the runner SIGKILLs a child still
- * alive after twice that plus a second, and either is reported with "timeout":1), $CQE_THETA_ALL (the
- * theta schedules of the batch: "@<k>" lines, each followed by sample k's $CQE_THETA lines; a shot
- * with no block has no schedule; without $CQE_THETA_ALL every shot keeps $CQE_THETA as it is). */
+ * Frames, private to chk-core (run.py removes them):
+ *   {"ev":"shot","k":<k>}    before a sample's events
+ *   {"ev":"shot_end","k":<k>,"code":<c>,"timeout":<0|1>,"stdout":"..","stderr":".."}   after them
+ * k = $CQE_SHOT_BASE + the record index; code is the sample's status. stdout is what the sample wrote
+ * to stdout, stderr the last 4000 bytes of what it wrote to stderr when code is not 0 (and the trace is
+ * not stderr), both byte by byte (every byte >= 0x7f as \u00XX). $CQE_SHOT_DIR is a directory for the
+ * capture files (a fresh one under $TMPDIR when unset). $CQE_THETA_ALL holds the theta schedules of
+ * the batch: "@<k>" lines in increasing k, each followed by sample k's $CQE_THETA lines; a sample
+ * with no block has no schedule. Without $CQE_THETA_ALL every sample reads $CQE_THETA. */
+
+#include <dlfcn.h>
+#include <fenv.h>
+#include <mach-o/getsect.h>
+#include <mach-o/ldsyms.h>
+#include <malloc/malloc.h>
+#include <pthread.h>
+#include <setjmp.h>
+#include <sys/mman.h>
 
 void cqe__theta_use(const char *text, size_t n); /* dispatch.c */
 
-static pid_t shot_runner; /* the runner's pid; 0 before its first shot */
+/* -- the heap -- */
+
+#define SETUP_ARENA ((size_t)256 << 20)
+#define SAMPLE_ARENA ((size_t)2 << 30)
+#define SETUP_BIG ((size_t)64 << 10)
+
+typedef struct { char *base, *top, *end; } arena_t;
+static arena_t a_setup, a_sample; /* in __DATA: a sample's restore empties a_sample */
+
+typedef struct shot_state shot_state;
+static shot_state *R; /* the shared state (mmap); NULL until the first record */
+
+static int in_arena(const arena_t *a, const void *p) { return a->base && (const char *)p >= a->base && (const char *)p < a->end; }
+
+static void *arena_alloc(arena_t *a, size_t reserve, size_t n) {
+  if (!a->base) {
+    void *m = mmap(NULL, reserve, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (m == MAP_FAILED)
+      return NULL;
+    a->base = a->top = m;
+    a->end = a->base + reserve;
+  }
+  size_t need = ((n + 15) & ~(size_t)15) + 16;
+  if (need < n || (size_t)(a->end - a->top) < need)
+    return NULL;
+  char *p = a->top;
+  a->top += need;
+  *(size_t *)p = n;
+  return p + 16;
+}
+
+static int sample_running(void);
+static void shot_mark_dirty(void);
+
+void *malloc(size_t n) {
+  void *p = NULL;
+  if (sample_running()) {
+    p = arena_alloc(&a_sample, SAMPLE_ARENA, n);
+    if (!p)
+      shot_mark_dirty();
+  } else if (n < SETUP_BIG) {
+    p = arena_alloc(&a_setup, SETUP_ARENA, n);
+  }
+  return p ? p : malloc_zone_malloc(malloc_default_zone(), n ? n : 1);
+}
+
+void *calloc(size_t n, size_t sz) {
+  if (sz && n > (size_t)-1 / sz)
+    return NULL;
+  void *p = malloc(n * sz);
+  if (p)
+    memset(p, 0, n * sz);
+  return p;
+}
+
+void free(void *p) {
+  if (!p || in_arena(&a_setup, p) || in_arena(&a_sample, p))
+    return; /* an arena block goes with its arena */
+  malloc_zone_t *z = malloc_zone_from_ptr(p);
+  if (z)
+    malloc_zone_free(z, p);
+}
+
+void *realloc(void *p, size_t n) {
+  if (!p)
+    return malloc(n);
+  if (in_arena(&a_setup, p) || in_arena(&a_sample, p)) {
+    size_t old = *(size_t *)((char *)p - 16);
+    void *q = malloc(n);
+    if (q)
+      memcpy(q, p, old < n ? old : n);
+    return q;
+  }
+  malloc_zone_t *z = malloc_zone_from_ptr(p);
+  return malloc_zone_realloc(z ? z : malloc_default_zone(), p, n);
+}
+
+/* -- atexit and exit -- */
+
+#define MAX_EXIT_FNS 64
+static void (*exit_fns[MAX_EXIT_FNS])(void);
+static int nexit_fns;
+
+int atexit(void (*fn)(void)) {
+  if (nexit_fns == MAX_EXIT_FNS) {
+    fprintf(stderr, "cq: chk-core: more than %d atexit handlers\n", MAX_EXIT_FNS);
+    abort();
+  }
+  exit_fns[nexit_fns++] = fn;
+  return 0;
+}
+
+static void run_exit_fns(void) {
+  while (nexit_fns > 0)
+    exit_fns[--nexit_fns]();
+}
+
+int __cxa_atexit(void (*)(void *), void *, void *);
+typedef void (*exit_fn_t)(int) __attribute__((noreturn));
+static exit_fn_t real_exit, real__exit;
+
+/* The C library's exit of a process that is no batch (no record ran): the handlers, as before. */
+static void libc_exit_hook(void *unused) {
+  (void)unused;
+  if (!R)
+    run_exit_fns();
+}
+
+__attribute__((constructor(100))) static void shot_ctor(void) {
+  real_exit = (exit_fn_t)dlsym(RTLD_NEXT, "exit");
+  real__exit = (exit_fn_t)dlsym(RTLD_NEXT, "_exit");
+  if (!real_exit || !real__exit) {
+    fprintf(stderr, "cq: chk-core: no exit/_exit in the C library\n");
+    abort();
+  }
+  __cxa_atexit(libc_exit_hook, NULL, NULL);
+}
+
+/* -- the shared state -- */
+
+enum { J_NONE, J_EXIT, J_SIGNAL };
+
+struct shot_state {
+  sigjmp_buf jb;          /* the driver's sigsetjmp, in the worker */
+  pid_t server, worker;
+  long resume;            /* server: the first record not yet run */
+  long next;              /* worker: the record after the last one it finished */
+  long cur;               /* the record of the running sample */
+  volatile long progress; /* worker: bumped at every shot's start and end */
+  volatile int in_sample, dirty;
+  int jkind, code, ran_fns, timeout;
+  long base;
+  double timeout_s;
+  /* the worker's snapshot (taken at its first sample) */
+  int snapped;
+  struct { char *at, *copy; size_t n; } sect[3];
+  int nsect;
+  char *setup_copy;
+  size_t setup_n;
+  fenv_t fenv;
+  char *stack_lo, *stack_copy;
+  size_t stack_n, stack_cap;
+  int out_fd, err_fd; /* read ends of the capture files */
+};
+
 static char shot_dir[1024], shot_out[1100], shot_err[1100];
 static int shot_own_dir;
-static long shot_base;
-static double shot_timeout = 30.0;
-static volatile sig_atomic_t shot_alarm;
-static char *theta_all;          /* $CQE_THETA_ALL's text */
+static char *theta_all; /* $CQE_THETA_ALL's text (system heap: never put back) */
 static int theta_all_set;
 typedef struct { long k; const char *p; size_t n; } theta_block;
 static theta_block *theta_blocks;
 static size_t theta_nblocks;
 
-static void shot_on_alarm(int sig) {
-  (void)sig;
-  shot_alarm = 1;
+static int sample_running(void) { return R && R->in_sample && getpid() == R->worker; }
+static void shot_mark_dirty(void) { R->dirty = 1; }
+
+static void shot_die(const char *what) {
+  fprintf(stderr, "cq: chk-core: %s: %s\n", what, strerror(errno));
+  real__exit(98);
 }
 
-/* The runner's end: registered after every constructor's atexit, so it runs first and mutes the
- * families' and the core's end-of-shot logging, which belongs to the children. */
-static void shot_runner_exit(void) {
-  if (getpid() != shot_runner)
-    return;
-  shot_muted = 1;
-  if (shot_own_dir) {
-    unlink(shot_out);
-    unlink(shot_err);
-    rmdir(shot_dir);
+static void *sys_alloc(size_t n) {
+  void *p = malloc_zone_malloc(malloc_default_zone(), n ? n : 1);
+  if (!p)
+    shot_die("out of memory");
+  return p;
+}
+
+void exit(int code) {
+  if (sample_running()) {
+    R->jkind = J_EXIT;
+    R->code = code & 0xff;
+    R->ran_fns = 0;
+    siglongjmp(R->jb, 1);
   }
+  real_exit(code);
 }
 
-static void shot_timer(double s) {
-  struct itimerval it;
-  memset(&it, 0, sizeof it);
-  if (s > 0) {
-    it.it_value.tv_sec = (time_t)s;
-    it.it_value.tv_usec = (suseconds_t)((s - (double)(time_t)s) * 1e6);
-    if (!it.it_value.tv_sec && !it.it_value.tv_usec)
-      it.it_value.tv_usec = 1;
+__attribute__((noreturn)) static void quick_exit_(int code) {
+  if (sample_running()) {
+    R->jkind = J_EXIT;
+    R->code = code & 0xff;
+    R->ran_fns = -1; /* no handlers */
+    siglongjmp(R->jb, 1);
   }
-  setitimer(ITIMER_REAL, &it, NULL);
+  real__exit(code);
 }
+void _exit(int code) { quick_exit_(code); }
+void _Exit(int code) { quick_exit_(code); }
 
-/* The file at path (its last `tail` bytes when tail > 0) as a JSON string body (heap); "" when empty. */
-static char *shot_slurp_json(const char *path, long tail) {
-  struct stat st;
-  if (stat(path, &st) != 0 || st.st_size == 0)
-    return xcalloc(1, 1);
-  FILE *f = fopen(path, "rb");
-  if (!f)
-    return xcalloc(1, 1);
-  long n = (long)st.st_size, from = (tail > 0 && n > tail) ? n - tail : 0;
-  fseek(f, from, SEEK_SET);
-  n -= from;
-  unsigned char *b = xcalloc((size_t)n + 1, 1);
-  n = (long)fread(b, 1, (size_t)n, f);
-  fclose(f);
-  char *o = xcalloc(6 * (size_t)n + 1, 1), *p = o;
-  for (long i = 0; i < n; ++i) {
+/* -- capture files -- */
+
+/* JSON string body of bytes (heap of the current phase). */
+static char *json_bytes(const unsigned char *b, size_t n) {
+  char *o = xcalloc(6 * n + 1, 1), *p = o;
+  for (size_t i = 0; i < n; ++i) {
     unsigned char c = b[i];
     if (c == '"' || c == '\\') {
       *p++ = '\\';
       *p++ = (char)c;
-    } else if (c < 0x20 || c >= 0x7f) { /* bytes, not UTF-8: every non-ASCII byte as \u00XX */
+    } else if (c < 0x20 || c >= 0x7f) {
       p += sprintf(p, "\\u%04x", c);
     } else {
       *p++ = (char)c;
     }
   }
-  free(b);
   return o;
 }
 
-static void shot_die(const char *what) {
-  fprintf(stderr, "cq: chk-core: %s: %s\n", what, strerror(errno));
-  _exit(98);
+/* What fd (writing the capture file read through rfd) holds, its last `tail` bytes when tail > 0, as
+ * a JSON string body; the file is emptied. */
+static char *take_capture(int fd, int rfd, long tail) {
+  struct stat st;
+  if (fstat(fd, &st) != 0 || st.st_size == 0)
+    return xcalloc(1, 1);
+  size_t n = (size_t)st.st_size, from = (tail > 0 && n > (size_t)tail) ? n - (size_t)tail : 0;
+  unsigned char *b = xcalloc(n - from + 1, 1);
+  ssize_t got = pread(rfd, b, n - from, (off_t)from);
+  char *o = json_bytes(b, got > 0 ? (size_t)got : 0);
+  free(b);
+  if (ftruncate(fd, 0) != 0 || lseek(fd, 0, SEEK_SET) < 0)
+    shot_die("cannot empty a capture file");
+  return o;
 }
+
+static void log_shot_end(long k, int code, int timeout, const char *out, const char *err) {
+  cqe__logf("{\"ev\":\"shot_end\",\"k\":%ld,\"code\":%d,\"timeout\":%d,\"stdout\":\"%s\",\"stderr\":\"%s\"}", k, code,
+            timeout, out, err);
+}
+
+/* -- theta -- */
 
 static void theta_all_load(const char *path) {
   theta_all_set = 1;
@@ -549,9 +736,10 @@ static void theta_all_load(const char *path) {
   fseek(f, 0, SEEK_END);
   long n = ftell(f);
   fseek(f, 0, SEEK_SET);
-  theta_all = xcalloc((size_t)n + 1, 1);
+  theta_all = sys_alloc((size_t)n + 1);
   if (fread(theta_all, 1, (size_t)n, f) != (size_t)n)
     shot_die("cannot read $CQE_THETA_ALL");
+  theta_all[n] = 0;
   fclose(f);
   size_t cap = 0;
   for (char *p = theta_all; *p;) {
@@ -559,10 +747,11 @@ static void theta_all_load(const char *path) {
     char *end = nl ? nl + 1 : p + strlen(p);
     if (*p == '@') {
       if (theta_nblocks == cap) {
+        theta_block *nb = sys_alloc((cap ? 2 * cap : 256) * sizeof *nb);
+        if (theta_nblocks)
+          memcpy(nb, theta_blocks, theta_nblocks * sizeof *nb);
         cap = cap ? 2 * cap : 256;
-        theta_blocks = realloc(theta_blocks, cap * sizeof *theta_blocks);
-        if (!theta_blocks)
-          abort();
+        theta_blocks = nb; /* the old block is left: a few KB once per batch */
       }
       theta_block *b = &theta_blocks[theta_nblocks++];
       b->k = strtol(p + 1, NULL, 10);
@@ -575,8 +764,136 @@ static void theta_all_load(const char *path) {
   }
 }
 
-static void shot_setup(void) {
-  shot_runner = getpid();
+static void theta_for(long k) {
+  if (!theta_all_set)
+    return;
+  size_t lo = 0, hi = theta_nblocks;
+  while (lo < hi) {
+    size_t mid = (lo + hi) / 2;
+    if (theta_blocks[mid].k < k)
+      lo = mid + 1;
+    else
+      hi = mid;
+  }
+  if (lo < theta_nblocks && theta_blocks[lo].k == k)
+    cqe__theta_use(theta_blocks[lo].p, theta_blocks[lo].n);
+  else
+    cqe__theta_use(NULL, 0);
+}
+
+/* -- signals and timers -- */
+
+static const int fatal_sigs[] = {SIGFPE, SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGTRAP, SIGSYS, SIGALRM};
+#define NFATAL ((int)(sizeof fatal_sigs / sizeof fatal_sigs[0]))
+
+static void timer_set(double s, int periodic) {
+  struct itimerval it;
+  memset(&it, 0, sizeof it);
+  if (s > 0) {
+    it.it_value.tv_sec = (time_t)s;
+    it.it_value.tv_usec = (suseconds_t)((s - (double)(time_t)s) * 1e6);
+    if (!it.it_value.tv_sec && !it.it_value.tv_usec)
+      it.it_value.tv_usec = 1;
+    if (periodic)
+      it.it_interval = it.it_value;
+  }
+  setitimer(ITIMER_REAL, &it, NULL);
+}
+
+static void worker_on_signal(int sig) {
+  if (!sample_running()) {
+    signal(sig, SIG_DFL);
+    raise(sig);
+    return;
+  }
+  R->jkind = J_SIGNAL;
+  R->code = -sig;
+  R->timeout = sig == SIGALRM;
+  siglongjmp(R->jb, 1);
+}
+
+static void worker_signals(void) {
+  struct sigaction sa;
+  memset(&sa, 0, sizeof sa);
+  sa.sa_handler = worker_on_signal;
+  sa.sa_flags = SA_ONSTACK | SA_NODEFER;
+  sigemptyset(&sa.sa_mask);
+  for (int i = 0; i < NFATAL; ++i)
+    sigaction(fatal_sigs[i], &sa, NULL);
+}
+
+static volatile sig_atomic_t server_tick;
+static void server_on_alarm(int sig) {
+  (void)sig;
+  server_tick = 1;
+}
+
+/* -- the worker's snapshot -- */
+
+static void snapshot_take(void) {
+  static const char *names[] = {"__data", "__bss", "__common"};
+  R->nsect = 0;
+  for (int i = 0; i < 3; ++i) {
+    unsigned long n = 0;
+    uint8_t *at = getsectiondata(&_mh_execute_header, "__DATA", names[i], &n);
+    if (!at || !n)
+      continue;
+    R->sect[R->nsect].at = (char *)at;
+    R->sect[R->nsect].n = n;
+    R->sect[R->nsect].copy = sys_alloc(n);
+    R->nsect++;
+  }
+  R->setup_n = a_setup.base ? (size_t)(a_setup.top - a_setup.base) : 0;
+  R->setup_copy = sys_alloc(R->setup_n);
+  if (R->setup_n)
+    memcpy(R->setup_copy, a_setup.base, R->setup_n);
+  fegetenv(&R->fenv);
+  /* every flag the worker sets is set before this copy, so the copy keeps it */
+  for (int i = 0; i < R->nsect; ++i)
+    memcpy(R->sect[i].copy, R->sect[i].at, R->sect[i].n);
+  R->snapped = 1;
+}
+
+static void snapshot_restore(void) {
+  for (int i = 0; i < R->nsect; ++i)
+    memcpy(R->sect[i].at, R->sect[i].copy, R->sect[i].n);
+  if (R->setup_n)
+    memcpy(a_setup.base, R->setup_copy, R->setup_n);
+  fesetenv(&R->fenv);
+}
+
+/* The stack from the driver's frame up: the setup's locals. Saved at every sample's start. */
+static void stack_save(char *lo) {
+  char *hi = (char *)pthread_get_stackaddr_np(pthread_self());
+  if (!(lo < hi))
+    shot_die("stack bounds");
+  R->stack_lo = lo;
+  R->stack_n = (size_t)(hi - lo);
+  if (R->stack_n > R->stack_cap) {
+    R->stack_copy = sys_alloc(R->stack_n);
+    R->stack_cap = R->stack_n;
+  }
+  memcpy(R->stack_copy, lo, R->stack_n);
+}
+
+__attribute__((noinline)) static void stack_restore(void) {
+  char *here = (char *)__builtin_frame_address(0);
+  if (here + 64 > R->stack_lo) {
+    fprintf(stderr, "cq: chk-core: the driver's frame moved between a sample's start and end\n");
+    real__exit(98);
+  }
+  memcpy(R->stack_lo, R->stack_copy, R->stack_n);
+}
+
+/* -- the server -- */
+
+static void server_setup(void) {
+  void *m = mmap(NULL, sizeof(shot_state), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0);
+  if (m == MAP_FAILED)
+    shot_die("mmap");
+  R = m;
+  memset(R, 0, sizeof *R);
+  R->server = getpid();
   const char *d = getenv("CQE_SHOT_DIR");
   if (d && *d) {
     snprintf(shot_dir, sizeof shot_dir, "%s", d);
@@ -590,96 +907,200 @@ static void shot_setup(void) {
   snprintf(shot_out, sizeof shot_out, "%s/out", shot_dir);
   snprintf(shot_err, sizeof shot_err, "%s/err", shot_dir);
   const char *b = getenv("CQE_SHOT_BASE");
-  shot_base = b && *b ? strtol(b, NULL, 10) : 0;
+  R->base = b && *b ? strtol(b, NULL, 10) : 0;
   const char *to = getenv("CQE_SHOT_TIMEOUT");
-  if (to && *to)
-    shot_timeout = strtod(to, NULL);
+  R->timeout_s = to && *to ? strtod(to, NULL) : 30.0;
   const char *th = getenv("CQE_THETA_ALL");
   if (th && *th)
     theta_all_load(th);
+  shot_muted = 1; /* the server logs only frames of samples its worker could not end */
   struct sigaction sa;
   memset(&sa, 0, sizeof sa);
-  sa.sa_handler = shot_on_alarm; /* no SA_RESTART: waitpid returns EINTR */
+  sa.sa_handler = server_on_alarm; /* no SA_RESTART: waitpid returns EINTR */
   sigemptyset(&sa.sa_mask);
   sigaction(SIGALRM, &sa, NULL);
-  atexit(shot_runner_exit);
 }
 
-/* before_call: 0 in the child (run the call), 1 in the runner once the child has ended. */
-int cqe__shot_begin(int idx) {
-  cqe__init();
-  if (!shot_runner)
-    shot_setup();
-  long k = shot_base + idx;
-  cqe__logf("{\"ev\":\"shot\",\"k\":%ld}", k);
-  fflush(NULL);
-  pid_t pid = fork();
-  if (pid < 0)
-    shot_die("fork");
-  if (pid == 0) {
-    signal(SIGALRM, SIG_DFL);
-    int fd = open(shot_out, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (fd >= 0) {
-      dup2(fd, 1);
-      close(fd);
-    }
-    if (trace_f != stderr) {
-      fd = open(shot_err, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-      if (fd >= 0) {
-        dup2(fd, 2);
-        close(fd);
-      }
-    }
-    if (theta_all_set) {
-      const theta_block *tb = NULL;
-      /* blocks are written in k order; a binary search finds k's */
-      size_t lo = 0, hi = theta_nblocks;
-      while (lo < hi) {
-        size_t mid = (lo + hi) / 2;
-        if (theta_blocks[mid].k < k)
-          lo = mid + 1;
-        else
-          hi = mid;
-      }
-      if (lo < theta_nblocks && theta_blocks[lo].k == k)
-        tb = &theta_blocks[lo];
-      cqe__theta_use(tb ? tb->p : NULL, tb ? tb->n : 0);
-    }
-    shot_timer(shot_timeout);
-    return 0;
+static void server_cleanup(void *unused) {
+  (void)unused;
+  if (R && getpid() == R->server && shot_own_dir) {
+    unlink(shot_out);
+    unlink(shot_err);
+    rmdir(shot_dir);
   }
-  shot_alarm = 0;
-  shot_timer(2 * shot_timeout + 1);
-  int st = 0, killed = 0;
+}
+
+static int open_capture(const char *path, int fd) {
+  int w = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+  if (w < 0 || dup2(w, fd) < 0)
+    shot_die("cannot open a capture file");
+  close(w);
+  int r = open(path, O_RDONLY);
+  if (r < 0)
+    shot_die("cannot open a capture file");
+  return r;
+}
+
+static void worker_start(void) {
+  R->worker = getpid();
+  R->snapped = 0;
+  R->dirty = 0;
+  R->in_sample = 0;
+  shot_muted = 0;
+  shot_buffered = 1;
+  signal(SIGALRM, SIG_DFL);
+  timer_set(0, 0);
+  R->out_fd = open_capture(shot_out, 1);
+  R->err_fd = trace_f != stderr ? open_capture(shot_err, 2) : -1;
+  stack_t ss = {.ss_sp = sys_alloc(1 << 16), .ss_size = 1 << 16, .ss_flags = 0}; /* a stack overflow still reaches the handler */
+  sigaltstack(&ss, NULL);
+}
+
+/* The server's wait for its worker; the record to resume at afterwards. */
+static void server_wait(void) {
+  long last = -1;
+  int killed = 0;
+  server_tick = 0;
+  timer_set(2 * R->timeout_s + 1, 1);
+  int st = 0;
   for (;;) {
-    pid_t r = waitpid(pid, &st, 0);
-    if (r == pid)
+    pid_t r = waitpid(R->worker, &st, 0);
+    if (r == R->worker)
       break;
     if (r < 0 && errno == EINTR) {
-      if (shot_alarm && !killed) {
-        kill(pid, SIGKILL);
-        killed = 1;
+      if (server_tick) {
+        server_tick = 0;
+        if (R->progress == last && !killed) {
+          kill(R->worker, SIGKILL);
+          killed = 1;
+        }
+        last = R->progress;
       }
       continue;
     }
     shot_die("waitpid");
   }
-  shot_timer(0);
-  int code = -1, timeout = 0;
-  if (WIFEXITED(st)) {
-    code = WEXITSTATUS(st);
-  } else if (WIFSIGNALED(st)) {
-    code = -WTERMSIG(st);
-    timeout = killed || WTERMSIG(st) == SIGALRM;
+  timer_set(0, 0);
+  if (!R->in_sample) {
+    R->resume = R->next;
+    return;
   }
-  char *out = shot_slurp_json(shot_out, 0);
-  char *err = (code && trace_f != stderr) ? shot_slurp_json(shot_err, 4000) : xcalloc(1, 1);
-  cqe__logf("{\"ev\":\"shot_end\",\"k\":%ld,\"code\":%d,\"timeout\":%d,\"stdout\":\"%s\",\"stderr\":\"%s\"}", k,
-            code, timeout, out, err);
+  /* the worker ended inside a sample: a signal it caught (J_SIGNAL), or a kill */
+  int code, timeout;
+  if (R->jkind == J_SIGNAL && !killed) {
+    code = R->code;
+    timeout = R->timeout;
+  } else {
+    code = WIFSIGNALED(st) ? -WTERMSIG(st) : WIFEXITED(st) ? WEXITSTATUS(st) : -1;
+    timeout = killed;
+  }
+  int ofd = open(shot_out, O_RDWR), efd = trace_f != stderr ? open(shot_err, O_RDWR) : -1;
+  char *out = ofd >= 0 ? take_capture(ofd, ofd, 0) : xcalloc(1, 1);
+  char *err = (efd >= 0 && code) ? take_capture(efd, efd, 4000) : xcalloc(1, 1);
+  if (ofd >= 0)
+    close(ofd);
+  if (efd >= 0)
+    close(efd);
+  shot_muted = 0;
+  log_shot_end(R->base + R->cur, code, timeout, out, err);
+  fflush(trace_f);
+  shot_muted = 1;
   free(out);
   free(err);
+  R->in_sample = 0;
+  R->resume = R->cur + 1;
+}
+
+/* -- the driver's hooks -- */
+
+/* The driver's jump target; the first call (the first record's) makes this process the server. */
+sigjmp_buf *cqe__shot_jb(void) {
+  cqe__init();
+  if (!R) {
+    fflush(NULL);
+    server_setup();
+    __cxa_atexit(server_cleanup, NULL, NULL);
+  }
+  return &R->jb;
+}
+
+static void shot_finish(int code, int run_fns);
+
+/* before_call: 1 in the worker (run the sample), 0 in the server (skip the record). */
+int cqe__shot_enter(int idx) {
+  if (!R) {
+    fprintf(stderr, "cq: chk-core: cqe__shot_enter before cqe__shot_jb\n");
+    abort();
+  }
+  if (getpid() == R->server) {
+    if (idx < R->resume)
+      return 0;
+    R->next = idx;
+    fflush(NULL);
+    pid_t pid = fork();
+    if (pid < 0)
+      shot_die("fork");
+    if (pid > 0) {
+      R->worker = pid;
+      server_wait();
+      return 0;
+    }
+    worker_start();
+  }
+  /* the worker: a sample */
+  if (!R->snapped)
+    snapshot_take();
+  worker_signals(); /* every sample: the program may have replaced a handler */
+  long k = R->base + idx;
+  cqe__logf("{\"ev\":\"shot\",\"k\":%ld}", k);
+  theta_for(k);
+  stack_save((char *)__builtin_frame_address(0) + 16);
+  R->cur = idx;
+  R->jkind = J_NONE;
+  R->progress++;
+  R->in_sample = 1;
+  timer_set(R->timeout_s, 0);
   return 1;
 }
 
-/* after_call: the shot is over; exit runs every end-of-shot handler, the core's exit event last. */
-void cqe__shot_end(void) { exit(0); }
+static void shot_finish(int code, int run_fns) {
+  timer_set(0, 0);
+  if (run_fns)
+    run_exit_fns();
+  fflush(stdout);
+  fflush(stderr);
+  char *out = take_capture(1, R->out_fd, 0);
+  char *err = R->err_fd >= 0 ? (code ? take_capture(2, R->err_fd, 4000) : (take_capture(2, R->err_fd, 1), xcalloc(1, 1)))
+                             : xcalloc(1, 1);
+  log_shot_end(R->base + R->cur, code, 0, out, err);
+  fflush(trace_f);
+  R->in_sample = 0;
+  R->next = R->cur + 1;
+  R->progress++;
+  if (R->dirty) /* the sample left state the snapshot does not cover: a fresh worker goes on */
+    real__exit(0);
+  stack_restore();
+  snapshot_restore();
+}
+
+/* after_call: the sample returned. */
+void cqe__shot_end(void) { shot_finish(0, 1); }
+
+/* The driver's sigsetjmp returned again: the sample called exit/_exit, or raised a signal. */
+void cqe__shot_resume(void) {
+  if (R->jkind == J_EXIT) {
+    shot_finish(R->code, R->ran_fns == 0);
+    return;
+  }
+  /* a signal: the C library may be inside a lock; leave the end to the server */
+  timer_set(0, 0);
+  if (ftrylockfile(trace_f) == 0) {
+    fflush(trace_f);
+    funlockfile(trace_f);
+  }
+  if (ftrylockfile(stdout) == 0) {
+    fflush(stdout);
+    funlockfile(stdout);
+  }
+  real__exit(0);
+}
