@@ -21,7 +21,10 @@ once; args has one entry per argument of that call):
   float                an fp ctype's value (long double: the exact double)
   {"bits": "0x..."}    the raw bit pattern of the ctype (long double: the 80-bit x87 pattern)
   "bits:0x..."         the same
-  string               for an fp ctype, anything Python's float() or float.fromhex() reads
+  "0x<hex digits>"     for an arithmetic ctype, its exact bit pattern: the sampling encoding that
+                       drivers.c_value renders for the C oracle (cq-arch Z1, cq-a4mf), so both
+                       sides receive the same value
+  string               for an fp ctype, anything else Python's float() or float.fromhex() reads
                        ("nan", "-inf", "-0.0", "0x1p-1074"); otherwise a C expression pasted into
                        the driver (pointers: "coef", "&hostv", names defined by spec.setup)
 
@@ -142,6 +145,9 @@ def _fp_bits(x: float, bits: int) -> int:
     raise SampleError(f"no fp encoding at {bits} bits")
 
 
+_BITS_RE = re.compile(r"0x[0-9a-fA-F]+")
+
+
 def encode_arg(ctype: str, value: Any) -> Tuple[str, Any]:
     """('bits', int) or ('expr', str) for one argument value."""
     kind, bits = ctype_kind(ctype)
@@ -153,6 +159,10 @@ def encode_arg(ctype: str, value: Any) -> Tuple[str, Any]:
         if kind not in ("int", "fp"):
             raise SampleError(f"bit pattern for non-arithmetic ctype {ctype}")
         return "bits", int(value[5:], 0) & ((1 << bits) - 1)
+    if isinstance(value, str) and kind in ("int", "fp") and _BITS_RE.fullmatch(value):
+        # drivers.c_value's encoding: a bare 0x-hex sample value is the exact bit pattern.
+        n = int(value, 16) & ((1 << bits) - 1)
+        return "bits", (n & 1) if bits == 1 else n
     if isinstance(value, bool):
         value = int(value)
     if kind == "int":

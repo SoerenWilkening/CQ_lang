@@ -223,6 +223,25 @@ class MultiWord(unittest.TestCase):
         self.assertEqual({k["w"] for k in r.kept}, {"i128", "i100", "f80"})
 
 
+class FpBitPatternArgs(unittest.TestCase):
+    """cq-a4mf: a sample's '0x...' value is the exact bit pattern (drivers.c_value), so 0.5 given as
+    its pattern reaches the lowered program as 0.5, at every fp width."""
+    CTYPES = ["_Float16", "float", "double", "long double"]
+    HALF = ["0x3800", "0x3f000000", "0x3fe0000000000000", "0x3ffe8000000000000000"]
+
+    def test_encode_arg_is_the_bit_pattern(self):
+        for c, v in zip(self.CTYPES, self.HALF):
+            self.assertEqual(run.encode_arg(c, v), ("bits", int(v, 16)), c)
+        self.assertEqual(run.encode_arg("int", "0xffffffff"), ("bits", 0xffffffff))
+        self.assertEqual(run.encode_arg("double", "0x1p-1"), ("bits", 0x3fe0000000000000))
+
+    def test_half_reaches_the_lowered_program(self):
+        r = go("fp_args.ll", "int fpargs(_Float16,float,double,long double)", "fpargs", self.CTYPES, self.HALF)
+        self.assertEqual(r.violations, [])
+        self.assertEqual([int(m["v"], 16) for m in r.measured], [int(v, 16) for v in self.HALF])
+        self.assertEqual([m["v"] for m in r.measured][2], hex(run._fp_bits(0.5, 64)))
+
+
 class Parser(unittest.TestCase):
     def classify(self, lines):
         with tempfile.TemporaryDirectory() as d:
