@@ -315,6 +315,39 @@ class Sampling(unittest.TestCase):
         self.assertIn("computed inside the program", ss.classes["edge"]["0"]["empty"])
         self.assertEqual(ss.classes["exhaustive"]["0"]["samples"], [0])
 
+    def test_classical_access_past_object_is_out_of_domain(self):
+        """cq-q9hd: 115_qaoa_ring reads x[eu[e]] at a classical index from a VLA of n cells. A
+        sample with n below a vertex an edge names reads past the VLA: undefined in C, no CR §2
+        row (that row is QROM/QRAM's), so the sampler must drop it (the reference then read a
+        handle cell past its slot array and fed garbage to cq_template_icmp_eq_i1)."""
+        n = "115_qaoa_ring"
+        spec = D.driver_spec(n, D.example_dir(n))
+        ins = S.Instrumenter(D.read_module(D.o1_path(n)), spec)
+        ins.rewrite()
+        mem = [s for s in ins.sites if s.kind == "mem"]
+        self.assertTrue(mem and all(s.classical for s in mem))
+        self.assertFalse(any(S.rows_for(s) for s in mem))
+        # a quantum offset keeps its rows: 29's table load at a quantum index
+        n29 = "29_table_quantum_index"
+        ins29 = S.Instrumenter(D.read_module(D.o1_path(n29)), D.driver_spec(n29, D.example_dir(n29)))
+        ins29.rewrite()
+        (m29,) = [s for s in ins29.sites if s.kind == "mem"]
+        self.assertFalse(m29.classical)
+        self.assertEqual([r.row for r in S.rows_for(m29)], ["load index = n", "load index > n"])
+
+        spec, ss = self.sample(n)
+        edges = {"eu4": [0, 1, 2, 3], "ev4": [1, 2, 3, 0], "eu5": [0, 1, 2, 3], "ev5": [1, 2, 3, 4]}
+        def s32(h):
+            v = int(h, 16)
+            return v - (1 << 32) if v >> 31 else v
+        for smp in ss.samples:
+            a = smp["args"]
+            nv, ne, layers = s32(a[0]), s32(a[1]), s32(a[4])
+            if ne <= 0 or layers <= 0:
+                continue
+            top = max(edges[a[2]][:ne] + edges[a[3]][:ne])
+            self.assertLess(top, nv, smp)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

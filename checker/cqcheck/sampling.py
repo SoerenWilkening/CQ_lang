@@ -38,7 +38,10 @@ Which candidates are kept: a quantum sample (edge, specials, exhaustive, random)
 A classical-set or search candidate is kept only when its probe run returns, or traps right after
 a probe that hit a trapping §2 row (division by zero, INT_MIN / -1): a candidate on which the C
 program itself does not terminate or faults (a negative VLA size, a read past a driver object) is
-outside the program's input domain.
+outside the program's input domain. So is one on which a memory access whose address depends on no
+quantum value (ClassicalValues) reaches outside its object, faulting or not (cq-q9hd): C leaves it
+undefined and CR §2's index >= n rows are the QROM/QRAM and fat-pointer rows only, so such a site
+has no §2 row either.
 """
 from __future__ import annotations
 
@@ -266,14 +269,18 @@ void __cqd_reg(void *p, uint64_t size) {
     cqd_nob = j;
     if (cqd_nob < NOBJ) { cqd_ob[cqd_nob] = b; cqd_os[cqd_nob] = size; cqd_nob++; }
 }
-void __cqd_m(int site, void *root, void *addr) {
-    if (cqd_mcount[site & 0xffff] >= CAP) return; cqd_mcount[site & 0xffff]++;
+static unsigned char cqd_ocount[65536];
+void __cqd_m(int site, void *root, void *addr, uint64_t nbytes) {
+    /* an access outside its object is reported past the per-site cap (validity, cq-q9hd) */
     uintptr_t r = (uintptr_t)root; int best = -1;
     for (int i = 0; i < cqd_nob; i++)
         if (cqd_ob[i] <= r && (best < 0 || cqd_ob[i] > cqd_ob[best])) best = i;
-    if (best < 0) { cqd_out("m %d ? ?\n", site); return; }
-    long long off = (long long)((intptr_t)addr - (intptr_t)cqd_ob[best]);
-    cqd_out("m %d %lld %llu\n", site, off, (unsigned long long)cqd_os[best]);
+    long long off = best < 0 ? 0 : (long long)((intptr_t)addr - (intptr_t)cqd_ob[best]);
+    int out = best >= 0 && (off < 0 || (unsigned long long)off + nbytes > cqd_os[best]);
+    if (cqd_mcount[site & 0xffff] >= CAP && !(out && cqd_ocount[site & 0xffff] < CAP)) return;
+    if (cqd_mcount[site & 0xffff] < CAP) cqd_mcount[site & 0xffff]++; else cqd_ocount[site & 0xffff]++;
+    if (best < 0) { cqd_out("m %d ? ? ?\n", site); return; }
+    cqd_out("m %d %lld %llu %llu\n", site, off, (unsigned long long)cqd_os[best], (unsigned long long)nbytes);
 }
 #define NLOOP 4096
 static long long cqd_cnt[NLOOP]; static unsigned char cqd_has[NLOOP], cqd_ctx[NLOOP], cqd_ent[NLOOP];
@@ -333,6 +340,7 @@ class Site:
     to_bits: int = 0              # fptoi destination width
     to_signed: bool = False
     consts: Dict[int, Optional[int]] = field(default_factory=dict)   # operand slot -> constant bits
+    classical: bool = False       # mem: the address depends on no quantum value (ClassicalValues)
 
     def key(self) -> str:
         return f"{self.fn}: {self.inst}"
@@ -432,11 +440,104 @@ def _operand_pairs(text: str) -> List[Tuple[str, str]]:
     return out
 
 
+class ClassicalValues:
+    """Which SSA values of the .O1.ll depend on no quantum value (cq-q9hd), so that a memory site
+    whose address is classical is told from a QROM/QRAM or fat-pointer access.
+
+    A value is classical when its backward slice reaches no quantum source. Sources are judged
+    conservatively (unknown counts as quantum): a constant, a global's address, an alloca and a
+    `cq_measure_*` result are classical; a parameter is classical only in a function the drivers
+    call directly, nothing in the module calls or takes the address of, and whose driver argument
+    is not quantum in any call; a load is classical when its address is and every root of that
+    address is a `constant` global or such a parameter marked `readonly`; `malloc` and its kin and
+    the value-only `llvm.*` intrinsics pass their operands through. Every other call result,
+    `cq_theta_*` included, is quantum."""
+
+    _THROUGH = {"add", "sub", "mul", "udiv", "sdiv", "urem", "srem", "shl", "lshr", "ashr", "and", "or",
+                "xor", "fadd", "fsub", "fmul", "fdiv", "frem", "fneg", "icmp", "fcmp", "trunc", "zext",
+                "sext", "fptrunc", "fpext", "fptoui", "fptosi", "uitofp", "sitofp", "ptrtoint", "inttoptr",
+                "bitcast", "addrspacecast", "getelementptr", "select", "freeze", "extractvalue",
+                "insertvalue", "extractelement", "insertelement", "shufflevector"}
+    _ALLOC = {"@malloc", "@calloc", "@realloc", "@aligned_alloc"}
+
+    def __init__(self, mod: D.Module, spec: Optional[DriverSpec]):
+        self.mod = mod
+        quantum: Dict[str, List[bool]] = {}
+        for call in (spec.calls if spec is not None else []):
+            fn = "@" + call["fn"].lstrip("@")
+            flags = [a["quantum"] for a in call["args"]]
+            prev = quantum.get(fn)
+            quantum[fn] = flags if prev is None else [x or y for x, y in zip(prev, flags)]
+        referenced: Set[str] = set()
+        for f in mod.functions.values():
+            for ins in f.insts():
+                referenced |= set(D._RE_GLOBAL.findall(ins.text))
+        for line in mod.globals.values():
+            referenced |= set(D._RE_GLOBAL.findall(line.split("=", 1)[1] if "=" in line else ""))
+        self.entry = {fn: flags for fn, flags in quantum.items() if fn not in referenced}
+
+    def _param_classical(self, f: D.Function, v: str) -> bool:
+        i = f.param_index(v)
+        flags = self.entry.get(f.name)
+        return i is not None and flags is not None and i < len(flags) and not flags[i]
+
+    def _memory_classical(self, f: D.Function, ptr: str) -> bool:
+        roots = D.pointer_roots(f, ptr)
+        for r in roots:
+            if r.startswith("@"):
+                line = self.mod.globals.get(r, "")
+                if not re.search(r"=.*\bconstant\b", D.strip_comment(line)):
+                    return False
+            elif not (self._param_classical(f, r) and "readonly" in f.params[f.param_index(r)][0]):
+                return False
+        return bool(roots)
+
+    def classical(self, f: D.Function, v: str) -> bool:
+        seen: Set[str] = set()
+        work = [v]
+        while work:
+            x = work.pop()
+            if not x.startswith("%") or x in seen:
+                continue
+            seen.add(x)
+            d = f.defs.get(x)
+            if d is None:
+                if not self._param_classical(f, x):
+                    return False
+                continue
+            if d.op == "alloca":
+                continue
+            if d.op == "phi":
+                for val in re.findall(r"\[\s*([^,\]]+?)\s*,\s*%[^\]]*\]", d.text):
+                    work += D.locals_in(val)
+                continue
+            if d.op in self._THROUGH:
+                work += d.refs()
+                continue
+            if d.op == "load":
+                p = d.operands[1].split()[-1]
+                if not self._memory_classical(f, p):
+                    return False
+                work.append(p)
+                continue
+            if d.op == "call" and d.callee:
+                c = d.callee
+                if c.startswith("@cq_measure_"):
+                    continue
+                if c in self._ALLOC or (c.startswith("@llvm.") and not re.search(r"load|gather|expand", c)):
+                    for a in d.call_args:
+                        work += D.locals_in(a)
+                    continue
+            return False
+        return True
+
+
 class Instrumenter:
     """Rewrites a .O1.ll into the probe build."""
 
-    def __init__(self, mod: D.Module):
+    def __init__(self, mod: D.Module, spec: Optional[DriverSpec] = None):
         self.mod = mod
+        self.taint = ClassicalValues(mod, spec)
         self.sites: List[Site] = []
         self.loops: List[Loop] = []
         self.n = 0
@@ -618,7 +719,7 @@ class Instrumenter:
 
     def decls(self) -> List[str]:
         d = ["declare void @__cqd_p(i32, i64, i64, i64, i64, i64, i64, i64, i64)",
-             "declare void @__cqd_m(i32, ptr, ptr)", "declare void @__cqd_reg(ptr, i64)",
+             "declare void @__cqd_m(i32, ptr, ptr, i64)", "declare void @__cqd_reg(ptr, i64)",
              "declare void @__cqd_hdr(i32, i1)", "declare void @__cqd_ctx(i32)"]
         d.append("define void @__cqd_globals() {")
         for g, line in self.mod.globals.items():
@@ -786,8 +887,10 @@ class Instrumenter:
             root, variable = self.addr_root(f, pv)
             if not variable:
                 return [], []
-            s = self.add_site(f, ins, "mem", op, [])
-            return [f"call void @__cqd_m(i32 {s.id}, ptr {root}, ptr {pv})"], []
+            ty = split_type(ins.operands[0])[0]
+            s = self.add_site(f, ins, "mem", op, [], classical=self.taint.classical(f, pv))
+            nb = f"ptrtoint (ptr getelementptr ({ty}, ptr null, i32 1) to i64)"
+            return [f"call void @__cqd_m(i32 {s.id}, ptr {root}, ptr {pv}, i64 {nb})"], []
         return [], []
 
     def addr_root(self, f: D.Function, v: str) -> Tuple[str, bool]:
@@ -871,7 +974,7 @@ class ProbeBuild:
         if len(o1) != 1:
             D.unimplemented(f"{spec.example}: expected one .O1.ll")
         self.mod = D.read_module(o1[0])
-        self.ins = Instrumenter(self.mod)
+        self.ins = Instrumenter(self.mod, spec)
         self.exe = work / "probe"
         self.build()
 
@@ -987,7 +1090,10 @@ class ProbeBuild:
                     (v[0] | v[1] << 64, v[2] | v[3] << 64, v[4] | v[5] << 64, v[6] | v[7] << 64))
             elif w[0] == "m":
                 if w[2] != "?":
-                    cur.m.setdefault(int(w[1]), []).append((int(w[2]), int(w[3])))
+                    off, size, nb = int(w[2]), int(w[3]), int(w[4])
+                    if off < 0 or off + nb > size:
+                        cur.oob.add(int(w[1]))
+                    cur.m.setdefault(int(w[1]), []).append((off, size))
             elif w[0] == "t":
                 cur.t.setdefault(int(w[1]), []).append(int(w[2]))
             elif w[0] == "E":
@@ -1068,6 +1174,7 @@ class Obs:
     p: Dict[int, List[Tuple[int, int, int, int]]] = field(default_factory=dict)
     m: Dict[int, List[Tuple[int, int]]] = field(default_factory=dict)
     t: Dict[int, List[int]] = field(default_factory=dict)
+    oob: Set[int] = field(default_factory=set)       # mem sites that accessed outside their object
 
     @property
     def returned(self) -> bool:
@@ -1190,8 +1297,10 @@ def rows_for(site: Site) -> List[Row]:
                        lambda r: 0 if fp_kind(r[0], 64)[0] == "nan" else 1))
         out.append(Row(site, "rotation angle +-Inf", [0], lambda r: fp_kind(r[0], 64)[0] == "inf",
                        lambda r: 0 if fp_kind(r[0], 64)[0] == "inf" else 1))
-    elif k == "mem":
-        # r = (offset, size, 0, 0) for memory sites
+    elif k == "mem" and not site.classical:
+        # r = (offset, size, 0, 0) for memory sites. CR §2's index >= n rows are the QROM/QRAM
+        # rows (a quantum offset) and rule 21's fat-pointer load; a classical-offset access of a
+        # classical pointer has no row: past its object it is outside the program's domain.
         out.append(Row(site, f"{site.op} index = n", [], lambda r: r[0] == r[1],
                        lambda r: abs(r[0] - r[1])))
         out.append(Row(site, f"{site.op} index > n", [], lambda r: r[0] > r[1] or r[0] < 0,
@@ -1404,7 +1513,9 @@ def classical_candidates(g: Gen, rng: random.Random) -> Dict[int, List[List[str]
     return out
 
 
-def _valid(o: Obs, rows_by_site: Dict[int, List[Row]]) -> bool:
+def _valid(o: Obs, rows_by_site: Dict[int, List[Row]], classical_mem: Set[int] = frozenset()) -> bool:
+    if o.oob & classical_mem:
+        return False          # a classical access past its object: undefined in C, no §2 row
     if o.returned:
         return True
     if o.end == "signal" and o.code in (8,):          # SIGFPE: a trapping §2 row in the native build
@@ -1420,8 +1531,12 @@ class Searcher:
 
     def __init__(self, g: Gen, pb: ProbeBuild, rows_by_site, rng: random.Random):
         self.g, self.pb, self.rows_by_site, self.rng = g, pb, rows_by_site, rng
+        self.classical_mem = {st.id for st in pb.ins.sites if st.kind == "mem" and st.classical}
         self.cache: Dict[Tuple[int, Tuple[str, ...]], Obs] = {}
         self.runs = 0
+
+    def valid(self, o: Obs) -> bool:
+        return _valid(o, self.rows_by_site, self.classical_mem)
 
     def observe(self, cands: List[Tuple[int, List[str]]]) -> List[Obs]:
         todo = [(c, a) for c, a in cands if (c, tuple(a)) not in self.cache]
@@ -1504,7 +1619,7 @@ class Searcher:
         scored = []
         # every candidate observed so far (the pool and earlier searches) is a starting point
         for (c, a), o in self.cache.items():
-            if not _valid(o, self.rows_by_site):
+            if not self.valid(o):
                 continue
             d = dist(o)
             if d == 0:
@@ -1527,7 +1642,7 @@ class Searcher:
                 return None
             spent += len(batch)
             for (c, a), o in zip(batch, self.observe(batch)):
-                if not _valid(o, self.rows_by_site):
+                if not self.valid(o):
                     continue
                 d = dist(o)
                 if d == 0:
@@ -1598,7 +1713,7 @@ def build_sample_set(spec: DriverSpec, example_dir: Path) -> SampleSet:
                 continue
             cands = [(ci, a) for a in cc[ci]]
             obs = searcher.observe(cands)
-            kept = [g.add(c, a) for (c, a), o in zip(cands, obs) if _valid(o, rows_by_site)][:N_RANDOM_CLASSICAL]
+            kept = [g.add(c, a) for (c, a), o in zip(cands, obs) if searcher.valid(o)][:N_RANDOM_CLASSICAL]
             if kept:
                 rc[str(ci)] = {"samples": kept}
             else:
@@ -1694,7 +1809,7 @@ def trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_sit
                 found = searcher.search(pool, dist)
                 if found:
                     cands.append((found[0], tuple(found[1])))
-            picked = [k for k, o in searcher.cache.items() if _valid(o, rows_by_site) and near(o, lp, t)]
+            picked = [k for k, o in searcher.cache.items() if searcher.valid(o) and near(o, lp, t)]
             picked.sort(key=lambda k: (k not in g.index, g.index.get(k, 0)))
             cands += picked[:24]
     cands = list(dict.fromkeys([(c, tuple(a)) for c, a in
