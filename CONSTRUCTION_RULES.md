@@ -232,7 +232,12 @@ to more than 64 bits, INVALID for `frem` of 0 or ±Inf and for `fmax`/`fmin` wit
 IEEE 754 at the operation's width and the `_rm`/`_exc` contract of §1.2 are normative, as for the NaN
 row (ruling 2026-10-27). The line is: what LLVM 19's own code generation fixes inline (a `cvtt`,
 `fist`, a shift, a double rounding through `float`, `ExpandLargeFpConvert`) is the C program's
-semantics and is adopted for the VALUE; what a vendor library computes is not fixed by the program,
+semantics and is adopted for the VALUE where C leaves the result to the implementation (which
+neighbour a rounding lands on, out-of-range and NaN inputs). A value C fixes exactly is never taken
+from a miscompile: LLVM 19's `ExpandLargeFpConvert` gives `uitofp` from more than 128 bits to f80 a
+negative result when the top bit is set; §2 gives the non-negative value rounded to nearest even at
+f80's 64-bit significand (`_rm` when present), and the C oracle of §6 is overridden on those inputs
+as for the NaN row (cq-cqcj, 2026-10-28). What a vendor library computes is not fixed by the program,
 and IEEE 754 is normative for it; exception FLAGS follow IEEE/x87 at the operation's width in every
 case where native raises none. IR that clang 19 emits and LLVM 19's own parser rejects (`fpext`/
 `fptrunc` between `half` and `bfloat`) never reaches the compiler and is out of scope.
@@ -325,8 +330,13 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
      `bitreverse`, `fneg`; a select whose arms are such updates of `y` or `y` itself (125); a
      controlled swap (145). Not: a width change (casts are rule 3), `mul` by a classical
      parameter or by a rail (`c = 0` collapses it), shifts, FP arithmetic other than `fneg`.
-   - *Both operands dead* (`x + z`, two rails): operand 0 of the IR instruction is cleaned; the
-     other is kept (its inverse would read the rail just cleaned).
+   - *Both operands dead* (`x + z`, two rails): when one of them is garbage that rule 5 uncomputes
+     anyway, rule 6 cleans the other, first (its inverse reads the garbage), and the garbage's `_unc`
+     follows in its usual place. When that `_unc` reads the other operand (the garbage was computed
+     from it), the garbage is uncomputed first and rule 6 asks the composite update (127): `g = 2x`,
+     `y' = g + x` is `y' = 3x`, a bijection, so `x` is cleaned. Only when neither operand is such
+     garbage is operand 0 of the IR instruction cleaned and the other kept (its inverse would read
+     the rail just cleaned) (cq-12cr, 2026-10-28).
    - *Placement:* `t` reads `y'` and `f`'s other operands, so the clean comes before the next
      non-diagonal gate on any of them (convention: right after the update). The old rail is kept
      only when `f` has no inverse in `y` or when an uncompute that must precede the clean has to
@@ -680,7 +690,9 @@ that class are equal iff:
    example declares clean is `0`.
 2. **Rotation list.** The sequence of `(gate, target register, angle or angle-rail expression,
    control predicate as a Boolean function of the inputs)` is equal up to reordering of gates
-   with disjoint support and up to rail renaming. A phase P(θ) on a flag rail is the phase
+   with disjoint support, reordering of any two phases (classical-angle or angle-rail: diagonal
+   gates commute whatever their supports; an Ry is ordered against every gate it overlaps), and
+   rail renaming. A phase P(θ) on a flag rail is the phase
    e^{iθ·f} on every basis branch, where f is the flag's Boolean function of the inputs; which rail
    carries it is irrelevant. So `and_i1(a, b, t) · rz_i1(t, θ) · and_i1(a, b, t)` with t |0⟩ equals the
    doubly-controlled phase CCP(θ) on a, b (never a controlled Rz, which differs by a relative phase).
