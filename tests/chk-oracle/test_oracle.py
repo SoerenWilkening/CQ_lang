@@ -458,6 +458,28 @@ int spin_q(unsigned x0, double t, unsigned c) { unsigned x = x0; cq_theta(&x, t)
         self.assertEqual(rr.outputs, {"ret": [], "end": "noreturn:abort", "loops": []})
         self.assertEqual(rr.violations, [])
 
+    def test_no_wall_clock_outcome(self):
+        # cq-sqn6: nontermination is the trip-cap step budget, never a clock. A runaway sample ends at
+        # the cap with the same result whatever timeout_ms is (here far below the run's wall time), and
+        # the hang guard, reached only past the budget, is an internal error, never a sample outcome.
+        o1 = compile_c("spin", r"""
+volatile int sink;
+int spin_q(unsigned x0, double t, unsigned c) { unsigned x = x0; cq_theta(&x, t); while (c != 0) { c += 2; sink++; }
+    return x + c; }
+""")
+        sp = spec("spin", "int spin_q(unsigned,double,unsigned)", [("spin_q", ["unsigned", "double", "unsigned"])])
+        smp = [{"call": 0, "args": [i32(0), HALF, i32(1)]}, {"call": 0, "args": [i32(0), HALF, i32(0)]}]
+        want = None
+        for to in (50, 2000):
+            rs = oracle.run_samples(o1, sp, smp * 3, timeout_ms=to, tripcap=20000)
+            got = [(r.outcome, r.failed, r.reason, r.notes, r.events) for r in rs]
+            self.assertEqual([(g[0], g[1]) for g in got], [("", True), ("ret", False)] * 3, to)
+            self.assertIn("nonterminating", rs[0].reason)
+            want = want or got
+            self.assertEqual(got, want, to)
+        with self.assertRaisesRegex(oracle.OracleError, "hang guard"):
+            oracle.run_samples(o1, sp, smp, timeout_ms=100, tripcap=10 ** 15)
+
 
 KSRC = r"""
 volatile int sink;

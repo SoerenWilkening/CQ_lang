@@ -9,10 +9,15 @@
  * alone would (in-process, see "samples" below), so a trap, an abort or a hang ends that sample only.
  * The sample appends `<index>\t<event JSON>` lines to
  * <trace> and `<index>\t<note>` lines to <status>; the parent adds `<index>\twait exited N|signaled
- * S|timeout`. Notes: `noreturn <callee>`, `raise <sig>`, `ub unreachable <fn>`, `ub oob-atomic`,
+ * S`, or `hang wall` when it killed a worker that made no progress. Notes: `noreturn <callee>`, `raise <sig>`, `ub unreachable <fn>`, `ub oob-atomic`,
  * `tripcap`, `crash <signal> addr=<a>`, `oob-load`, `oob-store`, `cap <loop>` (a quantum-exit loop or
  * quantum-depth recursion stopped after K trips: the sample ends there, not a failure; cq-8ay),
- * `internal <why>`.
+ * `internal <why>`, `hang cpu <ms>`.
+ * Determinism (cq-sqn6): no sample outcome depends on time or machine load. Nontermination is the
+ * tripcap step budget (loop-header executions). <timeout_ms> is only a hang guard, in the worker's CPU
+ * time (ITIMER_PROF, so a loaded machine does not reach it sooner), with a wall-clock backstop in the
+ * server for a worker that makes no progress at all (HANG_WALL_MS); either reports `hang ...`, which
+ * oracle.py raises as an internal error of the checker, never a sample verdict.
  * The cutoff records of cq-arch T2 go to <trace> as `{"ev":"kloop","loop","act","n","capped"[,"cut",
  * "mcut"]}` lines (oracle.py moves them to outputs["loops"]; they are not trace events).
  * <subst> lines `<index> <fn> <site> <period> <occ> <nwords> <hex w>...` replace the register value at a
@@ -625,8 +630,8 @@ int32_t cqrt_alloc_i32(int32_t v) { return v; }
  *   - the stack from the driver's frame up (the setup's locals), the fp environment, errno.
  * A sample ends as the forked child did, and gets the same notes: by return ("wait exited 0"), by
  * exit/_exit/_Exit(n) or one of this runtime's own ends ("wait exited n"), by abort with SIGABRT at its
- * default ("wait signaled 6"); in-process, with a jump back to the driver. A crash, a timeout
- * (SIGALRM) or any other signal ends the worker after its notes; the server writes the "wait" note of a
+ * default ("wait signaled 6"); in-process, with a jump back to the driver. A crash, the hang guard
+ * (SIGPROF) or any other signal ends the worker after its notes; the server writes the "wait" note of a
  * worker that died inside a sample and forks a fresh worker for the next record, so that sample's end
  * is exactly the fork-per-sample one. Isolated modules (oracle.py: process state the restore does not
  * cover, such as signal handlers, atexit or rand) run every sample in a worker of its own, and their
@@ -760,15 +765,18 @@ static void *sys_alloc(size_t n) {
     return p;
 }
 
-static void timer_ms(long ms, int periodic) {
+static void timer_ms(int which, long ms, int periodic) {
     struct itimerval it;
     memset(&it, 0, sizeof it);
     if (ms > 0) {
         it.it_value.tv_sec = ms / 1000, it.it_value.tv_usec = (ms % 1000) * 1000;
         if (periodic) it.it_interval = it.it_value;
     }
-    setitimer(ITIMER_REAL, &it, 0);
+    setitimer(which, &it, 0);
 }
+/* the server's wall-clock backstop: a worker that makes no progress (no sample begins or ends) for
+ * this long, in CPU or not, is killed and reported as a hang (an internal error, never an outcome) */
+#define HANG_WALL_MS 60000L
 
 /* the worker leaves (a crash, a timeout, a dirty or isolated sample): its output, then the end */
 static void worker_leave(void) {
@@ -812,8 +820,8 @@ static void on_crash(int sig, siginfo_t *si, void *uc) {
 
 static void on_timeout(int sig) {
     (void)sig;
-    if (!sample_running()) { signal(SIGALRM, SIG_DFL); raise(SIGALRM); return; }
-    note("wait timeout");
+    if (!sample_running()) { signal(SIGPROF, SIG_DFL); raise(SIGPROF); return; }
+    note("hang cpu %ld", timeout_ms);
     R->next = R->cur + 1;
     R->in_sample = 0;
     worker_leave();
@@ -905,7 +913,7 @@ static void server_wait(void) {
     long last = -1;
     int killed = 0, st = 0;
     server_tick = 0;
-    timer_ms(2 * timeout_ms + 200, 1);
+    timer_ms(ITIMER_REAL, HANG_WALL_MS, 1);
     for (;;) {
         pid_t r = waitpid(R->worker, &st, 0);
         if (r == R->worker) break;
@@ -919,12 +927,12 @@ static void server_wait(void) {
         }
         die("waitpid");
     }
-    timer_ms(0, 0);
+    timer_ms(ITIMER_REAL, 0, 0);
     ob_flush(&R->tr, trace_fd); /* what the worker left unwritten (whole lines) */
     ob_flush(&R->st, status_fd);
     if (!R->in_sample) { R->resume = R->next; return; }
     cur_sample = R->cur;
-    if (killed || (WIFSIGNALED(st) && WTERMSIG(st) == SIGALRM)) note("wait timeout");
+    if (killed) note("hang wall");
     else if (WIFSIGNALED(st)) note("wait signaled %d", WTERMSIG(st));
     else if (WIFEXITED(st)) note("wait exited %d", WEXITSTATUS(st));
     else note("wait unknown %d", st);
@@ -940,7 +948,8 @@ static void worker_start(void) {
     R->tr.n = R->st.n = 0;
     R->stack_copy = 0, R->stack_cap = 0; /* the last worker's copies were its own */
     ob_trace = &R->tr, ob_status = &R->st;
-    timer_ms(0, 0);
+    timer_ms(ITIMER_REAL, 0, 0); /* the server's tick is not the worker's */
+    signal(SIGALRM, SIG_DFL);
     int devnull = open("/dev/null", O_WRONLY);
     if (devnull >= 0) dup2(devnull, 1), dup2(devnull, 2), close(devnull);
     stack_t ss = {.ss_sp = sys_alloc(1 << 16), .ss_size = 1 << 16, .ss_flags = 0};
@@ -955,7 +964,7 @@ static void worker_start(void) {
     memset(&sa, 0, sizeof sa);
     sa.sa_handler = on_timeout;
     sa.sa_flags = SA_ONSTACK;
-    sigaction(SIGALRM, &sa, 0);
+    sigaction(SIGPROF, &sa, 0);
     if (!arena_base) {
         void *a = mmap(0, ARENA_CAP, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
         if (a == MAP_FAILED) die("mmap");
@@ -993,12 +1002,12 @@ int __cqo_sample_begin(int idx) {
     stack_save((char *)__builtin_frame_address(0) + 16);
     R->progress++;
     R->in_sample = 1;
-    timer_ms(timeout_ms, 0);
+    timer_ms(ITIMER_PROF, timeout_ms, 0);
     return 1;
 }
 
 static void sample_finish(void) {
-    timer_ms(0, 0);
+    timer_ms(ITIMER_PROF, 0, 0);
     R->next = R->cur + 1; /* before in_sample drops: the server never runs a finished sample again */
     R->in_sample = 0;
     R->progress++;

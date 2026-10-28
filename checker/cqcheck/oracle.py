@@ -65,8 +65,15 @@ identity.
 
 Sample outcome: ``ret`` (returned), ``noreturn:<callee>`` (abort, exit, __builtin_trap, ...),
 ``raise:<sig>`` (the program raised a fatal signal), ``cap:<loop>`` (stopped after K trips). Anything else is a failure with a reason, never
-dropped: ``unreachable`` reached, an out-of-bounds atomic, a timeout or the runaway trip cap, a signal no hook
+dropped: ``unreachable`` reached, an out-of-bounds atomic, the runaway trip cap, a signal no hook
 explains (a trap the totalization should have prevented), a bad sample.
+
+Determinism (cq-sqn6; orchestrator decision under determinism, owner may override): no sample's
+result depends on time or machine load. A runaway program ends at the trip cap, a step budget
+(``tripcap`` loop-header executions per sample). ``timeout_ms`` is only a hang guard for what the
+budget does not count (a loop inside an uninstrumented library function, a blocking call): a sample
+that passes it in CPU time, or a worker that makes no progress for a minute of wall-clock time, raises
+OracleError naming the sample, an internal error of the checker and never a sample outcome.
 
 API: ``run_sample(o1, spec, sample) -> RunResult`` and ``trace_sample(o1, spec, sample) -> [event]``
 (both frozen by Z1, cq-zew); ``run_samples(o1, spec, samples, ..., k=None, k_default=None) ->
@@ -407,8 +414,6 @@ def _classify(sr: SampleRun) -> None:
         sr.failed = True
         sr.reason = ("nonterminating: trip cap reached (the C program does not stop on this input)"
                      if b == "tripcap" else b)
-    elif wait == "wait timeout":
-        sr.failed, sr.reason = True, "timeout"
     elif wait == "wait exited 0" and has_ret:
         sr.outcome = "ret"
     elif wait == "wait exited 0" and cap:
@@ -632,6 +637,11 @@ def _parse_runs(samples: Sequence[Dict[str, Any]], trace: str, status: str) -> L
         if int(i) < 0:
             raise OracleError(f"oracle: the driver setup failed: {n}")
         runs[int(i)].notes.append(n)
+    for r in runs:
+        hang = next((n for n in r.notes if n.startswith("hang ")), None)
+        if hang:
+            raise OracleError(f"oracle: hang guard ({hang}) on sample {r.index} {json.dumps(r.sample)}: "
+                              "the sample ran past the guard without reaching the trip cap")
     for r in runs:
         _classify(r)
     return runs
