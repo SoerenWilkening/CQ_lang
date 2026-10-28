@@ -724,5 +724,87 @@ class AKRule(unittest.TestCase):
             compare(self.ours(self.CAP), c, QKEY, "c")
 
 
+class UnPrep(unittest.TestCase):
+    """CR rule 10 un-prep against "c" (bead cq-9gi3), shaped like 133's prep_twice: a register r
+    (h=3, i32, seed R0) prepared Ry(T1) under a (C site f:0), then overwritten: undone by Ry(-T1)
+    under a & b (the conjunction flag, no C reach of its own), reset, and prepared Ry(T2) under b
+    (C site f:1)."""
+
+    T1, T2, R0 = -3.7, 0.6, 8
+
+    @staticmethod
+    def site(fn, site, angle, reg):
+        return {"ev": "site", "fn": fn, "site": site, "kind": "theta", "angle": ang(angle), "reg": hex(reg)}
+
+    @staticmethod
+    def ryv(h, theta, flag, on, v):
+        return dict(ry(h, theta, [flag], [on]), w="i32", v=hex(v))
+
+    def c(self, first=True, second=True):
+        def build(s):
+            a, b = s & 1, s >> 1
+            rots = ([self.site("f", 0, self.T1, 0)] if first and a else []) + \
+                   ([self.site("f", 1, self.T2, 0)] if second and b else [])
+            return RunResult(side="c", sample={"call": 0, "args": [a, b]}, outputs={"ret": [], "end": "ret"},
+                             measured=[], rotations=rots, kept=None, clean=None, violations=[])
+        return [build(s) for s in range(4)]
+
+    def ours(self, unprep=None, first=True, second=True):
+        """unprep(a, b, r) -> list of extra records at the un-prep's position (r: the value there)."""
+        if unprep is None:
+            unprep = lambda a, b, r: [self.ryv(3, -self.T1, 6, a & b, r)]  # noqa: E731
+        R0 = self.R0
+
+        def build(a, b, s):
+            r = 0 if a and first else R0
+            rots = [self.ryv(3, self.T1, 5, a, r)] if first else []
+            rots += unprep(a, b, r)
+            if a and b:
+                r = R0
+            if b:
+                r = 0
+            if second:
+                rots.append(self.ryv(3, self.T2, 7, b, r))
+            return dict(rots=rots, kept=[keep(3, r, "i32"), keep(4, 0, "i32")])
+        return side("o", build)
+
+    def check(self, ours, c, equal, needle=None):
+        r = compare(ours, c, QKEY, "c")
+        self.assertEqual(r.equal, equal, r.reasons)
+        if needle:
+            self.assertTrue(any(needle in x for x in r.reasons), r.reasons)
+
+    def test_unprep_accepted(self):
+        # fails before cq-9gi3: "corresponds to no C site"
+        self.check(self.ours(), self.c(), True)
+
+    def test_unprep_wrong_angle_rejected(self):
+        for th in (self.T1, -self.T1 + 0.25, -self.T2):
+            self.check(self.ours(lambda a, b, r, th=th: [self.ryv(3, th, 6, a & b, r)]), self.c(), False,
+                       "no C site")
+
+    def test_unprep_wrong_target_rejected(self):
+        self.check(self.ours(lambda a, b, r: [self.ryv(4, -self.T1, 6, a & b, 0)]), self.c(), False)
+
+    def test_unprep_without_earlier_prep_rejected(self):
+        self.check(self.ours(first=False), self.c(first=False), False, "no C site")
+
+    def test_unprep_without_later_prep_rejected(self):
+        self.check(self.ours(second=False), self.c(second=False), False, "no C site")
+
+    def test_unprep_wrong_predicate_rejected(self):
+        for p in (lambda a, b: a, lambda a, b: b, lambda a, b: 1, lambda a, b: a & (1 - b)):
+            self.check(self.ours(lambda a, b, r, p=p: [self.ryv(3, -self.T1, 6, p(a, b), r)]), self.c(), False)
+
+    def test_unprep_twice_rejected(self):
+        # the earlier prep is undone once: a second adjoint finds the first un-prep as the latest gate
+        twice = lambda a, b, r: [self.ryv(3, -self.T1, 6, a & b, r)] * 2  # noqa: E731
+        self.check(self.ours(twice), self.c(), False)
+
+    def test_unprep_of_unmatched_gate_rejected(self):
+        # the "earlier prep" has no C reach (C lacks f:0): its adjoint is no un-prep
+        self.check(self.ours(), self.c(first=False), False)
+
+
 if __name__ == "__main__":
     unittest.main()

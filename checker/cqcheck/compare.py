@@ -25,7 +25,14 @@ What is compared (CR §6, CLAUDE.md "The §6 checker"):
   skips the call leaves no reach, so a site's k-th reach is not one gate across samples: a gate
   firing at a sample takes the site's earliest reach there not yet taken that agrees with it. Every
   reach must be taken, except phi reaches forming the same multiset of angles at every sample (a
-  global phase). The pairs must be in an order consistent with every sample's hit order. A
+  global phase). The pairs must be in an order consistent with every sample's hit order. One gate
+  takes no C reach (bead cq-9gi3): CR rule 10's un-prep, by which a second prep of a rail nothing
+  read since undoes the first by its adjoint under the conjunction flag. A lowered Ry (or
+  angle-rail Ry) i reads as the un-prep of the earlier gate j when j takes a C reach, at every
+  sample where i fires the latest gate on the target before i is j, i's angle is j's negated and
+  the target holds its value at j, and i's predicate is exactly the overwrite predicate: j fires,
+  no gate on the target fires between j and i, and a later gate on the target fires (the
+  overwriting prep), each such first later gate taking a C reach. Anything else is unmatched. A
   `cq_invert` region (the
   sites between an invert_begin and its matching invert_end, nesting by depth) is read under CR rule
   17: its sites are taken in reverse order with their angles negated (a region inside a region is so
@@ -521,6 +528,69 @@ def _c_sites(runs: List[RunResult], nan_eq: bool) -> Tuple[List[_Site], List[str
     return [sites[k] for k in sorted(sites, key=repr)], reasons
 
 
+def _unprep_partners(ours: List[_Ev]) -> List[Optional[Tuple[int, FrozenSet[int]]]]:
+    """Per gate, its rule-10 un-prep reading (bead cq-9gi3), or None: (j, ks) when gate i is the
+    adjoint of the earlier gate j and its predicate is exactly the overwrite predicate that rule 10
+    implies. Lowered side only; _match_c additionally requires j and every k to take C reaches.
+
+    Gate i (Ry or angle-rail Ry) reads as j's un-prep when, at every sample s where i fires, the
+    latest gate on i's target before i that fires at s is j (one j for all such s, of i's kind),
+    i's angle is j's negated, and the target holds the value it held at j; and i's predicate is,
+    at every sample, exactly: j fires, no gate on the target between j and i fires, and a gate on
+    the target after i fires (the overwriting prep k; ks collects the first such k per sample)."""
+    out: List[Optional[Tuple[int, FrozenSet[int]]]] = [None] * len(ours)
+    if not ours:
+        return out
+    nS = len(ours[0].pred)
+    sign = 1 << 63
+
+    def angle(e: _Ev, s: int) -> Optional[int]:
+        return e.theta if e.kind == "ry" else e.afn[s]
+
+    for i, e in enumerate(ours):
+        if e.kind not in ("ry", "ryq") or e.target is None:
+            continue
+        on_t = [g for g, x in enumerate(ours) if x.target == e.target]
+        before = [g for g in on_t if g < i]
+        after = [g for g in on_t if g > i]
+        j: Optional[int] = None
+        ok = True
+        for s in range(nS):
+            if not e.pred[s]:
+                continue
+            last = next((g for g in reversed(before) if ours[g].pred[s]), None)
+            if last is None or (j is not None and last != j):
+                ok = False
+                break
+            j = last
+        if not ok or j is None:
+            continue
+        p = ours[j]
+        if p.kind != e.kind or p.tclass[0] != e.tclass[0]:
+            continue
+        for s in range(nS):
+            if e.pred[s]:
+                a, b = angle(e, s), angle(p, s)
+                if a is None or b is None or a != (b ^ sign) or e.tclass[1][s] != p.tclass[1][s]:
+                    ok = False
+                    break
+        if not ok:
+            continue
+        ks = set()
+        for s in range(nS):
+            between = any(ours[g].pred[s] for g in before if g > j)
+            k = next((g for g in after if ours[g].pred[s]), None)
+            implied = bool(p.pred[s]) and not between and k is not None
+            if implied != bool(e.pred[s]):
+                ok = False
+                break
+            if implied:
+                ks.add(k)
+        if ok:
+            out[i] = (j, frozenset(ks))
+    return out
+
+
 def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
              capped: Sequence[bool] = ()) -> List[str]:
     """Match the C sites to our gates (module docstring). A site inside a loop is one gate per trip
@@ -611,30 +681,39 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
 
     start: Used = tuple(0 for _ in range(len(sites) * nS))
     assign: List[Optional[int]] = [None] * len(ours)
+    partner = _unprep_partners(ours)
     failed: set = set()
     limit = max(1000, 4 * len(ours) + 100)
     if sys.getrecursionlimit() < limit:
         sys.setrecursionlimit(limit)
 
-    def dfs(i: int, used: Used) -> bool:
+    # unp: the gates read as rule-10 un-preps (no C reach of their own); free: the gates left
+    # unmatched on capped samples. An un-prep's j and every k must take C reaches: j is checked
+    # when i is chosen, the ks at the leaf. Both sets are part of the memo key.
+    def dfs(i: int, used: Used, unp: FrozenSet[int], free: FrozenSet[int]) -> bool:
         if i == len(ours):
-            return not leftover(used)
-        if (i, used) in failed:
+            return not leftover(used) and not any(partner[u][1] & (unp | free) for u in unp)
+        if (i, used, unp, free) in failed:
             return False
         for j in cands[i]:
             nxt = take(i, j, used)
             if nxt is not None:
                 assign[i] = j
-                if dfs(i + 1, nxt):
+                if dfs(i + 1, nxt, unp, free):
                     return True
-        if free_ok[i]:
-            assign[i] = None
-            if dfs(i + 1, used):
+        assign[i] = None
+        if partner[i] is not None and partner[i][0] not in unp | free:
+            if dfs(i + 1, used, unp | {i}, free):
+                unprep.add(i)
                 return True
-        failed.add((i, used))
+        if free_ok[i]:
+            if dfs(i + 1, used, unp, free | {i}):
+                return True
+        failed.add((i, used, unp, free))
         return False
 
-    if not dfs(0, start):
+    unprep: set = set()
+    if not dfs(0, start, frozenset(), frozenset()):
         # diagnose with the greedy assignment
         used = start
         for i, e in enumerate(ours):
@@ -644,7 +723,7 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
                     used = nxt
                     break
             else:
-                if not free_ok[i]:
+                if not free_ok[i] and partner[i] is None:
                     reasons.append(f"lowered gate #{e.idx} {e.label} (predicate {_fn(e.pred)}) corresponds to "
                                    f"no C site")
         reasons += leftover(used)
@@ -657,7 +736,7 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
             used = take(i, assign[i], used, hits)
     # an unmatched gate on a capped sample must not precede a dependent gate that sample reached
     for i, x in enumerate(ours):
-        if assign[i] is not None:
+        if assign[i] is not None or i in unprep:
             continue
         for s in C:
             if not x.pred[s]:
