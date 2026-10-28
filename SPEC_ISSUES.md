@@ -47,8 +47,9 @@ Entry format:
 - Evidence: the cq-y10d probe build reports the out-of-object access on each; `cqcheck baseline` 107 c fails on exactly that sample (returns 0x7 vs 0x8). Other examples not surveyed.
 - Bead: cq-b4re
 
-## 38 rotate_derived: keeps the dead x of y = x + c before the rotation of y (rule 6)
-- Rule: CR rule 6 ("When y' = f(y, …) is a bijection in y … and y's old value is dead, the old rail is cleaned").
-- Disagreement: `int y = x + c; cq_theta(&y, t2);` with c classical: x is dead after the add, so rule 6 cleans x (t = y − c, copy into x, uncompute t, free x). The 38 reference keeps x allocated to the end. 180 teleport applies rule 6 to the same shape (c' = c ^ m1, m1 classical, then Ry on c') and cleans the old c; 144 and 145 clean too.
-- Evidence: `cqcheck run 38` with rule 6 implemented as CR says: s6 fails on rotate_derived, "1 rail(s) i32 … kept on the reference side" (x); 144, 145, 180 pass.
-- Bead: cq-tvfm (fix), owner question pending.
+## Rule-6 population, pending CQ_spec §7
+- Rule: CR rule 6 at CQ_spec 509e6ed (owner ruling cq-qpsb): every dead old value under a bijective update is cleaned, whatever follows (rotation, measurement only, escape).
+- Disagreement: older references keep the dead old rail in the measure-only and escape cases; they predate rule 6 and were missed by the §7 normalisation. The owner rewrites them in CQ_spec.
+- Evidence: with rule 6 as CR states it, `cqcheck run` (quick) is s6-red only because "1 rail … the reference keeps are not kept on our side" on: 01, 02, 10, 12, 13, 43, 156. C oracle and verifier pass on all seven. (Owner's list also names 45, 108, 109, 122, 162, 177, which our pass does not lower yet.)
+- Bead: cq-qpsb
+

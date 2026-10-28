@@ -485,14 +485,20 @@ bool deadAfter(LoweringContext &ctx, Value *y, Instruction *at, Instruction *als
 
 // Does `z` read `y`, through the original instructions computing it? Then y' = y + z(y) is a
 // composite update (127), not a bijection in y for fixed z: no rule 6 through z.
-bool reads(Value *z, Value *y, unsigned depth = 0) {
+// Only quantum values carry the dependency: a measured or classical value is a constant for the
+// inverse (rule 2; 180: c' = c ^ m1 with m1 a measurement of a value computed from c).
+bool reads(LoweringContext &ctx, Value *z, Value *y, unsigned depth = 0) {
   if (z == y)
     return true;
   auto *I = dyn_cast<Instruction>(z);
   if (!I || depth > 64)
     return false;
+  auto &binds = spine::shared(ctx).binds;
+  auto bi = binds.find(z);
+  if (bi == binds.end() || none_of(bi->second, [](const Operand &o) { return o.handle; }))
+    return false;
   for (Value *op : I->operands())
-    if (reads(op, y, depth + 1))
+    if (reads(ctx, op, y, depth + 1))
       return true;
   return false;
 }
@@ -559,7 +565,7 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
       // both operands dead: operand 0 is cleaned, the other kept (CR rule 6)
       for (unsigned i = 0; i < 2; ++i) {
         Value *Y = bo->getOperand(i), *Z = bo->getOperand(1 - i);
-        if (!cleanable(ctx, Y) || !deadAfter(ctx, Y, &I) || reads(Z, Y))
+        if (!cleanable(ctx, Y) || !deadAfter(ctx, Y, &I) || reads(ctx, Z, Y))
           continue;
         Operand z = ctx.operand(Z);
         if (opc == Instruction::Add) {
@@ -618,7 +624,7 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
     }
     if ((id == Intrinsic::fshl || id == Intrinsic::fshr) && II->getArgOperand(0) == II->getArgOperand(1)) {
       Value *Y = II->getArgOperand(0);
-      if (cleanable(ctx, Y) && deadAfter(ctx, Y, &I) && !reads(II->getArgOperand(2), Y)) {
+      if (cleanable(ctx, Y) && deadAfter(ctx, Y, &I) && !reads(ctx, II->getArgOperand(2), Y)) {
         spec.op = id == Intrinsic::fshl ? "fshr" : "fshl";   // a rotation's inverse
         spec.w = rt(I.getType(), &I);
         clean(ctx, Y, spec, {yp, yp, ctx.operand(II->getArgOperand(2))});
