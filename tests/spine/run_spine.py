@@ -45,7 +45,7 @@ def check_pattern(text: str) -> "re.Pattern":
 
 
 def probes(a) -> int:
-    """Synthetic modules in probes/: each `; CHECK <fn>: <text>` must occur in <fn>'s lowered body
+    """Synthetic modules in probes/: cq-lower and plain cq-verify accept each; each `; CHECK <fn>: <text>` must occur in <fn>'s lowered body
     (`%{{name}}` matches any local), each `; CHECK-COUNT <fn>: <text> <n>` exactly n times."""
     failures = 0
     out = ROOT / "build" / "tests" / "spine" / "out"
@@ -57,6 +57,10 @@ def probes(a) -> int:
         if r.returncode != 0:
             reasons.append("cq-lower: " + (r.stderr.strip().splitlines() or ["?"])[0])
         else:
+            v = subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-verify", "-disable-output",
+                                str(dest)], capture_output=True, text=True)
+            if v.returncode != 0:
+                reasons.append("cq-verify: " + (v.stderr.strip().splitlines() or ["?"])[0])
             module = dest.read_text()
             for line in p.read_text().splitlines():
                 m = re.match(r"; CHECK(-COUNT)? (\w+): (.*)$", line)

@@ -655,14 +655,7 @@ void Walker::emitBlock(BasicBlock *b) {
     visited.insert(&phi);
     if (spine::isQ(ctx, &phi)) {
       // A phi whose every incoming edge predicate is classical chooses its incoming value
-      // classically: a classical phi over handles (rule 9 at a58c3a4), not a select chain.
-      bool classicalChoice = true;
-      for (unsigned k = 0; k < phi.getNumIncomingValues() && classicalChoice; ++k)
-        classicalChoice = ctx.preds().edge(phi.getIncomingBlock(k), b).isClassical(ctx.T, ctx.S);
-      if (classicalChoice)
-        unimplemented("spine: a quantum phi at a classically chosen join: a classical phi over handles "
-                      "(cq-mtt, U1 recordMerge)",
-                      &phi);
+      // classically: pred's lowerMerge emits a classical phi over handles (rule 9 at a58c3a4).
       // Rule 10: a phi with a state prep (or a merge of one) among its incomings merges the
       // register's states; it is the register, never a select of the rotated rail (no label copy).
       if (any_of(phi.incoming_values(), [&](const Value *u) { return sh.statePreps.count(u); })) {

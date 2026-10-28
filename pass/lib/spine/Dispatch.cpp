@@ -375,11 +375,10 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
       auto &sel = cast<SelectInst>(I);
       if (onlyFactoredConditions(ctx, I))
         return;
-      if (!isQ(ctx, sel.getCondition())) {
-        if (lowerLogicalSelect(ctx, sel))
-          return;
-        unimplemented("spine: select on a classical condition with a quantum arm (cq-mtt)", &I);
-      }
+      // A classical condition with a quantum arm: pred's lowerSelect emits a classical select over
+      // the handles (rule 9 at a58c3a4).
+      if (!isQ(ctx, sel.getCondition()) && lowerLogicalSelect(ctx, sel))
+        return;
       bindOperand(ctx, &I, Operand{lowerSelect(ctx, sel), true});
       return;
     }
