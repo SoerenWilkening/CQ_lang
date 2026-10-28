@@ -12,7 +12,10 @@ import argparse
 import collections
 import concurrent.futures as cf
 import subprocess
+import functools
 import sys
+
+print = functools.partial(print, flush=True)  # noqa: A001  (progress visible when redirected)
 import traceback
 
 import fixture as fx
