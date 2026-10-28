@@ -18,7 +18,9 @@ Trace events (cq-arch; values are hex bit patterns ``0x`` + lowercase digits, no
   ``<fn>:<header>``, the header block's label spelled as an operand in the input .O1.ll (``%7``,
   ``%for.body``), taken before the instrumentation edits the function. ``n`` counts the trips begun: header
   executions, less the final one when it only ran the exit test (an exit from a header that is not a
-  latch). A guard branch whose other successor is an exit block reports ``n = 0`` when it skips the loop.
+  latch). A guard branch whose other successor is an exit block reports ``n = 0`` when it skips the loop;
+  the guard may reach the header directly or through single-predecessor blocks that branch
+  unconditionally on (a preheader, as in 55).
 - ``{"ev":"ret","v"}``: the driver call's return value (``null`` for void).
 
 The cutoff K (CR §6 at eb8a11a, ruling cq-1di; bead cq-8ay). Every quantum-exit loop and

@@ -243,6 +243,31 @@ void inv_q(int x0, double t) { int x = x0; cq_invert_begin(); cq_theta(&x, t); c
                 body = body[:body.index("\n}")]
                 self.assertRegex(body, rf"(?m)^{re.escape(hdr[1:])}:", (e, body))
 
+    def test_guard_skip_through_preheader(self):
+        # cq-ly85: the guard reaches the header through a preheader block (the shape of example 55);
+        # a skip reports n = 0, and a path that returns before the guard reports nothing.
+        o1 = compile_c("gp", """
+int gp_q(int m0, double t, int c, int early) {
+    int m = m0;
+    cq_theta(&m, t);
+    if (early == 7) return cq_measure(m);
+    int a[4] = {0, 0, 0, 0};
+    for (int i = 0; i <= m; i++) a[i] = i * c;
+    return cq_measure(a[m - 1]);
+}
+""")
+        text = Path(o1).read_text()
+        # the shape under test: the guard's taken edge enters a preheader that branches to the header
+        self.assertRegex(text, r"br i1 %\d+, label %\d+, label %(\d+)\n\n\1:[^\n]*\n(  [^\n]*\n)*?  br label %\d+\n", text)
+        sp = spec("gp", "int gp_q(int,double,int,int)", [("gp_q", ["int", "double", "int", "int"])])
+        trips = lambda ev: [e["n"] for e in ev if e["ev"] == "trip"]
+        for m, n in [(-1, 0), (-5, 0), (0, 1), (2, 3)]:
+            ev = oracle.trace_sample(o1, sp, {"call": 0, "args": [i32(m), HALF, i32(3), i32(0)]})
+            self.assertEqual(trips(ev), [n], (m, ev, text))
+        for m in (-1, 2):
+            ev = oracle.trace_sample(o1, sp, {"call": 0, "args": [i32(m), HALF, i32(3), i32(7)]})
+            self.assertEqual(trips(ev), [], (m, ev))
+
     def test_fp_output_typed_and_subst(self):
         o1 = compile_c("fpout", "double id_q(double x0, double t) { double x = x0; cq_theta(&x, t); return x + 1; }")
         sp = spec("fpout", "double id_q(double,double)", [("id_q", ["double", "double"])])

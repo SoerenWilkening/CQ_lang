@@ -953,17 +953,27 @@ public:
       // Guard skip: an entering edge whose branch's other successor is an exit block reports 0.
       SmallVector<BasicBlock *, 4> exitBlocks;
       L->getExitBlocks(exitBlocks);
-      for (BasicBlock *P : predecessors(H)) {
-        if (L->contains(P))
+      // The guard may reach the header through out-of-loop blocks that each have a single
+      // predecessor and branch unconditionally on (a preheader): the guard's taken edge is then
+      // the only way into that chain, so its not-taken edge bypasses the header.
+      for (BasicBlock *P0 : predecessors(H)) {
+        if (L->contains(P0))
           continue;
-        auto *br = dyn_cast<BranchInst>(P->getTerminator());
-        if (!br || !br->isConditional())
-          continue;
-        BasicBlock *other = br->getSuccessor(0) == H ? br->getSuccessor(1) : br->getSuccessor(0);
-        if (other == H)
-          continue;
-        if (is_contained(exitBlocks, other))
-          add(P, other, Rep{cid, nullptr, false, kq});
+        BasicBlock *to = H, *P = P0;
+        SmallPtrSet<BasicBlock *, 8> seen;
+        while (P && !L->contains(P) && seen.insert(P).second) {
+          auto *br = dyn_cast<BranchInst>(P->getTerminator());
+          if (!br)
+            break;
+          if (br->isConditional()) {
+            BasicBlock *other = br->getSuccessor(0) == to ? br->getSuccessor(1) : br->getSuccessor(0);
+            if (other != to && is_contained(exitBlocks, other))
+              add(P, other, Rep{cid, nullptr, false, kq});
+            break;
+          }
+          to = P;
+          P = P->getSinglePredecessor();
+        }
       }
     }
     auto kqValue = [&](IRBuilder<> &B, const std::vector<int32_t> *kq) -> Value * {
