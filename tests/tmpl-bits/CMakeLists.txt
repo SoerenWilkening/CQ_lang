@@ -28,3 +28,4 @@ add_test(NAME tmpl-bits-mutants
   COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/mutants.py" --clang ${CQ_CLANG}
           --src "${CMAKE_SOURCE_DIR}/checker/rt/tmpl_bits.c" --harness "${CMAKE_CURRENT_SOURCE_DIR}/test_tmpl_bits.c"
           --gen "${CMAKE_CURRENT_BINARY_DIR}" --rt "${CMAKE_SOURCE_DIR}/checker/rt")
+set_tests_properties(tmpl-bits tmpl-bits-mutants PROPERTIES TIMEOUT 300)

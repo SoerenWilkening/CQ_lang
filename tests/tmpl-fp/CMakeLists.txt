@@ -15,3 +15,4 @@ target_include_directories(test_tmpl_fp PRIVATE "${CMAKE_SOURCE_DIR}/checker/rt"
 set_target_properties(test_tmpl_fp PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED ON)
 target_compile_options(test_tmpl_fp PRIVATE -O1 -Wall -Wextra)
 add_test(NAME tmpl-fp COMMAND test_tmpl_fp)
+set_tests_properties(tmpl-fp PROPERTIES TIMEOUT 300)

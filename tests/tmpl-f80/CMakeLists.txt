@@ -24,3 +24,4 @@ set_target_properties(tmpl_f80_diff PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED
 target_compile_options(tmpl_f80_diff PRIVATE -march=penryn)
 # Sample count from CQ_FULL (cq-m4s9): quick 200 by default, CQ_FULL=1 3000.
 add_test(NAME tmpl-f80-diff COMMAND tmpl_f80_diff)
+set_tests_properties(tmpl-f80-diff PROPERTIES TIMEOUT 300)

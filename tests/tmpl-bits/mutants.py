@@ -2,8 +2,8 @@
 """Permanent mutants of checker/rt/tmpl_bits.c (cq-w0-tmpl-bits).
 
 Each mutant is one textual change to the family source that breaks a CR §2 / BACKEND_ABI §2
-semantic. The differential harness, built against the mutated source and run with --first, must
-reject every one; a mutant it accepts means the test lost its power. A mutant whose anchor text is
+semantic. The differential harness, linked with the mutated source and run with --mutant k (which
+stops at the first disagreement), must reject every one; a mutant it accepts means the test lost its power. A mutant whose anchor text is
 missing fails too (the source moved; update the anchor, never drop the mutant).
 """
 import argparse
@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 
 MUTANTS = [
     ("ctlz(0) = W - 1", "while (n < W && !tb_bit(a, W - 1", "while (n < W - 1 && !tb_bit(a, W - 1"),
@@ -48,20 +49,52 @@ def main():
     a = ap.parse_args()
     src = open(a.src).read()
     bad = 0
+    jobs = max(1, min(4, int(os.environ.get("CQCHECK_JOBS", "2"))))
     with tempfile.TemporaryDirectory() as td:
+        # One executable holds every mutant (cq-24uw): mutant k is compiled with cqe_register_op
+        # renamed to cq_mut_reg_k, which files its registrations under k; `--mutant k` runs the
+        # harness on those alone. A fresh executable per mutant cost about a second each (compile,
+        # link, first-exec scan); this way it is one link and one process per mutant.
+        cc = [a.clang, "-O1", "-std=c17", "-w", "-I", a.rt, "-I", a.gen]
+        units = [(cc + ["-c", a.harness, "-o", os.path.join(td, "harness.o")]), None]
+        live = []
+        reg = ['#include "cqe.h"', "void cq_mut_register(int, const char *, cqe_op_fn);"]
         for i, (what, old, new) in enumerate(MUTANTS):
             if src.count(old) != 1:
                 print(f"ANCHOR MISSING ({src.count(old)} hits): {what}")
                 bad += 1
                 continue
             m = os.path.join(td, f"m{i}.c")
-            exe = os.path.join(td, f"m{i}")
             open(m, "w").write(src.replace(old, new))
-            subprocess.run([a.clang, "-O1", "-std=c17", "-w", "-I", a.rt, "-I", a.gen, a.harness, m,
-                            os.path.join(a.gen, "native.o"), "-o", exe], check=True)
-            r = subprocess.run([exe, "--first"], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            units.append(cc + [f"-Dcqe_register_op=cq_mut_reg_{i}", "-c", m, "-o", m + ".o"])
+            reg.append(f"void cq_mut_reg_{i}(const char *op, cqe_op_fn fn) {{ cq_mut_register({i}, op, fn); }}")
+            live.append((i, what))
+        open(os.path.join(td, "mutreg.c"), "w").write("\n".join(reg) + "\n")
+        units[1] = cc + ["-c", os.path.join(td, "mutreg.c"), "-o", os.path.join(td, "mutreg.o")]
+        with ThreadPoolExecutor(jobs) as ex:
+            for r in ex.map(lambda c: subprocess.run(c).returncode, units):
+                if r:
+                    print("FAIL: a mutant unit does not compile")
+                    return 1
+        exe = os.path.join(td, "mutants")
+        objs = [os.path.join(td, "harness.o"), os.path.join(td, "mutreg.o")]
+        objs += [os.path.join(td, f"m{i}.c.o") for i, _ in live]
+        subprocess.run([a.clang, *objs, os.path.join(a.gen, "native.o"), "-o", exe], check=True)
+        # A mutant runs on the quick set first; only one the quick set does not reject runs again on
+        # the CQ_FULL set when CQ_FULL is on. A disagreement is a disagreement in either set, so the
+        # verdict is the full run's, without the full sweeps of every row ahead of the first miss.
+        quick_env = {k: v for k, v in os.environ.items() if k != "CQ_FULL"}
+        for i, what in live:
+            for env in (quick_env, None):
+                r = subprocess.run([exe, "--mutant", str(i)], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                   text=True, env=env)
+                if r.returncode != 0 or os.environ.get("CQ_FULL", "0") in ("", "0"):
+                    break
             first = (r.stderr.strip().splitlines() or [""])[0][:100]
-            if r.returncode == 0:
+            if r.returncode == 3:
+                print(f"NOT LINKED: {what}: {first}")
+                bad += 1
+            elif r.returncode == 0:
                 print(f"SURVIVED: {what}")
                 bad += 1
             else:

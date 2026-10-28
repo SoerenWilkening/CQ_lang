@@ -20,3 +20,4 @@ target_include_directories(tmpl_fpmisc_diff PRIVATE ${CMAKE_SOURCE_DIR}/checker/
 set_target_properties(tmpl_fpmisc_diff PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED ON)
 target_compile_options(tmpl_fpmisc_diff PRIVATE -O1 -Wall -Wextra)
 add_test(NAME tmpl-fpmisc-diff COMMAND tmpl_fpmisc_diff)
+set_tests_properties(tmpl-fpmisc-diff PROPERTIES TIMEOUT 300)

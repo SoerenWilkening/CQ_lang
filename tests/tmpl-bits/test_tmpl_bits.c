@@ -54,6 +54,21 @@ void cqe_fail(const char *fmt, ...) {
   va_end(ap);
   ++nfail;
 }
+/* Mutant registrations (cq-24uw): mutants.py links every mutant of tmpl_bits.c into one executable,
+ * each compiled with cqe_register_op renamed to a wrapper that calls cq_mut_register(k, ...).
+ * `--mutant k` runs the harness on mutant k's registrations alone (one executable, no process
+ * build per mutant). Exit 3: mutant k registered nothing (not linked), never a rejection. */
+#define MAXMUT 64
+static struct { char op[24]; cqe_op_fn fn; } mreg[MAXMUT][64];
+static int nmreg[MAXMUT];
+void cq_mut_register(int k, const char *op, cqe_op_fn fn) {
+  if (k < 0 || k >= MAXMUT || nmreg[k] == 64) {
+    fprintf(stderr, "bad mutant registration %d\n", k);
+    exit(3);
+  }
+  snprintf(mreg[k][nmreg[k]].op, sizeof mreg[k][nmreg[k]].op, "%s", op);
+  mreg[k][nmreg[k]++].fn = fn;
+}
 static cqe_op_fn lookup(const char *op) {
   cqe_op_fn f = NULL;
   int n = 0;
@@ -338,6 +353,16 @@ static int expect_reject(cqe_op_fn fn, const char *what, const char *op, const c
 int main(int argc, char **argv) {
   int bad = 0;
   first_only = argc > 1 && !strcmp(argv[1], "--first");
+  if (argc > 2 && !strcmp(argv[1], "--mutant")) { /* implies --first */
+    int k = atoi(argv[2]);
+    if (k < 0 || k >= MAXMUT || !nmreg[k]) {
+      fprintf(stderr, "mutant %d not linked\n", k);
+      return 3;
+    }
+    memcpy(reg, mreg[k], sizeof reg);
+    nreg = nmreg[k];
+    first_only = 1;
+  }
   {
     const char *e = getenv("CQ_FULL");
     full_mode = e && *e && strcmp(e, "0");

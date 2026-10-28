@@ -53,6 +53,23 @@ void cqe_fail(const char *fmt, ...) {
   va_end(ap);
 }
 
+/* Mutant registrations (cq-24uw): difftest.py links every mutant of tmpl_cmp.c into the one
+ * test executable, each compiled with cqe_register_op renamed to a wrapper that calls
+ * cq_mut_register(k, ...). `--mutant k` runs the harness on mutant k's registrations instead of the
+ * real family's (one executable, no build per mutant), stopping at the first disagreement. Exit 3:
+ * mutant k registered nothing (not linked), never a rejection. */
+#define MAXMUT 64
+static struct { char op[24]; cqe_op_fn fn; } mreg[MAXMUT][MAXOPS];
+static int nmreg[MAXMUT];
+void cq_mut_register(int k, const char *op, cqe_op_fn fn) {
+  if (k < 0 || k >= MAXMUT || nmreg[k] == MAXOPS) {
+    fprintf(stderr, "bad mutant registration %d\n", k);
+    exit(3);
+  }
+  snprintf(mreg[k][nmreg[k]].op, sizeof mreg[k][nmreg[k]].op, "%s", op);
+  mreg[k][nmreg[k]++].fn = fn;
+}
+
 static cqe_op_fn lookup(const char *op) {
   for (int i = 0; i < nreg; ++i)
     if (!strcmp(reg[i].op, op)) return reg[i].fn;
@@ -177,6 +194,7 @@ static void fp_specials(vset_t *s, unsigned bits, const char *w) {
 
 static long ncases, nmismatch;
 static int full_mode; /* CQ_FULL=1: full sizes; otherwise the quick set (cq-m4s9) */
+static int first_only; /* --first: exit 1 at the first disagreement (the mutant run, cq-24uw) */
 
 static void to_cqe(cqe_val *cv, val_t *v, unsigned bits, char kind, unsigned nw) {
   cv->bits = bits; cv->kind = kind; cv->nw = nw; cv->w = v->w;
@@ -195,6 +213,7 @@ static void report(const entry_t *e, const char *what, const val_t *ops, int nop
   fprintf(stderr, " ours=");
   for (int k = (int)rw - 1; k >= 0; --k) fprintf(stderr, "%016llx", (unsigned long long)got[k]);
   fprintf(stderr, "\n");
+  if (first_only) exit(1);
 }
 
 /* ops: data operands in template order (select: cond, arm1, arm2). */
@@ -386,7 +405,18 @@ static void convention(void) {
   printf("  calling convention: %d checks\n", checks);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+  first_only = argc > 1 && !strcmp(argv[1], "--first");
+  if (argc > 2 && !strcmp(argv[1], "--mutant")) { /* implies --first */
+    int k = atoi(argv[2]);
+    if (k < 0 || k >= MAXMUT || !nmreg[k]) {
+      fprintf(stderr, "mutant %d not linked\n", k);
+      return 3;
+    }
+    memcpy(reg, mreg[k], sizeof reg);
+    nreg = nmreg[k];
+    first_only = 1;
+  }
   {
     const char *e = getenv("CQ_FULL");
     full_mode = e && *e && strcmp(e, "0");
@@ -399,7 +429,10 @@ int main(void) {
   if (nreg != (int)(sizeof ops / sizeof ops[0])) { fprintf(stderr, "FAIL: %d ops registered, want 15\n", nreg); ++nmismatch; }
   printf("registered ops: %d\n", nreg);
   size_t ne = sizeof TABLE / sizeof TABLE[0];
-  for (size_t i = 0; i < ne; ++i) run_entry(&TABLE[i]);
+  for (size_t i = 0; i < ne; ++i) {
+    run_entry(&TABLE[i]);
+    if (first_only && nmismatch) return 1;
+  }
   table_rows();
   convention();
   printf("mode: %s  entries: %zu  cases: %ld  mismatches: %ld\n", full_mode ? "CQ_FULL" : "quick", ne, ncases, nmismatch);

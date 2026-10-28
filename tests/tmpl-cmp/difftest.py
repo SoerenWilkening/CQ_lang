@@ -10,14 +10,17 @@ f80; min/max, abs, overflow, sat at i32/i64), plus i1, i7, i100, and i16, i256, 
 the width applies to.
 
 Self-test: every mutant in MUTANTS (one textual fault in a copy of tmpl_cmp.c) must be rejected by
-the same harness before the real run counts.
+the same harness before the real run counts. A mutant run stops at its first disagreement
+(harness --first): the verdict is the same as a full run's, at a fraction of the time.
 
 Usage: difftest.py [--clang CLANG] [--work DIR]
 """
 import argparse
+import os
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -131,39 +134,59 @@ def main():
         print("FAIL: native.ll does not compile", file=sys.stderr)
         return 1
 
-    def build(src, exe, warn=True):
-        flags = ["-Wall", "-Wextra", "-Werror"] if warn else ["-w"]
-        return subprocess.run([a.clang, "-O1", "-std=c17", *flags, "-I", str(RT), "-I", str(work),
-                               str(HERE / "harness.c"), str(src), str(work / "native.o"), "-o", str(exe)]).returncode
-
-    # Self-test first: every mutant must be rejected.
+    # One executable (cq-24uw): the harness, the real family and every mutant, mutant k compiled
+    # with cqe_register_op renamed to cq_mut_reg_k (harness --mutant k runs on its registrations
+    # alone and stops at the first disagreement). A fresh executable per mutant cost about a second
+    # each (compile, link, first-exec scan) and ran every case.
+    cc = [a.clang, "-O1", "-std=c17", "-I", str(RT), "-I", str(work)]
+    werr = ["-Wall", "-Wextra", "-Werror"]
     orig = (RT / "tmpl_cmp.c").read_text()
-    survivors = 0
-    for name, old, new in MUTANTS:
+    units = [cc + werr + ["-c", str(HERE / "harness.c"), "-o", str(work / "harness.o")],
+             cc + werr + ["-c", str(RT / "tmpl_cmp.c"), "-o", str(work / "tmpl_cmp.o")]]
+    objs = [work / "harness.o", work / "tmpl_cmp.o", work / "mutreg.o"]
+    reg = ['#include "cqe.h"', "void cq_mut_register(int, const char *, cqe_op_fn);"]
+    live, survivors = [], 0
+    for k, (name, old, new) in enumerate(MUTANTS):
         if orig.count(old) != 1:
             print(f"FAIL: mutant {name}: its original text occurs {orig.count(old)} times", file=sys.stderr)
             survivors += 1
             continue
         src = work / f"mutant_{name}.c"
         src.write_text(orig.replace(old, new))
-        exe = work / f"mutant_{name}"
-        if build(src, exe, warn=False):
-            print(f"FAIL: mutant {name} does not compile", file=sys.stderr)
-            survivors += 1
-            continue
-        r = subprocess.run([str(exe)], capture_output=True, text=True)
-        killed = r.returncode != 0 and "MISMATCH" in r.stderr or "FAIL:" in r.stderr
-        print(f"mutant {name}: {'rejected' if killed else 'SURVIVED'}")
+        units.append(cc + ["-w", f"-Dcqe_register_op=cq_mut_reg_{k}", "-c", str(src), "-o", str(work / f"mutant_{name}.o")])
+        objs.append(work / f"mutant_{name}.o")
+        reg.append(f"void cq_mut_reg_{k}(const char *op, cqe_op_fn fn) {{ cq_mut_register({k}, op, fn); }}")
+        live.append((k, name))
+    (work / "mutreg.c").write_text("\n".join(reg) + "\n")
+    units.append(cc + werr + ["-c", str(work / "mutreg.c"), "-o", str(work / "mutreg.o")])
+    jobs = max(1, min(4, int(os.environ.get("CQCHECK_JOBS", "2"))))
+    with ThreadPoolExecutor(jobs) as ex:
+        if any(ex.map(lambda c: subprocess.run(c).returncode, units)):
+            print("FAIL: the test executable does not build (harness, family or a mutant)", file=sys.stderr)
+            return 1
+    exe = work / "difftest"
+    if subprocess.run([a.clang, *map(str, objs), str(work / "native.o"), "-o", str(exe)]).returncode:
+        print("FAIL: the test executable does not link", file=sys.stderr)
+        return 1
+
+    # Self-test first: every mutant must be rejected.
+    # A mutant runs on the quick set first; only one the quick set does not reject runs again on
+    # the CQ_FULL set when CQ_FULL is on. A disagreement is a disagreement in either set, so the
+    # verdict is the full run's, without the full sweeps of every entry ahead of the first miss.
+    quick_env = {k: v for k, v in os.environ.items() if k != "CQ_FULL"}
+    for k, name in live:
+        for env in (quick_env, None):
+            r = subprocess.run([str(exe), "--mutant", str(k)], capture_output=True, text=True, env=env)
+            killed = r.returncode not in (0, 3) and ("MISMATCH" in r.stderr or "FAIL:" in r.stderr)
+            if killed or r.returncode == 3 or os.environ.get("CQ_FULL", "0") in ("", "0"):
+                break
+        print(f"mutant {name}: {'rejected' if killed else 'NOT LINKED' if r.returncode == 3 else 'SURVIVED'}")
         survivors += 0 if killed else 1
     if survivors:
         print(f"FAIL: {survivors} of {len(MUTANTS)} mutants not rejected", file=sys.stderr)
         return 1
     print(f"self-test: {len(MUTANTS)} of {len(MUTANTS)} mutants rejected")
 
-    exe = work / "difftest"
-    if build(RT / "tmpl_cmp.c", exe):
-        print("FAIL: harness does not build", file=sys.stderr)
-        return 1
     r = subprocess.run([str(exe)])
     if r.returncode:
         print(f"FAIL: difftest exited {r.returncode}", file=sys.stderr)

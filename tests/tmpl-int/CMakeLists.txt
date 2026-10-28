@@ -27,3 +27,4 @@ add_test(NAME tmpl-int COMMAND tmpl_int_diff)
 add_test(NAME tmpl-int-bitops-dispatch
   COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_bitops_dispatch.py"
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+set_tests_properties(tmpl-int tmpl-int-bitops-dispatch PROPERTIES TIMEOUT 300)

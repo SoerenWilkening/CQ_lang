@@ -3,4 +3,4 @@
 add_test(NAME tmpl-cmp
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/difftest.py
           --clang ${CQ_CLANG} --work ${CMAKE_CURRENT_BINARY_DIR}/work)
-set_tests_properties(tmpl-cmp PROPERTIES TIMEOUT 900)
+set_tests_properties(tmpl-cmp PROPERTIES TIMEOUT 300)
