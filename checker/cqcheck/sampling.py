@@ -15,7 +15,7 @@ Classes (SampleSet.classes; every class is present, and a class with nothing in 
                 +-smallest normal), crossed when the product is small, one input at a time otherwise.
   specials      per call: every fp quantum input over +-0, +-Inf, NaN (quiet, negative with payload,
                 signalling) and the smallest subnormal.
-  exhaustive    per call: every input when the call's quantum scalar inputs total <= 16 bits.
+  exhaustive    per call: every input when the call's quantum scalar inputs total <= 8 bits.
   random_seed   {"seed", "quantum": per call, "classical": per call}: a seeded random set over the
                 quantum inputs (classical arguments at their drivers.txt values) and a seeded set
                 over the classical arguments.
@@ -35,7 +35,7 @@ object). For them the edge, specials, exhaustive and random classes hold, beside
 samples, samples at the drivers.txt arguments with substituted values: edge and specials one value per
 site for every reach (crossed over the sites when the product is small, one site at a time otherwise);
 exhaustive every value of every reach when the call's quantum argument bits plus its sites' bits,
-each site counted once per reach of its drivers.txt run in the C oracle (at least once), total <= 16;
+each site counted once per reach of its drivers.txt run in the C oracle (at least once), total <= 8;
 random a seeded list of per-reach values per site. Such a class entry names the sites in "subst_sites".
 Every other class keeps samples without "subst" (the sites keep the program's own values there).
 
@@ -82,7 +82,7 @@ from cqcheck.contracts import DriverSpec, SampleSet
 K = 4
 SEED = 20261027
 LLVM_BIN = Path(os.environ.get("CQ_LLVM_BIN", "/usr/local/opt/llvm@19/bin"))
-EXHAUSTIVE_BITS = 16
+EXHAUSTIVE_BITS = 8            # owner decision cq-l1wi: exhaustive only up to 8 quantum bits
 N_RANDOM_QUANTUM = 32
 N_RANDOM_CLASSICAL = 16
 CROSS_LIMIT = 1024
@@ -1529,7 +1529,7 @@ def per_call_classes(g: Gen, rng: random.Random) -> Dict[str, dict]:
                 specials[key] = {"samples": sorted(set(idx))}
             # exhaustive
             bits = sum(cts[j].bits for j in qs)
-            if bits <= EXHAUSTIVE_BITS:
+            if exhaustive_ok(bits):
                 idx = []
                 for n in range(1 << bits):
                     vals, sh = {}, 0
@@ -1577,6 +1577,11 @@ def site_random(rng: random.Random, ct: D.CType) -> int:
 def _site_hex(st: "D.ThetaSite", v: int) -> str:
     return "0x%x" % (v & ((1 << {"f16": 16, "bf16": 16, "f32": 32, "f64": 64, "f80": 80}.get(
         st.w, int(st.w[1:]) if st.w.startswith("i") else 128)) - 1))
+
+
+def exhaustive_ok(bits: int) -> bool:
+    """The one exhaustive bound (argument and substitution classes alike): at most 8 bits."""
+    return bits <= EXHAUSTIVE_BITS
 
 
 def theta_reaches(spec: DriverSpec, example_dir: Path,
@@ -1646,7 +1651,7 @@ def subst_classes(g: Gen, rng: random.Random, sites: Dict[int, List["D.ThetaSite
         qs = g.quantum_slots(ci)
         sbits = sum(ct.bits * n for ct, n in zip(cts, nreach))
         abits = sum(g.cts[ci][j].bits for j in qs)
-        if sbits + abits <= EXHAUSTIVE_BITS:
+        if exhaustive_ok(sbits + abits):
             idx = []
             for n in range(1 << (sbits + abits)):
                 sh, vals = 0, {}

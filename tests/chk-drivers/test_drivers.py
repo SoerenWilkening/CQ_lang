@@ -298,10 +298,17 @@ class Sampling(unittest.TestCase):
         self.assertEqual(ex["0"]["bits"], 8)
         self.assertEqual(len(ex["0"]["samples"]), 256)
         self.assertEqual(len(ex["3"]["samples"]), 4)          # and_i1: two _Bool registers
+        self.assertIn("empty", ex["1"])                       # 16 bits: past the 8-bit bound (cq-l1wi)
         self.assertIn("empty", ex["2"])                       # add_i64: 64 bits
         edge = {tuple(ss.samples[i]["args"][:1]) for i in ss.classes["edge"]["2"]["samples"]}
         self.assertTrue({("0x8000000000000000",), ("0x7fffffffffffffff",), ("0xffffffffffffffff",)} <= edge)
         self.assertIn("empty", ss.classes["specials"]["0"])
+
+    def test_exhaustive_bound_is_8_bits(self):
+        """cq-l1wi (owner decision): 8 quantum bits are exhaustive, 9 are not."""
+        self.assertEqual(S.EXHAUSTIVE_BITS, 8)
+        self.assertTrue(S.exhaustive_ok(8))
+        self.assertFalse(S.exhaustive_ok(9))
 
     def test_trips(self):
         spec, ss = self.sample("05_while_quantum_cond")
