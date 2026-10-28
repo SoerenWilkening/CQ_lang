@@ -9,11 +9,12 @@ cqrt_*/cq_template_* the linked module declares and every rule 27 declared clone
 checker's stand-in, typed by the example's .O1.ll: c_module_of, cq-rft), and clang links that with every checker/rt/*.c
 compiled as objects (never an archive, so each family's registering constructor is linked, cf.
 cq-f69). A build is cached under $CQE_CACHE (default <repo>/build/cqcheck-cache) by a hash of
-everything that goes into it. The driver reads its sample at run time (cq-arch Z2), so the samples of
+everything that goes into it, and so is a failed one (its BuildError text, cq-3ebz). The driver reads its sample at run time (cq-arch Z2), so the samples of
 one example share one build.
 
 Run. One process per sample: `prog` with $CQD_SAMPLES naming a one-record drivers.sample_file and
-the trace (JSONL, cq-arch) written to $CQE_TRACE. A sample that cannot be built or run is a RunResult whose violations say why; it is
+the trace (JSONL, cq-arch) written to $CQE_TRACE. run_samples builds once for a batch and runs its
+samples in parallel. A sample that cannot be built or run is a RunResult whose violations say why; it is
 never dropped.
 
 Sample values ({call, args}; call is an index into spec.calls, or a function name occurring there
@@ -51,6 +52,7 @@ RunResult fields (JSON-serializable):
 """
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import os
@@ -336,13 +338,43 @@ def build(lowered: Path, spec: DriverSpec, samples: Sequence[dict] = (),
     final = _cache_root() / "prog" / h.hexdigest()[:24]
     if (final / "prog").exists():
         return final / "prog"
+    # A failed build is cached too (cq-3ebz): the same inputs fail the same way, so every later call
+    # raises the recorded BuildError without rerunning clang, llvm-link and stubgen.
+    failed = final.with_name(final.name + ".build_error")
+    if failed.exists():
+        raise BuildError(failed.read_text())
     tmp = Path(tempfile.mkdtemp(prefix="prog.", dir=_ensure(_cache_root() / "prog")))
+    try:
+        _build_into(tmp, lowered, drv, triple, objs, ctext if c_module else None, extra_sources)
+    except BuildError as e:
+        shutil.rmtree(tmp, ignore_errors=True)
+        ftmp = failed.with_name(f"{failed.name}.{os.getpid()}.tmp")
+        ftmp.write_text(str(e))
+        os.replace(ftmp, failed)
+        raise
+    # First launch of a fresh binary can be slow (the host scans it); pay that here, not inside a
+    # sample's timeout. With an empty sample file the driver runs the setup only. Not a cached
+    # failure: a slow host is not a property of the inputs.
+    (tmp / "empty.samples").write_text("")
+    try:
+        subprocess.run([str(tmp / "prog")], cwd=tmp, capture_output=True, timeout=300,
+                       env=dict(os.environ, CQE_TRACE=os.devnull, CQD_SAMPLES=str(tmp / "empty.samples")))
+    except subprocess.TimeoutExpired as e:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise BuildError(f"the built program did not start within 300s: {e}")
+    _publish(tmp, final)
+    return final / "prog"
+
+
+def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[Path],
+                ctext: Optional[str], extra_sources: Sequence[Path]) -> None:
+    """The toolchain steps of build: tmp/prog from the lowered module and the driver source."""
     (tmp / "driver.c").write_text(drv)
     shutil.copy(lowered, tmp / "lowered.ll")
     _sh([CLANG, "-O1", "-w", "-target", triple, "-S", "-emit-llvm", "driver.c", "-o", "driver.ll"], cwd=tmp)
     _sh([LLVM_LINK, "-S", "lowered.ll", "driver.ll", "-o", "linked.ll"], cwd=tmp)
     cargs = []
-    if c_module:
+    if ctext is not None:
         (tmp / "c_module.ll").write_text(ctext)
         cargs = ["--c-module", "c_module.ll"]
     _sh([sys.executable, str(RT_DIR / "stubgen.py"), "linked.ll", *cargs, "-o", "stubs.ll"], cwd=tmp)
@@ -353,16 +385,6 @@ def build(lowered: Path, spec: DriverSpec, samples: Sequence[dict] = (),
         extra_objs.append(str(o))
     _sh([CLANG, "-O0", "-w", "-target", triple, *[str(o) for o in objs], *extra_objs, "linked.ll", "stubs.ll",
          "-lm", "-o", "prog"], cwd=tmp)
-    # First launch of a fresh binary can be slow (the host scans it); pay that here, not inside a
-    # sample's timeout. With an empty sample file the driver runs the setup only.
-    (tmp / "empty.samples").write_text("")
-    try:
-        subprocess.run([str(tmp / "prog")], cwd=tmp, capture_output=True, timeout=300,
-                       env=dict(os.environ, CQE_TRACE=os.devnull, CQD_SAMPLES=str(tmp / "empty.samples")))
-    except subprocess.TimeoutExpired as e:
-        raise BuildError(f"the built program did not start within 300s: {e}")
-    _publish(tmp, final)
-    return final / "prog"
 
 
 # ---- run -------------------------------------------------------------------------------------
@@ -423,16 +445,33 @@ def run_sample(lowered: Path, spec: DriverSpec, sample: dict, side: str, *, time
                rt_sources: Optional[Sequence[Path]] = None, extra_sources: Sequence[Path] = (),
                c_module: Optional[Path] = None) -> RunResult:
     """Run one sample of spec against the lowered module in the evaluator (cq-zew)."""
-    from cqcheck import drivers
-    try:
-        canon = canonical_sample(spec, sample)
-        record = drivers.sample_file(spec, [canon])
-    except (SampleError, KeyError, TypeError, ValueError, RuntimeError) as e:
-        return _result(side, sample, [], "", None, [{"what": "sample", "h": None, "msg": str(e)}])
+    prep = _prepare(spec, sample, side)
+    if isinstance(prep, RunResult):
+        return prep
+    canon, record = prep
     try:
         prog = build(Path(lowered), spec, [canon], rt_sources, extra_sources, c_module)
     except (BuildError, OSError, RuntimeError) as e:
-        return _result(side, sample, [], "", None, [{"what": "build", "h": None, "msg": str(e)}])
+        return _build_failure(side, sample, e)
+    return _execute(prog, sample, record, side, timeout)
+
+
+def _prepare(spec: DriverSpec, sample: dict, side: str):
+    """(canonical sample, its sample-file record), or the RunResult of a sample that is malformed."""
+    from cqcheck import drivers
+    try:
+        canon = canonical_sample(spec, sample)
+        return canon, drivers.sample_file(spec, [canon])
+    except (SampleError, KeyError, TypeError, ValueError, RuntimeError) as e:
+        return _result(side, sample, [], "", None, [{"what": "sample", "h": None, "msg": str(e)}])
+
+
+def _build_failure(side: str, sample: dict, e: BaseException) -> RunResult:
+    return _result(side, sample, [], "", None, [{"what": "build", "h": None, "msg": str(e)}])
+
+
+def _execute(prog: Path, sample: dict, record: str, side: str, timeout: float) -> RunResult:
+    """One process of the built program over one sample record."""
     with tempfile.TemporaryDirectory(prefix="cqe-run.") as wd:
         trace = Path(wd) / "trace.jsonl"
         (Path(wd) / "sample").write_text(record)
@@ -452,15 +491,75 @@ def run_sample(lowered: Path, spec: DriverSpec, sample: dict, side: str, *, time
     return _result(side, sample, events, stdout, code, extra + bad)
 
 
-def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: str, jobs: int = 0,
-                **kw) -> List[RunResult]:
-    """run_sample over many samples, in order, jobs processes at a time (0: the CPU count)."""
+def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: str, jobs: int = 0, *,
+                timeout: float = DEFAULT_TIMEOUT, rt_sources: Optional[Sequence[Path]] = None,
+                extra_sources: Sequence[Path] = (), c_module: Optional[Path] = None) -> List[RunResult]:
+    """run_sample over many samples, in order, jobs at a time (0: the CPU count). Each
+    result equals run_sample's for that sample; the program is built once for the batch, and a
+    build that fails gives every well-formed sample the same 'build' violation without running."""
     from concurrent.futures import ThreadPoolExecutor
     samples = list(samples)
-    try:  # one build for all (each sample would find it in the cache; this avoids racing builds)
-        canon = [canonical_sample(spec, s) for s in samples]
-        build(Path(lowered), spec, canon, kw.get("rt_sources"), kw.get("extra_sources", ()), kw.get("c_module"))
-    except (SampleError, BuildError, OSError, KeyError, TypeError, ValueError, RuntimeError):
-        pass  # run_sample reports it per sample
-    with ThreadPoolExecutor(max_workers=jobs or os.cpu_count() or 4) as ex:
-        return list(ex.map(lambda s: run_sample(lowered, spec, s, side, **kw), samples))
+    preps = [_prepare(spec, s, side) for s in samples]
+    good = [p for p in preps if not isinstance(p, RunResult)]
+    prog: Optional[Path] = None
+    failure: Optional[BaseException] = None
+    if good:
+        try:
+            prog = build(Path(lowered), spec, [c for c, _ in good], rt_sources, extra_sources, c_module)
+        except (BuildError, OSError, RuntimeError) as e:
+            failure = e
+
+    def one(i: int) -> RunResult:
+        p = preps[i]
+        if isinstance(p, RunResult):
+            return p
+        if failure is not None:
+            return _build_failure(side, samples[i], failure)
+        return _execute(prog, samples[i], p[1], side, timeout)
+
+    if failure is not None or not good:
+        return [one(i) for i in range(len(samples))]
+    workers = jobs or os.cpu_count() or 4
+    todo = [i for i, p in enumerate(preps) if not isinstance(p, RunResult)]
+    if len(todo) < _PROCESS_BATCH:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            return list(ex.map(one, range(len(samples))))
+    # Large batches (tens of thousands of samples): starting one process per sample from threads is
+    # bound by this interpreter's lock, so worker interpreters (_chunk_main) take chunks of samples.
+    out: List[Optional[RunResult]] = [p if isinstance(p, RunResult) else None for p in preps]
+    size = max(16, min(_CHUNK, len(todo) // (4 * workers) or 1))
+    chunks = [todo[k:k + size] for k in range(0, len(todo), size)]
+
+    def chunk(ix: List[int]) -> None:
+        for i, r in zip(ix, _execute_chunk(prog, [(samples[i], preps[i][1]) for i in ix], side, timeout)):
+            out[i] = dataclasses.replace(r, sample=samples[i])   # the sample as given, not its JSON copy
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        list(ex.map(chunk, chunks))
+    return out  # type: ignore[return-value]
+
+
+_PROCESS_BATCH = 512   # from this many samples on, run_samples uses worker interpreters
+_CHUNK = 256
+
+
+def _execute_chunk(prog: Path, items: Sequence[Tuple[dict, str]], side: str, timeout: float) -> List[RunResult]:
+    """_execute over (sample, record) pairs, in order, in one worker interpreter (_chunk_main)."""
+    job = json.dumps({"prog": str(prog), "side": side, "timeout": timeout,
+                      "items": [[s, rec] for s, rec in items]})
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(
+        [str(REPO / "checker")] + ([os.environ["PYTHONPATH"]] if os.environ.get("PYTHONPATH") else [])))
+    budget = (timeout + 10) * len(items) + 60
+    p = subprocess.run([sys.executable, "-c", "from cqcheck import run; run._chunk_main()"], input=job,
+                       capture_output=True, text=True, env=env, timeout=budget)
+    if p.returncode:
+        raise RuntimeError(f"cq: run.py worker failed ({p.returncode}): {p.stderr.strip()[-2000:]}")
+    return [RunResult(**d) for d in json.loads(p.stdout)]
+
+
+def _chunk_main() -> None:
+    """Worker interpreter of _execute_chunk: a job on stdin, the RunResults as a JSON list on stdout."""
+    job = json.loads(sys.stdin.read())
+    res = [dataclasses.asdict(_execute(Path(job["prog"]), s, rec, job["side"], job["timeout"]))
+           for s, rec in job["items"]]
+    sys.stdout.write(json.dumps(res))

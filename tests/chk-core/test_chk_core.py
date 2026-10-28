@@ -175,6 +175,56 @@ class Violations(unittest.TestCase):
             r = run.run_sample(bad, spec1(*self.ARGS), {"call": 0, "args": [1, 0.5]}, "ours", rt_sources=RT)
             self.assertEqual([v["what"] for v in r.violations], ["build"])
 
+    def test_failed_build_is_cached(self):
+        """cq-3ebz: a build that fails is recorded under its hash; every later sample gets the same
+        'build' violation without rerunning the toolchain, alone or as a batch."""
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as cache:
+            bad = Path(d) / "undef.ll"
+            bad.write_text('target triple = "x86_64-apple-macosx16.0.0"\ndeclare i32 @__cq_q_ext_fn_11(i32)\n'
+                           'define i32 @v(i32 %a, double %b) {\n  %r = call i32 @__cq_q_ext_fn_11(i32 %a)\n  ret i32 %r\n}\n')
+            spec = spec1(*self.ARGS)
+            old_env, old_sh = os.environ.get("CQE_CACHE"), run._sh
+            os.environ["CQE_CACHE"] = cache
+            try:
+                first = run.run_sample(bad, spec, {"call": 0, "args": [1, 0.5]}, "ours", rt_sources=RT)
+                self.assertEqual([v["what"] for v in first.violations], ["build"])
+                self.assertEqual(len(list((Path(cache) / "prog").glob("*.build_error"))), 1)
+
+                def no_tool(cmd, cwd=None):
+                    raise AssertionError(f"toolchain rerun for a cached failure: {cmd[0]}")
+                run._sh = no_tool
+                again = run.run_sample(bad, spec, {"call": 0, "args": [2, 1.5]}, "ours", rt_sources=RT)
+                self.assertEqual(again.violations, first.violations)
+                batch = run.run_samples(bad, spec, [{"call": 0, "args": [i, 0.5]} for i in range(5)]
+                                        + [{"call": 0, "args": [1]}], "ours", rt_sources=RT)
+                self.assertEqual([r.violations for r in batch[:5]], [first.violations] * 5)
+                self.assertEqual([v["what"] for v in batch[5].violations], ["sample"])
+                self.assertEqual([r.sample["args"][0] for r in batch[:5]], list(range(5)))
+            finally:
+                run._sh = old_sh
+                if old_env is None:
+                    os.environ.pop("CQE_CACHE", None)
+                else:
+                    os.environ["CQE_CACHE"] = old_env
+
+    def test_batch_equals_one_by_one(self):
+        """run_samples gives each sample run_sample's RunResult, in order (report.evaluate's path)."""
+        spec = spec1(*self.ARGS)
+        samples = [{"call": 0, "args": [x, 0.5]} for x in (0, 1, -3, 5)] + [{"call": 0, "args": [1]}]
+        batch = run.run_samples(HERE / "ok_clean.ll", spec, samples, "ours", rt_sources=RT, extra_sources=FAM)
+        one = [run.run_sample(HERE / "ok_clean.ll", spec, s, "ours", rt_sources=RT, extra_sources=FAM)
+               for s in samples]
+        self.assertEqual([to_json(r) for r in batch], [to_json(r) for r in one])
+        saved = run._PROCESS_BATCH, run._CHUNK
+        run._PROCESS_BATCH, run._CHUNK = 1, 2    # the worker-interpreter path of large batches
+        try:
+            workers = run.run_samples(HERE / "ok_clean.ll", spec, samples, "ours", rt_sources=RT,
+                                      extra_sources=FAM)
+        finally:
+            run._PROCESS_BATCH, run._CHUNK = saved
+        self.assertEqual([to_json(r) for r in workers], [to_json(r) for r in one])
+        self.assertTrue(all(w.sample is s for w, s in zip(workers, samples)))
+
 
 class HandlerOrder(unittest.TestCase):
     """M1 (cq-mgi) multi-handler dispatch through the real core (cq-f69), with multifam.c's three

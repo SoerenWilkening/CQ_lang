@@ -168,6 +168,12 @@ class FakeSiblings:
             ("sampling", "sample_set"): lambda s, d: SampleSet("x", self.samples, {}),
             ("run", "run_sample"): lambda p, s, smp, side: (self.calls.append(("run", side)), rr(side))[1],
             ("oracle", "run_sample"): lambda p, s, smp: (self.calls.append(("oracle",)), rr("c"))[1],
+            # report.evaluate runs each side as a batch (cq-3ebz)
+            ("run", "run_samples"): lambda p, s, smps, side: [
+                (self.calls.append(("run", side)), rr(side))[1] for _ in smps],
+            ("oracle", "run_samples"): lambda p, s, smps: [
+                (self.calls.append(("oracle",)), "sample run")[1] for _ in smps],
+            ("oracle", "run_result"): lambda sr, s, o1: rr("c"),
             ("compare", "compare"): lambda a, b, against, classical_key=None: (
                 self.calls.append(("compare", against, classical_key)), self.compare_reasons)[1],
             ("compare", "classical_key_from_driver"): lambda d: (self.calls.append(("key", d)),
@@ -271,7 +277,7 @@ class Evaluate(unittest.TestCase):
         def boom(*a):
             raise RuntimeError("evaluator crashed")
         with FakeSiblings():
-            importlib.import_module("cqcheck.oracle").run_sample = boom
+            importlib.import_module("cqcheck.oracle").run_samples = boom
             v = report.evaluate(EX04, self.mutant(), "both")
         self.assertEqual(v.c_oracle, "error")
         self.assertTrue(any("evaluator crashed" in r for r in v.reasons))

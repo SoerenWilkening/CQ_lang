@@ -20,7 +20,10 @@ oracle (``--oracle ref|c``); it is not green either.
 
 The §6 run composes the sibling checker modules through the functions named in ``SIBLING_API``. A
 function that a sibling does not provide yet makes the check ERROR with
-``cq: unimplemented: <module>: <function>``; nothing is ever assumed equal.
+``cq: unimplemented: <module>: <function>``; nothing is ever assumed equal. The run_sample entries
+are run as their owners' batch forms (cq-3ebz): ``run.run_samples`` and ``oracle.run_samples`` with
+``oracle.run_result``, which give each sample the RunResult run_sample would, with one build per
+side and the samples in parallel.
 """
 from __future__ import annotations
 
@@ -276,10 +279,27 @@ def _exc_reason(where: str, e: BaseException) -> str:
 
 
 def _side_results(runner: Callable, path: Path, spec, samples, *extra) -> list:
-    results = [runner(path, spec, s, *extra) for s in samples]
-    if not results:
+    """`runner(path, spec, samples, *extra)` runs the whole sample set as one batch (cq-3ebz: one
+    build per side, the samples in parallel); one RunResult per sample, in order."""
+    samples = list(samples)
+    if not samples:
         raise RuntimeError("the sample set is empty")
+    results = list(runner(path, spec, samples, *extra))
+    if len(results) != len(samples):
+        raise RuntimeError(f"{len(results)} results for {len(samples)} samples")
     return results
+
+
+def _evaluator_batch(lowered: Path, spec, samples, side: str) -> list:
+    """Every sample in the evaluator: run.run_samples, each result run.run_sample's (Z1)."""
+    return sibling("run", "run_samples")(lowered, spec, samples, side)
+
+
+def _oracle_batch(o1: Path, spec, samples) -> list:
+    """Every sample under the C oracle: oracle.run_samples, each made the RunResult that
+    oracle.run_sample (Z1) returns by oracle.run_result."""
+    to_result = sibling("oracle", "run_result")
+    return [to_result(r, spec, o1) for r in sibling("oracle", "run_samples")(o1, spec, samples)]
 
 
 def _compare(ours_results, other_results, against: str, spec) -> Tuple[str, List[str]]:
@@ -329,7 +349,7 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
         try:
             spec = sibling("drivers", "driver_spec")(ex.name, ex.dir)
             samples = sibling("sampling", "sample_set")(spec, ex.dir).samples
-            ours_results = _side_results(sibling("run", "run_sample"), ours, spec, samples, "ours")
+            ours_results = _side_results(_evaluator_batch, ours, spec, samples, "ours")
         except Exception as e:  # noqa: BLE001 - every failure is an ERROR verdict with its reason
             r = _exc_reason("setup (drivers, sampling, our run)", e)
             reasons.append(r)
@@ -340,8 +360,7 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
         else:
             if need_ref_run:
                 try:
-                    ref_results = _side_results(sibling("run", "run_sample"), ex.reference, spec,
-                                                samples, "ref")
+                    ref_results = _side_results(_evaluator_batch, ex.reference, spec, samples, "ref")
                     s6, rs = _compare(ours_results, ref_results, "ref", spec)
                     reasons += rs
                 except Exception as e:  # noqa: BLE001
@@ -349,7 +368,7 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
                     reasons.append(_exc_reason("s6", e))
             if want_c:
                 try:
-                    c_results = _side_results(sibling("oracle", "run_sample"), ex.o1, spec, samples)
+                    c_results = _side_results(_oracle_batch, ex.o1, spec, samples)
                     c_oracle, rs = _compare(ours_results, c_results, "c", spec)
                     reasons += rs
                 except Exception as e:  # noqa: BLE001
