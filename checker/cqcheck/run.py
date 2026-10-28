@@ -5,7 +5,8 @@ driver, run one sample, return a RunResult.
 
 Build. driver.c (generated from the DriverSpec) is compiled to IR with clang-19 for the lowered
 module's triple, llvm-link joins it to the lowered module, checker/rt/stubgen.py defines every
-cqrt_*/cq_template_* the linked module declares, and clang links that with every checker/rt/*.c
+cqrt_*/cq_template_* the linked module declares and every rule 27 declared clone nothing links (the
+checker's stand-in, typed by the example's .O1.ll: c_module_of, cq-rft), and clang links that with every checker/rt/*.c
 compiled as objects (never an archive, so each family's registering constructor is linked, cf.
 cq-f69). A build is cached under $CQE_CACHE (default <repo>/build/cqcheck-cache) by a hash of
 everything that goes into it, so the samples of one example share one build.
@@ -306,7 +307,8 @@ def runtime_objects(triple: str, rt_sources: Optional[Sequence[Path]] = None) ->
     for s in srcs:
         h.update(str(s).encode())
         h.update(s.read_bytes())
-    h.update((RT_DIR / "cqe.h").read_bytes())
+    for hdr in sorted(RT_DIR.glob("*.h")):  # cqe.h, cq_standin.h
+        h.update(hdr.read_bytes())
     d = _cache_root() / "rt" / h.hexdigest()[:24]
     objs = [d / (s.stem + ".o") for s in srcs]
     if all(o.exists() for o in objs):
@@ -331,15 +333,32 @@ def _publish(tmp: Path, final: Path) -> None:
         shutil.rmtree(tmp, ignore_errors=True)   # another process published the same build
 
 
+def c_module_of(lowered: Path, spec: DriverSpec) -> Optional[Path]:
+    """The C-level module whose declarations type the callees of rule 27 declared clones (cq-rft):
+    the one .O1.ll beside `lowered` (a CQ_spec reference), else the example's .O1.ll in CQ_spec."""
+    for d in (Path(lowered).resolve().parent, None):
+        if d is None:
+            from . import drivers
+            d = drivers.example_dir(spec.example)
+        found = sorted(d.glob("*.O1.ll")) if d.is_dir() else []
+        if len(found) == 1:
+            return found[0]
+    return None
+
+
 def build(lowered: Path, spec: DriverSpec, exprs: Dict[Tuple[int, int], List[str]],
-          rt_sources: Optional[Sequence[Path]] = None, extra_sources: Sequence[Path] = ()) -> Path:
-    """The executable for (lowered, spec, exprs); cached."""
+          rt_sources: Optional[Sequence[Path]] = None, extra_sources: Sequence[Path] = (),
+          c_module: Optional[Path] = None) -> Path:
+    """The executable for (lowered, spec, exprs); cached. c_module: see c_module_of (its default)."""
     text = Path(lowered).read_text()
     triple = _triple(text)
     objs = runtime_objects(triple, rt_sources)
     drv = driver_c(spec, exprs)
+    if c_module is None:
+        c_module = c_module_of(Path(lowered), spec)
+    ctext = Path(c_module).read_text() if c_module else ""
     h = hashlib.sha256()
-    for part in (_VERSION, text, drv, (RT_DIR / "stubgen.py").read_text(), Path(__file__).read_text(),
+    for part in (_VERSION, text, drv, (RT_DIR / "stubgen.py").read_text(), Path(__file__).read_text(), ctext,
                  *[str(o) for o in objs], *[Path(e).read_text() for e in extra_sources]):
         h.update(part.encode())
         h.update(b"\0")
@@ -351,7 +370,11 @@ def build(lowered: Path, spec: DriverSpec, exprs: Dict[Tuple[int, int], List[str
     shutil.copy(lowered, tmp / "lowered.ll")
     _sh([CLANG, "-O1", "-w", "-target", triple, "-S", "-emit-llvm", "driver.c", "-o", "driver.ll"], cwd=tmp)
     _sh([LLVM_LINK, "-S", "lowered.ll", "driver.ll", "-o", "linked.ll"], cwd=tmp)
-    _sh([sys.executable, str(RT_DIR / "stubgen.py"), "linked.ll", "-o", "stubs.ll"], cwd=tmp)
+    cargs = []
+    if c_module:
+        (tmp / "c_module.ll").write_text(ctext)
+        cargs = ["--c-module", "c_module.ll"]
+    _sh([sys.executable, str(RT_DIR / "stubgen.py"), "linked.ll", *cargs, "-o", "stubs.ll"], cwd=tmp)
     extra_objs = []
     for i, e in enumerate(extra_sources):
         o = tmp / f"extra{i}.o"
@@ -425,7 +448,8 @@ def _parse_trace(text: str) -> Tuple[List[dict], List[dict]]:
 
 
 def run_sample(lowered: Path, spec: DriverSpec, sample: dict, side: str, *, timeout: float = DEFAULT_TIMEOUT,
-               rt_sources: Optional[Sequence[Path]] = None, extra_sources: Sequence[Path] = ()) -> RunResult:
+               rt_sources: Optional[Sequence[Path]] = None, extra_sources: Sequence[Path] = (),
+               c_module: Optional[Path] = None) -> RunResult:
     """Run one sample of spec against the lowered module in the evaluator (cq-zew)."""
     try:
         ci = _resolve_call(spec, sample.get("call"))
@@ -444,7 +468,7 @@ def run_sample(lowered: Path, spec: DriverSpec, sample: dict, side: str, *, time
     except (SampleError, KeyError, TypeError, ValueError) as e:
         return _result(side, sample, [], "", None, [{"what": "sample", "h": None, "msg": str(e)}])
     try:
-        prog = build(Path(lowered), spec, exprs, rt_sources, extra_sources)
+        prog = build(Path(lowered), spec, exprs, rt_sources, extra_sources, c_module)
     except (BuildError, OSError) as e:
         return _result(side, sample, [], "", None, [{"what": "build", "h": None, "msg": str(e)}])
     with tempfile.TemporaryDirectory(prefix="cqe-run.") as wd:

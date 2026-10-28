@@ -46,6 +46,8 @@
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
 #include <cstdlib>
+
+#include "../rt/cq_standin.h"
 #include <map>
 #include <string>
 #include <vector>
@@ -697,7 +699,8 @@ public:
   // h = FNV-1a-64 offset; h = (h ^ b) * P for each byte of the name; then for each non-pointer scalar
   // argument, for each 64-bit word of its bit pattern (low word first, zero-extended):
   // h = (h ^ w) * P. The result is the low W bits of h (fp: as a bit pattern); void: nothing;
-  // pointer result: null. No memory effect.
+  // pointer result: null. No memory effect. One source with the evaluator: checker/rt/cq_standin.h
+  // (cq-rft); __cqo_mix in cqo_rt.c is cq_standin_mix.
   void stubs() {
     if (StubsFile.empty())
       return;
@@ -716,10 +719,7 @@ public:
         continue;
       F->setLinkage(GlobalValue::InternalLinkage);
       IRBuilder<> B(BasicBlock::Create(C, "", F));
-      uint64_t h0 = 0xcbf29ce484222325ULL;
-      for (unsigned char ch : name.bytes())
-        h0 = (h0 ^ ch) * 0x100000001b3ULL;
-      Value *h = B.getInt64(h0);
+      Value *h = B.getInt64(cq_standin_name(name.data(), name.size())); // checker/rt/cq_standin.h
       for (Argument &A : F->args()) {
         Type *T = A.getType();
         if (T->isPointerTy())

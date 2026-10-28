@@ -332,9 +332,14 @@ class StubgenCorpus(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             for ll in lowered:
                 text = ll.read_text()
-                declared = set(re.findall(r"^declare [^@]*@((?:cqrt|cq_template)_[A-Za-z0-9_.]+)\(", text, re.M))
+                declared = set(re.findall(r"^declare [^@]*@((?:cqrt|cq_template|__cq_q)_[A-Za-z0-9_.]+)\(", text,
+                                          re.M))
+                ctexts = [p.read_text() for p in ll.parent.glob("*.O1.ll")]
+                csigs = stubgen.c_signatures(ctexts)
+                declared = {n for n in declared
+                            if not n.startswith(stubgen.CLONE_PREFIX) or stubgen.clone_fn(n) in csigs}
                 try:
-                    out, names = stubgen.generate([text])
+                    out, names = stubgen.generate([text], ctexts)
                 except stubgen.StubError as e:
                     failures.append(f"{ll.parent.name}: {e}")
                     continue
@@ -349,12 +354,251 @@ class StubgenCorpus(unittest.TestCase):
                     failures.append(f"{ll.parent.name}: llvm-link: {p.stderr.strip()[:300]}")
                 for name, ret, _, params in (stubgen.parse_decl(l) for l in text.splitlines()
                                              if stubgen.parse_decl(l)):
+                    if name.startswith(stubgen.CLONE_PREFIX):
+                        continue  # declared clones: StandIn below
                     lines.add(f"{name}|{ret}|{','.join(t for t, _ in params)}")
         rc, out = Parser().classify(sorted(lines))
         print(f"\nstubgen corpus: {len(lowered)} lowered files, {nsym} stubs, {len(lines)} distinct declarations; "
               f"{out.strip().splitlines()[-1]}", file=sys.stderr)
         self.assertEqual(failures, [])
         self.assertEqual(rc, 0, out)
+
+
+# ---- rule 27 declared clones: one stand-in on both sides (cq-rft) ----------------------------
+
+# The C side: externs nothing defines, probes returning their values (the C oracle models each extern
+# with checker/rt/cq_standin.h through OracleInstr.cpp `stubs` and cqo_rt.c `__cqo_mix`).
+STANDIN_C = r"""
+int e_i(int, int);
+double e_d(double, signed char, long long);
+long double e_l(long double, short);
+unsigned char e_b(_Bool, float);
+long long e_w(long long, int *, unsigned);
+_Float16 e_h(_Float16, int *, int);
+int pi(int a, int b) { return e_i(a, b); }
+double pd(double a, signed char b, long long c) { return e_d(a, b, c); }
+long double pl(long double a, short b) { return e_l(a, b); }
+unsigned char pb(_Bool a, float b) { return e_b(a, b); }
+long long pw(long long x, unsigned u) { int c[2] = {1, 2}; return e_w(x, c, u); }
+_Float16 ph(float a, int n) { int c[2] = {n, 3}; return e_h((_Float16)a, c, n); }
+"""
+STANDIN_PROTOS = ("int pi(int,int); double pd(double,signed char,long long); long double pl(long double,short); "
+                  "unsigned char pb(_Bool,float); long long pw(long long,unsigned); _Float16 ph(float,int)")
+STANDIN_CALLS = [("pi", ["int", "int"]), ("pd", ["double", "signed char", "long long"]),
+                 ("pl", ["long double", "short"]), ("pb", ["_Bool", "float"]),
+                 ("pw", ["long long", "unsigned"]), ("ph", ["float", "int"])]
+STANDIN_SAMPLES = [
+    (0, [5, 7]), (0, [-1, 0]), (0, [-2147483648, 2147483647]),
+    (1, [0.5, -3, 1 << 40]), (1, ["nan", 127, -1]), (1, ["-0.0", -128, 0]),
+    (2, [1.25, -2]), (2, ["inf", 32767]),
+    (3, [1, 3.5]), (3, [0, "-inf"]),
+    (4, [-1, 7]), (4, [-987654321, 4294967295]),
+    (5, [1.5, 9]), (5, [-65504.0, -1]),
+]
+
+# The lowered side: each probe calls several declared clones of its extern (quantum and classical
+# digits, _ctl), records the forward results, runs each twin and frees. The trace's tmpl events
+# carry the clone results; every twin must leave 0.
+STANDIN_LL = r"""
+target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-apple-macosx16.0.0"
+
+define i32 @pi(i32 %a, i32 %b) {
+  %ha = call i32 @cqrt_alloc_i32(i32 %a)
+  %hb = call i32 @cqrt_alloc_i32(i32 %b)
+  %p = call i32 @cqrt_alloc_i1(i1 1)
+  %r1 = call i32 @__cq_q_e_i_10(i32 %ha, i32 %b, i32 4)
+  %r2 = call i32 @__cq_q_e_i_01(i32 %a, i32 %hb, i32 4)
+  %r3 = call i32 @__cq_q_e_i_11_ctl(i32 %p, i32 %ha, i32 %hb, i32 2)
+  call void @__cq_q_e_i_10_unc(i32 %r1, i32 %ha, i32 %b, i32 4)
+  call void @__cq_q_e_i_01_unc(i32 %r2, i32 %a, i32 %hb, i32 4)
+  call void @__cq_q_e_i_11_ctl_unc(i32 %r3, i32 %p, i32 %ha, i32 %hb, i32 2)
+  call void @cqrt_free(i32 %r1)
+  call void @cqrt_free(i32 %r2)
+  call void @cqrt_free(i32 %r3)
+  ret i32 0
+}
+
+define double @pd(double %a, i8 %b, i64 %c) {
+  %ha = call i32 @cqrt_alloc_f64(double %a)
+  %hb = call i32 @cqrt_alloc_i8(i8 %b)
+  %hc = call i32 @cqrt_alloc_i64(i64 %c)
+  %r1 = call i32 @__cq_q_e_d_111(i32 %ha, i32 %hb, i32 %hc, i32 4)
+  %r2 = call i32 @__cq_q_e_d_100(i32 %ha, i8 %b, i64 %c, i32 4)
+  call void @__cq_q_e_d_111_unc(i32 %r1, i32 %ha, i32 %hb, i32 %hc, i32 4)
+  call void @__cq_q_e_d_100_unc(i32 %r2, i32 %ha, i8 %b, i64 %c, i32 4)
+  call void @cqrt_free(i32 %r1)
+  call void @cqrt_free(i32 %r2)
+  ret double 0.0
+}
+
+define x86_fp80 @pl(x86_fp80 %a, i16 %b) {
+  %ha = call i32 @cqrt_alloc_f80(x86_fp80 %a)
+  %r1 = call i32 @__cq_q_e_l_10(i32 %ha, i16 %b, i32 4)
+  call void @__cq_q_e_l_10_unc(i32 %r1, i32 %ha, i16 %b, i32 4)
+  call void @cqrt_free(i32 %r1)
+  ret x86_fp80 0xK00000000000000000000
+}
+
+define zeroext i8 @pb(i1 zeroext %a, float %b) {
+  %ha = call i32 @cqrt_alloc_i1(i1 %a)
+  %hb = call i32 @cqrt_alloc_f32(float %b)
+  %r1 = call i32 @__cq_q_e_b_10(i32 %ha, float %b, i32 4)
+  %r2 = call i32 @__cq_q_e_b_01(i1 %a, i32 %hb, i32 4)
+  call void @__cq_q_e_b_10_unc(i32 %r1, i32 %ha, float %b, i32 4)
+  call void @__cq_q_e_b_01_unc(i32 %r2, i1 %a, i32 %hb, i32 4)
+  call void @cqrt_free(i32 %r1)
+  call void @cqrt_free(i32 %r2)
+  ret i8 0
+}
+
+define i64 @pw(i64 %x, i32 %u) {
+  %hx = call i32 @cqrt_alloc_i64(i64 %x)
+  %c = alloca [2 x i32]
+  %r1 = call i32 @__cq_q_e_w_10000(i32 %hx, ptr %c, i32 0, i32 0, i32 2, i32 %u, i32 4)
+  call void @__cq_q_e_w_10000_unc(i32 %r1, i32 %hx, ptr %c, i32 0, i32 0, i32 2, i32 %u, i32 4)
+  call void @cqrt_free(i32 %r1)
+  ret i64 0
+}
+
+define half @ph(float %a, i32 %n) {
+  %t = fptrunc float %a to half
+  %ht = call i32 @cqrt_alloc_f16(half %t)
+  %hn = call i32 @cqrt_alloc_i32(i32 %n)
+  %c = alloca [2 x i32]
+  %s = alloca [2 x i32]
+  %r1 = call i32 @__cq_q_e_h_10011(i32 %ht, ptr %c, i32 0, i32 0, i32 2, i32 %hn, i32 4)
+  call void @__cq_q_e_h_10011_unc(i32 %r1, i32 %ht, ptr %c, i32 0, i32 0, i32 2, i32 %hn, i32 4, ptr %s)
+  call void @cqrt_free(i32 %r1)
+  ret half 0.0
+}
+
+declare i32 @cqrt_alloc_i1(i1)
+declare i32 @cqrt_alloc_i8(i8)
+declare i32 @cqrt_alloc_i32(i32)
+declare i32 @cqrt_alloc_i64(i64)
+declare i32 @cqrt_alloc_f16(half)
+declare i32 @cqrt_alloc_f32(float)
+declare i32 @cqrt_alloc_f64(double)
+declare i32 @cqrt_alloc_f80(x86_fp80)
+declare void @cqrt_free(i32)
+declare i32 @__cq_q_e_i_10(i32, i32, i32)
+declare void @__cq_q_e_i_10_unc(i32, i32, i32, i32)
+declare i32 @__cq_q_e_i_01(i32, i32, i32)
+declare void @__cq_q_e_i_01_unc(i32, i32, i32, i32)
+declare i32 @__cq_q_e_i_11_ctl(i32, i32, i32, i32)
+declare void @__cq_q_e_i_11_ctl_unc(i32, i32, i32, i32, i32)
+declare i32 @__cq_q_e_d_111(i32, i32, i32, i32)
+declare void @__cq_q_e_d_111_unc(i32, i32, i32, i32, i32)
+declare i32 @__cq_q_e_d_100(i32, i8, i64, i32)
+declare void @__cq_q_e_d_100_unc(i32, i32, i8, i64, i32)
+declare i32 @__cq_q_e_l_10(i32, i16, i32)
+declare void @__cq_q_e_l_10_unc(i32, i32, i16, i32)
+declare i32 @__cq_q_e_b_10(i32, float, i32)
+declare void @__cq_q_e_b_10_unc(i32, i32, float, i32)
+declare i32 @__cq_q_e_b_01(i1, i32, i32)
+declare void @__cq_q_e_b_01_unc(i32, i1, i32, i32)
+declare i32 @__cq_q_e_w_10000(i32, ptr, i32, i32, i32, i32, i32)
+declare void @__cq_q_e_w_10000_unc(i32, i32, ptr, i32, i32, i32, i32, i32)
+declare i32 @__cq_q_e_h_10011(i32, ptr, i32, i32, i32, i32, i32)
+declare void @__cq_q_e_h_10011_unc(i32, i32, ptr, i32, i32, i32, i32, i32, ptr)
+"""
+
+STANDIN_NCLONES = {"pi": 3, "pd": 2, "pl": 1, "pb": 2, "pw": 1, "ph": 1}
+
+
+def standin_reference(name, args):
+    """cq_standin.h restated in Python, over (C type, bits) pairs: a third, independent reading."""
+    P, h = 0x100000001b3, 0xcbf29ce484222325
+    for b in name.encode():
+        h = ((h ^ b) * P) & (2**64 - 1)
+    for bits, v in args:
+        for w in range((bits + 63) // 64):
+            h = ((h ^ ((v >> (64 * w)) & (2**64 - 1))) * P) & (2**64 - 1)
+    return h
+
+
+class StandIn(unittest.TestCase):
+    """cq-rft: the evaluator's declared clone stand-in gives the C oracle's value for the same callee and
+    arguments (CR §6: one deterministic stand-in on both sides), its twin leaves 0, and both sides
+    agree with cq_standin.h restated in Python."""
+
+    @classmethod
+    def setUpClass(cls):
+        from cqcheck import oracle
+        cls.oracle = oracle
+        cls.tmp = Path(tempfile.mkdtemp(prefix="cq-standin."))
+        c = cls.tmp / "standin.c"
+        c.write_text(STANDIN_C)
+        cls.o1 = cls.tmp / "standin.O1.ll"
+        subprocess.run([str(LLVM / "clang"), "-target", "x86_64-apple-macosx16.0.0", "-O1", "-S", "-emit-llvm",
+                        str(c), "-o", str(cls.o1)], check=True)
+        cls.lowered = cls.tmp / "standin.lowered.ll"
+        cls.lowered.write_text(STANDIN_LL)
+        cls.spec = DriverSpec("standin", [p.strip() + ";" for p in STANDIN_PROTOS.split(";")], "",
+                              [{"fn": fn, "args": [{"ctype": t, "quantum": False} for t in ts]}
+                               for fn, ts in STANDIN_CALLS])
+
+    def c_values(self):
+        samples = [{"call": ci, "args": ["0x%x" % run.encode_arg(t, v)[1] for t, v in zip(STANDIN_CALLS[ci][1], a)]}
+                   for ci, a in STANDIN_SAMPLES]
+        out = []
+        for r in self.oracle.run_samples(self.o1, self.spec, samples):
+            self.assertFalse(r.failed, (r.sample, r.reason, r.notes))
+            out.append(int(next(e["v"] for e in r.events if e["ev"] == "ret"), 16))
+        return out
+
+    def evaluator_values(self):
+        prog = run.build(self.lowered, self.spec, {}, RT, FAM, self.o1)
+        out = []
+        for ci, a in STANDIN_SAMPLES:
+            argv = [str(ci)]
+            for t, v in zip(STANDIN_CALLS[ci][1], a):
+                _, x = run.encode_arg(t, v)
+                argv.append(f"b:{x & (2**64 - 1):x}:{x >> 64:x}")
+            with tempfile.TemporaryDirectory() as d:
+                t = Path(d) / "t.jsonl"
+                subprocess.run([str(prog), *argv], env=dict(os.environ, CQE_TRACE=str(t)), check=True,
+                               capture_output=True)
+                ev = [json.loads(l) for l in t.read_text().splitlines() if l.strip()]
+            viol = [e for e in ev if e["ev"] == "violation"]
+            self.assertEqual(viol, [], (ci, a))
+            vals = [int(e["v"], 16) for e in ev if e["ev"] == "tmpl" and e["sym"].startswith("__cq_q_")]
+            self.assertEqual(len(vals), STANDIN_NCLONES[STANDIN_CALLS[ci][0]], (ci, a, ev))
+            self.assertEqual(len(set(vals)), 1, f"clones of one callee disagree: {ci} {a} {vals}")
+            uncs = [e for e in ev if e["ev"] == "unc" and e["sym"].startswith("__cq_q_")]
+            self.assertEqual(len(uncs), len(vals))
+            self.assertTrue(all(int(e["residue"], 16) == 0 for e in uncs), uncs)
+            out.append(vals[0])
+        return out
+
+    def test_both_sides_identical(self):
+        c, e = self.c_values(), self.evaluator_values()
+        self.assertEqual([hex(v) for v in e], [hex(v) for v in c])
+        # e_i(5, 7) by the Python restatement: name bytes, then two 32-bit words, low 32 bits
+        self.assertEqual(c[0], standin_reference("e_i", [(32, 5), (32, 7)]) & 0xFFFFFFFF)
+        # e_l(1.25L, -2): the x87 pattern of 1.25 is two words; result low 80 bits of a 64-bit h
+        f80 = (0x3FFF << 64) | 0xA000000000000000
+        self.assertEqual(c[6], standin_reference("e_l", [(80, f80), (16, (-2) & 0xFFFF)]))
+        # the pointer argument of e_w is never mixed
+        self.assertEqual(c[10], standin_reference("e_w", [(64, 2**64 - 1), (32, 7)]))
+
+    def test_stubgen_leaves_unknown_callees_undefined(self):
+        text = STANDIN_LL + "declare i32 @__cq_q_absent_1(i32, i32)\n"
+        out, names = stubgen.generate([text], [self.o1.read_text()])
+        self.assertIn("__cq_q_e_i_11_ctl_unc", names)
+        self.assertNotIn("__cq_q_absent_1", names)  # no C declaration: left to the link
+        self.assertIn('c"e_w|i64|i64,ptr,i32\\00"', out)
+
+    def test_malformed_clone_is_a_violation(self):
+        # a K argument missing: the evaluator rejects the call rather than guessing
+        bad = STANDIN_LL.replace("@__cq_q_e_l_10(i32 %ha, i16 %b, i32 4)", "@__cq_q_e_l_10(i32 %ha, i16 %b)") \
+                        .replace("declare i32 @__cq_q_e_l_10(i32, i16, i32)", "declare i32 @__cq_q_e_l_10(i32, i16)")
+        ll = self.tmp / "standin_bad.ll"
+        ll.write_text(bad)
+        r = run.run_sample(ll, self.spec, {"call": 2, "args": [1.25, -2]}, "ours", rt_sources=RT,
+                           extra_sources=FAM, c_module=self.o1)
+        self.assertIn("malformed_call", [v["what"] for v in r.violations])
 
 
 if __name__ == "__main__":

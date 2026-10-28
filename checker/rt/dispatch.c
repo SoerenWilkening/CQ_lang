@@ -55,6 +55,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cq_standin.h"
 #include "cqe.h"
 
 
@@ -1078,23 +1079,36 @@ static void template_call(call_t *c, const char *sym) {
 
 /* ---- entry ------------------------------------------------------------------------------- */
 
+/* "<ret>|<t0>,<t1>,..." with exactly n parameter types (n < 0: as many as there are, *n set). */
+static int parse_sig(const char *sig, lty *rty, lty *ty, int *n) {
+  const char *bar = strchr(sig, '|');
+  if (!bar || parse_lty(sig, (size_t)(bar - sig), rty))
+    return -1;
+  const char *p = bar + 1;
+  int want = *n, i = 0;
+  while (want < 0 ? *p != 0 : i < want) {
+    if (i >= 64)
+      return -1;
+    const char *e = strchr(p, ',');
+    size_t len = e ? (size_t)(e - p) : strlen(p);
+    if (parse_lty(p, len, &ty[i]) || ty[i].kind == 'v')
+      return -1;
+    ++i;
+    p += len + (e ? 1 : 0);
+  }
+  if (*p != 0)
+    return -1;
+  *n = i;
+  return 0;
+}
+
 void cqe_dispatch(const char *sym, const char *sig, int32_t nargs, void **argv, void *ret) {
   cqe__init();
   lty rty, ty[64];
-  const char *bar = strchr(sig, '|');
-  if (!bar || parse_lty(sig, (size_t)(bar - sig), &rty) || nargs < 0 || nargs > 64) {
+  int n = nargs;
+  if (nargs < 0 || nargs > 64 || parse_sig(sig, &rty, ty, &n)) {
     cqe__violation("malformed_call", -1, "%s: bad stub signature '%s'", sym, sig);
     return;
-  }
-  const char *p = bar + 1;
-  for (int i = 0; i < nargs; ++i) {
-    const char *e = strchr(p, ',');
-    size_t n = e ? (size_t)(e - p) : strlen(p);
-    if (parse_lty(p, n, &ty[i]) || ty[i].kind == 'v') {
-      cqe__violation("malformed_call", -1, "%s: bad stub signature '%s'", sym, sig);
-      return;
-    }
-    p += n + (e ? 1 : 0);
   }
   cqe_val raw[64];
   for (int i = 0; i < nargs; ++i)
@@ -1119,6 +1133,243 @@ void cqe_dispatch(const char *sym, const char *sig, int32_t nargs, void **argv, 
   } else {
     cqe__violation("unknown_symbol", -1, "%s: not a runtime symbol", sym);
   }
+  for (int i = 0; i < nargs; ++i)
+    cqe__val_free(&raw[i]);
+}
+
+/* ---- rule 27 declared clones: the checker's stand-in (cq-rft) ---------------------------- */
+
+/* The rail width token of a C scalar type. */
+static const char *lty_wtok(const lty *t, char *buf, size_t n) {
+  if (t->kind == 'i')
+    snprintf(buf, n, "i%u", t->bits);
+  else if (!strcmp(t->ty, "half"))
+    snprintf(buf, n, "f16");
+  else if (!strcmp(t->ty, "bfloat"))
+    snprintf(buf, n, "bf16");
+  else if (!strcmp(t->ty, "float"))
+    snprintf(buf, n, "f32");
+  else if (!strcmp(t->ty, "double"))
+    snprintf(buf, n, "f64");
+  else if (!strcmp(t->ty, "x86_fp80"))
+    snprintf(buf, n, "f80");
+  else
+    return NULL;
+  return buf;
+}
+
+/* Entry of every stub stubgen.py generates for a declared clone __cq_q_<fn>_<mask>[_ctl][_pure][_adj]
+ * [_dN][_unc] that nothing links (rule 27). csig is "<fn>|<ret>|<t0>,..." of the C function fn.
+ * The clone's ABI arguments (rule 27): [out handle, twin with a non-void result] [pred, _ctl] then per
+ * C parameter a scalar (an i32 handle when its mask digit is 1, else the C-typed value) or a pointer
+ * as (ptr object, i32 tag, i32 idx, i32 cell count) with three digits (tag, idx, object), then the
+ * i32 K, then [one snapshot ptr per pointer whose object digit is 1, twin]. The value is the
+ * cq_standin.h function of fn and the scalar arguments (a quantum one by its rail's value), the same
+ * function the C oracle defines fn with. The forward clone returns a fresh rail holding it (void: no
+ * effect), its _ctl form ignores pred (the stand-in is pure, rule 27), the twin XORs it out of the out
+ * rail (void: no effect; the stand-in writes no cell, so the snapshot restore changes nothing). */
+void cqe_standin(const char *sym, const char *sig, const char *csig, int32_t nargs, void **argv, void *ret) {
+  cqe__init();
+  lty rty, ty[64], crty, cty[64];
+  int n = nargs, nc = -1;
+  const char *bar = strchr(csig, '|');
+  char fn[256];
+  if (nargs < 0 || nargs > 64 || parse_sig(sig, &rty, ty, &n) || !bar || (size_t)(bar - csig) >= sizeof fn ||
+      parse_sig(bar + 1, &crty, cty, &nc) || crty.kind == 'p') {
+    cqe__violation("malformed_call", -1, "%s: bad stand-in stub signature '%s' / '%s'", sym, sig, csig);
+    return;
+  }
+  memcpy(fn, csig, (size_t)(bar - csig));
+  fn[bar - csig] = 0;
+  cqe_val raw[64];
+  for (int i = 0; i < nargs; ++i)
+    load_val(&raw[i], &ty[i], argv[i]);
+  if (rty.kind != 'v') {
+    cqe_val z;
+    cqe__val_init(&z, rty.bits, 'i');
+    store_val(ret, &rty, &z);
+    cqe__val_free(&z);
+  }
+
+  /* the name: __cq_q_ fn _ mask { _suffix } */
+  size_t fl = strlen(fn);
+  int ok = !strncmp(sym, "__cq_q_", 7) && !strncmp(sym + 7, fn, fl) && sym[7 + fl] == '_';
+  const char *mask = ok ? sym + 8 + fl : "";
+  size_t ml = strspn(mask, "01");
+  int unc = 0, ctl = 0;
+  for (const char *q = mask + ml; ok && *q;) {
+    if (*q != '_') {
+      ok = 0;
+      break;
+    }
+    const char *e = strchr(q + 1, '_');
+    size_t len = e ? (size_t)(e - q - 1) : strlen(q + 1);
+    if (len == 3 && !strncmp(q + 1, "unc", 3))
+      unc = 1;
+    else if (len == 3 && !strncmp(q + 1, "ctl", 3))
+      ctl = 1;
+    else if (!((len == 4 && !strncmp(q + 1, "pure", 4)) || (len == 3 && !strncmp(q + 1, "adj", 3)) ||
+               (len >= 2 && q[1] == 'd' && strspn(q + 2, "0123456789") >= len - 1)))
+      ok = 0;
+    q += 1 + len;
+  }
+  if (!ok || ml == 0) {
+    cqe__violation("malformed_call", -1, "%s: not a declared clone of %s (CR §1.4, rule 27)", sym, fn);
+    goto done;
+  }
+
+  /* walk the ABI arguments against the C signature and the mask */
+  {
+    int a = 0, d = 0, nsnap = 0, nh = 0, known = 1;
+    int32_t out_h = -1, hs[64];
+    uint64_t h = cq_standin_name(fn, fl);
+    sbuf ab = {0};
+    sb_add(&ab, "[");
+    if (unc ? rty.kind != 'v' : (crty.kind == 'v' ? rty.kind != 'v' : strcmp(rty.ty, "i32") != 0)) {
+      cqe__violation("malformed_call", -1, "%s: returns %s; rule 27 says %s", sym, rty.ty,
+                     (unc || crty.kind == 'v') ? "void" : "an i32 handle");
+      ok = 0;
+    }
+    if (ok && unc && crty.kind != 'v') {
+      if (a >= nargs || strcmp(ty[a].ty, "i32") != 0)
+        ok = 0;
+      else
+        out_h = as_i32(&raw[a++]);
+    }
+    if (ok && ctl) {
+      if (a >= nargs || strcmp(ty[a].ty, "i32") != 0 || cqe__check(as_i32(&raw[a]), sym) < 0)
+        ok = 0;
+      ++a;
+    }
+    for (int j = 0; ok && j < nc; ++j) {
+      if (cty[j].kind == 'p') {
+        if (a + 4 > nargs || ty[a].kind != 'p' || strcmp(ty[a + 1].ty, "i32") || strcmp(ty[a + 2].ty, "i32") ||
+            strcmp(ty[a + 3].ty, "i32") || d + 3 > (int)ml) {
+          ok = 0;
+          break;
+        }
+        for (int k = 0; k < 2; ++k) /* a quantum tag or idx is a handle */
+          if (mask[d + k] == '1' && cqe__check(as_i32(&raw[a + 1 + k]), sym) < 0)
+            ok = 0;
+        nsnap += unc && mask[d + 2] == '1';
+        a += 4;
+        d += 3;
+        continue;
+      }
+      if (a >= nargs || d >= (int)ml) {
+        ok = 0;
+        break;
+      }
+      cqe_val v;
+      int owned = 0;
+      if (ab.p[ab.len - 1] != '[')
+        sb_add(&ab, ",");
+      if (mask[d] == '1') {
+        int32_t hh = as_i32(&raw[a]);
+        if (strcmp(ty[a].ty, "i32") || cqe__check(hh, sym) < 0) {
+          ok = 0;
+          break;
+        }
+        const cqe_val *rv = cqe__val(hh);
+        if (rv->bits != cty[j].bits || rv->kind != (cty[j].kind == 'f' ? 'f' : 'i')) {
+          cqe__violation("width_mismatch", hh, "%s: argument %d of %s is %s, rail %d is %s", sym, j, fn, cty[j].ty,
+                         (int)hh, cqe__w(hh));
+          ok = 0;
+          break;
+        }
+        hs[nh++] = hh;
+        known = known && cqe__known(hh);
+        cqe__val_init(&v, rv->bits, rv->kind);
+        cqe__val_copy_into(&v, rv);
+        owned = 1;
+        sb_addf(&ab, "{\"h\":%d,\"v\":\"", (int)hh);
+        sb_hex(&ab, rv);
+        sb_add(&ab, "\"}");
+      } else {
+        if (strcmp(ty[a].ty, cty[j].ty) != 0) {
+          ok = 0;
+          break;
+        }
+        v = raw[a];
+        sb_add(&ab, "{\"lit\":\"");
+        sb_hex(&ab, &v);
+        sb_add(&ab, "\"}");
+      }
+      for (uint32_t w = 0; w < cqe__nwords(v.bits); ++w)
+        h = cq_standin_mix(h, v.w[w]);
+      if (owned)
+        cqe__val_free(&v);
+      ++a;
+      ++d;
+    }
+    if (ok && (a >= nargs || strcmp(ty[a].ty, "i32") != 0)) /* K */
+      ok = 0;
+    ++a;
+    for (int k = 0; ok && k < nsnap; ++k, ++a)
+      if (a >= nargs || ty[a].kind != 'p')
+        ok = 0;
+    if (ok && (a != nargs || d != (int)ml))
+      ok = 0;
+    sb_add(&ab, "]");
+    if (!ok) {
+      cqe__violation("malformed_call", -1, "%s: arguments '%s' do not follow rule 27 for C signature '%s' and mask %.*s",
+                     sym, sig, csig, (int)ml, mask);
+    } else if (crty.kind == 'v') {
+      sbuf b = {0};
+      sb_addf(&b, "{\"ev\":\"standin\",\"sym\":\"%s\",\"args\":%s}", sym, ab.p);
+      cqe_log(b.p);
+      free(b.p);
+    } else {
+      char wt[16];
+      lty_wtok(&crty, wt, sizeof wt);
+      cqe_val v;
+      cqe__val_init(&v, crty.bits, crty.kind == 'f' ? 'f' : 'i');
+      v.w[0] = h;
+      cqe__val_mask(&v);
+      if (!unc) {
+        int32_t o = cqe__new(wt, &v, known, 0);
+        for (int i = 0; i < nh; ++i)
+          cqe__add_dep(o, hs[i]);
+        sbuf b = {0};
+        sb_addf(&b, "{\"ev\":\"tmpl\",\"sym\":\"%s\",\"out\":%d,\"args\":%s,\"w\":\"%s\",\"v\":\"", sym, (int)o, ab.p,
+                wt);
+        sb_hex(&b, cqe__val(o));
+        sb_addf(&b, "\",\"known\":%s}", cqe__known(o) ? "true" : "false");
+        cqe_log(b.p);
+        free(b.p);
+        cqe_val hv;
+        cqe__val_init(&hv, 32, 'i');
+        hv.w[0] = (uint32_t)o;
+        store_val(ret, &rty, &hv);
+        cqe__val_free(&hv);
+      } else if (cqe__check(out_h, sym) == 0) {
+        if (strcmp(cqe__w(out_h), wt) != 0)
+          cqe__violation("width_mismatch", out_h, "%s: out rail %d is %s, %s returns %s", sym, (int)out_h,
+                         cqe__w(out_h), fn, wt);
+        cqe__val_xor(cqe__val(out_h), &v);
+        cqe__mark_written(out_h);
+        sbuf b = {0};
+        sb_addf(&b, "{\"ev\":\"unc\",\"sym\":\"%s\",\"out\":%d,\"args\":%s,\"residue\":\"", sym, (int)out_h, ab.p);
+        sb_hex(&b, cqe__val(out_h));
+        sb_add(&b, "\"}");
+        cqe_log(b.p);
+        free(b.p);
+        if (!cqe__val_iszero(cqe__val(out_h))) {
+          char *hx = cqe__hexa(cqe__val(out_h));
+          cqe__violation("unc_residue", out_h, "%s: out rail %d holds %s after its twin", sym, (int)out_h, hx);
+          free(hx);
+          cqe__setknown(out_h, 0);
+        } else if (!zero_rule(out_h, hs, nh)) {
+          cqe__violation("unc_after_nondiagonal", out_h,
+                         "%s: rail %d or an operand took a non-diagonal gate after rail %d was computed", sym,
+                         (int)out_h, (int)out_h);
+        }
+      }
+      cqe__val_free(&v);
+    }
+    free(ab.p);
+  }
+done:
   for (int i = 0; i < nargs; ++i)
     cqe__val_free(&raw[i]);
 }

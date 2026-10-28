@@ -28,6 +28,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "../rt/cq_standin.h"
+
 
 /* ------------------------------------------------------------------ output */
 static int trace_fd = -1, status_fd = -1;
@@ -372,7 +374,8 @@ void __cqo_noreturn(const char *callee) { note("noreturn %s", callee); }
 void __cqo_raise_note(int32_t sig) { note("raise %d", sig); }
 void __cqo_unreachable(const char *fn) { note("ub unreachable %s", fn); _exit(97); }
 
-uint64_t __cqo_mix(uint64_t h, uint64_t w) { return (h ^ w) * 0x100000001b3ULL; }
+/* The checker's stand-in for a function nothing defines: one source with the evaluator (cq-rft). */
+uint64_t __cqo_mix(uint64_t h, uint64_t w) { return cq_standin_mix(h, w); }
 
 /* A driver setup that allocates rails (`cqrt_alloc_<W>(v)`) means the value v on the C side. */
 int32_t cqrt_alloc_i1(_Bool v) { return v; }
