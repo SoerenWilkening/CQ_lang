@@ -15,9 +15,10 @@ Classes (SampleSet.classes; every class is present, and a class with nothing in 
                 +-smallest normal), crossed when the product is small, one input at a time otherwise.
   specials      per call: every fp quantum input over +-0, +-Inf, NaN (quiet, negative with payload,
                 signalling) and the smallest subnormal.
-  exhaustive    per call: every input when the call's quantum scalar inputs total <= 8 bits.
+  exhaustive    per call: every input when the call's quantum scalar inputs total <= 8 bits (16 in
+                the on-demand full mode, FULL_MODE_ENV).
   random_seed   {"seed", "quantum": per call, "classical": per call}: a seeded random set over the
-                quantum inputs (classical arguments at their drivers.txt values) and a seeded set
+                quantum inputs (N_RANDOM_QUANTUM per call; N_RANDOM_CLASSICAL classical) (classical arguments at their drivers.txt values) and a seeded set
                 over the classical arguments.
   totalization  {"rows": [...]}: one entry per CR §2 row an instruction of the example can reach
                 (site, row, the samples that hit it), or the reason it is empty.
@@ -93,8 +94,27 @@ K = 4
 SEED = 20261027
 LLVM_BIN = Path(os.environ.get("CQ_LLVM_BIN", "/usr/local/opt/llvm@19/bin"))
 EXHAUSTIVE_BITS = 8            # owner decision cq-l1wi: exhaustive only up to 8 quantum bits
-N_RANDOM_QUANTUM = 32
-N_RANDOM_CLASSICAL = 16
+N_RANDOM_QUANTUM = 2048        # owner ruling cq-kjja: random quantum samples per call
+N_RANDOM_CLASSICAL = 64        # owner ruling cq-kjja: random classical samples per call
+# The on-demand full mode (owner ruling cq-kjja): exhaustive up to 16 quantum bits and 16384 random
+# quantum samples per call. Only the owner turns it on, with FULL_MODE_ENV=1; no test, ctest entry,
+# gate step or default path sets it, and CQ_FULL (the template tests' switch) does not enable it.
+FULL_MODE_ENV = "CQ_SAMPLES_FULL_MODE"
+FULL_EXHAUSTIVE_BITS = 16
+FULL_N_RANDOM_QUANTUM = 16384
+
+
+def full_mode() -> bool:
+    """The on-demand full sampling mode: on only when $CQ_SAMPLES_FULL_MODE is exactly "1"."""
+    return os.environ.get(FULL_MODE_ENV) == "1"
+
+
+def exhaustive_bits() -> int:
+    return FULL_EXHAUSTIVE_BITS if full_mode() else EXHAUSTIVE_BITS
+
+
+def n_random_quantum() -> int:
+    return FULL_N_RANDOM_QUANTUM if full_mode() else N_RANDOM_QUANTUM
 CROSS_LIMIT = 1024
 SEARCH_BUDGET = 384          # probe runs per unmet target
 SEARCH_BATCH = 48
@@ -1880,10 +1900,10 @@ def per_call_classes(g: Gen, rng: random.Random) -> Dict[str, dict]:
                     idx.append(g.add(ci, g.with_values(ci, vals)))
                 exhaustive[key] = {"samples": idx, "bits": bits}
             else:
-                exhaustive[key] = {"empty": f"the quantum inputs of this call total {bits} bits > {EXHAUSTIVE_BITS}"}
+                exhaustive[key] = {"empty": f"the quantum inputs of this call total {bits} bits > {exhaustive_bits()}"}
             # random over the quantum inputs
             idx = []
-            for _ in range(N_RANDOM_QUANTUM):
+            for _ in range(n_random_quantum()):
                 idx.append(g.add(ci, g.with_values(ci, {j: g.random_quantum(rng, cts[j]) for j in qs})))
             rq[key] = {"samples": sorted(set(idx))}
     return {"edge": edge, "specials": specials, "exhaustive": exhaustive, "rq": rq}
@@ -1921,8 +1941,9 @@ def _site_hex(st: "D.ThetaSite", v: int) -> str:
 
 
 def exhaustive_ok(bits: int) -> bool:
-    """The one exhaustive bound (argument and substitution classes alike): at most 8 bits."""
-    return bits <= EXHAUSTIVE_BITS
+    """The one exhaustive bound (argument and substitution classes alike): at most 8 bits, 16 in the
+    on-demand full mode."""
+    return bits <= exhaustive_bits()
 
 
 def theta_reaches(spec: DriverSpec, example_dir: Path,
@@ -2013,10 +2034,10 @@ def subst_classes(g: Gen, rng: random.Random, sites: Dict[int, List["D.ThetaSite
             out["exhaustive"][key] = {"empty": f"the quantum arguments ({abits} bits) and the substituted "
                                                f"cq_theta reaches ({sbits} bits: "
                                                f"{dict(zip(names, nreach))} reaches) total "
-                                               f"{sbits + abits} bits > {EXHAUSTIVE_BITS}"}
+                                               f"{sbits + abits} bits > {exhaustive_bits()}"}
         # random: per-reach lists
         idx = []
-        for _ in range(N_RANDOM_QUANTUM):
+        for _ in range(n_random_quantum()):
             sub = {}
             for st, ct, r in zip(sts, cts, nreach):
                 vs = [_site_hex(st, site_random(rng, ct)) for _ in range(max(r, 2))]
@@ -2271,6 +2292,7 @@ def _cache_dir() -> Path:
 
 def _cache_key(spec: DriverSpec, example_dir: Path) -> str:
     h = hashlib.sha256()
+    h.update(b"full\n" if full_mode() else b"default\n")   # the sampling mode (cq-kjja)
     h.update(json.dumps([spec.example, spec.protos, spec.setup, spec.calls], sort_keys=True).encode())
     for p in sorted(Path(example_dir).glob("*.O1.ll")):
         h.update(p.read_bytes())

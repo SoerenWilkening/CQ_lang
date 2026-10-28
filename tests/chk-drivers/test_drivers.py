@@ -319,6 +319,28 @@ class Sampling(unittest.TestCase):
         self.assertTrue(S.exhaustive_ok(8))
         self.assertFalse(S.exhaustive_ok(9))
 
+    def test_bounds_and_full_mode_switch(self):
+        """cq-kjja (owner ruling): 2048 random quantum and 64 classical samples per call by default;
+        the full mode (16 bits, 16384 random) only under its own explicit switch, never CQ_FULL=1.
+        Only the bounds are read here; nothing runs the full mode."""
+        self.assertEqual((S.N_RANDOM_QUANTUM, S.N_RANDOM_CLASSICAL), (2048, 64))
+        saved = {k: os.environ.pop(k, None) for k in ("CQ_FULL", S.FULL_MODE_ENV)}
+        try:
+            for env in ({}, {"CQ_FULL": "1"}, {S.FULL_MODE_ENV: "0"}, {S.FULL_MODE_ENV: "yes"}):
+                os.environ.update(env)
+                self.assertFalse(S.full_mode(), env)
+                self.assertEqual((S.exhaustive_bits(), S.n_random_quantum()), (8, 2048), env)
+                self.assertFalse(S.exhaustive_ok(9), env)
+                for k in env:
+                    del os.environ[k]
+            os.environ[S.FULL_MODE_ENV] = "1"
+            self.assertEqual((S.exhaustive_bits(), S.n_random_quantum()), (16, 16384))
+            self.assertTrue(S.exhaustive_ok(16))
+            self.assertFalse(S.exhaustive_ok(17))
+        finally:
+            os.environ.pop(S.FULL_MODE_ENV, None)
+            os.environ.update({k: v for k, v in saved.items() if v is not None})
+
     def test_trips(self):
         spec, ss = self.sample("05_while_quantum_cond")
         (lp,) = ss.classes["trips"]["loops"]

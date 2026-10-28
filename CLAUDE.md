@@ -85,7 +85,8 @@ Built first (step 0 below). Requirements:
   structural deletion is one case of it. Both sides run at K = 4.
 - **Inputs.** Drivers are generated from `drivers.txt`. For every quantum input: edge values
   (0, ±1, MIN, MAX), fp specials (±0, ±Inf, NaN, a subnormal), a seeded random set, and every input
-  when the quantum inputs total at most 8 bits. Also: values that hit every §2 totalization row
+  when the quantum inputs total at most 8 bits (16 bits only in the on-demand full sampling mode,
+  which the owner turns on explicitly; no test or default path runs it). Also: values that hit every §2 totalization row
   (divisor 0, INT_MIN / −1, shift amount at and above W, index at and above n, NaN and out-of-range
   into `fptosi`); for every loop, inputs giving trip counts 0, K−1, K and K+1 (found by running
   the C oracle with trip counters); a seeded set over the classical arguments as well.
