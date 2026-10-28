@@ -5,6 +5,7 @@
 // the walked function belong to the walker (Construct.cpp).
 #include "SpineInternal.h"
 
+#include "cq/Abi.h"
 #include "cq/Aggregates.h"
 #include "cq/Effects.h"
 #include "cq/FatPtr.h"
@@ -53,6 +54,57 @@ ObjectId soleObject(LoweringContext &ctx, const Value *ptr, const Instruction &a
   if (objs.size() != 1)
     unimplemented("spine: a lifetime end through a pointer with " + std::to_string(objs.size()) + " objects", &at);
   return objs.front();
+}
+
+// A quantum i1 whose only users are branch conditions that pred expanded into their terms (rule 8:
+// the condition has a classical factor, so no edge predicate uses it as one atom) has no rail to
+// compute: its terms are the flags and the classical factor is a classical branch.
+bool onlyFactoredConditions(LoweringContext &ctx, const Instruction &I) {
+  if (!I.getType()->isIntegerTy(1) || I.use_empty())
+    return false;
+  Pred whole = Pred::atom(&I);
+  for (const User *u : I.users()) {
+    auto *br = dyn_cast<BranchInst>(u);
+    if (!br || !br->isConditional() || br->getCondition() != &I || br->getFunction() != I.getFunction())
+      return false;
+    for (const BasicBlock *s : br->successors()) {
+      const Pred &e = ctx.preds().edge(br->getParent(), s);
+      if (e.isBottom())
+        continue;
+      if ((e & !whole).isBottom() || (e & whole).isBottom())
+        return false;
+    }
+  }
+  return true;
+}
+
+// Rule 8: a mixed i1 used as data, -O1's logical select over a classical condition and a constant
+// arm: c ? q : false = q & c, c ? true : q = q | c (and their negated-c forms) is the i1 template
+// with c as the literal (rule 4, the handle first).
+bool lowerLogicalSelect(LoweringContext &ctx, SelectInst &sel) {
+  if (!sel.getType()->isIntegerTy(1))
+    return false;
+  auto *t = dyn_cast<ConstantInt>(sel.getTrueValue());
+  auto *f = dyn_cast<ConstantInt>(sel.getFalseValue());
+  const Value *q;
+  const char *op;
+  bool negC;
+  if (f && f->isZero() && !t) { q = sel.getTrueValue(); op = "and"; negC = false; }        // c & q
+  else if (t && t->isOne() && !f) { q = sel.getFalseValue(); op = "or"; negC = false; }     // c | q
+  else if (t && t->isZero() && !f) { q = sel.getFalseValue(); op = "and"; negC = true; }    // !c & q
+  else if (f && f->isOne() && !t) { q = sel.getTrueValue(); op = "or"; negC = true; }       // !c | q
+  else
+    return false;
+  Operand h = ctx.operand(q), c = ctx.operand(sel.getCondition());
+  if (!h.handle || c.handle)
+    return false;
+  Value *lit = negC ? ctx.B().CreateNot(c.v) : c.v;
+  abi::TemplateSpec spec;
+  spec.op = op;
+  spec.w = RailType{Kind::Int, 1};
+  spec.shape = "hl";
+  ctx.emitTemplate(spec, {h, Operand{lit, false}}, &sel);
+  return true;
 }
 
 void lowerMemoryAccess(LoweringContext &ctx, Instruction &I) {
@@ -318,11 +370,23 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
     break;
   case Instruction::Select:
     if (q) {
-      if (!isQ(ctx, cast<SelectInst>(I).getCondition()))
+      auto &sel = cast<SelectInst>(I);
+      if (onlyFactoredConditions(ctx, I))
+        return;
+      if (!isQ(ctx, sel.getCondition())) {
+        if (lowerLogicalSelect(ctx, sel))
+          return;
         unimplemented("spine: select on a classical condition with a quantum arm (cq-mtt)", &I);
-      bindOperand(ctx, &I, Operand{lowerSelect(ctx, cast<SelectInst>(I)), true});
+      }
+      bindOperand(ctx, &I, Operand{lowerSelect(ctx, sel), true});
       return;
     }
+    break;
+  case Instruction::And:
+  case Instruction::Or:
+  case Instruction::Xor:
+    if (q && onlyFactoredConditions(ctx, I))
+      return;
     break;
   case Instruction::ICmp:
     if (q && I.getOperand(0)->getType()->isPointerTy()) {

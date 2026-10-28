@@ -190,10 +190,29 @@ BasicBlock *Walker::next(const BasicBlock *x, const BasicBlock *s) {
 }
 
 void Walker::plan() {
-  ReversePostOrderTraversal<Function *> rpo(&F);
-  for (BasicBlock *b : rpo) {
-    idx[b] = L.size();
-    L.push_back(b);
+  // Reverse post-order with successors visited last to first, so a branch's first successor (the
+  // then arm) comes first in L and its arm is linearized before the else arm (cq-746v).
+  {
+    std::vector<BasicBlock *> post;
+    DenseSet<BasicBlock *> seen;
+    std::vector<std::pair<BasicBlock *, unsigned>> stack;   // block, successors still to visit
+    seen.insert(&F.getEntryBlock());
+    stack.push_back({&F.getEntryBlock(), F.getEntryBlock().getTerminator()->getNumSuccessors()});
+    while (!stack.empty()) {
+      auto &[b, k] = stack.back();
+      if (k == 0) {
+        post.push_back(b);
+        stack.pop_back();
+        continue;
+      }
+      BasicBlock *s = b->getTerminator()->getSuccessor(--k);
+      if (seen.insert(s).second)
+        stack.push_back({s, s->getTerminator()->getNumSuccessors()});
+    }
+    for (auto it = post.rbegin(); it != post.rend(); ++it) {
+      idx[*it] = L.size();
+      L.push_back(*it);
+    }
   }
   for (Loop *lp : LI.getTopLevelLoops()) {
     if (pureClassical(*lp)) {
