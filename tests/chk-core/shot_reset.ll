@@ -6,6 +6,7 @@
 ; mode 4: _exit(7) mid-sample: no exit event
 ; mode 5: the rounding mode left upward, a rail left live, the counter bumped again
 ; mode 6: never returns (a timeout), after an alloc
+; mode 7: waits 1.5 s of wall time (usleep), then as mode 0: a slow machine, not a timeout (cq-o4ul)
 target triple = "x86_64-apple-macosx16.0.0"
 @g = global i32 0
 define i32 @sr(i32 %mode, double %th) {
@@ -19,7 +20,8 @@ entry:
                                   i32 3, label %bad
                                   i32 4, label %quit
                                   i32 5, label %fenv
-                                  i32 6, label %spin]
+                                  i32 6, label %spin
+                                  i32 7, label %slow]
 clean:
   call void @cqrt_ry_i32(i32 %x, double %th)
   %m = call i32 @cqrt_measure_i32(i32 %x)
@@ -52,6 +54,9 @@ fenv:
 spin:
   %v = load volatile i32, ptr @g
   br label %spin
+slow:
+  %u = call i32 @usleep(i32 1500000)
+  br label %clean
 }
 declare i32 @cqrt_alloc_i32(i32)
 declare void @cqrt_ry_i32(i32, double)
@@ -61,3 +66,4 @@ declare i32 @fegetround()
 declare i32 @fesetround(i32)
 declare i32 @raise(i32)
 declare void @_exit(i32)
+declare i32 @usleep(i32)

@@ -94,8 +94,13 @@ RT_DIR = REPO / "checker" / "rt"
 LLVM_BIN = Path(os.environ.get("CQ_LLVM_BIN", "/usr/local/opt/llvm@19/bin"))
 CLANG = str(LLVM_BIN / "clang")
 LLVM_LINK = str(LLVM_BIN / "llvm-link")
+OPT = str(LLVM_BIN / "opt")
 DEFAULT_TIMEOUT = 30.0
-_VERSION = "chk-core-5"
+# The step budget (cq-o4ul): a sample that enters more than this many basic blocks of the lowered
+# module is a 'timeout', deterministically (core.c, shots). `timeout` (seconds) is only a backstop and
+# counts the worker's CPU time, never wall time: no result depends on the machine's load.
+STEP_BUDGET = 1 << 28
+_VERSION = "chk-core-6"
 
 
 class BuildError(Exception):
@@ -420,7 +425,14 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
         (tmp / "handle_rets.json").write_text(json.dumps(handle_returning_fns(canon)))  # cq-n6a0
     except _Unimpl as e:
         raise BuildError(f"cq: unimplemented: {e}")
-    _sh([LLVM_LINK, "-S", "lowered.tot.ll", "driver.ll", "-o", "linked.ll"], cwd=tmp)
+    # the step budget (cq-o4ul): every basic block of the lowered module counts one step
+    _sh([OPT, "-S", "-passes=sancov-module", "-sanitizer-coverage-level=2", "-sanitizer-coverage-trace-pc",
+         "-sanitizer-coverage-prune-blocks=0", "lowered.tot.ll", "-o", "lowered.steps.ll"], cwd=tmp)
+    steps = (tmp / "lowered.steps.ll").read_text()
+    # sancov declares its whole callback family; only trace_pc is called (core.c defines it)
+    steps = re.sub(r"(?m)^declare [^\n]*@__sanitizer_cov_(?!trace_pc\()\w+\([^\n]*\n", "", steps)
+    (tmp / "lowered.steps.ll").write_text(steps)
+    _sh([LLVM_LINK, "-S", "lowered.steps.ll", "driver.ll", "-o", "linked.ll"], cwd=tmp)
     cargs = []
     if ctext is not None:
         (tmp / "c_module.ll").write_text(ctext)
@@ -1034,7 +1046,8 @@ def _shot_result(side: str, sample: dict, pre: List[dict], evs: List[dict], end:
     err = _bytes_text(end.get("stderr", ""))
     extra: List[dict] = []
     if end.get("timeout"):
-        code, extra = None, [{"what": "timeout", "h": None, "msg": f"no exit within {timeout}s"}]
+        code, extra = None, [{"what": "timeout", "h": None,
+                              "msg": f"no exit within {STEP_BUDGET} steps or {timeout}s of CPU time"}]
     elif code < 0:
         extra.append({"what": "signal", "h": None, "msg": f"killed by signal {-code}: {err[-500:]}"})
     elif code == 3 and "cqd: sample" in err:
@@ -1060,7 +1073,7 @@ def _run_part(prog: Path, items: Sequence[Tuple[dict, str, Optional[str]]], side
             trace = w / "trace.jsonl"
             env = dict(os.environ, CQE_TRACE=str(trace), CQD_SAMPLES=str(w / "samples"),
                        CQE_SHOT_DIR=str(w / "shot"), CQE_SHOT_BASE=str(pos),
-                       CQE_SHOT_TIMEOUT=repr(float(timeout)))
+                       CQE_SHOT_TIMEOUT=repr(float(timeout)), CQE_SHOT_STEPS=str(int(STEP_BUDGET)))
             env.pop("CQE_THETA", None)
             env.pop("CQE_THETA_ALL", None)
             if theta_all is not None:

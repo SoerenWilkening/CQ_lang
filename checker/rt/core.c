@@ -525,10 +525,13 @@ static void at_exit_handler(void) {
  * executable is this file's: the core's exit-event handler first, so it runs last, C1) run in reverse
  * order and the core writes the exit event. exit(n) in a sample does the same and ends the sample
  * with status n; _exit(n) and _Exit(n) end it with status n without the handlers (no exit event).
- * A sample that raises a signal (SIGFPE, SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGTRAP, SIGSYS) or runs
- * past $CQE_SHOT_TIMEOUT seconds (default 30, SIGALRM) ends with status minus the signal, no exit
- * event, and the worker ends with it: the server forks a fresh worker for the next record. The server
- * also SIGKILLs a worker that makes no progress for twice the timeout plus a second (a timeout).
+ * A sample that raises a signal (SIGFPE, SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGTRAP, SIGSYS, SIGALRM)
+ * ends with status minus the signal, no exit event, and the worker ends with it: the server forks a
+ * fresh worker for the next record. A timeout ends the same way; it is never a matter of wall time,
+ * so that no result depends on the machine's load (cq-o4ul): a sample that enters more than
+ * $CQE_SHOT_STEPS basic blocks of the lowered module (the step budget, deterministic; below) or uses
+ * more than $CQE_SHOT_TIMEOUT seconds of CPU time (default 30, SIGPROF) is a timeout. The server also
+ * SIGKILLs a worker that makes no progress (a timeout) while it is blocked (server_wait).
  * Allocation past the sample arena falls back to the system heap; that sample's worker then ends
  * after it. Not put back: state inside the C library (stdio buffers, strtok, rand, locale, errno),
  * blocks the C library allocated, and blocks of SETUP_BIG bytes or more the setup allocated (the
@@ -548,6 +551,8 @@ static void at_exit_handler(void) {
 #include <fenv.h>
 #include <mach-o/getsect.h>
 #include <mach-o/ldsyms.h>
+#include <libproc.h>
+#include <mach/mach_time.h>
 #include <malloc/malloc.h>
 #include <pthread.h>
 #include <setjmp.h>
@@ -842,7 +847,7 @@ static void theta_for(long k) {
 
 /* -- signals and timers -- */
 
-static const int fatal_sigs[] = {SIGFPE, SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGTRAP, SIGSYS, SIGALRM};
+static const int fatal_sigs[] = {SIGFPE, SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGTRAP, SIGSYS, SIGALRM, SIGPROF};
 #define NFATAL ((int)(sizeof fatal_sigs / sizeof fatal_sigs[0]))
 
 static void timer_set(double s, int periodic) {
@@ -859,6 +864,52 @@ static void timer_set(double s, int periodic) {
   setitimer(ITIMER_REAL, &it, NULL);
 }
 
+/* The worker's per-sample limit: s seconds of its own CPU time (SIGPROF), 0 to stop it. CPU time, not
+ * wall time: how long a sample takes on a loaded machine must not decide its result (cq-o4ul). */
+static void cpu_timer_set(double s) {
+  struct itimerval it;
+  memset(&it, 0, sizeof it);
+  if (s > 0) {
+    it.it_value.tv_sec = (time_t)s;
+    it.it_value.tv_usec = (suseconds_t)((s - (double)(time_t)s) * 1e6);
+    if (!it.it_value.tv_sec && !it.it_value.tv_usec)
+      it.it_value.tv_usec = 1;
+  }
+  setitimer(ITIMER_PROF, &it, NULL);
+}
+
+/* The CPU seconds a process has used; -1 when unknown. */
+static double proc_cpu(pid_t pid) {
+  struct rusage_info_v2 ri;
+  if (proc_pid_rusage(pid, RUSAGE_INFO_V2, (rusage_info_t *)&ri) != 0)
+    return -1;
+  mach_timebase_info_data_t tb;
+  mach_timebase_info(&tb);
+  return (double)(ri.ri_user_time + ri.ri_system_time) * tb.numer / tb.denom * 1e-9;
+}
+
+/* The step budget (cq-o4ul): run.py instruments every basic block of the lowered module with a call
+ * of __sanitizer_cov_trace_pc (LLVM's SanitizerCoverage, trace-pc), and a sample that enters more
+ * than $CQE_SHOT_STEPS blocks is a timeout, whatever the machine's load. 0 or unset: no budget. */
+static unsigned long long shot_steps, shot_step_cap = ~0ULL;
+
+__attribute__((noinline)) static void shot_over_budget(void) {
+  if (!sample_running()) { /* the setup has no budget */
+    shot_steps = 0;
+    return;
+  }
+  cpu_timer_set(0);
+  R->jkind = J_SIGNAL;
+  R->code = -SIGALRM;
+  R->timeout = 1;
+  siglongjmp(R->jb, 1);
+}
+
+void __sanitizer_cov_trace_pc(void) {
+  if (++shot_steps > shot_step_cap)
+    shot_over_budget();
+}
+
 static void worker_on_signal(int sig) {
   if (!sample_running()) {
     signal(sig, SIG_DFL);
@@ -867,7 +918,7 @@ static void worker_on_signal(int sig) {
   }
   R->jkind = J_SIGNAL;
   R->code = -sig;
-  R->timeout = sig == SIGALRM;
+  R->timeout = sig == SIGPROF;
   siglongjmp(R->jb, 1);
 }
 
@@ -932,6 +983,13 @@ static void stack_save(char *lo) {
     R->stack_copy = sys_alloc(R->stack_n);
     R->stack_cap = R->stack_n;
   }
+  /* the copy is a block of this worker's own heap: one an earlier worker allocated lies in memory this
+   * worker may hand to anything (malloc zones are per CPU, so whether it does depends on load) and
+   * would be put back over the stack (cq-o4ul) */
+  if (malloc_size(R->stack_copy) < R->stack_n) {
+    fprintf(stderr, "cq: chk-core: the stack copy is no block of this worker's heap\n");
+    real__exit(98);
+  }
   memcpy(R->stack_copy, lo, R->stack_n);
 }
 
@@ -969,6 +1027,9 @@ static void server_setup(void) {
   R->base = b && *b ? strtol(b, NULL, 10) : 0;
   const char *to = getenv("CQE_SHOT_TIMEOUT");
   R->timeout_s = to && *to ? strtod(to, NULL) : 30.0;
+  const char *steps = getenv("CQE_SHOT_STEPS");
+  unsigned long long cap = steps && *steps ? strtoull(steps, NULL, 10) : 0;
+  shot_step_cap = cap ? cap : ~0ULL;
   const char *th = getenv("CQE_THETA_ALL");
   if (th && *th)
     theta_all_load(th);
@@ -1002,13 +1063,17 @@ static int open_capture(const char *path, int fd) {
 
 static void worker_start(void) {
   R->worker = getpid();
+  /* R outlives a worker; a block an earlier worker allocated is not this worker's (cq-o4ul) */
   R->snapped = 0;
+  R->stack_copy = NULL;
+  R->stack_cap = 0;
   R->dirty = 0;
   R->in_sample = 0;
   shot_muted = 0;
   shot_buffered = 1;
   signal(SIGALRM, SIG_DFL);
   timer_set(0, 0);
+  cpu_timer_set(0);
   R->out_fd = open_capture(shot_out, 1);
   R->err_fd = trace_f != stderr ? open_capture(shot_err, 2) : -1;
   stack_t ss = {.ss_sp = sys_alloc(1 << 16), .ss_size = 1 << 16, .ss_flags = 0}; /* a stack overflow still reaches the handler */
@@ -1017,10 +1082,12 @@ static void worker_start(void) {
 
 /* The server's wait for its worker; the record to resume at afterwards. */
 static void server_wait(void) {
+  long first = R->next; /* the record the worker starts at */
   long last = -1;
   int killed = 0;
+  double limit = 2 * R->timeout_s + 1, cpu_last = -1, cpu_mark = 0;
   server_tick = 0;
-  timer_set(2 * R->timeout_s + 1, 1);
+  timer_set(limit, 1);
   int st = 0;
   for (;;) {
     pid_t r = waitpid(R->worker, &st, 0);
@@ -1029,17 +1096,38 @@ static void server_wait(void) {
     if (r < 0 && errno == EINTR) {
       if (server_tick) {
         server_tick = 0;
-        if (R->progress == last && !killed) {
+        /* A worker that made no progress over a whole tick is killed (a timeout) when it used no CPU
+         * in it (blocked, e.g. in a read), or more than `limit` CPU seconds since its last progress
+         * (SIGPROF blocked). Never for wall time alone: a worker the machine's load slows down still
+         * uses CPU, and its samples end as they would on an idle machine (cq-o4ul). */
+        double cpu = proc_cpu(R->worker);
+        if (R->progress != last) {
+          last = R->progress;
+          cpu_mark = cpu;
+        } else if (!killed && (cpu < 0 || cpu == cpu_last || cpu - cpu_mark > limit)) {
           kill(R->worker, SIGKILL);
           killed = 1;
         }
-        last = R->progress;
+        cpu_last = cpu;
       }
       continue;
     }
     shot_die("waitpid");
   }
   timer_set(0, 0);
+  if (!R->in_sample && R->next == first) {
+    /* the worker ended before it finished a record: a fresh one would end the same way (cq-o4ul) */
+    char tail[2001] = "";
+    int efd = trace_f != stderr ? open(shot_err, O_RDONLY) : -1;
+    if (efd >= 0) {
+      off_t n = lseek(efd, 0, SEEK_END), from = n > 2000 ? n - 2000 : 0;
+      ssize_t got = pread(efd, tail, (size_t)(n - from), from);
+      tail[got > 0 ? got : 0] = 0;
+      close(efd);
+    }
+    fprintf(stderr, "cq: chk-core: the worker ended (status %d) before it finished a record: %s\n", st, tail);
+    real__exit(98);
+  }
   if (!R->in_sample) {
     R->resume = R->next;
     return;
@@ -1117,13 +1205,14 @@ int cqe__shot_enter(int idx) {
   R->cur = idx;
   R->jkind = J_NONE;
   R->progress++;
+  shot_steps = 0;
   R->in_sample = 1;
-  timer_set(R->timeout_s, 0);
+  cpu_timer_set(R->timeout_s);
   return 1;
 }
 
 static void shot_finish(int code, int run_fns) {
-  timer_set(0, 0);
+  cpu_timer_set(0);
   if (run_fns)
     run_exit_fns();
   fflush(stdout);
@@ -1152,7 +1241,7 @@ void cqe__shot_resume(void) {
     return;
   }
   /* a signal: the C library may be inside a lock; leave the end to the server */
-  timer_set(0, 0);
+  cpu_timer_set(0);
   if (ftrylockfile(trace_f) == 0) {
     fflush(trace_f);
     funlockfile(trace_f);

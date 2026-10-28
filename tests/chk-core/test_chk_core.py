@@ -267,15 +267,57 @@ class ShotReset(unittest.TestCase):
             run.MIN_PART = saved
         self.assertEqual([to_json(r) for r in par], [to_json(r) for r in batch])
 
-    def test_timeout_ends_one_sample_only(self):
-        """A sample that never returns (mode 6) is a timeout; the samples around it are clean."""
+    def part(self, modes, timeout, budget):
         spec = spec1(*self.ARGS)
-        samples = [{"call": 0, "args": [m, 0.5]} for m in (0, 6, 0, 6, 0)]
+        samples = [{"call": 0, "args": [m, 0.5]} for m in modes]
         prog = run.build(HERE / "shot_reset.ll", spec, (), RT, FAM)
         items = [(s, drivers.sample_file(spec, [run.canonical_sample(spec, s)]), None) for s in samples]
-        res = run._run_part(prog, items, "ours", 1.0)
+        saved = run.STEP_BUDGET
+        run.STEP_BUDGET = budget
+        try:
+            return run._run_part(prog, items, "ours", timeout)
+        finally:
+            run.STEP_BUDGET = saved
+
+    def test_timeout_ends_one_sample_only(self):
+        """A sample that never returns (mode 6) is a timeout, by the step budget (cq-o4ul); the samples
+        around it are clean."""
+        res = self.part((0, 6, 0, 6, 0), 30.0, 1 << 16)
         self.assertEqual([[v["what"] for v in r.violations] for r in res], [[], ["timeout"], [], ["timeout"], []])
         self.assertEqual(len({to_json(r) for r in (res[0], res[2], res[4])}), 1)
+
+    def test_cpu_backstop(self):
+        """With no step budget, a sample that never returns ends at its CPU-time limit."""
+        res = self.part((0, 6, 0), 0.5, 0)
+        self.assertEqual([[v["what"] for v in r.violations] for r in res], [[], ["timeout"], []])
+
+    def test_wall_time_is_no_timeout(self):
+        """cq-o4ul: a sample that takes 1.5 s of wall time (mode 7; a loaded machine) under a 1 s limit is
+        not a timeout: the limits count steps and CPU time, never wall time."""
+        res = self.part((0, 7, 0), 1.0, 1 << 16)
+        self.assertEqual([r.violations for r in res], [[], [], []])
+        self.assertEqual(res[1].outputs, res[0].outputs)
+        self.assertEqual(res[1].kept, res[0].kept)
+
+    def test_fresh_worker_takes_its_own_stack_copy(self):
+        """cq-o4ul: a worker forked after a crash (mode 1) saved the stack into the block the previous
+        worker had allocated, memory of no one in the new worker; whether the C library then handed it
+        out, and the sample's bytes were put back over the driver's stack, depended on the CPU the
+        worker ran on. core.c checks the copy is its own block (a stale one ends the runner, 98)."""
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            exe = d / "shot_stack"
+            subprocess.run([str(LLVM / "clang"), "-std=c17", "-O1", "-w", "-I", str(REPO / "checker" / "rt"),
+                            str(HERE / "shot_stack.c"), *map(str, RT), "-o", str(exe)], check=True)
+            (d / "shot").mkdir()
+            modes = "0121012"
+            env = dict(os.environ, CQE_TRACE=str(d / "t.jsonl"), CQE_SHOT_DIR=str(d / "shot"))
+            p = subprocess.run([str(exe), modes], env=env, capture_output=True, text=True, timeout=60)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            ev = [json.loads(l) for l in (d / "t.jsonl").read_text().splitlines() if l.strip()]
+            self.assertEqual([e["i"] for e in ev if e["ev"] == "mark"], [i for i, m in enumerate(modes) if m != "1"])
+            self.assertEqual([(e["k"], e["code"]) for e in ev if e["ev"] == "shot_end"],
+                             [(i, -8 if m == "1" else 0) for i, m in enumerate(modes)])
 
 
 class ThetaSubstitution(unittest.TestCase):
