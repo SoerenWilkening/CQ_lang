@@ -321,7 +321,8 @@ class Sampling(unittest.TestCase):
         ex = ss.classes["exhaustive"]
         self.assertEqual(ex["0"]["bits"], 8)
         self.assertEqual(len(ex["0"]["samples"]), 256)
-        self.assertEqual(len(ex["3"]["samples"]), 4)          # and_i1: two _Bool registers
+        # and_i1: two _Bool registers, each also substituted at its cq_theta (cq-lvkq): 2 + 2 bits
+        self.assertEqual(len(ex["3"]["samples"]), 16)
         self.assertIn("empty", ex["1"])                       # 16 bits: past the 8-bit bound (cq-l1wi)
         self.assertIn("empty", ex["2"])                       # add_i64: 64 bits
         edge = {tuple(ss.samples[i]["args"][:1]) for i in ss.classes["edge"]["2"]["samples"]}
@@ -617,7 +618,8 @@ class ThetaSites(unittest.TestCase):
         self.assertEqual(subs("59_controlled_ry_bits")[2],
                          ["controlled_ry_two:0", "controlled_ry_two:1", "controlled_ry_two:2"])
         self.assertEqual(subs("60_qft"), [["qft:0"]])        # the register array behind the q argument
-        self.assertTrue(all(s == [] for s in subs("12_int_widths")))   # every register is an argument
+        # cq-lvkq: a site fed by a varied argument is substituted too (CR §6 item 1, every cq_theta)
+        self.assertTrue(all(len(s) >= 1 for s in subs("12_int_widths")))
 
 
 # cq-ir5z: a synthetic example (its own examples/ and _tools/drivers.txt) for the probe's own stops

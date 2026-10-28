@@ -311,7 +311,8 @@ class Cli(unittest.TestCase):
         line = out.read_text().strip()
         self.assertIn('"s6":"error"', line)
         self.assertIn("no lowered module for 04_value_arm_ifelse", line)
-        self.assertIn("04_value_arm_ifelse", report.load_verdicts())
+        # cq-8dr6: a run with --ours is not our pass; it never reaches the progress store
+        self.assertNotIn("04_value_arm_ifelse", report.load_verdicts())
 
     def test_resolve(self):
         self.assertEqual(report.resolve_examples(["4"])[0].name, "04_value_arm_ifelse")
