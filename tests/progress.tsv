@@ -1,9 +1,9 @@
 rule	witnesses	passing	failing
-1 Handle ABI	01, 46, 64, 93, 103, 110, 111		01, 46, 64, 93, 103, 110, 111
-2 Source and sink	01, 38, 42, 120, 128, 136, 140, 155		01, 38, 42, 120, 128, 136, 140, 155
-3 Taint propagation	17, 18, 26, 56, 63, 103		17, 18, 26, 56, 63, 103
-4 Opcode lowering, always out of place	10, 11, 13, 14, 56, 92, 94, 112, 130		10, 11, 13, 14, 56, 92, 94, 112, 130
-5 Uncompute spine	02, 04, 07, 20, 66, 118		02, 04, 07, 20, 66, 118
+1 Handle ABI	01, 46, 64, 93, 103, 110, 111	01, 46	64, 93, 103, 110, 111
+2 Source and sink	01, 38, 42, 120, 128, 136, 140, 155	01, 38, 42	120, 128, 136, 140, 155
+3 Taint propagation	17, 18, 26, 56, 63, 103	17	18, 26, 56, 63, 103
+4 Opcode lowering, always out of place	10, 11, 13, 14, 56, 92, 94, 112, 130	10, 11, 13, 14	56, 92, 94, 112, 130
+5 Uncompute spine	02, 04, 07, 20, 66, 118	02	04, 07, 20, 66, 118
 6 Bijective update of a dead value	125, 127		125, 127
 7 Seed rails	25, 28, 57, 62, 94, 95		25, 28, 57, 62, 94, 95
 8 Branch flags	03, 08, 21, 23, 59, 69, 137, 138, 146, 154		03, 08, 21, 23, 59, 69, 137, 138, 146, 154
@@ -21,7 +21,7 @@ rule	witnesses	passing	failing
 15 Quantum angle	79, 143		79, 143
 16 Noreturn arms and host effects	45, 47, 99, 102, 108, 138, 91, 186		45, 47, 99, 102, 108, 138, 91, 186
 17 cq_invert	44, 61, 126		44, 61, 126
-18 Function lifting	06, 07, 33, 34, 64, 119, 136		06, 07, 33, 34, 64, 119, 136
+18 Function lifting	06, 07, 33, 34, 36, 51, 64, 82, 95, 109, 119, 136		06, 07, 33, 34, 36, 51, 64, 82, 95, 109, 119, 136
 19 Indirect and opaque callees	96, 97, 102, 117, 124		96, 97, 102, 117, 124
 20 Memory classification	29, 30, 31, 32, 48, 50, 58, 63, 67, 71, 72, 74, 75, 76, 77, 78, 108, 114, 120, 160, 168		29, 30, 31, 32, 48, 50, 58, 63, 67, 71, 72, 74, 75, 76, 77, 78, 108, 114, 120, 160, 168
 21 Quantum pointers	84, 85, 86, 88, 89, 105, 107, 129		84, 85, 86, 88, 89, 105, 107, 129
@@ -30,4 +30,4 @@ rule	witnesses	passing	failing
 24 Threads, atomics, volatile, setjmp	32, 48, 94, 101, 106		32, 48, 94, 101, 106
 25 Widths and ABI extras	19, 63, 93, 103, 110, 111		19, 63, 93, 103, 110, 111
 26 Aggregates and complex	64, 69, 70, 78, 103, 107, 122		64, 69, 70, 78, 103, 107, 122
-27 Callees without a body: declared clones			
+27 Callees without a body: declared clones	161, 190		161, 190
