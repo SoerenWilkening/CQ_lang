@@ -243,7 +243,9 @@ void Walker::plan() {
       BasicBlock *exit = lp->getUniqueExitBlock();
       if (!exit)
         unimplemented("spine: a non-classical loop with more than one exit block", b->getTerminator());
-      outEdges[b].push_back(exit);
+      // The loop as a unit ends at its exit block; like any edge leaving b, it continues at the next
+      // block of the walk that may run (an arm still to run comes first).
+      outEdges[b].push_back(next(b, exit));
       continue;
     }
     Instruction *t = b->getTerminator();
@@ -290,19 +292,14 @@ void Walker::plan() {
         classicalPhi |= !spine::isQ(ctx, &phi);
       if (uncond && outPreds.lookup(b) == 1 && !classicalPhi && !pureHeaders.count(b) && !unitOf.count(b))
         merged.insert(b);
-      // A unit's exit continues where the loop module leaves the builder.
-      if (unitOf.count(prev) && pe != outEdges.end() && pe->second.front() == b) {
-        if (outPreds.lookup(b) != 1)
-          unimplemented("spine: the exit block of a dispatched loop has other predecessors", b->getTerminator());
+      // A unit's exit continues where the loop module leaves the builder when the unit is its only
+      // way in and it comes next; otherwise (a zero-trip guard's skip edge also reaches it, 41, 177)
+      // the unit ends in a jump to it (emitBlock).
+      if (unitOf.count(prev) && pe != outEdges.end() && pe->second.front() == b && outPreds.lookup(b) == 1)
         merged.insert(b);
-      }
     }
     prev = b;
   }
-  for (auto &[b, lp] : unitOf)
-    if (lp->getHeader() == b && !merged.count(outEdges.lookup(b).front()))
-      unimplemented("spine: the exit block of a dispatched loop does not follow it in the walk order",
-                    b->getTerminator());
 }
 
 // Can the walk continue at y after leaving `from`? Blocks inside a loop are entered by its header.
@@ -619,7 +616,29 @@ void Walker::emitBlock(BasicBlock *b) {
   sh.curPred = ctx.preds().block(b).quantumPart(ctx.T, ctx.S);
 
   if (unitOf.count(b)) {
-    lowerUnit(*unitOf.lookup(b));
+    Loop &lp = *unitOf.lookup(b);
+    lowerUnit(lp);
+    BasicBlock *n = outEdges.lookup(b).front();
+    if (merged.count(n))
+      return;
+    // The unit's exit edges all leave from where the loop module left the builder (a classical phi
+    // of the exit block takes its incoming values there). The jump flushes only once no rail the loop
+    // bound to an original value is still read after it.
+    BasicBlock *at = ctx.B().GetInsertBlock();
+    SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> exits;
+    lp.getExitEdges(exits);
+    for (auto &[from, to] : exits)
+      if (to == n)
+        edgeOut[{from, to}] = at;
+    blockDefs.clear();
+    for (BasicBlock *lb : lp.blocks())
+      for (Instruction &I : *lb) {
+        auto bi = sh.binds.find(&I);
+        if (bi != sh.binds.end() && any_of(bi->second, [](const Operand &o) { return o.handle; }))
+          blockDefs.push_back(&I);
+      }
+    BranchInst *br = ctx.B().CreateBr(out(n));
+    maybeFlush(br);
     return;
   }
 

@@ -15,3 +15,15 @@ target_compile_options(spine_clone_return PRIVATE $<TARGET_PROPERTY:cq_pass_objs
 add_dependencies(spine_clone_return cq_pass_objs)
 target_link_libraries(spine_clone_return PRIVATE LLVM)
 add_test(NAME spine_clone_return COMMAND spine_clone_return)
+
+# A loop dispatched as a unit whose exit block is also a zero-trip guard's skip target (cq-gio4).
+# Linked with every pass module except loops/classical/Classical.cpp, whose lowerClassical the test
+# supplies (a test double: cq-w1-loops-classical owns the real one).
+add_executable(spine_loop_exit_join loop_exit_join.cpp
+  $<FILTER:$<TARGET_OBJECTS:cq_pass_objs>,EXCLUDE,/loops/classical/Classical\.cpp\.o$>)
+target_include_directories(spine_loop_exit_join PRIVATE $<TARGET_PROPERTY:cq_pass_objs,INTERFACE_INCLUDE_DIRECTORIES>)
+target_compile_definitions(spine_loop_exit_join PRIVATE $<TARGET_PROPERTY:cq_pass_objs,INTERFACE_COMPILE_DEFINITIONS>)
+target_compile_options(spine_loop_exit_join PRIVATE $<TARGET_PROPERTY:cq_pass_objs,INTERFACE_COMPILE_OPTIONS>)
+add_dependencies(spine_loop_exit_join cq_pass_objs)
+target_link_libraries(spine_loop_exit_join PRIVATE LLVM)
+add_test(NAME spine_loop_exit_join COMMAND spine_loop_exit_join)
