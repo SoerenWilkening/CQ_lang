@@ -47,6 +47,11 @@ an address into (offset, object size), and a counter on every loop header. The p
 finds candidate inputs; it decides nothing about correctness. The trip samples are confirmed by
 the C oracle's trip counters (`confirm_trips`).
 
+The probe build runs as one server process per example (cq-wx6s): every sample runs in-process from
+the restored post-setup state (RUNTIME_C), not in a child forked per sample. A sample ends as a
+timeout after HDR_CAP loop-header executions (a deterministic budget in place of the 250 ms wall
+clock, which ended samples at a load-dependent 50 million or so); the wall clock stays as a backstop.
+
 Which candidates are kept: no sample of any class is one on which a memory access of the C program
 reaches outside its object, faulting or not, unless the C oracle (cut at K) stops before that
 access (cq-b19i): C leaves such an input undefined, so it is outside the program's domain
@@ -94,7 +99,6 @@ CROSS_LIMIT = 1024
 SEARCH_BUDGET = 384          # probe runs per unmet target
 SEARCH_BATCH = 48
 PER_SAMPLE_MS = 250
-PROBE_PROCS = int(os.environ.get("CQ_PROBE_PROCS", "4"))
 
 
 # ------------------------------------------------------------------------------------------------
@@ -250,93 +254,181 @@ def f80_noncanonical() -> List[int]:
 # ------------------------------------------------------------------------------------------------
 
 RUNTIME_C = r"""
+/* The probe runtime (cq-wx6s). One process per example serves every sample: the driver's setup runs
+ * once, then the master reads batches from stdin ("B <n>" and n records `<call> <arg>...`) and runs
+ * them in a worker it forks from the post-setup state. The worker runs the samples one after another
+ * in-process: before each it restores the main image's writable data (the module's globals and the
+ * driver objects), the runtime's per-sample state and the floating-point environment to their
+ * post-setup values, which is the state a child forked per sample starts from. A sample that may
+ * have left state behind that this does not restore (a signal other than SIGFPE, an access outside
+ * its object or into no known object, a memory intrinsic past its object, a large heap) ends its
+ * worker after its output is written, and the master forks the next worker for the following sample;
+ * a sample that kills its worker (a stack overflow) reports nothing, as a forked child would not.
+ * Each sample's output goes to stdout in one write; "D" ends a batch. */
+#define _DARWIN_C_SOURCE
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <setjmp.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <fenv.h>
 #include <stdbool.h>
 #include <sys/wait.h>
 #include <sys/time.h>
+#include <sys/mman.h>
+#include <sys/resource.h>
+#include <mach-o/getsect.h>
+#include <mach-o/ldsyms.h>
+#include <pthread.h>
 #define CAP 64
-static char cqd_buf[1 << 22]; static size_t cqd_len;
-static int cqd_out_fd = -1;
-static void cqd_out(const char *fmt, ...) {
-    if (cqd_len > sizeof cqd_buf - 256) return;
-    va_list ap; va_start(ap, fmt);
-    int n = vsnprintf(cqd_buf + cqd_len, sizeof cqd_buf - cqd_len, fmt, ap);
-    va_end(ap); if (n > 0) cqd_len += (size_t)n;
+#define NSITE 65536
+#define NOBJ 65536
+#define NLOOP 4096
+#define OUTCAP (1 << 22)
+#define NS_USED (CQD_NSITES < NSITE ? CQD_NSITES : NSITE)
+#define NL_USED (CQD_NLOOPS < NLOOP ? CQD_NLOOPS : NLOOP)
+typedef struct {
+    size_t len; int nob; int done; long long hdrs;
+    unsigned char pcount[NSITE], mcount[NSITE], ocount[NSITE];
+    long long cnt[NLOOP]; unsigned char has[NLOOP], ctx[NLOOP], ent[NLOOP], tc[NLOOP];
+    uintptr_t ob[NOBJ]; uint64_t os[NOBJ];
+    char buf[OUTCAP];
+} cqd_state;
+typedef struct {
+    sigjmp_buf jb; volatile int in; volatile int dirty; long cur; int out_fd; fenv_t fenv0;
+    char **tok; int ntok;
+    char **lines; long nlines, cap;     /* the batch (kept here: __DATA is restored per sample) */
+} cqd_ctl;
+static cqd_state *S, *B;     /* the sample's state, and its post-setup base */
+static cqd_ctl *C;
+static volatile long *P;     /* shared with the master: the sample in progress */
+static void *cqd_map(size_t n, int shared) {
+    void *p = mmap(0, n, PROT_READ | PROT_WRITE, MAP_ANON | (shared ? MAP_SHARED : MAP_PRIVATE), -1, 0);
+    if (p == MAP_FAILED) { perror("cqd: mmap"); _exit(2); }
+    return p;
 }
-static unsigned char cqd_pcount[65536], cqd_mcount[65536];
+__attribute__((constructor(101))) static void cqd_init(void) {
+    if (S) return;
+    S = cqd_map(sizeof *S, 0); B = cqd_map(sizeof *B, 0); C = cqd_map(sizeof *C, 0);
+    P = cqd_map(4096, 1);
+}
+static void cqd_out(const char *fmt, ...) {
+    if (S->len > sizeof S->buf - 256) return;
+    va_list ap; va_start(ap, fmt);
+    int n = vsnprintf(S->buf + S->len, sizeof S->buf - S->len, fmt, ap);
+    va_end(ap); if (n > 0) S->len += (size_t)n;
+}
 void __cqd_p(int site, uint64_t a0, uint64_t a1, uint64_t b0, uint64_t b1, uint64_t c0, uint64_t c1,
              uint64_t r0, uint64_t r1) {
-    if (cqd_pcount[site & 0xffff] >= CAP) return; cqd_pcount[site & 0xffff]++;
+    if (S->pcount[site & 0xffff] >= CAP) return; S->pcount[site & 0xffff]++;
     cqd_out("p %d %llx %llx %llx %llx %llx %llx %llx %llx\n", site, (unsigned long long)a0, (unsigned long long)a1,
             (unsigned long long)b0, (unsigned long long)b1, (unsigned long long)c0, (unsigned long long)c1,
             (unsigned long long)r0, (unsigned long long)r1);
 }
-#define NOBJ 65536
-static uintptr_t cqd_ob[NOBJ]; static uint64_t cqd_os[NOBJ]; static int cqd_nob;
 void __cqd_reg(void *p, uint64_t size) {
+    cqd_init();
     uintptr_t b = (uintptr_t)p; if (!b) return;
     int j = 0;
-    for (int i = 0; i < cqd_nob; i++)
-        if (!(cqd_ob[i] < b + (size ? size : 1) && b < cqd_ob[i] + (cqd_os[i] ? cqd_os[i] : 1))) {
-            cqd_ob[j] = cqd_ob[i]; cqd_os[j] = cqd_os[i]; j++; }
-    cqd_nob = j;
-    if (cqd_nob < NOBJ) { cqd_ob[cqd_nob] = b; cqd_os[cqd_nob] = size; cqd_nob++; }
+    for (int i = 0; i < S->nob; i++)
+        if (!(S->ob[i] < b + (size ? size : 1) && b < S->ob[i] + (S->os[i] ? S->os[i] : 1))) {
+            S->ob[j] = S->ob[i]; S->os[j] = S->os[i]; j++; }
+    S->nob = j;
+    if (S->nob < NOBJ) { S->ob[S->nob] = b; S->os[S->nob] = size; S->nob++; }
 }
-static unsigned char cqd_ocount[65536];
+static int cqd_find(uintptr_t r) {
+    int best = -1;
+    for (int i = 0; i < S->nob; i++)
+        if (S->ob[i] <= r && (best < 0 || S->ob[i] > S->ob[best])) best = i;
+    return best;
+}
 void __cqd_m(int site, void *root, void *addr, uint64_t nbytes) {
     /* an access outside its object is reported past the per-site cap (validity, cq-q9hd) */
-    uintptr_t r = (uintptr_t)root; int best = -1;
-    for (int i = 0; i < cqd_nob; i++)
-        if (cqd_ob[i] <= r && (best < 0 || cqd_ob[i] > cqd_ob[best])) best = i;
-    long long off = best < 0 ? 0 : (long long)((intptr_t)addr - (intptr_t)cqd_ob[best]);
-    int out = best >= 0 && (off < 0 || (unsigned long long)off + nbytes > cqd_os[best]);
-    if (cqd_mcount[site & 0xffff] >= CAP && !(out && cqd_ocount[site & 0xffff] < CAP)) return;
-    if (cqd_mcount[site & 0xffff] < CAP) cqd_mcount[site & 0xffff]++; else cqd_ocount[site & 0xffff]++;
+    int best = cqd_find((uintptr_t)root);
+    long long off = best < 0 ? 0 : (long long)((intptr_t)addr - (intptr_t)S->ob[best]);
+    int out = best >= 0 && (off < 0 || (unsigned long long)off + nbytes > S->os[best]);
+    if (out || best < 0) C->dirty = 1;
+    if (S->mcount[site & 0xffff] >= CAP && !(out && S->ocount[site & 0xffff] < CAP)) return;
+    if (S->mcount[site & 0xffff] < CAP) S->mcount[site & 0xffff]++; else S->ocount[site & 0xffff]++;
     if (best < 0) { cqd_out("m %d ? ? ?\n", site); return; }
-    cqd_out("m %d %lld %llu %llu\n", site, off, (unsigned long long)cqd_os[best], (unsigned long long)nbytes);
+    cqd_out("m %d %lld %llu %llu\n", site, off, (unsigned long long)S->os[best], (unsigned long long)nbytes);
 }
-#define NLOOP 4096
-static long long cqd_cnt[NLOOP]; static unsigned char cqd_has[NLOOP], cqd_ctx[NLOOP], cqd_ent[NLOOP];
-static unsigned char cqd_tc[NLOOP];
-static void cqd_trip(int l, long long n) { if (cqd_tc[l] < CAP) { cqd_tc[l]++; cqd_out("t %d %lld\n", l, n); } }
+/* a memory intrinsic's destination range: outside every object only makes the worker dirty */
+void __cqd_mi(void *root, void *dst, uint64_t n) {
+    if (!n) return;
+    int best = cqd_find((uintptr_t)root);
+    long long off = best < 0 ? 0 : (long long)((intptr_t)dst - (intptr_t)S->ob[best]);
+    if (best < 0 || off < 0 || (unsigned long long)off + n > S->os[best]) C->dirty = 1;
+}
+static void cqd_trip(int l, long long n) { if (S->tc[l] < CAP) { S->tc[l]++; cqd_out("t %d %lld\n", l, n); } }
+static void cqd_finish(const char *how, int code);
+static void cqd_stop(const char *how, int code) {
+    cqd_finish(how, code);
+    siglongjmp(C->jb, 1);
+}
 void __cqd_hdr(int l, bool be) {
-    if (!be || !cqd_has[l]) { if (cqd_has[l]) cqd_trip(l, cqd_cnt[l]); cqd_cnt[l] = 1; cqd_has[l] = 1; }
-    else cqd_cnt[l]++;
-    cqd_ent[l] = 1;
+    if (++S->hdrs > CQD_HDR_CAP) cqd_stop("timeout", SIGALRM);
+    if (!be || !S->has[l]) { if (S->has[l]) cqd_trip(l, S->cnt[l]); S->cnt[l] = 1; S->has[l] = 1; }
+    else S->cnt[l]++;
+    S->ent[l] = 1;
 }
 void __cqd_ctx(int l) {
-    if (cqd_ctx[l] && !cqd_ent[l]) cqd_trip(l, 0);
-    cqd_ctx[l] = 1; cqd_ent[l] = 0;
+    if (S->ctx[l] && !S->ent[l]) cqd_trip(l, 0);
+    S->ctx[l] = 1; S->ent[l] = 0;
 }
-static int cqd_done;
 static void cqd_finish(const char *how, int code) {
-    if (cqd_done) return; cqd_done = 1;
+    if (S->done) return; S->done = 1;
     for (int l = 0; l < NLOOP; l++) {
-        if (cqd_has[l]) cqd_trip(l, cqd_cnt[l]);
-        if (cqd_ctx[l] && !cqd_ent[l]) cqd_trip(l, 0);
+        if (S->has[l]) cqd_trip(l, S->cnt[l]);
+        if (S->ctx[l] && !S->ent[l]) cqd_trip(l, 0);
     }
     cqd_out("E %s %d\n", how, code);
-    size_t o = 0; while (o < cqd_len) { ssize_t w = write(cqd_out_fd, cqd_buf + o, cqd_len - o); if (w <= 0) break; o += (size_t)w; }
+    size_t o = 0; while (o < S->len) { ssize_t w = write(C->out_fd, S->buf + o, S->len - o); if (w <= 0) break; o += (size_t)w; }
 }
-static void cqd_sig(int s) { cqd_finish(s == SIGALRM ? "timeout" : "signal", s); _exit(100 + s); }
-static void cqd_atexit(void) { cqd_finish("exit", 0); }
-void cqd_end(void) { cqd_finish("exit", 0); _exit(0); }
-static void cqd_child(int idx) {
-    cqd_out("S %d\n", idx);
-    int sigs[] = {SIGSEGV, SIGFPE, SIGBUS, SIGILL, SIGALRM, SIGABRT, SIGTRAP};
-    for (unsigned i = 0; i < sizeof sigs / sizeof *sigs; i++) signal(sigs[i], cqd_sig);
-    atexit(cqd_atexit);
-    struct itimerval it = {{0, 0}, {PER_SAMPLE_MS / 1000, (PER_SAMPLE_MS % 1000) * 1000}};
-    setitimer(ITIMER_REAL, &it, 0);
+static void cqd_sig(int s) {
+    if (!C->in) return;               /* a timer that fired after its sample ended */
+    C->in = 0;
+    if (s != SIGFPE) C->dirty = 1;
+    cqd_stop(s == SIGALRM ? "timeout" : "signal", s);
 }
-static void cqd_load(void *dst, size_t n, const char *hex) {
+static void cqd_atexit(void) { if (C->in) { C->in = 0; cqd_finish("exit", 0); } }
+
+/* main's frame and everything above it (the setup's locals, which a sample may be passed) */
+static char *cqd_ms_lo, *cqd_ms_save; static size_t cqd_ms_n;
+/* the main image's writable segments, saved after the setup */
+#define NSEG 4
+static struct { char *p; char *save; unsigned long n; } cqd_seg[NSEG]; static int cqd_nseg;
+static void cqd_snapshot(void) {
+    const char *names[] = {"__DATA", "__DATA_DIRTY"};
+    for (unsigned i = 0; i < sizeof names / sizeof *names; i++) {
+        unsigned long n = 0;
+        char *p = (char *)getsegmentdata(&_mh_execute_header, names[i], &n);
+        if (!p || !n) continue;
+        cqd_seg[cqd_nseg].p = p; cqd_seg[cqd_nseg].n = n;
+        cqd_seg[cqd_nseg].save = cqd_map(n, 0);
+        memcpy(cqd_seg[cqd_nseg].save, p, n);
+        cqd_nseg++;
+    }
+}
+static void cqd_restore(void) {
+    /* the segment table itself lives in __DATA: copy it out first */
+    int ns = cqd_nseg; char *p[NSEG], *s[NSEG]; unsigned long n[NSEG];
+    for (int i = 0; i < ns; i++) { p[i] = cqd_seg[i].p; s[i] = cqd_seg[i].save; n[i] = cqd_seg[i].n; }
+    char *mlo = cqd_ms_lo, *msave = cqd_ms_save; size_t mn = cqd_ms_n;
+    for (int i = 0; i < ns; i++) memcpy(p[i], s[i], n[i]);
+    memcpy(mlo, msave, mn);
+    S->len = B->len; S->nob = B->nob; S->done = 0; S->hdrs = 0;
+    memcpy(S->pcount, B->pcount, NS_USED); memcpy(S->mcount, B->mcount, NS_USED);
+    memcpy(S->ocount, B->ocount, NS_USED);
+    memcpy(S->cnt, B->cnt, NL_USED * sizeof *S->cnt); memcpy(S->has, B->has, NL_USED);
+    memcpy(S->ctx, B->ctx, NL_USED); memcpy(S->ent, B->ent, NL_USED); memcpy(S->tc, B->tc, NL_USED);
+    memcpy(S->ob, B->ob, (size_t)B->nob * sizeof *S->ob); memcpy(S->os, B->os, (size_t)B->nob * sizeof *S->os);
+    memcpy(S->buf, B->buf, B->len);
+}
+void cqd_load(void *dst, size_t n, const char *hex) {
     unsigned char b[16] = {0}; size_t len = strlen(hex);
     if (len > 2 && hex[0] == '0' && (hex[1] == 'x' || hex[1] == 'X')) { hex += 2; len -= 2; }
     for (size_t i = 0; i < len && i < 32; i++) {
@@ -344,6 +436,110 @@ static void cqd_load(void *dst, size_t n, const char *hex) {
         b[i / 2] |= (unsigned char)(v << (4 * (i % 2)));
     }
     memcpy(dst, b, n);
+}
+
+typedef void (*cqd_call_fn)(int call, char **tok);
+static cqd_call_fn cqd_callee;
+/* Every sample's call runs on the same dedicated stack (STACK bytes between two guard pages), so
+ * what lies above a sample's frames is the same for every sample and in every environment: a store
+ * running up the stack faults at the same place each time. */
+#define STACK (8 << 20)
+static char *cqd_stack_top;
+static void cqd_stack_init(void) {
+    long pg = sysconf(_SC_PAGESIZE);
+    char *m = mmap(0, STACK + 2 * pg, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
+    if (m == MAP_FAILED) { perror("cqd: mmap stack"); _exit(2); }
+    mprotect(m, pg, PROT_NONE);
+    /* above the top: no mapping, so a store running up the stack faults with SIGSEGV as past the
+     * main thread's stack (a PROT_NONE page would give SIGBUS) */
+    munmap(m + pg + STACK, pg);
+    cqd_stack_top = m + pg + STACK;
+}
+static void cqd_call_sample(void) { cqd_callee(atoi(C->tok[0]), C->tok + 1); }
+__attribute__((noinline)) static void cqd_on_stack(char *top, void (*fn)(void)) {
+    __asm__ volatile("movq %%rsp, %%rbx\n\t"
+                     "movq %0, %%rsp\n\t"
+                     "callq *%1\n\t"
+                     "movq %%rbx, %%rsp\n\t"
+                     : : "r"(top), "r"(fn)
+                     : "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11", "memory", "cc",
+                       "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7", "xmm8", "xmm9",
+                       "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15");
+}
+
+static void cqd_worker(cqd_call_fn call, long from) {
+    int sigs[] = {SIGSEGV, SIGFPE, SIGBUS, SIGILL, SIGALRM, SIGABRT, SIGTRAP};
+    for (unsigned i = 0; i < sizeof sigs / sizeof *sigs; i++) signal(sigs[i], cqd_sig);
+    atexit(cqd_atexit);
+    for (long k = from; k < C->nlines; k++) {
+        *P = k;
+        cqd_restore();
+        C->dirty = CQD_ISOLATE;
+        C->cur = k;
+        char *tok[64]; int nt = 0; char *sv = 0;
+        for (char *t = strtok_r(C->lines[k], " \n", &sv); t && nt < 64; t = strtok_r(0, " \n", &sv)) tok[nt++] = t;
+        C->tok = tok; C->ntok = nt;
+        if (nt < 1) continue;
+        cqd_out("S %ld\n", k);
+        fesetenv(&C->fenv0);
+        struct itimerval it = {{0, 0}, {PER_SAMPLE_MS / 1000, (PER_SAMPLE_MS % 1000) * 1000}};
+        if (sigsetjmp(C->jb, 1) == 0) {
+            C->in = 1;
+            setitimer(ITIMER_REAL, &it, 0);
+            cqd_on_stack(cqd_stack_top, cqd_call_sample);
+            C->in = 0;
+            cqd_finish("exit", 0);
+        }
+        C->in = 0;
+        struct itimerval z = {{0, 0}, {0, 0}};
+        setitimer(ITIMER_REAL, &z, 0);
+        if (!C->dirty) {
+            struct rusage ru; getrusage(RUSAGE_SELF, &ru);
+            if (ru.ru_maxrss > (long)CQD_RSS_CAP) C->dirty = 1;     /* bytes on Darwin */
+        }
+        if (C->dirty) _exit(0);
+    }
+    _exit(0);
+}
+
+/* After the driver's setup: serve batches until stdin ends. */
+void cqd_serve(cqd_call_fn call) {
+    cqd_init();
+    int out = dup(1);
+    int dn = open("/dev/null", O_WRONLY); dup2(dn, 1); dup2(dn, 2);
+    C->out_fd = out;
+    cqd_callee = call;
+    cqd_stack_init();
+    fegetenv(&C->fenv0);
+    memcpy(B, S, offsetof(cqd_state, buf)); memcpy(B->buf, S->buf, S->len);
+    cqd_ms_lo = (char *)__builtin_frame_address(0) + 16;     /* above our return address */
+    cqd_ms_n = (size_t)((char *)pthread_get_stackaddr_np(pthread_self()) - cqd_ms_lo);
+    cqd_ms_save = cqd_map(cqd_ms_n, 0); memcpy(cqd_ms_save, cqd_ms_lo, cqd_ms_n);
+    cqd_snapshot();
+    char *line = malloc(1 << 16);
+    while (fgets(line, 1 << 16, stdin)) {
+        long n = 0;
+        if (sscanf(line, "B %ld", &n) != 1) continue;
+        if (n > C->cap) { C->cap = n; C->lines = realloc(C->lines, (size_t)n * sizeof *C->lines); }
+        C->nlines = 0;
+        for (long i = 0; i < n; i++) {
+            if (!fgets(line, 1 << 16, stdin)) _exit(3);
+            C->lines[C->nlines++] = strdup(line);
+        }
+        long next = 0;
+        while (next < C->nlines) {
+            *P = next;
+            pid_t pid = fork();
+            if (pid < 0) { perror("cqd: fork"); _exit(2); }
+            if (pid == 0) cqd_worker(call, next);
+            int st = 0; while (waitpid(pid, &st, 0) < 0) {}
+            next = *P + 1;
+        }
+        for (long i = 0; i < C->nlines; i++) free(C->lines[i]);
+        static const char done[] = "D\n";
+        if (write(out, done, 2) != 2) _exit(2);
+    }
+    _exit(0);
 }
 """
 
@@ -785,7 +981,7 @@ class Instrumenter:
 
     def decls(self) -> List[str]:
         d = ["declare void @__cqd_p(i32, i64, i64, i64, i64, i64, i64, i64, i64)",
-             "declare void @__cqd_m(i32, ptr, ptr, i64)", "declare void @__cqd_reg(ptr, i64)",
+             "declare void @__cqd_m(i32, ptr, ptr, i64)", "declare void @__cqd_mi(ptr, ptr, i64)", "declare void @__cqd_reg(ptr, i64)",
              "declare void @__cqd_hdr(i32, i1)", "declare void @__cqd_ctx(i32)"]
         d.append("define void @__cqd_globals() {")
         for g, line in self.mod.globals.items():
@@ -877,6 +1073,9 @@ class Instrumenter:
                                                                        "nnan", "ninf", "nsz", "arcp")]
                 ret_ty = " ".join(rt) if rt else None
             base = re.sub(r"\.(?:[a-z]\d+|v\d+[a-z]\d+|p0)+$", "", c)
+            if base in ("@llvm.memcpy", "@llvm.memmove", "@llvm.memset", "@llvm.memcpy.inline",
+                        "@llvm.memset.inline"):
+                return self.intrinsic_range(f, pairs), []
             if base in ("@llvm.fshl", "@llvm.fshr"):
                 s = self.add_site(f, ins, "fsh", c, pairs, width=int_width(vec_of(pairs[0][0])[1]))
                 return self.probe(s.id, pairs, None), []
@@ -960,6 +1159,22 @@ class Instrumenter:
             return [f"call void @__cqd_m(i32 {s.id}, ptr {root}, ptr {pv}, i64 {nb})"], []
         return [], []
 
+    def intrinsic_range(self, f: D.Function, pairs: List[Tuple[str, str]]) -> List[str]:
+        """A memory intrinsic's destination range for the runner (`__cqd_mi`): one outside its object
+        ends the in-process worker after the sample (RUNTIME_C). No observation changes."""
+        (dty, dst), (lty, ln) = pairs[0], pairs[2]
+        if dty != "ptr" or not int_width(lty) or not (dst.startswith("%") or dst.startswith("@")) \
+                or not (ln.startswith("%") or const_bits(lty, ln) is not None):
+            return ["call void @__cqd_mi(ptr null, ptr null, i64 1)"]
+        root = self.addr_root(f, dst)[0] if dst.startswith("%") else dst
+        out = []
+        if int_width(lty) != 64:
+            t = self.tmp()
+            out.append(f"{t} = zext {lty} {ln} to i64")
+            ln = t
+        out.append(f"call void @__cqd_mi(ptr {root}, ptr {dst}, i64 {ln})")
+        return out
+
     @staticmethod
     def sized_at_run_time(f: D.Function, root: str) -> bool:
         """The object under `root` may have a size fixed only at run time (cq-faa5): a VLA alloca, or
@@ -1028,57 +1243,53 @@ class Instrumenter:
 
 
 def _driver_main(spec: DriverSpec) -> str:
-    """The probe driver: setup once, then per stdin line `idx call hex...` a forked child runs
-    that call with those argument bits."""
-    out = [D.DRIVER_PRELUDE, "#include <stdio.h>\n#include <stdlib.h>\n#include <unistd.h>\n#include <fcntl.h>\n"
-           "#include <signal.h>\n#include <sys/wait.h>",
+    """The probe driver: setup once, then `cqd_serve` (RUNTIME_C) runs every sample through
+    `cqd_call`, which loads one record's argument bits and makes that call."""
+    out = [D.DRIVER_PRELUDE, "#include <stdio.h>\n#include <stdlib.h>\n#include <unistd.h>",
            "void __cqd_reg(void *, unsigned long long); void __cqd_globals(void);",
-           "void cqd_child(int); void cqd_end(void); void cqd_load(void *, unsigned long, const char *); extern int cqd_out_fd;"]
+           "void cqd_serve(void (*)(int, char **)); void cqd_load(void *, unsigned long, const char *);"]
     out += spec.protos
-    out.append("int main(void) {")
-    out.append("    " + spec.setup)
-    out.append("    __cqd_globals();")
-    out.append("    cqd_out_fd = open(getenv(\"CQD_OUT\"), O_WRONLY | O_CREAT | O_APPEND, 0644);")
-    out.append("    char line[8192];")
-    out.append("    while (fgets(line, sizeof line, stdin)) {")
-    out.append("        char *tok[64]; int nt = 0; char *sv = 0;")
-    out.append("        for (char *t = strtok_r(line, \" \\n\", &sv); t && nt < 64; t = strtok_r(0, \" \\n\", &sv)) tok[nt++] = t;")
-    out.append("        if (nt < 2) continue;")
-    out.append("        int idx = atoi(tok[0]), call = atoi(tok[1]); (void)call;")
-    out.append("        fflush(stdout);")
-    out.append("        pid_t pid = fork();")
-    out.append("        if (pid == 0) {")
-    out.append("            int dn = open(\"/dev/null\", O_WRONLY); dup2(dn, 1); dup2(dn, 2);")
-    out.append("            cqd_child(idx);")
-    out.append("            switch (call) {")
+    npt = sum(1 for c in spec.calls for a in c["args"] if D.parse_ctype(a["ctype"]).kind == "p")
+    out.append(f"static void *cqd_ptr[{max(npt, 1)}];   /* the pointer expressions, evaluated after setup */")
+    out.append("static void cqd_call(int call, char **tok) {")
+    out.append("    switch (call) {")
     for ci, call in enumerate(spec.calls):
-        lines = [f"            case {ci}: {{"]
-        actual = []
+        lines = [f"    case {ci}: {{"]
         for j, a in enumerate(call["args"]):
             ct = D.parse_ctype(a["ctype"])
             if ct.kind == "p":
-                lines.append(f"                void *p{j} = 0; (void)p{j};")
-                actual.append(None)
                 continue
             n = 1 if ct.bits == 1 else (10 if ct.bits == 80 else ct.bits // 8)
-            lines.append(f"                {ct.spelling} a{j}; memset(&a{j}, 0, sizeof a{j}); "
-                         f"cqd_load(&a{j}, {n}, tok[{2 + j}]);")
+            lines.append(f"        {ct.spelling} a{j}; memset(&a{j}, 0, sizeof a{j}); "
+                         f"cqd_load(&a{j}, {n}, tok[{j}]);")
             if ct.bits == 1:
-                lines.append(f"                a{j} = (*(unsigned char *)&a{j}) & 1;")
-            actual.append(f"a{j}")
-        lines.append(f"                CQD_CALL_{ci};")
-        lines.append("                break; }")
+                lines.append(f"        a{j} = (*(unsigned char *)&a{j}) & 1;")
+        lines.append(f"        CQD_CALL_{ci};")
+        lines.append("        break; }")
         out += lines
-    out.append("            }")
-    out.append("            cqd_end();")
-    out.append("        }")
-    out.append("        int st = 0; waitpid(pid, &st, 0);")
     out.append("    }")
+    out.append("}")
+    out.append("int main(void) {")
+    out.append("    " + spec.setup)
+    out.append("    __cqd_globals();")
+    out.append("    cqd_serve(cqd_call);")
     out.append("    return 0;\n}")
     return "\n".join(out) + "\n"
 
 
+# Process state a sample can change that the in-process runner does not restore: such a module runs
+# every sample in a worker of its own (CQD_ISOLATE), as a child forked per sample would.
+_ISOLATE_CALLS = {"@signal", "@sigaction", "@sigprocmask", "@pthread_sigmask", "@pthread_create",
+                  "@atexit", "@alarm", "@setitimer", "@fork", "@vfork", "@sigaltstack"}
+# A sample runs at most this many loop-header executions; past it, it ends as a timeout would.
+HDR_CAP = int(os.environ.get("CQD_HDR_CAP", str(1 << 20)))
+RSS_CAP = 512 << 20          # bytes: a worker whose peak resident size passes it is replaced
+
+
 class ProbeBuild:
+    """The probe build of one example and its server process: `run` sends a batch of samples and
+    reads one observation per sample (RUNTIME_C)."""
+
     def __init__(self, spec: DriverSpec, example_dir: Path, work: Path):
         self.spec = spec
         self.example_dir = Path(example_dir)
@@ -1089,7 +1300,13 @@ class ProbeBuild:
         self.mod = D.read_module(o1[0])
         self.ins = Instrumenter(self.mod, spec)
         self.exe = work / "probe"
+        self.proc: Optional[subprocess.Popen] = None
         self.build()
+
+    def isolate(self) -> bool:
+        if any(n in self.mod.declares or n in self.mod.functions for n in _ISOLATE_CALLS):
+            return True
+        return any("thread_local" in line for line in self.mod.globals.values())
 
     def build(self):
         w = self.work
@@ -1104,9 +1321,10 @@ class ProbeBuild:
                 stubs.append(_stub_for(line, identity=True))
         (w / "probe.ll").write_text(ll)
         (w / "stubs.ll").write_text(_stub_module_header(self.mod) + "\n".join(stubs) + "\n")
-        rt = RUNTIME_C.replace("PER_SAMPLE_MS", str(PER_SAMPLE_MS)).replace("static int cqd_out_fd", "int cqd_out_fd")
-        rt = rt.replace("static void cqd_child", "void cqd_child").replace("static void cqd_load", "void cqd_load")
-        (w / "rt.c").write_text(rt)
+        defs = {"PER_SAMPLE_MS": PER_SAMPLE_MS, "CQD_NSITES": max(1, len(self.ins.sites)),
+                "CQD_NLOOPS": max(1, len(self.ins.loops)), "CQD_HDR_CAP": f"{HDR_CAP}LL",
+                "CQD_RSS_CAP": f"{RSS_CAP}LL", "CQD_ISOLATE": int(self.isolate())}
+        (w / "rt.c").write_text("".join(f"#define {k} {v}\n" for k, v in defs.items()) + RUNTIME_C)
         (w / "driver.c").write_text(_driver_main(self.spec))
         self._splice_calls()
         self._link()
@@ -1118,20 +1336,23 @@ class ProbeBuild:
         body = (w / "driver.c").read_text()
         parse_call = D.parse_call
         line = D.read_drivers_txt(self.example_dir.resolve().parent.parent / "_tools" / "drivers.txt")[self.spec.example]
-        regs = []
+        regs: List[str] = []
+        ptrs: List[str] = []
         for ci, (ctext, call) in enumerate(zip(line.calls, self.spec.calls)):
             fn, args = parse_call(ctext)
             actual = []
             for j, (a, txt) in enumerate(zip(call["args"], args)):
                 if D.parse_ctype(a["ctype"]).kind == "p":
-                    actual.append(txt)
+                    actual.append(f"cqd_ptr[{len(ptrs)}]")
+                    ptrs.append(txt)
                     ident = D._ident_of(txt)
                     if ident:
                         regs.append(f"__cqd_reg((void *)&{ident}, sizeof({ident}));")
                 else:
                     actual.append(f"a{j}")
             body = body.replace(f"CQD_CALL_{ci};", f"(void){fn}({', '.join(actual)});")
-        body = body.replace("    __cqd_globals();", "    __cqd_globals();\n    " + " ".join(sorted(set(regs))))
+        body = body.replace("    __cqd_globals();", "    __cqd_globals();\n    " + " ".join(sorted(set(regs)))
+                            + "".join(f"\n    cqd_ptr[{k}] = (void *)({e});" for k, e in enumerate(ptrs)))
         (w / "driver.c").write_text(body)
 
     def _link(self, extra: str = ""):
@@ -1148,41 +1369,62 @@ class ProbeBuild:
                 return
             D.unimplemented(f"{self.spec.example}: probe build failed:\n{r.stderr[-3000:]}")
 
-    def run(self, samples: Sequence[dict]) -> List["Obs"]:
-        """One observation per sample (PROBE_PROCS probe processes in parallel)."""
-        if not samples:
-            return []
-        lines = []
-        for i, s in enumerate(samples):
-            args = [("-" if D.parse_ctype(a["ctype"]).kind == "p" else v)
-                    for a, v in zip(self.spec.calls[s["call"]]["args"], s["args"])]
-            lines.append(" ".join([str(i), str(s["call"])] + args))
-        nproc = max(1, min(PROBE_PROCS, len(lines) // 8 or 1))
-        chunks = [lines[k::nproc] for k in range(nproc)]
-        procs = []
-        for k, ch in enumerate(chunks):
-            outp = self.work / f"out.{os.getpid()}.{k}.txt"
-            if outp.exists():
-                outp.unlink()
-            inp = self.work / f"in.{os.getpid()}.{k}.txt"
-            env = dict(os.environ, CQD_OUT=str(outp))
-            # stdin is a pipe: a child's exit() cannot rewind it under the parent
-            pr = subprocess.Popen([str(self.exe)], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-                                  stderr=subprocess.DEVNULL, env=env)
-            threading.Thread(target=_feed, args=(pr, "\n".join(ch) + "\n"), daemon=True).start()
-            procs.append((pr, outp, inp, len(ch)))
-        obs = [Obs() for _ in samples]
-        for pr, outp, inp, n in procs:
+    def _start(self) -> subprocess.Popen:
+        if self.proc is None or self.proc.poll() is not None:
+            self.proc = subprocess.Popen([str(self.exe)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                         stderr=subprocess.DEVNULL, cwd=str(self.work))
+        return self.proc
+
+    def close(self) -> None:
+        pr, self.proc = self.proc, None
+        if pr is not None:
             try:
-                pr.wait(timeout=60 + n * (PER_SAMPLE_MS / 1000 + 0.2))
+                pr.stdin.close()
+            except OSError:
+                pass
+            try:
+                pr.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 pr.kill()
                 pr.wait()
-            text = outp.read_text(errors="replace") if outp.exists() else ""
-            for f in (outp, inp):
-                if f.exists():
-                    f.unlink()
-            self._parse(text, obs)
+            pr.stdout.close()
+
+    def __enter__(self) -> "ProbeBuild":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
+    def run(self, samples: Sequence[dict]) -> List["Obs"]:
+        """One observation per sample, from one batch on the probe server."""
+        if not samples:
+            return []
+        lines = [f"B {len(samples)}"]
+        for s in samples:
+            args = [("-" if D.parse_ctype(a["ctype"]).kind == "p" else v)
+                    for a, v in zip(self.spec.calls[s["call"]]["args"], s["args"])]
+            lines.append(" ".join([str(s["call"])] + args))
+        pr = self._start()
+        deadline = 60 + len(samples) * (PER_SAMPLE_MS / 1000 + 0.2)
+        timer = threading.Timer(deadline, pr.kill)
+        timer.start()
+        try:
+            pr.stdin.write(("\n".join(lines) + "\n").encode())
+            pr.stdin.flush()
+            chunks = []
+            while True:
+                ln = pr.stdout.readline()
+                if not ln or ln == b"D\n":
+                    break
+                chunks.append(ln)
+        except (BrokenPipeError, OSError):
+            chunks = []
+        finally:
+            timer.cancel()
+        if pr.poll() is not None:
+            self.proc = None
+        obs = [Obs() for _ in samples]
+        self._parse(b"".join(chunks).decode(errors="replace"), obs)
         return obs
 
     @staticmethod
@@ -1212,14 +1454,6 @@ class ProbeBuild:
             elif w[0] == "E":
                 cur.end = w[1]
                 cur.code = int(w[2])
-
-
-def _feed(pr, text: str) -> None:
-    try:
-        pr.stdin.write(text.encode())
-        pr.stdin.close()
-    except (BrokenPipeError, OSError):
-        pass
 
 
 def _stub_module_header(mod: D.Module) -> str:
@@ -2054,8 +2288,8 @@ def build_sample_set(spec: DriverSpec, example_dir: Path) -> SampleSet:
     rng = random.Random(seed)
     pc = per_call_classes(g, rng)
 
-    with tempfile.TemporaryDirectory(prefix=f"cqd-{spec.example}-") as tmp:
-        pb = ProbeBuild(spec, example_dir, Path(tmp))
+    with tempfile.TemporaryDirectory(prefix=f"cqd-{spec.example}-") as tmp, \
+            ProbeBuild(spec, example_dir, Path(tmp)) as pb:
         sites = pb.ins.sites
         rows_by_site: Dict[int, List[Row]] = {s.id: rows_for(s) for s in sites}
         searcher = Searcher(g, pb, rows_by_site, random.Random(seed + 1))
@@ -2345,8 +2579,8 @@ def domain_problems(spec: DriverSpec, example_dir: Path, ss: SampleSet) -> List[
     must be a run the oracle cuts at K before any out-of-object access (Obs.cap_ok, cq-b19i).
     Returns the samples that are not."""
     example_dir = Path(example_dir)
-    with tempfile.TemporaryDirectory(prefix=f"cqd-{spec.example}-") as tmp:
-        pb = ProbeBuild(spec, example_dir, Path(tmp))
+    with tempfile.TemporaryDirectory(prefix=f"cqd-{spec.example}-") as tmp, \
+            ProbeBuild(spec, example_dir, Path(tmp)) as pb:
         obs = pb.run(ss.samples)
         flagged = [(i, o) for i, o in enumerate(obs)
                    if o.oob and "subst" not in ss.samples[i] and i >= len(spec.calls)]
