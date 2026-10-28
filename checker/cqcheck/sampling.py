@@ -90,6 +90,7 @@ import math
 import os
 import random
 import re
+import sys
 import shlex
 import select
 import signal
@@ -156,6 +157,7 @@ def search_budget() -> int:
 
 
 CROSS_LIMIT = 1024
+CROSS_Q = 8                  # quantum values per kept classical tuple (cq-qdpd)
 SEARCH_BUDGET = 384          # probe runs per unmet target
 SEARCH_BATCH = 48
 # hang guards (cq-ir5z): internal errors, never a sample outcome
@@ -2287,15 +2289,109 @@ def subst_classes(g: Gen, rng: random.Random, sites: Dict[int, List["D.ThetaSite
                                                f"cq_theta reaches ({sbits} bits: "
                                                f"{dict(zip(names, nreach))} reaches) total "
                                                f"{sbits + abits} bits > {exhaustive_bits()}"}
-        # random: per-reach lists
+        # random: per-reach lists, each on a base drawn from the call's samples (the drivers.txt
+        # call, the random and the classical sets), so substituted values meet varied scalars
+        # (cq-3uwk: 124's controlled Ry needs x > k + i together with a substituted b)
+        bases = [list(sm["args"]) for sm in g.samples if sm["call"] == ci and "subst" not in sm] or [base]
         idx = []
         for _ in range(n_random_quantum()):
             sub = {}
             for st, ct, r in zip(sts, cts, nreach):
                 vs = [_site_hex(st, site_random(rng, ct)) for _ in range(max(r, 2))]
                 sub[st.key()] = vs
-            idx.append(g.add_subst(ci, base, sub))
+            idx.append(g.add_subst(ci, bases[rng.randrange(len(bases))], sub))
         out["rq"][key] = {"samples": sorted(set(idx)), "subst_sites": names}
+    return out
+
+
+REACH_CANDIDATES = 4096     # guided candidates per call for unreached rotation sites (cq-rzey)
+
+
+def _rot_sites(run) -> Set[Tuple[str, int, str]]:
+    return {(ev["fn"], ev["site"], ev["kind"]) for ev in run.events
+            if ev.get("ev") == "site" and ev.get("kind") in ("theta", "phi")}
+
+
+def reach_samples(g: "Gen", spec: DriverSpec, example_dir: Path, searcher: "Searcher",
+                  rng: random.Random) -> Dict[int, List[int]]:
+    """Per call, samples that reach a cq_theta / cq_phi site (C oracle site events) no sample so far
+    reaches (cq-rzey). Candidates: classical arguments at their drivers.txt value or random in
+    their domain; integer quantum arguments near one of the candidate's classical integer values
+    (+-2) or small; the rest random. Kept only when in the domain (probe)."""
+    from cqcheck import oracle
+    o1 = sorted(example_dir.glob("*.O1.ll"))[0]
+    plain = [sm for sm in g.samples if "subst" not in sm]
+    reached = set()
+    for r in oracle.run_samples(o1, spec, plain):
+        reached |= _rot_sites(r)
+    out: Dict[int, List[int]] = {}
+    for ci in range(len(spec.calls)):
+        qs, cs = g.quantum_slots(ci), g.classical_slots(ci)
+        if not qs:
+            continue
+        cands = []
+        for t in range(REACH_CANDIDATES):
+            vals: Dict[int, int] = {}
+            ints = []
+            if t % 3 == 2:
+                # the quantum integers first, every classical integer within +-2 of one of them
+                # (compare chains like 137's x > k1 && x < k2 && ...)
+                anchor = []
+                for j in qs:
+                    ct = g.cts[ci][j]
+                    if ct.kind == "i":
+                        v = rng.randint(-8, 16)
+                        vals[j] = v & ((1 << ct.bits) - 1)
+                        anchor.append(v)
+                    else:
+                        vals[j] = g.random_quantum(rng, ct)
+                for j in cs:
+                    ct = g.cts[ci][j]
+                    if ct.kind == "i" and anchor:
+                        vals[j] = (rng.choice(anchor) + rng.randint(-2, 2)) & ((1 << ct.bits) - 1)
+                cands.append({"call": ci, "args": g.with_values(ci, vals)})
+                continue
+            for j in cs:
+                ct = g.cts[ci][j]
+                if ct.kind == "i" and t % 2:
+                    lo, hi = g.classical_domain(ci, j)
+                    v = rng.randint(lo, hi)
+                    vals[j] = v & ((1 << ct.bits) - 1)
+                    ints.append(v)
+                elif ct.kind == "i":
+                    v = int(g.base[ci][j], 16)
+                    ints.append(_signed(v, ct.bits) if ct.signed else v)
+            for j in qs:
+                ct = g.cts[ci][j]
+                if ct.kind == "i" and ints and rng.random() < 0.75:
+                    v = rng.choice(ints) + rng.randint(-2, 2)
+                    vals[j] = v & ((1 << ct.bits) - 1)
+                else:
+                    vals[j] = g.random_quantum(rng, ct)
+            cands.append({"call": ci, "args": g.with_values(ci, vals)})
+        new: List[dict] = []
+        for c, r in zip(cands, oracle.run_samples(o1, spec, cands)):
+            if r.failed:
+                continue
+            fresh = _rot_sites(r) - reached
+            if fresh:
+                new.append(c)
+                reached |= fresh
+        if new:
+            # each with CROSS_Q other quantum values on the same classical tuple (cq-qdpd): a group
+            # of one would make the reached phase "global" and leave it uncompared
+            more = []
+            for c in new:
+                for _ in range(CROSS_Q):
+                    a = list(c["args"])
+                    for j in qs:
+                        a[j] = hexw(g.cts[ci][j], g.random_quantum(rng, g.cts[ci][j]))
+                    more.append({"call": ci, "args": a})
+            new += more
+            obs = searcher.observe([(c["call"], c["args"]) for c in new])
+            idx = [g.add(c["call"], c["args"]) for c, o in zip(new, obs) if searcher.valid(o)]
+            if idx:
+                out[ci] = idx
     return out
 
 
@@ -2632,6 +2728,21 @@ def build_sample_set(spec: DriverSpec, example_dir: Path) -> SampleSet:
             cands = [(ci, a) for a in cc[ci]]
             obs = searcher.observe(cands)
             kept = [g.add(c, a) for (c, a), o in zip(cands, obs) if searcher.valid(o)][:n_random_classical()]
+            # cq-qdpd: each kept classical tuple with CROSS_Q further quantum values, so a group (one
+            # classical tuple) holds several quantum inputs and a phase is "global" only when it
+            # really is constant over them (a group of one makes every phase global)
+            qs = g.quantum_slots(ci)
+            if kept and qs:
+                xc = []
+                for k in list(kept):
+                    a0 = g.samples[k]["args"]
+                    for _ in range(CROSS_Q):
+                        a = list(a0)
+                        for j in qs:
+                            a[j] = hexw(g.cts[ci][j], g.random_quantum(rng, g.cts[ci][j]))
+                        xc.append((ci, a))
+                xobs = searcher.observe(xc)
+                kept += [g.add(c, a) for (c, a), o in zip(xc, xobs) if searcher.valid(o)]
             if kept:
                 rc[str(ci)] = {"samples": kept}
             else:
@@ -2694,6 +2805,18 @@ def build_sample_set(spec: DriverSpec, example_dir: Path) -> SampleSet:
         trips_cls = {"K": K, "loops": loops_out}
         if not loops_out:
             trips_cls["empty"] = "the example has no loop"
+
+        # cq-rzey: reach every cq_theta / cq_phi site some input reaches. A site no sample reaches is
+        # never compared (137's nine-leaf condition: no random sample satisfies all nine compares).
+        # Guided candidates, per call: quantum integers near the call's classical argument values.
+        reach_extra = reach_samples(g, spec, example_dir, searcher, random.Random(seed + 4))
+        for ci, idx in reach_extra.items():
+            e = pc["edge"].get(str(ci))
+            if e is not None and "samples" in e:
+                e["samples"] = sorted(set(e["samples"]) | set(idx))
+                e["reach"] = len(idx)
+            elif idx:
+                pc["edge"][str(ci)] = {"samples": sorted(set(idx)), "reach": len(idx)}
 
     # cq_theta substitution (cq-6m2): appended after every search, which reads samples by (call, args)
     mod = D.read_module(sorted(example_dir.glob("*.O1.ll"))[0])

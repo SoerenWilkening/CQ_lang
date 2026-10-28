@@ -721,18 +721,20 @@ def reachable_functions(mod: Module, entry: str) -> Set[str]:
 
 
 def substituted_sites(mod: Module, spec: DriverSpec, call: int) -> List[ThetaSite]:
-    """The theta sites a sample of driver call `call` substitutes (cq-6m2): every site reachable from
-    the call's function whose register does not derive from a scalar argument the samples already
-    vary (an argument DriverSpec marks quantum). Such a register is computed inside the program or
-    read from a driver object (60's register array), so only "subst" varies it (CR §6 item 1)."""
+    """The theta sites a sample of driver call `call` substitutes (cq-6m2, cq-lvkq): every site
+    reachable from the call's function (CR §6 item 1: each cq_theta input replaced by a chosen bit
+    pattern)."""
+    # cq-lvkq (amends cq-arch Z4): every reachable site, those fed by a varied argument too. CR §6
+    # item 1 replaces each cq_theta input by a chosen bit pattern; without it, a site whose input
+    # is an argument has the same value before and after its Ry, so a computation moved across the
+    # Ry goes unseen (02 with its Ry after the add passed).
     c = spec.calls[call]
     fn = "@" + c["fn"]
-    varied = {(fn, i) for i, a in enumerate(c["args"]) if a["quantum"] and parse_ctype(a["ctype"]).kind != "p"}
     reach = reachable_functions(mod, fn)
     out = []
     for st in theta_sites(mod):
         f = "@" + (st.fn if re.fullmatch(r"[-A-Za-z$._0-9]+", st.fn) else '"' + st.fn + '"')
-        if f in reach and not (st.params & varied):
+        if f in reach:
             out.append(st)
     return out
 
