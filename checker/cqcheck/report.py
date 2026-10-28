@@ -311,6 +311,10 @@ def _compare(ours_results, other_results, against: str, spec) -> Tuple[str, List
     return (PASS, []) if not reasons else (FAIL, [f"{against}: {r}" for r in reasons])
 
 
+class _SkipDiff(Exception):
+    pass
+
+
 def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_error: str = "",
              short_circuit: bool = True, diff_out: Optional[Path] = None,
              reference_mode: bool = False) -> Verdict:
@@ -330,10 +334,16 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
 
     diff_lines = None
     try:
+        # quick mode ($CQ_QUICK=1, `cqcheck run` without --full): no textual diff, a quality signal
+        # that never fails (CLAUDE.md Reports); it costs four tool starts per example
+        if os.environ.get("CQ_QUICK") == "1":
+            raise _SkipDiff()
         diff_lines, diff = textual_diff(ours, ex.reference)
         if diff_out is not None:
             diff_out.parent.mkdir(parents=True, exist_ok=True)
             diff_out.write_text(diff + ("\n" if diff else ""))
+    except _SkipDiff:
+        pass
     except NormalizeError as e:
         reasons.append(f"diff: {e}")
 

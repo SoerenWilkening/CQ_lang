@@ -124,12 +124,37 @@ def full_mode() -> bool:
     return os.environ.get(FULL_MODE_ENV) == "1"
 
 
+# The quick mode (owner, 2026-10-28: development runs must be fast; if too slow, fewer samples):
+# $CQ_QUICK=1 (`cqcheck run` sets it unless --full). Every targeted class is generated as in the
+# default mode; only the random sets and the search budget shrink. The gate runs the default mode.
+QUICK_ENV = "CQ_QUICK"
+QUICK_N_RANDOM_QUANTUM = 128
+QUICK_N_RANDOM_CLASSICAL = 16
+QUICK_SEARCH_BUDGET = 96
+
+
+def quick_mode() -> bool:
+    return os.environ.get(QUICK_ENV) == "1" and not full_mode()
+
+
 def exhaustive_bits() -> int:
     return FULL_EXHAUSTIVE_BITS if full_mode() else EXHAUSTIVE_BITS
 
 
 def n_random_quantum() -> int:
-    return FULL_N_RANDOM_QUANTUM if full_mode() else N_RANDOM_QUANTUM
+    if full_mode():
+        return FULL_N_RANDOM_QUANTUM
+    return QUICK_N_RANDOM_QUANTUM if quick_mode() else N_RANDOM_QUANTUM
+
+
+def n_random_classical() -> int:
+    return QUICK_N_RANDOM_CLASSICAL if quick_mode() else N_RANDOM_CLASSICAL
+
+
+def search_budget() -> int:
+    return QUICK_SEARCH_BUDGET if quick_mode() else SEARCH_BUDGET
+
+
 CROSS_LIMIT = 1024
 SEARCH_BUDGET = 384          # probe runs per unmet target
 SEARCH_BATCH = 48
@@ -2314,7 +2339,7 @@ def classical_candidates(g: Gen, rng: random.Random) -> Dict[int, List[List[str]
         qs = g.quantum_slots(ci)
         cands = []
         if cs:
-            for t in range(N_RANDOM_CLASSICAL * 2):
+            for t in range(n_random_classical() * 2):
                 vals = {j: g.random_classical(rng, ci, j) for j in cs}
                 if t % 2 and qs:
                     vals.update({j: g.random_quantum(rng, g.cts[ci][j]) for j in qs})
@@ -2474,8 +2499,9 @@ class Searcher:
         return a
 
     def search(self, pool: List[Tuple[int, List[str]]], dist: Callable[[Obs], float],
-               budget: int = SEARCH_BUDGET) -> Optional[Tuple[int, List[str]]]:
-        """The first candidate with distance 0, or None after the budget."""
+               budget: int = 0) -> Optional[Tuple[int, List[str]]]:
+        """The first candidate with distance 0, or None after the budget (default search_budget())."""
+        budget = budget or search_budget()
         self.observe(pool)
         scored = []
         # every candidate observed so far (the pool and earlier searches) is a starting point
@@ -2522,7 +2548,7 @@ def _cache_dir() -> Path:
 
 def _cache_key(spec: DriverSpec, example_dir: Path) -> str:
     h = hashlib.sha256()
-    h.update(b"full\n" if full_mode() else b"default\n")   # the sampling mode (cq-kjja)
+    h.update(b"full\n" if full_mode() else b"quick\n" if quick_mode() else b"default\n")   # the mode
     h.update(json.dumps([spec.example, spec.protos, spec.setup, spec.calls], sort_keys=True).encode())
     for p in sorted(Path(example_dir).glob("*.O1.ll")):
         h.update(p.read_bytes())
@@ -2576,7 +2602,7 @@ def build_sample_set(spec: DriverSpec, example_dir: Path) -> SampleSet:
                 continue
             cands = [(ci, a) for a in cc[ci]]
             obs = searcher.observe(cands)
-            kept = [g.add(c, a) for (c, a), o in zip(cands, obs) if searcher.valid(o)][:N_RANDOM_CLASSICAL]
+            kept = [g.add(c, a) for (c, a), o in zip(cands, obs) if searcher.valid(o)][:n_random_classical()]
             if kept:
                 rc[str(ci)] = {"samples": kept}
             else:

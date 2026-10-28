@@ -1,9 +1,11 @@
 """The cqcheck CLI of cq-arch (module chk-report). Run as `python3 -m cqcheck` from checker/.
 
-  run <NN_name…|--all> [--ours DIR] [--oracle ref|c|both] [--json OUT]
+  run <NN_name…|--all> [--ours DIR] [--oracle ref|c|both] [--json OUT] [--full] [-j N]
       One Verdict per example (report.evaluate). Without --ours, our lowering is the example's
       .O1.ll through `opt -passes=cq-lower` at K = 4. Every verdict is stored for `progress`, and
       each normalized diff is written next to it. Exit 0 iff every requested check passed.
+      Quick by default (sampling.quick_mode: small random sets and search budget, no textual
+      diff); --full for the default-mode samples and the diff. -j N examples at a time.
   selftest, baseline      chk-selftest (mutants.selftest(), mutants.baseline())
   progress                tests/progress.tsv: rule, witnesses, passing, failing
   user --o1 X --lowered Y --entry FN [--samples N]
@@ -61,6 +63,28 @@ def _one(ex: report.Example, ours_dir: Optional[Path], oracle: str) -> Verdict:
     return report.evaluate(ex, lowered, oracle, lower_error=err, diff_out=diff_out)
 
 
+def _run_examples(a, examples, ours_dir) -> List[Verdict]:
+    if not a.full:
+        os.environ["CQ_QUICK"] = "1"          # sampling.quick_mode and report: fast development run
+    # a.jobs examples at a time, each with one runner per side (run.default_jobs, oracle PARTS = 1,
+    # the sampler's pool): never a pool inside a pool. Each verdict prints and is stored as it lands.
+    jobs = max(1, a.jobs or int(os.environ.get("CQCHECK_JOBS", "1")))
+    os.environ["CQCHECK_JOBS"] = "1"
+    from cqcheck import run as _run
+    _run.default_jobs = lambda: 1
+    by_name = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+        futs = {pool.submit(_one, e, ours_dir, a.oracle): e for e in examples}
+        for f in concurrent.futures.as_completed(futs):
+            v = f.result()
+            report.save_verdict(v)
+            by_name[v.example] = v
+            ok = report.requested_green(v)
+            print(f"{'ok  ' if ok else 'FAIL'} {v.example}  s6={v.s6} c={v.c_oracle} verifier={v.verifier}"
+                  + ("" if ok or not v.reasons else f"  {v.reasons[0][:200]}"), flush=True)
+    return [by_name[e.name] for e in examples if e.name in by_name]
+
+
 def cmd_run(a) -> int:
     if a.all == bool(a.examples):
         print("cqcheck run: give example names or --all (not both)", file=sys.stderr)
@@ -76,11 +100,18 @@ def cmd_run(a) -> int:
     if ours_dir is not None and not ours_dir.is_dir():
         print(f"cqcheck run: --ours {ours_dir} is not a directory", file=sys.stderr)
         return 2
-    jobs = int(os.environ.get("CQCHECK_JOBS", str(os.cpu_count() or 1)))
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
-        verdicts = list(pool.map(lambda e: _one(e, ours_dir, a.oracle), examples))
-    for v in verdicts:
-        report.save_verdict(v)
+    saved = {k: os.environ.get(k) for k in ("CQ_QUICK", "CQCHECK_JOBS")}
+    from cqcheck import run as _run
+    saved_jobs = _run.default_jobs
+    try:
+        verdicts = _run_examples(a, examples, ours_dir)
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        _run.default_jobs = saved_jobs
     if a.json:
         Path(a.json).write_text("".join(to_json(v) + "\n" for v in verdicts))
     print(report.format_table(verdicts))
@@ -129,6 +160,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     run.add_argument("--ours")
     run.add_argument("--oracle", choices=["ref", "c", "both"], default="both")
     run.add_argument("--json")
+    run.add_argument("--full", action="store_true",
+                     help="default-mode samples and the textual diff (the gate); without it a quick run")
+    run.add_argument("-j", "--jobs", type=int, default=0, help="examples at a time (default $CQCHECK_JOBS or 1)")
     sub.add_parser("selftest")
     sub.add_parser("baseline")
     sub.add_parser("progress")
