@@ -32,7 +32,9 @@ argument; the result is the low W bits; no memory effect.
 
 Samples are Z1's ``{"call", "args"}`` (SampleSet.samples entries); the driver is rendered only by
 ``drivers.driver_source(spec, samples, before_call=..., after_call=..., main_name="__cqo_drv_main")``,
-whose ``before_call``/``after_call`` fork one child per sample (cqo_rt.c). The driver discards the
+whose ``before_call``/``after_call`` fork one child per sample (cqo_rt.c). The driver reads the
+samples at run time from ``drivers.sample_file`` in ``$CQD_SAMPLES`` (cq-arch Z2): one build per
+example, and the samples run in up to ``PARTS`` runner processes in parallel. The driver discards the
 call's result, so the instrumentation logs it at the IR call (``-cq-oracle-entries``). An optional
 ``"subst": {"<fn>:<site>": hex}`` replaces the register value at a ``cq_theta`` site each time it is
 reached (for usercheck); it never reaches the driver.
@@ -43,8 +45,8 @@ dropped: ``unreachable`` reached, an out-of-bounds atomic, a timeout or trip cap
 explains (a trap the totalization should have prevented), a bad sample.
 
 API: ``run_sample(o1, spec, sample) -> RunResult`` and ``trace_sample(o1, spec, sample) -> [event]``
-(both frozen by Z1, cq-zew); ``run_samples(o1, spec, samples) -> [SampleRun]`` builds one program for
-a whole batch (one build instead of one per sample) and keeps failed samples' partial events.
+(both frozen by Z1, cq-zew); ``run_samples(o1, spec, samples) -> [SampleRun]`` runs a whole batch
+and keeps failed samples' partial events.
 CLI: ``python3 -m cqcheck.oracle <NN_name|O1.ll> [--samples JSON] [--driver JSON] [--json OUT]``.
 """
 from __future__ import annotations
@@ -246,20 +248,26 @@ AFTER_CALL = "__cqo_sample_end(); }"
 DRIVER_MAIN = "__cqo_drv_main"
 
 
-def _driver_source(spec: DriverSpec, samples: Sequence[dict]) -> str:
+def _drivers():
     from . import drivers
-    fn = getattr(drivers, "driver_source", None)
-    if fn is None:
+    if getattr(drivers, "driver_source", None) is None:
         raise OracleError("cq: unimplemented: chk-drivers: drivers.driver_source")
-    return fn(spec, list(samples), before_call=BEFORE_CALL, after_call=AFTER_CALL, main_name=DRIVER_MAIN)
+    return drivers
 
 
-def executable(o1: Path, spec: DriverSpec, samples: Sequence[dict]) -> Path:
-    """The oracle program for these samples: instrumented program + instrumented driver + runtime."""
+def _driver_source(spec: DriverSpec, samples: Sequence[dict]) -> str:
+    return _drivers().driver_source(spec, list(samples), before_call=BEFORE_CALL, after_call=AFTER_CALL,
+                                    main_name=DRIVER_MAIN)
+
+
+def executable(o1: Path, spec: DriverSpec, samples: Sequence[dict] = ()) -> Path:
+    """The oracle program of one example: instrumented program + instrumented driver + runtime. The
+    driver reads its samples at run time (cq-arch Z2), so one build serves every sample; `samples`
+    only supply the pointer expressions the driver accepts."""
     prog_o, triple = program(o1)
     plugin, rt = toolchain()
     src = _driver_source(spec, samples)
-    entries = sorted({spec.calls[s["call"]]["fn"] for s in samples})
+    entries = sorted({c["fn"] for c in spec.calls})   # every call the driver can make
     key = hashlib.sha256("\0".join([str(prog_o), src, ",".join(entries)]).encode()).hexdigest()[:20]
 
     def fill(d: Path) -> None:
@@ -335,7 +343,9 @@ def run_samples(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]],
     prog_o, _ = program(Path(o1))
     from .contracts import to_json
     base = "\0".join([str(prog_o), to_json(spec), str(timeout_ms), str(tripcap)])
-    keys = [hashlib.sha256("\0".join([base, _driver_source(spec, [{"call": s["call"], "args": s["args"]}]),
+    drivers = _drivers()
+    base += "\0" + hashlib.sha256(Path(drivers.__file__).read_bytes()).hexdigest()   # the driver's shape
+    keys = [hashlib.sha256("\0".join([base, drivers.sample_record(spec, s),
                                        json.dumps(s.get("subst"), sort_keys=True), str(SRC_KEY)])
                            .encode()).hexdigest()[:24] for s in samples]
     cache = _build_root() / "results"
@@ -362,39 +372,49 @@ def run_samples(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]],
     return out  # type: ignore[return-value]
 
 
-# Samples per driver: driver_source puts every sample in one function, and clang -O1 time grows
-# faster than linearly in its size (thousands of samples took minutes per driver).
-CHUNK = 64
+# The samples run in up to PARTS runner processes at once (each forks one child per sample in turn);
+# a part has at least MIN_PART samples.
+PARTS = max(1, min(8, os.cpu_count() or 1))
+MIN_PART = 16
 
 
 def _run_uncached(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int,
                   tripcap: int) -> List[SampleRun]:
-    runs: List[SampleRun] = []
-    for k in range(0, len(samples), CHUNK):
-        part = _run_chunk(o1, spec, samples[k:k + CHUNK], timeout_ms, tripcap)
-        for r in part:
-            r.index += k
-        runs += part
-    return runs
-
-
-def _run_chunk(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int,
-               tripcap: int) -> List[SampleRun]:
+    from concurrent.futures import ThreadPoolExecutor
     exe = executable(Path(o1), spec, [{"call": s["call"], "args": s["args"]} for s in samples])
+    n = max(1, min(PARTS, len(samples) // MIN_PART))
+    parts = [list(range(k, len(samples), n)) for k in range(n)]
+    with ThreadPoolExecutor(max_workers=n) as ex:
+        done = list(ex.map(lambda ix: _run_part(exe, spec, [samples[i] for i in ix], timeout_ms, tripcap),
+                           parts))
+    runs: List[Optional[SampleRun]] = [None] * len(samples)
+    for ix, part in zip(parts, done):
+        for i, r in zip(ix, part):
+            r.index = i
+            runs[i] = r
+    return runs  # type: ignore[return-value]
+
+
+def _run_part(exe: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int,
+              tripcap: int) -> List[SampleRun]:
     with tempfile.TemporaryDirectory(prefix="cqo-run.") as td:
         t = Path(td)
+        (t / "samples").write_text(_drivers().sample_file(spec, samples))
         cmd = [str(exe), str(t / "trace"), str(t / "status"), str(timeout_ms), str(tripcap)]
         sub = _subst_lines(samples)
         if sub:
             (t / "subst").write_text("".join(l + "\n" for l in sub))
             cmd.append(str(t / "subst"))
         budget = (2 * timeout_ms + 1000) * len(samples) / 1000 + 60
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=budget)
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=budget,
+                           env=dict(os.environ, **{_drivers().SAMPLES_ENV: str(t / "samples")}))
         if p.returncode != 0:
             raise OracleError(f"oracle: runner failed ({p.returncode}): {p.stderr.strip()[-2000:]}")
         runs = [SampleRun(i, s) for i, s in enumerate(samples)]
         for line in (t / "trace").read_text().splitlines():
             i, ev = line.split("\t", 1)
+            if int(i) < 0:
+                continue   # the driver's own setup, before any sample: no sample's event
             runs[int(i)].events.append(json.loads(ev))
         for line in (t / "status").read_text().splitlines():
             i, n = line.split("\t", 1)

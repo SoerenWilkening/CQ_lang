@@ -3,20 +3,22 @@ driver, run one sample, return a RunResult.
 
     run_sample(lowered: Path, spec: DriverSpec, sample: dict, side: str) -> RunResult   (cq-zew)
 
-Build. driver.c (generated from the DriverSpec) is compiled to IR with clang-19 for the lowered
+Build. driver.c (drivers.driver_source, the one renderer of samples, cq-arch Z1/Z2) is compiled to IR with clang-19 for the lowered
 module's triple, llvm-link joins it to the lowered module, checker/rt/stubgen.py defines every
 cqrt_*/cq_template_* the linked module declares and every rule 27 declared clone nothing links (the
 checker's stand-in, typed by the example's .O1.ll: c_module_of, cq-rft), and clang links that with every checker/rt/*.c
 compiled as objects (never an archive, so each family's registering constructor is linked, cf.
 cq-f69). A build is cached under $CQE_CACHE (default <repo>/build/cqcheck-cache) by a hash of
-everything that goes into it, so the samples of one example share one build.
+everything that goes into it. The driver reads its sample at run time (cq-arch Z2), so the samples of
+one example share one build.
 
-Run. One process per sample: `prog <call> <arg>...`, with the trace (JSONL, cq-arch) written to
-$CQE_TRACE. A sample that cannot be built or run is a RunResult whose violations say why; it is
+Run. One process per sample: `prog` with $CQD_SAMPLES naming a one-record drivers.sample_file and
+the trace (JSONL, cq-arch) written to $CQE_TRACE. A sample that cannot be built or run is a RunResult whose violations say why; it is
 never dropped.
 
 Sample values ({call, args}; call is an index into spec.calls, or a function name occurring there
-once; args has one entry per argument of that call):
+once; args has one entry per argument of that call). canonical_sample turns each into the sampling
+encoding (scalars "0x" + bit pattern, pointers a C expression) that drivers renders:
   int                  an integer ctype's value (wrapped to its width); for an fp ctype, that value
   float                an fp ctype's value (long double: the exact double)
   {"bits": "0x..."}    the raw bit pattern of the ctype (long double: the 80-bit x87 pattern)
@@ -25,8 +27,8 @@ once; args has one entry per argument of that call):
                        drivers.c_value renders for the C oracle (cq-arch Z1, cq-a4mf), so both
                        sides receive the same value
   string               for an fp ctype, anything else Python's float() or float.fromhex() reads
-                       ("nan", "-inf", "-0.0", "0x1p-1074"); otherwise a C expression pasted into
-                       the driver (pointers: "coef", "&hostv", names defined by spec.setup)
+                       ("nan", "-inf", "-0.0", "0x1p-1074"); for a pointer ctype, its C expression
+                       ("coef", "&hostv", names defined by spec.setup)
 
 RunResult fields (JSON-serializable):
   side        the side argument ('ours' or 'ref')
@@ -194,26 +196,12 @@ def encode_arg(ctype: str, value: Any) -> Tuple[str, Any]:
 
 # ---- driver ----------------------------------------------------------------------------------
 
-_DRIVER_PRELUDE = r"""
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
+# Ahead of drivers.driver_source: the driver logs each call's result as the trace's ret event through
+# the CQD_RESULT hook (cq-arch Z2).
+_RESULT_PRELUDE = r"""
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 void cqe_log(const char *json_object);
-__attribute__((unused)) static const double coef[4] = {1, 2, 3, 4};
-__attribute__((unused)) static const int icoef[4] = {1, 2, 3, 4};
-static int cqd_arg(void *dst, size_t n, const char *a) {
-  if (a[0] == 'e') return atoi(a + 2);
-  unsigned long long w[2] = {0, 0};
-  const char *p = a + 2; char *e;
-  w[0] = strtoull(p, &e, 16);
-  if (*e == ':') w[1] = strtoull(e + 1, 0, 16);
-  memset(dst, 0, n);
-  memcpy(dst, w, n < sizeof w ? n : sizeof w);
-  return -1;
-}
 static void cqd_ret(int call, const char *fn, const char *w, const void *p, size_t n, unsigned bits) {
   unsigned char b[64] = {0};
   memcpy(b, p, n < sizeof b ? n : sizeof b);
@@ -229,68 +217,36 @@ static void cqd_ret(int call, const char *fn, const char *w, const void *p, size
   snprintf(line, sizeof line, "{\"ev\":\"ret\",\"v\":\"%s\",\"w\":\"%s\",\"call\":%d,\"fn\":\"%s\"}", hex, w, call, fn);
   cqe_log(line);
 }
+#define CQD_RESULT(call, fn, w, p, n, bits) \
+  cqd_ret(call, fn, (w)[0] == 'a' ? "" : (w), p, n, (bits) ? (bits) : (unsigned)(8 * (n)))
 """
 
 
-def _parse_proto(p: str) -> Tuple[str, str, List[str]]:
-    m = re.match(r"\s*(.*?)\b([A-Za-z_]\w*)\s*\((.*)\)\s*;?\s*$", p, re.S)
-    if not m:
-        raise BuildError(f"prototype {p!r} not understood")
-    params = [x.strip() for x in m.group(3).split(",") if x.strip() and x.strip() != "void"]
-    return m.group(1).strip(), m.group(2), params
+def driver_c(spec: DriverSpec, samples: Sequence[dict]) -> str:
+    """The driver C source: drivers.driver_source (cq-arch Z1/Z2: the one renderer of samples) with
+    the result hook. It reads its samples from $CQD_SAMPLES at run time."""
+    from cqcheck import drivers
+    return _RESULT_PRELUDE + drivers.driver_source(spec, list(samples))
 
 
-def driver_c(spec: DriverSpec, exprs: Dict[Tuple[int, int], List[str]]) -> str:
-    """The driver C source: main(argc, argv) runs call argv[1] with arguments argv[2:] ("b:<lo>:<hi>"
-    bit patterns or "e:<n>", the n-th expression of exprs[(call, arg)]) and logs its return value."""
-    protos = {}
-    for p in spec.protos:
-        rt, name, params = _parse_proto(p)
-        protos.setdefault(name, (rt, params))
-    out = [_DRIVER_PRELUDE]
-    out += [p.strip().rstrip(";") + ";" for p in spec.protos]
-    out.append("int main(int argc, char **argv) {")
-    out.append("  if (argc < 2) return 2;")
-    out.append("  int cqd_call = atoi(argv[1]); (void)cqd_call;")
-    out.append("  " + (spec.setup or ""))
-    out.append("  switch (cqd_call) {")
-    for ci, call in enumerate(spec.calls):
-        fn = call["fn"]
-        args = call.get("args", [])
-        rt = protos.get(fn, ("int", []))[0]
-        out.append(f"  case {ci}: {{")
-        out.append(f"    if (argc != {2 + len(args)}) return 3;")
-        names = []
-        for ai, a in enumerate(args):
-            ct = norm_ctype(a["ctype"]) if ctype_kind(a["ctype"])[0] != "ptr" else a["ctype"].replace("static", "")
-            nm = f"a{ai}"
-            names.append(nm)
-            out.append(f"    {ct} {nm};")
-            out.append(f"    switch (cqd_arg(&{nm}, sizeof {nm}, argv[{2 + ai}])) {{")
-            for ei, e in enumerate(exprs.get((ci, ai), [])):
-                out.append(f"      case {ei}: {nm} = ({ct})({e}); break;")
-            out.append("      default: break;")
-            out.append("    }")
-        callexpr = f"{fn}({', '.join(names)})"
-        kind, bits = ctype_kind(rt)
-        nrt = norm_ctype(rt)
-        if nrt == "void" or kind == "ptr":
-            out.append(f"    (void){callexpr};")
+def canonical_sample(spec: DriverSpec, sample: dict) -> dict:
+    """{call: index, args: [...]} in the sampling encoding drivers renders (scalars "0x" + the bit
+    pattern, pointers their C expression), from any value form the module docstring lists."""
+    ci = _resolve_call(spec, sample.get("call"))
+    cargs = spec.calls[ci].get("args", [])
+    vals = sample.get("args", [])
+    if len(vals) != len(cargs):
+        raise SampleError(f"call {ci} takes {len(cargs)} arguments, the sample gives {len(vals)}")
+    out = []
+    for a, v in zip(cargs, vals):
+        kind, x = encode_arg(a["ctype"], v)
+        if kind == "bits":
+            out.append(f"0x{x:x}")
+        elif ctype_kind(a["ctype"])[0] == "ptr":
+            out.append(x)
         else:
-            if kind == "fp":
-                rbits, w = bits, f"f{bits}"
-            elif kind == "int":
-                rbits, w = bits, f"i{bits}"
-            else:
-                rbits, w = 0, ""   # an aggregate return: raw bytes, untyped
-            out.append(f"    {nrt} r = {callexpr};")
-            out.append(f"    cqd_ret({ci}, \"{fn}\", \"{w}\", &r, sizeof r, {rbits} ? {rbits} : (unsigned)(8 * sizeof r));")
-        out.append("    break; }")
-    out.append("  default: return 4;")
-    out.append("  }")
-    out.append("  return 0;")
-    out.append("}")
-    return "\n".join(out) + "\n"
+            raise SampleError(f"value {v!r} for {a['ctype']}: not a value of that type")
+    return {"call": ci, "args": out}
 
 
 # ---- build -----------------------------------------------------------------------------------
@@ -356,19 +312,24 @@ def c_module_of(lowered: Path, spec: DriverSpec) -> Optional[Path]:
     return None
 
 
-def build(lowered: Path, spec: DriverSpec, exprs: Dict[Tuple[int, int], List[str]],
+def build(lowered: Path, spec: DriverSpec, samples: Sequence[dict] = (),
           rt_sources: Optional[Sequence[Path]] = None, extra_sources: Sequence[Path] = (),
           c_module: Optional[Path] = None) -> Path:
-    """The executable for (lowered, spec, exprs); cached. c_module: see c_module_of (its default)."""
+    """The executable for (lowered, spec); cached. It reads its samples at run time (drivers'
+    sample file in $CQD_SAMPLES), so every sample of an example shares it; `samples` (canonical,
+    see canonical_sample) only supply the pointer expressions the driver accepts. c_module: see
+    c_module_of (its default)."""
+    from cqcheck import drivers
     text = Path(lowered).read_text()
     triple = _triple(text)
     objs = runtime_objects(triple, rt_sources)
-    drv = driver_c(spec, exprs)
+    drv = driver_c(spec, samples)
     if c_module is None:
         c_module = c_module_of(Path(lowered), spec)
     ctext = Path(c_module).read_text() if c_module else ""
     h = hashlib.sha256()
-    for part in (_VERSION, text, drv, (RT_DIR / "stubgen.py").read_text(), Path(__file__).read_text(), ctext,
+    for part in (_VERSION, text, drv, (RT_DIR / "stubgen.py").read_text(), Path(__file__).read_text(),
+                 Path(drivers.__file__).read_text(), ctext,
                  *[str(o) for o in objs], *[Path(e).read_text() for e in extra_sources]):
         h.update(part.encode())
         h.update(b"\0")
@@ -393,10 +354,11 @@ def build(lowered: Path, spec: DriverSpec, exprs: Dict[Tuple[int, int], List[str
     _sh([CLANG, "-O0", "-w", "-target", triple, *[str(o) for o in objs], *extra_objs, "linked.ll", "stubs.ll",
          "-lm", "-o", "prog"], cwd=tmp)
     # First launch of a fresh binary can be slow (the host scans it); pay that here, not inside a
-    # sample's timeout. With no arguments the driver returns 2 at once.
+    # sample's timeout. With an empty sample file the driver runs the setup only.
+    (tmp / "empty.samples").write_text("")
     try:
         subprocess.run([str(tmp / "prog")], cwd=tmp, capture_output=True, timeout=300,
-                       env=dict(os.environ, CQE_TRACE=os.devnull))
+                       env=dict(os.environ, CQE_TRACE=os.devnull, CQD_SAMPLES=str(tmp / "empty.samples")))
     except subprocess.TimeoutExpired as e:
         raise BuildError(f"the built program did not start within 300s: {e}")
     _publish(tmp, final)
@@ -461,36 +423,28 @@ def run_sample(lowered: Path, spec: DriverSpec, sample: dict, side: str, *, time
                rt_sources: Optional[Sequence[Path]] = None, extra_sources: Sequence[Path] = (),
                c_module: Optional[Path] = None) -> RunResult:
     """Run one sample of spec against the lowered module in the evaluator (cq-zew)."""
+    from cqcheck import drivers
     try:
-        ci = _resolve_call(spec, sample.get("call"))
-        cargs = spec.calls[ci].get("args", [])
-        vals = sample.get("args", [])
-        if len(vals) != len(cargs):
-            raise SampleError(f"call {ci} takes {len(cargs)} arguments, the sample gives {len(vals)}")
-        argv, exprs = [str(ci)], {}
-        for ai, (a, v) in enumerate(zip(cargs, vals)):
-            kind, x = encode_arg(a["ctype"], v)
-            if kind == "bits":
-                argv.append(f"b:{x & (2**64 - 1):x}:{x >> 64:x}")
-            else:
-                exprs[(ci, ai)] = [x]
-                argv.append("e:0")
-    except (SampleError, KeyError, TypeError, ValueError) as e:
+        canon = canonical_sample(spec, sample)
+        record = drivers.sample_file(spec, [canon])
+    except (SampleError, KeyError, TypeError, ValueError, RuntimeError) as e:
         return _result(side, sample, [], "", None, [{"what": "sample", "h": None, "msg": str(e)}])
     try:
-        prog = build(Path(lowered), spec, exprs, rt_sources, extra_sources, c_module)
-    except (BuildError, OSError) as e:
+        prog = build(Path(lowered), spec, [canon], rt_sources, extra_sources, c_module)
+    except (BuildError, OSError, RuntimeError) as e:
         return _result(side, sample, [], "", None, [{"what": "build", "h": None, "msg": str(e)}])
     with tempfile.TemporaryDirectory(prefix="cqe-run.") as wd:
         trace = Path(wd) / "trace.jsonl"
-        env = dict(os.environ, CQE_TRACE=str(trace))
+        (Path(wd) / "sample").write_text(record)
+        env = dict(os.environ, CQE_TRACE=str(trace), CQD_SAMPLES=str(Path(wd) / "sample"))
         try:
-            p = subprocess.run([str(prog), *argv[0:1], *argv[1:]], cwd=wd, env=env, capture_output=True,
-                               timeout=timeout)
+            p = subprocess.run([str(prog)], cwd=wd, env=env, capture_output=True, timeout=timeout)
             code, stdout, extra = p.returncode, p.stdout.decode(errors="replace"), []
+            err = p.stderr.decode(errors="replace")
             if code < 0:
-                extra.append({"what": "signal", "h": None,
-                              "msg": f"killed by signal {-code}: {p.stderr.decode(errors='replace')[-500:]}"})
+                extra.append({"what": "signal", "h": None, "msg": f"killed by signal {-code}: {err[-500:]}"})
+            elif code == 3 and "cqd: sample" in err:
+                extra.append({"what": "sample", "h": None, "msg": err.strip()[-500:]})
         except subprocess.TimeoutExpired as e:
             code, stdout = None, (e.stdout or b"").decode(errors="replace")
             extra = [{"what": "timeout", "h": None, "msg": f"no exit within {timeout}s"}]
@@ -503,5 +457,10 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
     """run_sample over many samples, in order, jobs processes at a time (0: the CPU count)."""
     from concurrent.futures import ThreadPoolExecutor
     samples = list(samples)
+    try:  # one build for all (each sample would find it in the cache; this avoids racing builds)
+        canon = [canonical_sample(spec, s) for s in samples]
+        build(Path(lowered), spec, canon, kw.get("rt_sources"), kw.get("extra_sources", ()), kw.get("c_module"))
+    except (SampleError, BuildError, OSError, KeyError, TypeError, ValueError, RuntimeError):
+        pass  # run_sample reports it per sample
     with ThreadPoolExecutor(max_workers=jobs or os.cpu_count() or 4) as ex:
         return list(ex.map(lambda s: run_sample(lowered, spec, s, side, **kw), samples))

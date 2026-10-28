@@ -9,8 +9,9 @@ FROZEN below is the whole frozen list. For each entry:
    A name that is not defined yet is PENDING: reported, and a failure only under --require-all
    (the wave-0 coordinator's gate, once every owner has landed).
 2. report.SIBLING_API (what report.evaluate calls) is a subset of FROZEN with the same text.
-3. Unless --no-bd: the Z1 comment on cq-arch contains every line `--print` emits (Z1 is the frozen
-   text; this table is its checkable copy, so the two cannot drift apart).
+3. Unless --no-bd: the Z1 or the Z2 comment on cq-arch contains every line `--print` emits (Z1, as
+   extended by Z2, is the frozen text; this table is its checkable copy, so the two cannot drift
+   apart).
 
 Usage: check_api.py [--require-all] [--no-bd] [--print]
 Exit 0 only when every check holds; every failure is printed.
@@ -39,6 +40,10 @@ FROZEN = [
     ("drivers", "chk-drivers", "cq-w0-chk-drivers", "driver_source",
      [("spec", "DriverSpec", "p", REQ), ("samples", "Sequence[dict]", "p", REQ), ("before_call", "str", "k", ""), ("after_call", "str", "k", ""),
       ("main_name", "str", "k", "main")], "str",
+     "chk-core (cq-w0-chk-core, run.py), chk-oracle (cq-w0-chk-oracle, oracle.py), usercheck (cq-w1-usercheck)"),
+    # Z2 (cq-7lrz): the run-time sample file the driver reads from $CQD_SAMPLES
+    ("drivers", "chk-drivers", "cq-7lrz", "sample_file",
+     [("spec", "DriverSpec", "p", REQ), ("samples", "Sequence[dict]", "p", REQ)], "str",
      "chk-core (cq-w0-chk-core, run.py), chk-oracle (cq-w0-chk-oracle, oracle.py), usercheck (cq-w1-usercheck)"),
     ("sampling", "chk-drivers", "cq-w0-chk-drivers", "sample_set",
      [("spec", "DriverSpec", "p", REQ), ("example_dir", "Path", "p", REQ)], "SampleSet",
@@ -234,14 +239,16 @@ def check_z1():
         return
     data = json.loads(out.stdout)
     texts = [c.get("text") or c.get("body") or "" for c in (data if isinstance(data, list) else [])]
-    z1 = [t for t in texts if t.lstrip().startswith("Z1")]
-    if len(z1) != 1:
-        fail(f"cq-arch: expected exactly one comment starting with Z1, found {len(z1)}")
-        return
-    body = " ".join(z1[0].split())
+    bodies = []
+    for tag in ("Z1", "Z2"):   # Z2 (cq-7lrz) extends Z1's list
+        z = [t for t in texts if t.lstrip().startswith(tag + " ")]
+        if len(z) != 1:
+            fail(f"cq-arch: expected exactly one comment starting with {tag}, found {len(z)}")
+            return
+        bodies.append(" ".join(z[0].split()))
     for line in z1_lines():
-        if " ".join(line.split()) not in body:
-            fail(f"cq-arch Z1 lacks the frozen line: {line}")
+        if not any(" ".join(line.split()) in b for b in bodies):
+            fail(f"cq-arch Z1/Z2 lack the frozen line: {line}")
 
 
 def main():

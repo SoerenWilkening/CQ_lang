@@ -20,7 +20,7 @@ REPO = HERE.parents[1]
 sys.path.insert(0, str(REPO / "checker"))
 sys.path.insert(0, str(REPO / "checker" / "rt"))
 
-from cqcheck import run  # noqa: E402
+from cqcheck import drivers, run  # noqa: E402
 from cqcheck.contracts import DriverSpec, RunResult, to_json  # noqa: E402
 import stubgen  # noqa: E402
 
@@ -53,14 +53,18 @@ def go(ll, proto, fn, ctypes, args):
 def trace_of(ll, proto, fn, ctypes, args):
     """The raw trace of one run (rebuilds through run.build, then runs by hand)."""
     spec = spec1(proto, fn, ctypes)
-    prog = run.build(HERE / ll, spec, {}, RT, FAM)
-    argv = ["0"]
-    for c, a in zip(ctypes, args):
-        _, x = run.encode_arg(c, a)
-        argv.append(f"b:{x & (2**64 - 1):x}:{x >> 64:x}")
+    prog = run.build(HERE / ll, spec, (), RT, FAM)
+    return run_prog(prog, spec, {"call": 0, "args": args})
+
+
+def run_prog(prog, spec, sample):
+    """The trace of one sample run by hand: the driver reads drivers' sample file from $CQD_SAMPLES
+    (cq-arch Z2)."""
     with tempfile.TemporaryDirectory() as d:
-        t = Path(d) / "t.jsonl"
-        subprocess.run([str(prog), *argv], env=dict(os.environ, CQE_TRACE=str(t)), check=True, capture_output=True)
+        t, f = Path(d) / "t.jsonl", Path(d) / "s"
+        f.write_text(drivers.sample_file(spec, [run.canonical_sample(spec, sample)]))
+        subprocess.run([str(prog)], env=dict(os.environ, CQE_TRACE=str(t), CQD_SAMPLES=str(f)), check=True,
+                       capture_output=True)
         return [json.loads(l) for l in t.read_text().splitlines() if l.strip()]
 
 
@@ -568,18 +572,10 @@ class StandIn(unittest.TestCase):
         return out
 
     def evaluator_values(self):
-        prog = run.build(self.lowered, self.spec, {}, RT, FAM, self.o1)
+        prog = run.build(self.lowered, self.spec, (), RT, FAM, self.o1)
         out = []
         for ci, a in STANDIN_SAMPLES:
-            argv = [str(ci)]
-            for t, v in zip(STANDIN_CALLS[ci][1], a):
-                _, x = run.encode_arg(t, v)
-                argv.append(f"b:{x & (2**64 - 1):x}:{x >> 64:x}")
-            with tempfile.TemporaryDirectory() as d:
-                t = Path(d) / "t.jsonl"
-                subprocess.run([str(prog), *argv], env=dict(os.environ, CQE_TRACE=str(t)), check=True,
-                               capture_output=True)
-                ev = [json.loads(l) for l in t.read_text().splitlines() if l.strip()]
+            ev = run_prog(prog, self.spec, {"call": ci, "args": list(a)})
             viol = [e for e in ev if e["ev"] == "violation"]
             self.assertEqual(viol, [], (ci, a))
             vals = [int(e["v"], 16) for e in ev if e["ev"] == "tmpl" and e["sym"].startswith("__cq_q_")]

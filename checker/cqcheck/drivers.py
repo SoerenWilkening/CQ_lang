@@ -137,8 +137,13 @@ _INT_TYPES = {
     "unsigned long": (64, False), "unsigned long int": (64, False),
     "long long": (64, True), "long long int": (64, True), "signed long long": (64, True),
     "unsigned long long": (64, False), "unsigned long long int": (64, False),
+    # not in drivers.txt; hand-written DriverSpecs (chk-core tests, usercheck) use them
+    "int8_t": (8, True), "uint8_t": (8, False), "int16_t": (16, True), "uint16_t": (16, False),
+    "int32_t": (32, True), "uint32_t": (32, False), "int64_t": (64, True), "uint64_t": (64, False),
+    "size_t": (64, False), "ssize_t": (64, True), "ptrdiff_t": (64, True), "intptr_t": (64, True),
+    "uintptr_t": (64, False), "__int128": (128, True), "unsigned __int128": (128, False),
 }
-_FP_TYPES = {"float": 32, "double": 64, "long double": 80}
+_FP_TYPES = {"_Float16": 16, "float": 32, "double": 64, "long double": 80}
 
 
 def parse_ctype(spelling: str) -> CType:
@@ -836,22 +841,34 @@ def baseline_values(line: DriverLine, spec: DriverSpec) -> List[List[str]]:
     return out
 
 
+_HEX = re.compile(r"0x[0-9a-fA-F]+")
+
+
+def _scalar_bits(ct: CType, v) -> int:
+    """The bit pattern of scalar sample value `v` (sampling encoding: "0x" + hex digits)."""
+    if not isinstance(v, str) or not _HEX.fullmatch(v):
+        unimplemented(f"sample value {v!r} for {ct.spelling}")
+    return int(v, 16)
+
+
 def c_value(ct: CType, v: str) -> str:
     """A C expression with the exact bit pattern of sample value `v` (sampling encoding)."""
     if ct.kind == "p":
         return v
-    if not v.startswith("0x"):
-        unimplemented(f"sample value {v!r} for {ct.spelling}")
+    n = _scalar_bits(ct, v)
     if ct.kind == "i":
-        n = int(v, 16)
         if ct.bits == 1:
             return "(_Bool)" + str(n & 1)
+        if ct.bits > 64:
+            n &= (1 << ct.bits) - 1
+            return f"(((({ct.spelling})0x{n >> 64:x}ULL) << 64) | ({ct.spelling})0x{n & ((1 << 64) - 1):x}ULL)"
         return f"(({ct.spelling})0x{n:x}ULL)"
+    if ct.bits == 16:
+        return f"cqd_f16(0x{n & 0xffff:04x}u)"
     if ct.bits == 32:
-        return f"cqd_f32(0x{int(v, 16):08x}u)"
+        return f"cqd_f32(0x{n:08x}u)"
     if ct.bits == 64:
-        return f"cqd_f64(0x{int(v, 16):016x}ULL)"
-    n = int(v, 16)
+        return f"cqd_f64(0x{n:016x}ULL)"
     return f"cqd_f80(0x{n & ((1 << 64) - 1):016x}ULL, 0x{n >> 64:04x}u)"
 
 
@@ -859,27 +876,220 @@ DRIVER_PRELUDE = r"""
 #include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
+static inline _Float16 cqd_f16(uint16_t b) { _Float16 f; memcpy(&f, &b, 2); return f; }
 static inline float cqd_f32(uint32_t b) { float f; memcpy(&f, &b, 4); return f; }
 static inline double cqd_f64(uint64_t b) { double f; memcpy(&f, &b, 8); return f; }
 static inline long double cqd_f80(uint64_t m, uint16_t e) {
     long double f = 0; memcpy(&f, &m, 8); memcpy((char *)&f + 8, &e, 2); return f; }
 """
 
+# ------------------------------------------------------------------------------------------------
+# The run-time sample file (cq-arch Z2, cq-7lrz)
+#
+# driver_source emits a driver that reads its samples when it runs, from the file named by the
+# environment variable CQD_SAMPLES, so one build of an example serves every sample. The file is
+# sample_file(spec, samples): one record per sample, one line per record, fields separated by one
+# space:
+#
+#     <call> <arg> <arg> ...
+#
+# <call> is the decimal index into spec.calls; one <arg> per argument of that call: a scalar is its
+# sample value's bit pattern as "0x" + lowercase hex digits (the value c_value renders, at most 128
+# bits); a pointer is "p" + the hex of the UTF-8 bytes of its C expression, which must be one the
+# driver was rendered with. Record k (0-based, in file order) runs with CQD_SAMPLE = k.
+# ------------------------------------------------------------------------------------------------
+
+SAMPLES_ENV = "CQD_SAMPLES"
+
+
+def _ptr_token(expr: str) -> str:
+    return "p" + expr.encode().hex()
+
+
+def _call_ctypes(spec: DriverSpec, sample: dict) -> Tuple[int, List[CType]]:
+    ci = sample.get("call")
+    if not isinstance(ci, int) or isinstance(ci, bool) or not 0 <= ci < len(spec.calls):
+        unimplemented(f"sample {sample!r}: call is not an index into the {len(spec.calls)} driver calls")
+    cts = [parse_ctype(a["ctype"]) for a in spec.calls[ci]["args"]]
+    if len(sample.get("args", [])) != len(cts):
+        unimplemented(f"sample {sample!r}: call {ci} takes {len(cts)} arguments")
+    return ci, cts
+
+
+def sample_record(spec: DriverSpec, sample: dict) -> str:
+    """The sample file line of one sample (without the newline)."""
+    ci, cts = _call_ctypes(spec, sample)
+    toks = [str(ci)]
+    for ct, v in zip(cts, sample["args"]):
+        if ct.kind == "p":
+            if not isinstance(v, str) or not v.strip():
+                unimplemented(f"pointer sample value {v!r}: a C expression")
+            toks.append(_ptr_token(v))
+        else:
+            n = _scalar_bits(ct, v)
+            if n >> 128:
+                unimplemented(f"sample value {v!r} for {ct.spelling}: wider than 128 bits")
+            toks.append(f"0x{n:x}")
+    return " ".join(toks)
+
+
+def sample_file(spec: DriverSpec, samples: Sequence[dict]) -> str:
+    """The run-time sample file of `samples`, in order: what the driver reads from $CQD_SAMPLES."""
+    return "".join(sample_record(spec, s) + "\n" for s in samples)
+
+
+_DRIVERS_TXT: Dict[Tuple[str, int], Dict[str, DriverLine]] = {}
+
+
+def _drivers_txt_lines() -> Dict[str, DriverLine]:
+    path = spec_dir() / "_tools" / "drivers.txt"
+    if not path.exists():
+        return {}
+    k = (str(path), path.stat().st_mtime_ns)
+    if k not in _DRIVERS_TXT:
+        _DRIVERS_TXT[k] = read_drivers_txt(path)
+    return _DRIVERS_TXT[k]
+
+
+def _pointer_exprs(spec: DriverSpec, samples: Sequence[dict]) -> Dict[Tuple[int, int], List[str]]:
+    """(call, arg) -> the C expressions a pointer argument may take: those of the samples, and, when
+    spec is a drivers.txt example, those of its line (sampling never varies a pointer, so a driver
+    rendered from any subset of an example's samples is the same driver)."""
+    out: Dict[Tuple[int, int], Set[str]] = {}
+    for s in samples:
+        ci, cts = _call_ctypes(spec, s)
+        for ai, (ct, v) in enumerate(zip(cts, s["args"])):
+            if ct.kind == "p":
+                out.setdefault((ci, ai), set()).add(v)
+    line = _drivers_txt_lines().get(spec.example)
+    if line is not None and [parse_call(c)[0] for c in line.calls] == [c["fn"] for c in spec.calls]:
+        for ci, (ctext, call) in enumerate(zip(line.calls, spec.calls)):
+            args = parse_call(ctext)[1]
+            if len(args) != len(call["args"]):
+                continue
+            for ai, (a, txt) in enumerate(zip(call["args"], args)):
+                if parse_ctype(a["ctype"]).kind == "p":
+                    out.setdefault((ci, ai), set()).add(txt)
+    return {k: sorted(v) for k, v in out.items()}
+
+
+def _ret_type(spec: DriverSpec, fn: str) -> Tuple[str, str, int]:
+    """(C spelling, rail type, value bits) of fn's return: rail type '' for void, a pointer or an
+    aggregate (bits 0); 'i<N>' for an integer, 'f<N>' for an fp type."""
+    for p in spec.protos:
+        for part in _split_top(p, ";"):
+            m = _PROTO.match(part) if part.strip() else None
+            if m and m.group("name") == fn:
+                ret = " ".join(w for w in m.group("ret").split()
+                               if w not in ("static", "inline", "extern", "const", "volatile"))
+                if ret == "void" or "*" in ret:
+                    return ret, "", 0
+                if ret in _INT_TYPES:
+                    return ret, f"i{_INT_TYPES[ret][0]}", _INT_TYPES[ret][0]
+                if ret in _FP_TYPES:
+                    return ret, f"f{_FP_TYPES[ret]}", _FP_TYPES[ret]
+                return ret, "agg", 0
+    unimplemented(f"{spec.example}: no prototype for {fn}")
+
+
+_READER_PRELUDE = r"""
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#ifndef CQD_RESULT
+#define CQD_RESULT(call, fn, w, p, n, bits) ((void)0)
+#endif
+#define CQD_BAD(why) do { fprintf(stderr, "cqd: sample %d: %s\n", cqd_idx, why); _exit(3); } while (0)
+#define CQD_TOK() do { cqd_t = strtok_r(0, " ", &cqd_sv); if (!cqd_t) CQD_BAD("too few arguments"); } while (0)
+#define CQD_HEX() do { \
+    CQD_TOK(); \
+    if (cqd_t[0] != '0' || cqd_t[1] != 'x') CQD_BAD("a scalar is 0x<hex>"); \
+    size_t cqd_len = strlen(cqd_t + 2); char *cqd_e = 0; \
+    if (cqd_len == 0 || cqd_len > 32) CQD_BAD("a scalar has 1 to 32 hex digits"); \
+    cqd_w[0] = cqd_w[1] = 0; \
+    if (cqd_len > 16) { \
+        cqd_w[0] = strtoull(cqd_t + cqd_len - 14, &cqd_e, 16); if (*cqd_e) CQD_BAD("bad hex digit"); \
+        cqd_t[cqd_len - 14] = 0; \
+    } \
+    cqd_w[cqd_len > 16] = strtoull(cqd_t + 2, &cqd_e, 16); if (*cqd_e) CQD_BAD("bad hex digit"); \
+} while (0)
+#define CQD_SCALAR(v, nbytes) do { CQD_HEX(); memset(&(v), 0, sizeof(v)); memcpy(&(v), cqd_w, nbytes); } while (0)
+#define CQD_BOOL(v) do { CQD_HEX(); (v) = (_Bool)(cqd_w[0] & 1); } while (0)
+"""
+
 
 def driver_source(spec: DriverSpec, samples: Sequence[dict], *, before_call: str = "",
                   after_call: str = "", main_name: str = "main") -> str:
-    """A C driver: the prototypes, the setup, then one call per sample in order. `before_call` and
-    `after_call` are C statements with `CQD_SAMPLE` (the sample index) in scope."""
-    out = [DRIVER_PRELUDE]
-    out += spec.protos
+    """A C driver (cq-arch Z2): `int <main_name>(void)` runs the setup once, then reads the sample
+    file named by $CQD_SAMPLES (sample_file) and makes one call per record, in order. Scalar
+    arguments are the records' bit patterns (bit-identical to c_value); a pointer argument is one of
+    the expressions of `samples` (and of the example's drivers.txt line), so the source does not
+    depend on scalar values: one build serves every sample.
+
+    `before_call` and `after_call` are C statements around each call with `CQD_SAMPLE` (the record
+    index) in scope. After a call whose result is an integer, fp or aggregate value, the driver
+    evaluates `CQD_RESULT(call, fn, w, p, n, bits)`: call index, function name, rail type ("i<N>",
+    "f<N>", or "agg"), a pointer to the result, sizeof the result, and its value bits (0 for an
+    aggregate). It is a macro a consumer may define ahead of the source; by default it does nothing.
+    A malformed record, or a pointer expression the driver was not rendered with, prints
+    "cqd: sample <k>: <why>" on stderr and ends the process with _exit(3)."""
+    ptrs = _pointer_exprs(spec, samples)
+    out = [DRIVER_PRELUDE, _READER_PRELUDE]
+    out += [p.strip().rstrip(";") + ";" for p in spec.protos if p.strip()]
     out.append(f"int {main_name}(void) {{")
     out.append("    " + spec.setup)
-    for i, s in enumerate(samples):
-        call = spec.calls[s["call"]]
-        cts = [parse_ctype(a["ctype"]) for a in call["args"]]
-        args = ", ".join(c_value(ct, v) for ct, v in zip(cts, s["args"]))
-        out.append(f"    {{ const int CQD_SAMPLE = {i}; (void)CQD_SAMPLE; {before_call} "
-                   f"(void){call['fn']}({args}); {after_call} }}")
+    out.append(f'    const char *cqd_path = getenv("{SAMPLES_ENV}");')
+    out.append('    FILE *cqd_f = cqd_path ? fopen(cqd_path, "rb") : 0;')
+    out.append('    int cqd_idx = -1;')
+    out.append('    if (!cqd_f) CQD_BAD("cannot open the sample file $' + SAMPLES_ENV + '");')
+    out.append("    fseek(cqd_f, 0, SEEK_END); long cqd_size = ftell(cqd_f); fseek(cqd_f, 0, SEEK_SET);")
+    out.append("    char *cqd_buf = malloc((size_t)cqd_size + 1);")
+    out.append('    if (!cqd_buf || fread(cqd_buf, 1, (size_t)cqd_size, cqd_f) != (size_t)cqd_size) '
+               'CQD_BAD("cannot read the sample file");')
+    out.append("    fclose(cqd_f); cqd_buf[cqd_size] = 0;")
+    out.append("    unsigned long long cqd_w[2]; char *cqd_t, *cqd_sv, *cqd_next;")
+    out.append("    for (char *cqd_p = cqd_buf; *cqd_p; cqd_p = cqd_next) {")
+    out.append("        char *cqd_nl = strchr(cqd_p, '\\n');")
+    out.append("        if (cqd_nl) { *cqd_nl = 0; cqd_next = cqd_nl + 1; } else cqd_next = cqd_p + strlen(cqd_p);")
+    out.append("        cqd_idx++;")
+    out.append("        cqd_sv = 0; cqd_t = strtok_r(cqd_p, \" \", &cqd_sv);")
+    out.append('        if (!cqd_t) CQD_BAD("an empty record");')
+    out.append("        char *cqd_ce = 0; long cqd_call = strtol(cqd_t, &cqd_ce, 10);")
+    out.append('        if (*cqd_ce) CQD_BAD("the call is a decimal index");')
+    out.append("        switch (cqd_call) {")
+    for ci, call in enumerate(spec.calls):
+        fn = call["fn"]
+        out.append(f"        case {ci}: {{")
+        names = []
+        for ai, a in enumerate(call["args"]):
+            ct = parse_ctype(a["ctype"])
+            nm = f"cqd_a{ai}"
+            names.append(nm)
+            if ct.kind == "p":
+                out.append(f"            {ct.spelling} {nm} = 0; CQD_TOK();")
+                conds = [f'if (!strcmp(cqd_t, "{_ptr_token(e)}")) {nm} = ({ct.spelling})({e});'
+                         for e in ptrs.get((ci, ai), [])]
+                out.append("            " + " else ".join(conds + ['CQD_BAD("a pointer expression the driver '
+                                                                    'was not rendered with");']))
+            elif ct.bits == 1:
+                out.append(f"            {ct.spelling} {nm}; CQD_BOOL({nm});")
+            else:
+                nbytes = 10 if ct.bits == 80 else ct.bits // 8
+                out.append(f"            {ct.spelling} {nm}; CQD_SCALAR({nm}, {nbytes});")
+        out.append('            if (strtok_r(0, " ", &cqd_sv)) CQD_BAD("too many arguments");')
+        rt, w, bits = _ret_type(spec, fn)
+        callexpr = f"{fn}({', '.join(names)})"
+        if w:
+            body = (f"{rt} cqd_r = {callexpr}; "
+                    f'CQD_RESULT({ci}, "{fn}", "{w}", &cqd_r, sizeof cqd_r, {bits});')
+        else:
+            body = f"(void){callexpr};"
+        out.append(f"            {{ const int CQD_SAMPLE = cqd_idx; (void)CQD_SAMPLE; {before_call} "
+                   f"{body} {after_call} }}")
+        out.append("            break; }")
+    out.append('        default: CQD_BAD("call index out of range");')
+    out.append("        }")
+    out.append("    }")
     out.append("    return 0;\n}")
     return "\n".join(out) + "\n"
 

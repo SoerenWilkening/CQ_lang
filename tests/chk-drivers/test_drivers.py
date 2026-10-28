@@ -122,10 +122,142 @@ int f(_Bool a, signed char b, unsigned long long c, float d, double e, long doub
         with tempfile.TemporaryDirectory() as t:
             Path(t, "d.c").write_text(src)
             Path(t, "f.c").write_text(callee)
+            Path(t, "s").write_text(D.sample_file(spec, [{"call": 0, "args": vals}]))
             subprocess.run([CLANG, "-w", "-O0", str(Path(t, "d.c")), str(Path(t, "f.c")), "-o", str(Path(t, "a"))],
                            check=True)
-            out = subprocess.run([str(Path(t, "a"))], capture_output=True, text=True, check=True).stdout.split()
+            out = subprocess.run([str(Path(t, "a"))], capture_output=True, text=True, check=True,
+                                 env=dict(os.environ, CQD_SAMPLES=str(Path(t, "s")))).stdout.split()
         self.assertEqual(out, ["1", "80", "fedcba9876543210", "7fc12345", "fff8000000012345", "7fffc000000000000001"])
+
+    def test_sample_file_shape(self):
+        """cq-arch Z2: one line per sample, `<call> <arg>...`, scalars 0x<hex>, pointers p<hex of the
+        expression>; the driver source does not depend on scalar values."""
+        spec = DriverSpec("t", ["int f(int,const double*);", "int g(long double);"], "",
+                          [{"fn": "f", "args": [{"ctype": "int", "quantum": True},
+                                                {"ctype": "const double*", "quantum": False}]},
+                           {"fn": "g", "args": [{"ctype": "long double", "quantum": True}]}])
+        a = [{"call": 0, "args": ["0x00ff", "coef"]}, {"call": 1, "args": ["0x3fff8000000000000000"]}]
+        b = [{"call": 0, "args": ["0x7", "coef"]}, {"call": 1, "args": ["0x0"]}]
+        self.assertEqual(D.sample_file(spec, a), "0 0xff p636f6566\n1 0x3fff8000000000000000\n")
+        self.assertEqual(D.driver_source(spec, a), D.driver_source(spec, b))
+        for bad in ({"call": 0, "args": ["7", "coef"]}, {"call": 2, "args": []}, {"call": 1, "args": []},
+                    {"call": 1, "args": ["0x1" + "0" * 32]}):
+            with self.assertRaises(RuntimeError, msg=bad):
+                D.sample_file(spec, [bad])
+
+
+# The driver shape before cq-7lrz (values baked into the source), kept here as the reference the
+# run-time driver must equal bit for bit.
+def baked_c_value(ct, v):
+    if ct.kind == "p":
+        return v
+    if ct.kind == "i":
+        n = int(v, 16)
+        if ct.bits == 1:
+            return "(_Bool)" + str(n & 1)
+        return f"(({ct.spelling})0x{n:x}ULL)"
+    if ct.bits == 32:
+        return f"cqd_f32(0x{int(v, 16):08x}u)"
+    if ct.bits == 64:
+        return f"cqd_f64(0x{int(v, 16):016x}ULL)"
+    n = int(v, 16)
+    return f"cqd_f80(0x{n & ((1 << 64) - 1):016x}ULL, 0x{n >> 64:04x}u)"
+
+
+def baked_driver_source(spec, samples):
+    out = [D.DRIVER_PRELUDE] + list(spec.protos) + ["int main(void) {", "    " + spec.setup]
+    for i, s in enumerate(samples):
+        call = spec.calls[s["call"]]
+        cts = [D.parse_ctype(a["ctype"]) for a in call["args"]]
+        args = ", ".join(baked_c_value(ct, v) for ct, v in zip(cts, s["args"]))
+        out.append(f"    {{ (void){call['fn']}({args}); }}")
+    out.append("    return 0;\n}")
+    return "\n".join(out) + "\n"
+
+
+def dump_callees(spec):
+    """Definitions of every prototype that print the callee name and each argument's value bytes
+    (a pointer: the first 4 bytes it points to)."""
+    out = ["#include <stdio.h>", "#include <stdbool.h>",
+           "static void cqd_dump(const void *p, int n) { const unsigned char *b = p; "
+           "for (int i = n - 1; i >= 0; --i) printf(\"%02x\", b[i]); putchar(' '); }"]
+    for t in spec.protos:
+        pr = D.parse_proto(t)
+        params, body = [], [f'printf("{pr.name} ");']
+        for j, ct in enumerate(pr.params):
+            params.append(f"{ct.spelling} x{j}")
+            if ct.kind == "p":
+                body.append(f"cqd_dump((const void *)x{j}, 4);")
+            else:
+                body.append(f"cqd_dump(&x{j}, {1 if ct.bits == 1 else 10 if ct.bits == 80 else ct.bits // 8});")
+        body.append("putchar('\\n');")
+        ret = " ".join(pr.ret.split())
+        if ret != "void":
+            body.append("return 0;")
+        out.append(f"{ret} {pr.name}({', '.join(params) or 'void'}) {{ {' '.join(body)} }}")
+    return "\n".join(out) + "\n"
+
+
+# Every scalar width of drivers.txt (_Bool, char, short, int, long, long long, float, double,
+# long double, signed and unsigned), pointers and setup snippets, and the fp specials of the sample
+# sets (each set's specials class: +-0, +-Inf, NaNs, the smallest subnormal).
+RUNTIME_EXAMPLES = ["03_phase_arm_eq", "12_int_widths", "17_casts", "19_fp_widths", "60_qft",
+                    "78_array_of_structs", "83_fmod_frem", "90_quantum_length_memcpy", "93_i128",
+                    "104_fpclass", "110_bitint", "156_qq_width_matrix", "163_sret_return", "186_free_qram"]
+BAKED_CHUNK = 4096
+
+
+class RuntimeSamples(unittest.TestCase):
+    """cq-7lrz acceptance: the run-time driver (cq-arch Z2) passes every argument bit-identical to the
+    baked driver, over the drivers' full sample sets of RUNTIME_EXAMPLES."""
+
+    def test_bit_identical_to_baked(self):
+        from concurrent.futures import ThreadPoolExecutor
+        widths, specials, total = set(), 0, 0
+        for n in RUNTIME_EXAMPLES:
+            with self.subTest(example=n):
+                spec = D.driver_spec(n, D.example_dir(n))
+                samples = S.sample_set(spec, D.example_dir(n)).samples
+                total += len(samples)
+                for s in samples:
+                    for a in spec.calls[s["call"]]["args"]:
+                        ct = D.parse_ctype(a["ctype"])
+                        widths.add((ct.kind, ct.bits, ct.signed) if ct.kind != "p" else ("p",))
+                specials += sum(1 for s in samples for a, v in zip(spec.calls[s["call"]]["args"], s["args"])
+                                if D.parse_ctype(a["ctype"]).kind == "f"
+                                and S.fp_kind(int(v, 16), D.parse_ctype(a["ctype"]).bits)[0] in ("nan", "inf", "sub"))
+                with tempfile.TemporaryDirectory() as t:
+                    t = Path(t)
+                    (t / "callee.c").write_text(dump_callees(spec))
+                    (t / "rt.c").write_text(D.driver_source(spec, samples))
+                    subprocess.run([CLANG, "-w", "-O0", "-c", str(t / "callee.c"), "-o", str(t / "callee.o")], check=True)
+                    subprocess.run([CLANG, "-w", "-O1", str(t / "rt.c"), str(t / "callee.o"), "-o", str(t / "rt")],
+                                   check=True)
+                    chunks = [samples[k:k + BAKED_CHUNK] for k in range(0, len(samples), BAKED_CHUNK)]
+
+                    def one(k):
+                        c = t / f"b{k}.c"
+                        c.write_text(baked_driver_source(spec, chunks[k]))
+                        subprocess.run([CLANG, "-w", "-O0", str(c), str(t / "callee.o"), "-o", str(t / f"b{k}")],
+                                       check=True)
+                        baked = subprocess.run([str(t / f"b{k}")], capture_output=True, text=True, check=True).stdout
+                        (t / f"s{k}").write_text(D.sample_file(spec, chunks[k]))
+                        rt = subprocess.run([str(t / "rt")], capture_output=True, text=True, check=True,
+                                            env=dict(os.environ, CQD_SAMPLES=str(t / f"s{k}"))).stdout
+                        return baked, rt
+
+                    with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as ex:
+                        for k, (baked, rt) in enumerate(ex.map(one, range(len(chunks)))):
+                            self.assertGreaterEqual(baked.count("\n"), len(chunks[k]))
+                            self.assertEqual(rt, baked, f"{n} chunk {k}")
+        print(f"\nruntime driver: {total} samples of {len(RUNTIME_EXAMPLES)} examples bit-identical to the "
+              f"baked driver; {specials} fp special arguments; widths {sorted(widths, key=str)}", file=sys.stderr)
+        self.assertGreaterEqual(len(RUNTIME_EXAMPLES), 10)
+        for w in [("i", 1, False), ("i", 8, True), ("i", 8, False), ("i", 16, True), ("i", 16, False),
+                  ("i", 32, True), ("i", 32, False), ("i", 64, True), ("i", 64, False), ("f", 32, True),
+                  ("f", 64, True), ("f", 80, True), ("p",)]:
+            self.assertIn(w, widths)
+        self.assertGreater(specials, 0)
 
 
 class Sampling(unittest.TestCase):
