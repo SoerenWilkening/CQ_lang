@@ -288,18 +288,33 @@ class Sampling(unittest.TestCase):
         return {(r["site"].split(":")[0], r["row"]): r for r in ss.classes["totalization"]["rows"]}
 
     def test_divrem_rows(self):
+        """cq-f075 (owner ruling, CLAUDE.md Domain): division by zero and INT_MIN / -1 are undefined
+        in LLVM, so their rows are empty with that reason and no kept sample divides that way."""
         spec, ss = self.sample("11_int_divrem")
         rows = self.rows(ss)
         for fn, row in (("@sdiv_qc", "sdiv(a, 0)"), ("@sdiv_qc", "sdiv(INT_MIN, -1)"), ("@udiv_qc", "udiv(a, 0)"),
                         ("@srem_qc", "srem(INT_MIN, -1)"), ("@urem_qq", "urem(a, 0)")):
-            self.assertIn("samples", rows[(fn, row)], (fn, row))
-        # a hit really hits: sdiv_qc(x, th, c) with x = INT_MIN and c = -1
-        s = ss.samples[rows[("@sdiv_qc", "sdiv(INT_MIN, -1)")]["samples"][0]]
-        self.assertEqual((s["args"][0], s["args"][2]), ("0x80000000", "0xffffffff"))
+            self.assertIn("outside the domain", rows[(fn, row)].get("empty", ""), (fn, row))
+        calls = {c["fn"]: i for i, c in enumerate(spec.calls)}
+        for i, smp in enumerate(ss.samples):
+            if i < len(spec.calls):
+                continue
+            a = smp["args"]
+            if smp["call"] == calls.get("sdiv_qc", -1):
+                self.assertNotEqual(a[2], "0x00000000", smp)
+                self.assertFalse(a[0] == "0x80000000" and a[2] == "0xffffffff", smp)
         self.assertEqual(ss.classes["trips"]["loops"], [])
         self.assertIn("empty", ss.classes["trips"])
         # baselines first
         self.assertEqual(ss.samples[0], {"call": 0, "args": ["0x00000000", "0x3fe0000000000000", "0x00000003"]})
+
+    def test_urem_by_zero_out_of_domain(self):
+        """cq-f075, cq-hw1a: 76 param_bounded(x, th, t, n) reads t[x % n]; n = 0 is undefined in
+        LLVM, so no kept sample of that call has n = 0 (the drivers.txt call has n = 4)."""
+        spec, ss = self.sample("76_param_quantum_index")
+        for i, smp in enumerate(ss.samples):
+            if smp["call"] == 0 and i >= len(spec.calls):
+                self.assertNotEqual(int(smp["args"][3], 16) & 0xffffffff, 0, smp)
 
     def test_exhaustive_and_edges(self):
         spec, ss = self.sample("12_int_widths")

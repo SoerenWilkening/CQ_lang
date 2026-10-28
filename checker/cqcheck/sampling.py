@@ -73,9 +73,12 @@ specials, exhaustive, random) are generated whole and then lose exactly their ou
 samples (`drop_out_of_domain`; the entry counts them in "out_of_domain"). A mem site's §2 rows
 (index = n, index > n) are listed with that reason and never searched: an offset at or past its
 object's end is such an access. A classical-set or search candidate is kept only when, beyond
-that, its probe run returns, or traps right after a probe that hit a trapping §2 row (division by
-zero, INT_MIN / -1): a candidate on which the C program itself does not terminate or faults (a
-negative VLA size) is outside the program's input domain too. Samples with cq_theta
+that, its probe run returns and hits no LLVM-undefined §2 row (`ub_row`: division by zero,
+INT_MIN / -1, a shift amount at or above W, an fptosi/fptoui of NaN, Inf or out of range; owner
+ruling 2026-10-28, CLAUDE.md Domain, cq-f075): a candidate on which the C program does not
+terminate, faults, or executes such an operation is outside the program's input domain. Every
+class loses those samples as it loses out-of-object ones, and their totalization rows are listed
+empty with that reason. Samples with cq_theta
 substitutions are not probed (the probe build has no substitution).
 """
 from __future__ import annotations
@@ -1876,6 +1879,30 @@ def rows_for(site: Site) -> List[Row]:
     return out
 
 
+def ub_row(row: Row) -> bool:
+    """A CR §2 row whose input is undefined behaviour or poison as LLVM defines it: outside the
+    domain (owner ruling 2026-10-28, CLAUDE.md Domain: whatever LLVM does, we do). Never sampled,
+    never compared. Rows LLVM defines (IEEE NaN/Inf results, fshl/fshr amounts mod W, ctlz/cttz/abs
+    without their poison flag, rotation angles) stay."""
+    k = row.site.kind
+    if k == "div":
+        return True
+    if k == "shift":
+        return True
+    if k == "fptoi":
+        return not row.row.startswith("f80 non-canonical")
+    return False
+
+
+def _ub(o: "Obs", rows_by_site: Dict[int, List[Row]]) -> bool:
+    """The sample executes an operation whose operands hit an LLVM-undefined row (ub_row)."""
+    for sid, recs in o.p.items():
+        for row in rows_by_site.get(sid, []):
+            if ub_row(row) and any(row.hit(r) for r in recs):
+                return True
+    return False
+
+
 def _records(o: Obs, site: Site) -> List[Tuple[int, int, int, int]]:
     if site.kind == "mem":
         return [(off, size, 0, 0) for off, size in o.m.get(site.id, [])]
@@ -2252,7 +2279,8 @@ def drop_out_of_domain(g: Gen, pc: Dict[str, dict], searcher: "Searcher") -> Non
     obs = searcher.observe([(s["call"], s["args"]) for s in g.samples])
     # the drivers.txt calls are spec input data and stay samples 0 .. ncalls-1 even when one of
     # them leaves an object (91 stores a[0] into malloc(0), 107 reads one past b: cq-b4re)
-    bad = {i for i, o in enumerate(obs) if not _in_domain(o) and i >= len(g.spec.calls)}
+    bad = {i for i, o in enumerate(obs)
+           if (not _in_domain(o) or _ub(o, searcher.rows_by_site)) and i >= len(g.spec.calls)}
     if not bad:
         return
     remap: Dict[int, int] = {}
@@ -2303,15 +2331,10 @@ def _in_domain(o: Obs) -> bool:
 
 def _valid(o: Obs, rows_by_site: Dict[int, List[Row]]) -> bool:
     if o.oob:
-        return o.cap_ok
-    if o.returned:
-        return True
-    if o.end == "signal" and o.code in (8,):          # SIGFPE: a trapping §2 row in the native build
-        for sid, recs in o.p.items():
-            for row in rows_by_site.get(sid, []):
-                if row.traps and any(row.hit(r) for r in recs):
-                    return True
-    return False
+        return o.cap_ok and not _ub(o, rows_by_site)
+    # an LLVM-undefined operation (a trapping division included) is outside the domain (CLAUDE.md
+    # Domain, cq-f075)
+    return o.returned and not _ub(o, rows_by_site)
 
 
 def _cap_clean(r) -> bool:
@@ -2577,6 +2600,11 @@ def build_sample_set(spec: DriverSpec, example_dir: Path) -> SampleSet:
             for row in rows_by_site[s.id]:
                 entry = {"site": s.key(), "row": row.row}
                 sr = static_reason(row)
+                if ub_row(row):
+                    entry["empty"] = ("outside the domain: undefined in LLVM (owner ruling 2026-10-28, "
+                                      "CLAUDE.md Domain; cq-f075)")
+                    tot_rows.append(entry)
+                    continue
                 if sr:
                     entry["empty"] = f"cannot be hit: {sr}"
                     tot_rows.append(entry)
