@@ -14,6 +14,8 @@ from cqcheck import sampling as S         # noqa: E402
 from cqcheck.contracts import DriverSpec, SampleSet, from_json, to_json   # noqa: E402
 
 CLANG = str(S.LLVM_BIN / "clang")
+# subprocesses a test runs at once: $CQCHECK_JOBS (the machine-wide cap), else 2
+JOBS = max(1, min(4, int(os.environ.get("CQCHECK_JOBS") or 2)))
 
 
 def q(spec, call=0):
@@ -67,22 +69,29 @@ class Loops(unittest.TestCase):
     def test_loops_equal_llvm_loopinfo(self):
         """The probe's natural loops are LLVM's LoopInfo loops, spelled per T1 (<fn>:<header>)."""
         import re
-        for n in D.all_examples():
-            o1 = D.o1_path(n)
-            m = D.read_module(o1)
-            ins = S.Instrumenter(m)
-            mine = sorted(lp.key() for f in m.functions.values() for lp in ins.find_loops(f))
-            out = subprocess.run([str(S.LLVM_BIN / "opt"), "-passes=print<loops>", "-disable-output", str(o1)],
-                                 capture_output=True, text=True).stderr
-            ref, fn = [], None
-            for line in out.splitlines():
-                mm = re.match(r"Loop info for function '(.*)'", line)
-                if mm:
-                    fn = mm.group(1)
-                mm = re.search(r"(%[^<, ]+)<header>", line)
-                if mm:
-                    ref.append(f"{fn}:{mm.group(1)}")
-            self.assertEqual(mine, sorted(ref), n)
+        from concurrent.futures import ThreadPoolExecutor
+
+        def loopinfo(n):
+            return subprocess.run([str(S.LLVM_BIN / "opt"), "-passes=print<loops>", "-disable-output",
+                                   str(D.o1_path(n))], capture_output=True, text=True).stderr
+
+        names = D.all_examples()
+        # one opt process per example, at most $CQCHECK_JOBS at once (cq-wx6s)
+        with ThreadPoolExecutor(max_workers=JOBS) as ex:
+            outs = ex.map(loopinfo, names)
+            for n, out in zip(names, outs):
+                m = D.read_module(D.o1_path(n))
+                ins = S.Instrumenter(m)
+                mine = sorted(lp.key() for f in m.functions.values() for lp in ins.find_loops(f))
+                ref, fn = [], None
+                for line in out.splitlines():
+                    mm = re.match(r"Loop info for function '(.*)'", line)
+                    if mm:
+                        fn = mm.group(1)
+                    mm = re.search(r"(%[^<, ]+)<header>", line)
+                    if mm:
+                        ref.append(f"{fn}:{mm.group(1)}")
+                self.assertEqual(mine, sorted(ref), n)
 
 
 class Encoding(unittest.TestCase):
@@ -246,7 +255,7 @@ class RuntimeSamples(unittest.TestCase):
                                             env=dict(os.environ, CQD_SAMPLES=str(t / f"s{k}"))).stdout
                         return baked, rt
 
-                    with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as ex:
+                    with ThreadPoolExecutor(max_workers=JOBS) as ex:
                         for k, (baked, rt) in enumerate(ex.map(one, range(len(chunks)))):
                             self.assertGreaterEqual(baked.count("\n"), len(chunks[k]))
                             self.assertEqual(rt, baked, f"{n} chunk {k}")

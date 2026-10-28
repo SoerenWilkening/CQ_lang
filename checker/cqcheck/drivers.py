@@ -370,7 +370,28 @@ def _balanced(s: str, open_at: int) -> str:
 _RE_TYPEDEF = re.compile(r"^(" + _LOCAL + r")\s*=\s*type\b")
 
 
+_MODULES: Dict[Tuple[str, int, int], Module] = {}
+_MODULES_KEPT = 8
+
+
 def read_module(path: Path) -> Module:
+    """The parsed module at `path`, parsed once per file content (cq-wx6s: an example's module is
+    read by the driver spec, the probe build, the sampler and the theta sites). Keyed by the
+    resolved path, mtime and size; the most recent _MODULES_KEPT are kept. Callers never mutate a
+    Module."""
+    p = Path(path).resolve()
+    st = p.stat()
+    key = (str(p), st.st_mtime_ns, st.st_size)
+    mod = _MODULES.pop(key, None)
+    if mod is None:
+        mod = _read_module(Path(path))
+        while len(_MODULES) >= _MODULES_KEPT:
+            del _MODULES[next(iter(_MODULES))]
+    _MODULES[key] = mod
+    return mod
+
+
+def _read_module(path: Path) -> Module:
     lines = path.read_text().splitlines()
     types = frozenset(m.group(1) for m in (_RE_TYPEDEF.match(ln) for ln in lines) if m)
     functions: Dict[str, Function] = {}

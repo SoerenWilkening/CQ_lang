@@ -1286,6 +1286,23 @@ HDR_CAP = int(os.environ.get("CQD_HDR_CAP", str(1 << 20)))
 RSS_CAP = 512 << 20          # bytes: a worker whose peak resident size passes it is replaced
 
 
+def _rt_object(src: Path) -> Path:
+    """The object of the probe runtime `src` (RUNTIME_C with its #defines), compiled once per content
+    and kept in the sample cache (cq-wx6s: it differs between examples only in the #defines)."""
+    text = src.read_bytes()
+    h = hashlib.sha256(text + str(LLVM_BIN).encode()).hexdigest()[:20]
+    obj = _cache_dir() / "rt" / f"{h}.o"
+    if not obj.exists():
+        obj.parent.mkdir(parents=True, exist_ok=True)
+        tmp = obj.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp.o")
+        r = subprocess.run([str(LLVM_BIN / "clang"), "-w", "-O0", "-target", "x86_64-apple-macosx", "-c", str(src),
+                            "-include", "stdbool.h", "-o", str(tmp)], capture_output=True, text=True)
+        if r.returncode != 0:
+            D.unimplemented(f"probe runtime build failed:\n{r.stderr[-3000:]}")
+        os.replace(tmp, obj)
+    return obj
+
+
 class ProbeBuild:
     """The probe build of one example and its server process: `run` sends a batch of samples and
     reads one observation per sample (RUNTIME_C)."""
@@ -1357,10 +1374,12 @@ class ProbeBuild:
 
     def _link(self, extra: str = ""):
         w = self.work
-        (w / "extra.ll").write_text(_stub_module_header(self.mod) + extra)
-        cmd = [str(LLVM_BIN / "clang"), "-w", "-O0", "-target", "x86_64-apple-macosx", str(w / "probe.ll"),
-               str(w / "stubs.ll"), str(w / "extra.ll"), str(w / "rt.c"), str(w / "driver.c"),
-               "-include", "stdbool.h", "-lm", "-o", str(self.exe)]
+        ins = [str(w / "probe.ll"), str(w / "stubs.ll")]
+        if extra:   # every clang input costs a compiler start (~0.3 s): an empty one is left out
+            (w / "extra.ll").write_text(_stub_module_header(self.mod) + extra)
+            ins.append(str(w / "extra.ll"))
+        cmd = [str(LLVM_BIN / "clang"), "-w", "-O0", "-target", "x86_64-apple-macosx", *ins, str(_rt_object(w / "rt.c")),
+               str(w / "driver.c"), "-include", "stdbool.h", "-lm", "-o", str(self.exe)]
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
             undef = re.findall(r'^\s+"_([^"]+)", referenced from', r.stderr, re.M)
