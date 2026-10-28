@@ -74,6 +74,7 @@ CLI: ``python3 -m cqcheck.oracle <NN_name|O1.ll> [--samples JSON] [--driver JSON
 """
 from __future__ import annotations
 
+import atexit
 import ctypes
 import dataclasses
 import hashlib
@@ -84,6 +85,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -271,10 +273,33 @@ def _k_flags(k: Optional[Dict[str, int]], k_default: Optional[int]) -> List[str]
     return out
 
 
+# Process state a sample can change that the in-process runner (cqo_rt.c, samples) does not put back:
+# a program that uses any of these runs every sample in a worker of its own, as the forked child of
+# one sample did (signal dispositions, atexit handlers, timers, the C library's hidden state).
+_ISOLATE = {"signal", "sigaction", "sigprocmask", "pthread_sigmask", "atexit", "__cxa_atexit",
+            "__cxa_thread_atexit", "alarm", "setitimer", "ualarm", "fork", "vfork", "sigaltstack",
+            "sigset", "bsd_signal", "rand", "srand", "random", "srandom", "initstate", "setstate",
+            "drand48", "erand48", "lrand48", "nrand48", "mrand48", "jrand48", "srand48", "seed48",
+            "lcong48", "strtok", "setlocale", "uselocale", "setenv", "putenv", "unsetenv", "fopen",
+            "freopen", "fdopen", "tmpfile", "open", "creat", "dup2", "close", "chdir", "umask",
+            "tmpnam", "tempnam", "mkstemp", "remove", "unlink", "rename"}
+_PROGRAMS: Dict[Tuple[str, int, str], Tuple[Path, str]] = {}
+
+
+def isolated(prog_o: Path) -> bool:
+    """Whether the program runs every sample in a worker of its own (_ISOLATE)."""
+    f = Path(prog_o).parent / "isolate.txt"
+    return f.exists() and bool(f.read_text().strip())
+
+
 def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[int] = None) -> Tuple[Path, str]:
     """The instrumented program object of one .O1.ll (cached), and its target triple. k / k_default:
     the cutoff flags (default none: CQ_K, then 4)."""
     o1 = Path(o1)
+    st = o1.stat()
+    memo = (str(o1.resolve()), st.st_mtime_ns, repr((sorted((k or {}).items()), k_default)))
+    if memo in _PROGRAMS and _PROGRAMS[memo][0].exists():
+        return _PROGRAMS[memo]
     plugin, rt = toolchain()
     text = o1.read_text()
     bundle = _bundle_files()
@@ -295,6 +320,8 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
             und = [n[1:] if n.startswith("_") else n for n in und]
         stubs = sorted(n for n in und if not _PROVIDED.match(n) and not _host_defines(n))
         (d / "stubs.txt").write_text("".join(n + "\n" for n in stubs))
+        iso = sorted(set(und) & _ISOLATE) + (["thread_local"] if "thread_local" in text else [])
+        (d / "isolate.txt").write_text("".join(n + "\n" for n in iso))
         _run([_tool("opt"), f"-load-pass-plugin={plugin}", "-passes=cq-oracle",
               f"-cq-oracle-stubs={d / 'stubs.txt'}", *kf, str(linked), "-o", str(d / "prog.bc")],
              "the cq-oracle instrumentation of the program")
@@ -302,11 +329,16 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
               "-o", str(d / "prog.o")], "compiling the instrumented program")
 
     d = _atomic_dir(_build_root() / "prog" / f"{o1.stem}-{key}", fill)
+    _PROGRAMS[memo] = (d / "prog.o", triple)
     return d / "prog.o", triple
 
 
-BEFORE_CALL = ("int __cqo_sample_begin(int); void __cqo_sample_end(void); "
-               "if (__cqo_sample_begin(CQD_SAMPLE)) {")
+# cqo_rt.c, samples: the worker runs each record's call in-process from the post-setup state; a sample
+# that ends by exit, abort or the runtime's own end jumps back here.
+DRIVER_PRELUDE = ("#include <setjmp.h>\nsigjmp_buf *__cqo_jb(void); void __cqo_resume(void); "
+                  "int __cqo_sample_begin(int); void __cqo_sample_end(void);\n")
+BEFORE_CALL = ("if (sigsetjmp(*__cqo_jb(), 1) != 0) __cqo_resume(); "
+               "else if (__cqo_sample_begin(CQD_SAMPLE)) {")
 AFTER_CALL = "__cqo_sample_end(); }"
 DRIVER_MAIN = "__cqo_drv_main"
 
@@ -319,8 +351,8 @@ def _drivers():
 
 
 def _driver_source(spec: DriverSpec, samples: Sequence[dict]) -> str:
-    return _drivers().driver_source(spec, list(samples), before_call=BEFORE_CALL, after_call=AFTER_CALL,
-                                    main_name=DRIVER_MAIN)
+    return DRIVER_PRELUDE + _drivers().driver_source(spec, list(samples), before_call=BEFORE_CALL,
+                                                     after_call=AFTER_CALL, main_name=DRIVER_MAIN)
 
 
 def executable(o1: Path, spec: DriverSpec, samples: Sequence[dict] = (),
@@ -425,46 +457,17 @@ def _subst_lines(samples: Sequence[dict]) -> List[str]:
 def run_samples(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]],
                 timeout_ms: int = DEFAULT_TIMEOUT_MS, tripcap: int = DEFAULT_TRIPCAP,
                 k: Optional[Dict[str, int]] = None, k_default: Optional[int] = None) -> List[SampleRun]:
-    """Every sample in one oracle program; each sample's call runs in its own forked child.
+    """Every sample in one oracle program, each from the post-setup state as a child forked for it
+    alone would run it (cqo_rt.c, samples). The batch entry point: the program's runner process
+    stays up across calls (one per example and part, per Python process), so a call costs a fork of
+    the runner plus microseconds per sample.
 
     A sample may carry an optional "subst": {"<fn>:<site>": hex | [hex, ...]} (cq-arch Z4: the value
     each reach of a cq_theta site takes; a list gives reach r its entry r mod len); the driver ignores
     keys other than call and args."""
     if not samples:
         return []
-    # Results are cached per (instrumented program, driver spec, sample, limits): a repeated run, or
-    # run_sample over a SampleSet already run as a batch, costs no build.
-    prog_o, _ = program(Path(o1), k, k_default)
-    from .contracts import to_json
-    base = "\0".join([str(prog_o), to_json(spec), str(timeout_ms), str(tripcap)])
-    drivers = _drivers()
-    base += "\0" + hashlib.sha256(Path(drivers.__file__).read_bytes()).hexdigest()   # the driver's shape
-    keys = [hashlib.sha256("\0".join([base, drivers.sample_record(spec, s),
-                                       json.dumps(s.get("subst"), sort_keys=True), str(SRC_KEY)])
-                           .encode()).hexdigest()[:24] for s in samples]
-    cache = _build_root() / "results"
-    out: List[Optional[SampleRun]] = [None] * len(samples)
-    todo = []
-    for i, (s, key) in enumerate(zip(samples, keys)):
-        f = cache / key[:2] / f"{key}.json"
-        if f.exists():
-            d = json.loads(f.read_text())
-            out[i] = SampleRun(i, s, d["events"], d["outcome"], d["failed"], d["reason"], d["notes"],
-                               d["loops"])
-        else:
-            todo.append(i)
-    if todo:
-        fresh = _run_uncached(Path(o1), spec, [samples[i] for i in todo], timeout_ms, tripcap, k, k_default)
-        for i, r in zip(todo, fresh):
-            r.index = i
-            out[i] = r
-            f = cache / keys[i][:2] / f"{keys[i]}.json"
-            f.parent.mkdir(parents=True, exist_ok=True)
-            tmp = f.with_suffix(f".{os.getpid()}.tmp")
-            tmp.write_text(json.dumps({"events": r.events, "outcome": r.outcome, "failed": r.failed,
-                                       "reason": r.reason, "notes": r.notes, "loops": r.loops}))
-            os.replace(tmp, f)
-    return out  # type: ignore[return-value]
+    return _run_uncached(Path(o1), spec, samples, timeout_ms, tripcap, k, k_default)
 
 
 def _jobs_cap() -> int:
@@ -476,22 +479,104 @@ def _jobs_cap() -> int:
     return max(1, j) if j else (os.cpu_count() or 1)
 
 
-# The samples run in up to PARTS runner processes at once (each forks one child per sample in turn):
-# min(8, CPU count), and never more than $CQCHECK_JOBS; a part has at least MIN_PART samples.
-PARTS = max(1, min(8, os.cpu_count() or 1, _jobs_cap()))
+# A batch runs in up to PARTS runner processes at once, read at each call and never more than
+# $CQCHECK_JOBS; a part has at least MIN_PART samples. The default is one: a sample costs
+# microseconds, and the callers (report, selftest, sampling) already run up to $CQCHECK_JOBS
+# examples in parallel, so a wider oracle would pass the machine-wide cap.
+PARTS = 1
 MIN_PART = 16
+
+
+class Runner:
+    """One persistent runner process of an oracle executable (``prog --serve``): each batch runs in a
+    child it forks from its pristine state."""
+
+    def __init__(self, exe: Path):
+        self.exe = exe
+        self.dir = Path(tempfile.mkdtemp(prefix="cqo-run."))
+        self.lock = threading.Lock()
+        self.p = subprocess.Popen([str(exe), "--serve"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL, text=True, bufsize=1)
+
+    def alive(self) -> bool:
+        return self.p.poll() is None
+
+    def run(self, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int, tripcap: int,
+            isolate: bool) -> List[SampleRun]:
+        with self.lock:
+            t = self.dir
+            (t / "samples").write_text(_drivers().sample_file(spec, samples))
+            sub = _subst_lines(samples)
+            if sub:
+                (t / "subst").write_text("".join(l + "\n" for l in sub))
+            req = " ".join([str(t / "trace"), str(t / "status"), str(t / "err"), str(int(timeout_ms)),
+                            str(int(tripcap)), "1" if isolate else "0", str(t / "samples"),
+                            str(t / "subst") if sub else "-"])
+            try:
+                self.p.stdin.write(req + "\n")
+                self.p.stdin.flush()
+                reply = self.p.stdout.readline()
+            except (BrokenPipeError, OSError) as e:
+                raise OracleError(f"oracle: runner {self.exe} died: {e}")
+            if reply.strip() != "0":
+                err = (t / "err").read_text(errors="replace") if (t / "err").exists() else ""
+                raise OracleError(f"oracle: runner failed ({reply.strip() or 'no reply'}): {err.strip()[-2000:]}")
+            return _parse_runs(samples, (t / "trace").read_text(), (t / "status").read_text())
+
+    def close(self) -> None:
+        try:
+            if self.p.poll() is None:
+                self.p.stdin.close()
+                try:
+                    self.p.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.p.kill()
+                    self.p.wait()
+        except OSError:
+            pass
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+
+_RUNNERS: Dict[Tuple[str, int], Runner] = {}
+_RUNNERS_LOCK = threading.Lock()
+
+
+def _runner(exe: Path, part: int) -> Runner:
+    key = (str(exe), part)
+    with _RUNNERS_LOCK:
+        r = _RUNNERS.get(key)
+        if r is None or not r.alive():
+            if r is not None:
+                r.close()
+            r = _RUNNERS[key] = Runner(exe)
+        return r
+
+
+def close_runners() -> None:
+    """End every runner process of this Python process (also run at exit)."""
+    with _RUNNERS_LOCK:
+        rs = list(_RUNNERS.values())
+        _RUNNERS.clear()
+    for r in rs:
+        r.close()
+
+
+atexit.register(close_runners)
 
 
 def _run_uncached(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int,
                   tripcap: int, k: Optional[Dict[str, int]] = None,
                   k_default: Optional[int] = None) -> List[SampleRun]:
     from concurrent.futures import ThreadPoolExecutor
-    exe = executable(Path(o1), spec, [{"call": s["call"], "args": s["args"]} for s in samples], k, k_default)
-    n = max(1, min(PARTS, len(samples) // MIN_PART))
-    parts = [list(range(k, len(samples), n)) for k in range(n)]
+    exe = executable(Path(o1), spec, _pointer_samples(spec, samples), k, k_default)
+    iso = isolated(program(Path(o1), k, k_default)[0])
+    n = max(1, min(PARTS, _jobs_cap(), len(samples) // MIN_PART))
+    if n == 1:
+        return _runner(exe, 0).run(spec, samples, timeout_ms, tripcap, iso)
+    parts = [list(range(j, len(samples), n)) for j in range(n)]
     with ThreadPoolExecutor(max_workers=n) as ex:
-        done = list(ex.map(lambda ix: _run_part(exe, spec, [samples[i] for i in ix], timeout_ms, tripcap),
-                           parts))
+        done = list(ex.map(lambda jx: _runner(exe, jx[0]).run(spec, [samples[i] for i in jx[1]], timeout_ms,
+                                                              tripcap, iso), enumerate(parts)))
     runs: List[Optional[SampleRun]] = [None] * len(samples)
     for ix, part in zip(parts, done):
         for i, r in zip(ix, part):
@@ -500,37 +585,41 @@ def _run_uncached(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]],
     return runs  # type: ignore[return-value]
 
 
-def _run_part(exe: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int,
-              tripcap: int) -> List[SampleRun]:
-    with tempfile.TemporaryDirectory(prefix="cqo-run.") as td:
-        t = Path(td)
-        (t / "samples").write_text(_drivers().sample_file(spec, samples))
-        cmd = [str(exe), str(t / "trace"), str(t / "status"), str(timeout_ms), str(tripcap)]
-        sub = _subst_lines(samples)
-        if sub:
-            (t / "subst").write_text("".join(l + "\n" for l in sub))
-            cmd.append(str(t / "subst"))
-        budget = (2 * timeout_ms + 1000) * len(samples) / 1000 + 60
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=budget,
-                           env=dict(os.environ, **{_drivers().SAMPLES_ENV: str(t / "samples")}))
-        if p.returncode != 0:
-            raise OracleError(f"oracle: runner failed ({p.returncode}): {p.stderr.strip()[-2000:]}")
-        runs = [SampleRun(i, s) for i, s in enumerate(samples)]
-        for line in (t / "trace").read_text().splitlines():
-            i, ev = line.split("\t", 1)
-            if int(i) < 0:
-                continue   # the driver's own setup, before any sample: no sample's event
-            e = json.loads(ev)
-            if e.get("ev") == "kloop":   # a T2 cutoff record, not a trace event
-                del e["ev"]
-                runs[int(i)].loops.append(e)
-            else:
-                runs[int(i)].events.append(e)
-        for line in (t / "status").read_text().splitlines():
-            i, n = line.split("\t", 1)
-            if int(i) < 0:
-                raise OracleError(f"oracle: the driver setup failed: {n}")
-            runs[int(i)].notes.append(n)
+def _pointer_samples(spec: DriverSpec, samples: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """One sample per distinct (call, pointer arguments) of `samples`: the driver depends on nothing
+    else of them (drivers.driver_source renders the pointer expressions only)."""
+    from .drivers import parse_ctype
+    ptr = {ci: [j for j, a in enumerate(c["args"]) if parse_ctype(a["ctype"]).kind == "p"]
+           for ci, c in enumerate(spec.calls)}
+    out: Dict[Any, Dict[str, Any]] = {}
+    for s in samples:
+        ci = s["call"]
+        js = ptr.get(ci) if isinstance(ci, int) and not isinstance(ci, bool) else None
+        key = (ci, tuple(s["args"][j] for j in js) if js is not None and len(s["args"]) == len(
+            spec.calls[ci]["args"]) else json.dumps(s["args"], sort_keys=True))
+        if key not in out:
+            out[key] = {"call": ci, "args": s["args"]}
+    return list(out.values())
+
+
+def _parse_runs(samples: Sequence[Dict[str, Any]], trace: str, status: str) -> List[SampleRun]:
+    runs = [SampleRun(i, s) for i, s in enumerate(samples)]
+    # `<index>\t<event JSON>` lines, parsed as one JSON array of [index, event] pairs
+    body = trace.rstrip("\n")
+    pairs = json.loads("[[" + body.replace("\n", "],[").replace("\t", ",", ) + "]]") if body else []
+    for i, e in pairs:
+        if i < 0:
+            continue   # the driver's own setup, before any sample: no sample's event
+        if e.get("ev") == "kloop":   # a T2 cutoff record, not a trace event
+            del e["ev"]
+            runs[i].loops.append(e)
+        else:
+            runs[i].events.append(e)
+    for line in status.splitlines():
+        i, n = line.split("\t", 1)
+        if int(i) < 0:
+            raise OracleError(f"oracle: the driver setup failed: {n}")
+        runs[int(i)].notes.append(n)
     for r in runs:
         _classify(r)
     return runs
