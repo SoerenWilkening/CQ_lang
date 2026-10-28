@@ -1,0 +1,376 @@
+{
+  "_doc": [
+    "Permanent self-test mutants (bead cq-w0-chk-selftest; CLAUDE.md 'The §6 checker', Self-test).",
+    "Each mutant is a CQ_spec reference lowered.ll with the listed edits applied in order, written under",
+    "$CQ_BUILD_DIR/mutants/<id>/ by checker/cqcheck/mutants.py. Each edit's 'old' must occur exactly once",
+    "in the text as it stands (with \"all\": true, at least once, every occurrence replaced). A mutant that",
+    "no longer applies after a re-pin is an error, never skipped.",
+    "'class' is a key of mutants.CLASSES, which gives the rejection the class predicts: the pattern some",
+    "reason of the reference check must match, and the one for the C-oracle check (or none when the",
+    "class is invisible to the C program, e.g. a kept rail)."
+  ],
+  "mutants": [
+    {
+      "id": "04-swap-select-arms",
+      "class": "swapped_select_arms",
+      "example": "04_value_arm_ifelse",
+      "note": "x > k ? x + a : x * b becomes x > k ? x * b : x + a: the measured result changes",
+      "edits": [
+        {
+          "old": "@cq_template_select_i32(i32 %9, i32 %7, i32 %8)",
+          "new": "@cq_template_select_i32(i32 %9, i32 %8, i32 %7)"
+        }
+      ]
+    },
+    {
+      "id": "145-swap-select-arms",
+      "class": "swapped_select_arms",
+      "example": "145_swap_test",
+      "note": "b after the swap takes the other arm: the measured b changes (the rule 6 recomputation then also leaves dirt)",
+      "edits": [
+        {
+          "old": "%8 = call i32 @cq_template_select_i32(i32 %7, i32 %5, i32 %6)",
+          "new": "%8 = call i32 @cq_template_select_i32(i32 %7, i32 %6, i32 %5)"
+        }
+      ]
+    },
+    {
+      "id": "03-flip-predicate",
+      "class": "flipped_predicate",
+      "example": "03_phase_arm_eq",
+      "note": "x == k becomes x != k, forward and uncompute alike: the phase fires on the complement",
+      "edits": [
+        {
+          "old": "icmp_eq_i32_hl",
+          "new": "icmp_ne_i32_hl",
+          "all": true
+        }
+      ]
+    },
+    {
+      "id": "39-flip-predicate",
+      "class": "flipped_predicate",
+      "example": "39_controlled_rotation",
+      "note": "x > k becomes x <= k in both functions: the controlled Ry fires on the complement",
+      "edits": [
+        {
+          "old": "icmp_sgt_i32_hl",
+          "new": "icmp_sle_i32_hl",
+          "all": true
+        }
+      ]
+    },
+    {
+      "id": "08-drop-unc",
+      "class": "dropped_unc",
+      "example": "08_nested_if_phase",
+      "note": "the x < m rail is freed without its uncompute",
+      "edits": [
+        {
+          "old": "  call void @cq_template_icmp_slt_i32_hl_unc(i32 %9, i32 %7, i32 %3)",
+          "new": "  ; dropped"
+        }
+      ]
+    },
+    {
+      "id": "05-drop-unc-in-reverse-loop",
+      "class": "dropped_unc",
+      "example": "05_while_quantum_cond",
+      "note": "the reverse loop frees x * a + b without uncomputing it",
+      "edits": [
+        {
+          "old": "  call void @cq_template_add_i32_hl_unc(i32 %33, i32 %34, i32 %4)",
+          "new": "  ; dropped"
+        }
+      ]
+    },
+    {
+      "id": "04-double-free",
+      "class": "extra_free",
+      "example": "04_value_arm_ifelse",
+      "note": "the comparison rail is freed twice",
+      "edits": [
+        {
+          "old": "  call void @cqrt_free(i32 %9)    ; IR: release the %7 rail (|0>)",
+          "new": "  call void @cqrt_free(i32 %9)    ; IR: release the %7 rail (|0>)\n  call void @cqrt_free(i32 %9)"
+        }
+      ]
+    },
+    {
+      "id": "39-free-before-measure",
+      "class": "extra_free",
+      "example": "39_controlled_rotation",
+      "note": "the rotated register r is freed while live, then measured",
+      "edits": [
+        {
+          "old": "  %9 = call i32 @cqrt_measure_i32(i32 %8)",
+          "new": "  call void @cqrt_free(i32 %8)\n  %9 = call i32 @cqrt_measure_i32(i32 %8)"
+        }
+      ]
+    },
+    {
+      "id": "03-drop-free",
+      "class": "dropped_free",
+      "example": "03_phase_arm_eq",
+      "note": "the uncomputed comparison rail is never freed: an extra kept rail reading 0",
+      "edits": [
+        {
+          "old": "  call void @cqrt_free(i32 %6)",
+          "new": "  ; dropped"
+        }
+      ]
+    },
+    {
+      "id": "05-drop-free",
+      "class": "dropped_free",
+      "example": "05_while_quantum_cond",
+      "note": "incoming 0 of the counter phi is never freed: an extra kept rail reading 0",
+      "edits": [
+        {
+          "old": "  call void @cqrt_free(i32 %37)",
+          "new": "  ; dropped"
+        }
+      ]
+    },
+    {
+      "id": "39-change-angle",
+      "class": "changed_angle",
+      "example": "39_controlled_rotation",
+      "note": "the controlled Ry takes the first rotation's angle",
+      "edits": [
+        {
+          "old": "@cqrt_ry_i32_controlled(i32 %7, i32 %8, double %4)",
+          "new": "@cqrt_ry_i32_controlled(i32 %7, i32 %8, double %1)"
+        }
+      ]
+    },
+    {
+      "id": "145-change-angle-ulp",
+      "class": "changed_angle",
+      "example": "145_swap_test",
+      "note": "the closing Ry(-pi/2) is off by a few ulps",
+      "edits": [
+        {
+          "old": "double 0xBFF921FB54442D18",
+          "new": "double 0xBFF921FB54442D1C"
+        }
+      ]
+    },
+    {
+      "id": "08-change-phase-angle",
+      "class": "changed_angle",
+      "example": "08_nested_if_phase",
+      "note": "the nested phase takes the outer phase's angle",
+      "edits": [
+        {
+          "old": "@cqrt_rz_i1(i32 %10, double %5)",
+          "new": "@cqrt_rz_i1(i32 %10, double %4)"
+        }
+      ]
+    },
+    {
+      "id": "59-change-control",
+      "class": "changed_control",
+      "example": "59_controlled_ry_bits",
+      "note": "Ry on q2 controlled by q0 instead of q0 && q1",
+      "edits": [
+        {
+          "old": "@cqrt_ry_i1_controlled(i32 %6, i32 %7, double %2)",
+          "new": "@cqrt_ry_i1_controlled(i32 %4, i32 %7, double %2)"
+        }
+      ]
+    },
+    {
+      "id": "152-change-control",
+      "class": "changed_control",
+      "example": "152_phase_in_kloop",
+      "note": "the in-loop controlled Ry on r is controlled by the previous trip's predicate",
+      "edits": [
+        {
+          "old": "@cqrt_ry_i32_controlled(i32 %14, i32 %7, double %4)",
+          "new": "@cqrt_ry_i32_controlled(i32 %12, i32 %7, double %4)"
+        }
+      ]
+    },
+    {
+      "id": "140-change-control",
+      "class": "changed_control",
+      "example": "140_nonreconverging_returns",
+      "note": "the else arm's Ry loses its NOT bracket: controlled by x > k instead of its negation",
+      "edits": [
+        {
+          "old": "  call void @cqrt_not_i1(i32 %8)    ; IR: bracket: block %12 runs under NOT %8\n",
+          "new": ""
+        },
+        {
+          "old": "  call void @cqrt_not_i1(i32 %8)    ; IR: bracket\n",
+          "new": ""
+        }
+      ]
+    },
+    {
+      "id": "125-change-control",
+      "class": "changed_control",
+      "example": "125_mixed_phase_value_arm",
+      "note": "the Ry on r is controlled by NOT f instead of f",
+      "edits": [
+        {
+          "old": "  call void @cqrt_ry_i32_controlled(i32 %12, i32 %15, double %8)",
+          "new": "  call void @cqrt_not_i1(i32 %12)\n  call void @cqrt_ry_i32_controlled(i32 %12, i32 %15, double %8)\n  call void @cqrt_not_i1(i32 %12)"
+        }
+      ]
+    },
+    {
+      "id": "42-drop-rotation",
+      "class": "dropped_rotation",
+      "example": "42_measure_one_of_two",
+      "note": "y's Ry is dropped",
+      "edits": [
+        {
+          "old": "  call void @cqrt_ry_i32(i32 %7, double %3)",
+          "new": "  ; dropped"
+        }
+      ]
+    },
+    {
+      "id": "08-drop-phase",
+      "class": "dropped_rotation",
+      "example": "08_nested_if_phase",
+      "note": "the outer branch phase is dropped",
+      "edits": [
+        {
+          "old": "  call void @cqrt_rz_i1(i32 %8, double %4), !cq.branchphase !6",
+          "new": "  ; dropped"
+        }
+      ]
+    },
+    {
+      "id": "03-add-rotation",
+      "class": "added_rotation",
+      "example": "03_phase_arm_eq",
+      "note": "x's Ry is applied twice",
+      "edits": [
+        {
+          "old": "  call void @cqrt_ry_i32(i32 %5, double %1)",
+          "new": "  call void @cqrt_ry_i32(i32 %5, double %1)\n  call void @cqrt_ry_i32(i32 %5, double %1)"
+        }
+      ]
+    },
+    {
+      "id": "59-add-rotation",
+      "class": "added_rotation",
+      "example": "59_controlled_ry_bits",
+      "note": "an extra uncontrolled Ry on q2 after the controlled one",
+      "edits": [
+        {
+          "old": "  call void @cqrt_ry_i1_controlled(i32 %6, i32 %7, double %2)",
+          "new": "  call void @cqrt_ry_i1_controlled(i32 %6, i32 %7, double %2)\n  call void @cqrt_ry_i1(i32 %7, double %0)"
+        }
+      ]
+    },
+    {
+      "id": "140-add-rotation",
+      "class": "added_rotation",
+      "example": "140_nonreconverging_returns",
+      "note": "the then arm's controlled Ry is applied twice",
+      "edits": [
+        {
+          "old": "  call void @cqrt_ry_i32_controlled(i32 %8, i32 %9, double %4)",
+          "new": "  call void @cqrt_ry_i32_controlled(i32 %8, i32 %9, double %4)\n  call void @cqrt_ry_i32_controlled(i32 %8, i32 %9, double %4)"
+        }
+      ]
+    },
+    {
+      "id": "42-change-measured-rail",
+      "class": "changed_measured_rail",
+      "example": "42_measure_one_of_two",
+      "note": "y is measured where the source measures x",
+      "edits": [
+        {
+          "old": "%9 = call i32 @cqrt_measure_i32(i32 %6)",
+          "new": "%9 = call i32 @cqrt_measure_i32(i32 %7)"
+        }
+      ]
+    },
+    {
+      "id": "13-change-measured-rail",
+      "class": "changed_measured_rail",
+      "example": "13_fp_arith",
+      "note": "fsub_qq measures its first operand instead of the difference",
+      "edits": [
+        {
+          "old": "@cq_template_fsub_f64(i32 %5, i32 %6)    ; IR: %7 = fsub double %5, %6\n  %8 = call double @cqrt_measure_f64(i32 %7)",
+          "new": "@cq_template_fsub_f64(i32 %5, i32 %6)    ; IR: %7 = fsub double %5, %6\n  %8 = call double @cqrt_measure_f64(i32 %5)"
+        }
+      ]
+    },
+    {
+      "id": "05-kloop-one-short",
+      "class": "kloop_one_trip_short",
+      "example": "05_while_quantum_cond",
+      "note": "forward and reverse loops run K-1 = 3 trips (consistently, so the tape balances)",
+      "edits": [
+        {
+          "old": "%22 = icmp ult i32 %21, 4",
+          "new": "%22 = icmp ult i32 %21, 3"
+        },
+        {
+          "old": "%40 = icmp ult i32 %39, 4",
+          "new": "%40 = icmp ult i32 %39, 3"
+        }
+      ]
+    },
+    {
+      "id": "152-kloop-one-short",
+      "class": "kloop_one_trip_short",
+      "example": "152_phase_in_kloop",
+      "note": "forward and reverse loops run K-1 = 3 trips: the fourth trip's phase and Ry are missing",
+      "edits": [
+        {
+          "old": "%21 = icmp ult i32 %20, 4",
+          "new": "%21 = icmp ult i32 %20, 3"
+        },
+        {
+          "old": "%35 = icmp ult i32 %34, 4",
+          "new": "%35 = icmp ult i32 %34, 3"
+        }
+      ]
+    },
+    {
+      "id": "08-move-phase-flag",
+      "class": "phase_moved_flag",
+      "example": "08_nested_if_phase",
+      "note": "the nested phase (x > k && x < m) sits on the outer flag (x > k)",
+      "edits": [
+        {
+          "old": "@cqrt_rz_i1(i32 %10, double %5)",
+          "new": "@cqrt_rz_i1(i32 %8, double %5)"
+        }
+      ]
+    },
+    {
+      "id": "152-move-phase-flag",
+      "class": "phase_moved_flag",
+      "example": "152_phase_in_kloop",
+      "note": "the in-loop phase sits on the trip predicate instead of trip && x odd",
+      "edits": [
+        {
+          "old": "@cqrt_rz_i1(i32 %17, double %3)",
+          "new": "@cqrt_rz_i1(i32 %14, double %3)"
+        }
+      ]
+    },
+    {
+      "id": "125-move-phase-flag",
+      "class": "phase_moved_flag",
+      "example": "125_mixed_phase_value_arm",
+      "note": "the then-arm phase moves inside the NOT bracket: it sits on NOT f",
+      "edits": [
+        {
+          "old": "  call void @cqrt_rz_i1(i32 %12, double %6)    ; IR: block %13: cq_phi(%6)  [phase arm: kickback on f]\n  call void @cqrt_not_i1(i32 %12)    ; IR: bracket: block %16 runs under NOT %12\n",
+          "new": "  call void @cqrt_not_i1(i32 %12)    ; IR: bracket: block %16 runs under NOT %12\n  call void @cqrt_rz_i1(i32 %12, double %6)    ; IR: block %13: cq_phi(%6)  [phase arm: kickback on f]\n"
+        }
+      ]
+    }
+  ]
+}
