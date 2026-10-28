@@ -262,12 +262,29 @@ Case classify(const Loop &L, const TaintInfo &T, const Specialization &S) {
   // exactly on the loop body by the standard post-dominator definition over the function.
   Function &F = *L.getHeader()->getParent();
   PostDominatorTree PDT(F);
+  // A block that is only `unreachable` (no call before it, so not a noreturn exit) is never
+  // taken: LLVM assumes so, and so do we (owner ruling, CLAUDE.md Domain; cq-s0pv, 131's switch
+  // default). Such a successor is no path out of Y for control dependence.
+  auto deadEnd = [](const BasicBlock *b) {
+    if (!isa<UnreachableInst>(b->getTerminator()))
+      return false;
+    for (const Instruction &I : *b)
+      if (isa<CallBase>(I))
+        return false;
+    return true;
+  };
+  auto postDomLive = [&](const BasicBlock *X, const BasicBlock *Y) {
+    for (const BasicBlock *s : successors(Y))
+      if (!deadEnd(s) && !(s == X || PDT.dominates(X, s)))
+        return false;
+    return true;
+  };
   auto controlQuantum = [&](const BasicBlock *X) {
     for (const BasicBlock *Y : L.blocks()) {
       if (Y == X || !quantumTerm(Y))
         continue;
       for (const BasicBlock *s : successors(Y))
-        if (L.contains(s) && (s == X || PDT.dominates(X, s)) && !PDT.properlyDominates(X, Y))
+        if (L.contains(s) && (s == X || PDT.dominates(X, s)) && !postDomLive(X, Y))
           return true;
     }
     return false;
