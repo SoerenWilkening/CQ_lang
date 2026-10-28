@@ -21,6 +21,8 @@
 //     every load/store/memory intrinsic bounds-checked over an object table (globals, allocas, heap,
 //     byval parameter copies, the va_start register save and overflow areas):
 //     a byte outside every object reads 0, a store to it is dropped;
+//   * the fenv calls modelled as rule 23 and the references model them (the 5 IEEE flags, no
+//     FE_DENORMAL; feraiseexcept(m) raises exactly m; fesetround of an invalid mode returns 1);
 //   * threads collapsed (pthread_create runs the start routine to completion, rule 24), noreturn
 //     callees, raise and `unreachable` noted in the sample status;
 //   * undefined external functions named in -cq-oracle-stubs given the checker's deterministic model.
@@ -839,7 +841,10 @@ public:
   void replaceLibrary() {
     static const char *names[] = {"malloc", "calloc", "realloc", "reallocf", "free", "aligned_alloc",
                                   "posix_memalign", "valloc", "memcpy", "memmove", "memset", "memcmp",
-                                  "bcmp", "bzero", "__memcpy_chk", "__memmove_chk", "__memset_chk", "pthread_create", "pthread_join", "pthread_detach"};
+                                  "bcmp", "bzero", "__memcpy_chk", "__memmove_chk", "__memset_chk", "pthread_create", "pthread_join", "pthread_detach",
+                                  // fenv as rule 23 models it, not as the host libm does (cq-fvs2)
+                                  "fetestexcept", "feclearexcept", "feraiseexcept", "fegetexceptflag",
+                                  "fesetexceptflag", "fesetround", "feupdateenv"};
     for (const char *n : names) {
       Function *F = M.getFunction(n);
       if (!F)

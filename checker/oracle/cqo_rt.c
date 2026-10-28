@@ -282,6 +282,43 @@ void *__cqo_reallocf(void *p, size_t n) {
     return q;
 }
 
+/* fenv as rule 23 models it (cq-fvs2; references 81, 82, 100), not as the host libm does. The flags
+ * are the five IEEE bits of x86-64 (INVALID 1, DIVBYZERO 4, OVERFLOW 8, UNDERFLOW 16, INEXACT 32):
+ * macOS also reports FE_DENORMAL (0x02, raised by an SSE op on a subnormal) and counts it in
+ * FE_ALL_EXCEPT, so every flag read masks it out. feraiseexcept(m) is flags | m exactly (macOS raises
+ * by arithmetic: OVERFLOW brings INEXACT); feupdateenv raises the saved flags the same way. A
+ * fexcept_t holds the flag bits. fesetround(m) is valid iff (m & ~0xC00) == 0 and returns 0, else
+ * returns 1 and leaves the mode. The mode and the environment calls otherwise run on the host FPU. */
+#define CQO_FE_IEEE (FE_INVALID | FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INEXACT)
+
+static void fe_set_exactly(int m) { /* raise the flags in m, no arithmetic, no trap */
+    m &= CQO_FE_IEEE;
+    if (!m) return;
+    fexcept_t f = (fexcept_t)m;
+    fesetexceptflag(&f, m);
+}
+int __cqo_fetestexcept(int m) { return fetestexcept(m & CQO_FE_IEEE); }
+int __cqo_feclearexcept(int m) { return feclearexcept(m & CQO_FE_IEEE) ? -1 : 0; }
+int __cqo_feraiseexcept(int m) { fe_set_exactly(m); return 0; }
+int __cqo_fegetexceptflag(fexcept_t *p, int m) { *p = (fexcept_t)fetestexcept(m & CQO_FE_IEEE); return 0; }
+int __cqo_fesetexceptflag(const fexcept_t *p, int m) {
+    m &= CQO_FE_IEEE;
+    int saved = (int)*p & m;
+    feclearexcept(m & ~saved);
+    fe_set_exactly(saved);
+    return 0;
+}
+int __cqo_fesetround(int m) {
+    if (m & ~0xC00) return 1;
+    return fesetround(m) ? 1 : 0;
+}
+int __cqo_feupdateenv(const fenv_t *e) {
+    int cur = fetestexcept(CQO_FE_IEEE);
+    if (fesetenv(e)) return -1;
+    fe_set_exactly(cur);
+    return 0;
+}
+
 /* threads: single-thread collapse (rule 24). pthread_create runs the routine to completion. */
 static void *thread_results[1024];
 static unsigned nthreads;

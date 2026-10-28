@@ -215,6 +215,42 @@ double vdbl_q(double x0, double t) { double x = x0; cq_theta(&x, t);
         self.assertEqual(rets(o1, sp, [{"call": 0, "args": ["tab", f64(0.5), HALF]}]), [f64(3.5)])
 
 
+class Fenv(unittest.TestCase):
+    """Rule 23's fenv model in the C program (cq-fvs2): five IEEE flags, no FE_DENORMAL;
+    feraiseexcept(m) is flags | m; fesetround of an invalid mode returns 1 and keeps the mode."""
+
+    def test_fenv_calls(self):
+        o1 = compile_c("fenvm", """
+#include <fenv.h>
+#pragma STDC FENV_ACCESS ON
+int denorm_q(double x0, double t, double k) { double x = x0; cq_theta(&x, t); feclearexcept(FE_ALL_EXCEPT);
+    int r = x > k; return fetestexcept(FE_ALL_EXCEPT) * 2 + r; }
+int raise_q(int x0, double t) { int x = x0; cq_theta(&x, t); feclearexcept(FE_ALL_EXCEPT);
+    feraiseexcept(x); return fetestexcept(FE_ALL_EXCEPT); }
+int round_q(int x0, double t) { int x = x0; cq_theta(&x, t); int rc = fesetround(x); int m = fegetround();
+    fesetround(FE_TONEAREST); return rc * 0x10000 + m; }
+int flagset_q(int x0, double t) { int x = x0; cq_theta(&x, t); feclearexcept(FE_ALL_EXCEPT);
+    feraiseexcept(FE_INEXACT | FE_INVALID); fexcept_t s; fegetexceptflag(&s, FE_INEXACT);
+    feclearexcept(FE_ALL_EXCEPT); feraiseexcept(FE_UNDERFLOW); fesetexceptflag(&s, x);
+    return fetestexcept(FE_ALL_EXCEPT); }
+int update_q(int x0, double t) { int x = x0; cq_theta(&x, t); fenv_t e; feclearexcept(FE_ALL_EXCEPT);
+    feholdexcept(&e); feraiseexcept(x); feupdateenv(&e); return fetestexcept(FE_ALL_EXCEPT); }
+""")
+        sp = spec("fenvm", "int denorm_q(double,double,double);int raise_q(int,double);int round_q(int,double);"
+                  "int flagset_q(int,double);int update_q(int,double)",
+                  [("denorm_q", ["double", "double", "double"]), ("raise_q", ["int", "double"]),
+                   ("round_q", ["int", "double"]), ("flagset_q", ["int", "double"]), ("update_q", ["int", "double"])])
+        S = lambda c, *a: {"call": c, "args": list(a)}
+        got = rets(o1, sp, [S(0, "0x0010000000000000", HALF, f64(3.0)),   # subnormal-free normal: no flag
+                            S(0, "0x0000000000000001", HALF, f64(0.0)),   # subnormal operand: DENORMAL hidden
+                            S(1, i32(8), HALF), S(1, i32(0x3f), HALF),
+                            S(2, i32(0x800), HALF), S(2, i32(8), HALF), S(2, i32(-1), HALF),
+                            S(3, i32(0x20), HALF), S(3, i32(0x30), HALF),
+                            S(4, i32(8), HALF)])
+        self.assertEqual(got, ["0x0", "0x1", "0x8", "0x3d", "0x800", "0x10000", "0x10000",
+                               "0x30", "0x20", "0x8"])
+
+
 class Events(unittest.TestCase):
     def test_sites_trips_ret(self):
         o1 = compile_c("ev", """
