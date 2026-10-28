@@ -58,7 +58,8 @@ RunResult fields (JSON-serializable):
               scalar {"w": rail type, "v": hex bit pattern} of an arithmetic return (cq-pq3:
               integers "i<N>" at their C width, two's complement; float "f32", double "f64",
               long double "f80" as the x87 80-bit pattern), the bare hex of an aggregate return;
-              void and pointer returns log nothing
+              void and pointer returns log nothing. An entry whose lowered return is a rail handle
+              (CR §1.1) reports that rail's value at exit instead (resolve_handle_rets, cq-n6a0)
   measured    [{"h", "w", "v"}] per cqrt_measure call, in order
   rotations   the rotation and phase trace events in order, as written (the shape compare.py
               reads): ry {ev, h, theta, ctl, ctlv, w, v}, ry_qangle {ev, h, a, aval, ctl, ctlv, w, v},
@@ -94,7 +95,7 @@ LLVM_BIN = Path(os.environ.get("CQ_LLVM_BIN", "/usr/local/opt/llvm@19/bin"))
 CLANG = str(LLVM_BIN / "clang")
 LLVM_LINK = str(LLVM_BIN / "llvm-link")
 DEFAULT_TIMEOUT = 30.0
-_VERSION = "chk-core-4"
+_VERSION = "chk-core-5"
 
 
 class BuildError(Exception):
@@ -416,6 +417,7 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
         if touches_fenv(canon):  # cq-6ady
             tot = default_env_module(tot)
         (tmp / "lowered.tot.ll").write_text(tot)
+        (tmp / "handle_rets.json").write_text(json.dumps(handle_returning_fns(canon)))  # cq-n6a0
     except _Unimpl as e:
         raise BuildError(f"cq: unimplemented: {e}")
     _sh([LLVM_LINK, "-S", "lowered.tot.ll", "driver.ll", "-o", "linked.ll"], cwd=tmp)
@@ -699,6 +701,108 @@ def default_env_module(text: str) -> str:
 
 
 DEFINE_NAME = re.compile(r"^define\b[^@]*@(\"?)([-\w.$]+)\1\(")
+
+
+# ---- entries that return a rail handle (cq-n6a0) -------------------------------------------------
+#
+# CR §1.1 and 162's header: an entry function keeps its C signature, and an unmeasured quantum value
+# it returns is the i32 handle of the rail, which escapes (never freed). The driver logs the call's
+# raw result, so for such an entry the logged "ret" is a handle number, which means nothing to the C
+# oracle (the value) nor across two lowerings (rail numbering is free). handle_returning_fns finds,
+# in the canonical lowered module, the functions whose returned value is a handle: it follows a ret's
+# operand through phi, select and integer casts to its definition, which is a handle when it is a
+# forward cq_template_* call, cqrt_alloc_*, cqrt_qram_load_*, cqrt_tape_alloc, a declared clone
+# __cq_q_* (rule 27: a non-void result is an i32 handle) or a call of a defined function that returns
+# a handle. resolve_handle_rets then replaces such a ret's handle by the rail's basis value from the
+# exit event (the rail is live there: it escaped), as the typed scalar at the call's C type; a
+# handle that names no live rail, or a rail of another type, is a "ret_handle" violation.
+
+_RAIL_CALLS = ("cqrt_alloc_", "cqrt_qram_load_", "cqrt_tape_alloc")
+_DEF = re.compile(r"^\s+(%[-\w.$\"]+) = (.*)$")
+_RET = re.compile(r"^\s+ret (\S+) (.+?)(?:, !.*)?$")
+
+
+def handle_returning_fns(text: str) -> List[str]:
+    """The defined functions of a canonical lowered module whose returned value is a rail handle."""
+    fns: Dict[str, Tuple[Dict[str, str], List[str]]] = {}
+    cur: Optional[str] = None
+    for line in text.splitlines():
+        if cur is None:
+            m = DEFINE_NAME.match(line) if line.startswith("define") else None
+            if m and line.rstrip().endswith("{"):
+                cur = m.group(2)
+                fns[cur] = ({}, [])
+            continue
+        if line.startswith("}"):
+            cur = None
+            continue
+        m = _DEF.match(line)
+        if m:
+            fns[cur][0][m.group(1)] = m.group(2)
+            continue
+        m = _RET.match(line)
+        if m and m.group(1) != "void":
+            fns[cur][1].append(m.group(2).strip())
+    memo: Dict[str, bool] = {}
+
+    def value(fn: str, v: str, seen: set) -> bool:
+        defs = fns[fn][0]
+        if not v.startswith("%") or (fn, v) in seen or v not in defs:
+            return False   # a constant or an argument: classical
+        seen.add((fn, v))
+        rhs = defs[v]
+        op = rhs.split(" ", 1)[0]
+        if op == "phi":
+            return any(value(fn, a.strip(), seen) for a in re.findall(r"\[\s*([^,\]]+),", rhs))
+        if op == "select":
+            ops = _split_top(rhs.split(" ", 1)[1])
+            return any(value(fn, o.split()[-1], seen) for o in ops[1:3] if o)
+        if op in ("zext", "sext", "trunc", "bitcast", "freeze"):
+            mm = re.match(r"\S+ \S+ (\S+) to ", rhs)
+            return bool(mm) and value(fn, mm.group(1), seen)
+        m = _CALLEE.search(rhs)
+        if m and re.match(r"^(tail |musttail |notail )?call\b", rhs):
+            return returns_handle(m.group(2))
+        return False
+
+    def returns_handle(callee: str) -> bool:
+        if callee.startswith("cq_template_"):
+            return not callee.endswith("_unc")
+        if callee.startswith("cqrt_"):
+            return callee.startswith(_RAIL_CALLS)
+        if callee not in fns:
+            return callee.startswith("__cq_q_") and not callee.endswith("_unc")
+        if callee not in memo:
+            memo[callee] = False   # a recursive cycle alone gives no handle
+            memo[callee] = any(value(callee, r, set()) for r in fns[callee][1])
+        return memo[callee]
+
+    return sorted(f for f in fns if returns_handle(f))
+
+
+def resolve_handle_rets(r: RunResult, fns: Sequence[str]) -> RunResult:
+    """r with each ret of a function in fns resolved from its handle to the rail's value; see above."""
+    if not fns or not r.outputs or not r.outputs.get("ret"):
+        return r
+    live = {k.get("h"): k for k in (r.kept or []) if isinstance(k, dict)}
+    rets, viol = [], list(r.violations)
+    for e in r.outputs["ret"]:
+        v = e.get("v")
+        if e.get("fn") not in fns or not isinstance(v, dict):
+            rets.append(e)
+            continue
+        h = int(v["v"], 16)
+        h = h - (1 << 32) if h >= 1 << 31 else h
+        rail = live.get(h)
+        if rail is None or rail.get("w") != v.get("w"):
+            what = "names no live rail at exit" if rail is None else f"names a {rail.get('w')} rail"
+            viol.append({"what": "ret_handle", "h": h,
+                         "msg": f"{e.get('fn')} returns handle {h} (a {v.get('w')}), which {what}"})
+            rets.append(e)
+            continue
+        rets.append(dict(e, v={"w": v["w"], "v": rail["v"]}))
+    return RunResult(side=r.side, sample=r.sample, outputs=dict(r.outputs, ret=rets), measured=r.measured,
+                     rotations=r.rotations, kept=r.kept, clean=r.clean, violations=viol)
 
 
 # ---- run -------------------------------------------------------------------------------------
@@ -1050,6 +1154,9 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
     else:
         with ThreadPoolExecutor(max_workers=n) as ex:
             list(ex.map(part, parts))
+    hfns = json.loads((prog.parent / "handle_rets.json").read_text())   # cq-n6a0
+    if hfns:
+        out = [resolve_handle_rets(r, hfns) if r.violations is not None else r for r in out]
     return out  # type: ignore[return-value]
 
 

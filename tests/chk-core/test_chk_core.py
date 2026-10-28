@@ -856,5 +856,39 @@ class DefaultEnv(unittest.TestCase):
                       out)
 
 
+class HandleReturn(unittest.TestCase):
+    """cq-n6a0: an entry whose lowered return is a rail handle (CR §1.1) reports the rail's value as its
+    ret, not the handle number; a classical return is untouched."""
+
+    def test_ret_is_the_rail_value(self):
+        protos = ["int hret(int,double,int)", "int cret(int,double,int)"]
+        calls = [{"fn": f, "args": [{"ctype": "int", "quantum": True}, {"ctype": "double", "quantum": False},
+                                    {"ctype": "int", "quantum": False}]} for f in ("hret", "cret")]
+        spec = DriverSpec(example="chk-core", protos=protos, setup="", calls=calls)
+        samples = [{"call": 0, "args": [40, 0.5, 2]}, {"call": 0, "args": [7, 0.5, 100]},
+                   {"call": 1, "args": [40, 0.5, 2]}]
+        rs = run.run_samples(HERE / "handle_ret.ll", spec, samples, "ours", rt_sources=RT, extra_sources=FAM)
+        for r in rs:
+            self.assertEqual(r.violations, [])
+        self.assertEqual([int(r.outputs["ret"][0]["v"]["v"], 16) for r in rs], [42, 107, 42])
+        self.assertEqual(rs[0].outputs["ret"][0]["v"]["w"], "i32")
+
+    def test_static_analysis(self):
+        text = subprocess.run([str(LLVM / "llvm-link"), "-S", str(HERE / "handle_ret.ll"), "-o", "-"],
+                              capture_output=True, text=True, check=True).stdout
+        self.assertEqual(run.handle_returning_fns(text), ["hret"])
+        if (SPEC / "examples" / "161_opaque_callee").is_dir():
+            ll = SPEC / "examples" / "161_opaque_callee" / "opaque_callee.lowered.ll"
+            text = subprocess.run([str(LLVM / "llvm-link"), "-S", str(ll), "-o", "-"], capture_output=True,
+                                  text=True, check=True).stdout
+            self.assertEqual(run.handle_returning_fns(text), ["opaque_callee"])
+
+    def test_dead_handle_is_a_violation(self):
+        r = RunResult(side="ours", sample={}, outputs={"ret": [{"call": 0, "fn": "f", "v": {"w": "i32", "v": "0x5"}}]},
+                      measured=[], rotations=[], kept=[{"h": 4, "w": "i32", "v": "0x1", "role": "garbage"}],
+                      clean=[], violations=[])
+        self.assertEqual([v["what"] for v in run.resolve_handle_rets(r, ["f"]).violations], ["ret_handle"])
+
+
 if __name__ == "__main__":
     unittest.main()
