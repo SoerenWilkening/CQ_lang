@@ -310,6 +310,27 @@ class Sampling(unittest.TestCase):
         for t in ("0", "3", "4", "5"):
             self.assertIn("sample", lp["trips"][t], t)
 
+    def test_trip_hit_reads_capped_records(self):
+        """cq-ldo7: a quantum-exit loop the C oracle cuts at K has a capped T2 record and no trip
+        event; it is the hit for every target above K, never for K or below."""
+        rec = [{"loop": "f:%8", "act": 0, "n": 4, "capped": True, "cut": 3, "mcut": 0}]
+        self.assertTrue(S.trip_hit([], rec, "f:%8", 5))
+        self.assertTrue(S.trip_hit([], rec, "f:%8", 9))
+        self.assertFalse(S.trip_hit([], rec, "f:%8", 4))
+        self.assertFalse(S.trip_hit([], rec, "g:%8", 5))
+        self.assertFalse(S.trip_hit([], [dict(rec[0], capped=False)], "f:%8", 5))
+        self.assertTrue(S.trip_hit([{"ev": "trip", "loop": "f:%8", "n": 3}], [], "f:%8", 3))
+
+    def test_quantum_bound_store_inside_cutoff(self):
+        """cq-b19i: 55 stores a[i] for i <= m (m quantum) into int a[4]. Uncut, m >= 4 stores past
+        a[3]; the C oracle cuts the quantum-exit loop at K = 4 (i = 0..3) and stops there, so every
+        sample is in the domain, and the K+1 trip class is a capped sample."""
+        n = "55_array_in_quantum_loop"
+        spec, ss = self.sample(n)
+        self.assertEqual(S.domain_problems(spec, D.example_dir(n), ss), [])
+        (lp,) = ss.classes["trips"]["loops"]
+        self.assertIn("sample", lp["trips"]["5"])
+
     def test_nonarg_registers(self):
         spec, ss = self.sample("113_dicke4")
         self.assertIn("computed inside the program", ss.classes["edge"]["0"]["empty"])

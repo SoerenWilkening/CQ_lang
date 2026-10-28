@@ -1194,6 +1194,12 @@ class Obs:
     m: Dict[int, List[Tuple[int, int]]] = field(default_factory=dict)
     t: Dict[int, List[int]] = field(default_factory=dict)
     oob: Set[int] = field(default_factory=set)       # mem sites that accessed outside their object
+    # cq-b19i: the probe runs the C program without the K cutoff. A sample whose probe run left an
+    # object at a classical site is run in the C oracle, which cuts quantum-exit loops and
+    # quantum-depth recursions at K as the circuit does (CR §6); cap_ok is True when that run
+    # stopped at the cutoff (outcome cap:<loop>) with no access outside an object (no oob-load /
+    # oob-store note): the out-of-object access lay past the cutoff, so the sample is in the domain.
+    cap_ok: bool = False
 
     @property
     def returned(self) -> bool:
@@ -1534,7 +1540,9 @@ def classical_candidates(g: Gen, rng: random.Random) -> Dict[int, List[List[str]
 
 def _valid(o: Obs, rows_by_site: Dict[int, List[Row]], classical_mem: Set[int] = frozenset()) -> bool:
     if o.oob & classical_mem:
-        return False          # a classical access past its object: undefined in C, no §2 row
+        # a classical access past its object: undefined in C, no §2 row, unless the C program as the
+        # oracle runs it (cut at K) stops before it (cq-b19i)
+        return o.cap_ok
     if o.returned:
         return True
     if o.end == "signal" and o.code in (8,):          # SIGFPE: a trapping §2 row in the native build
@@ -1545,6 +1553,21 @@ def _valid(o: Obs, rows_by_site: Dict[int, List[Row]], classical_mem: Set[int] =
     return False
 
 
+def _cap_clean(r) -> bool:
+    """An oracle SampleRun that stopped at the K cutoff without touching memory outside an object."""
+    return (not r.failed and r.outcome.startswith("cap:")
+            and not any(n in ("oob-load", "oob-store") for n in r.notes))
+
+
+def confirm_cap(pb: "ProbeBuild", keys: Sequence[Tuple[int, Tuple[str, ...]]], obs: Sequence[Obs]) -> None:
+    """Set Obs.cap_ok from the C oracle's runs of these samples (cq-b19i)."""
+    from cqcheck import oracle
+    o1 = sorted(pb.example_dir.glob("*.O1.ll"))[0]
+    runs = oracle.run_samples(o1, pb.spec, [{"call": c, "args": list(a)} for c, a in keys])
+    for o, r in zip(obs, runs):
+        o.cap_ok = _cap_clean(r)
+
+
 class Searcher:
     """Mutation search over the scalar arguments of one call, guided by a distance to the target."""
 
@@ -1553,6 +1576,7 @@ class Searcher:
         self.classical_mem = {st.id for st in pb.ins.sites if st.kind == "mem" and st.classical}
         self.cache: Dict[Tuple[int, Tuple[str, ...]], Obs] = {}
         self.runs = 0
+        self.oracle_runs = 0
 
     def valid(self, o: Obs) -> bool:
         return _valid(o, self.rows_by_site, self.classical_mem)
@@ -1565,6 +1589,10 @@ class Searcher:
             self.runs += len(uniq)
             for k, o in zip(uniq, obs):
                 self.cache[k] = o
+            flagged = [k for k, o in zip(uniq, obs) if o.oob & self.classical_mem]
+            if flagged:
+                self.oracle_runs += len(flagged)
+                confirm_cap(self.pb, flagged, [self.cache[k] for k in flagged])
         return [self.cache[(c, tuple(a))] for c, a in cands]
 
     def interesting(self, call: int, j: int) -> List[int]:
@@ -1802,11 +1830,21 @@ def build_sample_set(spec: DriverSpec, example_dir: Path) -> SampleSet:
     return SampleSet(example=spec.example, samples=g.samples, classes=classes)
 
 
+def trip_hit(events: Sequence[dict], loops: Sequence[dict], loop: str, t: int) -> bool:
+    """The C oracle ran loop `loop` for `t` trips in one sample: a T1 trip event with n == t, or, for
+    a quantum-exit loop the oracle cut at K (cq-8ay), a T2 record {loop, capped: true, n: K} for any
+    t > K. A capped activation never takes an exit edge, so it has no trip event (cq-ldo7)."""
+    if any(e.get("ev") == "trip" and e.get("loop") == loop and int(e["n"]) == t for e in events):
+        return True
+    return any(r.get("loop") == loop and r.get("capped") is True and t > int(r["n"]) for r in loops)
+
+
 def trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_site, bound_note) -> List[dict]:
     """Per loop and per target trip count, a sample on which the C oracle's trip counter reports that
     count. The probe build's header counters drive the search; candidates within one trip of a target
     (the probe counts header executions, the oracle trips begun, and a skipped guard as 0) go to the
-    C oracle, which decides."""
+    C oracle, which decides. For K+1, candidates the probe sees running longer go too: the oracle
+    cuts a quantum-exit loop at K and reports that as a capped record (trip_hit)."""
     from cqcheck import oracle
     loops = pb.ins.loops
     if not loops:
@@ -1815,35 +1853,49 @@ def trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_sit
     targets = (0, K - 1, K, K + 1)
     cands: List[Tuple[int, Tuple[str, ...]]] = []
 
-    def near(o: Obs, lp: Loop, t: int) -> bool:
-        ns = o.t.get(lp.id, [])
-        return any(abs(n - t) <= 1 for n in ns) or (t == 0 and not ns)
+    searcher.observe(pool)
+
+    def with_count(lp: Loop, pred) -> List[Tuple[int, Tuple[str, ...]]]:
+        ks = [k for k, o in searcher.cache.items() if searcher.valid(o) and pred(o.t.get(lp.id, []))]
+        ks.sort(key=lambda k: (k not in g.index, g.index.get(k, 0)))
+        return ks
 
     for lp in loops:
         for t in targets:
-            found = None
-            if not any(near(o, lp, t) for o in pool_obs):
-                def dist(o, lp=lp, t=t):
-                    return min((abs(n - t) for n in o.t.get(lp.id, [])), default=1e308)
-                found = searcher.search(pool, dist)
-                if found:
-                    cands.append((found[0], tuple(found[1])))
-            picked = [k for k, o in searcher.cache.items() if searcher.valid(o) and near(o, lp, t)]
-            picked.sort(key=lambda k: (k not in g.index, g.index.get(k, 0)))
-            cands += picked[:24]
+            # the oracle's t is the probe's t, or t + 1 for an exit from a header that is not a latch:
+            # search for each count the cache lacks (a count one off does not stand in for it, cq-ldo7)
+            for u in (t, t + 1):
+                if not with_count(lp, lambda ns, u=u: u in ns):
+                    def dist(o, lp=lp, u=u):
+                        return min((abs(n - u) for n in o.t.get(lp.id, [])), default=1e308)
+                    found = searcher.search(pool, dist)
+                    if found:
+                        cands.append((found[0], tuple(found[1])))
+            # up to 8 candidates per probe count near t
+            for v in (t, t + 1, t - 1):
+                cands += with_count(lp, lambda ns, v=v: v in ns)[:8]
+            if t == 0:
+                cands += with_count(lp, lambda ns: not ns)[:8]
+            if t == K + 1:
+                # the oracle cuts a quantum-exit loop at K: a longer probe run is a K+1 candidate
+                cands += with_count(lp, lambda ns: any(n > t + 1 for n in ns))[:8]
     cands = list(dict.fromkeys([(c, tuple(a)) for c, a in
                                 [(g.samples[i]["call"], g.samples[i]["args"]) for i in range(len(spec.calls))]] + cands))
     o1 = sorted(Path(example_dir).glob("*.O1.ll"))[0]
     runs = oracle.run_samples(o1, spec, [{"call": c, "args": list(a)} for c, a in cands])
     seen: Dict[str, Set[int]] = {}
+    capped: Dict[str, Set[int]] = {}
     for (c, a), r in zip(cands, runs):
         if r.failed:
             continue
         for e in r.events:
             if e.get("ev") == "trip":
                 seen.setdefault(e["loop"], set()).add(int(e["n"]))
+        for rec in r.loops:
+            if rec.get("capped") is True:
+                capped.setdefault(rec["loop"], set()).add(int(rec["n"]))
     known = set(oid.values())
-    stray = sorted(set(seen) - known)
+    stray = sorted((set(seen) | {l for l in capped if not l.endswith(":recursion")}) - known)
     if stray:
         D.unimplemented(f"{spec.example}: the C oracle reports loops {stray} the probe build does not know "
                         f"(probe loops {sorted(known)})")
@@ -1853,19 +1905,20 @@ def trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_sit
         for t in targets:
             hit = None
             for (c, a), r in zip(cands, runs):
-                if not r.failed and any(e.get("ev") == "trip" and e["loop"] == oid[lp.id] and int(e["n"]) == t
-                                        for e in r.events):
+                if not r.failed and trip_hit(r.events, r.loops, oid[lp.id], t):
                     hit = g.add(c, list(a))
                     break
             if hit is not None:
                 trips[str(t)] = {"sample": hit}
                 continue
             obs_c = sorted(seen.get(oid[lp.id], set()))
-            if not obs_c and not any(lp.id in o.t for o in searcher.cache.values()):
+            cap_c = sorted(capped.get(oid[lp.id], set()))
+            if not obs_c and not cap_c and not any(lp.id in o.t for o in searcher.cache.values()):
                 why = "the loop is never reached from the drivers.txt calls"
             else:
                 why = (f"no input found: the C oracle's trip counts on {len(cands)} candidates are "
                        f"{obs_c[:12]}{' ...' if len(obs_c) > 12 else ''}"
+                       + (f", and it cut the loop at K = {cap_c}" if cap_c else "")
                        + (" (it reports 0 only when a guard branch skips the loop)" if t == 0 else "")
                        + f"; {searcher.runs} probe runs searched")
             trips[str(t)] = {"empty": why + bound_note}
@@ -1874,24 +1927,26 @@ def trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_sit
     return out
 
 
-def confirm_trips(ss: SampleSet, trip_events: Callable[[dict], List[dict]]) -> List[str]:
-    """Check the trip samples against the C oracle's trip counters. `trip_events(sample)` returns the
-    oracle's events for one sample (oracle.trace_sample), loops spelled per T1. Returns the
-    disagreements."""
+def confirm_trips(ss: SampleSet, trip_run: Callable[[dict], Tuple[List[dict], List[dict]]]) -> List[str]:
+    """Check the trip samples against the C oracle's trip counters. `trip_run(sample)` returns the
+    oracle's events and T2 loop records for one sample (oracle.run_samples: SampleRun.events,
+    SampleRun.loops), loops spelled per T1; it raises when the sample cannot run. A K+1 sample of a
+    quantum-exit loop is confirmed by a capped record (trip_hit). Returns the disagreements."""
     bad = []
     for lp in ss.classes["trips"]["loops"]:
         for target, e in lp["trips"].items():
             if "sample" not in e:
                 continue
             try:
-                evs = trip_events(ss.samples[e["sample"]])
+                evs, recs = trip_run(ss.samples[e["sample"]])
             except Exception as x:  # noqa: BLE001 - a sample the oracle cannot run is a disagreement
                 bad.append(f"{ss.example}: loop {lp['loop']}: sample {e['sample']}: {x}")
                 continue
-            ns = [int(x["n"]) for x in evs if x.get("ev") == "trip" and x.get("loop") == lp["loop"]]
-            if int(target) not in ns:
+            if not trip_hit(evs, recs, lp["loop"], int(target)):
+                ns = [int(x["n"]) for x in evs if x.get("ev") == "trip" and x.get("loop") == lp["loop"]]
+                cs = [int(x["n"]) for x in recs if x.get("loop") == lp["loop"] and x.get("capped") is True]
                 bad.append(f"{ss.example}: loop {lp['loop']}: sample {e['sample']} "
-                           f"gives trips {ns} in the C oracle, the class says {target}")
+                           f"gives trips {ns} (cut at K: {cs}) in the C oracle, the class says {target}")
     return bad
 
 
@@ -1952,6 +2007,24 @@ def _summary(ss: SampleSet) -> str:
             f"trip targets {tr_hit}/{4 * len(lps)} found")
 
 
+def domain_problems(spec: DriverSpec, example_dir: Path, ss: SampleSet) -> List[str]:
+    """Every sample of the set, quantum ones included, inside the C program's domain as the oracle
+    runs it: a probe run that leaves an object at a classical site must be a run the oracle cuts at K
+    before any out-of-object access (Obs.cap_ok, cq-b19i). Returns the samples that are not."""
+    example_dir = Path(example_dir)
+    with tempfile.TemporaryDirectory(prefix=f"cqd-{spec.example}-") as tmp:
+        pb = ProbeBuild(spec, example_dir, Path(tmp))
+        cm = {st.id for st in pb.ins.sites if st.kind == "mem" and st.classical}
+        obs = pb.run(ss.samples)
+        flagged = [(i, o) for i, o in enumerate(obs) if o.oob & cm]
+        if flagged:
+            confirm_cap(pb, [(ss.samples[i]["call"], tuple(ss.samples[i]["args"])) for i, _ in flagged],
+                        [o for _, o in flagged])
+    return [f"{spec.example}: sample {i} {ss.samples[i]} accesses outside its object at "
+            f"{sorted(o.oob & cm)} in the C program, also as the oracle runs it"
+            for i, o in flagged if not o.cap_ok]
+
+
 def _one(n: str, confirm: bool = False):
     d = D.example_dir(n)
     spec = D.driver_spec(n, d)
@@ -1960,7 +2033,13 @@ def _one(n: str, confirm: bool = False):
     if confirm:
         from cqcheck import oracle
         o1 = sorted(d.glob("*.O1.ll"))[0]
-        bad = confirm_trips(ss, lambda smp: oracle.trace_sample(o1, spec, smp))
+
+        def trip_run(smp):
+            r = oracle.run_samples(o1, spec, [smp])[0]
+            if r.failed:
+                raise oracle.OracleError(f"oracle: sample {smp} cannot run: {r.reason}")
+            return r.events, r.loops
+        bad = confirm_trips(ss, trip_run) + domain_problems(spec, d, ss)
     return n, spec, ss, bad
 
 
@@ -1972,7 +2051,8 @@ def main(argv=None) -> int:
     ap.add_argument("-j", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--confirm", action="store_true",
-                    help="check every trip sample against the C oracle (oracle.trace_sample)")
+                    help="check every trip sample against the C oracle, and every sample against the "
+                         "C program's domain as the oracle runs it (cut at K)")
     a = ap.parse_args(argv)
     names = a.examples or D.all_examples()
     names = [n for n in names]
