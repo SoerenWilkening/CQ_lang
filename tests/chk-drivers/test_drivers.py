@@ -668,6 +668,19 @@ class ProbeDeterminism(unittest.TestCase):
     object ends the sample at the access (end "oob", the header count there), before it lands;
     nontermination is the header budget; no wall-clock limit decides a sample."""
 
+    def test_threads_collapse(self):
+        """cq-nfv3: 106 creates two threads. The probe collapses them as the C oracle does (CR rule
+        24: pthread_create runs the routine to completion), so the same batch observed twice gives
+        the same observations; with real threads they raced on the probe's buffer and counters."""
+        n = "106_fork_join"
+        spec = D.driver_spec(n, D.example_dir(n))
+        keys = [{"call": 0, "args": [f"0x{x:08x}", "0x3fe0000000000000", "0x00000003"]}
+                for x in (0, 1, 2, 5, 7, 100, 0x7fff)]
+        def observe():
+            with tempfile.TemporaryDirectory() as t, S.ProbeBuild(spec, D.example_dir(n), Path(t)) as pb:
+                return [(o.end, o.returned, sorted(o.p.items()), sorted(o.m.items())) for o in pb.run(keys)]
+        self.assertEqual(observe(), observe())
+
     def test_store_past_object_stops_at_the_access(self):
         """55 stores a[i] for i <= m into int a[4]. Before cq-ir5z the probe performed the stores up
         its sample stack: the run ended at whatever page lay above it (signal 11 after 3109 trips) or

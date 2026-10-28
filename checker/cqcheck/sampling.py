@@ -382,6 +382,7 @@ RUNTIME_C = r"""
 #include <mach-o/getsect.h>
 #include <mach-o/ldsyms.h>
 #include <pthread.h>
+#include <errno.h>
 #define CAP 64
 #define NSITE 65536
 #define NOBJ 65536
@@ -422,6 +423,25 @@ __attribute__((constructor(101))) static void cqd_init(void) {
     S = cqd_map(sizeof *S, 0); B = cqd_map(sizeof *B, 0); C = cqd_map(sizeof *C, 0);
     P = cqd_map(4096, 1);
 }
+/* threads: single-thread collapse (CR rule 24), as cqo_rt.c does (cq-nfv3). __DATA is restored per
+ * sample, so the thread table starts empty in every sample. */
+static void *cqd_thread_results[1024];
+static unsigned cqd_nthreads;
+int __cqd_pthread_create(pthread_t *t, const pthread_attr_t *a, void *(*fn)(void *), void *arg) {
+    (void)a;
+    if (cqd_nthreads >= 1024) return EAGAIN;
+    unsigned id = cqd_nthreads++;
+    *t = (pthread_t)(uintptr_t)(id + 1);
+    cqd_thread_results[id] = fn(arg);
+    return 0;
+}
+int __cqd_pthread_join(pthread_t t, void **ret) {
+    uintptr_t id = (uintptr_t)t;
+    if (id == 0 || id > cqd_nthreads) return ESRCH;
+    if (ret) *ret = cqd_thread_results[id - 1];
+    return 0;
+}
+int __cqd_pthread_detach(pthread_t t) { (void)t; return 0; }
 static void cqd_out(const char *fmt, ...) {
     if (S->len > sizeof S->buf - 256) return;
     va_list ap; va_start(ap, fmt);
@@ -1510,6 +1530,10 @@ class ProbeBuild:
         stubbed |= {line for n, line in self.mod.declares.items()
                     if n.startswith("@cq_theta_") or n.startswith("@cq_measure_")}
         ll = "\n".join(ln for ln in ll.split("\n") if ln not in stubbed)
+        # threads: single-thread collapse (CR rule 24), as the C oracle runs them (cqo_rt.c): the
+        # start routine runs to completion inside pthread_create, so every probe observation is a
+        # function of the input (cq-nfv3: 106's real threads raced on the probe's buffer and counters)
+        ll = re.sub(r"@pthread_(create|join|detach)\b", r"@__cqd_pthread_\1", ll)
         (w / "probe.ll").write_text(ll + "\n" + "\n".join(stubs) + "\n")
         (w / "driver.c").write_text(_driver_main(self.spec)
                                     + f"const int cqd_nsites = {max(1, len(self.ins.sites))}, "
