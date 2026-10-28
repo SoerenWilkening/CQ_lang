@@ -147,6 +147,7 @@ private:
   BasicBlock *out(const BasicBlock *b);
   void emitBlock(BasicBlock *b);
   void emitTerminator(BasicBlock *b);
+  void emitCloneReturn(ReturnInst *ret);
   void lowerUnit(Loop &lp);
   void maybeFlush(Instruction *term);
   void jump(const BasicBlock *from, const BasicBlock *to);
@@ -483,6 +484,44 @@ void Walker::lowerUnit(Loop &lp) {
       visited.insert(&I);
 }
 
+// Rule 18 copy-out at a clone's return (cq-b0w, orchestrator decision: the spine owns it). A
+// quantum result r is copied into a fresh rail f = cqrt_alloc_<W>(0); cqrt_copy_<W>(r, f), f is kept
+// (Role::Result: the caller frees it after the twin) and returned; flushAtExit then uncomputes the
+// body, which the copy reads, after it (06, 07, 33, 34). The copy is made even for a one-template
+// body (CR allows returning that rail directly; the corpus always copies). A classical result (a
+// callee that measures, or a mask under which the result does not depend on a quantum value) is
+// returned as is.
+void Walker::emitCloneReturn(ReturnInst *ret) {
+  IRBuilder<> &B = ctx.B();
+  Function *C = ctx.B().GetInsertBlock()->getParent();
+  ReturnInst *nr;
+  if (Value *rv = ret->getReturnValue()) {
+    if (rv->getType()->isAggregateType())
+      unimplemented("spine: a clone returning an aggregate (rule 18 copy-out per field: aggr/calls)", ret);
+    Operand op = ctx.operand(rv);
+    Value *v = op.v;
+    if (op.handle) {
+      if (C->getReturnType() != handleTy(ctx.M.getContext()))
+        internalError("spine: a clone with a quantum result whose return type is not the handle type", ret);
+      RailType w = railTypeOf(rv->getType());
+      CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                                 {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+      RailId fid = ctx.unc().recordSeed(f);
+      abi::CoreSpec cp{abi::Core::Copy, w};
+      CallInst *c = ctx.emitCore(cp, {op.v, f});
+      ctx.unc().recordCore(c, cp, {op, Operand{f, true}}, fid);
+      ctx.unc().setRole(fid, Role::Result);
+      v = f;
+    } else if (v->getType() != C->getReturnType()) {
+      internalError("spine: a clone's classical result does not have the clone's return type", ret);
+    }
+    nr = B.CreateRet(v);
+  } else {
+    nr = B.CreateRetVoid();
+  }
+  ctx.unc().flushAtExit(nr);
+}
+
 void Walker::emitTerminator(BasicBlock *b) {
   Instruction *t = b->getTerminator();
   sh.cur = t;
@@ -493,7 +532,7 @@ void Walker::emitTerminator(BasicBlock *b) {
     if (ctx.T.controlTainted(b, ctx.S))
       unimplemented("spine: a return under a quantum predicate", t);
     if (!ctx.S.isEntry())
-      unimplemented("spine: return from a clone: rule 18 copy-out has no owner in the frozen interface (cq-b0w)", t);
+      return emitCloneReturn(ret);
     ReturnInst *nr;
     if (Value *rv = ret->getReturnValue()) {
       Operand op = ctx.operand(rv);
