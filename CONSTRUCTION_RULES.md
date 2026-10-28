@@ -308,11 +308,31 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
    consumer and before any non-diagonal gate on any of its sources. Convention for the examples
    (not a requirement): uncompute as early as the invariant allows. — 02, 04, 07, 20, 66, 118.
 
-6. **Bijective update of a dead value.** When `y' = f(y, …)` is a bijection in `y` for the other
-   operands and `y`'s old value is dead, the old rail is cleaned: compute `t = f⁻¹(y', …)` fresh,
-   `copy_<W>(t, y_old)`, `_unc` of `t`, free `y_old`. When the old value is still needed to
-   uncompute other rails, those are uncomputed first and then this rule applies. — 125, 127
-   (to be rewritten as the two witnesses).
+6. **Bijective update of a dead value.** When `y' = f(y, …)` is a bijection in `y` for every value
+   of the other operands and `y`'s old value is dead, the old rail is cleaned: compute
+   `t = f⁻¹(y', …)` fresh, `copy_<W>(t, y_old)`, `_unc` of `t`, free `y_old`. When the old value is
+   still needed to uncompute other rails, those are uncomputed first and then this rule applies (to
+   the composite update, 127).
+   - *Dead:* nothing reads the old value after the update: no SSA use, no load of a cell that still
+     holds its handle, no measurement, no escape (`ret`, a call argument, memory that is read later).
+   - *Every such rail:* the rule is not an optimisation and has no other trigger. It applies to a
+     rotated user register (01, 38, 180) as to a template result (127). A kept old value is a
+     which-path record of the rail that replaced it: a later non-diagonal gate on `y'` or on an
+     operand of `f`, in this function or in a caller the rail escapes to (162), would act on a
+     dephased register. A seed (rule 7) is freed directly instead.
+   - *Bijections:* `add`, `sub`, `xor` with any other operand (classical or a rail), `sub 0, y`,
+     `xor y, -1`, `mul` by an odd literal, `fshl`/`fshr` with `y` in both value slots, `bswap`,
+     `bitreverse`, `fneg`; a select whose arms are such updates of `y` or `y` itself (125); a
+     controlled swap (145). Not: a width change (casts are rule 3), `mul` by a classical
+     parameter or by a rail (`c = 0` collapses it), shifts, FP arithmetic other than `fneg`.
+   - *Both operands dead* (`x + z`, two rails): operand 0 of the IR instruction is cleaned; the
+     other is kept (its inverse would read the rail just cleaned).
+   - *Placement:* `t` reads `y'` and `f`'s other operands, so the clean comes before the next
+     non-diagonal gate on any of them (convention: right after the update). The old rail is kept
+     only when `f` has no inverse in `y` or when an uncompute that must precede the clean has to
+     follow such a gate.
+
+   — 01, 38, 125, 127, 144, 145, 180.
 
 7. **Seed rails.** A rail minted from a classical constant or parameter and never written is in a
    known basis state and is freed directly (§0 free policy). — 25, 28, 57, 62, 94, 95.

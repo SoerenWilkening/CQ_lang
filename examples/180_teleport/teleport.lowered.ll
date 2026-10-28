@@ -10,8 +10,7 @@
 ; Clean: the old c rail %3 (rule 6: t = c' ^ m1 recomputes it, copy_i1 zeroes it, t is uncomputed) and t (%8), both freed.
 ; Kept: a (%2) and b (%4), measured and therefore never freed; c (%7, the corrected rail), measured at the end. The old b
 ;   rail after `b = a ^ b` is NOT a dead value to clean by rule 6: it IS the register c (c = b ^ 0 == b), read by the X
-;   correction. Even if it were dead it could not be cleaned: the inverse of the update needs a's value, and a is rotated
-;   non-diagonally (H) and measured right after (the rail is entangled with a measured one).
+;   correction. Were it dead, rule 6 would clean it right after the CNOT, before the H on a (the inverse reads a).
 ; Rotations: Ry(theta) on a (control 1); Ry(pi/2) on b (control 1); Ry(-pi/2) on a (control 1);
 ;   [after the measurements, classical control:] P(pi) on c (%7) under the classical m2 (control predicate: m2 & c, with
 ;   c the bare rail); Ry(-theta) on c (%7, control 1). The X correction is a basis permutation (xor_i1_hl), not a rotation.
