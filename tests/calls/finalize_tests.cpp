@@ -1,4 +1,5 @@
-// Unit tests of calls::finalize (cq-by8; CR §1.4 "dead originals", rule 18).
+// Unit tests of calls::finalize (cq-by8; CR §1.4 "dead originals", rule 18) and of the twins it
+// defines (cq-w1-calls; rule 18: the twin recomputes, XORs the result out, uncomputes).
 //
 // Each case parses a module shaped like what construct() leaves behind (clones already made, call
 // sites already retargeted), runs calls::finalize and checks which functions and globals survive.
@@ -21,6 +22,8 @@
 #include "cq/Taint.h"
 
 #include "llvm/AsmParser/Parser.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
@@ -523,6 +526,306 @@ define internal fastcc void @__cq_q_f_1_unc(i32 %o, i32 %x) {
 }
 )";
 
+
+// --- twins (cq-w1-calls) ---
+
+// 07-shaped: the entry calls the twin of a lowered clone; finalize defines it from the clone's body
+// with the copy-out turned into an XOR into %out.
+const char *kTwinDefine = R"(
+define i32 @entry(i32 %a, double %t, i32 %c) {
+  %q = call i32 @cqrt_alloc_i32(i32 %a)
+  call void @cqrt_ry_i32(i32 %q, double %t)
+  %r = call fastcc i32 @__cq_q_f_10(i32 %q, i32 %c)
+  call void @__cq_q_f_10_unc(i32 %r, i32 %q, i32 %c)
+  call void @cqrt_free(i32 %r)
+  %m = call i32 @cqrt_measure_i32(i32 %q)
+  ret i32 %m
+}
+
+define internal fastcc i32 @f(i32 %v, i32 %c) {
+  %s = mul i32 %v, %v
+  %t = add i32 %s, %c
+  ret i32 %t
+}
+
+define internal fastcc i32 @__cq_q_f_10(i32 %0, i32 %1) {
+  %3 = call i32 @cq_template_mul_i32(i32 %0, i32 %0)
+  %4 = call i32 @cq_template_add_i32_hl(i32 %3, i32 %1)
+  %5 = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %4, i32 %5)
+  call void @cq_template_add_i32_hl_unc(i32 %4, i32 %3, i32 %1)
+  call void @cqrt_free(i32 %4)
+  call void @cq_template_mul_i32_unc(i32 %3, i32 %0, i32 %0)
+  call void @cqrt_free(i32 %3)
+  ret i32 %5
+}
+
+declare void @__cq_q_f_10_unc(i32, i32, i32)
+declare i32 @cqrt_alloc_i32(i32)
+declare void @cqrt_ry_i32(i32, double)
+declare i32 @cqrt_measure_i32(i32)
+declare void @cqrt_free(i32)
+declare void @cqrt_copy_i32(i32, i32)
+declare i32 @cq_template_mul_i32(i32, i32)
+declare i32 @cq_template_add_i32_hl(i32, i32)
+declare void @cq_template_mul_i32_unc(i32, i32, i32)
+declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
+)";
+
+const char *kTwinDefineExpected = R"(define internal void @__cq_q_f_10_unc(i32 %out, i32 %0, i32 %1) {
+  %3 = call i32 @cq_template_mul_i32(i32 %0, i32 %0)
+  %4 = call i32 @cq_template_add_i32_hl(i32 %3, i32 %1)
+  call void @cqrt_copy_i32(i32 %4, i32 %out)
+  call void @cq_template_add_i32_hl_unc(i32 %4, i32 %3, i32 %1)
+  call void @cqrt_free(i32 %4)
+  call void @cq_template_mul_i32_unc(i32 %3, i32 %0, i32 %0)
+  call void @cqrt_free(i32 %3)
+  ret void
+}
+)";
+
+// 33-shaped: the twin of g calls the twin of h, which finalize defines in turn; a classical branch in
+// the clone (119's depth test) is kept, every return's copy-out becomes an XOR.
+const char *kTwinChain = R"(
+define i32 @entry(i32 %q, i32 %c, i32 %n) {
+  %r = call fastcc i32 @__cq_q_g_100(i32 %q, i32 %c, i32 %n)
+  call void @__cq_q_g_100_unc(i32 %r, i32 %q, i32 %c, i32 %n)
+  call void @cqrt_free(i32 %r)
+  ret i32 0
+}
+
+define internal fastcc i32 @g(i32 %v, i32 %c, i32 %n) {
+  ret i32 %v
+}
+
+define internal fastcc i32 @h(i32 %v, i32 %c) {
+  ret i32 %v
+}
+
+define internal fastcc i32 @__cq_q_g_100(i32 %0, i32 %1, i32 %2) {
+  %b = icmp slt i32 %2, 1
+  br i1 %b, label %base, label %rec
+base:
+  %f0 = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %0, i32 %f0)
+  ret i32 %f0
+rec:
+  %hr = call fastcc i32 @__cq_q_h_10(i32 %0, i32 %1)
+  %gm = call i32 @cq_template_mul_i32(i32 %hr, i32 %0)
+  %f1 = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %gm, i32 %f1)
+  call void @cq_template_mul_i32_unc(i32 %gm, i32 %hr, i32 %0)
+  call void @cqrt_free(i32 %gm)
+  call void @__cq_q_h_10_unc(i32 %hr, i32 %0, i32 %1)
+  call void @cqrt_free(i32 %hr)
+  ret i32 %f1
+}
+
+define internal fastcc i32 @__cq_q_h_10(i32 %0, i32 %1) {
+  %3 = call i32 @cq_template_add_i32_hl(i32 %0, i32 %1)
+  %4 = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %3, i32 %4)
+  call void @cq_template_add_i32_hl_unc(i32 %3, i32 %0, i32 %1)
+  call void @cqrt_free(i32 %3)
+  ret i32 %4
+}
+
+declare void @__cq_q_g_100_unc(i32, i32, i32, i32)
+declare void @__cq_q_h_10_unc(i32, i32, i32)
+declare i32 @cqrt_alloc_i32(i32)
+declare void @cqrt_free(i32)
+declare void @cqrt_copy_i32(i32, i32)
+declare i32 @cq_template_mul_i32(i32, i32)
+declare i32 @cq_template_add_i32_hl(i32, i32)
+declare void @cq_template_mul_i32_unc(i32, i32, i32)
+declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
+)";
+
+// 119-shaped: the forward clone fires a phase, so the twin recomputes through the _pure clone.
+const char *kTwinPure = R"(
+define i32 @entry(i32 %q, double %p) {
+  %r = call fastcc i32 @__cq_q_f_10(i32 %q, double %p)
+  call void @__cq_q_f_10_unc(i32 %r, i32 %q, double %p)
+  call void @cqrt_free(i32 %r)
+  ret i32 0
+}
+
+define internal fastcc i32 @f(i32 %v, double %p) {
+  ret i32 %v
+}
+
+define internal fastcc i32 @__cq_q_f_10(i32 %0, double %1) {
+  %3 = call i32 @cq_template_add_i32_hl(i32 %0, i32 3)
+  call void @cqrt_rz_i1(i32 %3, double %1)
+  %4 = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %3, i32 %4)
+  call void @cq_template_add_i32_hl_unc(i32 %3, i32 %0, i32 3)
+  call void @cqrt_free(i32 %3)
+  ret i32 %4
+}
+
+define internal fastcc i32 @__cq_q_f_10_pure(i32 %0, double %1) {
+  %3 = call i32 @cq_template_add_i32_hl(i32 %0, i32 3)
+  %4 = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %3, i32 %4)
+  call void @cq_template_add_i32_hl_unc(i32 %3, i32 %0, i32 3)
+  call void @cqrt_free(i32 %3)
+  ret i32 %4
+}
+
+declare void @__cq_q_f_10_unc(i32, i32, double)
+declare void @cqrt_rz_i1(i32, double)
+declare i32 @cqrt_alloc_i32(i32)
+declare void @cqrt_free(i32)
+declare void @cqrt_copy_i32(i32, i32)
+declare i32 @cq_template_add_i32_hl(i32, i32)
+declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
+)";
+
+// Rule 27: the twin of a declared clone stays a declaration (whatever is linked defines it).
+const char *kTwinDeclared = R"(
+define i32 @entry(i32 %h, i32 %c) {
+  %r = call i32 @__cq_q_ext_10(i32 %h, i32 %c, i32 4)
+  %s = call i32 @cq_template_add_i32_hl(i32 %r, i32 1)
+  call void @__cq_q_ext_10_unc(i32 %r, i32 %h, i32 %c, i32 4)
+  call void @cqrt_free(i32 %r)
+  ret i32 %s
+}
+declare i32 @ext(i32, i32)
+declare i32 @__cq_q_ext_10(i32, i32, i32)
+declare void @__cq_q_ext_10_unc(i32, i32, i32, i32)
+declare void @cqrt_free(i32)
+declare i32 @cq_template_add_i32_hl(i32, i32)
+)";
+
+// A twin of a clone with a phase and no _pure clone would replay the phase.
+const char *kTwinEffect = R"(
+define i32 @entry(i32 %q, double %p) {
+  %r = call fastcc i32 @__cq_q_f_10(i32 %q, double %p)
+  call void @__cq_q_f_10_unc(i32 %r, i32 %q, double %p)
+  ret i32 0
+}
+define internal fastcc i32 @f(i32 %v, double %p) {
+  ret i32 %v
+}
+define internal fastcc i32 @__cq_q_f_10(i32 %0, double %1) {
+  %3 = call i32 @cq_template_add_i32_hl(i32 %0, i32 3)
+  call void @cqrt_rz_i1(i32 %3, double %1)
+  %4 = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %3, i32 %4)
+  call void @cq_template_add_i32_hl_unc(i32 %3, i32 %0, i32 3)
+  call void @cqrt_free(i32 %3)
+  ret i32 %4
+}
+declare void @__cq_q_f_10_unc(i32, i32, double)
+declare void @cqrt_rz_i1(i32, double)
+declare i32 @cqrt_alloc_i32(i32)
+declare void @cqrt_free(i32)
+declare void @cqrt_copy_i32(i32, i32)
+declare i32 @cq_template_add_i32_hl(i32, i32)
+declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
+)";
+
+// A clone that returns a rail other than its copy-out has no twin by rule 18's construction.
+const char *kTwinNoCopyOut = R"(
+define i32 @entry(i32 %q) {
+  %r = call fastcc i32 @__cq_q_f_1(i32 %q)
+  call void @__cq_q_f_1_unc(i32 %r, i32 %q)
+  ret i32 0
+}
+define internal fastcc i32 @f(i32 %v) {
+  ret i32 %v
+}
+define internal fastcc i32 @__cq_q_f_1(i32 %0) {
+  %2 = call i32 @cq_template_add_i32_hl(i32 %0, i32 3)
+  ret i32 %2
+}
+declare void @__cq_q_f_1_unc(i32, i32)
+declare i32 @cq_template_add_i32_hl(i32, i32)
+)";
+
+std::string printFn(const Module &M, StringRef name) {
+  const Function *F = M.getFunction(name);
+  if (!F)
+    return "<missing @" + name.str() + ">";
+  std::string s;
+  raw_string_ostream os(s);
+  F->print(os);
+  return os.str();
+}
+
+// Runs finalize; checks the module verifies, every named twin is defined (internal, C calling
+// convention) and `check` on the result.
+void expectTwins(const std::string &c, const char *ir, const std::vector<std::string> &defined,
+                 const std::vector<std::string> &declared, std::function<void(Module &)> check = {}) {
+  LLVMContext ctx;
+  auto M = parse(ctx, ir);
+  calls::finalize(*M);
+  std::string v;
+  raw_string_ostream os(v);
+  if (verifyModule(*M, &os))
+    fail(c, "module does not verify after finalize: " + os.str());
+  for (const std::string &n : defined) {
+    Function *F = M->getFunction(n);
+    if (!F || F->isDeclaration())
+      fail(c, "twin @" + n + " is not defined");
+    else if (!F->hasInternalLinkage() || F->getCallingConv() != CallingConv::C)
+      fail(c, "twin @" + n + " is not internal with the C calling convention");
+  }
+  for (const std::string &n : declared) {
+    Function *F = M->getFunction(n);
+    if (!F || !F->isDeclaration())
+      fail(c, "@" + n + " should stay a declaration");
+  }
+  if (check)
+    check(*M);
+}
+
+void twinDefine() {
+  expectTwins("twin_define", kTwinDefine, {"__cq_q_f_10_unc"}, {}, [](Module &M) {
+    std::string got = printFn(M, "__cq_q_f_10_unc");
+    if (got != kTwinDefineExpected)
+      fail("twin_define", "twin body:\n" + got + "expected:\n" + kTwinDefineExpected);
+    if (M.getFunction("f"))
+      fail("twin_define", "the original @f has no classical caller and should be dropped");
+  });
+}
+
+void twinChain() {
+  expectTwins("twin_chain", kTwinChain, {"__cq_q_g_100_unc", "__cq_q_h_10_unc"}, {}, [](Module &M) {
+    Function *T = M.getFunction("__cq_q_g_100_unc");
+    unsigned rets = 0, xors = 0;
+    for (Instruction &I : instructions(*T)) {
+      if (auto *R = dyn_cast<ReturnInst>(&I)) {
+        ++rets;
+        if (R->getReturnValue())
+          fail("twin_chain", "a twin returns a value");
+      }
+      if (auto *CB = dyn_cast<CallInst>(&I)) {
+        StringRef n = CB->getCalledFunction()->getName();
+        if (n == "cqrt_alloc_i32" && isa<ConstantInt>(CB->getArgOperand(0)) &&
+            cast<ConstantInt>(CB->getArgOperand(0))->isZero())
+          fail("twin_chain", "a result rail alloc survived in the twin");
+        if (n == "cqrt_copy_i32" && CB->getArgOperand(1) == T->getArg(0))
+          ++xors;
+      }
+    }
+    if (rets != 2 || xors != 2)
+      fail("twin_chain", "expected two returns, each preceded by an XOR into %out; got " + std::to_string(rets) +
+                             " returns, " + std::to_string(xors) + " XORs");
+  });
+}
+
+void twinPure() {
+  expectTwins("twin_pure", kTwinPure, {"__cq_q_f_10_unc"}, {}, [](Module &M) {
+    for (Instruction &I : instructions(*M.getFunction("__cq_q_f_10_unc")))
+      if (auto *CB = dyn_cast<CallInst>(&I); CB && CB->getCalledFunction()->getName() == "cqrt_rz_i1")
+        fail("twin_pure", "the twin replays the phase: it must recompute through the _pure clone");
+  });
+}
+
+void twinDeclared() { expectTwins("twin_declared", kTwinDeclared, {}, {"__cq_q_ext_10", "__cq_q_ext_10_unc"}); }
+
 // --- fatal inputs ---
 
 const char *kUniquified = R"(
@@ -580,7 +883,8 @@ declare void @cqrt_ry_i32(i32, double)
 declare i32 @cqrt_measure_i32(i32)
 )";
 
-void otherStubs() {
+// materialize reads the result kind from the run's TaintInfo; with no call site lowered yet there is none.
+void materializeNoTaint() {
   LLVMContext ctx;
   auto M = parse(ctx, "define internal i32 @f(i32 %x) {\n  ret i32 %x\n}\n");
   Specialization S;
@@ -608,13 +912,19 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"keep_shared_references", [] { expectDropped("keep_shared_references", kSharedRefs, {"f"}); }},
     {"declared_clone_only", [] { expectDropped("declared_clone_only", kDeclaredOnly, {}); }},
     {"twin_only", [] { expectDropped("twin_only", kTwinOnly, {"f"}); }},
+    {"twin_define", twinDefine},
+    {"twin_chain", twinChain},
+    {"twin_pure", twinPure},
+    {"twin_declared", twinDeclared},
 };
 
 const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_uniquified", [] { expectDropped("fatal_uniquified", kUniquified, {}); }},
     {"fatal_ambiguous", [] { expectDropped("fatal_ambiguous", kAmbiguous, {}); }},
     {"fatal_inplace_entry", [] { expectDropped("fatal_inplace_entry", kInPlace, {}); }},
-    {"fatal_other_stubs", otherStubs},
+    {"fatal_materialize_no_taint", materializeNoTaint},
+    {"fatal_twin_effect", [] { expectTwins("fatal_twin_effect", kTwinEffect, {}, {}); }},
+    {"fatal_twin_no_copyout", [] { expectTwins("fatal_twin_no_copyout", kTwinNoCopyOut, {}, {}); }},
 };
 
 } // namespace

@@ -22,6 +22,18 @@
 //               has no use is dropped with it when it carries no symbol of its own: declarations
 //               and local-linkage functions and variables.
 //
+// Twins (rule 18, CR §1.4 "a twin nobody calls is not defined"). Before the originals are read, every
+// declared `<clone>_unc` with a use whose forward clone has a body here is defined: the twin
+// recomputes, XORs the result out of `out`, uncomputes. Its body is the lowered forward clone's (the
+// _pure clone's when one exists: what the twins recompute through, 119) with the copy-out
+// `f = cqrt_alloc_<W>(0); cqrt_copy_<W>(r, f); ...; ret f` of every return (Walker::emitCloneReturn)
+// turned into `cqrt_copy_<W>(r, out); ...; ret void`: the clone computes, copies out, uncomputes,
+// so the twin computes, XORs out, uncomputes. A twin body that calls another twin defines it in turn.
+// The body is checked to replay nothing but the pure value: no rotation, phase, measurement, tape,
+// abort or QRAM store, no host call that may write memory (unimplemented otherwise: a clone with
+// effects and no _pure clone). Twins use the C calling convention (Uncompute spells their calls) and
+// internal linkage. A twin of a clone with no body here (rule 27) stays a declaration.
+//
 // Shapes not lowered here (cq::unimplemented): a "__cq_q_" symbol that is not a canonical clone
 // name (a uniquified clone, CR §1.4 ruling 2026-10-27: the clone table belongs to materialize, which
 // finalize cannot see through Calls.h); a dead original whose body was rewritten in place (it calls
@@ -39,6 +51,9 @@
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Analysis/ValueTracking.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/Transforms/Utils/Cloning.h"
 
 #include <string>
 
@@ -106,6 +121,168 @@ void collectReferences(Function &F, SetVector<GlobalValue *> &out) {
   collectGlobals(std::move(work), out);
 }
 
+// ---- twins ----------------------------------------------------------------------------------------
+
+bool nonPureCore(abi::Core op) {
+  using abi::Core;
+  switch (op) {
+  case Core::Measure: case Core::Ry: case Core::RyQAngle: case Core::RzI1: case Core::RzQAngle:
+  case Core::QramStore: case Core::QramRealloc: case Core::TapeAlloc: case Core::TapeFmt:
+  case Core::TapeEffect: case Core::TapeWrite: case Core::TapeWriteLit: case Core::TapeWriteStrLit:
+  case Core::AbortI1:
+    return true;
+  default:
+    return false;
+  }
+}
+
+// Does replaying F (and the forward clones it calls) recompute its value and nothing else?
+void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &seen) {
+  if (!seen.insert(&F).second)
+    return;
+  auto refuse = [&](const Twine &why, const Value *at) {
+    unimplemented(("calls: calls::finalize: the twin @" + twin.getName() + " would replay " + why +
+                   " (a clone with effects and no _pure clone)")
+                      .str(),
+                  at);
+  };
+  for (Instruction &I : instructions(F)) {
+    if (auto *SI = dyn_cast<StoreInst>(&I)) {
+      if (!isa<AllocaInst>(getUnderlyingObject(SI->getPointerOperand())))
+        refuse("a store to memory outside the clone's frame", &I);
+      continue;
+    }
+    if (I.mayWriteToMemory() && !isa<CallBase>(I))
+      refuse("a memory write", &I);
+    auto *CB = dyn_cast<CallBase>(&I);
+    if (!CB)
+      continue;
+    if (CB->isInlineAsm())
+      refuse("inline asm", &I);
+    Function *G = CB->getCalledFunction();
+    if (!G)
+      refuse("an indirect call", &I);
+    if (isa<DbgInfoIntrinsic>(CB) || G->getIntrinsicID() == Intrinsic::lifetime_start ||
+        G->getIntrinsicID() == Intrinsic::lifetime_end)
+      continue;
+    bool unc = false;
+    if (abi::parseTemplate(G->getName(), &unc))
+      continue;
+    if (std::optional<abi::CoreSpec> c = abi::parseCore(G->getName())) {
+      if (nonPureCore(c->op))
+        refuse("the core gate @" + G->getName(), &I);
+      continue;
+    }
+    if (std::optional<abi::CloneSpec> c = abi::parseClone(G->getName())) {
+      if (!c->unc && !G->isDeclaration())
+        checkReplayable(*G, twin, seen);
+      continue;   // a twin is checked when it is defined; a declared clone is rule 27's
+    }
+    if (CB->onlyReadsMemory() && CB->willReturn())
+      continue;
+    refuse("the host call @" + G->getName(), &I);
+  }
+}
+
+// The body the twin of `fwd` recomputes through: fwd's _pure clone when one is defined, else fwd.
+Function *twinSource(Module &M, Function &fwd) {
+  std::optional<abi::CloneSpec> s = abi::parseClone(fwd.getName());
+  if (!s->pure) {
+    abi::CloneSpec p = *s;
+    p.pure = true;
+    if (Function *P = M.getFunction(abi::name(p)); P && !P->isDeclaration())
+      return P;
+  }
+  return &fwd;
+}
+
+void defineTwin(Module &M, Function &twin, Function &src) {
+  LLVMContext &C = M.getContext();
+  Type *h = Type::getInt32Ty(C);
+  if (src.getReturnType() != h || twin.arg_size() != src.arg_size() + 1)
+    internalError("calls: calls::finalize: twin @" + twin.getName().str() + " does not match the clone @" +
+                      src.getName().str() + " (an i32 handle result, its arguments after out)",
+                  &twin);
+  for (unsigned i = 0; i < src.arg_size(); ++i)
+    if (twin.getArg(i + 1)->getType() != src.getArg(i)->getType())
+      internalError("calls: calls::finalize: twin @" + twin.getName().str() + " argument types differ from @" +
+                        src.getName().str(),
+                    &twin);
+  SmallPtrSet<Function *, 8> seen;
+  checkReplayable(src, twin, seen);
+
+  ValueToValueMapTy VM;
+  Argument *out = twin.getArg(0);
+  out->setName("out");
+  for (unsigned i = 0; i < src.arg_size(); ++i) {
+    VM[src.getArg(i)] = twin.getArg(i + 1);
+    twin.getArg(i + 1)->setName(src.getArg(i)->getName());
+  }
+  SmallVector<ReturnInst *, 4> rets;
+  CloneFunctionInto(&twin, &src, VM, CloneFunctionChangeType::LocalChangesOnly, rets);
+  twin.setAttributes(AttributeList());
+  twin.setCallingConv(CallingConv::C);
+  twin.setLinkage(GlobalValue::InternalLinkage);
+
+  SmallVector<Instruction *, 4> dead;
+  for (ReturnInst *R : rets) {
+    // The copy-out of rule 18: f = cqrt_alloc_<W>(0), cqrt_copy_<W>(r, f), ..., ret f.
+    auto *f = dyn_cast_or_null<CallInst>(R->getReturnValue());
+    std::optional<abi::CoreSpec> a =
+        f && f->getCalledFunction() ? abi::parseCore(f->getCalledFunction()->getName()) : std::nullopt;
+    auto *zero = f ? dyn_cast<Constant>(f->getArgOperand(0)) : nullptr;
+    if (!a || a->op != abi::Core::Alloc || !zero || !zero->isNullValue())
+      unimplemented("calls: calls::finalize: a clone return that is not the rule 18 copy-out (a fresh |0> "
+                    "rail returned)",
+                    R);
+    SmallVector<CallInst *, 2> copies;
+    for (User *U : f->users()) {
+      if (U == R)
+        continue;
+      auto *cp = dyn_cast<CallInst>(U);
+      std::optional<abi::CoreSpec> c =
+          cp && cp->getCalledFunction() ? abi::parseCore(cp->getCalledFunction()->getName()) : std::nullopt;
+      if (!c || c->op != abi::Core::Copy || c->ctl || cp->getArgOperand(1) != f || cp->getArgOperand(0) == f)
+        unimplemented("calls: calls::finalize: a clone's result rail used other than by its copy-out", U);
+      copies.push_back(cp);
+    }
+    if (copies.size() != 1)
+      unimplemented("calls: calls::finalize: a clone's result rail written by other than one copy", f);
+    copies.front()->setArgOperand(1, out);
+    ReturnInst::Create(C, nullptr, R->getIterator());
+    R->eraseFromParent();
+    dead.push_back(f);
+  }
+  for (Instruction *f : dead)
+    if (f->use_empty())
+      f->eraseFromParent();
+    else
+      internalError("calls: calls::finalize: a clone's result rail still used after its twin rewrite", f);
+}
+
+// Defines every called, undefined twin whose forward clone has a body (see the header).
+void defineTwins(Module &M) {
+  for (bool changed = true; changed;) {
+    changed = false;
+    SmallVector<Function *, 8> todo;
+    for (Function &F : M) {
+      if (!isClone(F) || !F.isDeclaration() || F.use_empty())
+        continue;
+      std::optional<abi::CloneSpec> s = abi::parseClone(F.getName());
+      if (!s || !s->unc)
+        continue;
+      todo.push_back(&F);
+    }
+    for (Function *T : todo) {
+      Function *fwd = M.getFunction(T->getName().drop_back(4));   // "_unc"
+      if (!fwd || fwd->isDeclaration())
+        continue;   // rule 27: whatever is linked defines it
+      defineTwin(M, *T, *twinSource(M, *fwd));
+      changed = true;
+    }
+  }
+}
+
 } // namespace
 
 void finalize(Module &M) {
@@ -121,6 +298,7 @@ void finalize(Module &M) {
   }
   if (clones.empty())
     return;
+  defineTwins(M);
 
   SetVector<Function *> originals;
   for (Function *C : clones)
