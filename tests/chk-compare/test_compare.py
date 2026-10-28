@@ -724,6 +724,86 @@ class AKRule(unittest.TestCase):
             compare(self.ours(self.CAP), c, QKEY, "c")
 
 
+class AbortRule(unittest.TestCase):
+    """CR rule 16 / §1.3 abort rule against "c" (bead cq-ouml), shaped like 45: register x (h=1, i8,
+    x = s); Ry(1.0) on x (C site f:0); on x == 3 abort(), else Ry(2.0) on x (C site f:1) and return
+    x. Ours keeps abort_i1's flag (h=9, role abort, x == 3) and runs on: Ry(2.0) fires on every
+    sample, x is measured and returned on every sample."""
+
+    END = 3
+
+    @staticmethod
+    def site(site, angle, reg):
+        return {"ev": "site", "fn": "f", "site": site, "kind": "theta", "angle": ang(angle), "reg": hex(reg)}
+
+    def c(self, end="noreturn:abort"):
+        out = []
+        for s in range(4):
+            rots = [self.site(0, 1.0, s)]
+            if s == self.END:
+                outputs = {"ret": [], "end": end, "loops": []}
+                meas = []
+            else:
+                rots.append(self.site(1, 2.0, s))
+                outputs = {"ret": [{"call": 0, "fn": "f", "v": {"w": "i8", "v": hex(s)}}], "end": "ret", "loops": []}
+                meas = [{"h": None, "w": "i8", "v": hex(s)}]
+            out.append(RunResult(side="c", sample={"call": 0, "args": [s & 1, s >> 1]}, outputs=outputs,
+                                 measured=meas, rotations=rots, kept=None, clean=None, violations=[]))
+        return out
+
+    def ours(self, flag=lambda s: int(s == 3), role="abort", first=lambda s: 1, ret=lambda s: s, drop=False):
+        out = []
+        for s in range(4):
+            rots = [ry(1, 1.0, [8], [first(s)]), ry(1, 2.0)]
+            kept = [keep(1, s, "i8", "measured")]
+            if not drop:
+                kept.append(keep(9, flag(s), "i1", role))
+            out.append(run("o", s, rots, kept, measured=[{"h": 1, "w": "i8", "v": hex(s)}],
+                           outputs={"ret": [{"call": 0, "fn": "f", "v": {"w": "i8", "v": hex(ret(s))}}]}))
+        return out
+
+    def check(self, ours, c, equal, needle=None):
+        r = compare(ours, c, QKEY, "c")
+        self.assertEqual(r.equal, equal, r.reasons)
+        if needle:
+            self.assertTrue(any(needle in x for x in r.reasons), r.reasons)
+
+    def test_abort_flag_one_passes(self):
+        # fails before cq-ouml: "returns [...] != []" and "1 measurements != 0" on sample 3
+        self.check(self.ours(), self.c(), True)
+        self.check(self.ours(), self.c("raise:6"), True)
+        self.check(self.ours(), self.c("noreturn:llvm.trap"), True)
+
+    def test_dropped_abort_flag_rejected(self):
+        self.check(self.ours(drop=True), self.c(), False, "no kept abort flag")
+
+    def test_zero_abort_flag_rejected(self):
+        self.check(self.ours(flag=lambda s: 0), self.c(), False, "no kept abort flag")
+
+    def test_abort_flag_needs_abort_role(self):
+        for role in ("frozen", "measured", "tape", "garbage"):
+            self.check(self.ours(role=role), self.c(), False, "no kept abort flag")
+
+    def test_abort_flag_one_on_returning_sample_rejected(self):
+        self.check(self.ours(flag=lambda s: int(s >= 2)), self.c(), False, "returns and our abort flag")
+
+    def test_before_the_end_still_compared(self):
+        # the gate of site f:0 must fire on the ended sample too: it precedes the abort
+        self.check(self.ours(first=lambda s: int(s != 3)), self.c(), False, "f:0")
+
+    def test_ret_compared_on_returning_samples(self):
+        self.check(self.ours(ret=lambda s: 7 if s == 3 else s), self.c(), True)
+        self.check(self.ours(ret=lambda s: 7), self.c(), False, "returns")
+
+    def test_extra_c_measurement_before_the_end_still_compared(self):
+        c = self.c()
+        c[3] = dataclasses.replace(c[3], measured=[{"h": None, "w": "i8", "v": "0x5"}])
+        self.check(self.ours(), c, False, "measurement 0")
+
+    def test_ordinary_end_is_not_an_abort(self):
+        self.check(self.ours(), self.c("ret"), False, "returns")
+
+
 class UnPrep(unittest.TestCase):
     """CR rule 10 un-prep against "c" (bead cq-9gi3), shaped like 133's prep_twice: a register r
     (h=3, i32, seed R0) prepared Ry(T1) under a (C site f:0), then overwritten: undone by Ry(-T1)

@@ -114,7 +114,24 @@ i1 rail of ours (role not measured, abort, tape, qram, qram_cell, qram_slot) tha
 sample where it is capped, 0 on every uncapped sample and on every sample whose record of it says
 capped false, and anything on a sample capped by another activation that has no record of it (it
 lay past the cut). An activation never capped in a group cannot be told from other 0 rails there,
-so its "a_K reads 0" is checked only in groups where it is capped somewhere.
+so its "a_K reads 0" is checked only in groups where it is capped somewhere. On an ended sample
+(below) an activation with no record is unknown as well (the circuit runs on past the end).
+
+The abort rule (CR rule 16 and §1.3, bead cq-ouml; against="c" only). A C sample ends early when
+its outputs["end"] is "noreturn:<callee>" (abort, exit, __builtin_trap, any noreturn callee) or
+"raise:<sig>" (a fatal signal with no handler). The circuit does not end there: rule 16 lowers the
+call to abort_i1(pred), a kept flag the backend measures at the end of the shot, and the shot runs
+on. On an ended sample:
+- outputs["ret"] is not compared (the C program never returned);
+- the C side's measured and rotations are complete up to the end and compared with ours as on a
+  capped sample at its cut: our first len(C measured) measurements are compared with them, ours may
+  have more, and a lowered gate may fire after the end with any angle (the same "precedes a
+  reached gate" exception applies);
+- ours must keep an i1 rail of role "abort" that reads 1.
+On a sample that returns (neither ended nor capped) every kept abort-role i1 rail of ours reads 0.
+A capped sample says nothing about abort flags (an abort past the cut is unknown). The abort
+rails are read by role, which the evaluator sets on the operand of abort_i1 (BACKEND_ABI §1.2),
+since an abort site that never fires in a group is otherwise indistinguishable from other 0 rails.
 
 Floating-point equality (CR §2 NaN row, ruling 2026-10-27, bead cq-8dy). Against the reference
 every value is compared bit for bit. Against the C oracle a floating-point value is compared
@@ -609,7 +626,8 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
     one site, and at each sample the gate, where it fires, takes the site's earliest reach not yet
     taken that agrees with it in angle (and register, for theta). Every reach must be taken, except
     a constant multiset of classical-angle phi reaches (a global phase). capped[s] marks a sample
-    truncated at its cut (the a_K rule): a gate firing there with no reach left lies past the cut."""
+    truncated at its cut (the a_K rule) or ended early (the abort rule): a gate firing there with no
+    reach left lies past the cut or the end."""
     reasons: List[str] = []
     capped = list(capped)
     nS = len(capped) if capped else len(ours[0].pred) if ours else len(sites[0].occ) if sites else 0
@@ -805,7 +823,7 @@ def _truncate(rr: RunResult, cap: Dict[str, Any]) -> RunResult:
     return dataclasses.replace(rr, rotations=rots[:cap["cut"]], measured=meas[:cap["mcut"]])
 
 
-def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult]) -> List[str]:
+def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult], ended: Sequence[bool] = ()) -> List[str]:
     """Each (loop, act) capped somewhere in the group has its own kept i1 rail of ours reading
     1 where capped, 0 where it is known to have at most K trips (module docstring)."""
     caps = [_cap(rr) for rr in c_runs]
@@ -819,7 +837,7 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult]) -> List[str]:
         for s, rec in enumerate(recs):
             if k in rec:
                 f.append(int(rec[k]))
-            elif caps[s] is None:
+            elif caps[s] is None and not (ended and ended[s]):
                 f.append(0)
             else:
                 f.append(None)       # past another activation's cut: unknown
@@ -860,6 +878,37 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult]) -> List[str]:
     return reasons
 
 
+# ---------------------------------------------------------------- the abort rule (against "c")
+
+_ENDS = ("noreturn:", "raise:")
+
+
+def _ended(rr: RunResult) -> bool:
+    """A C sample that ended in a noreturn call or a fatal raise (module docstring)."""
+    end = rr.outputs.get("end") if isinstance(rr.outputs, dict) else None
+    return isinstance(end, str) and end.startswith(_ENDS)
+
+
+def _check_abort(o_runs: List[RunResult], ended: Sequence[bool], capped: Sequence[bool]) -> List[str]:
+    """Some kept abort-role i1 rail of ours reads 1 on every ended sample; every one reads 0 on
+    every sample that returns (module docstring)."""
+    flags: Dict[Any, List[int]] = {}
+    for s, rr in enumerate(o_runs):
+        for ent in rr.kept or []:
+            if ent.get("w") == "i1" and ent.get("role") == "abort":
+                flags.setdefault(ent["h"], [0] * len(o_runs))[s] = _masked(_int(ent.get("v")), "i1")
+    reasons = []
+    for s in range(len(o_runs)):
+        on = [h for h, v in flags.items() if v[s]]
+        if ended[s] and not on:
+            reasons.append(f"sample {_skey(o_runs[s].sample)}: the C program ends early (noreturn or fatal raise) "
+                           f"and no kept abort flag of ours reads 1")
+        elif not ended[s] and not capped[s] and on:
+            reasons.append(f"sample {_skey(o_runs[s].sample)}: the C program returns and our abort flag(s) "
+                           f"{on} read 1")
+    return reasons
+
+
 # ---------------------------------------------------------------- driver
 
 def _call_key(sample: Any) -> Hashable:
@@ -897,8 +946,10 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         reasons.append("no samples")
     # the a_K rule: a capped C sample is read through its cut (module docstring)
     capped: Dict[str, bool] = {}
+    ended: Dict[str, bool] = {}          # the abort rule: a C sample that ended in noreturn/raise
     if oracle == "c":
         for k in keys:
+            ended[k] = _ended(r_by[k])
             cap = _cap(r_by[k])
             capped[k] = cap is not None
             if cap is not None:
@@ -918,13 +969,13 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                            f"{r.violations}")
         if oracle == "c":
             oo, ro = _ret(o.outputs, "our"), _ret(r.outputs, "C-oracle")
-            if not capped[k] and _norm(oo, nan_eq) != _norm(ro, nan_eq):
+            if not (capped[k] or ended[k]) and _norm(oo, nan_eq) != _norm(ro, nan_eq):
                 reasons.append(f"sample {k}: returns {oo} != {ro} (ours {o.outputs}, C {r.outputs})")
         elif _norm(o.outputs, nan_eq) != _norm(r.outputs, nan_eq):
             reasons.append(f"sample {k}: outputs {o.outputs} != {r.outputs}")
         mo, mr = list(o.measured or []), list(r.measured or [])
-        if capped.get(k) and len(mo) >= len(mr):
-            mo = mo[:len(mr)]          # ours may measure past the cut
+        if (capped.get(k) or ended.get(k)) and len(mo) >= len(mr):
+            mo = mo[:len(mr)]          # ours may measure past the cut or the end
         if len(mo) != len(mr):
             reasons.append(f"sample {k}: {len(mo)} measurements != {len(mr)}")
         else:
@@ -994,9 +1045,11 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             if why_c:
                 reasons += [f"{tag}: {why}" for why in why_c]
                 continue
-            for why in _match_c(o_evs, o_glob, sites, nan_eq, [capped[k] for k in ks]):
+            for why in _match_c(o_evs, o_glob, sites, nan_eq, [capped[k] or ended[k] for k in ks]):
                 reasons.append(f"{tag}: {why}")
-            for why in _check_ak(o_runs, r_runs):
+            for why in _check_ak(o_runs, r_runs, [ended[k] for k in ks]):
+                reasons.append(f"{tag}: {why}")
+            for why in _check_abort(o_runs, [ended[k] for k in ks], [capped[k] for k in ks]):
                 reasons.append(f"{tag}: {why}")
     return reasons
 
