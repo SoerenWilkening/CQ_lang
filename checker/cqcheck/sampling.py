@@ -72,12 +72,14 @@ substitutions are not probed (the probe build has no substitution).
 from __future__ import annotations
 
 import hashlib
+import functools
 import json
 import math
 import os
 import random
 import re
-
+import shlex
+import signal
 import struct
 import subprocess
 import tempfile
@@ -195,6 +197,36 @@ def encode_c_literal(ct: D.CType, text: str) -> str:
     return hexw(ct, f80_from_fraction(q) if q != 0 else 0)
 
 
+@functools.lru_cache(maxsize=1 << 18)
+def fp_class(bits: int, w: int) -> str:
+    """fp_kind(bits, w)[0], without computing the value (the §2 rows' distances ask it per record)."""
+    if w == 80:
+        exp = (bits >> 64) & 0x7fff
+        mant = bits & ((1 << 64) - 1)
+        ib = mant >> 63
+        if exp == 0x7fff:
+            if not ib:
+                return "noncanon"
+            return "inf" if mant == 1 << 63 else "nan"
+        if exp == 0:
+            if mant == 0:
+                return "zero"
+            return "noncanon" if ib else "sub"
+        return "norm" if ib else "noncanon"
+    eb, mb = _FP_FIELDS[w]
+    exp = (bits >> mb) & ((1 << eb) - 1)
+    mant = bits & ((1 << mb) - 1)
+    if exp == (1 << eb) - 1:
+        return "inf" if mant == 0 else "nan"
+    if exp == 0:
+        return "zero" if mant == 0 else "sub"
+    return "norm"
+
+
+_FP_FIELDS = {16: (5, 10), 17: (8, 7), 32: (8, 23), 64: (11, 52)}
+
+
+@functools.lru_cache(maxsize=1 << 16)
 def fp_kind(bits: int, w: int) -> Tuple[str, Optional[Fraction]]:
     """('nan'|'inf'|'zero'|'sub'|'norm'|'noncanon', value) of an fp bit pattern of width w."""
     if w == 80:
@@ -309,8 +341,10 @@ RUNTIME_C = r"""
 #define NOBJ 65536
 #define NLOOP 4096
 #define OUTCAP (1 << 22)
-#define NS_USED (CQD_NSITES < NSITE ? CQD_NSITES : NSITE)
-#define NL_USED (CQD_NLOOPS < NLOOP ? CQD_NLOOPS : NLOOP)
+/* the example's counts, defined by its driver (the runtime object is the same for every example) */
+extern const int cqd_nsites, cqd_nloops, cqd_isolate;
+#define NS_USED ((size_t)(cqd_nsites < NSITE ? cqd_nsites : NSITE))
+#define NL_USED ((size_t)(cqd_nloops < NLOOP ? cqd_nloops : NLOOP))
 typedef struct {
     size_t len; int nob; int done; long long hdrs;
     unsigned char pcount[NSITE], mcount[NSITE], ocount[NSITE];
@@ -326,10 +360,16 @@ typedef struct {
 static cqd_state *S, *B;     /* the sample's state, and its post-setup base */
 static cqd_ctl *C;
 static volatile long *P;     /* shared with the master: the sample in progress */
+/* Every runtime mapping lies between two PROT_NONE guard pages: a sample whose stores run past its
+ * object faults at a guard instead of overwriting the runtime's control state (cq-wx6s: 114 spun in
+ * its fault handler once a store run had cleared C->in). */
 static void *cqd_map(size_t n, int shared) {
-    void *p = mmap(0, n, PROT_READ | PROT_WRITE, MAP_ANON | (shared ? MAP_SHARED : MAP_PRIVATE), -1, 0);
+    size_t pg = (size_t)sysconf(_SC_PAGESIZE);
+    n = (n + pg - 1) / pg * pg;
+    char *p = mmap(0, n + 2 * pg, PROT_READ | PROT_WRITE, MAP_ANON | (shared ? MAP_SHARED : MAP_PRIVATE), -1, 0);
     if (p == MAP_FAILED) { perror("cqd: mmap"); _exit(2); }
-    return p;
+    mprotect(p, pg, PROT_NONE); mprotect(p + pg + n, pg, PROT_NONE);
+    return p + pg;
 }
 __attribute__((constructor(101))) static void cqd_init(void) {
     if (S) return;
@@ -409,7 +449,11 @@ static void cqd_finish(const char *how, int code) {
     size_t o = 0; while (o < S->len) { ssize_t w = write(C->out_fd, S->buf + o, S->len - o); if (w <= 0) break; o += (size_t)w; }
 }
 static void cqd_sig(int s) {
-    if (!C->in) return;               /* a timer that fired after its sample ended */
+    if (!C->in) {
+        if (s == SIGALRM) return;     /* a timer that fired after its sample ended */
+        _exit(0);                     /* a fault outside a sample (its state was overwritten): returning
+                                       * would re-run the faulting instruction forever */
+    }
     C->in = 0;
     if (s != SIGFPE) C->dirty = 1;
     cqd_stop(s == SIGALRM ? "timeout" : "signal", s);
@@ -494,7 +538,7 @@ static void cqd_worker(cqd_call_fn call, long from) {
     for (long k = from; k < C->nlines; k++) {
         *P = k;
         cqd_restore();
-        C->dirty = CQD_ISOLATE;
+        C->dirty = cqd_isolate;
         C->cur = k;
         char *tok[64]; int nt = 0; char *sv = 0;
         for (char *t = strtok_r(C->lines[k], " \n", &sv); t && nt < 64; t = strtok_r(0, " \n", &sv)) tok[nt++] = t;
@@ -553,7 +597,8 @@ void cqd_serve(cqd_call_fn call) {
             if (pid < 0) { perror("cqd: fork"); _exit(2); }
             if (pid == 0) cqd_worker(call, next);
             int st = 0; while (waitpid(pid, &st, 0) < 0) {}
-            next = *P + 1;
+            long k = *P;
+            next = (k >= next && k < C->nlines) ? k + 1 : next + 1;
         }
         for (long i = 0; i < C->nlines; i++) free(C->lines[i]);
         static const char done[] = "D\n";
@@ -1298,7 +1343,7 @@ def _driver_main(spec: DriverSpec) -> str:
 
 
 # Process state a sample can change that the in-process runner does not restore: such a module runs
-# every sample in a worker of its own (CQD_ISOLATE), as a child forked per sample would.
+# every sample in a worker of its own (cqd_isolate), as a child forked per sample would.
 _ISOLATE_CALLS = {"@signal", "@sigaction", "@sigprocmask", "@pthread_sigmask", "@pthread_create",
                   "@atexit", "@alarm", "@setitimer", "@fork", "@vfork", "@sigaltstack"}
 # A sample runs at most this many loop-header executions; past it, it ends as a timeout would.
@@ -1306,21 +1351,57 @@ HDR_CAP = int(os.environ.get("CQD_HDR_CAP", str(1 << 20)))
 RSS_CAP = 512 << 20          # bytes: a worker whose peak resident size passes it is replaced
 
 
-def _rt_object(src: Path) -> Path:
-    """The object of the probe runtime `src` (RUNTIME_C with its #defines), compiled once per content
-    and kept in the sample cache (cq-wx6s: it differs between examples only in the #defines)."""
-    text = src.read_bytes()
+_CC = ["-w", "-O0", "-target", "x86_64-apple-macosx"]
+
+
+def _rt_object() -> Path:
+    """The object of the probe runtime (RUNTIME_C with its process-wide #defines), compiled once per
+    content and kept in the sample cache: the same object serves every example (cq-wx6s), whose own
+    counts come from its driver."""
+    defs = {"PER_SAMPLE_MS": PER_SAMPLE_MS, "CQD_HDR_CAP": f"{HDR_CAP}LL", "CQD_RSS_CAP": f"{RSS_CAP}LL"}
+    text = ("".join(f"#define {k} {v}\n" for k, v in defs.items()) + RUNTIME_C).encode()
     h = hashlib.sha256(text + str(LLVM_BIN).encode()).hexdigest()[:20]
     obj = _cache_dir() / "rt" / f"{h}.o"
     if not obj.exists():
         obj.parent.mkdir(parents=True, exist_ok=True)
         tmp = obj.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp.o")
-        r = subprocess.run([str(LLVM_BIN / "clang"), "-w", "-O0", "-target", "x86_64-apple-macosx", "-c", str(src),
-                            "-include", "stdbool.h", "-o", str(tmp)], capture_output=True, text=True)
+        src = tmp.with_suffix(".c")
+        src.write_bytes(text)
+        r = subprocess.run([str(LLVM_BIN / "clang"), *_CC, "-c", str(src), "-include", "stdbool.h", "-o", str(tmp)],
+                           capture_output=True, text=True)
+        src.unlink()
         if r.returncode != 0:
             D.unimplemented(f"probe runtime build failed:\n{r.stderr[-3000:]}")
         os.replace(tmp, obj)
     return obj
+
+
+_LD: List[List[str]] = []
+
+
+def _ld_command(objs: Sequence[str], out: str) -> List[str]:
+    """The link job clang runs for `clang -target x86_64-apple-macosx <objs> -lm -o <out>` (taken from
+    `clang -###` once per process), run without the clang driver's start (~0.3 s per call)."""
+    if not _LD:
+        with tempfile.TemporaryDirectory(prefix="cqd-ld-") as d:
+            o = Path(d) / "cqd_in.o"
+            o.write_bytes(b"")
+            r = subprocess.run([str(LLVM_BIN / "clang"), "-###", "-target", "x86_64-apple-macosx", str(o), "-lm",
+                                "-o", "cqd_out"], capture_output=True, text=True)
+            jobs = [ln for ln in r.stderr.splitlines() if ln.startswith(" \"")]
+            cmd = shlex.split(jobs[-1]) if jobs else []
+            if r.returncode != 0 or str(o) not in cmd or "cqd_out" not in cmd:
+                D.unimplemented(f"probe link: cannot read the link job of clang -###:\n{r.stderr[-3000:]}")
+            _LD.append(cmd)
+    cmd = []
+    for x in _LD[0]:
+        if x.endswith("cqd_in.o"):
+            cmd += list(objs)
+        elif x == "cqd_out":
+            cmd.append(out)
+        else:
+            cmd.append(x)
+    return cmd
 
 
 class ProbeBuild:
@@ -1356,13 +1437,17 @@ class ProbeBuild:
         for name, line in self.mod.declares.items():
             if name.startswith("@cq_theta_") or name.startswith("@cq_measure_"):
                 stubs.append(_stub_for(line, identity=True))
-        (w / "probe.ll").write_text(ll)
-        (w / "stubs.ll").write_text(_stub_module_header(self.mod) + "\n".join(stubs) + "\n")
-        defs = {"PER_SAMPLE_MS": PER_SAMPLE_MS, "CQD_NSITES": max(1, len(self.ins.sites)),
-                "CQD_NLOOPS": max(1, len(self.ins.loops)), "CQD_HDR_CAP": f"{HDR_CAP}LL",
-                "CQD_RSS_CAP": f"{RSS_CAP}LL", "CQD_ISOLATE": int(self.isolate())}
-        (w / "rt.c").write_text("".join(f"#define {k} {v}\n" for k, v in defs.items()) + RUNTIME_C)
-        (w / "driver.c").write_text(_driver_main(self.spec))
+        # the stubs join the probe module in place of their declarations: one compile, not two
+        stubbed = {self.mod.declares[n] for n in ("@cq_phi", "@__cq_invert_begin", "@__cq_invert_end")
+                   if n in self.mod.declares}
+        stubbed |= {line for n, line in self.mod.declares.items()
+                    if n.startswith("@cq_theta_") or n.startswith("@cq_measure_")}
+        ll = "\n".join(ln for ln in ll.split("\n") if ln not in stubbed)
+        (w / "probe.ll").write_text(ll + "\n" + "\n".join(stubs) + "\n")
+        (w / "driver.c").write_text(_driver_main(self.spec)
+                                    + f"const int cqd_nsites = {max(1, len(self.ins.sites))}, "
+                                      f"cqd_nloops = {max(1, len(self.ins.loops))}, "
+                                      f"cqd_isolate = {int(self.isolate())};\n")
         self._splice_calls()
         self._link()
 
@@ -1392,27 +1477,46 @@ class ProbeBuild:
                             + "".join(f"\n    cqd_ptr[{k}] = (void *)({e});" for k, e in enumerate(ptrs)))
         (w / "driver.c").write_text(body)
 
-    def _link(self, extra: str = ""):
+    def _compile(self, src: str, *flags: str) -> str:
+        """One clang start per input (several inputs in one clang call each cost a start of their own)."""
         w = self.work
-        ins = [str(w / "probe.ll"), str(w / "stubs.ll")]
-        if extra:   # every clang input costs a compiler start (~0.3 s): an empty one is left out
-            (w / "extra.ll").write_text(_stub_module_header(self.mod) + extra)
-            ins.append(str(w / "extra.ll"))
-        cmd = [str(LLVM_BIN / "clang"), "-w", "-O0", "-target", "x86_64-apple-macosx", *ins, str(_rt_object(w / "rt.c")),
-               str(w / "driver.c"), "-include", "stdbool.h", "-lm", "-o", str(self.exe)]
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        obj = str(w / (Path(src).stem + ".o"))
+        r = subprocess.run([str(LLVM_BIN / "clang"), *_CC, "-c", str(w / src), *flags, "-o", obj],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            D.unimplemented(f"{self.spec.example}: probe build failed ({src}):\n{r.stderr[-3000:]}")
+        return obj
+
+    def _link(self):
+        w = self.work
+        objs = [self._compile("probe.ll"), self._compile("driver.c", "-include", "stdbool.h"), str(_rt_object())]
+        r = subprocess.run(_ld_command(objs, str(self.exe)), capture_output=True, text=True)
         if r.returncode != 0:
             undef = re.findall(r'^\s+"_([^"]+)", referenced from', r.stderr, re.M)
-            if undef and not extra:
-                self._link(_undefined_stubs(self.mod, undef))
-                return
-            D.unimplemented(f"{self.spec.example}: probe build failed:\n{r.stderr[-3000:]}")
+            if undef:
+                (w / "extra.ll").write_text(_stub_module_header(self.mod) + _undefined_stubs(self.mod, undef))
+                objs.append(self._compile("extra.ll"))
+                r = subprocess.run(_ld_command(objs, str(self.exe)), capture_output=True, text=True)
+            if r.returncode != 0:
+                D.unimplemented(f"{self.spec.example}: probe build failed:\n{r.stderr[-3000:]}")
 
     def _start(self) -> subprocess.Popen:
         if self.proc is None or self.proc.poll() is not None:
+            # a session of its own: a kill reaches the server's worker too, which holds the pipe
             self.proc = subprocess.Popen([str(self.exe)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                         stderr=subprocess.DEVNULL, cwd=str(self.work))
+                                         stderr=subprocess.DEVNULL, cwd=str(self.work), start_new_session=True)
         return self.proc
+
+    @staticmethod
+    def _kill(pr: subprocess.Popen) -> None:
+        try:
+            os.killpg(pr.pid, signal.SIGKILL)
+        except OSError:
+            pass
+        try:
+            pr.kill()
+        except OSError:
+            pass
 
     def close(self) -> None:
         pr, self.proc = self.proc, None
@@ -1424,7 +1528,7 @@ class ProbeBuild:
             try:
                 pr.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                pr.kill()
+                self._kill(pr)
                 pr.wait()
             pr.stdout.close()
 
@@ -1445,25 +1549,31 @@ class ProbeBuild:
             lines.append(" ".join([str(s["call"])] + args))
         pr = self._start()
         deadline = 60 + len(samples) * (PER_SAMPLE_MS / 1000 + 0.2)
-        timer = threading.Timer(deadline, pr.kill)
+        timer = threading.Timer(deadline, self._kill, (pr,))
         timer.start()
         try:
             pr.stdin.write(("\n".join(lines) + "\n").encode())
             pr.stdin.flush()
-            chunks = []
+            # the batch's output in large reads up to its closing "D" line (the server writes
+            # nothing past it until the next batch, so the raw reads never take a later batch's bytes)
+            fd = pr.stdout.fileno()
+            buf = bytearray()
             while True:
-                ln = pr.stdout.readline()
-                if not ln or ln == b"D\n":
+                chunk = os.read(fd, 1 << 20)
+                if not chunk:
                     break
-                chunks.append(ln)
+                buf += chunk
+                if buf.endswith(b"\nD\n") or buf == b"D\n":
+                    del buf[-2:]
+                    break
         except (BrokenPipeError, OSError):
-            chunks = []
+            buf = bytearray()
         finally:
             timer.cancel()
         if pr.poll() is not None:
             self.proc = None
         obs = [Obs() for _ in samples]
-        self._parse(b"".join(chunks).decode(errors="replace"), obs)
+        self._parse(buf.decode(errors="replace"), obs)
         return obs
 
     @staticmethod
@@ -1479,9 +1589,13 @@ class ProbeBuild:
             elif cur is None:
                 continue
             elif w[0] == "p":
-                v = [int(x, 16) for x in w[2:]]
-                cur.p.setdefault(int(w[1]), []).append(
-                    (v[0] | v[1] << 64, v[2] | v[3] << 64, v[4] | v[5] << 64, v[6] | v[7] << 64))
+                a0, a1, b0, b1, c0, c1, r0, r1 = [int(x, 16) for x in w[2:]]
+                rec = (a0 | a1 << 64, b0 | b1 << 64, c0 | c1 << 64, r0 | r1 << 64)
+                lst = cur.p.get(int(w[1]))
+                if lst is None:
+                    cur.p[int(w[1])] = [rec]
+                else:
+                    lst.append(rec)
             elif w[0] == "m":
                 if w[2] != "?":
                     off, size, nb = int(w[2]), int(w[3]), int(w[4])
@@ -1635,14 +1749,14 @@ def rows_for(site: Site) -> List[Row]:
                 return 1e300
             tv = math.trunc(val)
             return 0 if (tv < lo or tv > hi) else float(min(tv - lo + 1, hi - tv + 1))
-        out.append(Row(site, f"{fam}: NaN", [0], lambda r: fp_kind(r[0], fw)[0] == "nan",
-                       lambda r: 0 if fp_kind(r[0], fw)[0] == "nan" else 1))
-        out.append(Row(site, f"{fam}: +-Inf", [0], lambda r: fp_kind(r[0], fw)[0] == "inf",
-                       lambda r: 0 if fp_kind(r[0], fw)[0] == "inf" else 1))
+        out.append(Row(site, f"{fam}: NaN", [0], lambda r: fp_class(r[0], fw) == "nan",
+                       lambda r: 0 if fp_class(r[0], fw) == "nan" else 1))
+        out.append(Row(site, f"{fam}: +-Inf", [0], lambda r: fp_class(r[0], fw) == "inf",
+                       lambda r: 0 if fp_class(r[0], fw) == "inf" else 1))
         out.append(Row(site, f"{fam}: out of range", [0], lambda r: rng(r) is False, rdist))
         if fw == 80:
-            out.append(Row(site, "f80 non-canonical operand", [0], lambda r: fp_kind(r[0], 80)[0] == "noncanon",
-                           lambda r: 0 if fp_kind(r[0], 80)[0] == "noncanon" else 1))
+            out.append(Row(site, "f80 non-canonical operand", [0], lambda r: fp_class(r[0], 80) == "noncanon",
+                           lambda r: 0 if fp_class(r[0], 80) == "noncanon" else 1))
     elif k in ("fpres", "frem", "minmax"):
         n = len(site.types)
         fws = [_fpw(t) for t in site.types]
@@ -1650,19 +1764,19 @@ def rows_for(site: Site) -> List[Row]:
             return out
 
         def kinds(r):
-            return [fp_kind(r[i], fws[i])[0] for i in range(n)]
+            return [fp_class(r[i], fws[i]) for i in range(n)]
         if k == "fpres":
             rw = fws[0]
             out.append(Row(site, f"{site.op} NaN operand", list(range(n)), lambda r: "nan" in kinds(r),
                            lambda r: 0 if "nan" in kinds(r) else 1))
             def inv_dist(r):
                 ks = kinds(r)
-                if "nan" not in ks and fp_kind(r[3], rw)[0] == "nan":
+                if "nan" not in ks and fp_class(r[3], rw) == "nan":
                     return 0
                 # graded: an invalid operation needs infinities or zeros among its operands
                 return 1 - 0.25 * sum(1 for x in ks if x in ("inf", "zero"))
             out.append(Row(site, f"{site.op} invalid (default NaN)", list(range(n)),
-                           lambda r: "nan" not in kinds(r) and fp_kind(r[3], rw)[0] == "nan", inv_dist))
+                           lambda r: "nan" not in kinds(r) and fp_class(r[3], rw) == "nan", inv_dist))
         elif k == "frem":
             out.append(Row(site, "frem(x, 0)", [1], lambda r: kinds(r)[1] == "zero", lambda r: 0 if kinds(r)[1] == "zero" else 1))
             out.append(Row(site, "frem(+-Inf, y)", [0], lambda r: kinds(r)[0] == "inf", lambda r: 0 if kinds(r)[0] == "inf" else 1))
@@ -1677,18 +1791,18 @@ def rows_for(site: Site) -> List[Row]:
                            lambda r: 0 if (kinds(r) == ["zero", "zero"] and (r[0] >> sb[0]) & 1 != (r[1] >> sb[1]) & 1) else 1))
         if 80 in fws:
             out.append(Row(site, "f80 non-canonical operand", list(range(n)),
-                           lambda r: any(fws[i] == 80 and fp_kind(r[i], 80)[0] == "noncanon" for i in range(n)),
-                           lambda r: 0 if any(fws[i] == 80 and fp_kind(r[i], 80)[0] == "noncanon" for i in range(n)) else 1))
+                           lambda r: any(fws[i] == 80 and fp_class(r[i], 80) == "noncanon" for i in range(n)),
+                           lambda r: 0 if any(fws[i] == 80 and fp_class(r[i], 80) == "noncanon" for i in range(n)) else 1))
     elif k == "ctz":
         out.append(Row(site, f"{site.op.split('.')[1]}(0)", [0], lambda r: r[0] & m == 0, lambda r: min(r[0] & m, 1 << 60)))
     elif k == "abs":
         mn = 1 << (W - 1)
         out.append(Row(site, "abs(INT_MIN)", [0], lambda r: r[0] & m == mn, lambda r: abs(_signed(r[0], W) + mn)))
     elif k == "angle":
-        out.append(Row(site, "rotation angle NaN", [0], lambda r: fp_kind(r[0], 64)[0] == "nan",
-                       lambda r: 0 if fp_kind(r[0], 64)[0] == "nan" else 1))
-        out.append(Row(site, "rotation angle +-Inf", [0], lambda r: fp_kind(r[0], 64)[0] == "inf",
-                       lambda r: 0 if fp_kind(r[0], 64)[0] == "inf" else 1))
+        out.append(Row(site, "rotation angle NaN", [0], lambda r: fp_class(r[0], 64) == "nan",
+                       lambda r: 0 if fp_class(r[0], 64) == "nan" else 1))
+        out.append(Row(site, "rotation angle +-Inf", [0], lambda r: fp_class(r[0], 64) == "inf",
+                       lambda r: 0 if fp_class(r[0], 64) == "inf" else 1))
     elif k == "mem" and not site.classical:
         # r = (offset, size, 0, 0) for memory sites. CR §2's index >= n rows are the QROM/QRAM
         # rows (a quantum offset) and rule 21's fat-pointer load; a classical-offset access of a
@@ -2157,6 +2271,22 @@ def confirm_cap(pb: "ProbeBuild", keys: Sequence[Tuple[int, Tuple[str, ...]]], o
         o.cap_ok = _cap_clean(r)
 
 
+def _shuffle(rng: random.Random, x: list) -> None:
+    """rng.shuffle(x), the same permutation from the same draws, without a call per element."""
+    if type(rng).shuffle is not random.Random.shuffle or \
+            type(rng)._randbelow is not random.Random._randbelow_with_getrandbits:
+        rng.shuffle(x)
+        return
+    getrandbits = rng.getrandbits
+    for i in range(len(x) - 1, 0, -1):
+        n = i + 1
+        k = n.bit_length()
+        j = getrandbits(k)
+        while j >= n:
+            j = getrandbits(k)
+        x[i], x[j] = x[j], x[i]
+
+
 class Searcher:
     """Mutation search over the scalar arguments of one call, guided by a distance to the target."""
 
@@ -2264,7 +2394,7 @@ class Searcher:
             return None
         spent = 0
         while spent < budget:
-            self.rng.shuffle(scored)
+            _shuffle(self.rng, scored)
             scored.sort(key=lambda t: t[0])
             elite = scored[:8]
             batch = []
