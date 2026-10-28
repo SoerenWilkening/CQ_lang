@@ -1315,8 +1315,30 @@ static const char *lty_wtok(const lty *t, char *buf, size_t n) {
  * function the C oracle defines fn with. The forward clone returns a fresh rail holding it (void: no
  * effect), its _ctl form ignores pred (the stand-in is pure, rule 27), the twin XORs it out of the out
  * rail (void: no effect; the stand-in writes no cell, so the snapshot restore changes nothing). */
+typedef void (*standin_thunk)(void **cargs, void *cret);
+
+static void standin(const char *sym, const char *sig, const char *csig, int32_t nargs, void **argv, void *ret,
+                    standin_thunk thunk);
+
 void cqe_standin(const char *sym, const char *sig, const char *csig, int32_t nargs, void **argv, void *ret) {
+  standin(sym, sig, csig, nargs, argv, ret, NULL);
+}
+
+/* A declared clone whose fn the host defines (cq-aou6; stubgen.py): the C oracle links the host's fn, so
+ * the clone takes its value from thunk, which calls that host fn on the C-typed argument values (one
+ * pointer per C parameter; only scalar parameters) and stores its result; everything else is
+ * cqe_standin's. A void fn is called by the forward clone only. */
+void cqe_standin_host(const char *sym, const char *sig, const char *csig, int32_t nargs, void **argv, void *ret,
+                      void *thunk) {
+  standin(sym, sig, csig, nargs, argv, ret, (standin_thunk)thunk);
+}
+
+static void standin(const char *sym, const char *sig, const char *csig, int32_t nargs, void **argv, void *ret,
+                    standin_thunk thunk) {
   cqe__init();
+  _Alignas(16) uint8_t cbuf[64][16]; /* the C arguments of fn, for thunk */
+  _Alignas(16) uint8_t rbuf[16];
+  void *cargs[64];
   lty rty, ty[64], crty, cty[64];
   int n = nargs, nc = -1;
   const char *bar = strchr(csig, '|');
@@ -1390,6 +1412,10 @@ void cqe_standin(const char *sym, const char *sig, const char *csig, int32_t nar
     }
     for (int j = 0; ok && j < nc; ++j) {
       if (cty[j].kind == 'p') {
+        if (thunk) { /* stubgen.py never pairs a thunk with a pointer parameter */
+          ok = 0;
+          break;
+        }
         if (a + 4 > nargs || ty[a].kind != 'p' || strcmp(ty[a + 1].ty, "i32") || strcmp(ty[a + 2].ty, "i32") ||
             strcmp(ty[a + 3].ty, "i32") || d + 3 > (int)ml) {
           ok = 0;
@@ -1444,14 +1470,24 @@ void cqe_standin(const char *sym, const char *sig, const char *csig, int32_t nar
       }
       for (uint32_t w = 0; w < cqe__nwords(v.bits); ++w)
         h = cq_standin_mix(h, v.w[w]);
+      if (thunk) {
+        memset(cbuf[j], 0, sizeof cbuf[j]);
+        store_val(cbuf[j], &cty[j], &v);
+        cargs[j] = cbuf[j];
+      }
       if (owned)
         cqe__val_free(&v);
       ++a;
       ++d;
     }
-    if (ok && (a >= nargs || strcmp(ty[a].ty, "i32") != 0)) /* K */
+    /* K. A clone of a host function may also be a rule 18 lift of the injected libc/libm source (CR §8
+     * item 14, 175: __cq_q_exp_1(i32)), which has none (cq-aou6). */
+    if (thunk && a == nargs) /* no pointer parameter, so no snapshot either */
+      ;
+    else if (ok && (a >= nargs || strcmp(ty[a].ty, "i32") != 0))
       ok = 0;
-    ++a;
+    else
+      ++a;
     for (int k = 0; ok && k < nsnap; ++k, ++a)
       if (a >= nargs || ty[a].kind != 'p')
         ok = 0;
@@ -1462,6 +1498,8 @@ void cqe_standin(const char *sym, const char *sig, const char *csig, int32_t nar
       cqe__violation("malformed_call", -1, "%s: arguments '%s' do not follow rule 27 for C signature '%s' and mask %.*s",
                      sym, sig, csig, (int)ml, mask);
     } else if (crty.kind == 'v') {
+      if (thunk && !unc)
+        thunk(cargs, rbuf);
       sbuf b = {0};
       sb_addf(&b, "{\"ev\":\"standin\",\"sym\":\"%s\",\"args\":%s}", sym, ab.p);
       cqe_log(b.p);
@@ -1470,9 +1508,15 @@ void cqe_standin(const char *sym, const char *sig, const char *csig, int32_t nar
       char wt[16];
       lty_wtok(&crty, wt, sizeof wt);
       cqe_val v;
-      cqe__val_init(&v, crty.bits, crty.kind == 'f' ? 'f' : 'i');
-      v.w[0] = h;
-      cqe__val_mask(&v);
+      if (thunk) { /* the host's fn (cq-aou6) */
+        memset(rbuf, 0, sizeof rbuf);
+        thunk(cargs, rbuf);
+        load_val(&v, &crty, rbuf);
+      } else {
+        cqe__val_init(&v, crty.bits, crty.kind == 'f' ? 'f' : 'i');
+        v.w[0] = h;
+        cqe__val_mask(&v);
+      }
       if (!unc) {
         int32_t o = cqe__new(wt, &v, known, 0);
         for (int i = 0; i < nh; ++i)

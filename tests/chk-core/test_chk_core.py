@@ -890,5 +890,32 @@ class HandleReturn(unittest.TestCase):
         self.assertEqual([v["what"] for v in run.resolve_handle_rets(r, ["f"]).violations], ["ret_handle"])
 
 
+class HostClone(unittest.TestCase):
+    """cq-aou6: a declared clone whose fn the host defines (libm, also through an llvm.<fn>.f64 intrinsic
+    of the C module) computes the host's fn, as the C oracle links it; its twin XORs it out; K optional."""
+
+    def test_libm_values(self):
+        spec = DriverSpec(example="chk-core", protos=["double hx(double,double)"], setup="",
+                          calls=[{"fn": "hx", "args": [{"ctype": "double", "quantum": True},
+                                                       {"ctype": "double", "quantum": False}]}])
+        xs = [(0.5, 2.0), (-1.25, 3.0), (2.0, -0.5)]
+        rs = run.run_samples(HERE / "host_clone.ll", spec, [{"call": 0, "args": list(a)} for a in xs], "ours",
+                             rt_sources=RT, extra_sources=FAM, c_module=HERE / "host_clone.O1.ll")
+        for (x, y), r in zip(xs, rs):
+            self.assertEqual(r.violations, [], (x, y))
+            self.assertEqual([int(m["v"], 16) for m in r.measured],
+                             [run._fp_bits(math.exp(x), 64), run._fp_bits(math.atan2(x, y), 64)])
+            self.assertEqual([c["v"] for c in r.clean], ["0x0"])   # pow's rail, XORed out by its twin
+
+    def test_stubgen_intrinsic_signature_and_pointer(self):
+        text = (HERE / "host_clone.ll").read_text()
+        out, _ = stubgen.generate([text], [(HERE / "host_clone.O1.ll").read_text()])
+        self.assertIn("declare double @exp(double)", out)
+        self.assertIn("call void @cqe_standin_host(", out)
+        bad = text.replace("@__cq_q_exp_1(i32", "@__cq_q_strlen_1(i32")
+        with self.assertRaises(stubgen.StubError):
+            stubgen.generate([bad], ["declare i64 @strlen(ptr)"])
+
+
 if __name__ == "__main__":
     unittest.main()
