@@ -176,8 +176,10 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
       internalError("spine: cq_theta through invoke", &CB);
     if (isQ(ctx, CI->getArgOperand(1)))
       return rot::lowerQuantumAngleTheta(ctx, *CI, ctx.currentFlag());   // rules 11, 15
-    if (Value *flag = ctx.currentFlag())
+    if (Value *flag = ctx.currentFlag()) {
+      shared(ctx).statePreps.insert(CI);                                  // a merge of it: cq-gtcn
       return rot::lowerControlledTheta(ctx, *CI, flag);                   // rule 10
+    }
     return lowerTheta(ctx, *CI);                                         // rule 2
   }
   case Class::Measure:

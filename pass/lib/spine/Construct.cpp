@@ -27,6 +27,7 @@
 #include "SpineInternal.h"
 
 #include "cq/Effects.h"
+#include "cq/Rotation.h"
 #include "cq/Switch.h"
 
 #include "llvm/ADT/BitVector.h"
@@ -655,6 +656,14 @@ void Walker::emitBlock(BasicBlock *b) {
         unimplemented("spine: a quantum phi at a classically chosen join: a classical phi over handles "
                       "(cq-mtt, U1 recordMerge)",
                       &phi);
+      // Rule 10: a phi with a state prep (or a merge of one) among its incomings merges the
+      // register's states; it is the register, never a select of the rotated rail (no label copy).
+      if (any_of(phi.incoming_values(), [&](const Value *u) { return sh.statePreps.count(u); })) {
+        sh.statePreps.insert(&phi);
+        rot::lowerStatePrepMerge(ctx, phi);
+        blockDefs.push_back(&phi);
+        continue;
+      }
       spine::bindOperand(ctx, &phi, Operand{lowerMerge(ctx, phi), true});
       blockDefs.push_back(&phi);
       continue;

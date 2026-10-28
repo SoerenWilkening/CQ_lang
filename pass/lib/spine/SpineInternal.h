@@ -86,6 +86,10 @@ struct Shared {
   // basis value, and the classical recomputations already emitted.
   llvm::DenseMap<const llvm::Value *, RailHist> hist;
   llvm::DenseMap<const llvm::Value *, llvm::Value *> collapsed;
+  // Rule 10 state preparation: the original values lowered as a register's state (a classical-angle
+  // cq_theta routed to rot::lowerControlledTheta, a phi routed to rot::lowerStatePrepMerge). A
+  // quantum phi with one of them among its incomings is a state-prep merge, never a select (cq-gtcn).
+  llvm::DenseSet<const llvm::Value *> statePreps;
   // Dominance over the original function(s): one tree per function read.
   std::map<const llvm::Function *, std::unique_ptr<llvm::DominatorTree>> dts;
   // The original instruction being lowered, and for an inlined callee the call it stands for.
