@@ -48,6 +48,24 @@
 
 namespace cq::spine {
 
+// Rule 2 classical collapse: the basis-value history of one rail minted by emitTemplate or by an
+// emitCore alloc. `def` is the minting call. A template rail is f(ops) of its record (orig, when the
+// template stands for exactly that original instruction, gives the classical recomputation); a seed is
+// its alloc literal. `writes` are the in-place XOR-type core gates on it since (not_i1, xor_i1,
+// and_i1, or_i1, copy, xorc, controlled forms), in emission order. A non-diagonal gate on it
+// (ry, ry_qangle) makes it opaque: its value is no function of basis values.
+struct RailHist {
+  llvm::CallInst *def = nullptr;
+  bool tmpl = false;
+  abi::TemplateSpec spec;
+  llvm::SmallVector<Operand, 3> ops;
+  const llvm::Value *orig = nullptr;
+  llvm::Value *seed = nullptr;
+  struct Write { abi::CoreSpec spec; llvm::SmallVector<llvm::Value *, 3> args; llvm::CallInst *call; };
+  std::vector<Write> writes;
+  bool opaque = false;
+};
+
 // What every LoweringContext of one construct() run shares (an inlined callee's context included).
 struct Shared {
   llvm::Module &M;
@@ -64,6 +82,10 @@ struct Shared {
   std::vector<bool> gateLogOpen;
   // Rule 2: rail handle -> (the original cq_measure call, the classical outcome).
   llvm::DenseMap<const llvm::Value *, std::pair<const llvm::Instruction *, llvm::Value *>> measured;
+  // Rule 2 classical collapse (Collapse.cpp): how each rail the spine's emitters minted got its
+  // basis value, and the classical recomputations already emitted.
+  llvm::DenseMap<const llvm::Value *, RailHist> hist;
+  llvm::DenseMap<const llvm::Value *, llvm::Value *> collapsed;
   // Dominance over the original function(s): one tree per function read.
   std::map<const llvm::Function *, std::unique_ptr<llvm::DominatorTree>> dts;
   // The original instruction being lowered, and for an inlined callee the call it stands for.
@@ -79,6 +101,15 @@ struct Shared {
 // A context for an inlined callee: the same Shared state, the callee's specialization (Context.cpp).
 std::unique_ptr<LoweringContext> childContext(LoweringContext &parent, const Specialization &S);
 Shared &shared(LoweringContext &);
+
+// Rule 2 classical collapse (Collapse.cpp, contract at its top). noteTemplate/noteCore keep the
+// histories (called by emitTemplate/emitCore); collapse returns the classical value a rail holds at
+// the builder's point when it depends only on measured rails and classical values, else nullptr.
+void noteTemplate(Shared &, llvm::CallInst *fwd, const abi::TemplateSpec &, llvm::ArrayRef<Operand>,
+                  const llvm::Value *orig);
+void noteCore(Shared &, llvm::CallInst *call, const abi::CoreSpec &, llvm::ArrayRef<llvm::Value *>);
+llvm::Value *outcomeAt(Shared &, llvm::Value *handle);
+llvm::Value *collapse(LoweringContext &, llvm::Value *handle);
 
 // Binds orig to an operand with an explicit kind (classical collapse binds a quantum orig classically).
 void bindOperand(LoweringContext &, const llvm::Value *orig, Operand op);

@@ -135,19 +135,30 @@ Operand LoweringContext::operand(const Value *orig) {
                   orig);
   Operand op = it->second.front();
   if (op.handle) {
-    // Rule 2: a use dominated by a measurement of this rail reads the classical outcome.
-    auto m = sh.measured.find(op.v);
-    if (m != sh.measured.end() && sh.dominatesCurrent(m->second.first))
-      return Operand{m->second.second, false};
+    // Rule 2: a use after a measurement of this rail reads the classical outcome, and a rail that
+    // depends only on measured rails and classical values collapses to its classical recomputation.
+    if (Value *c = spine::collapse(*this, op.v))
+      return Operand{c, false};
   }
   return op;
 }
 
+// rail() asks for the rail itself (a flag atom, a control, an in-place target): no classical
+// collapse of a derived rail. The rail of a measured value read after its measurement is still the
+// outcome (rule 2), so rail() of it is an error as before.
 Value *LoweringContext::rail(const Value *orig) {
-  Operand op = operand(orig);
-  if (!op.handle)
-    internalError("spine: rail() of a classical value " + describe(orig), orig);
-  return op.v;
+  if (!orig)
+    internalError("spine: rail(nullptr)");
+  spine::Shared &sh = *impl->sh;
+  auto it = sh.binds.find(orig);
+  if (isa<Constant>(orig) || it == sh.binds.end() || it->second.size() != 1 || !it->second.front().handle ||
+      spine::outcomeAt(sh, it->second.front().v)) {
+    Operand op = operand(orig);
+    if (!op.handle)
+      internalError("spine: rail() of a classical value " + describe(orig), orig);
+    return op.v;
+  }
+  return it->second.front().v;
 }
 
 SmallVector<Operand, 4> LoweringContext::fields(const Value *orig) {
@@ -198,6 +209,7 @@ Value *LoweringContext::emitTemplate(const abi::TemplateSpec &spec, ArrayRef<Ope
     if (impl->sh->gateLogOpen[t])
       impl->sh->gateLogs[t].push_back(call);
   unc().recordTemplate(call, spec, ops);
+  spine::noteTemplate(*impl->sh, call, spec, ops, orig);
   if (orig)
     spine::bindOperand(*this, orig, Operand{call, true});
   return call;
@@ -216,6 +228,7 @@ CallInst *LoweringContext::emitCore(const abi::CoreSpec &spec, ArrayRef<Value *>
   for (size_t t = 0; t < impl->sh->gateLogs.size(); ++t)
     if (impl->sh->gateLogOpen[t])
       impl->sh->gateLogs[t].push_back(call);
+  spine::noteCore(*impl->sh, call, spec, args);
   return call;
 }
 
