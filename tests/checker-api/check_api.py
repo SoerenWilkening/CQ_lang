@@ -9,8 +9,8 @@ FROZEN below is the whole frozen list. For each entry:
    A name that is not defined yet is PENDING: reported, and a failure only under --require-all
    (the wave-0 coordinator's gate, once every owner has landed).
 2. report.SIBLING_API (what report.evaluate calls) is a subset of FROZEN with the same text.
-3. Unless --no-bd: the Z1 or the Z2 comment on cq-arch contains every line `--print` emits (Z1, as
-   extended by Z2, is the frozen text; this table is its checkable copy, so the two cannot drift
+3. Unless --no-bd: the Z1, Z2 or Z3 comment on cq-arch contains every line `--print` emits (Z1, as
+   extended by Z2 and Z3, is the frozen text; this table is its checkable copy, so the two cannot drift
    apart).
 
 Usage: check_api.py [--require-all] [--no-bd] [--print]
@@ -60,6 +60,23 @@ FROZEN = [
     ("oracle", "chk-oracle", "cq-w0-chk-oracle", "trace_sample",
      [("o1", "Path", "p", REQ), ("spec", "DriverSpec", "p", REQ), ("sample", "dict", "p", REQ)], "List[dict]",
      "chk-drivers (cq-w0-chk-drivers, sampling.py trip search), usercheck (cq-w1-usercheck)"),
+    # Z3 (cq-l2po): the batch forms, called across modules since cq-3ebz
+    ("run", "chk-core", "cq-l2po", "run_samples",
+     [("lowered", "Path", "p", REQ), ("spec", "DriverSpec", "p", REQ), ("samples", "Iterable[dict]", "p", REQ), ("side", "str", "p", REQ),
+      ("jobs", "int", "p", 0), ("timeout", "float", "k", 30.0), ("rt_sources", "Optional[Sequence[Path]]", "k", None),
+      ("extra_sources", "Sequence[Path]", "k", ()), ("c_module", "Optional[Path]", "k", None)], "List[RunResult]",
+     "chk-report (cq-w0-chk-report, report.evaluate), chk-selftest (cq-w0-chk-selftest, mutants via report.evaluate), "
+     "usercheck (cq-w1-usercheck)"),
+    ("oracle", "chk-oracle", "cq-l2po", "run_samples",
+     [("o1", "Path", "p", REQ), ("spec", "DriverSpec", "p", REQ), ("samples", "Sequence[Dict[str, Any]]", "p", REQ),
+      ("timeout_ms", "int", "p", 2000), ("tripcap", "int", "p", 10_000_000), ("k", "Optional[Dict[str, int]]", "p", None),
+      ("k_default", "Optional[int]", "p", None)], "List[SampleRun]",
+     "chk-report (cq-w0-chk-report, report.evaluate), chk-drivers (cq-w0-chk-drivers, sampling.py trip search), "
+     "chk-selftest (cq-w0-chk-selftest, mutants via report.evaluate), usercheck (cq-w1-usercheck)"),
+    ("oracle", "chk-oracle", "cq-l2po", "run_result",
+     [("sr", "SampleRun", "p", REQ), ("spec", "DriverSpec", "p", REQ), ("o1", "Path", "p", REQ)], "RunResult",
+     "chk-report (cq-w0-chk-report, report.evaluate), chk-selftest (cq-w0-chk-selftest, mutants via report.evaluate), "
+     "usercheck (cq-w1-usercheck)"),
     ("compare", "chk-compare", "cq-w0-chk-compare", "compare",
      [("ours", "Sequence[RunResult]", "p", REQ), ("other", "Sequence[RunResult]", "p", REQ), ("against", "str", "p", REQ), ("classical_key", "Optional[Callable[[dict], Hashable]]", "p", None)],
      "List[str]",
@@ -240,7 +257,7 @@ def check_z1():
     data = json.loads(out.stdout)
     texts = [c.get("text") or c.get("body") or "" for c in (data if isinstance(data, list) else [])]
     bodies = []
-    for tag in ("Z1", "Z2"):   # Z2 (cq-7lrz) extends Z1's list
+    for tag in ("Z1", "Z2", "Z3"):   # Z2 (cq-7lrz) and Z3 (cq-l2po) extend Z1's list
         z = [t for t in texts if t.lstrip().startswith(tag + " ")]
         if len(z) != 1:
             fail(f"cq-arch: expected exactly one comment starting with {tag}, found {len(z)}")
@@ -248,7 +265,7 @@ def check_z1():
         bodies.append(" ".join(z[0].split()))
     for line in z1_lines():
         if not any(" ".join(line.split()) in b for b in bodies):
-            fail(f"cq-arch Z1/Z2 lack the frozen line: {line}")
+            fail(f"cq-arch Z1/Z2/Z3 lack the frozen line: {line}")
 
 
 def main():
