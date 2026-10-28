@@ -77,7 +77,7 @@ def probes(a) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-        ap.add_argument("--plugin", required=True)
+    ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--spec", required=True)
     ap.add_argument("--show-diff", action="store_true")
