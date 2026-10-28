@@ -5,6 +5,7 @@ trace_sample. Needs chk-drivers' drivers.driver_source (see fixture.py)."""
 from __future__ import annotations
 
 import math
+import re
 import struct
 import subprocess
 import tempfile
@@ -207,15 +208,34 @@ void inv_q(int x0, double t) { int x = x0; cq_invert_begin(); cq_theta(&x, t); c
         rr = oracle.run_sample(o1, sp, {"call": 0, "args": [i32(4), HALF, pa]})
         self.assertEqual(rr.side, "c")
         self.assertEqual(rr.sample, {"call": 0, "args": [i32(4), HALF, pa]})
-        self.assertEqual([r["gate"] for r in rr.rotations], ["ry", "phase"])
-        self.assertEqual(rr.measured, ["0x2"])
+        self.assertEqual([(r["ev"], r["kind"]) for r in rr.rotations], [("site", "theta"), ("site", "phi")])
+        self.assertEqual(rr.rotations[0], {"ev": "site", "fn": "loop_q", "site": 0, "kind": "theta",
+                                           "angle": HALF, "reg": hex(4)})
+        self.assertEqual(rr.measured, [{"h": None, "w": "i32", "v": "0x2"}])
+        self.assertEqual(rr.outputs, {"ret": [{"call": 0, "fn": "loop_q", "v": {"w": "i32", "v": "0x2"}}],
+                                      "end": "ret"})
         self.assertEqual(rr.violations, [])
+        self.assertIsNone(rr.kept)
+        self.assertIsNone(rr.clean)
+        rr = oracle.run_sample(o1, sp, {"call": 2, "args": [i32(3), HALF]})
+        self.assertEqual([r["kind"] for r in rr.rotations], ["invert_begin", "theta", "invert_end"])
+        self.assertEqual(rr.outputs["ret"], [])
+        # T1.2: loop ids are "<fn>:<header>", the header label as spelled in the input .O1.ll
+        text = Path(o1).read_text()
+        for e in tr({"call": 0, "args": [i32(31), HALF, pa]}) + tr({"call": 1, "args": [i32(7), HALF]}):
+            if e["ev"] == "trip":
+                fn, hdr = e["loop"].split(":", 1)
+                self.assertIn(fn, ("loop_q", "header_q"), e)
+                self.assertRegex(hdr, r"^%[-\w.$]+$", e)
+                body = text[text.index(f"@{fn}("):]
+                body = body[:body.index("\n}")]
+                self.assertRegex(body, rf"(?m)^{re.escape(hdr[1:])}:", (e, body))
 
     def test_fp_output_typed_and_subst(self):
         o1 = compile_c("fpout", "double id_q(double x0, double t) { double x = x0; cq_theta(&x, t); return x + 1; }")
         sp = spec("fpout", "double id_q(double,double)", [("id_q", ["double", "double"])])
         rr = oracle.run_sample(o1, sp, {"call": 0, "args": [f64(1.0), HALF]})
-        self.assertEqual(rr.outputs["ret"], {"w": "f64", "v": f64(2.0)})
+        self.assertEqual(rr.outputs["ret"], [{"call": 0, "fn": "id_q", "v": {"w": "f64", "v": f64(2.0)}}])
         r = oracle.run_samples(o1, sp, [{"call": 0, "args": [f64(1.0), HALF], "subst": {"id_q:0": f64(5.0)}}])[0]
         self.assertEqual(r.events[0]["reg"], f64(5.0))
         self.assertEqual(r.events[-1]["v"], f64(6.0))
@@ -248,7 +268,14 @@ int spin_q(unsigned x0, double t) { unsigned x = x0; cq_theta(&x, t); while (x !
         with self.assertRaises(oracle.OracleError):
             oracle.trace_sample(o1, sp, {"call": 3, "args": [i32(1), HALF]})
         rr = oracle.run_sample(o1, sp, {"call": 3, "args": [i32(1), HALF]})
-        self.assertTrue(rr.violations)
+        self.assertEqual(len(rr.violations), 1)
+        self.assertEqual(rr.violations[0]["what"], "c_oracle")
+        self.assertIsNone(rr.violations[0]["h"])
+        self.assertIn("nonterminating", rr.violations[0]["msg"])
+        self.assertEqual(rr.outputs["ret"], [])
+        rr = oracle.run_sample(o1, sp, {"call": 0, "args": [i32(2), HALF, i32(2)]})
+        self.assertEqual(rr.outputs, {"ret": [], "end": "noreturn:abort"})
+        self.assertEqual(rr.violations, [])
 
 
 if __name__ == "__main__":

@@ -11,12 +11,12 @@ Trace events (cq-arch; values are hex bit patterns ``0x`` + lowercase digits, no
 
 - ``{"ev":"site","fn","site","kind","angle","reg"}``: ``site`` is the ordinal of the call among the
   ``cq_theta_*``/``cq_phi``/``cq_measure_*``/``__cq_invert_*`` calls of function ``fn`` in textual order
-  of the input IR. ``kind`` is ``theta`` or ``phi`` (frozen) and, as extensions pending a freeze-rule
-  bead, ``measure`` (reg = the measured value) and ``invert_begin``/``invert_end`` (markers). ``angle``
-  is the f64 bit pattern (null for measure and markers); ``reg`` the register value at its width
-  (null for phi and markers).
-- ``{"ev":"trip","loop","n"}`` once per loop activation, when the loop is left. ``loop`` is
-  ``<fn>/<k>``, k the loop's index in LoopInfo preorder. ``n`` counts the trips begun: header
+  of the input IR. ``kind`` is ``theta``, ``phi``, ``measure`` (reg = the measured value) or
+  ``invert_begin``/``invert_end`` (markers) (cq-arch T1.1). ``angle`` is the f64 bit pattern (null for
+  measure and markers); ``reg`` the register value at its width (null for phi and markers).
+- ``{"ev":"trip","loop","n"}`` once per loop activation, when the loop is left (T1.2). ``loop`` is
+  ``<fn>:<header>``, the header block's label spelled as an operand in the input .O1.ll (``%7``,
+  ``%for.body``), taken before the instrumentation edits the function. ``n`` counts the trips begun: header
   executions, less the final one when it only ran the exit test (an exit from a header that is not a
   latch). A guard branch whose other successor is an exit block reports ``n = 0`` when it skips the loop.
 - ``{"ev":"ret","v"}``: the driver call's return value (``null`` for void).
@@ -115,13 +115,14 @@ def _atomic_dir(final: Path, fill) -> Path:
 # ------------------------------------------------------------------------------------------------
 # toolchain: the instrumentation plugin and the runtime, rebuilt when their sources change
 
+STANDIN = ROOT / "checker" / "rt" / "cq_standin.h"   # included by both sources (cq-25vx)
 SRC_KEY = hashlib.sha256((SRC / "OracleInstr.cpp").read_bytes() + (SRC / "cqo_rt.c").read_bytes()
-                         + Path(__file__).read_bytes()).hexdigest()[:16]
+                         + STANDIN.read_bytes() + Path(__file__).read_bytes()).hexdigest()[:16]
 
 
 def toolchain() -> Tuple[Path, Path]:
     cpp, rt = SRC / "OracleInstr.cpp", SRC / "cqo_rt.c"
-    h = hashlib.sha256(cpp.read_bytes() + b"\0" + rt.read_bytes()).hexdigest()[:16]
+    h = hashlib.sha256(cpp.read_bytes() + b"\0" + rt.read_bytes() + b"\0" + STANDIN.read_bytes()).hexdigest()[:16]
 
     def fill(d: Path) -> None:
         flags = _run([_tool("llvm-config"), "--cxxflags"], "llvm-config").stdout.split()
@@ -405,36 +406,101 @@ def _run_chunk(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], ti
     return runs
 
 
-def run_result(sr: SampleRun, spec: DriverSpec) -> RunResult:
-    """A sample under the C oracle as the side 'c' RunResult.
+# cq_theta_<t> / cq_measure_<t> suffix (CQ.h) -> the register's rail type
+_SITE_RAIL = {"i1": "i1", "c": "i8", "si8": "i8", "ui8": "i8", "si16": "i16", "ui16": "i16",
+              "si32": "i32", "ui32": "i32", "sl": "i64", "ul": "i64", "sll": "i64", "ull": "i64",
+              "f16": "f16", "bf16": "bf16", "f32": "f32", "f64": "f64", "f80": "f80"}
+_SITE_CALL = re.compile(r'\bcall\b[^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_begin|__cq_invert_end)\(')
+_DEFINE = re.compile(r'^define\b[^@]*@("(?:[^"\\]|\\.)*"|[-\w$.]+)\(')
+_SITE_CACHE: Dict[Path, Dict[Tuple[str, int], str]] = {}
 
-    outputs: {"ret": value, "end": outcome}, an fp return typed as {"w": "f32"|"f64"|"f80"|..., "v": hex}
-    (cq-pq3), an integer return as its hex, void as None; measured: the measure sites' values in order;
-    rotations: the theta/phi sites reached, in order, with the invert markers ({"gate": "ry"|"phase"|
-    "invert_begin"|"invert_end", "fn", "site", "angle", "reg"}); kept/clean: None (the C program has no
-    rails); violations: [] or the failure reason."""
-    ret = next((e["v"] for e in sr.events if e.get("ev") == "ret"), None)
-    rt = _ret_ctype(spec, spec.calls[sr.sample["call"]]["fn"])
-    if ret is not None and rt in _FP_RAIL:
-        ret = {"w": _FP_RAIL[rt], "v": ret}
+
+def site_callees(o1: Path) -> Dict[Tuple[str, int], str]:
+    """(fn, site ordinal) -> the callee name of each site call in the input .O1.ll (T1.1 ordinals:
+    textual order of the calls to cq_theta_*, cq_phi, cq_measure_*, __cq_invert_* within fn)."""
+    o1 = Path(o1).resolve()
+    if o1 in _SITE_CACHE:
+        return _SITE_CACHE[o1]
+    out: Dict[Tuple[str, int], str] = {}
+    fn, k = None, 0
+    for line in o1.read_text().splitlines():
+        m = _DEFINE.match(line)
+        if m:
+            fn, k = m.group(1), 0
+            if fn.startswith('"'):
+                fn = fn[1:-1]
+            continue
+        if line.startswith("}"):
+            fn = None
+            continue
+        if fn is None:
+            continue
+        c = _SITE_CALL.search(line)
+        if c:
+            out[(fn, k)] = c.group(1)
+            k += 1
+    _SITE_CACHE[o1] = out
+    return out
+
+
+def _measure_rail(o1: Path, fn: str, site: int) -> str:
+    callee = site_callees(o1).get((fn, int(site)))
+    if callee is None or not callee.startswith("cq_measure_"):
+        raise OracleError(f"oracle: measure site {fn}:{site} is not a cq_measure_* call in {o1}")
+    w = _SITE_RAIL.get(callee[len("cq_measure_"):])
+    if w is None:
+        raise OracleError(f"cq: unimplemented: oracle: rail type of {callee}")
+    return w
+
+
+def _typed_ret(spec: DriverSpec, sr: SampleRun) -> List[Dict[str, Any]]:
+    """outputs["ret"] in run.py's encoding (T1.5): one record for an arithmetic or aggregate return
+    of a sample that ended by return; none for void, pointer, or any other end."""
+    from .run import ctype_kind
+    if sr.outcome != "ret":
+        return []
+    ev = next((e for e in sr.events if e.get("ev") == "ret"), None)
+    fn = spec.calls[sr.sample["call"]]["fn"]
+    rt = _ret_ctype(spec, fn)
+    kind, bits = ctype_kind(rt)
+    if ev is None or ev.get("v") is None or rt == "void" or kind == "ptr":
+        return []
+    if rt in _FP_RAIL:
+        v: Any = {"w": _FP_RAIL[rt], "v": ev["v"]}
+    elif kind == "fp":
+        v = {"w": f"f{bits}", "v": ev["v"]}
+    elif kind == "int":
+        v = {"w": f"i{bits}", "v": ev["v"]}
+    else:
+        v = ev["v"]   # an aggregate return: bare hex
+    return [{"call": sr.sample["call"], "fn": fn, "v": v}]
+
+
+def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
+    """A sample under the C oracle as the side 'c' RunResult (cq-arch T1.5).
+
+    outputs: {"ret": [{"call", "fn", "v"}] in run.py's encoding (integer returns {"w": "i<N>"} at the
+    C width, fp {"w": "f32"|"f64"|"f80"|...}, an aggregate bare hex; void, pointer and samples that
+    did not return give no record), "end": outcome}; measured: [{"h": None, "w": the register's rail
+    type, "v": hex}] per reached measure site, in order; rotations: the site events of kind theta,
+    phi, invert_begin and invert_end verbatim, in order; kept/clean: None (the C program has no
+    rails); violations: [] or [{"what": "c_oracle", "h": None, "msg": reason}]."""
     measured, rotations = [], []
-    gate = {"theta": "ry", "phi": "phase", "invert_begin": "invert_begin", "invert_end": "invert_end"}
     for e in sr.events:
         if e.get("ev") != "site":
             continue
         if e["kind"] == "measure":
-            measured.append(e["reg"])
+            measured.append({"h": None, "w": _measure_rail(o1, e["fn"], e["site"]), "v": e["reg"]})
         else:
-            rotations.append({"gate": gate[e["kind"]], "fn": e["fn"], "site": e["site"],
-                              "angle": e["angle"], "reg": e["reg"]})
-    return RunResult(side="c", sample=sr.sample, outputs={"ret": ret, "end": sr.outcome},
+            rotations.append(dict(e))
+    return RunResult(side="c", sample=sr.sample, outputs={"ret": _typed_ret(spec, sr), "end": sr.outcome},
                      measured=measured, rotations=rotations, kept=None, clean=None,
-                     violations=[sr.reason] if sr.failed else [])
+                     violations=[{"what": "c_oracle", "h": None, "msg": sr.reason}] if sr.failed else [])
 
 
 def run_sample(o1: Path, spec: DriverSpec, sample: dict) -> RunResult:
     """Z1 (cq-zew): one sample of the C program as RunResult side 'c'; RunResult.sample is `sample`."""
-    return run_result(run_samples(Path(o1), spec, [sample])[0], spec)
+    return run_result(run_samples(Path(o1), spec, [sample])[0], spec, Path(o1))
 
 
 def trace_sample(o1: Path, spec: DriverSpec, sample: dict) -> List[dict]:

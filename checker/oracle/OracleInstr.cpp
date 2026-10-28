@@ -35,6 +35,7 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/ModuleSlotTracker.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
@@ -568,6 +569,24 @@ public:
     return NB;
   }
 
+  // Block -> its label spelled as an operand ("%7", "%for.body", "%\"a b\"") in the input text,
+  // taken through a ModuleSlotTracker before any pass below edits a function (erasing a non-void
+  // call or adding a block renumbers the slots).
+  DenseMap<const BasicBlock *, std::string> headerNames;
+
+  void spellBlocks(const std::vector<Function *> &fns) {
+    ModuleSlotTracker MST(&M);
+    for (Function *F : fns) {
+      MST.incorporateFunction(*F);
+      for (BasicBlock &BB : *F) {
+        std::string s;
+        raw_string_ostream OS(s);
+        BB.printAsOperand(OS, false, MST);
+        headerNames[&BB] = OS.str();
+      }
+    }
+  }
+
   void trips(Function &F) {
     DominatorTree DT(F);
     LoopInfo LI(DT);
@@ -588,10 +607,12 @@ public:
     };
     std::vector<std::pair<BasicBlock *, AllocaInst *>> headers;
     // Counters live in the entry block, zeroed once at function entry, reset on every exit.
-    unsigned idx = 0;
     for (Loop *L : loops) {
-      std::string id = (F.getName() + "/" + Twine(idx++)).str();
-      Constant *cid = str(id);
+      // T1.2: "<fn>:<header>", the header spelled as in the input text (captured before any edit).
+      auto hn = headerNames.find(L->getHeader());
+      if (hn == headerNames.end())
+        unimplemented("loop header created by the instrumentation", L->getHeader()->getTerminator());
+      Constant *cid = str((F.getName() + ":" + hn->second).str());
       AllocaInst *cnt = entryAlloca(F, I64);
       {
         IRBuilder<> B(cnt->getNextNode());
@@ -792,6 +813,7 @@ public:
     for (Function &F : M)
       if (!F.isDeclaration())
         defined.push_back(&F);
+    spellBlocks(defined);
     for (Function *F : defined) {
       dropPoison(*F);
       totalize(*F);
