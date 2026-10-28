@@ -804,6 +804,64 @@ class AbortRule(unittest.TestCase):
         self.check(self.ours(), self.c("ret"), False, "returns")
 
 
+class Rule2Measure(unittest.TestCase):
+    """CR rule 2 against "c" (bead cq-tnrb), shaped like 155: registers x (h=1, x = a) and y (h=2,
+    y = b), i8. C: if (x > 0) measure y; then measure x. Ours measures y unconditionally, then x."""
+
+    def c(self, build=None):
+        def meas(a, b):
+            return ([{"h": None, "w": "i8", "v": hex(b)}] if a else []) + [{"h": None, "w": "i8", "v": hex(a)}]
+        build = build or meas
+        return [RunResult(side="c", sample={"call": 0, "args": [s & 1, s >> 1]},
+                          outputs={"ret": [], "end": "ret", "loops": []}, measured=build(s & 1, s >> 1),
+                          rotations=[], kept=None, clean=None, violations=[]) for s in range(4)]
+
+    def ours(self, meas=None):
+        """meas(a, b) -> [(h, value)] in order; default [(2, b), (1, a)]."""
+        meas = meas or (lambda a, b: [(2, b), (1, a)])
+        out = []
+        for s in range(4):
+            a, b = s & 1, s >> 1
+            ms = meas(a, b)
+            kept = [keep(h, v, "i8", "measured") for h, v in ms]
+            out.append(run("o", s, [], kept, measured=[{"h": h, "w": "i8", "v": hex(v)} for h, v in ms]))
+        return out
+
+    def check(self, ours, c, equal, needle=None):
+        r = compare(ours, c, QKEY, "c")
+        self.assertEqual(r.equal, equal, r.reasons)
+        if needle:
+            self.assertTrue(any(needle in x for x in r.reasons), r.reasons)
+
+    def test_hoisted_arm_measurement_accepted(self):
+        # fails before cq-tnrb: "2 measurements != 1" on the samples with a = 0
+        self.check(self.ours(), self.c(), True)
+
+    def test_unconditional_measurement_outside_any_arm_rejected(self):
+        # a register the C program measures on no path: z (h=3) reads 7
+        self.check(self.ours(lambda a, b: [(3, 7), (2, b), (1, a)]), self.c(), False, "match no C measurement here")
+        # y measured although the C program never measures it
+        self.check(self.ours(), self.c(lambda a, b: [{"h": None, "w": "i8", "v": hex(a)}]), False,
+                   "match no C measurement here")
+
+    def test_c_measurement_still_needed(self):
+        self.check(self.ours(lambda a, b: [(1, a)]), self.c(), False, "measurements")
+
+    def test_value_still_compared(self):
+        self.check(self.ours(lambda a, b: [(2, 1 - b), (1, a)]), self.c(), False)
+        self.check(self.ours(lambda a, b: [(2, b), (1, 1 - a)]), self.c(), False)
+
+    def test_order_still_compared(self):
+        self.check(self.ours(lambda a, b: [(1, a + 4), (2, b)]),
+                   self.c(lambda a, b: [{"h": None, "w": "i8", "v": hex(v)} for v in ([b] if a else []) + [a + 4]]),
+                   False)
+
+    def test_type_still_compared(self):
+        c = self.c(lambda a, b: ([{"h": None, "w": "i16", "v": hex(b)}] if a else [])
+                   + [{"h": None, "w": "i8", "v": hex(a)}])
+        self.check(self.ours(), c, False)
+
+
 class UnPrep(unittest.TestCase):
     """CR rule 10 un-prep against "c" (bead cq-9gi3), shaped like 133's prep_twice: a register r
     (h=3, i32, seed R0) prepared Ry(T1) under a (C site f:0), then overwritten: undone by Ry(-T1)

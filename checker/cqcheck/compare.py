@@ -141,6 +141,17 @@ non-NaN. A value is floating point when its type is known: a typed output, a mea
 which the C register value is read) and every classical angle (f64). An Ry with a non-finite
 angle and an angle-rail gate with a non-finite angle are no gate in either mode (CR §1.3), so a
 NaN angle survives only on a classical-angle phase (P(θ), C `cq_phi`), where the mode applies.
+Measurements against the C oracle (CR rule 2, bead cq-tnrb). A cq_measure inside a quantum arm runs
+unconditionally at its program point, so on a sample where the C program does not take the arm our
+side measures once more. Within each comparison group each sample's C measurements are matched, in
+order, to our measurements reading the same value (and type). One of ours left unmatched on a
+sample must be identified on another sample: matched in every embedding of some sample of the same
+call whose measured rails of ours are the same handles (the hoisted arm measurement of a register
+the C program measures on another path; its value where C did not reach it is unconstrained), or
+lie past the cut or the end of an open-ended sample. A measurement whose value never tells it from
+another of ours is not identified (conservative). Every C measurement is matched. Against the
+reference measurements are compared by position.
+
 x87 f80: a NaN is exponent 0x7FFF with a nonzero fraction (bits 0..62), the explicit integer bit
 ignored, so a pseudo-NaN is a NaN and a pseudo-infinity is not.
 """
@@ -960,6 +971,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                                        f"a cq_invert region")
 
     # per sample: violations, outputs, measured values, frees
+    meas_opts: Dict[str, List[Tuple[FrozenSet[int], FrozenSet[int]]]] = {}
     for k in keys:
         o, r = o_by[k], r_by[k]
         if o.violations:
@@ -973,19 +985,11 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                 reasons.append(f"sample {k}: returns {oo} != {ro} (ours {o.outputs}, C {r.outputs})")
         elif _norm(o.outputs, nan_eq) != _norm(r.outputs, nan_eq):
             reasons.append(f"sample {k}: outputs {o.outputs} != {r.outputs}")
-        mo, mr = list(o.measured or []), list(r.measured or [])
-        if (capped.get(k) or ended.get(k)) and len(mo) >= len(mr):
-            mo = mo[:len(mr)]          # ours may measure past the cut or the end
-        if len(mo) != len(mr):
-            reasons.append(f"sample {k}: {len(mo)} measurements != {len(mr)}")
+        if oracle == "ref":
+            reasons += _measured_positional(k, o, r, False, nan_eq)
         else:
-            for i, (a, b) in enumerate(zip(mo, mr)):
-                wa, wb = a.get("w"), b.get("w")
-                if wa and wb and wa != wb:
-                    reasons.append(f"sample {k}: measurement {i} of {wa} != {wb}")
-                w = wa or wb or _kept_type(o, a.get("h")) or _kept_type(r, b.get("h"))
-                if _fpv(_int(a.get("v")), w, nan_eq) != _fpv(_int(b.get("v")), w, nan_eq):
-                    reasons.append(f"sample {k}: measurement {i} reads {a.get('v')} != {b.get('v')}")
+            meas_opts[k], why = _meas_options(k, o, r, capped[k] or ended[k], nan_eq)
+            reasons += why
         for side, rr in (("our", o), ("oracle", r)) if oracle == "ref" else (("our", o),):
             for c in rr.clean or []:
                 known = c.get("known")
@@ -1019,6 +1023,30 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
     if reasons:
         return reasons
 
+    # CR rule 2 against C (bead cq-tnrb): one of our measurements may go unmatched on a sample only
+    # when it is identified elsewhere: matched in every embedding of some sample of the same call
+    # with the same measured rails of ours (the C program measures that register on another path)
+    ident: Dict[Tuple, set] = {}
+
+    def _pool(k: str) -> Tuple:
+        return (_call_key(r_by[k].sample), tuple(m.get("h") for m in o_by[k].measured or []))
+
+    for k, opts in meas_opts.items():
+        ident.setdefault(_pool(k), set()).update(frozenset.intersection(*(img for img, _ in opts)))
+
+    def _meas_extra(k: str) -> List[str]:
+        n = len(o_by[k].measured or [])
+        known = ident[_pool(k)]
+        opts = meas_opts[k]
+        if any(all(i in img or i in past or i in known for i in range(n)) for img, past in opts):
+            return []
+        img, past = opts[0]
+        bad = [i for i in range(n) if i not in img and i not in past and i not in known]
+        hs = [o_by[k].measured[i].get("h") for i in bad]
+        return [f"sample {k}: our measurement(s) {bad} (rails {hs}) match no C measurement here, and no sample "
+                f"of the call identifies them with one the C program reaches (only CR rule 2's hoisted arm "
+                f"measurement may be extra)"]
+
     for gk, ks in groups.items():
         tag = f"classical arguments {gk[0]} ({len(ks)} samples)"
         o_runs = [o_by[k] for k in ks]
@@ -1051,7 +1079,69 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                 reasons.append(f"{tag}: {why}")
             for why in _check_abort(o_runs, [ended[k] for k in ks], [capped[k] for k in ks]):
                 reasons.append(f"{tag}: {why}")
+            for k in ks:
+                for why in _meas_extra(k):
+                    reasons.append(f"{tag}: {why}")
     return reasons
+
+
+def _meas_eq(o: RunResult, r: RunResult, a: Dict[str, Any], b: Dict[str, Any], nan_eq: bool) -> List[str]:
+    """Why our measurement record a differs from the oracle's b ([] when equal)."""
+    wa, wb = a.get("w"), b.get("w")
+    if wa and wb and wa != wb:
+        return [f"of {wa} != {wb}"]
+    w = wa or wb or _kept_type(o, a.get("h")) or _kept_type(r, b.get("h"))
+    if _fpv(_int(a.get("v")), w, nan_eq) != _fpv(_int(b.get("v")), w, nan_eq):
+        return [f"reads {a.get('v')} != {b.get('v')}"]
+    return []
+
+
+def _measured_positional(k: str, o: RunResult, r: RunResult, open_end: bool, nan_eq: bool) -> List[str]:
+    """Measurements compared by position (against the reference; and the diagnostic against C). On an
+    open-ended sample (capped or ended) ours may measure past the cut or the end."""
+    mo, mr = list(o.measured or []), list(r.measured or [])
+    if open_end and len(mo) >= len(mr):
+        mo = mo[:len(mr)]
+    if len(mo) != len(mr):
+        return [f"sample {k}: {len(mo)} measurements != {len(mr)}"]
+    return [f"sample {k}: measurement {i} {why}"
+            for i, (a, b) in enumerate(zip(mo, mr)) for why in _meas_eq(o, r, a, b, nan_eq)]
+
+
+_MEAS_OPTIONS = 256                  # embeddings of one sample's C measurements kept at most
+
+
+def _meas_options(k: str, o: RunResult, r: RunResult, open_end: bool, nan_eq: bool
+                  ) -> Tuple[List[Tuple[FrozenSet[int], FrozenSet[int]]], List[str]]:
+    """CR rule 2 (bead cq-tnrb): the ways one sample's C measurements embed, in order, into ours,
+    each one reading the same value (and type): [(our indices matched, our indices past the end)],
+    the latter non-empty only on an open-ended sample (capped or ended: ours past the last matched
+    one lie past the cut or the end). No way at all: the reasons."""
+    mo, mr = list(o.measured or []), list(r.measured or [])
+    n = len(mo)
+    ok = [[not _meas_eq(o, r, a, b, nan_eq) for b in mr] for a in mo]
+    opts: Dict[FrozenSet[int], FrozenSet[int]] = {}
+
+    def emb(j: int, i0: int, img: Tuple[int, ...]) -> None:
+        if len(opts) > _MEAS_OPTIONS:
+            raise CompareError(f"cq: unimplemented: chk-compare: sample {k}: more than {_MEAS_OPTIONS} ways to "
+                               f"match the C measurements to ours")
+        if j == len(mr):
+            last = img[-1] if img else -1
+            opts[frozenset(img)] = frozenset(range(last + 1, n)) if open_end else frozenset()
+            return
+        for i in range(i0, n - (len(mr) - j) + 1):
+            if ok[i][j]:
+                emb(j + 1, i + 1, img + (i,))
+
+    emb(0, 0, ())
+    if opts:
+        return list(opts.items()), []
+    why = _measured_positional(k, o, r, open_end, nan_eq)
+    if not why or (len(mo) > len(mr) and not open_end):
+        why = [f"sample {k}: the C measurements {[b.get('v') for b in mr]} are no in-order subsequence of ours "
+               f"{[a.get('v') for a in mo]}"]
+    return [], why
 
 
 def _ret(outputs: Any, side: str) -> Any:
