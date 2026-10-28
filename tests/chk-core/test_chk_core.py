@@ -296,8 +296,8 @@ class ThetaSubstitution(unittest.TestCase):
                 env["CQE_THETA"] = str(th)
             subprocess.run([str(prog)], env=env, check=True, capture_output=True)
             # the runner's shot frames (core.c, cq-e2i9) are not events of the sample
-        return [e for e in (json.loads(l) for l in t.read_text().splitlines() if l.strip())
-                if e["ev"] not in ("shot", "shot_end")]
+            return [e for e in (json.loads(l) for l in t.read_text().splitlines() if l.strip())
+                    if e["ev"] not in ("shot", "shot_end")]
 
     @staticmethod
     def ry(ev):

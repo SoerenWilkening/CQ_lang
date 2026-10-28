@@ -71,6 +71,7 @@ RunResult fields (JSON-serializable):
 """
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import os
@@ -119,12 +120,14 @@ _INTS = {
 _FPS = {"float": 32, "double": 64, "long double": 80, "_Float16": 16}
 
 
+@functools.lru_cache(maxsize=None)
 def norm_ctype(ct: str) -> str:
     ct = re.sub(r"\b(const|volatile|static|restrict|register)\b", " ", ct)
     ct = re.sub(r"\s*\*\s*", "*", ct)
     return " ".join(ct.split())
 
 
+@functools.lru_cache(maxsize=None)
 def ctype_kind(ct: str) -> Tuple[str, int]:
     """('int'|'fp'|'ptr'|'other', bits) of a C type."""
     c = norm_ctype(ct)
@@ -582,14 +585,15 @@ def _build_failure(side: str, sample: dict, e: BaseException) -> RunResult:
 _BAD = "__bad_line"
 
 
-def _parse_lines(text: str) -> List[dict]:
-    """Every trace line of a runner as an event: one json.loads over the whole trace, line by line only
-    when that fails (a line torn by a killed process becomes {"ev": _BAD, "line"})."""
+def _parse_lines(text: str) -> Tuple[List[dict], bool]:
+    """(every trace line of a runner as an event, whether a line was torn): one json.loads over the
+    whole trace, line by line only when that fails (a line torn by a killed process becomes
+    {"ev": _BAD, "line"})."""
     lines = [l for l in text.split("\n") if l.strip()]
     if not lines:
-        return []
+        return [], False
     try:
-        return json.loads("[" + ",".join(lines) + "]")
+        return json.loads("[" + ",".join(lines) + "]"), False
     except json.JSONDecodeError:
         out = []
         for l in lines:
@@ -597,7 +601,7 @@ def _parse_lines(text: str) -> List[dict]:
                 out.append(json.loads(l))
             except json.JSONDecodeError:
                 out.append({"ev": _BAD, "line": l.strip()})
-        return out
+        return out, True
 
 
 def _split_shots(events: List[dict]) -> Tuple[List[dict], Dict[int, Tuple[List[dict], Optional[dict]]]]:
@@ -618,9 +622,10 @@ def _split_shots(events: List[dict]) -> Tuple[List[dict], Dict[int, Tuple[List[d
     return pre, shots
 
 
-def _with_bad(events: List[dict]) -> Tuple[List[dict], List[dict]]:
-    """(events, the 'trace' violations of torn lines), as _parse_trace gives them."""
-    if not any(e.get("ev") == _BAD for e in events):
+def _with_bad(events: List[dict], torn: bool = True) -> Tuple[List[dict], List[dict]]:
+    """(events, the 'trace' violations of torn lines), as _parse_trace gives them; torn False: the
+    trace had none."""
+    if not torn or not any(e.get("ev") == _BAD for e in events):
         return events, []
     good = [e for e in events if e.get("ev") != _BAD]
     bad = [{"what": "trace", "h": None, "msg": f"unparsable trace line: {e['line'][:200]}"}
@@ -637,9 +642,9 @@ def _bytes_text(s: str) -> str:
 
 
 def _shot_result(side: str, sample: dict, pre: List[dict], evs: List[dict], end: dict, setup_out: str,
-                 timeout: float) -> RunResult:
+                 timeout: float, torn: bool = True) -> RunResult:
     """The RunResult of one finished shot: what a process of its own gave."""
-    events, bad = _with_bad(pre + evs)
+    events, bad = _with_bad(pre + evs if pre else evs, torn)
     code = end.get("code")
     stdout = setup_out + _bytes_text(end.get("stdout", ""))
     err = _bytes_text(end.get("stderr", ""))
@@ -684,10 +689,11 @@ def _run_part(prog: Path, items: Sequence[Tuple[dict, str, Optional[str]]], side
             except subprocess.TimeoutExpired as e:
                 code, killed = None, True
                 setup_out, err = (e.stdout or b"").decode(errors="replace"), (e.stderr or b"").decode(errors="replace")
-            pre, shots = _split_shots(_parse_lines(trace.read_text(errors="replace") if trace.exists() else ""))
+            events, torn = _parse_lines(trace.read_text(errors="replace") if trace.exists() else "")
+            pre, shots = _split_shots(events)
             while pos < len(items) and pos in shots and shots[pos][1] is not None:
                 evs, end = shots[pos]
-                out.append(_shot_result(side, items[pos][0], pre, evs, end, setup_out, timeout))
+                out.append(_shot_result(side, items[pos][0], pre, evs, end, setup_out, timeout, torn))
                 pos += 1
             if pos == len(items):
                 break

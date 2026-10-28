@@ -130,7 +130,9 @@ ignored, so a pseudo-NaN is a NaN and a pseudo-infinity is not.
 from __future__ import annotations
 
 import dataclasses
+import functools
 import json
+import re
 import sys
 from collections import Counter
 from dataclasses import dataclass
@@ -157,6 +159,7 @@ def _int(x: Any) -> Optional[int]:
     raise CompareError(f"cq: unimplemented: chk-compare: value {x!r}")
 
 
+@functools.lru_cache(maxsize=None)
 def _bits(w: Optional[str]) -> Optional[int]:
     if not w:
         return None
@@ -226,7 +229,15 @@ def _angle_identity(bits: int, nonfinite_is_identity: bool) -> bool:
     return nonfinite_is_identity and ((bits >> 52) & 0x7FF) == 0x7FF
 
 
+_PLAIN = re.compile(r'[ !#-\[\]-~]*')   # printable ASCII but '"' and '\\': json.dumps quotes it unchanged
+
+
 def _skey(sample: Any) -> str:
+    # fast paths with json.dumps's exact output (performance, cq-e2i9)
+    if isinstance(sample, str) and _PLAIN.fullmatch(sample):
+        return '"' + sample + '"'
+    if type(sample) is int:
+        return str(sample)
     return json.dumps(sample, sort_keys=True, separators=(",", ":"))
 
 
@@ -257,7 +268,7 @@ def _ctl_on(rec: Dict[str, Any]) -> int:
     return int(all(_int(b) for b in rec.get("ctlv", []) or []))
 
 
-def _shape(rr: RunResult) -> Tuple:
+def _shape_of(rr: RunResult) -> Tuple:
     """The structure of one lowered run: everything but data values."""
     rots = []
     for rec in rr.rotations or []:
@@ -932,6 +943,14 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                                    f"not in a known basis state")
 
     # groups: classical arguments, then the structure of each side
+    shape_of: Dict[int, Tuple] = {}
+
+    def _shape(rr: RunResult) -> Tuple:          # each run's shape once (performance, cq-e2i9)
+        sh = shape_of.get(id(rr))
+        if sh is None:
+            sh = shape_of[id(rr)] = _shape_of(rr)
+        return sh
+
     by_class: Dict[Hashable, List[str]] = {}
     for k in keys:
         by_class.setdefault(classical_key(r_by[k].sample), []).append(k)

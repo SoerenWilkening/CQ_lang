@@ -1074,8 +1074,8 @@ static void shot_finish(int code, int run_fns) {
                              : xcalloc(1, 1);
   log_shot_end(R->base + R->cur, code, 0, out, err);
   fflush(trace_f);
+  R->next = R->cur + 1; /* before in_sample drops: the server never runs a finished sample again */
   R->in_sample = 0;
-  R->next = R->cur + 1;
   R->progress++;
   if (R->dirty) /* the sample left state the snapshot does not cover: a fresh worker goes on */
     real__exit(0);
