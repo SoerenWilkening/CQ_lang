@@ -146,7 +146,18 @@ _INT_TYPES = {
 _FP_TYPES = {"_Float16": 16, "float": 32, "double": 64, "long double": 80}
 
 
+_CTYPES: Dict[str, CType] = {}
+
+
 def parse_ctype(spelling: str) -> CType:
+    """The CType of a C type spelling; parsed once per spelling (cq-bhp2: callers ask per sample)."""
+    ct = _CTYPES.get(spelling)
+    if ct is None:
+        ct = _CTYPES[spelling] = _parse_ctype(spelling)
+    return ct
+
+
+def _parse_ctype(spelling: str) -> CType:
     s = " ".join(spelling.replace("*", " * ").split())
     if "*" in s:
         return CType(s.replace(" *", "*"), "p", 64)
@@ -1036,7 +1047,7 @@ def _call_ctypes(spec: DriverSpec, sample: dict) -> Tuple[int, List[CType]]:
     if not isinstance(ci, int) or isinstance(ci, bool) or not 0 <= ci < len(spec.calls):
         unimplemented(f"sample {sample!r}: call is not an index into the {len(spec.calls)} driver calls")
     cts = [parse_ctype(a["ctype"]) for a in spec.calls[ci]["args"]]
-    if len(sample.get("args", [])) != len(cts):
+    if len(sample.get("args", ())) != len(cts):
         unimplemented(f"sample {sample!r}: call {ci} takes {len(cts)} arguments")
     return ci, cts
 
@@ -1044,8 +1055,12 @@ def _call_ctypes(spec: DriverSpec, sample: dict) -> Tuple[int, List[CType]]:
 def sample_record(spec: DriverSpec, sample: dict) -> str:
     """The sample file line of one sample (without the newline)."""
     ci, cts = _call_ctypes(spec, sample)
+    return _record(ci, cts, sample["args"])
+
+
+def _record(ci: int, cts: Sequence[CType], args: Sequence) -> str:
     toks = [str(ci)]
-    for ct, v in zip(cts, sample["args"]):
+    for ct, v in zip(cts, args):
         if ct.kind == "p":
             if not isinstance(v, str) or not v.strip():
                 unimplemented(f"pointer sample value {v!r}: a C expression")
@@ -1059,8 +1074,21 @@ def sample_record(spec: DriverSpec, sample: dict) -> str:
 
 
 def sample_file(spec: DriverSpec, samples: Sequence[dict]) -> str:
-    """The run-time sample file of `samples`, in order: what the driver reads from $CQD_SAMPLES."""
-    return "".join(sample_record(spec, s) + "\n" for s in samples)
+    """The run-time sample file of `samples`, in order: what the driver reads from $CQD_SAMPLES.
+    The argument types of each call are looked up once per file, not per sample (cq-bhp2)."""
+    per_call: Dict[int, List[CType]] = {}
+    out = []
+    for s in samples:
+        ci = s.get("call")
+        cts = per_call.get(ci) if type(ci) is int else None
+        if cts is None:
+            ci, cts = _call_ctypes(spec, s)
+            per_call[ci] = cts
+        elif len(s.get("args", ())) != len(cts):
+            unimplemented(f"sample {s!r}: call {ci} takes {len(cts)} arguments")
+        out.append(_record(ci, cts, s["args"]))
+        out.append("\n")
+    return "".join(out)
 
 
 _DRIVERS_TXT: Dict[Tuple[str, int], Dict[str, DriverLine]] = {}
