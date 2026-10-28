@@ -641,6 +641,13 @@ def _unprep_partners(ours: List[_Ev]) -> List[Optional[Tuple[int, FrozenSet[int]
     return out
 
 
+MATCH_BUDGET = 20_000
+
+
+class _OutOfBudget(Exception):
+    pass
+
+
 def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
              capped: Sequence[bool] = ()) -> List[str]:
     """Match the C sites to our gates (module docstring). A site inside a loop is one gate per trip
@@ -761,12 +768,18 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
         return (tuple(sorted(any_.items())), tuple(sorted(nonph.items())))
 
     check_order = [True]
+    # A node budget (narrow review): with the order state in the memo key, interchangeable gates make a
+    # failing search factorial. Out of budget is a failure with that reason, never a pass.
+    budget = [MATCH_BUDGET]
 
     def dfs(i: int, used: Used, unp: FrozenSet[int], free: FrozenSet[int], ordst: Tuple = ((), ())) -> bool:
         if i == len(ours):
             return not leftover(used) and not any(partner[u][1] & (unp | free) for u in unp)
         if (i, used, unp, free, ordst) in failed:
             return False
+        budget[0] -= 1
+        if budget[0] < 0:
+            raise _OutOfBudget()
         for j in cands[i]:
             hl: List[List[Tuple[int, _Ev]]] = [[] for _ in range(nS)]
             nxt = take(i, j, used, hl)
@@ -789,12 +802,29 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
         return False
 
     unprep: set = set()
-    if not dfs(0, start, frozenset(), frozenset()):
-        # a matching that only the order rules out: name the reversal it contains
-        check_order[0] = False
+    # First without the order (the memo then needs no order state, so the search stays small): if no
+    # matching exists at all, the order cannot help. Then with the order, from scratch.
+    check_order[0] = False
+    budget[0] = float("inf")         # the order-free search keeps its old, unbudgeted memoized form
+    found_any = dfs(0, start, frozenset(), frozenset())
+    found = False
+    if found_any:
+        any_assign, any_unprep = list(assign), set(unprep)
+        check_order[0] = True
         failed.clear()
         unprep.clear()
-        if dfs(0, start, frozenset(), frozenset()):
+        budget[0] = MATCH_BUDGET
+        try:
+            found = dfs(0, start, frozenset(), frozenset())
+        except _OutOfBudget:
+            return [f"the matching of {len(ours)} lowered gates to the C sites exceeded {MATCH_BUDGET} search "
+                    f"nodes without an order-consistent matching"]
+        if not found:
+            assign[:] = any_assign
+            unprep.clear()
+            unprep.update(any_unprep)
+    if not found:
+        if found_any:
             hits0: List[List[Tuple[int, _Ev]]] = [[] for _ in range(nS)]
             used0 = start
             for i in range(len(ours)):

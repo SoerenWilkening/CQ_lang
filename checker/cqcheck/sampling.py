@@ -2328,14 +2328,18 @@ def drop_subst_out_of_domain(g: "Gen", pc: Dict[str, dict], spec: DriverSpec, ex
         fn = "@" + spec.calls[ci]["fn"]
         args = list(sm["args"])
         ok = True
+        set_args: Set[int] = set()
         for key, v in sm["subst"].items():
             st = next((t for t in (sites or {}).get(ci, []) if t.key() == key), None)
             js = [j for (f, j) in (st.params if st else ()) if f == fn]
             if isinstance(v, list) and v:
                 v = v[0]                 # reached once: reach 0 takes entry 0
-            if st is None or len(js) != 1 or not isinstance(v, str):
+            # one site per argument, or the plain input is not the substituted one (narrow review: a
+            # second rotation of the same register overwrote the first site's value)
+            if st is None or len(js) != 1 or not isinstance(v, str) or js[0] in set_args:
                 ok = False
                 break
+            set_args.add(js[0])
             args[js[0]] = hexw(g.cts[ci][js[0]], int(v, 16))
         if ok:
             plain[i] = (ci, args)
@@ -2345,8 +2349,10 @@ def drop_subst_out_of_domain(g: "Gen", pc: Dict[str, dict], spec: DriverSpec, ex
             rows = {st.id: rows_for(st) for st in pb.ins.sites}
             se = Searcher(g, pb, rows, random.Random(seed + 5))
             keys = list(plain)
+            # the domain test of the plain classes (drop_out_of_domain): past an object or an
+            # LLVM-undefined operation; an abort or other end is in the domain (45's abort arm)
             for i, o in zip(keys, se.observe([plain[i] for i in keys])):
-                if not se.valid(o):
+                if not _in_domain(o) or _ub(o, rows):
                     bad.add(i)
     if not bad:
         return
