@@ -77,7 +77,9 @@ def _run_examples(a, examples, ours_dir) -> List[Verdict]:
         futs = {pool.submit(_one, e, ours_dir, a.oracle): e for e in examples}
         for f in concurrent.futures.as_completed(futs):
             v = f.result()
-            if ours_dir is None and a.oracle == "both":
+            ours_pass = (ours_dir is None and a.oracle == "both" and "CQ_PLUGIN" not in os.environ
+                         and report.spec_dir() == (report.ROOT.parent / "CQ_spec").resolve())
+            if ours_pass:
                 report.save_verdict(v)        # only our pass, both oracles, feeds progress (cq-8dr6)
             by_name[v.example] = v
             ok = report.requested_green(v)

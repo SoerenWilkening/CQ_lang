@@ -2677,8 +2677,11 @@ def _cache_key(spec: DriverSpec, example_dir: Path) -> str:
     line = D.read_drivers_txt(Path(example_dir).resolve().parent.parent / "_tools" / "drivers.txt").get(spec.example)
     h.update(repr(line).encode())
     from cqcheck import oracle as _oracle
-    for f in (Path(__file__), Path(D.__file__), Path(_oracle.__file__)):
+    for f in (Path(__file__), Path(D.__file__)):
         h.update(f.read_bytes())
+    # the oracle's key covers oracle.py, its runtime and instrumentation and the pass sources it
+    # compiles in (taint, the loop classifier): all decide trips, caps and reached sites (narrow review)
+    h.update(_oracle.SRC_KEY.encode())
     return h.hexdigest()[:20]
 
 
