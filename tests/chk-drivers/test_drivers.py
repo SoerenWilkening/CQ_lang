@@ -423,6 +423,135 @@ class Sampling(unittest.TestCase):
             self.assertLess(top, nv, smp)
 
 
+_CALLEE_LL = """%struct.pair = type { i32, i32 }
+
+define i32 @entry(i32 %0, double %1, i32 %2) {
+  %4 = alloca [2 x %struct.pair], align 4
+  %5 = tail call i32 @cq_theta_ui32(i32 %0, double %1)
+  %6 = call i32 @leaf(ptr %4, i32 %2)
+  %7 = call i32 @leaf2(ptr %4, i32 %5)
+  %8 = call i32 @leaf2(ptr %4, i32 %2)
+  %9 = getelementptr inbounds [2 x %struct.pair], ptr %4, i64 0, i64 1, i32 1
+  %10 = load i32, ptr %9, align 4
+  ret i32 %10
+}
+
+define internal i32 @leaf(ptr %0, i32 %1) {
+  %3 = sext i32 %1 to i64
+  %4 = getelementptr inbounds i32, ptr %0, i64 %3
+  %5 = load i32, ptr %4, align 4
+  ret i32 %5
+}
+
+define internal i32 @leaf2(ptr %0, i32 %1) {
+  %3 = call i32 @leaf(ptr %0, i32 %1)
+  ret i32 %3
+}
+
+declare i32 @cq_theta_ui32(i32, double)
+"""
+
+
+class ClassicalAddresses(unittest.TestCase):
+    """cq-y10d: the out-of-object filter needs every classical address to be seen as classical."""
+
+    def module(self, text):
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        f = Path(d.name) / "m.ll"
+        f.write_text(text)
+        return D.read_module(f)
+
+    @staticmethod
+    def spec():
+        return DriverSpec("t", [], "", [{"fn": "entry", "args": [
+            {"ctype": "unsigned", "quantum": True}, {"ctype": "double", "quantum": False},
+            {"ctype": "int", "quantum": False}]}])
+
+    def test_type_names_are_not_operands(self):
+        """Cause 1: a GEP over %struct.pair read the type name as an SSA operand with no def, so
+        the address counted as quantum (129's guarded_field_store %28)."""
+        m = self.module(_CALLEE_LL)
+        self.assertEqual(m.types, {"%struct.pair"})
+        f = m.functions["@entry"]
+        self.assertEqual(f.defs["%9"].refs(), ["%4"])
+        self.assertTrue(S.ClassicalValues(m, self.spec()).classical(f, "%9"))
+        m129 = D.read_module(D.o1_path("129_quantum_ptr_select_store"))
+        g = m129.functions["@guarded_field_store"]
+        self.assertEqual(g.defs["%28"].refs(), ["%8", "%27"])
+
+    def test_callee_pointer_param_fed_classical_addresses(self):
+        """Cause 2: a parameter of a function the drivers do not call is classical when every call
+        site passes a classical value (a greatest fixpoint: @leaf2 forwards to @leaf). A quantum
+        value at one call site makes it quantum."""
+        m = self.module(_CALLEE_LL)
+        cv = S.ClassicalValues(m, self.spec())
+        self.assertIn(("@leaf", 0), cv.cparams)            # ptr %4 at every site, also via @leaf2
+        self.assertIn(("@leaf2", 0), cv.cparams)
+        self.assertNotIn(("@leaf2", 1), cv.cparams)        # %5 = cq_theta at one site
+        self.assertNotIn(("@leaf", 1), cv.cparams)         # through @leaf2's quantum %1
+        self.assertNotIn(("@entry", 0), cv.cparams)        # a quantum driver argument
+        self.assertTrue(cv.classical(m.functions["@leaf"], "%0"))
+        self.assertFalse(cv.classical(m.functions["@leaf"], "%4"))
+        # the pointee of such a parameter is not driver data: a load through it stays quantum
+        self.assertFalse(cv.classical(m.functions["@leaf"], "%5"))
+        # 52: @reduce(const double *in, ...) gets the caller's alloca; in[i] is a classical site
+        n = "52_array_out_param"
+        ins = S.Instrumenter(D.read_module(D.o1_path(n)), D.driver_spec(n, D.example_dir(n)))
+        ins.rewrite()
+        mem = {s.inst.split(" =")[0]: s for s in ins.sites if s.kind == "mem" and s.fn == "@reduce"}
+        self.assertTrue(mem["%18"].classical)
+
+    def test_address_through_integer_arithmetic(self):
+        """cq-nqna: 107 reads *(int *)((uintptr_t)p + 4) with p = select(a, b + 1): the access is
+        a mem site rooted at p, so b + 2 (one past b) is seen leaving b."""
+        n = "107_pointer_int_union"
+        ins = S.Instrumenter(D.read_module(D.o1_path(n)), D.driver_spec(n, D.example_dir(n)))
+        f = ins.mod.functions["@union_ptr_to_int"]
+        self.assertEqual(ins.addr_root(f, "%13"), ("%10", True))
+
+
+class OutOfObject(unittest.TestCase):
+    """cq-nqna (orchestrator decision): no sample of any class accesses outside an object."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        os.environ["CQ_SAMPLES_CACHE"] = self.tmp.name
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_quantum_index_past_object_dropped(self):
+        """76 param_unbounded reads t[x] for an 8-bit quantum x from icoef[4]: x >= 4 is past the
+        object. The exhaustive class keeps x in 0..3 and counts the other 252; the mem site's
+        index >= n rows carry the domain reason."""
+        n = "76_param_quantum_index"
+        spec = D.driver_spec(n, D.example_dir(n))
+        ss = S.sample_set(spec, D.example_dir(n))
+        self.assertEqual(S.check_sample_set(spec, ss), [])
+        ex = ss.classes["exhaustive"]["1"]
+        self.assertEqual(ex["bits"], 8)
+        self.assertEqual(ex["out_of_domain"], 252)
+        self.assertEqual(sorted(int(ss.samples[i]["args"][0], 16) for i in ex["samples"]), [0, 1, 2, 3])
+        for i, smp in enumerate(ss.samples):
+            if smp["call"] == 1 and i >= len(spec.calls):
+                self.assertLess(int(smp["args"][0], 16), 4, smp)
+        mem_rows = [r for r in ss.classes["totalization"]["rows"] if "index" in r["row"]]
+        self.assertTrue(mem_rows)
+        for r in mem_rows:
+            self.assertEqual(r["empty"], "cannot be hit: " + S.OUT_OF_OBJECT)
+        # classical sites keep the cq-q9hd check (cq-y10d): 52 reads in[i] for i < n from tx[3]
+        # (n <= 3, or n <= 0 and no read); 129 reads s[i].g from s[2] (0 <= i < 2)
+        for n2, call, j, top, neg in (("52_array_out_param", 0, 4, 4, True),
+                                      ("129_quantum_ptr_select_store", 1, 6, 2, False)):
+            spec2 = D.driver_spec(n2, D.example_dir(n2))
+            self.assertEqual(spec2.calls[call]["args"][j]["quantum"], False)
+            ss2 = S.sample_set(spec2, D.example_dir(n2))
+            for i, smp in enumerate(ss2.samples):
+                if smp["call"] == call and i >= len(spec2.calls):
+                    v = int(smp["args"][j], 16)
+                    self.assertTrue(v < top or (neg and v >= 1 << 31), (n2, smp))
+
 class ThetaSites(unittest.TestCase):
     """cq-6m2 (cq-arch Z4): the cq_theta site table that "subst" keys name."""
 

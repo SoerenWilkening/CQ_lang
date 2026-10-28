@@ -7,4 +7,4 @@ set_tests_properties(chk-drivers-unit PROPERTIES ENVIRONMENT "CQ_SPEC_DIR=${CQ_S
 add_test(NAME chk-drivers-corpus
   COMMAND ${Python3_EXECUTABLE} -m cqcheck.sampling
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/checker)
-set_tests_properties(chk-drivers-corpus PROPERTIES ENVIRONMENT "CQ_SPEC_DIR=${CQ_SPEC_DIR}" TIMEOUT 7200)
+set_tests_properties(chk-drivers-corpus PROPERTIES ENVIRONMENT "CQ_SPEC_DIR=${CQ_SPEC_DIR}" TIMEOUT 300)

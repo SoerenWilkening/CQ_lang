@@ -28,7 +28,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, NoReturn, Optional, Sequence, Set, Tuple
+from typing import Dict, FrozenSet, Iterable, List, NoReturn, Optional, Sequence, Set, Tuple
 
 from cqcheck.contracts import DriverSpec
 
@@ -248,10 +248,14 @@ class Inst:
     callee: Optional[str] = None      # "@name" for a direct call
     call_args: List[str] = field(default_factory=list)   # operand texts of a call
     operands: List[str] = field(default_factory=list)    # top-level operand texts (non-call)
+    # identified type names of the module ("%struct.pair") that are no local of this function: they
+    # look like locals in the text but are never SSA operands (cq-y10d)
+    types: FrozenSet[str] = frozenset()
 
     def refs(self) -> List[str]:
+        """The SSA locals the instruction reads (type names excluded)."""
         body = self.text.split("=", 1)[1] if self.dest else self.text
-        return locals_in(body)
+        return [r for r in locals_in(body) if r not in self.types]
 
     def successors(self) -> List[str]:
         if self.op in ("br", "switch", "indirectbr", "callbr", "invoke"):
@@ -298,6 +302,7 @@ class Module:
     functions: Dict[str, Function]
     globals: Dict[str, str]           # "@g" -> its definition line
     declares: Dict[str, str]          # "@f" -> its declare line
+    types: FrozenSet[str] = frozenset()   # identified type names ("%struct.pair")
 
 
 def _parse_params(s: str) -> List[Tuple[str, str]]:
@@ -351,8 +356,12 @@ def _balanced(s: str, open_at: int) -> str:
     unimplemented(f"unbalanced parentheses in {s!r}")
 
 
+_RE_TYPEDEF = re.compile(r"^(" + _LOCAL + r")\s*=\s*type\b")
+
+
 def read_module(path: Path) -> Module:
     lines = path.read_text().splitlines()
+    types = frozenset(m.group(1) for m in (_RE_TYPEDEF.match(ln) for ln in lines) if m)
     functions: Dict[str, Function] = {}
     gl: Dict[str, str] = {}
     decl: Dict[str, str] = {}
@@ -412,6 +421,9 @@ def read_module(path: Path) -> Module:
             for ins in f.insts():
                 if ins.dest:
                     f.defs[ins.dest] = ins
+            ftypes = types - set(f.defs) - {n for _, n in params}
+            for ins in f.insts():
+                ins.types = ftypes
             functions[name] = f
         elif line.startswith("declare "):
             m = re.search(r"(@(?:\"[^\"]*\"|[-A-Za-z$._0-9]+))\(", line)
@@ -422,7 +434,7 @@ def read_module(path: Path) -> Module:
             if m:
                 gl[m.group(0)] = line
         i += 1
-    return Module(path, lines, functions, gl, decl)
+    return Module(path, lines, functions, gl, decl, types)
 
 
 def example_dir(example: str) -> Path:

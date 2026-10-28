@@ -47,16 +47,21 @@ an address into (offset, object size), and a counter on every loop header. The p
 finds candidate inputs; it decides nothing about correctness. The trip samples are confirmed by
 the C oracle's trip counters (`confirm_trips`).
 
-Which candidates are kept: a quantum sample (edge, specials, exhaustive, random) is always kept.
-A classical-set or search candidate is kept only when its probe run returns, or traps right after
-a probe that hit a trapping §2 row (division by zero, INT_MIN / -1): a candidate on which the C
-program itself does not terminate or faults (a negative VLA size, a read past a driver object) is
-outside the program's input domain. So is one on which a memory access whose address depends on no
-quantum value (ClassicalValues) reaches outside its object, faulting or not (cq-q9hd): C leaves it
-undefined and CR §2's index >= n rows are the QROM/QRAM and fat-pointer rows only, so such a site
-has no §2 row either. Such a site is any classical access at a variable offset, and also one at
-a constant offset into an object whose size is fixed at run time (q[0] of a zero-length VLA,
-cq-faa5).
+Which candidates are kept: no sample of any class is one on which a memory access of the C program
+reaches outside its object, faulting or not, unless the C oracle (cut at K) stops before that
+access (cq-b19i): C leaves such an input undefined, so it is outside the program's domain
+(cq-q9hd for classical addresses; cq-nqna, orchestrator decision, for quantum ones: a QROM, QRAM
+or fat-pointer access past the C object). A memory site is any access at a variable offset, and
+also one at a constant offset into an object whose size is fixed at run time (q[0] of a
+zero-length VLA, cq-faa5; a[1] of a heap block of quantum size). The quantum classes (edge,
+specials, exhaustive, random) are generated whole and then lose exactly their out-of-object
+samples (`drop_out_of_domain`; the entry counts them in "out_of_domain"). A mem site's §2 rows
+(index = n, index > n) are listed with that reason and never searched: an offset at or past its
+object's end is such an access. A classical-set or search candidate is kept only when, beyond
+that, its probe run returns, or traps right after a probe that hit a trapping §2 row (division by
+zero, INT_MIN / -1): a candidate on which the C program itself does not terminate or faults (a
+negative VLA size) is outside the program's input domain too. Samples with cq_theta
+substitutions are not probed (the probe build has no substitution).
 """
 from __future__ import annotations
 
@@ -461,12 +466,15 @@ class ClassicalValues:
 
     A value is classical when its backward slice reaches no quantum source. Sources are judged
     conservatively (unknown counts as quantum): a constant, a global's address, an alloca and a
-    `cq_measure_*` result are classical; a parameter is classical only in a function the drivers
-    call directly, nothing in the module calls or takes the address of, and whose driver argument
-    is not quantum in any call; a load is classical when its address is and every root of that
-    address is a `constant` global or such a parameter marked `readonly`; `malloc` and its kin and
-    the value-only `llvm.*` intrinsics pass their operands through. Every other call result,
-    `cq_theta_*` included, is quantum."""
+    `cq_measure_*` result are classical; a parameter is classical when its function's address is
+    never taken, it has at least one caller (a drivers.txt call or a direct call in the module), no
+    drivers.txt call passes a quantum argument there, and every direct call in the module passes a
+    classical value there (the greatest fixpoint over the call graph, cq-y10d: a callee's pointer
+    parameter fed by the caller's alloca is a classical address); a load is classical when its
+    address is and every root of that address is a `constant` global or a `readonly` parameter of
+    a function the drivers call directly and nothing in the module references (its pointee is
+    driver data); `malloc` and its kin and the value-only `llvm.*` intrinsics pass their operands
+    through. Every other call result, `cq_theta_*` included, is quantum."""
 
     _THROUGH = {"add", "sub", "mul", "udiv", "sdiv", "urem", "srem", "shl", "lshr", "ashr", "and", "or",
                 "xor", "fadd", "fsub", "fmul", "fdiv", "frem", "fneg", "icmp", "fcmp", "trunc", "zext",
@@ -483,15 +491,58 @@ class ClassicalValues:
             flags = [a["quantum"] for a in call["args"]]
             prev = quantum.get(fn)
             quantum[fn] = flags if prev is None else [x or y for x, y in zip(prev, flags)]
-        referenced: Set[str] = set()
+        referenced: Set[str] = set()      # every global named anywhere, direct callees included
+        taken: Set[str] = set()           # named other than as the callee of a direct call
+        sites: Dict[str, List[Tuple[D.Function, D.Inst]]] = {}
         for f in mod.functions.values():
             for ins in f.insts():
-                referenced |= set(D._RE_GLOBAL.findall(ins.text))
+                named = D._RE_GLOBAL.findall(ins.text)
+                referenced |= set(named)
+                if ins.op == "call":
+                    if ins.callee in mod.functions:
+                        sites.setdefault(ins.callee, []).append((f, ins))
+                    for a in ins.call_args:
+                        taken |= set(D._RE_GLOBAL.findall(a))
+                    if ins.callee is None:
+                        taken |= set(named)
+                else:
+                    taken |= set(named)
         for line in mod.globals.values():
-            referenced |= set(D._RE_GLOBAL.findall(line.split("=", 1)[1] if "=" in line else ""))
+            named = set(D._RE_GLOBAL.findall(line.split("=", 1)[1] if "=" in line else ""))
+            referenced |= named
+            taken |= named
         self.entry = {fn: flags for fn, flags in quantum.items() if fn not in referenced}
+        # classical parameters: start from every candidate, drop those some call site feeds a
+        # non-classical value, until nothing changes
+        self.cparams: Set[Tuple[str, int]] = set()
+        for fn, f in mod.functions.items():
+            if fn in taken or (fn not in quantum and fn not in sites):
+                continue
+            flags = quantum.get(fn, [])
+            for i, (ty, _) in enumerate(f.params):
+                if ty != "..." and not (i < len(flags) and flags[i]):
+                    self.cparams.add((fn, i))
+        changed = True
+        while changed:
+            changed = False
+            for fn, i in sorted(self.cparams):
+                for g, ins in sites.get(fn, []):
+                    if i >= len(ins.call_args) or not all(
+                            self.classical(g, r) for r in self._locals(g, ins.call_args[i])):
+                        self.cparams.discard((fn, i))
+                        changed = True
+                        break
+
+    def _locals(self, f: D.Function, text: str) -> List[str]:
+        """The locals an operand text reads: a module type name that is no local of f is skipped."""
+        return [r for r in D.locals_in(text)
+                if r not in self.mod.types or r in f.defs or f.param_index(r) is not None]
 
     def _param_classical(self, f: D.Function, v: str) -> bool:
+        i = f.param_index(v)
+        return i is not None and (f.name, i) in self.cparams
+
+    def _entry_param_classical(self, f: D.Function, v: str) -> bool:
         i = f.param_index(v)
         flags = self.entry.get(f.name)
         return i is not None and flags is not None and i < len(flags) and not flags[i]
@@ -503,7 +554,7 @@ class ClassicalValues:
                 line = self.mod.globals.get(r, "")
                 if not re.search(r"=.*\bconstant\b", D.strip_comment(line)):
                     return False
-            elif not (self._param_classical(f, r) and "readonly" in f.params[f.param_index(r)][0]):
+            elif not (self._entry_param_classical(f, r) and "readonly" in f.params[f.param_index(r)][0]):
                 return False
         return bool(roots)
 
@@ -524,7 +575,7 @@ class ClassicalValues:
                 continue
             if d.op == "phi":
                 for val in re.findall(r"\[\s*([^,\]]+?)\s*,\s*%[^\]]*\]", d.text):
-                    work += D.locals_in(val)
+                    work += self._locals(f, val)
                 continue
             if d.op in self._THROUGH:
                 work += d.refs()
@@ -541,7 +592,7 @@ class ClassicalValues:
                     continue
                 if c in self._ALLOC or (c.startswith("@llvm.") and not re.search(r"load|gather|expand", c)):
                     for a in d.call_args:
-                        work += D.locals_in(a)
+                        work += self._locals(f, a)
                     continue
             return False
         return True
@@ -901,7 +952,7 @@ class Instrumenter:
                 return [], []
             root, variable = self.addr_root(f, pv)
             classical = self.taint.classical(f, pv)
-            if not variable and not (classical and self.sized_at_run_time(f, root)):
+            if not variable and not self.sized_at_run_time(f, root):
                 return [], []
             ty = split_type(ins.operands[0])[0]
             s = self.add_site(f, ins, "mem", op, [], classical=classical)
@@ -925,12 +976,42 @@ class Instrumenter:
         parts = D.split_operands(split_type(m.group(1))[1].lstrip(","))
         return bool(parts) and not parts[0].startswith(("align", "addrspace")) and "%" in parts[0]
 
+    @staticmethod
+    def _int_provenance(f: D.Function, x: str) -> Optional[str]:
+        """The pointer an address-sized integer derives from: through add/sub/or/and/xor with
+        constants or integers, to a ptrtoint's operand (None when there is none)."""
+        seen: Set[str] = set()
+        work = [x]
+        while work:
+            y = work.pop()
+            if y in seen or not y.startswith("%"):
+                continue
+            seen.add(y)
+            d = f.defs.get(y)
+            if d is None:
+                continue
+            if d.op == "ptrtoint":
+                src = d.refs()
+                return src[0] if src else None
+            if d.op in ("add", "sub", "or", "and", "xor"):
+                work += d.refs()[::-1]
+        return None
+
     def addr_root(self, f: D.Function, v: str) -> Tuple[str, bool]:
         """Walk GEPs back to the base value; variable = some GEP index is not a constant, or the
         base is a phi/select (pointer induction, a pointer chosen at run time)."""
         variable = False
         for _ in range(64):
             d = f.defs.get(v)
+            if d is not None and d.op == "inttoptr":
+                # integer arithmetic on an address (107's u.v += 4): the provenance is the pointer
+                # under the ptrtoint, the offset counts as variable (cq-nqna)
+                src = d.refs()
+                p = self._int_provenance(f, src[0]) if src else None
+                if p is None:
+                    return v, True
+                v, variable = p, True
+                continue
             if d is None or d.op != "getelementptr":
                 if d is not None and d.op in ("phi", "select"):
                     variable = True
@@ -1352,8 +1433,15 @@ def _records(o: Obs, site: Site) -> List[Tuple[int, int, int, int]]:
     return o.p.get(site.id, [])
 
 
+OUT_OF_OBJECT = ("an access at or past its object's end is outside the C program's domain "
+                 "(cq-nqna, orchestrator decision): no kept input hits it")
+
+
 def static_reason(row: Row) -> Optional[str]:
-    """The reason a row can never be hit when every operand it reads is a constant."""
+    """The reason a row can never be hit: a mem row (OUT_OF_OBJECT), or a row every operand of
+    which is a constant."""
+    if row.site.kind == "mem":
+        return OUT_OF_OBJECT
     if not row.rel:
         return None
     c = row.site.consts
@@ -1705,6 +1793,42 @@ def _merge_class(cls: Dict[str, dict], extra: Dict[str, dict]) -> None:
             cls[key] = merged
 
 
+def drop_out_of_domain(g: Gen, pc: Dict[str, dict], searcher: "Searcher") -> None:
+    """Remove from g and from the per-call classes pc every sample on which the C program accesses
+    outside an object (not `_in_domain`, cq-nqna); renumber the rest. An entry that lost samples
+    counts them in "out_of_domain"; one that lost all of them becomes empty with that reason."""
+    if getattr(g, "sindex", None):
+        D.unimplemented("drop_out_of_domain after cq_theta substitution samples were added")
+    obs = searcher.observe([(s["call"], s["args"]) for s in g.samples])
+    # the drivers.txt calls are spec input data and stay samples 0 .. ncalls-1 even when one of
+    # them leaves an object (91 stores a[0] into malloc(0), 107 reads one past b: cq-b4re)
+    bad = {i for i, o in enumerate(obs) if not _in_domain(o) and i >= len(g.spec.calls)}
+    if not bad:
+        return
+    remap: Dict[int, int] = {}
+    kept = []
+    for i, s in enumerate(g.samples):
+        if i not in bad:
+            remap[i] = len(kept)
+            kept.append(s)
+    g.samples = kept
+    g.index = {(s["call"], tuple(s["args"])): j for j, s in enumerate(kept)}
+    for cls in pc.values():
+        for key, e in list(cls.items()):
+            if "samples" not in e:
+                continue
+            new = [remap[i] for i in e["samples"] if i in remap]
+            n = len(e["samples"]) - len(new)
+            if not n:
+                e["samples"] = new
+            elif new:
+                e["samples"] = new
+                e["out_of_domain"] = n
+            else:
+                cls[key] = {"empty": f"every one of its {n} samples accesses outside an object in the C "
+                                     f"program: outside its domain (cq-nqna)", "out_of_domain": n}
+
+
 def classical_candidates(g: Gen, rng: random.Random) -> Dict[int, List[List[str]]]:
     out = {}
     for ci in range(len(g.spec.calls)):
@@ -1721,10 +1845,14 @@ def classical_candidates(g: Gen, rng: random.Random) -> Dict[int, List[List[str]
     return out
 
 
-def _valid(o: Obs, rows_by_site: Dict[int, List[Row]], classical_mem: Set[int] = frozenset()) -> bool:
-    if o.oob & classical_mem:
-        # a classical access past its object: undefined in C, no §2 row, unless the C program as the
-        # oracle runs it (cut at K) stops before it (cq-b19i)
+def _in_domain(o: Obs) -> bool:
+    """No access outside an object, or the C program as the oracle runs it (cut at K) stops before
+    it (cq-b19i): undefined in C otherwise (cq-q9hd, cq-nqna)."""
+    return not o.oob or o.cap_ok
+
+
+def _valid(o: Obs, rows_by_site: Dict[int, List[Row]]) -> bool:
+    if o.oob:
         return o.cap_ok
     if o.returned:
         return True
@@ -1756,13 +1884,12 @@ class Searcher:
 
     def __init__(self, g: Gen, pb: ProbeBuild, rows_by_site, rng: random.Random):
         self.g, self.pb, self.rows_by_site, self.rng = g, pb, rows_by_site, rng
-        self.classical_mem = {st.id for st in pb.ins.sites if st.kind == "mem" and st.classical}
         self.cache: Dict[Tuple[int, Tuple[str, ...]], Obs] = {}
         self.runs = 0
         self.oracle_runs = 0
 
     def valid(self, o: Obs) -> bool:
-        return _valid(o, self.rows_by_site, self.classical_mem)
+        return _valid(o, self.rows_by_site)
 
     def observe(self, cands: List[Tuple[int, List[str]]]) -> List[Obs]:
         todo = [(c, a) for c, a in cands if (c, tuple(a)) not in self.cache]
@@ -1772,7 +1899,7 @@ class Searcher:
             self.runs += len(uniq)
             for k, o in zip(uniq, obs):
                 self.cache[k] = o
-            flagged = [k for k, o in zip(uniq, obs) if o.oob & self.classical_mem]
+            flagged = [k for k, o in zip(uniq, obs) if o.oob]
             if flagged:
                 self.oracle_runs += len(flagged)
                 confirm_cap(self.pb, flagged, [self.cache[k] for k in flagged])
@@ -1932,6 +2059,7 @@ def build_sample_set(spec: DriverSpec, example_dir: Path) -> SampleSet:
         sites = pb.ins.sites
         rows_by_site: Dict[int, List[Row]] = {s.id: rows_for(s) for s in sites}
         searcher = Searcher(g, pb, rows_by_site, random.Random(seed + 1))
+        drop_out_of_domain(g, pc, searcher)
 
         # the classical seeded set: kept when the C program runs to completion on it
         cc = classical_candidates(g, rng)
@@ -2211,20 +2339,22 @@ def _summary(ss: SampleSet) -> str:
 
 
 def domain_problems(spec: DriverSpec, example_dir: Path, ss: SampleSet) -> List[str]:
-    """Every sample of the set, quantum ones included, inside the C program's domain as the oracle
-    runs it: a probe run that leaves an object at a classical site must be a run the oracle cuts at K
-    before any out-of-object access (Obs.cap_ok, cq-b19i). Returns the samples that are not."""
+    """Every sample of the set (the drivers.txt calls aside, which are spec input data, cq-b4re; and
+    those with cq_theta substitutions, which the probe cannot run) inside
+    the C program's domain as the oracle runs it: a probe run that leaves an object at a memory site
+    must be a run the oracle cuts at K before any out-of-object access (Obs.cap_ok, cq-b19i).
+    Returns the samples that are not."""
     example_dir = Path(example_dir)
     with tempfile.TemporaryDirectory(prefix=f"cqd-{spec.example}-") as tmp:
         pb = ProbeBuild(spec, example_dir, Path(tmp))
-        cm = {st.id for st in pb.ins.sites if st.kind == "mem" and st.classical}
         obs = pb.run(ss.samples)
-        flagged = [(i, o) for i, o in enumerate(obs) if o.oob & cm]
+        flagged = [(i, o) for i, o in enumerate(obs)
+                   if o.oob and "subst" not in ss.samples[i] and i >= len(spec.calls)]
         if flagged:
             confirm_cap(pb, [(ss.samples[i]["call"], tuple(ss.samples[i]["args"])) for i, _ in flagged],
                         [o for _, o in flagged])
     return [f"{spec.example}: sample {i} {ss.samples[i]} accesses outside its object at "
-            f"{sorted(o.oob & cm)} in the C program, also as the oracle runs it"
+            f"{sorted(o.oob)} in the C program, also as the oracle runs it"
             for i, o in flagged if not o.cap_ok]
 
 
@@ -2251,7 +2381,7 @@ def main(argv=None) -> int:
     import concurrent.futures as cf
     ap = argparse.ArgumentParser(prog="cqcheck.sampling")
     ap.add_argument("examples", nargs="*")
-    ap.add_argument("-j", type=int, default=os.cpu_count() or 4)
+    ap.add_argument("-j", type=int, default=int(os.environ.get("CQCHECK_JOBS", "2")))
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--confirm", action="store_true",
                     help="check every trip sample against the C oracle, and every sample against the "
