@@ -228,6 +228,55 @@ class Violations(unittest.TestCase):
         self.assertTrue(all(w.sample is s for w, s in zip(workers, samples)))
 
 
+class ShotReset(unittest.TestCase):
+    """cq-e2i9: a batch runs in one runner process that forks one child per sample (core.c, shots);
+    nothing of sample i (rails, handles, violations, a dirty free, a signal, _exit, fenv, program
+    globals) is visible in sample i+1. shot_reset.ll's mode 0 is clean; every other mode leaves state."""
+    ARGS = ("int sr(int,double)", "sr", ["int", "double"])
+
+    def test_no_state_crosses_samples(self):
+        spec = spec1(*self.ARGS)
+        modes = [0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 0]
+        samples = [{"call": 0, "args": [m, 0.5]} for m in modes]
+        alone = run.run_samples(HERE / "shot_reset.ll", spec, [samples[0]], "ours", 1, rt_sources=RT,
+                                extra_sources=FAM)[0]
+        self.assertEqual(alone.violations, [])
+        self.assertEqual(alone.outputs["ret"][0]["v"], {"w": "i32", "v": "0x1"})  # counter fresh, round-to-nearest
+        self.assertEqual(alone.outputs["exit"], 0)
+        batch = run.run_samples(HERE / "shot_reset.ll", spec, samples, "ours", 1, rt_sources=RT,
+                                extra_sources=FAM)
+        for m, r in zip(modes, batch):
+            if m == 0:
+                self.assertEqual(to_json(r), to_json(alone), f"a clean sample saw earlier state: {r}")
+        whats = {m: [v["what"] for v in r.violations] for m, r in zip(modes, batch)}
+        self.assertIn("dirty_free", whats[1])
+        self.assertEqual(whats[2], ["signal", "no_exit"])
+        self.assertEqual(batch[3].outputs["exit"], -8)
+        self.assertIn("bad_handle", whats[3])
+        self.assertEqual(whats[4], ["no_exit"])
+        self.assertEqual(batch[7].outputs["exit"], 7)
+        self.assertEqual(whats[5], [])
+        self.assertEqual(batch[9].outputs["ret"][0]["v"], {"w": "i32", "v": "0x0"})
+        # several runners, each over a strided part: the same results
+        saved = run.MIN_PART
+        run.MIN_PART = 1
+        try:
+            par = run.run_samples(HERE / "shot_reset.ll", spec, samples, "ours", 3, rt_sources=RT,
+                                  extra_sources=FAM)
+        finally:
+            run.MIN_PART = saved
+        self.assertEqual([to_json(r) for r in par], [to_json(r) for r in batch])
+
+    def test_timeout_ends_one_sample_only(self):
+        spec = spec1(*self.ARGS)
+        samples = [{"call": 0, "args": [0, 0.5]}, {"call": 0, "args": [0, 0.5]}]
+        prog = run.build(HERE / "shot_reset.ll", spec, (), RT, FAM)
+        items = [(s, drivers.sample_file(spec, [run.canonical_sample(spec, s)]), None) for s in samples]
+        res = run._run_part(prog, items, "ours", 1e-6)   # a timer that fires at once
+        for r in res:
+            self.assertEqual([v["what"] for v in r.violations if v["what"] == "timeout"], ["timeout"])
+
+
 class ThetaSubstitution(unittest.TestCase):
     """cq-6m2 (cq-arch Z4): with $CQE_THETA, a firing Ry takes the earliest schedule reach of its width
     and angle, and its ry event logs the chosen value; a control reading 0 takes nothing."""
