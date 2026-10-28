@@ -86,6 +86,18 @@ int64_t __cqe_fpto80(long double x, int32_t w, int32_t sgn) {
   return (int64_t)((uint64_t)tot_fist(x - 9223372036854775808.0L, 64) ^ 0x8000000000000000ULL);
 }
 
+/* ---- the default environment for a plain fp operation (cq-6ady) -----------------------------
+ * run.py (default_env_module) brackets each non-constrained fp operation of a lowered module that
+ * touches the fp environment by these two (owner ruling on cq-0r1i: round-to-nearest, no flags):
+ * the live environment is saved, FE_DFL_ENV installed, and the saved one put back after the
+ * operation, so its flags vanish. Never nested. */
+static fenv_t fpdfl_saved;
+void __cqe_fpdfl_enter(void) {
+  fegetenv(&fpdfl_saved);
+  fesetenv(FE_DFL_ENV);
+}
+void __cqe_fpdfl_leave(void) { fesetenv(&fpdfl_saved); }
+
 /* ---- values ------------------------------------------------------------------------------ */
 
 uint32_t cqe__nwords(uint32_t bits) { return bits ? (bits + 63) / 64 : 1; }

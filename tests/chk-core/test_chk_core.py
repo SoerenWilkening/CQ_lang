@@ -828,5 +828,33 @@ class Totalize(unittest.TestCase):
             run.totalize_module(text)
 
 
+class DefaultEnv(unittest.TestCase):
+    """cq-6ady (owner ruling on cq-0r1i): in a lowered module that touches the fp environment, a plain
+    fp operation rounds to nearest and raises no flag; a constrained one sees the live mode."""
+
+    def test_plain_and_constrained(self):
+        protos = ["double d_up(double,double)", "int d_flags(double,double)", "double d_constrained(double,double)"]
+        calls = [{"fn": f, "args": [{"ctype": "double", "quantum": False}] * 2}
+                 for f in ("d_up", "d_flags", "d_constrained")]
+        spec = DriverSpec(example="chk-core", protos=protos, setup="", calls=calls)
+        tiny = "0x3c30000000000000"  # 2^-60: 1 + tiny is inexact
+        samples = [{"call": 0, "args": [1.0, tiny]}, {"call": 1, "args": [1.0, 3.0]},
+                   {"call": 2, "args": [1.0, tiny]}]
+        rs = run.run_samples(HERE / "default_env.ll", spec, samples, "ours", rt_sources=RT, extra_sources=FAM)
+        for r in rs:
+            self.assertEqual(r.violations, [])
+        ret = [int(r.outputs["ret"][0]["v"]["v"], 16) for r in rs]
+        self.assertEqual(ret[0], 0x3ff0000000000000)   # nearest, not upward
+        self.assertEqual(ret[1], 0)                    # no INEXACT from the plain fdiv
+        self.assertEqual(ret[2], 0x3ff0000000000001)   # the constrained fadd rounds upward
+
+    def test_untouched_module_is_left_alone(self):
+        text = "define double @f(double %a) {\n  %r = fadd double %a, 1.0\n  ret double %r\n}\n"
+        self.assertFalse(run.touches_fenv(text))
+        out = run.default_env_module(run.totalize_module(text + "declare i32 @fesetround(i32)\n"))
+        self.assertIn("call void @__cqe_fpdfl_enter()\n  %r = fadd double %a, 1.0\n  call void @__cqe_fpdfl_leave()",
+                      out)
+
+
 if __name__ == "__main__":
     unittest.main()

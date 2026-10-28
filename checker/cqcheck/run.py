@@ -5,7 +5,8 @@ driver, run one sample, return a RunResult.
 
 Build. driver.c (drivers.driver_source, the one renderer of samples, cq-arch Z1/Z2) is compiled to IR with clang-19 for the lowered
 module's triple, the lowered module's classical CR §2 rows are rewritten to the table (totalize_module,
-cq-ltoq), llvm-link joins it to the lowered module, checker/rt/stubgen.py defines every
+cq-ltoq) and, in a module that touches the fp environment, its plain fp operations run in the default
+one (default_env_module, cq-6ady), llvm-link joins it to the lowered module, checker/rt/stubgen.py defines every
 cqrt_*/cq_template_* the linked module declares and every rule 27 declared clone nothing links (the
 checker's stand-in, typed by the example's .O1.ll: c_module_of, cq-rft), and clang links that with every checker/rt/*.c
 compiled as objects (never an archive, so each family's registering constructor is linked, cf.
@@ -93,7 +94,7 @@ LLVM_BIN = Path(os.environ.get("CQ_LLVM_BIN", "/usr/local/opt/llvm@19/bin"))
 CLANG = str(LLVM_BIN / "clang")
 LLVM_LINK = str(LLVM_BIN / "llvm-link")
 DEFAULT_TIMEOUT = 30.0
-_VERSION = "chk-core-3"
+_VERSION = "chk-core-4"
 
 
 class BuildError(Exception):
@@ -410,7 +411,11 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
     # the lowered module in canonical text, then its classical CR §2 rows rewritten (cq-ltoq)
     _sh([LLVM_LINK, "-S", "lowered.ll", "-o", "lowered.canon.ll"], cwd=tmp)
     try:
-        (tmp / "lowered.tot.ll").write_text(totalize_module((tmp / "lowered.canon.ll").read_text()))
+        canon = (tmp / "lowered.canon.ll").read_text()
+        tot = totalize_module(canon)
+        if touches_fenv(canon):  # cq-6ady
+            tot = default_env_module(tot)
+        (tmp / "lowered.tot.ll").write_text(tot)
     except _Unimpl as e:
         raise BuildError(f"cq: unimplemented: {e}")
     _sh([LLVM_LINK, "-S", "lowered.tot.ll", "driver.ll", "-o", "linked.ll"], cwd=tmp)
@@ -614,6 +619,86 @@ def totalize_module(text: str) -> str:
         if any(k.startswith("fpto") and ".f80." not in k for k in helpers):
             out.append("declare i64 @__cqe_fpto64(double, i32, i32)")
     return "\n".join(out) + "\n"
+
+
+# ---- the default environment for non-constrained fp operations (cq-6ady) ----------------------
+#
+# Owner ruling on cq-0r1i: a non-constrained fp operation (plain fadd, fmul, fcmp, the fp casts, the
+# non-constrained fp intrinsics) means round-to-nearest with no flags raised, whatever mode the program
+# set with fesetround; only constrained intrinsics and the fenv/library calls see the live environment.
+# The C oracle brackets each such operation of a program that touches the environment
+# (OracleInstr.cpp defaultEnv); default_env_module does the same to the lowered module's classical
+# operations, after totalize_module: each runs between core.c's __cqe_fpdfl_enter (save the
+# environment, install FE_DFL_ENV) and __cqe_fpdfl_leave (restore it, so the operation's flags
+# vanish). The same set as the oracle's: fadd/fsub/fmul/fdiv/frem, fcmp, fp-typed casts but bitcast,
+# fp-typed non-constrained intrinsic calls, and the CR §2 fp helpers totalize_module made of
+# fptosi/fptoui, maxnum/minnum and fmuladd (bracketed as one call; nothing inside them is bracketed
+# again). fneg is left alone (a sign flip). The program is compiled at -O0, so nothing moves an
+# operation out of its bracket. A module that does not touch the environment runs in the default one
+# throughout (core.c puts fenv back after every sample) and is left alone, as the oracle leaves it.
+
+_FP_TOK = re.compile(r"\b(half|bfloat|float|double|x86_fp80|fp128|ppc_fp128)\b")
+_FP_INST = re.compile(r"^\s+%\S+ = (fadd|fsub|fmul|fdiv|frem|fcmp|fptrunc|fpext|sitofp|uitofp|fptosi|fptoui)\b")
+_CALLEE = re.compile(r"\bcall\b[^@]*@(\"?)([-\w.$]+)\1\(")
+_FENV_DECL = re.compile(r"^declare\b[^@]*@\"?(fe[\w.$]*)\"?\(")
+
+
+def touches_fenv(text: str) -> bool:
+    """The oracle's touchesFenv on a module's text: a strictfp function, a constrained intrinsic, or a
+    declared fe* function about exceptions, rounding or the environment."""
+    for line in text.splitlines():
+        if line.startswith(("define", "declare", "attributes")) and re.search(r"\bstrictfp\b", line):
+            return True
+        if line.startswith("declare") and "@llvm.experimental.constrained." in line:
+            return True
+        m = _FENV_DECL.match(line)
+        if m and any(k in m.group(1) for k in ("except", "round", "env")):
+            return True
+    return False
+
+
+def _needs_default_env(line: str) -> bool:
+    if _FP_INST.match(line):
+        return bool(_FP_TOK.search(line))
+    m = _CALLEE.search(line)
+    if not m or not re.match(r"^\s+(%\S+ = )?(tail |musttail |notail )?call\b", line):
+        return False
+    callee = m.group(2)
+    if callee.startswith("__cqe_tot."):
+        return callee.split(".")[1] in ("fptosi", "fptoui", "maxnum", "minnum", "fmuladd")
+    if callee.startswith("llvm.") and not callee.startswith("llvm.experimental.constrained."):
+        return bool(_FP_TOK.search(line))
+    return False
+
+
+def default_env_module(text: str) -> str:
+    """text with its non-constrained fp operations bracketed by the default environment; see above."""
+    out: List[str] = []
+    fn: Optional[str] = None
+    used = False
+    for line in text.splitlines():
+        if fn is None:
+            m = DEFINE_NAME.match(line) if line.startswith("define") else None
+            if m and line.rstrip().endswith("{"):
+                fn = m.group(2)
+            out.append(line)
+            continue
+        if line.startswith("}"):
+            fn = None
+            out.append(line)
+            continue
+        if not fn.startswith("__cqe_tot.") and _needs_default_env(line):
+            ind = re.match(r"^\s*", line).group(0)
+            out += [f"{ind}call void @__cqe_fpdfl_enter()", line, f"{ind}call void @__cqe_fpdfl_leave()"]
+            used = True
+            continue
+        out.append(line)
+    if used:
+        out += ["", "declare void @__cqe_fpdfl_enter()", "declare void @__cqe_fpdfl_leave()"]
+    return "\n".join(out) + "\n"
+
+
+DEFINE_NAME = re.compile(r"^define\b[^@]*@(\"?)([-\w.$]+)\1\(")
 
 
 # ---- run -------------------------------------------------------------------------------------
