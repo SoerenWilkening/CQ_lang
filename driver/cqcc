@@ -1,6 +1,287 @@
 #!/usr/bin/env python3
-"""Stub (cq-w0-scaffold): the cqcc driver. Ownership passes to cq-w1-driver."""
-import sys
+"""cqcc: the CQ compiler driver (cq-w1-driver).
 
-print("cq: unimplemented: driver: cqcc", file=sys.stderr)
-sys.exit(1)
+    clang -O1 -include CQ.h, per C translation unit
+      -> llvm-link of the user units, then the injection bundle (bundle/manifest.json) --only-needed
+      -> opt -load-pass-plugin=libCQLower.so -passes=cq-lower [-cq-k=...] [-cq-k-default=...]
+      -> the lowered module (-S), an object (-c) or an executable linked with the --backend libraries
+    --cq-check additionally runs `python3 -m cqcheck user` on the linked module and the lowered one.
+
+Usage: cqcc [options] inputs...
+
+Inputs, by suffix:
+  .c .i              compiled with clang -O1 -include CQ.h (one translation unit each)
+  .ll .bc            an -O1 IR unit, linked as given (e.g. a corpus name.O1.ll)
+  .o .a .dylib .so   handed to the final link only (executable output)
+
+Output (one of; default: an executable):
+  -S                 the lowered module as textual IR (default name a.lowered.ll)
+  -c                 an object file (default a.o); with -emit-llvm, the lowered module as bitcode (a.bc)
+  -o FILE            output path
+The whole program is one module (NORTHSTAR principle 3): -c makes one object from every input.
+
+Options:
+  -cq-k=<fn>=<k>,...   per-function loop cutoff, passed through to cq-lower (repeatable)
+  -cq-k-default=<k>    global loop cutoff, passed through to cq-lower
+  --backend LIB        a backend library for the final link: a path, -lname or -Ldir (repeatable)
+  --cq-check           run `cqcheck user` (the C-oracle check) on the result; its exit status is cqcc's
+  --cq-entry FN        the entry function for --cq-check (default main)
+  --cq-samples N       passed to cqcheck user as --samples
+  --save-temps DIR     keep the units, linked.ll (the pass input) and lowered.ll in DIR
+  -v                   print every command before running it
+  -I.. -D.. -U.. -include FILE -isystem DIR -std=.. -W.. -w -f..   passed to the C compile
+  -Xclang-cc ARG       one more argument for the C compile
+
+Environment: CQ_SPEC_DIR (default ../CQ_spec; CQ.h is read from it), CQ_BUILD_DIR (default build/),
+CQ_PLUGIN (default $CQ_BUILD_DIR/pass/libCQLower.so), CQ_LLVM_BIN (default /usr/local/opt/llvm@19/bin).
+
+A failing step exits with that step's status and writes no output. A failing --cq-check still writes
+the output and exits with cqcheck user's status.
+"""
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+LLVM_BIN = Path(os.environ.get("CQ_LLVM_BIN", "/usr/local/opt/llvm@19/bin"))
+SPEC_DIR = Path(os.environ.get("CQ_SPEC_DIR", str(ROOT.parent / "CQ_spec")))
+BUILD_DIR = Path(os.environ.get("CQ_BUILD_DIR", str(ROOT / "build")))
+PLUGIN = Path(os.environ.get("CQ_PLUGIN", str(BUILD_DIR / "pass" / "libCQLower.so")))
+MANIFEST = ROOT / "bundle" / "manifest.json"
+
+C_SUFFIXES = {".c", ".i"}
+IR_SUFFIXES = {".ll", ".bc"}
+LINK_SUFFIXES = {".o", ".a", ".dylib", ".so", ".tbd"}
+
+VERBOSE = False
+
+
+class DriverError(Exception):
+    def __init__(self, msg: str, status: int = 1):
+        super().__init__(msg)
+        self.status = status
+
+
+def usage(msg: str) -> "DriverError":
+    return DriverError(f"cqcc: {msg} (cqcc --help for usage)", 2)
+
+
+def tool(name: str) -> str:
+    p = LLVM_BIN / name
+    if not p.exists():
+        raise DriverError(f"cqcc: {p} not found (brew llvm@19; CQ_LLVM_BIN overrides)")
+    return str(p)
+
+
+def run(cmd, what: str, **kw) -> subprocess.CompletedProcess:
+    if VERBOSE:
+        print(" ".join(str(c) for c in cmd), file=sys.stderr, flush=True)
+    r = subprocess.run([str(c) for c in cmd], **kw)
+    if r.returncode != 0:
+        raise DriverError(f"cqcc: {what} failed (exit {r.returncode})", r.returncode)
+    return r
+
+
+def parse_args(argv):
+    o = {
+        "inputs": [], "out": None, "mode": "exe", "emit_llvm": False, "kflags": [], "backend": [],
+        "check": False, "entry": "main", "samples": None, "save_temps": None, "cflags": [],
+    }
+    it = iter(argv)
+
+    def value(flag):
+        try:
+            return next(it)
+        except StopIteration:
+            raise usage(f"{flag} needs a value")
+
+    for a in it:
+        if a in ("-h", "--help"):
+            print(__doc__)
+            sys.exit(0)
+        elif a == "-o":
+            o["out"] = value(a)
+        elif a == "-S":
+            o["mode"] = "S"
+        elif a == "-c":
+            o["mode"] = "c"
+        elif a == "-emit-llvm":
+            o["emit_llvm"] = True
+        elif a == "-v":
+            global VERBOSE
+            VERBOSE = True
+        elif a.startswith(("-cq-k=", "--cq-k=")):
+            o["kflags"].append("-cq-k=" + a.split("=", 1)[1])
+        elif a.startswith(("-cq-k-default=", "--cq-k-default=")):
+            o["kflags"].append("-cq-k-default=" + a.split("=", 1)[1])
+        elif a in ("-cq-k", "--cq-k", "-cq-k-default", "--cq-k-default"):
+            o["kflags"].append(f"-{a.lstrip('-')}={value(a)}")
+        elif a == "--backend":
+            o["backend"].append(value(a))
+        elif a.startswith("--backend="):
+            o["backend"].append(a.split("=", 1)[1])
+        elif a == "--cq-check":
+            o["check"] = True
+        elif a == "--cq-entry":
+            o["entry"] = value(a)
+        elif a.startswith("--cq-entry="):
+            o["entry"] = a.split("=", 1)[1]
+        elif a == "--cq-samples":
+            o["samples"] = value(a)
+        elif a.startswith("--cq-samples="):
+            o["samples"] = a.split("=", 1)[1]
+        elif a == "--save-temps":
+            o["save_temps"] = value(a)
+        elif a.startswith("--save-temps="):
+            o["save_temps"] = a.split("=", 1)[1]
+        elif a == "-Xclang-cc":
+            o["cflags"].append(value(a))
+        elif a in ("-I", "-D", "-U", "-include", "-isystem", "-iquote"):
+            o["cflags"] += [a, value(a)]
+        elif a.startswith(("-I", "-D", "-U", "-std=", "-W", "-f", "-isystem", "-iquote")) or a == "-w":
+            o["cflags"].append(a)
+        elif a.startswith("-l") or a.startswith("-L"):
+            o["backend"].append(a)
+        elif a.startswith("-") and a != "-":
+            raise usage(f"unknown option {a}")
+        else:
+            o["inputs"].append(Path(a))
+    if not o["inputs"]:
+        raise usage("no input files")
+    if o["samples"] is not None and not str(o["samples"]).isdigit():
+        raise usage("--cq-samples expects a count")
+    for p in o["inputs"]:
+        suf = p.suffix
+        if suf not in C_SUFFIXES | IR_SUFFIXES | LINK_SUFFIXES:
+            raise usage(f"{p}: unknown input kind (expected .c .i .ll .bc .o .a .dylib .so .tbd)")
+        if not p.exists():
+            raise usage(f"{p}: no such file")
+    if o["mode"] != "exe" and any(p.suffix in LINK_SUFFIXES for p in o["inputs"]):
+        raise usage("object and library inputs only go to the executable link (drop -S/-c)")
+    if o["mode"] != "exe" and o["backend"]:
+        raise usage("--backend only applies to the executable link (drop -S/-c)")
+    if o["emit_llvm"] and o["mode"] != "c":
+        raise usage("-emit-llvm goes with -c (bitcode); -S already emits textual IR")
+    if o["out"] is None:
+        o["out"] = {"S": "a.lowered.ll", "c": "a.bc" if o["emit_llvm"] else "a.o", "exe": "a.out"}[o["mode"]]
+    return o
+
+
+def target_flags():
+    """x86-64 only (NORTHSTAR principle 3). On an x86-64 Mac clang's default triple is what the corpus
+    used (x86_64-apple-macosx<version>); anywhere else the triple is forced."""
+    r = run([tool("clang"), "-print-target-triple"], "clang -print-target-triple", capture_output=True, text=True)
+    return [] if r.stdout.strip().startswith("x86_64-apple-") else ["--target=x86_64-apple-macosx"]
+
+
+def bundle_files():
+    """bundle/manifest.json (cq-w1-bundle's contract, read as checker/cqcheck/oracle.py reads it): a JSON
+    list of bitcode paths relative to bundle/. An empty list is the stub: nothing is linked."""
+    if not MANIFEST.exists():
+        raise DriverError(f"cqcc: {MANIFEST} missing")
+    try:
+        entries = json.loads(MANIFEST.read_text())
+    except ValueError as e:
+        raise DriverError(f"cqcc: {MANIFEST}: {e}")
+    if not isinstance(entries, list) or not all(isinstance(e, str) for e in entries):
+        raise DriverError(f"cqcc: {MANIFEST}: expected a JSON list of paths relative to bundle/")
+    files = [(MANIFEST.parent / e).resolve() for e in entries]
+    for f in files:
+        if not f.exists():
+            raise DriverError(f"cqcc: injection bundle file {f} (bundle/manifest.json) missing")
+    return files
+
+
+def main(argv) -> int:
+    o = parse_args(argv)
+    header = SPEC_DIR / "CQ.h"
+    if not header.exists():
+        raise DriverError(f"cqcc: {header} not found (CQ_SPEC_DIR overrides)")
+    if not PLUGIN.exists():
+        raise DriverError(f"cqcc: {PLUGIN} not found; build the pass (CQ_PLUGIN overrides)")
+
+    with tempfile.TemporaryDirectory(prefix="cqcc.") as tmpname:
+        tmp = Path(tmpname)
+        work = Path(o["save_temps"]) if o["save_temps"] else tmp
+        work.mkdir(parents=True, exist_ok=True)
+
+        # 1. clang -O1 per translation unit.
+        tflags = target_flags()
+        units = []
+        for i, src in enumerate(o["inputs"]):
+            if src.suffix in C_SUFFIXES:
+                ll = work / f"unit{i}.{src.stem}.ll"
+                run([tool("clang"), "-O1", *tflags, "-include", header, *o["cflags"], "-S", "-emit-llvm",
+                     src, "-o", ll], f"clang -O1 {src}")
+                units.append(ll)
+            elif src.suffix in IR_SUFFIXES:
+                units.append(src)
+        if not units:
+            raise usage("no C or IR input to lower")
+
+        # 2. llvm-link: the user units in full, then the bundle --only-needed (first file links in full).
+        # Everything stays textual IR, as the corpus's name.O1.ll is: bitcode does not keep use-list
+        # order, which the pass may observe. A single unit is not relinked: llvm-link would rename its
+        # source_filename and reorder its named metadata; the pass then reads exactly what clang wrote.
+        linked = work / "linked.ll"
+        if len(units) == 1 and units[0].suffix == ".ll":
+            shutil.copyfile(units[0], linked)
+        else:
+            run([tool("llvm-link"), "-S", *units, "-o", linked], "llvm-link of the user units")
+        bundle = bundle_files()
+        if bundle:
+            run([tool("llvm-link"), "-S", linked, "--only-needed", *bundle, "-o", linked],
+                "llvm-link with the injection bundle")
+
+        # 3. The pass, reading the module from stdin so the output does not name a temporary path.
+        lowered = work / ("lowered.bc" if o["mode"] == "c" and o["emit_llvm"] else "lowered.ll")
+        opt_cmd = [tool("opt"), f"-load-pass-plugin={PLUGIN}", "-passes=cq-lower", *o["kflags"],
+                   *([] if lowered.suffix == ".bc" else ["-S"]), "-o", lowered]
+        with open(linked, "rb") as fin:
+            run(opt_cmd, "opt -passes=cq-lower", stdin=fin)
+
+        # 4. Output.
+        out = Path(o["out"])
+        staged = tmp / ("staged" + out.suffix)
+        if o["mode"] == "S" or (o["mode"] == "c" and o["emit_llvm"]):
+            shutil.copyfile(lowered, staged)
+        elif o["mode"] == "c":
+            run([tool("clang"), "-O1", "-Xclang", "-disable-llvm-passes", "-c", "-x", "ir", lowered,
+                 "-o", staged], "clang -c of the lowered module")
+        else:
+            objs = [p for p in o["inputs"] if p.suffix in LINK_SUFFIXES]
+            run([tool("clang"), "-O1", "-Xclang", "-disable-llvm-passes", "-x", "ir", lowered, "-x", "none",
+                 *objs, *o["backend"], "-o", staged], "link of the lowered program")
+
+        # 5. --cq-check: the C-oracle check of cq-w1-usercheck on this program.
+        status = 0
+        if o["check"]:
+            o1 = linked
+            low_ll = lowered
+            if lowered.suffix == ".bc":
+                low_ll = work / "lowered.ll"
+                run([tool("llvm-dis"), lowered, "-o", low_ll], "llvm-dis of the lowered module")
+            cmd = [sys.executable, "-m", "cqcheck", "user", "--o1", o1.resolve(), "--lowered", low_ll.resolve(),
+                   "--entry", o["entry"]]
+            if o["samples"] is not None:
+                cmd += ["--samples", o["samples"]]
+            if VERBOSE:
+                print(" ".join(map(str, cmd)), file=sys.stderr, flush=True)
+            status = subprocess.run([str(c) for c in cmd], cwd=ROOT / "checker").returncode
+            if status != 0:
+                print(f"cqcc: --cq-check: cqcheck user exited {status}", file=sys.stderr)
+
+        shutil.move(str(staged), str(out))
+        return status
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except DriverError as e:
+        print(e, file=sys.stderr)
+        sys.exit(e.status)
