@@ -583,6 +583,7 @@ void __cqo_rec_up(int32_t on) {
     if (on && nrecs) recs[nrecs - 1].depth--;
 }
 
+/* the step budget: loop-header executions of one sample (the setup's do not count; cq-u9al) */
 static uint64_t ticks, tripcap = 10000000;
 void __cqo_tick(void) {
     if (++ticks > tripcap) { note("tripcap"); _exit(98); }
@@ -998,6 +999,7 @@ int __cqo_sample_begin(int idx) {
     cur_sample = idx;
     R->cur = idx;
     load_subst(idx);
+    ticks = 0;
     __cqo_spec_next = -1; /* the driver's call enters its callee's entry specialization */
     stack_save((char *)__builtin_frame_address(0) + 16);
     R->progress++;

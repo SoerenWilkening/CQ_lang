@@ -2148,7 +2148,11 @@ def confirm_cap(pb: "ProbeBuild", keys: Sequence[Tuple[int, Tuple[str, ...]]], o
     """Set Obs.cap_ok from the C oracle's runs of these samples (cq-b19i)."""
     from cqcheck import oracle
     o1 = sorted(pb.example_dir.glob("*.O1.ll"))[0]
-    runs = oracle.run_samples(o1, pb.spec, [{"call": c, "args": list(a)} for c, a in keys])
+    # The oracle's step budget is the probe's (cq-u9al): the candidate was flagged by an access the
+    # probe reached within HDR_CAP header executions, and the oracle runs the same path up to its cut,
+    # so a cut before that access comes within the same budget. A run past it is not cap-clean either
+    # way, and stops after HDR_CAP headers instead of the default 10 million (52: 0.2 s per sample).
+    runs = oracle.run_samples(o1, pb.spec, [{"call": c, "args": list(a)} for c, a in keys], tripcap=HDR_CAP)
     for o, r in zip(obs, runs):
         o.cap_ok = _cap_clean(r)
 
