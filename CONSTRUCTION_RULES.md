@@ -385,8 +385,12 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       or no bound is known (91). The K-th trip's own body predicate is not `a_K`; it is
       uncomputed by the mirror like every earlier one. A test-at-bottom loop (`do … while`) runs
       trip 0 under the `|1⟩` seed and computes `a_{j+1}` after the body (150).
-      Where -O1 tests at the loop header with no pre-header guard (09, 37, 54, 189) a trip is test then
-      body, and the last chained predicate already is the test admitting trip K+1: it is `a_K`. A loop
+      Where -O1 tests at the loop header with no pre-header guard (09, 37, 54, 189) the loop is
+      re-rolled the same way: the first header test is computed before the loop as trip 0 of the
+      chain, and each of the K trips is body then test, so that after the K-th body the chain ends
+      in the test admitting trip K+1, which is `a_K`. Keeping the K-th header test instead would read
+      1 on an input that runs exactly K trips, contradicting the definition above (ruling 2026-10-28;
+      the four references were rewritten the same day). A loop
       seeded by an arm flag `F` tears `F` down by its compare's `_unc` after the chain, never as a
       seed (153). Nested K-loops keep one inner `a_K` per outer trip plus the outer one (68, 153). A
       carried value whose exit `phi` -O1 folded to a literal is copied out from the carried rail
