@@ -54,12 +54,20 @@ encoding (scalars "0x" + bit pattern, pointers a C expression) that drivers rend
 RunResult fields (JSON-serializable):
   side        the side argument ('ours' or 'ref')
   sample      the sample dict as given
-  outputs     {"ret": [{"call", "fn", "v"}], "stdout": str, "exit": int}; "v" is the typed
+  outputs     {"ret": [{"call", "fn", "v"}], "stdout": str, "exit": int, "effects": [...]}; "v" is the typed
               scalar {"w": rail type, "v": hex bit pattern} of an arithmetic return (cq-pq3:
               integers "i<N>" at their C width, two's complement; float "f32", double "f64",
               long double "f80" as the x87 80-bit pattern), the bare hex of an aggregate return;
               void and pointer returns log nothing. An entry whose lowered return is a rail handle
-              (CR §1.1) reports that rail's value at exit instead (resolve_handle_rets, cq-n6a0)
+              (CR §1.1) reports that rail's value at exit instead (resolve_handle_rets, cq-n6a0).
+              "stdout" and "effects" are the host output of the run (cq-e4jk, compare.py "Host
+              output"): stdout is what the process printed (the driver's setup, then the sample)
+              followed by the tape's end-of-shot text (rt_tape.c's {"ev":"tape","op":"shot"} event,
+              "stdout": the format entries it performed); effects is the host-effect calls the
+              module made directly (host_fx.c's {"ev":"effect"} events, in call order) followed by
+              the effect entries the tape performed (in sequence order), each {"name", "args"} with
+              args [{"s": str} | {"w": "i<N>", "v": hex}] (a tape field's string, or its literal or
+              rail value at the end of the shot with its width token)
   measured    [{"h", "w", "v"}] per cqrt_measure call, in order
   rotations   the rotation and phase trace events in order, as written (the shape compare.py
               reads): ry {ev, h, theta, ctl, ctlv, w, v}, ry_qangle {ev, h, a, aval, ctl, ctlv, w, v},
@@ -87,6 +95,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from cqcheck.compare import HOST_EFFECTS
 from cqcheck.contracts import DriverSpec, RunResult
 
 REPO = Path(__file__).resolve().parents[2]
@@ -421,6 +430,8 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
         tot = totalize_module(canon)
         if touches_fenv(canon):  # cq-6ady
             tot = default_env_module(tot)
+        if any(Path(o).name == "host_fx.o" for o in objs):  # cq-e4jk; a test's restricted runtime may omit it
+            tot = host_effects_module(tot)
         (tmp / "lowered.tot.ll").write_text(tot)
         (tmp / "handle_rets.json").write_text(json.dumps(handle_returning_fns(canon)))  # cq-n6a0
     except _Unimpl as e:
@@ -845,6 +856,8 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     clean: List[dict] = []
     viol: List[dict] = []
     qram_live: List[dict] = []
+    direct_fx: List[dict] = []
+    tape_out, tape_fx = "", []
     last_exit: Optional[dict] = None
     for e in events:
         ev = e.get("ev")
@@ -865,12 +878,42 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
             # rt-mem's QRAM cells and unpopped slots live outside core's rail table; its exit event
             # lists them (roles qram_cell, qram_slot) and they are Kept items too (cq-lxv)
             qram_live.extend(e.get("live", []))
+        elif ev == "tape" and e.get("op") == "shot":
+            tape_out, tape_fx = _tape_shot(e)
+        elif ev == "effect":
+            direct_fx.append({"name": e.get("name"), "args": [_fx_arg(a) for a in e.get("args", [])]})
     kept = (list(last_exit["live"]) if last_exit is not None else []) + qram_live
     viol += extra
     if last_exit is None and code is not None and not any(v["what"] in _STOP_WHATS for v in extra):
         viol.append({"what": "no_exit", "h": None, "msg": f"process ended (status {code}) without the exit event"})
-    return RunResult(side=side, sample=sample, outputs={"ret": rets, "stdout": stdout, "exit": code},
+    return RunResult(side=side, sample=sample, outputs={"ret": rets, "stdout": stdout + tape_out, "exit": code,
+                                                    "effects": direct_fx + tape_fx},
                      measured=measured, rotations=rots, kept=kept, clean=clean, violations=viol)
+
+
+def host_effects_module(text: str) -> str:
+    """text with each call of a declared host-effect function (compare.HOST_EFFECTS) renamed to its
+    logging wrapper in checker/rt/host_fx.c (cq-e4jk): the effects the module performs directly are
+    logged as {"ev":"effect"} events. A module that defines such a function calls its own."""
+    for name in HOST_EFFECTS:
+        if re.search(rf"(?m)^declare\b[^\n]*@{name}\(", text):
+            text = re.sub(rf"@{name}(?=\()", f"@__cqe_fx_{name}", text)
+    return text
+
+
+def _fx_arg(f: dict) -> dict:
+    """One argument of a host effect, as compare reads it: {"s": str} or {"w", "v"}."""
+    if f.get("k") == "str" or "s" in f:
+        return {"s": _bytes_text(f.get("s", ""))}
+    return {"w": f.get("w"), "v": f.get("v")}
+
+
+def _tape_shot(e: dict) -> Tuple[str, List[dict]]:
+    """The host output of rt_tape.c's end-of-shot event: the text it printed and the effect entries
+    it performed, in sequence order."""
+    fx = [{"name": x.get("name"), "args": [_fx_arg(f) for f in x.get("fields", [])]}
+          for x in e.get("events", []) if x.get("kind") == "effect" and x.get("performed")]
+    return _bytes_text(e.get("stdout", "")), fx
 
 
 def _parse_trace(text: str) -> Tuple[List[dict], List[dict]]:

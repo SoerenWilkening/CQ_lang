@@ -560,7 +560,7 @@ class COracleT1(unittest.TestCase):
                 rots=[dict(r, reg=hex(a)) if r["kind"] == "theta" else r for r in rots]))
             self.check(ours, c, False, "matching")
 
-    # -- (ii) outputs["ret"] only
+    # -- (ii) outputs["ret"] and the host output only (T1 as amended by cq-e4jk)
     @staticmethod
     def ret(v):
         return [{"call": 0, "fn": "f", "v": {"w": "i32", "v": hex(v)}}]
@@ -568,8 +568,11 @@ class COracleT1(unittest.TestCase):
     def test_ret_only_compared(self):
         ours = side("o", lambda a, b, s: dict(rots=[], kept=[],
                                               outputs={"ret": self.ret(a + b), "stdout": "hi\n", "exit": 0}))
-        c = self.c_side(lambda a, b, s: dict(rots=[], outputs={"ret": self.ret(a + b), "end": "ret"}))
+        c = self.c_side(lambda a, b, s: dict(rots=[], outputs={"ret": self.ret(a + b), "end": "ret",
+                                                                 "stdout": "hi\n"}))
         self.check(ours, c, True)
+        c_out = self.c_side(lambda a, b, s: dict(rots=[], outputs={"ret": self.ret(a + b), "end": "ret"}))
+        self.check(ours, c_out, False, "host stdout differs")
         c_bad = self.c_side(lambda a, b, s: dict(rots=[], outputs={"ret": self.ret(a | b), "end": "ret"}))
         self.check(ours, c_bad, False, "returns")
 
@@ -942,6 +945,70 @@ class UnPrep(unittest.TestCase):
     def test_unprep_of_unmatched_gate_rejected(self):
         # the "earlier prep" has no C reach (C lacks f:0): its adjoint is no un-prep
         self.check(self.ours(), self.c(first=False), False)
+
+
+class HostOutput(unittest.TestCase):
+    """Host output (cq-e4jk): outputs["stdout"] and outputs["effects"] are compared against both
+    oracles; against "c" the C side's are a prefix of ours on an ended sample; an effect name of
+    ours outside HOST_EFFECTS is a CompareError against "c". Shaped like AbortRule's 45: x = s,
+    abort on x == 3."""
+
+    RM = {"name": "remove", "args": [{"s": "/tmp/cq_x"}]}
+
+    def ours(self, out=lambda s: f"x={s}\n", fx=lambda s: [], side="o"):
+        a = AbortRule().ours()
+        return [dataclasses.replace(r, side=side, outputs=dict(r.outputs, stdout=out(s), effects=fx(s), exit=0))
+                for s, r in enumerate(a)]
+
+    def c(self, out=lambda s: f"x={s}\n", fx=lambda s: []):
+        return [dataclasses.replace(r, outputs=dict(r.outputs, stdout=out(s), effects=fx(s)))
+                for s, r in enumerate(AbortRule().c())]
+
+    def check(self, ours, other, against, equal, needle=None):
+        r = compare(ours, other, QKEY, against)
+        self.assertEqual(r.equal, equal, r.reasons)
+        if needle:
+            self.assertTrue(any(needle in x for x in r.reasons), r.reasons)
+
+    def test_equal_passes(self):
+        self.check(self.ours(), self.ours(side="r"), "ref", True)
+        self.check(self.ours(), self.c(), "c", True)
+
+    def test_stdout_differs(self):
+        # m5/47: printf of a literal instead of the register
+        bad = self.ours(out=lambda s: "x=7\n")
+        self.check(bad, self.ours(side="r"), "ref", False, "host stdout differs")
+        self.check(bad, self.c(), "c", False, "host stdout differs")
+
+    def test_effect_dropped(self):
+        # m4/102: the remove() entry deleted
+        want = lambda s: [self.RM] if s & 1 else []
+        self.check(self.ours(), self.ours(side="r", fx=want), "ref", False, "host effects differ")
+        self.check(self.ours(), self.c(fx=want), "c", False, "host effects differ")
+        self.check(self.ours(fx=want), self.c(fx=want), "c", True)
+
+    def test_effect_argument_compared(self):
+        other = lambda s: [{"name": "remove", "args": [{"s": "/tmp/cq_y"}]}]
+        self.check(self.ours(fx=lambda s: [self.RM]), self.c(fx=other), "c", False, "host effects differ")
+        r6 = lambda w: (lambda s: [{"name": "raise", "args": [{"w": w, "v": "0x6"}]}])
+        self.check(self.ours(fx=r6("i32")), self.c(fx=r6("i32")), "c", True)
+
+    def test_prefix_on_ended_sample_only(self):
+        # sample 3 ends (abort): the circuit may print and act on past the end
+        more = lambda s: f"x={s}\n" + ("after\n" if s == 3 else "")
+        self.check(self.ours(out=more), self.c(), "c", True)
+        self.check(self.ours(out=more), self.ours(side="r"), "ref", False, "host stdout differs")
+        less = lambda s: "" if s == 3 else f"x={s}\n"
+        self.check(self.ours(out=less), self.c(), "c", False, "host stdout differs")
+        early = lambda s: f"x={s}\nmore\n" if s == 1 else f"x={s}\n"
+        self.check(self.ours(out=early), self.c(), "c", False, "host stdout differs")
+
+    def test_unknown_effect_against_c_is_an_error(self):
+        from cqcheck.compare import CompareError
+        fx = lambda s: [{"name": "kill", "args": []}]
+        with self.assertRaises(CompareError):
+            compare(self.ours(fx=fx), self.c(fx=fx), QKEY, "c")
+        self.check(self.ours(fx=fx), self.ours(side="r", fx=fx), "ref", True)
 
 
 if __name__ == "__main__":

@@ -56,6 +56,8 @@ _ROT_C = r"C site .* (has no lowered gate|reached .*)|lowered gate #\d+ .* corre
 _MEAS = r"measurement \d+ reads .* != "
 _OUT_REF = r"outputs .* != "
 _RET_C = r"returns .* != "
+_HOST_OUT = r"host stdout differs"
+_HOST_FX = r"host effects differ"
 
 # class -> (description, pattern a reason of the reference check must match, pattern for the
 # C-oracle check or None when the class is invisible to the C program).
@@ -82,6 +84,11 @@ CLASSES: Dict[str, Tuple[str, str, Optional[str]]] = {
     "kloop_one_trip_short": ("a K-bounded loop runs K-1 trips: inputs with K trips get another result "
                              "and a_K", f"{_MEAS}|{_OUT_REF}", rf"{_MEAS}|{_RET_C}|a_K of loop"),
     "phase_moved_flag": ("a phase sits on another flag", _ROT_REF, _ROT_C),
+    # host output (cq-e4jk, compare.py "Host output"): the tape's printed text and performed effects
+    "changed_tape_output": ("a tape field takes another value: the text the tape prints changes",
+                            _HOST_OUT, _HOST_OUT),
+    "dropped_tape_effect": ("a tape effect entry is deleted: the host call is never performed",
+                            _HOST_FX, _HOST_FX),
 }
 
 # The empty output: no definition, so the build of our side fails at the link on the entry symbol.

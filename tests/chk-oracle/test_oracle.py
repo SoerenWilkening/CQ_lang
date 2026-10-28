@@ -333,7 +333,8 @@ void inv_q(int x0, double t) { int x = x0; cq_invert_begin(); cq_theta(&x, t); c
         self.assertEqual(rr.measured, [{"h": None, "w": "i32", "v": "0x2"}])
         self.assertEqual(rr.outputs, {"ret": [{"call": 0, "fn": "loop_q", "v": {"w": "i32", "v": "0x2"}}],
                                       "end": "ret",
-                                      "loops": [{"loop": "loop_q:%6", "act": 0, "n": 2, "capped": False}]})
+                                      "loops": [{"loop": "loop_q:%6", "act": 0, "n": 2, "capped": False}],
+                                      "stdout": "", "effects": []})
         self.assertEqual(rr.violations, [])
         self.assertIsNone(rr.kept)
         self.assertIsNone(rr.clean)
@@ -455,7 +456,7 @@ int spin_q(unsigned x0, double t, unsigned c) { unsigned x = x0; cq_theta(&x, t)
         self.assertIn("nonterminating", rr.violations[0]["msg"])
         self.assertEqual(rr.outputs["ret"], [])
         rr = oracle.run_sample(o1, sp, {"call": 0, "args": [i32(2), HALF, i32(2)]})
-        self.assertEqual(rr.outputs, {"ret": [], "end": "noreturn:abort", "loops": []})
+        self.assertEqual(rr.outputs, {"ret": [], "end": "noreturn:abort", "loops": [], "stdout": "", "effects": []})
         self.assertEqual(rr.violations, [])
 
     def test_no_wall_clock_outcome(self):
@@ -673,6 +674,38 @@ class Cutoff(unittest.TestCase):
         self.assertEqual(caps(self.run1("halve_q", i32(64), HALF, HALF, k_default=6)), [(6, False)])
         self.assertEqual(caps(self.run1("halve_q", i32(128), HALF, HALF, k_default=6)), [(6, True)])
         self.assertEqual(caps(self.run1("halve_q", i32(128), HALF, HALF, k={"kq2": 9}, k_default=6)), [(6, True)])
+
+
+class HostOutput(unittest.TestCase):
+    """cq-e4jk: the program's stdout per sample (unbuffered: kept up to an abort or a fatal raise, and
+    not carried into the next sample) and its host-effect calls, in SampleRun.stdout/effects and side
+    'c' outputs["stdout"]/["effects"], never in the events."""
+
+    def test_stdout_and_effects(self):
+        o1 = compile_c("hostout", r"""
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+int out_q(int x, int k) {
+    printf("x=%d\n", x);
+    if (x > k) remove("/nonexistent/cq_e4jk");
+    if (x == 7) raise(SIGABRT);
+    if (x == 8) abort();
+    return x;
+}
+""")
+        sp = spec("hostout", "int out_q(int,int)", [("out_q", ["int", "int"])])
+        smp = [{"call": 0, "args": [i32(x), i32(3)]} for x in (1, 5, 7, 8, 2)]
+        runs = oracle.run_samples(o1, sp, smp)
+        self.assertEqual([r.stdout for r in runs], ["x=1\n", "x=5\n", "x=7\n", "x=8\n", "x=2\n"])
+        rm = {"name": "remove", "args": [{"s": "/nonexistent/cq_e4jk"}]}
+        self.assertEqual([r.effects for r in runs],
+                         [[], [rm], [rm, {"name": "raise", "args": [{"w": "i32", "v": "0x6"}]}], [rm], []])
+        self.assertEqual([r.outcome for r in runs], ["ret", "ret", "raise:6", "noreturn:abort", "ret"])
+        for r in runs:
+            self.assertFalse(any(e["ev"] in ("stdout", "effect") for e in r.events), r.events)
+        rr = oracle.run_result(runs[1], sp, o1)
+        self.assertEqual((rr.outputs["stdout"], rr.outputs["effects"]), ("x=5\n", [rm]))
 
 
 if __name__ == "__main__":

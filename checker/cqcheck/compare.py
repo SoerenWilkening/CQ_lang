@@ -9,7 +9,8 @@ sides, each a sequence of RunResults with one entry per sample, and returns the 
 
 What is compared (CR §6, CLAUDE.md "The §6 checker"):
 
-- per sample: violations (none allowed on either side), named outputs, measured values;
+- per sample: violations (none allowed on either side), named outputs, measured values, host
+  output (below);
 - every `cqrt_free` on our side sees a rail in a known classical basis state (CR §0);
 - oracle "ref" only: kept rails (live at exit, every role, A4's kept_entangled included) as a
   multiset of (type, value function over the group's samples);
@@ -74,8 +75,9 @@ record self-contained; values are hex bit patterns or ints):
   dict with a rail type "w" and a value "v" ({"w":"f32","v":"0x7fc00000"}) is a typed scalar: its
   value is compared at that width, and an fp one under the fp equality mode below. An untyped
   value carries no fp-ness and is compared bit for bit in both modes. Against the C oracle only
-  outputs["ret"] is compared (T1: the C side's "end" and our "stdout"/"exit" are diagnostics); a
-  missing "ret" reads as [].
+  outputs["ret"] and the host output are compared (T1 as amended by cq-e4jk: the C side's "end"
+  and our "exit" are diagnostics); a missing "ret" reads as []. Against the reference
+  outputs["stdout"] and outputs["effects"] are compared as host output and every other key as above.
 - violations: a list; any entry fails the comparison.
 - outputs["loops"] (C oracle side only; the cutoff records of the a_K rule below, bead cq-9rt): a
   list, missing = []. One record per activation of a quantum-exit loop or quantum-depth recursion
@@ -93,6 +95,19 @@ record self-contained; values are hex bit patterns or ints):
   capped run is not a violation: "violations" stays [], and "end" is the oracle's diagnostic (e.g.
   "cap:<loop>"). Whether the oracle stops the whole program at the cap or goes on is its choice;
   compare reads nothing past the earliest cut either way.
+
+Host output (cq-e4jk; CR rule 16 and §1.3). outputs["stdout"] (str, missing = "") and
+outputs["effects"] (missing = []) on every side: what the run printed and the host-effect calls it
+made, each effect {"name", "args": [{"s": str} | {"w": "i<N>", "v": hex}]}. On ours and the
+reference (run.py) stdout is the process's output followed by the tape's end-of-shot text, and
+effects the module's direct host-effect calls followed by the effect entries the tape performed; on
+the C side (oracle.py) they are the C program's stdout and its calls of the host-effect functions
+(HOST_EFFECTS), in order. Both are compared exactly, args as typed scalars, against either oracle;
+against the C oracle on a capped or ended sample (below) the C side's stdout and effects must be a
+prefix of ours (the circuit runs on past the cut or the end). Against the C oracle an effect name of
+ours outside HOST_EFFECTS is a CompareError (the C oracle logs no such call, so the comparison
+could not be decided). A program that interleaves direct and taped output is compared in the
+circuit's order (direct first, the tape at the end of the shot, CR §1.3).
 
 The a_K rule (CR §6, ruling 2026-10-27, cq-1di; against="c" only). A sample is capped when one of
 its loop records has capped true; its cut is that of the capped record with the smallest cut. On a
@@ -171,6 +186,12 @@ from .contracts import DriverSpec, RunResult
 
 class CompareError(Exception):
     """A RunResult this module cannot read: an internal error of the checker, never a verdict."""
+
+
+# The host-effect functions whose calls both sides log (cq-e4jk): run.py renames a lowered module's
+# direct calls to checker/rt/host_fx.c's wrappers, the C oracle logs them at the call
+# (OracleInstr.cpp, effects). Tape effect entries of these names are compared with them.
+HOST_EFFECTS = ("remove", "unlink", "rename", "raise")
 
 
 # ---------------------------------------------------------------- values
@@ -1068,8 +1089,10 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             oo, ro = _ret(o.outputs, "our"), _ret(r.outputs, "C-oracle")
             if not (capped[k] or ended[k]) and _norm(oo, nan_eq) != _norm(ro, nan_eq):
                 reasons.append(f"sample {k}: returns {oo} != {ro} (ours {o.outputs}, C {r.outputs})")
-        elif _norm(o.outputs, nan_eq) != _norm(r.outputs, nan_eq):
+        elif _norm(_rest(o.outputs, "our"), nan_eq) != _norm(_rest(r.outputs, "reference"), nan_eq):
             reasons.append(f"sample {k}: outputs {o.outputs} != {r.outputs}")
+        reasons += _host_output(k, o.outputs, r.outputs, oracle,
+                                oracle == "c" and (capped[k] or ended[k]))
         if oracle == "ref":
             reasons += _measured_positional(k, o, r, False, nan_eq)
         else:
@@ -1236,6 +1259,49 @@ def _ret(outputs: Any, side: str) -> Any:
     if not isinstance(outputs, dict):
         raise CompareError(f"cq: unimplemented: chk-compare: {side} outputs {outputs!r} are not a dict")
     return outputs.get("ret", [])
+
+
+_HOST_KEYS = ("stdout", "effects")
+
+
+def _rest(outputs: Any, side: str) -> Any:
+    """outputs without the host output (compared by _host_output)."""
+    if isinstance(outputs, dict):
+        return {k: v for k, v in outputs.items() if k not in _HOST_KEYS}
+    return outputs
+
+
+def _host(outputs: Any, side: str) -> Tuple[str, List[Any]]:
+    """(stdout, effects) of one side's outputs (module docstring, Host output)."""
+    if outputs is None:
+        return "", []
+    if not isinstance(outputs, dict):
+        raise CompareError(f"cq: unimplemented: chk-compare: {side} outputs {outputs!r} are not a dict")
+    out, fx = outputs.get("stdout", ""), outputs.get("effects", [])
+    if not isinstance(out, str) or not isinstance(fx, list) or not all(
+            isinstance(e, dict) and isinstance(e.get("name"), str) and isinstance(e.get("args"), list) for e in fx):
+        raise CompareError(f"cq: unimplemented: chk-compare: {side} host output {out!r} {fx!r} is malformed")
+    return out, fx
+
+
+def _host_output(k: str, o_out: Any, r_out: Any, oracle: str, open_end: bool) -> List[str]:
+    """The host-output reasons of one sample (module docstring, Host output)."""
+    other = "C" if oracle == "c" else "reference"
+    (os_, ofx), (rs, rfx) = _host(o_out, "our"), _host(r_out, other)
+    if oracle == "c":
+        bad = sorted({e["name"] for e in ofx} - set(HOST_EFFECTS))
+        if bad:
+            raise CompareError(f"cq: unimplemented: chk-compare: sample {k}: host effect(s) {bad} of ours have no "
+                               f"C-oracle log (HOST_EFFECTS {list(HOST_EFFECTS)})")
+    why = []
+    if os_ != rs and not (open_end and os_.startswith(rs)):
+        why.append(f"sample {k}: host stdout differs: ours {os_!r} != {other} {rs!r}"
+                   + (" (the C output must be a prefix of ours on a capped or ended sample)" if open_end else ""))
+    nf, nr = _norm(ofx), _norm(rfx)
+    if nf != nr and not (open_end and nf[:len(nr)] == nr):
+        why.append(f"sample {k}: host effects differ: ours {ofx} != {other} {rfx}"
+                   + (" (the C effects must be a prefix of ours on a capped or ended sample)" if open_end else ""))
+    return why
 
 
 def _kept_type(rr: RunResult, h: Any) -> Optional[str]:

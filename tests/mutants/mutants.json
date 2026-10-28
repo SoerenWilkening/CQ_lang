@@ -371,6 +371,34 @@
           "new": "  call void @cqrt_not_i1(i32 %12)    ; IR: bracket: block %16 runs under NOT %12\n  call void @cqrt_rz_i1(i32 %12, double %6)    ; IR: block %13: cq_phi(%6)  [phase arm: kickback on f]\n"
         }
       ]
+    },
+    {
+      "id": "47-tape-literal-field",
+      "class": "changed_tape_output",
+      "example": "47_printf_tape",
+      "note": "printf_mixed's classical field c is written to the tape as the literal 7: the printed line changes (review chk-h1 m5, cq-e4jk)",
+      "edits": [
+        {
+          "old": "call void @cqrt_tape_write_i32_lit(i32 %4, i32 %2)",
+          "new": "call void @cqrt_tape_write_i32_lit(i32 %4, i32 7)"
+        }
+      ]
+    },
+    {
+      "id": "102-drop-tape-effect",
+      "class": "dropped_tape_effect",
+      "example": "102_effect_tape",
+      "note": "remove_cond's effect entry and its path field are deleted: remove() is never performed where x > k (review chk-h1 m4, cq-e4jk)",
+      "edits": [
+        {
+          "old": "  call void @cqrt_tape_effect_controlled(i32 %6, i32 %4, ptr @.cq.effect.remove)",
+          "new": ""
+        },
+        {
+          "old": "  call void @cqrt_tape_write_str_lit(i32 %4, ptr @.str)",
+          "new": ""
+        }
+      ]
     }
   ]
 }

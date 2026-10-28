@@ -23,6 +23,12 @@
  * <subst> lines `<index> <fn> <site> <period> <occ> <nwords> <hex w>...` replace the register value at a
  * cq_theta site (cq-6m2, cq-arch Z4): the r-th reach (0-based) of site <fn>:<site> in sample <index>
  * takes the line whose <occ> is r mod <period>; a site with no line keeps its value (the identity).
+ * Host output (cq-e4jk): the program's stdout is a file of the batch (fd 1, unbuffered, so a sample
+ * that ends by abort or a signal keeps what it printed); each sample's end writes it to <trace> as
+ * `{"ev":"stdout","s"}` (the driver's setup output, then the sample's; bytes as code points) and cuts
+ * the file back to the setup's part. Each call of a host-effect function (OracleInstr.cpp, effects)
+ * writes `{"ev":"effect","name","args":[{"s"}|{"w","v"}]}` before it runs (oracle.py moves both to
+ * SampleRun.stdout/effects; they are not trace events).
  * Values in events are hex bit patterns, "0x" plus lowercase digits without leading zeros. */
 #define _DARWIN_C_SOURCE
 #include <errno.h>
@@ -748,6 +754,8 @@ struct shot {
     char *stack_lo, *stack_copy;
     size_t stack_n, stack_cap;
     obuf tr, st;
+    int cap_set;              /* cap_n is known (the server's first record) */
+    off_t cap_n;              /* the setup's part of the stdout file */
 };
 static struct shot *R;
 static int is_worker; /* set before the snapshot: stays set */
@@ -758,6 +766,116 @@ static void mark_dirty(void) { if (R) R->dirty = 1; }
 static void die(const char *what) {
     fprintf(stderr, "cqo: %s: %s\n", what, strerror(errno));
     real__exit(2);
+}
+
+/* -- host output (cq-e4jk) -- */
+#define CAP_RAW ((size_t)1 << 16)          /* a sample's stdout beyond this is an internal note */
+#define BIG_CAP (CAP_RAW * 6 + 4096)       /* one escaped line */
+static int cap_fd = -1;                    /* the batch's stdout file (fd 1 is a dup of it) */
+static char *bigline;                      /* mmap'd once per batch: never put back, never in __DATA */
+static char fxline[8192];
+static size_t fxn;
+static int fx_on;
+
+/* One `<index>\t<s>\n` trace line of any length (out_line caps at 4096 bytes). */
+static void out_long(const char *s, size_t n) {
+    char pre[32];
+    int k = snprintf(pre, sizeof pre, "%ld\t", cur_sample);
+    obuf *o = ob_trace;
+    if (trace_fd < 0 || k < 0) return;
+    size_t tot = (size_t)k + n + 1;
+    if (!o || tot > OBUF_CAP) {
+        if (o) ob_flush(o, trace_fd);
+        /* one write: other writers append to the same file */
+        char *b = bigline + BIG_CAP;
+        memcpy(b, pre, (size_t)k), memcpy(b + k, s, n), b[k + n] = '\n';
+        write_all(trace_fd, b, tot);
+        return;
+    }
+    if (o->n + tot > OBUF_CAP) ob_flush(o, trace_fd);
+    memcpy(o->b + o->n, pre, (size_t)k);
+    memcpy(o->b + o->n + k, s, n);
+    o->b[o->n + k + n] = '\n';
+    o->n += tot;
+}
+
+/* JSON string body of n bytes, each byte the code point of the same number (rt_tape.c's convention). */
+static size_t esc_bytes(char *out, const unsigned char *p, size_t n) {
+    size_t m = 0;
+    for (size_t i = 0; i < n; ++i) {
+        unsigned char c = p[i];
+        if (c == '"' || c == '\\') out[m++] = '\\', out[m++] = (char)c;
+        else if (c == '\n') out[m++] = '\\', out[m++] = 'n';
+        else if (c < 0x20 || c >= 0x7f) m += (size_t)sprintf(out + m, "\\u%04x", c);
+        else out[m++] = (char)c;
+    }
+    return m;
+}
+
+/* The sample's stdout as one trace line; the file goes back to the setup's part. */
+static void emit_stdout(void) {
+    if (cap_fd < 0 || !bigline || !R) return;
+    fflush(stdout);
+    struct stat st;
+    if (fstat(cap_fd, &st) != 0) { note("internal stdout: fstat: %s", strerror(errno)); return; }
+    size_t n = (size_t)st.st_size;
+    if (n > CAP_RAW) { note("internal stdout: the sample printed %zu bytes (more than %zu)", n, CAP_RAW); n = CAP_RAW; }
+    unsigned char *raw = (unsigned char *)bigline + 2 * BIG_CAP;
+    size_t got = 0;
+    while (got < n) {
+        ssize_t r = pread(cap_fd, raw + got, n - got, (off_t)got);
+        if (r < 0 && errno == EINTR) continue;
+        if (r <= 0) { note("internal stdout: pread: %s", r < 0 ? strerror(errno) : "short"); return; }
+        got += (size_t)r;
+    }
+    size_t m = (size_t)sprintf(bigline, "{\"ev\":\"stdout\",\"s\":\"");
+    m += esc_bytes(bigline + m, raw, n);
+    m += (size_t)sprintf(bigline + m, "\"}");
+    out_long(bigline, m);
+    if (ftruncate(cap_fd, R->cap_n) != 0) note("internal stdout: ftruncate: %s", strerror(errno));
+}
+
+/* The batch's stdout: a file of its own (unlinked), fd 1, unbuffered. */
+static void stdout_capture(const char *trace) {
+    char path[4200];
+    snprintf(path, sizeof path, "%s.stdout", trace);
+    cap_fd = open(path, O_RDWR | O_CREAT | O_TRUNC | O_APPEND, 0644);
+    if (cap_fd < 0) die("open the stdout file");
+    unlink(path);
+    if (dup2(cap_fd, 1) < 0) die("dup2 stdout");
+    setvbuf(stdout, 0, _IONBF, 0);
+    void *m = mmap(0, 3 * BIG_CAP, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (m == MAP_FAILED) die("mmap");
+    bigline = m;
+}
+
+/* The effect hooks (OracleInstr.cpp, logEffect): begin, one call per argument, end. */
+void __cqo_fx_begin(const char *name) {
+    fx_on = sample_running();
+    if (!fx_on) return;
+    fxn = (size_t)snprintf(fxline, sizeof fxline, "{\"ev\":\"effect\",\"name\":\"%s\",\"args\":[", name);
+}
+static void fx_sep(void) { if (fxline[fxn - 1] != '[') fxline[fxn++] = ','; }
+void __cqo_fx_str(const char *p) {
+    if (!fx_on) return;
+    size_t n = p ? strnlen(p, 1024) : 0;
+    if (fxn + n * 6 + 32 > sizeof fxline) { note("internal effect: argument too long"); fx_on = 0; return; }
+    fx_sep();
+    fxn += (size_t)sprintf(fxline + fxn, "{\"s\":\"");
+    fxn += esc_bytes(fxline + fxn, (const unsigned char *)p, n);
+    fxn += (size_t)sprintf(fxline + fxn, "\"}");
+}
+void __cqo_fx_int(uint64_t v, int32_t bits) {
+    if (!fx_on) return;
+    if (fxn + 64 > sizeof fxline) { note("internal effect: too many arguments"); fx_on = 0; return; }
+    fx_sep();
+    fxn += (size_t)sprintf(fxline + fxn, "{\"w\":\"i%d\",\"v\":\"0x%llx\"}", (int)bits, (unsigned long long)v);
+}
+void __cqo_fx_end(void) {
+    if (!fx_on) return;
+    fxn += (size_t)sprintf(fxline + fxn, "]}");
+    out_long(fxline, fxn);
+    fx_on = 0;
 }
 
 static void *sys_alloc(size_t n) {
@@ -933,6 +1051,7 @@ static void server_wait(void) {
     ob_flush(&R->st, status_fd);
     if (!R->in_sample) { R->resume = R->next; return; }
     cur_sample = R->cur;
+    emit_stdout();
     if (killed) note("hang wall");
     else if (WIFSIGNALED(st)) note("wait signaled %d", WTERMSIG(st));
     else if (WIFEXITED(st)) note("wait exited %d", WEXITSTATUS(st));
@@ -952,7 +1071,7 @@ static void worker_start(void) {
     timer_ms(ITIMER_REAL, 0, 0); /* the server's tick is not the worker's */
     signal(SIGALRM, SIG_DFL);
     int devnull = open("/dev/null", O_WRONLY);
-    if (devnull >= 0) dup2(devnull, 1), dup2(devnull, 2), close(devnull);
+    if (devnull >= 0) dup2(devnull, 2), close(devnull); /* fd 1 stays the batch's stdout file (cq-e4jk) */
     stack_t ss = {.ss_sp = sys_alloc(1 << 16), .ss_size = 1 << 16, .ss_flags = 0};
     sigaltstack(&ss, 0);
     struct sigaction sa;
@@ -986,6 +1105,11 @@ int __cqo_sample_begin(int idx) {
         if (idx < R->resume) return 0;
         R->next = idx;
         fflush(0);
+        if (!R->cap_set && cap_fd >= 0) {
+            struct stat st;
+            R->cap_n = fstat(cap_fd, &st) == 0 ? st.st_size : 0;
+            R->cap_set = 1;
+        }
         pid_t pid = fork();
         if (pid < 0) die("fork");
         if (pid > 0) {
@@ -1010,6 +1134,7 @@ int __cqo_sample_begin(int idx) {
 
 static void sample_finish(void) {
     timer_ms(ITIMER_PROF, 0, 0);
+    emit_stdout();
     R->next = R->cur + 1; /* before in_sample drops: the server never runs a finished sample again */
     R->in_sample = 0;
     R->progress++;
@@ -1036,6 +1161,7 @@ static int run_batch(const char *trace, const char *status, const char *subst_pa
     trace_fd = open(trace, O_WRONLY | O_CREAT | O_APPEND | O_TRUNC, 0644);
     status_fd = open(status, O_WRONLY | O_CREAT | O_APPEND | O_TRUNC, 0644);
     if (trace_fd < 0 || status_fd < 0) { perror("cqo"); return 2; }
+    stdout_capture(trace);
     load_subst_file(subst_path);
     __cqo_drv_main();
     if (is_worker) worker_leave(); /* the worker ran the last record */

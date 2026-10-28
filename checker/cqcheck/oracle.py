@@ -23,6 +23,15 @@ Trace events (cq-arch; values are hex bit patterns ``0x`` + lowercase digits, no
   the guard may reach the header directly or through single-predecessor blocks that branch
   unconditionally on (a preheader, as in 55).
 - ``{"ev":"ret","v"}``: the driver call's return value (``null`` for void).
+- ``{"ev":"effect","name","args"}`` (cq-e4jk): a call of a host-effect function (compare.HOST_EFFECTS:
+  remove, unlink, rename, raise), logged at the call, before it runs; args ``[{"s": str} | {"w":
+  "i<N>", "v": hex}]`` (a pointer argument read as a C string, an integer at its IR width).
+- ``{"ev":"stdout","s"}`` (cq-e4jk): once per sample, at its end, what the program printed to stdout
+  (the driver's setup, then the sample), bytes as the code points of the same number. stdout is
+  unbuffered in the oracle, so a sample that ends by abort or a signal keeps what it printed before
+  (CR §1.3: the tape entries before an abort flag reading 1 are performed).
+  Both go to ``SampleRun.effects`` and ``SampleRun.stdout`` and side 'c' outputs["effects"] and
+  outputs["stdout"] (compare.py, Host output), never to ``SampleRun.events``.
 
 The cutoff K (CR §6 at eb8a11a, ruling cq-1di; bead cq-8ay). Every quantum-exit loop and
 quantum-depth recursion stops after K trips, as in the circuit: when the trips begun would exceed K
@@ -399,6 +408,8 @@ class SampleRun:
     reason: str = ""
     notes: List[str] = field(default_factory=list)
     loops: List[Dict[str, Any]] = field(default_factory=list)   # T2 cutoff records (outputs["loops"])
+    stdout: str = ""             # the program's stdout in this sample (outputs["stdout"], cq-e4jk)
+    effects: List[Dict[str, Any]] = field(default_factory=list)  # its host-effect calls (outputs["effects"])
 
 
 def _classify(sr: SampleRun) -> None:
@@ -630,6 +641,12 @@ def _parse_runs(samples: Sequence[Dict[str, Any]], trace: str, status: str) -> L
         if e.get("ev") == "kloop":   # a T2 cutoff record, not a trace event
             del e["ev"]
             runs[i].loops.append(e)
+        elif e.get("ev") == "stdout":   # host output (cq-e4jk), not a trace event
+            runs[i].stdout = _bytes_text(e.get("s", ""))
+        elif e.get("ev") == "effect":
+            runs[i].effects.append({"name": e.get("name"), "args": [
+                {"s": _bytes_text(a["s"])} if "s" in a else {"w": a.get("w"), "v": a.get("v")}
+                for a in e.get("args", [])]})
         else:
             runs[i].events.append(e)
     for line in status.splitlines():
@@ -645,6 +662,14 @@ def _parse_runs(samples: Sequence[Dict[str, Any]], trace: str, status: str) -> L
     for r in runs:
         _classify(r)
     return runs
+
+
+def _bytes_text(s: str) -> str:
+    """A captured byte string (each byte one code point), decoded as UTF-8 as run.py decodes ours."""
+    try:
+        return s.encode("latin-1").decode("utf-8", errors="replace")
+    except UnicodeEncodeError:
+        return s
 
 
 # cq_theta_<t> / cq_measure_<t> suffix (CQ.h) -> the register's rail type
@@ -722,7 +747,8 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
 
     outputs: {"ret": [{"call", "fn", "v"}] in run.py's encoding (integer returns {"w": "i<N>"} at the
     C width, fp {"w": "f32"|"f64"|"f80"|...}, an aggregate bare hex; void, pointer and samples that
-    did not return give no record), "end": outcome, "loops": the T2 cutoff records}; measured: [{"h": None, "w": the register's rail
+    did not return give no record), "end": outcome, "loops": the T2 cutoff records, "stdout": the
+    program's stdout, "effects": its host-effect calls (cq-e4jk)}; measured: [{"h": None, "w": the register's rail
     type, "v": hex}] per reached measure site, in order; rotations: the site events of kind theta,
     phi, invert_begin and invert_end verbatim, in order; kept/clean: None (the C program has no
     rails); violations: [] or [{"what": "c_oracle", "h": None, "msg": reason}]."""
@@ -735,7 +761,8 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
         else:
             rotations.append(dict(e))
     return RunResult(side="c", sample=sr.sample,
-                     outputs={"ret": _typed_ret(spec, sr), "end": sr.outcome, "loops": list(sr.loops)},
+                     outputs={"ret": _typed_ret(spec, sr), "end": sr.outcome, "loops": list(sr.loops),
+                              "stdout": sr.stdout, "effects": list(sr.effects)},
                      measured=measured, rotations=rotations, kept=None, clean=None,
                      violations=[{"what": "c_oracle", "h": None, "msg": sr.reason}] if sr.failed else [])
 

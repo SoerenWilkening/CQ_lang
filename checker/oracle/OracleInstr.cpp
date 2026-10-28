@@ -27,6 +27,8 @@
 //     FE_DENORMAL; feraiseexcept(m) raises exactly m; fesetround of an invalid mode returns 1);
 //   * threads collapsed (pthread_create runs the start routine to completion, rule 24), noreturn
 //     callees, raise and `unreachable` noted in the sample status;
+//   * each call of a declared host-effect function (remove, unlink, rename, raise: compare.py
+//     HOST_EFFECTS) logged as an `effect` event before it runs (cq-e4jk; cqo_rt.c __cqo_fx_*);
 //   * undefined external functions named in -cq-oracle-stubs given the checker's deterministic model.
 // The instrumented module is compiled at -O0, so nothing re-optimizes the C program after this pass.
 // An IR shape this pass cannot handle is a fatal "cq-oracle: unimplemented: ..." error, never a skip.
@@ -1215,6 +1217,29 @@ public:
     }
   }
 
+  // ---------------------------------------------------------------- host effects (cq-e4jk)
+  // The host-effect functions both sides log (compare.py HOST_EFFECTS; the evaluator's
+  // checker/rt/host_fx.c): {"ev":"effect","name","args"}, a pointer argument read as a C string, an
+  // integer at its IR width.
+  const StringSet<> hostEffects = {"remove", "unlink", "rename", "raise"};
+
+  void logEffect(CallBase *CB, StringRef name) {
+    IRBuilder<> B(CB);
+    B.CreateCall(hook("__cqo_fx_begin", Void, {Ptr}), {str(name)});
+    for (Value *A : CB->args()) {
+      Type *T = A->getType();
+      if (T->isPointerTy()) {
+        B.CreateCall(hook("__cqo_fx_str", Void, {Ptr}), {A});
+      } else if (T->isIntegerTy() && T->getIntegerBitWidth() <= 64) {
+        B.CreateCall(hook("__cqo_fx_int", Void, {I64, I32}),
+                     {B.CreateZExt(A, I64), B.getInt32(T->getIntegerBitWidth())});
+      } else {
+        unimplemented("host effect argument type", CB);
+      }
+    }
+    B.CreateCall(hook("__cqo_fx_end", Void, {}), {});
+  }
+
   // ---------------------------------------------------------------- termination notes
   void notes(Function &F) {
     static const StringSet<> jumps = {"longjmp", "_longjmp", "siglongjmp", "__longjmp_chk"};
@@ -1242,6 +1267,8 @@ public:
         }
         continue;
       }
+      if (callee && callee->isDeclaration() && hostEffects.contains(callee->getName()))
+        logEffect(CB, callee->getName());
       if (callee && callee->getName() == "raise" && CB->arg_size() == 1) {
         IRBuilder<> B(CB);
         B.CreateCall(hook("__cqo_raise_note", Void, {I32}),

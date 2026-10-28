@@ -959,5 +959,50 @@ class HostClone(unittest.TestCase):
             stubgen.generate([bad], ["declare i64 @strlen(ptr)"])
 
 
+class HostOutput(unittest.TestCase):
+    """cq-e4jk: outputs["stdout"] is the process's output followed by the tape's end-of-shot text;
+    outputs["effects"] the direct host-effect calls (host_fx.c) followed by the performed tape
+    effect entries."""
+
+    def test_tape_shot_and_effect_events(self):
+        shot = {"ev": "tape", "op": "shot", "aborted": False, "abort_seq": -1, "stdout": "big 5\n\u00c3\u00a9",
+                "events": [
+                    {"seq": 0, "kind": "fmt", "t": 1, "pred": 1, "performed": True, "fmt": "big %d\n", "fields": [],
+                     "text": "big 5\n"},
+                    {"seq": 1, "kind": "effect", "t": 1, "pred": 1, "performed": True, "name": "remove",
+                     "fields": [{"k": "str", "s": "/tmp/cq_x"}]},
+                    {"seq": 2, "kind": "effect", "t": 1, "pred": 0, "performed": False, "name": "raise",
+                     "fields": [{"k": "lit", "w": "i32", "v": "0x6"}]},
+                    {"seq": 3, "kind": "effect", "t": 1, "pred": 1, "performed": True, "name": "raise",
+                     "fields": [{"k": "rail", "h": 9, "w": "i32", "v": "0x1e"}]}]}
+        direct = {"ev": "effect", "name": "unlink", "args": [{"s": "/a"}]}
+        ev = [direct, shot, {"ev": "exit", "live": []}]
+        r = run._result("ours", {}, ev, "pre\n", 0, [])
+        self.assertEqual(r.outputs["stdout"], "pre\nbig 5\n\u00e9")
+        self.assertEqual(r.outputs["effects"], [
+            {"name": "unlink", "args": [{"s": "/a"}]},
+            {"name": "remove", "args": [{"s": "/tmp/cq_x"}]},
+            {"name": "raise", "args": [{"w": "i32", "v": "0x1e"}]}])
+        r = run._result("ours", {}, [{"ev": "exit", "live": []}], "", 0, [])
+        self.assertEqual((r.outputs["stdout"], r.outputs["effects"]), ("", []))
+
+    def test_host_effects_module_renames_declared_only(self):
+        text = ("declare i32 @remove(ptr)\ndefine i32 @g() {\n  %r = call i32 @remove(ptr @.cq.effect.remove)\n"
+                "  %s = call i32 @remove_cond(i32 1)\n  %t = call i32 @raise(i32 6)\n  ret i32 %r\n}\n"
+                "define i32 @raise(i32 %s) {\n  ret i32 0\n}\n")
+        out = run.host_effects_module(text)
+        self.assertIn("declare i32 @__cqe_fx_remove(ptr)", out)
+        self.assertIn("call i32 @__cqe_fx_remove(ptr @.cq.effect.remove)", out)
+        self.assertIn("@remove_cond(i32 1)", out)
+        self.assertIn("call i32 @raise(i32 6)", out)   # defined by the module: its own
+
+    def test_direct_effect_and_stdout_end_to_end(self):
+        r = run.run_sample(HERE / "host_fx.ll", spec1("int fx(int)", "fx", ["int"]), {"call": 0, "args": [5]},
+                           "ours", rt_sources=RT + [REPO / "checker" / "rt" / "host_fx.c"], extra_sources=FAM)
+        self.assertEqual(r.violations, [])
+        self.assertEqual(r.outputs["effects"], [{"name": "remove", "args": [{"s": "/nonexistent/cq_e4jk\n"}]}])
+        self.assertEqual(r.outputs["stdout"], "v=5\n")
+
+
 if __name__ == "__main__":
     unittest.main()
