@@ -18,9 +18,15 @@ What is compared (CR §6, CLAUDE.md "The §6 checker"):
   value function over the group's samples). A phase P(θ) on a flag is e^{iθ·f}: its predicate is the
   flag's value, whichever rail carries it. Global phases are dropped on both sides: a classical-angle
   phase whose predicate is constant over the group (never an Ry, never an angle-rail phase). Against
-  the C oracle rotations are matched by site: each (function, site, occurrence) of a reached
-  `cq_theta`/`cq_phi` must be one lowered gate with the same predicate, angle and register value at
-  every sample, in an order consistent with every sample's hit order. A `cq_invert` region (the
+  the C oracle rotations are matched by site (bead cq-yonm): each lowered gate belongs to one
+  (function, site) of `cq_theta`/`cq_phi`, and at every sample the gates of a site that fire there,
+  in lowered order, are that site's reaches in that sample, each with the same angle (and register
+  value, for theta). A site inside a loop is one gate per trip on the lowered side, and a trip that
+  skips the call leaves no reach, so a site's k-th reach is not one gate across samples: a gate
+  firing at a sample takes the site's earliest reach there not yet taken that agrees with it. Every
+  reach must be taken, except phi reaches forming the same multiset of angles at every sample (a
+  global phase). The pairs must be in an order consistent with every sample's hit order. A
+  `cq_invert` region (the
   sites between an invert_begin and its matching invert_end, nesting by depth) is read under CR rule
   17: its sites are taken in reverse order with their angles negated (a region inside a region is so
   inverted twice), both for matching and for the per-sample order. A marker without its partner in
@@ -119,6 +125,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, FrozenSet, Hashable, List, Optional, Sequence, Tuple
 
@@ -457,12 +464,10 @@ def _fn(t: Sequence[Any]) -> str:
 
 @dataclass
 class _Site:
-    key: Tuple                       # (fn, site, kind, occurrence)
+    key: Tuple                       # (fn, site, kind): one C call site
     kind: str                        # theta | phi
-    pred: Tuple[int, ...]
-    afn: Tuple
-    rfn: Tuple
-    order: Dict[int, int]            # sample -> position in that sample's hits
+    # per sample: the site's reaches in emission order, (position in that sample's hits, angle, raw register)
+    occ: List[List[Tuple[int, Any, Optional[int]]]]
 
 
 _MARKERS = ("invert_begin", "invert_end")
@@ -501,41 +506,32 @@ def _c_sites(runs: List[RunResult], nan_eq: bool) -> Tuple[List[_Site], List[str
     for s, rr in enumerate(runs):
         seq, why = _c_order(rr, s)
         reasons += why
-        # occurrences counted in execution order, so a site's k-th reach is one gate in every sample
-        occ: Dict[Tuple, int] = {}
-        nth: Dict[int, int] = {}
-        for pos, rec, _ in sorted(seq, key=lambda t: t[0]):
-            base = (rec["fn"], rec["site"], rec["kind"])
-            nth[pos] = occ.get(base, 0)
-            occ[base] = nth[pos] + 1
         for epos, (pos, rec, neg) in enumerate(seq):
-            base = (rec["fn"], rec["site"], rec["kind"])
+            key = (rec["fn"], rec["site"], rec["kind"])
             ang = _int(rec["angle"]) & ((1 << 64) - 1)
             if neg:
                 ang ^= 1 << 63
             if _angle_identity(ang, nonfinite_is_identity=(rec["kind"] == "theta")):
                 continue
-            key = base + (nth[pos],)
             st = sites.get(key)
             if st is None:
-                st = sites[key] = _Site(key, rec["kind"], [0] * nS, [None] * nS, [None] * nS, {})
-            st.pred[s] = 1
-            st.afn[s] = _fpv(ang, "f64", nan_eq)
-            st.rfn[s] = _int(rec.get("reg")) if rec["kind"] == "theta" else None
-            st.order[s] = epos
-    for st in sites.values():
-        st.pred, st.afn, st.rfn = tuple(st.pred), tuple(st.afn), tuple(st.rfn)
-    return list(sites.values()), reasons
+                st = sites[key] = _Site(key, rec["kind"], [[] for _ in range(nS)])
+            st.occ[s].append((epos, _fpv(ang, "f64", nan_eq),
+                              _int(rec.get("reg")) if rec["kind"] == "theta" else None))
+    return [sites[k] for k in sorted(sites, key=repr)], reasons
 
 
 def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
              capped: Sequence[bool] = ()) -> List[str]:
-    """Match the C sites to our gates. capped[s] marks a sample truncated at its cut (the a_K rule):
-    signatures are compared on the other samples, and on a capped sample only where its C site was
-    reached (see the module docstring)."""
+    """Match the C sites to our gates (module docstring). A site inside a loop is one gate per trip
+    on our side, and a trip that skips the call leaves no C reach: so each lowered gate belongs to
+    one site, and at each sample the gate, where it fires, takes the site's earliest reach not yet
+    taken that agrees with it in angle (and register, for theta). Every reach must be taken, except
+    a constant multiset of classical-angle phi reaches (a global phase). capped[s] marks a sample
+    truncated at its cut (the a_K rule): a gate firing there with no reach left lies past the cut."""
     reasons: List[str] = []
     capped = list(capped)
-    nS = len(capped) if capped else len(ours[0].pred) if ours else len(sites[0].pred) if sites else 0
+    nS = len(capped) if capped else len(ours[0].pred) if ours else len(sites[0].occ) if sites else 0
     capped = capped or [False] * nS
     P = [s for s in range(nS) if not capped[s]]
     C = [s for s in range(nS) if capped[s]]
@@ -546,102 +542,134 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
         else:
             afn = tuple(_fpv(e.theta, "f64", nan_eq) if p else None for p in e.pred)
         w = e.tclass[0] if e.target is not None else None
-        if e.target is not None:
-            rfn = tuple(_fpv(v, w, nan_eq) if p else None for v, p in zip(e.tclass[1], e.pred))
-        else:
-            rfn = tuple(None for _ in e.pred)
+        rfn = e.tclass[1] if e.target is not None else tuple(None for _ in e.pred)
         return afn, rfn, w
 
-    full = {id(e): lfull(e) for e in ours}
+    full = [lfull(e) for e in ours]
+    ckind = ["theta" if e.kind in ("ry", "ryq") else "phi" for e in ours]
+    cands = [[j for j, st in enumerate(sites) if st.kind == ckind[i]] for i in range(len(ours))]
+    free_ok = [not any(e.pred[s] for s in P) and bool(C) for e in ours]   # fires only on capped samples
+    Used = Tuple[int, ...]           # per (site, sample) a bitmask of the reaches taken
 
-    def lsig(e: _Ev) -> Tuple:
-        kind = "theta" if e.kind in ("ry", "ryq") else "phi"
-        afn, rfn, w = full[id(e)]
-        return (kind, tuple(e.pred[s] for s in P), tuple(afn[s] for s in P), tuple(rfn[s] for s in P), w)
+    def take(i: int, j: int, used: Used, hits: Optional[List[List[Tuple[int, _Ev]]]] = None
+             ) -> Optional[Used]:
+        """Gate i taken by site j: the new state, or None (it disagrees, or takes no reach)."""
+        e, st = ours[i], sites[j]
+        afn, rfn, w = full[i]
+        new: Optional[List[int]] = None
+        for s in range(nS):
+            if not e.pred[s]:
+                continue
+            m = used[j * nS + s]
+            hit = None
+            for t, (epos, a, r) in enumerate(st.occ[s]):
+                if not (m >> t) & 1 and a == afn[s] and (st.kind != "theta" or _fpv(r, w, nan_eq) == _fpv(rfn[s], w, nan_eq)):
+                    hit = t
+                    break
+            if hit is None:
+                if capped[s]:
+                    continue         # past the cut: unknown
+                return None
+            if new is None:
+                new = list(used)
+            new[j * nS + s] = m | (1 << hit)
+            if hits is not None:
+                hits[s].append((st.occ[s][hit][0], e))
+        return tuple(new) if new is not None else None
 
-    def srfn(st: _Site, w: Optional[str]) -> Tuple:
-        return tuple(_fpv(v, w, nan_eq) if p and v is not None else None for v, p in zip(st.rfn, st.pred))
-
-    def optional(st: _Site) -> bool:
-        # a global phase: reached wherever known, one angle
-        return (st.kind == "phi" and all(st.pred[s] for s in P)
-                and len({a for a, p in zip(st.afn, st.pred) if p}) == 1)
-
-    def compat(st: _Site, e: _Ev, w: Optional[str]) -> bool:
-        afn, rfn, _ = full[id(e)]
-        sr = srfn(st, w)
-        return all(e.pred[s] and afn[s] == st.afn[s] and (st.kind != "theta" or rfn[s] == sr[s])
-                   for s in C if st.pred[s])
-
-    # a C register value is compared at the lowered target's width
-    by_sig: Dict[Tuple, List[_Ev]] = {}
-    for e in ours:
-        by_sig.setdefault(lsig(e), []).append(e)
-    widths = {sig[4] for sig in by_sig}
-    pairs: Dict[Tuple, _Ev] = {}
-    groups: Dict[Tuple, List[_Site]] = {}
-    for st in sites:
-        matched = False
-        for w in sorted(widths, key=lambda x: (x is None, str(x))):
-            rfn = srfn(st, w)
-            ww = w if st.kind == "theta" else None
-            sig = (st.kind, tuple(st.pred[s] for s in P), tuple(st.afn[s] for s in P),
-                   tuple(rfn[s] for s in P), ww)
-            if sig in by_sig:
-                groups.setdefault(sig, []).append(st)
-                matched = True
-                break
-        if not matched and not optional(st):
-            reasons.append(f"C site {st.key[0]}:{st.key[1]} ({st.kind}, occurrence {st.key[3]}, reached "
-                           f"{_fn(st.pred)}) has no lowered gate with that predicate, angle and register")
-    unmatched: List[_Ev] = []
-    for sig, evs in by_sig.items():
-        sts = groups.get(sig, [])
-        sts.sort(key=lambda st: st.order[next(s for s, p in enumerate(st.pred) if p)])
-        # pair in order, each site with the first remaining gate that agrees on the capped samples
-        left = list(evs)
-        got: List[Tuple[_Site, _Ev]] = []
-        missing: List[_Site] = []
-        for st in sts:
-            e = next((e for e in left if compat(st, e, sig[4])), None)
-            if e is None:
-                missing.append(st)
+    def leftover(used: Used) -> List[str]:
+        """Reaches not taken that are not a global phase."""
+        why: List[str] = []
+        for j, st in enumerate(sites):
+            left = [[(t, o) for t, o in enumerate(st.occ[s]) if not (used[j * nS + s] >> t) & 1]
+                    for s in range(nS)]
+            bad: List[Tuple[int, int]] = []
+            if st.kind == "theta":
+                bad = [(s, l[0][0]) for s, l in enumerate(left) if l]
+            elif P:
+                # a global phase: the same multiset at every uncapped sample, a part of it on a capped one
+                cnt = [Counter(o[1] for _, o in l) for l in left]
+                L = cnt[P[0]]
+                for s in range(nS):
+                    if (cnt[s] != L) if s in P else bool(cnt[s] - L):
+                        diff = (cnt[s] - L) or (L - cnt[s])
+                        t = next((t for t, o in left[s] if o[1] in diff), None)
+                        if t is None:          # a reach this sample lacks: name it where it is left
+                            s = P[0]
+                            t = next(t for t, o in left[s] if o[1] in diff)
+                        bad.append((s, t))
+                        break
             else:
-                left.remove(e)
-                got.append((st, e))
-        # an optional (global-phase) site may yield its gate to a mandatory one
-        for st in [st for st in missing if not optional(st)]:
-            for i, (st2, e) in enumerate(got):
-                if optional(st2) and compat(st, e, sig[4]):
-                    got[i] = (st, e)
+                if len({o[1] for l in left for _, o in l}) > 1:
+                    bad = [(s, l[0][0]) for s, l in enumerate(left) if l]
+            if bad:
+                s, t = bad[0]
+                reach = _fn([len(o) for o in st.occ])
+                why.append(f"C site {st.key[0]}:{st.key[1]} ({st.kind}, reach {t} at sample {s}; reaches per "
+                           f"sample {reach}) has no lowered gate with that predicate, angle and register")
+        return why
+
+    start: Used = tuple(0 for _ in range(len(sites) * nS))
+    assign: List[Optional[int]] = [None] * len(ours)
+    failed: set = set()
+    limit = max(1000, 4 * len(ours) + 100)
+    if sys.getrecursionlimit() < limit:
+        sys.setrecursionlimit(limit)
+
+    def dfs(i: int, used: Used) -> bool:
+        if i == len(ours):
+            return not leftover(used)
+        if (i, used) in failed:
+            return False
+        for j in cands[i]:
+            nxt = take(i, j, used)
+            if nxt is not None:
+                assign[i] = j
+                if dfs(i + 1, nxt):
+                    return True
+        if free_ok[i]:
+            assign[i] = None
+            if dfs(i + 1, used):
+                return True
+        failed.add((i, used))
+        return False
+
+    if not dfs(0, start):
+        # diagnose with the greedy assignment
+        used = start
+        for i, e in enumerate(ours):
+            for j in cands[i]:
+                nxt = take(i, j, used)
+                if nxt is not None:
+                    used = nxt
                     break
             else:
-                reasons.append(f"C site {st.key[0]}:{st.key[1]} occurrence {st.key[3]} has no lowered gate left"
-                               + (" agreeing on the capped samples" if C else ""))
-        for st, e in got:
-            pairs[st.key] = e
-        for e in left:
-            if any(sig[1]) or not C:
-                reasons.append(f"lowered gate #{e.idx} {e.label} (predicate {_fn(e.pred)}) corresponds to no C site")
-            else:
-                unmatched.append(e)    # fires only on capped samples: unknown past the cut
-    if reasons:
-        return reasons
-    by_key = {st.key: st for st in sites}
+                if not free_ok[i]:
+                    reasons.append(f"lowered gate #{e.idx} {e.label} (predicate {_fn(e.pred)}) corresponds to "
+                                   f"no C site")
+        reasons += leftover(used)
+        return reasons or ["the lowered gates and the C sites admit no matching"]
+
+    hits: List[List[Tuple[int, _Ev]]] = [[] for _ in range(nS)]
+    used = start
+    for i in range(len(ours)):
+        if assign[i] is not None:
+            used = take(i, assign[i], used, hits)
     # an unmatched gate on a capped sample must not precede a dependent gate that sample reached
-    for x in unmatched:
+    for i, x in enumerate(ours):
+        if assign[i] is not None:
+            continue
         for s in C:
             if not x.pred[s]:
                 continue
-            for k, e in pairs.items():
-                if s in by_key[k].order and e.idx > x.idx and (x.support & e.support):
+            for _, e in hits[s]:
+                if e.idx > x.idx and (x.support & e.support):
                     reasons.append(f"sample {s}: lowered gate #{x.idx} {x.label} corresponds to no C site and "
                                    f"precedes {e.label}, which the C program reached before the cut")
                     return reasons
     # order: every sample's hit order agrees with the lowered order on dependent gates
     for s in range(nS):
-        seq = sorted((by_key[k].order[s], e) for k, e in pairs.items() if s in by_key[k].order)
-        evs_s = [e for _, e in seq]
+        evs_s = [e for _, e in sorted(hits[s], key=lambda t: t[0])]
         for a in range(len(evs_s)):
             for b in range(a + 1, len(evs_s)):
                 x, y = evs_s[a], evs_s[b]

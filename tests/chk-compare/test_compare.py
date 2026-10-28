@@ -317,6 +317,34 @@ class COracle(unittest.TestCase):
         c = compare(side("o", ref_ab([ph(9, 1, 0.3)])), self.c_side(), QKEY, "c")
         self.assertTrue(c.equal, c.reasons)
 
+    def loop_c(self, a1=0.5, a2=0.5):
+        """152's shape (bead cq-yonm): a two-trip loop whose body calls cq_phi (site f:5) on trip 1
+        when a, on trip 2 when b. A skipped trip leaves no C reach, so on a=0, b=1 the site's first
+        reach is trip 2's."""
+        return side("c", lambda a, b, s: dict(
+            rots=([self.csite("f", 5, "phi", a1)] if a else []) + ([self.csite("f", 5, "phi", a2)] if b else []),
+            kept=[]))
+
+    @staticmethod
+    def loop_ours(p1, p2, a1=0.5, a2=0.5):
+        return side("o", lambda a, b, s: dict(rots=[ph(21, p1(a, b), a1), ph(22, p2(a, b), a2)],
+                                              kept=[keep(1, a), keep(2, b)]))
+
+    def test_loop_site_matched_per_trip(self):
+        c = compare(self.loop_ours(lambda a, b: a, lambda a, b: b), self.loop_c(), QKEY, "c")
+        self.assertTrue(c.equal, c.reasons)
+        c = compare(self.loop_ours(lambda a, b: a, lambda a, b: b, 0.5, 0.25), self.loop_c(0.5, 0.25), QKEY, "c")
+        self.assertTrue(c.equal, c.reasons)
+
+    def test_loop_site_wrong_trip_predicate_rejected(self):
+        for p2 in (lambda a, b: a & b, lambda a, b: a | b, lambda a, b: 0):
+            c = compare(self.loop_ours(lambda a, b: a, p2), self.loop_c(), QKEY, "c")
+            self.assertFalse(c.equal)
+        # each trip's angle stays with its trip
+        c = compare(self.loop_ours(lambda a, b: a, lambda a, b: b, 0.25, 0.5), self.loop_c(0.5, 0.25), QKEY, "c")
+        self.assertFalse(c.equal)
+        self.assertTrue(any("f:5" in r for r in c.reasons), c.reasons)
+
     def test_order_against_dependent_gate(self):
         # the C program puts the phase on a&b before the Ry on b; the lowered order reverses them
         c_first = side("c", lambda a, b, s: dict(
