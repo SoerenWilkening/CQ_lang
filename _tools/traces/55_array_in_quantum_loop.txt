@@ -1,7 +1,7 @@
-# driver: array_in_quantum_loop(0,.5,3)
-# call: array_in_quantum_loop(0,.5,3)
+# driver: array_in_quantum_loop(1,.5,3)
+# call: array_in_quantum_loop(1,.5,3)
 cqrt_qram_alloc_i32(4) -> a0
-cqrt_alloc_i32(0) -> h1
+cqrt_alloc_i32(1) -> h1
 cqrt_ry_i32(h1, 0x1p-1)
 cqrt_alloc_i32(0) -> h2
 cqrt_qram_store_i32_hl(a0, 0, h2)

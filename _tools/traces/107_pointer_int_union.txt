@@ -1,6 +1,6 @@
-# driver: union_ptr_to_int(0,.5,7);union_int_to_ptr(0,.5,7);union_slot(0,.5,7)
-# call: union_ptr_to_int(0,.5,7)
-cqrt_alloc_i32(0) -> h0
+# driver: union_ptr_to_int(1,.5,7);union_int_to_ptr(0,.5,7);union_slot(0,.5,7)
+# call: union_ptr_to_int(1,.5,7)
+cqrt_alloc_i32(1) -> h0
 cqrt_ry_i32(h0, 0x1p-1)
 cq_template_and_i32_hl(h0, 1) -> h1
 cq_template_icmp_eq_i32_hl(h1, 0) -> h2
