@@ -25,6 +25,7 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 
 namespace llvm { class LoopInfo; }
@@ -120,6 +121,28 @@ public:
   virtual void gate(abi::Core op, llvm::ArrayRef<llvm::Value *> controls, llvm::Value *target) = 0;
 };
 llvm::Value *materialize(unsigned node, GateSink &, const std::function<bool(unsigned)> &quantumLikeVar);
+
+// Rule 9 at CQ_spec a58c3a4 (owner ruling on cq-mtt): a select or phi whose condition, or choice of
+// incoming edge, is purely classical is a classical select/phi over the handles, with no gate, like a
+// classical branch. A classical arm is seeded onto a rail (a phi's on its incoming edge, before that
+// edge's branch: 128), the merged handle is recorded with Uncompute::recordMerge (U1) before any
+// consumer reads it, and each arm's rails are computed and uncomputed as usual (uncompute's alias).
+// What the lowering needs from the spine and uncompute, behind a sink so tests drive it directly.
+class MergeSink {
+public:
+  virtual ~MergeSink() = default;
+  virtual Operand operand(const llvm::Value *orig) = 0;   // read with the builder where it is used
+  // A fresh rail holding a classical value, recorded as a seed, at the builder's insertion point.
+  virtual llvm::Value *seed(llvm::Value *classical, RailType) = 0;
+  virtual void merged(llvm::Instruction *m) = 0;            // Uncompute::recordMerge
+};
+// The select's condition must be classical in the new IR (internal error otherwise).
+llvm::Value *classicalSelect(llvm::SelectInst &, llvm::IRBuilder<> &, MergeSink &);
+// For a phi at a classically chosen join whose output block is `join`: outOf(u) is the output block
+// carrying the original edge u -> phi's block, for each reachable incoming block u (null when u is
+// unreachable). The output CFG must already route every such edge into `join` and nothing else.
+llvm::Value *classicalPhi(llvm::PHINode &, llvm::BasicBlock *join, llvm::IRBuilder<> &,
+                          const std::function<llvm::BasicBlock *(const llvm::BasicBlock *)> &outOf, MergeSink &);
 
 // Rule 8's X bracket: when f is the negation of one positive quantum-like atom, that atom's variable.
 std::optional<unsigned> negatedAtom(unsigned f, const std::function<bool(unsigned)> &quantumLikeVar);

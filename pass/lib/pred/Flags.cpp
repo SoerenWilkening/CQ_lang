@@ -12,6 +12,8 @@
 
 #include "cq/Common.h"
 #include "cq/Rotation.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -123,6 +125,100 @@ Value *materialize(unsigned node, GateSink &sink, const std::function<bool(unsig
   return mat(node);
 }
 
+// ---- Rule 9 at a58c3a4: merges chosen classically (owner ruling on cq-mtt) ----
+
+Value *classicalSelect(SelectInst &sel, IRBuilder<> &B, MergeSink &sink) {
+  Operand c = sink.operand(sel.getCondition());
+  if (c.handle)
+    internalError("pred: a classically chosen select whose condition is a rail", &sel);
+  RailType w = railTypeOf(sel.getType());
+  if (auto *k = dyn_cast<ConstantInt>(c.v)) {
+    Operand a = sink.operand(k->isOne() ? sel.getTrueValue() : sel.getFalseValue());
+    return a.handle ? a.v : sink.seed(a.v, w);
+  }
+  Operand t = sink.operand(sel.getTrueValue()), f = sink.operand(sel.getFalseValue());
+  if (!t.handle && !f.handle)   // every arm read classically (a collapsed rail): one value, one rail
+    return sink.seed(B.CreateSelect(c.v, t.v, f.v), w);
+  if (t.v == f.v)
+    return t.v;
+  Value *ht = t.handle ? t.v : sink.seed(t.v, w);
+  Value *hf = f.handle ? f.v : sink.seed(f.v, w);
+  Instruction *m = B.Insert(SelectInst::Create(c.v, ht, hf), sel.getName());
+  sink.merged(m);
+  return m;
+}
+
+Value *classicalPhi(PHINode &phi, BasicBlock *join, IRBuilder<> &B,
+                    const std::function<BasicBlock *(const BasicBlock *)> &outOf, MergeSink &sink) {
+  RailType w = railTypeOf(phi.getType());
+  struct In { const BasicBlock *u; BasicBlock *out; const Value *v; Operand op; };
+  std::vector<In> ins;
+  for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i) {
+    const BasicBlock *u = phi.getIncomingBlock(i);
+    if (std::any_of(ins.begin(), ins.end(), [&](const In &x) { return x.u == u; }))
+      continue;   // a repeated edge carries the same value
+    BasicBlock *ob = outOf(u);
+    if (!ob)
+      continue;   // an unreachable predecessor never selects
+    ins.push_back({u, ob, phi.getIncomingValue(i), Operand{nullptr, false}});
+  }
+  if (ins.empty())
+    internalError("pred: a phi with no reachable incoming edge", &phi);
+  {
+    // Each incoming value is read where its edge leaves.
+    IRBuilderBase::InsertPointGuard g(B);
+    for (In &in : ins) {
+      Instruction *t = in.out->getTerminator();
+      if (!t)
+        internalError("pred: the output block of an incoming edge has no terminator yet", &phi);
+      B.SetInsertPoint(t);
+      in.op = sink.operand(in.v);
+    }
+  }
+  if (std::all_of(ins.begin(), ins.end(), [&](const In &x) { return x.op.v == ins[0].op.v; }))
+    return ins[0].op.handle ? ins[0].op.v : sink.seed(ins[0].op.v, w);   // one value on every edge
+
+  // The output CFG must reach the join through exactly the incoming edges' blocks.
+  SmallPtrSet<BasicBlock *, 8> outs, preds;
+  for (const In &in : ins)
+    if (!outs.insert(in.out).second)
+      unimplemented("pred: two incoming edges of a classically chosen phi leave one output block", &phi);
+  for (BasicBlock *p : predecessors(join))
+    preds.insert(p);
+  bool routed = outs.size() == preds.size();
+  for (BasicBlock *p : preds)
+    routed &= outs.count(p) > 0;
+  if (!routed)
+    unimplemented("pred: a classically chosen phi whose output join is not reached exactly through the output "
+                  "blocks of its incoming edges",
+                  &phi);
+
+  bool anyHandle = std::any_of(ins.begin(), ins.end(), [](const In &x) { return x.op.handle; });
+  if (anyHandle) {
+    // A classical arm meets the quantum ones on a rail, seeded on its own edge (128).
+    IRBuilderBase::InsertPointGuard g(B);
+    for (In &in : ins)
+      if (!in.op.handle) {
+        B.SetInsertPoint(in.out->getTerminator());
+        in.op = Operand{sink.seed(in.op.v, w), true};
+      }
+  }
+  Type *ty = anyHandle ? ins[0].op.v->getType() : phi.getType();
+  for (const In &in : ins)
+    if (in.op.v->getType() != ty)
+      internalError("pred: the arms of a classically chosen phi have different types", &phi);
+  PHINode *np = PHINode::Create(ty, unsigned(pred_size(join)), phi.getName());
+  np->insertInto(join, join->getFirstNonPHIIt());
+  for (BasicBlock *p : predecessors(join))
+    for (const In &in : ins)
+      if (in.out == p)
+        np->addIncoming(in.op.v, p);
+  if (!anyHandle)
+    return sink.seed(np, w);   // every arm read classically: one value, one rail
+  sink.merged(np);
+  return np;
+}
+
 namespace {
 
 RailType i1Rail() { return RailType{Kind::Int, 1}; }
@@ -215,6 +311,20 @@ public:
   }
 };
 
+class CtxMergeSink final : public MergeSink {
+  LoweringContext &ctx;
+
+public:
+  explicit CtxMergeSink(LoweringContext &ctx) : ctx(ctx) {}
+  Operand operand(const Value *orig) override { return ctx.operand(orig); }
+  Value *seed(Value *classical, RailType w) override {
+    CallInst *call = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {classical});
+    ctx.unc().recordSeed(call);
+    return call;
+  }
+  void merged(Instruction *m) override { ctx.unc().recordMerge(m); }
+};
+
 std::function<bool(unsigned)> quantumLikeFn(LoweringContext &ctx, std::shared_ptr<Oracle> O) {
   return [O](unsigned v) { return quantumLike(v, *O); };
 }
@@ -294,6 +404,18 @@ Value *lowerMerge(LoweringContext &ctx, PHINode &phi) {
   if (!scalarRailType(phi.getType()))
     unimplemented("pred: lowerMerge of a non-scalar phi (aggregates: aggr, pointers: fatptr)", &phi);
 
+  // Rule 9 at a58c3a4: every incoming edge chosen classically makes a classical phi over the handles.
+  std::shared_ptr<Oracle> CO = taintOracle(ctx.T, ctx.S);
+  bool classicalChoice = true;
+  for (unsigned i = 0; i < phi.getNumIncomingValues() && classicalChoice; ++i)
+    if (I.rpo.count(phi.getIncomingBlock(i)))
+      classicalChoice = isClassicalNode(nodeOf(ctx.preds().edge(phi.getIncomingBlock(i), bb)), *CO);
+  if (classicalChoice) {
+    CtxMergeSink sink(ctx);
+    auto outOf = [&](const BasicBlock *u) -> BasicBlock * { return I.rpo.count(u) ? ctx.block(u) : nullptr; };
+    return classicalPhi(phi, ctx.B().GetInsertBlock(), ctx.B(), outOf, sink);
+  }
+
   // One arm per distinct incoming value, in the phi's incoming order (its first occurrence).
   struct Arm { const Value *v; unsigned node; unsigned order; };
   std::vector<Arm> arms;
@@ -322,8 +444,10 @@ Value *lowerSelect(LoweringContext &ctx, SelectInst &sel) {
   Value *c = sel.getCondition();
   if (c->getType()->isVectorTy() || !scalarRailType(sel.getType()))
     unimplemented("pred: lowerSelect of a vector or non-scalar select (aggr, fatptr)", &sel);
-  if (!ctx.T.isQuantum(c, ctx.S))
-    internalError("pred: lowerSelect on a classical condition", &sel);
+  if (!ctx.T.isQuantum(c, ctx.S)) {
+    CtxMergeSink sink(ctx);   // rule 9 at a58c3a4: a classical select over the handles, no gate
+    return classicalSelect(sel, ctx.B(), sink);
+  }
   Pred p = Pred::atom(c);
   std::pair<Pred, Operand> arms[] = {{p, ctx.operand(sel.getTrueValue())},
                                      {!p, ctx.operand(sel.getFalseValue())}};

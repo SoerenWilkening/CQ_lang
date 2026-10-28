@@ -8,6 +8,8 @@
 //      atoms plus one classical atom; each evaluated on every assignment: the flag holds f, no gate
 //      targets one of its own controls or an atom rail, and replaying the recorded gates in reverse
 //      and in a shuffled order returns every ancilla to its seed value.
+//   5. Rule 9 at a58c3a4 (cq-mtt): a select or phi chosen classically is a classical select/phi over
+//      the handles, no gate; classical arms seeded (a phi's on its own edge); the merge recorded.
 #include "PredInternal.h"
 
 #include <algorithm>
@@ -20,6 +22,8 @@
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/InstIterator.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Verifier.h"
 #include "llvm/AsmParser/Parser.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -688,10 +692,146 @@ static void testFlags(Function &pool) {
   outs() << "flag synthesis: " << tested << " functions, " << gateTotal << " gates\n";
 }
 
+
+// ---- 5. merges chosen classically (rule 9 at a58c3a4, cq-mtt) ----
+// The sink stands in for the spine and uncompute: a map from original values to new ones, seeds as
+// calls of @alloc (recorded with the block they land in), merges recorded in order.
+class TestMergeSink final : public MergeSink {
+public:
+  IRBuilder<> &B;
+  FunctionCallee alloc;
+  std::map<const Value *, Operand> map;
+  std::vector<CallInst *> seeds;
+  std::vector<Instruction *> merges;
+  TestMergeSink(IRBuilder<> &B, Module &M)
+      : B(B), alloc(M.getOrInsertFunction("alloc", Type::getInt32Ty(Ctx), Type::getInt32Ty(Ctx))) {}
+  Operand operand(const Value *orig) override {
+    if (auto *k = dyn_cast<Constant>(orig))
+      return Operand{const_cast<Constant *>(k), false};
+    return map.at(orig);
+  }
+  Value *seed(Value *classical, RailType w) override {
+    if (w.kind != Kind::Int || w.bits != 32)
+      internalError("test: seed width");
+    seeds.push_back(B.CreateCall(alloc, {classical}));
+    return seeds.back();
+  }
+  void merged(Instruction *m) override { merges.push_back(m); }
+};
+
+static const char *MergeIR = R"(
+define i32 @f(i1 %c, i32 %q, i32 %k, i32 %r) {
+e:
+  br i1 %c, label %a, label %b
+a:
+  br label %j
+b:
+  br label %j
+j:
+  %p = phi i32 [ %q, %a ], [ %k, %b ]
+  %pc = phi i32 [ %k, %a ], [ %r, %b ]
+  %s = select i1 %c, i32 %k, i32 %q
+  %t = select i1 true, i32 %k, i32 %q
+  ret i32 %p
+}
+)";
+
+static void testClassicalMerges() {
+  // Which phis are chosen classically: both of 128's joins (the branch is on a measured outcome).
+  if (Module *mod = load("128_measure_then_reuse/measure_then_reuse.O1.ll"))
+    for (StringRef fn : {"measure_then_reuse", "measure_entangled_rotate_other"}) {
+      Function &F = *mod->getFunction(fn);
+      Computed c = compute(F);
+      BasicBlock *j = blk(F, "%12");
+      for (BasicBlock *u : predecessors(j))
+        CHECK(isClassicalNode(c.edge(u, j), *c.O), fn << ": edge into %12 is chosen classically");
+      CHECK(c.O->isQuantum(&*j->begin()), fn << ": the join's phi is quantum (a merge over handles)");
+    }
+
+  SMDiagnostic err;
+  std::unique_ptr<Module> src = parseAssemblyString(MergeIR, err, Ctx);
+  if (!src) {
+    err.print("pred_unit", errs());
+    ++failures;
+    return;
+  }
+  Function &F = *src->getFunction("f");
+  Module outM("out", Ctx);
+  Type *i32 = Type::getInt32Ty(Ctx), *i1 = Type::getInt1Ty(Ctx);
+  Function *O = Function::Create(FunctionType::get(i32, {i1, i32, i32, i32}, false), GlobalValue::ExternalLinkage,
+                                 "o", outM);
+  BasicBlock *oe = BasicBlock::Create(Ctx, "oe", O), *oa = BasicBlock::Create(Ctx, "oa", O),
+             *ob = BasicBlock::Create(Ctx, "ob", O), *oj = BasicBlock::Create(Ctx, "oj", O);
+  IRBuilder<> B(oe);
+  B.CreateCondBr(O->getArg(0), oa, ob);
+  B.SetInsertPoint(oa);
+  B.CreateBr(oj);
+  B.SetInsertPoint(ob);
+  B.CreateBr(oj);
+  B.SetInsertPoint(oj);
+  TestMergeSink sink(B, outM);
+  sink.map[val(F, "%c")] = {O->getArg(0), false};
+  sink.map[val(F, "%q")] = {O->getArg(1), true};    // a rail handle
+  sink.map[val(F, "%k")] = {O->getArg(2), false};   // classical
+  sink.map[val(F, "%r")] = {O->getArg(3), false};   // classical
+  std::map<const BasicBlock *, BasicBlock *> outOfMap = {{blk(F, "%a"), oa}, {blk(F, "%b"), ob}};
+  auto outOf = [&](const BasicBlock *u) { return outOfMap.at(u); };
+
+  // A phi over a handle and a classical value: the classical arm is seeded on its edge, the phi is
+  // over handles, and it is recorded as a merge.
+  auto &p = cast<PHINode>(*val(F, "%p"));
+  Value *mp = classicalPhi(p, oj, B, outOf, sink);
+  auto *np = dyn_cast<PHINode>(mp);
+  CHECK(np && np->getParent() == oj && np->getNumIncomingValues() == 2, "classical phi: a phi in the join");
+  CHECK(sink.seeds.size() == 1 && sink.seeds[0]->getParent() == ob &&
+            sink.seeds[0]->getNextNode() == ob->getTerminator() && sink.seeds[0]->getArgOperand(0) == O->getArg(2),
+        "classical phi: the classical arm is seeded at the end of its own edge's block");
+  if (np && sink.seeds.size() == 1) {
+    CHECK(np->getIncomingValueForBlock(oa) == O->getArg(1), "classical phi: the handle arm on its edge");
+    CHECK(np->getIncomingValueForBlock(ob) == sink.seeds[0], "classical phi: the seeded arm on its edge");
+  }
+  CHECK(sink.merges.size() == 1 && sink.merges[0] == mp, "classical phi: recorded as a merge (U1)");
+
+  // Every arm classical (a collapsed rail): a classical phi, then one seed of it in the join.
+  size_t seeds0 = sink.seeds.size(), merges0 = sink.merges.size();
+  Value *mpc = classicalPhi(cast<PHINode>(*val(F, "%pc")), oj, B, outOf, sink);
+  CHECK(sink.seeds.size() == seeds0 + 1 && mpc == sink.seeds.back() && sink.seeds.back()->getParent() == oj &&
+            isa<PHINode>(sink.seeds.back()->getArgOperand(0)) && sink.merges.size() == merges0,
+        "classical phi of classical values: one seed of a classical phi, no merge");
+
+  // A select on a classical condition: the classical arm seeded in place, a select over the handles,
+  // no gate, recorded as a merge.
+  seeds0 = sink.seeds.size();
+  merges0 = sink.merges.size();
+  Value *ms = classicalSelect(cast<SelectInst>(*val(F, "%s")), B, sink);
+  auto *ns = dyn_cast<SelectInst>(ms);
+  CHECK(ns && ns->getCondition() == O->getArg(0) && sink.seeds.size() == seeds0 + 1 &&
+            ns->getTrueValue() == sink.seeds.back() && sink.seeds.back()->getArgOperand(0) == O->getArg(2) &&
+            ns->getFalseValue() == O->getArg(1),
+        "classical select: select i1 %c over the seeded classical arm and the handle");
+  CHECK(sink.merges.size() == merges0 + 1 && sink.merges.back() == ms, "classical select: recorded as a merge (U1)");
+
+  // A constant condition picks its arm: a seed of the classical one, no select, no merge.
+  seeds0 = sink.seeds.size();
+  merges0 = sink.merges.size();
+  Value *mt = classicalSelect(cast<SelectInst>(*val(F, "%t")), B, sink);
+  CHECK(sink.seeds.size() == seeds0 + 1 && mt == sink.seeds.back() && sink.merges.size() == merges0,
+        "classical select on a constant: the chosen arm");
+
+  B.CreateRet(mp);
+  std::string verr;
+  raw_string_ostream vos(verr);
+  CHECK(!verifyFunction(*O, &vos), "classical merges: the output function verifies: " << vos.str());
+  for (Instruction &I : instructions(*O))
+    CHECK(!isa<CallInst>(I) || cast<CallInst>(I).getCalledFunction()->getName() == "alloc",
+          "classical merges emit no gate: " << operandName(&I));
+}
+
 int main() {
   testAlgebra();
   testExamples();
   testFactoring();
+  testClassicalMerges();
   // A pool function: 4 atom carriers + 60 rails.
   std::vector<Type *> params(64, Type::getInt32Ty(Ctx));
   Module poolMod("pool", Ctx);
