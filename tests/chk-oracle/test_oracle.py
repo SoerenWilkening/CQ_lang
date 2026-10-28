@@ -215,6 +215,39 @@ double vdbl_q(double x0, double t) { double x = x0; cq_theta(&x, t);
         self.assertEqual(rets(o1, sp, [{"call": 0, "args": ["tab", f64(0.5), HALF]}]), [f64(3.5)])
 
 
+class DefaultEnv(unittest.TestCase):
+    """Owner ruling on cq-0r1i: non-constrained fp ops run round-to-nearest and raise no flags,
+    whatever mode the program set; constrained ops (FENV_ACCESS) see the live mode and flags."""
+
+    SRC = """
+#include <fenv.h>
+%s
+double y_q(double x0, double t, double c) { double x = x0; cq_theta(&x, t); fesetround(FE_UPWARD);
+    double y = x * c; fesetround(FE_TONEAREST); return cq_measure(y); }
+int f_q(double x0, double t, double c) { double x = x0; cq_theta(&x, t); fesetround(FE_UPWARD);
+    feclearexcept(FE_ALL_EXCEPT); double y = x * c; long long q = (long long)(y * 1e300 * 1e300);
+    volatile double z = (double)(q | 1); (void)z; int f = fetestexcept(FE_ALL_EXCEPT); fesetround(FE_TONEAREST);
+    return cq_measure(f); }
+"""
+
+    def run2(self, name, pragma):
+        o1 = compile_c(name, self.SRC % pragma)
+        sp = spec(name, "double y_q(double,double,double);int f_q(double,double,double)",
+                  [("y_q", ["double", "double", "double"]), ("f_q", ["double", "double", "double"])])
+        a = 1.0 + 2.0**-52
+        return rets(o1, sp, [{"call": 0, "args": [f64(a), HALF, f64(a)]},
+                             {"call": 1, "args": [f64(a), HALF, f64(a)]}])
+
+    def test_plain_ops_default_env(self):
+        # (1 + 2^-52)^2 = 1 + 2^-51 + 2^-104: nearest 1 + 2^-51, upward 1 + 2^-51 + 2^-52. Plain ops:
+        # nearest and no flags (although the product overflows and the conversion is invalid).
+        self.assertEqual(self.run2("dflenv", ""), [f64(1.0 + 2.0**-51), "0x0"])
+
+    def test_constrained_ops_live_env(self):
+        # FENV_ACCESS: the live mode rounds up; INEXACT, OVERFLOW and INVALID are observed.
+        y, f = self.run2("dflenv_strict", "#pragma STDC FENV_ACCESS ON")
+        self.assertEqual(y, f64(1.0 + 2.0**-51 + 2.0**-52))
+        self.assertEqual(int(f, 16) & 0x29, 0x29)
 class Fenv(unittest.TestCase):
     """Rule 23's fenv model in the C program (cq-fvs2): five IEEE flags, no FE_DENORMAL;
     feraiseexcept(m) is flags | m; fesetround of an invalid mode returns 1 and keeps the mode."""

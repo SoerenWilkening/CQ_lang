@@ -21,6 +21,8 @@
 //     every load/store/memory intrinsic bounds-checked over an object table (globals, allocas, heap,
 //     byval parameter copies, the va_start register save and overflow areas):
 //     a byte outside every object reads 0, a store to it is dropped;
+//   * in a program that touches the fp environment, every non-constrained fp operation run in the
+//     default environment (round-to-nearest, its flags discarded; owner ruling on cq-0r1i);
 //   * the fenv calls modelled as rule 23 and the references model them (the 5 IEEE flags, no
 //     FE_DENORMAL; feraiseexcept(m) raises exactly m; fesetround of an invalid mode returns 1);
 //   * threads collapsed (pthread_create runs the start routine to completion, rule 24), noreturn
@@ -591,6 +593,70 @@ public:
       } else if (auto *II = dyn_cast<IntrinsicInst>(I)) {
         rewriteIntrinsic(II);
       }
+    }
+  }
+
+  // ---------------------------------------------------------------- the default environment
+  // Owner ruling on cq-0r1i: a non-constrained fp operation (plain fadd, fmul, fcmp, casts, the
+  // non-constrained fp intrinsics) means round-to-nearest with no flags raised, as LLVM defines it,
+  // whatever mode the program set; only constrained intrinsics and the fenv/library calls see the
+  // live environment. In a program that touches the environment (a fe* call, a constrained
+  // intrinsic, a strictfp function), every such operation runs between __cqo_fpdfl_enter (save the
+  // environment, install FE_DFL_ENV) and __cqo_fpdfl_leave (restore it, so its flags vanish). The
+  // module is compiled at -O0, so nothing moves the operation out of the bracket. A program that
+  // never touches the environment runs in the default one throughout and is left alone.
+  bool touchesFenv() const {
+    for (const Function &F : M) {
+      if (F.hasFnAttribute(Attribute::StrictFP))
+        return true;
+      StringRef n = F.getName();
+      if (n.starts_with("llvm.experimental.constrained."))
+        return true;
+      if (F.isDeclaration() && (n.starts_with("fe") || n.starts_with("__cqo_fe")) &&
+          (n.contains("except") || n.contains("round") || n.contains("env")))
+        return true;
+    }
+    return false;
+  }
+
+  static bool fpTyped(const Instruction &I) {
+    if (I.getType()->isFPOrFPVectorTy())
+      return true;
+    for (const Value *op : I.operands())
+      if (op->getType()->isFPOrFPVectorTy())
+        return true;
+    return false;
+  }
+
+  bool nonConstrainedFp(Instruction &I) {
+    if (isa<ConstrainedFPIntrinsic>(I))
+      return false;
+    if (auto *II = dyn_cast<IntrinsicInst>(&I))
+      return fpTyped(*II);
+    if (auto *CI = dyn_cast<CallInst>(&I)) {
+      // the §2 fp -> int rows the totalization put in the runtime
+      Function *G = CI->getCalledFunction();
+      return G && (G->getName() == "__cqo_fpto64" || G->getName() == "__cqo_fpto80");
+    }
+    if (isa<UnaryOperator>(I) || isa<BinaryOperator>(I) || isa<FCmpInst>(I) || isa<CastInst>(I))
+      return fpTyped(I) && !isa<BitCastInst>(I);
+    return false;
+  }
+
+  void defaultEnv(Function &F) {
+    std::vector<Instruction *> work;
+    for (Instruction &I : instructions(F))
+      if (nonConstrainedFp(I))
+        work.push_back(&I);
+    FunctionCallee enter = hook("__cqo_fpdfl_enter", Void, {});
+    FunctionCallee leave = hook("__cqo_fpdfl_leave", Void, {});
+    for (Instruction *I : work) {
+      if (I->getOpcode() == Instruction::FNeg)
+        continue;  // a sign flip: no rounding, no flag
+      IRBuilder<> B(I);
+      B.CreateCall(enter, {});
+      B.SetInsertPoint(I->getNextNode());
+      B.CreateCall(leave, {});
     }
   }
 
@@ -1270,6 +1336,10 @@ public:
       dropPoison(*F);
       totalize(*F);
     }
+    if (touchesFenv())
+      for (Function *F : defined)
+        if (!isDriverFn(*F))
+          defaultEnv(*F);
     // cq_* names used other than as a direct callee cannot be replaced by the identity.
     for (Function &F : M)
       if (siteKind(F.getName()) >= 0)

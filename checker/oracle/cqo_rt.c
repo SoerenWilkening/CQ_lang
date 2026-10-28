@@ -282,6 +282,14 @@ void *__cqo_reallocf(void *p, size_t n) {
     return q;
 }
 
+/* A non-constrained fp operation runs in the default environment (owner ruling on cq-0r1i):
+ * OracleInstr.cpp brackets it with these two. The operation's own flags vanish with the restore. */
+static fenv_t fpdfl_saved;
+void __cqo_fpdfl_enter(void) {
+    fegetenv(&fpdfl_saved);
+    fesetenv(FE_DFL_ENV);
+}
+void __cqo_fpdfl_leave(void) { fesetenv(&fpdfl_saved); }
 /* fenv as rule 23 models it (cq-fvs2; references 81, 82, 100), not as the host libm does. The flags
  * are the five IEEE bits of x86-64 (INVALID 1, DIVBYZERO 4, OVERFLOW 8, UNDERFLOW 16, INEXACT 32):
  * macOS also reports FE_DENORMAL (0x02, raised by an SSE op on a subnormal) and counts it in
