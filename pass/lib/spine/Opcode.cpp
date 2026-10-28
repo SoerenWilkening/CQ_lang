@@ -396,6 +396,19 @@ void lowerOpcode(LoweringContext &ctx, Instruction &I) {
 // Rule 6 (cq-fufh): a rotation in place on y' = f(y, z), with f a bijection in y (add, sub, xor) and
 // the old y dead (y' is its only use), cleans the old y rail first: t = f^-1(y', z), copy t into y,
 // uncompute t, free y. The non-diagonal gate noted on y' orders the clean-up before it (144).
+// y is dead after `at`: every other use of y is an instruction in at's block that comes before it
+// (180: c's first CNOT reads it before c ^ m1).
+static bool deadAfter(Value *y, Instruction *at) {
+  for (User *u : y->users()) {
+    if (u == at)
+      continue;
+    auto *ui = dyn_cast<Instruction>(u);
+    if (!ui || ui->getParent() != at->getParent() || !ui->comesBefore(at))
+      return false;
+  }
+  return true;
+}
+
 static void ruleSixBeforeRotation(LoweringContext &ctx, Value *v, Value *yPrime) {
   auto *bo = dyn_cast<BinaryOperator>(v);
   if (!bo || !bo->getType()->isIntegerTy())
@@ -406,14 +419,11 @@ static void ruleSixBeforeRotation(LoweringContext &ctx, Value *v, Value *yPrime)
   for (unsigned i = 0; i < 2; ++i) {
     Value *Y = bo->getOperand(i), *Z = bo->getOperand(1 - i);
     Operand y = ctx.operand(Y);
-    if (!y.handle || !Y->hasOneUse())
+    if (!y.handle || !deadAfter(Y, bo))
       continue;
     Operand z = ctx.operand(Z), yp{yPrime, true};
-    // Only a quantum update (z a rail, 144): y' = y + c with c classical is a derived register and
-    // the old one stays (38 rotate_derived keeps x). Orchestrator decision from the references,
-    // CR rule 6's wording does not separate the two (owner asked, cq-fufh).
-    if (!z.handle)
-      continue;
+    // CR rule 6 applies whether z is a rail (144) or classical (180: c ^ m1 with m1 measured). The
+    // 38 rotate_derived reference keeps the dead x of y = x + c; CR wins (SPEC_ISSUES.md, cq-tvfm).
     abi::TemplateSpec spec;
     spec.w = rt(bo->getType(), bo);
     Operand a = yp, b = z;

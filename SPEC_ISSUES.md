@@ -46,3 +46,9 @@ Entry format:
 - Disagreement: three drivers.txt calls access past an object, so the C program is undefined on them, yet the checker must run every drivers.txt call. 55 `array_in_quantum_loop(0, .5, 3)` reads `a[m - 1] = a[-1]`; 91 `heap_quantum_size(0, .5, 0, .25, 9)` stores `a[0]` into `malloc(0)`; 107 `union_ptr_to_int(0, .5, 7)` reads `b + 2`, one past `b` (the reference reads 0 by rule 21, the C oracle reads the adjacent `a[0]`).
 - Evidence: the cq-y10d probe build reports the out-of-object access on each; `cqcheck baseline` 107 c fails on exactly that sample (returns 0x7 vs 0x8). Other examples not surveyed.
 - Bead: cq-b4re
+
+## 38 rotate_derived: keeps the dead x of y = x + c before the rotation of y (rule 6)
+- Rule: CR rule 6 ("When y' = f(y, …) is a bijection in y … and y's old value is dead, the old rail is cleaned").
+- Disagreement: `int y = x + c; cq_theta(&y, t2);` with c classical: x is dead after the add, so rule 6 cleans x (t = y − c, copy into x, uncompute t, free x). The 38 reference keeps x allocated to the end. 180 teleport applies rule 6 to the same shape (c' = c ^ m1, m1 classical, then Ry on c') and cleans the old c; 144 and 145 clean too.
+- Evidence: `cqcheck run 38` with rule 6 implemented as CR says: s6 fails on rotate_derived, "1 rail(s) i32 … kept on the reference side" (x); 144, 145, 180 pass.
+- Bead: cq-tvfm (fix), owner question pending.
