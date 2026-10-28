@@ -1098,13 +1098,46 @@ public:
         if (q != KI.qexit.end())
           kq = &q->second;
       }
+      // The header's test region (CR rule 14, header-tested loops 09, 37, 54, 189): the header plus
+      // the blocks it reaches through single-predecessor in-loop edges that only compute and test
+      // (no memory write, no call), none a latch. When the region holds an exit, a header run that
+      // leaves through it only exits, and a trip begins on an edge from the region into the body
+      // (54: the two tests x > k and x * c > m are one test split over two blocks).
+      SmallPtrSet<BasicBlock *, 4> region;
+      bool regionExits = false;
+      {
+        SmallVector<BasicBlock *, 4> work{H};
+        region.insert(H);
+        while (!work.empty()) {
+          BasicBlock *B = work.pop_back_val();
+          if (L->isLoopExiting(B))
+            regionExits = true;
+          for (BasicBlock *S : successors(B)) {
+            if (!L->contains(S) || S == H || region.count(S) || S->getSinglePredecessor() != B ||
+                L->isLoopLatch(S) || !L->isLoopExiting(S))
+              continue;
+            bool pure = true;
+            for (Instruction &I : *S)
+              if (I.mayWriteToMemory() || isa<CallBase>(I) || isa<PHINode>(I))
+                pure = false;
+            if (pure) {
+              region.insert(S);
+              work.push_back(S);
+            }
+          }
+        }
+        if (L->isLoopLatch(H))
+          regionExits = false;
+      }
       if (kq) {
-        if (L->isLoopExiting(H) && !L->isLoopLatch(H)) {
-          for (BasicBlock *S : successors(H))
-            if (L->contains(S) && !std::count_if(edgeChecks.begin(), edgeChecks.end(), [&](auto &e) {
-                  return e.first == std::make_pair(H, S);
-                }))
-              edgeChecks.push_back({{H, S}, Check{cid, cnt, kq}});
+        if (regionExits) {
+          for (BasicBlock *R : region)
+            for (BasicBlock *S : successors(R))
+              if (L->contains(S) && !region.count(S) &&
+                  !std::count_if(edgeChecks.begin(), edgeChecks.end(), [&](auto &e) {
+                    return e.first == std::make_pair(R, S);
+                  }))
+                edgeChecks.push_back({{R, S}, Check{cid, cnt, kq}});
         } else {
           headerChecks.push_back({H, Check{cid, cnt, kq}});
         }
@@ -1116,8 +1149,8 @@ public:
         if (isa<IndirectBrInst>(from->getTerminator()) || isa<CallBrInst>(from->getTerminator()))
           unimplemented("loop exit from indirectbr/callbr", from->getTerminator());
         // A trip is begun at each header execution, except a final header run that only exits:
-        // an exit from a header that is not a latch.
-        add(from, to, Rep{cid, cnt, from == H && !L->isLoopLatch(H), kq});
+        // an exit from the header's test region (above).
+        add(from, to, Rep{cid, cnt, regionExits && region.count(from), kq});
       }
       // Guard skip: an entering edge whose branch's other successor is an exit block reports 0.
       SmallVector<BasicBlock *, 4> exitBlocks;
