@@ -102,12 +102,21 @@ bool isClassicalNode(unsigned f, Oracle &);
 void computePaths(PathStorage &, llvm::Function &, const llvm::LoopInfo &, Oracle &,
                   llvm::Value *entryFlag);
 
-// Rule 9's chain. Given each arm's predicate (in preference order), the conditions the selects test,
-// outermost first: result[i] = (condition relative to the arms not yet taken, arm index). Arms are
-// taken greedily: next is the first remaining arm one literal separates in the current context, so
-// nested arms nest (158) and an if/else chain is single compares (104). An arm unreachable in its
-// context is dropped; the last entry's condition is true (the complement arm, innermost).
-std::vector<std::pair<unsigned, unsigned>> chainConditions(llvm::ArrayRef<unsigned> armNodes);
+// Rule 9's select tree. Given each arm's predicate (in preference order), the selects to emit, root at
+// index 0. A node with arm >= 0 is that arm's value; otherwise it selects on cond (relative to the
+// context of the node) between thenIdx and elseIdx. Built greedily: a chain step takes the first arm
+// one literal separates in the current context, so nested arms nest (158) and an if/else chain is
+// single compares (104); when no arm is separable, a literal that splits the arms into two groups is
+// selected on with a tree per group (two-sided nested arms, cq-95k8), so each select tests one
+// literal and there is one select per distinct arm less one. Only when neither exists does a node
+// test a compound condition. An arm unreachable in its context is dropped; the complement arm of
+// each context is innermost.
+struct SelectNode {
+  unsigned cond;
+  int arm;
+  int thenIdx, elseIdx;
+};
+std::vector<SelectNode> selectTree(llvm::ArrayRef<unsigned> armNodes);
 
 // Flag synthesis (rule 8). The flag for f is a positive rail holding f: an existing rail when f is one
 // positive quantum-like atom, otherwise a fresh |0> rail t that receives XOR-into-t gates only

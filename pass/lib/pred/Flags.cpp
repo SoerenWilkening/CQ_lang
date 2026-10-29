@@ -686,20 +686,22 @@ Value *selectChain(LoweringContext &ctx, ArrayRef<std::pair<Pred, Operand>> arms
   std::vector<unsigned> nodes;
   for (auto &a : arms)
     nodes.push_back(nodeOf(a.first));
-  auto conds = chainConditions(nodes);
-  if (conds.size() == 1) {
+  std::vector<SelectNode> tree = selectTree(nodes);
+  if (tree[0].arm >= 0) {
     // One arm reaches the merge on every path: the merge is that value (a representation change).
-    const Operand &op = arms[conds[0].second].second;
+    const Operand &op = arms[tree[0].arm].second;
     return op.handle ? op.v : seedOf(ctx, op.v, w);
   }
   std::shared_ptr<Oracle> O = taintOracle(ctx.T, ctx.S);
   auto ql = quantumLikeFn(ctx, O);
-  Operand acc = arms[conds.back().second].second;
-  for (int j = int(conds.size()) - 2; j >= 0; --j) {
-    unsigned c = conds[j].first;
-    Operand a = arms[conds[j].second].second;
+  // Inner selects first (the true side's, then the false side's), each node's select after both.
+  std::function<Operand(int)> emit = [&](int k) -> Operand {
+    const SelectNode &nd = tree[k];
+    if (nd.arm >= 0)
+      return arms[nd.arm].second;
+    unsigned c = nd.cond;
+    Operand tv = emit(nd.thenIdx), fv = emit(nd.elseIdx);
     Value *cond;
-    Operand tv = a, fv = acc;
     if (auto g = negatedAtom(c, ql)) {
       // Selecting on NOT g is selecting on g with the arms swapped.
       CtxSink sink(ctx);
@@ -715,9 +717,9 @@ Value *selectChain(LoweringContext &ctx, ArrayRef<std::pair<Pred, Operand>> arms
     spec.w = w;
     std::string shape = std::string(tv.handle ? "h" : "l") + (fv.handle ? "h" : "l");
     spec.shape = shape == "hh" ? "" : shape;
-    acc = Operand{ctx.emitTemplate(spec, {Operand{cond, true}, tv, fv}), true};
-  }
-  return acc.v;
+    return Operand{ctx.emitTemplate(spec, {Operand{cond, true}, tv, fv}), true};
+  };
+  return emit(0).v;
 }
 
 Value *lowerMerge(LoweringContext &ctx, PHINode &phi) {

@@ -490,45 +490,94 @@ void computePaths(PathStorage &I, Function &F, const LoopInfo &LI, Oracle &O, Va
   }
 }
 
-std::vector<std::pair<unsigned, unsigned>> chainConditions(ArrayRef<unsigned> arms) {
+namespace {
+// One level of selectTree over the arms live in ctxt; returns the node's index in out.
+int buildSelect(std::vector<SelectNode> &out, ArrayRef<unsigned> arms, unsigned ctxt) {
   Bdd &m = Bdd::get();
-  std::vector<std::pair<unsigned, unsigned>> out;
+  auto literal = [&](unsigned n) { return !m.terminal(n) && m.terminal(m.lo(n)) && m.terminal(m.hi(n)); };
+  auto leaf = [&](unsigned i) {
+    out.push_back(SelectNode{Bdd::T, int(i), -1, -1});
+    return int(out.size() - 1);
+  };
+  auto node = [&](unsigned cond) {
+    out.push_back(SelectNode{cond, -1, -1, -1});
+    return int(out.size() - 1);
+  };
+  std::vector<unsigned> live;
+  for (unsigned i = 0; i < arms.size(); ++i)
+    if (m.andOp(ctxt, arms[i]) != Bdd::F)
+      live.push_back(i);
+  if (live.empty())
+    internalError("pred: merge arms do not cover the merge's predicate");
+  // An arm taken on every path of the context is the complement arm (innermost); the others are
+  // unreachable here and dropped.
+  for (unsigned i : live)
+    if (m.andOp(ctxt, m.notOp(arms[i])) == Bdd::F)
+      return leaf(i);
+  // A chain step: the first arm (in the caller's order) one literal separates from the rest in the
+  // context, so an if/else chain is single compares (104) and nested arms nest (158).
+  for (unsigned i : live) {
+    unsigned c = m.restrict(arms[i], ctxt);
+    if (literal(c)) {
+      int n = node(c);
+      int t = leaf(i);
+      int e = buildSelect(out, arms, m.andOp(ctxt, m.notOp(arms[i])));
+      out[n].thenIdx = t;
+      out[n].elseIdx = e;
+      return n;
+    }
+  }
+  // A split: a literal every live arm lies on one side of, with arms on both sides (two-sided nested
+  // value arms, cq-95k8). The select on it nests a select tree per side; rule 9: nested arms nest,
+  // never a conjunction flag for a pure select. The side of the first live arm is the true side.
+  std::set<unsigned> sup;
+  for (unsigned i : live)
+    m.support(m.restrict(arms[i], ctxt), sup);
+  for (unsigned v : sup) {
+    unsigned lit = m.ithVar(v);
+    bool pos = false, neg = false, splits = true;
+    for (unsigned i : live) {
+      unsigned a = m.andOp(ctxt, arms[i]);
+      bool p = m.andOp(a, lit) != Bdd::F, q = m.andOp(a, m.notOp(lit)) != Bdd::F;
+      if (p && q) {
+        splits = false;
+        break;
+      }
+      pos |= p;
+      neg |= q;
+    }
+    if (!splits || !pos || !neg)
+      continue;
+    unsigned cond = m.andOp(m.andOp(ctxt, arms[live[0]]), lit) != Bdd::F ? lit : m.notOp(lit);
+    int n = node(cond);
+    int t = buildSelect(out, arms, m.andOp(ctxt, cond));
+    int e = buildSelect(out, arms, m.andOp(ctxt, m.notOp(cond)));
+    out[n].thenIdx = t;
+    out[n].elseIdx = e;
+    return n;
+  }
+  // No literal separates the arms (an arm whose predicate is a compound condition of one branch, as
+  // for a && b): the first live arm's condition in the context.
+  unsigned i = live[0];
+  int n = node(m.restrict(arms[i], ctxt));
+  int t = leaf(i);
+  int e = buildSelect(out, arms, m.andOp(ctxt, m.notOp(arms[i])));
+  out[n].thenIdx = t;
+  out[n].elseIdx = e;
+  return n;
+}
+} // namespace
+
+std::vector<SelectNode> selectTree(ArrayRef<unsigned> arms) {
+  Bdd &m = Bdd::get();
   unsigned ctxt = Bdd::F;
   for (unsigned a : arms)
     ctxt = m.orOp(ctxt, a);
   if (ctxt == Bdd::F)
     internalError("pred: a merge none of whose arms can be taken");
-  auto literal = [&](unsigned n) { return !m.terminal(n) && m.terminal(m.lo(n)) && m.terminal(m.hi(n)); };
-  std::vector<bool> used(arms.size(), false);
-  while (ctxt != Bdd::F) {
-    // Rule 9: nested arms nest, never a conjunction flag for a pure select. Take next the first arm
-    // (in the caller's order) that one condition separates from the rest in the current context.
-    int pick = -1;
-    unsigned pickCond = Bdd::F;
-    for (unsigned i = 0; i < arms.size(); ++i) {
-      if (used[i] || m.andOp(ctxt, arms[i]) == Bdd::F)
-        continue;
-      unsigned c = m.restrict(arms[i], ctxt);
-      bool last = m.andOp(ctxt, m.notOp(arms[i])) == Bdd::F;
-      if (last || literal(c)) {
-        pick = int(i);
-        pickCond = last ? unsigned(Bdd::T) : c;
-        break;
-      }
-      if (pick < 0) {
-        pick = int(i);
-        pickCond = c;
-      }
-    }
-    if (pick < 0)
-      internalError("pred: merge arms do not cover the merge's predicate");
-    // Re-check the fallback pick for the "last arm" case.
-    if (m.andOp(ctxt, m.notOp(arms[pick])) == Bdd::F)
-      pickCond = Bdd::T;
-    used[pick] = true;
-    out.push_back({pickCond, unsigned(pick)});
-    ctxt = m.andOp(ctxt, m.notOp(arms[pick]));
-  }
+  std::vector<SelectNode> out;
+  if (buildSelect(out, arms, ctxt) != 0)
+    internalError("pred: selectTree's root is not its first node");
   return out;
 }
 

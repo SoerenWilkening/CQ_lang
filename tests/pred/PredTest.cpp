@@ -239,10 +239,138 @@ static std::vector<std::pair<unsigned, const Value *>> chainOf(Computed &c, PHIN
   std::vector<unsigned> nodes;
   for (auto &a : arms)
     nodes.push_back(std::get<1>(a));
+  // The tree as a chain: each select's true side an arm, its false side the rest.
   std::vector<std::pair<unsigned, const Value *>> out;
-  for (auto &[cond, i] : chainConditions(nodes))
-    out.push_back({cond, std::get<0>(arms[i])});
+  std::vector<SelectNode> tree = selectTree(nodes);
+  int k = 0;
+  while (tree[k].arm < 0) {
+    if (tree[tree[k].thenIdx].arm < 0) {
+      CHECK(false, phi.getName() << ": the select tree is not a chain");
+      return out;
+    }
+    out.push_back({tree[k].cond, std::get<0>(arms[tree[tree[k].thenIdx].arm])});
+    k = tree[k].elseIdx;
+  }
+  out.push_back({Bdd::T, std::get<0>(arms[tree[k].arm])});
   return out;
+}
+
+// cq-95k8: two-sided nested value arms (if (x) { if (z2) a else b } else { if (z5) c else d }).
+// Rule 9: the selects nest, select(x, select(z2, a, b), select(z5, c, d)), each on one literal; no
+// select tests a conjunction.
+static const char *TwoSidedIR = R"(
+declare i32 @cq_theta_si32(i32, double)
+define i32 @q05(i32 %x0, double %t, i32 %z0, i32 %a, i32 %b, i32 %c, i32 %d) {
+e:
+  %x = call i32 @cq_theta_si32(i32 %x0, double %t)
+  %z = call i32 @cq_theta_si32(i32 %z0, double %t)
+  %cx = icmp sgt i32 %x, 1
+  br i1 %cx, label %l, label %r
+l:
+  %c2 = icmp sgt i32 %z, 2
+  br i1 %c2, label %la, label %lb
+la:
+  %va = add i32 %x, %a
+  br label %j
+lb:
+  %vb = add i32 %z, %b
+  br label %j
+r:
+  %c5 = icmp sgt i32 %z, 5
+  br i1 %c5, label %rc, label %rd
+rc:
+  %vc = sub i32 %c, %x
+  br label %j
+rd:
+  %vd = sub i32 %d, %z
+  br label %j
+j:
+  %y = phi i32 [ %va, %la ], [ %vb, %lb ], [ %vc, %rc ], [ %vd, %rd ]
+  ret i32 %y
+}
+; The false side first in the phi: the tree's true side is still the first arm's.
+define i32 @q05r(i32 %x0, double %t, i32 %z0, i32 %a, i32 %b, i32 %c, i32 %d) {
+e:
+  %x = call i32 @cq_theta_si32(i32 %x0, double %t)
+  %z = call i32 @cq_theta_si32(i32 %z0, double %t)
+  %cx = icmp sgt i32 %x, 1
+  br i1 %cx, label %l, label %r
+l:
+  %c2 = icmp sgt i32 %z, 2
+  br i1 %c2, label %la, label %lb
+la:
+  %va = add i32 %x, %a
+  br label %j
+lb:
+  %vb = add i32 %z, %b
+  br label %j
+r:
+  %c5 = icmp sgt i32 %z, 5
+  br i1 %c5, label %rc, label %rd
+rc:
+  %vc = sub i32 %c, %x
+  br label %j
+rd:
+  %vd = sub i32 %d, %z
+  br label %j
+j:
+  %y = phi i32 [ %vd, %rd ], [ %vc, %rc ], [ %vb, %lb ], [ %va, %la ]
+  ret i32 %y
+}
+)";
+
+static void testSelectTree() {
+  SMDiagnostic err;
+  std::unique_ptr<Module> src = parseAssemblyString(TwoSidedIR, err, Ctx);
+  if (!src) {
+    err.print("pred_unit", errs());
+    ++failures;
+    return;
+  }
+  for (const char *fn : {"q05", "q05r"}) {
+    Function &F = *src->getFunction(fn);
+    Computed c = compute(F);
+    auto &phi = cast<PHINode>(*val(F, "%y"));
+    std::vector<unsigned> nodes;
+    std::vector<const Value *> vals;
+    for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i) {
+      nodes.push_back(c.edge(phi.getIncomingBlock(i), phi.getParent()));
+      vals.push_back(phi.getIncomingValue(i));
+    }
+    std::vector<SelectNode> t = selectTree(nodes);
+    unsigned x = C(val(F, "%cx")), z2 = C(val(F, "%c2")), z5 = C(val(F, "%c5"));
+    unsigned selects = 0;
+    bool literals = true;
+    for (const SelectNode &n : t)
+      if (n.arm < 0) {
+        ++selects;
+        literals &= !m.terminal(n.cond) && m.terminal(m.lo(n.cond)) && m.terminal(m.hi(n.cond));
+      }
+    CHECK(selects == 3 && literals, fn << ": three selects, each on one literal (no conjunction flag)");
+    // Evaluate the tree: under every assignment of the three atoms, it picks the phi's arm.
+    for (unsigned bits = 0; bits < 8; ++bits) {
+      auto value = [&](unsigned v) {
+        unsigned n = m.ithVar(v);
+        return (n == x && (bits & 1)) || (n == z2 && (bits & 2)) || (n == z5 && (bits & 4));
+      };
+      int k = 0;
+      while (t[k].arm < 0)
+        k = m.eval(t[k].cond, value) ? t[k].thenIdx : t[k].elseIdx;
+      const Value *want = (bits & 1) ? ((bits & 2) ? val(F, "%va") : val(F, "%vb"))
+                                     : ((bits & 4) ? val(F, "%vc") : val(F, "%vd"));
+      CHECK(vals[t[k].arm] == want, fn << ": the tree picks the taken arm under assignment " << bits);
+    }
+    bool rootX = t[0].arm < 0 && (t[0].cond == x || t[0].cond == N(x));
+    CHECK(rootX, fn << ": the outer select is on x > 1");
+    if (rootX) {
+      const SelectNode &l = t[t[0].thenIdx], &r = t[t[0].elseIdx];
+      CHECK(l.arm < 0 && r.arm < 0, fn << ": both sides of the outer select are selects");
+      if (std::string(fn) == "q05")
+        CHECK(t[0].cond == x && l.cond == z2 && vals[t[l.thenIdx].arm] == val(F, "%va") && r.cond == z5 &&
+                  vals[t[r.thenIdx].arm] == val(F, "%vc"),
+              fn << ": select(x, select(z2, a, b), select(z5, c, d))");
+    }
+  }
 }
 
 // ---- 1. algebra ----
@@ -1459,6 +1587,7 @@ static void testDeadEnds() {
 int main() {
   testAlgebra();
   testExamples();
+  testSelectTree();
   testDeadEnds();
   testFactoring();
   testClassicalMerges();
