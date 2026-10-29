@@ -13,7 +13,9 @@
 #include "cq/Rotation.h"
 #include "cq/Switch.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Operator.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
@@ -107,6 +109,86 @@ bool lowerLogicalSelect(LoweringContext &ctx, SelectInst &sel) {
   return true;
 }
 
+// Rule 21: whether a pointer's TAG (which object it points into) depends on quantum data. A pointer
+// is (tag, idx); a GEP index, its widening and its scaling only move idx, so a pointer whose every
+// root is a classical pointer has a classical tag even when taint calls it fat for a quantum index.
+// The tag is quantum where a quantum choice may pick between different objects (a select on a
+// quantum condition, a phi merging different provenances) or where the pointer itself arrives
+// quantum (loaded through a fat pointer, a clone parameter, inttoptr: rule 21's fat pointer). A
+// phi whose incomings differ in provenance counts as quantum-chosen: routing it to rule 21 is never
+// wrong (a classical tag is a guard that is constant), only less direct.
+bool quantumTagImpl(LoweringContext &ctx, const Value *p, SmallPtrSetImpl<const Value *> &seen) {
+  for (;;) {
+    if (auto *g = dyn_cast<GEPOperator>(p)) {
+      p = g->getPointerOperand();
+      continue;
+    }
+    if (auto *bc = dyn_cast<BitCastOperator>(p)) {
+      p = bc->getOperand(0);
+      continue;
+    }
+    if (auto *ac = dyn_cast<AddrSpaceCastOperator>(p)) {
+      p = ac->getPointerOperand();
+      continue;
+    }
+    break;
+  }
+  if (!ctx.T.isFatPointer(p, ctx.S) && !isQ(ctx, p))
+    return false;
+  if (!seen.insert(p).second)
+    return false;   // a cycle through phis adds no root of its own
+  auto sameObjects = [&](const Value *a, const Value *b) {
+    ArrayRef<ObjectId> x = ctx.T.provenance(a, ctx.S), y = ctx.T.provenance(b, ctx.S);
+    return x.size() == 1 && y.size() == 1 && x.front() == y.front();
+  };
+  if (auto *sel = dyn_cast<SelectInst>(p)) {
+    if (isQ(ctx, sel->getCondition()) && !sameObjects(sel->getTrueValue(), sel->getFalseValue()))
+      return true;
+    return quantumTagImpl(ctx, sel->getTrueValue(), seen) || quantumTagImpl(ctx, sel->getFalseValue(), seen);
+  }
+  if (auto *phi = dyn_cast<PHINode>(p)) {
+    for (const Value *in : phi->incoming_values())
+      if (in != phi && !sameObjects(in, phi))
+        return true;
+    for (const Value *in : phi->incoming_values())
+      if (quantumTagImpl(ctx, in, seen))
+        return true;
+    return false;
+  }
+  return true;
+}
+
+bool quantumTag(LoweringContext &ctx, const Value *p) {
+  SmallPtrSet<const Value *, 8> seen;
+  return quantumTagImpl(ctx, p, seen);
+}
+
+// The construction of one load or store, by rule 20's table and rule 21. A quantum tag is a fat
+// pointer (rule 21; its per-object accesses are rule 20's again). A classical tag reaches one
+// classified object: QRAM and slot objects take every access through their module (classical or
+// quantum offset); classical memory at a quantum offset is a QROM load; anything else is classical.
+enum class Access : uint8_t { Fat, Qram, Slot, Qrom, Classical };
+
+Access classifyAccess(LoweringContext &ctx, Instruction &I, const Value *p) {
+  if (quantumTag(ctx, p))
+    return Access::Fat;
+  bool qram = false, slot = false;
+  for (ObjectId o : ctx.T.provenance(p, ctx.S)) {
+    qram |= ctx.T.classOf(o) == ObjClass::Qram;
+    slot |= ctx.T.classOf(o) == ObjClass::Slot;
+  }
+  if (qram)
+    return Access::Qram;
+  if (slot)
+    return Access::Slot;
+  if (ctx.T.offsetKind(&I, ctx.S) == OffsetKind::Quantum) {
+    if (isa<StoreInst>(I))
+      internalError("spine: a quantum-offset store into memory taint classified Classical (rule 20: QRAM)", &I);
+    return Access::Qrom;
+  }
+  return Access::Classical;
+}
+
 void lowerMemoryAccess(LoweringContext &ctx, Instruction &I) {
   if (auto *ld = dyn_cast<LoadInst>(&I)) {
     if (ld->isVolatile() || ld->isAtomic()) {
@@ -116,20 +198,18 @@ void lowerMemoryAccess(LoweringContext &ctx, Instruction &I) {
         conc::lowerVolatile(ctx, I);
       return;
     }
-    const Value *p = ld->getPointerOperand();
-    if (ctx.T.isFatPointer(p, ctx.S))
+    switch (classifyAccess(ctx, I, ld->getPointerOperand())) {
+    case Access::Fat:
       return fatptr::lowerLoad(ctx, *ld);
-    bool qram = false, slot = false;
-    for (ObjectId o : ctx.T.provenance(p, ctx.S)) {
-      qram |= ctx.T.classOf(o) == ObjClass::Qram;
-      slot |= ctx.T.classOf(o) == ObjClass::Slot;
-    }
-    if (qram)
+    case Access::Qram:
       return mem::lowerQramLoad(ctx, *ld);
-    if (slot)
+    case Access::Slot:
       return mem::lowerSlotLoad(ctx, *ld);
-    if (ctx.T.offsetKind(ld, ctx.S) == OffsetKind::Quantum)
+    case Access::Qrom:
       return mem::lowerQromLoad(ctx, *ld);
+    case Access::Classical:
+      break;
+    }
     if (isQ(ctx, ld))
       internalError("spine: a classical-offset load of classical memory that taint calls quantum", ld);
     bindOperand(ctx, ld, Operand{copyClassical(ctx, I), false});
@@ -143,21 +223,31 @@ void lowerMemoryAccess(LoweringContext &ctx, Instruction &I) {
       conc::lowerVolatile(ctx, I);
     return;
   }
-  const Value *p = st->getPointerOperand();
-  if (ctx.T.isFatPointer(p, ctx.S))
+  switch (classifyAccess(ctx, I, st->getPointerOperand())) {
+  case Access::Fat:
     return fatptr::lowerStore(ctx, *st);
-  bool qram = false, slot = false;
-  for (ObjectId o : ctx.T.provenance(p, ctx.S)) {
-    qram |= ctx.T.classOf(o) == ObjClass::Qram;
-    slot |= ctx.T.classOf(o) == ObjClass::Slot;
-  }
-  if (qram)
+  case Access::Qram:
     return mem::lowerQramStore(ctx, *st);
-  if (slot)
+  case Access::Slot:
     return mem::lowerSlotStore(ctx, *st);
+  case Access::Qrom:
+    internalError("spine: a QROM store", st);
+  case Access::Classical:
+    break;
+  }
   if (isQ(ctx, st->getValueOperand()))
     internalError("spine: a quantum value stored into memory taint classified Classical", st);
   copyClassical(ctx, I);
+}
+
+// Rule 20, index operand: the widening of a quantum index is address arithmetic and never emitted
+// when its every use is a GEP index (that GEP has a quantum index, so it is never emitted either;
+// the access reads the logical index rail beneath the cast). A cast with any other use is a value
+// and lowered as one.
+bool onlyAddressIndex(const Instruction &I) {
+  return !I.use_empty() && llvm::all_of(I.uses(), [](const Use &u) {
+    return isa<GetElementPtrInst>(u.getUser()) && u.getOperandNo() != 0;
+  });
 }
 
 void lowerCall(LoweringContext &ctx, CallBase &CB) {
@@ -335,6 +425,11 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
       bindOperand(ctx, &I, Operand{copyClassical(ctx, I), false});
     }
     return;
+  case Instruction::ZExt:
+  case Instruction::SExt:
+    if (q && onlyAddressIndex(I))
+      return;
+    break;
   case Instruction::GetElementPtr:
   case Instruction::AddrSpaceCast:
     // Address arithmetic into a slot or QRAM object, or with a quantum index, is never emitted:
