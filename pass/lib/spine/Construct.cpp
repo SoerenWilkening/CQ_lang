@@ -481,10 +481,13 @@ BasicBlock *Walker::out(const BasicBlock *b) {
 void Walker::maybeFlush(Instruction *term) {
   if (!openRegions.empty())
     return;
-  for (const Instruction *d : blockDefs)
-    for (const User *u : d->users())
-      if (auto *ui = dyn_cast<Instruction>(u); ui && !visited.count(ui))
+  for (const Instruction *d : blockDefs) {
+    SmallVector<const Use *, 8> uses;
+    spine::readingUses(sh, d, uses);   // through skipped zexts (cq-su3p)
+    for (const Use *U : uses)
+      if (auto *ui = dyn_cast<Instruction>(U->getUser()); ui && !visited.count(ui))
         return;
+  }
   ctx.unc().flushBefore(term);
 }
 
@@ -1042,6 +1045,12 @@ void Walker::emitBlock(BasicBlock *b) {
       continue;
     }
     if (spine::isQ(ctx, &phi)) {
+      // Rule 10 through rule 3 (cq-su3p): a merge of zexts of one register's states is a view of the
+      // register's narrow rail, never a select over wide copies of it.
+      if (spine::viewMerge(ctx, phi)) {
+        blockDefs.push_back(&phi);
+        continue;
+      }
       // A phi whose every incoming edge predicate is classical chooses its incoming value
       // classically: pred's lowerMerge emits a classical phi over handles (rule 9 at a58c3a4).
       // Rule 10: a phi with a state prep (or a merge of one) among its incomings merges the
@@ -1164,8 +1173,13 @@ void Walker::emitBody(BasicBlock *b, const Instruction *resume) {
       it = e;
       continue;
     }
+    if (sh.hoisted.count(&I))
+      continue;   // lowered before an in-place rotation that -O1 placed it after (cq-su3p)
     spine::dispatch(ctx, I);
     spine::ruleSixAfter(ctx, I);
+    for (const Instruction *h : sh.hoistedDefs)
+      blockDefs.push_back(h);
+    sh.hoistedDefs.clear();
     if (!I.getType()->isVoidTy()) {
       auto bi = sh.binds.find(&I);
       if (bi != sh.binds.end())

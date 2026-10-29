@@ -110,9 +110,12 @@ bool precedes(const Instruction *I, const Instruction *P, const Value *def) {
 const Instruction *useAfter(Shared &sh, const Value *w, const Instruction *P, const DenseSet<const BasicBlock *> &reach,
                             SmallVectorImpl<const Instruction *> *all = nullptr) {
   const Instruction *first = nullptr;
-  for (const Use &U : w->uses()) {
+  SmallVector<const Use *, 8> uses;
+  readingUses(sh, w, uses);   // a skipped zext's readers read w (cq-su3p)
+  for (const Use *Up : uses) {
+    const Use &U = *Up;
     auto *I = dyn_cast<Instruction>(U.getUser());
-    if (!I || I == P)
+    if (!I || I == P || sh.hoisted.count(I))
       continue;
     bool after;
     if (auto *phi = dyn_cast<PHINode>(I))
@@ -144,6 +147,104 @@ const Instruction *pointIn(Shared &sh, const Instruction *T, const Function *F) 
   return nullptr;
 }
 
+bool inCycle(const BasicBlock *b) {
+  DenseSet<const BasicBlock *> seen;
+  SmallVector<const BasicBlock *, 16> work(succ_begin(b), succ_end(b));
+  while (!work.empty()) {
+    const BasicBlock *x = work.pop_back_val();
+    if (x == b)
+      return true;
+    if (!seen.insert(x).second)
+      continue;
+    for (const BasicBlock *s : successors(x))
+      work.push_back(s);
+  }
+  return false;
+}
+
+// cq-su3p: can the reader I (and the operands it needs that are not lowered yet) be lowered at T,
+// before the rotation? Pure scalar opcodes only, outside every cycle, in T's function, on paths where
+// T's classical guard held. `order` receives them operands first.
+bool hoistable(LoweringContext &ctx, const Instruction &T, const Instruction *I, const Pred &tf,
+               SmallVectorImpl<Instruction *> &order, SmallPtrSetImpl<const Instruction *> &seen, unsigned depth) {
+  Shared &sh = shared(ctx);
+  if (sh.binds.count(I) || sh.hoisted.count(I) || sh.narrowSkipped.count(I) || sh.views.count(I))
+    return true;
+  if (I == &T || depth > 16 || I->getFunction() != T.getFunction())
+    return false;
+  if (!seen.insert(I).second)
+    return true;
+  if (!(isa<BinaryOperator>(I) || isa<CmpInst>(I) || isa<CastInst>(I) || isa<FreezeInst>(I)))
+    return false;
+  if (!I->getType()->isIntOrIntVectorTy() && !I->getType()->isFloatingPointTy())
+    return false;
+  if (I->getType()->isVectorTy())
+    return false;
+  for (const Use &u : I->operands())
+    if (!u->getType()->isIntegerTy() && !u->getType()->isFloatingPointTy())
+      return false;
+  if (inCycle(I->getParent()))
+    return false;
+  const Pred &p = ctx.preds().block(I->getParent());
+  if (!p.isBottom() && !(p.classicalFactor(ctx.T, ctx.S) & !tf).isBottom())
+    return false;
+  for (const Use &u : I->operands()) {
+    const Value *o = u.get();
+    if (isa<Constant>(o) || isa<Argument>(o))
+      continue;
+    auto *oi = dyn_cast<Instruction>(o);
+    if (!oi || !hoistable(ctx, T, oi, tf, order, seen, depth + 1))
+      return false;
+  }
+  order.push_back(const_cast<Instruction *>(I));
+  return true;
+}
+
+// cq-su3p (113's %32): a reader of the register's pre-rotation value through another value bound to h
+// or a view of h, which -O1 sank after T, is lowered here, before the rotation (the reference's
+// shape), when it is hoistable. The walker skips it when it gets there. No rule 6 for it: the uses
+// between T and its original place are not lowered yet.
+void hoistReaders(LoweringContext &ctx, CallInst &T, const Value *v, Value *h) {
+  Shared &sh = shared(ctx);
+  if (T.getFunction() != sh.orig || !sh.inlineStack.empty() || sh.tripFlag || inCycle(T.getParent()))
+    return;
+  SmallVector<const Value *, 4> aliases;
+  for (auto &[w, ops] : sh.binds)
+    if (w != v && w != &T && ops.size() == 1 && ops.front().handle && ops.front().v == h)
+      aliases.push_back(w);
+  for (auto &[w, vw] : sh.views)
+    if (vw.rail == h)
+      aliases.push_back(w);
+  const BasicBlock *tb = T.getParent();
+  const Pred &tp = ctx.preds().block(tb);
+  Pred tf = tp.isBottom() ? Pred::bottom() : tp.classicalFactor(ctx.T, ctx.S);
+  for (const Value *w : aliases) {
+    if (functionOf(w) != T.getFunction())
+      continue;
+    bool cyc = false;
+    DenseSet<const BasicBlock *> r = reachFrom(&T, w, cyc);
+    if (cyc)
+      continue;
+    SmallVector<const Instruction *, 4> readers;
+    useAfter(sh, w, &T, r, &readers);
+    for (const Instruction *rd : readers) {
+      if (isa<PHINode>(rd) || sh.hoisted.count(rd))
+        continue;
+      SmallVector<Instruction *, 4> order;
+      SmallPtrSet<const Instruction *, 8> seen;
+      if (!hoistable(ctx, T, rd, tf, order, seen, 0))
+        continue;
+      for (Instruction *J : order) {
+        dispatch(ctx, *J);
+        sh.hoisted.insert(J);
+        auto bi = sh.binds.find(J);
+        if (bi != sh.binds.end() && any_of(bi->second, [](const Operand &o) { return o.handle; }))
+          sh.hoistedDefs.push_back(J);
+      }
+    }
+  }
+}
+
 } // namespace
 
 std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T) {
@@ -157,6 +258,32 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T) {
     return std::nullopt;   // a classical value or a measured rail: the rotation mints its own rail
   Shared &sh = shared(ctx);
   Value *h = x.v;
+  hoistReaders(ctx, T, v, h);
+
+  // A view of h (cq-su3p) read narrow after the rotation would read the rotated rail; a materialized
+  // view's wide readers read its copy taken at the merge.
+  for (auto &[w, vw] : sh.views) {
+    if (vw.rail != h || functionOf(w) != T.getFunction())
+      continue;
+    bool cyc = false;
+    DenseSet<const BasicBlock *> r = reachFrom(&T, w, cyc);
+    SmallVector<const Use *, 8> uses;
+    readingUses(sh, w, uses);
+    for (const Use *U : uses) {
+      auto *I = dyn_cast<Instruction>(U->getUser());
+      if (!I || I == &T || sh.hoisted.count(I))
+        continue;
+      bool after = isa<PHINode>(I) ? isAfter(&T, r, cast<PHINode>(I)->getIncomingBlock(*U)->getTerminator())
+                                   : (isAfter(&T, r, I) || (!sh.binds.count(I) && precedes(I, &T, w)));
+      if (!after && !cyc)
+        continue;
+      if (U->getUser() != w && sh.binds.count(w) && !narrowUse(ctx, *U, vw.bits) && U->get() == w)
+        continue;   // reads the wide copy
+      unimplemented("spine: " + describe(w) + ", a view of the rail cq_theta rotates in place, is read after the "
+                        "rotation (by " + describe(I) + ") (cq-su3p)",
+                    &T);
+    }
+  }
 
   // Any other value bound to h and read after the rotation would need a copy of its own.
   for (auto &[w, ops] : sh.binds) {

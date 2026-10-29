@@ -137,6 +137,23 @@ struct Shared {
   llvm::DenseMap<const llvm::Value *, PreRot> preRot;
   // cq-nvfi: every non-diagonal gate (ry, ry_qangle, controlled or not) on a rail, in emission order.
   llvm::DenseMap<const llvm::Value *, llvm::SmallVector<llvm::CallInst *, 2>> rotations;
+  // cq-su3p (Views.cpp): rule 3 representation views of a narrow register. A view phi (iN) merges
+  // zexts of one iM register's states and constants: it names the register's rail (bits M) and has
+  // no wide rail unless a user needs one (then `binds` holds a zext template of the rail, taken at
+  // the phi). A skipped zext (narrowSkipped) has no binding: every user narrows it to its source.
+  struct View {
+    llvm::Value *rail = nullptr;
+    unsigned bits = 0;
+  };
+  llvm::DenseMap<const llvm::Value *, View> views;
+  llvm::DenseSet<const llvm::Value *> narrowSkipped;
+  // A narrowed icmp ne of i1 views, lowered as xor_i1: its two narrow operands (rule 6 reads them).
+  llvm::DenseMap<const llvm::Value *, llvm::SmallVector<const llvm::Value *, 2>> narrowXor;
+  // cq-su3p (PreRotation.cpp): readers of a register's pre-rotation value that -O1 sank after the
+  // cq_theta, lowered just before the rotation. The walker skips them when it reaches them and takes
+  // hoistedDefs into the current block's definitions after the dispatch that hoisted them.
+  llvm::DenseSet<const llvm::Instruction *> hoisted;
+  std::vector<const llvm::Instruction *> hoistedDefs;
 
   Shared(llvm::Module &M, const loops::KOptions &KO) : M(M), KO(KO), B(M.getContext()) {}
   llvm::DominatorTree &dt(const llvm::Function &F);
@@ -173,6 +190,19 @@ void finishPreRotation(LoweringContext &, std::optional<PendingCopy> &);
 // The operand a phi being lowered (Shared::cur) reads for orig: a value copied before a rotation is
 // the rotated rail itself on edges that are not after the rotation (the register a merge names).
 Operand atPhiEdge(Shared &, const llvm::Value *orig, Operand bound);
+
+// cq-su3p, rule 3 representation views (Views.cpp, contract at its top). viewMerge lowers a
+// quantum phi that merges zexts of one register's states (rule 10 seen through a representation
+// change) and returns true, or returns false when the phi is not one. lowerNarrow lowers a zext,
+// trunc or icmp eq/ne that narrows (returns false otherwise). narrowUsers: does every use of v
+// narrow (v of iN viewed at bits M)? narrowValue: the original narrow value behind v (its zext
+// source, v itself for a view phi or a constant), or nullptr.
+bool viewMerge(LoweringContext &, llvm::PHINode &);
+bool lowerNarrow(LoweringContext &, llvm::Instruction &);
+const llvm::Value *narrowValue(Shared &, const llvm::Value *v, unsigned &bits);
+bool narrowUse(LoweringContext &, const llvm::Use &, unsigned bits);
+// The uses that read v once skipped zexts are seen through (their users' uses instead).
+void readingUses(Shared &, const llvm::Value *v, llvm::SmallVectorImpl<const llvm::Use *> &out);
 
 // Binds orig to an operand with an explicit kind (classical collapse binds a quantum orig classically).
 void bindOperand(LoweringContext &, const llvm::Value *orig, Operand op);

@@ -15,6 +15,7 @@
 #include <optional>
 
 #include "cq/Abi.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
@@ -502,7 +503,10 @@ bool cleanable(LoweringContext &ctx, Value *y) {
 // other select of a swap; the arms of a merge of updates, 125).
 bool deadAfter(LoweringContext &ctx, Value *y, Instruction *at, ArrayRef<const Instruction *> also = {}) {
   DominatorTree &DT = spine::shared(ctx).dt(*at->getFunction());
-  for (User *u : y->users()) {
+  SmallVector<const Use *, 8> uses;
+  spine::readingUses(spine::shared(ctx), y, uses);   // through skipped zexts (cq-su3p)
+  for (const Use *U : uses) {
+    User *u = U->getUser();
     if (u == at || is_contained(also, u))
       continue;
     auto *ui = dyn_cast<Instruction>(u);
@@ -524,9 +528,11 @@ bool reads(LoweringContext &ctx, Value *z, Value *y, unsigned depth = 0) {
   auto *I = dyn_cast<Instruction>(z);
   if (!I || depth > 64)
     return false;
-  auto &binds = spine::shared(ctx).binds;
-  auto bi = binds.find(z);
-  if (bi == binds.end() || none_of(bi->second, [](const Operand &o) { return o.handle; }))
+  spine::Shared &sh = spine::shared(ctx);
+  auto bi = sh.binds.find(z);
+  // A skipped zext or an unmaterialized view phi (cq-su3p) reads its operands without a binding.
+  bool narrow = sh.narrowSkipped.count(z) || sh.views.count(z);
+  if (!narrow && (bi == sh.binds.end() || none_of(bi->second, [](const Operand &o) { return o.handle; })))
     return false;
   for (Value *op : I->operands())
     if (reads(ctx, op, y, depth + 1))
@@ -767,9 +773,111 @@ void mergeCleanup(LoweringContext &ctx, Instruction &M, ArrayRef<Value *> arms, 
 
 } // namespace
 
+namespace {
+
+// Is the rail h dead after `at` (CR rule 6), over every original value naming it (cq-su3p)? The
+// aliases are the values bound to h alone and the view phis of h: a register's prep, its in-place
+// rotations and its merges. Each reading use of an alias is `at`, another alias not after `at` (a
+// rotation or merge of the register on the way to it), or an earlier instruction (dominating `at`)
+// that neither stores, returns, passes, rotates, measures nor merges it.
+bool railDeadAfter(LoweringContext &ctx, Value *h, Instruction *at) {
+  spine::Shared &sh = spine::shared(ctx);
+  SmallPtrSet<const Value *, 8> A;
+  for (auto &[w, ops] : sh.binds)
+    if (ops.size() == 1 && ops.front().handle && ops.front().v == h)
+      A.insert(w);
+  for (auto &[w, v] : sh.views)
+    if (v.rail == h)
+      A.insert(w);
+  const BasicBlock *ab = at->getParent();
+  DenseSet<const BasicBlock *> reach;
+  SmallVector<const BasicBlock *, 16> work(succ_begin(ab), succ_end(ab));
+  while (!work.empty()) {
+    const BasicBlock *b = work.pop_back_val();
+    if (!reach.insert(b).second)
+      continue;
+    for (const BasicBlock *s : successors(b))
+      work.push_back(s);
+  }
+  if (reach.count(ab))
+    return false;   // `at` in a cycle: an alias may come round again
+  auto after = [&](const Instruction *u) {
+    return reach.count(u->getParent()) || (u->getParent() == ab && at->comesBefore(u));
+  };
+  DominatorTree &DT = sh.dt(*at->getFunction());
+  for (const Value *w : A) {
+    SmallVector<const Use *, 8> uses;
+    spine::readingUses(sh, w, uses);
+    for (const Use *U : uses) {
+      auto *ui = dyn_cast<Instruction>(U->getUser());
+      if (!ui || ui->getFunction() != at->getFunction())
+        return false;
+      if (ui == at)
+        continue;
+      if (A.count(ui)) {
+        if (after(ui))
+          return false;
+        continue;
+      }
+      if (isa<StoreInst>(ui) || isa<ReturnInst>(ui) || isa<CallBase>(ui) || isa<PHINode>(ui) ||
+          !DT.dominates(ui, at))
+        return false;
+    }
+  }
+  return true;
+}
+
+// CR rule 6 on a compare narrowed to xor_i1 (cq-su3p, 113's q2 ^= q1 over i1-valued bytes): the
+// first narrow operand whose rail the spine minted and is dead after it is cleaned by t = y' ^ z.
+void narrowRuleSix(LoweringContext &ctx, Instruction &I, ArrayRef<const Value *> nv, Operand yp) {
+  spine::Shared &sh = spine::shared(ctx);
+  auto railOf = [&](const Value *w) -> Value * {
+    if (auto it = sh.views.find(w); it != sh.views.end())
+      return it->second.rail;
+    auto bi = sh.binds.find(w);
+    if (bi == sh.binds.end() || bi->second.size() != 1 || !bi->second.front().handle)
+      return nullptr;
+    return bi->second.front().v;
+  };
+  for (unsigned k = 0; k < 2; ++k) {
+    const Value *Y = nv[k], *Z = nv[1 - k];
+    if (isa<Constant>(Y))
+      continue;
+    Value *h = railOf(Y);
+    if (!h || !sh.hist.count(h) || sh.measured.count(h))
+      continue;
+    Operand z;
+    if (auto *c = dyn_cast<Constant>(Z)) {
+      z = Operand{const_cast<Constant *>(c), false};
+    } else {
+      Value *zr = railOf(Z);
+      if (!zr || zr == h || reads(ctx, const_cast<Value *>(Z), const_cast<Value *>(Y)))
+        continue;
+      z = sh.views.count(Z) ? Operand{zr, true} : ctx.operand(Z);
+    }
+    if (!railDeadAfter(ctx, h, &I))
+      continue;
+    abi::TemplateSpec spec;
+    spec.op = "xor";
+    spec.w = RailType{Kind::Int, 1};
+    Inverse inv = normalized(spec, {yp, z});                 // y = y' ^ z
+    ctx.unc().cleanupBijective(ctx.unc().idOf(h), inv.spec, inv.ops);
+    return;
+  }
+}
+
+} // namespace
+
 namespace spine {
 
 void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
+  if (auto nx = shared(ctx).narrowXor.find(&I); nx != shared(ctx).narrowXor.end()) {
+    SmallVector<const Value *, 2> nv(nx->second.begin(), nx->second.end());
+    Operand yp = ctx.operand(&I);
+    if (yp.handle)
+      narrowRuleSix(ctx, I, nv, yp);
+    return;
+  }
   if (!(isa<BinaryOperator>(I) || isa<UnaryOperator>(I) || isa<IntrinsicInst>(I) || isa<SelectInst>(I) ||
         isa<PHINode>(I)))
     return;

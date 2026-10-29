@@ -593,6 +593,8 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
 
   if (q && vec)
     return aggr::lowerVectorOp(ctx, I);
+  if (q && lowerNarrow(ctx, I))
+    return;   // rule 3: a view of a narrow register (Views.cpp, cq-su3p)
   if (q)
     return lowerOpcode(ctx, I);
   Instruction *n = copyClassical(ctx, I);
