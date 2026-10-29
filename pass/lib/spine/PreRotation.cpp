@@ -11,9 +11,15 @@
 //    angle), every value w bound to h is checked for a use after T: a non-phi user lowered after T
 //    in the original CFG (reachable from T's end without passing w's definition, which would make it
 //    another instance of w), a phi incoming whose edge is so reachable, or a non-phi user not lowered
-//    yet (a lazy reader such as fatptr's deriveGEP or a value -O1 sank, which reads w when it is
-//    finally emitted). The operand v needing it gets the copy; any other value bound to h needing it
+//    yet that precedes T (a lazy reader such as fatptr's deriveGEP or a value -O1 sank, which reads w
+//    when it is finally emitted; cq-drcl: a user in a block T cannot reach, a sibling arm, is no
+//    reader after T). The operand v needing it gets the copy; any other value bound to h needing it
 //    is cq::unimplemented. No use after T: nothing is emitted (the common case is unchanged).
+//  - Classical guards (cq-drcl). The copy is emitted at T. A reader after T whose block's classical
+//    factor does not imply T's block's is reached by a path on which T did not run (a classical arm
+//    joined): it would need a merge of c and h at the classical join, cq::unimplemented.
+//  - Not after T (cq-drcl). An instruction lowered after the rebinding that T does not reach (a
+//    sibling arm, quantum or classical) reads h for v: there the rotation did not happen.
 //  - Copy. c = cqrt_alloc_<W>(0), copy_<W>(h, c), recorded (recordSeed, recordCore): a Garbage rail
 //    that read h, so the Ry's noteNonDiagonal makes it KeptEntangled (A4) unless a later measurement
 //    gives it Role::Measured. After the lowering emitted the Ry on h, v is rebound to c: every later
@@ -77,23 +83,55 @@ bool isAfter(const Instruction *P, const DenseSet<const BasicBlock *> &reach, co
   return reach.count(point->getParent());
 }
 
-// Does w have a use after P (see the contract)? skip: P itself when it reads w.
-const Instruction *useAfter(Shared &sh, const Value *w, const Instruction *P, const DenseSet<const BasicBlock *> &reach) {
+// Does I come before P on some path that does not pass def's block after I (I would read another
+// instance of def's value otherwise)? I in P's block before P, or P's block reachable from I's.
+bool precedes(const Instruction *I, const Instruction *P, const Value *def) {
+  if (I->getParent() == P->getParent() && I != P && I->comesBefore(P))
+    return true;
+  const BasicBlock *db = nullptr;
+  if (auto *D = dyn_cast<Instruction>(def))
+    db = D->getParent();
+  DenseSet<const BasicBlock *> seen;
+  SmallVector<const BasicBlock *, 16> work(succ_begin(I->getParent()), succ_end(I->getParent()));
+  while (!work.empty()) {
+    const BasicBlock *b = work.pop_back_val();
+    if (b == P->getParent())
+      return true;
+    if (b == db || !seen.insert(b).second)
+      continue;
+    for (const BasicBlock *s : successors(b))
+      work.push_back(s);
+  }
+  return false;
+}
+
+// Does w have a use after P (see the contract)? skip: P itself when it reads w. lazy (optional): the
+// unlowered readers found, which are emitted at a later reader of theirs.
+const Instruction *useAfter(Shared &sh, const Value *w, const Instruction *P, const DenseSet<const BasicBlock *> &reach,
+                            SmallVectorImpl<const Instruction *> *all = nullptr) {
+  const Instruction *first = nullptr;
   for (const Use &U : w->uses()) {
     auto *I = dyn_cast<Instruction>(U.getUser());
     if (!I || I == P)
       continue;
-    if (auto *phi = dyn_cast<PHINode>(I)) {
-      if (isAfter(P, reach, phi->getIncomingBlock(U)->getTerminator()))
-        return I;
+    bool after;
+    if (auto *phi = dyn_cast<PHINode>(I))
+      after = isAfter(P, reach, phi->getIncomingBlock(U)->getTerminator());
+    else
+      // cq-drcl: a user not lowered yet is a lazy reader only when the walk passed it already (it
+      // precedes P); one in a block P cannot reach (a sibling arm) is lowered later and reads w's
+      // rail where the rotation did not happen (atPhiEdge).
+      after = isAfter(P, reach, I) ||
+              (!I->getType()->isVoidTy() && !sh.binds.count(I) && precedes(I, P, w));
+    if (!after)
       continue;
-    }
-    if (isAfter(P, reach, I))
-      return I;
-    if (!I->getType()->isVoidTy() && !sh.binds.count(I))
-      return I;   // not lowered yet: a lazy reader reads w when it is emitted
+    if (!first)
+      first = I;
+    if (!all)
+      return first;
+    all->push_back(I);
   }
-  return nullptr;
+  return first;
 }
 
 // The point standing for T in function F: T itself, or the inlined call site in F that leads to it.
@@ -138,13 +176,32 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T) {
 
   bool cyclic = false;
   DenseSet<const BasicBlock *> reach = reachFrom(&T, v, cyclic);
-  const Instruction *u = useAfter(sh, v, &T, reach);
+  SmallVector<const Instruction *, 4> readers;
+  const Instruction *u = useAfter(sh, v, &T, reach, &readers);
   if (!u)
     return std::nullopt;
   if (cyclic)
     unimplemented("spine: the pre-rotation value of an in-place cq_theta is read after it (by " + describe(u) +
                       ") inside a cycle where the value is invariant (cq-s32y)",
                   &T);
+  // cq-drcl: the copy is emitted at T, so it is available to a reader after T only when every output
+  // path to the reader passes T's output block: quantum arms are linearized, a classical branch is
+  // not. A reader whose block's classical factor does not imply T's is reached by a path on which T's
+  // classical guard failed, where v's value is h unrotated: that needs a merge of c and h at the
+  // classical join, which is not built.
+  if (T.getFunction() == sh.orig) {
+    auto cf = [&](const BasicBlock *b) {
+      const Pred &p = ctx.preds().block(b);
+      return p.isBottom() ? Pred::bottom() : p.classicalFactor(ctx.T, ctx.S);
+    };
+    Pred tf = cf(T.getParent());
+    for (const Instruction *r : readers)
+      if (!(cf(r->getParent()) & !tf).isBottom())
+        unimplemented("spine: the pre-rotation value of an in-place cq_theta under a classical guard is read (by " +
+                          describe(r) + ") where the guard may not have held: the copy and the rotated rail "
+                          "would merge at the classical join (cq-drcl)",
+                      &T);
+  }
 
   RailType w = railTypeOf(v->getType());
   CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
@@ -181,10 +238,18 @@ Operand atPhiEdge(Shared &sh, const Value *orig, Operand bound) {
   auto it = sh.preRot.find(orig);
   if (it == sh.preRot.end() || bound.v != it->second.c)
     return bound;
-  auto *phi = dyn_cast_or_null<PHINode>(sh.cur);
   const Shared::PreRot &r = it->second;
-  if (!phi || phi->getFunction() != r.T->getFunction())
+  if (!sh.cur || sh.cur->getFunction() != r.T->getFunction())
     return bound;
+  auto *phi = dyn_cast<PHINode>(sh.cur);
+  if (!phi) {
+    // cq-drcl: an instruction the rotation does not reach (a sibling arm of the cq_theta, quantum or
+    // classical) reads h: on its paths h was not rotated (rule 10's controlled Ry is the identity
+    // where its flag is false).
+    if (sh.cur != r.T && !isAfter(r.T, r.reach, sh.cur))
+      return Operand{r.h, true};
+    return bound;
+  }
   bool before = false, after = false;
   for (unsigned i = 0; i < phi->getNumIncomingValues(); ++i)
     if (phi->getIncomingValue(i) == orig)

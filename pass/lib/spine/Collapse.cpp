@@ -37,6 +37,7 @@
 //    guards, which commutes with the measurement of its sources.
 #include "SpineInternal.h"
 
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IntrinsicInst.h"
 
@@ -65,17 +66,27 @@ bool outAvailable(Shared &sh, const Instruction *def) {
   return false;
 }
 
-// Does output instruction a come before b on every path to b (same block, or a's block on b's chain
-// of single predecessors)? Conservative: false when unknown.
+// Does output instruction a come before b on every path to b (a dominates b in the output CFG built
+// so far)? cq-drcl: the predecessors of b's block are walked backwards without passing a's block; a
+// block with no predecessor reached that way (the entry, or a block not linked yet) is a path that
+// avoids a. Conservative: false when unknown. Edges the walk adds later are forward edges into blocks
+// not emitted yet or back edges to a loop header, neither of which opens a path into b avoiding a.
 bool outBefore(const Instruction *a, const Instruction *b) {
-  if (a->getParent() == b->getParent())
+  const BasicBlock *ab = a->getParent(), *bb = b->getParent();
+  if (ab == bb)
     return a != b && a->comesBefore(b);
-  SmallPtrSet<const BasicBlock *, 8> seen;
-  for (const BasicBlock *x = b->getParent()->getSinglePredecessor(); x && seen.insert(x).second;
-       x = x->getSinglePredecessor())
-    if (x == a->getParent())
-      return true;
-  return false;
+  SmallPtrSet<const BasicBlock *, 16> seen;
+  SmallVector<const BasicBlock *, 16> work{bb};
+  seen.insert(bb);
+  while (!work.empty()) {
+    const BasicBlock *x = work.pop_back_val();
+    if (pred_empty(x))
+      return false;
+    for (const BasicBlock *p : predecessors(x))
+      if (p != ab && seen.insert(p).second)
+        work.push_back(p);
+  }
+  return true;
 }
 
 // cq-nvfi: a read of rail v at `at` is stale when a non-diagonal gate hit v that does not come
