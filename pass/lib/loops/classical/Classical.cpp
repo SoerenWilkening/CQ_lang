@@ -61,7 +61,9 @@
 // value read after a case-3 loop; calls other than classical, template intrinsics and the CQ.h
 // surface; QRAM / fat-pointer memory accesses (187, 188: wave 2); a deferred record with a
 // non-diagonal gate on a rail from outside its trip; a classical branch inside a quantum arm
-// of the body; a quantum-exit loop nested in a classically bounded one.
+// of the body; a quantum-exit loop nested in a classically bounded one; a body block whose
+// classical factor (rule 8) the trip's path does not establish, a classical conjunct of a quantum arm
+// condition (cq-pkjc: the trip builds no classical guard).
 #include "cq/Loops.h"
 
 #include <map>
@@ -133,6 +135,23 @@ private:
     return ctx.T.isQuantum(v, ctx.S);
   }
   Pred qp(const BasicBlock *b) { return ctx.preds().block(b).quantumPart(ctx.T, ctx.S); }
+  // Rule 8 / P1 (cq-pkjc): the classical facts the output path into the block being walked
+  // establishes, and those of every walked original block.
+  Pred curFact = Pred::top();
+  DenseMap<const BasicBlock *, Pred> factOf;
+  Pred cfOf(const Pred &p) { return p.isBottom() ? Pred::top() : p.classicalFactor(ctx.T, ctx.S); }
+  // The classical factor of b's predicate must hold wherever b's code runs: the trip builds no
+  // classical guard, so a factor the path does not establish (a classical conjunct of a quantum arm's
+  // condition, select(i != 0, q, false)) would run the arm, a slot load at its classical offset
+  // included, outside its classical domain and drop the conjunct from every control.
+  void requireFact(const BasicBlock *b) {
+    if (!(curFact & !cfOf(ctx.preds().block(b))).isBottom())
+      unimplemented("loops-classical: a block of a classically bounded loop body whose classical guard (rule 8: "
+                    "the classical factor of its predicate, a classical conjunct of a quantum arm condition) the "
+                    "trip does not establish (a classical guard inside a trip is not built yet)",
+                    &*b->getFirstNonPHIOrDbg());
+    factOf[b] = curFact;
+  }
 
   BasicBlock *newBlock() { return BasicBlock::Create(ctx.M.getContext(), "", &ctx.out()); }
   BasicBlock *ob(const BasicBlock *b) {
@@ -633,7 +652,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     }
   };
 
-  // The header (its phis are the carried values above).
+  // The header (its phis are the carried values above). The outermost header runs under the spine's
+  // guard; a sub-loop's header fact is set by its parent's walk.
+  if (outermost)
+    curFact = cfOf(ctx.preds().block(header));
+  requireFact(header);
   emitInstructions(header);
   emitTerminator(header);
   for (BasicBlock *b : rpo) {
@@ -654,10 +677,18 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         unimplemented("loops-classical: a classical join reached while a quantum arm of the body is open",
                       &*b->begin());
       startSeg(ob(b));
+      Pred f = Pred::bottom();
+      for (const BasicBlock *p : ps) {
+        auto it = factOf.find(p);
+        f = f | ((it == factOf.end() ? Pred::top() : it->second) & cfOf(ctx.preds().edge(p, b)));
+      }
+      curFact = f;
     } else if (!cur) {
       unimplemented("loops-classical: a linearized block after the walk left its arm (body block order)",
                     &*b->begin());
     }
+    if (!sl)
+      requireFact(b);
     if (sl) {
       Case sc = classify(*sl, ctx.T, ctx.S);
       if (sc == Case::QuantumExit)

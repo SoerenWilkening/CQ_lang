@@ -24,7 +24,10 @@ SLOT_ENTRIES = ["s_reg", "s_qft", "s_int"]
 FATAL = [(PROBES / "slots_fatal_crossgate.O1.ll", "a non-diagonal gate in a classically bounded loop on a rail"),
          # cq-vqid: a record deferred to the reverse loop reads a rail rotated later in the same trip.
          (PROBES / "fatal_undoneread.O1.ll", "a non-diagonal gate in a classically bounded loop on a rail that a "
-          "record undone by the reverse loop reads")]
+          "record undone by the reverse loop reads"),
+         # cq-pkjc: a quantum arm's classical conjunct (select(i != 0, q[i], false)) the trip does not establish.
+         (PROBES / "fatal_armguard.O1.ll", "a block of a classically bounded loop body whose classical guard "
+          "(rule 8: the classical factor of its predicate")]
 ENTRIES = ["p_acc", "p_brk", "p_nest", "p_mod", "p_nb", "p_horner", "p_arm", "p_phase", "p_cjoin", "p_tphase", "p_bwb", "p_g2"]
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 
