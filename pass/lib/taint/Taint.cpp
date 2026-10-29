@@ -238,6 +238,18 @@ private:
   void analyze(SpecState &S);
 
   // Per-value access within cur.
+  //
+  // Rule 14 exit reads (cq-1v3i): a value defined in a loop whose next trip is decided by a tainted
+  // terminator is, when read outside that loop, the exit value merged over the quantum exit trip,
+  // so the read is quantum whatever the instruction reading it (phi, select, store, call actual,
+  // return, branch condition). L(V) applies this to the instruction whose operands are being read
+  // (curUser). Two exceptions keep 121: a pointer V, and a reader that computes an address (pointer
+  // type), are evaluated per trip in the exit block under that trip's exit predicate, so they stay
+  // classical-offset; the reader's non-pointer users are made quantum by the post-loop rule in
+  // analyze().
+  const Instruction *curUser = nullptr;
+  bool exitRead(const Value *V);
+  void computeExitQ(SpecState &S);
   Lanes L(const Value *V);
   PtrInfo P(const Value *V);
   bool setL(const Value *V, const Lanes &l);
@@ -650,10 +662,45 @@ Lanes Analyzer::L(const Value *V) {
       internalError("taint: argument of another function", V);
     return cur->formal[A->getArgNo()];
   }
+  if (exitRead(V))
+    return allLanes(lanesOf(T));
   auto it = cur->lanes.find(V);
   if (it != cur->lanes.end())
     return it->second;
   return Lanes(lanesOf(T));
+}
+
+bool Analyzer::exitRead(const Value *V) {
+  if (!curUser || cur->exitQ.empty() || curUser->getType()->isPointerTy() ||
+      V->getType()->isPointerTy())
+    return false;
+  auto *I = dyn_cast<Instruction>(V);
+  if (!I || I->getFunction() != curUser->getFunction())
+    return false;
+  for (const Loop *Lp = fn(cur->F).LI->getLoopFor(I->getParent()); Lp; Lp = Lp->getParentLoop())
+    if (!Lp->contains(curUser) && cur->exitQ.count(Lp))
+      return true;
+  return false;
+}
+
+// The loops of S whose header is control dependent on a tainted terminator inside the loop.
+void Analyzer::computeExitQ(SpecState &S) {
+  FnInfo &fi = fn(S.F);
+  for (const BasicBlock *BB : fi.rpo) {
+    Loop *Lp = fi.LI->getLoopFor(BB);
+    if (!Lp || Lp->getHeader() != BB || S.exitQ.count(Lp))
+      continue;
+    auto hit = S.cdt.find(BB);
+    if (hit == S.cdt.end())
+      continue;
+    for (const BasicBlock *T : hit->second)
+      if (Lp->contains(T)) {
+        // A terminator read in this round's computeCDT may have missed it: one more round.
+        S.exitQ.insert(Lp);
+        localChanged = true;
+        break;
+      }
+  }
 }
 
 PtrInfo Analyzer::P(const Value *V) {
@@ -727,8 +774,10 @@ void Analyzer::computeCDT(SpecState &S) {
   S.taintedTerm.clear();
   for (const BasicBlock *BB : fi.rpo) {
     const Value *c = terminatorCondition(BB->getTerminator());
+    curUser = BB->getTerminator();
     if (c && anyLane(L(c)))
       S.taintedTerm.insert(BB);
+    curUser = nullptr;
   }
   S.cdt.clear();
   bool ch = true;
@@ -847,7 +896,9 @@ void Analyzer::loopHeaderRule(SpecState &S, const BasicBlock *H,
     bool falseExits = !Lp->contains(BI->getSuccessor(1));
     if (trueExits == falseExits)
       continue;
+    curUser = BI;
     forcingLeaves(BI->getCondition(), trueExits, *this, isQ, leaves);
+    curUser = nullptr;
   }
   // Header phis the classical leaves depend on, through the loop body.
   SmallPtrSet<const PHINode *, 8> driving;
@@ -2462,6 +2513,7 @@ void Analyzer::analyze(SpecState &S) {
   do {
     localChanged = false;
     computeCDT(S);
+    computeExitQ(S);
     // Loop-header phis made quantum by a tainted next-trip decision.
     SmallPtrSet<const PHINode *, 16> headerQ;
     for (const BasicBlock *BB : fi.rpo)
@@ -2474,10 +2526,12 @@ void Analyzer::analyze(SpecState &S) {
         fenvCur |= S.fenvOut.lookup(Pr);
       for (const Instruction &CI : *BB) {
         Instruction &I = const_cast<Instruction &>(CI);
+        curUser = &I;
         if (auto *PN = dyn_cast<PHINode>(&I))
           transferPhi(*PN, headerQ);
         else
           transfer(I);
+        curUser = nullptr;
         if (auto *CB = dyn_cast<CallBase>(&I))
           fenvAfterCall(*CB);
       }
@@ -2494,33 +2548,36 @@ void Analyzer::analyze(SpecState &S) {
       st.changed = true;
     }
     // A value defined in a loop with a tainted exit and read after it is the select-merged carried
-    // value (rule 14), and several returns chosen by a tainted branch merge their values.
-    for (const BasicBlock *BB : fi.rpo) {
-      Loop *Lp = fi.LI->getLoopFor(BB);
-      if (!Lp)
-        continue;
-      auto hit = S.cdt.find(Lp->getHeader());
-      bool qexit = false;
-      if (hit != S.cdt.end())
-        for (const BasicBlock *T : hit->second)
-          if (Lp->contains(T))
-            qexit = true;
-      if (!qexit)
-        continue;
-      for (const Instruction &I : *BB) {
-        if (I.getType()->isVoidTy() || (isa<PHINode>(&I) && headerQ.count(cast<PHINode>(&I))))
+    // value (rule 14): L() reads it as quantum in any reader outside the loop (exitRead). The
+    // reader's result is quantum too, also where V is a pointer or the reader reads it through
+    // addresses computed after the loop (the load of an address evaluated per trip, 121), or the
+    // reader's transfer does not pass operand lanes to its result (a call). A reader that computes
+    // an address stays classical-offset (121). Several returns chosen by a tainted branch merge
+    // their values.
+    for (const BasicBlock *BB : fi.rpo)
+      for (const Loop *Lp = fi.LI->getLoopFor(BB); Lp; Lp = Lp->getParentLoop()) {
+        if (!S.exitQ.count(Lp))
           continue;
-        // The reader outside the loop sees the exit value, not this trip's: its value is merged
-        // over the exits, so it is quantum (117's found flag). An address is the exception: the exit
-        // block is evaluated per trip under that trip's exit predicate (121), so a pointer derived
-        // from the trip index stays a classical-offset pointer.
-        for (const User *U : I.users())
-          if (auto *UI = dyn_cast<Instruction>(U))
-            if (!Lp->contains(UI) && !isa<PHINode>(UI) && !UI->getType()->isVoidTy() &&
-                !UI->getType()->isPointerTy())
-              setL(UI, allLanes(lanesOf(UI->getType())));
+        for (const Instruction &I : *BB) {
+          if (I.getType()->isVoidTy() || (isa<PHINode>(&I) && headerQ.count(cast<PHINode>(&I))))
+            continue;
+          // Through addresses computed outside the loop to their non-pointer readers (a load of
+          // the element at the exit index).
+          SmallVector<const Instruction *, 8> work{&I};
+          SmallPtrSet<const Instruction *, 8> seen;
+          while (!work.empty()) {
+            const Instruction *D = work.pop_back_val();
+            for (const User *U : D->users())
+              if (auto *UI = dyn_cast<Instruction>(U))
+                if (!Lp->contains(UI) && !UI->getType()->isVoidTy()) {
+                  if (!UI->getType()->isPointerTy())
+                    setL(UI, allLanes(lanesOf(UI->getType())));
+                  else if (seen.insert(UI).second)
+                    work.push_back(UI);
+                }
+          }
+        }
       }
-    }
     SmallVector<const ReturnInst *, 4> rets;
     for (const BasicBlock *BB : fi.rpo)
       if (auto *RI = dyn_cast<ReturnInst>(BB->getTerminator()))

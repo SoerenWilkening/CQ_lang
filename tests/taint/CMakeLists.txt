@@ -13,3 +13,5 @@ cq_add_unit_test(taint_fenv taint_fenv.cpp)
 # cq-820w: an edge into a dead end does not restrict its siblings (control dependence, rule 16).
 cq_add_unit_test(taint_deadend taint_deadend.cpp)
 target_compile_definitions(taint_deadend PRIVATE CQ_SPEC_DIR="${CQ_SPEC_DIR}")
+# cq-1v3i: a loop's exit value (rule 14, quantum exit) is quantum in every reader after the loop.
+cq_add_unit_test(taint_exitread taint_exitread.cpp)

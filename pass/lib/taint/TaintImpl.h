@@ -24,6 +24,7 @@
 #include "DeadEnd.h"
 #include "cq/Taint.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallVector.h"
@@ -156,6 +157,8 @@ struct SpecState {
   llvm::DenseMap<const llvm::Value *, PtrInfo> ptr;
   llvm::DenseMap<const llvm::BasicBlock *, llvm::SmallVector<const llvm::BasicBlock *, 2>> cdt;
   llvm::DenseSet<const llvm::BasicBlock *> taintedTerm;
+  // Loops whose next trip is decided by a tainted terminator (rule 14; grows monotonically).
+  llvm::SmallPtrSet<const llvm::Loop *, 4> exitQ;
   Lanes ret;
   PtrInfo retPtr;
   bool analyzedOnce = false;
