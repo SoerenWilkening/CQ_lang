@@ -24,7 +24,8 @@
 //  - Recomputation. A measured rail is its outcome. A template rail whose record stands for exactly
 //    one original non-phi instruction (its only field) is that instruction copied classically with
 //    its operands remapped (which collapses them in turn). A template rail with no such instruction
-//    is recomputed from its record: select and icmp; any other op is cq::unimplemented. A seed is its
+//    is recomputed from its record (fromRecord: select, icmp and the integer templates, §2's totalization
+//    explicit); an fp, _rm/_rmq, _exc, qrom or overflow record is cq::unimplemented. A seed is its
 //    alloc literal. Then its writes are replayed classically in order. Recomputations are cached per
 //    rail while they dominate the builder's point.
 //  - Uncompute. Nothing is emitted for the rail itself: once every later reader takes the classical
@@ -184,24 +185,117 @@ Value *recompute(LoweringContext &ctx, Value *h);
 
 Value *classicalOf(LoweringContext &ctx, const Operand &o) { return o.handle ? recompute(ctx, o.v) : o.v; }
 
+// A template record recomputed by classical instructions whose value equals the template's total
+// function (CR §1.2, §2) on every input. Integer arithmetic, bitwise ops, compares, integer casts,
+// bitcasts and the integer intrinsics are recomputed, with §2's totalization made explicit where
+// LLVM's own result is poison or UB (division by 0, INT_MIN / -1, a shift amount at or above W). A
+// record whose value depends on the floating-point environment or on vendor semantics (fp
+// arithmetic, fp conversions, fp compares, _rm/_rmq, _exc), or that reads memory or returns a pair
+// (qrom_load, *_overflow), is cq::unimplemented, named by its template.
 Value *fromRecord(LoweringContext &ctx, const RailHist &r) {
   IRBuilder<> &B = ctx.B();
   const abi::TemplateSpec &s = r.spec;
-  if (s.op == "select" && r.ops.size() == 3)
-    return B.CreateSelect(classicalOf(ctx, r.ops[0]), classicalOf(ctx, r.ops[1]), classicalOf(ctx, r.ops[2]));
-  if (s.op == "icmp" && r.ops.size() == 2) {
+  auto fail = [&]() -> Value * {
+    unimplemented("spine: classical collapse (rule 2) of " + abi::name(s, false) +
+                      " with no original instruction to recompute it from",
+                  r.def);
+  };
+  if (s.rm != abi::TemplateSpec::NoRm || s.exc || s.strided)
+    return fail();
+  size_t n = r.ops.size();
+  SmallVector<Value *, 3> a;
+  auto args = [&](size_t k) {
+    if (n != k)
+      return false;
+    for (const Operand &o : r.ops)
+      a.push_back(classicalOf(ctx, o));
+    return true;
+  };
+  const std::string &op = s.op;
+  if (op == "select" && args(3))
+    return B.CreateSelect(a[0], a[1], a[2]);
+  if (op == "icmp" && args(2)) {
     static const std::pair<const char *, CmpInst::Predicate> preds[] = {
         {"eq", CmpInst::ICMP_EQ},   {"ne", CmpInst::ICMP_NE},   {"ugt", CmpInst::ICMP_UGT},
         {"uge", CmpInst::ICMP_UGE}, {"ult", CmpInst::ICMP_ULT}, {"ule", CmpInst::ICMP_ULE},
         {"sgt", CmpInst::ICMP_SGT}, {"sge", CmpInst::ICMP_SGE}, {"slt", CmpInst::ICMP_SLT},
         {"sle", CmpInst::ICMP_SLE}};
-    for (auto &[n, p] : preds)
-      if (s.pred == n)
-        return B.CreateICmp(p, classicalOf(ctx, r.ops[0]), classicalOf(ctx, r.ops[1]));
+    for (auto &[pn, p] : preds)
+      if (s.pred == pn)
+        return B.CreateICmp(p, a[0], a[1]);
+    return fail();
   }
-  unimplemented("spine: classical collapse (rule 2) of " + abi::name(s, false) +
-                    " with no original instruction to recompute it from",
-                r.def);
+  if (s.w.kind != Kind::Int)
+    return fail();   // fp templates: the value depends on the fp environment or §2's NaN rows
+  if (s.to) {
+    if (n != 1 || !args(1))
+      return fail();
+    Type *to = irTypeOf(B.getContext(), *s.to);
+    if (op == "zext" && s.to->kind == Kind::Int)
+      return B.CreateZExt(a[0], to);
+    if (op == "sext" && s.to->kind == Kind::Int)
+      return B.CreateSExt(a[0], to);
+    if (op == "trunc" && s.to->kind == Kind::Int)
+      return B.CreateTrunc(a[0], to);
+    if (op == "bitcast" && s.to->bits == s.w.bits)
+      return B.CreateBitCast(a[0], to);
+    return fail();
+  }
+  if (n == 2 && args(2)) {
+    Value *x = a[0], *y = a[1];
+    Type *T = x->getType();
+    unsigned W = s.w.bits;
+    if (op == "add") return B.CreateAdd(x, y);
+    if (op == "sub") return B.CreateSub(x, y);
+    if (op == "mul") return B.CreateMul(x, y);
+    if (op == "and") return B.CreateAnd(x, y);
+    if (op == "or") return B.CreateOr(x, y);
+    if (op == "xor") return B.CreateXor(x, y);
+    if (op == "shl" || op == "lshr" || op == "ashr") {
+      Value *k = B.CreateURem(y, ConstantInt::get(T, W));   // §2: the amount mod W
+      return op == "shl" ? B.CreateShl(x, k) : op == "lshr" ? B.CreateLShr(x, k) : B.CreateAShr(x, k);
+    }
+    if (op == "udiv" || op == "urem" || op == "sdiv" || op == "srem") {
+      Value *one = ConstantInt::get(T, 1), *z = B.CreateICmpEQ(y, Constant::getNullValue(T));
+      Value *bad = z;
+      bool sgn = op == "sdiv" || op == "srem";
+      if (sgn)   // INT_MIN / -1: §2 gives INT_MIN and 0, which dividing by 1 yields
+        bad = B.CreateOr(z, B.CreateAnd(B.CreateICmpEQ(x, ConstantInt::get(T, APInt::getSignedMinValue(W))),
+                                        B.CreateICmpEQ(y, Constant::getAllOnesValue(T))));
+      Value *d = B.CreateSelect(bad, one, y);
+      if (op == "udiv")   // udiv(a, 0) = 2^W - 1
+        return B.CreateSelect(z, Constant::getAllOnesValue(T), B.CreateUDiv(x, d));
+      if (op == "urem")   // urem(a, 0) = a
+        return B.CreateSelect(z, x, B.CreateURem(x, d));
+      if (op == "sdiv")   // sdiv(a, 0) = -1 if a >= 0, else +1
+        return B.CreateSelect(z,
+                              B.CreateSelect(B.CreateICmpSGE(x, Constant::getNullValue(T)),
+                                             Constant::getAllOnesValue(T), one),
+                              B.CreateSDiv(x, d));
+      return B.CreateSelect(z, x, B.CreateSRem(x, d));   // srem(a, 0) = a
+    }
+    static const std::pair<const char *, Intrinsic::ID> bin[] = {
+        {"smax", Intrinsic::smax}, {"smin", Intrinsic::smin}, {"umax", Intrinsic::umax},
+        {"umin", Intrinsic::umin}, {"uadd_sat", Intrinsic::uadd_sat}, {"usub_sat", Intrinsic::usub_sat}};
+    for (auto &[bn, id] : bin)
+      if (op == bn)
+        return B.CreateBinaryIntrinsic(id, x, y);
+    return fail();
+  }
+  if (n == 1 && args(1)) {
+    Value *x = a[0];
+    if (op == "ctpop") return B.CreateUnaryIntrinsic(Intrinsic::ctpop, x);
+    if (op == "bswap") return B.CreateUnaryIntrinsic(Intrinsic::bswap, x);
+    if (op == "ctlz" || op == "cttz")   // §2: ctlz(0) = cttz(0) = W, LLVM's value without the poison flag
+      return B.CreateBinaryIntrinsic(op == "ctlz" ? Intrinsic::ctlz : Intrinsic::cttz, x, B.getFalse());
+    if (op == "abs")   // §2: abs(INT_MIN) = INT_MIN, LLVM's value without the poison flag
+      return B.CreateBinaryIntrinsic(Intrinsic::abs, x, B.getFalse());
+    return fail();
+  }
+  if (n == 3 && (op == "fshl" || op == "fshr") && args(3))   // the amount is taken mod W by LLVM too
+    return B.CreateIntrinsic(op == "fshl" ? Intrinsic::fshl : Intrinsic::fshr, {a[0]->getType()},
+                             {a[0], a[1], a[2]});
+  return fail();
 }
 
 Value *recompute(LoweringContext &ctx, Value *h) {
