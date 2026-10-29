@@ -744,6 +744,109 @@ declare void @__cq_q_f_1_unc(i32, i32)
 declare i32 @cq_template_add_i32_hl(i32, i32)
 )";
 
+// 119-shaped (cq-mjwb): the return phi is chosen classically, so the clone copies out on each
+// incoming edge into a result rail of its own and returns the phi of those rails; the base case's
+// edge (critical) has a block of its own. The twin XORs each arm into %out and returns void.
+const char *kTwinReturnPhi = R"(
+define i32 @entry(i32 %q, i32 %n) {
+  %r = call fastcc i32 @__cq_q_f_10(i32 %q, i32 %n)
+  call void @__cq_q_f_10_unc(i32 %r, i32 %q, i32 %n)
+  call void @cqrt_free(i32 %r)
+  ret i32 0
+}
+
+define internal fastcc i32 @f(i32 %v, i32 %n) {
+  ret i32 %v
+}
+
+define internal fastcc i32 @__cq_q_f_10(i32 %0, i32 %1) {
+  %z = icmp slt i32 %1, 1
+  br i1 %z, label %base, label %arm
+
+base:
+  %b = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %0, i32 %b)
+  br label %join
+
+arm:
+  %u = call i32 @cq_template_add_i32_hl(i32 %0, i32 3)
+  %a = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %u, i32 %a)
+  call void @cq_template_add_i32_hl_unc(i32 %u, i32 %0, i32 3)
+  call void @cqrt_free(i32 %u)
+  br label %join
+
+join:
+  %r = phi i32 [ %b, %base ], [ %a, %arm ]
+  ret i32 %r
+}
+
+declare void @__cq_q_f_10_unc(i32, i32, i32)
+declare i32 @cqrt_alloc_i32(i32)
+declare void @cqrt_free(i32)
+declare void @cqrt_copy_i32(i32, i32)
+declare i32 @cq_template_add_i32_hl(i32, i32)
+declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
+)";
+
+const char *kTwinReturnPhiExpected = R"(define internal void @__cq_q_f_10_unc(i32 %out, i32 %0, i32 %1) {
+  %z = icmp slt i32 %1, 1
+  br i1 %z, label %base, label %arm
+
+base:                                             ; preds = %2
+  call void @cqrt_copy_i32(i32 %0, i32 %out)
+  br label %join
+
+arm:                                              ; preds = %2
+  %u = call i32 @cq_template_add_i32_hl(i32 %0, i32 3)
+  call void @cqrt_copy_i32(i32 %u, i32 %out)
+  call void @cq_template_add_i32_hl_unc(i32 %u, i32 %0, i32 3)
+  call void @cqrt_free(i32 %u)
+  br label %join
+
+join:                                             ; preds = %arm, %base
+  ret void
+}
+)";
+
+// The same, with a classical arm seeding its result rail (alloc_<W>(5)): its twin would XOR the
+// constant into %out, which is not built.
+const char *kTwinClassicalArm = R"(
+define i32 @entry(i32 %q, i32 %n) {
+  %r = call fastcc i32 @__cq_q_f_10(i32 %q, i32 %n)
+  call void @__cq_q_f_10_unc(i32 %r, i32 %q, i32 %n)
+  call void @cqrt_free(i32 %r)
+  ret i32 0
+}
+
+define internal fastcc i32 @f(i32 %v, i32 %n) {
+  ret i32 %v
+}
+
+define internal fastcc i32 @__cq_q_f_10(i32 %0, i32 %1) {
+  %z = icmp slt i32 %1, 1
+  br i1 %z, label %base, label %arm
+
+base:
+  %b = call i32 @cqrt_alloc_i32(i32 5)
+  br label %join
+
+arm:
+  %a = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %0, i32 %a)
+  br label %join
+
+join:
+  %r = phi i32 [ %b, %base ], [ %a, %arm ]
+  ret i32 %r
+}
+
+declare void @__cq_q_f_10_unc(i32, i32, i32)
+declare i32 @cqrt_alloc_i32(i32)
+declare void @cqrt_free(i32)
+declare void @cqrt_copy_i32(i32, i32)
+)";
+
 std::string printFn(const Module &M, StringRef name) {
   const Function *F = M.getFunction(name);
   if (!F)
@@ -821,6 +924,14 @@ void twinPure() {
     for (Instruction &I : instructions(*M.getFunction("__cq_q_f_10_unc")))
       if (auto *CB = dyn_cast<CallInst>(&I); CB && CB->getCalledFunction()->getName() == "cqrt_rz_i1")
         fail("twin_pure", "the twin replays the phase: it must recompute through the _pure clone");
+  });
+}
+
+void twinReturnPhi() {
+  expectTwins("twin_return_phi", kTwinReturnPhi, {"__cq_q_f_10_unc"}, {}, [](Module &M) {
+    std::string got = printFn(M, "__cq_q_f_10_unc");
+    if (got != kTwinReturnPhiExpected)
+      fail("twin_return_phi", "twin body:\n" + got + "expected:\n" + kTwinReturnPhiExpected);
   });
 }
 
@@ -916,6 +1027,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"twin_chain", twinChain},
     {"twin_pure", twinPure},
     {"twin_declared", twinDeclared},
+    {"twin_return_phi", twinReturnPhi},
 };
 
 const std::map<std::string, std::function<void()>> kFatal = {
@@ -925,6 +1037,7 @@ const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_materialize_no_taint", materializeNoTaint},
     {"fatal_twin_effect", [] { expectTwins("fatal_twin_effect", kTwinEffect, {}, {}); }},
     {"fatal_twin_no_copyout", [] { expectTwins("fatal_twin_no_copyout", kTwinNoCopyOut, {}, {}); }},
+    {"fatal_twin_classical_arm", [] { expectTwins("fatal_twin_classical_arm", kTwinClassicalArm, {}, {}); }},
 };
 
 } // namespace

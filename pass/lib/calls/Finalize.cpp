@@ -27,7 +27,9 @@
 // recomputes, XORs the result out of `out`, uncomputes. Its body is the lowered forward clone's (the
 // _pure clone's when one exists: what the twins recompute through, 119) with the copy-out
 // `f = cqrt_alloc_<W>(0); cqrt_copy_<W>(r, f); ...; ret f` of every return (Walker::emitCloneReturn)
-// turned into `cqrt_copy_<W>(r, out); ...; ret void`: the clone computes, copies out, uncomputes,
+// turned into `cqrt_copy_<W>(r, out); ...; ret void` (a return phi chosen classically has one such f
+// per incoming edge, Walker::returnCopyOut: each copy targets out, the phi goes; an arm seeded with a
+// classical value is unimplemented): the clone computes, copies out, uncomputes,
 // so the twin computes, XORs out, uncomputes. A twin body that calls another twin defines it in turn.
 // The body is checked to replay nothing but the pure value: no rotation, phase, measurement, tape,
 // abort or QRAM store, no host call that may write memory (unimplemented otherwise: a clone with
@@ -226,32 +228,51 @@ void defineTwin(Module &M, Function &twin, Function &src) {
 
   SmallVector<Instruction *, 4> dead;
   for (ReturnInst *R : rets) {
-    // The copy-out of rule 18: f = cqrt_alloc_<W>(0), cqrt_copy_<W>(r, f), ..., ret f.
-    auto *f = dyn_cast_or_null<CallInst>(R->getReturnValue());
-    std::optional<abi::CoreSpec> a =
-        f && f->getCalledFunction() ? abi::parseCore(f->getCalledFunction()->getName()) : std::nullopt;
-    auto *zero = f ? dyn_cast<Constant>(f->getArgOperand(0)) : nullptr;
-    if (!a || a->op != abi::Core::Alloc || !zero || !zero->isNullValue())
-      unimplemented("calls: calls::finalize: a clone return that is not the rule 18 copy-out (a fresh |0> "
-                    "rail returned)",
-                    R);
-    SmallVector<CallInst *, 2> copies;
-    for (User *U : f->users()) {
-      if (U == R)
-        continue;
-      auto *cp = dyn_cast<CallInst>(U);
-      std::optional<abi::CoreSpec> c =
-          cp && cp->getCalledFunction() ? abi::parseCore(cp->getCalledFunction()->getName()) : std::nullopt;
-      if (!c || c->op != abi::Core::Copy || c->ctl || cp->getArgOperand(1) != f || cp->getArgOperand(0) == f)
-        unimplemented("calls: calls::finalize: a clone's result rail used other than by its copy-out", U);
-      copies.push_back(cp);
+    // The copy-out of rule 18: f = cqrt_alloc_<W>(0), cqrt_copy_<W>(r, f), ..., ret f; or, for a
+    // return phi chosen classically, one such f per incoming edge and ret phi(f...) (cq-mjwb, 119).
+    // The same f on several incoming edges (a switch's duplicate edges) is rewritten once.
+    SmallSetVector<Value *, 2> results;
+    auto *rp = dyn_cast_or_null<PHINode>(R->getReturnValue());
+    if (rp && rp->hasOneUse())
+      results.insert(rp->incoming_values().begin(), rp->incoming_values().end());
+    else
+      results.insert(R->getReturnValue());
+    for (Value *rv : results) {
+      auto *f = dyn_cast_or_null<CallInst>(rv);
+      std::optional<abi::CoreSpec> a =
+          f && f->getCalledFunction() ? abi::parseCore(f->getCalledFunction()->getName()) : std::nullopt;
+      auto *zero = f ? dyn_cast<Constant>(f->getArgOperand(0)) : nullptr;
+      // A classical arm seeds its result rail with its value (cq-mjwb); its twin would XOR that
+      // constant into out, which is not built yet.
+      if (a && a->op == abi::Core::Alloc && zero && !zero->isNullValue())
+        unimplemented("calls: calls::finalize: a clone return seeded with a classical value (its twin would "
+                      "XOR the constant into out)",
+                      R);
+      if (!a || a->op != abi::Core::Alloc || !zero || !zero->isNullValue())
+        unimplemented("calls: calls::finalize: a clone return that is not the rule 18 copy-out (a fresh |0> "
+                      "rail returned)",
+                      R);
+      SmallVector<CallInst *, 2> copies;
+      for (User *U : f->users()) {
+        if (U == R || U == rp)
+          continue;
+        auto *cp = dyn_cast<CallInst>(U);
+        std::optional<abi::CoreSpec> c =
+            cp && cp->getCalledFunction() ? abi::parseCore(cp->getCalledFunction()->getName()) : std::nullopt;
+        if (!c || c->op != abi::Core::Copy || c->ctl || cp->getArgOperand(1) != f || cp->getArgOperand(0) == f)
+          unimplemented("calls: calls::finalize: a clone's result rail used other than by its copy-out", U);
+        copies.push_back(cp);
+      }
+      if (copies.size() != 1)
+        unimplemented("calls: calls::finalize: a clone's result rail written by other than one copy", f);
+      copies.front()->setArgOperand(1, out);
+      if (!is_contained(dead, f))
+        dead.push_back(f);
     }
-    if (copies.size() != 1)
-      unimplemented("calls: calls::finalize: a clone's result rail written by other than one copy", f);
-    copies.front()->setArgOperand(1, out);
     ReturnInst::Create(C, nullptr, R->getIterator());
     R->eraseFromParent();
-    dead.push_back(f);
+    if (rp)
+      rp->eraseFromParent();
   }
   for (Instruction *f : dead)
     if (f->use_empty())
