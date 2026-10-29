@@ -51,17 +51,23 @@
 //        arm's item comes after it, and after the item of every rail whose record reads m;
 //      * a barrier on an arm (an in-place write, a noted non-diagonal gate) binds every item that
 //        reads m;
-//      * its role stays Garbage, or a kept role that changes nothing: setRole(m, kept) is accepted
-//        only when every arm it may name is already kept (135's spelling: each arm copied out into a
-//        Result rail inside its own arm). Otherwise it is an internal error. Keeping every arm
-//        would keep the unchosen arm as garbage (an extra kept rail: §6-different, and CR §0's
-//        garbage policy), and keeping only the chosen one is path-dependent, which no static role
-//        says. A consumer that needs the merged value kept (measure, escape, result, a rotation,
-//        any in-place write) copies it out first: f = cqrt_alloc_<W>(0) (recordSeed),
-//        cqrt_copy_<W>(m, f) (recordCore Copy, out f), then uses and keeps f. The copy reads m,
-//        so every arm is uncomputed after it (compute-copy-uncompute).
-//      * noteNonDiagonal(m) and recordCore with m as the written rail are unimplemented (copy out
-//        first); cleanupBijective(m) is an internal error; Role::Seed on m is an internal error.
+//      * its role stays Garbage, or becomes kept (cq-bv91, superseding U1's copy-out on the review of
+//        cq-hs4k: a copy-out keeps a second rail beside an arm that is already kept, 128). A kept role
+//        on a phi merge keeps the chosen arm itself on each path: every arm takes the role, and an
+//        arm that also reaches the join along an edge that does not choose it is resolved at the end
+//        of that edge's block (a block whose only successor is the join), so exactly one arm of the
+//        merge is live on each path through the join (128: arm-local arms, nothing to resolve; 25:
+//        the zero-trip seed, defined before the loop, is freed on the loop's exit edge). Arms already
+//        kept stay as they are; a nested phi merge arm is kept the same way. Unimplemented: the
+//        unchosen arm may still be read after that edge (directly or through another merge), is
+//        read by a pending rail, has a barrier before the edge, may not exist where the edge leaves,
+//        or leaves by a block that also branches elsewhere; an arm that may reach a return without
+//        passing the join; a kept role on a classical select with a resolvable arm (keeping only
+//        the chosen arm needs a branch on the condition). Arms that are all kept already: nothing
+//        changes (135's spelling).
+//      * noteNonDiagonal(m) hits every arm m may name; each must be kept already (the consumer sets
+//        the role first), otherwise unimplemented. recordCore with m as the written rail is
+//        unimplemented; cleanupBijective(m) is an internal error; Role::Seed on m is an internal error.
 //      * an arm whose definition does not dominate the return where it would be resolved (a phi
 //        over arm-local garbage handles) is unimplemented (cq-ut4k).
 //
@@ -590,6 +596,134 @@ struct Uncompute::Impl {
     return uniq;
   }
 
+  // ---- kept merges (cq-bv91) --------------------------------------------------------------------
+
+  // A kept role on the phi merge m: each arm is kept itself on the paths where m chooses it, and an
+  // arm that also reaches m's join along an edge where m does not choose it is resolved at the end
+  // of that edge's block (its "own path"), before the join. The arm then carries the kept role: on
+  // every path that reaches a return through the join exactly one arm of m is live (128; the exit
+  // phi of a classically bounded loop, 25: the zero-trip seed is freed on the loop path).
+  void keepMerge(RailId m, Role role) {
+    Value *mh = rails[m].handle;
+    auto *phi = dyn_cast<PHINode>(mh);
+    if (!phi) {
+      for (RailId a : leaves(m))
+        if (resolvable(a))
+          unimplemented("uncompute: a kept role on a classical select over handles whose arm " +
+                            describe(rails[a].handle) +
+                            " is still resolvable (keeping only the chosen arm needs a branch on the condition)",
+                        cast<Instruction>(mh));
+      return;
+    }
+    BasicBlock *J = phi->getParent();
+    SmallVector<RailId, 4> mNames = names(m);
+    for (RailId a : SmallVector<RailId, 2>(rails[m].arms)) {
+      Rail &ra = rails[a];
+      if (ra.released || !ra.exitsDone.empty())
+        internalError("uncompute: setRole: an arm of a merged handle was already uncomputed", ra.handle);
+      SmallPtrSet<const BasicBlock *, 4> chosen;
+      for (unsigned i = 0; i < phi->getNumIncomingValues(); ++i)
+        if (byHandle.lookup(phi->getIncomingValue(i)) == a)
+          chosen.insert(phi->getIncomingBlock(i));
+      // The blocks ending an edge into J that a reaches unchosen: walk from a's definition, stopping
+      // at J (entered only through its predecessors).
+      const BasicBlock *D = defBlock(a);
+      SmallVector<BasicBlock *, 2> unchosen;
+      SmallPtrSet<const BasicBlock *, 16> seen;
+      SmallVector<const BasicBlock *, 16> work{D};
+      seen.insert(D);
+      while (!work.empty()) {
+        const BasicBlock *b = work.pop_back_val();
+        const Instruction *t = b->getTerminator();
+        if (!t || isa<ReturnInst>(t) || isa<UnreachableInst>(t))
+          unimplemented("uncompute: an arm of a kept merged handle, " + describe(ra.handle) +
+                            ", may reach a return or a block not yet emitted without passing the merge's join",
+                        phi);
+        for (const BasicBlock *s : successors(t)) {
+          if (s == J) {
+            if (!chosen.count(b) && !is_contained(unchosen, b))
+              unchosen.push_back(const_cast<BasicBlock *>(b));
+            continue;
+          }
+          if (s != D && seen.insert(s).second)
+            work.push_back(s);
+        }
+      }
+      if (isMerge(a)) {
+        if (!unchosen.empty())
+          unimplemented("uncompute: a nested merged arm, " + describe(ra.handle) +
+                            ", reaches a kept merge's join along an edge that does not choose it",
+                        phi);
+        keepMerge(a, role);
+        ra.role = role;
+        continue;
+      }
+      if (!resolvable(a))
+        continue;   // already kept: it stays as it is on its paths
+      for (BasicBlock *P : unchosen)
+        resolveOnEdge(a, P, mNames, phi);
+      ra.role = role;
+    }
+  }
+
+  // Resolve the arm a at the end of P, a block whose only successor is the join of the merge phi,
+  // which does not choose a from P. After P, a is not read on that path: the merge (and every merge
+  // that names a only through it) names another arm there.
+  void resolveOnEdge(RailId a, BasicBlock *P, ArrayRef<RailId> mNames, PHINode *phi) {
+    Rail &ra = rails[a];
+    Instruction *T = P->getTerminator();
+    if (T->getNumSuccessors() != 1)
+      unimplemented("uncompute: an arm of a kept merged handle is unchosen on an edge whose block also branches "
+                        "elsewhere: " + describe(ra.handle),
+                    T);
+    if (!dominates(defBlock(a), P))
+      unimplemented("uncompute: an arm of a kept merged handle may or may not exist where its edge leaves: " +
+                        describe(ra.handle),
+                    T);
+    // No direct use of a (nor through another merge) may follow P.
+    SmallVector<Instruction *, 8> uses;
+    if (ra.creator != kNone)
+      uses.push_back(records[ra.creator].forward);
+    for (unsigned w : ra.writes)
+      uses.push_back(records[w].forward);
+    SmallVector<RailId, 4> others;
+    for (RailId n : names(a))
+      if (!is_contained(mNames, n))
+        others.push_back(n);
+    for (RailId n : others) {
+      for (User *u : rails[n].handle->users())
+        if (auto *i = dyn_cast<Instruction>(u); i && i != phi)
+          uses.push_back(i);
+      uses.append(rails[n].uses.begin(), rails[n].uses.end());
+    }
+    for (Instruction *u : uses)
+      if (u->getParent() != P && reaches(P, u->getParent()))
+        unimplemented("uncompute: an arm of a kept merged handle, " + describe(ra.handle) +
+                          ", is still used after an edge where the merge does not choose it",
+                      u);
+    // Its readers must already be resolved (or kept): their items would need it on this path.
+    for (RailId n : others) {
+      SmallVector<RailId, 4> rd;
+      for (unsigned rec : rails[n].readerRecs)
+        rd.push_back(records[rec].out);
+      rd.append(rails[n].cleanupReaders.begin(), rails[n].cleanupReaders.end());
+      for (RailId o : rd)
+        if (o != a && !rails[o].released && (resolvable(o) || !rails[o].exitsDone.empty() || rails[o].cleanup))
+          unimplemented("uncompute: an arm of a kept merged handle, " + describe(ra.handle) +
+                            ", is read by a pending rail " + describe(rails[o].handle) +
+                            " where the merge does not choose it",
+                        T);
+    }
+    for (auto [e, isHit] : barriers(a))
+      if (e->getParent() == P || reaches(e->getParent(), P))
+        unimplemented("uncompute: a barrier precedes the resolution of an unchosen arm of a kept merged handle, " +
+                          describe(ra.handle),
+                      e);
+    IRBuilder<> B(T);
+    Instruction *end = emitItem(a, B);
+    itemEnd[{a, P}] = end;
+  }
+
   // ---- emission --------------------------------------------------------------------------------
 
   CallInst *track(CallInst *c) {
@@ -946,11 +1080,7 @@ void Uncompute::setRole(RailId r, Role role) {
     if (role == Role::Seed)
       internalError("uncompute: setRole: Role::Seed on a merged handle", x.handle);
     if (Impl::keptRole(role))
-      for (RailId a : I.leaves(r))
-        if (I.resolvable(a))
-          internalError("uncompute: setRole: a kept role on a merged handle whose arm " + describe(I.rails[a].handle) +
-                            " is still resolvable (U1: copy the merged handle out into a fresh rail and keep that)",
-                        x.handle);
+      I.keepMerge(r, role);   // cq-bv91: the chosen arm is kept on each path
     x.role = role;
     return;
   }
@@ -974,8 +1104,19 @@ void Uncompute::noteNonDiagonal(RailId target, Instruction *gate) {
   Impl::Rail &x = impl->rail(target, "noteNonDiagonal");
   if (!gate)
     internalError("uncompute: noteNonDiagonal without a gate", x.handle);
-  if (impl->isMerge(target))
-    unimplemented("uncompute: a non-diagonal gate on a merged handle (U1: copy it out first)", gate);
+  if (impl->isMerge(target)) {
+    // cq-bv91: the gate hits the arm the merge chose; every arm must already be kept (setRole first),
+    // so the hit binds only the items that read the merge or an arm.
+    for (RailId a : impl->leaves(target)) {
+      if (impl->resolvable(a))
+        unimplemented("uncompute: a non-diagonal gate on a merged handle whose arm " +
+                          describe(impl->rails[a].handle) + " is not kept (set the kept role first)",
+                      gate);
+      impl->rails[a].hits.push_back(gate);
+    }
+    x.hits.push_back(gate);
+    return;
+  }
   if (x.released)
     internalError("uncompute: gate on " + describe(x.handle) + " after it was uncomputed and freed", gate);
   x.hits.push_back(gate);

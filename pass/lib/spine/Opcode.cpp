@@ -417,8 +417,10 @@ void lowerTheta(LoweringContext &ctx, CallInst &call) {
   }
   CallInst *ry = ctx.emitCore(abi::CoreSpec{abi::Core::Ry, w}, {h, angle.v});
   RailId id = ctx.unc().idOf(h);
+  // Rotated: a register from here on (38). The role comes first: on a classically merged handle it
+  // keeps the chosen arm on each path, which the gate then hits (cq-bv91).
+  ctx.unc().setRole(id, Role::UserRegister);
   ctx.unc().noteNonDiagonal(id, ry);
-  ctx.unc().setRole(id, Role::UserRegister);   // rotated: a register from here on (38)
   spine::bindOperand(ctx, &call, Operand{h, true});
 }
 

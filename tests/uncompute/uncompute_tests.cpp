@@ -1392,8 +1392,193 @@ entry:
                     });
 }
 
-// U1 fatal: a kept role on a merged handle whose arms are resolvable. Keeping every arm would keep
-// the unchosen arm's garbage (an extra kept rail, §6-different from rule 9's "arm rails uncomputed").
+// ---- cq-bv91: a kept role on a classically merged phi keeps the chosen arm on each path ----------
+
+// 128 (measure_then_reuse): each arm exists only on the path that chooses it (a rotated register in
+// A, a seed of a classical value in B). Measuring the merge keeps the arm on its own path: nothing is
+// uncomputed or freed, one kept rail per path.
+void merge_kept_arm_local() {
+  Fx f(R"(
+define i32 @f(i32 %a0, double %th, i1 %c, i32 %v) {
+entry:
+  br i1 %c, label %A, label %B
+A:
+  %ha = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %ha, double %th)
+  br label %J
+B:
+  %hb = call i32 @cqrt_alloc_i32(i32 %v)
+  br label %J
+J:
+  %m = phi i32 [ %ha, %A ], [ %hb, %B ]
+  %r = call i32 @cqrt_measure_i32(i32 %m)
+  ret i32 %r
+})");
+  RailId a = f.reg("ha", 0);
+  f.U.noteNonDiagonal(a, f.call("cqrt_ry_i32"));
+  f.S("hb");
+  f.U.flushBefore(f.I("ha")->getParent()->getTerminator());
+  f.U.flushBefore(f.I("hb")->getParent()->getTerminator());
+  f.U.setRole(f.U.recordMerge(f.I("m")), Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "br i1 %c, label %A, label %B",
+                        "%ha = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %ha, double %th)",
+                        "br label %J",
+                        "%hb = call i32 @cqrt_alloc_i32(i32 %v)",
+                        "br label %J",
+                        "%m = phi i32 [ %ha, %A ], [ %hb, %B ]",
+                        "%r = call i32 @cqrt_measure_i32(i32 %m)",
+                        "ret i32 %r",
+                    });
+}
+
+// 25 (the exit phi of a classically bounded loop): the zero-trip seed s is defined before the branch,
+// so it also reaches the join along the loop edge, where the merge chooses the loop's output o. s is
+// kept on the zero-trip path and freed at the end of the loop edge's block, before the join; the
+// garbage t that o was computed from is uncomputed at the return as usual (o is kept).
+void merge_kept_unchosen_edge() {
+  Fx f(R"(
+define i32 @f(i32 %a0, double %th, i1 %c) {
+entry:
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %s = call i32 @cqrt_alloc_i32(i32 0)
+  br i1 %c, label %L, label %J
+L:
+  %t = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  %o = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %t, i32 %o)
+  br label %J
+J:
+  %m = phi i32 [ %s, %entry ], [ %o, %L ]
+  %r = call i32 @cqrt_measure_i32(i32 %m)
+  ret i32 %r
+})");
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  f.S("s");
+  f.T("t", "hl");
+  RailId o = f.S("o");
+  f.core(f.call("cqrt_copy_i32"), abi::Core::Copy, "hh", o);
+  f.U.setRole(o, Role::Output);
+  f.U.flushBefore(f.I("t")->getParent()->getTerminator());
+  RailId m = f.U.recordMerge(f.I("m"));
+  f.U.setRole(m, Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%s = call i32 @cqrt_alloc_i32(i32 0)",
+                        "br i1 %c, label %L, label %J",
+                        "%t = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "%o = call i32 @cqrt_alloc_i32(i32 0)",
+                        "call void @cqrt_copy_i32(i32 %t, i32 %o)",
+                        "call void @cq_template_add_i32_hl_unc(i32 %t, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %t)",
+                        "call void @cqrt_free(i32 %s)",
+                        "br label %J",
+                        "%m = phi i32 [ %s, %entry ], [ %o, %L ]",
+                        "%r = call i32 @cqrt_measure_i32(i32 %m)",
+                        "ret i32 %r",
+                    });
+}
+
+// cq_theta on the merge (lowerTheta: the role first, then the gate): the gate hits the chosen arm, so
+// a garbage rail that read the merge before the rotation cannot be uncomputed after it (A4).
+void merge_kept_rotated() {
+  Fx f(R"(
+define i32 @f(i32 %a0, double %th, i1 %c, i32 %v) {
+entry:
+  br i1 %c, label %A, label %B
+A:
+  %ha = call i32 @cqrt_alloc_i32(i32 %a0)
+  br label %J
+B:
+  %hb = call i32 @cqrt_alloc_i32(i32 %v)
+  br label %J
+J:
+  %m = phi i32 [ %ha, %A ], [ %hb, %B ]
+  %t = call i32 @cq_template_add_i32_hl(i32 %m, i32 1)
+  call void @cqrt_ry_i32(i32 %m, double %th)
+  %r = call i32 @cqrt_measure_i32(i32 %m)
+  %q = call i32 @cqrt_measure_i32(i32 %t)
+  ret i32 %r
+})");
+  f.S("ha");
+  f.S("hb");
+  f.U.flushBefore(f.I("ha")->getParent()->getTerminator());
+  f.U.flushBefore(f.I("hb")->getParent()->getTerminator());
+  RailId m = f.U.recordMerge(f.I("m"));
+  RailId t = f.T("t", "hl");
+  f.U.setRole(m, Role::UserRegister);
+  f.U.noteNonDiagonal(m, f.call("cqrt_ry_i32"));
+  f.U.setRole(t, Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "br i1 %c, label %A, label %B",
+                        "%ha = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "br label %J",
+                        "%hb = call i32 @cqrt_alloc_i32(i32 %v)",
+                        "br label %J",
+                        "%m = phi i32 [ %ha, %A ], [ %hb, %B ]",
+                        "%t = call i32 @cq_template_add_i32_hl(i32 %m, i32 1)",
+                        "call void @cqrt_ry_i32(i32 %m, double %th)",
+                        "%r = call i32 @cqrt_measure_i32(i32 %m)",
+                        "%q = call i32 @cqrt_measure_i32(i32 %t)",
+                        "ret i32 %r",
+                    });
+}
+
+// The unchosen arm s is still read by a pending garbage rail u on the loop edge: freeing s there would
+// leave u's uncompute without its operand. Unimplemented.
+void fatal_merge_unchosen_reader() {
+  Fx f(R"(
+define i32 @f(i32 %a0, double %th, i1 %c) {
+entry:
+  %s = call i32 @cqrt_alloc_i32(i32 %a0)
+  %u = call i32 @cq_template_add_i32_hl(i32 %s, i32 1)
+  br i1 %c, label %L, label %J
+L:
+  %o = call i32 @cqrt_alloc_i32(i32 0)
+  br label %J
+J:
+  %m = phi i32 [ %s, %entry ], [ %o, %L ]
+  %r = call i32 @cqrt_measure_i32(i32 %m)
+  %q = call i32 @cqrt_measure_i32(i32 %u)
+  ret i32 %r
+})");
+  f.S("s");
+  f.T("u", "hl");
+  f.S("o");
+  f.U.setRole(f.U.recordMerge(f.I("m")), Role::Measured);
+}
+
+// The unchosen arm s is read directly after the join: it cannot be freed on the loop edge.
+void fatal_merge_unchosen_used_after() {
+  Fx f(R"(
+define i32 @f(i32 %a0, double %th, i1 %c) {
+entry:
+  %s = call i32 @cqrt_alloc_i32(i32 %a0)
+  br i1 %c, label %L, label %J
+L:
+  %o = call i32 @cqrt_alloc_i32(i32 0)
+  br label %J
+J:
+  %m = phi i32 [ %s, %entry ], [ %o, %L ]
+  %r = call i32 @cqrt_measure_i32(i32 %m)
+  %q = call i32 @cqrt_measure_i32(i32 %s)
+  ret i32 %r
+})");
+  f.S("s");
+  f.S("o");
+  f.U.setRole(f.U.recordMerge(f.I("m")), Role::Measured);
+}
+
+// A kept role on a classical select whose arms are resolvable: keeping only the chosen arm would need
+// a branch on the condition (not built). Keeping every arm would keep the unchosen arm's garbage (an
+// extra kept rail, §6-different from rule 9's "arm rails uncomputed").
 void fatal_merge_kept_role() {
   Fx f(kSel);
   f.reg("x", 0);
@@ -1467,6 +1652,9 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"merge_noted_use", merge_noted_use},
     {"merge_phi", merge_phi},
     {"merge_nested", merge_nested},
+    {"merge_kept_arm_local", merge_kept_arm_local},
+    {"merge_kept_unchosen_edge", merge_kept_unchosen_edge},
+    {"merge_kept_rotated", merge_kept_rotated},
 };
 
 const std::map<std::string, std::function<void()>> kFatal = {
@@ -1480,6 +1668,8 @@ const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_merge_kept_role", fatal_merge_kept_role},
     {"fatal_merge_nondiagonal", fatal_merge_nondiagonal},
     {"fatal_merge_arm_local", fatal_merge_arm_local},
+    {"fatal_merge_unchosen_reader", fatal_merge_unchosen_reader},
+    {"fatal_merge_unchosen_used_after", fatal_merge_unchosen_used_after},
 };
 
 } // namespace
