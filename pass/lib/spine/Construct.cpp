@@ -647,6 +647,12 @@ void Walker::emitBlock(BasicBlock *b) {
                       "loop contract does not say which exit edge was taken; cq-qjm9)",
                       &*to->phis().begin());
     }
+    // Every exiting block's output block is where the loop module left the builder, the block the
+    // exit edges leave from (cq-qctz): a phi of an exit block the loop module did not bind (a
+    // classically chosen merge of the zero-trip edge and the loop edge) finds its loop incoming
+    // there through ctx.block(exiting). Set before the merged return, which also continues there.
+    for (auto &x : exits)
+      sh.blocks[x.first] = ctx.B().GetInsertBlock();
     if (merged.count(n))
       return;
     // The unit's exit edges all leave from where the loop module left the builder (a classical phi

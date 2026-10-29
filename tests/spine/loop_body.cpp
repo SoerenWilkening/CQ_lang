@@ -28,6 +28,12 @@
 //    rail %exitphi), %yl keeps that binding and the walker does not merge it again (%z's classical
 //    phi reads %exitphi); a phi outside the unit's exit blocks that the loop module binds (%z) is
 //    still an internal error (bound twice).
+//  - exit_join_latch / exit_join_header (cq-qctz) on kJoinLatch / kJoinHeader: a zero-trip guard
+//    skips the loop to its exit block, whose quantum phi %r = [%x, guard edge], [%v, loop edge]
+//    (%v a register defined before the loop, so no arm-local rail is merged: cq-ut4k) the loop
+//    module does not bind. The walker merges it classically, and its loop incoming comes from the
+//    block the unit ended in, whether the exiting block is the latch or the header. The add after
+//    it reads the merged %r (a measurement of the merged handle itself is cq-bv91).
 //  - rebind_unbound / lower_phi: rebind of an unbound value and lowerInstruction of a phi are
 //    internal errors (forked child).
 // The function is checked with the structural verifier and the LLVM verifier.
@@ -278,6 +284,79 @@ after:
 }
 )";
 
+// A guarded loop exiting from its latch: the exit block's quantum phi %r merges the guard's %x and
+// the loop edge's %v (cq-qctz; the shape of 27, 62, 139).
+const char *kJoinLatch = R"(
+declare i32 @cq_theta_si32(i32, double)
+declare i32 @cq_measure_si32(i32)
+declare void @cq_phi(double)
+
+define i32 @f(i32 %x0, i32 %v0, double %th, i32 %n, double %phi) {
+entry:
+  %x = call i32 @cq_theta_si32(i32 %x0, double %th)
+  %v = call i32 @cq_theta_si32(i32 %v0, double %th)
+  %g = icmp sgt i32 %n, 0
+  br i1 %g, label %pre, label %exit
+
+pre:
+  br label %body
+
+body:
+  %i = phi i32 [ %i1, %latch ], [ 0, %pre ]
+  %y = add i32 %x, %i
+  %c = icmp eq i32 %x, %i
+  br i1 %c, label %then, label %latch
+
+then:
+  call void @cq_phi(double %phi)
+  br label %latch
+
+latch:
+  %i1 = add nuw nsw i32 %i, 1
+  %d = icmp eq i32 %i1, %n
+  br i1 %d, label %exit, label %body
+
+exit:
+  %r = phi i32 [ %x, %entry ], [ %v, %latch ]
+  %w = add i32 %r, 1
+  %m = call i32 @cq_measure_si32(i32 %w)
+  ret i32 %m
+}
+)";
+
+// The same with the exit test in the header (the shape of 25, 28, 57, 149).
+const char *kJoinHeader = R"(
+declare i32 @cq_theta_si32(i32, double)
+declare i32 @cq_measure_si32(i32)
+
+define i32 @f(i32 %x0, i32 %v0, double %th, i32 %n) {
+entry:
+  %x = call i32 @cq_theta_si32(i32 %x0, double %th)
+  %v = call i32 @cq_theta_si32(i32 %v0, double %th)
+  %g = icmp sgt i32 %n, 0
+  br i1 %g, label %pre, label %exit
+
+pre:
+  br label %body
+
+body:
+  %i = phi i32 [ %i1, %latch ], [ 0, %pre ]
+  %y = add i32 %x, %i
+  %d = icmp eq i32 %i, %n
+  br i1 %d, label %exit, label %latch
+
+latch:
+  %i1 = add nuw nsw i32 %i, 1
+  br label %body
+
+exit:
+  %r = phi i32 [ %x, %entry ], [ %v, %body ]
+  %w = add i32 %r, 1
+  %m = call i32 @cq_measure_si32(i32 %w)
+  ret i32 %m
+}
+)";
+
 std::string lower(const std::string &c, Mode md = Mode::Lower, const char *ir = kLoop) {
   curCase = c;
   mode = md;
@@ -419,6 +498,43 @@ void caseExitPhiBound() {
     fail(c, "the phi after the exit block does not read the exit phi's loop-module binding");
 }
 
+// The label of the block holding the first match of rx (the "N:" line above it; "" = entry).
+std::string blockOf(const std::string &body, const std::string &rx) {
+  std::smatch m;
+  if (!std::regex_search(body, m, std::regex(rx)))
+    return "?";
+  std::string before = body.substr(0, m.position(0));
+  std::regex lbl(R"(\n(\d+):)");
+  std::string last = "";
+  for (auto it = std::sregex_iterator(before.begin(), before.end(), lbl); it != std::sregex_iterator(); ++it)
+    last = (*it)[1];
+  return last;
+}
+
+void checkExitJoin(const std::string &c, const char *ir) {
+  std::string b = lower(c, Mode::Lower, ir);
+  std::smatch p;
+  if (!std::regex_search(b, p, std::regex(R"(%r = phi i32 \[ %(\w+), %(\d+) \], \[ %(\w+), %(\d+) \])")))
+    return fail(c, "no two-incoming classical phi %r in the exit block");
+  std::map<std::string, std::string> in{{p[2], p[1]}, {p[4], p[3]}};
+  std::string unitBlk = blockOf(b, R"(call i32 @cq_template_add_i32_hl\(i32 %\w+, i32 0\))");
+  std::smatch x, v;
+  if (!std::regex_search(b, x, std::regex(R"(%(\d+) = call i32 @cqrt_alloc_i32\(i32 %x0\))")) ||
+      !std::regex_search(b, v, std::regex(R"(%(\d+) = call i32 @cqrt_alloc_i32\(i32 %v0\))")))
+    return fail(c, "no rails for %x and %v");
+  if (!in.count(unitBlk) || in[unitBlk] != v[1].str())
+    fail(c, "the phi's incoming from the unit's block " + unitBlk + " is not %v's rail %" + v[1].str());
+  if (!in.count("") && !in.count("0"))
+    fail(c, "the phi has no incoming from the guard's block (the entry)");
+  else if (in.count("0") ? in["0"] != x[1].str() : in[""] != x[1].str())
+    fail(c, "the phi's incoming from the guard's block is not %x's rail %" + x[1].str());
+  if (count(b, R"(call i32 @cq_template_add_i32_hl\(i32 %r, i32 1\))") != 1)
+    fail(c, "the add after the exit block does not read the merged %r");
+}
+
+void caseExitJoinLatch() { checkExitJoin("exit_join_latch", kJoinLatch); }
+void caseExitJoinHeader() { checkExitJoin("exit_join_header", kJoinHeader); }
+
 void caseRebind() {
   const char *c = "rebind";
   std::string b = lower(c);
@@ -484,7 +600,9 @@ int main(int argc, char **argv) {
                                                         {"trip", caseTrip},
                                                         {"two_trips", caseTwoTrips},
                                                         {"exit_phi_bound", caseExitPhiBound},
-                                                        {"non_exit_phi_bound", caseNonExitPhiBound}};
+                                                        {"non_exit_phi_bound", caseNonExitPhiBound},
+                                                        {"exit_join_latch", caseExitJoinLatch},
+                                                        {"exit_join_header", caseExitJoinHeader}};
   if (argc > 1) {
     auto it = cases.find(argv[1]);
     if (it == cases.end()) {
