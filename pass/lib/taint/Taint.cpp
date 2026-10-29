@@ -1940,8 +1940,45 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
   cur->anyQuantum = true;
 }
 
+// Whether a call may write through its argument operand argNo, by the call's attributes: the
+// parameter's readonly/readnone, and the call's memory effects on argument memory.
+static bool mayWriteThroughArg(const CallBase &CB, unsigned argNo) {
+  if (!CB.getArgOperand(argNo)->getType()->isPointerTy())
+    return false;
+  if (!isModSet(CB.getMemoryEffects().getModRef(IRMemLocation::ArgMem)))
+    return false;
+  return !CB.onlyReadsMemory(argNo);
+}
+
+// Rule 16, recognised by the callee's attributes and semantics, never by name: a call that may act
+// on the host beyond its pointer arguments. It may write memory other than its arguments' (a
+// stream, errno, a global the library owns), throw, or not return. A call whose only writes go
+// through its pointer arguments (frexp, modf, remquo: memory(argmem: write)) computes into the
+// caller's memory: with a quantum argument it is a declared clone (rule 27), not a tape entry.
+static bool hostEffectBeyondArgs(const CallBase &CB) {
+  MemoryEffects ME = CB.getMemoryEffects().getWithoutLoc(IRMemLocation::ArgMem);
+  return !ME.onlyReadsMemory() || CB.mayThrow() || !CB.willReturn();
+}
+
 void Analyzer::declaredClone(CallBase &CB, Function *G, ArrayRef<Value *> actuals) {
   lift(CB, G, actuals, false);
+  // Rule 27: the clone may overwrite cells of a pointee object with handles it minted (rule 3,
+  // through memory and calls). With no body the cells it writes are unknown: every object a pointer
+  // argument the call may write through can reach holds a handle at an unknown cell after the call.
+  for (unsigned i = 0; i < actuals.size(); ++i) {
+    if (!mayWriteThroughArg(CB, i))
+      continue;
+    PtrInfo p = P(actuals[i]);
+    if (!p.init)
+      continue;
+    p.top = true;
+    recordWrite(CB, p, 0, true, nullptr, nullptr, nullptr);
+    for (unsigned s : p.sites) {
+      const Site &site = st.sites[s];
+      if (site.kind != SiteKind::Function && !(site.kind == SiteKind::Alloca && site.owner == cur->F))
+        cur->writesOuter = true;
+    }
+  }
 }
 
 // <fenv.h> (C17 7.6) as rule 23 rail operations (eff-fenv), never a declared clone. Point-wise:
@@ -2306,8 +2343,9 @@ void Analyzer::transferCall(CallBase &CB) {
     lift(CB, G, actuals, false);
     return;
   }
-  // A body-less callee: host effect (a library function the target knows, with side effects), or a
-  // declared clone (rule 27) when the call is quantum.
+  // A body-less callee: host effect (a library function the target knows, with side effects beyond
+  // its pointer arguments when the call is quantum: hostEffectBeyondArgs), or a declared clone
+  // (rule 27) when the call is quantum.
   // Darwin spells some libc symbols "\01_name" (99: fwrite, fputs): the C name is what the target
   // library knows.
   LibFunc LF;
@@ -2329,7 +2367,7 @@ void Analyzer::transferCall(CallBase &CB) {
         if (st.objects[o].mayHoldHandle())
           quantumCall = true;
   }
-  if (known && !readNone) {
+  if (known && !readNone && !(quantumCall && !hostEffectBeyondArgs(CB))) {
     cur->hasEffect = true; // tape entry (rule 16) when quantum or under a quantum predicate
     if (quantumCall)
       cur->anyQuantum = true;

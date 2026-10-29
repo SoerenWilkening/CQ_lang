@@ -17,3 +17,6 @@ target_compile_definitions(taint_deadend PRIVATE CQ_SPEC_DIR="${CQ_SPEC_DIR}")
 cq_add_unit_test(taint_exitread taint_exitread.cpp)
 # cq-41y3: rule 2, a read of a measured value its measurement dominates is classical (the outcome).
 cq_add_unit_test(taint_measured taint_measured.cpp)
+# cq-cvwx: a known library function writing only through its pointer arguments (frexp, modf) with a
+# quantum argument is a declared clone (rule 27), not a host effect (rule 16); its pointee holds a handle.
+cq_add_unit_test(taint_libwriter taint_libwriter.cpp)
