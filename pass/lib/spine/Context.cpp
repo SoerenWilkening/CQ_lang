@@ -254,9 +254,29 @@ const Pred &LoweringContext::currentPredicate() const {
 
 Value *LoweringContext::currentFlag() {
   const Pred &p = currentPredicate();
+  spine::Shared &sh = *impl->sh;
+  if (!sh.tripFlag) {
+    if (p.isTop())
+      return nullptr;
+    return preds().flag(*this, p);
+  }
+  // cq-99f7: under a rule-14 trip the control is the trip rail, conjoined with the block's quantum
+  // part when there is one (a fresh i1 rail, recorded, torn down by Uncompute like any pred flag).
   if (p.isTop())
-    return nullptr;
-  return preds().flag(*this, p);
+    return sh.tripFlag;
+  if (sh.tripConj)
+    return sh.tripConj;
+  Value *f = preds().flag(*this, p);
+  if (!f)
+    internalError("spine: the flag of a non-top predicate under a trip is constant true");
+  RailType i1{Kind::Int, 1};
+  CallInst *c = emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(M.getContext())});
+  RailId cid = unc().recordSeed(c);
+  abi::CoreSpec andSpec{abi::Core::AndI1, i1};
+  CallInst *g = emitCore(andSpec, {sh.tripFlag, f, c});
+  unc().recordCore(g, andSpec, {Operand{sh.tripFlag, true}, Operand{f, true}, Operand{c, true}}, cid);
+  sh.tripConj = c;
+  return c;
 }
 
 unsigned LoweringContext::beginGateLog() {

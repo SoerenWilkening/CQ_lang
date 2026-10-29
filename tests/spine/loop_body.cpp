@@ -13,6 +13,11 @@
 //  - body: the body's quantum add is one template, and the cq_phi in the quantum arm %then is
 //    lowered under that arm's predicate (an rz on the predicate's rail; under top, rule 12 would emit nothing).
 //  - rebind: the measurement after the loop reads f (the alloc the double made), not the add's rail.
+//  - trip (cq-99f7): the double lowers the body of kTrip under a trip rail %trip (an i1 seed it
+//    mints and records) through lowerInstruction(ctx, I, trip): the cq_theta in the body's top block
+//    is an Ry controlled on %trip; the cq_phi at top is rz_i1 on %trip (no rule 12 deletion); the
+//    cq_phi in the quantum arm is rz_i1 on the conjunction %trip & (x == i): a fresh i1 rail
+//    (alloc 0, and_i1(%trip, cond, c)) uncomputed (the same and_i1 again) and freed after the phase.
 //  - rebind_unbound / lower_phi: rebind of an unbound value and lowerInstruction of a phi are
 //    internal errors (forked child).
 // The function is checked with the structural verifier and the LLVM verifier.
@@ -58,7 +63,7 @@ void fail(const std::string &c, const std::string &msg) {
   std::fprintf(stderr, "FAIL %s: %s\n", c.c_str(), msg.c_str());
 }
 // What the double does besides lowering the body.
-enum class Mode { Lower, LowerPhi, RebindUnbound };
+enum class Mode { Lower, LowerPhi, RebindUnbound, Trip };
 Mode mode = Mode::Lower;
 std::string curCase;
 } // namespace
@@ -76,11 +81,22 @@ void lowerClassical(LoweringContext &ctx, Loop &L, Case) {
       lowerInstruction(ctx, phi);   // must stop
     ctx.bindFields(&phi, {ctx.operand(phi.getIncomingValueForBlock(pre))});
   }
+  Value *trip = nullptr;
+  if (mode == Mode::Trip) {
+    RailType i1{Kind::Int, 1};
+    CallInst *t = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getTrue(ctx.M.getContext())});
+    t->setName("trip");
+    ctx.unc().recordSeed(t);
+    trip = t;
+  }
   for (BasicBlock *b : L.blocks())
     for (Instruction &I : *b) {
       if (isa<PHINode>(I) || I.isTerminator())
         continue;
-      lowerInstruction(ctx, I);
+      if (trip)
+        lowerInstruction(ctx, I, trip);
+      else
+        lowerInstruction(ctx, I);
       if (!ctx.currentPredicate().isTop())
         fail(curCase, "currentPredicate() not restored to the unit's after lowerInstruction");
     }
@@ -148,12 +164,47 @@ exit:
 }
 )";
 
-std::string lower(const std::string &c) {
+// kLoop's shape with a register %r rotated in the body's top block and a phase there too.
+const char *kTrip = R"(
+declare i32 @cq_theta_si32(i32, double)
+declare i32 @cq_measure_si32(i32)
+declare void @cq_phi(double)
+
+define i32 @f(i32 %x0, double %th, i32 %n, double %phi, i32 %r0, double %t, double %p2) {
+entry:
+  %x = call i32 @cq_theta_si32(i32 %x0, double %th)
+  %r = call i32 @cq_theta_si32(i32 %r0, double %th)
+  br label %body
+
+body:
+  %i = phi i32 [ %i1, %latch ], [ 0, %entry ]
+  %y = add i32 %x, %i
+  %r2 = call i32 @cq_theta_si32(i32 %r, double %t)
+  call void @cq_phi(double %p2)
+  %c = icmp eq i32 %x, %i
+  br i1 %c, label %then, label %latch
+
+then:
+  call void @cq_phi(double %phi)
+  br label %latch
+
+latch:
+  %i1 = add nuw nsw i32 %i, 1
+  %d = icmp eq i32 %i1, %n
+  br i1 %d, label %exit, label %body
+
+exit:
+  %m = call i32 @cq_measure_si32(i32 %y)
+  ret i32 %m
+}
+)";
+
+std::string lower(const std::string &c, Mode md = Mode::Lower, const char *ir = kLoop) {
   curCase = c;
-  mode = Mode::Lower;
+  mode = md;
   LLVMContext ctx;
   SMDiagnostic err;
-  std::unique_ptr<Module> M = parseAssemblyString(kLoop, err, ctx);
+  std::unique_ptr<Module> M = parseAssemblyString(ir, err, ctx);
   if (!M) {
     err.print("spine_loop_body", errs());
     std::exit(2);
@@ -195,6 +246,56 @@ void caseBody() {
     return fail(c, "no icmp template for the arm's condition");
   if (count(b, R"(call void @cqrt_rz_i1\(i32 %)" + m[1].str() + R"(, double %phi\))") != 1)
     fail(c, "the cq_phi in the quantum arm is not a phase on the arm's predicate rail");
+}
+
+// The position of the first match of rx in body at or after from (npos when none).
+size_t findAt(const std::string &body, const std::string &rx, size_t from = 0) {
+  std::smatch m;
+  std::string tail = body.substr(from);
+  if (!std::regex_search(tail, m, std::regex(rx)))
+    return std::string::npos;
+  return from + size_t(m.position(0));
+}
+
+void caseTrip() {
+  const char *c = "trip";
+  std::string b = lower(c, Mode::Trip, kTrip);
+  // The theta in the body's top block: an Ry on %r's rail controlled on the trip rail.
+  if (count(b, R"(call void @cqrt_ry_i32_controlled\(i32 %trip, i32 %\d+, double %t\))") != 1)
+    fail(c, "the body's cq_theta is not an Ry controlled on the trip rail");
+  if (count(b, R"(call void @cqrt_ry_i32\(i32 %\d+, double %t\))") != 0)
+    fail(c, "the body's cq_theta is also emitted uncontrolled");
+  // The phase at the body's top: rz_i1 on the trip rail (rule 12's deletion is off under a trip).
+  if (count(b, R"(call void @cqrt_rz_i1\(i32 %trip, double %p2\))") != 1)
+    fail(c, "the top-level cq_phi in the body is not a phase on the trip rail");
+  // The phase in the arm: rz_i1 on the conjunction of %trip and the arm's condition rail.
+  std::smatch m;
+  if (!std::regex_search(b, m, std::regex(R"(%(\d+) = call i32 @cq_template_icmp_eq_i32_hl\()")))
+    return fail(c, "no icmp template for the arm's condition");
+  std::string cond = m[1].str();
+  std::smatch a;
+  std::string andRx = R"(call void @cqrt_and_i1\(i32 %trip, i32 %)" + cond + R"(, i32 %(\d+)\))";
+  if (!std::regex_search(b, a, std::regex(andRx)))
+    return fail(c, "no conjunction and_i1(%trip, cond, c)");
+  std::string conj = a[1].str();
+  std::string andC = R"(call void @cqrt_and_i1\(i32 %trip, i32 %)" + cond + ", i32 %" + conj + R"(\))";
+  size_t alloc = findAt(b, "%" + conj + R"( = call i32 @cqrt_alloc_i1\(i1 false\))");
+  size_t fwd = findAt(b, andC);
+  size_t rz = findAt(b, R"(call void @cqrt_rz_i1\(i32 %)" + conj + R"(, double %phi\))");
+  size_t back = rz == std::string::npos ? rz : findAt(b, andC, rz);
+  size_t fr = back == std::string::npos ? back : findAt(b, R"(call void @cqrt_free\(i32 %)" + conj + R"(\))", back);
+  if (alloc == std::string::npos || fwd == std::string::npos || alloc > fwd)
+    fail(c, "the conjunction rail is not a fresh alloc 0 before its and_i1");
+  if (rz == std::string::npos || rz < fwd)
+    fail(c, "the arm's cq_phi is not a phase on the conjunction rail after it is computed");
+  if (count(b, R"(call void @cqrt_rz_i1\(i32 %\d+, double %phi\))") != 1)
+    fail(c, "the arm's cq_phi is not exactly one phase");
+  if (back == std::string::npos)
+    fail(c, "the conjunction is not uncomputed (no second and_i1) after the phase");
+  if (fr == std::string::npos)
+    fail(c, "the conjunction rail is not freed after its uncompute");
+  if (count(b, andC) != 2)
+    fail(c, "the conjunction is computed and uncomputed other than once each");
 }
 
 void caseRebind() {
@@ -254,7 +355,8 @@ int main(int argc, char **argv) {
   std::map<std::string, std::function<void()>> cases{{"body", caseBody},
                                                         {"rebind", caseRebind},
                                                         {"rebind_unbound", caseRebindUnbound},
-                                                        {"lower_phi", caseLowerPhi}};
+                                                        {"lower_phi", caseLowerPhi},
+                                                        {"trip", caseTrip}};
   if (argc > 1) {
     auto it = cases.find(argv[1]);
     if (it == cases.end()) {

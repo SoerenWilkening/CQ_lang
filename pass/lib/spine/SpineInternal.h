@@ -32,6 +32,15 @@
 //    part of preds().block(I.getParent())); both are restored on return, so after it the loop module
 //    sees its unit's state again. No rule 6 (ruleSixAfter): inside a rule-14 trip the mirror reads
 //    every old value. A cq_invert marker is an internal error (dispatch: the walker brackets regions).
+//  - lowerInstruction(ctx, I, tripFlag) (cq-99f7) is the same dispatch under a rule-14 trip: tripFlag
+//    is an i1 rail the loop module owns and recorded (its trip predicate a_j; nullptr = none, which is
+//    the two-argument form). For the call, currentFlag() is tripFlag when the block predicate's quantum
+//    part is top, else the conjunction tripFlag & flag(quantum part): a fresh i1 rail (alloc 0, and_i1)
+//    the spine mints once per call at the first request and records in Uncompute (recordSeed,
+//    recordCore), so it is torn down like any pred flag (rule 9 inner-arm phase, 152). A classical-angle
+//    cq_phi is rz_i1 on currentFlag(): rule 12's global-phase deletion never applies under a trip.
+//    currentPredicate() is unchanged (the block's quantum part): a consumer that tests it for top to
+//    decide "uncontrolled" does not see the trip (cq-hmv1); currentFlag() is the control.
 //  - rebind(orig, ops) (cq-ofn6) replaces orig's binding, which must exist (internal error
 //    otherwise): a loop module rebinds each loop value read after the loop to its exit value (rule 14
 //    case 1 copy-out, case 3 captured value). The kinds are the caller's; the old rails stay recorded.
@@ -103,6 +112,10 @@ struct Shared {
   std::map<const llvm::Function *, std::unique_ptr<llvm::DominatorTree>> dts;
   // The original instruction being lowered, and for an inlined callee the call it stands for.
   const llvm::Instruction *cur = nullptr;
+  // cq-99f7: the loop module's trip rail for the lowerInstruction call in progress (nullptr = none),
+  // and the conjunction flag minted for it (nullptr until currentFlag() asks under a non-top predicate).
+  llvm::Value *tripFlag = nullptr;
+  llvm::Value *tripConj = nullptr;
   std::vector<const llvm::CallBase *> inlineStack;
 
   Shared(llvm::Module &M, const loops::KOptions &KO) : M(M), KO(KO), B(M.getContext()) {}

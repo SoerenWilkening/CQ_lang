@@ -250,6 +250,23 @@ bool onlyAddressIndex(const Instruction &I) {
   });
 }
 
+// Rule 12 under a rule-14 trip (cq-99f7): the trip predicate is quantum, so a classical-angle phase is
+// never global: rz_i1 on the trip's control (the trip rail, or its conjunction with the block's
+// quantum part).
+void lowerTripPhase(LoweringContext &ctx, CallInst &cqPhi) {
+  if (cqPhi.arg_size() != 1)
+    internalError("spine: cq_phi with other than one argument", &cqPhi);
+  if (ctx.S.pure)
+    return;   // a _pure clone is the clone without its phase effects (CR §1.4)
+  Operand angle = ctx.operand(cqPhi.getArgOperand(0));
+  if (angle.handle)
+    internalError("spine: a classical cq_phi angle whose operand is a rail", &cqPhi);
+  Value *f = ctx.currentFlag();
+  if (!f)
+    internalError("spine: no control under a trip flag", &cqPhi);
+  ctx.emitCore(abi::CoreSpec{abi::Core::RzI1, RailType{Kind::Int, 1}}, {f, angle.v});
+}
+
 void lowerCall(LoweringContext &ctx, CallBase &CB) {
   using calls::Class;
   Class c = calls::classify(CB, ctx.T, ctx.S);
@@ -281,6 +298,8 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
       internalError("spine: cq_phi through invoke", &CB);
     if (isQ(ctx, CI->getArgOperand(0)))
       return rot::lowerQuantumAnglePhase(ctx, *CI, ctx.currentFlag());   // rule 15
+    if (shared(ctx).tripFlag)
+      return lowerTripPhase(ctx, *CI);                                   // rules 12, 14 (cq-99f7)
     return lowerPhase(ctx, *CI);                                         // rule 12
   case Class::InvertBegin:
   case Class::InvertEnd:
@@ -515,17 +534,26 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
 
 namespace cq {
 
-void lowerInstruction(LoweringContext &ctx, Instruction &I) {
+void lowerInstruction(LoweringContext &ctx, Instruction &I) { lowerInstruction(ctx, I, nullptr); }
+
+void lowerInstruction(LoweringContext &ctx, Instruction &I, Value *tripFlag) {
   if (isa<PHINode>(I) || I.isTerminator())
     internalError("spine: lowerInstruction of a phi or terminator", &I);
+  if (tripFlag && !tripFlag->getType()->isIntegerTy(32))
+    internalError("spine: lowerInstruction under a trip flag that is not a rail handle", tripFlag);
   spine::Shared &sh = spine::shared(ctx);
   const Instruction *savedCur = sh.cur;
   std::optional<Pred> savedPred = sh.curPred;
+  Value *savedTrip = sh.tripFlag, *savedConj = sh.tripConj;
   sh.cur = &I;
   sh.curPred = ctx.preds().block(I.getParent()).quantumPart(ctx.T, ctx.S);
+  sh.tripFlag = tripFlag;
+  sh.tripConj = nullptr;
   spine::dispatch(ctx, I);
   sh.cur = savedCur;
   sh.curPred = savedPred;
+  sh.tripFlag = savedTrip;
+  sh.tripConj = savedConj;
 }
 
 } // namespace cq
@@ -536,7 +564,7 @@ void lowerInline(LoweringContext &ctx, CallBase &CB, const Specialization &calle
   Function &F = *callee.F;
   if (F.size() != 1 || !isa<ReturnInst>(F.getEntryBlock().getTerminator()))
     unimplemented("spine: rule 19 inline of a callee with more than one block", &CB);
-  if (!ctx.currentPredicate().isTop())
+  if (!ctx.currentPredicate().isTop() || shared(ctx).tripFlag)
     unimplemented("spine: rule 19 inline under a quantum predicate", &CB);
   Shared &sh = shared(ctx);
   std::unique_ptr<LoweringContext> child = childContext(ctx, callee);
