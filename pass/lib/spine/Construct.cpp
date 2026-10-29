@@ -1069,8 +1069,21 @@ void Walker::run() {
 } // namespace
 
 void construct(Module &M, const TaintInfo &T, const Specialization &S, const loops::KOptions &KO) {
-  if (!S.F || S.F->isDeclaration())
-    internalError("spine: construct of a specialization with no body");
+  if (!S.F)
+    internalError("spine: construct of a specialization with no function");
+  ArrayRef<Specialization> all = T.specializations();
+  bool inList = !all.empty() && &S >= all.begin() && &S < all.end();
+  bool last = !inList || &S == &all.back();
+  // Rule 27 (161): a declared specialization has no body to construct. The compiler only emits
+  // declarations, and calls emits the declared clone (and its _ctl and twin declarations) at each
+  // call site. The module-wide epilogue still runs when it is the last specialization.
+  if (S.F->isDeclaration()) {
+    if (last) {
+      finishEntries(M);
+      dropDeadSurface(M);
+    }
+    return;
+  }
   if (S.adj)
     unimplemented("spine: an _adj clone (rule 17)", S.F);
   Function &F = *S.F;
@@ -1119,9 +1132,7 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
   }
   Walker(ctx, F, DT, LI).run();
 
-  ArrayRef<Specialization> all = T.specializations();
-  bool inList = !all.empty() && &S >= all.begin() && &S < all.end();
-  if (!inList || &S == &all.back()) {
+  if (last) {
     finishEntries(M);
     dropDeadSurface(M);
   }
