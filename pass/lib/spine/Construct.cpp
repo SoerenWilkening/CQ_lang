@@ -151,6 +151,7 @@ private:
   bool eligible(const BasicBlock *y, const BasicBlock *from) const;
   BasicBlock *out(const BasicBlock *b);
   void emitBlock(BasicBlock *b);
+  void emitGuard(BasicBlock *b);
   void emitBody(BasicBlock *b, const Instruction *resume);
   void emitTerminator(BasicBlock *b);
   void emitCloneReturn(ReturnInst *ret);
@@ -645,6 +646,8 @@ void Walker::emitBlock(BasicBlock *b) {
   sh.curPred = ctx.preds().block(b).quantumPart(ctx.T, ctx.S);
 
   if (unitOf.count(b)) {
+    // The header's guard comes first: the unit runs only under it (cq-uevr).
+    emitGuard(b);
     Loop &lp = *unitOf.lookup(b);
     SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> exits;
     lp.getExitEdges(exits);
@@ -731,27 +734,34 @@ void Walker::emitBlock(BasicBlock *b) {
     spine::bindOperand(ctx, &phi, Operand{np, false});
   }
 
-  if (auto g = guards.find(b); g != guards.end()) {
-    // Rule 8 / P1: the classical factor not yet established on every path here is a classical branch.
-    IRBuilder<> &B = ctx.B();
-    sh.cur = &*b->getFirstNonPHIIt();
-    Value *cond = nullptr;
-    for (unsigned k : g->second.first) {
-      const Lit &l = cands[k];
-      Operand op = ctx.operand(l.v);
-      if (op.handle)
-        internalError("spine: a classical guard literal that is a rail", l.v);
-      Value *v = l.eq ? B.CreateICmpEQ(op.v, ConstantInt::get(op.v->getType(), l.val)) : op.v;
-      if (l.neg)
-        v = B.CreateNot(v);
-      cond = cond ? B.CreateAnd(cond, v) : v;
-    }
-    BasicBlock *cont = BasicBlock::Create(ctx.M.getContext(), "", &ctx.out());
-    B.CreateCondBr(cond, cont, out(g->second.second));
-    B.SetInsertPoint(cont);
-    blockDefs.clear();
-  }
+  emitGuard(b);
   emitBody(b, nullptr);
+}
+
+// Rule 8 / P1: the classical factor of b's predicate not yet established on every path here is a
+// classical branch at b's start, to b's own code or to the planned skip block (cq-uevr: a loop unit's
+// header too, before the unit is lowered).
+void Walker::emitGuard(BasicBlock *b) {
+  auto g = guards.find(b);
+  if (g == guards.end())
+    return;
+  IRBuilder<> &B = ctx.B();
+  sh.cur = &*b->getFirstNonPHIIt();
+  Value *cond = nullptr;
+  for (unsigned k : g->second.first) {
+    const Lit &l = cands[k];
+    Operand op = ctx.operand(l.v);
+    if (op.handle)
+      internalError("spine: a classical guard literal that is a rail", l.v);
+    Value *v = l.eq ? B.CreateICmpEQ(op.v, ConstantInt::get(op.v->getType(), l.val)) : op.v;
+    if (l.neg)
+      v = B.CreateNot(v);
+    cond = cond ? B.CreateAnd(cond, v) : v;
+  }
+  BasicBlock *cont = BasicBlock::Create(ctx.M.getContext(), "", &ctx.out());
+  B.CreateCondBr(cond, cont, out(g->second.second));
+  B.SetInsertPoint(cont);
+  blockDefs.clear();
 }
 
 // The instructions of b after its phis (after resume when set: the end marker of a cq_invert region

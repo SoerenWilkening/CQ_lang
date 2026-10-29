@@ -10,7 +10,8 @@
 // incoming from the block the unit ended in. The function is checked with the structural verifier,
 // the LLVM verifier, and by text. A unit with two or more exit edges into an exit block with a phi
 // must stop with cq: unimplemented (cq-qjm9; the reviewer's p1.ll and p4.ll; cq-9us4's a1.ll, where the
-// loop sits in a quantum arm), run in a forked child.
+// loop sits in a quantum arm), run in a forked child. A unit whose header carries a planned classical
+// guard (cq-uevr, 26's shape) must emit it before the unit, the unit in its taken block.
 //
 //   spine_loop_exit_join            run every case
 //   spine_loop_exit_join <case>     run one case
@@ -224,6 +225,64 @@ void casePhi() {
     fail(c, "the phi has no incoming 0 from the guard's block");
 }
 
+// cq-uevr: the loop's header is reached only through a quantum branch on %a = %g & %q (26's shape,
+// without its exit phi), so its predicate g & q has the classical factor %g that no classical edge
+// establishes: planGuards plans a guard for the unit's header. It must be emitted before the unit
+// (the unit runs only under it, its skip edge going to the exit block), not dropped.
+const char *kGuardedHeader = R"(
+declare i32 @cq_theta_si32(i32, double)
+declare i32 @cq_measure_si32(i32)
+declare void @cq_phi(double)
+
+define i32 @u(i32 %x0, double %th, i32 %n, double %phi) {
+entry:
+  %x = call i32 @cq_theta_si32(i32 %x0, double %th)
+  %g = icmp sgt i32 %n, 0
+  %q = icmp eq i32 %x, 3
+  %a = and i1 %g, %q
+  br i1 %a, label %body, label %exit
+
+exit:
+  %m = call i32 @cq_measure_si32(i32 %x)
+  ret i32 %m
+
+body:
+  %i = phi i32 [ %i1, %latch ], [ 0, %entry ]
+  %c = icmp eq i32 %x, %i
+  br i1 %c, label %then, label %latch
+
+then:
+  call void @cq_phi(double %phi)
+  br label %latch
+
+latch:
+  %i1 = add nuw nsw i32 %i, 1
+  %d = icmp eq i32 %i1, %n
+  br i1 %d, label %exit, label %body
+}
+)";
+
+void caseGuardedHeader() {
+  const char *c = "guarded_header";
+  std::string b = lower(c, kGuardedHeader, "u");
+  // The guard: a classical branch on %g (the argument test n > 0), to the unit's block and to the
+  // exit block; the unit then jumps to the exit block, which measures and returns once.
+  std::smatch g;
+  if (!std::regex_search(b, g, std::regex(R"(%(\w+) = icmp sgt i32 %n, 0[\s\S]*?br i1 %(\w+), label %(\d+), label %(\d+))")))
+    return fail(c, "no classical guard branch");
+  if (g[1] != g[2])
+    fail(c, "the guard branch is not on the classical factor n > 0");
+  std::string unitBlk = g[3], skipBlk = g[4];
+  if (blockOf(b, R"(call void @loop_unit\(\))") != unitBlk)
+    fail(c, "the unit is not lowered in the guard's taken block " + unitBlk);
+  if (blockOf(b, R"(call i32 @cqrt_measure_i32\()") != skipBlk)
+    fail(c, "the measurement is not in the guard's skip target " + skipBlk);
+  expectCount(c, b, R"(call void @loop_unit\(\))", 1);
+  expectCount(c, b, R"(br i1 )", 1);
+  expectCount(c, b, R"(cqrt_measure_i32)", 1);
+  expectCount(c, b, R"(\bret i32)", 1);
+}
+
 // Runs the lowering in a forked child and expects it to stop with cq: unimplemented naming cq-qjm9
 // and printing the exit block's phi (rx matches it).
 void expectUnimplemented(const std::string &c, const char *ir, const std::string &phiRx) {
@@ -385,6 +444,7 @@ void caseNestedExits() {
 
 int main(int argc, char **argv) {
   std::map<std::string, std::function<void()>> cases{{"guarded", caseGuarded},
+                                                        {"guarded_header", caseGuardedHeader},
                                                         {"phi", casePhi},
                                                         {"two_exits", caseTwoExits},
                                                         {"nested_exits", caseNestedExits},
