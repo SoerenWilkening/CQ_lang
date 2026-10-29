@@ -41,6 +41,7 @@ public:
   llvm::Value *currentFlag();             // its flag rail, nullptr when classical-true
   unsigned beginGateLog(); std::vector<llvm::CallInst *> endGateLog(unsigned);
   unsigned K(const llvm::Loop *) const;
+  unsigned K(const llvm::Function &) const;   // F's K, F may be a declaration (rule 27 trailing K)
   // K1: storage owned by module spine.
 private:
   struct Impl; std::shared_ptr<Impl> impl;

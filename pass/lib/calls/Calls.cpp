@@ -236,10 +236,9 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
 }
 
 // K of a declared clone (rule 27, §0: flag, CQ_K, global flag, default 4).
-Value *declaredK(LoweringContext &, const CallBase &CB) {
-  unimplemented("calls: the trailing K of a rule 27 declared clone: LoweringContext exposes the K options only "
-                "per loop (ctx.K(loop)), and the callee has no body (cq-arch K channel gap)",
-                &CB);
+// Rule 27: the trailing i32 K of a declared clone is the callee's K (flag, CQ_K, global, default 4).
+Value *declaredK(LoweringContext &ctx, const Function &F) {
+  return ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()), ctx.K(F));
 }
 
 // The declared clone of F for CB (rule 27): declared here, called at the builder.
@@ -257,7 +256,7 @@ CallInst *emitDeclaredCall(LoweringContext &ctx, CallBase &CB, Function &F, Stri
     ops.push_back(Operand{flag, true});
   }
   appendActuals(ctx, CB, mask, args, ops);
-  Value *K = declaredK(ctx, CB);
+  Value *K = declaredK(ctx, F);
   args.push_back(K);
   ops.push_back(Operand{K, false});
   Type *rt = CB.getType();

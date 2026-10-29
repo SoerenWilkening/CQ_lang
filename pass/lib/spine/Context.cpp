@@ -299,4 +299,10 @@ unsigned LoweringContext::K(const llvm::Loop *L) const {
   return loops::resolveK(*L->getHeader()->getParent(), impl->sh->KO);
 }
 
+// The same resolution as K(const Loop *) (CLAUDE.md "K per loop": per-function flag, CQ_K, global flag,
+// default 4), for a function that may have no body: a rule 27 declared clone's trailing K is the callee's.
+unsigned LoweringContext::K(const llvm::Function &F) const {
+  return loops::resolveK(F, impl->sh->KO);
+}
+
 } // namespace cq

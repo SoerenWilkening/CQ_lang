@@ -38,3 +38,13 @@ target_compile_options(spine_loop_body PRIVATE $<TARGET_PROPERTY:cq_pass_objs,IN
 add_dependencies(spine_loop_body cq_pass_objs)
 target_link_libraries(spine_loop_body PRIVATE LLVM)
 add_test(NAME spine_loop_body COMMAND spine_loop_body)
+
+# LoweringContext::K(const Function &) (cq-x2lh): flag, CQ_K, global, default 4 on a declaration and
+# a definition. Linked with every pass module.
+add_executable(spine_k_function k_function.cpp $<TARGET_OBJECTS:cq_pass_objs>)
+target_include_directories(spine_k_function PRIVATE $<TARGET_PROPERTY:cq_pass_objs,INTERFACE_INCLUDE_DIRECTORIES>)
+target_compile_definitions(spine_k_function PRIVATE $<TARGET_PROPERTY:cq_pass_objs,INTERFACE_COMPILE_DEFINITIONS>)
+target_compile_options(spine_k_function PRIVATE $<TARGET_PROPERTY:cq_pass_objs,INTERFACE_COMPILE_OPTIONS>)
+add_dependencies(spine_k_function cq_pass_objs)
+target_link_libraries(spine_k_function PRIVATE LLVM)
+add_test(NAME spine_k_function COMMAND spine_k_function)
