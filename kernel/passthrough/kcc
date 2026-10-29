@@ -1,0 +1,24 @@
+#!/bin/sh
+# kcc: the kernel's CC for the tier-1 passthrough build (cq-w1-kernel-t1).
+# Every invocation goes to brew llvm@19 clang unchanged, except the compile of a kernel C translation
+# unit to its object (-c, a .c input, -o *.o outside scripts/): that one also gets -emit-llvm, so the
+# object kbuild writes is the TU's bitcode. The optimisation level is kbuild's: KCFLAGS=-O1 (appended
+# to KBUILD_CFLAGS, after its -O2), unless a per-directory or per-file flag kbuild places later says
+# otherwise (crypto/jitterentropy.c must be -O0); tus.py records the effective level per TU.
+# Preprocessing (-E), assembly listings (-S, e.g. asm-offsets.s), .S files, cc-option probes and
+# objects under scripts/ (scripts/mod/empty.o is a probe mk_elfconfig reads as ELF; nothing under
+# scripts/ is kernel code) are untouched.
+CLANG=${KCC_CLANG:-/usr/local/opt/llvm@19/bin/clang}
+c=0; src=0; obj=0; prev=
+for a in "$@"; do
+  case "$a" in
+    -c) c=1 ;;
+    *.c) [ "$prev" != "-o" ] && src=1 ;;
+  esac
+  [ "$prev" = "-o" ] && case "$a" in scripts/*) ;; *.o) obj=1 ;; esac
+  prev=$a
+done
+if [ $c = 1 ] && [ $src = 1 ] && [ $obj = 1 ]; then
+  exec "$CLANG" "$@" -emit-llvm
+fi
+exec "$CLANG" "$@"
