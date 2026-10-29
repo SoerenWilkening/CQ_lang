@@ -1,0 +1,29 @@
+CQ_lang2 kernel tier 1 (passthrough), bead cq-w1-kernel-t1
+linux release     v6.12 (https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git)
+linux commit      adc218676eef25575469234709c2d87185ca223a
+config            x86_64_defconfig (ARCH=x86_64 LLVM=1, KCFLAGS=-O1, kcc adds -emit-llvm)
+toolchain         brew llvm@19 19.1.7 (clang, opt), lld@19 19.1.7
+pass              CQ_lang2 c51cb791f9c08614fa47132cee08ec62d5f7d1f7 (the checkout's HEAD when the report was written)
+plugin sha256     b4f7ada842ceec8b2ed14ccc0e156c28098afa021fc3a29da450b32801e350f6
+identity          opt -passes=cq-lower X  ==  opt X   (byte for byte, bitcode output; owner
+                  ruling on cq-arch 2026-10-27; control.sh shows the comparison sees a rewrite)
+scope             every C file kbuild compiles to an object for `vmlinux modules` of the config,
+                  outside scripts/ (host programs). Not reached: arch/x86/boot and
+                  boot/compressed (bzImage needs a linked vmlinux) and the files modpost generates
+                  (*.mod.c, .vmlinux.export.c; modpost reads ELF). Opt level: KCFLAGS=-O1, except
+                  where the kernel's Makefiles set their own later (listed under opt level).
+
+TUs               2852
+  bitcode         2852
+bitcode TUs by verdict
+  identical       2852
+bitcode TUs by opt level
+  -O0             1
+  -O1             2822
+  -O2             3
+  -O3             1
+  -Os             25
+bitcode TUs by triple
+  i386-unknown-linux-code16   6
+  i386-unknown-linux-gnu      2
+  x86_64-unknown-linux-gnu    2844
