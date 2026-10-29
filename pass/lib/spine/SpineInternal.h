@@ -147,7 +147,7 @@ struct Shared {
 // A context for an inlined callee: the same Shared state, the callee's specialization (Context.cpp).
 std::unique_ptr<LoweringContext> childContext(LoweringContext &parent, const Specialization &S);
 Shared &shared(LoweringContext &);
-// CR rule 6 after an original instruction is lowered (Opcode.cpp).
+// CR rule 6 after an original instruction is lowered, or a quantum-join phi merged (Opcode.cpp).
 void ruleSixAfter(LoweringContext &, llvm::Instruction &);
 
 // Rule 2 classical collapse (Collapse.cpp, contract at its top). noteTemplate/noteCore keep the

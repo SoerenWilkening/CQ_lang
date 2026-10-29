@@ -1064,6 +1064,8 @@ void Walker::emitBlock(BasicBlock *b) {
       }
       Value *m = merged.count(b) ? nullptr : factoredMerge(phi);
       spine::bindOperand(ctx, &phi, Operand{m ? m : lowerMerge(ctx, phi), true});
+      // CR rule 6: a merge of bijective updates of a dead y and y itself cleans the old y (125).
+      spine::ruleSixAfter(ctx, phi);
       blockDefs.push_back(&phi);
       continue;
     }

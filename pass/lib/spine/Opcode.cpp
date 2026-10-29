@@ -11,6 +11,9 @@
 //                measured value read the outcome (LoweringContext::operand).
 #include "SpineInternal.h"
 
+#include <functional>
+#include <optional>
+
 #include "cq/Abi.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -495,12 +498,12 @@ bool cleanable(LoweringContext &ctx, Value *y) {
 }
 
 // Dead after `at` (CR rule 6): every other use of y is an earlier instruction that neither stores,
-// returns, passes (escape), rotates nor measures it. `also` is a second update that may read y
-// (the other select of a swap).
-bool deadAfter(LoweringContext &ctx, Value *y, Instruction *at, Instruction *also = nullptr) {
+// returns, passes (escape), rotates nor measures it. `also` are further updates that may read y (the
+// other select of a swap; the arms of a merge of updates, 125).
+bool deadAfter(LoweringContext &ctx, Value *y, Instruction *at, ArrayRef<const Instruction *> also = {}) {
   DominatorTree &DT = spine::shared(ctx).dt(*at->getFunction());
   for (User *u : y->users()) {
-    if (u == at || u == also)
+    if (u == at || is_contained(also, u))
       continue;
     auto *ui = dyn_cast<Instruction>(u);
     if (!ui || isa<StoreInst>(ui) || isa<ReturnInst>(ui) || isa<CallBase>(ui) || isa<PHINode>(ui))
@@ -531,6 +534,29 @@ bool reads(LoweringContext &ctx, Value *z, Value *y, unsigned depth = 0) {
   return false;
 }
 
+// Does the rail `h` of the new IR hold a function of the rail `y`? Through the histories of the
+// spine's emitters (Shared::hist): a template's operands and the in-place writes on a minted rail.
+// Too deep to tell counts as reading.
+bool railReads(spine::Shared &sh, Value *h, Value *y, unsigned depth = 0) {
+  if (h == y)
+    return true;
+  if (depth > 64)
+    return true;
+  auto it = sh.hist.find(h);
+  if (it == sh.hist.end())
+    return false;
+  const spine::RailHist &r = it->second;
+  if (r.tmpl)
+    for (const Operand &o : r.ops)
+      if (o.handle && railReads(sh, o.v, y, depth + 1))
+        return true;
+  for (const spine::RailHist::Write &w : r.writes)
+    for (Value *a : w.args)
+      if (a != h && (a == y || sh.hist.count(a)) && railReads(sh, a, y, depth + 1))
+        return true;
+  return false;
+}
+
 std::string shapeOf(ArrayRef<Operand> ops) {
   std::string sh;
   bool all = true;
@@ -541,7 +567,13 @@ std::string shapeOf(ArrayRef<Operand> ops) {
   return all ? "" : sh;
 }
 
-void clean(LoweringContext &ctx, Value *y, abi::TemplateSpec spec, SmallVector<Operand, 3> ops) {
+// The inverse of a bijective update in y: the template and its forward operands computing the old y.
+struct Inverse {
+  abi::TemplateSpec spec;
+  SmallVector<Operand, 3> ops;
+};
+
+Inverse normalized(abi::TemplateSpec spec, SmallVector<Operand, 3> ops) {
   if (ops.size() == 2) {
     // binary templates: "" (both rails), "hl", or "lh" (literal first, a non-commutative op)
     if (ops[0].handle && ops[1].handle) {
@@ -557,7 +589,7 @@ void clean(LoweringContext &ctx, Value *y, abi::TemplateSpec spec, SmallVector<O
   } else if (ops.size() == 3 && spec.op != "select") {
     spec.shape = shapeOf(ops);
   }
-  ctx.unc().cleanupBijective(ctx.unc().idOf(ctx.operand(y).v), spec, ops);
+  return Inverse{std::move(spec), std::move(ops)};
 }
 
 APInt oddInverse(const APInt &k) {
@@ -567,12 +599,179 @@ APInt oddInverse(const APInt &k) {
   return x;
 }
 
+// CR rule 6's bijections: when U = f(y, ...) is a bijection in y for every value of its other
+// operands (which do not read y), the inverse computing y from yp (the rail holding f's value).
+// Nothing is emitted. The caller has established that y is cleanable and dead.
+std::optional<Inverse> inverseOf(LoweringContext &ctx, Instruction &U, Value *Y, Operand yp) {
+  abi::TemplateSpec spec;
+  if (auto *bo = dyn_cast<BinaryOperator>(&U); bo && bo->getType()->isIntegerTy()) {
+    auto opc = bo->getOpcode();
+    Value *a0 = bo->getOperand(0), *a1 = bo->getOperand(1);
+    if (a0 == a1 || (Y != a0 && Y != a1))
+      return std::nullopt;
+    unsigned i = Y == a0 ? 0 : 1;
+    Value *Z = bo->getOperand(1 - i);
+    spec.w = rt(bo->getType(), bo);
+    if (opc == Instruction::Add || opc == Instruction::Sub || opc == Instruction::Xor) {
+      if (reads(ctx, Z, Y))
+        return std::nullopt;
+      Operand z = ctx.operand(Z);
+      if (opc == Instruction::Add) {
+        spec.op = "sub";
+        return normalized(spec, {yp, z});            // y = y' - z
+      }
+      if (opc == Instruction::Xor) {
+        spec.op = "xor";
+        return normalized(spec, {yp, z});            // y = y' ^ z
+      }
+      if (i == 0) {
+        spec.op = "add";
+        return normalized(spec, {yp, z});            // y' = y - z: y = y' + z
+      }
+      spec.op = "sub";
+      return normalized(spec, {z, yp});              // y' = z - y: y = z - y'
+    }
+    if (opc == Instruction::Mul) {
+      auto *k = dyn_cast<ConstantInt>(Z);
+      if (!k || !k->getValue()[0])
+        return std::nullopt;
+      spec.op = "mul";                               // y = y' * k^-1 (mod 2^W), k odd
+      return normalized(spec, {yp, Operand{ConstantInt::get(k->getType(), oddInverse(k->getValue())), false}});
+    }
+    return std::nullopt;
+  }
+  if (auto *un = dyn_cast<UnaryOperator>(&U); un && un->getOpcode() == Instruction::FNeg) {
+    if (un->getOperand(0) != Y)
+      return std::nullopt;
+    spec.op = "fneg";
+    spec.w = rt(U.getType(), &U);
+    return normalized(spec, {yp});                   // y = -y'
+  }
+  if (auto *II = dyn_cast<IntrinsicInst>(&U)) {
+    Intrinsic::ID id = II->getIntrinsicID();
+    if (id == Intrinsic::bswap || id == Intrinsic::bitreverse) {
+      if (II->getArgOperand(0) != Y)
+        return std::nullopt;
+      if (id == Intrinsic::bitreverse)
+        unimplemented("spine: rule 6 clean-up through bitreverse (no template)", &U);
+      spec.op = "bswap";
+      spec.w = rt(U.getType(), &U);
+      return normalized(spec, {yp});                 // an involution
+    }
+    if ((id == Intrinsic::fshl || id == Intrinsic::fshr) && II->getArgOperand(0) == Y &&
+        II->getArgOperand(1) == Y && !reads(ctx, II->getArgOperand(2), Y)) {
+      spec.op = id == Intrinsic::fshl ? "fshr" : "fshl";   // a rotation's inverse
+      spec.w = rt(U.getType(), &U);
+      return normalized(spec, {yp, yp, ctx.operand(II->getArgOperand(2))});
+    }
+  }
+  return std::nullopt;
+}
+
+void clean(LoweringContext &ctx, Value *y, const Inverse &inv) {
+  ctx.unc().cleanupBijective(ctx.unc().idOf(ctx.operand(y).v), inv.spec, inv.ops);
+}
+
+// CR rule 6, a select whose arms are bijective updates of y or y itself (125): a quantum select or a
+// quantum-join phi M, lowered (rule 9) to a chain of select templates over the rails of its arms. Its
+// inverse is the same chain over the inverses of the arms, read from M's rail: t = c ? f^-1(y') : y'
+// for y' = c ? f(y) : y, where no condition of the chain reads y (else M is no bijection in y). The
+// arms' inverses and the inner selects are fresh garbage rails (rule 5 undoes them after the clean-up
+// that reads them); the outermost select is the clean-up's inverse (Uncompute::cleanupBijective).
+void mergeCleanup(LoweringContext &ctx, Instruction &M, ArrayRef<Value *> arms, Operand yp) {
+  spine::Shared &sh = spine::shared(ctx);
+  DenseMap<Value *, Value *> leafOf;   // an arm's rail -> the arm
+  for (Value *a : arms) {
+    Operand o = ctx.operand(a);
+    if (!o.handle)
+      return;   // a classical arm: M is no bijection in any rail
+    leafOf.try_emplace(o.v, a);
+  }
+  if (leafOf.count(yp.v))
+    return;     // M is one of its arms (one arm reaches it on every path): no select to invert
+  SmallVector<Value *, 4> cands;
+  SmallVector<const Instruction *, 4> updates;
+  for (Value *a : arms) {
+    if (!is_contained(cands, a))
+      cands.push_back(a);
+    if (auto *U = dyn_cast<Instruction>(a)) {
+      updates.push_back(U);
+      for (Value *op : U->operands())
+        if (!is_contained(cands, op))
+          cands.push_back(op);
+    }
+  }
+  for (Value *Y : cands) {
+    if (!cleanable(ctx, Y))
+      continue;
+    SmallVector<const Instruction *, 4> also;
+    for (const Instruction *U : updates)
+      if (U != Y)
+        also.push_back(U);
+    if (!deadAfter(ctx, Y, &M, also))
+      continue;
+    Value *yr = ctx.operand(Y).v;
+    // The chain is a bijection in y: every node a select on a condition rail that does not read y,
+    // every leaf y itself or a bijective update of it, at least one an update.
+    bool updated = false;
+    std::function<bool(Value *)> ok = [&](Value *h) -> bool {
+      if (auto l = leafOf.find(h); l != leafOf.end()) {
+        if (l->second == Y)
+          return true;
+        auto *U = dyn_cast<Instruction>(l->second);
+        if (!U || !inverseOf(ctx, *U, Y, yp))
+          return false;
+        updated = true;
+        return true;
+      }
+      auto it = sh.hist.find(h);
+      if (it == sh.hist.end() || !it->second.tmpl || it->second.spec.op != "select" || it->second.ops.size() != 3)
+        return false;
+      const auto &ops = it->second.ops;
+      return ops[0].handle && ops[1].handle && ops[2].handle && !railReads(sh, ops[0].v, yr) && ok(ops[1].v) &&
+             ok(ops[2].v);
+    };
+    if (!ok(yp.v) || !updated)
+      continue;
+    // An inner rail of t, emitted here. The clean-up is placed after the last use of y (Uncompute):
+    // each inner rail is noted as a use of y so that the clean-up reading it comes after it.
+    RailId yid = ctx.unc().idOf(yr);
+    auto inner = [&](const Inverse &inv) {
+      Value *h = ctx.emitTemplate(inv.spec, inv.ops);
+      ctx.unc().noteUse(yid, cast<Instruction>(h));
+      return h;
+    };
+    std::function<Operand(Value *, bool)> emit = [&](Value *h, bool top) -> Operand {
+      if (auto l = leafOf.find(h); l != leafOf.end()) {
+        if (l->second == Y)
+          return yp;
+        Inverse inv = *inverseOf(ctx, *cast<Instruction>(l->second), Y, yp);
+        return Operand{inner(inv), true};
+      }
+      const spine::RailHist &r = sh.hist.find(h)->second;
+      abi::TemplateSpec spec = r.spec;
+      Operand c = r.ops[0], tv = r.ops[1], fv = r.ops[2];
+      Operand a = emit(tv.v, false), b = emit(fv.v, false);
+      Inverse inv{spec, {c, a, b}};
+      inv.spec.shape = "";
+      if (top) {
+        clean(ctx, Y, inv);
+        return Operand{};
+      }
+      return Operand{inner(inv), true};
+    };
+    emit(yp.v, true);
+    return;
+  }
+}
+
 } // namespace
 
 namespace spine {
 
 void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
-  if (!(isa<BinaryOperator>(I) || isa<UnaryOperator>(I) || isa<IntrinsicInst>(I) || isa<SelectInst>(I)))
+  if (!(isa<BinaryOperator>(I) || isa<UnaryOperator>(I) || isa<IntrinsicInst>(I) || isa<SelectInst>(I) ||
+        isa<PHINode>(I)))
     return;
   if (I.getType()->isVoidTy() || I.getType()->isVectorTy() || I.getType()->isStructTy())
     return;
@@ -581,89 +780,16 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
   if (bi == binds.end() || bi->second.size() != 1 || !bi->second[0].handle)
     return;
   Operand yp = ctx.operand(&I);
-  abi::TemplateSpec spec;
 
-  if (auto *bo = dyn_cast<BinaryOperator>(&I); bo && bo->getType()->isIntegerTy()) {
-    auto opc = bo->getOpcode();
-    Value *a0 = bo->getOperand(0), *a1 = bo->getOperand(1);
-    if (a0 == a1)
-      return;
-    spec.w = rt(bo->getType(), bo);
-    if (opc == Instruction::Add || opc == Instruction::Sub || opc == Instruction::Xor) {
-      // both operands dead: operand 0 is cleaned, the other kept (CR rule 6)
-      for (unsigned i = 0; i < 2; ++i) {
-        Value *Y = bo->getOperand(i), *Z = bo->getOperand(1 - i);
-        if (!cleanable(ctx, Y) || !deadAfter(ctx, Y, &I) || reads(ctx, Z, Y))
-          continue;
-        Operand z = ctx.operand(Z);
-        if (opc == Instruction::Add) {
-          spec.op = "sub";
-          clean(ctx, Y, spec, {yp, z});              // y = y' - z
-        } else if (opc == Instruction::Xor) {
-          spec.op = "xor";
-          clean(ctx, Y, spec, {yp, z});              // y = y' ^ z
-        } else if (i == 0) {
-          spec.op = "add";
-          clean(ctx, Y, spec, {yp, z});              // y' = y - z: y = y' + z
-        } else {
-          spec.op = "sub";
-          clean(ctx, Y, spec, {z, yp});              // y' = z - y: y = z - y'
-        }
-        return;
-      }
-      return;
-    }
-    if (opc == Instruction::Mul) {
-      for (unsigned i = 0; i < 2; ++i) {
-        auto *k = dyn_cast<ConstantInt>(bo->getOperand(1 - i));
-        Value *Y = bo->getOperand(i);
-        if (!k || !k->getValue()[0] || !cleanable(ctx, Y) || !deadAfter(ctx, Y, &I))
-          continue;
-        spec.op = "mul";                               // y = y' * k^-1 (mod 2^W), k odd
-        clean(ctx, Y, spec, {yp, Operand{ConstantInt::get(k->getType(), oddInverse(k->getValue())), false}});
-        return;
-      }
-    }
+  if (auto *phi = dyn_cast<PHINode>(&I)) {
+    SmallVector<Value *, 4> arms(phi->incoming_values().begin(), phi->incoming_values().end());
+    mergeCleanup(ctx, I, arms, yp);
     return;
   }
 
-  if (auto *un = dyn_cast<UnaryOperator>(&I); un && un->getOpcode() == Instruction::FNeg) {
-    Value *Y = un->getOperand(0);
-    if (cleanable(ctx, Y) && deadAfter(ctx, Y, &I)) {
-      spec.op = "fneg";
-      spec.w = rt(I.getType(), &I);
-      clean(ctx, Y, spec, {yp});                       // y = -y'
-    }
-    return;
-  }
-
-  if (auto *II = dyn_cast<IntrinsicInst>(&I)) {
-    Intrinsic::ID id = II->getIntrinsicID();
-    if (id == Intrinsic::bswap || id == Intrinsic::bitreverse) {
-      Value *Y = II->getArgOperand(0);
-      if (cleanable(ctx, Y) && deadAfter(ctx, Y, &I)) {
-        if (id == Intrinsic::bitreverse)
-          unimplemented("spine: rule 6 clean-up through bitreverse (no template)", &I);
-        spec.op = "bswap";
-        spec.w = rt(I.getType(), &I);
-        clean(ctx, Y, spec, {yp});                     // an involution
-      }
+  if (auto *sel = dyn_cast<SelectInst>(&I)) {
+    if (!spine::isQ(ctx, sel->getCondition()))
       return;
-    }
-    if ((id == Intrinsic::fshl || id == Intrinsic::fshr) && II->getArgOperand(0) == II->getArgOperand(1)) {
-      Value *Y = II->getArgOperand(0);
-      if (cleanable(ctx, Y) && deadAfter(ctx, Y, &I) && !reads(ctx, II->getArgOperand(2), Y)) {
-        spec.op = id == Intrinsic::fshl ? "fshr" : "fshl";   // a rotation's inverse
-        spec.w = rt(I.getType(), &I);
-        clean(ctx, Y, spec, {yp, yp, ctx.operand(II->getArgOperand(2))});
-      }
-      return;
-    }
-    return;
-  }
-
-  if (auto *sel = dyn_cast<SelectInst>(&I); sel && sel->getType()->isIntegerTy() &&
-                                            spine::isQ(ctx, sel->getCondition())) {
     Value *c = sel->getCondition(), *A = sel->getTrueValue(), *B = sel->getFalseValue();
     // A controlled swap (145): this select and an earlier q = select(c, B, A).
     for (User *u : c->users()) {
@@ -671,25 +797,36 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
       if (!q || q == sel || q->getCondition() != c || q->getTrueValue() != B || q->getFalseValue() != A ||
           !q->comesBefore(sel) || A == B)
         continue;
-      if (!cleanable(ctx, A) || !cleanable(ctx, B) || !deadAfter(ctx, A, &I, q) || !deadAfter(ctx, B, &I, q))
+      if (!sel->getType()->isIntegerTy() || !cleanable(ctx, A) || !cleanable(ctx, B) ||
+          !deadAfter(ctx, A, &I, {q}) || !deadAfter(ctx, B, &I, {q}))
         return;
+      abi::TemplateSpec spec;
       spec.op = "select";
       spec.w = rt(I.getType(), &I);
       spec.shape = "";
       Operand cp = ctx.operand(c), qq = ctx.operand(q);
       // q = select(c, B, A), sel = select(c, A, B): B = select(c, q, sel), A = select(c, sel, q)
-      clean(ctx, B, spec, {cp, qq, yp});
-      clean(ctx, A, spec, {cp, yp, qq});
+      clean(ctx, B, Inverse{spec, {cp, qq, yp}});
+      clean(ctx, A, Inverse{spec, {cp, yp, qq}});
       return;
     }
-    // A select whose arms are updates of y or y itself (125): not built yet.
-    for (Value *arm : {A, B}) {
-      auto *bo = dyn_cast<BinaryOperator>(arm);
-      if (!bo)
-        continue;
-      for (Value *Y : {bo->getOperand(0), bo->getOperand(1)})
-        if ((Y == A || Y == B) && cleanable(ctx, Y) && deadAfter(ctx, Y, &I, bo))
-          unimplemented("spine: rule 6 through a select of updates (125)", &I);
+    // A select whose arms are updates of y or y itself (125).
+    mergeCleanup(ctx, I, {A, B}, yp);
+    return;
+  }
+
+  // y' = f(y, ...): the first operand that is a cleanable dead rail f is a bijection in. With both
+  // operands dead, operand 0 is cleaned and the other kept (CR rule 6).
+  SmallVector<Value *, 3> tried;
+  for (Value *Y : I.operands()) {
+    if (is_contained(tried, Y))
+      continue;
+    tried.push_back(Y);
+    if (!cleanable(ctx, Y) || !deadAfter(ctx, Y, &I))
+      continue;
+    if (auto inv = inverseOf(ctx, I, Y, yp)) {
+      clean(ctx, Y, *inv);
+      return;
     }
   }
 }
