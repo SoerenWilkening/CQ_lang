@@ -96,6 +96,42 @@ struct FnInfo {
   std::vector<const llvm::BasicBlock *> rpo;
 };
 
+// Rule 23 environment state (cq-pu8b). Two facts: MODE (the rounding mode is a rail) and FLAGS (the
+// exception-flags rail is not empty), each a may-fact joined by OR over predecessors and callers.
+// Within a specialization a state is symbolic over its entry state E: one nibble per fact (low nibble
+// MODE, high nibble FLAGS), bit 0 "set", bit 1 "if E's MODE", bit 2 "if E's FLAGS". The fact holds
+// iff bit 0, or bit 1 and E has MODE, or bit 2 and E has FLAGS. Concrete states are two bits
+// (1 MODE, 2 FLAGS). Join is bitwise OR in both encodings.
+namespace fenvstate {
+constexpr uint8_t kIdentity = 0x42;                 // MODE := E.MODE, FLAGS := E.FLAGS
+inline uint8_t nib(uint8_t s, unsigned k) { return (s >> (4 * k)) & 0xF; }
+inline uint8_t withNib(uint8_t s, unsigned k, uint8_t n) {
+  return uint8_t((s & ~(0xF << (4 * k))) | ((n & 0xF) << (4 * k)));
+}
+inline uint8_t eval(uint8_t s, uint8_t E) {
+  uint8_t r = 0;
+  for (unsigned k = 0; k < 2; ++k) {
+    uint8_t n = nib(s, k);
+    if ((n & 1) || ((n & 2) && (E & 1)) || ((n & 4) && (E & 2)))
+      r |= uint8_t(1u << k);
+  }
+  return r;
+}
+// The callee's exit state X (symbolic over the callee's entry) after the caller's state Y.
+inline uint8_t compose(uint8_t X, uint8_t Y) {
+  uint8_t r = 0;
+  for (unsigned k = 0; k < 2; ++k) {
+    uint8_t n = nib(X, k), o = n & 1;
+    if (n & 2)
+      o |= nib(Y, 0);
+    if (n & 4)
+      o |= nib(Y, 1);
+    r = withNib(r, k, o);
+  }
+  return r;
+}
+} // namespace fenvstate
+
 struct SpecState {
   llvm::Function *F = nullptr;
   bool ctl = false, pure = false, adj = false;
@@ -122,7 +158,15 @@ struct SpecState {
 
   bool hasTheta = false, hasPhi = false, hasEffect = false, writesOuter = false, hasMeasure = false;
   bool anyQuantum = false;
-  bool fenvQuantum = false; // the flags/mode rail of rule 23 holds quantum data
+  // Rule 23 (cq-pu8b): the floating-point environment as point-wise state (see FenvState below).
+  // fenvIn is concrete (the join of every caller's state at its call; 0 for a root), every other
+  // state symbolic over it.
+  uint8_t fenvIn = 0;
+  llvm::DenseMap<const llvm::BasicBlock *, uint8_t> fenvOut; // state at the end of each block
+  uint8_t fenvExit = 0;    // join of the states at the returns
+  uint8_t fenvWrites = 0;  // facts this specialization (with its callees) may change: 1 mode, 2 flags
+  // State before and after each instruction that reads or changes the environment (the dump).
+  llvm::DenseMap<const llvm::Instruction *, std::pair<uint8_t, uint8_t>> fenvAt;
   llvm::DenseMap<const llvm::CallBase *, llvm::SmallVector<SpecState *, 2>> callees;
   llvm::DenseSet<const llvm::CallBase *> cutCalls; // depth-recursion calls replaced by |0>
 
@@ -154,6 +198,9 @@ struct ImplState {
   llvm::DenseMap<llvm::Type *, unsigned> laneCount;
   bool changed = false;
   bool longjmpUnderQuantum = false;
+  // Rule 23: the concrete environment facts saved into each fenv_t / fexcept_t object (fegetenv,
+  // feholdexcept, fegetexceptflag), joined over every save; an object never saved holds none.
+  std::map<ObjectId, uint8_t> fenvSaved;
 
   // Published result.
   std::vector<Specialization> published;

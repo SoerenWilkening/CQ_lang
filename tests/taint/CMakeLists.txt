@@ -8,3 +8,5 @@ add_test(NAME taint
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-0ia: lookups of unmarked classical values answer 'classical'; a value created after taint errors.
 cq_add_unit_test(taint_lookup taint_lookup.cpp)
+# cq-pu8b: rule 23's environment state point-wise (blocks, loops, calls, fenv_t objects).
+cq_add_unit_test(taint_fenv taint_fenv.cpp)

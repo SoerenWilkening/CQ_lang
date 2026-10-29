@@ -208,6 +208,21 @@ private:
   SpecState *cur = nullptr;
   bool localChanged = false;
 
+  // Rule 23 (cq-pu8b): the environment state (fenvstate encoding, symbolic over cur's entry state)
+  // before the instruction being transferred, and its transfer.
+  uint8_t fenvCur = 0;
+  uint8_t fenvNow() const { return fenvstate::eval(fenvCur, cur->fenvIn); }
+  void fenvAssign(unsigned k, uint8_t n) {
+    fenvCur = fenvstate::withNib(fenvCur, k, n);
+    if (!(cur->fenvWrites & (1u << k))) {
+      cur->fenvWrites |= uint8_t(1u << k);
+      st.changed = true;
+    }
+  }
+  void fenvRecord(const Instruction &I, uint8_t before) { cur->fenvAt[&I] = {before, fenvCur}; }
+  void transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *> actuals, unsigned rn);
+  void fenvAfterCall(CallBase &CB);
+
   // Sites and objects.
   unsigned siteFor(const Value *V, SiteKind k, const Function *owner);
   void splitSite(unsigned s, uint64_t stride, StructType *ST);
@@ -1764,6 +1779,126 @@ void Analyzer::declaredClone(CallBase &CB, Function *G, ArrayRef<Value *> actual
   lift(CB, G, actuals, false);
 }
 
+// <fenv.h> (C17 7.6) as rule 23 rail operations (eff-fenv), never a declared clone. Point-wise:
+// fenvCur is the state before the call and becomes the state after it. A change of a fact by a
+// quantum operand or under a quantum predicate makes it a rail (select(p, new, old) is one); a
+// classical change outside quantum control sets it to what it writes when that is known.
+void Analyzer::transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *> actuals,
+                                unsigned rn) {
+  using namespace fenvstate;
+  bool q = false;
+  for (Value *A : actuals)
+    q = q || L(A).any();
+  bool underQ = blockCT(CB.getParent()) || cur->ctl;
+  bool rail = q || underQ;
+  uint8_t before = fenvCur, now = fenvNow();
+  bool resQ = false;
+  auto savedIn = [&](Value *ptr) {
+    uint8_t b = 0;
+    if (ptr->getType()->isPointerTy())
+      for (ObjectId o : objectsOf(P(ptr))) {
+        auto it = st.fenvSaved.find(o);
+        if (it != st.fenvSaved.end())
+          b |= it->second;
+      }
+    return b;
+  };
+  auto saveTo = [&](Value *ptr, uint8_t bits) {
+    if (!ptr->getType()->isPointerTy())
+      return;
+    for (ObjectId o : objectsOf(P(ptr))) {
+      uint8_t &x = st.fenvSaved[o];
+      if ((x | bits) != x) {
+        x |= bits;
+        touchObject();
+      }
+    }
+  };
+  auto bit = [](bool b) { return uint8_t(b ? 1 : 0); };
+  if (cname == "fegetround") {
+    resQ = now & 1;
+  } else if (cname == "fesetround") {
+    // MODE := r when r is a valid FE_* constant ((r & ~0xC00) == 0); an invalid r changes nothing,
+    // a classical r of unknown validity may leave a rail in place.
+    auto *c = actuals.empty() ? nullptr : dyn_cast<ConstantInt>(actuals[0]);
+    if (rail)
+      fenvAssign(0, 1);
+    else if (c && (c->getZExtValue() & ~uint64_t(0xC00) & 0xffffffffu) == 0)
+      fenvAssign(0, 0);
+    else
+      fenvAssign(0, nib(fenvCur, 0));
+    resQ = q;
+  } else if (cname == "feraiseexcept" || cname == "feclearexcept") {
+    fenvAssign(1, rail ? 1 : nib(fenvCur, 1));
+  } else if (cname == "fetestexcept") {
+    resQ = q || (now & 2);
+  } else if (cname == "fegetexceptflag") {
+    saveTo(actuals[0], (now & 2) | (q ? 2 : 0));
+  } else if (cname == "fesetexceptflag") {
+    fenvAssign(1, rail ? 1 : (nib(fenvCur, 1) | bit(savedIn(actuals[0]) & 2)));
+  } else if (cname == "fegetenv" || cname == "feholdexcept") {
+    saveTo(actuals[0], now | (q ? 3 : 0));
+    if (cname == "feholdexcept")
+      fenvAssign(1, bit(rail));
+  } else if (cname == "fesetenv" || cname == "feupdateenv") {
+    // fesetenv: the state := the object's saved part; feupdateenv: MODE := its mode, FLAGS := its
+    // flags | FLAGS. An object never saved (FE_DFL_ENV) has an empty part.
+    uint8_t sv = savedIn(actuals[0]);
+    fenvAssign(0, rail ? 1 : bit(sv & 1));
+    uint8_t f = bit(sv & 2);
+    if (cname == "feupdateenv")
+      f |= nib(fenvCur, 1);
+    fenvAssign(1, rail ? 1 : f);
+  } else {
+    // fegetexcept, feenableexcept, fedisableexcept: host calls, trapping is not modelled on rails
+    // (eff-fenv); no environment fact changes.
+    if (rn && q)
+      setL(&CB, allLanes(rn));
+    cur->anyQuantum = cur->anyQuantum || q;
+    return;
+  }
+  fenvRecord(CB, before);
+  if (rn && resQ)
+    setL(&CB, allLanes(rn));
+  cur->anyQuantum = cur->anyQuantum || q;
+}
+
+// The state after a call of defined callees (cur->callees): each callee's exit state composed with
+// the state before the call, joined over the candidates. The callee's entry state joins this call's.
+// Under a quantum predicate a callee that is not a _ctl clone still changes the environment only on
+// the predicate's branch, so every fact it may change is a rail after the call.
+void Analyzer::fenvAfterCall(CallBase &CB) {
+  using namespace fenvstate;
+  auto it = cur->callees.find(&CB);
+  if (it == cur->callees.end() || it->second.empty() || cur->cutCalls.count(&CB))
+    return;
+  uint8_t before = fenvCur, E = fenvNow(), out = 0, writes = 0;
+  bool underQ = blockCT(CB.getParent()) || cur->ctl;
+  for (SpecState *C : it->second) {
+    if ((C->fenvIn | E) != C->fenvIn) {
+      C->fenvIn |= E;
+      st.changed = true;
+    }
+    if (C->declared) {
+      out |= before; // a declared clone (rule 27) is opaque: no rail operation
+      continue;
+    }
+    uint8_t o = compose(C->fenvExit, before);
+    for (unsigned k = 0; k < 2; ++k)
+      if (underQ && !C->ctl && (C->fenvWrites & (1u << k)))
+        o = withNib(o, k, nib(o, k) | 1);
+    out |= o;
+    writes |= C->fenvWrites;
+  }
+  if ((cur->fenvWrites | writes) != cur->fenvWrites) {
+    cur->fenvWrites |= writes;
+    st.changed = true;
+  }
+  fenvCur = out;
+  if (writes || E)
+    fenvRecord(CB, before);
+}
+
 void Analyzer::transferCall(CallBase &CB) {
   if (CB.isInlineAsm()) {
     for (const Use &A : CB.args())
@@ -1897,8 +2032,39 @@ void Analyzer::transferCall(CallBase &CB) {
     bool q = false;
     for (Value *A : actuals)
       q = q || L(A).any();
-    if (isa<ConstrainedFPIntrinsic>(&CB) && q)
-      cur->fenvQuantum = true;
+    if (auto *CFP = dyn_cast<ConstrainedFPIntrinsic>(&CB)) {
+      // Rule 23: an op rounding in the dynamic mode while MODE is a rail is quantum. An op that
+      // raises makes FLAGS non-empty when it is quantum or runs under a quantum predicate (its bits
+      // are then quantum); otherwise it raises into the host flags only.
+      uint8_t before = fenvCur;
+      std::optional<RoundingMode> rmode = CFP->getRoundingMode();
+      if (rmode && *rmode == RoundingMode::Dynamic && (fenvNow() & 1))
+        q = true;
+      std::optional<fp::ExceptionBehavior> eb = CFP->getExceptionBehavior();
+      if (eb && *eb != fp::ebIgnore) {
+        bool underQ = blockCT(CB.getParent()) || cur->ctl;
+        fenvAssign(1, (q || underQ) ? 1 : fenvstate::nib(fenvCur, 1));
+      }
+      fenvRecord(CB, before);
+    }
+    if (id == Intrinsic::get_rounding) {
+      // llvm.get.rounding reads the mode as fegetround does.
+      q = q || (fenvNow() & 1);
+      fenvRecord(CB, fenvCur);
+    }
+    if (id == Intrinsic::set_rounding) {
+      // llvm.set.rounding writes the mode as fesetround does (LLVM's encoding: 0 to 3 are modes).
+      uint8_t before = fenvCur;
+      bool underQ = blockCT(CB.getParent()) || cur->ctl;
+      auto *c = dyn_cast<ConstantInt>(actuals[0]);
+      if (q || underQ)
+        fenvAssign(0, 1);
+      else if (c && c->getZExtValue() <= 3)
+        fenvAssign(0, 0);
+      else
+        fenvAssign(0, fenvstate::nib(fenvCur, 0));
+      fenvRecord(CB, before);
+    }
     if (q && rn)
       setL(&CB, allLanes(rn));
     if (CB.getType()->isPointerTy()) {
@@ -1985,15 +2151,7 @@ void Analyzer::transferCall(CallBase &CB) {
     cname = cname.drop_front(2);
   bool known = st.TLI->getLibFunc(cname, LF);
   if (isFenvCall(cname)) {
-    // <fenv.h> on quantum state is a rail operation of rule 23 (eff-fenv), never a declared clone.
-    bool q = false;
-    for (Value *A : actuals)
-      q = q || L(A).any();
-    if (q)
-      cur->fenvQuantum = true;
-    if (rn && (q || cur->fenvQuantum))
-      setL(&CB, allLanes(rn));
-    cur->anyQuantum = cur->anyQuantum || q;
+    transferFenvCall(CB, cname, actuals, rn);
     return;
   }
   bool readNone = G->doesNotAccessMemory() || G->onlyReadsMemory();
@@ -2208,6 +2366,7 @@ void Analyzer::analyze(SpecState &S) {
   if (S.declared) {
     // A declared clone: every result is a handle (rule 27).
     S.ret = allLanes(lanesOf(S.F->getReturnType()));
+    S.fenvExit = fenvstate::kIdentity;
     S.analyzedOnce = true;
     S.hasEffect = true;
     return;
@@ -2239,14 +2398,32 @@ void Analyzer::analyze(SpecState &S) {
     SmallPtrSet<const PHINode *, 16> headerQ;
     for (const BasicBlock *BB : fi.rpo)
       loopHeaderRule(S, BB, headerQ);
+    uint8_t exit = 0;
     for (const BasicBlock *BB : fi.rpo) {
+      // Rule 23: the environment state entering the block, joined over its predecessors.
+      fenvCur = BB->isEntryBlock() ? fenvstate::kIdentity : 0;
+      for (const BasicBlock *Pr : predecessors(BB))
+        fenvCur |= S.fenvOut.lookup(Pr);
       for (const Instruction &CI : *BB) {
         Instruction &I = const_cast<Instruction &>(CI);
         if (auto *PN = dyn_cast<PHINode>(&I))
           transferPhi(*PN, headerQ);
         else
           transfer(I);
+        if (auto *CB = dyn_cast<CallBase>(&I))
+          fenvAfterCall(*CB);
       }
+      uint8_t &o = S.fenvOut[BB];
+      if ((o | fenvCur) != o) {
+        o |= fenvCur;
+        localChanged = true;
+      }
+      if (isa<ReturnInst>(BB->getTerminator()))
+        exit |= o;
+    }
+    if ((S.fenvExit | exit) != S.fenvExit) {
+      S.fenvExit |= exit;
+      st.changed = true;
     }
     // A value defined in a loop with a tainted exit and read after it is the select-merged carried
     // value (rule 14), and several returns chosen by a tainted branch merge their values.
@@ -3030,6 +3207,38 @@ void TaintInfo::print(llvm::raw_ostream &os) const {
     const Specialization &P = I.published[k];
     os << "cq-taint: spec " << specName(k) << " fn=@" << P.F->getName() << " mask=" << P.mask
        << " entry=" << P.isEntry() << " declared=" << P.F->isDeclaration() << "\n";
+  }
+  // Rule 23 (cq-pu8b): the environment state before and after every instruction that reads or
+  // changes it, per specialization (MODE 'M' when the mode is a rail, FLAGS 'F' when the flags rail
+  // is not empty, '-' otherwise), and whether the instruction's result is quantum.
+  auto envStr = [](uint8_t c) {
+    std::string r = (c & 1) ? "M" : "-";
+    r += (c & 2) ? "F" : "-";
+    return r;
+  };
+  for (size_t k = 0; k < I.published.size(); ++k) {
+    SpecState *SS = I.publishedState[k];
+    if (SS->declared || SS->fenvAt.empty())
+      continue;
+    os << "cq-taint: fenv " << specName(k) << " entry=" << envStr(SS->fenvIn)
+       << " exit=" << envStr(fenvstate::eval(SS->fenvExit, SS->fenvIn))
+       << " writes=" << envStr(SS->fenvWrites) << "\n";
+    for (const llvm::BasicBlock &BB : *SS->F)
+      for (const llvm::Instruction &Ins : BB) {
+        auto it = SS->fenvAt.find(&Ins);
+        if (it == SS->fenvAt.end())
+          continue;
+        auto lit = SS->lanes.find(&Ins);
+        bool q = lit != SS->lanes.end() && lit->second.any();
+        std::string text;
+        llvm::raw_string_ostream ts(text);
+        Ins.print(ts);
+        llvm::StringRef t = llvm::StringRef(text).trim();
+        os << "cq-taint: fenv " << specName(k) << "   "
+           << envStr(fenvstate::eval(it->second.first, SS->fenvIn)) << " -> "
+           << envStr(fenvstate::eval(it->second.second, SS->fenvIn)) << " q=" << q << "  " << t
+           << "\n";
+      }
   }
   if (getenv("CQ_TAINT_DEBUG"))
     for (size_t k = 0; k < I.published.size(); ++k) {
