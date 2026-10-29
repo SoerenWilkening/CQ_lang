@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""tests/eff-conc (cq-w1-eff-conc): rule 24 probes through the real cq-lower plugin.
+
+For probes/conc.O1.ll it checks, and fails on:
+  - cq-lower (with its built-in structural verifier) exits 0, and plain cq-verify accepts the output;
+  - p_vol_internal drops `volatile` (an unobservable access is the plain one), while
+    p_vol_observable keeps both volatile accesses to @obs_counter and p_atomic_classical keeps its
+    atomic store and load (the host performs them);
+  - every entry is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle).
+probes/*_error.O1.ll must make cq-lower exit non-zero with the named eff-conc internal error: a quantum
+value stored to an observable volatile global, atomicrmw on quantum data (94's shape, not built), and
+setjmp/longjmp (101's shape, blocked on cq-jwdf), and 32's volatile slot (mem-slots, cq-r4cz). Update this test when those are built.
+The owned example's acceptance is `python3 -m cqcheck run 48_volatile_global --oracle both` (the bead).
+Outputs go to build/tests/eff-conc/out/.
+"""
+import argparse
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+PROBES = Path(__file__).parent / "probes"
+ENTRIES = ["p_vol_internal", "p_vol_observable", "p_atomic_classical"]
+ERRORS = {"vol_quantum_observable_error.O1.ll": "eff-conc: a volatile access to observable memory involving "
+                                                "quantum data",
+          "atomicrmw_error.O1.ll": "eff-conc: atomicrmw on quantum data or non-classical memory",
+          "setjmp_error.O1.ll": "eff-conc: setjmp in a lowered function",
+          # cq-r4cz: mem-slots does not forward an unobservable volatile store to its load yet (32's shape).
+          "vol_local_error.O1.ll": "mem-slots: a computed rail stored into a slot cell"}
+# entry -> (regex that must match its body, regex that must not)
+SHAPES = {"p_vol_internal": (None, r"volatile"),
+          "p_vol_observable": (r"load volatile i32, ptr @obs_counter[\s\S]*store volatile i32 %\d+, ptr @obs_counter",
+                               None),
+          "p_atomic_classical": (r"store atomic i32 %\d+, ptr @acell seq_cst[\s\S]*load atomic i32, ptr @acell seq_cst",
+                                 None)}
+
+
+def body(module: str, fn: str) -> str:
+    m = re.search(r"^define [^\n]*@" + re.escape(fn) + r"\(.*?^}", module, re.S | re.M)
+    return m.group(0) if m else ""
+
+
+def lower(a, src: Path, dest: Path):
+    return subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-lower", "-S", str(src), "-o",
+                           str(dest)], capture_output=True, text=True)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--plugin", required=True)
+    ap.add_argument("--opt", required=True)
+    ap.add_argument("--entry", action="append", help="check only these entries")
+    a = ap.parse_args()
+    out = ROOT / "build" / "tests" / "eff-conc" / "out"
+    out.mkdir(parents=True, exist_ok=True)
+    failures = 0
+
+    for name, text in ERRORS.items():
+        r = lower(a, PROBES / name, out / ("err_" + name))
+        ok = r.returncode != 0 and text in r.stderr
+        failures += not ok
+        print(f"{'ok' if ok else 'FAIL':4} {name}" + ("" if ok else "\n     expected: " + text + "\n     got: " +
+                                                        (r.stderr.strip() or "exit 0")))
+
+    probe = PROBES / "conc.O1.ll"
+    lowered = out / "conc.lowered.ll"
+    r = lower(a, probe, lowered)
+    if r.returncode != 0:
+        print("FAIL cq-lower: " + r.stderr.strip())
+        return 1
+    v = subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-verify", "-disable-output",
+                        str(lowered)], capture_output=True, text=True)
+    if v.returncode != 0:
+        print("FAIL cq-verify: " + v.stderr.strip())
+        return 1
+    text = lowered.read_text()
+    for e in a.entry or ENTRIES:
+        b = body(text, e)
+        why = []
+        if not b:
+            why.append("no lowered body")
+        must, mustnot = SHAPES[e]
+        if must and not re.search(must, b):
+            why.append("missing: " + must)
+        if mustnot and re.search(mustnot, b):
+            why.append("present: " + mustnot)
+        c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(probe), "--lowered", str(lowered),
+                            "--entry", e], capture_output=True, text=True, cwd=ROOT / "checker")
+        if c.returncode != 0 or "PASS" not in c.stdout + c.stderr:
+            why.append("cqcheck user: " + (c.stdout + c.stderr).strip()[-2000:])
+        failures += bool(why)
+        print(f"{'ok' if not why else 'FAIL':4} {e}" + "".join("\n     " + x for x in why))
+    print("FAIL" if failures else "ok", f"({failures} failing)")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
