@@ -3,9 +3,13 @@
 
 Fails on any of:
   corpus      cqcc -S on an example's .c differs from opt -passes=cq-lower on its .O1.ll (linked with the
-              injection bundle --only-needed when bundle/manifest.json lists one), modulo the ModuleID
-              comment and source_filename; or, where the reference run fails, cqcc does not fail with the
-              same "cq: ..." error and no output
+              injection bundle --only-needed when the manifest lists one and the .O1.ll declares, without a
+              body, a symbol the bundle defines), modulo the ModuleID comment and source_filename; or,
+              where the reference run fails, cqcc does not fail with the same "cq: ..." error and no output
+  bundle      with a non-empty manifest, a module declaring memcmp and logb does not get exactly the
+              bundle's bodies for them (and not the unrelated complex runtime), or the result is not the pass's
+              identity; with the empty manifest, they do not stay declarations; a module declaring
+              nothing of the bundle (identity) is relinked
   identity    a TU with no taint is not byte-identical to opt with no passes on the module cqcc gave the
               pass, or (one TU) to opt -S of clang -O1 -S -emit-llvm -include CQ.h output
   K           -cq-k / -cq-k-default do not reach the pass (its own usage errors must come back), or a
@@ -16,6 +20,7 @@ Fails on any of:
               wrong value
 
 Default corpus examples: a handful (the bead iterates on few); --examples NN_name... or --all for more.
+--manifest FILE (or CQ_BUNDLE_MANIFEST) tests against another bundle manifest than bundle/manifest.json.
 """
 import argparse
 import os
@@ -64,8 +69,25 @@ def cq_error(stderr):
 
 def bundle_files():
     import json
-    man = ROOT / "bundle" / "manifest.json"
+    man = Path(ENV.get("CQ_BUNDLE_MANIFEST", ROOT / "bundle" / "manifest.json"))
     return [(man.parent / p).resolve() for p in json.loads(man.read_text())]
+
+
+def ext_syms(path, flag, tmp):
+    """External symbols of an IR file per llvm-nm (bitcode only, so .ll is assembled first)."""
+    path = Path(path)
+    if path.suffix == ".ll":
+        bc = tmp / (path.name + ".syms.bc")
+        run([LLVM / "llvm-as", path, "-o", bc])
+        path = bc
+    out = run([LLVM / "llvm-nm", flag, "--extern-only", "--format=just-symbols", path], text=True).stdout
+    return set(out.split())
+
+
+def needs_bundle(module, b, tmp):
+    """The bundle rule: link iff the module declares without a body a symbol some bundle file defines."""
+    defined = set().union(*(ext_syms(f, "--defined-only", tmp) for f in b)) if b else set()
+    return bool(defined & ext_syms(module, "--undefined-only", tmp))
 
 
 def test_corpus(examples, spec, plugin, tmp):
@@ -75,7 +97,7 @@ def test_corpus(examples, spec, plugin, tmp):
         c, o1 = d / f"{base}.c", d / f"{base}.O1.ll"
         ref_in = o1
         b = bundle_files()
-        if b:
+        if b and needs_bundle(o1, b, tmp):
             ref_in = tmp / f"{ex}.ref.bc"
             r = run([LLVM / "llvm-link", o1, "--only-needed", *b, "-o", ref_in])
             if r.returncode:
@@ -149,6 +171,39 @@ def test_identity(spec, tmp):
         fail("identity executable", r.stderr or "output differs from the plain clang build")
     else:
         ok("identity executable runs like the plain clang build")
+
+
+def test_bundle(tmp):
+    b = bundle_files()
+    d = tmp / "bundle"
+    out = tmp / "bundle_user.ll"
+    r = cqcc("-S", SRC / "bundle_user.c", "-o", out, "--save-temps", d)
+    if r.returncode:
+        fail("bundle", r.stderr)
+        return
+    linked = d / "linked.ll"
+    defined = ext_syms(linked, "--defined-only", tmp)
+    lib = {"_memcmp", "_logb"}
+    if b:
+        offered = set().union(*(ext_syms(f, "--defined-only", tmp) for f in b))
+        if not lib <= offered:
+            fail("bundle", f"manifest bundle does not define {sorted(lib - offered)}; cannot test linking")
+            return
+        # --only-needed: logb's body may pull ilogb in, but nothing of the complex runtime
+        extra = {x for x in defined & offered if re.fullmatch(r"___(mul|div)[sdx]c3", x)}
+        if not lib <= defined:
+            fail("bundle", f"bodies of {sorted(lib - defined)} not linked from the bundle")
+        elif extra:
+            fail("bundle", f"bundle symbols linked though nothing needs them: {sorted(extra)}")
+        elif out.read_bytes() != opt_identity(linked):
+            fail("bundle", "not byte-identical to opt with no passes on the pass input")
+        else:
+            ok("bundle: memcmp and logb bodies linked --only-needed, pass is the identity")
+    else:
+        if defined & lib or not lib <= ext_syms(linked, "--undefined-only", tmp):
+            fail("bundle (empty manifest)", "memcmp/logb are not plain declarations")
+        else:
+            ok("bundle (empty manifest): memcmp and logb stay declarations")
 
 
 def test_k(tmp):
@@ -232,16 +287,20 @@ def main():
     ap.add_argument("--spec", default=str(ROOT.parent / "CQ_spec"))
     ap.add_argument("--examples", nargs="*")
     ap.add_argument("--all", action="store_true")
+    ap.add_argument("--manifest", help="bundle manifest (default: CQ_BUNDLE_MANIFEST or bundle/manifest.json)")
     a = ap.parse_args()
     spec = Path(a.spec).resolve()
     global ENV
     ENV = dict(os.environ, CQ_PLUGIN=str(Path(a.plugin).resolve()), CQ_SPEC_DIR=str(spec))
+    if a.manifest:
+        ENV["CQ_BUNDLE_MANIFEST"] = str(Path(a.manifest).resolve())
     examples = sorted(p.name for p in (spec / "examples").iterdir() if p.is_dir()) if a.all \
         else (a.examples or DEFAULT_EXAMPLES)
     with tempfile.TemporaryDirectory(prefix="cq-driver-test.") as t:
         tmp = Path(t)
         test_corpus(examples, spec, Path(a.plugin).resolve(), tmp)
         test_identity(spec, tmp)
+        test_bundle(tmp)
         test_k(tmp)
         test_check(tmp)
         test_link(tmp)

@@ -2,7 +2,8 @@
 """cqcc: the CQ compiler driver (cq-w1-driver).
 
     clang -O1 -include CQ.h, per C translation unit
-      -> llvm-link of the user units, then the injection bundle (bundle/manifest.json) --only-needed
+      -> llvm-link of the user units, then the injection bundle (bundle/manifest.json) --only-needed,
+         only when the linked user module needs it (the bundle rule below)
       -> opt -load-pass-plugin=libCQLower.so -passes=cq-lower [-cq-k=...] [-cq-k-default=...]
       -> the lowered module (-S), an object (-c) or an executable linked with the --backend libraries
     --cq-check additionally runs `python3 -m cqcheck user` on the linked module and the lowered one.
@@ -33,7 +34,19 @@ Options:
   -Xclang-cc ARG       one more argument for the C compile
 
 Environment: CQ_SPEC_DIR (default ../CQ_spec; CQ.h is read from it), CQ_BUILD_DIR (default build/),
-CQ_PLUGIN (default $CQ_BUILD_DIR/pass/libCQLower.so), CQ_LLVM_BIN (default /usr/local/opt/llvm@19/bin).
+CQ_PLUGIN (default $CQ_BUILD_DIR/pass/libCQLower.so), CQ_LLVM_BIN (default /usr/local/opt/llvm@19/bin),
+CQ_BUNDLE_MANIFEST (default bundle/manifest.json; its entries are relative to its own directory).
+
+The bundle rule (cq-jxaw; the checker applies the same rule, cq-b041). Let U be the module llvm-link made
+of the user units (or the single unit as given) and B the set of external symbols the bundle files define
+(llvm-nm --defined-only --extern-only over every manifest file). The bundle is linked iff some symbol of
+B is declared in U without a body (llvm-nm --undefined-only of U, which lists every external
+declaration, used or not, and no intrinsic). Then, and only then: llvm-link -S U --only-needed
+<manifest files, in manifest order>. Otherwise U goes to the pass untouched, so a module that needs
+nothing from the bundle is lowered exactly as without one (CLAUDE.md Pipeline, NORTHSTAR principle 1:
+llvm-link would otherwise rename source_filename, reorder declarations and append the bundle's named
+metadata). A weak or linkonce definition in U is a body, not a declaration. Names are compared as
+llvm-nm prints them (Mach-O mangled) on both sides.
 
 A failing step exits with that step's status and writes no output. A failing --cq-check still writes
 the output and exits with cqcheck user's status.
@@ -51,7 +64,7 @@ LLVM_BIN = Path(os.environ.get("CQ_LLVM_BIN", "/usr/local/opt/llvm@19/bin"))
 SPEC_DIR = Path(os.environ.get("CQ_SPEC_DIR", str(ROOT.parent / "CQ_spec")))
 BUILD_DIR = Path(os.environ.get("CQ_BUILD_DIR", str(ROOT / "build")))
 PLUGIN = Path(os.environ.get("CQ_PLUGIN", str(BUILD_DIR / "pass" / "libCQLower.so")))
-MANIFEST = ROOT / "bundle" / "manifest.json"
+MANIFEST = Path(os.environ.get("CQ_BUNDLE_MANIFEST", str(ROOT / "bundle" / "manifest.json"))).resolve()
 
 C_SUFFIXES = {".c", ".i"}
 IR_SUFFIXES = {".ll", ".bc"}
@@ -180,7 +193,8 @@ def target_flags():
 
 def bundle_files():
     """bundle/manifest.json (cq-w1-bundle's contract, read as checker/cqcheck/oracle.py reads it): a JSON
-    list of bitcode paths relative to bundle/. An empty list is the stub: nothing is linked."""
+    list of bitcode paths relative to bundle/ (to the manifest's directory). An empty list is the stub:
+    nothing is linked."""
     if not MANIFEST.exists():
         raise DriverError(f"cqcc: {MANIFEST} missing")
     try:
@@ -194,6 +208,28 @@ def bundle_files():
         if not f.exists():
             raise DriverError(f"cqcc: injection bundle file {f} (bundle/manifest.json) missing")
     return files
+
+
+def nm(path: Path, flags, what: str, work: Path) -> set:
+    """External symbol names of an IR file as llvm-nm prints them. llvm-nm reads bitcode only, so a
+    textual unit is assembled to a scratch .bc first."""
+    if path.suffix == ".ll":
+        bc = work / (path.name + ".nm.bc")
+        run([tool("llvm-as"), path, "-o", bc], f"llvm-as of {path.name} (bundle rule)")
+        path = bc
+    r = run([tool("llvm-nm"), *flags, "--extern-only", "--format=just-symbols", path], what,
+            capture_output=True, text=True)
+    return {ln.strip() for ln in r.stdout.splitlines() if ln.strip()}
+
+
+def bundle_needed(linked: Path, bundle, work: Path) -> bool:
+    """The bundle rule (module docstring): some symbol a bundle file defines is declared in `linked`
+    without a body."""
+    defined = set()
+    for f in bundle:
+        defined |= nm(f, ["--defined-only"], f"llvm-nm of the injection bundle {f.name}", work)
+    declared = nm(linked, ["--undefined-only"], "llvm-nm of the linked user module", work)
+    return bool(defined & declared)
 
 
 def main(argv) -> int:
@@ -223,7 +259,8 @@ def main(argv) -> int:
         if not units:
             raise usage("no C or IR input to lower")
 
-        # 2. llvm-link: the user units in full, then the bundle --only-needed (first file links in full).
+        # 2. llvm-link: the user units in full, then, when the bundle rule (module docstring) says the
+        # module needs it, the bundle --only-needed (first file links in full).
         # Everything stays textual IR, as the corpus's name.O1.ll is: bitcode does not keep use-list
         # order, which the pass may observe. A single unit is not relinked: llvm-link would rename its
         # source_filename and reorder its named metadata; the pass then reads exactly what clang wrote.
@@ -233,7 +270,7 @@ def main(argv) -> int:
         else:
             run([tool("llvm-link"), "-S", *units, "-o", linked], "llvm-link of the user units")
         bundle = bundle_files()
-        if bundle:
+        if bundle and bundle_needed(linked, bundle, tmp):
             run([tool("llvm-link"), "-S", linked, "--only-needed", *bundle, "-o", linked],
                 "llvm-link with the injection bundle")
 
