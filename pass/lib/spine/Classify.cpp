@@ -125,6 +125,19 @@ bool knownLibFunc(const Function &F) {
   return TLI.getLibFunc(F, lf);
 }
 
+// The <fenv.h> functions (C17 7.6, with the glibc/BSD trap-enable extensions); taint's isFenvCall
+// and eff-fenv's fenvFn name the same set.
+bool isFenvFunction(StringRef n) {
+  static const char *names[] = {"feclearexcept", "fegetexceptflag", "feraiseexcept", "fesetexceptflag",
+                                "fetestexcept",  "fegetround",      "fesetround",    "fegetenv",
+                                "feholdexcept",  "fesetenv",        "feupdateenv",   "fegetexcept",
+                                "feenableexcept", "fedisableexcept"};
+  for (const char *x : names)
+    if (n == x)
+      return true;
+  return false;
+}
+
 bool mayHaveHostEffect(const CallBase &CB) {
   return !CB.onlyReadsMemory() || CB.mayThrow() || !CB.willReturn();
 }
@@ -155,7 +168,9 @@ Class classify(const CallBase &CB, const TaintInfo &T, const Specialization &S) 
 
   if (F->isIntrinsic()) {
     Intrinsic::ID id = F->getIntrinsicID();
-    if (isa<ConstrainedFPIntrinsic>(CB))
+    // Rule 23: the constrained ops and LLVM's rounding-mode intrinsics read or write the
+    // floating-point environment, classical ones included.
+    if (isa<ConstrainedFPIntrinsic>(CB) || id == Intrinsic::get_rounding || id == Intrinsic::set_rounding)
       return Class::Fenv;
     switch (id) {
     case Intrinsic::memcpy: case Intrinsic::memmove: case Intrinsic::memset:
@@ -190,6 +205,13 @@ Class classify(const CallBase &CB, const TaintInfo &T, const Specialization &S) 
       return Class::LibmIntrinsic;
     unimplemented("spine: calls::classify: an intrinsic with a quantum operand that no rule routes", &CB);
   }
+
+  // Rule 23: every <fenv.h> call (C17 7.6, a callee with no body) of a lowered function is the fenv
+  // module's, classical ones included: the host part stays, and the quantum part (the mode and flags
+  // rails) changes with it (a classical fesetround drops a quantum mode rail, feclearexcept clears
+  // flag rails). eff-fenv copies the call to the host when the quantum part is not involved.
+  if (F->isDeclaration() && isFenvFunction(F->getName()))
+    return Class::Fenv;
 
   if (CB.hasFnAttr(Attribute::ReturnsTwice) || F->hasFnAttribute(Attribute::ReturnsTwice))
     return qPred || qArg || qRes ? Class::Setjmp : Class::Classical;
