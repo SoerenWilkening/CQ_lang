@@ -491,6 +491,13 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
   case Instruction::Select:
     if (q) {
       auto &sel = cast<SelectInst>(I);
+      // Rule 21 (cq-xb7r): a quantum pointer select is a fat pointer (tag, idx), whether its tag is
+      // quantum (two objects) or classical (one object at a quantum offset); fatptr computes and binds
+      // its two fields here, at the select, so their rails are live wherever the pointer is used.
+      if (sel.getType()->isPointerTy()) {
+        fatptr::lower(ctx, &sel);
+        return;
+      }
       if (onlyFactoredConditions(ctx, I))
         return;
       // A classical condition with a quantum arm: pred's lowerSelect emits a classical select over

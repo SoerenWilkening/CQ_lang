@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """tests/spine (cq-w0-construct): the spine's owned examples and probes through the real plugin.
 
-Structural checks only; the bead's acceptance is §6 (`python3 -m cqcheck run ... --oracle both`).
+Fatal probes (probes/fatal/) must stop cq-lower with their `; FATAL:` text. Structural checks only; the bead's acceptance is §6 (`python3 -m cqcheck run ... --oracle both`).
 Per example it checks, and fails on:
 
   - cq-lower (with its built-in structural verifier) exits 0 and writes a module;
@@ -76,6 +76,23 @@ def probes(a) -> int:
                     reasons.append(f"{m.group(2)}: missing '{m.group(3)}'")
         failures += bool(reasons)
         print(f"{'ok' if not reasons else 'FAIL':4} probe {p.name}" + "".join("\n     " + x for x in reasons))
+    # probes/fatal/: each must stop cq-lower (non-zero exit, nothing written) with the text of its
+    # `; FATAL: <text>` line on stderr (an internal error, never a decline: CLAUDE.md).
+    for p in sorted((Path(__file__).parent / "probes" / "fatal").glob("*.ll")):
+        want = [m.group(1) for m in re.finditer(r"^; FATAL: (.*)$", p.read_text(), re.M)]
+        dest = out / ("fatal_" + p.name)
+        dest.unlink(missing_ok=True)
+        r = subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-lower", "-S", str(p),
+                            "-o", str(dest)], capture_output=True, text=True)
+        reasons = []
+        if len(want) != 1:
+            reasons.append("expected exactly one '; FATAL:' line")
+        elif r.returncode == 0:
+            reasons.append("cq-lower exited 0")
+        elif want[0] not in r.stderr:
+            reasons.append("stderr lacks '" + want[0] + "': " + (r.stderr.strip().splitlines() or ["?"])[0])
+        failures += bool(reasons)
+        print(f"{'ok' if not reasons else 'FAIL':4} fatal {p.name}" + "".join("\n     " + x for x in reasons))
     return failures
 
 

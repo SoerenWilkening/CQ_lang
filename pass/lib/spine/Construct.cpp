@@ -717,6 +717,11 @@ void Walker::emitBlock(BasicBlock *b) {
         blockDefs.push_back(&phi);
         continue;
       }
+      // Rule 21 (cq-xb7r): a quantum pointer phi is a fat-pointer merge (tag, idx), the phi
+      // counterpart of the select fatptr::lower takes; fatptr has no phi entry yet, and pred's merge
+      // is scalar only.
+      if (phi.getType()->isPointerTy())
+        unimplemented("spine: a quantum pointer phi (rule 21 fat-pointer merge; fatptr has no phi entry)", &phi);
       spine::bindOperand(ctx, &phi, Operand{lowerMerge(ctx, phi), true});
       blockDefs.push_back(&phi);
       continue;
