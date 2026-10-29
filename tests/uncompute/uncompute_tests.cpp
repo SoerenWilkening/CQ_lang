@@ -1861,6 +1861,37 @@ J:
                     });
 }
 
+// cq-1dgy (rev/sodl-n1/r1.ll, r3.c): the join is inside a loop and the arm a is defined before it.
+// a is unchosen on P's edge, so it would be freed at the end of P; the back edge then reaches Q, whose
+// edge chooses the same a (use after free), and P again (double free). Refused.
+const char *kLoopArm = R"(
+define i32 @f(i32 %a0, i1 %c, i1 %d) {
+entry:
+  %a = call i32 @cqrt_alloc_i32(i32 %a0)
+  br label %H
+H:
+  br i1 %c, label %P, label %Q
+P:
+  %b = call i32 @cqrt_alloc_i32(i32 7)
+  br label %J
+Q:
+  br label %J
+J:
+  %m = phi i32 [ %b, %P ], [ %a, %Q ]
+  %r = call i32 @cqrt_measure_i32(i32 %m)
+  br i1 %d, label %H, label %X
+X:
+  ret i32 %r
+})";
+
+void fatal_merge_unchosen_loop() {
+  Fx f(kLoopArm);
+  f.S("a");
+  f.S("b");
+  f.U.setRole(f.U.recordMerge(f.I("m")), Role::Measured);
+  f.U.flushAtExit(f.ret());
+}
+
 // A kept role on a classical select whose arms are resolvable: keeping only the chosen arm would need
 // a branch on the condition (not built). Keeping every arm would keep the unchosen arm's garbage (an
 // extra kept rail, §6-different from rule 9's "arm rails uncomputed").
@@ -1963,6 +1994,7 @@ const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_merge_unchosen_read_later", fatal_merge_unchosen_read_later},
     {"fatal_merge_nested_select_edge", fatal_merge_nested_select_edge},
     {"fatal_merge_nested_select_edge_rev", fatal_merge_nested_select_edge_rev},
+    {"fatal_merge_unchosen_loop", fatal_merge_unchosen_loop},
 };
 
 } // namespace

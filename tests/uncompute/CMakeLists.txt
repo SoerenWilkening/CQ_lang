@@ -32,7 +32,8 @@ set(CQ_UNC_FATAL
   "fatal_merge_unchosen_used_after=cq: unimplemented: uncompute: an arm of a kept merged handle, .* is still used after"
   "fatal_merge_unchosen_read_later=cq: unimplemented: uncompute: recordTemplate: an arm of a kept merged handle, .* is read after the edge"
   "fatal_merge_nested_select_edge=cq: unimplemented: uncompute: a kept role on a classical select over handles whose arm %t"
-  "fatal_merge_nested_select_edge_rev=cq: unimplemented: uncompute: a kept role on a classical select over handles whose arm %t")
+  "fatal_merge_nested_select_edge_rev=cq: unimplemented: uncompute: a kept role on a classical select over handles whose arm %t"
+  "fatal_merge_unchosen_loop=cq: unimplemented: uncompute: an arm of a kept merged handle, %a, freed at the end of an edge where the merge does not choose it, is reached again")
 foreach(entry ${CQ_UNC_FATAL})
   string(FIND "${entry}" "=" eq)
   string(SUBSTRING "${entry}" 0 ${eq} c)

@@ -822,6 +822,28 @@ struct Uncompute::Impl {
     return false;
   }
 
+  // cq-1dgy: is there a path of at least one edge from P to B (B == P: a cycle through P) that
+  // enters none of the blocks in avoid?
+  static bool reachesAgain(const BasicBlock *P, const BasicBlock *B, ArrayRef<const BasicBlock *> avoid) {
+    SmallPtrSet<const BasicBlock *, 16> seen;
+    SmallVector<const BasicBlock *, 16> work{P};
+    while (!work.empty()) {
+      const BasicBlock *b = work.pop_back_val();
+      const Instruction *t = b->getTerminator();
+      if (!t)
+        continue;
+      for (const BasicBlock *s : successors(t)) {
+        if (is_contained(avoid, s))
+          continue;
+        if (s == B)
+          return true;
+        if (seen.insert(s).second)
+          work.push_back(s);
+      }
+    }
+    return false;
+  }
+
   // Does reading r read x other than through the merge m (r == x, or a merge naming x by an arm
   // path that avoids m)?
   bool readsPast(RailId r, RailId x, RailId m) const {
@@ -854,7 +876,53 @@ struct Uncompute::Impl {
 
   // At a return: every IR user of an edge-freed arm's handle (beyond the merges, checked at
   // recordMerge, and our own items) lies where the arm still exists on its path.
+  //
+  // cq-1dgy: nor may a path leaving P come back, without passing x's definition, to P itself (the
+  // free runs again on the same instance: double free) or to the incoming block of a merge phi whose
+  // incoming value there may name x (a later iteration chooses the freed instance: use after free).
+  // The output CFG is complete only once the loops around P are emitted (their back edges are not
+  // there yet when the role is set), so this is checked at each return, with checkEdgeUsers.
+  void checkEdgeLoops() const {
+    for (RailId x = 0; x < rails.size(); ++x)
+      for (auto [P, m] : rails[x].edgeFrees) {
+        const BasicBlock *D = defBlock(x);
+        auto refuse = [&](const BasicBlock *b) {
+          unimplemented("uncompute: an arm of a kept merged handle, " + describe(rails[x].handle) +
+                            ", freed at the end of an edge where the merge does not choose it, is reached again "
+                            "from that edge without being redefined (a loop around the join)",
+                        b->getTerminator());
+        };
+        if (reachesAgain(P, P, {D}))
+          refuse(P);
+        // A merge n reads x where an operand may name it: a phi at the end of that incoming block, a
+        // select at its own block. An operand naming x only through a nested merge r is re-chosen
+        // whenever the path passes r's definition, so such a path does not read the freed instance.
+        auto check = [&](Value *v, const BasicBlock *at) {
+          auto it = byHandle.find(v);
+          if (it == byHandle.end() || !is_contained(closure(it->second), x))
+            return;
+          SmallVector<const BasicBlock *, 2> avoid{D};
+          if (it->second != x)
+            avoid.push_back(defBlock(it->second));
+          if (reachesAgain(P, at, avoid))
+            refuse(at);
+        };
+        for (RailId n : names(x)) {
+          if (n == x)
+            continue;
+          if (auto *phi = dyn_cast<PHINode>(rails[n].handle)) {
+            for (unsigned j = 0; j < phi->getNumIncomingValues(); ++j)
+              check(phi->getIncomingValue(j), phi->getIncomingBlock(j));
+          } else if (auto *sel = dyn_cast<SelectInst>(rails[n].handle)) {
+            check(sel->getTrueValue(), sel->getParent());
+            check(sel->getFalseValue(), sel->getParent());
+          }
+        }
+      }
+  }
+
   void checkEdgeUsers() const {
+    checkEdgeLoops();
     for (RailId x = 0; x < rails.size(); ++x)
       for (auto [P, m] : rails[x].edgeFrees)
         for (User *u : rails[x].handle->users()) {
