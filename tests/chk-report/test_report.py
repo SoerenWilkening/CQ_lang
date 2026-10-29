@@ -150,29 +150,34 @@ class Diff(unittest.TestCase):
 class FakeSiblings:
     """Installs fake sibling functions for the duration of a test; the real modules are restored."""
 
-    def __init__(self, compare_reasons=(), samples=({"call": 0, "args": [0]},), drop=()):
+    def __init__(self, compare_reasons=(), samples=({"call": 0, "args": [0]},), drop=(), classes=None,
+                 domain=(), trip_runs=None):
         self.calls = []
         self.compare_reasons = list(compare_reasons)
         self.samples = list(samples)
         self.drop = set(drop)
+        # a complete sample set by default: every class present, nothing applicable left out
+        self.classes = complete_classes() if classes is None else classes
+        self.domain = list(domain)
+        self.trip_runs = trip_runs or {}    # sample index -> (events, loops) of the C oracle
 
     def __enter__(self):
         self.saved = {}
-        spec = DriverSpec("x", [], "", [])
+        spec = DriverSpec("x", [], "", [{"fn": "f", "args": [{"ctype": "int", "quantum": True}]}])
 
         def rr(side):
             return RunResult(side, None, {}, {}, [], [], [], [])
 
         fns = {
             ("drivers", "driver_spec"): lambda name, d: spec,
-            ("sampling", "sample_set"): lambda s, d: SampleSet("x", self.samples, {}),
+            ("sampling", "sample_set"): lambda s, d: SampleSet("x", self.samples, self.classes),
             ("run", "run_sample"): lambda p, s, smp, side: (self.calls.append(("run", side)), rr(side))[1],
             ("oracle", "run_sample"): lambda p, s, smp: (self.calls.append(("oracle",)), rr("c"))[1],
             # report.evaluate runs each side as a batch (cq-3ebz)
             ("run", "run_samples"): lambda p, s, smps, side: [
                 (self.calls.append(("run", side)), rr(side))[1] for _ in smps],
             ("oracle", "run_samples"): lambda p, s, smps: [
-                (self.calls.append(("oracle",)), "sample run")[1] for _ in smps],
+                (self.calls.append(("oracle",)), self.oracle_run(smp))[1] for smp in smps],
             ("oracle", "run_result"): lambda sr, s, o1: rr("c"),
             ("compare", "compare"): lambda a, b, against, classical_key=None: (
                 self.calls.append(("compare", against, classical_key)), self.compare_reasons)[1],
@@ -188,6 +193,9 @@ class FakeSiblings:
                     delattr(m, name)
             else:
                 setattr(m, name, fn)
+        from cqcheck import gaps
+        self.gaps_domain = gaps.domain_check
+        gaps.domain_check = lambda spec, d, ss: list(self.domain)
         self.verify = report.verify
         report.verify = lambda p, reference=False: (self.calls.append(("verify", reference)),
                                                     (report.PASS, ""))[1]
@@ -202,6 +210,22 @@ class FakeSiblings:
             else:
                 setattr(m, name, fn)
         report.verify = self.verify
+        importlib.import_module("cqcheck.gaps").domain_check = self.gaps_domain
+
+    def oracle_run(self, smp):
+        i = self.samples.index(smp)
+        evs, loops = self.trip_runs.get(i, ([], []))
+        return types.SimpleNamespace(failed=False, reason="", events=evs, loops=loops)
+
+
+def complete_classes(trips=None):
+    """A sample set's classes for FakeSiblings' one call with one int quantum argument."""
+    return {"edge": {"0": {"samples": [0]}}, "specials": {"0": {"empty": "no floating-point quantum input in this call"}},
+            "exhaustive": {"0": {"empty": "the quantum inputs of this call total 32 bits > 8"}},
+            "random_seed": {"seed": 1, "quantum": {"0": {"samples": [0]}},
+                            "classical": {"0": {"empty": "no classical scalar argument in this call"}}},
+            "totalization": {"rows": [], "empty": "no instruction of the example is named by a CR §2 row"},
+            "trips": trips or {"K": 4, "loops": [], "empty": "the example has no loop"}}
 
 
 class Evaluate(unittest.TestCase):
@@ -293,6 +317,161 @@ class Evaluate(unittest.TestCase):
             self.assertEqual(st, "error")
         else:
             self.assertIn(st, ("pass", "fail"))
+
+
+class SampleGaps(unittest.TestCase):
+    """cq-h4pn: a class the sampler left empty reaches the verdict (MISSING: not green) or a report
+    line (IMPOSSIBLE, NOTE); sampling's own checks (check_sample_set, confirm_trips,
+    domain_problems) do too."""
+
+    def mutant(self):
+        p = Path(tempfile.mkstemp(suffix=".ll", dir=TMP)[1])
+        p.write_text(EX04.reference.read_text().replace("double %1)", "double 1.0)", 1))
+        return p
+
+    def run_with(self, oracle="both", compare_reasons=(), **kw):
+        with FakeSiblings(compare_reasons=compare_reasons, **kw):
+            return report.evaluate(EX04, self.mutant(), oracle)
+
+    @staticmethod
+    def loop(trips):
+        return {"K": 4, "loops": [{"loop": "f:%7", "parent": None, "trips": trips}]}
+
+    def test_complete_set_is_green_and_quiet(self):
+        v = self.run_with()
+        self.assertEqual((v.s6, v.c_oracle), ("pass", "pass"))
+        self.assertFalse([r for r in v.reasons if r.startswith("sampling")])
+
+    def test_missing_trip_target_is_not_green(self):
+        found = {"0": {"sample": 0}, "3": {"sample": 0}, "4": {"sample": 0}}
+        trips = dict(found, **{"5": {"empty": "no input found: the C oracle's trip counts on 9 candidates "
+                                             "are [0, 3, 4]; 10 probe runs searched"}})
+        runs = {0: ([{"ev": "trip", "loop": "f:%7", "n": n} for n in (0, 3, 4)], [])}
+        v = self.run_with(classes=complete_classes(self.loop(trips)), trip_runs=runs)
+        self.assertEqual((v.s6, v.c_oracle), ("error", "error"))
+        self.assertFalse(report.green(v))
+        self.assertTrue(any(r.startswith("sampling: missing: trips: f:%7 trip 5: no input found") for r in v.reasons),
+                        v.reasons)
+        # oracle=ref alone: the trip samples still go through the C oracle's trip counters
+        v = self.run_with(oracle="ref", classes=complete_classes(self.loop(trips)), trip_runs=runs)
+        self.assertEqual((v.s6, v.c_oracle), ("error", "not-run"))
+
+    def test_missing_trip_target_with_a_failing_compare_stays_fail(self):
+        trips = {t: {"empty": "no input found: nothing"} for t in ("0", "3", "4", "5")}
+        v = self.run_with(compare_reasons=["rotation list differs"], classes=complete_classes(self.loop(trips)))
+        self.assertEqual((v.s6, v.c_oracle), ("fail", "fail"))
+        self.assertIn("sampling: missing: trips: f:%7 trip 3: no input found: nothing", v.reasons)
+
+    def test_trip_sample_the_oracle_disagrees_with(self):
+        trips = {t: {"sample": 0} for t in ("0", "3", "4", "5")}
+        runs = {0: ([{"ev": "trip", "loop": "f:%7", "n": 2}], [])}
+        v = self.run_with(classes=complete_classes(self.loop(trips)), trip_runs=runs)
+        self.assertEqual((v.s6, v.c_oracle), ("error", "error"))
+        self.assertTrue(any(r.startswith("sampling: trip sample disagrees:") and "gives trips [2]" in r
+                            for r in v.reasons), v.reasons)
+
+    def test_empty_class_the_sampler_gave_up_on(self):
+        c = complete_classes()
+        c["random_seed"]["classical"]["0"] = {"empty": "none of 64 seeded classical candidates ran to "
+                                                       "completion in the C program (outcomes: ['timeout'])"}
+        v = self.run_with(classes=c)
+        self.assertEqual((v.s6, v.c_oracle), ("error", "error"))
+        self.assertTrue(any(r.startswith("sampling: missing: random_seed.classical: call 0:") for r in v.reasons))
+
+    def test_unknown_reason_is_missing(self):
+        c = complete_classes()
+        c["edge"]["0"] = {"empty": "something new"}
+        v = self.run_with(classes=c)
+        self.assertEqual((v.s6, v.c_oracle), ("error", "error"))
+        self.assertIn("sampling: missing: edge: call 0: something new", v.reasons)
+
+    def test_class_absent_is_missing(self):
+        c = complete_classes()
+        del c["specials"]
+        v = self.run_with(classes=c)
+        self.assertEqual((v.s6, v.c_oracle), ("error", "error"))
+        self.assertTrue(any(r.startswith("sampling: missing: sample set: ") for r in v.reasons), v.reasons)
+
+    def test_out_of_domain_sample_is_not_green(self):
+        v = self.run_with(domain=["x: sample 3 accesses outside its object"])
+        self.assertEqual((v.s6, v.c_oracle), ("error", "error"))
+        self.assertIn("sampling: outside the domain: x: sample 3 accesses outside its object", v.reasons)
+
+    def test_impossible_class_is_reported_and_green(self):
+        c = complete_classes()
+        c["edge"]["0"] = {"empty": "every one of its 9 samples accesses outside an object in the C program: "
+                                   "outside its domain (cq-nqna)", "out_of_domain": 9}
+        c["totalization"] = {"rows": [
+            {"site": "f: %3 = sdiv i32 %1, %2", "row": "sdiv by 0",
+             "empty": "outside the domain: undefined in LLVM (owner ruling 2026-10-28, CLAUDE.md Domain; cq-f075)"},
+            {"site": "f: %4 = fadd double %1, %2", "row": "overflow",
+             "empty": "unreachable by search: the site ran in 3 of 9 pool samples"},
+            {"site": "f: %5 = fadd double %1, %2", "row": "normal", "samples": [0]}]}
+        v = self.run_with(classes=c)
+        self.assertEqual((v.s6, v.c_oracle), ("pass", "pass"))
+        self.assertTrue(report.green(v))
+        self.assertTrue(any(r.startswith("sampling: impossible: edge: call 0: every one of its 9") for r in v.reasons))
+        self.assertTrue(any(r.startswith("sampling: impossible: totalization: 1 of 3") for r in v.reasons))
+        self.assertTrue(any(r.startswith("sampling: note: totalization: 1 of 3") for r in v.reasons))
+
+    def test_gap_check_crash_is_error(self):
+        from cqcheck import gaps
+
+        def boom(*a):
+            raise RuntimeError("gap check crashed")
+        saved = gaps.sample_gaps
+        gaps.sample_gaps = boom
+        try:
+            v = self.run_with()
+        finally:
+            gaps.sample_gaps = saved
+        self.assertEqual((v.s6, v.c_oracle), ("error", "error"))
+        self.assertTrue(any("gap check crashed" in r for r in v.reasons))
+
+    def test_classify_reason(self):
+        from cqcheck import gaps
+        self.assertIsNone(gaps.classify_reason("the quantum inputs of this call total 32 bits > 8"))
+        self.assertEqual(gaps.classify_reason("the quantum inputs of this call total 6 bits > 4"), gaps.MISSING)
+        self.assertIsNone(gaps.classify_reason(
+            "no scalar argument of this call flows into a cq_theta_* register; every cq_theta_* register is "
+            "computed inside the program; substituted cq_theta sites: no floating-point register among the "
+            "substituted cq_theta sites"))
+        self.assertEqual(gaps.classify_reason("the loop is never reached from the drivers.txt calls"), gaps.MISSING)
+        self.assertEqual(gaps.classify_reason(""), gaps.MISSING)
+
+
+class TripProofs(unittest.TestCase):
+    """cq-h4pn: a trip count is IMPOSSIBLE only with a proof (ScalarEvolution, or a header every
+    call reaches); the search's evidence alone keeps it MISSING."""
+
+    def gaps_of(self, name, loop, targets):
+        from cqcheck import drivers as D, gaps
+        ex = report.resolve_examples([name])[0]
+        spec = D.driver_spec(ex.name, ex.dir)
+        trips = {t: {"empty": "no input found: the C oracle's trip counts on 9 candidates are [1]"}
+                 for t in targets}
+        c = complete_classes({"K": 4, "loops": [{"loop": loop, "parent": None, "trips": trips}]})
+        ss = SampleSet(ex.name, [{"call": i, "args": []} for i in range(len(spec.calls))], c)
+        return {g.where.rsplit(" ", 1)[1]: g for g in gaps.sample_gaps(spec, ss, ex.dir, report.LLVM_BIN)
+                if g.where.startswith("trips")}
+
+    def test_do_while_never_runs_zero_trips(self):
+        g = self.gaps_of("150", "do_while_quantum:%7", ("0", "5"))
+        self.assertEqual(g["0"].kind, "impossible")
+        self.assertIn("never reports 0", g["0"].why)
+        self.assertEqual(g["5"].kind, "missing")          # a quantum exit: any count may occur
+
+    def test_constant_trip_count(self):
+        # 120 register_grid:%19 runs exactly 2 trips (ScalarEvolution: backedge-taken count 1)
+        g = self.gaps_of("120", "register_grid:%19", ("0", "3", "4", "5"))
+        for t in ("3", "4", "5"):
+            self.assertEqual(g[t].kind, "impossible", g[t])
+            self.assertIn("always 1", g[t].why)
+        self.assertEqual(g["0"].kind, "missing")          # a nested loop: 0 is not proved
+
+    def test_bound_by_an_argument_is_not_proved(self):
+        g = self.gaps_of("25", "for_classical_bound:%10", ("0", "3", "4", "5"))
+        self.assertTrue(all(x.kind == "missing" for x in g.values()), g)
 
 
 class Bundle(unittest.TestCase):

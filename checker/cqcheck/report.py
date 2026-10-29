@@ -18,6 +18,14 @@ green. ERROR means the check could not be decided (no lowered module, a checker 
 built yet, an exception): it is never green. NOT_RUN appears only when the caller asked for one
 oracle (``--oracle ref|c``); it is not green either.
 
+The sample set must hold every input class CLAUDE.md "Inputs" requires (cq-h4pn, gaps.py): a class
+the sampler left empty without a proof that no input exists, a problem sampling.check_sample_set
+finds, a sample outside the C program's domain (sampling.domain_problems) or a trip sample whose
+count the C oracle's trip counters do not give (sampling.confirm_trips) turns a §6 check that
+passed over that sample set into ERROR (FAIL stays FAIL), each with a ``sampling: ...`` reason.
+A class no input can fill (``sampling: impossible: ...``) and the totalization rows the search did
+not hit (``sampling: note: ...``) are reasons only.
+
 The §6 run composes the sibling checker modules through the functions named in ``SIBLING_API``. A
 function that a sibling does not provide yet makes the check ERROR with
 ``cq: unimplemented: <module>: <function>``; nothing is ever assumed equal. The run_sample entries
@@ -387,11 +395,45 @@ def _evaluator_batch(lowered: Path, spec, samples, side: str) -> list:
     return sibling("run", "run_samples")(lowered, spec, samples, side)
 
 
-def _oracle_batch(o1: Path, spec, samples) -> list:
+def _oracle_batch(o1: Path, spec, samples, raw: Optional[list] = None) -> list:
     """Every sample under the C oracle: oracle.run_samples, each made the RunResult that
-    oracle.run_sample (Z1) returns by oracle.run_result."""
+    oracle.run_sample (Z1) returns by oracle.run_result. `raw`, when given, receives the
+    oracle.SampleRun of each sample (their trip counters confirm the trip class, cq-h4pn)."""
     to_result = sibling("oracle", "run_result")
-    return [to_result(r, spec, o1) for r in sibling("oracle", "run_samples")(o1, spec, samples)]
+    runs = list(sibling("oracle", "run_samples")(o1, spec, samples))
+    if raw is not None:
+        raw.extend(runs)
+    return [to_result(r, spec, o1) for r in runs]
+
+
+def _sample_set_gaps(ex: Example, spec, ss) -> Tuple[List[str], List[str]]:
+    """(failing lines, reported lines) of the sample set (cq-h4pn; gaps.py): sampling's own
+    acceptance (check_sample_set), the classes it left empty, and every sample inside the C
+    program's domain (sampling.domain_problems). A MISSING class or a problem fails; an IMPOSSIBLE
+    class and a NOTE are reported only."""
+    from cqcheck import gaps
+    found = gaps.sample_gaps(spec, ss, ex.dir, LLVM_BIN)
+    bad = [g.line() for g in found if g.kind == gaps.MISSING]
+    bad += [f"sampling: outside the domain: {p}" for p in gaps.domain_check(spec, ex.dir, ss)]
+    return bad, [g.line() for g in found if g.kind != gaps.MISSING]
+
+
+def _trip_disagreements(ex: Example, spec, ss, c_raw: Optional[list]) -> List[str]:
+    """Each trip sample's count in the C oracle's trip counters (sampling.confirm_trips), from the
+    C oracle's runs of the §6 comparison, or from a run of the trip samples alone when the C
+    oracle was not asked for."""
+    import json
+    from cqcheck import gaps
+    idx = gaps.trip_samples(ss)
+    if not idx:
+        return []
+    if c_raw is None:
+        c_raw = list(sibling("oracle", "run_samples")(ex.o1, spec, [ss.samples[i] for i in idx]))
+        keyed = [ss.samples[i] for i in idx]
+    else:
+        keyed = list(ss.samples)
+    runs = {json.dumps(s, sort_keys=True): r for s, r in zip(keyed, c_raw)}
+    return [f"sampling: trip sample disagrees: {d}" for d in gaps.confirm_trips(ss, runs)]
 
 
 def _compare(ours_results, other_results, against: str, spec) -> Tuple[str, List[str]]:
@@ -488,7 +530,8 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
         pre = _start_prebuild(ex, ours, need_ref_run)
         try:
             spec = sibling("drivers", "driver_spec")(ex.name, ex.dir)
-            samples = sibling("sampling", "sample_set")(spec, ex.dir).samples
+            ss = sibling("sampling", "sample_set")(spec, ex.dir)
+            samples = ss.samples
             if not substitution:
                 samples = [sm for sm in samples if "subst" not in sm]
             ours_results = _side_results(_evaluator_batch, ours, spec, samples, "ours")
@@ -500,6 +543,14 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
             if want_c:
                 c_oracle = ERROR
         else:
+            # cq-h4pn: a class the sampler left empty without a proof that no input exists, or a
+            # sample set its own checks reject, keeps every §6 check over it from being green
+            try:
+                sampling_bad, sampling_notes = _sample_set_gaps(ex, spec, ss)
+            except Exception as e:  # noqa: BLE001
+                sampling_bad, sampling_notes = [_exc_reason("sampling gaps", e)], []
+            reasons += sampling_bad
+            c_raw: Optional[list] = [] if want_c else None
             if need_ref_run:
                 try:
                     ref_results = _side_results(_evaluator_batch, ex.reference, spec, samples, "ref")
@@ -510,12 +561,24 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
                     reasons.append(_exc_reason("s6", e))
             if want_c:
                 try:
-                    c_results = _side_results(_oracle_batch, ex.o1, spec, samples)
+                    c_results = _side_results(_oracle_batch, ex.o1, spec, samples, c_raw)
                     c_oracle, rs = _compare(ours_results, c_results, "c", spec)
                     reasons += rs
                 except Exception as e:  # noqa: BLE001
                     c_oracle = ERROR
                     reasons.append(_exc_reason("c_oracle", e))
+                    c_raw = None
+            try:
+                trip_bad = _trip_disagreements(ex, spec, ss, c_raw)
+            except Exception as e:  # noqa: BLE001
+                trip_bad = [_exc_reason("sampling trip confirmation", e)]
+            reasons += trip_bad
+            if sampling_bad or trip_bad:
+                if need_ref_run and s6 == PASS:
+                    s6 = ERROR
+                if want_c and c_oracle == PASS:
+                    c_oracle = ERROR
+            reasons += sampling_notes
         if pre is not None:
             pre.join()
 
