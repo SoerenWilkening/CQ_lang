@@ -249,6 +249,12 @@ private:
   // analyze().
   const Instruction *curUser = nullptr;
   bool exitRead(const Value *V);
+  // Rule 2 (cq-41y3): "dominated uses of the measured SSA value denote the outcome", and a value
+  // computed only from measured rails and classical values is classical. L(V) reads V as classical
+  // in curUser when every use of V in curUser is dominated by a cq_measure_* call of this function
+  // whose operand is V. A rail read before its measurement keeps its taint (cq-r6bc, open). A
+  // rule 14 exit read wins: the carried value merged over a quantum exit trip stays quantum.
+  bool measuredRead(const Value *V);
   void computeExitQ(SpecState &S);
   Lanes L(const Value *V);
   PtrInfo P(const Value *V);
@@ -657,13 +663,15 @@ Lanes Analyzer::L(const Value *V) {
   Type *T = V->getType();
   if (isa<Constant>(V) || isa<BasicBlock>(V) || isa<MetadataAsValue>(V) || isa<InlineAsm>(V))
     return Lanes(lanesOf(T));
+  if (exitRead(V))
+    return allLanes(lanesOf(T));
+  if (measuredRead(V))
+    return Lanes(lanesOf(T));
   if (auto *A = dyn_cast<Argument>(V)) {
     if (A->getParent() != cur->F)
       internalError("taint: argument of another function", V);
     return cur->formal[A->getArgNo()];
   }
-  if (exitRead(V))
-    return allLanes(lanesOf(T));
   auto it = cur->lanes.find(V);
   if (it != cur->lanes.end())
     return it->second;
@@ -681,6 +689,44 @@ bool Analyzer::exitRead(const Value *V) {
     if (!Lp->contains(curUser) && cur->exitQ.count(Lp))
       return true;
   return false;
+}
+
+bool Analyzer::measuredRead(const Value *V) {
+  if (!curUser || curUser->getFunction() != cur->F)
+    return false;
+  if (auto *A = dyn_cast<Argument>(V)) {
+    if (A->getParent() != cur->F)
+      return false;
+  } else if (auto *I = dyn_cast<Instruction>(V)) {
+    if (I->getFunction() != cur->F)
+      return false;
+  } else {
+    return false;
+  }
+  SmallVector<const CallBase *, 2> meas;
+  for (const User *U : V->users())
+    if (auto *CB = dyn_cast<CallBase>(U))
+      if (CB != curUser && CB->getFunction() == cur->F && isMeasure(CB->getCalledFunction()) &&
+          CB->arg_size() >= 1 && CB->getArgOperand(0) == V)
+        meas.push_back(CB);
+  if (meas.empty())
+    return false;
+  const DominatorTree &DT = *fn(cur->F).DT;
+  bool any = false;
+  for (const Use &U : V->uses()) {
+    if (U.getUser() != curUser)
+      continue;
+    any = true;
+    bool dom = false;
+    for (const CallBase *M : meas)
+      if (DT.dominates(M, U)) {
+        dom = true;
+        break;
+      }
+    if (!dom)
+      return false;
+  }
+  return any;
 }
 
 // The loops of S whose header is control dependent on a tainted terminator inside the loop.
