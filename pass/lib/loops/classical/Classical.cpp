@@ -22,7 +22,8 @@
 //  a_j = a_{j-1} & NOT q (as a_{j-1} ^ (a_{j-1} & q), for a positive q); every quantum carried value advances by
 //  select(a_{j-1}, next, prev); a quantum value read after the loop that is no carried value's next
 //  gets its own capture rail cap_j = select(a_{j-1}, v_j, cap_{j-1}); the loop branches on the
-//  classical disjuncts only. No predicate is kept: the mirror uncomputes every a_j, the last included.
+//  classical disjuncts only. Every body instruction is lowered under the trip rail a_{j-1}
+//  (lowerInstruction's tripFlag, cq-99f7): a cq_theta / cq_phi in the trip is controlled by it. No predicate is kept: the mirror uncomputes every a_j, the last included.
 //
 //  Segments. Every forward output block is a segment with its own Uncompute scope (sequential, never
 //  nested). After the outermost loop exits, each quantum value read after the loop is copied out
@@ -38,7 +39,7 @@
 //
 // Shapes that are not built yet stop with cq::unimplemented (the instruction printed): a loop with
 // more than one exiting block or latch; a case-3 exit test not at the latch, with more than one
-// quantum disjunct, or with a sub-loop or a body effect (needs the trip flag, cq-99f7); a classical
+// quantum disjunct, or with a sub-loop or a memory write; a classical
 // value read after a case-3 loop; calls other than classical, template intrinsics and the CQ.h
 // surface; slot / QRAM memory accesses (187, 188: wave 2); a classical branch inside a quantum arm
 // of the body; a quantum-exit loop nested in a classically bounded one.
@@ -216,8 +217,8 @@ void Unit::check(Loop &L, Case c) {
     for (Instruction &I : *b) {
       if (isa<DbgInfoIntrinsic>(I))
         continue;
-      if (c == Case::ClassicalBoundQuantumExit && I.mayWriteToMemory() && !isa<IntrinsicInst>(I))
-        unimplemented("loops-classical: a body effect in a case-3 loop (it needs the trip flag, cq-99f7)", &I);
+      if (c == Case::ClassicalBoundQuantumExit && I.mayWriteToMemory() && !isa<CallBase>(I))
+        unimplemented("loops-classical: a memory write in a case-3 loop (under the trip rail: loops-mem)", &I);
       if (auto *CB = dyn_cast<CallBase>(&I)) {
         calls::Class k = calls::classify(*CB, ctx.T, ctx.S);
         switch (k) {
@@ -227,11 +228,7 @@ void Unit::check(Loop &L, Case c) {
         case calls::Class::Theta:
         case calls::Class::Measure:
         case calls::Class::Phi:
-          if (c == Case::ClassicalBoundQuantumExit)
-            unimplemented("loops-classical: a cq_theta / cq_measure / cq_phi in a case-3 loop (it needs the trip "
-                          "flag, cq-99f7)",
-                          &I);
-          break;
+          break;   // case 3: under the trip rail (lowerInstruction's tripFlag, cq-99f7)
         default:
           unimplemented("loops-classical: a call of this class inside a rule-14 loop (calls-loops / loops-mem "
                         "integration)",
@@ -610,7 +607,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     for (Instruction &I : *b) {
       if (isa<PHINode>(I) || I.isTerminator() || skip.count(&I))
         continue;
-      lowerInstruction(ctx, I);
+      lowerInstruction(ctx, I, aPhi);   // case 3: the body runs under a_{j-1}; case 1: no trip rail
     }
   };
 
