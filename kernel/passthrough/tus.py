@@ -11,7 +11,15 @@ import os, re, shlex, sys
 from pathlib import Path
 
 KOUT = Path(os.environ["KOUT"]); KTREE = Path(os.environ["KTREE"]); KSRC = Path(os.environ["KSRC"])
-KCC = str(Path(__file__).resolve().parent / "kcc")
+# raw bitcode, and the wrapper header LLVM puts in front of it for Darwin triples
+BITCODE = (b"BC\xc0\xde", b"\xde\xc0\x17\x0b")
+
+def is_kcc(argv0):
+    """The compiler of a .cmd line is this harness's kcc, whichever checkout ran the build: the .cmd
+    files record the absolute path of the kcc kbuild was given (a worktree that may be gone since), so
+    the match is on the path's last two components (kernel/passthrough/kcc), not on this file's path."""
+    p = Path(argv0)
+    return p.name == "kcc" and p.parent.name == "passthrough" and p.parent.parent.name == "kernel"
 
 def tus():
     out = {}
@@ -27,9 +35,9 @@ def tus():
             if not m:
                 continue
             obj, cmd = m.group(1), m.group(2)
-            if not cmd.startswith(KCC + " "):
-                continue
             argv = shlex.split(cmd.split(";")[0])
+            if not argv or not is_kcc(argv[0]):
+                continue
             if "-c" not in argv or "-o" not in argv:
                 continue
             srcs = [a for a in argv[1:] if a.endswith(".c")]
@@ -37,7 +45,7 @@ def tus():
                 continue
             ol = [a for a in argv if re.fullmatch(r"-O[0-3sz]?", a)]
             o = KOUT / obj
-            state = "bitcode" if o.exists() and open(o, "rb").read(4) == b"BC\xc0\xde" else "not-bitcode"
+            state = "bitcode" if o.exists() and open(o, "rb").read(4) in BITCODE else "not-bitcode"
             src = srcs[-1]
             src = str(Path(src).relative_to(KTREE)) if src.startswith(str(KTREE)) else src
             out[obj] = (obj, src, ol[-1] if ol else "", state)
@@ -49,5 +57,9 @@ def tus():
     return [out[k] for k in sorted(out)]
 
 if __name__ == "__main__":
-    for t in tus():
+    ts = tus()
+    for t in ts:
         print("\t".join(t))
+    if not ts:   # an empty list is never a vacuous pass for the callers
+        print(f"tus: no TUs found under {KOUT}", file=sys.stderr)
+        sys.exit(1)
