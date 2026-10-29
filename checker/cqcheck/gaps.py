@@ -24,13 +24,15 @@ search's evidence alone:
     executions, so the C oracle (T1.2: trips begun) reports C or C + 1; a constant maximum M bounds it
     by M + 1.
   * 0: the C oracle reports 0 only on a guard branch that skips the loop or a header run that exits
-    before a trip begins (OracleInstr.cpp, trip counters). For a top-level loop whose header no
-    header-region exit can leave (over-approximated: the header is a latch, or neither the header
-    nor a single-predecessor non-latch successor of it is exiting) and that every path from the
-    function's entry reaches (each block on the way only branches onward to it), every call runs at
-    least one trip.
+    before a trip begins (OracleInstr.cpp, trip counters). A loop, nested or not, with no such guard
+    (the oracle's own walk back from the header) and no header-region exit (over-approximated: the
+    header is a latch, or neither the header nor a single-predecessor non-latch successor of it is
+    exiting) is never reported as 0 (cq-oou2).
+  * sampling.construct_trip_targets (cq-oou2): constructed inputs that reach the count only outside
+    the domain, or only with the K cutoff off; it writes that proof as the target's reason, with the
+    witness ("outside the domain: ...", "cannot be hit: ...").
 
-A nested loop's 0 and every count not covered above stay MISSING when the search found none.
+Every count not covered above stays MISSING when the search found none.
 """
 from __future__ import annotations
 
@@ -133,8 +135,13 @@ def scev_counts(o1: Path, llvm_bin: Path) -> Dict[str, Dict[str, Optional[int]]]
 
 
 def _zero_proof(f: "D.Function", header: str, blocks: set, top_level: bool) -> Optional[str]:
-    if not top_level:
-        return None
+    """Why the C oracle never reports 0 trips of this loop, or None. OracleInstr.cpp (trip counters)
+    reports 0 only (a) on a guard skip: walking back from an out-of-loop predecessor of the header
+    through unconditional branches and single predecessors, a conditional branch whose other
+    successor is an exit block of the loop, or (b) on a header run that exits from the header's test
+    region before a trip begins (the header is not a latch). Neither present: no activation of the
+    loop, nested or not, is reported as 0 (cq-oou2). The region test over-approximates the oracle's
+    (a single-predecessor non-latch exiting successor counts whatever it computes)."""
     preds = f.preds()
     succ = {b: f.blocks[b][-1].successors() for b in f.order}
     latches = {p for p in preds.get(header, []) if p in blocks}
@@ -146,24 +153,27 @@ def _zero_proof(f: "D.Function", header: str, blocks: set, top_level: bool) -> O
             if s in blocks and s != header and set(preds.get(s, [])) == {header} \
                     and s not in latches and s in exiting:
                 return None
-    # every block outside the loop that reaches the header without passing it only branches onward
-    pre, work = set(), [p for p in preds.get(header, []) if p not in blocks]
-    while work:
-        b = work.pop()
-        if b in pre:
+    exit_blocks = {s for b in blocks for s in succ[b] if s not in blocks}
+    for p0 in preds.get(header, []):
+        if p0 in blocks:
             continue
-        pre.add(b)
-        work += [p for p in preds.get(b, []) if p not in blocks and p not in pre]
-    entry = f.order[0]
-    if entry not in pre:
-        return None
-    for b in pre:
-        term = f.blocks[b][-1]
-        if term.op not in ("br", "switch") or any(s not in pre and s != header for s in succ[b]):
-            return None
-    return (f"every path from the entry of @{f.name[1:]} reaches the loop header {header} and no header "
-            f"run exits before a trip begins: every call runs at least one trip, so the C oracle never "
-            f"reports 0")
+        to, p, seen = header, p0, set()
+        while p is not None and p not in blocks and p not in seen:
+            seen.add(p)
+            term = f.blocks[p][-1]
+            if term.op != "br":
+                break
+            ss = term.successors()
+            if len(ss) > 1:
+                if any(o != to and o in exit_blocks for o in ss):
+                    return None
+                break
+            to = p
+            ps = preds.get(p, [])
+            p = ps[0] if len(set(ps)) == 1 else None
+    where = "" if top_level else " (a nested loop: per activation)"
+    return (f"the loop at {header} of @{f.name[1:]}{where} has no guard branch that skips it and no "
+            f"header run that exits before a trip begins: the C oracle's trip counter never reports 0")
 
 
 def loop_facts(example_dir: Path, llvm_bin: Path) -> Dict[str, LoopFacts]:

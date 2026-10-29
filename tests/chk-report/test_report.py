@@ -467,7 +467,17 @@ class TripProofs(unittest.TestCase):
         for t in ("3", "4", "5"):
             self.assertEqual(g[t].kind, "impossible", g[t])
             self.assertIn("always 1", g[t].why)
-        self.assertEqual(g["0"].kind, "missing")          # a nested loop: 0 is not proved
+        # cq-oou2: nested, but no guard skips it and its header is a latch: the oracle never reports 0
+        self.assertEqual(g["0"].kind, "impossible", g["0"])
+        self.assertIn("never reports 0", g["0"].why)
+
+    def test_nested_zero_trips(self):
+        # cq-oou2: 68's inner loop is entered unguarded on every outer trip (j = 0 < i holds)
+        g = self.gaps_of("68", "nested_quantum_loops:%15", ("0",))
+        self.assertEqual(g["0"].kind, "impossible", g["0"])
+        # 60's inner loop (j = i + 1; j < n) has a guard that skips it: 0 stays unproved
+        g = self.gaps_of("60", "qft:%23", ("0",))
+        self.assertEqual(g["0"].kind, "missing", g["0"])
 
     def test_bound_by_an_argument_is_not_proved(self):
         g = self.gaps_of("25", "for_classical_bound:%10", ("0", "3", "4", "5"))

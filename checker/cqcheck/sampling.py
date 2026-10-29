@@ -3320,7 +3320,163 @@ def trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_sit
             trips[str(t)] = {"empty": why + bound_note}
         out.append({"loop": lp.key(),
                     "parent": (loops[lp.parent].key() if lp.parent is not None else None), "trips": trips})
+    if any("empty" in e for o in out for e in o["trips"].values()):
+        construct_trip_targets(spec, example_dir, g, searcher, out)
     return out
+
+
+# ------------------------------------------------------------------------------------------------
+# Constructed trip inputs and the domain proof (cq-oou2)
+# ------------------------------------------------------------------------------------------------
+#
+# Orchestrator decision (cq-oou2, under CLAUDE.md Domain "whatever LLVM does, we do"; owner may
+# override): a trip target the search left empty is impossible in the domain when the inputs that
+# would reach it are undefined as LLVM defines it. The checker shows this per target by constructing
+# inputs (each integer argument of each drivers.txt call, one at a time, raised or set to the
+# values below, the rest at the drivers.txt values) and running them in the C oracle, which keeps
+# running past an access outside an object (loads read 0, stores are dropped) and notes it, so its
+# trip counters show the count such an input would reach. For each target:
+#
+#   found       a constructed input reaches it inside the domain (the probe's validity and the
+#               oracle's clean run): it is the target's sample (a search miss, fixed);
+#   IMPOSSIBLE  at least one constructed input reaches it, and every one that does is outside the
+#               domain (an access past an object, an LLVM-undefined §2 row, a "ub" or "crash" note of
+#               the oracle), or, as the oracle runs it (cut at K, CR rule 14, cq-b19i), ends at another
+#               loop's cutoff before it: it reaches the count only with the cutoff off (68's outer
+#               loop: x >= 5 runs the inner loop past K on the first outer trip);
+#   MISSING     otherwise: no constructed input reaches it, or one does on a run neither clean nor
+#               undefined (nontermination); the reason says which.
+#
+# Search evidence alone never proves impossibility: the proof needs a witness that reaches the count.
+
+TRIP_UNCUT_K = 1 << 30            # the oracle's K for the uncut runs: no loop is cut
+TRIP_CONSTRUCT_TRIPCAP = 1 << 20  # header executions per constructed run (a run past it is no witness)
+
+
+def trip_construct_values(ct: D.CType, base: int) -> List[int]:
+    """The values an integer argument takes in the constructed trip inputs (bit patterns at ct.bits):
+    the edges, the drivers.txt value and K + 2 above it, the targets and their neighbours, and every
+    power of two with its neighbours."""
+    w = ct.bits
+    m = (1 << w) - 1
+    b = _signed(base, w) if ct.signed else base & m
+    vals = set(int_edges(ct))
+    vals |= {(b + d) & m for d in range(-1, K + 3)}
+    vals |= {v & m for t in (0, K - 1, K, K + 1) for v in (t - 1, t, t + 1)}
+    for e in range(w):
+        vals |= {((1 << e) + d) & m for d in (-1, 0, 1)}
+    return sorted(vals)
+
+
+def trip_constructed_inputs(g: "Gen") -> List[Tuple[int, Tuple[str, ...]]]:
+    out: List[Tuple[int, Tuple[str, ...]]] = []
+    for ci in range(len(g.spec.calls)):
+        for j in g.quantum_slots(ci) + g.classical_slots(ci):
+            ct = g.cts[ci][j]
+            if ct.kind != "i" or ct.bits == 1:
+                continue
+            for v in trip_construct_values(ct, int(g.base[ci][j], 16)):
+                out.append((ci, tuple(g.with_values(ci, {j: v}))))
+    return list(dict.fromkeys(out))
+
+
+def run_undefined(r, o: Optional["Obs"], rows_by_site) -> Optional[str]:
+    """Why the C program is undefined on this input as LLVM defines it, or None: an access outside
+    an object in the oracle (oob-load, oob-store), an oracle "ub ..." or "crash ..." note, or a probe
+    run that hits an LLVM-undefined §2 row (ub_row) or leaves an object where the oracle does not cut
+    first."""
+    for n in r.notes:
+        if n in ("oob-load", "oob-store") or n.startswith(("ub ", "crash ")):
+            return f"the C oracle notes '{n}'"
+    if o is not None:
+        if _ub(o, rows_by_site):
+            return "it executes an LLVM-undefined operation (a CR §2 row outside the domain)"
+        if o.oob and not o.cap_ok:
+            return "it accesses outside an object"
+    return None
+
+
+def trip_proof(loop: str, t: int, cands: Sequence[Tuple[int, Tuple[str, ...]]], kruns, uruns,
+               obs: Sequence[Optional["Obs"]], valid: Callable[["Obs"], bool], rows_by_site) -> Tuple[str, Optional[int], str]:
+    """The decision above for target `t` of `loop` over constructed inputs `cands`, their C oracle
+    runs at K (`kruns`) and uncut (`uruns`, None entries when not run) and their probe observations
+    (`obs`, None when not probed). Returns ("found", index, ""), ("ub" | "cut", index of the first
+    witness, why), or ("missing", None, why)."""
+    reach = ub = cut = 0
+    first_ub = first_cut = None
+    undecided = []
+    for i, (kr, ur) in enumerate(zip(kruns, uruns)):
+        hit_k = kr is not None and trip_hit(kr.events, kr.loops, loop, t)
+        hit_u = ur is not None and trip_hit(ur.events, ur.loops, loop, t)
+        if not (hit_k or hit_u):
+            continue
+        reach += 1
+        # the domain as the oracle runs it (cut at K, cq-b19i): the uncut run only shows the count
+        why = run_undefined(kr, obs[i], rows_by_site)
+        if why:
+            ub += 1
+            if first_ub is None:
+                first_ub = (i, why)
+            continue
+        if hit_k and not kr.failed and (obs[i] is not None and valid(obs[i])):
+            return "found", i, ""
+        if not hit_k and not kr.failed and kr.outcome.startswith("cap:"):
+            cut += 1
+            if first_cut is None:
+                first_cut = (i, kr.outcome[4:])
+            continue
+        undecided.append(i)
+    if reach and not undecided:
+        if cut == 0:
+            i, why = first_ub
+            return "ub", i, (f"outside the domain: each of the {ub} constructed inputs that runs {t} trips of {loop} "
+                             f"in the C oracle is undefined as LLVM defines it (CLAUDE.md Domain; cq-oou2), "
+                             f"e.g. {{\"call\": {cands[i][0]}, \"args\": {list(cands[i][1])}}}: {why}")
+        i, lp = first_cut
+        return "cut", i, (f"cannot be hit: as the C oracle runs it (cut at K = {K}, CR rule 14; cq-oou2), each of the "
+                          f"{reach} constructed inputs that runs {t} trips of {loop} with the cutoff off "
+                          + (f"is undefined as LLVM defines it ({ub}) or " if ub else "")
+                          + f"ends at the cutoff of {lp} first ({cut}), e.g. "
+                          f"{{\"call\": {cands[i][0]}, \"args\": {list(cands[i][1])}}}")
+    if not reach:
+        return "missing", None, f"none of {len(cands)} constructed inputs runs {t} trips in the C oracle (with or without the cutoff)"
+    i = undecided[0]
+    kr = kruns[i]
+    return "missing", None, (f"{reach} of {len(cands)} constructed inputs run {t} trips, {len(undecided)} of them neither "
+                             f"inside the domain nor undefined (e.g. {{\"call\": {cands[i][0]}, \"args\": "
+                             f"{list(cands[i][1])}}}: {kr.reason or kr.outcome})")
+
+
+def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", out: List[dict]) -> None:
+    """Fill or prove the empty trip targets of `out` (trip_classes' result) with constructed inputs."""
+    from cqcheck import oracle
+    cands = trip_constructed_inputs(g)
+    if not cands:
+        for lpo in out:
+            for e in lpo["trips"].values():
+                if "empty" in e:
+                    e["empty"] += "; no integer argument to construct inputs from (cq-oou2)"
+        return
+    obs = searcher.observe([(c, list(a)) for c, a in cands])
+    o1 = sorted(Path(example_dir).glob("*.O1.ll"))[0]
+    smp = [{"call": c, "args": list(a)} for c, a in cands]
+    kruns = oracle.run_samples(o1, spec, smp, tripcap=TRIP_CONSTRUCT_TRIPCAP)
+    uruns: List[Optional[object]] = [None] * len(cands)
+    if any(r.outcome.startswith("cap:") for r in kruns):
+        uruns = oracle.run_samples(o1, spec, smp, tripcap=TRIP_CONSTRUCT_TRIPCAP, k_default=TRIP_UNCUT_K)
+    for lpo in out:
+        for target, e in lpo["trips"].items():
+            if "empty" not in e:
+                continue
+            kind, i, why = trip_proof(lpo["loop"], int(target), cands, kruns, uruns, obs, searcher.valid,
+                                      searcher.rows_by_site)
+            if kind == "found":
+                lpo["trips"][target] = {"sample": g.add(cands[i][0], list(cands[i][1]))}
+            elif kind in ("ub", "cut"):
+                lpo["trips"][target] = {"empty": why, "witness": {"call": cands[i][0], "args": list(cands[i][1])},
+                                        "proof": kind}
+            else:
+                e["empty"] += f"; {why} (cq-oou2)"
 
 
 def confirm_trips(ss: SampleSet, trip_run: Callable[[dict], Tuple[List[dict], List[dict]]]) -> List[str]:

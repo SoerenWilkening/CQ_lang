@@ -541,6 +541,83 @@ declare i32 @cq_theta_ui32(i32, double)
 """
 
 
+class TripDomainProof(unittest.TestCase):
+    """cq-oou2: a trip target the search left empty is filled by a constructed input inside the
+    domain, proved impossible by constructed inputs that reach it only outside the domain (or only
+    with the K cutoff off), or stays missing. Synthetic oracle runs; no example is run."""
+
+    class Run:
+        def __init__(self, n=None, loop="f:%8", notes=(), outcome="ret", failed=False, capped=None, reason=""):
+            self.events = [] if n is None else [{"ev": "trip", "loop": loop, "n": n}]
+            self.loops = [] if capped is None else [{"loop": capped, "n": S.K, "capped": True}]
+            self.notes, self.outcome, self.failed, self.reason = list(notes), outcome, failed, reason
+
+    def obs(self, end="exit", oob=(), cap_ok=False):
+        o = S.Obs()
+        o.end, o.oob, o.cap_ok = end, set(oob), cap_ok
+        return o
+
+    def proof(self, t, kruns, uruns=None, obs=None):
+        n = len(kruns)
+        cands = [(0, (hex(i),)) for i in range(n)]
+        return S.trip_proof("f:%8", t, cands, kruns, uruns or [None] * n, obs or [self.obs() for _ in range(n)],
+                            lambda o: S._valid(o, {}), {})
+
+    def test_reached_only_past_an_object_is_out_of_domain(self):
+        k = [self.Run(3), self.Run(5, notes=["oob-load"]), self.Run(5, notes=["oob-store"])]
+        kind, i, why = self.proof(5, k, obs=[self.obs(), self.obs("oob", {2}), self.obs("oob", {2})])
+        self.assertEqual((kind, i), ("ub", 1))
+        self.assertIn("outside the domain", why)
+        self.assertIn("oob-load", why)
+        from cqcheck import gaps
+        self.assertEqual(gaps.classify_reason(why), gaps.IMPOSSIBLE)
+
+    def test_a_clean_reach_is_a_sample_never_a_proof(self):
+        k = [self.Run(5, notes=["oob-load"]), self.Run(5)]
+        self.assertEqual(self.proof(5, k)[:2], ("found", 1))
+
+    def test_crash_after_the_count_is_undefined(self):
+        # a crash note (the trap of a division by zero) is undefined; the oracle reached the count first
+        k = [self.Run(0, notes=["crash 8 addr=0x0"], failed=True, reason="crash 8")]
+        self.assertEqual(self.proof(0, k)[0], "ub")
+
+    def test_nothing_reaches_it_stays_missing(self):
+        kind, i, why = self.proof(5, [self.Run(3), self.Run(4, notes=["oob-load"])])
+        self.assertEqual((kind, i), ("missing", None))
+        self.assertIn("none of 2 constructed inputs", why)
+        from cqcheck import gaps
+        self.assertEqual(gaps.classify_reason("no input found: x; " + why), gaps.MISSING)
+
+    def test_a_nonterminating_reach_blocks_the_proof(self):
+        k = [self.Run(5, notes=["oob-load"]), self.Run(5, notes=["tripcap"], failed=True, reason="nonterminating")]
+        kind, _, why = self.proof(5, k)
+        self.assertEqual(kind, "missing")
+        self.assertIn("neither inside the domain nor undefined", why)
+
+    def test_an_access_past_the_cutoff_is_inside_the_domain(self):
+        # cq-b19i: the probe left the object, the oracle cut at K first (cap_ok): in the domain, so a
+        # sample, never a witness
+        k = [self.Run(None, outcome="cap:f:%8", capped="f:%8")]
+        kind, i, _ = self.proof(5, k, obs=[self.obs("oob", {1}, cap_ok=True)])
+        self.assertEqual((kind, i), ("found", 0))
+
+    def test_reached_only_with_the_cutoff_off(self):
+        # 68's shape: uncut, the input runs 5 trips of f:%8; at K the inner loop f:%9 is cut first
+        k = [self.Run(None, outcome="cap:f:%9", capped="f:%9"), self.Run(2)]
+        u = [self.Run(5), self.Run(2)]
+        kind, i, why = self.proof(5, k, uruns=u)
+        self.assertEqual((kind, i), ("cut", 0))
+        self.assertIn("cutoff of f:%9", why)
+        from cqcheck import gaps
+        self.assertEqual(gaps.classify_reason(why), gaps.IMPOSSIBLE)
+
+    def test_construct_values(self):
+        ct = D.parse_ctype("int")
+        v = S.trip_construct_values(ct, 3)
+        for x in (0, 1, 4, 5, 6, 0x10000, 0xffffffff, 0x80000000, 0x7fffffff):
+            self.assertIn(x, v)
+
+
 class ClassicalAddresses(unittest.TestCase):
     """cq-y10d: the out-of-object filter needs every classical address to be seen as classical."""
 
