@@ -84,6 +84,8 @@ public:
       r = sink.classicalSeed(n);
     else if (m.lo(n) == Bdd::F && m.hi(n) == Bdd::T)
       r = atomRail(m.var(n));
+    else if (Value *x = m.lo(n) == Bdd::T && m.hi(n) == Bdd::F && ql(m.var(n)) ? sink.liveNegation(m.var(n)) : nullptr)
+      r = x;   // NOT v is already a live rail (cq-su3p, 113)
     else {
       r = sink.alloc0();
       into(r, n);
@@ -279,6 +281,148 @@ bool bracketedFlag(unsigned node, GateSink &sink, const std::function<bool(unsig
   return Materializer(sink, ql).bracketed(node, use);
 }
 
+// ---- Decision (1) on cq-su3p: NOT v as an existing live rail ----
+
+namespace {
+
+bool isI1(const RailType &w) { return w.kind == Kind::Int && w.bits == 1; }
+
+// Is c a forward template computing NOT atom (xor with true, icmp eq false, icmp ne true on i1)?
+bool negates(const CallInst &c, const Value *atom) {
+  const Function *f = c.getCalledFunction();
+  if (!f || c.arg_size() != 2)
+    return false;
+  bool unc = false;
+  std::optional<abi::TemplateSpec> spec = abi::parseTemplate(f->getName(), &unc);
+  if (!spec || unc || spec->to || !isI1(spec->w) || spec->rm != abi::TemplateSpec::NoRm || spec->exc)
+    return false;
+  const Value *a0 = c.getArgOperand(0), *a1 = c.getArgOperand(1);
+  const ConstantInt *k = nullptr;
+  if (a0 == atom && spec->shape == "hl")
+    k = dyn_cast<ConstantInt>(a1);
+  else if (a1 == atom && spec->shape == "lh")
+    k = dyn_cast<ConstantInt>(a0);
+  if (!k || k->getBitWidth() != 1)
+    return false;
+  if (spec->op == "xor")
+    return k->isOne();
+  if (spec->op == "icmp")
+    return (spec->pred == "eq" && k->isZero()) || (spec->pred == "ne" && k->isOne());
+  return false;
+}
+
+// What call c does to the rails `a` (the atom) and `x` (the candidate): false when it may change
+// either's basis value or resolve it. A not_i1 on the atom flips `atomFlips`.
+bool keeps(const CallInst &c, const Value *a, const Value *x, unsigned &atomFlips) {
+  bool readsA = false, readsX = false;
+  for (const Use &u : c.args()) {
+    readsA |= u.get() == a;
+    readsX |= u.get() == x;
+  }
+  if (!readsA && !readsX)
+    return true;
+  const Function *f = c.getCalledFunction();
+  if (!f)
+    return false;
+  bool unc = false;
+  if (abi::parseTemplate(f->getName(), &unc))
+    return !unc || (c.getArgOperand(0) != a && c.getArgOperand(0) != x);   // an _unc's first operand is its result
+  std::optional<abi::CoreSpec> core = abi::parseCore(f->getName());
+  if (!core || core->unc)
+    return false;
+  auto target = [&](unsigned i) -> const Value * { return i < c.arg_size() ? c.getArgOperand(i) : nullptr; };
+  const Value *t = nullptr;
+  switch (core->op) {
+  case abi::Core::RzI1:
+  case abi::Core::RzQAngle:
+    return true;   // diagonal
+  case abi::Core::Ry:
+  case abi::Core::RyQAngle:
+  case abi::Core::Xorc:
+    t = target(core->ctl ? 1 : 0);
+    break;
+  case abi::Core::Copy:
+    t = target(core->ctl ? 2 : 1);
+    break;
+  case abi::Core::NotI1:
+    t = target(0);
+    if (t == a && !core->ctl && c.arg_size() == 1) {
+      ++atomFlips;
+      return true;
+    }
+    break;
+  case abi::Core::AndI1:
+  case abi::Core::OrI1:
+    t = target(2);
+    break;
+  case abi::Core::XorI1:
+    t = target(1);
+    break;
+  default:
+    return false;   // a measurement, a free, QRAM, tape, ...: not known to leave both as they are
+  }
+  return t && t != a && t != x;
+}
+
+} // namespace
+
+Value *liveNegationAt(Value *atom, BasicBlock *bb, BasicBlock::iterator pt) {
+  if (!atom || !bb)
+    return nullptr;
+  // The blocks that run, once and in this order, before bb on every path into it.
+  SmallVector<BasicBlock *, 8> chain{bb};
+  SmallPtrSet<BasicBlock *, 8> seen{bb};
+  for (BasicBlock *b = bb; BasicBlock *p = b->getSinglePredecessor(); b = p) {
+    if (!seen.insert(p).second || p->getTerminator() == nullptr || p->getTerminator()->getNumSuccessors() != 1)
+      break;
+    chain.push_back(p);
+  }
+  for (User *u : atom->users()) {
+    auto *c = dyn_cast<CallInst>(u);
+    if (!c || !negates(*c, atom))
+      continue;
+    auto at = std::find(chain.begin(), chain.end(), c->getParent());
+    if (at == chain.end())
+      continue;
+    if (c->getParent() == bb) {   // before pt
+      bool before = false;
+      for (auto it = bb->begin(); it != pt; ++it)
+        if (&*it == c) {
+          before = true;
+          break;
+        }
+      if (!before)
+        continue;
+    }
+    bool resolved = false;
+    for (User *xu : c->users())
+      if (auto *xc = dyn_cast<CallInst>(xu); xc && xc->getCalledFunction()) {
+        bool unc = false;
+        StringRef fn = xc->getCalledFunction()->getName();
+        if (abi::parseTemplate(fn, &unc) ? unc && xc->getArgOperand(0) == c : false)
+          resolved = true;
+        if (auto core = abi::parseCore(fn); core && (core->op == abi::Core::Free || core->unc))
+          resolved = true;
+      }
+    if (resolved)
+      continue;
+    // The window from c to pt, in program order.
+    unsigned flips = 0;
+    bool ok = true;
+    for (auto b = std::make_reverse_iterator(at + 1); ok && b != chain.rend(); ++b) {
+      BasicBlock *blk = *b;
+      auto it = blk == c->getParent() ? std::next(c->getIterator()) : blk->begin();
+      auto end = blk == bb ? pt : blk->end();
+      for (; ok && it != end; ++it)
+        if (auto *ci = dyn_cast<CallInst>(&*it))
+          ok = keeps(*ci, atom, c, flips);
+    }
+    if (ok && flips % 2 == 0)
+      return c;
+  }
+  return nullptr;
+}
+
 // ---- Rule 9 at a58c3a4: merges chosen classically (owner ruling on cq-mtt) ----
 
 Value *classicalSelect(SelectInst &sel, IRBuilder<> &B, MergeSink &sink) {
@@ -467,6 +611,18 @@ public:
     CallInst *free = ctx.emitCore(abi::CoreSpec{abi::Core::Free}, {t});
     for (Value *r : held)
       ctx.unc().noteUse(ctx.unc().idOf(r), free);
+  }
+
+  Value *liveNegation(unsigned var) override {
+    const Atom &a = atomOf(var);
+    Value *h;
+    if (a.kind == AtomKind::Cond && ctx.T.isQuantum(a.v, ctx.S))
+      h = ctx.rail(a.v);
+    else if (a.kind == AtomKind::Entry)
+      h = const_cast<Value *>(a.v);
+    else
+      return nullptr;   // a switch case flag is minted where it is read; a classical atom is a seed
+    return liveNegationAt(h, ctx.B().GetInsertBlock(), ctx.B().GetInsertPoint());
   }
 
   void gate(abi::Core op, ArrayRef<Value *> controls, Value *target) override {

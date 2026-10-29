@@ -130,6 +130,10 @@ public:
   virtual llvm::Value *scratch0() = 0;
   virtual void rawGate(abi::Core op, llvm::ArrayRef<llvm::Value *> controls, llvm::Value *target) = 0;
   virtual void freeScratch(llvm::Value *t, llvm::ArrayRef<llvm::Value *> held) = 0;
+  // Decision (1) on cq-su3p (NORTHSTAR p2, CR rule 3; 113): the flag for NOT v, v a quantum-like
+  // atom, is an existing live i1 rail holding that Boolean function when there is one (the rail of
+  // xor v, true / icmp eq v, false), so no fresh rail is minted. nullptr: mint as usual.
+  virtual llvm::Value *liveNegation(unsigned var) { return nullptr; }
 };
 llvm::Value *materialize(unsigned node, GateSink &, const std::function<bool(unsigned)> &quantumLikeVar);
 // Rule 8's X bracket inside a compound flag (cq-rdux, 137). The flag's gates take a negated
@@ -163,6 +167,19 @@ llvm::Value *classicalSelect(llvm::SelectInst &, llvm::IRBuilder<> &, MergeSink 
 // unreachable). The output CFG must already route every such edge into `join` and nothing else.
 llvm::Value *classicalPhi(llvm::PHINode &, llvm::BasicBlock *join, llvm::IRBuilder<> &,
                           const std::function<llvm::BasicBlock *(const llvm::BasicBlock *)> &outOf, MergeSink &);
+
+// The output-IR half of GateSink::liveNegation. An existing rail of the output function that holds
+// NOT a (a the value of the i1 rail `atom`) at the insertion point (bb, pt): the result of a forward
+// template xor_i1(atom, true), icmp_eq_i1(atom, false) or icmp_ne_i1(atom, true) that
+//   - lies in bb before pt, or in a block from which bb is reached through a chain of blocks each with
+//     a single predecessor (so it runs, once, before pt on every path to pt);
+//   - is not resolved: no cqrt_free of it and no _unc whose result operand it is, anywhere;
+//   - still holds its value at pt: between it and pt no call writes it or the atom (a target of Ry,
+//     copy, xorc, and/or/xor_i1, a measurement, a free, a clone or any call pred does not know), except
+//     an even number of not_i1 on the atom (rule 8's X brackets, closed). Templates and diagonal gates
+//     (rz) only read.
+// nullptr when there is none.
+llvm::Value *liveNegationAt(llvm::Value *atom, llvm::BasicBlock *bb, llvm::BasicBlock::iterator pt);
 
 // Rule 8's X bracket: when f is the negation of one positive quantum-like atom, that atom's variable.
 std::optional<unsigned> negatedAtom(unsigned f, const std::function<bool(unsigned)> &quantumLikeVar);

@@ -743,6 +743,214 @@ static void testFlags(Function &pool) {
   outs() << "flag synthesis: " << tested << " functions, " << gateTotal << " gates\n";
 }
 
+// ---- 4c. decision (1) on cq-su3p: NOT v as an existing live rail (113) ----
+// Each function is an output-IR fragment: %a is the atom's rail, the call named "x" is the candidate,
+// and the call named "pt" marks the insertion point (the flag would be emitted before it).
+static const char *NegIR = R"(
+declare i32 @cqrt_alloc_i1(i1)
+declare void @cqrt_free(i32)
+declare void @cqrt_not_i1(i32)
+declare void @cqrt_xor_i1(i32, i32)
+declare void @cqrt_ry_i1(i32, double)
+declare void @cqrt_ry_i1_controlled(i32, i32, double)
+declare void @cqrt_rz_i1(i32, double)
+declare i1 @cqrt_measure_i1(i32)
+declare i32 @cq_template_xor_i1_hl(i32, i1)
+declare void @cq_template_xor_i1_hl_unc(i32, i32, i1)
+declare i32 @cq_template_icmp_eq_i1_hl(i32, i1)
+declare i32 @cq_template_icmp_ne_i1_hl(i32, i1)
+declare i32 @cq_template_and_i1(i32, i32)
+declare void @mark()
+define void @xor_true(i32 %a) {
+  %x = call i32 @cq_template_xor_i1_hl(i32 %a, i1 true)
+  %u = call i32 @cq_template_and_i1(i32 %a, i32 %x)
+  call void @cqrt_rz_i1(i32 %a, double 1.0)
+  call void @cqrt_ry_i1_controlled(i32 %a, i32 %u, double 1.0)
+  call void @mark()
+  ret void
+}
+define void @icmp_eq_false(i32 %a) {
+  %x = call i32 @cq_template_icmp_eq_i1_hl(i32 %a, i1 false)
+  call void @mark()
+  ret void
+}
+define void @icmp_ne_true(i32 %a) {
+  %x = call i32 @cq_template_icmp_ne_i1_hl(i32 %a, i1 true)
+  call void @mark()
+  ret void
+}
+define void @xor_false(i32 %a) {
+  %x = call i32 @cq_template_xor_i1_hl(i32 %a, i1 false)
+  call void @mark()
+  ret void
+}
+define void @after_pt(i32 %a) {
+  call void @mark()
+  %x = call i32 @cq_template_xor_i1_hl(i32 %a, i1 true)
+  ret void
+}
+define void @ry_atom(i32 %a) {
+  %x = call i32 @cq_template_xor_i1_hl(i32 %a, i1 true)
+  call void @cqrt_ry_i1(i32 %a, double 1.0)
+  call void @mark()
+  ret void
+}
+define void @cry_atom(i32 %a, i32 %c) {
+  %x = call i32 @cq_template_xor_i1_hl(i32 %a, i1 true)
+  call void @cqrt_ry_i1_controlled(i32 %c, i32 %a, double 1.0)
+  call void @mark()
+  ret void
+}
+define void @ry_x(i32 %a) {
+  %x = call i32 @cq_template_xor_i1_hl(i32 %a, i1 true)
+  call void @cqrt_ry_i1(i32 %x, double 1.0)
+  call void @mark()
+  ret void
+}
+define void @xor_into_x(i32 %a, i32 %c) {
+  %x = call i32 @cq_template_xor_i1_hl(i32 %a, i1 true)
+  call void @cqrt_xor_i1(i32 %c, i32 %x)
+  call void @mark()
+  ret void
+}
+define void @bracket_closed(i32 %a) {
+  %x = call i32 @cq_template_xor_i1_hl(i32 %a, i1 true)
+  call void @cqrt_not_i1(i32 %a)
+  call void @cqrt_rz_i1(i32 %a, double 1.0)
+  call void @cqrt_not_i1(i32 %a)
+  call void @mark()
+  ret void
+}
+define void @bracket_open(i32 %a) {
+  %x = call i32 @cq_template_xor_i1_hl(i32 %a, i1 true)
+  call void @cqrt_not_i1(i32 %a)
+  call void @mark()
+  ret void
+}
+define void @measured_x(i32 %a) {
+  %x = call i32 @cq_template_xor_i1_hl(i32 %a, i1 true)
+  %m = call i1 @cqrt_measure_i1(i32 %x)
+  call void @mark()
+  ret void
+}
+define void @resolved_x(i32 %a) {
+  %x = call i32 @cq_template_xor_i1_hl(i32 %a, i1 true)
+  call void @cq_template_xor_i1_hl_unc(i32 %x, i32 %a, i1 true)
+  call void @cqrt_free(i32 %x)
+  call void @mark()
+  ret void
+}
+define void @chain(i32 %a) {
+  %x = call i32 @cq_template_xor_i1_hl(i32 %a, i1 true)
+  br label %b1
+b1:
+  br label %b2
+b2:
+  call void @mark()
+  ret void
+}
+define void @chain_ry(i32 %a) {
+  %x = call i32 @cq_template_xor_i1_hl(i32 %a, i1 true)
+  br label %b1
+b1:
+  call void @cqrt_ry_i1(i32 %a, double 1.0)
+  br label %b2
+b2:
+  call void @mark()
+  ret void
+}
+define void @join(i32 %a, i1 %k) {
+  %x = call i32 @cq_template_xor_i1_hl(i32 %a, i1 true)
+  br i1 %k, label %b1, label %b2
+b1:
+  br label %b2
+b2:
+  call void @mark()
+  ret void
+}
+define void @branch_arm(i32 %a, i1 %k) {
+  %x = call i32 @cq_template_xor_i1_hl(i32 %a, i1 true)
+  br i1 %k, label %b1, label %b2
+b1:
+  call void @mark()
+  br label %b2
+b2:
+  ret void
+}
+)";
+
+class NegSink : public SimSink {
+public:
+  std::map<unsigned, Value *> live;   // var -> a rail holding NOT var
+  Value *liveNegation(unsigned var) override {
+    auto it = live.find(var);
+    return it == live.end() ? nullptr : it->second;
+  }
+};
+
+static void testLiveNegation(Function &pool) {
+  SMDiagnostic err;
+  std::unique_ptr<Module> mod = parseAssemblyString(NegIR, err, Ctx);
+  if (!mod) {
+    err.print("pred_unit", errs());
+    CHECK(false, "the live-negation IR parses");
+    return;
+  }
+  // name -> is the call named %x the answer
+  std::pair<const char *, bool> cases[] = {
+      {"xor_true", true},      {"icmp_eq_false", true}, {"icmp_ne_true", true}, {"xor_false", false},
+      {"after_pt", false},     {"ry_atom", false},      {"cry_atom", false},    {"ry_x", false},
+      {"xor_into_x", false},   {"bracket_closed", true}, {"bracket_open", false}, {"measured_x", false},
+      {"resolved_x", false},   {"chain", true},          {"chain_ry", false},    {"join", false},
+      {"branch_arm", false}};
+  for (auto [name, want] : cases) {
+    Function *F = mod->getFunction(name);
+    Value *x = nullptr;
+    Instruction *pt = nullptr;
+    for (Instruction &I : instructions(*F)) {
+      if (I.getName() == "x")
+        x = &I;
+      if (auto *c = dyn_cast<CallInst>(&I); c && c->getCalledFunction() && c->getCalledFunction()->getName() == "mark")
+        pt = &I;
+    }
+    Value *got = liveNegationAt(F->getArg(0), pt->getParent(), pt->getIterator());
+    CHECK(got == (want ? x : nullptr), "liveNegationAt " << name << ": " << (got ? "a rail" : "none"));
+  }
+
+  // The Materializer: the flag of NOT q0 is the live rail itself, no gate, no seed; a compound flag
+  // reads it as its sub-flag (q1 & !q0 = and_i1(q1, live) into one fresh rail).
+  std::vector<Value *> args;
+  for (Argument &a : pool.args())
+    args.push_back(&a);
+  unsigned q0 = atomVar(AtomKind::Cond, args[0]), q1 = atomVar(AtomKind::Cond, args[1]);
+  auto ql = [](unsigned) { return true; };
+  Value *live = args[63];
+  {
+    NegSink sink;
+    sink.pool = std::vector<Value *>(args.begin() + 4, args.begin() + 60);
+    sink.live[q0] = live;
+    Value *f = materialize(N(m.ithVar(q0)), sink, ql);
+    CHECK(f == live && sink.gates.empty() && sink.seeds.empty(), "flag(NOT q0) is the live rail, nothing minted");
+  }
+  {
+    NegSink sink;
+    sink.pool = std::vector<Value *>(args.begin() + 4, args.begin() + 60);
+    sink.live[q0] = live;
+    Value *f = materialize(A(m.ithVar(q1), N(m.ithVar(q0))), sink, ql);
+    bool one = sink.gates.size() == 1 && sink.gates[0].op == abi::Core::AndI1 && sink.gates[0].t == f &&
+               is_contained(sink.gates[0].ctl, live) && sink.seeds.size() == 1;
+    CHECK(one, "flag(q1 & NOT q0) is one and_i1 reading the live rail");
+  }
+  {
+    NegSink sink;   // no live rail: minted as before (alloc 0, not_i1, xor_i1)
+    sink.pool = std::vector<Value *>(args.begin() + 4, args.begin() + 60);
+    Value *f = materialize(N(m.ithVar(q0)), sink, ql);
+    CHECK(f != live && sink.gates.size() == 2 && sink.seeds.size() == 1, "flag(NOT q0) without a live rail is minted");
+  }
+  modules.push_back(std::move(mod));
+  outs() << "live negation: " << std::size(cases) << " output-IR cases\n";
+}
+
 // ---- 4b. rule 8's X bracket inside a compound flag (cq-rdux) ----
 static void testBracketed(Function &pool) {
   std::vector<Value *> args;
@@ -1261,6 +1469,7 @@ int main() {
                                     GlobalValue::ExternalLinkage, "pool", poolMod);
   testFlags(*pool);
   testBracketed(*pool);
+  testLiveNegation(*pool);
   outs() << "pred_unit: " << checks << " checks, " << failures << " failures\n";
   return failures ? 1 : 0;
 }
