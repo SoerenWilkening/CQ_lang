@@ -30,19 +30,37 @@ own, a zeroed 4096-byte, 16-aligned static array (sampling never varies a pointe
 no such C spelling (byval, sret, a struct or vector parameter, an internal entry) is an internal
 error of the checker, `cq: unimplemented: usercheck: ...`.
 
+A pointer parameter the lowered entry reads as handle cells (an i32 loaded through it reaches a
+rail operand of a cqrt_* or cq_template_* call, a template's `l` shape positions excluded, directly or through a defined callee: a `bool *` to the caller's
+quantum registers, CR rule 20, example 60) gets instead an object of HANDLE_CELLS seeded handles,
+`static int cqu_objJ[HANDLE_CELLS]` with every cell `cqrt_alloc_iW(0)` in the setup, as 60's
+drivers.txt line does (cq-sujz decision 1). The C oracle's cqrt_alloc_iW returns its argument, so the
+C program reads the same object as zeros. W is the width of the cqrt operation the handles reach.
+The object is 4 * HANDLE_CELLS bytes on both sides: a C element narrower than the 4-byte cell (60's
+bool) leaves indices HANDLE_CELLS .. 4 * HANDLE_CELLS / sizeof - 1 inside the C program's domain but
+past the lowered side's cells (a gap, bead cq-562f).
+
+The baseline call (every argument 0) is made up, not spec data: it is filtered by the C program's
+domain like every other sample (sampling.sample_set(..., exempt_baseline=False), cq-sujz decision 2),
+so 120's register_grid(obj, 0, 0), which reads q[-1][1], is not compared.
+
 A program that defines `main` has it renamed to `__cqu_main` in both modules (the checker's drivers
 define `main`); `--entry main` then runs `__cqu_main`. Only `int main(void)` is an entry: argc/argv
 would need argv's object to agree with a sampled argc.
 
-`samples` (cqcc --cq-samples): at most that many samples are compared, a seeded subset of the sample
-set that always holds the baseline call; None compares every sample.
+`samples` (cqcc --cq-samples): at most that many samples are compared: whole classical groups (the
+samples at one argument tuple), sample 0's group first, then the smallest (`subset`); None compares
+every sample.
 
 Exit status: 0 when the lowered program is §6-equal to the C program on every compared sample, 1 when
 it differs (the reasons are printed), 2 when the check could not be decided (bad arguments, an
-internal error of the checker): never green.
+internal error of the checker, no sample in the C program's domain, or a gate matching out of the
+comparison's search budget with no other difference: undecided, never 'differs', cq-sujz decision 6):
+never green.
 """
 from __future__ import annotations
 
+import json
 import os
 import random
 import re
@@ -57,6 +75,10 @@ from cqcheck.contracts import DriverSpec
 PASS_STATUS, FAIL_STATUS, ERROR_STATUS = 0, 1, 2
 MAIN_RENAMED = "__cqu_main"
 OBJ_BYTES = 4096
+HANDLE_CELLS = 64     # seeded handle cells behind a pointer the lowered entry reads handles through
+# compare._match_c's reason when its order-consistent search runs out of its node budget (cq-sujz)
+_OUT_OF_BUDGET = re.compile(r"exceeded \d+ search nodes without an order-consistent matching")
+_ALLOC_C = {1: "_Bool", 8: "signed char", 16: "short", 32: "int"}   # cqrt_alloc_i<W>'s parameter
 SUBSET_SEED = 20261028
 DEFAULT_JOBS = 4      # runner processes when $CQCHECK_JOBS is unset (machine load, CLAUDE.md memory)
 
@@ -172,6 +194,116 @@ def entry_prototype(o1_text: str, fn: str) -> Tuple[str, List[str]]:
 
 
 # ------------------------------------------------------------------------------------------------
+# Handle cells: a pointer parameter the lowered entry reads quantum handles through
+
+
+_WIDTH = re.compile(r"_i(\d+)(?![0-9])")
+# cqrt operations with classical integer operands (an allocation's value, a QRAM size or cell index,
+# a tape literal) or with handles that are no rails (QRAM arrays, tapes): never evidence of a rail
+_CQRT_NOT_RAIL = re.compile(r"@cqrt_(alloc|qram_|tape_)")
+
+
+def _rail_position(callee: str, k: int, nargs: int) -> bool:
+    """Argument k of a call to callee is a rail handle (BACKEND_ABI.md core and template naming)."""
+    if callee.startswith("@cqrt_"):
+        if _CQRT_NOT_RAIL.match(callee):
+            return False
+        return not (callee.startswith("@cqrt_xorc_") and k == 1)     # xorc(h, c): c is classical
+    if not callee.startswith("@cq_template_"):
+        return False
+    parts = callee[len("@cq_template_"):].split("_")
+    unc = parts[-1] == "unc"
+    if unc:
+        parts.pop()
+    if parts[-1] == "exc":
+        parts.pop()
+    if parts[-1] in ("rm", "rmq"):
+        if parts.pop() == "rm" and k == nargs - 1:
+            return False                     # the classical rounding mode, after the data operands
+    # the shape: one letter per data operand, `l` a literal (ABI "cq_template_<op>...[_<shape>]"); an
+    # _unc form takes the output handle first, select its condition handle before the arms
+    shape = parts[-1] if len(parts) > 2 and re.fullmatch(r"[hlq]+", parts[-1]) else ""
+    off = (1 if unc else 0) + (1 if parts[0] == "select" else 0)
+    return not (0 <= k - off < len(shape) and shape[k - off] == "l")
+
+
+def _handle_widths(mod, f, v: str, seen: set) -> Tuple[bool, set]:
+    """(v reaches a handle operand, the rail widths of the operations it reaches): v an i32 SSA
+    value of f, followed through phi/select and into defined callees."""
+    if (f.name, v) in seen:
+        return False, set()
+    seen.add((f.name, v))
+    used, widths = False, set()
+    for inst in f.insts():
+        if v not in inst.refs():
+            continue
+        if inst.op == "call" and inst.callee:
+            for k, a in enumerate(inst.call_args):
+                if v not in a.split():
+                    continue
+                if inst.callee.startswith(("@cqrt_", "@cq_template_")):
+                    if not _rail_position(inst.callee, k, len(inst.call_args)):
+                        continue
+                    used = True
+                    m = _WIDTH.search(inst.callee)
+                    if m:
+                        widths.add(int(m.group(1)))
+                elif inst.callee in mod.functions:
+                    g = mod.functions[inst.callee]
+                    if k < len(g.params):
+                        u, w = _handle_widths(mod, g, g.params[k][1], seen)
+                        used, widths = used or u, widths | w
+        elif inst.op in ("phi", "select") and inst.dest:
+            u, w = _handle_widths(mod, f, inst.dest, seen)
+            used, widths = used or u, widths | w
+    return used, widths
+
+
+def _cell_widths(mod, f, p: str, seen: set) -> Tuple[bool, set]:
+    """Whether f reads handles through the pointer p (an i32 load rooted at p reaching a handle
+    operand, in f or in a defined callee p is passed to), and their rail widths."""
+    from cqcheck import drivers as D
+    if (f.name, "ptr", p) in seen:
+        return False, set()
+    seen.add((f.name, "ptr", p))
+    used, widths = False, set()
+    for inst in f.insts():
+        if inst.op == "load" and inst.dest and inst.operands and inst.operands[0] == "i32" \
+                and p in D._operand_roots(f, inst.operands[1], set()):
+            u, w = _handle_widths(mod, f, inst.dest, seen)
+            used, widths = used or u, widths | w
+        elif inst.op == "call" and inst.callee in mod.functions:
+            g = mod.functions[inst.callee]
+            for k, a in enumerate(inst.call_args):
+                if k < len(g.params) and a.split()[0] == "ptr" and p in D._operand_roots(f, a, set()):
+                    u, w = _cell_widths(mod, g, g.params[k][1], seen)
+                    used, widths = used or u, widths | w
+    return used, widths
+
+
+def handle_cell_params(low_path: Path, entry: str) -> Dict[int, int]:
+    """param index -> rail width, for each pointer parameter of the lowered entry it reads quantum
+    handles through."""
+    from cqcheck import drivers as D
+    mod = D.read_module(low_path)
+    f = mod.functions.get("@" + entry)
+    if f is None:
+        raise UserCheckError(f"cqcheck user: the entry {entry} has no definition in the lowered module")
+    out: Dict[int, int] = {}
+    for j, (t, p) in enumerate(f.params):
+        if not t.split() or t.split()[0] != "ptr":
+            continue
+        used, widths = _cell_widths(mod, f, p, set())
+        if not used:
+            continue
+        if len(widths) != 1 or next(iter(widths)) not in _ALLOC_C:
+            unimplemented(f"parameter {j} of {entry} holds handles of rail widths {sorted(widths)} "
+                          f"(one of i1, i8, i16, i32 is seeded)")
+        out[j] = next(iter(widths))
+    return out
+
+
+# ------------------------------------------------------------------------------------------------
 # The work tree
 
 
@@ -183,8 +315,10 @@ def _defines(text: str, fn: str) -> bool:
     return _define_line(text, fn) is not None
 
 
-def build_spec(o1_text: str, entry: str, root: Path) -> Tuple[DriverSpec, Path]:
-    """The work tree under root and the DriverSpec of the entry (every argument classical). Returns
+def build_spec(o1_text: str, entry: str, root: Path,
+               cells: Optional[Dict[int, int]] = None) -> Tuple[DriverSpec, Path]:
+    """The work tree under root and the DriverSpec of the entry (every argument classical). `cells`:
+    param index -> rail width of each pointer parameter that gets seeded handle cells. Returns
     (spec, the example directory holding <base>.O1.ll)."""
     from cqcheck import drivers as D
     if not re.fullmatch(r"[A-Za-z_]\w*", entry):
@@ -199,14 +333,21 @@ def build_spec(o1_text: str, entry: str, root: Path) -> Tuple[DriverSpec, Path]:
     if entry == MAIN_RENAMED and pct:
         unimplemented("main with parameters (argc/argv) as the entry; pass --entry with a function "
                       "that takes scalar arguments")
-    setup, args = [], []
+    setup, args, allocs = [], [], set()
     for j, ct in enumerate(pct):
-        if ct.endswith("*"):
+        if ct.endswith("*") and j in (cells or {}):
+            nm, w = f"cqu_obj{j}", cells[j]
+            allocs.add(w)
+            setup.append(f"static int {nm}[{HANDLE_CELLS}]; for (int cqu_i = 0; cqu_i < {HANDLE_CELLS}; "
+                         f"cqu_i++) {nm}[cqu_i] = cqrt_alloc_i{w}(0);")
+            args.append(nm)
+        elif ct.endswith("*"):
             nm = f"cqu_obj{j}"
             setup.append(f"static unsigned char {nm}[{OBJ_BYTES}] __attribute__((aligned(16)));")
             args.append(nm)
         else:
             args.append("0")
+    proto += "".join(f"int cqrt_alloc_i{w}({_ALLOC_C[w]});" for w in sorted(allocs))
     fields = [example, proto, f"{entry}({','.join(args)})"] + ([" ".join(setup)] if setup else [])
     tools = root / "_tools"
     tools.mkdir()
@@ -218,18 +359,68 @@ def build_spec(o1_text: str, entry: str, root: Path) -> Tuple[DriverSpec, Path]:
     return DriverSpec(example=spec.example, protos=spec.protos, setup=spec.setup, calls=calls), exdir
 
 
-def subset(samples: List[dict], n: Optional[int]) -> List[dict]:
-    """At most n samples: the baseline (sample 0) and a seeded choice of the rest, in set order."""
+def _magnitude(spec: Optional[DriverSpec], sample: dict) -> int:
+    """The sum of the magnitudes of a sample's integer arguments (signed ones as |value|): a proxy for
+    the size of the run (loop bounds, array lengths), so a subset compares small programs first."""
+    from cqcheck import drivers as D
+    if spec is None:
+        return 0
+    tot = 0
+    for a, v in zip(spec.calls[sample["call"]]["args"], sample["args"]):
+        ct = D.parse_ctype(a["ctype"])
+        if ct.kind != "i" or not isinstance(v, str) or not v.startswith("0x"):
+            continue
+        x = int(v, 16) & ((1 << ct.bits) - 1)
+        if ct.signed and x >> (ct.bits - 1):
+            x = (1 << ct.bits) - x
+        tot += x
+    return tot
+
+
+def subset(samples: List[dict], n: Optional[int], key=None, spec: Optional[DriverSpec] = None) -> List[dict]:
+    """At most n samples, in set order: whole classical groups (`key`, the comparison's classical
+    key: the samples sharing the entry's arguments and differing in their cq_theta substitutions),
+    sample 0's group first, then the others smallest first (`_magnitude`, ties in a seeded order),
+    each taken when it fits. cq-sujz decision 6: the matching against the C program tells rails apart
+    by their values over a group, so a group cut down to one sample leaves equal-looking rails it
+    cannot match within its budget, and a large program (117 at nq = t = 7) has more gates than the
+    budget can order; fewer and smaller samples, never a bigger budget. A first group larger than n
+    is cut to sample 0 and a seeded choice of its others."""
     if n is None or n >= len(samples):
         return list(samples)
     if n < 1:
         raise UserCheckError(f"cqcheck user: --samples {n}: at least one sample is compared")
-    rest = sorted(random.Random(SUBSET_SEED).sample(range(1, len(samples)), n - 1))
-    return [samples[0]] + [samples[i] for i in rest]
+    key = key or (lambda s: json.dumps([s["call"], s["args"]]))
+    groups: Dict[object, List[int]] = {}
+    for i, s in enumerate(samples):
+        groups.setdefault(key(s), []).append(i)
+    first = groups.pop(key(samples[0]))
+    rng = random.Random(SUBSET_SEED)
+    if len(first) > n:
+        first = [first[0]] + sorted(rng.sample(first[1:], n - 1))
+    take = list(first)
+    rest = list(groups.values())
+    rng.shuffle(rest)
+    rest.sort(key=lambda g: _magnitude(spec, samples[g[0]]))      # stable: ties keep the seeded order
+    for g in rest:
+        if len(take) + len(g) <= n:
+            take += g
+    return [samples[i] for i in sorted(take)]
 
 
 # ------------------------------------------------------------------------------------------------
 # The check
+
+
+def verdict(reasons: List[str]) -> int:
+    """The status of a comparison's reasons: pass with none; undecided (2) when every one is a gate
+    matching out of its search budget (no difference found, none ruled out: cq-sujz decision 6);
+    differs (1) otherwise."""
+    if not reasons:
+        return PASS_STATUS
+    if all(_OUT_OF_BUDGET.search(r) for r in reasons):
+        return ERROR_STATUS
+    return FAIL_STATUS
 
 
 def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Path) -> Tuple[int, List[str]]:
@@ -243,13 +434,16 @@ def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Pat
             entry = MAIN_RENAMED
     if not _defines(low_text, entry):
         raise UserCheckError(f"cqcheck user: the entry {entry} has no definition in the lowered module")
-    spec, exdir = build_spec(o1_text, entry, work)
-    c_module = next(exdir.glob("*.O1.ll"))
-    low = work / f"{exdir.name.split('_', 1)[1]}.lowered.ll"
+    low = work / f"user_{entry}.lowered.ll"
     low.write_text(low_text)
+    spec, exdir = build_spec(o1_text, entry, work, handle_cell_params(low, entry))
+    c_module = next(exdir.glob("*.O1.ll"))
 
-    ss = sampling.sample_set(spec, exdir)
-    chosen = subset(ss.samples, samples)
+    # the all-zero baseline is made up: domain-filtered like every other sample (cq-sujz)
+    ss = sampling.sample_set(spec, exdir, exempt_baseline=False)
+    if not ss.samples:
+        raise UserCheckError(f"cqcheck user: entry {entry}: no sample inside the C program's domain")
+    chosen = subset(ss.samples, samples, compare.classical_key_from_driver(spec), spec)
     nsubst = sum(1 for s in chosen if "subst" in s)
     lines = [f"cqcheck user: entry {entry}: {len(chosen)} samples"
              + (f" of {len(ss.samples)}" if len(chosen) != len(ss.samples) else "")
@@ -261,6 +455,13 @@ def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Pat
         raise UserCheckError(f"cqcheck user: {len(ours)} lowered and {len(cres)} C results "
                              f"for {len(chosen)} samples")
     reasons = list(compare.compare(ours, cres, "c", classical_key=compare.classical_key_from_driver(spec)))
+    status = verdict(reasons)
+    if status == ERROR_STATUS:
+        lines.append(f"cqcheck user: UNDECIDED: the gate matching against the C program ran out of its "
+                     f"search budget on {len(reasons)} classical group(s) and found no difference "
+                     f"elsewhere; compare fewer or smaller samples (--samples)")
+        lines += [f"  c: {r}" for r in reasons]
+        return ERROR_STATUS, lines
     if reasons:
         lines.append(f"cqcheck user: FAIL: the lowered program differs from the C program "
                      f"({len(reasons)} reasons)")

@@ -2494,17 +2494,20 @@ def _merge_class(cls: Dict[str, dict], extra: Dict[str, dict]) -> None:
             cls[key] = merged
 
 
-def drop_out_of_domain(g: Gen, pc: Dict[str, dict], searcher: "Searcher") -> None:
+def drop_out_of_domain(g: Gen, pc: Dict[str, dict], searcher: "Searcher", exempt_baseline: bool = True) -> None:
     """Remove from g and from the per-call classes pc every sample on which the C program accesses
     outside an object (not `_in_domain`, cq-nqna); renumber the rest. An entry that lost samples
-    counts them in "out_of_domain"; one that lost all of them becomes empty with that reason."""
+    counts them in "out_of_domain"; one that lost all of them becomes empty with that reason.
+    `exempt_baseline=False` (cqcheck user, whose baseline is made up, not drivers.txt data: cq-sujz)
+    filters the baseline calls like every other sample."""
     if getattr(g, "sindex", None):
         D.unimplemented("drop_out_of_domain after cq_theta substitution samples were added")
     obs = searcher.observe([(s["call"], s["args"]) for s in g.samples])
     # the drivers.txt calls are spec input data and stay samples 0 .. ncalls-1 even when one of
     # them leaves an object (91 stores a[0] into malloc(0), 107 reads one past b: cq-b4re)
     bad = {i for i, o in enumerate(obs)
-           if (not _in_domain(o) or _ub(o, searcher.rows_by_site)) and i >= len(g.spec.calls)}
+           if (not _in_domain(o) or _ub(o, searcher.rows_by_site))
+           and (i >= len(g.spec.calls) or not exempt_baseline)}
     if not bad:
         return
     remap: Dict[int, int] = {}
@@ -2745,8 +2748,10 @@ def _cache_dir() -> Path:
     return Path(os.environ.get("CQ_SAMPLES_CACHE", D.REPO / "build" / "chk-drivers"))
 
 
-def _cache_key(spec: DriverSpec, example_dir: Path) -> str:
+def _cache_key(spec: DriverSpec, example_dir: Path, exempt_baseline: bool = True) -> str:
     h = hashlib.sha256()
+    if not exempt_baseline:
+        h.update(b"baseline-filtered\n")      # cqcheck user (cq-sujz); the corpus key adds nothing
     h.update(b"full\n" if full_mode() else b"quick\n" if quick_mode() else b"default\n")   # the mode
     h.update(json.dumps([spec.example, spec.protos, spec.setup, spec.calls], sort_keys=True).encode())
     for p in sorted(Path(example_dir).glob("*.O1.ll")):
@@ -2764,15 +2769,18 @@ def _cache_key(spec: DriverSpec, example_dir: Path) -> str:
     return h.hexdigest()[:20]
 
 
-def sample_set(spec: DriverSpec, example_dir: Path) -> SampleSet:
-    """The SampleSet of one example (cq-zew). Deterministic; cached under build/chk-drivers/."""
+def sample_set(spec: DriverSpec, example_dir: Path, exempt_baseline: bool = True) -> SampleSet:
+    """The SampleSet of one example (cq-zew). Deterministic; cached under build/chk-drivers/.
+    `exempt_baseline` (default, the corpus): the drivers.txt calls are spec input data and stay
+    samples 0 .. ncalls-1 whatever their domain; False (cqcheck user's made-up baseline, cq-sujz):
+    they are domain-filtered like every other sample."""
     example_dir = Path(example_dir)
-    key = _cache_key(spec, example_dir)
+    key = _cache_key(spec, example_dir, exempt_baseline)
     cache = _cache_dir() / f"{spec.example}.{key}.json"
     if cache.exists():
         d = json.loads(cache.read_text())
         return SampleSet(**d)
-    ss = build_sample_set(spec, example_dir)
+    ss = build_sample_set(spec, example_dir, exempt_baseline)
     cache.parent.mkdir(parents=True, exist_ok=True)
     tmp = cache.with_suffix(f".tmp{os.getpid()}")
     tmp.write_text(json.dumps({"example": ss.example, "samples": ss.samples, "classes": ss.classes},
@@ -2781,7 +2789,7 @@ def sample_set(spec: DriverSpec, example_dir: Path) -> SampleSet:
     return ss
 
 
-def build_sample_set(spec: DriverSpec, example_dir: Path) -> SampleSet:
+def build_sample_set(spec: DriverSpec, example_dir: Path, exempt_baseline: bool = True) -> SampleSet:
     example_dir = Path(example_dir)
     line = D.read_drivers_txt(example_dir.resolve().parent.parent / "_tools" / "drivers.txt")[spec.example]
     baselines = D.baseline_values(line, spec)
@@ -2797,7 +2805,7 @@ def build_sample_set(spec: DriverSpec, example_dir: Path) -> SampleSet:
         sites = pb.ins.sites
         rows_by_site: Dict[int, List[Row]] = {s.id: rows_for(s) for s in sites}
         searcher = Searcher(g, pb, rows_by_site, random.Random(seed + 1))
-        drop_out_of_domain(g, pc, searcher)
+        drop_out_of_domain(g, pc, searcher, exempt_baseline)
 
         # the classical seeded set: kept when the C program runs to completion on it
         cc = classical_candidates(g, rng)

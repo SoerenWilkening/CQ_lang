@@ -4,8 +4,14 @@
 Fails on any of:
   program   a small C program (src/*.c) compiled by cqcc -S is not green under `cqcheck user` with its
             entry (exit 0)
-  corpus    a CQ_spec example's reference lowered.ll is not green against its .O1.ll, with the entry
-            from drivers.txt and no quantum flags (default 01, 02, 42; --examples NN_name... for more)
+  corpus    a CQ_spec example's reference lowered.ll is not green against its .O1.ll, with every entry
+            of its drivers.txt line and no quantum flags (default 01, 02, 42, 60, 120 and 117 at
+            --samples 200; --examples NN_name[:samples]... for others). 60 takes a pointer to handle
+            cells, 120's all-zero baseline reads q[-1][1] (outside the domain), 117's big groups run
+            out of the matching budget (cq-sujz)
+  unit      in process: the verdict of out-of-budget reasons is undecided (2), never differs; a
+            --samples subset keeps classical groups whole, smallest first; a template's literal
+            operand is no rail position
   mutant    a wrong lowered module is not rejected (exit 1): built from 01's reference with the Ry's
             angle negated, the add computed before the Ry (only cq_theta substitution sees it), the
             measured rail replaced by its classical input, and an empty body (ret 0)
@@ -27,7 +33,8 @@ CQCC = ROOT / "driver" / "cqcc"
 SRC = HERE / "src"
 PROGRAMS = [("classical", "poly"), ("qmain", "main"), ("phase", "phase_if"), ("fromptr", "from_ptr"),
             ("fpq", "fpq")]
-DEFAULT_EXAMPLES = ["01_add_classical_const", "02_add_quantum_quantum", "42_measure_one_of_two"]
+DEFAULT_EXAMPLES = ["01_add_classical_const", "02_add_quantum_quantum", "42_measure_one_of_two", "60_qft",
+                    "120_multidim_array", "117_qpe_counting:200"]
 
 failures = []
 
@@ -41,9 +48,10 @@ def ok(test, msg=""):
     print(f"ok   {test}" + (f": {msg}" if msg else ""))
 
 
-def user(o1, low, entry):
+def user(o1, low, entry, samples=None):
     r = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(o1), "--lowered", str(low),
-                        "--entry", entry], cwd=ROOT / "checker", capture_output=True, text=True)
+                        "--entry", entry] + (["--samples", str(samples)] if samples else []),
+                       cwd=ROOT / "checker", capture_output=True, text=True)
     return r.returncode, (r.stdout + r.stderr).strip()
 
 
@@ -56,12 +64,47 @@ def expect(test, status, got):
         ok(test, last)
 
 
-def drivers_entry(spec, ex):
+def drivers_entries(spec, ex):
+    """Every function the example's drivers.txt line calls, in order."""
     for line in (spec / "_tools" / "drivers.txt").read_text().splitlines():
         if line.startswith(ex + "|"):
-            calls = line.split("|")[2].split(";")
-            return calls[0].split("(")[0].strip()
+            calls = [c.split("(")[0].strip() for c in line.split("|")[2].split(";") if c.strip()]
+            return list(dict.fromkeys(calls))
     raise SystemExit(f"{ex}: no drivers.txt line")
+
+
+def unit():
+    sys.path.insert(0, str(ROOT / "checker"))
+    from cqcheck import user as U
+    from cqcheck.contracts import DriverSpec
+    oob = ("classical arguments ('0', '\"0x00000007\"') (1 samples): the matching of 609 lowered gates to the "
+           "C sites exceeded 20000 search nodes without an order-consistent matching")
+    for name, reasons, want in (("verdict pass", [], 0), ("verdict out of budget", [oob, oob], 2),
+                                ("verdict differs", [oob, "sample {}: returns 1 != 2"], 1)):
+        got = U.verdict(reasons)
+        (ok if got == want else fail)(f"unit {name}", f"{got}" + ("" if got == want else f", want {want}"))
+    spec = DriverSpec(example="00_user_f", protos=["int f(int);"], setup="",
+                      calls=[{"fn": "f", "args": [{"ctype": "int", "quantum": False}]}])
+    smp = [{"call": 0, "args": ["0x00000000"]}]
+    for v, n in ((0x40, 1), (5, 3), (0xffffffff, 2)):      # -1 is small (signed), 0x40 is not
+        smp += [{"call": 0, "args": [f"0x{v:08x}"]}] + [{"call": 0, "args": [f"0x{v:08x}"], "subst": {"s": f"{k}"}}
+                                                       for k in range(n - 1)]
+    got = U.subset(smp, 6, key=lambda s: tuple(s["args"]), spec=spec)
+    groups = [s["args"][0] for s in got]        # in set order
+    want = ["0x00000000", "0x00000005", "0x00000005", "0x00000005", "0xffffffff", "0xffffffff"]
+    (ok if groups == want else fail)("unit subset", f"{groups}" + ("" if groups == want else f", want {want}"))
+    for callee, nargs, k, want in (("@cq_template_icmp_eq_i32_hl", 2, 1, False),
+                                   ("@cq_template_icmp_eq_i32_hl_unc", 3, 2, False),
+                                   ("@cq_template_icmp_eq_i32_hl_unc", 3, 1, True),
+                                   ("@cq_template_sub_i32_lh", 2, 0, False),
+                                   ("@cq_template_select_i8_lh", 3, 1, False),
+                                   ("@cq_template_select_i8_lh", 3, 0, True),
+                                   ("@cq_template_fadd_f64_hl_rm_exc", 3, 2, False),
+                                   ("@cq_template_add_i32", 2, 1, True),
+                                   ("@cqrt_and_i1", 3, 2, True), ("@cqrt_xorc_i32", 2, 1, False),
+                                   ("@cqrt_alloc_i1", 1, 0, False), ("@cqrt_qram_load_i32_hl", 2, 1, False)):
+        got = U._rail_position(callee, k, nargs)
+        (ok if got == want else fail)(f"unit rail position {callee}#{k}", f"{got}")
 
 
 def mutants(ref_text):
@@ -93,6 +136,7 @@ def main():
     ap.add_argument("--examples", nargs="*", default=DEFAULT_EXAMPLES)
     a = ap.parse_args()
     spec = a.spec.resolve()
+    unit()
     with tempfile.TemporaryDirectory(prefix="cqu-test-") as t:
         tmp = Path(t)
         for name, entry in PROGRAMS:
@@ -104,10 +148,13 @@ def main():
                 continue
             expect(f"program {name} ({entry})", 0, user(d / "linked.ll", d / "lowered.ll", entry))
 
-        for ex in a.examples:
+        for item in a.examples:
+            ex, _, samples = item.partition(":")
             d = spec / "examples" / ex
             base = ex.split("_", 1)[1]
-            expect(f"corpus {ex}", 0, user(d / f"{base}.O1.ll", d / f"{base}.lowered.ll", drivers_entry(spec, ex)))
+            for entry in drivers_entries(spec, ex):
+                expect(f"corpus {ex} {entry}" + (f" (--samples {samples})" if samples else ""), 0,
+                       user(d / f"{base}.O1.ll", d / f"{base}.lowered.ll", entry, samples or None))
 
         d = spec / "examples" / "01_add_classical_const"
         o1 = d / "add_classical_const.O1.ll"
