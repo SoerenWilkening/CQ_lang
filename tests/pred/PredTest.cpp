@@ -11,6 +11,7 @@
 //   5. Rule 9 at a58c3a4 (cq-mtt): a select or phi chosen classically is a classical select/phi over
 //      the handles, no gate; classical arms seeded (a phi's on its own edge); the merge recorded.
 #include "PredInternal.h"
+#include "../../pass/lib/taint/DeadEnd.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -24,6 +25,7 @@
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Verifier.h"
+#include "cq/Taint.h"
 #include "llvm/AsmParser/Parser.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -119,9 +121,39 @@ public:
   }
   bool isQuantum(const Value *v) override { return quantum.count(v) > 0; }
   bool controlTainted(const BasicBlock *b) override { return ctl.count(b) > 0; }
-  EdgePreds switchEdges(const SwitchInst &) override {
-    unimplemented("test oracle: switchEdges");
+  // Taint's one dead-end definition (cq-820w).
+  bool deadEnd(const BasicBlock *b) override {
+    if (b->getParent() != deadOf) {
+      dead = taint_detail::DeadEnds(*b->getParent());
+      deadOf = b->getParent();
+    }
+    return dead.isDeadEnd(b);
   }
+  // A3's reading, standing in for the switch module: a case is scrutinee == v, the default the
+  // complement of every case.
+  EdgePreds switchEdges(const SwitchInst &si) override {
+    EdgePreds ep;
+    unsigned noCase = Bdd::T;
+    auto add = [&](const BasicBlock *bb, unsigned n) {
+      for (auto &e : ep.succ)
+        if (e.first == bb) {
+          e.second = makePred(m.orOp(nodeOf(e.second), n));
+          return;
+        }
+      ep.succ.push_back({bb, makePred(n)});
+    };
+    for (const auto &c : si.cases()) {
+      unsigned eq = m.ithVar(atomVar(AtomKind::Eq, si.getCondition(), c.getCaseValue()->getValue()));
+      add(c.getCaseSuccessor(), eq);
+      noCase = m.andOp(noCase, m.notOp(eq));
+    }
+    add(si.getDefaultDest(), noCase);
+    return ep;
+  }
+
+private:
+  const Function *deadOf = nullptr;
+  taint_detail::DeadEnds dead;
 };
 
 // ---- IR helpers ----
@@ -827,9 +859,193 @@ static void testClassicalMerges() {
           "classical merges emit no gate: " << operandName(&I));
 }
 
+// cq-820w: an edge into a dead end does not restrict its siblings (rule 16: after a noreturn arm the
+// program continues uncontrolled; 49: with the unreachable default gone, the last case is the
+// complement). The dead end keeps its own edge's predicate. Run with the test oracle and with taint's
+// own answer (taintOracle over computeTaint), which pred's A1 check then holds to.
+static const char *DeadIR = R"(
+target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-apple-macosx16.0.0"
+define i32 @loop_abort(i32 %a, double %th, i32 %n) {
+entry:
+  %x = tail call i32 @cq_theta_si32(i32 %a, double %th)
+  br label %h
+h:
+  %i = phi i32 [ 0, %entry ], [ %i1, %latch ]
+  %c = icmp eq i32 %x, %i
+  br i1 %c, label %die, label %latch
+die:
+  tail call void @abort()
+  unreachable
+latch:
+  %i1 = add i32 %i, 1
+  %d = icmp slt i32 %i1, %n
+  br i1 %d, label %h, label %exit
+exit:
+  ret i32 %i1
+}
+define i32 @nested(i32 %a, double %th, i32 %k, i32 %c) {
+entry:
+  %x = tail call i32 @cq_theta_si32(i32 %a, double %th)
+  %q1 = icmp sgt i32 %x, %k
+  br i1 %q1, label %arm, label %join
+arm:
+  %q2 = icmp eq i32 %x, %c
+  br i1 %q2, label %cont, label %dead
+dead:
+  tail call void @abort()
+  unreachable
+cont:
+  %y = add i32 %x, 1
+  br label %join
+join:
+  %p = phi i32 [ %y, %cont ], [ %x, %entry ]
+  ret i32 %p
+}
+define i32 @cswitch(i32 %a, double %th, i32 %s) {
+entry:
+  %x = tail call i32 @cq_theta_si32(i32 %a, double %th)
+  switch i32 %s, label %u [
+    i32 0, label %b0
+    i32 1, label %b1
+    i32 2, label %b2
+  ]
+b0:
+  br label %j
+b1:
+  br label %j
+b2:
+  br label %j
+u:
+  unreachable
+j:
+  %p = phi i32 [ 1, %b0 ], [ 2, %b1 ], [ 3, %b2 ]
+  %r = add i32 %p, %x
+  ret i32 %r
+}
+declare i32 @cq_theta_si32(i32, double)
+declare void @abort() noreturn nounwind
+)";
+
+static void testDeadEnds() {
+  auto blkOf = [](Function &F, StringRef n) -> BasicBlock * {
+    for (BasicBlock &b : F)
+      if (b.getName() == n)
+        return &b;
+    return blk(F, n);
+  };
+  auto entrySpec = [](const TaintInfo &T, const Function *F) -> const Specialization * {
+    for (const Specialization &S : T.specializations())
+      if (S.F == F && S.isEntry())
+        return &S;
+    return nullptr;
+  };
+  // Path predicates with taint's own oracle (A1: taint's control dependence, taint's dead ends).
+  auto withTaint = [&](Module &M, Function &F, PathStorage &P) -> bool {
+    static std::vector<std::unique_ptr<TaintInfo>> keep;
+    keep.push_back(std::make_unique<TaintInfo>(computeTaint(M, {})));
+    const Specialization *S = entrySpec(*keep.back(), &F);
+    CHECK(S, "no entry specialization of @" << F.getName());
+    if (!S)
+      return false;
+    auto O = taintOracle(*keep.back(), *S);
+    DominatorTree DT(F);
+    LoopInfo LI(DT);
+    computePaths(P, F, LI, *O, nullptr);
+    return true;
+  };
+  auto blockOf = [](PathStorage &P, const BasicBlock *b) { return nodeOf(P.blocks.find(b)->second); };
+  auto edgeOf = [](PathStorage &P, const BasicBlock *a, const BasicBlock *b) {
+    return nodeOf(P.edges.find({a, b})->second);
+  };
+
+  if (Module *mod = load("45_unreachable_arm/unreachable_arm.O1.ll")) {
+    for (const char *fn : {"unreachable_arm", "abort_then_rotate"}) {
+      Function &F = *mod->getFunction(fn);
+      unsigned q = C(val(F, "%6"));
+      Computed c = compute(F);
+      expectBlock(c, F, "%7", q);         // the abort arm keeps its flag (eff-tape's abort_i1)
+      expectBlock(c, F, "%8", Bdd::T);    // the continuation is uncontrolled (rule 16)
+      CHECK(c.edge(blk(F, "%4"), blk(F, "%8")) == Bdd::T, "45 " << fn << ": edge %4 -> %8 is top");
+      PathStorage P;
+      if (withTaint(*mod, F, P)) {
+        CHECK(blockOf(P, blk(F, "%7")) == q, "45 " << fn << " (taint oracle): %7 is x == k");
+        CHECK(blockOf(P, blk(F, "%8")) == Bdd::T, "45 " << fn << " (taint oracle): %8 is top");
+      }
+    }
+  }
+  if (Module *mod = load("108_arch_primitives/arch_primitives.O1.ll")) {
+    Function &F = *mod->getFunction("trap_q");
+    PathStorage P;
+    if (withTaint(*mod, F, P)) {
+      CHECK(blockOf(P, blk(F, "%6")) == C(val(F, "%5")), "108 trap_q: the trap arm is x > k");
+      CHECK(blockOf(P, blk(F, "%7")) == Bdd::T, "108 trap_q: the continuation is top");
+    }
+  }
+  if (Module *mod = load("49_switch_shared_unreachable/switch_shared_unreachable.O1.ll")) {
+    Function &F = *mod->getFunction("switch_shared_unreachable");
+    Value *sc = val(F, "%6");
+    auto eq = [&](unsigned v) { return m.ithVar(atomVar(AtomKind::Eq, sc, APInt(32, v))); };
+    Computed c = compute(F);
+    expectBlock(c, F, "%7", Or(eq(0), eq(1)));
+    expectBlock(c, F, "%9", eq(2));
+    expectBlock(c, F, "%11", N(Or(Or(eq(0), eq(1)), eq(2))));   // the last case is the complement
+    expectBlock(c, F, "%13", A(A(A(N(eq(0)), N(eq(1))), N(eq(2))), N(eq(3))));   // the dead default keeps its own
+    expectBlock(c, F, "%14", Bdd::T);
+  }
+  SMDiagnostic err;
+  std::unique_ptr<Module> own = parseAssemblyString(DeadIR, err, Ctx);
+  CHECK(own, "dead-end IR parses");
+  if (!own)
+    return;
+  {
+    Function &F = *own->getFunction("loop_abort");
+    unsigned q = C(val(F, "%c"));
+    for (int pass = 0; pass < 2; ++pass) {
+      PathStorage P;
+      std::unique_ptr<TestOracle> O;
+      if (pass == 0) {
+        O = std::make_unique<TestOracle>(F);
+        DominatorTree DT(F);
+        LoopInfo LI(DT);
+        computePaths(P, F, LI, *O, nullptr);
+      } else if (!withTaint(*own, F, P)) {
+        continue;
+      }
+      const char *how = pass ? " (taint oracle)" : "";
+      CHECK(blockOf(P, blkOf(F, "die")) == q, "loop_abort" << how << ": the abort arm is x == i");
+      CHECK(blockOf(P, blkOf(F, "latch")) == Bdd::T, "loop_abort" << how << ": the latch is top");
+      CHECK(blockOf(P, blkOf(F, "exit")) == Bdd::T, "loop_abort" << how << ": the loop's live exit is top");
+    }
+  }
+  {
+    Function &F = *own->getFunction("nested");
+    unsigned q1 = C(val(F, "%q1")), q2 = C(val(F, "%q2"));
+    PathStorage P;
+    if (withTaint(*own, F, P)) {
+      CHECK(blockOf(P, blkOf(F, "dead")) == A(q1, N(q2)), "nested: the dead arm is q1 & !q2");
+      CHECK(blockOf(P, blkOf(F, "cont")) == q1, "nested: the live sibling (successor 0) is q1");
+      CHECK(edgeOf(P, blkOf(F, "arm"), blkOf(F, "cont")) == q1, "nested: edge arm -> cont is q1");
+      CHECK(blockOf(P, blkOf(F, "join")) == Bdd::T, "nested: the join is top");
+    }
+  }
+  {
+    Function &F = *own->getFunction("cswitch");
+    Value *s = F.getArg(2);
+    auto eq = [&](unsigned v) { return m.ithVar(atomVar(AtomKind::Eq, s, APInt(32, v))); };
+    PathStorage P;
+    if (withTaint(*own, F, P)) {
+      CHECK(blockOf(P, blkOf(F, "b0")) == eq(0), "cswitch: case 0");
+      CHECK(blockOf(P, blkOf(F, "b2")) == N(Or(eq(0), eq(1))), "cswitch: the last live case is the complement");
+      CHECK(blockOf(P, blkOf(F, "j")) == Bdd::T, "cswitch: the join is top");
+    }
+  }
+}
+
 int main() {
   testAlgebra();
   testExamples();
+  testDeadEnds();
   testFactoring();
   testClassicalMerges();
   // A pool function: 4 atom carriers + 60 rails.

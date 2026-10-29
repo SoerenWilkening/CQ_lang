@@ -10,3 +10,6 @@ add_test(NAME taint
 cq_add_unit_test(taint_lookup taint_lookup.cpp)
 # cq-pu8b: rule 23's environment state point-wise (blocks, loops, calls, fenv_t objects).
 cq_add_unit_test(taint_fenv taint_fenv.cpp)
+# cq-820w: an edge into a dead end does not restrict its siblings (control dependence, rule 16).
+cq_add_unit_test(taint_deadend taint_deadend.cpp)
+target_compile_definitions(taint_deadend PRIVATE CQ_SPEC_DIR="${CQ_SPEC_DIR}")

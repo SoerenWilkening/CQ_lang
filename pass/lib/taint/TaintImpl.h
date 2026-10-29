@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 
+#include "DeadEnd.h"
 #include "cq/Taint.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
@@ -91,7 +92,10 @@ struct FnInfo {
   std::unique_ptr<llvm::DominatorTree> DT;
   std::unique_ptr<llvm::PostDominatorTree> PDT;
   std::unique_ptr<llvm::LoopInfo> LI;
-  // Direct control dependence: block -> the branching blocks it is control dependent on.
+  // Direct control dependence: block -> the branching blocks it is control dependent on. An edge into
+  // a dead end does not restrict its siblings (cq-820w, rule 16): a block that reaches a return is
+  // control dependent on A only through A's successors that reach a return too.
+  cq::taint_detail::DeadEnds dead;
   llvm::DenseMap<const llvm::BasicBlock *, llvm::SmallVector<const llvm::BasicBlock *, 2>> cdParents;
   std::vector<const llvm::BasicBlock *> rpo;
 };

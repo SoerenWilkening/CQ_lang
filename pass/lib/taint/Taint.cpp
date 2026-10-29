@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <numeric>
 
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
@@ -329,8 +330,20 @@ FnInfo &Analyzer::fn(const Function *F) {
     info->rpo.push_back(BB);
   // Direct control dependence (Ferrante et al.): for an edge A -> S of a branching A, every block on
   // the post-dominator tree path from S up to (excluding) ipdom(A) is control dependent on A.
+  //
+  // Dead ends (DeadEnd.h, cq-820w): an edge into a dead end does not restrict its siblings. For a
+  // block that reaches a return, post-dominance is taken over the paths to a return only (the
+  // live subgraph), and a branch counts only through its live successors: a branch whose live
+  // successors are all one block makes nothing live control dependent on it. A dead end keeps the
+  // ordinary answer (it stays control dependent on the branch into it).
+  info->dead = taint_detail::DeadEnds(MF);
+  const taint_detail::DeadEnds &dead = info->dead;
+  auto addParent = [&](const BasicBlock *X, const BasicBlock *A) {
+    auto &v = info->cdParents[X];
+    if (llvm::find(v, A) == v.end())
+      v.push_back(A);
+  };
   for (const BasicBlock *A : info->rpo) {
-    const Instruction *T = A->getTerminator();
     SmallPtrSet<const BasicBlock *, 4> succs;
     for (const BasicBlock *S : successors(A))
       succs.insert(S);
@@ -341,15 +354,66 @@ FnInfo &Analyzer::fn(const Function *F) {
     for (const BasicBlock *S : succs) {
       DomTreeNode *X = info->PDT->getNode(S);
       while (X && X != stop) {
-        if (BasicBlock *XB = X->getBlock()) {
-          auto &v = info->cdParents[XB];
-          if (llvm::find(v, A) == v.end())
-            v.push_back(A);
-        }
+        if (BasicBlock *XB = X->getBlock())
+          if (dead.isDeadEnd(XB))
+            addParent(XB, A);
         X = X->getIDom();
       }
     }
-    (void)T;
+  }
+  // Post-dominance over the live subgraph: pdom(Y) = {Y} | AND over Y's live successors of pdom(s).
+  std::vector<const BasicBlock *> liveBlocks;
+  DenseMap<const BasicBlock *, unsigned> liveIdx;
+  for (const BasicBlock *B : info->rpo)
+    if (!dead.isDeadEnd(B)) {
+      liveIdx[B] = liveBlocks.size();
+      liveBlocks.push_back(B);
+    }
+  unsigned nLive = liveBlocks.size();
+  std::vector<BitVector> pdom(nLive, BitVector(nLive, true));
+  for (unsigned i = 0; i < nLive; ++i)
+    if (taint_detail::DeadEnds::returns(liveBlocks[i])) {
+      pdom[i].reset();
+      pdom[i].set(i);
+    }
+  for (bool ch = true; ch;) {
+    ch = false;
+    for (unsigned i = nLive; i-- > 0;) {
+      const BasicBlock *Y = liveBlocks[i];
+      if (taint_detail::DeadEnds::returns(Y))
+        continue;
+      BitVector nv(nLive, true);
+      bool any = false;
+      for (const BasicBlock *S : successors(Y)) {
+        auto it = liveIdx.find(S);
+        if (it == liveIdx.end())
+          continue;   // a dead end, or a block unreachable from the entry (no path to it from Y)
+        nv &= pdom[it->second];
+        any = true;
+      }
+      if (!any)
+        internalError("taint: a block that reaches a return has no live successor", Y->getTerminator());
+      nv.set(i);
+      if (nv != pdom[i]) {
+        pdom[i] = std::move(nv);
+        ch = true;
+      }
+    }
+  }
+  for (unsigned a = 0; a < nLive; ++a) {
+    const BasicBlock *A = liveBlocks[a];
+    SmallVector<unsigned, 4> liveSuccs;
+    for (const BasicBlock *S : successors(A)) {
+      auto it = liveIdx.find(S);
+      if (it != liveIdx.end() && llvm::find(liveSuccs, it->second) == liveSuccs.end())
+        liveSuccs.push_back(it->second);
+    }
+    if (liveSuccs.size() < 2)
+      continue;
+    for (unsigned s : liveSuccs)
+      for (unsigned x : pdom[s].set_bits())
+        if (x == a || !pdom[a].test(x))   // x post-dominates s and not strictly A
+          addParent(liveBlocks[x], A);
   }
   auto *raw = info.get();
   st.fns[F] = std::move(info);
@@ -705,9 +769,13 @@ bool Analyzer::edgeChosen(const BasicBlock *from, const BasicBlock *to) {
   if (fit != cur->cdt.end())
     E.append(fit->second.begin(), fit->second.end());
   if (cur->taintedTerm.count(from)) {
+    // An edge into a dead end does not restrict its siblings (cq-820w): from chooses the edge into
+    // a live block only when it has two live successors.
+    const taint_detail::DeadEnds &dead = fn(cur->F).dead;
     SmallPtrSet<const BasicBlock *, 4> succs;
     for (const BasicBlock *S : successors(from))
-      succs.insert(S);
+      if (dead.isDeadEnd(to) || !dead.isDeadEnd(S))
+        succs.insert(S);
     if (succs.size() >= 2)
       E.push_back(from);
   }

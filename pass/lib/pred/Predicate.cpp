@@ -11,10 +11,17 @@
 //   - an edge leaving loop L for L's unique exit block contributes pred(header of L): the loop as a
 //     unit always ends there (a quantum-exit loop runs its K trips, rule 14);
 //   - an edge leaving a loop with several exit blocks contributes pred(from) & cond, with the
-//     condition's value from the trip that exits.
+//     condition's value from the trip that exits;
+//   - an edge into a dead end (no return reachable from it, taint/DeadEnd.h) does not restrict its
+//     siblings (rule 16: after a noreturn arm the program continues uncontrolled; 49: with the
+//     unreachable default gone, the last case is the complement). The last live successor of a
+//     branch with a dead-end successor takes the complement of its other live successors' conditions;
+//     the dead end keeps its own edge's predicate (eff-tape's abort flag). A loop exit into a dead
+//     end is not one of the loop's ends: the loop's live exits partition its predicate.
 // Control dependence is taint's answer (A1): compute checks that a block taint reports as not
 // control-tainted gets no quantum predicate of its own, and fails loudly otherwise.
 #include "PredInternal.h"
+#include "../taint/DeadEnd.h"
 
 #include <tuple>
 
@@ -111,7 +118,19 @@ public:
   TaintOracle(const TaintInfo &T, const Specialization &S) : T(T), S(S) {}
   bool isQuantum(const Value *v) override { return T.isQuantum(v, S); }
   bool controlTainted(const BasicBlock *b) override { return T.controlTainted(b, S); }
+  bool deadEnd(const BasicBlock *b) override {
+    const Function *F = b->getParent();
+    if (F != deadOf) {
+      dead = taint_detail::DeadEnds(*F);
+      deadOf = F;
+    }
+    return dead.isDeadEnd(b);
+  }
   EdgePreds switchEdges(const SwitchInst &si) override { return sw::switchEdges(si, T, S); }
+
+private:
+  const Function *deadOf = nullptr;
+  taint_detail::DeadEnds dead;
 };
 } // namespace
 
@@ -268,6 +287,30 @@ static unsigned edgeCond(const BasicBlock *from, const BasicBlock *to, Oracle &O
   unimplemented("pred: path predicate across this terminator", term);
 }
 
+// edgeCond with dead ends (cq-820w): an edge between two live blocks out of a branch that also has a
+// dead-end successor; the last live successor in successor order takes the complement of the other
+// live successors' conditions, so the dead ends' share falls to it.
+static unsigned liveEdgeCond(const BasicBlock *from, const BasicBlock *to, Oracle &O) {
+  if (O.deadEnd(from) || O.deadEnd(to))
+    return edgeCond(from, to, O);
+  SmallVector<const BasicBlock *, 4> live;
+  bool anyDead = false;
+  for (const BasicBlock *s : successors(from)) {
+    if (O.deadEnd(s))
+      anyDead = true;
+    else if (llvm::find(live, s) == live.end())
+      live.push_back(s);
+  }
+  if (!anyDead || live.back() != to)
+    return edgeCond(from, to, O);
+  Bdd &m = Bdd::get();
+  unsigned others = Bdd::F;
+  for (const BasicBlock *s : live)
+    if (s != to)
+      others = m.orOp(others, edgeCond(from, s, O));
+  return m.notOp(others);
+}
+
 void computePaths(PathStorage &I, Function &F, const LoopInfo &LI, Oracle &O, Value *entryFlag) {
   Bdd &m = Bdd::get();
   I = PathStorage();
@@ -348,6 +391,20 @@ void computePaths(PathStorage &I, Function &F, const LoopInfo &LI, Oracle &O, Va
   // the header, minus the earlier exit edges', and the last exit edge takes the rest. A join every
   // exit reaches then gets the loop's predicate back (121's block %29; control dependence is
   // post-dominance, A1).
+  // The loop's unique exit block once exits into dead ends are set aside (null when several remain).
+  auto liveUniqueExit = [&](const Loop *L) -> const BasicBlock * {
+    SmallVector<BasicBlock *, 4> exitBlocks;
+    L->getUniqueExitBlocks(exitBlocks);
+    const BasicBlock *one = nullptr;
+    for (const BasicBlock *e : exitBlocks) {
+      if (O.deadEnd(e) && !O.deadEnd(L->getHeader()))
+        continue;
+      if (one)
+        return nullptr;
+      one = e;
+    }
+    return one;
+  };
   std::map<const Loop *, std::map<std::pair<const BasicBlock *, const BasicBlock *>, unsigned>> exitShare;
   auto exitContribution = [&](const Loop *L, const BasicBlock *p, const BasicBlock *bb) {
     auto &shares = exitShare[L];
@@ -356,7 +413,7 @@ void computePaths(PathStorage &I, Function &F, const LoopInfo &LI, Oracle &O, Va
       L->getExitEdges(exits);
       std::vector<std::pair<const BasicBlock *, const BasicBlock *>> edgesInOrder;
       for (auto &e : exits)
-        if (reachable.count(e.first) &&
+        if (reachable.count(e.first) && (O.deadEnd(L->getHeader()) || !O.deadEnd(e.second)) &&
             std::find(edgesInOrder.begin(), edgesInOrder.end(), std::make_pair((const BasicBlock *)e.first, (const BasicBlock *)e.second)) == edgesInOrder.end())
           edgesInOrder.push_back({e.first, e.second});
       std::stable_sort(edgesInOrder.begin(), edgesInOrder.end(), [&](auto &x, auto &y) {
@@ -369,7 +426,7 @@ void computePaths(PathStorage &I, Function &F, const LoopInfo &LI, Oracle &O, Va
         if (i + 1 == edgesInOrder.size()) {
           x = m.notOp(covered);
         } else {
-          unsigned d = m.restrict(m.andOp(predOf(ep), edgeCond(ep, eb, O)), h);
+          unsigned d = m.restrict(m.andOp(predOf(ep), liveEdgeCond(ep, eb, O)), h);
           x = m.andOp(d, m.notOp(covered));
         }
         covered = m.orOp(covered, x);
@@ -395,12 +452,14 @@ void computePaths(PathStorage &I, Function &F, const LoopInfo &LI, Oracle &O, Va
         continue;   // a back edge: the loop module chains trips
       unsigned contrib;
       const Loop *out = leftLoop(p, bb);
-      if (out && out->getUniqueExitBlock() == bb)
+      if (out && O.deadEnd(bb) && !O.deadEnd(p))
+        contrib = m.andOp(predOf(p), edgeCond(p, bb, O));   // a loop exit into a dead end
+      else if (out && liveUniqueExit(out) == bb)
         contrib = predOf(out->getHeader());
       else if (out)
         contrib = exitContribution(out, p, bb);
       else
-        contrib = m.andOp(predOf(p), edgeCond(p, bb, O));
+        contrib = m.andOp(predOf(p), liveEdgeCond(p, bb, O));
       I.edges[{p, bb}] = makePred(contrib);
       acc = m.orOp(acc, contrib);
     }
@@ -412,7 +471,7 @@ void computePaths(PathStorage &I, Function &F, const LoopInfo &LI, Oracle &O, Va
     for (const BasicBlock *s : successors(bb)) {
       if (!seen.insert(s).second || I.edges.count({bb, s}))
         continue;
-      I.edges[{bb, s}] = makePred(m.andOp(predOf(bb), edgeCond(bb, s, O)));
+      I.edges[{bb, s}] = makePred(m.andOp(predOf(bb), liveEdgeCond(bb, s, O)));
     }
   }
   // A1: control dependence is taint's. A block taint calls free of tainted control must not carry a

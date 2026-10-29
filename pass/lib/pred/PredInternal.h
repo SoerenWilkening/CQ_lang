@@ -80,6 +80,9 @@ public:
   virtual ~Oracle() = default;
   virtual bool isQuantum(const llvm::Value *) = 0;
   virtual bool controlTainted(const llvm::BasicBlock *) = 0;
+  // Is the block a dead end (no return reachable from it)? Taint's one definition (taint/DeadEnd.h,
+  // cq-820w): an edge into a dead end does not restrict its siblings.
+  virtual bool deadEnd(const llvm::BasicBlock *) = 0;
   virtual EdgePreds switchEdges(const llvm::SwitchInst &) = 0;
 };
 std::unique_ptr<Oracle> taintOracle(const TaintInfo &, const Specialization &);
