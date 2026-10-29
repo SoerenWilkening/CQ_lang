@@ -25,6 +25,21 @@
 //  classical disjuncts only. Every body instruction is lowered under the trip rail a_{j-1}
 //  (lowerInstruction's tripFlag, cq-99f7): a cq_theta / cq_phi in the trip is controlled by it. No predicate is kept: the mirror uncomputes every a_j, the last included.
 //
+//  Slot memory (rule 20, cq-sujx). A load or store of a slot object at a classical offset goes
+//  through mem::lowerSlotLoad / lowerSlotStore once in the trip (the spine's dispatch): a cell loaded
+//  per trip is an alias (kept, never undone), a register stored back changes nothing, a seed or
+//  computed rail stored into a cell takes the role mem-slots gives it. The reverse undoes no memory:
+//  the cells hold classical handles and every mirror operand is pushed. QRAM objects and fat pointers
+//  in the trip are not built yet.
+//
+//  Per-trip uncompute (rule 5, as early as allowed). Before the reverse, each segment is flushed at
+//  its terminator (Uncompute::flushBefore) with the region's back edges cut, so a rail made and last
+//  read within one segment is undone in its own trip (60: the Toffoli flag of q[j] && q[i]); only a
+//  path that re-executes the record could put another segment's gate between them. Rule 5's
+//  invariant across trips: if the region has a non-diagonal gate (Ry, quantum-angle Ry) on a rail
+//  that is not made by a record of the region, and the reverse loop still undoes anything, a later
+//  trip's gate may touch a rail an earlier trip's record read: cq::unimplemented.
+//
 //  Segments. Every forward output block is a segment with its own Uncompute scope (sequential, never
 //  nested). After the outermost loop exits, each quantum value read after the loop is copied out
 //  (alloc + copy, Role::Output) and rebound to the copy; then the reverse runs: one reverse block
@@ -41,11 +56,14 @@
 // more than one exiting block or latch; a case-3 exit test not at the latch, with more than one
 // quantum disjunct, or with a sub-loop or a memory write; a classical
 // value read after a case-3 loop; calls other than classical, template intrinsics and the CQ.h
-// surface; slot / QRAM memory accesses (187, 188: wave 2); a classical branch inside a quantum arm
+// surface; QRAM / fat-pointer memory accesses (187, 188: wave 2); a deferred record with a
+// non-diagonal gate on a rail from outside its trip; a classical branch inside a quantum arm
 // of the body; a quantum-exit loop nested in a classically bounded one.
 #include "cq/Loops.h"
 
 #include <map>
+#include <optional>
+#include <tuple>
 #include <vector>
 
 #include "cq/Abi.h"
@@ -104,6 +122,7 @@ private:
   DenseMap<std::pair<const BasicBlock *, const BasicBlock *>, BasicBlock *> edgeFrom;
   DenseMap<const BasicBlock *, BasicBlock *> obMap;
   std::vector<Value *> externalInits;   // handles defined outside the region read through header phis
+  std::vector<std::pair<BasicBlock *, BasicBlock *>> heads;   // every loop's output header H and its entry block
 
   bool isQ(const Value *v) {
     if (isa<Constant>(v) || isa<BasicBlock>(v) || isa<MetadataAsValue>(v))
@@ -236,24 +255,20 @@ void Unit::check(Loop &L, Case c) {
         }
         continue;
       }
-      if (auto *st = dyn_cast<StoreInst>(&I)) {
-        bool q = isQ(st->getValueOperand()) || isQ(st->getPointerOperand()) ||
-                 ctx.T.isFatPointer(st->getPointerOperand(), ctx.S);
-        for (ObjectId o : ctx.T.provenance(st->getPointerOperand(), ctx.S))
-          q |= ctx.T.classOf(o) != ObjClass::Classical;
-        if (q)
-          unimplemented("loops-classical: a store into slot / QRAM memory in a classically bounded loop (rule 14, "
-                        "187, 188: loops-mem)",
+      // Rule 20 slot cells at classical offsets go through mem-slots per trip (cq-sujx); a fat pointer
+      // (rule 21) or a QRAM object (rule 20, 187, 188) in the trip is not built yet.
+      if (isa<LoadInst>(I) || isa<StoreInst>(I)) {
+        const Value *ptr = getLoadStorePointerOperand(&I);
+        bool isStore = isa<StoreInst>(I);
+        if (isQ(ptr) || ctx.T.isFatPointer(ptr, ctx.S))
+          unimplemented(std::string("loops-classical: a ") + (isStore ? "store" : "load") +
+                            " through a quantum (fat) pointer in a classically bounded loop (rule 21)",
                         &I);
-        continue;
-      }
-      if (auto *ld = dyn_cast<LoadInst>(&I)) {
-        bool q = ctx.T.isFatPointer(ld->getPointerOperand(), ctx.S);
-        for (ObjectId o : ctx.T.provenance(ld->getPointerOperand(), ctx.S))
-          q |= ctx.T.classOf(o) != ObjClass::Classical;
-        if (q)
-          unimplemented("loops-classical: a load of slot / QRAM memory in a classically bounded loop (loops-mem)",
-                        &I);
+        for (ObjectId o : ctx.T.provenance(ptr, ctx.S))
+          if (ctx.T.classOf(o) == ObjClass::Qram)
+            unimplemented(std::string("loops-classical: a ") + (isStore ? "store into" : "load of") +
+                              " QRAM memory in a classically bounded loop (rule 14, 187, 188)",
+                          &I);
         continue;
       }
       if (I.mayWriteToMemory() && (isQ(&I) || any_of(I.operands(), [&](const Use &u) { return isQ(u.get()); })))
@@ -385,6 +400,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     segOpen = false;
   }
   startSeg(H);
+  heads.push_back({H, entryFrom});
   {
     unsigned k = 0;
     for (PHINode &p : header->phis()) {
@@ -780,6 +796,69 @@ void Unit::reverse(BasicBlock *X, unsigned seedScope) {
     }
   }
 
+  // Per trip (rule 5, as early as allowed): a rail made and last read within one segment is uncomputed
+  // at the end of that segment, in every trip (60: the Toffoli flag of q[j] && q[i]). What is left
+  // waits for the reverse loop.
+  // The flush runs with every back edge of the region cut: an item placed in its record's segment is
+  // reached from a gate of another segment only by a path that re-executes the record (a later trip),
+  // so only the acyclic trip may count as "between" for Uncompute's barrier check.
+  {
+    BasicBlock *cut = newBlock();
+    new UnreachableInst(C, cut);
+    std::vector<std::tuple<Instruction *, unsigned, BasicBlock *>> backEdges;
+    for (auto &[H, from] : heads)
+      for (BasicBlock *p : predecessors(H)) {
+        if (p == from)
+          continue;
+        Instruction *t = p->getTerminator();
+        for (unsigned k = 0; k < t->getNumSuccessors(); ++k)
+          if (t->getSuccessor(k) == H && !is_contained(backEdges, std::make_tuple(t, k, H)))
+            backEdges.push_back({t, k, H});
+      }
+    for (auto &[t, k, H] : backEdges)
+      t->setSuccessor(k, cut);
+    for (const Seg &s : segs)
+      ctx.unc().flushBefore(s.bb->getTerminator());
+    for (auto &[t, k, H] : backEdges)
+      t->setSuccessor(k, H);
+    cut->eraseFromParent();
+  }
+  // Rule 5's invariant across trips: the reverse loop undoes trip t's records after every later trip
+  // has run, so a non-diagonal gate in the loop must not touch a rail an undone record reads. A gate
+  // on a rail made in its own trip (by a record of the region) cannot touch an earlier trip's rails;
+  // a gate on any other rail (a slot cell loaded per trip, a carried value, a rail from before the
+  // loop) may, and then no deferred item may remain (cq-sujx).
+  const Instruction *crossGate = nullptr;
+  {
+    DenseSet<const Value *> fresh;
+    for (const Seg &s : segs)
+      for (const Record &r : ctx.unc().scopeRecords(s.scope))
+        fresh.insert(r.forward);
+    for (const Seg &s : segs)
+      for (Instruction &I : *s.bb) {
+        auto *call = dyn_cast<CallInst>(&I);
+        Function *callee = call ? call->getCalledFunction() : nullptr;
+        if (!callee || crossGate)
+          continue;
+        std::optional<abi::CoreSpec> cs = abi::parseCore(callee->getName());
+        if (!cs || cs->unc || (cs->op != abi::Core::Ry && cs->op != abi::Core::RyQAngle))
+          continue;
+        for (Value *a : call->args())
+          if (a->getType() == i32 && !isa<Constant>(a) && !fresh.count(a))
+            crossGate = call;
+      }
+  }
+  auto checkDeferred = [&](BasicBlock *bb, BasicBlock::iterator from) {
+    if (!crossGate)
+      return;
+    for (auto it = from; it != bb->end(); ++it)
+      if (isa<CallInst>(*it))
+        unimplemented("loops-classical: a non-diagonal gate in a classically bounded loop on a rail that is not "
+                      "made in its own trip, while the reverse loop still undoes a record (rule 5's invariant "
+                      "across trips: a later trip's gate may touch a rail an earlier trip's record read)",
+                      crossGate);
+  };
+
   BasicBlock *Z = newBlock();
   std::vector<BasicBlock *> R(n);
   for (unsigned i = 0; i < n; ++i)
@@ -789,6 +868,7 @@ void Unit::reverse(BasicBlock *X, unsigned seedScope) {
   for (unsigned i = n; i-- > 0;) {
     IRBuilder<> B(R[i]);
     ctx.unc().emitMirror(segs[i].scope, B);
+    checkDeferred(R[i], R[i]->begin());
     std::vector<Instruction *> mirror;
     for (Instruction &I : *R[i])
       mirror.push_back(&I);
@@ -882,6 +962,7 @@ void Unit::reverse(BasicBlock *X, unsigned seedScope) {
     ctx.unc().noteUse(ctx.unc().idOf(h), anchor);
   IRBuilder<> BZ(Z);
   ctx.unc().emitMirror(seedScope, BZ);
+  checkDeferred(Z, Z->begin());
   ctx.B().SetInsertPoint(Z);
 }
 
