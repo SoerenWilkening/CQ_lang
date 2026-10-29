@@ -38,7 +38,10 @@
 //  path that re-executes the record could put another segment's gate between them. Rule 5's
 //  invariant across trips: if the region has a non-diagonal gate (Ry, quantum-angle Ry) on a rail
 //  that is not made by a record of the region, and the reverse loop still undoes anything, a later
-//  trip's gate may touch a rail an earlier trip's record read: cq::unimplemented.
+//  trip's gate may touch a rail an earlier trip's record read: cq::unimplemented. Likewise (cq-vqid)
+//  a non-diagonal gate on a rail that an item undone by the reverse loop reads (a merge read: each
+//  arm), on a path after that item's forward record that does not make the rail again (later in
+//  the same trip, or a later trip on a rail the trip does not remake): cq::unimplemented.
 //
 //  Segments. Every forward output block is a segment with its own Uncompute scope (sequential, never
 //  nested). After the outermost loop exits, each quantum value read after the loop is copied out
@@ -859,6 +862,128 @@ void Unit::reverse(BasicBlock *X, unsigned seedScope) {
                       crossGate);
   };
 
+  // Rule 5's invariant within the deferral (cq-vqid): an item the reverse loop undoes reads the rails
+  // its records read, and they must still hold the value those records read. A non-diagonal gate
+  // in the region on such a rail (a merge read reads every arm it may name) that can run after one
+  // of the item's forward records, before the rail is made again, rotates it under the deferred
+  // undo: the same trip after the record, or a later trip of an enclosing loop of the region on a
+  // rail that the trip does not make again. cq::unimplemented (the undo is never placed before the
+  // gate: it waits for the reverse loop).
+  struct Gate {
+    CallInst *call;
+    Value *target;
+  };
+  std::vector<Gate> gates;
+  for (const Seg &s : segs)
+    for (Instruction &I : *s.bb)
+      if (auto *call = dyn_cast<CallInst>(&I))
+        if (Function *callee = call->getCalledFunction())
+          if (std::optional<abi::CoreSpec> cs = abi::parseCore(callee->getName());
+              cs && !cs->unc && (cs->op == abi::Core::Ry || cs->op == abi::Core::RyQAngle))
+            gates.push_back({call, call->getArgOperand(cs->ctl ? 1 : 0)});
+  std::vector<CallInst *> fwdRecords;
+  for (const Seg &s : segs)
+    for (const Record &r : ctx.unc().scopeRecords(s.scope))
+      fwdRecords.push_back(r.forward);
+  auto leavesOf = [&](Value *v) {
+    SmallVector<Value *, 4> out, work{v};
+    SmallPtrSet<Value *, 8> seen;
+    while (!work.empty()) {
+      Value *x = work.pop_back_val();
+      if (!seen.insert(x).second)
+        continue;
+      if (auto *p = dyn_cast<PHINode>(x); p && p->getType() == i32) {
+        for (Value *in : p->incoming_values())
+          work.push_back(in);
+        continue;
+      }
+      if (auto *sl = dyn_cast<SelectInst>(x); sl && sl->getType() == i32) {
+        work.push_back(sl->getTrueValue());
+        work.push_back(sl->getFalseValue());
+        continue;
+      }
+      if (!isa<Constant>(x))
+        out.push_back(x);
+    }
+    return out;
+  };
+  // May G run after f, on a path that does not make `rail` again? f == nullptr: f is before the region.
+  auto runsAfter = [&](const Instruction *f, const Instruction *G, const Value *rail) {
+    if (!f || !region.count(f->getParent()))
+      return true;
+    if (f->getParent() == G->getParent() && f->comesBefore(G))
+      return true;
+    auto *d = dyn_cast<Instruction>(rail);
+    const BasicBlock *db = d && region.count(d->getParent()) ? d->getParent() : nullptr;
+    SmallVector<const BasicBlock *, 8> work;
+    SmallPtrSet<const BasicBlock *, 16> seen;
+    for (const BasicBlock *b : successors(f->getParent()))
+      work.push_back(b);
+    while (!work.empty()) {
+      const BasicBlock *b = work.pop_back_val();
+      if (!region.count(b) || !seen.insert(b).second)
+        continue;
+      if (b == db) {
+        if (G->getParent() == b && G->comesBefore(d))
+          return true;
+        continue;
+      }
+      if (G->getParent() == b)
+        return true;
+      for (const BasicBlock *nb : successors(b))
+        work.push_back(nb);
+    }
+    return false;
+  };
+  auto checkUndoneReads = [&](BasicBlock *bb) {
+    if (gates.empty())
+      return;
+    for (Instruction &I : *bb) {
+      auto *m = dyn_cast<CallInst>(&I);
+      Function *callee = m ? m->getCalledFunction() : nullptr;
+      if (!callee)
+        continue;
+      StringRef name = callee->getName();
+      SmallVector<Value *, 4> args(m->args());
+      // The forward records this item undoes: the call it was spelled from (the same name, or the
+      // name + "_unc"; the forward argument list, after the out handle for a template).
+      SmallVector<const Instruction *, 2> anchors;
+      for (CallInst *fwd : fwdRecords) {
+        StringRef fn = fwd->getCalledFunction() ? fwd->getCalledFunction()->getName() : StringRef();
+        if (fn.empty() || !(name == fn || name == (fn + "_unc").str()))
+          continue;
+        SmallVector<Value *, 4> fa(fwd->args());
+        bool same = args == fa;
+        bool withOut = !same && args.size() == fa.size() + 1 && args[0] == fwd &&
+                       std::equal(fa.begin(), fa.end(), args.begin() + 1);
+        if (same || withOut)
+          anchors.push_back(fwd);
+      }
+      if (anchors.empty()) {
+        // A free (or an item with no forward call of its own): its rails are read from their
+        // definitions on.
+        for (Value *a : args)
+          if (a->getType() == i32 && !isa<Constant>(a))
+            for (Value *l : leavesOf(a))
+              anchors.push_back(dyn_cast<Instruction>(l));
+      }
+      for (Value *a : args) {
+        if (a->getType() != i32 || isa<Constant>(a))
+          continue;
+        for (Value *l : leavesOf(a))
+          for (const Gate &g : gates)
+            for (Value *t : leavesOf(g.target))
+              if (t == l)
+                for (const Instruction *f : anchors)
+                  if (runsAfter(f, g.call, l))
+                    unimplemented("loops-classical: a non-diagonal gate in a classically bounded loop on a rail "
+                                  "that a record undone by the reverse loop reads, after that record (rule 5: "
+                                  "the reverse loop would undo it against the rotated rail)",
+                                  g.call);
+      }
+    }
+  };
+
   BasicBlock *Z = newBlock();
   std::vector<BasicBlock *> R(n);
   for (unsigned i = 0; i < n; ++i)
@@ -868,6 +993,7 @@ void Unit::reverse(BasicBlock *X, unsigned seedScope) {
   for (unsigned i = n; i-- > 0;) {
     IRBuilder<> B(R[i]);
     ctx.unc().emitMirror(segs[i].scope, B);
+    checkUndoneReads(R[i]);
     checkDeferred(R[i], R[i]->begin());
     std::vector<Instruction *> mirror;
     for (Instruction &I : *R[i])
@@ -962,6 +1088,7 @@ void Unit::reverse(BasicBlock *X, unsigned seedScope) {
     ctx.unc().noteUse(ctx.unc().idOf(h), anchor);
   IRBuilder<> BZ(Z);
   ctx.unc().emitMirror(seedScope, BZ);
+  checkUndoneReads(Z);
   checkDeferred(Z, Z->begin());
   ctx.B().SetInsertPoint(Z);
 }

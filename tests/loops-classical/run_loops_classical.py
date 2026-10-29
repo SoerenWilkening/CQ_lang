@@ -21,7 +21,10 @@ PROBE = PROBES / "loops.O1.ll"
 SLOT_PROBE = PROBES / "slots.O1.ll"
 SLOT_ENTRIES = ["s_reg", "s_qft", "s_int"]
 # Probes cq-lower must stop on with cq::unimplemented carrying this text (nothing emitted).
-FATAL = [(PROBES / "slots_fatal_crossgate.O1.ll", "a non-diagonal gate in a classically bounded loop on a rail")]
+FATAL = [(PROBES / "slots_fatal_crossgate.O1.ll", "a non-diagonal gate in a classically bounded loop on a rail"),
+         # cq-vqid: a record deferred to the reverse loop reads a rail rotated later in the same trip.
+         (PROBES / "fatal_undoneread.O1.ll", "a non-diagonal gate in a classically bounded loop on a rail that a "
+          "record undone by the reverse loop reads")]
 ENTRIES = ["p_acc", "p_brk", "p_nest", "p_mod", "p_nb", "p_horner", "p_arm", "p_phase", "p_cjoin", "p_tphase", "p_bwb", "p_g2"]
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 
