@@ -124,9 +124,12 @@ public:
   virtual void gate(abi::Core op, llvm::ArrayRef<llvm::Value *> controls, llvm::Value *target) = 0;
   // For bracketedFlag, emitted and NOT recorded (the caller undoes them itself, CR §5 balanced where
   // emitted): a fresh |0> i1 rail, an XOR-type gate (not_i1 on an atom rail for a bracket), its free.
+  // The free is the last thing a bracketed flag emits, after every bracket closed; it is noted as a
+  // use of every rail in `held` (each recorded control rail of the flag's gates), so the uncompute
+  // spine places no item of theirs, nor any item ordered after one, inside a bracket (cq-nogu).
   virtual llvm::Value *scratch0() = 0;
   virtual void rawGate(abi::Core op, llvm::ArrayRef<llvm::Value *> controls, llvm::Value *target) = 0;
-  virtual void freeScratch(llvm::Value *t) = 0;
+  virtual void freeScratch(llvm::Value *t, llvm::ArrayRef<llvm::Value *> held) = 0;
 };
 llvm::Value *materialize(unsigned node, GateSink &, const std::function<bool(unsigned)> &quantumLikeVar);
 // Rule 8's X bracket inside a compound flag (cq-rdux, 137). The flag's gates take a negated
@@ -134,8 +137,8 @@ llvm::Value *materialize(unsigned node, GateSink &, const std::function<bool(uns
 // it negated, not_i1 again after the last. When some gate of f's decomposition has such a control,
 // emits: every control rail (literal atoms; sub-flags through materialize, recorded), a scratch |0>
 // rail t, the gates into t (fewest negated controls first, brackets opened as needed), use(t), the
-// same gates in reverse, the closing brackets, free(t); and returns true. t and the bracket are not
-// recorded. Otherwise emits nothing and returns false (the ordinary flag applies).
+// same gates in reverse, the closing brackets, free(t) holding every control rail until it (so no
+// uncompute item lands inside a bracket); and returns true. t and the bracket are not recorded. Otherwise emits nothing and returns false (the ordinary flag applies).
 bool bracketedFlag(unsigned node, GateSink &, const std::function<bool(unsigned)> &quantumLikeVar,
                    const std::function<void(llvm::Value *)> &use);
 

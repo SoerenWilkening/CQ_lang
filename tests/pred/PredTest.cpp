@@ -607,7 +607,13 @@ public:
   void rawGate(abi::Core op, ArrayRef<Value *> controls, Value *target) override {
     seq.push_back({true, {op, std::vector<Value *>(controls.begin(), controls.end()), target}});
   }
-  void freeScratch(Value *t) override { freed.push_back(t); }
+  std::vector<Value *> held;   // rails the free is a noted use of
+  size_t freeAt = ~size_t(0);   // seq index of the free
+  void freeScratch(Value *t, ArrayRef<Value *> h) override {
+    freed.push_back(t);
+    held.assign(h.begin(), h.end());
+    freeAt = seq.size();
+  }
 };
 
 static bool apply(const SimGate &g, std::map<Value *, bool> &st) {
@@ -822,13 +828,21 @@ static void testBracketed(Function &pool) {
         for (const SimGate &g : sink.gates)
           if (!is_contained(subs, g.t))
             subs.push_back(g.t);
+        // Every IR user is a use (a bracket's not_i1 on an atom included), and the scratch free is a
+        // noted use of each held rail: the item lands after seq[lastUse].
+        CHECK(sink.freeAt == sink.seq.size(), "the scratch free is the last thing emitted: " << describe(f));
         std::map<Value *, size_t> lastUse;
         for (size_t i = 0; i < sink.seq.size(); ++i) {
           for (Value *c : sink.seq[i].g.ctl)
             lastUse[c] = i;
-          if (!sink.seq[i].raw)
-            lastUse[sink.seq[i].g.t] = i;
+          lastUse[sink.seq[i].g.t] = i;
         }
+        for (Value *h : sink.held)
+          lastUse[h] = sink.freeAt - 1;
+        // An atom rail's own item (its producers' _unc chain) may read any other atom rail through a
+        // value computed from it (p5, cq-nogu: y < k2 with y = 3x + zext(a), under (y < k2) & !a):
+        // where it lands, no bracket may be open.
+        std::set<Value *> atomItemDone;
         bool atUse = false;
         std::set<Value *> done;
         for (size_t i = 0; i <= sink.seq.size(); ++i) {
@@ -837,6 +851,15 @@ static void testBracketed(Function &pool) {
           if (i == sink.seq.size())
             break;
           CHECK(::apply(sink.seq[i].g, st), "unknown gate kind");
+          for (auto &[var, a] : sink.atomRails) {
+            if (atomItemDone.count(a) || lastUse.count(a) == 0 || lastUse[a] > i)
+              continue;
+            atomItemDone.insert(a);
+            bool closed = true;
+            for (auto &[v2, b] : sink.atomRails)
+              closed &= st[b] == init[b];
+            CHECK(closed, "no bracket open where an atom rail's item lands: " << describe(f) << " row " << r);
+          }
           for (bool again = true; again;) {
             again = false;
             for (auto it = subs.rbegin(); it != subs.rend(); ++it) {

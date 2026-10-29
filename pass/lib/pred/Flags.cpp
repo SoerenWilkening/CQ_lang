@@ -11,7 +11,8 @@
 //   - One exception (cq-rdux): a phase whose compound flag has a negated atom (rule 8's X bracket)
 //     computes the flag on an unrecorded scratch rail, applies the phase and uncomputes and frees the
 //     flag itself, with the bracket around all three (bracketedFlag). The scratch rail is never an
-//     operand of a record; its sub-flags and atoms are ordinary recorded rails read by IR users.
+//     operand of a record; its sub-flags and atoms are ordinary recorded rails read by IR users, and
+//     the scratch free, after the last bracket closes, is a noted use of each (cq-nogu).
 #include "PredInternal.h"
 
 #include "cq/Common.h"
@@ -231,8 +232,10 @@ public:
         open.erase(it);
     };
     // Before each gate exactly the brackets it needs are open. The uncompute spine places a recorded
-    // control's item right after its last use, which is a gate of the replay: the sub-flags of a gate
-    // never read its own literals (Shannon), so the item then reads its atoms un-negated.
+    // control's item right after its last use; freeScratch, after every bracket closed, is noted as
+    // a use of every control rail, so no item reading a bracketed atom, directly or through the
+    // chain of a rail it uncomputes (p5: an atom rail computed from zext of the negated atom), lands
+    // inside a bracket (cq-nogu).
     auto emit = [&](size_t i) {
       SmallVector<Value *, 2> need;
       for (size_t j = 0; j < gates[i].ctl.size(); ++j)
@@ -243,12 +246,6 @@ public:
           setNeg(open[k], false);
       for (Value *r : need)
         setNeg(r, true);
-      // An atom rail computed directly from a bracketed one may have its item placed after this gate.
-      for (Value *r : rails[i])
-        if (auto *c = dyn_cast<CallInst>(r))
-          for (Value *a : c->args())
-            if (is_contained(need, a))
-              unimplemented("pred: an X bracket on a rail another control of the same flag gate reads", c);
       for (Value *r : rails[i])
         if (r == t)
           internalError("pred: a bracketed flag gate controlled by its own target");
@@ -261,7 +258,12 @@ public:
       emit(i);
     while (!open.empty())
       setNeg(open.back(), false);
-    sink.freeScratch(t);
+    SmallVector<Value *, 8> held;
+    for (const auto &r : rails)
+      for (Value *c : r)
+        if (!is_contained(held, c))
+          held.push_back(c);
+    sink.freeScratch(t, held);
     return true;
   }
 };
@@ -461,7 +463,11 @@ public:
     ctx.emitCore(abi::CoreSpec{op, i1Rail()}, args);
   }
 
-  void freeScratch(Value *t) override { ctx.emitCore(abi::CoreSpec{abi::Core::Free}, {t}); }
+  void freeScratch(Value *t, ArrayRef<Value *> held) override {
+    CallInst *free = ctx.emitCore(abi::CoreSpec{abi::Core::Free}, {t});
+    for (Value *r : held)
+      ctx.unc().noteUse(ctx.unc().idOf(r), free);
+  }
 
   void gate(abi::Core op, ArrayRef<Value *> controls, Value *target) override {
     SmallVector<Value *, 3> args(controls.begin(), controls.end());
