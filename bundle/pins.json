@@ -1,0 +1,106 @@
+{
+  "clang": "19.1.7",
+  "triple": "x86_64-apple-macosx16.0.0",
+  "output": "cq_bundle_v1.bc",
+  "sources": {
+    "llvm-project": {
+      "url": "https://github.com/llvm/llvm-project.git",
+      "tag": "llvmorg-19.1.7",
+      "rev": "cd708029e0b2869e80abe31ddb175f7c35361f90",
+      "root": "compiler-rt/lib/builtins",
+      "flags": [
+        "-O1",
+        "-std=c11",
+        "-fno-builtin",
+        "-w"
+      ],
+      "units": [
+        "muldc3.c",
+        "divdc3.c",
+        "mulsc3.c",
+        "divsc3.c",
+        "mulxc3.c",
+        "divxc3.c"
+      ]
+    },
+    "musl": {
+      "url": "https://git.musl-libc.org/git/musl",
+      "rev": "b1efda5b91735e33635376ca11c9b497a1c66e39",
+      "root": ".",
+      "flags": [
+        "-O1",
+        "-std=c99",
+        "-nostdinc",
+        "-ffreestanding",
+        "-fno-strict-aliasing",
+        "-D_XOPEN_SOURCE=700",
+        "-w"
+      ],
+      "include": [
+        "@cq_arch",
+        "arch/x86_64",
+        "arch/generic",
+        "@musl_obj",
+        "src/include",
+        "src/internal",
+        "include"
+      ],
+      "units": [
+        "src/math/logb.c",
+        "src/math/ilogb.c",
+        "src/math/scalbn.c",
+        "src/math/logbf.c",
+        "src/math/ilogbf.c",
+        "src/math/scalbnf.c",
+        "src/math/logbl.c",
+        "src/math/ilogbl.c",
+        "src/math/__fpclassifyl.c",
+        "src/math/scalbnl.c",
+        "src/string/memcmp.c"
+      ]
+    }
+  },
+  "files": {
+    "llvm-project:divdc3.c": "f6ebfa99e5a208078e998cf87e539f25a92d86e4e316fe983f4031f1745d938a",
+    "llvm-project:divsc3.c": "840b134538c700eabd1f830b400189f7e7148b90c0ffc3c70404050d46161d3e",
+    "llvm-project:divxc3.c": "2f7814e11d2866c7c2504ef6cc9c223f9f56183f1b2d510269a2c728be5f91c5",
+    "llvm-project:fp_lib.h": "f16da551301b3fe3d21987ee967686f6b9e4b233eecd0ae7b5a0ab461350b55c",
+    "llvm-project:int_endianness.h": "ec5175561075845b7b16a92ad5ecdfd42a284de2736dd07e4ca7011b75c37709",
+    "llvm-project:int_lib.h": "b31130f10484636895daa13b91b63d47ea82b45547f29e4dd136b48a67854d30",
+    "llvm-project:int_math.h": "42d83ee41543909de016379a8251e211a6890cbc7945c433bb30f4ba29d7b10c",
+    "llvm-project:int_types.h": "b4b768e1b2251df4c0161b4c1f120417500ff4883b7008120104d042eeb2151f",
+    "llvm-project:int_util.h": "63d06198ab720a75c20bfd84be895c2746581b129168bae6201e7384bbb0473b",
+    "llvm-project:muldc3.c": "6b5c3fba3f59901c717168ba3a51dab26674541ac16a7b870ce7af0f3e339644",
+    "llvm-project:mulsc3.c": "ced55a7c473dbde086ca3649c431dc198348cf66d612eec2316862837a84b14a",
+    "llvm-project:mulxc3.c": "9de668cf8933db694755bbe4c68d0908c304c0dbbb25aee99e688cdd57d1f09c",
+    "musl:arch/generic/bits/stdint.h": "da756261a2d5fcd7b64bcc323d91897c75a1f9b3883cf2dbf6d066454ae6f511",
+    "musl:arch/generic/fp_arch.h": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "musl:arch/x86_64/bits/alltypes.h.in": "3178d6112df2fac8d2ad0331ea956a9161ca38780f1e01569a97a4d76a40071e",
+    "musl:arch/x86_64/bits/float.h": "de4738aaf93195145476108f536039c28dc572aa34ccf3ce099142266f9007df",
+    "musl:arch/x86_64/bits/limits.h": "1cf68647701c5ccf850d6f092f1dbd1460c2b25931699b423cd3b6a98081885f",
+    "musl:include/alltypes.h.in": "96f91d1c50bcea6145ee951c66750b570465d2533ee0776334603f316ae7b538",
+    "musl:include/endian.h": "4414084736937798abcc075d1f8053e116d873c81dda0908013bfca3331771b9",
+    "musl:include/features.h": "6d228e77b88b69f70f9157548b6ec673ffc6b998ce6035fbbee0caddb8442903",
+    "musl:include/float.h": "d513aa2c48b2d60672ab10dbab0ab80347db9f1b353db4ea3fae2018907964c1",
+    "musl:include/limits.h": "d6fb743478f7a8dd27f057db844a806165709641b0d0e78fbf0cabf5c88f1e12",
+    "musl:include/math.h": "5559892c51d9625616fde0c4d25609f1e68e0aa3aee090d1842c6f894e63352a",
+    "musl:include/stdint.h": "b6e77f1611e56cf499233172cab8bc09c0f7d937f3daa5ad552e1712fc6663e5",
+    "musl:include/string.h": "714a7724b0051be159c0fb7ec7f97c4ff9dd16c22e1be926c957f747cc6a8906",
+    "musl:src/include/features.h": "9b199f92f5949f23a224995e0e1578b2f1be0e95879fbc1c4abfa2784658490c",
+    "musl:src/include/string.h": "93a9f37d69566fe060496888e32ce151592340ceebe541014dd2276eab71e8b7",
+    "musl:src/internal/libm.h": "d5a11757541471030d8f4bf7a39a29de35732ecbb291b2f45bf03296be4f25a2",
+    "musl:src/math/__fpclassifyl.c": "79a2f6d1f56dd3c3cc316d6fc5891ec0bd04b69a1b0f6688e028fb29c8f85a84",
+    "musl:src/math/ilogb.c": "c9875bc2118b90b16f2a8f3770a61dad59e2e5e076e744d4c054191ba00611be",
+    "musl:src/math/ilogbf.c": "d872a912229d178401482fc6b7cc7c3397a838b43d30f61bfdad8f8d03f63f4d",
+    "musl:src/math/ilogbl.c": "1d2ac88f9b2316e6cf5e73878800c5b96c26de6813e8f528c4c60cceb98fa3ea",
+    "musl:src/math/logb.c": "46f89d69993da5a4b329d8958fbf1c93427b85cca53e45b4d4aa9a91bcc043b1",
+    "musl:src/math/logbf.c": "7490638a90bc5f6b916f073bc52a7ce29cbcb194f7b38935f207de2336efea9d",
+    "musl:src/math/logbl.c": "5e2f5f3596afe640040312875b5ce56c35be45024cd1ce964c33ebf6dfed5192",
+    "musl:src/math/scalbn.c": "a2e766283ed30c2b30c71e01dbdabef58faf92cc9aa84a01c1ce1069b6625696",
+    "musl:src/math/scalbnf.c": "3fb36f1cf8d9c118bfe85b462e6e0c034543835e5ffee4661f5ab8de997813e5",
+    "musl:src/math/scalbnl.c": "f4da2cc8aa06122ce93867a80516abf3f4002abb9fdaf2da826c2c1986759345",
+    "musl:src/string/memcmp.c": "826b1b5e84d3c0fb68be827c051f6dc0d67da17ee3a444e94be0e5360586916f",
+    "musl:tools/mkalltypes.sed": "8ccea9ec27a8450a52973cab8cdea0af8b4bd93d246b1f206b37ccc6fa0b8b7b"
+  },
+  "sha256": "543cecdb64be1dc0f7b7ef267a657537e67c73110a010ece88b66c892d1d42e7"
+}
