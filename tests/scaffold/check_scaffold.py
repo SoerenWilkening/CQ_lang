@@ -3,7 +3,8 @@
 
 1. spec.lock holds (tools/spec_lock.py).
 2. The frozen headers equal cq-arch's text with the owner's amendments A1-A4 and freeze beads K1
-   (cq-k1w), S1 (cq-sml), P1 (cq-6yb), B1 (cq-dvj), M1 (cq-mgi), C1 (cq-4cy), M2 (cq-9ge) and U1 (cq-bq0): pass/include/cq/*.h, checker/rt/cqe.h, and
+   (cq-k1w), S1 (cq-sml), P1 (cq-6yb), B1 (cq-dvj), M1 (cq-mgi), C1 (cq-4cy), M2 (cq-9ge), U1 (cq-bq0) and the
+   freeze amendments L1 (cq-ofn6), L2 (cq-99f7) and L3 (cq-x2lh): pass/include/cq/*.h, checker/rt/cqe.h, and
    the dataclass fields of checker/cqcheck/contracts.py. cq-arch is read live from beads (`bd show cq-arch --json`) unless
    --arch-json names a saved copy.
 3. `opt -passes=cq-lower` on every example `.O1.ll` (counted from the directory) either exits 0 with an
@@ -146,6 +147,21 @@ AMENDMENTS = [
     # (CR rule 9 at a58c3a4) is a merge alias in Uncompute.
     ("  RailId recordExternal(llvm::Value *handle, Role);",
      ["  RailId recordMerge(llvm::Instruction *merged);"], "after"),
+    # L1 (freeze amendment cq-ofn6, cq-arch comment 2026-10-29 00:27): rebind and the spine's
+    # per-instruction dispatch.
+    ("  void bindFields(const llvm::Value *orig, llvm::ArrayRef<Operand>);",
+     ["  void rebind(const llvm::Value *orig, llvm::ArrayRef<Operand>);   // replaces a binding; internalError if unbound"],
+     "after"),
+    ("void lowerOpcode(LoweringContext &, llvm::Instruction &);",
+     ["void lowerInstruction(LoweringContext &, llvm::Instruction &);   // the spine's dispatch of one non-phi, non-terminator"],
+     "after"),
+    # L2 (freeze amendment cq-99f7, cq-arch comment 2026-10-29 01:01): the tripFlag overload.
+    ("void lowerInstruction(LoweringContext &, llvm::Instruction &);   // the spine's dispatch of one non-phi, non-terminator",
+     ["void lowerInstruction(LoweringContext &, llvm::Instruction &, llvm::Value *tripFlag);   // cq-99f7: under a loop trip's i1 rail"],
+     "after"),
+    # L3 (freeze amendment cq-x2lh, cq-arch comment 2026-10-29 06:51): the K of a function.
+    ("  unsigned K(const llvm::Loop *) const;",
+     ["  unsigned K(const llvm::Function &) const;   // F's K, F may be a declaration (rule 27 trailing K)"], "after"),
 ]
 
 # M1 (freeze bead cq-mgi, final text in a cq-arch comment): the op registry and the handler
@@ -325,7 +341,7 @@ def check_headers(desc):
             fail(f"contracts.py {cls}: fields {got} != cq-arch {names}")
         else:
             n += 1
-    print(f"headers: {n} interfaces compared against cq-arch (+A1-A4, K1, S1, P1, B1, M1, C1, M2, U1)")
+    print(f"headers: {n} interfaces compared against cq-arch (+A1-A4, K1, S1, P1, B1, M1, C1, M2, U1, L1-L3)")
 
 
 # ---------------------------------------------------------------------------------------------
