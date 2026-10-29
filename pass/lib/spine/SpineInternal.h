@@ -187,6 +187,13 @@ llvm::Instruction *copyClassical(LoweringContext &, llvm::Instruction &);
 // Rule 19 inline of an in-module entry callee returning an unmeasured quantum value (Dispatch.cpp).
 void lowerInline(LoweringContext &, llvm::CallBase &, const Specialization &callee);
 
+// Rule 20, _Bool cells (cq-sj2j): is this original load or store an access of a _Bool slot object,
+// whose cells hold i1 rails behind i8 memory? The object's definition is mem-slots' (Slots.cpp,
+// boolCells): the access goes to mem-slots (one slot object), and every load or store of that object
+// in the function is an i8 load carrying !range [0, 2) or an i8 store of a zext from i1 or of the
+// constant 0 / 1 (Dispatch.cpp).
+bool boolCellAccess(LoweringContext &, const llvm::Instruction &access);
+
 // Is v (an original value) quantum in this context's specialization?
 bool isQ(LoweringContext &, const llvm::Value *v);
 bool anyQuantumOperand(LoweringContext &, const llvm::Instruction &);

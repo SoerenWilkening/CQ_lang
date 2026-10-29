@@ -14,6 +14,7 @@
 #include "cq/Switch.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/Support/raw_ostream.h"
@@ -391,6 +392,63 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
 }
 
 } // namespace
+
+namespace {
+
+bool boolRangeLoad(const LoadInst *ld) {
+  MDNode *r = ld->getMetadata(LLVMContext::MD_range);
+  if (!ld->getType()->isIntegerTy(8) || !r || r->getNumOperands() != 2)
+    return false;
+  auto *lo = mdconst::dyn_extract<ConstantInt>(r->getOperand(0));
+  auto *hi = mdconst::dyn_extract<ConstantInt>(r->getOperand(1));
+  return lo && hi && lo->isZero() && hi->getZExtValue() == 2;
+}
+
+bool boolValueStore(const StoreInst *st) {
+  const Value *v = st->getValueOperand();
+  if (!v->getType()->isIntegerTy(8))
+    return false;
+  if (auto *z = dyn_cast<ZExtInst>(v))
+    return z->getSrcTy()->isIntegerTy(1);
+  if (auto *c = dyn_cast<ConstantInt>(v))
+    return c->getZExtValue() <= 1;
+  return false;
+}
+
+} // namespace
+
+bool boolCellAccess(LoweringContext &ctx, const Instruction &access) {
+  const Value *p;
+  if (auto *ld = dyn_cast<LoadInst>(&access)) {
+    if (ld->isVolatile() || ld->isAtomic())
+      return false;
+    p = ld->getPointerOperand();
+  } else if (auto *st = dyn_cast<StoreInst>(&access)) {
+    if (st->isVolatile() || st->isAtomic())
+      return false;
+    p = st->getPointerOperand();
+  } else {
+    return false;
+  }
+  auto &I = const_cast<Instruction &>(access);
+  if (classifyAccess(ctx, I, p) != Access::Slot)
+    return false;
+  ArrayRef<ObjectId> objs = ctx.T.provenance(p, ctx.S);
+  if (objs.size() != 1)
+    return false;   // mem-slots stops on an access of several objects
+  ObjectId o = objs.front();
+  auto hasO = [&](const Value *q) { return llvm::is_contained(ctx.T.provenance(q, ctx.S), o); };
+  for (const Instruction &J : instructions(*access.getFunction())) {
+    if (auto *ld = dyn_cast<LoadInst>(&J)) {
+      if (hasO(ld->getPointerOperand()) && !boolRangeLoad(ld))
+        return false;
+    } else if (auto *st = dyn_cast<StoreInst>(&J)) {
+      if (hasO(st->getPointerOperand()) && !boolValueStore(st))
+        return false;
+    }
+  }
+  return true;
+}
 
 Instruction *copyClassical(LoweringContext &ctx, Instruction &I) {
   if (isa<PHINode>(I) || I.isTerminator())

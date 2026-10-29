@@ -298,6 +298,28 @@ void lowerIntrinsic(LoweringContext &ctx, IntrinsicInst &II) {
   ctx.emitTemplate(spec, ops, &II);
 }
 
+// Rule 20 with rule 3 (cq-sj2j; 58, 60: "the i8<->i1 zext/trunc are representation changes, no
+// gate"): a _Bool slot cell holds an i1 rail behind i8 memory, so the trunc i8 -> i1 of its load
+// and the zext i1 -> i8 of a value stored only into such cells name the same rail.
+bool boolCellRepresentation(LoweringContext &ctx, const CastInst &ci) {
+  LLVMContext &C = ctx.M.getContext();
+  if (isa<TruncInst>(ci) && ci.getSrcTy() == Type::getInt8Ty(C) && ci.getDestTy() == Type::getInt1Ty(C)) {
+    auto *ld = dyn_cast<LoadInst>(ci.getOperand(0));
+    return ld && spine::boolCellAccess(ctx, *ld);
+  }
+  if (isa<ZExtInst>(ci) && ci.getSrcTy() == Type::getInt1Ty(C) && ci.getDestTy() == Type::getInt8Ty(C)) {
+    if (ci.use_empty())
+      return false;
+    for (const Use &u : ci.uses()) {
+      auto *st = dyn_cast<StoreInst>(u.getUser());
+      if (!st || u.getOperandNo() != 0 || !spine::boolCellAccess(ctx, *st))
+        return false;
+    }
+    return true;
+  }
+  return false;
+}
+
 } // namespace
 
 void lowerOpcode(LoweringContext &ctx, Instruction &I) {
@@ -368,6 +390,10 @@ void lowerOpcode(LoweringContext &ctx, Instruction &I) {
     }
     Type *from = ci->getSrcTy(), *to = ci->getDestTy();
     if (from == to) {   // a no-op bitcast: a representation change with no gate (rule 3)
+      spine::bindOperand(ctx, &I, x);
+      return;
+    }
+    if (boolCellRepresentation(ctx, *ci)) {
       spine::bindOperand(ctx, &I, x);
       return;
     }
