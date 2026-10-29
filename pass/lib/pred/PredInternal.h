@@ -122,8 +122,22 @@ public:
   virtual llvm::Value *alloc0() = 0;                      // a fresh |0> i1 rail, recorded as a seed
   // target ^= op(controls): XorI1 (1 control), AndI1/OrI1 (2), NotI1 (0); recorded against target.
   virtual void gate(abi::Core op, llvm::ArrayRef<llvm::Value *> controls, llvm::Value *target) = 0;
+  // For bracketedFlag, emitted and NOT recorded (the caller undoes them itself, CR §5 balanced where
+  // emitted): a fresh |0> i1 rail, an XOR-type gate (not_i1 on an atom rail for a bracket), its free.
+  virtual llvm::Value *scratch0() = 0;
+  virtual void rawGate(abi::Core op, llvm::ArrayRef<llvm::Value *> controls, llvm::Value *target) = 0;
+  virtual void freeScratch(llvm::Value *t) = 0;
 };
 llvm::Value *materialize(unsigned node, GateSink &, const std::function<bool(unsigned)> &quantumLikeVar);
+// Rule 8's X bracket inside a compound flag (cq-rdux, 137). The flag's gates take a negated
+// quantum-like atom as a literal control: not_i1 on the atom's rail before the first gate that reads
+// it negated, not_i1 again after the last. When some gate of f's decomposition has such a control,
+// emits: every control rail (literal atoms; sub-flags through materialize, recorded), a scratch |0>
+// rail t, the gates into t (fewest negated controls first, brackets opened as needed), use(t), the
+// same gates in reverse, the closing brackets, free(t); and returns true. t and the bracket are not
+// recorded. Otherwise emits nothing and returns false (the ordinary flag applies).
+bool bracketedFlag(unsigned node, GateSink &, const std::function<bool(unsigned)> &quantumLikeVar,
+                   const std::function<void(llvm::Value *)> &use);
 
 // Rule 9 at CQ_spec a58c3a4 (owner ruling on cq-mtt): a select or phi whose condition, or choice of
 // incoming edge, is purely classical is a classical select/phi over the handles, with no gate, like a

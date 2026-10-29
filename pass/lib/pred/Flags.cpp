@@ -8,6 +8,10 @@
 //     argument list, out its target; IR users of a handle are its uses; a rail is resolved only at a
 //     flushBefore/flushAtExit the spine places. A flag minted here is used right where it is minted
 //     (a gate or a select), so the first flush after that lowering tears it down (CR §5).
+//   - One exception (cq-rdux): a phase whose compound flag has a negated atom (rule 8's X bracket)
+//     computes the flag on an unrecorded scratch rail, applies the phase and uncomputes and frees the
+//     flag itself, with the bracket around all three (bracketedFlag). The scratch rail is never an
+//     operand of a record; its sub-flags and atoms are ordinary recorded rails read by IR users.
 #include "PredInternal.h"
 
 #include "cq/Common.h"
@@ -22,29 +26,53 @@ using namespace llvm;
 namespace cq {
 namespace pred_detail {
 
-Value *materialize(unsigned node, GateSink &sink, const std::function<bool(unsigned)> &ql) {
+namespace {
+
+// Flag synthesis state shared by materialize and bracketedPhase: one memo of atom rails and minted
+// sub-flags per lowering, so an atom (a switch case flag, a classical seed) is read through one rail.
+class Materializer {
   Bdd &m = Bdd::get();
+  GateSink &sink;
+  const std::function<bool(unsigned)> &ql;
   std::map<unsigned, Value *> memo, atoms;
 
-  auto classical = [&](unsigned n) {
+public:
+  Materializer(GateSink &sink, const std::function<bool(unsigned)> &ql) : sink(sink), ql(ql) {}
+
+  bool classical(unsigned n) {
     std::set<unsigned> sup;
     m.support(n, sup);
     for (unsigned v : sup)
       if (ql(v))
         return false;
     return true;
-  };
-  auto atomRail = [&](unsigned v) {
+  }
+
+  Value *atomRail(unsigned v) {
     auto it = atoms.find(v);
     if (it != atoms.end())
       return it->second;
     return atoms[v] = sink.atomRail(v);
-  };
+  }
 
-  std::function<Value *(unsigned)> mat;
-  std::function<void(Value *, unsigned)> into;
+  // The latest quantum-like atom of n: the innermost condition, so a nested predicate is its parent's
+  // flag joined with the inner condition (08, 137).
+  unsigned shannonVar(unsigned n) {
+    std::set<unsigned> sup;
+    m.support(n, sup);
+    unsigned v = 0;
+    bool found = false;
+    for (unsigned s : sup)
+      if (ql(s)) {
+        v = s;
+        found = true;
+      }
+    if (!found)
+      internalError("pred: flag synthesis lost its quantum atom");
+    return v;
+  }
 
-  mat = [&](unsigned n) -> Value * {
+  Value *mat(unsigned n) {
     if (m.terminal(n))
       internalError("pred: a flag for a constant predicate");
     auto it = memo.find(n);
@@ -60,10 +88,10 @@ Value *materialize(unsigned node, GateSink &sink, const std::function<bool(unsig
       into(r, n);
     }
     return memo[n] = r;
-  };
+  }
 
   // t ^= n, by XOR-into-t gates only.
-  into = [&](Value *t, unsigned n) {
+  void into(Value *t, unsigned n) {
     if (n == Bdd::F)
       return;
     if (n == Bdd::T) {
@@ -74,19 +102,7 @@ Value *materialize(unsigned node, GateSink &sink, const std::function<bool(unsig
       sink.gate(abi::Core::XorI1, {mat(n)}, t);
       return;
     }
-    // Shannon on the latest quantum-like atom: the innermost condition, so a nested predicate is its
-    // parent's flag joined with the inner condition (08, 137).
-    std::set<unsigned> sup;
-    m.support(n, sup);
-    unsigned v = 0;
-    bool found = false;
-    for (unsigned s : sup)
-      if (ql(s)) {
-        v = s;
-        found = true;
-      }
-    if (!found)
-      internalError("pred: flag synthesis lost its quantum atom");
+    unsigned v = shannonVar(n);
     unsigned f0 = m.cofactor(n, v, false), f1 = m.cofactor(n, v, true);
     Value *V = atomRail(v);
     if (f0 == Bdd::F) {                       // v & f1
@@ -120,9 +136,145 @@ Value *materialize(unsigned node, GateSink &sink, const std::function<bool(unsig
       else
         sink.gate(abi::Core::AndI1, {V, mat(d)}, t);
     }
-  };
+  }
 
-  return mat(node);
+  // ---- Rule 8's X bracket inside a compound flag (cq-rdux) ----
+  // A control of a planned gate: a literal (a quantum-like atom, possibly negated) or a sub-flag
+  // node, minted by mat (recorded, torn down by the uncompute spine).
+  struct Ctl { bool lit; unsigned var; bool neg; unsigned node; };
+  struct PGate { abi::Core op; SmallVector<Ctl, 2> ctl; unsigned negs() const {
+    unsigned k = 0;
+    for (const Ctl &c : ctl)
+      k += c.lit && c.neg;
+    return k;
+  } };
+
+  Ctl ctlOf(unsigned n) {
+    if (!m.terminal(n) && ql(m.var(n))) {
+      if (m.lo(n) == Bdd::F && m.hi(n) == Bdd::T)
+        return Ctl{true, m.var(n), false, 0};
+      if (m.lo(n) == Bdd::T && m.hi(n) == Bdd::F)
+        return Ctl{true, m.var(n), true, 0};
+    }
+    return Ctl{false, 0, false, n};
+  }
+  static Ctl lit(unsigned v, bool neg) { return Ctl{true, v, neg, 0}; }
+
+  // The gates of t ^= n with a negated atom as a literal control (no rail of its own): Shannon on the
+  // same atom as `into`, so a predicate with no negated literal plans what `into` emits.
+  void plan(unsigned n, std::vector<PGate> &out) {
+    if (n == Bdd::F)
+      return;
+    if (n == Bdd::T) {
+      out.push_back({abi::Core::NotI1, {}});
+      return;
+    }
+    if (classical(n)) {
+      out.push_back({abi::Core::XorI1, {ctlOf(n)}});
+      return;
+    }
+    unsigned v = shannonVar(n);
+    unsigned f0 = m.cofactor(n, v, false), f1 = m.cofactor(n, v, true);
+    if (f0 == Bdd::F) {                       // v & f1
+      if (f1 == Bdd::T)
+        out.push_back({abi::Core::XorI1, {lit(v, false)}});
+      else
+        out.push_back({abi::Core::AndI1, {lit(v, false), ctlOf(f1)}});
+    } else if (f1 == Bdd::F) {                // !v & f0
+      if (f0 == Bdd::T)
+        out.push_back({abi::Core::XorI1, {lit(v, true)}});
+      else
+        out.push_back({abi::Core::AndI1, {ctlOf(f0), lit(v, true)}});
+    } else if (f0 == Bdd::T) {                // !v | f1
+      out.push_back({abi::Core::OrI1, {lit(v, true), ctlOf(f1)}});
+    } else if (f1 == Bdd::T) {                // v | f0
+      out.push_back({abi::Core::OrI1, {lit(v, false), ctlOf(f0)}});
+    } else {                                  // f0 ^ (v & (f0 ^ f1))
+      plan(f0, out);
+      unsigned d = m.xorOp(f0, f1);
+      if (d == Bdd::T)
+        out.push_back({abi::Core::XorI1, {lit(v, false)}});
+      else
+        out.push_back({abi::Core::AndI1, {lit(v, false), ctlOf(d)}});
+    }
+  }
+
+  bool bracketed(unsigned node, const std::function<void(Value *)> &use) {
+    if (m.terminal(node) || classical(node))
+      internalError("pred: a bracketed flag for a constant or classical predicate");
+    std::vector<PGate> gates;
+    plan(node, gates);
+    if (std::none_of(gates.begin(), gates.end(), [](const PGate &g) { return g.negs() > 0; }))
+      return false;   // nothing to bracket: the ordinary flag
+    // Gates with fewer negated controls first, so a bracket opens once and spans the inner gates, the
+    // use and their replay (137).
+    std::stable_sort(gates.begin(), gates.end(), [](const PGate &a, const PGate &b) { return a.negs() < b.negs(); });
+    Value *t = sink.scratch0();
+    // Every control rail is minted before any bracket opens: a sub-flag's recorded gates read its
+    // atoms un-negated, as their replay will.
+    std::vector<SmallVector<Value *, 2>> rails;
+    for (const PGate &g : gates) {
+      SmallVector<Value *, 2> r;
+      for (const Ctl &c : g.ctl)
+        r.push_back(c.lit ? atomRail(c.var) : mat(c.node));
+      rails.push_back(r);
+    }
+    std::vector<Value *> open;   // rails currently negated, in opening order
+    auto setNeg = [&](Value *r, bool want) {
+      auto it = std::find(open.begin(), open.end(), r);
+      if ((it != open.end()) == want)
+        return;
+      sink.rawGate(abi::Core::NotI1, {}, r);
+      if (want)
+        open.push_back(r);
+      else
+        open.erase(it);
+    };
+    // Before each gate exactly the brackets it needs are open. The uncompute spine places a recorded
+    // control's item right after its last use, which is a gate of the replay: the sub-flags of a gate
+    // never read its own literals (Shannon), so the item then reads its atoms un-negated.
+    auto emit = [&](size_t i) {
+      SmallVector<Value *, 2> need;
+      for (size_t j = 0; j < gates[i].ctl.size(); ++j)
+        if (gates[i].ctl[j].lit && gates[i].ctl[j].neg)
+          need.push_back(rails[i][j]);
+      for (size_t k = open.size(); k-- > 0;)
+        if (!is_contained(need, open[k]))
+          setNeg(open[k], false);
+      for (Value *r : need)
+        setNeg(r, true);
+      // An atom rail computed directly from a bracketed one may have its item placed after this gate.
+      for (Value *r : rails[i])
+        if (auto *c = dyn_cast<CallInst>(r))
+          for (Value *a : c->args())
+            if (is_contained(need, a))
+              unimplemented("pred: an X bracket on a rail another control of the same flag gate reads", c);
+      for (Value *r : rails[i])
+        if (r == t)
+          internalError("pred: a bracketed flag gate controlled by its own target");
+      sink.rawGate(gates[i].op, rails[i], t);
+    };
+    for (size_t i = 0; i < gates.size(); ++i)
+      emit(i);
+    use(t);
+    for (size_t i = gates.size(); i-- > 0;)
+      emit(i);
+    while (!open.empty())
+      setNeg(open.back(), false);
+    sink.freeScratch(t);
+    return true;
+  }
+};
+
+} // namespace
+
+Value *materialize(unsigned node, GateSink &sink, const std::function<bool(unsigned)> &ql) {
+  return Materializer(sink, ql).mat(node);
+}
+
+bool bracketedFlag(unsigned node, GateSink &sink, const std::function<bool(unsigned)> &ql,
+                   const std::function<void(Value *)> &use) {
+  return Materializer(sink, ql).bracketed(node, use);
 }
 
 // ---- Rule 9 at a58c3a4: merges chosen classically (owner ruling on cq-mtt) ----
@@ -298,6 +450,18 @@ public:
   Value *classicalSeed(unsigned node) override { return seed(classicalValue(node)); }
 
   Value *alloc0() override { return seed(ConstantInt::getFalse(ctx.M.getContext())); }
+
+  Value *scratch0() override {
+    return ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1Rail()}, {ConstantInt::getFalse(ctx.M.getContext())});
+  }
+
+  void rawGate(abi::Core op, ArrayRef<Value *> controls, Value *target) override {
+    SmallVector<Value *, 3> args(controls.begin(), controls.end());
+    args.push_back(target);
+    ctx.emitCore(abi::CoreSpec{op, i1Rail()}, args);
+  }
+
+  void freeScratch(Value *t) override { ctx.emitCore(abi::CoreSpec{abi::Core::Free}, {t}); }
 
   void gate(abi::Core op, ArrayRef<Value *> controls, Value *target) override {
     SmallVector<Value *, 3> args(controls.begin(), controls.end());
@@ -500,6 +664,14 @@ void lowerPhase(LoweringContext &ctx, CallInst &cqPhi) {
     ctx.emitCore(rz, {G, angle.v});
     ctx.emitCore(x, {G});
     return;
+  }
+  {
+    // Rule 8: a negated atom inside a compound flag is an X bracket on its rail, not a rail of its
+    // own (137). The bracket spans the flag's gates, the phase and their replay, so the flag is
+    // computed and uncomputed here, around the phase, and is no uncompute record (cq-rdux).
+    CtxSink sink(ctx);
+    if (bracketedFlag(n, sink, quantumLikeFn(ctx, O), [&](Value *t) { ctx.emitCore(rz, {t, angle.v}); }))
+      return;
   }
   Value *f = ctx.preds().flag(ctx, q);
   ctx.emitCore(rz, {f, angle.v});

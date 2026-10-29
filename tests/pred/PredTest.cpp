@@ -594,7 +594,20 @@ public:
   Value *alloc0() override { return classicalSeed(Bdd::F); }
   void gate(abi::Core op, ArrayRef<Value *> controls, Value *target) override {
     gates.push_back({op, std::vector<Value *>(controls.begin(), controls.end()), target});
+    seq.push_back({false, gates.back()});
   }
+  // bracketedFlag: program order of recorded (raw = false) and unrecorded gates, the scratch rails.
+  struct Ev { bool raw; SimGate g; };
+  std::vector<Ev> seq;
+  std::vector<Value *> scratch, freed;
+  Value *scratch0() override {
+    scratch.push_back(fresh());
+    return scratch.back();
+  }
+  void rawGate(abi::Core op, ArrayRef<Value *> controls, Value *target) override {
+    seq.push_back({true, {op, std::vector<Value *>(controls.begin(), controls.end()), target}});
+  }
+  void freeScratch(Value *t) override { freed.push_back(t); }
 };
 
 static bool apply(const SimGate &g, std::map<Value *, bool> &st) {
@@ -722,6 +735,176 @@ static void testFlags(Function &pool) {
     }
   }
   outs() << "flag synthesis: " << tested << " functions, " << gateTotal << " gates\n";
+}
+
+// ---- 4b. rule 8's X bracket inside a compound flag (cq-rdux) ----
+static void testBracketed(Function &pool) {
+  std::vector<Value *> args;
+  for (Argument &a : pool.args())
+    args.push_back(&a);
+  unsigned qv[3] = {atomVar(AtomKind::Cond, args[0]), atomVar(AtomKind::Cond, args[1]),
+                    atomVar(AtomKind::Cond, args[2])};
+  unsigned kv = atomVar(AtomKind::Eq, args[3], APInt(32, 7));
+  auto ql = [&](unsigned v) { return v != kv; };
+  unsigned tested = 0, bracketed = 0;
+  for (unsigned nvars : {3u, 4u}) {
+    unsigned rows = 1u << nvars;
+    for (unsigned tt = 0; tt < (1u << rows); ++tt) {
+      unsigned f = Bdd::F;
+      for (unsigned r = 0; r < rows; ++r) {
+        if (!((tt >> r) & 1))
+          continue;
+        unsigned term = Bdd::T;
+        for (unsigned i = 0; i < nvars; ++i) {
+          unsigned v = m.ithVar(i < 3 ? qv[i] : kv);
+          term = m.andOp(term, ((r >> i) & 1) ? v : m.notOp(v));
+        }
+        f = m.orOp(f, term);
+      }
+      if (f == Bdd::T || f == Bdd::F)
+        continue;
+      std::set<unsigned> sup;
+      m.support(f, sup);
+      bool classicalOnly = true;
+      for (unsigned v : sup)
+        classicalOnly &= !ql(v);
+      if (classicalOnly)
+        continue;
+      ++tested;
+      SimSink sink;
+      sink.pool = std::vector<Value *>(args.begin() + 4, args.end());
+      size_t useAt = ~size_t(0);
+      Value *used = nullptr;
+      bool did = bracketedFlag(f, sink, ql, [&](Value *t) {
+        useAt = sink.seq.size();
+        used = t;
+      });
+      if (!did) {
+        CHECK(sink.seq.empty() && sink.scratch.empty() && sink.next == 0,
+              "no bracket: nothing emitted: " << describe(f));
+        continue;
+      }
+      ++bracketed;
+      CHECK(sink.scratch.size() == 1 && used == sink.scratch[0] && sink.freed == sink.scratch,
+            "one scratch rail, used once and freed: " << describe(f));
+      std::set<Value *> atomSet;
+      for (auto &[v, r] : sink.atomRails)
+        atomSet.insert(r);
+      bool notOnAtom = false, structural = true;
+      for (const SimSink::Ev &e : sink.seq) {
+        if (e.raw && e.g.op == abi::Core::NotI1)
+          notOnAtom |= atomSet.count(e.g.t) > 0;
+        if (e.raw && e.g.op != abi::Core::NotI1)
+          structural &= e.g.t == used;
+        if (!e.raw)
+          structural &= e.g.t != used && !atomSet.count(e.g.t);
+      }
+      CHECK(notOnAtom, "a bracketed flag puts not_i1 on an atom rail: " << describe(f));
+      CHECK(structural, "raw gates target the scratch flag (or bracket an atom), recorded ones a sub-flag: "
+                            << describe(f));
+      for (unsigned r = 0; r < rows; ++r) {
+        auto value = [&](unsigned var) {
+          for (unsigned i = 0; i < nvars; ++i)
+            if (var == (i < 3 ? qv[i] : kv))
+              return bool((r >> i) & 1);
+          return false;
+        };
+        std::map<Value *, bool> st;
+        for (auto &[var, rail] : sink.atomRails)
+          st[rail] = value(var);
+        for (auto &[rail, node] : sink.seeds)
+          st[rail] = m.eval(node, value);
+        st[used] = false;
+        std::map<Value *, bool> init = st;
+        // The uncompute spine replays a sub-flag right after its last use (as early as allowed),
+        // readers first: model that, so a replay inside an open bracket would leave it dirty.
+        std::vector<Value *> subs;   // sub-flag rails in minting order
+        for (const SimGate &g : sink.gates)
+          if (!is_contained(subs, g.t))
+            subs.push_back(g.t);
+        std::map<Value *, size_t> lastUse;
+        for (size_t i = 0; i < sink.seq.size(); ++i) {
+          for (Value *c : sink.seq[i].g.ctl)
+            lastUse[c] = i;
+          if (!sink.seq[i].raw)
+            lastUse[sink.seq[i].g.t] = i;
+        }
+        bool atUse = false;
+        std::set<Value *> done;
+        for (size_t i = 0; i <= sink.seq.size(); ++i) {
+          if (i == useAt)
+            atUse = st[used];
+          if (i == sink.seq.size())
+            break;
+          CHECK(::apply(sink.seq[i].g, st), "unknown gate kind");
+          for (bool again = true; again;) {
+            again = false;
+            for (auto it = subs.rbegin(); it != subs.rend(); ++it) {
+              if (done.count(*it) || lastUse[*it] > i)
+                continue;
+              bool ready = true;   // every sub-flag that reads it is replayed already
+              for (const SimGate &g : sink.gates)
+                if (g.t != *it && is_contained(g.ctl, *it) && !done.count(g.t))
+                  ready = false;
+              if (!ready)
+                continue;
+              for (auto g = sink.gates.rbegin(); g != sink.gates.rend(); ++g)
+                if (g->t == *it)
+                  ::apply(*g, st);
+              CHECK(!st[*it], "a sub-flag replayed after its last use is |0>: " << describe(f) << " row " << r);
+              done.insert(*it);
+              again = true;
+            }
+          }
+        }
+        CHECK(done.size() == subs.size(), "every sub-flag replayed: " << describe(f));
+        CHECK(atUse == m.eval(f, value), "bracketed flag value at its use: " << describe(f) << " row " << r);
+        CHECK(st[used] == false, "the scratch flag is |0> at its free: " << describe(f));
+        bool clean = true;
+        for (auto &[rail, v] : init)
+          clean &= st[rail] == v;
+        CHECK(clean, "bracket closed and sub-flags replayed: every rail restored: " << describe(f));
+      }
+    }
+  }
+  CHECK(bracketed > 0, "some predicate needs a bracket");
+  // The probe shapes (cq-rdux): 137 `p & !c`, 923_q03 `!x & c`, 971_u01 `x ? z : w`.
+  {
+    unsigned x = m.ithVar(qv[0]), y = m.ithVar(qv[1]), z = m.ithVar(qv[2]);
+    auto shape = [&](unsigned f) {
+      SimSink sink;
+      sink.pool = std::vector<Value *>(args.begin() + 4, args.end());
+      std::string out;
+      bracketedFlag(f, sink, ql, [&](Value *) { sink.seq.push_back({true, {abi::Core::RzI1, {}, nullptr}}); });
+      std::map<Value *, std::string> nm;
+      for (auto &[var, rail] : sink.atomRails)
+        nm[rail] = var == qv[0] ? "x" : var == qv[1] ? "y" : var == qv[2] ? "z" : "k";
+      for (Value *t : sink.scratch)
+        nm[t] = "t";
+      unsigned g = 0;
+      for (auto &[rail, node] : sink.seeds)
+        nm[rail] = "g" + std::to_string(g++);
+      for (const SimSink::Ev &e : sink.seq) {
+        const char *op = e.g.op == abi::Core::NotI1 ? "not" : e.g.op == abi::Core::AndI1 ? "and"
+                         : e.g.op == abi::Core::OrI1 ? "or" : e.g.op == abi::Core::XorI1 ? "xor" : "rz";
+        out += std::string(e.raw ? "" : "*") + op + "(";
+        for (Value *c : e.g.ctl)
+          out += nm[c] + ",";
+        out += (e.g.t ? nm[e.g.t] : std::string("t")) + ") ";
+      }
+      return out;
+    };
+    std::string s137 = shape(A(A(x, y), N(z)));
+    CHECK(s137 == "*and(y,x,g0) not(z) and(g0,z,t) rz(t) and(g0,z,t) not(z) ",
+          "137: the false edge of the inner compare is an X bracket around the flag: " << s137);
+    std::string sq03 = shape(A(N(x), z));
+    CHECK(sq03 == "not(x) and(z,x,t) rz(t) and(z,x,t) not(x) ", "923_q03: !x & c: " << sq03);
+    std::string su01 = shape(Or(A(x, y), A(N(x), z)));
+    CHECK(su01 == "and(y,x,t) not(x) and(z,x,t) rz(t) and(z,x,t) not(x) and(y,x,t) ",
+          "971_u01: x ? y : z, positive gates outside the bracket: " << su01);
+    CHECK(shape(A(x, y)).empty(), "no negated atom: no bracket (the ordinary flag)");
+  }
+  outs() << "bracketed flags: " << tested << " functions, " << bracketed << " bracketed\n";
 }
 
 
@@ -1054,6 +1237,7 @@ int main() {
   Function *pool = Function::Create(FunctionType::get(Type::getVoidTy(Ctx), params, false),
                                     GlobalValue::ExternalLinkage, "pool", poolMod);
   testFlags(*pool);
+  testBracketed(*pool);
   outs() << "pred_unit: " << checks << " checks, " << failures << " failures\n";
   return failures ? 1 : 0;
 }
