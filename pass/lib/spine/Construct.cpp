@@ -148,6 +148,20 @@ private:
   };
   std::vector<Lit> cands;
   DenseMap<const BasicBlock *, std::pair<std::vector<unsigned>, BasicBlock *>> guards;
+  // cq-174f: the classical facts each planned output edge establishes (planGuards), and per original
+  // block the output edges actually emitted into its output block, with their facts (and the loop
+  // when the edge is a unit's exit). A quantum phi of a block reached by several output edges is
+  // factored by them first (factoredMerge).
+  DenseMap<std::pair<const BasicBlock *, const BasicBlock *>, Pred> edgeFacts;
+  DenseMap<const BasicBlock *, Pred> guardFacts;
+  struct InEdge {
+    BasicBlock *out;
+    std::optional<Pred> facts;
+    Loop *unit;
+  };
+  DenseMap<const BasicBlock *, SmallVector<InEdge, 2>> inEdges;
+  void noteIn(const BasicBlock *from, const BasicBlock *to, Loop *unit = nullptr);
+  Value *factoredMerge(PHINode &phi);
   bool eligible(const BasicBlock *y, const BasicBlock *from) const;
   BasicBlock *out(const BasicBlock *b);
   void emitBlock(BasicBlock *b);
@@ -369,6 +383,13 @@ void Walker::planGuards() {
       it->second = it->second | f;
   };
   in.insert({L.front(), Pred::top()});
+  auto fact = [&](const BasicBlock *from, const BasicBlock *to, const Pred &f) {
+    auto it = edgeFacts.find({from, to});
+    if (it == edgeFacts.end())
+      edgeFacts.insert({{from, to}, f});
+    else
+      it->second = it->second | f;
+  };
   for (BasicBlock *b : L) {
     if (unitOf.count(b) && unitOf.lookup(b)->getHeader() != b)
       continue;
@@ -413,11 +434,13 @@ void Walker::planGuards() {
           unimplemented("spine: a classical guard skipping to a block with a classical phi", &phi);
       guards[b] = {sel, skip};
       add(skip, inB & !conj);
+      guardFacts.insert({b, inB & !conj});
     }
     Pred outB = inB & cf;
 
     if (unitOf.count(b)) {
       add(outEdges[b].front(), outB);
+      fact(b, outEdges[b].front(), outB);
       continue;
     }
     Instruction *t = b->getTerminator();
@@ -425,18 +448,19 @@ void Walker::planGuards() {
     if (oe == outEdges.end())
       continue;
     if (isQuantumTerm(ctx, t) || isa<UnreachableInst>(t)) {
-      for (BasicBlock *n : oe->second)
+      for (BasicBlock *n : oe->second) {
         add(n, outB);
+        fact(b, n, outB);
+      }
       continue;
     }
     for (unsigned k = 0; k < t->getNumSuccessors(); ++k) {
       BasicBlock *s = t->getSuccessor(k), *tg = oe->second[k];
       if (idx.lookup(s) <= idx.lookup(b))
         continue;   // a back edge of a purely classical loop
-      if (tg == s)
-        add(s, outB & ctx.preds().edge(b, s).classicalFactor(ctx.T, ctx.S));
-      else
-        add(tg, outB);
+      Pred f = tg == s ? outB & ctx.preds().edge(b, s).classicalFactor(ctx.T, ctx.S) : outB;
+      add(tg, f);
+      fact(b, tg, f);
     }
   }
 }
@@ -467,7 +491,169 @@ void Walker::jump(const BasicBlock *from, const BasicBlock *to) {
     return;
   BranchInst *br = ctx.B().CreateBr(out(to));
   edgeOut[{from, to}] = br->getParent();
+  noteIn(from, to);
   maybeFlush(br);
+}
+
+void Walker::noteIn(const BasicBlock *from, const BasicBlock *to, Loop *unit) {
+  auto f = edgeFacts.find({from, to});
+  inEdges[to].push_back(
+      {ctx.B().GetInsertBlock(), f == edgeFacts.end() ? std::nullopt : std::optional<Pred>(f->second), unit});
+}
+
+// cq-174f: a quantum phi whose output block is reached by several output edges (a classical guard's
+// skip edge, a unit's exit, a classical branch) is factored by the classical facts of those edges
+// first (rule 8 / P1: the classical factor stays a classical branch). On each output edge e with facts
+// F the incomings whose edge predicate meets F are the candidates; a candidate edge u -> b from
+// outside a rule-14 case-3 unit whose exit e is, is absorbed by the unit when, under F, u -> b is
+// taken only when the header's predicate is false and its value is the initial value of the carried
+// value whose next the unit's own incoming is: the unit's trip predicate starts at the flag of the
+// header's quantum predicate (loops-classical's contract), so no trip runs and the carried value
+// leaves the unit as that initial value (26 break_with_body: the pre-header test n < 1 || x == k is
+// trip -1 of the latch test). An edge keeping one candidate takes its value; an edge keeping several
+// takes rule 9's select chain over them, emitted where the edge leaves, each arm under the quantum
+// part of its predicate restricted to F (only when that restriction is exact: the arm's classical
+// factor is F; g6 of review cq-hqk5, a case-1 loop in an arm `q && c`). The phi is then chosen
+// classically: a phi over handles on the output edges, each value read where its edge leaves (a
+// classical one seeded there), recorded as a merge (rule 9 at a58c3a4, then cq-bv91's kept arms).
+// Otherwise (an output edge with no facts, a non-scalar phi, an inexact restriction) nullptr: the
+// merge stays pred's lowerMerge.
+Value *Walker::factoredMerge(PHINode &phi) {
+  const BasicBlock *b = phi.getParent();
+  auto ie = inEdges.find(b);
+  if (ie == inEdges.end() || ie->second.size() < 2)
+    return nullptr;
+  BasicBlock *join = out(b);
+  {
+    SmallPtrSet<BasicBlock *, 4> outs, preds;
+    for (const InEdge &e : ie->second) {
+      if (!e.facts || !outs.insert(e.out).second)
+        return nullptr;
+    }
+    for (BasicBlock *p : predecessors(join))
+      preds.insert(p);
+    if (preds != outs)
+      return nullptr;
+  }
+  RailType w = railTypeOf(phi.getType());
+  if (!(phi.getType()->isIntegerTy() || phi.getType()->isFloatingPointTy()))
+    return nullptr;
+  // Per output edge: one incoming value, or a select chain over several, each arm under the quantum
+  // part of its edge predicate restricted to the edge's facts.
+  struct Choice {
+    BasicBlock *out;
+    SmallVector<std::pair<Pred, const Value *>, 2> arms;
+  };
+  std::vector<Choice> chosen;
+  for (const InEdge &e : ie->second) {
+    const Pred &F = *e.facts;
+    SmallVector<unsigned, 2> cands;
+    for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i) {
+      const BasicBlock *u = phi.getIncomingBlock(i);
+      if (!idx.count(u))
+        continue;   // an unreachable predecessor never selects
+      if ((ctx.preds().edge(u, b) & F).isBottom())
+        continue;
+      if (none_of(cands, [&](unsigned k) { return phi.getIncomingValue(k) == phi.getIncomingValue(i); }))
+        cands.push_back(i);
+    }
+    if (e.unit && cands.size() > 1 && loops::classify(*e.unit, ctx.T, ctx.S) == loops::Case::ClassicalBoundQuantumExit) {
+      Loop &lp = *e.unit;
+      const BasicBlock *header = lp.getHeader(), *pre = lp.getLoopPredecessor(), *latch = lp.getLoopLatch();
+      const Value *inLoop = nullptr;
+      unsigned nIn = 0;
+      for (unsigned k : cands)
+        if (lp.contains(phi.getIncomingBlock(k))) {
+          inLoop = phi.getIncomingValue(k);
+          ++nIn;
+        }
+      const Value *init = nullptr;
+      if (nIn == 1 && pre && latch)
+        for (const PHINode &h : header->phis())
+          if (h.getIncomingValueForBlock(latch) == inLoop && spine::isQ(ctx, &h))
+            init = h.getIncomingValueForBlock(pre);
+      if (init) {
+        const Pred &hp = ctx.preds().block(header);
+        SmallVector<unsigned, 2> kept;
+        for (unsigned k : cands) {
+          const BasicBlock *u = phi.getIncomingBlock(k);
+          bool absorbed = !lp.contains(u) && phi.getIncomingValue(k) == init;
+          if (absorbed)
+            for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i)
+              if (phi.getIncomingValue(i) == init && !lp.contains(phi.getIncomingBlock(i)) &&
+                  !(ctx.preds().edge(phi.getIncomingBlock(i), b) & F & hp).isBottom())
+                absorbed = false;
+          if (!absorbed)
+            kept.push_back(k);
+        }
+        cands = kept;
+      }
+    }
+    if (cands.empty())
+      return nullptr;
+    Choice ch{e.out, {}};
+    for (unsigned k : cands) {
+      // The arm's predicate under F: every incoming edge carrying the same value.
+      Pred p = Pred::bottom();
+      for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i)
+        if (phi.getIncomingValue(i) == phi.getIncomingValue(k) && idx.count(phi.getIncomingBlock(i)))
+          p = p | ctx.preds().edge(phi.getIncomingBlock(i), b);
+      p = p & F;
+      // Its quantum part stands for it under F only when its classical factor is F itself.
+      if (cands.size() > 1 && !(F & !p.classicalFactor(ctx.T, ctx.S)).isBottom())
+        return nullptr;
+      ch.arms.push_back({p.quantumPart(ctx.T, ctx.S), phi.getIncomingValue(k)});
+    }
+    chosen.push_back(std::move(ch));
+  }
+
+  // Each value is read where its edge leaves.
+  IRBuilder<> &B = ctx.B();
+  std::vector<Operand> ops;
+  {
+    IRBuilderBase::InsertPointGuard g(B);
+    for (Choice &ch : chosen) {
+      Instruction *t = ch.out->getTerminator();
+      if (!t)
+        internalError("spine: the output block of an incoming edge has no terminator yet", &phi);
+      B.SetInsertPoint(t);
+      if (ch.arms.size() == 1) {
+        ops.push_back(ctx.operand(ch.arms.front().second));
+        continue;
+      }
+      // Rule 9 on this edge alone: the merge's quantum rest, a select chain where the edge leaves.
+      std::vector<std::pair<Pred, Operand>> arms;
+      for (auto &[p, v] : ch.arms)
+        arms.push_back({p, ctx.operand(v)});
+      ops.push_back(Operand{selectChain(ctx, arms, w), true});
+    }
+    bool anyHandle = any_of(ops, [](const Operand &o) { return o.handle; });
+    bool same = all_of(ops, [&](const Operand &o) { return o.v == ops.front().v; });
+    if (anyHandle && !same)
+      for (unsigned k = 0; k < ops.size(); ++k)
+        if (!ops[k].handle) {
+          B.SetInsertPoint(chosen[k].out->getTerminator());
+          CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {ops[k].v});
+          ctx.unc().recordSeed(a);
+          ops[k] = Operand{a, true};
+        }
+  }
+  auto seedHere = [&](Value *c) {
+    CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {c});
+    ctx.unc().recordSeed(a);
+    return a;
+  };
+  if (all_of(ops, [&](const Operand &o) { return o.v == ops.front().v; }))
+    return ops.front().handle ? ops.front().v : seedHere(ops.front().v);
+  Type *ty = ops.front().v->getType();
+  PHINode *np = PHINode::Create(ty, unsigned(ops.size()), phi.getName());
+  np->insertInto(join, join->getFirstNonPHIIt());
+  for (unsigned k = 0; k < ops.size(); ++k)
+    np->addIncoming(ops[k].v, chosen[k].out);
+  if (!ops.front().handle)
+    return seedHere(np);   // every arm read classically: one value, one rail
+  ctx.unc().recordMerge(np);
+  return np;
 }
 
 void Walker::lowerUnit(Loop &lp) {
@@ -576,8 +762,10 @@ void Walker::emitTerminator(BasicBlock *b) {
     if (ip)
       openRegions.push_back(ip);
     BasicBlock *n = outEdges.lookup(b).front();
-    if (!merged.count(n))
+    if (!merged.count(n)) {
       B.CreateBr(out(n));
+      noteIn(b, n);
+    }
     return;
   }
 
@@ -589,6 +777,9 @@ void Walker::emitTerminator(BasicBlock *b) {
     if (c.handle)
       internalError("spine: a classical branch on a rail", t);
     BranchInst *nb = B.CreateCondBr(c.v, out(targets[0]), out(targets[1]));
+    noteIn(b, targets[0]);
+    if (targets[1] != targets[0])
+      noteIn(b, targets[1]);
     for (unsigned k = 0; k < 2; ++k)
       if (targets[k] == br->getSuccessor(k))
         edgeOut[{b, br->getSuccessor(k)}] = nb->getParent();
@@ -604,6 +795,14 @@ void Walker::emitTerminator(BasicBlock *b) {
   unsigned k = 1;
   for (auto &cs : sw->cases())
     ns->addCase(cs.getCaseValue(), out(targets[k++]));
+  {
+    SmallVector<const BasicBlock *, 4> done;
+    for (BasicBlock *t : targets)
+      if (!is_contained(done, t)) {
+        done.push_back(t);
+        noteIn(b, t);
+      }
+  }
   for (unsigned s = 0; s < sw->getNumSuccessors(); ++s)
     if (targets[s] == sw->getSuccessor(s))
       edgeOut[{b, sw->getSuccessor(s)}] = ns->getParent();
@@ -698,6 +897,7 @@ void Walker::emitBlock(BasicBlock *b) {
           blockDefs.push_back(&I);
       }
     BranchInst *br = ctx.B().CreateBr(out(n));
+    noteIn(b, n, &lp);
     maybeFlush(br);
     return;
   }
@@ -725,7 +925,8 @@ void Walker::emitBlock(BasicBlock *b) {
       // is scalar only.
       if (phi.getType()->isPointerTy())
         unimplemented("spine: a quantum pointer phi (rule 21 fat-pointer merge; fatptr has no phi entry)", &phi);
-      spine::bindOperand(ctx, &phi, Operand{lowerMerge(ctx, phi), true});
+      Value *m = merged.count(b) ? nullptr : factoredMerge(phi);
+      spine::bindOperand(ctx, &phi, Operand{m ? m : lowerMerge(ctx, phi), true});
       blockDefs.push_back(&phi);
       continue;
     }
@@ -759,7 +960,23 @@ void Walker::emitGuard(BasicBlock *b) {
     cond = cond ? B.CreateAnd(cond, v) : v;
   }
   BasicBlock *cont = BasicBlock::Create(ctx.M.getContext(), "", &ctx.out());
-  B.CreateCondBr(cond, cont, out(g->second.second));
+  const BasicBlock *skip = g->second.second;
+  // cq-174f: when the skip block has a quantum phi, the skip edge gets a block of its own, where the
+  // phi's value on that edge is read (and seeded) on the skip path only.
+  BasicBlock *from = B.GetInsertBlock();
+  bool split = any_of(skip->phis(), [&](const PHINode &p) { return spine::isQ(ctx, &p); });
+  if (split) {
+    BasicBlock *e = BasicBlock::Create(ctx.M.getContext(), "", &ctx.out());
+    B.CreateCondBr(cond, cont, e);
+    BranchInst::Create(out(skip), e);
+    from = e;
+  } else {
+    B.CreateCondBr(cond, cont, out(skip));
+  }
+  {
+    auto gf = guardFacts.find(b);
+    inEdges[skip].push_back({from, gf == guardFacts.end() ? std::nullopt : std::optional<Pred>(gf->second), nullptr});
+  }
   B.SetInsertPoint(cont);
   blockDefs.clear();
 }

@@ -34,3 +34,9 @@ Entry format:
 - Disagreement: the references of 80, 81 and 100 lower fesetround/fetestexcept/feraiseexcept/... on quantum state as rail operations, which needs recognising <fenv.h> calls by name; rule 27 read literally makes a quantum call to a bodiless fesetround a declared clone.
 - Evidence: 80_fenv_rounding.lowered.ll (fesetround on a quantum mode), 81, 100; our pass follows rule 23 and is §6-green on all three.
 - Bead: cq-8q9i
+
+## 26_break_quantum_cond: break_with_body keeps the |1> trip seed on the zero-trip path
+- Rule: CR rule 14, classical bound with a quantum exit ("every predicate, the last included, ... is uncomputed by the mirror. Nothing is kept."); rule 7 (a seed is freed directly).
+- Disagreement: the reference allocates `%8 = cqrt_alloc_i1(i1 true)` (the trip-0 predicate) in the entry, before the classical branch on `n < 1`; the skip block `%10` measures `%7` and returns without freeing `%8`, so a |1> seed is live at exit whenever n < 1.
+- Evidence: `cqcheck run 26_break_quantum_cond --oracle both` (cq-174f with cq-t71u's patch): c=pass, verifier=pass, s6 fails on n = 0 only: "1 rail(s) i1 with values 1 the reference keeps are not kept on our side".
+- Bead: cq-ph2i
