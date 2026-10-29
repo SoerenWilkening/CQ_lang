@@ -295,6 +295,79 @@ class Evaluate(unittest.TestCase):
             self.assertIn(st, ("pass", "fail"))
 
 
+class Bundle(unittest.TestCase):
+    """cq-b041: lower() links the injection bundle (--only-needed) only into a module that declares
+    without a body a symbol the bundle defines; cq-sl4s: the keys carry the files actually linked."""
+
+    HEAD = ('target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"\n'
+            'target triple = "x86_64-apple-macosx"\n')   # Mach-O mangling, as the corpus and the bundle
+    USER_NEEDS = HEAD + ("declare i32 @bfoo(i32)\n"
+                         "define i32 @user(i32 %x) {\n  %r = call i32 @bfoo(i32 %x)\n  ret i32 %r\n}\n")
+    USER_NOT = HEAD + ("declare i32 @other(i32)\n"
+                       "define i32 @user(i32 %x) {\n  %r = call i32 @other(i32 %x)\n  ret i32 %r\n}\n")
+    LIB = HEAD + ("define i32 @bfoo(i32 %x) {\n  %r = call i32 @bbar(i32 %x)\n  ret i32 %r\n}\n"
+                  "define i32 @bbar(i32 %x) {\n  %r = add i32 %x, 1\n  ret i32 %r\n}\n"
+                  "define i32 @bunused(i32 %x) {\n  ret i32 %x\n}\n")
+
+    def setUp(self):
+        from cqcheck import oracle
+        self.oracle = oracle
+        self.d = Path(tempfile.mkdtemp(dir=TMP))
+        (self.d / "lib.ll").write_text(self.LIB)
+        self.bc = self.d / "lib.bc"
+        r = report._run([str(report.LLVM_BIN / "llvm-as"), str(self.d / "lib.ll"), "-o", str(self.bc)])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.saved = oracle._bundle_files
+        oracle._bundle_files = lambda: [self.bc]
+
+    def tearDown(self):
+        self.oracle._bundle_files = self.saved
+
+    def example(self, name, text):
+        d = self.d / name
+        d.mkdir()
+        ex = report.Example(name, d)
+        ex.o1.write_text(text)
+        return ex
+
+    def test_bundle_for(self):
+        self.assertEqual(self.oracle.bundle_for(self.USER_NEEDS), [self.bc])
+        self.assertEqual(self.oracle.bundle_for(self.USER_NOT), [])
+        # a symbol the module defines itself is not a need
+        self.assertEqual(self.oracle.bundle_for(self.HEAD + "define i32 @bfoo(i32 %x) {\n  ret i32 %x\n}\n"), [])
+        self.assertEqual(self.oracle.bundle_for(self.HEAD + "@bfoo = external global i32\n"), [self.bc])
+        self.oracle._bundle_files = lambda: []
+        self.assertEqual(self.oracle.bundle_for(self.USER_NEEDS), [])
+
+    def test_lower_links_only_needed(self):
+        ex = self.example("900_needs", self.USER_NEEDS)
+        out, err = report.lower(ex, self.d / "ours" / ex.name / f"{ex.base}.lowered.ll")
+        self.assertEqual(err, "")
+        text = out.read_text()
+        self.assertIn("define i32 @bfoo(", text)
+        self.assertIn("define i32 @bbar(", text)       # the bundle's own callee comes along
+        self.assertNotIn("@bunused", text)
+        self.assertNotIn("declare i32 @bfoo", text)
+        self.assertTrue((out.parent / f"{ex.base}.linked.ll").exists())
+
+    def test_lower_without_need_is_unchanged(self):
+        ex = self.example("901_not", self.USER_NOT)
+        out, err = report.lower(ex, self.d / "ours" / ex.name / f"{ex.base}.lowered.ll")
+        self.assertEqual(err, "")
+        self.assertFalse((out.parent / f"{ex.base}.linked.ll").exists())
+        plain = report._run([str(report.LLVM_BIN / "opt"), "-S", str(ex.o1)]).stdout.decode()
+        self.assertEqual(out.read_text(), plain)
+
+    def test_keys_carry_linked_files(self):
+        k1 = self.oracle.bundle_key([self.bc])
+        self.assertIn(str(self.bc), k1)
+        (self.d / "lib2.ll").write_text(self.LIB.replace("add i32 %x, 1", "add i32 %x, 2"))
+        r = report._run([str(report.LLVM_BIN / "llvm-as"), str(self.d / "lib2.ll"), "-o", str(self.bc)])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotEqual(self.oracle.bundle_key([self.bc]), k1)   # content, not only the path
+        self.assertEqual(self.oracle.bundle_key([]), "")
+
+
 class Cli(unittest.TestCase):
     def test_names_or_all(self):
         self.assertEqual(cli.main(["run"]), 2)

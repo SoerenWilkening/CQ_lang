@@ -158,12 +158,27 @@ def _first_error_line(stderr: bytes) -> str:
 
 def lower(ex: Example, dest: Path) -> Tuple[Optional[Path], str]:
     """Our lowering of `ex`: its .O1.ll through `opt -passes=cq-lower` at K = 4. Returns (path, "")
-    or (None, the internal error). Nothing is kept from a failed run."""
+    or (None, the internal error). Nothing is kept from a failed run but the linked input.
+
+    The injection bundle (CR rule 18, CLAUDE.md "Pipeline"; cq-b041) is linked first, as the C oracle
+    links it, when the module declares without a body a symbol the bundle defines (oracle.bundle_for):
+    `llvm-link -S <.O1.ll> --only-needed <bundle files>` into ``<base>.linked.ll`` beside `dest`, one
+    textual unit with the user module first. Otherwise the .O1.ll goes in as clang wrote it."""
+    from cqcheck import oracle
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists():
         dest.unlink()
+    src = Path(ex.o1)
+    bundle = oracle.bundle_for(src.read_text())
+    if bundle:
+        linked = dest.parent / f"{ex.base}.linked.ll"
+        r = _run([str(LLVM_BIN / "llvm-link"), "-S", str(src), "--only-needed", *map(str, bundle),
+                  "-o", str(linked)])
+        if r.returncode != 0:
+            return None, f"llvm-link with the injection bundle exited {r.returncode}: {_first_error_line(r.stderr)}"
+        src = linked
     r = _run([str(LLVM_BIN / "opt"), f"-load-pass-plugin={plugin_path()}", "-passes=cq-lower",
-              f"-cq-k-default={K_CHECK}", "-S", str(ex.o1), "-o", str(dest)])
+              f"-cq-k-default={K_CHECK}", "-S", str(src), "-o", str(dest)])
     if r.returncode != 0:
         if dest.exists():
             dest.unlink()

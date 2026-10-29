@@ -262,6 +262,44 @@ def _bundle_files() -> List[Path]:
     return [(man.parent / p).resolve() for p in json.loads(man.read_text())]
 
 
+_BUNDLE_INFO: Dict[Tuple[str, int, int], Tuple[frozenset, str]] = {}
+
+
+def _bundle_info(b: Path) -> Tuple[frozenset, str]:
+    """(the symbols bundle file `b` defines, as llvm-nm prints them; the sha256 of its content)."""
+    st = b.stat()
+    memo = (str(b), st.st_mtime_ns, st.st_size)
+    if memo not in _BUNDLE_INFO:
+        defs = _run([_tool("llvm-nm"), "--defined-only", "--format=just-symbols", str(b)],
+                    "llvm-nm of the injection bundle").stdout.split()
+        _BUNDLE_INFO[memo] = (frozenset(defs), hashlib.sha256(b.read_bytes()).hexdigest())
+    return _BUNDLE_INFO[memo]
+
+
+_NAME = r'([-\w$.]+|"[^"]+")'
+_DECLARED = re.compile(r'^(?:declare\b[^@]*@' + _NAME + r'\(|@' + _NAME + r' = (?:\S+ )*?external\b)', re.M)
+
+
+def bundle_for(ll_text: str) -> List[Path]:
+    """The injection bundle files to link into a module (cq-b041; CR rule 18, CLAUDE.md "Pipeline"):
+    every bundle/manifest.json file, linked --only-needed, when the module declares without a body
+    at least one symbol the bundle defines; otherwise none, and the module is used as clang wrote it."""
+    bundle = _bundle_files()
+    if not bundle:
+        return []
+    names = {(a or b).strip('"') for a, b in _DECLARED.findall(ll_text)}
+    if "-apple-" in _triple(ll_text):  # Mach-O symbol names carry a leading underscore
+        names = {"_" + n for n in names}
+    if any(names & _bundle_info(b)[0] for b in bundle):
+        return bundle
+    return []
+
+
+def bundle_key(files: Sequence[Path]) -> str:
+    """A cache-key part for the bundle files actually linked: their paths and contents."""
+    return "\0".join(f"{b}:{_bundle_info(Path(b))[1]}" for b in files)
+
+
 _LIBC = None
 
 
@@ -320,10 +358,9 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
         return _PROGRAMS[memo]
     plugin, rt = toolchain()
     text = o1.read_text()
-    bundle = _bundle_files()
+    bundle = bundle_for(text)
     kf = _k_flags(k, k_default)
-    key = hashlib.sha256("\0".join([text, SRC_KEY, *kf] + [f"{b}:{b.stat().st_mtime_ns}" for b in bundle])
-                         .encode()).hexdigest()[:20]
+    key = hashlib.sha256("\0".join([text, SRC_KEY, *kf] + ([bundle_key(bundle)] if bundle else [])).encode()).hexdigest()[:20]
     triple = _triple(text)
 
     def fill(d: Path) -> None:

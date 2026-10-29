@@ -2754,13 +2754,17 @@ def _cache_key(spec: DriverSpec, example_dir: Path, exempt_baseline: bool = True
         h.update(b"baseline-filtered\n")      # cqcheck user (cq-sujz); the corpus key adds nothing
     h.update(b"full\n" if full_mode() else b"quick\n" if quick_mode() else b"default\n")   # the mode
     h.update(json.dumps([spec.example, spec.protos, spec.setup, spec.calls], sort_keys=True).encode())
+    from cqcheck import oracle as _oracle
     for p in sorted(Path(example_dir).glob("*.O1.ll")):
         h.update(p.read_bytes())
+        # the injection bundle files the C oracle links into it (cq-sl4s); nothing when none is linked
+        bundle = _oracle.bundle_for(p.read_text())
+        if bundle:
+            h.update(_oracle.bundle_key(bundle).encode())
     # the drivers.txt line (its argument values are the baselines, samples 0 .. ncalls-1) and the C
     # oracle, which the trip, cap and reach searches run (cq-f3mz)
     line = D.read_drivers_txt(Path(example_dir).resolve().parent.parent / "_tools" / "drivers.txt").get(spec.example)
     h.update(repr(line).encode())
-    from cqcheck import oracle as _oracle
     for f in (Path(__file__), Path(D.__file__)):
         h.update(f.read_bytes())
     # the oracle's key covers oracle.py, its runtime and instrumentation and the pass sources it
