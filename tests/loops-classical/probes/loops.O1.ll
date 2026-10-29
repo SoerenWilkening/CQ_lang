@@ -283,6 +283,55 @@ define i32 @p_tphase(i32 noundef %0, double noundef %1, i32 noundef %2, i32 noun
   ret i32 %17
 }
 
+; Function Attrs: nounwind ssp uwtable
+define i32 @p_bwb(i32 noundef %0, double noundef %1, i32 noundef %2, i32 noundef %3, i32 noundef %4) local_unnamed_addr #0 {
+  %6 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %1) #4
+  %7 = icmp slt i32 %2, 1
+  %8 = icmp eq i32 %6, %3
+  %9 = select i1 %7, i1 true, i1 %8
+  br i1 %9, label %20, label %10
+
+10:                                               ; preds = %5, %10
+  %11 = phi i32 [ %15, %10 ], [ 0, %5 ]
+  %12 = phi i32 [ %14, %10 ], [ 0, %5 ]
+  %13 = mul nsw i32 %12, %4
+  %14 = add nsw i32 %13, %11
+  %15 = add nuw nsw i32 %11, 1
+  %16 = icmp sge i32 %15, %2
+  %17 = add nsw i32 %15, %3
+  %18 = icmp eq i32 %6, %17
+  %19 = select i1 %16, i1 true, i1 %18
+  br i1 %19, label %20, label %10, !llvm.loop !24
+
+20:                                               ; preds = %10, %5
+  %21 = phi i32 [ 0, %5 ], [ %14, %10 ]
+  %22 = tail call i32 @cq_measure_si32(i32 noundef %21) #5
+  ret i32 %22
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @p_g2(i32 noundef %0, double noundef %1, i32 noundef %2, i32 noundef %3) local_unnamed_addr #0 {
+  %5 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %1) #4
+  %6 = icmp slt i32 %2, 1
+  %7 = icmp eq i32 %5, %3
+  %8 = select i1 %6, i1 true, i1 %7
+  br i1 %8, label %16, label %9
+
+9:                                                ; preds = %4, %9
+  %10 = phi i32 [ %11, %9 ], [ 0, %4 ]
+  tail call void @cq_phi(double noundef 5.000000e-01) #5
+  %11 = add nuw nsw i32 %10, 1
+  %12 = icmp sge i32 %11, %2
+  %13 = add nsw i32 %11, %3
+  %14 = icmp eq i32 %5, %13
+  %15 = select i1 %12, i1 true, i1 %14
+  br i1 %15, label %16, label %9, !llvm.loop !25
+
+16:                                               ; preds = %9, %4
+  %17 = tail call i32 @cq_measure_si32(i32 noundef %5) #5
+  ret i32 %17
+}
+
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
 declare i32 @llvm.smax.i32(i32, i32) #3
 
@@ -320,3 +369,5 @@ attributes #5 = { nounwind }
 !21 = distinct !{!21, !7, !8}
 !22 = distinct !{!22, !7, !8}
 !23 = distinct !{!23, !7, !8}
+!24 = distinct !{!24, !7, !8}
+!25 = distinct !{!25, !7, !8}

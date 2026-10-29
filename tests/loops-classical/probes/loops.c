@@ -1,5 +1,5 @@
-/* tests/loops-classical probes (cq-w1-loops-classical): rule 14 cases 1 and 3 without a zero-trip guard, so the
- * exit value is read directly (no exit merge): each entry is checked §6 against its own C program
+/* tests/loops-classical probes (cq-w1-loops-classical): rule 14 cases 1 and 3, mostly without a zero-trip guard, so the
+ * exit value is read directly (no exit merge; p_bwb and p_g2 are guarded): each entry is checked §6 against its own C program
  * (cqcheck user). Regenerate loops.O1.ll: clang -O1 -S -emit-llvm -target x86_64-apple-macosx16.0.0
  * -I ../CQ_spec loops.c -o loops.O1.ll */
 #include "CQ.h"
@@ -73,4 +73,19 @@ int p_tphase(int x0, double th, int n, int k, double ph) {
   int acc = 0, i = 0;
   do { cq_phi(ph); acc += i; i++; if (x == i + k) break; } while (i < n);
   return cq_measure(acc);
+}
+/* cq-t71u: case 3 under the zero-trip guard (a classical guard before the unit): 26 break_with_body verbatim,
+ * whose a_{-1} flag is torn down in the seed scope's mirror */
+int p_bwb(int x0, double th, int n, int k, int c) {
+  int x = x0; cq_theta(&x, th);
+  int acc = 0;
+  for (int i = 0; i < n; i++) { if (x == i + k) break; acc = acc * c + i; }
+  return cq_measure(acc);
+}
+/* cq-t71u: review g2 (wt/rev/small-n1), a guarded case-3 loop with a phase in the trip and the register read after */
+int p_g2(int x0, double th, int n, int k) {
+  int x = x0; cq_theta(&x, th);
+  int i;
+  for (i = 0; i < n; i++) { if (x == i + k) break; cq_phi(0.5); }
+  return cq_measure(x);
 }

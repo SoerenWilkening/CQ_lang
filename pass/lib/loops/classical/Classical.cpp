@@ -326,13 +326,16 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // Entry: the trip predicate, the seeds.
   unsigned seedScope = 0;
   Value *aInit = nullptr;
+  if (outermost)
+    seedScope = ctx.unc().openScope();
+  // a_{-1} is minted inside the outermost loop's seed scope, so Z tears it down after the reverse (cq-t71u): under
+  // a classical guard its definition does not dominate the return and no exit flush could free it. An atom rail
+  // flag() returns has no record in the scope and is untouched.
   if (c3) {
     Pred hp = qp(header);
     if (!hp.isTop())
       aInit = ctx.preds().flag(ctx, hp);
   }
-  if (outermost)
-    seedScope = ctx.unc().openScope();
   if (c3 && !aInit)
     aInit = seed(ConstantInt::getTrue(ctx.M.getContext()), RailType{Kind::Int, 1});
   else if (aInit && outermost)
