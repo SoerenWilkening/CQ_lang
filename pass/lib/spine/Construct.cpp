@@ -123,6 +123,9 @@ private:
   DenseMap<std::pair<const BasicBlock *, const BasicBlock *>, BasicBlock *> edgeOut;
   std::vector<std::pair<PHINode *, PHINode *>> classicalPhis;
   DenseSet<const Instruction *> visited;
+  // cq-lx8f: quantum phis of a unit's exit blocks that the loop module bound (rule 14 case 2: an exit
+  // phi identified with a carried value's final state). The walker does not merge them again.
+  DenseSet<const PHINode *> unitBoundPhis;
   std::vector<const Instruction *> blockDefs;           // original quantum defs in the current output block
   SmallVector<const BasicBlock *, 4> openRegions;       // ipdoms of quantum terminators not yet reached
   std::unique_ptr<TargetLibraryInfoImpl> tlii;
@@ -618,10 +621,20 @@ void Walker::emitBlock(BasicBlock *b) {
 
   if (unitOf.count(b)) {
     Loop &lp = *unitOf.lookup(b);
-    lowerUnit(lp);
-    BasicBlock *n = outEdges.lookup(b).front();
     SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> exits;
     lp.getExitEdges(exits);
+    // The exit blocks' quantum phis not yet bound: those bound once the unit returns, the loop module
+    // bound (cq-lx8f). A phi bound before the unit is not the loop module's and stays an error below.
+    SmallVector<const PHINode *, 4> exitPhis;
+    for (auto &x : exits)
+      for (PHINode &phi : x.second->phis())
+        if (spine::isQ(ctx, &phi) && !sh.binds.count(&phi) && !is_contained(exitPhis, &phi))
+          exitPhis.push_back(&phi);
+    lowerUnit(lp);
+    for (const PHINode *phi : exitPhis)
+      if (sh.binds.count(phi))
+        unitBoundPhis.insert(phi);
+    BasicBlock *n = outEdges.lookup(b).front();
     // All of the unit's exit edges leave from one output block, so a phi of an exit block cannot
     // tell them apart: it would get one incoming per exit edge from the same block (cq-qjm9). It
     // stays unimplemented until the loop contract says which exit edge was taken. The count is over
@@ -658,6 +671,10 @@ void Walker::emitBlock(BasicBlock *b) {
   for (PHINode &phi : b->phis()) {
     sh.cur = &phi;
     visited.insert(&phi);
+    if (unitBoundPhis.count(&phi)) {
+      blockDefs.push_back(&phi);
+      continue;
+    }
     if (spine::isQ(ctx, &phi)) {
       // A phi whose every incoming edge predicate is classical chooses its incoming value
       // classically: pred's lowerMerge emits a classical phi over handles (rule 9 at a58c3a4).

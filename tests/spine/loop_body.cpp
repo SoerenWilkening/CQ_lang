@@ -18,6 +18,16 @@
 //    is an Ry controlled on %trip; the cq_phi at top is rz_i1 on %trip (no rule 12 deletion); the
 //    cq_phi in the quantum arm is rz_i1 on the conjunction %trip & (x == i): a fresh i1 rail
 //    (alloc 0, and_i1(%trip, cond, c)) uncomputed (the same and_i1 again) and freed after the phase.
+//  - two_trips (cq-lx8f): the double lowers the body twice (an unrolled trip: the header phi %i is
+//    rebound to its latch incoming in between), so lowerInstruction meets instructions that are
+//    already bound and replaces their bindings. Both trips' add and icmp rails are computed,
+//    uncomputed and freed (the first trip's records do not leak when its bindings are replaced), and
+//    the exit copy reads the second trip's add.
+//  - exit_phi_bound / non_exit_phi_bound (cq-lx8f) on kExit, whose exit block has an LCSSA phi %yl
+//    of %y and a later block a phi %z of %yl (classical choice): bound by the loop module (to a fresh
+//    rail %exitphi), %yl keeps that binding and the walker does not merge it again (%z's classical
+//    phi reads %exitphi); a phi outside the unit's exit blocks that the loop module binds (%z) is
+//    still an internal error (bound twice).
 //  - rebind_unbound / lower_phi: rebind of an unbound value and lowerInstruction of a phi are
 //    internal errors (forked child).
 // The function is checked with the structural verifier and the LLVM verifier.
@@ -31,6 +41,7 @@
 #include <memory>
 #include <regex>
 #include <string>
+#include <vector>
 
 #include <sys/wait.h>
 #include <unistd.h>
@@ -63,7 +74,7 @@ void fail(const std::string &c, const std::string &msg) {
   std::fprintf(stderr, "FAIL %s: %s\n", c.c_str(), msg.c_str());
 }
 // What the double does besides lowering the body.
-enum class Mode { Lower, LowerPhi, RebindUnbound, Trip };
+enum class Mode { Lower, LowerPhi, RebindUnbound, Trip, TwoTrips, ExitPhiBound, NonExitPhiBound };
 Mode mode = Mode::Lower;
 std::string curCase;
 } // namespace
@@ -89,17 +100,22 @@ void lowerClassical(LoweringContext &ctx, Loop &L, Case) {
     ctx.unc().recordSeed(t);
     trip = t;
   }
-  for (BasicBlock *b : L.blocks())
-    for (Instruction &I : *b) {
-      if (isa<PHINode>(I) || I.isTerminator())
-        continue;
-      if (trip)
-        lowerInstruction(ctx, I, trip);
-      else
-        lowerInstruction(ctx, I);
-      if (!ctx.currentPredicate().isTop())
-        fail(curCase, "currentPredicate() not restored to the unit's after lowerInstruction");
-    }
+  for (unsigned t = 0; t < (mode == Mode::TwoTrips ? 2u : 1u); ++t) {
+    if (t > 0)
+      for (PHINode &phi : L.getHeader()->phis())
+        ctx.rebind(&phi, {ctx.operand(phi.getIncomingValueForBlock(L.getLoopLatch()))});
+    for (BasicBlock *b : L.blocks())
+      for (Instruction &I : *b) {
+        if (isa<PHINode>(I) || I.isTerminator())
+          continue;
+        if (trip)
+          lowerInstruction(ctx, I, trip);
+        else
+          lowerInstruction(ctx, I);
+        if (!ctx.currentPredicate().isTop())
+          fail(curCase, "currentPredicate() not restored to the unit's after lowerInstruction");
+      }
+  }
   if (mode == Mode::RebindUnbound) {
     // An argument of another function is never bound here.
     ctx.rebind(ctx.M.getFunction("other")->getArg(0), {Operand{ctx.B().getInt32(0), false}});
@@ -122,6 +138,27 @@ void lowerClassical(LoweringContext &ctx, Loop &L, Case) {
           ctx.rebind(&I, {Operand{f, true}});
           break;
         }
+  // The exit-block phi %yl (exit_phi_bound), and also the later block's phi %z (non_exit_phi_bound),
+  // bound by the loop module to a fresh rail holding a copy of %x.
+  for (const char *bindPhi : {"yl", "z"}) {
+    if (mode != Mode::NonExitPhiBound && (mode != Mode::ExitPhiBound || std::string(bindPhi) != "yl"))
+      continue;
+    Function *F = L.getHeader()->getParent();
+    for (BasicBlock &b : *F)
+      for (PHINode &phi : b.phis())
+        if (phi.getName() == bindPhi) {
+          RailType w = railTypeOf(phi.getType());
+          CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                                     {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+          f->setName("exitphi");
+          RailId fid = ctx.unc().recordSeed(f);
+          abi::CoreSpec cp{abi::Core::Copy, w};
+          Operand v = ctx.operand(&*F->getEntryBlock().begin());   // %x, the rotated register
+          CallInst *c = ctx.emitCore(cp, {v.v, f});
+          ctx.unc().recordCore(c, cp, {v, Operand{f, true}}, fid);
+          ctx.bindFields(&phi, {Operand{f, true}});
+        }
+  }
 }
 } // namespace cq::loops
 
@@ -195,6 +232,48 @@ latch:
 
 exit:
   %m = call i32 @cq_measure_si32(i32 %y)
+  ret i32 %m
+}
+)";
+
+// kLoop with an LCSSA phi %yl of %y in the exit block and a phi %z of %yl in a later block.
+const char *kExit = R"(
+declare i32 @cq_theta_si32(i32, double)
+declare i32 @cq_measure_si32(i32)
+declare void @cq_phi(double)
+
+define i32 @f(i32 %x0, double %th, i32 %n, double %phi) {
+entry:
+  %x = call i32 @cq_theta_si32(i32 %x0, double %th)
+  br label %body
+
+body:
+  %i = phi i32 [ %i1, %latch ], [ 0, %entry ]
+  %y = add i32 %x, %i
+  %c = icmp eq i32 %x, %i
+  br i1 %c, label %then, label %latch
+
+then:
+  call void @cq_phi(double %phi)
+  br label %latch
+
+latch:
+  %i1 = add nuw nsw i32 %i, 1
+  %d = icmp eq i32 %i1, %n
+  br i1 %d, label %exit, label %body
+
+exit:
+  %yl = phi i32 [ %y, %latch ]
+  %e = icmp eq i32 %n, 7
+  br i1 %e, label %other, label %after
+
+other:
+  br label %after
+
+after:
+  %z = phi i32 [ %yl, %exit ], [ %x, %other ]
+  %w = add i32 %z, 1
+  %m = call i32 @cq_measure_si32(i32 %w)
   ret i32 %m
 }
 )";
@@ -298,6 +377,48 @@ void caseTrip() {
     fail(c, "the conjunction is computed and uncomputed other than once each");
 }
 
+// Every forward call of template tmpl: its result rail, and that the rail is uncomputed (tmpl_unc on
+// it) and then freed.
+std::vector<std::string> checkComputedUncomputed(const std::string &c, const std::string &b, const std::string &tmpl) {
+  std::vector<std::string> rails;
+  std::regex fwd("%(\\d+) = call i32 @" + tmpl + "\\(");
+  for (auto it = std::sregex_iterator(b.begin(), b.end(), fwd); it != std::sregex_iterator(); ++it) {
+    std::string r = (*it)[1].str();
+    rails.push_back(r);
+    size_t def = size_t(it->position(0));
+    size_t unc = findAt(b, "call void @" + tmpl + "_unc\\(i32 %" + r + "[,)]", def);
+    size_t fr = unc == std::string::npos ? unc : findAt(b, "call void @cqrt_free\\(i32 %" + r + "\\)", unc);
+    if (unc == std::string::npos || fr == std::string::npos)
+      fail(c, "rail %" + r + " of " + tmpl + " is not uncomputed and then freed");
+  }
+  return rails;
+}
+
+void caseTwoTrips() {
+  const char *c = "two_trips";
+  std::string b = lower(c, Mode::TwoTrips);
+  std::vector<std::string> adds = checkComputedUncomputed(c, b, "cq_template_add_i32_hl");
+  std::vector<std::string> cmps = checkComputedUncomputed(c, b, "cq_template_icmp_eq_i32_hl");
+  if (adds.size() != 2 || cmps.size() != 2)
+    return fail(c, "expected two trips of the add and the icmp, got " + std::to_string(adds.size()) + " and " +
+                       std::to_string(cmps.size()));
+  if (count(b, R"(call i32 @cq_template_add_i32_hl\(i32 %\d+, i32 0\))") != 1)
+    fail(c, "the first trip's add is not x + 0");
+  if (count(b, R"(call void @cqrt_rz_i1\(i32 %\d+, double %phi\))") != 2)
+    fail(c, "not one arm phase per trip");
+  if (count(b, R"(call void @cqrt_copy_i32\(i32 %)" + adds[1] + R"(, i32 %exitcopy\))") != 1)
+    fail(c, "the exit copy does not read the second trip's add");
+}
+
+void caseExitPhiBound() {
+  const char *c = "exit_phi_bound";
+  std::string b = lower(c, Mode::ExitPhiBound, kExit);
+  if (count(b, R"(%exitphi = call i32 @cqrt_alloc_i32\(i32 0\))") != 1)
+    fail(c, "no exit phi rail");
+  if (count(b, R"(%z = phi i32 \[[^\n]*%exitphi)") != 1)
+    fail(c, "the phi after the exit block does not read the exit phi's loop-module binding");
+}
+
 void caseRebind() {
   const char *c = "rebind";
   std::string b = lower(c);
@@ -308,7 +429,7 @@ void caseRebind() {
 }
 
 // Runs the lowering in a forked child and expects it to stop with cq: internal error containing msg.
-void expectInternal(const std::string &c, Mode md, const std::string &msg) {
+void expectInternal(const std::string &c, Mode md, const std::string &msg, const char *ir = kLoop) {
   int pfd[2];
   if (pipe(pfd) != 0)
     std::exit(2);
@@ -321,7 +442,7 @@ void expectInternal(const std::string &c, Mode md, const std::string &msg) {
     mode = md;
     LLVMContext ctx;
     SMDiagnostic err;
-    std::unique_ptr<Module> M = parseAssemblyString(kLoop, err, ctx);
+    std::unique_ptr<Module> M = parseAssemblyString(ir, err, ctx);
     if (!M)
       _exit(3);
     cq::TaintInfo T = cq::computeTaint(*M, cq::TaintOptions{});
@@ -346,6 +467,10 @@ void expectInternal(const std::string &c, Mode md, const std::string &msg) {
     fail(c, "the stop does not say '" + msg + "'");
 }
 
+void caseNonExitPhiBound() {
+  expectInternal("non_exit_phi_bound", Mode::NonExitPhiBound, "%z bound twice", kExit);
+}
+
 void caseRebindUnbound() { expectInternal("rebind_unbound", Mode::RebindUnbound, "rebind of %a, which is not bound"); }
 void caseLowerPhi() { expectInternal("lower_phi", Mode::LowerPhi, "lowerInstruction of a phi or terminator"); }
 
@@ -356,7 +481,10 @@ int main(int argc, char **argv) {
                                                         {"rebind", caseRebind},
                                                         {"rebind_unbound", caseRebindUnbound},
                                                         {"lower_phi", caseLowerPhi},
-                                                        {"trip", caseTrip}};
+                                                        {"trip", caseTrip},
+                                                        {"two_trips", caseTwoTrips},
+                                                        {"exit_phi_bound", caseExitPhiBound},
+                                                        {"non_exit_phi_bound", caseNonExitPhiBound}};
   if (argc > 1) {
     auto it = cases.find(argv[1]);
     if (it == cases.end()) {

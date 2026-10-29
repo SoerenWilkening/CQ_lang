@@ -41,6 +41,12 @@
 //    cq_phi is rz_i1 on currentFlag(): rule 12's global-phase deletion never applies under a trip.
 //    currentPredicate() is unchanged (the block's quantum part): a consumer that tests it for top to
 //    decide "uncontrolled" does not see the trip (cq-hmv1); currentFlag() is the control.
+//  - lowerInstruction on an I that is already bound (cq-lx8f) replaces its binding: an unrolled
+//    rule-14 trip re-lowers the body. The old rails stay recorded in Uncompute and flush normally.
+//  - A quantum phi of a unit's exit block that is unbound when the unit starts and bound when the
+//    loop module returns (cq-lx8f: an exit phi it identified with a carried value's final state) is
+//    not merged by the walker; it keeps the loop module's binding. Any other phi bound before the
+//    walker reaches it is an internal error (bound twice).
 //  - rebind(orig, ops) (cq-ofn6) replaces orig's binding, which must exist (internal error
 //    otherwise): a loop module rebinds each loop value read after the loop to its exit value (rule 14
 //    case 1 copy-out, case 3 captured value). The kinds are the caller's; the old rails stay recorded.
