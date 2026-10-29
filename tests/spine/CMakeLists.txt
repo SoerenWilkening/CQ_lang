@@ -27,3 +27,14 @@ target_compile_options(spine_loop_exit_join PRIVATE $<TARGET_PROPERTY:cq_pass_ob
 add_dependencies(spine_loop_exit_join cq_pass_objs)
 target_link_libraries(spine_loop_exit_join PRIVATE LLVM)
 add_test(NAME spine_loop_exit_join COMMAND spine_loop_exit_join)
+
+# The loop-module entry points lowerInstruction and LoweringContext::rebind (cq-ofn6). Linked like
+# spine_loop_exit_join, with a one-trip lowerClassical test double.
+add_executable(spine_loop_body loop_body.cpp
+  $<FILTER:$<TARGET_OBJECTS:cq_pass_objs>,EXCLUDE,/loops/classical/Classical\.cpp\.o$>)
+target_include_directories(spine_loop_body PRIVATE $<TARGET_PROPERTY:cq_pass_objs,INTERFACE_INCLUDE_DIRECTORIES>)
+target_compile_definitions(spine_loop_body PRIVATE $<TARGET_PROPERTY:cq_pass_objs,INTERFACE_COMPILE_DEFINITIONS>)
+target_compile_options(spine_loop_body PRIVATE $<TARGET_PROPERTY:cq_pass_objs,INTERFACE_COMPILE_OPTIONS>)
+add_dependencies(spine_loop_body cq_pass_objs)
+target_link_libraries(spine_loop_body PRIVATE LLVM)
+add_test(NAME spine_loop_body COMMAND spine_loop_body)

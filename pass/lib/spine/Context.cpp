@@ -183,6 +183,17 @@ void LoweringContext::bindFields(const Value *orig, ArrayRef<Operand> ops) {
   slot.append(ops.begin(), ops.end());
 }
 
+void LoweringContext::rebind(const Value *orig, ArrayRef<Operand> ops) {
+  if (!orig)
+    internalError("spine: rebind(nullptr)");
+  if (ops.empty())
+    internalError("spine: rebind of " + describe(orig) + " to no fields", orig);
+  auto it = impl->sh->binds.find(orig);
+  if (it == impl->sh->binds.end() || it->second.empty())
+    internalError("spine: rebind of " + describe(orig) + ", which is not bound", orig);
+  it->second.assign(ops.begin(), ops.end());
+}
+
 BasicBlock *LoweringContext::block(const BasicBlock *orig) {
   auto it = impl->sh->blocks.find(orig);
   if (it == impl->sh->blocks.end())

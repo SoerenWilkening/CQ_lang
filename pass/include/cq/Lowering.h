@@ -1,4 +1,4 @@
-// Frozen interface (cq-arch, with freeze beads cq-k1w and cq-sml). Changes only under cq-arch's freeze rule.
+// Frozen interface (cq-arch, with freeze beads cq-k1w, cq-sml and cq-ofn6). Changes only under cq-arch's freeze rule.
 #pragma once
 
 #include <memory>
@@ -32,6 +32,7 @@ public:
   llvm::SmallVector<Operand, 4> fields(const llvm::Value *orig);
   void bind(const llvm::Value *orig, llvm::Value *v);
   void bindFields(const llvm::Value *orig, llvm::ArrayRef<Operand>);
+  void rebind(const llvm::Value *orig, llvm::ArrayRef<Operand>);   // replaces a binding; internalError if unbound
   llvm::BasicBlock *block(const llvm::BasicBlock *orig);
   llvm::Value *emitTemplate(const abi::TemplateSpec &, llvm::ArrayRef<Operand>, const llvm::Value *orig = nullptr);
   llvm::CallInst *emitCore(const abi::CoreSpec &, llvm::ArrayRef<llvm::Value *>);
@@ -46,6 +47,7 @@ private:
 };
 void construct(llvm::Module &, const TaintInfo &, const Specialization &, const loops::KOptions &);
 void lowerOpcode(LoweringContext &, llvm::Instruction &);
+void lowerInstruction(LoweringContext &, llvm::Instruction &);   // the spine's dispatch of one non-phi, non-terminator
 void lowerTheta(LoweringContext &, llvm::CallInst &);
 void lowerMeasure(LoweringContext &, llvm::CallInst &);
 }

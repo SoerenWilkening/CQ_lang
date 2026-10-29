@@ -26,6 +26,15 @@
 //  - A loop that is not purely classical is dispatched as a unit (loops::lowerClassical /
 //    loops::lowerCutoff) at its header. On return the builder must sit in the block where the loop's
 //    single exit block continues.
+//  - lowerInstruction(ctx, I) (cq-ofn6) is dispatch for a loop module lowering its body: I is an
+//    original non-phi, non-terminator instruction; for its duration the walker's per-instruction state
+//    is set from I (the current instruction, for rule 2 dominance, and currentPredicate() = the quantum
+//    part of preds().block(I.getParent())); both are restored on return, so after it the loop module
+//    sees its unit's state again. No rule 6 (ruleSixAfter): inside a rule-14 trip the mirror reads
+//    every old value. A cq_invert marker is an internal error (dispatch: the walker brackets regions).
+//  - rebind(orig, ops) (cq-ofn6) replaces orig's binding, which must exist (internal error
+//    otherwise): a loop module rebinds each loop value read after the loop to its exit value (rule 14
+//    case 1 copy-out, case 3 captured value). The kinds are the caller's; the old rails stay recorded.
 //  - cq_invert: at __cq_invert_begin the spine calls invert::lowerRegion(begin, end) and skips the
 //    instructions up to and including the matching end (same block).
 #pragma once

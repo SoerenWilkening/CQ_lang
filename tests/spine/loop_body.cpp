@@ -1,0 +1,271 @@
+// Unit test of the two entry points a rule-14 loop module uses (cq-ofn6, Lowering.h):
+// lowerInstruction (the spine's dispatch of one original body instruction, with the walker's
+// per-instruction state set from it) and LoweringContext::rebind (a loop value read after the loop
+// rebound to its exit value).
+//
+// loops::lowerClassical is still a stub (cq-w1-loops-classical), so this binary is linked with every
+// pass module except loops/classical/Classical.cpp and supplies a test double, a fake loop module
+// that lowers ONE trip: it binds each header phi to its preheader incoming, lowers every non-phi,
+// non-terminator instruction of the loop (in loop block order) through lowerInstruction, checks
+// after each call that currentPredicate() is again the unit's (top), and then, for each quantum loop
+// value read after the loop, copies its rail into a fresh rail f (alloc + copy, recorded) and
+// rebinds the value to f. The walker ends the unit and lowers the exit block. Checks:
+//  - body: the body's quantum add is one template, and the cq_phi in the quantum arm %then is
+//    lowered under that arm's predicate (an rz on the predicate's rail; under top, rule 12 would emit nothing).
+//  - rebind: the measurement after the loop reads f (the alloc the double made), not the add's rail.
+//  - rebind_unbound / lower_phi: rebind of an unbound value and lowerInstruction of a phi are
+//    internal errors (forked child).
+// The function is checked with the structural verifier and the LLVM verifier.
+//
+//   spine_loop_body            run every case
+//   spine_loop_body <case>     run one case
+#include <cstdio>
+#include <cstdlib>
+#include <functional>
+#include <map>
+#include <memory>
+#include <regex>
+#include <string>
+
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include "cq/Calls.h"
+#include "cq/Common.h"
+#include "cq/Loops.h"
+#include "cq/Lowering.h"
+#include "cq/Predicate.h"
+#include "cq/Taint.h"
+#include "cq/Uncompute.h"
+#include "cq/Verify.h"
+
+#include "llvm/Analysis/LoopInfo.h"
+#include "llvm/AsmParser/Parser.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Verifier.h"
+#include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/raw_ostream.h"
+
+using namespace llvm;
+
+namespace {
+int failures = 0;
+void fail(const std::string &c, const std::string &msg) {
+  ++failures;
+  std::fprintf(stderr, "FAIL %s: %s\n", c.c_str(), msg.c_str());
+}
+// What the double does besides lowering the body.
+enum class Mode { Lower, LowerPhi, RebindUnbound };
+Mode mode = Mode::Lower;
+std::string curCase;
+} // namespace
+
+// ---- test double of pass/lib/loops/classical/Classical.cpp ----------------------------------------
+namespace cq::loops {
+unsigned units = 0;
+void lowerClassical(LoweringContext &ctx, Loop &L, Case) {
+  ++units;
+  BasicBlock *pre = L.getLoopPreheader();
+  if (!pre)
+    internalError("test double: no preheader");
+  for (PHINode &phi : L.getHeader()->phis()) {
+    if (mode == Mode::LowerPhi)
+      lowerInstruction(ctx, phi);   // must stop
+    ctx.bindFields(&phi, {ctx.operand(phi.getIncomingValueForBlock(pre))});
+  }
+  for (BasicBlock *b : L.blocks())
+    for (Instruction &I : *b) {
+      if (isa<PHINode>(I) || I.isTerminator())
+        continue;
+      lowerInstruction(ctx, I);
+      if (!ctx.currentPredicate().isTop())
+        fail(curCase, "currentPredicate() not restored to the unit's after lowerInstruction");
+    }
+  if (mode == Mode::RebindUnbound) {
+    // An argument of another function is never bound here.
+    ctx.rebind(ctx.M.getFunction("other")->getArg(0), {Operand{ctx.B().getInt32(0), false}});
+  }
+  for (BasicBlock *b : L.blocks())
+    for (Instruction &I : *b)
+      for (User *u : I.users())
+        if (auto *ui = dyn_cast<Instruction>(u); ui && !L.contains(ui)) {
+          if (!ctx.T.isQuantum(&I, ctx.S))
+            internalError("test double: a classical loop value read after the loop", &I);
+          RailType w = railTypeOf(I.getType());
+          CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                                     {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+          f->setName("exitcopy");
+          RailId fid = ctx.unc().recordSeed(f);
+          abi::CoreSpec cp{abi::Core::Copy, w};
+          Operand v = ctx.operand(&I);
+          CallInst *c = ctx.emitCore(cp, {v.v, f});
+          ctx.unc().recordCore(c, cp, {v, Operand{f, true}}, fid);
+          ctx.rebind(&I, {Operand{f, true}});
+          break;
+        }
+}
+} // namespace cq::loops
+
+namespace {
+
+// A classically bounded loop with a quantum body: %y = x + i, and a phase in the quantum arm
+// x == i. %y is read after the loop by the measurement.
+const char *kLoop = R"(
+declare i32 @cq_theta_si32(i32, double)
+declare i32 @cq_measure_si32(i32)
+declare void @cq_phi(double)
+
+define void @other(i32 %a) {
+  ret void
+}
+
+define i32 @f(i32 %x0, double %th, i32 %n, double %phi) {
+entry:
+  %x = call i32 @cq_theta_si32(i32 %x0, double %th)
+  br label %body
+
+body:
+  %i = phi i32 [ %i1, %latch ], [ 0, %entry ]
+  %y = add i32 %x, %i
+  %c = icmp eq i32 %x, %i
+  br i1 %c, label %then, label %latch
+
+then:
+  call void @cq_phi(double %phi)
+  br label %latch
+
+latch:
+  %i1 = add nuw nsw i32 %i, 1
+  %d = icmp eq i32 %i1, %n
+  br i1 %d, label %exit, label %body
+
+exit:
+  %m = call i32 @cq_measure_si32(i32 %y)
+  ret i32 %m
+}
+)";
+
+std::string lower(const std::string &c) {
+  curCase = c;
+  mode = Mode::Lower;
+  LLVMContext ctx;
+  SMDiagnostic err;
+  std::unique_ptr<Module> M = parseAssemblyString(kLoop, err, ctx);
+  if (!M) {
+    err.print("spine_loop_body", errs());
+    std::exit(2);
+  }
+  cq::TaintInfo T = cq::computeTaint(*M, cq::TaintOptions{});
+  cq::loops::KOptions KO;
+  cq::loops::units = 0;
+  for (const cq::Specialization &S : T.specializations())
+    cq::construct(*M, T, S, KO);
+  cq::calls::finalize(*M);
+  cq::verifyLowered(*M);
+  std::string vs;
+  raw_string_ostream vos(vs);
+  if (verifyModule(*M, &vos))
+    fail(c, "llvm verifier: " + vos.str());
+  if (cq::loops::units != 1)
+    fail(c, "the loop was dispatched " + std::to_string(cq::loops::units) + " times, expected once");
+  std::string s;
+  raw_string_ostream os(s);
+  M->getFunction("f")->print(os);
+  std::printf("---- %s\n%s", c.c_str(), os.str().c_str());
+  return os.str();
+}
+
+unsigned count(const std::string &body, const std::string &rx) {
+  std::regex r(rx);
+  return std::distance(std::sregex_iterator(body.begin(), body.end(), r), std::sregex_iterator());
+}
+
+void caseBody() {
+  const char *c = "body";
+  std::string b = lower(c);
+  if (count(b, R"(= call i32 @cq_template_add_i32_hl\(i32 %\d+, i32 0\))") != 1)
+    fail(c, "the body's add is not one forward add template (one trip, i = 0)");
+  // The phase in %then is under the quantum predicate x == i: a phase on the predicate's rail (the
+  // icmp template's result); at the unit's top predicate rule 12 would delete it.
+  std::smatch m;
+  if (!std::regex_search(b, m, std::regex(R"(%(\d+) = call i32 @cq_template_icmp_eq_i32_hl\()")))
+    return fail(c, "no icmp template for the arm's condition");
+  if (count(b, R"(call void @cqrt_rz_i1\(i32 %)" + m[1].str() + R"(, double %phi\))") != 1)
+    fail(c, "the cq_phi in the quantum arm is not a phase on the arm's predicate rail");
+}
+
+void caseRebind() {
+  const char *c = "rebind";
+  std::string b = lower(c);
+  if (count(b, R"(%exitcopy = call i32 @cqrt_alloc_i32\(i32 0\))") != 1)
+    fail(c, "no exit copy rail");
+  if (count(b, R"(call i32 @cqrt_measure_i32\(i32 %exitcopy\))") != 1)
+    fail(c, "the measurement after the loop does not read the rebound exit value");
+}
+
+// Runs the lowering in a forked child and expects it to stop with cq: internal error containing msg.
+void expectInternal(const std::string &c, Mode md, const std::string &msg) {
+  int pfd[2];
+  if (pipe(pfd) != 0)
+    std::exit(2);
+  std::fflush(nullptr);
+  pid_t pid = fork();
+  if (pid == 0) {
+    dup2(pfd[1], 2);
+    close(pfd[0]);
+    close(pfd[1]);
+    mode = md;
+    LLVMContext ctx;
+    SMDiagnostic err;
+    std::unique_ptr<Module> M = parseAssemblyString(kLoop, err, ctx);
+    if (!M)
+      _exit(3);
+    cq::TaintInfo T = cq::computeTaint(*M, cq::TaintOptions{});
+    cq::loops::KOptions KO;
+    for (const cq::Specialization &S : T.specializations())
+      cq::construct(*M, T, S, KO);
+    _exit(0);   // reached only when the lowering did not stop
+  }
+  close(pfd[1]);
+  std::string out;
+  char buf[512];
+  ssize_t k;
+  while ((k = read(pfd[0], buf, sizeof buf)) > 0)
+    out.append(buf, size_t(k));
+  close(pfd[0]);
+  int status = 0;
+  waitpid(pid, &status, 0);
+  std::printf("---- %s\n%s", c.c_str(), out.c_str());
+  if (!(WIFEXITED(status) && WEXITSTATUS(status) != 0 && WEXITSTATUS(status) != 3))
+    return fail(c, "the lowering did not stop (status " + std::to_string(status) + ")");
+  if (out.find(msg) == std::string::npos)
+    fail(c, "the stop does not say '" + msg + "'");
+}
+
+void caseRebindUnbound() { expectInternal("rebind_unbound", Mode::RebindUnbound, "rebind of %a, which is not bound"); }
+void caseLowerPhi() { expectInternal("lower_phi", Mode::LowerPhi, "lowerInstruction of a phi or terminator"); }
+
+} // namespace
+
+int main(int argc, char **argv) {
+  std::map<std::string, std::function<void()>> cases{{"body", caseBody},
+                                                        {"rebind", caseRebind},
+                                                        {"rebind_unbound", caseRebindUnbound},
+                                                        {"lower_phi", caseLowerPhi}};
+  if (argc > 1) {
+    auto it = cases.find(argv[1]);
+    if (it == cases.end()) {
+      std::fprintf(stderr, "unknown case %s\n", argv[1]);
+      return 2;
+    }
+    it->second();
+  } else {
+    for (auto &kv : cases)
+      kv.second();
+  }
+  std::printf("%s\n", failures ? "FAILED" : "ok");
+  return failures ? 1 : 0;
+}

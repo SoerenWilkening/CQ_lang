@@ -507,6 +507,27 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
     bindOperand(ctx, &I, Operand{n, false});
 }
 
+} // namespace cq::spine
+
+namespace cq {
+
+void lowerInstruction(LoweringContext &ctx, Instruction &I) {
+  if (isa<PHINode>(I) || I.isTerminator())
+    internalError("spine: lowerInstruction of a phi or terminator", &I);
+  spine::Shared &sh = spine::shared(ctx);
+  const Instruction *savedCur = sh.cur;
+  std::optional<Pred> savedPred = sh.curPred;
+  sh.cur = &I;
+  sh.curPred = ctx.preds().block(I.getParent()).quantumPart(ctx.T, ctx.S);
+  spine::dispatch(ctx, I);
+  sh.cur = savedCur;
+  sh.curPred = savedPred;
+}
+
+} // namespace cq
+
+namespace cq::spine {
+
 void lowerInline(LoweringContext &ctx, CallBase &CB, const Specialization &callee) {
   Function &F = *callee.F;
   if (F.size() != 1 || !isa<ReturnInst>(F.getEntryBlock().getTerminator()))
