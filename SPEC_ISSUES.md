@@ -28,3 +28,9 @@ Entry format:
 - Disagreement: fenv_tested measures y, then f = fetestexcept(FE_INEXACT) = host | (select(y > k, 32, 0) & 32), which depends only on the measured y and the host flags. The reference keeps and measures f's rail (`cqrt_measure_i32(%13)`); rule 2 makes f classical, so cq_measure(f) is a classical re-read and no second measurement exists.
 - Evidence: `cqcheck run 65_fenv_bracket --oracle both` with our lowering (f collapsed): s6 and C oracle fail on every sample, "1 measurements != 2".
 - Bead: cq-r6bc
+
+## 80, 81, 100: rule 27's exception list omits rule 23
+- Rule: CR rule 27 ("The compiler knows no library by name ... except the calls rule 16, rule 22 and the intrinsic routes classify"); rule 23 ("fenv calls on quantum state are rail operations").
+- Disagreement: the references of 80, 81 and 100 lower fesetround/fetestexcept/feraiseexcept/... on quantum state as rail operations, which needs recognising <fenv.h> calls by name; rule 27 read literally makes a quantum call to a bodiless fesetround a declared clone.
+- Evidence: 80_fenv_rounding.lowered.ll (fesetround on a quantum mode), 81, 100; our pass follows rule 23 and is §6-green on all three.
+- Bead: cq-8q9i
