@@ -46,3 +46,9 @@ Entry format:
 - Disagreement: in switch_phase, -O1 merges the three case phases into one `cq_phi(%12)` in the shared case block `%11`, `%12 = phi double [ %4, %9 ], [ %3, %8 ], [ %2, %5 ]`, chosen by the quantum switch on `x & 3`. The reference emits `rz_i1(case flag, pK)` per case (rule 13, "phase arms per rule 8"); rule 11 requires one `rz_qangle[_controlled]` on a select rail.
 - Evidence: `cqcheck run 22_switch_quantum --oracle both` with cq-bxc4 (taint marks `%12` quantum): c=pass, verifier=pass; s6 fails in switch_phase only, "our gate #1 phase_qangle(rail 6, ctl=[7]) matches no reference gate"; switch_value passes.
 - Bead: cq-5h88
+
+## 125_mixed_phase_value_arm vs 133_state_prep_overwrite: rule 10's controlled Ry sits on opposite sides of the sibling arm's phase
+- Rule: CR rule 10 (no position given for the prep's `ry_<W>_controlled`); CR §6 item 2 ("an Ry is ordered against every gate it overlaps").
+- Disagreement: the same shape (a prep under the flag f in one arm, a `cq_phi` in the other arm, one merge phi) is ordered both ways. 133 prep_beside_phase emits `xorc`/`ry_i32_controlled(f, r)` in the arm, before `not; rz_i1(f, p); not`. 125 emits `ry_i32_controlled(f, r)` at the merge phi %19, after `not; rz_i1(f, b); not`. The Ry's control f is the phase's support, so §6 orders them, and no placement rule for the construction meets both references.
+- Evidence: the current lowering (Ry at the prep in its arm) passes 133 and fails 125 (`cqcheck run 125_mixed_phase_value_arm --oracle both`: "our gate #3 ry(h=5, ..., ctl=[3]) ... matches no reference gate movable to this position"). Our 133 lowering with xorc+Ry moved after the else-arm phase (the merge placement) fails 133 (`cqcheck run 133_state_prep_overwrite --ours ...`: "our gate #1 phase(f=2, 0x3fb999999999999a) ... matches no reference gate movable to this position").
+- Bead: cq-vrwm
