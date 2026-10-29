@@ -2,7 +2,7 @@
 // unreachable) does not restrict its siblings for control dependence (CR rule 16: after a noreturn
 // arm the program continues uncontrolled). The dead end itself stays control dependent on the
 // branch into it; a phi whose incoming edge only a dead-end branch "chooses" is not quantum.
-// Witnesses 45 (both functions), 49 (the switch join), 108 trap_q, plus synthetic shapes.
+// Witnesses 45 (both functions), 49 (the switch join), 22 (both joins, cq-fv9n), 108 trap_q, plus synthetic shapes.
 #include <cstdio>
 #include <string>
 
@@ -212,6 +212,15 @@ int main() {
     cq::TaintInfo T49 = cq::computeTaint(*M49, {});
     expectCT(T49, *M49->getFunction("switch_shared_unreachable"),
              {{"7", true}, {"9", true}, {"11", true}, {"13", true}, {"14", false}});
+  }
+  // cq-fv9n: a quantum switch whose default is a bare unreachable; the join after it (switch_value
+  // %15, switch_phase %13) is not control dependent on the switch, so the spine may place the ret.
+  if (auto M22 = loadSpec(Ctx, "22_switch_quantum/switch_quantum.O1.ll")) {
+    cq::TaintInfo T22 = cq::computeTaint(*M22, {});
+    expectCT(T22, *M22->getFunction("switch_value"),
+             {{"8", true}, {"10", true}, {"12", true}, {"14", true}, {"15", false}});
+    expectCT(T22, *M22->getFunction("switch_phase"),
+             {{"8", true}, {"9", true}, {"10", true}, {"11", true}, {"13", false}});
   }
   if (auto M108 = loadSpec(Ctx, "108_arch_primitives/arch_primitives.O1.ll")) {
     cq::TaintInfo T108 = cq::computeTaint(*M108, {});
