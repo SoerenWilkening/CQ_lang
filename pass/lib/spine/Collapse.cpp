@@ -17,7 +17,9 @@
 //    that reaches it (the original measurement dominates the instruction being lowered, or the
 //    output measurement call dominates the builder's point), or when its minting call and every
 //    write on it dominate the builder's point and every rail they read is classical there. It
-//    collapses only when at least one measured rail is among its sources: a rail built from seeds
+//    collapses only when at least one measured rail is among its sources (cq-nvfi: a source read
+//    before a non-diagonal gate hit it, at the minting call or a write, makes the rail not classical:
+//    it read a value that neither the source's later basis value nor its outcome recomputes): a rail built from seeds
 //    alone (a merge of classical arms) is the quantum control flow's own representation and stays.
 //  - Recomputation. A measured rail is its outcome. A template rail whose record stands for exactly
 //    one original non-phi instruction (its only field) is that instruction copied classically with
@@ -61,6 +63,28 @@ bool outAvailable(Shared &sh, const Instruction *def) {
     if (b == def->getParent())
       return true;
   return false;
+}
+
+// Does output instruction a come before b on every path to b (same block, or a's block on b's chain
+// of single predecessors)? Conservative: false when unknown.
+bool outBefore(const Instruction *a, const Instruction *b) {
+  if (a->getParent() == b->getParent())
+    return a != b && a->comesBefore(b);
+  SmallPtrSet<const BasicBlock *, 8> seen;
+  for (const BasicBlock *x = b->getParent()->getSinglePredecessor(); x && seen.insert(x).second;
+       x = x->getSinglePredecessor())
+    if (x == a->getParent())
+      return true;
+  return false;
+}
+
+// cq-nvfi: a read of rail v at `at` is stale when a non-diagonal gate hit v that does not come
+// before the read: what the reader read is no function of v's later basis value or outcome.
+bool staleRead(Shared &sh, Value *v, const Instruction *at) {
+  auto it = sh.rotations.find(v);
+  if (it == sh.rotations.end())
+    return false;
+  return any_of(it->second, [&](const CallInst *r) { return !outBefore(r, at); });
 }
 
 bool availableValue(Shared &sh, Value *v) {
@@ -116,14 +140,14 @@ Cls classify(Shared &sh, Value *h, DenseMap<Value *, Cls> &memo) {
   if (r.opaque || !outAvailable(sh, r.def))
     return No;
   Cls c = Classical;
-  auto join = [&](Value *v) {
-    Cls k = classify(sh, v, memo);
+  auto join = [&](Value *v, const Instruction *at) {
+    Cls k = staleRead(sh, v, at) ? No : classify(sh, v, memo);
     c = k == No || c == No ? No : std::max(c, k);
   };
   if (r.tmpl) {
     for (const Operand &o : r.ops)
       if (o.handle)
-        join(o.v);
+        join(o.v, r.def);
   } else if (!r.seed || !availableValue(sh, r.seed)) {
     return No;
   }
@@ -131,7 +155,7 @@ Cls classify(Shared &sh, Value *h, DenseMap<Value *, Cls> &memo) {
     if (!outAvailable(sh, w.call))
       return memo[h] = No;
     for (Value *a : writeReads(w))
-      join(a);
+      join(a, w.call);
   }
   return memo[h] = c;
 }
@@ -245,9 +269,11 @@ void noteCore(Shared &sh, CallInst *call, const abi::CoreSpec &spec, ArrayRef<Va
   }
   if (spec.op == abi::Core::Ry || spec.op == abi::Core::RyQAngle) {
     unsigned t = spec.ctl ? 1 : 0;
-    if (t < args.size())
+    if (t < args.size()) {
+      sh.rotations[args[t]].push_back(call);
       if (auto it = sh.hist.find(args[t]); it != sh.hist.end())
         it->second.opaque = true;
+    }
     return;
   }
   int t = xorTarget(spec, args.size());

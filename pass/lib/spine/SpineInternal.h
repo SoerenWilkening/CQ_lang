@@ -125,6 +125,18 @@ struct Shared {
   llvm::Value *tripFlag = nullptr;
   llvm::Value *tripConj = nullptr;
   std::vector<const llvm::CallBase *> inlineStack;
+  // cq-s32y: a register's pre-rotation value read after its in-place rotation reads a copy taken
+  // just before the Ry (PreRotation.cpp). orig -> (the cq_theta, the rotated rail h, the copy c, the
+  // original blocks reachable from the cq_theta's end without redefining orig).
+  struct PreRot {
+    const llvm::Instruction *T = nullptr;
+    llvm::Value *h = nullptr;
+    llvm::Value *c = nullptr;
+    llvm::DenseSet<const llvm::BasicBlock *> reach;
+  };
+  llvm::DenseMap<const llvm::Value *, PreRot> preRot;
+  // cq-nvfi: every non-diagonal gate (ry, ry_qangle, controlled or not) on a rail, in emission order.
+  llvm::DenseMap<const llvm::Value *, llvm::SmallVector<llvm::CallInst *, 2>> rotations;
 
   Shared(llvm::Module &M, const loops::KOptions &KO) : M(M), KO(KO), B(M.getContext()) {}
   llvm::DominatorTree &dt(const llvm::Function &F);
@@ -146,6 +158,21 @@ void noteTemplate(Shared &, llvm::CallInst *fwd, const abi::TemplateSpec &, llvm
 void noteCore(Shared &, llvm::CallInst *call, const abi::CoreSpec &, llvm::ArrayRef<llvm::Value *>);
 llvm::Value *outcomeAt(Shared &, llvm::Value *handle);
 llvm::Value *collapse(LoweringContext &, llvm::Value *handle);
+
+// cq-s32y (PreRotation.cpp). Before a cq_theta on an existing rail h is lowered: when a use of its
+// operand v (or of another value bound to h) is not before the rotation, h is copied into a fresh
+// rail c (alloc 0, copy_<W>), returned for finishPreRotation, which rebinds v to c after the
+// lowering emitted the Ry on h. A use is before the rotation when it is lowered already, or (a phi's
+// incoming) its edge is not reachable from the cq_theta without passing v's definition.
+struct PendingCopy {
+  const llvm::Value *v = nullptr;
+  Shared::PreRot rec;
+};
+std::optional<PendingCopy> beginPreRotation(LoweringContext &, llvm::CallInst &theta);
+void finishPreRotation(LoweringContext &, std::optional<PendingCopy> &);
+// The operand a phi being lowered (Shared::cur) reads for orig: a value copied before a rotation is
+// the rotated rail itself on edges that are not after the rotation (the register a merge names).
+Operand atPhiEdge(Shared &, const llvm::Value *orig, Operand bound);
 
 // Binds orig to an operand with an explicit kind (classical collapse binds a quantum orig classically).
 void bindOperand(LoweringContext &, const llvm::Value *orig, Operand op);

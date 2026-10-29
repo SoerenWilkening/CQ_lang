@@ -133,7 +133,7 @@ Operand LoweringContext::operand(const Value *orig) {
     internalError("spine: operand() of a value with " + std::to_string(it->second.size()) +
                       " fields (use fields())",
                   orig);
-  Operand op = it->second.front();
+  Operand op = spine::atPhiEdge(sh, orig, it->second.front());
   if (op.handle) {
     // Rule 2: a use after a measurement of this rail reads the classical outcome, and a rail that
     // depends only on measured rails and classical values collapses to its classical recomputation.
@@ -158,7 +158,7 @@ Value *LoweringContext::rail(const Value *orig) {
       internalError("spine: rail() of a classical value " + describe(orig), orig);
     return op.v;
   }
-  return it->second.front().v;
+  return spine::atPhiEdge(sh, orig, it->second.front()).v;
 }
 
 SmallVector<Operand, 4> LoweringContext::fields(const Value *orig) {

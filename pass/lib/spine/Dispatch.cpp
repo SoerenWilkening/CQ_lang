@@ -281,13 +281,18 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
   case Class::Theta: {
     if (!CI)
       internalError("spine: cq_theta through invoke", &CB);
-    if (isQ(ctx, CI->getArgOperand(1)))
-      return rot::lowerQuantumAngleTheta(ctx, *CI, ctx.currentFlag());   // rules 11, 15
-    if (Value *flag = ctx.currentFlag()) {
+    // cq-s32y: a use of the operand after an in-place rotation reads a copy taken before the Ry.
+    std::optional<PendingCopy> pre = beginPreRotation(ctx, *CI);
+    if (isQ(ctx, CI->getArgOperand(1))) {
+      rot::lowerQuantumAngleTheta(ctx, *CI, ctx.currentFlag());          // rules 11, 15
+    } else if (Value *flag = ctx.currentFlag()) {
       shared(ctx).statePreps.insert(CI);                                  // a merge of it: cq-gtcn
-      return rot::lowerControlledTheta(ctx, *CI, flag);                   // rule 10
+      rot::lowerControlledTheta(ctx, *CI, flag);                          // rule 10
+    } else {
+      lowerTheta(ctx, *CI);                                               // rule 2
     }
-    return lowerTheta(ctx, *CI);                                         // rule 2
+    finishPreRotation(ctx, pre);
+    return;
   }
   case Class::Measure:
     if (!CI)
