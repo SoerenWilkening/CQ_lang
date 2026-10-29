@@ -7,7 +7,7 @@ set(CQ_UNC_CASES
   reverse_dependency_order independent_most_recent_first last_use_ir last_use_noted
   nondiagonal_before nondiagonal_kept nondiagonal_transitive rule10_flag_kept
   measure_is_not_a_barrier rule6_sequence scope_mirror_order scope_nested seed_direct
-  seed_xorc_direct seed_written_undone qram_lifo multi_exit arm_flush ex14_fmuladd
+  seed_xorc_direct seed_written_undone qram_lifo qram_rmw qram_kept_bus qram_pop_kept multi_exit arm_flush ex14_fmuladd
   ex42_measure_one_of_two ex162_consumer ex144_rule6
   merge_measured merge_all_arms_kept merge_template_then_garbage merge_noted_use merge_phi merge_nested
   merge_kept_arm_local merge_kept_unchosen_edge merge_kept_rotated)
@@ -23,6 +23,7 @@ set(CQ_UNC_FATAL
   "fatal_scope_order=cq: internal error: uncompute: scopes close last-in-first-out"
   "fatal_mirror_outside_reader=cq: internal error: uncompute: mirror would free"
   "fatal_write_barrier=cq: unimplemented: uncompute: an in-place write on an operand rail"
+  "fatal_qram_kept_bus_barrier=cq: unimplemented: uncompute: an in-place write on an operand rail"
   "fatal_unknown_handle=cq: internal error: uncompute: recordTemplate: .* is not a recorded rail"
   "fatal_merge_kept_role=cq: unimplemented: uncompute: a kept role on a classical select over handles"
   "fatal_merge_nondiagonal=cq: unimplemented: uncompute: a non-diagonal gate on a merged handle"

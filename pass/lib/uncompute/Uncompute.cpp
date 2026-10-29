@@ -25,8 +25,8 @@
 //  - recordSeed(alloc): a cqrt_alloc_<W> call; a new rail, Role::Seed (rule 7).
 //  - recordCore(fwd, spec, ops, out): a reversible core gate, ops = fwd's argument list.
 //      in place on the rail `out` (out must be fwd's target operand): copy, xorc, not_i1, and_i1, or_i1,
-//        xor_i1 (involutions: undone by the same call, BACKEND_ABI §1.8, §1.9) and qram_store (undone by
-//        its _unc, popped last-in-first-out because a rail's records are undone in reverse order);
+//        xor_i1 (involutions: undone by the same call, BACKEND_ABI §1.8, §1.9) and qram_store on the
+//        bus `out` (undone by its _unc as an item of its own, POP(k), see QRAM versions below);
 //      with a fresh result (`out` is ignored, the new rail's id is returned): qram_load (Role::Garbage,
 //        undone by its _unc(h, args...)), qram_alloc (Role::Seed, released by cqrt_qram_free), alloc
 //        (= recordSeed). Any other core gate is not reversible and is an internal error here.
@@ -90,6 +90,15 @@
 //    pending resolvable rail created by a record of the scope. Its operands are the forward Values;
 //    a caller that mirrors outside their dominance region (a reverse loop) remaps the instructions
 //    emitted between B's insertion point before and after the call. No barrier check is made.
+//  - QRAM versions (amendment A2, cq-w6ie). A bus's stores s_1..s_m in program order are each an item
+//    POP(k) (the store's _unc alone), which reads the store's index, value and control rails. A load
+//    made after s_k reads version v_k. POP(k) follows every use of the bus, POP(k+1) and the un-copy
+//    of every load reading v_j, j >= k; a load reading v_k is un-copied after every POP(j), j > k (the
+//    cell holds v_k again), so a later popped store is no barrier for it. The bus's item is
+//    cqrt_qram_free alone, after every POP and load un-copy (77: pop the rmw store, sum, old, the
+//    index, then the initializers). A kept bus (a global, Output) has no POP: its stores stay and stay
+//    barriers. A POP made KeptEntangled by a hit on a rail it reads keeps every earlier POP, every load
+//    reading an earlier version, and the bus.
 //  - scopeRecords(s): the records created while s was open (nested scopes included), program order.
 //    The ArrayRef is valid until the next record* call. Scopes close last-in-first-out.
 //
@@ -175,6 +184,7 @@ struct Uncompute::Impl {
     RecKind kind;
     SmallVector<RailId, 3> reads; // handle operands other than the record's own rail
     bool preserving = false;      // an uncontrolled xorc: a seed stays in a known basis state
+    RailId item = kNone;          // the item that undoes it: out, or a QRAM store's POP (A2)
   };
   struct Cleanup {
     abi::TemplateSpec inverse;
@@ -196,6 +206,13 @@ struct Uncompute::Impl {
     SmallPtrSet<const BasicBlock *, 2> exitsDone; // returns this rail was placed for
     SmallVector<RailId, 2> arms;       // U1: non-empty iff this rail is a merge (its handle aliases one arm)
     SmallVector<RailId, 2> mergedInto; // U1: the merges that name this rail as an arm
+    // A2 (cq-w6ie): QRAM versions. A bus's stores s_1..s_m (program order) are POP items of their
+    // own; a load records, per bus it may read, the number k of stores made before it (it reads v_k).
+    RailId popBus = kNone;             // POP(popK) of this bus: a pseudo rail, handle = the store call
+    unsigned popK = 0;                 // 1-based
+    SmallVector<RailId, 4> pops;       // on a bus: POP(1..m)
+    SmallVector<RailId, 4> loads;      // on a bus: the loads that recorded a version on it
+    SmallVector<std::pair<RailId, unsigned>, 1> versions; // on a load: (bus, k)
   };
   struct Scope {
     unsigned begin, end;
@@ -307,7 +324,7 @@ struct Uncompute::Impl {
                      RailId out, RecKind kind, bool preserving) {
     unsigned idx = records.size();
     Record rec{fwd, std::move(spec), SmallVector<Operand, 3>(ops.begin(), ops.end()), out};
-    RecInfo ri{kind, {}, preserving};
+    RecInfo ri{kind, {}, preserving, out};
     for (const Operand &o : ops) {
       if (!o.handle)
         continue;
@@ -383,8 +400,26 @@ struct Uncompute::Impl {
 
   // ---- items -----------------------------------------------------------------------------------
 
+  bool isPop(RailId g) const { return rails[g].popBus != kNone; }
+
+  // A bus whose stores are popped: one that is itself resolved (a kept bus, e.g. a global, Output,
+  // keeps every store; a KeptEntangled bus keeps the stores below a kept POP).
+  bool busPoppable(RailId b) const {
+    const Rail &r = rails[b];
+    return !r.cleanup && r.arms.empty() && (r.role == Role::Seed || r.role == Role::Garbage);
+  }
+
+  // The store record w is (or will be) popped before the bus is released.
+  bool storePopped(unsigned w) const {
+    RailId p = info[w].item;
+    return info[w].kind == RecKind::QramStore && isPop(p) && rails[p].role == Role::Garbage &&
+           busPoppable(rails[p].popBus);
+  }
+
   bool resolvable(RailId g) const {
     const Rail &r = rails[g];
+    if (r.popBus != kNone)
+      return !r.released && r.role == Role::Garbage && busPoppable(r.popBus);
     return !r.released && r.arms.empty() && (r.cleanup || r.role == Role::Garbage || r.role == Role::Seed);
   }
 
@@ -406,7 +441,9 @@ struct Uncompute::Impl {
       return out;
     if (r.creator != kNone)
       out.push_back(r.creator);
-    out.append(r.writes.begin(), r.writes.end());
+    for (unsigned w : r.writes)
+      if (info[w].kind != RecKind::QramStore) // A2: each store is its own POP item
+        out.push_back(w);
     return out;
   }
 
@@ -459,8 +496,8 @@ struct Uncompute::Impl {
     SmallVector<RailId, 4> cand;
     for (RailId n : ns) {
       for (unsigned rec : rails[n].readerRecs)
-        if (!is_contained(cand, records[rec].out))
-          cand.push_back(records[rec].out);
+        if (!is_contained(cand, info[rec].item))
+          cand.push_back(info[rec].item);
       for (RailId o : rails[n].cleanupReaders)
         if (!is_contained(cand, o))
           cand.push_back(o);
@@ -473,7 +510,50 @@ struct Uncompute::Impl {
       if (any_of(ns, [&](RailId n) { return is_contained(rd, n); }))
         out.push_back(o);
     }
+    for (RailId o : versionBefore(g))
+      if (!is_contained(out, o))
+        out.push_back(o);
     return out;
+  }
+
+  // A2 (cq-w6ie): the QRAM version order, items that must precede g's item beyond its readers.
+  //  - POP(k) follows POP(k+1) (last in, first out) and the un-copy of every load reading v_j, j >= k;
+  //  - a load reading v_k is un-copied after POP(j) for every j > k (the cell holds v_k again);
+  //  - the bus (cqrt_qram_free) follows every POP (its loads are readers already).
+  SmallVector<RailId, 4> versionBefore(RailId g) const {
+    const Rail &r = rails[g];
+    SmallVector<RailId, 4> out;
+    if (r.popBus != kNone) {
+      const Rail &b = rails[r.popBus];
+      if (r.popK < b.pops.size())
+        out.push_back(b.pops[r.popK]);
+      for (RailId l : b.loads)
+        for (auto [bus, k] : rails[l].versions)
+          if (bus == r.popBus && k >= r.popK && !is_contained(out, l))
+            out.push_back(l);
+      return out;
+    }
+    for (auto [bus, k] : r.versions)
+      for (unsigned j = k; j < rails[bus].pops.size(); ++j)
+        out.push_back(rails[bus].pops[j]);
+    out.append(r.pops.begin(), r.pops.end());
+    return out;
+  }
+
+  // POP(k) of a bus is kept (a non-diagonal gate hit a rail it reads): its store stays, so every
+  // earlier store stays, every load reading an earlier version cannot be un-copied, and the bus is
+  // never freed (CR §0; A4).
+  void keepBelow(RailId g) {
+    RailId b = rails[g].popBus;
+    for (unsigned j = 1; j < rails[g].popK; ++j)
+      rails[rails[b].pops[j - 1]].role = Role::KeptEntangled;
+    for (RailId l : rails[b].loads)
+      for (auto [bus, k] : rails[l].versions)
+        if (bus == b && k < rails[g].popK && resolvable(l)) {
+          rails[l].role = Role::KeptEntangled;
+          rails[l].cleanup.reset();
+        }
+    rails[b].role = Role::KeptEntangled;
   }
 
   const BasicBlock *defBlock(RailId g) const {
@@ -490,6 +570,12 @@ struct Uncompute::Impl {
   // Every instruction g's item must follow (except the items of readers, added at placement).
   SmallVector<Instruction *, 8> anchors(RailId g) const {
     const Rail &r = rails[g];
+    if (r.popBus != kNone) {
+      // POP(k) follows every use of the bus (those after s_k are the ones that matter).
+      SmallVector<Instruction *, 8> out = anchors(r.popBus);
+      out.push_back(records[r.creator].forward);
+      return out;
+    }
     SmallVector<Instruction *, 8> out;
     if (r.creator != kNone)
       out.push_back(records[r.creator].forward);
@@ -535,7 +621,7 @@ struct Uncompute::Impl {
   // The barrier events of g's item: (event, isHit) that must not precede the item.
   SmallVector<std::pair<Instruction *, bool>, 4> barriers(RailId g) const {
     SmallVector<std::pair<Instruction *, bool>, 4> out;
-    auto eventsOf = [&](RailId x, auto &&isAfterBase) {
+    auto eventsOf = [&](RailId x, auto &&isAfterBase, bool popsFirst = false) {
       const Rail &rx = rails[x];
       for (Instruction *h : rx.hits)
         if (isAfterBase(h))
@@ -543,7 +629,7 @@ struct Uncompute::Impl {
       if (x == g)
         return; // g's own writes are undone by its item
       for (unsigned w : rx.writes)
-        if (isAfterBase(records[w].forward))
+        if (isAfterBase(records[w].forward) && !(popsFirst && storePopped(w)))
           out.push_back({records[w].forward, false});
     };
     const Rail &r = rails[g];
@@ -572,9 +658,12 @@ struct Uncompute::Impl {
     for (unsigned rec : undone(g)) {
       const Instruction *f = records[rec].forward;
       auto afterRec = [&](const Instruction *e) { return e != f && after(e, f); };
+      // A2: a later store on a load's bus is popped before the load is un-copied (not a barrier),
+      // unless the bus keeps its stores.
+      bool popsFirst = info[rec].kind == RecKind::QramLoad;
       for (RailId x0 : info[rec].reads)
         for (RailId x : leaves(x0)) // U1: a read of a merge reads one of its arms
-          eventsOf(x, afterRec);
+          eventsOf(x, afterRec, popsFirst);
     }
     // Hits on g itself after it was minted (a rotated seed or result is never freed).
     if (r.creator != kNone) {
@@ -705,7 +794,7 @@ struct Uncompute::Impl {
     for (RailId n : others) {
       SmallVector<RailId, 4> rd;
       for (unsigned rec : rails[n].readerRecs)
-        rd.push_back(records[rec].out);
+        rd.push_back(info[rec].item);
       rd.append(rails[n].cleanupReaders.begin(), rails[n].cleanupReaders.end());
       for (RailId o : rd)
         if (o != a && !rails[o].released && (resolvable(o) || !rails[o].exitsDone.empty() || rails[o].cleanup))
@@ -771,6 +860,11 @@ struct Uncompute::Impl {
 
   Instruction *emitItem(RailId g, IRBuilder<> &B) {
     Rail &r = rails[g];
+    if (r.popBus != kNone) {
+      // A2: POP(k) is the store's _unc alone; the bus's own item frees it.
+      CallInst *fwd = records[r.creator].forward;
+      return track(B.CreateCall(uncOf(fwd, false), argsOf(fwd, nullptr)));
+    }
     if (r.cleanup) {
       // Rule 6: t = f^-1(ops); copy(t, old); f^-1_unc(t, ops); free t; free old.
       Module &M = *B.GetInsertBlock()->getModule();
@@ -806,8 +900,7 @@ struct Uncompute::Impl {
           track(B.CreateCall(fwd->getFunctionType(), fwd->getCalledOperand(), argsOf(fwd, nullptr)));
           break;
         case RecKind::QramStore:
-          track(B.CreateCall(uncOf(fwd, false), argsOf(fwd, nullptr)));
-          break;
+          internalError("uncompute: a QRAM store is undone by its own POP item", fwd);
         case RecKind::Seed:
         case RecKind::QramAlloc:
           break;
@@ -884,6 +977,8 @@ struct Uncompute::Impl {
 
   void place(RailId g, const Ctx &c) {
     Rail &r = rails[g];
+    if (!resolvable(g))
+      return; // kept by a POP placed earlier in this batch (keepBelow)
     if (c.mode == Mode::Mirror) {
       Instruction *end = emitItem(g, *c.mirror);
       r.released = true;
@@ -933,6 +1028,8 @@ struct Uncompute::Impl {
     if (kept) {
       r.role = Role::KeptEntangled;
       r.cleanup.reset();
+      if (r.popBus != kNone)
+        keepBelow(g);
       return;
     }
     IRBuilder<> B(pos.before);
@@ -990,6 +1087,13 @@ RailId Uncompute::recordCore(CallInst *fwd, const abi::CoreSpec &spec, ArrayRef<
   case Core::QramLoad: {
     RailId r = impl->newRail(fwd, Role::Garbage, "recordCore");
     impl->addRecord(fwd, spec, ops, r, RecKind::QramLoad, false);
+    if (ops.empty() || !ops[0].handle)
+      internalError("uncompute: recordCore: a QRAM load's first operand is its bus", fwd);
+    // A2: the load reads v_k, k = the stores made so far on each bus its operand may name.
+    for (RailId b : impl->leaves(impl->lookup(ops[0].v, "recordCore", fwd))) {
+      impl->rails[r].versions.push_back({b, static_cast<unsigned>(impl->rails[b].pops.size())});
+      impl->rails[b].loads.push_back(r);
+    }
     return r;
   }
   case Core::Copy:
@@ -1008,9 +1112,20 @@ RailId Uncompute::recordCore(CallInst *fwd, const abi::CoreSpec &spec, ArrayRef<
   case Core::XorI1:
     impl->addRecord(fwd, spec, ops, target(1), RecKind::Involution, false);
     return out;
-  case Core::QramStore:
-    impl->addRecord(fwd, spec, ops, target(c), RecKind::QramStore, false);
+  case Core::QramStore: {
+    unsigned rec = impl->addRecord(fwd, spec, ops, target(c), RecKind::QramStore, false);
+    // A2: the store is undone by its own item POP(k), a pseudo rail outside byHandle.
+    RailId p = impl->rails.size();
+    impl->rails.emplace_back();
+    Impl::Rail &pr = impl->rails.back();
+    pr.handle = fwd;
+    pr.creator = rec;
+    pr.popBus = out;
+    pr.popK = impl->rails[out].pops.size() + 1;
+    impl->rails[out].pops.push_back(p);
+    impl->info[rec].item = p;
     return out;
+  }
   case Core::QramRealloc:
     unimplemented("uncompute: recordCore of qram_realloc", fwd);
   default:
