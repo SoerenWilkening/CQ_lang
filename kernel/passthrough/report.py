@@ -80,10 +80,16 @@ def main():
         f.write("object\tsource\topt\tstate\tverdict\tsha256\ttriple\tplugin_sha256\tdetail\n")
         for r in rows:
             f.write("\t".join(r) + "\n")
-    # the pass is the plugin: name the checkout it was built in (PLUGIN is <checkout>/build/pass/X)
-    root = plugin.resolve().parents[2] if plugin.exists() else HERE.parents[1]
-    commit = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True,
-                            text=True).stdout.strip() or "unknown"
+    # the pass is the plugin: a snap.sh copy names its origin; otherwise PLUGIN is <checkout>/build/pass/X
+    origin = Path(str(plugin) + ".origin")
+    if origin.exists():
+        o = dict(l.split(None, 1) for l in origin.read_text().splitlines() if l.strip())
+        passline = [f"pass              CQ_lang2 {o['commit']}", f"plugin origin     snap.sh copy of {o['source']} (mtime {o['mtime']})"]
+    else:
+        root = plugin.resolve().parents[2] if plugin.exists() else HERE.parents[1]
+        commit = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True,
+                                text=True).stdout.strip() or "unknown"
+        passline = [f"pass              CQ_lang2 {commit} (HEAD of the plugin's checkout when the report was written)"]
     kver = subprocess.run(["git", "-C", e["KTREE"], "rev-parse", "HEAD"], capture_output=True,
                           text=True).stdout.strip()
     lines = [
@@ -94,7 +100,7 @@ def main():
         "toolchain         brew llvm@19 19.1.7 (clang, opt), lld@19 19.1.7",
         f"plugin            {plugin}",
         f"plugin sha256     {psha} (every verdict below is a result recorded under this hash)",
-        f"pass              CQ_lang2 {commit} (HEAD of the plugin's checkout when the report was written)",
+        *passline,
         "identity          opt -passes=cq-lower X  ==  opt X   (byte for byte, bitcode output; owner",
         "                  ruling on cq-arch 2026-10-27; control.sh shows the comparison sees a rewrite)",
         "scope             every C file kbuild compiles to an object for `vmlinux modules` of the config,",
