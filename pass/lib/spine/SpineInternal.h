@@ -50,8 +50,10 @@
 //  - rebind(orig, ops) (cq-ofn6) replaces orig's binding, which must exist (internal error
 //    otherwise): a loop module rebinds each loop value read after the loop to its exit value (rule 14
 //    case 1 copy-out, case 3 captured value). The kinds are the caller's; the old rails stay recorded.
-//  - cq_invert: at __cq_invert_begin the spine calls invert::lowerRegion(begin, end) and skips the
-//    instructions up to and including the matching end (same block).
+//  - cq_invert: at __cq_invert_begin the spine calls invert::lowerRegion(begin, end), end being the
+//    matching end in the same block or else the first __cq_invert_end of a later block of the linear
+//    order; it skips every original instruction from begin to end (the region's blocks emit nothing of
+//    their own and continue in the current output block).
 #pragma once
 
 #include <map>
