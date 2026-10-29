@@ -169,6 +169,8 @@ private:
   void emitBody(BasicBlock *b, const Instruction *resume);
   void emitTerminator(BasicBlock *b);
   void emitCloneReturn(ReturnInst *ret);
+  Value *returnCopyOut(PHINode &phi);
+  DenseSet<const Value *> copiedOut;                    // return phis copied out per edge (cq-mjwb)
   void lowerUnit(Loop &lp);
   void maybeFlush(Instruction *term);
   void jump(const BasicBlock *from, const BasicBlock *to);
@@ -690,7 +692,11 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
       unimplemented("spine: a clone returning an aggregate (rule 18 copy-out per field: aggr/calls)", ret);
     Operand op = ctx.operand(rv);
     Value *v = op.v;
-    if (op.handle) {
+    if (copiedOut.count(rv)) {
+      // Copied out on each incoming edge already (returnCopyOut): v is the phi of the result rails.
+      if (!op.handle || C->getReturnType() != handleTy(ctx.M.getContext()))
+        internalError("spine: a return phi copied out per edge that is not a handle of the clone's type", ret);
+    } else if (op.handle) {
       if (C->getReturnType() != handleTy(ctx.M.getContext()))
         internalError("spine: a clone with a quantum result whose return type is not the handle type", ret);
       RailType w = railTypeOf(rv->getType());
@@ -710,6 +716,132 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     nr = B.CreateRetVoid();
   }
   ctx.unc().flushAtExit(nr);
+}
+
+// Rule 18 copy-out of a return phi chosen classically (cq-mjwb, 119). A clone's return value that
+// is a phi of the return's own block, read by the return alone, whose every incoming edge is chosen
+// classically, names on each path the arm of the edge taken. Copying out of the merged handle at the
+// return would read an arm (garbage of its own branch) at a return its definition does not dominate.
+// So the copy-out is made on each incoming edge, where the edge leaves: f_e = cqrt_alloc_<W>(0),
+// cqrt_copy_<W>(arm_e, f_e) (an arm that is classical on that edge: f_e = cqrt_alloc_<W>(arm_e)), f_e
+// kept as Role::Result; the return returns the phi of the f_e, recorded as a merge whose arms are all
+// kept (U1, cq-bv91: nothing changes). The arm's garbage is then resolved in its own arm: the edge
+// block flushes (flushBefore its terminator) once nothing lowered later reads a rail defined there,
+// as maybeFlush does at a jump (119: the reference's per-arm alloc + copy, the base case copying the
+// formal, and the arm's uncompute inside the arm). An edge leaving a block that branches elsewhere
+// too gets a block of its own on that edge (as a classical guard's skip edge does), so the copy runs
+// on that edge only. nullptr when the shape is not this one (an entry, other users, a merged or
+// guarded join, an output edge the walk did not record, a quantum phi of the block after this one):
+// the merge is lowered as any other phi.
+Value *Walker::returnCopyOut(PHINode &phi) {
+  BasicBlock *b = phi.getParent();
+  auto *ret = dyn_cast<ReturnInst>(b->getTerminator());
+  if (ctx.S.isEntry() || !ret || ret->getReturnValue() != &phi || !phi.hasOneUse() || merged.count(b) ||
+      guards.count(b) || unitOf.count(b))
+    return nullptr;
+  if (!phi.getType()->isIntegerTy() && !phi.getType()->isFloatingPointTy())
+    return nullptr;
+  for (const PHINode &o : b->phis())
+    if (&o != &phi && !visited.count(&o) && spine::isQ(ctx, &o))
+      return nullptr;
+  Function *C = ctx.B().GetInsertBlock()->getParent();
+  if (C->getReturnType() != handleTy(ctx.M.getContext()))
+    return nullptr;
+  BasicBlock *ob = out(b);
+  // One value per output edge block; every output edge into ob is one of them.
+  SmallVector<std::pair<BasicBlock *, const Value *>, 4> edges;
+  for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i) {
+    BasicBlock *u = phi.getIncomingBlock(i);
+    if (!idx.count(u))
+      continue;   // an unreachable predecessor never chooses
+    if (!ctx.preds().edge(u, b).isClassical(ctx.T, ctx.S))
+      return nullptr;
+    auto e = edgeOut.find({u, b});
+    if (e == edgeOut.end())
+      return nullptr;
+    const Value *v = phi.getIncomingValue(i);
+    auto it = find_if(edges, [&](const auto &x) { return x.first == e->second; });
+    if (it == edges.end())
+      edges.push_back({e->second, v});
+    else if (it->second != v)
+      return nullptr;
+  }
+  if (edges.empty())
+    return nullptr;
+  for (BasicBlock *p : predecessors(ob))
+    if (none_of(edges, [&](const auto &x) { return x.first == p; }))
+      return nullptr;
+  for (auto &[E, v] : edges) {
+    Instruction *t = E->getTerminator();
+    if (!t || count(successors(E), ob) != 1)
+      return nullptr;
+  }
+
+  IRBuilder<> &B = ctx.B();
+  RailType w = railTypeOf(phi.getType());
+  PHINode *np;
+  {
+    IRBuilderBase::InsertPointGuard g(B);
+    SmallVector<std::pair<BasicBlock *, Value *>, 4> fs;
+    for (auto &[E, v] : edges) {
+      BasicBlock *at = E;
+      if (E->getTerminator()->getNumSuccessors() > 1) {
+        // The edge's own block: the copy runs on this edge only.
+        BasicBlock *n = BasicBlock::Create(ctx.M.getContext(), "", &ctx.out(), ob);
+        E->getTerminator()->replaceSuccessorWith(ob, n);
+        BranchInst::Create(ob, n);
+        ob->replacePhiUsesWith(E, n);
+        for (auto &[k, o] : edgeOut)
+          if (k.second == b && o == E)
+            o = n;
+        for (InEdge &ie : inEdges[b])
+          if (ie.out == E)
+            ie.out = n;
+        at = n;
+      }
+      Instruction *t = at->getTerminator();
+      B.SetInsertPoint(t);
+      sh.cur = &phi;
+      Operand op = ctx.operand(v);
+      CallInst *f;
+      if (op.handle) {
+        f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+        RailId fid = ctx.unc().recordSeed(f);
+        abi::CoreSpec cp{abi::Core::Copy, w};
+        CallInst *c = ctx.emitCore(cp, {op.v, f});
+        ctx.unc().recordCore(c, cp, {op, Operand{f, true}}, fid);
+        ctx.unc().setRole(fid, Role::Result);
+      } else {
+        f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {op.v});
+        ctx.unc().setRole(ctx.unc().recordSeed(f), Role::Result);
+      }
+      fs.push_back({at, f});
+      // The arm's garbage is resolved in its own arm once nothing lowered later reads it.
+      if (at == E && openRegions.empty()) {
+        bool later = false;
+        for (auto &[orig, ops] : sh.binds) {
+          auto *oi = dyn_cast<Instruction>(orig);
+          if (!oi || none_of(ops, [&](const Operand &o) {
+                return o.handle && isa<Instruction>(o.v) && cast<Instruction>(o.v)->getParent() == E;
+              }))
+            continue;
+          for (const User *us : oi->users())
+            if (auto *ui = dyn_cast<Instruction>(us); ui && ui != &phi && !visited.count(ui))
+              later = true;
+        }
+        if (!later)
+          ctx.unc().flushBefore(t);
+      }
+    }
+    np = PHINode::Create(handleTy(ctx.M.getContext()), unsigned(fs.size()), phi.getName());
+    np->insertInto(ob, ob->getFirstNonPHIIt());
+    for (auto &[at, f] : fs)
+      np->addIncoming(f, at);
+  }
+  ctx.unc().recordMerge(np);
+  copiedOut.insert(&phi);
+  sh.cur = &phi;
+  return np;
 }
 
 void Walker::emitTerminator(BasicBlock *b) {
@@ -925,6 +1057,11 @@ void Walker::emitBlock(BasicBlock *b) {
       // is scalar only.
       if (phi.getType()->isPointerTy())
         unimplemented("spine: a quantum pointer phi (rule 21 fat-pointer merge; fatptr has no phi entry)", &phi);
+      if (Value *r = returnCopyOut(phi)) {
+        spine::bindOperand(ctx, &phi, Operand{r, true});
+        blockDefs.push_back(&phi);
+        continue;
+      }
       Value *m = merged.count(b) ? nullptr : factoredMerge(phi);
       spine::bindOperand(ctx, &phi, Operand{m ? m : lowerMerge(ctx, phi), true});
       blockDefs.push_back(&phi);
