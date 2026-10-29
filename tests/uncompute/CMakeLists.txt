@@ -10,7 +10,7 @@ set(CQ_UNC_CASES
   seed_xorc_direct seed_written_undone qram_lifo qram_rmw qram_kept_bus qram_pop_kept multi_exit arm_flush ex14_fmuladd
   ex42_measure_one_of_two ex162_consumer ex144_rule6
   merge_measured merge_all_arms_kept merge_template_then_garbage merge_noted_use merge_phi merge_nested
-  merge_kept_arm_local merge_kept_unchosen_edge merge_kept_rotated)
+  merge_kept_arm_local merge_kept_unchosen_edge merge_kept_rotated merge_kept_nested_phi_edge)
 foreach(c ${CQ_UNC_CASES})
   add_test(NAME uncompute.${c} COMMAND uncompute_tests ${c})
 endforeach()
@@ -29,7 +29,10 @@ set(CQ_UNC_FATAL
   "fatal_merge_nondiagonal=cq: unimplemented: uncompute: a non-diagonal gate on a merged handle"
   "fatal_merge_arm_local=cq: unimplemented: uncompute: an arm of a merged handle, .* cq-ut4k"
   "fatal_merge_unchosen_reader=cq: unimplemented: uncompute: an arm of a kept merged handle, .* is read by a pending rail"
-  "fatal_merge_unchosen_used_after=cq: unimplemented: uncompute: an arm of a kept merged handle, .* is still used after")
+  "fatal_merge_unchosen_used_after=cq: unimplemented: uncompute: an arm of a kept merged handle, .* is still used after"
+  "fatal_merge_unchosen_read_later=cq: unimplemented: uncompute: recordTemplate: an arm of a kept merged handle, .* is read after the edge"
+  "fatal_merge_nested_select_edge=cq: unimplemented: uncompute: a kept role on a classical select over handles whose arm %t"
+  "fatal_merge_nested_select_edge_rev=cq: unimplemented: uncompute: a kept role on a classical select over handles whose arm %t")
 foreach(entry ${CQ_UNC_FATAL})
   string(FIND "${entry}" "=" eq)
   string(SUBSTRING "${entry}" 0 ${eq} c)

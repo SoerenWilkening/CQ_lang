@@ -1753,6 +1753,114 @@ J:
   f.U.setRole(f.U.recordMerge(f.I("m")), Role::Measured);
 }
 
+// cq-sodl (rev/bv91-n1/p1.c): the zero-trip arm s is freed on the loop edge; the spine lowers a
+// direct read of s after the join only after the kept consumer (cq_measure(a * 5) after the loop).
+// That read is caught when it is recorded: unimplemented, not a use after free.
+void fatal_merge_unchosen_read_later() {
+  Fx f(R"(
+define i32 @f(i32 %a0, double %th, i1 %c) {
+entry:
+  %s = call i32 @cqrt_alloc_i32(i32 %a0)
+  br i1 %c, label %L, label %J
+L:
+  %o = call i32 @cqrt_alloc_i32(i32 0)
+  br label %J
+J:
+  %m = phi i32 [ %s, %entry ], [ %o, %L ]
+  %r = call i32 @cqrt_measure_i32(i32 %m)
+  ret i32 %r
+})");
+  RailId s = f.S("s");
+  f.S("o");
+  f.U.setRole(f.U.recordMerge(f.I("m")), Role::Measured);
+  IRBuilder<> B(f.ret());
+  CallInst *u = B.CreateCall(f.M->getFunction("cq_template_mul_i32_hl"), {f.I("s"), B.getInt32(5)});
+  (void)s;
+  f.U.recordTemplate(u, {}, {H(u->getArgOperand(0)), Operand{u->getArgOperand(1), false}});
+}
+
+// cq-sodl (rev/bv91-n1/q8.ll): the edge from A carries a nested merge n = select(k, t, x) that may
+// still choose t, so t is chosen on both edges and is never freed on A's edge; n is a kept classical
+// select with a resolvable arm t: unimplemented (cq-aqeq), whichever order the phi lists its arms in.
+const char *kNestedSel = R"(
+define i32 @f(i32 %a0, double %th, i1 %c, i1 %k) {
+entry:
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %t = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  br i1 %c, label %A, label %B
+A:
+  %n = select i1 %k, i32 %t, i32 %x
+  br label %J
+B:
+  br label %J
+J:
+  %m = phi i32 [ %ARM1 ], [ %ARM2 ]
+  %r = call i32 @cqrt_measure_i32(i32 %m)
+  ret i32 %r
+})";
+void nestedSel(bool selFirst) {
+  std::string ir = kNestedSel;
+  std::string a1 = selFirst ? "%n, %A" : "%t, %B", a2 = selFirst ? "%t, %B" : "%n, %A";
+  ir.replace(ir.find("%ARM1"), 5, a1);
+  ir.replace(ir.find("%ARM2"), 5, a2);
+  Fx f(ir);
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  f.T("t", "hl");
+  f.U.recordMerge(f.I("n"));
+  f.U.setRole(f.U.recordMerge(f.I("m")), Role::Measured);
+}
+void fatal_merge_nested_select_edge() { nestedSel(true); }
+void fatal_merge_nested_select_edge_rev() { nestedSel(false); }
+
+// cq-sodl: m = phi [n, Y], [s, X] with n = phi [s, Z], [b, W]. The edge from Y chooses n, which may
+// still be s (from Z): s is freed only on W's edge (where n chooses b), never on Y's.
+void merge_kept_nested_phi_edge() {
+  Fx f(R"(
+define i32 @f(i32 %a0, double %th, i1 %c, i1 %d) {
+entry:
+  %s = call i32 @cqrt_alloc_i32(i32 %a0)
+  br i1 %c, label %X, label %Y0
+Y0:
+  br i1 %d, label %Z, label %W
+Z:
+  br label %N
+W:
+  %b = call i32 @cqrt_alloc_i32(i32 7)
+  br label %N
+N:
+  %n = phi i32 [ %s, %Z ], [ %b, %W ]
+  br label %J
+X:
+  br label %J
+J:
+  %m = phi i32 [ %n, %N ], [ %s, %X ]
+  %r = call i32 @cqrt_measure_i32(i32 %m)
+  ret i32 %r
+})");
+  f.S("s");
+  f.S("b");
+  f.U.recordMerge(f.I("n"));
+  f.U.setRole(f.U.recordMerge(f.I("m")), Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%s = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "br i1 %c, label %X, label %Y0",
+                        "br i1 %d, label %Z, label %W",
+                        "br label %N",
+                        "%b = call i32 @cqrt_alloc_i32(i32 7)",
+                        "call void @cqrt_free(i32 %s)",
+                        "br label %N",
+                        "%n = phi i32 [ %s, %Z ], [ %b, %W ]",
+                        "br label %J",
+                        "br label %J",
+                        "%m = phi i32 [ %n, %N ], [ %s, %X ]",
+                        "%r = call i32 @cqrt_measure_i32(i32 %m)",
+                        "ret i32 %r",
+                    });
+}
+
 // A kept role on a classical select whose arms are resolvable: keeping only the chosen arm would need
 // a branch on the condition (not built). Keeping every arm would keep the unchosen arm's garbage (an
 // extra kept rail, §6-different from rule 9's "arm rails uncomputed").
@@ -1835,6 +1943,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"merge_kept_arm_local", merge_kept_arm_local},
     {"merge_kept_unchosen_edge", merge_kept_unchosen_edge},
     {"merge_kept_rotated", merge_kept_rotated},
+    {"merge_kept_nested_phi_edge", merge_kept_nested_phi_edge},
 };
 
 const std::map<std::string, std::function<void()>> kFatal = {
@@ -1851,6 +1960,9 @@ const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_merge_arm_local", fatal_merge_arm_local},
     {"fatal_merge_unchosen_reader", fatal_merge_unchosen_reader},
     {"fatal_merge_unchosen_used_after", fatal_merge_unchosen_used_after},
+    {"fatal_merge_unchosen_read_later", fatal_merge_unchosen_read_later},
+    {"fatal_merge_nested_select_edge", fatal_merge_nested_select_edge},
+    {"fatal_merge_nested_select_edge_rev", fatal_merge_nested_select_edge_rev},
 };
 
 } // namespace
