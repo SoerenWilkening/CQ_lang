@@ -9,7 +9,8 @@
 // guard's skip edge to the same exit block, and give a classical phi of the exit block its loop
 // incoming from the block the unit ended in. The function is checked with the structural verifier,
 // the LLVM verifier, and by text. A unit with two or more exit edges into an exit block with a phi
-// must stop with cq: unimplemented (cq-qjm9; the reviewer's p1.ll and p4.ll), run in a forked child.
+// must stop with cq: unimplemented (cq-qjm9; the reviewer's p1.ll and p4.ll; cq-9us4's a1.ll, where the
+// loop sits in a quantum arm), run in a forked child.
 //
 //   spine_loop_exit_join            run every case
 //   spine_loop_exit_join <case>     run one case
@@ -338,7 +339,44 @@ exit:
 }
 )";
 
+// cq-9us4's a1.ll: the loop sits in the quantum arm of %q, so the unit continues at next(b, exit)
+// rather than at %join; its two exit edges (%brk, %latch) into %join must still stop.
+const char *kArmExits = R"(
+declare i32 @cq_theta_si32(i32, double)
+declare i32 @cq_measure_si32(i32)
+declare void @cq_phi(double)
+
+define i32 @h(i32 %x0, double %th, i32 %n, i32 %k, double %phi) {
+entry:
+  %x = call i32 @cq_theta_si32(i32 %x0, double %th)
+  %q = icmp eq i32 %x, 3
+  br i1 %q, label %body, label %els
+els:
+  br label %join
+body:
+  %i = phi i32 [ %i1, %latch ], [ 0, %entry ]
+  %c = icmp eq i32 %x, %i
+  br i1 %c, label %then, label %brk
+then:
+  call void @cq_phi(double %phi)
+  br label %brk
+brk:
+  %e = icmp eq i32 %i, %k
+  br i1 %e, label %join, label %latch
+latch:
+  %i1 = add nuw nsw i32 %i, 1
+  %d = icmp eq i32 %i1, %n
+  br i1 %d, label %join, label %body
+join:
+  %r = phi i32 [ 5, %els ], [ %i1, %latch ], [ 100, %brk ]
+  %m = call i32 @cq_measure_si32(i32 %x)
+  %s = add i32 %m, %r
+  ret i32 %s
+}
+)";
+
 void caseTwoExits() { expectUnimplemented("two_exits", kTwoExits, R"(at: +%r = phi i32 \[ 0, %entry \])"); }
+void caseArmExits() { expectUnimplemented("arm_exits", kArmExits, R"(at: +%r = phi i32 \[ 5, %els \])"); }
 void caseNestedExits() {
   expectUnimplemented("nested_exits", kNestedExits, R"(at: +%r = phi i32 \[ 0, %entry \])");
 }
@@ -349,7 +387,8 @@ int main(int argc, char **argv) {
   std::map<std::string, std::function<void()>> cases{{"guarded", caseGuarded},
                                                         {"phi", casePhi},
                                                         {"two_exits", caseTwoExits},
-                                                        {"nested_exits", caseNestedExits}};
+                                                        {"nested_exits", caseNestedExits},
+                                                        {"arm_exits", caseArmExits}};
   if (argc > 1) {
     auto it = cases.find(argv[1]);
     if (it == cases.end()) {
