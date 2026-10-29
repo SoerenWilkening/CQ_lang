@@ -40,3 +40,9 @@ Entry format:
 - Disagreement: the reference allocates `%8 = cqrt_alloc_i1(i1 true)` (the trip-0 predicate) in the entry, before the classical branch on `n < 1`; the skip block `%10` measures `%7` and returns without freeing `%8`, so a |1> seed is live at exit whenever n < 1.
 - Evidence: `cqcheck run 26_break_quantum_cond --oracle both` (cq-174f with cq-t71u's patch): c=pass, verifier=pass, s6 fails on n = 0 only: "1 rail(s) i1 with values 1 the reference keeps are not kept on our side".
 - Bead: cq-ph2i
+
+## 22_switch_quantum: switch_phase expands a quantum-chosen phase angle into per-case phases
+- Rule: CR rule 11 ("An angle that depends on quantum data in any way (a `select` or `phi` on a quantum flag, a `switch` over a quantum scrutinee, ...) is computed into an `f64` rail ... and consumed by rule 15's single primitive. The compiler never expands it into per-arm controlled rotations.")
+- Disagreement: in switch_phase, -O1 merges the three case phases into one `cq_phi(%12)` in the shared case block `%11`, `%12 = phi double [ %4, %9 ], [ %3, %8 ], [ %2, %5 ]`, chosen by the quantum switch on `x & 3`. The reference emits `rz_i1(case flag, pK)` per case (rule 13, "phase arms per rule 8"); rule 11 requires one `rz_qangle[_controlled]` on a select rail.
+- Evidence: `cqcheck run 22_switch_quantum --oracle both` with cq-bxc4 (taint marks `%12` quantum): c=pass, verifier=pass; s6 fails in switch_phase only, "our gate #1 phase_qangle(rail 6, ctl=[7]) matches no reference gate"; switch_value passes.
+- Bead: cq-5h88

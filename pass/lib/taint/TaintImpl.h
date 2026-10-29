@@ -99,6 +99,11 @@ struct FnInfo {
   cq::taint_detail::DeadEnds dead;
   llvm::DenseMap<const llvm::BasicBlock *, llvm::SmallVector<const llvm::BasicBlock *, 2>> cdParents;
   std::vector<const llvm::BasicBlock *> rpo;
+  // cq-bxc4: per join J, per predecessor P, the branching blocks the edge P -> J is (transitively)
+  // control dependent on within the paths that end in J (Analyzer::joinEdgeCD). Structural only.
+  llvm::DenseMap<const llvm::BasicBlock *,
+                 llvm::DenseMap<const llvm::BasicBlock *, llvm::SmallVector<const llvm::BasicBlock *, 4>>>
+      joinEdgeCD;
 };
 
 // Rule 23 environment state (cq-pu8b). Two facts: MODE (the rounding mode is a rail) and FLAGS (the

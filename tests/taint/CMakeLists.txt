@@ -20,3 +20,7 @@ cq_add_unit_test(taint_measured taint_measured.cpp)
 # cq-cvwx: a known library function writing only through its pointer arguments (frexp, modf) with a
 # quantum argument is a declared clone (rule 27), not a host effect (rule 16); its pointee holds a handle.
 cq_add_unit_test(taint_libwriter taint_libwriter.cpp)
+# cq-bxc4: a phi at a join that depends on a tainted terminator is chosen by it when the incoming edge
+# still depends on it given the join (shared/fallthrough case blocks, if/else-if joins).
+cq_add_unit_test(taint_joinchoice taint_joinchoice.cpp)
+target_compile_definitions(taint_joinchoice PRIVATE CQ_SPEC_DIR="${CQ_SPEC_DIR}")

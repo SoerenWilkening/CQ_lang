@@ -264,6 +264,8 @@ private:
   void computeCDT(SpecState &S);
   bool blockCT(const BasicBlock *BB) const;
   bool edgeChosen(const BasicBlock *from, const BasicBlock *to);
+  const DenseMap<const BasicBlock *, SmallVector<const BasicBlock *, 4>> &joinEdgeCD(const BasicBlock *J);
+  bool chosenAtDependentJoin(const PHINode &PN);
   void loopHeaderRule(SpecState &S, const BasicBlock *H, SmallPtrSetImpl<const PHINode *> &quantum);
 
   void transfer(Instruction &I);
@@ -882,6 +884,133 @@ bool Analyzer::edgeChosen(const BasicBlock *from, const BasicBlock *to) {
   return false;
 }
 
+// cq-bxc4. Control dependence of J's incoming edges within the paths that end in J: the graph G_J
+// of the blocks other than J that reach a predecessor edge of J without passing through J, each edge
+// P -> J a sink of its own, every sink into one virtual exit. The edge P -> J is control dependent on
+// a branching A of G_J (Ferrante et al., transitively) iff, once J is reached, which edge entered it
+// depends on A's choice. Blocks that cannot reach J (a return or a dead end) are not in G_J, so a
+// branch whose other successors never reach J does not choose among J's edges, and DeadEnd.h's
+// semantics (cq-820w) carry over: a dead end never reaches J.
+const DenseMap<const BasicBlock *, SmallVector<const BasicBlock *, 4>> &
+Analyzer::joinEdgeCD(const BasicBlock *J) {
+  FnInfo &fi = fn(cur->F);
+  auto it = fi.joinEdgeCD.find(J);
+  if (it != fi.joinEdgeCD.end())
+    return it->second;
+  // Nodes: 0..k-1 the sinks (one per distinct predecessor), then the blocks of G_J.
+  SmallVector<const BasicBlock *, 8> preds;
+  for (const BasicBlock *P : predecessors(J))
+    if (llvm::find(preds, P) == preds.end())
+      preds.push_back(P);
+  unsigned k = preds.size();
+  DenseMap<const BasicBlock *, unsigned> id;
+  std::vector<const BasicBlock *> blocks;
+  SmallVector<const BasicBlock *, 16> work;
+  for (const BasicBlock *P : preds)
+    if (P != J && id.try_emplace(P, k + blocks.size()).second) {
+      blocks.push_back(P);
+      work.push_back(P);
+    }
+  while (!work.empty()) {
+    const BasicBlock *B = work.pop_back_val();
+    for (const BasicBlock *Q : predecessors(B))
+      if (Q != J && id.try_emplace(Q, k + blocks.size()).second) {
+        blocks.push_back(Q);
+        work.push_back(Q);
+      }
+  }
+  unsigned n = k + blocks.size();
+  std::vector<SmallVector<unsigned, 4>> succ(n);
+  for (const BasicBlock *B : blocks) {
+    auto &v = succ[id[B]];
+    for (const BasicBlock *S : successors(B)) {
+      unsigned s;
+      if (S == J)
+        s = unsigned(llvm::find(preds, B) - preds.begin());
+      else if (auto sit = id.find(S); sit != id.end())
+        s = sit->second;
+      else
+        continue;
+      if (llvm::find(v, s) == v.end())
+        v.push_back(s);
+    }
+  }
+  // Post-dominator sets (every node of G_J reaches a sink).
+  std::vector<BitVector> pdom(n, BitVector(n, true));
+  for (unsigned i = 0; i < k; ++i) {
+    pdom[i].reset();
+    pdom[i].set(i);
+  }
+  bool ch = true;
+  while (ch) {
+    ch = false;
+    for (unsigned i = n; i-- > k;) {
+      BitVector v(n, true);
+      for (unsigned s : succ[i])
+        v &= pdom[s];
+      v.set(i);
+      if (v != pdom[i]) {
+        pdom[i] = std::move(v);
+        ch = true;
+      }
+    }
+  }
+  // Direct control dependence, then its transitive closure.
+  std::vector<BitVector> cd(n, BitVector(n));
+  for (unsigned a = k; a < n; ++a) {
+    if (succ[a].size() < 2)
+      continue;
+    for (unsigned s : succ[a])
+      for (unsigned y : pdom[s].set_bits())
+        if (y == a || !pdom[a].test(y))
+          cd[y].set(a);
+  }
+  ch = true;
+  while (ch) {
+    ch = false;
+    for (unsigned y = 0; y < n; ++y) {
+      BitVector v = cd[y];
+      for (unsigned a : cd[y].set_bits())
+        v |= cd[a];
+      if (v != cd[y]) {
+        cd[y] = std::move(v);
+        ch = true;
+      }
+    }
+  }
+  auto &res = fi.joinEdgeCD[J];
+  for (unsigned i = 0; i < k; ++i) {
+    auto &v = res[preds[i]];
+    for (unsigned a : cd[i].set_bits())
+      v.push_back(blocks[a - k]);
+  }
+  return res;
+}
+
+// cq-bxc4 (rules 9, 13): a phi whose join J depends on a tainted terminator T is still chosen by T
+// when, given that J is reached, which incoming edge entered J depends on T (a switch case block
+// shared by two cases or entered by a fallthrough, an if/else-if join whose last arm returns). The
+// other tainted terminators are edgeChosen's. A loop header's entry/latch choice is rule 14's
+// (loopHeaderRule), not this.
+bool Analyzer::chosenAtDependentJoin(const PHINode &PN) {
+  const BasicBlock *J = PN.getParent();
+  auto jit = cur->cdt.find(J);
+  if (jit == cur->cdt.end() || jit->second.empty())
+    return false;
+  if (fn(cur->F).LI->isLoopHeader(J))
+    return false;
+  const auto &cdE = joinEdgeCD(J);
+  for (const BasicBlock *P : PN.blocks()) {
+    auto eit = cdE.find(P);
+    if (eit == cdE.end())
+      continue;
+    for (const BasicBlock *T : eit->second)
+      if (cur->taintedTerm.count(T) && llvm::find(jit->second, T) != jit->second.end())
+        return true;
+  }
+  return false;
+}
+
 // Classical leaves of an exit condition that force the exit on their own (polarity: the value of C
 // that takes the exit edge).
 static void forcingLeaves(const Value *C, bool exitOn, Analyzer &A,
@@ -996,6 +1125,8 @@ void Analyzer::transferPhi(PHINode &PN, const SmallPtrSetImpl<const PHINode *> &
         chosen = true;
         break;
       }
+  if (!allSame && !chosen)
+    chosen = chosenAtDependentJoin(PN);
   if (PN.getType()->isPointerTy()) {
     PtrInfo p;
     for (const Value *In : PN.incoming_values())
