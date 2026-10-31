@@ -620,6 +620,24 @@ class TripDomainProof(unittest.TestCase):
         k = [self.Run(5, notes=["tripcap"], failed=True, reason="tripcap")]
         self.assertEqual(self.proof(5, k)[0], "missing")
 
+    def test_exhaustive_inputs(self):
+        # cq-oou2: 87's call takes an 8-bit quantum char and an angle: 256 inputs enumerate it
+        from cqcheck import drivers as D2
+        ex_dir = D2.example_dir("87_pointer_induction")
+        spec = D2.driver_spec("87_pointer_induction", ex_dir)
+        g = S.Gen(spec, [["0x00", "0x3fe0000000000000"]])
+        o1 = sorted(ex_dir.glob("*.O1.ll"))[0].read_text()
+        ins = S.exhaustive_inputs(g, o1)
+        self.assertEqual(len(ins), 256)
+        self.assertEqual(ins[5], (0, ("0x05", "0x3fe0000000000000")))
+        # an angle read as data, or a wider quantum input: no enumeration
+        self.assertIn("  ret i32", o1)
+        self.assertIsNone(S.exhaustive_inputs(g, o1.replace("  ret i32", "  %99 = fadd double %1, %1\n  ret i32", 1)))
+        ex_dir = D2.example_dir("152_phase_in_kloop")
+        spec = D2.driver_spec("152_phase_in_kloop", ex_dir)
+        g = S.Gen(spec, [["0x00000000", "0x3fe0000000000000", "0x00000001", "0x3fd3333333333333", "0x3fe6666666666666"]])
+        self.assertIsNone(S.exhaustive_inputs(g, sorted(ex_dir.glob("*.O1.ll"))[0].read_text()))
+
     def test_construct_values(self):
         ct = D.parse_ctype("int")
         v = S.trip_construct_values(ct, 3)

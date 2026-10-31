@@ -3345,6 +3345,10 @@ def trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_sit
 #   IMPOSSIBLE  at least one constructed input reaches it, and every one that does is outside the
 #               domain (an access past an object, an LLVM-undefined §2 row, a "ub" or "crash" note of
 #               the oracle);
+#   IMPOSSIBLE  (exhaustion) no input of any drivers.txt call reaches it, every input enumerated: each
+#               call's inputs are integer quantum scalars of at most EXHAUST_BITS bits in all and
+#               floating-point classical arguments the function uses only as cq_theta / cq_phi angles
+#               (the identity in the C oracle), and every enumerated run returns, inside the domain;
 #   MISSING     otherwise: no constructed input reaches it, or one does on a run neither clean nor
 #               undefined (past its step budget, failed). A count reached only with the K cutoff off
 #               (68's outer loop: x >= 5 runs the inner loop past K first) is MISSING too: that the
@@ -3441,6 +3445,51 @@ def trip_proof(loop: str, t: int, cands: Sequence[Tuple[int, Tuple[str, ...]]], 
                              f"{list(cands[i][1])}}}: {kr.reason or kr.outcome})")
 
 
+EXHAUST_BITS = 8                  # CLAUDE.md Inputs: every input when the quantum inputs total <= 8 bits
+
+
+def exhaustive_inputs(g: "Gen", o1_text: str) -> Optional[List[Tuple[int, Tuple[str, ...]]]]:
+    """Every input of every drivers.txt call, when each call's argument values are its quantum
+    integer scalars (EXHAUST_BITS bits in all at most) and floating-point classical arguments that
+    the function reads only as the angle of a cq_theta_* or cq_phi call; else None (cq-oou2)."""
+    out: List[Tuple[int, Tuple[str, ...]]] = []
+    for ci, call in enumerate(g.spec.calls):
+        if g.cell_slots(ci):
+            return None
+        m = re.search(r"^define [^\n]*@" + re.escape(call["fn"]) + r"\(([^\n]*)\)[^\n]*\{\n(.*?)^\}", o1_text,
+                      re.M | re.S)
+        if not m:
+            return None
+        body = m.group(2)
+        q = g.quantum_slots(ci)
+        bits = 0
+        for j, a in enumerate(call["args"]):
+            ct = g.cts[ci][j]
+            if not re.search(rf"%{j}(?:,|$)", m.group(1).strip()):
+                return None              # parameters named otherwise: not checked
+            if j in q:
+                if ct.kind != "i":
+                    return None
+                bits += ct.bits
+                continue
+            if ct.kind != "f":
+                return None
+            for line in body.splitlines():
+                line = line.split(";", 1)[0]
+                if not re.search(rf"%{j}\b", line):
+                    continue
+                if not (re.search(rf"call [^@]*@cq_theta_\w+\([^,]+, double noundef %{j}\)", line)
+                        or re.search(rf"call void @cq_phi\(double noundef %{j}\)", line)):
+                    return None
+        if bits > EXHAUST_BITS:
+            return None
+        vals: List[Dict[object, int]] = [{}]
+        for j in q:
+            vals = [{**v, j: x} for v in vals for x in range(1 << g.cts[ci][j].bits)]
+        out += [(ci, tuple(g.with_values(ci, v))) for v in vals]
+    return out
+
+
 def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", out: List[dict]) -> None:
     """Fill or prove the empty trip targets of `out` (trip_classes' result) with constructed inputs."""
     from cqcheck import oracle
@@ -3455,6 +3504,14 @@ def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", ou
     o1 = sorted(Path(example_dir).glob("*.O1.ll"))[0]
     smp = [{"call": c, "args": list(a)} for c, a in cands]
     kruns = oracle.run_samples(o1, spec, smp, tripcap=TRIP_CONSTRUCT_TRIPCAP)
+    exh = exhaustive_inputs(g, o1.read_text())
+    eruns: list = []
+    if exh is not None:
+        eruns = oracle.run_samples(o1, spec, [{"call": c, "args": list(a)} for c, a in exh],
+                                   tripcap=TRIP_CONSTRUCT_TRIPCAP)
+        eobs = searcher.observe([(c, list(a)) for c, a in exh])
+        if any(r.failed or r.outcome != "ret" or run_undefined(r, o, searcher.rows_by_site) for r, o in zip(eruns, eobs)):
+            exh = None
     for lpo in out:
         for target, e in lpo["trips"].items():
             if "empty" not in e:
@@ -3466,6 +3523,13 @@ def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", ou
             elif kind == "ub":
                 lpo["trips"][target] = {"empty": why, "witness": {"call": cands[i][0], "args": list(cands[i][1])},
                                         "proof": kind}
+            elif exh is not None and not any(trip_hit(r.events, r.loops, lpo["loop"], int(target)) for r in eruns):
+                lpo["trips"][target] = {"empty": (
+                    f"cannot be hit: no input runs {target} trips of {lpo['loop']}: every one of the {len(exh)} inputs "
+                    f"of the drivers.txt calls (quantum integers of at most {EXHAUST_BITS} bits, the classical "
+                    f"arguments only angles) returns inside the domain in the C oracle with trip counts "
+                    f"{sorted({rec['n'] for r in eruns for rec in r.events if rec.get('ev') == 'trip' and rec.get('loop') == lpo['loop']})} "
+                    f"(exhaustion; cq-oou2)"), "proof": "exhaustion"}
             else:
                 e["empty"] += f"; {why} (cq-oou2)"
 
