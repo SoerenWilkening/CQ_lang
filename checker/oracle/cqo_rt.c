@@ -1243,7 +1243,17 @@ static void snapshot_take(void) {
 }
 
 static void snapshot_restore(void) {
-    if (arena_base && arena_top > arena_base) memset(arena_base, 0, (size_t)(arena_top - arena_base));
+    if (arena_base && arena_top > arena_base) {
+        /* cq-oou2: a large block (75's malloc(n * 4) with n near 2^30) is replaced by fresh zero pages,
+         * never written: zeroing it touched every page (gigabytes) though the sample used a few */
+        size_t used = (size_t)(arena_top - arena_base);
+        if (used <= ((size_t)1 << 20)) memset(arena_base, 0, used);
+        else {
+            size_t pg = (size_t)getpagesize(), len = (used + pg - 1) & ~(pg - 1);
+            if (mmap(arena_base, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_FIXED, -1, 0) == MAP_FAILED)
+                die("mmap");
+        }
+    }
     for (int i = 0; i < R->nsect; ++i) memcpy(R->sect[i].at, R->sect[i].copy, R->sect[i].n);
     memcpy(heap_objs.v, R->heap_tab, R->heap_n * sizeof(obj));
     for (size_t i = 0; i < R->heap_n; ++i)
