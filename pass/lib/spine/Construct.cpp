@@ -35,6 +35,7 @@
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/IR/AttributeMask.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -48,6 +49,7 @@ namespace {
 
 struct PendingEntry {
   Function *F, *NF;
+  Type *retType;   // rule 19: the i32 handle replacing a C return type that cannot hold it, or null
 };
 thread_local std::map<const Module *, std::vector<PendingEntry>> pendingEntries;
 
@@ -71,6 +73,31 @@ void finishEntries(Module &M) {
     }
     NF.replaceAllUsesWith(&F);
     NF.eraseFromParent();
+  }
+  // Rule 19 (193): an entry whose return type the lowering replaced by the i32 handle. Its lowered
+  // body moves into a function of the new type that takes the entry's name, attributes (parameter
+  // list as in C; no return attributes: the C ones describe the narrow type) and place in the module.
+  // Remaining uses of the entry are calls in original bodies the lowering replaced; with opaque
+  // pointers they are redirected as they stand.
+  for (PendingEntry &p : it->second) {
+    if (!p.retType)
+      continue;
+    Function &F = *p.F;
+    FunctionType *FT = FunctionType::get(p.retType, F.getFunctionType()->params(), F.isVarArg());
+    Function *F2 = Function::Create(FT, F.getLinkage(), F.getAddressSpace(), "");
+    M.getFunctionList().insert(F.getIterator(), F2);
+    F2->copyAttributesFrom(&F);
+    AttributeList AL = F2->getAttributes();
+    F2->setAttributes(AL.removeRetAttributes(F.getContext(), AttributeMask(AL.getRetAttrs())));
+    F2->copyMetadata(&F, 0);
+    F2->splice(F2->end(), &F);
+    for (unsigned i = 0; i < F.arg_size(); ++i) {
+      F2->getArg(i)->takeName(F.getArg(i));
+      F.getArg(i)->replaceAllUsesWith(F2->getArg(i));
+    }
+    F2->takeName(&F);
+    F.replaceAllUsesWith(F2);
+    F.eraseFromParent();
   }
   pendingEntries.erase(it);
 }
@@ -865,18 +892,18 @@ void Walker::emitTerminator(BasicBlock *b) {
       if (op.handle) {
         // §1.1: an entry returns an unmeasured quantum value as its handle; the rail escapes.
         ctx.unc().setRole(ctx.unc().idOf(op.v), Role::Escaped);
-        Type *rt = F.getReturnType();
+        Type *rt = sh.out->getReturnType();
         if (!rt->isIntegerTy())
-          unimplemented("spine: an entry returning a quantum value of non-integer C type (§1.1 names no "
-                        "encoding of a handle in it)",
-                        t);
-        // cq-juf6 (orchestrator decision under CR §1.1, rule 19 and principle 2): an i32 handle does
-        // not fit an i1/i8/i16 C return, and truncating it would return another rail's handle.
+          unimplemented("spine: an entry returning a quantum value of aggregate or vector C type (rule 26)", t);
+        // Rule 19: the entry's return type is the C one of 32 bits or more, or the i32 handle (set
+        // where the entry is created); a narrower one here is a return the taint did not see.
         if (rt->getIntegerBitWidth() < 32)
-          unimplemented("spine: an entry returning a quantum value in a C return type narrower than i32 "
-                        "(rule 19 keeps the C signature, §1.1's handle is an i32; SPEC_ISSUES)",
-                        t);
-        v = B.CreateZExtOrTrunc(op.v, rt);
+          internalError("spine: an entry returns a handle in a return type narrower than i32 (rule 19)", t);
+        v = B.CreateZExt(op.v, rt);
+      } else if (v->getType() != sh.out->getReturnType()) {
+        unimplemented("spine: an entry whose return type rule 19 made the i32 handle returns a classical "
+                      "value of its C type on some path",
+                      t);
       }
       nr = B.CreateRet(v);
     } else {
@@ -1253,14 +1280,31 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
 
   Value *entryFlag = nullptr;
   if (S.isEntry()) {
-    Function *NF = Function::Create(F.getFunctionType(), GlobalValue::InternalLinkage, F.getName() + ".cq.entry", &M);
+    // Rule 19 (193): an entry returning an unmeasured quantum value returns its handle. The return
+    // type stays the C one when it is an integer of 32 bits or more (the handle as is or
+    // zero-extended) and is i32 otherwise (_Bool, char, short, floating, pointer). An aggregate
+    // return (rule 26) keeps its type here and is refused at the return.
+    FunctionType *FT = F.getFunctionType();
+    Type *retType = nullptr;
+    Type *crt = FT->getReturnType();
+    bool qRet = false;
+    for (BasicBlock &BB : F)
+      if (auto *r = dyn_cast<ReturnInst>(BB.getTerminator()))
+        if (Value *v = r->getReturnValue())
+          qRet |= spine::isQ(ctx, v);
+    if (qRet && !crt->isAggregateType() && !crt->isVectorTy() &&
+        !(crt->isIntegerTy() && crt->getIntegerBitWidth() >= 32)) {
+      retType = Type::getInt32Ty(M.getContext());
+      FT = FunctionType::get(retType, FT->params(), FT->isVarArg());
+    }
+    Function *NF = Function::Create(FT, GlobalValue::InternalLinkage, F.getName() + ".cq.entry", &M);
     sh.out = NF;
     for (unsigned i = 0; i < F.arg_size(); ++i) {
       if (spine::isQ(ctx, F.getArg(i)))
         unimplemented("spine: an entry function with a quantum formal (rule 1)", F.getArg(i));
       spine::bindOperand(ctx, F.getArg(i), Operand{NF->getArg(i), false});
     }
-    pendingEntries[&M].push_back({&F, NF});
+    pendingEntries[&M].push_back({&F, NF, retType});
   } else {
     Function *C = calls::materialize(M, S);
     sh.out = C;

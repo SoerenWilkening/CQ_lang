@@ -14,6 +14,7 @@
 //   unc-operand-mismatch        an _unc (template, QRAM core, clone twin) whose operands differ from its
 //                               forward call (CR §1.2, §1.3, §1.4)
 //   handle-in-classical-op      a handle reaching a classical instruction or a classical operand slot
+//                               (a zext feeding only the return is rule 19's wide return, 193)
 //   classical-control-on-taint  a br / switch / select condition computed from a handle
 //   unwritten-measurement       a cqrt_measure the source did not write: a second measurement of a rail
 //                               already measured on every path (rule 2: a re-measurement is a classical
@@ -268,6 +269,18 @@ private:
     }
   }
 
+  // Rule 19 (162, 193): a function whose C return type is an integer wider than i32 returns an
+  // escaped handle zero-extended to it. Only a zext whose every user is a return of it qualifies.
+  bool isReturnedHandleZExt(const Instruction &I) const {
+    auto *Z = dyn_cast<ZExtInst>(&I);
+    if (!Z || Z->getType() != F.getReturnType() || Z->use_empty())
+      return false;
+    for (const User *U : Z->users())
+      if (!isa<ReturnInst>(U))
+        return false;
+    return true;
+  }
+
   // ---- handle-in-classical-op ----
   void handleInClassicalOp() {
     for (const Instruction &I : instructions(F)) {
@@ -283,6 +296,8 @@ private:
         if (isa<StoreInst>(I) && n == 0)
           continue;
         if (isa<InsertValueInst>(I) && n == 1)
+          continue;
+        if (isReturnedHandleZExt(I))
           continue;
         if (auto *CB = dyn_cast<CallBase>(&I)) {
           if (CB->isArgOperand(&U)) {

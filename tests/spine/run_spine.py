@@ -26,7 +26,7 @@ OWNED = [
     "01_add_classical_const", "02_add_quantum_quantum", "10_int_ops", "11_int_divrem", "12_int_widths",
     "13_fp_arith", "14_fmuladd", "16_fp_intrinsics", "17_casts", "38_second_rotation", "40_computed_angle",
     "42_measure_one_of_two", "46_mixed_widths", "156_qq_width_matrix", "157_uitofp_quantum_shift64",
-    "162_quantum_return_entry",
+    "162_quantum_return_entry", "193_narrow_quantum_return",
 ]
 
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
