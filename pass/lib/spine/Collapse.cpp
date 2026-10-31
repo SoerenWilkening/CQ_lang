@@ -36,6 +36,10 @@
 //  - Where it applies. LoweringContext::operand (every data use). rail() (a flag atom, a control, an
 //    in-place target) never collapses a derived rail: a flag stays the quantum control of the arms it
 //    guards, which commutes with the measurement of its sources.
+//  - cq_measure (cq-i962). classicalRead: a cq_measure of a rail classical at its point (seeds alone
+//    included: a value computed after a collapse) reads the recomputation and emits no gate (rule 2).
+//    A constrained FP op (rule 23) is recomputed in the mode it was lowered with and with the host
+//    environment restored after it (fromConstrained).
 #include "SpineInternal.h"
 
 #include "llvm/ADT/SetVector.h"
@@ -310,6 +314,46 @@ Value *fromRecord(LoweringContext &ctx, const RailHist &r) {
   return fail();
 }
 
+// cq-i962: a constrained FP op (rule 23) recomputed at the use point must round in the mode it was
+// lowered with (the record's last operand: the _rm literal, or the _rmq MODE rail, itself collapsed)
+// and must not raise into the host flags (its bits were the quantum FLAGS' at its own point). The
+// copy runs between fegetenv and fesetenv of a host fenv_t (both the mode and the flags restored),
+// under fesetround(mode). fmuladd (lowered unfused, CR §2) is cq::unimplemented.
+Value *fromConstrained(LoweringContext &ctx, const RailHist &r, ConstrainedFPIntrinsic &ci) {
+  IRBuilder<> &B = ctx.B();
+  if (ci.getIntrinsicID() == Intrinsic::experimental_constrained_fmuladd)
+    unimplemented("spine: classical collapse (rule 2) of a constrained fmuladd (lowered unfused)", &ci);
+  unsigned n = ci.getNonMetadataArgCount();
+  bool rm = r.spec.rm != abi::TemplateSpec::NoRm;
+  if (r.ops.size() != n + (rm ? 1 : 0))
+    internalError("spine: classical collapse: a constrained op's record has an unexpected operand count", &ci);
+  Value *mode = nullptr;
+  if (rm) {
+    mode = classicalOf(ctx, r.ops.back());
+  } else if (std::optional<RoundingMode> m = ci.getRoundingMode()) {
+    if (*m != RoundingMode::NearestTiesToEven)
+      unimplemented("spine: classical collapse (rule 2) of a constrained op whose record carries no mode", &ci);
+    mode = B.getInt32(0);   // FE_TONEAREST
+  }
+  if (mode && !mode->getType()->isIntegerTy(32))
+    internalError("spine: classical collapse: a rounding mode that is not an i32", &ci);
+  for (unsigned i = 0; i < n; ++i)   // operands first, each in its own mode
+    (void)ctx.operand(ci.getArgOperand(i));
+  Function &F = *B.GetInsertBlock()->getParent();
+  // fenv_t of the pinned triple (x86_64-apple-macosx) is 16 bytes; 32 leaves room.
+  IRBuilder<> EB(&F.getEntryBlock(), F.getEntryBlock().getFirstInsertionPt());
+  AllocaInst *env = EB.CreateAlloca(ArrayType::get(B.getInt8Ty(), 32), nullptr, "cq.fenv.save");
+  env->setAlignment(Align(16));
+  LLVMContext &C = B.getContext();
+  Type *i32 = B.getInt32Ty(), *ptr = PointerType::getUnqual(C);
+  B.CreateCall(ctx.M.getOrInsertFunction("fegetenv", FunctionType::get(i32, {ptr}, false)), {env});
+  if (mode)
+    B.CreateCall(ctx.M.getOrInsertFunction("fesetround", FunctionType::get(i32, {i32}, false)), {mode});
+  Value *v = copyClassical(ctx, ci);
+  B.CreateCall(ctx.M.getOrInsertFunction("fesetenv", FunctionType::get(i32, {ptr}, false)), {env});
+  return v;
+}
+
 Value *recompute(LoweringContext &ctx, Value *h) {
   Shared &sh = shared(ctx);
   if (Value *m = outcomeAt(sh, h))
@@ -334,7 +378,10 @@ Value *recompute(LoweringContext &ctx, Value *h) {
       if (auto *cb = dyn_cast<CallBase>(oi))
         viaOrig &= cb->getCalledFunction() && cb->getCalledFunction()->isIntrinsic();
     }
-    v = viaOrig ? copyClassical(ctx, *const_cast<Instruction *>(oi)) : fromRecord(ctx, r);
+    if (viaOrig && isa<ConstrainedFPIntrinsic>(oi))
+      v = fromConstrained(ctx, r, *cast<ConstrainedFPIntrinsic>(const_cast<Instruction *>(oi)));
+    else
+      v = viaOrig ? copyClassical(ctx, *const_cast<Instruction *>(oi)) : fromRecord(ctx, r);
   }
   for (const RailHist::Write &w : r.writes) {
     int t = xorTarget(w.spec, w.args.size());
@@ -408,6 +455,16 @@ Value *outcomeAt(Shared &sh, Value *h) {
   if (sh.dominatesCurrent(m->second.first) || (mc && outAvailable(sh, mc)))
     return m->second.second;
   return nullptr;
+}
+
+Value *classicalRead(LoweringContext &ctx, Value *handle) {
+  Shared &sh = shared(ctx);
+  if (Value *m = outcomeAt(sh, handle))
+    return m;
+  DenseMap<Value *, Cls> memo;
+  if (classify(sh, handle, memo) == No)
+    return nullptr;
+  return recompute(ctx, handle);
 }
 
 Value *collapse(LoweringContext &ctx, Value *handle) {

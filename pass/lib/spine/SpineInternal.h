@@ -190,6 +190,12 @@ void noteTemplate(Shared &, llvm::CallInst *fwd, const abi::TemplateSpec &, llvm
 void noteCore(Shared &, llvm::CallInst *call, const abi::CoreSpec &, llvm::ArrayRef<llvm::Value *>);
 llvm::Value *outcomeAt(Shared &, llvm::Value *handle);
 llvm::Value *collapse(LoweringContext &, llvm::Value *handle);
+// cq-i962: the classical value a rail holds at the builder's point when it is a function of measured
+// rails and classical values only, a rail built from classical seeds alone included (a value computed
+// after a collapse, 'only from measured rails and classical values', rule 2); else nullptr. Used for
+// cq_measure only (CR rule 2: a cq_measure of a value rule 2 made classical is a classical read):
+// elsewhere a seeds-only rail stays the quantum control flow's representation.
+llvm::Value *classicalRead(LoweringContext &, llvm::Value *handle);
 // cq-ihlt (decision A on rule 2): after calls::lowerLifted emitted a clone call, note every rail
 // passed to it whose formal the callee measures. calleeCollapse(h, at): when the rail h is classical
 // only because a callee measured its quantum sources, emit for each such source a cqrt_measure on its

@@ -466,7 +466,10 @@ void lowerMeasure(LoweringContext &ctx, CallInst &call) {
   }
   // cq-ihlt: a value whose only quantum sources a callee measured is classical; its sources' rails
   // are re-read in the caller right after the clone call (rule 2) and cq_measure reads it classically.
-  if (Value *c = spine::calleeCollapse(ctx, x.v, call)) {
+  Value *c = spine::calleeCollapse(ctx, x.v, call);
+  if (!c)
+    c = spine::classicalRead(ctx, x.v);   // cq-i962: a value computed after a collapse
+  if (c) {
     spine::bindOperand(ctx, &call, Operand{c, false});
     return;
   }
