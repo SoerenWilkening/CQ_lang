@@ -2293,8 +2293,11 @@ struct OraclePass : PassInfoMixin<OraclePass> {
 
 }  // namespace
 
+void cqRegisterTripFacts(PassBuilder &PB);   // TripFacts.cpp: -passes=cq-trip-facts (cq-97oj)
+
 extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
   return {LLVM_PLUGIN_API_VERSION, "CQOracle", "0.1", [](PassBuilder &PB) {
+            cqRegisterTripFacts(PB);
             PB.registerPipelineParsingCallback(
                 [](StringRef name, ModulePassManager &MPM, ArrayRef<PassBuilder::PipelineElement>) {
                   if (name != "cq-oracle")

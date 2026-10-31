@@ -188,7 +188,7 @@ def _pass_inputs() -> List[Path]:
 
 def _src_hash() -> str:
     h = hashlib.sha256()
-    for p in [SRC / "OracleInstr.cpp", SRC / "cqo_rt.c", STANDIN] + _pass_inputs():
+    for p in [SRC / "OracleInstr.cpp", SRC / "TripFacts.cpp", SRC / "cqo_rt.c", STANDIN] + _pass_inputs():
         h.update(str(p.relative_to(ROOT)).encode() + b"\0" + p.read_bytes() + b"\0")
     return h.hexdigest()[:16]
 
@@ -204,7 +204,7 @@ def toolchain() -> Tuple[Path, Path]:
         from concurrent.futures import ThreadPoolExecutor
         flags = _run([_tool("llvm-config"), "--cxxflags"], "llvm-config").stdout.split()
         cxx = [_tool("clang++"), *flags, "-fno-rtti", "-fPIC", "-O1", "-I", str(PASS / "include")]
-        units = [cpp] + PASS_SOURCES
+        units = [cpp, SRC / "TripFacts.cpp"] + PASS_SOURCES
         objs = [d / f"{k}-{u.stem}.o" for k, u in enumerate(units)]
         with ThreadPoolExecutor(max_workers=min(len(units), _jobs_cap())) as ex:
             list(ex.map(lambda uo: _run([*cxx, "-c", str(uo[0]), "-o", str(uo[1])],

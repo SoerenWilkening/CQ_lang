@@ -481,6 +481,16 @@ class TripProofs(unittest.TestCase):
         g = self.gaps_of("25", "for_classical_bound:%10", ("3",))
         self.assertEqual(g["3"].kind, "missing", g["3"])
 
+    def test_value_set_proof(self):
+        # cq-97oj kind 1: 117's inner loop runs (1 smax (1 << j)) trips, a power of two: never 3 or 5;
+        # 4 is a power of two and stays unproved
+        g = self.gaps_of("117", "qpe_counting:%65", ("3", "4", "5"))
+        for t in ("3", "5"):
+            self.assertEqual(g[t].kind, "impossible", g[t])
+            self.assertIn("value-set proof", g[t].why)
+            self.assertIn("power of two", g[t].why)
+        self.assertEqual(g["4"].kind, "missing", g["4"])
+
     def test_nested_zero_trips(self):
         # cq-oou2: 68's inner loop is entered unguarded on every outer trip (j = 0 < i holds)
         g = self.gaps_of("68", "nested_quantum_loops:%15", ("0",))

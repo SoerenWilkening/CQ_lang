@@ -32,6 +32,11 @@ search's evidence alone:
     the domain; it writes that proof as the target's reason, with the witness ("outside the domain:
     ..."). A count reached only with the K cutoff off is no proof: MISSING.
 
+  * TripFacts.cpp (the oracle plugin's cq-trip-facts pass, cq-97oj): a value-set proof (LLVM
+    ScalarEvolution's exact trip count with ValueTracking's range, power-of-two and known-bits facts
+    excludes the count) or a domain proof (the count needs an argument range on every point of which
+    an access every path to the loop executes leaves its object, getObjectSize).
+
 Every count not covered above stays MISSING when the search found none.
 """
 from __future__ import annotations
@@ -95,6 +100,7 @@ class LoopFacts:
     max: Optional[int] = None         # its constant maximum
     zero_proof: Optional[str] = None  # why the C oracle never reports 0 trips, or None
     region_exit: bool = True          # a header run may only exit (over-approximated; cq-oou2)
+    static: Optional[Dict[int, str]] = None   # target -> proof of TripFacts.cpp (cq-97oj kinds 1, 2)
 
     def impossible(self, loop: str, t: int) -> Optional[str]:
         """Why no input gives `t` trips of `loop`, or None when that is not proved."""
@@ -110,6 +116,8 @@ class LoopFacts:
         if self.max is not None and t > self.max + 1:
             return (f"LLVM ScalarEvolution: the backedge-taken count of {loop} is at most {self.max}, "
                     f"so no activation runs more than {self.max + 1} trips")
+        if self.static and t in self.static:
+            return self.static[t]
         return None
 
 
@@ -190,12 +198,30 @@ def _region_may_exit(f: "D.Function", header: str, blocks: set) -> bool:
                and s in exiting for s in succ[header])
 
 
+def trip_facts(o1: Path, llvm_bin: Path, tmax: int) -> Dict[str, Dict[int, str]]:
+    """{"<fn>:<header>": {target: proof}} from the oracle plugin's cq-trip-facts pass (TripFacts.cpp,
+    cq-97oj): LLVM's ScalarEvolution and ValueTracking on the .O1.ll (value-set and domain proofs)."""
+    from cqcheck import oracle
+    plugin, _ = oracle.toolchain()
+    r = subprocess.run([str(llvm_bin / "opt"), f"-load-pass-plugin={plugin}", "-passes=cq-trip-facts",
+                        f"-cq-trip-max={tmax}", "-disable-output", str(o1)], capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"opt -passes=cq-trip-facts on {o1} exited {r.returncode}: {r.stderr.strip()[:500]}")
+    out: Dict[str, Dict[int, str]] = {}
+    for line in r.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) == 5 and parts[0] == "cq-trip-fact":
+            out.setdefault(parts[1], {})[int(parts[2])] = f"{parts[3]} proof (cq-97oj): {parts[4]}"
+    return out
+
+
 def loop_facts(example_dir: Path, llvm_bin: Path) -> Dict[str, LoopFacts]:
     """LoopFacts per loop of the example's .O1.ll, keyed as the trips class keys them (T1)."""
     from cqcheck import sampling
     o1 = sorted(Path(example_dir).glob("*.O1.ll"))[0]
     mod = D.read_module(o1)
     counts = scev_counts(o1, llvm_bin)
+    static = trip_facts(o1, llvm_bin, sampling.K + 1)
     ins = sampling.Instrumenter(mod, None)
     out: Dict[str, LoopFacts] = {}
     for f in mod.functions.values():
@@ -204,7 +230,7 @@ def loop_facts(example_dir: Path, llvm_bin: Path) -> Dict[str, LoopFacts]:
             c = counts.get(key, {})
             out[key] = LoopFacts(c.get("exact"), c.get("max"),
                                  _zero_proof(f, lp.header, lp.blocks, lp.parent is None),
-                                 _region_may_exit(f, lp.header, lp.blocks))
+                                 _region_may_exit(f, lp.header, lp.blocks), static.get(key))
     return out
 
 
