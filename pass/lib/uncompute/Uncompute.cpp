@@ -129,7 +129,9 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/ADT/MapVector.h"
@@ -260,21 +262,77 @@ struct Uncompute::Impl {
 
   bool isMerge(RailId g) const { return !rails[g].arms.empty(); }
 
-  // ---- memory aliases of handles (cq-zh7z) ------------------------------------------------------
+  // ---- memory aliases of handles (cq-zh7z, cq-vdaa) ---------------------------------------------
   // A handle reaches memory by a store of it (a slot cell) and is read back by a load, which is a
-  // rail of its own (recordExternal). The cells a rail may sit in: the pointers its handle (or a
-  // merge naming it) was stored to or loaded from.
-  static void cellsOf(const Value *h, SmallVectorImpl<const Value *> &out) {
-    if (auto *ld = dyn_cast<LoadInst>(h))
-      out.push_back(ld->getPointerOperand());
-    for (const User *u : h->users())
-      if (auto *st = dyn_cast<StoreInst>(u); st && st->getValueOperand() == h)
-        out.push_back(st->getPointerOperand());
+  // rail of its own (recordExternal). A cell is a pointer and the byte size accessed through it
+  // (0: unknown extent, the whole object from there on).
+  struct Cell {
+    const Value *ptr;
+    uint64_t size;
+    bool operator==(const Cell &o) const { return ptr == o.ptr && size == o.size; }
+  };
+  static uint64_t accessSize(Type *t, const DataLayout &DL) {
+    TypeSize ts = DL.getTypeStoreSize(t);
+    return ts.isScalable() ? 0 : ts.getFixedValue();
   }
-  void railCells(RailId y, SmallVectorImpl<const Value *> &out) const {
+  // The cells a rail may sit in, closed over copies (cq-vdaa): the pointers its handle (or a merge
+  // naming it) was stored to or loaded from; then every load of the function that may read one of
+  // those cells may be the rail, so the cells that load (or a phi or select of it) is stored to join
+  // the set; a memcpy or memmove whose source may overlap a cell copies the rail to an unknown cell
+  // of its destination object. Repeated to a fixed point.
+  void railCells(RailId y, SmallVectorImpl<Cell> &out) const {
+    SmallVector<const Value *, 8> vals;
     for (RailId n : names(y))
-      if (rails[n].handle)
-        cellsOf(rails[n].handle, out);
+      if (rails[n].handle && !is_contained(vals, rails[n].handle))
+        vals.push_back(rails[n].handle);
+    const Function *F = nullptr;
+    for (const Value *v : vals)
+      if (auto *I = dyn_cast<Instruction>(v)) {
+        F = I->getFunction();
+        break;
+      } else if (auto *A = dyn_cast<Argument>(v)) {
+        F = A->getParent();
+        break;
+      }
+    if (!F)
+      return;
+    const DataLayout &DL = F->getDataLayout();
+    auto addCell = [&](Cell c) {
+      if (!is_contained(out, c))
+        out.push_back(c);
+    };
+    auto addVal = [&](const Value *v) {
+      if (!is_contained(vals, v))
+        vals.push_back(v);
+    };
+    size_t vi = 0, ci = 0;
+    while (vi < vals.size() || ci < out.size()) {
+      // Values to the cells they sit in.
+      for (; vi < vals.size(); ++vi) {
+        const Value *h = vals[vi];
+        if (auto *ld = dyn_cast<LoadInst>(h))
+          addCell({ld->getPointerOperand(), accessSize(ld->getType(), DL)});
+        for (const User *u : h->users()) {
+          if (auto *st = dyn_cast<StoreInst>(u); st && st->getValueOperand() == h)
+            addCell({st->getPointerOperand(), accessSize(h->getType(), DL)});
+          else if (isa<PHINode>(u) || (isa<SelectInst>(u) && cast<SelectInst>(u)->getCondition() != h))
+            addVal(u);
+        }
+      }
+      // Cells to the loads and copies that may read them.
+      for (; ci < out.size(); ++ci) {
+        Cell c = out[ci];
+        for (const Instruction &I : instructions(*F)) {
+          if (auto *ld = dyn_cast<LoadInst>(&I)) {
+            if (mayAlias(c, {ld->getPointerOperand(), accessSize(ld->getType(), DL)}, DL))
+              addVal(ld);
+          } else if (auto *mt = dyn_cast<MemTransferInst>(&I)) {
+            if (mayAlias(c, {mt->getRawSource(), 0}, DL))
+              addCell({getUnderlyingObject(mt->getRawDest()), 0});
+          }
+        }
+      }
+    }
   }
   // Base object plus constant and variable byte offsets, through GEPs.
   struct Addr {
@@ -301,30 +359,30 @@ struct Uncompute::Impl {
     return a;
   }
   static bool identified(const Value *v) { return isa<AllocaInst>(v) || isa<GlobalVariable>(v); }
-  // False only when the two 4-byte cells provably differ.
-  static bool mayAlias(const Value *p, const Value *q, const DataLayout &DL) {
-    if (p == q)
+  // False only when the two cells provably do not overlap.
+  static bool mayAlias(const Cell &p, const Cell &q, const DataLayout &DL) {
+    if (p.ptr == q.ptr)
       return true;
-    Addr a = decompose(p, DL), b = decompose(q, DL);
+    Addr a = decompose(p.ptr, DL), b = decompose(q.ptr, DL);
     if (a.base != b.base) {
       const Value *ua = getUnderlyingObject(a.base), *ub = getUnderlyingObject(b.base);
       return !(ua != ub && identified(ua) && identified(ub));
     }
-    if (!a.exact || !b.exact || a.vars.size() != b.vars.size())
+    if (!a.exact || !b.exact || a.vars.size() != b.vars.size() || p.size == 0 || q.size == 0)
       return true;
     for (auto &kv : a.vars) {
       auto it = b.vars.find(kv.first);
       if (it == b.vars.end() || it->second != kv.second)
         return true;
     }
-    APInt d = a.off - b.off;
-    return d.abs().ult(4);
+    // [a.off, a.off + p.size) and [b.off, b.off + q.size) overlap.
+    return a.off.slt(b.off + q.size) && b.off.slt(a.off + p.size);
   }
   // A gate on target may hit every other live rail that sits in a cell target's handle may share.
   void noteAliasHits(RailId target, Instruction *gate) {
     const DataLayout &DL = gate->getModule()->getDataLayout();
     SmallVector<RailId, 4> self = leaves(target);
-    SmallVector<const Value *, 4> mine;
+    SmallVector<Cell, 8> mine;
     for (RailId t : self)
       railCells(t, mine);
     if (mine.empty())
@@ -333,11 +391,11 @@ struct Uncompute::Impl {
       Rail &ry = rails[y];
       if (isMerge(y) || ry.released || ry.popBus != kNone || is_contained(self, y))
         continue;
-      SmallVector<const Value *, 4> theirs;
+      SmallVector<Cell, 8> theirs;
       railCells(y, theirs);
       bool hit = false;
-      for (const Value *p : mine)
-        for (const Value *q : theirs)
+      for (const Cell &p : mine)
+        for (const Cell &q : theirs)
           hit = hit || mayAlias(p, q, DL);
       if (hit)
         ry.aliasHits.push_back(gate);

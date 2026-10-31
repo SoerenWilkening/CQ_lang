@@ -10,7 +10,8 @@ set(CQ_UNC_CASES
   seed_xorc_direct seed_written_undone qram_lifo qram_rmw qram_kept_bus qram_pop_kept multi_exit arm_flush ex14_fmuladd
   ex42_measure_one_of_two ex162_consumer ex144_rule6
   merge_measured merge_all_arms_kept merge_template_then_garbage merge_noted_use merge_phi merge_nested
-  merge_kept_arm_local merge_kept_unchosen_edge merge_kept_rotated merge_kept_nested_phi_edge alias_distinct_cell)
+  merge_kept_arm_local merge_kept_unchosen_edge merge_kept_rotated merge_kept_nested_phi_edge alias_distinct_cell
+  alias_copy_distinct_array)
 foreach(c ${CQ_UNC_CASES})
   add_test(NAME uncompute.${c} COMMAND uncompute_tests ${c})
 endforeach()
@@ -35,6 +36,9 @@ set(CQ_UNC_FATAL
   "fatal_merge_nested_select_edge_rev=cq: unimplemented: uncompute: a kept role on a classical select over handles whose arm %t"
   "fatal_alias_slot_reload=cq: unimplemented: uncompute: a non-diagonal gate on a handle that may name an operand rail of %g through a slot cell"
   "fatal_alias_slot_direct=cq: unimplemented: uncompute: a non-diagonal gate on a handle that may name an operand rail of %g through a slot cell"
+  "fatal_alias_second_array=cq: unimplemented: uncompute: a non-diagonal gate on a handle that may name an operand rail of %g through a slot cell"
+  "fatal_alias_second_array_rev=cq: unimplemented: uncompute: a non-diagonal gate on a handle that may name an operand rail of %g through a slot cell"
+  "fatal_alias_memcpy=cq: unimplemented: uncompute: a non-diagonal gate on a handle that may name an operand rail of %g through a slot cell"
   "fatal_merge_unchosen_loop=cq: unimplemented: uncompute: an arm of a kept merged handle, %a, freed at the end of an edge where the merge does not choose it, is reached again")
 foreach(entry ${CQ_UNC_FATAL})
   string(FIND "${entry}" "=" eq)

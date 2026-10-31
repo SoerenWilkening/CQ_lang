@@ -2042,6 +2042,145 @@ define i32 @f(i32 %a0, i64 %i, double %th) {
   f.U.flushAtExit(f.ret());
 }
 
+// ---- cq-vdaa: the rail reaches a second slot array through a copy of a reload -----------------
+
+// c1's shape: x sits in q[i]; a reload %l of q[j] (x when j == i) is stored to s[k]; a reload %l2 of
+// s[m] (x when j == i and k == m) is rotated, and g, which read x, is read after the Ry.
+const char *kCopyIr = R"(
+define i32 @f(i32 %a0, i64 %i, i64 %j, i64 %k, i64 %m, double %th) {
+  %qa = alloca i32, i64 4
+  %sa = alloca i32, i64 4
+  %ta = alloca i32, i64 4
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %pi = getelementptr inbounds i32, ptr %qa, i64 %i
+  store i32 %x, ptr %pi
+  %g = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  %pj = getelementptr inbounds i32, ptr %qa, i64 %j
+  %l = load i32, ptr %pj
+  %pk = getelementptr inbounds i32, ptr %sa, i64 %k
+  store i32 %l, ptr %pk
+  %pm = getelementptr inbounds i32, ptr GATEARR, i64 %m
+  %l2 = load i32, ptr %pm
+  call void @cqrt_ry_i32(i32 %l2, double %th)
+  %q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)
+  %r = call i32 @cqrt_measure_i32(i32 %q)
+  ret i32 %r
+})";
+
+void copyCase(const char *arr, Fx *&out, std::string &keep) {
+  keep = kCopyIr;
+  keep.replace(keep.find("GATEARR"), 7, arr);
+  out = new Fx(keep);
+  Fx &f = *out;
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 0));
+  f.T("g", "hl");
+  f.U.recordExternal(f.I("l"), Role::UserRegister);
+  f.U.recordExternal(f.I("l2"), Role::UserRegister);
+  f.U.noteNonDiagonal(f.id("l2"), f.call("cqrt_ry_i32", 1));
+  f.U.setRole(f.T("q", "hl"), Role::Measured);
+  f.U.flushAtExit(f.ret());
+}
+
+void fatal_alias_second_array() {
+  Fx *f;
+  std::string ir;
+  copyCase("%sa", f, ir);
+}
+
+// The rotated reload comes from a third array the rail never reaches: g is cleaned after its
+// consumer as before.
+void alias_copy_distinct_array() {
+  Fx *f;
+  std::string ir;
+  copyCase("%ta", f, ir);
+  f->check(__func__, {
+                         "%qa = alloca i32, i64 4, align 4",
+                         "%sa = alloca i32, i64 4, align 4",
+                         "%ta = alloca i32, i64 4, align 4",
+                         "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                         "call void @cqrt_ry_i32(i32 %x, double %th)",
+                         "%pi = getelementptr inbounds i32, ptr %qa, i64 %i",
+                         "store i32 %x, ptr %pi, align 4",
+                         "%g = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                         "%pj = getelementptr inbounds i32, ptr %qa, i64 %j",
+                         "%l = load i32, ptr %pj, align 4",
+                         "%pk = getelementptr inbounds i32, ptr %sa, i64 %k",
+                         "store i32 %l, ptr %pk, align 4",
+                         "%pm = getelementptr inbounds i32, ptr %ta, i64 %m",
+                         "%l2 = load i32, ptr %pm, align 4",
+                         "call void @cqrt_ry_i32(i32 %l2, double %th)",
+                         "%q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)",
+                         "call void @cq_template_add_i32_hl_unc(i32 %g, i32 %x, i32 1)",
+                         "call void @cqrt_free(i32 %g)",
+                         "%r = call i32 @cqrt_measure_i32(i32 %q)",
+                         "ret i32 %r",
+                     });
+}
+
+// c2's shape, the reverse: g read a reload %l2 of s[m], which may be x copied there through a
+// reload of q[j]; the Ry is on x itself.
+void fatal_alias_second_array_rev() {
+  Fx f(R"(
+define i32 @f(i32 %a0, i64 %i, i64 %j, i64 %k, i64 %m, double %th) {
+  %qa = alloca i32, i64 4
+  %sa = alloca i32, i64 4
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %pi = getelementptr inbounds i32, ptr %qa, i64 %i
+  store i32 %x, ptr %pi
+  %pj = getelementptr inbounds i32, ptr %qa, i64 %j
+  %l = load i32, ptr %pj
+  %pk = getelementptr inbounds i32, ptr %sa, i64 %k
+  store i32 %l, ptr %pk
+  %pm = getelementptr inbounds i32, ptr %sa, i64 %m
+  %l2 = load i32, ptr %pm
+  %g = call i32 @cq_template_add_i32_hl(i32 %l2, i32 1)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)
+  %r = call i32 @cqrt_measure_i32(i32 %q)
+  ret i32 %r
+})");
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 0));
+  f.U.recordExternal(f.I("l"), Role::UserRegister);
+  f.U.recordExternal(f.I("l2"), Role::UserRegister);
+  f.T("g", "hl");
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 1));
+  f.U.setRole(f.T("q", "hl"), Role::Measured);
+  f.U.flushAtExit(f.ret());
+}
+
+// A memcpy of the whole first array into the second: the rotated reload of s[m] may be x.
+void fatal_alias_memcpy() {
+  Fx f(R"(
+define i32 @f(i32 %a0, i64 %i, i64 %m, double %th) {
+  %qa = alloca i32, i64 4
+  %sa = alloca i32, i64 4
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %pi = getelementptr inbounds i32, ptr %qa, i64 %i
+  store i32 %x, ptr %pi
+  %g = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  call void @llvm.memcpy.p0.p0.i64(ptr %sa, ptr %qa, i64 16, i1 false)
+  %pm = getelementptr inbounds i32, ptr %sa, i64 %m
+  %l2 = load i32, ptr %pm
+  call void @cqrt_ry_i32(i32 %l2, double %th)
+  %q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)
+  %r = call i32 @cqrt_measure_i32(i32 %q)
+  ret i32 %r
+}
+declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1))");
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 0));
+  f.T("g", "hl");
+  f.U.recordExternal(f.I("l2"), Role::UserRegister);
+  f.U.noteNonDiagonal(f.id("l2"), f.call("cqrt_ry_i32", 1));
+  f.U.setRole(f.T("q", "hl"), Role::Measured);
+  f.U.flushAtExit(f.ret());
+}
+
 const std::map<std::string, std::function<void()>> kPositive = {
     {"reverse_dependency_order", reverse_dependency_order},
     {"independent_most_recent_first", independent_most_recent_first},
@@ -2079,6 +2218,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"merge_kept_rotated", merge_kept_rotated},
     {"merge_kept_nested_phi_edge", merge_kept_nested_phi_edge},
     {"alias_distinct_cell", alias_distinct_cell},
+    {"alias_copy_distinct_array", alias_copy_distinct_array},
 };
 
 const std::map<std::string, std::function<void()>> kFatal = {
@@ -2101,6 +2241,9 @@ const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_merge_unchosen_loop", fatal_merge_unchosen_loop},
     {"fatal_alias_slot_reload", fatal_alias_slot_reload},
     {"fatal_alias_slot_direct", fatal_alias_slot_direct},
+    {"fatal_alias_second_array", fatal_alias_second_array},
+    {"fatal_alias_second_array_rev", fatal_alias_second_array_rev},
+    {"fatal_alias_memcpy", fatal_alias_memcpy},
 };
 
 } // namespace
