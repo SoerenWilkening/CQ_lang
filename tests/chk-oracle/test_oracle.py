@@ -797,6 +797,64 @@ double fenv_tested(double x0, double th, double c, double k) {
             self.assertFalse(any(r.get("kind") == "read" for r in rr.rotations), smp)
 
 
+class SameRail(unittest.TestCase):
+    """Bead cq-425g (CR rule 2, ABI 1.3, owner ruling cq-r6bc): a second cq_measure of a value already
+    measured is a classical read, also through a reload of the same cells (59, 120 at n = 1, rows = 1:
+    q[0] and q[n - 1] are one rail) and through a lossless cast; a lossy cast measures only its own
+    value. A slot taint holds as a rail whose cells hold a constant is measured (114 at n = 1), and a
+    variadic actual read through the save areas is the actual (95, 109: never a false classical)."""
+
+    def test_same_rail(self):
+        o1 = compile_c("same_rail", """
+#include <stdarg.h>
+#include <stdbool.h>
+int reload(const double *th, int n, double c) {
+    bool q[n]; for (int i = 0; i < n; i++) q[i] = 0;
+    for (int i = 0; i < n; i++) cq_theta(&q[i], th[i]);
+    for (int i = 0; i + 1 < n; i++) if (q[i]) cq_theta(&q[i + 1], c);
+    return cq_measure(q[0]) + cq_measure(q[n - 1]); }
+int grid(const double *th, int rows, double c) {
+    bool q[2][2] = {{0, 0}, {0, 0}};
+    for (int i = 0; i < rows; i++) for (int j = 0; j < 2; j++) cq_theta(&q[i][j], th[2 * i + j]);
+    for (int i = 0; i < rows; i++) if (q[i][0]) cq_theta(&q[i][1], c);
+    if (q[0][1]) cq_theta(&q[rows - 1][1], c);
+    return cq_measure(q[0][1]) + cq_measure(q[rows - 1][1]); }
+int const_slot(int n, int k) {
+    bool q[n]; for (int i = 0; i < n; i++) q[i] = (i >= n - k);
+    for (int m = n; m >= 2; m--) if (q[m - 1]) cq_theta(&q[m - 2], 0.5);
+    return cq_measure(q[0]); }
+int lossy(int x0, double t) { int x = x0; cq_theta(&x, t); signed char c = (signed char)x; return cq_measure(c) + cq_measure(x); }
+int widened(int x0, double t) { int x = x0; cq_theta(&x, t); long w = x; return (int)cq_measure(w) + cq_measure(x); }
+__attribute__((noinline)) static int sum3(int n, ...) { va_list ap; va_start(ap, n); int s = 0;
+    for (int i = 0; i < 3; i++) s += va_arg(ap, int); va_end(ap); return s + n; }
+int va(int x0, double t, int a, int b) { int x = x0; cq_theta(&x, t); return cq_measure(sum3(1, a, x, b)); }
+""")
+        sp = spec("same_rail", "int reload(const double*,int,double);int grid(const double*,int,double);"
+                  "int const_slot(int,int);int lossy(int,double);int widened(int,double);int va(int,double,int,int)",
+                  [("reload", ["const double*", "int", "double"]), ("grid", ["const double*", "int", "double"]),
+                   ("const_slot", ["int", "int"]), ("lossy", ["int", "double"]), ("widened", ["int", "double"]),
+                   ("va", ["int", "double", "int", "int"])],
+                  setup="static double coef[4] = {0.3, 1.1, 0.7, 2.0};")
+        S = lambda c, *a: {"call": c, "args": list(a)}
+        cases = [  # (sample, gates, classical reads)
+            (S(0, "coef", i32(1), HALF), 1, 1),     # q[0] is q[n - 1]
+            (S(0, "coef", i32(2), HALF), 2, 0),
+            (S(1, "coef", i32(1), HALF), 1, 1),     # q[0][1] is q[rows - 1][1], after quantum branches
+            (S(1, "coef", i32(2), HALF), 2, 0),
+            (S(2, i32(1), i32(0)), 1, 0),           # a slot rail holding a constant is measured
+            (S(3, i32(5), HALF), 2, 0),             # (signed char)x leaves x's high bits unmeasured
+            (S(4, i32(5), HALF), 1, 1),             # (long)x is x
+            (S(5, i32(5), HALF, i32(2), i32(3)), 1, 0),   # sum3's result: the variadic x
+        ]
+        for smp, gates, reads in cases:
+            rr = oracle.run_sample(o1, sp, smp)
+            self.assertEqual(rr.violations, [], smp)
+            ev = oracle.trace_sample(o1, sp, smp)
+            got = [e["kind"] for e in ev if e["ev"] == "site" and e["kind"] in ("measure", "read")]
+            self.assertEqual((got.count("measure"), got.count("read")), (gates, reads), (smp, ev))
+            self.assertEqual(len(rr.measured), gates, smp)
+
+
 class CollapseMerges(unittest.TestCase):
     """Review y1ll-n1 of the rule 2 collapse (bead cq-y1ll): (1) a merge the circuit holds as a rail,
     decided by a classical condition, is never classical because the incoming the sample ran is a

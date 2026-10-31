@@ -483,12 +483,14 @@ static struct shnode { uint32_t d0, nd, stamp; uint8_t fl; } *sh_n;
 static uint32_t *sh_d, *sh_stack;
 static size_t sh_nn, sh_nd;
 static uint32_t sh_stampv;
-static struct shcell { uintptr_t a; uint32_t node, gen; } *sh_c;
+static struct shcell { uintptr_t a; uint32_t node, gen, ep; } *sh_c; /* ep: sh_gm when put */
 static size_t sh_ncells;
 static uint32_t sh_gm, sh_gf, sh_mq, sh_ret, sh_args[64];
 static const void *sh_byval[64];
 static int sh_pending_read;
 
+#define SH_LO 4096
+static struct shlo { uintptr_t p; uint64_t len; uint32_t node, c, ep, gm, gen; } *sh_lo; /* the loads measure may pin, off __DATA */
 static uint32_t *sh_seen, *sh_genp; /* sh_genp: the cell generation, outside __DATA (never put back) */
 /* The tables are mapped before the setup runs, so the snapshot of __DATA keeps their addresses. */
 __attribute__((constructor(102))) static void sh_init(void) {
@@ -499,8 +501,9 @@ __attribute__((constructor(102))) static void sh_init(void) {
     sh_seen = mmap(0, SH_MAXN * sizeof *sh_seen, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
     sh_c = mmap(0, SH_CELLS * sizeof *sh_c, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
     sh_genp = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    sh_lo = mmap(0, SH_LO * sizeof *sh_lo, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
     if (sh_n == MAP_FAILED || sh_d == MAP_FAILED || sh_stack == MAP_FAILED || sh_seen == MAP_FAILED ||
-        sh_c == MAP_FAILED || sh_genp == MAP_FAILED) {
+        sh_c == MAP_FAILED || sh_genp == MAP_FAILED || sh_lo == MAP_FAILED) {
         fprintf(stderr, "cqo: mmap\n");
         raise(SIGKILL);
     }
@@ -579,9 +582,11 @@ static int sh_classical(uint32_t n) {
 
 /* cq_measure of a value with node n: a classical read when n is classical (no gate), else a
  * measurement that makes n classical from here on. __cqo_site reads the verdict. */
+static int sh_uniform(uintptr_t p, uint64_t len, uint32_t *node, uint32_t *ep);
+static void sh_pin(uint32_t n);
 void __cqo_sh_measure(uint32_t n) {
     sh_pending_read = sh_classical(n);
-    if (!sh_pending_read && n > SH_OPAQUE && n < sh_nn) sh_n[n].fl |= SH_MEASURED;
+    if (!sh_pending_read && n > SH_OPAQUE && n < sh_nn) sh_n[n].fl |= SH_MEASURED, sh_pin(n);
 }
 
 /* memory cells, one per byte, open addressing; a cell of another generation is empty */
@@ -593,7 +598,7 @@ static struct shcell *sh_cell(uintptr_t a, int add) {
             if (!add) return 0;
             if (sh_ncells * 10 >= SH_CELLS * 7) { note("internal more than %zu shadow cells", (size_t)SH_CELLS * 7 / 10); _exit(95); }
             sh_ncells++;
-            c->a = a, c->gen = *sh_genp, c->node = 0;
+            c->a = a, c->gen = *sh_genp, c->node = 0, c->ep = 0;
             return c;
         }
         if (c->a == a) return c;
@@ -604,7 +609,7 @@ static uint32_t sh_get(uintptr_t a) { struct shcell *c = sh_ncells ? sh_cell(a, 
 static void sh_put(uintptr_t a, uint32_t n) {
     if (sh_nn < 2) { if (!n) return; sh_reset(); }
     struct shcell *c = sh_cell(a, n != 0);
-    if (c) c->node = n;
+    if (c) c->node = n, c->ep = sh_gm;
 }
 static void sh_clear(const void *p, uint64_t n) {
     if (!sh_ncells) return;
@@ -628,14 +633,44 @@ void __cqo_sh_store(void *p, uint64_t n, uint32_t v, uint32_t addr) {
     if (v) sh_mq = __cqo_sh_j(sh_mq, v, 0);
     for (uint64_t i = 0; i < n; ++i) sh_put((uintptr_t)p + i, v);
 }
-uint32_t __cqo_sh_load(const void *p, uint64_t n, uint32_t addr) {
+/* Same rail (cq-425g, CR rule 2 with ABI 1.3: a second measurement of a rail is a classical
+ * re-read). A load at a classical address of cells that all hold one node c, put while sh_gm was what
+ * it is now (no quantum branch's implicit write since), is c itself. Otherwise it is a fresh node; when
+ * the cells were uniform, the load remembers them (sh_lo), and a measurement of that node with the
+ * cells and sh_gm unchanged pins it: the cells now hold the measured node, so a later load of them
+ * reads the measured value (the rail measured in place). A rail load (`rail`: taint holds the value
+ * as a rail) of a node-0 content is a fresh node over SH_OPAQUE: the circuit measures it, as a merge
+ * of constants (OracleInstr.cpp, classical merges). */
+static int sh_uniform(uintptr_t p, uint64_t len, uint32_t *node, uint32_t *ep) {
+    for (uint64_t i = 0; i < len; ++i) {
+        struct shcell *c = sh_ncells ? sh_cell(p + i, 0) : 0;
+        uint32_t nn = c ? c->node : 0, ee = c ? c->ep : 0;
+        if (i == 0) *node = nn, *ep = ee;
+        else if (nn != *node || ee != *ep) return 0;
+    }
+    return 1;
+}
+static void sh_pin(uint32_t n) {
+    struct shlo *r = &sh_lo[n % SH_LO];
+    uint32_t c, ep;
+    if (r->gen != *sh_genp || r->node != n || r->gm != sh_gm || !sh_uniform(r->p, r->len, &c, &ep) || c != r->c || ep != r->ep) return;
+    for (uint64_t i = 0; i < r->len; ++i) sh_put(r->p + i, n);
+}
+static uint32_t sh_load(const void *p, uint64_t n, uint32_t addr, int rail) {
+    uint32_t c = 0, ep = 0;
+    int uni = !addr && n && sh_uniform((uintptr_t)p, n, &c, &ep);
+    if (uni && ep == sh_gm && (c || !rail)) return c;
     uint32_t acc = __cqo_sh_j(addr, sh_gm, 0), last = 0;
     for (uint64_t i = 0; i < n; ++i) {
-        uint32_t c = sh_get((uintptr_t)p + i);
-        if (c && c != last) acc = __cqo_sh_j(acc, c, 0), last = c;
+        uint32_t x = sh_get((uintptr_t)p + i);
+        if (x && x != last) acc = __cqo_sh_j(acc, x, 0), last = x;
     }
-    return __cqo_sh_v(acc, 0, 0);
+    uint32_t r = acc ? __cqo_sh_v(acc, 0, 0) : rail ? __cqo_sh_v(SH_OPAQUE, 0, 0) : 0;
+    if (uni && r > SH_OPAQUE) sh_lo[r % SH_LO] = (struct shlo){(uintptr_t)p, n, r, c, ep, sh_gm, *sh_genp};
+    return r;
 }
+uint32_t __cqo_sh_load(const void *p, uint64_t n, uint32_t addr) { return sh_load(p, n, addr, 0); }
+uint32_t __cqo_sh_qload(const void *p, uint64_t n, uint32_t addr) { return sh_load(p, n, addr, 1); }
 void __cqo_sh_fill(void *p, uint64_t n, uint32_t v) {
     if (v) sh_mq = __cqo_sh_j(sh_mq, v, 0);
     for (uint64_t i = 0; i < n; ++i) sh_put((uintptr_t)p + i, v);

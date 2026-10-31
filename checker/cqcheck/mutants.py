@@ -83,7 +83,10 @@ CLASSES: Dict[str, Tuple[str, str, Optional[str]]] = {
                    r"violations on our side: .*'what': '(bad_handle|use_after_free)'"),
     "dropped_free": ("a clean rail is never freed: kept garbage at exit",
                      r"rail\(s\) .* kept on our side that the reference does not keep", None),
-    "changed_angle": ("a rotation or phase takes another angle", _ROT_REF, _ROT_C),
+    # a Ry at another angle takes no cq_theta reach of the C program's (dispatch.c, substitution
+    # matches the angle): its target keeps its value and the outputs may differ first (39)
+    "changed_angle": ("a rotation or phase takes another angle", f"{_ROT_REF}|{_MEAS}|{_OUT_REF}",
+                      f"{_ROT_C}|{_MEAS}|{_RET_C}"),
     # with substitution the other control also moves a substitution (125: measurement 1 reads 0x3)
     "changed_control": ("a controlled rotation is controlled by another rail", f"{_ROT_REF}|{_MEAS}|{_OUT_REF}",
                         f"{_ROT_C}|{_MEAS}|{_RET_C}"),
@@ -107,6 +110,7 @@ ROTATION_ONLY: Dict[str, Tuple[str, str]] = {
     "flipped_predicate": (_ROT_REF, _ROT_C),
     "changed_control": (_ROT_REF, _ROT_C),
     "dropped_rotation": (_ROT_REF, _ROT_C),
+    "changed_angle": (_ROT_REF, _ROT_C),
 }
 
 # The empty output: no definition, so the build of our side fails at the link on the entry symbol.

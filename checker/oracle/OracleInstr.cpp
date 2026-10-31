@@ -38,6 +38,7 @@
 #include "cq/Taint.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/Analysis/CallGraph.h"
@@ -454,14 +455,98 @@ public:
     DenseMap<const Value *, Value *> sh;
     SmallPtrSet<const Instruction *, 32> orig;  // the function as clang wrote it: taint knows only these
     Type *I32;
+    // Values taint calls classical that still carry a shadow (cq-425g): a read of a variadic
+    // actual through the va_list's save areas (clang -O1 expands va_arg into loads from the
+    // reg_save_area / overflow_arg_area, which taint does not see as reading the actuals), the
+    // result of a call whose callee returns such a value (`retCarried`), and every value computed
+    // from one. Their shadow is the plain data flow (no rail semantics: taint holds them as no rail).
+    const DenseSet<const Function *> &retCarried;
+    SmallPtrSet<const Value *, 32> extra;
 
-    Shadow(Instrumenter &In, Function &F, const cq::TaintInfo &T) : In(In), F(F), T(T), DT(F), PDT(F) {
+    Shadow(Instrumenter &In, Function &F, const cq::TaintInfo &T, const DenseSet<const Function *> &rc)
+        : In(In), F(F), T(T), DT(F), PDT(F), retCarried(rc) {
       I32 = In.I32;
       for (const cq::Specialization &S : T.specializations())
         if (S.F == &F)
           specs.push_back(&S);
       for (Instruction &I : instructions(F))
         orig.insert(&I);
+      closeExtra();
+    }
+
+    // an alloca va_start or va_copy initializes
+    static bool isVaList(const Value *P) {
+      P = P->stripInBoundsConstantOffsets();
+      if (!isa<AllocaInst>(P))
+        return false;
+      for (const User *U : P->users())
+        if (auto *II = dyn_cast<IntrinsicInst>(U))
+          if (II->getIntrinsicID() == Intrinsic::vastart || II->getIntrinsicID() == Intrinsic::vacopy)
+            return true;
+      return false;
+    }
+    // a load through a pointer read from a va_list (a save area), moved by GEPs and merged by
+    // phis/selects: clang's expansion of va_arg
+    static bool isVaRead(const LoadInst *L) {
+      SmallPtrSet<const Value *, 16> seen;
+      std::vector<const Value *> work{L->getPointerOperand()};
+      while (!work.empty()) {
+        const Value *V = work.back();
+        work.pop_back();
+        if (!seen.insert(V).second)
+          continue;
+        if (auto *G = dyn_cast<GEPOperator>(V))
+          work.push_back(G->getPointerOperand());
+        else if (auto *P = dyn_cast<PHINode>(V))
+          for (const Value *in : P->incoming_values())
+            work.push_back(in);
+        else if (auto *S = dyn_cast<SelectInst>(V))
+          work.push_back(S->getTrueValue()), work.push_back(S->getFalseValue());
+        else if (auto *X = dyn_cast<LoadInst>(V)) {
+          if (isVaList(X->getPointerOperand()))
+            return true;
+        }
+      }
+      return false;
+    }
+    void closeExtra() {
+      std::vector<const Value *> work;
+      auto add = [&](const Value *V) {
+        if (!q(V) && extra.insert(V).second)
+          work.push_back(V);
+      };
+      for (Instruction &I : instructions(F)) {
+        if (auto *L = dyn_cast<LoadInst>(&I); L && isVaRead(L))
+          add(L);
+        if (auto *CB = dyn_cast<CallBase>(&I))
+          if (Function *G = CB->getCalledFunction(); G && retCarried.count(G) && !CB->getType()->isVoidTy())
+            add(CB);
+      }
+      while (!work.empty()) {
+        const Value *V = work.back();
+        work.pop_back();
+        for (const User *U : V->users()) {
+          auto *I = dyn_cast<Instruction>(U);
+          if (!I || !orig.count(I) || I->isTerminator() || I->getType()->isVoidTy())
+            continue;
+          if (auto *CB = dyn_cast<CallBase>(I)) {
+            Function *G = CB->getCalledFunction();
+            // a body's result is the callee's (retCarried); a site's is its own
+            if (!G || !G->isDeclaration() || siteKind(G->getName()) >= 0)
+              continue;
+          }
+          add(I);
+        }
+      }
+    }
+    bool carried(const Value *V) const { return q(V) || extra.count(V); }
+    // a returned value carried only through `extra`: callers' results carry it too
+    bool returnsExtra() const {
+      for (const BasicBlock &BB : F)
+        if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
+          if (Value *v = R->getReturnValue(); v && extra.count(v))
+            return true;
+      return false;
     }
 
     bool q(const Value *V) const {
@@ -524,7 +609,7 @@ public:
       if (isa<Argument>(V))
         return get(V);
       auto *J = dyn_cast<Instruction>(V);
-      if (!J || !q(J))
+      if (!J || !carried(J))
         return zero();
       if (DT.dominates(J, at))
         return get(J);
@@ -535,7 +620,7 @@ public:
       if (isa<Argument>(V))
         return get(V);
       auto *J = dyn_cast<Instruction>(V);
-      if (!J || !q(J))
+      if (!J || !carried(J))
         return zero();
       if (DT.properlyDominates(J->getParent(), B))
         return get(J);
@@ -560,7 +645,7 @@ public:
       if (isa<Argument>(V))
         return get(V);
       auto *J = dyn_cast<Instruction>(V);
-      if (!J || !q(J))
+      if (!J || !carried(J))
         return zero();
       if (dominated(J))
         return get(J);
@@ -727,7 +812,7 @@ public:
       std::vector<std::pair<PHINode *, PHINode *>> phis;
       for (BasicBlock *BB : order)
         for (PHINode &P : BB->phis())
-          if (q(&P)) {
+          if (carried(&P)) {
             PHINode *s = PHINode::Create(I32, P.getNumIncomingValues(), "", BB->getFirstNonPHI());
             phis.push_back({&P, s});
           }
@@ -790,6 +875,10 @@ public:
               PHINode *s = phiSh[P];
               if (X) {
                 sh[P] = B.CreateCall(h3("__cqo_sh_v"), {s, X, zero()});
+                continue;
+              }
+              if (!q(P)) {  // carried only (extra): the incoming the sample ran
+                sh[P] = s;
                 continue;
               }
               std::vector<Value *> inc;
@@ -880,10 +969,16 @@ public:
       }
       IRBuilder<> B(I->getNextNode());
       if (auto *LI = dyn_cast<LoadInst>(I)) {
-        if (q(LI))
-          sh[LI] = B.CreateCall(h("__cqo_sh_load", I32, {In.Ptr, In.I64, I32}),
+        if (!carried(LI))
+          return;
+        // a rail taint holds (q) reads its cells as the rail itself (__cqo_sh_qload: a node
+        // over no rail is a fresh one, never classical; cq-425g); a variadic actual read
+        // through the save areas depends on what the call passed (sh_gm, as VAArgInst)
+        bool va = !q(LI) && isVaRead(LI);
+        Value *n = B.CreateCall(h(q(LI) ? "__cqo_sh_qload" : "__cqo_sh_load", I32, {In.Ptr, In.I64, I32}),
                                 {LI->getPointerOperand(), B.getInt64(bytes(LI->getType())),
                                  get(LI->getPointerOperand())});
+        sh[LI] = va ? node(B, {n, call0(B, "__cqo_sh_mq_get")}) : n;
         return;
       }
       if (auto *SI = dyn_cast<StoreInst>(I)) {
@@ -904,7 +999,7 @@ public:
           deps.push_back(get(op));
         Value *n = node(B, deps);
         B.CreateCall(h("__cqo_sh_store", In.Void, {In.Ptr, In.I64, I32, I32}), {p, B.getInt64(bytes(VT)), n, get(p)});
-        if (q(I))
+        if (carried(I))
           sh[I] = n;
         return;
       }
@@ -915,23 +1010,53 @@ public:
       if (isa<AllocaInst>(I))
         return;
       if (isa<VAArgInst>(I)) {
-        if (q(I))
+        if (carried(I))
           sh[I] = node(B, {call0(B, "__cqo_sh_gm_get"), call0(B, "__cqo_sh_mq_get")});
         return;
       }
-      if (I->getType()->isVoidTy() || !q(I))
+      if (I->getType()->isVoidTy() || !carried(I))
         return;
       if (auto *Sel = dyn_cast<SelectInst>(I))
-        if (!q(Sel->getCondition()) && !Sel->getCondition()->getType()->isVectorTy()) {
+        if (q(Sel) && !carried(Sel->getCondition()) && !Sel->getCondition()->getType()->isVectorTy()) {
           // a classical choice between rails: the chosen rail itself (a classical merge, as a phi's)
           Value *t = get(Sel->getTrueValue()), *f = get(Sel->getFalseValue());
           sh[I] = nonZero(B, B.CreateSelect(Sel->getCondition(), t, f), {t, f});
           return;
         }
+      // a cast that loses nothing (its operand is a function of its value) denotes the same rail:
+      // the same node, so measuring either measures both (cq-425g: 59's trunc of a loaded bool)
+      if (isa<FreezeInst>(I) || (isa<CastInst>(I) && lossless(cast<CastInst>(I)))) {
+        sh[I] = get(I->getOperand(0));
+        return;
+      }
       std::vector<Value *> deps;
       for (Value *op : I->operands())
         deps.push_back(get(op));
       sh[I] = node(B, deps);
+    }
+
+    bool lossless(CastInst *C) {
+      Type *S = C->getSrcTy(), *D = C->getDestTy();
+      switch (C->getOpcode()) {
+      case Instruction::ZExt:
+      case Instruction::SExt:
+      case Instruction::BitCast:
+      case Instruction::AddrSpaceCast:
+        return true;
+      case Instruction::PtrToInt:
+      case Instruction::IntToPtr:
+        return In.DL.getTypeSizeInBits(S) == In.DL.getTypeSizeInBits(D);
+      case Instruction::Trunc: {
+        if (S->isVectorTy())
+          return false;
+        unsigned lost = S->getScalarSizeInBits() - D->getScalarSizeInBits();
+        Value *X = C->getOperand(0);
+        return computeKnownBits(X, In.DL).countMinLeadingZeros() >= lost ||
+               ComputeNumSignBits(X, In.DL) > lost;
+      }
+      default:
+        return false;
+      }
     }
 
     void visitCall(CallBase *CB, IRBuilder<> &B) {
@@ -956,7 +1081,7 @@ public:
         Value *d = join(Ba, args);
         Ba.CreateCall(h("__cqo_sh_gf", In.Void, {I32}), {d});
         Ba.CreateCall(h("__cqo_sh_gm", In.Void, {I32}), {join(Ba, {d, call0(Ba, "__cqo_sh_mq_get")})});
-        if (hasResult && q(CB))
+        if (hasResult && carried(CB))
           sh[CB] = node(B, {d, call0(B, "__cqo_sh_gm_get"), call0(B, "__cqo_sh_gf_get")});
         return;
       }
@@ -984,11 +1109,11 @@ public:
           Value *d = join(B, args);
           if (!isZero(d))
             B.CreateCall(h("__cqo_sh_gf", In.Void, {I32}), {d});
-          if (hasResult && q(CB))
+          if (hasResult && carried(CB))
             sh[CB] = node(B, {d, env});
           return;
         }
-        if (hasResult && q(CB))
+        if (hasResult && carried(CB))
           sh[CB] = node(B, args);
         return;
       }
@@ -1012,7 +1137,7 @@ public:
         }
         if (hasResult) {
           Value *r = B.CreateCall(h("__cqo_sh_ret", I32, {}), {});
-          if (q(CB))
+          if (carried(CB))
             sh[CB] = r;
         }
         return;
@@ -1029,7 +1154,7 @@ public:
                       {node(Ba, {d, call0(Ba, "__cqo_sh_gm_get"), call0(Ba, "__cqo_sh_gf_get")})});
         Value *r = B.CreateCall(h("__cqo_sh_ret", I32, {}), {});
         B.CreateCall(h("__cqo_sh_args_clear", In.Void, {}), {});
-        if (hasResult && q(CB))
+        if (hasResult && carried(CB))
           sh[CB] = r;
         return;
       }
@@ -1037,7 +1162,7 @@ public:
       // reads its arguments (and the fp environment), and through a pointer may read or write memory
       StringRef n = G->getName();
       if (isAllocator(n)) {
-        if (hasResult && q(CB))
+        if (hasResult && carried(CB))
           sh[CB] = node(B, args);
         return;
       }
@@ -1050,7 +1175,7 @@ public:
                        {CB->getArgOperand(0), B.CreateZExtOrTrunc(CB->getArgOperand(2), In.I64), join(B, {args[1], extra})});
         if (!isZero(extra))
           B.CreateCall(h("__cqo_sh_gm", In.Void, {I32}), {extra});
-        if (hasResult && q(CB))
+        if (hasResult && carried(CB))
           sh[CB] = node(B, {extra});
         return;
       }
@@ -1062,7 +1187,7 @@ public:
       if (ptr && !G->onlyReadsMemory())  // fegetenv, fegetexceptflag: what it writes may be the fp state (y1ll-n1)
         Ba.CreateCall(h("__cqo_sh_gm", In.Void, {I32}),
                       {join(Ba, {d, call0(Ba, "__cqo_sh_mq_get"), call0(Ba, "__cqo_sh_gf_get")})});
-      if (hasResult && q(CB)) {
+      if (hasResult && carried(CB)) {
         std::vector<Value *> deps{d, call0(B, "__cqo_sh_gf_get")};
         if (ptr) {
           deps.push_back(call0(B, "__cqo_sh_gm_get"));
@@ -1076,9 +1201,17 @@ public:
   void shadows() {
     if (!Taint)
       return;
+    // functions returning a value carried only through Shadow::extra, to a fixpoint (cq-425g)
+    DenseSet<const Function *> rc;
+    for (bool changed = true; changed;) {
+      changed = false;
+      for (Function &F : M)
+        if (!F.isDeclaration() && !isDriverFn(F) && !rc.count(&F) && Shadow(*this, F, *Taint, rc).returnsExtra())
+          rc.insert(&F), changed = true;
+    }
     for (Function &F : M)
       if (!F.isDeclaration() && !isDriverFn(F))
-        Shadow(*this, F, *Taint).run();
+        Shadow(*this, F, *Taint, rc).run();
   }
 
   // ---------------------------------------------------------------- poison and §2 arithmetic

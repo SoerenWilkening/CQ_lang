@@ -69,7 +69,7 @@ class Static(unittest.TestCase):
 
 
 class Judge(unittest.TestCase):
-    ROT = mutants.CLASSES["changed_angle"]
+    ROT = mutants.CLASSES["added_rotation"]  # rotation list only
     KEPT = mutants.CLASSES["dropped_free"]
 
     def test_predicted_rejection(self):
@@ -108,7 +108,8 @@ class Judge(unittest.TestCase):
         rot = V("fail", "fail", ["ref: classical arguments () (4 samples): rotation list differs: x",
                                  "c: classical arguments () (4 samples): lowered gate #2 ry(r) corresponds to "
                                  "no C site"])
-        for cls in ("flipped_predicate", "changed_control", "dropped_rotation"):
+        # cq-425g: changed_angle too (39-change-angle: a Ry at another angle takes no substitution)
+        for cls in ("flipped_predicate", "changed_control", "dropped_rotation", "changed_angle"):
             with self.subTest(cls):
                 self.assertIn(cls, mutants.ROTATION_ONLY)
                 self.assertEqual(mutants.judge_mutant(cls, full, rot), [])
@@ -122,8 +123,8 @@ class Judge(unittest.TestCase):
                 self.assertEqual(mutants.judge_mutant(cls, rot, None), [])
                 self.assertTrue(mutants.needs_subst_off(cls, full))
         # a class outside ROTATION_ONLY ignores the run with substitution off
-        self.assertFalse(mutants.needs_subst_off("changed_angle", full))
-        self.assertEqual(mutants.judge_mutant("changed_angle", rot, None), [])
+        self.assertFalse(mutants.needs_subst_off("added_rotation", full))
+        self.assertEqual(mutants.judge_mutant("added_rotation", rot, None), [])
 
     def test_empty_pattern(self):
         r = ("sample {}: violations on our side: [{'what': 'build', 'h': None, 'msg': 'clang failed (1): "
