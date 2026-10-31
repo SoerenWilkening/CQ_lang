@@ -434,13 +434,14 @@ def _trip_disagreements(ex: Example, spec, ss, c_raw: Optional[list], samples: l
                         sibling("oracle", "run_samples")(ex.o1, spec, need)))
     # cq-97oj (4): the trip counters count uncut (the K cut applies only to the compared run): each
     # trip sample's trip events with the cutoff off join its compared run's
-    import dataclasses
+    import copy
     from cqcheck import sampling
     trip = [ss.samples[i] for i in idx]
     for smp, ur in zip(trip, sibling("oracle", "run_samples")(ex.o1, spec, trip, k=sampling.uncut_k(Path(ex.o1)))):
         key = json.dumps(smp, sort_keys=True)
         r = runs[key]
-        runs[key] = dataclasses.replace(r, events=list(r.events) + [e for e in ur.events if e.get("ev") == "trip"])
+        r = runs[key] = copy.copy(r)
+        r.events = list(r.events) + [e for e in ur.events if e.get("ev") == "trip" and e not in r.events]
     return [f"sampling: trip sample disagrees: {d}" for d in gaps.confirm_trips(ss, runs)]
 
 
