@@ -13,10 +13,7 @@ Trace events (cq-arch; values are hex bit patterns ``0x`` + lowercase digits, no
 - ``{"ev":"site","fn","site","kind","angle","reg"}``: ``site`` is the ordinal of the call among the
   ``cq_theta_*``/``cq_phi``/``cq_measure_*``/``__cq_invert_*`` calls of function ``fn`` in textual order
   of the input IR. ``kind`` is ``theta``, ``phi``, ``measure`` (reg = the measured value) or
-  ``invert_begin``/``invert_end`` (markers) (cq-arch T1.1), or ``read``: a ``cq_measure`` of a value CR
-  rule 2's classical collapse made classical (computed only from measured rails and classical values,
-  owner ruling cq-r6bc; OracleInstr.cpp, shadows), which is no gate and is neither measured nor a rotation
-  (bead cq-y1ll). ``angle`` is the f64 bit pattern (null for
+  ``invert_begin``/``invert_end`` (markers) (cq-arch T1.1). ``angle`` is the f64 bit pattern (null for
   measure and markers); ``reg`` the register value at its width (null for phi and markers).
 - ``{"ev":"trip","loop","n"}`` once per loop activation, when the loop is left (T1.2). ``loop`` is
   ``<fn>:<header>``, the header block's label spelled as an operand in the input .O1.ll (``%7``,
@@ -789,7 +786,7 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
     C width, fp {"w": "f32"|"f64"|"f80"|...}, an aggregate bare hex; void, pointer and samples that
     did not return give no record), "end": outcome, "loops": the T2 cutoff records, "stdout": the
     program's stdout, "effects": its host-effect calls (cq-e4jk)}; measured: [{"h": None, "w": the register's rail
-    type, "v": hex}] per reached measure site that is a gate (not a rule 2 classical read), in order; rotations: the site events of kind theta,
+    type, "v": hex}] per reached measure site, in order; rotations: the site events of kind theta,
     phi, invert_begin and invert_end verbatim, in order; kept/clean: None (the C program has no
     rails); violations: [] or [{"what": "c_oracle", "h": None, "msg": reason}]."""
     measured, rotations = [], []
@@ -798,8 +795,6 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
             continue
         if e["kind"] == "measure":
             measured.append({"h": None, "w": _measure_rail(o1, e["fn"], e["site"]), "v": e["reg"]})
-        elif e["kind"] == "read":
-            continue   # CR rule 2: a classical read of a collapsed value, no gate (cq-y1ll)
         else:
             rotations.append(dict(e))
     return RunResult(side="c", sample=sr.sample,
