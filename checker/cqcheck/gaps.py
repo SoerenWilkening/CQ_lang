@@ -21,8 +21,8 @@ search's evidence alone:
 
   * LLVM's ScalarEvolution on the .O1.ll (`opt -passes=print<scalar-evolution>`; whatever LLVM
     does, we do): an exact constant backedge-taken count C means every activation runs C + 1 header
-    executions, so the C oracle (T1.2: trips begun) reports C or C + 1; a constant maximum M bounds it
-    by M + 1.
+    executions, so the C oracle (T1.2: trips begun) reports C or C + 1, and C + 1 alone when no header
+    run only exits (the header-region test below); a constant maximum M bounds it by M + 1.
   * 0: the C oracle reports 0 only on a guard branch that skips the loop or a header run that exits
     before a trip begins (OracleInstr.cpp, trip counters). A loop, nested or not, with no such guard
     (the oracle's own walk back from the header) and no header-region exit (over-approximated: the
@@ -94,6 +94,7 @@ class LoopFacts:
     exact: Optional[int] = None       # ScalarEvolution's exact constant backedge-taken count
     max: Optional[int] = None         # its constant maximum
     zero_proof: Optional[str] = None  # why the C oracle never reports 0 trips, or None
+    region_exit: bool = True          # a header run may only exit (over-approximated; cq-oou2)
 
     def impossible(self, loop: str, t: int) -> Optional[str]:
         """Why no input gives `t` trips of `loop`, or None when that is not proved."""
@@ -102,6 +103,10 @@ class LoopFacts:
         if self.exact is not None and t not in (self.exact, self.exact + 1):
             return (f"LLVM ScalarEvolution: the backedge-taken count of {loop} is always {self.exact}, "
                     f"so every activation runs {self.exact} or {self.exact + 1} trips")
+        if self.exact is not None and t == self.exact and not self.region_exit:
+            return (f"LLVM ScalarEvolution: the backedge-taken count of {loop} is always {self.exact}, and no "
+                    f"header run only exits (the header is a latch, or its test region holds no exit), so "
+                    f"every header execution begins a trip: every activation runs {self.exact + 1} trips")
         if self.max is not None and t > self.max + 1:
             return (f"LLVM ScalarEvolution: the backedge-taken count of {loop} is at most {self.max}, "
                     f"so no activation runs more than {self.max + 1} trips")
@@ -144,15 +149,8 @@ def _zero_proof(f: "D.Function", header: str, blocks: set, top_level: bool) -> O
     (a single-predecessor non-latch exiting successor counts whatever it computes)."""
     preds = f.preds()
     succ = {b: f.blocks[b][-1].successors() for b in f.order}
-    latches = {p for p in preds.get(header, []) if p in blocks}
-    exiting = {b for b in blocks if any(s not in blocks for s in succ[b])}
-    if header not in latches:
-        if header in exiting:
-            return None
-        for s in succ[header]:
-            if s in blocks and s != header and set(preds.get(s, [])) == {header} \
-                    and s not in latches and s in exiting:
-                return None
+    if _region_may_exit(f, header, blocks):
+        return None
     exit_blocks = {s for b in blocks for s in succ[b] if s not in blocks}
     for p0 in preds.get(header, []):
         if p0 in blocks:
@@ -176,6 +174,22 @@ def _zero_proof(f: "D.Function", header: str, blocks: set, top_level: bool) -> O
             f"header run that exits before a trip begins: the C oracle's trip counter never reports 0")
 
 
+def _region_may_exit(f: "D.Function", header: str, blocks: set) -> bool:
+    """Whether a header run may only exit, leaving through the header's test region before a trip
+    begins (OracleInstr.cpp, trip counters: never when the header is a latch). Over-approximated:
+    the header is exiting, or a single-predecessor non-latch successor of it is."""
+    preds = f.preds()
+    succ = {b: f.blocks[b][-1].successors() for b in f.order}
+    latches = {p for p in preds.get(header, []) if p in blocks}
+    if header in latches:
+        return False
+    exiting = {b for b in blocks if any(s not in blocks for s in succ[b])}
+    if header in exiting:
+        return True
+    return any(s in blocks and s != header and set(preds.get(s, [])) == {header} and s not in latches
+               and s in exiting for s in succ[header])
+
+
 def loop_facts(example_dir: Path, llvm_bin: Path) -> Dict[str, LoopFacts]:
     """LoopFacts per loop of the example's .O1.ll, keyed as the trips class keys them (T1)."""
     from cqcheck import sampling
@@ -189,7 +203,8 @@ def loop_facts(example_dir: Path, llvm_bin: Path) -> Dict[str, LoopFacts]:
             key = lp.key()
             c = counts.get(key, {})
             out[key] = LoopFacts(c.get("exact"), c.get("max"),
-                                 _zero_proof(f, lp.header, lp.blocks, lp.parent is None))
+                                 _zero_proof(f, lp.header, lp.blocks, lp.parent is None),
+                                 _region_may_exit(f, lp.header, lp.blocks))
     return out
 
 

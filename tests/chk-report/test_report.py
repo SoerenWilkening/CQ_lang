@@ -471,6 +471,16 @@ class TripProofs(unittest.TestCase):
         self.assertEqual(g["0"].kind, "impossible", g["0"])
         self.assertIn("never reports 0", g["0"].why)
 
+    def test_constant_count_with_a_latch_header(self):
+        # cq-oou2: 72's fill loop runs exactly 4 trips (backedge-taken count 3); its header is the
+        # latch, so no header run only exits and the oracle never reports 3
+        g = self.gaps_of("72", "memset_over_quantum:%19", ("3",))
+        self.assertEqual(g["3"].kind, "impossible", g["3"])
+        self.assertIn("every activation runs 4 trips", g["3"].why)
+        # a header-tested loop (150's do-while is not; 25's for over an argument has no exact count)
+        g = self.gaps_of("25", "for_classical_bound:%10", ("3",))
+        self.assertEqual(g["3"].kind, "missing", g["3"])
+
     def test_nested_zero_trips(self):
         # cq-oou2: 68's inner loop is entered unguarded on every outer trip (j = 0 < i holds)
         g = self.gaps_of("68", "nested_quantum_loops:%15", ("0",))
