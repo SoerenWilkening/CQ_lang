@@ -391,6 +391,7 @@ Below, "BJ" names the Bennett.jl circuit. Columns: **ops**, **semantics with §2
 |---|---|---|---|---|
 | `{u,s}{add,sub,mul}_overflow` | **`i1` overflow flag only** (element 1 of `*.with.overflow`). Element 0 is the ordinary `add`/`sub`/`mul` template over the same operands (CR rule 4). u: unsigned carry/borrow/product > 2^W−1; s: signed result out of range | uadd i32, sadd i32, usub i64, umul i32 (ssub and smul not in the corpus) | sadd, uadd, smul, umul: BJ `src/extract/instructions.jl:_handle_intrinsic` + `_fuse_overflow_extractvalue`. usub (= a <ᵤ b): `src/lowering/arith.jl:lower_ult!`. ssub: no reference implementation | 92, 112 |
 | `uadd_sat` `usub_sat` | min(a + b, 2^W − 1); max(a − b, 0) | i32 | no reference implementation in BJ (`_WIDTH_DEPENDENT_INTRINSICS` lists them, but there is no expansion); build from add/sub + compare + select | 92, 109 |
+| `sadd_sat` `ssub_sat` | signed a + b / a − b clamped to [−2^(W−1), 2^(W−1) − 1] (`llvm.sadd.sat`/`llvm.ssub.sat`; total, no CR §2 row). Overflow iff sign(a) = sign(b) ≠ sign(a + b) (sub: sign(a) ≠ sign(b) and sign(a − b) ≠ sign(a)); the clamp is sign(a) in the top bit and its complement below | i32 (ssub not in the corpus) | none in BJ; build from add/sub + a three-sign overflow flag + select, O(W) Toffolis, as the unsigned pair | 194 |
 | `smax` `smin` `umax` `umin` | as LLVM | i32 | BJ `src/extract/instructions.jl:_handle_intrinsic` (compare + select) | 26, 56, 187 |
 | `abs` | \|a\|; **abs(INT_MIN) = INT_MIN** | i32 | BJ `src/extract/instructions.jl:_handle_intrinsic` | 56 |
 
@@ -501,6 +502,7 @@ column says where the reversible circuit comes from.
 | `fptosi` `fptoui` | 2 / 1 | f64→i32 | BJ (f64→i32/u32); other widths EXTEND |
 | `*_overflow` | 2 | uadd sadd umul i32, usub i64 | BJ (sadd uadd smul umul; usub via ult); ssub none |
 | `uadd_sat` `usub_sat` | 1 / 1 | i32 | none (composite) |
+| `sadd_sat` `ssub_sat` | 1 / 0 | i32 | none (composite) |
 | `smax` `smin` `umax` `umin` `abs` | 3 / 3 / 2 / 1 / 1 | i32 | BJ |
 | `ctlz` `cttz` `ctpop` `bswap` | 1 / 1 / 2 / 1 | i32 i64 | BJ |
 | `fadd` `fsub` `fmul` `fdiv` | 29 / 16 / 32 / 11 | f16 f32 f64 f80 | BJ f64; f16 f32 f80 EXTEND |

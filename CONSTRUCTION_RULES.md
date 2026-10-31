@@ -77,7 +77,7 @@ template := "cq_template_" op ["_" pred] "_" W ["_to_" W2] ["_" shape] ["_rm" | 
 op       := add sub mul udiv sdiv urem srem and or xor shl lshr ashr
             fadd fsub fmul fdiv frem fneg icmp fcmp fcmps select
             zext sext trunc fpext fptrunc sitofp uitofp fptosi fptoui bitcast
-            fma fshl fshr abs ctlz cttz ctpop bswap smax smin umax umin uadd_sat usub_sat
+            fma fshl fshr abs ctlz cttz ctpop bswap smax smin umax umin uadd_sat usub_sat sadd_sat ssub_sat
             {u,s}{add,sub,mul}_overflow fabs copysign fmax fmin floor ceil trunc rint round sqrt
             is_fpclass qrom_load qrom_load_s
 pred     := an icmp/fcmp predicate. A compare with the literal on the left is spelled by flipping
@@ -804,6 +804,7 @@ Byte identity of traces is never required.
 | 2 collapse, 11, 14, §6 (2026-10-29; rulings to CQ_lang2 cq-r6bc, cq-5h88, cq-ph2i, cq-vrwm, cq-xidq, cq-8q9i, cq-eina, cq-3wo5) | 65 (both functions measure y and kept rails that are functions of the outcome, and measured one), 22 `switch_phase` (per-case `rz_i1` for one merged `cq_phi` with a `phi` angle), 26 `break_with_body` (the `|1⟩` seed minted before the zero-trip test, live on the skip path), drivers 86 (`ptr_less` called with `a == b` only), 44/61/126 `.O1.ll` (stale inline-asm `!srcloc` offsets) | done: 65 collapses after the measurement and writes the flags back to the host (`; Classical reads (rule 2): 1`); 22 angle rail + `rz_qangle_controlled`; 26 seed in a preheader; two more `ptr_less` calls with `a != b`, both orders; `!srcloc` re-captured (non-normative) |
 | 2 collapse through a callee measurement (2026-10-31, cq-9hwg) | 136 (`cq_measure(y)` of y = x + c, x measured inside the clone, was emitted as a measurement) | done: the caller re-reads x's rail, uncomputes y against it, recomputes y classically; `; Classical reads (rule 2): 1` |
 | 19 return type (2026-10-31, cq-juf6) | none (161, 162 return `i32`); CQ_lang2 probe 976_u06 (`_Bool` entry truncated the handle) | done: rule 19 text; 193 `narrow_quantum_return` witnesses `_Bool`, `short` (return type `i32`) and `long` (handle zero-extended) |
+| §1.2 `sadd_sat` `ssub_sat` (2026-10-31, CQ_lang2 verifier on 194) | 194 (`llvm.sadd.sat.i32` from compiler-rt's inline `scalbn`, lowered to `cq_template_sadd_sat_i32` while §1.2 listed only the unsigned pair) | done: §1.2 lists `sadd_sat ssub_sat`; semantics in ABI §2.7 (saturate to `[−2^(W−1), 2^(W−1) − 1]`, total, no §2 row needed); the saturating intrinsics are templates, never expanded into add + compare + select in the lowered IR |
 | 18 pinned body (2026-10-29, cq-ezan) | 169 (`__cq_q_logb_1` followed a musl `ilogb` without its `#pragma STDC FENV_ACCESS ON`, inlined into `logb`) | done 2026-10-31: regenerated from the pinned bundle as built: `__cq_q_logb_1(x, mode, flags)` calls a strictfp `__cq_q_ilogb_1(x, mode, flags)` on 82's ABI (unguarded, merged by select, result and flags phis alike), the INVALID of both `FORCE_EVAL(0/0.0f)` arms as `flags \| select(pred, 1, 0)`, the K-loop and its `a_K` in the ilogb clone (one per activation: the twin re-runs the forward clone), `__cq_q___divdc3_0011` minting an empty flags rail and the mode literal 0 and dropping the returned flags; 173 unchanged (its `.c` defines `__mulsc3`/`__divsc3`) |
 
 ## 8. Examples written 2026-10-26 (144–180)
