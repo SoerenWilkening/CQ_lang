@@ -1100,6 +1100,16 @@ class WideIntToF80(unittest.TestCase):
         self.assertEqual(rows[0][2:4], ["40c5", "8000000000000002"])
         self.assertGreater(double, 50)  # the double rounding is exercised, not only agreed on
 
+    def test_uitofp_top_bit_is_never_negative(self):
+        """cq-cqcj (CR §2 at 744da1b): native gives c07f 8000000000000000 for uitofp i129 2^128."""
+        for mode in (None, "down", "up", "zero"):
+            p = subprocess.run([str(self.exe)] + ([str(self.MODES[mode])] if mode else []),
+                               input=f"129 {2**128:x}\n129 {2**129 - 1:x}\n", capture_output=True, text=True,
+                               env=dict(os.environ, CQE_TRACE="/dev/null"), check=True)
+            u = [l.split()[2:4] for l in p.stdout.splitlines() if l.split()[1] == "u"]
+            # 2^129 - 1: the 113-bit nearest-even step already gives 2^129, exact at f80 in every mode
+            self.assertEqual(u, [["407f", "8000000000000000"], ["4080", "8000000000000000"]], mode)
+
     def test_rm_second_rounding_in_the_mode(self):
         for mode in ("down", "up", "zero"):
             rows = self.run_h(mode)
