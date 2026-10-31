@@ -298,7 +298,8 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
   case Class::Measure:
     if (!CI)
       internalError("spine: cq_measure through invoke", &CB);
-    return lowerMeasure(ctx, *CI);
+    lowerMeasure(ctx, *CI);
+    return fenv::afterMeasure(ctx, *CI);   // rule 2 collapse of the fenv state (rule 23, cq-tigu)
   case Class::Phi:
     if (!CI)
       internalError("spine: cq_phi through invoke", &CB);
