@@ -3348,7 +3348,9 @@ def trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_sit
 #   IMPOSSIBLE  (exhaustion) no input of any drivers.txt call reaches it, every input enumerated: each
 #               call's inputs are integer quantum scalars of at most EXHAUST_BITS bits in all and
 #               floating-point classical arguments the function uses only as cq_theta / cq_phi angles
-#               (the identity in the C oracle), and every enumerated run returns, inside the domain;
+#               (the identity in the C oracle), every cq_theta rotates such a parameter itself in the
+#               entry block (so the values after it are enumerated too), and every enumerated run
+#               returns, inside the domain;
 #   MISSING     otherwise: no constructed input reaches it, or one does on a run neither clean nor
 #               undefined (past its step budget, failed). A count reached only with the K cutoff off
 #               (68's outer loop: x >= 5 runs the inner loop past K first) is MISSING too: that the
@@ -3453,6 +3455,25 @@ def exhaustive_inputs(g: "Gen", o1_text: str) -> Optional[List[Tuple[int, Tuple[
     integer scalars (EXHAUST_BITS bits in all at most) and floating-point classical arguments that
     the function reads only as the angle of a cq_theta_* or cq_phi call; else None (cq-oou2)."""
     out: List[Tuple[int, Tuple[str, ...]]] = []
+    # A cq_theta may leave its register at any value (the substitution classes): the enumeration
+    # covers the values after it only when each cq_theta rotates a quantum parameter itself, once, in
+    # the entry block of a called function (87's c = c0 rotated): then they range as the parameter does.
+    entry_ok: Set[str] = set()
+    for ci, call in enumerate(g.spec.calls):
+        m = re.search(r"^define [^\n]*@" + re.escape(call["fn"]) + r"\(([^\n]*)\)[^\n]*\{\n(.*?)^\}", o1_text,
+                      re.M | re.S)
+        if not m:
+            return None
+        entry = re.split(r"^\d+:", m.group(2), maxsplit=1, flags=re.M)[0]
+        for line in entry.splitlines():
+            line = line.split(";", 1)[0]
+            t = re.search(r"call [^@]*@cq_theta_\w+\([^%]*%(\d+), double", line)
+            if t and int(t.group(1)) in g.quantum_slots(ci):
+                entry_ok.add(line.strip())
+    for line in o1_text.splitlines():
+        line = line.split(";", 1)[0]
+        if re.search(r"call [^@]*@cq_theta_", line) and line.strip() not in entry_ok:
+            return None
     for ci, call in enumerate(g.spec.calls):
         if g.cell_slots(ci):
             return None
@@ -3490,6 +3511,26 @@ def exhaustive_inputs(g: "Gen", o1_text: str) -> Optional[List[Tuple[int, Tuple[
     return out
 
 
+def _trip_runs(o1: Path, spec, smp: List[dict]) -> list:
+    """The C oracle's runs of the constructed inputs, cut at K with the construction's budget, each
+    keeping only its distinct trip events (all trip_hit reads besides the loop records): a run's full
+    trace (117: every site reach of 4096 header executions) held for a thousand inputs passed the
+    2 GB cap (cq-oou2)."""
+    from cqcheck import oracle
+    out = []
+    for i in range(0, len(smp), 64):
+        for r in oracle.run_samples(o1, spec, smp[i:i + 64], tripcap=TRIP_CONSTRUCT_TRIPCAP):
+            seen = set()
+            ev = []
+            for e in r.events:
+                if e.get("ev") == "trip" and (e.get("loop"), e.get("n")) not in seen:
+                    seen.add((e.get("loop"), e.get("n")))
+                    ev.append(e)
+            r.events = ev
+            out.append(r)
+    return out
+
+
 def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", out: List[dict]) -> None:
     """Fill or prove the empty trip targets of `out` (trip_classes' result) with constructed inputs."""
     from cqcheck import oracle
@@ -3503,12 +3544,26 @@ def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", ou
     obs = searcher.observe([(c, list(a)) for c, a in cands])
     o1 = sorted(Path(example_dir).glob("*.O1.ll"))[0]
     smp = [{"call": c, "args": list(a)} for c, a in cands]
-    kruns = oracle.run_samples(o1, spec, smp, tripcap=TRIP_CONSTRUCT_TRIPCAP)
+    # A loop under a test of a rotated register (117's grover under c[j]) is reached only where a
+    # cq_theta leaves it nonzero: each candidate also runs with every substitutable site at 1 and at
+    # all ones (theta_reaches' variants; a site fed by a varied argument is not substituted, cq-lvkq).
+    # A substituted sample is not probed: its domain is its base's (as the substitution classes).
+    mod = D.read_module(o1)
+    allowed = {ci: [st for st in D.substituted_sites(mod, spec, ci) if not (st.params & varied_params(spec, ci))]
+               for ci in range(len(spec.calls))}
+    base_n = len(cands)
+    for v in (1, -1):
+        for i in range(base_n):
+            c, a = cands[i]
+            if allowed[c]:
+                cands.append((c, a))
+                obs.append(obs[i] if searcher.valid(obs[i]) else None)   # its base's domain, when clean
+                smp.append({"call": c, "args": list(a), "subst": {st.key(): _site_hex(st, v) for st in allowed[c]}})
+    kruns = _trip_runs(o1, spec, smp)
     exh = exhaustive_inputs(g, o1.read_text())
     eruns: list = []
     if exh is not None:
-        eruns = oracle.run_samples(o1, spec, [{"call": c, "args": list(a)} for c, a in exh],
-                                   tripcap=TRIP_CONSTRUCT_TRIPCAP)
+        eruns = _trip_runs(o1, spec, [{"call": c, "args": list(a)} for c, a in exh])
         eobs = searcher.observe([(c, list(a)) for c, a in exh])
         if any(r.failed or r.outcome != "ret" or run_undefined(r, o, searcher.rows_by_site) for r, o in zip(eruns, eobs)):
             exh = None
@@ -3519,10 +3574,9 @@ def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", ou
             kind, i, why = trip_proof(lpo["loop"], int(target), cands, kruns, obs, searcher.valid,
                                       searcher.rows_by_site)
             if kind == "found":
-                lpo["trips"][target] = {"sample": g.add(cands[i][0], list(cands[i][1]))}
+                lpo["trips"][target] = {"sample": g.add_subst(cands[i][0], list(cands[i][1]), smp[i].get("subst"))}
             elif kind == "ub":
-                lpo["trips"][target] = {"empty": why, "witness": {"call": cands[i][0], "args": list(cands[i][1])},
-                                        "proof": kind}
+                lpo["trips"][target] = {"empty": why, "witness": smp[i], "proof": kind}
             elif exh is not None and not any(trip_hit(r.events, r.loops, lpo["loop"], int(target)) for r in eruns):
                 lpo["trips"][target] = {"empty": (
                     f"cannot be hit: no input runs {target} trips of {lpo['loop']}: every one of the {len(exh)} inputs "

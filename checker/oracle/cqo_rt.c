@@ -173,6 +173,13 @@ void __cqo_global(void *p, uint64_t n) { ov_push(&global_objs, (uintptr_t)p, (ui
 uint64_t __cqo_mark(void) { return stack_objs.n; }
 void __cqo_release(uint64_t m) { if (m < stack_objs.n) stack_objs.n = m; }
 void __cqo_alloca(void *p, uint64_t n) {
+    /* cq-oou2: an alloca larger than the whole stack overflows it (a fault: outside the domain), but
+     * its address lies in some other mapping (117's bool c[t] with t near 2^31 landed in the sample
+     * arena), so zeroing it below would write gigabytes there: the fault the program takes */
+    if (n > (uint64_t)pthread_get_stacksize_np(pthread_self())) {
+        note("stack overflow: an alloca of %llu bytes", (unsigned long long)n);
+        raise(SIGSEGV);
+    }
     ov_push(&stack_objs, (uintptr_t)p, (uintptr_t)p + n);
     memset(p, 0, n); /* an uninitialized local reads 0 */
     sh_clear(p, n);
