@@ -1121,7 +1121,9 @@ def _run_part(prog: Path, items: Sequence[Tuple[dict, str, Optional[str]]], side
             env.pop("CQE_THETA_ALL", None)
             if theta_all is not None:
                 env["CQE_THETA_ALL"] = str(theta_all)
-            budget = (2 * timeout + 2) * (len(items) - pos) + 60
+            # a backstop only; capped below poll()'s int32 milliseconds (cq-vo6v: 47301 uncached
+            # samples in one runner overflowed it, an OverflowError for 56 and 156)
+            budget = min((2 * timeout + 2) * (len(items) - pos) + 60, 2_000_000.0)
             try:
                 p = subprocess.run([str(prog)], cwd=wd, env=env, capture_output=True, timeout=budget)
                 code, killed = p.returncode, False
