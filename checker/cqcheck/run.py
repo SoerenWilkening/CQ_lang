@@ -470,7 +470,8 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
                 ctext: Optional[str], extra_sources: Sequence[Path]) -> None:
     """The toolchain steps of build: tmp/prog from the lowered module and the driver source."""
     shutil.copy(lowered, tmp / "lowered.ll")
-    shutil.copy(driver_ll(drv, triple), tmp / "driver.ll")
+    dll = driver_ll(drv, triple)
+    shutil.copy(dll, tmp / "driver.ll")
     # the lowered module in canonical text, then its classical CR §2 rows rewritten (cq-ltoq)
     _sh([LLVM_LINK, "-S", "lowered.ll", "-o", "lowered.canon.ll"], cwd=tmp)
     try:
@@ -491,16 +492,18 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
     # sancov declares its whole callback family; only trace_pc is called (core.c defines it)
     steps = re.sub(r"(?m)^declare [^\n]*@__sanitizer_cov_(?!trace_pc\()\w+\([^\n]*\n", "", steps)
     (tmp / "lowered.steps.ll").write_text(steps)
-    _sh([LLVM_LINK, "-S", "lowered.steps.ll", "driver.ll", "-o", "linked.ll"], cwd=tmp)
+    # the driver is linked as its object, compiled once per content (driver_obj, cq-8m6v), not
+    # linked into the module and compiled again with it; stubgen reads both modules, in link order
     if ctext is not None:
         (tmp / "c_module.ll").write_text(ctext)
-    _stubgen(tmp / "linked.ll", tmp / "c_module.ll" if ctext is not None else None, tmp / "stubs.ll")
+    _stubgen([tmp / "lowered.steps.ll", tmp / "driver.ll"], tmp / "c_module.ll" if ctext is not None else None,
+             tmp / "stubs.ll")
     extra_objs = []
     for i, e in enumerate(extra_sources):
         o = tmp / f"extra{i}.o"
         _sh([CLANG, "-std=c17", "-O1", "-w", "-target", triple, "-I", str(RT_DIR), "-c", str(e), "-o", str(o)])
         extra_objs.append(str(o))
-    _sh([CLANG, "-O0", "-w", "-target", triple, *[str(o) for o in objs], *extra_objs, "linked.ll", "stubs.ll",
+    _sh([CLANG, "-O0", "-w", "-target", triple, *[str(o) for o in objs], *extra_objs, "lowered.steps.ll", str(driver_obj(dll, triple)), "stubs.ll",
          "-lm", "-o", "prog"], cwd=tmp)
 
 
@@ -527,7 +530,20 @@ def driver_ll(drv: str, triple: str) -> Path:
 _STUBGEN = None
 
 
-def _stubgen(linked: Path, c_module: Optional[Path], out: Path) -> None:
+def driver_obj(dll: Path, triple: str) -> Path:
+    """driver_ll's module compiled at -O0, as the program's link compiled it (cached beside it)."""
+    out = dll.with_suffix(".o")
+    if out.exists():
+        return out
+    with key_lock(out):
+        if not out.exists():
+            tmp = out.with_name(f"{out.stem}.{os.getpid()}.{threading.get_ident()}.tmp.o")
+            _sh([CLANG, "-O0", "-w", "-target", triple, "-c", str(dll), "-o", str(tmp)])
+            os.replace(tmp, out)
+    return out
+
+
+def _stubgen(modules: Sequence[Path], c_module: Optional[Path], out: Path) -> None:
     """checker/rt/stubgen.py, in this process (cq-8m6v: no interpreter start per build); a failure is
     the BuildError its command line gave: `stubgen.py failed (1): cq: stubgen: <why>`."""
     global _STUBGEN
@@ -538,7 +554,7 @@ def _stubgen(linked: Path, c_module: Optional[Path], out: Path) -> None:
         spec_.loader.exec_module(mod)
         _STUBGEN = mod
     try:
-        text, _ = _STUBGEN.generate([linked.read_text()], [c_module.read_text()] if c_module else [])
+        text, _ = _STUBGEN.generate([m.read_text() for m in modules], [c_module.read_text()] if c_module else [])
     except (_STUBGEN.StubError, OSError) as e:
         raise BuildError("stubgen.py failed (1): " + f"cq: stubgen: {e}"[-2000:])
     out.write_text(text)
