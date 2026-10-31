@@ -500,11 +500,26 @@ bool cleanable(LoweringContext &ctx, Value *y) {
 
 // Dead after `at` (CR rule 6): every other use of y is an earlier instruction that neither stores,
 // returns, passes (escape), rotates nor measures it. `also` are further updates that may read y (the
-// other select of a swap; the arms of a merge of updates, 125).
+// other select of a swap; the arms of a merge of updates, 125). Earlier: it dominates `at`, or (cq-tmvo)
+// it is in a block no path from `at` reaches while `at` lies outside every cycle (a read in a sibling
+// arm of a branch that joined before `at`).
 bool deadAfter(LoweringContext &ctx, Value *y, Instruction *at, ArrayRef<const Instruction *> also = {}) {
   DominatorTree &DT = spine::shared(ctx).dt(*at->getFunction());
   SmallVector<const Use *, 8> uses;
   spine::readingUses(spine::shared(ctx), y, uses);   // through skipped zexts (cq-su3p)
+  std::optional<DenseSet<const BasicBlock *>> reach;
+  auto unreachedFromAt = [&](const Instruction *ui) {
+    if (!reach) {
+      reach.emplace();
+      SmallVector<const BasicBlock *, 16> work(succ_begin(at->getParent()), succ_end(at->getParent()));
+      while (!work.empty()) {
+        const BasicBlock *b = work.pop_back_val();
+        if (reach->insert(b).second)
+          work.append(succ_begin(b), succ_end(b));
+      }
+    }
+    return !reach->count(at->getParent()) && !reach->count(ui->getParent()) && ui->getParent() != at->getParent();
+  };
   for (const Use *U : uses) {
     User *u = U->getUser();
     if (u == at || is_contained(also, u))
@@ -512,7 +527,7 @@ bool deadAfter(LoweringContext &ctx, Value *y, Instruction *at, ArrayRef<const I
     auto *ui = dyn_cast<Instruction>(u);
     if (!ui || isa<StoreInst>(ui) || isa<ReturnInst>(ui) || isa<CallBase>(ui) || isa<PHINode>(ui))
       return false;
-    if (!DT.dominates(ui, at))
+    if (ui->getFunction() != at->getFunction() || (!DT.dominates(ui, at) && !unreachedFromAt(ui)))
       return false;
   }
   return true;
@@ -675,17 +690,22 @@ std::optional<Inverse> inverseOf(LoweringContext &ctx, Instruction &U, Value *Y,
 }
 
 void clean(LoweringContext &ctx, Value *y, const Inverse &inv) {
-  ctx.unc().cleanupBijective(ctx.unc().idOf(ctx.operand(y).v), inv.spec, inv.ops);
+  Value *h = ctx.operand(y).v;
+  ctx.unc().cleanupBijective(ctx.unc().idOf(h), inv.spec, inv.ops);
+  spine::shared(ctx).ruleSixCleaned.insert(h);
 }
 
 // Garbage rule 5 uncomputes anyway (CR rule 6, both operands dead; cq-12cr): a template result the
-// spine minted that no non-diagonal gate or measurement turned into a register.
+// spine minted that no non-diagonal gate or measurement turned into a register, and whose _unc can
+// still run: no operand of it was cleaned by rule 6 (cq-tmvo: r = z + x + w with z cleaned at z + x
+// leaves z + x a rail rule 5 cannot uncompute; rule 6 then cleans it at its own update).
 bool ruleFiveGarbage(LoweringContext &ctx, Value *y) {
   spine::Shared &sh = spine::shared(ctx);
   Value *h = ctx.operand(y).v;
   auto it = sh.hist.find(h);
-  return it != sh.hist.end() && it->second.tmpl && !it->second.opaque && !sh.rotations.count(h) &&
-         !sh.measured.count(h);
+  if (it == sh.hist.end() || !it->second.tmpl || it->second.opaque || sh.rotations.count(h) || sh.measured.count(h))
+    return false;
+  return none_of(it->second.ops, [&](const Operand &o) { return o.handle && sh.ruleSixCleaned.count(o.v); });
 }
 
 // y = a*x + c + sum(+-rest) over the original instructions computing V (CR rule 6's composite update,
@@ -968,6 +988,7 @@ void narrowRuleSix(LoweringContext &ctx, Instruction &I, ArrayRef<const Value *>
     spec.w = RailType{Kind::Int, 1};
     Inverse inv = normalized(spec, {yp, z});                 // y = y' ^ z
     ctx.unc().cleanupBijective(ctx.unc().idOf(h), inv.spec, inv.ops);
+    sh.ruleSixCleaned.insert(h);
     return;
   }
 }

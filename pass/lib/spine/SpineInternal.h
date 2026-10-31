@@ -149,6 +149,9 @@ struct Shared {
   llvm::DenseSet<const llvm::Value *> narrowSkipped;
   // A narrowed icmp ne of i1 views, lowered as xor_i1: its two narrow operands (rule 6 reads them).
   llvm::DenseMap<const llvm::Value *, llvm::SmallVector<const llvm::Value *, 2>> narrowXor;
+  // CR rule 6: the rails a clean-up was requested for (Opcode.cpp). A template rail reading one of them
+  // is no longer garbage rule 5 can uncompute (cq-tmvo).
+  llvm::DenseSet<const llvm::Value *> ruleSixCleaned;
   // cq-su3p (PreRotation.cpp): readers of a register's pre-rotation value that -O1 sank after the
   // cq_theta, lowered just before the rotation. The walker skips them when it reaches them and takes
   // hoistedDefs into the current block's definitions after the dispatch that hoisted them.
