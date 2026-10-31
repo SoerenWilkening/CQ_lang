@@ -5,7 +5,8 @@
 // Input: a whole program (the example's .O1.ll linked with the generated driver and, when present,
 // the injection bundle). Output: the same program with
 //   * cq_theta_* / cq_measure_* replaced by the identity, each call site logging a `site` event
-//     (fn, site ordinal, kind, angle, register value); cq_phi and __cq_invert_begin/end log and vanish;
+//     (fn, site ordinal, kind, angle, register value); a cq_measure of a value CR rule 2's classical
+//     collapse made classical logs kind `read`, no measurement (shadows below; cq-y1ll); cq_phi and __cq_invert_begin/end log and vanish;
 //   * every loop counting its trips (`trip` event per activation, a guard skip reports 0);
 //   * every quantum-exit loop and quantum-depth recursion stopped after K trips (CR §6 at eb8a11a,
 //     ruling cq-1di; bead cq-8ay): the trip counter that reaches K+1 trips begun ends the sample with
@@ -37,11 +38,14 @@
 #include "cq/Taint.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/PostDominators.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/AttributeMask.h"
 #include "llvm/IR/Constants.h"
@@ -69,6 +73,7 @@
 #include "../rt/cq_standin.h"
 #include <functional>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -213,7 +218,8 @@ public:
   void analyseCutoffs() {
     if (!callsCqSurface(M))
       return;
-    cq::TaintInfo T = cq::computeTaint(M, cq::TaintOptions{});
+    Taint = cq::computeTaint(M, cq::TaintOptions{});  // shared with shadows() (rule 2, cq-y1ll)
+    const cq::TaintInfo &T = *Taint;
     std::vector<const cq::Specialization *> byId(1, nullptr);
     DenseMap<const cq::Specialization *, unsigned> idOf;
     for (const cq::Specialization &S : T.specializations())
@@ -417,6 +423,587 @@ public:
         A.CreateCall(up, {on});
       }
     }
+  }
+
+  // ---------------------------------------------------------------- rule 2 classical collapse (cq-y1ll)
+  // Owner ruling cq-r6bc (CR rule 2): a value computed only from measured rails and classical values
+  // is classical (a data-flow condition, not a program-order one), and a cq_measure of such a value is
+  // a classical read, no gate. The oracle tracks it per sample: every value the circuit holds as a rail
+  // (taint's answer, any specialization of the function) carries a shadow node at run time
+  // (cqo_rt.c, rule 2 classical collapse). A cq_theta result is a leaf; any other quantum value is a
+  // fresh node over what the circuit computes it from: its operands; for a load, the cells read, the
+  // address and every implicit write so far (sh_gm); for a merge (phi) the circuit takes under a
+  // quantum condition, the conditions deciding it and every incoming value, where a value of an arm
+  // the sample did not run is unknown (SH_OPAQUE: never classical); likewise a function's result
+  // merged over several returns. A quantum branch whose arms write memory or touch the fp environment
+  // adds its condition and what the arms write (SH_OPAQUE for what the sample cannot know) to sh_gm /
+  // sh_gf. Calls pass nodes through argument and result slots; a library call joins its arguments into
+  // sh_gf (and, writing through a pointer, sh_gm). cq_measure asks the runtime whether its operand's
+  // node is classical (then the site logs kind "read" and counts no measurement), else marks it
+  // measured. Wherever the instrumentation cannot see a source it errs to "quantum": that is the
+  // measurement the oracle counted before this rule.
+  std::optional<cq::TaintInfo> Taint;
+
+  struct Shadow {
+    Instrumenter &In;
+    Function &F;
+    const cq::TaintInfo &T;
+    std::vector<const cq::Specialization *> specs;
+    DominatorTree DT;
+    PostDominatorTree PDT;
+    DenseMap<const Value *, Value *> sh;
+    SmallPtrSet<const Instruction *, 32> orig;  // the function as clang wrote it: taint knows only these
+    Type *I32;
+
+    Shadow(Instrumenter &In, Function &F, const cq::TaintInfo &T) : In(In), F(F), T(T), DT(F), PDT(F) {
+      I32 = In.I32;
+      for (const cq::Specialization &S : T.specializations())
+        if (S.F == &F)
+          specs.push_back(&S);
+      for (Instruction &I : instructions(F))
+        orig.insert(&I);
+    }
+
+    bool q(const Value *V) const {
+      if (!isa<Instruction>(V) && !isa<Argument>(V))
+        return false;
+      if (auto *I = dyn_cast<Instruction>(V); I && !orig.count(I))
+        return false;
+      for (const cq::Specialization *S : specs)
+        if (T.isQuantum(V, *S))
+          return true;
+      return false;
+    }
+    Value *zero() { return ConstantInt::get(I32, 0); }
+    Value *opaque() { return ConstantInt::get(I32, 1); }
+    static bool isZero(Value *v) {
+      auto *c = dyn_cast<ConstantInt>(v);
+      return c && c->isZero();
+    }
+    Value *get(Value *V) {
+      auto it = sh.find(V);
+      return it == sh.end() ? zero() : it->second;
+    }
+    FunctionCallee h(StringRef n, Type *r, ArrayRef<Type *> ps) { return In.hook(n, r, ps); }
+    FunctionCallee h3(StringRef n) { return h(n, I32, {I32, I32, I32}); }
+    Value *call0(IRBuilder<> &B, StringRef n) { return B.CreateCall(h(n, I32, {}), {}); }
+
+    // a dependency set over vs (0 when all are classical constants)
+    Value *join(IRBuilder<> &B, std::vector<Value *> vs) {
+      std::vector<Value *> nz;
+      for (Value *v : vs)
+        if (!isZero(v))
+          nz.push_back(v);
+      if (nz.empty())
+        return zero();
+      while (nz.size() > 1) {
+        std::vector<Value *> next;
+        for (size_t i = 0; i < nz.size(); i += 3) {
+          if (i + 1 == nz.size()) {
+            next.push_back(nz[i]);
+            continue;
+          }
+          Value *a = nz[i], *b = nz[i + 1], *c = i + 2 < nz.size() ? nz[i + 2] : zero();
+          next.push_back(B.CreateCall(h3("__cqo_sh_j"), {a, b, c}));
+        }
+        nz = next;
+      }
+      return nz[0];
+    }
+    // a value's own node over vs
+    Value *node(IRBuilder<> &B, std::vector<Value *> vs) {
+      Value *d = join(B, vs);
+      if (isZero(d))
+        return zero();
+      return B.CreateCall(h3("__cqo_sh_v"), {d, zero(), zero()});
+    }
+
+    // V's node as known where `at` (an instruction) runs; SH_OPAQUE for a quantum value not computed
+    // on every path to it.
+    Value *availAt(Value *V, Instruction *at) {
+      if (isa<Argument>(V))
+        return get(V);
+      auto *J = dyn_cast<Instruction>(V);
+      if (!J || !q(J))
+        return zero();
+      if (DT.dominates(J, at))
+        return get(J);
+      return opaque();
+    }
+    // the same at the top of block B (before its phis' shadows)
+    Value *availIn(Value *V, BasicBlock *B) {
+      if (isa<Argument>(V))
+        return get(V);
+      auto *J = dyn_cast<Instruction>(V);
+      if (!J || !q(J))
+        return zero();
+      if (DT.properlyDominates(J->getParent(), B))
+        return get(J);
+      return opaque();
+    }
+
+    Value *condOf(Instruction *Term) {
+      if (auto *BI = dyn_cast<BranchInst>(Term))
+        return BI->isConditional() ? BI->getCondition() : nullptr;
+      if (auto *SI = dyn_cast<SwitchInst>(Term))
+        return SI->getCondition();
+      return nullptr;
+    }
+    Value *quantumCond(BasicBlock *X) {
+      Instruction *Term = X->getTerminator();
+      if (!Term || Term->getNumSuccessors() < 2)
+        return nullptr;
+      Value *c = condOf(Term);
+      if (!c) {
+        if (isa<IndirectBrInst>(Term) || isa<CallBrInst>(Term))
+          unimplemented("rule 2 shadows: a multi-way terminator other than br/switch", Term);
+        return nullptr;
+      }
+      return q(c) ? c : nullptr;
+    }
+
+    static bool isAllocator(StringRef n) {
+      return n == "malloc" || n == "calloc" || n == "free" || n == "aligned_alloc" || n == "valloc" ||
+             n == "posix_memalign" || n == "realloc" || n == "reallocf";
+    }
+    static bool isCopy(StringRef n) {
+      return n == "memcpy" || n == "memmove" || n == "__memcpy_chk" || n == "__memmove_chk";
+    }
+    static bool isFill(StringRef n) { return n == "memset" || n == "__memset_chk" || n == "bzero"; }
+    static bool runsModuleCode(const CallBase &CB) {
+      if (const Function *G = CB.getCalledFunction()) {
+        StringRef n = G->getName();
+        if (n == "raise" || n == "kill" || n == "pthread_kill")
+          return true;
+      }
+      for (const Value *a : CB.args())
+        if (isa<Function>(a->stripPointerCasts()))
+          return true;
+      return false;
+    }
+    static bool hasPtrArg(const CallBase &CB) {
+      for (const Value *a : CB.args())
+        if (a->getType()->isPointerTy())
+          return true;
+      return false;
+    }
+
+    // What the arms of the quantum branch ending A may write (memory, the fp environment), as
+    // available at A's terminator.
+    struct Region {
+      bool mem = false, fenv = false, opaque = false, mq = false;
+      std::vector<Value *> deps;
+    };
+    Region region(BasicBlock *A) {
+      Region R;
+      BasicBlock *stop = nullptr;
+      if (DomTreeNode *n = PDT.getNode(A))
+        if (DomTreeNode *p = n->getIDom())
+          stop = p->getBlock();
+      SmallPtrSet<BasicBlock *, 16> seen;
+      std::vector<BasicBlock *> work(succ_begin(A), succ_end(A));
+      Instruction *at = A->getTerminator();
+      auto contrib = [&](Value *v) { R.deps.push_back(availAt(v, at)); };
+      while (!work.empty()) {
+        BasicBlock *X = work.back();
+        work.pop_back();
+        if (X == stop || !seen.insert(X).second)
+          continue;
+        for (BasicBlock *S : successors(X))
+          work.push_back(S);
+        for (Instruction &I : *X) {
+          if (auto *SI = dyn_cast<StoreInst>(&I)) {
+            R.mem = true;
+            contrib(SI->getValueOperand());
+            contrib(SI->getPointerOperand());
+          } else if (isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I)) {
+            R.mem = true;
+            for (Value *op : I.operands())
+              contrib(op);
+          } else if (auto *CB = dyn_cast<CallBase>(&I)) {
+            Function *G = CB->getCalledFunction();
+            if (G && siteKind(G->getName()) >= 0)
+              continue;
+            if (!G || CB->isInlineAsm()) {
+              R.mem = R.fenv = R.opaque = true;
+              continue;
+            }
+            if (G->isIntrinsic()) {
+              if (isa<MemIntrinsic>(CB)) {
+                R.mem = true;
+                for (Value *a : CB->args())
+                  contrib(a);
+              } else if (isa<ConstrainedFPIntrinsic>(CB)) {
+                R.fenv = true;
+                for (Value *a : CB->args())
+                  contrib(a);
+              }
+              continue;
+            }
+            if (!G->isDeclaration()) {
+              R.fenv = true;
+              for (Value *a : CB->args())
+                contrib(a);
+              if (!G->doesNotAccessMemory())
+                R.mem = R.opaque = true;
+              continue;
+            }
+            StringRef n = G->getName();
+            if (isAllocator(n))
+              continue;
+            R.fenv = true;
+            for (Value *a : CB->args())
+              contrib(a);
+            if (isCopy(n) || isFill(n))
+              R.mem = true;
+            else if (hasPtrArg(*CB) && !G->onlyReadsMemory())
+              R.mem = R.mq = true;
+            if (runsModuleCode(*CB))
+              R.mem = R.opaque = true;
+          } else if (isa<VAArgInst>(I)) {
+            // reads its list: no write
+          }
+        }
+      }
+      return R;
+    }
+
+    void run() {
+      if (F.isDeclaration())
+        return;
+      // entry: the argument slots (every call fills them; reading clears them)
+      {
+        IRBuilder<> B(&*F.getEntryBlock().getFirstInsertionPt());
+        for (Argument &A : F.args()) {
+          Value *s = B.CreateCall(h("__cqo_sh_arg", I32, {I32}), {B.getInt32(A.getArgNo())});
+          sh[&A] = q(&A) ? s : zero();
+          if (A.hasByValAttr())
+            B.CreateCall(h("__cqo_sh_byval_in", In.Void, {I32, In.Ptr, In.I64}),
+                         {B.getInt32(A.getArgNo()), &A,
+                          B.getInt64(In.DL.getTypeAllocSize(A.getParamByValType()).getFixedValue())});
+        }
+      }
+      ReversePostOrderTraversal<Function *> RPOT(&F);
+      std::vector<BasicBlock *> order(RPOT.begin(), RPOT.end());
+      SmallPtrSet<BasicBlock *, 32> reachable(order.begin(), order.end());
+
+      // phi shadows first (incoming filled at the end)
+      std::vector<std::pair<PHINode *, PHINode *>> phis;
+      for (BasicBlock *BB : order)
+        for (PHINode &P : BB->phis())
+          if (q(&P)) {
+            PHINode *s = PHINode::Create(I32, P.getNumIncomingValues(), "", BB->getFirstNonPHI());
+            phis.push_back({&P, s});
+          }
+      DenseMap<PHINode *, PHINode *> phiSh(phis.begin(), phis.end());
+
+      // a function's result merged over several returns under quantum control
+      std::vector<ReturnInst *> rets;
+      std::vector<Value *> qconds;
+      for (BasicBlock *BB : order) {
+        if (auto *R = dyn_cast<ReturnInst>(BB->getTerminator()))
+          if (R->getReturnValue())
+            rets.push_back(R);
+        if (Value *c = quantumCond(BB))
+          qconds.push_back(c);
+      }
+      bool retMerge = rets.size() > 1 && !qconds.empty();
+
+      for (BasicBlock *BB : order) {
+        // the block's phis: a merge under a quantum condition depends on the deciding conditions
+        // and on every incoming value
+        if (!BB->phis().empty() && phiSh.size()) {
+          std::vector<PHINode *> mine;
+          for (PHINode &P : BB->phis())
+            if (phiSh.count(&P))
+              mine.push_back(&P);
+          if (!mine.empty()) {
+            std::vector<Value *> conds;
+            BasicBlock *idom = nullptr;
+            if (DomTreeNode *n = DT.getNode(BB))
+              if (DomTreeNode *p = n->getIDom())
+                idom = p->getBlock();
+            SmallPtrSet<BasicBlock *, 16> seen;
+            std::vector<BasicBlock *> work(pred_begin(BB), pred_end(BB));
+            if (idom)
+              work.push_back(idom);
+            while (!work.empty()) {
+              BasicBlock *X = work.back();
+              work.pop_back();
+              if (!reachable.count(X) || !seen.insert(X).second)
+                continue;
+              if (Value *c = quantumCond(X))
+                conds.push_back(c);
+              if (X != idom)
+                for (BasicBlock *P : predecessors(X))
+                  work.push_back(P);
+            }
+            IRBuilder<> B(&*BB->getFirstInsertionPt());
+            Value *X = nullptr;
+            if (!conds.empty()) {
+              std::vector<Value *> deps;
+              for (Value *c : conds)
+                deps.push_back(availIn(c, BB));
+              for (PHINode *P : mine)
+                for (unsigned i = 0; i < P->getNumIncomingValues(); ++i)
+                  if (reachable.count(P->getIncomingBlock(i)))
+                    deps.push_back(availIn(P->getIncomingValue(i), BB));
+              X = join(B, deps);
+            }
+            for (PHINode *P : mine) {
+              PHINode *s = phiSh[P];
+              sh[P] = X ? (Value *)B.CreateCall(h3("__cqo_sh_v"), {s, X, zero()}) : (Value *)s;
+            }
+          }
+        }
+        std::vector<Instruction *> insts;
+        for (Instruction &I : *BB)
+          if (!isa<PHINode>(I) && orig.count(&I))
+            insts.push_back(&I);
+        for (Instruction *I : insts)
+          visit(I, retMerge, rets, qconds);
+      }
+
+      for (auto &[P, s] : phis)
+        for (unsigned i = 0; i < P->getNumIncomingValues(); ++i)
+          s->addIncoming(get(P->getIncomingValue(i)), P->getIncomingBlock(i));
+    }
+
+    uint64_t bytes(Type *T) { return In.DL.getTypeStoreSize(T).getFixedValue(); }
+
+    void visit(Instruction *I, bool retMerge, const std::vector<ReturnInst *> &rets,
+               const std::vector<Value *> &qconds) {
+      if (I->isTerminator()) {
+        IRBuilder<> B(I);
+        if (auto *R = dyn_cast<ReturnInst>(I)) {
+          if (Value *v = R->getReturnValue()) {
+            Value *s = get(v);
+            if (retMerge) {
+              std::vector<Value *> deps{s};
+              for (ReturnInst *O : rets)
+                if (O != R)
+                  deps.push_back(availAt(O->getReturnValue(), R));
+              for (Value *c : qconds)
+                deps.push_back(availAt(c, R));
+              s = node(B, deps);
+            }
+            B.CreateCall(h("__cqo_sh_ret_set", In.Void, {I32}), {s});
+          }
+          return;
+        }
+        if (Value *c = quantumCond(I->getParent())) {
+          Region R = region(I->getParent());
+          if (R.mem || R.fenv) {
+            std::vector<Value *> deps = R.deps;
+            deps.push_back(get(c));
+            if (R.opaque)
+              deps.push_back(opaque());
+            if (R.mq)
+              deps.push_back(call0(B, "__cqo_sh_mq_get"));
+            Value *d = join(B, deps);
+            if (R.mem)
+              B.CreateCall(h("__cqo_sh_gm", In.Void, {I32}), {d});
+            if (R.fenv)
+              B.CreateCall(h("__cqo_sh_gf", In.Void, {I32}), {d});
+          }
+        }
+        if (isa<InvokeInst>(I) || isa<CallBrInst>(I))
+          unimplemented("rule 2 shadows: invoke/callbr", I);
+        return;
+      }
+      IRBuilder<> B(I->getNextNode());
+      if (auto *LI = dyn_cast<LoadInst>(I)) {
+        if (q(LI))
+          sh[LI] = B.CreateCall(h("__cqo_sh_load", I32, {In.Ptr, In.I64, I32}),
+                                {LI->getPointerOperand(), B.getInt64(bytes(LI->getType())),
+                                 get(LI->getPointerOperand())});
+        return;
+      }
+      if (auto *SI = dyn_cast<StoreInst>(I)) {
+        B.CreateCall(h("__cqo_sh_store", In.Void, {In.Ptr, In.I64, I32, I32}),
+                     {SI->getPointerOperand(), B.getInt64(bytes(SI->getValueOperand()->getType())),
+                      get(SI->getValueOperand()), get(SI->getPointerOperand())});
+        return;
+      }
+      if (isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I)) {
+        Value *p = isa<AtomicRMWInst>(I) ? cast<AtomicRMWInst>(I)->getPointerOperand()
+                                         : cast<AtomicCmpXchgInst>(I)->getPointerOperand();
+        Type *VT = isa<AtomicRMWInst>(I) ? cast<AtomicRMWInst>(I)->getValOperand()->getType()
+                                         : cast<AtomicCmpXchgInst>(I)->getNewValOperand()->getType();
+        Value *old = B.CreateCall(h("__cqo_sh_load", I32, {In.Ptr, In.I64, I32}),
+                                  {p, B.getInt64(bytes(VT)), get(p)});
+        std::vector<Value *> deps{old};
+        for (Value *op : I->operands())
+          deps.push_back(get(op));
+        Value *n = node(B, deps);
+        B.CreateCall(h("__cqo_sh_store", In.Void, {In.Ptr, In.I64, I32, I32}), {p, B.getInt64(bytes(VT)), n, get(p)});
+        if (q(I))
+          sh[I] = n;
+        return;
+      }
+      if (auto *CB = dyn_cast<CallBase>(I)) {
+        visitCall(CB, B);
+        return;
+      }
+      if (isa<AllocaInst>(I))
+        return;
+      if (isa<VAArgInst>(I)) {
+        if (q(I))
+          sh[I] = node(B, {call0(B, "__cqo_sh_gm_get"), call0(B, "__cqo_sh_mq_get")});
+        return;
+      }
+      if (I->getType()->isVoidTy() || !q(I))
+        return;
+      if (auto *Sel = dyn_cast<SelectInst>(I))
+        if (!q(Sel->getCondition()) && !Sel->getCondition()->getType()->isVectorTy()) {
+          // a classical choice between rails: the chosen rail itself (a classical merge, as a phi's)
+          sh[I] = B.CreateSelect(Sel->getCondition(), get(Sel->getTrueValue()), get(Sel->getFalseValue()));
+          return;
+        }
+      std::vector<Value *> deps;
+      for (Value *op : I->operands())
+        deps.push_back(get(op));
+      sh[I] = node(B, deps);
+    }
+
+    void visitCall(CallBase *CB, IRBuilder<> &B) {
+      Function *G = CB->getCalledFunction();
+      std::vector<Value *> args;
+      for (Value *a : CB->args())
+        args.push_back(get(a));
+      bool hasResult = !CB->getType()->isVoidTy();
+      if (G && siteKind(G->getName()) >= 0) {
+        int k = siteKind(G->getName());
+        if (k == KTheta) {
+          sh[CB] = B.CreateCall(h("__cqo_sh_leaf", I32, {}), {});
+        } else if (k == KMeasure) {
+          IRBuilder<> Bb(CB);
+          Bb.CreateCall(h("__cqo_sh_measure", In.Void, {I32}), {args[0]});
+          sh[CB] = args[0];  // dominated uses denote the outcome: the measured node, classical now
+        }
+        return;
+      }
+      if (CB->isInlineAsm()) {
+        IRBuilder<> Ba(CB);
+        Value *d = join(Ba, args);
+        Ba.CreateCall(h("__cqo_sh_gf", In.Void, {I32}), {d});
+        Ba.CreateCall(h("__cqo_sh_gm", In.Void, {I32}), {join(Ba, {d, call0(Ba, "__cqo_sh_mq_get")})});
+        if (hasResult && q(CB))
+          sh[CB] = node(B, {d, call0(B, "__cqo_sh_gm_get"), call0(B, "__cqo_sh_gf_get")});
+        return;
+      }
+      if (G && G->isIntrinsic()) {
+        if (auto *MS = dyn_cast<MemSetInst>(CB)) {
+          Value *v = get(MS->getValue());
+          Value *extra = join(B, {get(MS->getDest()), get(MS->getLength())});
+          if (!isZero(v) || !isZero(extra))
+            B.CreateCall(h("__cqo_sh_fill", In.Void, {In.Ptr, In.I64, I32}),
+                         {MS->getDest(), B.CreateZExtOrTrunc(MS->getLength(), In.I64), join(B, {v, extra})});
+          if (!isZero(extra))
+            B.CreateCall(h("__cqo_sh_gm", In.Void, {I32}), {extra});
+          return;
+        }
+        if (isa<MemTransferInst>(CB)) {
+          Value *extra = join(B, args);
+          if (!isZero(extra))
+            B.CreateCall(h("__cqo_sh_gm", In.Void, {I32}), {extra});
+          return;
+        }
+        if (isa<ConstrainedFPIntrinsic>(CB)) {
+          Value *d = join(B, args);
+          if (!isZero(d))
+            B.CreateCall(h("__cqo_sh_gf", In.Void, {I32}), {d});
+        }
+        if (hasResult && q(CB))
+          sh[CB] = node(B, args);
+        return;
+      }
+      if (G && !G->isDeclaration() && !isDriverFn(*G)) {
+        IRBuilder<> Ba(CB);
+        unsigned np = G->getFunctionType()->getNumParams();
+        std::vector<Value *> va;
+        for (unsigned i = 0; i < args.size(); ++i) {
+          if (i >= np) {
+            va.push_back(args[i]);
+            continue;
+          }
+          Ba.CreateCall(h("__cqo_sh_arg_set", In.Void, {I32, I32}), {Ba.getInt32(i), args[i]});
+          if (CB->isByValArgument(i))
+            Ba.CreateCall(h("__cqo_sh_byval_src", In.Void, {I32, In.Ptr}), {Ba.getInt32(i), CB->getArgOperand(i)});
+        }
+        if (!va.empty()) {
+          Value *d = join(Ba, va);
+          if (!isZero(d))
+            Ba.CreateCall(h("__cqo_sh_gm", In.Void, {I32}), {d});
+        }
+        if (hasResult) {
+          Value *r = B.CreateCall(h("__cqo_sh_ret", I32, {}), {});
+          if (q(CB))
+            sh[CB] = r;
+        }
+        return;
+      }
+      if (!G) {
+        // indirect: a body reads the slots and sets the result; a library callee leaves the preset
+        IRBuilder<> Ba(CB);
+        for (unsigned i = 0; i < args.size(); ++i)
+          Ba.CreateCall(h("__cqo_sh_arg_set", In.Void, {I32, I32}), {Ba.getInt32(i), args[i]});
+        Value *d = join(Ba, {join(Ba, args), call0(Ba, "__cqo_sh_mq_get")});
+        Ba.CreateCall(h("__cqo_sh_gf", In.Void, {I32}), {d});
+        Ba.CreateCall(h("__cqo_sh_gm", In.Void, {I32}), {d});
+        Ba.CreateCall(h("__cqo_sh_ret_set", In.Void, {I32}),
+                      {node(Ba, {d, call0(Ba, "__cqo_sh_gm_get"), call0(Ba, "__cqo_sh_gf_get")})});
+        Value *r = B.CreateCall(h("__cqo_sh_ret", I32, {}), {});
+        B.CreateCall(h("__cqo_sh_args_clear", In.Void, {}), {});
+        if (hasResult && q(CB))
+          sh[CB] = r;
+        return;
+      }
+      // a library function (declared): allocation and memory moves are the runtime's; anything else
+      // reads its arguments (and the fp environment), and through a pointer may read or write memory
+      StringRef n = G->getName();
+      if (isAllocator(n)) {
+        if (hasResult && q(CB))
+          sh[CB] = node(B, args);
+        return;
+      }
+      if (isCopy(n) || isFill(n)) {
+        Value *extra = join(B, isFill(n) && n != "bzero"
+                                   ? std::vector<Value *>{args[0], args[2]}
+                                   : args);
+        if (isFill(n) && n != "bzero" && !isZero(args[1]))
+          B.CreateCall(h("__cqo_sh_fill", In.Void, {In.Ptr, In.I64, I32}),
+                       {CB->getArgOperand(0), B.CreateZExtOrTrunc(CB->getArgOperand(2), In.I64), join(B, {args[1], extra})});
+        if (!isZero(extra))
+          B.CreateCall(h("__cqo_sh_gm", In.Void, {I32}), {extra});
+        if (hasResult && q(CB))
+          sh[CB] = node(B, {extra});
+        return;
+      }
+      IRBuilder<> Ba(CB);
+      Value *d = join(Ba, args);
+      if (!isZero(d))
+        Ba.CreateCall(h("__cqo_sh_gf", In.Void, {I32}), {d});
+      bool ptr = hasPtrArg(*CB);
+      if (ptr && !G->onlyReadsMemory())
+        Ba.CreateCall(h("__cqo_sh_gm", In.Void, {I32}), {join(Ba, {d, call0(Ba, "__cqo_sh_mq_get")})});
+      if (hasResult && q(CB)) {
+        std::vector<Value *> deps{d, call0(B, "__cqo_sh_gf_get")};
+        if (ptr) {
+          deps.push_back(call0(B, "__cqo_sh_gm_get"));
+          deps.push_back(call0(B, "__cqo_sh_mq_get"));
+        }
+        sh[CB] = node(B, deps);
+      }
+    }
+  };
+
+  void shadows() {
+    if (!Taint)
+      return;
+    for (Function &F : M)
+      if (!F.isDeclaration() && !isDriverFn(F))
+        Shadow(*this, F, *Taint).run();
   }
 
   // ---------------------------------------------------------------- poison and §2 arithmetic
@@ -1381,6 +1968,15 @@ public:
 
   void run() {
     analyseCutoffs();  // on the pristine module: taint answers for the program as clang wrote it
+    {
+      // block labels as the input spells them, before shadows() adds numbered values
+      std::vector<Function *> pristine;
+      for (Function &F : M)
+        if (!F.isDeclaration())
+          pristine.push_back(&F);
+      spellBlocks(pristine);
+    }
+    shadows();         // rule 2 collapse, on the pristine module too (before stubs give bodies)
     if (KI.on) {
       SpecNext = M.getGlobalVariable("__cqo_spec_next");
       if (!SpecNext)
@@ -1391,7 +1987,6 @@ public:
     for (Function &F : M)
       if (!F.isDeclaration())
         defined.push_back(&F);
-    spellBlocks(defined);
     for (Function *F : defined) {
       dropPoison(*F);
       totalize(*F);

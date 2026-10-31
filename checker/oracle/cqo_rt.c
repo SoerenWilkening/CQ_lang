@@ -166,6 +166,8 @@ static int in_bounds(const void *p, uint64_t n) {
 
 
 static unsigned oob_loads, oob_stores;
+static void sh_clear(const void *p, uint64_t n);          /* rule 2 shadow cells (cq-y1ll), below */
+static void sh_move(void *d, const void *s, uint64_t n);
 
 void __cqo_global(void *p, uint64_t n) { ov_push(&global_objs, (uintptr_t)p, (uintptr_t)p + n); }
 uint64_t __cqo_mark(void) { return stack_objs.n; }
@@ -173,6 +175,7 @@ void __cqo_release(uint64_t m) { if (m < stack_objs.n) stack_objs.n = m; }
 void __cqo_alloca(void *p, uint64_t n) {
     ov_push(&stack_objs, (uintptr_t)p, (uintptr_t)p + n);
     memset(p, 0, n); /* an uninitialized local reads 0 */
+    sh_clear(p, n);
 }
 
 /* An object of the current frame that already holds its value: a byval parameter copy. */
@@ -196,6 +199,7 @@ void __cqo_zero(void *p, int64_t n) {
     uintptr_t a = (uintptr_t)p, e = n < 0 ? o->hi : a + (uint64_t)n;
     if (e > o->hi) e = o->hi;
     memset(p, 0, e - a);
+    sh_clear(p, e - a);
 }
 
 /* The object an access belongs to: the one containing its base pointer, else the one containing the
@@ -232,6 +236,7 @@ void __cqo_require(const void *p, uint64_t n) {
 }
 
 void __cqo_imemset(void *p, uint8_t v, uint64_t n, const void *base) {
+    sh_clear(p, n); /* the value's node, when quantum, is set after the call (OracleInstr.cpp shadows) */
     const obj *o = access_obj(base, p);
     uintptr_t a = (uintptr_t)p;
     if (inside(o, a, n)) { memset(p, v, n); return; }
@@ -242,6 +247,7 @@ void __cqo_imemset(void *p, uint8_t v, uint64_t n, const void *base) {
 
 void __cqo_imemmove(void *d, const void *s, uint64_t n, const void *dbase, const void *sbase) {
     const obj *od = access_obj(dbase, d), *os = access_obj(sbase, s);
+    sh_move(d, s, n);
     if (inside(od, (uintptr_t)d, n) && inside(os, (uintptr_t)s, n)) { memmove(d, s, n); return; }
     unsigned char *tmp = malloc(n ? n : 1);
     __cqo_load(s, n, tmp, sbase);
@@ -310,7 +316,7 @@ static void *heap_alloc(size_t al, size_t n) {
         else memset(p, 0, n ? n : 1);
         if (p && !sample_running()) last_setup_lo = (uintptr_t)p, last_setup_n = n;
     }
-    if (p) heap_add(p, n);
+    if (p) heap_add(p, n), sh_clear(p, n);
     return p;
 }
 
@@ -346,6 +352,7 @@ void *__cqo_realloc(void *p, size_t n) {
     if (!q) { if (old != (size_t)-1) heap_add(p, old); return 0; }
     if (old == (size_t)-1) old = 0; /* not ours: nothing known to copy */
     memcpy(q, p, old < n ? old : n);
+    sh_move(q, p, old < n ? old : n);
     heap_release(p);
     return q;
 }
@@ -453,6 +460,202 @@ int64_t __cqo_fpto80(long double x, int32_t w, int32_t sgn) {
     return (int64_t)((uint64_t)fist(x - 9223372036854775808.0L, 64) ^ 0x8000000000000000ULL);
 }
 
+/* ------------------------------------------------------------------ rule 2 classical collapse (cq-y1ll)
+ * Owner ruling cq-r6bc (CR rule 2): a value computed only from measured rails and classical values is
+ * classical, a data-flow condition and not a program-order one; a cq_measure of such a value is a
+ * classical read and no gate. OracleInstr.cpp (shadows) gives every value the circuit holds as a rail
+ * (taint's answer) a shadow node: a cq_theta result is a leaf, any other quantum value a fresh node
+ * over the nodes it is computed from (operands, the cells it loads, the quantum conditions a merge
+ * depends on, and SH_OPAQUE where the instrumentation cannot see a source: a value of an arm the
+ * sample did not run). Node 0 is classical. A node is classical when it was measured, or when it is
+ * no leaf and every node it depends on is classical. Memory cells (bytes) carry the node of the value
+ * stored there; sh_gm is what any quantum load may also depend on (the conditions of quantum branches
+ * whose arms write memory, stores at quantum addresses, library calls writing through pointers),
+ * sh_gf the same for the fp environment, sh_mq every node ever stored. All of it is reset per sample. */
+#define SH_OPAQUE 1u
+#define SH_MAXN ((size_t)1 << 24)
+#define SH_MAXD ((size_t)1 << 26)
+#define SH_CELLS ((size_t)1 << 22)
+#define SH_LEAF 1
+#define SH_MEASURED 2
+#define SH_CLASSICAL 4
+static struct shnode { uint32_t d0, nd, stamp; uint8_t fl; } *sh_n;
+static uint32_t *sh_d, *sh_stack;
+static size_t sh_nn, sh_nd;
+static uint32_t sh_stampv;
+static struct shcell { uintptr_t a; uint32_t node, gen; } *sh_c;
+static size_t sh_ncells;
+static uint32_t sh_gm, sh_gf, sh_mq, sh_ret, sh_args[64];
+static const void *sh_byval[64];
+static int sh_pending_read;
+
+static uint32_t *sh_seen, *sh_genp; /* sh_genp: the cell generation, outside __DATA (never put back) */
+/* The tables are mapped before the setup runs, so the snapshot of __DATA keeps their addresses. */
+__attribute__((constructor(102))) static void sh_init(void) {
+    if (sh_n) return;
+    sh_n = mmap(0, SH_MAXN * sizeof *sh_n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    sh_d = mmap(0, SH_MAXD * sizeof *sh_d, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    sh_stack = mmap(0, SH_MAXN * sizeof *sh_stack, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    sh_seen = mmap(0, SH_MAXN * sizeof *sh_seen, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    sh_c = mmap(0, SH_CELLS * sizeof *sh_c, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    sh_genp = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (sh_n == MAP_FAILED || sh_d == MAP_FAILED || sh_stack == MAP_FAILED || sh_seen == MAP_FAILED ||
+        sh_c == MAP_FAILED || sh_genp == MAP_FAILED) {
+        fprintf(stderr, "cqo: mmap\n");
+        raise(SIGKILL);
+    }
+    *sh_genp = 1;
+}
+
+static void sh_reset(void) {
+    sh_nn = 2, sh_nd = 0; /* 0: classical, 1: SH_OPAQUE */
+    sh_n[0] = (struct shnode){0, 0, 0, SH_CLASSICAL};
+    sh_n[SH_OPAQUE] = (struct shnode){0, 0, 0, SH_LEAF};
+    if (++*sh_genp == 0) { memset(sh_c, 0, SH_CELLS * sizeof *sh_c); *sh_genp = 1; }
+    sh_ncells = 0;
+    sh_gm = sh_gf = sh_mq = sh_ret = 0;
+    memset(sh_args, 0, sizeof sh_args);
+    memset(sh_byval, 0, sizeof sh_byval);
+    sh_pending_read = 0;
+}
+
+static uint32_t sh_new(const uint32_t *deps, unsigned k, uint8_t fl) {
+    if (sh_nn < 2) sh_reset();
+    if (sh_nn >= SH_MAXN || sh_nd + k > SH_MAXD) { note("internal more than %zu shadow nodes", (size_t)SH_MAXN); _exit(95); }
+    uint32_t n = (uint32_t)sh_nn++;
+    sh_n[n] = (struct shnode){(uint32_t)sh_nd, 0, 0, fl};
+    for (unsigned i = 0; i < k; ++i)
+        if (deps[i]) sh_d[sh_nd++] = deps[i], sh_n[n].nd++;
+    return n;
+}
+
+/* a value's own node over up to three dependencies (0 when all are classical constants) */
+uint32_t __cqo_sh_v(uint32_t a, uint32_t b, uint32_t c) {
+    if (!(a | b | c)) return 0;
+    uint32_t d[3] = {a, b, c};
+    return sh_new(d, 3, 0);
+}
+/* a dependency set (no value of its own): 0, the single node, or a node over them */
+uint32_t __cqo_sh_j(uint32_t a, uint32_t b, uint32_t c) {
+    if (!(a | b | c)) return 0;
+    if (!(b | c)) return a;
+    if (!(a | c)) return b;
+    if (!(a | b)) return c;
+    uint32_t d[3] = {a, b, c};
+    return sh_new(d, 3, 0);
+}
+uint32_t __cqo_sh_leaf(void) { return sh_new(0, 0, SH_LEAF); }
+uint32_t __cqo_sh_opaque(void) { return SH_OPAQUE; }
+
+static int sh_classical(uint32_t n) {
+    if (n == 0 || n >= sh_nn) return n == 0;
+    uint32_t stamp = ++sh_stampv;
+    size_t sp = 0, nseen = 0;
+    sh_stack[sp++] = n;
+    while (sp) {
+        uint32_t m = sh_stack[--sp];
+        struct shnode *x = &sh_n[m];
+        if (x->fl & (SH_MEASURED | SH_CLASSICAL)) continue;
+        if (x->fl & SH_LEAF) return 0;
+        if (x->stamp == stamp) continue;
+        x->stamp = stamp;
+        sh_seen[nseen++] = m;
+        for (uint32_t i = 0; i < x->nd; ++i) {
+            if (sp == SH_MAXN) { note("internal shadow stack"); _exit(95); }
+            sh_stack[sp++] = sh_d[x->d0 + i];
+        }
+    }
+    for (size_t i = 0; i < nseen; ++i) sh_n[sh_seen[i]].fl |= SH_CLASSICAL;
+    return 1;
+}
+
+/* cq_measure of a value with node n: a classical read when n is classical (no gate), else a
+ * measurement that makes n classical from here on. __cqo_site reads the verdict. */
+void __cqo_sh_measure(uint32_t n) {
+    sh_pending_read = sh_classical(n);
+    if (!sh_pending_read && n > SH_OPAQUE && n < sh_nn) sh_n[n].fl |= SH_MEASURED;
+}
+
+/* memory cells, one per byte, open addressing; a cell of another generation is empty */
+static struct shcell *sh_cell(uintptr_t a, int add) {
+    size_t h = (size_t)((a * 0x9E3779B97F4A7C15ULL) >> 40) & (SH_CELLS - 1);
+    for (;;) {
+        struct shcell *c = &sh_c[h];
+        if (c->gen != *sh_genp) {
+            if (!add) return 0;
+            if (sh_ncells * 10 >= SH_CELLS * 7) { note("internal more than %zu shadow cells", (size_t)SH_CELLS * 7 / 10); _exit(95); }
+            sh_ncells++;
+            c->a = a, c->gen = *sh_genp, c->node = 0;
+            return c;
+        }
+        if (c->a == a) return c;
+        h = (h + 1) & (SH_CELLS - 1);
+    }
+}
+static uint32_t sh_get(uintptr_t a) { struct shcell *c = sh_ncells ? sh_cell(a, 0) : 0; return c ? c->node : 0; }
+static void sh_put(uintptr_t a, uint32_t n) {
+    if (sh_nn < 2) { if (!n) return; sh_reset(); }
+    struct shcell *c = sh_cell(a, n != 0);
+    if (c) c->node = n;
+}
+static void sh_clear(const void *p, uint64_t n) {
+    if (!sh_ncells) return;
+    for (uint64_t i = 0; i < n; ++i) sh_put((uintptr_t)p + i, 0);
+}
+static void sh_move(void *d, const void *s, uint64_t n) {
+    if (!sh_ncells || !n) return;
+    uint32_t buf[256];
+    uint32_t *t = n <= 256 ? buf : malloc(n * sizeof *t);
+    if (!t) { note("internal out of memory"); _exit(95); }
+    for (uint64_t i = 0; i < n; ++i) t[i] = sh_get((uintptr_t)s + i);
+    for (uint64_t i = 0; i < n; ++i) sh_put((uintptr_t)d + i, t[i]);
+    if (t != buf) free(t);
+}
+
+void __cqo_sh_store(void *p, uint64_t n, uint32_t v, uint32_t addr) {
+    if (addr) {
+        v = __cqo_sh_j(v, addr, 0);
+        sh_gm = __cqo_sh_j(sh_gm, v, 0);
+    }
+    if (v) sh_mq = __cqo_sh_j(sh_mq, v, 0);
+    for (uint64_t i = 0; i < n; ++i) sh_put((uintptr_t)p + i, v);
+}
+uint32_t __cqo_sh_load(const void *p, uint64_t n, uint32_t addr) {
+    uint32_t acc = __cqo_sh_j(addr, sh_gm, 0), last = 0;
+    for (uint64_t i = 0; i < n; ++i) {
+        uint32_t c = sh_get((uintptr_t)p + i);
+        if (c && c != last) acc = __cqo_sh_j(acc, c, 0), last = c;
+    }
+    return __cqo_sh_v(acc, 0, 0);
+}
+void __cqo_sh_fill(void *p, uint64_t n, uint32_t v) {
+    if (v) sh_mq = __cqo_sh_j(sh_mq, v, 0);
+    for (uint64_t i = 0; i < n; ++i) sh_put((uintptr_t)p + i, v);
+}
+void __cqo_sh_gm(uint32_t x) { sh_gm = __cqo_sh_j(sh_gm, x, 0); }
+void __cqo_sh_gf(uint32_t x) { sh_gf = __cqo_sh_j(sh_gf, x, 0); }
+uint32_t __cqo_sh_gm_get(void) { return sh_gm; }
+uint32_t __cqo_sh_gf_get(void) { return sh_gf; }
+uint32_t __cqo_sh_mq_get(void) { return sh_mq; }
+void __cqo_sh_arg_set(int32_t i, uint32_t n) { if (i < 64) sh_args[i] = n; }
+uint32_t __cqo_sh_arg(int32_t i) {
+    if (i >= 64) return SH_OPAQUE;
+    uint32_t n = sh_args[i];
+    sh_args[i] = 0;
+    return n;
+}
+void __cqo_sh_args_clear(void) { memset(sh_args, 0, sizeof sh_args); memset(sh_byval, 0, sizeof sh_byval); }
+void __cqo_sh_ret_set(uint32_t n) { sh_ret = n; }
+uint32_t __cqo_sh_ret(void) { uint32_t n = sh_ret; sh_ret = 0; return n; }
+/* a byval argument: the callee's copy takes the cells of the caller's object */
+void __cqo_sh_byval_src(int32_t i, const void *p) { if (i < 64) sh_byval[i] = p; }
+void __cqo_sh_byval_in(int32_t i, void *p, uint64_t n) {
+    const void *s = i < 64 ? sh_byval[i] : 0;
+    if (i < 64) sh_byval[i] = 0;
+    if (s) sh_move(p, s, n);
+    else sh_clear(p, n);
+}
+
 /* ------------------------------------------------------------------ events */
 /* cq_theta substitution (cq-6m2, cq-arch Z4): this sample's chosen values, per site and reach */
 #define MAXSUBST 8192
@@ -471,9 +674,11 @@ static int skey_of(const char *fn, int site) {
 /* entries of RunResult side 'c' rotations / measured so far (T2 cut, mcut) */
 static long n_rotations, n_measured;
 
-static const char *kinds[] = {"theta", "phi", "measure", "invert_begin", "invert_end"};
+static const char *kinds[] = {"theta", "phi", "measure", "invert_begin", "invert_end", "read"};
 
 void __cqo_site(const char *fn, int32_t site, int32_t kind, uint64_t angle, void *reg, int32_t bits) {
+    if (kind == 2 && sh_pending_read) kind = 5; /* rule 2: a classical read, no measurement (cq-y1ll) */
+    sh_pending_read = 0;
     int sk = kind == 0 ? skey_of(fn, site) : -1;
     if (sk >= 0) {
         int occ = (int)(skeys[sk].reach++ % skeys[sk].period);
@@ -502,7 +707,7 @@ void __cqo_site(const char *fn, int32_t site, int32_t kind, uint64_t angle, void
              f, site, kinds[kind], a, r);
     out_line(trace_fd, line);
     if (kind == 2) n_measured++;
-    else n_rotations++;
+    else if (kind != 5) n_rotations++;
 }
 
 /* ------------------------------------------------------------------ the cutoff K (CR §6, cq-8ay)
@@ -1124,6 +1329,7 @@ int __cqo_sample_begin(int idx) {
     R->cur = idx;
     load_subst(idx);
     ticks = 0;
+    sh_reset();
     __cqo_spec_next = -1; /* the driver's call enters its callee's entry specialization */
     stack_save((char *)__builtin_frame_address(0) + 16);
     R->progress++;
