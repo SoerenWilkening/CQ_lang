@@ -332,11 +332,14 @@ class _SkipDiff(Exception):
 
 def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_error: str = "",
              short_circuit: bool = True, diff_out: Optional[Path] = None,
-             reference_mode: bool = False) -> Verdict:
+             reference_mode: bool = False, substitution: bool = True) -> Verdict:
     """The Verdict for one example. `ours` is our lowered module, or None with `lower_error` when
     the pass produced nothing. `oracle` is ref, c or both. `short_circuit=False` forces the §6 run
     on a textual match (the baseline runs a reference against itself). `reference_mode=True` runs
-    the verifier as `cq-verify<reference>` (S1): `ours` is a CQ_spec reference (the baseline)."""
+    the verifier as `cq-verify<reference>` (S1): `ours` is a CQ_spec reference (the baseline).
+    `substitution=False` runs only the samples without cq_theta substitution (the self-test's
+    rotation classes, cq-lkth: there a skipped or moved Ry leaves every value as it is, so the
+    rotation list is the first difference); never the verdict of `run`."""
     reasons: List[str] = []
     if ours is None:
         why = lower_error or "no lowered module"
@@ -374,6 +377,8 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
         try:
             spec = sibling("drivers", "driver_spec")(ex.name, ex.dir)
             samples = sibling("sampling", "sample_set")(spec, ex.dir).samples
+            if not substitution:
+                samples = [sm for sm in samples if "subst" not in sm]
             ours_results = _side_results(_evaluator_batch, ours, spec, samples, "ours")
         except Exception as e:  # noqa: BLE001 - every failure is an ERROR verdict with its reason
             r = _exc_reason("setup (drivers, sampling, our run)", e)

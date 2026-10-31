@@ -100,6 +100,31 @@ class Judge(unittest.TestCase):
         r = ["ref: t: 1 rail(s) i1 with values (0) kept on our side that the reference does not keep (x)"]
         self.assertEqual(mutants._judge(V("fail", "pass", r), self.KEPT[1], self.KEPT[2]), [])
 
+    def test_rotation_only_needs_the_rotation_list_with_substitution_off(self):
+        # cq-lkth: with substitution the output difference comes first (125-change-control:
+        # measurement 1 reads 0x3 != 0x0); the run with substitution off must fail on the rotation list
+        full = V("fail", "fail", ["ref: sample 1: measurement 1 reads 0x3 != 0x0",
+                                  "c: sample 1: measurement 1 reads 0x3 != 0x0"])
+        rot = V("fail", "fail", ["ref: classical arguments () (4 samples): rotation list differs: x",
+                                 "c: classical arguments () (4 samples): lowered gate #2 ry(r) corresponds to "
+                                 "no C site"])
+        for cls in ("flipped_predicate", "changed_control", "dropped_rotation"):
+            with self.subTest(cls):
+                self.assertIn(cls, mutants.ROTATION_ONLY)
+                self.assertEqual(mutants.judge_mutant(cls, full, rot), [])
+                self.assertTrue(mutants.judge_mutant(cls, full, None))
+                # an output difference with substitution off does not prove the comparator
+                self.assertTrue(mutants.judge_mutant(cls, full, full))
+                self.assertTrue(mutants.judge_mutant(cls, full, V("pass", "pass", [])))
+                self.assertTrue(mutants.judge_mutant(cls, V("pass", "pass", []), rot))
+                # caught on the rotation list with substitution (59: q's bits read 0 without it)
+                self.assertFalse(mutants.needs_subst_off(cls, rot))
+                self.assertEqual(mutants.judge_mutant(cls, rot, None), [])
+                self.assertTrue(mutants.needs_subst_off(cls, full))
+        # a class outside ROTATION_ONLY ignores the run with substitution off
+        self.assertFalse(mutants.needs_subst_off("changed_angle", full))
+        self.assertEqual(mutants.judge_mutant("changed_angle", rot, None), [])
+
     def test_empty_pattern(self):
         r = ("sample {}: violations on our side: [{'what': 'build', 'h': None, 'msg': 'clang failed (1): "
              "Undefined symbols for architecture x86_64:\\n  \"_f\", referenced from:'}]")

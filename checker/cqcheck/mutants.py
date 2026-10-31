@@ -17,7 +17,15 @@ mutated reference and an empty output are both rejected. Three parts:
    rejected when the §6 check against the reference FAILs with a reason that matches its class's
    pattern, and the C-oracle check FAILs with its class's pattern when the class predicts one
    (otherwise the C-oracle check may pass or fail, but never ERROR). ERROR is never a rejection:
-   it is a check that could not be decided.
+   it is a check that could not be decided. A mutant of a class in ROTATION_ONLY must also be
+   caught by the rotation-list comparator (cq-lkth): with every site substituted, a skipped or
+   moved Ry also skips or moves its substitution, so the outputs may differ first and compare never
+   reaches the rotation list. When the evaluation does not FAIL on the rotation list against both
+   oracles, the mutant is evaluated again with cq_theta substitution off, where the evaluator
+   leaves every value as it is (an Ry is logged, not applied), and that run must so FAIL. Its
+   control (the reference against itself with substitution off) must be green too, or the mutant
+   is unproven. (A register only cq_theta substitution sets, 59's bits, reads 0 without it: there
+   the evaluation with substitution already fails on the rotation list.)
 3. Empty output. For every example of the corpus (counted from the directory), an empty lowered
    module (zero bytes: the pass emitted nothing) is evaluated as our output (reference_mode=False)
    and must FAIL both §6 checks, each with a reason that names the missing definition.
@@ -76,7 +84,9 @@ CLASSES: Dict[str, Tuple[str, str, Optional[str]]] = {
     "dropped_free": ("a clean rail is never freed: kept garbage at exit",
                      r"rail\(s\) .* kept on our side that the reference does not keep", None),
     "changed_angle": ("a rotation or phase takes another angle", _ROT_REF, _ROT_C),
-    "changed_control": ("a controlled rotation is controlled by another rail", _ROT_REF, _ROT_C),
+    # with substitution the other control also moves a substitution (125: measurement 1 reads 0x3)
+    "changed_control": ("a controlled rotation is controlled by another rail", f"{_ROT_REF}|{_MEAS}|{_OUT_REF}",
+                        f"{_ROT_C}|{_MEAS}|{_RET_C}"),
     "dropped_rotation": ("a rotation or phase is deleted", f"{_ROT_REF}|{_MEAS}|{_OUT_REF}",
                          f"{_ROT_C}|{_MEAS}|{_RET_C}"),
     "added_rotation": ("a rotation is added", _ROT_REF, _ROT_C),
@@ -89,6 +99,14 @@ CLASSES: Dict[str, Tuple[str, str, Optional[str]]] = {
                             _HOST_OUT, _HOST_OUT),
     "dropped_tape_effect": ("a tape effect entry is deleted: the host call is never performed",
                             _HOST_FX, _HOST_FX),
+}
+
+# Classes whose evaluation may FAIL on an output difference before the rotation list: each must also
+# FAIL on these patterns, with substitution or else without it (module docstring, cq-lkth).
+ROTATION_ONLY: Dict[str, Tuple[str, str]] = {
+    "flipped_predicate": (_ROT_REF, _ROT_C),
+    "changed_control": (_ROT_REF, _ROT_C),
+    "dropped_rotation": (_ROT_REF, _ROT_C),
 }
 
 # The empty output: no definition, so the build of our side fails at the link on the entry symbol.
@@ -210,6 +228,7 @@ class Outcome:
     ok: bool
     why: List[str] = field(default_factory=list)
     verdict: Optional[Verdict] = None
+    verdict_off: Optional[Verdict] = None     # substitution off (ROTATION_ONLY classes)
 
 
 def _short(v: Optional[Verdict], n: int = 2) -> str:
@@ -222,7 +241,8 @@ def _short(v: Optional[Verdict], n: int = 2) -> str:
 
 def _record(store: Path, o: Outcome, lock: threading.Lock) -> None:
     line = json.dumps({"kind": o.kind, "id": o.id, "example": o.example, "class": o.cls, "ok": o.ok,
-                       "why": o.why, "verdict": json.loads(to_json(o.verdict)) if o.verdict else None},
+                       "why": o.why, "verdict": json.loads(to_json(o.verdict)) if o.verdict else None,
+                       "verdict_subst_off": json.loads(to_json(o.verdict_off)) if o.verdict_off else None},
                       sort_keys=True)
     with lock:
         with (store / "outcomes.jsonl").open("a") as f:
@@ -231,30 +251,68 @@ def _record(store: Path, o: Outcome, lock: threading.Lock) -> None:
         print(f"{mark} {o.kind:<7} {o.id:<32} {o.example:<28} {'; '.join(o.why)}", flush=True)
         if not o.ok:
             print("      " + _short(o.verdict, 3), flush=True)
+            if o.verdict_off is not None:
+                print("      substitution off: " + _short(o.verdict_off, 3), flush=True)
+
+
+def _control(ex: report.Example, substitution: bool) -> Outcome:
+    cid = ex.name if substitution else f"{ex.name}/subst-off"
+    try:
+        v = report.evaluate(ex, ex.reference, short_circuit=False, reference_mode=True,
+                            substitution=substitution)
+        return Outcome("control", cid, ex.name, "", report.green(v),
+                       [] if report.green(v) else ["the reference is not green against itself and its C program"], v)
+    except Exception as e:  # noqa: BLE001 - reported, never green
+        return Outcome("control", cid, ex.name, "", False, [f"{type(e).__name__}: {e}"])
+
+
+def needs_subst_off(cls: str, v: Verdict) -> bool:
+    """A ROTATION_ONLY mutant whose evaluation `v` does not FAIL on the rotation list itself."""
+    return cls in ROTATION_ONLY and bool(_judge(v, *ROTATION_ONLY[cls]))
+
+
+def judge_mutant(cls: str, v: Verdict, v_off: Optional[Verdict]) -> List[str]:
+    """Why a mutant of class `cls` is not the predicted rejection ([] = rejected as predicted): `v`
+    is its evaluation, `v_off` the one with substitution off (read only when needs_subst_off)."""
+    _, ref_pat, c_pat = CLASSES[cls]
+    why = _judge(v, ref_pat, c_pat)
+    if needs_subst_off(cls, v):
+        if v_off is None:
+            why.append("the rotation list is not a reason, and no evaluation with substitution off")
+        else:
+            why += [f"substitution off: {w}" for w in _judge(v_off, *ROTATION_ONLY[cls])]
+    return why
 
 
 def _example_job(ex: report.Example, mutants: List[Mutant], empty: bool, emit) -> List[Outcome]:
-    """Control, then the mutants of ex (only if the control is green), then the empty output."""
+    """Control, then the mutants of ex (only if the control is green; a mutant judged with
+    substitution off also needs that control green), then the empty output."""
     out: List[Outcome] = []
     if mutants:
-        try:
-            v = report.evaluate(ex, ex.reference, short_circuit=False, reference_mode=True)
-            ctl = Outcome("control", ex.name, ex.name, "", report.green(v),
-                          [] if report.green(v) else ["the reference is not green against itself and its C program"], v)
-        except Exception as e:  # noqa: BLE001 - reported, never green
-            ctl = Outcome("control", ex.name, ex.name, "", False, [f"{type(e).__name__}: {e}"])
+        ctl = _control(ex, True)
         emit(ctl)
         out.append(ctl)
+        ctl_off: List[Outcome] = []         # the control with substitution off, once, when needed
         for m in mutants:
-            _, ref_pat, c_pat = CLASSES[m.cls]
             if not ctl.ok:
                 o = Outcome("mutant", m.id, ex.name, m.cls, False, ["unproven: the control is not green"])
             else:
                 try:
                     path = materialize(m, ex)
                     v = report.evaluate(ex, path, short_circuit=False, reference_mode=True)
-                    why = _judge(v, ref_pat, c_pat)
-                    o = Outcome("mutant", m.id, ex.name, m.cls, not why, why, v)
+                    v_off = None
+                    if needs_subst_off(m.cls, v):
+                        if not ctl_off:
+                            ctl_off.append(_control(ex, False))
+                            emit(ctl_off[0])
+                            out.append(ctl_off[0])
+                        if ctl_off[0].ok:
+                            v_off = report.evaluate(ex, path, short_circuit=False, reference_mode=True,
+                                                    substitution=False)
+                    why = judge_mutant(m.cls, v, v_off)
+                    if needs_subst_off(m.cls, v) and not ctl_off[0].ok:
+                        why.append("unproven: the control with substitution off is not green")
+                    o = Outcome("mutant", m.id, ex.name, m.cls, not why, why, v, v_off)
                 except Exception as e:  # noqa: BLE001
                     o = Outcome("mutant", m.id, ex.name, m.cls, False, [f"{type(e).__name__}: {e}"])
             emit(o)
