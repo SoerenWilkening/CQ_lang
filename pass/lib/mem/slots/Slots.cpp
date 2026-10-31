@@ -190,6 +190,7 @@ struct FnState {
   std::unique_ptr<DominatorTree> DT;
   DenseMap<const Instruction *, Operand> lowered;   // slot load / store -> the handle the cell holds after it
   DenseSet<const Value *> registers;                // new-IR handles known never to be resolved here
+  DenseSet<const Instruction *> copies;             // slot stores lowered as a basis copy (cq-dr4o)
   std::map<const Value *, ObjInfo> objs;
 };
 
@@ -829,8 +830,11 @@ bool needsCopy(LoweringContext &ctx, FnState &st, const StoreInst &S, const Site
         uint64_t sz = DL.getTypeStoreSize(x.ty).getFixedValue();
         if (!st.lowered.count(x.I) || differentCell(x.a, h->a, sz, h->size))
           continue;
-        if (auto *xs = dyn_cast<StoreInst>(x.I))
-          names.insert(xs->getValueOperand());
+        if (auto *xs = dyn_cast<StoreInst>(x.I)) {
+          // A store lowered as a copy left its own rail in the cell, not its value's (cq-7hpb).
+          if (!st.copies.count(xs))
+            names.insert(xs->getValueOperand());
+        }
         else
           names.insert(x.I);
       }
@@ -843,16 +847,14 @@ bool needsCopy(LoweringContext &ctx, FnState &st, const StoreInst &S, const Site
   for (const Value *n : own)
     for (const User *u : n->users()) {
       auto *X = dyn_cast<StoreInst>(u);
-      if (!X || X == &S || X->getValueOperand() != n || !st.lowered.count(X))
+      if (!X || X == &S || X->getValueOperand() != n || !st.lowered.count(X) || st.copies.count(X))
         continue;
       std::optional<Holder> h;
       slotSite(*X, X->getPointerOperand(), n->getType(), h);
       if (h && !(h->o == dest.o && sameCell(h->a, dest.a)))
         holders.push_back(*h);
     }
-  if (holders.empty())
-    return false;
-  // A name read after S. A later plain store of a name into a slot cell is not a read: that store is
+  // A name read after S, with or without another memory holder (cq-7hpb: b[j] = x; ... x). A later plain store of a name into a slot cell is not a read: that store is
   // decided the same way when it is lowered, with S's cell among its holders.
   auto slotStoreOf = [&](const Instruction *U, const Value *n) {
     auto *X = dyn_cast<StoreInst>(U);
@@ -887,6 +889,8 @@ bool needsCopy(LoweringContext &ctx, FnState &st, const StoreInst &S, const Site
       if (reach.count(ub) || (ub == SB && S.comesBefore(U)))
         return true;
     }
+  if (holders.empty())
+    return false;
   // An overwrite of a holder with a value that may be the rail puts it back, unless that value is a
   // load of S's own cell: it is the rail only when its cell held it, i.e. when S's cell is the holder.
   auto rePuts = [&](const Value *o) {
@@ -1072,6 +1076,7 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
     ctx.unc().recordCore(cc, cp, {Operand{h, true}, Operand{c, true}}, cid);
     val = Operand{c, true};
     what = What::Copy;
+    st.copies.insert(&stI);
   } else {
     what = st.registers.count(val.v) || isThetaResult(v) ? What::Register : What::Computed;
   }
