@@ -950,5 +950,62 @@ recompute:
             self.assertEqual([l["n"] for l in rr.outputs["loops"]], [n], x0)
 
 
+class CollapseRepin(unittest.TestCase):
+    """Bead cq-vo6v (CR rule 2 at CQ_spec 75588cd). (1) 94: the cell an atomic writes and the atomic's
+    result are distinct values: measuring a later load of the cell leaves a cmpxchg's {loaded, equal}
+    quantum; an atomicrmw's result is the old cell itself (a second measurement of it is a read).
+    (2) 102: a signal handler that loads nothing and calls nothing writes a function of the signal
+    number, so a cell it may write under a quantum branch depends on the branch condition only and
+    collapses with its sources' measurement; a handler that loads keeps the cell opaque (measured)."""
+
+    def counts(self, o1, sp, cases):
+        for smp, want in cases:
+            rr = oracle.run_sample(o1, sp, smp)
+            self.assertEqual(rr.violations, [], smp)
+            ev = oracle.trace_sample(o1, sp, smp)
+            got = [e["kind"] for e in ev if e["ev"] == "site" and e["kind"] in ("measure", "read")]
+            self.assertEqual((got.count("measure"), got.count("read")), want, (smp, ev))
+            self.assertEqual(len(rr.measured), want[0], smp)
+
+    def test_atomics(self):
+        o1 = compile_c("collapse_atomics", """
+int atom(int x0, double t, int c, int e) {
+    int x = x0; cq_theta(&x, t); int cell = c;
+    __atomic_store_n(&cell, x, __ATOMIC_SEQ_CST);
+    int old = __atomic_fetch_add(&cell, c, __ATOMIC_SEQ_CST);
+    int expected = e;
+    int ok = __atomic_compare_exchange_n(&cell, &expected, old, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+    int now = __atomic_load_n(&cell, __ATOMIC_SEQ_CST);
+    return cq_measure(now) + cq_measure(ok) + cq_measure(expected); }
+int rmw_old(int x0, double t, int c) {
+    int x = x0; cq_theta(&x, t); int cell = 0;
+    __atomic_store_n(&cell, x, __ATOMIC_SEQ_CST);
+    int old = __atomic_fetch_add(&cell, c, __ATOMIC_SEQ_CST);
+    return cq_measure(x) + cq_measure(old); }
+""")
+        sp = spec("collapse_atomics", "int atom(int,double,int,int);int rmw_old(int,double,int);",
+                  [("atom", ["int", "double", "int", "int"]), ("rmw_old", ["int", "double", "int"])])
+        S = lambda c, *a: {"call": c, "args": list(a)}
+        self.counts(o1, sp, [(S(0, i32(5), HALF, i32(3), i32(8)), (3, 0)),
+                             (S(0, i32(5), HALF, i32(3), i32(1)), (3, 0)),
+                             (S(1, i32(5), HALF, i32(3)), (1, 1))])
+
+    def test_signal_handler(self):
+        src = """
+#include <signal.h>
+static volatile sig_atomic_t hit;
+static void h(int s) { hit = HANDLER; }
+int handled(int x0, double t, int k) {
+    int x = x0; cq_theta(&x, t); signal(SIGUSR1, h);
+    if (x > k) raise(SIGUSR1);
+    return cq_measure(x) + cq_measure(hit); }
+"""
+        S = lambda c, *a: {"call": c, "args": list(a)}
+        for name, body, want in (("handler_args", "s", (1, 1)), ("handler_loads", "hit + s", (2, 0))):
+            o1 = compile_c(name, src.replace("HANDLER", body))
+            sp = spec(name, "int handled(int,double,int);", [("handled", ["int", "double", "int"])])
+            self.counts(o1, sp, [(S(0, i32(5), HALF, i32(3)), want), (S(0, i32(1), HALF, i32(3)), want)])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

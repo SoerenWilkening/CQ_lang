@@ -691,16 +691,43 @@ public:
       return n == "memcpy" || n == "memmove" || n == "__memcpy_chk" || n == "__memmove_chk";
     }
     static bool isFill(StringRef n) { return n == "memset" || n == "__memset_chk" || n == "bzero"; }
+    static bool deliversSignal(const CallBase &CB) {
+      const Function *G = CB.getCalledFunction();
+      if (!G)
+        return false;
+      StringRef n = G->getName();
+      return n == "raise" || n == "kill" || n == "pthread_kill";
+    }
     static bool runsModuleCode(const CallBase &CB) {
-      if (const Function *G = CB.getCalledFunction()) {
-        StringRef n = G->getName();
-        if (n == "raise" || n == "kill" || n == "pthread_kill")
-          return true;
-      }
+      if (deliversSignal(CB))
+        return true;
       for (const Value *a : CB.args())
         if (isa<Function>(a->stripPointerCasts()))
           return true;
       return false;
+    }
+    // A module function whose every write is a function of its arguments (cq-vo6v): it loads
+    // nothing and calls nothing but debug/lifetime/assume intrinsics, so what it writes, had the arm
+    // run it, is known from what the call passes (the region's deps), not opaque.
+    static bool writesFromArgs(const Function &G) {
+      if (G.isDeclaration())
+        return false;
+      for (const Instruction &I : instructions(G)) {
+        if (isa<LoadInst>(I) || isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I) || isa<VAArgInst>(I))
+          return false;
+        if (auto *CB = dyn_cast<CallBase>(&I))
+          if (!isa<DbgInfoIntrinsic>(CB) && !isa<AssumeInst>(CB) && !CB->isLifetimeStartOrEnd())
+            return false;
+      }
+      return true;
+    }
+    // the handlers a signal delivery may run: every defined function whose address is taken; their
+    // argument is the signal number (an argument of the delivering call)
+    bool handlersWriteFromArgs() const {
+      for (const Function &G : *F.getParent())
+        if (!G.isDeclaration() && !isDriverFn(G) && G.hasAddressTaken() && !writesFromArgs(G))
+          return false;
+      return true;
     }
     static bool hasPtrArg(const CallBase &CB) {
       for (const Value *a : CB.args())
@@ -766,7 +793,7 @@ public:
               for (Value *a : CB->args())
                 contrib(a);
               if (!G->doesNotAccessMemory())
-                R.mem = R.opaque = true;
+                R.mem = true, R.opaque |= !writesFromArgs(*G);
               continue;
             }
             StringRef n = G->getName();
@@ -780,7 +807,7 @@ public:
             else if (hasPtrArg(*CB) && !G->onlyReadsMemory())
               R.mem = R.mq = true;
             if (runsModuleCode(*CB))
-              R.mem = R.opaque = true;
+              R.mem = true, R.opaque |= !(deliversSignal(*CB) && handlersWriteFromArgs());
           } else if (isa<VAArgInst>(I)) {
             // reads its list: no write
           }
@@ -997,10 +1024,13 @@ public:
         std::vector<Value *> deps{old};
         for (Value *op : I->operands())
           deps.push_back(get(op));
-        Value *n = node(B, deps);
-        B.CreateCall(h("__cqo_sh_store", In.Void, {In.Ptr, In.I64, I32, I32}), {p, B.getInt64(bytes(VT)), n, get(p)});
+        // the new cell and the result are distinct values (cq-vo6v, 94): measuring the cell's later
+        // load must not make the result ({loaded, equal} of a cmpxchg) classical. An atomicrmw's
+        // result is the old cell itself (the same rail, as a lossless cast).
+        Value *cell = node(B, deps);
+        B.CreateCall(h("__cqo_sh_store", In.Void, {In.Ptr, In.I64, I32, I32}), {p, B.getInt64(bytes(VT)), cell, get(p)});
         if (carried(I))
-          sh[I] = n;
+          sh[I] = isa<AtomicRMWInst>(I) ? old : node(B, deps);
         return;
       }
       if (auto *CB = dyn_cast<CallBase>(I)) {
