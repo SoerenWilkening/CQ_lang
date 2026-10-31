@@ -418,7 +418,7 @@ def _sample_set_gaps(ex: Example, spec, ss) -> Tuple[List[str], List[str]]:
     return bad, [g.line() for g in found if g.kind != gaps.MISSING]
 
 
-def _trip_disagreements(ex: Example, spec, ss, c_raw: Optional[list]) -> List[str]:
+def _trip_disagreements(ex: Example, spec, ss, c_raw: Optional[list], samples: list) -> List[str]:
     """Each trip sample's count in the C oracle's trip counters (sampling.confirm_trips), from the
     C oracle's runs of the §6 comparison, or from a run of the trip samples alone when the C
     oracle was not asked for."""
@@ -427,12 +427,11 @@ def _trip_disagreements(ex: Example, spec, ss, c_raw: Optional[list]) -> List[st
     idx = gaps.trip_samples(ss)
     if not idx:
         return []
-    if c_raw is None:
-        c_raw = list(sibling("oracle", "run_samples")(ex.o1, spec, [ss.samples[i] for i in idx]))
-        keyed = [ss.samples[i] for i in idx]
-    else:
-        keyed = list(ss.samples)
-    runs = {json.dumps(s, sort_keys=True): r for s, r in zip(keyed, c_raw)}
+    runs = ({json.dumps(s, sort_keys=True): r for s, r in zip(samples, c_raw)} if c_raw is not None else {})
+    need = [ss.samples[i] for i in idx if json.dumps(ss.samples[i], sort_keys=True) not in runs]
+    if need:
+        runs.update(zip((json.dumps(s, sort_keys=True) for s in need),
+                        sibling("oracle", "run_samples")(ex.o1, spec, need)))
     return [f"sampling: trip sample disagrees: {d}" for d in gaps.confirm_trips(ss, runs)]
 
 
@@ -569,7 +568,7 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
                     reasons.append(_exc_reason("c_oracle", e))
                     c_raw = None
             try:
-                trip_bad = _trip_disagreements(ex, spec, ss, c_raw)
+                trip_bad = _trip_disagreements(ex, spec, ss, c_raw, samples)
             except Exception as e:  # noqa: BLE001
                 trip_bad = [_exc_reason("sampling trip confirmation", e)]
             reasons += trip_bad
