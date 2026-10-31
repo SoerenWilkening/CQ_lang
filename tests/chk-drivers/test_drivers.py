@@ -749,6 +749,68 @@ SYNTH_LINE = "900_probe_synth|int fill(int,double);int spin(int,double);|fill(1,
 HALF = "0x3fe0000000000000"
 
 
+# cq-z8gj: uninitialized stack and heap reads (observed by the division's operands), and the C
+# library's string and memory functions
+SYNTH2_C = r"""
+#define _FORTIFY_SOURCE 0
+#include <string.h>
+/* deep below the caller's frame, past what the probe runtime's own calls write in the sample */
+__attribute__((noinline)) static int stk(int w) { volatile int u[8192]; if (w) u[0] = 41; return u[0]; }
+int ustack(int n0, double th) {
+    int n = n0;
+    cq_theta(&n, th);
+    int v = stk(n & 1);
+    return cq_measure(100 / (v + 1));
+}
+int scpy(int n0, double th) {
+    int n = n0;
+    cq_theta(&n, th);
+    char s[16];
+    memset(s, 'a', 15);
+    s[15] = 0;
+    s[n & 15] = 0;
+    char d[4];
+    strcpy(d, s);
+    return cq_measure(((volatile char *)d)[0]);
+}
+int mcmp(int n0, double th) {
+    int n = n0;
+    cq_theta(&n, th);
+    char a[4] = {1, 2, 3, 4};
+    char b[16] = {0};
+    return cq_measure(memcmp(a, b, (unsigned)n & 15));
+}
+"""
+SYNTH2_LINE = ("901_probe_synth2|int ustack(int,double);int scpy(int,double);int mcmp(int,double);"
+               "|ustack(1,.5);scpy(2,.5);mcmp(3,.5)")
+SYNTH3_C = r"""
+#include <stdlib.h>
+int uheap(int n0, double th) {
+    int n = n0;
+    cq_theta(&n, th);
+    volatile int *p = malloc(256);       /* p[40]: past what the allocator writes into a free block */
+    if (n & 1) p[40] = 41;
+    int v = p[40];
+    free((void *)p);
+    return cq_measure(100 / (v + 1));
+}
+"""
+SYNTH3_LINE = "902_probe_synth3|int uheap(int,double);|uheap(1,.5)"
+
+
+def synth_example(t, name, c_text, line):
+    """A synthetic example under t (its own examples/ and _tools/drivers.txt): its directory."""
+    ex = t / "examples" / name
+    ex.mkdir(parents=True)
+    (t / "_tools").mkdir()
+    (t / "_tools" / "drivers.txt").write_text(line + "\n")
+    (t / "s.c").write_text(c_text)
+    subprocess.run([CLANG, "-w", "-O1", "-S", "-emit-llvm", "-target", "x86_64-apple-macosx",
+                    "-include", str(D.spec_dir() / "CQ.h"), str(t / "s.c"),
+                    "-o", str(ex / (name.split("_", 1)[1] + ".O1.ll"))], check=True)
+    return ex
+
+
 def probe_obs(spec, example_dir, samples, env_pad):
     """The probe build's observations of `samples`, its server started with an environment of
     `env_pad` extra bytes (a different initial stack layout)."""
@@ -838,6 +900,31 @@ class ProbeDeterminism(unittest.TestCase):
         self.assertEqual(a[1].oob, {-1})
         self.assertEqual(a[1].hdrs, 0)
         self.assertEqual(a[4].hdrs, S.HDR_CAP + 1)
+
+    def test_residue_and_library_ranges(self):
+        """cq-z8gj: an uninitialized stack read sees the same bytes whatever sample ran before it in
+        the worker (a fresh sample stack); so does an uninitialized heap read (a module that
+        allocates runs each sample in a worker of its own); strcpy and memcmp past their objects end
+        the sample before the call as "oob" (site -1), as a memory intrinsic does."""
+        odd, even = ["0x00000001", HALF], ["0x00000002", HALF]
+        with tempfile.TemporaryDirectory() as t:
+            ex = synth_example(Path(t), "901_probe_synth2", SYNTH2_C, SYNTH2_LINE)
+            spec = D.driver_spec("901_probe_synth2", ex)
+            both = probe_obs(spec, ex, [{"call": 0, "args": odd}, {"call": 0, "args": even}], 1)
+            alone = probe_obs(spec, ex, [{"call": 0, "args": even}], 1)
+            lib = probe_obs(spec, ex, [{"call": 1, "args": ["0x00000002", HALF]},
+                                       {"call": 1, "args": ["0x00000009", HALF]},
+                                       {"call": 2, "args": ["0x00000003", HALF]},
+                                       {"call": 2, "args": ["0x00000008", HALF]}], 1)
+            ex3 = synth_example(Path(t) / "h", "902_probe_synth3", SYNTH3_C, SYNTH3_LINE)
+            spec3 = D.driver_spec("902_probe_synth3", ex3)
+            hboth = probe_obs(spec3, ex3, [{"call": 0, "args": odd}, {"call": 0, "args": even}], 1)
+            halone = probe_obs(spec3, ex3, [{"call": 0, "args": even}], 1)
+        self.assertEqual(obs_key(both[1]), obs_key(alone[0]))
+        self.assertEqual(obs_key(hboth[1]), obs_key(halone[0]))
+        self.assertNotEqual(obs_key(both[0]), obs_key(both[1]))       # the odd sample did write 41
+        self.assertEqual([o.end for o in lib], ["exit", "oob", "exit", "oob"])
+        self.assertEqual((lib[1].oob, lib[3].oob), ({-1}, {-1}))
 
     def test_no_wall_clock_outcome(self):
         """The runtime has no per-sample wall-clock timer; the CPU-time hang guard and the server's

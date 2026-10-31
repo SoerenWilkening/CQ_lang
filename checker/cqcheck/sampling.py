@@ -63,7 +63,16 @@ page, and some stores overwrote the probe's own state). Nontermination is only t
 sample ends as `timeout` after HDR_CAP loop-header executions. No wall-clock limit decides a sample:
 HANG_CPU_S of CPU time in one sample (a loop the budget does not count, inside an uninstrumented
 library function) and HANG_WALL_S of wall time with no output from the server are hang guards that
-raise ProbeError, an internal error of the checker, never a sample outcome.
+raise ProbeError, an internal error of the checker, never a sample outcome. Beyond the mem sites
+(cq-z8gj): a load or store at a constant offset from a global or a fixed-size alloca is
+range-checked as well (it was assumed in bounds), and so are the ranges the C library's
+memory and string functions access (memcpy, memmove, memset, memcmp, bcmp, bzero: their n bytes;
+strlen, strcpy, stpcpy, strcat: a terminating NUL inside the object, and the copy's destination
+range). Every sample starts on a fresh, zeroed sample stack, and a module that allocates or frees
+heap memory runs every sample in a worker of its own forked from the post-setup state, whose batch
+lines never touch the heap: an uninitialized read sees the same bytes in every sample. An address
+under no known object (memory the C library hands out, a pointer forged from an integer) still
+only makes the worker dirty: no object table bounds it.
 
 Which candidates are kept: no sample of any class is one on which a memory access of the C program
 reaches outside its object, faulting or not, unless the C oracle (cut at K) stops before that
@@ -409,6 +418,7 @@ typedef struct {
     sigjmp_buf jb; volatile int in; volatile int dirty; long cur; int out_fd; fenv_t fenv0;
     char **tok; int ntok;
     char **lines; long nlines, cap;     /* the batch (kept here: __DATA is restored per sample) */
+    char *arena[1024]; size_t arena_n[1024]; int narena; size_t used;   /* its text, off the heap */
 } cqd_ctl;
 static cqd_state *S, *B;     /* the sample's state, and its post-setup base */
 static cqd_ctl *C;
@@ -515,6 +525,21 @@ void __cqd_mi(void *root, void *dst, uint64_t n) {
         cqd_stop("oob", -1);
     }
 }
+/* A C string's length, before a library string function reads it: no NUL inside its object ends
+ * the sample here as "oob" with code -1, as a memory intrinsic past its object does (cq-z8gj). */
+uint64_t __cqd_ms(void *root, const char *p) {
+    int best = cqd_find((uintptr_t)root);
+    if (best < 0) { C->dirty = 1; return strlen(p); }
+    long long off = (long long)((intptr_t)p - (intptr_t)S->ob[best]);
+    const char *e = (off >= 0 && (unsigned long long)off < S->os[best])
+                    ? memchr(p, 0, (size_t)(S->os[best] - (unsigned long long)off)) : 0;
+    if (!e) {
+        cqd_out("mi %lld %llu %llu\n", off, (unsigned long long)S->os[best], 1ULL);
+        C->in = 0;
+        cqd_stop("oob", -1);
+    }
+    return (uint64_t)(e - p);
+}
 void __cqd_hdr(int l, bool be) {
     if (++S->hdrs > CQD_HDR_CAP) cqd_stop("timeout", SIGALRM);
     if (!be || !S->has[l]) { if (S->has[l]) cqd_trip(l, S->cnt[l]); S->cnt[l] = 1; S->has[l] = 1; }
@@ -595,7 +620,13 @@ static cqd_call_fn cqd_callee;
  * what lies above a sample's frames is the same for every sample and in every environment: a store
  * running up the stack faults at the same place each time. */
 #define STACK (8 << 20)
-static char *cqd_stack_top;
+static char *cqd_stack_top, *cqd_stack_lo;
+/* a fresh, zeroed sample stack: what an uninitialized read of the stack sees does not depend on an
+ * earlier sample of the same worker (cq-z8gj) */
+static void cqd_stack_fresh(void) {
+    if (mmap(cqd_stack_lo, STACK, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE | MAP_FIXED, -1, 0) == MAP_FAILED) {
+        perror("cqd: mmap stack"); _exit(2); }
+}
 static void cqd_stack_init(void) {
     long pg = sysconf(_SC_PAGESIZE);
     char *m = mmap(0, STACK + 2 * pg, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
@@ -604,6 +635,7 @@ static void cqd_stack_init(void) {
     /* above the top: no mapping, so a store running up the stack faults with SIGSEGV as past the
      * main thread's stack (a PROT_NONE page would give SIGBUS) */
     munmap(m + pg + STACK, pg);
+    cqd_stack_lo = m + pg;
     cqd_stack_top = m + pg + STACK;
 }
 static void cqd_call_sample(void) { cqd_callee(atoi(C->tok[0]), C->tok + 1); }
@@ -632,6 +664,7 @@ static void cqd_worker(cqd_call_fn call, long from) {
         C->tok = tok; C->ntok = nt;
         if (nt < 1) continue;
         cqd_out("S %ld\n", k);
+        if (k > from) cqd_stack_fresh();
         fesetenv(&C->fenv0);
         struct itimerval it = {{0, 0}, {HANG_CPU_S, 0}};
         if (sigsetjmp(C->jb, 1) == 0) {
@@ -671,11 +704,28 @@ void cqd_serve(cqd_call_fn call) {
     while (fgets(line, 1 << 16, stdin)) {
         long n = 0;
         if (sscanf(line, "B %ld", &n) != 1) continue;
-        if (n > C->cap) { C->cap = n; C->lines = realloc(C->lines, (size_t)n * sizeof *C->lines); }
+        /* the batch lives in mappings of its own, never on the heap, so a worker forked for a
+         * sample finds the heap as the setup left it, whatever the batch (cq-z8gj) */
+        if (n > C->cap) {
+            if (C->lines) munmap(C->lines, (size_t)C->cap * sizeof *C->lines);
+            C->cap = n;
+            C->lines = mmap(0, (size_t)n * sizeof *C->lines, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
+            if (C->lines == MAP_FAILED) { perror("cqd: mmap"); _exit(2); }
+        }
         C->nlines = 0;
         for (long i = 0; i < n; i++) {
             if (!fgets(line, 1 << 16, stdin)) _exit(3);
-            C->lines[C->nlines++] = strdup(line);
+            size_t len = strlen(line) + 1;
+            if (!C->narena || C->used + len > C->arena_n[C->narena - 1]) {
+                if (C->narena == 1024) { fputs("cqd: batch too large\n", stderr); _exit(2); }
+                size_t sz = len > (1 << 22) ? len : (1 << 22);
+                char *a = mmap(0, sz, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
+                if (a == MAP_FAILED) { perror("cqd: mmap"); _exit(2); }
+                C->arena[C->narena] = a; C->arena_n[C->narena] = sz; C->narena++; C->used = 0;
+            }
+            char *dst = C->arena[C->narena - 1] + C->used;
+            memcpy(dst, line, len); C->used += len;
+            C->lines[C->nlines++] = dst;
         }
         long next = 0;
         while (next < C->nlines) {
@@ -687,7 +737,8 @@ void cqd_serve(cqd_call_fn call) {
             long k = *P;
             next = (k >= next && k < C->nlines) ? k + 1 : next + 1;
         }
-        for (long i = 0; i < C->nlines; i++) free(C->lines[i]);
+        for (int i = 0; i < C->narena; i++) munmap(C->arena[i], C->arena_n[i]);
+        C->narena = 0; C->used = 0;
         static const char done[] = "D\n";
         if (write(out, done, 2) != 2) _exit(2);
     }
@@ -726,6 +777,13 @@ class Loop:
         """T1 (cq-mia): "<fn>:<header>", fn without "@", the header label as an operand."""
         return f"{self.fn[1:]}:{self.header}"
 
+
+# The C library's memory functions whose accessed ranges are n bytes (cq-z8gj): name -> (the first
+# pointer's argument index, (the second's,) or () ), and the index of n.
+_LIB_N = {"@memcpy": (0, (1,)), "@memmove": (0, (1,)), "@memcmp": (0, (1,)), "@bcmp": (0, (1,)),
+          "@memset": (0, ()), "@bzero": (0, ())}
+_LIB_N_LEN = {"@memcpy": 2, "@memmove": 2, "@memcmp": 2, "@bcmp": 2, "@memset": 2, "@bzero": 1}
+_LIB_STR = {"@strlen", "@strcpy", "@stpcpy", "@strcat"}
 
 _FLAGS = {"nuw", "nsw", "exact", "disjoint", "fast", "nnan", "ninf", "nsz", "arcp", "contract", "afn",
           "reassoc", "nneg", "samesign", "tail", "musttail", "notail"}
@@ -1133,7 +1191,8 @@ class Instrumenter:
 
     def decls(self) -> List[str]:
         d = ["declare void @__cqd_p(i32, i64, i64, i64, i64, i64, i64, i64, i64)",
-             "declare void @__cqd_m(i32, ptr, ptr, i64)", "declare void @__cqd_mi(ptr, ptr, i64)", "declare void @__cqd_reg(ptr, i64)",
+             "declare void @__cqd_m(i32, ptr, ptr, i64)", "declare void @__cqd_mi(ptr, ptr, i64)",
+             "declare i64 @__cqd_ms(ptr, ptr)", "declare void @__cqd_reg(ptr, i64)",
              "declare void @__cqd_hdr(i32, i1)", "declare void @__cqd_ctx(i32)"]
         d.append("define void @__cqd_globals() {")
         for g, line in self.mod.globals.items():
@@ -1266,6 +1325,13 @@ class Instrumenter:
             if c == "@cq_phi":
                 s = self.add_site(f, ins, "angle", c, pairs[0:1])
                 return self.probe(s.id, pairs[0:1], None), []
+            if c in _LIB_N:
+                # the C library's memory functions (cq-z8gj): their n bytes, as the intrinsics'
+                d, rest = _LIB_N[c]
+                return self.intrinsic_range(f, [pairs[d], pairs[rest[0]] if rest else pairs[d], pairs[_LIB_N_LEN[c]]],
+                                            src=bool(rest)), []
+            if c in _LIB_STR:
+                return self.string_ranges(f, c, pairs), []
             if c in ("@malloc", "@calloc", "@realloc", "@aligned_alloc") and ins.dest:
                 vals = [v for _, v in pairs]
                 if c == "@malloc":
@@ -1306,8 +1372,15 @@ class Instrumenter:
             root, variable = self.addr_root(f, pv)
             classical = self.taint.classical(f, pv)
             if not variable and not self.sized_at_run_time(f, root):
-                return [], []
-            ty = split_type(ins.operands[0])[0]
+                if root == pv:
+                    return [], []          # the object itself, at offset 0
+                # a constant offset into a global or a fixed-size alloca (cq-z8gj): range-checked,
+                # not a mem site (its §2 rows are static)
+                ty = split_type(re.sub(r"^(?:(?:volatile|atomic)\s+)+", "", ins.operands[0]))[0]
+                nb = f"ptrtoint (ptr getelementptr ({ty}, ptr null, i32 1) to i64)"
+                return [f"call void @__cqd_mi(ptr {root}, ptr {pv}, i64 {nb})"], []
+            # load/store volatile|atomic: the type follows the keywords
+            ty = split_type(re.sub(r"^(?:(?:volatile|atomic)\s+)+", "", ins.operands[0]))[0]
             s = self.add_site(f, ins, "mem", op, [], classical=classical)
             nb = f"ptrtoint (ptr getelementptr ({ty}, ptr null, i32 1) to i64)"
             return [f"call void @__cqd_m(i32 {s.id}, ptr {root}, ptr {pv}, i64 {nb})"], []
@@ -1331,6 +1404,43 @@ class Instrumenter:
                 continue
             root = self.addr_root(f, pv)[0] if pv.startswith("%") else pv
             out.append(f"call void @__cqd_mi(ptr {root}, ptr {pv}, i64 {ln})")
+        return out
+
+    def _root(self, f: D.Function, pty: str, pv: str) -> Optional[str]:
+        if pty != "ptr" or not (pv.startswith("%") or pv.startswith("@")):
+            return None
+        return self.addr_root(f, pv)[0] if pv.startswith("%") else pv
+
+    def string_ranges(self, f: D.Function, c: str, pairs: List[Tuple[str, str]]) -> List[str]:
+        """strlen(s), strcpy/stpcpy(d, s), strcat(d, s) (cq-z8gj): each string has a NUL inside its
+        object (`__cqd_ms`), and a copy's destination range lies inside the destination's object
+        (`__cqd_mi`), checked before the call. A string the runner cannot place ends the in-process
+        worker after the sample."""
+        out: List[str] = []
+        lens: List[Optional[str]] = [None, None]
+        # the strings read: strlen's, the source, and strcat's destination too
+        for k in (0,) if c == "@strlen" else (0, 1) if c == "@strcat" else (1,):
+            pty, pv = pairs[k]
+            root = self._root(f, pty, pv)
+            if root is None:
+                out.append("call void @__cqd_mi(ptr null, ptr null, i64 1)")
+                continue
+            t = self.tmp()
+            out.append(f"{t} = call i64 @__cqd_ms(ptr {root}, ptr {pv})")
+            lens[k] = t
+        if c == "@strlen":
+            return out
+        (dty, dv), sl = pairs[0], lens[1]
+        droot = self._root(f, dty, dv)
+        if droot is None or sl is None or (c == "@strcat" and lens[0] is None):
+            return out
+        n = self.tmp()
+        out.append(f"{n} = add i64 {sl}, 1")
+        dst = dv
+        if c == "@strcat":
+            dst = self.tmp()
+            out.append(f"{dst} = getelementptr i8, ptr {dv}, i64 {lens[0]}")
+        out.append(f"call void @__cqd_mi(ptr {droot}, ptr {dst}, i64 {n})")
         return out
 
     @staticmethod
@@ -1448,6 +1558,11 @@ def _driver_main(spec: DriverSpec) -> str:
 # every sample in a worker of its own (cqd_isolate), as a child forked per sample would.
 _ISOLATE_CALLS = {"@signal", "@sigaction", "@sigprocmask", "@pthread_sigmask", "@pthread_create",
                   "@atexit", "@alarm", "@setitimer", "@fork", "@vfork", "@sigaltstack"}
+# Heap allocation: a module that allocates or frees runs every sample in a worker of its own, forked
+# from the post-setup state, so each sample's heap (its addresses and the bytes an uninitialized
+# block holds) is the one the setup left (cq-z8gj).
+_HEAP_CALLS = {"@malloc", "@calloc", "@realloc", "@reallocf", "@aligned_alloc", "@posix_memalign", "@valloc",
+               "@free", "@strdup", "@strndup"}
 # A sample runs at most this many loop-header executions; past it, it ends as a timeout would.
 HDR_CAP = int(os.environ.get("CQD_HDR_CAP", str(1 << 20)))
 RSS_CAP = 512 << 20          # bytes: a worker whose peak resident size passes it is replaced
@@ -1524,7 +1639,7 @@ class ProbeBuild:
         self.build()
 
     def isolate(self) -> bool:
-        if any(n in self.mod.declares or n in self.mod.functions for n in _ISOLATE_CALLS):
+        if any(n in self.mod.declares or n in self.mod.functions for n in _ISOLATE_CALLS | _HEAP_CALLS):
             return True
         return any("thread_local" in line for line in self.mod.globals.values())
 
