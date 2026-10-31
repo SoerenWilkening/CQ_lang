@@ -1,7 +1,9 @@
-// Frozen interface (cq-arch, with owner amendments A2 and A4 of 2026-10-27 and freeze beads cq-k1w, cq-bq0 (U1)).
+// Frozen interface (cq-arch, with owner amendments A2 and A4 of 2026-10-27 and freeze beads cq-k1w, cq-bq0 (U1),
+// cq-fx3s (F1)).
 // Changes only under cq-arch's freeze rule.
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <variant>
 
@@ -41,6 +43,13 @@ public:
   unsigned openScope(); void closeScope(unsigned);
   llvm::ArrayRef<Record> scopeRecords(unsigned) const;
   void emitMirror(unsigned scope, llvm::IRBuilder<> &);
+  // F1 (freeze bead cq-fx3s, CR rule 14): a deferred item, the reverse loop of a classically bounded
+  // loop placed after the readers of the loop's exit values. The rails created by records of `scopes`
+  // are owned by the item (no flush resolves them; emit mirrors them); exitRails (owned) are read after
+  // the loop; reads are the rails the item reads (not owned). emit is called once, with the builder at
+  // the end of a fresh unterminated block, and leaves it at the end of an unterminated block.
+  void recordDeferred(llvm::ArrayRef<unsigned> scopes, llvm::ArrayRef<RailId> exitRails,
+                      std::function<void(llvm::IRBuilder<> &)> emit, llvm::ArrayRef<RailId> reads);
   // K1: storage owned by module uncompute.
 private:
   struct Impl; std::shared_ptr<Impl> impl;

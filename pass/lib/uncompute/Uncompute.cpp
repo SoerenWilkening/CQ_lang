@@ -105,6 +105,27 @@
 //    index, then the initializers). A kept bus (a global, Output) has no POP: its stores stay and stay
 //    barriers. A POP made KeptEntangled by a hit on a rail it reads keeps every earlier POP, every load
 //    reading an earlier version, and the bus.
+//  - Deferred items (F1, freeze bead cq-fx3s; CR rule 14: the reverse loop runs after the readers of the
+//    loop's exit values, 153, 178, 187, 188). recordDeferred(scopes, exits, emit, reads): the rails created
+//    by records of the (closed) scopes are OWNED by the item: no flush resolves them, emit's mirrors do.
+//    exits (owned, pending) are read after the loop; reads (not owned) are the rails the item reads. The
+//    item is a pseudo rail g: it reads `reads` (their items follow it), and every rail outside it whose
+//    item reads an exit rail (through merges too) precedes it; a reader owned by another pending item is
+//    that item. Placement:
+//      * flushBefore(P): last in the batch, when every use of the exit rails after the loop (IR users and
+//        noted uses of every handle that may name one, outside the blocks that reach the loop) lies in
+//        P's block before P, there is at least one, every reader is resolved, and no block holding a
+//        pending record of another scope reaches P (never inside a later loop's trip or an open region);
+//      * flushAtExit(R): when the loop reaches R, in the batch's reverse dependency order, else
+//        unimplemented if it cannot be placed. Placed once: a return reached from the loop by a path that
+//        avoids the placement is unimplemented.
+//    At the placement the block is split: its head (phis included) and its predecessors move to a fresh
+//    block H, emit runs from the end of H (it may branch around itself where the loop did not run) and
+//    the original block keeps the tail and its terminator. Rule 5: a non-diagonal gate or an in-place
+//    write after the loop on a rail the item reads (or on an exit rail) that the placement does not
+//    precede is unimplemented. An exit rail that became kept (a measurement, a kept merge's arm, an
+//    escape) is copied in the loop's exit block before its first use after the loop, every such use reads
+//    the copy (which takes the role), and the item undoes the rail itself; a rotated one is unimplemented.
 //  - scopeRecords(s): the records created while s was open (nested scopes included), program order.
 //    The ArrayRef is valid until the next record* call. Scopes close last-in-first-out.
 //
@@ -137,6 +158,7 @@
 #include "llvm/ADT/MapVector.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Transforms/Utils/SSAUpdater.h"
 
 using namespace llvm;
 
@@ -228,6 +250,19 @@ struct Uncompute::Impl {
     // cq-sodl: the edges this arm was freed on (the block P ending the edge, the kept merge m that
     // does not choose it there). A later read of the arm not through m on a path leaving P is caught.
     SmallVector<std::pair<BasicBlock *, RailId>, 1> edgeFrees;
+    // F1 (cq-fx3s): on the pseudo rail of a deferred item, its index in defs; on a rail created by a
+    // record of a deferred item's scopes, that item (no flush resolves it; the item's emit mirrors it).
+    unsigned deferred = kNone;
+    unsigned ownedBy = kNone;
+  };
+  // F1 (cq-fx3s): a deferred item (the rule-14 reverse loop), see recordDeferred.
+  struct Deferred {
+    SmallVector<RailId, 4> exits;
+    std::function<void(IRBuilder<> &)> emit;
+    SmallVector<RailId, 8> reads;
+    SmallPtrSet<const BasicBlock *, 8> region; // the blocks of the owned records
+    RailId pseudo = kNone;
+    BasicBlock *placedAt = nullptr;            // the block the program continues in after the item
   };
   struct Scope {
     unsigned begin, end;
@@ -239,6 +274,7 @@ struct Uncompute::Impl {
   std::vector<Rail> rails;
   DenseMap<const Value *, RailId> byHandle;
   std::vector<Scope> scopes;
+  std::vector<Deferred> defs;
   SmallVector<unsigned, 4> openStack;
   DenseSet<const Instruction *> emitted;
   DenseMap<std::pair<RailId, const BasicBlock *>, Instruction *> itemEnd;
@@ -389,7 +425,7 @@ struct Uncompute::Impl {
       return;
     for (RailId y = 0; y < rails.size(); ++y) {
       Rail &ry = rails[y];
-      if (isMerge(y) || ry.released || ry.popBus != kNone || is_contained(self, y))
+      if (isMerge(y) || ry.released || ry.popBus != kNone || ry.deferred != kNone || is_contained(self, y))
         continue;
       SmallVector<Cell, 8> theirs;
       railCells(y, theirs);
@@ -605,6 +641,8 @@ struct Uncompute::Impl {
 
   SmallVector<RailId, 4> itemReads(RailId g) const {
     const Rail &r = rails[g];
+    if (r.deferred != kNone)
+      return SmallVector<RailId, 4>(defs[r.deferred].reads.begin(), defs[r.deferred].reads.end());
     if (r.cleanup)
       return SmallVector<RailId, 4>(r.cleanup->reads.begin(), r.cleanup->reads.end());
     SmallVector<RailId, 4> out;
@@ -648,6 +686,16 @@ struct Uncompute::Impl {
 
   // Rails whose item reads g, directly or through a merge that may name g (U1).
   SmallVector<RailId, 4> readersOf(RailId g) const {
+    if (rails[g].deferred != kNone) {
+      // F1: the item frees its exit rails, so every rail outside it whose item reads one goes first.
+      const Deferred &d = defs[rails[g].deferred];
+      SmallVector<RailId, 4> out;
+      for (RailId x : d.exits)
+        for (RailId o : readersOf(x))
+          if (o != g && rails[o].ownedBy != rails[g].deferred && !is_contained(out, o))
+            out.push_back(o);
+      return out;
+    }
     SmallVector<RailId, 4> ns = names(g);
     SmallVector<RailId, 4> cand;
     for (RailId n : ns) {
@@ -663,7 +711,12 @@ struct Uncompute::Impl {
       if (o == g)
         continue;
       SmallVector<RailId, 4> rd = itemReads(o);
-      if (any_of(ns, [&](RailId n) { return is_contained(rd, n); }))
+      if (!any_of(ns, [&](RailId n) { return is_contained(rd, n); }))
+        continue;
+      // F1: a reader owned by a deferred item not yet placed is undone by that item.
+      if (unsigned di = rails[o].ownedBy; di != kNone && rails[g].ownedBy != di && !rails[defs[di].pseudo].released)
+        o = defs[di].pseudo;
+      if (o != g && !is_contained(out, o))
         out.push_back(o);
     }
     for (RailId o : versionBefore(g))
@@ -1330,6 +1383,8 @@ struct Uncompute::Impl {
     Rail &r = rails[g];
     if (!resolvable(g))
       return; // kept by a POP placed earlier in this batch (keepBelow)
+    if (r.deferred != kNone)
+      return placeDeferred(g, c);
     if (c.mode == Mode::Mirror) {
       Instruction *end = emitItem(g, *c.mirror);
       r.released = true;
@@ -1399,6 +1454,226 @@ struct Uncompute::Impl {
       r.released = true;
     else
       r.exitsDone.insert(pos.bb);
+  }
+
+  // ---- deferred items (F1, cq-fx3s) --------------------------------------------------------------
+
+  // A block in the item's region or before it (it reaches a block of an owned record).
+  bool beforeOrIn(const Deferred &d, const BasicBlock *b) const {
+    for (const BasicBlock *rb : d.region)
+      if (reaches(b, rb))
+        return true;
+    return false;
+  }
+  bool afterRegion(const Deferred &d, const BasicBlock *b) const {
+    if (beforeOrIn(d, b))
+      return false;
+    for (const BasicBlock *rb : d.region)
+      if (reaches(rb, b))
+        return true;
+    return false;
+  }
+
+  // The uses of the item's exit rails after the loop: IR users and noted uses of every handle that may
+  // name one (merges included), outside the region.
+  SmallVector<Instruction *, 8> deferredAnchors(const Deferred &d) const {
+    SmallVector<Instruction *, 8> as;
+    for (RailId x : d.exits)
+      for (RailId n : names(x)) {
+        for (User *u : rails[n].handle->users())
+          if (auto *i = dyn_cast<Instruction>(u); i && i->getParent() && !beforeOrIn(d, i->getParent()))
+            as.push_back(i);
+        for (Instruction *i : rails[n].uses)
+          if (i->getParent() && !beforeOrIn(d, i->getParent()))
+            as.push_back(i);
+      }
+    return as;
+  }
+
+  // flushBefore(P) may place the item only where every use of its exit rails after the loop lies in
+  // P's block before P (and there is at least one: before the exit values' readers are lowered there
+  // is none). Uses still to be lowered are the caller's contract, as for any rail flushBefore resolves.
+  bool deferredLocalReady(RailId g, Instruction *point) const {
+    const Deferred &d = defs[rails[g].deferred];
+    SmallVector<Instruction *, 8> as = deferredAnchors(d);
+    if (as.empty())
+      return false;
+    for (Instruction *a : as)
+      if (a->getParent() != point->getParent() || !a->comesBefore(point))
+        return false;
+    // Never inside another region whose own records are still pending (a later rule-14 loop's trip, its
+    // back edges cut while it flushes per trip, or a cq_invert region): the item would run per trip.
+    const BasicBlock *P = point->getParent();
+    for (const Scope &sc : scopes) {
+      if (sc.open)
+        return false;
+      for (unsigned rec = sc.begin; rec < sc.end; ++rec) {
+        RailId it = info[rec].item;
+        if (it == kNone || rails[it].ownedBy == rails[g].deferred || !resolvable(it))
+          continue;
+        if (reaches(records[rec].forward->getParent(), P))
+          return false;
+      }
+    }
+    return true;
+  }
+
+  static RailType createdType(const Record &rec) {
+    if (auto *t = std::get_if<abi::TemplateSpec>(&rec.spec))
+      return templateResultType(*t);
+    return std::get<abi::CoreSpec>(rec.spec).w;
+  }
+
+  // Place the item: after every use of its exit rails after the loop and the items of their readers,
+  // before any barrier on a rail it reads. The block is split there: its head (and its predecessors)
+  // move to a fresh block H, the item is emitted from the end of H, and the program continues in the
+  // original block, which keeps the tail and the terminator (so a caller's references to it as an
+  // edge's source stay valid).
+  void placeDeferred(RailId g, const Ctx &c) {
+    Rail &r = rails[g];
+    Deferred &d = defs[r.deferred];
+    SmallVector<Instruction *, 12> as = deferredAnchors(d);
+    for (RailId o : readersOf(g))
+      for (auto &kv : itemEnd)
+        if (kv.first.first == o)
+          as.push_back(kv.second);
+    Pos pos;
+    if (c.mode == Mode::Local) {
+      pos = afterLatest(c.point->getParent(), as, g);
+    } else if (c.mode == Mode::Exit) {
+      BasicBlock *Rb = c.point->getParent();
+      SmallVector<Instruction *, 12> rel;
+      for (Instruction *a : as)
+        if (reaches(a->getParent(), Rb))
+          rel.push_back(a);
+      pos = afterLatest(Rb, rel, g);
+    } else {
+      internalError("uncompute: a deferred item inside a mirror", r.handle);
+    }
+    if (!pos.before)
+      internalError("uncompute: no insertion point for a deferred item", r.handle);
+    // Rule 5: every rail the item reads (and every exit rail) must still hold the value its records
+    // read. A non-diagonal gate or an in-place write after the loop that the placement does not
+    // precede would be undone against the changed rail.
+    SmallVector<RailId, 8> xs;
+    for (RailId x0 : d.reads)
+      for (RailId x : leaves(x0))
+        if (!is_contained(xs, x))
+          xs.push_back(x);
+    for (RailId x : d.exits)
+      if (!is_contained(xs, x))
+        xs.push_back(x);
+    for (RailId x : xs) {
+      SmallVector<Instruction *, 8> evs(rails[x].hits.begin(), rails[x].hits.end());
+      evs.append(rails[x].aliasHits.begin(), rails[x].aliasHits.end());
+      for (unsigned w : rails[x].writes)
+        if (rails[x].ownedBy == kNone)
+          evs.push_back(records[w].forward);
+      for (Instruction *e : evs) {
+        if (!e->getParent() || !afterRegion(d, e->getParent()))
+          continue;
+        bool violated = e->getParent() == pos.bb ? !(pos.before == e || pos.before->comesBefore(e))
+                                                 : reaches(e->getParent(), pos.bb);
+        if (violated)
+          unimplemented("uncompute: a non-diagonal gate or an in-place write on a rail the deferred rule-14 reverse "
+                            "loop reads (" + describe(rails[x].handle) + ") precedes its earliest placement",
+                        e);
+      }
+    }
+    // An exit rail that became kept (measured, escaped, a kept merge's arm) is kept by a copy taken
+    // here, and the reverse loop undoes the rail itself (every trip's instance is undone alike).
+    SmallVector<std::pair<RailId, Role>, 2> keptExits;
+    for (RailId x : d.exits) {
+      Rail &rx = rails[x];
+      if (!keptRole(rx.role))
+        continue;
+      if (!rx.hits.empty() || !rx.aliasHits.empty() || rx.creator == kNone || rx.cleanup)
+        unimplemented("uncompute: a kept exit rail of a deferred rule-14 reverse loop that was rotated or has no "
+                          "producer: " + describe(rx.handle),
+                      cast<Instruction>(rx.handle));
+      keptExits.push_back({x, rx.role});
+    }
+    // Split.
+    BasicBlock *P = pos.bb;
+    Function *F = P->getParent();
+    LLVMContext &C = F->getContext();
+    BasicBlock *H = BasicBlock::Create(C, "", F, P);
+    H->splice(H->end(), P, P->begin(), pos.before->getIterator());
+    for (BasicBlock *pr : SmallVector<BasicBlock *, 4>(predecessors(P)))
+      if (pr != H)
+        pr->getTerminator()->replaceSuccessorWith(P, H);
+    IRBuilder<> B(H);
+    for (auto [x, role] : keptExits) {
+      // The copy is taken where the loop exits (the one block outside the region its blocks branch
+      // to), before any use after the loop: every such use reads the copy, which takes the kept role
+      // (a measured rail is never freed), and the reverse loop undoes the rail itself.
+      BasicBlock *X = nullptr;
+      auto fromRegion = [&](const BasicBlock *b) {
+        return any_of(d.region, [&](const BasicBlock *rb) { return reaches(rb, b); });
+      };
+      for (BasicBlock &lb : *F)
+        if (&lb != H && beforeOrIn(d, &lb) && fromRegion(&lb))
+          for (const BasicBlock *s : successors(&lb))
+            if (!beforeOrIn(d, s)) {
+              if (X && X != s)
+                unimplemented("uncompute: a kept exit rail of a deferred rule-14 reverse loop whose loop has more "
+                                  "than one exit block",
+                              cast<Instruction>(rails[x].handle));
+              X = const_cast<BasicBlock *>(s);
+            }
+      if (!X || !X->getTerminator())
+        internalError("uncompute: no exit block for a kept exit rail of a deferred item in " + F->getName().str(),
+                      rails[x].handle);
+      Module &M = *F->getParent();
+      RailType w = createdType(records[rails[x].creator]);
+      Value *xh = rails[x].handle;
+      SmallVector<Use *, 8> outside;
+      for (Use &u : xh->uses())
+        if (auto *ui = dyn_cast<Instruction>(u.getUser()); ui && ui->getParent() && !beforeOrIn(d, ui->getParent()))
+          outside.push_back(&u);
+      IRBuilder<> BXc(X->getTerminator());
+      CallInst *f = track(BXc.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, w}),
+                                         {Constant::getNullValue(irTypeOf(C, w))}));
+      track(BXc.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Copy, w}), {xh, f}));
+      for (Use *u : outside)
+        u->set(f);
+      RailId fid = newRail(f, role, "recordDeferred"); // may move rails: indices only from here
+      for (RailId m : SmallVector<RailId, 2>(rails[x].mergedInto)) {
+        for (RailId &a : rails[m].arms)
+          if (a == x)
+            a = fid;
+        rails[fid].mergedInto.push_back(m);
+      }
+      rails[x].mergedInto.clear();
+      rails[x].role = Role::Garbage;
+    }
+    rails[g].released = true;
+    d.emit(B);
+    for (auto [x, role] : keptExits)
+      if (!rails[x].released)
+        internalError("uncompute: the deferred reverse loop did not undo its kept exit rail", rails[x].handle);
+    for (RailId x : d.exits)
+      if (!rails[x].released && !keptRole(rails[x].role))
+        internalError("uncompute: the deferred reverse loop did not undo its exit rail", rails[x].handle);
+    if (B.GetInsertBlock()->getTerminator())
+      internalError("uncompute: a deferred item left its builder in a terminated block", rails[g].handle);
+    BranchInst *br = BranchInst::Create(P, B.GetInsertBlock());
+    emitted.insert(br);
+    itemEnd[{g, br->getParent()}] = br;
+    d.placedAt = P;
+  }
+
+  // At a return R: a deferred item already placed must lie on every path from its loop to R.
+  void checkDeferredPaths(BasicBlock *Rb) const {
+    for (const Deferred &d : defs) {
+      if (!d.placedAt)
+        continue;
+      for (const BasicBlock *rb : d.region)
+        if (reachesAgain(rb, Rb, {d.placedAt}) || rb == Rb)
+          unimplemented("uncompute: a return is reached from a classically bounded loop by a path that avoids its "
+                            "deferred reverse loop (the loop's exit values are read on another path only)",
+                        Rb->getTerminator());
+    }
   }
 
   void resolve(SmallVectorImpl<RailId> &cands, const Ctx &c) {
@@ -1645,8 +1920,15 @@ void Uncompute::flushBefore(Instruction *point) {
   Impl &I = *impl;
   Impl::Ctx c{Impl::Mode::Local, point, nullptr};
   BasicBlock *P = point->getParent();
-  SmallVector<RailId, 16> cands;
+  SmallVector<RailId, 16> cands, deferred;
   for (RailId g = 0; g < I.rails.size(); ++g) {
+    if (I.rails[g].ownedBy != kNone)
+      continue; // F1: mirrored by its deferred item
+    if (I.rails[g].deferred != kNone) {
+      if (I.resolvable(g))
+        deferred.push_back(g);
+      continue;
+    }
     if (!I.resolvable(g) || !I.rails[g].exitsDone.empty() || I.defBlock(g) != P)
       continue;
     bool ok = true;
@@ -1660,6 +1942,15 @@ void Uncompute::flushBefore(Instruction *point) {
       cands.push_back(g);
   }
   I.resolve(cands, c);
+  // F1: a deferred item goes last, once every use of its exit rails after the loop lies before P in
+  // P's block and every reader of them is resolved.
+  for (RailId g : deferred) {
+    if (!I.deferredLocalReady(g, point))
+      continue;
+    if (any_of(I.readersOf(g), [&](RailId o) { return I.resolvable(o) && !I.done(o, c); }))
+      continue;
+    I.place(g, c);
+  }
 }
 
 void Uncompute::flushAtExit(ReturnInst *ret) {
@@ -1670,10 +1961,19 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
   I.checkEdgeUsers();
   Impl::Ctx c{Impl::Mode::Exit, ret, nullptr};
   BasicBlock *Rb = ret->getParent();
-  SmallVector<RailId, 16> cands;
+  SmallVector<RailId, 16> cands, defc;
   for (RailId g = 0; g < I.rails.size(); ++g) {
-    if (!I.resolvable(g) || I.done(g, c))
+    if (!I.resolvable(g) || I.done(g, c) || I.rails[g].ownedBy != kNone)
       continue;
+    if (unsigned di = I.rails[g].deferred; di != kNone) {
+      // F1: placed here when its loop reaches this return (the item branches around itself on a path
+      // where the loop did not run).
+      if (any_of(I.defs[di].region, [&](const BasicBlock *rb) { return Impl::reaches(rb, Rb); })) {
+        cands.push_back(g);
+        defc.push_back(g);
+      }
+      continue;
+    }
     const BasicBlock *D = I.defBlock(g);
     if (!Impl::reaches(D, Rb))
       continue;
@@ -1689,6 +1989,53 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
     cands.push_back(g);
   }
   I.resolve(cands, c);
+  for (RailId g : defc)
+    if (!I.rails[g].released)
+      unimplemented("uncompute: a deferred rule-14 reverse loop could not be placed before a return its loop reaches "
+                        "(a reader of its exit values is still pending)",
+                    ret);
+  I.checkDeferredPaths(Rb);
+}
+
+void Uncompute::recordDeferred(ArrayRef<unsigned> scopes, ArrayRef<RailId> exitRails,
+                               std::function<void(IRBuilder<> &)> emit, ArrayRef<RailId> reads) {
+  Impl &I = *impl;
+  if (exitRails.empty() || !emit)
+    internalError("uncompute: recordDeferred without exit rails or an emitter");
+  unsigned di = I.defs.size();
+  Impl::Deferred d;
+  d.emit = std::move(emit);
+  for (unsigned s : scopes) {
+    if (s >= I.scopes.size() || I.scopes[s].open)
+      internalError("uncompute: recordDeferred over a scope that is not closed: " + std::to_string(s));
+    for (unsigned rec = I.scopes[s].begin; rec < I.scopes[s].end; ++rec) {
+      d.region.insert(I.records[rec].forward->getParent());
+      if (isCreator(I.info[rec].kind) && I.info[rec].item != kNone)
+        I.rails[I.info[rec].item].ownedBy = di;
+    }
+  }
+  for (RailId x : exitRails) {
+    Impl::Rail &rx = I.rail(x, "recordDeferred");
+    if (rx.ownedBy != di || rx.released || I.isMerge(x))
+      internalError("uncompute: recordDeferred: an exit rail that is not a pending rail of the item's scopes", rx.handle);
+    if (!is_contained(d.exits, x))
+      d.exits.push_back(x);
+  }
+  RailId g = I.rails.size();
+  I.rails.emplace_back();
+  I.rails.back().handle = I.rails[d.exits.front()].handle;
+  I.rails.back().deferred = di;
+  d.pseudo = g;
+  for (RailId r : reads) {
+    Impl::Rail &rr = I.rail(r, "recordDeferred");
+    if (rr.ownedBy == di)
+      internalError("uncompute: recordDeferred: a read rail owned by the item", rr.handle);
+    if (!is_contained(d.reads, r)) {
+      d.reads.push_back(r);
+      rr.cleanupReaders.push_back(g);
+    }
+  }
+  I.defs.push_back(std::move(d));
 }
 
 unsigned Uncompute::openScope() {
