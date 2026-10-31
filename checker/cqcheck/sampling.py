@@ -87,6 +87,7 @@ substitutions are not probed (the probe build has no substitution).
 from __future__ import annotations
 
 import hashlib
+from collections import Counter
 import functools
 import json
 import math
@@ -2608,9 +2609,11 @@ def _merge_class(cls: Dict[str, dict], extra: Dict[str, dict]) -> None:
 
 
 def drop_out_of_domain(g: Gen, pc: Dict[str, dict], searcher: "Searcher", exempt_baseline: bool = True) -> None:
-    """Remove from g and from the per-call classes pc every sample on which the C program accesses
-    outside an object (not `_in_domain`, cq-nqna); renumber the rest. An entry that lost samples
-    counts them in "out_of_domain"; one that lost all of them becomes empty with that reason.
+    """Remove from g and from the per-call classes pc every sample outside the C program's domain:
+    one that accesses outside an object (not `_in_domain`, cq-nqna) or executes an LLVM-undefined
+    operation (`_ub`, cq-f075); renumber the rest. An entry that lost samples counts them in
+    "out_of_domain"; one that lost all of them becomes empty with the reasons it lost them for
+    (domain_reason, cq-krfj).
     `exempt_baseline=False` (cqcheck user, whose baseline is made up, not drivers.txt data: cq-sujz)
     filters the baseline calls like every other sample."""
     if getattr(g, "sindex", None):
@@ -2618,9 +2621,14 @@ def drop_out_of_domain(g: Gen, pc: Dict[str, dict], searcher: "Searcher", exempt
     obs = searcher.observe([(s["call"], s["args"]) for s in g.samples])
     # the drivers.txt calls are spec input data and stay samples 0 .. ncalls-1 even when one of
     # them leaves an object (91 stores a[0] into malloc(0), 107 reads one past b: cq-b4re)
-    bad = {i for i, o in enumerate(obs)
-           if (not _in_domain(o) or _ub(o, searcher.rows_by_site))
-           and (i >= len(g.spec.calls) or not exempt_baseline)}
+    why: Dict[int, str] = {}
+    for i, o in enumerate(obs):
+        if i < len(g.spec.calls) and exempt_baseline:
+            continue
+        r = domain_reason(o, searcher.rows_by_site)
+        if r:
+            why[i] = r
+    bad = set(why)
     if not bad:
         return
     remap: Dict[int, int] = {}
@@ -2643,8 +2651,10 @@ def drop_out_of_domain(g: Gen, pc: Dict[str, dict], searcher: "Searcher", exempt
                 e["samples"] = new
                 e["out_of_domain"] = n
             else:
-                cls[key] = {"empty": f"every one of its {n} samples accesses outside an object in the C "
-                                     f"program: outside its domain (cq-nqna)", "out_of_domain": n}
+                counts = Counter(why[i] for i in e["samples"] if i in why)
+                parts = [f"{k} {r}" for r, k in sorted(counts.items())]
+                cls[key] = {"empty": f"every one of its {n} samples is outside the C program's domain: "
+                                     f"{', '.join(parts)}", "out_of_domain": n}
 
 
 def classical_candidates(g: Gen, rng: random.Random) -> Dict[int, List[List[str]]]:
@@ -2661,6 +2671,19 @@ def classical_candidates(g: Gen, rng: random.Random) -> Dict[int, List[List[str]
                 cands.append(g.with_values(ci, vals))
         out[ci] = cands
     return out
+
+
+OOB_REASON = "access outside an object (cq-nqna)"
+UB_REASON = "execute an LLVM-undefined operation (cq-f075)"
+
+
+def domain_reason(o: Obs, rows_by_site: Dict[int, List[Row]]) -> Optional[str]:
+    """Why a probed sample is outside the C program's domain (OOB_REASON or UB_REASON), or None."""
+    if not _in_domain(o):
+        return OOB_REASON
+    if _ub(o, rows_by_site):
+        return UB_REASON
+    return None
 
 
 def _in_domain(o: Obs) -> bool:

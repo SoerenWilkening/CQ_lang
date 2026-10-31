@@ -610,6 +610,33 @@ class OutOfObject(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_dropped_entries_name_their_reason(self):
+        """cq-krfj: an entry emptied by drop_out_of_domain names why its samples left the domain: an
+        LLVM-undefined operation is not an access outside an object."""
+        from types import SimpleNamespace as NS
+        from unittest import mock
+        oob = S.Obs(ran=True, end="oob", oob={3})
+        ub = S.Obs(ran=True, end="exit")
+        ok = S.Obs(ran=True, end="exit")
+        is_ub = lambda o, rows: o is ub      # noqa: E731
+        with mock.patch.object(S, "_ub", side_effect=is_ub):
+            self.assertEqual(S.domain_reason(oob, {}), S.OOB_REASON)
+            self.assertEqual(S.domain_reason(ub, {}), S.UB_REASON)
+            self.assertIsNone(S.domain_reason(ok, {}))
+            obs = [ok, ub, ub, oob, ok]
+            g = NS(spec=NS(calls=[{}]), samples=[{"call": 0, "args": [str(i)]} for i in range(5)])
+            se = NS(rows_by_site={}, observe=lambda cands: obs)
+            pc = {"edge": {"0": {"samples": [1, 2]}}, "specials": {"0": {"samples": [1, 3]}},
+                  "rq": {"0": {"samples": [3, 4]}}}
+            S.drop_out_of_domain(g, pc, se)
+        self.assertEqual(len(g.samples), 2)
+        self.assertEqual(pc["edge"]["0"]["out_of_domain"], 2)
+        self.assertIn("2 " + S.UB_REASON, pc["edge"]["0"]["empty"])
+        self.assertNotIn("outside an object", pc["edge"]["0"]["empty"])
+        self.assertIn("1 " + S.UB_REASON, pc["specials"]["0"]["empty"])
+        self.assertIn("1 " + S.OOB_REASON, pc["specials"]["0"]["empty"])
+        self.assertEqual(pc["rq"]["0"], {"samples": [1], "out_of_domain": 1})
+
     def test_quantum_index_past_object_dropped(self):
         """76 param_unbounded reads t[x] for an 8-bit quantum x from icoef[4]: x >= 4 is past the
         object. The exhaustive class keeps x in 0..3 and counts the other 252; the mem site's
