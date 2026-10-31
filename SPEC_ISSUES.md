@@ -16,3 +16,9 @@ Entry format:
 ```
 
 ## Open
+
+## 194_complex_builtin_lifted: the reference uses a template CR §1.2 does not name
+- Rule: CR §1.2 template list (intrinsic routes name `uadd_sat usub_sat`, no signed saturating forms); BACKEND_ABI §2 likewise.
+- Disagreement: complex_builtin_lifted.lowered.ll calls `cq_template_sadd_sat_i32` (11 uses), from compiler-rt's inline `__compiler_rt_logb`/`scalbn` path.
+- Evidence: our structural verifier rejects the reference: "malformed ABI call: @cq_template_sadd_sat_i32 is not a template name (CR §1.2)".
+- Bead: cq-75bz
