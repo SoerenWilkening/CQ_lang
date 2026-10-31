@@ -71,3 +71,42 @@ def match_c(data, n: int):
         raise NativeError(f"cq: chk-compare: cq_match_c failed ({rc})")
     return (out[0], bool(out[1]), bool(out[2]), [None if x < 0 else int(x) for x in out[3:3 + n]],
             {i for i in range(n) if out[3 + n + i]})
+
+
+def launcher() -> Path:
+    """The cqcheck launcher (native/cqcheck_launch.c, step 6 option b): tool_root()/cqcheck, which execs
+    the interpreter `python3` resolves to (outside any shim) on the checker, with -S. Rebuilt when its
+    source, the interpreter or the checker's place changes."""
+    from cqcheck import run
+    py = subprocess.run(["python3", "-c", "import sys; print(sys.executable)"], capture_output=True,
+                        text=True).stdout.strip() or sys_executable()
+    checker = str(SRC.parent)
+    src = SRC / "cqcheck_launch.c"
+    h = hashlib.sha256("\0".join([py, checker, str(run.LLVM_BIN)]).encode() + src.read_bytes()).hexdigest()[:20]
+    built = run.tool_root() / "native" / f"cqcheck-{h}"
+    if not built.exists():
+        built.parent.mkdir(parents=True, exist_ok=True)
+        tmp = built.with_name(built.name + f".{os.getpid()}.tmp")
+        r = subprocess.run([str(run.LLVM_BIN / "clang"), "-O1", "-w", f"-DCQ_PY={_c_str(py)}",
+                            f"-DCQ_CHECKER={_c_str(repr(checker))}", str(src), "-o", str(tmp)],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            raise NativeError(f"cq: building the cqcheck launcher failed:\n{r.stderr[-3000:]}")
+        os.replace(tmp, built)
+    link = run.tool_root() / "cqcheck"
+    tmpl = link.with_name(f"cqcheck.{os.getpid()}.tmp")
+    if tmpl.exists() or tmpl.is_symlink():
+        tmpl.unlink()
+    os.symlink(built.name if built.parent == link.parent else os.path.relpath(built, link.parent), tmpl)
+    os.replace(tmpl, link)
+    return link
+
+
+def sys_executable() -> str:
+    import sys
+    return sys.executable
+
+
+def _c_str(s: str) -> str:
+    """A C string literal of s, for a -D definition."""
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'

@@ -11,6 +11,10 @@
   user --o1 X --lowered Y --entry FN [--samples N]
                           usercheck (user.main(o1, lowered, entry, samples))
 
+Launcher (cq-8m6v): <build>/cqcheck-tools/cqcheck <args> is `python3 -m cqcheck <args>` without the pyenv
+shim's start and without site-packages (checker/native/cqcheck_launch.c; built by the cqcheck_tools
+target). Run it through heavy.sh like any checker run: it is an ordinary process, no daemon.
+
 Environment: CQ_SPEC_DIR (default ../CQ_spec), CQ_BUILD_DIR (default build/), CQ_PLUGIN (default
 $CQ_BUILD_DIR/pass/libCQLower.so), CQ_LLVM_BIN (default /usr/local/opt/llvm@19/bin).
 """
