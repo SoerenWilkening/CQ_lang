@@ -2235,11 +2235,23 @@ def exhaustive_ok(bits: int) -> bool:
     return bits <= exhaustive_bits()
 
 
-def theta_reaches(spec: DriverSpec, example_dir: Path,
-                  sites: Dict[int, List["D.ThetaSite"]]) -> Dict[int, Dict[str, int]]:
-    """call -> {site key: reaches}: the most reaches of each cq_theta site in the C oracle over the
-    drivers.txt sample of that call with cq_theta the identity, and with every substituted site at 1
-    and at all ones (a site under a control on rotated registers is reached only when they read 1)."""
+REACH_BASES = 2     # reaching samples per cq_theta site the drivers.txt call does not reach (cq-15cu)
+
+
+def theta_reaches(spec: DriverSpec, example_dir: Path, sites: Dict[int, List["D.ThetaSite"]],
+                  g: Optional["Gen"] = None) -> Tuple[Dict[int, Dict[str, int]],
+                                                       Dict[int, Dict[str, List[Tuple[List[str], Optional[int]]]]]]:
+    """(call -> {site key: reaches}, call -> {site key: [(reaching args, variant), ...]}): the most reaches of
+    each cq_theta site in the C oracle over the drivers.txt sample of that call with cq_theta the
+    identity, and with every substituted site at 1 and at all ones (a site under a control on
+    rotated registers is reached only when they read 1).
+
+    cq-15cu: a site those probes never reach (125's site 2 under x > k) is looked for over the
+    call's plain samples of `g` (the same three variants each): its reaches are the most over the
+    samples reaching it, and the first REACH_BASES of them are its reaching bases, on which
+    subst_classes substitutes it (variant None: the other sites unsubstituted; 1 or -1: the other
+    sites at that value, as when it was reached). A site no sample reaches has no entry in either
+    (the caller reports it)."""
     from cqcheck import oracle
     o1 = sorted(Path(example_dir).glob("*.O1.ll"))[0]
     line = D.read_drivers_txt(Path(example_dir).resolve().parent.parent / "_tools" / "drivers.txt")[spec.example]
@@ -2261,14 +2273,48 @@ def theta_reaches(spec: DriverSpec, example_dir: Path,
                 cnt[k] = cnt.get(k, 0) + 1
         for k, n in cnt.items():
             out[smp["call"]][k] = max(out[smp["call"]].get(k, 0), n)
-    return out
+    bases: Dict[int, Dict[str, List[Tuple[List[str], Optional[int]]]]] = {ci: {} for ci in range(len(spec.calls))}
+    if g is None:
+        return out, bases
+    for ci in range(len(spec.calls)):
+        missing = {st.key() for st in sites.get(ci, []) if not out[ci].get(st.key())}
+        if not missing:
+            continue
+        plain = [list(sm["args"]) for sm in g.samples if sm["call"] == ci and "subst" not in sm]
+        for variant in (None, 1, -1):
+            if not missing:
+                break
+            probes = [{"call": ci, "args": a} if variant is None else
+                      {"call": ci, "args": a,
+                       "subst": {st.key(): _site_hex(st, variant) for st in sites[ci]}}
+                      for a in plain]
+            found: Set[str] = set()
+            for smp, r in zip(probes, oracle.run_samples(o1, spec, probes)):
+                if r.failed:
+                    continue
+                cnt = {}
+                for e in r.events:
+                    if e.get("ev") == "site" and e.get("kind") == "theta":
+                        k = f"{e['fn']}:{e['site']}"
+                        cnt[k] = cnt.get(k, 0) + 1
+                for k in missing & set(cnt):
+                    out[ci][k] = max(out[ci].get(k, 0), cnt[k])
+                    bs = bases[ci].setdefault(k, [])
+                    if len(bs) < REACH_BASES:
+                        bs.append((smp["args"], variant))
+                    found.add(k)
+            missing -= found
+    return out, bases
 
 
 def subst_classes(g: Gen, rng: random.Random, sites: Dict[int, List["D.ThetaSite"]],
-                  reaches: Dict[int, Dict[str, int]]) -> Dict[str, Dict[str, dict]]:
+                  reaches: Dict[int, Dict[str, int]],
+                  reach_bases: Optional[Dict[int, Dict[str, List[Tuple[List[str], Optional[int]]]]]] = None
+                  ) -> Dict[str, Dict[str, dict]]:
     """Per call, the substitution samples of the edge, specials, exhaustive and random classes:
     {"edge"|"specials"|"exhaustive"|"rq": {"<call>": {"samples": [...], ...} | {"empty": why}}}.
-    Calls with no substituted site get no entry."""
+    Calls with no substituted site get no entry. A site the drivers.txt call does not reach gets
+    the edge and specials values again on each of its reaching bases (theta_reaches, cq-15cu)."""
     out: Dict[str, Dict[str, dict]] = {"edge": {}, "specials": {}, "exhaustive": {}, "rq": {}}
     for ci, sts in sites.items():
         if not sts:
@@ -2336,6 +2382,20 @@ def subst_classes(g: Gen, rng: random.Random, sites: Dict[int, List["D.ThetaSite
                 sub[st.key()] = vs
             idx.append(g.add_subst(ci, bases[rng.randrange(len(bases))], sub))
         out["rq"][key] = {"samples": sorted(set(idx)), "subst_sites": names}
+        # cq-15cu: the sites the drivers.txt call does not reach, substituted where they are reached
+        rb = (reach_bases or {}).get(ci, {})
+        for cls, values, kind in (("edge", site_edges, None), ("specials", site_specials, "f")):
+            if "samples" not in out[cls][key]:
+                continue
+            for st in sts:
+                if kind and st.ctype.kind != kind:
+                    continue
+                for b, variant in rb.get(st.key(), []):
+                    for v in values(st.ctype):
+                        sub = {t.key(): _site_hex(t, v if t is st else variant) for t in sts
+                               if t is st or variant is not None}
+                        out[cls][key]["samples"].append(g.add_subst(ci, b, sub))
+            out[cls][key]["samples"] = sorted(set(out[cls][key]["samples"]))
     return out
 
 
@@ -2948,7 +3008,10 @@ def build_sample_set(spec: DriverSpec, example_dir: Path, exempt_baseline: bool 
     # cq_theta substitution (cq-6m2): appended after every search, which reads samples by (call, args)
     mod = D.read_module(sorted(example_dir.glob("*.O1.ll"))[0])
     sites = {ci: D.substituted_sites(mod, spec, ci) for ci in range(len(spec.calls))}
-    reaches = theta_reaches(spec, example_dir, sites) if any(sites.values()) else {}
+    reaches, reach_bases = theta_reaches(spec, example_dir, sites, g) if any(sites.values()) else ({}, {})
+    # cq-15cu: a cq_theta site no sample reaches is never substituted; it is reported, not skipped
+    unreached = {ci: [st.key() for st in sts if not reaches.get(ci, {}).get(st.key())]
+                 for ci, sts in sites.items()}
     # A site fed by a varied argument (cq-lvkq) is substituted only where its reach index means the
     # same on both sides: reached once, in a module with no cq_invert region. In a loop the lowered
     # side reaches it on every unrolled trip and the C program only on taken ones; an inverted
@@ -2963,7 +3026,7 @@ def build_sample_set(spec: DriverSpec, example_dir: Path, exempt_baseline: bool 
         sites[ci] = [st for st in sites[ci]
                      if not (st.params & varied) or (not inverted and reaches.get(ci, {}).get(st.key(), 0) == 1)]
     if any(sites.values()):
-        sc = subst_classes(g, random.Random(seed + 3), sites, reaches)
+        sc = subst_classes(g, random.Random(seed + 3), sites, reaches, reach_bases)
         _merge_class(pc["edge"], sc["edge"])
         _merge_class(pc["specials"], sc["specials"])
         _merge_class(pc["rq"], sc["rq"])
@@ -2978,6 +3041,9 @@ def build_sample_set(spec: DriverSpec, example_dir: Path, exempt_baseline: bool 
                 cur["subst"] = e["empty"]
             else:
                 pc["exhaustive"][key] = {"empty": cur.get("empty", "") + "; " + e["empty"]}
+    for ci, names in unreached.items():
+        if names:
+            pc["edge"].setdefault(str(ci), {"empty": "no edge sample"})["unreached_sites"] = names
 
     if getattr(g, "sindex", None):
         drop_subst_out_of_domain(g, pc, spec, example_dir, sites, seed)

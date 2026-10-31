@@ -444,6 +444,21 @@ class Sampling(unittest.TestCase):
         self.assertEqual(ex1["reaches"]["controlled_ry_chain:0"], 4)      # n = 4
         self.assertEqual(len(ex1["samples"]), 1 << ex1["bits"])
 
+    def test_substitution_where_the_baseline_misses_a_site(self):
+        """cq-15cu: 125's cq_theta(&r, t) under x > k is not reached by the drivers.txt call (x0 = 0,
+        k = 2); it is substituted on samples that reach it (an edge value beside x > k), and no
+        site is reported unreached."""
+        from cqcheck import oracle
+        spec, ss = self.sample("125_mixed_phase_value_arm")
+        site = "mixed_phase_value_arm:3"
+        self.assertNotIn("unreached_sites", ss.classes["edge"]["0"])
+        edge = [ss.samples[i] for i in ss.classes["edge"]["0"]["samples"]
+                if site in ss.samples[i].get("subst", {})]
+        o1 = sorted(D.example_dir("125_mixed_phase_value_arm").glob("*.O1.ll"))[0]
+        reached = [any(e.get("ev") == "site" and f"{e['fn']}:{e['site']}" == site for e in r.events)
+                   for r in oracle.run_samples(o1, spec, edge)]
+        self.assertTrue(any(reached))
+
     def test_constant_offset_into_vla_is_checked(self):
         """cq-faa5: 59_controlled_ry_bits reads q[0] (a constant offset, no GEP) and q[n-1] of a
         VLA of n cells. Both are mem sites, classical, with no §2 rows, and n = 0 leaves the object
