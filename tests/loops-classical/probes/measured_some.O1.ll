@@ -164,6 +164,38 @@ define i32 @m_join(i32 noundef %0, i32 noundef %1) local_unnamed_addr #0 {
   ret i32 %22
 }
 
+; Function Attrs: nounwind ssp uwtable
+define i32 @m_join2(i32 noundef %0, i32 noundef %1) local_unnamed_addr #0 {
+  %3 = tail call i32 @cq_theta_si32(i32 noundef 0, double noundef 9.000000e-01) #2
+  %4 = mul nsw i32 %3, 3
+  %5 = add nsw i32 %4, 1
+  %6 = icmp eq i32 %0, 0
+  br i1 %6, label %9, label %7
+
+7:                                                ; preds = %2
+  %8 = tail call i32 @cq_measure_si32(i32 noundef %5) #3
+  br label %10
+
+9:                                                ; preds = %2
+  store volatile i32 0, ptr @m_sink, align 4, !tbaa !11
+  br label %10
+
+10:                                               ; preds = %9, %7
+  %11 = phi i32 [ %8, %7 ], [ 5, %9 ]
+  %12 = icmp eq i32 %1, 0
+  br i1 %12, label %17, label %13
+
+13:                                               ; preds = %10
+  %14 = tail call i32 @cq_measure_si32(i32 noundef %5) #3
+  %15 = mul nsw i32 %14, 100
+  %16 = add nsw i32 %15, %11
+  br label %17
+
+17:                                               ; preds = %13, %10
+  %18 = phi i32 [ %16, %13 ], [ %11, %10 ]
+  ret i32 %18
+}
+
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #2 = { nomerge nounwind }

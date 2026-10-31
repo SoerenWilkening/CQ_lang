@@ -42,3 +42,15 @@ int m_join(int c, int n) {
     if (n > 3) r += 100 * cq_measure(y);
     return r;
 }
+/* cq-50qq: y measured on one arm; the join still reaches a later measurement (d), so the non-measuring arm keeps
+ * y across the join; at the return, on the paths that measured it nowhere (c == 0, d == 0), y is cleaned under a
+ * classical "measured on this path" flag. The runner checks the kept rails at c == d == 0 (no garbage rail). */
+int m_join2(int c, int d) {
+    int x = 0; cq_theta(&x, 0.9);
+    int y = x * 3 + 1;
+    int r;
+    if (c) r = cq_measure(y);
+    else { m_sink = c; r = 5; }
+    if (d) r += 100 * cq_measure(y);
+    return r;
+}

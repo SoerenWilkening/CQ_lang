@@ -1814,13 +1814,72 @@ struct Uncompute::Impl {
         unimplemented("uncompute: a rail measured on some paths only, " + describe(r.handle) +
                           ", is defined in a loop and leaves its unmeasured paths in " + describe(ps.front()),
                       at);
+      // cq-50qq: a return reached both from a measurement and from D on a path that never measures
+      // the rail (it crossed a join from which a later measurement was still reachable, then left
+      // without it). On those paths the rail is garbage there; the branches that decide it are
+      // classical (a measurement in a quantum arm runs on every path, rule 2), so the item runs under
+      // a classical flag "measured on this path" (false after D, true after each measurement block),
+      // branched around on the measured paths, where the rail stays kept.
+      SmallPtrSet<const BasicBlock *, 16> psSet(ps.begin(), ps.end());
+      SmallVector<BasicBlock *, 4> mixed;
+      {
+        SmallPtrSet<const BasicBlock *, 16> seen{D};
+        SmallVector<const BasicBlock *, 16> w{D};
+        while (!w.empty()) {
+          const BasicBlock *b = w.pop_back_val();
+          if (psSet.count(b))
+            continue;   // resolved on its own exit edge
+          if (mreach.count(b) && isa<ReturnInst>(b->getTerminator()))
+            mixed.push_back(const_cast<BasicBlock *>(b));
+          for (const BasicBlock *s : succs(b))
+            if (s != D && !mb.count(s) && seen.insert(s).second)
+              w.push_back(s);
+        }
+      }
+      if (cyclic && !mixed.empty())
+        unimplemented("uncompute: a rail measured on some paths only, " + describe(r.handle) +
+                          ", is defined in a loop and reaches a return unmeasured in " + describe(mixed.front()),
+                      at);
       for (BasicBlock *P : ps)
         if (unmeasuredDone.insert({g, P}).second)
           resolveUnmeasuredAt(g, P);
+      for (BasicBlock *R : mixed)
+        if (unmeasuredDone.insert({g, R}).second) {
+          // Built by hand: the construction fills its phis' incoming values later, and SSAUpdater
+          // would read an empty phi as a block without predecessors.
+          LLVMContext &C = R->getContext();
+          DenseMap<const BasicBlock *, Value *> atEnd;
+          std::function<Value *(const BasicBlock *)> flagAt = [&](const BasicBlock *b) -> Value * {
+            if (auto it = atEnd.find(b); it != atEnd.end())
+              return it->second;
+            if (mb.count(b))
+              return atEnd[b] = ConstantInt::getTrue(C);
+            if (b == D)
+              return atEnd[b] = ConstantInt::getFalse(C);
+            if (!dominates(D, b))
+              return atEnd[b] = PoisonValue::get(Type::getInt1Ty(C));   // never on a path from D
+            SmallVector<BasicBlock *, 4> pr(predecessors(const_cast<BasicBlock *>(b)));
+            if (pr.size() == 1) {
+              atEnd[b] = PoisonValue::get(Type::getInt1Ty(C));   // a single-predecessor cycle is unreachable
+              Value *v = flagAt(pr.front());
+              return atEnd[b] = v;
+            }
+            BasicBlock *bb = const_cast<BasicBlock *>(b);
+            PHINode *phi = PHINode::Create(Type::getInt1Ty(C), pr.size(), "", bb->begin());
+            emitted.insert(phi);
+            atEnd[b] = phi;
+            for (BasicBlock *p : pr)
+              phi->addIncoming(flagAt(p), p);
+            return phi;
+          };
+          resolveUnmeasuredAt(g, R, flagAt(R));
+        }
     }
   }
 
-  void resolveUnmeasuredAt(RailId g, BasicBlock *P) {
+  // measured: null, or a classical i1 that holds on the paths reaching P where the rail was measured;
+  // the item then runs in a block of its own that those paths branch around.
+  void resolveUnmeasuredAt(RailId g, BasicBlock *P, Value *measured = nullptr) {
     Rail &r = rails[g];
     Instruction *T = P->getTerminator();
     auto refuse = [&](const std::string &why, const Value *v) {
@@ -1852,6 +1911,7 @@ struct Uncompute::Impl {
       }
     }
     Pos pos = afterLatest(P, inP, g);
+    Instruction *prevAt = pos.before->getPrevNode();
     // Values at the item: kept rails as they are (no barrier since the record that read them), every
     // other source recomputed by replaying its records.
     DenseMap<Value *, Value *> vmap;
@@ -1954,6 +2014,20 @@ struct Uncompute::Impl {
       track(B.CreateCall(declareFn(*P->getModule(), "cqrt_free", FT, nh), {nh}));
     }
     emitRelease(g, B);
+    if (!measured)
+      return;
+    // P's head (phis included) and its predecessors move to a fresh block H, the item to a block I of
+    // its own; H branches to P on the measured paths and through I otherwise.
+    Instruction *first = prevAt ? prevAt->getNextNode() : &P->front();
+    Function *F = P->getParent();
+    BasicBlock *H = BasicBlock::Create(C, "", F, P);
+    BasicBlock *It = BasicBlock::Create(C, "", F, P);
+    H->splice(H->end(), P, P->begin(), first->getIterator());
+    It->splice(It->end(), P, first->getIterator(), pos.before->getIterator());
+    for (BasicBlock *pr : SmallVector<BasicBlock *, 4>(predecessors(P)))
+      pr->getTerminator()->replaceSuccessorWith(P, H);
+    emitted.insert(BranchInst::Create(P, It, measured, H));
+    emitted.insert(BranchInst::Create(P, It));
   }
 
   void resolve(SmallVectorImpl<RailId> &cands, const Ctx &c) {

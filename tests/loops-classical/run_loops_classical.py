@@ -54,7 +54,9 @@ MEASURED = {"m_r8": [("measured", "i32"), ("kept_entangled", "i32"), ("measured"
             "m_r8c": [("measured", "i32"), ("kept_entangled", "i32"), ("measured", "i32")]}
 # cq-zpe8: measured on one arm and again after the join's loop; §6 only (the kept rails depend on the arm; the
 # loop is classical, so no reverse loop).
-MEASURED_SEC6 = ["m_join"]
+MEASURED_SEC6 = ["m_join", "m_join2"]
+# cq-50qq: m_join2 at c == d == 0 (measured nowhere): x alone is kept (frozen), y is cleaned under the classical flag.
+MEASURED_NONE = {"m_join2": [("frozen", "i32")]}
 ENTRIES = ["p_acc", "p_brk", "p_nest", "p_mod", "p_nb", "p_horner", "p_arm", "p_phase", "p_cjoin", "p_tphase", "p_bwb", "p_g2"]
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 
@@ -96,8 +98,9 @@ def check_probe(a, probe: Path, entries, out: Path) -> int:
     return failures
 
 
-def check_kept(probe: Path, lowered: Path, entry: str, want) -> str:
-    """'' when every sample with trip count 2 or 3 keeps exactly `want` (role, width), else why not."""
+def check_kept(probe: Path, lowered: Path, entry: str, want, pick=None) -> str:
+    """'' when every sample with trip count 2 or 3 (or every sample `pick` accepts) keeps exactly `want`
+    (role, width), else why not."""
     import collections
     import tempfile
     sys.path.insert(0, str(ROOT / "checker"))
@@ -109,9 +112,10 @@ def check_kept(probe: Path, lowered: Path, entry: str, want) -> str:
         spec, exdir = user.build_spec(probe.read_text(), entry, work, user.handle_cell_params(lowp, entry))
         c_module = next(exdir.glob("*.O1.ll"))
         ss = sampling.sample_set(spec, exdir, exempt_baseline=False)
-        chosen = [x for x in ss.samples if int(x["args"][-1], 16) in (2, 3)][:24]
+        pick = pick or (lambda args: int(args[-1], 16) in (2, 3))
+        chosen = [x for x in ss.samples if pick(x["args"])][:24]
         if not chosen:
-            return "no sample with trip count 2 or 3"
+            return "no sample selected"
         hist = collections.Counter()
         for r in run.run_samples(lowp, spec, chosen, "ours", 4, c_module=c_module):
             hist[tuple(sorted((k.get("role"), k.get("w")) for k in (r.kept or [])))] += 1
@@ -152,6 +156,12 @@ def main() -> int:
         for e, kept in table.items():
             why = check_kept(probe, out / (probe.stem + ".lowered.ll"), e, kept)
             print(("FAIL " if why else "ok   ") + e + " kept" + ("" if not why else ": " + why))
+            failures += bool(why)
+    if "measured" in want:
+        for e, kept in MEASURED_NONE.items():
+            why = check_kept(MEASURED_PROBE, out / (MEASURED_PROBE.stem + ".lowered.ll"), e, kept,
+                             lambda args: all(int(v, 16) == 0 for v in args))
+            print(("FAIL " if why else "ok   ") + e + " kept (measured nowhere)" + ("" if not why else ": " + why))
             failures += bool(why)
     if "fatal" in want:
         for probe, msg in FATAL:
