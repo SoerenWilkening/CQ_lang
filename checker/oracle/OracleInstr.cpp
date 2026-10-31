@@ -542,6 +542,42 @@ public:
       return opaque();
     }
 
+    // Classical merges (review y1ll-n1): a merge taint holds as a rail but decided by a classical
+    // condition takes the node of the incoming the sample ran. When that node is 0 (a constant
+    // incoming: trip 0 of a loop, an arm that assigns a constant), the circuit still holds the merge
+    // as a rail, so its node is a fresh one over every quantum incoming, each as computed so far in
+    // this activation (a frame slot holding node + 1; 0 = not computed yet: SH_OPAQUE), and
+    // SH_OPAQUE when there is no quantum incoming at all (__cqo_sh_nz).
+    DenseMap<Instruction *, AllocaInst *> slots;
+    Value *slotOf(Instruction *J, IRBuilder<> &B) {
+      AllocaInst *&a = slots[J];
+      if (!a)
+        a = In.entryAlloca(F, I32);  // registered and zeroed at entry (memory())
+      return B.CreateCall(h("__cqo_sh_slot", I32, {I32}), {B.CreateLoad(I32, a)});
+    }
+    // V's node as computed so far, where B inserts (dominating `dom` means computed: sh)
+    Value *soFar(Value *V, IRBuilder<> &B, std::function<bool(Instruction *)> dominated) {
+      if (isa<Argument>(V))
+        return get(V);
+      auto *J = dyn_cast<Instruction>(V);
+      if (!J || !q(J))
+        return zero();
+      if (dominated(J))
+        return get(J);
+      return slotOf(J, B);
+    }
+    void storeSlots() {
+      for (auto &[J, a] : slots) {
+        Value *v = get(J);
+        Instruction *after = isa<Instruction>(v) ? cast<Instruction>(v) : J;
+        IRBuilder<> B(isa<PHINode>(after) ? &*after->getParent()->getFirstInsertionPt() : after->getNextNode());
+        B.CreateStore(B.CreateAdd(v, B.getInt32(1)), a);
+      }
+    }
+    Value *nonZero(IRBuilder<> &B, Value *s, std::vector<Value *> incomings) {
+      return B.CreateCall(h("__cqo_sh_nz", I32, {I32, I32}), {s, join(B, incomings)});
+    }
+
     Value *condOf(Instruction *Term) {
       if (auto *BI = dyn_cast<BranchInst>(Term))
         return BI->isConditional() ? BI->getCondition() : nullptr;
@@ -752,7 +788,17 @@ public:
             }
             for (PHINode *P : mine) {
               PHINode *s = phiSh[P];
-              sh[P] = X ? (Value *)B.CreateCall(h3("__cqo_sh_v"), {s, X, zero()}) : (Value *)s;
+              if (X) {
+                sh[P] = B.CreateCall(h3("__cqo_sh_v"), {s, X, zero()});
+                continue;
+              }
+              std::vector<Value *> inc;
+              for (unsigned i = 0; i < P->getNumIncomingValues(); ++i)
+                if (reachable.count(P->getIncomingBlock(i)))
+                  inc.push_back(soFar(P->getIncomingValue(i), B, [&](Instruction *J) {
+                    return DT.properlyDominates(J->getParent(), BB);
+                  }));
+              sh[P] = nonZero(B, s, inc);
             }
           }
         }
@@ -764,9 +810,16 @@ public:
           visit(I, retMerge, rets, qconds);
       }
 
+      storeSlots();
       for (auto &[P, s] : phis)
         for (unsigned i = 0; i < P->getNumIncomingValues(); ++i)
           s->addIncoming(get(P->getIncomingValue(i)), P->getIncomingBlock(i));
+      // tag what was added: the loop analyses below (trips: the header's test region) look at the
+      // program as clang wrote it
+      MDNode *tag = MDNode::get(F.getContext(), {});
+      for (Instruction &I : instructions(F))
+        if (!orig.count(&I))
+          I.setMetadata("cqo.sh", tag);
     }
 
     uint64_t bytes(Type *T) { return In.DL.getTypeStoreSize(T).getFixedValue(); }
@@ -786,6 +839,18 @@ public:
               for (Value *c : qconds)
                 deps.push_back(availAt(c, R));
               s = node(B, deps);
+            } else if (rets.size() > 1) {
+              bool qret = false;
+              for (ReturnInst *O : rets)
+                qret |= q(O->getReturnValue());
+              if (qret) {
+                std::vector<Value *> inc;
+                for (ReturnInst *O : rets)
+                  inc.push_back(O == R ? s : soFar(O->getReturnValue(), B, [&](Instruction *J) {
+                    return DT.dominates(J, R);
+                  }));
+                s = nonZero(B, s, inc);
+              }
             }
             B.CreateCall(h("__cqo_sh_ret_set", In.Void, {I32}), {s});
           }
@@ -798,8 +863,10 @@ public:
             deps.push_back(get(c));
             if (R.opaque)
               deps.push_back(opaque());
-            if (R.mq)
+            if (R.mq) {
               deps.push_back(call0(B, "__cqo_sh_mq_get"));
+              deps.push_back(call0(B, "__cqo_sh_gf_get"));
+            }
             Value *d = join(B, deps);
             if (R.mem)
               B.CreateCall(h("__cqo_sh_gm", In.Void, {I32}), {d});
@@ -857,7 +924,8 @@ public:
       if (auto *Sel = dyn_cast<SelectInst>(I))
         if (!q(Sel->getCondition()) && !Sel->getCondition()->getType()->isVectorTy()) {
           // a classical choice between rails: the chosen rail itself (a classical merge, as a phi's)
-          sh[I] = B.CreateSelect(Sel->getCondition(), get(Sel->getTrueValue()), get(Sel->getFalseValue()));
+          Value *t = get(Sel->getTrueValue()), *f = get(Sel->getFalseValue());
+          sh[I] = nonZero(B, B.CreateSelect(Sel->getCondition(), t, f), {t, f});
           return;
         }
       std::vector<Value *> deps;
@@ -910,9 +978,15 @@ public:
           return;
         }
         if (isa<ConstrainedFPIntrinsic>(CB)) {
+          // reads the rounding mode, raises into the flags: the result depends on the fp
+          // environment as it was (review y1ll-n1)
+          Value *env = call0(B, "__cqo_sh_gf_get");
           Value *d = join(B, args);
           if (!isZero(d))
             B.CreateCall(h("__cqo_sh_gf", In.Void, {I32}), {d});
+          if (hasResult && q(CB))
+            sh[CB] = node(B, {d, env});
+          return;
         }
         if (hasResult && q(CB))
           sh[CB] = node(B, args);
@@ -985,8 +1059,9 @@ public:
       if (!isZero(d))
         Ba.CreateCall(h("__cqo_sh_gf", In.Void, {I32}), {d});
       bool ptr = hasPtrArg(*CB);
-      if (ptr && !G->onlyReadsMemory())
-        Ba.CreateCall(h("__cqo_sh_gm", In.Void, {I32}), {join(Ba, {d, call0(Ba, "__cqo_sh_mq_get")})});
+      if (ptr && !G->onlyReadsMemory())  // fegetenv, fegetexceptflag: what it writes may be the fp state (y1ll-n1)
+        Ba.CreateCall(h("__cqo_sh_gm", In.Void, {I32}),
+                      {join(Ba, {d, call0(Ba, "__cqo_sh_mq_get"), call0(Ba, "__cqo_sh_gf_get")})});
       if (hasResult && q(CB)) {
         std::vector<Value *> deps{d, call0(B, "__cqo_sh_gf_get")};
         if (ptr) {
@@ -1725,7 +1800,8 @@ public:
               continue;
             bool pure = true;
             for (Instruction &I : *S)
-              if (I.mayWriteToMemory() || isa<CallBase>(I) || isa<PHINode>(I))
+              if (!I.getMetadata("cqo.sh") &&  // rule 2 shadows (cq-y1ll) are not the program's
+                  (I.mayWriteToMemory() || isa<CallBase>(I) || isa<PHINode>(I)))
                 pure = false;
             if (pure) {
               region.insert(S);

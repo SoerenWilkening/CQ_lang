@@ -797,5 +797,76 @@ double fenv_tested(double x0, double th, double c, double k) {
             self.assertFalse(any(r.get("kind") == "read" for r in rr.rotations), smp)
 
 
+class CollapseMerges(unittest.TestCase):
+    """Review y1ll-n1 of the rule 2 collapse (bead cq-y1ll): (1) a merge the circuit holds as a rail,
+    decided by a classical condition, is never classical because the incoming the sample ran is a
+    constant (trip 0 of a loop, 25); (2) a constrained-FP result depends on the rounding mode and flags
+    (80); (3) a library call writing through a pointer writes what may be the fp state (100: the flags
+    come back through fesetexceptflag; taint holds the fexcept_t object as saved fp state, so a plain
+    load of it is classical)."""
+
+    def test_merges_and_fenv(self):
+        o1 = compile_c("collapse_merges", """
+#include <fenv.h>
+int loop_acc(int x0, double t, int n, int c) {
+    int x = x0; cq_theta(&x, t); int acc = 0;
+    for (int i = 0; i < n; i++) acc = acc * c + x;
+    return cq_measure(acc); }
+int sel_const(int x0, double t, int b) { int x = x0; cq_theta(&x, t); int m = b ? x + 1 : 0; return cq_measure(m); }
+#pragma STDC FENV_ACCESS ON
+double qmode(double x0, double th, double k, double a, double b) {
+    double x = x0; cq_theta(&x, th);
+    fesetround(x > k ? FE_UPWARD : FE_DOWNWARD);
+    double s = a + b;
+    fesetround(FE_TONEAREST);
+    return cq_measure(s); }
+int saved_flags(double x0, double th, double c) {
+    double x = x0; cq_theta(&x, th);
+    double y = x / c;
+    fexcept_t saved;
+    fegetexceptflag(&saved, FE_INEXACT);
+    double z = y * c;
+    fesetexceptflag(&saved, FE_INEXACT);
+    int m = (int)cq_measure(z);
+    return m + cq_measure(fetestexcept(FE_ALL_EXCEPT)); }
+#pragma STDC FENV_ACCESS OFF
+int retry(int x0, double th, int k, int c, int m) {
+    int x = x0; cq_theta(&x, th); int y;
+recompute:
+    if (x > k) { x -= k; goto recompute; }
+    y = x * c;
+    if (y > m) { x = x >> 1; goto recompute; }
+    return cq_measure(y); }
+""")
+        sp = spec("collapse_merges", "int loop_acc(int,double,int,int);int sel_const(int,double,int);"
+                  "double qmode(double,double,double,double,double);int saved_flags(double,double,double);"
+                  "int retry(int,double,int,int,int)",
+                  [("loop_acc", ["int", "double", "int", "int"]), ("sel_const", ["int", "double", "int"]),
+                   ("qmode", ["double", "double", "double", "double", "double"]),
+                   ("saved_flags", ["double", "double", "double"]),
+                   ("retry", ["int", "double", "int", "int", "int"])])
+        S = lambda c, *a: {"call": c, "args": list(a)}
+        cases = [  # (sample, gates)
+            (S(0, i32(5), HALF, i32(0), i32(3)), 1),    # trip 0: acc = 0 still a rail
+            (S(0, i32(5), HALF, i32(3), i32(3)), 1),
+            (S(1, i32(5), HALF, i32(0)), 1),            # the constant arm of a classical choice
+            (S(1, i32(5), HALF, i32(1)), 1),
+            (S(2, f64(1.5), HALF, f64(1.0), f64(0.1), f64(0.2)), 1),   # classical operands, quantum mode
+            (S(3, f64(1.5), HALF, f64(3.0)), 2),        # the flags y's division raised, through saved
+        ]
+        for smp, gates in cases:
+            rr = oracle.run_sample(o1, sp, smp)
+            self.assertEqual(rr.violations, [], smp)
+            ev = oracle.trace_sample(o1, sp, smp)
+            got = [e["kind"] for e in ev if e["ev"] == "site" and e["kind"] in ("measure", "read")]
+            self.assertEqual((got.count("measure"), got.count("read")), (gates, 0), (smp, ev))
+            self.assertEqual(len(rr.measured), gates, smp)
+        # 54's header test region (x > k, then x * c > m) holds the shadows' calls: still one test, so
+        # x0 = 0, 5 begin 0, 1 trips (as before the shadows)
+        for x0, n in ((0, 0), (5, 1)):
+            rr = oracle.run_sample(o1, sp, S(4, i32(x0), HALF, i32(3), i32(2), i32(9)))
+            self.assertEqual([l["n"] for l in rr.outputs["loops"]], [n], x0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -544,6 +544,14 @@ uint32_t __cqo_sh_j(uint32_t a, uint32_t b, uint32_t c) {
     uint32_t d[3] = {a, b, c};
     return sh_new(d, 3, 0);
 }
+/* a classical merge of a rail (OracleInstr.cpp, classical merges): the chosen incoming's node, else
+ * (a constant incoming) a fresh node over the quantum incomings computed so far, else SH_OPAQUE */
+uint32_t __cqo_sh_nz(uint32_t s, uint32_t inc) {
+    if (s) return s;
+    return inc ? __cqo_sh_v(inc, 0, 0) : SH_OPAQUE;
+}
+/* a frame slot of a quantum value: node + 1, 0 when not computed in this activation */
+uint32_t __cqo_sh_slot(uint32_t v) { return v ? v - 1 : SH_OPAQUE; }
 uint32_t __cqo_sh_leaf(void) { return sh_new(0, 0, SH_LEAF); }
 uint32_t __cqo_sh_opaque(void) { return SH_OPAQUE; }
 
