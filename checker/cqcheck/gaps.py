@@ -29,8 +29,8 @@ search's evidence alone:
     header is a latch, or neither the header nor a single-predecessor non-latch successor of it is
     exiting) is never reported as 0 (cq-oou2).
   * sampling.construct_trip_targets (cq-oou2): constructed inputs that reach the count only outside
-    the domain, or only with the K cutoff off; it writes that proof as the target's reason, with the
-    witness ("outside the domain: ...", "cannot be hit: ...").
+    the domain; it writes that proof as the target's reason, with the witness ("outside the domain:
+    ..."). A count reached only with the K cutoff off is no proof: MISSING.
 
 Every count not covered above stays MISSING when the search found none.
 """

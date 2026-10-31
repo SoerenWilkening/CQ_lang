@@ -543,8 +543,9 @@ declare i32 @cq_theta_ui32(i32, double)
 
 class TripDomainProof(unittest.TestCase):
     """cq-oou2: a trip target the search left empty is filled by a constructed input inside the
-    domain, proved impossible by constructed inputs that reach it only outside the domain (or only
-    with the K cutoff off), or stays missing. Synthetic oracle runs; no example is run."""
+    domain, proved impossible by constructed inputs that reach it only outside the domain, or stays
+    missing (a count reached only with the K cutoff off included). Synthetic oracle runs; no example
+    is run."""
 
     class Run:
         def __init__(self, n=None, loop="f:%8", notes=(), outcome="ret", failed=False, capped=None, reason=""):
@@ -557,10 +558,10 @@ class TripDomainProof(unittest.TestCase):
         o.end, o.oob, o.cap_ok = end, set(oob), cap_ok
         return o
 
-    def proof(self, t, kruns, uruns=None, obs=None):
+    def proof(self, t, kruns, obs=None):
         n = len(kruns)
         cands = [(0, (hex(i),)) for i in range(n)]
-        return S.trip_proof("f:%8", t, cands, kruns, uruns or [None] * n, obs or [self.obs() for _ in range(n)],
+        return S.trip_proof("f:%8", t, cands, kruns, obs or [self.obs() for _ in range(n)],
                             lambda o: S._valid(o, {}), {})
 
     def test_reached_only_past_an_object_is_out_of_domain(self):
@@ -601,15 +602,23 @@ class TripDomainProof(unittest.TestCase):
         kind, i, _ = self.proof(5, k, obs=[self.obs("oob", {1}, cap_ok=True)])
         self.assertEqual((kind, i), ("found", 0))
 
-    def test_reached_only_with_the_cutoff_off(self):
-        # 68's shape: uncut, the input runs 5 trips of f:%8; at K the inner loop f:%9 is cut first
+    def test_cut_first_is_no_proof(self):
+        # 68's shape: at K the inner loop f:%9 is cut before f:%8 runs 5 trips. That the constructed
+        # inputs end there is evidence, not a proof (orchestrator decision on cq-oou2): MISSING
         k = [self.Run(None, outcome="cap:f:%9", capped="f:%9"), self.Run(2)]
-        u = [self.Run(5), self.Run(2)]
-        kind, i, why = self.proof(5, k, uruns=u)
-        self.assertEqual((kind, i), ("cut", 0))
-        self.assertIn("cutoff of f:%9", why)
+        kind, i, why = self.proof(5, k)
+        self.assertEqual((kind, i), ("missing", None))
         from cqcheck import gaps
-        self.assertEqual(gaps.classify_reason(why), gaps.IMPOSSIBLE)
+        self.assertEqual(gaps.classify_reason("no input found: x; " + why), gaps.MISSING)
+
+    def test_an_undefined_access_before_the_budget_is_a_witness(self):
+        # a classical loop over a large bound runs past the construction's step budget, after the
+        # access past the object the oracle noted
+        k = [self.Run(5, notes=["oob-load", "tripcap"], failed=True, reason="tripcap")]
+        self.assertEqual(self.proof(5, k)[0], "ub")
+        # past the budget with no such note: no witness either way
+        k = [self.Run(5, notes=["tripcap"], failed=True, reason="tripcap")]
+        self.assertEqual(self.proof(5, k)[0], "missing")
 
     def test_construct_values(self):
         ct = D.parse_ctype("int")

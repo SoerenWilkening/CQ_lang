@@ -3341,16 +3341,22 @@ def trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_sit
 #               oracle's clean run): it is the target's sample (a search miss, fixed);
 #   IMPOSSIBLE  at least one constructed input reaches it, and every one that does is outside the
 #               domain (an access past an object, an LLVM-undefined §2 row, a "ub" or "crash" note of
-#               the oracle), or, as the oracle runs it (cut at K, CR rule 14, cq-b19i), ends at another
-#               loop's cutoff before it: it reaches the count only with the cutoff off (68's outer
-#               loop: x >= 5 runs the inner loop past K on the first outer trip);
+#               the oracle);
 #   MISSING     otherwise: no constructed input reaches it, or one does on a run neither clean nor
-#               undefined (nontermination); the reason says which.
+#               undefined (past its step budget, failed). A count reached only with the K cutoff off
+#               (68's outer loop: x >= 5 runs the inner loop past K first) is MISSING too: that the
+#               constructed inputs end at another loop's cutoff first is evidence, not a proof
+#               (orchestrator decision on cq-oou2 under cq-h4pn's, owner may override).
 #
 # Search evidence alone never proves impossibility: the proof needs a witness that reaches the count.
+#
+# Cost (cq-oou2): the constructed runs are the oracle cut at K with a step budget of
+# TRIP_CONSTRUCT_TRIPCAP header executions each. A target is at most K + 1 trips of one activation,
+# so a run past the budget (a classical loop over a large bound, 58's n near 2^31) shows only what it
+# reached before it; it is no witness of a clean reach, but an undefined access it noted before the
+# budget still is one (the oracle notes it when it happens).
 
-TRIP_UNCUT_K = 1 << 30            # the oracle's K for the uncut runs: no loop is cut
-TRIP_CONSTRUCT_TRIPCAP = 1 << 20  # header executions per constructed run (a run past it is no witness)
+TRIP_CONSTRUCT_TRIPCAP = 1 << 12  # header executions per constructed run (a run past it is no clean witness)
 
 
 def trip_construct_values(ct: D.CType, base: int) -> List[int]:
@@ -3396,50 +3402,35 @@ def run_undefined(r, o: Optional["Obs"], rows_by_site) -> Optional[str]:
     return None
 
 
-def trip_proof(loop: str, t: int, cands: Sequence[Tuple[int, Tuple[str, ...]]], kruns, uruns,
+def trip_proof(loop: str, t: int, cands: Sequence[Tuple[int, Tuple[str, ...]]], kruns,
                obs: Sequence[Optional["Obs"]], valid: Callable[["Obs"], bool], rows_by_site) -> Tuple[str, Optional[int], str]:
     """The decision above for target `t` of `loop` over constructed inputs `cands`, their C oracle
-    runs at K (`kruns`) and uncut (`uruns`, None entries when not run) and their probe observations
-    (`obs`, None when not probed). Returns ("found", index, ""), ("ub" | "cut", index of the first
-    witness, why), or ("missing", None, why)."""
-    reach = ub = cut = 0
-    first_ub = first_cut = None
+    runs at K (`kruns`) and their probe observations (`obs`, None when not probed). Returns
+    ("found", index, ""), ("ub", index of the first witness, why), or ("missing", None, why)."""
+    reach = ub = 0
+    first_ub = None
     undecided = []
-    for i, (kr, ur) in enumerate(zip(kruns, uruns)):
-        hit_k = kr is not None and trip_hit(kr.events, kr.loops, loop, t)
-        hit_u = ur is not None and trip_hit(ur.events, ur.loops, loop, t)
-        if not (hit_k or hit_u):
+    for i, kr in enumerate(kruns):
+        if kr is None or not trip_hit(kr.events, kr.loops, loop, t):
             continue
         reach += 1
-        # the domain as the oracle runs it (cut at K, cq-b19i): the uncut run only shows the count
         why = run_undefined(kr, obs[i], rows_by_site)
         if why:
             ub += 1
             if first_ub is None:
                 first_ub = (i, why)
             continue
-        if hit_k and not kr.failed and (obs[i] is not None and valid(obs[i])):
+        if not kr.failed and obs[i] is not None and valid(obs[i]):
             return "found", i, ""
-        if not hit_k and not kr.failed and kr.outcome.startswith("cap:"):
-            cut += 1
-            if first_cut is None:
-                first_cut = (i, kr.outcome[4:])
-            continue
         undecided.append(i)
     if reach and not undecided:
-        if cut == 0:
-            i, why = first_ub
-            return "ub", i, (f"outside the domain: each of the {ub} constructed inputs that runs {t} trips of {loop} "
-                             f"in the C oracle is undefined as LLVM defines it (CLAUDE.md Domain; cq-oou2), "
-                             f"e.g. {{\"call\": {cands[i][0]}, \"args\": {list(cands[i][1])}}}: {why}")
-        i, lp = first_cut
-        return "cut", i, (f"cannot be hit: as the C oracle runs it (cut at K = {K}, CR rule 14; cq-oou2), each of the "
-                          f"{reach} constructed inputs that runs {t} trips of {loop} with the cutoff off "
-                          + (f"is undefined as LLVM defines it ({ub}) or " if ub else "")
-                          + f"ends at the cutoff of {lp} first ({cut}), e.g. "
-                          f"{{\"call\": {cands[i][0]}, \"args\": {list(cands[i][1])}}}")
+        i, why = first_ub
+        return "ub", i, (f"outside the domain: each of the {ub} constructed inputs that runs {t} trips of {loop} "
+                         f"in the C oracle is undefined as LLVM defines it (CLAUDE.md Domain; cq-oou2), "
+                         f"e.g. {{\"call\": {cands[i][0]}, \"args\": {list(cands[i][1])}}}: {why}")
     if not reach:
-        return "missing", None, f"none of {len(cands)} constructed inputs runs {t} trips in the C oracle (with or without the cutoff)"
+        return "missing", None, (f"none of {len(cands)} constructed inputs runs {t} trips in the C oracle "
+                                 f"(cut at K, {TRIP_CONSTRUCT_TRIPCAP} header executions each)")
     i = undecided[0]
     kr = kruns[i]
     return "missing", None, (f"{reach} of {len(cands)} constructed inputs run {t} trips, {len(undecided)} of them neither "
@@ -3461,18 +3452,15 @@ def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", ou
     o1 = sorted(Path(example_dir).glob("*.O1.ll"))[0]
     smp = [{"call": c, "args": list(a)} for c, a in cands]
     kruns = oracle.run_samples(o1, spec, smp, tripcap=TRIP_CONSTRUCT_TRIPCAP)
-    uruns: List[Optional[object]] = [None] * len(cands)
-    if any(r.outcome.startswith("cap:") for r in kruns):
-        uruns = oracle.run_samples(o1, spec, smp, tripcap=TRIP_CONSTRUCT_TRIPCAP, k_default=TRIP_UNCUT_K)
     for lpo in out:
         for target, e in lpo["trips"].items():
             if "empty" not in e:
                 continue
-            kind, i, why = trip_proof(lpo["loop"], int(target), cands, kruns, uruns, obs, searcher.valid,
+            kind, i, why = trip_proof(lpo["loop"], int(target), cands, kruns, obs, searcher.valid,
                                       searcher.rows_by_site)
             if kind == "found":
                 lpo["trips"][target] = {"sample": g.add(cands[i][0], list(cands[i][1]))}
-            elif kind in ("ub", "cut"):
+            elif kind == "ub":
                 lpo["trips"][target] = {"empty": why, "witness": {"call": cands[i][0], "args": list(cands[i][1])},
                                         "proof": kind}
             else:
