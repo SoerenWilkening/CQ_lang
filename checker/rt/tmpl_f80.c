@@ -27,8 +27,10 @@
  *     two NaNs give b unchanged; _exc raises INVALID iff an operand is a signaling NaN or
  *     non-canonical, else nothing (CR §2 / cq-qx1: IEEE maxNum over the libm call);
  *   - rint rounds in the current mode: the host's (fegetround) for plain rint, the template's mode for _rm/_rmq
- *     (CR §2 at CQ_spec 2f894fd); sitofp/uitofp and fptrunc to f16/bf16 are correctly
- *     rounded in the template's mode at every width (software rounding, never double rounding).
+ *     (CR §2 at CQ_spec 2f894fd); sitofp/uitofp from at most 128 bits and fptrunc to f16/bf16
+ *     are correctly rounded in the template's mode (software rounding); sitofp/uitofp from more
+ *     than 128 bits round twice as LLVM 19 does (to 113 bits nearest even, then to f80 in the
+ *     mode), never negative for uitofp (CR §2, cq-off6, cq-cqcj).
  *
  * Calling convention of the registered cqe_op_fn (what the core dispatcher hands a family):
  *   - tname: the parsed template name. tname->w is the operand width (the source of a cast),
@@ -560,6 +562,25 @@ static int fix_int(f80b b, uint32_t N, int sgn, uint64_t *r) {
 
 /* ---------------------------------------------------------------- integer -> f80 */
 
+/* M (n words) rounded in place to its top p bits, to nearest even (the result may carry into one
+ * more bit, an exact power of two). */
+static void round_mag_ne(uint64_t *M, uint32_t n, uint32_t p) {
+  uint32_t L = mw_bitlen(M, n);
+  if (L <= p)
+    return;
+  long s = (long)(L - p);
+  int guard = mw_bit(M, n, s - 1), sticky = mw_any_below(M, n, s - 1);
+  int up = guard && (sticky || mw_bit(M, n, s));
+  for (long i = 0; i < s; ++i) M[i / 64] &= ~(UINT64_C(1) << (i % 64));
+  if (up)
+    for (uint32_t w = (uint32_t)(s / 64), first = 1; w < n; ++w, first = 0) {
+      uint64_t add = first ? UINT64_C(1) << (s % 64) : 1, old = M[w];
+      M[w] += add;
+      if (M[w] >= old)
+        break;
+    }
+}
+
 static f80b int_to_f80(const cqe_val *a, uint32_t N, int sgn, int rc, int *flags) {
   uint64_t *M = read_bits(a, N);
   uint32_t n = nwords(N);
@@ -578,6 +599,20 @@ static f80b int_to_f80(const cqe_val *a, uint32_t N, int sgn, int rc, int *flags
     long lsb;
     int inf;
     *flags |= round_to(neg, M, n, 0, FMT_F80, rc, &q, &lsb, &inf);
+    if (N > 128) {
+      /* LLVM 19 ExpandLargeFpConvert (expandIToFP) builds an fp128 in integer code, rounding |v|
+       * to 113 bits to nearest even whatever the mode, then calls compiler-rt __trunctfxf2: two
+       * roundings, the first adopted from LLVM (CR §2: which neighbour a double rounding lands on),
+       * the second the library's, IEEE in the template's mode. The flags stay those of one IEEE
+       * rounding (native raises none). uitofp's sign is never set (cq-cqcj: LLVM 19's sign bit
+       * from the top bit is a miscompile, not adopted). */
+      uint64_t *W = calloc(n + 1, sizeof *W); /* one word of headroom for the carry */
+      if (!W) abort();
+      memcpy(W, M, n * sizeof *W);
+      round_mag_ne(W, n + 1, 113);
+      round_to(neg, W, n + 1, 0, FMT_F80, rc, &q, &lsb, &inf);
+      free(W);
+    }
     r = f80_encode(neg, q, lsb, inf);
   }
   free(M);

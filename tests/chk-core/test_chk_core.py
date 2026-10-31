@@ -1004,5 +1004,111 @@ class HostOutput(unittest.TestCase):
         self.assertEqual(r.outputs["stdout"], "v=5\n")
 
 
+RT_ALL = sorted((REPO / "checker" / "rt").glob("*.c"))
+
+
+def build_harness(c_file, exe):
+    """A C test harness linked with every evaluator source (the core, the dispatcher, all families)."""
+    subprocess.run([str(LLVM / "clang"), "-std=c17", "-O1", "-w", "-target", "x86_64-apple-macosx", "-I",
+                    str(REPO / "checker" / "rt"), str(c_file), *map(str, RT_ALL), "-lm", "-o", str(exe)], check=True)
+
+
+def _round_mag(v, p, mode, neg):
+    """|v| (a positive int) rounded to p significant bits: mode 'ne', 'up', 'down', 'zero' (IEEE, on the
+    signed value -v when neg)."""
+    s = v.bit_length() - p
+    if s <= 0:
+        return v
+    q, r = v >> s, v & ((1 << s) - 1)
+    half = 1 << (s - 1)
+    inc = {"ne": r > half or (r == half and q & 1), "zero": False,
+           "up": r != 0 and not neg, "down": r != 0 and neg}[mode]
+    return (q + bool(inc)) << s
+
+
+def _f80_of(mag, neg):
+    if mag == 0:
+        return (0x8000 if neg else 0), 0
+    L = mag.bit_length()
+    return (0x8000 if neg else 0) | (L - 1 + 16383), (mag >> (L - 64) if L >= 64 else mag << (64 - L))
+
+
+class WideIntToF80(unittest.TestCase):
+    """cq-off6, cq-cqcj: sitofp/uitofp iN -> f80, N > 128. LLVM 19 at -O1 (ExpandLargeFpConvert, read
+    from llc -print-after=expand-large-fp-convert) rounds |v| to 113 bits to nearest even in integer
+    code, then calls __trunctfxf2: two roundings, adopted (CR §2, the neighbour a double rounding lands
+    on); the second is the library's, IEEE in the template's mode. uitofp with the top bit set comes
+    back negative natively; CR §2 (cq-cqcj) overrides that: never negative."""
+    MODES = {"ne": 0x000, "down": 0x400, "up": 0x800, "zero": 0xC00}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.exe = Path(cls.tmp.name) / "wide_itofp"
+        build_harness(HERE / "wide_itofp.c", cls.exe)
+        rnd = random.Random(0x0FF6)
+        cls.cases = [(200, 2**198 + 2**135 + 2**134 - 1)]  # the review repro (chk-h3 big3.c)
+        for _ in range(3000):
+            N = rnd.choice((129, 192, 200, 256))
+            L = rnd.randint(max(1, N - 80), N)
+            v = (1 << (L - 1)) | rnd.getrandbits(L - 1)
+            for lo in (L - 65, L - 114):  # the f80 and fp128 round positions: ties and near-ties
+                if lo > 4 and rnd.random() < 0.6:
+                    w = rnd.randint(2, min(lo, 12))
+                    pat = rnd.choice((1 << (w - 1), (1 << (w - 1)) - 1, (1 << w) - 1, 0, (1 << (w - 1)) + 1))
+                    v = (v & ~(((1 << w) - 1) << (lo - w + 1))) | (pat << (lo - w + 1))
+            cls.cases.append((N, v))
+        for _ in range(400):  # the f80 round bits [L-113, L-65] as 0111..1 or 1000..0: a near-tie at 113 bits
+            N = rnd.choice((129, 192, 200, 256))
+            L = rnd.randint(120, N)
+            v = (1 << (L - 1)) | rnd.getrandbits(L - 1)
+            win = rnd.choice(((1 << 48) - 1, 1 << 48))
+            v = (v & ~(((1 << 49) - 1) << (L - 113))) | (win << (L - 113))
+            cls.cases.append((N, v))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def run_h(self, mode=None):
+        p = subprocess.run([str(self.exe)] + ([str(self.MODES[mode])] if mode else []),
+                           input="".join(f"{N} {v:x}\n" for N, v in self.cases), capture_output=True, text=True,
+                           env=dict(os.environ, CQE_TRACE="/dev/null"), check=True)
+        rows = [l.split() for l in p.stdout.splitlines()]
+        self.assertEqual(len(rows), 2 * len(self.cases))
+        return rows
+
+    def model(self, N, v, sgn, mode):
+        neg = sgn and v >> (N - 1) & 1
+        mag = (1 << N) - v if neg else v
+        return _f80_of(_round_mag(_round_mag(mag, 113, "ne", neg), 64, mode, neg), neg)
+
+    def test_native_nearest(self):
+        rows = self.run_h()
+        double = 0
+        for i, (N, v) in enumerate(self.cases):
+            for j, sgn in enumerate((0, 1)):
+                n_, k, ese, em, nse, nm = rows[2 * i + j]
+                ev, nat = (int(ese, 16), int(em, 16)), (int(nse, 16), int(nm, 16))
+                if not sgn and v >> (N - 1) & 1:  # LLVM 19's uitofp sign bug, not adopted (cq-cqcj)
+                    self.assertEqual(nat[0] & 0x8000, 0x8000, (N, hex(v)))
+                    nat = (nat[0] & 0x7FFF, nat[1])
+                self.assertEqual(ev, nat, (N, hex(v), "su"[1 - sgn]))
+                self.assertEqual(ev, self.model(N, v, sgn, "ne"))
+                neg = sgn and v >> (N - 1) & 1
+                double += ev != _f80_of(_round_mag((1 << N) - v if neg else v, 64, "ne", neg), neg)
+        self.assertEqual(rows[0][2:4], ["40c5", "8000000000000002"])
+        self.assertGreater(double, 50)  # the double rounding is exercised, not only agreed on
+
+    def test_rm_second_rounding_in_the_mode(self):
+        for mode in ("down", "up", "zero"):
+            rows = self.run_h(mode)
+            for i, (N, v) in enumerate(self.cases):
+                for j, sgn in enumerate((0, 1)):
+                    r = rows[2 * i + j]
+                    self.assertEqual((int(r[2], 16), int(r[3], 16)), self.model(N, v, sgn, mode),
+                                     (N, hex(v), "su"[1 - sgn], mode))
+
+
 if __name__ == "__main__":
     unittest.main()
