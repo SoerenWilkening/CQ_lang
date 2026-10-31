@@ -5,7 +5,9 @@ For probes/loops.O1.ll (and slots.O1.ll, rule6.O1.ll) it checks, and fails on:
   - cq-lower (with its built-in structural verifier) exits 0, and plain cq-verify accepts the output;
   - no CQ.h surface call is left; every entry with a loop pushes and pops (the reverse ran);
   - every entry is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle).
-For rule6.O1.ll it also checks the kept rails at trip counts 2 and 3 (cq-b13w, CR rule 6 on carried values).
+For rule6.O1.ll it also checks the kept rails at trip counts 2 and 3 (cq-b13w, CR rule 6 on carried values), and
+for deferred.O1.ll likewise (cq-fx3s, cq-aqbw: the reverse loop deferred after the exit values' readers keeps no
+which-path or garbage rail).
 The owned examples' acceptance is `python3 -m cqcheck run <examples> --oracle both` (the bead).
 Outputs go to build/tests/loops-classical/out/.
 """
@@ -38,6 +40,12 @@ RULE6 = {"r_b3": [("frozen", "i32"), ("measured", "i32")],
          "r_live": [("frozen", "i32"), ("measured", "i32"), ("measured", "i32")],
          "r_fneg": [("frozen", "f64"), ("measured", "f64")],
          "r_c3": [("frozen", "i32"), ("measured", "i32")]}
+# cq-fx3s / cq-aqbw: the reverse loop deferred until after the readers of the loop's exit values (no copy-out).
+DEFERRED_PROBE = PROBES / "deferred.O1.ll"
+DEFERRED = {"f_arm": [("frozen", "i32"), ("measured", "i32")],
+            "f_arm_brk": [("frozen", "i32"), ("measured", "i32")],
+            "f_arm_phase": [("frozen", "i32"), ("measured", "i32")],
+            "f_oracle": [("measured", "i32")]}
 ENTRIES = ["p_acc", "p_brk", "p_nest", "p_mod", "p_nb", "p_horner", "p_arm", "p_phase", "p_cjoin", "p_tphase", "p_bwb", "p_g2"]
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 
@@ -108,13 +116,13 @@ def main() -> int:
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--entry", action="append", help="check only these entries of loops.O1.ll")
-    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "fatal"],
+    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "fatal"],
                     help="run only these probe groups (default: all)")
     a = ap.parse_args()
     out = ROOT / "build" / "tests" / "loops-classical" / "out"
     out.mkdir(parents=True, exist_ok=True)
     failures = 0
-    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "fatal"]))
+    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "fatal"]))
     groups = []
     if "loops" in want:
         groups.append((PROBE, a.entry or ENTRIES))
@@ -122,11 +130,15 @@ def main() -> int:
         groups.append((SLOT_PROBE, SLOT_ENTRIES))
     if "rule6" in want:
         groups.append((RULE6_PROBE, list(RULE6)))
+    if "deferred" in want:
+        groups.append((DEFERRED_PROBE, list(DEFERRED)))
     for probe, entries in groups:
         failures += check_probe(a, probe, entries, out)
-    if "rule6" in want:
-        for e, kept in RULE6.items():
-            why = check_kept(RULE6_PROBE, out / (RULE6_PROBE.stem + ".lowered.ll"), e, kept)
+    for group, probe, table in (("rule6", RULE6_PROBE, RULE6), ("deferred", DEFERRED_PROBE, DEFERRED)):
+        if group not in want:
+            continue
+        for e, kept in table.items():
+            why = check_kept(probe, out / (probe.stem + ".lowered.ll"), e, kept)
             print(("FAIL " if why else "ok   ") + e + " kept" + ("" if not why else ": " + why))
             failures += bool(why)
     if "fatal" in want:
