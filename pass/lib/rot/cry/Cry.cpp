@@ -83,6 +83,7 @@ struct Register {
   bool deadShare = false;                // made by a prep nothing reads (two thetas of one seed)
   bool locked = false;                   // rotated in place: no adjoint undo across it
   std::vector<Prep> active;
+  std::optional<Pred> dirty;             // cq-2xi3: where an in-place rotation left it off seed-or-active
   std::optional<Pred> all;               // union of the full block predicates of its preps
   unsigned uses = 0;                     // rail's IR use count right after our last gate on it
 };
@@ -351,6 +352,12 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
       R->w = w;
     }
     R->locked = true;   // its state is no longer seed-or-active-prep: no adjoint undo across this
+    // cq-2xi3: where an active prep fired or this rotation runs, the register is not its seed; a
+    // merge's straight-through edge there is not the register (lowerStatePrepMerge).
+    Pred d = R->dirty ? (*R->dirty | q) : q;
+    for (const Prep &p : R->active)
+      d = d | p.eff;
+    R->dirty = d;
     R->active.clear();
     controlledRy(ctx, flag, rail, w, angle.v);
     R->uses = rail->getNumUses();
@@ -550,7 +557,13 @@ void lowerStatePrepMerge(LoweringContext &ctx, PHINode &phi) {
     const Pred &e = ctx.preds().edge(phi.getIncomingBlock(i), bb);
     for (const Prep &p : R->active)
       if (!(p.eff & e).isBottom())
-        unimplemented("rot-cry: a state-prep merge whose straight-through edge may follow a prep", &phi);
+        unimplemented("rot-cry: a state-prep merge whose straight-through edge (incoming " + describe(u) +
+                          ") may follow a prep",
+                      &phi);
+    if (R->dirty && !(*R->dirty & e).isBottom())
+      unimplemented("rot-cry: a state-prep merge whose straight-through edge (incoming " + describe(u) +
+                        ") may follow a prep or an in-place rotation of the register (cq-2xi3)",
+                    &phi);
   }
   st.of[&phi] = R;
   ctx.bind(&phi, R->rail);
