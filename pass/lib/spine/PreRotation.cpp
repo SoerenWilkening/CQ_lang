@@ -30,10 +30,21 @@
 //    register h, never a select of h and its copy). Edges of both kinds for v: cq::unimplemented.
 //  - Loops. A copy needed while T can reach itself without passing v's definition (v invariant
 //    over a cycle around T) is cq::unimplemented: a body lowered once would rotate h on every trip.
+//  - Memory (cq-xu07). When v is a load, the cell it read holds h too, and so may any value stored
+//    into the cell's object: in C the cell keeps its value. When a read of the object may observe
+//    the cell after T (a load, memory intrinsic or call reaching it on a path from T before a store
+//    to the load's own pointer overwrites it; a return when the object outlives the function) or a
+//    quantum value stored into the object is read after T (q[i] = cq_theta(q[i]); s = cq_theta(q[j])
+//    with i == j), the rotation hits a copy instead: c = alloc 0, copy_<W>(h, c), v bound to c while
+//    T is lowered (T names c) and back to h after it. Otherwise (the corpus's load, cq_theta, store
+//    back: 61, 124) h is rotated in place as before.
 #include "SpineInternal.h"
 
 #include "cq/Abi.h"
+#include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/CFG.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -62,7 +73,7 @@ const Function *functionOf(const Value *v) {
 // definition of the value whose instance is tracked). cyclic: P's block is among them.
 DenseSet<const BasicBlock *> reachFrom(const Instruction *P, const Value *def, bool &cyclic) {
   const BasicBlock *db = nullptr;
-  if (auto *D = dyn_cast<Instruction>(def))
+  if (auto *D = dyn_cast_or_null<Instruction>(def))
     db = D->getParent();
   DenseSet<const BasicBlock *> reach;
   SmallVector<const BasicBlock *, 16> work(succ_begin(P->getParent()), succ_end(P->getParent()));
@@ -245,6 +256,74 @@ void hoistReaders(LoweringContext &ctx, CallInst &T, const Value *v, Value *h) {
   }
 }
 
+// cq-xu07: may p point into obj (an identified object, else anything)?
+bool mayPointInto(const Value *p, const Value *obj) {
+  const Value *o = getUnderlyingObject(p);
+  return o == obj || !isIdentifiedObject(o) || !isIdentifiedObject(obj);
+}
+
+// cq-xu07: may the cell the load L read (or a value stored into its object) be read after T?
+bool cellReadAfter(Shared &sh, const Instruction &T, const LoadInst &L) {
+  const Value *ptr = L.getPointerOperand(), *obj = getUnderlyingObject(ptr);
+  const Function *F = T.getFunction();
+  bool local = isa<AllocaInst>(obj);
+  auto reads = [&](const Instruction &I) {
+    if (auto *ld = dyn_cast<LoadInst>(&I))
+      return mayPointInto(ld->getPointerOperand(), obj);
+    if (isa<ReturnInst>(I))
+      return !local;
+    if (auto *CB = dyn_cast<CallBase>(&I)) {
+      if (CB->isLifetimeStartOrEnd() || isa<DbgInfoIntrinsic>(CB))
+        return false;
+      if (auto *MI = dyn_cast<MemIntrinsic>(CB))
+        return isa<MemTransferInst>(MI) && mayPointInto(cast<MemTransferInst>(MI)->getSource(), obj);
+      for (const Value *a : CB->args())
+        if (a->getType()->isPointerTy() && mayPointInto(a, obj))
+          return true;
+      return !local && CB->mayReadFromMemory();
+    }
+    return false;
+  };
+  // Paths from T, each ending at a store to the load's own pointer (the cell overwritten).
+  SmallPtrSet<const BasicBlock *, 16> seen;
+  SmallVector<BasicBlock::const_iterator, 16> work{std::next(T.getIterator())};
+  while (!work.empty()) {
+    BasicBlock::const_iterator it = work.pop_back_val();
+    const BasicBlock *b = it->getParent();
+    bool killed = false;
+    for (; it != b->end(); ++it) {
+      if (auto *st = dyn_cast<StoreInst>(&*it); st && st->getPointerOperand() == ptr) {
+        killed = true;
+        break;
+      }
+      if (reads(*it))
+        return true;
+    }
+    if (killed)
+      continue;
+    for (const BasicBlock *s : successors(b))
+      if (seen.insert(s).second)
+        work.push_back(s->begin());
+  }
+  // A quantum value stored into the object, read after T: it may be the cell's rail.
+  bool cyc = false;
+  DenseSet<const BasicBlock *> reach = reachFrom(&T, nullptr, cyc);
+  for (const BasicBlock &b : *F)
+    for (const Instruction &I : b) {
+      auto *st = dyn_cast<StoreInst>(&I);
+      if (!st || st->getValueOperand() == &T || !mayPointInto(st->getPointerOperand(), obj))
+        continue;
+      const Value *w = st->getValueOperand();
+      auto bi = sh.binds.find(w);
+      if (bi == sh.binds.end() || none_of(bi->second, [](const Operand &o) { return o.handle; }))
+        continue;
+      for (const User *u : w->users())
+        if (auto *ui = dyn_cast<Instruction>(u); ui && ui != st && ui != &T && isAfter(&T, reach, ui))
+          return true;
+    }
+  return false;
+}
+
 } // namespace
 
 std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T) {
@@ -258,6 +337,27 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T) {
     return std::nullopt;   // a classical value or a measured rail: the rotation mints its own rail
   Shared &sh = shared(ctx);
   Value *h = x.v;
+  if (auto *L = dyn_cast<LoadInst>(v); L && cellReadAfter(sh, T, *L)) {
+    // cq-xu07: rotate a copy; the cell and every holder of h keep the unrotated rail.
+    RailType w = railTypeOf(v->getType());
+    CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                               {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+    RailId cid = ctx.unc().recordSeed(c);
+    abi::CoreSpec cp{abi::Core::Copy, w};
+    CallInst *cc = ctx.emitCore(cp, {h, c});
+    ctx.unc().recordCore(cc, cp, {Operand{h, true}, Operand{c, true}}, cid);
+    auto it = sh.binds.find(v);
+    if (it == sh.binds.end() || it->second.size() != 1 || it->second.front().v != h)
+      internalError("spine: the load operand of an in-place cq_theta is not bound to one rail", &T);
+    it->second.assign({Operand{c, true}});
+    PendingCopy pc;
+    pc.v = v;
+    pc.rec.T = &T;
+    pc.rec.h = h;
+    pc.rec.c = c;
+    pc.rotCopy = true;
+    return pc;
+  }
   hoistReaders(ctx, T, v, h);
 
   // A view of h (cq-su3p) read narrow after the rotation would read the rotated rail; a materialized
@@ -352,6 +452,14 @@ void finishPreRotation(LoweringContext &ctx, std::optional<PendingCopy> &pc) {
     return;
   Shared &sh = shared(ctx);
   auto it = sh.binds.find(pc->v);
+  if (pc->rotCopy) {
+    if (it == sh.binds.end() || it->second.size() != 1 || it->second.front().v != pc->rec.c)
+      internalError("spine: the load operand of a cq_theta on a copy changed its binding during the rotation",
+                    pc->rec.T);
+    it->second.assign({Operand{pc->rec.h, true}});
+    pc.reset();
+    return;
+  }
   if (it == sh.binds.end() || it->second.size() != 1 || it->second.front().v != pc->rec.h)
     internalError("spine: the operand of an in-place cq_theta changed its binding during the rotation", pc->rec.T);
   it->second.assign({Operand{pc->rec.c, true}});

@@ -184,9 +184,13 @@ llvm::Value *collapse(LoweringContext &, llvm::Value *handle);
 // rail c (alloc 0, copy_<W>), returned for finishPreRotation, which rebinds v to c after the
 // lowering emitted the Ry on h. A use is before the rotation when it is lowered already, or (a phi's
 // incoming) its edge is not reachable from the cq_theta without passing v's definition.
+// cq-xu07: when v is a load whose cell (or another holder of the cell's rail) may be read after the
+// rotation, the Ry hits the copy instead (rotCopy): v is bound to c while the cq_theta is lowered and
+// back to h after it, so the cell, v and every other holder keep the unrotated rail.
 struct PendingCopy {
   const llvm::Value *v = nullptr;
   Shared::PreRot rec;
+  bool rotCopy = false;
 };
 std::optional<PendingCopy> beginPreRotation(LoweringContext &, llvm::CallInst &theta);
 void finishPreRotation(LoweringContext &, std::optional<PendingCopy> &);
