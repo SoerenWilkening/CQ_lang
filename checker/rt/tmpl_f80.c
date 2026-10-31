@@ -30,7 +30,8 @@
  *     (CR §2 at CQ_spec 2f894fd); sitofp/uitofp from at most 128 bits and fptrunc to f16/bf16
  *     are correctly rounded in the template's mode (software rounding); sitofp/uitofp from more
  *     than 128 bits round twice as LLVM 19 does (to 113 bits nearest even, then to f80 in the
- *     mode), never negative for uitofp (CR §2, cq-off6, cq-cqcj).
+ *     mode), except uitofp with the top bit set: non-negative, rounded once in the mode (CR §2,
+ *     cq-off6, cq-cqcj, cq-6d9d).
  *
  * Calling convention of the registered cqe_op_fn (what the core dispatcher hands a family):
  *   - tname: the parsed template name. tname->w is the operand width (the source of a cast),
@@ -599,13 +600,15 @@ static f80b int_to_f80(const cqe_val *a, uint32_t N, int sgn, int rc, int *flags
     long lsb;
     int inf;
     *flags |= round_to(neg, M, n, 0, FMT_F80, rc, &q, &lsb, &inf);
-    if (N > 128) {
+    if (N > 128 && (sgn || !((M[(N - 1) / 64] >> ((N - 1) % 64)) & 1))) {
       /* LLVM 19 ExpandLargeFpConvert (expandIToFP) builds an fp128 in integer code, rounding |v|
        * to 113 bits to nearest even whatever the mode, then calls compiler-rt __trunctfxf2: two
        * roundings, the first adopted from LLVM (CR §2: which neighbour a double rounding lands on),
        * the second the library's, IEEE in the template's mode. The flags stay those of one IEEE
-       * rounding (native raises none). uitofp's sign is never set (cq-cqcj: LLVM 19's sign bit
-       * from the top bit is a miscompile, not adopted). */
+       * rounding (native raises none). uitofp with the top bit set is not LLVM 19's value at all
+       * (a negative result, a miscompile): CR §2 (cq-cqcj) gives the non-negative value rounded
+       * once at f80's 64-bit significand, in the template's mode for _rm (cq-6d9d, cq-xyqx), so
+       * the single rounding above stands. */
       uint64_t *W = calloc(n + 1, sizeof *W); /* one word of headroom for the carry */
       if (!W) abort();
       memcpy(W, M, n * sizeof *W);

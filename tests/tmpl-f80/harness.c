@@ -18,7 +18,10 @@
  *                exception bits INVALID iff an operand is a signaling NaN (or non-canonical,
  *                T-noncanon), else none (cq-qx1 ruling, IEEE maxNum, over libm's choice)
  *   T-fpclass    is_fpclass: pseudo-denormal is subnormal; non-canonical is the real indefinite
- *   T-itofp      sitofp/uitofp above 64 bits: correctly rounded in the template's mode, INEXACT
+ *   T-itofp      sitofp/uitofp above 64 bits: correctly rounded in the template's mode, INEXACT;
+ *                above 128 bits rounded twice as LLVM 19 does (113 bits nearest even, then f80
+ *                in the mode; flags of one rounding), except uitofp with the top bit set, rounded
+ *                once (CR §2, cq-cqcj, cq-6d9d)
  *   T-narrow     fptrunc f80 -> f16 in a directed mode and its exception bits; f80 -> bf16 in
  *                every form (LLVM 19 cannot lower fptrunc x86_fp80 to bfloat: no native code)
  *   T-nan        NaN result of fp arithmetic: the first NaN operand quieted, else the real
@@ -537,6 +540,28 @@ static void expected(const struct tcase *c, form_t f, const val *a, res_t *e, wh
     }
     int fl;
     e->v = ref_int_to_f80(M, neg, rc, &fl);
+    int top_u = c->op[0] == 'u' && ((M[(N - 1) / 64] >> ((N - 1) % 64)) & 1);
+    if (N > 128 && !top_u) {
+      /* LLVM 19 ExpandLargeFpConvert: |v| to 113 bits to nearest even first (integer code, no
+       * mode), then to f80 in the mode (__trunctfxf2); flags of the single rounding above. */
+      int top = -1;
+      for (int i = 255; i >= 0; --i)
+        if ((M[i / 64] >> (i % 64)) & 1) { top = i; break; }
+      int s = top - 112; /* bits below the 113-bit significand */
+      if (s > 0) {
+        int half = (M[(s - 1) / 64] >> ((s - 1) % 64)) & 1, low = 0, odd = (M[s / 64] >> (s % 64)) & 1;
+        for (int i = 0; i < s - 1; ++i) low |= (int)((M[i / 64] >> (i % 64)) & 1);
+        for (int i = 0; i < s; ++i) M[i / 64] &= ~(1ull << (i % 64));
+        if (half && (low || odd)) /* add 2^s; N <= 200 < 256 leaves room for the carry */
+          for (int i = s / 64, first = 1; i < 4; ++i, first = 0) {
+            uint64_t old = M[i];
+            M[i] += first ? 1ull << (s % 64) : 1;
+            if (M[i] >= old) break;
+          }
+      }
+      int fl2;
+      e->v = ref_int_to_f80(M, neg, rc, &fl2);
+    }
     e->exc = fl;
     why->row = "T-itofp";
   } else if (c->k == K_FPTOI && W2 > 64 && f.exc) {

@@ -1038,7 +1038,8 @@ class WideIntToF80(unittest.TestCase):
     from llc -print-after=expand-large-fp-convert) rounds |v| to 113 bits to nearest even in integer
     code, then calls __trunctfxf2: two roundings, adopted (CR §2, the neighbour a double rounding lands
     on); the second is the library's, IEEE in the template's mode. uitofp with the top bit set comes
-    back negative natively; CR §2 (cq-cqcj) overrides that: never negative."""
+    back negative natively (a miscompile); CR §2 (cq-cqcj) overrides that value: the non-negative value
+    rounded once at f80's 64-bit significand, in the mode for _rm (cq-6d9d, cq-xyqx)."""
     MODES = {"ne": 0x000, "down": 0x400, "up": 0x800, "zero": 0xC00}
 
     @classmethod
@@ -1047,7 +1048,8 @@ class WideIntToF80(unittest.TestCase):
         cls.exe = Path(cls.tmp.name) / "wide_itofp"
         build_harness(HERE / "wide_itofp.c", cls.exe)
         rnd = random.Random(0x0FF6)
-        cls.cases = [(200, 2**198 + 2**135 + 2**134 - 1)]  # the review repro (chk-h3 big3.c)
+        cls.cases = [(200, 2**198 + 2**135 + 2**134 - 1),  # the review repro (chk-h3 big3.c)
+                     (129, 0x1ad40d14ea5bac7990000000000000080)]  # top-bit uitofp (chkfp-n1 probe3)
         for _ in range(3000):
             N = rnd.choice((129, 192, 200, 256))
             L = rnd.randint(max(1, N - 80), N)
@@ -1081,34 +1083,48 @@ class WideIntToF80(unittest.TestCase):
     def model(self, N, v, sgn, mode):
         neg = sgn and v >> (N - 1) & 1
         mag = (1 << N) - v if neg else v
+        if not sgn and v >> (N - 1) & 1:  # CR §2 (cq-cqcj): one rounding, never negative
+            return _f80_of(_round_mag(mag, 64, mode, False), False)
         return _f80_of(_round_mag(_round_mag(mag, 113, "ne", neg), 64, mode, neg), neg)
 
     def test_native_nearest(self):
         rows = self.run_h()
-        double = 0
+        double = top_double = 0
         for i, (N, v) in enumerate(self.cases):
             for j, sgn in enumerate((0, 1)):
                 n_, k, ese, em, nse, nm = rows[2 * i + j]
                 ev, nat = (int(ese, 16), int(em, 16)), (int(nse, 16), int(nm, 16))
-                if not sgn and v >> (N - 1) & 1:  # LLVM 19's uitofp sign bug, not adopted (cq-cqcj)
+                neg = sgn and v >> (N - 1) & 1
+                single = _f80_of(_round_mag((1 << N) - v if neg else v, 64, "ne", neg), neg)
+                if not sgn and v >> (N - 1) & 1:
+                    # LLVM 19's uitofp with the top bit set: negative, the double-rounded magnitude
+                    # (a miscompile). Not adopted (cq-cqcj): one rounding, non-negative (cq-6d9d).
                     self.assertEqual(nat[0] & 0x8000, 0x8000, (N, hex(v)))
-                    nat = (nat[0] & 0x7FFF, nat[1])
+                    self.assertEqual((nat[0] & 0x7FFF, nat[1]),
+                                     _f80_of(_round_mag(_round_mag(v, 113, "ne", 0), 64, "ne", 0), 0))
+                    self.assertEqual(ev, single, (N, hex(v), "u top"))
+                    top_double += ev != (nat[0] & 0x7FFF, nat[1])
+                    continue
                 self.assertEqual(ev, nat, (N, hex(v), "su"[1 - sgn]))
                 self.assertEqual(ev, self.model(N, v, sgn, "ne"))
-                neg = sgn and v >> (N - 1) & 1
-                double += ev != _f80_of(_round_mag((1 << N) - v if neg else v, 64, "ne", neg), neg)
+                double += ev != single
         self.assertEqual(rows[0][2:4], ["40c5", "8000000000000002"])
+        self.assertTrue(rows[2][3].endswith("63cd"), rows[2])  # once rounded; LLVM's double gives ...63cc
         self.assertGreater(double, 50)  # the double rounding is exercised, not only agreed on
+        self.assertGreaterEqual(top_double, 5)  # top-bit uitofp: single rounding differs from LLVM's double (seeded: 5)
 
     def test_uitofp_top_bit_is_never_negative(self):
-        """cq-cqcj (CR §2 at 744da1b): native gives c07f 8000000000000000 for uitofp i129 2^128."""
+        """cq-cqcj (CR §2 at 744da1b): native gives c07f 8000000000000000 for uitofp i129 2^128;
+        CR §2 gives the non-negative value rounded once, in the mode for _rm (cq-6d9d)."""
         for mode in (None, "down", "up", "zero"):
             p = subprocess.run([str(self.exe)] + ([str(self.MODES[mode])] if mode else []),
                                input=f"129 {2**128:x}\n129 {2**129 - 1:x}\n", capture_output=True, text=True,
                                env=dict(os.environ, CQE_TRACE="/dev/null"), check=True)
             u = [l.split()[2:4] for l in p.stdout.splitlines() if l.split()[1] == "u"]
-            # 2^129 - 1: the 113-bit nearest-even step already gives 2^129, exact at f80 in every mode
-            self.assertEqual(u, [["407f", "8000000000000000"], ["4080", "8000000000000000"]], mode)
+            # 2^129 - 1: rounded once at 64 bits (cq-6d9d), so the mode decides; LLVM's 113-bit
+            # nearest-even step would give 2^129 in every mode
+            top = ["4080", "8000000000000000"] if mode in (None, "up") else ["407f", "ffffffffffffffff"]
+            self.assertEqual(u, [["407f", "8000000000000000"], top], mode)
 
     def test_rm_second_rounding_in_the_mode(self):
         for mode in ("down", "up", "zero"):
