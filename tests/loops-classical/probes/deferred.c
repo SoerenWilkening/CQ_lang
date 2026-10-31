@@ -41,7 +41,7 @@ int f_arm_phase(int x0, double th, double ph, int n) {
 int f_oracle(int x0, double th, int s, int n) {
   int x = x0; cq_theta(&x, th);
   int v = 0;
-  for (int i = 0; i < n; i++) v += (x >> i) & 1;
+  for (int i = 0; i < n; i++) v |= ((x >> i) & 1) << i;
   if (__builtin_popcount(v & s) & 1) cq_phi(3.14159);
   cq_theta(&x, -th);
   return cq_measure(x);

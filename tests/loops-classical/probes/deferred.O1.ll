@@ -106,32 +106,33 @@ define i32 @f_oracle(i32 noundef %0, double noundef %1, i32 noundef %2, i32 noun
   br i1 %6, label %13, label %7
 
 7:                                                ; preds = %13, %4
-  %8 = phi i32 [ 0, %4 ], [ %18, %13 ]
+  %8 = phi i32 [ 0, %4 ], [ %19, %13 ]
   %9 = and i32 %8, %2
-  %10 = tail call range(i32 0, 32) i32 @llvm.ctpop.i32(i32 %9)
+  %10 = tail call range(i32 0, 33) i32 @llvm.ctpop.i32(i32 %9)
   %11 = and i32 %10, 1
   %12 = icmp eq i32 %11, 0
-  br i1 %12, label %22, label %21
+  br i1 %12, label %23, label %22
 
 13:                                               ; preds = %4, %13
-  %14 = phi i32 [ %19, %13 ], [ 0, %4 ]
-  %15 = phi i32 [ %18, %13 ], [ 0, %4 ]
+  %14 = phi i32 [ %20, %13 ], [ 0, %4 ]
+  %15 = phi i32 [ %19, %13 ], [ 0, %4 ]
   %16 = lshr i32 %5, %14
   %17 = and i32 %16, 1
-  %18 = add nuw nsw i32 %17, %15
-  %19 = add nuw nsw i32 %14, 1
-  %20 = icmp eq i32 %19, %3
-  br i1 %20, label %7, label %13, !llvm.loop !11
+  %18 = shl nuw i32 %17, %14
+  %19 = or i32 %18, %15
+  %20 = add nuw nsw i32 %14, 1
+  %21 = icmp eq i32 %20, %3
+  br i1 %21, label %7, label %13, !llvm.loop !11
 
-21:                                               ; preds = %7
+22:                                               ; preds = %7
   tail call void @cq_phi(double noundef 3.141590e+00) #4
-  br label %22
+  br label %23
 
-22:                                               ; preds = %21, %7
-  %23 = fneg double %1
-  %24 = tail call i32 @cq_theta_si32(i32 noundef %5, double noundef %23) #3
-  %25 = tail call i32 @cq_measure_si32(i32 noundef %24) #4
-  ret i32 %25
+23:                                               ; preds = %22, %7
+  %24 = fneg double %1
+  %25 = tail call i32 @cq_theta_si32(i32 noundef %5, double noundef %24) #3
+  %26 = tail call i32 @cq_measure_si32(i32 noundef %25) #4
+  ret i32 %26
 }
 
 ; Function Attrs: mustprogress nocallback nofree nosync nounwind speculatable willreturn memory(none)
