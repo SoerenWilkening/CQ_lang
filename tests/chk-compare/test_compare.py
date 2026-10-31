@@ -725,6 +725,34 @@ class AKRule(unittest.TestCase):
         if needle:
             self.assertTrue(any(needle in x for x in r.reasons), r.reasons)
 
+    def test_cut_inside_invert_region(self):
+        # cq-088c: the K-loop inside a cq_invert region (begin before f:1's trips, end after them);
+        # a capped sample's cut lies inside the region, which then closes at the cut. Before:
+        # CompareError "the cut ... lies inside a cq_invert region"
+        beg = {"ev": "site", "fn": "f", "site": 10, "kind": "invert_begin", "angle": None, "reg": None}
+        end = {"ev": "site", "fn": "f", "site": 11, "kind": "invert_end", "angle": None, "reg": None}
+        T = self.CAP
+        c = []
+        for r in self.c_side(T):
+            rots = list(r.rotations)
+            capped = T[r.sample["args"][0] | r.sample["args"][1] << 1] > self.K
+            rots.insert(1, beg)
+            if not capped:
+                rots.insert(len(rots) - 1, end)
+            outputs = dict(r.outputs, loops=[dict(l, cut=l["cut"] + 1) if l["capped"] else l
+                                             for l in r.outputs["loops"]])
+            c.append(dataclasses.replace(r, rotations=rots, outputs=outputs))
+
+        def ours(angle):
+            out = []
+            for s in range(4):
+                rots = [ry(1, 1.0)] + [ph(20 + j, j <= T[s], angle) for j in range(self.K, 0, -1)] + [ry(1, 2.0)]
+                out.append(run("o", s, rots, [keep(1, s, "i8"), keep(9, int(T[s] > self.K), "i1", "garbage")],
+                               outputs={"ret": self.ret(min(T[s], self.K)), "stdout": "", "exit": 0}))
+            return out
+        self.check(ours(-0.5), c, True)
+        self.check(ours(0.5), c, False)
+
     CAP = (0, 2, 9, 7)        # samples 2 and 3 capped
     LEQ = (0, 2, 3, 4)        # none capped; sample 3 exits after exactly K trips
 
@@ -867,6 +895,46 @@ class AbortRule(unittest.TestCase):
 
     def test_ordinary_end_is_not_an_abort(self):
         self.check(self.ours(), self.c("ret"), False, "returns")
+
+    # -- cq-088c: a sample that ends inside a cq_invert region
+    def region_c(self):
+        """f:0 Ry(1.0); invert_begin; f:1 Ry(2.0); on x == 3 abort() (the region never closes), else
+        f:2 Ry(3.0); invert_end."""
+        out = []
+        for s in range(4):
+            rots = [self.site(0, 1.0, s), {"ev": "site", "fn": "f", "site": 10, "kind": "invert_begin",
+                                           "angle": None, "reg": None},
+                    self.site(1, 2.0, s)]
+            if s != self.END:
+                rots += [self.site(2, 3.0, s), {"ev": "site", "fn": "f", "site": 11, "kind": "invert_end",
+                                                "angle": None, "reg": None}]
+            out.append(RunResult(side="c", sample={"call": 0, "args": [s & 1, s >> 1]},
+                                 outputs={"end": "noreturn:abort" if s == self.END else "ret", "loops": []},
+                                 measured=[], rotations=rots, kept=None, clean=None, violations=[]))
+        return out
+
+    def region_ours(self, rots):
+        return [run("o", s, rots(s), [keep(1, s, "i8"), keep(9, int(s == self.END), "i1", "abort")])
+                for s in range(4)]
+
+    def test_end_inside_invert_region(self):
+        # fails before cq-088c: "1 C invert_begin(s) without a matching invert_end" on sample 3. Rule 17
+        # emits the region reversed: the reached f:1 is the region's last gate, f:2 (unknown past the
+        # end) comes before it
+        c = self.region_c()
+        self.check(self.region_ours(lambda s: [ry(1, 1.0), ry(1, -3.0), ry(1, -2.0)]), c, True)
+        # the region forward, or not negated, is still a difference
+        self.check(self.region_ours(lambda s: [ry(1, 1.0), ry(1, 2.0), ry(1, 3.0)]), c, False)
+        self.check(self.region_ours(lambda s: [ry(1, 1.0), ry(1, 3.0), ry(1, 2.0)]), c, False)
+        # the reached f:1 must fire on the ended sample too
+        self.check(self.region_ours(lambda s: [ry(1, 1.0), ry(1, -3.0), ry(1, -2.0, [8], [int(s != 3)])]),
+                   c, False, "f:1")
+
+    def test_unclosed_region_on_a_returning_sample_still_a_difference(self):
+        c = self.region_c()
+        c[0] = dataclasses.replace(c[0], rotations=c[0].rotations[:3])
+        self.check(self.region_ours(lambda s: [ry(1, 1.0), ry(1, -3.0), ry(1, -2.0)]), c, False,
+                   "without a matching invert_end")
 
 
 class Rule2Measure(unittest.TestCase):

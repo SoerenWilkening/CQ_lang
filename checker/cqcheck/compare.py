@@ -38,7 +38,11 @@ What is compared (CR §6, CLAUDE.md "The §6 checker"):
   sites between an invert_begin and its matching invert_end, nesting by depth) is read under CR rule
   17: its sites are taken in reverse order with their angles negated (a region inside a region is so
   inverted twice), both for matching and for the per-sample order. A marker without its partner in
-  a sample is a difference, never skipped.
+  a sample is a difference, never skipped, except an invert_begin still open where an open-ended
+  sample stops (it ended in noreturn/raise, or its cut lies inside the region; bead cq-088c): rule
+  17 emits the whole region reversed, so the sites the sample reached in it are the region's last
+  gates, reversed and negated, and the gates of the sites it did not reach come before them, unknown
+  as past the end. Each open region is closed where the sample stops, innermost first.
 
 Groups. The samples are partitioned by `classical_key(sample)` (the classical arguments; see
 `classical_key_from_driver`; without it, by the sample's call). Each group is further split by the
@@ -595,9 +599,11 @@ class _Site:
 _MARKERS = ("invert_begin", "invert_end")
 
 
-def _c_order(rr: RunResult, s: int) -> Tuple[List[Tuple[int, Dict[str, Any], bool]], List[str]]:
+def _c_order(rr: RunResult, s: int, open_end: bool = False
+             ) -> Tuple[List[Tuple[int, Dict[str, Any], bool]], List[str]]:
     """One C sample's theta/phi sites in emission order under CR rule 17: [(original position,
-    record, negated)], and the reasons its markers do not pair up."""
+    record, negated)], and the reasons its markers do not pair up. `open_end`: the sample stops
+    early (ended or cut), so a region still open there is closed at its end (module docstring)."""
     reasons: List[str] = []
     stack: List[List[Tuple[int, Dict[str, Any], bool]]] = [[]]
     for pos, rec in enumerate(rr.rotations or []):
@@ -615,18 +621,22 @@ def _c_order(rr: RunResult, s: int) -> Tuple[List[Tuple[int, Dict[str, Any], boo
             stack[-1].extend((p, r, not neg) for p, r, neg in reversed(region))
         else:
             stack[-1].append((pos, rec, False))
-    if len(stack) > 1:
+    if len(stack) > 1 and not open_end:
         reasons.append(f"sample {s}: {len(stack) - 1} C invert_begin(s) without a matching invert_end")
         return [], reasons
+    while len(stack) > 1:
+        region = stack.pop()
+        stack[-1].extend((p, r, not neg) for p, r, neg in reversed(region))
     return stack[0], reasons
 
 
-def _c_sites(runs: List[RunResult], nan_eq: bool) -> Tuple[List[_Site], List[str]]:
+def _c_sites(runs: List[RunResult], nan_eq: bool, open_end: Sequence[bool] = ()
+             ) -> Tuple[List[_Site], List[str]]:
     sites: Dict[Tuple, _Site] = {}
     reasons: List[str] = []
     nS = len(runs)
     for s, rr in enumerate(runs):
-        seq, why = _c_order(rr, s)
+        seq, why = _c_order(rr, s, bool(open_end) and open_end[s])
         reasons += why
         for epos, (pos, rec, neg) in enumerate(seq):
             key = (rec["fn"], rec["site"], rec["kind"])
@@ -1133,11 +1143,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             cap = _cap(r_by[k])
             capped[k] = cap is not None
             if cap is not None:
-                r_by[k] = _truncate(r_by[k], cap)
-                _, why = _c_order(r_by[k], 0)
-                if why:
-                    raise CompareError(f"cq: unimplemented: chk-compare: sample {k}: the cut {cap!r} lies inside "
-                                       f"a cq_invert region")
+                r_by[k] = _truncate(r_by[k], cap)      # a cut inside a cq_invert region closes it (cq-088c)
 
     # per sample: violations, outputs, measured values, frees
     meas_opts: Dict[str, List[Tuple[FrozenSet[int], FrozenSet[int]]]] = {}
@@ -1240,7 +1246,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             if why:
                 reasons.append(f"{tag}: rotation list differs: {why}")
         else:
-            sites, why_c = _c_sites(r_runs, nan_eq)
+            sites, why_c = _c_sites(r_runs, nan_eq, [capped[k] or ended[k] for k in ks])
             if why_c:
                 reasons += [f"{tag}: {why}" for why in why_c]
                 continue
