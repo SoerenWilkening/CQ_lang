@@ -1711,7 +1711,9 @@ struct Uncompute::Impl {
   // early return, the loop path left y live). On those paths the rail is resolved like any garbage, at
   // the end of the unmeasured region: in each block P that no measurement of it reaches but from which
   // the program leaves that region (a return, or the single edge into a block a measurement reaches),
-  // right after the last use in P. Its sources may be gone by then (they were freed as soon as the
+  // right after the last use in P. An edge into a block from which a measurement is still reachable is
+  // no such exit: the rail stays kept on that path (cq-zpe8: freed there, a later measurement after the
+  // join read a freed rail). Its sources may be gone by then (they were freed as soon as the
   // rail looked kept), so the item recomputes the rail into a fresh t from kept rails (replaying the
   // records of every resolvable source too), copies t into the rail (|0>, rule 6's clean-up shape),
   // undoes the recomputation in reverse and frees (Bennett's compute-copy-uncompute, local to P).
@@ -1797,9 +1799,12 @@ struct Uncompute::Impl {
           }
           if (mb.count(s))
             continue;   // the edge into a measurement: measured on that path
-          if (mreach.count(s))
-            exits = true;
-          else if (un.insert(s).second)
+          if (mreach.count(s)) {
+            // cq-zpe8: a measurement still reachable after the join reads the rail on this path too, so
+            // it stays kept here (a clean-up would free it before that measurement).
+            if (llvm::none_of(mb, [&](const BasicBlock *m) { return reaches(s, m); }))
+              exits = true;
+          } else if (un.insert(s).second)
             work.push_back(s);
         }
         if (exits)

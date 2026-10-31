@@ -52,6 +52,9 @@ MEASURED_PROBE = PROBES / "measured_some.O1.ll"
 MEASURED = {"m_r8": [("measured", "i32"), ("kept_entangled", "i32"), ("measured", "i32")],
             "m_r8b": [("measured", "i32"), ("measured", "i32")],
             "m_r8c": [("measured", "i32"), ("kept_entangled", "i32"), ("measured", "i32")]}
+# cq-zpe8: measured on one arm and again after the join's loop; §6 only (the kept rails depend on the arm; the
+# loop is classical, so no reverse loop).
+MEASURED_SEC6 = ["m_join"]
 ENTRIES = ["p_acc", "p_brk", "p_nest", "p_mod", "p_nb", "p_horner", "p_arm", "p_phase", "p_cjoin", "p_tphase", "p_bwb", "p_g2"]
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 
@@ -82,7 +85,7 @@ def check_probe(a, probe: Path, entries, out: Path) -> int:
             why.append("no lowered body")
         if SURFACE.search(b):
             why.append("a CQ.h surface call is left")
-        if "@cqrt_push(" not in b or "@cqrt_pop()" not in b:
+        if e not in MEASURED_SEC6 and ("@cqrt_push(" not in b or "@cqrt_pop()" not in b):
             why.append("no push/pop: the reverse loop is missing")
         c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(probe), "--lowered", str(lowered),
                             "--entry", e], capture_output=True, text=True, cwd=ROOT / "checker")
@@ -139,7 +142,7 @@ def main() -> int:
     if "deferred" in want:
         groups.append((DEFERRED_PROBE, list(DEFERRED)))
     if "measured" in want:
-        groups.append((MEASURED_PROBE, list(MEASURED)))
+        groups.append((MEASURED_PROBE, list(MEASURED) + MEASURED_SEC6))
     for probe, entries in groups:
         failures += check_probe(a, probe, entries, out)
     for group, probe, table in (("rule6", RULE6_PROBE, RULE6), ("deferred", DEFERRED_PROBE, DEFERRED),

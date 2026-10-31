@@ -29,3 +29,16 @@ int m_r8c(int q0, double th, int n) {
     int r = y + 2;
     return cq_measure(r) + cq_measure(x) * 7;
 }
+/* cq-zpe8: y measured on one arm, the join loops, and a later measurement after the loop reads y on either arm:
+ * the non-measuring arm keeps y (no clean-up before the later measurement; was use_after_free). §6 only. */
+volatile int m_sink;
+int m_join(int c, int n) {
+    int x = 0; cq_theta(&x, 0.9);
+    int y = x * 3 + 1;
+    int r = 0;
+    if (c) r = cq_measure(y);
+    else m_sink = c;
+    for (int i = 0; i < n; i++) r += 2;
+    if (n > 3) r += 100 * cq_measure(y);
+    return r;
+}
