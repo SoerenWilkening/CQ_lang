@@ -315,23 +315,44 @@ Case classify(const Loop &L, const TaintInfo &T, const Specialization &S) {
     return false;
   };
 
-  // Disjuncts of "exit taken": cond (exit on true) or !cond (exit on false), through and/or/select.
+  // Disjuncts of "exit taken": cond (exit on true) or !cond (exit on false), through and/or/select
+  // and negation. cq-dtvp: select c, t, true is !c | t and select c, false, f is !c & f (the
+  // condition enters negated), and xor x, true is !x; -O1 writes `i + 1 >= n || q` as
+  // select(i + 1 < n, q, true).
   std::function<void(const Value *, bool, SmallVectorImpl<std::pair<const Value *, bool>> &)> disjuncts;
   disjuncts = [&](const Value *c, bool positive, SmallVectorImpl<std::pair<const Value *, bool>> &out) {
     const Value *a = nullptr, *b = nullptr;
-    bool isOr = false, isAnd = false;
+    bool isOr = false, isAnd = false, negA = false;
+    auto isTrue = [](const Value *v) {
+      auto *k = dyn_cast<ConstantInt>(v);
+      return k && k->isOne();
+    };
+    auto isFalse = [](const Value *v) {
+      auto *k = dyn_cast<ConstantInt>(v);
+      return k && k->isZero();
+    };
     if (auto *bo = dyn_cast<BinaryOperator>(c); bo && bo->getType()->isIntegerTy(1)) {
       if (bo->getOpcode() == Instruction::Or) { isOr = true; a = bo->getOperand(0); b = bo->getOperand(1); }
       if (bo->getOpcode() == Instruction::And) { isAnd = true; a = bo->getOperand(0); b = bo->getOperand(1); }
+      if (bo->getOpcode() == Instruction::Xor) {
+        for (unsigned i = 0; i < 2; ++i)
+          if (isTrue(bo->getOperand(i)))
+            return disjuncts(bo->getOperand(1 - i), !positive, out);
+      }
     } else if (auto *sel = dyn_cast<SelectInst>(c); sel && sel->getType()->isIntegerTy(1)) {
-      if (auto *k = dyn_cast<ConstantInt>(sel->getTrueValue()); k && k->isOne()) {
-        isOr = true; a = sel->getCondition(); b = sel->getFalseValue();
-      } else if (auto *k2 = dyn_cast<ConstantInt>(sel->getFalseValue()); k2 && k2->isZero()) {
-        isAnd = true; a = sel->getCondition(); b = sel->getTrueValue();
+      const Value *t = sel->getTrueValue(), *f = sel->getFalseValue();
+      if (isTrue(t)) {
+        isOr = true; a = sel->getCondition(); b = f;
+      } else if (isFalse(f)) {
+        isAnd = true; a = sel->getCondition(); b = t;
+      } else if (isTrue(f)) {
+        isOr = true; negA = true; a = sel->getCondition(); b = t;
+      } else if (isFalse(t)) {
+        isAnd = true; negA = true; a = sel->getCondition(); b = f;
       }
     }
     if ((isOr && positive) || (isAnd && !positive)) {
-      disjuncts(a, positive, out);
+      disjuncts(a, negA ? !positive : positive, out);
       disjuncts(b, positive, out);
       return;
     }
