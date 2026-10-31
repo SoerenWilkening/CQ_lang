@@ -14,7 +14,8 @@ Fails on any of:
             operand is no rail position
   mutant    a wrong lowered module is not rejected (exit 1): built from 01's reference with the Ry's
             angle negated, the add computed before the Ry (only cq_theta substitution sees it), the
-            measured rail replaced by its classical input, and an empty body (ret 0)
+            measured rail replaced by its classical input, and an empty body (ret 0); from 60's
+            reference, five wrong phases or Ry that only varied handle cells expose (cq-rbe6)
   error     a missing entry or main(argc, argv) is not an error (exit 2)
 
 Every run goes through the CLI (`python3 -m cqcheck user` from checker/), as cqcc --cq-check runs it.
@@ -130,6 +131,24 @@ def mutants(ref_text):
     return out
 
 
+def mutants60(ref_text):
+    """name -> a wrong lowered module of 60_qft (qft), cq-rbe6 (review cq-9edz's m60 mutants): the
+    controlled phase dropped, negated, controlled on q[j] twice, on the wrong cell, and the Ry
+    negated. Only varied handle cells (the quantum inputs behind q) fire the phase."""
+    rz = "  call void @cqrt_rz_i1(i32 %24, double %29)"
+    andq = "  call void @cqrt_and_i1(i32 %23, i32 %17, i32 %24)"
+    gep = "  %22 = getelementptr inbounds i32, ptr %0, i64 %21"
+    ry = "  call void @cqrt_ry_i1(i32 %17, double %2)"
+    for t in (rz, andq, gep, ry):
+        if t not in ref_text:
+            raise SystemExit(f"60's reference changed: {t!r} not found")
+    return {"drop_phase": ref_text.replace(rz, ""),
+            "negated_phase": ref_text.replace(rz, "  %neg = fneg double %29\n  call void @cqrt_rz_i1(i32 %24, double %neg)"),
+            "control_twice": ref_text.replace(andq, "  call void @cqrt_and_i1(i32 %23, i32 %23, i32 %24)"),
+            "wrong_cell": ref_text.replace(gep, "  %22 = getelementptr inbounds i32, ptr %0, i64 %15"),
+            "negated_ry": ref_text.replace(ry, "  %ng = fneg double %2\n  call void @cqrt_ry_i1(i32 %17, double %ng)")}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--spec", type=Path, default=ROOT.parent / "CQ_spec")
@@ -162,6 +181,12 @@ def main():
             p = tmp / f"mutant_{name}.ll"
             p.write_text(text)
             expect(f"mutant {name}", 1, user(o1, p, "add_classical"))
+
+        d60 = spec / "examples" / "60_qft"
+        for name, text in mutants60((d60 / "qft.lowered.ll").read_text()).items():
+            p = tmp / f"mutant60_{name}.ll"
+            p.write_text(text)
+            expect(f"mutant 60 {name}", 1, user(d60 / "qft.O1.ll", p, "qft"))
 
         expect("error: no such entry", 2, user(o1, d / "add_classical_const.lowered.ll", "nosuch"))
         argv = tmp / "argv"

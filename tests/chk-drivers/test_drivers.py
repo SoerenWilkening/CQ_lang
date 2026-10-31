@@ -61,8 +61,9 @@ class DriverSpecs(unittest.TestCase):
         # registers computed inside the program: no quantum argument (58, 113)
         self.assertEqual(q(s["58_register_array"]), [False, False])
         self.assertEqual(s["113_dicke4"].calls[0]["args"], [])
-        # a pointer to the caller's registers (60)
+        # a pointer to the caller's registers (60): handle cells, each a quantum input (cq-rbe6)
         self.assertEqual(q(s["60_qft"]), [True, False, False])
+        self.assertEqual(s["60_qft"].calls[0]["args"][0].get("cells"), {"w": 1, "n": 4})
 
 
 class Loops(unittest.TestCase):
@@ -178,8 +179,18 @@ def baked_driver_source(spec, samples):
     for i, s in enumerate(samples):
         call = spec.calls[s["call"]]
         cts = [D.parse_ctype(a["ctype"]) for a in call["args"]]
-        args = ", ".join(baked_c_value(ct, v) for ct, v in zip(cts, s["args"]))
-        out.append(f"    {{ (void){call['fn']}({args}); }}")
+        writes, vals = [], []
+        for a, ct, v in zip(call["args"], cts, s["args"]):
+            if ct.kind == "p":
+                v, cv = D.split_ptr(v)
+                cells = a.get("cells")
+                if cells:    # the C side's view of the handle cells (cq-rbe6): element k = value k
+                    nb = max(1, cells["w"] // 8)
+                    for k, x in enumerate(cv or ["0x0"] * cells["n"]):
+                        writes.append(f"{{ unsigned long long x = {int(x, 16) & ((1 << cells['w']) - 1)}ULL; "
+                                      f"memcpy((char *)({v}) + {k * nb}, &x, {nb}); }}")
+            vals.append(baked_c_value(ct, v))
+        out.append(f"    {{ {' '.join(writes)} (void){call['fn']}({', '.join(vals)}); }}")
     out.append("    return 0;\n}")
     return "\n".join(out) + "\n"
 
@@ -328,6 +339,22 @@ class Sampling(unittest.TestCase):
         edge = {tuple(ss.samples[i]["args"][:1]) for i in ss.classes["edge"]["2"]["samples"]}
         self.assertTrue({("0x8000000000000000",), ("0x7fffffffffffffff",), ("0xffffffffffffffff",)} <= edge)
         self.assertIn("empty", ss.classes["specials"]["0"])
+
+    def test_handle_cells_are_quantum_inputs(self):
+        """cq-rbe6: 60's register array (int q[4] of cqrt_alloc_i1(0) handles) is a quantum input:
+        exhaustive (with the cq_theta reaches) and edge over its 4 cells, and classical tuples crossed with random cell values."""
+        spec, ss = self.sample("60_qft")
+        cells = lambda i: tuple(D.split_ptr(ss.samples[i]["args"][0])[1] or ["0x0"] * 4)
+        ex = ss.classes["exhaustive"]["0"]
+        self.assertEqual(ex["bits"], 4 + 3)                  # the cells crossed with qft:0's 3 reaches
+        self.assertEqual({cells(i) for i in ex["samples"]},
+                         {tuple(f"0x{(n >> k) & 1:x}" for k in range(4)) for n in range(16)})
+        self.assertEqual(len({cells(i) for i in ss.classes["edge"]["0"]["samples"]}), 16)
+        rc = ss.classes["random_seed"]["classical"]["0"]["samples"]
+        self.assertGreater(len({(ss.samples[i]["args"][1], cells(i)) for i in rc}),
+                           len({ss.samples[i]["args"][1] for i in rc}))
+        self.assertEqual(D.sample_record(spec, {"call": 0, "args": ["q@cells:0x1,0x0,0x1,0x1", "0x3", "0x0"]}),
+                         "0 p71 0x1 0x0 0x1 0x1 0x3 0x0")
 
     def test_exhaustive_bound_is_8_bits(self):
         """cq-l1wi (owner decision): 8 quantum bits are exhaustive, 9 are not."""

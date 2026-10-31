@@ -17,6 +17,19 @@ quantum when the memory it points to flows in that way (the register array of 60
 concrete values of the drivers.txt calls are not part of DriverSpec: they are the baseline samples
 of the SampleSet (sampling.py).
 
+Handle cells (cq-rbe6). A quantum pointer argument whose drivers.txt object the setup fills with rail
+handles (`int q[N]` with `q[i] = cqrt_alloc_iW(0)`, 60_qft; and cqcheck user's seeded objects) is a
+memory-borne quantum input: its argument entry carries `"cells": {"w": W, "n": N}`, and its N cells
+are quantum inputs sampled like any other (CLAUDE.md "Inputs"). A sample gives their values in the
+pointer value, `<expr>@cells:<hex>,<hex>,...` (one W-bit pattern per cell; the bare `<expr>` is every
+cell 0, the setup's own values). The driver writes them at the start of the sample, every cell in
+every sample (so the circuit's structure does not depend on them): on the lowered side, where the
+setup left a handle (>= 1, rt/core.c) in each cell, cell k becomes `cqrt_alloc_iW(v_k)`, a rail
+holding v_k; on the C side, where the setup's `cqrt_alloc_iW(0)` left the value 0 (oracle/cqo_rt.c),
+element k of the C program's view of the object, an array of the W-bit C type the alloc takes
+(60's `bool *q`), becomes v_k. Cell 0 as the setup left it tells the sides apart (read at the first
+sample, before any write).
+
 The module also holds the textual `.O1.ll` reader that sampling.py builds on, and the C source of a
 driver `main` (`driver_source`), which renders every sample of a SampleSet with bit-exact argument
 values.
@@ -921,6 +934,43 @@ def _ident_of(expr: str) -> Optional[str]:
     return e if re.fullmatch(r"[A-Za-z_]\w*", e) else None
 
 
+CELL_CTYPES = {1: "_Bool", 8: "signed char", 16: "short", 32: "int"}   # cqrt_alloc_i<W>'s parameter
+CELLS_SEP = "@cells:"
+
+
+def handle_cells(setup: str, expr: str) -> Optional[Dict[str, int]]:
+    """{"w", "n"} when the setup fills the object `expr` names with rail handles (an `int X[N]` whose
+    cells are assigned `cqrt_alloc_iW(0)`), else None."""
+    ident = _ident_of(expr)
+    if ident is None or not expr.strip() == ident:
+        return None
+    al = re.findall(r"\b" + re.escape(ident) + r"\s*\[[^\]]*\]\s*=\s*cqrt_alloc_i(\d+)\s*\(([^)]*)\)", setup)
+    if not al:
+        return None
+    decl = re.search(r"\bint\s+" + re.escape(ident) + r"\s*\[\s*(\d+)\s*\]", setup)
+    ws = {int(w) for w, _ in al}
+    if decl is None or len(ws) != 1 or any(v.strip() != "0" for _, v in al) or next(iter(ws)) not in CELL_CTYPES:
+        unimplemented(f"driver object {ident}: handle cells other than `int {ident}[N]` filled with "
+                      f"cqrt_alloc_i<W>(0) of one W in 1, 8, 16, 32 (setup {setup!r})")
+    return {"w": next(iter(ws)), "n": int(decl.group(1))}
+
+
+def cell_ctype(cells: Dict[str, int]) -> "CType":
+    return parse_ctype(CELL_CTYPES[cells["w"]])
+
+
+def split_ptr(v: str) -> Tuple[str, Optional[List[str]]]:
+    """(the C expression, the cell values or None) of a pointer sample value."""
+    if CELLS_SEP in v:
+        e, vals = v.split(CELLS_SEP, 1)
+        return e, vals.split(",")
+    return v, None
+
+
+def ptr_with_cells(expr: str, vals: Sequence[str]) -> str:
+    return expr + CELLS_SEP + ",".join(vals)
+
+
 def build_driver_spec(line: DriverLine, mod: Optional[Module] = None) -> DriverSpec:
     mod = mod or read_module(o1_path(line.example))
     protos = {p.name: p for p in (parse_proto(t) for t in line.protos)}
@@ -946,6 +996,9 @@ def build_driver_spec(line: DriverLine, mod: Optional[Module] = None) -> DriverS
             else:
                 q = ("@" + fn, i) in qp.value and only_into_theta(mod, "@" + fn, i)[0]
             cargs.append({"ctype": ct.spelling, "quantum": bool(q)})
+            cells = handle_cells(line.setup, a) if ct.kind == "p" else None
+            if cells is not None:     # rails, whether or not a cq_theta rotates them: quantum
+                cargs[-1].update(quantum=True, cells=cells)
             ident = _ident_of(a)
             if ct.kind == "p" and ident in IMPLICIT_OBJECTS and ident not in implicit \
                     and not re.search(r"\b" + ident + r"\b", line.setup):
@@ -1055,7 +1108,9 @@ static inline long double cqd_f80(uint64_t m, uint16_t e) {
 # <call> is the decimal index into spec.calls; one <arg> per argument of that call: a scalar is its
 # sample value's bit pattern as "0x" + lowercase hex digits (the value c_value renders, at most 128
 # bits); a pointer is "p" + the hex of the UTF-8 bytes of its C expression, which must be one the
-# driver was rendered with. Record k (0-based, in file order) runs with CQD_SAMPLE = k.
+# driver was rendered with, followed, for an argument with handle cells, by one "0x" token per cell
+# (its value; 0 for a pointer value without cells). Record k (0-based, in file order) runs with
+# CQD_SAMPLE = k.
 # ------------------------------------------------------------------------------------------------
 
 SAMPLES_ENV = "CQD_SAMPLES"
@@ -1078,16 +1133,28 @@ def _call_ctypes(spec: DriverSpec, sample: dict) -> Tuple[int, List[CType]]:
 def sample_record(spec: DriverSpec, sample: dict) -> str:
     """The sample file line of one sample (without the newline)."""
     ci, cts = _call_ctypes(spec, sample)
-    return _record(ci, cts, sample["args"])
+    return _record(ci, cts, sample["args"], spec.calls[ci]["args"])
 
 
-def _record(ci: int, cts: Sequence[CType], args: Sequence) -> str:
+def _record(ci: int, cts: Sequence[CType], args: Sequence, cargs: Sequence[dict] = ()) -> str:
+    """A pointer with handle cells is its expression's token followed by one 0x token per cell."""
     toks = [str(ci)]
-    for ct, v in zip(cts, args):
+    for ai, (ct, v) in enumerate(zip(cts, args)):
         if ct.kind == "p":
             if not isinstance(v, str) or not v.strip():
                 unimplemented(f"pointer sample value {v!r}: a C expression")
-            toks.append(_ptr_token(v))
+            expr, vals = split_ptr(v)
+            cells = cargs[ai].get("cells") if ai < len(cargs) else None
+            toks.append(_ptr_token(expr))
+            if cells is None:
+                if vals is not None:
+                    unimplemented(f"pointer sample value {v!r}: cell values for an argument with no handle cells")
+                continue
+            vals = vals if vals is not None else ["0x0"] * cells["n"]
+            if len(vals) != cells["n"]:
+                unimplemented(f"pointer sample value {v!r}: {cells['n']} cell values")
+            m = (1 << cells["w"]) - 1
+            toks += [f"0x{_scalar_bits(cell_ctype(cells), x) & m:x}" for x in vals]
         else:
             n = _scalar_bits(ct, v)
             if n >> 128:
@@ -1109,7 +1176,7 @@ def sample_file(spec: DriverSpec, samples: Sequence[dict]) -> str:
             per_call[ci] = cts
         elif len(s.get("args", ())) != len(cts):
             unimplemented(f"sample {s!r}: call {ci} takes {len(cts)} arguments")
-        out.append(_record(ci, cts, s["args"]))
+        out.append(_record(ci, cts, s["args"], spec.calls[ci]["args"]))
         out.append("\n")
     return "".join(out)
 
@@ -1136,7 +1203,7 @@ def _pointer_exprs(spec: DriverSpec, samples: Sequence[dict]) -> Dict[Tuple[int,
         ci, cts = _call_ctypes(spec, s)
         for ai, (ct, v) in enumerate(zip(cts, s["args"])):
             if ct.kind == "p":
-                out.setdefault((ci, ai), set()).add(v)
+                out.setdefault((ci, ai), set()).add(split_ptr(v)[0])
     line = _drivers_txt_lines().get(spec.example)
     if line is not None and [parse_call(c)[0] for c in line.calls] == [c["fn"] for c in spec.calls]:
         for ci, (ctext, call) in enumerate(zip(line.calls, spec.calls)):
@@ -1194,6 +1261,24 @@ _READER_PRELUDE = r"""
 """
 
 
+def _cells_helper(w: int) -> str:
+    """The driver's writer of one sample's handle cells (module docstring, cq-rbe6)."""
+    ct = CELL_CTYPES[w]
+    nb = max(1, w // 8)
+    m = (1 << w) - 1
+    return (f"int cqrt_alloc_i{w}({ct});\n"
+            f"static void cqd_cells_i{w}(void *p, int n, const unsigned long long *v) {{\n"
+            f"    int32_t *h = (int32_t *)p;\n"
+            f"    static int rails = -1;   /* decided on the post-setup state, before any sample writes */\n"
+            f"    if (rails < 0) rails = h[0] != 0;\n"
+            f"    if (rails) {{   /* handles (>= 1): the lowered side */\n"
+            f"        for (int k = 0; k < n; k++) h[k] = cqrt_alloc_i{w}(({ct})(v[k] & 0x{m:x}ULL));\n"
+            f"    }} else {{          /* the setup's cqrt_alloc_i{w}(0) as the value 0: the C side's {ct} view */\n"
+            f"        for (int k = 0; k < n; k++) {{ unsigned long long x = v[k] & 0x{m:x}ULL; "
+            f"memcpy((char *)p + (size_t)k * {nb}, &x, {nb}); }}\n"
+            f"    }}\n}}")
+
+
 def driver_source(spec: DriverSpec, samples: Sequence[dict], *, before_call: str = "",
                   after_call: str = "", main_name: str = "main") -> str:
     """A C driver (cq-arch Z2): `int <main_name>(void)` runs the setup once, then reads the sample
@@ -1212,6 +1297,8 @@ def driver_source(spec: DriverSpec, samples: Sequence[dict], *, before_call: str
     ptrs = _pointer_exprs(spec, samples)
     out = [DRIVER_PRELUDE, _READER_PRELUDE]
     out += [p.strip().rstrip(";") + ";" for p in spec.protos if p.strip()]
+    for w in sorted({a["cells"]["w"] for c in spec.calls for a in c["args"] if a.get("cells")}):
+        out.append(_cells_helper(w))
     out.append(f"int {main_name}(void) {{")
     out.append("    " + spec.setup)
     out.append(f'    const char *cqd_path = getenv("{SAMPLES_ENV}");')
@@ -1237,6 +1324,7 @@ def driver_source(spec: DriverSpec, samples: Sequence[dict], *, before_call: str
         fn = call["fn"]
         out.append(f"        case {ci}: {{")
         names = []
+        cellw: List[str] = []
         for ai, a in enumerate(call["args"]):
             ct = parse_ctype(a["ctype"])
             nm = f"cqd_a{ai}"
@@ -1247,6 +1335,11 @@ def driver_source(spec: DriverSpec, samples: Sequence[dict], *, before_call: str
                          for e in ptrs.get((ci, ai), [])]
                 out.append("            " + " else ".join(conds + ['CQD_BAD("a pointer expression the driver '
                                                                     'was not rendered with");']))
+                if a.get("cells"):
+                    n = a["cells"]["n"]
+                    out.append(f"            unsigned long long cqd_c{ai}[{n}]; "
+                               f"for (int cqd_k = 0; cqd_k < {n}; cqd_k++) {{ CQD_HEX(); cqd_c{ai}[cqd_k] = cqd_w[0]; }}")
+                    cellw.append(f"cqd_cells_i{a['cells']['w']}((void *)({nm}), {n}, cqd_c{ai});")
             elif ct.bits == 1:
                 out.append(f"            {ct.spelling} {nm}; CQD_BOOL({nm});")
             else:
@@ -1261,7 +1354,7 @@ def driver_source(spec: DriverSpec, samples: Sequence[dict], *, before_call: str
         else:
             body = f"(void){callexpr};"
         out.append(f"            {{ const int CQD_SAMPLE = cqd_idx; (void)CQD_SAMPLE; {before_call} "
-                   f"{body} {after_call} }}")
+                   f"{' '.join(cellw)} {body} {after_call} }}")
         out.append("            break; }")
     out.append('        default: CQD_BAD("call index out of range");')
     out.append("        }")

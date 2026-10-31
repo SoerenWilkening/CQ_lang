@@ -9,8 +9,8 @@ injection bundle), `lowered` its lowering, `entry` the function both run from. T
 the C program only (CLAUDE.md "The §6 checker", oracle (b)); there is no reference.
 
 Inputs. A program has no drivers.txt line, so nothing says which entry arguments are quantum: every
-argument of the entry is classical, and the quantum inputs are the values reaching the program's
-cq_theta sites (CR §6 item 1, "each cq_theta input replaced by a chosen bit pattern"). Both sides
+argument of the entry is classical (a handle-cell object aside, below), and the quantum inputs are
+the values reaching the program's cq_theta sites (CR §6 item 1, "each cq_theta input replaced by a chosen bit pattern"). Both sides
 take the same sampled basis value at each reach of a site: the sample's "subst" (cq-arch Z4) is what
 cq_theta returns in the C oracle and what the evaluator's firing Ry leaves on its target (run.py's
 theta schedule, dispatch.c). The sampling classes are cq-w0-chk-drivers' (sampling.sample_set): the
@@ -34,8 +34,10 @@ A pointer parameter the lowered entry reads as handle cells (an i32 loaded throu
 rail operand of a cqrt_* or cq_template_* call, a template's `l` shape positions excluded, directly or through a defined callee: a `bool *` to the caller's
 quantum registers, CR rule 20, example 60) gets instead an object of HANDLE_CELLS seeded handles,
 `static int cqu_objJ[HANDLE_CELLS]` with every cell `cqrt_alloc_iW(0)` in the setup, as 60's
-drivers.txt line does (cq-sujz decision 1). The C oracle's cqrt_alloc_iW returns its argument, so the
-C program reads the same object as zeros. W is the width of the cqrt operation the handles reach.
+drivers.txt line does (cq-sujz decision 1). The cells are quantum inputs (cq-rbe6): drivers.py's
+handle cells, varied by every quantum class of the sampling, the lowered side holding rails at the
+sampled values and the C program reading them as its own element type. W is the width of the cqrt
+operation the handles reach.
 The object is 4 * HANDLE_CELLS bytes on both sides: a C element narrower than the 4-byte cell (60's
 bool) leaves indices HANDLE_CELLS .. 4 * HANDLE_CELLS / sizeof - 1 inside the C program's domain but
 past the lowered side's cells (a gap, bead cq-562f).
@@ -354,7 +356,10 @@ def build_spec(o1_text: str, entry: str, root: Path,
     (tools / "drivers.txt").write_text("|".join(fields) + "\n")
     line = D.read_drivers_txt(tools / "drivers.txt")[example]
     spec = D.build_driver_spec(line, D.read_module(o1))
-    calls = [{"fn": c["fn"], "args": [{"ctype": a["ctype"], "quantum": False} for a in c["args"]]}
+    # every argument classical but a handle-cell object (drivers.handle_cells): its cells are quantum
+    # inputs, sampled like any other (cq-rbe6), and no part of the classical key
+    calls = [{"fn": c["fn"], "args": [dict(a, quantum=True) if a.get("cells") else
+                                      {"ctype": a["ctype"], "quantum": False} for a in c["args"]]}
              for c in spec.calls]
     return DriverSpec(example=spec.example, protos=spec.protos, setup=spec.setup, calls=calls), exdir
 

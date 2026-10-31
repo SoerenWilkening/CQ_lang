@@ -5,7 +5,10 @@ where `i` indexes DriverSpec.calls and each argument is
 
   * a scalar: the hex bit pattern of the C value at its storage width, "0x..." (`_Bool` "0x0" or
     "0x1"; `long double` the 80-bit x87 pattern);
-  * a pointer: the C expression of the drivers.txt call, never varied.
+  * a pointer: the C expression of the drivers.txt call, never varied; for an argument with handle
+    cells (drivers.handle_cells, 60_qft's register array) followed by the cells' values,
+    `<expr>@cells:<hex>,...`: each cell is a quantum input of the edge, specials, exhaustive and
+    random classes like a quantum scalar (cq-rbe6), and the probe build writes the C program's view.
 
 Samples 0 .. len(calls)-1 are the drivers.txt calls themselves (the baseline), in order.
 
@@ -1405,13 +1408,22 @@ def _driver_main(spec: DriverSpec) -> str:
     out += spec.protos
     npt = sum(1 for c in spec.calls for a in c["args"] if D.parse_ctype(a["ctype"]).kind == "p")
     out.append(f"static void *cqd_ptr[{max(npt, 1)}];   /* the pointer expressions, evaluated after setup */")
+    # handle cells (cq-rbe6): the token "c:<hex>,<hex>,..." writes the C program's view of the cells
+    out.append("static void cqd_cells(void *p, int nb, int n, const char *s) {\n"
+               "    for (int k = 0; k < n && *s; k++) { char *e; unsigned long long x = strtoull(s, &e, 16);\n"
+               "        memcpy((char *)p + (size_t)k * nb, &x, nb); s = *e == ',' ? e + 1 : e; }\n}")
     out.append("static void cqd_call(int call, char **tok) {")
+    kp = 0
     out.append("    switch (call) {")
     for ci, call in enumerate(spec.calls):
         lines = [f"    case {ci}: {{"]
         for j, a in enumerate(call["args"]):
             ct = D.parse_ctype(a["ctype"])
             if ct.kind == "p":
+                if a.get("cells"):
+                    lines.append(f"        if (tok[{j}][0] == 'c') cqd_cells(cqd_ptr[{kp}], "
+                                 f"{max(1, a['cells']['w'] // 8)}, {a['cells']['n']}, tok[{j}] + 2);")
+                kp += 1
                 continue
             n = 1 if ct.bits == 1 else (10 if ct.bits == 80 else ct.bits // 8)
             lines.append(f"        {ct.spelling} a{j}; memset(&a{j}, 0, sizeof a{j}); "
@@ -1637,7 +1649,8 @@ class ProbeBuild:
             return []
         lines = [f"B {len(samples)}"]
         for s in samples:
-            args = [("-" if D.parse_ctype(a["ctype"]).kind == "p" else v)
+            args = [(("c:" + ",".join(D.split_ptr(v)[1]) if D.split_ptr(v)[1] else "-")
+                     if D.parse_ctype(a["ctype"]).kind == "p" else v)
                     for a, v in zip(self.spec.calls[s["call"]]["args"], s["args"])]
             lines.append(" ".join([str(s["call"])] + args))
         pr = self._start()
@@ -2030,13 +2043,34 @@ class Gen:
         return [j for j, a in enumerate(self.spec.calls[call]["args"])
                 if not a["quantum"] and self.cts[call][j].kind != "p"]
 
+    def cell_slots(self, call: int) -> List[Tuple[int, int]]:
+        """(argument, cell) of every handle cell behind a quantum pointer argument (cq-rbe6,
+        drivers.handle_cells): memory-borne quantum inputs, sampled like the scalar ones."""
+        return [(j, k) for j, a in enumerate(self.spec.calls[call]["args"]) if a.get("cells")
+                for k in range(a["cells"]["n"])]
+
+    def slot_ctype(self, call: int, slot) -> D.CType:
+        if isinstance(slot, tuple):
+            return D.cell_ctype(self.spec.calls[call]["args"][slot[0]]["cells"])
+        return self.cts[call][slot]
+
     def has_driver_object(self, call: int) -> bool:
         return any(ct.kind == "p" for ct in self.cts[call])
 
-    def with_values(self, call: int, vals: Dict[int, int]) -> List[str]:
-        a = list(self.base[call])
+    def with_values(self, call: int, vals: Dict[object, int]) -> List[str]:
+        return self.set_values(call, self.base[call], vals)
+
+    def set_values(self, call: int, args: Sequence[str], vals: Dict[object, int]) -> List[str]:
+        a = list(args)
         for j, v in vals.items():
-            a[j] = hexw(self.cts[call][j], v)
+            if isinstance(j, tuple):          # a handle cell (argument, cell): in the pointer value
+                cells = self.spec.calls[call]["args"][j[0]]["cells"]
+                expr, cv = D.split_ptr(a[j[0]])
+                cv = list(cv) if cv is not None else ["0x0"] * cells["n"]
+                cv[j[1]] = hexw(D.cell_ctype(cells), v)
+                a[j[0]] = D.ptr_with_cells(expr, cv)
+            else:
+                a[j] = hexw(self.cts[call][j], v)
         return a
 
     def classical_domain(self, call: int, j: int) -> Tuple[int, int]:
@@ -2098,8 +2132,9 @@ def per_call_classes(g: Gen, rng: random.Random) -> Dict[str, dict]:
     edge, specials, exhaustive, rq = {}, {}, {}, {}
     for ci, call in enumerate(spec.calls):
         key = str(ci)
-        qs = g.quantum_slots(ci)
-        cts = g.cts[ci]
+        qs = g.quantum_slots(ci) + g.cell_slots(ci)
+        cts = {j: g.slot_ctype(ci, j) for j in qs}
+        cts.update(enumerate(g.cts[ci]))
         pointee = [j for j, a in enumerate(call["args"]) if a["quantum"] and cts[j].kind == "p"]
         why_none = ("no scalar argument of this call flows into a cq_theta_* register"
                     + (f"; the quantum input is the memory behind argument {pointee[0]} "
@@ -2264,16 +2299,16 @@ def subst_classes(g: Gen, rng: random.Random, sites: Dict[int, List["D.ThetaSite
             out[cls][key] = {"samples": sorted(set(idx)), "subst_sites": [st.key() for st in which]}
         # exhaustive: every value of every reach (with the quantum scalar arguments) when small
         nreach = [min(MAX_REACH_SLOTS, max(1, reaches.get(ci, {}).get(st.key(), 0))) for st in sts]
-        qs = g.quantum_slots(ci)
+        qs = g.quantum_slots(ci) + g.cell_slots(ci)      # handle cells too (cq-rbe6)
         sbits = sum(ct.bits * n for ct, n in zip(cts, nreach))
-        abits = sum(g.cts[ci][j].bits for j in qs)
+        abits = sum(g.slot_ctype(ci, j).bits for j in qs)
         if exhaustive_ok(sbits + abits):
             idx = []
             for n in range(1 << (sbits + abits)):
                 sh, vals = 0, {}
                 for j in qs:
-                    vals[j] = (n >> sh) & ((1 << g.cts[ci][j].bits) - 1)
-                    sh += g.cts[ci][j].bits
+                    vals[j] = (n >> sh) & ((1 << g.slot_ctype(ci, j).bits) - 1)
+                    sh += g.slot_ctype(ci, j).bits
                 sub: Dict[str, object] = {}
                 for st, ct, r in zip(sts, cts, nreach):
                     vs = []
@@ -2825,15 +2860,13 @@ def build_sample_set(spec: DriverSpec, example_dir: Path, exempt_baseline: bool 
             # cq-qdpd: each kept classical tuple with CROSS_Q further quantum values, so a group (one
             # classical tuple) holds several quantum inputs and a phase is "global" only when it
             # really is constant over them (a group of one makes every phase global)
-            qs = g.quantum_slots(ci)
+            qs = g.quantum_slots(ci) + g.cell_slots(ci)      # handle cells too (cq-rbe6)
             if kept and qs:
                 xc = []
                 for k in list(kept):
                     a0 = g.samples[k]["args"]
                     for _ in range(CROSS_Q):
-                        a = list(a0)
-                        for j in qs:
-                            a[j] = hexw(g.cts[ci][j], g.random_quantum(rng, g.cts[ci][j]))
+                        a = g.set_values(ci, a0, {j: g.random_quantum(rng, g.slot_ctype(ci, j)) for j in qs})
                         xc.append((ci, a))
                 xobs = searcher.observe(xc)
                 kept += [g.add(c, a) for (c, a), o in zip(xc, xobs) if searcher.valid(o)]
