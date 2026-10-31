@@ -123,7 +123,8 @@
 //    block H, emit runs from the end of H (it may branch around itself where the loop did not run) and
 //    the original block keeps the tail and its terminator. Rule 5: a non-diagonal gate or an in-place
 //    write after the loop on a rail the item reads (or on an exit rail) that the placement does not
-//    precede is unimplemented. An exit rail that became kept (a measurement, a kept merge's arm, an
+//    precede moves the item to where the loop exits (cq-dyef, 116: the immediate placement), which
+//    needs every exit rail kept (each is copied there, below); otherwise it is unimplemented. An exit rail that became kept (a measurement, a kept merge's arm, an
 //    escape) is copied in the loop's exit block before its first use after the loop, every such use reads
 //    the copy (which takes the role), and the item undoes the rail itself; a rotated one is unimplemented.
 //  - scopeRecords(s): the records created while s was open (nested scopes included), program order.
@@ -1563,6 +1564,8 @@ struct Uncompute::Impl {
     for (RailId x : d.exits)
       if (!is_contained(xs, x))
         xs.push_back(x);
+    Instruction *barrier = nullptr;
+    RailId barrierRail = kNone;
     for (RailId x : xs) {
       SmallVector<Instruction *, 8> evs(rails[x].hits.begin(), rails[x].hits.end());
       evs.append(rails[x].aliasHits.begin(), rails[x].aliasHits.end());
@@ -1574,11 +1577,51 @@ struct Uncompute::Impl {
           continue;
         bool violated = e->getParent() == pos.bb ? !(pos.before == e || pos.before->comesBefore(e))
                                                  : reaches(e->getParent(), pos.bb);
-        if (violated)
-          unimplemented("uncompute: a non-diagonal gate or an in-place write on a rail the deferred rule-14 reverse "
-                            "loop reads (" + describe(rails[x].handle) + ") precedes its earliest placement",
-                        e);
+        if (violated && !barrier) {
+          barrier = e;
+          barrierRail = x;
+        }
       }
+    }
+    // The loop's exit block X: the one block outside the region the region's blocks branch to.
+    auto exitBlock = [&](const Value *at) -> BasicBlock * {
+      BasicBlock *X = nullptr;
+      auto fromRegion = [&](const BasicBlock *b) {
+        return any_of(d.region, [&](const BasicBlock *rb) { return reaches(rb, b); });
+      };
+      for (BasicBlock &lb : *pos.bb->getParent())
+        if (beforeOrIn(d, &lb) && fromRegion(&lb))
+          for (const BasicBlock *s : successors(&lb))
+            if (!beforeOrIn(d, s)) {
+              if (X && X != s)
+                unimplemented("uncompute: a deferred rule-14 reverse loop whose loop has more than one exit block",
+                              dyn_cast<Instruction>(at));
+              X = const_cast<BasicBlock *>(s);
+            }
+      if (!X || !X->getTerminator())
+        internalError("uncompute: no exit block for a deferred item in " + pos.bb->getParent()->getName().str(), at);
+      return X;
+    };
+    // cq-dyef: a barrier after the loop precedes the earliest deferred placement (116: the QFT's Ry on
+    // the counting cells the modexp reverse reads, before y is measured). The reverse then runs where
+    // the loop exits, before any barrier (the immediate placement, as before cq-fx3s), which is correct
+    // when every exit rail is kept (measured, escaped, a kept merge's arm): its uses after the loop
+    // read the copy taken in X, which stays, and the item undoes the rail itself. Any other exit rail
+    // is still read after the loop by an item that has not run: cq::unimplemented, as before.
+    if (barrier) {
+      for (RailId x : d.exits)
+        if (!keptRole(rails[x].role))
+          unimplemented("uncompute: a non-diagonal gate or an in-place write on a rail the deferred rule-14 reverse "
+                            "loop reads (" + describe(rails[barrierRail].handle) +
+                            ") precedes its earliest placement, and an exit rail it frees (" +
+                            describe(rails[x].handle) + ") is not kept, so it cannot run where the loop exits",
+                        barrier);
+      BasicBlock *X = exitBlock(rails[g].handle);
+      BasicBlock *S = X->getSingleSuccessor();
+      if (!S || beforeOrIn(d, S))
+        internalError("uncompute: the loop's exit block of a deferred item does not continue in one block",
+                      X->getTerminator());
+      pos = {S, &*S->getFirstInsertionPt()};
     }
     // An exit rail that became kept (measured, escaped, a kept merge's arm) is kept by a copy taken
     // here, and the reverse loop undoes the rail itself (every trip's instance is undone alike).
@@ -1593,6 +1636,7 @@ struct Uncompute::Impl {
                       cast<Instruction>(rx.handle));
       keptExits.push_back({x, rx.role});
     }
+    BasicBlock *keptX = keptExits.empty() ? nullptr : exitBlock(rails[keptExits.front().first].handle);
     // Split.
     BasicBlock *P = pos.bb;
     Function *F = P->getParent();
@@ -1607,23 +1651,7 @@ struct Uncompute::Impl {
       // The copy is taken where the loop exits (the one block outside the region its blocks branch
       // to), before any use after the loop: every such use reads the copy, which takes the kept role
       // (a measured rail is never freed), and the reverse loop undoes the rail itself.
-      BasicBlock *X = nullptr;
-      auto fromRegion = [&](const BasicBlock *b) {
-        return any_of(d.region, [&](const BasicBlock *rb) { return reaches(rb, b); });
-      };
-      for (BasicBlock &lb : *F)
-        if (&lb != H && beforeOrIn(d, &lb) && fromRegion(&lb))
-          for (const BasicBlock *s : successors(&lb))
-            if (!beforeOrIn(d, s)) {
-              if (X && X != s)
-                unimplemented("uncompute: a kept exit rail of a deferred rule-14 reverse loop whose loop has more "
-                                  "than one exit block",
-                              cast<Instruction>(rails[x].handle));
-              X = const_cast<BasicBlock *>(s);
-            }
-      if (!X || !X->getTerminator())
-        internalError("uncompute: no exit block for a kept exit rail of a deferred item in " + F->getName().str(),
-                      rails[x].handle);
+      BasicBlock *X = keptX;
       Module &M = *F->getParent();
       RailType w = createdType(records[rails[x].creator]);
       Value *xh = rails[x].handle;
