@@ -176,7 +176,7 @@ class FakeSiblings:
             # report.evaluate runs each side as a batch (cq-3ebz)
             ("run", "run_samples"): lambda p, s, smps, side: [
                 (self.calls.append(("run", side)), rr(side))[1] for _ in smps],
-            ("oracle", "run_samples"): lambda p, s, smps: [
+            ("oracle", "run_samples"): lambda p, s, smps, **kw: [
                 (self.calls.append(("oracle",)), self.oracle_run(smp))[1] for smp in smps],
             ("oracle", "run_result"): lambda sr, s, o1: rr("c"),
             ("compare", "compare"): lambda a, b, against, classical_key=None: (

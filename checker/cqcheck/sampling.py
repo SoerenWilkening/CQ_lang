@@ -3359,6 +3359,9 @@ def trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_sit
 #
 # Search evidence alone never proves impossibility: the proof needs a witness that reaches the count.
 #
+# Trip counting (cq-97oj (4)): a constructed input reaches a count when its run cut at K or its run
+# with the cutoff off (every function's K flag at TRIP_UNCUT_K) reports it; its domain is its cut run's.
+#
 # Cost (cq-oou2): the constructed runs are the oracle cut at K with a step budget of
 # TRIP_CONSTRUCT_TRIPCAP header executions each. A target is at most K + 1 trips of one activation,
 # so a run past the budget (a classical loop over a large bound, 58's n near 2^31) shows only what it
@@ -3439,7 +3442,7 @@ def trip_proof(loop: str, t: int, cands: Sequence[Tuple[int, Tuple[str, ...]]], 
                          f"e.g. {{\"call\": {cands[i][0]}, \"args\": {list(cands[i][1])}}}: {why}")
     if not reach:
         return "missing", None, (f"none of {len(cands)} constructed inputs runs {t} trips in the C oracle "
-                                 f"(cut at K, {TRIP_CONSTRUCT_TRIPCAP} header executions each)")
+                                 f"(cut at K and uncut, {TRIP_CONSTRUCT_TRIPCAP} header executions each)")
     i = undecided[0]
     kr = kruns[i]
     return "missing", None, (f"{reach} of {len(cands)} constructed inputs run {t} trips, {len(undecided)} of them neither "
@@ -3511,7 +3514,16 @@ def exhaustive_inputs(g: "Gen", o1_text: str) -> Optional[List[Tuple[int, Tuple[
     return out
 
 
-def _trip_runs(o1: Path, spec, smp: List[dict]) -> list:
+TRIP_UNCUT_K = 1 << 30            # cq-97oj (4): the trip counters count uncut
+
+
+def uncut_k(o1: Path) -> Dict[str, int]:
+    """The oracle's per-function K flags that switch the K cutoff off in every defined function (they
+    take precedence over CQ_K and the default): a run whose trip counters count uncut."""
+    return {m.group(1): TRIP_UNCUT_K for m in re.finditer(r"^define [^@\n]*@([-\w.$]+)\(", o1.read_text(), re.M)}
+
+
+def _trip_runs(o1: Path, spec, smp: List[dict], uncut: bool = False) -> list:
     """The C oracle's runs of the constructed inputs, cut at K with the construction's budget, each
     keeping only its distinct trip events (all trip_hit reads besides the loop records): a run's full
     trace (117: every site reach of 4096 header executions) held for a thousand inputs passed the
@@ -3519,7 +3531,8 @@ def _trip_runs(o1: Path, spec, smp: List[dict]) -> list:
     from cqcheck import oracle
     out = []
     for i in range(0, len(smp), 64):
-        for r in oracle.run_samples(o1, spec, smp[i:i + 64], tripcap=TRIP_CONSTRUCT_TRIPCAP):
+        for r in oracle.run_samples(o1, spec, smp[i:i + 64], tripcap=TRIP_CONSTRUCT_TRIPCAP,
+                                    k=uncut_k(o1) if uncut else None):
             seen = set()
             ev = []
             for e in r.events:
@@ -3560,6 +3573,11 @@ def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", ou
                 obs.append(obs[i] if searcher.valid(obs[i]) else None)   # its base's domain, when clean
                 smp.append({"call": c, "args": list(a), "subst": {st.key(): _site_hex(st, v) for st in allowed[c]}})
     kruns = _trip_runs(o1, spec, smp)
+    # cq-97oj (4): the trip counters count uncut, the K cut applies only to the compared run (68: x = 5
+    # runs 5 outer trips in C; cut at K the inner loop's cutoff ends the run first). A run's domain
+    # stays its compared (cut) run's; the uncut run adds only its trip events.
+    for kr, ur in zip(kruns, _trip_runs(o1, spec, smp, uncut=True)):
+        kr.events = kr.events + [e for e in ur.events if e not in kr.events]
     exh = exhaustive_inputs(g, o1.read_text())
     eruns: list = []
     if exh is not None:
