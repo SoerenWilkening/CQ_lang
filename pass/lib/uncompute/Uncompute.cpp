@@ -1852,7 +1852,7 @@ struct Uncompute::Impl {
           std::function<Value *(const BasicBlock *)> flagAt = [&](const BasicBlock *b) -> Value * {
             if (auto it = atEnd.find(b); it != atEnd.end())
               return it->second;
-            if (mb.count(b))
+            if (mb.count(b) || psSet.count(b))   // measured here, or cleaned on its exit edge already
               return atEnd[b] = ConstantInt::getTrue(C);
             if (b == D)
               return atEnd[b] = ConstantInt::getFalse(C);
