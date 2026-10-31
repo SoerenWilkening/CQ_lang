@@ -501,13 +501,27 @@ bool cleanable(LoweringContext &ctx, Value *y) {
 // Dead after `at` (CR rule 6): every other use of y is an earlier instruction that neither stores,
 // returns, passes (escape), rotates nor measures it. `also` are further updates that may read y (the
 // other select of a swap; the arms of a merge of updates, 125). Earlier: it dominates `at`, or (cq-tmvo)
-// it is in a block no path from `at` reaches while `at` lies outside every cycle (a read in a sibling
-// arm of a branch that joined before `at`).
+// it is in a block no path from `at` reaches, from which a path reaches `at`, while `at` lies outside
+// every cycle (a read in a sibling arm of a branch that joined before `at`). cq-oqih: a read in a
+// sibling arm of `at`'s own branch (neither block reaches the other) is not earlier: a quantum branch
+// emits every arm, the sibling after `at`'s (49, 158), and the rail is one rail on every path.
 bool deadAfter(LoweringContext &ctx, Value *y, Instruction *at, ArrayRef<const Instruction *> also = {}) {
   DominatorTree &DT = spine::shared(ctx).dt(*at->getFunction());
   SmallVector<const Use *, 8> uses;
   spine::readingUses(spine::shared(ctx), y, uses);   // through skipped zexts (cq-su3p)
   std::optional<DenseSet<const BasicBlock *>> reach;
+  auto reachesAt = [&](const BasicBlock *from) {
+    DenseSet<const BasicBlock *> seen;
+    SmallVector<const BasicBlock *, 16> work(succ_begin(from), succ_end(from));
+    while (!work.empty()) {
+      const BasicBlock *b = work.pop_back_val();
+      if (b == at->getParent())
+        return true;
+      if (seen.insert(b).second)
+        work.append(succ_begin(b), succ_end(b));
+    }
+    return false;
+  };
   auto unreachedFromAt = [&](const Instruction *ui) {
     if (!reach) {
       reach.emplace();
@@ -518,7 +532,8 @@ bool deadAfter(LoweringContext &ctx, Value *y, Instruction *at, ArrayRef<const I
           work.append(succ_begin(b), succ_end(b));
       }
     }
-    return !reach->count(at->getParent()) && !reach->count(ui->getParent()) && ui->getParent() != at->getParent();
+    return !reach->count(at->getParent()) && !reach->count(ui->getParent()) && ui->getParent() != at->getParent() &&
+           reachesAt(ui->getParent());
   };
   for (const Use *U : uses) {
     User *u = U->getUser();
