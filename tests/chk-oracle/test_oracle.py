@@ -828,12 +828,30 @@ int widened(int x0, double t) { int x = x0; cq_theta(&x, t); long w = x; return 
 __attribute__((noinline)) static int sum3(int n, ...) { va_list ap; va_start(ap, n); int s = 0;
     for (int i = 0; i < 3; i++) s += va_arg(ap, int); va_end(ap); return s + n; }
 int va(int x0, double t, int a, int b) { int x = x0; cq_theta(&x, t); return cq_measure(sum3(1, a, x, b)); }
+int r_live(int x0, double th, int n) {
+    int x = x0; cq_theta(&x, th); int t = x + 1; cq_theta(&t, th); int s = t;
+    for (int i = 0; i < n; i++) { s += x; cq_theta(&s, th); }
+    return cq_measure(s) + cq_measure(t); }
+int fs3(int q0, double th, unsigned i, unsigned j, unsigned k) {
+    int a[4] = {0, 0, 0, 0}, b[4] = {0, 0, 0, 0}; int x = q0; cq_theta(&x, th);
+    a[i & 3] = x; b[j & 3] = a[i & 3]; a[i & 3] = 0;
+    int z = b[k & 3]; cq_theta(&z, th); b[k & 3] = z;
+    return cq_measure(b[j & 3]) + cq_measure(x) * 5; }
+int fs3b(int q0, double th, unsigned i, unsigned j, unsigned k) {
+    int a[4] = {0, 0, 0, 0}, b[4] = {0, 0, 0, 0}; int x = q0; cq_theta(&x, th);
+    a[i & 3] = x; b[j & 3] = a[i & 3]; a[i & 3] = 0;
+    int z = b[k & 3]; cq_theta(&z, th); b[k & 3] = z;
+    int mx = cq_measure(x); return mx * 5 + cq_measure(b[j & 3]); }
 """)
         sp = spec("same_rail", "int reload(const double*,int,double);int grid(const double*,int,double);"
-                  "int const_slot(int,int);int lossy(int,double);int widened(int,double);int va(int,double,int,int)",
+                  "int const_slot(int,int);int lossy(int,double);int widened(int,double);int va(int,double,int,int);"
+                  "int r_live(int,double,int);int fs3(int,double,unsigned,unsigned,unsigned);"
+                  "int fs3b(int,double,unsigned,unsigned,unsigned)",
                   [("reload", ["const double*", "int", "double"]), ("grid", ["const double*", "int", "double"]),
                    ("const_slot", ["int", "int"]), ("lossy", ["int", "double"]), ("widened", ["int", "double"]),
-                   ("va", ["int", "double", "int", "int"])],
+                   ("va", ["int", "double", "int", "int"]), ("r_live", ["int", "double", "int"]),
+                   ("fs3", ["int", "double", "unsigned", "unsigned", "unsigned"]),
+                   ("fs3b", ["int", "double", "unsigned", "unsigned", "unsigned"])],
                   setup="static double coef[4] = {0.3, 1.1, 0.7, 2.0};")
         S = lambda c, *a: {"call": c, "args": list(a)}
         cases = [  # (sample, gates, classical reads)
@@ -845,6 +863,12 @@ int va(int x0, double t, int a, int b) { int x = x0; cq_theta(&x, t); return cq_
             (S(3, i32(5), HALF), 2, 0),             # (signed char)x leaves x's high bits unmeasured
             (S(4, i32(5), HALF), 1, 1),             # (long)x is x
             (S(5, i32(5), HALF, i32(2), i32(3)), 1, 0),   # sum3's result: the variadic x
+            (S(6, i32(5), HALF, i32(0)), 1, 1),     # cq-q5sl: s is t at zero trips
+            (S(6, i32(5), HALF, i32(1)), 2, 0),
+            (S(7, i32(5), HALF, i32(0), i32(1), i32(2)), 1, 1),   # b[j] is x: either order (mem-n3 s3/s3b)
+            (S(8, i32(5), HALF, i32(0), i32(1), i32(2)), 1, 1),
+            (S(7, i32(5), HALF, i32(0), i32(1), i32(1)), 2, 0),   # b[j] rotated: another rail
+            (S(8, i32(5), HALF, i32(0), i32(1), i32(1)), 2, 0),
         ]
         for smp, gates, reads in cases:
             rr = oracle.run_sample(o1, sp, smp)
