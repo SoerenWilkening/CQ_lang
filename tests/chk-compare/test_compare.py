@@ -534,6 +534,39 @@ class FpModes(unittest.TestCase):
         self.assertTrue(self.eq(ours, c, "c").equal, self.eq(ours, c, "c").reasons)
 
 
+class RegisterVersions(unittest.TestCase):
+    """cq-k19b: one register version per Ry (cq-lvkq) makes a rail rotated twice two _dep columns
+    with the same values; they never formed a full grid, so every support fell back to every varying
+    register and commuting gates were ordered."""
+
+    def test_equal_columns_are_one(self):
+        from cqcheck.compare import _dep
+        a = (0, 1, 0, 1)
+        b = (0, 0, 1, 1)
+        regs = {(1, 0): a, (1, 1): a, (2, 0): b}
+        self.assertEqual(_dep(b, regs), frozenset({(2, 0)}))
+        self.assertEqual(_dep(a, regs), frozenset({(1, 0), (1, 1)}))
+        self.assertEqual(_dep(tuple(x & y for x, y in zip(a, b)), regs), frozenset(regs))
+        # not determined by the registers: every varying one, as before
+        self.assertEqual(_dep((0, 1, 1, 0, 1), {(1, 0): (0, 1, 1, 0, 0), (2, 0): (0, 0, 0, 0, 0)}),
+                         frozenset({(1, 0)}))
+
+    def test_phase_commutes_with_a_twice_rotated_rail(self):
+        def rots(order):
+            return side("o", lambda a, b, s: dict(rots=order(b), kept=[keep(1, a, "i8"), keep(2, b, "i8"),
+                                                                         keep(7, b)]))
+        ref = rots(lambda b: [ry(2, 0.7), ry(1, 1.0), ry(1, 2.0), ph(7, b, 0.5)])
+        ours = rots(lambda b: [ry(2, 0.7), ph(7, b, 0.5), ry(1, 1.0), ry(1, 2.0)])
+        r = compare(ours, ref, QKEY, "ref")
+        self.assertTrue(r.equal, r.reasons)
+        # the phase on rail 1's value still does not commute with its Ry
+        ref2 = side("o", lambda a, b, s: dict(rots=[ry(2, 0.7), ry(1, 1.0), ry(1, 2.0), ph(7, a, 0.5)],
+                                              kept=[keep(1, a, "i8"), keep(2, b, "i8"), keep(7, a)]))
+        ours2 = side("o", lambda a, b, s: dict(rots=[ry(2, 0.7), ph(7, a, 0.5), ry(1, 1.0), ry(1, 2.0)],
+                                               kept=[keep(1, a, "i8"), keep(2, b, "i8"), keep(7, a)]))
+        self.assertFalse(compare(ours2, ref2, QKEY, "ref").equal)
+
+
 class COracleT1(unittest.TestCase):
     """oracle "c" reads cq-arch T1's side 'c' RunResult (bead cq-b0c): invert markers under CR rule
     17, outputs["ret"] only, measured records with h null, kept and clean None."""

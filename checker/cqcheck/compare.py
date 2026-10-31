@@ -389,9 +389,17 @@ def _dep(fn: Sequence[Any], regs: Dict[int, Tuple]) -> FrozenSet[int]:
     if len(set(fn)) <= 1:
         return frozenset()
     varying = {h: vals for h, vals in regs.items() if len(set(vals)) > 1}
-    names = sorted(varying)
-    if not names:
+    if not varying:
         return frozenset(regs)       # varies with nothing we can name: depend on everything
+    # Registers with the same values over the group (two versions of a rail no substitution
+    # rewrote, a rail and its copy; cq-k19b) are one column: a function of one is a function of
+    # the other, so a dependence on the column is one on each of them (conservative). Without
+    # this the duplicate columns never form a full grid and the support falls back to every
+    # varying register.
+    same: Dict[Tuple, List[Any]] = {}
+    for h in sorted(varying):
+        same.setdefault(varying[h], []).append(h)
+    names = [hs[0] for hs in same.values()]
     tuples = [tuple(varying[h][s] for h in names) for s in range(len(fn))]
     table: Dict[Tuple, Any] = {}
     determined = True
@@ -403,7 +411,7 @@ def _dep(fn: Sequence[Any], regs: Dict[int, Tuple]) -> FrozenSet[int]:
     for h in names:
         grid *= len(set(varying[h]))
     if not determined or grid != len(table):
-        return frozenset(names)
+        return frozenset(varying)
     dep = set()
     for t, f in table.items():
         for i, h in enumerate(names):
@@ -414,7 +422,7 @@ def _dep(fn: Sequence[Any], regs: Dict[int, Tuple]) -> FrozenSet[int]:
                 if table[u] != f:
                     dep.add(h)
                     break
-    return frozenset(dep)
+    return frozenset(m for h in dep for m in same[varying[h]])
 
 
 def _lowered_events(runs: List[RunResult]) -> Tuple[List[_Ev], List[_Ev]]:
