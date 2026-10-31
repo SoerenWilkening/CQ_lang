@@ -1285,6 +1285,59 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
     todo = [i for i, r in enumerate(out) if r is None]
     if not todo:
         return out  # type: ignore[return-value]
+    # cq-8m6v: the results of a batch are a function of the executable (its directory name is its
+    # content key), the records, the theta schedules and the limits (cq-o4ul: the step budget, never
+    # the machine's load); a batch in which a run hit the CPU-time backstop or lost its runner is
+    # not kept
+    key = [_RUNS_VERSION, prog.parent.name, side, float(timeout), STEP_BUDGET,
+           [[preps[i][1], theta.get(i)] for i in todo]]
+    got = load_runs("eval", key)
+    if got is not None:
+        for i, d in zip(todo, got):
+            out[i] = RunResult(side=side, sample=samples[i], **d)
+        todo = []
+    else:
+        _run_todo(prog, samples, preps, theta, todo, out, side, jobs, timeout)
+        done = [out[i] for i in todo]
+        if not any(v.get("what") in ("timeout", "runner") for r in done for v in (r.violations or [])):
+            save_runs("eval", key, [{f: getattr(r, f) for f in _RESULT_FIELDS} for r in done])
+    hfns = json.loads((prog.parent / "handle_rets.json").read_text())   # cq-n6a0
+    if hfns:
+        out = [resolve_handle_rets(r, hfns) if r.violations is not None else r for r in out]
+    return out  # type: ignore[return-value]
+
+
+_RUNS_VERSION = "eval-runs-1"
+_RESULT_FIELDS = ("outputs", "measured", "rotations", "kept", "clean", "violations")
+
+
+def _runs_path(kind: str, key: Any) -> Path:
+    h = hashlib.sha256(json.dumps(key, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:32]
+    return _cache_root() / "runs" / kind / h[:2] / f"{h}.json.z"
+
+
+def load_runs(kind: str, key: Any) -> Optional[List[dict]]:
+    """The cached results of one batch (save_runs), or None."""
+    import zlib
+    p = _runs_path(kind, key)
+    try:
+        data = p.read_bytes()
+    except OSError:
+        return None
+    return json.loads(zlib.decompress(data))
+
+
+def save_runs(kind: str, key: Any, results: List[dict]) -> None:
+    import zlib
+    p = _runs_path(kind, key)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_name(f"{p.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    tmp.write_bytes(zlib.compress(json.dumps(results, separators=(",", ":")).encode(), 1))
+    os.replace(tmp, p)
+
+
+def _run_todo(prog: Path, samples, preps, theta, todo, out, side: str, jobs: int, timeout: float) -> None:
+    from concurrent.futures import ThreadPoolExecutor
     n = max(1, min(jobs or default_jobs(), len(todo) // MIN_PART))
     parts = [todo[k::n] for k in range(n)]     # strided: neighbouring samples are often alike in cost
 
@@ -1298,10 +1351,6 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
     else:
         with ThreadPoolExecutor(max_workers=n) as ex:
             list(ex.map(part, parts))
-    hfns = json.loads((prog.parent / "handle_rets.json").read_text())   # cq-n6a0
-    if hfns:
-        out = [resolve_handle_rets(r, hfns) if r.violations is not None else r for r in out]
-    return out  # type: ignore[return-value]
 
 
 MIN_PART = 32   # a runner gets at least this many samples (fewer runners for a small batch)

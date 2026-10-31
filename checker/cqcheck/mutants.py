@@ -334,11 +334,8 @@ def _example_job(ex: report.Example, mutants: List[Mutant], empty: bool, emit) -
 
 
 def _spec_lock() -> int:
-    r = subprocess.run([sys.executable, str(report.ROOT / "tools" / "spec_lock.py")],
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        sys.stderr.write(r.stdout + r.stderr)
-    return r.returncode
+    from cqcheck import speclock   # in this process, stamped (cq-8m6v)
+    return speclock.check()
 
 
 def _jobs() -> int:

@@ -32,8 +32,11 @@ import difflib
 import importlib
 import json
 import os
+import hashlib
 import re
+import shutil
 import subprocess
+import threading
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
@@ -157,6 +160,43 @@ def _first_error_line(stderr: bytes) -> str:
     return text.splitlines()[0].strip() if text else "(no message)"
 
 
+_PLUGIN_HASH: Dict[Tuple[str, int, int], str] = {}
+
+
+def plugin_hash() -> str:
+    """sha256 of the pass plugin's bytes (memoized per file state)."""
+    p = plugin_path()
+    try:
+        st = p.stat()
+    except OSError:
+        return "missing:" + str(p)
+    k = (str(p), st.st_mtime_ns, st.st_size)
+    if k not in _PLUGIN_HASH:
+        _PLUGIN_HASH[k] = hashlib.sha256(p.read_bytes()).hexdigest()
+    return _PLUGIN_HASH[k]
+
+
+def _tool_cache(kind: str, *parts: str) -> Path:
+    """The cache entry of one opt run (cq-8m6v): a deterministic function of the plugin's bytes, the
+    toolchain and the input text, so a warm run starts no tool. Under $CQE_CACHE (run._cache_root)."""
+    from cqcheck import run
+    h = hashlib.sha256()
+    for x in (kind, plugin_hash(), str(LLVM_BIN), *parts):
+        h.update(x.encode() + b"\0")
+    return run._cache_root() / kind / h.hexdigest()[:24]
+
+
+def _publish_entry(final: Path, files: Dict[str, bytes]) -> None:
+    tmp = final.with_name(f"{final.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    tmp.mkdir(parents=True, exist_ok=True)
+    for n, b in files.items():
+        (tmp / n).write_bytes(b)
+    try:
+        os.replace(tmp, final)
+    except OSError:
+        shutil.rmtree(tmp, ignore_errors=True)   # another process published the same entry
+
+
 def lower(ex: Example, dest: Path) -> Tuple[Optional[Path], str]:
     """Our lowering of `ex`: its .O1.ll through `opt -passes=cq-lower` at K = 4. Returns (path, "")
     or (None, the internal error). Nothing is kept from a failed run but the linked input.
@@ -170,7 +210,33 @@ def lower(ex: Example, dest: Path) -> Tuple[Optional[Path], str]:
     if dest.exists():
         dest.unlink()
     src = Path(ex.o1)
-    bundle = oracle.bundle_for(src.read_text())
+    text = src.read_text()
+    bundle = oracle.bundle_for(text)
+    # cached by (plugin, toolchain, K, input, the bundle linked into it): every file the run leaves
+    # and its result
+    # (the paths too: opt writes its input's path into the module, and messages name them)
+    entry = _tool_cache("lower", f"-cq-k-default={K_CHECK}", str(src), str(dest), text,
+                        oracle.bundle_key(bundle) if bundle else "")
+    linked_name = f"{ex.base}.linked.ll"
+    if not (entry / "result").exists():
+        res, err = _lower_uncached(ex, src, bundle, dest)
+        files = {"result": ("ok" if res else "err:" + err).encode()}
+        if res is not None:
+            files["lowered.ll"] = dest.read_bytes()
+        if bundle and (dest.parent / linked_name).exists():
+            files["linked.ll"] = (dest.parent / linked_name).read_bytes()
+        _publish_entry(entry, files)
+        return res, err
+    if (entry / "linked.ll").exists():
+        shutil.copyfile(entry / "linked.ll", dest.parent / linked_name)
+    result = (entry / "result").read_text()
+    if result != "ok":
+        return None, result[4:]
+    shutil.copyfile(entry / "lowered.ll", dest)
+    return dest, ""
+
+
+def _lower_uncached(ex: Example, src: Path, bundle: List[Path], dest: Path) -> Tuple[Optional[Path], str]:
     if bundle:
         linked = dest.parent / f"{ex.base}.linked.ll"
         r = _run([str(LLVM_BIN / "llvm-link"), "-S", str(src), "--only-needed", *map(str, bundle),
@@ -191,6 +257,16 @@ def verify(lowered: Path, reference: bool = False) -> Tuple[str, str]:
     """The structural verifier (NORTHSTAR principle 4) over our output. `reference=True` runs it in
     reference mode, `cq-verify<reference>` (S1), for a CQ_spec reference lowered.ll."""
     passes = "cq-verify<reference>" if reference else "cq-verify"
+    entry = _tool_cache("verify", passes, str(lowered), Path(lowered).read_text())
+    if (entry / "result").exists():
+        d = json.loads((entry / "result").read_text())
+        return d[0], d[1]
+    out = _verify_uncached(lowered, passes)
+    _publish_entry(entry, {"result": json.dumps(list(out)).encode()})
+    return out
+
+
+def _verify_uncached(lowered: Path, passes: str) -> Tuple[str, str]:
     r = _run([str(LLVM_BIN / "opt"), f"-load-pass-plugin={plugin_path()}", f"-passes={passes}",
               "-disable-output", str(lowered)])
     if r.returncode == 0:

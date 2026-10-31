@@ -40,12 +40,10 @@ def _delegate(module: str, owner: str, name: str) -> Optional[Callable]:
 
 
 def _spec_lock() -> int:
-    """CLAUDE.md: spec.lock is checked before any test run; drift exits 1."""
-    r = subprocess.run([sys.executable, str(report.ROOT / "tools" / "spec_lock.py")],
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        sys.stderr.write(r.stdout + r.stderr)
-    return r.returncode
+    """CLAUDE.md: spec.lock is checked before any test run; drift exits 1 (speclock: in this process,
+    stamped, cq-8m6v)."""
+    from cqcheck import speclock
+    return speclock.check()
 
 
 def _one(ex: report.Example, ours_dir: Optional[Path], oracle: str) -> Verdict:

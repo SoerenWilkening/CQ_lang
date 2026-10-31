@@ -281,9 +281,20 @@ def _bundle_info(b: Path) -> Tuple[frozenset, str]:
     st = b.stat()
     memo = (str(b), st.st_mtime_ns, st.st_size)
     if memo not in _BUNDLE_INFO:
-        defs = _run([_tool("llvm-nm"), "--defined-only", "--format=just-symbols", str(b)],
-                    "llvm-nm of the injection bundle").stdout.split()
-        _BUNDLE_INFO[memo] = (frozenset(defs), hashlib.sha256(b.read_bytes()).hexdigest())
+        sha = hashlib.sha256(b.read_bytes()).hexdigest()
+        # the symbol list is a function of the bytes and the toolchain (cq-8m6v: kept across runs)
+        from .run import tool_root
+        kept = tool_root() / "bundle-nm" / hashlib.sha256(f"{sha}\0{LLVM_BIN}".encode()).hexdigest()[:24]
+        if kept.exists():
+            defs = kept.read_text().split()
+        else:
+            defs = _run([_tool("llvm-nm"), "--defined-only", "--format=just-symbols", str(b)],
+                        "llvm-nm of the injection bundle").stdout.split()
+            kept.parent.mkdir(parents=True, exist_ok=True)
+            tmp = kept.with_name(f"{kept.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+            tmp.write_text("".join(d + "\n" for d in defs))
+            os.replace(tmp, kept)
+        _BUNDLE_INFO[memo] = (frozenset(defs), sha)
     return _BUNDLE_INFO[memo]
 
 
@@ -646,6 +657,25 @@ def _run_uncached(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]],
     from concurrent.futures import ThreadPoolExecutor
     exe = executable(Path(o1), spec, _pointer_samples(spec, samples), k, k_default)
     iso = isolated(program(Path(o1), k, k_default)[0])
+    # cq-8m6v: a batch's runs are a function of the executable (its path is its content key), the
+    # samples and the limits (cq-sqn6: no result depends on time or load; a hang raises instead)
+    from .run import load_runs, save_runs
+    key = [_RUNS_VERSION, str(exe), iso, int(timeout_ms), int(tripcap), list(samples)]
+    got = load_runs("oracle", key)
+    if got is not None:
+        return [SampleRun(index=i, sample=s, **d) for i, (s, d) in enumerate(zip(samples, got))]
+    runs = _run_batch(exe, spec, samples, timeout_ms, tripcap, iso)
+    save_runs("oracle", key, [{f: getattr(r, f) for f in _RUN_FIELDS} for r in runs])
+    return runs
+
+
+_RUNS_VERSION = "oracle-runs-1"
+_RUN_FIELDS = ("events", "outcome", "failed", "reason", "notes", "loops", "stdout", "effects")
+
+
+def _run_batch(exe: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int, tripcap: int,
+               iso: bool) -> List[SampleRun]:
+    from concurrent.futures import ThreadPoolExecutor
     n = max(1, min(PARTS, _jobs_cap(), len(samples) // MIN_PART))
     if n == 1:
         return _runner(exe, 0).run(spec, samples, timeout_ms, tripcap, iso)
