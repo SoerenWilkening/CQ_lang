@@ -663,6 +663,41 @@ class ThetaSites(unittest.TestCase):
         # cq-lvkq: a site fed by a varied argument is substituted too (CR §6 item 1, every cq_theta)
         self.assertTrue(all(len(s) >= 1 for s in subs("12_int_widths")))
 
+    def test_reached_once_is_judged_over_the_plain_samples(self):
+        """cq-obrq: a site fed by a varied argument, in a loop with one trip at the drivers.txt
+        values, is reached more often by other plain samples: its reach count is the most over them
+        too, so the caller's reached-once filter drops it. Its bases stay those of the probes (none)."""
+        from types import SimpleNamespace as NS
+        from unittest import mock
+        from cqcheck import oracle
+        spec = DriverSpec(example="t", protos=[], setup="",
+                          calls=[{"fn": "f", "args": [{"ctype": "int", "quantum": True}]}])
+        st = D.ThetaSite("f", 0, "i32", {("@f", 0)})
+        fixed = D.ThetaSite("f", 1, "i32", set())
+
+        def run(o1, spec, samples):
+            out = []
+            for sm in samples:
+                n = int(sm["args"][0], 0)
+                out.append(NS(failed=False, events=[{"ev": "site", "kind": "theta", "fn": "f", "site": 0}] * n
+                              + [{"ev": "site", "kind": "theta", "fn": "f", "site": 1}] * n))
+            return out
+        g = NS(samples=[{"call": 0, "args": ["1"]}, {"call": 0, "args": ["3"]},
+                        {"call": 0, "args": ["2"], "subst": {"f:0": "0x5"}}])
+        with tempfile.TemporaryDirectory() as t:
+            ex = Path(t) / "examples" / "t"
+            ex.mkdir(parents=True)
+            (ex / "t.O1.ll").write_text("")
+            with mock.patch.object(D, "read_drivers_txt", return_value={"t": None}), \
+                    mock.patch.object(D, "baseline_values", return_value=[["1"]]), \
+                    mock.patch.object(oracle, "run_samples", side_effect=run):
+                reaches, bases = S.theta_reaches(spec, ex, {0: [st, fixed]}, g)
+                self.assertEqual(reaches[0]["f:0"], 3)
+                self.assertEqual(reaches[0]["f:1"], 1)      # no varied argument: the probes decide
+                self.assertEqual(bases[0], {})
+                reaches, _ = S.theta_reaches(spec, ex, {0: [st, fixed]})   # no plain samples given
+                self.assertEqual(reaches[0]["f:0"], 1)
+
 
 # cq-ir5z: a synthetic example (its own examples/ and _tools/drivers.txt) for the probe's own stops
 SYNTH_C = r"""

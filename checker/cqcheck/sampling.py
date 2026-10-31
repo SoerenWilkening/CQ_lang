@@ -2251,7 +2251,12 @@ def theta_reaches(spec: DriverSpec, example_dir: Path, sites: Dict[int, List["D.
     samples reaching it, and the first REACH_BASES of them are its reaching bases, on which
     subst_classes substitutes it (variant None: the other sites unsubstituted; 1 or -1: the other
     sites at that value, as when it was reached). A site no sample reaches has no entry in either
-    (the caller reports it)."""
+    (the caller reports it).
+
+    cq-obrq: a site fed by a varied argument (varied_params) that the probes reach once is counted
+    over the same plain samples and variants too, since the caller substitutes it only when it is
+    reached once (a site in a loop with one trip at the drivers.txt values may take more trips
+    elsewhere); its bases stay those of the probes."""
     from cqcheck import oracle
     o1 = sorted(Path(example_dir).glob("*.O1.ll"))[0]
     line = D.read_drivers_txt(Path(example_dir).resolve().parent.parent / "_tools" / "drivers.txt")[spec.example]
@@ -2278,11 +2283,13 @@ def theta_reaches(spec: DriverSpec, example_dir: Path, sites: Dict[int, List["D.
         return out, bases
     for ci in range(len(spec.calls)):
         missing = {st.key() for st in sites.get(ci, []) if not out[ci].get(st.key())}
-        if not missing:
+        varied = varied_params(spec, ci)
+        once = {st.key() for st in sites.get(ci, []) if st.params & varied and out[ci].get(st.key()) == 1}
+        if not missing and not once:
             continue
         plain = [list(sm["args"]) for sm in g.samples if sm["call"] == ci and "subst" not in sm]
         for variant in (None, 1, -1):
-            if not missing:
+            if not missing and not once:
                 break
             probes = [{"call": ci, "args": a} if variant is None else
                       {"call": ci, "args": a,
@@ -2297,6 +2304,8 @@ def theta_reaches(spec: DriverSpec, example_dir: Path, sites: Dict[int, List["D.
                     if e.get("ev") == "site" and e.get("kind") == "theta":
                         k = f"{e['fn']}:{e['site']}"
                         cnt[k] = cnt.get(k, 0) + 1
+                for k in once & set(cnt):
+                    out[ci][k] = max(out[ci][k], cnt[k])
                 for k in missing & set(cnt):
                     out[ci][k] = max(out[ci].get(k, 0), cnt[k])
                     bs = bases[ci].setdefault(k, [])
@@ -2304,7 +2313,16 @@ def theta_reaches(spec: DriverSpec, example_dir: Path, sites: Dict[int, List["D.
                         bs.append((smp["args"], variant))
                     found.add(k)
             missing -= found
+            once = {k for k in once if out[ci][k] == 1}
     return out, bases
+
+
+def varied_params(spec: DriverSpec, ci: int) -> Set[Tuple[str, int]]:
+    """The (function, parameter) pairs of driver call `ci` that the sampler varies as quantum
+    scalars: a cq_theta site fed by one is substituted only where it is reached once (cq-lvkq)."""
+    c = spec.calls[ci]
+    fn = "@" + c["fn"]
+    return {(fn, i) for i, a in enumerate(c["args"]) if a["quantum"] and D.parse_ctype(a["ctype"]).kind != "p"}
 
 
 def subst_classes(g: Gen, rng: random.Random, sites: Dict[int, List["D.ThetaSite"]],
@@ -3019,10 +3037,7 @@ def build_sample_set(spec: DriverSpec, example_dir: Path, exempt_baseline: bool 
     inverted = any(n.startswith("@__cq_invert") or n.startswith("@cq_invert")
                    for n in list(mod.declares) + list(mod.functions))
     for ci in list(sites):
-        c = spec.calls[ci]
-        fn = "@" + c["fn"]
-        varied = {(fn, i) for i, a in enumerate(c["args"])
-                  if a["quantum"] and D.parse_ctype(a["ctype"]).kind != "p"}
+        varied = varied_params(spec, ci)
         sites[ci] = [st for st in sites[ci]
                      if not (st.params & varied) or (not inverted and reaches.get(ci, {}).get(st.key(), 0) == 1)]
     if any(sites.values()):
