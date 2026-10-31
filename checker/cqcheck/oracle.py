@@ -599,7 +599,8 @@ class Runner:
             if reply.strip() != "0":
                 err = (t / "err").read_text(errors="replace") if (t / "err").exists() else ""
                 raise OracleError(f"oracle: runner failed ({reply.strip() or 'no reply'}): {err.strip()[-2000:]}")
-            return _parse_runs(samples, (t / "trace").read_text(), (t / "status").read_text())
+            with open(t / "trace") as tf:     # read line by line (cq-8m6v), never as one string
+                return _parse_runs(samples, tf, (t / "status").read_text())
 
     def close(self) -> None:
         try:
@@ -708,12 +709,21 @@ def _pointer_samples(spec: DriverSpec, samples: Sequence[Dict[str, Any]]) -> Lis
     return list(out.values())
 
 
-def _parse_runs(samples: Sequence[Dict[str, Any]], trace: str, status: str) -> List[SampleRun]:
+def _trace_pairs(trace):
+    """(index, event) of every `<index>\t<event JSON>` line of a trace (text or an open file), one line
+    at a time."""
+    lines = trace.split("\n") if isinstance(trace, str) else trace
+    for line in lines:
+        line = line.rstrip("\n")
+        if not line:
+            continue
+        i, e = line.split("\t", 1)
+        yield int(i), json.loads(e)
+
+
+def _parse_runs(samples: Sequence[Dict[str, Any]], trace, status: str) -> List[SampleRun]:
     runs = [SampleRun(i, s) for i, s in enumerate(samples)]
-    # `<index>\t<event JSON>` lines, parsed as one JSON array of [index, event] pairs
-    body = trace.rstrip("\n")
-    pairs = json.loads("[[" + body.replace("\n", "],[").replace("\t", ",", ) + "]]") if body else []
-    for i, e in pairs:
+    for i, e in _trace_pairs(trace):
         if i < 0:
             continue   # the driver's own setup, before any sample: no sample's event
         if e.get("ev") == "kloop":   # a T2 cutoff record, not a trace event

@@ -70,6 +70,14 @@ def run_prog(prog, spec, sample):
                 if e["ev"] not in ("shot", "shot_end")]
 
 
+
+def freed(r: RunResult) -> int:
+    """The sample's cqrt_free count: the compact trace's summary (run.py, cq-8m6v), which also says
+    that no free of the sample was dirty when no tagged free event precedes it."""
+    summ = [c for c in r.clean if "freed" in c]
+    assert len(summ) == 1 and summ[0] is r.clean[-1], r.clean
+    return summ[0]["freed"]
+
 class CoreGates(unittest.TestCase):
     ARGS = ("int core_all(int,double)", "core_all", ["int", "double"])
 
@@ -121,7 +129,7 @@ class CoreGates(unittest.TestCase):
         self.assertEqual([x["ev"] for x in r.rotations],
                          ["ry", "phase", "ry", "ry_qangle", "ry_qangle", "phase_qangle", "phase_qangle"])
         self.assertEqual(len(r.kept), 6)
-        self.assertEqual(len(r.clean), 4)
+        self.assertEqual(freed(r), 4)
 
     def test_handles_deterministic(self):
         a = go("core_gates.ll", *self.ARGS, [6, 0.25])
@@ -542,7 +550,7 @@ class Bf16(unittest.TestCase):
                 self.assertEqual(r.violations, [])
                 want = [_bf16_add(x, x), _bf16_add(x, 0x3F80), x, 0x4049, x, 0x1234, x]
                 self.assertEqual([int(m["v"], 16) for m in r.measured], want)
-                self.assertEqual(len(r.clean), 1)  # the bitcast forward/_unc pair's rail
+                self.assertEqual(freed(r), 1)  # the bitcast forward/_unc pair's rail
 
     def test_core_dispatch_fp_int(self):
         self.run_bf16(RT + [REPO / "checker" / "rt" / "tmpl_fp.c", REPO / "checker" / "rt" / "tmpl_int.c"])
@@ -948,13 +956,18 @@ class HostClone(unittest.TestCase):
                           calls=[{"fn": "hx", "args": [{"ctype": "double", "quantum": True},
                                                        {"ctype": "double", "quantum": False}]}])
         xs = [(0.5, 2.0), (-1.25, 3.0), (2.0, -0.5)]
-        rs = run.run_samples(HERE / "host_clone.ll", spec, [{"call": 0, "args": list(a)} for a in xs], "ours",
-                             rt_sources=RT, extra_sources=FAM, c_module=HERE / "host_clone.O1.ll")
+        os.environ["CQE_COMPACT"] = "0"     # the diagnostics trace: every free event, with its value
+        try:
+            rs = run.run_samples(HERE / "host_clone.ll", spec, [{"call": 0, "args": list(a)} for a in xs], "ours",
+                                 rt_sources=RT, extra_sources=FAM, c_module=HERE / "host_clone.O1.ll")
+        finally:
+            os.environ.pop("CQE_COMPACT", None)
         for (x, y), r in zip(xs, rs):
             self.assertEqual(r.violations, [], (x, y))
             self.assertEqual([int(m["v"], 16) for m in r.measured],
                              [run._fp_bits(math.exp(x), 64), run._fp_bits(math.atan2(x, y), 64)])
-            self.assertEqual([c["v"] for c in r.clean], ["0x0"])   # pow's rail, XORed out by its twin
+            self.assertEqual([c["v"] for c in r.clean if "freed" not in c], ["0x0"])   # pow's rail, XORed out by its twin
+            self.assertEqual(freed(r), 1)
 
     def test_stubgen_intrinsic_signature_and_pointer(self):
         text = (HERE / "host_clone.ll").read_text()

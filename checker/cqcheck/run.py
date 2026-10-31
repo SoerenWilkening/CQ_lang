@@ -934,8 +934,9 @@ _STOP_WHATS = frozenset(("build", "sample", "timeout"))
 
 
 def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optional[int],
-            extra: List[dict]) -> RunResult:
-    """One pass over a sample's trace events into its RunResult."""
+            extra: List[dict], freed: Optional[dict] = None) -> RunResult:
+    """One pass over a sample's trace events into its RunResult. `freed`: the compact trace's summary
+    of the sample's frees (_shot_result), the last entry of `clean`."""
     rets: List[dict] = []
     measured: List[dict] = []
     rots: List[dict] = []
@@ -950,7 +951,10 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
         if ev in _ROT_EVENTS:
             rots.append(dict(e))
         elif ev == "free":
-            clean.append({"h": e.get("h"), "v": e.get("v"), "known": e.get("known"), "w": e.get("w")})
+            c = {"h": e.get("h"), "v": e.get("v"), "known": e.get("known"), "w": e.get("w")}
+            if e.get("shot"):
+                c["shot"] = True
+            clean.append(c)
         elif ev == "measure":
             measured.append({"h": e["h"], "w": e.get("w"), "v": e["v"]})
         elif ev == "ret":
@@ -969,6 +973,8 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
         elif ev == "effect":
             direct_fx.append({"name": e.get("name"), "args": [_fx_arg(a) for a in e.get("args", [])]})
     kept = (list(last_exit["live"]) if last_exit is not None else []) + qram_live
+    if freed is not None:
+        clean.append(dict(freed))
     viol += extra
     if last_exit is None and code is not None and not any(v["what"] in _STOP_WHATS for v in extra):
         viol.append({"what": "no_exit", "h": None, "msg": f"process ended (status {code}) without the exit event"})
@@ -1158,6 +1164,40 @@ def _with_bad(events: List[dict], torn: bool = True) -> Tuple[List[dict], List[d
     return good, bad
 
 
+def _stream_shots(trace: Path, side: str, items: Sequence[Tuple[dict, str, Optional[str]]], setup_out: str,
+                  timeout: float) -> Tuple[List[dict], Dict[int, RunResult], Dict[int, List[dict]]]:
+    """One pass over a runner's trace, line by line: (the events before its first shot, k -> the
+    RunResult of every finished shot k of `items`, k -> the events of a shot with no end). What
+    _parse_lines and _split_shots gave, with each finished shot turned into its result at once."""
+    pre: List[dict] = []
+    done: Dict[int, RunResult] = {}
+    open_shots: Dict[int, List[dict]] = {}
+    cur: Optional[List[dict]] = pre
+    if not trace.exists():
+        return pre, done, open_shots
+    with open(trace, errors="replace") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                e = json.loads(line)
+            except json.JSONDecodeError:
+                e = {"ev": _BAD, "line": line.strip()}
+            ev = e.get("ev") if isinstance(e, dict) else None
+            if ev == "shot":
+                cur = open_shots[e["k"]] = []
+            elif ev == "shot_end":
+                k = e["k"]
+                evs = open_shots.pop(k, [])
+                done.pop(k, None)
+                if 0 <= k < len(items):
+                    done[k] = _shot_result(side, items[k][0], pre, evs, e, setup_out, timeout)
+                cur = None                     # nothing of a shot follows its end
+            elif cur is not None:
+                cur.append(e)
+    return pre, done, open_shots
+
+
 def _bytes_text(s: str) -> str:
     """A shot's captured stream: core.c writes each byte as one character; decoded as a pipe was."""
     try:
@@ -1169,6 +1209,10 @@ def _bytes_text(s: str) -> str:
 def _shot_result(side: str, sample: dict, pre: List[dict], evs: List[dict], end: dict, setup_out: str,
                  timeout: float, torn: bool = True) -> RunResult:
     """The RunResult of one finished shot: what a process of its own gave."""
+    if "freed" in end:
+        # the compact trace (cq-8m6v): the sample's free events are its dirty ones only, tagged as the
+        # sample's; the frame sums up all of them (count, digest of the handles in order)
+        evs = [dict(e, shot=True) if isinstance(e, dict) and e.get("ev") == "free" else e for e in evs]
     events, bad = _with_bad(pre + evs if pre else evs, torn)
     code = end.get("code")
     stdout = setup_out + _bytes_text(end.get("stdout", ""))
@@ -1181,7 +1225,8 @@ def _shot_result(side: str, sample: dict, pre: List[dict], evs: List[dict], end:
         extra.append({"what": "signal", "h": None, "msg": f"killed by signal {-code}: {err[-500:]}"})
     elif code == 3 and "cqd: sample" in err:
         extra.append({"what": "sample", "h": None, "msg": err.strip()[-500:]})
-    return _result(side, sample, events, stdout, code, extra + bad)
+    return _result(side, sample, events, stdout, code, extra + bad,
+                   {"freed": end["freed"], "fdig": end["fdig"]} if "freed" in end else None)
 
 
 def _run_part(prog: Path, items: Sequence[Tuple[dict, str, Optional[str]]], side: str,
@@ -1201,6 +1246,7 @@ def _run_part(prog: Path, items: Sequence[Tuple[dict, str, Optional[str]]], side
             (w / "samples").write_text("".join(rec for _, rec, _ in items[pos:]))
             trace = w / "trace.jsonl"
             env = dict(os.environ, CQE_TRACE=str(trace), CQD_SAMPLES=str(w / "samples"),
+                       CQE_COMPACT="0" if os.environ.get("CQE_COMPACT") == "0" else "1",   # 0: diagnostics
                        CQE_SHOT_DIR=str(w / "shot"), CQE_SHOT_BASE=str(pos),
                        CQE_SHOT_TIMEOUT=repr(float(timeout)), CQE_SHOT_STEPS=str(int(STEP_BUDGET)))
             env.pop("CQE_THETA", None)
@@ -1217,16 +1263,16 @@ def _run_part(prog: Path, items: Sequence[Tuple[dict, str, Optional[str]]], side
             except subprocess.TimeoutExpired as e:
                 code, killed = None, True
                 setup_out, err = (e.stdout or b"").decode(errors="replace"), (e.stderr or b"").decode(errors="replace")
-            events, torn = _parse_lines(trace.read_text(errors="replace") if trace.exists() else "")
-            pre, shots = _split_shots(events)
-            while pos < len(items) and pos in shots and shots[pos][1] is not None:
-                evs, end = shots[pos]
-                out.append(_shot_result(side, items[pos][0], pre, evs, end, setup_out, timeout, torn))
+            # the trace is read one line and one shot at a time (cq-8m6v): a finished shot becomes its
+            # RunResult and its events are dropped, so memory holds one sample's events at a time
+            pre, done, open_shots = _stream_shots(trace, side, items, setup_out, timeout)
+            while pos < len(items) and pos in done:
+                out.append(done.pop(pos))
                 pos += 1
             if pos == len(items):
                 break
             # the runner ended inside sample pos: that sample fails, the rest run in a new runner
-            events, bad = _with_bad(pre + (shots[pos][0] if pos in shots else []))
+            events, bad = _with_bad(pre + open_shots.get(pos, []))
             if killed:
                 extra = [{"what": "timeout", "h": None, "msg": f"no exit within {timeout}s"}]
             elif code == 3 and "cqd: sample" in err:
@@ -1289,7 +1335,7 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
     # content key), the records, the theta schedules and the limits (cq-o4ul: the step budget, never
     # the machine's load); a batch in which a run hit the CPU-time backstop or lost its runner is
     # not kept
-    key = [_RUNS_VERSION, prog.parent.name, side, float(timeout), STEP_BUDGET,
+    key = [_RUNS_VERSION, prog.parent.name, side, float(timeout), STEP_BUDGET, os.environ.get("CQE_COMPACT") == "0",
            [[preps[i][1], theta.get(i)] for i in todo]]
     got = load_runs("eval", key)
     if got is not None:
@@ -1307,7 +1353,7 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
     return out  # type: ignore[return-value]
 
 
-_RUNS_VERSION = "eval-runs-1"
+_RUNS_VERSION = "eval-runs-2"
 _RESULT_FIELDS = ("outputs", "measured", "rotations", "kept", "clean", "violations")
 
 

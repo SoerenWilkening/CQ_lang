@@ -85,7 +85,10 @@ record self-contained; values are hex bit patterns or ints):
   site of kind theta, phi, invert_begin or invert_end (the markers' angle and reg null), in
   execution order.
 - kept: the exit event's live list, [{"h","w","v","role"}].
-- clean: the free events, [{"h","v","known"}].
+- clean: the free events, [{"h","v","known"}]. From run.py's compact trace (cq-8m6v): the setup's
+  free events, the sample's dirty ones (tagged "shot"), then one summary {"freed": n, "fdig": hex}
+  of all the sample's frees (count, FNV-1a-64 of the handles in order), which stands for them in the
+  run's structure.
 - measured: the measure events, [{"h","v"}] (a "w" is compared when both sides give one); the C
   side's records have "h" null.
 - kept, clean: None on the C side (T1); read only on the lowered sides.
@@ -346,7 +349,12 @@ def _shape_of(rr: RunResult) -> Tuple:
         theta = _int(rec.get("theta")) if ev in ("ry", "phase") else None
         rots.append((ev, rec.get("h"), rec.get("a"), rec.get("f"), tuple(rec.get("ctl", []) or []), theta))
     kept = tuple(sorted((k["h"], k.get("w")) for k in rr.kept or []))
-    freed = tuple(c["h"] for c in rr.clean or [])
+    # every free in order: the setup's free events, then the sample's summary (run.py's compact trace,
+    # cq-8m6v: the count and a digest of the handles), or the sample's free events when there is none
+    clean = rr.clean or []
+    summed = any("freed" in c for c in clean)
+    freed = tuple((c["freed"], c["fdig"]) if "freed" in c else c["h"] for c in clean
+                  if not (summed and c.get("shot")))
     meas = tuple(m.get("h") for m in rr.measured or [])
     return (tuple(rots), kept, freed, meas)
 
@@ -1186,6 +1194,8 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             reasons += why
         for side, rr in (("our", o), ("oracle", r)) if oracle == "ref" else (("our", o),):
             for c in rr.clean or []:
+                if "freed" in c:
+                    continue           # the compact trace's summary of the sample's frees (run.py)
                 known = c.get("known")
                 if (known is not None and not _int(known)) or (known is None and _int(c.get("v")) != 0):
                     reasons.append(f"sample {k}: {side} side frees rail {c.get('h')} = {c.get('v')} "

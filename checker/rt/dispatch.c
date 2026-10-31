@@ -104,6 +104,7 @@ void cqe__mark_written(int32_t h);
 void cqe__mark_nd(int32_t h);
 void cqe__mark_measured(int32_t h);
 void cqe__add_dep(int32_t h, int32_t src);
+int cqe__free_note(int32_t h, int known); /* core.c (cq-8m6v) */
 void cqe__free(int32_t h);
 
 /* ---- small string buffer ----------------------------------------------------------------- */
@@ -597,7 +598,8 @@ static void gate_free(call_t *c) {
     return;
   char *hx = cqe__hexa(cqe__val(h));
   int known = cqe__known(h);
-  cqe__logf("{\"ev\":\"free\",\"h\":%d,\"v\":\"%s\",\"known\":%s,\"w\":\"%s\"}", (int)h, hx, known ? "true" : "false",
+  if (cqe__free_note(h, known))
+    cqe__logf("{\"ev\":\"free\",\"h\":%d,\"v\":\"%s\",\"known\":%s,\"w\":\"%s\"}", (int)h, hx, known ? "true" : "false",
             cqe__w(h));
   free(hx);
   if (cqe__measured(h) || cqe__role(h) == 1 || cqe__role(h) == 2)

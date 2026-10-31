@@ -217,10 +217,33 @@ static int shot_buffered; /* a shot worker: the trace is flushed at the end of e
 
 static void at_exit_handler(void);
 
+/* Compact trace (cq-8m6v, $CQE_COMPACT=1, set by run.py's runner): only the events run.py reads
+ * reach the trace (rotations, measure, ret, violation, exit, effect, the shot frames, rt-mem's exit
+ * and rt-tape's end-of-shot events, and the free events of the setup and the dirty ones of a sample);
+ * a sample's frees are summed up in its shot_end frame (cqe__free_note). Without it every event is
+ * written, as before. */
+static int compact;
+
+static int keep_event(const char *s) {
+  static const char pre[] = "{\"ev\":\"";
+  if (!compact || strncmp(s, pre, sizeof pre - 1) != 0)
+    return 1;
+  const char *n = s + sizeof pre - 1;
+  static const char *keep[] = {"ry\"", "ry_qangle\"", "phase\"", "phase_qangle\"", "measure\"", "ret\"",
+                               "violation\"", "exit\"", "effect\"", "shot\"", "shot_end\"", "free\"",
+                               "qram\",\"op\":\"exit\"", "tape\",\"op\":\"shot\""};
+  for (size_t i = 0; i < sizeof keep / sizeof *keep; ++i)
+    if (!strncmp(n, keep[i], strlen(keep[i])))
+      return 1;
+  return 0;
+}
+
 void cqe__init(void) {
   if (inited)
     return;
   inited = 1;
+  const char *cm = getenv("CQE_COMPACT");
+  compact = cm && !strcmp(cm, "1");
   const char *path = getenv("CQE_TRACE");
   if (path && *path) {
     trace_f = fopen(path, "w");
@@ -238,7 +261,7 @@ __attribute__((constructor(101))) static void cqe__ctor(void) { cqe__init(); }
 
 void cqe_log(const char *json_object) {
   cqe__init();
-  if (shot_muted)
+  if (shot_muted || !keep_event(json_object))
     return;
   fputs(json_object, trace_f);
   fputc('\n', trace_f);
@@ -249,7 +272,7 @@ void cqe_log(const char *json_object) {
 /* printf-style log of one line. */
 void cqe__logf(const char *fmt, ...) {
   cqe__init();
-  if (shot_muted)
+  if (shot_muted || !keep_event(fmt)) /* every format starts with its literal {"ev":"<kind>" */
     return;
   va_list ap;
   va_start(ap, fmt);
@@ -419,7 +442,15 @@ void cqe__add_dep(int32_t h, int32_t src) {
   r->deps[r->ndeps++] = src;
 }
 
-void cqe__free(int32_t h) { rails[h].live = 0; }
+void cqe__free(int32_t h) {
+  rails[h].live = 0;
+  /* a freed rail's role is never asked (the exit event lists live rails); its dependency list goes
+   * back to the sample arena's free lists for the next rail (cq-8m6v). Its event times stay: a live
+   * rail's role reads them. */
+  free(rails[h].deps);
+  rails[h].deps = NULL;
+  rails[h].ndeps = rails[h].capdeps = 0;
+}
 
 /* ---- cqe.h rail API (families) ------------------------------------------------------------- */
 
@@ -578,7 +609,39 @@ static shot_state *R; /* the shared state (mmap); NULL until the first record */
 
 static int in_arena(const arena_t *a, const void *p) { return a->base && (const char *)p >= a->base && (const char *)p < a->end; }
 
+/* The sample arena's free lists (cq-8m6v): a block freed in a sample goes to the list of its size
+ * class (16-byte steps up to ARENA_FL_MAX) and the next malloc of that class takes it, zeroed, as a
+ * fresh arena block would be. In __DATA, so a sample's restore empties them with the arena. */
+#define ARENA_FL_MAX ((size_t)64 << 10)
+static void *arena_fl[ARENA_FL_MAX / 16 + 1];
+
+#define ARENA_FREED ((size_t)0xf4eef4eef4eef4eeULL) /* the header's second word of a block on a free list */
+
+static size_t arena_need(size_t n) { return ((n + 15) & ~(size_t)15) + 16; }
+
+static int arena_map(arena_t *a, size_t reserve) {
+  if (!a->base) {
+    void *m = mmap(NULL, reserve, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (m == MAP_FAILED)
+      return 0;
+    a->base = a->top = m;
+    a->end = a->base + reserve;
+  }
+  return 1;
+}
+
 static void *arena_alloc(arena_t *a, size_t reserve, size_t n) {
+  if (a == &a_sample && arena_need(n) >= n && arena_need(n) <= ARENA_FL_MAX) {
+    void **head = &arena_fl[arena_need(n) / 16];
+    if (*head) {
+      char *p = *head;
+      *head = *(void **)p;
+      memset(p, 0, arena_need(n) - 16);
+      *(size_t *)(p - 16) = n;
+      *(size_t *)(p - 8) = 0;
+      return p;
+    }
+  }
   if (!a->base) {
     void *m = mmap(NULL, reserve, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
     if (m == MAP_FAILED)
@@ -620,7 +683,17 @@ void *calloc(size_t n, size_t sz) {
 }
 
 void free(void *p) {
-  if (!p || in_arena(&a_setup, p) || in_arena(&a_sample, p))
+  if (in_arena(&a_sample, p)) { /* to its class's free list (above); a large block goes with the arena */
+    size_t need = arena_need(*(size_t *)((char *)p - 16));
+    size_t *mark = (size_t *)((char *)p - 8);
+    if (need <= ARENA_FL_MAX && *mark != ARENA_FREED) { /* a second free of a block changes nothing */
+      *mark = ARENA_FREED;
+      *(void **)p = arena_fl[need / 16];
+      arena_fl[need / 16] = p;
+    }
+    return;
+  }
+  if (!p || in_arena(&a_setup, p))
     return; /* an arena block goes with its arena */
   malloc_zone_t *z = malloc_zone_from_ptr(p);
   if (z)
@@ -633,8 +706,10 @@ void *realloc(void *p, size_t n) {
   if (in_arena(&a_setup, p) || in_arena(&a_sample, p)) {
     size_t old = *(size_t *)((char *)p - 16);
     void *q = malloc(n);
-    if (q)
+    if (q) {
       memcpy(q, p, old < n ? old : n);
+      free(p); /* a sample block to its free list (cq-8m6v); a setup block stays */
+    }
     return q;
   }
   malloc_zone_t *z = malloc_zone_from_ptr(p);
@@ -707,7 +782,22 @@ struct shot_state {
   char *stack_lo, *stack_copy;
   size_t stack_n, stack_cap;
   int out_fd, err_fd; /* read ends of the capture files */
+  long freed_n;           /* the running sample's cqrt_free calls (cq-8m6v), and */
+  unsigned long long freed_dig; /* FNV-1a-64 of their handles in order: the shot_end frame's summary */
 };
+
+#define FREED_DIG0 0xcbf29ce484222325ULL
+
+/* A cqrt_free of rail h with its known flag: counted into the running sample's summary; whether its
+ * free event is written (always outside a sample and without the compact trace; in a sample of a
+ * compact trace only a dirty one, which compare reports). */
+int cqe__free_note(int32_t h, int known) {
+  if (!sample_running())
+    return 1;
+  R->freed_n++;
+  R->freed_dig = (R->freed_dig ^ (uint32_t)h) * 0x100000001b3ULL;
+  return !compact || !known;
+}
 
 static char shot_dir[1024], shot_out[1100], shot_err[1100];
 static int shot_own_dir;
@@ -790,8 +880,9 @@ static char *take_capture(int fd, int rfd, long tail) {
 }
 
 static void log_shot_end(long k, int code, int timeout, const char *out, const char *err) {
-  cqe__logf("{\"ev\":\"shot_end\",\"k\":%ld,\"code\":%d,\"timeout\":%d,\"stdout\":\"%s\",\"stderr\":\"%s\"}", k, code,
-            timeout, out, err);
+  cqe__logf("{\"ev\":\"shot_end\",\"k\":%ld,\"code\":%d,\"timeout\":%d,\"stdout\":\"%s\",\"stderr\":\"%s\","
+            "\"freed\":%ld,\"fdig\":\"0x%llx\"}",
+            k, code, timeout, out, err, R->freed_n, R->freed_dig);
 }
 
 /* -- theta -- */
@@ -946,6 +1037,11 @@ static void server_on_alarm(int sig) {
 
 static void snapshot_take(void) {
   static const char *names[] = {"__data", "__bss", "__common"};
+  /* cq-8m6v: map the sample arena now, so that the snapshot holds its base and every restore empties
+   * it (top = base) instead of forgetting it: a sample used to map a fresh 2 GB arena and leave the
+   * last one's pages resident, so a runner grew with its batch */
+  if (!arena_map(&a_sample, SAMPLE_ARENA))
+    shot_die("mmap of the sample arena");
   R->nsect = 0;
   for (int i = 0; i < 3; ++i) {
     unsigned long n = 0;
@@ -966,6 +1062,17 @@ static void snapshot_take(void) {
   for (int i = 0; i < R->nsect; ++i)
     memcpy(R->sect[i].copy, R->sect[i].at, R->sect[i].n);
   R->snapped = 1;
+}
+
+/* The pages the sample used, replaced by fresh zero pages (cq-8m6v): the next sample's blocks read 0
+ * until written, as blocks of a fresh arena did, and the memory goes back to the system. */
+static void arena_recycle(void) {
+  if (!a_sample.base || a_sample.top <= a_sample.base)
+    return;
+  size_t pg = (size_t)getpagesize();
+  size_t n = ((size_t)(a_sample.top - a_sample.base) + pg - 1) & ~(pg - 1);
+  if (mmap(a_sample.base, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_FIXED, -1, 0) == MAP_FAILED)
+    shot_die("mmap of the sample arena");
 }
 
 static void snapshot_restore(void) {
@@ -1207,6 +1314,8 @@ int cqe__shot_enter(int idx) {
   theta_for(k);
   stack_save((char *)__builtin_frame_address(0) + 16);
   R->cur = idx;
+  R->freed_n = 0;
+  R->freed_dig = FREED_DIG0;
   R->jkind = J_NONE;
   R->progress++;
   shot_steps = 0;
@@ -1232,6 +1341,7 @@ static void shot_finish(int code, int run_fns) {
   if (R->dirty) /* the sample left state the snapshot does not cover: a fresh worker goes on */
     real__exit(0);
   stack_restore();
+  arena_recycle();
   snapshot_restore();
 }
 
