@@ -1,6 +1,6 @@
-/* §1.1: an entry function returning an UNMEASURED quantum value. The return keeps the C type at the external signature;
- * the value returned is the i32 handle widened/narrowed to that type (an escaped rail, never freed). The second entry
- * consumes such a value from a sibling. */
+/* §1.1, rule 19: an entry function returning an UNMEASURED quantum value. The value returned is the i32 handle (an
+ * escaped rail, never freed); an int return holds it as is (a narrower C return type becomes i32, a wider one carries the
+ * handle zero-extended: 193). The second entry consumes such a value from a sibling. */
 __attribute__((noinline)) int quantum_return_entry(int x0, double tx, int c) {
     int x = x0;
     cq_theta(&x, tx);

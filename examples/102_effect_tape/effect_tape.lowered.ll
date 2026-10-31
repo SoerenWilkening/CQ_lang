@@ -1,11 +1,15 @@
 ; HAND-WRITTEN. Rules: 16, 19, 20, 7, 8, 5, 2.
-; Checked: raise_handled: x + hit; raise_default: x; remove_cond: x (measured).
-; Clean: the predicate flag (x > k) in raise_handled and remove_cond.
+; Checked: raise_handled: x + hit (hit is a classical read by rule 2; its value is witnessed by the output); raise_default: x;
+; remove_cond: x (measured).
+; Clean: the predicate flag (x > k) in raise_handled and remove_cond; raise_handled's hit rail (rule 2: hit = select(x > k,
+; 30, 0) is a function of x alone, so it collapses with x's measurement and is uncomputed at the collapse point against the
+; rail that holds m, with the predicate recomputed on that rail for the purpose); @hit's first seed rail (|0>, never
+; written: no cell holds it once the slot takes the collapsed value).
 ; Kept: the user register x of each function; the tape rails (never freed, replayed by the backend); raise_default's
-; predicate flag (it is the abort flag, kept and measured at the end of the shot); raise_handled's hit rail (measured
-; by the user, stays allocated); @hit's seed rail alloc_i32(0) (still |0>, only read by the select, which is never
-; uncomputed because the hit rail is measured; it is global storage seeded once for the program, 160).
+; predicate flag (it is the abort flag, kept and measured at the end of the shot); @hit's slot, which after the collapse
+; holds a fresh seed rail of hit's classical value (rule 7: the cell holds a handle on other paths, 160).
 ; Rotations: Ry(th) on x (each function).
+; Classical reads (rule 2): 1 (raise_handled's cq_measure(hit): hit is classical after x's measurement, no gate).
 ; CLASSICAL EFFECTS UNDER A QUANTUM PREDICATE (rule 16). A host effect cannot happen "in superposition" and executing it
 ; on a classical reading of the predicate would be a measurement, so every effect under a quantum predicate goes the way
 ; of printf (47): it is RECORDED on the function's tape with its predicate rail and REPLAYED by the backend after the
@@ -42,16 +46,26 @@ define i32 @raise_handled(i32 noundef %0, double noundef %1, i32 noundef %2) {
   call void @cqrt_ry_i32(i32 %5, double %1)    ; IR: %4 = cq_theta_si32(%0, %1)  [Ry]
   %6 = call ptr @signal(i32 30, ptr @h)    ; IR: %5 = signal(30, @h)  (classical host call; the compiler reads SIGUSR1 -> @h off it)
   %7 = call i32 @cq_template_icmp_sgt_i32_hl(i32 %5, i32 %2)    ; IR: %6 = icmp sgt i32 %4, %2  [predicate of block %7]
+  %8 = load i32, ptr @hit, align 4    ; IR: the handle the slot holds before the handler runs (the seed rail): the complement operand of the guarded store, read for rule 2's uncompute below
   call void @cqrt_tape_effect_controlled(i32 %7, i32 %4, ptr @.cq.effect.raise)    ; IR: block %7: %8 = raise(30): the delivery, recorded under the predicate (replayed iff it measures 1)
   call void @cqrt_tape_write_i32_lit(i32 %4, i32 30)    ; IR: %8: argument 0, the signal number (classical)
   call fastcc void @__cq_q_h_0_ctl(i32 %7, i32 30)    ; IR: %8 = raise(30): the installed handler h(30) runs under the predicate (controlled clone)
   call void @cq_template_icmp_sgt_i32_hl_unc(i32 %7, i32 %5, i32 %2)    ; IR: uncompute %6
   call void @cqrt_free(i32 %7)    ; IR: release the %6 rail (|0>)
-  %8 = call i32 @cqrt_measure_i32(i32 %5)    ; IR: %10 = cq_measure_si32(%4)
-  %9 = load i32, ptr @hit, align 4    ; IR: %11 = load volatile i32, ptr @hit  (the handle the guarded store left in the slot)
-  %10 = call i32 @cqrt_measure_i32(i32 %9)    ; IR: %12 = cq_measure_si32(%11)  (measures the hit rail; it stays allocated)
-  %11 = add nsw i32 %10, %8    ; IR: %13 = add nsw i32 %12, %10  (classical)
-  ret i32 %11    ; IR: ret i32 %13
+  %9 = call i32 @cqrt_measure_i32(i32 %5)    ; IR: %10 = cq_measure_si32(%4)  [outcome m; %5 holds it from here on]
+  %10 = call i32 @cq_template_icmp_sgt_i32_hl(i32 %5, i32 %2)    ; IR: rule 2 collapse of hit: the predicate again, on the rail that holds m (its value is classical now)
+  %11 = load i32, ptr @hit, align 4    ; IR: %11 = load volatile i32, ptr @hit  (the hit rail the guarded store left in the slot)
+  call void @cq_template_select_i32_lh_unc(i32 %11, i32 %10, i32 30, i32 %8)    ; IR: rule 2: uncompute hit = pred ? 30 : seed (its only quantum source is measured)
+  call void @cqrt_free(i32 %11)    ; IR: release the hit rail (|0>)
+  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %10, i32 %5, i32 %2)    ; IR: uncompute the recomputed predicate
+  call void @cqrt_free(i32 %10)    ; IR: release it (|0>)
+  %12 = icmp sgt i32 %9, %2    ; IR: rule 2: m > k  (classical)
+  %13 = select i1 %12, i32 30, i32 0    ; IR: rule 2: hit = (m > k) ? 30 : 0 recomputed classically (the seed's value is 0)
+  %14 = call i32 @cqrt_alloc_i32(i32 %13)    ; IR: the slot takes a seed rail of the classical value (rule 7: the cell holds a handle on other paths)
+  store i32 %14, ptr @hit, align 4    ; IR: @hit = hit  (slot store, no gate)
+  call void @cqrt_free(i32 %8)    ; IR: release the first seed (|0>, never written; no cell holds it any more)
+  %15 = add nsw i32 %13, %9    ; IR: %13 = add nsw i32 %12, %10  (classical; cq_measure_si32(%11) is a classical read of hit, rule 2: no gate)
+  ret i32 %15    ; IR: ret i32 %13
 }
 
 define internal void @__cq_slot_init_hit() {
@@ -111,6 +125,7 @@ declare void @cqrt_free(i32)
 declare i32 @cq_template_icmp_sgt_i32_hl(i32, i32)
 declare void @cq_template_icmp_sgt_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_select_i32_lh(i32, i32, i32)
+declare void @cq_template_select_i32_lh_unc(i32, i32, i32, i32)
 
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 

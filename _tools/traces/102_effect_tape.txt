@@ -11,23 +11,29 @@ cq_template_select_i32_lh(h3, 30, h0) -> h100000
 cq_template_icmp_sgt_i32_hl_unc(h3, h2, 1)
 cqrt_free(h3)
 cqrt_measure_i32(h2) -> 0
-cqrt_measure_i32(h100000) -> 0
-# call: raise_default(0,.5,1)
-cqrt_tape_alloc() -> t4
+cq_template_icmp_sgt_i32_hl(h2, 1) -> h4
+cq_template_select_i32_lh_unc(h100000, h4, 30, h0)
+cqrt_free(h100000)
+cq_template_icmp_sgt_i32_hl_unc(h4, h2, 1)
+cqrt_free(h4)
 cqrt_alloc_i32(0) -> h5
-cqrt_ry_i32(h5, 0x1p-1)
-cq_template_icmp_sgt_i32_hl(h5, 1) -> h6
-cqrt_tape_effect_controlled(h6, t4, "raise")
-cqrt_tape_write_i32_lit(t4, 6)
-cqrt_abort_i1(h6)
-cqrt_measure_i32(h5) -> 0
+cqrt_free(h0)
+# call: raise_default(0,.5,1)
+cqrt_tape_alloc() -> t6
+cqrt_alloc_i32(0) -> h7
+cqrt_ry_i32(h7, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h7, 1) -> h8
+cqrt_tape_effect_controlled(h8, t6, "raise")
+cqrt_tape_write_i32_lit(t6, 6)
+cqrt_abort_i1(h8)
+cqrt_measure_i32(h7) -> 0
 # call: remove_cond(0,.5,1)
-cqrt_tape_alloc() -> t7
-cqrt_alloc_i32(0) -> h8
-cqrt_ry_i32(h8, 0x1p-1)
-cq_template_icmp_sgt_i32_hl(h8, 1) -> h9
-cqrt_tape_effect_controlled(h9, t7, "remove")
-cqrt_tape_write_str_lit(t7, "/tmp/cq_x")
-cq_template_icmp_sgt_i32_hl_unc(h9, h8, 1)
-cqrt_free(h9)
-cqrt_measure_i32(h8) -> 0
+cqrt_tape_alloc() -> t9
+cqrt_alloc_i32(0) -> h10
+cqrt_ry_i32(h10, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h10, 1) -> h11
+cqrt_tape_effect_controlled(h11, t9, "remove")
+cqrt_tape_write_str_lit(t9, "/tmp/cq_x")
+cq_template_icmp_sgt_i32_hl_unc(h11, h10, 1)
+cqrt_free(h11)
+cqrt_measure_i32(h10) -> 0

@@ -1,12 +1,15 @@
 ; HAND-WRITTEN. Rules: 2, 4, 5, 7, 8, 9, 14, 18, 20, 21, 22, 27, §0.
-; Checked: memmove_overlap: a[j & 3] + 1 after the move, a = {x, x, y, 5} (measured). memcmp_qlen: the sign of
+; Checked: memmove_overlap: a[j & 3] + 1 after the move, a = {x, x, y, 5} (measured; the loaded register is cleaned by rule 6). memcmp_qlen: the sign of
 ; memcmp(a, b, x & 3), = (x & 3) >= 2 ? sign(v - u) : 0 (measured). escape: a[0] as re-read after the call (measured).
-; Clean: memmove_overlap: the displaced seed 6 and the seed 5 (never written, rule 7). memcmp_qlen: the length rail
+; Clean: memmove_overlap: the displaced seed 6 and the seed 5 (never written, rule 7); the register cell j & 3 names (x for
+; j & 3 in {0, 1}, y for 2): its old value is dead after r = cell + 1, a bijection, so rule 6 cleans it (t = r - 1 copied
+; onto it, t uncomputed, both freed) under a classical branch on j & 3, since the compiler knows statically that cells
+; 0..2 hold registers and cell 3 the seed 5, which rule 6 frees directly instead. memcmp_qlen: the length rail
 ; x & 3 and its zext to i64, the sign chain (ashr, icmp ne, its zext), the memcmp result rail (cleared by the twin);
 ; inside the clone and the twin the 0 seed and every trip rail (the n == j flag, the header predicate, the byte-equality flag, both
 ; zexts, the difference, the trip's exit value, the result select, the next-trip predicate, all three trips' included)
 ; and the two seeds. escape: the rail x + 1, after the twin of the declared clone has restored the cells.
-; Kept: memmove_overlap: x, y (rotated) and the result (measured). memcmp_qlen: x, u, v (rotated) and the result
+; Kept: memmove_overlap: the rotated register cell j & 3 does NOT name (y, or x) and the result (measured). memcmp_qlen: x, u, v (rotated) and the result
 ; (measured). escape: x (rotated; measured through the handle re-read from cell 0).
 ; Rotations: memmove_overlap: (Ry, x, tx, 1); (Ry, y, ty, 1). memcmp_qlen: (Ry, x, tx, 1); (Ry, u, tu, 1); (Ry, v, tv, 1).
 ; escape: (Ry, x, tx, 1).
@@ -84,9 +87,21 @@ define i32 @memmove_overlap(i32 noundef %0, double noundef %1, i32 noundef %2, d
   %19 = getelementptr inbounds [4 x i32], ptr %6, i64 0, i64 %18    ; IR: %14 = gep [4 x i32], %6, 0, %13
   %20 = load i32, ptr %19, align 4    ; IR: %15 = load i32, ptr %14: a[j & 3]  (slot load: the handle, no gate)
   %21 = call i32 @cq_template_add_i32_hl(i32 %20, i32 1)    ; IR: %16 = add nsw i32 %15, 1  [result rail]
-  %22 = call i32 @cqrt_measure_i32(i32 %21)    ; IR: %17 = cq_measure_si32(%16)
-  call void @cqrt_free(i32 %10)    ; IR: llvm.lifetime.end(%6): release the seed 5 (never written, basis state 5)
-  ret i32 %22    ; IR: ret i32 %17
+  %22 = icmp eq i32 %17, 3    ; IR: rule 6 (classical): cell 3 holds the seed 5, cells 0..2 hold the registers x, x, y
+  br i1 %22, label %25, label %23    ; IR: a seed is freed directly (rule 7); a register is cleaned
+
+23:
+  %24 = call i32 @cq_template_sub_i32_hl(i32 %21, i32 1)    ; IR: rule 6: t = r - 1 recomputes the loaded register (r = cell + 1 is a bijection in it; the cell is dead: nothing reads a after the load)
+  call void @cqrt_copy_i32(i32 %24, i32 %20)    ; IR: rule 6: the old register ^= t: |0>
+  call void @cq_template_sub_i32_hl_unc(i32 %24, i32 %21, i32 1)    ; IR: rule 6: uncompute t
+  call void @cqrt_free(i32 %24)    ; IR: release t (|0>)
+  call void @cqrt_free(i32 %20)    ; IR: release the old register rail (|0> after the copy; x when j & 3 in {0, 1}, y when 2)
+  br label %25
+
+25:
+  call void @cqrt_free(i32 %10)    ; IR: llvm.lifetime.end(%6): release the seed 5 (never written, basis state 5): the loaded cell itself when j & 3 == 3 (rule 6: a seed is freed directly), else still held by cell 3
+  %26 = call i32 @cqrt_measure_i32(i32 %21)    ; IR: %17 = cq_measure_si32(%16)
+  ret i32 %26    ; IR: ret i32 %17
 }
 
 define i32 @memcmp_qlen(i32 noundef %0, double noundef %1, i8 noundef zeroext %2, double noundef %3, i8 noundef zeroext %4, double noundef %5) {
@@ -389,6 +404,8 @@ declare void @cqrt_push(i32)
 declare i32 @cqrt_pop()
 declare void @cqrt_free(i32)
 declare i32 @cq_template_add_i32_hl(i32, i32)
+declare i32 @cq_template_sub_i32_hl(i32, i32)
+declare void @cq_template_sub_i32_hl_unc(i32, i32, i32)
 declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_and_i32_hl(i32, i32)
 declare void @cq_template_and_i32_hl_unc(i32, i32, i32)

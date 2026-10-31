@@ -296,6 +296,10 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
    which still holds the outcome; that is what "while its sources still hold the outcome" means),
    and it is uncomputed at the collapse point (convention: right after the measurement). A
    `cq_measure` of a value this rule made classical is a classical read and emits no measurement.
+   When the measurement happened inside a clone that returns only a function of the outcome, the
+   caller RE-READS the rail with `measure_<W>` at the collapse point (a classical re-read of a
+   measured rail, §1.3; the backend logs no measurement) to obtain the outcome it recomputes the
+   collapsed values from (136).
    A collapsed rule 23 rail (flags or mode) is written back to the host environment at the collapse
    point (`feraiseexcept(v)` / `fesetround(m)` of its classical value), so nothing of it stays an
    output (65; ruling 2026-10-29). — 01, 38, 42, 65, 120, 128, 136, 140, 155.
@@ -334,9 +338,24 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
      dephased register. A seed (rule 7) is freed directly instead.
    - *Bijections:* `add`, `sub`, `xor` with any other operand (classical or a rail), `sub 0, y`,
      `xor y, -1`, `mul` by an odd literal, `fshl`/`fshr` with `y` in both value slots, `bswap`,
-     `bitreverse`, `fneg`; a select whose arms are such updates of `y` or `y` itself (125); a
-     controlled swap (145). Not: a width change (casts are rule 3), `mul` by a classical
-     parameter or by a rail (`c = 0` collapses it), shifts, FP arithmetic other than `fneg`.
+     `bitreverse`, `fneg`; a select whose arms are such updates of `y` or `y` itself (125) and
+     whose condition does not read `y`; a controlled swap (145). Not: a width change (casts are
+     rule 3), `mul` by a classical parameter or by a rail (`c = 0` collapses it), shifts, FP
+     arithmetic other than `fneg`; a select or loop update whose condition reads `y` (x = k and
+     x = k + 1 both leave `x -= 1 under x > k` at k: 149's x, 54, 68, 139); a merge whose
+     complement arm is a classical value rather than `y` itself (123: the old `y` is rule-5
+     garbage, uncomputed as usual).
+   - *In a rolled loop (rule 14):* a carried value whose trip update is such a bijection and whose
+     trip predicate does not read it (a counter, an accumulator) is cleaned in the body of the
+     same trip: the arm's garbage whose `_unc` reads the old value is uncomputed first, then
+     `t = f⁻¹(y', a, …)` (the composite update's inverse, e.g. `a ? y' - 1 : y'`) is computed
+     fresh, copied onto the old rail, uncomputed and freed, and the old rail is freed. The
+     cleaned rail is not pushed and the reverse loop never sees it; the final carried rail is the
+     loop's result and is measured directly (no copy-out); trip 0's old rail is the `|0⟩`
+     incoming, freed by the same clean-up. 05, 09, 150 (the counter), 149 (s), 27 (acc).
+   - *A cell chosen by a classical index* (190): the compiler knows each cell's content class
+     statically and the index at run time, so a classical branch on the index cleans a register
+     cell and frees a seed cell directly.
    - *Both operands dead* (`x + z`, two rails): when one of them is garbage that rule 5 uncomputes
      anyway, rule 6 cleans the other, first (its inverse reads the garbage), and the garbage's `_unc`
      follows in its usual place. When that `_unc` reads the other operand (the garbage was computed
@@ -513,8 +532,13 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     36, 51, 64, 82, 95, 109, 119, 136.
 
 19. **Indirect and opaque callees.** An external function that returns an unmeasured quantum
-    value keeps its C signature and returns the handle (escaped, never freed); an in-module caller
-    of such a function inlines it (162). A call through a classical function pointer dispatches over
+    value returns the handle (escaped, never freed): its parameter list keeps the C ABI, and its
+    return type is the C return type when that is an integer of 32 bits or more (the `i32` handle
+    as is, 162, or zero-extended to the wider type, 193 `long`) and `i32` otherwise (`_Bool`,
+    `char`, `short`, every floating or pointer type: a handle cannot be narrowed, and no value the
+    program does not measure is measured to fit a signature; 193). An aggregate return is the
+    struct of handles and classical values of §1.1 (rule 26). An in-module caller of such a
+    function inlines it (162). A call through a classical function pointer dispatches over
     the static callee set; a function pointer loaded at a quantum index is a QROM of callee tags
     with every candidate clone called unguarded and merged by `select`; a callee under a quantum
     predicate becomes a `_ctl` clone iff its body has a non-pure gate (rotation, phase, slot or
@@ -776,9 +800,11 @@ Byte identity of traces is never required.
 | 3 lane gate | 103 (dead `fadd_f32` on an unread lane) | remove |
 | §1.4 mask and bounds (2026-10-27) | 52 (`reduce_1000`: the `out` pointer carries two cells, so two digits), 98 (`chain_10`: the call-site bound `n & 3` must appear as `_b3`) | renamed `__cq_q_reduce_10000`, `__cq_q_chain_10_b3[_dN]` |
 | 27 declared clones (2026-10-27) | 161 (`ext_fn` called with the raw handle), 190 `escape` (`ext_sink` gets slot memory of handles) | done 2026-10-27: `__cq_q_ext_fn_10`, `__cq_q_ext_sink_0010` (snapshot twin), trailing K argument |
-| 6 unconditional (2026-10-28, cq-qpsb) | references that kept a dead old value under a bijective update | done: 01, 02, 10 (sub_qc, xor_qq), 12 (add_i8/16/64), 13 (fneg_q), 38, 43, 45 (unreachable_arm), 94, 108 (trap_q), 109 (bswap_q), 112 (usub_overflow_qq, rotr_qc, rotr_qq), 156 (sub_qq_i8), 162 (entry), 186 (free_uncond, free_classical_cond). Triaged, no change (no inverse, or the value is read later): 20, 25, 67, 109 (others), 122, 162 (consumer), 177, 189 (calloc_aligned). Open, not yet triaged: the K-loop and classical-loop chains 05, 09, 26, 27, 54, 68, 73, 75, 91, 139, 149, 150; the selects of 100, 116, 123, 129; 190 memmove_overlap (the dead cell is chosen by a classical index and may be a seed) |
+| 6 unconditional (2026-10-28, cq-qpsb) | references that kept a dead old value under a bijective update | done: 01, 02, 10 (sub_qc, xor_qq), 12 (add_i8/16/64), 13 (fneg_q), 38, 43, 45 (unreachable_arm), 94, 108 (trap_q), 109 (bswap_q), 112 (usub_overflow_qq, rotr_qc, rotr_qq), 156 (sub_qq_i8), 162 (entry), 186 (free_uncond, free_classical_cond). Triaged, no change (no inverse, or the value is read later): 20, 25, 67, 109 (others), 122, 162 (consumer), 177, 189 (calloc_aligned). Triaged 2026-10-31: rewritten 05, 09, 150 (the counter n, cleaned per trip), 149 (s), 27 (acc), 190 memmove_overlap (the loaded register under a classical branch on j & 3; the seed cell is freed directly). No change: 26 (acc*c + i: no bijection), 54 (x -= k under x > k, x >> 1), 68 (i-- under i > 0 and j++ under j < i: the predicate reads the value; acc*a + j), 91 (i++ under i < (x & 3)), 139 (acc += … under a break test that reads acc), 73, 75 (x is live: the cells are x + i), 100 (flags OR), 116 ((y*ap) % N), 123 (the merge's complement arm is the classical y0: the old y' is rule-5 garbage), 129 (guarded_field_store's select(y > c, 3y, y - c) is not injective; ptr_select_rmw already cleans by rule 6) |
 | 2 collapse, 11, 14, §6 (2026-10-29; rulings to CQ_lang2 cq-r6bc, cq-5h88, cq-ph2i, cq-vrwm, cq-xidq, cq-8q9i, cq-eina, cq-3wo5) | 65 (both functions measure y and kept rails that are functions of the outcome, and measured one), 22 `switch_phase` (per-case `rz_i1` for one merged `cq_phi` with a `phi` angle), 26 `break_with_body` (the `|1⟩` seed minted before the zero-trip test, live on the skip path), drivers 86 (`ptr_less` called with `a == b` only), 44/61/126 `.O1.ll` (stale inline-asm `!srcloc` offsets) | done: 65 collapses after the measurement and writes the flags back to the host (`; Classical reads (rule 2): 1`); 22 angle rail + `rz_qangle_controlled`; 26 seed in a preheader; two more `ptr_less` calls with `a != b`, both orders; `!srcloc` re-captured (non-normative) |
-| 18 pinned body (2026-10-29, cq-ezan) | 169 (`__cq_q_logb_1` follows a musl `ilogb` without its `#pragma STDC FENV_ACCESS ON`, inlined into `logb`) | open: regenerate from the pinned musl as built (strictfp `ilogb` clone with 82's mode/flags convention, the INVALID of `FORCE_EVAL(0/0.0f)` into the flags rail); 173 unchanged (its `.c` defines `__mulsc3`/`__divsc3`) |
+| 2 collapse through a callee measurement (2026-10-31, cq-9hwg) | 136 (`cq_measure(y)` of y = x + c, x measured inside the clone, was emitted as a measurement) | done: the caller re-reads x's rail, uncomputes y against it, recomputes y classically; `; Classical reads (rule 2): 1` |
+| 19 return type (2026-10-31, cq-juf6) | none (161, 162 return `i32`); CQ_lang2 probe 976_u06 (`_Bool` entry truncated the handle) | done: rule 19 text; 193 `narrow_quantum_return` witnesses `_Bool`, `short` (return type `i32`) and `long` (handle zero-extended) |
+| 18 pinned body (2026-10-29, cq-ezan) | 169 (`__cq_q_logb_1` followed a musl `ilogb` without its `#pragma STDC FENV_ACCESS ON`, inlined into `logb`) | done 2026-10-31: regenerated from the pinned bundle as built: `__cq_q_logb_1(x, mode, flags)` calls a strictfp `__cq_q_ilogb_1(x, mode, flags)` on 82's ABI (unguarded, merged by select, result and flags phis alike), the INVALID of both `FORCE_EVAL(0/0.0f)` arms as `flags \| select(pred, 1, 0)`, the K-loop and its `a_K` in the ilogb clone (one per activation: the twin re-runs the forward clone), `__cq_q___divdc3_0011` minting an empty flags rail and the mode literal 0 and dropping the returned flags; 173 unchanged (its `.c` defines `__mulsc3`/`__divsc3`) |
 
 ## 8. Examples written 2026-10-26 (144–180)
 
@@ -809,6 +835,9 @@ lower straight-line in the entries), 184 musl `atan` on a quantum double with th
 114, 115, 117, 176–179, 185 take their sizes and problem data as function inputs; 113, 116, 118 stay fixed-size on purpose.
 
 Added 2026-10-27: 186 `free_qram` (QRAM lifetime end at `free`, `qram_realloc`, entangled block kept).
+
+Added 2026-10-31: 193 `narrow_quantum_return` (rule 19: entries returning an unmeasured `_Bool`, `short` and `long`
+quantum value; the first two return the `i32` handle, the `long` carries it zero-extended; consumers inlined by clang).
 
 To write (2026-10-27): an irreducible loop (`goto` into a loop body with a quantum exit) under rule 14's
 `fix-irreducible` bullet; a `switch` with a reachable default (rule 13); an inline `asm` with a quantum

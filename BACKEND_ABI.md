@@ -152,7 +152,9 @@ h. "Unchanged" means the rail is not touched. "Ex" lists 2–3 witness examples.
 - **Rails.** h stays allocated and is never freed. Afterwards it holds the outcome, a known basis
   state. It may still be read as an operand or a control, but is never rotated again. The call is
   never conditioned (no `_controlled` form). Measuring the same rail again re-reads the outcome
-  classically, and the compiler emits no second call.
+  classically; the compiler emits a second call only to bring an outcome a callee measured into
+  the caller (CR rule 2, 136), and the backend treats a `measure` of an already-measured rail as a
+  re-read, never as a measurement event.
 - **§2.** None. **Ref.** No reference implementation (Bennett.jl and BennettVM.jl are classical
   reversible). **Ex.** 01, 38, 155. In the corpus: 191 examples (all except 60).
 

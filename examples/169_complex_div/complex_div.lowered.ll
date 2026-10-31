@@ -1,10 +1,14 @@
-; HAND-WRITTEN. Rules: 26, 18, 8, 9, 4, 5, 7, 13, 14, 24 (and 3, 1).
+; HAND-WRITTEN. Rules: 26, 18, 8, 9, 4, 5, 7, 13, 14, 19, 23, 24 (and 3, 1).
 ; Checked: complex_div_q_c: creal(q) + cimag(q) (measured); complex_div_c_qq: creal(q) and cimag(q) (two measurements, classical sum).
-; Clean: every rail but the registers (re; c and d), the measured result rails and the one Kept rail below.
-; Kept: a_K of __cq_q_logb_1 (ilogb's subnormal-loop exit test i<<1 >= 0 evaluated after the K-th body, ANDed with
+; Clean: every rail but the registers (re; c and d), the measured result rails and the one Kept rail below; this includes
+;   the fenv rails of the strictfp ilogb clone (the caller's empty flags rail, the two INVALID selects, the two ORed flags
+;   states, the flags phi of logb and both clones' returned flags copies: fenv state the program never reads, dropped).
+; Kept: a_K of __cq_q_ilogb_1 (ilogb's subnormal-loop exit test i<<1 >= 0 evaluated after the K-th body, ANDed with
 ;   trip K's predicate a_4; rule 14: a_K = 1 iff the loop would run a (K+1)-th trip, an exact-K exit reads 0; the shl
-;   recurrence has no LLVM range bound below K, so it is kept): one rail per forward call of the clone, allocated by the
-;   forward body of __cq_q___divdc3_0011 and never freed; __cq_q_logb_1_unc keeps nothing).
+;   recurrence has no LLVM range bound below K, so it is kept): one rail per ACTIVATION of the loop (rule 14, as a nested
+;   loop keeps one inner a_K per outer trip): __cq_q___divdc3_0011 runs __cq_q_logb_1 forward once and its twin once, and
+;   the twin re-runs the forward ilogb clone (strictfp ilogb cannot be inlined into it), so complex_div_c_qq keeps two;
+;   __cq_q_ilogb_1_unc itself keeps nothing).
 ; Rotations: Ry(th) on re (first entry); Ry(tc) on c, Ry(td) on d (second entry). The clones hold no rotation.
 ; Complex division has no inline fast path: clang always calls __divdc3, the compiler-rt body reproduced in the .c file, so the
 ; whole divide is one lifted call (rule 18). The two entries reach it with different taint: mask 1000 (a = creal(z) quantum,
@@ -12,15 +16,27 @@
 ; op with a handle operand is an out-of-place template (rule 4, the _hl/_lh shapes with the classical value as a literal). The
 ; libm calls inside the body follow the same taint: logb/scalbn with classical arguments are the plain calls of the O1.ll,
 ; a quantum argument makes them clones of the injected musl bodies (rule 18): __cq_q_scalbn_10 and __cq_q_scalbn_11
-; (musl scalbn.c) and __cq_q_logb_1 (musl logb.c with ilogb.c inlined; the musl copy vendored by ziglang, compiled with
-; clang -O1, is the shape the clone follows value for value). In __cq_q_logb_1 the subnormal loop
-; `for (e = -0x3ff; i>>63 == 0; e--, i<<=1);` has a quantum exit: it runs as rule 14's chain of K = 4 trips (lines tagged
-; [K]) seeded by the arm predicate (e == 0 & i<<12 != 0), the pre-header guard %22 being trip 0 of the latch test %30, each
-; carried value advancing by a select on the trip predicate; the trips are written out (a rolled loop emits the same gates).
-; After the K-th body the latch test is evaluated once more and a_K = a_4 & test is kept; that test and every trip
-; predicate a_1..a_4 (the K-th body's included) are uncomputed. The FORCE_EVAL(0/0.0f) of ilogb is a volatile store/load of a NaN constant to a dead local: unobservable,
-; no gate (rule 24). The `switch` on the exponent field is one equality flag per case and the default is the complement
-; (rule 13). fabs/fmax(maxnum)/copysign/fptosi/sitofp and every fcmp predicate (ueq = !isfinite, une, ord, uno) are templates.
+; (musl scalbn.c), __cq_q_logb_1 (musl logb.c) and __cq_q_ilogb_1 (musl ilogb.c). The PINNED SOURCE AS BUILT is normative
+; for every function the .c does not define (owner ruling 2026-10-29, cq-ezan): the bundle's clang -O1 IR of musl b1efda5,
+; whose values the `; IR:` comments of the clones name. ilogb.c carries `#pragma STDC FENV_ACCESS ON`, so its IR is
+; strictfp: it cannot be inlined into logb (no pragma) and its clone follows 82's fenv ABI (rule 23): the caller's mode
+; and flags rail as two trailing parameters, { result, flags' } returned, both copied into fresh rails before the body is
+; uncomputed, the _unc twin taking both returned handles first. __divdc3 has no FENV_ACCESS, so its environment is the
+; default: __cq_q___divdc3_0011 passes the mode literal 0 (FE_TONEAREST) and mints an EMPTY flags rail (|0>, rule 7) that
+; it frees directly after the twins; the returned flags are fenv state the program never reads and are dropped (uncomputed
+; by the twin, freed). logb calls ilogb only in its finite-nonzero block, under a quantum predicate: the clone is called
+; UNGUARDED (rule 19: its body has no non-pure gate) and merged, so logb's result phi AND its flags phi are the same nested
+; selects, the flags arms of the blocks that do not call ilogb being the caller's flags. In __cq_q_ilogb_1 the subnormal
+; loop `for (e = -0x3ff; i>>63 == 0; e--, i<<=1);` has a quantum exit: it runs as rule 14's chain of K = 4 trips (lines
+; tagged [K]) seeded by the arm predicate (e == 0 & i<<12 != 0), the pre-header guard %12 being trip 0 of the latch test
+; %21, each carried value advancing by a select on the trip predicate; the trips are written out (a rolled loop emits the
+; same gates). After the K-th body the latch test is evaluated once more and a_K = a_4 & test is kept; that test and every
+; trip predicate a_1..a_4 (the K-th body's included) are uncomputed. The two FORCE_EVAL(0/0.0f) of ilogb (the zero arm,
+; block %13 under S0 & i<<12 == 0, and the inf/nan arm, block %22 under S2047) are constrained.sitofp(0) = 0.0f and
+; constrained.fdiv(0.0f, 0.0f): two literals, so the quotient is a classical NaN stored volatile to a dead local (no gate,
+; rule 24), and its INVALID bit is fenv state: flags' = flags | select(pred, FE_INVALID = 1, 0) (65's spelling); the mode
+; is passed but not read (a NaN in every rounding mode). The `switch` on the exponent field is one equality flag per case
+; and the default is the complement (rule 13). fabs/fmax(maxnum)/copysign/fptosi/sitofp and every fcmp predicate (ueq = !isfinite, une, ord, uno) are templates.
 ; Every tainted branch is a flag (rule 8): `select i1 %a, i1 true, i1 %b` is the disjunction or_i1, `and i1` the
 ; conjunction and_i1, a negated conjunct an X bracket (not_i1) around the gate, a classical conjunct a seed rail (rule 7).
 ; Path predicates of the nested if/else-if ladder (P37, P41, P45, P57, P71, P78) are and_i1 chains; the two five-incoming
@@ -586,634 +602,716 @@ define internal fastcc { i32, i32 } @__cq_q___divdc3_0011(double %0, double %1, 
   %5 = call i32 @cq_template_fabs_f64(i32 %2)    ; IR: %5 = fabs(c)
   %6 = call i32 @cq_template_fabs_f64(i32 %3)    ; IR: %6 = fabs(d)
   %7 = call i32 @cq_template_fmax_f64(i32 %5, i32 %6)    ; IR: %7 = maxnum(%5, %6)  (fmax)
-  %8 = call fastcc i32 @__cq_q_logb_1(i32 %7)    ; IR: %8 = logb(%7), quantum clone (mask 1, injected musl body)
-  %9 = call i32 @cq_template_fabs_f64(i32 %8)    ; IR: %9 = fabs(%8)
-  %10 = call i32 @cq_template_fcmp_ueq_f64_hl(i32 %9, double 0x7FF0000000000000)    ; IR: %10 = fcmp ueq %9, inf  (!isfinite(logbw))  [br %10 -> %16, else block %11]
-  %11 = call i32 @cq_template_fptosi_f64_to_i32(i32 %8)    ; IR: %12 = fptosi %8 to i32  (block %11)
-  %12 = call i32 @cq_template_sub_i32_lh(i32 0, i32 %11)    ; IR: %13 = sub nsw 0, %12
-  %13 = call fastcc i32 @__cq_q_scalbn_11(i32 %2, i32 %12)    ; IR: %14 = scalbn(c, %13), quantum clone (mask 11, injected musl body)
-  %14 = call fastcc i32 @__cq_q_scalbn_11(i32 %3, i32 %12)    ; IR: %15 = scalbn(d, %13), quantum clone (mask 11, injected musl body)
-  %15 = call i32 @cq_template_select_f64(i32 %10, i32 %2, i32 %13)    ; IR: %17 = phi [ %14, %11 ], [ %2, %4 ]  (c; the %10 edge keeps c)
-  %16 = call i32 @cq_template_select_f64(i32 %10, i32 %3, i32 %14)    ; IR: %18 = phi [ %15, %11 ], [ %3, %4 ]  (d)
-  %17 = call i32 @cq_template_select_i32_lh(i32 %10, i32 0, i32 %11)    ; IR: %19 = phi [ %12, %11 ], [ 0, %4 ]  (ilogbw)
-  %18 = call i32 @cq_template_fmul_f64(i32 %16, i32 %16)    ; IR: %20 = fmul %18, %18
-  %19 = call i32 @cq_template_fmul_f64(i32 %15, i32 %15)    ; IR: %21 = fmuladd(%17, %17, %20)  (denom)  [unfused product]
-  %20 = call i32 @cq_template_fadd_f64(i32 %19, i32 %18)    ; IR: %21 = fmuladd(%17, %17, %20)  (denom)  [unfused sum]
-  %21 = call i32 @cq_template_fmul_f64_hl(i32 %16, double %1)    ; IR: %22 = fmul %18, %1
-  %22 = call i32 @cq_template_fmul_f64_hl(i32 %15, double %0)    ; IR: %23 = fmuladd(%0, %17, %22)  (commutative product, quantum factor first)  [unfused product]
-  %23 = call i32 @cq_template_fadd_f64(i32 %22, i32 %21)    ; IR: %23 = fmuladd(%0, %17, %22)  (commutative product, quantum factor first)  [unfused sum]
-  %24 = call i32 @cq_template_fdiv_f64(i32 %23, i32 %20)    ; IR: %24 = fdiv %23, %21
-  %25 = call i32 @cq_template_sub_i32_lh(i32 0, i32 %17)    ; IR: %25 = sub nsw 0, %19
-  %26 = call fastcc i32 @__cq_q_scalbn_11(i32 %24, i32 %25)    ; IR: %26 = scalbn(%24, %25)  (real z), quantum clone (mask 11, injected musl body)
-  %27 = call i32 @cq_template_fneg_f64(i32 %16)    ; IR: %27 = fneg %18
-  %28 = call i32 @cq_template_fmul_f64_hl(i32 %27, double %0)    ; IR: %28 = fmul %27, %0
-  %29 = call i32 @cq_template_fmul_f64_hl(i32 %15, double %1)    ; IR: %29 = fmuladd(%1, %17, %28)  (commutative product, quantum factor first)  [unfused product]
-  %30 = call i32 @cq_template_fadd_f64(i32 %29, i32 %28)    ; IR: %29 = fmuladd(%1, %17, %28)  (commutative product, quantum factor first)  [unfused sum]
-  %31 = call i32 @cq_template_fdiv_f64(i32 %30, i32 %20)    ; IR: %30 = fdiv %29, %21
-  %32 = call fastcc i32 @__cq_q_scalbn_11(i32 %31, i32 %25)    ; IR: %31 = scalbn(%30, %25)  (imag z), quantum clone (mask 11, injected musl body)
-  %33 = call i32 @cq_template_fcmp_ord_f64_hl(i32 %26, double 0.000000e+00)    ; IR: %32 = fcmp ord %26, 0
-  %34 = call i32 @cq_template_fcmp_ord_f64_hl(i32 %32, double 0.000000e+00)    ; IR: %33 = fcmp ord %31, 0
-  %35 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %34 = select i1 %32, true, %33 = %32 | %33  [br %34 -> exit %94; block %35 runs under !%34]  [fresh flag rail]
-  call void @cqrt_or_i1(i32 %33, i32 %34, i32 %35)    ; IR: %34 = select i1 %32, true, %33 = %32 | %33  [br %34 -> exit %94; block %35 runs under !%34]
-  %36 = call i32 @cq_template_fcmp_oeq_f64_hl(i32 %20, double 0.000000e+00)    ; IR: %36 = fcmp oeq %21, 0  (denom == 0; block %35)
-  %37 = fcmp ord double %0, 0.000000e+00    ; IR: %38 = fcmp ord %0, 0  (block %37)  (classical)
-  %38 = fcmp ord double %1, 0.000000e+00    ; IR: %39 = fcmp ord %1, 0  (classical)
-  %39 = or i1 %37, %38    ; IR: %40 = or i1 %38, %39  (classical)
-  %40 = call i32 @cq_template_copysign_f64_lh(double 0x7FF0000000000000, i32 %15)    ; IR: %42 = copysign(inf, %17)  (block %41)
-  %41 = call i32 @cq_template_fmul_f64_hl(i32 %40, double %0)    ; IR: %43 = fmul %42, %0
-  %42 = call i32 @cq_template_fmul_f64_hl(i32 %40, double %1)    ; IR: %44 = fmul %42, %1
-  %43 = tail call double @llvm.fabs.f64(double %0)    ; IR: %46 = fabs(a)  (block %45)  (classical)
-  %44 = fcmp une double %43, 0x7FF0000000000000    ; IR: %47 = !isinf(a)  (classical)
-  %45 = tail call double @llvm.fabs.f64(double %1)    ; IR: %48 = fabs(b)  (classical)
-  %46 = fcmp une double %45, 0x7FF0000000000000    ; IR: %49 = !isinf(b)  (classical)
-  %47 = and i1 %44, %46    ; IR: %50 = and i1 %47, %49  (classical)
-  %48 = call i32 @cq_template_fabs_f64(i32 %15)    ; IR: %51 = fabs(%17)
-  %49 = call i32 @cq_template_fcmp_ueq_f64_hl(i32 %48, double 0x7FF0000000000000)    ; IR: %52 = !isfinite(%17)
-  %50 = call i32 @cqrt_alloc_i1(i1 %47)    ; IR: %53 = select i1 %50, true, %52 = %50 | %52  [the classical conjunct %44 as a seed rail, rule 7]
-  %51 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %53 = select i1 %50, true, %52 = %50 | %52  [fresh flag rail]
-  call void @cqrt_or_i1(i32 %50, i32 %49, i32 %51)    ; IR: %53 = select i1 %50, true, %52 = %50 | %52
-  %52 = call i32 @cq_template_fabs_f64(i32 %16)    ; IR: %54 = fabs(%18)
-  %53 = call i32 @cq_template_fcmp_ueq_f64_hl(i32 %52, double 0x7FF0000000000000)    ; IR: %55 = !isfinite(%18)
-  %54 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %56 = select i1 %53, true, %55 = %53 | %55  [br %56 -> %71, else block %57]  [fresh flag rail]
-  call void @cqrt_or_i1(i32 %51, i32 %53, i32 %54)    ; IR: %56 = select i1 %53, true, %55 = %53 | %55  [br %56 -> %71, else block %57]
-  %55 = select i1 %44, double 0.000000e+00, double 1.000000e+00    ; IR: %58 = select %47, 0.0, 1.0  (block %57)  (classical)
-  %56 = tail call double @llvm.copysign.f64(double %55, double %0)    ; IR: %59 = copysign(%58, a)  (classical)
-  %57 = tail call double @llvm.fabs.f64(double %1)    ; IR: %60 = fabs(b)  (classical)
-  %58 = fcmp une double %57, 0x7FF0000000000000    ; IR: %61 = !isinf(b)  (classical)
-  %59 = select i1 %58, double 0.000000e+00, double 1.000000e+00    ; IR: %62 = select %61, 0.0, 1.0  (classical)
-  %60 = tail call double @llvm.copysign.f64(double %59, double %1)    ; IR: %63 = copysign(%62, b)  (classical)
-  %61 = call i32 @cq_template_fmul_f64_hl(i32 %16, double %60)    ; IR: %64 = fmul %63, %18  (commutative, quantum operand first)
-  %62 = call i32 @cq_template_fmul_f64_hl(i32 %15, double %56)    ; IR: %65 = fmuladd(%59, %17, %64)  (commutative product, quantum factor first)  [unfused product]
-  %63 = call i32 @cq_template_fadd_f64(i32 %62, i32 %61)    ; IR: %65 = fmuladd(%59, %17, %64)  (commutative product, quantum factor first)  [unfused sum]
-  %64 = call i32 @cq_template_fmul_f64_hl(i32 %63, double 0x7FF0000000000000)    ; IR: %66 = fmul %65, inf
-  %65 = fneg double %56    ; IR: %67 = fneg %59  (classical)
-  %66 = call i32 @cq_template_fmul_f64_hl(i32 %16, double %65)    ; IR: %68 = fmul %18, %67
-  %67 = call i32 @cq_template_fmul_f64_hl(i32 %15, double %60)    ; IR: %69 = fmuladd(%63, %17, %68)  (commutative product, quantum factor first)  [unfused product]
-  %68 = call i32 @cq_template_fadd_f64(i32 %67, i32 %66)    ; IR: %69 = fmuladd(%63, %17, %68)  (commutative product, quantum factor first)  [unfused sum]
-  %69 = call i32 @cq_template_fmul_f64_hl(i32 %68, double 0x7FF0000000000000)    ; IR: %70 = fmul %69, inf
-  %70 = call i32 @cq_template_fcmp_une_f64_hl(i32 %8, double 0x7FF0000000000000)    ; IR: %72 = fcmp une %8, inf  (block %71)
-  %71 = fcmp ueq double %43, 0x7FF0000000000000    ; IR: %73 = fcmp ueq %46, inf  (classical)
-  %72 = call i32 @cqrt_alloc_i1(i1 %71)    ; IR: %74 = or i1 %73, %72  [the classical conjunct %66 as a seed rail, rule 7]
-  %73 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %74 = or i1 %73, %72  [fresh flag rail]
-  call void @cqrt_or_i1(i32 %72, i32 %70, i32 %73)    ; IR: %74 = or i1 %73, %72
-  %74 = tail call double @llvm.fabs.f64(double %1)    ; IR: %75 = fabs(b)  (classical)
-  %75 = fcmp ueq double %74, 0x7FF0000000000000    ; IR: %76 = fcmp ueq %75, inf  (classical)
-  %76 = call i32 @cqrt_alloc_i1(i1 %75)    ; IR: %77 = or i1 %76, %74  [br %77 -> exit %94, else block %78]  [the classical conjunct %70 as a seed rail, rule 7]
-  %77 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %77 = or i1 %76, %74  [br %77 -> exit %94, else block %78]  [fresh flag rail]
-  call void @cqrt_or_i1(i32 %76, i32 %73, i32 %77)    ; IR: %77 = or i1 %76, %74  [br %77 -> exit %94, else block %78]
-  %78 = call i32 @cq_template_fabs_f64(i32 %15)    ; IR: %79 = fabs(%17)  (block %78)
-  %79 = call i32 @cq_template_fcmp_une_f64_hl(i32 %78, double 0x7FF0000000000000)    ; IR: %80 = !isinf(%17)
-  %80 = call i32 @cq_template_select_f64_ll(i32 %79, double 0.000000e+00, double 1.000000e+00)    ; IR: %81 = select %80, 0.0, 1.0
-  %81 = call i32 @cq_template_copysign_f64(i32 %80, i32 %15)    ; IR: %82 = copysign(%81, %17)
-  %82 = call i32 @cq_template_fabs_f64(i32 %16)    ; IR: %83 = fabs(%18)
-  %83 = call i32 @cq_template_fcmp_une_f64_hl(i32 %82, double 0x7FF0000000000000)    ; IR: %84 = !isinf(%18)
-  %84 = call i32 @cq_template_select_f64_ll(i32 %83, double 0.000000e+00, double 1.000000e+00)    ; IR: %85 = select %84, 0.0, 1.0
-  %85 = call i32 @cq_template_copysign_f64(i32 %84, i32 %16)    ; IR: %86 = copysign(%85, %18)
-  %86 = call i32 @cq_template_fmul_f64_hl(i32 %85, double %1)    ; IR: %87 = fmul %86, %1
-  %87 = call i32 @cq_template_fmul_f64_hl(i32 %81, double %0)    ; IR: %88 = fmuladd(%0, %82, %87)  (commutative product, quantum factor first)  [unfused product]
-  %88 = call i32 @cq_template_fadd_f64(i32 %87, i32 %86)    ; IR: %88 = fmuladd(%0, %82, %87)  (commutative product, quantum factor first)  [unfused sum]
-  %89 = call i32 @cq_template_fmul_f64_hl(i32 %88, double 0.000000e+00)    ; IR: %89 = fmul %88, 0.0
-  %90 = call i32 @cq_template_fneg_f64(i32 %85)    ; IR: %90 = fneg %86
-  %91 = call i32 @cq_template_fmul_f64_hl(i32 %90, double %0)    ; IR: %91 = fmul %90, %0
-  %92 = call i32 @cq_template_fmul_f64_hl(i32 %81, double %1)    ; IR: %92 = fmuladd(%1, %82, %91)  (commutative product, quantum factor first)  [unfused product]
-  %93 = call i32 @cq_template_fadd_f64(i32 %92, i32 %91)    ; IR: %92 = fmuladd(%1, %82, %91)  (commutative product, quantum factor first)  [unfused sum]
-  %94 = call i32 @cq_template_fmul_f64_hl(i32 %93, double 0.000000e+00)    ; IR: %93 = fmul %92, 0.0
-  call void @cqrt_not_i1(i32 %35)    ; IR: bracket: P37 reads NOT %32
-  %95 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: P37 = path predicate of block %37: !%34 & %36  [fresh flag rail]
-  call void @cqrt_and_i1(i32 %35, i32 %36, i32 %95)    ; IR: P37 = path predicate of block %37: !%34 & %36
-  call void @cqrt_not_i1(i32 %35)    ; IR: bracket (close): P37 reads NOT %32
-  %96 = call i32 @cqrt_alloc_i1(i1 %39)    ; IR: P41 = path predicate of block %41: P37 & %40  [the classical conjunct %36 as a seed rail, rule 7]
-  %97 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: P41 = path predicate of block %41: P37 & %40  [fresh flag rail]
-  call void @cqrt_and_i1(i32 %95, i32 %96, i32 %97)    ; IR: P41 = path predicate of block %41: P37 & %40
-  call void @cqrt_not_i1(i32 %35)    ; IR: bracket: P45 reads NOT %32
-  call void @cqrt_not_i1(i32 %97)    ; IR: bracket: P45 reads NOT %90
-  %98 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: P45 = path predicate of block %45: !%34 & !P41  (reached from %35 on !%36 or from %37 on !%40)  [fresh flag rail]
-  call void @cqrt_and_i1(i32 %35, i32 %97, i32 %98)    ; IR: P45 = path predicate of block %45: !%34 & !P41  (reached from %35 on !%36 or from %37 on !%40)
-  call void @cqrt_not_i1(i32 %35)    ; IR: bracket (close): P45 reads NOT %32
-  call void @cqrt_not_i1(i32 %97)    ; IR: bracket (close): P45 reads NOT %90
-  call void @cqrt_not_i1(i32 %54)    ; IR: bracket: P57 reads NOT %51
-  %99 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: P57 = path predicate of block %57: P45 & !%56  [fresh flag rail]
-  call void @cqrt_and_i1(i32 %98, i32 %54, i32 %99)    ; IR: P57 = path predicate of block %57: P45 & !%56
-  call void @cqrt_not_i1(i32 %54)    ; IR: bracket (close): P57 reads NOT %51
-  %100 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: P71 = path predicate of block %71: P45 & %56  [fresh flag rail]
-  call void @cqrt_and_i1(i32 %98, i32 %54, i32 %100)    ; IR: P71 = path predicate of block %71: P45 & %56
-  call void @cqrt_not_i1(i32 %77)    ; IR: bracket: P78 reads NOT %72
-  %101 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: P78 = path predicate of block %78: P71 & !%77  [fresh flag rail]
-  call void @cqrt_and_i1(i32 %100, i32 %77, i32 %101)    ; IR: P78 = path predicate of block %78: P71 & !%77
-  call void @cqrt_not_i1(i32 %77)    ; IR: bracket (close): P78 reads NOT %72
-  %102 = call i32 @cq_template_select_f64(i32 %97, i32 %42, i32 %32)    ; IR: %95 = phi [ %70, %57 ], [ %93, %78 ], [ %31, %71 ], [ %44, %41 ], [ %31, %16 ]: innermost select, the %41 arm against the complement %31
-  %103 = call i32 @cq_template_select_f64(i32 %101, i32 %94, i32 %102)    ; IR: %95 = phi (imag result): the %78 arm
-  %104 = call i32 @cq_template_select_f64(i32 %99, i32 %69, i32 %103)    ; IR: %95 = phi (imag result): the %57 arm
-  %105 = call i32 @cq_template_select_f64(i32 %97, i32 %41, i32 %26)    ; IR: %96 = phi [ %66, %57 ], [ %89, %78 ], [ %26, %71 ], [ %43, %41 ], [ %26, %16 ]: innermost select, the %41 arm against the complement %26
-  %106 = call i32 @cq_template_select_f64(i32 %101, i32 %89, i32 %105)    ; IR: %96 = phi (real result): the %78 arm
-  %107 = call i32 @cq_template_select_f64(i32 %99, i32 %64, i32 %106)    ; IR: %96 = phi (real result): the %57 arm
-  %108 = call i32 @cqrt_alloc_f64(double 0.000000e+00)    ; IR: ret  [result rail: real]
-  call void @cqrt_copy_f64(i32 %107, i32 %108)    ; IR: copy real out
-  %109 = call i32 @cqrt_alloc_f64(double 0.000000e+00)    ; IR: ret  [result rail: imaginary]
-  call void @cqrt_copy_f64(i32 %104, i32 %109)    ; IR: copy imaginary out
-  call void @cq_template_select_f64_unc(i32 %107, i32 %99, i32 %64, i32 %106)    ; IR: uncompute %96
-  call void @cqrt_free(i32 %107)    ; IR: release the %96 rail (|0>)
-  call void @cq_template_select_f64_unc(i32 %106, i32 %101, i32 %89, i32 %105)    ; IR: uncompute %96
-  call void @cqrt_free(i32 %106)    ; IR: release the %96 rail (|0>)
-  call void @cq_template_select_f64_unc(i32 %105, i32 %97, i32 %41, i32 %26)    ; IR: uncompute %96
-  call void @cqrt_free(i32 %105)    ; IR: release the %96 rail (|0>)
-  call void @cq_template_select_f64_unc(i32 %104, i32 %99, i32 %69, i32 %103)    ; IR: uncompute %95
-  call void @cqrt_free(i32 %104)    ; IR: release the %95 rail (|0>)
-  call void @cq_template_select_f64_unc(i32 %103, i32 %101, i32 %94, i32 %102)    ; IR: uncompute %95
-  call void @cqrt_free(i32 %103)    ; IR: release the %95 rail (|0>)
-  call void @cq_template_select_f64_unc(i32 %102, i32 %97, i32 %42, i32 %32)    ; IR: uncompute %95
-  call void @cqrt_free(i32 %102)    ; IR: release the %95 rail (|0>)
-  call void @cqrt_not_i1(i32 %77)    ; IR: bracket: P78 reads NOT %72
-  call void @cqrt_and_i1(i32 %100, i32 %77, i32 %101)    ; IR: uncompute P78  [self-inverse]
-  call void @cqrt_free(i32 %101)    ; IR: release the P78 rail (|0>)
-  call void @cqrt_not_i1(i32 %77)    ; IR: bracket (close): P78 reads NOT %72
-  call void @cqrt_and_i1(i32 %98, i32 %54, i32 %100)    ; IR: uncompute P71  [self-inverse]
-  call void @cqrt_free(i32 %100)    ; IR: release the P71 rail (|0>)
-  call void @cqrt_not_i1(i32 %54)    ; IR: bracket: P57 reads NOT %51
-  call void @cqrt_and_i1(i32 %98, i32 %54, i32 %99)    ; IR: uncompute P57  [self-inverse]
-  call void @cqrt_free(i32 %99)    ; IR: release the P57 rail (|0>)
-  call void @cqrt_not_i1(i32 %54)    ; IR: bracket (close): P57 reads NOT %51
-  call void @cqrt_not_i1(i32 %35)    ; IR: bracket: P45 reads NOT %32
-  call void @cqrt_not_i1(i32 %97)    ; IR: bracket: P45 reads NOT %90
-  call void @cqrt_and_i1(i32 %35, i32 %97, i32 %98)    ; IR: uncompute P45  [self-inverse]
-  call void @cqrt_free(i32 %98)    ; IR: release the P45 rail (|0>)
-  call void @cqrt_not_i1(i32 %35)    ; IR: bracket (close): P45 reads NOT %32
-  call void @cqrt_not_i1(i32 %97)    ; IR: bracket (close): P45 reads NOT %90
-  call void @cqrt_and_i1(i32 %95, i32 %96, i32 %97)    ; IR: uncompute P41  [self-inverse]
-  call void @cqrt_free(i32 %97)    ; IR: release the P41 rail (|0>)
-  call void @cqrt_free(i32 %96)    ; IR: release the seed rail (basis state)
-  call void @cqrt_not_i1(i32 %35)    ; IR: bracket: P37 reads NOT %32
-  call void @cqrt_and_i1(i32 %35, i32 %36, i32 %95)    ; IR: uncompute P37  [self-inverse]
-  call void @cqrt_free(i32 %95)    ; IR: release the P37 rail (|0>)
-  call void @cqrt_not_i1(i32 %35)    ; IR: bracket (close): P37 reads NOT %32
-  call void @cq_template_fmul_f64_hl_unc(i32 %94, i32 %93, double 0.000000e+00)    ; IR: uncompute %93
-  call void @cqrt_free(i32 %94)    ; IR: release the %93 rail (|0>)
-  call void @cq_template_fadd_f64_unc(i32 %93, i32 %92, i32 %91)    ; IR: uncompute %92  [sum]
-  call void @cqrt_free(i32 %93)    ; IR: release the %92 rail (|0>)
-  call void @cq_template_fmul_f64_hl_unc(i32 %92, i32 %81, double %1)    ; IR: uncompute %92  [product]
-  call void @cqrt_free(i32 %92)    ; IR: release the %92 product rail (|0>)
-  call void @cq_template_fmul_f64_hl_unc(i32 %91, i32 %90, double %0)    ; IR: uncompute %91
-  call void @cqrt_free(i32 %91)    ; IR: release the %91 rail (|0>)
-  call void @cq_template_fneg_f64_unc(i32 %90, i32 %85)    ; IR: uncompute %90
-  call void @cqrt_free(i32 %90)    ; IR: release the %90 rail (|0>)
-  call void @cq_template_fmul_f64_hl_unc(i32 %89, i32 %88, double 0.000000e+00)    ; IR: uncompute %89
-  call void @cqrt_free(i32 %89)    ; IR: release the %89 rail (|0>)
-  call void @cq_template_fadd_f64_unc(i32 %88, i32 %87, i32 %86)    ; IR: uncompute %88  [sum]
-  call void @cqrt_free(i32 %88)    ; IR: release the %88 rail (|0>)
-  call void @cq_template_fmul_f64_hl_unc(i32 %87, i32 %81, double %0)    ; IR: uncompute %88  [product]
-  call void @cqrt_free(i32 %87)    ; IR: release the %88 product rail (|0>)
-  call void @cq_template_fmul_f64_hl_unc(i32 %86, i32 %85, double %1)    ; IR: uncompute %87
-  call void @cqrt_free(i32 %86)    ; IR: release the %87 rail (|0>)
-  call void @cq_template_copysign_f64_unc(i32 %85, i32 %84, i32 %16)    ; IR: uncompute %86
-  call void @cqrt_free(i32 %85)    ; IR: release the %86 rail (|0>)
-  call void @cq_template_select_f64_ll_unc(i32 %84, i32 %83, double 0.000000e+00, double 1.000000e+00)    ; IR: uncompute %85
-  call void @cqrt_free(i32 %84)    ; IR: release the %85 rail (|0>)
-  call void @cq_template_fcmp_une_f64_hl_unc(i32 %83, i32 %82, double 0x7FF0000000000000)    ; IR: uncompute %84
-  call void @cqrt_free(i32 %83)    ; IR: release the %84 rail (|0>)
-  call void @cq_template_fabs_f64_unc(i32 %82, i32 %16)    ; IR: uncompute %83
-  call void @cqrt_free(i32 %82)    ; IR: release the %83 rail (|0>)
-  call void @cq_template_copysign_f64_unc(i32 %81, i32 %80, i32 %15)    ; IR: uncompute %82
-  call void @cqrt_free(i32 %81)    ; IR: release the %82 rail (|0>)
-  call void @cq_template_select_f64_ll_unc(i32 %80, i32 %79, double 0.000000e+00, double 1.000000e+00)    ; IR: uncompute %81
-  call void @cqrt_free(i32 %80)    ; IR: release the %81 rail (|0>)
-  call void @cq_template_fcmp_une_f64_hl_unc(i32 %79, i32 %78, double 0x7FF0000000000000)    ; IR: uncompute %80
-  call void @cqrt_free(i32 %79)    ; IR: release the %80 rail (|0>)
-  call void @cq_template_fabs_f64_unc(i32 %78, i32 %15)    ; IR: uncompute %79
-  call void @cqrt_free(i32 %78)    ; IR: release the %79 rail (|0>)
-  call void @cqrt_or_i1(i32 %76, i32 %73, i32 %77)    ; IR: uncompute %77  [self-inverse]
-  call void @cqrt_free(i32 %77)    ; IR: release the %77 rail (|0>)
-  call void @cqrt_free(i32 %76)    ; IR: release the seed rail (basis state)
-  call void @cqrt_or_i1(i32 %72, i32 %70, i32 %73)    ; IR: uncompute %74  [self-inverse]
-  call void @cqrt_free(i32 %73)    ; IR: release the %74 rail (|0>)
-  call void @cqrt_free(i32 %72)    ; IR: release the seed rail (basis state)
-  call void @cq_template_fcmp_une_f64_hl_unc(i32 %70, i32 %8, double 0x7FF0000000000000)    ; IR: uncompute %72
-  call void @cqrt_free(i32 %70)    ; IR: release the %72 rail (|0>)
-  call void @cq_template_fmul_f64_hl_unc(i32 %69, i32 %68, double 0x7FF0000000000000)    ; IR: uncompute %70
-  call void @cqrt_free(i32 %69)    ; IR: release the %70 rail (|0>)
-  call void @cq_template_fadd_f64_unc(i32 %68, i32 %67, i32 %66)    ; IR: uncompute %69  [sum]
-  call void @cqrt_free(i32 %68)    ; IR: release the %69 rail (|0>)
-  call void @cq_template_fmul_f64_hl_unc(i32 %67, i32 %15, double %60)    ; IR: uncompute %69  [product]
-  call void @cqrt_free(i32 %67)    ; IR: release the %69 product rail (|0>)
-  call void @cq_template_fmul_f64_hl_unc(i32 %66, i32 %16, double %65)    ; IR: uncompute %68
-  call void @cqrt_free(i32 %66)    ; IR: release the %68 rail (|0>)
-  call void @cq_template_fmul_f64_hl_unc(i32 %64, i32 %63, double 0x7FF0000000000000)    ; IR: uncompute %66
-  call void @cqrt_free(i32 %64)    ; IR: release the %66 rail (|0>)
-  call void @cq_template_fadd_f64_unc(i32 %63, i32 %62, i32 %61)    ; IR: uncompute %65  [sum]
-  call void @cqrt_free(i32 %63)    ; IR: release the %65 rail (|0>)
-  call void @cq_template_fmul_f64_hl_unc(i32 %62, i32 %15, double %56)    ; IR: uncompute %65  [product]
-  call void @cqrt_free(i32 %62)    ; IR: release the %65 product rail (|0>)
-  call void @cq_template_fmul_f64_hl_unc(i32 %61, i32 %16, double %60)    ; IR: uncompute %64
-  call void @cqrt_free(i32 %61)    ; IR: release the %64 rail (|0>)
-  call void @cqrt_or_i1(i32 %51, i32 %53, i32 %54)    ; IR: uncompute %56  [self-inverse]
-  call void @cqrt_free(i32 %54)    ; IR: release the %56 rail (|0>)
-  call void @cq_template_fcmp_ueq_f64_hl_unc(i32 %53, i32 %52, double 0x7FF0000000000000)    ; IR: uncompute %55
-  call void @cqrt_free(i32 %53)    ; IR: release the %55 rail (|0>)
-  call void @cq_template_fabs_f64_unc(i32 %52, i32 %16)    ; IR: uncompute %54
-  call void @cqrt_free(i32 %52)    ; IR: release the %54 rail (|0>)
-  call void @cqrt_or_i1(i32 %50, i32 %49, i32 %51)    ; IR: uncompute %53  [self-inverse]
-  call void @cqrt_free(i32 %51)    ; IR: release the %53 rail (|0>)
-  call void @cqrt_free(i32 %50)    ; IR: release the seed rail (basis state)
-  call void @cq_template_fcmp_ueq_f64_hl_unc(i32 %49, i32 %48, double 0x7FF0000000000000)    ; IR: uncompute %52
-  call void @cqrt_free(i32 %49)    ; IR: release the %52 rail (|0>)
-  call void @cq_template_fabs_f64_unc(i32 %48, i32 %15)    ; IR: uncompute %51
-  call void @cqrt_free(i32 %48)    ; IR: release the %51 rail (|0>)
-  call void @cq_template_fmul_f64_hl_unc(i32 %42, i32 %40, double %1)    ; IR: uncompute %44
-  call void @cqrt_free(i32 %42)    ; IR: release the %44 rail (|0>)
-  call void @cq_template_fmul_f64_hl_unc(i32 %41, i32 %40, double %0)    ; IR: uncompute %43
-  call void @cqrt_free(i32 %41)    ; IR: release the %43 rail (|0>)
-  call void @cq_template_copysign_f64_lh_unc(i32 %40, double 0x7FF0000000000000, i32 %15)    ; IR: uncompute %42
-  call void @cqrt_free(i32 %40)    ; IR: release the %42 rail (|0>)
-  call void @cq_template_fcmp_oeq_f64_hl_unc(i32 %36, i32 %20, double 0.000000e+00)    ; IR: uncompute %36
-  call void @cqrt_free(i32 %36)    ; IR: release the %36 rail (|0>)
-  call void @cqrt_or_i1(i32 %33, i32 %34, i32 %35)    ; IR: uncompute %34  [self-inverse]
-  call void @cqrt_free(i32 %35)    ; IR: release the %34 rail (|0>)
-  call void @cq_template_fcmp_ord_f64_hl_unc(i32 %34, i32 %32, double 0.000000e+00)    ; IR: uncompute %33
-  call void @cqrt_free(i32 %34)    ; IR: release the %33 rail (|0>)
-  call void @cq_template_fcmp_ord_f64_hl_unc(i32 %33, i32 %26, double 0.000000e+00)    ; IR: uncompute %32
-  call void @cqrt_free(i32 %33)    ; IR: release the %32 rail (|0>)
-  call fastcc void @__cq_q_scalbn_11_unc(i32 %32, i32 %31, i32 %25)    ; IR: uncompute the result rail(s) of %31
-  call void @cqrt_free(i32 %32)    ; IR: release it (|0>)
-  call void @cq_template_fdiv_f64_unc(i32 %31, i32 %30, i32 %20)    ; IR: uncompute %30
-  call void @cqrt_free(i32 %31)    ; IR: release the %30 rail (|0>)
-  call void @cq_template_fadd_f64_unc(i32 %30, i32 %29, i32 %28)    ; IR: uncompute %29  [sum]
-  call void @cqrt_free(i32 %30)    ; IR: release the %29 rail (|0>)
-  call void @cq_template_fmul_f64_hl_unc(i32 %29, i32 %15, double %1)    ; IR: uncompute %29  [product]
-  call void @cqrt_free(i32 %29)    ; IR: release the %29 product rail (|0>)
-  call void @cq_template_fmul_f64_hl_unc(i32 %28, i32 %27, double %0)    ; IR: uncompute %28
-  call void @cqrt_free(i32 %28)    ; IR: release the %28 rail (|0>)
-  call void @cq_template_fneg_f64_unc(i32 %27, i32 %16)    ; IR: uncompute %27
-  call void @cqrt_free(i32 %27)    ; IR: release the %27 rail (|0>)
-  call fastcc void @__cq_q_scalbn_11_unc(i32 %26, i32 %24, i32 %25)    ; IR: uncompute the result rail(s) of %26
-  call void @cqrt_free(i32 %26)    ; IR: release it (|0>)
-  call void @cq_template_sub_i32_lh_unc(i32 %25, i32 0, i32 %17)    ; IR: uncompute %25
-  call void @cqrt_free(i32 %25)    ; IR: release the %25 rail (|0>)
-  call void @cq_template_fdiv_f64_unc(i32 %24, i32 %23, i32 %20)    ; IR: uncompute %24
-  call void @cqrt_free(i32 %24)    ; IR: release the %24 rail (|0>)
-  call void @cq_template_fadd_f64_unc(i32 %23, i32 %22, i32 %21)    ; IR: uncompute %23  [sum]
-  call void @cqrt_free(i32 %23)    ; IR: release the %23 rail (|0>)
-  call void @cq_template_fmul_f64_hl_unc(i32 %22, i32 %15, double %0)    ; IR: uncompute %23  [product]
-  call void @cqrt_free(i32 %22)    ; IR: release the %23 product rail (|0>)
-  call void @cq_template_fmul_f64_hl_unc(i32 %21, i32 %16, double %1)    ; IR: uncompute %22
-  call void @cqrt_free(i32 %21)    ; IR: release the %22 rail (|0>)
-  call void @cq_template_fadd_f64_unc(i32 %20, i32 %19, i32 %18)    ; IR: uncompute %21  [sum]
-  call void @cqrt_free(i32 %20)    ; IR: release the %21 rail (|0>)
-  call void @cq_template_fmul_f64_unc(i32 %19, i32 %15, i32 %15)    ; IR: uncompute %21  [product]
-  call void @cqrt_free(i32 %19)    ; IR: release the %21 product rail (|0>)
-  call void @cq_template_fmul_f64_unc(i32 %18, i32 %16, i32 %16)    ; IR: uncompute %20
-  call void @cqrt_free(i32 %18)    ; IR: release the %20 rail (|0>)
-  call void @cq_template_select_i32_lh_unc(i32 %17, i32 %10, i32 0, i32 %11)    ; IR: uncompute %19
-  call void @cqrt_free(i32 %17)    ; IR: release the %19 rail (|0>)
-  call void @cq_template_select_f64_unc(i32 %16, i32 %10, i32 %3, i32 %14)    ; IR: uncompute %18
-  call void @cqrt_free(i32 %16)    ; IR: release the %18 rail (|0>)
-  call void @cq_template_select_f64_unc(i32 %15, i32 %10, i32 %2, i32 %13)    ; IR: uncompute %17
-  call void @cqrt_free(i32 %15)    ; IR: release the %17 rail (|0>)
-  call fastcc void @__cq_q_scalbn_11_unc(i32 %14, i32 %3, i32 %12)    ; IR: uncompute the result rail(s) of %15
-  call void @cqrt_free(i32 %14)    ; IR: release it (|0>)
-  call fastcc void @__cq_q_scalbn_11_unc(i32 %13, i32 %2, i32 %12)    ; IR: uncompute the result rail(s) of %14
-  call void @cqrt_free(i32 %13)    ; IR: release it (|0>)
-  call void @cq_template_sub_i32_lh_unc(i32 %12, i32 0, i32 %11)    ; IR: uncompute %13
-  call void @cqrt_free(i32 %12)    ; IR: release the %13 rail (|0>)
-  call void @cq_template_fptosi_f64_to_i32_unc(i32 %11, i32 %8)    ; IR: uncompute %12
-  call void @cqrt_free(i32 %11)    ; IR: release the %12 rail (|0>)
-  call void @cq_template_fcmp_ueq_f64_hl_unc(i32 %10, i32 %9, double 0x7FF0000000000000)    ; IR: uncompute %10
-  call void @cqrt_free(i32 %10)    ; IR: release the %10 rail (|0>)
-  call void @cq_template_fabs_f64_unc(i32 %9, i32 %8)    ; IR: uncompute %9
-  call void @cqrt_free(i32 %9)    ; IR: release the %9 rail (|0>)
-  call fastcc void @__cq_q_logb_1_unc(i32 %8, i32 %7)    ; IR: uncompute the result rail(s) of %8
-  call void @cqrt_free(i32 %8)    ; IR: release it (|0>)
+  %8 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: the caller's flags rail for the fenv ABI of the strictfp callee (82): __divdc3 has no FENV_ACCESS, so its environment is the default: an EMPTY flags rail (|0>, rule 7) and the default mode literal 0 (FE_TONEAREST)
+  %9 = call fastcc { i32, i32 } @__cq_q_logb_1(i32 %7, i32 0, i32 %8)    ; IR: %8 = logb(%7), quantum clone (mask 1, injected musl logb.c; it calls the strictfp ilogb clone) + mode + flags
+  %10 = extractvalue { i32, i32 } %9, 0    ; IR: %8  [result rail]
+  %11 = extractvalue { i32, i32 } %9, 1    ; IR: %8: the flags after logb (fenv state the program never reads: dropped below)
+  %12 = call i32 @cq_template_fabs_f64(i32 %10)    ; IR: %9 = fabs(%8)
+  %13 = call i32 @cq_template_fcmp_ueq_f64_hl(i32 %12, double 0x7FF0000000000000)    ; IR: %10 = fcmp ueq %9, inf  (!isfinite(logbw))  [br %10 -> %16, else block %11]
+  %14 = call i32 @cq_template_fptosi_f64_to_i32(i32 %10)    ; IR: %12 = fptosi %8 to i32  (block %11)
+  %15 = call i32 @cq_template_sub_i32_lh(i32 0, i32 %14)    ; IR: %13 = sub nsw 0, %12
+  %16 = call fastcc i32 @__cq_q_scalbn_11(i32 %2, i32 %15)    ; IR: %14 = scalbn(c, %13), quantum clone (mask 11, injected musl body)
+  %17 = call fastcc i32 @__cq_q_scalbn_11(i32 %3, i32 %15)    ; IR: %15 = scalbn(d, %13), quantum clone (mask 11, injected musl body)
+  %18 = call i32 @cq_template_select_f64(i32 %13, i32 %2, i32 %16)    ; IR: %17 = phi [ %14, %11 ], [ %2, %4 ]  (c; the %10 edge keeps c)
+  %19 = call i32 @cq_template_select_f64(i32 %13, i32 %3, i32 %17)    ; IR: %18 = phi [ %15, %11 ], [ %3, %4 ]  (d)
+  %20 = call i32 @cq_template_select_i32_lh(i32 %13, i32 0, i32 %14)    ; IR: %19 = phi [ %12, %11 ], [ 0, %4 ]  (ilogbw)
+  %21 = call i32 @cq_template_fmul_f64(i32 %19, i32 %19)    ; IR: %20 = fmul %18, %18
+  %22 = call i32 @cq_template_fmul_f64(i32 %18, i32 %18)    ; IR: %21 = fmuladd(%17, %17, %20)  (denom)  [unfused product]
+  %23 = call i32 @cq_template_fadd_f64(i32 %22, i32 %21)    ; IR: %21 = fmuladd(%17, %17, %20)  (denom)  [unfused sum]
+  %24 = call i32 @cq_template_fmul_f64_hl(i32 %19, double %1)    ; IR: %22 = fmul %18, %1
+  %25 = call i32 @cq_template_fmul_f64_hl(i32 %18, double %0)    ; IR: %23 = fmuladd(%0, %17, %22)  (commutative product, quantum factor first)  [unfused product]
+  %26 = call i32 @cq_template_fadd_f64(i32 %25, i32 %24)    ; IR: %23 = fmuladd(%0, %17, %22)  (commutative product, quantum factor first)  [unfused sum]
+  %27 = call i32 @cq_template_fdiv_f64(i32 %26, i32 %23)    ; IR: %24 = fdiv %23, %21
+  %28 = call i32 @cq_template_sub_i32_lh(i32 0, i32 %20)    ; IR: %25 = sub nsw 0, %19
+  %29 = call fastcc i32 @__cq_q_scalbn_11(i32 %27, i32 %28)    ; IR: %26 = scalbn(%24, %25)  (real z), quantum clone (mask 11, injected musl body)
+  %30 = call i32 @cq_template_fneg_f64(i32 %19)    ; IR: %27 = fneg %18
+  %31 = call i32 @cq_template_fmul_f64_hl(i32 %30, double %0)    ; IR: %28 = fmul %27, %0
+  %32 = call i32 @cq_template_fmul_f64_hl(i32 %18, double %1)    ; IR: %29 = fmuladd(%1, %17, %28)  (commutative product, quantum factor first)  [unfused product]
+  %33 = call i32 @cq_template_fadd_f64(i32 %32, i32 %31)    ; IR: %29 = fmuladd(%1, %17, %28)  (commutative product, quantum factor first)  [unfused sum]
+  %34 = call i32 @cq_template_fdiv_f64(i32 %33, i32 %23)    ; IR: %30 = fdiv %29, %21
+  %35 = call fastcc i32 @__cq_q_scalbn_11(i32 %34, i32 %28)    ; IR: %31 = scalbn(%30, %25)  (imag z), quantum clone (mask 11, injected musl body)
+  %36 = call i32 @cq_template_fcmp_ord_f64_hl(i32 %29, double 0.000000e+00)    ; IR: %32 = fcmp ord %26, 0
+  %37 = call i32 @cq_template_fcmp_ord_f64_hl(i32 %35, double 0.000000e+00)    ; IR: %33 = fcmp ord %31, 0
+  %38 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %34 = select i1 %32, true, %33 = %32 | %33  [br %34 -> exit %94; block %35 runs under !%34]  [fresh flag rail]
+  call void @cqrt_or_i1(i32 %36, i32 %37, i32 %38)    ; IR: %34 = select i1 %32, true, %33 = %32 | %33  [br %34 -> exit %94; block %35 runs under !%34]
+  %39 = call i32 @cq_template_fcmp_oeq_f64_hl(i32 %23, double 0.000000e+00)    ; IR: %36 = fcmp oeq %21, 0  (denom == 0; block %35)
+  %40 = fcmp ord double %0, 0.000000e+00    ; IR: %38 = fcmp ord %0, 0  (block %37)  (classical)
+  %41 = fcmp ord double %1, 0.000000e+00    ; IR: %39 = fcmp ord %1, 0  (classical)
+  %42 = or i1 %40, %41    ; IR: %40 = or i1 %38, %39  (classical)
+  %43 = call i32 @cq_template_copysign_f64_lh(double 0x7FF0000000000000, i32 %18)    ; IR: %42 = copysign(inf, %17)  (block %41)
+  %44 = call i32 @cq_template_fmul_f64_hl(i32 %43, double %0)    ; IR: %43 = fmul %42, %0
+  %45 = call i32 @cq_template_fmul_f64_hl(i32 %43, double %1)    ; IR: %44 = fmul %42, %1
+  %46 = tail call double @llvm.fabs.f64(double %0)    ; IR: %46 = fabs(a)  (block %45)  (classical)
+  %47 = fcmp une double %46, 0x7FF0000000000000    ; IR: %47 = !isinf(a)  (classical)
+  %48 = tail call double @llvm.fabs.f64(double %1)    ; IR: %48 = fabs(b)  (classical)
+  %49 = fcmp une double %48, 0x7FF0000000000000    ; IR: %49 = !isinf(b)  (classical)
+  %50 = and i1 %47, %49    ; IR: %50 = and i1 %47, %49  (classical)
+  %51 = call i32 @cq_template_fabs_f64(i32 %18)    ; IR: %51 = fabs(%17)
+  %52 = call i32 @cq_template_fcmp_ueq_f64_hl(i32 %51, double 0x7FF0000000000000)    ; IR: %52 = !isfinite(%17)
+  %53 = call i32 @cqrt_alloc_i1(i1 %50)    ; IR: %53 = select i1 %50, true, %52 = %50 | %52  [the classical conjunct %44 as a seed rail, rule 7]
+  %54 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %53 = select i1 %50, true, %52 = %50 | %52  [fresh flag rail]
+  call void @cqrt_or_i1(i32 %53, i32 %52, i32 %54)    ; IR: %53 = select i1 %50, true, %52 = %50 | %52
+  %55 = call i32 @cq_template_fabs_f64(i32 %19)    ; IR: %54 = fabs(%18)
+  %56 = call i32 @cq_template_fcmp_ueq_f64_hl(i32 %55, double 0x7FF0000000000000)    ; IR: %55 = !isfinite(%18)
+  %57 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %56 = select i1 %53, true, %55 = %53 | %55  [br %56 -> %71, else block %57]  [fresh flag rail]
+  call void @cqrt_or_i1(i32 %54, i32 %56, i32 %57)    ; IR: %56 = select i1 %53, true, %55 = %53 | %55  [br %56 -> %71, else block %57]
+  %58 = select i1 %47, double 0.000000e+00, double 1.000000e+00    ; IR: %58 = select %47, 0.0, 1.0  (block %57)  (classical)
+  %59 = tail call double @llvm.copysign.f64(double %58, double %0)    ; IR: %59 = copysign(%58, a)  (classical)
+  %60 = tail call double @llvm.fabs.f64(double %1)    ; IR: %60 = fabs(b)  (classical)
+  %61 = fcmp une double %60, 0x7FF0000000000000    ; IR: %61 = !isinf(b)  (classical)
+  %62 = select i1 %61, double 0.000000e+00, double 1.000000e+00    ; IR: %62 = select %61, 0.0, 1.0  (classical)
+  %63 = tail call double @llvm.copysign.f64(double %62, double %1)    ; IR: %63 = copysign(%62, b)  (classical)
+  %64 = call i32 @cq_template_fmul_f64_hl(i32 %19, double %63)    ; IR: %64 = fmul %63, %18  (commutative, quantum operand first)
+  %65 = call i32 @cq_template_fmul_f64_hl(i32 %18, double %59)    ; IR: %65 = fmuladd(%59, %17, %64)  (commutative product, quantum factor first)  [unfused product]
+  %66 = call i32 @cq_template_fadd_f64(i32 %65, i32 %64)    ; IR: %65 = fmuladd(%59, %17, %64)  (commutative product, quantum factor first)  [unfused sum]
+  %67 = call i32 @cq_template_fmul_f64_hl(i32 %66, double 0x7FF0000000000000)    ; IR: %66 = fmul %65, inf
+  %68 = fneg double %59    ; IR: %67 = fneg %59  (classical)
+  %69 = call i32 @cq_template_fmul_f64_hl(i32 %19, double %68)    ; IR: %68 = fmul %18, %67
+  %70 = call i32 @cq_template_fmul_f64_hl(i32 %18, double %63)    ; IR: %69 = fmuladd(%63, %17, %68)  (commutative product, quantum factor first)  [unfused product]
+  %71 = call i32 @cq_template_fadd_f64(i32 %70, i32 %69)    ; IR: %69 = fmuladd(%63, %17, %68)  (commutative product, quantum factor first)  [unfused sum]
+  %72 = call i32 @cq_template_fmul_f64_hl(i32 %71, double 0x7FF0000000000000)    ; IR: %70 = fmul %69, inf
+  %73 = call i32 @cq_template_fcmp_une_f64_hl(i32 %10, double 0x7FF0000000000000)    ; IR: %72 = fcmp une %8, inf  (block %71)
+  %74 = fcmp ueq double %46, 0x7FF0000000000000    ; IR: %73 = fcmp ueq %46, inf  (classical)
+  %75 = call i32 @cqrt_alloc_i1(i1 %74)    ; IR: %74 = or i1 %73, %72  [the classical conjunct %66 as a seed rail, rule 7]
+  %76 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %74 = or i1 %73, %72  [fresh flag rail]
+  call void @cqrt_or_i1(i32 %75, i32 %73, i32 %76)    ; IR: %74 = or i1 %73, %72
+  %77 = tail call double @llvm.fabs.f64(double %1)    ; IR: %75 = fabs(b)  (classical)
+  %78 = fcmp ueq double %77, 0x7FF0000000000000    ; IR: %76 = fcmp ueq %75, inf  (classical)
+  %79 = call i32 @cqrt_alloc_i1(i1 %78)    ; IR: %77 = or i1 %76, %74  [br %77 -> exit %94, else block %78]  [the classical conjunct %70 as a seed rail, rule 7]
+  %80 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %77 = or i1 %76, %74  [br %77 -> exit %94, else block %78]  [fresh flag rail]
+  call void @cqrt_or_i1(i32 %79, i32 %76, i32 %80)    ; IR: %77 = or i1 %76, %74  [br %77 -> exit %94, else block %78]
+  %81 = call i32 @cq_template_fabs_f64(i32 %18)    ; IR: %79 = fabs(%17)  (block %78)
+  %82 = call i32 @cq_template_fcmp_une_f64_hl(i32 %81, double 0x7FF0000000000000)    ; IR: %80 = !isinf(%17)
+  %83 = call i32 @cq_template_select_f64_ll(i32 %82, double 0.000000e+00, double 1.000000e+00)    ; IR: %81 = select %80, 0.0, 1.0
+  %84 = call i32 @cq_template_copysign_f64(i32 %83, i32 %18)    ; IR: %82 = copysign(%81, %17)
+  %85 = call i32 @cq_template_fabs_f64(i32 %19)    ; IR: %83 = fabs(%18)
+  %86 = call i32 @cq_template_fcmp_une_f64_hl(i32 %85, double 0x7FF0000000000000)    ; IR: %84 = !isinf(%18)
+  %87 = call i32 @cq_template_select_f64_ll(i32 %86, double 0.000000e+00, double 1.000000e+00)    ; IR: %85 = select %84, 0.0, 1.0
+  %88 = call i32 @cq_template_copysign_f64(i32 %87, i32 %19)    ; IR: %86 = copysign(%85, %18)
+  %89 = call i32 @cq_template_fmul_f64_hl(i32 %88, double %1)    ; IR: %87 = fmul %86, %1
+  %90 = call i32 @cq_template_fmul_f64_hl(i32 %84, double %0)    ; IR: %88 = fmuladd(%0, %82, %87)  (commutative product, quantum factor first)  [unfused product]
+  %91 = call i32 @cq_template_fadd_f64(i32 %90, i32 %89)    ; IR: %88 = fmuladd(%0, %82, %87)  (commutative product, quantum factor first)  [unfused sum]
+  %92 = call i32 @cq_template_fmul_f64_hl(i32 %91, double 0.000000e+00)    ; IR: %89 = fmul %88, 0.0
+  %93 = call i32 @cq_template_fneg_f64(i32 %88)    ; IR: %90 = fneg %86
+  %94 = call i32 @cq_template_fmul_f64_hl(i32 %93, double %0)    ; IR: %91 = fmul %90, %0
+  %95 = call i32 @cq_template_fmul_f64_hl(i32 %84, double %1)    ; IR: %92 = fmuladd(%1, %82, %91)  (commutative product, quantum factor first)  [unfused product]
+  %96 = call i32 @cq_template_fadd_f64(i32 %95, i32 %94)    ; IR: %92 = fmuladd(%1, %82, %91)  (commutative product, quantum factor first)  [unfused sum]
+  %97 = call i32 @cq_template_fmul_f64_hl(i32 %96, double 0.000000e+00)    ; IR: %93 = fmul %92, 0.0
+  call void @cqrt_not_i1(i32 %38)    ; IR: bracket: P37 reads NOT %32
+  %98 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: P37 = path predicate of block %37: !%34 & %36  [fresh flag rail]
+  call void @cqrt_and_i1(i32 %38, i32 %39, i32 %98)    ; IR: P37 = path predicate of block %37: !%34 & %36
+  call void @cqrt_not_i1(i32 %38)    ; IR: bracket (close): P37 reads NOT %32
+  %99 = call i32 @cqrt_alloc_i1(i1 %42)    ; IR: P41 = path predicate of block %41: P37 & %40  [the classical conjunct %36 as a seed rail, rule 7]
+  %100 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: P41 = path predicate of block %41: P37 & %40  [fresh flag rail]
+  call void @cqrt_and_i1(i32 %98, i32 %99, i32 %100)    ; IR: P41 = path predicate of block %41: P37 & %40
+  call void @cqrt_not_i1(i32 %38)    ; IR: bracket: P45 reads NOT %32
+  call void @cqrt_not_i1(i32 %100)    ; IR: bracket: P45 reads NOT %90
+  %101 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: P45 = path predicate of block %45: !%34 & !P41  (reached from %35 on !%36 or from %37 on !%40)  [fresh flag rail]
+  call void @cqrt_and_i1(i32 %38, i32 %100, i32 %101)    ; IR: P45 = path predicate of block %45: !%34 & !P41  (reached from %35 on !%36 or from %37 on !%40)
+  call void @cqrt_not_i1(i32 %38)    ; IR: bracket (close): P45 reads NOT %32
+  call void @cqrt_not_i1(i32 %100)    ; IR: bracket (close): P45 reads NOT %90
+  call void @cqrt_not_i1(i32 %57)    ; IR: bracket: P57 reads NOT %51
+  %102 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: P57 = path predicate of block %57: P45 & !%56  [fresh flag rail]
+  call void @cqrt_and_i1(i32 %101, i32 %57, i32 %102)    ; IR: P57 = path predicate of block %57: P45 & !%56
+  call void @cqrt_not_i1(i32 %57)    ; IR: bracket (close): P57 reads NOT %51
+  %103 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: P71 = path predicate of block %71: P45 & %56  [fresh flag rail]
+  call void @cqrt_and_i1(i32 %101, i32 %57, i32 %103)    ; IR: P71 = path predicate of block %71: P45 & %56
+  call void @cqrt_not_i1(i32 %80)    ; IR: bracket: P78 reads NOT %72
+  %104 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: P78 = path predicate of block %78: P71 & !%77  [fresh flag rail]
+  call void @cqrt_and_i1(i32 %103, i32 %80, i32 %104)    ; IR: P78 = path predicate of block %78: P71 & !%77
+  call void @cqrt_not_i1(i32 %80)    ; IR: bracket (close): P78 reads NOT %72
+  %105 = call i32 @cq_template_select_f64(i32 %100, i32 %45, i32 %35)    ; IR: %95 = phi [ %70, %57 ], [ %93, %78 ], [ %31, %71 ], [ %44, %41 ], [ %31, %16 ]: innermost select, the %41 arm against the complement %31
+  %106 = call i32 @cq_template_select_f64(i32 %104, i32 %97, i32 %105)    ; IR: %95 = phi (imag result): the %78 arm
+  %107 = call i32 @cq_template_select_f64(i32 %102, i32 %72, i32 %106)    ; IR: %95 = phi (imag result): the %57 arm
+  %108 = call i32 @cq_template_select_f64(i32 %100, i32 %44, i32 %29)    ; IR: %96 = phi [ %66, %57 ], [ %89, %78 ], [ %26, %71 ], [ %43, %41 ], [ %26, %16 ]: innermost select, the %41 arm against the complement %26
+  %109 = call i32 @cq_template_select_f64(i32 %104, i32 %92, i32 %108)    ; IR: %96 = phi (real result): the %78 arm
+  %110 = call i32 @cq_template_select_f64(i32 %102, i32 %67, i32 %109)    ; IR: %96 = phi (real result): the %57 arm
+  %111 = call i32 @cqrt_alloc_f64(double 0.000000e+00)    ; IR: ret  [result rail: real]
+  call void @cqrt_copy_f64(i32 %110, i32 %111)    ; IR: copy real out
+  %112 = call i32 @cqrt_alloc_f64(double 0.000000e+00)    ; IR: ret  [result rail: imaginary]
+  call void @cqrt_copy_f64(i32 %107, i32 %112)    ; IR: copy imaginary out
+  call void @cq_template_select_f64_unc(i32 %110, i32 %102, i32 %67, i32 %109)    ; IR: uncompute %96
+  call void @cqrt_free(i32 %110)    ; IR: release the %96 rail (|0>)
+  call void @cq_template_select_f64_unc(i32 %109, i32 %104, i32 %92, i32 %108)    ; IR: uncompute %96
+  call void @cqrt_free(i32 %109)    ; IR: release the %96 rail (|0>)
+  call void @cq_template_select_f64_unc(i32 %108, i32 %100, i32 %44, i32 %29)    ; IR: uncompute %96
+  call void @cqrt_free(i32 %108)    ; IR: release the %96 rail (|0>)
+  call void @cq_template_select_f64_unc(i32 %107, i32 %102, i32 %72, i32 %106)    ; IR: uncompute %95
+  call void @cqrt_free(i32 %107)    ; IR: release the %95 rail (|0>)
+  call void @cq_template_select_f64_unc(i32 %106, i32 %104, i32 %97, i32 %105)    ; IR: uncompute %95
+  call void @cqrt_free(i32 %106)    ; IR: release the %95 rail (|0>)
+  call void @cq_template_select_f64_unc(i32 %105, i32 %100, i32 %45, i32 %35)    ; IR: uncompute %95
+  call void @cqrt_free(i32 %105)    ; IR: release the %95 rail (|0>)
+  call void @cqrt_not_i1(i32 %80)    ; IR: bracket: P78 reads NOT %72
+  call void @cqrt_and_i1(i32 %103, i32 %80, i32 %104)    ; IR: uncompute P78  [self-inverse]
+  call void @cqrt_free(i32 %104)    ; IR: release the P78 rail (|0>)
+  call void @cqrt_not_i1(i32 %80)    ; IR: bracket (close): P78 reads NOT %72
+  call void @cqrt_and_i1(i32 %101, i32 %57, i32 %103)    ; IR: uncompute P71  [self-inverse]
+  call void @cqrt_free(i32 %103)    ; IR: release the P71 rail (|0>)
+  call void @cqrt_not_i1(i32 %57)    ; IR: bracket: P57 reads NOT %51
+  call void @cqrt_and_i1(i32 %101, i32 %57, i32 %102)    ; IR: uncompute P57  [self-inverse]
+  call void @cqrt_free(i32 %102)    ; IR: release the P57 rail (|0>)
+  call void @cqrt_not_i1(i32 %57)    ; IR: bracket (close): P57 reads NOT %51
+  call void @cqrt_not_i1(i32 %38)    ; IR: bracket: P45 reads NOT %32
+  call void @cqrt_not_i1(i32 %100)    ; IR: bracket: P45 reads NOT %90
+  call void @cqrt_and_i1(i32 %38, i32 %100, i32 %101)    ; IR: uncompute P45  [self-inverse]
+  call void @cqrt_free(i32 %101)    ; IR: release the P45 rail (|0>)
+  call void @cqrt_not_i1(i32 %38)    ; IR: bracket (close): P45 reads NOT %32
+  call void @cqrt_not_i1(i32 %100)    ; IR: bracket (close): P45 reads NOT %90
+  call void @cqrt_and_i1(i32 %98, i32 %99, i32 %100)    ; IR: uncompute P41  [self-inverse]
+  call void @cqrt_free(i32 %100)    ; IR: release the P41 rail (|0>)
+  call void @cqrt_free(i32 %99)    ; IR: release the seed rail (basis state)
+  call void @cqrt_not_i1(i32 %38)    ; IR: bracket: P37 reads NOT %32
+  call void @cqrt_and_i1(i32 %38, i32 %39, i32 %98)    ; IR: uncompute P37  [self-inverse]
+  call void @cqrt_free(i32 %98)    ; IR: release the P37 rail (|0>)
+  call void @cqrt_not_i1(i32 %38)    ; IR: bracket (close): P37 reads NOT %32
+  call void @cq_template_fmul_f64_hl_unc(i32 %97, i32 %96, double 0.000000e+00)    ; IR: uncompute %93
+  call void @cqrt_free(i32 %97)    ; IR: release the %93 rail (|0>)
+  call void @cq_template_fadd_f64_unc(i32 %96, i32 %95, i32 %94)    ; IR: uncompute %92  [sum]
+  call void @cqrt_free(i32 %96)    ; IR: release the %92 rail (|0>)
+  call void @cq_template_fmul_f64_hl_unc(i32 %95, i32 %84, double %1)    ; IR: uncompute %92  [product]
+  call void @cqrt_free(i32 %95)    ; IR: release the %92 product rail (|0>)
+  call void @cq_template_fmul_f64_hl_unc(i32 %94, i32 %93, double %0)    ; IR: uncompute %91
+  call void @cqrt_free(i32 %94)    ; IR: release the %91 rail (|0>)
+  call void @cq_template_fneg_f64_unc(i32 %93, i32 %88)    ; IR: uncompute %90
+  call void @cqrt_free(i32 %93)    ; IR: release the %90 rail (|0>)
+  call void @cq_template_fmul_f64_hl_unc(i32 %92, i32 %91, double 0.000000e+00)    ; IR: uncompute %89
+  call void @cqrt_free(i32 %92)    ; IR: release the %89 rail (|0>)
+  call void @cq_template_fadd_f64_unc(i32 %91, i32 %90, i32 %89)    ; IR: uncompute %88  [sum]
+  call void @cqrt_free(i32 %91)    ; IR: release the %88 rail (|0>)
+  call void @cq_template_fmul_f64_hl_unc(i32 %90, i32 %84, double %0)    ; IR: uncompute %88  [product]
+  call void @cqrt_free(i32 %90)    ; IR: release the %88 product rail (|0>)
+  call void @cq_template_fmul_f64_hl_unc(i32 %89, i32 %88, double %1)    ; IR: uncompute %87
+  call void @cqrt_free(i32 %89)    ; IR: release the %87 rail (|0>)
+  call void @cq_template_copysign_f64_unc(i32 %88, i32 %87, i32 %19)    ; IR: uncompute %86
+  call void @cqrt_free(i32 %88)    ; IR: release the %86 rail (|0>)
+  call void @cq_template_select_f64_ll_unc(i32 %87, i32 %86, double 0.000000e+00, double 1.000000e+00)    ; IR: uncompute %85
+  call void @cqrt_free(i32 %87)    ; IR: release the %85 rail (|0>)
+  call void @cq_template_fcmp_une_f64_hl_unc(i32 %86, i32 %85, double 0x7FF0000000000000)    ; IR: uncompute %84
+  call void @cqrt_free(i32 %86)    ; IR: release the %84 rail (|0>)
+  call void @cq_template_fabs_f64_unc(i32 %85, i32 %19)    ; IR: uncompute %83
+  call void @cqrt_free(i32 %85)    ; IR: release the %83 rail (|0>)
+  call void @cq_template_copysign_f64_unc(i32 %84, i32 %83, i32 %18)    ; IR: uncompute %82
+  call void @cqrt_free(i32 %84)    ; IR: release the %82 rail (|0>)
+  call void @cq_template_select_f64_ll_unc(i32 %83, i32 %82, double 0.000000e+00, double 1.000000e+00)    ; IR: uncompute %81
+  call void @cqrt_free(i32 %83)    ; IR: release the %81 rail (|0>)
+  call void @cq_template_fcmp_une_f64_hl_unc(i32 %82, i32 %81, double 0x7FF0000000000000)    ; IR: uncompute %80
+  call void @cqrt_free(i32 %82)    ; IR: release the %80 rail (|0>)
+  call void @cq_template_fabs_f64_unc(i32 %81, i32 %18)    ; IR: uncompute %79
+  call void @cqrt_free(i32 %81)    ; IR: release the %79 rail (|0>)
+  call void @cqrt_or_i1(i32 %79, i32 %76, i32 %80)    ; IR: uncompute %77  [self-inverse]
+  call void @cqrt_free(i32 %80)    ; IR: release the %77 rail (|0>)
+  call void @cqrt_free(i32 %79)    ; IR: release the seed rail (basis state)
+  call void @cqrt_or_i1(i32 %75, i32 %73, i32 %76)    ; IR: uncompute %74  [self-inverse]
+  call void @cqrt_free(i32 %76)    ; IR: release the %74 rail (|0>)
+  call void @cqrt_free(i32 %75)    ; IR: release the seed rail (basis state)
+  call void @cq_template_fcmp_une_f64_hl_unc(i32 %73, i32 %10, double 0x7FF0000000000000)    ; IR: uncompute %72
+  call void @cqrt_free(i32 %73)    ; IR: release the %72 rail (|0>)
+  call void @cq_template_fmul_f64_hl_unc(i32 %72, i32 %71, double 0x7FF0000000000000)    ; IR: uncompute %70
+  call void @cqrt_free(i32 %72)    ; IR: release the %70 rail (|0>)
+  call void @cq_template_fadd_f64_unc(i32 %71, i32 %70, i32 %69)    ; IR: uncompute %69  [sum]
+  call void @cqrt_free(i32 %71)    ; IR: release the %69 rail (|0>)
+  call void @cq_template_fmul_f64_hl_unc(i32 %70, i32 %18, double %63)    ; IR: uncompute %69  [product]
+  call void @cqrt_free(i32 %70)    ; IR: release the %69 product rail (|0>)
+  call void @cq_template_fmul_f64_hl_unc(i32 %69, i32 %19, double %68)    ; IR: uncompute %68
+  call void @cqrt_free(i32 %69)    ; IR: release the %68 rail (|0>)
+  call void @cq_template_fmul_f64_hl_unc(i32 %67, i32 %66, double 0x7FF0000000000000)    ; IR: uncompute %66
+  call void @cqrt_free(i32 %67)    ; IR: release the %66 rail (|0>)
+  call void @cq_template_fadd_f64_unc(i32 %66, i32 %65, i32 %64)    ; IR: uncompute %65  [sum]
+  call void @cqrt_free(i32 %66)    ; IR: release the %65 rail (|0>)
+  call void @cq_template_fmul_f64_hl_unc(i32 %65, i32 %18, double %59)    ; IR: uncompute %65  [product]
+  call void @cqrt_free(i32 %65)    ; IR: release the %65 product rail (|0>)
+  call void @cq_template_fmul_f64_hl_unc(i32 %64, i32 %19, double %63)    ; IR: uncompute %64
+  call void @cqrt_free(i32 %64)    ; IR: release the %64 rail (|0>)
+  call void @cqrt_or_i1(i32 %54, i32 %56, i32 %57)    ; IR: uncompute %56  [self-inverse]
+  call void @cqrt_free(i32 %57)    ; IR: release the %56 rail (|0>)
+  call void @cq_template_fcmp_ueq_f64_hl_unc(i32 %56, i32 %55, double 0x7FF0000000000000)    ; IR: uncompute %55
+  call void @cqrt_free(i32 %56)    ; IR: release the %55 rail (|0>)
+  call void @cq_template_fabs_f64_unc(i32 %55, i32 %19)    ; IR: uncompute %54
+  call void @cqrt_free(i32 %55)    ; IR: release the %54 rail (|0>)
+  call void @cqrt_or_i1(i32 %53, i32 %52, i32 %54)    ; IR: uncompute %53  [self-inverse]
+  call void @cqrt_free(i32 %54)    ; IR: release the %53 rail (|0>)
+  call void @cqrt_free(i32 %53)    ; IR: release the seed rail (basis state)
+  call void @cq_template_fcmp_ueq_f64_hl_unc(i32 %52, i32 %51, double 0x7FF0000000000000)    ; IR: uncompute %52
+  call void @cqrt_free(i32 %52)    ; IR: release the %52 rail (|0>)
+  call void @cq_template_fabs_f64_unc(i32 %51, i32 %18)    ; IR: uncompute %51
+  call void @cqrt_free(i32 %51)    ; IR: release the %51 rail (|0>)
+  call void @cq_template_fmul_f64_hl_unc(i32 %45, i32 %43, double %1)    ; IR: uncompute %44
+  call void @cqrt_free(i32 %45)    ; IR: release the %44 rail (|0>)
+  call void @cq_template_fmul_f64_hl_unc(i32 %44, i32 %43, double %0)    ; IR: uncompute %43
+  call void @cqrt_free(i32 %44)    ; IR: release the %43 rail (|0>)
+  call void @cq_template_copysign_f64_lh_unc(i32 %43, double 0x7FF0000000000000, i32 %18)    ; IR: uncompute %42
+  call void @cqrt_free(i32 %43)    ; IR: release the %42 rail (|0>)
+  call void @cq_template_fcmp_oeq_f64_hl_unc(i32 %39, i32 %23, double 0.000000e+00)    ; IR: uncompute %36
+  call void @cqrt_free(i32 %39)    ; IR: release the %36 rail (|0>)
+  call void @cqrt_or_i1(i32 %36, i32 %37, i32 %38)    ; IR: uncompute %34  [self-inverse]
+  call void @cqrt_free(i32 %38)    ; IR: release the %34 rail (|0>)
+  call void @cq_template_fcmp_ord_f64_hl_unc(i32 %37, i32 %35, double 0.000000e+00)    ; IR: uncompute %33
+  call void @cqrt_free(i32 %37)    ; IR: release the %33 rail (|0>)
+  call void @cq_template_fcmp_ord_f64_hl_unc(i32 %36, i32 %29, double 0.000000e+00)    ; IR: uncompute %32
+  call void @cqrt_free(i32 %36)    ; IR: release the %32 rail (|0>)
+  call fastcc void @__cq_q_scalbn_11_unc(i32 %35, i32 %34, i32 %28)    ; IR: uncompute the result rail(s) of %31
+  call void @cqrt_free(i32 %35)    ; IR: release it (|0>)
+  call void @cq_template_fdiv_f64_unc(i32 %34, i32 %33, i32 %23)    ; IR: uncompute %30
+  call void @cqrt_free(i32 %34)    ; IR: release the %30 rail (|0>)
+  call void @cq_template_fadd_f64_unc(i32 %33, i32 %32, i32 %31)    ; IR: uncompute %29  [sum]
+  call void @cqrt_free(i32 %33)    ; IR: release the %29 rail (|0>)
+  call void @cq_template_fmul_f64_hl_unc(i32 %32, i32 %18, double %1)    ; IR: uncompute %29  [product]
+  call void @cqrt_free(i32 %32)    ; IR: release the %29 product rail (|0>)
+  call void @cq_template_fmul_f64_hl_unc(i32 %31, i32 %30, double %0)    ; IR: uncompute %28
+  call void @cqrt_free(i32 %31)    ; IR: release the %28 rail (|0>)
+  call void @cq_template_fneg_f64_unc(i32 %30, i32 %19)    ; IR: uncompute %27
+  call void @cqrt_free(i32 %30)    ; IR: release the %27 rail (|0>)
+  call fastcc void @__cq_q_scalbn_11_unc(i32 %29, i32 %27, i32 %28)    ; IR: uncompute the result rail(s) of %26
+  call void @cqrt_free(i32 %29)    ; IR: release it (|0>)
+  call void @cq_template_sub_i32_lh_unc(i32 %28, i32 0, i32 %20)    ; IR: uncompute %25
+  call void @cqrt_free(i32 %28)    ; IR: release the %25 rail (|0>)
+  call void @cq_template_fdiv_f64_unc(i32 %27, i32 %26, i32 %23)    ; IR: uncompute %24
+  call void @cqrt_free(i32 %27)    ; IR: release the %24 rail (|0>)
+  call void @cq_template_fadd_f64_unc(i32 %26, i32 %25, i32 %24)    ; IR: uncompute %23  [sum]
+  call void @cqrt_free(i32 %26)    ; IR: release the %23 rail (|0>)
+  call void @cq_template_fmul_f64_hl_unc(i32 %25, i32 %18, double %0)    ; IR: uncompute %23  [product]
+  call void @cqrt_free(i32 %25)    ; IR: release the %23 product rail (|0>)
+  call void @cq_template_fmul_f64_hl_unc(i32 %24, i32 %19, double %1)    ; IR: uncompute %22
+  call void @cqrt_free(i32 %24)    ; IR: release the %22 rail (|0>)
+  call void @cq_template_fadd_f64_unc(i32 %23, i32 %22, i32 %21)    ; IR: uncompute %21  [sum]
+  call void @cqrt_free(i32 %23)    ; IR: release the %21 rail (|0>)
+  call void @cq_template_fmul_f64_unc(i32 %22, i32 %18, i32 %18)    ; IR: uncompute %21  [product]
+  call void @cqrt_free(i32 %22)    ; IR: release the %21 product rail (|0>)
+  call void @cq_template_fmul_f64_unc(i32 %21, i32 %19, i32 %19)    ; IR: uncompute %20
+  call void @cqrt_free(i32 %21)    ; IR: release the %20 rail (|0>)
+  call void @cq_template_select_i32_lh_unc(i32 %20, i32 %13, i32 0, i32 %14)    ; IR: uncompute %19
+  call void @cqrt_free(i32 %20)    ; IR: release the %19 rail (|0>)
+  call void @cq_template_select_f64_unc(i32 %19, i32 %13, i32 %3, i32 %17)    ; IR: uncompute %18
+  call void @cqrt_free(i32 %19)    ; IR: release the %18 rail (|0>)
+  call void @cq_template_select_f64_unc(i32 %18, i32 %13, i32 %2, i32 %16)    ; IR: uncompute %17
+  call void @cqrt_free(i32 %18)    ; IR: release the %17 rail (|0>)
+  call fastcc void @__cq_q_scalbn_11_unc(i32 %17, i32 %3, i32 %15)    ; IR: uncompute the result rail(s) of %15
+  call void @cqrt_free(i32 %17)    ; IR: release it (|0>)
+  call fastcc void @__cq_q_scalbn_11_unc(i32 %16, i32 %2, i32 %15)    ; IR: uncompute the result rail(s) of %14
+  call void @cqrt_free(i32 %16)    ; IR: release it (|0>)
+  call void @cq_template_sub_i32_lh_unc(i32 %15, i32 0, i32 %14)    ; IR: uncompute %13
+  call void @cqrt_free(i32 %15)    ; IR: release the %13 rail (|0>)
+  call void @cq_template_fptosi_f64_to_i32_unc(i32 %14, i32 %10)    ; IR: uncompute %12
+  call void @cqrt_free(i32 %14)    ; IR: release the %12 rail (|0>)
+  call void @cq_template_fcmp_ueq_f64_hl_unc(i32 %13, i32 %12, double 0x7FF0000000000000)    ; IR: uncompute %10
+  call void @cqrt_free(i32 %13)    ; IR: release the %10 rail (|0>)
+  call void @cq_template_fabs_f64_unc(i32 %12, i32 %10)    ; IR: uncompute %9
+  call void @cqrt_free(i32 %12)    ; IR: release the %9 rail (|0>)
+  call fastcc void @__cq_q_logb_1_unc(i32 %10, i32 %11, i32 %7, i32 0, i32 %8)    ; IR: uncompute the result rail and the dropped flags rail of %8
+  call void @cqrt_free(i32 %10)    ; IR: release the result rail (|0>)
+  call void @cqrt_free(i32 %11)    ; IR: release the dropped flags rail (|0>)
+  call void @cqrt_free(i32 %8)    ; IR: release the empty incoming flags rail (never written, rule 7)
   call void @cq_template_fmax_f64_unc(i32 %7, i32 %5, i32 %6)    ; IR: uncompute %7
   call void @cqrt_free(i32 %7)    ; IR: release the %7 rail (|0>)
   call void @cq_template_fabs_f64_unc(i32 %6, i32 %3)    ; IR: uncompute %6
   call void @cqrt_free(i32 %6)    ; IR: release the %6 rail (|0>)
   call void @cq_template_fabs_f64_unc(i32 %5, i32 %2)    ; IR: uncompute %5
   call void @cqrt_free(i32 %5)    ; IR: release the %5 rail (|0>)
-  %110 = insertvalue { i32, i32 } poison, i32 %108, 0    ; IR: ret: field 0 (handle)
-  %111 = insertvalue { i32, i32 } %110, i32 %109, 1    ; IR: ret: field 1 (handle)
-  ret { i32, i32 } %111    ; IR: ret  (the aggregate carries handles)
+  %113 = insertvalue { i32, i32 } poison, i32 %111, 0    ; IR: ret: field 0 (handle)
+  %114 = insertvalue { i32, i32 } %113, i32 %112, 1    ; IR: ret: field 1 (handle)
+  ret { i32, i32 } %114    ; IR: ret  (the aggregate carries handles)
 }
 
-define internal fastcc i32 @__cq_q_logb_1(i32 %0) {
-  %2 = call i32 @cq_template_fabs_f64(i32 %0)    ; IR: %4 = fabs(x)
-  %3 = call i32 @cq_template_fcmp_ueq_f64_hl(i32 %2, double 0x7FF0000000000000)    ; IR: %5 = fcmp ueq %4, inf  (!isfinite(x))  [br %5 -> block %6]
-  %4 = call i32 @cq_template_fmul_f64(i32 %0, i32 %0)    ; IR: %7 = fmul x, x  (block %6: x * x)
-  %5 = call i32 @cq_template_fcmp_oeq_f64_hl(i32 %0, double 0.000000e+00)    ; IR: %9 = fcmp oeq x, 0  (block %8)  [br %9 -> block %10]
-  %6 = call i32 @cq_template_fmul_f64(i32 %0, i32 %0)    ; IR: %11 = fmul x, x  (block %10)
-  %7 = call i32 @cq_template_fdiv_f64_lh(double -1.000000e+00, i32 %6)    ; IR: %12 = fdiv -1.0, %11
-  %8 = call i32 @cq_template_bitcast_f64_to_i64(i32 %0)    ; IR: %14 = bitcast x to i64  (block %13: u.i)
-  %9 = call i32 @cq_template_lshr_i64_hl(i32 %8, i64 52)    ; IR: %15 = lshr %14, 52
-  %10 = call i32 @cq_template_trunc_i64_to_i32(i32 %9)    ; IR: %16 = trunc nuw nsw %15 to i32
-  %11 = call i32 @cq_template_and_i32_hl(i32 %10, i32 2047)    ; IR: %17 = and %16, 2047  (e)
-  %12 = call i32 @cq_template_icmp_eq_i32_hl(i32 %11, i32 0)    ; IR: S0 = switch %17: case 0 -> block %18  (rule 13: one equality flag per reachable case)
-  %13 = call i32 @cq_template_icmp_eq_i32_hl(i32 %11, i32 2047)    ; IR: S2047 = switch %17: case 2047 -> block %31; the default %36 is the complement
-  %14 = call i32 @cq_template_shl_i64_hl(i32 %8, i64 12)    ; IR: %19 = shl %14, 12  (block %18: i <<= 12)
-  %15 = call i32 @cq_template_icmp_eq_i64_hl(i32 %14, i64 0)    ; IR: %20 = icmp eq %19, 0  [br %20 -> block %23 (FP_ILOGB0), else block %21]
-  call void @cqrt_not_i1(i32 %15)    ; IR: bracket: a0 reads NOT %15
-  %16 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: a0 = predicate of block %21 (the loop sits in this arm): S0 & !%20  [chain seed a_0]  [fresh flag rail]
-  call void @cqrt_and_i1(i32 %12, i32 %15, i32 %16)    ; IR: a0 = predicate of block %21 (the loop sits in this arm): S0 & !%20  [chain seed a_0]
-  call void @cqrt_not_i1(i32 %15)    ; IR: bracket (close): a0 reads NOT %15
-  %17 = call i32 @cq_template_icmp_sgt_i64_hl(i32 %14, i64 -1)    ; IR: %22 = icmp sgt %19, -1  (pre-header guard = trip 0 of the latch test)  [K]
-  %18 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: a1 = trip 1 predicate a_1 = a_0 & cond_1  [K]  [fresh flag rail]
-  call void @cqrt_and_i1(i32 %16, i32 %17, i32 %18)    ; IR: a1 = trip 1 predicate a_1 = a_0 & cond_1  [K]
-  %19 = add nsw i32 -1023, -1    ; IR: %28 = add nsw %26, -1  (trip 1: e--)  (classical)
-  %20 = call i32 @cq_template_shl_i64_hl(i32 %14, i64 1)    ; IR: %29 = shl nuw %27, 1  (trip 1: i <<= 1)
-  %21 = call i32 @cq_template_select_i32_ll(i32 %18, i32 %19, i32 -1023)    ; IR: %26 = phi i32 [ %28, %25 ], [ -1023, %21 ]: e after trip 1 = a_1 ? %28 : e
-  %22 = call i32 @cq_template_select_i64(i32 %18, i32 %20, i32 %14)    ; IR: %27 = phi i64 [ %29, %25 ], [ %19, %21 ]: i after trip 1 = a_1 ? %29 : i
-  %23 = call i32 @cq_template_icmp_sgt_i64_hl(i32 %22, i64 -1)    ; IR: %30 = icmp sgt %29, -1  (latch test, trip 2)  [K]
-  %24 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: a2 = trip 2 predicate a_2 = a_1 & cond_2  [K]  [fresh flag rail]
-  call void @cqrt_and_i1(i32 %18, i32 %23, i32 %24)    ; IR: a2 = trip 2 predicate a_2 = a_1 & cond_2  [K]
-  %25 = call i32 @cq_template_add_i32_hl(i32 %21, i32 -1)    ; IR: %28 = add nsw %26, -1  (trip 2: e--)
-  %26 = call i32 @cq_template_shl_i64_hl(i32 %22, i64 1)    ; IR: %29 = shl nuw %27, 1  (trip 2: i <<= 1)
-  %27 = call i32 @cq_template_select_i32(i32 %24, i32 %25, i32 %21)    ; IR: %26 = phi i32 [ %28, %25 ], [ -1023, %21 ]: e after trip 2 = a_2 ? %28 : e
-  %28 = call i32 @cq_template_select_i64(i32 %24, i32 %26, i32 %22)    ; IR: %27 = phi i64 [ %29, %25 ], [ %19, %21 ]: i after trip 2 = a_2 ? %29 : i
-  %29 = call i32 @cq_template_icmp_sgt_i64_hl(i32 %28, i64 -1)    ; IR: %30 = icmp sgt %29, -1  (latch test, trip 3)  [K]
-  %30 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: a3 = trip 3 predicate a_3 = a_2 & cond_3  [K]  [fresh flag rail]
-  call void @cqrt_and_i1(i32 %24, i32 %29, i32 %30)    ; IR: a3 = trip 3 predicate a_3 = a_2 & cond_3  [K]
-  %31 = call i32 @cq_template_add_i32_hl(i32 %27, i32 -1)    ; IR: %28 = add nsw %26, -1  (trip 3: e--)
-  %32 = call i32 @cq_template_shl_i64_hl(i32 %28, i64 1)    ; IR: %29 = shl nuw %27, 1  (trip 3: i <<= 1)
-  %33 = call i32 @cq_template_select_i32(i32 %30, i32 %31, i32 %27)    ; IR: %26 = phi i32 [ %28, %25 ], [ -1023, %21 ]: e after trip 3 = a_3 ? %28 : e
-  %34 = call i32 @cq_template_select_i64(i32 %30, i32 %32, i32 %28)    ; IR: %27 = phi i64 [ %29, %25 ], [ %19, %21 ]: i after trip 3 = a_3 ? %29 : i
-  %35 = call i32 @cq_template_icmp_sgt_i64_hl(i32 %34, i64 -1)    ; IR: %30 = icmp sgt %29, -1  (latch test, trip 4)  [K]
-  %36 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: a4 = trip 4 predicate a_4 = a_3 & cond_4  [K]  [fresh flag rail]
-  call void @cqrt_and_i1(i32 %30, i32 %35, i32 %36)    ; IR: a4 = trip 4 predicate a_4 = a_3 & cond_4  [K]
-  %37 = call i32 @cq_template_add_i32_hl(i32 %33, i32 -1)    ; IR: %28 = add nsw %26, -1  (trip 4: e--)
-  %38 = call i32 @cq_template_shl_i64_hl(i32 %34, i64 1)    ; IR: %29 = shl nuw %27, 1  (trip 4: i <<= 1)
-  %39 = call i32 @cq_template_select_i32(i32 %36, i32 %37, i32 %33)    ; IR: %26 = phi i32 [ %28, %25 ], [ -1023, %21 ]: e after trip 4 = a_4 ? %28 : e
-  %40 = call i32 @cq_template_select_i64(i32 %36, i32 %38, i32 %34)    ; IR: %27 = phi i64 [ %29, %25 ], [ %19, %21 ]: i after trip 4 = a_4 ? %29 : i
-  %41 = call i32 @cq_template_icmp_sgt_i64_hl(i32 %40, i64 -1)    ; IR: %30 = icmp sgt %29, -1 after trip K: the exit test that would admit a (K+1)-th trip  [K]
-  %42 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: a_K = a_4 & that test  [output rail, kept, rule 14]  [fresh flag rail]
-  call void @cqrt_and_i1(i32 %36, i32 %41, i32 %42)    ; IR: br i1 %30 taken once more (rule 14)
-  call void @cq_template_icmp_sgt_i64_hl_unc(i32 %41, i32 %40, i64 -1)    ; IR: uncompute that test
-  call void @cqrt_free(i32 %41)    ; IR: release it (|0>)
-  %43 = call i32 @cq_template_and_i64_hl(i32 %8, i64 4503599627370495)    ; IR: %33 = and %14, 0xfffffffffffff  (block %31: the mantissa)
-  %44 = call i32 @cq_template_icmp_eq_i64_hl(i32 %43, i64 0)    ; IR: %34 = icmp eq %33, 0
-  %45 = call i32 @cq_template_select_i32_ll(i32 %44, i32 2147483647, i32 -2147483648)    ; IR: %35 = select %34, INT_MAX, FP_ILOGBNAN
-  %46 = call i32 @cq_template_add_i32_hl(i32 %11, i32 -1023)    ; IR: %37 = add nsw %17, -1023  (block %36: e - 0x3ff)
-  %47 = call i32 @cq_template_select_i32_lh(i32 %15, i32 -2147483648, i32 %39)    ; IR: %39 = phi i32 [ %35, %31 ], [ %37, %36 ], [ FP_ILOGB0, %23 ], [ -1023, %21 ], [ %28, %25 ]: the case-0 subtree on %20 (the %21 and %25 incomings are e after the chain)
-  %48 = call i32 @cq_template_select_i32(i32 %13, i32 %45, i32 %46)    ; IR: %39 = phi i32: the case-2047 arm against the default %36
-  %49 = call i32 @cq_template_select_i32(i32 %12, i32 %47, i32 %48)    ; IR: %39 = phi i32: the case-0 subtree against the rest
-  %50 = call i32 @cq_template_sitofp_i32_to_f64(i32 %49)    ; IR: %40 = sitofp %39 to double
-  %51 = call i32 @cq_template_select_f64(i32 %5, i32 %7, i32 %50)    ; IR: %42 = phi double [ %12, %10 ], [ %40, %38 ], [ %7, %6 ]: the %8 subtree on %9
-  %52 = call i32 @cq_template_select_f64(i32 %3, i32 %4, i32 %51)    ; IR: %42 = phi double: the top split on %5
-  %53 = call i32 @cqrt_alloc_f64(double 0.000000e+00)    ; IR: ret  [result rail: logb(x)]
-  call void @cqrt_copy_f64(i32 %52, i32 %53)    ; IR: copy logb(x) out
-  call void @cq_template_select_f64_unc(i32 %52, i32 %3, i32 %4, i32 %51)    ; IR: uncompute %42
-  call void @cqrt_free(i32 %52)    ; IR: release the %42 rail (|0>)
-  call void @cq_template_select_f64_unc(i32 %51, i32 %5, i32 %7, i32 %50)    ; IR: uncompute %42
-  call void @cqrt_free(i32 %51)    ; IR: release the %42 rail (|0>)
-  call void @cq_template_sitofp_i32_to_f64_unc(i32 %50, i32 %49)    ; IR: uncompute %40
-  call void @cqrt_free(i32 %50)    ; IR: release the %40 rail (|0>)
-  call void @cq_template_select_i32_unc(i32 %49, i32 %12, i32 %47, i32 %48)    ; IR: uncompute %39
-  call void @cqrt_free(i32 %49)    ; IR: release the %39 rail (|0>)
-  call void @cq_template_select_i32_unc(i32 %48, i32 %13, i32 %45, i32 %46)    ; IR: uncompute %39
-  call void @cqrt_free(i32 %48)    ; IR: release the %39 rail (|0>)
-  call void @cq_template_select_i32_lh_unc(i32 %47, i32 %15, i32 -2147483648, i32 %39)    ; IR: uncompute %39
-  call void @cqrt_free(i32 %47)    ; IR: release the %39 rail (|0>)
-  call void @cq_template_add_i32_hl_unc(i32 %46, i32 %11, i32 -1023)    ; IR: uncompute %37
-  call void @cqrt_free(i32 %46)    ; IR: release the %37 rail (|0>)
-  call void @cq_template_select_i32_ll_unc(i32 %45, i32 %44, i32 2147483647, i32 -2147483648)    ; IR: uncompute %35
-  call void @cqrt_free(i32 %45)    ; IR: release the %35 rail (|0>)
-  call void @cq_template_icmp_eq_i64_hl_unc(i32 %44, i32 %43, i64 0)    ; IR: uncompute %34
-  call void @cqrt_free(i32 %44)    ; IR: release the %34 rail (|0>)
-  call void @cq_template_and_i64_hl_unc(i32 %43, i32 %8, i64 4503599627370495)    ; IR: uncompute %33
-  call void @cqrt_free(i32 %43)    ; IR: release the %33 rail (|0>)
-  call void @cq_template_select_i64_unc(i32 %40, i32 %36, i32 %38, i32 %34)    ; IR: uncompute %27
-  call void @cqrt_free(i32 %40)    ; IR: release the %27 rail (|0>)
-  call void @cq_template_select_i32_unc(i32 %39, i32 %36, i32 %37, i32 %33)    ; IR: uncompute %26
-  call void @cqrt_free(i32 %39)    ; IR: release the %26 rail (|0>)
-  call void @cq_template_shl_i64_hl_unc(i32 %38, i32 %34, i64 1)    ; IR: uncompute %29
-  call void @cqrt_free(i32 %38)    ; IR: release the %29 rail (|0>)
-  call void @cq_template_add_i32_hl_unc(i32 %37, i32 %33, i32 -1)    ; IR: uncompute %28
-  call void @cqrt_free(i32 %37)    ; IR: release the %28 rail (|0>)
-  call void @cqrt_and_i1(i32 %30, i32 %35, i32 %36)    ; IR: uncompute a4 (trip K's own predicate; a_K is a separate rail)  [self-inverse]
-  call void @cqrt_free(i32 %36)    ; IR: release the a4 rail (|0>)
-  call void @cq_template_icmp_sgt_i64_hl_unc(i32 %35, i32 %34, i64 -1)    ; IR: uncompute %30
-  call void @cqrt_free(i32 %35)    ; IR: release the %30 rail (|0>)
-  call void @cq_template_select_i64_unc(i32 %34, i32 %30, i32 %32, i32 %28)    ; IR: uncompute %27
-  call void @cqrt_free(i32 %34)    ; IR: release the %27 rail (|0>)
-  call void @cq_template_select_i32_unc(i32 %33, i32 %30, i32 %31, i32 %27)    ; IR: uncompute %26
-  call void @cqrt_free(i32 %33)    ; IR: release the %26 rail (|0>)
-  call void @cq_template_shl_i64_hl_unc(i32 %32, i32 %28, i64 1)    ; IR: uncompute %29
-  call void @cqrt_free(i32 %32)    ; IR: release the %29 rail (|0>)
-  call void @cq_template_add_i32_hl_unc(i32 %31, i32 %27, i32 -1)    ; IR: uncompute %28
-  call void @cqrt_free(i32 %31)    ; IR: release the %28 rail (|0>)
-  call void @cqrt_and_i1(i32 %24, i32 %29, i32 %30)    ; IR: uncompute a3  [self-inverse]
-  call void @cqrt_free(i32 %30)    ; IR: release the a3 rail (|0>)
-  call void @cq_template_icmp_sgt_i64_hl_unc(i32 %29, i32 %28, i64 -1)    ; IR: uncompute %30
-  call void @cqrt_free(i32 %29)    ; IR: release the %30 rail (|0>)
-  call void @cq_template_select_i64_unc(i32 %28, i32 %24, i32 %26, i32 %22)    ; IR: uncompute %27
-  call void @cqrt_free(i32 %28)    ; IR: release the %27 rail (|0>)
-  call void @cq_template_select_i32_unc(i32 %27, i32 %24, i32 %25, i32 %21)    ; IR: uncompute %26
-  call void @cqrt_free(i32 %27)    ; IR: release the %26 rail (|0>)
-  call void @cq_template_shl_i64_hl_unc(i32 %26, i32 %22, i64 1)    ; IR: uncompute %29
-  call void @cqrt_free(i32 %26)    ; IR: release the %29 rail (|0>)
-  call void @cq_template_add_i32_hl_unc(i32 %25, i32 %21, i32 -1)    ; IR: uncompute %28
-  call void @cqrt_free(i32 %25)    ; IR: release the %28 rail (|0>)
-  call void @cqrt_and_i1(i32 %18, i32 %23, i32 %24)    ; IR: uncompute a2  [self-inverse]
-  call void @cqrt_free(i32 %24)    ; IR: release the a2 rail (|0>)
-  call void @cq_template_icmp_sgt_i64_hl_unc(i32 %23, i32 %22, i64 -1)    ; IR: uncompute %30
-  call void @cqrt_free(i32 %23)    ; IR: release the %30 rail (|0>)
-  call void @cq_template_select_i64_unc(i32 %22, i32 %18, i32 %20, i32 %14)    ; IR: uncompute %27
-  call void @cqrt_free(i32 %22)    ; IR: release the %27 rail (|0>)
-  call void @cq_template_select_i32_ll_unc(i32 %21, i32 %18, i32 %19, i32 -1023)    ; IR: uncompute %26
-  call void @cqrt_free(i32 %21)    ; IR: release the %26 rail (|0>)
-  call void @cq_template_shl_i64_hl_unc(i32 %20, i32 %14, i64 1)    ; IR: uncompute %29
-  call void @cqrt_free(i32 %20)    ; IR: release the %29 rail (|0>)
-  call void @cqrt_and_i1(i32 %16, i32 %17, i32 %18)    ; IR: uncompute a1  [self-inverse]
-  call void @cqrt_free(i32 %18)    ; IR: release the a1 rail (|0>)
-  call void @cq_template_icmp_sgt_i64_hl_unc(i32 %17, i32 %14, i64 -1)    ; IR: uncompute %22
-  call void @cqrt_free(i32 %17)    ; IR: release the %22 rail (|0>)
-  call void @cqrt_not_i1(i32 %15)    ; IR: bracket: a0 reads NOT %15
-  call void @cqrt_and_i1(i32 %12, i32 %15, i32 %16)    ; IR: uncompute a0  [self-inverse]
-  call void @cqrt_free(i32 %16)    ; IR: release the a0 rail (|0>)
-  call void @cqrt_not_i1(i32 %15)    ; IR: bracket (close): a0 reads NOT %15
-  call void @cq_template_icmp_eq_i64_hl_unc(i32 %15, i32 %14, i64 0)    ; IR: uncompute %20
-  call void @cqrt_free(i32 %15)    ; IR: release the %20 rail (|0>)
-  call void @cq_template_shl_i64_hl_unc(i32 %14, i32 %8, i64 12)    ; IR: uncompute %19
-  call void @cqrt_free(i32 %14)    ; IR: release the %19 rail (|0>)
-  call void @cq_template_icmp_eq_i32_hl_unc(i32 %13, i32 %11, i32 2047)    ; IR: uncompute S2047
-  call void @cqrt_free(i32 %13)    ; IR: release the S2047 rail (|0>)
-  call void @cq_template_icmp_eq_i32_hl_unc(i32 %12, i32 %11, i32 0)    ; IR: uncompute S0
-  call void @cqrt_free(i32 %12)    ; IR: release the S0 rail (|0>)
-  call void @cq_template_and_i32_hl_unc(i32 %11, i32 %10, i32 2047)    ; IR: uncompute %17
-  call void @cqrt_free(i32 %11)    ; IR: release the %17 rail (|0>)
-  call void @cq_template_trunc_i64_to_i32_unc(i32 %10, i32 %9)    ; IR: uncompute %16
-  call void @cqrt_free(i32 %10)    ; IR: release the %16 rail (|0>)
-  call void @cq_template_lshr_i64_hl_unc(i32 %9, i32 %8, i64 52)    ; IR: uncompute %15
-  call void @cqrt_free(i32 %9)    ; IR: release the %15 rail (|0>)
-  call void @cq_template_bitcast_f64_to_i64_unc(i32 %8, i32 %0)    ; IR: uncompute %14
-  call void @cqrt_free(i32 %8)    ; IR: release the %14 rail (|0>)
-  call void @cq_template_fdiv_f64_lh_unc(i32 %7, double -1.000000e+00, i32 %6)    ; IR: uncompute %12
-  call void @cqrt_free(i32 %7)    ; IR: release the %12 rail (|0>)
-  call void @cq_template_fmul_f64_unc(i32 %6, i32 %0, i32 %0)    ; IR: uncompute %11
-  call void @cqrt_free(i32 %6)    ; IR: release the %11 rail (|0>)
-  call void @cq_template_fcmp_oeq_f64_hl_unc(i32 %5, i32 %0, double 0.000000e+00)    ; IR: uncompute %9
-  call void @cqrt_free(i32 %5)    ; IR: release the %9 rail (|0>)
-  call void @cq_template_fmul_f64_unc(i32 %4, i32 %0, i32 %0)    ; IR: uncompute %7
-  call void @cqrt_free(i32 %4)    ; IR: release the %7 rail (|0>)
-  call void @cq_template_fcmp_ueq_f64_hl_unc(i32 %3, i32 %2, double 0x7FF0000000000000)    ; IR: uncompute %5
-  call void @cqrt_free(i32 %3)    ; IR: release the %5 rail (|0>)
-  call void @cq_template_fabs_f64_unc(i32 %2, i32 %0)    ; IR: uncompute %4
-  call void @cqrt_free(i32 %2)    ; IR: release the %4 rail (|0>)
-  ret i32 %53    ; IR: ret  (the result handle)
-}
-
-define internal fastcc void @__cq_q_logb_1_unc(i32 %0, i32 %1) {
-  %3 = call i32 @cq_template_fabs_f64(i32 %1)    ; IR: %4 = fabs(x)
-  %4 = call i32 @cq_template_fcmp_ueq_f64_hl(i32 %3, double 0x7FF0000000000000)    ; IR: %5 = fcmp ueq %4, inf  (!isfinite(x))  [br %5 -> block %6]
-  %5 = call i32 @cq_template_fmul_f64(i32 %1, i32 %1)    ; IR: %7 = fmul x, x  (block %6: x * x)
-  %6 = call i32 @cq_template_fcmp_oeq_f64_hl(i32 %1, double 0.000000e+00)    ; IR: %9 = fcmp oeq x, 0  (block %8)  [br %9 -> block %10]
-  %7 = call i32 @cq_template_fmul_f64(i32 %1, i32 %1)    ; IR: %11 = fmul x, x  (block %10)
-  %8 = call i32 @cq_template_fdiv_f64_lh(double -1.000000e+00, i32 %7)    ; IR: %12 = fdiv -1.0, %11
-  %9 = call i32 @cq_template_bitcast_f64_to_i64(i32 %1)    ; IR: %14 = bitcast x to i64  (block %13: u.i)
-  %10 = call i32 @cq_template_lshr_i64_hl(i32 %9, i64 52)    ; IR: %15 = lshr %14, 52
-  %11 = call i32 @cq_template_trunc_i64_to_i32(i32 %10)    ; IR: %16 = trunc nuw nsw %15 to i32
-  %12 = call i32 @cq_template_and_i32_hl(i32 %11, i32 2047)    ; IR: %17 = and %16, 2047  (e)
-  %13 = call i32 @cq_template_icmp_eq_i32_hl(i32 %12, i32 0)    ; IR: S0 = switch %17: case 0 -> block %18  (rule 13: one equality flag per reachable case)
-  %14 = call i32 @cq_template_icmp_eq_i32_hl(i32 %12, i32 2047)    ; IR: S2047 = switch %17: case 2047 -> block %31; the default %36 is the complement
-  %15 = call i32 @cq_template_shl_i64_hl(i32 %9, i64 12)    ; IR: %19 = shl %14, 12  (block %18: i <<= 12)
-  %16 = call i32 @cq_template_icmp_eq_i64_hl(i32 %15, i64 0)    ; IR: %20 = icmp eq %19, 0  [br %20 -> block %23 (FP_ILOGB0), else block %21]
-  call void @cqrt_not_i1(i32 %16)    ; IR: bracket: a0 reads NOT %16
-  %17 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: a0 = predicate of block %21 (the loop sits in this arm): S0 & !%20  [chain seed a_0]  [fresh flag rail]
-  call void @cqrt_and_i1(i32 %13, i32 %16, i32 %17)    ; IR: a0 = predicate of block %21 (the loop sits in this arm): S0 & !%20  [chain seed a_0]
-  call void @cqrt_not_i1(i32 %16)    ; IR: bracket (close): a0 reads NOT %16
-  %18 = call i32 @cq_template_icmp_sgt_i64_hl(i32 %15, i64 -1)    ; IR: %22 = icmp sgt %19, -1  (pre-header guard = trip 0 of the latch test)  [K]
+define internal fastcc { i32, i32 } @__cq_q_ilogb_1(i32 %0, i32 %1, i32 %2) {
+  %4 = call i32 @cq_template_bitcast_f64_to_i64(i32 %0)    ; IR: %4 = bitcast x to i64  (u.i)
+  %5 = call i32 @cq_template_lshr_i64_hl(i32 %4, i64 52)    ; IR: %5 = lshr %4, 52
+  %6 = call i32 @cq_template_trunc_i64_to_i32(i32 %5)    ; IR: %6 = trunc nuw nsw %5 to i32
+  %7 = call i32 @cq_template_and_i32_hl(i32 %6, i32 2047)    ; IR: %7 = and %6, 2047  (e)
+  %8 = call i32 @cq_template_icmp_eq_i32_hl(i32 %7, i32 0)    ; IR: S0 = switch %7: case 0 -> block %8  (rule 13: one equality flag per reachable case)
+  %9 = call i32 @cq_template_icmp_eq_i32_hl(i32 %7, i32 2047)    ; IR: S2047 = switch %7: case 2047 -> block %22; the default %28 is the complement
+  %10 = call i32 @cq_template_shl_i64_hl(i32 %4, i64 12)    ; IR: %9 = shl %4, 12  (block %8: i <<= 12)
+  %11 = call i32 @cq_template_icmp_eq_i64_hl(i32 %10, i64 0)    ; IR: %10 = icmp eq %9, 0  [br %10 -> block %13 (FP_ILOGB0), else block %11]
+  %12 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: predicate of block %13 = S0 & %10  (FORCE_EVAL(0/0.0f): constrained sitofp(0) = 0.0f and fdiv(0.0f, 0.0f), two literals)  [fresh flag rail]
+  call void @cqrt_and_i1(i32 %8, i32 %11, i32 %12)    ; IR: predicate of block %13 = S0 & %10  (FORCE_EVAL(0/0.0f): constrained sitofp(0) = 0.0f and fdiv(0.0f, 0.0f), two literals)
+  %13 = call i32 @cq_template_select_i32_ll(i32 %12, i32 1, i32 0)    ; IR: %15 = constrained.fdiv(0.0f, 0.0f, round.dynamic, strict): its exception bits, INVALID (FE_INVALID = 1) where block %13 runs; the NaN quotient is stored volatile to a dead local: no gate (rule 24); the mode is not read (a NaN in every mode)
+  %14 = call i32 @cq_template_or_i32(i32 %2, i32 %13)    ; IR: flags after block %13 = the caller's flags | %15's exception bits  [flags rail]
+  %15 = call i32 @cq_template_select_i32_ll(i32 %9, i32 1, i32 0)    ; IR: %24 = constrained.fdiv(0.0f, 0.0f, round.dynamic, strict) in block %22: INVALID where the case-2047 arm runs (its predicate is S2047 itself)
+  %16 = call i32 @cq_template_or_i32(i32 %14, i32 %15)    ; IR: flags after block %22 = flags | %24's exception bits  [flags' rail: the returned fenv state]
+  %17 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: a0 = predicate of block %11 (the loop sits in this arm): S0 & !%10  [chain seed a_0]  [fresh flag rail]
+  call void @cqrt_not_i1(i32 %11)    ; IR: bracket: the conjunct is NOT %11
+  call void @cqrt_and_i1(i32 %8, i32 %11, i32 %17)    ; IR: a0 = predicate of block %11 (the loop sits in this arm): S0 & !%10  [chain seed a_0]
+  call void @cqrt_not_i1(i32 %11)    ; IR: bracket (close)
+  %18 = call i32 @cq_template_icmp_sgt_i64_hl(i32 %10, i64 -1)    ; IR: %12 = icmp sgt %9, -1  (pre-header guard = trip 0 of the latch test)  [K]
   %19 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: a1 = trip 1 predicate a_1 = a_0 & cond_1  [K]  [fresh flag rail]
   call void @cqrt_and_i1(i32 %17, i32 %18, i32 %19)    ; IR: a1 = trip 1 predicate a_1 = a_0 & cond_1  [K]
-  %20 = add nsw i32 -1023, -1    ; IR: %28 = add nsw %26, -1  (trip 1: e--)  (classical)
-  %21 = call i32 @cq_template_shl_i64_hl(i32 %15, i64 1)    ; IR: %29 = shl nuw %27, 1  (trip 1: i <<= 1)
-  %22 = call i32 @cq_template_select_i32_ll(i32 %19, i32 %20, i32 -1023)    ; IR: %26 = phi i32 [ %28, %25 ], [ -1023, %21 ]: e after trip 1 = a_1 ? %28 : e
-  %23 = call i32 @cq_template_select_i64(i32 %19, i32 %21, i32 %15)    ; IR: %27 = phi i64 [ %29, %25 ], [ %19, %21 ]: i after trip 1 = a_1 ? %29 : i
-  %24 = call i32 @cq_template_icmp_sgt_i64_hl(i32 %23, i64 -1)    ; IR: %30 = icmp sgt %29, -1  (latch test, trip 2)  [K]
+  %20 = add nsw i32 -1023, -1    ; IR: %19 = add nsw %17, -1  (trip 1: e--)  (classical)
+  %21 = call i32 @cq_template_shl_i64_hl(i32 %10, i64 1)    ; IR: %20 = shl nuw %18, 1  (trip 1: i <<= 1)
+  %22 = call i32 @cq_template_select_i32_ll(i32 %19, i32 %20, i32 -1023)    ; IR: %17 = phi i32 [ %19, %16 ], [ -1023, %11 ]: e after trip 1 = a_1 ? %19 : e
+  %23 = call i32 @cq_template_select_i64(i32 %19, i32 %21, i32 %10)    ; IR: %18 = phi i64 [ %20, %16 ], [ %9, %11 ]: i after trip 1 = a_1 ? %20 : i
+  %24 = call i32 @cq_template_icmp_sgt_i64_hl(i32 %23, i64 -1)    ; IR: %21 = icmp sgt %20, -1  (latch test, trip 2)  [K]
   %25 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: a2 = trip 2 predicate a_2 = a_1 & cond_2  [K]  [fresh flag rail]
   call void @cqrt_and_i1(i32 %19, i32 %24, i32 %25)    ; IR: a2 = trip 2 predicate a_2 = a_1 & cond_2  [K]
-  %26 = call i32 @cq_template_add_i32_hl(i32 %22, i32 -1)    ; IR: %28 = add nsw %26, -1  (trip 2: e--)
-  %27 = call i32 @cq_template_shl_i64_hl(i32 %23, i64 1)    ; IR: %29 = shl nuw %27, 1  (trip 2: i <<= 1)
-  %28 = call i32 @cq_template_select_i32(i32 %25, i32 %26, i32 %22)    ; IR: %26 = phi i32 [ %28, %25 ], [ -1023, %21 ]: e after trip 2 = a_2 ? %28 : e
-  %29 = call i32 @cq_template_select_i64(i32 %25, i32 %27, i32 %23)    ; IR: %27 = phi i64 [ %29, %25 ], [ %19, %21 ]: i after trip 2 = a_2 ? %29 : i
-  %30 = call i32 @cq_template_icmp_sgt_i64_hl(i32 %29, i64 -1)    ; IR: %30 = icmp sgt %29, -1  (latch test, trip 3)  [K]
+  %26 = call i32 @cq_template_add_i32_hl(i32 %22, i32 -1)    ; IR: %19 = add nsw %17, -1  (trip 2: e--)
+  %27 = call i32 @cq_template_shl_i64_hl(i32 %23, i64 1)    ; IR: %20 = shl nuw %18, 1  (trip 2: i <<= 1)
+  %28 = call i32 @cq_template_select_i32(i32 %25, i32 %26, i32 %22)    ; IR: %17 = phi i32 [ %19, %16 ], [ -1023, %11 ]: e after trip 2 = a_2 ? %19 : e
+  %29 = call i32 @cq_template_select_i64(i32 %25, i32 %27, i32 %23)    ; IR: %18 = phi i64 [ %20, %16 ], [ %9, %11 ]: i after trip 2 = a_2 ? %20 : i
+  %30 = call i32 @cq_template_icmp_sgt_i64_hl(i32 %29, i64 -1)    ; IR: %21 = icmp sgt %20, -1  (latch test, trip 3)  [K]
   %31 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: a3 = trip 3 predicate a_3 = a_2 & cond_3  [K]  [fresh flag rail]
   call void @cqrt_and_i1(i32 %25, i32 %30, i32 %31)    ; IR: a3 = trip 3 predicate a_3 = a_2 & cond_3  [K]
-  %32 = call i32 @cq_template_add_i32_hl(i32 %28, i32 -1)    ; IR: %28 = add nsw %26, -1  (trip 3: e--)
-  %33 = call i32 @cq_template_shl_i64_hl(i32 %29, i64 1)    ; IR: %29 = shl nuw %27, 1  (trip 3: i <<= 1)
-  %34 = call i32 @cq_template_select_i32(i32 %31, i32 %32, i32 %28)    ; IR: %26 = phi i32 [ %28, %25 ], [ -1023, %21 ]: e after trip 3 = a_3 ? %28 : e
-  %35 = call i32 @cq_template_select_i64(i32 %31, i32 %33, i32 %29)    ; IR: %27 = phi i64 [ %29, %25 ], [ %19, %21 ]: i after trip 3 = a_3 ? %29 : i
-  %36 = call i32 @cq_template_icmp_sgt_i64_hl(i32 %35, i64 -1)    ; IR: %30 = icmp sgt %29, -1  (latch test, trip 4)  [K]
+  %32 = call i32 @cq_template_add_i32_hl(i32 %28, i32 -1)    ; IR: %19 = add nsw %17, -1  (trip 3: e--)
+  %33 = call i32 @cq_template_shl_i64_hl(i32 %29, i64 1)    ; IR: %20 = shl nuw %18, 1  (trip 3: i <<= 1)
+  %34 = call i32 @cq_template_select_i32(i32 %31, i32 %32, i32 %28)    ; IR: %17 = phi i32 [ %19, %16 ], [ -1023, %11 ]: e after trip 3 = a_3 ? %19 : e
+  %35 = call i32 @cq_template_select_i64(i32 %31, i32 %33, i32 %29)    ; IR: %18 = phi i64 [ %20, %16 ], [ %9, %11 ]: i after trip 3 = a_3 ? %20 : i
+  %36 = call i32 @cq_template_icmp_sgt_i64_hl(i32 %35, i64 -1)    ; IR: %21 = icmp sgt %20, -1  (latch test, trip 4)  [K]
   %37 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: a4 = trip 4 predicate a_4 = a_3 & cond_4  [K]  [fresh flag rail]
   call void @cqrt_and_i1(i32 %31, i32 %36, i32 %37)    ; IR: a4 = trip 4 predicate a_4 = a_3 & cond_4  [K]
-  %38 = call i32 @cq_template_add_i32_hl(i32 %34, i32 -1)    ; IR: %28 = add nsw %26, -1  (trip 4: e--)
-  %39 = call i32 @cq_template_shl_i64_hl(i32 %35, i64 1)    ; IR: %29 = shl nuw %27, 1  (trip 4: i <<= 1)
-  %40 = call i32 @cq_template_select_i32(i32 %37, i32 %38, i32 %34)    ; IR: %26 = phi i32 [ %28, %25 ], [ -1023, %21 ]: e after trip 4 = a_4 ? %28 : e
-  %41 = call i32 @cq_template_select_i64(i32 %37, i32 %39, i32 %35)    ; IR: %27 = phi i64 [ %29, %25 ], [ %19, %21 ]: i after trip 4 = a_4 ? %29 : i
-  %42 = call i32 @cq_template_and_i64_hl(i32 %9, i64 4503599627370495)    ; IR: %33 = and %14, 0xfffffffffffff  (block %31: the mantissa)
-  %43 = call i32 @cq_template_icmp_eq_i64_hl(i32 %42, i64 0)    ; IR: %34 = icmp eq %33, 0
-  %44 = call i32 @cq_template_select_i32_ll(i32 %43, i32 2147483647, i32 -2147483648)    ; IR: %35 = select %34, INT_MAX, FP_ILOGBNAN
-  %45 = call i32 @cq_template_add_i32_hl(i32 %12, i32 -1023)    ; IR: %37 = add nsw %17, -1023  (block %36: e - 0x3ff)
-  %46 = call i32 @cq_template_select_i32_lh(i32 %16, i32 -2147483648, i32 %40)    ; IR: %39 = phi i32 [ %35, %31 ], [ %37, %36 ], [ FP_ILOGB0, %23 ], [ -1023, %21 ], [ %28, %25 ]: the case-0 subtree on %20 (the %21 and %25 incomings are e after the chain)
-  %47 = call i32 @cq_template_select_i32(i32 %14, i32 %44, i32 %45)    ; IR: %39 = phi i32: the case-2047 arm against the default %36
-  %48 = call i32 @cq_template_select_i32(i32 %13, i32 %46, i32 %47)    ; IR: %39 = phi i32: the case-0 subtree against the rest
-  %49 = call i32 @cq_template_sitofp_i32_to_f64(i32 %48)    ; IR: %40 = sitofp %39 to double
-  %50 = call i32 @cq_template_select_f64(i32 %6, i32 %8, i32 %49)    ; IR: %42 = phi double [ %12, %10 ], [ %40, %38 ], [ %7, %6 ]: the %8 subtree on %9
-  %51 = call i32 @cq_template_select_f64(i32 %4, i32 %5, i32 %50)    ; IR: %42 = phi double: the top split on %5
-  call void @cqrt_copy_f64(i32 %51, i32 %0)    ; IR: xor logb(x) out of the result rail
-  call void @cq_template_select_f64_unc(i32 %51, i32 %4, i32 %5, i32 %50)    ; IR: uncompute %42
-  call void @cqrt_free(i32 %51)    ; IR: release the %42 rail (|0>)
-  call void @cq_template_select_f64_unc(i32 %50, i32 %6, i32 %8, i32 %49)    ; IR: uncompute %42
-  call void @cqrt_free(i32 %50)    ; IR: release the %42 rail (|0>)
-  call void @cq_template_sitofp_i32_to_f64_unc(i32 %49, i32 %48)    ; IR: uncompute %40
-  call void @cqrt_free(i32 %49)    ; IR: release the %40 rail (|0>)
-  call void @cq_template_select_i32_unc(i32 %48, i32 %13, i32 %46, i32 %47)    ; IR: uncompute %39
-  call void @cqrt_free(i32 %48)    ; IR: release the %39 rail (|0>)
-  call void @cq_template_select_i32_unc(i32 %47, i32 %14, i32 %44, i32 %45)    ; IR: uncompute %39
-  call void @cqrt_free(i32 %47)    ; IR: release the %39 rail (|0>)
-  call void @cq_template_select_i32_lh_unc(i32 %46, i32 %16, i32 -2147483648, i32 %40)    ; IR: uncompute %39
-  call void @cqrt_free(i32 %46)    ; IR: release the %39 rail (|0>)
-  call void @cq_template_add_i32_hl_unc(i32 %45, i32 %12, i32 -1023)    ; IR: uncompute %37
-  call void @cqrt_free(i32 %45)    ; IR: release the %37 rail (|0>)
-  call void @cq_template_select_i32_ll_unc(i32 %44, i32 %43, i32 2147483647, i32 -2147483648)    ; IR: uncompute %35
-  call void @cqrt_free(i32 %44)    ; IR: release the %35 rail (|0>)
-  call void @cq_template_icmp_eq_i64_hl_unc(i32 %43, i32 %42, i64 0)    ; IR: uncompute %34
-  call void @cqrt_free(i32 %43)    ; IR: release the %34 rail (|0>)
-  call void @cq_template_and_i64_hl_unc(i32 %42, i32 %9, i64 4503599627370495)    ; IR: uncompute %33
-  call void @cqrt_free(i32 %42)    ; IR: release the %33 rail (|0>)
-  call void @cq_template_select_i64_unc(i32 %41, i32 %37, i32 %39, i32 %35)    ; IR: uncompute %27
-  call void @cqrt_free(i32 %41)    ; IR: release the %27 rail (|0>)
-  call void @cq_template_select_i32_unc(i32 %40, i32 %37, i32 %38, i32 %34)    ; IR: uncompute %26
-  call void @cqrt_free(i32 %40)    ; IR: release the %26 rail (|0>)
-  call void @cq_template_shl_i64_hl_unc(i32 %39, i32 %35, i64 1)    ; IR: uncompute %29
-  call void @cqrt_free(i32 %39)    ; IR: release the %29 rail (|0>)
-  call void @cq_template_add_i32_hl_unc(i32 %38, i32 %34, i32 -1)    ; IR: uncompute %28
-  call void @cqrt_free(i32 %38)    ; IR: release the %28 rail (|0>)
-  call void @cqrt_and_i1(i32 %31, i32 %36, i32 %37)    ; IR: uncompute a4  [self-inverse]
-  call void @cqrt_free(i32 %37)    ; IR: release the a4 rail (|0>)
-  call void @cq_template_icmp_sgt_i64_hl_unc(i32 %36, i32 %35, i64 -1)    ; IR: uncompute %30
-  call void @cqrt_free(i32 %36)    ; IR: release the %30 rail (|0>)
-  call void @cq_template_select_i64_unc(i32 %35, i32 %31, i32 %33, i32 %29)    ; IR: uncompute %27
-  call void @cqrt_free(i32 %35)    ; IR: release the %27 rail (|0>)
-  call void @cq_template_select_i32_unc(i32 %34, i32 %31, i32 %32, i32 %28)    ; IR: uncompute %26
-  call void @cqrt_free(i32 %34)    ; IR: release the %26 rail (|0>)
-  call void @cq_template_shl_i64_hl_unc(i32 %33, i32 %29, i64 1)    ; IR: uncompute %29
-  call void @cqrt_free(i32 %33)    ; IR: release the %29 rail (|0>)
-  call void @cq_template_add_i32_hl_unc(i32 %32, i32 %28, i32 -1)    ; IR: uncompute %28
-  call void @cqrt_free(i32 %32)    ; IR: release the %28 rail (|0>)
-  call void @cqrt_and_i1(i32 %25, i32 %30, i32 %31)    ; IR: uncompute a3  [self-inverse]
-  call void @cqrt_free(i32 %31)    ; IR: release the a3 rail (|0>)
-  call void @cq_template_icmp_sgt_i64_hl_unc(i32 %30, i32 %29, i64 -1)    ; IR: uncompute %30
-  call void @cqrt_free(i32 %30)    ; IR: release the %30 rail (|0>)
-  call void @cq_template_select_i64_unc(i32 %29, i32 %25, i32 %27, i32 %23)    ; IR: uncompute %27
-  call void @cqrt_free(i32 %29)    ; IR: release the %27 rail (|0>)
-  call void @cq_template_select_i32_unc(i32 %28, i32 %25, i32 %26, i32 %22)    ; IR: uncompute %26
-  call void @cqrt_free(i32 %28)    ; IR: release the %26 rail (|0>)
-  call void @cq_template_shl_i64_hl_unc(i32 %27, i32 %23, i64 1)    ; IR: uncompute %29
-  call void @cqrt_free(i32 %27)    ; IR: release the %29 rail (|0>)
-  call void @cq_template_add_i32_hl_unc(i32 %26, i32 %22, i32 -1)    ; IR: uncompute %28
-  call void @cqrt_free(i32 %26)    ; IR: release the %28 rail (|0>)
-  call void @cqrt_and_i1(i32 %19, i32 %24, i32 %25)    ; IR: uncompute a2  [self-inverse]
-  call void @cqrt_free(i32 %25)    ; IR: release the a2 rail (|0>)
-  call void @cq_template_icmp_sgt_i64_hl_unc(i32 %24, i32 %23, i64 -1)    ; IR: uncompute %30
-  call void @cqrt_free(i32 %24)    ; IR: release the %30 rail (|0>)
-  call void @cq_template_select_i64_unc(i32 %23, i32 %19, i32 %21, i32 %15)    ; IR: uncompute %27
-  call void @cqrt_free(i32 %23)    ; IR: release the %27 rail (|0>)
-  call void @cq_template_select_i32_ll_unc(i32 %22, i32 %19, i32 %20, i32 -1023)    ; IR: uncompute %26
-  call void @cqrt_free(i32 %22)    ; IR: release the %26 rail (|0>)
-  call void @cq_template_shl_i64_hl_unc(i32 %21, i32 %15, i64 1)    ; IR: uncompute %29
-  call void @cqrt_free(i32 %21)    ; IR: release the %29 rail (|0>)
-  call void @cqrt_and_i1(i32 %17, i32 %18, i32 %19)    ; IR: uncompute a1  [self-inverse]
-  call void @cqrt_free(i32 %19)    ; IR: release the a1 rail (|0>)
-  call void @cq_template_icmp_sgt_i64_hl_unc(i32 %18, i32 %15, i64 -1)    ; IR: uncompute %22
-  call void @cqrt_free(i32 %18)    ; IR: release the %22 rail (|0>)
-  call void @cqrt_not_i1(i32 %16)    ; IR: bracket: a0 reads NOT %16
-  call void @cqrt_and_i1(i32 %13, i32 %16, i32 %17)    ; IR: uncompute a0  [self-inverse]
-  call void @cqrt_free(i32 %17)    ; IR: release the a0 rail (|0>)
-  call void @cqrt_not_i1(i32 %16)    ; IR: bracket (close): a0 reads NOT %16
-  call void @cq_template_icmp_eq_i64_hl_unc(i32 %16, i32 %15, i64 0)    ; IR: uncompute %20
-  call void @cqrt_free(i32 %16)    ; IR: release the %20 rail (|0>)
-  call void @cq_template_shl_i64_hl_unc(i32 %15, i32 %9, i64 12)    ; IR: uncompute %19
-  call void @cqrt_free(i32 %15)    ; IR: release the %19 rail (|0>)
-  call void @cq_template_icmp_eq_i32_hl_unc(i32 %14, i32 %12, i32 2047)    ; IR: uncompute S2047
-  call void @cqrt_free(i32 %14)    ; IR: release the S2047 rail (|0>)
-  call void @cq_template_icmp_eq_i32_hl_unc(i32 %13, i32 %12, i32 0)    ; IR: uncompute S0
-  call void @cqrt_free(i32 %13)    ; IR: release the S0 rail (|0>)
-  call void @cq_template_and_i32_hl_unc(i32 %12, i32 %11, i32 2047)    ; IR: uncompute %17
-  call void @cqrt_free(i32 %12)    ; IR: release the %17 rail (|0>)
-  call void @cq_template_trunc_i64_to_i32_unc(i32 %11, i32 %10)    ; IR: uncompute %16
-  call void @cqrt_free(i32 %11)    ; IR: release the %16 rail (|0>)
-  call void @cq_template_lshr_i64_hl_unc(i32 %10, i32 %9, i64 52)    ; IR: uncompute %15
-  call void @cqrt_free(i32 %10)    ; IR: release the %15 rail (|0>)
-  call void @cq_template_bitcast_f64_to_i64_unc(i32 %9, i32 %1)    ; IR: uncompute %14
-  call void @cqrt_free(i32 %9)    ; IR: release the %14 rail (|0>)
-  call void @cq_template_fdiv_f64_lh_unc(i32 %8, double -1.000000e+00, i32 %7)    ; IR: uncompute %12
-  call void @cqrt_free(i32 %8)    ; IR: release the %12 rail (|0>)
-  call void @cq_template_fmul_f64_unc(i32 %7, i32 %1, i32 %1)    ; IR: uncompute %11
-  call void @cqrt_free(i32 %7)    ; IR: release the %11 rail (|0>)
-  call void @cq_template_fcmp_oeq_f64_hl_unc(i32 %6, i32 %1, double 0.000000e+00)    ; IR: uncompute %9
-  call void @cqrt_free(i32 %6)    ; IR: release the %9 rail (|0>)
-  call void @cq_template_fmul_f64_unc(i32 %5, i32 %1, i32 %1)    ; IR: uncompute %7
-  call void @cqrt_free(i32 %5)    ; IR: release the %7 rail (|0>)
-  call void @cq_template_fcmp_ueq_f64_hl_unc(i32 %4, i32 %3, double 0x7FF0000000000000)    ; IR: uncompute %5
-  call void @cqrt_free(i32 %4)    ; IR: release the %5 rail (|0>)
-  call void @cq_template_fabs_f64_unc(i32 %3, i32 %1)    ; IR: uncompute %4
-  call void @cqrt_free(i32 %3)    ; IR: release the %4 rail (|0>)
-  ret void    ; IR: ret  (the twin returns nothing)
+  %38 = call i32 @cq_template_add_i32_hl(i32 %34, i32 -1)    ; IR: %19 = add nsw %17, -1  (trip 4: e--)
+  %39 = call i32 @cq_template_shl_i64_hl(i32 %35, i64 1)    ; IR: %20 = shl nuw %18, 1  (trip 4: i <<= 1)
+  %40 = call i32 @cq_template_select_i32(i32 %37, i32 %38, i32 %34)    ; IR: %17 = phi i32 [ %19, %16 ], [ -1023, %11 ]: e after trip 4 = a_4 ? %19 : e
+  %41 = call i32 @cq_template_select_i64(i32 %37, i32 %39, i32 %35)    ; IR: %18 = phi i64 [ %20, %16 ], [ %9, %11 ]: i after trip 4 = a_4 ? %20 : i
+  %42 = call i32 @cq_template_icmp_sgt_i64_hl(i32 %41, i64 -1)    ; IR: %21 = icmp sgt %20, -1 after trip K: the exit test that would admit a (K+1)-th trip  [K]
+  %43 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: a_K = a_4 & that test  [output rail, kept, rule 14]  [fresh flag rail]
+  call void @cqrt_and_i1(i32 %37, i32 %42, i32 %43)    ; IR: a_K = a_4 & that test  [output rail, kept, rule 14]
+  call void @cq_template_icmp_sgt_i64_hl_unc(i32 %42, i32 %41, i64 -1)    ; IR: uncompute that test
+  call void @cqrt_free(i32 %42)    ; IR: release it (|0>)
+  %44 = call i32 @cq_template_and_i64_hl(i32 %4, i64 4503599627370495)    ; IR: %25 = and %4, 0xfffffffffffff  (block %22: the mantissa)
+  %45 = call i32 @cq_template_icmp_eq_i64_hl(i32 %44, i64 0)    ; IR: %26 = icmp eq %25, 0
+  %46 = call i32 @cq_template_select_i32_ll(i32 %45, i32 2147483647, i32 -2147483648)    ; IR: %27 = select %26, INT_MAX, FP_ILOGBNAN
+  %47 = call i32 @cq_template_add_i32_hl(i32 %7, i32 -1023)    ; IR: %29 = add nsw %7, -1023  (block %28: e - 0x3ff)
+  %48 = call i32 @cq_template_select_i32_lh(i32 %11, i32 -2147483648, i32 %40)    ; IR: %31 = phi i32 [ %27, %22 ], [ %29, %28 ], [ FP_ILOGB0, %13 ], [ -1023, %11 ], [ %19, %16 ]: the case-0 subtree on %10 (the loop arm's e, -1023 when the guard fails)
+  %49 = call i32 @cq_template_select_i32(i32 %9, i32 %46, i32 %47)    ; IR: %31 = phi i32: the case-2047 arm against the default %28
+  %50 = call i32 @cq_template_select_i32(i32 %8, i32 %48, i32 %49)    ; IR: %31 = phi i32: the case-0 subtree against the rest  [the result e]
+  %51 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: ret i32 %31  [result rail of the call]
+  call void @cqrt_copy_i32(i32 %50, i32 %51)    ; IR: copy e out
+  %52 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: ret i32 %31  [the returned flags rail: the second result, copied out too (rule 18, 82)]
+  call void @cqrt_copy_i32(i32 %16, i32 %52)    ; IR: copy flags' out
+  call void @cq_template_select_i32_unc(i32 %50, i32 %8, i32 %48, i32 %49)    ; IR: uncompute %31 = phi i32: the case-0 subtree against the rest
+  call void @cqrt_free(i32 %50)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_unc(i32 %49, i32 %9, i32 %46, i32 %47)    ; IR: uncompute %31 = phi i32: the case-2047 arm against the default %28
+  call void @cqrt_free(i32 %49)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_lh_unc(i32 %48, i32 %11, i32 -2147483648, i32 %40)    ; IR: uncompute %31 = phi i32 [ %27, %22 ], [ %29, %28 ], [ FP_ILOGB0, %13 ], [ -1023, %11 ], [ %19, %16 ]: the case-0 subtree on %10 (the loop arm's e, -1023 when the guard fails)
+  call void @cqrt_free(i32 %48)    ; IR: release it (|0>)
+  call void @cq_template_add_i32_hl_unc(i32 %47, i32 %7, i32 -1023)    ; IR: uncompute %29 = add nsw %7, -1023
+  call void @cqrt_free(i32 %47)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_ll_unc(i32 %46, i32 %45, i32 2147483647, i32 -2147483648)    ; IR: uncompute %27 = select %26, INT_MAX, FP_ILOGBNAN
+  call void @cqrt_free(i32 %46)    ; IR: release it (|0>)
+  call void @cq_template_icmp_eq_i64_hl_unc(i32 %45, i32 %44, i64 0)    ; IR: uncompute %26 = icmp eq %25, 0
+  call void @cqrt_free(i32 %45)    ; IR: release it (|0>)
+  call void @cq_template_and_i64_hl_unc(i32 %44, i32 %4, i64 4503599627370495)    ; IR: uncompute %25 = and %4, 0xfffffffffffff
+  call void @cqrt_free(i32 %44)    ; IR: release it (|0>)
+  call void @cq_template_select_i64_unc(i32 %41, i32 %37, i32 %39, i32 %35)    ; IR: uncompute %18 = phi i64 [ %20, %16 ], [ %9, %11 ]: i after trip 4 = a_4 ? %20 : i
+  call void @cqrt_free(i32 %41)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_unc(i32 %40, i32 %37, i32 %38, i32 %34)    ; IR: uncompute %17 = phi i32 [ %19, %16 ], [ -1023, %11 ]: e after trip 4 = a_4 ? %19 : e
+  call void @cqrt_free(i32 %40)    ; IR: release it (|0>)
+  call void @cq_template_shl_i64_hl_unc(i32 %39, i32 %35, i64 1)    ; IR: uncompute %20 = shl nuw %18, 1
+  call void @cqrt_free(i32 %39)    ; IR: release it (|0>)
+  call void @cq_template_add_i32_hl_unc(i32 %38, i32 %34, i32 -1)    ; IR: uncompute %19 = add nsw %17, -1
+  call void @cqrt_free(i32 %38)    ; IR: release it (|0>)
+  call void @cqrt_and_i1(i32 %31, i32 %36, i32 %37)    ; IR: uncompute a4 = trip 4 predicate a_4 = a_3 & cond_4  [self-inverse]
+  call void @cqrt_free(i32 %37)    ; IR: release it (|0>)
+  call void @cq_template_icmp_sgt_i64_hl_unc(i32 %36, i32 %35, i64 -1)    ; IR: uncompute %21 = icmp sgt %20, -1
+  call void @cqrt_free(i32 %36)    ; IR: release it (|0>)
+  call void @cq_template_select_i64_unc(i32 %35, i32 %31, i32 %33, i32 %29)    ; IR: uncompute %18 = phi i64 [ %20, %16 ], [ %9, %11 ]: i after trip 3 = a_3 ? %20 : i
+  call void @cqrt_free(i32 %35)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_unc(i32 %34, i32 %31, i32 %32, i32 %28)    ; IR: uncompute %17 = phi i32 [ %19, %16 ], [ -1023, %11 ]: e after trip 3 = a_3 ? %19 : e
+  call void @cqrt_free(i32 %34)    ; IR: release it (|0>)
+  call void @cq_template_shl_i64_hl_unc(i32 %33, i32 %29, i64 1)    ; IR: uncompute %20 = shl nuw %18, 1
+  call void @cqrt_free(i32 %33)    ; IR: release it (|0>)
+  call void @cq_template_add_i32_hl_unc(i32 %32, i32 %28, i32 -1)    ; IR: uncompute %19 = add nsw %17, -1
+  call void @cqrt_free(i32 %32)    ; IR: release it (|0>)
+  call void @cqrt_and_i1(i32 %25, i32 %30, i32 %31)    ; IR: uncompute a3 = trip 3 predicate a_3 = a_2 & cond_3  [self-inverse]
+  call void @cqrt_free(i32 %31)    ; IR: release it (|0>)
+  call void @cq_template_icmp_sgt_i64_hl_unc(i32 %30, i32 %29, i64 -1)    ; IR: uncompute %21 = icmp sgt %20, -1
+  call void @cqrt_free(i32 %30)    ; IR: release it (|0>)
+  call void @cq_template_select_i64_unc(i32 %29, i32 %25, i32 %27, i32 %23)    ; IR: uncompute %18 = phi i64 [ %20, %16 ], [ %9, %11 ]: i after trip 2 = a_2 ? %20 : i
+  call void @cqrt_free(i32 %29)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_unc(i32 %28, i32 %25, i32 %26, i32 %22)    ; IR: uncompute %17 = phi i32 [ %19, %16 ], [ -1023, %11 ]: e after trip 2 = a_2 ? %19 : e
+  call void @cqrt_free(i32 %28)    ; IR: release it (|0>)
+  call void @cq_template_shl_i64_hl_unc(i32 %27, i32 %23, i64 1)    ; IR: uncompute %20 = shl nuw %18, 1
+  call void @cqrt_free(i32 %27)    ; IR: release it (|0>)
+  call void @cq_template_add_i32_hl_unc(i32 %26, i32 %22, i32 -1)    ; IR: uncompute %19 = add nsw %17, -1
+  call void @cqrt_free(i32 %26)    ; IR: release it (|0>)
+  call void @cqrt_and_i1(i32 %19, i32 %24, i32 %25)    ; IR: uncompute a2 = trip 2 predicate a_2 = a_1 & cond_2  [self-inverse]
+  call void @cqrt_free(i32 %25)    ; IR: release it (|0>)
+  call void @cq_template_icmp_sgt_i64_hl_unc(i32 %24, i32 %23, i64 -1)    ; IR: uncompute %21 = icmp sgt %20, -1
+  call void @cqrt_free(i32 %24)    ; IR: release it (|0>)
+  call void @cq_template_select_i64_unc(i32 %23, i32 %19, i32 %21, i32 %10)    ; IR: uncompute %18 = phi i64 [ %20, %16 ], [ %9, %11 ]: i after trip 1 = a_1 ? %20 : i
+  call void @cqrt_free(i32 %23)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_ll_unc(i32 %22, i32 %19, i32 %20, i32 -1023)    ; IR: uncompute %17 = phi i32 [ %19, %16 ], [ -1023, %11 ]: e after trip 1 = a_1 ? %19 : e
+  call void @cqrt_free(i32 %22)    ; IR: release it (|0>)
+  call void @cq_template_shl_i64_hl_unc(i32 %21, i32 %10, i64 1)    ; IR: uncompute %20 = shl nuw %18, 1
+  call void @cqrt_free(i32 %21)    ; IR: release it (|0>)
+  call void @cqrt_and_i1(i32 %17, i32 %18, i32 %19)    ; IR: uncompute a1 = trip 1 predicate a_1 = a_0 & cond_1  [self-inverse]
+  call void @cqrt_free(i32 %19)    ; IR: release it (|0>)
+  call void @cq_template_icmp_sgt_i64_hl_unc(i32 %18, i32 %10, i64 -1)    ; IR: uncompute %12 = icmp sgt %9, -1
+  call void @cqrt_free(i32 %18)    ; IR: release it (|0>)
+  call void @cqrt_not_i1(i32 %11)    ; IR: bracket: the conjunct is NOT %11
+  call void @cqrt_and_i1(i32 %8, i32 %11, i32 %17)    ; IR: uncompute a0 = predicate of block %11 (the loop sits in this arm): S0 & !%10  [self-inverse]
+  call void @cqrt_not_i1(i32 %11)    ; IR: bracket (close)
+  call void @cqrt_free(i32 %17)    ; IR: release it (|0>)
+  call void @cq_template_or_i32_unc(i32 %16, i32 %14, i32 %15)    ; IR: uncompute flags after block %22 = flags | %24's exception bits
+  call void @cqrt_free(i32 %16)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_ll_unc(i32 %15, i32 %9, i32 1, i32 0)    ; IR: uncompute %24 = constrained.fdiv(0.0f, 0.0f, round.dynamic, strict) in block %22: INVALID where the case-2047 arm runs (its predicate is S2047 itself)
+  call void @cqrt_free(i32 %15)    ; IR: release it (|0>)
+  call void @cq_template_or_i32_unc(i32 %14, i32 %2, i32 %13)    ; IR: uncompute flags after block %13 = the caller's flags | %15's exception bits
+  call void @cqrt_free(i32 %14)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_ll_unc(i32 %13, i32 %12, i32 1, i32 0)    ; IR: uncompute %15 = constrained.fdiv(0.0f, 0.0f, round.dynamic, strict): its exception bits, INVALID (FE_INVALID = 1) where block %13 runs; the NaN quotient is stored volatile to a dead local: no gate (rule 24); the mode is not read (a NaN in every mode)
+  call void @cqrt_free(i32 %13)    ; IR: release it (|0>)
+  call void @cqrt_and_i1(i32 %8, i32 %11, i32 %12)    ; IR: uncompute predicate of block %13 = S0 & %10  [self-inverse]
+  call void @cqrt_free(i32 %12)    ; IR: release it (|0>)
+  call void @cq_template_icmp_eq_i64_hl_unc(i32 %11, i32 %10, i64 0)    ; IR: uncompute %10 = icmp eq %9, 0
+  call void @cqrt_free(i32 %11)    ; IR: release it (|0>)
+  call void @cq_template_shl_i64_hl_unc(i32 %10, i32 %4, i64 12)    ; IR: uncompute %9 = shl %4, 12
+  call void @cqrt_free(i32 %10)    ; IR: release it (|0>)
+  call void @cq_template_icmp_eq_i32_hl_unc(i32 %9, i32 %7, i32 2047)    ; IR: uncompute S2047 = switch %7: case 2047 -> block %22; the default %28 is the complement
+  call void @cqrt_free(i32 %9)    ; IR: release it (|0>)
+  call void @cq_template_icmp_eq_i32_hl_unc(i32 %8, i32 %7, i32 0)    ; IR: uncompute S0 = switch %7: case 0 -> block %8
+  call void @cqrt_free(i32 %8)    ; IR: release it (|0>)
+  call void @cq_template_and_i32_hl_unc(i32 %7, i32 %6, i32 2047)    ; IR: uncompute %7 = and %6, 2047
+  call void @cqrt_free(i32 %7)    ; IR: release it (|0>)
+  call void @cq_template_trunc_i64_to_i32_unc(i32 %6, i32 %5)    ; IR: uncompute %6 = trunc nuw nsw %5 to i32
+  call void @cqrt_free(i32 %6)    ; IR: release it (|0>)
+  call void @cq_template_lshr_i64_hl_unc(i32 %5, i32 %4, i64 52)    ; IR: uncompute %5 = lshr %4, 52
+  call void @cqrt_free(i32 %5)    ; IR: release it (|0>)
+  call void @cq_template_bitcast_f64_to_i64_unc(i32 %4, i32 %0)    ; IR: uncompute %4 = bitcast x to i64
+  call void @cqrt_free(i32 %4)    ; IR: release it (|0>)
+  %53 = insertvalue { i32, i32 } poison, i32 %51, 0    ; IR: ret i32 %31: the result handle
+  %54 = insertvalue { i32, i32 } %53, i32 %52, 1    ; IR: and the new flags handle
+  ret { i32, i32 } %54    ; IR: ret i32 %31
+}
+
+define internal fastcc void @__cq_q_ilogb_1_unc(i32 %0, i32 %1, i32 %2, i32 %3, i32 %4) {
+  %6 = call i32 @cq_template_bitcast_f64_to_i64(i32 %2)    ; IR: %4 = bitcast x to i64  (u.i)
+  %7 = call i32 @cq_template_lshr_i64_hl(i32 %6, i64 52)    ; IR: %5 = lshr %4, 52
+  %8 = call i32 @cq_template_trunc_i64_to_i32(i32 %7)    ; IR: %6 = trunc nuw nsw %5 to i32
+  %9 = call i32 @cq_template_and_i32_hl(i32 %8, i32 2047)    ; IR: %7 = and %6, 2047  (e)
+  %10 = call i32 @cq_template_icmp_eq_i32_hl(i32 %9, i32 0)    ; IR: S0 = switch %7: case 0 -> block %8  (rule 13: one equality flag per reachable case)
+  %11 = call i32 @cq_template_icmp_eq_i32_hl(i32 %9, i32 2047)    ; IR: S2047 = switch %7: case 2047 -> block %22; the default %28 is the complement
+  %12 = call i32 @cq_template_shl_i64_hl(i32 %6, i64 12)    ; IR: %9 = shl %4, 12  (block %8: i <<= 12)
+  %13 = call i32 @cq_template_icmp_eq_i64_hl(i32 %12, i64 0)    ; IR: %10 = icmp eq %9, 0  [br %10 -> block %13 (FP_ILOGB0), else block %11]
+  %14 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: predicate of block %13 = S0 & %10  (FORCE_EVAL(0/0.0f): constrained sitofp(0) = 0.0f and fdiv(0.0f, 0.0f), two literals)  [fresh flag rail]
+  call void @cqrt_and_i1(i32 %10, i32 %13, i32 %14)    ; IR: predicate of block %13 = S0 & %10  (FORCE_EVAL(0/0.0f): constrained sitofp(0) = 0.0f and fdiv(0.0f, 0.0f), two literals)
+  %15 = call i32 @cq_template_select_i32_ll(i32 %14, i32 1, i32 0)    ; IR: %15 = constrained.fdiv(0.0f, 0.0f, round.dynamic, strict): its exception bits, INVALID (FE_INVALID = 1) where block %13 runs; the NaN quotient is stored volatile to a dead local: no gate (rule 24); the mode is not read (a NaN in every mode)
+  %16 = call i32 @cq_template_or_i32(i32 %4, i32 %15)    ; IR: flags after block %13 = the caller's flags | %15's exception bits  [flags rail]
+  %17 = call i32 @cq_template_select_i32_ll(i32 %11, i32 1, i32 0)    ; IR: %24 = constrained.fdiv(0.0f, 0.0f, round.dynamic, strict) in block %22: INVALID where the case-2047 arm runs (its predicate is S2047 itself)
+  %18 = call i32 @cq_template_or_i32(i32 %16, i32 %17)    ; IR: flags after block %22 = flags | %24's exception bits  [flags' rail: the returned fenv state]
+  %19 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: a0 = predicate of block %11 (the loop sits in this arm): S0 & !%10  [chain seed a_0]  [fresh flag rail]
+  call void @cqrt_not_i1(i32 %13)    ; IR: bracket: the conjunct is NOT %13
+  call void @cqrt_and_i1(i32 %10, i32 %13, i32 %19)    ; IR: a0 = predicate of block %11 (the loop sits in this arm): S0 & !%10  [chain seed a_0]
+  call void @cqrt_not_i1(i32 %13)    ; IR: bracket (close)
+  %20 = call i32 @cq_template_icmp_sgt_i64_hl(i32 %12, i64 -1)    ; IR: %12 = icmp sgt %9, -1  (pre-header guard = trip 0 of the latch test)  [K]
+  %21 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: a1 = trip 1 predicate a_1 = a_0 & cond_1  [K]  [fresh flag rail]
+  call void @cqrt_and_i1(i32 %19, i32 %20, i32 %21)    ; IR: a1 = trip 1 predicate a_1 = a_0 & cond_1  [K]
+  %22 = add nsw i32 -1023, -1    ; IR: %19 = add nsw %17, -1  (trip 1: e--)  (classical)
+  %23 = call i32 @cq_template_shl_i64_hl(i32 %12, i64 1)    ; IR: %20 = shl nuw %18, 1  (trip 1: i <<= 1)
+  %24 = call i32 @cq_template_select_i32_ll(i32 %21, i32 %22, i32 -1023)    ; IR: %17 = phi i32 [ %19, %16 ], [ -1023, %11 ]: e after trip 1 = a_1 ? %19 : e
+  %25 = call i32 @cq_template_select_i64(i32 %21, i32 %23, i32 %12)    ; IR: %18 = phi i64 [ %20, %16 ], [ %9, %11 ]: i after trip 1 = a_1 ? %20 : i
+  %26 = call i32 @cq_template_icmp_sgt_i64_hl(i32 %25, i64 -1)    ; IR: %21 = icmp sgt %20, -1  (latch test, trip 2)  [K]
+  %27 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: a2 = trip 2 predicate a_2 = a_1 & cond_2  [K]  [fresh flag rail]
+  call void @cqrt_and_i1(i32 %21, i32 %26, i32 %27)    ; IR: a2 = trip 2 predicate a_2 = a_1 & cond_2  [K]
+  %28 = call i32 @cq_template_add_i32_hl(i32 %24, i32 -1)    ; IR: %19 = add nsw %17, -1  (trip 2: e--)
+  %29 = call i32 @cq_template_shl_i64_hl(i32 %25, i64 1)    ; IR: %20 = shl nuw %18, 1  (trip 2: i <<= 1)
+  %30 = call i32 @cq_template_select_i32(i32 %27, i32 %28, i32 %24)    ; IR: %17 = phi i32 [ %19, %16 ], [ -1023, %11 ]: e after trip 2 = a_2 ? %19 : e
+  %31 = call i32 @cq_template_select_i64(i32 %27, i32 %29, i32 %25)    ; IR: %18 = phi i64 [ %20, %16 ], [ %9, %11 ]: i after trip 2 = a_2 ? %20 : i
+  %32 = call i32 @cq_template_icmp_sgt_i64_hl(i32 %31, i64 -1)    ; IR: %21 = icmp sgt %20, -1  (latch test, trip 3)  [K]
+  %33 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: a3 = trip 3 predicate a_3 = a_2 & cond_3  [K]  [fresh flag rail]
+  call void @cqrt_and_i1(i32 %27, i32 %32, i32 %33)    ; IR: a3 = trip 3 predicate a_3 = a_2 & cond_3  [K]
+  %34 = call i32 @cq_template_add_i32_hl(i32 %30, i32 -1)    ; IR: %19 = add nsw %17, -1  (trip 3: e--)
+  %35 = call i32 @cq_template_shl_i64_hl(i32 %31, i64 1)    ; IR: %20 = shl nuw %18, 1  (trip 3: i <<= 1)
+  %36 = call i32 @cq_template_select_i32(i32 %33, i32 %34, i32 %30)    ; IR: %17 = phi i32 [ %19, %16 ], [ -1023, %11 ]: e after trip 3 = a_3 ? %19 : e
+  %37 = call i32 @cq_template_select_i64(i32 %33, i32 %35, i32 %31)    ; IR: %18 = phi i64 [ %20, %16 ], [ %9, %11 ]: i after trip 3 = a_3 ? %20 : i
+  %38 = call i32 @cq_template_icmp_sgt_i64_hl(i32 %37, i64 -1)    ; IR: %21 = icmp sgt %20, -1  (latch test, trip 4)  [K]
+  %39 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: a4 = trip 4 predicate a_4 = a_3 & cond_4  [K]  [fresh flag rail]
+  call void @cqrt_and_i1(i32 %33, i32 %38, i32 %39)    ; IR: a4 = trip 4 predicate a_4 = a_3 & cond_4  [K]
+  %40 = call i32 @cq_template_add_i32_hl(i32 %36, i32 -1)    ; IR: %19 = add nsw %17, -1  (trip 4: e--)
+  %41 = call i32 @cq_template_shl_i64_hl(i32 %37, i64 1)    ; IR: %20 = shl nuw %18, 1  (trip 4: i <<= 1)
+  %42 = call i32 @cq_template_select_i32(i32 %39, i32 %40, i32 %36)    ; IR: %17 = phi i32 [ %19, %16 ], [ -1023, %11 ]: e after trip 4 = a_4 ? %19 : e
+  %43 = call i32 @cq_template_select_i64(i32 %39, i32 %41, i32 %37)    ; IR: %18 = phi i64 [ %20, %16 ], [ %9, %11 ]: i after trip 4 = a_4 ? %20 : i
+  %44 = call i32 @cq_template_and_i64_hl(i32 %6, i64 4503599627370495)    ; IR: %25 = and %4, 0xfffffffffffff  (block %22: the mantissa)
+  %45 = call i32 @cq_template_icmp_eq_i64_hl(i32 %44, i64 0)    ; IR: %26 = icmp eq %25, 0
+  %46 = call i32 @cq_template_select_i32_ll(i32 %45, i32 2147483647, i32 -2147483648)    ; IR: %27 = select %26, INT_MAX, FP_ILOGBNAN
+  %47 = call i32 @cq_template_add_i32_hl(i32 %9, i32 -1023)    ; IR: %29 = add nsw %7, -1023  (block %28: e - 0x3ff)
+  %48 = call i32 @cq_template_select_i32_lh(i32 %13, i32 -2147483648, i32 %42)    ; IR: %31 = phi i32 [ %27, %22 ], [ %29, %28 ], [ FP_ILOGB0, %13 ], [ -1023, %11 ], [ %19, %16 ]: the case-0 subtree on %10 (the loop arm's e, -1023 when the guard fails)
+  %49 = call i32 @cq_template_select_i32(i32 %11, i32 %46, i32 %47)    ; IR: %31 = phi i32: the case-2047 arm against the default %28
+  %50 = call i32 @cq_template_select_i32(i32 %10, i32 %48, i32 %49)    ; IR: %31 = phi i32: the case-0 subtree against the rest  [the result e]
+  call void @cqrt_copy_i32(i32 %50, i32 %0)    ; IR: xor e out of %out
+  call void @cqrt_copy_i32(i32 %18, i32 %1)    ; IR: xor the new flags out of %flout
+  call void @cq_template_select_i32_unc(i32 %50, i32 %10, i32 %48, i32 %49)    ; IR: uncompute %31 = phi i32: the case-0 subtree against the rest
+  call void @cqrt_free(i32 %50)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_unc(i32 %49, i32 %11, i32 %46, i32 %47)    ; IR: uncompute %31 = phi i32: the case-2047 arm against the default %28
+  call void @cqrt_free(i32 %49)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_lh_unc(i32 %48, i32 %13, i32 -2147483648, i32 %42)    ; IR: uncompute %31 = phi i32 [ %27, %22 ], [ %29, %28 ], [ FP_ILOGB0, %13 ], [ -1023, %11 ], [ %19, %16 ]: the case-0 subtree on %10 (the loop arm's e, -1023 when the guard fails)
+  call void @cqrt_free(i32 %48)    ; IR: release it (|0>)
+  call void @cq_template_add_i32_hl_unc(i32 %47, i32 %9, i32 -1023)    ; IR: uncompute %29 = add nsw %7, -1023
+  call void @cqrt_free(i32 %47)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_ll_unc(i32 %46, i32 %45, i32 2147483647, i32 -2147483648)    ; IR: uncompute %27 = select %26, INT_MAX, FP_ILOGBNAN
+  call void @cqrt_free(i32 %46)    ; IR: release it (|0>)
+  call void @cq_template_icmp_eq_i64_hl_unc(i32 %45, i32 %44, i64 0)    ; IR: uncompute %26 = icmp eq %25, 0
+  call void @cqrt_free(i32 %45)    ; IR: release it (|0>)
+  call void @cq_template_and_i64_hl_unc(i32 %44, i32 %6, i64 4503599627370495)    ; IR: uncompute %25 = and %4, 0xfffffffffffff
+  call void @cqrt_free(i32 %44)    ; IR: release it (|0>)
+  call void @cq_template_select_i64_unc(i32 %43, i32 %39, i32 %41, i32 %37)    ; IR: uncompute %18 = phi i64 [ %20, %16 ], [ %9, %11 ]: i after trip 4 = a_4 ? %20 : i
+  call void @cqrt_free(i32 %43)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_unc(i32 %42, i32 %39, i32 %40, i32 %36)    ; IR: uncompute %17 = phi i32 [ %19, %16 ], [ -1023, %11 ]: e after trip 4 = a_4 ? %19 : e
+  call void @cqrt_free(i32 %42)    ; IR: release it (|0>)
+  call void @cq_template_shl_i64_hl_unc(i32 %41, i32 %37, i64 1)    ; IR: uncompute %20 = shl nuw %18, 1
+  call void @cqrt_free(i32 %41)    ; IR: release it (|0>)
+  call void @cq_template_add_i32_hl_unc(i32 %40, i32 %36, i32 -1)    ; IR: uncompute %19 = add nsw %17, -1
+  call void @cqrt_free(i32 %40)    ; IR: release it (|0>)
+  call void @cqrt_and_i1(i32 %33, i32 %38, i32 %39)    ; IR: uncompute a4 = trip 4 predicate a_4 = a_3 & cond_4  [self-inverse]
+  call void @cqrt_free(i32 %39)    ; IR: release it (|0>)
+  call void @cq_template_icmp_sgt_i64_hl_unc(i32 %38, i32 %37, i64 -1)    ; IR: uncompute %21 = icmp sgt %20, -1
+  call void @cqrt_free(i32 %38)    ; IR: release it (|0>)
+  call void @cq_template_select_i64_unc(i32 %37, i32 %33, i32 %35, i32 %31)    ; IR: uncompute %18 = phi i64 [ %20, %16 ], [ %9, %11 ]: i after trip 3 = a_3 ? %20 : i
+  call void @cqrt_free(i32 %37)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_unc(i32 %36, i32 %33, i32 %34, i32 %30)    ; IR: uncompute %17 = phi i32 [ %19, %16 ], [ -1023, %11 ]: e after trip 3 = a_3 ? %19 : e
+  call void @cqrt_free(i32 %36)    ; IR: release it (|0>)
+  call void @cq_template_shl_i64_hl_unc(i32 %35, i32 %31, i64 1)    ; IR: uncompute %20 = shl nuw %18, 1
+  call void @cqrt_free(i32 %35)    ; IR: release it (|0>)
+  call void @cq_template_add_i32_hl_unc(i32 %34, i32 %30, i32 -1)    ; IR: uncompute %19 = add nsw %17, -1
+  call void @cqrt_free(i32 %34)    ; IR: release it (|0>)
+  call void @cqrt_and_i1(i32 %27, i32 %32, i32 %33)    ; IR: uncompute a3 = trip 3 predicate a_3 = a_2 & cond_3  [self-inverse]
+  call void @cqrt_free(i32 %33)    ; IR: release it (|0>)
+  call void @cq_template_icmp_sgt_i64_hl_unc(i32 %32, i32 %31, i64 -1)    ; IR: uncompute %21 = icmp sgt %20, -1
+  call void @cqrt_free(i32 %32)    ; IR: release it (|0>)
+  call void @cq_template_select_i64_unc(i32 %31, i32 %27, i32 %29, i32 %25)    ; IR: uncompute %18 = phi i64 [ %20, %16 ], [ %9, %11 ]: i after trip 2 = a_2 ? %20 : i
+  call void @cqrt_free(i32 %31)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_unc(i32 %30, i32 %27, i32 %28, i32 %24)    ; IR: uncompute %17 = phi i32 [ %19, %16 ], [ -1023, %11 ]: e after trip 2 = a_2 ? %19 : e
+  call void @cqrt_free(i32 %30)    ; IR: release it (|0>)
+  call void @cq_template_shl_i64_hl_unc(i32 %29, i32 %25, i64 1)    ; IR: uncompute %20 = shl nuw %18, 1
+  call void @cqrt_free(i32 %29)    ; IR: release it (|0>)
+  call void @cq_template_add_i32_hl_unc(i32 %28, i32 %24, i32 -1)    ; IR: uncompute %19 = add nsw %17, -1
+  call void @cqrt_free(i32 %28)    ; IR: release it (|0>)
+  call void @cqrt_and_i1(i32 %21, i32 %26, i32 %27)    ; IR: uncompute a2 = trip 2 predicate a_2 = a_1 & cond_2  [self-inverse]
+  call void @cqrt_free(i32 %27)    ; IR: release it (|0>)
+  call void @cq_template_icmp_sgt_i64_hl_unc(i32 %26, i32 %25, i64 -1)    ; IR: uncompute %21 = icmp sgt %20, -1
+  call void @cqrt_free(i32 %26)    ; IR: release it (|0>)
+  call void @cq_template_select_i64_unc(i32 %25, i32 %21, i32 %23, i32 %12)    ; IR: uncompute %18 = phi i64 [ %20, %16 ], [ %9, %11 ]: i after trip 1 = a_1 ? %20 : i
+  call void @cqrt_free(i32 %25)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_ll_unc(i32 %24, i32 %21, i32 %22, i32 -1023)    ; IR: uncompute %17 = phi i32 [ %19, %16 ], [ -1023, %11 ]: e after trip 1 = a_1 ? %19 : e
+  call void @cqrt_free(i32 %24)    ; IR: release it (|0>)
+  call void @cq_template_shl_i64_hl_unc(i32 %23, i32 %12, i64 1)    ; IR: uncompute %20 = shl nuw %18, 1
+  call void @cqrt_free(i32 %23)    ; IR: release it (|0>)
+  call void @cqrt_and_i1(i32 %19, i32 %20, i32 %21)    ; IR: uncompute a1 = trip 1 predicate a_1 = a_0 & cond_1  [self-inverse]
+  call void @cqrt_free(i32 %21)    ; IR: release it (|0>)
+  call void @cq_template_icmp_sgt_i64_hl_unc(i32 %20, i32 %12, i64 -1)    ; IR: uncompute %12 = icmp sgt %9, -1
+  call void @cqrt_free(i32 %20)    ; IR: release it (|0>)
+  call void @cqrt_not_i1(i32 %13)    ; IR: bracket: the conjunct is NOT %13
+  call void @cqrt_and_i1(i32 %10, i32 %13, i32 %19)    ; IR: uncompute a0 = predicate of block %11 (the loop sits in this arm): S0 & !%10  [self-inverse]
+  call void @cqrt_not_i1(i32 %13)    ; IR: bracket (close)
+  call void @cqrt_free(i32 %19)    ; IR: release it (|0>)
+  call void @cq_template_or_i32_unc(i32 %18, i32 %16, i32 %17)    ; IR: uncompute flags after block %22 = flags | %24's exception bits
+  call void @cqrt_free(i32 %18)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_ll_unc(i32 %17, i32 %11, i32 1, i32 0)    ; IR: uncompute %24 = constrained.fdiv(0.0f, 0.0f, round.dynamic, strict) in block %22: INVALID where the case-2047 arm runs (its predicate is S2047 itself)
+  call void @cqrt_free(i32 %17)    ; IR: release it (|0>)
+  call void @cq_template_or_i32_unc(i32 %16, i32 %4, i32 %15)    ; IR: uncompute flags after block %13 = the caller's flags | %15's exception bits
+  call void @cqrt_free(i32 %16)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_ll_unc(i32 %15, i32 %14, i32 1, i32 0)    ; IR: uncompute %15 = constrained.fdiv(0.0f, 0.0f, round.dynamic, strict): its exception bits, INVALID (FE_INVALID = 1) where block %13 runs; the NaN quotient is stored volatile to a dead local: no gate (rule 24); the mode is not read (a NaN in every mode)
+  call void @cqrt_free(i32 %15)    ; IR: release it (|0>)
+  call void @cqrt_and_i1(i32 %10, i32 %13, i32 %14)    ; IR: uncompute predicate of block %13 = S0 & %10  [self-inverse]
+  call void @cqrt_free(i32 %14)    ; IR: release it (|0>)
+  call void @cq_template_icmp_eq_i64_hl_unc(i32 %13, i32 %12, i64 0)    ; IR: uncompute %10 = icmp eq %9, 0
+  call void @cqrt_free(i32 %13)    ; IR: release it (|0>)
+  call void @cq_template_shl_i64_hl_unc(i32 %12, i32 %6, i64 12)    ; IR: uncompute %9 = shl %4, 12
+  call void @cqrt_free(i32 %12)    ; IR: release it (|0>)
+  call void @cq_template_icmp_eq_i32_hl_unc(i32 %11, i32 %9, i32 2047)    ; IR: uncompute S2047 = switch %7: case 2047 -> block %22; the default %28 is the complement
+  call void @cqrt_free(i32 %11)    ; IR: release it (|0>)
+  call void @cq_template_icmp_eq_i32_hl_unc(i32 %10, i32 %9, i32 0)    ; IR: uncompute S0 = switch %7: case 0 -> block %8
+  call void @cqrt_free(i32 %10)    ; IR: release it (|0>)
+  call void @cq_template_and_i32_hl_unc(i32 %9, i32 %8, i32 2047)    ; IR: uncompute %7 = and %6, 2047
+  call void @cqrt_free(i32 %9)    ; IR: release it (|0>)
+  call void @cq_template_trunc_i64_to_i32_unc(i32 %8, i32 %7)    ; IR: uncompute %6 = trunc nuw nsw %5 to i32
+  call void @cqrt_free(i32 %8)    ; IR: release it (|0>)
+  call void @cq_template_lshr_i64_hl_unc(i32 %7, i32 %6, i64 52)    ; IR: uncompute %5 = lshr %4, 52
+  call void @cqrt_free(i32 %7)    ; IR: release it (|0>)
+  call void @cq_template_bitcast_f64_to_i64_unc(i32 %6, i32 %2)    ; IR: uncompute %4 = bitcast x to i64
+  call void @cqrt_free(i32 %6)    ; IR: release it (|0>)
+  ret void    ; IR: ret void
+}
+
+define internal fastcc { i32, i32 } @__cq_q_logb_1(i32 %0, i32 %1, i32 %2) {
+  %4 = call i32 @cq_template_fabs_f64(i32 %0)    ; IR: %2 = fabs(x)
+  %5 = call i32 @cq_template_fcmp_ueq_f64_hl(i32 %4, double 0x7FF0000000000000)    ; IR: %3 = fcmp ueq %2, inf  (!isfinite(x))  [br %3 -> block %4]
+  %6 = call i32 @cq_template_fmul_f64(i32 %0, i32 %0)    ; IR: %5 = fmul x, x  (block %4: x * x)
+  %7 = call i32 @cq_template_fcmp_oeq_f64_hl(i32 %0, double 0.000000e+00)    ; IR: %7 = fcmp oeq x, 0  (block %6)  [br %7 -> block %8]
+  %8 = call i32 @cq_template_fmul_f64(i32 %0, i32 %0)    ; IR: %9 = fmul x, x  (block %8)
+  %9 = call i32 @cq_template_fdiv_f64_lh(double -1.000000e+00, i32 %8)    ; IR: %10 = fdiv -1.0, %9
+  %10 = call fastcc { i32, i32 } @__cq_q_ilogb_1(i32 %0, i32 %1, i32 %2)    ; IR: %12 = call @ilogb(x) (block %11): the strictfp clone, called UNGUARDED (rule 19: its body has no non-pure gate) with the mode and flags, merged below
+  %11 = extractvalue { i32, i32 } %10, 0    ; IR: %12  [the result e]
+  %12 = extractvalue { i32, i32 } %10, 1    ; IR: %12: the flags after ilogb
+  %13 = call i32 @cq_template_sitofp_i32_to_f64(i32 %11)    ; IR: %13 = sitofp %12 to double
+  %14 = call i32 @cq_template_select_f64(i32 %7, i32 %9, i32 %13)    ; IR: %15 = phi double [ %10, %8 ], [ %13, %11 ], [ %5, %4 ]: the %6 subtree on %7
+  %15 = call i32 @cq_template_select_f64(i32 %5, i32 %6, i32 %14)    ; IR: %15 = phi double: the top split on %3  [the result]
+  %16 = call i32 @cq_template_select_i32(i32 %7, i32 %2, i32 %12)    ; IR: the flags phi of the same merge: block %8 does not call ilogb, so its arm is the caller's flags; block %11's is ilogb's flags'
+  %17 = call i32 @cq_template_select_i32(i32 %5, i32 %2, i32 %16)    ; IR: the flags phi, top split: block %4 keeps the caller's flags  [flags' rail: the returned fenv state]
+  %18 = call i32 @cqrt_alloc_f64(double 0.000000e+00)    ; IR: ret double %15  [result rail: logb(x)]
+  call void @cqrt_copy_f64(i32 %15, i32 %18)    ; IR: copy logb(x) out
+  %19 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: ret double %15  [the returned flags rail, copied out too (rule 18, 82)]
+  call void @cqrt_copy_i32(i32 %17, i32 %19)    ; IR: copy flags' out
+  call void @cq_template_select_i32_unc(i32 %17, i32 %5, i32 %2, i32 %16)    ; IR: uncompute the flags phi, top split: block %4 keeps the caller's flags
+  call void @cqrt_free(i32 %17)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_unc(i32 %16, i32 %7, i32 %2, i32 %12)    ; IR: uncompute the flags phi of the same merge: block %8 does not call ilogb, so its arm is the caller's flags; block %11's is ilogb's flags'
+  call void @cqrt_free(i32 %16)    ; IR: release it (|0>)
+  call void @cq_template_select_f64_unc(i32 %15, i32 %5, i32 %6, i32 %14)    ; IR: uncompute %15 = phi double: the top split on %3
+  call void @cqrt_free(i32 %15)    ; IR: release it (|0>)
+  call void @cq_template_select_f64_unc(i32 %14, i32 %7, i32 %9, i32 %13)    ; IR: uncompute %15 = phi double [ %10, %8 ], [ %13, %11 ], [ %5, %4 ]: the %6 subtree on %7
+  call void @cqrt_free(i32 %14)    ; IR: release it (|0>)
+  call void @cq_template_sitofp_i32_to_f64_unc(i32 %13, i32 %11)    ; IR: uncompute %13 = sitofp %12 to double
+  call void @cqrt_free(i32 %13)    ; IR: release it (|0>)
+  call fastcc void @__cq_q_ilogb_1_unc(i32 %11, i32 %12, i32 %0, i32 %1, i32 %2)    ; IR: uncompute %12's two result rails
+  call void @cqrt_free(i32 %11)    ; IR: release the e rail (|0>)
+  call void @cqrt_free(i32 %12)    ; IR: release the flags rail (|0>)
+  call void @cq_template_fdiv_f64_lh_unc(i32 %9, double -1.000000e+00, i32 %8)    ; IR: uncompute %10 = fdiv -1.0, %9
+  call void @cqrt_free(i32 %9)    ; IR: release it (|0>)
+  call void @cq_template_fmul_f64_unc(i32 %8, i32 %0, i32 %0)    ; IR: uncompute %9 = fmul x, x
+  call void @cqrt_free(i32 %8)    ; IR: release it (|0>)
+  call void @cq_template_fcmp_oeq_f64_hl_unc(i32 %7, i32 %0, double 0.000000e+00)    ; IR: uncompute %7 = fcmp oeq x, 0
+  call void @cqrt_free(i32 %7)    ; IR: release it (|0>)
+  call void @cq_template_fmul_f64_unc(i32 %6, i32 %0, i32 %0)    ; IR: uncompute %5 = fmul x, x
+  call void @cqrt_free(i32 %6)    ; IR: release it (|0>)
+  call void @cq_template_fcmp_ueq_f64_hl_unc(i32 %5, i32 %4, double 0x7FF0000000000000)    ; IR: uncompute %3 = fcmp ueq %2, inf
+  call void @cqrt_free(i32 %5)    ; IR: release it (|0>)
+  call void @cq_template_fabs_f64_unc(i32 %4, i32 %0)    ; IR: uncompute %2 = fabs(x)
+  call void @cqrt_free(i32 %4)    ; IR: release it (|0>)
+  %20 = insertvalue { i32, i32 } poison, i32 %18, 0    ; IR: ret double %15: the result handle
+  %21 = insertvalue { i32, i32 } %20, i32 %19, 1    ; IR: and the new flags handle
+  ret { i32, i32 } %21    ; IR: ret double %15
+}
+
+define internal fastcc void @__cq_q_logb_1_unc(i32 %0, i32 %1, i32 %2, i32 %3, i32 %4) {
+  %6 = call i32 @cq_template_fabs_f64(i32 %2)    ; IR: %2 = fabs(x)
+  %7 = call i32 @cq_template_fcmp_ueq_f64_hl(i32 %6, double 0x7FF0000000000000)    ; IR: %3 = fcmp ueq %2, inf  (!isfinite(x))  [br %3 -> block %4]
+  %8 = call i32 @cq_template_fmul_f64(i32 %2, i32 %2)    ; IR: %5 = fmul x, x  (block %4: x * x)
+  %9 = call i32 @cq_template_fcmp_oeq_f64_hl(i32 %2, double 0.000000e+00)    ; IR: %7 = fcmp oeq x, 0  (block %6)  [br %7 -> block %8]
+  %10 = call i32 @cq_template_fmul_f64(i32 %2, i32 %2)    ; IR: %9 = fmul x, x  (block %8)
+  %11 = call i32 @cq_template_fdiv_f64_lh(double -1.000000e+00, i32 %10)    ; IR: %10 = fdiv -1.0, %9
+  %12 = call fastcc { i32, i32 } @__cq_q_ilogb_1(i32 %2, i32 %3, i32 %4)    ; IR: %12 = call @ilogb(x) (block %11): the strictfp clone, called UNGUARDED (rule 19: its body has no non-pure gate) with the mode and flags, merged below
+  %13 = extractvalue { i32, i32 } %12, 0    ; IR: %12  [the result e]
+  %14 = extractvalue { i32, i32 } %12, 1    ; IR: %12: the flags after ilogb
+  %15 = call i32 @cq_template_sitofp_i32_to_f64(i32 %13)    ; IR: %13 = sitofp %12 to double
+  %16 = call i32 @cq_template_select_f64(i32 %9, i32 %11, i32 %15)    ; IR: %15 = phi double [ %10, %8 ], [ %13, %11 ], [ %5, %4 ]: the %6 subtree on %7
+  %17 = call i32 @cq_template_select_f64(i32 %7, i32 %8, i32 %16)    ; IR: %15 = phi double: the top split on %3  [the result]
+  %18 = call i32 @cq_template_select_i32(i32 %9, i32 %4, i32 %14)    ; IR: the flags phi of the same merge: block %8 does not call ilogb, so its arm is the caller's flags; block %11's is ilogb's flags'
+  %19 = call i32 @cq_template_select_i32(i32 %7, i32 %4, i32 %18)    ; IR: the flags phi, top split: block %4 keeps the caller's flags  [flags' rail: the returned fenv state]
+  call void @cqrt_copy_f64(i32 %17, i32 %0)    ; IR: xor logb(x) out of %out
+  call void @cqrt_copy_i32(i32 %19, i32 %1)    ; IR: xor the new flags out of %flout
+  call void @cq_template_select_i32_unc(i32 %19, i32 %7, i32 %4, i32 %18)    ; IR: uncompute the flags phi, top split: block %4 keeps the caller's flags
+  call void @cqrt_free(i32 %19)    ; IR: release it (|0>)
+  call void @cq_template_select_i32_unc(i32 %18, i32 %9, i32 %4, i32 %14)    ; IR: uncompute the flags phi of the same merge: block %8 does not call ilogb, so its arm is the caller's flags; block %11's is ilogb's flags'
+  call void @cqrt_free(i32 %18)    ; IR: release it (|0>)
+  call void @cq_template_select_f64_unc(i32 %17, i32 %7, i32 %8, i32 %16)    ; IR: uncompute %15 = phi double: the top split on %3
+  call void @cqrt_free(i32 %17)    ; IR: release it (|0>)
+  call void @cq_template_select_f64_unc(i32 %16, i32 %9, i32 %11, i32 %15)    ; IR: uncompute %15 = phi double [ %10, %8 ], [ %13, %11 ], [ %5, %4 ]: the %6 subtree on %7
+  call void @cqrt_free(i32 %16)    ; IR: release it (|0>)
+  call void @cq_template_sitofp_i32_to_f64_unc(i32 %15, i32 %13)    ; IR: uncompute %13 = sitofp %12 to double
+  call void @cqrt_free(i32 %15)    ; IR: release it (|0>)
+  call fastcc void @__cq_q_ilogb_1_unc(i32 %13, i32 %14, i32 %2, i32 %3, i32 %4)    ; IR: uncompute %12's two result rails
+  call void @cqrt_free(i32 %13)    ; IR: release the e rail (|0>)
+  call void @cqrt_free(i32 %14)    ; IR: release the flags rail (|0>)
+  call void @cq_template_fdiv_f64_lh_unc(i32 %11, double -1.000000e+00, i32 %10)    ; IR: uncompute %10 = fdiv -1.0, %9
+  call void @cqrt_free(i32 %11)    ; IR: release it (|0>)
+  call void @cq_template_fmul_f64_unc(i32 %10, i32 %2, i32 %2)    ; IR: uncompute %9 = fmul x, x
+  call void @cqrt_free(i32 %10)    ; IR: release it (|0>)
+  call void @cq_template_fcmp_oeq_f64_hl_unc(i32 %9, i32 %2, double 0.000000e+00)    ; IR: uncompute %7 = fcmp oeq x, 0
+  call void @cqrt_free(i32 %9)    ; IR: release it (|0>)
+  call void @cq_template_fmul_f64_unc(i32 %8, i32 %2, i32 %2)    ; IR: uncompute %5 = fmul x, x
+  call void @cqrt_free(i32 %8)    ; IR: release it (|0>)
+  call void @cq_template_fcmp_ueq_f64_hl_unc(i32 %7, i32 %6, double 0x7FF0000000000000)    ; IR: uncompute %3 = fcmp ueq %2, inf
+  call void @cqrt_free(i32 %7)    ; IR: release it (|0>)
+  call void @cq_template_fabs_f64_unc(i32 %6, i32 %2)    ; IR: uncompute %2 = fabs(x)
+  call void @cqrt_free(i32 %6)    ; IR: release it (|0>)
+  ret void    ; IR: ret void
 }
 
 define internal fastcc i32 @__cq_q_scalbn_10(i32 %0, i32 %1) {
@@ -1617,3 +1715,7 @@ declare void @cq_template_bitcast_i64_to_f64_unc(i32, i32)
 !3 = !{i32 7, !"uwtable", i32 2}
 !4 = !{i32 7, !"frame-pointer", i32 2}
 !5 = !{!"Homebrew clang version 19.1.7"}
+declare i32 @cq_template_or_i32(i32, i32)
+declare void @cq_template_or_i32_unc(i32, i32, i32)
+declare i32 @cqrt_alloc_i32(i32)
+declare void @cqrt_copy_i32(i32, i32)
