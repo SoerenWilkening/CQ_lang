@@ -485,8 +485,12 @@ template <typename Pred> bool anyAfter(const Instruction &I, Pred p) {
   return false;
 }
 
-// The quantum part may change here: refuse the shapes the module does not lower (header, LIMITS).
-void requireWritable(LoweringContext &ctx, State &st, const Instruction &I) {
+// The quantum part (state or a saved part) may change here: the placement limits (header, LIMITS).
+// CR rule 23 gives no construction merging two states at a classical join, so a change in a block a
+// classical branch chooses is refused: dropping a quantum MODE by fesetround(const) on one classical
+// path, or saving into an object on one classical path, would otherwise hold after the join on every
+// path (cq-1dlz).
+void requirePlaced(LoweringContext &ctx, State &st, const Instruction &I) {
   if (!ctx.S.isEntry())
     unimplemented("eff-fenv: the quantum floating-point environment changes in a clone (rule 23 state "
                   "crossing a call: the clone would return it to its caller)",
@@ -501,6 +505,11 @@ void requireWritable(LoweringContext &ctx, State &st, const Instruction &I) {
     unimplemented("eff-fenv: the quantum floating-point environment changes in a block a classical branch "
                   "chooses (rule 23 state merged at a classical join)",
                   &I);
+}
+
+// The quantum part may change here: refuse the shapes the module does not lower (header, LIMITS).
+void requireWritable(LoweringContext &ctx, State &st, const Instruction &I) {
+  requirePlaced(ctx, st, I);
   // Lifted calls and llvm.set.rounding do not carry the quantum part: none may follow while it lives.
   const Instruction *bad = nullptr;
   anyAfter(I, [&](const Instruction &n) {
@@ -972,6 +981,9 @@ Saved savedOf(LoweringContext &ctx, State &st, DenseMap<const Value *, Saved> &t
 void save(LoweringContext &ctx, State &st, DenseMap<const Value *, Saved> &table, const Value *p, Saved s,
           const Instruction &I) {
   const Value *obj = objectOf(p);
+  auto prev = table.find(obj);
+  if (s.mode || s.flags || (prev != table.end() && (prev->second.mode || prev->second.flags)))
+    requirePlaced(ctx, st, I);   // the object's saved part changes on every path or is refused (cq-1dlz)
   if (s.mode || s.flags) {
     requireSaveTarget(obj, I);
     st.anyQuantumSave = true;
@@ -1034,8 +1046,11 @@ void lowerFenvCall(LoweringContext &ctx, CallBase &CB) {
     Operand r = arg(0);
     if (!r.handle && !flag) {
       if (auto *c = dyn_cast<ConstantInt>(r.v)) {
+        bool valid = (c->getZExtValue() & ~uint64_t(kModeBits) & 0xffffffffu) == 0;
+        if (valid && st.mode)
+          requirePlaced(ctx, st, CB);   // drops the quantum MODE: on every path or refused (cq-1dlz)
         hostCopy();
-        if ((c->getZExtValue() & ~uint64_t(kModeBits) & 0xffffffffu) == 0) {
+        if (valid) {
           setMode(ctx, st, nullptr);
           st.modeVal = c;
           st.modeValAt = &CB;
