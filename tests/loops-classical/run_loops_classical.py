@@ -7,7 +7,8 @@ For probes/loops.O1.ll (and slots.O1.ll, rule6.O1.ll) it checks, and fails on:
   - every entry is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle).
 For rule6.O1.ll it also checks the kept rails at trip counts 2 and 3 (cq-b13w, CR rule 6 on carried values), and
 for deferred.O1.ll likewise (cq-fx3s, cq-aqbw: the reverse loop deferred after the exit values' readers keeps no
-which-path or garbage rail).
+which-path or garbage rail), and for measured_some.O1.ll likewise (cq-8lf8: a computed rail measured on an early
+return only is not left as garbage on the loop path).
 The owned examples' acceptance is `python3 -m cqcheck run <examples> --oracle both` (the bead).
 Outputs go to build/tests/loops-classical/out/.
 """
@@ -46,6 +47,11 @@ DEFERRED = {"f_arm": [("frozen", "i32"), ("measured", "i32")],
             "f_arm_brk": [("frozen", "i32"), ("measured", "i32")],
             "f_arm_phase": [("frozen", "i32"), ("measured", "i32")],
             "f_oracle": [("measured", "i32")]}
+# cq-8lf8: y = 3x + 1 measured when n == 7 only; at n = 2, 3 the loop path keeps no garbage rail.
+MEASURED_PROBE = PROBES / "measured_some.O1.ll"
+MEASURED = {"m_r8": [("measured", "i32"), ("kept_entangled", "i32"), ("measured", "i32")],
+            "m_r8b": [("measured", "i32"), ("measured", "i32")],
+            "m_r8c": [("measured", "i32"), ("kept_entangled", "i32"), ("measured", "i32")]}
 ENTRIES = ["p_acc", "p_brk", "p_nest", "p_mod", "p_nb", "p_horner", "p_arm", "p_phase", "p_cjoin", "p_tphase", "p_bwb", "p_g2"]
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 
@@ -116,13 +122,13 @@ def main() -> int:
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--entry", action="append", help="check only these entries of loops.O1.ll")
-    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "fatal"],
+    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "fatal"],
                     help="run only these probe groups (default: all)")
     a = ap.parse_args()
     out = ROOT / "build" / "tests" / "loops-classical" / "out"
     out.mkdir(parents=True, exist_ok=True)
     failures = 0
-    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "fatal"]))
+    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "fatal"]))
     groups = []
     if "loops" in want:
         groups.append((PROBE, a.entry or ENTRIES))
@@ -132,9 +138,12 @@ def main() -> int:
         groups.append((RULE6_PROBE, list(RULE6)))
     if "deferred" in want:
         groups.append((DEFERRED_PROBE, list(DEFERRED)))
+    if "measured" in want:
+        groups.append((MEASURED_PROBE, list(MEASURED)))
     for probe, entries in groups:
         failures += check_probe(a, probe, entries, out)
-    for group, probe, table in (("rule6", RULE6_PROBE, RULE6), ("deferred", DEFERRED_PROBE, DEFERRED)):
+    for group, probe, table in (("rule6", RULE6_PROBE, RULE6), ("deferred", DEFERRED_PROBE, DEFERRED),
+                                 ("measured", MEASURED_PROBE, MEASURED)):
         if group not in want:
             continue
         for e, kept in table.items():
