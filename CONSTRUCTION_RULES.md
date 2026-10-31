@@ -291,7 +291,14 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
    value computed only from measured rails and classical values is classical: its rail (a flag
    too) is uncomputed while its sources still hold the outcome, and the value is recomputed by
    ordinary classical instructions from the outcomes; a merge under such a flag is a classical
-   `select`. — 01, 38, 42, 120, 128, 136, 140, 155.
+   `select`. Collapse is a data-flow condition, not a program-order one: a rail computed *before*
+   the measurement of its only quantum source collapses too (its `_unc` reads the measured rail,
+   which still holds the outcome; that is what "while its sources still hold the outcome" means),
+   and it is uncomputed at the collapse point (convention: right after the measurement). A
+   `cq_measure` of a value this rule made classical is a classical read and emits no measurement.
+   A collapsed rule 23 rail (flags or mode) is written back to the host environment at the collapse
+   point (`feraiseexcept(v)` / `fesetround(m)` of its classical value), so nothing of it stays an
+   output (65; ruling 2026-10-29). — 01, 38, 42, 65, 120, 128, 136, 140, 155.
 
 3. **Taint propagation.** Forward over SSA. Through memory per rule 20, through calls per rule 18,
    through pointers per rule 21. The angle operand of a rotation is classical unless rule 15
@@ -382,7 +389,11 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     quantum index, arithmetic on a register) is computed into an `f64` rail by ordinary templates
     (`select_f64[_ll|_hl|_lh]`, `qrom_load_f64`, arithmetic) and consumed by rule 15's single
     primitive. The compiler never expands it into per-arm controlled rotations; the ladder is the
-    backend's. — 132, 141, 142.
+    backend's. A `cq_phi` whose angle -O1 merged into one `phi` over the edges of a quantum
+    `switch` or diamond (22 `switch_phase`) is this case: the `phi` is the rule 9/13 select chain
+    of its incoming values, and the phase fires as `rz_qangle_controlled` under the shared block's
+    predicate. Rule 13's "phase arms per rule 8" is for distinct `cq_phi` calls that stayed in
+    their own blocks (ruling 2026-10-29). — 22, 132, 141, 142.
 
 12. **Phase deletion.** `cq_phi(θ)` is deleted only when no quantum predicate is in scope at any
     call depth. Inside a `_ctl` clone or a callee reached from a quantum arm it is
@@ -393,7 +404,8 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     block gets `or_i1` of its edge flags; an `unreachable` default gets no flag, and then the last
     case needs none either: it is the complement of the others and becomes the innermost select
     arm; a reachable default is the complement of the case flags. Value arms merge per rule 9, phase arms per
-    rule 8. — 22, 49, 123, 131, 142; new example for a reachable default (§8).
+    rule 8 (distinct `cq_phi` calls in their own blocks; one merged call with a `phi` angle is rule 11,
+    22 `switch_phase`). — 22, 49, 123, 131, 142; new example for a reachable default (§8).
 
 14. **Loops.**
     - *Classical bound, quantum body*: the loop stays a classical loop. Each trip computes next
@@ -428,7 +440,9 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     - *Classical bound with a quantum exit* (`for (i = 0; i < n; i++) if (q) break;`, a mixed exit
       `c_classical || q`): no cutoff applies. The loop is a classical loop over the classical bound,
       `q` feeds the predicate chain, and **every** predicate, the last included, is a function of
-      the inputs and is uncomputed by the mirror. Nothing is kept. — 26, 121, 130, 139.
+      the inputs and is uncomputed by the mirror. Nothing is kept. The chain's `|1⟩` seed is minted
+      after the classical zero-trip test, where a trip can run, never on the skip path (26). — 26,
+      121, 130, 139.
     - *Recursion with quantum depth*: one clone per level `_d1.._dK`; the call at level K is
       replaced by a `|0⟩` rail; the depth cutoff is min(K, B) like a loop's, and the kept overflow
       predicate is "the cut level would recurse once more" (0 on every branch when B ≤ K). — 98.
@@ -484,6 +498,16 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     LLVM math intrinsic on a quantum operand (`llvm.exp.f64`, `llvm.sin.f64`, `llvm.pow.f64`, …)
     is the call of the libm function of the same name and is lifted the same way (175, 184).
     A library may instead be lowered once and linked (rule 27).
+    A function the program defines shadows the injected body of the same name, as in C linking
+    (169's `__divdc3` and 173's `__mulsc3`/`__divsc3` are the example's own). For every function the
+    program does not define, the body this rule lifts is the pinned library source as the bundle
+    builds it (clang 19.1.7 `-O1`, the pinned flags), pragmas included: musl's `ilogb.c` carries
+    `#pragma STDC FENV_ACCESS ON`, so `ilogb` is a strictfp clone of its own (LLVM never inlines a
+    strictfp callee into a non-strictfp caller), lowered by rule 23 with 82's calling convention
+    (the caller's mode and flags rail in, the new flags rail out beside the result), and its
+    `FORCE_EVAL(0/0.0f)` is a constrained `fdiv` of two literals whose INVALID bit enters the flags
+    rail under the arm predicate (the volatile store stays nothing, rule 24). A reference that
+    depicts another body pins nothing (169, §7; ruling 2026-10-29).
     Result taint is recorded per clone (an `i32` return is a handle or a classical int by that
     record, not by its type). Recursion with classical depth is ordinary calls. — 06, 07, 33, 34,
     36, 51, 64, 82, 95, 109, 119, 136.
@@ -592,10 +616,18 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     string/memory functions are library calls: injected musl source lifted by rule 18 (190; 121 writes the same loops in user code).
     — 72, 73, 90.
 
-23. **Floating-point environment.** Under `FENV_ACCESS` the mode and flags split into a host part
+23. **Floating-point environment.** The C17 §7.6 functions (`fegetround`, `fesetround`,
+    `feclearexcept`, `feraiseexcept`, `fetestexcept`, `fegetexceptflag`, `fesetexceptflag`,
+    `fegetenv`, `fesetenv`, `feholdexcept`, `feupdateenv`) are recognised by name and signature as
+    the standard interface to the environment, like the intrinsic routes (they are reserved
+    identifiers, C17 §7.1.3, so no user body carries the name; an exception to rule 27, ruling
+    2026-10-29). Under `FENV_ACCESS` the mode and flags split into a host part
     (real calls) and a quantum part (rail); constrained ops take `_rm`/`_rmq` and emit a second
-    `_exc` template; fenv calls on quantum state are rail operations; the final flags rail is an
-    output. — 65, 80, 81, 82, 100.
+    `_exc` template; fenv calls on quantum state are rail operations; `fenv_t`/`fexcept_t` objects
+    are a host alloca plus the compiler-tracked quantum part, never a slot array, a QRAM or a
+    rule-21 pointer; a clone that does constrained FP work takes the caller's mode and flags rail
+    and returns the new flags rail beside its result (82); the final flags rail is an output,
+    unless rule 2 collapsed it into a host write-back (65). — 65, 80, 81, 82, 100.
 
 24. **Threads, atomics, volatile, setjmp.** Single-thread collapse: atomics are plain ops, fences
     nothing, `pthread_create` a direct call of the clone, mutexes no-ops; an unobservable
@@ -615,7 +647,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
 
 27. **Callees without a body: declared clones.** The compiler knows no library by name. Every
     quantum call to a function with no body in the module (after injection, and except the calls
-    rule 16, rule 22 and the intrinsic routes classify) is a call to the clone that §1.4 names, and
+    rule 16, rule 22, rule 23 and the intrinsic routes classify) is a call to the clone that §1.4 names, and
     the compiler only emits declarations of that clone and of the twins it calls. Whatever is linked
     supplies the definitions. A missing one is an ordinary undefined-symbol link error, and there is
     no fallback to the original function. A call with no quantum argument stays the ordinary call.
@@ -691,15 +723,20 @@ that class are equal iff:
 2. **Rotation list.** The sequence of `(gate, target register, angle or angle-rail expression,
    control predicate as a Boolean function of the inputs)` is equal up to reordering of gates
    with disjoint support, reordering of any two phases (classical-angle or angle-rail: diagonal
-   gates commute whatever their supports; an Ry is ordered against every gate it overlaps), and
-   rail renaming. A phase P(θ) on a flag rail is the phase
+   gates commute whatever their supports), reordering of an Ry with any gate that neither acts on
+   the Ry's target rail nor is non-diagonal on one of its control rails (a controlled Ry is
+   diagonal on its controls, so a phase whose predicate does not read the Ry's target commutes
+   with it: 125 and 133 order the same prep against its sibling phase both ways and are equal;
+   ruling 2026-10-29), and rail renaming. An Ry is ordered against every other gate it overlaps. A phase P(θ) on a flag rail is the phase
    e^{iθ·f} on every basis branch, where f is the flag's Boolean function of the inputs; which rail
    carries it is irrelevant. So `and_i1(a, b, t) · rz_i1(t, θ) · and_i1(a, b, t)` with t |0⟩ equals the
    doubly-controlled phase CCP(θ) on a, b (never a controlled Rz, which differs by a relative phase).
 
-A phase whose control predicate is constant over the quantum inputs once the classical arguments are
-fixed, and whose angle is classical, is a global phase: whether either side emits it is not compared
-(this is what rule 12's deletion relies on; it never applies to an Ry, nor to a phase with an angle rail).
+A phase whose control predicate (every enclosing arm predicate included) is constant over the quantum
+inputs once the classical arguments and the outcomes of the measurements executed before it are fixed,
+and whose angle is classical, is a global phase: whether either side emits it is not compared (each
+outcome branch is a separately collapsed state and the phase a scalar on it; rules 2 and 12 compose to
+this, ruling 2026-10-29; it never applies to an Ry, nor to a phase with an angle rail).
 
 The classical reference of item 1 runs every quantum-exit loop and quantum-depth recursion with the
 same cutoff as the circuit: a loop is stopped after K trips (the exit test after the K-th body gives
@@ -740,6 +777,8 @@ Byte identity of traces is never required.
 | §1.4 mask and bounds (2026-10-27) | 52 (`reduce_1000`: the `out` pointer carries two cells, so two digits), 98 (`chain_10`: the call-site bound `n & 3` must appear as `_b3`) | renamed `__cq_q_reduce_10000`, `__cq_q_chain_10_b3[_dN]` |
 | 27 declared clones (2026-10-27) | 161 (`ext_fn` called with the raw handle), 190 `escape` (`ext_sink` gets slot memory of handles) | done 2026-10-27: `__cq_q_ext_fn_10`, `__cq_q_ext_sink_0010` (snapshot twin), trailing K argument |
 | 6 unconditional (2026-10-28, cq-qpsb) | references that kept a dead old value under a bijective update | done: 01, 02, 10 (sub_qc, xor_qq), 12 (add_i8/16/64), 13 (fneg_q), 38, 43, 45 (unreachable_arm), 94, 108 (trap_q), 109 (bswap_q), 112 (usub_overflow_qq, rotr_qc, rotr_qq), 156 (sub_qq_i8), 162 (entry), 186 (free_uncond, free_classical_cond). Triaged, no change (no inverse, or the value is read later): 20, 25, 67, 109 (others), 122, 162 (consumer), 177, 189 (calloc_aligned). Open, not yet triaged: the K-loop and classical-loop chains 05, 09, 26, 27, 54, 68, 73, 75, 91, 139, 149, 150; the selects of 100, 116, 123, 129; 190 memmove_overlap (the dead cell is chosen by a classical index and may be a seed) |
+| 2 collapse, 11, 14, §6 (2026-10-29; rulings to CQ_lang2 cq-r6bc, cq-5h88, cq-ph2i, cq-vrwm, cq-xidq, cq-8q9i, cq-eina, cq-3wo5) | 65 (both functions measure y and kept rails that are functions of the outcome, and measured one), 22 `switch_phase` (per-case `rz_i1` for one merged `cq_phi` with a `phi` angle), 26 `break_with_body` (the `|1⟩` seed minted before the zero-trip test, live on the skip path), drivers 86 (`ptr_less` called with `a == b` only), 44/61/126 `.O1.ll` (stale inline-asm `!srcloc` offsets) | done: 65 collapses after the measurement and writes the flags back to the host (`; Classical reads (rule 2): 1`); 22 angle rail + `rz_qangle_controlled`; 26 seed in a preheader; two more `ptr_less` calls with `a != b`, both orders; `!srcloc` re-captured (non-normative) |
+| 18 pinned body (2026-10-29, cq-ezan) | 169 (`__cq_q_logb_1` follows a musl `ilogb` without its `#pragma STDC FENV_ACCESS ON`, inlined into `logb`) | open: regenerate from the pinned musl as built (strictfp `ilogb` clone with 82's mode/flags convention, the INVALID of `FORCE_EVAL(0/0.0f)` into the flags rail); 173 unchanged (its `.c` defines `__mulsc3`/`__divsc3`) |
 
 ## 8. Examples written 2026-10-26 (144–180)
 
@@ -773,6 +812,9 @@ Added 2026-10-27: 186 `free_qram` (QRAM lifetime end at `free`, `qram_realloc`, 
 
 To write (2026-10-27): an irreducible loop (`goto` into a loop body with a quantum exit) under rule 14's
 `fix-irreducible` bullet; a `switch` with a reachable default (rule 13); an inline `asm` with a quantum
-operand, as a declared clone (rule 27).
+operand, as a declared clone (rule 27). (2026-10-29): complex multiplication and division WITHOUT
+defining the builtin, so the pinned compiler-rt 19.1.7 `__muldc3`/`__divdc3` bodies (inline
+`__compiler_rt_logb`/`scalbn`/`fmax`: `ctlz`, `sadd.with.overflow`, no libm call) are the lifted bodies
+(rule 18; 169–174 define their own and witness the lifted-musl shape instead).
 
 Out of scope by §0: an `-O0`+mem2reg or `-O2` variant of any example.

@@ -83,7 +83,7 @@
 83_fmod_frem|double fmod_qc(double,double,double);double fmod_cq(double,double,double);float fmodf_qq(float,float,double,double);long double fmodl_qc(long double,double,long double);|fmod_qc(0,.5,3);fmod_cq(1,.5,3);fmodf_qq(0,1,.5,.25);fmodl_qc(0,.5,3)
 84_multi_origin_pointer|int ptr_select_store(unsigned,double,int);|ptr_select_store(0,.5,9)
 85_pointer_return|int ptr_return(unsigned,double,int);|ptr_return(0,.5,7)
-86_ptrdiff_compare|long ptrdiff_q(unsigned,double,int*);int ptr_less(unsigned,double,int*,int*);int ptr_eq_two_objects(unsigned,double);|ptrdiff_q(0,.5,icoef);ptr_less(0,.5,icoef,icoef);ptr_eq_two_objects(0,.5)
+86_ptrdiff_compare|long ptrdiff_q(unsigned,double,int*);int ptr_less(unsigned,double,int*,int*);int ptr_eq_two_objects(unsigned,double);|ptrdiff_q(0,.5,icoef);ptr_less(0,.5,icoef,icoef);ptr_less(0,.5,icoef,icoef+1);ptr_less(0,.5,icoef+1,icoef);ptr_eq_two_objects(0,.5)
 87_pointer_induction|int count_nonzero(unsigned char,double);|count_nonzero(0,.5)
 92_overflow_intrinsics|int mul_overflow(unsigned,double,unsigned);int add_overflow_qq(int,int,double,double);unsigned add_sat(unsigned,double,unsigned);|mul_overflow(0,.5,3);add_overflow_qq(0,1,.5,.25);add_sat(0,.5,3)
 93_i128|unsigned long long mul_i128(unsigned long long,double,unsigned long long);unsigned long long div_i128(unsigned long long,double,unsigned long long,unsigned long long);|mul_i128(0,.5,3);div_i128(0,.5,1,2)

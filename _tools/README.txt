@@ -95,3 +95,5 @@ sample_check.py [NN_name | NN_name:mutant.lowered.ll ...]   §6.1 basis-input SA
                          evaluator, templates per §2) and base.O1.ll with cq_theta/cq_measure = identity, on ~7 fixed seed
                          values; compares outputs, measured values, fired Ry/phase angles; _unc residue and dirty frees FAIL.
                          KDIFF = differs only where the K = 4 cutoff may bind; f80 and fenv (_rm/_exc) examples are SKIPPED.
+                         A reference whose C program measures a value rule 2 made classical declares the count in its
+                         header (`; Classical reads (rule 2): N`, 65); those C-side measurements have no lowered gate.

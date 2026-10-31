@@ -7,7 +7,9 @@ leave 0; cqrt_free must see 0 or an untouched seed; rotations only change nothin
 the identity reference in sample_rt.c (cq_theta, cq_measure = identity). Both run the drivers.txt calls on a few fixed
 inputs: the arguments that the lowered entry passes straight to cqrt_alloc_<W> are replaced by 0, 1, -1, 3, 7, MAX, MIN
 (per C type; 0, 1.5, -2.25, 7 for floating). Compared per sample: driver return values, the multiset of measured values,
-the multiset of fired Ry angles; fired phases must be a sub-multiset of the C program's, and the C-only remainder (the
+the multiset of fired Ry angles (a C-side measurement the lowered side lacks is allowed only as one of the rule-2
+classical reads the reference header declares: `; Classical reads (rule 2): N`, N per driver run; their values are
+witnessed by the output compare); fired phases must be a sub-multiset of the C program's, and the C-only remainder (the
 deleted global phase) must not depend on the input. Lowered-side violations (_unc residue, dirty free, ...) FAIL. A mismatch without violations in an example with a [K]
 loop is KDIFF: expected where the C loop needs more than K = 4 trips; read the sample.
 A reference that traps, aborts or does not terminate (C UB) leaves that sample uncompared (listed in the note).
@@ -440,7 +442,8 @@ def check(name, low=None, keep=None):
             lout = [norm_out(o) for o in lo if o[0] == 'O']; rout = [norm_out(o) for o in ro if o[0] == 'O']
             if lout != rout and not ls: diff.append(f'outputs lowered {lout} != C {rout}')
             lm = Counter((e[1], e[2]) for e in ev.ev if e[0] == 'M'); rm = Counter((int(e[2]), int(e[3], 16)) for e in ro if e[:2] == ['E', 'M'])
-            if rm - lm and not ls: diff.append(f'measured C-only {dict(rm - lm)} (lowered-only {dict(lm - rm)})')   # extra lowered measurements: an arm's measurement is never conditioned (§1.3)
+            cr = int((re.search(r'^; Classical reads \(rule 2\): (\d+)', lt, re.M) or [None, '0'])[1])   # cq_measure calls of a value rule 2 made classical: no gate on the lowered side
+            if rm - lm and not ls and sum((rm - lm).values()) != cr: diff.append(f'measured C-only {dict(rm - lm)} (lowered-only {dict(lm - rm)}; declared classical reads {cr})')   # extra lowered measurements: an arm's measurement is never conditioned (§1.3)
             ly = Counter(fmt_ang(e[1]) for e in ev.ev if e[0] == 'RY'); ry = Counter(fmt_ang(int(e[2], 16)) for e in ro if e[:2] == ['E', 'RY'])
             ry = Counter({k: v for k, v in ry.items() if k not in ('nan', 'inf', '-inf')})
             if ly != ry and not ls: diff.append(f'Ry lowered-only {dict(ly - ry)} C-only {dict(ry - ly)}')

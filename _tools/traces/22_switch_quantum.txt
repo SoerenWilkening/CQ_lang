@@ -36,17 +36,29 @@ cqrt_alloc_i32(0) -> h8
 cqrt_ry_i32(h8, 0x1p-1)
 cq_template_and_i32_hl(h8, 3) -> h9
 cq_template_icmp_eq_i32_hl(h9, 0) -> h10
-cqrt_rz_i1(h10, 0x1.999999999999ap-4)
-cq_template_icmp_eq_i32_hl_unc(h10, h9, 0)
-cqrt_free(h10)
 cq_template_icmp_eq_i32_hl(h9, 1) -> h11
-cqrt_rz_i1(h11, 0x1.999999999999ap-3)
-cq_template_icmp_eq_i32_hl_unc(h11, h9, 1)
-cqrt_free(h11)
 cq_template_icmp_eq_i32_hl(h9, 2) -> h12
-cqrt_rz_i1(h12, 0x1.3333333333333p-2)
+cqrt_alloc_i1(0) -> h13
+cqrt_or_i1(h10, h11, h13)
+cqrt_alloc_i1(0) -> h14
+cqrt_or_i1(h13, h12, h14)
+cq_template_select_f64_ll(h11, 0.2, 0.3) -> h100003
+cq_template_select_f64_lh(h10, 0.1, h100003) -> h100004
+cqrt_rz_qangle_controlled(h14, h100004)
+cq_template_select_f64_lh_unc(h100004, h10, 0.1, h100003)
+cqrt_free(h100004)
+cq_template_select_f64_ll_unc(h100003, h11, 0.2, 0.3)
+cqrt_free(h100003)
+cqrt_or_i1(h13, h12, h14)
+cqrt_free(h14)
+cqrt_or_i1(h10, h11, h13)
+cqrt_free(h13)
 cq_template_icmp_eq_i32_hl_unc(h12, h9, 2)
 cqrt_free(h12)
+cq_template_icmp_eq_i32_hl_unc(h11, h9, 1)
+cqrt_free(h11)
+cq_template_icmp_eq_i32_hl_unc(h10, h9, 0)
+cqrt_free(h10)
 cq_template_and_i32_hl_unc(h9, h8, 3)
 cqrt_free(h9)
 cqrt_measure_i32(h8) -> 0
