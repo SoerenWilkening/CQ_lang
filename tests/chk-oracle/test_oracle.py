@@ -781,5 +781,21 @@ double fenv_tested(double x0, double th, double c, double k) {
             self.assertFalse(any(r.get("kind") == "read" for r in rr.rotations), smp)
 
 
+class WideUIToF80(unittest.TestCase):
+    """CR §2 (owner ruling cq-cqcj): uitofp from more than 128 bits to f80 is never negative (LLVM 19's
+    ExpandLargeFpConvert sets the sign from the top bit; the oracle clears it)."""
+
+    def test_top_bit(self):
+        o1 = compile_c("wideu80", """
+long double wide(unsigned x, unsigned y) {
+    unsigned _BitInt(129) v = ((unsigned _BitInt(129))x << 128) | y;
+    return (long double)v; }
+""")
+        sp = spec("wideu80", "long double wide(unsigned,unsigned)", [("wide", ["unsigned", "unsigned"])])
+        got = rets(o1, sp, [{"call": 0, "args": [i32(1), i32(0)]}, {"call": 0, "args": [i32(1), i32(3)]},
+                            {"call": 0, "args": [i32(0), i32(5)]}])
+        self.assertEqual(got, [f80(2.0**128), f80(2.0**128), f80(5.0)])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

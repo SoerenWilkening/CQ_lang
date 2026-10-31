@@ -1115,6 +1115,22 @@ public:
     CI->eraseFromParent();
   }
 
+  // uitofp iN -> x86_fp80, N > 128: LLVM 19's ExpandLargeFpConvert sets the sign from the top bit
+  // (a miscompile); CR §2 (cq-cqcj) gives the non-negative value, the magnitude (two roundings,
+  // 113 bits then f80) being LLVM's. The sign bit is cleared on the integer image, which no fp fold
+  // can drop.
+  void fixWideUIToF80(CastInst *CI) {
+    if (CI->getType()->isVectorTy() || !CI->getType()->isX86_FP80Ty() ||
+        CI->getOperand(0)->getType()->getIntegerBitWidth() <= 128)
+      return;
+    IRBuilder<> B(CI->getNextNode());
+    Type *I80 = B.getIntNTy(80);
+    Value *bits = B.CreateBitCast(CI, I80);
+    Value *pos = B.CreateAnd(bits, ConstantInt::get(I80, APInt::getSignedMaxValue(80)));
+    Value *r = B.CreateBitCast(pos, CI->getType());
+    CI->replaceUsesWithIf(r, [&](Use &U) { return U.getUser() != bits; });
+  }
+
   void rewriteIntrinsic(IntrinsicInst *II) {
     switch (II->getIntrinsicID()) {
     case Intrinsic::abs:
@@ -1179,6 +1195,8 @@ public:
       } else if (auto *CI = dyn_cast<CastInst>(I)) {
         if (CI->getOpcode() == Instruction::FPToSI || CI->getOpcode() == Instruction::FPToUI)
           rewriteFpToInt(CI);
+        else if (CI->getOpcode() == Instruction::UIToFP)
+          fixWideUIToF80(CI);
       } else if (auto *II = dyn_cast<IntrinsicInst>(I)) {
         rewriteIntrinsic(II);
       }

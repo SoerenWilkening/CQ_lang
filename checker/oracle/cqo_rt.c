@@ -1420,3 +1420,30 @@ int main(int argc, char **argv) {
     fflush(0);
     real__exit(r);
 }
+
+/* fptrunc fp128 -> x86_fp80, reached by sitofp/uitofp from more than 128 bits through LLVM 19's
+ * ExpandLargeFpConvert. Darwin's libclang_rt.osx.a ships trunctfxf2.c.o empty, so the oracle program
+ * does not link without it. CR §2: a library step, IEEE; the oracle runs a plain conversion in the
+ * default environment, so to nearest even (finite inputs: the expansion builds no NaN or Inf). The
+ * fp128 travels in xmm0 as this 16-byte vector does. */
+typedef uint64_t cqo_fp128_bits __attribute__((vector_size(16)));
+long double __trunctfxf2(cqo_fp128_bits x) {
+  uint64_t lo = x[0], hi = x[1];
+  int e = (int)((hi >> 48) & 0x7fff);
+  uint64_t m = (UINT64_C(1) << 63) | ((hi & UINT64_C(0xffffffffffff)) << 15) | (lo >> 49);
+  uint64_t rest = lo & ((UINT64_C(1) << 49) - 1), half = UINT64_C(1) << 48;
+  if (e == 0) /* zero (the expansion makes no subnormal fp128) */
+    m = 0;
+  else if (rest > half || (rest == half && (m & 1)))
+    if (++m == 0) {
+      m = UINT64_C(1) << 63;
+      ++e;
+    }
+  unsigned char b[16] = {0};
+  uint16_t se = (uint16_t)(e | (int)(hi >> 63) << 15);
+  memcpy(b, &m, 8);
+  memcpy(b + 8, &se, 2);
+  long double r;
+  memcpy(&r, b, 10);
+  return r;
+}
