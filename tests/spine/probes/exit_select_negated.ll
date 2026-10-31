@@ -1,10 +1,9 @@
 ; cq-dtvp: a loop exiting on select(i + 1 < n, q, true), i.e. !(i + 1 < n) | q, has a classical
 ; disjunct of its exit test (rule 14 case 3, ClassicalBoundQuantumExit), exactly as the `or` form
 ; `i + 1 >= n || q` does: the loop runs classically over i and n, the carried v advances by the trip
-; flag. spine's loops::classify splits this select form since cq-dtvp; taint's forcingLeaves and
-; loops-classical's exit split do not yet (cq-wxch, cq-bea6), so today the counter i is tainted and
-; the loop is lowered as a K cutoff (wrong for n > K). Not run by run_spine.py (probes/blocked/);
-; it moves to probes/ when both beads land.
+; flag. spine's loops::classify (cq-dtvp), taint's forcingLeaves (cq-wxch) and loops-classical's
+; exit split (cq-bea6) all split this select form, so the counter i stays classical and the loop is
+; lowered as case 3 (a reverse loop over i), never a K cutoff.
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
@@ -29,3 +28,4 @@ exit:
 }
 ; CHECK exit_select_negated: add nuw nsw i32 %i, 1
 ; CHECK exit_select_negated: icmp slt i32 %{{a}}, %n
+; CHECK exit_select_negated: call i32 @cqrt_pop()
