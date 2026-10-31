@@ -127,6 +127,56 @@ class Equalities(unittest.TestCase):
         ours = side("o", lambda a, b, s: dict(rots=[ry(1, 2.0), ry(2, 1.0, [1], [a])], kept=[keep(1, a), keep(2, b)]))
         self.bad(ours, ref, "rotation list differs")
 
+    # -- commutation, owner ruling cq-vrwm (CR §6 item 2 amended): an Ry is ordered against a gate
+    # acting on its target or non-diagonal on one of its controls; a phase not reading its target
+    # commutes with it
+    def test_ry_commutes_with_phase_on_its_control(self):
+        # (each test rotates a first: a predicate is read over registers, the Ry targets)
+        # 125/133: Ry(b) controlled by a, and a phase on a: both diagonal on a, either order
+        def mk(first):
+            return lambda a, b, s: dict(rots=[ry(1, 3.0)] + [ry(2, 1.0, [1], [a]), ph(7, a, 0.5)][::1 if first else -1],
+                                        kept=[keep(1, a), keep(2, b)])
+        self.ok(side("o", mk(True)), side("r", mk(False)))
+        self.ok(side("o", mk(False)), side("r", mk(True)))
+
+    def test_ry_ordered_against_phase_reading_its_target(self):
+        # the phase's predicate a&b reads b, the Ry's target: the order is fixed
+        def mk(first):
+            return lambda a, b, s: dict(rots=[ry(1, 3.0)] + [ry(2, 1.0, [1], [a]), ph(7, a & b, 0.5)][::1 if first else -1],
+                                        kept=[keep(1, a), keep(2, b)])
+        self.bad(side("o", mk(True)), side("r", mk(False)), "rotation list differs")
+        self.bad(side("o", mk(False)), side("r", mk(True)), "rotation list differs")
+
+    def test_ry_ordered_against_nondiagonal_gate_on_its_control(self):
+        # Ry(b) controlled by a, and an (uncontrolled) Ry on a: non-diagonal on the control
+        def mk(first):
+            return lambda a, b, s: dict(rots=[ry(1, 3.0)] + [ry(2, 1.0, [1], [a]), ry(1, 2.0)][::1 if first else -1],
+                                        kept=[keep(1, a), keep(2, b)])
+        self.bad(side("o", mk(True)), side("r", mk(False)), "rotation list differs")
+        self.bad(side("o", mk(False)), side("r", mk(True)), "rotation list differs")
+
+    def test_ry_commutes_with_phase_on_its_control_rail_sampled(self):
+        # sampled group (not a full grid over a, b, c): support is conservative, so the phase reads
+        # every varying register; a phase on the Ry's own control rail (handle 9) that
+        # is a function of that control (here its negation, 125's else-arm phase) still commutes
+        smp = [0, 1, 2, 3, 5, 6]          # c = s >> 2 does not cross a, b fully
+
+        def mk(first, f):
+            return lambda a, b, s: dict(
+                rots=[ry(1, 3.0), ry(3, 0.5)] + [ry(2, 1.0, [9], [a]), ph(f, 1 - a, 0.5)][::1 if first else -1],
+                kept=[keep(1, a), keep(2, (s >> 1) & 1), keep(3, s >> 2)])
+        self.ok(side("o", mk(True, 9), smp), side("r", mk(False, 9), smp))
+        self.ok(side("o", mk(False, 9), smp), side("r", mk(True, 9), smp))
+        # the same predicate on another rail: nothing shows it does not read b, the order is fixed
+        self.bad(side("o", mk(True, 8), smp), side("r", mk(False, 8), smp), "rotation list differs")
+
+    def test_rys_sharing_only_a_control_commute(self):
+        # two Ry on distinct targets b, c under the same control a: block-diagonal in a, commute
+        def mk(first):
+            return lambda a, b, s: dict(rots=[ry(1, 3.0)] + [ry(2, 1.0, [1], [a]), ry(3, 2.0, [1], [a])][::1 if first else -1],
+                                        kept=[keep(1, a), keep(2, b), keep(3, 0)])
+        self.ok(side("o", mk(True)), side("r", mk(False)))
+
     # -- rails
     def test_rail_renaming_accepted(self):
         ours = side("o", lambda a, b, s: dict(rots=[ry(41, 1.0), ry(40, 2.0), ph(3, a & b, 0.5)],
@@ -352,7 +402,19 @@ class COracle(unittest.TestCase):
             + [self.csite("f", 2, "theta", 2.0, b)], kept=[]))
         c = compare(side("o", ref_ab()), c_first, QKEY, "c")
         self.assertFalse(c.equal)
-        self.assertTrue(any("supports overlap" in r for r in c.reasons), c.reasons)
+        self.assertTrue(any("do not commute" in r for r in c.reasons), c.reasons)
+
+    def test_order_ry_commutes_with_phase_on_its_control(self):
+        # owner ruling cq-vrwm: C reaches phi(a) then theta(b) under a; lowered emits the controlled
+        # Ry first. Diagonal on a, the phase does not read b: either order. A phase reading b: ordered.
+        for reads_b, equal in ((False, True), (True, False)):
+            c_side = side("c", lambda a, b, s: dict(
+                rots=[self.csite("f", 1, "theta", 1.0, a)] + ([self.csite("f", 3, "phi", 0.5)] if (a & b if reads_b else a) else [])
+                + ([self.csite("f", 2, "theta", 2.0, b)] if a else []), kept=[]))
+            ours = side("o", lambda a, b, s: dict(
+                rots=[ry(1, 1.0), ry(2, 2.0, [1], [a]), ph(7, a & b if reads_b else a, 0.5)], kept=[keep(1, a), keep(2, b)]))
+            c = compare(ours, c_side, QKEY, "c")
+            self.assertEqual(c.equal, equal, c.reasons)
 
 
 class FpModes(unittest.TestCase):
@@ -526,7 +588,7 @@ class COracleT1(unittest.TestCase):
 
     def test_invert_region_negated_not_reversed_rejected(self):
         ours = self.lowered(lambda a, b: [ry(1, 1.0), ry(1, -2.0), ry(1, -3.0), ph(7, a & b, -0.5)])
-        self.check(ours, self.region_c(), False, "supports overlap")
+        self.check(ours, self.region_c(), False, "do not commute")
 
     def test_invert_region_reversed_not_negated_rejected(self):
         ours = self.lowered(lambda a, b: [ry(1, 1.0), ph(7, a & b, 0.5), ry(1, 3.0), ry(1, 2.0)])

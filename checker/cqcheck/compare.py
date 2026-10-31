@@ -15,7 +15,7 @@ What is compared (CR §6, CLAUDE.md "The §6 checker"):
 - oracle "ref" only: kept rails (live at exit, every role, A4's kept_entangled included) as a
   multiset of (type, value function over the group's samples);
 - the rotation list: (gate, target, angle or angle-rail value, control predicate per input), up to
-  reordering of gates with disjoint support and renaming of rails. Rails are matched by (type,
+  reordering of commuting gates (below) and renaming of rails. Rails are matched by (type,
   value function over the group's samples). A phase P(θ) on a flag is e^{iθ·f}: its predicate is the
   flag's value, whichever rail carries it. Global phases are dropped on both sides: a classical-angle
   phase whose predicate is constant over the group (never an Ry, never an angle-rail phase). Against
@@ -54,6 +54,18 @@ Support. A gate's support is its target rail plus the registers (Ry targets) its
 angle-rail value depend on. Dependence is exact when the group's register values form a full grid
 on which the function is determined (the exhaustive case); otherwise every non-constant register is
 taken as a dependence (conservative: a reordering is accepted only when provably disjoint).
+
+Commutation (CR §6 item 2 as amended by the owner ruling on cq-vrwm, 2026-10-29). Two phases always
+commute (both diagonal). Otherwise an Ry is ordered against every gate that acts on its target rail
+or is non-diagonal on one of its controls: gates x and y are ordered when the target of one lies in
+the support of the other (an Ry on the same rail, a phase or a controlled Ry whose predicate or
+angle reads the target, an Ry on a rail the other's predicate reads). A phase whose predicate does
+not read the Ry's target, and an Ry sharing only controls with another, commute with it (a
+controlled Ry is block-diagonal in its controls' basis, as is e^{iθ·g} with g independent of the
+target). Support being conservative on sampled groups, a classical-angle phase is also known not to
+read the Ry's target when its flag rail is one of the Ry's control rails on the same side and its
+predicate is a function of that control's value at the Ry over the group's samples (_diag_on_controls:
+125's and 133's prep against the sibling arm's phase on the same flag).
 
 RunResult contents consumed here (the frozen trace events of cq-arch, plus fields that make a
 record self-contained; values are hex bit patterns or ints):
@@ -119,8 +131,9 @@ capped sample:
   more;
 - a C site the truncated sample does not reach is unknown there, not "not reached": a lowered gate
   may fire there with any angle, except that a lowered gate that matches no C site and fires on a
-  capped sample is still a difference when it precedes, in our order with overlapping support, a
-  gate whose C site that sample reached (it would lie before the cut);
+  capped sample is still a difference when it precedes, in our order, a gate whose C site that
+  sample reached and that it does not commute with (or, both phases, whose support it overlaps) (it
+  would lie before the cut);
 - a_K must read 1.
 On a sample with no capped record everything is compared, and every a_K must read 0.
 a_K is located on our side by value function, like every rail (CLAUDE.md): within each comparison
@@ -178,7 +191,7 @@ import json
 import re
 import sys
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, FrozenSet, Hashable, List, Optional, Sequence, Tuple
 
 from .contracts import DriverSpec, RunResult
@@ -343,6 +356,8 @@ class _Ev:
     pred: Tuple[int, ...]            # fired per group sample
     support: FrozenSet[int] = frozenset()
     label: str = ""
+    flag: Optional[int] = None       # the flag rail of a classical-angle phase (ph)
+    ctlfn: Dict[int, Tuple] = field(default_factory=dict)  # Ry: control rail -> its value per sample
 
 
 def _target_value(rr: RunResult, rec: Dict[str, Any]) -> Tuple[Optional[str], int]:
@@ -440,10 +455,15 @@ def _lowered_events(runs: List[RunResult]) -> Tuple[List[_Ev], List[_Ev]]:
         if target is not None:
             regs[(target, nver.get(target, 0))] = tuple(tvals)
             nver[target] = nver.get(target, 0) + 1
+        ctlfn: Dict[int, Tuple] = {}
+        if kind in ("ry", "ryq"):
+            for k, c in enumerate(r0.get("ctl", []) or []):
+                ctlfn[c] = tuple(int(bool(_int((recs[s][i].get("ctlv") or [])[k]))) for s in S)
         evs.append(_Ev(idx=i, kind=kind, target=target,
                        tclass=(w, tuple(tvals)) if target is not None else None,
                        theta=theta, afn=tuple(afn) if kind in ("ryq", "phq") else None,
-                       pred=tuple(fired), label=_describe(r0)))
+                       pred=tuple(fired), label=_describe(r0),
+                       flag=r0.get("f") if kind == "ph" else None, ctlfn=ctlfn))
     live, glob = [], []
     for e in evs:
         if not any(e.pred):
@@ -493,6 +513,30 @@ def _phase(e: _Ev) -> bool:
     return e.kind in ("ph", "phq")
 
 
+def _diag_on_controls(p: _Ev, y: _Ev) -> bool:
+    """The phase p acts only through one of the Ry y's control rails: its flag rail is a control of
+    y (on the same side) and its predicate is a function of that control's value at y over the
+    group's samples. Then p is diagonal on y's controls and does not read y's target, so they
+    commute (owner ruling cq-vrwm), whatever the conservative support says."""
+    if p.kind != "ph" or y.kind not in ("ry", "ryq") or p.flag is None or p.flag == y.target:
+        return False
+    cv = y.ctlfn.get(p.flag)
+    if cv is None:
+        return False
+    table: Dict[int, int] = {}
+    return all(table.setdefault(c, f) == f for c, f in zip(cv, p.pred))
+
+
+def _ordered(x: _Ev, y: _Ev) -> bool:
+    """x and y do not commute (module docstring, Commutation; owner ruling cq-vrwm)."""
+    if _phase(x) and _phase(y):
+        return False
+    if _diag_on_controls(x, y) or _diag_on_controls(y, x):
+        return False
+    return ((x.target is not None and x.target in y.support)
+            or (y.target is not None and y.target in x.support))
+
+
 def _match_lists(ours: List[_Ev], ref: List[_Ev]) -> Optional[str]:
     """Trace equivalence under partial commutation with a rail bijection; None when equal."""
     best = [-1, ""]
@@ -515,7 +559,7 @@ def _match_lists(ours: List[_Ev], ref: List[_Ev]) -> Optional[str]:
             if pair is None or pair in tried:
                 continue
             tried.add(pair)
-            if any(ref[k].support & r.support and not (_phase(ref[k]) and _phase(r)) for k in rem[:pos]):
+            if any(_ordered(ref[k], r) for k in rem[:pos]):
                 continue
             m2, minv2 = m, minv
             if pair != (-1, -1) and pair[0] not in m:
@@ -770,30 +814,49 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
     # unmatched on capped samples. An un-prep's j and every k must take C reaches: j is checked
     # when i is chosen, the ks at the leaf. Both sets are part of the memo key.
     # Order (owner note): gates are taken in lowered order, so a gate's C reach must come after the
-    # C reach of every earlier-taken gate it does not commute with at that sample (overlapping
-    # support, not both phases). ordst: per (rail, sample) the latest C position of a taken gate
-    # touching the rail, for any gate and for non-phase gates. It is part of the memo key.
+    # C reach of every earlier-taken gate it does not commute with at that sample (_ordered: the
+    # target of one in the support of the other). ordst: per (rail, sample) the latest C position of
+    # a taken gate whose support holds the rail, and of a taken gate targeting the rail. It is part
+    # of the memo key.
+    # A gate in some _diag_on_controls pair (comm) is recorded per gate in exc, keyed (rail, sample,
+    # gate), so that its partners can skip it; every other gate only as the per-rail maximum.
+    comm: List[set] = [set() for _ in ours]
+    for a in range(len(ours)):
+        for b in range(len(ours)):
+            if a != b and _diag_on_controls(ours[a], ours[b]):
+                comm[a].add(b)
+                comm[b].add(a)
+
     def order_ok(i: int, picks: List[Tuple[int, int]], ordst: Tuple) -> Optional[Tuple]:
         e = ours[i]
-        any_, nonph = dict(ordst[0]), dict(ordst[1])
+        any_, tgt, exc = dict(ordst[0]), dict(ordst[1]), dict(ordst[2])
         for s, p in picks:
-            for r in e.support:
-                lim = nonph.get((r, s), -1) if _phase(e) else any_.get((r, s), -1)
-                if p < lim:
-                    return None
+            lim = max((tgt.get((r, s), -1) for r in e.support), default=-1)
+            if e.target is not None:
+                lim = max(lim, any_.get((e.target, s), -1))
+            for (r, s2, k), q in exc.items():
+                if s2 == s and k not in comm[i] and q > lim and _ordered(e, ours[k]):
+                    lim = q
+            if p < lim:
+                return None
+            if comm[i]:
+                for r in e.support:
+                    if p > exc.get((r, s, i), -1):
+                        exc[(r, s, i)] = p
+                continue
             for r in e.support:
                 if p > any_.get((r, s), -1):
                     any_[(r, s)] = p
-                if not _phase(e) and p > nonph.get((r, s), -1):
-                    nonph[(r, s)] = p
-        return (tuple(sorted(any_.items())), tuple(sorted(nonph.items())))
+            if e.target is not None and p > tgt.get((e.target, s), -1):
+                tgt[(e.target, s)] = p
+        return (tuple(sorted(any_.items())), tuple(sorted(tgt.items())), tuple(sorted(exc.items())))
 
     check_order = [True]
     # A node budget (narrow review): with the order state in the memo key, interchangeable gates make a
     # failing search factorial. Out of budget is a failure with that reason, never a pass.
     budget = [MATCH_BUDGET]
 
-    def dfs(i: int, used: Used, unp: FrozenSet[int], free: FrozenSet[int], ordst: Tuple = ((), ())) -> bool:
+    def dfs(i: int, used: Used, unp: FrozenSet[int], free: FrozenSet[int], ordst: Tuple = ((), (), ())) -> bool:
         if i == len(ours):
             return not leftover(used) and not any(partner[u][1] & (unp | free) for u in unp)
         if (i, used, unp, free, ordst) in failed:
@@ -856,9 +919,9 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
                 for a in range(len(evs_s)):
                     for b in range(a + 1, len(evs_s)):
                         x, y = evs_s[a], evs_s[b]
-                        if x.idx > y.idx and (x.support & y.support) and not (_phase(x) and _phase(y)):
+                        if x.idx > y.idx and _ordered(x, y):
                             return [f"sample {s}: C order puts {x.label} before {y.label}, the lowered order "
-                                    f"reverses them and their supports overlap (no matching keeps the C order)"]
+                                    f"reverses them and they do not commute (no matching keeps the C order)"]
         check_order[0] = True
         # diagnose with the greedy assignment
         used = start
@@ -888,7 +951,7 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
             if not x.pred[s]:
                 continue
             for _, e in hits[s]:
-                if e.idx > x.idx and (x.support & e.support):
+                if e.idx > x.idx and (_ordered(x, e) or (_phase(x) and _phase(e) and x.support & e.support)):
                     reasons.append(f"sample {s}: lowered gate #{x.idx} {x.label} corresponds to no C site and "
                                    f"precedes {e.label}, which the C program reached before the cut")
                     return reasons
@@ -898,9 +961,9 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
         for a in range(len(evs_s)):
             for b in range(a + 1, len(evs_s)):
                 x, y = evs_s[a], evs_s[b]
-                if x.idx > y.idx and (x.support & y.support) and not (_phase(x) and _phase(y)):
+                if x.idx > y.idx and _ordered(x, y):
                     reasons.append(f"sample {s}: C order puts {x.label} before {y.label}, the lowered order "
-                                   f"reverses them and their supports overlap")
+                                   f"reverses them and they do not commute")
                     return reasons
     return reasons
 
