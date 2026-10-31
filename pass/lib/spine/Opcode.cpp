@@ -678,6 +678,112 @@ void clean(LoweringContext &ctx, Value *y, const Inverse &inv) {
   ctx.unc().cleanupBijective(ctx.unc().idOf(ctx.operand(y).v), inv.spec, inv.ops);
 }
 
+// Garbage rule 5 uncomputes anyway (CR rule 6, both operands dead; cq-12cr): a template result the
+// spine minted that no non-diagonal gate or measurement turned into a register.
+bool ruleFiveGarbage(LoweringContext &ctx, Value *y) {
+  spine::Shared &sh = spine::shared(ctx);
+  Value *h = ctx.operand(y).v;
+  auto it = sh.hist.find(h);
+  return it != sh.hist.end() && it->second.tmpl && !it->second.opaque && !sh.rotations.count(h) &&
+         !sh.measured.count(h);
+}
+
+// y = a*x + c + sum(+-rest) over the original instructions computing V (CR rule 6's composite update,
+// 127): add, sub, and mul or shl by a literal of a term free of other addends. nullopt: V is no such
+// affine function of x.
+struct Affine {
+  APInt a, c;
+  SmallVector<std::pair<bool, Value *>, 4> rest;   // (negated, a value that does not read x)
+};
+
+std::optional<Affine> affineIn(LoweringContext &ctx, Value *V, Value *X, unsigned W, unsigned depth = 0) {
+  if (V == X)
+    return Affine{APInt(W, 1), APInt(W, 0), {}};
+  if (auto *k = dyn_cast<ConstantInt>(V))
+    return Affine{APInt(W, 0), k->getValue(), {}};
+  if (!reads(ctx, V, X))
+    return Affine{APInt(W, 0), APInt(W, 0), {{false, V}}};
+  auto *bo = dyn_cast<BinaryOperator>(V);
+  if (!bo || depth > 16 || !bo->getType()->isIntegerTy(W))
+    return std::nullopt;
+  auto opc = bo->getOpcode();
+  if (opc == Instruction::Add || opc == Instruction::Sub) {
+    auto l = affineIn(ctx, bo->getOperand(0), X, W, depth + 1);
+    auto r = affineIn(ctx, bo->getOperand(1), X, W, depth + 1);
+    if (!l || !r)
+      return std::nullopt;
+    bool neg = opc == Instruction::Sub;
+    l->a = neg ? l->a - r->a : l->a + r->a;
+    l->c = neg ? l->c - r->c : l->c + r->c;
+    for (auto &[n, v] : r->rest)
+      l->rest.push_back({n != neg, v});
+    return l;
+  }
+  if (opc == Instruction::Mul || opc == Instruction::Shl) {
+    auto *k = dyn_cast<ConstantInt>(bo->getOperand(1));
+    Value *T = bo->getOperand(0);
+    if (!k && opc == Instruction::Mul) {
+      k = dyn_cast<ConstantInt>(bo->getOperand(0));
+      T = bo->getOperand(1);
+    }
+    if (!k || (opc == Instruction::Shl && k->getValue().uge(W)))
+      return std::nullopt;
+    APInt f = opc == Instruction::Mul ? k->getValue() : APInt::getOneBitSet(W, k->getZExtValue());
+    auto t = affineIn(ctx, T, X, W, depth + 1);
+    if (!t || !t->rest.empty())
+      return std::nullopt;
+    return Affine{t->a * f, t->c * f, {}};
+  }
+  return std::nullopt;
+}
+
+// CR rule 6 on x against the composite update y' = f(g(x), x) (cq-12cr owner ruling, 127): the
+// garbage g, computed from x, is uncomputed by rule 5 first (its _unc reads x, so Uncompute orders it
+// before x's clean-up). y' = a*x + c + sum(+-rest) is a bijection in x iff a is odd; then
+// x = (y' - c - sum(+-rest)) * a^-1, its inner steps fresh garbage rails. An even a: x is kept.
+void compositeCleanup(LoweringContext &ctx, Instruction &I, Value *X, Operand yp) {
+  if (!I.getType()->isIntegerTy())
+    unimplemented("spine: rule 6 composite update (127) of a non-integer value", &I);
+  unsigned W = I.getType()->getIntegerBitWidth();
+  std::optional<Affine> f = affineIn(ctx, &I, X, W);
+  if (!f)
+    unimplemented("spine: rule 6 composite update (127) that is not an affine function of the register", &I);
+  if (!f->a[0])
+    return;   // an even multiplier: no inverse, x is kept
+  abi::TemplateSpec spec;
+  spec.w = rt(I.getType(), &I);
+  SmallVector<Inverse, 4> steps;   // each reads the previous step's rail (yp first)
+  if (!f->c.isZero())
+    steps.push_back(Inverse{spec, {Operand{}, Operand{ConstantInt::get(I.getType(), f->c), false}}});
+  for (auto &[neg, v] : f->rest) {
+    steps.push_back(Inverse{spec, {Operand{}, ctx.operand(v)}});
+    steps.back().spec.op = neg ? "add" : "sub";
+  }
+  if (!f->c.isZero())
+    steps.front().spec.op = "sub";
+  if (!f->a.isOne()) {
+    steps.push_back(Inverse{spec, {Operand{}, Operand{ConstantInt::get(I.getType(), oddInverse(f->a)), false}}});
+    steps.back().spec.op = "mul";
+  }
+  if (steps.empty()) {   // y' = x (2x - x): t = y' + 0
+    steps.push_back(Inverse{spec, {Operand{}, Operand{ConstantInt::get(I.getType(), 0), false}}});
+    steps.back().spec.op = "add";
+  }
+  RailId xid = ctx.unc().idOf(ctx.operand(X).v);
+  Operand cur = yp;
+  for (size_t k = 0; k < steps.size(); ++k) {
+    steps[k].ops[0] = cur;
+    Inverse inv = normalized(steps[k].spec, steps[k].ops);
+    if (k + 1 == steps.size()) {
+      clean(ctx, X, inv);
+      return;
+    }
+    Value *h = ctx.emitTemplate(inv.spec, inv.ops);
+    ctx.unc().noteUse(xid, cast<Instruction>(h));
+    cur = Operand{h, true};
+  }
+}
+
 // CR rule 6, a select whose arms are bijective updates of y or y itself (125): a quantum select or a
 // quantum-join phi M, lowered (rule 9) to a chain of select templates over the rails of its arms. Its
 // inverse is the same chain over the inverses of the arms, read from M's rail: t = c ? f^-1(y') : y'
@@ -923,20 +1029,35 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
     return;
   }
 
-  // y' = f(y, ...): the first operand that is a cleanable dead rail f is a bijection in. With both
-  // operands dead, operand 0 is cleaned and the other kept (CR rule 6).
-  SmallVector<Value *, 3> tried;
-  for (Value *Y : I.operands()) {
-    if (is_contained(tried, Y))
-      continue;
-    tried.push_back(Y);
-    if (!cleanable(ctx, Y) || !deadAfter(ctx, Y, &I))
-      continue;
+  // y' = f(y, ...): the first operand that is a cleanable dead rail f is a bijection in.
+  SmallVector<Value *, 3> dead;
+  for (Value *Y : I.operands())
+    if (!is_contained(dead, Y) && cleanable(ctx, Y) && deadAfter(ctx, Y, &I))
+      dead.push_back(Y);
+  // CR rule 6, both operands dead (cq-12cr): when exactly one is garbage rule 5 uncomputes anyway, the
+  // other is cleaned (its inverse reads the garbage, whose _unc follows in its usual place); when that
+  // garbage was computed from the other, it is uncomputed first and rule 6 asks the composite update.
+  // Otherwise operand 0 of the IR instruction is cleaned and the other kept.
+  if (dead.size() == 2) {
+    bool g0 = ruleFiveGarbage(ctx, dead[0]), g1 = ruleFiveGarbage(ctx, dead[1]);
+    if (g0 != g1) {
+      Value *G = g0 ? dead[0] : dead[1], *R = g0 ? dead[1] : dead[0];
+      if (reads(ctx, G, R)) {
+        if (inverseOf(ctx, I, G, yp)) {
+          compositeCleanup(ctx, I, R, yp);
+          return;
+        }
+      } else if (auto inv = inverseOf(ctx, I, R, yp)) {
+        clean(ctx, R, *inv);
+        return;
+      }
+    }
+  }
+  for (Value *Y : dead)
     if (auto inv = inverseOf(ctx, I, Y, yp)) {
       clean(ctx, Y, *inv);
       return;
     }
-  }
 }
 
 } // namespace spine
