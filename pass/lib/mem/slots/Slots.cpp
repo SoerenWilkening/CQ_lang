@@ -31,6 +31,15 @@
 // cq_theta result). A store under a quantum predicate stores
 // select(predicate, value, old) into a fresh rail (rules 9, 20).
 //
+// One rail per cell (cq-dr4o; CR rule 20 "the rail replaces the cell" read with C value semantics, CR
+// §0 basis copies). A store of a handle that another holder may still expose after the store (the
+// cell a slot load read it from, a cell an earlier store left it in, or an SSA value that may name it
+// and is read after the store) stores a copy: c = alloc_<W>(0), copy_<W>(h, c), recorded like any core
+// gate; in a dynamic object c is the cell's register (kept, like a seed), elsewhere it follows the
+// computed-rail rules. Otherwise the store is a move (the handle, no gate): each other holder is
+// overwritten (in the store's block before it, or on every path after it before any read) or dies.
+// A later plain store of the same rail into a slot cell is decided when it is lowered.
+//
 // Rails through memory. Uncompute (rule 5) sees SSA uses only, so a rail read back through a cell must
 // be the stored Value itself, or a rail that is never resolved:
 //  - FORWARDING: a load whose cell was written (or read) by a dominating access with the same address
@@ -667,6 +676,249 @@ bool isThetaResult(const Value *v) {
   return f && f->getName().starts_with("cq_theta_");
 }
 
+
+// ---- one rail per cell (cq-dr4o) -----------------------------------------------------------------
+
+// A slot cell (object, its facts, its address) that may hold the handle a store writes.
+struct Holder { ObjectId o; ObjInfo *info; Addr a; uint64_t size; const Instruction *at; };
+
+const Instruction *defOf(const Value *v) { return dyn_cast<Instruction>(v); }
+
+// No path from S reads the cell before a store overwrites exactly that cell (or the object dies: a
+// local or non-escaping heap object at the return). A path that redefines a value of the cell's
+// address, or a call that may read the object, keeps it alive.
+bool cellDeadAfter(LoweringContext &ctx, const Holder &h, const Instruction *S) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  SmallPtrSet<const Instruction *, 4> defs;
+  if (auto *I = defOf(h.a.root))
+    defs.insert(I);
+  for (auto &t : h.a.terms)
+    if (auto *I = defOf(t.first))
+      defs.insert(I);
+  bool localDeath = h.info->kind == RootKind::Local || (h.info->kind == RootKind::Heap && !h.info->escaping);
+  // 1 dead on this path, 0 alive, -1 keep walking.
+  auto step = [&](const Instruction &I) -> int {
+    if (&I == S)
+      return -1;
+    if (defs.count(&I))
+      return 0;
+    if (auto *st = dyn_cast<StoreInst>(&I)) {
+      if (!hasObject(ctx, st->getPointerOperand(), h.o))
+        return -1;
+      if (!st->isVolatile() && !st->isAtomic() && !ctx.T.isFatPointer(st->getPointerOperand(), ctx.S) &&
+          DL.getTypeStoreSize(st->getValueOperand()->getType()).getFixedValue() == h.size &&
+          sameCell(decompose(st->getPointerOperand(), DL), h.a))
+        return 1;
+      return -1;
+    }
+    if (auto *ld = dyn_cast<LoadInst>(&I)) {
+      if (!hasObject(ctx, ld->getPointerOperand(), h.o))
+        return -1;
+      Addr a = decompose(ld->getPointerOperand(), DL);
+      return differentCell(a, h.a, DL.getTypeStoreSize(ld->getType()).getFixedValue(), h.size) ? -1 : 0;
+    }
+    if (isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I) || isa<VAArgInst>(I))
+      return hasObject(ctx, I.getOperand(0), h.o) ? 0 : -1;
+    if (isa<ReturnInst>(I) || isa<ResumeInst>(I))
+      return localDeath ? 1 : 0;
+    if (isa<UnreachableInst>(I))
+      return 1;
+    auto *CB = dyn_cast<CallBase>(&I);
+    if (!CB || isa<DbgInfoIntrinsic>(CB) || isCqSurface(*CB))
+      return -1;
+    if (auto *II = dyn_cast<IntrinsicInst>(CB))
+      if (II->getIntrinsicID() == Intrinsic::lifetime_end && hasObject(ctx, II->getArgOperand(1), h.o))
+        return 1;
+    if (isFree(*CB) && CB->arg_size() && hasObject(ctx, CB->getArgOperand(0), h.o))
+      return 1;
+    for (const Use &u : CB->args())
+      if (hasObject(ctx, u.get(), h.o))
+        return 0;
+    if (CB->mayReadOrWriteMemory() && (h.info->escaping || h.info->kind == RootKind::Param ||
+                                       h.info->kind == RootKind::Global))
+      return 0;
+    return -1;
+  };
+  auto walk = [&](BasicBlock::const_iterator from, BasicBlock::const_iterator to) -> int {
+    for (auto it = from; it != to; ++it)
+      if (int r = step(*it); r >= 0)
+        return r;
+    return -1;
+  };
+  const BasicBlock *SB = S->getParent();
+  int r = walk(std::next(S->getIterator()), SB->end());
+  if (r == 0)
+    return false;
+  if (r == 1)
+    return true;
+  SmallPtrSet<const BasicBlock *, 16> seen;
+  SmallVector<const BasicBlock *, 16> work(succ_begin(SB), succ_end(SB));
+  while (!work.empty()) {
+    const BasicBlock *b = work.pop_back_val();
+    if (!seen.insert(b).second)
+      continue;
+    int x = walk(b->begin(), b->end());
+    if (x == 0)
+      return false;
+    if (x == 1)
+      continue;
+    for (const BasicBlock *s : successors(b))
+      work.push_back(s);
+  }
+  return true;
+}
+
+// CR rule 20 slot store, C value semantics (cq-dr4o): the rail replaces the cell, and C copies the
+// value. When the handle S stores may still be read after S through another holder (a cell other
+// than S's, or an SSA value naming the rail), the two C objects would share one rail and an in-place
+// gate on one (rule 2) would change the other: S then stores a basis copy (CR §0). It is a move (the
+// handle itself, no gate) when no other holder can be read after S.
+bool needsCopy(LoweringContext &ctx, FnState &st, const StoreInst &S, const Site &dest) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  const Value *v = S.getValueOperand();
+  SmallPtrSet<const Value *, 8> names;
+  SmallVector<Holder, 4> holders;
+  auto slotSite = [&](const Instruction &I, const Value *ptr, Type *ty, std::optional<Holder> &out) {
+    ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
+    if (objs.size() != 1 || ctx.T.classOf(objs.front()) != ObjClass::Slot || ctx.T.isFatPointer(ptr, ctx.S))
+      return;
+    Addr a = decompose(ptr, DL);
+    if (!a.ok)
+      return;
+    ObjInfo &info = objInfo(ctx, st, a.root, objs.front());
+    out = Holder{objs.front(), &info, a, DL.getTypeStoreSize(ty).getFixedValue(), &I};
+  };
+  // Rule 2 and rule 3 views of a value are the same rail: cq_theta (in place), freeze, bitcast.
+  auto sameRail = [](const User *u, const Value *x) {
+    if (isa<FreezeInst>(u) || isa<BitCastInst>(u))
+      return true;
+    auto *c = dyn_cast<CallInst>(u);
+    return c && c->getCalledFunction() && c->getCalledFunction()->getName().starts_with("cq_theta_") &&
+           c->arg_size() && c->getArgOperand(0) == x;
+  };
+  auto close = [&](SmallPtrSet<const Value *, 8> &set) {
+    SmallVector<const Value *, 8> work(set.begin(), set.end());
+    while (!work.empty()) {
+      const Value *x = work.pop_back_val();
+      for (const User *u : x->users())
+        if (sameRail(u, x) && set.insert(u).second)
+          work.push_back(u);
+    }
+  };
+  // The rail's origin and the values naming it by construction.
+  const Value *origin = v;
+  for (unsigned guard = 0; guard < 64; ++guard) {
+    const auto *U = dyn_cast<User>(origin);
+    if (!U || !U->getNumOperands())
+      break;
+    const Value *x = U->getOperand(0);
+    if (!sameRail(U, x))
+      break;
+    origin = x;
+  }
+  SmallPtrSet<const Value *, 8> own{origin};
+  close(own);
+  names.insert(own.begin(), own.end());
+  // Under one rail per cell, the cell a slot load read is the rail's only cell; every handle an access
+  // lowered before S may have left in (or read from) that cell may be the same rail.
+  if (auto *L = dyn_cast<LoadInst>(origin)) {
+    std::optional<Holder> h;
+    slotSite(*L, L->getPointerOperand(), L->getType(), h);
+    if (h) {
+      for (const Access &x : accessesOf(ctx, *st.F, h->o)) {
+        uint64_t sz = DL.getTypeStoreSize(x.ty).getFixedValue();
+        if (!st.lowered.count(x.I) || differentCell(x.a, h->a, sz, h->size))
+          continue;
+        if (auto *xs = dyn_cast<StoreInst>(x.I))
+          names.insert(xs->getValueOperand());
+        else
+          names.insert(x.I);
+      }
+      close(names);
+      if (!(h->o == dest.o && sameCell(h->a, dest.a)))
+        holders.push_back(*h);
+    }
+  }
+  // Cells an earlier store left the rail in.
+  for (const Value *n : own)
+    for (const User *u : n->users()) {
+      auto *X = dyn_cast<StoreInst>(u);
+      if (!X || X == &S || X->getValueOperand() != n || !st.lowered.count(X))
+        continue;
+      std::optional<Holder> h;
+      slotSite(*X, X->getPointerOperand(), n->getType(), h);
+      if (h && !(h->o == dest.o && sameCell(h->a, dest.a)))
+        holders.push_back(*h);
+    }
+  if (holders.empty())
+    return false;
+  // A name read after S. A later plain store of a name into a slot cell is not a read: that store is
+  // decided the same way when it is lowered, with S's cell among its holders.
+  auto slotStoreOf = [&](const Instruction *U, const Value *n) {
+    auto *X = dyn_cast<StoreInst>(U);
+    if (!X || X->getValueOperand() != n || X->isVolatile() || X->isAtomic())
+      return false;
+    std::optional<Holder> h;
+    slotSite(*X, X->getPointerOperand(), n->getType(), h);
+    return h.has_value();
+  };
+  const BasicBlock *SB = S.getParent();
+  SmallPtrSet<const BasicBlock *, 16> reach;
+  SmallVector<const BasicBlock *, 16> bw(succ_begin(SB), succ_end(SB));
+  while (!bw.empty()) {
+    const BasicBlock *b = bw.pop_back_val();
+    if (reach.insert(b).second)
+      for (const BasicBlock *s : successors(b))
+        bw.push_back(s);
+  }
+  for (const Value *n : names)
+    for (const User *u : n->users()) {
+      auto *U = dyn_cast<Instruction>(u);
+      if (!U || U == &S || slotStoreOf(U, n))
+        continue;
+      const BasicBlock *ub = U->getParent();
+      if (auto *phi = dyn_cast<PHINode>(U)) {
+        for (unsigned i = 0; i < phi->getNumIncomingValues(); ++i)
+          if (phi->getIncomingValue(i) == n &&
+              (phi->getIncomingBlock(i) == SB || reach.count(phi->getIncomingBlock(i))))
+            return true;
+        continue;
+      }
+      if (reach.count(ub) || (ub == SB && S.comesBefore(U)))
+        return true;
+    }
+  // An overwrite of a holder with a value that may be the rail puts it back, unless that value is a
+  // load of S's own cell: it is the rail only when its cell held it, i.e. when S's cell is the holder.
+  auto rePuts = [&](const Value *o) {
+    if (!names.count(o) || own.count(o))
+      return names.count(o) > 0;
+    auto *ol = dyn_cast<LoadInst>(o);
+    return !(ol && hasObject(ctx, ol->getPointerOperand(), dest.o) &&
+             sameCell(decompose(ol->getPointerOperand(), DL), dest.a));
+  };
+  // A holder overwritten in S's block before S (after the access that left the rail there) no longer
+  // holds it (the second store of a swap); every other holder must be dead after S.
+  for (const Holder &h : holders) {
+    bool gone = false;
+    for (auto it = S.getIterator(); it != SB->begin();) {
+      --it;
+      if (&*it == h.at)
+        break;
+      auto *o = dyn_cast<StoreInst>(&*it);
+      if (o && !rePuts(o->getValueOperand()) && hasObject(ctx, o->getPointerOperand(), h.o) &&
+          !o->isVolatile() && !o->isAtomic() && !ctx.T.isFatPointer(o->getPointerOperand(), ctx.S) &&
+          DL.getTypeStoreSize(o->getValueOperand()->getType()).getFixedValue() == h.size &&
+          sameCell(decompose(o->getPointerOperand(), DL), h.a)) {
+        gone = true;
+        break;
+      }
+    }
+    if (!gone && !cellDeadAfter(ctx, h, &S))
+      return true;
+  }
+  return false;
+}
+
 } // namespace
 
 void allocateSlots(LoweringContext &ctx, Instruction &site) {
@@ -768,7 +1020,7 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
   RailType w = cellRail(*s.info, v->getType(), stI);
   IRBuilder<> &B = ctx.B();
 
-  enum class What { Register, Seed, Computed } what;
+  enum class What { Register, Seed, Computed, Copy } what;
   Operand val = ctx.operand(v);
   if (s.info->boolCells && val.handle)
     if (auto *z = dyn_cast<ZExtInst>(v); z && z->getSrcTy()->isIntegerTy(1)) {
@@ -809,6 +1061,17 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
     ctx.unc().recordSeed(alloc);
     val = Operand{alloc, true};
     what = What::Seed;
+  } else if (needsCopy(ctx, st, stI, s)) {
+    // C copies the value (cq-dr4o): the cell gets its own rail, a basis copy of the stored one (CR §0).
+    Value *h = val.v;
+    CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                               {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+    RailId cid = ctx.unc().recordSeed(c);
+    abi::CoreSpec cp{abi::Core::Copy, w};
+    CallInst *cc = ctx.emitCore(cp, {h, c});
+    ctx.unc().recordCore(cc, cp, {Operand{h, true}, Operand{c, true}}, cid);
+    val = Operand{c, true};
+    what = What::Copy;
   } else {
     what = st.registers.count(val.v) || isThetaResult(v) ? What::Register : What::Computed;
   }
@@ -823,6 +1086,7 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
                       "call (its clean-up is the callee twin's: rule 18, 31, 106)",
                       &stI);
       if (isDynamic(ctx, st, *s.info, s.o)) {
+        // A copy into a dynamic cell is that cell's register, like its seed (58, 59; cq-dr4o).
         if (what == What::Computed)
           unimplemented("mem-slots: a computed rail stored into a slot cell that is read back at a run-time "
                         "cell (its clean-up needs a memory-aware uncompute or the loops module's reverse loop: "
