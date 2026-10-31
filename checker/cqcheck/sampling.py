@@ -105,6 +105,7 @@ import random
 import re
 import sys
 import shlex
+import shutil
 import select
 import signal
 import struct
@@ -1569,6 +1570,7 @@ RSS_CAP = 512 << 20          # bytes: a worker whose peak resident size passes i
 
 
 _CC = ["-w", "-O0", "-target", "x86_64-apple-macosx"]
+_PROBE_VERSION = "probe-exe-1"
 
 
 def _rt_object() -> Path:
@@ -1678,7 +1680,35 @@ class ProbeBuild:
                                       f"cqd_nloops = {max(1, len(self.ins.loops))}, "
                                       f"cqd_isolate = {int(self.isolate())};\n")
         self._splice_calls()
-        self._link()
+        self._link_cached()
+
+    def _link_cached(self):
+        """_link, once per content (cq-8m6v): the executable is kept in the sample cache by a hash of
+        the probe module, the driver, the runtime object and the toolchain, so a second probe build
+        of the same example (drop_subst_out_of_domain, report's prebuild) starts no tool. A fresh
+        executable is launched once with no batch before it is published, so the host's first-run
+        scan of a new binary is paid there, not inside a batch."""
+        w = self.work
+        h = hashlib.sha256()
+        for part in (_PROBE_VERSION, str(LLVM_BIN), " ".join(_CC), str(_rt_object()), (w / "probe.ll").read_text(),
+                     (w / "driver.c").read_text()):
+            h.update(part.encode() + b"\0")
+        final = _cache_dir() / "probe" / h.hexdigest()[:24]
+        if not final.exists():
+            from cqcheck import run as _run
+            with _run.key_lock(final):
+                if not final.exists():
+                    self._link()
+                    try:
+                        subprocess.run([str(self.exe)], stdin=subprocess.DEVNULL, capture_output=True,
+                                       cwd=str(w), timeout=300, start_new_session=True)
+                    except subprocess.TimeoutExpired:
+                        pass
+                    final.parent.mkdir(parents=True, exist_ok=True)
+                    tmp = final.with_name(f"{final.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+                    shutil.copy2(self.exe, tmp)
+                    os.replace(tmp, final)
+        self.exe = final
 
     def _splice_calls(self):
         """The call statements: the drivers.txt pointer expressions (the same in every sample of a
@@ -3039,6 +3069,11 @@ def _cache_key(spec: DriverSpec, example_dir: Path, exempt_baseline: bool = True
     # compiles in (taint, the loop classifier): all decide trips, caps and reached sites (narrow review)
     h.update(_oracle.SRC_KEY.encode())
     return h.hexdigest()[:20]
+
+
+def cached(spec: DriverSpec, example_dir: Path, exempt_baseline: bool = True) -> bool:
+    """Whether sample_set finds the set in its cache."""
+    return (_cache_dir() / f"{spec.example}.{_cache_key(spec, Path(example_dir), exempt_baseline)}.json").exists()
 
 
 def sample_set(spec: DriverSpec, example_dir: Path, exempt_baseline: bool = True) -> SampleSet:

@@ -1419,9 +1419,17 @@ def save_runs(kind: str, key: Any, results: List[dict]) -> None:
     os.replace(tmp, p)
 
 
+# A program that reaches the file system may let a sample see what an earlier sample of its batch
+# left in the working directory: its batch runs in one runner, as one sequence (cq-8m6v; the same
+# calls as oracle._FS, declared by the lowered module).
+_FS_DECL = re.compile(r"(?m)^declare\b[^@\n]*@(fopen|freopen|fdopen|tmpfile|open|creat|dup2|close|chdir|umask|"
+                      r"tmpnam|tempnam|mkstemp|remove|unlink|rename)\(")
+
+
 def _run_todo(prog: Path, samples, preps, theta, todo, out, side: str, jobs: int, timeout: float) -> None:
     from concurrent.futures import ThreadPoolExecutor
-    n = max(1, min(jobs or default_jobs(), len(todo) // MIN_PART))
+    whole = bool(_FS_DECL.search((prog.parent / "lowered.ll").read_text()))
+    n = 1 if whole else max(1, min(jobs or default_jobs(), len(todo) // MIN_PART))
     parts = [todo[k::n] for k in range(n)]     # strided: neighbouring samples are often alike in cost
 
     def part(ix: List[int]) -> None:

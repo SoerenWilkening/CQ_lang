@@ -455,8 +455,9 @@ def _compare(ours_results, other_results, against: str, spec) -> Tuple[str, List
 
 
 def _prebuild(ex: Example, ours: Path, need_ref_run: bool) -> None:
-    """The executables of the §6 run, built while the sample set is generated (cq-8m6v): the C
-    oracle's program (the sampler runs it too), then ours and the reference in the evaluator. Each is
+    """The executables of the §6 run, built while the sample set is generated (cq-8m6v): the sampler's
+    probe build and the C oracle's program (the sampler runs both), ours and the reference in the
+    evaluator. Each is
     the cache entry the run itself asks for (the drivers depend on the DriverSpec and the drivers.txt
     pointer expressions only), so the run finds it built; a failure here is ignored and met again,
     with its own reason, when the run asks for the same build."""
@@ -472,7 +473,15 @@ def _prebuild(ex: Example, ours: Path, need_ref_run: bool) -> None:
             pass
 
     # side by side: each is a chain of tool starts that waits on nothing of the others
-    builds = [lambda: oracle.executable(ex.o1, spec), lambda: run.build(ours, spec, [])]
+    def probe() -> None:
+        import tempfile
+        from cqcheck import sampling
+        if sampling.cached(spec, ex.dir):
+            return                       # the sample set is kept: no probe runs
+        with tempfile.TemporaryDirectory(prefix=f"cqd-{ex.name}-pre-") as tmp:
+            sampling.ProbeBuild(spec, ex.dir, Path(tmp)).close()
+
+    builds = [probe, lambda: oracle.executable(ex.o1, spec), lambda: run.build(ours, spec, [])]
     if need_ref_run:
         builds.append(lambda: run.build(ex.reference, spec, []))
     ts = [threading.Thread(target=one, args=(b,), daemon=True) for b in builds]

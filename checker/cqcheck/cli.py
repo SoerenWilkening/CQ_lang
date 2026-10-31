@@ -79,10 +79,15 @@ def _run_examples(a, examples, ours_dir) -> List[Verdict]:
         os.environ["CQ_QUICK"] = "1"          # sampling.quick_mode and report: fast development run
     # a.jobs examples at a time, each with one runner per side (run.default_jobs, oracle PARTS = 1,
     # the sampler's pool): never a pool inside a pool. Each verdict prints and is stored as it lands.
-    jobs = max(1, a.jobs or int(os.environ.get("CQCHECK_JOBS", "1")))
-    os.environ["CQCHECK_JOBS"] = "1"
-    from cqcheck import run as _run
-    _run.default_jobs = lambda: 1
+    total = max(1, int(os.environ.get("CQCHECK_JOBS", "1") or "1"))
+    jobs = max(1, a.jobs or total)
+    # cq-8m6v: what $CQCHECK_JOBS leaves to each example in flight goes to its runners (evaluator and
+    # C-oracle parts): one example at CQCHECK_JOBS=4 runs its batches in up to 4 parts
+    inner = max(1, total // min(jobs, max(1, len(examples))))
+    os.environ["CQCHECK_JOBS"] = str(inner)
+    from cqcheck import oracle as _oracle, run as _run
+    _run.default_jobs = lambda: inner
+    _oracle.PARTS = inner
     by_name = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
         futs = {pool.submit(_one, e, ours_dir, a.oracle): e for e in examples}
@@ -115,6 +120,8 @@ def cmd_run(a) -> int:
     saved = {k: os.environ.get(k) for k in ("CQ_QUICK", "CQCHECK_JOBS")}
     from cqcheck import run as _run
     saved_jobs = _run.default_jobs
+    from cqcheck import oracle as _oracle
+    saved_parts = _oracle.PARTS
     try:
         verdicts = _run_examples(a, examples, ours_dir)
     finally:
@@ -124,6 +131,7 @@ def cmd_run(a) -> int:
             else:
                 os.environ[k] = v
         _run.default_jobs = saved_jobs
+        _oracle.PARTS = saved_parts
     if a.json:
         Path(a.json).write_text("".join(to_json(v) + "\n" for v in verdicts))
     print(report.format_table(verdicts))

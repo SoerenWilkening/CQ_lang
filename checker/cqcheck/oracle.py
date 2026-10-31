@@ -364,6 +364,18 @@ _ISOLATE = {"signal", "sigaction", "sigprocmask", "pthread_sigmask", "atexit", "
 _PROGRAMS: Dict[Tuple[str, int, str], Tuple[Path, str]] = {}
 
 
+# Of _ISOLATE, the calls that reach the file system (cq-8m6v): a program that makes one may let a
+# sample see what an earlier sample of its batch left there, so its batches are run whole, as asked,
+# in one runner (no per-sample reuse across batches, no parallel parts).
+_FS = {"fopen", "freopen", "fdopen", "tmpfile", "open", "creat", "dup2", "close", "chdir", "umask", "tmpnam",
+       "tempnam", "mkstemp", "remove", "unlink", "rename"}
+
+
+def touches_files(prog_o: Path) -> bool:
+    f = Path(prog_o).parent / "isolate.txt"
+    return f.exists() and bool(set(f.read_text().split()) & _FS)
+
+
 def isolated(prog_o: Path) -> bool:
     """Whether the program runs every sample in a worker of its own (_ISOLATE)."""
     f = Path(prog_o).parent / "isolate.txt"
@@ -676,11 +688,37 @@ def _run_uncached(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]],
     from .run import load_runs, save_runs
     key = [_RUNS_VERSION, str(exe), iso, int(timeout_ms), int(tripcap), list(samples)]
     got = load_runs("oracle", key)
-    if got is not None:
-        return [SampleRun(index=i, sample=s, **d) for i, (s, d) in enumerate(zip(samples, got))]
-    runs = _run_batch(exe, spec, samples, timeout_ms, tripcap, iso)
-    save_runs("oracle", key, [{f: getattr(r, f) for f in _RUN_FIELDS} for r in runs])
-    return runs
+    if got is None and touches_files(program(Path(o1), k, k_default)[0]):
+        runs = _run_batch(exe, spec, samples, timeout_ms, tripcap, iso, whole=True)
+        save_runs("oracle", key, [{f: getattr(r, f) for f in _RUN_FIELDS} for r in runs])
+        return runs
+    if got is None:
+        # and per sample within this process (cq-8m6v): every sample runs from the post-setup state
+        # as a process of its own would, so a sample run in an earlier batch (the sampler's searches,
+        # the theta schedules) is not run again; the rest run as one batch
+        mk = (str(exe), iso, int(timeout_ms), int(tripcap))
+        with _MEMO_LOCK:
+            memo = _SAMPLE_MEMO.pop(mk, None)
+            if memo is None:
+                memo = {}
+            _SAMPLE_MEMO[mk] = memo                     # most recently used last
+            while len(_SAMPLE_MEMO) > MAX_RUNNERS:      # the executables of the examples in flight
+                _SAMPLE_MEMO.pop(next(iter(_SAMPLE_MEMO)))
+        skeys = [json.dumps(s, sort_keys=True) for s in samples]
+        todo = [i for i, sk in enumerate(skeys) if sk not in memo]
+        if todo:
+            ran = _run_batch(exe, spec, [samples[i] for i in todo], timeout_ms, tripcap, iso)
+            with _MEMO_LOCK:
+                for i, r in zip(todo, ran):
+                    memo[skeys[i]] = {f: getattr(r, f) for f in _RUN_FIELDS}
+        got = [memo[sk] for sk in skeys]
+        save_runs("oracle", key, got)
+    return [SampleRun(index=i, sample=s, **{f: (list(v) if isinstance(v, list) else v) for f, v in d.items()})
+            for i, (s, d) in enumerate(zip(samples, got))]
+
+
+_SAMPLE_MEMO: Dict[Tuple, Dict[str, Dict[str, Any]]] = {}
+_MEMO_LOCK = threading.Lock()
 
 
 _RUNS_VERSION = "oracle-runs-1"
@@ -688,9 +726,9 @@ _RUN_FIELDS = ("events", "outcome", "failed", "reason", "notes", "loops", "stdou
 
 
 def _run_batch(exe: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int, tripcap: int,
-               iso: bool) -> List[SampleRun]:
+               iso: bool, whole: bool = False) -> List[SampleRun]:
     from concurrent.futures import ThreadPoolExecutor
-    n = max(1, min(PARTS, _jobs_cap(), len(samples) // MIN_PART))
+    n = 1 if whole else max(1, min(PARTS, _jobs_cap(), len(samples) // MIN_PART))
     if n == 1:
         return _runner(exe, 0).run(spec, samples, timeout_ms, tripcap, iso)
     parts = [list(range(j, len(samples), n)) for j in range(n)]

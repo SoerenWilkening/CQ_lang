@@ -375,11 +375,25 @@ class _Ev:
     ctlfn: Dict[int, Tuple] = field(default_factory=dict)  # Ry: control rail -> its value per sample
 
 
-def _target_value(rr: RunResult, rec: Dict[str, Any]) -> Tuple[Optional[str], int]:
+def _kept_by_h(rr: RunResult, memo: Optional[Dict[int, Dict[Any, List[Dict[str, Any]]]]] = None
+               ) -> Dict[Any, List[Dict[str, Any]]]:
+    """The run's kept entries by handle, each handle's in kept order (performance, cq-8m6v)."""
+    if memo is not None and id(rr) in memo:
+        return memo[id(rr)]
+    by: Dict[Any, List[Dict[str, Any]]] = {}
+    for k in rr.kept or []:
+        by.setdefault(k["h"], []).append(k)
+    if memo is not None:
+        memo[id(rr)] = by
+    return by
+
+
+def _target_value(rr: RunResult, rec: Dict[str, Any], kept_by: Optional[Dict[Any, List[Dict[str, Any]]]] = None
+                  ) -> Tuple[Optional[str], int]:
     h = rec["h"]
     w = rec.get("w")
     v = rec.get("v")
-    for k in rr.kept or []:
+    for k in (kept_by.get(h, ()) if kept_by is not None else rr.kept or []):
         if k["h"] == h:
             w = w or k.get("w")
             if v is None:
@@ -447,6 +461,7 @@ def _lowered_events(runs: List[RunResult]) -> Tuple[List[_Ev], List[_Ev]]:
     # named (rail, n); a support names the rail.
     regs: Dict[Tuple[int, int], Tuple] = {}
     nver: Dict[int, int] = {}
+    kept_by = [_kept_by_h(rr) for rr in runs] if n else []
     for i in range(n):
         r0 = recs[0][i]
         kind = _KIND[r0["ev"]]
@@ -472,7 +487,7 @@ def _lowered_events(runs: List[RunResult]) -> Tuple[List[_Ev], List[_Ev]]:
             fired.append(on)
             afn.append(aval if on else None)
             if kind in ("ry", "ryq"):
-                w, v = _target_value(runs[s], rec)
+                w, v = _target_value(runs[s], rec, kept_by[s])
                 tvals.append(v)
         target = r0.get("h") if kind in ("ry", "ryq") else None
         if target is not None:
@@ -1485,11 +1500,14 @@ def _kept_type(rr: RunResult, h: Any) -> Optional[str]:
 def _kept_multiset(runs: List[RunResult]) -> Dict[Tuple, int]:
     hs = [k["h"] for k in runs[0].kept or []]
     out: Dict[Tuple, int] = {}
+    by = [_kept_by_h(rr) for rr in runs]
     for h in hs:
         w = None
         vals = []
-        for rr in runs:
-            ent = next(k for k in rr.kept if k["h"] == h)
+        for rr, b in zip(runs, by):
+            if h not in b:
+                raise StopIteration          # as next() over no entry raised it
+            ent = b[h][0]
             w = w or ent.get("w")
             vals.append(_int(ent.get("v")))
         cls = (w, tuple(_masked(v, w) for v in vals))
