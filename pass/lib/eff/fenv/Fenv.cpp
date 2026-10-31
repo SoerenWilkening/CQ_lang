@@ -225,6 +225,7 @@ struct State {
   std::map<const Function *, std::unique_ptr<DominatorTree>> dt;
   std::map<const Function *, std::unique_ptr<LoopInfo>> li;
   std::map<const Function *, std::unique_ptr<PostDominatorTree>> pdt;
+  std::map<const Function *, DenseMap<const BasicBlock *, unsigned>> walk;   // the spine's order L
 };
 
 // Keyed by the output function. A key reused by a later module's function is reset on first use
@@ -485,6 +486,76 @@ template <typename Pred> bool anyAfter(const Instruction &I, Pred p) {
   return false;
 }
 
+// The spine's walk order L of F's blocks (spine/Construct.cpp Walker::plan: reverse post-order with
+// successors visited last to first, so a quantum branch's then arm is linearized before its else arm).
+const DenseMap<const BasicBlock *, unsigned> &walkOrder(State &st, const Function &F) {
+  auto &idx = st.walk[&F];
+  if (!idx.empty())
+    return idx;
+  std::vector<const BasicBlock *> post;
+  SmallPtrSet<const BasicBlock *, 32> seen;
+  std::vector<std::pair<const BasicBlock *, unsigned>> stack;
+  const BasicBlock *E = &F.getEntryBlock();
+  seen.insert(E);
+  stack.push_back({E, E->getTerminator()->getNumSuccessors()});
+  while (!stack.empty()) {
+    auto &[b, k] = stack.back();
+    if (k == 0) {
+      post.push_back(b);
+      stack.pop_back();
+      continue;
+    }
+    const BasicBlock *s = b->getTerminator()->getSuccessor(--k);
+    if (seen.insert(s).second)
+      stack.push_back({s, s->getTerminator()->getNumSuccessors()});
+  }
+  unsigned n = 0;
+  for (auto it = post.rbegin(); it != post.rend(); ++it)
+    idx[*it] = n++;
+  return idx;
+}
+
+// Instructions the output runs after I although the original CFG does not reach them from I: those
+// of a later arm of a quantum branch I's block is in, linearized after it (rules 8, 9, 13). A block
+// y counts when it comes after I's block x in the spine's walk, is not reachable from x, and the
+// nearest common dominator of x and y ends in a quantum terminator (the spine's next(), cq-kti4).
+template <typename Pred>
+bool anyLinearizedAfter(LoweringContext &ctx, State &st, const Instruction &I, Pred p) {
+  const BasicBlock *x = I.getParent();
+  const Function &F = *x->getParent();
+  const auto &idx = walkOrder(st, F);
+  loopInfo(st, F);
+  DominatorTree &DT = *st.dt[&F];
+  SmallPtrSet<const BasicBlock *, 32> reach;
+  SmallVector<const BasicBlock *, 16> work{x};
+  while (!work.empty())
+    for (const BasicBlock *s : successors(work.pop_back_val()))
+      if (reach.insert(s).second)
+        work.push_back(s);
+  unsigned ix = idx.lookup(x);
+  for (const BasicBlock &Y : F) {
+    auto it = idx.find(&Y);
+    if (it == idx.end() || it->second <= ix || reach.count(&Y))
+      continue;
+    const BasicBlock *d = DT.findNearestCommonDominator(const_cast<BasicBlock *>(x),
+                                                          const_cast<BasicBlock *>(&Y));
+    if (!d)
+      continue;
+    const Instruction *t = d->getTerminator();
+    bool quantum = false;
+    if (auto *br = dyn_cast<BranchInst>(t))
+      quantum = br->isConditional() && isQ(ctx, br->getCondition());
+    else if (auto *sw = dyn_cast<SwitchInst>(t))
+      quantum = isQ(ctx, sw->getCondition());
+    if (!quantum)
+      continue;
+    for (const Instruction &n : Y)
+      if (p(n))
+        return true;
+  }
+  return false;
+}
+
 // The quantum part (state or a saved part) may change here: the placement limits (header, LIMITS).
 // CR rule 23 gives no construction merging two states at a classical join, so a change in a block a
 // classical branch chooses is refused: dropping a quantum MODE by fesetround(const) on one classical
@@ -618,7 +689,7 @@ bool isMeasure(const Instruction &I) {
 }
 
 // After every lowered instruction (and every measurement): a state rail with no possible writer and
-// no measurement ahead is final, an output. A measurement ahead may make it classical (rule 2,
+// no measurement ahead (in the original CFG or in a later linearized quantum arm) is final, an output. A measurement ahead may make it classical (rule 2,
 // writeBack), and an output's sources are freed after their last use, which its later uncompute
 // would need. A writer or measurement inside a loop is ignored here: if it ever wrote the quantum
 // part, requireWritable stops it; a collapse there is refused by writeBack.
@@ -626,9 +697,10 @@ void settle(LoweringContext &ctx, State &st, const Instruction &I) {
   writeBack(ctx, st, I);
   LoopInfo &LI = loopInfo(st, *I.getFunction());
   auto final = [&](bool (*writes)(const Instruction &)) {
-    return !anyAfter(I, [&](const Instruction &n) {
+    auto later = [&](const Instruction &n) {
       return (writes(n) || isMeasure(n)) && !LI.getLoopFor(n.getParent());
-    });
+    };
+    return !anyAfter(I, later) && !anyLinearizedAfter(ctx, st, I, later);
   };
   if (st.flags && !st.output.count(st.flags) && final(writesFlags)) {
     ctx.unc().setRole(ctx.unc().idOf(st.flags), Role::Output);
