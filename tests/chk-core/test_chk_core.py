@@ -1110,5 +1110,93 @@ class WideIntToF80(unittest.TestCase):
                                      (N, hex(v), "su"[1 - sgn], mode))
 
 
+class TmplCall:
+    """tmpl_call.c built once: runtime symbols called through the real dispatcher."""
+    _tmp = None
+
+    @classmethod
+    def call(cls, lines):
+        if cls._tmp is None:
+            cls._tmp = tempfile.TemporaryDirectory()
+            build_harness(HERE / "tmpl_call.c", Path(cls._tmp.name) / "tmpl_call")
+        p = subprocess.run([str(Path(cls._tmp.name) / "tmpl_call")], input="".join(l + "\n" for l in lines),
+                           capture_output=True, text=True, env=dict(os.environ, CQE_TRACE="/dev/null"))
+        return p.returncode, p.stdout.split()
+
+
+_FMT16 = {"f16": (5, 10), "bf16": (8, 7)}
+
+
+def _f16_value(fmt, b):
+    e, m = _FMT16[fmt]
+    E, M, bias = (b >> m) & ((1 << e) - 1), b & ((1 << m) - 1), (1 << (e - 1)) - 1
+    v = Fraction(M, 1 << m) * Fraction(2) ** (1 - bias) if E == 0 else (1 + Fraction(M, 1 << m)) * Fraction(2) ** (E - bias)
+    return -v if b >> (e + m) else v
+
+
+def _f16_round(fmt, x, sign_if_zero=0):
+    """x (a Fraction) rounded once, to nearest even, to the 16-bit format's bit pattern (overflow: Inf)."""
+    e, m = _FMT16[fmt]
+    bias = (1 << (e - 1)) - 1
+    s = 1 if x < 0 or (x == 0 and sign_if_zero) else 0
+    x = abs(x)
+    ulp = Fraction(2) ** (1 - bias - m)  # the subnormal quantum
+    if x >= Fraction(2) ** (1 - bias):
+        k = x.numerator.bit_length() - x.denominator.bit_length() + 1
+        while Fraction(2) ** k > x:
+            k -= 1
+        ulp = Fraction(2) ** (k - m)
+    q = x / ulp
+    n = q.numerator // q.denominator
+    if q - n > Fraction(1, 2) or (q - n == Fraction(1, 2) and n % 2):
+        n += 1
+    v = n * ulp
+    if v == 0:
+        return s << (e + m)
+    k = v.numerator.bit_length() - v.denominator.bit_length() + 1
+    while Fraction(2) ** k > v:
+        k -= 1
+    if k > bias:
+        return (s << (e + m)) | (((1 << e) - 1) << m)
+    if k < 1 - bias:
+        return (s << (e + m)) | int(v / Fraction(2) ** (1 - bias - m))
+    return (s << (e + m)) | ((k + bias) << m) | int((v / Fraction(2) ** k - 1) * (1 << m))
+
+
+class Fma16(unittest.TestCase):
+    """cq-q4cz: fma at f16 and bf16 is one IEEE rounding (CR §2 fma row). LLVM 19 -O1 promotes
+    llvm.fma.f16 (clang's __builtin_fmaf16) to fmaf then __truncsfhf2, two roundings (clang 19 -O1 -S,
+    measured); llvm.fma is IEEE fusedMultiplyAdd by LangRef and fmaf16 by C, so that double rounding is
+    not adopted (CR §2: a value C fixes exactly is never taken from a miscompile)."""
+
+    def test_review_repro(self):
+        rc, out = TmplCall.call(["cq_template_fma_bf16 i32|i32,i32,i32 h:bf16:980e h:bf16:7f60 h:bf16:802b"])
+        self.assertEqual((rc, out), (0, ["d7f9"]))  # once rounded; via f32 it would be d7f8
+
+    def test_random_against_exact(self):
+        rnd = random.Random(0x4C2)
+        for fmt in ("f16", "bf16"):
+            e, m = _FMT16[fmt]
+            def fin():  # a finite operand (no Inf, no NaN)
+                while True:
+                    b = rnd.getrandbits(16)
+                    if (b >> m) & ((1 << e) - 1) != (1 << e) - 1:
+                        return b
+
+            cases = [(fin(), fin(), fin()) for _ in range(600)]
+            want = []
+            for a, b, c in cases:
+                va, vb, vc = (_f16_value(fmt, x) for x in (a, b, c))
+                r = va * vb + vc
+                prod_neg = (a ^ b) >> 15
+                zero_sign = prod_neg & (c >> 15)  # exact zero: -0 only if both addends are -0 (RNE)
+                want.append(_f16_round(fmt, r, zero_sign))
+            rc, out = TmplCall.call([f"cq_template_fma_{fmt} i32|i32,i32,i32 h:{fmt}:{a:x} h:{fmt}:{b:x} h:{fmt}:{c:x}"
+                                     for a, b, c in cases])
+            self.assertEqual(rc, 0)
+            for (a, b, c), w, g in zip(cases, want, out):
+                self.assertEqual(int(g, 16), w, (fmt, hex(a), hex(b), hex(c)))
+
+
 if __name__ == "__main__":
     unittest.main()
